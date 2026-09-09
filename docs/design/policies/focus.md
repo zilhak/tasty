@@ -97,6 +97,30 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 - 리소스 생성/삭제 명령이 내부적으로 focus 를 일시 이동해야 하면 작업 후 **원래 focus 를 복원**한다.
 - `TASTY_SURFACE_ID` 환경변수(= "내가 있는 surface")는 focus 와 다르다. CLI `--surface` 기본값으로 쓸 수 있다.
 
+## 폴백으로 가는 메서드는 이름과 사유로 남는다
+
+위 폴백이 답이 되는 메서드가 **어느 것인지**를 값으로 든 자리가
+`src/source_guards/unrouted_dispatch_reasons.rs` 다. 모수는 "라우팅이 인식하는 키를
+하나도 안 읽는 dispatch arm" 이고 명부와 집합 동등이라, 새 메서드가 지목 없이 들어오는
+것과 명부가 낡는 것을 양방향으로 잡는다. 갈래와 사유의 근거는
+[ADR-0251](../../adr/0251-unrouted-dispatch-methods-carry-a-reason-not-a-predicate.md).
+
+갈래는 일곱이고 묻는 것은 하나다 — **주인 창이 안 정해져도 답이 옳은 이유가
+무엇인가.** 저장소가 창 밖이면 고칠 것이 없고(`NotWindowOwned`), 창 소유인데 합산이
+답하면 정본이 합산 명부이며(`AggregatedList`), 생성이면 실을 id 가 애초에
+없고(`CreatesWithoutATarget`), 열린 결함이면 축을 세워야 한다(`PerWindowOpenDefect`).
+남은 셋은 **이 스캔이 못 보는 자리**다: 대상 키를 serde 구조체로 읽어 안 보이는 것
+(`TargetReadByDeserializer`), `request_target` 밖에서 풀려 안 보이는 것
+(`RoutedOutsideRequestTarget`), 그리고 debug 표면(`DebugOnly`). 사각을 술어에서 지우는
+대신 명부의 행으로 만들어 검토받게 한다.
+
+**그 명부가 드러낸 열린 결함이 다섯이다** — `notification.list`(합산 정책 미결) ·
+`system.info`(한 창의 워크스페이스 수를 답하는데 어느 창인지 안 적힌다) ·
+`recent.query`(창마다 따로 로드한 인메모리 캐시를 읽는다) ·
+`git_viewer.query`·`file_handler.dispatch`(대상 surface 를 serde 로 받는데 그 키가 범용
+키가 아니라 라우팅이 못 푼다 — 다른 창의 surface 를 지목해도 요청이 닿은 창에서
+처리된다). 뒤의 넷은 이 명부를 만들기 전에는 어느 문서에도 없었다.
+
 ## 라우팅 아래에도 층이 하나 더 있다 — 그 층은 대상을 안 고른다
 
 위의 폴백은 **창을 고르는** 한 층이다. 창이 정해진 뒤 핸들러가 그 창의 활성 포인터를

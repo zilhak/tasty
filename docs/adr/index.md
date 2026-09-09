@@ -231,3 +231,4 @@
 | 0248 | [webview 정리는 GDK 를 먼저 끝낸 뒤 X 창을 지운다 — 남는 경합은 에러 트랩이 값으로 받는다](0248-webview-teardown-lets-gdk-finish-before-the-x-window-is-destroyed.md) | Accepted | 2026-09-08 | linux, x11, gdk, gtk, webview, crash-safety, teardown, ordering, adr-0159 |
 | 0249 | [markdown 의 로컬 이미지는 렌더러가 문서 안에 싣는다 — 그 자리가 읽기 범위이기도 하다](0249-markdown-local-images-are-inlined-by-the-renderer.md) | Accepted | 2026-09-08 | markdown, plugin, webview, images, sanitizer, security, scope, cross-platform, adr-0065 |
 | 0250 | [Linux 도 원격 서브리소스를 막는다 — macOS 와 같은 규칙을 WebKit content filter 로 컴파일해서](0250-linux-blocks-remote-subresources-with-a-webkit-content-filter.md) | Accepted | 2026-09-08 | webview, linux, webkitgtk, security, remote-content, cross-platform, ffi, adr-0249 |
+| 0251 | [폴백으로 가는 dispatch 메서드는 술어가 아니라 사유로 판정한다](0251-unrouted-dispatch-methods-carry-a-reason-not-a-predicate.md) | Accepted | 2026-09-09 | ipc, routing, focus, guards, roster, multi-window, adr-0133, adr-0175 |

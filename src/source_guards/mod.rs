@@ -1076,6 +1076,11 @@ mod routing_key_coverage;
 /// 메서드에서만 인식되는 키를 모든 메서드에서 인식된 것으로 세어 거짓 초록이 된다.
 mod routing_key_method_scope;
 
+/// 위 둘이 "이 키가 라우팅되는가" 를 묻는 반면, 여기서는 **라우팅 키를 하나도 안 읽는
+/// 메서드**를 모수로 잡아 그 자리가 왜 그래도 되는지를 갈래와 사유로 든다. 폴백이
+/// 답이 되는 메서드가 어느 것인지를 값으로 든 자리가 없었다.
+mod unrouted_dispatch_reasons;
+
 #[cfg(test)]
 mod workflow_fail_fast_tests;
 

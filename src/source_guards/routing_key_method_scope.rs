@@ -42,12 +42,12 @@ use std::path::PathBuf;
 use super::repo_root;
 
 const HANDLER_DIR: &str = "src/adapters/ipc/handler";
-const HANDLER_ROOT: &str = "src/adapters/ipc/handler.rs";
+pub(super) const HANDLER_ROOT: &str = "src/adapters/ipc/handler.rs";
 const ROUTING_SOURCE: &str = "src/core/request_target.rs";
 
 /// arm 의 식에서 따라 들어갈 호출 깊이(arm 자신이 1 단계다).
 /// 실측 고정점은 4 이고 5·7 에서도 값이 같다 — 고정점 바로 위를 쓴다.
-const RESOLVE_DEPTH: u32 = 5;
+pub(super) const RESOLVE_DEPTH: u32 = 5;
 
 /// dispatch arm 수의 하한 — **연기 검사**다. 파서가 죽으면 예외가 아니라 조용한 0 이
 /// 되고, 모수가 비면 아래 집합 동등은 양쪽이 빈 집합이라 그냥 통과한다.
@@ -144,7 +144,7 @@ fn is_id_shaped(key: &str) -> bool {
 }
 
 /// 여는 중괄호 위치에서 짝을 찾아 블록을 돌려준다. 문자열 리터럴 안의 중괄호는 안 센다.
-fn balanced(src: &str, open_at: usize) -> &str {
+pub(super) fn balanced(src: &str, open_at: usize) -> &str {
     let b = src.as_bytes();
     let (mut depth, mut i) = (0usize, open_at);
     let (mut in_str, mut esc) = (false, false);
@@ -174,7 +174,7 @@ fn balanced(src: &str, open_at: usize) -> &str {
 }
 
 /// `"a" | "b" => 식` 형태의 arm 을 걷는다.
-fn dispatch_arms(src: &str) -> Vec<(Vec<String>, String)> {
+pub(super) fn dispatch_arms(src: &str) -> Vec<(Vec<String>, String)> {
     const HEAD: &str = "Some(match request.method.as_str() {";
     let mut out = Vec::new();
     let mut from = 0usize;
@@ -254,7 +254,7 @@ fn module_of(rel: &str) -> Vec<String> {
     parts
 }
 
-fn handler_sources() -> Vec<(String, String)> {
+pub(super) fn handler_sources() -> Vec<(String, String)> {
     let root = repo_root();
     let mut paths = Vec::new();
     gather_rs(&root.join(HANDLER_DIR), &mut paths);
@@ -289,10 +289,10 @@ fn gather_rs(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-type FnKey = (Vec<String>, String);
+pub(super) type FnKey = (Vec<String>, String);
 
 /// (모듈, 함수이름) → 본문. 같은 모듈에 같은 이름이 둘이면 먼저 나온 것이 이긴다.
-fn fn_index(files: &[(String, String)]) -> BTreeMap<FnKey, String> {
+pub(super) fn fn_index(files: &[(String, String)]) -> BTreeMap<FnKey, String> {
     let mut out = BTreeMap::new();
     for (rel, src) in files {
         let module = module_of(rel);
@@ -333,7 +333,11 @@ fn fn_bodies(src: &str) -> Vec<(String, String)> {
 ///
 /// 순서: `super`/`self`/`crate` 접두 → 명시 모듈 → 같은 모듈 → 모듈 루트 → 이름 유일.
 /// 이름만으로 고르면 `handle_list` 처럼 모듈마다 있는 이름에서 엉뚱한 정의가 이긴다.
-fn resolve(index: &BTreeMap<FnKey, String>, caller: &[String], path: &str) -> Option<FnKey> {
+pub(super) fn resolve(
+    index: &BTreeMap<FnKey, String>,
+    caller: &[String],
+    path: &str,
+) -> Option<FnKey> {
     let mut parts: Vec<&str> = path.split("::").collect();
     let name = parts.pop()?.to_string();
     if parts.is_empty() {
@@ -394,8 +398,16 @@ fn flatten(src: &str) -> String {
     src.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// 한 조각이 `params` 에서 읽는 id 키.
+/// 한 조각이 `params` 에서 읽는 id 키 — [`params_keys_in`] 에서 모양으로 좁힌 것.
 fn id_keys_in(fragment: &str) -> BTreeSet<String> {
+    params_keys_in(fragment)
+        .into_iter()
+        .filter(|k| is_id_shaped(k))
+        .collect()
+}
+
+/// 한 조각이 `params` 에서 **숫자로** 읽는 키 전부(모양 필터 없음).
+pub(super) fn params_keys_in(fragment: &str) -> BTreeSet<String> {
     const MARKERS: &[&str] = &[
         "params.get(\"",
         "(params,\"",
@@ -417,7 +429,6 @@ fn id_keys_in(fragment: &str) -> BTreeSet<String> {
             let tail = call_chain_after(after, end);
             if !key.is_empty()
                 && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
-                && is_id_shaped(key)
                 && !tail.contains("as_str()")
             {
                 out.insert(key.to_string());
@@ -434,7 +445,7 @@ fn id_keys_in(fragment: &str) -> BTreeSet<String> {
 /// `matchrequire_surface_id` 로 붙어 이름이 통째로 달라지고, 그러면 그 헬퍼 안의 키
 /// 읽기가 안 보인다 — 위반이 아니라 **침묵**이라 가드는 초록인 채로 비어 간다.
 /// (실측으로 걸렸다: 이 형태 하나 때문에 쌍 67 중 30 을 못 봤다.)
-fn called_paths(fragment: &str) -> Vec<String> {
+pub(super) fn called_paths(fragment: &str) -> Vec<String> {
     let b = fragment.as_bytes();
     let mut out = Vec::new();
     for (i, c) in fragment.char_indices() {
@@ -474,7 +485,21 @@ fn reachable_keys(
     depth: u32,
     seen: &mut BTreeSet<FnKey>,
 ) -> BTreeSet<String> {
-    let mut keys = id_keys_in(fragment);
+    reachable_keys_with(index, caller, fragment, depth, seen, id_keys_in)
+}
+
+/// 같은 순회를 **추출기를 갈아 끼워** 돌린다. 옆 가드가 모양 필터 없는 키 집합을 같은
+/// 도달 판정으로 얻어야 하는데, 순회를 복제하면 깊이·재수출 해석이 두 벌이 되어 한쪽만
+/// 고쳐지는 순간 갈린다.
+pub(super) fn reachable_keys_with(
+    index: &BTreeMap<FnKey, String>,
+    caller: &[String],
+    fragment: &str,
+    depth: u32,
+    seen: &mut BTreeSet<FnKey>,
+    extract: fn(&str) -> BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut keys = extract(fragment);
     if depth == 0 {
         return keys;
     }
@@ -486,7 +511,14 @@ fn reachable_keys(
             continue;
         }
         let body = index[&key].clone();
-        keys.extend(reachable_keys(index, &key.0, &body, depth - 1, seen));
+        keys.extend(reachable_keys_with(
+            index,
+            &key.0,
+            &body,
+            depth - 1,
+            seen,
+            extract,
+        ));
     }
     keys
 }
@@ -519,6 +551,16 @@ fn method_id_keys() -> BTreeMap<String, BTreeSet<String>> {
 
 /// 모든 메서드에 걸리는 범용 키 — `params_resource_id` 의 배열 리터럴.
 fn generic_keys(routing: &str) -> BTreeSet<String> {
+    generic_keys_all(routing)
+        .into_iter()
+        .filter(|k| is_id_shaped(k))
+        .collect()
+}
+
+/// 같은 배열을 **모양 필터 없이** 돌려준다. `surface` · `parent` · `target` · `pane` 은
+/// `_id` 로 안 끝나지만 라우팅이 인식하는 대상 키라, 그 넷을 빼고 "이 메서드가 대상을
+/// 지목하는가" 를 물으면 `terminal.*` 일곱이 지목 없음으로 잡힌다(실측).
+pub(super) fn generic_keys_all(routing: &str) -> BTreeSet<String> {
     let at = routing
         .find("fn params_resource_id")
         .expect("params_resource_id 가 사라졌다 — 대조군이 죽었다");
@@ -527,9 +569,6 @@ fn generic_keys(routing: &str) -> BTreeSet<String> {
     let list_at = body.find("for key in [").expect("범용 키 배열을 못 찾았다");
     let list_end = body[list_at..].find(']').expect("배열이 안 닫힌다") + list_at;
     literals(&body[list_at..list_end])
-        .into_iter()
-        .filter(|k| is_id_shaped(k))
-        .collect()
 }
 
 /// 메서드 한정 인식 — `method_scoped_resource_id` 의 각 `if` 블록에서 (메서드, 키).
@@ -537,7 +576,7 @@ fn generic_keys(routing: &str) -> BTreeSet<String> {
 /// 그 함수의 모든 분기는 **긍정형 `if`** 여야 한다. `if !matches!(…) { return None; }`
 /// 처럼 뒤집힌 가드를 쓰면 메서드 목록이 블록 밖의 코드에 걸려 여기서 안 보인다.
 /// [`the_scoped_side_has_no_inverted_guard`] 가 그 형태를 못박는다.
-fn scoped_pairs(routing: &str) -> BTreeSet<(String, String)> {
+pub(super) fn scoped_pairs(routing: &str) -> BTreeSet<(String, String)> {
     let at = routing
         .find("fn method_scoped_resource_id")
         .expect("method_scoped_resource_id 가 사라졌다 — 대조군이 죽었다");
@@ -571,7 +610,7 @@ fn scoped_pairs(routing: &str) -> BTreeSet<(String, String)> {
 }
 
 /// 조각 안의 소문자 문자열 리터럴.
-fn literals(fragment: &str) -> BTreeSet<String> {
+pub(super) fn literals(fragment: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut rest = fragment;
     while let Some(at) = rest.find('"') {
@@ -590,7 +629,7 @@ fn literals(fragment: &str) -> BTreeSet<String> {
     out
 }
 
-fn routing_source() -> String {
+pub(super) fn routing_source() -> String {
     let path = repo_root().join(ROUTING_SOURCE);
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{ROUTING_SOURCE}: {e}"));
     let production = src.split("#[cfg(test)]").next().unwrap_or(&src).to_string();
