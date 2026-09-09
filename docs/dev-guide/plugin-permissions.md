@@ -227,7 +227,7 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 | `plugin.enable` / `plugin.disable` | — (`local_only`) | `-32001 permission_denied` | 0 |
 | namespace forward · **`METHOD_TABLE` 에 없는 이름** (예 `markdown.recent`) | **없음** | 정상 응답 | **9 (설치된 전부)** |
 | namespace forward · **표에 있는 이름** (예 `markdown.navigate` · `image.list`) | 그 표가 적은 것 (`fs.read` · `surface.read`) | `-32001 permission_denied` | 0 |
-| plugin kind 를 지목한 생성 요청 (`tab.create` 등의 `type`) | `surface:write` | 정상 응답 | **1 (그 kind 의 소유자)** |
+| plugin kind 를 지목한 생성 요청 (`tab.create` 등의 `type`) | `surface.write` | 정상 응답 | **1 (그 kind 의 소유자)** |
 
 - **둘째 줄과 셋째 줄을 가르는 것은 namespace 가 아니라 이름이다.** `method_meta()` 는
   `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → **런타임 등록 plugin prefix**

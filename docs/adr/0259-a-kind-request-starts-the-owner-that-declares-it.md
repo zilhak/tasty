@@ -59,7 +59,7 @@ control 프레임 왕복뿐이다. 그 채널의 서버측 코드(`core/attach_r
 | `plugin.enable` | — (`local_only`) | `-32001 permission_denied` | 0 |
 | namespace forward · **표에 없는 이름** (`markdown.recent`) | **없음** | 정상 응답 | **9 (전부)** |
 | namespace forward · **표에 있는 이름** (`markdown.navigate` · `image.list`) | 그 표가 적은 것 (`fs.read` · `surface.read`) | `-32001 permission_denied` | 0 |
-| 이 트리거 (`workspace.create {type:"markdown"}`) | `surface:write` | 정상 응답 | **1 (소유자)** |
+| 이 트리거 (`workspace.create {type:"markdown"}`) | `surface.write` | 정상 응답 | **1 (소유자)** |
 
 읽을 것 셋.
 
@@ -84,7 +84,7 @@ control 프레임 왕복뿐이다. 그 채널의 서버측 코드(`core/attach_r
   forward 에 닿지도 못한다 — 권한 0 토큰에 `-32001 unknown ipc method`, 토큰 없는 Local 에
   `-32601`.
 
-그러므로 이 트리거는 위 표의 **둘째 줄보다 좁다** — 권한을 더 요구하고(`surface:write`),
+그러므로 이 트리거는 위 표의 **둘째 줄보다 좁다** — 권한을 더 요구하고(`surface.write`),
 띄우는 수가 적다(9 → 1). 새 신뢰 경계를 여는 것이 아니다. 한때 여기 "설치·grant 를 안
 한다" 도 근거로 적혀 있었는데 그것은 비교가 아니다 — 셋째 불릿대로 **둘째 줄도 설치·grant 를
 안 한다.** 비교는 권한 축과 9-vs-1 축만으로 성립한다.
