@@ -1935,7 +1935,7 @@ impl App {
     }
 
     /// `apply_stream_outcome` 지원 — `markdown_content_requests` 배치 적용.
-    /// markdown mirror(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`):
+    /// markdown mirror(`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`):
     /// mirror client 가 attach 채널로 보낸 원문 조회 요청. holder 를 찾아 처리.
     fn apply_markdown_content_requests_batch(
         &mut self,
@@ -2386,7 +2386,7 @@ impl App {
         let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
     }
 
-    /// markdown mirror(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`)
+    /// markdown mirror(`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`)
     /// — mirror client 가 attach 채널로 보낸 `markdown_content_request` 하나를 적용한다.
     /// `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을 찾아
     /// `attach_runtime::handle_markdown_content_request` 로 위임한다.

@@ -602,7 +602,7 @@ impl CoreState {
         // mesh 후보를 bundled 화이트리스트로 재검증. 통과 못한 후보는
         // non_terminals 와 동일하게 placeholder 로 내려간다.
         let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
-        // content 후보(ADR-0254)도 같은 두 단 — 통과 못한 후보(html 등 다른 webview
+        // content 후보(ADR-0255)도 같은 두 단 — 통과 못한 후보(html 등 다른 webview
         // kind)는 placeholder 로 내려간다.
         let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
 
@@ -644,7 +644,7 @@ impl CoreState {
                 "root": root.to_string_lossy(),
             }));
         }
-        // ADR-0254 — markdown 은 placeholder 가 아니라 전용 role. 내용은 여기 싣지
+        // ADR-0255 — markdown 은 placeholder 가 아니라 전용 role. 내용은 여기 싣지
         // 않고(트리 디스크립터가 문서 크기만큼 부풀지 않게) client 가
         // `markdown_content_request` 로 따로 가져온다. `file` 은 **표시·제목 전용의
         // opaque 문자열**이다 — client 는 이 값으로 자기 로컬 파일을 열지 않는다
@@ -1672,7 +1672,7 @@ fn cap_diff_hunks(
     (out, false)
 }
 
-/// markdown mirror(ADR-0254) — mirror client 가 attach 채널로 보낸
+/// markdown mirror(ADR-0255) — mirror client 가 attach 채널로 보낸
 /// `markdown_content_request` 하나를 처리한다. `client_id` 가 이 engine 이 호스팅하는
 /// 어떤 workspace 든 점유(holder)해야 신뢰한다(`handle_list_dir_request`/
 /// `handle_git_query_request` 와 동일한 "attach 점유 = 권한" 원칙 — 이 채널이 나르는
@@ -1683,7 +1683,7 @@ fn cap_diff_hunks(
 /// (`handle_git_query_request` 가 `tasty-git-core` 를 host 에서 직접 부르는 것과 같은
 /// 형태). 그 결과로, 서버측 plugin 이 대용량 확인 대기 중이라 서버 화면에는 아무것도
 /// 안 띄운 파일이라도 여기서는 예산 안에서 읽어 보낸다 — 그 게이트는 그리는 쪽의
-/// 물음이지 읽기 권한의 경계가 아니다(ADR-0254 항목 4).
+/// 물음이지 읽기 권한의 경계가 아니다(ADR-0255 항목 4).
 ///
 /// 회신은 `markdown_content_result` 이벤트(`StreamControl` enum 밖의 raw JSON "event"
 /// 태그, list_dir/git_query 와 동일 패턴).
@@ -1730,7 +1730,7 @@ pub(crate) fn handle_markdown_content_request(
 ///
 /// **파일 없이 열린 markdown surface 는 에러가 아니다** — 서버에서도 빈 문서가 보이므로
 /// 그 상태의 충실한 mirror 는 빈 `file`/`source` 다. `ok:false` 로 답하면 mirror 가
-/// 서버에 없는 에러를 만들어낸다(ADR-0254 항목 2).
+/// 서버에 없는 에러를 만들어낸다(ADR-0255 항목 2).
 fn markdown_content_for_request(
     engine: &CoreState,
     surface_id: u32,
@@ -2066,12 +2066,12 @@ pub(crate) fn mesh_mirror_candidates(
     (whitelisted, rejected)
 }
 
-/// content mirror(ADR-0254) 를 실제로 타는 `(kind, plugin_id)` 조합.
+/// content mirror(ADR-0255) 를 실제로 타는 `(kind, plugin_id)` 조합.
 ///
 /// **markdown 하나로 좁힌다.** `Surface::attach_content_info()` 는 `RemoteSurface`
 /// 전체에 붙으므로 이 게이트가 없으면 같은 webview kind 인 html surface 까지 새 role
 /// 로 나가는데, html 의 URL 은 파일 경로라는 보장이 없어 "그 경로의 원문" 이라는 이
-/// 채널의 의미가 성립하지 않는다(ADR-0254 항목 1).
+/// 채널의 의미가 성립하지 않는다(ADR-0255 항목 1).
 pub(crate) fn is_attach_content_allowed(kind: &str, plugin_id: &str) -> bool {
     matches!((kind, plugin_id), ("markdown", "com.tasty.markdown"))
 }
@@ -2105,7 +2105,7 @@ pub(crate) fn content_mirror_candidates(class: &AttachSurfaceClass) -> ContentMi
 
 #[cfg(test)]
 mod content_mirror_candidate_tests {
-    //! ADR-0254 화이트리스트가 markdown 만 통과시키는지. html(같은 webview kind)과
+    //! ADR-0255 화이트리스트가 markdown 만 통과시키는지. html(같은 webview kind)과
     //! 서드파티 markdown 사칭(`kind` 는 같고 `plugin_id` 가 다른 조합)은 rejected
     //! (= placeholder 유지)로 떨어져야 한다.
     use super::content_mirror_candidates;
@@ -2203,7 +2203,7 @@ mod mesh_descriptor_display_name_tests {
     //! `Surface::display_name()`(예: image 파일명)을 `display_name` 필드로
     //! 실어보내는지. 이전엔 이 필드 자체가 없어 client 가 kind 문자열("image")로
     //! 대체 표시했다. markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서
-    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(ADR-0254 의 전용
+    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(ADR-0255 의 전용
     //! `role:"markdown"` 으로 분류) 여기 fixture 로 쓰지 않는다.
     use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 

@@ -23,7 +23,7 @@ use super::{
 ///   mirror 대상(ADR-0059).
 /// - `content_candidates`: `Surface::attach_content_info()` 가 `Some` 을 반환한
 ///   surface `(surface_id, kind, plugin_id, file)` — 렌더 결과가 아니라 **원문**을
-///   나르는 mirror 대상(ADR-0254). `mesh_candidates` 와 **같은 이유로 여기서 최종
+///   나르는 mirror 대상(ADR-0255). `mesh_candidates` 와 **같은 이유로 여기서 최종
 ///   판정하지 않는다** — 어떤 `(kind, plugin_id)` 조합이 이 채널을 타는지는 앱
 ///   계층(`src/core/attach_runtime.rs`)의 화이트리스트가 정하고, 떨어진 후보는
 ///   호출자가 `non_terminals` 와 동일하게(placeholder) 취급해야 한다.
@@ -212,7 +212,7 @@ impl Workspace {
                             return;
                         }
                         // mesh 다음, explorer 앞 — mesh 판정이 먼저여야 기존
-                        // image/mesh_demo 분류가 안 바뀐다(ADR-0254 항목 1a).
+                        // image/mesh_demo 분류가 안 바뀐다(ADR-0255 항목 1a).
                         if let Some((kind, plugin_id, file)) = s.attach_content_info() {
                             class.content_candidates.push((
                                 id,

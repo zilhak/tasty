@@ -84,7 +84,7 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/attach_git_query_loopback.rs",
     "tests/attach_list_dir_loopback.rs",
     "tests/attach_local_creation_tap.rs",
-    // ADR-0254 의 markdown 원문 채널. 앞의 두 채널(list_dir · git_query)과 같은 가족의
+    // ADR-0255 의 markdown 원문 채널. 앞의 두 채널(list_dir · git_query)과 같은 가족의
     // 세 번째 타깃이라 같은 자리에 둔다. **이 스위트만 번들 plugin 스테이징을 켠다**
     // (`spawn_diag::SUITES_THAT_CALL_BUNDLED_PLUGINS`) — 검증 대상이 실제 markdown
     // plugin 이 만든 surface 라 빈 번들 루트로는 `unknown surface kind: markdown` 이

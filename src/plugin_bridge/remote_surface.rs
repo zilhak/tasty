@@ -210,7 +210,7 @@ impl Surface for RemoteSurface {
         .clone()
     }
 
-    /// ADR-0254 — 이 surface 는 렌더 결과가 아니라 **원문**을 attach 채널로 나를 수
+    /// ADR-0255 — 이 surface 는 렌더 결과가 아니라 **원문**을 attach 채널로 나를 수
     /// 있는 후보다. 경로는 plugin 이 `surface.create`/`restore` 응답에 실어 올린
     /// snapshot(`{"file": ...}`)에서 꺼낸다 — markdown plugin 의 `open_file_surface`
     /// 가 그 형태로 올리고 host 가 [`Self::snapshot_cache`] 에 캐시한다.

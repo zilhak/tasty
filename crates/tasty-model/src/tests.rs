@@ -923,7 +923,7 @@ fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_act
     assert_eq!(class.explorers, vec![(200, PathBuf::from("/proj/sub"))]);
 }
 
-/// content mirror 후보(ADR-0254)를 답하는 테스트용 surface. 본체 크레이트의
+/// content mirror 후보(ADR-0255)를 답하는 테스트용 surface. 본체 크레이트의
 /// `RemoteSurface` 가 이 자리를 채우지만 그 타입은 여기서 볼 수 없다 — 계약만 흉내낸다.
 struct ContentSurface {
     id: SurfaceId,
@@ -956,7 +956,7 @@ impl super::Surface for ContentSurface {
     }
 }
 
-/// ADR-0254 — content mirror 를 답하는 surface 는 `non_terminals` 가 아니라 전용
+/// ADR-0255 — content mirror 를 답하는 surface 는 `non_terminals` 가 아니라 전용
 /// `content_candidates` 버킷으로 분류되고, kind·plugin_id·파일 경로가 함께 실려야 한다.
 /// 화이트리스트 판정은 이 crate 가 하지 않는다(앱 계층) — 여기서는 후보를 모으는 것까지다.
 #[test]

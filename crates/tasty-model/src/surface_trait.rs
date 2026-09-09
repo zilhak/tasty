@@ -61,7 +61,7 @@ pub trait Surface: Any + Send {
         None
     }
 
-    /// attach content mirror 후보 판별(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`).
+    /// attach content mirror 후보 판별(`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`).
     /// `Some((kind, plugin_id, file))` 를 반환하면 이 surface 는 **렌더 결과가 아니라
     /// 원문**을 attach 채널로 나를 수 있다는 뜻 — `Workspace::classify_attach_surfaces`
     /// 가 이 신호로 후보를 모으고, 실제 화이트리스트 판정(어떤 `(kind, plugin_id)`

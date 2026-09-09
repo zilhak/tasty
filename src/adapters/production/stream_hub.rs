@@ -138,7 +138,7 @@ pub struct PumpOutcome {
     /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
     /// `(client_id, msg)` — 원격 attach mirror 세션의 markdown 원문 조회 요청
-    /// (ADR-0254). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
+    /// (ADR-0255). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
     /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
     /// `(client_id, event)` — (06) native bulk 파일 전송의 begin/chunk/commit 을
@@ -237,7 +237,7 @@ pub enum GitQueryRequestMsg {
     },
 }
 
-/// markdown mirror(ADR-0254) mid-session control messages — mirror client 가
+/// markdown mirror(ADR-0255) mid-session control messages — mirror client 가
 /// 원격/holder 쪽에 그 markdown surface 가 열고 있는 문서의 **원문**을 요청한다.
 /// [`ListDirRequestMsg`] 과 같은 "outside `StreamControl`" 근거와 신뢰 모델
 /// (attach 점유 = 신뢰, `client_holds_workspace`).

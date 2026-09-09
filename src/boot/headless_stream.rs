@@ -270,7 +270,7 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
 }
 
 /// 미러가 이 인스턴스에 묻는 파일계 조회 — (04) file picker · git-viewer ·
-/// markdown 원문(ADR-0254).
+/// markdown 원문(ADR-0255).
 fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for (client_id, msg) in std::mem::take(&mut outcome.list_dir_requests) {
         // (04) file picker: mirror client 가 이 headless 인스턴스로
@@ -311,7 +311,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
         );
     }
     for (client_id, msg) in std::mem::take(&mut outcome.markdown_content_requests) {
-        // markdown mirror(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`):
+        // markdown mirror(`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`):
         // mirror client 가 이 headless 인스턴스로 markdown 원문을 요청 —
         // list_dir 와 동일하게 headless 는 단일 engine 이라 holder 순회 불요.
         use crate::adapters::production::stream_hub::MarkdownContentRequestMsg;
