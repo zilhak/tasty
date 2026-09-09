@@ -68,6 +68,7 @@ pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
     if current == 0 {
         let tx = conn.transaction()?;
         tx.execute_batch(SCHEMA_SQL)?;
+        tx.execute_batch(crate::store::tutorial_progress::SCHEMA)?;
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         tracing::info!("state.db schema initialized at v{SCHEMA_VERSION}");
@@ -75,6 +76,7 @@ pub fn ensure_schema(conn: &mut Connection) -> Result<(), DbSchemaError> {
     }
 
     if current == SCHEMA_VERSION {
+        conn.execute_batch(crate::store::tutorial_progress::SCHEMA)?;
         return Ok(());
     }
 

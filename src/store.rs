@@ -7,3 +7,5 @@
 pub mod notification;
 pub mod recent_files;
 pub mod scrollback;
+
+pub(crate) mod tutorial_progress;
