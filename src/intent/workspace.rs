@@ -47,6 +47,17 @@ fn new_workspace(
     category: Option<crate::model::WorkspaceCategoryId>,
     origin: &super::IntentOrigin,
 ) {
+    #[cfg(feature = "gui")]
+    let tutorial_setup = matches!(
+        origin,
+        super::IntentOrigin::User {
+            source: super::UserSource::Menu("tutorial.prepare")
+        }
+    );
+    #[cfg(feature = "gui")]
+    if tutorial_setup && !state.tutorial.preparing {
+        return;
+    }
     let kind = kind.unwrap_or("terminal");
     // 호출자가 cwd 결정 (terminal kind + null params 면 inherit, 그 외 None).
     let cwd = if kind == "terminal" && params.is_null() {
@@ -75,6 +86,11 @@ fn new_workspace(
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
         Err(e) => {
+            #[cfg(feature = "gui")]
+            if tutorial_setup {
+                state.tutorial.preparing = false;
+                state.tutorial.setup_error = true;
+            }
             tracing::warn!("NewWorkspace kind={kind} failed: {e}");
             return;
         }
@@ -90,6 +106,22 @@ fn new_workspace(
             renamed_description,
         } = event
         {
+            #[cfg(feature = "gui")]
+            if tutorial_setup {
+                if let Some(ws) = engine.workspaces.get(index) {
+                    if let Some(pane) = ws.pane_layout().find_pane(ws.focused_pane) {
+                        if let Some(tab) = pane.tabs.get(pane.active_tab) {
+                            state.tutorial.prepared(
+                                crate::adapters::ui::tutorial::PracticeContext {
+                                    workspace: workspace_id,
+                                    pane: pane.id,
+                                    tab: tab.id,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
             crate::app::dispatch_domain::cascade_workspace_created(
                 state,
                 engine,

@@ -59,8 +59,25 @@ fn new_tab(
         name: None,
         surface_params,
     };
-    if let Err(e) = core.apply(engine, intent) {
-        crate::core::mark_last_forward_user_triggered(engine, &e, origin);
-        super::report_apply_error(state, &format!("NewTab kind={kind}"), &e);
+    match core.apply(engine, intent) {
+        Ok(events) => {
+            #[cfg(feature = "gui")]
+            if origin.is_user() {
+                for event in &events {
+                    if let crate::core::intent::CoreEvent::TabCreated {
+                        pane_id, tab_id, ..
+                    } = event
+                    {
+                        state.observe_tutorial_tab_created(engine, *pane_id, *tab_id);
+                    }
+                }
+            }
+            // Headless builds have no tutorial observer; Core already applied the mutation.
+            let _ = events;
+        }
+        Err(e) => {
+            crate::core::mark_last_forward_user_triggered(engine, &e, origin);
+            super::report_apply_error(state, &format!("NewTab kind={kind}"), &e);
+        }
     }
 }

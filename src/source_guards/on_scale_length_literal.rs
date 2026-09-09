@@ -979,7 +979,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 175 -> 174 · 198 -> 197 은 각각 한 자리이고 같은 원인이다 — `p[0]` 의 첨자가
         // `vec2(` 인자로 세어지던 것이 `head_span_of` 의 `[` 처리로 닫혔다. 사각이
         // 좁아진 것이라 이 수도 함께 내린다.
-        (174, 197),
+        // Tutorial cards replace two zero-spacing vectors; their viewport regression adds one test-only rectangle.
+        (172, 198),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );

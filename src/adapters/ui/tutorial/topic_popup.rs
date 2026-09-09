@@ -22,7 +22,7 @@ pub const TUTORIAL_TOPICS_POPUP_ID: &str = "tutorial_topics";
 
 /// 기본 크기(360 × 헤더+리스트+푸터). 리스트는 내부 스크롤(max 200).
 pub fn tutorial_topics_default_size() -> egui::Vec2 {
-    egui::vec2(360.0, 260.0)
+    egui::vec2(360.0, 360.0)
 }
 
 pub fn draw_tutorial_topics_popup(
@@ -30,12 +30,23 @@ pub fn draw_tutorial_topics_popup(
     state: &mut AppState,
     _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
+    if !state.tutorial.catalog_loaded {
+        crate::adapters::ui::tutorial::open_catalog(state);
+    }
     let th = theme::theme();
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
     }
 
     let mut action = PopupAction::None;
+    if ui.ctx().input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+        state.tutorial.popup_selected =
+            (state.tutorial.popup_selected + 1).min(all_topics().len() - 1);
+    }
+    if ui.ctx().input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        state.tutorial.popup_selected = state.tutorial.popup_selected.saturating_sub(1);
+    }
+
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     let width = ui.available_width();
 
@@ -48,7 +59,6 @@ pub fn draw_tutorial_topics_popup(
             bottom: th.spacing_md.value() as i8,
         })
         .show(ui, |ui| {
-            ui.set_width(width);
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(t("tutorial.popup_title"))
@@ -81,7 +91,6 @@ pub fn draw_tutorial_topics_popup(
     egui::Frame::new()
         .inner_margin(egui::Margin::same(th.spacing_sm.value() as i8))
         .show(ui, |ui| {
-            ui.set_width(width);
             egui::ScrollArea::vertical()
                 .max_height(th.tutorial_topic_body_max_height().value())
                 .auto_shrink([false, true])
@@ -89,7 +98,20 @@ pub fn draw_tutorial_topics_popup(
                     ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
                     for (i, topic) in all_topics().iter().enumerate() {
                         let sel = state.tutorial.popup_selected == i;
-                        if topic_row(ui, &th, i + 1, t(topic.title_key), t(topic.desc_key), sel) {
+                        let status = if state.tutorial.progress[i].completed {
+                            t("tutorial.status_done")
+                        } else if state.tutorial.progress[i].started {
+                            t("tutorial.status_progress")
+                        } else {
+                            t("tutorial.status_new")
+                        };
+                        let description = format!("{} · {}", t(topic.desc_key), status);
+                        if ui
+                            .push_id(topic.id, |ui| {
+                                topic_row(ui, &th, i + 1, t(topic.title_key), &description, sel)
+                            })
+                            .inner
+                        {
                             state.tutorial.popup_selected = i;
                         }
                     }
@@ -106,7 +128,6 @@ pub fn draw_tutorial_topics_popup(
             bottom: th.spacing_md.value() as i8,
         })
         .show(ui, |ui| {
-            ui.set_width(width);
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(t("tutorial.esc_hint"))
@@ -115,11 +136,32 @@ pub fn draw_tutorial_topics_popup(
                         .color(th.text_muted().to_egui()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if Button::new(t("tutorial.btn_start"))
-                        .variant(ButtonVariant::Primary)
-                        .size(ControlSize::Sm)
-                        .show(ui, &th)
-                        .clicked()
+                    let selected = state.tutorial.popup_selected;
+                    let resume = state.tutorial.progress[selected].resume > 0
+                        || (state.tutorial.progress[selected].started
+                            && !state.tutorial.progress[selected].completed);
+                    if resume
+                        && Button::new(t("tutorial.btn_restart"))
+                            .variant(ButtonVariant::Secondary)
+                            .size(ControlSize::Sm)
+                            .show(ui, &th)
+                            .clicked()
+                    {
+                        state.tutorial.progress[selected].resume = 0;
+                        state.tutorial.request_start(selected);
+                        action = PopupAction::Close;
+                    }
+                    if Button::new(t(if resume {
+                        "tutorial.btn_resume"
+                    } else if state.tutorial.progress[selected].completed {
+                        "tutorial.btn_replay"
+                    } else {
+                        "tutorial.btn_start"
+                    }))
+                    .variant(ButtonVariant::Primary)
+                    .size(ControlSize::Sm)
+                    .show(ui, &th)
+                    .clicked()
                     {
                         state.tutorial.request_start(state.tutorial.popup_selected);
                         action = PopupAction::Close;
@@ -128,6 +170,13 @@ pub fn draw_tutorial_topics_popup(
             });
         });
 
+    if ui.ctx().input(|i| i.key_pressed(egui::Key::Enter)) {
+        state.tutorial.request_start(state.tutorial.popup_selected);
+        action = PopupAction::Close;
+    }
+    if state.tutorial.save_error {
+        ui.label(t("tutorial.save_error"));
+    }
     action
 }
 
@@ -209,4 +258,9 @@ fn hsep(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, width: f32)
         rect.center().y,
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
+}
+
+/// Every catalog close path clears only its load latch, never a queued start.
+pub fn on_close(_ctx: &egui::Context, state: &mut AppState, _engine: &mut crate::core::CoreState) {
+    state.tutorial.catalog_loaded = false;
 }

@@ -1,7 +1,15 @@
-<!-- source-hash: 7330dbc8d28e -->
+<!-- source-hash: dae44fec3db7 -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
+
+## Learn directly on the screen
+
+Open **Tools** > **Tutorial** in the sidebar for screen structure, splitting practice, and finding commands and shortcuts. Learn how each pane has its own tab bar and each tab has its own surface layout.
+
+Splitting practice creates a separate workspace. Click the work area, then use the displayed shortcut or menu. Once the action is confirmed, choose **Next**. The practice workspace stays open afterward; keep using it or close it yourself.
+
+Choose **Topics** or press `Esc` to stop, and **Resume** to continue later. Completion and progress survive restarting the app. Resuming splitting practice creates a new practice workspace. Shortcut hints follow your current settings.
 
 ## Window layout
 

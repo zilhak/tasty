@@ -380,6 +380,9 @@ impl View for MainView {
         // (settings, dialog, focused popup) is active. Otherwise the central
         // keyboard dispatcher in keyboard.rs handles routing to the correct
         // surface, and egui never sees the key event.
+        if self.route_tutorial_input(&event) {
+            return ViewAction::None;
+        }
         let is_keyboard_event = matches!(
             &event,
             WindowEvent::KeyboardInput { .. } | WindowEvent::Ime(_)

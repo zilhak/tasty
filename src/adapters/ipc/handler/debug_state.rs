@@ -84,9 +84,21 @@ pub(super) fn handle_ui_state(
     #[cfg(not(feature = "gui"))]
     let host_popup_focused = false;
 
+    #[cfg(feature = "gui")]
+    let tutorial = json!({
+        "active": state.tutorial.active.map(|a| json!({"topic": a.topic, "step": a.step})),
+        "ready": state.tutorial.ready(),
+        "keyboard_focus": state.tutorial.keyboard_focus,
+        "catalog_open": state.popups.is_open("tutorial_topics"),
+        "rect": state.tutorial.callout_rect.map(|r| [r.min.x, r.min.y, r.max.x, r.max.y]),
+        "save_error": state.tutorial.save_error,
+    });
+    #[cfg(not(feature = "gui"))]
+    let tutorial = serde_json::Value::Null;
     JsonRpcResponse::success(
         id,
         json!({
+            "tutorial": tutorial,
             // ☆ 이 값은 "설정 모달이 화면에 있다" 가 아니라 **열기 요청 래치**다. 모달이
             // 실제로 떠 있는지는 아래 `modal_open` 이 답한다 — 그쪽이 모달 등록에서 세워져
             // 닫힐 때까지 남는 지속 값이다. 이름이 그 차이를 안 말해 주므로 여기 적어 둔다.

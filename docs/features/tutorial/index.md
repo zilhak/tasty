@@ -1,66 +1,64 @@
 # 튜토리얼 (마커 오버레이 인앱 투어)
 
-- **Status**: Partial (첫 주제 1개 · 4 step)
-- **주체**: 로컬 사용자 (GUI 전용 — [주체](../../concepts/actors.md))
-- **코드**: `src/adapters/ui/tutorial/`
-- **화면**: 마커 오버레이 + 안내 말풍선 + 주제 목록 팝업 (갤러리 specimen: Overlays › Tutorial)
+- **Status**: Implemented — 화면 구조, 분할 실습, 명령 발견 3개 주제.
+- **주체**: 로컬 사용자, GUI 전용.
+- **코드**: `src/adapters/ui/tutorial/`.
+- **화면**: 주제 목록 팝업 + 마커 + 안내 말풍선. 갤러리: Overlays › Tutorial.
 
-## 목적
+## 사용자 흐름
 
-처음 쓰는 사용자에게 tasty 의 화면 구조 개념을 UI 위에서 직접 가리켜 안내한다. "도구"
-메뉴에서 열며, 각 step 이 화면의 특정 영역(워크스페이스/탭헤더/페인/서피스)에 **사각테두리
-마커**를 얹고 그 옆 **말풍선**으로 개념을 설명한다. 마커는 위젯 자체를 건드리지 않고 좌표
-위에 별도 도형을 최상위 z 로 그리는 방식이다.
+도구 메뉴의 튜토리얼 또는 설정한 `open_tutorial` 단축키로 목록을 연다. 최초 실행에 자동으로 투어를 시작하지 않는다. 목록에서 위/아래로 주제를 고르고 Enter 또는 버튼으로 시작한다.
 
-## 내부 동작 (headless-valid)
+- **화면 구조 이해하기**: 워크스페이스 → 페인 → 탭 → 서피스 → 두 레벨 분할 요약.
+- **직접 나누고 탭 전환하기**: 연습 워크스페이스 생성 → 서피스 분할 → 새 탭 → 원래 탭으로 전환 → 페인 분할 → 요약.
+- **명령과 단축키 찾기**: 팔레트 열기 → 현재 단축키 확인 → 명령 탐색 안내.
 
-- **구성 3요소**
-  - **마커 오버레이** — 대상 rect 위에 그리는 정적 링(+정적 glow) + 스포트라이트 scrim(마커
-    rect 만 밝게 남김). `Order::Tooltip` painter 로 최상위에 그리며 `pointer-events:none`
-    (클릭은 하위로 통과). 메시지·심각도 없음(6번째 오버레이 개념 — [용어](../../concepts/ubiquitous-language.md)).
-  - **안내 말풍선(callout)** — 244px 고정폭. `step/total` + dot rail, 제목, 본문,
-    버튼 행(Skip · Back · Next). 마커를 가리키는 4방 tail. **edge-avoidance 배치**(선호순서
-    below→above→right→left, 뷰포트 오버플로 시 flip, 8px 안전영역 clamp, clamp 후에도 tail 은
-    마커 모서리를 계속 조준) — 순수 함수 `callout::place_callout`. 말풍선만 마우스를 소비.
-  - **주제 목록 팝업** — `PopupDef`(CenteredFocused) 위 스크롤 리스트 + "진행" 버튼.
-- **상태머신** — 목록팝업 --[진행]--> step0 --[Next]--> … --[Next on last]--> 목록 재open.
-  Skip/Esc(any step) → 목록 재open(**완전 종료 아님**). Back → 이전 step(첫 step Back 숨김).
-- **마커 좌표 해석** — step 의 `MarkerTarget`(ContentArea/TabHeader/Pane/Surface)을 매 프레임
-  `LayoutContext`(pane/surface rect) · `terminal_rect`(콘텐츠 전체영역) · `tab_bar_height`
-  로 재해석한다(정적 stale 없음). 첫 주제는 focused pane/surface 로 해석.
-- **첫 주제** = "워크스페이스 · 페인 · 탭 · 서피스" 4 step: 워크스페이스(콘텐츠 전체영역) →
-  탭 헤더(pane 상단 띠) → 페인(pane rect) → 서피스(surface rect). 마커가 점점 좁혀지며
-  포함관계를 드러낸다.
+다음/이전으로 진행한다. 실습 단계는 해당 사용자 행동의 성공을 확인한 뒤 다음을 활성화한다. 성공 직후 자동으로 전진하지 않는다. 목록 버튼 또는 Escape는 현재 위치를 기억하고 목록으로 돌아간다. 목록에서 Escape/X/바깥 클릭은 튜토리얼을 닫는다. 완료한 주제를 다시 보다가 중단해도 완료 기록은 유지한다.
 
-## 인터페이스
+목록은 미시작/진행 중/완료를 표시하며 이어하기/처음부터/다시 보기를 제공한다. 분할 실습 재개는 새 연습 공간 준비부터 시작한다. 연습 워크스페이스는 완료·중단 후에도 남으며 사용자가 직접 닫는다.
 
-- **AI Agent (IPC/CLI)**: **없음.** 튜토리얼은 사용자 조작 재현 계열(Toast/Banner/Modifier-hint
-  와 동일) — 진입·진행·복귀를 IPC/CLI 로 발화하는 API 를 신설하지 않는다(불가침 원칙 1).
-- **사용자 트리거**: 사이드바 "도구" 메뉴 → "튜토리얼" 클릭 → 주제 목록 팝업. 주제 선택 +
-  "진행" → step 진행. Next/Back 이동, Skip/Esc 복귀. **최초 실행 자동 표시 없음.**
+## 입력과 표시
 
-## 비-목표 (Out of scope)
+시작 시 말풍선이 키보드를 받는다. 실습의 직접 해보기 버튼 또는 작업영역 클릭으로 실제 단축키와 터미널 입력을 사용할 수 있다. 말풍선을 클릭하면 안내의 키보드 탐색으로 돌아간다. 포커스된 팝업과 전체화면 무대는 기존 입력 우선순위를 유지한다. 튜토리얼 Escape는 egui/터미널로 재전달하지 않고 사용자 입력 경계에서 한 번 처리한다.
 
-- 리사이즈 중 마커 위치 실시간 추적은 매 프레임 재해석으로 자동 정합되지만, 스포트라이트 scrim
-  OFF 토글(설정)은 아직 미구현(기본 ON) — 후속.
-- 최초 실행 자동 표시 · 완료 상태 영속 · 첫 주제 외 추가 주제 · 개별 위젯 정밀 지시(egui
-  `read_response` escape hatch)는 범위 밖(후속 주제에서).
+마커와 scrim은 클릭을 차단하지 않는다. 대상 rect는 매 프레임 현재 layout에서 해석한다. 대상이 보이지 않으면 다른 영역을 대신 가리키지 않고 복귀 안내를 표시한다. 실제 대상이 필요한 단계의 다음 버튼은 비활성화한다. 요약은 마커 없는 카드다.
 
-## 구현
+말풍선은 현재 화면 폭과 제목/본문 측정에 따라 배치하며, 본문은 내부 스크롤하고 버튼은 줄바꿈한다. 호스트 popup이 키보드를 소유하거나 전체화면 무대가 열리면 투어는 그 뒤에서 진행 위치를 유지한다.
 
-- `src/adapters/ui/tutorial/mod.rs` — `Topic`/`Step`/`MarkerTarget` 컴파일타임 정의,
-  `TutorialRuntime`(AppState 필드), `resolve_marker_rect`(순수), `draw_tutorial_overlay`
-  (오케스트레이션 — `src/adapters/ui/overlay.rs::draw_overlays` 말미 훅).
-- `marker.rs` — `paint_marker` / `paint_spotlight_scrim`.
-- `callout.rs` — `place_callout`(edge-avoidance 순수 함수 + 단위테스트) + `draw_callout`.
-- `topic_popup.rs` — `draw_tutorial_topics_popup`(PopupDef draw_fn).
-- 배선: `popup/defs.rs`(팝업 등록), `tools_menu.rs`(진입 항목), `state.rs`(런타임 필드),
-  `lang/{en,ko,ja}.toml`(문자열). 시각 토큰은 design-system(Overlays › Tutorial specimen).
+네이티브 WebView는 기존 호스트 오버레이 정책에 따라 투어 중 숨겨진다. 따라서 웹 본문 위의 투명한 실습을 제공하는 기능은 아니다. 설정·프리셋 윈도우 내부를 가리키는 투어도 제공하지 않는다.
+
+## 실습 판정
+
+분할 실습은 사용자 요청으로 생성한 로컬 terminal workspace의 ID를 기록한다. 서피스 분할은 workspace/pane/tab, 새 탭은 workspace/pane, 원래 탭으로 전환은 tab ID, 페인 분할은 원래 pane ID를 비교한다. 다른 워크스페이스나 agent origin의 분할은 학습 성공으로 인정하지 않는다.
+
+서피스·페인 분할의 공용 cascade와 사용자 탭 생성/전환 경로에서 성공 사실을 관찰한다. 실패한 생성, 동일 탭 재선택, 중단한 준비 요청은 다음 단계를 열지 않는다. 팔레트 주제의 완료 조건은 팔레트를 여는 것이며, 임의 명령의 실행 성공을 주장하지 않는다.
+
+단축키 안내는 `KeybindingSettings::get_bindings`와 기존 표시 formatter에서 얻는다. 미지정이면 메뉴 사용을 안내한다.
+
+## 진행 기록
+
+`state.db`의 `tutorial_progress`는 주제 ID·콘텐츠 revision·완료 여부·재개 step ID·row version을 저장한다. 레이아웃 복원 설정과 독립적이며 runtime 객체 ID는 저장하지 않는다. 같은 DB의 기존 사용자 상태는 보존한다.
+
+완료는 단조 갱신하며 다른 View의 오래된 재개 위치는 row version 검사로 덮어쓰지 않는다. 새 목록 세션에서 최신 기록을 읽는다. 저장 실패는 세션 진행을 유지하고 안내하며, 목록 재진입에서 재시도한다. 알 수 없는 단계는 해당 주제 처음으로 복구한다.
+
+## 구현 경계
+
+- `catalog.rs`: 안정적인 ID·번역 키·단계 요구사항.
+- `runtime.rs`: 전이, 완료/중단, 실습 성공 판정.
+- `progress.rs` / `src/store/tutorial_progress.rs`: 사용자 전이의 DB 효과와 SQL.
+- `mod.rs`: 현재 대상 해석과 렌더 오케스트레이션.
+- `callout.rs`, `marker.rs`, `topic_popup.rs`: 표시.
+- `src/intent/popup.rs`: 공용 목록 진입과 팔레트 관찰.
+- `src/view/main.rs`, `src/state.rs`: raw Escape 및 키/오버레이 판정.
+
+에이전트용 release IPC/CLI 시작·진행·포커스 API는 없다. 사용자 조작 재현은 기존 debug 경로만 사용한다.
 
 ## Acceptance Criteria
 
-- 도구 메뉴 "튜토리얼" → 주제 목록 팝업이 열린다.
-- 주제 선택 + 진행 → 팝업 닫힘 → step0 마커+말풍선 진행.
-- Next/Back 으로 step 이동, 각 step 마커 위치·말풍선 내용 갱신.
-- Skip/Esc → 주제 목록 팝업 복귀, 마지막 step Next → 목록 재open.
-- 마커/scrim 은 hit-transparent(클릭 통과), 말풍선만 마우스 소비.
+- 메뉴/설정된 단축키로 목록을 열고 세 주제를 시작할 수 있다.
+- 기본 안내를 완료하고 목록을 다시 열면 완료가 표시된다.
+- 중단 후 이어하기, 완료 후 다시 보기, 재시작 후 기록 로드가 동작한다.
+- terminal에서 누른 Escape는 투어만 목록으로 전환하며 PTY로 전달되지 않는다.
+- 대상 유실/워크스페이스 이탈 시 잘못된 마커나 실습 성공이 나타나지 않는다.
+- 클릭·사용자 단축키로 실습을 수행할 수 있고 같은 agent 동작은 실습을 완료하지 않는다.
+- ko/en/ja 안내와 현재 바인딩을 표시하며 긴 본문은 스크롤할 수 있다.

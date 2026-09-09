@@ -1,5 +1,5 @@
-//! 안내 말풍선(Callout) — 244px 고정폭. 제목·본문·`step/total`·dot rail·
-//! Skip/Back/Next + 4방 tail. **edge-avoidance layout pass**(선호순서 below→
+//! 안내 말풍선(Callout) — 244px 기준폭을 뷰포트에 맞춘다. 제목·본문·`step/total`·dot rail·
+//! 목록/이전/다음 및 실습 버튼 + 4방 tail. **edge-avoidance layout pass**(선호순서 below→
 //! above→right→left, 뷰포트 오버플로 시 flip, 8px 안전영역 clamp, clamp 후에도
 //! tail 은 마커 모서리를 계속 조준)는 순수 함수 [`place_callout`] 로 분리해 단위
 //! 테스트한다.
@@ -9,11 +9,11 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::i18n::t;
 
-/// 244px 고정폭(i18n 가변폭은 세로로 흡수).
+/// 기준폭. 좁은 화면에서는 줄이고 긴 본문은 스크롤한다.
 pub const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 /// tail 삼각 크기(12px diamond 전사).
 const TAIL: LogicalPx = LogicalPx(12.0);
@@ -129,61 +129,89 @@ pub fn place_callout(
     }
 }
 
-/// 말풍선 높이 추정(배치용) — 본문 galley 높이 + 고정 라인/패딩. egui Area 는
-/// 세로 auto-size 지만 배치(above/clamp)에는 사전 높이가 필요하다.
-pub fn callout_height(ctx: &egui::Context, theme: &Theme, body: &str) -> f32 {
-    let content_w = (CALLOUT_W - theme.spacing_lg.scaled(2.0)).value();
-    let body_h = ctx.fonts(|f| {
+/// Measure title and body with the same fonts and width as the rendered card.
+pub fn measure_callout(
+    ctx: &egui::Context,
+    theme: &Theme,
+    title: &str,
+    body: &str,
+    available: egui::Vec2,
+) -> egui::Vec2 {
+    let width = CALLOUT_W.value().min(
+        (available.x - theme.spacing_lg.value() * 2.0)
+            .max(theme.item_height_interactive.value() * 2.0),
+    );
+    let content_width = (width - theme.spacing_lg.value() * 2.0).max(theme.spacing_lg.value());
+    let text_height = ctx.fonts(|f| {
         f.layout(
-            body.to_string(),
-            egui::FontId::proportional(theme.font_size_caption.value()),
-            theme.text_secondary().to_egui(),
-            content_w,
+            title.to_owned(),
+            egui::FontId::proportional(theme.font_size_body.value()),
+            theme.text_primary().to_egui(),
+            content_width,
         )
         .size()
-        .y
+        .y + f
+            .layout(
+                body.to_owned(),
+                egui::FontId::proportional(theme.font_size_caption.value()),
+                theme.text_secondary().to_egui(),
+                content_width,
+            )
+            .size()
+            .y
     });
-    // padding(md*2) + step line + gap + title line + gap + body + button row.
-    theme.spacing_md.value() * 2.0
-        + theme.font_size_micro.value()
-        + 4.0
-        + theme.font_size_body.value()
-        + 6.0
-        + body_h
-        + theme.spacing_md.value()
-        + theme.item_height_interactive.value()
+    let height =
+        text_height + theme.item_height_interactive.value() * 3.0 + theme.spacing_lg.value() * 3.0;
+    egui::vec2(
+        width,
+        height.min(
+            (available.y - theme.spacing_lg.value() * 2.0)
+                .max(theme.item_height_interactive.value() * 3.0),
+        ),
+    )
 }
 
-/// 버튼 클릭 결과.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CalloutClick {
     None,
     Next,
     Back,
     Skip,
+    Practice,
 }
 
-/// 말풍선을 `placement.pos` 에 최상위(Order::Tooltip) Area 로 그린다. 마커/scrim 과
-/// 달리 이 Area 는 자기 영역의 마우스를 소비한다(버튼 상호작용). tail 은 Frame
-/// 렌더 후 painter 로 얹는다.
-#[allow(clippy::too_many_arguments)]
+pub struct CalloutProps<'a> {
+    pub step: usize,
+    pub total: usize,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub first: bool,
+    pub last: bool,
+    pub ready: bool,
+    pub prepare: bool,
+    pub size: egui::Vec2,
+    pub keyboard_focus: bool,
+    pub anchored: bool,
+}
+
+pub struct CalloutResponse {
+    pub action: CalloutClick,
+    pub rect: egui::Rect,
+    pub clicked: bool,
+}
+
 pub fn draw_callout(
     ctx: &egui::Context,
     theme: &Theme,
     placement: Placement,
-    step: usize,
-    total: usize,
-    title: &str,
-    body: &str,
-    first: bool,
-    last: bool,
-) -> CalloutClick {
-    let mut click = CalloutClick::None;
+    props: CalloutProps<'_>,
+) -> CalloutResponse {
+    let mut action = CalloutClick::None;
     let area = egui::Area::new(egui::Id::new("tutorial_callout"))
         .order(egui::Order::Tooltip)
         .fixed_pos(placement.pos)
         .show(ctx, |ui| {
-            let resp = egui::Frame::new()
+            egui::Frame::new()
                 .fill(theme.surface_raised().to_egui())
                 .stroke(egui::Stroke::new(
                     theme.border_width.value(),
@@ -191,104 +219,141 @@ pub fn draw_callout(
                 ))
                 .corner_radius(theme.corner_radius_lg.value())
                 .shadow(theme.shadow_popover().to_egui())
-                .inner_margin(egui::Margin {
-                    left: theme.spacing_lg.value() as i8,
-                    right: theme.spacing_lg.value() as i8,
-                    top: theme.spacing_md.value() as i8,
-                    bottom: theme.spacing_md.value() as i8,
-                })
+                .inner_margin(tasty_ui_widgets::margin_sym(
+                    theme.spacing_lg,
+                    theme.spacing_md,
+                ))
                 .show(ui, |ui| {
-                    ui.set_width((CALLOUT_W - theme.spacing_lg.scaled(2.0)).value());
-                    ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                    // step / total.
+                    ui.set_width(
+                        (props.size.x - theme.spacing_lg.value() * 2.0)
+                            .max(theme.spacing_lg.value()),
+                    );
+                    ui.spacing_mut().item_spacing =
+                        egui::vec2(theme.spacing_sm.value(), theme.spacing_xs.value());
                     ui.label(
-                        egui::RichText::new(format!("{step} / {total}"))
+                        egui::RichText::new(format!("{} / {}", props.step, props.total))
                             .monospace()
                             .size(theme.font_size_micro.value())
-                            .strong()
                             .color(theme.accent_primary().to_egui()),
                     );
-                    vspace(ui, theme.spacing_xs);
-                    ui.label(
-                        egui::RichText::new(title)
-                            .size(theme.font_size_body.value())
-                            .strong()
-                            .color(theme.text_primary().to_egui()),
-                    );
-                    // 디자인 전사값 6px — 토큰 산술(4×1.5)로 표현.
-                    vspace(ui, theme.spacing_xs * 1.5);
-                    ui.label(
-                        egui::RichText::new(body)
-                            .size(theme.font_size_caption.value())
-                            .color(theme.text_secondary().to_egui()),
-                    );
-                    ui.add_space(theme.spacing_md.value());
+                    let body_height = (props.size.y
+                        - theme.item_height_interactive.value() * 3.0
+                        - theme.spacing_lg.value() * 2.0)
+                        .max(theme.font_size_body.value());
+                    egui::ScrollArea::vertical()
+                        .id_salt("tutorial_body")
+                        .max_height(body_height)
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(props.title)
+                                    .size(theme.font_size_body.value())
+                                    .strong()
+                                    .color(theme.text_primary().to_egui()),
+                            );
+                            ui.label(
+                                egui::RichText::new(props.body)
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_secondary().to_egui()),
+                            );
+                        });
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        // dot rail (좌).
-                        for i in 0..total {
-                            let c = if i == step - 1 {
-                                theme.accent_primary().to_egui()
-                            } else {
-                                theme.surface_active().to_egui()
-                            };
+                        for i in 0..props.total {
                             let (r, _) = ui.allocate_exact_size(
                                 egui::vec2(STEP_RAIL_DOT_SIZE.value(), STEP_RAIL_DOT_SIZE.value()),
                                 egui::Sense::hover(),
                             );
+                            let color = if i + 1 == props.step {
+                                theme.accent_primary()
+                            } else {
+                                theme.surface_active()
+                            };
                             ui.painter().circle_filled(
                                 r.center(),
                                 STEP_RAIL_DOT_SIZE.value() * 0.5,
-                                c,
+                                color.to_egui(),
                             );
                         }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let next_label = if last {
-                                t("tutorial.btn_done")
-                            } else {
-                                t("tutorial.btn_next")
-                            };
-                            if Button::new(next_label)
-                                .variant(ButtonVariant::Primary)
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        if !props.ready
+                            && !props.prepare
+                            && Button::new(t("tutorial.btn_try"))
+                                .variant(ButtonVariant::Secondary)
                                 .size(ControlSize::Sm)
                                 .show(ui, theme)
                                 .clicked()
-                            {
-                                click = CalloutClick::Next;
-                            }
-                            if !first
-                                && Button::new(t("tutorial.btn_back"))
-                                    .variant(ButtonVariant::Secondary)
+                        {
+                            ui.memory_mut(|m| {
+                                if let Some(id) = m.focused() {
+                                    m.surrender_focus(id);
+                                }
+                            });
+                            action = CalloutClick::Practice;
+                        }
+
+                        if Button::new(t("tutorial.btn_skip"))
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .show(ui, theme)
+                            .clicked()
+                        {
+                            action = CalloutClick::Skip;
+                        }
+                        if !props.first
+                            && Button::new(t("tutorial.btn_back"))
+                                .variant(ButtonVariant::Secondary)
+                                .size(ControlSize::Sm)
+                                .show(ui, theme)
+                                .clicked()
+                        {
+                            action = CalloutClick::Back;
+                        }
+                        let label = if props.prepare {
+                            t("tutorial.btn_prepare")
+                        } else if props.last {
+                            t("tutorial.btn_done")
+                        } else {
+                            t("tutorial.btn_next")
+                        };
+                        let next = ui
+                            .add_enabled_ui(props.ready, |ui| {
+                                Button::new(label)
+                                    .variant(ButtonVariant::Primary)
                                     .size(ControlSize::Sm)
                                     .show(ui, theme)
-                                    .clicked()
-                            {
-                                click = CalloutClick::Back;
-                            }
-                            let skip = ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(t("tutorial.btn_skip"))
-                                        .size(theme.font_size_caption.value())
-                                        .color(theme.text_muted().to_egui()),
-                                )
-                                .sense(egui::Sense::click()),
-                            );
-                            if skip.clicked() {
-                                click = CalloutClick::Skip;
-                            }
-                        });
+                            })
+                            .inner;
+                        if props.keyboard_focus && ui.memory(|m| m.focused().is_none()) {
+                            next.request_focus();
+                        }
+                        if next.clicked() {
+                            action = CalloutClick::Next;
+                        }
                     });
-                });
-            resp.response.rect
+                })
+                .response
+                .rect
         });
-
-    paint_tail(
-        &ctx.layer_painter(area.response.layer_id),
-        area.inner,
-        theme,
-        placement,
-    );
-    click
+    // Do not draw a misleading pointer on an unanchored summary/recovery card.
+    if props.anchored {
+        paint_tail(
+            &ctx.layer_painter(area.response.layer_id),
+            area.inner,
+            theme,
+            placement,
+        );
+    }
+    let clicked = ctx.input(|i| {
+        i.pointer.any_pressed()
+            && i.pointer
+                .interact_pos()
+                .is_some_and(|p| area.inner.contains(p))
+    });
+    CalloutResponse {
+        action,
+        rect: area.inner,
+        clicked,
+    }
 }
 
 /// tail 삼각형 — bubble 모서리에서 마커 방향으로 튀어나온다. 외곽 2변만 stroke.
@@ -387,5 +452,57 @@ mod tests {
             (aim_x - LogicalPx(marker.center().x)).abs() <= LogicalPx(SIZE.x),
             "tail aims near marker center"
         );
+    }
+    #[test]
+    fn long_translations_keep_actions_inside_a_small_viewport() {
+        let theme = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(420.0, 300.0));
+        for title in [
+            "A long title that wraps across several lines",
+            "워크스페이스와 페인 안에서 서피스를 분할하는 방법",
+            "ワークスペースのサーフェスを分割する方法",
+        ] {
+            for _ in 0..3 {
+                let mut rect = egui::Rect::NOTHING;
+                let _output = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(screen),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        let body = "A long explanation. ".repeat(40);
+                        let size = measure_callout(ctx, &theme, title, &body, screen.size());
+                        let placement = place_callout(
+                            egui::Rect::from_center_size(screen.center(), egui::Vec2::ZERO),
+                            size,
+                            screen,
+                            theme.spacing_md.value(),
+                            theme.spacing_sm.value(),
+                        );
+                        rect = draw_callout(
+                            ctx,
+                            &theme,
+                            placement,
+                            CalloutProps {
+                                step: 2,
+                                total: 6,
+                                title,
+                                body: &body,
+                                first: false,
+                                last: false,
+                                ready: false,
+                                prepare: false,
+                                size,
+                                keyboard_focus: false,
+                                anchored: false,
+                            },
+                        )
+                        .rect;
+                    },
+                );
+                assert!(screen.contains_rect(rect), "{title}: {rect:?}");
+            }
+        }
     }
 }

@@ -37,6 +37,36 @@ struct KeyboardSendOutcome {
 }
 
 impl MainView {
+    /// Resolve tutorial ownership before feeding egui, so Escape cannot also reach the PTY.
+    pub(super) fn route_tutorial_input(&mut self, event: &winit::event::WindowEvent) -> bool {
+        use winit::event::WindowEvent;
+        if let WindowEvent::KeyboardInput { event, .. } = event {
+            if event.state == winit::event::ElementState::Pressed
+                && event.logical_key
+                    == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+                && self.state.tutorial.active.is_some()
+                && !self.state.popups.has_focused()
+                && !self.state.fullscreen_stage_active()
+                && !self.state.has_input_dialog_open()
+                && !self.state.plugin_popup_open
+                && !self.state.settings_open_requested
+            {
+                crate::adapters::ui::tutorial::interrupt_and_reopen(&mut self.state);
+                self.mark_dirty();
+                return true;
+            }
+        }
+        if let WindowEvent::MouseInput {
+            state: winit::event::ElementState::Pressed,
+            ..
+        } = event
+        {
+            // Let egui report whether this click belonged to the callout in its next pass.
+            self.state.tutorial.keyboard_focus = false;
+        }
+        false
+    }
+
     pub(super) fn handle_keyboard_input(
         &mut self,
         event: &winit::event::KeyEvent,

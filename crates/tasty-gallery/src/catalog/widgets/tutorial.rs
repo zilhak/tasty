@@ -519,7 +519,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                 theme,
                                 1,
                                 "워크스페이스 · 페인 · 탭 · 서피스",
-                                "화면 구조 4개 기본 개념.",
+                                "화면 구조와 두 레벨 분할. · 완료",
                                 true,
                                 scaled,
                             );
@@ -528,8 +528,8 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                     ui,
                                     theme,
                                     2,
-                                    "커맨드 팔레트 & 단축키",
-                                    "모든 명령을 키보드로.",
+                                    "직접 나누고 탭 전환하기",
+                                    "서피스·탭·페인 분할 실습. · 진행 중",
                                     false,
                                     false,
                                 );
@@ -537,17 +537,8 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                     ui,
                                     theme,
                                     3,
-                                    "포트 스캐너 · 리모트",
-                                    "로컬 포트와 원격 세션 연결.",
-                                    false,
-                                    false,
-                                );
-                                topic_row(
-                                    ui,
-                                    theme,
-                                    4,
-                                    "프리셋 & 워크스페이스 레이아웃",
-                                    "페인 배치를 저장·복원.",
+                                    "명령과 단축키 찾기",
+                                    "팔레트와 나의 단축키. · 미시작",
                                     false,
                                     false,
                                 );

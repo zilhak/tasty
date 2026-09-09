@@ -1147,7 +1147,8 @@ impl AppState {
     /// 차단"(입력 유실)이 된다.
     pub(crate) fn keyboard_overlay_open(&self) -> bool {
         #[cfg(feature = "gui")]
-        let host_popup_focused = self.popups.has_focused();
+        let host_popup_focused = self.popups.has_focused()
+            || (self.tutorial.active.is_some() && self.tutorial.keyboard_focus);
         #[cfg(not(feature = "gui"))]
         let host_popup_focused = false;
         keyboard_overlay_open(
@@ -1200,7 +1201,10 @@ impl AppState {
         // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
         // 반드시 `set_visible(false)` 가 필요하고, 그 게이트가 바로 이 함수다.
         #[cfg(feature = "gui")]
-        let open = open || self.popups.has_any_open() || self.fullscreen_stage.is_some();
+        let open = open
+            || self.popups.has_any_open()
+            || self.fullscreen_stage.is_some()
+            || self.tutorial.active.is_some();
         open
     }
 

@@ -1028,6 +1028,7 @@ pub fn apply_tab_bar_actions(
         }
         match action {
             TabBarAction::SwitchTab { pane_id, tab_index } => {
+                let before = state.tutorial_tab_snapshot(engine);
                 let mut to_wake: Vec<u32> = Vec::new();
                 if let Some(pane) = state
                     .active_workspace_mut(engine)
@@ -1042,6 +1043,7 @@ pub fn apply_tab_bar_actions(
                 for sid in to_wake {
                     engine.ensure_surface_initialized(sid);
                 }
+                state.observe_tutorial_tab_switch(engine, before);
             }
             TabBarAction::CloseTab { pane_id, tab_index } => {
                 state.close_tab(engine, pane_id, tab_index);

@@ -486,10 +486,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 resizable: false,
                 min_size: None,
                 draw_fn: crate::adapters::ui::tutorial::topic_popup::draw_tutorial_topics_popup,
-                // 판단: `state.tutorial.popup_selected` 는 어떤 경로로 닫혀도 지워지지
-                // 않지만, 남아 있어도 다음 open 시 이전 선택이 미리 강조되는 것뿐이라
-                // 무해하다 — 훅을 추가하지 않는다.
-                on_close: None,
+                on_close: Some(crate::adapters::ui::tutorial::topic_popup::on_close),
             },
             PopupDef {
                 id: super::rail_category::RAIL_CATEGORY_POPUP_ID,

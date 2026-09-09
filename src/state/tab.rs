@@ -45,6 +45,10 @@ impl AppState {
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_terminal_marker_tab(tab_id, surface_id);
         }
+        #[cfg(feature = "gui")]
+        if let Some(pane) = self.focused_pane(engine) {
+            self.observe_tutorial_tab_created(engine, pane.id, tab_id);
+        }
         engine.send_fast_init(surface_id);
         engine.mark_layout_dirty();
         Ok(())
@@ -185,16 +189,24 @@ impl AppState {
 
     /// Next tab in the focused pane.
     pub fn next_tab_in_pane(&mut self, engine: &mut CoreState) {
+        #[cfg(feature = "gui")]
+        let before = self.tutorial_tab_snapshot(engine);
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.next_tab();
         }
+        #[cfg(feature = "gui")]
+        self.observe_tutorial_tab_switch(engine, before);
     }
 
     /// Previous tab in the focused pane.
     pub fn prev_tab_in_pane(&mut self, engine: &mut CoreState) {
+        #[cfg(feature = "gui")]
+        let before = self.tutorial_tab_snapshot(engine);
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.prev_tab();
         }
+        #[cfg(feature = "gui")]
+        self.observe_tutorial_tab_switch(engine, before);
     }
 
     /// Go to tab by index (0-based) in the focused pane.
@@ -202,11 +214,16 @@ impl AppState {
     /// pane 을 못 찾은 것은 인덱스가 틀린 것과 다른 일이라 갈래를 따로 낸다
     /// ([`TabSwitch::NoPane`]).
     pub fn goto_tab_in_pane(&mut self, engine: &mut CoreState, index: usize) -> TabSwitch {
-        if let Some(pane) = self.focused_pane_mut(engine) {
+        #[cfg(feature = "gui")]
+        let before = self.tutorial_tab_snapshot(engine);
+        let result = if let Some(pane) = self.focused_pane_mut(engine) {
             pane.goto_tab(index)
         } else {
             TabSwitch::NoPane
-        }
+        };
+        #[cfg(feature = "gui")]
+        self.observe_tutorial_tab_switch(engine, before);
+        result
     }
 
     /// Close a specific tab in a specific pane (context menu 등 임의 (pane_id, tab_index)
@@ -432,5 +449,50 @@ impl AppState {
         tab.explicit_name = None;
         engine.mark_layout_dirty();
         true
+    }
+}
+
+#[cfg(feature = "gui")]
+impl AppState {
+    pub(crate) fn observe_tutorial_tab_created(&mut self, engine: &CoreState, pane: u32, tab: u32) {
+        if self.tutorial.active.is_none() {
+            return;
+        }
+        if let Some(ws) = engine
+            .workspaces
+            .iter()
+            .find(|w| w.pane_layout().find_pane(pane).is_some())
+        {
+            self.tutorial
+                .observe(crate::adapters::ui::tutorial::PracticeEvent::NewTab {
+                    workspace: ws.id,
+                    pane,
+                    tab,
+                });
+        }
+    }
+    pub(crate) fn tutorial_tab_snapshot(&self, engine: &CoreState) -> Option<(u32, u32, u32)> {
+        let ws = engine.workspaces.get(self.active_workspace)?;
+        let pane = ws.pane_layout().find_pane(ws.focused_pane)?;
+        Some((ws.id, pane.id, pane.tabs.get(pane.active_tab)?.id))
+    }
+    pub(crate) fn observe_tutorial_tab_switch(
+        &mut self,
+        engine: &CoreState,
+        before: Option<(u32, u32, u32)>,
+    ) {
+        if let (Some((workspace, pane, from)), Some((ws, p, to))) =
+            (before, self.tutorial_tab_snapshot(engine))
+        {
+            if workspace == ws && pane == p {
+                self.tutorial
+                    .observe(crate::adapters::ui::tutorial::PracticeEvent::SwitchTab {
+                        workspace,
+                        pane,
+                        from,
+                        to,
+                    });
+            }
+        }
     }
 }

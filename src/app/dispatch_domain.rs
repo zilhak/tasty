@@ -1833,6 +1833,24 @@ pub(crate) fn cascade_surface_split(
     {
         tab.focused_surface = new_surface_id;
     }
+    #[cfg(feature = "gui")]
+    if let Some(ws) = engine.workspaces.get(workspace_index) {
+        if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+            if let Some(tab) = pane
+                .tabs
+                .iter()
+                .find(|tab| tab.contains_surface(new_surface_id))
+            {
+                state.tutorial.observe(
+                    crate::adapters::ui::tutorial::PracticeEvent::SplitSurface {
+                        workspace: ws.id,
+                        pane: pane_id,
+                        tab: tab.id,
+                    },
+                );
+            }
+        }
+    }
 }
 
 /// `CoreEvent::PaneSplit` 의 외부 cascade. host events (`pane.split` +
@@ -1861,6 +1879,18 @@ pub(crate) fn cascade_pane_split(
         && let Some(ws) = engine.workspaces.get_mut(c.workspace_index)
     {
         ws.focused_pane = c.new_pane_id;
+    }
+    #[cfg(feature = "gui")]
+    if origin.is_user() {
+        if let Some(workspace) = workspace_id {
+            state
+                .tutorial
+                .observe(crate::adapters::ui::tutorial::PracticeEvent::SplitPane {
+                    workspace,
+                    original: c.original_pane_id,
+                    new_pane: c.new_pane_id,
+                });
+        }
     }
 }
 

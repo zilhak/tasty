@@ -51,6 +51,14 @@ fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
     if state.popups.is_open(id) {
         return;
     }
+    if id == crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID {
+        crate::adapters::ui::tutorial::open_catalog(state);
+    }
+    if id == crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID {
+        state
+            .tutorial
+            .observe(crate::adapters::ui::tutorial::PracticeEvent::OpenPalette);
+    }
     match mode {
         OpenPopupMode::Default => state.popups.open(id),
         OpenPopupMode::CenteredFocused => state.popups.open_centered_focused(id),
