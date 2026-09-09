@@ -203,6 +203,16 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 ## 떠 있는 표면의 그림자
 
-떠 있는 표면(popover · 배너 · tooltip · autocomplete 드롭다운 · modifier-hint · tutorial callout)의 lift 그림자는 **`SHADOW_POPOVER` 하나**다(design `--tasty-shadow-popover`, `theme.shadow_popover()`). 새 그림자 값을 만들지 않고 이 토큰을 재사용한다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 `theme.shadow_popover().to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다. 이 규칙은 `crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)가 소스 스캔으로 집행한다.
+떠 있는 표면의 lift 그림자는 정본 토큰 **둘**이다 — `SHADOW_POPOVER`(design `--tasty-shadow-popover`, `theme.shadow_popover()`)와 `SHADOW_MODAL`(design `--tasty-shadow-modal`, `theme.shadow_modal()`). 어느 표면이 어느 쪽을 쓰는지는 SCOPE RULE 이 정한다 — anchored + scrim-less 는 popover, centered + scrim-backed 는 modal, 두 형태 어디에도 안 들어가는 표면은 그림자가 없다. 그 규칙을 그렇게 정한 근거(scrim 은 바닥을 어둡게 하지만 엣지를 그리지 않는다)·대안·재검토 조건은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md).
 
-**모달은 현재 그림자가 없다.** 호스트 모달(`PopupManager`)은 scrim(`th.scrim()`)으로 떠 있음을 표현하고 `Frame::new()` 로 그려 그림자가 없으며, 갤러리 모달 specimen 도 이에 맞춰 그림자를 그리지 않는다. 모달이 그림자를 **가져야 하는지는 아직 결정되지 않았다**(popover 단차 재사용 / 모달 전용 토큰 신설 / 없음 확정 — 셋 중 미정). 이 문서는 "그림자가 없다"는 현재 상태만 기술하며, 결정이 서면 갱신한다. `crates/tasty-egui-theme` 이 `visuals.window_shadow` 를 매핑하지 않아 egui 기본 그림자도 이 정책의 사각지대로 남아 있다.
+세 갈래의 현재 소비처:
+
+- **popover** — 배너 셸과 그 더보기 메뉴, tooltip, autocomplete 드롭다운, modifier-hint 오버레이, tutorial callout, 그리고 트리거 옆에 붙는 popup(tools menu · search bar · rail category · 마우스 캡처 배너 더보기 메뉴).
+- **modal** — 호스트 popup 셸(`src/adapters/ui/popup/draw.rs`), plugin popup 셸(`src/plugin_bridge/popup_render.rs`), 부팅 셸 설정 다이얼로그(`src/gfx/gpu/shell_setup.rs`).
+- **없음** — 알림 패널(타이틀바를 갖고 사용자가 옮기는 창처럼 동작해 두 형태 어디에도 안 들어간다).
+
+값을 새로 만들지 않고 이 둘만 쓴다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다. 이 규칙은 `crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)가 소스 스캔으로 집행한다 — 값의 **출처**는 집행하지만 어느 표면이 어느 값을 쓰는가는 집행하지 않는다(표면의 형태를 소스에서 읽을 방법이 없다).
+
+`ShadowToken.spread` 는 음수를 **표현**한다(CSS `box-shadow` 의 spread 와 같은 의미). 다만 egui 의 `epaint::Shadow::spread` 는 부호 없는 정수라 음수를 담지 못하고, 캐스트에 맡기면 조용히 0 이 되어 다른 그림자가 그려진다. 그래서 `to_egui()` 가 명시적으로 잘라내고 debug 빌드에서는 단언으로 터진다 — 음수 spread 가 필요한 표면(CSD 타이틀바)은 근사값을 만들지 않고 **미구현으로 둔다**.
+
+`crates/tasty-egui-theme` 이 `visuals.window_shadow` 를 매핑하지 않아 egui 기본 그림자는 이 정책의 사각지대로 남아 있다.

@@ -193,7 +193,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
 | `--tasty-modhint-radius` | → `radius` (4) | `corner_radius` | 셸 코너 |
-| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | 떠 있는 패널 그림자(banner 와 공유) |
+| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | anchored + scrim-less 표면의 lift 그림자(banner 와 공유) — SCOPE RULE 은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md) |
 | `--tasty-modhint-strip-bg` | → `bg-sidebar` | `modhint_strip_bg()` | 드래그 스트립 배경 |
 | `--tasty-modhint-separator` | → `separator` | `modhint_separator()` | 스트립/헤더 하단 구분선 |
 | `--tasty-modhint-held-fg` | → `text-muted` | `modhint_held_fg()` | 스트립 "held" 라벨 |
@@ -202,10 +202,6 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-modhint-row-fg` | → `text-secondary` | `modhint_row_fg()` | 액션/역할 행 텍스트 |
 | `--tasty-modhint-empty-fg` | → `text-muted` | `modhint_empty_fg()` | **신규**. 빈 조합 플레이스홀더("바인딩 없음") 텍스트 — row-fg(text-secondary)보다 한 단계 절제(§6-2) |
 | `--tasty-modhint-agent-dot` | → `accent-agent` | `modhint_agent_dot()` | plugin 행 leading agent dot |
-
-> **디자인 `--tasty-modhint-shadow` 는 `shadow-modal`** 로 선언돼 있으나, Rust Theme 는 떠
-> 있는 패널용 단일 그림자 토큰(`shadow_popover`, banner 와 공유)만 두어 새 그림자 시스템을
-> 만들지 않는 정책을 따른다 → `modhint` 도 `shadow_popover()` 로 매핑한다.
 
 ## tooltip / help-hint (help-hint-01 위젯 + specimen)
 
