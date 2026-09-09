@@ -53,9 +53,30 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 그것이 이 문서가 가르는 축(창이 필요한가)에서 옳은 자리다: registry 는 `App` 도 창도
 아니고 engine 의 것이다.
 
-헤드리스에서 그 답이 GUI 와 **다르다**는 것이 이 조회의 값이다. 헤드리스는
-`webview`/`remote` 선언을 설계대로 등록하지 않으므로(`boot/headless_plugins.rs` 의
-`register_one_surface_kind`), 같은 매니페스트가 조합에 따라 다른 kind 집합을 낸다.
+**한때 여기 "헤드리스에서 그 답이 GUI 와 다르다는 것이 이 조회의 값" 이라고 적혀
+있었다 — 그 서술은 더 이상 사실이 아니다.** 그때 헤드리스는 `webview`/`remote` 선언을
+등록하지 않았고, 그래서 같은 매니페스트가 조합에 따라 다른 kind 집합을 냈다. 그 차이는
+[ADR-0255](../adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md) 로
+근거가 사라졌다 — markdown mirror 가 나르는 것은 픽셀이 아니라 원문이고 그리는 것은
+client 라, 서버는 창 없이도 그 kind 의 surface 를 가질 수 있다. 지금
+`register_one_surface_kind`(`boot/headless_plugins.rs`)는 **세 rendering 을 전부**
+등록하고, 그래서 이 조회의 답은 **같은 plugin 이 떠 있는 한 두 조합에서 같다.**
+
+갈리는 것은 집합이 아니라 **언제 차는가**다. gui 는 첫 창을 만들 때 plugin 을 전부
+띄우고(`app/window_lifecycle.rs` 의 `discover_and_start` — 코드 근거이며 이 회차에
+gui 로 재지는 않았다), 헤드리스는 기동이 지연이라 아무 plugin 도 안 뜬 데몬에서는
+host 내장 넷만 나온다. 실측(2026-09-09, 갓 만든 격리
+홈 헤드리스 데몬): 부팅 직후 `dag_graph`·`empty`·`explorer`·`terminal` 넷 →
+`plugin enable com.tasty.markdown` 뒤 `markdown` 이 더해져 다섯 → plugin 9 개가 전부
+뜬 뒤 여덟(`html`·`image`·`mesh_demo` 가 더해진다). 그 시점의 `plugin.show` 는 넷 다
+`registered: true` 이고 `effective_rendering` 이 선언과 같다.
+
+**기동을 유발하는 자리가 하나 늘었다.** plugin 이 선언한 kind 를 지목한 생성 요청
+(`tab.create`·`pane.split`·`workspace.create` 의 `type`)이 오면, 소속을 매니페스트로
+먼저 묻고 맞을 때만 기동한다(`headless_plugins::ensure_plugin_for_surface_kind`,
+namespace forward 와 같은 두 층). 없는 이름을 지목한 요청은 매니페스트 층에서 걸러져
+plugin 을 하나도 안 띄운다 — 실측 `--type nosuchkind` 가 0.05 s 에 예전과 같은
+`unknown surface kind` 로 답하고 `running` 이 그대로 0 이었다.
 
 ## `plugin.*` — 19 개 메서드의 판정
 

@@ -143,6 +143,11 @@ pub(crate) fn pump_ipc(
         if forward_to_plugin_namespace(app, engine, &cmd) {
             continue;
         }
+        // 2e) plugin 이 선언한 surface kind 를 지목했으면 그 plugin 을 먼저 띄운다.
+        //     바로 위 forward 와 **같은 두 층**이다 — 소속은 매니페스트가 답하고,
+        //     기동은 소속이 맞은 뒤에만 한다. 다른 것은 묻는 대상뿐이다(메서드 이름 vs
+        //     surface kind). 근거·대기 시한은 `headless_plugins::ensure_plugin_for_surface_kind`.
+        super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
         // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
         //    handle_with_caller 내부가 자체 수행한다.
         let resp = crate::ipc::handler::handle_with_caller(

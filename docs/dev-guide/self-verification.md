@@ -82,22 +82,24 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
 
 #### headless 빌드에서 무엇이 없는가 — 재기 전에 알아야 할 세 가지
 
-1. **plugin 은 부팅해도 안 뜬다.** 부팅 직후 `plugin list` 는 9 개 전부 `running=false` 다. 헤드리스는 매니저를 **디스크만 읽어** 세우고(`ensure_plugin_manager_metadata`), 프로세스 기동은 attach 세션이 mesh mirror 를 요구하거나, **plugin namespace 로 forward 되거나**, `plugin.enable` 로 **지목될 때** 일어난다(아래 2).
+1. **plugin 은 부팅해도 안 뜬다.** 부팅 직후 `plugin list` 는 9 개 전부 `running=false` 다. 헤드리스는 매니저를 **디스크만 읽어** 세우고(`ensure_plugin_manager_metadata`), 프로세스 기동은 attach 세션이 mesh mirror 를 요구하거나, **plugin namespace 로 forward 되거나**, `plugin.enable` 로 **지목되거나**, **plugin 이 선언한 surface kind 를 지목한 생성 요청이 올 때**(`tab.create`·`pane.split`·`workspace.create` 의 `type`) 일어난다(아래 2·3). 마지막 것은 소속을 매니페스트로 먼저 물어, 없는 이름이면 plugin 을 하나도 안 띄운다 — 실측 `--type nosuchkind` 는 0.05 s 에 `unknown surface kind` 로 답하고 `running` 이 그대로 0 이다. 소속이 맞으면 hello 를 기다리므로 그 **첫** 호출만 느리다(실측 0.35 s, 두 번째 0.08 s).
 2. **하나만 띄우려면 `plugin enable <id>` 를 쓴다.** 이 둘은 헤드리스에도 배선돼 있고(`plugin.enable` · `plugin.disable`), **지목한 하나만** 기동한다. 실측(2026-09-09, 격리 홈 데몬): 부팅 직후 9 개 전부 `running=false` → `tasty plugin enable com.tasty.image` → `{"enabled":"com.tasty.image"}` → `plugin list` 의 `running` 이 `["com.tasty.image"]` 하나다. 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다 — `plugin.install`·`remove`·`grant`·`revoke`·`upgrade_builtins`·`audit_follow` 는 아직 없어서 `-32017 … gated out of this build combination (headless / release)` 로 답한다.
 
    ★ **plugin namespace 를 한 번 부르는 것도 여전히 기동을 유발하는데, 그쪽은 9 개가 전부 뜬다.** 그 경로(`forward_to_plugin_namespace` → `ensure_plugin_manager` → `discover_and_start`)는 개별 지목이 없기 때문이다. 실측(2026-09-09, 갓 만든 격리 홈): `tasty image list` 는 그 자체로는 `-32017` 로 실패하는데, 그 뒤 `plugin list` 의 `running` 이 설치된 9 개 전부다. **하나만 재고 싶으면 namespace 를 부르지 말고 `plugin enable` 을 써라** — 관측 대상을 여덟 개 더 만들지 않는다.
-3. **선언된 surface kind 가 전부 등록되지는 않는다.** `register_one_surface_kind` 가 `rendering` 으로 갈라, `webview`/`remote` 는 skip 하고 `egui-mesh` 만 등록한다. 실측(9 개 기동 후):
+3. **선언된 surface kind 는 plugin 이 뜨는 순간 전부 등록된다 — 조합에 따라 갈리지 않는다.** `register_one_surface_kind` 는 `rendering` 세 종류(`webview`/`remote`/`egui-mesh`)를 모두 등록한다. 실측(2026-09-09, 갓 만든 격리 홈 헤드리스 데몬, 9 개 기동 후):
 
    | kind | 선언 (`plugin.show` 의 `declared_rendering`) | 등록됐나 (`registered`) | `new workspace --type <kind>` |
    |---|---|---|---|
-   | `markdown` | `webview` | `false` | `-32603 unknown surface kind: markdown` |
-   | `html` | `webview` | `false` | `-32603 unknown surface kind: html` |
+   | `markdown` | `webview` | `true` (`effective_rendering: "webview"`) | 생성됨 |
+   | `html` | `webview` | `true` (`effective_rendering: "webview"`) | 생성됨 (`--url` 필요 — 없으면 `-32602`) |
    | `image` | `egui-mesh` | `true` (`effective_rendering: "egui-mesh"`) | 생성됨 |
    | `mesh_demo` | `egui-mesh` | `true` (`effective_rendering: "egui-mesh"`) | 생성됨 |
 
-   skip 은 조용하지 않다 — `RUST_LOG` 없이도 격리 홈의 `debug-dev.log` 에 `plugin '<id>' declared non-egui-mesh surface kind '<kind>' (rendering=Webview); skipped in headless` 로 남는다. **그 줄이 skip 의 증거다.**
+   **한때 이 자리는 정반대였다** — `webview`/`remote` 를 skip 하고 `egui-mesh` 만 등록해, 위 표의 앞 두 줄이 `registered: false` + `-32603 unknown surface kind` 였다. 그 skip 의 사유("렌더가 창을 전제한다")는 [ADR-0255](../adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md) 로 무너졌다: mirror 가 나르는 것은 픽셀이 아니라 원문이고 그리는 것은 client 다. 그러니 **옛 회차의 그 표를 근거로 삼지 마라.** 그때 skip 의 증거로 쓰던 `debug-dev.log` 의 `skipped in headless` 줄도 이제 안 나온다 — 그 줄이 없는 것은 로그가 꺼진 것이 아니라 skip 이 없어진 것이다.
 
-   ★ 표의 **선언 열과 등록 열이 서로 다른 물음**이다. `declared_rendering` 은 매니페스트가 요청한 것이고 `registered` 가 host 가 받아들였는지다 — 헤드리스에서는 넷 중 둘이 선언만 있고 사실이 없다. 사실만 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다. 만들어 보는 술어는 이제 대조용이다.
+   ★ 표의 **선언 열과 등록 열은 여전히 서로 다른 물음**이다. `declared_rendering` 은 매니페스트가 요청한 것이고 `registered` 는 host 가 받아들였는지다 — 지금은 둘이 일치하지만, 일치가 보장이라서가 아니라 **그 plugin 이 떠 있어서**다. 안 뜬 plugin 의 kind 는 선언만 있고 사실이 없다. 사실만 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다. 만들어 보는 술어는 이제 대조용이다.
+
+   실측 진행(같은 회차): 부팅 직후 `['dag_graph','empty','explorer','terminal']` 넷 → `plugin enable com.tasty.markdown` 뒤 `markdown` 이 더해져 다섯 → 9 개 전부 뜬 뒤 여덟.
 
 **tasty 터미널 내부(`TASTY_SURFACE_ID` 환경변수가 설정된 셸)에서 검증 인스턴스를 띄울 때는 `--launch` 플래그가 필수다.** `cargo run --bin tasty -- <플래그>` 를 `--launch` 없이 실행하면 `src/boot.rs` 의 GUI 부팅 skip 조건(`cli_routing::Routed::AugmentedHelp` 분기)(`TASTY_SURFACE_ID` 설정 + `--launch` 미지정)에 걸려 GUI 가 뜨지 않고 CLI 도움말만 출력한 채 조용히 종료된다 — 이 상태로 `until target/debug/tasty list info ...` 같은 readiness poll 을 돌리면 죽은 프로세스를 무한정 기다리게 된다. 즉 `cargo run &` 을 `--launch` 없이 tasty 터미널 안에서 실행했다면, poll 이 멈추지 않을 때 프로세스가 애초에 GUI 로 뜬 게 맞는지부터 의심한다.
 

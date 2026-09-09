@@ -135,6 +135,90 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
     );
 }
 
+/// plugin 이 선언한 surface kind 를 지목한 요청이 오면 그 plugin 을 기동한다.
+///
+/// **소속은 매니페스트가 답하고, 기동은 소속이 맞은 뒤에만 한다** — `plugin namespace
+/// forward`(`boot/headless_dispatch.rs`)와 **같은 두 층**이고 근거도 같다
+/// ([ADR-0173](../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)).
+/// 다른 것은 물음뿐이다: 그쪽은 "이 메서드 이름이 누구 것인가", 여기는 "이 kind 를
+/// 누가 선언했는가".
+///
+/// 이 트리거가 없으면 `remote`/`webview` kind 는 헤드리스에서 **영영 등록되지
+/// 않는다.** 등록은 hello 가 하고, 헤드리스에서 plugin 이 뜨는 자리는 attach 세션
+/// (`boot/headless_stream.rs`)과 namespace forward 둘뿐인데, `tab.create` 는 그
+/// 어느 쪽도 아니기 때문이다. 실측(2026-09-09): 등록만 열고 이 트리거가 없으면
+/// `tests/attach_markdown_content_loopback.rs` 의 다섯이 그대로
+/// `unknown surface kind: markdown` 으로 죽는다.
+///
+/// **여기서 기다리는 이유.** hello 는 비동기고 등록은 hello 가 한다. 반면 이 요청은
+/// 동기라 handler 가 돌기 전에 registry 가 차 있어야 한다. 그래서 hello 를 등록의
+/// 유일한 트리거로 두고(사본을 만들지 않는다) 그것이 도착할 때까지 pump 를 돌린다.
+/// 대기는 **데몬 수명 동안 최대 한 번**이다 — `plugin_started` 가 서면 다시 안 온다.
+/// 시한이 지나도록 안 차면 그냥 돌아가고, 그러면 handler 가 예전과 똑같은
+/// `unknown surface kind` 를 답한다(느려질 뿐 답이 바뀌지 않는다).
+///
+/// `ensure_plugin_manager`(= `discover_and_start`)가 **설치된 것을 전부** 띄우는 것은
+/// namespace forward 와 같은 성질이다. 하나만 띄우는 길은 `plugin.enable` 이고, 그쪽은
+/// `plugins.toml` 을 쓰므로 요청 하나의 부수효과로 부를 수 없다.
+pub(crate) fn ensure_plugin_for_surface_kind(
+    app: &mut App,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    request: &crate::ipc::protocol::JsonRpcRequest,
+) {
+    if app.plugin_started {
+        return;
+    }
+    // surface 를 만드는 handler 셋(`tab.create` · `pane.split` · `workspace.create`)이
+    // 모두 이 한 키로 kind 를 읽는다. 다른 키를 읽는 요청은 여기서 조용히 지나간다 —
+    // 잘못 짚어도 하는 일이 없다(등록된 kind 면 아래 첫 검사에서 돌아간다).
+    let Some(kind) = request.params.get("type").and_then(|v| v.as_str()) else {
+        return;
+    };
+    if engine.surface_registry.get(kind).is_some() {
+        return;
+    }
+    // 매니페스트만 읽는다 — 프로세스는 아직 하나도 안 띄운다.
+    ensure_plugin_manager_metadata(app, engine);
+    let declared = app.plugin_manager.as_ref().is_some_and(|mgr| {
+        mgr.packages()
+            .iter()
+            .any(|pkg| pkg.manifest.surface_kinds.iter().any(|d| d.kind == kind))
+    });
+    if !declared {
+        return;
+    }
+    let kind = kind.to_string();
+    ensure_plugin_manager(app, engine);
+    let deadline = std::time::Instant::now() + KIND_REGISTRATION_WAIT;
+    while std::time::Instant::now() < deadline {
+        pump_plugins(app, state, engine);
+        if engine.surface_registry.get(&kind).is_some() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    tracing::warn!(
+        "surface kind '{kind}' is declared by an installed plugin but was not registered \
+         within {:?} of starting it; the request will be answered as an unknown kind",
+        KIND_REGISTRATION_WAIT
+    );
+}
+
+/// [`ensure_plugin_for_surface_kind`] 가 hello 를 기다리는 시한.
+///
+/// 재는 대상은 프로세스 spawn + handshake 한 번이다. 실측(2026-09-09, 갓 만든 격리 홈의
+/// 헤드리스 데몬): `tab.create {type:"markdown"}` **첫** 호출이 이 대기를 포함해
+/// **0.35 s**, 같은 호출의 두 번째가 **0.08 s**(대기가 아예 안 온다 — `plugin_started`).
+/// 등록된 kind 는 그 사이 4 개(`dag_graph`/`empty`/`explorer`/`terminal`)에서 8 개로
+/// 늘어 gui 와 같아졌다. 5 초는 그 값의 10 배가 넘는 여유이면서, 안 뜨는 plugin 에
+/// 데몬을 오래 묶어 두지 않는 선이다.
+///
+/// **없는 kind 를 지목한 요청은 이 대기에 안 들어간다.** 매니페스트 층이 먼저 답하므로
+/// `--type nosuchkind` 는 실측 **0.05 s** 에 예전과 같은 `unknown surface kind` 를
+/// 돌려주고 plugin 은 하나도 안 뜬다.
+const KIND_REGISTRATION_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// `src/app/plugin_glue/lifecycle.rs::finalize_plugin_hello` 의 헤드리스 등가.
 /// surface_kind registry 등록(egui-mesh 포함) + hook_event 등록만 수행하고, GUI
 /// 전용 CoreEvent cascade(toast/이벤트버스 브로드캐스트)는 생략한다 — 그 브로드캐스트는
@@ -193,13 +277,13 @@ fn register_hook_events(
 }
 
 /// 선언된 surface_kind 를 등록하고 plugin 을 등록 완료로 표시한다.
-/// egui-mesh 만 실제로 등록된다 — 나머지 rendering 종류는 창을 전제해 headless 에
-/// 재현 대상이 없다(아래 arm 주석).
+/// 세 rendering 종류를 전부 등록한다 — gui 와 같은 집합이다([`register_one_surface_kind`]).
 fn register_surface_kinds(
     mgr: &mut crate::plugin::PluginManager,
     registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
     hello_pairs: &[(String, String)],
 ) {
+    let host_cmd_tx = mgr.host_cmd_tx.clone();
     for (plugin_id, _version) in hello_pairs {
         if let Some(pkg) = mgr
             .packages()
@@ -211,34 +295,65 @@ fn register_surface_kinds(
                 if let Some(default) = &decl.default_colors {
                     tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
                 }
-                register_one_surface_kind(registry, plugin_id, &pkg.manifest.api_version, decl);
+                register_one_surface_kind(
+                    registry,
+                    plugin_id,
+                    &pkg.manifest.api_version,
+                    decl,
+                    &host_cmd_tx,
+                );
             }
         }
         mgr.registered_plugins.insert(plugin_id.clone());
     }
 }
 
-/// surface_kind 선언 하나를 rendering 종류에 따라 등록하거나 건너뛴다.
+/// surface_kind 선언 하나를 rendering 종류에 따라 등록한다.
+///
+/// **세 rendering 을 전부 등록한다 — gui 와 같은 집합이다.** 한때 여기서
+/// `remote`/`webview` 를 건너뛰었고 그 사유는 "실제 렌더가 창을 전제하는 surface 라
+/// headless 에 재현할 대상이 없다" 였다. 그 사유가 [ADR-0255](../../docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md)
+/// 로 무너졌다 — markdown mirror 가 나르는 것은 픽셀이 아니라 **원문**이고, 그리는
+/// 것은 client 다. 서버가 하는 일은 파일 read 와 control 프레임 왕복뿐이라 창이
+/// 필요 없다. 실제로 그 채널의 서버측 코드(`src/core/attach_runtime.rs`)에는 feature
+/// 게이트가 하나도 없다 — 없던 것은 **이 kind 를 등록하는 한 줄**뿐이었고, 그것 때문에
+/// 헤드리스 데몬에서는 `tab.create {type:"markdown"}` 이 `unknown surface kind` 로
+/// 죽어 그 채널 전체에 닿을 방법이 없었다(`docs/identity.md` 원칙 2 — 에이전트 기능은
+/// 조합에 따라 사라지지 않는다).
+///
+/// 탈 것도 이미 양쪽에 있다: `RemoteSurface`(`src/plugin_bridge/remote_surface.rs`)는
+/// 비-gui 빌드에서도 컴파일되도록 **일부러** 게이트 밖에 두었고, `host_cmd` 도
+/// 그래서 무조건 re-export 된다. gui 전용으로 남는 것은 그 surface 를 **그리는**
+/// 쪽(`sync_webviews` · webview overlay)이지 등록이 아니다.
 fn register_one_surface_kind(
     registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
     plugin_id: &str,
     api_version: &str,
     decl: &crate::plugin::manifest::SurfaceKindDecl,
+    host_cmd_tx: &std::sync::mpsc::Sender<crate::plugin_bridge::host_cmd::HostCmd>,
 ) {
     match decl.rendering {
-        crate::plugin::manifest::SurfaceKindRendering::Remote
-        | crate::plugin::manifest::SurfaceKindRendering::Webview => {
-            // `plugin_bridge::remote_kind`/webview surface stand-in은
-            // GUI 전용(`#[cfg(feature = "gui")]`) — 실제 렌더가 창을
-            // 전제하는 surface 라 headless 에 재현할 대상이 없다. attach
-            // mesh mirror 스코프(markdown/image/mesh_demo=egui-mesh) 밖이라
-            // 등록을 skip 한다(기존 headless 동작과 동일 — 회귀 아님).
-            tracing::debug!(
-                "plugin '{}' declared non-egui-mesh surface kind '{}' \
-                 (rendering={:?}); skipped in headless (gui-only registration)",
+        crate::plugin::manifest::SurfaceKindRendering::Webview => {
+            // gui 의 `register_plugin_surface_kinds` 와 **같은 두 호출**이다. overlay
+            // 플래그를 읽는 것은 gui 의 매 프레임 `sync_webviews` 뿐이라, 헤드리스에서
+            // 세워 두어도 소비자가 없어 아무 일도 일어나지 않는다 — 대신 조합에 따라
+            // 등록 사실이 갈리지 않는다.
+            crate::core::surface_registry::webview_kind::register_webview_kind(
+                plugin_id, &decl.kind,
+            );
+            crate::plugin_bridge::remote_kind::register_remote_kind(
+                registry,
                 plugin_id,
-                decl.kind,
-                decl.rendering
+                decl,
+                host_cmd_tx.clone(),
+            );
+        }
+        crate::plugin::manifest::SurfaceKindRendering::Remote => {
+            crate::plugin_bridge::remote_kind::register_remote_kind(
+                registry,
+                plugin_id,
+                decl,
+                host_cmd_tx.clone(),
             );
         }
         crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
