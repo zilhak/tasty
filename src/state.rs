@@ -476,13 +476,20 @@ pub struct AppState {
     pub(crate) plugin_mesh_banner_forward:
         std::collections::HashMap<u64, crate::plugin_bridge::MeshForwardCommon>,
 
-    /// 비동기 host→plugin push(예: git-viewer 원격 조회 결과, `event.dispatch`
-    /// unicast) 도착 후 강제 repaint 가 필요한 egui-mesh popup 인스턴스. 일반 dirty
-    /// 판정(geom/input/theme 변경)은 이런 "plugin 내부 상태만 바뀐" 갱신을 감지하지
+    /// 무입력 강제 repaint 를 요청받은 egui-mesh popup 인스턴스. 일반 dirty
+    /// 판정(geom/input/theme 변경)은 "plugin 내부 상태만 바뀐" 갱신을 감지하지
     /// 못하므로(`draw_plugin_popups`), 이 요청을 채워두면 다음 frame 이 geometry/입력
     /// 변화 없이도 `set_context` 를 재forward 해 plugin 이 새 데이터로 다시 그리게
     /// 한다(`MeshForwardCommon::pending_full` 이 텍스처를 요구하는 것과 달리 repaint
-    /// 자체를 강제한다 — 그래서 공용 칸이 아니라 popup 만의 칸이다).
+    /// 자체를 강제한다).
+    ///
+    /// 아래 `plugin_mesh_banner_pending_repaint` 와 **평행한 칸**이다 — 같은 타입·같은
+    /// 목적이고, 두 칸 다 plugin 의 self-repaint 요청(`mark_invalidated_popups_dirty`·
+    /// `mark_invalidated_banners_dirty`)이 채운다. 다른 것은 **추가 진입로**뿐이다:
+    /// popup 은 그 위에 ADR-0056 의 비동기 host→plugin push 결과(git-viewer 원격 조회
+    /// 결과, `attach_client.rs` 두 자리)가 같은 칸을 쓰고, banner 는 self-repaint 하나
+    /// 뿐이다. 두 칸을 `MeshForwardCommon` 으로 합치지 않은 이유는
+    /// [`crate::plugin_bridge::MeshForwardCommon`] 의 doc 에 있다.
     pub(crate) plugin_mesh_popup_pending_repaint: std::collections::HashSet<u64>,
 
     /// 위 popup 칸의 banner 대응 — 무입력 강제 repaint 를 요청받은 egui-mesh banner

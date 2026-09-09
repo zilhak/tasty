@@ -67,7 +67,8 @@ pub(crate) fn mesh_region_of(
 ///
 /// 채널 고유의 칸은 여기 넣지 않는다. surface 의 focus 추적·입력 누적은 사본이 아니라
 /// 그 채널 하나만의 것이라 각자 자리에 남는다. 무입력 강제 repaint 도 여기서 합치지
-/// 않았는데, 이유는 "세 채널이 갖는가" 가 아니라 아래 두 축이다.
+/// 않았는데, 이유는 "세 채널이 갖는가" 가 아니라 아래 세 가지다(첫째는 차이가
+/// 아니라는 확인이고, 나머지 둘이 실제로 갈리는 축이다).
 ///
 /// - **채우는 self-repaint 는 셋이 같다.** plugin SDK 의 `schedule_self_repaint` 는
 ///   surface·popup·banner 세 판이 `arm_self_repaint_timer`(`crates/tasty-plugin-sdk/src/egui_surface.rs`)
