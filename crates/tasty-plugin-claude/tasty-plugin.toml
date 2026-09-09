@@ -306,8 +306,12 @@ kind = "poll"
 poll_method = "claude.state"
 # `claude.spawn` 응답의 `child_surface_id` 를 poll 호출(`claude.state`) 의
 # 필수 파라미터 `surface_id` 로 옮긴다 — 이 매핑이 없으면 poll params 가
-# 비어 `claude.state` 가 "Missing required 'surface_id' parameter" 로 매 tick
-# 실패한다(handlers.rs 의 `require_surface_id`).
+# 비어 `claude.state` 가 "Missing required 'surface' (or 'surface_id')
+# parameter" 로 매 tick 실패한다(handlers.rs 의 `require_target_surface`).
+# 이름이 `require_surface_id` 가 아닌 것은 그 판정이 `surface` 와 `surface_id`
+# **두 키를 한 필드로** 읽기 때문이고, 그 이름은 이 레포에서 이미 호스트의
+# 한 키짜리 헬퍼를 가리킨다(그 함수의 doc 참고). 문구는 앱 언어를 따르므로
+# 위 영문은 en 카탈로그의 값이다 — 대조가 필요하면 JSON-RPC code 로 한다.
 map_from_response = { child_surface_id = "surface_id" }
 state_field = "state"
 terminal_states = ["idle", "needs_input"]
