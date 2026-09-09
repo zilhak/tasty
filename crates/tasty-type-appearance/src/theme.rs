@@ -220,9 +220,11 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
     alpha: 102,
 };
 
-/// `--tasty-shadow-modal` 값. scrim 을 깔고 뷰포트를 점유하는 centered 표면의 단차 —
-/// popover 보다 **크다**. scrim 이 바닥을 어둡게 하지만 엣지를 그리지 않아, 어두운
-/// 테마에서 어두운 모달이 어두워진 바닥 위에 놓이면 1px 보더만으로는 실루엣이 사라진다.
+/// `--tasty-shadow-modal` 값. **뷰포트를 점유하는** centered 표면의 단차 — popover 보다
+/// **크다**. `scrim` 유무는 갈래를 가르는 술어가 아니다(이 값을 받는 표면 중 실제로
+/// scrim 이 깔리는 것은 일부다). scrim 은 값을 더 크게 잡은 **근거**로만 등장한다 —
+/// 바닥을 어둡게 하지만 엣지를 그리지 않아, 어두운 테마에서 어두운 모달이 어두워진
+/// 바닥 위에 놓이면 1px 보더만으로는 실루엣이 사라진다.
 /// 근거·대안·재검토 조건은 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
 ///
 /// `alpha` 는 디자인 `rgba(0,0,0,0.55)` 의 0.55 를 0~255 로 옮긴 값이다:
@@ -1657,7 +1659,9 @@ impl Theme {
     pub fn shadow_popover(&self) -> ShadowToken {
         SHADOW_POPOVER
     }
-    /// centered + scrim-backed 표면(모달) 그림자. `--tasty-shadow-modal`.
+    /// **뷰포트를 점유하는** centered 표면(모달) 그림자. `--tasty-shadow-modal`.
+    /// scrim 유무는 갈래를 가르는 술어가 아니다 — 이 값을 받는 표면 중 scrim 이
+    /// 깔리는 것은 일부다.
     /// 어느 표면이 이 값을 쓰는지는 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
     #[inline]
     pub fn shadow_modal(&self) -> ShadowToken {
