@@ -47,8 +47,38 @@
   읽혔다. 결과는 양방향이다 — 스팬이 일찍 닫혀 테스트 코드가 출하로 세어지고(과다계상),
   안 닫혀 **출하 코드가 통째로 게이트 안으로 사라진다**(조용한 통과). 그래서 스팬을 재는
   함수들은 `mask-source` 와 **같은 렉서**로 덮은 사본에서 센다 — 렉싱은 한 벌만 둔다.
-  고친 뒤 판정이 달라진 파일은 7 개였고 **동결 목록에 든 것은 하나도 없어** 동결 총합·
-  편향 핀·파일 SLOC 게이트의 수는 어느 것도 안 움직였다.
+  고친 뒤 판정이 달라진 파일은 7 개다. **동결 목록에 든 것은 하나도 없어** 동결 총합과
+  편향 핀은 안 움직였고, 이 게이트의 **요약 수치**(판정 1135 · 임계초과 0 · 경고 8 ·
+  최대 999)도 그대로다.
+- ★ **요약 수치가 같은 것과 좌변이 안 움직인 것은 다른 말이다.** 이 게이트의 모수는
+  동결 명부가 아니라 skip 과 명부를 **걷어낸 뒤 남는 판정 대상 1135 개 전부**다 —
+  명부는 그 모수를 좁히는 **제외 필터**이지 판정 대상의 목록이 아니다. 그래서
+  "명부에 없다" 는 사실은 개별 좌변에 대해 아무것도 말하지 않는다(오히려 명부 밖이
+  판정 대상이다).
+  실측(2026-09-10)으로 **개별 좌변 다섯이 움직였다**(전부 내려가는 방향. 전 → 후 ·
+  차 · 후 기준 임계까지 남은 여유):
+  - `crates/tasty-doc-guards/src/temp_path.rs` 778 → 548 · −230 · 452
+  - `crates/tasty-plugin-agent-stream/src/record.rs` 273 → 164 · −109 · 836
+  - `crates/tasty-ipc/src/stream.rs` 420 → 312 · −108 · 688
+  - `src/core/child_terminal.rs` 302 → 222 · −80 · 778
+  - `src/source_guards/plugin_locale_specific_literals.rs` 320 → 313 · −7 · 687
+
+  나머지 둘은 사본 **내용**만 갈리고 code 수는 같았다
+  (`src/source_guards/headless_app_layer_coverage.rs` 477 ·
+  `crates/tasty-doc-guards/tests/host_writes_nothing_to_stdout.rs` 116 — 뒤쪽은
+  `tests/` 라 이 게이트의 skip 대상이기도 하다). **뒤집힘이 없었던 이유는 거리다** —
+  다섯 중 임계에 가장 가까웠던 것이 전 778 이라 경고 띠(900)에도 안 들어갔다. 그것은
+  값을 재서 안 것이지 명부를 조회해서 안 것이 아니다. 임계 근처 파일을 건드리는 판정기
+  수정은 같은 절차로 요약 수치를 조용히 뒤집는다.
+- ★ **그리고 이 판정기의 소비자는 이 게이트 계열만이 아니다 — 셋이다.** `resolve_judge
+  strip-cfg-test` 를 부르는 자리는 전수로 `scripts/check-file-size.sh` ·
+  `scripts/check-frozen-sum-ratchet.sh` · `scripts/check-plugin-version-bump.sh` 이고
+  (`scripts/gate-delta.sh` 는 경로만 넘기고 판정하지 않는다), **셋째의 좌변은
+  움직였다.** 위 다섯 중 `record.rs` 가 번들 plugin `tasty-plugin-agent-stream` 의
+  의존 폐포 안이라 증거 사본이 351 → 240(비공백 줄)으로 달라지고, 그 파일의 테스트
+  블록만 고친 변경의 판정이 **"bump 요구" → "판정 대상 0"** 으로 뒤집힌다(방향은
+  안전 — 거짓 양성 제거). 실측·경위는
+  [ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md).
 - **그 사본은 계측기가 읽을 수 있는 형태로 넘긴다 — `--neutralize-char-literal-quotes`.**
   `tokei` 14.0.0 은 문자 리터럴 `'"'` 의 따옴표를 **문자열의 시작**으로 읽고, 그 뒤 파일
   끝까지를 문자열 안으로 본다. 문자열 안의 빈 줄은 code 로 세므로 **`strip-cfg-test` 가
