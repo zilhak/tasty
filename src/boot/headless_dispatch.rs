@@ -99,7 +99,9 @@ pub(crate) fn pump_ipc(
         }
         // 2) App 층 가로채기 — 창이 없어도 답이 정의되는 표면들을 engine 앞에서 답한다.
         //    어느 하나가 답했으면 응답은 그 안에서 이미 나갔다. 그 안의 갈래는
-        //    `2-hub` / `2-plugin` / `2-toggle` / `2-elev` / `2-surface` + debug 다.
+        //    **그 함수에 적힌 순서 그대로** `2-hub` / `2-plugin` / `2-toggle` /
+        //    `2-elev` / debug / `2-surface` 다 — debug 가 `2-surface` **앞**이라
+        //    `system.shutdown`(debug 격리)은 뒤엣것에서 답한다.
         match intercept_app_layer(app, state, engine, &caller, &cmd) {
             Some(Intercepted::Answered) => continue,
             Some(Intercepted::Shutdown) => return std::ops::ControlFlow::Break(()),
@@ -143,10 +145,15 @@ pub(crate) fn pump_ipc(
         if forward_to_plugin_namespace(app, engine, &cmd) {
             continue;
         }
-        // 2e) plugin 이 선언한 surface kind 를 지목했으면 그 plugin 을 먼저 띄운다.
+        // 2e) plugin 이 선언한 surface kind 를 지목했으면 **그 하나를** 먼저 띄운다.
         //     바로 위 forward 와 **같은 두 층**이다 — 소속은 매니페스트가 답하고,
         //     기동은 소속이 맞은 뒤에만 한다. 다른 것은 묻는 대상뿐이다(메서드 이름 vs
-        //     surface kind). 근거·대기 시한은 `headless_plugins::ensure_plugin_for_surface_kind`.
+        //     surface kind).
+        //
+        //     **띄우는 범위는 위 forward 와 다르다.** 그쪽은 `discover_and_start` 라
+        //     설치된 것을 전부 띄우고, 여기는 kind 를 선언한 소유자 하나만 띄운다
+        //     (`start_one_enabled`). 설치·권한 grant 도 여기엔 없다. 근거·대기 시한은
+        //     `headless_plugins::ensure_plugin_for_surface_kind`.
         super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
         // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
         //    handle_with_caller 내부가 자체 수행한다.

@@ -82,11 +82,22 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
 
 #### headless 빌드에서 무엇이 없는가 — 재기 전에 알아야 할 세 가지
 
-1. **plugin 은 부팅해도 안 뜬다.** 부팅 직후 `plugin list` 는 9 개 전부 `running=false` 다. 헤드리스는 매니저를 **디스크만 읽어** 세우고(`ensure_plugin_manager_metadata`), 프로세스 기동은 attach 세션이 mesh mirror 를 요구하거나, **plugin namespace 로 forward 되거나**, `plugin.enable` 로 **지목되거나**, **plugin 이 선언한 surface kind 를 지목한 생성 요청이 올 때**(`tab.create`·`pane.split`·`workspace.create` 의 `type`) 일어난다(아래 2·3). 마지막 것은 소속을 매니페스트로 먼저 물어, 없는 이름이면 plugin 을 하나도 안 띄운다 — 실측 `--type nosuchkind` 는 0.05 s 에 `unknown surface kind` 로 답하고 `running` 이 그대로 0 이다. 소속이 맞으면 hello 를 기다리므로 그 **첫** 호출만 느리다(실측 0.35 s, 두 번째 0.08 s).
+1. **plugin 은 부팅해도 안 뜬다.** 부팅 직후 `plugin list` 는 9 개 전부 `running=false` 다. 헤드리스는 매니저를 **디스크만 읽어** 세우고(`ensure_plugin_manager_metadata`), 프로세스 기동은 attach 세션이 mesh mirror 를 요구하거나, **plugin namespace 로 forward 되거나**, `plugin.enable` 로 **지목되거나**, **plugin 이 선언한 surface kind 를 지목한 생성 요청이 올 때**(`tab.create`·`pane.split`·`workspace.create` 의 `type`) 일어난다(아래 2·3).
+
+   ★ **넷은 띄우는 수가 다르다 — 그것이 관측 오염의 크기다.** 실측(2026-09-10, 갓 만든 격리 홈):
+
+   | 트리거 | 띄우는 것 | 첫 호출 소요 |
+   |---|---|---|
+   | `plugin enable <id>` | 지목한 1 개 | — |
+   | kind 지목 생성 요청 (`--type markdown`) | 그 kind 의 **소유자 1 개** | 0.14 s (두 번째 0.09 s) |
+   | plugin namespace 한 번 (`markdown recent`) | 설치된 **9 개 전부** | — |
+   | attach mesh mirror 세션 | 설치된 **9 개 전부** | — |
+
+   kind 지목은 소속을 **매니페스트 ∩ `plugins.toml`** 로 먼저 묻는다([ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md)). 그래서 ① 없는 이름은 plugin 을 하나도 안 띄우고(실측 `--type nosuchkind` 0.09 s, `running` 0), ② **`plugin disable` 한 plugin 의 kind 도 안 띄운다**(실측 0.09 s, `running` 0). ②가 없으면 그 요청이 영영 안 뜰 plugin 을 기다려 **데몬 IPC 전체가 선다** — 고치기 전 실측이 그 요청 5.34 s · 무관한 `list info` 5.04 s · 덤으로 8 개 기동이었다.
 2. **하나만 띄우려면 `plugin enable <id>` 를 쓴다.** 이 둘은 헤드리스에도 배선돼 있고(`plugin.enable` · `plugin.disable`), **지목한 하나만** 기동한다. 실측(2026-09-09, 격리 홈 데몬): 부팅 직후 9 개 전부 `running=false` → `tasty plugin enable com.tasty.image` → `{"enabled":"com.tasty.image"}` → `plugin list` 의 `running` 이 `["com.tasty.image"]` 하나다. 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다 — `plugin.install`·`remove`·`grant`·`revoke`·`upgrade_builtins`·`audit_follow` 는 아직 없어서 `-32017 … gated out of this build combination (headless / release)` 로 답한다.
 
    ★ **plugin namespace 를 한 번 부르는 것도 여전히 기동을 유발하는데, 그쪽은 9 개가 전부 뜬다.** 그 경로(`forward_to_plugin_namespace` → `ensure_plugin_manager` → `discover_and_start`)는 개별 지목이 없기 때문이다. 실측(2026-09-09, 갓 만든 격리 홈): `tasty image list` 는 그 자체로는 `-32017` 로 실패하는데, 그 뒤 `plugin list` 의 `running` 이 설치된 9 개 전부다. **하나만 재고 싶으면 namespace 를 부르지 말고 `plugin enable` 을 써라** — 관측 대상을 여덟 개 더 만들지 않는다.
-3. **선언된 surface kind 는 plugin 이 뜨는 순간 전부 등록된다 — 조합에 따라 갈리지 않는다.** `register_one_surface_kind` 는 `rendering` 세 종류(`webview`/`remote`/`egui-mesh`)를 모두 등록한다. 실측(2026-09-09, 갓 만든 격리 홈 헤드리스 데몬, 9 개 기동 후):
+3. **선언된 surface kind 는 plugin 이 뜨는 순간 전부 등록된다 — 조합에 따라 갈리지 않는다.** `register_one_surface_kind` 는 `rendering` 세 종류(`webview`/`remote`/`egui-mesh`)를 모두 등록한다([ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md)). 실측(2026-09-09, 갓 만든 격리 홈 헤드리스 데몬, 9 개 기동 후):
 
    | kind | 선언 (`plugin.show` 의 `declared_rendering`) | 등록됐나 (`registered`) | `new workspace --type <kind>` |
    |---|---|---|---|
@@ -100,6 +111,8 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
    ★ 표의 **선언 열과 등록 열은 여전히 서로 다른 물음**이다. `declared_rendering` 은 매니페스트가 요청한 것이고 `registered` 는 host 가 받아들였는지다 — 지금은 둘이 일치하지만, 일치가 보장이라서가 아니라 **그 plugin 이 떠 있어서**다. 안 뜬 plugin 의 kind 는 선언만 있고 사실이 없다. 사실만 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다. 만들어 보는 술어는 이제 대조용이다.
 
    실측 진행(같은 회차): 부팅 직후 `['dag_graph','empty','explorer','terminal']` 넷 → `plugin enable com.tasty.markdown` 뒤 `markdown` 이 더해져 다섯 → 9 개 전부 뜬 뒤 여덟.
+
+   ★ **kind 지목 트리거는 이 표를 한 칸씩 채운다.** 실측(2026-09-10, 같은 데몬을 kind 지목만으로 몰아본 회차): 부팅 직후 넷 → `--type markdown` 뒤 다섯(`running` 은 `com.tasty.markdown` 하나) → `--type image` 뒤 여섯(`running` 둘). 그래서 **한 kind 를 재려고 나머지 여덟을 띄우지 않아도 된다** — 위 2 의 `plugin enable` 과 같은 성질이고, namespace 를 부르는 쪽과 갈리는 자리다.
 
 **tasty 터미널 내부(`TASTY_SURFACE_ID` 환경변수가 설정된 셸)에서 검증 인스턴스를 띄울 때는 `--launch` 플래그가 필수다.** `cargo run --bin tasty -- <플래그>` 를 `--launch` 없이 실행하면 `src/boot.rs` 의 GUI 부팅 skip 조건(`cli_routing::Routed::AugmentedHelp` 분기)(`TASTY_SURFACE_ID` 설정 + `--launch` 미지정)에 걸려 GUI 가 뜨지 않고 CLI 도움말만 출력한 채 조용히 종료된다 — 이 상태로 `until target/debug/tasty list info ...` 같은 readiness poll 을 돌리면 죽은 프로세스를 무한정 기다리게 된다. 즉 `cargo run &` 을 `--launch` 없이 tasty 터미널 안에서 실행했다면, poll 이 멈추지 않을 때 프로세스가 애초에 GUI 로 뜬 게 맞는지부터 의심한다.
 

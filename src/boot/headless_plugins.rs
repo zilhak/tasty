@@ -135,7 +135,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
     );
 }
 
-/// plugin 이 선언한 surface kind 를 지목한 요청이 오면 그 plugin 을 기동한다.
+/// plugin 이 선언한 surface kind 를 지목한 요청이 오면 **그 plugin 하나를** 기동한다.
 ///
 /// **소속은 매니페스트가 답하고, 기동은 소속이 맞은 뒤에만 한다** — `plugin namespace
 /// forward`(`boot/headless_dispatch.rs`)와 **같은 두 층**이고 근거도 같다
@@ -150,25 +150,35 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 /// `tests/attach_markdown_content_loopback.rs` 의 다섯이 그대로
 /// `unknown surface kind: markdown` 으로 죽는다.
 ///
+/// **소속 판정은 매니페스트와 `plugins.toml` 을 함께 읽는다.** 선언만 보고 기동하면
+/// 사용자가 끈 plugin 의 kind 를 지목하는 것만으로 데몬이 아래 대기에 들어간다 —
+/// 그 plugin 은 (`discover_and_start` 가 disabled 를 거르므로) 영영 안 뜨고, 대기는
+/// 시한을 꽉 채운다. 실측(2026-09-10, 이 갈래를 고치기 전): `plugin disable
+/// com.tasty.markdown` 뒤 `--type markdown` 한 번이 그 요청을 **5.34 s** 묶고, 그동안
+/// 무관한 `list info` 가 **5.04 s** 걸렸다(데몬이 단일 루프라 IPC 전체가 선다).
+/// 그래서 disabled 는 소속이 아예 안 맞은 것으로 친다 — 아래 `enabled_owner_of_kind`
+/// 가 그 판정이고, 이 모듈의 `tests::a_disabled_plugin_does_not_own_its_kind` 가 그
+/// 사실을 값으로 고정한다.
+///
+/// **띄우는 것은 지목된 하나뿐이다.** 예전에는 `ensure_plugin_manager`
+/// (= `discover_and_start`)를 불러 설치된 것을 **전부** 띄웠고, 그래서 markdown 을
+/// 한 번 지목하면 프로세스 여덟이 덤으로 남았다. 지금은 `start_one_enabled` 로
+/// 소유자만 띄운다 — 요청이 자기가 부르지 않은 관측 대상을 만들지 않는다(ADR-0136 과
+/// 같은 축). 설치·권한 grant 도 이 경로에 **없다**: 위 소속 판정이 이미 설치된
+/// package 표를 보므로, 여기 닿았다는 것 자체가 설치가 끝났다는 뜻이다.
+///
 /// **여기서 기다리는 이유.** hello 는 비동기고 등록은 hello 가 한다. 반면 이 요청은
 /// 동기라 handler 가 돌기 전에 registry 가 차 있어야 한다. 그래서 hello 를 등록의
 /// 유일한 트리거로 두고(사본을 만들지 않는다) 그것이 도착할 때까지 pump 를 돌린다.
-/// 대기는 **데몬 수명 동안 최대 한 번**이다 — `plugin_started` 가 서면 다시 안 온다.
-/// 시한이 지나도록 안 차면 그냥 돌아가고, 그러면 handler 가 예전과 똑같은
-/// `unknown surface kind` 를 답한다(느려질 뿐 답이 바뀌지 않는다).
-///
-/// `ensure_plugin_manager`(= `discover_and_start`)가 **설치된 것을 전부** 띄우는 것은
-/// namespace forward 와 같은 성질이다. 하나만 띄우는 길은 `plugin.enable` 이고, 그쪽은
-/// `plugins.toml` 을 쓰므로 요청 하나의 부수효과로 부를 수 없다.
+/// 기다리는 것은 **우리가 방금 spawn 한 프로세스의 handshake** 뿐이다 — 이미 떠
+/// 있는데 kind 가 아직 없으면 기다려도 원인이 우리 손에 없으므로 그냥 돌아간다.
+/// 시한이 지나도록 안 차면 handler 가 예전과 똑같은 `unknown surface kind` 를 답한다.
 pub(crate) fn ensure_plugin_for_surface_kind(
     app: &mut App,
     state: &mut AppState,
     engine: &mut CoreState,
     request: &crate::ipc::protocol::JsonRpcRequest,
 ) {
-    if app.plugin_started {
-        return;
-    }
     // surface 를 만드는 handler 셋(`tab.create` · `pane.split` · `workspace.create`)이
     // 모두 이 한 키로 kind 를 읽는다. 다른 키를 읽는 요청은 여기서 조용히 지나간다 —
     // 잘못 짚어도 하는 일이 없다(등록된 kind 면 아래 첫 검사에서 돌아간다).
@@ -178,18 +188,30 @@ pub(crate) fn ensure_plugin_for_surface_kind(
     if engine.surface_registry.get(kind).is_some() {
         return;
     }
-    // 매니페스트만 읽는다 — 프로세스는 아직 하나도 안 띄운다.
+    // 매니페스트와 `plugins.toml` 만 읽는다 — 프로세스는 아직 하나도 안 띄운다.
     ensure_plugin_manager_metadata(app, engine);
-    let declared = app.plugin_manager.as_ref().is_some_and(|mgr| {
-        mgr.packages()
-            .iter()
-            .any(|pkg| pkg.manifest.surface_kinds.iter().any(|d| d.kind == kind))
-    });
-    if !declared {
+    let Some(owner) = app
+        .plugin_manager
+        .as_ref()
+        .and_then(|mgr| enabled_owner_of_kind(mgr, kind))
+    else {
+        return;
+    };
+    let kind = kind.to_string();
+    let started = app
+        .plugin_manager
+        .as_mut()
+        .is_some_and(|mgr| mgr.start_one_enabled(&owner));
+    if !started {
+        // 우리가 안 띄웠으면 기다릴 근거가 없다 — 이미 떠 있거나(그럼 hello 는 이
+        // 요청과 무관한 시점에 온다) spawn 이 실패한 것이다. 둘 다 시한을 채워도
+        // 바뀌지 않으므로 데몬을 묶지 않는다.
+        tracing::debug!(
+            "surface kind '{kind}' is declared by '{owner}' but nothing was started here; \
+             answering without waiting"
+        );
         return;
     }
-    let kind = kind.to_string();
-    ensure_plugin_manager(app, engine);
     let deadline = std::time::Instant::now() + KIND_REGISTRATION_WAIT;
     while std::time::Instant::now() < deadline {
         pump_plugins(app, state, engine);
@@ -199,24 +221,71 @@ pub(crate) fn ensure_plugin_for_surface_kind(
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     tracing::warn!(
-        "surface kind '{kind}' is declared by an installed plugin but was not registered \
-         within {:?} of starting it; the request will be answered as an unknown kind",
+        "surface kind '{kind}' is declared by '{owner}' but was not registered within {:?} of \
+         starting it; the request will be answered as an unknown kind",
         KIND_REGISTRATION_WAIT
     );
 }
 
+/// 이 kind 를 선언했고 **사용자가 끄지 않은** plugin 의 id.
+///
+/// 두 물음을 한 자리에서 답한다 — *누가 선언했나*(매니페스트)와 *그것이 지금 켜져
+/// 있나*(`plugins.toml`). 앞엣것만 보면 `discover_and_start` 가 영영 안 띄울 plugin 을
+/// 기다리게 되고, 그 대기가 데몬 전체를 세운다([`ensure_plugin_for_surface_kind`] 의
+/// 실측). 뒤엣것만 보는 판정은 없다 — 켜져 있어도 이 kind 를 선언 안 했으면 남이다.
+pub(crate) fn enabled_owner_of_kind(
+    mgr: &crate::plugin::PluginManager,
+    kind: &str,
+) -> Option<String> {
+    owner_of_kind(
+        mgr.packages().iter().map(|pkg| {
+            (
+                pkg.manifest.id.as_str(),
+                pkg.manifest.surface_kinds.as_slice(),
+            )
+        }),
+        |id| mgr.config.is_disabled(id),
+        kind,
+    )
+}
+
+/// 위 판정의 알맹이 — 매니저 없이 값만 받는다.
+///
+/// 갈라 둔 이유는 시험이다. `PluginManager` 의 `packages` 는 밖에서 채울 수 없어서,
+/// 매니저를 받는 채로는 "비활성이면 소속이 아니다" 를 **디스크에 홈을 만들지 않고는**
+/// 못 잰다. 그러면 이 규칙의 채널이 실행 확인 하나가 되고, 그건 다음 사람이 안 돌린다.
+fn owner_of_kind<'a>(
+    packages: impl IntoIterator<Item = (&'a str, &'a [crate::plugin::manifest::SurfaceKindDecl])>,
+    is_disabled: impl Fn(&str) -> bool,
+    kind: &str,
+) -> Option<String> {
+    packages
+        .into_iter()
+        .find(|(id, kinds)| !is_disabled(id) && kinds.iter().any(|d| d.kind == kind))
+        .map(|(id, _)| id.to_string())
+}
+
 /// [`ensure_plugin_for_surface_kind`] 가 hello 를 기다리는 시한.
 ///
-/// 재는 대상은 프로세스 spawn + handshake 한 번이다. 실측(2026-09-09, 갓 만든 격리 홈의
-/// 헤드리스 데몬): `tab.create {type:"markdown"}` **첫** 호출이 이 대기를 포함해
-/// **0.35 s**, 같은 호출의 두 번째가 **0.08 s**(대기가 아예 안 온다 — `plugin_started`).
-/// 등록된 kind 는 그 사이 4 개(`dag_graph`/`empty`/`explorer`/`terminal`)에서 8 개로
-/// 늘어 gui 와 같아졌다. 5 초는 그 값의 10 배가 넘는 여유이면서, 안 뜨는 plugin 에
-/// 데몬을 오래 묶어 두지 않는 선이다.
+/// 재는 대상은 프로세스 spawn + handshake **한 번**이다. 실측(2026-09-10, 갓 만든 격리
+/// 홈의 헤드리스 데몬, `new workspace --type <kind>`):
 ///
-/// **없는 kind 를 지목한 요청은 이 대기에 안 들어간다.** 매니페스트 층이 먼저 답하므로
-/// `--type nosuchkind` 는 실측 **0.05 s** 에 예전과 같은 `unknown surface kind` 를
-/// 돌려주고 plugin 은 하나도 안 뜬다.
+/// | 호출 | 소요 | 그 뒤 running | 등록된 kind |
+/// |---|---|---|---|
+/// | 부팅 직후 | — | 0 | 4 (`dag_graph`/`empty`/`explorer`/`terminal`) |
+/// | `--type nosuchkind` | 0.09 s | 0 | 4 |
+/// | `--type markdown` 첫 번째 | 0.14 s | 1 (`com.tasty.markdown`) | 5 |
+/// | `--type markdown` 두 번째 | 0.09 s | 1 | 5 |
+/// | `--type image` 첫 번째 | 0.14 s | 2 (`+com.tasty.image`) | 6 |
+///
+/// 읽을 것 셋. ① 대기는 kind 마다 **처음 한 번**이고 그 뒤로는 첫 검사에서 돌아간다.
+/// ② **없는 kind 는 이 대기에 안 들어간다** — 소속 판정이 먼저 답한다. ③ 지목한
+/// plugin 만 뜬다: markdown 을 물었는데 image 가 딸려 오지 않는다.
+///
+/// 5 초는 위 0.14 s 의 30 배가 넘는 여유이면서, 뜨다 만 plugin 에 데몬을 오래 묶어
+/// 두지 않는 선이다. 이 시한을 꽉 채우는 갈래는 **우리가 spawn 에 성공했는데 hello 가
+/// 안 오는 경우** 하나로 좁혀져 있다([`ensure_plugin_for_surface_kind`] 의 `started`
+/// 검사) — 비활성 plugin 을 지목하던 옛 갈래는 소속 판정이 먼저 자른다.
 const KIND_REGISTRATION_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// `src/app/plugin_glue/lifecycle.rs::finalize_plugin_hello` 의 헤드리스 등가.
@@ -466,5 +535,60 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         if let Some(mgr) = app.plugin_manager.as_mut() {
             mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::owner_of_kind;
+
+    fn decl(kind: &str) -> crate::plugin::manifest::SurfaceKindDecl {
+        serde_json::from_value(serde_json::json!({
+            "kind": kind,
+            "display_name_i18n_key": format!("surface.kind.{kind}"),
+        }))
+        .expect("decl 을 만들지 못했다")
+    }
+
+    /// **비활성 plugin 은 자기 kind 의 소유자가 아니다.**
+    ///
+    /// 이 한 줄이 없으면 `ensure_plugin_for_surface_kind` 가 영영 안 뜰 plugin 을
+    /// 기다린다 — 실측으로 그 대기가 데몬 IPC 전체를 5 초 세웠다(그 함수 doc).
+    #[test]
+    fn a_disabled_plugin_does_not_own_its_kind() {
+        let md = [decl("markdown")];
+        let pkgs = [("com.tasty.markdown", md.as_slice())];
+        assert_eq!(
+            owner_of_kind(pkgs, |_| false, "markdown").as_deref(),
+            Some("com.tasty.markdown"),
+            "대조군: 켜져 있으면 소유자다"
+        );
+        assert_eq!(
+            owner_of_kind(pkgs, |id| id == "com.tasty.markdown", "markdown"),
+            None,
+            "비활성인데 소유자로 답했다 — 그 뒤 대기가 데몬을 세운다"
+        );
+    }
+
+    /// 켜져 있어도 **선언 안 한 kind** 는 남의 것이다. 위 판정이 `is_disabled` 만
+    /// 보게 뒤집히면 이쪽이 운다.
+    #[test]
+    fn an_enabled_plugin_does_not_own_a_kind_it_never_declared() {
+        let md = [decl("markdown")];
+        let pkgs = [("com.tasty.markdown", md.as_slice())];
+        assert_eq!(owner_of_kind(pkgs, |_| false, "image"), None);
+    }
+
+    /// 첫 소유자만 답한다 — 뒤에 있는 비활성 동명 선언이 답을 가리지 않는다.
+    #[test]
+    fn the_first_enabled_declarer_answers() {
+        let a = [decl("markdown")];
+        let b = [decl("markdown")];
+        let pkgs = [("com.first", a.as_slice()), ("com.second", b.as_slice())];
+        assert_eq!(
+            owner_of_kind(pkgs, |id| id == "com.first", "markdown").as_deref(),
+            Some("com.second"),
+            "앞엣것이 비활성이면 다음 선언자로 넘어가야 한다"
+        );
     }
 }

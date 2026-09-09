@@ -380,9 +380,43 @@ impl PluginManager {
         }
     }
 
+    /// **설정을 안 건드리고** 이미 설치·활성인 plugin 하나만 띄운다 — 띄웠으면 `true`.
+    ///
+    /// [`Self::enable`] 과 갈리는 자리는 `plugins.toml` 이다. 그쪽은 활성 여부라는
+    /// **사용자 결정**을 영속화하는 명령이라 요청 하나의 부수효과로 부를 수 없다.
+    /// 이쪽은 그 결정을 읽기만 한다 — 비활성이면 아무것도 안 하고, 그래서 요청이
+    /// disable 을 뒤집지 못한다.
+    ///
+    /// 대안은 `discover_and_start` 였고, 그것은 **설치된 것을 전부** 띄운다. 요청
+    /// 하나가 지목한 것 말고 여덟을 더 띄우는 것은 관측 대상을 요청이 만들어내는
+    /// 형태라(ADR-0136 과 같은 축) 이 창구를 따로 낸다.
+    pub fn start_one_enabled(&mut self, plugin_id: &str) -> bool {
+        if self.config.is_disabled(plugin_id) || self.is_auto_disabled(plugin_id) {
+            return false;
+        }
+        if self.processes.contains_key(plugin_id) {
+            return false;
+        }
+        if !self.packages.iter().any(|p| p.manifest.id == plugin_id) {
+            return false;
+        }
+        self.ensure_listener();
+        self.start_enabled_package(plugin_id);
+        self.processes.contains_key(plugin_id)
+    }
+
     /// `discover_and_start` 부팅 경로 — enable() 과 대칭으로 정적 contribute 를
     /// 등록 후 spawn 시도. `id` 가 packages 에 없으면(레이스) no-op.
+    ///
+    /// **이미 떠 있으면 아무것도 안 한다.** `enable()` 이 예전부터 그 검사를 들고
+    /// 있었는데(`!self.processes.contains_key`) 이쪽에는 없었고, 그래서 이미 하나가
+    /// 뜬 매니저에서 `discover_and_start` 가 돌면 그 하나를 **다시 spawn** 해 맵의
+    /// 옛 핸들을 덮어썼다 — 덮인 프로세스는 회수 주체를 잃는다. 기동 창구가
+    /// [`Self::start_one_enabled`] 로 하나 늘면서 그 조합이 흔해지므로 여기서 막는다.
     fn start_enabled_package(&mut self, id: &str) {
+        if self.processes.contains_key(id) {
+            return;
+        }
         let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == id).cloned() else {
             return;
         };

@@ -71,12 +71,23 @@ host 내장 넷만 나온다. 실측(2026-09-09, 갓 만든 격리
 뜬 뒤 여덟(`html`·`image`·`mesh_demo` 가 더해진다). 그 시점의 `plugin.show` 는 넷 다
 `registered: true` 이고 `effective_rendering` 이 선언과 같다.
 
-**기동을 유발하는 자리가 하나 늘었다.** plugin 이 선언한 kind 를 지목한 생성 요청
-(`tab.create`·`pane.split`·`workspace.create` 의 `type`)이 오면, 소속을 매니페스트로
-먼저 묻고 맞을 때만 기동한다(`headless_plugins::ensure_plugin_for_surface_kind`,
-namespace forward 와 같은 두 층). 없는 이름을 지목한 요청은 매니페스트 층에서 걸러져
-plugin 을 하나도 안 띄운다 — 실측 `--type nosuchkind` 가 0.05 s 에 예전과 같은
-`unknown surface kind` 로 답하고 `running` 이 그대로 0 이었다.
+**기동을 유발하는 자리가 하나 늘었다 — 그리고 그 자리는 하나만 띄운다.** plugin 이
+선언한 kind 를 지목한 생성 요청(`tab.create`·`pane.split`·`workspace.create` 의 `type`)이
+오면, 소속을 먼저 묻고 맞을 때만 **그 kind 의 소유자 하나**를 기동한다
+(`headless_plugins::ensure_plugin_for_surface_kind`, namespace forward 와 같은 두 층 —
+[ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md)).
+
+소속은 **매니페스트 ∩ `plugins.toml`** 이다. 두 갈래가 거기서 끝난다(실측 2026-09-10,
+갓 만든 격리 홈): 없는 이름(`--type nosuchkind`)은 0.09 s 에 예전과 같은
+`unknown surface kind` 로 답하고, **`plugin disable` 한 plugin 의 kind** 도 같은 0.09 s
+에 같은 답을 낸다 — 둘 다 `running` 이 그대로 0 이다. 뒤엣것을 안 거르면 그 요청이
+영영 안 뜰 plugin 을 시한(5 초)까지 기다리고, 헤드리스 메인 루프가 하나라 **그동안
+데몬 IPC 전체가 선다**(고치기 전 실측: 그 요청 5.34 s · 무관한 `list info` 5.04 s ·
+덤으로 8 개 기동).
+
+소속이 맞으면 그 하나만 뜬다 — `--type markdown` 첫 호출 0.14 s 뒤 `running` 이
+`['com.tasty.markdown']` 이고, 이어서 `--type image` 를 부르면 둘이 된다. **namespace
+forward 와 갈리는 자리가 여기다**: 그쪽은 `discover_and_start` 라 한 번에 9 개를 띄운다.
 
 ## `plugin.*` — 19 개 메서드의 판정
 

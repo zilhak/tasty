@@ -215,6 +215,29 @@ grant/revoke → `plugins.toml` 저장 → `refresh_plugin_permissions` 가 (매
 
 **Capability elevation 자동 발행**: Agent 가 `MissingPermission` 으로 거부되면 `approval.request{kind:capability_elevation}` 발행(같은 (agent,permission) Pending 은 approval_id 재사용). `approve`(TTL grant) / `approve_permanently`(무기한) / `deny`.
 
+## 비-Local caller 가 유발할 수 있는 plugin 수명주기
+
+이 문서의 나머지는 "그 호출이 통과하는가" 를 다룬다. 이 절은 **통과한 호출의 부수효과가
+plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니라 각 경로가 무엇을 하느냐로
+정해지는 축이라, 표를 따로 둔다. 실측(2026-09-10, 격리 홈 헤드리스 데몬, `session issue`
+로 발급한 토큰을 `TASTY_SESSION_TOKEN` 으로 붙여 호출):
+
+| 경로 | 필요한 권한 | 비-Local 결과 | 그 뒤 뜨는 프로세스 |
+|---|---|---|---|
+| `plugin.enable` / `plugin.disable` | — (`local_only`) | `-32001 permission_denied` | 0 |
+| plugin namespace forward (예 `markdown.recent`) | **없음** | 정상 응답 | **9 (설치된 전부)** + 번들 설치·매니페스트 권한 자동 grant |
+| plugin kind 를 지목한 생성 요청 (`tab.create` 등의 `type`) | `surface:write` | 정상 응답 | **1 (그 kind 의 소유자)** |
+
+- 둘째 줄은 **의도된 개방이 아니라 표의 해소 규칙에서 나온 성질**이다. plugin namespace
+  아래의 이름은 `method_meta` 가 `plugin_callable: true, required: []` 로 해소하므로(등록
+  prefix 갈래), 권한을 하나도 안 담은 Agent 토큰으로도 통과한다. 좁히려면 소유자를 아는
+  `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다 — 아직 안 했다.
+- 셋째 줄은 위 둘째 줄보다 **좁다**(권한을 더 요구하고, 하나만 띄우고, 설치·grant 를 안
+  한다). 그래서 caller 종류로 가르지 않는다 — 근거와 기각한 대안은
+  [ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md) 의 "신뢰 경계".
+- **이 표는 헤드리스 기준이다.** gui 는 첫 창을 만들 때 `discover_and_start` 로 전부
+  띄우므로, 셋째 줄의 트리거가 거기서는 할 일이 없다.
+
 ## Audit log
 
 `handle_with_caller` 가 allow/deny 양쪽에서 `audit::record` → `tasty.audit.{ts}.{seq}` Global scope(기본 30일, lazy evict). `plugin.audit_query/summary/follow/clear` 로 조회.
