@@ -8,14 +8,24 @@
 //! `check-headless` 의 전체 스위트에서도 돈다(`docs/dev-guide/ci-gates.md`). 자동 잡은
 //! push 된 커밋만 보므로, 크레이트를 추가·삭제했으면 커밋 전에 직접 돌려라.
 //!
-//! 검사 3 종:
+//! 검사 4 종:
 //! - 모든 `crates/<name>/Cargo.toml` 의 `<name>` 이 문서에 `` `<name>` `` 형태로
 //!   등장한다(번들 plugin 도 축약 없이 풀네임).
 //! - 절 제목 `## 워크스페이스 크레이트 (N)` 의 N 이 디렉토리 수와 같다.
 //! - 개요 문장의 "N 개 크레이트(`crates/*`)" 도 같은 값이다.
+//! - 레포 루트 `CLAUDE.md` "빌드" 절의 "`crates/*` N 개" 도 같은 값이다.
+//!
+//! 마지막 항목이 여기 있는 이유: 그 문장은 정본(이 문서)의 **복제본**인데 채널이
+//! 없었다. `docs/dev-guide/build.md` 는 같은 자리에서 수를 아예 복제하지 않는 쪽을
+//! 골랐지만(그 문서가 그 판단을 본문에 적어 두었다), `CLAUDE.md` 는 에이전트가 매
+//! 세션 읽는 진입점이라 규모를 그 자리에서 알려주는 값이 필요하다. 그래서 복제를
+//! 남기는 대신 대조를 붙인다.
 //!
 //! 역방향(문서에만 있고 디렉토리에 없는 이름)은 검사하지 않는다 — `tasty-tui-sim`
 //! 같은 바이너리 이름이 정당하게 등장한다.
+//!
+//! **README 의 같은 수는 여기서 안 본다** — 배지와 본문이라 형태가 달라
+//! `crates/tasty-doc-guards/tests/readme_badge_parity.rs` 가 본다. 좌변 함수는 공유한다.
 //!
 //! 선례: `tests/changelog_unreleased.rs` · `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs`.
 
@@ -36,19 +46,11 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// `crates/` 바로 아래에서 `Cargo.toml` 을 가진 디렉토리 이름을 정렬해 돌려준다.
-/// workspace `exclude` 여부와 무관하게 디렉토리 기준이다 — 문서의 수치 정의와 같다.
+/// `crates/` 바로 아래에서 `Cargo.toml` 을 가진 디렉토리 이름 — 좌변의 정의와 빈 결과
+/// 거부는 [`tasty_doc_guards::crate_layers::crate_dir_names`] 한 곳에 있다. 같은 좌변을
+/// `readme_badge_parity` 도 쓰므로 여기서 다시 구현하지 않는다(두 벌이면 갈린다).
 fn crate_dir_names() -> Vec<String> {
-    let dir = root().join(CRATES_DIR);
-    let entries =
-        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
-    let mut names: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().join("Cargo.toml").is_file())
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
+    tasty_doc_guards::crate_layers::crate_dir_names(&root())
 }
 
 fn section_count(doc: &str) -> usize {
@@ -66,7 +68,6 @@ fn section_count(doc: &str) -> usize {
 fn every_crate_directory_is_listed() {
     let doc = read(DOC);
     let names = crate_dir_names();
-    assert!(!names.is_empty(), "{CRATES_DIR}/ has no crate directories");
     let missing: Vec<&str> = names
         .iter()
         .map(String::as_str)
@@ -91,5 +92,27 @@ fn stated_crate_count_matches_directories() {
     assert!(
         doc.contains(&overview),
         "{DOC}: the overview sentence must say `{overview}` ({CRATES_DIR}/ holds {actual} crates)"
+    );
+}
+
+/// `CLAUDE.md` 의 복제본은 정본과 문장 형태가 다르다 — 정본은 "N 개 크레이트(`crates/*`)"
+/// 이고 여기는 어순이 뒤집힌 "`crates/*` N 개" 다. 그래서 같은 술어로 못 찾는다.
+const CLAUDE_MD: &str = "CLAUDE.md";
+
+#[test]
+fn claude_md_crate_count_matches_directories() {
+    let actual = crate_dir_names().len();
+    let expected = format!("`crates/*` {actual} 개");
+    let contents = read(CLAUDE_MD);
+    assert!(
+        contents.contains(&expected),
+        "{CLAUDE_MD} 의 \"빌드\" 절이 `{expected}` 라고 말해야 한다 ({CRATES_DIR}/ 실측 \
+         {actual}). 지금 그 형태로 적힌 줄:\n{}",
+        contents
+            .lines()
+            .filter(|l| l.contains("`crates/*`"))
+            .map(|l| format!("      {}", l.trim()))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }

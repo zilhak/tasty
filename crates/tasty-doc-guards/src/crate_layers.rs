@@ -11,6 +11,45 @@
 //!
 //! **모르는 형태는 조용히 건너뛰지 않는다.** 절에 안 잡힌 크레이트는 소비자가 실패로
 //! 보고한다 — 건너뛰면 그 크레이트의 의존이 아예 안 세어져 통과한다.
+//!
+//! 여기에 **좌변을 만드는 함수도 함께 산다**([`crate_dir_names`]). 아래 함수들이 전부
+//! `known: &[String]` 을 요구하는데 그것을 만드는 방법이 소비자마다 다르면 같은 물음
+//! ("워크스페이스 크레이트가 무엇인가")에 답이 여럿 생긴다. 실측으로 밟은 형태다 —
+//! `README` 배지가 그 답을 손으로 적어 두고 낡았다.
+
+use std::path::Path;
+
+/// `crates/` **바로 아래**에서 `Cargo.toml` 을 가진 디렉토리 이름을 정렬해 돌려준다.
+/// 이것이 이 레포에서 "워크스페이스 크레이트 수" 의 **정의**다.
+///
+/// workspace `exclude` 여부와 무관하게 **디렉토리 기준**이다 — `crates/tasty-plugin-sdk-wasm`
+/// 은 루트 `Cargo.toml` 의 `exclude` 라 `cargo metadata` 에 안 나오지만 여기서는 센다.
+/// 반대로 레포 루트의 본 바이너리 크레이트(`tasty`)는 `crates/` 아래가 아니라 **안 센다**.
+/// 이 좌변을 고른 이유는 이것이 **문서가 가리키는 자리에서 그대로 셀 수 있는 수**이기
+/// 때문이다 — `README` 배지는 `crates/` 로 링크하고, `docs/architecture/index.md` 는
+/// 그 디렉토리를 전수 열거한다. `cargo metadata` 의 member 수는 그 자리에서 셀 수 없다.
+///
+/// 빈 결과는 돌려주지 않고 panic 한다. 순회가 죽어 아무것도 못 찾은 상태를 소비자가
+/// "위반 0" 으로 읽으면 그 가드는 지키려던 것이 깨진 순간에 초록이 된다
+/// ([`crate::floored_walk`] 와 같은 이유. 하한을 소비자마다 다시 쓰면 언젠가 빠뜨린다).
+pub fn crate_dir_names(repo_root: &Path) -> Vec<String> {
+    let dir = repo_root.join("crates");
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().join("Cargo.toml").is_file())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !names.is_empty(),
+        "{} 아래에 크레이트 디렉토리가 하나도 없다 — 순회가 죽었거나 레포 루트 해석이 \
+         틀렸다. 이 값을 그대로 쓰면 소비자가 '위반 0' 으로 읽는다",
+        dir.display()
+    );
+    names.sort();
+    names
+}
 
 /// 문서의 계층 절 하나 — 이름과 그 절이 **열거한** 크레이트들.
 #[derive(Debug, Clone)]

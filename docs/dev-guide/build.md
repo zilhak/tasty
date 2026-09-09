@@ -4,7 +4,7 @@ tasty 의 워크스페이스 구조, 빌드 프로필, 빌드 시간 최적화. 
 
 ## 워크스페이스 구조
 
-cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수와 전수 목록은 [architecture/index.md](../architecture/index.md) 가 정본이고 `architecture_crate_list_complete` 가 그것을 강제한다 — 여기서 수를 복제하지 않는다(복제본은 가드 밖이라 낡는다. 실제로 48 로 낡아 있었다). 크레이트는 레이어로 나뉜다(전체 목록·각 역할은 `crates/` 와 각 `Cargo.toml`):
+cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수와 전수 목록은 [architecture/index.md](../architecture/index.md) 가 정본이고 `architecture_crate_list_complete` 가 그것을 강제한다 — 여기서 수를 복제하지 않는다(복제본은 **가드 밖이면** 낡는다. 실제로 48 로 낡아 있었고, 그 값이 마지막까지 남아 있던 곳이 두 README 의 Workspace 배지와 본문이다). 복제를 남기기로 한 자리는 대조를 함께 붙였다 — 두 README 는 `readme_badge_parity`, 루트 `CLAUDE.md` "빌드" 절은 `architecture_crate_list_complete` 가 본다. 셋 다 좌변이 같은 함수(`tasty_doc_guards::crate_layers::crate_dir_names`)라 답이 갈리지 않는다. 크레이트는 레이어로 나뉜다(전체 목록·각 역할은 `crates/` 와 각 `Cargo.toml`):
 
 | 레이어 | 예 | 성격 |
 |--------|-----|------|
