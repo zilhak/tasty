@@ -285,3 +285,5 @@ Plugins · Ports · Remote · 커맨드 팔레트를 연다. 페이지이기 때
 개발 서버를 켠 상태에서도 배포 빌드를 실행할 수 있도록 Vite 의 의존성 캐시는 command·mode 별로 분리한다. `site/astro.config.mjs`의 `tasty-isolate-dependency-cache` 플러그인이 이 경로를 설정한다. 개발용 JSX 코드는 React의 `jsxDEV`를 사용하므로 production 의존성 번들을 재사용하면 갤러리 hydration이 실패하고 지연 렌더링하는 Stage가 비게 된다.
 
 갤러리 검증은 HTTP 응답과 pageerror만으로 판정하지 않는다. 콘솔의 hydration 오류, React 아일랜드의 SSR 상태 해제, 첫 Stage의 실제 컨트롤 표시, 아래쪽 Stage의 스크롤 후 표시를 함께 확인한다. 개발 서버를 유지한 채 build한 뒤에도 새 브라우저에서 같은 검사를 수행한다.
+
+가이드 사이드바의 현재 페이지와 본문 목차의 현재 절은 디자인 시스템의 `--tasty-accent-primary`로 강조한다. 선택 배경도 같은 토큰에서 파생하며, 로고의 수박색인 `--brand`를 선택 상태에 사용하지 않는다.

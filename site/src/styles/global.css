@@ -371,9 +371,9 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 }
 .nav-list a:hover { color: var(--tasty-color-neutral-1100); background: var(--tasty-color-neutral-300); text-decoration: none; }
 .nav-list a[aria-current="page"] {
-  color: var(--brand);
+  color: var(--tasty-accent-primary);
   font-weight: 600;
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  background: color-mix(in srgb, var(--tasty-accent-primary) 12%, transparent);
 }
 
 /* ------------------------------------------------------------- content */
@@ -654,7 +654,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   line-height: 1.45;
 }
 .toc a:hover { color: var(--tasty-color-neutral-1100); text-decoration: none; }
-.toc a[data-active] { color: var(--brand); border-left-color: var(--brand); }
+.toc a[data-active] { color: var(--tasty-accent-primary); border-left-color: var(--tasty-accent-primary); }
 .toc .lvl-3 { padding-left: var(--sp-6); }
 
 /* --------------------------------------------------------------- footer */
