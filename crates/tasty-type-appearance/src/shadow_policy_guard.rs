@@ -1,4 +1,6 @@
-//! 그림자 정책 집행 가드 — "떠 있는 표면 그림자는 `SHADOW_POPOVER` 1종" 을 소스에서 강제한다.
+//! 그림자 정책 집행 가드 — "떠 있는 표면 그림자는 정본 토큰(`SHADOW_POPOVER` /
+//! `SHADOW_MODAL`)에서만 나온다" 를 소스에서 강제한다. 어느 표면이 어느 쪽을 쓰는지는
+//! `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE.
 //!
 //! `theme.rs` 주석이 "허용된 단 하나의 popover 그림자, 새 그림자 금지" 를 선언하지만
 //! 그것을 집행하는 장치가 없어, `shell_setup.rs` 가 그 선언을 어긴 채(색이 앱 배경으로
@@ -44,6 +46,10 @@ use std::path::{Path, PathBuf};
 /// 상향(`../..`)이 틀려 스캔이 비면 가드가 거짓 초록이 되는 것을 막는 하한 — 실측보다
 /// 넉넉히 낮게(파일 재구성 여유) 두되 0/소수로 붕괴하는 것은 잡는다.
 const SCAN_FILE_FLOOR: usize = 800;
+
+/// 판정2 가 추적하는 그림자 접근자 이름. `Theme` 가 노출하는 `shadow_*()` 전부여야
+/// 한다 — 빠뜨리면 그 토큰의 기하 재대입이 조용히 통과한다.
+const SHADOW_ACCESSORS: &[&str] = &["shadow_popover", "shadow_modal"];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -168,16 +174,20 @@ fn shadow_literal_violations(
     (v, allowed)
 }
 
-/// 판정2: `shadow_popover().to_egui()` 를 `let mut` 로 받은 변수의 기하 필드
-/// (`offset`/`blur`/`spread`) 재대입은 위반. `color` 재대입은 허용(페이드 애니메이션 —
-/// banner/modifier_hint 가 opacity 를 곱한다). 이름(`gamma_multiply`)이 아니라 **어느
-/// 필드를 재대입하는가**로 가른다: 허용 함수를 통과했다는 것이 허용 값이 나온다는 뜻은
-/// 아니다.
+/// 판정2: 그림자 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 결과를
+/// `let mut` 로 받은 변수의 기하 필드(`offset`/`blur`/`spread`) 재대입은 위반.
+/// `color` 재대입은 허용(페이드 애니메이션 — banner/modifier_hint 가 opacity 를
+/// 곱한다). 이름(`gamma_multiply`)이 아니라 **어느 필드를 재대입하는가**로 가른다:
+/// 허용 함수를 통과했다는 것이 허용 값이 나온다는 뜻은 아니다.
+///
+/// 접근자 목록([`SHADOW_ACCESSORS`])이 실제 `Theme` 접근자와 어긋나면 새 토큰의
+/// 재대입이 조용히 안 잡힌다 — 그 정합은
+/// `shadow_accessor_list_matches_theme_accessors` 가 theme.rs 를 읽어 고정한다.
 fn geom_reassign_violations(rel: &str, text: &str) -> Vec<String> {
     let mut vars: Vec<String> = Vec::new();
     for line in text.lines() {
         let t = line.trim();
-        if t.starts_with("let mut ") && t.contains("shadow_popover") {
+        if t.starts_with("let mut ") && SHADOW_ACCESSORS.iter().any(|a| t.contains(a)) {
             let name: String = t["let mut ".len()..]
                 .chars()
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
@@ -240,7 +250,8 @@ fn shadow_creation_is_confined_to_the_token_converter() {
 
     assert!(
         violations.is_empty(),
-        "허용 위치(theme.rs::to_egui) 밖 Shadow 생성 — theme.shadow_popover() 로 라우팅해라:\n{}",
+        "허용 위치(theme.rs::to_egui) 밖 Shadow 생성 — theme.shadow_popover()/shadow_modal() \
+         로 라우팅해라:\n{}",
         violations.join("\n")
     );
     assert_eq!(
@@ -251,7 +262,7 @@ fn shadow_creation_is_confined_to_the_token_converter() {
 
 /// 역방향: 허용 함수를 통과해도 그 결과의 기하를 덮어쓰면 정책 우회다.
 #[test]
-fn shadow_popover_result_is_not_geometrically_overridden() {
+fn shadow_accessor_result_is_not_geometrically_overridden() {
     let root = repo_root();
     let mut violations = Vec::new();
     for f in scan_files() {
@@ -261,7 +272,7 @@ fn shadow_popover_result_is_not_geometrically_overridden() {
     }
     assert!(
         violations.is_empty(),
-        "shadow_popover() 결과의 기하 필드를 재대입한다(허용 함수 통과 ≠ 허용 값):\n{}",
+        "그림자 접근자 결과의 기하 필드를 재대입한다(허용 함수 통과 ≠ 허용 값):\n{}",
         violations.join("\n")
     );
 }
@@ -287,6 +298,39 @@ fn mutation_discriminates_when_converter_moves_out_of_range() {
         "to_egui 밖으로 나간 리터럴은 허용 카운트에 안 든다"
     );
     assert_eq!(v.len(), 1, "to_egui 밖 Shadow 리터럴은 위반");
+}
+
+/// [`SHADOW_ACCESSORS`] 가 `Theme` 의 실제 `shadow_*()` 접근자 전부인가. 새 그림자
+/// 토큰에 접근자를 붙이고 이 목록을 안 늘리면 판정2 가 그 토큰만 안 본다 — 가드가
+/// 조용히 절반만 도는 형태라, 목록을 정본(theme.rs)에서 다시 읽어 대조한다.
+#[test]
+fn shadow_accessor_list_matches_theme_accessors() {
+    let theme_src =
+        fs::read_to_string(repo_root().join("crates/tasty-type-appearance/src/theme.rs"))
+            .expect("theme.rs");
+    let mut found: Vec<String> = Vec::new();
+    for line in theme_src.lines() {
+        let t = line.trim();
+        // `pub fn shadow_xxx(&self) -> ShadowToken {`
+        if let Some(rest) = t.strip_prefix("pub fn shadow_") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                found.push(format!("shadow_{name}"));
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    let mut listed: Vec<String> = SHADOW_ACCESSORS.iter().map(|s| (*s).to_string()).collect();
+    listed.sort();
+    assert_eq!(
+        found, listed,
+        "theme.rs 의 shadow_*() 접근자와 SHADOW_ACCESSORS 가 어긋났다 — 빠진 쪽의 기하 \
+         재대입이 조용히 통과한다"
+    );
 }
 
 #[test]
@@ -326,6 +370,17 @@ fn mutation_arrow_on_line_does_not_hide_a_real_creation() {
     assert!(
         !is_shadow_literal(return_type),
         "반환타입 선언은 생성이 아니다 — 정당 면제를 죽이면 안 된다"
+    );
+}
+
+#[test]
+fn mutation_catches_geometry_reassignment_on_modal_shadow() {
+    // popover 만 보던 판정2 가 새 토큰도 보는가 — 목록을 좁히는 변이를 잡는다.
+    let text = "let mut shadow = theme.shadow_modal().to_egui();\nshadow.blur = 4;\n";
+    assert_eq!(
+        geom_reassign_violations("x.rs", text).len(),
+        1,
+        "shadow_modal() 결과의 기하 재대입도 위반이다"
     );
 }
 

@@ -154,16 +154,26 @@ pub const OPACITY_RECESSED: f32 = 0.4;
 /// `generated_component.rs` 의 생성 접근자로 옮겼고 여기만 손으로 남았다.
 pub const MOTION_HOLD_REVEAL_SHIFT_MS: Millis = Millis(1200.0);
 
-/// 떠 있는 패널(popover / banner)의 lift 그림자 토큰. egui 비의존 순수 표현 —
-/// egui 변환은 `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
+/// 떠 있는 표면의 lift 그림자 토큰. egui 비의존 순수 표현 — egui 변환은
+/// `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
 ///
-/// design `--tasty-shadow-popover` (= 허용된 단 하나의 popover scrim 그림자, 새 그림자
-/// 시스템을 만들지 않고 재사용). `alpha` 는 0~255 straight 검정 알파.
+/// 값은 둘이다([`SHADOW_POPOVER`] / [`SHADOW_MODAL`]) — 어느 표면이 어느 쪽을 쓰는지는
+/// `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE 이 정한다.
+/// `alpha` 는 0~255 straight 검정 알파.
+///
+/// # `spread` 는 음수를 담는다 (CSS `box-shadow` 네 번째 길이와 같은 의미)
+/// 디자인 `--tasty-titlebar-csd-shadow`(`0 18px 50px -8px`)가 음수 spread 를 쓴다 —
+/// 그 `-8px` 는 장식이 아니라 falloff 를 8px 리사이즈 엣지 밴드 안으로 묶는 기능이다.
+/// 그래서 이 타입은 음수를 **표현**한다. 다만 egui 0.31 의 `epaint::Shadow::spread` 는
+/// `u8` 이라 음수를 담지 못하고, [`to_egui`](ShadowToken::to_egui) 는 그 사실을 숨기지
+/// 않는다(그 함수 문서 참고). 근사값을 임의로 만들지 않는 것이 디자인 지시라, 음수
+/// spread 를 쓰는 토큰은 **아직 만들지 않는다**(CSD 그림자 미구현).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowToken {
     pub offset_x: f32,
     pub offset_y: f32,
     pub blur: f32,
+    /// 그림자 확장(px). 음수는 축소 — CSS `box-shadow` 의 spread 와 같은 의미다.
     pub spread: f32,
     pub alpha: u8,
 }
@@ -171,11 +181,25 @@ pub struct ShadowToken {
 #[cfg(feature = "egui-compat")]
 impl ShadowToken {
     /// egui epaint Shadow 로 변환. offset/blur/spread 는 px 정수로 반올림.
+    ///
+    /// # 음수 `spread` 는 이 경로로 갈 수 없다
+    /// egui 0.31 의 `epaint::Shadow::spread` 는 `u8` 이다. `as u8` 캐스트는 음수를
+    /// **조용히 0 으로 saturate** 해 디자인이 지정한 것과 다른 그림자를 그린다 —
+    /// falloff 를 좁히라고 쓴 `-8px` 가 "확장 없음" 이 되어버린다. 그 조용한 왜곡을
+    /// 막기 위해 음수를 캐스트에 맡기지 않고 여기서 `max(0)` 로 **명시적으로** 잘라내고
+    /// debug 빌드에서는 단언으로 터뜨린다. 음수 spread 가 필요한 표면(CSD 타이틀바)은
+    /// 근사값을 만드는 대신 **미구현으로 둔다** — 지원하려면 egui 의 `Shadow` 가 아니라
+    /// 자체 렌더 경로가 필요하고, 그것은 이 타입의 몫이 아니다.
     pub fn to_egui(self) -> egui::epaint::Shadow {
+        debug_assert!(
+            self.spread >= 0.0,
+            "음수 spread({})는 egui Shadow(u8)로 표현할 수 없다 — 근사하지 말고 미구현으로 두어라",
+            self.spread
+        );
         egui::epaint::Shadow {
             offset: [self.offset_x.round() as i8, self.offset_y.round() as i8],
             blur: self.blur.round() as u8,
-            spread: self.spread.round() as u8,
+            spread: self.spread.round().max(0.0) as u8,
             color: egui::Color32::from_black_alpha(self.alpha),
         }
     }
@@ -188,6 +212,22 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
     blur: 24.0,
     spread: 0.0,
     alpha: 90,
+};
+
+/// `--tasty-shadow-modal` 값. scrim 을 깔고 뷰포트를 점유하는 centered 표면의 단차 —
+/// popover 보다 **크다**. scrim 이 바닥을 어둡게 하지만 엣지를 그리지 않아, 어두운
+/// 테마에서 어두운 모달이 어두워진 바닥 위에 놓이면 1px 보더만으로는 실루엣이 사라진다.
+/// 근거·대안·재검토 조건은 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
+///
+/// `alpha` 는 디자인 `rgba(0,0,0,0.55)` 의 0.55 를 0~255 로 옮긴 값이다:
+/// 0.55 × 255 = 140.25 → 최근접 정수 **140**. ([`SHADOW_POPOVER`] 의 90 은 같은 규칙의
+/// 0.353 × 255 = 90.0 에 대응한다.)
+pub const SHADOW_MODAL: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 20.0,
+    blur: 60.0,
+    spread: 0.0,
+    alpha: 140,
 };
 
 /// design `--tasty-scrim-bg` — 모달/팝업 뒤 무대를 어둡게 덮는 scrim 알파. black 50%
@@ -1611,6 +1651,12 @@ impl Theme {
     pub fn shadow_popover(&self) -> ShadowToken {
         SHADOW_POPOVER
     }
+    /// centered + scrim-backed 표면(모달) 그림자. `--tasty-shadow-modal`.
+    /// 어느 표면이 이 값을 쓰는지는 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
+    #[inline]
+    pub fn shadow_modal(&self) -> ShadowToken {
+        SHADOW_MODAL
+    }
 
     // ── 모션 (modifier-hint) ──
     /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). 타이핑 중 Shift 스침으로
@@ -2684,5 +2730,60 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 그림자 토큰의 알파는 디자인 rgba 의 소수 알파를 0~255 로 옮긴 값이다 —
+    /// 그 산술을 상수 옆 주석이 아니라 여기서 고정한다(주석은 값을 안 지킨다).
+    #[test]
+    fn shadow_token_alphas_match_their_design_fractions() {
+        for (name, token, fraction) in [
+            ("SHADOW_POPOVER", SHADOW_POPOVER, 0.353_f32),
+            ("SHADOW_MODAL", SHADOW_MODAL, 0.55_f32),
+        ] {
+            let expected = (fraction * 255.0).round() as u8;
+            assert_eq!(
+                token.alpha, expected,
+                "{name} 의 alpha 가 디자인 알파({fraction})의 반올림({expected})과 다르다"
+            );
+        }
+    }
+
+    /// `ShadowToken.spread` 는 음수를 **표현**하지만(CSD 의 `-8px`), 그 값을 쓰는 토큰은
+    /// 아직 없다. egui 변환이 음수를 담지 못해 조용히 0 이 되므로, 음수 spread 토큰을
+    /// 새로 들이는 순간 그 사실이 여기서 드러나야 한다 — 근사값을 만들지 않기 위한
+    /// 잠금이다(`ShadowToken::to_egui` 문서).
+    #[test]
+    fn no_shipped_shadow_token_uses_negative_spread() {
+        for (name, token) in [
+            ("SHADOW_POPOVER", SHADOW_POPOVER),
+            ("SHADOW_MODAL", SHADOW_MODAL),
+        ] {
+            assert!(
+                token.spread >= 0.0,
+                "{name} 이 음수 spread({})를 쓴다 — egui Shadow(u8)로는 표현할 수 없으니 \
+                 근사하지 말고 자체 렌더 경로를 먼저 만들어라",
+                token.spread
+            );
+        }
+    }
+
+    /// 음수 spread 는 `as u8` 캐스트에 맡기면 **조용히** 0 으로 saturate 된다. 그
+    /// 왜곡이 조용하지 않다는 것을 고정한다 — debug 빌드에서 `to_egui` 가 단언으로
+    /// 터진다. 이 성질이 깨지면 위 `no_shipped_shadow_token_uses_negative_spread`
+    /// 잠금이 남아도 실수로 들어온 음수가 그림자를 말없이 바꾼다.
+    #[cfg(all(feature = "egui-compat", debug_assertions))]
+    #[test]
+    #[should_panic(expected = "음수 spread")]
+    fn to_egui_refuses_negative_spread_in_debug() {
+        // 디자인 `--tasty-titlebar-csd-shadow` 의 형상(`0 18px 50px -8px`).
+        let t = ShadowToken {
+            offset_x: 0.0,
+            offset_y: 18.0,
+            blur: 50.0,
+            spread: -8.0,
+            alpha: 140,
+        };
+        // 반환값은 볼 것이 없다 — 이 호출이 `debug_assert!` 로 터지는 것 자체가 단언이다.
+        let _ = t.to_egui();
     }
 }
