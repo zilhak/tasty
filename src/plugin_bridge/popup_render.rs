@@ -291,6 +291,11 @@ pub fn draw_plugin_popups(
         // (ADR-0056) 비동기 host→plugin push(예: 원격 git 조회 결과) 도착 후 강제
         // repaint — geom/input/theme 변경 없이도 plugin 이 새 내부 상태로 다시
         // 그리도록 이번 frame 에 set_context 를 보낸다.
+        //
+        // 이 칸에는 plugin 의 무입력 self-repaint 요청(`PopupInvalidated` →
+        // `App::mark_invalidated_popups_dirty`)도 **편승한다** — 요구하는 것이 같은
+        // "무입력 재forward" 라 별도 칸을 만들지 않았다. banner 는 편승분만 갖는다
+        // (위 ADR-0056 경로는 git-viewer 전용이고 그 plugin 은 banner 를 안 낸다).
         let need_repaint = state
             .plugin_mesh_popup_pending_repaint
             .remove(&snap.instance_id);
