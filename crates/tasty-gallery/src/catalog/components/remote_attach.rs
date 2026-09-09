@@ -163,6 +163,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("frame", "680×460 · bg-panel · headless header"),
+            ("shadow", "shadow-modal — occupies the viewport (centered)"),
             ("left", "240px bg-sidebar · attach profiles (single select)"),
             ("right", "flex · 4 states off left selection"),
             (
@@ -384,6 +385,9 @@ pub fn draw_new_row(ui: &mut egui::Ui, theme: &Theme) {
 // ════════════════════════════════════════════════════════════════════════
 /// 새 행 한 상태를 실제 pane 폭(440px)에서 보여주는 스트립 — 아래에 ws 행 하나를
 /// 같이 깔아 두 행의 좌측 정렬선이 픽셀 동일한지 눈으로 확인할 수 있게 한다.
+///
+/// 이 스트립은 popup **안**의 목록 한 조각을 떼어 보이는 것이라 떠 있는 표면이 아니다
+/// — SCOPE RULE(ADR-0254)의 세 번째 갈래로 lift 를 얹지 않는다(`ra_card` 와 다르다).
 fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
     let peek = &WORKSPACES[0];
     egui::Frame::new()
@@ -419,6 +423,12 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
+        // 본체 `remote_attach` popup 은 anchored 명부에도 shadowless 명부에도 없어
+        // 뷰포트를 점유하는 centered 표면으로 판정된다 = SCOPE RULE(ADR-0254)의 modal
+        // 갈래(`popup/draw.rs::popup_shadow`). def 도 중앙 고정 · 이동/리사이즈 없음이다.
+        // 이 specimen 은 공유 셸 키트를 안 쓰고 프레임을 직접 그리므로 갈래도 여기서
+        // 직접 얹는다.
+        .shadow(theme.shadow_modal().to_egui())
         .show(ui, |ui| {
             ui.set_width(FRAME_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);

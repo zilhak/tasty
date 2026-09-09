@@ -35,6 +35,13 @@ fn backbar_height(theme: &Theme) -> f32 {
 /// 창 껍데기 — 보더 + 타이틀바. 내용 rect 를 돌려준다.
 fn chrome(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, title: &str) -> egui::Rect {
     let radius = theme.corner_radius.value();
+    // 배경보다 **먼저** — lift 그림자는 셸 아래에 깔린다(본체 `popup/draw.rs` 와 같은
+    // 순서). 본체 `dag_list` 는 anchored 명부에도 shadowless 명부에도 없어 뷰포트를
+    // 점유하는 centered 표면으로 판정된다 = SCOPE RULE(ADR-0254)의 modal 갈래
+    // (`popup/draw.rs::popup_shadow`). 이 specimen 은 공유 셸 키트를 안 쓰고 창 껍데기를
+    // 직접 그리므로 갈래도 여기서 직접 얹는다.
+    ui.painter()
+        .add(theme.shadow_modal().to_egui().as_shape(rect, radius));
     ui.painter()
         .rect_filled(rect, radius, theme.bg_panel().to_egui());
     ui.painter().rect_stroke(
@@ -317,6 +324,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("popup", "560 × 460 · movable · resizable"),
+            ("shadow", "shadow-modal — occupies the viewport (centered)"),
             ("titlebar", "28 · gitTree + name + close"),
             ("filter band", "8/12 · search + status"),
             ("toggle band", "4/12 · this workspace only"),
