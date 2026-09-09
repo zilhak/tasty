@@ -225,18 +225,31 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 | 경로 | 필요한 권한 | 비-Local 결과 | 그 뒤 뜨는 프로세스 |
 |---|---|---|---|
 | `plugin.enable` / `plugin.disable` | — (`local_only`) | `-32001 permission_denied` | 0 |
-| plugin namespace forward (예 `markdown.recent`) | **없음** | 정상 응답 | **9 (설치된 전부)** + 번들 설치·매니페스트 권한 자동 grant |
+| namespace forward · **`METHOD_TABLE` 에 없는 이름** (예 `markdown.recent`) | **없음** | 정상 응답 | **9 (설치된 전부)** |
+| namespace forward · **표에 있는 이름** (예 `markdown.navigate` · `image.list`) | 그 표가 적은 것 (`fs.read` · `surface.read`) | `-32001 permission_denied` | 0 |
 | plugin kind 를 지목한 생성 요청 (`tab.create` 등의 `type`) | `surface:write` | 정상 응답 | **1 (그 kind 의 소유자)** |
 
-- 둘째 줄은 **의도된 개방이 아니라 표의 해소 규칙에서 나온 성질**이다. plugin namespace
-  아래의 이름은 `method_meta` 가 `plugin_callable: true, required: []` 로 해소하므로(등록
-  prefix 갈래), 권한을 하나도 안 담은 Agent 토큰으로도 통과한다. 좁히려면 소유자를 아는
-  `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다 — 아직 안 했다.
-- 셋째 줄은 위 둘째 줄보다 **좁다**(권한을 더 요구하고, 하나만 띄우고, 설치·grant 를 안
-  한다). 그래서 caller 종류로 가르지 않는다 — 근거와 기각한 대안은
+- **둘째 줄과 셋째 줄을 가르는 것은 namespace 가 아니라 이름이다.** `method_meta()` 는
+  `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → **런타임 등록 plugin prefix**
+  순으로 해소한다. 앞 단계에서 걸린 이름은 그 자리가 적은 권한을 그대로 요구하고, 마지막
+  갈래까지 내려온 이름만 `plugin_callable: true, required: []` 가 되어 권한을 하나도 안
+  담은 Agent 토큰으로 통과한다. 실측(2026-09-10, 같은 데몬·같은 토큰): `markdown.recent`
+  는 통과하고 **같은 namespace 의** `markdown.navigate` 는 `fs.read` 가 없다고 거부된다.
+  경계의 크기도 값이다 — 번들 plugin 이 선언한 namespace 여섯 중 표에 이름이 있는 것은
+  `image` 8 건 · `markdown` 1 건뿐이고 나머지 넷(`agent_stream`·`claude`·`codex`·`html`)은
+  0 건이라, 대부분의 이름이 마지막 갈래로 내려온다.
+- 둘째 줄은 **의도된 개방이 아니라 그 해소 규칙에서 나온 성질**이다. 좁히려면 소유자를
+  아는 `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다 — 아직 안 했다.
+- **어느 줄도 설치나 grant 를 하지 않는다.** 실측(2026-09-10, 정상 홈): 권한 0
+  `markdown.recent` 전후로 `plugins.toml` 의 md5 가 같고 `plugins/` 아래 파일 45 개의
+  목록 md5 도 같다. 번들 설치는 부팅에 걸려 있어 그 시점엔 이미 끝나 있고, 반대로 설치가
+  안 된 홈에서는 prefix 가 등록돼 있지 않아 그 호출이 forward 에 닿지도 못한다(권한 0
+  토큰에 `-32001 unknown ipc method`, 토큰 없는 Local 에 `-32601`).
+- 넷째 줄은 위 둘째 줄보다 **좁다**(권한을 더 요구하고, 하나만 띄운다). 그래서 caller
+  종류로 가르지 않는다 — 근거와 기각한 대안은
   [ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md) 의 "신뢰 경계".
 - **이 표는 헤드리스 기준이다.** gui 는 첫 창을 만들 때 `discover_and_start` 로 전부
-  띄우므로, 셋째 줄의 트리거가 거기서는 할 일이 없다.
+  띄우므로, 넷째 줄의 트리거가 거기서는 할 일이 없다.
 
 ## Audit log
 

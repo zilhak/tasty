@@ -57,24 +57,44 @@ control 프레임 왕복뿐이다. 그 채널의 서버측 코드(`core/attach_r
 | 경로 | 필요한 권한 | 비-Local 결과 | 그 뒤 뜨는 프로세스 |
 |---|---|---|---|
 | `plugin.enable` | — (`local_only`) | `-32001 permission_denied` | 0 |
-| plugin namespace forward (`markdown.recent`) | **없음**(권한 0 토큰으로 통과) | 정상 응답 | **9 (전부)** + 설치·grant |
+| namespace forward · **표에 없는 이름** (`markdown.recent`) | **없음** | 정상 응답 | **9 (전부)** |
+| namespace forward · **표에 있는 이름** (`markdown.navigate` · `image.list`) | 그 표가 적은 것 (`fs.read` · `surface.read`) | `-32001 permission_denied` | 0 |
 | 이 트리거 (`workspace.create {type:"markdown"}`) | `surface:write` | 정상 응답 | **1 (소유자)** |
 
-읽을 것 둘.
+읽을 것 셋.
 
-- **"namespace forward 는 비-Local 에게 막혀 있다" 는 사실이 아니다.** plugin namespace 아래의
-  이름은 `method_meta` 가 `plugin_callable: true, required: []` 로 해소하므로(`method_meta.rs` 의
-  등록 prefix 갈래), **권한 0 인 Agent 토큰**으로도 통과하고 그 한 번이 `discover_and_start` 로
-  9 개를 띄운다. 이것은 `main` 부터 있던 성질이고 이 결정이 만든 것이 아니다.
-- 그러므로 이 트리거는 **이미 열려 있는 것보다 좁다** — 권한을 더 요구하고(`surface:write`),
-  띄우는 수가 적고(1), 설치·grant 를 안 한다. 새 신뢰 경계를 여는 것이 아니다.
+- **"namespace forward 는 비-Local 에게 막혀 있다" 도, "열려 있다" 도 전칭으로는 틀렸다.**
+  가르는 것은 namespace 가 아니라 **그 이름이 `METHOD_TABLE` 에 등재돼 있는가**다.
+  `method_meta()` 는 그 표 → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → **런타임 등록 plugin
+  prefix** 순으로 해소하는데, 앞 단계에서 걸린 이름은 그 자리가 적은 권한을 그대로 요구하고,
+  마지막 갈래까지 내려온 이름만 `plugin_callable: true, required: []` 가 된다. 실측
+  (2026-09-10, 같은 데몬·같은 권한 0 토큰): `markdown.recent` 는 정상 응답이고
+  `markdown.navigate` 는 `-32001 … missing permission 'fs.read'` 다 — **같은 namespace 안에서
+  갈린다.** `image.list` 도 같은 형태로 `surface.read` 를 요구해 막히고, 그때 뜨는 프로세스는
+  0 이다.
+- **경계는 값으로 셀 수 있다.** 번들 plugin 이 선언한 namespace 여섯 중 `METHOD_TABLE` 에
+  이름이 있는 것은 둘뿐이다 — `image` 8 건 · `markdown` 1 건(`markdown.navigate`), 나머지 넷
+  (`agent_stream`·`claude`·`codex`·`html`)은 0 건. 그래서 대부분의 이름이 마지막 갈래로
+  내려오고, 그중 한 번이 `discover_and_start` 로 9 개를 띄운다. 이것은 `main` 부터 있던
+  성질이고 이 결정이 만든 것이 아니다.
+- **뜨는 것은 프로세스뿐이다 — 이 경로가 설치나 grant 를 하지는 않는다.** 실측(2026-09-10,
+  정상 홈): 권한 0 `markdown.recent` 전후로 `plugins.toml` 의 md5 가 같고 `plugins/` 아래
+  파일 45 개의 목록 md5 도 같다. 부팅이 `install_builtins_if_needed` 를 이미 끝냈으므로 그
+  호출은 no-op 다. 반대로 설치가 **안 된** 홈에서는 prefix 가 등록돼 있지 않아 이 호출이
+  forward 에 닿지도 못한다 — 권한 0 토큰에 `-32001 unknown ipc method`, 토큰 없는 Local 에
+  `-32601`.
+
+그러므로 이 트리거는 위 표의 **둘째 줄보다 좁다** — 권한을 더 요구하고(`surface:write`),
+띄우는 수가 적다(9 → 1). 새 신뢰 경계를 여는 것이 아니다. 한때 여기 "설치·grant 를 안
+한다" 도 근거로 적혀 있었는데 그것은 비교가 아니다 — 셋째 불릿대로 **둘째 줄도 설치·grant 를
+안 한다.** 비교는 권한 축과 9-vs-1 축만으로 성립한다.
 
 `local_only` 로 맞추는 길은 **일부러 안 골랐다.** gui 는 첫 창을 만들 때 plugin 을 전부 띄우므로
 Agent caller 가 `tab.create {type:"markdown"}` 을 언제 불러도 kind 가 차 있다. 헤드리스에서만 그
 호출을 caller 종류로 막으면 **같은 에이전트가 같은 명령을 조합에 따라 다르게 받는다** — 이 lane 이
 없애려던 바로 그 형태다(`docs/identity.md` 원칙 2).
 
-위 표의 둘째 줄(namespace forward 가 권한 0 에 9 개를 띄우는 것)은 **이 결정의 범위 밖**이며,
+위 표의 둘째 줄(표에 없는 이름이 권한 0 에 9 개를 띄우는 것)은 **이 결정의 범위 밖**이며,
 좁히려면 소유자를 알고 있는 `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다. 별건으로 남긴다 —
 여기서 조용히 함께 고치면 그 변경의 근거가 이 문서에 묻힌다.
 
@@ -146,7 +166,10 @@ Agent caller 가 `tab.create {type:"markdown"}` 을 언제 불러도 kind 가 �
   없는 kind(`--type nosuchkind`)의 소요를 잰다 — 그 호출은 탐색만 하고 끝난다(2026-09-10: 0.09 s).
 - plugin namespace forward 가 권한 0 인 caller 에게 9 개를 띄우는 것을 좁히기로 하는 것. 재는 법:
   권한 없는 세션 토큰을 발급해 `markdown.recent` 를 부른 뒤 `plugin list` 의 `running` 을 센다
-  (2026-09-10: 9).
+  (2026-09-10: 9). **이름을 아무거나 고르면 안 된다** — 위 "신뢰 경계" 의 첫 불릿대로 `METHOD_TABLE`
+  에 등재된 이름(`image.list`·`markdown.navigate`)은 그 표의 권한에서 `-32001` 로 끝나 `running` 이
+  0 이다. 재는 대상은 **표에 없는 이름**이고, 그 판정은 `crates/tasty-ipc/src/method_meta.rs` 의
+  `METHOD_TABLE` 을 그 prefix 로 훑어 먼저 확인한다.
 
 ## References
 
