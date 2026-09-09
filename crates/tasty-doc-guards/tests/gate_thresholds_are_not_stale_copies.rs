@@ -262,6 +262,7 @@ const SLOC_SOURCE: (&str, &str) = ("scripts/check-file-size.sh", "THRESHOLD=");
 const SHARED_WALK_SOURCE: (&str, &str) = ("scripts/check-shared-walk-ratchet.sh", "CAP=");
 const ALLOW_REASON_SOURCE: (&str, &str) = ("scripts/check-allow-reason.sh", "CAP=");
 const FROZEN_SUM_SOURCE: (&str, &str) = (".complexity-file-allowlist", "# frozen-sum-budget: ");
+const DOC_BIAS_SOURCE: (&str, &str) = (".complexity-file-allowlist", "# doc-comment-bias: ");
 
 /// 게이트 어휘 — 이 중 하나가 ±2 줄 창에 있어야 그 자리를 "이 게이트에 대한 언급" 으로 센다.
 const COGNITIVE_VOCAB: &[&str] = &[
@@ -314,6 +315,15 @@ const FROZEN_SUM_VOCAB: &[&str] = &[
     "래칫",
     "budget",
 ];
+/// 계측 편향의 어휘.
+///
+/// ★ **`tokei` 를 일부러 안 넣었다** — 다른 게이트에서는 그 낱말이 recall 을 벌지만
+/// 여기서는 값이 `25` 라 흔하고, 그 낱말 하나로 `complexity-gate.md` 의 "25% 큰 파일"
+/// 이 창을 통과한다(실측 2026-09-09). 그 파일은 다른 두 게이트의 **명부**에 있어
+/// `EXCLUDED` 로 뺄 수가 없고(`no_file_is_both_claimed_and_excluded`), 명부에 넣으면
+/// 편향이 움직인 날 "지금 값이 아예 없다 — 그 자리를 고쳐라" 가 **백분율 문장**을
+/// 가리킨다. 값이 흔할수록 어휘는 그 개념에 붙은 낱말만 든다.
+const DOC_BIAS_VOCAB: &[&str] = &["doc-comment-bias", "doc 주석", "누락", "편향", "bias"];
 
 /// cognitive 임계를 **현재 상태로 주장하는** 파일과, 그 파일이 값을 든 **줄 수**.
 ///
@@ -363,6 +373,14 @@ const ALLOW_REASON_CLAIMS: &[Claim] = &[
 /// 지금이야말로 명부를 세울 수 있는 때이고, 사본이 생긴 뒤에는 그것이 정본인지 사본인지를
 /// 다시 판정해야 한다. 예산은 되돌아 올라가지 않으므로 낡은 사본이 가장 비싼 값이다.
 const FROZEN_SUM_CLAIMS: &[Claim] = &[(".complexity-file-allowlist", 1)];
+
+/// 계측 편향의 **고정값**을 현재 상태로 주장하는 파일과 그 **줄 수**.
+///
+/// 정본 그 자신뿐이다. 이 값은 게이트가 매번 재어 여유 0 으로 고정하므로 산문이 그것을
+/// 복제하면 편향이 움직인 날 그 산문이 조용히 거짓이 된다 — 그래서 산문 쪽은 값을 지우고
+/// 정본을 가리키게 고쳤다(`complexity-gate.md`). 남은 인용은 전부 시점 측정이라
+/// `EXCLUDED` 에 있다.
+const DOC_BIAS_CLAIMS: &[Claim] = &[(".complexity-file-allowlist", 1)];
 
 /// 명부 한 항목 — (레포 상대 경로, 그 파일이 임계값을 든 **줄 수**).
 ///
@@ -450,7 +468,12 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
         "scripts/check-frozen-sum-ratchet.sh",
         Kind::Dated,
-        "옛 어긋남 사건의 기록",
+        "옛 어긋남 사건의 기록 · 계측 편향의 시점 재측정",
+    ),
+    (
+        "docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md",
+        Kind::Dated,
+        "계측 편향을 결정한 ADR — 본문의 수는 2026-09-09 재측정이라 편향이 움직여도 안 고친다",
     ),
     (
         "CHANGELOG.md",
@@ -745,6 +768,7 @@ const FROZEN_SUM_SUBJECT: &[&str] = &[
     "check-frozen-sum-ratchet",
     "frozen_sum_ratchet_gate",
 ];
+const DOC_BIAS_SUBJECT: &[&str] = &["doc-comment-bias", "계측 편향"];
 
 /// 게이트 하나 — 정본·명부·어휘·주제어를 한 값으로 묶는다.
 ///
@@ -819,6 +843,13 @@ const GATES: &[Gate] = &[
         claims: FROZEN_SUM_CLAIMS,
         vocab: FROZEN_SUM_VOCAB,
         subject: FROZEN_SUM_SUBJECT,
+    },
+    Gate {
+        label: "계측 편향",
+        source: DOC_BIAS_SOURCE,
+        claims: DOC_BIAS_CLAIMS,
+        vocab: DOC_BIAS_VOCAB,
+        subject: DOC_BIAS_SUBJECT,
     },
 ];
 
