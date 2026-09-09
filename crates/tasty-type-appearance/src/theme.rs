@@ -2738,14 +2738,67 @@ mod tests {
         }
     }
 
+    /// 출하되는 그림자 토큰 명부 + 각자의 디자인 소수 알파. 아래 두 시험(알파 산술 ·
+    /// 음수 spread 금지)이 **이 하나**를 공유한다 — 명부를 시험마다 손으로 적으면 새
+    /// 토큰이 한쪽에만 들어가 다른 쪽이 조용히 그것을 안 본다.
+    ///
+    /// 이 명부가 `theme.rs` 의 실제 `pub const …: ShadowToken` 전부인지는
+    /// [`shipped_shadow_token_roster_is_complete`] 가 소스에서 다시 읽어 대조한다.
+    const SHIPPED_SHADOW_TOKENS: &[(&str, ShadowToken, f32)] = &[
+        ("SHADOW_POPOVER", SHADOW_POPOVER, 0.4),
+        ("SHADOW_MODAL", SHADOW_MODAL, 0.55),
+    ];
+
+    /// [`SHIPPED_SHADOW_TOKENS`] 가 `theme.rs` 가 출하하는 `ShadowToken` 상수 전부인가.
+    /// 명부를 안 늘린 채 세 번째 토큰이 들어오면 알파 산술도 음수 spread 잠금도 그
+    /// 토큰을 **안 보고** 초록이 된다 — 그 조용한 절반 실행을 막으려고 명부를
+    /// 정본(이 파일의 소스)에서 다시 읽는다.
+    ///
+    /// ADR-0254 의 "출하되는 그림자 토큰 중 하나가 음수 `spread` 를 갖게 된다" 재검토
+    /// 트리거가 채널로 성립하는 근거가 이 대조다.
+    #[test]
+    fn shipped_shadow_token_roster_is_complete() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/theme.rs"),
+        )
+        .expect("theme.rs");
+        let mut found: Vec<String> = Vec::new();
+        for line in src.lines() {
+            let t = line.trim_end();
+            // `pub const SHADOW_XXX: ShadowToken = ShadowToken {`
+            let Some(rest) = t.strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some((name, tail)) = rest.split_once(':') else {
+                continue;
+            };
+            if tail.trim_start().starts_with("ShadowToken") {
+                found.push(name.trim().to_string());
+            }
+        }
+        found.sort();
+        assert!(
+            !found.is_empty(),
+            "theme.rs 에서 ShadowToken 상수를 하나도 못 찾았다 — 스캔이 비면 이 대조는 \
+             거짓 초록이 된다(경로/선언 형태를 먼저 확인해라)"
+        );
+        let mut listed: Vec<String> = SHIPPED_SHADOW_TOKENS
+            .iter()
+            .map(|(n, _, _)| (*n).to_string())
+            .collect();
+        listed.sort();
+        assert_eq!(
+            found, listed,
+            "theme.rs 의 ShadowToken 상수와 SHIPPED_SHADOW_TOKENS 가 어긋났다 — 빠진 \
+             토큰은 알파 산술도 음수 spread 잠금도 통과하지 않고 **안 보인다**"
+        );
+    }
+
     /// 그림자 토큰의 알파는 디자인 rgba 의 소수 알파를 0~255 로 옮긴 값이다 —
     /// 그 산술을 상수 옆 주석이 아니라 여기서 고정한다(주석은 값을 안 지킨다).
     #[test]
     fn shadow_token_alphas_match_their_design_fractions() {
-        for (name, token, fraction) in [
-            ("SHADOW_POPOVER", SHADOW_POPOVER, 0.4_f32),
-            ("SHADOW_MODAL", SHADOW_MODAL, 0.55_f32),
-        ] {
+        for (name, token, fraction) in SHIPPED_SHADOW_TOKENS {
             let expected = (fraction * 255.0).round() as u8;
             assert_eq!(
                 token.alpha, expected,
@@ -2757,13 +2810,11 @@ mod tests {
     /// `ShadowToken.spread` 는 음수를 **표현**하지만(CSD 의 `-8px`), 그 값을 쓰는 토큰은
     /// 아직 없다. egui 변환이 음수를 담지 못해 조용히 0 이 되므로, 음수 spread 토큰을
     /// 새로 들이는 순간 그 사실이 여기서 드러나야 한다 — 근사값을 만들지 않기 위한
-    /// 잠금이다(`ShadowToken::to_egui` 문서).
+    /// 잠금이다(`ShadowToken::to_egui` 문서). 명부의 완전성은
+    /// [`shipped_shadow_token_roster_is_complete`] 가 따로 잰다.
     #[test]
     fn no_shipped_shadow_token_uses_negative_spread() {
-        for (name, token) in [
-            ("SHADOW_POPOVER", SHADOW_POPOVER),
-            ("SHADOW_MODAL", SHADOW_MODAL),
-        ] {
+        for (name, token, _) in SHIPPED_SHADOW_TOKENS {
             assert!(
                 token.spread >= 0.0,
                 "{name} 이 음수 spread({})를 쓴다 — egui Shadow(u8)로는 표현할 수 없으니 \
