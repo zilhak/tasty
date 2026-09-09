@@ -1252,6 +1252,42 @@ mod tests {
         }
     }
 
+    /// 오형식 대상 surface 는 **어느 키가 틀렸는지** 댄다.
+    ///
+    /// [`optional_target_surface`] 는 `surface` 와 `surface_id` **두 이름을 한 필드로**
+    /// 읽는다. 그래서 틀린 키를 안 대면 호출자는 자기가 보낸 둘 중 무엇을 고쳐야 하는지
+    /// 모른다 — 짝 plugin(claude)의 같은 자리가 한동안 `Malformed { raw, .. }` 로 키를
+    /// 버려서 정확히 그랬다. 같은 이름의 시험이 그쪽에도 있다: 두 사본이 **정보량**을
+    /// 함께 고정한다(문구·placeholder 형태는 여전히 crate 마다 다르고, 그 축은
+    /// `tasty-plugin-agent-common` 의 crate doc 이 유예한 것이다).
+    ///
+    /// 로케일 셋을 다 본다 — 키 이름은 번역 대상이 아니라 **파라미터 이름**이라
+    /// 세 카탈로그에서 똑같이 나와야 한다.
+    #[test]
+    fn a_malformed_target_surface_names_which_of_the_two_keys_was_wrong() {
+        for locale in ["en", "ko", "ja"] {
+            let tr = test_translator_for(locale);
+            let by_surface = optional_target_surface(&json!({ "surface": "x" }), &tr)
+                .expect_err("문자열은 surface id 가 아니다")
+                .message;
+            let by_surface_id = optional_target_surface(&json!({ "surface_id": "x" }), &tr)
+                .expect_err("문자열은 surface id 가 아니다")
+                .message;
+            assert!(
+                by_surface_id.contains("surface_id"),
+                "{locale}: 'surface_id' 가 틀렸는데 그 이름을 안 댄다 — {by_surface_id}"
+            );
+            assert!(
+                !by_surface.contains("surface_id"),
+                "{locale}: 'surface' 가 틀렸는데 'surface_id' 를 댄다 — {by_surface}"
+            );
+            assert_ne!(
+                by_surface, by_surface_id,
+                "{locale}: 두 키가 같은 문구를 받는다 — 어느 쪽이 틀렸는지 못 가른다"
+            );
+        }
+    }
+
     /// `null` 은 **값이 왔다**가 아니라 **안 왔다**로 읽는다 — JSON 직렬화가 빈 슬롯을
     /// `null` 로 채우는 경우가 있어서, 이것을 오타로 취급하면 정상 경로가 막힌다.
     #[test]

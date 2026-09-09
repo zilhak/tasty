@@ -98,9 +98,15 @@ pub(crate) fn optional_target_surface(
     tr: &Translator,
 ) -> Result<Option<u32>, IpcMethodError> {
     target_surface(params).map_err(|e| match e {
-        TargetSurfaceError::Malformed { raw, .. } => IpcMethodError::invalid_params(
-            &tr.t_fmt("claude.params.target_surface_not_a_number", &raw),
-        ),
+        // `key` 를 버리지 않는다 — 이 판정은 `surface` 와 `surface_id` **두 이름**을 한
+        // 필드로 읽으므로, 어느 쪽이 틀렸는지 안 대면 호출자는 자기가 보낸 두 키 중
+        // 무엇을 고쳐야 하는지 모른다. 짝 plugin(codex)은 처음부터 그것을 댔다.
+        // placeholder 형태는 이 crate 의 관례(`{}` 하나 + 조립한 인자)를 따른다 —
+        // 바로 아래 `Conflict` 가 같은 형태다.
+        TargetSurfaceError::Malformed { key, raw } => IpcMethodError::invalid_params(&tr.t_fmt(
+            "claude.params.target_surface_not_a_number",
+            &format!("'{key}' = {raw}"),
+        )),
         TargetSurfaceError::Conflict {
             surface,
             surface_id,
@@ -1132,6 +1138,48 @@ mod tests {
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
+    }
+
+    fn test_translator_for(code: &str) -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, code)
+    }
+
+    /// 오형식 대상 surface 는 **어느 키가 틀렸는지** 댄다.
+    ///
+    /// 이 판정은 `surface` 와 `surface_id` **두 이름을 한 필드로** 읽는다. 그래서
+    /// 틀린 키를 안 대면 호출자는 자기가 보낸 둘 중 무엇을 고쳐야 하는지 모른다 —
+    /// 한동안 이쪽이 `Malformed { raw, .. }` 로 키를 버려서 정확히 그랬고, 짝
+    /// plugin(codex)은 처음부터 댔다. 같은 이름의 시험이 그쪽에도 있다: 두 사본이
+    /// **정보량**을 함께 고정한다(문구·placeholder 형태는 여전히 crate 마다 다르고,
+    /// 그 축은 `tasty-plugin-agent-common` 의 crate doc 이 유예한 것이다).
+    ///
+    /// 로케일 셋을 다 본다 — 키 이름은 번역 대상이 아니라 **파라미터 이름**이라
+    /// 세 카탈로그에서 똑같이 나와야 하고, 한 언어만 보면 다른 언어에서 문구를
+    /// 손보다 키를 흘려도 안 잡힌다.
+    #[test]
+    fn a_malformed_target_surface_names_which_of_the_two_keys_was_wrong() {
+        for locale in ["en", "ko", "ja"] {
+            let tr = test_translator_for(locale);
+            let by_surface = optional_target_surface(&json!({ "surface": "x" }), &tr)
+                .expect_err("문자열은 surface id 가 아니다")
+                .message;
+            let by_surface_id = optional_target_surface(&json!({ "surface_id": "x" }), &tr)
+                .expect_err("문자열은 surface id 가 아니다")
+                .message;
+            assert!(
+                by_surface_id.contains("surface_id"),
+                "{locale}: 'surface_id' 가 틀렸는데 그 이름을 안 댄다 — {by_surface_id}"
+            );
+            assert!(
+                !by_surface.contains("surface_id"),
+                "{locale}: 'surface' 가 틀렸는데 'surface_id' 를 댄다 — {by_surface}"
+            );
+            assert_ne!(
+                by_surface, by_surface_id,
+                "{locale}: 두 키가 같은 문구를 받는다 — 어느 쪽이 틀렸는지 못 가른다"
+            );
+        }
     }
 
     #[test]

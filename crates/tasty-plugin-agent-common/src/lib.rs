@@ -32,6 +32,15 @@
 //! 수 있지만, 통일하면 `lang/{en,ko,ja}.toml` 여섯 파일이 함께 움직인다 — 규약을
 //! 하나로 정하는 별건이지 여기로 옮기는 문제가 아니다.
 //!
+//! **★ 유예된 것은 형태지 정보량이 아니다.** [`params::TargetSurfaceError::Malformed`]
+//! 는 `key` 를 실어 **어느 키가 틀렸는지**를 말한다 — 이 축은 키가 둘(`surface` /
+//! `surface_id`)이라 그것을 안 대면 호출자가 자기가 보낸 둘 중 무엇을 고쳐야 하는지
+//! 모른다. claude 가 그 필드를 버려서 한동안 "the target surface" 로 뭉뚱그렸고,
+//! 그것은 형태 차이가 아니라 **한쪽만 정보를 잃은 표류**였다. 두 plugin 의 같은 이름
+//! 시험 `a_malformed_target_surface_names_which_of_the_two_keys_was_wrong` 가
+//! 세 로케일 각각에서 그 정보량을 고정한다 — 문구와 placeholder 는 여전히 서로
+//! 다르고, 시험은 그쪽을 안 본다.
+//!
 //! 한 함수 안에서도 갈린다. 완료 알림 hook 등록(`host_call::register_completion_hooks`)은
 //! 등록 **루프**만 여기 있고 **이벤트 목록**은 각 plugin 이 인자로 준다 — 그 목록의 근거는
 //! 각자의 매니페스트 `contributes.hook_events` 이고, host 는 매니페스트에 없는 이벤트
