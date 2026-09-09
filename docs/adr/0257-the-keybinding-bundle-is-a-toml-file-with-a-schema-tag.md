@@ -79,11 +79,14 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
   기본값으로 덮인다.
 - **`Settings` 전체를 옮긴다** — 이미 있는 직렬화를 그대로 쓴다. 안 골랐다: 요구가
   "단축키" 범위인데 테마·터미널 설정까지 딸려 간다.
-- **JSON 을 쓴다** — `Option` 필드가 있어도 안전하다. 안 골랐다: 이 레포의 사용자
-  설정 파일이 전부 TOML 이고, `KeybindingSettings` 에는 `Option<T>` 필드가 없다
-  (전 필드가 `Vec<String>` / `String` / `[String; N]` / `Vec<ScriptBinding>` 이고,
-  `ScriptBinding` 자신도 `String` 필드 둘뿐이라 중첩까지 봐도 `Option` 이 없다).
-  `ShortcutOverride` 의 TOML
+- **JSON 을 쓴다** — null 리터럴이 있어 **시퀀스 원소의 `None`** 까지 그대로 싣는다.
+  안 골랐다: 이 레포의 사용자 설정 파일이 전부 TOML 이고, TOML 이 못 싣는 모양은 그
+  하나뿐인데 번들이 싣는 타입에 그 모양이 없다. 필드 자리·맵 값 자리의 `None` 은 중첩
+  깊이와 무관하게 **키 생략으로 통과하므로**(`#[serde(default)]` 가 붙은 이 타입은
+  역직렬화도 `None` 으로 돌아온다) 평범한 `Option<T>` 필드는 JSON 을 부르는 이유가
+  안 된다. `KeybindingSettings` 는 전 필드가 `Vec<String>` / `String` / `[String; N]` /
+  `Vec<ScriptBinding>` 이고 `ScriptBinding` 자신도 `String` 필드 둘뿐이라, 시퀀스 원소가
+  `Option` 인 자리가 중첩까지 봐도 없다. `ShortcutOverride` 의 TOML
   round-trip 도 `shortcut_override_serialization` 이 이미 고정하고 있다. 사람이 열어
   고치는 파일이라는 요구에도 TOML 이 낫다.
 - **번들 코덱을 새 크레이트로 뺀다** — 두 타입 어디에도 안 얹힌다. 안 골랐다:
@@ -99,10 +102,20 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- `KeybindingSettings` 에 `Option<T>` 필드가 생긴다(`ScriptBinding` 같은 중첩 타입 안도
-  포함 — 위 열거가 그 층을 함께 센다) — TOML 은 null 을 표현하지 못해
-  그 필드가 직렬화에서 깨진다. 그때는 포맷(또는 그 필드의 표현)을 다시 정해야 한다.
-  같은 함정의 선례가 preset capture 다.
+- `KeybindingSettings` 또는 `ScriptBinding` 에 **`Option<T>` 를 원소로 갖는 시퀀스**
+  필드가 생긴다(`Vec<Option<T>>` · `[Option<T>; N]`) — TOML 에는 null 리터럴이 없고
+  배열 원소에는 생략할 키가 없어, `encode` 가 번들 한 장을 한 번에 직렬화하다
+  `unsupported None value` 로 **그 필드만이 아니라 export 전체**를 실패시킨다
+  (`BundleError::Serialize`). 받는 쪽도 그 값을 못 되살린다 — 배열 원소는 언제나
+  `Some` 으로만 돌아온다. 그때는 포맷(또는 그 필드의 표현)을 다시 정해야 한다.
+  `keybinding_types_have_no_option_inside_a_sequence` 가 선언의 모양으로 잡는다 —
+  값에 `None` 이 실제로 들어야 발화하는 결함이라 컴파일도 기존 round-trip 시험도
+  그 자리를 안 잡기 때문이다.
+  **깨지는 층은 여기뿐이다** — 필드 자리·맵 값 자리의 `None` 은 중첩 깊이와 무관하게
+  키 생략으로 통과하므로, 평범한 `Option<T>` 필드가 생긴 것은 이 조건이 아니다.
+  같은 뿌리("TOML 에 null 이 없다")의 선례가 preset capture 인데 층이 다르다 — 거기서
+  깨진 것은 `Option::None` 이 아니라 `serde_json::Value::Null` 이고, 에러도
+  `unsupported unit type` 이었다(`src/core/surface_registry/egui_mesh.rs`).
 - `KeybindingBundle` 에 최상위 필드가 늘었는데 `BUNDLE_KEYS` 가 안 늘었다 —
   `top_level_keys_match_the_struct` 가 잡는다.
 
@@ -122,3 +135,6 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
 - 코드 근거(결정이 실현된 현재 위치): `tasty_host_plugin::keybinding_bundle` 의
   `encode`·`decode`·`DecodeEnv`·`BundleWarning`, export 원본인
   `PluginsConfig::shortcut_overrides`
+- 채널: `crates/tasty-doc-guards/tests/keybinding_types_have_no_option_inside_a_sequence.rs`
+  — TOML 이 못 싣는 유일한 모양이 번들 타입에 들어오는지 선언에서 본다. 그 파일의
+  모듈 주석에 어느 자리가 통과하고 어느 자리가 깨지는지 실측이 적혀 있다.

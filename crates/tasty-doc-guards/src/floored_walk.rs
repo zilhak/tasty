@@ -195,15 +195,15 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 105,
-        measured_on: "2026-09-08",
+        measured: 106,
+        measured_on: "2026-09-09",
         counted_on: super::CountedOn::Tree(
-            "12bc0f4b2 + 회차 95 통합 41 커밋. base 에서는 102 이고, 이 회차에 lane 셋이 \
-             통합 시험 타깃을 하나씩 더했다 — 818 의 `floor_coordinates_are_permanent`, \
-             820 의 `automatic_job_roster_is_pinned`, 817 의 \
-             `direct_walks_do_not_swallow_failure`. **셋 다 자기 것 하나만 보고 103 으로 \
-             적었다.** 이 모수는 lane 트리에서 재면 구조적으로 낮게 나오고, 그 차는 이 \
-             회차에 두 번 다 통합에서만 났다(28 커밋 시점 104, 41 커밋 시점 105).",
+            "5bdea7a6d + 이 커밋(lane `conductor/w-kbdcodec`). 이 lane 이 \
+             `keybinding_types_have_no_option_inside_a_sequence` 를 더해 105 -> 106 이 \
+             됐다. **lane 트리에서 잰 값이라 구조적으로 낮을 수 있다** — 직전 회차에서 \
+             lane 셋이 각자 자기 것 하나만 보고 같은 값을 적었고, 그 차는 두 번 다 \
+             통합에서만 드러났다(12bc0f4b2 + 회차 95 통합: base 102, 28 커밋 시점 104, \
+             41 커밋 시점 105). 최종 값은 병합하는 쪽이 통합 트리에서 다시 잰다.",
         ),
         how: "`crates/<크레이트>/tests/<파일>.rs` — 네 마디짜리 경로만. 재는 법: `/` 로 \
               쪼갠 마디가 넷이고 둘째 마디가 `tests` 이며 `.rs` 로 끝나는 줄.",
