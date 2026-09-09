@@ -216,7 +216,7 @@ TTY 가 필요한 명령을 스크립트로 굴릴 때 씁니다. `spawn` 이 �
 
 ```sh
 tasty pty spawn --cwd ~/proj -- python3         # 명령을 PTY 로 띄우고 id 를 받음
-tasty pty write --id 3 "print(1+1)\n"           # 표준 입력으로 보내기 (줄바꿈이 곧 제출)
+tasty pty write --id 3 $'print(1+1)\n'           # 표준 입력으로 보내기 (줄바꿈이 곧 제출)
 tasty pty read --id 3 --lines 20                # 지금 화면의 마지막 20줄
 tasty pty list                                  # 떠 있는 PTY 목록
 tasty pty kill --id 3                            # 종료

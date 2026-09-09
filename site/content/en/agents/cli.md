@@ -1,4 +1,4 @@
-<!-- source-hash: b49b443c57f3 -->
+<!-- source-hash: ff83de64efe1 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -214,7 +214,7 @@ Run a program on a real PTY (pseudo-terminal) with no tab and no screen. Use it 
 
 ```sh
 tasty pty spawn --cwd ~/proj -- python3         # start a command on a PTY and get its id
-tasty pty write --id 3 "print(1+1)\n"           # send to stdin (a newline submits)
+tasty pty write --id 3 $'print(1+1)\n'           # send to stdin (a newline submits)
 tasty pty read --id 3 --lines 20                # the last 20 lines on the screen right now
 tasty pty list                                  # PTYs that are up
 tasty pty kill --id 3                            # stop it
