@@ -16,6 +16,8 @@
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-09-09
+
 ### Added
 
 - **`plugin.show` 가 선언과 사실을 갈라 낸다.** 지금까지 이 응답의 `surface_kinds[].rendering` 은 매니페스트에 적힌 값을 그대로 옮긴 것이었다 — plugin 이 요청한 것이지 host 가 등록한 것이 아니라서, 소비자가 그 갈림을 볼 수 없었다. 그리고 그 갈림은 오류 상태에서만 나는 것이 아니다: 헤드리스는 `webview`/`remote` 선언을 설계대로 등록하지 않고, egui-mesh 는 화이트리스트·api_version 게이트를 통과한 것만 등록하며, host 내장 kind 를 remote 로 재선언한 plugin 은 조용히 무시된다(셋 다 로그로만 남았다). 이제 칸이 넷이다 — `declared_rendering`(매니페스트가 요청한 것) · `registered`(그 선언이 **이 plugin 의 것으로** 등록됐는가) · `effective_rendering`(등록됐을 때 host 가 실제로 쓰는 경로) · `registered_by`(kind 이름의 임자 — `host` 이거나 plugin id). 이름이 registry 에 있는데 임자가 다르면 `registered` 는 false 다. **`rendering` 칸은 없어졌다** — 이름이 사실처럼 읽히는 것이 결함이었고, 그 값을 읽던 소비자는 저장소에 없었다. (BREAK 아님: 0.x 표면 · 소비자 0.)

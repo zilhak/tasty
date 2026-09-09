@@ -1,4 +1,4 @@
-<!-- source-hash: 41ad27155df5 -->
+<!-- source-hash: 5718a75faff0 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -7,7 +7,7 @@ Download the installer from the [GitHub releases page](https://github.com/zilhak
 
 ## Choosing an install file
 
-`{ver}` stands for the version (e.g. `0.10.2`).
+`{ver}` stands for the version (e.g. `0.10.3`).
 
 | OS | Architecture | File | Notes |
 |----|---------|------|------|
@@ -86,7 +86,7 @@ language = "ko"
 Check from the terminal that the install worked. The second command only responds while a Tasty window is open.
 
 ```sh
-tasty --version      # e.g. tasty 0.10.2
+tasty --version      # e.g. tasty 0.10.3
 tasty list info      # version · Workspace count of the running Tasty
 ```
 
