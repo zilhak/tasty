@@ -101,7 +101,8 @@ pub(crate) fn optional_target_surface(
     target_surface(params).map_err(|e| match e {
         // `key` 를 버리지 않는다 — 이 판정은 `surface` 와 `surface_id` **두 이름**을 한
         // 필드로 읽으므로, 어느 쪽이 틀렸는지 안 대면 호출자는 자기가 보낸 두 키 중
-        // 무엇을 고쳐야 하는지 모른다. 짝 plugin(codex)은 처음부터 그것을 댔다.
+        // 무엇을 고쳐야 하는지 모른다. 짝 plugin(codex)의 **같은 자리**는 처음부터
+        // 그것을 댔다 — 그쪽 훅 경로(`handle_hook`)는 그러지 않았고, 그건 따로 고쳤다.
         // placeholder 형태는 이 crate 의 관례(`{}` 하나 + 조립한 인자)를 따른다 —
         // 바로 아래 `Conflict` 가 같은 형태다.
         TargetSurfaceError::Malformed { key, raw } => IpcMethodError::invalid_params(&tr.t_fmt(
@@ -1155,8 +1156,11 @@ mod tests {
     /// **정보량**을 함께 고정한다(문구·placeholder 형태는 여전히 crate 마다 다르고,
     /// 그 축은 `tasty-plugin-agent-common` 의 crate doc 이 유예한 것이다).
     ///
-    /// 이 판정을 거치는 세 번째 자리는 `hook.rs::resolve_surface_id_from` 이다 —
-    /// 거기만 env 폴백이 붙어 자기 시험으로 같은 축을 따로 고정한다.
+    /// 이 판정을 거치는 자리는 **넷**이다. 나머지 둘은 훅 경로다: 이쪽의
+    /// `hook.rs::resolve_surface_id_from` 은 env 폴백이 더 붙어 있고, codex 쪽의
+    /// `handlers.rs::handle_hook` 은 한동안 세 갈래를 전부 `--surface 를 대라` 한
+    /// 문장으로 덮어 이 축을 깨고 있었다(그래서 위 "짝 plugin 은 처음부터" 는
+    /// **판정부 자리에 한한 말**이다). 넷 다 자기 시험으로 같은 축을 따로 고정한다.
     ///
     /// 로케일 셋을 다 본다 — 키 이름은 번역 대상이 아니라 **파라미터 이름**이라
     /// 세 카탈로그에서 똑같이 나와야 하고, 한 언어만 보면 다른 언어에서 문구를

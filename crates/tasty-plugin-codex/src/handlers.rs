@@ -810,8 +810,14 @@ pub(crate) fn handle_hook<H: HostCall>(
         .get("event")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_event")))?;
-    let surface_id = require_target_surface(params, tr)
-        .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
+    // 이름이 **하나도 안 왔을 때만** hook 전용 문구(`--surface 를 대라`)로 갈아탄다.
+    // 오형식과 두 키 충돌은 그대로 올린다 — 그 둘은 `--surface` 를 대라는 처방이
+    // 틀린 자리고(값은 왔다), 어느 키가 왜 틀렸는지는 공용 판정부가 이미 문구로
+    // 갖고 있다(`codex.params.not_a_number` · `codex.params.surface_conflict`).
+    // 예전엔 `require_target_surface(..).map_err(|_| requires_surface)` 라 세 갈래가
+    // 전부 같은 한 문장으로 나갔다.
+    let surface_id = optional_target_surface(params, tr)?
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     let new_state = hook_event_to_state(event, tr)?;
     // 조용히 실패한 host 호출을 센다. 아래 `terminal.set_state` 는 전파하므로 이 수에
     // 안 들어간다 — 세는 것은 **응답이 성공을 말하는 동안 실패할 수 있는 것**뿐이다.
@@ -1396,6 +1402,66 @@ mod tests {
         );
 
         assert!(err.is_err(), "전파하는 호출의 실패는 Err 로 나간다");
+    }
+
+    /// 훅 경로가 **오형식**과 **두 키 충돌**을 hook 전용 문구로 덮지 않는다.
+    ///
+    /// 이 핸들러도 `surface` 와 `surface_id` **두 이름을 한 필드로** 읽는다. 한동안
+    /// `require_target_surface(..).map_err(|_| requires_surface)` 라 세 갈래가 전부
+    /// `--surface 를 대라` 한 문장으로 나갔다 — 값을 **보낸** 호출자에게 값을 보내라고
+    /// 답하는 형태이고, 어느 키가 왜 거절됐는지는 사라진다. 같은 축을 고정하는 시험이
+    /// 짝 plugin(claude)의 `hook.rs` 에도 있다(그쪽은 env 폴백이 더 붙은 자리다).
+    ///
+    /// 이름이 하나도 안 온 갈래만 그 문구를 유지한다 — 거기서는 `--surface` 가 맞는
+    /// 처방이다.
+    ///
+    /// 로케일 셋을 다 본다 — 키 이름은 번역 대상이 아니라 **파라미터 이름**이라 세
+    /// 카탈로그에서 똑같이 나와야 한다.
+    #[test]
+    fn a_hook_does_not_answer_malformed_or_conflicting_names_with_requires_surface() {
+        for locale in ["en", "ko", "ja"] {
+            let tr = test_translator_for(locale);
+            let host = FlakyHost::failing(Vec::new());
+            let requires = tr.t("codex.hook.requires_surface");
+
+            let call = |params| {
+                handle_hook(&host, &params, &tr)
+                    .expect_err("대상 surface 를 못 정하면 Err 다")
+                    .message
+            };
+
+            let by_surface = call(json!({ "surface": "x", "event": "stop" }));
+            let by_surface_id = call(json!({ "surface_id": "x", "event": "stop" }));
+            let conflict = call(json!({ "surface": 1, "surface_id": 2, "event": "stop" }));
+            let absent = call(json!({ "event": "stop" }));
+
+            for (label, msg) in [
+                ("surface", &by_surface),
+                ("surface_id", &by_surface_id),
+                ("conflict", &conflict),
+            ] {
+                assert!(
+                    !msg.contains(requires),
+                    "{locale}/{label}: 값이 왔는데 '--surface 를 대라' 로 답한다 — {msg}"
+                );
+            }
+            assert!(
+                by_surface_id.contains("surface_id"),
+                "{locale}: 'surface_id' 가 틀렸는데 그 이름을 안 댄다 — {by_surface_id}"
+            );
+            assert!(
+                !by_surface.contains("surface_id"),
+                "{locale}: 'surface' 가 틀렸는데 'surface_id' 를 댄다 — {by_surface}"
+            );
+            assert!(
+                conflict.contains('1') && conflict.contains('2'),
+                "{locale}: 어느 두 값이 어긋났는지 안 댄다 — {conflict}"
+            );
+            assert!(
+                absent.contains(requires),
+                "{locale}: 이름이 하나도 안 온 갈래는 훅 전용 문구를 그대로 쓴다 — {absent}"
+            );
+        }
     }
 
     /// 이 완주만의 surface id. `make_codex_command` 가 쓰는 prompt 임시파일 경로는
