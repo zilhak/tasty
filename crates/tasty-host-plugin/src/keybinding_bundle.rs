@@ -369,6 +369,9 @@ fn decode_plugin_overrides(
     out
 }
 
+/// 이식 시 `option` 바인딩 판정과 대체 적용 — 번들이 실어 나르는 두 값 위에서 돈다.
+pub mod option_migration;
+
 #[cfg(test)]
 #[path = "keybinding_bundle/tests.rs"]
 mod tests;

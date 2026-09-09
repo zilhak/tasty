@@ -77,6 +77,23 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 
 **"symbol" 표시가 실제 화면에 그려지는 방식은 위치마다 다르다.** `format_display`/`format_display_parts` 가 만드는 문자열은 "⌘"/"⌥"/"⇧" 을 그대로 담은 텍스트다(커맨드 팔레트·상태바·키바인딩 탭 등에서 소비) — egui 폰트 fallback 체인에 U+2325(⌥) glyph 가 없어 이 경로는 tofu box 로 깨질 수 있는 리스크를 안고 있다(알려진 이슈, 아직 미해결). 반면 설정 > 일반 > 표시 탭의 3 개 드롭다운과 modifier-hint 오버레이의 keycap 칩(`combo_keycap_parts`, `src/adapters/ui/modifier_hint_overlay.rs`)은 "symbol" 스타일을 텍스트로 타이핑하지 않고 벡터 아이콘(`tasty_icons::{CMD_KEY,OPTION_KEY,SHIFT_KEY}`, `tasty_ui_widgets::{KbdKey,kbd_parts}`)으로 그려 이 문제를 원천 차단한다.
 
+### 이식 시 `option` 처리
+
+이식이 깨지는 토큰은 `option` **하나뿐**이다. 나머지는 저장이 이미 OS 독립이고 `alt` 는 저장이 하나이며 macOS 에서만 ⌘ 로 매핑된다. 반면 `option` 은 macOS 물리 ⌥ 이라 **비-macOS 에서는 매칭 자체가 항상 불일치**로 접힌다(`binding.rs` 의 winit·egui 두 경로 모두 `option_matches = !parsed.option`). 그래서 macOS 에서 만든 구성을 Windows/Linux 로 가져오면 그 바인딩들은 **화면에는 그대로 보이는데 눌러도 아무 일이 없다**.
+
+네 프리셋에는 `option` 문자열이 하나도 없다 — `option` 바인딩은 사용자가 macOS 에서 직접 만든 것뿐이다(녹화이거나 quick-switch modifier 선택).
+
+판정과 대체는 `tasty_host_plugin::keybinding_bundle::option_migration` 이 한다.
+
+- **판정은 문자열 검색이 아니라 실제 파서**로 한다(`parse_binding` / `Combo::parse_modifiers`). `"option"` 이라는 이름의 키가 있을 가능성과 대소문자·토큰 순서 변형을 문자열 매칭으로 다루면 틀리고, 틀리는 방향이 거짓 음성이라 조용하다.
+- **찾는 자리는 다섯이다**: ① 일반 콤보 필드의 각 원소 ② quick-switch 축 modifier 셋 ③ quick-switch 슬롯·다음/이전 — **그 축이 "개별 지정" 일 때만**(규칙 기반 축의 슬롯은 raw 키 하나라 콤보가 아니다) ④ `script_bindings[].combo` ⑤ plugin override 의 `Key { value }`(`Inherit`/`None` 은 콤보를 안 담는다).
+- **대체 값을 받는 수단이 자리마다 다르다**(`ReplacementKind`). 콤보 자리는 기존 녹화로 받고, **축 modifier 자리는 녹화로 못 받는다** — 녹화가 modifier 단독 입력을 무시하기 때문이라 `all_modifier_combos()`(비-macOS 7개) 중에서 고르게 해야 한다. sentinel `"individual"` 은 modifier 조합으로 파싱되지 않아 거절되므로, 마이그레이션이 축의 모드를 바꾸지는 않는다.
+- **대체 값이 다시 `option` 을 담으면 거절**한다.
+- **충돌은 적용 전후의 차분으로 본다.** 축 modifier 를 바꾸면 그 축의 슬롯 전부와 다음/이전의 합성 콤보가 한꺼번에 움직이므로, 검사 대상은 값 하나가 아니라 적용 결과의 **발화 콤보 명부 전체**다. 원래부터 있던 중복까지 거절하면 사용자가 이번 이식과 무관한 이유로 막히므로, 새로 생긴 충돌만 에러가 된다.
+- **충돌 네임스페이스는 둘**이다. 호스트 액션·quick-switch·스크립트가 한 묶음이고, plugin 은 plugin 마다 별도다 — 겹치는 키에서 plugin 이 호스트보다 항상 우선하고(아래 "Plugin 커맨드 단축키 우선순위") 어느 plugin 의 명령이 후보인지는 포커스가 가르므로, 호스트↔plugin 과 plugin↔plugin 은 충돌이 아니라 규정된 우선순위다.
+
+대상 플랫폼 판정은 컴파일 타임(`cfg!(target_os = "macos")`)으로 충분하다 — 비-macOS 바이너리는 매칭이 항상 불일치라 런타임에 갈릴 여지가 없다. 대상이 macOS 면 목록은 비어 있다.
+
 ## OS 메뉴 key equivalent
 
 tasty 가 직접 소유하는 OS 메뉴(macOS NSMenu / Windows AcceleratorTable / Linux Wayland 메뉴)의 key equivalent 도 **`KeybindingSettings` 의 대응 binding 에서 가져온다 — 가져올 수 없으면 비운다.** selector 가 OS 표준(`cut:` / `performClose:` 등)이라는 사실이 단축키 하드코딩을 정당화하지 않는다(selector 와 key equivalent 는 독립 결정). binding 이 빈 vec 이면 key equivalent 도 비워 단축키 없는 메뉴 항목으로 둔다.

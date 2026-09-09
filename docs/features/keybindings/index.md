@@ -111,6 +111,8 @@ import(`decode`)은 사용자가 고른 임의의 파일을 다루므로 세 갈
 
 `[keybindings]` 는 **필드 단위로** 복원한다 — 기본값에서 출발해 번들의 필드를 하나씩 얹고, 얹은 뒤 전체가 역직렬화되지 않으면 그 필드만 되돌린다. 그래서 구버전·신버전 번들의 배열 길이 차이가 그 필드 하나만 기본값으로 만들고 나머지는 그대로 복원된다. 코덱에는 필드 명부가 없다.
 
+import 한 구성이 macOS 에서 만들어졌으면 `option` 바인딩이 이 환경에서 조용히 죽는다. 그 자리를 전수로 찾아 대체 값을 적용하는 계산이 같은 자리에 있다(`keybinding_bundle::option_migration`) — 찾는 다섯 자리·대체 값의 종류·충돌 검사 규칙은 [key-mapping](../../design/policies/key-mapping.md) "이식 시 `option` 처리" 가 정본이다.
+
 결정의 근거·대안·재검토 조건은 [ADR-0255](../../adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md).
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
