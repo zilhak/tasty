@@ -685,11 +685,13 @@ fn build_spawn_warning(
 }
 
 /// ★ 짝 crate(claude)의 같은 함수는 응답을 remap 하고 자식마다 foreground 정보를
-/// 덧씌운다 — 이쪽은 호스트 응답을 그대로 흘린다. 그 차이가 왜 남아 있는지와
-/// **그것을 지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의 crate doc
-/// "짝이 갈린 채 남는 것" 에 한 곳으로 적혀 있다.
-pub(crate) fn handle_children(
-    host: &HostHandle,
+/// 덧씌운다 — 이쪽은 호스트 응답을 그대로 흘린다. 그 차이가 왜 남아 있는지는
+/// `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채 남는 것" 에 한 곳으로
+/// 적혀 있다. 이쪽 shape 을 고정하는 것은
+/// `children_response_is_the_host_response_verbatim` 이고, 저쪽 shape 을 고정하는
+/// 짝 시험이 claude 에 있다 — 한쪽만 바뀌면 그 시험이 빨개진다.
+pub(crate) fn handle_children<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -715,10 +717,11 @@ pub(crate) fn handle_broadcast(
 
 /// ★ 짝 crate(claude)의 같은 함수는 `error_scan` 을 내리고 응답을 `{killed: true}`
 /// 로 바꾼다 — 앞은 의도된 비대칭(여기 그 하위 시스템이 없다), 뒤는 아직 안 정해진
-/// 차이다. 근거와 **지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의
-/// crate doc "짝이 갈린 채 남는 것" 에 있다.
-pub(crate) fn handle_kill(
-    host: &HostHandle,
+/// 차이다. 근거는 `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채 남는 것" 에
+/// 있다. 이쪽 shape 을 고정하는 것은 `kill_response_is_the_host_response_verbatim`
+/// 이고, 저쪽에 짝 시험이 있다.
+pub(crate) fn handle_kill<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -2355,6 +2358,63 @@ trusted_hash = "sha256:xyz"
             host.commands_on(target).is_empty(),
             "죽은 surface 에 재무장하면 좀비 hook: {:?}",
             host.commands_on(target)
+        );
+    }
+
+    // ── 짝 crate 와 갈린 응답 shape 고정 (`tasty_plugin_agent_common` crate doc
+    //    "짝이 갈린 채 남는 것") — claude 에 같은 두 물음을 묻는 짝 시험이 있다 ──
+
+    /// 호스트 원본 응답만 돌려주는 mock. 위 `MockHost` 는 hook 사이클을 흉내 내는
+    /// 물건이라 `terminal.kill` 성공 응답의 두 필드를 표현하는 축이 없다 — 그
+    /// 축만 따로 세운다.
+    struct ShapeHost;
+
+    impl HostCall for ShapeHost {
+        fn call(
+            &self,
+            method: &str,
+            _params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            match method {
+                "terminal.children" => Ok(json!({ "children": [{
+                    "surface_id": 42,
+                    "index": 0,
+                    "state": "idle",
+                }]})),
+                "terminal.kill" => Ok(json!({ "killed_surface_id": 42, "child_index": 0 })),
+                other => panic!("unexpected host call: {other}"),
+            }
+        }
+    }
+
+    /// 호스트 응답을 **그대로** 흘린다 — `{"children": […]}` 째로 나가고 필드명도
+    /// 호스트 것이다. 짝 crate(claude)는 remap 한 bare 배열로 답한다. 그 차이는
+    /// 아직 안 정해진 것이라, 정해지기 전에 조용히 바뀌지 않도록 여기서 못박는다.
+    #[test]
+    fn children_response_is_the_host_response_verbatim() {
+        let out = handle_children(&ShapeHost, &json!({ "surface": 1 }), &test_translator())
+            .expect("handle_children");
+        assert_eq!(
+            out,
+            json!({ "children": [{ "surface_id": 42, "index": 0, "state": "idle" }] }),
+            "호스트 응답을 remap 하기 시작했다 — 짝 crate 와의 차이가 정해지기 전에는 못 바꾼다"
+        );
+    }
+
+    /// 성공 응답도 호스트 것 그대로다 — `killed_surface_id`·`child_index` 가 남는다.
+    /// 짝 crate(claude)는 그 둘을 버리고 `{"killed": true}` 로 줄인다.
+    #[test]
+    fn kill_response_is_the_host_response_verbatim() {
+        let out = handle_kill(
+            &ShapeHost,
+            &json!({ "surface": 1, "child": 0 }),
+            &test_translator(),
+        )
+        .expect("handle_kill");
+        assert_eq!(
+            out,
+            json!({ "killed_surface_id": 42, "child_index": 0 }),
+            "응답 shape 이 바뀌었다 — 짝 crate 와의 차이가 정해지기 전에는 못 바꾼다"
         );
     }
 }

@@ -46,9 +46,18 @@
 //! **버리기만 한다.** 그런데 맞추려면 claude 쪽을 바꿔야 하고 그것은 에이전트가 읽는
 //! 표면의 변경이라, 여기서 정하지 않는다.
 //!
-//! **★ 그리고 이 둘을 지키는 것은 아무것도 없다.** 두 plugin 의 응답 shape 을 고정하는
-//! 시험도 가드도 없다 — 한쪽이 shape 을 바꿔도 빨개지는 것이 없고, 둘이 더 갈려도
-//! 마찬가지다. 이 문단이 지금 그 자리를 대신하는 유일한 것이다.
+//! **★ 무엇이 이 둘을 지키는가.** 이 문단이 오래 유일한 기록이었고 — 그동안 한쪽이
+//! shape 을 바꿔도 빨개지는 것이 없었다. 이제 네 시험이 **네 값을 각각 못박는다**:
+//! `tasty-plugin-claude` 의 `children_response_is_a_bare_remapped_array` ·
+//! `kill_response_is_reduced_to_a_killed_flag`, `tasty-plugin-codex` 의
+//! `children_response_is_the_host_response_verbatim` ·
+//! `kill_response_is_the_host_response_verbatim`. 넷 다 호스트 원본 응답만 돌려주는
+//! mock(`ShapeHost`) 위에서 돌아 **호스트를 안 바꾸고 plugin 의 변환만** 잰다.
+//!
+//! 그래서 지금 갈린 채 남는 것은 **표에 적힌 그대로 고정**돼 있다. 위 표를 바꾸려면
+//! 대응하는 시험이 먼저 빨개지고, 합치기로 정해지면 그때 시험 넷 중 둘이 지워진다.
+//! 시험은 shape 이 **옳다**고 주장하지 않는다 — 지금 무엇인지를 말할 뿐이고, 어느
+//! 쪽으로 맞출지는 여전히 여기서 정하지 않는다.
 //!
 //! ## 이 crate 는 plugin 이 아니다
 //!

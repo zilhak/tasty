@@ -205,7 +205,7 @@ pub(crate) fn resolve_child_surface_id<H: HostCall>(
     })
 }
 
-fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
+fn host_call<H: HostCall>(host: &H, method: &str, params: Value) -> Result<Value, IpcMethodError> {
     host.call(method, params).map_err(IpcMethodError::from)
 }
 
@@ -214,11 +214,13 @@ fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, Ip
 /// 보존하기 위해 호스트 응답(`surface_id`)을 remap 한다. 응답은 bare 배열(claude
 /// CLI 출력 shape).
 /// ★ 짝 crate(codex)의 같은 함수와 **응답 shape 이 다르다** — 이쪽은 remap 한
-/// bare 배열, 저쪽은 호스트 응답 그대로다. 그 차이가 왜 남아 있는지와 **그것을
-/// 지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의 crate doc
-/// "짝이 갈린 채 남는 것" 에 한 곳으로 적혀 있다. 여기에 사본을 두지 않는다.
-pub(crate) fn handle_children(
-    host: &HostHandle,
+/// bare 배열, 저쪽은 호스트 응답 그대로다. 그 차이가 왜 남아 있는지는
+/// `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채 남는 것" 에 한 곳으로
+/// 적혀 있다. 여기에 사본을 두지 않는다. 이쪽 shape 을 고정하는 것은
+/// `children_response_is_a_bare_remapped_array` 이고, 저쪽 shape 을 고정하는 짝
+/// 시험이 codex 에 같은 이름 규칙으로 있다 — 한쪽만 바뀌면 그 시험이 빨개진다.
+pub(crate) fn handle_children<H: HostCall>(
+    host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -273,11 +275,12 @@ pub(crate) fn handle_children(
 /// 종료된 surface 는 error scanner 에서도 즉시 내린다.
 /// ★ `error_scan` 을 내리는 것은 **의도된 비대칭**이다(codex 에 그 하위 시스템이
 /// 없다). 그 옆의 응답 shape 차이(`{killed: true}` vs 호스트 응답 그대로)는 아직
-/// 안 정해졌고, 근거와 **지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의
-/// crate doc "짝이 갈린 채 남는 것" 에 있다.
-pub(crate) fn handle_kill(
+/// 안 정해졌고, 근거는 `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채
+/// 남는 것" 에 있다. 이쪽 shape 을 고정하는 것은
+/// `kill_response_is_reduced_to_a_killed_flag` 이고, 저쪽에 짝 시험이 있다.
+pub(crate) fn handle_kill<H: HostCall>(
     scanner: &Arc<Mutex<ErrorScanner>>,
-    host: &HostHandle,
+    host: &H,
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -1712,6 +1715,84 @@ mod tests {
             host.done_commands_on(target).is_empty(),
             "죽은 surface 에 재무장하면 좀비 hook: {:?}",
             host.done_commands_on(target)
+        );
+    }
+
+    // ── 짝 crate 와 갈린 응답 shape 고정 (`tasty_plugin_agent_common` crate doc
+    //    "짝이 갈린 채 남는 것") — codex 에 같은 두 물음을 묻는 짝 시험이 있다 ──
+
+    /// 호스트 원본 응답만 돌려주는 mock. 위 `MockHost` 는 hook 사이클을 흉내 내는
+    /// 물건이라 `terminal.kill` 성공 응답의 두 필드를 표현하는 축이 없다 — 그
+    /// 축만 따로 세운다.
+    struct ShapeHost;
+
+    impl HostCall for ShapeHost {
+        fn call(
+            &self,
+            method: &str,
+            _params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            match method {
+                "terminal.children" => Ok(json!({ "children": [{
+                    "surface_id": 42,
+                    "index": 0,
+                    "cwd": "/w",
+                    "role": "reviewer",
+                    "nickname": "nick",
+                    "state": "idle",
+                    "evidence": "prompt",
+                    "confidence": "certain",
+                }]})),
+                "surface.foreground_process" => Ok(json!({ "name": "claude", "pid": 4242 })),
+                "terminal.kill" => Ok(json!({ "killed_surface_id": 42, "child_index": 0 })),
+                other => panic!("unexpected host call: {other}"),
+            }
+        }
+    }
+
+    /// 응답은 **bare 배열**이고, 호스트 `surface_id` 는 `child_surface_id` 로
+    /// remap 되며, 자식마다 foreground 정보가 덧씌워진다. 짝 crate(codex)는 호스트
+    /// 응답을 그대로 흘린다 — 그 차이는 지금 의도된 것이 아니라 **아직 안 정해진**
+    /// 것이라, 정해지기 전에 조용히 바뀌지 않도록 여기서 못박는다.
+    #[test]
+    fn children_response_is_a_bare_remapped_array() {
+        let out = handle_children(&ShapeHost, &json!({ "surface_id": 1 }), &test_translator())
+            .expect("handle_children");
+        let arr = out
+            .as_array()
+            .unwrap_or_else(|| panic!("bare 배열이 아니다 (호스트 shape 으로 돌아갔나): {out}"));
+        assert_eq!(arr.len(), 1);
+        let e = &arr[0];
+        assert_eq!(e["child_surface_id"], json!(42), "remap 이 사라졌다: {e}");
+        assert!(
+            e.get("surface_id").is_none(),
+            "호스트 필드명이 그대로 남았다: {e}"
+        );
+        // 화이트리스트가 판정 근거 3 축을 다 옮기는지(ADR-0072).
+        assert_eq!(e["state"], json!("idle"));
+        assert_eq!(e["evidence"], json!("prompt"));
+        assert_eq!(e["confidence"], json!("certain"));
+        assert_eq!(e["foreground_process"], json!("claude"));
+        assert_eq!(e["foreground_pid"], json!(4242));
+    }
+
+    /// 성공 응답은 `{"killed": true}` 하나로 줄어든다 — 호스트가 실어 보낸
+    /// `killed_surface_id`·`child_index` 는 여기서 버려진다. 짝 crate(codex)는 그
+    /// 둘을 그대로 흘린다.
+    #[test]
+    fn kill_response_is_reduced_to_a_killed_flag() {
+        let scanner = Arc::new(Mutex::new(ErrorScanner::new()));
+        let out = handle_kill(
+            &scanner,
+            &ShapeHost,
+            &json!({ "surface_id": 1, "child_index": 0 }),
+            &test_translator(),
+        )
+        .expect("handle_kill");
+        assert_eq!(
+            out,
+            json!({ "killed": true }),
+            "응답 shape 이 바뀌었다 — 짝 crate 와의 차이가 정해지기 전에는 못 바꾼다"
         );
     }
 }
