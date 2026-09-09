@@ -27,16 +27,14 @@
 //! - **`0.0`** — 실측 건수는 위 테스트가 든다. `size-0` 이 실재하지만 기하에서 0 은
 //!   디자인 결정이 아니라 덧셈의 항등원이다. `vec2(SIZE_0.value(), ..)` 는 정합이
 //!   아니라 소음이다.
-//! - **clamp·문턱 자리의 `1.0`**([`is_the_degenerate_floor`]) — 위 `0.0` 과 같은
-//!   이야기가 한 자리에서만 성립한다. `(h - t).max(PhysicalPx(1.0))` 의 1 은 디자인한
-//!   여백이 아니라 **직사각형이 직사각형으로 남는 최소값**이고,
-//!   `(a - b).abs() < PhysicalPx(1.0)` 의 1 은 서브픽셀 동일성 문턱이다. 토큰이
-//!   움직여도 따라가면 **안 되는** 값이라 이 축의 위반이 아니다. 자리만으로 가르지
-//!   않는다 — 값이 1 일 때만 빠지므로 `.max(LogicalPx(200.0))` 같은 진짜 치수 하한은
+//! - **clamp·문턱 자리의 `1.0`**([`is_the_degenerate_floor`]) — 자리(clamp·문턱)와 값(1)의
+//!   **연언**일 때만 빠진다. `.max(LogicalPx(200.0))` 같은 진짜 치수 하한은 같은 자리라도
 //!   그대로 세어진다.
-//! - **정규화 좌표 자리**([`UNIT_SPACE_SITES`]) — 텍스처 UV 의 `pos2(1.0, 1.0)` 은
-//!   1px 가 아니라 100% 다. 부류가 아니라 **자리 명부**로 둔다 —
-//!   [`DISPLAY_SPECIMENS`] 와 같은 이유다.
+//! - **정규화 좌표 자리**([`UNIT_SPACE_SITES`]) — 부류가 아니라 **자리 명부**다. 등록된
+//!   (파일, 호출 머리)만 빠지고, 그 자리의 수는 상한이자 하한이다.
+//!
+//! 이 둘이 왜 이 축의 값이 아닌지, 그리고 왜 하나는 부류이고 하나는 자리 명부인지는
+//! [ADR-0252] 에 있다 — 여기서는 되풀이하지 않는다.
 //! - **테스트 게이트 안** — 화면에 안 나가는 코드다. 판정은 [`super::test_gate`].
 //! - **값을 선언하는 자리**([`DECLARATION_SITES`]) — 다른 자리가 참조해야 할 이름이
 //!   사는 곳이라, 여기를 판정하면 선언에게 자기 자신을 참조하라고 요구하게 된다.
@@ -67,6 +65,7 @@
 //! 형태다. 보고에 총합이 필요하면 그 자리에서 더해라.
 //!
 //! [ADR-0126]: ../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md
+//! [ADR-0252]: ../../docs/adr/0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md
 
 use super::test_gate::blank_test_modules;
 use super::{mask_non_code, repo_root, rust_sources};
@@ -141,12 +140,13 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
     "스피너를 여러 크기로 보여주는 것이 이 카드의 목적이다 — 토큰으로 바꾸면 전시가 사라진다",
 )];
 
-/// **정규화 좌표 자리 명부** — 자리 단위다. `DISPLAY_SPECIMENS` 와 같은 이유로 부류가
-/// 아니다: "여긴 픽셀이 아니라 비율이야" 는 아무 자리에나 붙일 수 있는 말이라, 부류로
-/// 열어 두면 다음 사람이 진짜 치수를 그렇게 부른다.
+/// **정규화 좌표 자리 명부** — `DISPLAY_SPECIMENS` 와 같이 자리 단위다. 부류가 아닌
+/// 이유는 [ADR-0252].
 ///
 /// 항목은 (파일, 호출 머리, 자리 수, 사유)이고 수는 상한이자 하한이다 —
 /// [`the_blind_spots_are_still_the_size_they_say`] 가 실측으로 든다.
+///
+/// [ADR-0252]: ../../docs/adr/0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md
 const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
     "crates/tasty-plugin-image/src/render.rs",
     "pos2",
@@ -399,18 +399,10 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
 
 /// 그 `1` 이 **치수가 아니라 퇴화 방지 하한**인가.
 ///
-/// `0.0` 을 빼는 이유("기하에서 0 은 디자인 결정이 아니라 덧셈의 항등원이다")와 같은
-/// 이야기가 1 에도 한 자리에서만 성립한다 — **직사각형이 직사각형으로 남는 최소값**이다.
-/// `(h - tab_bar_h).max(PhysicalPx(1.0))` 의 1 은 "1 픽셀짜리 여백을 디자인했다" 가
-/// 아니라 "0 이나 음수가 되지 않게 막는다" 이고, `(a - b).abs() < PhysicalPx(1.0)` 의
-/// 1 은 **서브픽셀 동일성 문턱**이다. 어느 쪽도 `size-1` 토큰으로 바꿀 자리가 아니다 —
-/// 토큰이 움직이면 따라 움직여야 할 값이 아니기 때문이다(그래서 이 축의 위반이 아니다).
-///
-/// # 값이 술어의 일부인 이유
-///
-/// 자리만으로 가르지 않는다. `.max(LogicalPx(200.0))` 의 200 은 진짜 치수 하한이고,
-/// 그것까지 빼면 clamp 라는 자리 하나로 이 축의 큰 값들이 통째로 숨는다. 빠지는 것은
-/// **1** 뿐이다.
+/// 참이 되는 자리는 둘이다 — clamp 계열(`.max` · `.min` · `.clamp`)의 인자와 비교 문턱
+/// (`.abs() < PhysicalPx(1.0)`)의 오른쪽. **어느 쪽이든 값이 1 일 때만** 참이므로
+/// `.max(LogicalPx(200.0))` 의 200 은 그대로 세어진다. 왜 이 둘이 이 축의 값이 아닌지와
+/// 왜 자리 명부가 아니라 부류인지는 [ADR-0252].
 ///
 /// # 이 술어가 일부러 안 잡는 것
 ///
@@ -418,6 +410,8 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
 /// `SURFACE_BORDER_WIDTH`)은 여기서 안 빠진다. 그 줄은 값을 쓰는 자리가 아니라 이름을
 /// 짓는 자리라 처방이 다르고([`declares_a_named_dimension`]), `=` 하나로 그것까지
 /// 걷어내면 이 축에서 제일 고칠 만한 자리(헤어라인)가 통째로 사라진다.
+///
+/// [ADR-0252]: ../../docs/adr/0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md
 fn is_the_degenerate_floor(text: &[char], at: usize, value: f32) -> bool {
     if value != 1.0 {
         return false;

@@ -232,3 +232,4 @@
 | 0249 | [markdown 의 로컬 이미지는 렌더러가 문서 안에 싣는다 — 그 자리가 읽기 범위이기도 하다](0249-markdown-local-images-are-inlined-by-the-renderer.md) | Accepted | 2026-09-08 | markdown, plugin, webview, images, sanitizer, security, scope, cross-platform, adr-0065 |
 | 0250 | [Linux 도 원격 서브리소스를 막는다 — macOS 와 같은 규칙을 WebKit content filter 로 컴파일해서](0250-linux-blocks-remote-subresources-with-a-webkit-content-filter.md) | Accepted | 2026-09-08 | webview, linux, webkitgtk, security, remote-content, cross-platform, ffi, adr-0249 |
 | 0251 | [폴백으로 가는 dispatch 메서드는 술어가 아니라 사유로 판정한다](0251-unrouted-dispatch-methods-carry-a-reason-not-a-predicate.md) | Accepted | 2026-09-09 | ipc, routing, focus, guards, roster, multi-window, adr-0133, adr-0175 |
+| 0252 | [축의 바늘에 걸린 `1` 둘 — 퇴화 방지 하한은 부류로, 정규화 좌표는 자리 명부로 뺀다](0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md) | Accepted | 2026-09-09 | guards, design-tokens, exemption, class-vs-roster, predicate, ratchet, adr-0126, adr-0135, adr-0139 |
