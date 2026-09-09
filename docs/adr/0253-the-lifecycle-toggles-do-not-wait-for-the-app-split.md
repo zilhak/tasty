@@ -100,8 +100,16 @@ plugin namespace 로 forward 될 때 `ensure_plugin_manager` 가 `discover_and_s
   `the_remaining_lifecycle_methods_are_still_absent_in_a_headless_daemon` 이 그 자리에서
   빨개진다(`plugin.remove` · `plugin.grant` 가 `-32017` 이 아니게 되므로).
 - `dispatch_lifecycle_toggle` 이 두 라우터 중 한쪽에서만 불리게 된다 — 그러면 계약이
-  두 벌이 된다. `src/source_guards/dispatch_name_literals.rs` 의 `DELEGATED_ROUTERS` 가
-  이 함수를 명부로 잡고 있어, 이름이 사라지거나 바뀌면 그 대조가 빨개진다.
+  두 벌이 된다. `src/source_guards/headless_app_layer_coverage.rs` 의
+  `a_shared_dispatch_is_called_by_both_routers` 가 그 자리에서 빨개진다: 호출자를
+  **라우터 파일별로 나눠** 세고, `src/app/ipc/app_methods.rs` 와
+  `src/boot/headless_dispatch.rs` 양쪽에 호출이 있어야 통과한다.
+  같은 함수를 `DELEGATED_ROUTERS` 도 명부로 들고 있지만 **그것은 이 트리거의 채널이
+  아니다** — 그 대조가 재는 것은 *호출자가 하나라도 있는가* 라, 한쪽이 자기 인라인
+  사본으로 돌아가도 다른 쪽이 계속 부르는 한 초록이다(실측: gui 호출만 별칭으로
+  우회시키면 새 시험만 빨개지고 `the_roster_is_reached_from_the_request_method` 는
+  통과했다). 그 명부가 잡는 것은 이름이 통째로 사라지는 경우뿐이고, 그건 이 결정의
+  트리거가 아니다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 

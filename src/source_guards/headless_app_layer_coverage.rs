@@ -30,7 +30,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{fn_body, repo_root};
+use super::{callers_of, fn_body, repo_root};
 
 const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
@@ -443,5 +443,47 @@ fn a_cover_claim_dies_with_its_evidence() {
             !without.contains(token),
             "치환이 안 먹었다 — 이 대조는 아무것도 안 본다"
         );
+    }
+}
+
+/// 호출자 스캔의 사거리에서 **빼는** 디렉토리 — 이 규칙을 재는 쪽이다. 거기 있는
+/// 이름은 판정 대상이 아니라 판정문의 재료라, 세면 가드 자신을 호출자로 센다.
+const GUARD_DIRS: &[&str] = &["src/source_guards/", "crates/tasty-doc-guards/"];
+
+/// 두 라우터가 **같은 함수**로 답하는 갈래. 이름 하나가 곧 "gui 와 헤드리스가 계약을
+/// 한 벌로 나눠 갖는다" 는 주장이고, 아래 시험이 그 주장을 두 자리에서 **각각** 잰다.
+///
+/// # 왜 명부 등록만으로는 못 재는가
+///
+/// [`super::dispatch_name_literals`] 의 `DELEGATED_ROUTERS` 도 이 함수를 들고 있지만,
+/// 그것이 재는 것은 *호출자가 하나라도 있는가* 다. 한쪽이 자기 인라인 사본으로
+/// 돌아가도 다른 쪽이 계속 부르면 전부 초록이다 — 즉 **"한쪽에서만 불린다" 를 잡는
+/// 채널이 아니다.** 그것을 잡으려면 라우터별로 나눠 세야 하고, 그게 이 시험이다.
+///
+/// 세는 단위는 **라우터 파일**이다. 호출이 그 파일의 dispatch 함수 본문에 있는지
+/// 헬퍼 안에 있는지는 계약의 소재를 바꾸지 않는다 — gui 는 실제로 `app_methods.rs` 의
+/// `ipc_dispatch_plugin_method` 에서 부르고 헤드리스는 `pump_ipc` 안에서 부른다.
+/// 파일이 통째로 그 이름을 잃는 것이 곧 그 라우터가 계약을 잃는 것이다.
+const SHARED_BY_BOTH_ROUTERS: &[&str] = &["dispatch_lifecycle_toggle"];
+
+/// 공용 dispatch 함수는 **두 라우터 양쪽에서** 불린다.
+#[test]
+fn a_shared_dispatch_is_called_by_both_routers() {
+    for name in SHARED_BY_BOTH_ROUTERS {
+        let sites = callers_of(name, GUARD_DIRS);
+        assert!(
+            !sites.is_empty(),
+            "`{name}` 을 부르는 자리를 하나도 못 찾았다 — 빈 좌변의 초록은 통과가 아니라 \
+             미측정이다. 이름이 바뀌었으면 이 명부도 함께 고쳐라"
+        );
+        let files: BTreeSet<&str> = sites.iter().map(|s| s.rel.as_str()).collect();
+        for rel in [GUI_STEP, HEADLESS_PUMP] {
+            assert!(
+                files.contains(rel),
+                "`{name}` 이 `{rel}` 에서 안 불린다 — 한쪽 라우터가 자기 사본으로 \
+                 돌아갔다는 뜻이고, 그러면 같은 계약이 두 벌이 된다. 부르는 자리: \
+                 {files:?}"
+            );
+        }
     }
 }
