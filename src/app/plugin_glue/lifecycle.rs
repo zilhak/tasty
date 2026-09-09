@@ -250,37 +250,21 @@ impl App {
     }
 
     /// `plugin.enable` IPC handler 의 본문. spawn 실패 시 Err 즉시 반환.
+    ///
+    /// 본체는 `crate::ipc::handler::plugin` 에 있다 — 헤드리스 pump 가 같은 함수를
+    /// 부른다(`docs/dev-guide/headless-ipc-surface.md`). 여기 남는 것은 `App` 이
+    /// 자기 매니저를 넘겨 주는 일뿐이다.
     pub(crate) fn plugin_enable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        mgr.enable(&plugin_id)?;
-        Ok(vec![CoreEvent::PluginEnableToggled {
-            plugin_id,
-            enabled: true,
-        }])
+        crate::ipc::handler::plugin::enable(self.plugin_manager.as_mut(), plugin_id)
     }
 
     /// `plugin.disable` IPC handler 의 본문. graceful shutdown. unloaded 도
     /// 함께 발화 (was_running 분기 — 옛 lifecycle.rs:317 의 의미를 cascade 가
     /// 흡수). 결정 §7.2: reason 은 항상 `User`.
+    ///
+    /// 본체 위치는 [`Self::plugin_enable`] 와 같다 — 두 조합이 같은 함수를 부른다.
     pub(crate) fn plugin_disable(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
-        let Some(mgr) = self.plugin_manager.as_mut() else {
-            anyhow::bail!("plugin manager not initialized");
-        };
-        let was_running = mgr.is_running(&plugin_id);
-        mgr.disable(&plugin_id)?;
-        let mut events = vec![CoreEvent::PluginEnableToggled {
-            plugin_id: plugin_id.clone(),
-            enabled: false,
-        }];
-        if was_running {
-            events.push(CoreEvent::PluginUnloaded {
-                plugin_id,
-                reason: tasty_plugin_protocol::events::LifecycleReason::User,
-            });
-        }
-        Ok(events)
+        crate::ipc::handler::plugin::disable(self.plugin_manager.as_mut(), plugin_id)
     }
 
     /// `plugin.grant` IPC handler 의 본문. permission 토큰 검증 + grant +

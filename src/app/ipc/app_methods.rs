@@ -558,65 +558,21 @@ impl App {
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
-            "plugin.enable" => {
-                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
-                    Some(s) => s.to_string(),
-                    None => {
-                        send_response(
-                            &cmd.response_tx,
-                            host_ipc::protocol::JsonRpcResponse::invalid_params(
-                                id,
-                                "Missing 'id' parameter",
-                            ),
-                        );
-                        return IpcStep::Handled;
-                    }
+            // 두 조합이 **같은 함수**를 부른다 — 헤드리스 pump 도 이것을 부른다
+            // (`src/boot/headless_dispatch.rs`). 여기 남는 차이는 낸 이벤트의
+            // 소비처뿐이다: gui 는 창 큐로 cascade 하고 헤드리스는 그 자리에서 낸다.
+            "plugin.enable" | "plugin.disable" => {
+                let Some((response, events)) = host_ipc::handler::plugin::dispatch_lifecycle_toggle(
+                    self.plugin_manager.as_mut(),
+                    cmd.request.method.as_str(),
+                    id,
+                    &cmd.request.params,
+                ) else {
+                    // 위 arm 이 이름을 못 걸러 냈다는 뜻 — 표와 arm 이 갈렸다.
+                    unreachable!("plugin.enable/disable 이 토글 표에 없다");
                 };
-                let pid_for_response = plugin_id.clone();
-                match self.plugin_enable(plugin_id) {
-                    Ok(events) => {
-                        self.cascade_plugin_events(events);
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({ "enabled": pid_for_response }),
-                        )
-                    }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(
-                        id,
-                        -32000,
-                        format!("enable failed: {e}"),
-                    ),
-                }
-            }
-            "plugin.disable" => {
-                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
-                    Some(s) => s.to_string(),
-                    None => {
-                        send_response(
-                            &cmd.response_tx,
-                            host_ipc::protocol::JsonRpcResponse::invalid_params(
-                                id,
-                                "Missing 'id' parameter",
-                            ),
-                        );
-                        return IpcStep::Handled;
-                    }
-                };
-                let pid_for_response = plugin_id.clone();
-                match self.plugin_disable(plugin_id) {
-                    Ok(events) => {
-                        self.cascade_plugin_events(events);
-                        host_ipc::protocol::JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({ "disabled": pid_for_response }),
-                        )
-                    }
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(
-                        id,
-                        -32000,
-                        format!("disable failed: {e}"),
-                    ),
-                }
+                self.cascade_plugin_events(events);
+                response
             }
             "plugin.grant" => {
                 let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {

@@ -82,8 +82,10 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
 
 #### headless 빌드에서 무엇이 없는가 — 재기 전에 알아야 할 세 가지
 
-1. **plugin 은 부팅해도 안 뜬다.** 부팅 직후 `plugin list` 는 9 개 전부 `running=false` 다. 헤드리스는 매니저를 **디스크만 읽어** 세우고(`ensure_plugin_manager_metadata`), 프로세스 기동은 attach 세션이 mesh mirror 를 요구하거나 **plugin namespace 로 forward 될 때만** 일어난다.
-2. **`plugin.enable` / `plugin.disable` 에는 dispatch arm 이 없다** — `-32017 … gated out of this build combination (headless / release)`. 결함이 아니라 배선하지 않기로 한 것이고, 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다. 그래서 "enable 해서 띄운다" 는 GUI 습관은 여기서 안 통한다. 기동을 유발하려면 그 plugin 의 **namespace 를 한 번 부르면 된다**(예: `tasty image list` — 이 호출 자체는 같은 `-32017` 로 실패하지만, 소속 판정이 끝난 뒤 9 개가 전부 뜬다).
+1. **plugin 은 부팅해도 안 뜬다.** 부팅 직후 `plugin list` 는 9 개 전부 `running=false` 다. 헤드리스는 매니저를 **디스크만 읽어** 세우고(`ensure_plugin_manager_metadata`), 프로세스 기동은 attach 세션이 mesh mirror 를 요구하거나, **plugin namespace 로 forward 되거나**, `plugin.enable` 로 **지목될 때** 일어난다(아래 2).
+2. **하나만 띄우려면 `plugin enable <id>` 를 쓴다.** 이 둘은 헤드리스에도 배선돼 있고(`plugin.enable` · `plugin.disable`), **지목한 하나만** 기동한다. 실측(2026-09-09, 격리 홈 데몬): 부팅 직후 9 개 전부 `running=false` → `tasty plugin enable com.tasty.image` → `{"enabled":"com.tasty.image"}` → `plugin list` 의 `running` 이 `["com.tasty.image"]` 하나다. 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다 — `plugin.install`·`remove`·`grant`·`revoke`·`upgrade_builtins`·`audit_follow` 는 아직 없어서 `-32017 … gated out of this build combination (headless / release)` 로 답한다.
+
+   ★ **plugin namespace 를 한 번 부르는 것도 여전히 기동을 유발하는데, 그쪽은 9 개가 전부 뜬다.** 그 경로(`forward_to_plugin_namespace` → `ensure_plugin_manager` → `discover_and_start`)는 개별 지목이 없기 때문이다. 실측(2026-09-09, 갓 만든 격리 홈): `tasty image list` 는 그 자체로는 `-32017` 로 실패하는데, 그 뒤 `plugin list` 의 `running` 이 설치된 9 개 전부다. **하나만 재고 싶으면 namespace 를 부르지 말고 `plugin enable` 을 써라** — 관측 대상을 여덟 개 더 만들지 않는다.
 3. **선언된 surface kind 가 전부 등록되지는 않는다.** `register_one_surface_kind` 가 `rendering` 으로 갈라, `webview`/`remote` 는 skip 하고 `egui-mesh` 만 등록한다. 실측(9 개 기동 후):
 
    | kind | 선언 (`plugin.show` 의 `declared_rendering`) | 등록됐나 (`registered`) | `new workspace --type <kind>` |

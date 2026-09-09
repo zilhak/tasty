@@ -251,11 +251,16 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 ///   gui 와 **같은 문구, 같은 자리**
 /// - `image.bogus` → `-32601 method 'image.bogus' not found` (plugin 문구) — 두 조합 동일
 ///
-/// 제거 상태는 headless 에서 **만들 수 없다**. `plugin.remove`·`plugin.disable` 자체가
-/// 그 조합에 없어서(`-32017`) 상태 전이를 못 시킨다 — 라우팅 결함이 아니라 이미 기록된
-/// 공백이다([headless-ipc-surface](../../docs/dev-guide/headless-ipc-surface.md) 의
-/// "아직 없다 — `App` 이분이 선행이다"). 위 비활성 상태는 `plugins.toml` 을 직접 고쳐
-/// 만들었다.
+/// 제거 상태는 headless 에서 **만들 수 없다**. `plugin.remove` 가 그 조합에 없어서
+/// (`-32017`) 상태 전이를 못 시킨다 — 라우팅 결함이 아니라 이미 기록된 공백이다
+/// ([headless-ipc-surface](../../docs/dev-guide/headless-ipc-surface.md) 의 "아직 없다 —
+/// `App` 이분이 선행이다").
+///
+/// **비활성 상태는 이제 만들 수 있다.** 위 실측 당시에는 `plugin.disable` 도 그 조합에
+/// 없어 `plugins.toml` 을 직접 고쳐 만들었는데, 지금은 토글 둘이 배선돼 있어
+/// `tasty plugin disable <id>` 로 같은 상태가 된다(같은 문서의 "답한다 — 수명주기
+/// 토글"). 위 실측값은 상태를 어떻게 만들었느냐와 무관하다 — 재는 것은 그 상태에서의
+/// 응답이다.
 const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     (
         "image.list",

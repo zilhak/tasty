@@ -451,6 +451,190 @@ pub fn dispatch_readonly(
     Some(response)
 }
 
+// ─── 수명주기 토글 (`plugin.enable` / `plugin.disable`) ───
+//
+// 이 절의 함수들은 **두 빌드 조합이 함께 부른다** — gui 라우터
+// (`src/app/ipc/app_methods.rs`)와 헤드리스 pump(`src/boot/headless_dispatch.rs`).
+// 위 `dispatch_readonly` 와 같은 이유로 한 자리에만 둔다: 파라미터 이름·응답 칸 이름
+// ·오류 문구는 **에이전트가 보는 계약**이라, 두 벌로 두면 한쪽만 고쳐지는 순간
+// 같은 명령이 조합에 따라 다르게 답한다.
+//
+// 갈리는 것은 **낸 이벤트를 누가 소비하는가** 하나뿐이다. gui 는 첫 main window 의
+// `PendingHostEvent` 큐로 넣어 `app/dispatch/host_events.rs` 가 drain 하고, 헤드리스는
+// 창이 없어 [`cascade_toggle_events_headless`] 가 그 자리에서 직접 처리한다. 그래서
+// **발화하는 이벤트 키와 payload 자체**는 아래 두 emit 함수 한 벌만 존재한다.
+
+/// [`dispatch_lifecycle_toggle`] 이 답하는 메서드 이름.
+///
+/// 같은 `plugin.*` 쓰기라도 `install`/`remove`/`grant`/`revoke`/`upgrade_builtins` 는
+/// 여기 없다 — 그것들은 파일을 복사하거나 권한을 바꾸는 일이라 헤드리스에서 열지
+/// 여부가 별도 결정이다(`docs/dev-guide/headless-ipc-surface.md`).
+pub const LIFECYCLE_TOGGLE_METHODS: &[&str] = &["plugin.enable", "plugin.disable"];
+
+/// 이 메서드를 [`dispatch_lifecycle_toggle`] 이 답하는가 — **답을 만들기 전에** 묻는
+/// 순수 판정. 헤드리스가 매니저를 세울지 정하는 데 쓰므로 판정이 답변보다 앞선다.
+pub fn is_lifecycle_toggle_method(method: &str) -> bool {
+    LIFECYCLE_TOGGLE_METHODS.contains(&method)
+}
+
+/// `plugin.enable` 의 본체 — 매니저만 만지고 cascade 는 안 한다.
+///
+/// `enable` 은 **지목한 하나만** 기동한다(`PluginManager::enable` 이 그 id 의
+/// package 를 찾아 `start_plugin_internal` 을 부른다). 전체를 훑는
+/// `discover_and_start` 와 다른 경로다.
+pub fn enable(
+    mgr: Option<&mut PluginManager>,
+    plugin_id: String,
+) -> anyhow::Result<Vec<crate::core::intent::CoreEvent>> {
+    let Some(mgr) = mgr else {
+        anyhow::bail!("plugin manager not initialized");
+    };
+    mgr.enable(&plugin_id)?;
+    Ok(vec![crate::core::intent::CoreEvent::PluginEnableToggled {
+        plugin_id,
+        enabled: true,
+    }])
+}
+
+/// `plugin.disable` 의 본체 — graceful shutdown. 돌기 전에 잡은 `was_running` 으로
+/// `PluginUnloaded` 를 함께 낼지 가른다(끄기 전부터 안 돌던 plugin 은 "내려갔다" 가
+/// 아니다). 결정 §7.2: reason 은 항상 `User`.
+pub fn disable(
+    mgr: Option<&mut PluginManager>,
+    plugin_id: String,
+) -> anyhow::Result<Vec<crate::core::intent::CoreEvent>> {
+    let Some(mgr) = mgr else {
+        anyhow::bail!("plugin manager not initialized");
+    };
+    let was_running = mgr.is_running(&plugin_id);
+    mgr.disable(&plugin_id)?;
+    let mut events = vec![crate::core::intent::CoreEvent::PluginEnableToggled {
+        plugin_id: plugin_id.clone(),
+        enabled: false,
+    }];
+    if was_running {
+        events.push(crate::core::intent::CoreEvent::PluginUnloaded {
+            plugin_id,
+            reason: tasty_plugin_protocol::events::LifecycleReason::User,
+        });
+    }
+    Ok(events)
+}
+
+/// 창이 없어도 답이 정의되는 **수명주기 토글** 둘을 한 자리에서 라우팅한다.
+/// 속하지 않는 메서드면 `None` — 호출자가 이어서 처리한다.
+///
+/// 낸 `CoreEvent` 는 **호출자가 cascade 한다.** 소비처가 조합마다 달라서 그렇고,
+/// 그 차이가 이 함수 밖에 있는 유일한 것이다.
+pub fn dispatch_lifecycle_toggle(
+    mgr: Option<&mut PluginManager>,
+    method: &str,
+    id: Value,
+    params: &Value,
+) -> Option<(JsonRpcResponse, Vec<crate::core::intent::CoreEvent>)> {
+    if !is_lifecycle_toggle_method(method) {
+        return None;
+    }
+    let plugin_id = match params.get("id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            return Some((
+                JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
+                Vec::new(),
+            ));
+        }
+    };
+    let pid_for_response = plugin_id.clone();
+    // 성공 응답의 칸 이름(`enabled`/`disabled`)과 실패 문구 접두어(`enable failed:`)는
+    // CLI 가 그대로 사람에게 보여 주는 계약이다 — 조합마다 갈리면 안 된다.
+    let (verb, key, result) = match method {
+        "plugin.enable" => ("enable", "enabled", enable(mgr, plugin_id)),
+        "plugin.disable" => ("disable", "disabled", disable(mgr, plugin_id)),
+        // 위에서 표로 걸렀으므로 여기 오는 것은 **표에 이름을 넣고 arm 을 안 넣은**
+        // 경우뿐이다. 조용히 `None` 을 돌려주면 그 메서드가 `-32601` 로 새어나가
+        // "구현 안 됨" 과 구별되지 않으므로, 그 자리에서 크게 실패한다.
+        other => {
+            return Some((
+                JsonRpcResponse::internal_error(
+                    id,
+                    format!("LIFECYCLE_TOGGLE_METHODS 에 '{other}' 가 있으나 dispatch arm 이 없다"),
+                ),
+                Vec::new(),
+            ));
+        }
+    };
+    let response = match result {
+        Ok(events) => {
+            return Some((
+                JsonRpcResponse::success(id, json!({ key: pid_for_response })),
+                events,
+            ));
+        }
+        Err(e) => JsonRpcResponse::error(id, -32000, format!("{verb} failed: {e}")),
+    };
+    Some((response, Vec::new()))
+}
+
+/// `plugin.enabled` / `plugin.disabled` 를 event bus 에 낸다.
+///
+/// gui 는 `PendingHostEvent` drain 에서, 헤드리스는
+/// [`cascade_toggle_events_headless`] 에서 이 **한 함수**를 부른다 — 이벤트 키가
+/// 두 벌이면 구독한 plugin 이 조합에 따라 다른 이름을 받는다.
+pub fn emit_enable_toggled(mgr: &mut PluginManager, plugin_id: String, enabled: bool) {
+    let payload = tasty_plugin_protocol::events::payloads::PluginEnableToggled { plugin_id };
+    let key = if enabled {
+        "plugin.enabled"
+    } else {
+        "plugin.disabled"
+    };
+    mgr.emit_host_event(key, &payload, tasty_plugin_protocol::EventScope::System);
+}
+
+/// `plugin.unloaded` 를 event bus 에 낸다. 위와 같은 이유로 한 벌만 둔다.
+pub fn emit_unloaded(
+    mgr: &mut PluginManager,
+    plugin_id: String,
+    reason: tasty_plugin_protocol::events::LifecycleReason,
+) {
+    let payload = tasty_plugin_protocol::events::payloads::PluginUnloaded { plugin_id, reason };
+    mgr.emit_host_event(
+        "plugin.unloaded",
+        &payload,
+        tasty_plugin_protocol::EventScope::System,
+    );
+}
+
+/// [`dispatch_lifecycle_toggle`] 이 낸 이벤트를 **창이 없는 조합에서** 소비한다.
+///
+/// gui 의 `App::cascade_plugin_events` 가 하는 일 중 이 둘에 해당하는 부분과 같다 —
+/// 다만 gui 는 첫 main window 의 큐를 거쳐 한 tick 뒤에 발화하고 창이 하나도 없으면
+/// **아무것도 발화하지 않는데**, 여기서는 매니저를 직접 들고 있어 그 자리에서 낸다.
+/// hook 이벤트 등록 해제(`plugin_hook_events`)는 gui 의 `cascade_plugin_unloaded` 와
+/// 같은 일이다 — 안 돌아가는 plugin 이 선언한 hook 키로 훅을 걸 수 있으면 안 된다.
+#[cfg(not(feature = "gui"))]
+pub fn cascade_toggle_events_headless(
+    mgr: &mut PluginManager,
+    hook_events: &crate::core::hook_event_registry::PluginHookEventRegistry,
+    events: Vec<crate::core::intent::CoreEvent>,
+) {
+    use crate::core::intent::CoreEvent;
+    for ev in events {
+        match ev {
+            CoreEvent::PluginEnableToggled { plugin_id, enabled } => {
+                emit_enable_toggled(mgr, plugin_id, enabled);
+            }
+            CoreEvent::PluginUnloaded { plugin_id, reason } => {
+                hook_events.unregister(&plugin_id);
+                emit_unloaded(mgr, plugin_id, reason);
+            }
+            other => tracing::warn!(
+                "cascade_toggle_events_headless: 토글이 낼 수 없는 CoreEvent: {:?}",
+                std::mem::discriminant(&other)
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

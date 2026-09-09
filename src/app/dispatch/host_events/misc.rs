@@ -4,8 +4,7 @@ use serde_json::json;
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::events::LifecycleReason;
 use tasty_plugin_protocol::events::payloads::{
-    HookFired, NotificationCreated, PluginEnableToggled, PluginError, PluginLoaded, PluginUnloaded,
-    ProcessExited,
+    HookFired, NotificationCreated, PluginError, PluginLoaded, ProcessExited,
 };
 
 use crate::plugin::PluginManager;
@@ -65,31 +64,26 @@ pub(super) fn emit_plugin_loaded(mgr: &mut PluginManager, plugin_id: String, ver
     mgr.emit_host_event("plugin.loaded", &payload, EventScope::System);
 }
 
+/// 발화 자체는 `crate::ipc::handler::plugin` 에 있다 — 헤드리스가 창 큐를 안 거치고
+/// 같은 이벤트를 내야 해서, 키와 payload 는 그쪽 한 벌만 존재한다. 여기 남는 것은
+/// 큐가 실어 온 값을 그 함수의 인자 모양으로 맞추는 일뿐이다.
 pub(super) fn emit_plugin_enable_toggled(
     mgr: &mut PluginManager,
     plugin_id: String,
     enabled: bool,
 ) {
-    let payload = PluginEnableToggled { plugin_id };
-    let key = if enabled {
-        "plugin.enabled"
-    } else {
-        "plugin.disabled"
-    };
-    mgr.emit_host_event(key, &payload, EventScope::System);
+    crate::ipc::handler::plugin::emit_enable_toggled(mgr, plugin_id, enabled);
 }
 
+/// 위와 같다. `reason` 은 큐에 문자열로 실려 오므로(`PendingHostEvent` 가 protocol
+/// 타입을 안 들고 다닌다) 되읽는 것이 이 함수의 일이다.
 pub(super) fn emit_plugin_unloaded(mgr: &mut PluginManager, plugin_id: String, reason: String) {
     let lr = match reason.as_str() {
         "ipc" => LifecycleReason::Ipc,
         "crash" => LifecycleReason::Crash,
         _ => LifecycleReason::User,
     };
-    let payload = PluginUnloaded {
-        plugin_id,
-        reason: lr,
-    };
-    mgr.emit_host_event("plugin.unloaded", &payload, EventScope::System);
+    crate::ipc::handler::plugin::emit_unloaded(mgr, plugin_id, lr);
 }
 
 pub(super) fn emit_plugin_error(

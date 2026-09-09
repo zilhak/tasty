@@ -1214,35 +1214,64 @@ fn plugin_show_distinguishes_an_unknown_plugin_from_a_missing_manager() {
     );
 }
 
-/// 수명주기 메서드는 **여전히 없다** — 이 축이 연 것은 읽기 표면뿐이다.
+/// 수명주기 **토글 둘**은 창 없이 답한다 — `-32017`(이 빌드에 arm 이 없다)이 아니다.
 ///
-/// **이 테스트는 위 둘이 빨개질 때 초록으로 남아야 한다.** 배선
-/// (`src/boot/headless_dispatch.rs` 의 읽기 전용 가로채기)을 죽이면 위 두 테스트는
-/// `-32601` 로 실패하는데, 이것은 그대로 통과한다. 셋이 함께 빨개지면 그 변이는
-/// "무언가 깨졌다" 만 말하고, 배선이 **정확히 그 둘을 만든다**는 것은 말하지 못한다.
-/// 이 비대칭이 이 세 테스트의 판정력이므로, 셋을 한 조건으로 묶도록 고치지 마라.
+/// 파라미터를 **일부러 빼고** 부른다. 그러면 응답이 arm 안의 파싱에서 나므로
+/// (`-32602 Missing 'id' parameter`), 이 단언은 매니저 상태도 홈 상태도 안 보고
+/// **arm 이 이 바이너리에 있는가** 하나만 잰다. 공유 데몬을 상대로 도는 테스트라
+/// plugin 을 실제로 켜고 끄면 다른 테스트의 전제를 바꾼다 — 그래서 부수효과가
+/// 0 인 갈래로 잰다.
 ///
-/// 이 단언이 없으면 위 둘은 "`plugin.*` 를 전부 열었다" 와 구별되지 않는다.
-/// 헤드리스에서 `plugin.enable` 이 답하려면 `App.plugin_manager` 만으로는 부족하고
-/// gui feature 로 게이트된 `app/plugin_glue` 와 `cascade_plugin_events` 가 필요하다.
-/// 그 경계를 여는 것은 별도 결정이므로, 지금은 없는 것이 현재 상태다.
-#[cfg(not(feature = "gui"))]
+/// 두 코드의 차이가 계측기다: `-32017` 은 "이 조합에 안 들어 있다", `-32602` 는
+/// "들어 있고 인자가 틀렸다" 다. 뒤엣것이 와야 배선됐다는 뜻이 된다.
 #[test]
-fn lifecycle_methods_are_still_absent_in_a_headless_daemon() {
+fn lifecycle_toggles_answer_without_a_window() {
     let _lane = lane();
     let tasty = common::shared();
-    let resp = tasty.call_raw("plugin.enable", json!({"id": "anything"}));
+    for method in ["plugin.enable", "plugin.disable"] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp
+            .get("error")
+            .and_then(|e| e.get("code"))
+            .and_then(|c| c.as_i64());
+        assert_eq!(
+            code,
+            Some(-32602),
+            "{method} 는 arm 이 있어 인자 오류로 답해야 한다. `-32017` 이면 그 조합에 \
+             arm 이 없는 것이고, `-32601` 이면 표에서 이름이 빠진 것이다: {resp}"
+        );
+    }
+}
 
-    let code = resp
-        .get("error")
-        .and_then(|e| e.get("code"))
-        .and_then(|c| c.as_i64());
-    assert_eq!(
-        code,
-        Some(-32017),
-        "헤드리스에서 plugin.enable 은 아직 arm 이 없는 메서드여야 한다. `-32601` 이 왔다면 \
-         표에서 이름이 빠진 것이고, 그러면 호출자가 오타와 구분할 수 없다: {resp}"
-    );
+/// 나머지 수명주기 메서드는 **여전히 없다** — 위 축이 연 것은 토글 둘뿐이다.
+///
+/// **이 테스트는 위 셋이 빨개질 때 초록으로 남아야 한다.** 배선
+/// (`src/boot/headless_dispatch.rs` 의 읽기 전용 · 토글 가로채기)을 죽이면 위 세
+/// 테스트는 실패하는데, 이것은 그대로 통과한다. 넷이 함께 빨개지면 그 변이는
+/// "무언가 깨졌다" 만 말하고, 배선이 **정확히 그 셋을 만든다**는 것은 말하지 못한다.
+/// 이 비대칭이 이 네 테스트의 판정력이므로, 넷을 한 조건으로 묶도록 고치지 마라.
+///
+/// `plugin.remove` 는 파일을 지우고 `plugin.grant` 는 권한을 바꾼다 — 토글과 달리
+/// 헤드리스에서 열지 여부가 각각 별도 결정이라 아직 없다
+/// (`docs/dev-guide/headless-ipc-surface.md`).
+#[cfg(not(feature = "gui"))]
+#[test]
+fn the_remaining_lifecycle_methods_are_still_absent_in_a_headless_daemon() {
+    let _lane = lane();
+    let tasty = common::shared();
+    for method in ["plugin.remove", "plugin.grant"] {
+        let resp = tasty.call_raw(method, json!({"id": "anything"}));
+        let code = resp
+            .get("error")
+            .and_then(|e| e.get("code"))
+            .and_then(|c| c.as_i64());
+        assert_eq!(
+            code,
+            Some(-32017),
+            "헤드리스에서 {method} 는 아직 arm 이 없는 메서드여야 한다. `-32601` 이 \
+             왔다면 표에서 이름이 빠진 것이고, 그러면 호출자가 오타와 구분할 수 없다: {resp}"
+        );
+    }
 }
 
 /// 대상을 **지목했는데 아무 창도 안 가진** 요청은 거절된다 — 포커스된 창으로 안 샌다.

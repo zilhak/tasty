@@ -59,7 +59,7 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 
 ## `plugin.*` — 19 개 메서드의 판정
 
-### 답한다 (7)
+### 답한다 — 읽기 (7)
 
 `App.plugin_manager` 또는 `Core` 만 읽으면 답이 정해지는 것들이다. 창과 무관하다.
 
@@ -73,6 +73,29 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 | `plugin.audit_summary` | `Core` 의 audit store |
 | `plugin.list_agent_permissions` | `Core` 의 세션 권한 |
 
+### 답한다 — 수명주기 토글 (2)
+
+`plugin.enable` · `plugin.disable`
+
+읽는 것도 쓰는 것도 `App.plugin_manager` 하나다. 창을 안 본다.
+
+두 라우터가 **같은 함수**를 부른다 — `handler::plugin::dispatch_lifecycle_toggle`
+(`src/adapters/ipc/handler/plugin.rs`). 파라미터 이름·응답 칸 이름·오류 문구는
+에이전트가 보는 계약이라 한 자리에만 둔다. gui 의 `App::plugin_enable` /
+`App::plugin_disable` 도 같은 함수의 얇은 위임이다.
+
+**갈리는 것은 낸 이벤트의 소비처 하나다.** gui 는 첫 main window 의 `PendingHostEvent`
+큐에 넣어 `app/dispatch/host_events.rs` 가 다음 drain 에 event bus 로 보내고, 창이 하나도
+없으면 **아무것도 발화하지 않는다**. 헤드리스는 창이 없어 그 큐를 못 쓰므로
+`cascade_toggle_events_headless` 가 매니저를 직접 들고 그 자리에서 낸다. 발화하는 이벤트
+키와 payload 자체(`plugin.enabled` / `plugin.disabled` / `plugin.unloaded`)는 두 경로가
+같은 함수를 부른다. hook 이벤트 등록 해제도 gui 의 `cascade_plugin_unloaded` 와 같다.
+
+**매니저는 메타데이터 층까지만 세운다** (`ensure_plugin_manager_metadata`). 번들 설치는
+부팅이 이미 했고(`src/boot.rs`), `PluginManager::enable` 은 그 package 표에서 **지목한
+하나만** 찾아 기동한다. 여기서 `ensure_plugin_manager`(= `discover_and_start`)를 부르면
+하나를 켜라는 명령이 설치된 전부를 띄운다 — 그것이 이 갈래를 나눈 이유다.
+
 ### 아직 없다 — 쓰기이지만 창은 필요 없다 (3)
 
 `Core` 만 있으면 되므로 기술적 장벽은 없다. 읽기 표면과 **함께 열지 않은** 이유는
@@ -81,16 +104,17 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 
 `plugin.audit_clear` · `plugin.grant_agent_permission` · `plugin.revoke_agent_permission`
 
-### 아직 없다 — `App` 이분이 선행이다 (8)
+### 아직 없다 — `App` 이분이 선행이다 (6)
 
-`plugin_enable` 계열 헬퍼는 `src/app/plugin_glue/` 에 있고 그 모듈은 `gui` feature 로
-게이트돼 있다. 이어지는 `cascade_plugin_events` 는 `src/app/dispatch_domain.rs` 의 `App`
-메서드이며 헤드리스 스텁(`dispatch_domain_stubs.rs`)에 대응물이 없다. 이 경계를 여는 것은
+이어지는 `cascade_plugin_events` 는 `src/app/dispatch_domain.rs` 의 `App` 메서드이며
+헤드리스 스텁(`dispatch_domain_stubs.rs`)에 대응물이 없다. 위 토글 둘은 그 cascade 중
+자기 이벤트 둘만 헤드리스 형태로 대체해 열었지만, 나머지는 파일을 복사·삭제하거나
+권한을 바꾸는 일이라 각각이 별도 결정이다. 이 경계를 여는 것은
 [ADR-0127](../adr/0127-e2e-harness-binary-selection.md) 이 "`App` 이분이 선행" 이라고
 적어 둔 그 자리다.
 
-`plugin.enable` · `plugin.disable` · `plugin.install` · `plugin.remove` · `plugin.grant` ·
-`plugin.revoke` · `plugin.upgrade_builtins` · `plugin.audit_follow`
+`plugin.install` · `plugin.remove` · `plugin.grant` · `plugin.revoke` ·
+`plugin.upgrade_builtins` · `plugin.audit_follow`
 
 `plugin.audit_follow` 는 `Core` 만 읽지만 구독을 여는 스트리밍 표면이라, 헤드리스에서
 구독 수명을 무엇에 묶을지가 위 결정과 함께 정해져야 한다.
@@ -174,7 +198,10 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 | `remote.attach` | mirror workspace 를 띄울 창이 필요하다 |
 | `system.gpu_stats` | 창마다의 GpuState 와 wgpu 전역 리포트를 센다. GPU 컨텍스트가 없다 |
 
-`plugin.*` 의 12 건은 위 "`plugin.*` — 19 개 메서드의 판정" 절이 따로 가른다.
+`plugin.*` 는 위 "`plugin.*` — 19 개 메서드의 판정" 절이 따로 가른다 — 그 절 기준 **지금 9 건**이다.
+아래 census 는 2026-09-05 에 12 건으로 셌고, 그 뒤 `plugin.request_permission` 과 토글 둘이
+열려 그만큼 줄었다. 이 수는 census 를 다시 돌려 얻은 값이 아니라 그 절의 분류에서 따라오는
+값이다 — 정본은 그 절이다.
 
 ## dispatch arm 이 `gui` 로 게이트된 표면
 
@@ -222,10 +249,10 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 | 부류 | 건수 | 어디서 판정하나 |
 |------|------|-----------------|
 | 창 축(`window.*` · `view.*` · `ui.screenshot` · `remote.attach` · `system.gpu_stats`) | 11 | 위 "app 층 메서드" 절 |
-| `plugin.*` | 12 | 위 "`plugin.*` — 19 개 메서드의 판정" 절 |
+| `plugin.*` | 9 | 위 "`plugin.*` — 19 개 메서드의 판정" 절 (census 시점 12 → 그 뒤 셋이 열렸다) |
 | `debug.*` | 36 | 이 절 |
 | 그 밖 | 6 | 이 절 |
-| **합** | **65** | |
+| **합** | **62** | |
 
 ### 분류 미정 (그 밖 2)
 

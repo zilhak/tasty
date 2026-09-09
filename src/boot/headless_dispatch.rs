@@ -130,6 +130,37 @@ pub(crate) fn pump_ipc(
                 continue;
             }
         }
+        // 2b-toggle) `plugin.enable` / `plugin.disable` — 창을 안 보는 수명주기 쓰기 둘.
+        //     gui 라우터와 **같은 함수**를 부른다(`handler::plugin::dispatch_lifecycle_toggle`).
+        //
+        //     매니저는 여기서도 **메타데이터 층까지만** 세운다. 부팅이 이미 번들을
+        //     설치해 뒀으므로(`src/boot.rs` 의 `install_builtins_if_needed`) 이 층이면
+        //     package 표가 차 있고, `PluginManager::enable` 은 그 표에서 **지목한
+        //     하나만** 찾아 기동한다. `ensure_plugin_manager`(= `discover_and_start`)를
+        //     부르면 안 되는 이유가 그것이다 — 하나를 켜라는 명령이 전부를 띄운다.
+        //
+        //     낸 이벤트는 창 큐가 없으므로 그 자리에서 소비한다. gui 의
+        //     `cascade_plugin_events` 가 하는 일 중 이 둘에 해당하는 부분이다.
+        if crate::ipc::handler::plugin::is_lifecycle_toggle_method(&cmd.request.method) {
+            super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+            let hook_events = engine.plugin_hook_events.clone();
+            if let Some((resp, events)) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
+                app.plugin_manager.as_mut(),
+                &cmd.request.method,
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                &cmd.request.params,
+            ) {
+                if let Some(mgr) = app.plugin_manager.as_mut() {
+                    crate::ipc::handler::plugin::cascade_toggle_events_headless(
+                        mgr,
+                        &hook_events,
+                        events,
+                    );
+                }
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
+        }
         // 2b-elev) `plugin.request_permission` — agent 가 권한 부족을 미리 알고
         //     capability_elevation 을 자체 발행하는 자리. gui 는 첫 main window 의
         //     state 를 빌려 이것을 답하는데(`app/ipc/app_methods.rs`), 헤드리스는

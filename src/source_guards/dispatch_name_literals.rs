@@ -249,6 +249,10 @@ const DELEGATED_ROUTERS: &[(&str, &str)] = &[
         "handle_event_bus",
     ),
     ("src/adapters/ipc/handler/ime.rs", "handle_ime_method"),
+    (
+        "src/adapters/ipc/handler/plugin.rs",
+        "dispatch_lifecycle_toggle",
+    ),
     ("src/adapters/ipc/handler/plugin.rs", "dispatch_readonly"),
     ("src/adapters/ipc/handler/telemetry.rs", "record_ipc_call"),
     ("src/app/ipc/debug_methods.rs", "ipc_debug_fullscreen"),
