@@ -21,12 +21,19 @@ use super::{
 /// - `explorers`: `(surface_id, root)` — explorer surface 와 **활성 탭의 현재
 ///   디렉토리**(ADR-0059 Decision 1, 전체 탭이 아니라 활성 탭만). browse-only 원격
 ///   mirror 대상(ADR-0059).
+/// - `content_candidates`: `Surface::attach_content_info()` 가 `Some` 을 반환한
+///   surface `(surface_id, kind, plugin_id, file)` — 렌더 결과가 아니라 **원문**을
+///   나르는 mirror 대상(ADR-0254). `mesh_candidates` 와 **같은 이유로 여기서 최종
+///   판정하지 않는다** — 어떤 `(kind, plugin_id)` 조합이 이 채널을 타는지는 앱
+///   계층(`src/core/attach_runtime.rs`)의 화이트리스트가 정하고, 떨어진 후보는
+///   호출자가 `non_terminals` 와 동일하게(placeholder) 취급해야 한다.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct AttachSurfaceClass {
     pub terminals: Vec<SurfaceId>,
     pub non_terminals: Vec<SurfaceId>,
     pub mesh_candidates: Vec<(SurfaceId, String, String)>,
     pub explorers: Vec<(SurfaceId, PathBuf)>,
+    pub content_candidates: Vec<(SurfaceId, String, String, Option<PathBuf>)>,
 }
 
 /// Workspace - one sidebar item. Contains a PaneLayout (binary split tree of Panes).
@@ -201,6 +208,17 @@ impl Workspace {
                                 id,
                                 kind.to_string(),
                                 plugin_id.to_string(),
+                            ));
+                            return;
+                        }
+                        // mesh 다음, explorer 앞 — mesh 판정이 먼저여야 기존
+                        // image/mesh_demo 분류가 안 바뀐다(ADR-0254 항목 1a).
+                        if let Some((kind, plugin_id, file)) = s.attach_content_info() {
+                            class.content_candidates.push((
+                                id,
+                                kind.to_string(),
+                                plugin_id.to_string(),
+                                file,
                             ));
                             return;
                         }

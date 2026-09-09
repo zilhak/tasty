@@ -61,6 +61,23 @@ pub trait Surface: Any + Send {
         None
     }
 
+    /// attach content mirror 후보 판별(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`).
+    /// `Some((kind, plugin_id, file))` 를 반환하면 이 surface 는 **렌더 결과가 아니라
+    /// 원문**을 attach 채널로 나를 수 있다는 뜻 — `Workspace::classify_attach_surfaces`
+    /// 가 이 신호로 후보를 모으고, 실제 화이트리스트 판정(어떤 `(kind, plugin_id)`
+    /// 조합이 이 채널을 타는지)은 [`Self::attach_mesh_info`] 와 **같은 이유로** 이
+    /// crate 밖(앱 계층, `src/core/attach_runtime.rs`)의 책임으로 남긴다.
+    ///
+    /// `file` 은 그 surface 가 열고 있는 **원격 절대경로**다. 없으면(파일 없이 열린
+    /// 빈 문서) `None` — 그 경우도 후보이긴 하다(빈 문서를 빈 문서로 mirror 한다).
+    /// 반환 위치가 owned 인 이유는 구현체(`RemoteSurface`)가 이 값을 mutex 뒤의
+    /// snapshot 캐시에서 꺼내 빌려줄 수 없기 때문이다.
+    ///
+    /// 기본 구현은 `None`(이 채널 대상 아님) — 대다수 surface 에 영향 없음.
+    fn attach_content_info(&self) -> Option<(&str, &str, Option<PathBuf>)> {
+        None
+    }
+
     /// Resize-fitting hook. Layout 가 leaf 의 rect 를 알릴 때 호출. 기본 no-op.
     /// 현재 모든 구현 (TerminalSurface 포함) 이 default 만 — Terminal resize 는
     /// 별 PTY resize 경로로 분리. 본 메서드는 후속 surface kind 들의 옵션.

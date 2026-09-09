@@ -1682,6 +1682,7 @@ impl App {
         // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
         self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
         self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
+        self.apply_markdown_content_requests_batch(outcome.markdown_content_requests, &hub);
         // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
         // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
         // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
@@ -1930,6 +1931,24 @@ impl App {
     ) {
         for (client_id, msg) in requests {
             self.apply_git_query_request_msg(client_id, msg, hub);
+        }
+    }
+
+    /// `apply_stream_outcome` 지원 — `markdown_content_requests` 배치 적용.
+    /// markdown mirror(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`):
+    /// mirror client 가 attach 채널로 보낸 원문 조회 요청. holder 를 찾아 처리.
+    fn apply_markdown_content_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<
+            Item = (
+                u32,
+                crate::adapters::production::stream_hub::MarkdownContentRequestMsg,
+            ),
+        >,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        for (client_id, msg) in requests {
+            self.apply_markdown_content_request_msg(client_id, msg, hub);
         }
     }
 
@@ -2357,6 +2376,58 @@ impl App {
         let payload = serde_json::json!({
             "event": "list_dir_result",
             "request_id": request_id,
+            "ok": false,
+            "reason": "client does not hold a workspace attach",
+        });
+        let frame = crate::ipc::stream::StreamFrame::new(
+            crate::ipc::stream::StreamTag::Control,
+            serde_json::to_vec(&payload).unwrap_or_default(),
+        );
+        let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
+    }
+
+    /// markdown mirror(`docs/adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md`)
+    /// — mirror client 가 attach 채널로 보낸 `markdown_content_request` 하나를 적용한다.
+    /// `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을 찾아
+    /// `attach_runtime::handle_markdown_content_request` 로 위임한다.
+    fn apply_markdown_content_request_msg(
+        &mut self,
+        client_id: u32,
+        msg: crate::adapters::production::stream_hub::MarkdownContentRequestMsg,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) {
+        use crate::adapters::production::stream_hub::MarkdownContentRequestMsg;
+        let MarkdownContentRequestMsg::MarkdownContentRequest {
+            request_id,
+            surface_id,
+        } = msg;
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.attach.client_holds_workspace(client_id)
+            {
+                crate::core::attach_runtime::handle_markdown_content_request(
+                    &mut main.core_state,
+                    hub,
+                    client_id,
+                    request_id,
+                    surface_id,
+                );
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.attach.client_holds_workspace(client_id) {
+                crate::core::attach_runtime::handle_markdown_content_request(
+                    engine, hub, client_id, request_id, surface_id,
+                );
+                return;
+            }
+        }
+        // holder 를 못 찾음 — markdown_content_result 실패 회신(list_dir 과 동일 처리).
+        let payload = serde_json::json!({
+            "event": "markdown_content_result",
+            "request_id": request_id,
+            "surface_id": surface_id,
             "ok": false,
             "reason": "client does not hold a workspace attach",
         });

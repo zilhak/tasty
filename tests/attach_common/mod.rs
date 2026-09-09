@@ -219,6 +219,15 @@ fn open_stream(port: u16, params: Value) -> TcpStream {
 /// `{"event":"attached_workspace",...}` control 프레임까지 읽고 연결을 반환한다
 /// (ack·터미널 초기 스냅샷 등 무관한 프레임은 건너뛴다).
 pub fn open_workspace_attach(port: u16, workspace_id: u64) -> AttachStream {
+    open_workspace_attach_with_descriptor(port, workspace_id).0
+}
+
+/// [`open_workspace_attach`] 와 같지만 `attached_workspace` 디스크립터(트리 +
+/// per-surface role)를 함께 돌려준다 — role 직렬화 자체를 검증하는 테스트용.
+pub fn open_workspace_attach_with_descriptor(
+    port: u16,
+    workspace_id: u64,
+) -> (AttachStream, Value) {
     let mut stream = open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}));
     // heartbeat 는 점유를 유지시킨다 — 서버는 침묵을 죽음으로 보고 점유를 회수하므로,
     // **침묵이 계약인 헬퍼에는 절대 걸지 않는다**: `open_surface_attach`(TTL 회수를
@@ -241,9 +250,37 @@ pub fn open_workspace_attach(port: u16, workspace_id: u64) -> AttachStream {
             continue;
         }
         match v.get("event").and_then(|e| e.as_str()) {
-            Some("attached_workspace") => return AttachStream { inner: stream },
+            Some("attached_workspace") => return (AttachStream { inner: stream }, v),
             Some("attach_error") => panic!("workspace attach rejected: {v:?}"),
             _ => continue, // 터미널 스냅샷 등 무관한 control 프레임 — 계속 대기.
+        }
+    }
+}
+
+/// [`open_workspace_attach_with_descriptor`] 의 **거절해도 panic 하지 않는** 판.
+/// 이미 점유된 workspace 면 `None` 을 돌려준다 — 연결을 끊었다 다시 붙으며 상태가
+/// 무르익기를 기다리는(재시도) 테스트용. 실패한 연결은 여기서 drop 되고, 서버는 그
+/// EOF 로 점유를 회수한다.
+pub fn try_open_workspace_attach_stream(
+    port: u16,
+    workspace_id: u64,
+) -> Option<(AttachStream, Value)> {
+    let mut stream = open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}));
+    spawn_heartbeat(&stream);
+    loop {
+        let (tag, payload) = read_frame(&mut stream);
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        if let Some(ok) = v.get("ok") {
+            assert_eq!(ok, true, "handshake rejected: {v:?}");
+            continue;
+        }
+        match v.get("event").and_then(|e| e.as_str()) {
+            Some("attached_workspace") => return Some((AttachStream { inner: stream }, v)),
+            Some("attach_error") => return None,
+            _ => continue,
         }
     }
 }

@@ -137,6 +137,10 @@ pub struct PumpOutcome {
     /// worktrees snapshot 또는 단일 파일 diff). `list_dir_requests` 와 동일한 이유로
     /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
+    /// `(client_id, msg)` — 원격 attach mirror 세션의 markdown 원문 조회 요청
+    /// (ADR-0254). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
+    /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
+    pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
     /// `(client_id, event)` — (06) native bulk 파일 전송의 begin/chunk/commit 을
     /// **도착 순서 그대로** 담는 단일 벡터. begin(Control)·chunk(Data)·commit(Control)이
     /// 서로 다른 프레임 태그로 오지만 같은 배치에 섞여 drain 될 수 있으므로, 분리된
@@ -230,6 +234,21 @@ pub enum GitQueryRequestMsg {
         /// `kind = Diff` 전용 — 대상 파일의 repo-relative 경로.
         #[serde(default)]
         diff_path: Option<String>,
+    },
+}
+
+/// markdown mirror(ADR-0254) mid-session control messages — mirror client 가
+/// 원격/holder 쪽에 그 markdown surface 가 열고 있는 문서의 **원문**을 요청한다.
+/// [`ListDirRequestMsg`] 과 같은 "outside `StreamControl`" 근거와 신뢰 모델
+/// (attach 점유 = 신뢰, `client_holds_workspace`).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum MarkdownContentRequestMsg {
+    MarkdownContentRequest {
+        request_id: u64,
+        /// **원격** surface id — 서버가 자기 트리에서 그 surface 를 찾아 content
+        /// mirror 대상인지 확인하고 그 파일을 읽는다.
+        surface_id: u32,
     },
 }
 
@@ -536,6 +555,12 @@ impl StreamHub {
                                         serde_json::from_slice::<GitQueryRequestMsg>(&frame.payload)
                                     {
                                         out.git_query_requests.push((client_id, msg));
+                                    } else if let Ok(msg) =
+                                        serde_json::from_slice::<MarkdownContentRequestMsg>(
+                                            &frame.payload,
+                                        )
+                                    {
+                                        out.markdown_content_requests.push((client_id, msg));
                                     }
                                 }
                             }

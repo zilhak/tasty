@@ -923,6 +923,117 @@ fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_act
     assert_eq!(class.explorers, vec![(200, PathBuf::from("/proj/sub"))]);
 }
 
+/// content mirror 후보(ADR-0254)를 답하는 테스트용 surface. 본체 크레이트의
+/// `RemoteSurface` 가 이 자리를 채우지만 그 타입은 여기서 볼 수 없다 — 계약만 흉내낸다.
+struct ContentSurface {
+    id: SurfaceId,
+    kind: &'static str,
+    plugin_id: String,
+    file: Option<std::path::PathBuf>,
+}
+
+impl super::Surface for ContentSurface {
+    crate::impl_surface_any!();
+
+    fn kind(&self) -> &'static str {
+        self.kind
+    }
+
+    fn type_name(&self) -> &'static str {
+        "Remote"
+    }
+
+    fn surface_id(&self) -> Option<SurfaceId> {
+        Some(self.id)
+    }
+
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    fn attach_content_info(&self) -> Option<(&str, &str, Option<std::path::PathBuf>)> {
+        Some((self.kind, self.plugin_id.as_str(), self.file.clone()))
+    }
+}
+
+/// ADR-0254 — content mirror 를 답하는 surface 는 `non_terminals` 가 아니라 전용
+/// `content_candidates` 버킷으로 분류되고, kind·plugin_id·파일 경로가 함께 실려야 한다.
+/// 화이트리스트 판정은 이 crate 가 하지 않는다(앱 계층) — 여기서는 후보를 모으는 것까지다.
+#[test]
+fn workspace_classify_attach_surfaces_puts_content_surface_in_dedicated_bucket() {
+    use super::{Pane, Workspace};
+    use std::path::PathBuf;
+
+    let pane = Pane::new_with_surface(
+        1,
+        1,
+        "README.md".into(),
+        Box::new(ContentSurface {
+            id: 400,
+            kind: "markdown",
+            plugin_id: "com.tasty.markdown".into(),
+            file: Some(PathBuf::from("/proj/README.md")),
+        }),
+    );
+    let ws = Workspace::new_with_pane(1, "w".into(), pane);
+    let class = ws.classify_attach_surfaces();
+    assert!(
+        class.non_terminals.is_empty(),
+        "content 후보가 placeholder 로 새면 안 된다"
+    );
+    assert_eq!(
+        class.content_candidates,
+        vec![(
+            400,
+            "markdown".to_string(),
+            "com.tasty.markdown".to_string(),
+            Some(PathBuf::from("/proj/README.md")),
+        )]
+    );
+}
+
+/// 회귀: mesh 판정이 content 판정보다 **먼저**여야 한다. 두 신호를 다 답하는 surface 가
+/// content 버킷으로 새면 기존 image/mesh_demo 의 mesh mirror 가 조용히 끊긴다.
+#[test]
+fn workspace_classify_attach_surfaces_prefers_mesh_over_content() {
+    use super::{Pane, Workspace};
+
+    struct BothSurface(SurfaceId);
+    impl super::Surface for BothSurface {
+        crate::impl_surface_any!();
+        fn kind(&self) -> &'static str {
+            "image"
+        }
+        fn type_name(&self) -> &'static str {
+            "EguiMesh"
+        }
+        fn surface_id(&self) -> Option<SurfaceId> {
+            Some(self.0)
+        }
+        fn source_cwd(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+        fn attach_mesh_info(&self) -> Option<(&str, &str)> {
+            Some(("image", "com.tasty.image"))
+        }
+        fn attach_content_info(&self) -> Option<(&str, &str, Option<std::path::PathBuf>)> {
+            Some(("image", "com.tasty.image", None))
+        }
+    }
+
+    let pane = Pane::new_with_surface(1, 1, "img".into(), Box::new(BothSurface(500)));
+    let ws = Workspace::new_with_pane(1, "w".into(), pane);
+    let class = ws.classify_attach_surfaces();
+    assert_eq!(
+        class.mesh_candidates,
+        vec![(500, "image".to_string(), "com.tasty.image".to_string())]
+    );
+    assert!(
+        class.content_candidates.is_empty(),
+        "mesh 후보가 content 버킷으로 새면 mesh mirror 가 끊긴다"
+    );
+}
+
 #[test]
 fn surface_layout_to_tree_json_full_preserves_split_ratio() {
     let node1 = test_surface_node(10);

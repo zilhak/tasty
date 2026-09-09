@@ -244,6 +244,7 @@ const HEADLESS_OK_SUITES: &[&str] = &[
     "attach_git_query_loopback",
     "attach_list_dir_loopback",
     "attach_local_creation_tap",
+    "attach_markdown_content_loopback",
     "attach_silent_disconnect",
     "hook_env_integration",
     "hooks_detection_e2e",
@@ -1410,7 +1411,11 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
 /// 오래 안 보였던 이유가 정확히 그것이다.
 ///
 /// 새 스위트가 plugin 을 쓰기 시작하면 여기 추가한다.
-pub const SUITES_THAT_CALL_BUNDLED_PLUGINS: &[&str] = &["e2e_tests", "soak_memory"];
+pub const SUITES_THAT_CALL_BUNDLED_PLUGINS: &[&str] = &[
+    "attach_markdown_content_loopback",
+    "e2e_tests",
+    "soak_memory",
+];
 
 /// 지금 도는 테스트 바이너리 이름 (`.../deps/e2e_tests-1a2b3c4d` → `e2e_tests`).
 ///

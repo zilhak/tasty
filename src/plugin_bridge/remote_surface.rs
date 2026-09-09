@@ -210,6 +210,28 @@ impl Surface for RemoteSurface {
         .clone()
     }
 
+    /// ADR-0254 — 이 surface 는 렌더 결과가 아니라 **원문**을 attach 채널로 나를 수
+    /// 있는 후보다. 경로는 plugin 이 `surface.create`/`restore` 응답에 실어 올린
+    /// snapshot(`{"file": ...}`)에서 꺼낸다 — markdown plugin 의 `open_file_surface`
+    /// 가 그 형태로 올리고 host 가 [`Self::snapshot_cache`] 에 캐시한다.
+    ///
+    /// **여기서 kind 를 좁히지 않는다.** 어떤 `(kind, plugin_id)` 조합이 실제로 이
+    /// 채널을 타는지는 앱 계층의 화이트리스트(`attach_runtime::content_mirror_candidates`)
+    /// 가 정한다 — `attach_mesh_info` 와 같은 두 단 구조이고, 그래서 이 override 는
+    /// `RemoteSurface` 전체에 붙는다.
+    fn attach_content_info(&self) -> Option<(&str, &str, Option<PathBuf>)> {
+        let file = crate::poison::recover_mutex(
+            self.snapshot_cache.lock(),
+            SNAPSHOT_WHAT,
+            &SNAPSHOT_POISON_REPORTED,
+        )
+        .as_ref()
+        .and_then(|v| v.get("file"))
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+        Some((self.kind_static, self.plugin_id.as_str(), file))
+    }
+
     fn to_tree_json(&self) -> serde_json::Value {
         serde_json::json!({
             "kind": self.kind_static,

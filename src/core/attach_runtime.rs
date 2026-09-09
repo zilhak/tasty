@@ -284,6 +284,7 @@ impl CoreState {
             .chain(class.non_terminals.iter())
             .chain(class.explorers.iter().map(|(sid, _)| sid))
             .chain(class.mesh_candidates.iter().map(|(sid, _, _)| sid))
+            .chain(class.content_candidates.iter().map(|(sid, _, _, _)| sid))
             .copied()
             .collect();
 
@@ -321,11 +322,15 @@ impl CoreState {
         }
 
         let (mesh_whitelisted, _mesh_rejected) = mesh_mirror_candidates(&class);
+        let (content_whitelisted, content_rejected) = content_mirror_candidates(&class);
         tracing::debug!(
-            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} mesh, {} placeholders)",
+            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} mesh, {} content, {} placeholders)",
             class.terminals.len(),
             mesh_whitelisted.len(),
-            class.non_terminals.len() + (class.mesh_candidates.len() - mesh_whitelisted.len()),
+            content_whitelisted.len(),
+            class.non_terminals.len()
+                + (class.mesh_candidates.len() - mesh_whitelisted.len())
+                + content_rejected.len(),
         );
     }
 
@@ -597,6 +602,9 @@ impl CoreState {
         // mesh 후보를 bundled 화이트리스트로 재검증. 통과 못한 후보는
         // non_terminals 와 동일하게 placeholder 로 내려간다.
         let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
+        // content 후보(ADR-0254)도 같은 두 단 — 통과 못한 후보(html 등 다른 webview
+        // kind)는 placeholder 로 내려간다.
+        let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
 
         let mut surfaces = Vec::new();
         for &sid in &class.terminals {
@@ -636,7 +644,29 @@ impl CoreState {
                 "root": root.to_string_lossy(),
             }));
         }
-        for &sid in class.non_terminals.iter().chain(mesh_rejected.iter()) {
+        // ADR-0254 — markdown 은 placeholder 가 아니라 전용 role. 내용은 여기 싣지
+        // 않고(트리 디스크립터가 문서 크기만큼 부풀지 않게) client 가
+        // `markdown_content_request` 로 따로 가져온다. `file` 은 **표시·제목 전용의
+        // opaque 문자열**이다 — client 는 이 값으로 자기 로컬 파일을 열지 않는다
+        // (두 인스턴스의 파일시스템이 다르다).
+        for (sid, _kind, file) in &content_whitelisted {
+            let display_name = display_names
+                .get(sid)
+                .cloned()
+                .unwrap_or_else(|| kinds.get(sid).copied().unwrap_or("markdown").to_string());
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "markdown",
+                "file": file.as_ref().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
+                "display_name": display_name,
+            }));
+        }
+        for &sid in class
+            .non_terminals
+            .iter()
+            .chain(mesh_rejected.iter())
+            .chain(content_rejected.iter())
+        {
             surfaces.push(serde_json::json!({
                 "remote_id": sid,
                 "role": "placeholder",
@@ -1642,6 +1672,169 @@ fn cap_diff_hunks(
     (out, false)
 }
 
+/// markdown mirror(ADR-0254) — mirror client 가 attach 채널로 보낸
+/// `markdown_content_request` 하나를 처리한다. `client_id` 가 이 engine 이 호스팅하는
+/// 어떤 workspace 든 점유(holder)해야 신뢰한다(`handle_list_dir_request`/
+/// `handle_git_query_request` 와 동일한 "attach 점유 = 권한" 원칙 — 이 채널이 나르는
+/// 것은 SSH 로 붙은 사용자가 이미 읽을 수 있는 그 호스트의 파일 원문이다).
+///
+/// **파일은 이 host 가 직접 읽는다** — 서버측 markdown plugin 에 되묻지 않는다.
+/// 이 핸들러는 동기 경로이고 plugin 왕복은 비동기라 여기서 기다릴 수 없다
+/// (`handle_git_query_request` 가 `tasty-git-core` 를 host 에서 직접 부르는 것과 같은
+/// 형태). 그 결과로, 서버측 plugin 이 대용량 확인 대기 중이라 서버 화면에는 아무것도
+/// 안 띄운 파일이라도 여기서는 예산 안에서 읽어 보낸다 — 그 게이트는 그리는 쪽의
+/// 물음이지 읽기 권한의 경계가 아니다(ADR-0254 항목 4).
+///
+/// 회신은 `markdown_content_result` 이벤트(`StreamControl` enum 밖의 raw JSON "event"
+/// 태그, list_dir/git_query 와 동일 패턴).
+pub(crate) fn handle_markdown_content_request(
+    engine: &mut CoreState,
+    hub: &StreamHub,
+    client_id: u32,
+    request_id: u64,
+    surface_id: u32,
+) {
+    let is_holder = engine.attach.client_holds_workspace(client_id);
+    let result = if !is_holder {
+        Err("client does not hold a workspace attach".to_string())
+    } else {
+        markdown_content_for_request(engine, surface_id)
+    };
+    let payload = match result {
+        Ok((file, source, truncated)) => serde_json::json!({
+            "event": "markdown_content_result",
+            "request_id": request_id,
+            "surface_id": surface_id,
+            "ok": true,
+            "file": file,
+            "source": source,
+            "truncated": truncated,
+        }),
+        Err(reason) => serde_json::json!({
+            "event": "markdown_content_result",
+            "request_id": request_id,
+            "surface_id": surface_id,
+            "ok": false,
+            "reason": reason,
+        }),
+    };
+    let frame = StreamFrame::new(
+        StreamTag::Control,
+        serde_json::to_vec(&payload).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
+}
+
+/// `surface_id`(원격 id)를 content mirror 대상으로 확인하고 그 파일의 원문을 예산 안에서
+/// 읽는다. 반환은 `(file, source, truncated)`.
+///
+/// **파일 없이 열린 markdown surface 는 에러가 아니다** — 서버에서도 빈 문서가 보이므로
+/// 그 상태의 충실한 mirror 는 빈 `file`/`source` 다. `ok:false` 로 답하면 mirror 가
+/// 서버에 없는 에러를 만들어낸다(ADR-0254 항목 2).
+fn markdown_content_for_request(
+    engine: &CoreState,
+    surface_id: u32,
+) -> Result<(String, String, bool), String> {
+    let surface = engine
+        .find_surface_by_id(surface_id)
+        .ok_or_else(|| "unknown surface".to_string())?;
+    let (kind, plugin_id, file) = surface
+        .attach_content_info()
+        .ok_or_else(|| "surface does not carry content".to_string())?;
+    if !is_attach_content_allowed(kind, plugin_id) {
+        return Err(format!("surface kind '{kind}' is not content-mirrored"));
+    }
+    let Some(path) = file else {
+        return Ok((String::new(), String::new(), false));
+    };
+    // 에러 구분 수준은 `list_dir_for_request` 와 같다 — PermissionDenied 만 갈라 적고
+    // 나머지는 io 에러 문자열 그대로(없는 파일이면 그 사유가 그대로 나간다).
+    let bytes = std::fs::read(&path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            "permission denied".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+    let (source, truncated) = markdown_source_wire_capped(&bytes);
+    Ok((path.to_string_lossy().to_string(), source, truncated))
+}
+
+/// `markdown_content_result` 프레임 하나의 `source` 에 허용하는 바이트 예산.
+/// [`LIST_DIR_ENTRIES_BYTE_BUDGET`]·[`GIT_QUERY_BYTE_BUDGET`] 과 **같은 근거** —
+/// attach 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)보다 충분히 작게
+/// 잡아 envelope 오버헤드 + serde_json 이스케이프 팽창분을 흡수한다. 없으면 큰 문서
+/// 하나가 `write_frame` 을 상한 초과로 실패시키고 그 세션의 write thread 가 통째로
+/// 죽어 mirror 연결 자체가 끊긴다.
+///
+/// markdown plugin 의 대용량 게이트(`LARGE_FILE_LIMIT_BYTES`, 1MiB — plugin in-process
+/// 사용자 확인)와는 **다른 층**이다. 값이 그보다 작은 것은 우연이 아니다: 그 게이트를
+/// 건드릴 만큼 큰 파일은 이 예산에도 반드시 걸려 항상 `truncated: true` 로 도착한다.
+const MARKDOWN_CONTENT_BYTE_BUDGET: usize = 700 * 1024;
+
+/// 원문을 [`MARKDOWN_CONTENT_BYTE_BUDGET`] 안으로 자른다. 두 번째 반환값은 잘렸는지 여부.
+fn markdown_source_wire_capped(bytes: &[u8]) -> (String, bool) {
+    markdown_source_wire_capped_with_budget(bytes, MARKDOWN_CONTENT_BYTE_BUDGET)
+}
+
+/// 테스트 용이성을 위해 예산을 파라미터로 뺀 실제 구현.
+///
+/// 자르는 자리는 **UTF-8 문자 경계**다 — 이어지는 바이트(`0b10xx_xxxx`) 한가운데서
+/// 자르면 그 문자가 통째로 U+FFFD 하나로 바뀌어, 잘린 자리에 있지도 않던 글자가 생긴다.
+/// 경계까지 뒤로 물러나면 그 문자는 아예 안 실린다(있던 글자가 빠지는 쪽이 없던 글자가
+/// 생기는 쪽보다 낫고, 어느 쪽이든 `truncated` 가 알린다).
+fn markdown_source_wire_capped_with_budget(bytes: &[u8], budget: usize) -> (String, bool) {
+    if bytes.len() <= budget {
+        return (String::from_utf8_lossy(bytes).into_owned(), false);
+    }
+    let mut end = budget;
+    while end > 0 && (bytes[end] & 0b1100_0000) == 0b1000_0000 {
+        end -= 1;
+    }
+    (String::from_utf8_lossy(&bytes[..end]).into_owned(), true)
+}
+
+#[cfg(test)]
+mod markdown_content_tests {
+    use super::markdown_source_wire_capped_with_budget;
+
+    #[test]
+    fn a_document_within_budget_is_not_truncated() {
+        let (source, truncated) = markdown_source_wire_capped_with_budget(b"# hi\n", 64);
+        assert_eq!(source, "# hi\n");
+        assert!(!truncated);
+    }
+
+    /// 예산이 다국어 문자 한가운데 떨어져도 U+FFFD 를 만들지 않는다 — 경계까지
+    /// 물러나 그 문자를 통째로 뺀다.
+    #[test]
+    fn truncation_backs_up_to_a_char_boundary() {
+        // "가" 는 3 바이트(EA B0 80). 예산 4 면 두 번째 문자의 1 바이트째까지 들어간다.
+        let bytes = "가나".as_bytes();
+        assert_eq!(bytes.len(), 6);
+        let (source, truncated) = markdown_source_wire_capped_with_budget(bytes, 4);
+        assert_eq!(source, "가", "잘린 자리에 U+FFFD 가 생기면 안 된다");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn truncation_at_an_exact_boundary_keeps_everything_before_it() {
+        let bytes = "가나".as_bytes();
+        let (source, truncated) = markdown_source_wire_capped_with_budget(bytes, 3);
+        assert_eq!(source, "가");
+        assert!(truncated);
+    }
+
+    /// 비-UTF8 바이트는 lossy 로 실린다(`fs_list` 의 경로 처리와 같은 수준) —
+    /// 읽기 자체가 실패로 바뀌지는 않는다.
+    #[test]
+    fn invalid_utf8_is_carried_lossily_without_failing() {
+        let (source, truncated) = markdown_source_wire_capped_with_budget(&[0xff, 0xfe], 64);
+        assert!(!source.is_empty());
+        assert!(!truncated);
+    }
+}
+
 #[cfg(test)]
 mod git_query_tests {
     use super::*;
@@ -1794,6 +1987,97 @@ pub(crate) fn mesh_mirror_candidates(
     (whitelisted, rejected)
 }
 
+/// content mirror(ADR-0254) 를 실제로 타는 `(kind, plugin_id)` 조합.
+///
+/// **markdown 하나로 좁힌다.** `Surface::attach_content_info()` 는 `RemoteSurface`
+/// 전체에 붙으므로 이 게이트가 없으면 같은 webview kind 인 html surface 까지 새 role
+/// 로 나가는데, html 의 URL 은 파일 경로라는 보장이 없어 "그 경로의 원문" 이라는 이
+/// 채널의 의미가 성립하지 않는다(ADR-0254 항목 1).
+pub(crate) fn is_attach_content_allowed(kind: &str, plugin_id: &str) -> bool {
+    matches!((kind, plugin_id), ("markdown", "com.tasty.markdown"))
+}
+
+/// [`content_mirror_candidates`] 의 반환 — `(화이트리스트를 통과한 후보, placeholder 로
+/// 떨어진 id)`. 앞쪽 원소는 `(surface_id, kind, file)`.
+type ContentMirrorSplit<'a> = (
+    Vec<(SurfaceId, &'a str, Option<&'a std::path::Path>)>,
+    Vec<SurfaceId>,
+);
+
+/// `AttachSurfaceClass::content_candidates`(raw, `tasty-model` 이 화이트리스트를 모른
+/// 채 `Surface::attach_content_info()` 만으로 모은 후보)를
+/// [`is_attach_content_allowed`] 로 재검증한다. [`mesh_mirror_candidates`] 와 완전히
+/// 동형이며, 같은 이유(crate 의존 방향)로 최종 판정이 여기(앱 계층)에 있다.
+///
+/// 반환: `(whitelisted, rejected)`. `rejected` 는 `class.non_terminals` 와 동일하게
+/// placeholder 로 취급해야 한다.
+pub(crate) fn content_mirror_candidates(class: &AttachSurfaceClass) -> ContentMirrorSplit<'_> {
+    let mut whitelisted = Vec::new();
+    let mut rejected = Vec::new();
+    for (sid, kind, plugin_id, file) in &class.content_candidates {
+        if is_attach_content_allowed(kind, plugin_id) {
+            whitelisted.push((*sid, kind.as_str(), file.as_deref()));
+        } else {
+            rejected.push(*sid);
+        }
+    }
+    (whitelisted, rejected)
+}
+
+#[cfg(test)]
+mod content_mirror_candidate_tests {
+    //! ADR-0254 화이트리스트가 markdown 만 통과시키는지. html(같은 webview kind)과
+    //! 서드파티 markdown 사칭(`kind` 는 같고 `plugin_id` 가 다른 조합)은 rejected
+    //! (= placeholder 유지)로 떨어져야 한다.
+    use super::content_mirror_candidates;
+    use crate::model::AttachSurfaceClass;
+    use std::path::PathBuf;
+
+    #[test]
+    fn content_mirror_candidates_filters_by_whitelist() {
+        let class = AttachSurfaceClass {
+            content_candidates: vec![
+                (
+                    10,
+                    "markdown".into(),
+                    "com.tasty.markdown".into(),
+                    Some(PathBuf::from("/proj/README.md")),
+                ),
+                (11, "html".into(), "com.tasty.html".into(), None),
+                (
+                    12,
+                    "markdown".into(),
+                    "com.thirdparty.markdown".into(),
+                    Some(PathBuf::from("/x.md")),
+                ),
+            ],
+            ..Default::default()
+        };
+        let (whitelisted, rejected) = content_mirror_candidates(&class);
+        assert_eq!(
+            whitelisted,
+            vec![(
+                10,
+                "markdown",
+                Some(std::path::Path::new("/proj/README.md"))
+            )]
+        );
+        assert_eq!(rejected, vec![11, 12]);
+    }
+
+    /// 파일 없이 열린 markdown surface 도 후보다 — 빈 문서를 빈 문서로 mirror 한다.
+    #[test]
+    fn a_markdown_surface_without_a_file_is_still_a_candidate() {
+        let class = AttachSurfaceClass {
+            content_candidates: vec![(7, "markdown".into(), "com.tasty.markdown".into(), None)],
+            ..Default::default()
+        };
+        let (whitelisted, rejected) = content_mirror_candidates(&class);
+        assert_eq!(whitelisted, vec![(7, "markdown", None)]);
+        assert!(rejected.is_empty());
+    }
+}
+
 #[cfg(test)]
 mod mesh_mirror_candidate_tests {
     //! bundled 화이트리스트에 있는 mesh 후보만
@@ -1822,6 +2106,7 @@ mod mesh_mirror_candidate_tests {
                 // markdown 은 Stage B 이후 egui-mesh 화이트리스트 밖 — rejected.
                 (13, "markdown".to_string(), "com.tasty.markdown".to_string()),
             ],
+            content_candidates: vec![],
         };
         let (whitelisted, rejected) = mesh_mirror_candidates(&class);
         let mut whitelisted_ids: Vec<u32> = whitelisted.iter().map(|(sid, _, _)| *sid).collect();
@@ -1839,8 +2124,8 @@ mod mesh_descriptor_display_name_tests {
     //! `Surface::display_name()`(예: image 파일명)을 `display_name` 필드로
     //! 실어보내는지. 이전엔 이 필드 자체가 없어 client 가 kind 문자열("image")로
     //! 대체 표시했다. markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서
-    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(non_terminals placeholder
-    //! 로 분류) 여기 fixture 로 쓰지 않는다.
+    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(ADR-0254 의 전용
+    //! `role:"markdown"` 으로 분류) 여기 fixture 로 쓰지 않는다.
     use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 
     fn engine_with_mesh_surface(
