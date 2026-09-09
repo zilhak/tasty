@@ -10,8 +10,24 @@
 //! - `#[cfg(test)] mod x;`(선언 한 줄)을 모듈 **시작**으로 읽어 그 뒤를 통째로 잃었다.
 //! - 속성 **앞**의 doc 주석을 그 항목 **밖**으로 봤다.
 //!
+//! 네 번째는 성질이 다르다 — **줄 단위 렉싱**이었다. 여러 줄에 걸치는 리터럴은 줄
+//! 하나만 봐서는 못 가르므로, 그 안이 코드로 보인다. 실측(2026-09-10)으로 이 트리에
+//! 형태가 둘, 그것을 문 파일이 7 개 있었다:
+//!
+//! - **여러 줄 raw string**(`r#"{…}"#`) 3 파일 — 전부 JSON 픽스처.
+//! - **`\` 로 이어붙인 여러 줄 문자열** 4 파일 — 그중 셋은 가드 자신의 합성 픽스처라
+//!   그 문자열 **안의 `#[cfg(test)]` 가 속성으로도** 읽혔다.
+//!
+//! 결과는 양방향이고 **둘 다 실재했다** — 스팬이 일찍 닫혀 테스트 코드가 출하로
+//! 세어지고(과다계상), 안 닫혀 **그 뒤의 출하 코드가 통째로 게이트 안으로 사라진다.**
+//! 뒤쪽이 조용한 통과다. 그래서 스팬을 재는 함수들은
+//! [`mask_non_code`](crate::source_text::mask_non_code) 로 덮은 사본에서 센다 —
+//! 렉싱은 한 벌만 둔다.
+//!
 //! 판정 기준은 관례가 아니라 *컴파일러가 무엇을 보느냐*다. 그래서 범위를 세 조각으로
 //! 잡는다 — 속성 앞의 doc·속성 자신·항목 본문.
+
+use crate::source_text::mask_non_code;
 
 /// cfg 술어가 `needle` 을 **함의**하는가.
 ///
@@ -46,14 +62,24 @@ pub fn implies(pred: &str, needle: &str) -> bool {
     parts.iter().any(|part| implies(part, needle))
 }
 
-/// 한 줄의 중괄호 수지. **줄 주석·문자열·문자 리터럴 안은 세지 않는다** —
-/// 문자열 속 `}` 에 속으면 블록이 일찍 닫히고 그 뒤가 게이트 밖으로 보인다.
+/// 한 줄의 중괄호 수지. 한 줄 안에서 닫히는 줄 주석·문자열·문자 리터럴은 안 센다.
+///
+/// **줄 하나만 본다 — 여러 줄에 걸치는 것은 여기서 원리적으로 못 가른다.** raw string
+/// (`r#"…"#`)과 블록 주석(`/* … */`)이 그것이다. 그래서 스팬을 재는 쪽은
+/// [`mask_non_code`](crate::source_text::mask_non_code) 로 그것들을 **먼저 덮은
+/// 사본**에서 센다([`cfg_gated_lines`]·[`cfg_attr_lines`] 가 안에서 그렇게 한다).
+///
+/// 안 덮으면 **두 방향으로** 틀린다. 리터럴 속 `}` 에 속으면 블록이 일찍 닫혀 그 뒤의
+/// 테스트 코드가 출하로 세어지고(과다계상 — 값이 커져 시끄럽다), 리터럴 속 `{` 로
+/// depth 가 올라간 채 **안 닫히면** 스팬이 파일 끝까지 늘어나 그 뒤의 출하 코드가
+/// 통째로 게이트 안으로 사라진다. 뒤쪽이 이 doc 을 고치게 한 방향이다 — 그 오독의
+/// 결과는 위반이 아니라 **침묵**이라 아무 게이트도 안 운다.
 pub fn brace_delta(line: &str) -> i32 {
     delta(line, b'{', b'}')
 }
 
 /// 한 줄의 괄호 수지. `cfg_attr` 이 여러 줄에 걸칠 때 끝을 찾는 데 쓴다 —
-/// [`brace_delta`] 와 같은 이유로 리터럴·주석 안은 세지 않는다.
+/// [`brace_delta`] 와 같은 한계(줄 하나만 본다)와 같은 처방(먼저 덮은 사본)이다.
 pub fn paren_delta(line: &str) -> i32 {
     delta(line, b'(', b')')
 }
@@ -117,14 +143,17 @@ fn attr_implies(line: &str, needle: &str) -> bool {
 /// 3. 항목 본문 — 중괄호 수지가 0 으로 돌아올 때까지. 그 줄에서 블록이 열리지 않으면
 ///    한 줄짜리 항목이다(`#[cfg(test)] mod x;` 가 이 경우다 — 뒤를 삼키지 않는다).
 pub fn cfg_gated_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
+    let masked = masked_lines(lines);
     let mut gated = vec![false; lines.len()];
-    for (i, line) in lines.iter().enumerate() {
-        if !attr_implies(line.as_ref(), needle) {
+    for i in 0..masked.len() {
+        if !attr_implies(&masked[i], needle) {
             continue;
         }
         gated[i] = true;
 
-        // ① 속성 앞의 doc 주석·속성·빈 줄.
+        // ① 속성 앞의 doc 주석·속성·빈 줄. **여기는 원문을 본다** — 사본에서는 주석이
+        // 공백이라 진짜 빈 줄과 안 갈리고, 그러면 이 스캔이 `///` 아닌 주석 덩이까지
+        // 넘어 올라가 범위가 조용히 넓어진다.
         for j in (0..i).rev() {
             let p = lines[j].as_ref().trim();
             if p.is_empty() || p.starts_with("///") || p.starts_with("#[") {
@@ -135,7 +164,7 @@ pub fn cfg_gated_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
         }
 
         // ②③ 속성이 붙는 항목의 첫 줄 — 주석·빈 줄·다른 속성은 건너뛴다.
-        let Some(start) = (i + 1..lines.len()).find(|&j| {
+        let Some(start) = (i + 1..masked.len()).find(|&j| {
             let t = lines[j].as_ref().trim();
             !(t.is_empty() || t.starts_with("//") || t.starts_with("#["))
         }) else {
@@ -144,15 +173,36 @@ pub fn cfg_gated_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
         for g in gated.iter_mut().take(start + 1).skip(i + 1) {
             *g = true;
         }
-        let mut depth = brace_delta(lines[start].as_ref());
+        let mut depth = brace_delta(&masked[start]);
         let mut j = start;
-        while depth > 0 && j + 1 < lines.len() {
+        while depth > 0 && j + 1 < masked.len() {
             j += 1;
             gated[j] = true;
-            depth += brace_delta(lines[j].as_ref());
+            depth += brace_delta(&masked[j]);
         }
     }
     gated
+}
+
+/// 줄 목록을 **한 번 이어 붙여** [`mask_non_code`](crate::source_text::mask_non_code)
+/// 를 먹인 뒤 다시 줄로 가른다.
+///
+/// 이어 붙이는 이유가 이 함수의 전부다 — raw string 과 블록 주석은 **여러 줄에
+/// 걸치므로** 줄 단위로는 못 가른다([`brace_delta`] 의 한계). 사본은 줄 수와 줄
+/// 번호를 보존하므로 결과 인덱스는 원본과 그대로 맞는다.
+///
+/// 이미 마스킹된 입력을 다시 먹여도 결과는 같다 — 덮인 자리에 따옴표도 `//` 도
+/// 안 남는다. 그래서 마스킹한 사본을 넘겨 오던 소비자를 안 건드린다.
+fn masked_lines<S: AsRef<str>>(lines: &[S]) -> Vec<String> {
+    let joined: String = lines
+        .iter()
+        .map(AsRef::as_ref)
+        .collect::<Vec<_>>()
+        .join("\n");
+    mask_non_code(&joined)
+        .split('\n')
+        .map(str::to_string)
+        .collect()
 }
 
 /// `cfg_attr(<술어>, …)` 에서 술어만 떼어낸다. 첫 최상위 쉼표 앞이 술어다.
@@ -196,10 +246,11 @@ fn cfg_attr_predicate(attr: &str) -> Option<String> {
 /// `#![cfg_attr(test, …)]` 한 줄이 출하 산출물을 바꾸지 않는데도 내용이
 /// 달라진 것으로 읽혔다.
 pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
+    let masked = masked_lines(lines);
     let mut marked = vec![false; lines.len()];
     let mut i = 0usize;
-    while i < lines.len() {
-        let t = lines[i].as_ref().trim_start();
+    while i < masked.len() {
+        let t = masked[i].trim_start();
         if !(t.starts_with("#[cfg_attr(") || t.starts_with("#![cfg_attr(")) {
             i += 1;
             continue;
@@ -209,10 +260,10 @@ pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
         let mut depth = 0i32;
         let mut text = String::new();
         loop {
-            let line = lines[end].as_ref();
+            let line = &masked[end];
             text.push_str(line);
             depth += paren_delta(line);
-            if depth <= 0 || end + 1 >= lines.len() {
+            if depth <= 0 || end + 1 >= masked.len() {
                 break;
             }
             end += 1;
@@ -227,6 +278,8 @@ pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
             // 있으라고 요구하는 선언의 일부다 — 속성이 출하 밖이면 그 근거도 함께
             // 나간다. 주석은 어떤 빌드에도 안 들어가므로 이 확장으로 실변경이 숨을
             // 여지는 없다.
+            // **여기만 원문을 본다.** 사본에서는 주석이 공백이라 진짜 빈 줄과 안
+            // 갈리고, 그러면 스캔이 위쪽 주석 덩이를 넘어 계속 올라간다.
             for j in (0..i).rev() {
                 if lines[j].as_ref().trim_start().starts_with("//") {
                     marked[j] = true;
@@ -329,6 +382,69 @@ mod cfg_span_tests {
         );
         assert!(!g[0] && !g[1], "게이트 없는 항목을 게이트로 셌다");
         assert!(g[2] && g[3]);
+    }
+
+    /// **여러 줄 raw string 안의 중괄호는 코드가 아니다.** 줄 단위로 세면 그 `}` 가
+    /// 블록을 일찍 닫아 **테스트 코드가 출하로 세어진다** — 실측(2026-09-10)으로
+    /// `crates/tasty-ipc/src/stream.rs` · `crates/tasty-plugin-agent-stream/src/record.rs`
+    /// · `src/core/child_terminal.rs` 셋이 이 형태였고, 셋 다 JSON 픽스처였다.
+    #[test]
+    fn braces_in_a_multi_line_raw_string_do_not_close_the_gated_block() {
+        let g = gated(
+            "#[cfg(test)]\nmod m {\n    const J: &str = r#\"{\n        \\\"a\\\": 1\n    }\"#;\n    fn t() {}\n}\nfn shipped() {}",
+            "test",
+        );
+        assert!(
+            g[5] && g[6],
+            "raw string 속 `}}` 에 속아 블록이 일찍 닫혔다 — 테스트 코드가 출하로 세어진다"
+        );
+        assert!(!g[7], "블록이 닫힌 뒤까지 게이트로 셌다");
+    }
+
+    /// **반대 방향 — 스팬이 안 닫히는 형태.** 여러 줄 raw string 이 여는 `{` 만 담으면
+    /// 줄 단위 계수에서 depth 가 올라간 채 **0 으로 안 돌아오고**, 스팬이 파일 끝까지
+    /// 늘어나 그 뒤의 **출하 코드가 통째로 게이트 안으로 사라진다.** 위 시험(일찍
+    /// 닫힘)은 테스트를 출하로 세는 과다계상이라 시끄럽지만, 이쪽은 **조용한 통과**다 —
+    /// 명부 밖에서 답하는 함수가 잔여 검사에 안 보이는 자리가 그것이었다.
+    #[test]
+    fn an_unclosed_brace_in_a_raw_string_does_not_stretch_the_span_to_eof() {
+        let g = gated(
+            "#[cfg(test)]\nmod m {\n    const J: &str = r#\"\n{\n\"#;\n    fn t() {}\n}\nfn shipped() {}\nfn also_shipped() {}",
+            "test",
+        );
+        assert!(
+            !g[7] && !g[8],
+            "raw string 이 여는 `{{` 만 담아 depth 가 안 닫혔고, 스팬이 파일 끝까지 늘어나 \
+             출하 코드가 게이트 안으로 사라졌다: {g:?}"
+        );
+    }
+
+    /// **블록 주석 안의 중괄호도 코드가 아니다.** 이 레포에 실례는 없지만 렉싱 축이
+    /// 같아서 함께 못박는다 — 같은 마스킹 한 벌이 셋을 다 덮는다.
+    #[test]
+    fn braces_in_a_block_comment_do_not_move_the_span() {
+        let g = gated(
+            "#[cfg(test)]\nmod m {\n    /* 여는 중괄호 {\n       그리고 그것뿐 */\n    fn t() {}\n}\nfn shipped() {}",
+            "test",
+        );
+        assert!(g[4] && g[5], "블록 주석 속 `{{` 에 스팬이 늘어났다");
+        assert!(!g[6], "블록 주석 속 중괄호가 스팬을 파일 끝까지 늘렸다");
+    }
+
+    /// **문자열 안의 `#[cfg(test)]` 는 속성이 아니다.** 가드 자신의 합성 픽스처가 그
+    /// 형태를 든다 — 실측(2026-09-10)으로 `src/source_guards/` 의 두 가드와
+    /// `crates/tasty-doc-guards/tests/host_writes_nothing_to_stdout.rs` 가 그 자리였고,
+    /// 픽스처 문자열의 본문이 **출하 코드 취급으로 지워지고 있었다.**
+    #[test]
+    fn a_cfg_attribute_inside_a_string_is_not_an_attribute() {
+        let g = gated(
+            "fn shipped() {}\nconst FIXTURE: &str = \"\\\n#[cfg(test)]\nmod fixture {\n}\n\";\nfn also_shipped() {}",
+            "test",
+        );
+        assert!(
+            g.iter().all(|x| !x),
+            "문자열 안의 `#[cfg(test)]` 를 속성으로 읽어 픽스처 본문을 지웠다: {g:?}"
+        );
     }
 
     /// needle 이 다르면 안 걸린다 — `debug_assertions` 축과 `test` 축은 별개다.
