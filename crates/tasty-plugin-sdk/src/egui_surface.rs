@@ -2250,10 +2250,15 @@ mod tests {
     /// `BannerInvalidated` 한 줄이 실제로 소켓에 나가는지 확인한다. loopback 소켓으로
     /// [`HostHandle`] 을 세우는 형태는 `host.rs` 의 시험 모듈에 있는 것과 같다.
     ///
-    /// **이 시험이 덮는 범위는 plugin 쪽 끝까지다.** host 쪽 네 자리(`pump` 누적 ·
-    /// `take_invalidated_banners` · `AppState::plugin_mesh_banner_pending_repaint` 예약 ·
-    /// `banner_render.rs` 의 forward 게이트)를 덮는 자동 시험은 **없다** — 그 층들은
-    /// 이 크레이트 밖이고 GUI 인스턴스가 있어야 지난다.
+    /// **이 시험이 덮는 범위는 plugin 쪽 끝까지다.** host 쪽 네 자리는 둘로 갈린다.
+    /// 앞 두 자리(`pump` 누적 · `take_invalidated_banners` 드레인)는 `tasty-host-plugin`
+    /// 의 `manager/pump.rs` 시험 모듈이 **GUI 없이 순수 단위 시험으로** 덮는다
+    /// (`banner_invalidated_accumulates_and_drains_once` ·
+    /// `banner_and_popup_invalidations_land_in_separate_accumulators`) — 그 층은 이
+    /// 크레이트 밖이지만 인스턴스는 필요 없다. 뒤 두 자리
+    /// (`AppState::plugin_mesh_banner_pending_repaint` 예약 · `banner_render.rs` 의
+    /// forward 게이트)를 덮는 자동 시험은 **없다** — 그 둘은 `AppState` 와 렌더 경로에
+    /// 걸려 있어 GUI 인스턴스가 있어야 지난다.
     ///
     /// 두 frame 을 그리는 이유: 첫 frame 은 출력이 새로 나와 `commit`(host RPC)까지
     /// 가려 한다. 같은 화면을 한 번 더 그리면 출력이 dedup 되어 mesh 는 안 나가고

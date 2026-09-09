@@ -80,8 +80,9 @@ pub(crate) fn mesh_region_of(
 ///   `plugin_mesh_banner_pending_repaint`)다 — 채널당 한 칸 vs 인스턴스 키잉.
 /// - **추가 진입로도 채널마다 다르다.** surface 는 파일 변경 통지가 같은
 ///   `SurfaceInvalidated` 를 타고 와 `mark_surface_invalidated` 로 그 칸을 세우고,
-///   popup 은 ADR-0056 의 비동기 host→plugin push 결과가 같은 칸을 쓰며
-///   (`src/plugin_bridge/popup_render.rs`), banner 는 self-repaint 하나뿐이다.
+///   popup 은 ADR-0056 의 비동기 host→plugin push 결과가 같은 칸을 세우며
+///   (git-viewer 원격 조회 결과 뒤의 강제 repaint, `src/app/attach_client.rs` 두
+///   자리), banner 는 self-repaint 하나뿐이다.
 #[derive(Default)]
 pub(crate) struct MeshForwardCommon {
     /// 마지막으로 보낸 `(width_px, height_px, ppp.to_bits())`. 변경 감지의 좌변.
