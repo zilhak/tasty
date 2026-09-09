@@ -15,13 +15,17 @@
 //!
 //! plugin namespace forward 는 **생략하지 않는다** — plugin 이 contribute 한
 //! namespace(`markdown.*` 등)는 CLI 로 노출된 에이전트 표면이라 headless 에서도
-//! 답해야 한다(`docs/identity.md` 원칙 2). 다만 배치가 gui 와 다르다: gui 는
-//! namespace forward 를 engine handler **앞**에 두지만(`app/ipc/routing.rs` step 5),
-//! 여기서는 engine handler 가 `-32601` 을 돌려준 **뒤**의 fallback 이다. 그래야
-//! 호스트가 답할 수 있는 메서드의 경로가 한 줄도 안 바뀌고, plugin 기동을
-//! "실제로 plugin 메서드가 불렸을 때" 로 미룰 수 있다 — namespace 표는 plugin 이
-//! spawn 돼야 채워지므로(`manager/lifecycle.rs` 의 `on_plugin_spawn_success`),
-//! 부르기 전에 아는 방법이 없다.
+//! 답해야 한다(`docs/identity.md` 원칙 2). 배치도 gui 와 **같다**: engine handler
+//! **앞**에서 정한다(gui 는 `app/ipc/routing.rs` step 5, 여기서는 아래 2d). 재료도
+//! 같은 매니페스트 하나다 — namespace 소속은 `~/.tasty/plugins/` 의 매니페스트가
+//! 선언하는 정적 사실이라 plugin 을 하나도 안 띄우고 답이 나고, 기동은 소속이
+//! 맞은 뒤에만 한다([ADR-0173](../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)).
+//!
+//! 예전에는 이 판정이 engine handler 가 `-32601` 을 돌려준 **뒤**의 fallback 이었고
+//! "engine 이 못 답했나" 를 오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅
+//! 신호로 고정해, 종단을 더 정확하게 만드는 변경이 forward 를 조용히 깨뜨렸다 —
+//! 실측으로 표에 등재된 채 plugin namespace 아래 있던 여덟이 그렇게 새었다. 지금
+//! 코드는 라우팅에 안 쓰인다.
 
 #![cfg(not(feature = "gui"))]
 
