@@ -1,21 +1,32 @@
 //! 단축키 이식 번들이 TOML 로 나갈 수 있는 모양인지 지키는 가드 — ADR-0255 의
-//! 재검토 조건 "`Option<T>` 를 원소로 갖는 시퀀스 필드가 생긴다" 의 채널.
+//! 재검토 조건 "`Option<T>` 를 원소로 갖는 시퀀스 필드가 생긴다" 의 채널. 같은 뿌리로
+//! 깨지는 `Option<Option<T>>` 도 함께 막는다(아래 참조).
 //!
 //! ## 무엇이 실제로 깨지는가 (실측 2026-09-09, `toml` 0.8 / `toml_edit` 0.20)
 //!
-//! TOML 에는 null 리터럴이 없다. 그런데 `None` 이 깨지는 자리는 **한 층뿐이다**.
+//! TOML 에는 null 리터럴이 없다. 그래서 `None` 은 **생략할 키가 있는 자리에서만**
+//! 통과한다. 측정한 모양은 다섯이다.
 //!
-//! - **필드 자리·맵 값 자리의 `None` 은 통과한다** — 직렬화기가 그 키를 통째로 생략하고
+//! - **필드 자리의 평범한 `Option<T>` 는 통과한다** — 직렬화기가 그 키를 통째로 생략하고
 //!   (`toml_edit` 의 `ser::map` 이 `UnsupportedNone` 을 그 자리에서만 삼킨다),
 //!   `#[serde(default)]` 가 붙은 타입은 역직렬화도 그대로 `None` 으로 돌아온다.
-//!   중첩 깊이는 상관없다 — 중첩 구조체 안이든 `[[array of tables]]` 안이든 같다.
+//!   중첩 구조체 안이든 `[[array of tables]]` 안이든 같다.
+//! - **맵 값 자리의 `Option<T>` 도 직렬화는 통과한다 — 다만 그 키가 사라진다.**
+//!   `BTreeMap<String, Option<String>>` 에 `("k", None)` 을 넣으면 결과 테이블에 `k` 가
+//!   아예 안 실리고, 역직렬화하면 그 엔트리가 **없는 맵**이 돌아온다(`None` 을 값으로 가진
+//!   엔트리가 아니다). 필드 자리와 달리 `#[serde(default)]` 가 되살릴 대상 자체가 없다.
 //! - **시퀀스 원소의 `None` 은 깨진다** — `Vec<Option<T>>` · `[Option<T>; N]` 는
 //!   `unsupported None value`(`toml_edit::ser::Error::UnsupportedNone`) 로 실패한다.
 //!   배열 원소에는 생략할 키가 없기 때문이다.
+//! - **튜플의 `None` 도 깨진다** — 튜플이 배열로 나가므로 `(String, Option<String>)` 는
+//!   필드 자리에 있어도, `Vec<(String, Option<String>)>` 안에 있어도 같은 에러다.
+//! - **`Option<Option<T>>` 의 `Some(None)` 도 깨진다 — 필드 자리인데 깨진다.**
+//!   바깥 `Option` 이 키 생략을 이미 써 버려 안쪽 `None` 에는 생략할 키가 남지 않는다
+//!   (`None` 과 `Some(Some(x))` 는 통과한다).
 //!
-//! 그래서 이 가드가 보는 것은 "`Option` 이 있는가" 가 아니라 **"`Option` 이 시퀀스
-//! 원소인가"** 다. 앞엣것으로 세면 안전한 필드까지 위반으로 잡아, 실재하지 않는 위반에
-//! 대한 처방을 내보내게 된다.
+//! 그래서 이 가드가 보는 것은 "`Option` 이 있는가" 가 아니라 **"`None` 이 생략할 키를
+//! 못 갖는 자리인가"** 다. 앞엣것으로 세면 안전한 필드까지 위반으로 잡아, 실재하지 않는
+//! 위반에 대한 처방을 내보내게 된다.
 //!
 //! ## 왜 시험이 아니라 소스 형태로 재는가
 //!
@@ -26,23 +37,40 @@
 //!
 //! ## 이 가드가 닿지 않는 곳
 //!
-//! 선언 텍스트를 읽으므로, 시퀀스 원소의 `Option` 이 **타입 별칭 뒤에 숨거나**
-//! 이 파일 밖에 정의된 타입 안에 있으면 못 본다. 지금은 번들이 싣는 타입이 둘 다
-//! 이 파일에 있어 그 구멍이 닫혀 있다 — 다른 파일의 타입을 필드로 들이면 이 가드도
-//! 함께 넓혀야 한다.
+//! 선언 텍스트를 읽으므로 [`FORBIDDEN`] 의 문자열과 글자가 안 맞으면 못 본다. 측정으로
+//! 확인한 구멍은 넷이다 — **닫혀 있지 않다.**
+//!
+//! - **타입 별칭 뒤에 숨은 것** (`type Slots = Vec<Option<String>>;` 을 필드 타입으로 쓰면
+//!   본문에는 `Slots` 만 남는다).
+//! - **이 파일 밖에 정의된 타입 안에 있는 것** — 지금은 번들이 싣는 타입이 둘 다
+//!   [`KEYBINDINGS_SRC`] 에 있지만, 다른 파일의 타입을 필드로 들이면 이 가드도 함께
+//!   넓혀야 한다.
+//! - **튜플 안의 `Option`** — 위에서 측정했듯 실제로 깨지는데 안 잡는다. 일부러 안
+//!   막았다: 공백을 지운 뒤 `,Option<` 로 세면 **안전한** 맵 값
+//!   (`HashMap<String,Option<String>>`)까지 위반으로 잡혀, 실재하지 않는 위반에 대한
+//!   처방("표현을 다시 정해라")을 내보내게 된다. 튜플 필드가 실제로 생기면 그때
+//!   튜플만 골라내는 판정을 짓는다.
+//! - **완전수식 경로** (`Vec<std::option::Option<T>>` · `Vec<core::option::Option<T>>`) —
+//!   글자가 안 맞아 안 잡힌다.
+//!
+//! 주석과 문자열 리터럴 안의 텍스트는 [`code_only`] 가 지우므로 위반으로 안 센다
+//! (raw string 은 예외 — 아래 참조).
 
 use std::path::PathBuf;
 
 /// 번들이 싣는 호스트 측 타입이 모두 사는 파일.
 const KEYBINDINGS_SRC: &str = "crates/tasty-settings/src/keybindings.rs";
 
-/// 시퀀스 원소 자리의 `Option` — 공백을 지운 타입 문자열에서 찾는 형태.
+/// `None` 이 생략할 키를 못 갖는 자리 — 공백을 지운 타입 문자열에서 찾는 형태.
+///
+/// 앞 다섯은 시퀀스 원소, 마지막 하나는 바깥 `Option` 이 키 생략을 소진한 필드 자리다.
 const FORBIDDEN: &[&str] = &[
     "Vec<Option<",
     "[Option<",
     "VecDeque<Option<",
     "BTreeSet<Option<",
     "HashSet<Option<",
+    "Option<Option<",
 ];
 
 fn read(rel: &str) -> String {
@@ -50,15 +78,71 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
 }
 
-/// 줄 주석을 지운다 — 설명 문구 안의 `Vec<Option<...>>` 이 위반으로 세지지 않게.
+/// 주석과 문자열 리터럴의 **내용**을 지운다.
+///
+/// 두 가지를 막는다 — 설명 문구 안의 `Vec<Option<…>>` 이 위반으로 세지는 것(거짓 양성),
+/// 그리고 그 안의 중괄호가 [`struct_body`] 의 깊이 계수를 흔드는 것. 그래서 본문을
+/// 잘라내기 **전에** 원본 전체에 한 번 적용한다.
+///
+/// 줄 주석(`//`·`///`)·블록 주석(`/* */`, 중첩 포함)·큰따옴표 문자열을 모두 본다.
+/// 줄바꿈은 남겨 실패문의 본문이 원본과 같은 줄 나눔으로 읽히게 한다.
+///
+/// raw string(`r#"…"#`)은 안 본다 — 이 두 타입의 본문에 없다. 생기면 그 안의 텍스트가
+/// 위반으로 세질 수 있다.
 fn code_only(s: &str) -> String {
-    s.lines()
-        .map(|l| match l.find("//") {
-            Some(i) => &l[..i],
-            None => l,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let c: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0usize;
+    let mut block = 0usize;
+    while i < c.len() {
+        if block > 0 {
+            if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+                block += 1;
+                i += 2;
+            } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
+                block -= 1;
+                i += 2;
+            } else {
+                if c[i] == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+            block = 1;
+            i += 2;
+            continue;
+        }
+        if c[i] == '/' && c.get(i + 1) == Some(&'/') {
+            while i < c.len() && c[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c[i] == '"' {
+            out.push('"');
+            i += 1;
+            while i < c.len() && c[i] != '"' {
+                if c[i] == '\\' {
+                    i += 1;
+                }
+                if i < c.len() && c[i] == '\n' {
+                    out.push('\n');
+                }
+                i += 1;
+            }
+            if i < c.len() {
+                out.push('"');
+                i += 1;
+            }
+            continue;
+        }
+        out.push(c[i]);
+        i += 1;
+    }
+    out
 }
 
 /// `struct <name> {` 부터 중괄호 깊이가 0 으로 돌아오는 지점까지.
@@ -90,18 +174,21 @@ fn struct_body(src: &str, name: &str) -> String {
 
 #[test]
 fn keybinding_types_have_no_option_inside_a_sequence() {
-    let src = read(KEYBINDINGS_SRC);
+    let src = code_only(&read(KEYBINDINGS_SRC));
     for name in ["KeybindingSettings", "ScriptBinding"] {
-        let body = code_only(&struct_body(&src, name));
+        let body = struct_body(&src, name);
         let squeezed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
         for shape in FORBIDDEN {
             assert!(
                 !squeezed.contains(shape),
-                "`{name}` 에 시퀀스 원소가 `Option` 인 필드가 생겼다(`{shape}…`). \
-                 TOML 에는 null 리터럴이 없어 배열 원소의 `None` 은 생략할 키가 없다 — \
-                 `keybinding_bundle::encode` 가 그 필드만이 아니라 **번들 전체**를 \
-                 `unsupported None value` 로 실패시킨다. 필드 자리의 `Option` 은 안전하니 \
-                 이 가드를 넓히지 말고, 그 필드의 표현이나 번들 포맷을 다시 정해라 \
+                "`{name}` 에 `None` 이 생략할 키를 못 갖는 자리가 생겼다(`{shape}…`). \
+                 TOML 에는 null 리터럴이 없어 배열 원소에는 생략할 키가 없고, \
+                 `Option<Option<T>>` 의 안쪽 `None`(`Some(None)`)도 바깥 `Option` 이 \
+                 키 생략을 이미 써 버려 같은 처지다 — `keybinding_bundle::encode` 가 \
+                 그 필드만이 아니라 **번들 전체**를 `unsupported None value` 로 \
+                 실패시킨다. 필드 자리의 평범한 `Option<T>` 와 맵 값 자리의 `Option<T>` 는 \
+                 안전하니 이 가드를 그리로 넓히지 말고, 그 필드의 표현이나 번들 포맷을 \
+                 다시 정해라 \
                  (docs/adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md \
                  재검토 조건).\n{body}"
             );

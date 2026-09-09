@@ -79,14 +79,22 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
   기본값으로 덮인다.
 - **`Settings` 전체를 옮긴다** — 이미 있는 직렬화를 그대로 쓴다. 안 골랐다: 요구가
   "단축키" 범위인데 테마·터미널 설정까지 딸려 간다.
-- **JSON 을 쓴다** — null 리터럴이 있어 **시퀀스 원소의 `None`** 까지 그대로 싣는다.
-  안 골랐다: 이 레포의 사용자 설정 파일이 전부 TOML 이고, TOML 이 못 싣는 모양은 그
-  하나뿐인데 번들이 싣는 타입에 그 모양이 없다. 필드 자리·맵 값 자리의 `None` 은 중첩
-  깊이와 무관하게 **키 생략으로 통과하므로**(`#[serde(default)]` 가 붙은 이 타입은
-  역직렬화도 `None` 으로 돌아온다) 평범한 `Option<T>` 필드는 JSON 을 부르는 이유가
-  안 된다. `KeybindingSettings` 는 전 필드가 `Vec<String>` / `String` / `[String; N]` /
-  `Vec<ScriptBinding>` 이고 `ScriptBinding` 자신도 `String` 필드 둘뿐이라, 시퀀스 원소가
-  `Option` 인 자리가 중첩까지 봐도 없다. `ShortcutOverride` 의 TOML
+- **JSON 을 쓴다** — null 리터럴이 있어 **`None` 이 생략할 키를 못 갖는 자리**까지
+  그대로 싣는다. 안 골랐다: 이 레포의 사용자 설정 파일이 전부 TOML 이고, TOML 이 못 싣는
+  모양이 번들이 싣는 타입에 하나도 없다. `None` 이 놓이는 자리는 실측으로 이렇게 갈린다.
+  - **필드 자리의 평범한 `Option<T>` 는 키 생략으로 통과한다** — 중첩 구조체 안이든
+    `[[array of tables]]` 안이든 같고, `#[serde(default)]` 가 붙은 이 타입은 역직렬화도
+    `None` 으로 돌아온다.
+  - **맵 값 자리의 `Option<T>` 는 직렬화가 실패하지는 않지만 그 키가 사라진다** —
+    결과 테이블에 그 항목이 안 실리고, 역직렬화하면 값이 `None` 인 엔트리가 아니라
+    **엔트리 자체가 없는** 맵이 돌아온다. 되살릴 키가 없어 `#[serde(default)]` 로도
+    안 메워진다. 필드 자리와 같은 "통과" 가 아니다.
+  - **깨지는 자리** — 시퀀스 원소의 `None`, 튜플 안의 `None`(튜플이 배열로
+    나가 원소 자리가 된다), 그리고 `Option<Option<T>>` 의 `Some(None)`(바깥 `Option` 이
+    키 생략을 이미 써 버린다).
+  `KeybindingSettings` 는 전 필드가 `Vec<String>` / `String` / `[String; N]` /
+  `Vec<ScriptBinding>` 이고 `ScriptBinding` 자신도 `String` 필드 둘뿐이라, 위의 깨지는
+  모양이 중첩까지 봐도 없다. `ShortcutOverride` 의 TOML
   round-trip 도 `shortcut_override_serialization` 이 이미 고정하고 있다. 사람이 열어
   고치는 파일이라는 요구에도 TOML 이 낫다.
 - **번들 코덱을 새 크레이트로 뺀다** — 두 타입 어디에도 안 얹힌다. 안 골랐다:
@@ -111,8 +119,12 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
   `keybinding_types_have_no_option_inside_a_sequence` 가 선언의 모양으로 잡는다 —
   값에 `None` 이 실제로 들어야 발화하는 결함이라 컴파일도 기존 round-trip 시험도
   그 자리를 안 잡기 때문이다.
-  **깨지는 층은 여기뿐이다** — 필드 자리·맵 값 자리의 `None` 은 중첩 깊이와 무관하게
-  키 생략으로 통과하므로, 평범한 `Option<T>` 필드가 생긴 것은 이 조건이 아니다.
+  **필드 자리라고 다 안전한 것은 아니다** — 평범한 `Option<T>` 필드는 중첩 깊이와
+  무관하게 키 생략으로 통과하므로 이 조건이 아니지만, `Option<Option<T>>` 는 **필드
+  자리인데 깨진다**(바깥 `Option` 이 키 생략을 써 버려 안쪽 `None` 에 남는 키가 없다).
+  튜플 안의 `Option` 도 튜플이 배열로 나가 같은 이유로 깨진다. 그래서 같은 가드가
+  `Option<Option<T>>` 도 함께 막는다 — 튜플은 안 막는다(막는 문자열이 안전한 맵 값까지
+  잡아 실재하지 않는 위반을 만든다. 그 가드의 "이 가드가 닿지 않는 곳" 참조).
   같은 뿌리("TOML 에 null 이 없다")의 선례가 preset capture 인데 층이 다르다 — 거기서
   깨진 것은 `Option::None` 이 아니라 `serde_json::Value::Null` 이고, 에러도
   `unsupported unit type` 이었다(`src/core/surface_registry/egui_mesh.rs`).
