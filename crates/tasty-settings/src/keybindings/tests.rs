@@ -675,8 +675,11 @@ fn category_next_prev_serde_roundtrip() {
 
 // ── "개별 지정" sentinel + 역전환 복원 (S-9) ────────────────────────
 
-/// sentinel 값이 4축 조합 파서가 절대 만들 수 없는 문자열인지 확인(회귀 방지) —
-/// `Combo::parse_modifiers` 는 메인 크레이트에 있어 여기선 문자열 형태만 고정한다.
+/// sentinel 의 **문자열 값**을 고정한다(회귀 방지) — 이 값은 축 modifier 필드에 그대로
+/// 직렬화되므로, 바뀌면 기존 config 의 "개별 지정" 축이 조용히 풀린다. "4축 조합 파서가
+/// 절대 만들 수 없는 문자열" 이라는 동치 쪽은 `parse` 의
+/// `individual_sentinel_is_not_a_modifier_combo` 가 `Combo::parse_modifiers` 를 직접 불러
+/// 고정한다 — 같은 크레이트라 여기서 문자열 형태만 고정할 이유가 없다.
 #[test]
 fn individual_switch_modifier_sentinel_value() {
     assert_eq!(KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER, "individual");
