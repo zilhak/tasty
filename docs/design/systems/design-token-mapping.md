@@ -145,8 +145,8 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-banner-bg` | → `surface-raised` → neutral-300 | `surface_raised()` | semantic 직접 매핑(신규 필드 불필요) |
 | `--tasty-banner-fg` | → `text-primary` | `text_primary()` | 〃 |
 | `--tasty-banner-border` | → `border-strong` | `border_strong()` | 〃 |
-| `--tasty-banner-radius` | → `radius-8` (8px) | `corner_radius`(4)×2 = 8 도출 | **신규**: `--tasty-banner-radius`/`radius_8` 토큰 필요(시스템 기본 4px 의 의도적 2배) |
-| `--tasty-banner-shadow` | → `shadow-popover` | popover급 근사(offset 0/8, blur 24, black α90) | **신규**: shadow 토큰 struct 미보유 — popover shadow 토큰화 필요 |
+| `--tasty-banner-radius` | → `radius-8` (8px) | `corner_radius_lg`(8) | 기존 토큰 — 본체 배너 셸도 `corner_radius_lg` 를 쓴다(시스템 기본 4px 의 의도적 2배) |
+| `--tasty-banner-shadow` | → `shadow-popover` | `shadow_popover()` | 기존 토큰 — 본체 배너 셸도 같은 접근자를 쓴다([ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md) SCOPE RULE 의 popover 갈래) |
 | `--tasty-banner-margin` | → `space-sm` → size-8 (8px) | `spacing_sm` | 기존 토큰 |
 | `--tasty-banner-padding-x` | → `space-md` (12) | `spacing_md` | 기존 토큰 |
 | `--tasty-banner-padding-y` | → `space-sm` (8) | `spacing_sm` | 기존 토큰 |
@@ -157,12 +157,13 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-banner-countdown-font` | → `font-mono` | `FontId::monospace` | 기존 |
 | `--tasty-banner-countdown-font-size` | → `font-size-micro` (10) | `font_size_micro` | 기존 토큰 |
 | `--tasty-banner-countdown-fg` | → `text-muted` | `text_muted()` | 기존 접근자 |
-| `--tasty-banner-recessed-opacity` | → `opacity-recessed` (0.4) | 로컬 const `0.4` + `gamma_multiply` | **신규**: `--tasty-opacity-recessed` primitive(`opacity_recessed()`) 필요 |
+| `--tasty-banner-recessed-opacity` | → `opacity-recessed` (0.4) | `opacity_recessed()` + `gamma_multiply` | 기존 접근자 — 본체도 같은 접근자를 쓴다 |
 | `--tasty-banner-fade` | → `motion-ui` → duration-120 (120ms) | (없음 — 모션 토큰 미보유, immediate-mode end-state) | switch-overlay-fade 와 동일 한계 — 모션 토큰 미도입 |
 
-> **banner-03(본체) 에서 추가 필요한 신규 Theme 항목**: ① `--tasty-banner-radius`(radius-8,
-> 8px), ② `--tasty-opacity-recessed`(0.4 primitive), ③ `--tasty-banner-shadow`(popover
-> shadow). 나머지 `--tasty-banner-*` 는 모두 기존 semantic 접근자로 커버된다.
+> **banner-03(본체) 에 추가로 필요한 신규 Theme 항목은 없다.** 한때 신규로 적혔던 셋 —
+> `--tasty-banner-radius`(`corner_radius_lg`) · `--tasty-opacity-recessed`
+> (`opacity_recessed()`) · `--tasty-banner-shadow`(`shadow_popover()`) — 은 모두 `Theme`
+> 에 있고, 나머지 `--tasty-banner-*` 도 기존 semantic 접근자로 커버된다.
 
 ## modifier-hint 오버레이 (modifier-hint-03 specimen + 본체)
 
