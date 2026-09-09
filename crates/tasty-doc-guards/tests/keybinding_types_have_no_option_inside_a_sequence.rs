@@ -35,16 +35,29 @@
 //! 그 필드에 `None` 을 넣기 전까지는 초록이다. 그래서 판정의 주어는 값이 아니라
 //! **선언의 모양**이고, 그것은 판정 시점에 레포가 읽을 수 있다.
 //!
+//! ## 무엇을 좌변으로 삼는가
+//!
+//! 번들이 싣는 타입 [`CARRIED`] 전량이다 — `encode` 가 직렬화하는 주어
+//! `KeybindingBundle` 에서 출발해 필드 타입을 펼치며(타입 별칭 포함) std 가 아닌 이름
+//! 있는 타입마다 재귀해 얻은 폐포이고, 세 파일에 흩어져 있다. 그 명부가 [`KEYBINDINGS_SRC`]
+//! 에 대해서는 **닫혀 있는지도 대조한다** — 그 파일은 번들이 싣는 설정 타입만을 위해
+//! 존재하므로, 거기 선언된 타입 전량이 명부에 있어야 한다
+//! ([`roster_covers_every_type_declared_in_the_settings_source`]).
+//!
 //! ## 이 가드가 닿지 않는 곳
 //!
 //! 선언 텍스트를 읽으므로 [`FORBIDDEN`] 의 문자열과 글자가 안 맞으면 못 본다. 측정으로
-//! 확인한 구멍은 넷이다 — **닫혀 있지 않다.**
+//! 확인한 구멍은 아래와 같다 — **닫혀 있지 않다.**
 //!
 //! - **타입 별칭 뒤에 숨은 것** (`type Slots = Vec<Option<String>>;` 을 필드 타입으로 쓰면
-//!   본문에는 `Slots` 만 남는다).
-//! - **이 파일 밖에 정의된 타입 안에 있는 것** — 지금은 번들이 싣는 타입이 둘 다
-//!   [`KEYBINDINGS_SRC`] 에 있지만, 다른 파일의 타입을 필드로 들이면 이 가드도 함께
-//!   넓혀야 한다.
+//!   본문에는 `Slots` 만 남는다). **지금 하나 있다** — `KeybindingBundle` 의
+//!   `plugin_keybindings` 는 별칭 `PluginShortcutOverrides` 로 적혀 있어 그 뒤의 모양이
+//!   이 가드에 안 보인다. 그 별칭이 펼쳐지는 `ShortcutOverride` 는 명부에 따로 실어 본다.
+//! - **명부에 없는 파일의 타입** — 번들이 새 타입을 들이면 [`CARRIED`] 를 손으로 넓혀야
+//!   한다. [`KEYBINDINGS_SRC`] 한 파일만 완전성 대조가 붙어 있고, 나머지 두 파일에는
+//!   그런 채널이 없다.
+//! - **매크로가 만들어 내는 필드** — 선언 텍스트에 타입이 안 나타나면 못 본다. 지금
+//!   명부의 네 타입은 모두 필드를 손으로 적고 있어 해당 사례가 없다.
 //! - **튜플 안의 `Option`** — 위에서 측정했듯 실제로 깨지는데 안 잡는다. 일부러 안
 //!   막았다: 공백을 지운 뒤 `,Option<` 로 세면 **안전한** 맵 값
 //!   (`HashMap<String,Option<String>>`)까지 위반으로 잡혀, 실재하지 않는 위반에 대한
@@ -54,12 +67,55 @@
 //!   글자가 안 맞아 안 잡힌다.
 //!
 //! 주석과 문자열 리터럴 안의 텍스트는 [`code_only`] 가 지우므로 위반으로 안 센다
-//! (raw string 은 예외 — 아래 참조).
+//! (raw string 은 갈래가 셋 — [`code_only`] 참조).
 
 use std::path::PathBuf;
 
-/// 번들이 싣는 호스트 측 타입이 모두 사는 파일.
+/// 번들이 싣는 설정 타입이 사는 파일. 이 파일은 그 타입들만을 위해 존재하므로
+/// [`roster_covers_every_type_declared_in_the_settings_source`] 가 완전성을 대조한다.
 const KEYBINDINGS_SRC: &str = "crates/tasty-settings/src/keybindings.rs";
+
+/// 번들 본체 타입이 사는 파일.
+const BUNDLE_SRC: &str = "crates/tasty-host-plugin/src/keybinding_bundle.rs";
+
+/// plugin override 타입이 사는 파일. 번들과 무관한 타입도 여럿 사는 파일이라
+/// 완전성 대조는 안 붙인다 — 명부가 이름으로 하나만 고른다.
+const OVERRIDE_SRC: &str = "crates/tasty-host-plugin/src/registry_state.rs";
+
+/// 번들이 싣는 타입 전량 — (파일, 종류, 이름).
+///
+/// 도출: `keybinding_bundle::encode` 가 직렬화하는 주어 `KeybindingBundle` 에서 출발해
+/// 필드 타입을 하나씩 펼치고(타입 별칭 `PluginShortcutOverrides` 포함), std 가 아닌
+/// 이름 있는 타입마다 재귀했다. 나머지 필드 타입은 전부 `String` · `u32` · `Vec<_>` ·
+/// `BTreeMap<_, _>` · `[String; N]` 라 재귀가 거기서 끝난다. 같은 파일의 다른 타입
+/// (`DecodeEnv` · `DecodedBundle` · `BundleWarning` · `SchemaFound` · `BundleError`,
+/// `PluginsConfig` · `PluginsDisabled` · `PluginGrants`)은 번들이 직렬화하지 않는다.
+const CARRIED: &[(&str, TypeKind, &str)] = &[
+    (BUNDLE_SRC, TypeKind::Struct, "KeybindingBundle"),
+    (KEYBINDINGS_SRC, TypeKind::Struct, "KeybindingSettings"),
+    (KEYBINDINGS_SRC, TypeKind::Struct, "ScriptBinding"),
+    (OVERRIDE_SRC, TypeKind::Enum, "ShortcutOverride"),
+];
+
+/// 선언 키워드 — 본문을 잘라낼 때와 완전성을 대조할 때 같은 집합을 쓴다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TypeKind {
+    Struct,
+    Enum,
+    Union,
+}
+
+impl TypeKind {
+    const ALL: &'static [Self] = &[Self::Struct, Self::Enum, Self::Union];
+
+    fn keyword(self) -> &'static str {
+        match self {
+            Self::Struct => "struct",
+            Self::Enum => "enum",
+            Self::Union => "union",
+        }
+    }
+}
 
 /// `None` 이 생략할 키를 못 갖는 자리 — 공백을 지운 타입 문자열에서 찾는 형태.
 ///
@@ -81,14 +137,23 @@ fn read(rel: &str) -> String {
 /// 주석과 문자열 리터럴의 **내용**을 지운다.
 ///
 /// 두 가지를 막는다 — 설명 문구 안의 `Vec<Option<…>>` 이 위반으로 세지는 것(거짓 양성),
-/// 그리고 그 안의 중괄호가 [`struct_body`] 의 깊이 계수를 흔드는 것. 그래서 본문을
+/// 그리고 그 안의 중괄호가 [`type_body`] 의 깊이 계수를 흔드는 것. 그래서 본문을
 /// 잘라내기 **전에** 원본 전체에 한 번 적용한다.
 ///
 /// 줄 주석(`//`·`///`)·블록 주석(`/* */`, 중첩 포함)·큰따옴표 문자열을 모두 본다.
 /// 줄바꿈은 남겨 실패문의 본문이 원본과 같은 줄 나눔으로 읽히게 한다.
 ///
-/// raw string(`r#"…"#`)은 안 본다 — 이 두 타입의 본문에 없다. 생기면 그 안의 텍스트가
-/// 위반으로 세질 수 있다.
+/// raw string(`r#"…"#`)을 따로 알아보지는 않는다. 실측(2026-09-09)으로 갈래가 셋이다.
+///
+/// - 안에 `"` 가 없는 raw string 은 **평범한 문자열과 똑같이 내용이 지워진다**
+///   (`r#"Vec<Option<u8>>"#` → `r#""#`). 위반으로 안 센다.
+/// - 안에 `"` 가 든 raw string 은 그 따옴표가 문자열을 조기에 닫아 **그 뒤 텍스트가
+///   코드로 남는다** — 거짓 양성이 될 수 있는 유일한 갈래다. 명부의 세 파일 중
+///   [`OVERRIDE_SRC`] 의 `#[cfg(test)]` 모듈에 그런 raw string 이 있지만, 그 자리는
+///   [`type_body`] 가 잘라내는 `ShortcutOverride` 본문보다 뒤라 판정에 안 닿는다.
+/// - `\` 로 끝나는 raw string(`r"C:\path\"`)은 escape 건너뛰기가 닫는 따옴표를 삼켜
+///   **파일 끝까지 먹는다.** 그러면 중괄호 짝이 깨져 [`type_body`] 가 패닉으로 죽는다 —
+///   조용한 통과가 아니라 fail-loud 다.
 fn code_only(s: &str) -> String {
     let c: Vec<char> = s.chars().collect();
     let mut out = String::with_capacity(s.len());
@@ -145,17 +210,17 @@ fn code_only(s: &str) -> String {
     out
 }
 
-/// `struct <name> {` 부터 중괄호 깊이가 0 으로 돌아오는 지점까지.
-fn struct_body(src: &str, name: &str) -> String {
-    let header = format!("struct {name} {{");
+/// `<kind> <name> {` 부터 중괄호 깊이가 0 으로 돌아오는 지점까지.
+fn type_body(src: &str, rel: &str, kind: TypeKind, name: &str) -> String {
+    let header = format!("{} {name} {{", kind.keyword());
     let start = src.find(&header).unwrap_or_else(|| {
         panic!(
-            "{KEYBINDINGS_SRC} 에서 `{header}` 를 못 찾았다 — 타입이 \
-                                  옮겨졌으면 이 가드의 대상도 함께 옮겨야 한다 (ADR-0255)."
+            "{rel} 에서 `{header}` 를 못 찾았다 — 타입이 옮겨졌으면 이 가드의 \
+             명부(`CARRIED`)도 함께 옮겨야 한다 (ADR-0255)."
         )
     });
     let after = &src[start..];
-    let open = after.find('{').expect("struct has no opening brace");
+    let open = after.find('{').expect("type has no opening brace");
     let mut depth = 0i32;
     for (i, ch) in after[open..].char_indices() {
         match ch {
@@ -169,21 +234,57 @@ fn struct_body(src: &str, name: &str) -> String {
             _ => {}
         }
     }
-    panic!("`{header}` 본문의 닫는 중괄호를 못 찾았다");
+    panic!("{rel} 의 `{header}` 본문의 닫는 중괄호를 못 찾았다");
+}
+
+/// 주석·문자열을 지운 본문에서 선언된 타입 이름 전량을 뽑는다.
+///
+/// `<kind> <ident>` 형태만 본다 — 키워드 앞이 공백/줄머리여야 하고(`enum` 이 다른
+/// 식별자의 꼬리인 경우를 배제), 뒤에는 식별자가 와야 한다.
+fn declared_types(src: &str) -> Vec<(TypeKind, String)> {
+    let mut out = Vec::new();
+    for kind in TypeKind::ALL {
+        let kw = kind.keyword();
+        for (at, _) in src.match_indices(kw) {
+            let before_ok = at == 0
+                || src[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_whitespace());
+            if !before_ok {
+                continue;
+            }
+            let rest = &src[at + kw.len()..];
+            let mut chars = rest.chars();
+            if chars.next() != Some(' ') {
+                continue;
+            }
+            let ident: String = chars
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if ident.is_empty() || !ident.starts_with(char::is_uppercase) {
+                continue;
+            }
+            out.push((*kind, ident));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 #[test]
 fn keybinding_types_have_no_option_inside_a_sequence() {
-    let src = code_only(&read(KEYBINDINGS_SRC));
-    for name in ["KeybindingSettings", "ScriptBinding"] {
-        let body = struct_body(&src, name);
+    for (rel, kind, name) in CARRIED {
+        let src = code_only(&read(rel));
+        let body = type_body(&src, rel, *kind, name);
         let squeezed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
         for shape in FORBIDDEN {
             assert!(
                 !squeezed.contains(shape),
-                "`{name}` 에 `None` 이 생략할 키를 못 갖는 자리가 생겼다(`{shape}…`). \
-                 TOML 에는 null 리터럴이 없어 배열 원소에는 생략할 키가 없고, \
-                 `Option<Option<T>>` 의 안쪽 `None`(`Some(None)`)도 바깥 `Option` 이 \
+                "`{name}`({rel}) 에 `None` 이 생략할 키를 못 갖는 자리가 생겼다\
+                 (`{shape}…`). TOML 에는 null 리터럴이 없어 배열 원소에는 생략할 키가 \
+                 없고, `Option<Option<T>>` 의 안쪽 `None`(`Some(None)`)도 바깥 `Option` 이 \
                  키 생략을 이미 써 버려 같은 처지다 — `keybinding_bundle::encode` 가 \
                  그 필드만이 아니라 **번들 전체**를 `unsupported None value` 로 \
                  실패시킨다. 필드 자리의 평범한 `Option<T>` 와 맵 값 자리의 `Option<T>` 는 \
@@ -193,5 +294,25 @@ fn keybinding_types_have_no_option_inside_a_sequence() {
                  재검토 조건).\n{body}"
             );
         }
+    }
+}
+
+/// [`KEYBINDINGS_SRC`] 는 번들이 싣는 설정 타입만을 위해 존재하는 파일이라, 거기 선언된
+/// 타입은 전부 TOML 로 오간다. 그래서 명부가 그 파일에 대해 닫혀 있는지 대조한다 —
+/// 위 가드가 "같은 파일의 다른 타입" 을 놓치던 자리다.
+#[test]
+fn roster_covers_every_type_declared_in_the_settings_source() {
+    let src = code_only(&read(KEYBINDINGS_SRC));
+    for (kind, name) in declared_types(&src) {
+        assert!(
+            CARRIED
+                .iter()
+                .any(|(rel, k, n)| *rel == KEYBINDINGS_SRC && *k == kind && *n == name),
+            "{KEYBINDINGS_SRC} 에 `{} {name}` 이 선언됐는데 `CARRIED` 명부에 없다. \
+             이 파일의 타입은 전부 `[keybindings]` 로 TOML 에 실리므로 \
+             `keybinding_types_have_no_option_inside_a_sequence` 가 함께 봐야 한다 \
+             — 명부에 넣어라 (ADR-0255).",
+            kind.keyword()
+        );
     }
 }

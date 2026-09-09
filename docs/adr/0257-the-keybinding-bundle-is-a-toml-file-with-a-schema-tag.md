@@ -92,10 +92,13 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
   - **깨지는 자리** — 시퀀스 원소의 `None`, 튜플 안의 `None`(튜플이 배열로
     나가 원소 자리가 된다), 그리고 `Option<Option<T>>` 의 `Some(None)`(바깥 `Option` 이
     키 생략을 이미 써 버린다).
-  `KeybindingSettings` 는 전 필드가 `Vec<String>` / `String` / `[String; N]` /
-  `Vec<ScriptBinding>` 이고 `ScriptBinding` 자신도 `String` 필드 둘뿐이라, 위의 깨지는
-  모양이 중첩까지 봐도 없다. `ShortcutOverride` 의 TOML
-  round-trip 도 `shortcut_override_serialization` 이 이미 고정하고 있다. 사람이 열어
+  번들이 싣는 타입은 `KeybindingBundle` 에서 필드를 펼쳐 얻은 폐포
+  (`KeybindingSettings` · `ScriptBinding` · `ShortcutOverride`)이고, 그 전부에 위의
+  깨지는 모양이 중첩까지 봐도 없다 — `KeybindingBundle` 자신의 나머지 필드는 스칼라
+  (`String` · `u32`)이고, `KeybindingSettings` 는 전 필드가 `Vec<String>` / `String` /
+  `[String; N]` / `Vec<ScriptBinding>` 이며, `ScriptBinding` 은 `String` 필드뿐이고,
+  `ShortcutOverride` 는 `Vec<String>` 과 `String` 뿐이다. `ShortcutOverride` 의 TOML
+  round-trip 은 `shortcut_override_serialization` 이 이미 고정하고 있다. 사람이 열어
   고치는 파일이라는 요구에도 TOML 이 낫다.
 - **번들 코덱을 새 크레이트로 뺀다** — 두 타입 어디에도 안 얹힌다. 안 골랐다:
   `tasty-host-plugin` 이 이미 두 타입을 모두 보고, plugin override 절반이 그 크레이트
@@ -110,9 +113,10 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- `KeybindingSettings` 또는 `ScriptBinding` 에 **`Option<T>` 를 원소로 갖는 시퀀스**
-  필드가 생긴다(`Vec<Option<T>>` · `[Option<T>; N]`) — TOML 에는 null 리터럴이 없고
-  배열 원소에는 생략할 키가 없어, `encode` 가 번들 한 장을 한 번에 직렬화하다
+- 번들이 싣는 타입(`KeybindingBundle` · `KeybindingSettings` · `ScriptBinding` ·
+  `ShortcutOverride`) 중 하나에 **`Option<T>` 를 원소로 갖는 시퀀스** 필드가 생긴다
+  (`Vec<Option<T>>` · `[Option<T>; N]`) — TOML 에는 null 리터럴이 없고 배열 원소에는
+  생략할 키가 없어, `encode` 가 번들 한 장을 한 번에 직렬화하다
   `unsupported None value` 로 **그 필드만이 아니라 export 전체**를 실패시킨다
   (`BundleError::Serialize`). 받는 쪽도 그 값을 못 되살린다 — 배열 원소는 언제나
   `Some` 으로만 돌아온다. 그때는 포맷(또는 그 필드의 표현)을 다시 정해야 한다.
@@ -148,5 +152,7 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
   `encode`·`decode`·`DecodeEnv`·`BundleWarning`, export 원본인
   `PluginsConfig::shortcut_overrides`
 - 채널: `crates/tasty-doc-guards/tests/keybinding_types_have_no_option_inside_a_sequence.rs`
-  — TOML 이 못 싣는 유일한 모양이 번들 타입에 들어오는지 선언에서 본다. 그 파일의
-  모듈 주석에 어느 자리가 통과하고 어느 자리가 깨지는지 실측이 적혀 있다.
+  — `None` 이 생략할 키를 못 갖는 자리가 번들이 싣는 타입에 들어오는지 그 타입들의
+  선언에서 본다. 다만 깨지는 모양이 그것 하나가 아니고 가드가 그 전부를 보지도
+  않는다 — 어느 자리가 통과하고 어느 자리가 깨지는지, 그리고 가드가 무엇을 못 보는지는
+  그 파일의 모듈 주석에 실측으로 적혀 있다.
