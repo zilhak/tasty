@@ -97,240 +97,13 @@ pub(crate) fn pump_ipc(
                 continue;
             }
         }
-        // 2) 허브 관측만 App 층에서 가로챈다 — `timer.list` 가 읽는 TimerHub 는
-        //    `App` 필드(+ plugin manager 자기 허브)라 `CoreState` 만 받는 engine
-        //    handler 에서는 닿지 않는다. gui 의 app_methods step 과 같은 함수를 쓴다.
-        if cmd.request.method == "timer.list" {
-            let resp = crate::ipc::protocol::JsonRpcResponse::success(
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                app.timer_list_json(std::time::Instant::now()),
-            );
-            send_response(&cmd.response_tx, resp);
-            continue;
-        }
-        // 2b) 읽기 전용 `plugin.*` 조회도 App 층에서 답한다 — `plugin_manager` 는 `App`
-        //     필드라 engine handler 가 닿지 않는다. gui 라우터와 **같은 함수**를 쓴다
-        //     (`handler::plugin::dispatch_readonly`), 두 벌로 두면 갈라지기 때문이다.
-        //
-        //     매니저는 여기서 **메타데이터 층까지만** 세운다. plugin 프로세스를 띄우거나
-        //     번들을 설치·권한 grant 하는 것은 조회의 부수효과일 수 없다
-        //     (`headless_plugins::ensure_plugin_manager_metadata` 주석).
-        if crate::ipc::handler::plugin::is_readonly_method(&cmd.request.method) {
-            super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-            let surface_registry = engine.surface_registry.clone();
-            if let Some(resp) = crate::ipc::handler::plugin::dispatch_readonly(
-                &app.core,
-                app.plugin_manager.as_ref(),
-                &surface_registry,
-                &cmd.request.method,
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                &cmd.request.params,
-            ) {
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-        }
-        // 2b-toggle) `plugin.enable` / `plugin.disable` — 창을 안 보는 수명주기 쓰기 둘.
-        //     gui 라우터와 **같은 함수**를 부른다(`handler::plugin::dispatch_lifecycle_toggle`).
-        //
-        //     매니저는 여기서도 **메타데이터 층까지만** 세운다. 부팅이 이미 번들을
-        //     설치해 뒀으므로(`src/boot.rs` 의 `install_builtins_if_needed`) 이 층이면
-        //     package 표가 차 있고, `PluginManager::enable` 은 그 표에서 **지목한
-        //     하나만** 찾아 기동한다. `ensure_plugin_manager`(= `discover_and_start`)를
-        //     부르면 안 되는 이유가 그것이다 — 하나를 켜라는 명령이 전부를 띄운다.
-        //
-        //     낸 이벤트는 창 큐가 없으므로 그 자리에서 소비한다. gui 의
-        //     `cascade_plugin_events` 가 하는 일 중 이 둘에 해당하는 부분이다.
-        if crate::ipc::handler::plugin::is_lifecycle_toggle_method(&cmd.request.method) {
-            super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-            let hook_events = engine.plugin_hook_events.clone();
-            if let Some((resp, events)) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
-                app.plugin_manager.as_mut(),
-                &cmd.request.method,
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                &cmd.request.params,
-            ) {
-                if let Some(mgr) = app.plugin_manager.as_mut() {
-                    crate::ipc::handler::plugin::cascade_toggle_events_headless(
-                        mgr,
-                        &hook_events,
-                        events,
-                    );
-                }
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-        }
-        // 2b-elev) `plugin.request_permission` — agent 가 권한 부족을 미리 알고
-        //     capability_elevation 을 자체 발행하는 자리. gui 는 첫 main window 의
-        //     state 를 빌려 이것을 답하는데(`app/ipc/app_methods.rs`), 헤드리스는
-        //     `state`·`engine` 을 이미 손에 들고 있어 같은 핸들러가 그대로 선다.
-        //
-        //     **팝업이 없다고 하는 일이 없는 것은 아니다.** 이 메서드가 만드는 것은
-        //     approval **레코드**이고, 헤드리스에서도 `approval.await`·`approval.list`
-        //     ·`approval.respond` 가 그 레코드에 닿는다. 팝업은 창이 있을 때 더해지는
-        //     표시일 뿐이라 `publish_capability_elevation` 안에서 gui feature 로
-        //     갈린다. 이것이 없으면 거부당한 헤드리스 agent 는 권한을 **요청할 자리**가
-        //     없다 — 위 1b) 가 거부에 격상 레코드를 실어 주는 것과 같은 축의 나머지
-        //     절반이다.
-        if cmd.request.method == "plugin.request_permission" {
-            let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let resp = crate::ipc::handler::session::handle_request_permission(
-                &mut app.core,
-                state,
-                engine,
-                &caller,
-                rpc_id,
-                &cmd.request.params,
-            );
-            send_response(&cmd.response_tx, resp);
-            continue;
-        }
-        // 2c-debug) debug 빌드의 app 층 표면 중 **창이 없어도 답이 정의되는 것.**
-        //
-        //     gui 는 이것들을 라우터의 debug step(`src/app/ipc/debug_methods.rs`)에서
-        //     처리하는데 그 step 자체가 헤드리스에 없다. 읽는 것은 `App` 의
-        //     `lua_engine` / `plugin_manager` 이고 둘 다 feature 게이트가 없는 필드다 —
-        //     창을 안 보는데 자리가 없어서 `-32601` 이던 것이라, 에이전트 검증 표면이
-        //     헤드리스에서만 사라지는 형태였다(`docs/identity.md` 원칙 2).
-        //
-        //     여기 **없는** debug 메서드(popup · banner · fullscreen · modifier_hint ·
-        //     tool · inject_* · selection · pending_menu · focused_surface · info ·
-        //     gpu.stall)는 창·렌더러·egui 입력 큐를 읽는다. 판정은 메서드별로
-        //     `docs/dev-guide/headless-ipc-surface.md` 에 있다.
-        #[cfg(debug_assertions)]
-        {
-            let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            if cmd.request.method == "debug.lua.eval" {
-                let resp = crate::core::app_surface_debug::lua_eval(
-                    app.lua_engine.as_ref(),
-                    rpc_id,
-                    &cmd.request.params,
-                );
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-            // 아래 둘은 매니저를 본다. **메타데이터 층까지만** 세운다 — 조회가 plugin
-            // 프로세스를 띄우면 관측이 자기 대상을 바꾼다(ADR-0136). 그래서 아직 아무
-            // plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의
-            // 사실이다(매니저가 아예 없을 때의 `-32000` 과 구분된다).
-            if cmd.request.method.starts_with("debug.event_bus.") {
-                super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-                let resp = crate::ipc::handler::debug_plugin::handle_event_bus(
-                    app.plugin_manager.as_mut(),
-                    &cmd.request.method,
-                    &cmd.request.params,
-                    rpc_id,
-                );
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-            // plugin popup **조회**. 매니저만 읽어 창이 없어도 답이 정의된다
-            // (gui 와 같은 함수를 부른다).
-            //
-            // `open`/`close` 는 여기 없다. 컴파일이 막아서가 아니라 — 헤드리스에는
-            // plugin popup 을 **닫는 경로가 하나도 없기** 때문이다(debug close 도,
-            // plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch`
-            // 에 산다). open 만 열면 그 빌드에서 닫을 수 없는 인스턴스가 남는다 —
-            // 표면을 넓히면서 정리 책임을 새로 지는 형태라 열지 않았다.
-            if cmd.request.method == "debug.popup.list" {
-                super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-                let resp =
-                    crate::ipc::handler::popup::handle_list(app.plugin_manager.as_ref(), rpc_id);
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-            // 등록된 전체화면 무대 **조회**. 읽는 것이 gui 무관 메타 표뿐이라 창이
-            // 없어도 답이 정의된다(gui 와 같은 함수를 부른다).
-            //
-            // 같은 갈래의 `open`/`close`/`state` 는 여기 없다 — 셋 다
-            // `pick_debug_window` 로 창을 지목한다. 무대는 창 단위라 창이 없으면 답이
-            // 정의되지 않는다. "컴파일되는가" 와 "열어도 되는가" 는 다른 물음이다.
-            if cmd.request.method == "debug.fullscreen.list" {
-                let resp = crate::core::app_surface_debug::fullscreen_list(rpc_id);
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-            if cmd.request.method == "debug.extension.invoke_hook" {
-                super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
-                crate::ipc::handler::debug_plugin::handle_extension_invoke_hook(
-                    app.plugin_manager.as_mut(),
-                    &cmd.request.params,
-                    rpc_id,
-                    cmd.response_tx.clone(),
-                );
-                continue;
-            }
-        }
-        // 2d) app 층 표면 중 **창이 없어도 답이 정의되는 것**을 여기서 답한다.
-        //     gui 의 `app_methods` step 과 **같은 함수**를 부른다
-        //     (`crate::core::app_surface`) — 두 벌로 두면 한쪽만 고쳐지는 순간 갈라진다.
-        //
-        //     여기 없는 app 층 메서드(`window.*` · `view.*` · `ui.screenshot` ·
-        //     `remote.attach` · `system.gpu_stats`)는 읽는 것이 `App.view` 라서
-        //     헤드리스에 대응물이 없다. 그 판정은 메서드별로
-        //     `docs/dev-guide/headless-ipc-surface.md` 에 적혀 있다.
-        {
-            let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            match cmd.request.method.as_str() {
-                "clipboard.set_text" => {
-                    let resp = crate::core::app_surface::clipboard_set_text(
-                        &app.core,
-                        rpc_id,
-                        &cmd.request.params,
-                    );
-                    send_response(&cmd.response_tx, resp);
-                    continue;
-                }
-                "remote.workspaces" => {
-                    crate::core::app_surface::spawn_remote_workspaces(
-                        rpc_id,
-                        &cmd.request.params,
-                        &cmd.response_tx,
-                    );
-                    continue;
-                }
-                // 대기 대상 store 는 **이 engine** 것이다. gui 처럼 창·parked 를 훑을
-                // 일이 없다 — 헤드리스는 engine 이 하나뿐이고 `app.core_state` 는
-                // 부팅이 채우지 않는다(`boot::bootstrap_engine` 이 새로 만들어 돌려준다).
-                "agent.task_await" => {
-                    crate::core::app_surface::spawn_task_await(
-                        engine.task_waker_hub.clone(),
-                        app.core.memory_arc(),
-                        engine.agent_seq.clone(),
-                        rpc_id,
-                        cmd.request.params.clone(),
-                        &cmd.response_tx,
-                    );
-                    continue;
-                }
-                "approval.await" => {
-                    crate::core::app_surface::spawn_approval_await(
-                        engine.approval_store.clone(),
-                        app.core.memory_arc(),
-                        rpc_id,
-                        cmd.request.params.clone(),
-                        &cmd.response_tx,
-                    );
-                    continue;
-                }
-                // 데몬은 자기 IPC 로 멈출 수 있어야 한다. gui 는 `AppEvent::Shutdown` 을
-                // winit proxy 로 보내는데 헤드리스엔 proxy 가 없으므로, 호출자에게 성공을
-                // 회신한 뒤 **호출자(run loop)에게 break 를 돌려준다.** gui 와 같은
-                // debug 격리(`DEBUG_METHODS`)를 유지한다.
-                #[cfg(debug_assertions)]
-                "system.shutdown" => {
-                    send_response(
-                        &cmd.response_tx,
-                        crate::ipc::protocol::JsonRpcResponse::success(
-                            rpc_id,
-                            serde_json::json!({"shutdown": true}),
-                        ),
-                    );
-                    return std::ops::ControlFlow::Break(());
-                }
-                _ => {}
-            }
+        // 2) App 층 가로채기 — 창이 없어도 답이 정의되는 표면들을 engine 앞에서 답한다.
+        //    어느 하나가 답했으면 응답은 그 안에서 이미 나갔다. 그 안의 갈래는
+        //    `2-hub` / `2-plugin` / `2-toggle` / `2-elev` / `2-surface` + debug 다.
+        match intercept_app_layer(app, state, engine, &caller, &cmd) {
+            Some(Intercepted::Answered) => continue,
+            Some(Intercepted::Shutdown) => return std::ops::ControlFlow::Break(()),
+            None => {}
         }
         // 2c) 지목한 대상을 이 engine 이 안 가졌으면 거절한다 — gui 와 같은 판정
         //     (`app/ipc/routing.rs`). 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만,
@@ -389,6 +162,280 @@ pub(crate) fn pump_ipc(
         send_response(&cmd.response_tx, resp);
     }
     std::ops::ControlFlow::Continue(())
+}
+
+/// [`intercept_app_layer`] 의 답 — 응답은 그 안에서 이미 보냈다.
+enum Intercepted {
+    /// 이 명령은 여기서 끝났다. 다음 명령으로 넘어간다.
+    Answered,
+    /// 데몬을 멈추라는 답이었다. 호출자(run loop)가 break 한다.
+    Shutdown,
+}
+
+/// engine handler 앞에서 답하는 **App 층 표면** 전부.
+///
+/// 가르는 축은 하나다 — *읽는 것이 `App` 필드인가*. `timer.list` 의 TimerHub,
+/// `plugin.*` 의 `plugin_manager`, `lua_engine` 이 그렇다. `CoreState` 만 받는 engine
+/// handler 는 그 셋에 닿지 못하므로, 여기서 안 답하면 헤드리스에서만 `-32601` 이 된다
+/// (`docs/identity.md` 원칙 2 — 에이전트 표면이 조합에 따라 사라지지 않는다).
+/// gui 는 같은 자리를 라우터의 app_methods / debug step 이 맡고, **부르는 함수는 같다.**
+///
+/// `pump_ipc` 에서 갈라낸 이유는 길이가 아니라 축이다 — 그쪽에 남은 것은 caller 해석 ·
+/// 게이트 · 라우팅이고, 여기 있는 것은 종단 응답이다. 갈라 두면 새 App 층 표면이
+/// 라우팅 코드를 건드리지 않고 는다.
+fn intercept_app_layer(
+    app: &mut App,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    caller: &crate::ipc::caller::CallerContext,
+    cmd: &crate::ipc::server::IpcCommand,
+) -> Option<Intercepted> {
+    // 2-hub) 허브 관측만 App 층에서 가로챈다 — `timer.list` 가 읽는 TimerHub 는
+    //    `App` 필드(+ plugin manager 자기 허브)라 `CoreState` 만 받는 engine
+    //    handler 에서는 닿지 않는다. gui 의 app_methods step 과 같은 함수를 쓴다.
+    if cmd.request.method == "timer.list" {
+        let resp = crate::ipc::protocol::JsonRpcResponse::success(
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            app.timer_list_json(std::time::Instant::now()),
+        );
+        send_response(&cmd.response_tx, resp);
+        return Some(Intercepted::Answered);
+    }
+    // 2-plugin) 읽기 전용 `plugin.*` 조회도 App 층에서 답한다 — `plugin_manager` 는 `App`
+    //     필드라 engine handler 가 닿지 않는다. gui 라우터와 **같은 함수**를 쓴다
+    //     (`handler::plugin::dispatch_readonly`), 두 벌로 두면 갈라지기 때문이다.
+    //
+    //     매니저는 여기서 **메타데이터 층까지만** 세운다. plugin 프로세스를 띄우거나
+    //     번들을 설치·권한 grant 하는 것은 조회의 부수효과일 수 없다
+    //     (`headless_plugins::ensure_plugin_manager_metadata` 주석).
+    if crate::ipc::handler::plugin::is_readonly_method(&cmd.request.method) {
+        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        let surface_registry = engine.surface_registry.clone();
+        if let Some(resp) = crate::ipc::handler::plugin::dispatch_readonly(
+            &app.core,
+            app.plugin_manager.as_ref(),
+            &surface_registry,
+            &cmd.request.method,
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            &cmd.request.params,
+        ) {
+            send_response(&cmd.response_tx, resp);
+            return Some(Intercepted::Answered);
+        }
+    }
+    // 2-toggle) `plugin.enable` / `plugin.disable` — 창을 안 보는 수명주기 쓰기 둘.
+    //     gui 라우터와 **같은 함수**를 부른다(`handler::plugin::dispatch_lifecycle_toggle`).
+    //
+    //     매니저는 여기서도 **메타데이터 층까지만** 세운다. 부팅이 이미 번들을
+    //     설치해 뒀으므로(`src/boot.rs` 의 `install_builtins_if_needed`) 이 층이면
+    //     package 표가 차 있고, `PluginManager::enable` 은 그 표에서 **지목한
+    //     하나만** 찾아 기동한다. `ensure_plugin_manager`(= `discover_and_start`)를
+    //     부르면 안 되는 이유가 그것이다 — 하나를 켜라는 명령이 전부를 띄운다.
+    //
+    //     낸 이벤트는 창 큐가 없으므로 그 자리에서 소비한다. gui 의
+    //     `cascade_plugin_events` 가 하는 일 중 이 둘에 해당하는 부분이다.
+    if crate::ipc::handler::plugin::is_lifecycle_toggle_method(&cmd.request.method) {
+        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        let hook_events = engine.plugin_hook_events.clone();
+        if let Some((resp, events)) = crate::ipc::handler::plugin::dispatch_lifecycle_toggle(
+            app.plugin_manager.as_mut(),
+            &cmd.request.method,
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            &cmd.request.params,
+        ) {
+            if let Some(mgr) = app.plugin_manager.as_mut() {
+                crate::ipc::handler::plugin::cascade_toggle_events_headless(
+                    mgr,
+                    &hook_events,
+                    events,
+                );
+            }
+            send_response(&cmd.response_tx, resp);
+            return Some(Intercepted::Answered);
+        }
+    }
+    // 2-elev) `plugin.request_permission` — agent 가 권한 부족을 미리 알고
+    //     capability_elevation 을 자체 발행하는 자리. gui 는 첫 main window 의
+    //     state 를 빌려 이것을 답하는데(`app/ipc/app_methods.rs`), 헤드리스는
+    //     `state`·`engine` 을 이미 손에 들고 있어 같은 핸들러가 그대로 선다.
+    //
+    //     **팝업이 없다고 하는 일이 없는 것은 아니다.** 이 메서드가 만드는 것은
+    //     approval **레코드**이고, 헤드리스에서도 `approval.await`·`approval.list`
+    //     ·`approval.respond` 가 그 레코드에 닿는다. 팝업은 창이 있을 때 더해지는
+    //     표시일 뿐이라 `publish_capability_elevation` 안에서 gui feature 로
+    //     갈린다. 이것이 없으면 거부당한 헤드리스 agent 는 권한을 **요청할 자리**가
+    //     없다 — 위 1b) 가 거부에 격상 레코드를 실어 주는 것과 같은 축의 나머지
+    //     절반이다.
+    if cmd.request.method == "plugin.request_permission" {
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let resp = crate::ipc::handler::session::handle_request_permission(
+            &mut app.core,
+            state,
+            engine,
+            &caller,
+            rpc_id,
+            &cmd.request.params,
+        );
+        send_response(&cmd.response_tx, resp);
+        return Some(Intercepted::Answered);
+    }
+
+    #[cfg(debug_assertions)]
+    if let Some(hit) = intercept_debug_app_layer(app, engine, cmd) {
+        return Some(hit);
+    }
+    // 2-surface) app 층 표면 중 **창이 없어도 답이 정의되는 것**을 여기서 답한다.
+    //     gui 의 `app_methods` step 과 **같은 함수**를 부른다
+    //     (`crate::core::app_surface`) — 두 벌로 두면 한쪽만 고쳐지는 순간 갈라진다.
+    //
+    //     여기 없는 app 층 메서드(`window.*` · `view.*` · `ui.screenshot` ·
+    //     `remote.attach` · `system.gpu_stats`)는 읽는 것이 `App.view` 라서
+    //     헤드리스에 대응물이 없다. 그 판정은 메서드별로
+    //     `docs/dev-guide/headless-ipc-surface.md` 에 적혀 있다.
+    {
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        match cmd.request.method.as_str() {
+            "clipboard.set_text" => {
+                let resp = crate::core::app_surface::clipboard_set_text(
+                    &app.core,
+                    rpc_id,
+                    &cmd.request.params,
+                );
+                send_response(&cmd.response_tx, resp);
+                return Some(Intercepted::Answered);
+            }
+            "remote.workspaces" => {
+                crate::core::app_surface::spawn_remote_workspaces(
+                    rpc_id,
+                    &cmd.request.params,
+                    &cmd.response_tx,
+                );
+                return Some(Intercepted::Answered);
+            }
+            // 대기 대상 store 는 **이 engine** 것이다. gui 처럼 창·parked 를 훑을
+            // 일이 없다 — 헤드리스는 engine 이 하나뿐이고 `app.core_state` 는
+            // 부팅이 채우지 않는다(`boot::bootstrap_engine` 이 새로 만들어 돌려준다).
+            "agent.task_await" => {
+                crate::core::app_surface::spawn_task_await(
+                    engine.task_waker_hub.clone(),
+                    app.core.memory_arc(),
+                    engine.agent_seq.clone(),
+                    rpc_id,
+                    cmd.request.params.clone(),
+                    &cmd.response_tx,
+                );
+                return Some(Intercepted::Answered);
+            }
+            "approval.await" => {
+                crate::core::app_surface::spawn_approval_await(
+                    engine.approval_store.clone(),
+                    app.core.memory_arc(),
+                    rpc_id,
+                    cmd.request.params.clone(),
+                    &cmd.response_tx,
+                );
+                return Some(Intercepted::Answered);
+            }
+            // 데몬은 자기 IPC 로 멈출 수 있어야 한다. gui 는 `AppEvent::Shutdown` 을
+            // winit proxy 로 보내는데 헤드리스엔 proxy 가 없으므로, 호출자에게 성공을
+            // 회신한 뒤 **호출자(run loop)에게 break 를 돌려준다.** gui 와 같은
+            // debug 격리(`DEBUG_METHODS`)를 유지한다.
+            #[cfg(debug_assertions)]
+            "system.shutdown" => {
+                send_response(
+                    &cmd.response_tx,
+                    crate::ipc::protocol::JsonRpcResponse::success(
+                        rpc_id,
+                        serde_json::json!({"shutdown": true}),
+                    ),
+                );
+                return Some(Intercepted::Shutdown);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// debug 빌드의 app 층 표면 중 **창이 없어도 답이 정의되는 것.**
+///
+/// gui 는 이것들을 라우터의 debug step(`src/app/ipc/debug_methods.rs`)에서 처리하는데
+/// 그 step 자체가 헤드리스에 없다. 읽는 것은 `App` 의 `lua_engine` / `plugin_manager`
+/// 이고 둘 다 feature 게이트가 없는 필드다 — 창을 안 보는데 자리가 없어서 `-32601`
+/// 이던 것이라, 에이전트 검증 표면이 헤드리스에서만 사라지는 형태였다
+/// (`docs/identity.md` 원칙 2).
+///
+/// 여기 **없는** debug 메서드(popup · banner · fullscreen · modifier_hint · tool ·
+/// inject_* · selection · pending_menu · focused_surface · info · gpu.stall)는 창·
+/// 렌더러·egui 입력 큐를 읽는다. 판정은 메서드별로
+/// `docs/dev-guide/headless-ipc-surface.md` 에 있다.
+#[cfg(debug_assertions)]
+fn intercept_debug_app_layer(
+    app: &mut App,
+    engine: &CoreState,
+    cmd: &crate::ipc::server::IpcCommand,
+) -> Option<Intercepted> {
+    let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+    if cmd.request.method == "debug.lua.eval" {
+        let resp = crate::core::app_surface_debug::lua_eval(
+            app.lua_engine.as_ref(),
+            rpc_id,
+            &cmd.request.params,
+        );
+        send_response(&cmd.response_tx, resp);
+        return Some(Intercepted::Answered);
+    }
+    // 아래 둘은 매니저를 본다. **메타데이터 층까지만** 세운다 — 조회가 plugin
+    // 프로세스를 띄우면 관측이 자기 대상을 바꾼다(ADR-0136). 그래서 아직 아무
+    // plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의
+    // 사실이다(매니저가 아예 없을 때의 `-32000` 과 구분된다).
+    if cmd.request.method.starts_with("debug.event_bus.") {
+        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        let resp = crate::ipc::handler::debug_plugin::handle_event_bus(
+            app.plugin_manager.as_mut(),
+            &cmd.request.method,
+            &cmd.request.params,
+            rpc_id,
+        );
+        send_response(&cmd.response_tx, resp);
+        return Some(Intercepted::Answered);
+    }
+    // plugin popup **조회**. 매니저만 읽어 창이 없어도 답이 정의된다
+    // (gui 와 같은 함수를 부른다).
+    //
+    // `open`/`close` 는 여기 없다. 컴파일이 막아서가 아니라 — 헤드리스에는
+    // plugin popup 을 **닫는 경로가 하나도 없기** 때문이다(debug close 도,
+    // plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch`
+    // 에 산다). open 만 열면 그 빌드에서 닫을 수 없는 인스턴스가 남는다 —
+    // 표면을 넓히면서 정리 책임을 새로 지는 형태라 열지 않았다.
+    if cmd.request.method == "debug.popup.list" {
+        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        let resp = crate::ipc::handler::popup::handle_list(app.plugin_manager.as_ref(), rpc_id);
+        send_response(&cmd.response_tx, resp);
+        return Some(Intercepted::Answered);
+    }
+    // 등록된 전체화면 무대 **조회**. 읽는 것이 gui 무관 메타 표뿐이라 창이
+    // 없어도 답이 정의된다(gui 와 같은 함수를 부른다).
+    //
+    // 같은 갈래의 `open`/`close`/`state` 는 여기 없다 — 셋 다
+    // `pick_debug_window` 로 창을 지목한다. 무대는 창 단위라 창이 없으면 답이
+    // 정의되지 않는다. "컴파일되는가" 와 "열어도 되는가" 는 다른 물음이다.
+    if cmd.request.method == "debug.fullscreen.list" {
+        let resp = crate::core::app_surface_debug::fullscreen_list(rpc_id);
+        send_response(&cmd.response_tx, resp);
+        return Some(Intercepted::Answered);
+    }
+    if cmd.request.method == "debug.extension.invoke_hook" {
+        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        crate::ipc::handler::debug_plugin::handle_extension_invoke_hook(
+            app.plugin_manager.as_mut(),
+            &cmd.request.params,
+            rpc_id,
+            cmd.response_tx.clone(),
+        );
+        return Some(Intercepted::Answered);
+    }
+    None
 }
 
 /// plugin namespace forward — 넘겼으면 `true`(응답은 plugin 이 준다).

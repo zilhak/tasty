@@ -18,8 +18,15 @@
 //! 두 라우터의 dispatch 는 `match`/`if` 안의 문자열 리터럴이라 밖으로 꺼낼 상수가
 //! 없다. 값으로 읽을 수 있는 것(읽기 전용 `plugin.*` 표)은 값으로 읽는다.
 //!
-//! 판정은 **각 dispatch 함수의 본문만** 본다. 같은 메서드 이름이 doc 주석·다른 헬퍼에
-//! 흔하게 등장해서, 파일 전체를 세면 안 열린 것이 열린 것으로 잡힌다.
+//! **세는 창은 두 쪽이 다르고, 그 차이는 의도다.** gui 쪽은 dispatch **함수 본문**만
+//! 본다 — 그 파일에는 답하지 않는 헬퍼가 같이 살아서, 파일 전체를 세면 안 열린 것이
+//! 열린 것으로 잡힌다. 헤드리스 쪽은 **파일 전체**를 본다([`headless_methods`]) —
+//! 그 파일은 통째로 `#![cfg(not(feature = "gui"))]` 인 dispatch 모듈이라 파일이 곧
+//! 물음의 범위이고, 답하는 자리를 함수로 갈라도 판정이 안 흔들린다. 함수로 좁혔던
+//! 때 그 리팩터 한 번이 실제로 판정을 뒤집었다(그 실측은 `headless_methods` 에 있다).
+//!
+//! 두 창 모두 doc 주석의 이름은 안 센다 — 세는 것은 **문자열 리터럴**이고 주석 속
+//! 메서드 이름은 백틱이라 따옴표에 안 걸린다.
 //!
 //! 텍스트로 읽는 대가는 **리터럴이 아닌 이름은 안 보인다** 는 것이다. 그 사각은 수를
 //! 세는 검사로 못 좁힌다 — 이름 하나를 매크로 뒤로 숨기면 항목이 하나 줄 뿐이고(하한
@@ -35,7 +42,6 @@ use super::{callers_of, fn_body, repo_root};
 const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
 const HEADLESS_PUMP: &str = "src/boot/headless_dispatch.rs";
-const HEADLESS_FN: &str = "fn pump_ipc";
 const GUI_DEBUG_STEP: &str = "src/app/ipc/debug_methods.rs";
 const GUI_DEBUG_FN: &str = "fn ipc_step_debug";
 
@@ -43,9 +49,11 @@ const GUI_DEBUG_FN: &str = "fn ipc_step_debug";
 /// 값의 근거: 2026-09-05 실측 17 건.
 const MIN_GUI_METHODS: usize = 12;
 
-/// 헤드리스 펌프가 이름으로 답하는 메서드 수의 하한.
-/// 값의 근거: 2026-09-05 실측 6 건.
-const MIN_HEADLESS_METHODS: usize = 4;
+/// 헤드리스 dispatch 가 이름으로 답하는 메서드 수의 하한.
+/// 값의 근거: 2026-09-09 실측 12 건([`headless_methods`] 의 모수 = 파일 전체).
+/// 그 전 값은 같은 파일을 `fn pump_ipc` 본문으로 좁혀 세던 6 건이었다 — 좌변이
+/// 바뀌었으므로 두 수를 견주지 마라.
+const MIN_HEADLESS_METHODS: usize = 8;
 
 /// gui 의 app 층 step 에는 있고 **헤드리스에는 의도적으로 없는** 메서드와 그 사유.
 ///
@@ -138,11 +146,18 @@ fn gui_methods() -> BTreeSet<String> {
     method_literals(&body)
 }
 
+/// **모수는 함수가 아니라 파일이다.** 한때 이 자리는 `fn pump_ipc` 본문만 잘라 봤고,
+/// 그 창은 답하는 자리가 그 함수 안에 전부 있다는 전제 위에 서 있었다. 그 전제는
+/// 리팩터가 깨뜨린다 — 종단 응답을 `intercept_app_layer` 로 갈라내자 창 안의 이름이
+/// **6 개에서 0 개로** 떨어졌고, 가드는 "헤드리스가 아무것도 안 답한다" 고 말했다.
+/// 코드는 한 줄도 안 잃었는데 판정만 뒤집힌 것이라, 그때 옳은 처방은 이름을 도로 밀어
+/// 넣는 것이 아니라 **세는 창을 물음에 맞추는 것**이다. 물음은 "이 메서드를 헤드리스
+/// dispatch 가 답하는가" 이고, 그 dispatch 는 파일 하나다(`#![cfg(not(feature = "gui"))]`).
+///
+/// 같은 파일의 debug 갈래 판정이 이미 파일 전체를 본다(`in_file`) — 창을 맞추면 그 둘도
+/// 같은 모수를 쓰게 된다.
 fn headless_methods() -> BTreeSet<String> {
-    let src = read(HEADLESS_PUMP);
-    let body = fn_body(&src, HEADLESS_FN)
-        .unwrap_or_else(|| panic!("{HEADLESS_PUMP} 에서 `{HEADLESS_FN}` 본문을 못 잘랐다"));
-    method_literals(&body)
+    method_literals(&read(HEADLESS_PUMP))
 }
 
 /// gui app 층 step 의 모든 메서드는 **헤드리스가 답하거나, 왜 못 답하는지가 적혀 있다.**
@@ -158,8 +173,8 @@ fn every_gui_app_layer_method_is_answered_headless_or_carries_a_reason() {
     let headless = headless_methods();
     assert!(
         headless.len() >= MIN_HEADLESS_METHODS,
-        "헤드리스 펌프에서 메서드를 {} 개밖에 못 뽑았다(하한 {MIN_HEADLESS_METHODS}, \
-         2026-09-05 실측 6)",
+        "헤드리스 dispatch 에서 메서드를 {} 개밖에 못 뽑았다(하한 {MIN_HEADLESS_METHODS}, \
+         2026-09-09 실측 12)",
         headless.len()
     );
 

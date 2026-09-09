@@ -244,10 +244,26 @@ const RELEASE_ROUTERS: &[(&str, &str, usize)] = &[
         "pub(crate) fn dispatch_list_global(",
         3,
     ),
+    // 헤드리스 dispatch 는 **두 자리**다. `pump_ipc` 에는 이름으로 가르는 팔이 더 이상
+    // 없고(하한 0 은 그 사실이다), 종단 응답이 전부 `intercept_app_layer` 로 갔다 —
+    // 모듈 doc 이 적어 둔 사각("팔을 헬퍼 함수로 옮기면 안 잡힌다")이 실제로 발생한
+    // 자리이고, 그 doc 이 정한 처방대로 헬퍼를 명부에 **더한다**. `pump_ipc` 를 빼지
+    // 않는 이유는 팔이 거기 다시 생길 수 있어서고, 하한 0 이라 스캔 붕괴는 못 보지만
+    // 그쪽은 아래 항목의 하한과 전역 `scanned > 200` 이 맡는다.
     (
         "src/boot/headless_dispatch.rs",
         "pub(crate) fn pump_ipc(",
-        1,
+        0,
+    ),
+    // `intercept_debug_app_layer` 는 **일부러 안 넣는다.** 그쪽 팔은 함수 시그니처에
+    // 붙은 `#[cfg(debug_assertions)]` 로 gated 인데, `is_debug_gated` 는 스캔한 본문
+    // 줄에서만 cfg 를 찾으므로 시그니처 밖의 그것을 못 본다 — 넣으면 debug 표면이
+    // 통째로 "release 표에 없는 팔" 로 잡히는 위양성이 된다. 그 팔들은 예전에도
+    // (블록 cfg 안에 있어서) gated 로 걸러졌으므로 이 제외로 잃는 판정은 없다.
+    (
+        "src/boot/headless_dispatch.rs",
+        "fn intercept_app_layer(",
+        5,
     ),
 ];
 
