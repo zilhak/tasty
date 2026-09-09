@@ -88,13 +88,19 @@
 "이후 회차의 정정" 절이 정본이다. 비포커스 창에 그 자원을 만들 수단이 없어 **실행
 재현은 못 했다.**
 
-**hook 둘(`hook.list` · `global_hook.list`)은 합산 전에 id 공간을 먼저 고쳐야 한다 —
-위 재검토 트리거 2 가 걸린 것이다.**
-`IdGenerator` 가 공유하는 카운터는 workspace · category · pane · tab · surface · pty ·
-observer 일곱이고 **hook 과 global hook 은 거기 없다.** 그래서 두 창의 hook 이 똑같이
-id 1 을 받는다. 실측: 포커스된 창에서 `unset global-hook --hook 1` 이 성공하고, 한 번
-더 부르면 `removed: false` 다 — **비포커스 창의 global hook 은 존재하는데 어떤 요청으로도
-닿지 않는다.** 이 저장소가 pty 에서 겪은 것과 같은 형태다.
+**그 회차에는 hook 둘(`hook.list` · `global_hook.list`)이 합산 전에 id 공간을 먼저
+고쳐야 하는 상태였다 — 위 재검토 트리거 2 가 걸린 것이다.**
+그때 `IdGenerator` 가 공유하는 카운터는 workspace · category · pane · tab · surface ·
+pty · observer 일곱이었고 hook 과 global hook 은 거기 없었다. 그래서 두 창의 hook 이
+똑같이 id 1 을 받았다. 실측: 포커스된 창에서 `unset global-hook --hook 1` 이 성공하고,
+한 번 더 부르면 `removed: false` 다 — **비포커스 창의 global hook 은 존재하는데 어떤
+요청으로도 닿지 않았다.** 이 저장소가 pty 에서 겪은 것과 같은 형태다.
+
+**그 선행 조건은 같은 날 뒤 회차에서 닫혔고 두 목록은 합산으로 갔다 — 아래 "이후 회차의
+정정" 이 정본이다.** 지금 `IdGenerator` 의 공유 카운터에는 `hook` 과 `global_hook` 이
+들어 있고(`src/core/state.rs` 의 `IdGenerator`), `hook.list` · `global_hook.list` 는
+`dispatch_list_global` 의 합산 arm 이다(`src/app/dispatch/list_global.rs`). 위 문단의
+"먼저 고쳐야 한다" 는 **지금 어느 목록에도 남아 있지 않다.**
 
 ### 자동 발견은 못 한다 — 네 형태로 다 새었고 넷 다 실측이다
 
@@ -114,20 +120,30 @@ Alternatives C 를 **기각으로 확정한다.** 세 성질을 정적으로 자
 `tasty-doc-guards` 라 경로 필터 없는 잡에서 돈다. 둘은 겹치는 것이 아니라 **채널이
 다르다** — 조합별 채널의 정본은 [ci-gates](../dev-guide/ci-gates.md).
 
-### 이후 회차의 정정 — approval 은 공유였고 attach 는 합산으로 갔다 (2026-09-09)
+### 이후 회차의 정정 — approval 은 공유였고 attach·hook 둘은 합산으로 갔다 (2026-09-09)
 
 위 절이 `approval.list` · `attach.list` 를 묶어 "저장소가 engine 마다 새로 만들어진다 /
 둘은 합산 전에 id 공간을 먼저 고쳐야 한다" 로 적은 것은 **둘 다 틀렸다.** 그 판정은
 `CoreState` 생성자만 읽고 창 생성 경로를 안 읽은 결과다.
+
+hook 둘은 **틀린 것이 아니라 낡은 것**이다 — 그때는 선행 조건이 실제로 열려 있었고,
+같은 날 뒤 회차가 카운터를 공유로 올려 그것을 닫았다. 두 사유를 갈라 적는 이유는 고치는
+방법이 다르기 때문이다: 앞은 **읽는 범위**(생성자만 읽었다)를 넓혀야 하고, 뒤는 **읽는
+시점**(그 뒤에 바뀌었다)을 다시 재야 한다.
 
 - **`approval_store` 는 창 사이에 공유된다.** 두 번째 main window 를 세우는
   `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의 Arc 로
   덮어쓴다 — 그 아홉 중 하나가 `approval_store` 다. 저장소가 어디 사는지는 **생성자와
   창 생성 경로를 함께** 읽어야 정해진다.
 - **`attach.list` 는 합산으로 갔다.** 점유 레지스트리는 engine 별이 맞지만, 두 배열의
-  키(`surface_id` · `workspace_id`)는 위 절이 같은 자리에서 공유로 열거한 일곱에 있다.
-  즉 id 공간은 처음부터 닫혀 있었고 합산만이 남은 일이었다 — "합산 전에 id 공간을
-  먼저" 는 hook 둘에만 해당한다.
+  키(`surface_id` · `workspace_id`)는 위 절이 같은 자리에서 공유로 열거한 카운터 안에
+  있다. 즉 id 공간은 처음부터 닫혀 있었고 합산만이 남은 일이었다.
+- **`hook.list` · `global_hook.list` 도 합산으로 갔다.** 위 절이 선행 조건으로 든 id
+  공간이 닫혔기 때문이다 — `IdGenerator` 의 공유 카운터는 위 절이 센 일곱이 아니라
+  **아홉**이고(workspace · category · pane · tab · surface · pty · observer · **hook** ·
+  **global_hook**), 두 hook 카운터가 그 안에 있다. 두 목록은 이미 `dispatch_list_global`
+  의 합산 arm 이다. 지목은 합산과 별개 축이고 `Kind::Hook` · `Kind::GlobalHook` 이
+  각각 푼다.
 
 갈래와 사유의 정본은 `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs`
 의 명부이고, 정책 쪽 서술은 [focus 정책](../design/policies/focus.md) 이다.
