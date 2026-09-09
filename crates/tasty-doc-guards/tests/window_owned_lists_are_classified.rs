@@ -121,8 +121,8 @@ const ROSTER: &[(&str, Class, &str)] = &[
     ),
     (
         "attach.list",
-        PerEngineNotAggregated,
-        "engine 별 `OccupancyRegistry`. CLI 표면이 없어(`tasty tool attach` 는 다른 메서드) 실행 재현은 안 했다",
+        Aggregated,
+        "engine 별 `OccupancyRegistry` 라 창별인 것은 맞지만, 두 배열의 키(`surface_id`·`workspace_id`)가 IdGenerator 공유라 이어 붙이면 그대로 키가 된다 — 지목 축이 안 막혀 있어 합산이 곧 답이다. 결과가 이름 붙은 배열 **둘**이라 합산 함수가 한 순회에서 둘을 꺼낸다(따로 부르면 두 배열이 서로 다른 시점의 스냅샷이 된다)",
     ),
     // ── 아래는 dispatch 표의 `.list` 전수를 명부와 대조하다 드러난 것들이다.
     // 그 대조가 없던 동안 이 명부는 `.list` 27 중 13 만 덮고 있었다.
@@ -406,7 +406,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .filter(|(_, c, _)| *c == PerEngineNotAggregated)
         .count();
     assert_eq!(
-        open, 3,
+        open, 2,
         "창별인데 합산 안 되는 항목의 수가 바뀌었다. 고쳤으면 갈래를 옮기고 이 수를 \
          함께 내려라 — 남겨 두면 다음 사람이 이미 닫힌 것을 다시 센다."
     );

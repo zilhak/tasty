@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::app::App;
 use crate::ipc as host_ipc;
 use crate::ipc::handler::{
-    hooks, image, output, pane, pty, surface, workspace, workspace_category,
+    attach, hooks, image, output, pane, pty, surface, workspace, workspace_category,
 };
 use crate::ipc::protocol::JsonRpcResponse;
 
@@ -85,6 +85,19 @@ impl App {
             "global_hook.list" => {
                 Some(self.collect_list(id, |_c, s, e, id| hooks::handle_global_hook_list(s, e, id)))
             }
+            // 점유 레지스트리(`OccupancyRegistry`)는 engine 마다 하나다 — 이름이 attach 라
+            // 창 밖의 것처럼 읽히지만 저장소가 `CoreState` 에 산다. 그래서 창이 둘일 때
+            // 다른 창의 점유는 **보이지 않고**, 그 목록을 믿고 free 라고 판단한 호출자가
+            // 이미 점유된 surface 를 집으러 간다.
+            //
+            // 두 배열의 키가 창을 건너 유일하다: `surface_id` 와 `workspace_id` 는 둘 다
+            // `IdGenerator` 의 공유 카운터에서 나온다(`surface.list`·`workspace.list` 가
+            // 합산인 근거와 같다). 그래서 이어 붙이면 그대로 키가 된다.
+            "attach.list" => Some(self.collect_fields(
+                id,
+                ("attached", "workspaces"),
+                |_c, _s, e, id| attach::handle_list(e, id),
+            )),
             _ => None,
         }
     }
@@ -100,11 +113,12 @@ impl App {
     /// 어떤 요청의 대상이 아니다. 그래서 "어느 창의 normal 인가" 라는 물음이 생기지
     /// 않는다.
     fn collect_categories(&mut self, id: serde_json::Value) -> JsonRpcResponse {
-        let rows = self.merge(
+        let rows = self.merge_fields(
             &id,
             |_c, s, e, id| workspace_category::handle_list(s, e, id),
-            None,
+            &[],
         );
+        let rows = one(rows);
         JsonRpcResponse::success(id, json!(fold_normal(rows)))
     }
 
@@ -118,7 +132,7 @@ impl App {
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
-        let merged = self.merge(&id, f, None);
+        let merged = one(self.merge_fields(&id, f, &[]));
         JsonRpcResponse::success(id, json!(merged))
     }
 
@@ -132,18 +146,21 @@ impl App {
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
-        let merged = self.merge(&id, f, Some(field));
+        let merged = one(self.merge_fields(&id, f, &[field]));
         JsonRpcResponse::success(id, json!({ field: merged }))
     }
 
-    /// 모든 main + parked engine 을 돌며 배열을 잇는다. `field` 가 있으면 결과 객체의
-    /// 그 필드에서, 없으면 결과 자체에서 배열을 꺼낸다.
-    fn merge<F>(
+    /// 결과가 **이름 붙은 배열 둘**인 list 를 합쳐 같은 모양으로 되돌린다.
+    ///
+    /// 필드마다 `merge_fields` 를 따로 부르면 engine 당 핸들러가 두 번 돌고, 그러면
+    /// 한 응답의 두 배열이 **서로 다른 시점의 스냅샷**이 된다. 한 번 순회하며 둘 다
+    /// 꺼낸다.
+    fn collect_fields<F>(
         &mut self,
-        id: &serde_json::Value,
-        mut f: F,
-        field: Option<&str>,
-    ) -> Vec<serde_json::Value>
+        id: serde_json::Value,
+        fields: (&str, &str),
+        f: F,
+    ) -> JsonRpcResponse
     where
         F: FnMut(
             &crate::core::Core,
@@ -152,15 +169,44 @@ impl App {
             serde_json::Value,
         ) -> JsonRpcResponse,
     {
-        let take = |resp: JsonRpcResponse, out: &mut Vec<serde_json::Value>| {
+        let (a, b) = fields;
+        let mut merged = self.merge_fields(&id, f, &[a, b]);
+        let second = merged.pop().unwrap_or_default();
+        let first = merged.pop().unwrap_or_default();
+        JsonRpcResponse::success(id, json!({ a: first, b: second }))
+    }
+
+    /// 모든 main + parked engine 을 **한 번씩** 돌며 배열을 잇는다. `fields` 가 비면
+    /// 결과 자체가 배열이라고 보고 통 하나를 돌려주고, 이름이 있으면 결과 객체의 그
+    /// 필드마다 통을 하나씩 돌려준다 — 통의 수와 순서는 `fields` 와 같다.
+    ///
+    /// 필드가 여럿일 때 필드마다 따로 순회하지 않는 이유는 시점이다: 핸들러가 engine
+    /// 당 두 번 돌면 한 응답의 두 배열이 서로 다른 스냅샷이 된다.
+    fn merge_fields<F>(
+        &mut self,
+        id: &serde_json::Value,
+        mut f: F,
+        fields: &[&str],
+    ) -> Vec<Vec<serde_json::Value>>
+    where
+        F: FnMut(
+            &crate::core::Core,
+            &mut crate::state::AppState,
+            &mut crate::core::CoreState,
+            serde_json::Value,
+        ) -> JsonRpcResponse,
+    {
+        let take = |resp: JsonRpcResponse, out: &mut Vec<Vec<serde_json::Value>>| {
             let result = resp.result;
-            let arr = match field {
-                Some(k) => result.as_ref().and_then(|v| v.get(k)),
-                None => result.as_ref(),
-            }
-            .and_then(|v| v.as_array());
-            if let Some(arr) = arr {
-                out.extend(arr.iter().cloned());
+            for (i, slot) in out.iter_mut().enumerate() {
+                let arr = match fields.get(i) {
+                    Some(k) => result.as_ref().and_then(|v| v.get(k)),
+                    None => result.as_ref(),
+                }
+                .and_then(|v| v.as_array());
+                if let Some(arr) = arr {
+                    slot.extend(arr.iter().cloned());
+                }
             }
         };
         // `pty.list` 는 목록을 만들기 전에 idle/종료분을 걷어내므로 engine 이 `&mut` 다.
@@ -171,7 +217,7 @@ impl App {
             core,
             ..
         } = self;
-        let mut combined: Vec<serde_json::Value> = Vec::new();
+        let mut combined: Vec<Vec<serde_json::Value>> = vec![Vec::new(); fields.len().max(1)];
         for w in view.views.values_mut() {
             if let Some(m) = w.as_main_mut() {
                 take(
@@ -185,6 +231,12 @@ impl App {
         }
         combined
     }
+}
+
+/// 통 하나짜리 순회 결과에서 그 통을 꺼낸다. `merge_fields` 는 `fields` 가 비거나
+/// 이름이 하나면 통을 정확히 하나 돌려주므로 여기서 갈래가 생기지 않는다.
+fn one(mut buckets: Vec<Vec<serde_json::Value>>) -> Vec<serde_json::Value> {
+    buckets.pop().unwrap_or_default()
 }
 
 /// 여러 engine 에서 온 카테고리 행에서 `normal` 을 하나로 접는다.
