@@ -629,29 +629,24 @@ fn deliver<H: HostCallSink>(host: &H, call: &HostCall) -> bool {
 /// 환경변수를 직접 읽으면 테스트가 그것을 피하려고 자기를 건너뛰게 되고(그 변수는 우리
 /// 실행 환경에 **항상** 있다), 그러면 초록은 "위반 없음" 이 아니라 "한 번도 안 돎" 을
 /// 뜻하게 된다. 그래서 env 값을 인자로 받는다.
+///
+/// 두 키(`surface` / `surface_id`)를 한 필드로 읽는 판정은 여기 있지 않다 —
+/// [`crate::handlers::optional_target_surface`] 한 벌이고, 이 함수가 더하는 것은
+/// **env 폴백**뿐이다. 예전엔 그 두 키를 여기서 직접 읽었고, 그래서 `surface_id` 가
+/// 틀렸을 때도 문구가 `'surface'` 를 댔다 — 호출자가 자기가 보낸 두 키 중 무엇을
+/// 고쳐야 하는지 모르는 형태다.
 fn resolve_surface_id_from(
     params: &Value,
     env_surface: Option<&str>,
     tr: &Translator,
 ) -> Result<u32, IpcMethodError> {
-    // **값이 왔는데 숫자가 아닌 것**과 **키가 아예 없는 것**을 가른다. 둘을 합치면
+    // **값이 왔는데 못 읽는 것**과 **아무 이름도 안 온 것**을 가른다. 둘을 합치면
     // 잘못된 값이 조용히 env 폴백으로 넘어가고, 그 폴백은 호출자 **자신**이라
-    // 명령이 자기에게 배달된다 — 종료코드 0, 오류 없음.
-    //
-    // `u32` 범위 밖도 같은 부류다. `as u32` 로 자르면 `5_000_000_000` 이 `705_032_704`
-    // 가 되는데, 그것은 **실재할 수 있는 다른 surface 의 id** 다(실측). 못 읽는 값이
-    // 자기에게 가는 것보다 나쁘다 — 남의 터미널로 간다. 자르지 말고 거부한다.
-    for key in ["surface", "surface_id"] {
-        let Some(raw) = params.get(key) else { continue };
-        if raw.is_null() {
-            continue;
-        }
-        return match raw.as_u64().and_then(|n| u32::try_from(n).ok()) {
-            Some(sid) => Ok(sid),
-            None => Err(IpcMethodError::invalid_params(
-                &tr.t_fmt("claude.params.surface_not_a_number", &raw.to_string()),
-            )),
-        };
+    // 명령이 자기에게 배달된다 — 종료코드 0, 오류 없음. 그래서 `Err` 는 폴백으로
+    // 넘기지 않고 그대로 올린다. (자르지 않는 이유는 공용 판정부의 doc 에 있다:
+    // `5_000_000_000 as u32` 는 `705_032_704` 라 실재할 수 있는 다른 surface 다.)
+    if let Some(sid) = crate::handlers::optional_target_surface(params, tr)? {
+        return Ok(sid);
     }
     if let Some(sid) = env_surface.and_then(|e| e.parse::<u32>().ok()) {
         return Ok(sid);
@@ -674,8 +669,12 @@ mod tests {
     /// 실제 crate `lang/` 을 로드한 `Translator` — `checklist.rs` SENTINEL 핀
     /// 테스트와 동일 패턴(lang 파일 드리프트로부터 assertion 을 고정).
     fn test_translator() -> Translator {
+        test_translator_for("en")
+    }
+
+    fn test_translator_for(code: &str) -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
-        Translator::load(&lang_dir, "en")
+        Translator::load(&lang_dir, code)
     }
 
     /// 호출을 전부 받아 성공/실패를 미리 정해진 대로 답하는 mock 호스트. 죽은 surface 를
@@ -1550,6 +1549,61 @@ mod tests {
                 .expect_err("숫자가 아닌 surface 는 거부해야 한다");
             assert_eq!(err.code, -32602, "params={bad}");
         }
+    }
+
+    /// 오형식 surface 는 훅 경로에서도 **어느 키가 틀렸는지** 댄다.
+    ///
+    /// 이 함수는 `surface` 와 `surface_id` **두 이름을 한 필드로** 읽는 판정
+    /// ([`crate::handlers::optional_target_surface`])에 env 폴백만 더한 것이다. 한동안
+    /// 두 키를 여기서 직접 읽었고, 그때는 어느 쪽이 왔든 문구가 `'surface'` 를 댔다 —
+    /// `surface_id` 로 지목한 호출자는 자기가 안 보낸 키를 고치라는 답을 받았다.
+    /// 같은 축을 고정하는 시험이 `handlers.rs` 에도 있다(그쪽은 폴백이 없는 자리다).
+    ///
+    /// 로케일 셋을 다 본다 — 키 이름은 번역 대상이 아니라 **파라미터 이름**이라
+    /// 세 카탈로그에서 똑같이 나와야 한다.
+    #[test]
+    fn a_malformed_surface_in_a_hook_names_which_of_the_two_keys_was_wrong() {
+        for locale in ["en", "ko", "ja"] {
+            let tr = test_translator_for(locale);
+            // env 는 채워둔다 — 폴백으로 넘어가면 문구 자체가 안 나온다.
+            let by_surface = resolve_surface_id_from(&json!({ "surface": "x" }), Some("42"), &tr)
+                .expect_err("문자열은 surface id 가 아니다")
+                .message;
+            let by_surface_id =
+                resolve_surface_id_from(&json!({ "surface_id": "x" }), Some("42"), &tr)
+                    .expect_err("문자열은 surface id 가 아니다")
+                    .message;
+            assert!(
+                by_surface_id.contains("surface_id"),
+                "{locale}: 'surface_id' 가 틀렸는데 그 이름을 안 댄다 — {by_surface_id}"
+            );
+            assert!(
+                !by_surface.contains("surface_id"),
+                "{locale}: 'surface' 가 틀렸는데 'surface_id' 를 댄다 — {by_surface}"
+            );
+            assert_ne!(
+                by_surface, by_surface_id,
+                "{locale}: 두 키가 같은 문구를 받는다 — 어느 쪽이 틀렸는지 못 가른다"
+            );
+        }
+    }
+
+    /// 두 이름이 서로 다른 대상을 가리키면 훅 경로도 고르지 않고 거절한다 — 고르면
+    /// 절반의 호출자에게는 지목하지 않은 surface 로 훅이 배달된다.
+    #[test]
+    fn two_names_disagreeing_is_refused_in_a_hook_too() {
+        let err = resolve_surface_id_from(
+            &json!({ "surface": 1, "surface_id": 2 }),
+            Some("42"),
+            &test_translator(),
+        )
+        .expect_err("두 이름이 다른 대상을 가리키면 고를 수 없다");
+        assert_eq!(err.code, -32602);
+        assert!(
+            err.message.contains('1') && err.message.contains('2'),
+            "어느 두 값이 어긋났는지 안 댄다 — {}",
+            err.message
+        );
     }
 
     // ── error dedupe 초기화 배선 (disable/reset_dedupe/is_enabled 재배선) ──
