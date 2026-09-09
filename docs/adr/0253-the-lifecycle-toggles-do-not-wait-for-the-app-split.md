@@ -129,6 +129,11 @@ plugin namespace 로 forward 될 때 `ensure_plugin_manager` 가 `discover_and_s
   소속은 매니페스트가, 기동은 그 뒤가 정한다.
 - [ADR-0136](0136-a-query-does-not-create-what-it-observes.md) — 관측이 자기 대상을
   바꾸지 않는다. 이 결정은 그 원칙을 기동 쪽으로 넓힌다.
+- [ADR-0167](0167-a-registered-name-answers-whether-it-is-in-this-binary.md) — `-32017`
+  의 출처. 그 결정의 "잃은 것" 이 세는 e2e 단언 넷에 `plugin.enable` 이 들어 있는데,
+  **이 결정이 그 자리를 옮겼다** — 그 단언은 이제 `plugin.remove` · `plugin.grant` 를
+  잰다(`the_remaining_lifecycle_methods_are_still_absent_in_a_headless_daemon`).
+  0167 본문은 그 시점의 기록이라 고치지 않는다.
 - 코드 근거(결정이 실현된 현재 위치): `dispatch_lifecycle_toggle` ·
   `cascade_toggle_events_headless` · `emit_enable_toggled` · `emit_unloaded`
   (`src/adapters/ipc/handler/plugin.rs`).
