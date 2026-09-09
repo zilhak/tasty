@@ -304,11 +304,23 @@ pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
 /// 짧아지면 "지운 결과" 와 "안 읽힌 결과" 가 구분되지 않는다. 내용 동등을 묻는
 /// 소비자는 비교 전에 빈 줄을 접어야 한다.
 ///
-/// **소비자가 둘이라 여기 산다.** `strip-cfg-test` 는 이 사본을 파일로 써서 `tokei`
-/// 에게 세게 하고, `src/source_guards/headless_app_layer_coverage.rs` 는 "명부 밖에
-/// 이름이 사는가" 의 좌변을 만들 때 이 함수를 직접 부른다. 뒤쪽이 자기 사본을 따로
-/// 만들면 같은 물음에 답이 둘이 되고, 갈린 답은 조용하다 — 실제로 그 자리에서 갈림은
-/// **출하되지도 않는 코드에 대한 영구 면제**라는 처방으로 나타났다.
+/// **소비자가 셋이라 여기 산다** (2026-09-10 실측 — `git grep` 전수):
+///
+/// - `crates/tasty-doc-guards/src/bin/strip-cfg-test.rs` — 이 사본을 파일로 써서
+///   `tokei` 에게 세게 한다.
+/// - `src/source_guards/headless_app_layer_coverage.rs` — "명부 밖에 이름이 사는가" 의
+///   좌변을 만들 때 이 함수를 직접 부른다(사본 파일이 필요 없다).
+/// - `crates/tasty-doc-guards/tests/agent_facing_reads_of_active_state_are_classified.rs`
+///   의 `shipped_code` — 마스킹한 사본을 넣어 부른다.
+///
+/// 소비자가 자기 사본을 만들면 같은 물음에 답이 둘이 되고, 갈린 답은 조용하다. 두
+/// 형태를 실측으로 밟았다 — 앞의 갈림은 **출하되지도 않는 코드에 대한 영구 면제**라는
+/// 처방으로 나타났고, 셋째 소비자는 **글자 그대로 같은 루프를 든 사본**이라 정본이
+/// 렉싱을 고쳐도 안 따라올 자리였다.
+///
+/// **그래서 채널을 붙였다** — 이 모듈의 `one_span_judge` 가 [`cfg_gated_lines`] 와
+/// [`cfg_attr_lines`] 를 둘 다 부르는 자리를 잡는다. 그 전까지 이 중복을 잡는 것은
+/// `git grep` 밖에 없었다.
 pub fn blank_gated_lines(src: &str, needle: &str) -> String {
     let lines: Vec<&str> = src.split('\n').collect();
     let gated = cfg_gated_lines(&lines, needle);
@@ -455,6 +467,51 @@ mod cfg_span_tests {
         let t = gated(src, "test");
         assert!(d[0] && d[1] && !d[2] && !d[3]);
         assert!(!t[0] && !t[1] && t[2] && t[3]);
+    }
+}
+
+/// **스팬 판정을 이어 붙이는 자리는 여기 하나다** — 사본이 생기면 잡는다.
+///
+/// [`cfg_gated_lines`] 와 [`cfg_attr_lines`] 를 **둘 다** 부르는 코드는 사실상
+/// [`blank_gated_lines`] 를 다시 쓰고 있는 것이다. 그 사본은 조용하다: 정본이 렉싱을
+/// 고쳐도 안 따라오고, 갈린 답은 실패가 아니라 다른 수로 나온다. 실측(2026-09-10)으로
+/// 그런 사본이 하나 있었고(`crates/tasty-doc-guards/tests/agent_facing_reads_of_active_state_are_classified.rs`
+/// 의 `shipped_code`), **그것을 잡는 채널은 `git grep` 밖에 없었다.**
+///
+/// 좌변은 마스킹한 사본이다 — 주석·문자열이 이름을 인용하는 것은 호출이 아니다.
+/// 한쪽만 부르는 자리는 대상이 아니다(범위가 다른 물음을 물을 수 있다).
+#[cfg(test)]
+mod one_span_judge {
+    use crate::source_text::{mask_non_code, rust_sources};
+
+    /// 이 판정을 이어 붙이는 정본. 여기서 둘을 다 부르는 것이 이 모듈의 존재 이유다.
+    const HOME: &str = "crates/tasty-doc-guards/src/cfg_predicate.rs";
+
+    #[test]
+    fn only_one_place_joins_the_two_span_judges() {
+        let root = crate::repo_root();
+        let sources = rust_sources(&root, &["src", "crates", "tests"]);
+        assert!(
+            sources.len() > 500,
+            "훑은 .rs 가 {} 개뿐이다 — 빈 모수의 잔여 0 은 통과가 아니라 미측정이다",
+            sources.len()
+        );
+        let copies: Vec<String> = sources
+            .iter()
+            .filter(|(rel, _)| rel.to_string_lossy() != HOME)
+            .filter(|(_, text)| {
+                let code = mask_non_code(text);
+                code.contains("cfg_gated_lines(") && code.contains("cfg_attr_lines(")
+            })
+            .map(|(rel, _)| rel.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            copies.is_empty(),
+            "`cfg_gated_lines` 와 `cfg_attr_lines` 를 둘 다 부르는 자리는 \
+             `blank_gated_lines` 를 다시 쓰고 있는 것이다 — 그 사본은 정본이 렉싱을 \
+             고쳐도 안 따라오고, 갈린 답은 실패가 아니라 다른 수로 나온다. \
+             `blank_gated_lines` 를 불러라: {copies:?}"
+        );
     }
 }
 

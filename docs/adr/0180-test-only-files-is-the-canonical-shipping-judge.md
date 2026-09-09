@@ -206,6 +206,10 @@ poison 축은 "출하 코드다" 라며 잡는다(거짓 양성, 시끄러움). 
   `src/source_guards/length_constant_frontier.rs` · `src/source_guards/sloc_gate_skip_proxy.rs`
   · `src/source_guards/headless_app_layer_coverage.rs`(명부 밖 잔여의 좌변을
   `cfg_predicate::blank_gated_lines` 로 좁힌다 — `strip-cfg-test` 와 같은 판정)
+  · `crates/tasty-doc-guards/tests/agent_facing_reads_of_active_state_are_classified.rs`
+  (`shipped_code` — 마스킹한 사본을 `blank_gated_lines` 에 넣는다. 한때 그 함수를 **글자
+  그대로 베낀 루프**였고, 그 사본을 잡는 채널이 `git grep` 밖에 없었다. 지금은
+  `cfg_predicate` 의 `one_span_judge` 가 두 스팬 판정기를 함께 부르는 자리를 잡는다)
   · `crates/tasty-doc-guards/src/env_isolation.rs` ·
   `crates/tasty-doc-guards/src/poison_recovery.rs` · `tests/cli_method_table_parity.rs`
 - 층 경계 사본 선례(바이너리 위임): `scripts/check-*.sh` ↔ `crates/tasty-doc-guards/src/bin/`

@@ -45,7 +45,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use tasty_doc_guards::cfg_predicate::{cfg_attr_lines, cfg_gated_lines};
+use tasty_doc_guards::cfg_predicate::blank_gated_lines;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
 /// 전역 활성/포커스 포인터의 이름.
@@ -236,21 +236,14 @@ fn repo_root() -> PathBuf {
 }
 
 /// 출하되는 코드만 남긴 사본. 주석·문자열·`#[cfg(test)]`·`cfg_attr(test, …)` 를 뺀다.
+///
+/// **두 판정기를 이어 붙일 뿐 여기서 다시 세지 않는다.** 한때 이 자리가
+/// [`blank_gated_lines`] 와 **글자 그대로 같은 루프**를 들고 있었다(앞에 마스킹만 더
+/// 붙은 사본이었다). 같은 물음에 답이 둘이면 갈린 쪽은 조용하다 — 그 사본은 정본이
+/// 렉싱을 고쳐도 안 따라오므로, 여기만 옛 판정으로 남는다. `cfg_predicate` 의
+/// `one_span_judge` 가 그 갈림을 이제 채널로 잡는다.
 fn shipped_code(src: &str) -> String {
-    let masked = mask_non_code(src);
-    let lines: Vec<&str> = masked.split('\n').collect();
-    let gated = cfg_gated_lines(&lines, "test");
-    let attrs = cfg_attr_lines(&lines, "test");
-    let mut out = String::with_capacity(masked.len());
-    for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            out.push('\n');
-        }
-        if !gated[i] && !attrs[i] {
-            out.push_str(line);
-        }
-    }
-    out
+    blank_gated_lines(&mask_non_code(src), "test")
 }
 
 fn is_agent_facing(rel: &str) -> bool {
