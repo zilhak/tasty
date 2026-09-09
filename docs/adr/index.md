@@ -234,4 +234,4 @@
 | 0251 | [폴백으로 가는 dispatch 메서드는 술어가 아니라 사유로 판정한다](0251-unrouted-dispatch-methods-carry-a-reason-not-a-predicate.md) | Accepted | 2026-09-09 | ipc, routing, focus, guards, roster, multi-window, adr-0133, adr-0175 |
 | 0252 | [축의 바늘에 걸린 `1` 둘 — 퇴화 방지 하한은 부류로, 정규화 좌표는 자리 명부로 뺀다](0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md) | Accepted | 2026-09-09 | guards, design-tokens, exemption, class-vs-roster, predicate, ratchet, adr-0126, adr-0135, adr-0139 |
 | 0253 | [수명주기 토글 둘은 `App` 이분을 기다리지 않는다 — cascade 전체가 아니라 그 둘이 내는 이벤트만 헤드리스 형태로 대체한다](0253-the-lifecycle-toggles-do-not-wait-for-the-app-split.md) | Accepted | 2026-09-09 | ipc, headless, plugin, lifecycle, routing, agent-surface, adr-0127, adr-0173 |
-| 0254 | [떠 있는 표면의 그림자는 두 값뿐이고, scrim 을 깐 쪽이 더 크다](0254-floating-surface-shadow-scope-rule.md) | Accepted | 2026-09-09 | design-tokens, theme, shadow, modal, popover, scrim, gallery, guards, adr-0139 |
+| 0254 | [떠 있는 표면의 그림자는 두 값뿐이고, 뷰포트를 점유하는 쪽이 더 크다](0254-floating-surface-shadow-scope-rule.md) | Accepted | 2026-09-09 | design-tokens, theme, shadow, modal, popover, scrim, gallery, guards, adr-0139 |

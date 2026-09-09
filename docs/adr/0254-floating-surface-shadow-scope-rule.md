@@ -1,4 +1,4 @@
-# ADR-0254: 떠 있는 표면의 그림자는 두 값뿐이고, scrim 을 깐 쪽이 더 크다
+# ADR-0254: 떠 있는 표면의 그림자는 두 값뿐이고, 뷰포트를 점유하는 쪽이 더 크다
 
 - **Status**: Accepted
 - **Date**: 2026-09-09
@@ -31,9 +31,15 @@ popup 셸은 `Frame::new()` 로 그려 **그림자가 아예 없었고**, 그것
 
 떠 있는 표면의 그림자를 **두 값**으로 정하고, 어느 쪽을 쓰는지는 표면의 형태가 정한다.
 
-- **anchored + scrim-less**(살아 있는 콘텐츠 위에 뜬다) → `SHADOW_POPOVER`
-- **centered + scrim-backed**(뷰포트를 점유한다) → `SHADOW_MODAL`
+- **anchored + scrim-less**(트리거 옆에 붙어 살아 있는 콘텐츠 위에 뜬다) → `SHADOW_POPOVER`
+- **centered**(뷰포트를 점유한다) → `SHADOW_MODAL`
 - 위 둘 중 어느 형태도 아닌 떠 있는 표면 → **그림자 없음**
+
+**scrim 유무는 갈래를 가르는 술어가 아니다.** centered 표면 중 실제로 scrim 을 까는 것은
+일부이고(`PopupManager` 는 headless 모달 id 세트에만 scrim 을 그린다), 나머지 centered
+표면도 같은 `SHADOW_MODAL` 을 받는다. scrim 은 그 값을 popover 보다 크게 잡은 **근거**로
+아래에 등장할 뿐이다 — 판정은 "뷰포트를 점유하는가" 로만 한다. 구현의 술어도 같은
+모양이다(명부 둘의 여집합: shadowless 도 anchored 도 아니면 modal).
 
 `SHADOW_MODAL` 은 `SHADOW_POPOVER` 보다 **크다**. 그림자의 역할이 "자기가 소유하지 않은
 콘텐츠 위에 떠 있음" 을 알리는 것이라면, scrim 이 이미 그 역할을 하는 표면은 그림자를
@@ -67,8 +73,8 @@ scrim 이 지운 대비를 그림자가 되돌려야 하므로 값이 더 커진
 - **운영 비용**: 새 떠 있는 표면을 만들 때 세 갈래 중 하나를 고르는 판단이 붙는다. 그
   판단은 디자인의 몫이고 구현이 임의로 정하지 않는다. `shadow_policy_guard` 가 값의
   **출처**(정본 토큰인가)는 계속 집행하지만, **어느 표면이 어느 값을 쓰는가**는
-  집행하지 않는다 — 표면의 형태(anchored/centered, scrim 유무)를 소스에서 읽는 판정기가
-  없기 때문이다. 그 축은 리뷰가 지킨다.
+  집행하지 않는다 — 표면의 형태(트리거에 앵커되는가 · 뷰포트를 점유하는가)를 소스에서
+  읽는 판정기가 없기 때문이다. 그 축은 리뷰가 지킨다.
 
 ## Alternatives Considered
 

@@ -10,10 +10,17 @@ use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
 /// 리사이즈 테두리 밴드 폭(px). popup_rect 가장자리 안쪽 이 폭 안에서 누르면 리사이즈.
 const RESIZE_BAND: LogicalPx = LogicalPx(6.0);
 
-/// **anchored + scrim-less** popup — 트리거 위젯 옆에 붙어 살아 있는 콘텐츠 위에 뜬다.
-/// 여는 쪽이 트리거 rect 로 좌표를 계산해 `OpenPopupMode::AtFocused`/`AtTopOfScope` 로
-/// 연다(`sidebar/tools.rs` · `sidebar/collapsed.rs` · `mouse_capture_menu.rs` ·
-/// `input/shortcuts/dispatch.rs`). SCOPE RULE(ADR-0254) 상 `shadow_popover()`.
+/// **anchored + scrim-less** popup — 살아 있는 콘텐츠 위에 뜨고 뷰포트를 점유하지
+/// 않는다. SCOPE RULE(ADR-0254) 상 `shadow_popover()`.
+///
+/// 앵커의 형태는 둘로 갈린다 — **셋은 트리거 rect 로 좌표를 계산해**
+/// `OpenPopupMode::AtFocused` 로 열고(`tools_menu` ← `sidebar/tools.rs`,
+/// `rail_category` ← `sidebar/collapsed.rs`, 배너 더보기 메뉴 ← `mouse_capture_menu.rs`),
+/// **`search_bar` 만 트리거 rect 를 안 쓴다** — `OpenPopupMode::AtTopOfScope` 로 열려
+/// scope 상단에 가로 중앙 정렬된다(`super::open_at_top_of_scope`). 여는 자리가 셋이다:
+/// `tab_bar.rs` · `input/shortcuts/keybinding.rs` · `input/shortcuts/dispatch.rs`.
+/// 그래도 anchored 갈래인 이유는 좌표의 출처가 아니라 형태다 — scrim 없이 살아 있는
+/// surface 위에 얹힌다.
 ///
 /// 명부로 적는 이유: `PopupDef` 에는 anchored/centered 를 담는 필드가 없다 — 위치는
 /// 정의가 아니라 **여는 시점**의 `OpenPopupMode` 가 정하므로 정적으로 읽을 값이 없다.
@@ -30,8 +37,14 @@ const ANCHORED_POPUPS: &[PopupId] = &[
 /// 근거가 없다.
 const SHADOWLESS_POPUPS: &[PopupId] = &["notifications"];
 
-/// 이 popup 이 그릴 lift 그림자. SCOPE RULE(ADR-0254)의 세 갈래를 popup id 로 판정한다 —
-/// anchored + scrim-less → popover, 나머지 centered 표면 → modal, 둘 다 아니면 없음.
+/// 이 popup 이 그릴 lift 그림자. SCOPE RULE(ADR-0254)의 세 갈래를 popup id 로 판정한다.
+///
+/// 술어는 **명부 두 개의 여집합**이다 — shadowless 도 anchored 도 아니면 modal. 즉
+/// modal 갈래의 판정 기준은 "뷰포트를 점유한다(centered)" 이고, **scrim 유무가 아니다**:
+/// `PopupManager` 가 실제로 scrim 을 까는 것은 이 파일 아래쪽의 id 세트뿐이라 modal
+/// 그림자를 받는 표면 중 다수는 scrim 이 없다. scrim 은 값을 popover 보다 **크게 잡은
+/// 근거**(scrim 이 지운 대비를 그림자가 되돌린다)이지 갈래를 가르는 술어가 아니다 —
+/// ADR-0254 Decision.
 fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::ShadowToken> {
     let th = theme::theme();
     if SHADOWLESS_POPUPS.contains(&popup_id) {
