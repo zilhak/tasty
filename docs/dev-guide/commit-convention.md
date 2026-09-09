@@ -10,11 +10,21 @@ tasty 는 [Conventional Commits](https://www.conventionalcommits.org/) 를 따�
 [optional body]
 ```
 
-- `<description>` — 영어/한국어 모두 허용. "fix bug" 처럼 정보 0 인 표제 금지: 무엇을·어디서·왜가 한 줄에 드러나게.
-  - **영어는 명령형 현재 시제** — `add X` / `fix Y`. Conventional Commits 관례 그대로.
-  - **한국어는 명사(명사형)로 끝낸다** — `-한다` · `-했다` · `-된다` 같은 종결어미로 끝내지 않는다. `... 를 고친다` 가 아니라 `... 정정`, `... 를 붙인다` 가 아니라 `... 추가`. 두 언어를 같은 자리에서 같은 모양으로 읽히게 하려는 것이다: 영어 표제가 동사로 **시작**해 목적어로 끝나듯, 한국어 표제도 **무엇을 했는가가 마지막 낱말에 오게** 한다. `git log --format=%s` 를 훑을 때 종결어미가 매 줄 끝을 채우면 그 자리가 정보를 안 나른다.
+- `<description>` — 영어로 작성, 명령형 현재 시제("add X"). "fix bug" 처럼 정보 0 인 표제 금지: 무엇을·어디서·왜가 한 줄에 드러나게.
 - `(scope)` — 영향 범위(선택). 예: `feat(themes)`, `fix(ipc)`, `refactor(state)`.
 - `body` — 필요할 때만. 동기·트레이드오프·거부한 대안.
+
+## 언어와 평문
+
+커밋 메시지는 Markdown 문서가 아니다. 제목과 본문에 각각 다음 규칙을 적용한다.
+
+- 제목 전체(type·scope·description)는 영어 평문으로 작성한다.
+- 본문도 영어 평문으로 작성한다. 제목만 영어로 쓰고 본문을 한국어로 쓰지 않는다.
+- 제목과 본문 모두 Markdown 서식을 금지한다. 별표 강조, 백틱 인라인 코드, 제목 표기, 글머리·번호 목록, 인용문, Markdown 링크·이미지, 코드 블록, 표를 사용하지 않는다.
+- 본문은 문장과 빈 줄로 나눈 문단으로 구성한다. 파일 경로·명령·식별자는 백틱이나 강조 없이 그대로 적는다. URL이 필요하면 Markdown 링크 대신 주소를 그대로 적는다.
+- Conventional Commits의 type(scope): description 구조와 Git trailer의 Key: Value 구조는 평문 메타데이터이므로 유지한다. 경로나 식별자에 포함된 기호 자체를 Markdown 서식으로 취급하지 않는다.
+
+이 문서의 코드 블록과 Markdown은 규칙을 설명하기 위한 문서 서식이며, 커밋 메시지에 복사할 서식이 아니다.
 
 ## Type
 
@@ -69,14 +79,5 @@ i18n(cli): route passkey CLI strings through translation keys
 chore(deps): bump wgpu to 22.1
 ```
 
-한국어 표제 — 마지막 낱말이 명사다:
 
-```
-fix(ipc): forward 갈래가 caller 권한을 안 보던 것 정정
-test(doc-guards): 명부 밖에서 답하는 이름을 잡는 채널 추가
-refactor(headless): pump_ipc 의 App 층 종단 응답 분리
-docs(adr): 예산 하향 갈래의 요건 둘 명시
-```
-
-이 규칙 이전 히스토리는 `-한다` 로 끝나는 표제가 섞여 있다. **소급하지 않는다** — 이미 나간
-커밋 메시지는 rewrite 없이는 못 고치고, 그 rewrite 의 값이 표제 어미 통일보다 크지 않다.
+이 규칙은 새로 작성하는 커밋 메시지에 적용한다. 기존 커밋 메시지는 소급하여 변경하지 않는다.
