@@ -46,7 +46,7 @@ const dataAttrs = Object.fromEntries(
     <p class="hero__note">
       {c.installNote} <a href={url(`${guide}getting-started/install/`)}>{c.installNoteLink}</a>
     </p>
-    <div class="window"><AppShell heading={c.shellHeading} task={c.shellTask} client:visible /></div>
+    <div class="window"><AppShell lang={lang} heading={c.shellHeading} task={c.shellTask} client:visible /></div>
   </section>
 
   <section class="section">

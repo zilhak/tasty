@@ -46,6 +46,14 @@ const agentSession = (task) => ({
   ],
 });
 
+// Demonstration input only; the embedded terminal does not execute commands.
+const mixedCommand = "tasty split --level surface --target-surface 4 --type markdown --file notes/split-layout.md";
+const mixedSession = {
+  id: "4",
+  plainLines: ["~/work/tasty", mixedCommand],
+  lines: [t(c.dim)("~/work/tasty"), <><span style={{ color: c.mauve }}>❯</span> {mixedCommand}</>],
+};
+
 const userSession = {
   id: "s_02JK",
   // plain-text mirror of `lines` — what the search bar matches against
@@ -67,20 +75,6 @@ const userSession = {
   ],
 };
 
-// The third tab is a MIXED split — a terminal on the left, the doc it opened on
-// the right — so it cannot be mistaken for the first tab's two terminals.
-const splitSession = {
-  id: "s_04SC",
-  plainLines: [
-    "~/tasty main via v1.84",
-    "❯ tasty split --level surface --target-surface this --type markdown --file notes/split-layout.md",
-  ],
-  lines: [
-    <Prompt branch="main" />,
-    <><span style={{ color: c.mauve }}>❯</span> tasty split --level surface --target-surface this --type markdown --file notes/split-layout.md</>,
-  ],
-};
-
 // Every workspace field combination the sidebar knows how to draw, so the
 // illustration shows the real range rather than one happy row.
 const workspaces = [
@@ -93,7 +87,7 @@ const workspaces = [
 const INITIAL_TABS = [
   { id: "t1", title: "claude · release", kind: "terminal", owner: "agent", activity: "running", attached: true },
   { id: "t2", title: "README.md", kind: "markdown", owner: "user", activity: "idle", notif: true },
-  { id: "t3", title: "zsh", kind: "split", owner: "user", activity: "idle" },
+  { id: "t3", title: "terminal + docs", kind: "split", owner: "user", activity: "idle" },
 ];
 
 /* Theme is the page's, not this component's. `site.js` owns applying and
@@ -142,13 +136,14 @@ function OverlayLayer({ open, lock, scale, children }) {
   );
 }
 
-export function AppShell({ heading = "Workspaces", task = "cut release 0.7.1" }) {
+export function AppShell({ heading = "Workspaces", task = "run tests", lang = "en" }) {
+  const ko = lang === "ko";
   const [theme, setTheme] = usePageTheme();
   const [overlay, setOverlay] = React.useState(null);
   const [toolsAnchor, setToolsAnchor] = React.useState(null);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [activeWs, setActiveWs] = React.useState("prod");
-  const [activeTab, setActiveTab] = React.useState("t1");
+  const [activeTab, setActiveTab] = React.useState("t3");
   const [tabs, setTabs] = React.useState(INITIAL_TABS);
   const [collapsed, setCollapsed] = React.useState(false);
   const [uiScale, setUiScale] = React.useState("md");
@@ -228,27 +223,29 @@ export function AppShell({ heading = "Workspaces", task = "cut release 0.7.1" })
         <div className="shell__work">
           <TabStrip tabs={tabs} active={activeTab} onSelect={setActiveTab} onClose={closeTab}
             onNew={newTab} onSearch={() => setSearchOpen((v) => !v)} />
-          <div className="shell__panes">
+          <div className={`shell__panes${tab?.kind === "split" ? " shell__panes--mixed" : ""}`}>
             {tab && tab.kind === "markdown" ? (
               <div className="shell__pane"><MarkdownSurface focused /></div>
-            ) : tab && tab.kind === "split" ? (
+            ) : tab?.kind === "split" ? (
               <>
                 <div className="shell__pane">
-                  <TerminalPane session={splitSession} focused
+                  <TerminalPane session={mixedSession} focused
                     searchOpen={searchOpen} onSearchClose={() => setSearchOpen(false)} />
                 </div>
                 <div className="shell__pane">
                   <MarkdownSurface path="~/work/tasty/notes/split-layout.md">
-                    <h1 style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-prose-h1)", margin: "0 0 var(--tasty-space-xs)" }}>Split layout</h1>
-                    <p style={{ color: "var(--tasty-text-secondary)", fontSize: "var(--tasty-font-size-body)", margin: "0 0 var(--tasty-space-lg)" }}>
-                      A pane group holds surfaces of different kinds. Terminal and markdown sit side by side
-                      in one tab; only one of them has focus.</p>
-                    <h2 style={{ fontSize: "var(--tasty-font-size-max)", margin: "0 0 var(--tasty-space-sm)", color: "var(--tasty-accent-primary)" }}>Rules</h2>
-                    <ul style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", margin: 0, paddingLeft: "var(--tasty-space-lg)" }}>
-                      <li>The status bar reports the focused surface, not the tab.</li>
-                      <li>Search (Cmd+F) is scoped to the focused surface.</li>
-                      <li>An unfocused markdown surface keeps the sidebar bed, not the document bed.</li>
-                    </ul>
+                    <h2 style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-prose-h1)", margin: "0 0 var(--tasty-space-sm)" }}>
+                      {ko ? "실행은 왼쪽, 문서는 오른쪽" : "Run it left, read it right"}
+                    </h2>
+                    <p style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>
+                      {ko ? "한 탭 안에 터미널과 문서를 나란히 두세요. 명령을 실행하면서 필요한 설명을 바로 확인할 수 있습니다." : "Keep a terminal and a document side by side in one tab. Run a command while keeping its instructions in view."}
+                    </p>
+                    <h3 style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-accent-primary)" }}>
+                      {ko ? "같이 두고, 함께 전환하세요" : "Keep them together"}
+                    </h3>
+                    <p style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>
+                      {ko ? "다른 탭을 선택하면 이 배치가 함께 전환됩니다. 터미널을 선택한 상태에서는 검색과 상태바도 그 터미널을 기준으로 표시합니다." : "Switch tabs to change the whole layout. With the terminal focused, search and the status bar refer to that terminal."}
+                    </p>
                   </MarkdownSurface>
                 </div>
               </>
@@ -265,7 +262,7 @@ export function AppShell({ heading = "Workspaces", task = "cut release 0.7.1" })
             )}
           </div>
           <div className="shell__status">
-            <StatusBar surfaceId={tab && tab.kind === "markdown" ? "s_03MD" : tab && tab.kind === "split" ? "s_04SC" : "s_02JK"} theme={theme}
+            <StatusBar surfaceId={tab?.kind === "markdown" ? "3" : tab?.kind === "split" ? "4" : "2"} theme={theme}
               onTheme={() => setTheme(theme === "latte" ? "mocha" : "latte")}
               onPalette={() => setOverlay("palette")} />
           </div>

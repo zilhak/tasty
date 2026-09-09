@@ -150,3 +150,11 @@
 .workflow-diagram__pane { display: flex; flex-direction: column; min-width: 0; min-height: 190px; }
 .workflow-diagram figcaption { margin-top: .75rem; font-size: .85rem; }
 @media (max-width: 600px) { .workflow-diagram__grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Keep both surface kinds visible in the landing's mixed-layout example. */
+.shell__panes--mixed .shell__pane { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .window .shell:has(.shell__panes--mixed) { height: 620px; }
+  .window .shell__panes--mixed { flex-direction: column; }
+  .window .shell__panes--mixed .shell__pane { min-height: 0; }
+}
