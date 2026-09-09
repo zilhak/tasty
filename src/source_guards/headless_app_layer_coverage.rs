@@ -274,12 +274,24 @@ fn headless_methods() -> BTreeSet<String> {
 /// [`no_method_name_lives_outside_the_roster`] 의 잔여 면제다. 지금 **비어 있다**
 /// (2026-09-10 실측: 출하 범위로 좁히고 주석을 걷어낸 파일 전체 12 · 명부 합집합 12 ·
 /// 잔여 0). 채워야 하는 경우는 하나다 — dispatch 가 **아닌** 자리가 메서드 이름을
-/// 문자열로 들 때. 실측으로 확인한 형태는 셋이다:
+/// **리터럴 하나로 통째** 들 때.
 ///
-/// - **오류문·안내문** — 답하지 못한 이름을 되돌려 주는 자리.
-/// - **로그 문구** — 산문 안에 이름이 박힌 형태.
-/// - **구조화 로그의 맨 리터럴** — `warn!(method = "window.list", …)` 처럼 필드 값이
-///   따옴표째 코드에 있는 형태. 주석이 아니므로 걷어내기가 안 지운다.
+/// **산문은 여기 올 수 없다.** [`method_literals`] 의 `shaped` 가 소문자·숫자·`.`·`_`
+/// 밖의 글자를 배제하므로, 공백이 하나라도 든 문자열은 애초에 잔여 후보가 아니다.
+/// 즉 "산문 안에 이름이 박힌 형태를 여기 등록하라" 는 **영원히 발동하지 않는 처방**
+/// 이고, 그것을 적어 두면 다음 사람이 실재하지 않는 형태에 면제를 등록하려다 못 하고
+/// 그 자리에서 판정이 멈춘다.
+///
+/// 실측(2026-09-10, 헤드리스 조합 `--bins headless_app_layer_coverage`) — 명부 밖
+/// 출하 함수 `forward_to_plugin_namespace` 에 한 줄씩 넣고 쟀다. 원복 뒤 오염 0:
+///
+/// - `warn!("ns.prosecase is not answered here")`(산문 로그 문구) → 11 passed · **0 failed**
+/// - `error!("ns.errcase not routed by this binary")`(산문 오류문) → 11 passed · **0 failed**
+/// - `warn!(method = "ns.fieldcase", …)`(구조화 로그의 필드 값) → **1 failed**
+/// - `let _unrouted = "ns.constcase";`(맨 리터럴) → **1 failed**
+///
+/// 그래서 실재하는 형태는 하나다 — **리터럴 전체가 그 이름인 것.** 뒤의 둘이 그
+/// 하나의 두 사례다(주석이 아니므로 걷어내기가 안 지운다).
 ///
 /// 그 자리가 실제로 **답하면** 답은 여기가 아니라 [`HEADLESS_DISPATCH_FNS`] 다.
 /// 둘을 섞으면 이 면제가 곧 사각이 된다.
@@ -356,9 +368,10 @@ fn no_method_name_lives_outside_the_roster() {
         "{HEADLESS_PUMP} 의 `HEADLESS_DISPATCH_FNS` 밖에서 메서드 이름이 산다: \
          {outside:?}. 그 자리가 **답하면** 그 함수를 `HEADLESS_DISPATCH_FNS` 에 \
          더해라 — 안 더하면 답하는 이름이 좌변에 안 들어와, `NOT_IN_HEADLESS` 의 \
-         사유가 거짓인 채로 초록이 된다. 답하지 않고 이름을 **인용만** 하는 자리(로그 \
-         문구·오류문·구조화 로그의 필드 값)라면 `OUTSIDE_ROSTER_LITERALS` 에 근거와 \
-         함께 등록해라"
+         사유가 거짓인 채로 초록이 된다. 답하지 않고 이름을 **리터럴로 들기만** 하는 \
+         자리 — 리터럴 전체가 그 이름인 형태(구조화 로그의 필드 값 등) — 라면 \
+         `OUTSIDE_ROSTER_LITERALS` 에 근거와 함께 등록해라. 산문에 이름이 박힌 형태는 \
+         이 좌변에 애초에 안 들어오므로 등록 대상이 아니다"
     );
     // 반대 방향 — 면제해 둔 이름이 명부 안으로 들어왔으면 그 줄이 낡은 것이다.
     let stale: Vec<&str> = OUTSIDE_ROSTER_LITERALS
