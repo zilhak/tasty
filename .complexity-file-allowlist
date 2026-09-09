@@ -16,6 +16,15 @@
 # 실패한다(그때는 이 수를 내려 래칫을 조인다). 항목이 추가되면 합이 그 파일 크기만큼 뛰므로
 # 그 커밋에서 이 수를 함께 갱신한다 — 목록 diff 와 이 줄이 같은 화면에 보이도록 여기 둔다.
 # frozen-sum-budget: 35504
+#
+# 아래 줄은 **계측기 자신의 편향분**이다. tokei 는 doc 주석(///·//!) 바로 앞줄이 문자열
+# 리터럴을 담고 있으면 그 줄을 어디에도 안 센다(사이에 낀 빈 줄도 함께 잃는다). 그래서 위
+# 합은 실제 출하 줄보다 그만큼 작다. 절대값은 예산도 같은 계측기로 정해져 양변에서
+# 상쇄되므로 무해하지만, **움직이면** 위 합이 성장 없이 움직인다 — 늘면 합이 내려가고
+# 줄면 합이 올라간다. scripts/check-frozen-sum-ratchet.sh 가 같은 tokei 로 doc 줄을 뺀
+# 값과 견줘 이 수를 양방향으로 고정한다. 움직였으면 이 줄과 위 예산 줄을 **같은 폭으로
+# 함께** 옮긴다 — 그 폭은 성장이 아니라 계측 단위의 이동이다.
+# doc-comment-bias: 25
 crates/tasty-gallery/src/catalog.rs
 crates/tasty-host-plugin/src/builtin.rs
 crates/tasty-memory/src/lib.rs

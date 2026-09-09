@@ -51,6 +51,15 @@ fn write_sibling(root: &Path, threshold: Option<i64>, scan_dirs: Option<&str>) {
 
 /// 임시 루트를 짓는다. `budget_line` 이 없으면 예산 줄을 빼고 쓴다.
 fn root_with(budget_line: Option<i64>, entries: &[&str]) -> tempfile::TempDir {
+    root_with_bias(budget_line, Some(0), entries)
+}
+
+/// 편향 핀까지 고르는 판. 이 게이트의 좌변은 **둘**이라 둘 다 고를 수 있어야 한다.
+fn root_with_bias(
+    budget_line: Option<i64>,
+    bias_line: Option<i64>,
+    entries: &[&str],
+) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("임시 디렉토리");
     let root = dir.path();
     fs::create_dir_all(root.join("scripts")).expect("scripts");
@@ -78,6 +87,9 @@ fn root_with(budget_line: Option<i64>, entries: &[&str]) -> tempfile::TempDir {
     let mut al = String::from("# 합성 목록\n");
     if let Some(b) = budget_line {
         al.push_str(&format!("# frozen-sum-budget: {b}\n"));
+    }
+    if let Some(b) = bias_line {
+        al.push_str(&format!("# doc-comment-bias: {b}\n"));
     }
     for e in entries {
         al.push_str(e);
@@ -134,8 +146,19 @@ fn run(root: &Path, tokei_body: &str) -> i32 {
 }
 
 /// 목록의 파일 하나에 `code` 를 실어 보고하는 tokei 스텁.
+///
+/// 게이트가 한 번의 tokei 호출로 **셋**을 재므로 스텁도 셋을 담는다: 사본(합) ·
+/// doc 줄을 뺀 사본(편향) · 형태 프로브. 편향은 기본으로 0(둘이 같은 code)이고
+/// 프로브는 실물 tokei 가 내는 값(1)이라, 이 기본판을 쓰는 시험들은 **합 축만** 잰다.
 fn reports(path: &str, code: i64) -> String {
-    format!(r#"echo '{{"Rust":{{"reports":[{{"name":"{path}","stats":{{"code":{code}}}}}]}}}}'"#)
+    reports_with(path, code, code, 1)
+}
+
+/// 셋을 따로 고르는 판 — 편향 축·프로브 축을 재는 시험이 쓴다.
+fn reports_with(path: &str, code: i64, nodoc_code: i64, probe_code: i64) -> String {
+    format!(
+        r#"echo '{{"Rust":{{"reports":[{{"name":"{path}","stats":{{"code":{code}}}}},{{"name":"__nodoc/{path}","stats":{{"code":{nodoc_code}}}}},{{"name":"__probe/probe.rs","stats":{{"code":{probe_code}}}}}]}}}}'"#
+    )
 }
 
 const P: &str = "src/frozen_one.rs";
@@ -276,7 +299,7 @@ fn files_outside_the_allowlist_do_not_count() {
     // 이 게이트가 묻는 물음("동결 안에서 자랐나")이 아니라 다른 물음이 된다.
     let d = root_with(Some(BUDGET), &[P]);
     let body = format!(
-        r#"echo '{{"Rust":{{"reports":[{{"name":"{P}","stats":{{"code":{BUDGET}}}}},{{"name":"src/not_frozen.rs","stats":{{"code":900000}}}}]}}}}'"#
+        r#"echo '{{"Rust":{{"reports":[{{"name":"{P}","stats":{{"code":{BUDGET}}}}},{{"name":"__nodoc/{P}","stats":{{"code":{BUDGET}}}}},{{"name":"__probe/probe.rs","stats":{{"code":1}}}},{{"name":"src/not_frozen.rs","stats":{{"code":900000}}}}]}}}}'"#
     );
     assert_eq!(
         run(d.path(), &body),
@@ -301,8 +324,13 @@ fn reports_sensitive_to_scan_dirs(base: i64, extra: i64) -> String {
     format!(
         "case \" $* \" in\n\
          *\" extra \"*) printf '{{\"Rust\":{{\"reports\":[{{\"name\":\"{P}\",\"stats\":{{\"code\":{base}}}}},\
-         {{\"name\":\"extra/e.rs\",\"stats\":{{\"code\":{extra}}}}}]}}}}' ;;\n\
-         *) printf '{{\"Rust\":{{\"reports\":[{{\"name\":\"{P}\",\"stats\":{{\"code\":{base}}}}}]}}}}' ;;\n\
+         {{\"name\":\"__nodoc/{P}\",\"stats\":{{\"code\":{base}}}}},\
+         {{\"name\":\"__probe/probe.rs\",\"stats\":{{\"code\":1}}}},\
+         {{\"name\":\"extra/e.rs\",\"stats\":{{\"code\":{extra}}}}},\
+         {{\"name\":\"__nodoc/extra/e.rs\",\"stats\":{{\"code\":{extra}}}}}]}}}}' ;;\n\
+         *) printf '{{\"Rust\":{{\"reports\":[{{\"name\":\"{P}\",\"stats\":{{\"code\":{base}}}}},\
+         {{\"name\":\"__nodoc/{P}\",\"stats\":{{\"code\":{base}}}}},\
+         {{\"name\":\"__probe/probe.rs\",\"stats\":{{\"code\":1}}}}]}}}}' ;;\n\
          esac"
     )
 }
@@ -377,6 +405,7 @@ fn the_scan_dirs_reach_the_stripper() {
          sep=\"\"\n\
          for f in $files; do\n\
          n=$(wc -l < \"$f\" | tr -d ' ')\n\
+         case \"$f\" in __probe/*) n=1 ;; esac\n\
          printf '%s{\"name\":\"%s\",\"stats\":{\"code\":%s}}' \"$sep\" \"$f\" \"$n\"\n\
          sep=\",\"\n\
          done\n\
@@ -739,5 +768,136 @@ fn the_under_budget_branch_does_not_name_a_cause() {
         text.lines().any(|l| l.contains(P)),
         "미달 갈래가 파일별 내역을 안 찍는다 — 내려감이 한 형태에 갇혔는지는 파일별로만 \
          보이고, 그 표가 없으면 ㄹ 의 둘째 요건을 아무도 확인할 수 없다:\n{text}"
+    );
+}
+
+// ── 둘째 좌변 — 계측기의 doc 주석 편향 ─────────────────────────────────
+//
+// 이 게이트의 합은 실제 출하 줄이 아니라 **tokei 가 센 값**이고, 둘은 상수만큼 다르다.
+// 그 상수는 예산에도 같이 박혀 있어 절대값은 상쇄되지만 **움직이면** 합이 성장 없이
+// 움직인다. 방향에 따라 나타나는 곳이 다르다: 편향이 늘면 합이 내려가 미달 갈래로
+// 위장하고, 줄면 합이 올라가 **띠 안에 통째로 들어간다** — 뒤엣것은 아무 데서도 안
+// 울린다. 그래서 여기가 저울 하나를 더 둔다. 근거·기각한 대안(상시 독립 계측 대조 ·
+// 차이의 상한 래칫): `docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md`
+
+/// 대조군 — 편향이 고정값과 같으면 통과다.
+///
+/// 이것이 없으면 아래 둘은 "편향을 항상 거절하는 게이트" 로도 통과한다.
+#[test]
+fn a_bias_that_matches_the_pin_passes() {
+    let d = root_with_bias(Some(BUDGET), Some(3), &[P]);
+    assert_eq!(
+        run(d.path(), &reports_with(P, BUDGET, BUDGET + 3, 1)),
+        0,
+        "편향이 고정값과 같은데 통과가 아니다"
+    );
+}
+
+/// 편향이 **늘면** 실패다 — 합이 그만큼 내려가 미달로 위장하는 방향.
+#[test]
+fn a_bias_that_grew_fails() {
+    let d = root_with_bias(Some(BUDGET), Some(3), &[P]);
+    assert_eq!(
+        run(d.path(), &reports_with(P, BUDGET, BUDGET + 4, 1)),
+        1,
+        "편향이 늘었는데 조용하다 — 그 폭만큼 합이 내려가고, 그것을 ㄱ 이나 ㄹ 로 읽으면 \
+         예산이 성장 없이 영구히 내려간다"
+    );
+}
+
+/// 편향이 **줄어도** 실패다. 한 방향만 서면 래칫이 아니다.
+///
+/// 이쪽이 조용한 방향이다 — 합이 올라가는데 띠가 파일 하나 몫이라 통째로 삼켜진다.
+/// "남는 여유는 곧 안 보는 구간" 이라는 이 게이트 자신의 명제가 그만큼 깨진다.
+#[test]
+fn a_bias_that_shrank_also_fails() {
+    let d = root_with_bias(Some(BUDGET), Some(3), &[P]);
+    assert_eq!(
+        run(d.path(), &reports_with(P, BUDGET, BUDGET + 2, 1)),
+        1,
+        "편향이 줄었는데 조용하다 — 이 방향은 합을 올리므로 띠 안에서 아무 데서도 안 운다"
+    );
+}
+
+/// 편향 핀이 없으면 **판정 불가(2)** 다. 0 으로 물러나지 않는다.
+///
+/// 물러나면 편향이 있는 트리에서 매번 거짓 위반이 나고, 그 처방을 따르면 예산이
+/// 편향만큼 잘못 움직인다.
+#[test]
+fn a_missing_bias_line_is_a_measurement_failure() {
+    let d = root_with_bias(Some(BUDGET), None, &[P]);
+    // rc 만 보면 안 된다 — 이 게이트의 판정 불가는 열 곳 넘는 자리에서 같은 2 로 나오고,
+    // 그러면 다른 자리가 낸 2 를 이 자리의 것으로 읽는다. 그래서 **자기 말**을 함께 건다
+    // (`tests/refusals_are_told_apart_by_their_own_words.rs` 가 세는 좌변이 그것이다).
+    let (code, text) = run_bare(d.path(), None, Some(&reports(P, BUDGET)), STRIP_OK);
+    assert_eq!(
+        code, 2,
+        "편향 줄이 없는데 값을 냈다 — 좌변 하나가 꺼진 채로 도는 것은 통과가 아니다:\n{text}"
+    );
+    assert!(
+        text.contains("'# doc-comment-bias: <수>' 줄이 없다"),
+        "편향 줄이 없다는 사실을 자기 말로 말하지 않는다 — 다른 판정 불가 자리와 rc 로 \
+         구별되지 않으므로 이 자리의 완화가 조용해진다:\n{text}"
+    );
+}
+
+/// 편향 실패문이 **폭만큼** 옮기라고 말하는가 — 합에 맞추라고 하면 안 된다.
+///
+/// 예산을 합으로 맞추면 같은 커밋에 섞인 진짜 성장까지 함께 사면된다. 옮길 폭은
+/// 편향의 차뿐이고, 성장은 그 뒤 합 판정이 봐야 한다. 그리고 그 실패문은 **어느
+/// 파일이 오독 형태를 보유하는지**를 함께 찍는다 — ADR 의 요건 (2)("내려감이 그
+/// 형태를 담은 파일에 갇혔는가")의 앞쪽 절반이 그 표 없이는 손 측정으로 남는다.
+#[test]
+fn the_bias_failure_moves_both_pins_by_the_delta() {
+    let d = root_with_bias(Some(BUDGET), Some(3), &[P]);
+    let (code, text) = run_bare(
+        d.path(),
+        None,
+        Some(&reports_with(P, BUDGET, BUDGET + 5, 1)),
+        STRIP_OK,
+    );
+    assert_eq!(code, 1, "편향이 갈렸는데 위반이 아니다:\n{text}");
+    assert!(
+        text.contains(&format!("# frozen-sum-budget: {}", BUDGET - 2)),
+        "예산을 **차(2)만큼** 옮기라고 말하지 않는다 — 합으로 맞추라고 하면 같은 \
+         커밋의 진짜 성장이 함께 사면된다:\n{text}"
+    );
+    assert!(
+        text.contains("# doc-comment-bias: 5"),
+        "새 편향 값을 안 알려준다 — 좌변이 둘인데 하나만 알려주면 다음 회차가 남은 \
+         하나를 손으로 찾는다:\n{text}"
+    );
+    assert!(
+        text.lines().any(|l| l.contains(P)),
+        "어느 파일이 오독 형태를 보유하는지를 안 찍는다 — 그 표가 없으면 ㄹ 의 둘째 \
+         요건 앞쪽 절반이 손 측정으로 남는다:\n{text}"
+    );
+}
+
+/// 오독의 **형태**가 달라지면 합을 판정하기 전에 먼저 선다.
+///
+/// 편향의 수만 고정하면 "얼마나" 는 지키지만 "무엇 때문에" 는 안 지킨다. 계측기가 이
+/// 오독을 고치거나 다른 형태로 바꾸면 편향의 수는 여전히 어떤 값을 갖는데 그 뜻이
+/// 달라진다. 그래서 게이트가 세 줄짜리 최소 재현을 매번 함께 재고, 그 값이 갈리면
+/// 합·편향을 판정하기 전에 멈춘다. ADR 이 갈래 ㄹ 의 요건 (1)로 요구하는 "형태의
+/// 최소 재현" 이 이 자리에 산다.
+#[test]
+fn the_form_probe_stands_before_the_sum() {
+    let d = root_with_bias(Some(BUDGET), Some(0), &[P]);
+    // 합도 편향도 멀쩡한데 프로브만 갈린 트리. 그래도 멈춰야 한다.
+    let (code, text) = run_bare(
+        d.path(),
+        None,
+        Some(&reports_with(P, BUDGET, BUDGET, 2)),
+        STRIP_OK,
+    );
+    assert_eq!(
+        code, 1,
+        "계측기의 오독 형태가 달라졌는데 값을 냈다 — 그 값의 뜻이 어제와 다르다:\n{text}"
+    );
+    assert!(
+        text.contains("형태"),
+        "무엇이 달라졌는지를 안 말한다 — 편향의 수만 갱신하면 형태가 바뀐 사실이 \
+         값 뒤에 묻힌다:\n{text}"
     );
 }

@@ -9,10 +9,14 @@
 # 게이트는 한 번도 울지 않았다. 이 스크립트가 그 방향을 본다.
 # 근거·측정·대안: docs/adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md
 #
-# 판정 셋.
-#   합 > 예산 + 여유   → 위반(1). 동결분이 "파일 하나 분량" 만큼 자랐다.
-#   합 < 예산          → 위반(1). 래칫을 조여라 — 남는 여유는 곧 안 보는 구간이다.
-#   그 사이            → 통과(0).
+# 판정. **좌변이 셋이고, 순서가 있다** — 뒤엣것의 뜻이 앞엣것에 달려 있다.
+#   1. 오독 형태 프로브 != 1     → 위반(1). 계측기가 어제와 다르게 센다. 이 아래 값들의
+#                                 뜻이 바뀌었으므로 합을 판정하지 않는다.
+#   2. 계측 편향 != 고정값        → 위반(1). 합이 성장 없이 그만큼 움직였다. 예산과 편향을
+#                                 같은 폭으로 함께 옮긴다(여유 0 · 양방향).
+#   3. 합 > 예산 + 여유          → 위반(1). 동결분이 "파일 하나 분량" 만큼 자랐다.
+#      합 < 예산                 → 위반(1). 래칫을 조여라 — 남는 여유는 곧 안 보는 구간이다.
+#      그 사이                   → 통과(0).
 #
 # **여유는 임계 자신이다.** `check-file-size.sh` 의 `THRESHOLD` 를 읽어 쓴다 — 외우지
 # 않는다. 그래서 발화 사건이 "동결분이 **허용 파일 하나 분량**만큼 자랐다" 가 되고,
@@ -72,6 +76,16 @@ BUDGET="$(sed -n 's/^#[[:space:]]*frozen-sum-budget:[[:space:]]*\([0-9][0-9]*\)[
 BUDGET="${BUDGET%%$'\n'*}"
 [ -n "$BUDGET" ] || die ".complexity-file-allowlist 에 '# frozen-sum-budget: <수>' 줄이 없다."
 
+# ── 둘째 좌변: 계측기의 doc 주석 편향 ────────────────────────────────────
+# 이 게이트의 합은 실제 출하 줄이 아니라 **tokei 가 센 값**이고, 그 둘은 상수만큼
+# 다르다(아래 형태 프로브가 지목하는 오독). 그 상수는 예산에도 같이 박혀 있어 절대값은
+# 무해한데, **움직이면** 합이 성장 없이 움직인다. 그 이동을 사람이 관측하게 두면
+# 안 보이므로(늘면 미달로 위장하고, 줄면 띠 안에서 통째로 침묵한다) 여기서
+# 양방향으로 고정한다. 재는 법은 둘째 계측기가 아니라 **같은 tokei 로 두 번**이다.
+BIAS_PINNED="$(sed -n 's/^#[[:space:]]*doc-comment-bias:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$ALLOWLIST")"
+BIAS_PINNED="${BIAS_PINNED%%$'\n'*}"
+[ -n "$BIAS_PINNED" ] || die ".complexity-file-allowlist 에 '# doc-comment-bias: <수>' 줄이 없다."
+
 command -v tokei >/dev/null 2>&1 || die "tokei 미설치: cargo install tokei"
 
 PY=""
@@ -100,10 +114,41 @@ trap 'rm -rf "$STRIPPED"' EXIT
 
 "$STRIP_BIN" --neutralize-char-literal-quotes "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}" >/dev/null \
     || die "출하 줄 판정 실패."
-TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json "${SCAN_DIRS[@]}")" || die "tokei 실행 실패."
 
-# 합계와 내역. 목록에 있는데 **디스크에 존재하면서** 보고에 없는 경로가 있으면 측정 실패다
-# (없어진 파일은 0 으로 세는 것이 맞다 — 삭제는 정당하게 합을 줄인다).
+# ── 편향을 재는 사본: 같은 사본에서 doc 주석 줄만 뺀다 ────────────────────
+# 둘째 계측기를 안 들인다. 필요한 답은 "두 계측기가 갈리는가" 가 아니라 "이 파일의 계측
+# 편향이 **움직였는가**" 이고, 그것은 **같은 tokei 로 두 번** 재면 나온다. 손으로 짠
+# 렉서를 좌변에 두면 그 렉서의 결함이 tokei 의 결함과 구별되지 않는다(실측으로 밟았다 —
+# docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md 의 대안 D·G).
+#
+# 뺄 대상은 목록에 오른 파일뿐이다 — 좌변이 그 합이므로 트리 전체를 두 번 잴 이유가 없다.
+while IFS= read -r p; do
+    case "$p" in ''|'#'*) continue ;; esac
+    [ -f "$STRIPPED/$p" ] || continue
+    mkdir -p "$STRIPPED/__nodoc/$(dirname "$p")"
+    grep -vE '^[[:space:]]*(///|//!)' "$STRIPPED/$p" >"$STRIPPED/__nodoc/$p" || true
+done <"$ALLOWLIST"
+
+# ── 오독의 **형태**를 레포에 남긴다 — 최소 재현 ───────────────────────────
+# 아래 세 줄에서 tokei 14.0.0 은 code 를 **1** 로 센다. code 줄은 둘(`const A` · `const B`)
+# 이고 doc 줄 하나는 embedded Markdown 의 comments 로 갈려 나가므로, 어디에도 안 세어진
+# 줄이 정확히 하나 생긴다. 트리거는 **doc 주석 바로 앞줄이 문자열 리터럴을 담는 것**이다
+# — 앞줄에 문자열이 없으면(`const A: u32 = 0;`) 손실이 없고, 사이에 빈 줄이 끼면 그
+# 빈 줄까지 함께 잃는다(그래서 code 손실과 blank 손실의 수가 파일마다 갈린다).
+#
+# 이 프로브가 상시로 도는 이유: 편향의 수만 고정하면 "얼마나" 는 지키지만 "무엇 때문에"
+# 는 안 지킨다. 계측기가 이 형태를 고치거나 다른 형태로 바꾸면 여기서 먼저 걸리고,
+# 그것이 위 ADR 의 재검토 트리거("계측기의 다른 오독 형태가 나온다")의 좌변이다.
+mkdir -p "$STRIPPED/__probe"
+printf 'const A: &str = "x";\n/// doc\nconst B: u32 = 1;\n' >"$STRIPPED/__probe/probe.rs"
+
+# tokei 호출은 **한 번**이다 — 셋을 한 보고에 담아 같은 계측기·같은 판본으로 재게 한다.
+TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json "${SCAN_DIRS[@]}" __nodoc __probe)" \
+    || die "tokei 실행 실패."
+
+# 합계·편향·프로브·내역. 목록에 있는데 **디스크에 존재하면서** 보고에 없는 경로가 있으면
+# 측정 실패다 (없어진 파일은 0 으로 세는 것이 맞다 — 삭제는 정당하게 합을 줄인다).
+# 편향은 파일마다 `doc 줄을 뺀 code - 원래 code` 이고, 그 합이 이 게이트의 둘째 좌변이다.
 REPORT="$(printf '%s' "$TOKEI_JSON" | ALLOWLIST="$ALLOWLIST" ROOT="$ROOT" "$PY" -c '
 import json, os, sys
 sys.stdout.reconfigure(newline="\n")
@@ -115,31 +160,97 @@ reports = rust.get("reports", [])
 if not reports:
     print("tokei 가 Rust 파일을 하나도 보고하지 않았다 — 측정 실패로 읽는다", file=sys.stderr); sys.exit(3)
 sizes = {r["name"].replace("\\", "/").lstrip("./"): r["stats"]["code"] for r in reports}
+probe = sizes.get("__probe/probe.rs")
+if probe is None:
+    print("형태 프로브가 보고에 없다 — 측정 실패로 읽는다", file=sys.stderr); sys.exit(3)
 root = os.environ["ROOT"]
-entries, missing, total = [], [], 0
+entries, missing, unmeasured, total, bias = [], [], [], 0, 0
 for line in open(os.environ["ALLOWLIST"], encoding="utf-8"):
     p = line.strip()
     if not p or p.startswith("#"):
         continue
     if p in sizes:
-        entries.append((sizes[p], p)); total += sizes[p]
+        nodoc = sizes.get("__nodoc/" + p)
+        if nodoc is None:
+            unmeasured.append(p); continue
+        b = nodoc - sizes[p]
+        entries.append((sizes[p], b, p)); total += sizes[p]; bias += b
     elif os.path.exists(os.path.join(root, p)):
         missing.append(p)
 if missing:
     print("목록의 파일이 디스크에 있는데 보고에 없다 — 측정 실패로 읽는다: "
           + ", ".join(sorted(missing)[:5]), file=sys.stderr)
     sys.exit(3)
+if unmeasured:
+    print("doc 줄을 뺀 사본이 보고에 없다 — 편향을 못 잰다: "
+          + ", ".join(sorted(unmeasured)[:5]), file=sys.stderr)
+    sys.exit(3)
 entries.sort(reverse=True)
 print(total)
-for c, p in entries:
-    print(f"{c}\t{p}")
+print(bias)
+print(probe)
+for c, b, p in entries:
+    print(f"{c}\t{b}\t{p}")
 ')" || die "동결 합계 측정 실패."
 
 # 파이프를 안 쓴다 — 조기에 끝나는 소비자(`head`)의 오른쪽에 producer 를 두면 SIGPIPE 로
 # 죽고 `pipefail` 이 그것을 실패로 읽는다. 가드: crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs
-SUM="${REPORT%%$'\n'*}"
-BREAKDOWN="${REPORT#*$'\n'}"
+REST="$REPORT"
+SUM="${REST%%$'\n'*}"; REST="${REST#*$'\n'}"
+BIAS="${REST%%$'\n'*}"; REST="${REST#*$'\n'}"
+PROBE_CODE="${REST%%$'\n'*}"
+BREAKDOWN="${REST#*$'\n'}"
 CEILING=$((BUDGET + SLACK))
+
+# ── 형태 프로브 먼저 ─────────────────────────────────────────────────────
+# 계측기가 바뀌면 아래 값 전부의 뜻이 바뀐다. 그러니 합을 판정하기 전에 **재는 자가
+# 어제와 같은가**를 먼저 묻는다. 기대값은 1 이다(위 프로브 파일의 code 줄은 둘).
+if [ "$PROBE_CODE" != "1" ]; then
+    echo "동결 총합 래칫: 계측기의 오독 **형태**가 달라졌다."
+    echo "  최소 재현(3 줄)에서 tokei 가 센 code = $PROBE_CODE (여태 1)"
+    echo
+    echo "  그 세 줄은 이렇다 — code 줄은 둘이고, doc 주석 바로 앞줄이 문자열 리터럴이다:"
+    echo "      const A: &str = \"x\";"
+    echo "      /// doc"
+    echo "      const B: u32 = 1;"
+    echo
+    echo "  2 가 나왔으면 계측기가 이 오독을 **고쳤다.** 그러면 편향이 0 으로 가고 합이"
+    echo "  그만큼 올라간다 — 그 상승은 성장이 아니다. 아래 편향 줄과 예산 줄을 같은"
+    echo "  폭으로 함께 옮기고, ADR-0258 의 재검토 트리거를 연다."
+    echo "  1 도 2 도 아니면 오독이 **다른 형태로 바뀐** 것이다. 그때는 편향의 수를"
+    echo "  갱신하기 전에 형태부터 다시 지목해야 한다(같은 ADR 의 대안 B 를 다시 연다)."
+    echo "  근거: docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md"
+    exit 1
+fi
+
+# ── 둘째 좌변: 편향이 움직였는가 ─────────────────────────────────────────
+# **양방향이다.** 편향이 늘면 합이 그만큼 내려가 미달로 위장하고, 줄면 합이 그만큼
+# 올라가 성장으로 위장한다. 뒤엣것은 띠 안에 통째로 들어가 아무 데서도 안 울리므로,
+# 이 좌변이 없으면 "남는 여유는 곧 안 보는 구간" 이라는 이 게이트 자신의 명제가
+# 편향의 폭만큼 깨진다. 그래서 여유 0 으로 고정한다.
+if [ "$BIAS" -ne "$BIAS_PINNED" ]; then
+    DELTA=$((BIAS - BIAS_PINNED))
+    echo "동결 총합 래칫: 계측기의 doc 주석 편향이 움직였다."
+    echo "  편향 $BIAS  (고정값 $BIAS_PINNED · 차 $DELTA)"
+    echo
+    echo "★ 이 차는 **성장이 아니다.** 합은 실제 출하 줄이 아니라 tokei 가 센 값이고,"
+    echo "  예산도 같은 계측기로 정해져 있다. 편향이 $DELTA 만큼 움직이면 합이 그만큼"
+    echo "  반대로 움직이는데 실제 코드는 한 줄도 안 변했을 수 있다."
+    echo
+    echo "  할 일은 둘을 **같은 폭으로 함께** 옮기는 것이다 (.complexity-file-allowlist):"
+    echo "      # frozen-sum-budget: $((BUDGET - DELTA))"
+    echo "      # doc-comment-bias: $BIAS"
+    echo "  예산을 합($SUM)으로 맞추지 마라 — 그러면 같은 커밋에 섞인 진짜 성장까지"
+    echo "  함께 사면된다. 옮기는 폭은 $DELTA 뿐이고, 성장은 그 뒤 합 판정이 본다."
+    echo
+    echo "  파일별 편향 (0 이 아닌 것만 — 이 파일들이 오독 형태를 보유한다):"
+    while IFS=$'\t' read -r c b q; do
+        [ "$b" = "0" ] || printf '    %6s  %s\n' "$b" "$q"
+    done <<<"$BREAKDOWN"
+    echo
+    echo "  근거·재검토 트리거: docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md"
+    exit 1
+fi
 
 if [ "$SUM" -gt "$CEILING" ]; then
     echo "동결 총합 래칫 위반: 동결 파일들의 출하 SLOC 합이 예산을 넘었다."
@@ -147,10 +258,10 @@ if [ "$SUM" -gt "$CEILING" ]; then
     echo
     echo "  큰 것부터:"
     shown=0
-    while IFS=$'\t' read -r c p; do
+    while IFS=$'\t' read -r c b p; do
         shown=$((shown + 1))
         [ "$shown" -gt 8 ] && break
-        printf '    %6s  %s\n' "$c" "$p"
+        printf '    %6s  %6s  %s\n' "$c" "$b" "$p"
     done <<<"$BREAKDOWN"
     echo
     echo "★ **여기서 넘었다고 이 커밋이 원인인 것은 아니다.** 이것은 누적 합이라 마지막"
@@ -197,18 +308,20 @@ fi
 # 옳았다(doc 코드펜스를 Markdown 으로 가르는 쪽이 맞다)" 였는데, 다시 재니 반대다.
 #
 # ★ 재측정(2026-09-09): 목록 23 중 **9 파일**이 갈리고 **전부 tokei 가 덜 세는 방향,
-# 합 +25** 다. 원인은 코드펜스 분류가 아니라 **doc 주석에 딸린 줄의 누락**이다. 근거 셋:
-# 9 파일 전부 doc 주석 줄(`///`·`//!`)만 지우면 두 계측이 **정확히** 일치하고, tokei 가
-# 잃는 것은 code 만이 아니라 **같은 수의 blank** 이며(`render.rs` code 1982→1988 ·
-# blank 2440→2446), embedded Markdown 의 code 는 **0** 이다. 빈 줄은 Markdown 코드로 갈릴
-# 수 없고, 갈라 넘긴 코드가 0 인데 잃은 줄이 6 이면 그것은 분류가 아니라 누락이다.
+# 합 +25** 다. 원인은 코드펜스 분류가 아니라 **doc 주석 바로 앞줄이 문자열 리터럴일 때
+# 그 줄이 누락되는 것**이다. 근거 셋: 9 파일 전부 doc 주석 줄(`///`·`//!`)만 지우면 두
+# 계측이 **정확히** 일치하고, tokei 가 잃는 것은 code 만이 아니라 **blank 도 함께**이며
+# (`render.rs` code 1982→1988 · blank 2440→2446), embedded Markdown 의 code 는 **0** 이다.
+# 빈 줄은 Markdown 코드로 갈릴 수 없고, 갈라 넘긴 코드가 0 인데 잃은 줄이 6 이면 그것은
+# 분류가 아니라 누락이다. **code 손실과 blank 손실의 수는 같지 않다** — 잃는 blank 은
+# 사이에 낀 빈 줄 수만큼이라 그때 합이 code 25 · blank 21 이었고 9 중 7 에서만 같았다.
 #
-# ★ 그래서 **이 게이트의 값에는 갈래 ㄷ 이 25 줄만큼 상시로 섞여 있다.** 그래도 예산
+# ★ 그래서 **이 게이트의 값에는 갈래 ㄷ 이 그만큼 상시로 섞여 있다.** 그래도 예산
 # 하향 판단은 안 뒤집힌다 — 예산도 같은 tokei 로 정해져 이 편향이 **양변에서 상쇄**되고,
-# 신호가 되는 것은 편향의 **변동**(동결 파일에 doc 주석이 드나드는 것)뿐이다. 그 변동을
-# 재는 데는 둘째 계측기가 필요 없다:
-#     grep -vE '^[[:space:]]*(///|//!)' <사본 경로> >/tmp/nodoc.rs && tokei /tmp/nodoc.rs
-# 로 doc 줄을 뺀 code 를 원래 code 와 견주면 그 차가 그 파일의 편향분이다.
+# 신호가 되는 것은 편향의 **변동**뿐이다. 그 변동은 **양방향으로 다르게 위험하다**:
+# 편향이 늘면 합이 내려가 미달 갈래로 위장하고, 줄면 합이 올라가 띠 안에 통째로 들어가
+# 아무 데서도 안 운다. 그래서 위쪽에 편향 좌변을 따로 뒀다 — 그 판정을 지나 아래 갈래
+# 목록에 왔다는 것은 이 형태가 이미 배제됐다는 뜻이다.
 #
 # 재측정 뒤에도 상시 대조를 안 두는 이유는 남는다: 대조표는 "갈린다" 만 말하고 "누가
 # 옳은가" 는 안 말한다 — 이번 판별을 지은 것도 대조표가 아니라 위 doc 제거 실험이다.
@@ -236,8 +349,8 @@ if [ "$SUM" -lt "$BUDGET" ]; then
     echo "     못한다 — 특정 형태만 덜 세는 회귀는 그 둘을 **모두 통과한다.**"
     echo
     echo "  지금 내역 (큰 것부터 전량 — 위 (2) 는 이 표를 고치기 전 값과 견주는 것이다):"
-    while IFS=$'\t' read -r c p; do
-        printf '    %6s  %s\n' "$c" "$p"
+    while IFS=$'\t' read -r c b p; do
+        printf '    %6s  %6s  %s\n' "$c" "$b" "$p"
     done <<<"$BREAKDOWN"
     echo
     echo "ㄱ 이나 ㄹ 임을 확인한 뒤에만: .complexity-file-allowlist 의 예산 줄을 이 값으로 내린다(한 줄):"
@@ -252,3 +365,6 @@ fi
 # 판단에 쓰는 값이다. 통과줄이 식을 떼고 "여유 $SLACK" 만 남기면 그 상수가 남은 여유로
 # 읽힌다 — 실제로 lane 이 924 를 보고하는데 이 줄은 1000 을 찍는 어긋남이 났다.
 echo "동결 총합 래칫 통과 (합 $SUM / 천장 $CEILING = 예산 $BUDGET + 띠 $SLACK — 남은 여유 $((CEILING - SUM)))."
+# 둘째 좌변도 통과줄에 찍는다. 안 찍으면 그 좌변이 초록인지 **꺼져 있는지**가 안 보이고,
+# 이 게이트에서 조용한 좌변은 안 보는 구간과 구별되지 않는다.
+echo "  계측 편향 $BIAS (고정값 $BIAS_PINNED · 여유 0) — 합은 실제 출하 줄보다 그만큼 작다."
