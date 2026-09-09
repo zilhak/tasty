@@ -50,7 +50,7 @@ use crate::plugin::registry_state::ShortcutOverride;
 use super::binding::parse_binding;
 
 // 조합 타입과 열거는 `KeybindingSettings` 가 저장하는 축 modifier 값의 해석 규칙이라
-// 그 값을 소유한 크레이트에 있다(`docs/adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md`).
+// 그 값을 소유한 크레이트에 있다(`docs/adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md`).
 // 이 모듈은 그것으로 hint 섹션을 조립한다.
 pub use tasty_settings::keybindings::parse::{Combo, all_modifier_combos, combos_containing_all};
 

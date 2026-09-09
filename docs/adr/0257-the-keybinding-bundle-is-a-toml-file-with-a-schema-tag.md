@@ -146,7 +146,7 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
 
 - `docs/features/keybindings/index.md` "이식 번들" — 지금 어떻게 동작하는가
 - `docs/design/policies/key-mapping.md` "설정 파일 이식성" — 바인딩 문자열이 이미 OS 독립
-- [ADR-0254](0254-the-binding-parser-lives-with-the-setting-it-parses.md) — 이식 판정이
+- [ADR-0256](0256-the-binding-parser-lives-with-the-setting-it-parses.md) — 이식 판정이
   쓸 파서를 어디에 뒀는가
 - 코드 근거(결정이 실현된 현재 위치): `tasty_host_plugin::keybinding_bundle` 의
   `encode`·`decode`·`DecodeEnv`·`BundleWarning`, export 원본인

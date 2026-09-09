@@ -8,7 +8,7 @@
 //! 그래서 번들 타입은 두 타입이 **모두 보이는 가장 낮은 지점**인 이 크레이트에 있다
 //! (`tasty-host-plugin` → `tasty-settings` 단방향 의존이라 반대쪽에는 못 둔다).
 //! 결정의 근거·대안·재검토 조건은
-//! `docs/adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md`,
+//! `docs/adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md`,
 //! 지금 어떻게 동작하는지는 `docs/features/keybindings/index.md` 의 "이식 번들" 절.
 //!
 //! ## 왜 `PluginShortcutSnapshot` 이 export 원본이 아닌가

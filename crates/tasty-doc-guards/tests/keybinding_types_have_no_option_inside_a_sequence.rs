@@ -1,4 +1,4 @@
-//! 단축키 이식 번들이 TOML 로 나갈 수 있는 모양인지 지키는 가드 — ADR-0255 의
+//! 단축키 이식 번들이 TOML 로 나갈 수 있는 모양인지 지키는 가드 — ADR-0257 의
 //! 재검토 조건 "`Option<T>` 를 원소로 갖는 시퀀스 필드가 생긴다" 의 채널. 같은 뿌리로
 //! 깨지는 `Option<Option<T>>` 도 함께 막는다(아래 참조).
 //!
@@ -216,7 +216,7 @@ fn type_body(src: &str, rel: &str, kind: TypeKind, name: &str) -> String {
     let start = src.find(&header).unwrap_or_else(|| {
         panic!(
             "{rel} 에서 `{header}` 를 못 찾았다 — 타입이 옮겨졌으면 이 가드의 \
-             명부(`CARRIED`)도 함께 옮겨야 한다 (ADR-0255)."
+             명부(`CARRIED`)도 함께 옮겨야 한다 (ADR-0257)."
         )
     });
     let after = &src[start..];
@@ -290,7 +290,7 @@ fn keybinding_types_have_no_option_inside_a_sequence() {
                  실패시킨다. 필드 자리의 평범한 `Option<T>` 와 맵 값 자리의 `Option<T>` 는 \
                  안전하니 이 가드를 그리로 넓히지 말고, 그 필드의 표현이나 번들 포맷을 \
                  다시 정해라 \
-                 (docs/adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md \
+                 (docs/adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md \
                  재검토 조건).\n{body}"
             );
         }
@@ -311,7 +311,7 @@ fn roster_covers_every_type_declared_in_the_settings_source() {
             "{KEYBINDINGS_SRC} 에 `{} {name}` 이 선언됐는데 `CARRIED` 명부에 없다. \
              이 파일의 타입은 전부 `[keybindings]` 로 TOML 에 실리므로 \
              `keybinding_types_have_no_option_inside_a_sequence` 가 함께 봐야 한다 \
-             — 명부에 넣어라 (ADR-0255).",
+             — 명부에 넣어라 (ADR-0257).",
             kind.keyword()
         );
     }

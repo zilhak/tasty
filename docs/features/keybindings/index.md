@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: [0254](../../adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0255](../../adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
+- **ADR**: [0256](../../adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
 - **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs`
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
@@ -18,7 +18,7 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
 
-그 문자열을 축과 키 토큰으로 쪼개는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0254](../../adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md)).
+그 문자열을 축과 키 토큰으로 쪼개는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0256](../../adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md)).
 
 **사이드바 "도구" 메뉴의 빌트인 항목 일곱은 전부 대응 필드를 갖는다** — `toggle_command_palette` · `open_port_scanner` · `open_remote_tool` · `open_preset_window` · `open_tutorial` · `toggle_dag_list` · `open_file_picker`. plugin 이 기여하는 도구 항목은 매니페스트의 `[[contributes.commands]]` 로 이미 단축키를 갖고 Plugins 서브탭에서 관리되므로, 호스트 빌트인만 필드가 없으면 **plugin 도구는 되고 호스트 도구는 안 되는** 역전이 남는다. 다섯(팔레트·DAG 목록 제외)은 네 프리셋 모두 기본값이 비어 있다 — 새 기본값 다섯을 네 프리셋에 넣으면 기존 콤보와의 충돌을 통과해야 하고, 통과하더라도 그 콤보를 이미 쓰던 사용자는 첫 로드에서 `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다.
 
@@ -113,7 +113,7 @@ import(`decode`)은 사용자가 고른 임의의 파일을 다루므로 세 갈
 
 import 한 구성이 macOS 에서 만들어졌으면 `option` 바인딩이 이 환경에서 조용히 죽는다. 그 자리를 전수로 찾아 대체 값을 적용하는 계산이 같은 자리에 있다(`keybinding_bundle::option_migration`) — 찾는 다섯 자리·대체 값의 종류·충돌 검사 규칙은 [key-mapping](../../design/policies/key-mapping.md) "이식 시 `option` 처리" 가 정본이다.
 
-결정의 근거·대안·재검토 조건은 [ADR-0255](../../adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md).
+결정의 근거·대안·재검토 조건은 [ADR-0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md).
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
 

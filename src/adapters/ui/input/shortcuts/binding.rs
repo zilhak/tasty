@@ -3,7 +3,7 @@
 //! 문자열을 축과 키 토큰으로 쪼개는 **파싱**은 그 문자열을 소유한 크레이트에 있다
 //! (`tasty_settings::keybindings::parse`) — 단축키 이식 번들의 `option` 판정이 같은
 //! 규칙을 써야 하는데 이 모듈은 `gui` feature 뒤라 그쪽에서 안 보이기 때문이다
-//! (`docs/adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md`).
+//! (`docs/adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md`).
 //! 여기 남은 것은 파싱 결과를 실제 키 이벤트와 맞추는 플랫폼 규칙이다.
 
 use winit::keyboard::{Key, ModifiersState, NamedKey};
