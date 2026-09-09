@@ -2,8 +2,8 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: 없음 (정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
-- **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`)
+- **ADR**: [0254](../../adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0255](../../adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
+- **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs`
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
 ## 목적
@@ -74,6 +74,44 @@ modifier 드롭다운에서 **"개별 지정"**(sentinel `KeybindingSettings::IN
 #### switch-number 오버레이 — 표시 = 동작
 
 modifier 홀드 중 탭바(`tab_bar.rs`)·사이드바(`sidebar/view.rs`)에 뜨는 숫자 키캡은 고정 상수가 아니라 **설정된 슬롯 키**를 그린다(`switch_overlay::tab_digit(kb, index)`/`workspace_digit(kb, local_idx)`). 슬롯을 `"q"` 로 바꾸면 키캡도 `Q` 로 뜬다(눌러서 가는 곳 = 표시). 워크스페이스 사이드바는 카테고리 토글 on 시 **active 카테고리 내 로컬 인덱스**로 키캡을 매기고 **비활성 카테고리 행에는 키캡을 표시하지 않는다** — 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(전역 인덱스로 표시하던 과거 불일치를 제거). 오버레이 modifier 상태는 egui raw_input(실제 사용자 키)만 반영하므로 IPC/에이전트로는 강제 표시할 수 없다. **개별 지정 축은 오버레이 대상에서 자동 제외**된다(위 "개별 지정 모드" 참조).
+
+### 이식 번들 — 구성 전량을 파일 한 장으로
+
+한 tasty 환경의 단축키 구성 **전량**을 파일 하나로 내보내고 다른 환경에서 읽어 들이는 코덱이 있다(`crates/tasty-host-plugin/src/keybinding_bundle.rs`). 옮기는 대상은 두 파일에 흩어져 있다 — `config.toml` 의 `[keybindings]`(`KeybindingSettings` 전량)와 `plugins.toml` 의 `keybindings`(plugin command override). 그래서 번들 타입은 두 타입이 모두 보이는 `tasty-host-plugin` 에 있다.
+
+포맷은 최상위에 **스키마 태그와 버전**이 붙은 TOML 이다.
+
+```toml
+schema = "tasty.keybindings"
+version = 1
+
+[keybindings]
+new_tab = ["alt+t", "ctrl+alt+t"]
+tab_switch_modifier = "individual"
+# … `KeybindingSettings` 의 필드 전량
+
+[[keybindings.script_bindings]]
+script_id = "s1"
+combo = "ctrl+f9"
+
+[plugin_keybindings."com.example.explorer"."explorer.refresh"]
+mode = "key"
+value = ["F6"]
+```
+
+번들은 액션 이름을 따로 열거하지 않고 `KeybindingSettings` 를 통째로 싣는다 — 번들에 있는 필드가 곧 그 타입에 있는 필드이므로, "모든 단축키는 `KeybindingSettings` 로 노출된다" 는 규칙이 번들 포맷에서도 그대로 성립한다.
+
+**export 원본은 `PluginsConfig.keybindings` 자체**(`PluginsConfig::shortcut_overrides`)다. 설정 창이 가진 `PluginShortcutSnapshot` 은 `command_registry.iter_all()` 로 만들어져 **등록된 command 만** 담으므로, 그것을 원본으로 쓰면 비활성·미등록 plugin 의 override 가 조용히 빠진다.
+
+import(`decode`)은 사용자가 고른 임의의 파일을 다루므로 세 갈래로 갈린다.
+
+- **거절** — 최상위 `schema` 가 없거나 다르면 `NotABundle`, TOML 자체가 깨졌으면 `Toml`. 값을 하나도 복원할 수 없는 경우만 에러다(`config.toml` 을 골라도 패닉하지 않는다).
+- **경고하고 계속** — 모르는 최상위 키·모르는 단축키 필드·값의 모양이 다른 필드(타입 불일치, 고정 배열 길이 차이)·읽히지 않는 override 항목·이 빌드보다 높은 버전. 전부 `BundleWarning` 목록으로 돌려준다.
+- **버리고 경고** — 이 환경에 **설치되지 않은 plugin** 의 override 전부, 대상이 없는 `script_bindings` 항목. 설치 여부와 script 존재 여부는 `DecodeEnv` 로 받고, `known_script_ids: None` 이면 script 판정을 건너뛴다(레지스트리를 못 보는 호출자가 전량을 잃지 않게).
+
+`[keybindings]` 는 **필드 단위로** 복원한다 — 기본값에서 출발해 번들의 필드를 하나씩 얹고, 얹은 뒤 전체가 역직렬화되지 않으면 그 필드만 되돌린다. 그래서 구버전·신버전 번들의 배열 길이 차이가 그 필드 하나만 기본값으로 만들고 나머지는 그대로 복원된다. 코덱에는 필드 명부가 없다.
+
+결정의 근거·대안·재검토 조건은 [ADR-0255](../../adr/0255-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md).
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
 

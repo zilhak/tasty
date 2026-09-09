@@ -55,7 +55,7 @@ pub struct PluginsConfig {
 /// - `Inherit { source }`: plugin이 inherit를 선언한 command를 사용자가
 ///   그대로 두거나, plugin이 inherit 가능한 host action으로 명시 변경한 경우.
 /// - `None`: 사용자가 의도적으로 단축키를 비워둠. 매니페스트 기본값보다 우선.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "mode", rename_all = "lowercase")]
 pub enum ShortcutOverride {
     Key { value: Vec<String> },
@@ -216,6 +216,23 @@ impl PluginsConfig {
     /// 첫 조회에서 자연히 한 번 계산된다.
     pub fn shortcut_revision(&self) -> u64 {
         self.shortcut_revision
+    }
+
+    /// plugin 단축키 override 전량 — 단축키 이식 번들의 **export 원본**이다
+    /// (`keybinding_bundle`). 설정 창의 `PluginShortcutSnapshot` 은 등록된 command 만
+    /// 담아 비활성·미등록 plugin 의 override 가 빠지므로 그쪽을 원본으로 쓰지 않는다.
+    pub fn shortcut_overrides(&self) -> &BTreeMap<String, BTreeMap<String, ShortcutOverride>> {
+        &self.keybindings
+    }
+
+    /// override 맵 전량을 교체한다 — 이식 번들 import 의 착지점. `shortcut_revision` 을
+    /// 올려 파생 스냅샷 캐시(webview 키 포워딩 등)를 무효화한다.
+    pub fn replace_shortcut_overrides(
+        &mut self,
+        overrides: BTreeMap<String, BTreeMap<String, ShortcutOverride>>,
+    ) {
+        self.keybindings = overrides;
+        self.shortcut_revision = crate::command_registry::next_shortcut_epoch();
     }
 
     /// override를 설정. 같은 키가 있으면 덮어씀.
