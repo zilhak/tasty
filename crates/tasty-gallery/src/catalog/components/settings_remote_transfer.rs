@@ -47,7 +47,9 @@ struct State {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // Settings › General › Remote transfer 서브탭 **콘텐츠** — 창 셸에 얹힌
+        // 패널이라 lift 가 없다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 // 섹션 헤딩 "Received files" — mono micro uppercase muted.

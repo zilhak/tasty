@@ -1,6 +1,9 @@
 //! `explorer_rename_popup` specimen — 디자인 T11 explorer "Rename" 팝업
 //! (design §3.5, 와이어프레임 8).
 //!
+//! 본체는 `rename` popup 의 한 target(`RenameTarget::ExplorerEntry`)으로 연다 —
+//! `OpenPopupMode::WithScope`(스코프 중앙)라 SCOPE RULE(ADR-0254) 상 modal 그림자다.
+//!
 //! Add-favorite 팝업과 동일 골격(title / path caption / input / Cancel·primary
 //! footer) — 타이틀·초기값(현재 파일명)·primary 라벨만 다르다. 완전성을 위해
 //! 별도 specimen 으로 등재(design §3.5). 공유 frame 키트(`widgets::dialog`) 재사용.

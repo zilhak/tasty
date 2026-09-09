@@ -243,8 +243,11 @@ pub fn pages() -> Vec<Page> {
                     "Color — elevation (surface ramp)",
                     vec![spec(
                         "elevation",
-                        "Depth reads through surface tint, never shadow",
-                        Some("bg-app → sidebar → panel → surface-raised, one tint step apart"),
+                        "Depth reads through surface tint; shadow is for floating surfaces only",
+                        Some(
+                            "bg-app → sidebar → panel → surface-raised, one tint step apart — \
+                             lift is popover / modal / none, by surface shape",
+                        ),
                         theme::elevation,
                     )],
                 ),

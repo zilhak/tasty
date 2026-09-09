@@ -1,7 +1,11 @@
 //! `explorer_favorite_popup` specimen — 디자인 T11 "Add to favorites" 팝업
 //! (design §3.5, 와이어프레임 8).
 //!
-//! 결정: Popup (`PopupDef`, modal 아님 — 경량 입력·앵커드). rename 팝업과 동일 골격
+//! 결정: Popup (`PopupDef`, Modal View 아님 — 경량 입력). 본체는 이것을 별도 def 로
+//! 두지 않고 `rename` popup 의 한 target(`RenameTarget::ExplorerAddFavorite`)으로
+//! 연다(`src/adapters/ui/dialog.rs`). 여는 방식은 `OpenPopupMode::WithScope` —
+//! **스코프 중앙**이라 앵커드가 아니고, 그래서 SCOPE RULE(ADR-0254) 상 modal 그림자다
+//! (`popup_shadow` 가 `rename` 을 anchored 명부에 안 넣는다). rename 팝업과 동일 골격
 //! (title / path caption / input / Cancel·primary footer) — 타이틀·초기값·primary
 //! 라벨만 다르다. 공유 frame 키트(`widgets::dialog`) 재사용.
 //!

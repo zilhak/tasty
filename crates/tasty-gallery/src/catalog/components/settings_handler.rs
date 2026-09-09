@@ -72,7 +72,9 @@ thread_local! {
 
 pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
+        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 // 헤더 행 — Mono 헤드 좌 + "Add mapping" ghost sm 우 (jsx:914-917).
                 ui.horizontal(|ui| {
@@ -174,7 +176,9 @@ thread_local! {
 
 pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
+        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 mono_head(ui, theme, "Detection passes (priority order)");
                 DETECTOR_STATE.with(|s| {
@@ -252,7 +256,9 @@ thread_local! {
 
 pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
+        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 mono_head(ui, theme, "Registered file handlers");
                 HANDLER_STATE.with(|s| {
@@ -379,7 +385,9 @@ fn origin_variant(origin: &str) -> TagVariant {
 
 pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
+        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 HOOK_STATE.with(|s| {
                     let st = &mut *s.borrow_mut();

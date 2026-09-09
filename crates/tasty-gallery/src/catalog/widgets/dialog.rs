@@ -7,6 +7,14 @@
 //! 보여주고(`draw`), 동시에 14 Spec 전부가 호출하는 frame/region/field 헬퍼를
 //! `pub` 으로 노출한다 (research §2.4 공통).
 //!
+//! **셸의 lift 그림자는 세 갈래다** — SCOPE RULE(ADR-0254). 같은 셸을 쓰는 호출부라도
+//! *본체에서 그 표면이 무엇인가* 에 따라 갈래가 갈리므로, 셸을 부르는 쪽이 셋 중
+//! 하나를 고른다: 뷰포트를 점유하면 [`frame_card`](modal), 트리거 옆에 붙어 살아 있는
+//! 콘텐츠 위에 뜨면 [`frame_card_popover`], **떠 있는 표면이 아니면**(창 셸 · pane
+//! 콘텐츠 · 다른 표면 안에 얹히는 섹션) [`frame_card_flat`]. 셋째 갈래를 안 두면
+//! 갤러리가 "Depth reads through surface tint" 라고 전시하면서 UI 표면에 모달 단차를
+//! 그리게 된다.
+//!
 //! 색·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
 //! (`scrim-bg` black 50% / `shadow-modal` black .55) 을 black-alpha 로 도출한다.
 //!
@@ -33,8 +41,10 @@ const FRAME_CARD_W: LogicalPx = LogicalPx(240.0);
 /// 내부 콘텐츠는 region/hsep/field 로 채운다. item_spacing 은 0 으로 둔다
 /// (각 region 이 자체 패딩을 가짐).
 ///
-/// anchored + scrim-less 표면(tools menu · search bar)은 이것이 아니라
-/// [`frame_card_popover`] 를 쓴다 — SCOPE RULE(ADR-0254).
+/// **뷰포트를 점유하는** 표면만 이것을 쓴다 — SCOPE RULE(ADR-0254). anchored +
+/// scrim-less 표면(tools menu · search bar · rail category · 드롭다운)은
+/// [`frame_card_popover`], 떠 있는 표면이 아닌 것(창 셸 · pane 콘텐츠 · 다른 표면
+/// 안에 얹히는 섹션)은 [`frame_card_flat`].
 pub fn frame_card(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -42,7 +52,7 @@ pub fn frame_card(
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    frame_card_with_shadow(ui, theme, width, fill, theme.shadow_modal(), add);
+    frame_card_with_shadow(ui, theme, width, fill, Some(theme.shadow_modal()), add);
 }
 
 /// [`frame_card`] 의 popover 변형 — 같은 셸에 **popover** shadow. 트리거 옆에 붙어
@@ -54,7 +64,24 @@ pub fn frame_card_popover(
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    frame_card_with_shadow(ui, theme, width, fill, theme.shadow_popover(), add);
+    frame_card_with_shadow(ui, theme, width, fill, Some(theme.shadow_popover()), add);
+}
+
+/// [`frame_card`] 의 **그림자 없는** 변형 — 같은 셸(fill + 1px border-strong + radius)에
+/// lift 를 안 얹는다. SCOPE RULE(ADR-0254)의 세 번째 갈래로, 본체에서 **떠 있는 표면이
+/// 아닌 것**이 쓴다: 별도 창의 셸(Settings), pane 콘텐츠(image surface), 그리고 다른
+/// 표면 안에 얹혀 있는 것을 갤러리가 따로 떼어 보이는 섹션·서브탭 콘텐츠.
+///
+/// 이 갈래가 없으면 갤러리가 Foundations 에서 "Depth reads through surface tint" 라고
+/// 전시하면서 정작 UI 표면 카드에 모달 단차를 그린다 — 전시와 실제가 갈린다.
+pub fn frame_card_flat(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    fill: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    frame_card_with_shadow(ui, theme, width, fill, None, add);
 }
 
 fn frame_card_with_shadow(
@@ -62,30 +89,32 @@ fn frame_card_with_shadow(
     theme: &Theme,
     width: LogicalPx,
     fill: egui::Color32,
-    shadow: tasty_type_appearance::theme::ShadowToken,
+    shadow: Option<tasty_type_appearance::theme::ShadowToken>,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    egui::Frame::new()
+    let mut frame = egui::Frame::new()
         .fill(fill)
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
             theme.border_strong().to_egui(),
         ))
-        .corner_radius(theme.corner_radius.value())
-        .shadow(shadow.to_egui())
-        .show(ui, |ui| {
-            // 부모 stage 가 `horizontal_wrapped`(`StageVariant::Wrap`) 여도 모달
-            // 콘텐츠는 항상 세로(top_down)로 적층 + 폭을 `width` 로 bound 한다.
-            // `Frame::show` 의 콘텐츠 ui 는 부모 레이아웃을 상속하므로, 명시적
-            // vertical child 없이는 region 들이 가로 흐름에 얹혀 본문이 글자당
-            // 줄바꿈으로 붕괴한다 (scrim_backdrop 의 top_down child 와 동일 원리).
+        .corner_radius(theme.corner_radius.value());
+    if let Some(shadow) = shadow {
+        frame = frame.shadow(shadow.to_egui());
+    }
+    frame.show(ui, |ui| {
+        // 부모 stage 가 `horizontal_wrapped`(`StageVariant::Wrap`) 여도 모달
+        // 콘텐츠는 항상 세로(top_down)로 적층 + 폭을 `width` 로 bound 한다.
+        // `Frame::show` 의 콘텐츠 ui 는 부모 레이아웃을 상속하므로, 명시적
+        // vertical child 없이는 region 들이 가로 흐름에 얹혀 본문이 글자당
+        // 줄바꿈으로 붕괴한다 (scrim_backdrop 의 top_down child 와 동일 원리).
+        ui.set_width(width.value());
+        ui.vertical(|ui| {
             ui.set_width(width.value());
-            ui.vertical(|ui| {
-                ui.set_width(width.value());
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                add(ui);
-            });
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            add(ui);
         });
+    });
 }
 
 /// 인라인 글리프 — `size` 정사각 영역을 할당해 `color` tint 로 그린다.

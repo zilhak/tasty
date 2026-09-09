@@ -9,7 +9,8 @@
 //! 본체(`view/settings/ui/tabs/misc.rs`)가 소유하고, 여기서는 갤러리 프레임과 동일하게
 //! **헤더 + 목록(bound/unbound/changed) 또는 빈 상태**만 전사한다.
 //!
-//! 토큰: 프레임 `bg-panel`/`border-strong`/`radius`/shadow(모달), 행 하단 `separator`,
+//! 토큰: 프레임 `bg-panel`/`border-strong`/`radius`(그림자 없음 — Settings 창 안의
+//! 콘텐츠 패널이라 SCOPE RULE 의 세 번째 갈래다), 행 하단 `separator`,
 //! name `font-size-body`(13)/semibold `text-primary`, path mono `font-size-term-sm`(12)
 //! dir=`text-muted`·file=`text-secondary`, changed 배지 `accent-warning` color-mix,
 //! Unbound `text-disabled`, help `font-size-caption`(11) `accent-warning`.
@@ -89,7 +90,10 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
     let width = LogicalPx(ui.available_width()).min(FRAME_MAX_W);
     spec::stage(ui, theme, StageVariant::Column, |ui| {
-        kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
+        // Settings › Misc › Scripts 의 **콘텐츠 프레임**이다(본체
+        // `view/settings/ui/tabs/misc.rs`) — 떠 있는 표면이 아니라 창 셸에 얹힌
+        // 패널이라 lift 가 없다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, width, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
                 header(ui, theme);
@@ -332,7 +336,7 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "≤560 · bg-panel · 1px border-strong · shadow"),
+            ("frame", "≤560 · bg-panel · 1px border-strong · no shadow"),
             (
                 "header",
                 "title font-size-max semibold + muted desc · Add script (secondary sm)",

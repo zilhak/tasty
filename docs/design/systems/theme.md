@@ -211,6 +211,8 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 - **modal** — 호스트 popup 셸(`src/adapters/ui/popup/draw.rs`), plugin popup 셸(`src/plugin_bridge/popup_render.rs`), 부팅 셸 설정 다이얼로그(`src/gfx/gpu/shell_setup.rs`).
 - **없음** — 알림 패널(타이틀바를 갖고 사용자가 옮기는 창처럼 동작해 두 형태 어디에도 안 들어간다).
 
+갤러리도 같은 세 갈래를 노출한다 — 공유 셸 키트(`crates/tasty-gallery/src/catalog/widgets/dialog.rs`)의 `frame_card`(modal) / `frame_card_popover` / `frame_card_flat`(없음). 갈래는 셸이 아니라 **호출부가 본체에서 무엇인가**가 정하므로, 창 셸(Settings)·pane 콘텐츠(image surface)·다른 표면 안에 얹히는 섹션은 `frame_card_flat` 을 쓴다. 그래야 Foundations 의 elevation 전시("UI 표면의 깊이는 tint 로 읽는다")와 카드의 실제가 갈리지 않는다.
+
 값을 새로 만들지 않고 이 둘만 쓴다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다. 이 규칙은 `crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)가 소스 스캔으로 집행한다 — 값의 **출처**는 집행하지만 어느 표면이 어느 값을 쓰는가는 집행하지 않는다(표면의 형태를 소스에서 읽을 방법이 없다).
 
 `ShadowToken.spread` 는 음수를 **표현**하지만(CSS `box-shadow` 와 같은 의미) 그것을 쓰는 표면은 **미구현으로 둔다** — egui 가 음수를 못 담아 `to_egui()` 가 debug 단언으로 터진다. 근거·대안은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md).

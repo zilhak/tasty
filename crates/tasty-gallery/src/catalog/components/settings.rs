@@ -136,7 +136,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         .max(theme.measure_sm);
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // Settings 는 별도 창(`SettingsView`)이라 살아 있는 콘텐츠 위에 뜨지도,
+        // 터미널 뷰포트를 점유하지도 않는다 — 본체 `src/view/settings/` 도 그림자를
+        // 그리지 않는다. SCOPE RULE(ADR-0254)의 세 번째 갈래.
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);
             ui.horizontal_top(|ui| {

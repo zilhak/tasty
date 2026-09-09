@@ -22,7 +22,11 @@ fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
 
 // ── elevation (surface ramp) ────────────────────────────────────────────────
 
-/// Spec "Depth reads through surface tint, never shadow".
+/// Spec "Depth reads through surface tint; shadow is for floating surfaces only".
+///
+/// UI 표면(ramp)에는 lift 가 없다. 그림자는 떠 있는 표면만 받고 그것도 두 값으로
+/// 갈린다 — SCOPE RULE(ADR-0254): 뷰포트를 점유하면 modal, anchored + scrim-less 면
+/// popover, 둘 어디에도 안 들어가면 없음.
 pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
         ui.scope(|ui| {
@@ -54,7 +58,7 @@ pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("ramp", "crust → … → surface2"),
             ("border", "1px border-default"),
-            ("shadow", "none (UI surfaces)"),
+            ("shadow", "none — floating surfaces only (popover / modal)"),
             ("stack width", "measure-sm 300"),
         ],
         &[

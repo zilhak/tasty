@@ -91,7 +91,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 /// surface = control bar + canvas. `loaded`=true 면 그림, false 면 fallback.
 fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
-    kit::frame_card(ui, theme, PANE_W, kit::panel_fill(theme), |ui| {
+    // image surface 는 pane 안에 사는 콘텐츠지 떠 있는 표면이 아니다 — 본체
+    // (`tasty-plugin-image`)도 셸 그림자를 그리지 않는다. SCOPE RULE(ADR-0254)의
+    // 세 번째 갈래.
+    kit::frame_card_flat(ui, theme, PANE_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();
         let pad = theme.spacing_sm;
         let bar_h = BTN_H + pad.scaled(2.0);

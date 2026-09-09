@@ -268,7 +268,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 닫힘(미적용) 버튼 — surface-raised + border.
         funnel_button(ui, theme, "State", false);
         // 열린 드롭다운 카드(min-width 216).
-        kit::frame_card(ui, theme, LogicalPx(216.0), kit::panel_fill(theme), |ui| {
+        // 열린 드롭다운은 funnel 버튼 옆에 붙어 살아 있는 콘텐츠 위에 뜬다
+        // (anchored + scrim-less) — SCOPE RULE(ADR-0254) 상 popover.
+        kit::frame_card_popover(ui, theme, LogicalPx(216.0), kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                 kit::caption(ui, theme, "Filter by state", true);
                 ui.add_space(theme.spacing_xs.value());
@@ -303,7 +305,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     // 관례). 위 모달의 "즐겨찾기 1개 이상"(혼합 상태) 시연과 별개로 gallery-first
     // 정책에 따라 노출한다.
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        // 이 카드는 위 모달의 **한 섹션**을 떼어 보이는 것이다 — 그 자체로 떠 있는
+        // 표면이 아니므로 모달 단차를 겹쳐 그리지 않는다(ADR-0254 세 번째 갈래).
+        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             draw_favorites_section(ui, theme, &[]);
         });
     });
