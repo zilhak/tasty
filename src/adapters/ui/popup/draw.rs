@@ -10,6 +10,39 @@ use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
 /// 리사이즈 테두리 밴드 폭(px). popup_rect 가장자리 안쪽 이 폭 안에서 누르면 리사이즈.
 const RESIZE_BAND: LogicalPx = LogicalPx(6.0);
 
+/// **anchored + scrim-less** popup — 트리거 위젯 옆에 붙어 살아 있는 콘텐츠 위에 뜬다.
+/// 여는 쪽이 트리거 rect 로 좌표를 계산해 `OpenPopupMode::AtFocused`/`AtTopOfScope` 로
+/// 연다(`sidebar/tools.rs` · `sidebar/collapsed.rs` · `mouse_capture_menu.rs` ·
+/// `input/shortcuts/dispatch.rs`). SCOPE RULE(ADR-0254) 상 `shadow_popover()`.
+///
+/// 명부로 적는 이유: `PopupDef` 에는 anchored/centered 를 담는 필드가 없다 — 위치는
+/// 정의가 아니라 **여는 시점**의 `OpenPopupMode` 가 정하므로 정적으로 읽을 값이 없다.
+const ANCHORED_POPUPS: &[PopupId] = &[
+    "tools_menu",
+    "search_bar",
+    super::rail_category::RAIL_CATEGORY_POPUP_ID,
+    crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
+];
+
+/// 두 갈래 **어디에도** 안 들어가는 떠 있는 표면 — 그림자를 그리지 않는다(ADR-0254 의
+/// 세 번째 갈래). 알림 패널은 타이틀바를 갖고 사용자가 옮기는 창처럼 동작한다:
+/// 트리거에 붙지도(anchored) 뷰포트를 점유하지도(centered) 않아 둘 중 하나를 고를
+/// 근거가 없다.
+const SHADOWLESS_POPUPS: &[PopupId] = &["notifications"];
+
+/// 이 popup 이 그릴 lift 그림자. SCOPE RULE(ADR-0254)의 세 갈래를 popup id 로 판정한다 —
+/// anchored + scrim-less → popover, 나머지 centered 표면 → modal, 둘 다 아니면 없음.
+fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::ShadowToken> {
+    let th = theme::theme();
+    if SHADOWLESS_POPUPS.contains(&popup_id) {
+        None
+    } else if ANCHORED_POPUPS.contains(&popup_id) {
+        Some(th.shadow_popover())
+    } else {
+        Some(th.shadow_modal())
+    }
+}
+
 /// 포인터가 rect 의 어느 테두리 밴드에 있는지 판정. 어느 엣지에도 안 닿으면 None.
 ///
 /// `band` 가 `LogicalPx` 가 아닌 이유: 본문이 전부 egui `Rect`/`Pos2` 산술이라, 타입을
@@ -427,6 +460,16 @@ impl PopupManager {
                 | super::transfer::TRANSFER_ERROR_POPUP_ID => th.bg_panel().into(),
                 _ => th.surface_raised().into(),
             };
+            // 배경보다 먼저 — 그림자는 셸 **아래**에 깔린다. scrim 이 이미 그려졌다면
+            // 그 위에 온다: scrim 은 바닥을 균일하게 어둡게 할 뿐 엣지를 안 그려서,
+            // 어두운 테마에서 모달 실루엣을 세우는 것은 이 단차다(ADR-0254).
+            if let Some(shadow) = popup_shadow(popup_id) {
+                painter.add(
+                    shadow
+                        .to_egui()
+                        .as_shape(popup_rect, th.corner_radius.value()),
+                );
+            }
             painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
             painter.rect_stroke(
                 popup_rect,

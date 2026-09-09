@@ -229,6 +229,15 @@ pub fn draw_plugin_popups(
         let painter = ctx.layer_painter(layer_id);
         let th = crate::theme::theme();
         painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
+        // plugin popup 은 예외 없이 scrim 을 깔고 뷰포트를 점유한다 = SCOPE RULE 의
+        // modal 갈래(ADR-0254). scrim 은 바닥을 어둡게 할 뿐 엣지를 안 그려서, 이 단차가
+        // 없으면 어두운 테마에서 셸 실루엣이 어두워진 바닥에 묻힌다. 배경보다 먼저 —
+        // 그림자는 셸 아래에 깔린다.
+        painter.add(
+            th.shadow_modal()
+                .to_egui()
+                .as_shape(rect, th.corner_radius.value()),
+        );
         paint_shell_background_excluding_content(
             &painter,
             rect,
