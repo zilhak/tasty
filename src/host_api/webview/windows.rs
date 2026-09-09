@@ -254,6 +254,7 @@ impl PlatformWebView {
             let mut tok_start: i64 = 0;
             let h_start = NavigationStartingEventHandler::create(Box::new(
                 move |_sender, args| -> windows::core::Result<()> {
+                    tracing::debug!("WebView surface {surface_id}: load started");
                     nav_start.set(NavState::Loading);
                     // navigation 시도 URL 캡처 — 아래 원격 차단(WebResourceRequested)과
                     // 독립적으로, 차단 여부와 무관하게 항상 기록한다.
@@ -282,6 +283,7 @@ impl PlatformWebView {
                     let mut is_success = BOOL(0);
                     args.IsSuccess(&mut is_success)?;
                     if is_success.as_bool() {
+                        tracing::debug!("WebView surface {surface_id}: load finished");
                         nav_done.set(NavState::Done);
                     } else {
                         let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
@@ -289,7 +291,9 @@ impl PlatformWebView {
                             tracing::warn!("WebView2 WebErrorStatus query failed: {e}");
                         }
                         // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
-                        tracing::warn!("WebView2 navigation failed: status={status:?}");
+                        tracing::warn!(
+                            "WebView surface {surface_id}: WebView2 navigation failed: status={status:?}"
+                        );
                         nav_done.set(NavState::Failed);
                     }
                     Ok(())

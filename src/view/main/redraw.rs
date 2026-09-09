@@ -23,6 +23,28 @@ pub(crate) const MAX_WEBVIEW_CREATE_ATTEMPTS: u32 = 8;
 /// 안 낳는데 아래 유닛 테스트는 둘 다 초록이다. 그래서 컴파일 타임에 막는다.
 const _: () = assert!(MAX_WEBVIEW_CREATE_ATTEMPTS > 1);
 
+/// reveal 게이트에 걸린 상태가 이만큼 이어지면 그 사실을 한 번 로그로 남긴다.
+/// 값 자체는 "정상 로드가 끝나기에 충분히 길다" 는 것 말고 다른 의미가 없다 —
+/// 이 상한이 하는 일은 화면이 빈 채로 남은 것을 로그에서 알아볼 수 있게 하는 것뿐이고,
+/// 넘겼다고 해서 로드를 끊거나 상태를 강등하지 않는다.
+pub(crate) const REVEAL_PENDING_WARN_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 진단 로그에 남길 URL 의 **종류와 크기**. 원문은 남기지 않는다 — markdown 처럼
+/// 문서 전체를 raw HTML 로 싣는 kind 가 있어 로그가 문서만큼 커진다.
+fn describe_webview_url(url: Option<&String>) -> String {
+    let Some(url) = url else {
+        return "none".to_string();
+    };
+    let kind = if url.starts_with("file://") {
+        "file"
+    } else if url.starts_with("http://") || url.starts_with("https://") {
+        "http"
+    } else {
+        "raw-html"
+    };
+    format!("{kind} {} bytes", url.len())
+}
+
 /// 이 surface 를 또 시도할 것인가.
 pub(crate) fn should_attempt_webview(attempts: u32) -> bool {
     attempts < MAX_WEBVIEW_CREATE_ATTEMPTS
@@ -608,6 +630,13 @@ impl MainView {
                     self.webview_key_bridge.clone(),
                 ) {
                     Ok(wv) => {
+                        let bounds = active_html.get(&sid);
+                        tracing::debug!(
+                            "WebView surface {sid}: created (visible={}, bounds={:?}, url={})",
+                            bounds.is_some(),
+                            bounds,
+                            describe_webview_url(url.as_ref())
+                        );
                         if let Some(url) = &url {
                             if url.starts_with("file://")
                                 || url.starts_with("http://")
@@ -618,6 +647,13 @@ impl MainView {
                                 wv.load_html(url);
                             }
                             self.webview_loaded_urls.insert(sid, url.clone());
+                        } else {
+                            // 수집 단계(`collect_html_surfaces`)가 URL 이 있는 surface 만
+                            // 담으므로 여기까지 와서 None 이면 그 사이에 사라진 것이다.
+                            // 로드가 없으니 nav 는 Idle 에 머물고 화면은 비어 보인다.
+                            tracing::warn!(
+                                "WebView surface {sid}: created without a URL; nothing will be loaded"
+                            );
                         }
                         // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
                         settings.apply(&wv);
@@ -673,6 +709,34 @@ impl MainView {
                 err
             );
         }
+    }
+
+    /// reveal 게이트에 걸린 surface 를 추적해, 그 상태가
+    /// [`REVEAL_PENDING_WARN_AFTER`] 를 넘겨 이어지면 surface 당 **한 번** 경고한다.
+    ///
+    /// 이 함수는 아무것도 고치지 않는다 — 상태를 강등하거나 재로드를 부르지 않는다.
+    /// 하는 일은 "화면 그 자리가 비어 있다" 는 사실을 로그에 남기는 것뿐이다: 생성도
+    /// 로드 발사도 성공한 뒤 navigation 이 끝나지 않는 경로는 지금 어떤 실패 줄도
+    /// 남기지 않아, 증상이 육안으로만 관측된다.
+    fn note_reveal_pending(&mut self, pending: &[(u32, crate::webview::NavState)]) {
+        let now = std::time::Instant::now();
+        for &(sid, nav) in pending {
+            let entry = self
+                .webview_reveal_pending
+                .entry(sid)
+                .or_insert((now, false));
+            if !entry.1 && now.duration_since(entry.0) >= REVEAL_PENDING_WARN_AFTER {
+                entry.1 = true;
+                tracing::warn!(
+                    "WebView surface {sid}: still hidden {:?} after it became visible \
+                     (nav_state={nav:?}); the pane shows host chrome, not the page",
+                    REVEAL_PENDING_WARN_AFTER
+                );
+            }
+        }
+        // 드러났거나 사라진 surface 는 추적에서 뺀다 — 다시 보류되면 시계가 새로 시작한다.
+        self.webview_reveal_pending
+            .retain(|sid, _| pending.iter().any(|(p, _)| p == sid));
     }
 
     fn resync_webview_urls(&mut self, all_html_ids: &[u32]) {
@@ -763,17 +827,24 @@ impl MainView {
         // Idle 이면 native overlay 를 숨겨 그 자리에 egui chrome(spinner/error/placeholder)이
         // 보이게 한다(S-W3 가 지적한 "loading 중 overlay 가 spinner 를 덮는" 문제 해소).
         let mut any_visible = false;
+        let mut reveal_pending: Vec<(u32, crate::webview::NavState)> = Vec::new();
         for (sid, wv) in &self.webviews {
             // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
             if let Some(bounds) = active_html.get(sid) {
                 wv.set_bounds(*bounds, scale_factor);
             }
-            let reveal = !overlay_open
-                && active_html.contains_key(sid)
-                && wv.nav_state() == crate::webview::NavState::Done;
+            let nav = wv.nav_state();
+            // 드러나야 할 자리에 있는데(활성 tab · overlay 없음) nav 가 Done 이 아니면
+            // 그 프레임의 그 surface 는 "만들어졌지만 안 보이는" 상태다.
+            let wants_reveal = !overlay_open && active_html.contains_key(sid);
+            let reveal = wants_reveal && nav == crate::webview::NavState::Done;
+            if wants_reveal && !reveal {
+                reveal_pending.push((*sid, nav));
+            }
             wv.set_visible(reveal);
             any_visible |= reveal;
         }
+        self.note_reveal_pending(&reveal_pending);
         // 키 폴링 tick 의 게이트(`app::webview_keys`) — 드러난 webview 가 없으면
         // 키가 그리로 갈 수 없으므로 폴링을 세우지 않는다.
         self.webview_any_visible = any_visible;

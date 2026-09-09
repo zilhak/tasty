@@ -67,6 +67,20 @@ cargo build --release && ./target/release/tasty
 cat ~/.tasty/debug.log             # 직전 host 실행의 warn 이상 로그
 ```
 
+### webview surface 가 비어 보일 때
+
+markdown / html surface 는 mesh 를 그리지 않고 native webview overlay 로만 보인다. 그 자리가 비면(검은 사각형, 또는 host chrome 만) 어느 단계에서 멈췄는지는 다음 줄들로 가른다.
+
+| 단계 | 남는 곳 | 레벨 |
+|------|---------|------|
+| plugin 이 HTML 을 실었는가 | `plugins-logs/<plugin id>.log` — `markdown surface <id>: loaded N bytes of HTML` · 실패 시 `webview.set_url failed` / `no document registered` / `theme unavailable` | info / warn |
+| host 가 그 URL 을 받았는가 | 호스트 로그 — `webview.set_url: surface <id> not found ...` / `... is not a webview-enabled RemoteSurface` (성공 시 조용) | warn |
+| native webview 가 만들어졌는가 | 호스트 로그 — `WebView surface <id>: created (visible=…, bounds=…, url=…)` · 실패 시 `Failed to create WebView for surface <id>` / `Giving up on the WebView ...` | debug / warn |
+| 페이지가 로드됐는가 | 호스트 로그 — `WebView surface <id>: load started` / `load finished`, 실패 시 각 백엔드의 navigation failed 줄, Linux 는 `WebKit web process terminated` 도 | debug / warn |
+| 로드는 끝났는데 안 보이는가 | 호스트 로그 — `WebView surface <id>: still hidden ... (nav_state=…)`, 그리고 Linux 에서 부모 창 밖에 그려지는 경우 `GTK window realized without a GDK window` | warn |
+
+성공 줄이 `debug` 라 **release 파일 로그(`warn` 이상)에는 실패·보류 줄만 남는다.** 단계별 성공까지 보려면 dev 빌드(`debug-dev.log`)나 `TASTY_LOG=debug` 로 stderr 를 받는다.
+
 ## 에러 루프 자동 감지 (dev 전용)
 
 dev 빌드는 **`ErrorLoopDetector`** 를 가진다 — 같은 에러 메시지가 **1초 내 100회 이상** 반복되면 의도적으로 panic 을 발생시켜 crash report 로 떨군다. 무한 에러 루프(GPU 재시도 폭주 등)를 영원히 도는 대신 즉시 멈춰 흔적을 남기기 위함.

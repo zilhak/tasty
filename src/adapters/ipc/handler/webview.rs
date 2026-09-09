@@ -51,6 +51,11 @@ pub fn handle_set_url(
                         rs.set_webview_url(Some(url));
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
+                    // plugin 쪽에도 에러가 돌아가지만 그 줄은 plugin 로그에만 남는다.
+                    // 화면이 비는 증상을 host 로그만으로 가를 수 있게 여기서도 남긴다.
+                    tracing::warn!(
+                        "webview.set_url: surface {sid} is not a webview-enabled RemoteSurface"
+                    );
                     return JsonRpcResponse::error(
                         id,
                         -32000,
@@ -60,6 +65,7 @@ pub fn handle_set_url(
             }
         }
     }
+    tracing::warn!("webview.set_url: surface {sid} not found in any workspace layout");
     JsonRpcResponse::error(id, -32000, "surface_id not found")
 }
 

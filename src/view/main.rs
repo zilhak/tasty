@@ -109,6 +109,12 @@ pub struct MainView {
     /// 안 끝난다(실측: 10 초에 27477 회). 상한은
     /// `redraw::MAX_WEBVIEW_CREATE_ATTEMPTS`, 영구 실패는 한 번에 상한으로 올린다.
     pub(crate) webview_create_attempts: std::collections::HashMap<u32, u32>,
+    /// reveal 게이트(`nav_state == Done`)에 걸려 아직 화면에 드러나지 못한 surface 마다
+    /// (처음 그렇게 관측한 시각, 이미 경고했는지). 값이 오래 유지되면 "만들어졌는데
+    /// 안 보인다" 는 증상이므로 surface 당 한 번 로그를 남긴다 —
+    /// `redraw::REVEAL_PENDING_WARN_AFTER`. 판정만 하고 강등·재시도 같은 동작 변경은
+    /// 하지 않는다(큰 문서가 정당하게 오래 걸릴 수 있다).
+    pub(crate) webview_reveal_pending: std::collections::HashMap<u32, (std::time::Instant, bool)>,
     /// 이 창의 모든 native webview 가 공유하는 키/포커스 브리지. webview 는 OS
     /// 자식 창이라 자기가 키보드 포커스를 잡으면 winit `KeyboardInput` 이 끊긴다 —
     /// 백엔드가 이 브리지에 키를 올리고 host 가 매 프레임 비운다
@@ -241,6 +247,7 @@ impl MainView {
             webview_applied_settings: std::collections::HashMap::new(),
             webview_loaded_urls: std::collections::HashMap::new(),
             webview_create_attempts: std::collections::HashMap::new(),
+            webview_reveal_pending: std::collections::HashMap::new(),
             webview_key_bridge: std::rc::Rc::new(crate::webview::WebViewKeyBridge::new()),
             webview_overlay_focus_released: false,
             webview_any_visible: false,

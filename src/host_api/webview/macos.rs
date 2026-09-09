@@ -24,6 +24,8 @@ use super::{NavState, WebViewBounds};
 
 /// `NavDelegate` 의 ivar — host 와 공유하는 navigation 상태 셀.
 struct NavDelegateIvars {
+    /// 진단 로그가 어느 surface 의 navigation 인지 밝히기 위한 소유 surface ID.
+    surface_id: u32,
     nav_state: Rc<Cell<NavState>>,
     /// decidePolicyForNavigationAction 이 캡처한, 아직 host 에 통지되지 않은 navigation
     /// 시도 URL 큐(도착 순서 보존). host `sync_webviews` 가 매 프레임
@@ -50,11 +52,15 @@ define_class!(
     unsafe impl WKNavigationDelegate for NavDelegate {
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
         fn did_start_provisional(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+            let sid = self.ivars().surface_id;
+            tracing::debug!("WebView surface {sid}: load started");
             self.ivars().nav_state.set(NavState::Loading);
         }
 
         #[unsafe(method(webView:didFinishNavigation:))]
         fn did_finish(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+            let sid = self.ivars().surface_id;
+            tracing::debug!("WebView surface {sid}: load finished");
             self.ivars().nav_state.set(NavState::Done);
         }
 
@@ -67,7 +73,8 @@ define_class!(
         ) {
             // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
             tracing::warn!(
-                "WKWebView navigation failed: {}",
+                "WebView surface {}: WKWebView navigation failed: {}",
+                self.ivars().surface_id,
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
@@ -81,7 +88,8 @@ define_class!(
             error: &NSError,
         ) {
             tracing::warn!(
-                "WKWebView provisional navigation failed: {}",
+                "WebView surface {}: WKWebView provisional navigation failed: {}",
+                self.ivars().surface_id,
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
@@ -123,10 +131,12 @@ impl NavDelegate {
     /// 인스턴스를 만든다.
     fn new(
         mtm: MainThreadMarker,
+        surface_id: u32,
         nav_state: Rc<Cell<NavState>>,
         pending_navigations: Rc<RefCell<Vec<String>>>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(NavDelegateIvars {
+            surface_id,
             nav_state,
             pending_navigations,
         });
@@ -354,8 +364,12 @@ impl PlatformWebView {
             // WKWebView 가 weak 참조하므로 Retained 를 struct 필드(_nav_delegate)로 보관.
             let nav_state = Rc::new(Cell::new(NavState::Idle));
             let pending_navigations: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-            let nav_delegate =
-                NavDelegate::new(mtm, nav_state.clone(), pending_navigations.clone());
+            let nav_delegate = NavDelegate::new(
+                mtm,
+                surface_id,
+                nav_state.clone(),
+                pending_navigations.clone(),
+            );
             let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
             webview.setNavigationDelegate(Some(nav_proto));
 

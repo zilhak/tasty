@@ -342,9 +342,19 @@ impl PlatformWebView {
         let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);
         let gdk_win_clone = gdk_window.clone();
         gtk_window.connect_realize(move |w| {
-            w.window().map(|_| {
-                w.set_window(gdk_win_clone.clone());
-            });
+            // realize 됐는데 GDK 창이 없으면 부모 안의 foreign 창으로 바꿔칠 자리가
+            // 없다. 그냥 건너뛰면 WebKit 은 GTK 가 스스로 만든 **별개 toplevel** 에
+            // 그리고, 부모 안에 만들어 map 해둔 X 자식 창은 배경 픽셀(검정)만 남긴다.
+            // navigation 은 그래도 정상 완료하므로 다른 어떤 진단 줄도 남지 않는다 —
+            // 화면만 비어 보이는 상태의 유일한 흔적이 이 줄이다.
+            if w.window().is_none() {
+                tracing::warn!(
+                    "WebView surface {surface_id}: GTK window realized without a GDK window; \
+                     the page will render outside the parent window"
+                );
+                return;
+            }
+            w.set_window(gdk_win_clone.clone());
         });
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -410,13 +420,28 @@ impl PlatformWebView {
         {
             let nav = nav_state.clone();
             webview.connect_load_changed(move |_wv, event| match event {
-                LoadEvent::Started => nav.set(NavState::Loading),
+                LoadEvent::Started => {
+                    tracing::debug!("WebView surface {surface_id}: load started");
+                    nav.set(NavState::Loading);
+                }
                 LoadEvent::Finished => {
                     if nav.get() != NavState::Failed {
+                        tracing::debug!("WebView surface {surface_id}: load finished");
                         nav.set(NavState::Done);
                     }
                 }
                 _ => {} // Redirected / Committed 은 무시
+            });
+        }
+        {
+            // web process 가 죽으면 load-failed 도 load-changed 도 오지 않는다 — nav 는
+            // Loading 에 굳고 reveal 게이트가 영영 안 열린다. 그 사실이 남는 유일한 줄이다.
+            let nav = nav_state.clone();
+            webview.connect_web_process_terminated(move |_wv, reason| {
+                tracing::warn!(
+                    "WebView surface {surface_id}: WebKit web process terminated ({reason:?})"
+                );
+                nav.set(NavState::Failed);
             });
         }
         {
