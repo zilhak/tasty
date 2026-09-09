@@ -637,24 +637,7 @@ impl MainView {
                             bounds,
                             describe_webview_url(url.as_ref())
                         );
-                        if let Some(url) = &url {
-                            if url.starts_with("file://")
-                                || url.starts_with("http://")
-                                || url.starts_with("https://")
-                            {
-                                wv.load_url(url);
-                            } else {
-                                wv.load_html(url);
-                            }
-                            self.webview_loaded_urls.insert(sid, url.clone());
-                        } else {
-                            // 수집 단계(`collect_html_surfaces`)가 URL 이 있는 surface 만
-                            // 담으므로 여기까지 와서 None 이면 그 사이에 사라진 것이다.
-                            // 로드가 없으니 nav 는 Idle 에 머물고 화면은 비어 보인다.
-                            tracing::warn!(
-                                "WebView surface {sid}: created without a URL; nothing will be loaded"
-                            );
-                        }
+                        self.load_initial_url(sid, &wv, url.as_ref());
                         // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
                         settings.apply(&wv);
                         // Start hidden if not active
@@ -709,6 +692,33 @@ impl MainView {
                 err
             );
         }
+    }
+
+    /// 갓 만든 webview 에 첫 URL 을 싣는다. scheme 이 있으면 그대로 열고, 없으면 raw
+    /// HTML 로 다룬다(markdown 처럼 문서 전체를 문자열로 싣는 kind 가 이 갈래다).
+    ///
+    /// 이 갈래들을 `create_missing_webviews` 에서 떼어낸 것은 그 함수가 이미 예산 판정과
+    /// 생성 실패 분기를 안고 있어, 로드까지 함께 두면 복잡도 게이트
+    /// (`clippy::cognitive_complexity`)를 넘기 때문이다.
+    fn load_initial_url(
+        &mut self,
+        sid: u32,
+        wv: &crate::webview::PlatformWebView,
+        url: Option<&String>,
+    ) {
+        let Some(url) = url else {
+            // 수집 단계(`collect_html_surfaces`)가 URL 이 있는 surface 만 담으므로
+            // 여기까지 와서 None 이면 그 사이에 사라진 것이다. 로드가 없으니 nav 는
+            // Idle 에 머물고 화면은 비어 보인다.
+            tracing::warn!("WebView surface {sid}: created without a URL; nothing will be loaded");
+            return;
+        };
+        if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
+            wv.load_url(url);
+        } else {
+            wv.load_html(url);
+        }
+        self.webview_loaded_urls.insert(sid, url.clone());
     }
 
     /// reveal 게이트에 걸린 surface 를 추적해, 그 상태가

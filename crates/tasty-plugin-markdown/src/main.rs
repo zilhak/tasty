@@ -537,13 +537,9 @@ impl MarkdownPlugin {
             );
             return;
         };
-        let Some(theme) = fetch_theme(host) else {
-            // 사유는 `fetch_theme` 이 이미 남겼다. 여기서는 그 결과가 렌더를 통째로
-            // 건너뛰게 했다는 사실을 남긴다 — 그러지 않으면 webview 가 빈 채로 남은
-            // 이유가 로그에서 이어지지 않는다.
-            tracing::warn!(
-                "markdown surface {surface_id}: theme unavailable — skipping webview load"
-            );
+        // 실패하면 렌더를 통째로 건너뛰어 webview 가 빈 채로 남는다. 그 사실과 사유는
+        // `fetch_theme` 이 surface 를 밝혀 남긴다 — 여기서 또 남기지 않는다.
+        let Some(theme) = fetch_theme(host, surface_id) else {
             return;
         };
         let recent = fetch_recent(host);
@@ -557,19 +553,7 @@ impl MarkdownPlugin {
             base_dir: doc.base_dir.as_deref(),
             recent: &recent,
         });
-        let html_len = html.len();
-        if let Err(e) = host.call(
-            "webview.set_url",
-            json!({ "surface_id": surface_id, "url": html }),
-        ) {
-            tracing::warn!("markdown surface {surface_id}: webview.set_url failed: {e}");
-        } else {
-            // file 이 없는 surface(빈 문서)는 `file=` 가 빈 채로 남는다 — 그것이 곧
-            // "경로 없이 열린 문서" 라는 표시다.
-            tracing::info!(
-                "markdown surface {surface_id}: loaded {html_len} bytes of HTML (file={file_path})"
-            );
-        }
+        push_html(host, surface_id, file_path, html);
     }
 
     /// 살아있는 모든 markdown 문서를 재렌더한다(`theme.changed` 수신 시).
@@ -1017,17 +1001,43 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
 /// surface 는 `surface.set_context` 를 받지 않아(egui-mesh 와 달리 host 가 mesh 프레임을
 /// 합성하지 않으므로) 이 조회가 유일한 Theme 획득 경로다. 실패하면 `None` — 호출자는
 /// 문서 재생성을 건너뛴다(다음 성공한 조회가 갱신할 때까지 이전 내용 유지).
-fn fetch_theme(host: &HostHandle) -> Option<Theme> {
+/// 렌더된 HTML 을 host webview 에 싣고 결과를 로그에 남긴다. `reload_webview` 에서
+/// 떼어낸 것은 그 함수의 조기 반환 갈래가 이미 여럿이라, 결과 분기까지 함께 두면
+/// 복잡도 게이트(`clippy::cognitive_complexity`)를 넘기 때문이다.
+fn push_html(host: &HostHandle, surface_id: u32, file_path: &str, html: String) {
+    let html_len = html.len();
+    if let Err(e) = host.call(
+        "webview.set_url",
+        json!({ "surface_id": surface_id, "url": html }),
+    ) {
+        tracing::warn!("markdown surface {surface_id}: webview.set_url failed: {e}");
+    } else {
+        // file 이 없는 surface(빈 문서)는 `file=` 가 빈 채로 남는다 — 그것이 곧
+        // "경로 없이 열린 문서" 라는 표시다.
+        tracing::info!(
+            "markdown surface {surface_id}: loaded {html_len} bytes of HTML (file={file_path})"
+        );
+    }
+}
+
+/// `surface_id` 는 로그 전용이다 — 실패하면 그 surface 의 webview 가 빈 채로 남으므로,
+/// 어느 자리가 비었는지 이 줄만으로 짚을 수 있어야 한다.
+fn fetch_theme(host: &HostHandle, surface_id: u32) -> Option<Theme> {
     match host.call("theme.query", json!({})) {
         Ok(v) => match serde_json::from_value::<ThemeWire>(v) {
             Ok(wire) => Some(theme_from_wire(&wire)),
             Err(e) => {
-                tracing::warn!("markdown: malformed theme.query response: {e}");
+                tracing::warn!(
+                    "markdown surface {surface_id}: malformed theme.query response: {e} — \
+                     skipping webview load"
+                );
                 None
             }
         },
         Err(e) => {
-            tracing::warn!("markdown: theme.query failed: {e}");
+            tracing::warn!(
+                "markdown surface {surface_id}: theme.query failed: {e} — skipping webview load"
+            );
             None
         }
     }
