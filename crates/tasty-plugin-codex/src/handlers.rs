@@ -795,9 +795,9 @@ pub(crate) fn handle_respawn(
 /// `UserPromptSubmit` / `SessionStart` 만 정상 처리한다. idle/active 신호를
 /// 호스트 registry(`terminal.set_state`)에 주입한다 — 자체 state 는 없다.
 ///
-/// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
-/// codex 의 wire schema 와 호환되어야 한다. 모든 필드가 optional 이므로 empty
-/// object 는 "no decision, continue normally" 의미.
+/// **반환값**: Tasty 내부 진단용 `host_call_failures`. CLI 가 이 값으로 실패를
+/// 기록한다. Codex wire schema 의 필드가 아니므로 [`hook_command`] 는 CLI stdout 을
+/// 버리고 "no decision, continue normally" 의미의 빈 객체 `{}` 만 Codex 에 보낸다.
 /// 호스트를 트레이트로 받는다 — 이 핸들러가 세는 수가 시험 가능해야 하기 때문이다.
 /// 같은 파일의 `handle_notify_caller` 는 이미 그 이음매를 갖고 있었고 이 자리만 구체
 /// 타입을 받고 있었다.
@@ -1014,6 +1014,9 @@ fn hook_command(event_kebab: &str) -> String {
     // TASTY_SURFACE_ID 가 비어있을 때 skip 하는 guard 포함. 가드 없으면 codex 가
     // 변수를 빈 문자열로 치환해 `tasty codex hook X --surface ` 가 실행되어
     // invalid_params 노이즈 발생.
+    // CLI 의 host_call_failures 는 Tasty 내부 진단값이지 Codex hook 응답이 아니다.
+    // CLI 가 로컬 실패 로그를 기록한 뒤 stdout 만 버리고 Codex 에는 {} 를 보낸다.
+    // stderr 는 유지해 실제 전달 오류를 JSON 오류로 덮지 않는다.
     //
     // Windows: codex 는 hook 명령을 PowerShell 로 실행한다(실측 2026-07-12 —
     // 단일따옴표/`#` 주석이 PS 규칙으로 해석되고 순수 PS 구문 명령이 성공).
@@ -1023,7 +1026,7 @@ fn hook_command(event_kebab: &str) -> String {
     #[cfg(windows)]
     {
         format!(
-            "if ($env:TASTY_SURFACE_ID) {{ $input | tasty codex hook {event_kebab} --surface $env:TASTY_SURFACE_ID }}"
+            "if ($env:TASTY_SURFACE_ID) {{ $input | tasty codex hook {event_kebab} --surface $env:TASTY_SURFACE_ID > $null; '{{}}' }}"
         )
     }
     // POSIX: 가드를 `if` 로 올려 "TASTY_SURFACE_ID 미설정" 과 "hook 명령 실패" 를
@@ -1037,7 +1040,7 @@ fn hook_command(event_kebab: &str) -> String {
     #[cfg(not(windows))]
     {
         format!(
-            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true; fi"
+            "if [ -n \"$TASTY_SURFACE_ID\" ]; then tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID > /dev/null || true; printf '{{}}\\n'; fi"
         )
     }
 }
@@ -1874,6 +1877,50 @@ command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook stop --surface $TAST
             "stderr 무소음: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+
+    /// Codex receives a no-decision response, while the CLI still receives the
+    /// event, surface and stdin payload and can report diagnostics on stderr.
+    #[cfg(unix)]
+    #[test]
+    fn posix_hook_output_is_codex_json_even_when_delivery_fails() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        for (_, event, _) in HOOK_EVENTS {
+            for exit_code in [0, 1] {
+                let script = format!(
+                    r#"tasty() {{
+    [ "$*" = "codex hook {event} --surface 42" ] || exit 91
+    IFS= read -r payload
+    [ "$payload" = '{{"session_id":"test-session"}}' ] || exit 92
+    printf '{{"host_call_failures":2}}\n'
+    printf 'delivery diagnostic\n' >&2
+    return {exit_code}
+}}
+{}"#,
+                    hook_command(event)
+                );
+                let mut child = Command::new("/bin/sh")
+                    .args(["-c", &script])
+                    .env("TASTY_SURFACE_ID", "42")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("/bin/sh");
+                child
+                    .stdin
+                    .take()
+                    .unwrap()
+                    .write_all(b"{\"session_id\":\"test-session\"}\n")
+                    .unwrap();
+                let out = child.wait_with_output().unwrap();
+                assert!(out.status.success(), "{event}, exit={exit_code}: {out:?}");
+                assert_eq!(out.stdout, b"{}\n", "{event}, exit={exit_code}");
+                assert_eq!(out.stderr, b"delivery diagnostic\n");
+            }
+        }
     }
 
     #[test]

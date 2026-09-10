@@ -15,6 +15,7 @@ tasty codex install     # ~/.codex/config.toml 의 [hooks] 에 Tasty 항목 추�
 
 - 이미 직접 넣어 둔 훅은 그대로 보존됩니다. 여러 번 실행해도 중복되지 않습니다.
 - **Tasty 를 업데이트한 뒤에는 다시 실행합니다.** 훅 명령 문자열은 설정 파일에 저장되므로 새 형식을 반영하려면 재설치가 필요합니다.
+- Codex에서 `hook returned invalid ... JSON output` 오류가 뜨면 업데이트 후 `tasty codex install`을 다시 실행하세요. Tasty의 상태 전달 결과가 Codex의 훅 응답에 섞이지 않도록 설정됩니다.
 - Tasty 밖에서 Claude Code를 실행하면 이 훅은 동작하지 않습니다.
 - 제거는 `tasty claude uninstall` / `tasty codex uninstall`.
 
