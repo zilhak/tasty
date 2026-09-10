@@ -10,7 +10,9 @@ tasty 는 [Conventional Commits](https://www.conventionalcommits.org/) 를 따�
 [optional body]
 ```
 
-- `<description>` — 영어/한국어 모두 허용, 명령형 현재 시제("add X" / "X 추가"). "fix bug" 처럼 정보 0 인 표제 금지: 무엇을·어디서·왜가 한 줄에 드러나게.
+- `<description>` — 영어/한국어 모두 허용. "fix bug" 처럼 정보 0 인 표제 금지: 무엇을·어디서·왜가 한 줄에 드러나게.
+  - **영어는 명령형 현재 시제** — `add X` / `fix Y`. Conventional Commits 관례 그대로.
+  - **한국어는 명사(명사형)로 끝낸다** — `-한다` · `-했다` · `-된다` 같은 종결어미로 끝내지 않는다. `... 를 고친다` 가 아니라 `... 정정`, `... 를 붙인다` 가 아니라 `... 추가`. 두 언어를 같은 자리에서 같은 모양으로 읽히게 하려는 것이다: 영어 표제가 동사로 **시작**해 목적어로 끝나듯, 한국어 표제도 **무엇을 했는가가 마지막 낱말에 오게** 한다. `git log --format=%s` 를 훑을 때 종결어미가 매 줄 끝을 채우면 그 자리가 정보를 안 나른다.
 - `(scope)` — 영향 범위(선택). 예: `feat(themes)`, `fix(ipc)`, `refactor(state)`.
 - `body` — 필요할 때만. 동기·트레이드오프·거부한 대안.
 
@@ -66,3 +68,15 @@ docs(dev-guide): add i18n policy
 i18n(cli): route passkey CLI strings through translation keys
 chore(deps): bump wgpu to 22.1
 ```
+
+한국어 표제 — 마지막 낱말이 명사다:
+
+```
+fix(ipc): forward 갈래가 caller 권한을 안 보던 것 정정
+test(doc-guards): 명부 밖에서 답하는 이름을 잡는 채널 추가
+refactor(headless): pump_ipc 의 App 층 종단 응답 분리
+docs(adr): 예산 하향 갈래의 요건 둘 명시
+```
+
+이 규칙 이전 히스토리는 `-한다` 로 끝나는 표제가 섞여 있다. **소급하지 않는다** — 이미 나간
+커밋 메시지는 rewrite 없이는 못 고치고, 그 rewrite 의 값이 표제 어미 통일보다 크지 않다.
