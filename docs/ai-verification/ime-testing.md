@@ -44,10 +44,14 @@ call("surface.ime_disable")
 - `surface_id` 지정 미지원 — 항상 포커스된 surface.
 - 마우스 클릭에 의한 preedit 커밋은 시뮬레이션 불가(별도 경로).
 - OS IME 후보창 위치(`set_ime_cursor_area`)는 호출되나 실제 OS IME 는 열리지 않음.
-- 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh surface(markdown 의 파일열기
-  팝업 경로 입력 필드 등)의 IME 는 별도 경로 — winit IME 를 plugin 으로 forward 해
-  plugin egui `TextEdit` 이 라이브 preedit 을 인라인 렌더한다([egui-mesh-channel](../dev-guide/egui-mesh-channel.md)
-  "입력 forward"). 인라인 조합 표시는 헤드리스 시뮬레이션 불가 — 실제 OS IME 로 육안 검증한다.
+- 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
+  다시 둘로 갈린다 — **surface** 는 winit IME 를 `ime.rs` 의 forward 로 plugin 에 넘기고,
+  **popup**(markdown 의 파일열기 팝업 경로 입력 필드 등)은 host egui ctx 에 들어온
+  `Event::Ime` 를 `collect_mesh_popup_input` 이 긁어 넘긴다. 어느 쪽이든 plugin egui
+  `TextEdit` 이 라이브 preedit 을 인라인 렌더한다([egui-mesh-channel](../dev-guide/egui-mesh-channel.md)
+  "입력 forward"·"입력 게이트"). 어느 쪽도 이 IPC 로는 주입되지 않는다 —
+  `surface.ime_*` 는 focused surface 의 **터미널** 오버레이 상태를 만지고, `debug.inject_key` 는
+  키만 주입한다. 인라인 조합 표시는 헤드리스 시뮬레이션 불가 — 실제 OS IME 로 육안 검증한다.
   (markdown 주소창은 [ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 문서에 내장된
   HTML `<input>` 이 됐다 — IME 는 host native WebView 가 자체 처리하며 이 경로/egui-mesh 어느
   쪽에도 속하지 않는다.)

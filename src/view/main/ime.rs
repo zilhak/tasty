@@ -59,7 +59,10 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
     // 팝업/오버레이가 열려 있으면 IME 이벤트를 터미널로 전달하지 않는다.
     // Enabled/Disabled는 IME 상태 추적용이므로 허용하고, Preedit/Commit만 차단.
     // 키 게이트와 같은 단일 출처 — plugin egui-mesh popup 이 열려 있을 때도 IME
-    // Preedit/Commit 이 터미널로 새면 안 된다(그 조합은 popup 이 받아야 한다).
+    // Preedit/Commit 이 터미널로 새면 안 된다. 그 조합을 popup 으로 나르는 것은 이 경로가
+    // 아니라 `crate::plugin_bridge::popup_render::collect_mesh_popup_input` 이다 — 이벤트는
+    // 이미 egui ctx 에 들어가 있고 그 수집기가 `ctx.input` 으로 읽어 와이어에 싣는다.
+    // 여기서 또 forward 하면 이중 처리가 된다.
     //
     // 전체화면 무대도 같은 취급이다 — 무대가 뜨면 뒤 터미널은 그려지지도 않는데, 이 항이
     // 빠지면 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY 로 샌다. 무대만 떠 있고 다른

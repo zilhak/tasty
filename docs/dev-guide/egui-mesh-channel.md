@@ -669,7 +669,7 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
 [host]  popup.set_context { instance_id, width_px, height_px, ppp, raw_input }
           │  surface 와 달리 surface_id 대신 host 발급 instance_id 로 키잉
           │  raw_input 은 draw_plugin_popups 가 ctx.input 의 egui 이벤트를 content-local
-          │  좌표로 변환(콘텐츠 영역 안의 포인터 + 키/텍스트만) — host 가 받은 실제 입력만
+          │  좌표로 변환(콘텐츠 영역 안의 포인터 + 키/텍스트/IME만) — host 가 받은 실제 입력만
           ▼
 [plugin] EguiMeshPopup::paint(&ctx.host, &ctx.params, |ctx| { ... })
           │  SDK 헬퍼가 surface 와 동일한 코덱/버퍼 로직 공유(EguiMeshCore)
@@ -677,6 +677,28 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
 [host]  popup_mesh_frames[instance_id] 갱신 → render_egui_mesh_popups 가 instance_id 로
           lookup → decode → 전용 egui_wgpu::Renderer 로 content_rect 에 합성
 ```
+
+### 입력 게이트 — 키·텍스트·IME 는 최상단 popup 만 받는다
+
+`collect_mesh_popup_input`(`src/plugin_bridge/popup_render.rs`)이 host egui ctx 에서 긁는
+이벤트 중 포인터 계열은 콘텐츠 영역/가림 판정(`accepts_pointer`)을 타고, **키·텍스트·IME
+세 계열은 `has_key_focus`(= 이번 프레임 최상단 popup) 게이트**를 함께 탄다 — 아래 깔린
+popup 이 Esc·문자·조합 문자를 받아 자기 UI 로 처리하면 Esc 소유권 규칙
+([popup.md § Host ↔ Plugin popup z-order](../design/systems/popup.md#host--plugin-popup-z-order))
+이 깨진다. 같은 값을 wire 의 `focused` 로도 실어 plugin 쪽 egui 가 커서/포커스 표시를 host
+판정과 맞춘다.
+
+**IME 는 조합 세션 네 갈래를 전부 나른다**(`Enabled`/`Preedit`/`Commit`/`Disabled`).
+egui 0.31 `TextEdit` 의 Commit 분기는 `Enabled`/`Preedit` 에서 세워지는
+`state.ime_cursor_range` 가 커서와 일치할 때만 텍스트를 삽입하므로, Commit 만 실으면 조합
+결과가 화면 파손도 에러도 없이 사라진다. 플랫폼 차이(Linux 가 winit `Ime::Enabled` 를 무시하고
+`Preedit` 수신 시 `Enabled` 를 합성하는 등)는 egui-winit 이 이미 흡수해 ctx 에 넣으므로 수집기는
+갈래 구분 없이 그대로 옮긴다.
+
+winit IME 이벤트를 터미널 PTY 로 보내지 않는 차단은 `src/view/main/ime.rs` 의
+`keyboard_overlay_open()` 분기가 담당한다 — 그 경로는 popup 으로 forward 하지 **않는다**.
+이벤트는 이미 host egui ctx 에 들어가 있고, popup 으로 나르는 것은 위 수집기 하나뿐이다
+(두 곳에서 나르면 이중 처리가 된다).
 
 ### bootstrap 은 1회만 (불필요 paint 억제)
 

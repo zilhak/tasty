@@ -14,11 +14,11 @@
 
 use std::collections::HashSet;
 
-use egui::{Context, Event, Id, Order, Pos2, Rect, Stroke, Vec2};
+use egui::{Context, Event, Id, ImeEvent, Order, Pos2, Rect, Stroke, Vec2};
 use tasty_plugin_manifest::PopupRendering;
 use tasty_plugin_protocol::{
-    ModifiersWire, PointerButtonWire, PopupCloseReason, PopupSetContextParams, RawInputEventWire,
-    RawInputWire, ThemeWire,
+    ImeWire, ModifiersWire, PointerButtonWire, PopupCloseReason, PopupSetContextParams,
+    RawInputEventWire, RawInputWire, ThemeWire,
 };
 
 use crate::adapters::ui::popup;
@@ -379,7 +379,7 @@ pub fn draw_plugin_popups(
 /// dismiss 로만 처리된다. `pointer_occluded` 면(이 popup 보다 위 popup 이 포인터 좌표를
 /// 덮는다) 콘텐츠 영역 안이라도 포인터 이벤트를 보내지 않는다.
 ///
-/// 키/텍스트는 `has_key_focus`(= 이번 프레임 최상단 popup) 일 때만 보낸다 — 아래 깔린
+/// 키/텍스트/IME 는 `has_key_focus`(= 이번 프레임 최상단 popup) 일 때만 보낸다 — 아래 깔린
 /// popup 이 Esc 나 문자를 받아 자기 UI 로 처리하면 규칙 7 이 깨진다. 같은 값을 wire 의
 /// `focused` 로도 실어 plugin 쪽 egui 가 커서/포커스 표시를 맞추게 한다.
 fn collect_mesh_popup_input(
@@ -453,6 +453,21 @@ fn collect_mesh_popup_input(
                 }
                 Event::Text(t) if has_key_focus => {
                     events.push(RawInputEventWire::Text { text: t.clone() })
+                }
+                // IME 조합은 네 갈래를 **전부** 나른다. egui 0.31 `TextEdit` 의 Commit
+                // 분기는 `state.ime_cursor_range` 가 Enabled/Preedit 에서 세워져 있어야만
+                // 텍스트를 삽입하므로, Commit 만 실으면 조합 결과가 조용히 사라진다
+                // (화면도 안 깨지고 에러도 없다). egui-winit 이 이미 OS 차이를 흡수해
+                // ctx 에 넣어 준 것이라 여기서 플랫폼 분기를 다시 하지 않는다.
+                Event::Ime(ime) if has_key_focus => {
+                    events.push(RawInputEventWire::Ime {
+                        event: match ime {
+                            ImeEvent::Enabled => ImeWire::Enabled,
+                            ImeEvent::Preedit(text) => ImeWire::Preedit { text: text.clone() },
+                            ImeEvent::Commit(text) => ImeWire::Commit { text: text.clone() },
+                            ImeEvent::Disabled => ImeWire::Disabled,
+                        },
+                    });
                 }
                 Event::PointerGone => events.push(RawInputEventWire::PointerGone),
                 _ => {}
@@ -669,5 +684,97 @@ mod tests {
         let (_, dy) = collected_scroll(egui::MouseWheelUnit::Page, Vec2::new(0.0, -1.0))
             .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
         assert_eq!(dy, -PAGE_HEIGHT);
+    }
+
+    /// egui ctx 에 들어온 이벤트 목록을 **실제 수집 함수**로 통과시켜 와이어 이벤트를
+    /// 돌려준다. `has_key_focus` 를 그대로 노출해 게이트를 함께 잰다.
+    fn collected_events(events: Vec<Event>, has_key_focus: bool) -> Vec<RawInputEventWire> {
+        let ctx = Context::default();
+        let content_rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(300.0, 200.0));
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1280.0, PAGE_HEIGHT),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut wire = None;
+        let _full_output = ctx.run(input, |ctx| {
+            wire = Some(collect_mesh_popup_input(
+                ctx,
+                content_rect,
+                None,
+                false,
+                has_key_focus,
+            ));
+        });
+        wire.expect("수집 함수가 와이어를 만들어야 한다").events
+    }
+
+    /// 수집된 와이어에서 IME 갈래만 뽑는다.
+    fn collected_ime(events: Vec<Event>, has_key_focus: bool) -> Vec<ImeWire> {
+        collected_events(events, has_key_focus)
+            .into_iter()
+            .filter_map(|e| match e {
+                RawInputEventWire::Ime { event } => Some(event),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 조합 세션의 **네 갈래가 전부** 와이어에 실린다. Commit 만 실으면 egui 0.31
+    /// `TextEdit` 이 `state.ime_cursor_range` 를 못 세워 글자를 조용히 버린다 — 그래서
+    /// 이 시험의 모수는 프로토콜 쪽 round-trip 시험과 같은 4 단계다.
+    #[test]
+    fn all_four_ime_stages_reach_the_wire() {
+        let got = collected_ime(
+            vec![
+                Event::Ime(ImeEvent::Enabled),
+                Event::Ime(ImeEvent::Preedit("ㅎ".into())),
+                Event::Ime(ImeEvent::Commit("한".into())),
+                Event::Ime(ImeEvent::Disabled),
+            ],
+            true,
+        );
+        assert_eq!(
+            got,
+            vec![
+                ImeWire::Enabled,
+                ImeWire::Preedit { text: "ㅎ".into() },
+                ImeWire::Commit { text: "한".into() },
+                ImeWire::Disabled,
+            ]
+        );
+    }
+
+    /// IME 는 `Key`/`Text` 와 **같은 게이트**를 탄다 — 최상단이 아닌 popup 은 조합 문자를
+    /// 받지 않는다(규칙 7). 게이트가 빠지면 아래 깔린 popup 이 조합을 먹는다.
+    #[test]
+    fn ime_is_dropped_without_key_focus() {
+        let got = collected_ime(
+            vec![
+                Event::Ime(ImeEvent::Enabled),
+                Event::Ime(ImeEvent::Preedit("ㅎ".into())),
+                Event::Ime(ImeEvent::Commit("한".into())),
+                Event::Ime(ImeEvent::Disabled),
+            ],
+            false,
+        );
+        assert!(
+            got.is_empty(),
+            "포커스 없는 popup 에 IME 가 실렸다: {got:?}"
+        );
+    }
+
+    /// 영문 경로(`Event::Text`)는 그대로다 — IME 갈래를 더한 것이 기존 입력을 바꾸지
+    /// 않는다(회귀 방지).
+    #[test]
+    fn plain_text_still_reaches_the_wire() {
+        let got = collected_events(vec![Event::Text("a".into())], true);
+        assert!(
+            got.contains(&RawInputEventWire::Text { text: "a".into() }),
+            "영문 텍스트가 와이어에서 사라졌다: {got:?}"
+        );
     }
 }
