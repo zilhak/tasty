@@ -363,8 +363,11 @@ const SHARED_WALK_CLAIMS: &[Claim] = &[
 
 /// 사유 없는 `#[allow]` 래칫의 상한을 **현재 상태로 주장하는** 파일과 그 **줄 수**.
 const ALLOW_REASON_CLAIMS: &[Claim] = &[
-    // 48·198·199·226·228 = 계보 서술 · 231 = 정본
-    ("scripts/check-allow-reason.sh", 6),
+    // 231 = 정본 하나뿐이다. 48·198·199·226·228 도 이 수를 들지만 전부 **날짜와 트리를
+    // 박은 계보/시점 서술**이라(`실측 2026-09-08 … base 12bc0f4b2`, `184 → 183 → 182`)
+    // 상한이 182 → 181 로 내려가도 그 줄들은 그대로 참이다 — 지금 값으로 고치면 없던
+    // 거짓이 새로 생긴다(이 가드의 `TIME_NOTE` 가 시키는 처방). 그래서 좌변이 6 → 1 이다.
+    ("scripts/check-allow-reason.sh", 1),
     ("tests/allow_reason_gate.rs", 2),
 ];
 
