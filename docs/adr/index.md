@@ -241,3 +241,4 @@
 | 0258 | [계측용 사본은 계측기가 읽을 수 있는 형태로 넘긴다 — 그리고 그 교정이 여는 예산 하향 갈래](0258-the-measured-copy-is-neutralized-for-the-counter.md) | Accepted | 2026-09-09 | complexity-gate, sloc, tokei, measurement, judge-vs-counter, ratchet, budget, adr-0165, adr-0168, adr-0205 |
 | 0259 | [헤드리스도 plugin surface kind 를 등록하고, 그 kind 를 지목한 생성 요청이 **소유자 하나**를 띄운다](0259-a-kind-request-starts-the-owner-that-declares-it.md) | Accepted | 2026-09-10 | headless, plugin, surface-kind, lazy-start, attach, markdown, trust-boundary, adr-0136, adr-0173, adr-0255 |
 | 0260 | [튜토리얼 진행은 사용자 상태 DB에 주제별로 저장한다](0260-tutorial-progress-belongs-to-user-state.md) | Accepted | 2026-09-09 | tutorial, persistence, concurrency |
+| 0261 | [busy 는 순간값이 아니라 상태다 — 입력은 진입만 막고, 유지는 못 끊는다](0261-busy-is-a-state-and-input-blocks-only-entry.md) | Accepted | 2026-09-11 | busy-indicator, terminal, sidebar, osc133, shell-integration, input-echo, adr-0002 |
