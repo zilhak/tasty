@@ -24,7 +24,7 @@
 //! - **read failed** — 클립보드 핸들 실패(danger 톤).
 //! - **already open** — 단일 인스턴스 가드.
 //!
-//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 이 TODO 시점에도 실 데이터가 5종
+//! `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 지금도 실 데이터가 5종
 //! (Text/Files/Image/Html/Other)뿐이라 실제로 재현되지 않는다 — plugin `view.rs` 와
 //! 동일한 한계다(`spec::note` 참고).
 

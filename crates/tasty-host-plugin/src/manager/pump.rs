@@ -299,8 +299,9 @@ impl PluginManager {
                         generation,
                         frame_seq,
                         full_textures,
-                        // popup 은 attach mesh mirror 스코프 밖(surface 전용, TODO
-                        // 15/18) — wire 에 byte_len 이 없어 0(구버전과 동일 fallback).
+                        // popup 은 attach mesh mirror 스코프 밖이다(mirror 는
+                        // surface 전용) — wire 에 byte_len 이 없어 0(구버전과 동일
+                        // fallback).
                         byte_len: 0,
                         ime_cursor,
                     },

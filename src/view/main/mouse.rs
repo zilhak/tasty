@@ -2091,7 +2091,8 @@ mod resize_gate_tests {
     #[test]
     fn empty_chrome_yields_nothing_so_resize_wins() {
         // 타이틀바/상태바의 버튼 없는 빈 여백 — 모든 플래그가 false 여야
-        // 리사이즈가 항상 이긴다(이 TODO 가 고친 버그의 회귀 조건).
+        // 리사이즈가 항상 이긴다 — 이 조합이 깨지면 빈 여백에서 창 가장자리를
+        // 잡을 수 없다.
         assert!(!resize_should_yield_to_content(
             false, false, false, false, false
         ));

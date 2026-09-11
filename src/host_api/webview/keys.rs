@@ -314,7 +314,7 @@ mod tests {
     }
 
     /// 백엔드에서 올라온 키가 host 단축키에 매칭되면 소비(`true`), 아니면 페이지로
-    /// 흘림(`false`). 이 TODO 의 "완료 확인 방법" 이 요구한 단위 테스트 지점이다
+    /// 흘림(`false`). 키 라우팅 규칙이 단위 테스트로 고정되는 유일한 지점이다
     /// (OS 포커스 자체는 단위 테스트로 재현할 수 없다).
     #[test]
     fn capture_key_consumes_host_shortcut_and_passes_the_rest() {

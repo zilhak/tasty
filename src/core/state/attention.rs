@@ -11,8 +11,8 @@
 //! `AttentionStore` 는 `NotificationStore` 와 별개다 — attention 레코드가 곧 패널
 //! 아이템은 아니다. 패널 노출 여부는 kind 별 정책(`effects_of` 의 `panel_item`)이
 //! 결정하며, 실제 패널 아이템 생성은 지금처럼 producer 가 `notifications.add()` 를
-//! 직접 호출해 만든다(이 TODO 는 순수 구조 이관이라 그 호출 여부 자체를 바꾸지
-//! 않는다). OSC 133 명령 완료는 `notifications.add()` 를 호출하지 않으므로 패널에
+//! 직접 호출해 만든다(이 분리는 순수 구조 이관이라 그 호출 여부 자체를 바꾸지
+//! 않았다). OSC 133 명령 완료는 `notifications.add()` 를 호출하지 않으므로 패널에
 //! 아이템이 쌓이지 않은 채로도 attention 레코드(및 그 파생 효과인 테두리·탭 제목)만
 //! 발동하는 조합이 성립한다.
 

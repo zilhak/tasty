@@ -3887,8 +3887,8 @@ mod tests {
     }
 
     /// pane B, tab2 의 surface(local 52)를 담은 workspace 를 만들어 `capture_focused_remote`
-    /// 가 **remote id 3**(local 52)을 정확히 되짚어내는지 검증한다(TODO
-    /// 01-mirror-workspace-focus-jump 원인 분석의 "1. 캡처" 단계).
+    /// 가 **remote id 3**(local 52)을 정확히 되짚어내는지 검증한다 — mirror workspace
+    /// 포커스 점프 버그는 이 "캡처" 단계가 틀리면 그 뒤가 전부 어긋난다.
     #[test]
     fn capture_focused_remote_finds_remote_id_of_locally_focused_surface() {
         let ids = IdGenerator::new();

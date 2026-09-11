@@ -712,7 +712,8 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
 // ── Bare `http(s)://` autolinking ───────────────────────────────────────────────
 
 /// Schemes this pass recognizes for bare-URL autolinking. `www.`-prefixed (schemeless) hosts
-/// and email addresses are out of scope for now (conductor-scoped — a separate TODO if needed).
+/// and email addresses are out of scope for now — recognizing them is a separate change, not a
+/// gap in this pass.
 /// find 히트 하이라이트 배경의 알파. 대응 토큰이 없어 값에 이름만 둔다.
 /// (`alert_css` 의 `BG_ALPHA` 와 값 공간은 같고 역할이 다르다.)
 const FIND_HIT_BG_ALPHA: u8 = 90;
@@ -2344,7 +2345,7 @@ fn find_bar_html(tr: &Translator) -> String {
 /// this category of script is safe: it never touches user markdown content, only the DOM
 /// structure this same trusted pipeline already built).
 ///
-/// Implements the TODO's recommended "trust JS" direction over a native find API
+/// Implements the "trust JS" direction over a native find API
 /// (`WebKitFindController`/`WKWebView.find`/WebView2 `Find`): none of those three engines' native
 /// find surfaces agree on a feature set (regex isn't supported by any of them; whole-word varies),
 /// and getting a live match-count back to the host would need a new bidirectional signal per

@@ -211,8 +211,8 @@ pub(crate) struct HoveredLink {
     pub highlight: crate::terminal_link::LinkHighlight,
 }
 
-/// 로컬 egui-mesh 또는 attach mesh mirror 중 현재 포인터가 hover 중인 surface(TODO
-/// 26). `CursorLeft`·surface 전환 시점에 이전 대상에 `PointerGone` 을 1 회 forward
+/// 로컬 egui-mesh 또는 attach mesh mirror 중 현재 포인터가 hover 중인 surface.
+/// `CursorLeft`·surface 전환 시점에 이전 대상에 `PointerGone` 을 1 회 forward
 /// 하기 위한 단일 슬롯 — 두 경로는 `mouse.rs` 의 egui-mesh→attach-mesh 순차
 /// early-return 구조상 동시에 hover 상태일 수 없으므로 슬롯 하나로 충분하다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

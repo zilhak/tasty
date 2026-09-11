@@ -1398,7 +1398,7 @@ fn draw_color_picker_row(
 /// The contract is fixed by `SettingsPageContribute`: host knows the *shape*
 /// (FontOverride → label + override grid + preview), plugin owns the *storage*
 /// (`appearance.plugin_font_overrides[storage_key]`). Color/Bool/Enum item
-/// kinds will land in later TODOs and route through the same dispatch.
+/// kinds are not implemented yet; when added they route through the same dispatch.
 ///
 /// Note: surface 색 picker 가 사라졌다. theme TOML
 /// (`~/.tasty/themes/<id>.toml` 의 `[surfaces.<storage_key>]`) 에서 직접 편집.

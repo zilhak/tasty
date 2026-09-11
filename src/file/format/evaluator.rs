@@ -280,7 +280,7 @@ mod tests {
     // ── simple_glob_match(구) ↔ globset(신) 호환성 회귀 ──────────────────
     //
     // simple_glob_match 는 여러 개의 `*` 도 이미 지원했다(prefix/middle/suffix
-    // 매칭) — "단일 `*` 만 지원" 이라는 TODO 문서 초기 서술과 달리 실제로는 그렇지
+    // 매칭) — "단일 `*` 만 지원" 이라는 초기 추정과 달리 실제로는 그렇지
     // 않았다. 아래는 그 실제 지원 범위를 기준으로 신구 매처가 일치하는지 확인한다.
     #[test]
     fn glob_migration_compat_agrees_on_previously_supported_patterns() {

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// 50 인 이유는 egui 기본값(native 40 / web 8)과 견주어 고른 것이 아니라 이 코드베이스가
 /// plugin 표면에 이미 쓰던 값을 보존하는 것이다. egui 는 그 두 값이 왜 달라야 하는지
-/// 자기 소스에 `TODO` 로 남겨 두었으므로 기준이 될 수 없다. 근거 전문은 ADR-0130.
+/// 자기 소스에 미결 표시로 남겨 두었으므로 기준이 될 수 없다. 근거 전문은 ADR-0130.
 pub const DEFAULT_WHEEL_LINE_SCROLL: f32 = 50.0;
 
 /// 빌트인 bashrc 의 *전반부* — LANG/LC_ALL, MSYS PATH, `__tasty_osc7` 함수 정의.

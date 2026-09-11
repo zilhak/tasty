@@ -730,7 +730,7 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
         );
     }
     // hard 점유(원격 attach) 대상은 거부 — `occupy_soft` 자체는 hard lock 을 검사하지
-    // 않으므로 여기서 명시적으로 막는다(hard 점유는 이 TODO 스코프 밖).
+    // 않으므로 여기서 명시적으로 막는다(hard 점유를 푸는 경로는 여기가 아니다).
     if engine.attach.is_hard_occupied(target) {
         return JsonRpcResponse::invalid_params(
             id,

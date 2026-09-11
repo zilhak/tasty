@@ -12,7 +12,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// `settings.get_plugin_setting { storage_key }` →
 /// `{ "value": <PluginSettingValue as JSON> | null }`.
 ///
-/// caller 가 `CallerContext::Plugin` 이 아니면(Local/Agent) — 이번 TODO 는
+/// caller 가 `CallerContext::Plugin` 이 아니면(Local/Agent) — 이 핸들러는
 /// "plugin 자기 설정 read-back" 전용이라 Local/Agent 호출은 항상 값 없음으로
 /// 취급한다. `caller.owner()` 를 그대로 재사용(memory.rs/secret.rs 와 동일
 /// 관례) — Local 은 `HOST_OWNER`("_host") 로 조회되므로 plugin_settings 맵에
