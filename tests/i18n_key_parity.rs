@@ -1150,7 +1150,10 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
 ///
 /// 뒷값은 **조립하는 자리**다. 그 파일이 사라지면 이 항목은 죽은 인용이 되므로
 /// [`assembled_namespaces_point_at_a_living_assembler`] 가 실재와 비어 있지 않음을 함께 본다.
-const ASSEMBLED_NAMESPACES: &[(&str, &str)] = &[("cli.help.", "crates/tasty-cli/src/help_i18n.rs")];
+const ASSEMBLED_NAMESPACES: &[(&str, &str)] = &[
+    ("cli.help.", "crates/tasty-cli/src/help_i18n.rs"),
+    ("tutorial.step_", "src/adapters/ui/tutorial/catalog.rs"),
+];
 
 const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
