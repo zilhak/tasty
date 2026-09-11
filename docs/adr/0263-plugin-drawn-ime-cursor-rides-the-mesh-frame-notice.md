@@ -1,6 +1,6 @@
-# ADR-XXXX: plugin 이 그린 IME 커서 영역은 mesh frame 알림에 실려 host 로 돌아온다
+# ADR-0263: plugin 이 그린 IME 커서 영역은 mesh frame 알림에 실려 host 로 돌아온다
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Tags**: ime, egui-mesh, plugin-protocol, typed-length, candidate-window, popup, surface
 
