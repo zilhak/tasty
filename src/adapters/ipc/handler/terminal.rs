@@ -1507,13 +1507,13 @@ mod tests {
     fn set_state_idle_clears_a_pending_needs_input() {
         let mut e = engine();
         e.child_terminals.register_child(7, child(5001, 0));
-        fn push(e: &mut CoreState, state: &str) {
+        fn push_child_state(e: &mut CoreState, state: &str) {
             let resp = handle_set_state(e, json!(1), &json!({ "surface": 5001, "state": state }));
             assert!(resp.error.is_none(), "{state} 주입이 거부됐다");
         }
-        push(&mut e, "needs_input");
+        push_child_state(&mut e, "needs_input");
         assert_eq!(e.child_terminals.state_of(5001), "needs_input");
-        push(&mut e, "idle");
+        push_child_state(&mut e, "idle");
         assert_eq!(e.child_terminals.state_of(5001), "idle");
     }
 
