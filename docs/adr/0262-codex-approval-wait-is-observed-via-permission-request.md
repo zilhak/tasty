@@ -1,6 +1,6 @@
-# ADR-XXXX: Codex 승인 대기는 `PermissionRequest` 훅으로 관측하고, `idle` 전이가 대기를 내린다
+# ADR-0262: Codex 승인 대기는 `PermissionRequest` 훅으로 관측하고, `idle` 전이가 대기를 내린다
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Tags**: plugin, codex, agent-state, attention, hooks
 

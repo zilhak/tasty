@@ -210,7 +210,7 @@ impl ChildTerminalRegistry {
     /// 이 규칙이 없으면 codex 승인 프롬프트를 **거절**한 자식이 그 자리에 얼어붙는다:
     /// 거절은 `Interrupt`(→ idle) 하나만 쏘고 `PostToolUse`(→ active) 는 오지 않아,
     /// `needs_input` 을 내릴 사람이 아무도 없다(실측 — codex-cli 0.154.0).
-    /// 근거·대안은 ADR "child 상태의 needs_input 은 idle 전이가 함께 내린다".
+    /// 근거·대안은 [ADR-0262](../../docs/adr/0262-codex-approval-wait-is-observed-via-permission-request.md).
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
         self.idle.insert(child_surface, idle);
         self.needs_input.insert(child_surface, false);

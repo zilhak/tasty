@@ -242,3 +242,4 @@
 | 0259 | [헤드리스도 plugin surface kind 를 등록하고, 그 kind 를 지목한 생성 요청이 **소유자 하나**를 띄운다](0259-a-kind-request-starts-the-owner-that-declares-it.md) | Accepted | 2026-09-10 | headless, plugin, surface-kind, lazy-start, attach, markdown, trust-boundary, adr-0136, adr-0173, adr-0255 |
 | 0260 | [튜토리얼 진행은 사용자 상태 DB에 주제별로 저장한다](0260-tutorial-progress-belongs-to-user-state.md) | Accepted | 2026-09-09 | tutorial, persistence, concurrency |
 | 0261 | [busy 는 순간값이 아니라 상태다 — 입력은 진입만 막고, 유지는 못 끊는다](0261-busy-is-a-state-and-input-blocks-only-entry.md) | Accepted | 2026-09-11 | busy-indicator, terminal, sidebar, osc133, shell-integration, input-echo, adr-0002 |
+| 0262 | [Codex 승인 대기는 `PermissionRequest` 훅으로 관측하고, `idle` 전이가 대기를 내린다](0262-codex-approval-wait-is-observed-via-permission-request.md) | Accepted | 2026-09-11 | plugin, codex, agent-state, attention, hooks |
