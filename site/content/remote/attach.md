@@ -97,7 +97,7 @@ tasty remote attach --ssh me@10.0.0.5 --workspace 3        # 프로필 없이 1�
 tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/proj   # 원격에 워크스페이스 생성
 ```
 
-- 워크스페이스 attach 는 그 안의 터미널을 분할 구조까지 그대로 mirror 합니다. 마크다운·HTML 같은 비터미널 표면은 자리만 잡고 내용은 보이지 않습니다 (탐색기는 둘러보기만 가능).
+- 워크스페이스 attach 는 그 안의 터미널을 분할 구조까지 그대로 mirror 합니다. 이미지 서피스도 내용이 그대로 보이고 클릭·키 입력이 원격에 전달됩니다. 탐색기는 폴더를 둘러보기만 할 수 있습니다 — 이름 변경·삭제·파일 열기는 막혀 있습니다. 마크다운·HTML 서피스는 아직 자리만 잡고 내용은 보이지 않습니다.
 - `--raw` 는 서피스 단위에서만 됩니다.
 - `--no-reconnect` 를 주지 않으면 SSH 가 끊겼을 때 자동으로 재연결을 시도합니다.
 
