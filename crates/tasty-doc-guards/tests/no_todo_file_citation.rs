@@ -17,7 +17,7 @@
 //! 2. 설계 결정이 크면 — `docs/adr/` 에 ADR 을 쓰고 그 경로를 인용
 //! 3. 기능 동작 설명이면 — `docs/`(dev-guide / features / plugins) 문서를 참조
 //!
-//! **탐지 패턴 6 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
+//! **탐지 패턴 7 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
 //! - P1 번호 인용 — 대문자 `TODO` + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자.
 //!   **어순 양방향**: 한국어 문장에서는 번호가 앞에 온다(`<숫자>번 TODO`). 뒤 어순만
 //!   보던 시절 그 형태가 소스에 두 건 살아 있었다 — 같은 죽은 좌표인데 어순 하나로
@@ -38,6 +38,12 @@
 //!   언급도 금지 대상이라는
 //!   [ADR-0105](../docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md) 의
 //!   결정을 강제한다. P3 가 네 개 하위 디렉토리로 좁혀 놓았던 것을 넓힌 형태다.
+//! - P7 산문 언급 — 번호가 붙지 않은 `TODO`. P1 은 **숫자가 붙어야만** 잡는데, 실제로
+//!   새는 형태는 번호 없이 티켓 자체를 가리키는 산문이다(`이 TODO 는 순수 구조
+//!   이관이라` · `TODO 문서 초기 서술과 달리` · `a separate TODO if needed`). 번호가
+//!   없다고 덜 죽은 참조가 되는 것이 아니다 — 갓 클론한 사람에게 그 문서는 존재한
+//!   적이 없다. **할 일 표시는 통과시킨다**(판정선은 [`todo_marker_end`]), 그리고
+//!   **마크다운은 범위 밖이다**(근거는 [`out_of_scope`]).
 //!
 //! **매칭은 구분자 개수·대소문자로 회피되지 않아야 한다.** 구분자를 한 개만 소비하는
 //! 매처는 공백 두 개만 넣어도 통과하고, 원문 그대로 비교하는 매처는 대문자 표기로
@@ -97,11 +103,17 @@ use std::path::{Path, PathBuf};
 /// - `.gitignore`: 제외 항목을 적는 것이 그 파일의 정의다(ADR-0105 범위 밖 4항).
 /// - `docs/adr/0027-...`: 휘발 경로 누수를 *문제로 서술* 하는 예시(참조가 아니다).
 ///   게다가 Accepted ADR 의 Context 본문이라 template 규칙상 수정 대상도 아니다.
+/// - 이 파일 자신(P7): 모듈 머리말·패턴 doc·단위 테스트가 `TODO` 를 산문으로 쓴다 —
+///   무엇을 잡고 무엇을 통과시키는지 적는 것이 이 파일의 일이라, 금지 형태를 담는
+///   것이 본질이다. P7 은 숫자를 요구하지 않아 `fx!` 로 판정 지점을 끊을 수도 없다
+///   (끊을 구분자가 없다 — `TODO` 라는 낱말 자체가 판정 대상이다).
+/// - `scripts/check-allow-reason.sh`(P7): 그 스크립트 주석이 ADR-0037 의 규칙 본문
+///   (**빈 사유·"TODO" 금지**)을 인용한다. 인용을 지우면 그 게이트가 무엇을 강제하는지
+///   알 수 없게 된다 — `CLAUDE.md` 가 P1·P4 를 면제받는 것과 같은 이유다.
 ///
-/// **이 파일 자신은 면제가 없다.** 순회 입력으로 폴더 이름이 필요한 곳은 조각으로
-/// 조립하고([`ws_dir`]), 패턴 픽스처는 `fx!` 로 판정 지점을 끊어 쓴다. 가드가 자기
-/// 자신에게만 통째 면제를 두면, 위에 적은 "파일 통째 면제 금지" 원칙의 유일한 예외가
-/// 가드 본인이 되어 앞뒤가 맞지 않는다.
+/// **면제는 여전히 패턴 단위다.** 위 둘도 P7 만 면제이고, 같은 파일에 P1·P3·P6 을
+/// 심으면 잡힌다. 순회 입력으로 폴더 이름이 필요한 곳은 조각으로 조립하고
+/// ([`ws_dir`]), 번호가 붙는 패턴의 픽스처는 그대로 `fx!` 로 판정 지점을 끊어 쓴다.
 const ALLOWLIST: &[(&str, &[&str])] = &[
     ("CLAUDE.md", &["P1", "P4"]),
     (".gitignore", &["P6"]),
@@ -109,6 +121,11 @@ const ALLOWLIST: &[(&str, &[&str])] = &[
         "docs/adr/0027-figma-planning-sot-naming-derived-index.md",
         &["P3", "P6"],
     ),
+    (
+        "crates/tasty-doc-guards/tests/no_todo_file_citation.rs",
+        &["P7"],
+    ),
+    ("scripts/check-allow-reason.sh", &["P7"]),
 ];
 
 /// 탐지 패턴 표 — (id, 설명, 판정 함수). 한 줄에 대해 **전부** 돌린다.
@@ -120,6 +137,7 @@ const PATTERNS: &[(&str, &str, Finder)] = &[
     ("P4", "디자인 changelog slug", find_p4),
     ("P5", "앵커 슬러그 번호", find_p5),
     ("P6", "로컬 폴더 언급", find_p6),
+    ("P7", "산문 TODO 언급", find_p7),
 ];
 
 /// 순회에서 통째로 가지치기할 **이름**. 빌드 산출물·워크트리·VCS·의존성 +
@@ -526,6 +544,55 @@ fn find_p6(line: &str) -> Option<String> {
     None
 }
 
+/// 할 일 표시(`TODO:` · `TODO(<범위>):`)의 끝 인덱스 — 콜론 다음.
+///
+/// **판정선이 콜론인 이유**: 티켓을 가리키는 산문은 `TODO` 를 문장 안의 명사로 쓰고
+/// (`이 TODO 는` · `a separate TODO if needed`), 할 일 표시는 그 뒤에 곧바로 콜론을
+/// 붙여 설명을 연다(`TODO: ...` · `TODO(<범위>): ...`). 괄호 형태는 **닫는 괄호 뒤에
+/// 콜론이 와야** 인정한다 — 괄호만 보면 `TODO(…)` 로 끝나는 산문까지 통과한다.
+/// 괄호 안은 무엇이든 좋다(담당자·기한·조건). P1 이 괄호 안 *숫자* 를 티켓 번호로
+/// 잡는 것과 겹치지 않는다: 그쪽은 콜론이 없어 여기서 마커로 인정되지 않는다.
+fn todo_marker_end(line: &str, after_todo: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let colon_at = match bytes.get(after_todo)? {
+        b':' => return Some(after_todo + 1),
+        b'(' => after_todo + 1 + line[after_todo + 1..].find(')')? + 1,
+        _ => return None,
+    };
+    (bytes.get(colon_at) == Some(&b':')).then_some(colon_at + 1)
+}
+
+/// P7 — 번호가 붙지 않은 산문 `TODO`. 할 일 표시([`todo_marker_end`])만 통과한다.
+///
+/// 소문자 `todo` 는 보지 않는다 — 식별자·URL·영단어로 흔하고, 티켓을 가리키는 산문은
+/// 관례상 대문자로 쓴다. P1 이 대문자만 보는 것과 같은 선이다.
+fn find_p7(line: &str) -> Option<String> {
+    let mut from = 0;
+    while let Some(pos) = line[from..].find("TODO") {
+        let start = from + pos;
+        let after = start + 4;
+        from = after;
+        if todo_marker_end(line, after).is_none() {
+            return Some(line[start..after].to_string());
+        }
+    }
+    None
+}
+
+/// 패턴의 **적용 범위** — 파일 종류로 갈리는 것만 여기서 뺀다.
+///
+/// [`ALLOWLIST`] 와 다른 축이다: 면제는 *그 파일 하나* 가 금지 형태를 담는 것이 본질일
+/// 때 주는 것이고, 여기는 *확장자 전체* 에 대해 그 패턴이 애초에 물음이 아닌 경우다.
+/// 면제로 흉내 내면 `.md` 파일 수만큼 항목이 늘고, 새 문서마다 항목을 더해야 한다.
+///
+/// **P7 은 마크다운을 안 본다.** 문서는 규칙 본문을 인용하는 것이 자기 일이고(이 가드가
+/// 무엇을 금지하는지 적으려면 그 형태를 그대로 적어야 한다), 상류 라이브러리가 자기
+/// 소스에 남긴 마커를 서술하는 자리도 문서다. 산문 언급이 거기서는 정상이다. 코드
+/// 주석에는 그 일이 없다 — 티켓을 가리키는 것 말고 `TODO` 를 산문으로 쓸 이유가 없다.
+fn out_of_scope(id: &str, rel: &str) -> bool {
+    id == "P7" && rel.to_ascii_lowercase().ends_with(".md")
+}
+
 /// 스캔에서 뺄 확장자 — 바이너리라 인용을 담을 수 없는 것. `read_to_string` 이
 /// 비-UTF8 을 걸러 주지만, 여기서 먼저 쳐내 순회 비용을 줄인다.
 /// 스캔 대상 파일인지 — repo-relative 경로 기준.
@@ -647,7 +714,7 @@ fn violations_in_line(rel: &str, line: &str) -> Vec<String> {
     let allowed = allowed_patterns(rel);
     PATTERNS
         .iter()
-        .filter(|(id, _, _)| !allowed.contains(id))
+        .filter(|(id, _, _)| !allowed.contains(id) && !out_of_scope(id, rel))
         .filter_map(|(id, kind, find)| find(line).map(|m| format!("{id} {kind}: `{m}`")))
         .collect()
 }
@@ -691,6 +758,8 @@ fn no_todo_file_citation() {
          앵커(P5)면 제목에서 번호를 떼고 그 제목을 가리키던 참조도 함께 고칠 것 — \
          제목의 번호는 앵커로 굳어 링크·주석으로 퍼진다.\n\
          P6 면 위치를 적지 말고 \"커밋되지 않는 로컬 전용 지침이 정한다\" 로 위임할 것.\n\
+         P7(산문 `TODO`)이면 티켓을 가리키던 말을 지우고 그 자리에서 이유를 한 줄로 \
+         서술할 것 — 할 일 표시(`TODO:` · `TODO(<범위>):`)는 그대로 둬도 된다.\n\
          그 형태를 담는 것이 본질인 파일이면 ALLOWLIST 에 (경로, 허용 패턴) 으로 추가:\n{}",
         violations.join("\n")
     );
@@ -952,6 +1021,98 @@ fn p6_allows_identifiers_and_build_outputs() {
     );
     assert_eq!(find_p6("site/release.json 을 읽는다"), None);
     assert_eq!(find_p6("target/release/tasty-plugin-claude"), None);
+}
+
+#[test]
+fn p7_catches_prose_todo_but_not_task_markers() {
+    // 실제로 샜던 세 형태 — 번호가 없어 P1 이 통과시키던 것들.
+    assert_eq!(
+        find_p7("//! 이 TODO 는 순수 구조 이관이라"),
+        Some("TODO".into())
+    );
+    assert_eq!(
+        find_p7("// \"단일 `*` 만 지원\" 이라는 TODO 문서 초기 서술과 달리"),
+        Some("TODO".into())
+    );
+    assert_eq!(
+        find_p7("/// (conductor-scoped — a separate TODO if needed)."),
+        Some("TODO".into())
+    );
+    // 상류 라이브러리가 자기 소스에 남긴 마커를 *서술* 하는 것도 산문이다.
+    assert_eq!(
+        find_p7("/// 자기 소스에 `TODO` 로 남겨 두었으므로"),
+        Some("TODO".into())
+    );
+    // 문장 끝·구두점 앞.
+    assert_eq!(
+        find_p7("// tracked as a separate TODO."),
+        Some("TODO".into())
+    );
+    assert_eq!(
+        find_p7("// later TODOs route through the same dispatch"),
+        Some("TODO".into())
+    );
+
+    // 할 일 표시는 통과 — 콜론이 바로 붙거나, 괄호 묶음 뒤에 콜론이 온다.
+    assert_eq!(
+        find_p7("// TODO: winit PR 머지 후 공식 버전으로 교체"),
+        None
+    );
+    assert_eq!(
+        find_p7("// TODO(권한모델): manifest 권한 도입 후 대체"),
+        None
+    );
+    assert_eq!(find_p7("// TODO(emilk): upstream 이 정한다"), None);
+    // 한 줄에 마커와 산문이 함께 있으면 산문 쪽이 잡힌다.
+    assert_eq!(
+        find_p7("// TODO: 이 TODO 는 아래와 이어진다"),
+        Some("TODO".into())
+    );
+
+    // 콜론이 없으면 마커가 아니다 — 괄호만으로는 통과하지 못한다.
+    assert_eq!(find_p7("// TODO(alice) 나중에"), Some("TODO".into()));
+    assert_eq!(find_p7("// TODO 나중에 고친다"), Some("TODO".into()));
+    // 소문자는 보지 않는다 — 식별자·영단어로 흔하다.
+    assert_eq!(find_p7("let todo = 3; // todo list 를 만든다"), None);
+    assert_eq!(find_p7("fn todo_marker() {}"), None);
+}
+
+#[test]
+fn p7_is_out_of_scope_in_markdown_only() {
+    let prose = "이 TODO 는 순수 구조 이관이다";
+    // 코드·스크립트·CI 설정에서는 잡힌다.
+    for rel in [
+        "src/core/state/attention.rs",
+        "scripts/bench/perf-10-surfaces.sh",
+        ".github/workflows/test.yml",
+        "site/vendor/gallery/components.jsx",
+        "Justfile",
+    ] {
+        assert!(
+            violations_in_line(rel, prose)
+                .iter()
+                .any(|v| v.starts_with("P7")),
+            "P7 이 코드 자리에서 안 잡혔다: {rel}"
+        );
+    }
+    // 마크다운은 범위 밖 — 규칙 본문 인용과 상류 마커 서술이 거기서는 정상이다.
+    for rel in [
+        "CLAUDE.md",
+        "docs/dev-guide/ci-gates.md",
+        "site/content/help/troubleshooting.md",
+        "crates/tasty-plugin-markdown/assets/NOTICE.md",
+    ] {
+        assert!(
+            violations_in_line(rel, prose).is_empty(),
+            "마크다운이 P7 범위에 들어왔다: {rel}"
+        );
+    }
+    // 범위 밖은 P7 하나뿐이다 — 같은 `.md` 에서 다른 패턴은 그대로 잡힌다.
+    assert!(
+        violations_in_line("docs/dev-guide/ci-gates.md", fx!("see TODO", " 40"))
+            .iter()
+            .any(|v| v.starts_with("P1"))
+    );
 }
 
 #[test]
