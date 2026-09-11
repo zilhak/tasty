@@ -1,4 +1,4 @@
-<!-- source-hash: 79f709ebb76d -->
+<!-- source-hash: 12782b203c61 -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -61,7 +61,7 @@ Each Workspace remembers its own focused Pane. Switch away and back and the curs
 | **REMOTE** pill | A Workspace mirroring a remote tasty |
 | Lavender border around the dot left of the name | Occupied remotely by another user |
 
-When the sidebar is collapsed (**Collapse**, `Ctrl+B`) the cards become square icons and the marks merge into a single dot.
+When the sidebar is collapsed (**Collapse**, `Ctrl+B`) the cards become square icons and the marks shrink with them. The dot at the top right shows only the most urgent one, without a count — yellow is waiting for input, blue is a finished job, green is running. The **REMOTE** pill turns into a sky-blue chip at the bottom right. When another user holds the Workspace remotely, the lavender border wraps **the whole square icon** instead of the dot.
 
 ## Closing and restoring
 
