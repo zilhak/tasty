@@ -48,7 +48,13 @@ call("surface.ime_disable")
   올려 넘긴다([egui-mesh-channel](../dev-guide/egui-mesh-channel.md) "IME candidate 위치") —
   변환식 자체는 `plugin_bridge::mesh_ime_cursor_area` 단위 시험으로 재고, 후보창이 실제로
   그 자리에 뜨는지는 OS IME 가 그리는 창이라 tasty 프레임 캡처에 안 잡힐 수 있다. 그때는
-  넘긴 값을 로그로 관측해 판정하고, **무엇으로 판정했는지 보고에 명시한다.**
+  winit 에 넘긴 값을 stderr trace 로 관측한다 —
+  `TASTY_LOG=tasty::view::main=trace` 로 띄우면 `ime cursor area: x=… y=… w=… h=…` 가
+  찍힌다(dev 빌드의 **파일** 레이어는 `debug` 고정이라 trace 가 안 들어간다 — stderr 를
+  받아야 한다). **무엇으로 판정했는지 보고에 명시한다.**
+  이 값은 조합 중이 아니어도 나온다 — plugin egui 의 `PlatformOutput::ime` 는 편집 위젯이
+  focus 중이면 늘 채워지므로, IME 엔진 없이 입력란을 클릭하는 것만으로 경로가 끝까지
+  흐르는지 볼 수 있다.
 - 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
   다시 둘로 갈린다 — **surface** 는 winit IME 를 `ime.rs` 의 forward 로 plugin 에 넘기고,
   **popup**(markdown 의 파일열기 팝업 경로 입력 필드 등)은 host egui ctx 에 들어온
