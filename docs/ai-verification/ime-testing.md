@@ -51,10 +51,16 @@ call("surface.ime_disable")
   winit 에 넘긴 값을 stderr trace 로 관측한다 —
   `TASTY_LOG=tasty::view::main=trace` 로 띄우면 `ime cursor area: x=… y=… w=… h=…` 가
   찍힌다(dev 빌드의 **파일** 레이어는 `debug` 고정이라 trace 가 안 들어간다 — stderr 를
-  받아야 한다). **무엇으로 판정했는지 보고에 명시한다.**
+  받아야 한다). ★ **`xvfb-run` 으로 띄웠으면 그 줄은 stdout 파일에 있다** — xvfb-run 이
+  명령을 `2>&1` 로 돌려 stderr 를 합친다. stderr 쪽만 grep 하면 0 건이 나와 경로가 끊긴
+  것처럼 보인다(거짓 음성). **무엇으로 판정했는지 보고에 명시한다.**
   이 값은 조합 중이 아니어도 나온다 — plugin egui 의 `PlatformOutput::ime` 는 편집 위젯이
-  focus 중이면 늘 채워지므로, IME 엔진 없이 입력란을 클릭하는 것만으로 경로가 끝까지
-  흐르는지 볼 수 있다.
+  focus 중이면 늘 채워지므로, IME 엔진 없이 **포커스만 주어도** 경로가 끝까지 흐르는지
+  볼 수 있다. WM 없는 Xvfb 에서는 클릭 주입이 egui popup 에 안 닿으니
+  `debug inject egui-key --key Tab` 으로 포커스 체인을 돌린다 — 몇 번째 Tab 이 입력란에
+  닿는지는 그 popup 의 위젯 순서에 달렸으므로, Tab 하나마다 trace 줄 수의 **증가분**을
+  재서 켜지는 자리와 꺼지는 자리를 갈라라. popup 을 닫은 뒤 증가분이 0 인 것이
+  stale 캐시가 없다는 음성 대조다.
 - 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
   다시 둘로 갈린다 — **surface** 는 winit IME 를 `ime.rs` 의 forward 로 plugin 에 넘기고,
   **popup**(markdown 의 파일열기 팝업 경로 입력 필드 등)은 host egui ctx 에 들어온
