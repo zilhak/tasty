@@ -365,8 +365,19 @@ impl MainView {
 
     /// 세 입력원이 공유하는 winit 호출 한 자리. 크기는 최소 1px 로 올린다 — 0 을 넘기면
     /// 플랫폼별로 무시하거나 창 원점으로 떨어진다.
+    ///
+    /// **넘긴 값을 `trace` 로 남긴다.** 후보창은 OS IME 가 그리는 창이라 tasty 프레임
+    /// 캡처에 안 잡힐 수 있고, 그때 이 값이 판정의 유일한 관측점이다
+    /// (`docs/ai-verification/ime-testing.md`). trace 는 기본 비활성이라 평시 비용이 없다.
     fn set_ime_cursor_area(&self, area: crate::model::PhysicalRect) {
         use winit::dpi::{PhysicalPosition, PhysicalSize};
+        tracing::trace!(
+            "ime cursor area: x={} y={} w={} h={}",
+            area.x.value(),
+            area.y.value(),
+            area.width.value(),
+            area.height.value()
+        );
         self.base.winit.set_ime_cursor_area(
             PhysicalPosition::new(area.x.value().round() as i32, area.y.value().round() as i32),
             PhysicalSize::new(
