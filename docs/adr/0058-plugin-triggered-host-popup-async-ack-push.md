@@ -101,9 +101,9 @@ ADR-0042는 "host 무지 원칙"(host는 이 메서드가 어느 plugin·어느 
    );
    ```
    취소(사용자가 popup을 그냥 닫음) 시에는 `{ "request_id": ..., "paths": [], "cancelled":
-   true }`. 정확한 Rust 타입(derive된 struct vs 인라인 `json!`)은 구현 TODO(21번)가
-   정하되, 이 이벤트의 **key(`"file_picker.result"`)와 최소 wire 필드(`request_id`,
-   `paths`, `cancelled`)는 이 ADR이 고정**한다.
+   true }`. 정확한 Rust 타입(derive된 struct vs 인라인 `json!`)은 구현에 맡기되, 이 이벤트의
+   **key(`"file_picker.result"`)와 최소 wire 필드(`request_id`, `paths`, `cancelled`)는 이
+   ADR이 고정**한다.
 5. **plugin 수신**: 신규 콜백은 필요 없다 — 기존 `on_event`(`EventDispatchCtx`)가
    `envelope.key == "file_picker.result"`를 받는다. plugin은 자신이 `file_picker.trigger`
    호출 시 받은 `request_id`를 자체 pending-map에 들고 있다가 이 이벤트로 상관관계를

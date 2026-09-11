@@ -21,7 +21,10 @@
 //! - P1 번호 인용 — 대문자 `TODO` + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자.
 //!   **어순 양방향**: 한국어 문장에서는 번호가 앞에 온다(`<숫자>번 TODO`). 뒤 어순만
 //!   보던 시절 그 형태가 소스에 두 건 살아 있었다 — 같은 죽은 좌표인데 어순 하나로
-//!   가드를 통과했다.
+//!   가드를 통과했다. **괄호 묶음도 잡는다**(`TODO(<숫자>)` · `TODO[<숫자>]` ·
+//!   `TODO(<숫자>번)`). 벌거벗은 숫자만 보던 시절 그 형태가 문서에 두 건 살아
+//!   있었다 — 규칙 본문이 예시로 드는 붙여쓴 형태와 같은 죽은 좌표인데 괄호
+//!   하나로 가드를 통과했다.
 //! - P2 conductor 번호 인용 — `todo-conductor`(대소문자 무시) + 구분자 런 + 숫자
 //! - P3 경로 인용 — 로컬 작업 폴더 + `todo` / `todo-conductor` / `plans` / `conductor`
 //! - P4 디자인 changelog slug — `YYYY-MM-DD-<slug>`. 원격 Claude Design 프로젝트
@@ -39,9 +42,12 @@
 //! **매칭은 구분자 개수·대소문자로 회피되지 않아야 한다.** 구분자를 한 개만 소비하는
 //! 매처는 공백 두 개만 넣어도 통과하고, 원문 그대로 비교하는 매처는 대문자 표기로
 //! 통과한다. 그래서 P2~P6 은 구분자를 런으로 소비하고 소문자로 비교한다. P1 만
-//! 예외적으로 공백 런까지만 넓힌다 — 임의 문장부호(`:` · `#` · `.`)를 구분자로
-//! 허용하면 "TODO. 40" 같은 평범한 문장이 걸린다. 티켓 인용은 공백이나 하이픈으로
-//! 쓰이지 문장부호로 쓰이지 않는다.
+//! 예외적으로 공백 런과 **짝 맞는 괄호 묶음**까지만 넓힌다 — 임의 문장부호
+//! (`:` · `#` · `.`)를 구분자로 허용하면 "TODO. 40" 같은 평범한 문장이 걸린다.
+//! 괄호는 그 논거의 반례가 아니다: 여는 괄호 뒤 숫자에 **닫는 괄호가 짝으로 따라올
+//! 것**을 함께 요구하므로 문장이 아니라 번호를 감싼 묶음만 걸린다
+//! ([`bracketed_number_end`]). 티켓 인용은 공백·하이픈·괄호로 쓰이지 벌거벗은
+//! 문장부호로 쓰이지 않는다.
 //!
 //! **스캔 대상 정의 — denylist 전수 순회.** ADR-0105 의 규칙 범위가 "git 이 추적하는
 //! 모든 파일" 이므로, 확장자·디렉토리 화이트리스트로 "볼 파일" 을 열거하지 않는다.
@@ -230,20 +236,53 @@ fn digits_end(bytes: &[u8], i: usize) -> Option<usize> {
     Some(end)
 }
 
+/// 한국어 서수 접미사 — 번호 뒤에 붙는다(`21번`).
+const KOREAN_ORDINAL: &str = "번";
+
+/// 여는 괄호로 감싼 번호(`(11)` · `[7]` · `(21번)`)의 끝 인덱스 — 닫는 괄호 다음.
+///
+/// **짝을 요구하는 것이 오탐 방지의 핵심이다.** 여는 괄호만 보고 숫자를 받으면
+/// `TODO (2026 년부터` 같은 평범한 문장이 걸린다. 그래서 여는 괄호에 맞는 닫는
+/// 괄호가 숫자(+ 선택적 `번`) 바로 뒤에 와야만 인정한다 — 이 형태는 문장부호가
+/// 아니라 **번호를 감싸는 묶음**이라, 모듈 머리말이 `:` · `#` · `.` 를 구분자로
+/// 받지 않기로 한 근거(평범한 문장의 오탐)가 여기에는 적용되지 않는다.
+fn bracketed_number_end(line: &str, i: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let close = match bytes.get(i)? {
+        b'(' => b')',
+        b'[' => b']',
+        _ => return None,
+    };
+    let num_start = skip_run(bytes, i + 1, b" \t");
+    let after_digits = digits_end(bytes, num_start)?;
+    // 한국어 서수(`21번`)까지가 번호다 — 괄호 안에서만 보므로 `이번` 류와 섞이지 않는다.
+    let after_ordinal = match line[after_digits..].strip_prefix(KOREAN_ORDINAL) {
+        Some(_) => after_digits + KOREAN_ORDINAL.len(),
+        None => after_digits,
+    };
+    let end = skip_run(bytes, after_ordinal, b" \t");
+    (bytes.get(end) == Some(&close)).then_some(end + 1)
+}
+
 /// P1 — 번호와 대문자 `TODO` 가 붙어 있는 형태를 **양쪽 어순 모두** 잡는다.
-/// 뒤 어순은 `TODO` + 공백 런 + 선택적 하이픈 + 숫자, 앞 어순은 숫자 + `번` +
-/// 공백 런 + `TODO`(한국어 문장의 자연스러운 순서). 번호 없는 평범한 `TODO:`
-/// 주석은 대상이 아니다(금지 대상은 *파일 번호 인용* 이지 할 일 표시가 아니다).
+/// 뒤 어순은 `TODO` + 공백 런 + (선택적 하이픈 + 숫자 | 괄호로 감싼 숫자),
+/// 앞 어순은 숫자 + `번` + 공백 런 + `TODO`(한국어 문장의 자연스러운 순서).
+/// 번호 없는 평범한 `TODO:` 주석은 대상이 아니다(금지 대상은 *파일 번호 인용*
+/// 이지 할 일 표시가 아니다).
 fn find_p1(line: &str) -> Option<String> {
     let bytes = line.as_bytes();
     let mut from = 0;
     while let Some(pos) = line[from..].find("TODO") {
         let start = from + pos;
-        let mut i = skip_run(bytes, start + 4, b" \t");
+        let after_space = skip_run(bytes, start + 4, b" \t");
+        let mut i = after_space;
         if i < bytes.len() && bytes[i] == b'-' {
             i += 1;
         }
         if let Some(end) = digits_end(bytes, i) {
+            return Some(line[start..end].to_string());
+        }
+        if let Some(end) = bracketed_number_end(line, after_space) {
             return Some(line[start..end].to_string());
         }
         if let Some(num_start) = korean_ordinal_start(line, start) {
@@ -257,9 +296,8 @@ fn find_p1(line: &str) -> Option<String> {
 /// 앞 어순 판정 — `line[..todo_at]` 의 꼬리가 `숫자+번` + 공백 런인지 본다.
 /// 맞으면 숫자열이 시작하는 바이트 인덱스.
 fn korean_ordinal_start(line: &str, todo_at: usize) -> Option<usize> {
-    const ORDINAL: &str = "번";
     let head = line[..todo_at].trim_end_matches([' ', '\t']);
-    let digits = head.strip_suffix(ORDINAL)?;
+    let digits = head.strip_suffix(KOREAN_ORDINAL)?;
     let num_start = digits.len()
         - digits
             .chars()
@@ -702,6 +740,40 @@ fn p1_catches_numbered_todo_citation_only() {
     assert_eq!(find_p1("TODO #40"), None);
     assert_eq!(find_p1("TODO_40"), None);
     assert_eq!(find_p1("see todo 40"), None);
+}
+
+#[test]
+fn p1_catches_bracketed_ticket_numbers() {
+    assert_eq!(
+        find_p1(fx!("원 TODO", "(11)는 close 계열을 다뤘다")),
+        Some(fx!("TODO", "(11)").into())
+    );
+    assert_eq!(
+        find_p1(fx!("구현 TODO", "(21번)가 정한다")),
+        Some(fx!("TODO", "(21번)").into())
+    );
+    assert_eq!(
+        find_p1(fx!("TODO", "[7] 참조")),
+        Some(fx!("TODO", "[7]").into())
+    );
+    // 공백 런·괄호 안쪽 여백으로 회피되지 않는다.
+    assert_eq!(
+        find_p1(fx!("TODO", "  ( 40 )")),
+        Some(fx!("TODO", "  ( 40 )").into())
+    );
+
+    // 닫는 괄호가 짝으로 따라오지 않으면 번호 묶음이 아니다 — 평범한 문장이다.
+    assert_eq!(find_p1(fx!("TODO", " (2026 년부터 바뀐다")), None);
+    assert_eq!(find_p1(fx!("TODO", "(11 참조")), None);
+    // 여는 괄호와 닫는 괄호의 종류가 어긋나면 묶음으로 보지 않는다.
+    assert_eq!(find_p1(fx!("TODO", "(11]")), None);
+    // 괄호 안이 숫자가 아니면 대상이 아니다 — `TODO(name):` 코드 관례가 여기 걸린다.
+    assert_eq!(find_p1("TODO(alice): 나중에 고친다"), None);
+    assert_eq!(find_p1("TODO(fixme)"), None);
+    assert_eq!(find_p1("TODO(v2): 캐시를 뺀다"), None);
+    // 숫자 뒤에 다른 글자가 붙으면 번호가 아니다.
+    assert_eq!(find_p1("TODO(3rd)"), None);
+    assert_eq!(find_p1("TODO(0.1.59)"), None);
 }
 
 #[test]
