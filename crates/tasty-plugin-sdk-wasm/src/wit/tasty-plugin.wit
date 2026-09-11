@@ -1,6 +1,6 @@
 // Tasty plugin WIT (WASI Preview 2 component model) — Phase J.C POC.
 //
-// 설계 결정 (TODO-C §3.1):
+// 설계 결정:
 // - JSON-string marshal: ctx/result 타입의 WIT record 변환을 회피하고 모두 string
 //   으로 직렬화 (POC 단순화). 비용은 wasm-poc.md §3 에서 측정 후 평가.
 //   주의: UiNode/UiEvent DSL 은 C1 에서 native protocol 에서 제거됨 — wasm plugin 의

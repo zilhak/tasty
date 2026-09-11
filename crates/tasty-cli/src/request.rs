@@ -1033,7 +1033,7 @@ mod tests {
 
     // env 는 process-global 이라 cargo test 의 병렬 실행에서 race 가 난다.
     // TASTY_SURFACE_ID 를 조작하는 모든 시나리오를 이 한 #[test] 안에 순차
-    // 수행해 격리한다 (TODO §2 권고 A). 별도 #[test] 로 분리하면 set/remove 가
+    // 수행해 격리한다. 별도 #[test] 로 분리하면 set/remove 가
     // 병렬 인터리빙되어 flaky 해진다 — 실측 사례: terminal.children 의
     // remove_var 가 notify 의 set_var("42") 직후에 끼어들어 None != Some(42).
     #[test]

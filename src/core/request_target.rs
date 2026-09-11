@@ -681,8 +681,8 @@ mod tests {
     }
 
     /// `"child"` 는 `terminal.kill`/`terminal.release`/`terminal.respawn` 이 쓰는
-    /// **부모별 index**지 surface id 가 아니다(TODO 문서에서 명시적으로 배제) —
-    /// resource id 로 오인해선 안 된다.
+    /// **부모별 index**지 surface id 가 아니다 — 같은 index 가 부모마다 다른
+    /// surface 를 가리키므로 resource id 로 오인해 라우팅하면 안 된다.
     #[test]
     fn child_index_key_is_not_recognized() {
         assert!(params_resource_id(&json!({ "child": 5 })).is_none());

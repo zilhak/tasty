@@ -202,7 +202,7 @@ mod tests {
     }
 
     /// 보안 회귀 테스트 — deny 프로필과 allow 프로필을 조합해도 샌드박스가
-    /// 풀리면 안 된다(TODO 검증 절차 9번과 동일 시나리오, JSON 레벨).
+    /// 풀리면 안 된다 — 적용 순서를 뒤집어도 deny 가 이긴다는 것을 JSON 레벨에서 고정한다.
     #[test]
     fn deny_beats_allow_even_when_allow_profile_applied_later() {
         let deny_profile = json!({"permissions": {"deny": ["Bash"]}});
