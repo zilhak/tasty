@@ -2877,6 +2877,7 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 | pre-commit | mod/use 선언 순서 · `egui::Window` 직접 사용 · `println!`/`dbg!` | ❌ 훅에만 있다 |
 | pre-commit | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 (P.1) | ✅ `plugin-version-check.yml` — **같은 스크립트를 부른다**. 훅은 index 를 `main` 과의 merge-base 와 비교하고(amend·rebase 에 안 흔들리게), CI 는 밀어넣은 범위의 두 끝점을 비교한다 |
 | pre-commit | 주석 없는 `let _ =` (C.6) | 부분 — 전수판 `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 가 훅의 상위집합이고, 그 전수판이 `check-headless` 에서 자동 실행된다(기본 조합 잡은 `--lib --bins` 라 못 본다). **자동 잡의 clippy 는 `let_underscore_must_use`(warn)로 그 자리를 표면화하지만 이 규칙을 집행하지는 않는다** — 주석을 못 읽어 사유가 달린 정상 코드까지 세는 명부이고, `-D warnings` 가 없어 빌드도 막지 않는다([error-handling](error-handling.md)) |
+| pre-commit | 커밋되지 않는 티켓을 가리키는 인용 P1~P7 (T.1) | ✅ `doc-guards.yml` — **같은 타깃을 부른다**(`cargo test -p tasty-doc-guards --test no_todo_file_citation`). pre-push `B.7` 도 그 타깃을 포함한다 — 셋이 겹치는 것은 의도다: 커밋 · push · main/PR 은 서로 다른 자리고, 자동 채널 둘은 **push 된 커밋만** 본다. ★ 이 검사만 staged diff 가 아니라 **레포 전체 작업 트리**를 본다(가드의 좌변이 순회다) — 내가 안 건드린 파일이 범인일 수 있는 대신, staged 밖에 남은 죽은 인용도 같이 막힌다. 실측 2.0 s |
 | pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다 |
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
@@ -2925,7 +2926,7 @@ tasty-doc-guards`)이 훅에서 초록인 채로 Windows 잡에서 빨갰다 —
 | 갈래 | 스텝 | 훅이 Windows 전용 결함을 보나 | 왜 |
 |---|---|---|---|
 | 컴파일 | `B.4` · `B.5` · `B.6` | **아니다** | `--all-targets` 는 타깃 **종류**(lib·bin·test·bench)이지 플랫폼 타깃이 아니다. 호스트만 컴파일하므로 `#[cfg(windows)]` 갈래는 타입체크·lint 를 안 받는다 |
-| 소스 문자열 | `B.7` · `A.1` · `C.6` · `C.9` · `C.11` · `C.12` | **판정이 바이트에 달린다** | 플랫폼 무관해 보이지만 결과가 체크아웃된 줄바꿈에 달린다. 위 실물이 이 갈래다 |
+| 소스 문자열 | `B.7` · `T.1` · `A.1` · `C.6` · `C.9` · `C.11` · `C.12` | **판정이 바이트에 달린다** | 플랫폼 무관해 보이지만 결과가 체크아웃된 줄바꿈에 달린다. 위 실물이 이 갈래다 |
 | 플랫폼 무관 | `A.2` · `M.1` · `P.1` · `W.1` · `W.2` | 해당 없음 | 잡을 Windows 전용 결함이 없다 |
 
 컴파일 갈래가 안 보는 코드의 크기는 재 둔다 — **문법 검사 말고는 아무것도 안 받는 자리**다:

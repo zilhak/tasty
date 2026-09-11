@@ -10,9 +10,9 @@
 
 **어떤 검사가 CI 에도 있고 어떤 검사가 훅에만 있는지는 [ci-gates](ci-gates.md) 의 표가 정본이다.** 훅을 설치하지 않거나 우회하면 훅 전용 검사(mod/use 선언 순서 · `egui::Window` 직접 사용 · `println!`/`dbg!`)는 아무 데서도 잡히지 않는다. `let _ =` 는 전수판(C.6 아래 참고)이 따로 있지만 그것이 도는 `cargo test --workspace` 에도 자동 채널은 없다.
 
-## pre-commit (1–3초)
+## pre-commit (2–5초 — 그중 T.1 이 실측 2.0 s)
 
-A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(기존 코드 통과, 신규 위반만 차단). 화이트리스트·정확한 검출 로직은 `.githooks/pre-commit` 가 SoT.
+A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(기존 코드 통과, 신규 위반만 차단). T.1 만 **레포 전체 작업 트리**를 본다 — 그 가드의 좌변이 순회라 staged 밖 위반도 잡힌다. 화이트리스트·정확한 검출 로직은 `.githooks/pre-commit` 가 SoT.
 
 | ID | 검사 | 목적 |
 |----|------|------|
@@ -24,6 +24,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | C.12 | `dbg!` | release leak 방지 |
 | M.1 | 2-parent merge 커밋 (branch 가 갈라지는 merge) | 갈래 커밋 차단. `pre-merge-commit` 은 **clean non-ff merge 만** 잡는다 — 충돌 merge 는 git 이 커밋을 만들지 않고 멈춘 뒤 resolve → `git commit` 으로 마무리되므로 이 훅을 탄다 |
 | P.1 | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 | `scripts/check-plugin-version-bump.sh` 를 훅과 CI 가 **같은 것으로** 부른다 — 둘이 갈리지 않게. 비교 기준은 `HEAD` 가 아니라 **`main` 과의 merge-base** 라 `--amend`·rebase 에 안 흔들린다 ([ADR-0137](../adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md)) |
+| T.1 | 커밋되지 않는 로컬 티켓·문서를 가리키는 인용 (P1~P7) | `cargo test -q -p tasty-doc-guards --test no_todo_file_citation` 을 그대로 부른다. **이 검사만 staged diff 가 아니라 레포 전체 작업 트리를 본다** — 가드의 좌변이 순회라 그렇다. 내가 안 건드린 파일이 범인일 수 있는 대신, staged 밖에 남은 죽은 인용도 같이 막힌다. pre-push `B.7` 과 겹치는 것은 의도다(커밋 대 push). 규칙 전문은 [ADR-0105](../adr/0105-no-nongit-path-refs-in-tracked-sources.md) |
 | W.1 | 사용자 표면 선언 파일(`crates/tasty-ipc/src/method_meta.rs` · `crates/tasty-cli/src/commands/` · `crates/tasty-plugin-*/tasty-plugin.toml`)이 staged 인데 `CHANGELOG.md` 는 아님 | CHANGELOG 누락 상기 — **경고만, 커밋은 통과** |
 | W.2 | 새로 추가된 파일을 **처음 보는 타깃** 안내 | 판정자가 다른 패키지에 있어 놓치는 일을 줄인다 — `cargo test -p <크레이트>` 는 루트 패키지의 통합 타깃을 안 돌리고 그 반대도 마찬가지다. "이 파일을 무엇이 판정하는가" 의 정확한 매핑은 순회 범위를 소스에서 읽어야 해 근사밖에 안 되므로, **새것의 종류**(경로 모양)로만 안내한다 — **경고만, 커밋은 통과** |
 
