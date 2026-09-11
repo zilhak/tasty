@@ -23,8 +23,9 @@ host 에는 그 위치를 알아내는 경로가 둘 있었고 egui-mesh 에서�
 원점 근처에 떠 입력 지점에서 떨어진다.
 
 값을 아는 쪽은 정해져 있다 — **plugin 프로세스의 egui** 가 매 pass `PlatformOutput::ime`
-(`IMEOutput { rect, cursor_rect }`)를 계산한다. 문제는 그 값이 host 로 돌아오는 채널이
-없던 것이다. 그때 plugin → host 로 흐르던 것은 mesh 바이트와 self-repaint 요청뿐이었다.
+(`IMEOutput { rect, cursor_rect }`)를 계산한다. 문제는 그 값이 host 로 돌아오는 칸이
+없던 것이다. 그때 **mesh 채널**이 plugin → host 로 나르던 것은 mesh 바이트(+ 그 메타)와
+self-repaint 요청뿐이었다.
 
 ## Decision
 
