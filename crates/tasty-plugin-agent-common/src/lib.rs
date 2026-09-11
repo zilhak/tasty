@@ -51,8 +51,10 @@
 //! 한 함수 안에서도 갈린다. 완료 알림 hook 등록(`host_call::register_completion_hooks`)은
 //! 등록 **루프**만 여기 있고 **이벤트 목록**은 각 plugin 이 인자로 준다 — 그 목록의 근거는
 //! 각자의 매니페스트 `contributes.hook_events` 이고, host 는 매니페스트에 없는 이벤트
-//! 구독을 거부한다. codex 에 `needs-input` 이 없는 것은 표류가 아니라 **의도된 비대칭**이다
-//! (대응하는 codex hook 이벤트가 없어 거짓 계약을 만들지 않으려고 선언하지 않았다).
+//! 구독을 거부한다. 두 plugin 은 `needs-input` 을 같은 이름으로 갖는다 — claude 는
+//! `Notification`/`PreToolUse`, codex 는 `PermissionRequest` 가 그것을 쏜다. 목록이
+//! 인자인 이유는 그 근거가 crate 마다 다른 파일(매니페스트)에 있어서지, 한쪽이
+//! 비어서가 아니다.
 //!
 //! **본문이 같아졌는데도 안 오는 것이 둘 있다.** `rearm_if_still_alive` 와
 //! `handle_broadcast` 는 양쪽 본문이 정규화하면 글자 그대로 같지만, 남는 것이

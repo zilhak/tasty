@@ -1,4 +1,4 @@
-<!-- source-hash: 8324f4590776 -->
+<!-- source-hash: 695d77882af6 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -101,7 +101,7 @@ Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.lo
 
 In environments where Monitor is not available, read the file directly (`tail -f`). Delivery may be delayed by tens of seconds, but it is never lost.
 
-Codex children have no `needs_input` notification (Codex CLI has no such event). A pause at an approval prompt will not appear in state notifications, so check the approval policy below before starting.
+When a Codex child pauses at a tool-execution approval prompt, its state becomes `needs_input` and a line arrives in the same file. Its tab and workspace are highlighted in yellow too. Note that after you approve, the state returns to running only once that tool finishes — Codex gives no event for the approval itself. Questions other than approvals (general input requests) are not detected yet. During automation, check the approval policy below so it never pauses in the first place.
 
 ## 5. Codex approval policy
 

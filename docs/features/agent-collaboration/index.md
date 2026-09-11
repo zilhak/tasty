@@ -64,7 +64,7 @@ tasty agent task-create --workspace-id 1 --name spawn-worker \
 | `terminal_states`(성공) | `idle`, `needs_input` | `idle` |
 | `failure_states`(실패) | `exited` | `exited` |
 
-poll 파라미터 키가 다른 것은 각 plugin 의 state 핸들러가 요구하는 이름이 다르기 때문이고(`surface_id` vs `surface`), codex 의 목록에 `needs_input` 이 없는 것은 codex 쪽에 그 상태를 세우는 hook 이벤트가 없어 실제로 관측될 일이 없기 때문이다 — 거짓 계약을 만들지 않으려고 뺐다. spawn 과 tell 은 소스 키도 다르다: spawn 응답은 `child_surface_id`(새로 만든 자식), tell 응답은 `surface_id`(이미 존재하는 대상)를 싣는다.
+poll 파라미터 키가 다른 것은 각 plugin 의 state 핸들러가 요구하는 이름이 다르기 때문이고(`surface_id` vs `surface`), codex 의 목록에 `needs_input` 이 없는 것은 관측이 안 돼서가 아니다 — codex `PermissionRequest` hook 이 그 상태를 실제로 세운다([plugins/codex](../../plugins/codex/index.md)). 두 plugin 이 갈리는 것은 **그 상태를 노드 종결로 볼지**다: claude 는 되묻기를 종결로 보고(사람이 답할 때까지 기다리는 것이 그 노드가 할 수 있는 전부), codex 는 도구 실행 승인이라 답이 오면 같은 턴이 이어지므로 종결로 보지 않는다. 지금은 그 판단을 바꾸지 않는다 — 바꾸면 `codex.spawn` 노드의 의미가 달라진다. spawn 과 tell 은 소스 키도 다르다: spawn 응답은 `child_surface_id`(새로 만든 자식), tell 응답은 `surface_id`(이미 존재하는 대상)를 싣는다.
 
 ### 이어서 지시 주기 (`tell`)
 

@@ -13,6 +13,7 @@
   `src/adapters/ipc/handler/surface/completion.rs` (completion producer) ·
   `src/adapters/ipc/handler/surface/attention.rs` (IPC 조회·해제) ·
   `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) ·
+  `crates/tasty-plugin-codex/src/handlers.rs::hook_side_effects` (Codex PermissionRequest hook producer) ·
   `src/app/dispatch_domain.rs::cascade_terminal_command_completed` (OSC 133 명령 완료 producer) ·
   `src/core/attach_runtime.rs::forward_attention`/`apply_attached_attention_clear` +
   `src/app/attach_client.rs` (원격 attach mirror 전파 — server→client push, client→server 해제 edge)
@@ -126,15 +127,15 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
 
 `AttentionStore` 는 **인스턴스 로컬**이다 — 인스턴스 간 자동 동기화가 없다. 그래서 원격
 attach 로 워크스페이스를 mirror 하는 쪽은 서버(surface 를 소유한 인스턴스)에서 발동한
-attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 플러그인 훅이 PTY 가
-있는 인스턴스에서만 발화하고 그 훅 신호는 미러에 도달하지 않으므로, push 가 없으면 미러
-사용자에게 "응답 필요" 가 도달할 경로가 **원천적으로 없다**.
+attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude·Codex 플러그인 훅이
+PTY 가 있는 인스턴스에서만 발화하고 그 훅 신호는 미러에 도달하지 않으므로, push 가 없으면
+미러 사용자에게 "응답 필요" 가 도달할 경로가 **원천적으로 없다**.
 
 - **진실 원천은 surface 를 소유한 인스턴스다.** 미러는 서버가 push 한 값을 **반영만** 하고
   자기 판단으로 레코드를 만들지 않는다(아래 Producer 의 mirror 항목).
   busy(`StreamControl::Activity`)와 같은 방향·같은 이유의 단방향 채널이다.
-  단, "미러가 그 사건을 볼 수 없다" 는 **`NeedsInput` 에만 해당한다** — Claude 훅은 PTY 가
-  있는 쪽에서만 발화한다. `Completion` 쪽 producer 중 OSC 133 명령 완료·Bell·OSC 9/777 은
+  단, "미러가 그 사건을 볼 수 없다" 는 **`NeedsInput` 에만 해당한다** — Claude·Codex 훅은
+  PTY 가 있는 쪽에서만 발화한다. `Completion` 쪽 producer 중 OSC 133 명령 완료·Bell·OSC 9/777 은
   서버 바이트를 파싱하는 미러에서도 **실제로 발화하며**, 그래서 정책적으로 억제한다.
 - **서버측**: 1Hz `Tick::Busy` 에 편승해 `CoreState::forward_attention`
   (`core/attach_runtime.rs`)이 `attention_forwards`(`core/state/attention.rs`)가 계산한
@@ -181,7 +182,7 @@ attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 
 
 attention 을 발동시키는 경로. 여러 종류가 공존한다 — attention 자체는 어느 producer 에도
 종속되지 않는다. Toast/completion IPC·CLI/OSC 133 은 `kind = Completion` 으로,
-Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동한다.
+Claude·Codex hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동한다.
 
 - **Toast 알림** — toast 알림이 신규 발화(coalesce 아님)되면 그 source surface 를 attention
   (`dispatch_domain.rs` 주경로 + `event_handler.rs` windows resume 경로). 이 두 경로는
@@ -205,6 +206,13 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
     직후 active 복귀)는 대상이 아니다.
   - `tasty claude install`이 등록한 훅(`crates/tasty-plugin-claude/src/install.rs`)을 통해
     Claude 세션이 이벤트를 발화할 때마다 자동 — 별도 사용자 조작 불필요.
+- **Codex hook (plugin)** — `crates/tasty-plugin-codex/src/handlers.rs` 의 `hook_side_effects`
+  가 같은 `surface.completion` IPC 를 호출한다. 발동 이벤트는 `PermissionRequest`
+  (도구 실행 승인 프롬프트가 뜨기 직전) 하나이고 `kind = "needs_input"` 이다. 해제 쪽
+  (`PostToolUse` → active, `Interrupt` → idle)은 attention 을 다시 발동시키지 않는다 —
+  attention 해제는 이 축이 아니라 실제 포커스가 한다(위 "해제"). Codex 의 턴 완료
+  (`Stop`)는 `Completion` attention 을 발동시키지 않는다(claude 와 갈리는 지점 — 지금은
+  완료 알림 경로만 쓴다). 상세·실측은 [plugins/codex](../../plugins/codex/index.md).
 - **OSC 133 명령 완료 (셸 통합)** — `cascade_terminal_command_completed`
   (`src/app/dispatch_domain.rs`)가 OSC 133 D phase(개별 셸 명령 종료)
   를 받을 때마다 exit code(성공/실패) 무관하게 항상 `raise_attention(surface_id,

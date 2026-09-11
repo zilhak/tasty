@@ -7,10 +7,13 @@
 //! - `make_codex_command` — codex 바이너리 기동 명령 빌더(`--dangerously-bypass-hook-trust`
 //!   포함 — hook 이 항상 fire 되게 한다).
 //! - install/uninstall/hook — `~/.codex/config.toml` 조작 + trust 판정.
-//! - hook 이 산출한 idle/active 신호를 `terminal.set_state` 로 호스트 registry 에 주입하고,
-//!   `stop` 이벤트는 `surface.fire_hook`으로 `codex-idle`도 함께 쏜다.
-//! - `handle_spawn`/`handle_tell` 이 완료 시(`codex-idle`/`process-exit`) caller 에게
-//!   1 회성 알림을 보내는 hook 을 등록한다(`register_notify_hooks`).
+//! - hook 이 산출한 idle/needs_input/active 신호를 `terminal.set_state` 로 호스트
+//!   registry 에 주입하고, 턴이 끝나는 이벤트(`stop`/`interrupt`)는
+//!   `surface.fire_hook`으로 `codex-idle`도, 승인 대기(`permission-request`)는
+//!   `needs-input` 과 `surface.completion`(kind=needs_input)도 함께 쏜다.
+//! - `handle_spawn`/`handle_tell` 이 상태 전환 시(`codex-idle`/`needs-input`/
+//!   `process-exit`) caller 에게 1 회성 알림을 보내는 hook 을 등록한다
+//!   (`register_notify_hooks`).
 //!
 //! 모든 호스트 호출은 `host.call(...)`을 통해 동기로 이루어진다.
 
@@ -247,10 +250,11 @@ fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<Str
 /// `default_sandbox_mode`) > **하드코드 기본값**.
 ///
 /// **승인(`approval`)은 결정되지 않으면 무조건 `never`로 떨어진다** — tasty 가 spawn 하는
-/// codex 자식은 전부 완료 알림(idle/exit hook)만 기다리는 무인 자동화 흐름이고, codex 에는
-/// needs_input 류 hook 이 없어 승인 프롬프트가 뜨면 아무도 응답할 수 없는 채로 영구 정지한다
-/// (기본값이 무해하지 않으면 이 정지가 그대로 재현된다 — docs/plugins/codex/index.md 의
-/// 승인/샌드박스 정책 플래그 절 참조). "설정을 안 건드리면 codex 자체 인터랙티브 기본값을
+/// codex 자식은 전부 무인 자동화 흐름이라, 승인 프롬프트가 뜨면 아무도 응답하지 않는 채로
+/// 멈춘다(기본값이 무해하지 않으면 이 정지가 그대로 재현된다 — docs/plugins/codex/index.md 의
+/// 승인/샌드박스 정책 플래그 절 참조). `PermissionRequest` hook 을 설치한 뒤로 그 정지는
+/// **관측 가능**해졌지만(상태가 `needs_input` 으로 조회되고 caller 에게 알림이 간다) 스스로
+/// 풀리지는 않는다 — 사람이 응답해야 한다. "설정을 안 건드리면 codex 자체 인터랙티브 기본값을
 /// 쓴다"는 옛 의미는 더 이상 유효하지 않다 — 인터랙티브 승인이 필요하면 호출자가 `--approval
 /// untrusted`/`on-request` 를 **명시적으로** 넘겨야 한다.
 /// 샌드박스(`sandbox`)는 승인과 달리 결정 안 됐다고 자체적으로 멈추는 축이 아니므로(그 자체는
@@ -563,12 +567,13 @@ fn register_notify_hooks<H: HostCall>(
 ) {
     let cmd = notify_caller_command(caller_surface, target_surface, kind);
     // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
-    // `needs-input` 이 없는 것은 표류가 아니라 codex 에 그 hook 이 없기 때문이다.
+    // 세 이벤트 모두 거기 선언돼 있어야 host 가 등록을 받아준다. `needs-input` 은
+    // codex `PermissionRequest` hook 이 쏜다(짝인 claude 와 같은 이벤트 이름).
     tasty_plugin_agent_common::host_call::register_completion_hooks(
         host,
         target_surface,
         &cmd,
-        &["codex-idle", "process-exit"],
+        &["codex-idle", "needs-input", "process-exit"],
         "codex",
     );
 }
@@ -614,10 +619,10 @@ pub(crate) fn handle_notify_caller<H: HostCall>(
 }
 
 /// `target` 이 host 트리에 여전히 존재하면(=이번 fire 가 process-exit 가 아니었다면)
-/// 형제 hook(codex-idle/process-exit)을 재등록한다. process-exit 로 fire 된 경우 host
-/// 는 hook 발화 직후 동기로 그 surface 를 닫으므로(`close_surface_by_id_no_snapshot`)
-/// 이 시점엔 이미 사라져 있고, 반대로 codex-idle 은 surface 가 살아있는 상태에서만
-/// 나는 이벤트라 재등록이 안전하다. **조회 실패를 어느 쪽으로 볼지는
+/// 형제 hook(codex-idle/needs-input/process-exit)을 재등록한다. process-exit 로 fire 된
+/// 경우 host 는 hook 발화 직후 동기로 그 surface 를 닫으므로(`close_surface_by_id_no_snapshot`)
+/// 이 시점엔 이미 사라져 있고, 반대로 codex-idle/needs-input 은 surface 가 살아있는
+/// 상태에서만 나는 이벤트라 재등록이 안전하다. **조회 실패를 어느 쪽으로 볼지는
 /// [`surface_is_alive`] 가 한 곳에서 정한다** — 그 사유의 사본을 여기 두지 않는다.
 ///
 /// ★ 짝 crate(claude)에 **본문이 같은** 함수가 있고 합치지 않았다. 이유는 부르는
@@ -791,8 +796,9 @@ pub(crate) fn handle_respawn(
     Ok(resp)
 }
 
-/// Codex CLI hook event 가 fire 됐을 때 호출. install 이 박은 `Stop` /
-/// `UserPromptSubmit` / `SessionStart` 만 정상 처리한다. idle/active 신호를
+/// Codex CLI hook event 가 fire 됐을 때 호출. install 이 박은 6 개
+/// (`Stop` / `UserPromptSubmit` / `SessionStart` / `PermissionRequest` /
+/// `PostToolUse` / `Interrupt`) 만 정상 처리한다. idle/needs_input/active 신호를
 /// 호스트 registry(`terminal.set_state`)에 주입한다 — 자체 state 는 없다.
 ///
 /// **반환값**: Tasty 내부 진단용 `host_call_failures`. CLI 가 이 값으로 실패를
@@ -856,16 +862,13 @@ pub(crate) fn handle_hook<H: HostCall>(
         "terminal.set_state",
         json!({ "surface": surface_id, "state": new_state }),
     )?;
-    // stop → idle 은 완료 신호이기도 하므로 `codex-idle` surface hook 도 함께
-    // 쏜다 — `register_notify_hooks` 로 등록된 1 회성 알림이 이걸 구독한다.
-    if event == "stop"
-        && let Err(e) = host.call(
-            "surface.fire_hook",
-            json!({ "surface_id": surface_id, "event": "codex-idle" }),
-        )
-    {
-        tracing::warn!("codex hook fire_hook 'codex-idle' failed: {e}");
-        host_call_failures += 1;
+    // 상태 주입만으로는 UI 가 아무것도 모른다 — 턴 경계는 surface hook 으로,
+    // 승인 대기는 그 위에 공용 attention 까지 함께 쏜다.
+    for (event_key, value) in hook_side_effects(event) {
+        if let Err(e) = host.call(event_key, value(surface_id)) {
+            tracing::warn!("codex hook '{event}' side-effect {event_key} failed: {e}");
+            host_call_failures += 1;
+        }
     }
     // 응답이 빈 객체였다 — 그러면 최선노력 호출이 전부 실패한 훅과 전부 성공한 훅이
     // 바이트까지 같다. 전파하는 호출이 하나 있다고 해서 나머지의 침묵이 메워지지는
@@ -875,15 +878,57 @@ pub(crate) fn handle_hook<H: HostCall>(
 }
 
 /// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
+///
+/// 이벤트별 근거는 codex-cli 0.154.0 실측(하나의 세션에서 훅 payload 와 발생 순서를
+/// 덤프)이다 — 전체 표와 측정값은
+/// [docs/plugins/codex/index.md](../../../docs/plugins/codex/index.md) 의 hook 절.
+///
+/// - `interrupt` → **idle**: 승인 거절(선택지 3)·Esc·Ctrl-C 는 `Interrupt` **하나만**
+///   쏘고 `Stop` 도 `PostToolUse` 도 뒤따르지 않는다. 이 매핑이 없으면 중단된 자식이
+///   영원히 `active` 로 남아 완료 알림이 오지 않는다.
+/// - `post-tool-use` → **active**: 승인이 난 뒤 codex 가 쏘는 **유일한** 이벤트라
+///   `needs_input` 해제를 여기서 한다. 도구가 끝난 뒤에 오므로 해제가 도구 실행
+///   시간만큼 늦다(측정: 45 s sleep 에 45.4 s) — codex 가 "승인이 났다" 자체를
+///   알리는 이벤트를 갖고 있지 않아서다.
 fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, IpcMethodError> {
     match event {
-        "stop" => Ok("idle"),
-        "prompt-submit" | "session-start" => Ok("active"),
+        "stop" | "interrupt" => Ok("idle"),
+        "permission-request" => Ok("needs_input"),
+        "prompt-submit" | "session-start" | "post-tool-use" => Ok("active"),
         other => Err(IpcMethodError::invalid_params(&tr.t_replace(
             "codex.hook.unknown_event",
             "{event}",
             other,
         ))),
+    }
+}
+
+/// state 주입 **외에** 그 이벤트가 추가로 쏴야 할 host 호출들(순수 함수, 단위 시험
+/// 대상). 전부 최선노력이라 실패해도 응답은 `ok` 이고 `host_call_failures` 로만 샌다.
+///
+/// - 턴이 끝나는 이벤트(`stop`/`interrupt`)는 `codex-idle` surface hook —
+///   `register_notify_hooks` 가 등록한 1 회성 알림이 이걸 구독한다.
+/// - 승인 대기(`permission-request`)는 `needs-input` surface hook(같은 알림 경로)과
+///   공용 attention(`surface.completion` kind=needs_input) 둘 다. 후자가 없으면
+///   registry 상태만 바뀌고 탭·워크스페이스 표시는 그대로다
+///   ([ADR-0062](../../../docs/adr/0062-attention-store-kind-aware-primitive.md)).
+fn hook_side_effects(event: &str) -> Vec<(&'static str, fn(u32) -> Value)> {
+    match event {
+        "stop" | "interrupt" => vec![(
+            "surface.fire_hook",
+            |sid| json!({ "surface_id": sid, "event": "codex-idle" }),
+        )],
+        "permission-request" => vec![
+            (
+                "surface.fire_hook",
+                |sid| json!({ "surface_id": sid, "event": "needs-input" }),
+            ),
+            (
+                "surface.completion",
+                |sid| json!({ "surface_id": sid, "kind": "needs_input" }),
+            ),
+        ],
+        _ => Vec::new(),
     }
 }
 
@@ -912,7 +957,7 @@ pub(crate) fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
             "Codex blocks newly-added hooks until trusted, but tasty starts every codex instance \
 with `--dangerously-bypass-hook-trust` (spawn/launch/reboot), so hooks fire regardless of this \
 status. Manual trust is only needed if you run `codex` yourself without that flag. To trust \
-manually: run `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press \
+manually: run `codex` in any terminal, type `/hooks` + Enter, then for each installed hook press \
 Enter → t → Esc → Down. Trust persists per-machine."
                 .into(),
         );
@@ -951,9 +996,10 @@ pub(crate) fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError>
 // # async = false                  # optional
 // ```
 //
-// Codex 가 지원하는 event: Stop, PreToolUse, PostToolUse, PermissionRequest,
-// PreCompact, PostCompact, SessionStart, UserPromptSubmit. tasty 는 idle/active
-// 트래킹에 필요한 3 개만 박는다 (Stop, UserPromptSubmit, SessionStart).
+// Codex 가 지원하는 event(0.154.0 바이너리 실측): PreToolUse, PermissionRequest,
+// PostToolUse, PreCompact, PostCompact, SessionStart, SessionEnd, UserPromptSubmit,
+// SubagentStart, SubagentStop, Stop, Interrupt. tasty 는 idle/needs_input/active
+// 트래킹에 필요한 6 개만 박는다 ([`HOOK_EVENTS`]).
 //
 // Trust gate: codex 는 새 hook entry 를 *trust* 하기 전엔 fire 하지 않고 TUI 에
 // "1 hook needs review" 표시 후 `/hooks` 명령 승인을 요구한다 (`HookStateToml`
@@ -976,10 +1022,20 @@ const HOOK_MARKER: &str = "tasty codex hook";
 /// 인코딩한다. config table 키는 Rust enum variant 그대로 CamelCase, hook 명령에
 /// 넘기는 우리 자체 event 이름은 kebab, codex 가 trust state 를 영속화할 때 쓰는
 /// 키는 snake_case lowercase.
+/// 매처(`matcher`)는 어느 항목에도 걸지 않는다 — 승인은 **어느 tool 에서도** 요청될 수
+/// 있어 tool 이름으로 좁힐 근거가 없다(짝인 claude 는 `AskUserQuestion` 하나로 좁힌다).
+/// 그 대가로 `PostToolUse` 는 tool 호출마다 hook 프로세스를 하나 띄운다.
 const HOOK_EVENTS: &[(&str, &str, &str)] = &[
     ("Stop", "stop", "stop"),
     ("UserPromptSubmit", "prompt-submit", "user_prompt_submit"),
     ("SessionStart", "session-start", "session_start"),
+    (
+        "PermissionRequest",
+        "permission-request",
+        "permission_request",
+    ),
+    ("PostToolUse", "post-tool-use", "post_tool_use"),
+    ("Interrupt", "interrupt", "interrupt"),
 ];
 
 /// 경로만 계산한다 — 실패를 문구로 만들지 않으므로 `Translator` 가 없는 자리에서도
@@ -1322,7 +1378,10 @@ mod tests {
     /// 물건이라 "실패를 만드는" 축이 없다 — 그 축만 따로 세운다.
     struct FlakyHost {
         fail: Vec<&'static str>,
-        seen: RefCell<Vec<String>>,
+        /// method 이름만이 아니라 **params 까지** 남긴다 — 어떤 이벤트가 어떤 부수효과를
+        /// 쐈는지는 `surface.fire_hook` 의 `event` 값에서만 갈린다(같은 method 를 두
+        /// 이벤트가 공유한다).
+        seen: RefCell<Vec<(String, Value)>>,
     }
 
     impl FlakyHost {
@@ -1340,7 +1399,7 @@ mod tests {
             method: &str,
             _params: Value,
         ) -> Result<Value, tasty_plugin_sdk::PluginError> {
-            self.seen.borrow_mut().push(method.to_string());
+            self.seen.borrow_mut().push((method.to_string(), _params));
             if self.fail.contains(&method) {
                 Err(tasty_plugin_sdk::PluginError::HostCall {
                     method: method.to_string(),
@@ -1650,6 +1709,97 @@ mod tests {
         );
     }
 
+    /// 승인 대기 진입: 상태만 바꾸는 것으로는 UI 가 아무것도 모른다 — 같은 훅이
+    /// `needs-input` surface hook(알림 경로)과 공용 attention(`surface.completion`
+    /// kind=needs_input)까지 쏴야 탭·워크스페이스 표시가 난다.
+    #[test]
+    fn a_permission_request_raises_state_notification_and_attention_together() {
+        let host = FlakyHost::failing(Vec::new());
+        let out = handle_hook(
+            &host,
+            &json!({ "surface_id": 42, "event": "permission-request" }),
+            &test_translator(),
+        )
+        .unwrap();
+        assert_eq!(out["host_call_failures"], 0);
+
+        let seen = host.seen.borrow();
+        assert!(
+            seen.contains(&(
+                "terminal.set_state".to_string(),
+                json!({ "surface": 42, "state": "needs_input" })
+            )),
+            "{seen:?}"
+        );
+        assert!(
+            seen.contains(&(
+                "surface.fire_hook".to_string(),
+                json!({ "surface_id": 42, "event": "needs-input" })
+            )),
+            "{seen:?}"
+        );
+        assert!(
+            seen.contains(&(
+                "surface.completion".to_string(),
+                json!({ "surface_id": 42, "kind": "needs_input" })
+            )),
+            "{seen:?}"
+        );
+    }
+
+    /// 중단(거절 / Esc / Ctrl-C)은 `Interrupt` **하나만** 온다 — 그래서 이 훅이
+    /// idle 로 되돌리고 완료 알림(`codex-idle`)까지 쏜다. 안 그러면 중단된 자식이
+    /// 영원히 active 로 남아 기다리는 부모가 풀리지 않는다.
+    #[test]
+    fn an_interrupt_goes_idle_and_fires_the_completion_hook() {
+        let host = FlakyHost::failing(Vec::new());
+        handle_hook(
+            &host,
+            &json!({ "surface_id": 42, "event": "interrupt" }),
+            &test_translator(),
+        )
+        .unwrap();
+
+        let seen = host.seen.borrow();
+        assert!(
+            seen.contains(&(
+                "terminal.set_state".to_string(),
+                json!({ "surface": 42, "state": "idle" })
+            )),
+            "{seen:?}"
+        );
+        assert!(
+            seen.contains(&(
+                "surface.fire_hook".to_string(),
+                json!({ "surface_id": 42, "event": "codex-idle" })
+            )),
+            "{seen:?}"
+        );
+    }
+
+    /// 해제 쪽은 부수효과가 없다 — 상태만 active 로 돌린다. `needs-input` 을
+    /// 한 번 더 쏘거나 완료 알림을 쏘면 배지가 늘어난다.
+    #[test]
+    fn a_post_tool_use_only_returns_to_active() {
+        let host = FlakyHost::failing(Vec::new());
+        handle_hook(
+            &host,
+            &json!({ "surface_id": 42, "event": "post-tool-use" }),
+            &test_translator(),
+        )
+        .unwrap();
+
+        let seen = host.seen.borrow();
+        assert_eq!(
+            *seen,
+            vec![(
+                "terminal.set_state".to_string(),
+                json!({ "surface": 42, "state": "active" })
+            )],
+            "{seen:?}"
+        );
+    }
+
     #[test]
     fn hook_event_to_state_maps_known_events() {
         assert_eq!(
@@ -1664,6 +1814,30 @@ mod tests {
             hook_event_to_state("session-start", &test_translator()).unwrap(),
             "active"
         );
+        assert_eq!(
+            hook_event_to_state("permission-request", &test_translator()).unwrap(),
+            "needs_input"
+        );
+        assert_eq!(
+            hook_event_to_state("post-tool-use", &test_translator()).unwrap(),
+            "active"
+        );
+        assert_eq!(
+            hook_event_to_state("interrupt", &test_translator()).unwrap(),
+            "idle"
+        );
+    }
+
+    /// 설치하는 이벤트와 해석하는 이벤트가 갈리면 훅이 fire 되고도 invalid_params 로
+    /// 거부된다 — 한쪽만 늘어나는 표류를 여기서 막는다.
+    #[test]
+    fn every_installed_event_has_a_state_mapping() {
+        for (camel, kebab, _) in HOOK_EVENTS {
+            assert!(
+                hook_event_to_state(kebab, &test_translator()).is_ok(),
+                "{camel} 를 설치하면서 '{kebab}' 해석을 안 넣었다"
+            );
+        }
     }
 
     #[test]
@@ -2037,7 +2211,7 @@ command = "tasty codex hook stop"
     }
 
     #[test]
-    fn codex_hooks_all_trusted_in_returns_true_when_all_three_present() {
+    fn codex_hooks_all_trusted_in_returns_true_when_every_installed_event_present() {
         let path = "/Users/x/.codex/config.toml";
         let toml = format!(
             r#"
@@ -2049,6 +2223,15 @@ trusted_hash = "sha256:def456"
 
 [hooks.state."{path}:session_start:0:0"]
 trusted_hash = "sha256:fff999"
+
+[hooks.state."{path}:permission_request:0:0"]
+trusted_hash = "sha256:aaa111"
+
+[hooks.state."{path}:post_tool_use:0:0"]
+trusted_hash = "sha256:bbb222"
+
+[hooks.state."{path}:interrupt:0:0"]
+trusted_hash = "sha256:ccc333"
 "#
         );
         let value = parse_toml(&toml);
@@ -2410,9 +2593,9 @@ trusted_hash = "sha256:xyz"
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.commands_on(target).len(), 2, "2 형제 등록");
+        assert_eq!(host.commands_on(target).len(), 3, "3 형제 등록");
 
-        // codex-idle 이 fire(once 제거) → 나머지 형제(process-exit) 정리.
+        // codex-idle 이 fire(once 제거) → 나머지 형제(needs-input/process-exit) 정리.
         assert_eq!(host.fire(target, "codex-idle"), 1);
         let expected = notify_caller_command(caller, target, "tell");
         cleanup_sibling_hooks(&host, target, &expected);
@@ -2433,7 +2616,7 @@ trusted_hash = "sha256:xyz"
         let (caller, target) = (7u32, 1650u32);
         register_notify_hooks(&host, caller, target, "spawn");
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.commands_on(target).len(), 4, "두 그룹 = 4 hook");
+        assert_eq!(host.commands_on(target).len(), 6, "두 그룹 = 6 hook");
 
         // spawn 그룹의 codex-idle 이 먼저 fire → spawn 그룹만 정리.
         host.fire(target, "codex-idle");
@@ -2474,7 +2657,7 @@ trusted_hash = "sha256:xyz"
         let (caller, target) = (7u32, 1650u32);
         host.mark_alive(target);
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.commands_on(target).len(), 2, "최초 2 형제 등록");
+        assert_eq!(host.commands_on(target).len(), 3, "최초 3 형제 등록");
 
         // 1번째 전환: codex-idle — child 는 여전히 살아있다.
         assert_eq!(host.fire(target, "codex-idle"), 1);
@@ -2486,8 +2669,8 @@ trusted_hash = "sha256:xyz"
         .unwrap();
         assert_eq!(
             host.commands_on(target).len(),
-            2,
-            "살아있으면 형제 hook 이 다시 2개로 재무장돼야 함"
+            3,
+            "살아있으면 형제 hook 이 다시 3개로 재무장돼야 함"
         );
 
         // 2번째 전환에도 계속 재무장되는지 확인 — 'spawn/tell 당 1회' 로 되돌아가면 안 됨.
@@ -2500,7 +2683,7 @@ trusted_hash = "sha256:xyz"
         .unwrap();
         assert_eq!(
             host.commands_on(target).len(),
-            2,
+            3,
             "두 번째 전환에도 재무장돼야 함"
         );
     }
