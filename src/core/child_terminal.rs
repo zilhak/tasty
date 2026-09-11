@@ -200,11 +200,20 @@ impl ChildTerminalRegistry {
         true
     }
 
+    /// **`idle` 이 어느 값이든 `needs_input` 은 함께 내린다** — 두 플래그는 독립
+    /// 저장이지만 독립된 상태가 아니다. `state_of` 가 `needs_input` 을 `idle` 보다
+    /// 우선하므로, 한 번 세워진 `needs_input` 은 그것을 명시적으로 내리는 경로가
+    /// 없는 한 뒤따르는 `idle` 을 **영구히 가린다**. "턴이 끝났다"(idle)와 "턴 안에서
+    /// 사람을 기다린다"(needs_input)는 동시에 참일 수 없으므로, 어느 쪽 전이든
+    /// 대기는 해소된 것으로 본다.
+    ///
+    /// 이 규칙이 없으면 codex 승인 프롬프트를 **거절**한 자식이 그 자리에 얼어붙는다:
+    /// 거절은 `Interrupt`(→ idle) 하나만 쏘고 `PostToolUse`(→ active) 는 오지 않아,
+    /// `needs_input` 을 내릴 사람이 아무도 없다(실측 — codex-cli 0.154.0).
+    /// 근거·대안은 ADR "child 상태의 needs_input 은 idle 전이가 함께 내린다".
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
         self.idle.insert(child_surface, idle);
-        if !idle {
-            self.needs_input.insert(child_surface, false);
-        }
+        self.needs_input.insert(child_surface, false);
         self.stamp_state_report(child_surface);
     }
 

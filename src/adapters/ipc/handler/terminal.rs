@@ -496,7 +496,7 @@ pub(crate) fn handle_tell(
 /// 넣는 경로(hook `prompt-submit` → `terminal.set_state`)는 존재하지만 그게 도는
 /// 데 걸리는 시간이 폴링 간격보다 길 수 있다 — 주입한 쪽이 그 자리에서 내린다.
 ///
-/// `set_idle(_, false)` 는 `needs_input` 도 함께 내린다
+/// `set_idle` 은 어느 방향이든 `needs_input` 을 함께 내린다
 /// (`core/child_terminal.rs`) — 프롬프트에 답한 경우까지 한 번에 맞춰진다.
 ///
 /// **등록된 자식에만 적용한다**: `set_idle` 은 `HashMap::insert` 라 자식이 아닌
@@ -1497,6 +1497,24 @@ mod tests {
             &json!({ "surface": 5000, "state": "active" }),
         );
         assert_eq!(e.child_terminals.state_of(5000), "active");
+    }
+
+    /// `idle` 전이는 `needs_input` 을 함께 내린다 — codex 승인 프롬프트를 **거절**하면
+    /// `Interrupt`(→ idle) 하나만 오고 `PostToolUse`(→ active) 는 오지 않아, 이 규칙이
+    /// 없으면 자식이 영구히 `needs_input` 으로 조회된다(`state_of` 가 needs_input 을
+    /// idle 보다 우선한다).
+    #[test]
+    fn set_state_idle_clears_a_pending_needs_input() {
+        let mut e = engine();
+        e.child_terminals.register_child(7, child(5001, 0));
+        fn push(e: &mut CoreState, state: &str) {
+            let resp = handle_set_state(e, json!(1), &json!({ "surface": 5001, "state": state }));
+            assert!(resp.error.is_none(), "{state} 주입이 거부됐다");
+        }
+        push(&mut e, "needs_input");
+        assert_eq!(e.child_terminals.state_of(5001), "needs_input");
+        push(&mut e, "idle");
+        assert_eq!(e.child_terminals.state_of(5001), "idle");
     }
 
     #[test]
