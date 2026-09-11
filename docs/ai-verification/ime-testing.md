@@ -44,6 +44,11 @@ call("surface.ime_disable")
 - `surface_id` 지정 미지원 — 항상 포커스된 surface.
 - 마우스 클릭에 의한 preedit 커밋은 시뮬레이션 불가(별도 경로).
 - OS IME 후보창 위치(`set_ime_cursor_area`)는 호출되나 실제 OS IME 는 열리지 않음.
+  egui-mesh 갈래(surface·popup)의 후보창 위치는 **plugin 이 알려온 값**을 host 가 창 좌표로
+  올려 넘긴다([egui-mesh-channel](../dev-guide/egui-mesh-channel.md) "IME candidate 위치") —
+  변환식 자체는 `plugin_bridge::mesh_ime_cursor_area` 단위 시험으로 재고, 후보창이 실제로
+  그 자리에 뜨는지는 OS IME 가 그리는 창이라 tasty 프레임 캡처에 안 잡힐 수 있다. 그때는
+  넘긴 값을 로그로 관측해 판정하고, **무엇으로 판정했는지 보고에 명시한다.**
 - 이 IPC/오버레이 경로는 **터미널 전용**이다. egui-mesh 의 IME 는 별도 경로이고, 그 안에서
   다시 둘로 갈린다 — **surface** 는 winit IME 를 `ime.rs` 의 forward 로 plugin 에 넘기고,
   **popup**(markdown 의 파일열기 팝업 경로 입력 필드 등)은 host egui ctx 에 들어온

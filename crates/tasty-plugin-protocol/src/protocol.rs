@@ -244,6 +244,33 @@ pub enum ImeWire {
     Disabled,
 }
 
+/// egui [`IMEOutput`] 미러 — plugin 프로세스의 egui 가 매 pass 계산하는 "IME 를 원하는
+/// 위젯이 지금 어디에 있는가". [`PluginEvent::PaintFrame`] · [`PluginEvent::PopupPaintFrame`]
+/// 에 실려 **plugin → host** 방향으로 돌아온다(입력 와이어의 역방향).
+///
+/// 좌표는 그 mesh 콘텐츠 영역 로컬 논리 포인트(좌상단 0,0) — 입력 와이어의 포인터 좌표와
+/// 같은 계다. host 가 콘텐츠 영역 origin 을 더해 창 좌표로 바꾼 뒤 winit
+/// `set_ime_cursor_area` 로 OS 에 알린다. OS IME 후보창은 plugin 프로세스가 그리는 mesh
+/// 밖(OS 소유 창)이라 plugin 이 직접 위치를 정할 수 없고, host 만 winit 창을 쥐고 있다.
+///
+/// [`IMEOutput`]: https://docs.rs/egui/0.31/egui/output/struct.IMEOutput.html
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+pub struct ImeCursorWire {
+    /// 편집 위젯(`TextEdit`) 전체가 차지하는 사각형.
+    pub rect: RectWire,
+    /// 주 캐럿의 사각형(아주 얇다).
+    pub cursor_rect: RectWire,
+}
+
+/// 논리 포인트 사각형 — 좌상단 (x, y) + 크기. egui `Rect` 미러.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+pub struct RectWire {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
 /// `command.invoke` params — 사용자 단축키 매칭 시 호스트가 plugin에 보내는 명령.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CommandInvokeParams {
@@ -449,6 +476,11 @@ pub enum PluginEvent {
         /// capacity 를 fallback 으로 쓴다.
         #[serde(default)]
         byte_len: u32,
+        /// 이 frame 을 그린 pass 의 egui `PlatformOutput::ime` — IME 를 원하는 위젯이
+        /// focus 중이었다면 그 위치(콘텐츠 로컬 논리 포인트). host 가 OS IME 후보창
+        /// 위치를 정하는 데 쓴다([`ImeCursorWire`]). 포커스된 편집 위젯이 없으면 `None`.
+        #[serde(default)]
+        ime_cursor: Option<ImeCursorWire>,
     },
     /// egui-mesh popup: plugin 이 popup 인스턴스용 mesh 를 commit 했음을 알린다.
     /// [`PluginEvent::PaintFrame`] 의 popup 대응 — surface_id 대신 host 발급
@@ -465,6 +497,9 @@ pub enum PluginEvent {
         /// 전체 텍스처 상태 동봉 여부 — [`PluginEvent::PaintFrame::full_textures`] 와 동일 의미.
         #[serde(default)]
         full_textures: bool,
+        /// [`PluginEvent::PaintFrame::ime_cursor`] 와 동일 의미 — popup 콘텐츠 영역 로컬.
+        #[serde(default)]
+        ime_cursor: Option<ImeCursorWire>,
     },
     /// egui-mesh banner(A3): plugin 이 banner 인스턴스용 mesh 를 commit 했음을 알린다.
     /// [`PluginEvent::PopupPaintFrame`] 의 banner 대응 — `instance_id` 로 키잉한다.

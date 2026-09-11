@@ -14,7 +14,9 @@ plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를
 [plugin] egui::Context::run(raw_input) → tessellate(ppp) → POD 인코드
           │  SharedBuffer 에 write + commit(footer generation)
           ▼  PluginEvent::PaintFrame { surface_id, buffer_id, generation,
-          │                            frame_seq, full_textures }
+          │                            frame_seq, full_textures, ime_cursor }
+          │  ime_cursor 는 그 pass 의 PlatformOutput::ime — host 가 OS IME 후보창 위치를
+          │  정하는 데 쓰는 역방향 값(아래 "IME candidate 위치")
 [host]  SharedBuffer Acquire-load → decode_paint → (ClippedPrimitive, TexturesDelta, ppp)
           → frame_seq 체인 검증(아래 "텍스처 상태 수명 + delta 체인"): delta 적용은 체인
             연속(또는 full)일 때만, mesh 채택은 참조 텍스처 상주 시 seq 불연속이어도 수행
@@ -403,14 +405,39 @@ set_context 송신 자체는 host 렌더 파이프라인의 일부라 사용자 
 없다** — 입력 주입은 `#[cfg(debug_assertions)]` debug 격리(`debug.inject_window_mouse`)로만
 존재한다(불가침 원칙 1·3, [debug-ipc](debug-ipc.md)).
 
-### 알려진 한계 (IME candidate 위치)
+### IME candidate 위치 — plugin 이 값을 되돌려준다
 
-OS IME candidate 창(조합 후보 목록)의 화면 위치는 host `update_ime_cursor_area` 가
-현재 **터미널 커서** 기준으로만 설정한다 — egui-mesh surface 편집 시 후보 창이 정확한
-필드 위치에 안 뜰 수 있다. 라이브 preedit **인라인 표시**(egui `TextEdit`)는 정상
-동작하며, 후보 창 위치는 별도 과제다. Copy 는 위 표대로 `egui_copy` capability 를
-가진 kind 한정으로 wire 에 있지만, Cut/Paste 는 아직 wire 에 없어 egui-mesh 필드에서
-Ctrl+V/X 는 동작하지 않는다(popup 미러 경로와 동일 한계).
+OS IME candidate 창(조합 후보 목록)의 위치를 winit 에 알리는 것은 host 뿐이지만
+(`set_ime_cursor_area`), **그 위치를 아는 것은 plugin 프로세스의 egui** 다 — host egui 에는
+대응 위젯이 없어 `platform_output.ime` 가 늘 `None` 이라 egui-winit 의 자동 경로가 안 탄다
+(`gfx/gpu.rs` 의 `ime_widget_focused`). 그래서 값이 **역방향으로** 돌아온다: plugin egui 의
+`PlatformOutput::ime` 를 `PaintFrame`/`PopupPaintFrame` 알림의 `ime_cursor:
+Option<ImeCursorWire>` 칸에 실어 보내고, host 가 콘텐츠 영역의 물리 origin 을 더해 창
+좌표로 올린 뒤(`plugin_bridge::mesh_ime_cursor_area`) winit 에 넘긴다. 후보창은
+`cursor_rect`(주 캐럿)를 따른다 — 터미널 갈래가 anchor **셀** 사각형을 넘기는 것과 같은
+의미다.
+
+`MainView::update_ime_cursor_area` 의 입력원은 셋이고 **IME 라우팅의 선점 순서와 같은
+순서로** 고른다: 키 포커스를 가진 plugin popup → 포커스된 egui-mesh surface → 터미널
+preedit. 조합을 받는 쪽이 후보창 위치도 정한다.
+
+**dedup 에 종속된다**: 출력 바이트가 직전과 같으면 SDK 는 알림을 아예 안 보내므로 그 tick
+에는 값이 갱신되지 않는다. 캐럿이 mesh 의 일부라 캐럿이 움직이면 바이트가 달라지고 안
+움직이면 직전 값이 여전히 맞다 — 그래서 관측되는 결함이 없지만, 이 정합은 "캐럿이
+그려진다" 는 사실에 의존한다.
+
+**banner 는 대상이 아니다** — 키/텍스트/IME 를 forward 받지 않으므로(포커스를 주지 않는
+non-modal 공지) `BannerPaintFrame` 에는 그 칸이 없다.
+
+### 알려진 한계 (attach mesh mirror 의 candidate 위치 · Cut/Paste)
+
+**attach mesh mirror 는 위 경로 밖이다** — 그 frame 은 고정 길이 바이너리 chunk 헤더
+(`tasty-ipc` `mesh_stream`)로 나르고 거기에는 `ime_cursor` 칸이 없다. 원격 mesh surface 를
+편집할 때 후보창은 여전히 마지막 위치나 창 원점 근처에 뜬다.
+
+Copy 는 위 표대로 `egui_copy` capability 를 가진 kind 한정으로 wire 에 있지만, Cut/Paste 는
+아직 wire 에 없어 egui-mesh 필드에서 Ctrl+V/X 는 동작하지 않는다(popup 미러 경로와 동일
+한계).
 
 ## crash 격리
 
@@ -529,8 +556,10 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   `src/view/main/attach_mesh_input.rs`(attach) — 후자는 좌표/modifier 변환 헬퍼
   (`mesh_local_point`/`mesh_modifiers`/`mesh_theme_snapshot`/`map_button`/`key_wire_event`)를
   그대로 재사용하고, 목적지만 로컬 `PluginManager` 대신 `CoreState` forward 큐(네트워크)로
-  바꾼다. IME candidate 위치 한계·클립보드 미지원 등 위 "알려진 한계"는 attach 경로에도
-  동일하게 적용된다(입력 자체가 같은 wire 이벤트를 타므로).
+  바꾼다. 클립보드 미지원 등 위 "알려진 한계" 는 attach 경로에도 동일하게 적용된다(입력
+  자체가 같은 wire 이벤트를 타므로). IME candidate 위치는 **attach 쪽만 한계로 남았다** —
+  값을 나르는 칸이 로컬 JSON 알림에만 있고 attach 의 바이너리 chunk 헤더에는 없다(위
+  "알려진 한계").
 - **개방 정책은 서버측에서 재검증**: client 는 서버가 보낸 디스크립터의 `role: "mesh"` 를
   신뢰하지 않고, 서버(`build_workspace_tree_surfaces`, `src/core/attach_runtime.rs`)가
   `Surface::attach_mesh_info()` + 위 "개방 정책" 화이트리스트(`is_egui_mesh_allowed`)로 재검증한
@@ -724,7 +753,7 @@ plugin `api_version` 이 호스트와 일치할 때만 열린다(`open_popup_ins
 | manifest popup rendering 필드 | `crates/tasty-plugin-manifest/src/types.rs` (`PopupRendering`) |
 | plugin SDK 헬퍼 | `crates/tasty-plugin-sdk/src/egui_surface.rs` (`EguiMeshPopup`) |
 | host 라우팅 (popup_mesh_frames / set_context 송신) | `crates/tasty-host-plugin/src/manager/{pump,events,buffer,popup}.rs` |
-| host 셸 + 입력 forward + 영역 수집 | `src/plugin_bridge/popup_render.rs` |
+| host 셸 + 입력 forward + 영역 수집 + IME 커서 영역 캐시 | `src/plugin_bridge/popup_render.rs` |
 | host 합성 (decode + 전용 Renderer) | `src/gfx/gpu/egui_mesh_prepare.rs` (`render_egui_mesh_popups`) |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` (`popup_id = "demo"`) |
 

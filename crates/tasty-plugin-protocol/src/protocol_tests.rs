@@ -425,6 +425,7 @@ fn paint_frame_event_round_trip() {
         frame_seq: 56,
         full_textures: true,
         byte_len: 777,
+        ime_cursor: None,
     };
     let s = serde_json::to_string(&ev).unwrap();
     assert!(s.contains("\"kind\":\"paint_frame\""), "{s}");
@@ -437,6 +438,7 @@ fn paint_frame_event_round_trip() {
             frame_seq,
             full_textures,
             byte_len,
+            ime_cursor,
         } => {
             assert_eq!(surface_id, 42);
             assert_eq!(buffer_id, SharedBufferId(9));
@@ -444,8 +446,56 @@ fn paint_frame_event_round_trip() {
             assert_eq!(frame_seq, 56);
             assert!(full_textures);
             assert_eq!(byte_len, 777);
+            assert_eq!(ime_cursor, None);
         }
         other => panic!("expected PaintFrame, got {other:?}"),
+    }
+}
+
+/// `ime_cursor` 는 `#[serde(default)]` 라 **그 칸이 없는 구버전 plugin 의 알림도** 그대로
+/// 파싱된다 — 새 필드가 옛 plugin 을 깨지 않는다는 것이 이 확장을 고른 근거의 일부다
+/// (ADR: plugin 이 그린 IME 커서 영역은 mesh frame 알림에 실려 host 로 돌아온다).
+#[test]
+fn paint_frame_without_ime_cursor_still_parses() {
+    let s = r#"{"kind":"paint_frame","surface_id":1,"buffer_id":2,"generation":3,"frame_seq":4,"full_textures":false,"byte_len":5}"#;
+    let parsed: PluginEvent = serde_json::from_str(s).unwrap();
+    match parsed {
+        PluginEvent::PaintFrame { ime_cursor, .. } => assert_eq!(ime_cursor, None),
+        other => panic!("expected PaintFrame, got {other:?}"),
+    }
+}
+
+/// IME 커서 영역이 두 rect 를 온전히 round-trip 한다 — host 가 창 좌표 변환에 쓰는 값이라
+/// 한 칸만 새도 후보창이 엉뚱한 곳에 뜬다.
+#[test]
+fn paint_frame_ime_cursor_round_trips() {
+    let ime = ImeCursorWire {
+        rect: RectWire {
+            x: 12.0,
+            y: 34.0,
+            width: 200.0,
+            height: 24.0,
+        },
+        cursor_rect: RectWire {
+            x: 56.0,
+            y: 36.0,
+            width: 1.0,
+            height: 18.0,
+        },
+    };
+    let ev = PluginEvent::PopupPaintFrame {
+        instance_id: 7,
+        buffer_id: SharedBufferId(1),
+        generation: 2,
+        frame_seq: 3,
+        full_textures: false,
+        ime_cursor: Some(ime),
+    };
+    let s = serde_json::to_string(&ev).unwrap();
+    let parsed: PluginEvent = serde_json::from_str(&s).unwrap();
+    match parsed {
+        PluginEvent::PopupPaintFrame { ime_cursor, .. } => assert_eq!(ime_cursor, Some(ime)),
+        other => panic!("expected PopupPaintFrame, got {other:?}"),
     }
 }
 

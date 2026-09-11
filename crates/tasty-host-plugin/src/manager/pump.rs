@@ -263,6 +263,7 @@ impl PluginManager {
                 frame_seq,
                 full_textures,
                 byte_len,
+                ime_cursor,
             } => {
                 // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
                 // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
@@ -276,6 +277,7 @@ impl PluginManager {
                         frame_seq,
                         full_textures,
                         byte_len,
+                        ime_cursor,
                     },
                 ));
             }
@@ -285,6 +287,7 @@ impl PluginManager {
                 generation,
                 frame_seq,
                 full_textures,
+                ime_cursor,
             } => {
                 // A2 popup 수신 라우팅: 최근 popup mesh frame 메타를 저장.
                 // host 합성기(popup_mesh_render)가 instance_id 로 lookup 한다.
@@ -299,6 +302,7 @@ impl PluginManager {
                         // popup 은 attach mesh mirror 스코프 밖(surface 전용, TODO
                         // 15/18) — wire 에 byte_len 이 없어 0(구버전과 동일 fallback).
                         byte_len: 0,
+                        ime_cursor,
                     },
                 ));
             }
@@ -321,6 +325,9 @@ impl PluginManager {
                         full_textures,
                         // banner 도 attach mesh mirror 스코프 밖 — 위 popup 과 동일 사유.
                         byte_len: 0,
+                        // banner 는 키/IME 를 forward 받지 않아(셸이 포커스를 주지
+                        // 않는 non-modal 공지) wire 에 이 칸이 없다.
+                        ime_cursor: None,
                     },
                 ));
             }

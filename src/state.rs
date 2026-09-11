@@ -453,6 +453,17 @@ pub struct AppState {
     /// mesh 를 합성한다. 셸(scrim/bg/border)은 host egui 가, 내용만 plugin mesh 가 그린다.
     pub(crate) plugin_mesh_popup_regions: Vec<(u64, crate::model::PhysicalRect)>,
 
+    /// 키 포커스를 가진 egui-mesh popup 이 알려온 IME 커서 영역(창 물리 좌표).
+    /// `draw_plugin_popups` 가 매 egui frame 채우고 `MainView::update_ime_cursor_area` 가
+    /// 읽어 winit `set_ime_cursor_area` 로 OS IME 후보창 위치를 정한다.
+    ///
+    /// 렌더 프레임이 채우는 캐시라 `plugin_popup_open` 과 같은 프레임 간 전달 패턴이다 —
+    /// IME 커서 영역을 아는 것은 plugin 프로세스의 egui 뿐이고(host egui 에는 대응 위젯이
+    /// 없어 `platform_output.ime` 가 늘 `None`), 그 값은 `PopupPaintFrame` 알림으로
+    /// 돌아온다. `None` 이면 그 popup 에 편집 위젯 포커스가 없다는 뜻이라 후보창 위치를
+    /// 정하지 않는다.
+    pub(crate) plugin_popup_ime_cursor_area: Option<crate::model::PhysicalRect>,
+
     /// egui-mesh popup 인스턴스별 forward 추적 상태. **칸의 정의도 dirty 판정도
     /// [`crate::plugin_bridge::MeshForwardCommon`] 한 곳에서 나온다** — banner·surface 와
     /// "같은 모양" 이라서가 아니라 *같은 타입*이라서 갈릴 자리가 없다. 무입력 강제
@@ -1054,6 +1065,7 @@ impl AppState {
             plugin_popup_focus_bumps: Vec::new(),
             plugin_banner_closes: Vec::new(),
             plugin_mesh_popup_regions: Vec::new(),
+            plugin_popup_ime_cursor_area: None,
             plugin_mesh_popup_forward: std::collections::HashMap::new(),
             plugin_mesh_banner_regions: Vec::new(),
             plugin_mesh_banner_forward: std::collections::HashMap::new(),

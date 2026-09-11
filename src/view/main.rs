@@ -93,6 +93,15 @@ pub struct MainView {
     /// Used to reconcile: if the raw cursor moved past this point, PTY
     /// echo has caught up and advance should be reduced accordingly.
     pub(crate) ime_advance_base: (usize, usize),
+    /// 포커스된 egui-mesh surface 가 알려온 IME 커서 영역(창 물리 좌표).
+    /// `forward_egui_mesh_context` 가 매 redraw 채우고 [`Self::update_ime_cursor_area`] 가
+    /// 읽어 OS IME 후보창 위치를 정한다. popup 쪽 짝은
+    /// `AppState.plugin_popup_ime_cursor_area`.
+    ///
+    /// 터미널 갈래(`ime_preedit`)와 달리 조합 중이 아니어도 채워진다 — plugin egui 의
+    /// `PlatformOutput::ime` 는 편집 위젯이 focus 중이면 늘 `Some` 이고, host egui 위젯에
+    /// 대해 egui-winit 이 하는 것과 같은 판정이다.
+    pub(crate) egui_mesh_ime_cursor_area: Option<crate::model::PhysicalRect>,
     /// Detector for double-tap modifier shortcuts (e.g. Shift+Shift).
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
@@ -241,6 +250,7 @@ impl MainView {
             click_count: 0,
             ime_active: false,
             ime_cursor_advance: 0,
+            egui_mesh_ime_cursor_area: None,
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
@@ -308,12 +318,30 @@ impl MainView {
         ime::recalc_anchor(self);
     }
 
+    /// OS IME 후보창이 뜰 자리를 winit 에 알린다. 입력원이 셋이고 **위에서 아래로
+    /// 선점한다** — [`ime`] 모듈의 IME 라우팅 선점 순서와 같은 순서다(오버레이/popup →
+    /// egui-mesh surface → 터미널). 조합을 받는 쪽이 후보창 위치도 정해야 한다.
+    ///
+    /// 앞의 둘은 plugin 프로세스의 egui 가 계산한 값이다 — host egui 에는 대응 위젯이 없어
+    /// `platform_output.ime` 가 늘 `None` 이고(`gfx/gpu.rs` 의 `ime_widget_focused`),
+    /// egui-winit 의 자동 경로가 안 탄다. 그 값은 mesh frame 알림에 실려 돌아온다.
     pub(crate) fn update_ime_cursor_area(&self) {
         // 무대 중에는 뒤 surface 의 셀 좌표로 IME 후보창 위치를 잡는 것이 무의미하다
         // (그 surface 는 보이지도 않는다). 진입 시 preedit 은 이미 버려지므로 보통
         // 아래 `ime_preedit` 가드에 걸리지만, 무대 콘텐츠가 자체 IME 입력을 받는
         // 경우까지 뒤 좌표를 쓰지 않도록 명시적으로 먼저 끊는다.
         if self.state.fullscreen_stage_active() {
+            return;
+        }
+        // 키 포커스를 가진 plugin egui-mesh popup 이 먼저다 — popup 이 열려 있으면 조합은
+        // 그 popup 이 받는다(`view::main::ime` 의 오버레이 분기 + `collect_mesh_popup_input`).
+        if let Some(area) = self.state.plugin_popup_ime_cursor_area {
+            self.set_ime_cursor_area(area);
+            return;
+        }
+        // 다음은 포커스된 egui-mesh surface.
+        if let Some(area) = self.egui_mesh_ime_cursor_area {
+            self.set_ime_cursor_area(area);
             return;
         }
         let Some(preedit) = &self.ime_preedit else {
@@ -332,16 +360,18 @@ impl MainView {
         ) else {
             return;
         };
+        self.set_ime_cursor_area(cell_rect);
+    }
 
+    /// 세 입력원이 공유하는 winit 호출 한 자리. 크기는 최소 1px 로 올린다 — 0 을 넘기면
+    /// 플랫폼별로 무시하거나 창 원점으로 떨어진다.
+    fn set_ime_cursor_area(&self, area: crate::model::PhysicalRect) {
         use winit::dpi::{PhysicalPosition, PhysicalSize};
         self.base.winit.set_ime_cursor_area(
-            PhysicalPosition::new(
-                cell_rect.x.value().round() as i32,
-                cell_rect.y.value().round() as i32,
-            ),
+            PhysicalPosition::new(area.x.value().round() as i32, area.y.value().round() as i32),
             PhysicalSize::new(
-                cell_rect.width.value().max(1.0).round() as u32,
-                cell_rect.height.value().max(1.0).round() as u32,
+                area.width.value().max(1.0).round() as u32,
+                area.height.value().max(1.0).round() as u32,
             ),
         );
     }

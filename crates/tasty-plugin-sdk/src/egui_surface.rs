@@ -42,8 +42,9 @@ use egui::{
 };
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
-    BannerSetContextParams, ImeWire, ModifiersWire, PointerButtonWire, PopupSetContextParams,
-    RawInputEventWire, RawInputWire, SurfaceSetContextParams, ThemeWire,
+    BannerSetContextParams, ImeCursorWire, ImeWire, ModifiersWire, PointerButtonWire,
+    PopupSetContextParams, RawInputEventWire, RawInputWire, RectWire, SurfaceSetContextParams,
+    ThemeWire,
 };
 
 #[cfg(any(unix, windows))]
@@ -55,6 +56,17 @@ use crate::error::PluginError;
 use crate::host::HostHandle;
 #[cfg(any(unix, windows))]
 use crate::shared_buffer::SharedBuffer;
+
+/// egui `Rect` → 와이어 `RectWire`. 좌상단 + 크기로 옮긴다(음수 크기가 생기지 않도록
+/// egui 의 `width()`/`height()` 를 그대로 쓴다 — egui 가 정상 rect 를 보장한다).
+fn rect_wire(r: Rect) -> RectWire {
+    RectWire {
+        x: r.min.x,
+        y: r.min.y,
+        width: r.width(),
+        height: r.height(),
+    }
+}
 
 /// egui-mesh 렌더 코어 — surface/popup 공통. 자기 egui [`Context`](폰트 atlas 포함),
 /// 직전 출력 해시(invalidate 판정), shared buffer(unix) 를 들고 있다. surface 와 popup 은
@@ -94,6 +106,12 @@ struct EguiMeshCore {
     /// (ADR-0009) — 이 필드는 그 값을 host round-trip 없이 plugin 코드로 넘겨주는
     /// 통로일 뿐이다.
     last_copied_text: Option<String>,
+    /// 직전 `render()` 의 `platform_output.ime` — IME 를 원하는 위젯(`TextEdit`)이 그
+    /// pass 에 focus 중이었다면 그 위치(콘텐츠 로컬 논리 포인트). OS IME 후보창은
+    /// plugin 이 그리는 mesh 밖의 OS 소유 창이라 plugin 이 위치를 정할 수 없고, winit
+    /// 창을 쥔 host 만 정할 수 있다 — 이 필드는 그 값을 PaintFrame 알림에 실어 host 로
+    /// 돌려보내는 통로다.
+    last_ime_cursor: Option<ImeCursorWire>,
 }
 
 /// 한 번의 렌더가 만든 송신 후보 frame — 인코드된 mesh 바이트 + full 마킹.
@@ -146,6 +164,7 @@ impl EguiMeshCore {
             buffer: None,
             pending_self_repaint: None,
             last_copied_text: None,
+            last_ime_cursor: None,
         }
     }
 
@@ -218,6 +237,14 @@ impl EguiMeshCore {
         self.last_copied_text.take()
     }
 
+    /// 직전 `render()` 가 관측한 IME 커서 영역(콘텐츠 로컬 논리 포인트). `take_*` 가
+    /// 아니라 **복사**다 — 클립보드처럼 한 번 소비하고 끝나는 사건이 아니라 "지금 어디에
+    /// 포커스가 있는가" 라는 지속 상태이고, dedup 으로 frame 송신이 생략된 tick 에도
+    /// 값이 유효하다.
+    fn ime_cursor(&self) -> Option<ImeCursorWire> {
+        self.last_ime_cursor
+    }
+
     /// egui 를 구동·tessellate·encode 하고 직전 출력과 해시 비교로 dedup 한다.
     /// 출력이 직전과 byte 단위로 동일하면 `None`(송신 생략). `run_frame`/`repaint_last` 공용.
     ///
@@ -238,6 +265,13 @@ impl EguiMeshCore {
         self.last_copied_text = full.platform_output.commands.iter().find_map(|c| match c {
             OutputCommand::CopyText(text) if !text.is_empty() => Some(text.clone()),
             _ => None,
+        });
+        // 이 pass 에 IME 를 원하는 위젯이 focus 중이었다면 그 위치. host 가 이 값으로 OS
+        // IME 후보창 위치를 정한다. 매 render() 마다 갱신되므로 포커스가 풀리면 자연히
+        // `None` 이 된다 — host 는 `None` 을 "이 mesh 는 IME 대상이 아니다" 로 읽는다.
+        self.last_ime_cursor = full.platform_output.ime.map(|ime| ImeCursorWire {
+            rect: rect_wire(ime.rect),
+            cursor_rect: rect_wire(ime.cursor_rect),
         });
         // egui 가 이번 pass 에서 추가 pass 를 요청했는지 읽어둔다 — dedup(아래) 으로
         // 이번 frame 이 송신 생략되더라도 유실되지 않도록 매 render() 마다 갱신한다.
@@ -781,6 +815,7 @@ impl EguiMeshSurface {
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
             byte_len,
+            ime_cursor: self.core.ime_cursor(),
         })?;
         Ok(Some(generation))
     }
@@ -829,6 +864,7 @@ impl EguiMeshSurface {
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
             byte_len,
+            ime_cursor: self.core.ime_cursor(),
         })?;
         Ok(Some(generation))
     }
@@ -920,6 +956,7 @@ impl EguiMeshPopup {
             generation,
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
+            ime_cursor: self.core.ime_cursor(),
         })?;
         Ok(Some(generation))
     }
@@ -945,6 +982,7 @@ impl EguiMeshPopup {
             generation,
             frame_seq: self.core.next_frame_seq(),
             full_textures: frame.full_textures,
+            ime_cursor: self.core.ime_cursor(),
         })?;
         Ok(Some(generation))
     }

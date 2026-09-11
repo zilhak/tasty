@@ -275,6 +275,12 @@ pub struct EguiMeshFrame {
     /// 정확한 payload 만 내보내는 데 필요. 0 이면 구버전 plugin — consumer 는 버퍼
     /// capacity 전체를 fallback 으로 쓴다.
     pub byte_len: u32,
+    /// 이 frame 을 그린 plugin egui pass 의 `PlatformOutput::ime` — IME 를 원하는 위젯이
+    /// focus 중이었다면 그 위치(콘텐츠 로컬 논리 포인트). host 가 콘텐츠 영역 origin 을
+    /// 더해 창 좌표로 바꾼 뒤 winit `set_ime_cursor_area` 로 OS IME 후보창 위치를 정한다
+    /// (`src/view/main.rs` `update_ime_cursor_area`). 편집 위젯이 없으면 `None`.
+    /// banner 는 키 입력을 forward 받지 않으므로 늘 `None` 이다.
+    pub ime_cursor: Option<tasty_plugin_protocol::ImeCursorWire>,
 }
 
 pub struct PluginManager {

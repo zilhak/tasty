@@ -24,11 +24,11 @@ pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, BannerCloseReason, BannerClosedParams, BannerOpenParams,
     BannerOpenResult, BannerSetContextParams, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
-    ExtensionHookResult, HandleChannelMessage, ImeWire, IpcCallResult, ModifiersWire, PixelRect,
-    PluginEvent, PluginRequest, PluginResponse, PointerButtonWire, PopupCloseReason,
-    PopupClosedParams, PopupOpenParams, PopupOpenResult, PopupSetContextParams, RawInputEventWire,
-    RawInputWire, SharedBufferCreateParams, SharedBufferCreateResult, SharedBufferDirtyParams,
-    SharedBufferId, SurfaceResult, SurfaceSetContextParams, ThemeWire,
+    ExtensionHookResult, HandleChannelMessage, ImeCursorWire, ImeWire, IpcCallResult,
+    ModifiersWire, PixelRect, PluginEvent, PluginRequest, PluginResponse, PointerButtonWire,
+    PopupCloseReason, PopupClosedParams, PopupOpenParams, PopupOpenResult, PopupSetContextParams,
+    RawInputEventWire, RawInputWire, RectWire, SharedBufferCreateParams, SharedBufferCreateResult,
+    SharedBufferDirtyParams, SharedBufferId, SurfaceResult, SurfaceSetContextParams, ThemeWire,
     WebviewNavigationAttemptParams,
 };
 pub use protocol::{

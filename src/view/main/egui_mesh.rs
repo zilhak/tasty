@@ -362,6 +362,11 @@ impl MainView {
 
         let visible: HashSet<u32> = targets.iter().map(|t| t.sid).collect();
 
+        // IME 후보창 위치 캐시는 매 redraw 새로 채운다 — 포커스가 mesh surface 를 떠나면
+        // 값이 사라져야 터미널 갈래가 다시 후보창 위치를 정한다(stale 값이 남으면 후보창이
+        // 방금 떠난 surface 자리에 뜬다).
+        self.egui_mesh_ime_cursor_area = None;
+
         for MeshTarget {
             sid,
             plugin_id,
@@ -387,6 +392,16 @@ impl MainView {
                 &plugin_id,
             );
             let is_focused = focused == Some(sid);
+            // OS IME 후보창 위치 — plugin 이 알려온 커서 영역(콘텐츠 로컬)을 창 좌표로
+            // 올려 캐시한다. 아래 dirty 판정의 조기 `continue` **앞**이어야 한다: 조합 중
+            // 화면이 정적이면(입력·geom·theme 무변) 그 `continue` 를 타는데, 그때도 후보창
+            // 위치는 계속 유효해야 한다.
+            if is_focused
+                && let Some(ime) = mgr.egui_mesh_frame(sid).and_then(|f| f.ime_cursor.as_ref())
+            {
+                self.egui_mesh_ime_cursor_area =
+                    Some(crate::plugin_bridge::mesh_ime_cursor_area(rect, ime, ppp));
+            }
             let geom_changed = st.common.geom_changed(geom);
             let has_input = !st.events.is_empty();
             let need_bootstrap = st.common.need_bootstrap(has_frame);

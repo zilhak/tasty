@@ -63,6 +63,10 @@ pub fn draw_plugin_popups(
     // mesh popup 없음) 경로에서도 반드시 비워져야 한다. 남겨두면 이미 닫힌 plugin popup
     // 의 rect 가 host popup 의 outside-click 을 영구히 삼킨다.
     state.plugin_popup_hittest.clear();
+    // IME 후보창 위치 캐시도 매 frame 새로 채운다 — 아래 두 조기 반환(plugin manager 부재 /
+    // mesh popup 없음)도 이 리셋이 덮는다. stale 값이 남으면 popup 을 닫은 뒤에도 터미널
+    // 조합의 후보창이 닫힌 popup 자리에 뜬다.
+    state.plugin_popup_ime_cursor_area = None;
 
     let Some(mgr) = plugin_manager else {
         state.plugin_mesh_popup_forward.clear();
@@ -334,6 +338,19 @@ pub fn draw_plugin_popups(
         state
             .plugin_mesh_popup_regions
             .push((snap.instance_id, physical));
+
+        // OS IME 후보창 위치 — plugin 프로세스의 egui 가 알려온 커서 영역(콘텐츠 로컬)을
+        // 창 좌표로 올려 캐시한다. 키 포커스를 가진 popup 만 — 조합을 받는 것이 그 하나뿐이라
+        // (`collect_mesh_popup_input` 의 `has_key_focus` 게이트) 후보창도 그 하나를 따라야 한다.
+        if has_key_focus
+            && let Some(ime) = mgr
+                .popup_mesh_frame(snap.instance_id)
+                .and_then(|f| f.ime_cursor.as_ref())
+        {
+            state.plugin_popup_ime_cursor_area = Some(crate::plugin_bridge::mesh_ime_cursor_area(
+                physical, ime, ppp,
+            ));
+        }
 
         // popup 내부 클릭 시 z-order 승격(규칙 7 "클릭된 것이 앞") — host popup 의
         // `bring_to_front`(click-to-front)와 같은 규칙이다. `mgr` 이 `&PluginManager` 불변

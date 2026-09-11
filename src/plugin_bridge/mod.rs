@@ -48,6 +48,42 @@ pub(crate) fn mesh_region_of(
     .to_physical(pixels_per_point)
 }
 
+/// plugin 이 알려온 IME 커서 영역(콘텐츠 로컬 논리 포인트)을 창 물리 좌표로 올린다.
+///
+/// plugin 프로세스의 egui 가 매 pass 계산하는 `PlatformOutput::ime` 는 그 mesh 콘텐츠
+/// 영역이 원점인 좌표계다(입력 와이어의 포인터 좌표와 같은 계). OS IME 후보창 위치를
+/// 정하는 winit `set_ime_cursor_area` 는 **창** 물리 좌표를 받으므로, 콘텐츠 영역의
+/// 물리 origin 을 더해 옮겨야 한다.
+///
+/// 두 단위가 한 식에서 만나는 자리라 타입으로 고정한다(`docs/concepts/typed-length.md`) —
+/// 논리 rect 를 `to_physical` 로 한 번에 올린 뒤 물리 origin 을 더한다. 네 변에 각각
+/// `× ppp` 를 곱하고 origin 을 따로 더하면 하나를 빠뜨려도 컴파일이 통과하고, 그 결과는
+/// 후보창이 엉뚱한 자리에 뜨는 형태로만 드러난다([`mesh_region_of`] 와 같은 사유).
+///
+/// `cursor_rect`(주 캐럿)를 쓴다 — `rect`(편집 위젯 전체)를 쓰면 긴 입력란에서 후보창이
+/// 줄 왼쪽 끝에 붙는다. 터미널 갈래가 anchor **셀** 사각형을 넘기는 것과 같은 의미다.
+#[cfg(feature = "gui")]
+pub(crate) fn mesh_ime_cursor_area(
+    content_origin: crate::model::PhysicalRect,
+    ime: &tasty_plugin_protocol::ImeCursorWire,
+    pixels_per_point: f32,
+) -> crate::model::PhysicalRect {
+    use crate::model::{LogicalPx, LogicalRect, PhysicalRect};
+    let local = LogicalRect {
+        x: LogicalPx(ime.cursor_rect.x),
+        y: LogicalPx(ime.cursor_rect.y),
+        width: LogicalPx(ime.cursor_rect.width),
+        height: LogicalPx(ime.cursor_rect.height),
+    }
+    .to_physical(pixels_per_point);
+    PhysicalRect {
+        x: content_origin.x + local.x,
+        y: content_origin.y + local.y,
+        width: local.width,
+        height: local.height,
+    }
+}
+
 /// egui-mesh forward 한 벌이 **세 채널에서 똑같이** 들고 다니는 상태 — surface(A1)·
 /// popup(A2)·banner(A3).
 ///
@@ -194,5 +230,106 @@ impl MeshForwardCommon {
             self.bootstrap_at
                 .get_or_insert_with(std::time::Instant::now);
         }
+    }
+}
+
+#[cfg(all(test, feature = "gui"))]
+mod tests {
+    use super::*;
+    use crate::model::{PhysicalPx, PhysicalRect};
+    use tasty_plugin_protocol::{ImeCursorWire, RectWire};
+
+    fn ime(cursor: RectWire) -> ImeCursorWire {
+        ImeCursorWire {
+            // 편집 위젯 전체 rect — 이 함수는 캐럿만 쓰므로 값이 결과에 안 들어간다는
+            // 것을 보이려고 캐럿과 다른 값을 넣는다.
+            rect: RectWire {
+                x: 0.0,
+                y: 0.0,
+                width: 999.0,
+                height: 999.0,
+            },
+            cursor_rect: cursor,
+        }
+    }
+
+    /// ppp = 1 이면 콘텐츠 origin 을 그대로 더한 값이다 — 변환식의 뼈대.
+    #[test]
+    fn ime_cursor_area_offsets_by_the_content_origin() {
+        let origin = PhysicalRect {
+            x: PhysicalPx(100.0),
+            y: PhysicalPx(200.0),
+            width: PhysicalPx(300.0),
+            height: PhysicalPx(150.0),
+        };
+        let got = mesh_ime_cursor_area(
+            origin,
+            &ime(RectWire {
+                x: 10.0,
+                y: 20.0,
+                width: 1.0,
+                height: 18.0,
+            }),
+            1.0,
+        );
+        assert_eq!(got.x, PhysicalPx(110.0));
+        assert_eq!(got.y, PhysicalPx(220.0));
+        assert_eq!(got.width, PhysicalPx(1.0));
+        assert_eq!(got.height, PhysicalPx(18.0));
+    }
+
+    /// ppp 는 **로컬 좌표에만** 곱한다 — origin 은 이미 물리 좌표이므로 다시 곱하면
+    /// 고배율에서 후보창이 화면 밖으로 밀린다. 이 시험이 그 실수를 문다.
+    #[test]
+    fn ime_cursor_area_scales_only_the_local_rect() {
+        let origin = PhysicalRect {
+            x: PhysicalPx(100.0),
+            y: PhysicalPx(200.0),
+            width: PhysicalPx(600.0),
+            height: PhysicalPx(300.0),
+        };
+        let got = mesh_ime_cursor_area(
+            origin,
+            &ime(RectWire {
+                x: 10.0,
+                y: 20.0,
+                width: 2.0,
+                height: 16.0,
+            }),
+            2.0,
+        );
+        // origin(100,200) + 로컬(10,20) × 2 = (120, 240)
+        assert_eq!(got.x, PhysicalPx(120.0));
+        assert_eq!(got.y, PhysicalPx(240.0));
+        assert_eq!(got.width, PhysicalPx(4.0));
+        assert_eq!(got.height, PhysicalPx(32.0));
+        // origin 까지 곱한 형태(= (100+10)×2) 와 다르다.
+        assert_ne!(got.x, PhysicalPx(220.0));
+    }
+
+    /// 캐럿 rect 를 쓴다 — 위젯 전체 rect 를 쓰면 긴 입력란에서 후보창이 줄 왼쪽 끝에
+    /// 붙는다. 두 rect 가 다른 입력을 주고 결과가 캐럿을 따르는지 본다.
+    #[test]
+    fn ime_cursor_area_follows_the_caret_not_the_widget() {
+        let origin = PhysicalRect {
+            x: PhysicalPx(0.0),
+            y: PhysicalPx(0.0),
+            width: PhysicalPx(400.0),
+            height: PhysicalPx(100.0),
+        };
+        let got = mesh_ime_cursor_area(
+            origin,
+            &ime(RectWire {
+                x: 250.0,
+                y: 8.0,
+                width: 1.0,
+                height: 18.0,
+            }),
+            1.0,
+        );
+        assert_eq!(got.x, PhysicalPx(250.0));
+        // 위젯 전체 rect(x=0, width=999)를 썼다면 나올 값과 다르다.
+        assert_ne!(got.x, PhysicalPx(0.0));
+        assert_ne!(got.width, PhysicalPx(999.0));
     }
 }
