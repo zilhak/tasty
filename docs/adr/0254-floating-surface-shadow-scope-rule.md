@@ -103,6 +103,11 @@ scrim 이 지운 대비를 그림자가 되돌려야 하므로 값이 더 커진
   `crates/tasty-type-appearance/src/shadow_policy_guard.rs` 의
   `shadow_accessor_list_matches_theme_accessors` 가 접근자 명부를 theme.rs 에서 다시
   읽어 대조하므로, 접근자가 늘면 그 시험이 먼저 실패한다.
+- 정본에 **세 번째 raw 그림자 값**이 들어오거나, 기존 alias 토큰이 명부 밖 값을 가리키게
+  된다 — `crates/tasty-design-tokens/tests/shadow_parity.rs` 의
+  `raw_shadow_token_roster_is_complete` · `alias_shadow_tokens_land_on_a_listed_raw_value`
+  가 vendor json 을 훑어 잡는다. 그 시험은 같은 파일에서 두 상수의 전사(기하·알파)도
+  정본과 대조하므로, 값이 갈리는 것과 값이 늘어나는 것을 한 자리에서 본다.
 - 출하되는 그림자 토큰 중 하나가 음수 `spread` 를 갖게 된다 —
   `no_shipped_shadow_token_uses_negative_spread`(theme.rs 유닛 시험)가 잡는다. 그때는
   "미구현으로 둔다" 는 이 결정의 조항이 더 이상 유지되지 않는다는 뜻이므로, egui 밖
@@ -127,7 +132,9 @@ scrim 이 지운 대비를 그림자가 되돌려야 하므로 값이 더 커진
 
 - 코드 근거(결정이 실현된 현재 위치): `crates/tasty-type-appearance/src/theme.rs` 의
   `SHADOW_POPOVER` · `SHADOW_MODAL` · `ShadowToken::to_egui`,
-  `crates/tasty-type-appearance/src/shadow_policy_guard.rs`
+  `crates/tasty-type-appearance/src/shadow_policy_guard.rs`,
+  `crates/tasty-design-tokens/tests/shadow_parity.rs`(정본 ↔ 상수 전사 대조),
+  `crates/tasty-egui-theme/src/lib.rs`(egui 기본 그림자 두 필드의 매핑)
 - 운영 상태 서술: [`design/systems/theme.md`](../design/systems/theme.md) "떠 있는 표면의 그림자"
 - 토큰 매핑: [`design/systems/design-token-mapping.md`](../design/systems/design-token-mapping.md)
 - 수치를 문서 본문에 적지 않는 이유: [ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)

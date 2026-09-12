@@ -217,6 +217,8 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 값을 새로 만들지 않고 이 둘만 쓴다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다. 이 규칙은 `crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)가 소스 스캔으로 집행한다 — 값의 **출처**는 집행하지만 어느 표면이 어느 값을 쓰는가는 집행하지 않는다(표면의 형태를 소스에서 읽을 방법이 없다).
 
+두 상수가 디자인 정본을 제대로 옮겨 적었는지는 `crates/tasty-design-tokens/tests/shadow_parity.rs` 가 vendor json 과 필드 단위로 대조한다 — 그림자는 `$type: shadow` 라 생성기가 건너뛰고 값이 **손으로 옮겨지므로**, 이 대조가 없으면 전사 오차가 조용히 남는다(실제로 남아 있었다). 같은 파일이 정본 쪽 모수도 잠근다: raw 그림자 토큰 명부의 완전성, alias 토큰이 명부 안의 값으로 귀착하는지, `-shadow` 로 끝나는 이름이 떠 있는 그림자가 아닌 치수 축(`kbd-shadow-depth`)과 섞이지 않는지. 통합 테스트라 자동 실행은 헤드리스 잡뿐이다(`docs/dev-guide/ci-gates.md`).
+
 `ShadowToken.spread` 는 음수를 **표현**하지만(CSS `box-shadow` 와 같은 의미) 그것을 쓰는 표면은 **미구현으로 둔다** — egui 가 음수를 못 담아 `to_egui()` 가 debug 단언으로 터진다. 근거·대안은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md).
 
 egui 가 스스로 그리는 그림자 둘(`visuals.popup_shadow` · `visuals.window_shadow`)도 같은 두 토큰으로 매핑한다(`crates/tasty-egui-theme/src/lib.rs`). 매핑하지 않으면 `Visuals::dark()`/`light()` 의 기본값이 남아 정본 아닌 **세 번째 그림자**가 뜨고, 그 기본값은 테마마다 알파가 갈려(dark α96 / light α25) 같은 화면의 tasty 그림자와 값이 달라진다. 갈래는 형태가 정한다 — `Frame::popup`(= `egui::popup_below_widget` · `ComboBox` · MultiSelect/Select 위젯 메뉴)은 트리거 아래 붙는 anchored 표면이라 popover, `egui::Window` 는 뷰포트를 점유하므로 modal 이다. 프레임을 직접 넘기는 호출부는 이 기본값 대신 자기 프레임의 `.shadow(...)` 를 쓴다.
