@@ -57,7 +57,8 @@ pub fn handle(
         Err(e) => {
             // mirror 워크스페이스면 `Core::apply` 가 로컬 실행을 막고 복원 op 를
             // forward 큐에 넣은 뒤 이 에러를 돌려준다 — 로컬 스택은 손대지 않는다.
-            // 그 op 를 "사용자 유래" 로 뒤집어야 복원된 탭으로 focus 가 옮겨간다(08).
+            // 그 op 를 "사용자 유래" 로 뒤집어야 복원된 탭으로 focus 가 옮겨간다 —
+            // 사용자 유래 op 만 결과 delta 의 새 surface 로 focus 를 따라가게 한다.
             // 이 핸들러는 단축키 전용이라 origin 은 항상 사용자다.
             crate::core::mark_last_forward_user_triggered(engine, &e, &intent.origin);
             // forward 불가/그 밖의 실패는 warn 만 남기고 사용자에게 아무 신호가 없었다.
