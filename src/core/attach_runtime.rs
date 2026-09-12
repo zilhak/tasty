@@ -821,6 +821,24 @@ pub(crate) fn execute_forwarded_structural_op(
             let tab_id = engine
                 .find_tab_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} tab not found"))?;
+            // forward 된 close 는 원격 **사용자**의 손 조작이라 되돌릴 수 있어야 한다
+            // (ADR-0264 결정 4). `CloseSurface` 는 holder 진입점이 save_snapshot=true 로
+            // 갈라 들어가지만 `apply_close_tab` 에는 그 축이 없으므로, 여기서 핸들러가
+            // 트리를 건드리기 **전에** 직접 캡처한다.
+            if let Some(item) = engine
+                .find_pane_for_tab(tab_id)
+                .and_then(|pane_id| {
+                    let idx = engine
+                        .find_pane_by_id(pane_id)?
+                        .tabs
+                        .iter()
+                        .position(|t| t.id == tab_id)?;
+                    Some((pane_id, idx))
+                })
+                .and_then(|(pane_id, idx)| engine.capture_closed_tab(pane_id, idx))
+            {
+                engine.push_closed_item(item);
+            }
             let p = json!({ "tab_id": tab_id });
             tab::handle_tab_close(core, state, engine, rid, &p)
         }
@@ -828,6 +846,11 @@ pub(crate) fn execute_forwarded_structural_op(
             let pane_id = engine
                 .find_pane_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
+            // 위 `CloseTab` 과 같은 근거. pane 캡처는 `close_pane` 이 트리를 재배치하기
+            // 전이어야 split context 가 남는다(`capture_closed_pane` 의 doc).
+            if let Some(item) = engine.capture_closed_pane(pane_id) {
+                engine.push_closed_item(item);
+            }
             let p = json!({ "pane_id": pane_id });
             pane::handle_pane_close(core, state, engine, rid, &p)
         }
@@ -2372,6 +2395,173 @@ mod forward_exec_tests {
         assert!(
             ids.contains(&fd.added_terminals[0]),
             "delta.surfaces 에 신규 surface 가 있어야 한다"
+        );
+    }
+
+    /// forward 된 `CloseSurface` 는 서버의 복원 스택에 항목을 남긴다.
+    ///
+    /// 그 close 를 일으킨 것은 원격 **사용자**의 손 조작이므로 되돌릴 수 있어야 한다
+    /// (ADR-0264 결정 4). 이 앞단이 없으면 복원 forward 를 아무리 정확히 붙여도 원격에
+    /// 꺼낼 항목이 존재하지 않는다.
+    #[test]
+    fn a_forwarded_close_surface_leaves_a_restorable_snapshot() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        // 같은 탭에 surface 를 하나 더 만든다 — 워크스페이스의 마지막 surface 를 닫는
+        // 것은 workspace 통째 cascade 라 갈래가 다르다.
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::SplitSurface {
+                surface_id: a,
+                direction: SplitAxis::Horizontal,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("split ok")
+        .expect("split delta");
+        let b = fd.added_terminals[0];
+
+        let before = engine.closed_items.len();
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::CloseSurface { surface_id: b },
+        )
+        .expect("forwarded close must succeed");
+        assert_eq!(
+            engine.closed_items.len(),
+            before + 1,
+            "forward 된 surface close 는 서버 복원 스택에 정확히 하나 남겨야 한다"
+        );
+    }
+
+    /// forward 된 `CloseTab` 도 같다. `apply_close_tab` 에는 save_snapshot 축이 없어
+    /// `execute_forwarded_structural_op` 이 핸들러 호출 **전** 직접 캡처한다.
+    #[test]
+    fn a_forwarded_close_tab_leaves_a_restorable_snapshot() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::NewTab {
+                anchor_surface_id: a,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("new tab ok")
+        .expect("new tab delta");
+        let b = fd.added_terminals[0];
+
+        let before = engine.closed_items.len();
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::CloseTab {
+                anchor_surface_id: b,
+            },
+        )
+        .expect("forwarded close must succeed");
+        assert_eq!(
+            engine.closed_items.len(),
+            before + 1,
+            "forward 된 tab close 는 서버 복원 스택에 정확히 하나 남겨야 한다"
+        );
+        assert!(
+            matches!(
+                engine.closed_items.list().next(),
+                Some(crate::model::ClosedItem::Tab(_))
+            ),
+            "탭 단위로 캡처돼야 한다"
+        );
+    }
+
+    /// forward 된 `ClosePane` 은 **트리 재배치 전** 캡처라야 split context 가 남는다 —
+    /// 제거 후엔 부모 Split 노드 자체가 사라져 복구할 수 없다.
+    #[test]
+    fn a_forwarded_close_pane_captures_the_split_context() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::SplitPane {
+                anchor_surface_id: a,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("split pane ok")
+        .expect("split pane delta");
+        let b = fd.added_terminals[0];
+
+        let before = engine.closed_items.len();
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::ClosePane {
+                anchor_surface_id: b,
+            },
+        )
+        .expect("forwarded close must succeed");
+        assert_eq!(
+            engine.closed_items.len(),
+            before + 1,
+            "forward 된 pane close 는 서버 복원 스택에 정확히 하나 남겨야 한다"
+        );
+        assert!(
+            matches!(
+                engine.closed_items.list().next(),
+                Some(crate::model::ClosedItem::Pane { .. })
+            ),
+            "pane 단위로(split context 를 실어) 캡처돼야 한다 — 재배치 전 캡처의 증거"
+        );
+    }
+
+    /// 반대 축의 회귀 방지: **일반 IPC** close 는 여전히 스냅샷을 안 남긴다. 면제는
+    /// 데이터(params)가 아니라 **진입 경로**가 정한다는 규율이 살아 있는지 본다.
+    #[test]
+    fn a_plain_ipc_close_still_leaves_no_snapshot() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::SplitSurface {
+                surface_id: a,
+                direction: SplitAxis::Horizontal,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("split ok")
+        .expect("split delta");
+        let b = fd.added_terminals[0];
+
+        let before = engine.closed_items.len();
+        let resp = crate::adapters::ipc::handler::surface::handle_surface_close(
+            &mut core,
+            &mut state,
+            &mut engine,
+            serde_json::Value::Null,
+            &serde_json::json!({ "surface_id": b }),
+        );
+        assert!(resp.error.is_none(), "일반 IPC close 자체는 성공해야 한다");
+        assert_eq!(
+            engine.closed_items.len(),
+            before,
+            "에이전트 경로의 close 는 사용자 되돌리기 스택을 건드리지 않는다"
         );
     }
 

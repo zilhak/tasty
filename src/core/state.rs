@@ -987,6 +987,56 @@ impl CoreState {
     /// 이를 로그로 찍고, tab/pane close 는 같은 함수를 타지만 계측 대상이 아니라
     /// 값을 그대로 버린다 — 여기서 직접 로그를 찍으면 탭 하나 닫을 때마다 info 가
     /// 나가 close 계측의 신호 대 잡음비가 무너진다.
+    /// 탭 하나의 복원 스냅샷을 만든다(push 는 호출자 책임 — 호출자마다 조건이 다르다).
+    ///
+    /// `AppState` 안에 인라인으로 흩어져 있던 같은 코드를 여기로 모은 것이다. forward
+    /// 된 close 를 실행하는 경로(`attach_runtime::execute_forwarded_structural_op`)는
+    /// `AppState` 의 close 함수를 타지 않고 IPC 핸들러를 재사용하므로, 캡처를 공유하려면
+    /// engine 쪽에 있어야 한다(ADR-0264 결정 4).
+    ///
+    /// **트리에서 탭을 제거하기 전에 불러야 한다** — 제거 후엔 읽을 것이 없다.
+    pub(crate) fn capture_closed_tab(
+        &self,
+        pane_id: u32,
+        tab_index: usize,
+    ) -> Option<crate::model::ClosedItem> {
+        let tab = self.find_pane_by_id(pane_id)?.tabs.get(tab_index)?;
+        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
+        let terminals = &self.terminals;
+        crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| terminals.get(id))
+            .map(crate::model::ClosedItem::Tab)
+    }
+
+    /// pane 하나의 복원 스냅샷을 만든다(push 는 호출자 책임). 워크스페이스에 pane 이
+    /// 하나뿐이면 `None` — 그건 pane close 가 아니라 workspace close 로 cascade 되는
+    /// 자리라 pane 스냅샷의 대상이 아니다.
+    ///
+    /// **`close_pane` 이 트리를 재배치하기 전에 불러야 한다** — split
+    /// context(sibling/direction/ratio/side)는 제거 후엔 부모 Split 노드 자체가 사라져
+    /// 복구할 수 없다.
+    pub(crate) fn capture_closed_pane(&self, pane_id: u32) -> Option<crate::model::ClosedItem> {
+        let ws = self
+            .workspaces
+            .get(self.find_workspace_index_for_pane(pane_id)?)?;
+        if ws.pane_layout().all_pane_ids().len() <= 1 {
+            return None;
+        }
+        let pane = ws.pane_layout().find_pane(pane_id)?;
+        let (direction, ratio, was_first, sibling_pane_id) =
+            ws.pane_layout().locate_split_context(pane_id)?;
+        let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&self.surface_registry);
+        let terminals = &self.terminals;
+        Some(crate::model::ClosedItem::from_pane(
+            pane,
+            sibling_pane_id,
+            direction,
+            ratio,
+            was_first,
+            &mut snap_fn,
+            &|id| terminals.get(id),
+        ))
+    }
+
     pub fn push_closed_item(
         &mut self,
         mut item: crate::model::ClosedItem,

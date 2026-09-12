@@ -267,27 +267,16 @@ impl AppState {
             return false;
         }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        let snapshot_opt = if let Some(pane) = self
+        if let Some(pane) = self
             .active_workspace(engine)
             .pane_layout()
             .find_pane(pane_id)
+            && let Some(tab) = pane.tabs.get(tab_index)
         {
-            if let Some(tab) = pane.tabs.get(tab_index) {
-                super::AppState::collect_close_targets(tab, engine, &mut targets);
-                let mut snap_fn =
-                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                let terminals = &engine.terminals;
-                crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
-                    terminals.get(id)
-                })
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if let Some(snapshot) = snapshot_opt {
-            engine.push_closed_item(crate::model::ClosedItem::Tab(snapshot));
+            super::AppState::collect_close_targets(tab, engine, &mut targets);
+        }
+        if let Some(snapshot) = engine.capture_closed_tab(pane_id, tab_index) {
+            engine.push_closed_item(snapshot);
         }
         let closed = if let Some(pane) = self
             .active_workspace_mut(engine)
@@ -340,24 +329,15 @@ impl AppState {
         }
         // Capture tab snapshot + collect persist_ids (immutable borrow).
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        let snapshot_opt = if let Some(pane) = self.focused_pane(engine) {
-            let active = pane.active_tab;
-            if let Some(tab) = pane.tabs.get(active) {
-                super::AppState::collect_close_targets(tab, engine, &mut targets);
-                let mut snap_fn =
-                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                let terminals = &engine.terminals;
-                crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
-                    terminals.get(id)
-                })
-            } else {
-                None
+        let active_slot = self.focused_pane(engine).map(|p| (p.id, p.active_tab));
+        if let Some((pane_id, active)) = active_slot
+            && let Some(pane) = self.focused_pane(engine)
+            && let Some(tab) = pane.tabs.get(active)
+        {
+            super::AppState::collect_close_targets(tab, engine, &mut targets);
+            if let Some(snapshot) = engine.capture_closed_tab(pane_id, active) {
+                engine.push_closed_item(snapshot);
             }
-        } else {
-            None
-        };
-        if let Some(snapshot) = snapshot_opt {
-            engine.push_closed_item(crate::model::ClosedItem::Tab(snapshot));
         }
         let closed = if let Some(pane) = self.focused_pane_mut(engine) {
             pane.close_active_tab()

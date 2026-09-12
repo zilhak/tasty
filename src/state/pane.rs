@@ -214,32 +214,10 @@ impl AppState {
 
         // Capture closed-item snapshot (전용 `close_pane` 단축키는 항상 사용자
         // 행동이라 조건 없이 캡처한다 — `close_active_surface`의 무조건 스냅샷과
-        // 동일 관례). `close_pane`이 트리를 재배치하기 *전*에 split context를
-        // 캡처해야 한다 — 제거 후엔 부모 Split 노드 자체가 사라져 복구할 수 없다.
-        let snapshot_item = {
-            let ws = self.active_workspace(engine);
-            if ws.pane_layout().all_pane_ids().len() > 1
-                && let Some(pane) = ws.pane_layout().find_pane(target_id)
-                && let Some((direction, ratio, was_first, sibling_pane_id)) =
-                    ws.pane_layout().locate_split_context(target_id)
-            {
-                let mut snap_fn =
-                    crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                let terminals = &engine.terminals;
-                Some(crate::model::ClosedItem::from_pane(
-                    pane,
-                    sibling_pane_id,
-                    direction,
-                    ratio,
-                    was_first,
-                    &mut snap_fn,
-                    &|id| terminals.get(id),
-                ))
-            } else {
-                None
-            }
-        };
-        if let Some(item) = snapshot_item {
+        // 동일 관례). 캡처는 `close_pane`이 트리를 재배치하기 *전*이어야 한다 —
+        // 제거 후엔 부모 Split 노드 자체가 사라져 split context 를 복구할 수 없다
+        // (`CoreState::capture_closed_pane` 의 doc 이 그 제약을 소유한다).
+        if let Some(item) = engine.capture_closed_pane(target_id) {
             engine.push_closed_item(item);
         }
 

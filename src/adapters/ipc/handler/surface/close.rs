@@ -5,18 +5,32 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-/// 공용 close 본문 — IPC handle_surface_close / handle_surface_close_self 가
-/// 공유한다. save_snapshot=false (Agent), auto-recreate empty workspace.
+/// 공용 close 본문 — IPC handle_surface_close / handle_surface_close_self 와
+/// [`close_surface_for_attach_holder`] 가 공유한다. auto-recreate empty workspace.
+///
+/// `save_snapshot` 은 **진입 경로가 정한다.** IPC 요청 진입점은 에이전트 경로라 `false`
+/// 이고(되돌리기 스택은 사용자 행동의 것이다), holder 경로는 `true` 다 — 그 close 를
+/// 일으킨 것은 원격 사용자의 손 조작이기 때문이다
+/// (`docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md` 결정 4).
+/// 아래 [`refuse_if_hard_occupied`] 의 "왜 params 플래그가 아니라 호출 경로로 면제하는가"
+/// 와 같은 규율이다 — params 는 호출자가 만들므로 그 축을 데이터로 두면 아무 에이전트나
+/// 같은 키를 실어 사용자 스택을 채운다.
+///
+/// `is_user_close` 는 **독립 축**이라 여기서 함께 뒤집지 않는다(plugin lifecycle 이벤트에
+/// 나가는 값 — `src/state/tests.rs` 의
+/// `pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close` 가 두 축이 별개임을
+/// 고정한다). forward 된 close 도 지금처럼 `is_user_close=false` 로 나간다.
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     surface_id: u32,
+    save_snapshot: bool,
 ) -> JsonRpcResponse {
     let intent = crate::core::intent::DomainIntent::CloseSurface {
         surface_id,
-        save_snapshot: false,
+        save_snapshot,
     };
     let events = match core.apply(engine, intent) {
         Ok(events) => events,
@@ -105,6 +119,9 @@ fn refuse_if_hard_occupied(
 /// 이 경로로 들어오는 요청은 holder 의 attach 스트림에서 온 것이라 행위자가 곧 점유자다.
 /// 자기 터미널을 닫는 것이므로 막을 이유가 없다. 진입점이 갈려 있는 것 자체가 면제의
 /// 근거이고, 그래서 params 로는 흉내 낼 수 없다.
+///
+/// 같은 근거로 `save_snapshot=true` 다 — 이 close 를 일으킨 것은 원격 **사용자**의 손
+/// 조작이므로 되돌릴 수 있어야 한다([`close_surface_via_intent`] 의 doc 참조).
 pub(crate) fn close_surface_for_attach_holder(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -112,7 +129,7 @@ pub(crate) fn close_surface_for_attach_holder(
     id: serde_json::Value,
     surface_id: u32,
 ) -> JsonRpcResponse {
-    close_surface_via_intent(core, state, engine, id, surface_id)
+    close_surface_via_intent(core, state, engine, id, surface_id, true)
 }
 
 pub(crate) fn handle_surface_close(
@@ -138,7 +155,7 @@ pub(crate) fn handle_surface_close(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, state, engine, id, surface_id)
+    close_surface_via_intent(core, state, engine, id, surface_id, false)
 }
 
 /// Close the calling surface itself. Only way for a surface to close itself.
@@ -156,7 +173,7 @@ pub(crate) fn handle_surface_close_self(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, state, engine, id, surface_id)
+    close_surface_via_intent(core, state, engine, id, surface_id, false)
 }
 
 #[cfg(test)]
