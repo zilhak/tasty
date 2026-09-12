@@ -172,6 +172,11 @@ fn build_mirror_forward_op(
         D::ClosePane { pane_id } => Some(StructuralOp::ClosePane {
             anchor_surface_id: pane_anchor(*pane_id)?,
         }),
+        // 복원은 "무엇을 만들지" 를 클라이언트가 정하지 않는다 — 무엇이 복원될지는
+        // 원격 스택이 정하므로 op 에는 anchor 밖에 없다(ADR-0264 결정 2).
+        D::RestoreClosedItem { target_pane_id } => Some(StructuralOp::RestoreClosedItem {
+            anchor_surface_id: pane_anchor((*target_pane_id)?)?,
+        }),
         D::MoveTab {
             pane_id,
             from_index,
@@ -1069,6 +1074,9 @@ mod mirror_structural_guard_tests {
                     from_index: 0,
                     to_index: 1,
                 },
+                DomainIntent::RestoreClosedItem {
+                    target_pane_id: Some(pane),
+                },
             ]
         };
 
@@ -1162,6 +1170,62 @@ mod mirror_structural_guard_tests {
             } => assert_eq!(*anchor_surface_id, a, "pane anchor = 활성 탭 surface a"),
             other => panic!("expected SplitPane, got {other:?}"),
         }
+    }
+
+    /// mirror 에서 누른 복원은 로컬 실행이 막히고 forward 큐에 op 하나가 쌓인다.
+    /// **로컬 복원 스택은 손대지 않는다** — 로컬 pop 은 게이트가 `apply_restore_closed_item`
+    /// 호출 전에 돌려주므로 자동으로 막힌다(ADR-0264 결정 2). 그 사실을 고정한다.
+    #[test]
+    fn mirror_restore_enqueues_forward_and_leaves_the_local_stack_alone() {
+        use crate::ipc::stream::StructuralOp;
+        let (mut core, mut engine) = build_test_core();
+        let (a, pane) = seed(&mut engine);
+        engine.push_closed_item(crate::model::ClosedItem::Surface {
+            surface: crate::model::closed_item::ClosedSurface::from_surface_id(9999, None),
+            tab_name: "gone".to_string(),
+        });
+        let before_len = engine.closed_items.len();
+        engine.workspaces[0].mirror = true;
+
+        let err = core
+            .apply(
+                &mut engine,
+                DomainIntent::RestoreClosedItem {
+                    target_pane_id: Some(pane),
+                },
+            )
+            .expect_err("mirror restore must be blocked locally");
+        let blocked = err
+            .downcast_ref::<MirrorStructuralBlocked>()
+            .expect("MirrorStructuralBlocked");
+        assert!(blocked.forwarded, "복원은 forward 대상이다");
+        assert_eq!(engine.pending_structural_forward.len(), 1);
+        match &engine.pending_structural_forward[0].op {
+            StructuralOp::RestoreClosedItem { anchor_surface_id } => {
+                assert_eq!(*anchor_surface_id, a, "anchor 는 그 pane 의 대표 surface");
+            }
+            other => panic!("expected RestoreClosedItem, got {other:?}"),
+        }
+        assert_eq!(
+            engine.closed_items.len(),
+            before_len,
+            "로컬 스택은 그대로여야 한다 — 로컬 pop 이 일어나면 안 된다"
+        );
+    }
+
+    /// 대상 pane 을 못 잡으면(워크스페이스가 없어 `target_pane_id` 가 `None`) mirror
+    /// 판정 자체가 성립하지 않는다 — 비-mirror 취급으로 떨어져 기존 경로를 탄다.
+    #[test]
+    fn a_restore_without_a_target_pane_is_not_a_mirror_op() {
+        let (mut _core, mut engine) = build_test_core();
+        let (_a, _pane) = seed(&mut engine);
+        engine.workspaces[0].mirror = true;
+        assert_eq!(
+            engine.mirror_workspace_index_for_structural(&DomainIntent::RestoreClosedItem {
+                target_pane_id: None,
+            }),
+            None,
+        );
     }
 
     /// convert 는 이제 forward 대상이다 — `StructuralOp::ConvertSurface` 로 큐잉되고

@@ -1239,6 +1239,9 @@ mirror_structural_blocked = "Can't change structure in a mirrored remote workspa
 # Shown when a structural change forwarded to the remote instance fails there —
 # most often because the requested surface kind isn't available on the remote.
 mirror_structural_forward_failed = "The remote workspace couldn't apply that change."
+# Forwarded restore found nothing in the remote workspace's restore stack. Not a
+# failure — the generic forward-failure wording above would read as an error.
+mirror_restore_empty = "Nothing to restore in the remote workspace."
 # Shown when a close would destroy a surface a remote attach session hard-occupies.
 # Occupancy means someone is working in that terminal right now, so closing would kill
 # their session without warning. Reclaim it with the force-detach button, then close.

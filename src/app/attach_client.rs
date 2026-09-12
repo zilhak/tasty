@@ -2012,9 +2012,12 @@ fn pending_op_focus_for(
     remote_to_local: &HashMap<u32, u32>,
 ) -> Option<PendingOpFocus> {
     match op {
+        // 복원도 **새 리소스를 만드는 op** 다 — 되살아난 탭으로 focus 가 가야 한다.
+        // 빠뜨리면 아래 `_ => None` 에 떨어져 복원된 탭이 배경에 생긴다.
         StructuralOp::NewTab { .. }
         | StructuralOp::SplitSurface { .. }
-        | StructuralOp::SplitPane { .. } => Some(PendingOpFocus::NewResource),
+        | StructuralOp::SplitPane { .. }
+        | StructuralOp::RestoreClosedItem { .. } => Some(PendingOpFocus::NewResource),
         StructuralOp::CloseSurface { .. }
         | StructuralOp::CloseTab { .. }
         | StructuralOp::ClosePane { .. } => {
@@ -2230,6 +2233,18 @@ fn apply_one_mirror_event(
             // forward 한 구조 op 가 원격에서 실패(예: 미등록 kind).
             // 사용자에게 실패 toast. 로컬/원격 어느 쪽도 구조 변경
             // 없음(요청/응답).
+            //
+            // "원격에 복원할 항목이 없다" 는 **실패가 아니다** — 아래 일반 문구
+            // ("적용하지 못했습니다")로 내보내면 오류로 읽힌다. 서버가 전용 sentinel
+            // (`STRUCTURAL_REASON_RESTORE_EMPTY`)로 그 경우를 표시하고 여기서 다른
+            // 문구를 쓴다(ADR-0264 결정 2).
+            if reason == tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY {
+                host.toast(
+                    crate::i18n::t("attach.toast.mirror_restore_empty").to_string(),
+                    crate::adapters::ui::ToastKind::Info,
+                );
+                return;
+            }
             let base = crate::i18n::t("attach.toast.mirror_structural_forward_failed");
             let msg: String = if reason.is_empty() {
                 base.to_string()
@@ -4193,6 +4208,10 @@ mod tests {
                 direction: SplitAxis::Vertical,
                 surface_kind: "terminal".to_string(),
                 params: serde_json::Value::Null,
+            },
+            // 복원도 새 리소스를 만드는 op 다 — 되살아난 탭으로 focus 가 가야 한다.
+            StructuralOp::RestoreClosedItem {
+                anchor_surface_id: 1,
             },
         ] {
             assert!(matches!(

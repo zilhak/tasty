@@ -933,6 +933,14 @@ pub(crate) fn execute_forwarded_structural_op(
                 }
             }
         }
+        StructuralOp::RestoreClosedItem { anchor_surface_id } => {
+            // 이 인스턴스에는 아직 복원 실행 경로가 없다. 조용히 흘리지 않고 사유를
+            // 실어 실패로 회신한다 — client 가 회신을 기다리다 `pending_op_focus`
+            // 엔트리를 세션 수명 동안 들고 있는 것을 막는다.
+            return Err(format!(
+                "restore not executed on this instance: anchor surface {anchor_surface_id}"
+            ));
+        }
         StructuralOp::MoveSurface {
             source_surface_id,
             target_surface_id,

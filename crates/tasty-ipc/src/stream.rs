@@ -540,7 +540,26 @@ pub enum StructuralOp {
         source_surface_id: u32,
         target_surface_id: u32,
     },
+    /// Restore the most recently closed item of the workspace containing the
+    /// anchor surface, into the pane containing it.
+    ///
+    /// Unlike every other variant the client does **not** describe what to
+    /// create — what comes back is whatever the server's restore stack holds for
+    /// that workspace. Expressing this as a `NewTab` would mean the client
+    /// inventing a kind and params, which is not a restore: the scrollback lives
+    /// on the server's disk and the PTY has to be spawned there.
+    /// See `docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md`.
+    RestoreClosedItem { anchor_surface_id: u32 },
 }
+
+/// `StructuralResult.reason` for a forwarded restore that found nothing in the
+/// anchor workspace's restore stack.
+///
+/// A **sentinel, not prose**: the client tells this case apart from a genuine
+/// failure to show a different message ("nothing to restore" reads as an error
+/// under the generic forward-failure wording). Both sides depend on this crate,
+/// so the string has one definition rather than two spellings that can drift.
+pub const STRUCTURAL_REASON_RESTORE_EMPTY: &str = "restore_empty";
 
 impl StructuralOp {
     /// The remote surface id this op is anchored on. The server uses it to locate
@@ -559,6 +578,7 @@ impl StructuralOp {
             }
             | StructuralOp::CloseTab { anchor_surface_id }
             | StructuralOp::ClosePane { anchor_surface_id }
+            | StructuralOp::RestoreClosedItem { anchor_surface_id }
             | StructuralOp::MoveTab {
                 anchor_surface_id, ..
             } => *anchor_surface_id,
@@ -587,6 +607,7 @@ impl StructuralOp {
             }
             | StructuralOp::CloseTab { anchor_surface_id }
             | StructuralOp::ClosePane { anchor_surface_id }
+            | StructuralOp::RestoreClosedItem { anchor_surface_id }
             | StructuralOp::MoveTab {
                 anchor_surface_id, ..
             } => *anchor_surface_id = remote,
