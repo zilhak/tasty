@@ -20,6 +20,10 @@
 
 - **Codex 승인 대기가 `needs_input` 으로 보인다.** Codex 가 `Would you like to run the following command?` 승인 화면을 띄우면 그 서피스의 상태가 `needs_input` 으로 조회되고(`tasty codex state` · `terminal.state`), 비포커스 대상이면 탭·워크스페이스에 기존 노란 표시가 뜨며, `spawn`/`tell` 을 건 호출자의 알림 로그에도 한 줄이 간다. 지금까지는 아무 신호도 없어 "멈춘 것" 과 "일하는 것" 이 같은 관측이었다 — 저장소는 그것을 "Codex CLI 에 대응 이벤트가 없다" 로 설명해 왔고, 그 전제가 틀렸다(codex-cli 0.154.0 실측). `tasty codex install` 이 심는 훅이 셋에서 여섯으로 늘었다 — `PermissionRequest`(→ 대기 진입) · `PostToolUse`(승인된 도구가 끝나면 → 실행 중) · `Interrupt`(거절·Esc·Ctrl-C → 대기 종료)가 더해졌다. **기존 사용자는 `tasty codex install` 을 다시 실행해야 한다.** 두 가지는 아직 못 한다: 승인을 누른 뒤에도 **그 도구가 끝나야** 상태가 실행 중으로 돌아오고(Codex 가 "승인됨" 자체를 알리지 않는다 — 45 초짜리 명령이면 45 초), 승인이 아닌 일반 질문 입력은 감지 대상이 아니다.
 
+### Changed
+
+- **드롭다운 메뉴의 그림자가 나머지 떠 있는 표면과 같아진다.** 설정 창의 선택 드롭다운, MultiSelect/Select, 포트 스캐너·remote tool·DAG 크롬의 콤보박스는 지금까지 UI 프레임워크의 기본 그림자를 그렸다 — 테마마다 진하기가 갈려(다크에서 짙고 라이트에서 옅다) 같은 화면에 나란히 뜨는 배너·tooltip·autocomplete 와 단차가 달랐다. 이제 넷 다 같은 popover 단차를 쓴다.
+
 ### Fixed
 
 - **중단한 Codex 자식이 영원히 "실행 중" 으로 남던 것.** 승인 거절·Esc·Ctrl-C 로 턴을 끊으면 Codex 는 `Interrupt` 하나만 쏘고 완료 이벤트를 내지 않는다 — 그래서 그 자식은 계속 `active` 로 보였고, `spawn`/`tell` 로 그것을 기다리던 호출자는 알림을 영영 못 받았다. 이제 중단도 대기 종료로 읽는다.
