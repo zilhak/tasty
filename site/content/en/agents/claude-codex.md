@@ -1,4 +1,4 @@
-<!-- source-hash: 695d77882af6 -->
+<!-- source-hash: 2705fe79eb50 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -35,6 +35,8 @@ tasty codex launch --workspace review --directory ~/proj
 This creates a new Workspace and runs the CLI in its terminal. If you omit `--workspace`, the name is `claude` / `codex`.
 
 For Codex you can attach approval and sandbox policies with `--approval untrusted|on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, and `--full-auto` (see "Codex approval policy" below).
+
+For Claude Code you can set the permission mode with `--permission-mode` (see "Claude permission mode" below).
 
 <a id="3-driving-child-agents-spawn--tell"></a>
 
@@ -114,7 +116,20 @@ When a Codex child pauses at a tool-execution approval prompt, its state becomes
 
 In environments where nested sandboxes are not possible, such as containers, if specifying `--sandbox` fails with something like `RTM_NEWADDR: Operation not permitted`, use `--full-auto`. This hint is also attached to the completion notification.
 
-## 6. Restarting a session (reboot)
+## 6. Claude permission mode
+
+`tasty claude launch/spawn/respawn/reboot/child-profile` accept the child's permission mode as a flag.
+
+- `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` — passed straight through to Claude Code.
+- **If you pass nothing, no flag is added at all.** The child starts with the Claude Code settings you already use. Unlike Codex it does not quietly become "never ask" — Claude Code has no separate sandbox axis, so making it stop asking is the same as letting it run unrestricted.
+- If a child pausing for approval would break an unattended run, name the mode you want on that call. A paused child still notifies its parent, so it is not left unnoticed.
+- The global default is **Default permission mode for child sessions** at **Settings** › **Plugin** › **Claude Code**. It defaults to **Inherit** (no flag), and per-call flags take precedence.
+- If the settings JSON behind `--profile` / `--profile-file` sets `permissions.defaultMode`, it cannot be combined with `--permission-mode` — the two decide the same thing, so you get an error asking you to pick one.
+- A mode given to `reboot` / `child-profile` applies **to that restart only**. It is not carried over when the tab is restored later.
+
+<a id="6-restarting-a-session-reboot"></a>
+
+## 7. Restarting a session (reboot)
 
 After changing hooks or settings, relaunch the agent with the same session.
 
@@ -125,7 +140,9 @@ tasty codex reboot --surface 58
 
 After the specified delay, Tasty stops the process and resumes the same session. When an agent calls this on **itself**, it should make this its last action of the turn, since stopping the process interrupts any remaining response. Restarting a child does not interrupt the parent's response.
 
-## 7. Claude session profiles and the Stop gate
+<a id="7-claude-session-profiles-and-the-stop-gate"></a>
+
+## 8. Claude session profiles and the Stop gate
 
 Claude Code reads hooks only once, at startup. To attach extra hooks and permissions to a specific session only, register a profile and pass `--profile` at launch.
 

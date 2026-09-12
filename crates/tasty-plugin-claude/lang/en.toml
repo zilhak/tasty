@@ -4,6 +4,14 @@ desc = "Manage Claude Code child sessions"
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
 "settings.continue_checklist_round_limit" = "Default gate round limit (used when a gate sets none)"
+"settings.default_permission_mode" = "Default permission mode for child sessions"
+"settings.permission_mode.inherit" = "Inherit (use Claude Code's own settings)"
+"settings.permission_mode.manual" = "Ask every time (manual)"
+"settings.permission_mode.plan" = "Plan only (plan)"
+"settings.permission_mode.accept_edits" = "Accept file edits (acceptEdits)"
+"settings.permission_mode.auto" = "Automatic (auto)"
+"settings.permission_mode.dont_ask" = "Do not ask (dontAsk)"
+"settings.permission_mode.bypass" = "Bypass all permission checks (bypassPermissions)"
 
 [claude.checklist]
 body = """
@@ -36,6 +44,8 @@ missing_command = "Missing required 'command' parameter"
 missing_name = "Missing required 'name' parameter"
 missing_file = "Missing required 'file' parameter"
 missing_body_file = "Missing required 'body_file' parameter"
+invalid_permission_mode = "invalid 'permission_mode': {}"
+permission_mode_conflicts_with_profile = "--permission-mode and a profile whose settings JSON sets permissions.defaultMode are mutually exclusive — the two decide the same thing, so pick one"
 
 [claude.hook]
 missing_event = "Missing required 'event' parameter"

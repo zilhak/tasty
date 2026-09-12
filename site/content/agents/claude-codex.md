@@ -36,6 +36,8 @@ tasty codex launch --workspace review --directory ~/proj
 
 Codex 는 `--approval untrusted|on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--full-auto` 로 승인·샌드박스 정책을 붙일 수 있습니다 (아래 "Codex 승인 정책").
 
+Claude Code 는 `--permission-mode` 로 권한 모드를 지정할 수 있습니다 (아래 "Claude 권한 모드").
+
 <a id="3-자식-에이전트-부리기-spawn--tell"></a>
 
 ## 3. 다른 에이전트에게 작업 맡기기 (spawn / tell)
@@ -114,7 +116,20 @@ Codex 자식이 도구 실행 승인 프롬프트에서 멈추면 상태가 `nee
 
 컨테이너 등 중첩 샌드박스가 안 되는 환경에서 `--sandbox` 지정이 `RTM_NEWADDR: Operation not permitted` 류로 실패하면 `--full-auto` 를 씁니다. 완료 알림에도 이 힌트가 붙습니다.
 
-## 6. 세션 재시작 (reboot)
+## 6. Claude 권한 모드
+
+`tasty claude launch/spawn/respawn/reboot/child-profile` 는 자식 Claude 의 권한 모드를 플래그로 받습니다.
+
+- `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` — Claude Code 에 그대로 전달됩니다.
+- **아무것도 안 주면 플래그가 붙지 않습니다.** 자식은 여러분이 쓰던 Claude Code 설정 그대로 뜹니다. Codex 와 달리 자동으로 "묻지 않음" 이 되지 않습니다 — Claude Code 에는 샌드박스 축이 따로 없어서, 안 묻게 만드는 순간 그것이 곧 제한 없는 실행이 되기 때문입니다.
+- 자동화 중에 자식이 승인 대기로 멈추는 것이 곤란하면 그 호출에만 원하는 모드를 명시하세요. 멈춘 자식은 부모에게 알림이 가므로 눈치채지 못한 채 방치되지는 않습니다.
+- 전역 기본값은 **설정** › **플러그인** › **Claude Code** 의 **자식 세션 기본 권한 모드** <!-- en: Default permission mode for child sessions -->. 기본값은 **물려받음**(플래그 미부착)이고, 호출별 플래그가 우선합니다.
+- `--profile` / `--profile-file` 로 붙이는 설정 JSON 이 `permissions.defaultMode` 를 정하고 있으면 `--permission-mode` 와 함께 쓸 수 없습니다 — 둘이 같은 것을 정하므로 하나만 고르라는 에러가 납니다.
+- `reboot` / `child-profile` 에서 지정한 모드는 **그 재시작에만** 적용됩니다. 탭 복원으로 다시 뜰 때는 따라가지 않습니다.
+
+<a id="6-세션-재시작-reboot"></a>
+
+## 7. 세션 재시작 (reboot)
 
 훅이나 설정을 바꾼 뒤 에이전트를 같은 세션으로 다시 띄웁니다.
 
@@ -125,7 +140,9 @@ tasty codex reboot --surface 58
 
 지정한 시간 뒤 프로세스를 끊고 같은 세션을 이어서 시작합니다. 에이전트가 **자기 자신**에게 호출할 때는 턴의 마지막 행동으로 부릅니다 — 이후 응답은 프로세스 종료로 중단됩니다. 자식 에이전트만 재시작할 때는 작업을 요청한 에이전트의 응답이 중단되지 않습니다.
 
-## 7. Claude 세션 프로필과 Stop 게이트
+<a id="7-claude-세션-프로필과-stop-게이트"></a>
+
+## 8. Claude 세션 프로필과 Stop 게이트
 
 Claude Code 는 훅을 시작할 때 한 번만 읽습니다. 특정 세션에만 추가 훅·권한을 붙이려면 프로필을 등록하고 실행 시 `--profile` 로 지정합니다.
 

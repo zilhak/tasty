@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.88"
+version = "0.1.89"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -112,6 +112,7 @@ flags = [
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to claude as --task <text>" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching claude. Mutually exclusive with --profile" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -125,6 +126,7 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching the child. Mutually exclusive with --profile" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -189,6 +191,7 @@ flags = [
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when relaunching the child. Mutually exclusive with --profile" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
@@ -199,6 +202,7 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile. Mutually exclusive with --profile" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the surface (re-resolved from the registry on each future reboot, so edits to the profile or gate are picked up) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
     { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile (path- or name-based) before resuming" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode" },
 ]
 
 [contributes.cli.arg_groups.child_profile_args]
@@ -210,6 +214,7 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach to the child via --settings on resume. Persists on the child surface and is inherited by its future reboots until cleared with --clear-profile. Mutually exclusive with --profile" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach to the child, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the child surface (re-resolved from the registry on each future reboot) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file" },
     { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach the child's previously attached session profile (path- or name-based) before resuming" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
@@ -384,3 +389,25 @@ label_key = "claude.settings.continue_checklist_round_limit"
 storage_key = "continue_checklist_round_limit"
 default = 3.0
 min = 1.0
+
+# 자식 Claude 의 승인 정책 기본값. `inherit`(기본)이면 기동 명령에
+# `--permission-mode` 를 아예 안 붙여, 사용자 자신의 Claude Code 설정이 그대로
+# 정한다 — codex 쪽과 달리 비대화형 값으로 떨어뜨리지 않는 이유는 Claude Code 에
+# 샌드박스 축이 따로 없어 "안 묻는다" 가 곧 봉쇄 없는 전권이 되기 때문이다
+# (docs/adr/0265-child-approval-policy-is-the-callers-choice.md 결정 2·3).
+# 호출별 `--permission-mode` 가 이 값을 그 호출에 한해 덮는다.
+[[contributes.settings_pages.items]]
+kind = "select"
+id = "default_permission_mode"
+label_key = "claude.settings.default_permission_mode"
+storage_key = "default_permission_mode"
+default = "inherit"
+options = [
+    { value = "inherit",           label_key = "claude.settings.permission_mode.inherit" },
+    { value = "manual",            label_key = "claude.settings.permission_mode.manual" },
+    { value = "plan",              label_key = "claude.settings.permission_mode.plan" },
+    { value = "acceptEdits",       label_key = "claude.settings.permission_mode.accept_edits" },
+    { value = "auto",              label_key = "claude.settings.permission_mode.auto" },
+    { value = "dontAsk",           label_key = "claude.settings.permission_mode.dont_ask" },
+    { value = "bypassPermissions", label_key = "claude.settings.permission_mode.bypass" },
+]

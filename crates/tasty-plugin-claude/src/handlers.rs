@@ -58,6 +58,112 @@ pub(crate) fn resolve_profile_file_param(
     }
 }
 
+/// Claude Code `--permission-mode` 가 받는 값 집합. 외부 도구의 계약이라 실측으로
+/// 얻었다(`claude --help`, 2026-09-12). 각 값이 무엇을 뜻하는지는 Claude Code 가
+/// 정하며 이 plugin 은 해석하지 않고 전달만 한다 — 여기서 하는 일은 **모르는 값을
+/// 조용히 흘려보내지 않는 것**뿐이다(`docs/adr/0265-child-approval-policy-is-the-callers-choice.md`
+/// 결정 7).
+pub(crate) const VALID_PERMISSION_MODES: &[&str] = &[
+    "acceptEdits",
+    "auto",
+    "bypassPermissions",
+    "manual",
+    "dontAsk",
+    "plan",
+];
+
+/// 승인 정책 기본값을 담는 plugin 설정 키. 매니페스트
+/// `[[contributes.settings_pages.items]]` 의 `storage_key` 와 같은 문자열이어야 한다.
+const PERMISSION_MODE_SETTING_KEY: &str = "default_permission_mode";
+
+/// `--permission-mode` 조각(또는 빈 문자열). 앞에 공백을 포함해 기존 명령 문자열
+/// 뒤에 그대로 이어 붙인다.
+fn permission_mode_flag(mode: Option<&str>) -> String {
+    match mode {
+        Some(m) => format!(" --permission-mode {m}"),
+        None => String::new(),
+    }
+}
+
+/// settings JSON 이 **권한 모드**를 정하고 있는가. 순수 함수 — 단위 테스트 대상.
+///
+/// `permissions.allow`/`deny` 는 규칙 목록이지 모드가 아니라 `--permission-mode` 와
+/// 축이 달라 충돌로 보지 않는다. 모드를 정하는 키는 `permissions.defaultMode`
+/// 하나다.
+fn settings_json_sets_default_mode(settings: &Value) -> bool {
+    settings
+        .get("permissions")
+        .and_then(|p| p.get("defaultMode"))
+        .is_some()
+}
+
+/// `--profile`/`--profile-file` 로 주입될 settings 파일이 권한 모드를 정하는지.
+/// 읽기·파싱 실패는 "정하지 않는다" 로 본다 — 이 판정의 목적은 **두 축이 같은 값을
+/// 놓고 조용히 경쟁하는 것**을 막는 것이라, 읽을 수 없는 파일 때문에 기동 자체를
+/// 막지는 않는다(그 파일이 실제로 깨졌다면 Claude Code 가 자기 자리에서 말한다).
+fn profile_file_sets_default_mode(path: &str) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .is_some_and(|v| settings_json_sets_default_mode(&v))
+}
+
+/// 전역 설정(`default_permission_mode`)의 fallback 값. 미설정·`"inherit"` 이면
+/// `None`(= 플래그를 안 붙인다). 설정에 모르는 값이 들어 있으면 기동을 막지 않고
+/// 경고만 남기고 무시한다 — 설정 항목은 select 라 정상 경로로는 생길 수 없는 값이고,
+/// 그것 때문에 모든 기동이 실패하면 사용자가 복구할 창구가 좁다.
+fn default_permission_mode<H: HostCall>(host: &H) -> Option<String> {
+    let value = host
+        .call(
+            "settings.get_plugin_setting",
+            json!({ "storage_key": PERMISSION_MODE_SETTING_KEY }),
+        )
+        .ok()
+        .and_then(|v| v.get("value").and_then(|v| v.as_str()).map(String::from))
+        .filter(|s| s != "inherit" && !s.is_empty())?;
+    if !VALID_PERMISSION_MODES.contains(&value.as_str()) {
+        tracing::warn!("claude: ignoring unknown {PERMISSION_MODE_SETTING_KEY} setting '{value}'");
+        return None;
+    }
+    Some(value)
+}
+
+/// `permission_mode` param → 기동 명령에 실릴 값. 우선순위는 **호출별 params >
+/// 전역 설정 > 미부착**이고, 아무도 안 고르면 플래그 자체가 안 붙어 자식은 사용자
+/// 자신의 Claude Code 설정대로 뜬다
+/// (`docs/adr/0265-child-approval-policy-is-the-callers-choice.md` 결정 2·4).
+///
+/// `profile_file` 이 정하는 settings JSON 에 `permissions.defaultMode` 가 있고
+/// `permission_mode` 도 함께 오면 **거부**한다 — 어느 쪽이 이기는지 조용히 정하지
+/// 않는다([`resolve_profile_file_param`] 이 `profile_file`+`profile` 조합에서,
+/// `profile_merge` 가 `defaultMode` 충돌에서 이미 같은 선택을 했다).
+pub(crate) fn resolve_permission_mode<H: HostCall>(
+    host: &H,
+    params: &Value,
+    profile_file: Option<&str>,
+    tr: &Translator,
+) -> Result<Option<String>, IpcMethodError> {
+    let explicit = params
+        .get("permission_mode")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let Some(mode) = explicit else {
+        return Ok(default_permission_mode(host));
+    };
+    if !VALID_PERMISSION_MODES.contains(&mode) {
+        return Err(IpcMethodError::invalid_params(&tr.t_fmt(
+            "claude.params.invalid_permission_mode",
+            &format!("{mode} (valid: {})", VALID_PERMISSION_MODES.join(", ")),
+        )));
+    }
+    if profile_file.is_some_and(profile_file_sets_default_mode) {
+        return Err(IpcMethodError::invalid_params(
+            &tr.t("claude.params.permission_mode_conflicts_with_profile"),
+        ));
+    }
+    Ok(Some(mode.to_string()))
+}
+
 /// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
 ///
 /// `hook.rs` 의 `resolve_surface_id_from` 은 [`optional_target_surface`] 에 **env 폴백**만
@@ -610,6 +716,7 @@ pub(crate) fn handle_launch(
         .and_then(|v| v.as_str())
         .map(String::from);
     let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
+    let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
     // cwd 는 CLI 가 미리 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
     // 호스트 workspace.create 가 직접 PTY 의 working_dir 로 사용 → `cd` echo trick 불필요.
@@ -635,7 +742,11 @@ pub(crate) fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let cmd = build_launch_command(task.as_deref(), profile_file.as_deref());
+        let cmd = build_launch_command(
+            task.as_deref(),
+            profile_file.as_deref(),
+            permission_mode.as_deref(),
+        );
         if let Err(e) = host.call(
             "surface.send",
             json!({ "surface_id": sid, "text": format!("{cmd}\r") }),
@@ -653,10 +764,15 @@ pub(crate) fn handle_launch(
     }))
 }
 
-/// `claude` / `claude --task <escaped>` / 뒤에 `--settings "<path>"` 가 붙는 조합.
+/// `claude` / `claude --task <escaped>` / 뒤에 `--settings "<path>"` ·
+/// `--permission-mode <mode>` 가 붙는 조합.
 /// `profile_file` 은 CLI `path_kind = "file"` 정규화를 이미 거친 절대경로 — 인라인
 /// JSON 이 아니라 파일 경로를 큰따옴표로 감싼다(`reboot::resume_command` 와 동일 규칙).
-pub(crate) fn build_launch_command(task: Option<&str>, profile_file: Option<&str>) -> String {
+pub(crate) fn build_launch_command(
+    task: Option<&str>,
+    profile_file: Option<&str>,
+    permission_mode: Option<&str>,
+) -> String {
     let mut cmd = "claude".to_string();
     if let Some(t) = task {
         let escaped = shell_escape::escape(t.into());
@@ -665,6 +781,7 @@ pub(crate) fn build_launch_command(task: Option<&str>, profile_file: Option<&str
     if let Some(path) = profile_file {
         cmd.push_str(&format!(" --settings \"{path}\""));
     }
+    cmd.push_str(&permission_mode_flag(permission_mode));
     cmd
 }
 
@@ -687,6 +804,7 @@ pub(crate) fn handle_respawn(
         .and_then(|v| v.as_str())
         .map(String::from);
     let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
+    let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
     // 1) 호스트 registry 위임(command 미전송): cwd 있으면 PTY 교체, 없으면 Ctrl-C.
     //    role/nickname/cwd 갱신 + idle 초기화까지 호스트가 수행.
@@ -710,6 +828,7 @@ pub(crate) fn handle_respawn(
         child_surface_id,
         prompt.as_deref(),
         profile_file.as_deref(),
+        permission_mode.as_deref(),
     );
 
     // 3) error scan 대상으로 (재)등록. PTY 가 갈렸으므로 이전 인스턴스의 dedupe
@@ -778,6 +897,7 @@ pub(crate) fn start_claude_in_surface(
     surface_id: u32,
     prompt: Option<&str>,
     profile_file: Option<&str>,
+    permission_mode: Option<&str>,
 ) {
     let agent_id = format!("claude_s{surface_id}");
     let session_token = issue_session_token(host, &agent_id);
@@ -788,11 +908,23 @@ pub(crate) fn start_claude_in_surface(
         None => format!("TASTY_SURFACE_ID={surface_id} TASTY_AGENT_ID={agent_id} "),
     };
     let text = match prompt {
-        Some(p) => claude_launch_command_with_prompt(surface_id, &agent_prefix, p, profile_file),
-        None => match profile_file {
-            Some(path) => format!("{agent_prefix}claude --settings \"{path}\"\r"),
-            None => format!("{agent_prefix}claude\r"),
-        },
+        Some(p) => claude_launch_command_with_prompt(
+            surface_id,
+            &agent_prefix,
+            p,
+            profile_file,
+            permission_mode,
+        ),
+        None => {
+            let settings_flag = match profile_file {
+                Some(path) => format!(" --settings \"{path}\""),
+                None => String::new(),
+            };
+            format!(
+                "{agent_prefix}claude{settings_flag}{}\r",
+                permission_mode_flag(permission_mode)
+            )
+        }
     };
 
     if let Err(e) = host.call(
@@ -826,6 +958,7 @@ fn claude_launch_command_with_prompt(
     agent_prefix: &str,
     prompt: &str,
     profile_file: Option<&str>,
+    permission_mode: Option<&str>,
 ) -> String {
     let temp_dir = std::env::temp_dir();
     prompt_file::sweep_stale(&temp_dir, PROMPT_FILE_PREFIX);
@@ -837,8 +970,12 @@ fn claude_launch_command_with_prompt(
         Some(path) => format!("--settings \"{path}\" "),
         None => String::new(),
     };
+    let mode_flag = match permission_mode {
+        Some(m) => format!("--permission-mode {m} "),
+        None => String::new(),
+    };
     format!(
-        "{agent_prefix}claude {settings_flag}\"$(cat '{}')\"\r",
+        "{agent_prefix}claude {settings_flag}{mode_flag}\"$(cat '{}')\"\r",
         prompt_path.display()
     )
 }
@@ -892,6 +1029,7 @@ pub(crate) fn handle_spawn(
         .and_then(|v| v.as_str())
         .map(String::from);
     let profile_file = resolve_profile_file_param(data_dir, params, tr)?;
+    let permission_mode = resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
     // 1) 호스트 registry 에 등록 + 점유 + tab 생성. workspace required.
     let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
@@ -913,6 +1051,7 @@ pub(crate) fn handle_spawn(
         child_surface_id,
         prompt.as_deref(),
         profile_file.as_deref(),
+        permission_mode.as_deref(),
     );
 
     // 2-1) error scan 대상 등록. `ScanTarget::Child` 로 넣으면 폴링 루프가
@@ -1249,17 +1388,20 @@ mod tests {
 
     #[test]
     fn build_launch_command_no_task() {
-        assert_eq!(build_launch_command(None, None), "claude");
+        assert_eq!(build_launch_command(None, None, None), "claude");
     }
 
     #[test]
     fn build_launch_command_with_simple_task() {
-        assert_eq!(build_launch_command(Some("fix"), None), "claude --task fix");
+        assert_eq!(
+            build_launch_command(Some("fix"), None, None),
+            "claude --task fix"
+        );
     }
 
     #[test]
     fn build_launch_command_with_spaces_gets_escaped() {
-        let out = build_launch_command(Some("fix the bug"), None);
+        let out = build_launch_command(Some("fix the bug"), None, None);
         assert!(out.starts_with("claude --task "), "prefix wrong: {out}");
         assert!(out.contains("fix the bug"), "task body missing: {out}");
         assert_ne!(out, "claude --task fix the bug", "must be escaped");
@@ -1268,7 +1410,7 @@ mod tests {
     #[test]
     fn build_launch_command_with_profile_appends_quoted_settings_path() {
         assert_eq!(
-            build_launch_command(None, Some("/home/user/profile.json")),
+            build_launch_command(None, Some("/home/user/profile.json"), None),
             "claude --settings \"/home/user/profile.json\""
         );
     }
@@ -1276,14 +1418,186 @@ mod tests {
     #[test]
     fn build_launch_command_with_task_and_profile_appends_both() {
         assert_eq!(
-            build_launch_command(Some("fix"), Some("/home/user/profile.json")),
+            build_launch_command(Some("fix"), Some("/home/user/profile.json"), None),
             "claude --task fix --settings \"/home/user/profile.json\""
+        );
+    }
+
+    /// `settings.get_plugin_setting` 하나만 답하는 최소 host — 승인 정책 해석은
+    /// 그 한 물음 말고는 host 를 안 부른다. `MockHost` 는 hook 사이클을 흉내 내는
+    /// 물건이라 이 축을 표현할 자리가 없다.
+    struct SettingHost(Option<&'static str>);
+
+    impl HostCall for SettingHost {
+        fn call(
+            &self,
+            method: &str,
+            _params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            match (method, self.0) {
+                ("settings.get_plugin_setting", Some(v)) => Ok(json!({ "value": v })),
+                ("settings.get_plugin_setting", None) => Ok(json!({})),
+                _ => Ok(json!({})),
+            }
+        }
+    }
+
+    #[test]
+    fn build_launch_command_with_permission_mode_appends_flag() {
+        assert_eq!(
+            build_launch_command(None, None, Some("acceptEdits")),
+            "claude --permission-mode acceptEdits"
+        );
+    }
+
+    /// 두 플래그가 함께 오면 순서가 고정된다 — `--settings` 먼저, 정책이 뒤.
+    #[test]
+    fn build_launch_command_with_profile_and_permission_mode_fixes_order() {
+        assert_eq!(
+            build_launch_command(None, Some("/home/u/p.json"), Some("plan")),
+            "claude --settings \"/home/u/p.json\" --permission-mode plan"
+        );
+    }
+
+    #[test]
+    fn claude_launch_command_with_prompt_puts_mode_before_the_positional_prompt() {
+        let out = claude_launch_command_with_prompt(
+            3,
+            "TASTY_SURFACE_ID=3 ",
+            "hello",
+            None,
+            Some("dontAsk"),
+        );
+        assert!(
+            out.starts_with("TASTY_SURFACE_ID=3 claude --permission-mode dontAsk \"$(cat '"),
+            "got {out}"
+        );
+    }
+
+    #[test]
+    fn resolve_permission_mode_defaults_to_no_flag() {
+        // ADR-0265 결정 2 — params 도 설정도 없으면 플래그를 안 붙인다(사용자 자신의
+        // Claude Code 설정이 그대로 정한다). codex 와 달리 비대화형 값으로 떨어뜨리지
+        // 않는다.
+        let host = SettingHost(None);
+        assert_eq!(
+            resolve_permission_mode(&host, &json!({}), None, &test_translator()).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_permission_mode_takes_the_explicit_param() {
+        let host = SettingHost(None);
+        assert_eq!(
+            resolve_permission_mode(
+                &host,
+                &json!({ "permission_mode": "plan" }),
+                None,
+                &test_translator()
+            )
+            .unwrap(),
+            Some("plan".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_permission_mode_falls_back_to_the_plugin_setting() {
+        let host = SettingHost(Some("acceptEdits"));
+        assert_eq!(
+            resolve_permission_mode(&host, &json!({}), None, &test_translator()).unwrap(),
+            Some("acceptEdits".to_string())
+        );
+    }
+
+    /// 호출별 params 가 설정 기본값을 이 호출에 한해 덮는다(ADR-0265 결정 4).
+    #[test]
+    fn explicit_param_overrides_the_plugin_setting() {
+        let host = SettingHost(Some("acceptEdits"));
+        assert_eq!(
+            resolve_permission_mode(
+                &host,
+                &json!({ "permission_mode": "plan" }),
+                None,
+                &test_translator()
+            )
+            .unwrap(),
+            Some("plan".to_string())
+        );
+    }
+
+    /// `inherit` 은 "플래그를 안 붙인다" 와 같은 뜻이다.
+    #[test]
+    fn inherit_setting_means_no_flag() {
+        let host = SettingHost(Some("inherit"));
+        assert_eq!(
+            resolve_permission_mode(&host, &json!({}), None, &test_translator()).unwrap(),
+            None
+        );
+    }
+
+    /// 설정에 모르는 값이 들어 있어도 기동을 막지 않는다 — 무시하고 미부착.
+    #[test]
+    fn unknown_setting_value_is_ignored_not_fatal() {
+        let host = SettingHost(Some("yolo"));
+        assert_eq!(
+            resolve_permission_mode(&host, &json!({}), None, &test_translator()).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_permission_mode_rejects_an_unknown_value() {
+        let host = SettingHost(None);
+        let err = resolve_permission_mode(
+            &host,
+            &json!({ "permission_mode": "yolo" }),
+            None,
+            &test_translator(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:?}").contains("yolo"), "got {err:?}");
+    }
+
+    #[test]
+    fn resolve_permission_mode_rejects_a_profile_that_sets_the_same_axis() {
+        // ADR-0265 결정 5 — 어느 쪽이 이기는지 조용히 정하지 않는다.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        std::fs::write(&path, r#"{"permissions":{"defaultMode":"plan"}}"#).unwrap();
+        let host = SettingHost(None);
+        let err = resolve_permission_mode(
+            &host,
+            &json!({ "permission_mode": "acceptEdits" }),
+            path.to_str(),
+            &test_translator(),
+        )
+        .unwrap_err();
+        assert!(format!("{err:?}").contains("defaultMode"), "got {err:?}");
+    }
+
+    /// `allow`/`deny` 는 규칙 목록이지 모드가 아니다 — 같은 축이 아니므로 공존한다.
+    #[test]
+    fn resolve_permission_mode_allows_a_profile_that_only_lists_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.json");
+        std::fs::write(&path, r#"{"permissions":{"allow":["Bash(ls:*)"]}}"#).unwrap();
+        let host = SettingHost(None);
+        assert_eq!(
+            resolve_permission_mode(
+                &host,
+                &json!({ "permission_mode": "acceptEdits" }),
+                path.to_str(),
+                &test_translator()
+            )
+            .unwrap(),
+            Some("acceptEdits".to_string())
         );
     }
 
     #[test]
     fn claude_launch_command_with_prompt_no_profile_unchanged() {
-        let out = claude_launch_command_with_prompt(1, "TASTY_SURFACE_ID=1 ", "hello", None);
+        let out = claude_launch_command_with_prompt(1, "TASTY_SURFACE_ID=1 ", "hello", None, None);
         assert!(
             out.starts_with("TASTY_SURFACE_ID=1 claude \"$(cat '"),
             "got {out}"
@@ -1298,6 +1612,7 @@ mod tests {
             "TASTY_SURFACE_ID=2 ",
             "hello",
             Some("/home/user/profile.json"),
+            None,
         );
         assert!(
             out.starts_with(

@@ -4,6 +4,14 @@ desc = "Claude Code の子セッションを管理します"
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
 "settings.continue_checklist_round_limit" = "ゲートの既定ラウンド上限（ゲートが独自の値を指定しない場合）"
+"settings.default_permission_mode" = "子セッションの既定パーミッションモード"
+"settings.permission_mode.inherit" = "継承（Claude Code 自身の設定に従う）"
+"settings.permission_mode.manual" = "毎回確認する（manual）"
+"settings.permission_mode.plan" = "計画のみ（plan）"
+"settings.permission_mode.accept_edits" = "ファイル編集を自動承認（acceptEdits）"
+"settings.permission_mode.auto" = "自動（auto）"
+"settings.permission_mode.dont_ask" = "確認しない（dontAsk）"
+"settings.permission_mode.bypass" = "すべての権限チェックをバイパス（bypassPermissions）"
 
 [claude.checklist]
 body = """
@@ -36,6 +44,8 @@ missing_command = "必須パラメータ 'command' がありません"
 missing_name = "必須パラメータ 'name' がありません"
 missing_file = "必須パラメータ 'file' がありません"
 missing_body_file = "必須パラメータ 'body_file' がありません"
+invalid_permission_mode = "'permission_mode' の値が不正です: {}"
+permission_mode_conflicts_with_profile = "--permission-mode と permissions.defaultMode を設定するプロファイルは同時に指定できません — 同じものを決めるため、どちらか一方のみ指定してください"
 
 [claude.hook]
 missing_event = "必須パラメータ 'event' がありません"

@@ -4,6 +4,14 @@ desc = "Claude Code 자식 세션을 관리합니다"
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
 "settings.continue_checklist_round_limit" = "게이트 기본 라운드 상한 (게이트가 자체 값을 지정하지 않았을 때)"
+"settings.default_permission_mode" = "자식 세션 기본 권한 모드"
+"settings.permission_mode.inherit" = "물려받음 (Claude Code 자신의 설정을 따름)"
+"settings.permission_mode.manual" = "매번 묻기 (manual)"
+"settings.permission_mode.plan" = "계획만 (plan)"
+"settings.permission_mode.accept_edits" = "파일 편집 자동 승인 (acceptEdits)"
+"settings.permission_mode.auto" = "자동 (auto)"
+"settings.permission_mode.dont_ask" = "묻지 않음 (dontAsk)"
+"settings.permission_mode.bypass" = "모든 권한 검사 우회 (bypassPermissions)"
 
 [claude.checklist]
 body = """
@@ -36,6 +44,8 @@ missing_command = "필수 파라미터 'command' 누락"
 missing_name = "필수 파라미터 'name' 누락"
 missing_file = "필수 파라미터 'file' 누락"
 missing_body_file = "필수 파라미터 'body_file' 이 없다"
+invalid_permission_mode = "잘못된 'permission_mode' 값: {}"
+permission_mode_conflicts_with_profile = "--permission-mode 와 permissions.defaultMode 를 정하는 프로필은 동시에 줄 수 없다 — 둘이 같은 것을 정하므로 하나만 지정해라"
 
 [claude.hook]
 missing_event = "필수 파라미터 'event' 누락"

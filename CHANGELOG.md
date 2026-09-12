@@ -18,6 +18,7 @@
 
 ### Added
 
+- **자식 Claude 의 권한 모드를 호출자가 고를 수 있다.** `tasty claude launch|spawn|respawn|reboot|child-profile` 에 `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` 이 생겼다(IPC params 이름은 `permission_mode`). 지금까지는 자식이 어떤 승인 정책으로 뜰지 지정할 창구가 아예 없었다. **아무것도 안 주면 동작은 그대로다** — 플래그가 붙지 않아 자식은 쓰던 Claude Code 설정대로 뜬다. Codex 쪽처럼 자동으로 "묻지 않음" 이 되지는 않는다(Claude Code 에는 샌드박스 축이 따로 없어 그것이 곧 제한 없는 실행이 되기 때문). 전역 기본값은 설정 › 플러그인 › Claude Code 의 **자식 세션 기본 권한 모드**(기본: 물려받음)이고 호출별 플래그가 우선한다. `--profile`/`--profile-file` 이 가리키는 설정 JSON 이 `permissions.defaultMode` 를 정하고 있으면 `--permission-mode` 와 함께 줄 수 없다(같은 것을 정하므로 하나만 고르라는 에러). `reboot`/`child-profile` 에서 준 모드는 그 재시작에만 적용되고 탭 복원에는 따라가지 않는다.
 - **Codex 승인 대기가 `needs_input` 으로 보인다.** Codex 가 `Would you like to run the following command?` 승인 화면을 띄우면 그 서피스의 상태가 `needs_input` 으로 조회되고(`tasty codex state` · `terminal.state`), 비포커스 대상이면 탭·워크스페이스에 기존 노란 표시가 뜨며, `spawn`/`tell` 을 건 호출자의 알림 로그에도 한 줄이 간다. 지금까지는 아무 신호도 없어 "멈춘 것" 과 "일하는 것" 이 같은 관측이었다 — 저장소는 그것을 "Codex CLI 에 대응 이벤트가 없다" 로 설명해 왔고, 그 전제가 틀렸다(codex-cli 0.154.0 실측). `tasty codex install` 이 심는 훅이 셋에서 여섯으로 늘었다 — `PermissionRequest`(→ 대기 진입) · `PostToolUse`(승인된 도구가 끝나면 → 실행 중) · `Interrupt`(거절·Esc·Ctrl-C → 대기 종료)가 더해졌다. **기존 사용자는 `tasty codex install` 을 다시 실행해야 한다.** 두 가지는 아직 못 한다: 승인을 누른 뒤에도 **그 도구가 끝나야** 상태가 실행 중으로 돌아오고(Codex 가 "승인됨" 자체를 알리지 않는다 — 45 초짜리 명령이면 45 초), 승인이 아닌 일반 질문 입력은 감지 대상이 아니다.
 
 ### Changed

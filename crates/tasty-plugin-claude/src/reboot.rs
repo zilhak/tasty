@@ -149,6 +149,13 @@ pub(crate) fn reboot_surface(
         tr,
     )?;
 
+    // 승인 정책은 **이 호출에 한해서만** 산다 — 복원이 셸에 그대로 타이핑하는
+    // `restore.command` meta 에는 싣지 않는다(`hook.rs` 가 그 문자열을 쓸 때
+    // `permission_mode` 를 `None` 으로 고정한다). 근거는
+    // `docs/adr/0265-child-approval-policy-is-the-callers-choice.md` 결정 6.
+    let permission_mode =
+        crate::handlers::resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
+
     let Some(baseline) = query_foreground(host, surface_id) else {
         return Err(IpcMethodError::new(tr.t_fmt(
             "claude.reboot.no_foreground_process",
@@ -187,6 +194,7 @@ pub(crate) fn reboot_surface(
                 &thread_session,
                 extra_prompt.as_deref(),
                 profile_file.as_deref(),
+                permission_mode.as_deref(),
                 &notice_base,
             );
             tasty_utils::poison::recover_mutex(
@@ -529,13 +537,27 @@ fn fetch_session_id(
 /// 아니라 파일 경로**를 큰따옴표로 감싼다(중괄호/따옴표 이스케이프는 셸마다 달라
 /// 인라인 JSON 은 같은 cmd/pwsh/bash 함정에 빠진다; 큰따옴표는 세 셸 모두 경로
 /// 공백을 처리한다). 경로는 CLI `path_kind = "file"` 정규화를 이미 거쳐 절대경로다.
-pub(crate) fn resume_command(session_id: &str, profile_file: Option<&str>) -> String {
-    format!("{}\r", resume_command_line(session_id, profile_file))
+pub(crate) fn resume_command(
+    session_id: &str,
+    profile_file: Option<&str>,
+    permission_mode: Option<&str>,
+) -> String {
+    let mode = match permission_mode {
+        Some(m) => format!(" --permission-mode {m}"),
+        None => String::new(),
+    };
+    format!("{}{mode}\r", resume_command_line(session_id, profile_file))
 }
 
 /// resume 명령의 **본문**(제출 `\r` 없음). `restore.command` surface meta 도 같은
 /// 문자열을 써야 하므로(복원은 이 meta 를 셸에 그대로 타이핑한다) 포맷의 단일
 /// 소유자를 여기 둔다 — 셸 전송용은 [`resume_command`] 가 `\r` 만 덧붙인다.
+///
+/// **승인 정책(`--permission-mode`)은 여기 들어오지 않는다.** 그 값은 한 번의 호출에
+/// 한해 사는 것이고, 복원은 호출자가 없는 자리에서 일어난다 — meta 에 실으면 그 뒤
+/// 모든 재부팅이 조용히 그 정책을 이어받는다
+/// (`docs/adr/0265-child-approval-policy-is-the-callers-choice.md` 결정 6). 그래서
+/// 플래그는 [`resume_command`] 가 전송 직전에만 덧붙인다.
 pub(crate) fn resume_command_line(session_id: &str, profile_file: Option<&str>) -> String {
     match profile_file {
         Some(path) => format!("claude -r {session_id} --settings \"{path}\""),
@@ -575,6 +597,7 @@ fn run_reboot_sequence(
     session_id: &str,
     extra_prompt: Option<&str>,
     profile_file: Option<&str>,
+    permission_mode: Option<&str>,
     notice_base: &str,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
@@ -588,7 +611,14 @@ fn run_reboot_sequence(
         return;
     }
 
-    if !resume_and_wait(host, surface_id, baseline, session_id, profile_file) {
+    if !resume_and_wait(
+        host,
+        surface_id,
+        baseline,
+        session_id,
+        profile_file,
+        permission_mode,
+    ) {
         return;
     }
     thread::sleep(TUI_READY_GRACE);
@@ -652,10 +682,14 @@ fn resume_and_wait(
     baseline: &str,
     session_id: &str,
     profile_file: Option<&str>,
+    permission_mode: Option<&str>,
 ) -> bool {
     if let Err(e) = host.call(
         "surface.send",
-        json!({ "surface_id": surface_id, "text": resume_command(session_id, profile_file) }),
+        json!({
+            "surface_id": surface_id,
+            "text": resume_command(session_id, profile_file, permission_mode),
+        }),
     ) {
         tracing::warn!("claude reboot s{surface_id}: resume send failed: {e}");
         return false;
@@ -968,7 +1002,7 @@ mod tests {
     #[test]
     fn resume_command_is_plain_and_submits() {
         assert_eq!(
-            resume_command("0e5cbdf4-32a1", None),
+            resume_command("0e5cbdf4-32a1", None, None),
             "claude -r 0e5cbdf4-32a1\r"
         );
     }
@@ -976,7 +1010,7 @@ mod tests {
     #[test]
     fn resume_command_with_profile_appends_quoted_settings_path() {
         assert_eq!(
-            resume_command("0e5cbdf4-32a1", Some("/home/user/profile.json")),
+            resume_command("0e5cbdf4-32a1", Some("/home/user/profile.json"), None),
             "claude -r 0e5cbdf4-32a1 --settings \"/home/user/profile.json\"\r"
         );
     }
