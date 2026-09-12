@@ -101,6 +101,9 @@
 
 ## 관련
 
+- [`documentation-model.md`](../documentation-model.md) §6 — **열거가 아닌 자리**(산문 ·
+  주석 · 이웃한 술어)에 같은 사실이 적혔을 때. 여기의 판정기 처방이 안 닿는 자리이고,
+  그때 남는 의무(자리를 먼저 세고 양방향 전수 대조)의 정본이 거기다.
 - [`ADR-0147`](../adr/0147-multiple-carriers-are-joined-by-a-check-not-merged.md) —
   이 기준의 근거·대안·재검토 조건.
 - [`complexity-gate.md`](complexity-gate.md) — 면제의 근거는 강제 가능한
