@@ -1,4 +1,4 @@
-<!-- source-hash: 2705fe79eb50 -->
+<!-- source-hash: 8edb7379150a -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -93,7 +93,7 @@ $TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log
 - Example line (English): `surface 57 task complete (via spawn)`. The wording follows the app language.
 - A notification is added whenever the state changes while the child agent is running.
 - When the file exceeds 256 KiB it is emptied and written afresh.
-- If a Claude child has been stalled for more than 30 seconds after an API error, a separate "stalled" line arrives in the same file.
+- If a Claude child looks stalled, a separate "stalled" line arrives in the same file — after 30 seconds when an error is visible on screen, and after 2 minutes when output simply stops with no error (for example, waiting at an approval prompt whose hook never arrived). When there is an error line it is attached as a hint. A child whose screen merely sits still for 2 minutes of long reasoning can produce the same line — if it goes on to send a completion notice, it was not stuck.
 
 When a Claude Code session is the parent, hook this file with the Monitor tool once, and from then on the completion of every child arrives as a notification.
 

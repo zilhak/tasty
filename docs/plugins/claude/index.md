@@ -209,14 +209,16 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 `claude-error` 자체는 **부모에게 알리지 않는다.** 패턴에 `overloaded_error`/`rate_limit_error`처럼 Claude Code가 자동 재시도하는 일시적 에러가 포함돼 있어, 그대로 알리면 재시도가 잦은 세션에서 알림이 쏟아진다. 대신 스캐너가 "재시도 중"과 "멈춤"을 가른 뒤 **`claude-error-stalled`** 를 따로 발사하고, 부모 알림은 이쪽만 구독한다.
 
+**이름에 `error`가 남아 있지만 범위는 에러 뒤 정지만이 아니다** — 에러 문자열이 한 번도 안 나온 정지도, 호스트가 이미 `stale`로 본 자식도 같은 키로 알린다([ADR-0266](../../adr/0266-derived-stale-must-reach-the-push-channel.md)). 키는 부모가 `hook.set`으로 이미 등록해 둔 배선 식별자라 개명하면 등록된 훅이 전부 깨지고 기능적으로 얻는 것이 없어서 그대로 두었고, 원인은 **알림 문구가** 가른다(에러 줄이 화면에 있으면 그 줄을 힌트로 붙인 문구, 없으면 "출력도 완료 신호도 없다" 문구).
+
 판정 기준은 두 조건의 **동시** 충족이다(`error_scan.rs`):
 
 | 조건 | 왜 |
 |---|---|
-| 에러 매치 후 PTY 출력이 **30초 이상 전혀 변하지 않음** | 재시도 중에는 시도 횟수·백오프 카운트다운이 계속 그려져 출력이 흐른다. 응답 없이 매달리면 출력이 완전히 멈춘다. 비교는 dedupe 스니펫(앞 200자)이 아니라 **텍스트 전체 지문**으로 한다 — 뒤에 출력이 붙어도 앞 200자는 그대로라, 스니펫으로 보면 재시도를 정지로 오판한다 |
-| `terminal.state`가 여전히 **`active`** | `idle`/`needs_input`/`exited`면 턴이 이미 끝났고 그 사건은 완료 알림 3형제(`claude-idle`/`needs-input`/`process-exit`)가 이미 부모에게 알렸다 — 같은 사건에 알림이 두 번 가지 않게 막는다 |
+| PTY 출력이 **문턱 이상 전혀 변하지 않음** — 화면에 에러 줄이 있으면 **30초**, 없으면 **120초** | 재시도 중에는 시도 횟수·백오프 카운트다운이 계속 그려져 출력이 흐른다. 응답 없이 매달리면 출력이 완전히 멈춘다. 에러가 없는 정적은 보강 증거가 없어(긴 추론과 관측상 구별되지 않는다) 더 긴 문턱을 요구하며, 그 값은 호스트가 자식을 조용하다고 부르기 시작하는 문턱(`CHILD_OUTPUT_SILENCE`, `src/core/state/child_liveness.rs`)에 맞췄다. 비교는 dedupe 스니펫(앞 200자)이 아니라 **텍스트 전체 지문**으로 한다 — 뒤에 출력이 붙어도 앞 200자는 그대로라, 스니펫으로 보면 재시도를 정지로 오판한다 |
+| `terminal.state`가 **`active` 또는 `stale`** | `idle`/`needs_input`/`exited`면 턴이 이미 끝났고 그 사건은 완료 알림 3형제(`claude-idle`/`needs-input`/`process-exit`)가 이미 부모에게 알렸다 — 같은 사건에 알림이 두 번 가지 않게 막는다. 반면 **`stale`에는 그런 완료 알림 경로가 없다**(그 값이 나온다는 것 자체가 훅이 유실됐다는 뜻이다) — `confidence`가 `confirmed`든 `heuristic`든 알린다: 승인 대기는 전경이 여전히 `claude`라 휴리스틱 쪽으로 판정되므로 확정만 알리면 정작 이 경로가 존재하는 이유인 사고를 못 잡는다 |
 
-노이즈 상한: 한 정적 구간당 1회(출력이 재개되면 해제), 그리고 surface당 최소 5분 간격. 새 턴 신호(`prompt-submit`/`session-start`/`active`)는 dedupe와 함께 정적 구간 측정도 리셋하지만 쿨다운은 유지한다(턴을 넘나드는 반복 에러의 빈도 상한이라 턴 경계에서 풀리면 무의미).
+노이즈 상한: 한 정적 구간당 1회(출력이 재개되면 해제), 그리고 surface당 최소 5분 간격. 오탐(긴 추론 중인 자식)은 이 문턱·상한으로 누르고 받아들인다 — 미탐은 부모가 영원히 기다리는 비용이라 대가가 비대칭이다. 새 턴 신호(`prompt-submit`/`session-start`/`active`)는 dedupe와 함께 정적 구간 측정도 리셋하지만 쿨다운은 유지한다(턴을 넘나드는 반복 에러의 빈도 상한이라 턴 경계에서 풀리면 무의미).
 
 **상태 축은 건드리지 않는다.** 이 경로는 `terminal.set_state`를 호출하지 않으므로 `claude children`의 `state`는 변하지 않는다 — 에러는 재시도로 복구될 수 있어 상태로 승격하면 오탐이고, 파생 상태는 관측 융합의 출력 전용 계약이다([ADR-0072](../../adr/0072-child-state-hook-observation-fusion.md)).
 
@@ -225,7 +227,7 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 - `register_notify_hooks`가 3형제(once)와 함께 `claude-error-stalled` 하나를 **상시 hook**(`once: false`)으로 등록한다. command 문자열이 `tasty claude notify-error --caller-surface … --target-surface …` 로 달라서, 형제 그룹의 `cleanup_sibling_hooks`(command 완전 일치) 정리 대상에 걸리지 않는다.
 - 상시라서 **재무장이 필요 없다** — 3형제의 fire→정리→재무장 사이클과 얽히지 않는다. 발사 빈도 상한은 발신 측(위 쿨다운)이 갖는다.
 - 등록은 멱등하다: spawn 후 tell, 그리고 형제 재무장까지 여러 번 호출되므로 같은 command의 기존 hook을 먼저 걷어내고 새로 단다.
-- `notify-error` 핸들러는 알림 조립 직전 `surface.screen_text`를 읽어 매치된 에러 줄을 힌트로 덧붙인다(codex `notify-caller`와 같은 방식). 알림은 완료 알림과 같은 `<parent_home>/notify/<caller_surface>.log` 한 줄로 나간다([child-completion-notify-log](../../dev-guide/external-interaction/child-completion-notify-log.md)).
+- `notify-error` 핸들러는 알림 조립 직전 `surface.screen_text`를 읽어 **원인을 가른다** — 에러 줄이 있으면 그 줄을 힌트로 덧붙이고, 없으면 에러 없는 정지용 문구를 쓴다(codex `notify-caller`와 같은 방식). 알림은 완료 알림과 같은 `<parent_home>/notify/<caller_surface>.log` 한 줄로 나간다([child-completion-notify-log](../../dev-guide/external-interaction/child-completion-notify-log.md)).
 
 ## 인터페이스
 

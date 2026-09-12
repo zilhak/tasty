@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.89"
+version = "0.1.90"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -50,7 +50,7 @@ description = "Claude output matched an error pattern"
 
 [[contributes.hook_events]]
 key = "claude-error-stalled"
-description = "Claude produced no output for a sustained period after an error while still active (likely stuck)"
+description = "Claude produced no output for a sustained period while the host still sees an unfinished turn (active or stale) — likely stuck. Fires with or without a preceding error; the notification text says which"
 
 [[contributes.cli]]
 name = "claude"

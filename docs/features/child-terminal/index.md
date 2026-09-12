@@ -95,6 +95,25 @@
 여전히 `idle`/`needs_input`/`active` 세 값만 받는다 — hook 이 파생 상태를 registry 에
 밀어넣을 수 있으면 관측 축이 다시 push 캐시로 퇴화한다.
 
+### 조회만이 소비처가 아니다 — push 축
+
+판정된 값은 `terminal.children`/`terminal.state` 응답으로만 나가는 것이 아니다.
+claude plugin 의 정지 감시(`crates/tasty-plugin-claude/src/error_scan.rs`)가 자식 출력이
+문턱 이상 멎은 것을 보면 이 판정을 조회해 보고, 그 값이 **`active` 또는 `stale`** 이면
+부모의 완료 알림 로그에 한 줄을 싣는다(`claude-error-stalled` hook →
+`tasty claude notify-error` →
+[child-completion-notify-log](../../dev-guide/external-interaction/child-completion-notify-log.md)).
+`stale` 이 그 대상인 이유는 **그 값에 대응하는 완료 알림 경로가 없기 때문**이다 — `stale` 이
+나온다는 것 자체가 훅이 유실됐다는 뜻이라, 부모가 묻지 않으면 그 사실이 아무 데도 도달하지
+않는다. 결정과 오탐 대가는
+[ADR-0266](../../adr/0266-derived-stale-must-reach-the-push-channel.md).
+
+이 축은 위 "출력 전용" 과 어긋나지 않는다 — 알림은 판정을 **읽어서** 나가는 것이고,
+`terminal.set_state` 를 부르지 않으므로 파생 상태가 registry 로 되밀려 들어가지 않는다.
+조회 축(`spawn_census` 의 respawn 후보 집계)은 지금대로 **확정 `stale` 만** 센다: 두 축이
+묻는 것이 다르다 — 조회는 "이 자식을 재사용해도 되나", push 는 "부모가 더 기다려도
+소용없나" 다.
+
 ### 능동 프로빙 배제
 
 대상 surface 에 입력을 주입해 반응을 보는 능동 프로빙은 사용자 입력 재현이라 release

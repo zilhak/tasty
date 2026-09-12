@@ -158,7 +158,7 @@ pub(crate) fn resolve_permission_mode<H: HostCall>(
     }
     if profile_file.is_some_and(profile_file_sets_default_mode) {
         return Err(IpcMethodError::invalid_params(
-            &tr.t("claude.params.permission_mode_conflicts_with_profile"),
+            tr.t("claude.params.permission_mode_conflicts_with_profile"),
         ));
     }
     Ok(Some(mode.to_string()))
@@ -647,9 +647,6 @@ pub(crate) fn handle_notify_error<H: HostCall>(
 /// `notify-caller` 와 같은 방식). 화면 조회는 best-effort 라, 실패하면 힌트 없이
 /// 본문만 보낸다.
 fn notify_error_message<H: HostCall>(tr: &Translator, host: &H, target_surface: u32) -> String {
-    let mut message =
-        tr.t("claude.notify.stalled_message")
-            .replacen("{}", &target_surface.to_string(), 1);
     let screen = host
         .call(
             "surface.screen_text",
@@ -657,10 +654,20 @@ fn notify_error_message<H: HostCall>(tr: &Translator, host: &H, target_surface: 
         )
         .ok()
         .and_then(|r| r.get("text").and_then(|t| t.as_str()).map(str::to_string));
-    if let Some(line) = screen
+    let error_line = screen
         .as_deref()
-        .and_then(crate::error_scan::first_error_line)
-    {
+        .and_then(crate::error_scan::first_error_line);
+    // **원인을 문구가 가른다.** 발사 이벤트 키는 하나라(개명하면 부모가 이미 등록해
+    // 둔 훅이 전부 깨진다) 에러 뒤 정지와 에러 없는 정지가 같은 키로 온다 — 부모는
+    // 둘에 다르게 대응하므로 한 줄 안에서 구별돼야 한다.
+    // `docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 2.
+    let key = if error_line.is_some() {
+        "claude.notify.stalled_message"
+    } else {
+        "claude.notify.stalled_no_error_message"
+    };
+    let mut message = tr.t(key).replacen("{}", &target_surface.to_string(), 1);
+    if let Some(line) = error_line {
         // 화면 한 줄이 그대로 알림에 실린다 — 로그 한 줄 형식을 깨지 않도록 길이를 자른다.
         let hint: String = line.chars().take(160).collect();
         message.push_str(&tr.t("claude.notify.stalled_hint").replacen("{}", &hint, 1));

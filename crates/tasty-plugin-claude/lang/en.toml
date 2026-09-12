@@ -54,6 +54,7 @@ unknown_event = "unknown claude hook event: '{}'"
 [claude.notify]
 done_message = "surface {}: task complete (via {})"
 stalled_message = "surface {}: no output since an error — the child looks stuck (still active, no completion signal)"
+stalled_no_error_message = "surface {}: no output for a long stretch and no completion signal — the child looks stuck (it may be waiting at a prompt whose hook never arrived)"
 stalled_hint = " Last error: {}"
 
 [claude.launch]

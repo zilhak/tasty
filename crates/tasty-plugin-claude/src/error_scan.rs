@@ -55,6 +55,17 @@ fn claude_error_regex() -> &'static Regex {
 /// 정지로 오인하고, 길면 진짜 정지 통보가 늦어진다.
 const STALL_QUIET: Duration = Duration::from_secs(30);
 
+/// **에러 없이** 정지를 판정할 때 요구하는 무출력 시간. 위 [`STALL_QUIET`] 보다
+/// 긴 이유는 보강 증거가 없기 때문이다 — 에러 문자열이 화면에 있으면 "무언가
+/// 잘못됐다" 는 독립 신호가 하나 더 있지만, 그냥 조용한 것은 긴 추론과 관측상
+/// 구별되지 않는다(`src/core/state/child_liveness.rs` 의 "확실성의 한계").
+///
+/// 값은 호스트가 자식을 조용하다고 부르기 시작하는 문턱(`CHILD_OUTPUT_SILENCE`,
+/// 같은 파일)에 맞췄다 — plugin 은 호스트 크레이트를 링크하지 않아 두 값은 **따로
+/// 적힌 사본**이다. 갈리면 "호스트는 조용하다는데 plugin 은 아직 아니다" 같은 상태가
+/// 생긴다. 결정은 `docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 5.
+const STALL_QUIET_NO_ERROR: Duration = Duration::from_secs(120);
+
 /// 같은 surface 에 정지 알림을 다시 보내기까지의 최소 간격 — 에러가 반복되는
 /// 세션에서 알림이 무한히 쌓이지 않게 하는 상한.
 const STALL_NOTIFY_COOLDOWN: Duration = Duration::from_secs(300);
@@ -63,6 +74,12 @@ const STALL_NOTIFY_COOLDOWN: Duration = Duration::from_secs(300);
 /// 이벤트다 — 부모 알림은 노이즈를 걸러낸 이 쪽만 구독한다. 매니페스트
 /// `[[contributes.hook_events]]` 에 같은 문자열이 선언돼 있어야 host 가 등록·발사를
 /// 받아준다.
+///
+/// **이름에 `error` 가 남아 있지만 범위는 에러 뒤 정지만이 아니다.** 키는 부모가
+/// `hook.set` 으로 이미 등록해 둔 배선 식별자라 개명하면 등록된 훅이 전부 깨지고
+/// 기능적으로 얻는 것이 없다 — 그래서 그대로 두고 범위만 넓혔다. 원인은 알림 문구가
+/// 가른다(`handlers::notify_error_message`).
+/// 근거: `docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 2.
 pub(crate) const STALLED_EVENT: &str = "claude-error-stalled";
 
 /// `text`(ANSI-stripped 권장)에 알려진 Claude 에러 패턴이 포함됐는지.
@@ -145,6 +162,9 @@ struct OutputWatch {
     last_change: Instant,
     /// 이번 정적 구간에서 정지 알림을 이미 보냈는지 — 출력이 다시 흐르면 해제된다.
     stall_notified: bool,
+    /// 마지막으로 본 텍스트에 에러 패턴이 있었는지 — 정지 판정의 **문턱**을 고른다
+    /// (있으면 [`STALL_QUIET`], 없으면 [`STALL_QUIET_NO_ERROR`]).
+    saw_error: bool,
 }
 
 fn output_fingerprint(text: &str) -> u64 {
@@ -156,36 +176,55 @@ fn output_fingerprint(text: &str) -> u64 {
     h.finish()
 }
 
+/// 정적이 얼마나 이어져야 정지로 보는가 — 화면에 에러가 있는지로 갈린다.
+fn stall_threshold(saw_error: bool) -> Duration {
+    if saw_error {
+        STALL_QUIET
+    } else {
+        STALL_QUIET_NO_ERROR
+    }
+}
+
 /// 상태 조회(IPC) 전에 값싸게 거를 수 있는 조건 — 무출력 지속시간 · 중복 · 쿨다운.
 fn stall_pre_gate(
     quiet: Duration,
     already_notified: bool,
     since_last_notify: Option<Duration>,
+    threshold: Duration,
 ) -> bool {
-    if already_notified || quiet < STALL_QUIET {
+    if already_notified || quiet < threshold {
         return false;
     }
     !matches!(since_last_notify, Some(d) if d < STALL_NOTIFY_COOLDOWN)
 }
 
-/// 정지 알림을 보낼지의 최종 판정(순수 함수).
-///
-/// `child_state` 는 호스트가 보는 자식 상태(`terminal.state`)다. **`active` 일 때만**
-/// 알린다:
+/// 호스트가 보는 자식 상태(`terminal.state`)가 정지 알림을 허용하는가.
 ///
 /// - `idle`/`needs_input`/`exited` = 턴이 이미 끝났다 → 기존 완료 알림 경로
 ///   (`claude-idle`/`needs-input`/`process-exit` 형제 hook)가 부모에게 이미 알렸다.
 ///   여기서 또 알리면 같은 사건에 알림이 두 번 간다.
 /// - `active` + 무출력 = 호스트는 작업 중이라고 보는데 실제로는 아무것도 진행되지
-///   않는 상태. 부모가 무한정 기다리게 되는 유일한 조합이고, 턴이 끝나지 않으므로
-///   Claude Code 의 `Stop` 훅도 구조적으로 오지 않는다.
+///   않는 상태. 턴이 끝나지 않으므로 Claude Code 의 `Stop` 훅도 구조적으로 오지 않는다.
+/// - `stale` = 호스트가 관측으로 **이미 조용하다고 판정한** 상태다. 그런데 그 값에는
+///   대응하는 완료 알림 경로가 없다 — `stale` 이 나온다는 것 자체가 훅이 유실됐다는
+///   뜻이기 때문이다. 확정(`confirmed`)이든 휴리스틱이든 알린다: 승인 대기는 전경이
+///   여전히 `claude` 라 휴리스틱 쪽으로 판정되므로, 확정만 알리면 정작 이 경로가
+///   존재하는 이유인 사고를 못 잡는다
+///   (`docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 3).
+fn state_allows_stall_notice(child_state: &str) -> bool {
+    matches!(child_state, "active" | "stale")
+}
+
+/// 정지 알림을 보낼지의 최종 판정(순수 함수).
 fn should_notify_stall(
     quiet: Duration,
     child_state: &str,
     already_notified: bool,
     since_last_notify: Option<Duration>,
+    threshold: Duration,
 ) -> bool {
-    stall_pre_gate(quiet, already_notified, since_last_notify) && child_state == "active"
+    stall_pre_gate(quiet, already_notified, since_last_notify, threshold)
+        && state_allows_stall_notice(child_state)
 }
 
 impl ErrorScanner {
@@ -276,42 +315,48 @@ impl ErrorScanner {
             )
             .ok()?;
         let text = resp.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        let has_error = detect_claude_error(text);
         // 출력 흐름 추적은 에러 매치 여부와 무관하게 매 tick 갱신한다 — 에러가 뜨기
         // 전부터 흐름을 보고 있어야 "에러 직후부터의 정적" 을 잴 수 있다.
-        self.track_output(surface_id, text, now);
-        if !detect_claude_error(text) {
-            return None;
-        }
-
-        // 같은 텍스트가 연속 polling에서 다시 잡히면 무시 (dedupe). prompt가
-        // 새로 그려지지 않는 한 mark는 그대로 유지되므로 같은 chunk가 반복
-        // 노출될 수 있다.
-        let snippet: String = text.chars().take(200).collect();
-        let already_fired = self.last_fired.get(&surface_id) == Some(&snippet);
+        self.track_output(surface_id, text, now, has_error);
 
         let mut fired = None;
-        if !already_fired {
-            let fire_result = host.call(
-                "surface.fire_hook",
-                json!({
-                    "surface_id": surface_id,
-                    "event": "claude-error",
-                }),
-            );
-            match fire_result {
-                Ok(_) => {
-                    self.last_fired.insert(surface_id, snippet.clone());
-                    fired = Some(snippet);
-                }
-                Err(e) => {
-                    tracing::warn!("claude error fire_hook failed for surface {surface_id}: {e}");
+        if has_error {
+            // 같은 텍스트가 연속 polling에서 다시 잡히면 무시 (dedupe). prompt가
+            // 새로 그려지지 않는 한 mark는 그대로 유지되므로 같은 chunk가 반복
+            // 노출될 수 있다.
+            let snippet: String = text.chars().take(200).collect();
+            let already_fired = self.last_fired.get(&surface_id) == Some(&snippet);
+            if !already_fired {
+                let fire_result = host.call(
+                    "surface.fire_hook",
+                    json!({
+                        "surface_id": surface_id,
+                        "event": "claude-error",
+                    }),
+                );
+                match fire_result {
+                    Ok(_) => {
+                        self.last_fired.insert(surface_id, snippet.clone());
+                        fired = Some(snippet);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "claude error fire_hook failed for surface {surface_id}: {e}"
+                        );
+                    }
                 }
             }
         }
 
-        // dedupe 로 `claude-error` 재발사가 눌린 tick 에서도 정지 판정은 계속 돈다 —
-        // "같은 에러 텍스트가 그대로 멈춰 있다" 가 바로 정지의 모습이라, 여기서
-        // 빠져나가면 정작 알려야 할 케이스를 영영 못 잡는다.
+        // **에러 매치와 무관하게** 정지 판정을 돈다. 한때 이 호출이 "에러가 없으면
+        // 빠져나가는" return 뒤에 있었고, 그래서 승인 프롬프트처럼 에러 문자열이 없는
+        // 정지는 판정에 도달조차 못 했다
+        // (`docs/adr/0266-derived-stale-must-reach-the-push-channel.md`).
+        // dedupe 로 `claude-error` 재발사가 눌린 tick 에서도 마찬가지로 돈다 — "같은
+        // 에러 텍스트가 그대로 멈춰 있다" 가 바로 정지의 모습이다. 조회 비용은
+        // `stall_pre_gate` 가 앞에서 막는다(값싼 조건을 다 통과한 tick 에서만
+        // `terminal.state` 를 부른다).
         self.maybe_notify_stall(host, surface_id, now);
         fired
     }
@@ -319,7 +364,7 @@ impl ErrorScanner {
     /// 이번 tick 의 텍스트로 출력 흐름 관측치를 갱신한다. 지문이 바뀌면 정적 구간을
     /// 처음부터 다시 재고, 이미 보낸 정지 알림도 해제한다(출력이 재개됐으므로 다음
     /// 정적 구간은 새 사건이다).
-    fn track_output(&mut self, surface_id: u32, text: &str, now: Instant) {
+    fn track_output(&mut self, surface_id: u32, text: &str, now: Instant, has_error: bool) {
         let fingerprint = output_fingerprint(text);
         match self.watch.get_mut(&surface_id) {
             Some(w) if w.fingerprint == fingerprint => {}
@@ -327,6 +372,7 @@ impl ErrorScanner {
                 w.fingerprint = fingerprint;
                 w.last_change = now;
                 w.stall_notified = false;
+                w.saw_error = has_error;
             }
             None => {
                 self.watch.insert(
@@ -335,14 +381,16 @@ impl ErrorScanner {
                         fingerprint,
                         last_change: now,
                         stall_notified: false,
+                        saw_error: has_error,
                     },
                 );
             }
         }
     }
 
-    /// 에러가 매치된 상태에서 무출력이 [`STALL_QUIET`] 이상 이어졌고 호스트가 그
-    /// 자식을 여전히 `active` 로 보면 [`STALLED_EVENT`] 를 발사한다.
+    /// 무출력이 문턱([`stall_threshold`]) 이상 이어졌고 호스트가 그 자식을 아직
+    /// 끝나지 않은 것으로 보면([`state_allows_stall_notice`]) [`STALLED_EVENT`] 를
+    /// 발사한다. 문턱은 화면에 에러가 있는지로 갈린다.
     ///
     /// 상태 축은 건드리지 않는다 — `terminal.set_state` 를 호출하지 않으므로
     /// `claude children` 의 `state` 는 이 경로로 변하지 않는다(파생 상태 출력 전용
@@ -353,11 +401,12 @@ impl ErrorScanner {
         };
         let quiet = now.saturating_duration_since(w.last_change);
         let already_notified = w.stall_notified;
+        let threshold = stall_threshold(w.saw_error);
         let since_last_notify = self
             .last_stall_notify
             .get(&surface_id)
             .map(|t| now.saturating_duration_since(*t));
-        if !stall_pre_gate(quiet, already_notified, since_last_notify) {
+        if !stall_pre_gate(quiet, already_notified, since_last_notify, threshold) {
             return;
         }
 
@@ -372,7 +421,13 @@ impl ErrorScanner {
                     .map(str::to_ascii_lowercase)
             })
             .unwrap_or_default();
-        if !should_notify_stall(quiet, &child_state, already_notified, since_last_notify) {
+        if !should_notify_stall(
+            quiet,
+            &child_state,
+            already_notified,
+            since_last_notify,
+            threshold,
+        ) {
             return;
         }
 
@@ -535,40 +590,95 @@ mod tests {
             STALL_QUIET - Duration::from_secs(1),
             "active",
             false,
-            None
+            None,
+            STALL_QUIET
         ));
-        assert!(should_notify_stall(STALL_QUIET, "active", false, None));
+        assert!(should_notify_stall(
+            STALL_QUIET,
+            "active",
+            false,
+            None,
+            STALL_QUIET
+        ));
     }
 
     #[test]
-    fn stall_only_when_host_still_thinks_child_is_active() {
+    fn stall_only_when_the_turn_has_not_ended() {
         // 턴이 끝난 상태(idle/needs_input/exited)면 기존 완료 알림 경로가 이미
         // 부모에게 알렸다 — 같은 사건으로 두 번 알리지 않는다.
         for state in ["idle", "needs_input", "exited", ""] {
             assert!(
-                !should_notify_stall(STALL_QUIET * 2, state, false, None),
+                !should_notify_stall(STALL_QUIET * 2, state, false, None, STALL_QUIET),
                 "state={state} 에서는 정지 알림이 나가면 안 된다"
             );
         }
-        assert!(should_notify_stall(STALL_QUIET * 2, "active", false, None));
+        assert!(should_notify_stall(
+            STALL_QUIET * 2,
+            "active",
+            false,
+            None,
+            STALL_QUIET
+        ));
+        // `stale` 에는 완료 알림 경로가 **없다** — 그 값이 나온다는 것 자체가 훅이
+        // 유실됐다는 뜻이라, 여기서 안 알리면 부모는 영원히 기다린다.
+        assert!(should_notify_stall(
+            STALL_QUIET * 2,
+            "stale",
+            false,
+            None,
+            STALL_QUIET
+        ));
     }
 
     #[test]
     fn stall_notifies_once_per_silence_and_respects_cooldown() {
         // 같은 정적 구간에서 반복 알림 금지.
-        assert!(!should_notify_stall(STALL_QUIET * 3, "active", true, None));
+        assert!(!should_notify_stall(
+            STALL_QUIET * 3,
+            "active",
+            true,
+            None,
+            STALL_QUIET
+        ));
         // 쿨다운 안이면 새 정적 구간이라도 억제 — 에러 반복 세션의 빈도 상한.
         assert!(!should_notify_stall(
             STALL_QUIET * 3,
             "active",
             false,
-            Some(STALL_NOTIFY_COOLDOWN - Duration::from_secs(1))
+            Some(STALL_NOTIFY_COOLDOWN - Duration::from_secs(1)),
+            STALL_QUIET
         ));
         assert!(should_notify_stall(
             STALL_QUIET * 3,
             "active",
             false,
-            Some(STALL_NOTIFY_COOLDOWN)
+            Some(STALL_NOTIFY_COOLDOWN),
+            STALL_QUIET
+        ));
+    }
+
+    #[test]
+    fn the_threshold_depends_on_whether_an_error_is_on_screen() {
+        assert_eq!(stall_threshold(true), STALL_QUIET);
+        assert_eq!(stall_threshold(false), STALL_QUIET_NO_ERROR);
+        assert!(
+            STALL_QUIET_NO_ERROR > STALL_QUIET,
+            "보강 증거가 없으면 더 길게 본다"
+        );
+        // 에러 없는 정적은 짧은 문턱으로는 정지가 아니다.
+        assert!(!should_notify_stall(
+            STALL_QUIET,
+            "active",
+            false,
+            None,
+            STALL_QUIET_NO_ERROR
+        ));
+        assert!(should_notify_stall(
+            STALL_QUIET_NO_ERROR,
+            "active",
+            false,
+            None,
+            STALL_QUIET_NO_ERROR
         ));
     }
 
@@ -715,14 +825,87 @@ mod tests {
     }
 
     #[test]
-    fn clean_output_without_error_never_fires_anything() {
-        // 노이즈 회귀 가드 — 정상 세션은 아무 hook 도 발사하지 않는다.
+    fn clean_output_never_fires_an_error_event() {
+        // 노이즈 회귀 가드 — 에러 패턴이 없으면 `claude-error` 는 어느 tick 에서도
+        // 안 나간다. 에러 **없는 정적**은 이제 정지로 알리지만(아래
+        // `silence_without_error_fires_stall`) 그것은 다른 이벤트다.
         let host = ScanHost::new("running tests…\nall good\n", "active");
         let mut s = ErrorScanner::new();
         let t0 = Instant::now();
         s.scan_one_at(&host, 1, t0);
-        s.scan_one_at(&host, 1, t0 + STALL_QUIET * 5);
+        // 문턱 이전까지는 아무것도 안 나간다.
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR - Duration::from_secs(1));
         assert!(host.events().is_empty(), "발사 없음: {:?}", host.events());
+        // 문턱을 넘겨도 에러 이벤트는 없다.
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR * 5);
+        assert!(
+            !host.events().iter().any(|e| e == "claude-error"),
+            "에러가 없는데 claude-error 가 나갔다: {:?}",
+            host.events()
+        );
+    }
+
+    /// 에러 문자열이 **한 번도 안 나온 채로** 정적이 임계를 넘는 갈래. 고치기 전에는
+    /// 0 이었다 — 에러가 없으면 정지 판정 함수에 도달조차 하지 않았다.
+    #[test]
+    fn silence_without_error_fires_stall() {
+        let host = ScanHost::new("waiting for your approval…\n", "active");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        assert_eq!(host.stalled_count(), 0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+        assert_eq!(host.stalled_count(), 1, "에러가 없어도 정적이 길면 알린다");
+        assert!(
+            host.events().iter().all(|e| e == STALLED_EVENT),
+            "에러 이벤트가 섞이면 안 된다: {:?}",
+            host.events()
+        );
+    }
+
+    /// 호스트가 이미 `stale` 로 본 갈래. 고치기 전에는 `child_state == "active"`
+    /// 게이트가 막아 0 이었다.
+    #[test]
+    fn stale_state_fires_stall() {
+        let host = ScanHost::new("…\n", "stale");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+        assert_eq!(host.stalled_count(), 1);
+    }
+
+    /// 회귀 방지 — 턴이 끝난 상태는 여전히 억제한다(완료 알림 경로가 이미 알렸다).
+    #[test]
+    fn idle_and_needs_input_still_suppressed() {
+        for state in ["idle", "needs_input", "exited"] {
+            let host = ScanHost::new("…\n", state);
+            let mut s = ErrorScanner::new();
+            let t0 = Instant::now();
+            s.scan_one_at(&host, 1, t0);
+            s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR * 2);
+            assert_eq!(host.stalled_count(), 0, "state={state}");
+        }
+    }
+
+    /// 출력이 재개되면 dedupe 가 풀리고 다음 정적 구간은 새 사건으로 센다.
+    #[test]
+    fn output_resumption_rearms_and_does_not_double_fire() {
+        let host = ScanHost::new("thinking…\n", "active");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR * 2);
+        assert_eq!(host.stalled_count(), 1, "같은 정적 구간에서는 1 회");
+
+        // 출력 재개 → 다시 정적. 쿨다운을 넘긴 시점이라 두 번째 사건이 나간다.
+        let t1 = t0 + STALL_NOTIFY_COOLDOWN + STALL_QUIET_NO_ERROR;
+        host.set_text("thinking…\nstill here\n");
+        s.scan_one_at(&host, 1, t1);
+        assert_eq!(host.stalled_count(), 1, "재개 직후는 정적이 아니다");
+        s.scan_one_at(&host, 1, t1 + STALL_QUIET_NO_ERROR);
+        assert_eq!(host.stalled_count(), 2);
     }
 
     /// surface **둘**을 켠다. 하나만 켜면 `disable(1)` 이 네 맵을 통째로 비워도 이
