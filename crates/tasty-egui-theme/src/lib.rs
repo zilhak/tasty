@@ -48,8 +48,8 @@ fn stroke1(theme: &Theme, c: HexColor) -> egui::Stroke {
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // ── 베이스: 라이트/다크 분기 ──
     // light()/dark() 의 기본값에 의존하는 필드는 아래에서 거의 모두 덮어쓴다.
-    // 그래도 베이스를 맞춰두면 shadow / text_cursor 등 우리가 매핑하지 않는
-    // 잔여 필드가 적절한 톤으로 남는다.
+    // 그래도 베이스를 맞춰두면 text_cursor 등 우리가 매핑하지 않는 잔여 필드가
+    // 적절한 톤으로 남는다(그림자 두 필드는 아래에서 정본 토큰으로 덮는다).
     let mut visuals = if theme.is_light {
         egui::Visuals::light()
     } else {
@@ -60,6 +60,21 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     visuals.panel_fill = theme.mantle.into();
     visuals.window_fill = theme.base.into();
     visuals.window_stroke = stroke1(theme, theme.surface0);
+
+    // ── 떠 있는 표면의 그림자 (SCOPE RULE — ADR-0254) ──
+    // egui 가 스스로 그리는 그림자는 둘이다. `popup_shadow` 는 `Frame::popup` 이 쓰고
+    // (`egui::popup_below_widget` · `ComboBox` 가 그 경로다), `window_shadow` 는
+    // `egui::Window` 의 기본 프레임이 쓴다. 이 둘을 매핑하지 않으면 `Visuals::dark()`
+    // /`light()` 의 기본값이 그대로 남아, 정본 토큰이 아닌 **세 번째 그림자**가 화면에
+    // 뜬다 — 게다가 그 기본값은 테마마다 알파가 갈려(dark α96 / light α25) 같은 화면에
+    // 나란히 놓인 tasty 그림자와 값이 달라진다.
+    //
+    // 갈래는 SCOPE RULE 대로 형태가 정한다. `Frame::popup` 은 트리거 위젯 아래 붙어
+    // 살아 있는 콘텐츠 위에 뜨는 anchored 표면이므로 popover, `egui::Window` 는 떠서
+    // 뷰포트를 점유하는 표면이므로 modal 이다. 프레임을 직접 넘기는 호출부는 이 기본값
+    // 대신 자기 프레임의 `.shadow(...)` 를 쓴다 — 그쪽도 같은 두 토큰에서만 고른다.
+    visuals.popup_shadow = theme.shadow_popover().to_egui();
+    visuals.window_shadow = theme.shadow_modal().to_egui();
     visuals.extreme_bg_color = theme.crust.into();
     visuals.faint_bg_color = theme.surface0.into();
     visuals.code_bg_color = theme.surface0.into();

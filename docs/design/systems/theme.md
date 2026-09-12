@@ -207,7 +207,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 세 갈래의 현재 소비처:
 
-- **popover** — 배너 셸, tooltip, autocomplete 드롭다운, modifier-hint 오버레이, tutorial callout, 그리고 anchored popup(tools menu · rail category · 마우스 캡처 배너 더보기 메뉴 · search bar). 앞의 셋은 트리거 rect 로 좌표를 계산해 열고, `search bar` 만 scope 상단 가로중앙에 뜬다 — 좌표의 출처가 아니라 형태(scrim 없이 살아 있는 콘텐츠 위)가 갈래를 정한다.
+- **popover** — 배너 셸, tooltip, autocomplete 드롭다운, MultiSelect/Select·ComboBox 메뉴(egui `Frame::popup` 경로 — 아래 참조), modifier-hint 오버레이, tutorial callout, 그리고 anchored popup(tools menu · rail category · 마우스 캡처 배너 더보기 메뉴 · search bar). 앞의 셋은 트리거 rect 로 좌표를 계산해 열고, `search bar` 만 scope 상단 가로중앙에 뜬다 — 좌표의 출처가 아니라 형태(scrim 없이 살아 있는 콘텐츠 위)가 갈래를 정한다.
 - **modal** — 호스트 popup 셸(`src/adapters/ui/popup/draw.rs`), plugin popup 셸(`src/plugin_bridge/popup_render.rs`), 부팅 셸 설정 다이얼로그(`src/gfx/gpu/shell_setup.rs`).
 - **없음** — 알림 패널(타이틀바를 갖고 사용자가 옮기는 창처럼 동작해 두 형태 어디에도 안 들어간다).
 
@@ -219,4 +219,4 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 `ShadowToken.spread` 는 음수를 **표현**하지만(CSS `box-shadow` 와 같은 의미) 그것을 쓰는 표면은 **미구현으로 둔다** — egui 가 음수를 못 담아 `to_egui()` 가 debug 단언으로 터진다. 근거·대안은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md).
 
-`crates/tasty-egui-theme` 이 `visuals.window_shadow` 를 매핑하지 않아 egui 기본 그림자는 이 정책의 사각지대로 남아 있다.
+egui 가 스스로 그리는 그림자 둘(`visuals.popup_shadow` · `visuals.window_shadow`)도 같은 두 토큰으로 매핑한다(`crates/tasty-egui-theme/src/lib.rs`). 매핑하지 않으면 `Visuals::dark()`/`light()` 의 기본값이 남아 정본 아닌 **세 번째 그림자**가 뜨고, 그 기본값은 테마마다 알파가 갈려(dark α96 / light α25) 같은 화면의 tasty 그림자와 값이 달라진다. 갈래는 형태가 정한다 — `Frame::popup`(= `egui::popup_below_widget` · `ComboBox` · MultiSelect/Select 위젯 메뉴)은 트리거 아래 붙는 anchored 표면이라 popover, `egui::Window` 는 뷰포트를 점유하므로 modal 이다. 프레임을 직접 넘기는 호출부는 이 기본값 대신 자기 프레임의 `.shadow(...)` 를 쓴다.
