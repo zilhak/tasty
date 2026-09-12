@@ -245,3 +245,4 @@
 | 0262 | [Codex 승인 대기는 `PermissionRequest` 훅으로 관측하고, `idle` 전이가 대기를 내린다](0262-codex-approval-wait-is-observed-via-permission-request.md) | Accepted | 2026-09-11 | plugin, codex, agent-state, attention, hooks |
 | 0263 | [plugin 이 그린 IME 커서 영역은 mesh frame 알림에 실려 host 로 돌아온다](0263-plugin-drawn-ime-cursor-rides-the-mesh-frame-notice.md) | Accepted | 2026-09-11 | ime, egui-mesh, plugin-protocol, typed-length, candidate-window, popup, surface |
 | 0265 | [자식 Claude 의 승인 정책은 호출자가 고르고, 아무도 안 고르면 사용자 자신의 설정이 남는다](0265-child-approval-policy-is-the-callers-choice.md) | Accepted | 2026-09-12 | plugin, claude, codex, permissions, cli, ipc, defaults, safety, profile |
+| 0266 | [관측으로 파생된 정지(`stale`)는 조회뿐 아니라 push 알림에도 도달한다](0266-derived-stale-must-reach-the-push-channel.md) | Accepted | 2026-09-12 | plugin, claude, child-terminal, agent-state, hooks, notification, stall, adr-0072 |
