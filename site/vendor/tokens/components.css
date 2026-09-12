@@ -522,6 +522,23 @@
   /* ─────────────────  OVERLAYS (gallery specimen layouts)  ───────────────── */
   /* Plugins window */
   --tasty-plugins-list-width:       var(--tasty-size-288); /* left installed-list column */
+  /* Plugin avatar — the square initial mark that stands in for a plugin icon
+     (a plugin manifest carries no image). TWO sizes only: sm on list rows,
+     lg on a detail/preview identity block. The tint is mixed into
+     surface-raised (a FIXED bed) rather than the row background, so the mark
+     reads identically on a default, hover and selected row. Colour does NOT
+     vary by plugin — the manifest has no category field, so the mark carries
+     identity (the initial), not classification. */
+  --tasty-plugin-avatar-size-sm:    var(--tasty-size-32); /* Installed / Attention list row */
+  --tasty-plugin-avatar-size-lg:    var(--tasty-size-46); /* detail identity + Add-plugin manifest preview */
+  --tasty-plugin-avatar-radius:     var(--tasty-radius);
+  --tasty-plugin-avatar-fg:         var(--tasty-accent-primary); /* the initial */
+  --tasty-plugin-avatar-bg:         color-mix(in srgb, var(--tasty-accent-primary) 18%, var(--tasty-surface-raised));
+  --tasty-plugin-avatar-border:     color-mix(in srgb, var(--tasty-accent-primary) 38%, transparent);
+  --tasty-plugin-avatar-border-width: var(--tasty-border-width);
+  --tasty-plugin-avatar-initial-weight: var(--tasty-font-weight-bold);
+  --tasty-plugin-avatar-initial-font-size-sm: var(--tasty-font-size-max); /* 14 — at the UI cap */
+  --tasty-plugin-avatar-initial-font-size-lg: var(--tasty-font-size-16);  /* 16 — sanctioned MARK exception to the 14px UI cap (same class as font-size-brand-wordmark): a single glyph standing in for an icon, never running copy. Replaces the old round(size x 0.42) ratio. */
   /* Settings window */
   --tasty-settings-sidebar-width:   var(--tasty-size-200); /* L2 left nav */
   --tasty-settings-row-min-height:  var(--tasty-size-32);  /* one settings/toggle row */
@@ -599,7 +616,7 @@
   --tasty-modhint-bg:            var(--tasty-bg-panel);   /* opaque floating fill (never translucent — it sits over live output) */
   --tasty-modhint-border:        var(--tasty-border-strong);
   --tasty-modhint-radius:        var(--tasty-radius);     /* 4 — chrome, not a marketing card */
-  --tasty-modhint-shadow:        var(--tasty-shadow-modal); /* floating lift (reuses the modal scrim — no new shadow system) */
+  --tasty-modhint-shadow:        var(--tasty-shadow-popover); /* anchored + scrim-less → popover per the semantic.css SCOPE RULE (was shadow-modal; a floating panel is not a modal) */
   --tasty-modhint-header-bg:     var(--tasty-bg-sidebar); /* muted drag strip — deliberately NOT a focus titlebar */
   --tasty-modhint-header-height: var(--tasty-size-28);
   --tasty-modhint-section-gap:   var(--tasty-space-md);   /* 12 — between chord sections */
@@ -654,6 +671,11 @@
      fields (do not apply the primitive-alias→zoom-multiply default). */
   --tasty-titlebar-csd-radius:        var(--tasty-radius-8);          /* 8px top corners — px-fixed, no UI zoom */
   --tasty-titlebar-csd-border:        var(--tasty-border-strong);     /* 1px window outline */
+  /* INTENTIONAL EXCEPTION to the two-shadow scope rule: this is OS window-frame
+     chrome, not a UI overlay, and the -8px spread is functional — it keeps the
+     falloff inside the 8px shadow-margin band that carries the resize edges.
+     A renderer that cannot express negative spread must widen its shadow type;
+     do NOT substitute shadow-modal or drop the spread. */
   --tasty-titlebar-csd-shadow:        0 18px 50px -8px rgba(0,0,0,.5); /* one-off CSD scrim */
   --tasty-titlebar-csd-shadow-margin: var(--tasty-size-8);            /* 8px → resize-edge band — px-fixed, no UI zoom (see ZOOM POLICY above) */
 

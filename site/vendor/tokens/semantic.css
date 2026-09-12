@@ -126,10 +126,31 @@
 
   /* ── Elevation — the SOLE shadow exception (floating overlays / CSD scrims).
      Tasty has no general shadow system; surfaces use tint. These two raw
-     box-shadows are the one-off scrims popovers and modals are allowed to use,
-     so overlay chrome references a token instead of a hardcoded shadow. ──── */
-  --tasty-shadow-popover: 0 6px 18px rgba(0, 0, 0, 0.4);  /* small popovers: search bar, tools menu, command palette */
-  --tasty-shadow-modal:   0 20px 60px rgba(0, 0, 0, 0.55); /* centered modals: ports, remote, settings, plugins */
+     box-shadows are the one-off scrims floating surfaces are allowed to use,
+     so overlay chrome references a token instead of a hardcoded shadow.
+
+     SCOPE RULE (canonical — decides which of the two, no third value exists):
+       anchored + scrim-less, floats over live content  → shadow-popover
+       centered + scrim-backed, owns the whole viewport → shadow-modal
+     The scrim dims the ground but draws no edge; on a dark theme a dark modal
+     on a dimmed dark ground loses its silhouette, so a scrim-backed surface
+     takes the scrim AND the shadow. Both are single-layer, pure-black-alpha,
+     integer-px, non-negative-spread, theme-agnostic — deliberately inside what
+     a client-side renderer can express. Geometry (6/18, 20/60) is off the 4px
+     grid on purpose: the grid governs the spacing and size axes, not blur.
+
+     Anything floating that is NOT in one of the two lists below gets NO shadow. */
+
+  /* shadow-popover — anchored, scrim-less. Canonical surfaces:
+     search bar · tools menu · sidebar context menu · tooltip bubble ·
+     autocomplete menu · multiselect / combobox menu · banner shell ·
+     banner more-menu · modifier-hint panel · tutorial callout ·
+     switch-number overlay · any anchored dropdown that opens over the terminal */
+  --tasty-shadow-popover: 0 6px 18px rgba(0, 0, 0, 0.4);
+  /* shadow-modal — centered, scrim-backed. Canonical surfaces:
+     command palette · ports · remote · settings · plugins · preset editor ·
+     git viewer · clipboard viewer · DAG popup · every centered confirm/edit dialog */
+  --tasty-shadow-modal:   0 20px 60px rgba(0, 0, 0, 0.55);
 
   /* ── Scrim — dim layer behind centered modals/palette ─────── */
   --tasty-scrim-bg:          var(--tasty-alpha-black-50);
