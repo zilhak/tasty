@@ -420,6 +420,9 @@ ls target/debug/deps/*.d | sed 's/-[0-9a-f]*\.d$//' \
 
 ## 관련
 
+- [`documentation-model.md`](../documentation-model.md) §6 — 여기의 변이 절차를 **문서의
+  채널 주장**("배선돼 있다 / 이것이 본다")에 적용하는 규칙의 정본. 변이를 못 붙일 때
+  무엇을 대신 적는지도 거기다.
 - [debug-ipc.md](debug-ipc.md) — debug 전용 IPC (사용자 입력 재현)
 - [independent-verification.md](independent-verification.md) — debug 격리 + 자기검증 배경
 - [`ai-verification/visual-verification`](../ai-verification/visual-verification.md) — 시각 검증 · [`ai-verification/screenshot-methods`](../ai-verification/screenshot-methods.md) — `ui.screenshot`(OS 캡처 금지)
