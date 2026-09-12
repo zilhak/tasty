@@ -1540,6 +1540,126 @@
       "$type": "dimension",
       "$value": "{semantic.space-sm}"
     },
+    "multiselect-height": {
+      "$type": "dimension",
+      "$value": "{component.select-height}"
+    },
+    "multiselect-padding-x": {
+      "$type": "dimension",
+      "$value": "{component.select-padding-x}"
+    },
+    "multiselect-radius": {
+      "$type": "dimension",
+      "$value": "{component.select-radius}"
+    },
+    "multiselect-font-size": {
+      "$type": "dimension",
+      "$value": "{component.select-font-size}"
+    },
+    "multiselect-bg": {
+      "$type": "color",
+      "$value": "{component.select-bg}"
+    },
+    "multiselect-fg": {
+      "$type": "color",
+      "$value": "{component.select-fg}"
+    },
+    "multiselect-border": {
+      "$type": "color",
+      "$value": "{component.select-border}"
+    },
+    "multiselect-border-hover": {
+      "$type": "color",
+      "$value": "{semantic.border-strong}"
+    },
+    "multiselect-border-focus": {
+      "$type": "color",
+      "$value": "{component.select-border-focus}"
+    },
+    "multiselect-chevron-fg": {
+      "$type": "color",
+      "$value": "{component.select-chevron-fg}"
+    },
+    "multiselect-chevron-room": {
+      "$type": "dimension",
+      "$value": "{component.select-chevron-room}"
+    },
+    "multiselect-chevron-offset": {
+      "$type": "dimension",
+      "$value": "{component.select-chevron-offset}"
+    },
+    "multiselect-summary-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}"
+    },
+    "multiselect-summary-fg-empty": {
+      "$type": "color",
+      "$value": "{semantic.text-placeholder}"
+    },
+    "multiselect-menu-bg": {
+      "$type": "color",
+      "$value": "{component.menu-bg}"
+    },
+    "multiselect-menu-border": {
+      "$type": "color",
+      "$value": "{component.menu-border}"
+    },
+    "multiselect-menu-radius": {
+      "$type": "dimension",
+      "$value": "{component.menu-radius}"
+    },
+    "multiselect-menu-shadow": {
+      "$type": "shadow",
+      "$value": "{semantic.shadow-popover}"
+    },
+    "multiselect-menu-padding": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "multiselect-menu-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "multiselect-menu-max-height": {
+      "$type": "dimension",
+      "$value": "{component.autocomplete-max-height}"
+    },
+    "multiselect-menu-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "multiselect-row-height": {
+      "$type": "dimension",
+      "$value": "{component.menu-item-height}"
+    },
+    "multiselect-row-padding-x": {
+      "$type": "dimension",
+      "$value": "{component.menu-item-padding-x}"
+    },
+    "multiselect-row-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "multiselect-row-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}"
+    },
+    "multiselect-row-bg-hover": {
+      "$type": "color",
+      "$value": "{semantic.overlay-hover}"
+    },
+    "multiselect-row-bg-active": {
+      "$type": "color",
+      "$value": "{semantic.surface-active}"
+    },
+    "multiselect-all-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}"
+    },
+    "multiselect-separator": {
+      "$type": "color",
+      "$value": "{semantic.separator}"
+    },
     "checkbox-size": {
       "$type": "dimension",
       "$value": "{primitive.size-16}"
@@ -2386,7 +2506,7 @@
     },
     "explorer-favorites-pin-ratio": {
       "$type": "number",
-      "$value": 0.4
+      "$value": "0.4"
     },
     "explorer-favorites-pin-min-height": {
       "$type": "dimension",
@@ -2431,6 +2551,46 @@
     "plugins-list-width": {
       "$type": "dimension",
       "$value": "{primitive.size-288}"
+    },
+    "plugin-avatar-size-sm": {
+      "$type": "dimension",
+      "$value": "{primitive.size-32}"
+    },
+    "plugin-avatar-size-lg": {
+      "$type": "dimension",
+      "$value": "{primitive.size-46}"
+    },
+    "plugin-avatar-radius": {
+      "$type": "dimension",
+      "$value": "{semantic.radius}"
+    },
+    "plugin-avatar-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}"
+    },
+    "plugin-avatar-bg": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) 18%, var(--tasty-surface-raised))"
+    },
+    "plugin-avatar-border": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) 38%, transparent)"
+    },
+    "plugin-avatar-border-width": {
+      "$type": "dimension",
+      "$value": "{semantic.border-width}"
+    },
+    "plugin-avatar-initial-weight": {
+      "$type": "fontWeight",
+      "$value": "{semantic.font-weight-bold}"
+    },
+    "plugin-avatar-initial-font-size-sm": {
+      "$type": "dimension",
+      "$value": "{semantic.font-size-max}"
+    },
+    "plugin-avatar-initial-font-size-lg": {
+      "$type": "dimension",
+      "$value": "{primitive.font-size-16}"
     },
     "settings-sidebar-width": {
       "$type": "dimension",
@@ -2562,7 +2722,7 @@
     },
     "modhint-shadow": {
       "$type": "shadow",
-      "$value": "{semantic.shadow-modal}"
+      "$value": "{semantic.shadow-popover}"
     },
     "modhint-header-bg": {
       "$type": "color",

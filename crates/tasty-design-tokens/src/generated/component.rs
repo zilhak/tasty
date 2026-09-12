@@ -461,6 +461,77 @@ pub mod modhint {
     pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
 }
 
+pub mod multiselect {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.multiselect-chevron-offset` → `{component.select-chevron-offset}` = 8px
+    pub const CHEVRON_OFFSET: LogicalPx = super::select::CHEVRON_OFFSET;
+
+    /// `component.multiselect-chevron-room` → `{component.select-chevron-room}` = 28px
+    pub const CHEVRON_ROOM: LogicalPx = super::select::CHEVRON_ROOM;
+
+    /// `component.multiselect-font-size` → `{component.select-font-size}` = 13px
+    pub const FONT_SIZE: LogicalPx = super::select::FONT_SIZE;
+
+    /// `component.multiselect-height` → `{component.select-height}` = 28px
+    pub const HEIGHT: LogicalPx = super::select::HEIGHT;
+
+    /// `component.multiselect-menu-gap` → `{semantic.space-xs}` = 4px
+    pub const MENU_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.multiselect-menu-max-height` → `{component.autocomplete-max-height}` = 220px
+    pub const MENU_MAX_HEIGHT: LogicalPx = super::autocomplete::MAX_HEIGHT;
+
+    /// `component.multiselect-menu-max-width` → `{primitive.size-320}` = 320px
+    pub const MENU_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_320;
+
+    /// `component.multiselect-menu-padding` → `{semantic.space-xs}` = 4px
+    pub const MENU_PADDING: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.multiselect-menu-radius` → `{component.menu-radius}` = 4px
+    pub const MENU_RADIUS: LogicalPx = super::menu::RADIUS;
+
+    /// `component.multiselect-padding-x` → `{component.select-padding-x}` = 12px
+    pub const PADDING_X: LogicalPx = super::select::PADDING_X;
+
+    /// `component.multiselect-radius` → `{component.select-radius}` = 4px
+    pub const RADIUS: LogicalPx = super::select::RADIUS;
+
+    /// `component.multiselect-row-gap` → `{semantic.space-sm}` = 8px
+    pub const ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.multiselect-row-height` → `{component.menu-item-height}` = 28px
+    pub const ROW_HEIGHT: LogicalPx = super::menu::ITEM_HEIGHT;
+
+    /// `component.multiselect-row-padding-x` → `{component.menu-item-padding-x}` = 12px
+    pub const ROW_PADDING_X: LogicalPx = super::menu::ITEM_PADDING_X;
+}
+
+pub mod plugin {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.plugin-avatar-border-width` → `{semantic.border-width}` = 1px
+    pub const AVATAR_BORDER_WIDTH: LogicalPx = crate::generated::semantic::BORDER_WIDTH;
+
+    /// `component.plugin-avatar-initial-font-size-lg` → `{primitive.font-size-16}` = 16px
+    pub const AVATAR_INITIAL_FONT_SIZE_LG: LogicalPx = crate::generated::primitive::FONT_SIZE_16;
+
+    /// `component.plugin-avatar-initial-font-size-sm` → `{semantic.font-size-max}` = 14px
+    pub const AVATAR_INITIAL_FONT_SIZE_SM: LogicalPx = crate::generated::semantic::FONT_SIZE_MAX;
+
+    /// `component.plugin-avatar-initial-weight` → `{semantic.font-weight-bold}` = 700
+    pub const AVATAR_INITIAL_WEIGHT: u16 = crate::generated::semantic::FONT_WEIGHT_BOLD;
+
+    /// `component.plugin-avatar-radius` → `{semantic.radius}` = 4px
+    pub const AVATAR_RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.plugin-avatar-size-lg` → `{primitive.size-46}` = 46px
+    pub const AVATAR_SIZE_LG: LogicalPx = crate::generated::primitive::SIZE_46;
+
+    /// `component.plugin-avatar-size-sm` → `{primitive.size-32}` = 32px
+    pub const AVATAR_SIZE_SM: LogicalPx = crate::generated::primitive::SIZE_32;
+}
+
 pub mod plugins_list {
     use tasty_type_geometry::length::LogicalPx;
 

@@ -1543,6 +1543,222 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.multiselect-all-fg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn multiselect_all_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.multiselect-bg` → `{component.select-bg}`
+    #[inline]
+    pub fn multiselect_bg(&self) -> HexColor {
+        self.select_bg()
+    }
+
+    /// `component.multiselect-border` → `{component.select-border}`
+    #[inline]
+    pub fn multiselect_border(&self) -> HexColor {
+        self.select_border()
+    }
+
+    /// `component.multiselect-border-focus` → `{component.select-border-focus}`
+    #[inline]
+    pub fn multiselect_border_focus(&self) -> HexColor {
+        self.select_border_focus()
+    }
+
+    /// `component.multiselect-border-hover` → `{semantic.border-strong}`
+    #[inline]
+    pub fn multiselect_border_hover(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.multiselect-chevron-fg` → `{component.select-chevron-fg}`
+    #[inline]
+    pub fn multiselect_chevron_fg(&self) -> HexColor {
+        self.select_chevron_fg()
+    }
+
+    /// `component.multiselect-chevron-offset` → `{component.select-chevron-offset}` = 8px
+    #[inline]
+    pub fn multiselect_chevron_offset(&self) -> LogicalPx {
+        self.select_chevron_offset()
+    }
+
+    /// `component.multiselect-chevron-room` → `{component.select-chevron-room}` = 28px
+    #[inline]
+    pub fn multiselect_chevron_room(&self) -> LogicalPx {
+        self.select_chevron_room()
+    }
+
+    /// `component.multiselect-fg` → `{component.select-fg}`
+    #[inline]
+    pub fn multiselect_fg(&self) -> HexColor {
+        self.select_fg()
+    }
+
+    /// `component.multiselect-font-size` → `{component.select-font-size}` = 13px
+    #[inline]
+    pub fn multiselect_font_size(&self) -> LogicalPx {
+        self.select_font_size()
+    }
+
+    /// `component.multiselect-height` → `{component.select-height}` = 28px
+    #[inline]
+    pub fn multiselect_height(&self) -> LogicalPx {
+        self.select_height()
+    }
+
+    /// `component.multiselect-menu-bg` → `{component.menu-bg}`
+    #[inline]
+    pub fn multiselect_menu_bg(&self) -> HexColor {
+        self.menu_bg()
+    }
+
+    /// `component.multiselect-menu-border` → `{component.menu-border}`
+    #[inline]
+    pub fn multiselect_menu_border(&self) -> HexColor {
+        self.menu_border()
+    }
+
+    /// `component.multiselect-menu-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn multiselect_menu_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.multiselect-menu-max-height` → `{component.autocomplete-max-height}` = 220px
+    #[inline]
+    pub fn multiselect_menu_max_height(&self) -> LogicalPx {
+        self.autocomplete_max_height()
+    }
+
+    /// `component.multiselect-menu-max-width` → `{primitive.size-320}` = 320px
+    #[inline]
+    pub fn multiselect_menu_max_width(&self) -> LogicalPx {
+        LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
+    /// `component.multiselect-menu-padding` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn multiselect_menu_padding(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.multiselect-menu-radius` → `{component.menu-radius}` = 4px
+    #[inline]
+    pub fn multiselect_menu_radius(&self) -> LogicalPx {
+        self.menu_radius()
+    }
+
+    /// `component.multiselect-padding-x` → `{component.select-padding-x}` = 12px
+    #[inline]
+    pub fn multiselect_padding_x(&self) -> LogicalPx {
+        self.select_padding_x()
+    }
+
+    /// `component.multiselect-radius` → `{component.select-radius}` = 4px
+    #[inline]
+    pub fn multiselect_radius(&self) -> LogicalPx {
+        self.select_radius()
+    }
+
+    /// `component.multiselect-row-bg-active` → `{semantic.surface-active}`
+    #[inline]
+    pub fn multiselect_row_bg_active(&self) -> HexColor {
+        self.surface_active()
+    }
+
+    /// `component.multiselect-row-bg-hover` → `{semantic.overlay-hover}`
+    #[inline]
+    pub fn multiselect_row_bg_hover(&self) -> HexColor {
+        self.overlay_hover()
+    }
+
+    /// `component.multiselect-row-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn multiselect_row_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
+    /// `component.multiselect-row-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn multiselect_row_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.multiselect-row-height` → `{component.menu-item-height}` = 28px
+    #[inline]
+    pub fn multiselect_row_height(&self) -> LogicalPx {
+        self.menu_item_height()
+    }
+
+    /// `component.multiselect-row-padding-x` → `{component.menu-item-padding-x}` = 12px
+    #[inline]
+    pub fn multiselect_row_padding_x(&self) -> LogicalPx {
+        self.menu_item_padding_x()
+    }
+
+    /// `component.multiselect-separator` → `{semantic.separator}`
+    #[inline]
+    pub fn multiselect_separator(&self) -> HexColor {
+        self.separator
+    }
+
+    /// `component.multiselect-summary-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn multiselect_summary_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
+    /// `component.multiselect-summary-fg-empty` → `{semantic.text-placeholder}`
+    #[inline]
+    pub fn multiselect_summary_fg_empty(&self) -> HexColor {
+        self.text_placeholder()
+    }
+
+    /// `component.plugin-avatar-border-width` → `{semantic.border-width}` = 1px
+    #[inline]
+    pub fn plugin_avatar_border_width(&self) -> LogicalPx {
+        self.border_width
+    }
+
+    /// `component.plugin-avatar-fg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn plugin_avatar_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.plugin-avatar-initial-font-size-lg` → `{primitive.font-size-16}` = 16px
+    #[inline]
+    pub fn plugin_avatar_initial_font_size_lg(&self) -> LogicalPx {
+        LogicalPx((16.0 * self.ui_zoom).round())
+    }
+
+    /// `component.plugin-avatar-initial-font-size-sm` → `{semantic.font-size-max}` = 14px
+    #[inline]
+    pub fn plugin_avatar_initial_font_size_sm(&self) -> LogicalPx {
+        self.font_size_max
+    }
+
+    /// `component.plugin-avatar-radius` → `{semantic.radius}` = 4px
+    #[inline]
+    pub fn plugin_avatar_radius(&self) -> LogicalPx {
+        self.corner_radius
+    }
+
+    /// `component.plugin-avatar-size-lg` → `{primitive.size-46}` = 46px
+    #[inline]
+    pub fn plugin_avatar_size_lg(&self) -> LogicalPx {
+        LogicalPx((46.0 * self.ui_zoom).round())
+    }
+
+    /// `component.plugin-avatar-size-sm` → `{primitive.size-32}` = 32px
+    #[inline]
+    pub fn plugin_avatar_size_sm(&self) -> LogicalPx {
+        LogicalPx((32.0 * self.ui_zoom).round())
+    }
+
     /// `component.plugins-list-width` → `{primitive.size-288}` = 288px
     #[inline]
     pub fn plugins_list_width(&self) -> LogicalPx {

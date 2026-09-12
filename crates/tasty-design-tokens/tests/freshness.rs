@@ -34,12 +34,12 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 751 (115/137/499). 디자인 측이 `tokens/tasty.tokens.json` export 를
-/// 세 CSS 파일로부터 통째로 재생성해 CSS ↔ JSON parity 를 복구한 결과, 그동안 export
-/// 에만 빠져 있던 209종이 한꺼번에 들어와 이전 542(111/131/300) 에서 증가했다
-/// (primitive 4 · semantic 6 · component 199 — DAG surface 블록 `dag-*` 102종 전부 포함).
-/// 제거·개명은 없다(이전 키 집합은 새 export 의 진부분집합).
-/// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
+/// 토큰 census — 791 (115/137/539). 이전 751(115/137/499) 에서 component 40종이
+/// 늘었다: MultiSelect 블록 `multiselect-*` 30종과 plugin 아바타 블록
+/// `plugin-avatar-*` 10종이 export 재생성으로 들어왔다. 앞의 30종은 디자인 CSS 에만
+/// 있고 export 에 빠져 있던 것이고(그래서 CSS 539 ↔ JSON 499 로 갈려 있었다), 뒤의
+/// 10종은 그 뒤에 새로 생긴 블록이다. 제거·개명은 없다(이전 키 집합은 새 export 의
+/// 진부분집합). vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
@@ -55,10 +55,10 @@ fn token_census_matches_design_export() {
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Component),
-        499,
+        539,
         "component census drift"
     );
-    assert_eq!(set.len(), 751, "total census drift");
+    assert_eq!(set.len(), 791, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.
