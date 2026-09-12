@@ -12,11 +12,17 @@
 //! fallback 갈래 하나만 도달 가능**하다. 색을 인자로 받게 해 두지 않은 것은 그래서다 —
 //! 부를 수 있는 값이 하나뿐인 인자는 호출부마다 같은 상수를 다시 적게 만든다.
 //!
-//! **글자 크기.** 디자인은 `Math.round(size * 0.42)` 다. 목록(32)에서는 13 이 나와
-//! `font_size_body` 와 값이 그대로 맞지만, 상세(46)에서는 19 가 나와 **UI 폰트 상한
-//! 14 를 넘는다**(`docs/design/systems/theme.md` "UI 폰트 최대"). 토큰 축은 구조 축과
-//! 함께 필수라(`CLAUDE.md` "갤러리 완전성 · gallery-first") 상한 쪽을 따르고 상세
-//! 글리프를 `font_size_max` 로 자른다. 비율은 0.42 → 0.30 으로 바뀐다.
+//! **글자 크기.** 디자인이 한때 쓰던 `Math.round(size * 0.42)` 는 목록(32)에서 13 이라
+//! `font_size_body` 와 맞았지만 상세(46)에서 19 가 나와 **UI 폰트 상한 14 를 넘었고**
+//! (`docs/design/systems/theme.md` "UI 폰트 최대"), 그래서 여기서는 상한 쪽을 따라
+//! 상세 글리프를 `font_size_max` 로 잘랐다(비율로는 0.42 → 0.30).
+//!
+//! 디자인은 그 뒤 비율을 버리고 크기를 토큰으로 못박았다 —
+//! `--tasty-plugin-avatar-initial-font-size-sm`(= `font-size-max`, 14) ·
+//! `-lg`(= `font-size-16`, 16, 워드마크와 같은 급의 **승인된 MARK 예외**). 즉 목록 쪽은
+//! 13 → 14, 상세 쪽은 14 → 16 이 정본이다. **아직 채택하지 않았다** — 상세의 16 은
+//! tasty 쪽 UI 폰트 상한에 예외를 하나 더 등재하는 일이라(그 목록은 theme.md 와
+//! `src/design_token_guard.rs` 가 함께 갖는다) 그림자 정합 작업의 범위 밖이다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
