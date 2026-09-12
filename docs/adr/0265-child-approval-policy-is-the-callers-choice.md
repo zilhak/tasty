@@ -40,7 +40,7 @@ claude 쪽 답은 **결정된 적이 없다.**
 아니면 전무가 아니다(`dontAsk`/`acceptEdits` 같은 중간 값이 실재한다).
 
 claude plugin 이 정책 대신 이미 갖고 있는 축은 `--profile`/`--profile-file` 이다
-(`handlers.rs` 의 `resolve_profile_file_param`) — 세션 settings JSON 을 `--settings
+(`crates/tasty-plugin-claude/src/handlers.rs` 의 `resolve_profile_file_param`) — 세션 settings JSON 을 `--settings
 <path>` 로 주입하는 경로이고, 그 JSON 에 `permissions` 를 손으로 넣으면 정책이
 바뀐다. 다만 그 축은 파일을 **미리 만들어 등록해야** 하고 호출 단위 override 라는
 의미를 갖지 못한다. 그리고 그 축에는 이미 안전 규율이 하나 박혀 있다 —
