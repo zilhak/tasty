@@ -208,7 +208,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 세 갈래의 현재 소비처:
 
 - **popover** — 배너 셸, tooltip, autocomplete 드롭다운, MultiSelect/Select·ComboBox 메뉴(egui `Frame::popup` 경로 — 아래 참조), modifier-hint 오버레이, tutorial callout, 그리고 anchored popup(tools menu · rail category · 마우스 캡처 배너 더보기 메뉴 · search bar). 앞의 셋은 트리거 rect 로 좌표를 계산해 열고, `search bar` 만 scope 상단 가로중앙에 뜬다 — 좌표의 출처가 아니라 형태(scrim 없이 살아 있는 콘텐츠 위)가 갈래를 정한다.
-- **modal** — 호스트 popup 셸(`src/adapters/ui/popup/draw.rs`), plugin popup 셸(`src/plugin_bridge/popup_render.rs`), 부팅 셸 설정 다이얼로그(`src/gfx/gpu/shell_setup.rs`).
+- **modal** — 호스트 popup 셸(`src/adapters/ui/popup/draw.rs`), plugin popup 셸(`src/plugin_bridge/popup_render.rs`), 부팅 셸 설정 다이얼로그(`src/gfx/gpu/shell_setup.rs`), 부팅 실패 카드(`src/gfx/gpu/boot_error.rs`).
 - **없음** — 알림 패널(타이틀바를 갖고 사용자가 옮기는 창처럼 동작해 두 형태 어디에도 안 들어간다).
 
 갤러리도 같은 세 갈래를 노출한다 — 공유 셸 키트(`crates/tasty-gallery/src/catalog/widgets/dialog.rs`)의 `frame_card`(modal) / `frame_card_popover` / `frame_card_flat`(없음). 갈래는 셸이 아니라 **호출부가 본체에서 무엇인가**가 정하므로, 창 셸(Settings)·pane 콘텐츠(image surface)·다른 표면 안에 얹히는 섹션은 `frame_card_flat` 을 쓴다. 그래야 Foundations 의 elevation 전시("UI 표면의 깊이는 tint 로 읽는다")와 카드의 실제가 갈리지 않는다.

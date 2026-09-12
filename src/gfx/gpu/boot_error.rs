@@ -55,7 +55,11 @@ impl GpuState {
                             th.border_default(),
                         ))
                         .corner_radius(th.corner_radius_lg.value())
-                        .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg)),
+                        .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg))
+                        // 부팅 실패 카드는 화면 전체를 덮는 `CentralPanel` 위에 중앙
+                        // 정렬로 뜬다 = SCOPE RULE 의 modal 갈래(ADR-0254). 부팅 셸
+                        // 설정 다이얼로그와 같은 형태다.
+                        .shadow(th.shadow_modal().to_egui()),
                 )
                 .show(ctx, |ui| {
                     // ── Title (danger) ──────────────────────────────
