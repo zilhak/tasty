@@ -174,7 +174,7 @@ fn build_mirror_forward_op(
         }),
         // 복원은 "무엇을 만들지" 를 클라이언트가 정하지 않는다 — 무엇이 복원될지는
         // 원격 스택이 정하므로 op 에는 anchor 밖에 없다(ADR-0264 결정 2).
-        D::RestoreClosedItem { target_pane_id } => Some(StructuralOp::RestoreClosedItem {
+        D::RestoreClosedItem { target_pane_id, .. } => Some(StructuralOp::RestoreClosedItem {
             anchor_surface_id: pane_anchor((*target_pane_id)?)?,
         }),
         D::MoveTab {
@@ -420,12 +420,14 @@ impl Core {
             DomainIntent::RespawnTerminal { surface_id, cwd } => {
                 Ok(vec![Self::apply_respawn_terminal(engine, surface_id, cwd)])
             }
-            DomainIntent::RestoreClosedItem { target_pane_id } => {
-                Ok(vec![Self::apply_restore_closed_item(
-                    engine,
-                    target_pane_id,
-                )])
-            }
+            DomainIntent::RestoreClosedItem {
+                target_pane_id,
+                scope,
+            } => Ok(vec![Self::apply_restore_closed_item(
+                engine,
+                target_pane_id,
+                scope,
+            )]),
             DomainIntent::UpdateTabName { surface_id, name } => {
                 Ok(vec![Self::apply_update_tab_name(engine, surface_id, name)])
             }
@@ -1076,6 +1078,7 @@ mod mirror_structural_guard_tests {
                 },
                 DomainIntent::RestoreClosedItem {
                     target_pane_id: Some(pane),
+                    scope: crate::core::intent::RestoreScope::Local,
                 },
             ]
         };
@@ -1192,6 +1195,7 @@ mod mirror_structural_guard_tests {
                 &mut engine,
                 DomainIntent::RestoreClosedItem {
                     target_pane_id: Some(pane),
+                    scope: crate::core::intent::RestoreScope::Local,
                 },
             )
             .expect_err("mirror restore must be blocked locally");
@@ -1223,6 +1227,7 @@ mod mirror_structural_guard_tests {
         assert_eq!(
             engine.mirror_workspace_index_for_structural(&DomainIntent::RestoreClosedItem {
                 target_pane_id: None,
+                scope: crate::core::intent::RestoreScope::Local,
             }),
             None,
         );

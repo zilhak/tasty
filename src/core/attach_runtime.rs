@@ -934,12 +934,57 @@ pub(crate) fn execute_forwarded_structural_op(
             }
         }
         StructuralOp::RestoreClosedItem { anchor_surface_id } => {
-            // 이 인스턴스에는 아직 복원 실행 경로가 없다. 조용히 흘리지 않고 사유를
-            // 실어 실패로 회신한다 — client 가 회신을 기다리다 `pending_op_focus`
-            // 엔트리를 세션 수명 동안 들고 있는 것을 막는다.
-            return Err(format!(
-                "restore not executed on this instance: anchor surface {anchor_surface_id}"
-            ));
+            // 복원은 IPC/CLI 로 노출된 적이 없어 재사용할 핸들러가 없다 — `ConvertSurface`
+            // /`MoveSurface` 와 같은 형태로 `Core::apply` 를 직접 부른다.
+            let pane_id = engine
+                .find_pane_for_surface(*anchor_surface_id)
+                .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
+            let ws_id = engine
+                .find_workspace_index_for_pane(pane_id)
+                .map(|idx| engine.workspaces[idx].id)
+                .ok_or_else(|| format!("pane {pane_id} workspace not found"))?;
+            let intent = crate::core::intent::DomainIntent::RestoreClosedItem {
+                target_pane_id: Some(pane_id),
+                // 그 워크스페이스에서 닫힌 항목만 후보다(ADR-0264 결정 3) — 서버 앞에
+                // 앉은 사용자의 히스토리를 가져가지 않고, 복원 결과가 anchor 워크스페이스
+                // 안에 떨어져 아래 before/after diff 가 그것을 delta 로 싣는다.
+                scope: crate::core::intent::RestoreScope::Workspace(ws_id),
+            };
+            match core.apply(engine, intent) {
+                Ok(events) => {
+                    let restored = matches!(
+                        events.into_iter().next(),
+                        Some(crate::core::intent::CoreEvent::ClosedItemRestored {
+                            restored: true,
+                            ..
+                        })
+                    );
+                    if restored {
+                        // ★ 로컬 경로의 cascade(`cascade_closed_item_restored`)를 여기서
+                        // 재현하지 않는다. 그 함수의 두 갈래는 `AppState::active_workspace`
+                        // 와 `focused_pane` 을 바꾸는데, forward 경로에서 그것을 부르면
+                        // **원격 사용자의 조작이 이 기계 앞에 앉은 사용자의 화면을
+                        // 움직인다** — 루트 CLAUDE.md 원칙 1·3 과
+                        // `docs/design/policies/focus.md` 가 금지하는 형태다. client 쪽
+                        // focus 는 `PendingOpFocus::NewResource` 가 delta 적용 시점에
+                        // client-only 로 보정하므로 서버 상태를 만질 이유가 없다.
+                        tasty_ipc::protocol::JsonRpcResponse::success(
+                            rid.clone(),
+                            json!({ "ok": true, "pane_id": pane_id }),
+                        )
+                    } else {
+                        // "복원할 것 없음" 은 실패가 아니다 — client 가 일반 forward 실패
+                        // 문구 대신 전용 안내를 쓰도록 sentinel 로 회신한다.
+                        tasty_ipc::protocol::JsonRpcResponse::invalid_params(
+                            rid.clone(),
+                            crate::ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.to_string(),
+                        )
+                    }
+                }
+                Err(e) => {
+                    tasty_ipc::protocol::JsonRpcResponse::internal_error(rid.clone(), e.to_string())
+                }
+            }
         }
         StructuralOp::MoveSurface {
             source_surface_id,
@@ -2570,6 +2615,209 @@ mod forward_exec_tests {
             engine.closed_items.len(),
             before,
             "에이전트 경로의 close 는 사용자 되돌리기 스택을 건드리지 않는다"
+        );
+    }
+
+    /// forward 된 복원은 원격에서 실제로 탭을 되살리고, 그 터미널이 delta 의 added 에
+    /// 잡혀 tap 대상이 된다 — 그래야 client mirror 에 나타나고 원격 PTY 출력이 흐른다.
+    #[test]
+    fn a_forwarded_restore_recreates_the_tab_and_lands_in_the_delta() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        // 탭을 하나 더 만들고 forward close 로 닫아 서버 스택에 항목을 만든다.
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::NewTab {
+                anchor_surface_id: a,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("new tab ok")
+        .expect("new tab delta");
+        let b = fd.added_terminals[0];
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::CloseTab {
+                anchor_surface_id: b,
+            },
+        )
+        .expect("close ok");
+
+        let before = engine.workspaces[0].all_surface_ids().len();
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::RestoreClosedItem {
+                anchor_surface_id: a,
+            },
+        )
+        .expect("restore must succeed")
+        .expect("delta must be produced");
+        assert_eq!(
+            engine.workspaces[0].all_surface_ids().len(),
+            before + 1,
+            "복원은 anchor 워크스페이스 안에 surface 를 되살려야 한다"
+        );
+        assert_eq!(
+            fd.added_terminals.len(),
+            1,
+            "복원된 터미널이 tap 대상에 잡혀야 한다 — 안 그러면 mirror 에 화면이 안 온다"
+        );
+    }
+
+    /// 스택이 비면 **실패가 아니라** 전용 sentinel 로 회신한다 — client 가 일반 forward
+    /// 실패 문구("적용하지 못했습니다") 대신 안내 toast 를 쓴다.
+    #[test]
+    fn a_forwarded_restore_with_an_empty_stack_reports_the_sentinel_reason() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let err = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::RestoreClosedItem {
+                anchor_surface_id: a,
+            },
+        )
+        .expect_err("빈 스택은 Err(reason) 이어야 한다");
+        assert_eq!(err, crate::ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY);
+    }
+
+    /// forward 된 복원은 이 기계 앞에 앉은 사용자의 활성 워크스페이스·focused pane 을
+    /// **움직이지 않는다**(루트 CLAUDE.md 원칙 1·3). 로컬 경로의 cascade 를 그대로
+    /// 재현하면 깨지는 불변식이라 회귀 방지로 고정한다.
+    #[test]
+    fn a_forwarded_restore_does_not_move_the_local_users_focus() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::SplitPane {
+                anchor_surface_id: a,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("split pane ok")
+        .expect("split pane delta");
+        let b = fd.added_terminals[0];
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::ClosePane {
+                anchor_surface_id: b,
+            },
+        )
+        .expect("close pane ok");
+
+        let ws_before = state.active_workspace;
+        let focus_before: Vec<(u32, u32)> = engine
+            .workspaces
+            .iter()
+            .map(|w| (w.id, w.focused_pane))
+            .collect();
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::RestoreClosedItem {
+                anchor_surface_id: a,
+            },
+        )
+        .expect("restore must succeed");
+        assert_eq!(
+            state.active_workspace, ws_before,
+            "원격의 복원이 로컬 사용자의 활성 워크스페이스를 바꾸면 안 된다"
+        );
+        let focus_after: Vec<(u32, u32)> = engine
+            .workspaces
+            .iter()
+            .map(|w| (w.id, w.focused_pane))
+            .collect();
+        assert_eq!(
+            focus_before, focus_after,
+            "원격의 복원이 로컬 사용자의 focused pane 을 바꾸면 안 된다"
+        );
+    }
+
+    /// 다른 워크스페이스에서 닫힌 항목은 **후보가 아니다** — 스택 top 이 그것이어도
+    /// anchor 워크스페이스 스코프는 자기 것만 본다(ADR-0264 결정 3).
+    #[test]
+    fn a_forwarded_restore_never_takes_another_workspaces_item() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        // anchor 워크스페이스(0)에 복원할 항목을 하나 만든다.
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::NewTab {
+                anchor_surface_id: a,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        )
+        .expect("new tab ok")
+        .expect("new tab delta");
+        let b = fd.added_terminals[0];
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::CloseTab {
+                anchor_surface_id: b,
+            },
+        )
+        .expect("close ok");
+
+        // 그 뒤 **다른** 워크스페이스에서 탭이 닫혀 스택 top 을 차지한다.
+        let other_ws = core
+            .create_default_workspace(&mut engine)
+            .expect("second workspace");
+        let other_sid = engine.workspaces[other_ws].all_surface_ids()[0];
+        engine
+            .terminals
+            .insert(other_sid, Terminal::new_detached(80, 24));
+        let other_pane = engine.workspaces[other_ws]
+            .pane_layout()
+            .first_pane()
+            .unwrap()
+            .id;
+        let other_tab_idx = 0;
+        let snapshot = engine
+            .capture_closed_tab(other_pane, other_tab_idx)
+            .expect("other workspace tab snapshot");
+        engine.push_closed_item(snapshot);
+
+        let restored_ws0 = engine.workspaces[0].all_surface_ids().len();
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::RestoreClosedItem {
+                anchor_surface_id: a,
+            },
+        )
+        .expect("restore must succeed");
+        assert_eq!(
+            engine.workspaces[0].all_surface_ids().len(),
+            restored_ws0 + 1,
+            "anchor 워크스페이스의 항목이 복원돼야 한다"
+        );
+        assert_eq!(
+            engine.closed_items.len(),
+            1,
+            "다른 워크스페이스 항목은 스택에 그대로 남아야 한다"
         );
     }
 

@@ -44,6 +44,23 @@ pub(crate) enum SendPayload {
     Text(String),
 }
 
+/// [`DomainIntent::RestoreClosedItem`] 이 복원 스택에서 무엇을 꺼낼지 정하는 스코프.
+///
+/// 스택은 한 인스턴스 안에서 두 사용자에게 공유된다 — 그 기계 앞에 앉은 사용자와,
+/// 워크스페이스를 원격에서 점유한 mirror 사용자. 결정·대안은
+/// `docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md` 결정 3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RestoreScope {
+    /// 이 인스턴스 앞의 사용자가 누른 복원. 전역 LIFO — 스코프를 걸지 않는다.
+    /// forward 된 close 는 이 인스턴스 자신의 트리에서 탭을 없애므로, 그 변경도
+    /// 여기 앉은 사용자의 undo 대상이어야 한다.
+    Local,
+    /// mirror client 가 forward 한 복원. 그 워크스페이스에서 닫힌 항목만 후보다 —
+    /// 복원 결과가 anchor 워크스페이스 안에 떨어져야 forward 실행의 트리 diff 가
+    /// 그것을 delta 로 실어 보낸다.
+    Workspace(u32),
+}
+
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
@@ -235,12 +252,16 @@ pub(crate) enum DomainIntent {
     },
 
     // ─── Closed items (D.3.C.D.5) ───
-    /// closed_items stack top 을 pop 해 복원. `target_pane_id` 는 *호출자가
-    /// 결정한* attach 대상 (focused pane). Workspace 복원 시에는 사용 안 함.
+    /// closed_items 에서 `scope` 가 정하는 가장 최근 항목을 pop 해 복원.
+    /// `target_pane_id` 는 *호출자가 결정한* attach 대상 (focused pane).
+    /// Workspace 복원 시에는 사용 안 함.
     /// `target_pane_id == None` 이면 (engine.workspaces 비어있는 상태에서
     /// Surface/Tab 을 복원 요청한 경우) 복원은 Workspace 인 경우만 가능.
     /// 이 경우 caller 가 사전에 ensure_workspace_exists 처리하는 것을 권장.
-    RestoreClosedItem { target_pane_id: Option<u32> },
+    RestoreClosedItem {
+        target_pane_id: Option<u32>,
+        scope: RestoreScope,
+    },
 
     // ─── Tab name (D.3.C.C.8) ───
     /// Terminal 의 OSC 0/2 title 변경 등으로 tab 표시명을 갱신. surface_id 가

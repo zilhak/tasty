@@ -213,7 +213,7 @@ impl CoreState {
             // 복원은 대상 pane 이 **Option** 이라 위 pane 기반 팔에 못 얹는다.
             // `None`(워크스페이스가 하나도 없어 대상 pane 자체가 없는 상태)이면
             // mirror 일 수 없으므로 비-mirror 취급으로 떨어뜨린다.
-            D::RestoreClosedItem { target_pane_id } => {
+            D::RestoreClosedItem { target_pane_id, .. } => {
                 self.find_workspace_index_for_pane((*target_pane_id)?)
             }
             _ => return None,

@@ -47,7 +47,11 @@ pub fn handle(
     }
     ensure_workspace_for_restore(core, state, engine);
     let target_pane_id = state.focused_pane(engine).map(|p| p.id);
-    let domain_intent = crate::core::intent::DomainIntent::RestoreClosedItem { target_pane_id };
+    let domain_intent = crate::core::intent::DomainIntent::RestoreClosedItem {
+        target_pane_id,
+        // 이 핸들러는 이 인스턴스 앞의 사용자 단축키 전용이다(모듈 doc 참조).
+        scope: crate::core::intent::RestoreScope::Local,
+    };
     let events = match core.apply(engine, domain_intent) {
         Ok(e) => e,
         Err(e) => {

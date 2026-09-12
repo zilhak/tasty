@@ -1037,11 +1037,37 @@ impl CoreState {
         ))
     }
 
+    /// 복원 스택 엔트리의 **출처 워크스페이스** 를 항목 자신의 구조 id 로 판정한다
+    /// (ADR-0264 결정 3). 워크스페이스 통째 항목은 어디에도 속하지 않으므로 `None`.
+    ///
+    /// 호출 시점 전제: [`Self::push_closed_item`] 의 호출부는 모두 스냅샷을 트리 재배치
+    /// **전**에 만들어 넘긴다(그래야 pane 의 split context 가 남는다 —
+    /// [`Self::capture_closed_pane`] 참조). 그래서 그 시점의 트리가 아직 이 항목을 담고
+    /// 있고 id 조회 하나로 출처가 나온다 — 호출부 열몇 곳이 인자를 하나씩 더 나르지
+    /// 않아도 되는 이유다. 재배치 뒤에 push 하는 호출부가 새로 생기면 그 항목만 `None`
+    /// 으로 떨어져 원격 스코프 pop 의 후보에서 조용히 빠지므로, 그런 호출부를 만들지
+    /// 않는다.
+    fn origin_workspace_of(&self, item: &crate::model::ClosedItem) -> Option<u32> {
+        use crate::model::closed_item::ClosedItem;
+        let ws_idx = match item {
+            ClosedItem::Surface { surface, .. } => self
+                .find_workspace_index_for_surface(surface.id)
+                .map(|(i, _)| i),
+            ClosedItem::Tab(tab) => self
+                .find_pane_for_tab(tab.id)
+                .and_then(|pid| self.find_workspace_index_for_pane(pid)),
+            ClosedItem::Pane { pane, .. } => self.find_workspace_index_for_pane(pane.id),
+            ClosedItem::Workspace { .. } => return None,
+        }?;
+        self.workspaces.get(ws_idx).map(|ws| ws.id)
+    }
+
     pub fn push_closed_item(
         &mut self,
         mut item: crate::model::ClosedItem,
     ) -> crate::close_trace::PushClosedItemTimings {
         let mut timings = crate::close_trace::PushClosedItemTimings::default();
+        let origin_workspace = self.origin_workspace_of(&item);
         let mem = self.memory.clone();
         let t_inject = std::time::Instant::now();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
@@ -1075,7 +1101,7 @@ impl CoreState {
         // otherwise `~/.tasty/scrollback/*.bin` orphans accumulate for the rest
         // of the session.
         let t_evict = std::time::Instant::now();
-        if let Some(evicted) = self.closed_items.push(item) {
+        if let Some(evicted) = self.closed_items.push(item, origin_workspace) {
             let mut refs = Vec::new();
             crate::model::closed_item::collect_scrollback_refs(&evicted, &mut refs);
             for id in refs {

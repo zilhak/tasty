@@ -4,12 +4,13 @@ use super::*;
 use crate::core::pty_registry::PTY_ID_BASE;
 
 impl Core {
-    /// `DomainIntent::RestoreClosedItem` 본문. closed_items stack pop → kind 별
-    /// rebuild + engine attach. AppState 의존 부분 (active_workspace 변경) 은
-    /// cascade 가 처리하므로 본 함수는 *engine mutate* 만.
+    /// `DomainIntent::RestoreClosedItem` 본문. closed_items 에서 `scope` 가 정하는
+    /// 항목을 pop → kind 별 rebuild + engine attach. AppState 의존 부분
+    /// (active_workspace 변경) 은 cascade 가 처리하므로 본 함수는 *engine mutate* 만.
     pub(super) fn apply_restore_closed_item(
         engine: &mut crate::core::CoreState,
         target_pane_id: Option<u32>,
+        scope: crate::core::intent::RestoreScope,
     ) -> CoreEvent {
         use crate::core::intent::RestoredKind;
         use crate::core::restore_rebuild;
@@ -23,7 +24,7 @@ impl Core {
             kind: RestoredKind::Nothing,
         };
 
-        let Some(item) = engine.closed_items.pop() else {
+        let Some(item) = pop_for_scope(engine, scope) else {
             return nothing();
         };
 
@@ -542,6 +543,23 @@ pub(crate) fn apply_create_workspace_inner(
 
 /// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
 /// *모든* workspace 순회 (포커스 독립).
+/// `scope` 가 정하는 후보 중 가장 최근 항목을 복원 스택에서 꺼낸다(ADR-0264 결정 3).
+///
+/// `Workspace` 스코프는 그 워크스페이스에서 닫힌 항목만 본다. 워크스페이스 통째 항목은
+/// 출처가 `None` 이라 여기 원리적으로 안 걸리고, 그래서 "새 워크스페이스를 만들어 놓고
+/// delta 에는 안 잡히는" 갈래가 forward 경로에 **도달하지 못한다** — pop 한 뒤 거부하면
+/// 항목만 잃으므로, 배제는 pop 이전이어야 한다.
+fn pop_for_scope(
+    engine: &mut crate::core::CoreState,
+    scope: crate::core::intent::RestoreScope,
+) -> Option<crate::model::ClosedItem> {
+    use crate::core::intent::RestoreScope;
+    match scope {
+        RestoreScope::Workspace(ws_id) => engine.closed_items.pop_matching(|o| o == Some(ws_id)),
+        RestoreScope::Local => engine.closed_items.pop_matching(|_| true),
+    }
+}
+
 fn push_tab_to_pane(
     engine: &mut crate::core::CoreState,
     pane_id: u32,

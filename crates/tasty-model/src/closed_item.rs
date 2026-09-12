@@ -603,9 +603,25 @@ pub fn snapshot_extent(item: &ClosedItem) -> SnapshotExtent {
     out
 }
 
+/// 복원 스택의 한 엔트리 — 항목과 그 **출처 워크스페이스**.
+///
+/// 출처를 함께 싣는 이유는 스택이 한 인스턴스 안에서 **두 사용자에게 공유되기**
+/// 때문이다: 그 기계 앞에 앉은 사용자와, 워크스페이스를 원격에서 점유한 mirror
+/// 사용자가 같은 스택을 본다. 출처가 없으면 mirror 사용자의 복원이 다른 워크스페이스
+/// 항목을 가져가고, 그 복원 결과는 anchor 워크스페이스 밖이라 되반영 delta 에도 안
+/// 잡힌다("서버에는 생겼는데 client 에는 아무 일도 없는" 상태). 결정·대안은
+/// `docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md` 결정 3.
+pub struct ClosedEntry {
+    /// 닫힐 당시 이 항목이 속해 있던 워크스페이스. [`ClosedItem::Workspace`] 는
+    /// 자기가 워크스페이스라 어디에도 속하지 않으므로 `None` 이고, 그래서 워크스페이스
+    /// 스코프 pop 의 후보가 **원리적으로** 되지 않는다.
+    pub origin_workspace: Option<WorkspaceId>,
+    pub item: ClosedItem,
+}
+
 /// LIFO store for recently closed items.
 pub struct ClosedItemStore {
-    items: VecDeque<ClosedItem>,
+    items: VecDeque<ClosedEntry>,
 }
 
 impl Default for ClosedItemStore {
@@ -621,21 +637,40 @@ impl ClosedItemStore {
         }
     }
 
-    /// Push a closed item. Returns the item evicted when the store is already at
-    /// `MAX_CLOSED_ITEMS`, so the host can release its backing scrollback files.
+    /// Push a closed item together with the workspace it was closed in (`None`
+    /// for a whole-workspace item). Returns the item evicted when the store is
+    /// already at `MAX_CLOSED_ITEMS`, so the host can release its backing
+    /// scrollback files.
     #[must_use = "evicted item may own disk-backed scrollback that needs cleanup"]
-    pub fn push(&mut self, item: ClosedItem) -> Option<ClosedItem> {
+    pub fn push(
+        &mut self,
+        item: ClosedItem,
+        origin_workspace: Option<WorkspaceId>,
+    ) -> Option<ClosedItem> {
         let evicted = if self.items.len() >= MAX_CLOSED_ITEMS {
             self.items.pop_front() // Drop oldest
         } else {
             None
         };
-        self.items.push_back(item);
-        evicted
+        self.items.push_back(ClosedEntry {
+            origin_workspace,
+            item,
+        });
+        evicted.map(|e| e.item)
     }
 
-    pub fn pop(&mut self) -> Option<ClosedItem> {
-        self.items.pop_back()
+    /// 가장 최근 항목부터 거슬러 올라가며 `keep` 가 참인 **첫** 엔트리를 꺼낸다.
+    /// 술어의 인자는 그 엔트리의 출처 워크스페이스([`ClosedEntry::origin_workspace`]).
+    ///
+    /// 스코프 없는 전역 pop 을 남기지 않은 것은 의도다 — 복원 요청에는 언제나 "누가
+    /// 어느 워크스페이스에서 눌렀는가" 가 붙어 있고, 호출부가 그 맥락을 술어로 적게
+    /// 만들면 "그냥 top 을 꺼내는" 갈래가 실수로 생기지 않는다.
+    pub fn pop_matching(
+        &mut self,
+        keep: impl Fn(Option<WorkspaceId>) -> bool,
+    ) -> Option<ClosedItem> {
+        let idx = self.items.iter().rposition(|e| keep(e.origin_workspace))?;
+        self.items.remove(idx).map(|e| e.item)
     }
 
     /// 라이브러리 표준 accessor — "복원 가능 항목 없음" UI 분기 후보.
@@ -649,7 +684,7 @@ impl ClosedItemStore {
 
     /// List items for display (newest first).
     pub fn list(&self) -> impl Iterator<Item = &ClosedItem> {
-        self.items.iter().rev()
+        self.items.iter().rev().map(|e| &e.item)
     }
 }
 
@@ -731,21 +766,86 @@ mod tests {
         for i in 0..MAX_CLOSED_ITEMS {
             assert!(
                 store
-                    .push(surface_item(i as u32, ClosedScrollback::Empty))
+                    .push(surface_item(i as u32, ClosedScrollback::Empty), Some(1))
                     .is_none()
             );
         }
         // The (MAX+1)-th push evicts the oldest (id 0) so its files can be freed.
         let evicted = store
-            .push(surface_item(
-                999,
-                ClosedScrollback::Persisted("ref-evicted".into()),
-            ))
+            .push(
+                surface_item(999, ClosedScrollback::Persisted("ref-evicted".into())),
+                Some(1),
+            )
             .expect("eviction over capacity");
         match evicted {
             ClosedItem::Surface { surface, .. } => assert_eq!(surface.id, 0),
             _ => panic!("expected Surface"),
         }
         assert_eq!(store.len(), MAX_CLOSED_ITEMS);
+    }
+
+    fn ids_of(store: &ClosedItemStore) -> Vec<SurfaceId> {
+        store
+            .list()
+            .map(|i| match i {
+                ClosedItem::Surface { surface, .. } => surface.id,
+                _ => panic!("expected Surface"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_workspace_scoped_pop_skips_other_workspaces_however_recent() {
+        let mut store = ClosedItemStore::new();
+        for (id, ws) in [(1, 7), (2, 9), (3, 9)] {
+            assert!(
+                store
+                    .push(surface_item(id, ClosedScrollback::Empty), Some(ws))
+                    .is_none(),
+                "용량 미만이라 evict 는 없다"
+            );
+        }
+
+        // 스택 top 은 ws 9 의 것이지만 ws 7 스코프는 자기 것만 본다.
+        let got = store.pop_matching(|o| o == Some(7)).expect("ws 7 item");
+        match got {
+            ClosedItem::Surface { surface, .. } => assert_eq!(surface.id, 1),
+            _ => panic!("expected Surface"),
+        }
+        assert_eq!(
+            ids_of(&store),
+            vec![3, 2],
+            "다른 워크스페이스 항목은 그대로"
+        );
+        assert!(
+            store.pop_matching(|o| o == Some(7)).is_none(),
+            "ws 7 에는 더 없다 — 다른 워크스페이스로 흘러가지 않는다"
+        );
+    }
+
+    #[test]
+    fn a_whole_workspace_item_never_matches_a_workspace_scope() {
+        let mut store = ClosedItemStore::new();
+        let evicted = store.push(
+            ClosedItem::Workspace {
+                id: 5,
+                name: "w".into(),
+                subtitle: String::new(),
+                pane_layout: ClosedPaneNode::Leaf(ClosedPane {
+                    id: 1,
+                    tabs: Vec::new(),
+                    active_tab: 0,
+                }),
+                focused_pane: 1,
+            },
+            None,
+        );
+        assert!(evicted.is_none(), "용량 미만이라 evict 는 없다");
+        assert!(
+            store.pop_matching(|o| o == Some(5)).is_none(),
+            "출처가 None 이라 어떤 워크스페이스 스코프에도 안 걸린다"
+        );
+        assert_eq!(store.len(), 1, "후보가 아니었으므로 스택에 그대로 남는다");
+        assert!(store.pop_matching(|_| true).is_some());
     }
 }

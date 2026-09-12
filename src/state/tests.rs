@@ -559,6 +559,7 @@ fn close_pane_then_restore_reinserts_pane() {
             &mut engine,
             DomainIntent::RestoreClosedItem {
                 target_pane_id: Some(remaining_pane_id),
+                scope: crate::core::intent::RestoreScope::Local,
             },
         )
         .expect("restore should not error");

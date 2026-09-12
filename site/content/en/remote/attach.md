@@ -1,4 +1,4 @@
-<!-- source-hash: 4beba938ad6a -->
+<!-- source-hash: c986f3cc4caa -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -121,7 +121,9 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 ## What you can do inside a mirror
 
 - Keyboard input · mouse go straight to the remote terminal. The remote re-lays out to match the size of your Pane.
-- Splits, new Tabs, closing · moving Tabs, and Surface conversion are **executed on the remote** and the result is reflected in the mirror. Creating a Surface of a type the remote does not have fails with a toast.
+- Splits, new Tabs, closing · moving Tabs, Surface conversion, and reopening a closed item are **executed on the remote** and the result is reflected in the mirror. Creating a Surface of a type the remote does not have fails with a toast.
+- **Reopening a closed item** (`Ctrl+Shift+T` by default) inside a mirror brings back a Tab that was closed on the remote — that Tab is a remote terminal, so your input goes to the remote too. Its earlier scrollback is fully visible only in the remote window (a mirror starts from the visible screen).
+  - A reopen only brings back what was closed **in that remote Workspace**. If the remote has nothing to reopen you just get an informational toast and nothing happens — a Tab you closed on your own side is never created inside the mirror instead. Go back to your own Workspace and press the same key to reopen yours.
 - The remote terminal's completion · input-needed indicators (border · badge) also arrive in the mirror as they are.
 - Pasting a clipboard image uploads it to the remote and inputs the **remote path**. Text paste works as usual.
 - You cannot create child agents in a mirror Workspace with `tasty claude spawn` and the like. Launch them directly on the remote instance.
