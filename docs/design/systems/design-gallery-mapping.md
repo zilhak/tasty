@@ -593,6 +593,34 @@ i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,di
 i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`preset_col_before` 문구 갱신,
 `preset_col_after` 제거 (3열 헤더 = 프리셋 이름).
 
+## Settings › Keybindings › Import / Export (kbimportexport)
+
+디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
+창 자체 toast) + `gallery/overlays-windows.jsx` Section `kbimportexport` ↔ 갤러리
+`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 3 종). 갤러리는
+본체 미의존이라 같은 위젯·토큰으로 미러한다.
+
+| 디자인 jsx | 갤러리 | 비고 |
+|---|---|---|
+| `IeL2Tail` · `KB_L2_SEPARATED` | `l2_tail` · `l2_separator` · `l2_row` | **신규 축** — L2 행 위 1px separator(margin space-sm), 필터 활성 시 숨김 |
+| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding space-md/size-14. Import primary · Export secondary |
+| 창 toast(export 경로) | `export_toast`(`toast_card::draw_card`, Success) | 설정 창 자체 `ToastManager` 의 카드 |
+| `DrillDown` detail + back bar actions | `detail_frame`(실제 `DrillDown`) | 우측 슬롯: `Show all {n}`/`Changed only` ghost · `{n} unresolved`(mono caption warning) · Apply primary(미해결 시 비활성) |
+| `IeDiffTable` (grid `size-32 minmax(0,1.6fr) 1fr 1fr`) | `diff_table` | **신규 축 둘** — 선두 선택 열(32) · 그룹 헤더 행(surface-raised, select-all · chevron · mono micro caps 그룹명 · `N changed · M total`). 변경 = accent-primary, 미해결 = accent-warning |
+| plugin 행 부제 · quick-switch 축 부제 | `action_cell` | agent 점 + mono micro plugin 이름 / micro 슬롯 수 |
+| `IeMigrateCard` | `migrate_card` | tone(warning/success) 11% 채움 · 36% 테두리, 헤더 counter mono caption |
+| `IeMigrateRow` | `migrate_row` · `record_slot` · `select` | 라벨 288 · 원래 조합 120 · → · 녹화 슬롯(min 140×24, mono, 충돌 시 danger 테두리) 또는 modifier `select`(7 조합 + "pick" sentinel). 부제 들여쓰기 288 |
+| `IeNotices` | `notices` · `dropped_notice` · `parse_failure` | 버린 plugin = helpCircle muted 정보 줄(경고 아님) · 마이그레이션 불필요 = 안내문 한 문장 · 파싱 실패 = danger 12%/35% 인라인 블록 + "Choose another file" |
+
+**전사 노트**:
+- `letter-spacing-caps` 는 egui 미지원이라 mono `font-size-micro` uppercase, `fontWeight: 600` 은
+  색 강조로 둔다(Preset · Hook Handlers 관례). `color-mix(tone X%, transparent)` 는 명명 const
+  계수의 `gamma_multiply`.
+- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5 · 선택 열 32 · 라벨 288/120 · 슬롯 140×24 ·
+  패딩 14)은 스냅하지 않고 명명 const 로 둔다([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)).
+- specimen 폭은 본체 설정 창 콘텐츠 컬럼(868)이다 — jsx gallery 의 620 에는 ui kit 의 288·120
+  라벨 열이 들어가지 않는다. 진입 화면 컬럼만 620 을 따른다.
+
 ## Settings › Handler 탭 서브탭 콘텐츠 (S13)
 
 L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)하고 Hook Handlers

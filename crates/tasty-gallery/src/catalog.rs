@@ -1142,6 +1142,36 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "kbimportexport",
+                    "Keybindings · Import / Export",
+                    vec![
+                        spec(
+                            "kbimportexport-entry",
+                            "L2 placement & entry screen",
+                            Some(
+                                "L2 separator above the last row · 2 action rows (Export secondary · Import primary) · export toast",
+                            ),
+                            components::kb_import_export::draw_entry,
+                        ),
+                        spec(
+                            "kbimportexport-preview",
+                            "Import preview — group headers, select column, long-table handling",
+                            Some(
+                                "32px select · 1.6fr action · 1fr current · 1fr imported · group header row · changed-only toggle",
+                            ),
+                            components::kb_import_export::draw_preview,
+                        ),
+                        spec(
+                            "kbimportexport-migration",
+                            "Option migration — pending · resolved · conflict · unbound · not needed",
+                            Some(
+                                "tinted card gates Apply · record slot / modifier Select · dropped-plugin info line · inline parse failure",
+                            ),
+                            components::kb_import_export::draw_migration,
+                        ),
+                    ],
+                ),
+                section(
                     "scripts",
                     "Misc · Scripts (Lua script manager)",
                     vec![
