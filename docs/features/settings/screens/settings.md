@@ -31,7 +31,7 @@
   - **General**: General / Notifications / Accessibility / Overlay(토스트 표시 시간 `Toast duration` DragValue, 1~10s)
   - **Terminal**: General(터미널 동작 설정) / Mouse Capture(마우스 캡처 안내 배너 토글 + Shift 우회 Note + 캡처 비활성화 블랙리스트 + 배너만 억제하는 블랙리스트) / TUI(OSC 52 클립보드 읽기 허용 토글 + bordered warning callout) / Performance
   - **Appearance**: Theme / Colors(프리셋 색 개별 override picker) / General / Display(UI 스케일 전용) / Tasty(앱 크롬 색상) / Terminal / Explorer(내장 파일 관리자 폰트, T11 host builtin 승격) / (플러그인 기여 페이지 동적 — 예: HTML)
-  - **Keybindings**: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins
+  - **Keybindings**: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Explorer / Scripts / Preset / Plugins / ─ / Import / Export — 마지막 항목 위에만 1px separator 가 붙고, 필터 검색 중에는 separator 를 숨긴다
   - **FileHandler**(표시 "Handler"): File Extension Mapping / File Detectors / File Handlers / Hook Handlers(공유 훅 핸들러 레지스트리 편집 — 리스너 설정은 CLI 전용, 여기 미노출)
   - **Misc**: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state).
   - **Plugins**: 플러그인 기여 설정 페이지 (동적)
@@ -40,14 +40,15 @@
   - Theme(Appearance) → [`design/systems/theme`](../../../design/systems/theme.md)
   - Notifications → [`features/notifications/`](../../notifications/index.md) · FileHandler(파일 서브탭) → [`features/file-handler/`](../../file-handler/index.md) · Hook Handlers → [`features/webhook/`](../../webhook/index.md)·[`features/hooks/`](../../hooks/index.md)
   - Plugins → [`features/plugin-system/`](../../plugin-system/index.md)
-- **Save / Cancel** (하단): draft 커밋 / 폐기. 헤더 밴드에 close ✕ 는 없다 — 닫기/취소 진입점은
+- **Save / Cancel** (하단): draft 커밋 / 폐기. plugin 단축키 draft(Plugins 서브탭 편집 · 가져오기 Apply)도 같은 규칙이다 — Save 로 닫혔을 때만 적용되고, Cancel · 타이틀바 close · `toggle_settings` 로 닫히면 버린다. 헤더 밴드에 close ✕ 는 없다 — 닫기/취소 진입점은
   footer **Cancel** · OS 타이틀바 close · `toggle_settings` 바인딩(기본 `Ctrl+,`) 셋이다. 마지막 것은
   타이틀바 close 와 같은 경로(`ViewAction::Close`)로 닫으므로 draft 처리가 같다. 바인딩 녹화 중에는
   닫지 않는다 — 그때 키는 캡처로 가야 한다. **Escape 는 넷째 진입점이 아니다** — 대응 바인딩
   필드가 없고, 이 화면에는 편집 가능한 텍스트 필드가 여러 탭에 있어 편집 중 Escape 가 "편집 취소"
   인지 "닫기" 인지가 아직 값으로 안 정해졌다. 메인 윈도우의 Escape 경로가 보는 `settings_open_requested`
   는 **열기 요청 래치**라 모달이 떠 있는 동안은 false 다 — 그 경로는 이 화면을 닫지 않는다.
-- **Keybindings › Preset**: 이 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋).
+- **Keybindings › Preset · Import / Export**: 이 두 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋) · [가져오기 / 내보내기](../../keybindings/index.md#가져오기--내보내기).
+- **Keybindings › Import / Export 의 충돌 확인**: 가져오기 Apply 가 새 충돌을 만들면 설정 창 자체 popup(`keybinding_import_conflict`)이 뜬다 — Cancel · Overwrite, 키보드 Enter/Y = Overwrite, Esc/N = Cancel, 타이틀바 ✕ = Cancel.
 
 ## 상태별 시각
 

@@ -1,4 +1,4 @@
-<!-- source-hash: 4e994bdca436 -->
+<!-- source-hash: 207ce7faf5b7 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -118,9 +118,41 @@ To apply one:
 
 Applying a preset resets every keybinding you changed by hand back to the preset value.
 
+## Moving to another computer — Import / Export
+
+**Import / Export**, at the very bottom of the list on the left of **Settings** > **Keybindings** (below the divider), moves your whole keybinding configuration as a single file. General keybindings, number-switch rules, script keybindings and plugin keybindings all go in.
+
+To export:
+
+1. Press **Export…**.
+2. Pick a folder and a file name. The default name is `tasty-keybindings-<date>.toml`.
+3. Once written, a notification shows the file path. Edits you haven't saved yet are included.
+
+To import:
+
+1. Press **Import…** and open the file you brought over. Nothing is applied yet — a comparison view opens.
+2. Current and imported values sit side by side in four groups: **General bindings** · **Quick switch** · **Script bindings** · **Plugin overrides**. At first only rows that change are shown; **Show all N** at the top right shows everything.
+3. Untick the rows you don't want. The tick on a group title turns the whole group on or off.
+4. Press **Apply** at the top right. Nothing is saved to the file yet.
+5. Press **Save** at the bottom of the window. **Cancel** discards the imported changes too.
+
+Good to know:
+
+- Quick switch moves one axis at a time (Tab · Workspace · Category) — the modifier and the slot keys move together.
+- Plugin keybindings that exist only on this computer are not removed just because the file lacks them. Conversely, keybindings for plugins not installed on this computer are not imported, and the comparison view says so in one line.
+- If you pick something that isn't a keybinding file, you get **This file can't be read as keybindings** instead of the comparison, and nothing changes. Use **Choose another file** to try again.
+
+### Importing a file made on a Mac into Windows or Linux
+
+Keybindings that contain the Mac `Option` key never work on Windows or Linux. If there are any, an **Option bindings need a replacement** card appears above the comparison, and **Apply** stays disabled until every one is settled.
+
+- A regular keybinding — click the slot on the right and press the combination to use instead. To not use it on this computer, press **Leave unbound**.
+- A number-switch modifier — choose a replacement modifier combination from the dropdown. A modifier can't be left unbound.
+- If the combination you choose collides with another action in the file, it is shown under that row, and the **Shortcut already in use** popup appears when you **Apply**. Choosing **Overwrite** clears the other action.
+
 ## Changing one keybinding
 
-1. Open **Settings** (`Ctrl+,`) > **Keybindings**. The sub-tabs on the left are divided by what the action targets — **General** · **Workspace** · **Pane** · **Tab** · **Surface** · **Clipboard** · **Zoom** · **Explorer** · **Run Scripts** · **Preset** · **Plugins**.
+1. Open **Settings** (`Ctrl+,`) > **Keybindings**. The sub-tabs on the left are divided by what the action targets — **General** · **Workspace** · **Pane** · **Tab** · **Surface** · **Clipboard** · **Zoom** · **Explorer** · **Run Scripts** · **Preset** · **Plugins** · **Import / Export**.
 2. Click the key button of the action you want to change; it turns into **Press key combination...**. Press the combination you want.
 3. To add another combination to the same action, press **Add binding**.
 4. Pressing `Esc` while recording empties that slot.

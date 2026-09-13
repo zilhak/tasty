@@ -2,8 +2,8 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: [0256](../../adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
-- **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs`
+- **ADR**: [0256](../../adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 · [XXXX(번호 미정)](../../adr/XXXX-keybinding-import-applies-selected-rows-onto-the-draft.md) 가져오기 적용 단위 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
+- **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs` · 가져오기/내보내기 화면 `src/view/settings/ui/keybindings_tab/import_export.rs`
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
 ## 목적
@@ -237,18 +237,40 @@ Settings › Keybindings › **Preset** 서브탭은 **drill-down**(content-swap
 - **Apply 범위** — Apply 는 선택 프리셋을 settings **draft** 에 기록(사용 중 프리셋이면 "Applied" 비활성 — 적용할 diff 없음), footer Save 가 draft 전체를 디스크에 커밋. 두 버튼은 물리적으로 분리(back bar vs footer).
 - 이 서브탭은 표준 콘텐츠 패딩/스크롤 래퍼를 우회한 **full-bleed** — DrillDown 이 자체 패딩과 내부 스크롤을 소유한다.
 
+### 가져오기 / 내보내기
+
+Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식-번들--구성-전량을-파일-한-장으로)을 파일로 쓰고 읽는 화면이다(`src/view/settings/ui/keybindings_tab/import_export.rs`, 행 모델 `import_export/model.rs` — 디자인 `kb_import_export.jsx`). L2 목록 **맨 끝**에 있고 위에 separator 가 붙는다(필터 검색 중에는 separator 를 숨긴다). Preset 과 같은 **full-bleed drill-down** 이다.
+
+- **진입 화면** — 안내문 + 행 둘: **Export**(secondary) · **Import**(primary).
+- **내보내기** — 설정 창의 로컬 파일 선택([native-file-picker](../native-file-picker/index.md#설정-창에서의-로컬-전용-재사용))을 저장 모드로 연다. 기본 파일명 `tasty-keybindings-<YYYY-MM-DD>.toml`, `.toml` 필터. 내보내는 원본은 **현재 draft**(저장 전 편집 포함)와 `plugins.toml` 의 override 전량(`PluginsConfig::shortcut_overrides`)이다. 쓰기에 성공하면 설정 창 자체 toast(Success)가 경로를 보여 준다. 쓰기 실패는 로그(`tracing::error!`)만 남는다 — 화면 표시는 디자인 값이 정해지지 않았다.
+- **가져오기** — 같은 선택기를 열기 모드로 열어 고른 파일을 `decode` 한다(`DecodeEnv` = 이 환경에 설치된 plugin id · 스크립트 레지스트리). 성공하면 detail 로 들어간다.
+  - **파싱 실패**(`Toml`·`NotABundle`) — detail 에 danger 인라인 블록(파일 이름 · TOML span 에서 계산한 줄 번호)과 "다른 파일 고르기" 가 뜨고 back bar 액션은 숨는다.
+  - **버린 plugin override**(`DroppedUninstalledPlugin`) — 경고가 아니라 muted 정보 줄 하나(개수 · plugin id 목록). 그 밖의 `BundleWarning` 은 로그(`tracing::warn!`)로만 남는다.
+- **diff 표** — 선두 **선택 열** + Action / Current / Imported. 행은 네 그룹이고 그룹마다 **헤더 행**(그룹 전체 선택 · 접기 chevron · 그룹명 · `N changed · M total`)이 붙는다.
+  - **General** — 일반 콤보 필드 하나가 한 행(콤보 목록 전체).
+  - **Quick switch** — 축(tab · workspace · category) 하나가 한 행. modifier · 슬롯 전부 · 다음/이전을 함께 옮긴다 — 슬롯은 raw 키라 modifier 와 떨어지면 뜻이 바뀐다.
+  - **Scripts** — 현재와 번들의 **합집합**. 번들에 없는 현재 바인딩은 적용하면 사라지는 행으로 보인다.
+  - **Plugin overrides** — **번들에 있는 명령만**. 이 환경에만 있는 override 는 표에 오르지 않고 바뀌지도 않는다.
+  - 기본은 변경된 행만 보인다(back bar 의 **Show all {n}** / **Changed only** 토글). 선택은 해제한 행을 기억하는 방식이라 처음에는 모든 행이 선택돼 있다 — 변경 없는 행은 적용해도 값이 같다.
+- **option 마이그레이션 카드** — 비-macOS 에서 번들에 `option` 바인딩이 있으면 표 위에 카드가 뜬다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 7 조합 중 선택. 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 는 비울 수 없다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
+- **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
+- **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
+
+결정의 근거·대안·재검토 조건은 [ADR-XXXX](../../adr/XXXX-keybinding-import-applies-selected-rows-onto-the-draft.md)(번호 미정).
+
 ### 설정 탭 구성 (서브탭·항목 순서)
 
 Settings 의 Keybindings 탭은 액션을 서브탭으로 묶고, 그 순서는 **유비쿼터스 언어 계층**을 따른다. 서브탭 enum: `KeybindingsSubTab`(`src/view/settings/ui/keybindings_tab.rs`).
 
 ```
-General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Image → Preset → Plugins
+General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Explorer → Scripts → Preset → Plugins ─ Import / Export
           \________ 계층 순서 ________/
 ```
 
-- **General / Clipboard / Zoom / Image**: 계층에 속하지 않는 전역·기능별 단축키.
+- **General / Clipboard / Zoom / Explorer**: 계층에 속하지 않는 전역·기능별 단축키.
 - **Workspace → Pane → Tab → Surface**: [구조 계층](../../concepts/hierarchy.md) 순서.
-- **Preset / Plugins**: 프리셋 적용 · 플러그인 기여 단축키(항상 끝).
+- **Scripts / Preset / Plugins**: 스크립트 바인딩 · 프리셋 적용 · 플러그인 기여 단축키.
+- **Import / Export**: 구성 전량의 파일 이식(항상 맨 끝, 위에 separator). [가져오기 / 내보내기](#가져오기--내보내기).
 
 각 서브탭 *내부* 항목 순서: **① 생성/분할 → ② 탐색(next/prev/focus) → ③ 수정(rename/convert) → ④ 닫기 → ⑤ 수식키(modifier, separator 로 구분)**.
 

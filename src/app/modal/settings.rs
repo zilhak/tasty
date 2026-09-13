@@ -75,6 +75,7 @@ impl App {
             init.user_config_path,
         );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
+        modal.set_plugin_bundle_context(self.plugin_bundle_context());
         modal.set_plugin_settings_pages(init.plugin_pages);
         self.apply_pending_tab_overrides(&mut modal);
         crate::view::ui::present_first_frame(&mut modal);

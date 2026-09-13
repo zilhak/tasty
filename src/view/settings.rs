@@ -30,6 +30,9 @@ pub struct SettingsView {
     double_tap: crate::double_tap::DoubleTapDetector,
     captured_double_tap: Option<String>,
     should_close: bool,
+    /// footer Save 로 닫혔는가. plugin override draft 는 이것이 참일 때만 회수된다 —
+    /// Cancel · 창 닫기 · 설정 토글 키로 닫으면 그 draft 는 버려진다.
+    committed: bool,
     toasts: ToastManager,
 }
 
@@ -53,6 +56,7 @@ impl SettingsView {
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             captured_double_tap: None,
             should_close: false,
+            committed: false,
             toasts: ToastManager::new(),
         }
     }
@@ -88,6 +92,11 @@ impl SettingsView {
         self.settings_ui_state.select_section_by_key(key)
     }
 
+    /// 단축키 가져오기/내보내기가 쓰는 plugin override 원본 · 설치 plugin 을 주입한다.
+    pub fn set_plugin_bundle_context(&mut self, ctx: crate::settings_ui::PluginBundleContext) {
+        self.settings_ui_state.set_plugin_bundle_context(ctx);
+    }
+
     /// Plugin 이 contribute 한 settings sub-page 스냅샷을 주입한다. 모달 오픈 직전에
     /// host App 이 호출. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
     pub fn set_plugin_settings_pages(&mut self, pages: Vec<tasty_host_plugin::SettingsPageEntry>) {
@@ -105,15 +114,24 @@ impl SettingsView {
         self.settings_ui_state.bashrc_save_error.take()
     }
 
-    /// 사용자가 Plugins 서브탭에서 변경한 override draft를 가져간다.
+    /// 사용자가 Plugins 서브탭·가져오기에서 변경한 override draft를 가져간다.
     /// 호출 후에는 빈 draft가 남는다. 모달 close 시 main App이 회수.
+    ///
+    /// **Save 로 닫혔을 때만** 내용을 돌려준다. 호스트 설정은 Save 전까지 원본이라 Cancel 이
+    /// 저절로 안전하지만, 이 draft 는 닫힐 때 무조건 회수되므로 여기서 가르지 않으면 Cancel ·
+    /// 창 닫기에도 적용된다.
     pub fn take_plugin_shortcut_draft(
         &mut self,
     ) -> std::collections::BTreeMap<
         (String, String),
         Option<crate::plugin::registry_state::ShortcutOverride>,
     > {
-        std::mem::take(&mut self.settings_ui_state.plugin_shortcuts_draft)
+        let draft = std::mem::take(&mut self.settings_ui_state.plugin_shortcuts_draft);
+        if self.committed {
+            draft
+        } else {
+            std::collections::BTreeMap::new()
+        }
     }
 }
 
@@ -293,6 +311,15 @@ impl View for SettingsView {
         self.settings = settings;
         if action.is_some() {
             self.should_close = true;
+            self.committed = action == Some(true);
+        }
+        if let Some(msg) = self.settings_ui_state.take_import_export_toast() {
+            self.toasts.push(
+                msg,
+                crate::adapters::ui::ToastKind::Success,
+                ToastScope::Window,
+            );
+            self.mark_dirty();
         }
 
         let has_copy = full_output

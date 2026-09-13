@@ -598,7 +598,10 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
 창 자체 toast) + `gallery/overlays-windows.jsx` Section `kbimportexport` ↔ 갤러리
 `catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 3 종). 갤러리는
-본체 미의존이라 같은 위젯·토큰으로 미러한다.
+본체 미의존이라 같은 위젯·토큰으로 미러한다. 본체는 `src/view/settings/ui/keybindings_tab/import_export.rs`
+(`action_row` · `diff_table` · `group_header` · `action_cell` · `migrate_card` · `migrate_row` ·
+`record_slot` · `dropped_notice` · `parse_failure` 는 갤러리와 같은 이름. 갤러리의 `entry`·`detail_frame`·`notices`
+자리는 `draw_import_export_subtab` 한 함수가 `DrillDown` 으로 짠다)와 `src/view/settings/ui.rs` 의 `l2_separator` 다.
 
 | 디자인 jsx | 갤러리 | 비고 |
 |---|---|---|

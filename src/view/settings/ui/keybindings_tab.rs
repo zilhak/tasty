@@ -93,6 +93,8 @@ pub enum KeybindingsSubTab {
     Scripts,
     Preset,
     Plugins,
+    /// 구성 전량 내보내기 · 파일에서 가져오기(미리보기 후 적용).
+    ImportExport,
 }
 
 /// 필드를 **어느 서브탭 어느 자리**에 놓는가. 배치만 정하고 **라벨은 갖지 않는다** —
@@ -201,12 +203,15 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("explorer_go_up", KeybindingsSubTab::Explorer, None),
 ];
 
-/// 그 서브탭이 바인딩 엔트리 목록을 그리는가. Scripts/Preset/Plugins 는 자기 화면을
-/// 따로 그린다.
+/// 그 서브탭이 바인딩 엔트리 목록을 그리는가. Scripts/Preset/Plugins/ImportExport 는 자기
+/// 화면을 따로 그린다.
 fn draws_entries(sub_tab: KeybindingsSubTab) -> bool {
     !matches!(
         sub_tab,
-        KeybindingsSubTab::Scripts | KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins
+        KeybindingsSubTab::Scripts
+            | KeybindingsSubTab::Preset
+            | KeybindingsSubTab::Plugins
+            | KeybindingsSubTab::ImportExport
     )
 }
 
@@ -280,6 +285,8 @@ pub fn draw_keybindings_tab(
         (String, String),
         Option<ShortcutOverride>,
     >,
+    import_export: &mut ImportExportState,
+    plugin_bundle: &PluginBundleContext,
 ) {
     let th = crate::theme::theme();
     let current = sub_tab;
@@ -447,11 +454,23 @@ pub fn draw_keybindings_tab(
                 &settings.general,
             );
         }
+        KeybindingsSubTab::ImportExport => {
+            draw_import_export_subtab(
+                ui,
+                settings,
+                import_export,
+                plugin_bundle,
+                plugin_shortcuts,
+                plugin_shortcuts_draft,
+                recording_field,
+                &captured,
+            );
+        }
     }
 
     if !matches!(
         current,
-        KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins
+        KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins | KeybindingsSubTab::ImportExport
     ) {
         vspace(ui, th.spacing_sm);
         ui.label(
@@ -466,6 +485,7 @@ pub fn draw_keybindings_tab(
 mod capture;
 mod entries;
 mod entries_scripts;
+mod import_export;
 #[cfg(test)]
 mod label_width;
 mod plugins;
@@ -475,6 +495,10 @@ mod quick_switch;
 pub use capture::{capture_bare_key, capture_winit_key_combo};
 use entries::draw_keybinding_entries;
 use entries_scripts::draw_script_bindings;
+use import_export::draw_import_export_subtab;
+pub(crate) use import_export::{
+    EXPORT_CONSUMER, IMPORT_CONSUMER, ImportExportRequest, ImportExportState, PluginBundleContext,
+};
 use plugins::draw_plugins_subtab;
 use preset::draw_preset_subtab;
 use quick_switch::{QuickSwitchKind, draw_quick_switch_section};

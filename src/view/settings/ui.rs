@@ -5,11 +5,13 @@ mod tabs;
 
 use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
 use keybindings_tab::{
-    FieldKind, KeybindingsSubTab, PendingBinding, RecordingSlot, clear_bare_target,
-    draw_keybindings_tab, set_bare_target,
+    EXPORT_CONSUMER, FieldKind, IMPORT_CONSUMER, ImportExportRequest, ImportExportState,
+    KeybindingsSubTab, PendingBinding, RecordingSlot, clear_bare_target, draw_keybindings_tab,
+    set_bare_target,
 };
 use tabs::*;
 
+pub(crate) use keybindings_tab::PluginBundleContext;
 pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 
 use crate::adapters::ui::popup::{PopupManager, PopupState};
@@ -40,6 +42,8 @@ const SETTINGS_TITLE_DIVIDER_HEIGHT: LogicalPx = LogicalPx(20.0);
 const SETTINGS_TITLE_DIVIDER_MARGIN_R: LogicalPx = LogicalPx(14.0);
 /// 푸터 좌우 패딩. 디자인 footer `padding: space-md size-14` 의 수평값.
 const SETTINGS_FOOTER_PAD_X: i8 = 14;
+/// 단축키 가져오기 Apply 가 만난 충돌을 확인하는 popup id.
+const IMPORT_CONFLICT_POPUP_ID: &str = "keybinding_import_conflict";
 
 /// 단계 E: Plugins 서브탭에서 표시할 한 row.
 ///
@@ -258,6 +262,10 @@ pub struct SettingsUiState {
     /// 합성과 plugin page 렌더링에서 참조한다. 비어 있으면 plugin sub-tab
     /// 자체가 표시되지 않는다 (= dead-setting 미노출 정책).
     pub settings_pages: Vec<SettingsPageEntry>,
+    /// Keybindings › Import / Export 서브탭 상태(미리보기 · 마이그레이션 선택 · 요청).
+    import_export: ImportExportState,
+    /// 모달 오픈 시 host 가 주입하는 plugin override 원본 · 설치 plugin — export/import 가 쓴다.
+    plugin_bundle: PluginBundleContext,
 }
 
 impl SettingsUiState {
@@ -366,6 +374,7 @@ impl SettingsUiState {
                     "scripts" => KeybindingsSubTab::Scripts,
                     "preset" => KeybindingsSubTab::Preset,
                     "plugins" => KeybindingsSubTab::Plugins,
+                    "import_export" | "import-export" => KeybindingsSubTab::ImportExport,
                     _ => return false,
                 };
                 true
@@ -403,6 +412,14 @@ impl SettingsUiState {
         popups.register(
             PopupState::new(
                 "keybinding_conflict",
+                t("settings.keybindings.conflict_title"),
+                egui::vec2(340.0, 120.0),
+            )
+            .with_close_on_outside_click(false),
+        );
+        popups.register(
+            PopupState::new(
+                IMPORT_CONFLICT_POPUP_ID,
                 t("settings.keybindings.conflict_title"),
                 egui::vec2(340.0, 120.0),
             )
@@ -451,23 +468,32 @@ impl SettingsUiState {
             plugin_shortcuts_selected: None,
             plugin_shortcuts_draft: std::collections::BTreeMap::new(),
             settings_pages: Vec::new(),
+            import_export: ImportExportState::default(),
+            plugin_bundle: PluginBundleContext::default(),
         }
     }
 
     /// 설정 창 안에서 로컬 파일 선택 popup 을 연다. 결과는 `consumer` 키로
     /// `file_chooser.take_outcome` 해 가져간다. 이미 열려 있던 선택은 취소로 끝난다.
+    ///
+    /// `title` 을 주면 popup 타이틀과 view 헤더가 모드 기본 문구 대신 그것을 쓴다.
     fn open_file_chooser(
         &mut self,
         consumer: &'static str,
         mode: file_chooser::FileChooserMode,
         filters: Vec<String>,
+        title: Option<&'static str>,
     ) {
         self.file_chooser.cancel();
         self.file_chooser.begin(consumer, mode, filters);
+        if let Some(title) = title {
+            self.file_chooser.set_title(title);
+        }
         let save_mode = self.file_chooser.is_save_mode();
+        let title = self.file_chooser.title();
         if let Some(p) = self.popups.get_mut(file_chooser::FILE_CHOOSER_POPUP_ID) {
             p.size = file_chooser::chooser_size(&crate::theme::theme(), save_mode);
-            p.title = file_chooser::chooser_title(save_mode).to_string();
+            p.title = title.to_string();
         }
         // intent-exempt: 설정 창 내부 PopupManager 의 sub-popup open(충돌 팝업과 같은 경로).
         self.popups
@@ -478,6 +504,16 @@ impl SettingsUiState {
     /// host App 이 호출한다. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
     pub fn set_settings_pages(&mut self, pages: Vec<SettingsPageEntry>) {
         self.settings_pages = pages;
+    }
+
+    /// plugin override 원본 · 설치 plugin 을 주입한다. 모달 오픈 직전에 host App 이 호출한다.
+    pub fn set_plugin_bundle_context(&mut self, ctx: PluginBundleContext) {
+        self.plugin_bundle = ctx;
+    }
+
+    /// 설정 창 자체 토스트로 올릴 가져오기/내보내기 결과 문구(1 회).
+    pub fn take_import_export_toast(&mut self) -> Option<String> {
+        self.import_export.take_toast()
     }
 }
 
@@ -525,19 +561,13 @@ fn conflict_message_text(
 /// (macOS 재현). 실제 galley 높이를 재서 타이틀바·여백·버튼 높이를 더해 팝업
 /// 크기를 그때그때 결정하면 잘림이 사라진다. 폭은 zoom 을 곱해 콘텐츠 스케일과
 /// 정합시킨다(theme 토큰은 이미 zoom 반영, 고정 폭만 미반영이던 비대칭 제거).
-fn conflict_popup_size(
-    ui: &egui::Ui,
-    th: &Theme,
-    pending: &PendingBinding,
-    zoom: f32,
-    general: &crate::settings::GeneralSettings,
-) -> egui::Vec2 {
+fn conflict_popup_size(ui: &egui::Ui, th: &Theme, message: String, zoom: f32) -> egui::Vec2 {
     use crate::adapters::ui::popup::content_margin;
     let width = (340.0 * zoom).round();
     let content_w = (LogicalPx(width) - content_margin().scaled(2.0)).max(LogicalPx(1.0));
     let galley = ui.fonts(|f| {
         f.layout(
-            conflict_message_text(pending, general),
+            message,
             egui::FontId::proportional(th.font_size_body.value()),
             egui::Color32::WHITE, // 측정 전용 — 색은 높이에 무관
             content_w.value(),
@@ -691,7 +721,10 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             // full-bleed 로 그린다 (디자인 settings_window.jsx
                             // `fullBleed`).
                             let full_bleed = ui_state.active_tab == SettingsTab::Keybindings
-                                && ui_state.keybindings_sub_tab == KeybindingsSubTab::Preset;
+                                && matches!(
+                                    ui_state.keybindings_sub_tab,
+                                    KeybindingsSubTab::Preset | KeybindingsSubTab::ImportExport
+                                );
                             if full_bleed {
                                 draw_active_content(
                                     ui,
@@ -730,7 +763,12 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             let conflict_size = if !ui_state.popups.is_open("keybinding_conflict") {
                                 ui_state.pending_binding.as_ref().map(|pending| {
                                     let zoom = draft.appearance.ui_scale_factor();
-                                    conflict_popup_size(ui, &th, pending, zoom, &settings.general)
+                                    conflict_popup_size(
+                                        ui,
+                                        &th,
+                                        conflict_message_text(pending, &settings.general),
+                                        zoom,
+                                    )
                                 })
                             } else {
                                 None
@@ -740,6 +778,32 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                                     p.size = size;
                                 }
                                 ui_state.popups.open_centered_focused("keybinding_conflict");
+                            }
+
+                            // 단축키 가져오기 Apply 의 충돌 확인 — 문구가 서 있으면 연다.
+                            // intent-exempt: 설정 창 내부 PopupManager 의 sub-popup open(위와 같은 경로).
+                            let import_conflict_size =
+                                if ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID) {
+                                    None
+                                } else {
+                                    ui_state.import_export.conflict_prompt().map(|msg| {
+                                        let zoom = draft.appearance.ui_scale_factor();
+                                        conflict_popup_size(ui, &th, msg.to_string(), zoom)
+                                    })
+                                };
+                            if let Some(size) = import_conflict_size {
+                                if let Some(p) = ui_state.popups.get_mut(IMPORT_CONFLICT_POPUP_ID) {
+                                    p.size = size;
+                                }
+                                ui_state
+                                    .popups
+                                    .open_centered_focused(IMPORT_CONFLICT_POPUP_ID);
+                            }
+                            if ui_state.import_export.conflict_prompt().is_none()
+                                && ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID)
+                            {
+                                // intent-exempt: 설정 창 내부 sub-popup close.
+                                ui_state.popups.close(IMPORT_CONFLICT_POPUP_ID);
                             }
 
                             // 충돌 팝업에서 수락/거부 처리
@@ -792,8 +856,10 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
     // Draw popups (충돌 확인 · 파일 선택)
     let mut chooser_done = false;
+    let mut import_answer: Option<bool> = None;
     let popup_result = {
         let pending = ui_state.pending_binding.clone();
+        let import_prompt = ui_state.import_export.conflict_prompt().map(str::to_string);
         let accepted = &mut ui_state.conflict_accepted;
         let cancelled = &mut ui_state.conflict_cancelled;
         let chooser = &mut ui_state.file_chooser;
@@ -803,6 +869,24 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
             &mut |id, ui| {
                 if id == file_chooser::FILE_CHOOSER_POPUP_ID {
                     chooser_done |= chooser.draw(ui, &th, chooser_owns_escape);
+                    return;
+                }
+                if id == IMPORT_CONFLICT_POPUP_ID
+                    && let Some(msg) = &import_prompt
+                {
+                    ui.label(msg.as_str());
+                    vspace(ui, th.spacing_sm);
+                    ui.horizontal(|ui| {
+                        if ui.button(t("button.cancel")).clicked() {
+                            import_answer = Some(false);
+                        }
+                        if ui
+                            .button(t("settings.keybindings.conflict_apply"))
+                            .clicked()
+                        {
+                            import_answer = Some(true);
+                        }
+                    });
                     return;
                 }
                 if id == "keybinding_conflict"
@@ -836,6 +920,9 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     if popup_result.closed.contains(&"keybinding_conflict") {
         ui_state.pending_binding = None;
     }
+    if popup_result.closed.contains(&IMPORT_CONFLICT_POPUP_ID) {
+        import_answer = Some(false);
+    }
 
     // 파일 선택: view 가 끝냈으면 popup 을 닫고, 타이틀바 ✕ 로 닫혔으면 취소로 남긴다.
     if chooser_done {
@@ -849,6 +936,24 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         ui_state.file_chooser.cancel();
     }
     apply_file_chooser_outcomes(ui_state);
+
+    if ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID)
+        && escape_owner == Some(IMPORT_CONFLICT_POPUP_ID)
+    {
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Y) {
+                import_answer = Some(true);
+            }
+            if i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::N) {
+                import_answer = Some(false);
+            }
+        });
+    }
+    if let Some(accepted) = import_answer {
+        ui_state.import_export.answer_conflict(accepted);
+        // intent-exempt: 설정 창 내부 sub-popup close.
+        ui_state.popups.close(IMPORT_CONFLICT_POPUP_ID);
+    }
 
     // 키보드로 충돌 팝업 수락/거부 — 파일 선택이 그 위에 떠 있으면 키는 그쪽 것이다.
     if ui_state.popups.is_open("keybinding_conflict") && escape_owner == Some("keybinding_conflict")
@@ -868,11 +973,15 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
 /// 설정 창 popup 중 Esc 를 받을 하나 — 열린 것 중 z 순서가 가장 위인 것.
 fn settings_escape_owner(popups: &PopupManager) -> Option<&'static str> {
-    ["keybinding_conflict", file_chooser::FILE_CHOOSER_POPUP_ID]
-        .into_iter()
-        .filter_map(|id| popups.open_geometry(id).map(|(z, _)| (z, id)))
-        .max_by_key(|(z, _)| *z)
-        .map(|(_, id)| id)
+    [
+        "keybinding_conflict",
+        IMPORT_CONFLICT_POPUP_ID,
+        file_chooser::FILE_CHOOSER_POPUP_ID,
+    ]
+    .into_iter()
+    .filter_map(|id| popups.open_geometry(id).map(|(z, _)| (z, id)))
+    .max_by_key(|(z, _)| *z)
+    .map(|(_, id)| id)
 }
 
 /// 닫힌 파일 선택의 결과를 그것을 연 화면 상태로 돌려준다.
@@ -882,6 +991,31 @@ fn apply_file_chooser_outcomes(ui_state: &mut SettingsUiState) {
         .take_outcome(ScriptsUiState::BROWSE_CONSUMER)
     {
         ui_state.scripts.apply_browsed_file(&path);
+    }
+    if let Some(file_chooser::FileChooserOutcome::Confirmed(path)) =
+        ui_state.file_chooser.take_outcome(EXPORT_CONSUMER)
+    {
+        match ui_state.draft.as_ref() {
+            Some(draft) => ui_state.import_export.export_to(
+                &path,
+                &draft.keybindings,
+                &ui_state.plugin_bundle,
+                &ui_state.plugin_shortcuts_draft,
+            ),
+            None => tracing::warn!("keybinding export: no settings draft to export"),
+        }
+    }
+    if let Some(file_chooser::FileChooserOutcome::Confirmed(path)) =
+        ui_state.file_chooser.take_outcome(IMPORT_CONSUMER)
+    {
+        match ui_state.draft.as_ref() {
+            Some(draft) => {
+                ui_state
+                    .import_export
+                    .import_from(&path, draft, &ui_state.plugin_bundle)
+            }
+            None => tracing::warn!("keybinding import: no settings draft to compare against"),
+        }
     }
 }
 
@@ -907,6 +1041,9 @@ struct L2Section {
     label: String,
     /// plugin-contributed 섹션이면 true → 라벨 앞에 accent-agent dot.
     is_plugin: bool,
+    /// 위에 구분선을 긋는다 — 성격이 다른 꼬리 항목(디자인 `KB_L2_SEPARATED`). 필터 중에는
+    /// 숨는다(걸러진 목록에서 구분선은 가를 대상이 없다).
+    separated: bool,
     selected: bool,
     select: L2Select,
 }
@@ -950,6 +1087,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                 .map(|(tab, label)| L2Section {
                     label: label.to_string(),
                     is_plugin: false,
+                    separated: false,
                     selected: cur == tab,
                     select: L2Select::General(tab),
                 })
@@ -973,6 +1111,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             .map(|(tab, label)| L2Section {
                 label: label.to_string(),
                 is_plugin: false,
+                separated: false,
                 selected: cur == tab,
                 select: L2Select::Terminal(tab),
             })
@@ -1023,11 +1162,16 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                     KeybindingsSubTab::Plugins,
                     t("settings.keybindings.subtab.plugins"),
                 ),
+                (
+                    KeybindingsSubTab::ImportExport,
+                    t("settings.keybindings.subtab.import_export"),
+                ),
             ]
             .into_iter()
             .map(|(tab, label)| L2Section {
                 label: label.to_string(),
                 is_plugin: false,
+                separated: tab == KeybindingsSubTab::ImportExport,
                 selected: cur == tab,
                 select: L2Select::Keybindings(tab),
             })
@@ -1057,6 +1201,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             .map(|(tab, label)| L2Section {
                 label: label.to_string(),
                 is_plugin: false,
+                separated: false,
                 selected: cur == tab,
                 select: L2Select::FileHandler(tab),
             })
@@ -1070,6 +1215,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             let mut sections = vec![L2Section {
                 label: t("settings.misc.scripts").to_string(),
                 is_plugin: false,
+                separated: false,
                 selected: cur == MiscSubTab::Scripts,
                 select: L2Select::Misc(MiscSubTab::Scripts),
             }];
@@ -1077,6 +1223,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             sections.push(L2Section {
                 label: t("settings.misc.subtab.tastyrc").to_string(),
                 is_plugin: false,
+                separated: false,
                 selected: cur == MiscSubTab::Tastyrc,
                 select: L2Select::Misc(MiscSubTab::Tastyrc),
             });
@@ -1165,6 +1312,7 @@ fn build_appearance_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             selected: tab == cur,
             label,
             is_plugin,
+            separated: false,
             select: L2Select::Appearance(tab),
         })
         .collect()
@@ -1219,6 +1367,7 @@ fn build_plugin_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             selected: cur.as_ref() == Some(&tab),
             label,
             is_plugin: true,
+            separated: false,
             select: L2Select::Plugin(tab),
         })
         .collect()
@@ -1403,6 +1552,9 @@ fn draw_l2_sidebar(
                             continue;
                         }
                         any = true;
+                        if s.separated && filter_lc.is_empty() {
+                            l2_separator(ui, th);
+                        }
                         if sidebar_row(ui, th, &s.label, s.is_plugin, s.selected) {
                             clicked = Some(i);
                         }
@@ -1418,6 +1570,21 @@ fn draw_l2_sidebar(
                 });
         });
     clicked
+}
+
+/// L2 구분선 — 디자인 `height: border-width · background: separator · margin: space-sm`.
+fn l2_separator(ui: &mut egui::Ui, th: &Theme) {
+    let m = th.spacing_sm.value();
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(w, th.border_width.value() + m * 2.0),
+        egui::Sense::hover(),
+    );
+    ui.painter().hline(
+        (rect.left() + m)..=(rect.right() - m),
+        rect.center().y,
+        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+    );
 }
 
 /// L2 사이드바 한 row. selected = surface-active 배경 + radius-sm, plugin row 는
@@ -1609,9 +1776,12 @@ fn commit_hook_handler_draft(ui_state: &mut SettingsUiState) {
 }
 
 /// Cancel 클릭 시 draft 폐기 — 다음 오픈 시 디스크에서 다시 로드되도록 모든
-/// 탭의 편집 draft(bashrc/extension-priority/file-handler/hook-handler)를 지운다.
+/// 탭의 편집 draft(bashrc/extension-priority/file-handler/hook-handler/plugin 단축키)를 지운다.
 fn discard_settings_draft(ui_state: &mut SettingsUiState, result: &mut Option<bool>) {
     ui_state.bashrc_user_draft = None;
+    // plugin override draft 는 모달이 닫힐 때 host 가 회수해 적용하므로, 여기서 비우지 않으면
+    // Cancel 해도 적용된다(가져오기 Apply 는 그 draft 에 대량으로 쓴다).
+    ui_state.plugin_shortcuts_draft.clear();
     ui_state.extension_priority_draft = None;
     ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
     ui_state.hook_edit_draft = file_handler_tab::HookHandlerEditDraft::default();
@@ -1670,19 +1840,44 @@ fn draw_active_content(
             &mut ui_state.preview_font_loaded,
             &ui_state.settings_pages,
         ),
-        SettingsTab::Keybindings => draw_keybindings_tab(
-            ui,
-            draft,
-            &mut ui_state.recording_field,
-            ui_state.keybindings_sub_tab,
-            &mut ui_state.selected_preset,
-            &mut ui_state.pending_binding,
-            captured_double_tap,
-            &mut ui_state.captured_winit_combo,
-            &ui_state.plugin_shortcuts,
-            &mut ui_state.plugin_shortcuts_selected,
-            &mut ui_state.plugin_shortcuts_draft,
-        ),
+        SettingsTab::Keybindings => {
+            draw_keybindings_tab(
+                ui,
+                draft,
+                &mut ui_state.recording_field,
+                ui_state.keybindings_sub_tab,
+                &mut ui_state.selected_preset,
+                &mut ui_state.pending_binding,
+                captured_double_tap,
+                &mut ui_state.captured_winit_combo,
+                &ui_state.plugin_shortcuts,
+                &mut ui_state.plugin_shortcuts_selected,
+                &mut ui_state.plugin_shortcuts_draft,
+                &mut ui_state.import_export,
+                &ui_state.plugin_bundle,
+            );
+            match ui_state.import_export.take_request() {
+                Some(ImportExportRequest::Export) => {
+                    let default_name = format!(
+                        "tasty-keybindings-{}.toml",
+                        chrono::Local::now().format("%Y-%m-%d")
+                    );
+                    ui_state.open_file_chooser(
+                        EXPORT_CONSUMER,
+                        file_chooser::FileChooserMode::Save { default_name },
+                        vec!["toml".to_string()],
+                        Some(t("settings.keybindings.ie_export_chooser_title")),
+                    );
+                }
+                Some(ImportExportRequest::Import) => ui_state.open_file_chooser(
+                    IMPORT_CONSUMER,
+                    file_chooser::FileChooserMode::Open,
+                    vec!["toml".to_string()],
+                    Some(t("settings.keybindings.ie_import_chooser_title")),
+                ),
+                None => {}
+            }
+        }
         SettingsTab::FileHandler => draw_file_handler_tab(
             ui,
             ui_state.file_handler_sub_tab,
@@ -1719,6 +1914,7 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
                     ScriptsUiState::BROWSE_CONSUMER,
                     file_chooser::FileChooserMode::Open,
                     vec!["lua".to_string()],
+                    None,
                 );
             }
             if navigate {
@@ -1770,6 +1966,45 @@ mod tab_key_tests {
             assert_eq!(st.file_handler_sub_tab, FileHandlerSubTab::HookHandlers);
         }
         assert!(!st.select_section_by_key("unknown-section"));
+    }
+
+    /// 가져오기/내보내기 서브탭 deep-link 키 — 밑줄·하이픈 둘 다.
+    #[test]
+    fn import_export_section_key() {
+        let mut st = SettingsUiState::new();
+        assert!(st.select_tab_by_key("keybindings"));
+        for key in ["import_export", "import-export"] {
+            st.keybindings_sub_tab = KeybindingsSubTab::General;
+            assert!(st.select_section_by_key(key), "key '{key}' should resolve");
+            assert_eq!(st.keybindings_sub_tab, KeybindingsSubTab::ImportExport);
+        }
+    }
+
+    /// L2 목록의 마지막이 가져오기/내보내기이고, 그 행만 위에 구분선을 갖는다.
+    #[test]
+    fn import_export_is_the_separated_last_keybindings_section() {
+        let mut st = SettingsUiState::new();
+        st.active_tab = SettingsTab::Keybindings;
+        let sections = build_l2_sections(&mut st);
+        let last = sections.last().expect("sections");
+        assert!(matches!(
+            last.select,
+            L2Select::Keybindings(KeybindingsSubTab::ImportExport)
+        ));
+        assert_eq!(sections.iter().filter(|s| s.separated).count(), 1);
+        assert!(last.separated);
+    }
+
+    /// Cancel 은 plugin 단축키 draft 도 버린다 — 모달 close 가 그 draft 를 회수해 적용하므로.
+    #[test]
+    fn cancel_discards_the_plugin_shortcut_draft() {
+        let mut st = SettingsUiState::new();
+        st.plugin_shortcuts_draft
+            .insert(("p".into(), "c".into()), None);
+        let mut result = None;
+        discard_settings_draft(&mut st, &mut result);
+        assert!(st.plugin_shortcuts_draft.is_empty());
+        assert_eq!(result, Some(false));
     }
 
     /// 충돌 팝업 크기 조립이 안내문 높이(=wrap 줄 수)에 비례해 커지고, 어떤 경우에도

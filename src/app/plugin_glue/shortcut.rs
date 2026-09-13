@@ -116,6 +116,27 @@ impl App {
         settings_ui::PluginShortcutSnapshot { rows }
     }
 
+    /// 단축키 가져오기/내보내기가 쓰는 plugin 쪽 원본 — override 전량(등록 여부 무관)과
+    /// 설치된 plugin 목록.
+    pub(crate) fn plugin_bundle_context(&self) -> settings_ui::PluginBundleContext {
+        let Some(mgr) = self.plugin_manager.as_ref() else {
+            return settings_ui::PluginBundleContext::default();
+        };
+        settings_ui::PluginBundleContext {
+            overrides: mgr.config.shortcut_overrides().clone(),
+            installed_plugin_ids: mgr
+                .packages()
+                .iter()
+                .map(|p| p.manifest.id.clone())
+                .collect(),
+            plugin_names: mgr
+                .packages()
+                .iter()
+                .map(|p| (p.manifest.id.clone(), p.manifest.name.clone()))
+                .collect(),
+        }
+    }
+
     /// 사용자 키 입력이 plugin 명령에 매칭되면 dispatch 한다. 호출자(event_handler)는
     /// normal window dispatch를 skip해 host action이 trigger되지 않게 한다.
     ///

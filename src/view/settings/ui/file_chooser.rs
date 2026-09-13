@@ -40,9 +40,6 @@ pub(crate) enum FileChooserMode {
     Open,
     /// 디렉토리를 고르고 파일명을 입력해 저장 경로를 정한다. `default_name` 은 입력 행의
     /// 초깃값이다.
-    // 이유: 설정 창에서 저장 경로를 요구하는 첫 호출처(단축키 가져오기/내보내기)가 아직
-    // 없다. 그 전까지는 이 모듈의 단위 테스트만 이 variant 를 만든다.
-    #[cfg_attr(not(test), allow(dead_code))]
     Save { default_name: String },
 }
 
@@ -65,6 +62,8 @@ struct ChooserSession {
     filters: Vec<String>,
     /// 저장 모드의 파일명 입력.
     save_name: String,
+    /// 호출처가 정한 타이틀. 없으면 모드 기본 문구.
+    title: Option<&'static str>,
 }
 
 /// `SettingsUiState` 가 갖는 파일 선택 상태. 한 번에 하나만 열린다.
@@ -110,6 +109,7 @@ impl SettingsFileChooser {
             selected: Vec::new(),
             filters,
             save_name,
+            title: None,
         };
         session.reload();
         self.session = Some(session);
@@ -121,6 +121,21 @@ impl SettingsFileChooser {
             self.session.as_ref().map(|s| &s.mode),
             Some(FileChooserMode::Save { .. })
         )
+    }
+
+    /// 열려 있는 선택의 타이틀을 호출처 문구로 바꾼다(popup 타이틀과 view 헤더 공용).
+    pub(crate) fn set_title(&mut self, title: &'static str) {
+        if let Some(s) = self.session.as_mut() {
+            s.title = Some(title);
+        }
+    }
+
+    /// 열려 있는 선택의 타이틀.
+    pub(crate) fn title(&self) -> &'static str {
+        match self.session.as_ref() {
+            Some(s) => s.title(),
+            None => chooser_title(false),
+        }
     }
 
     /// popup 이 view 밖의 경로(타이틀바 ✕)로 닫혔을 때 — 미확정이면 취소로 남긴다.
@@ -185,6 +200,11 @@ pub(crate) fn chooser_title(save_mode: bool) -> &'static str {
 }
 
 impl ChooserSession {
+    fn title(&self) -> &'static str {
+        self.title
+            .unwrap_or_else(|| chooser_title(matches!(self.mode, FileChooserMode::Save { .. })))
+    }
+
     /// 현재 디렉토리를 동기로 다시 읽는다. 선택은 비운다.
     fn reload(&mut self) {
         self.selected.clear();
@@ -337,7 +357,7 @@ fn draw_view(
         selected: &s.selected,
         name_filter_text: &name_filter_text,
         owns_escape,
-        title_label: chooser_title(save_mode),
+        title_label: s.title(),
         name_field_label: t("filepicker.name_field_label"),
         cancel_label: t("button.cancel"),
         // 저장 모드에서 view 의 확정 버튼은 목록에서 고른 기존 파일을 대상으로 한다.

@@ -176,6 +176,9 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   wrapper 가 view 아래에 덧붙인다. 목록에서 기존 파일을 고르면 그 이름이 입력으로 가고, view 의
   확정 버튼은 "덮어쓰기" 라벨로 그 기존 파일을 대상으로 확정한다. 파일명은 한 경로 성분이어야 한다
   (`/`·`\`·`.`·`..` 거부). 저장 모드는 경로를 정할 뿐 파일을 만들지 않는다.
+- **호출자**: Misc › Scripts(Lua 스크립트 파일 열기) · Keybindings › Import / Export(번들 내보내기는
+  저장 모드, 가져오기는 열기 모드 — [단축키 가져오기 / 내보내기](../keybindings/index.md#가져오기--내보내기)).
+- **제목**: 기본은 모드의 제목이고, 여는 쪽이 `set_title` 로 덮어쓸 수 있다(가져오기/내보내기가 자기 제목을 쓴다).
 - **확장자 필터**: 메인 피커와 같은 `matches_filters` — 디렉토리는 거르지 않는다.
 - **결과 전달**: 여는 쪽이 `consumer` 키(`&'static str`)를 주고, 닫힌 뒤 같은 키로
   `take_outcome` 해 `Confirmed(PathBuf)` 또는 `Cancelled` 를 1 회 가져간다. 타이틀바 ✕ 로 닫히면
