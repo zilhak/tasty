@@ -67,6 +67,20 @@ const userSession = {
   ],
 };
 
+// The third tab is a MIXED split — a terminal on the left, the doc it opened on
+// the right — so it cannot be mistaken for the first tab's two terminals.
+const splitSession = {
+  id: "s_04SC",
+  plainLines: [
+    "~/tasty main via v1.84",
+    "❯ tasty split --level surface --target-surface this --type markdown --file notes/split-layout.md",
+  ],
+  lines: [
+    <Prompt branch="main" />,
+    <><span style={{ color: c.mauve }}>❯</span> tasty split --level surface --target-surface this --type markdown --file notes/split-layout.md</>,
+  ],
+};
+
 // Every workspace field combination the sidebar knows how to draw, so the
 // illustration shows the real range rather than one happy row.
 const workspaces = [
@@ -79,7 +93,7 @@ const workspaces = [
 const INITIAL_TABS = [
   { id: "t1", title: "claude · release", kind: "terminal", owner: "agent", activity: "running", attached: true },
   { id: "t2", title: "README.md", kind: "markdown", owner: "user", activity: "idle", notif: true },
-  { id: "t3", title: "zsh", kind: "terminal", owner: "user", activity: "idle" },
+  { id: "t3", title: "zsh", kind: "split", owner: "user", activity: "idle" },
 ];
 
 /* Theme is the page's, not this component's. `site.js` owns applying and
@@ -217,6 +231,27 @@ export function AppShell({ heading = "Workspaces", task = "cut release 0.7.1" })
           <div className="shell__panes">
             {tab && tab.kind === "markdown" ? (
               <div className="shell__pane"><MarkdownSurface focused /></div>
+            ) : tab && tab.kind === "split" ? (
+              <>
+                <div className="shell__pane">
+                  <TerminalPane session={splitSession} focused
+                    searchOpen={searchOpen} onSearchClose={() => setSearchOpen(false)} />
+                </div>
+                <div className="shell__pane">
+                  <MarkdownSurface path="~/work/tasty/notes/split-layout.md">
+                    <h1 style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-prose-h1)", margin: "0 0 var(--tasty-space-xs)" }}>Split layout</h1>
+                    <p style={{ color: "var(--tasty-text-secondary)", fontSize: "var(--tasty-font-size-body)", margin: "0 0 var(--tasty-space-lg)" }}>
+                      A pane group holds surfaces of different kinds. Terminal and markdown sit side by side
+                      in one tab; only one of them has focus.</p>
+                    <h2 style={{ fontSize: "var(--tasty-font-size-max)", margin: "0 0 var(--tasty-space-sm)", color: "var(--tasty-accent-primary)" }}>Rules</h2>
+                    <ul style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", margin: 0, paddingLeft: "var(--tasty-space-lg)" }}>
+                      <li>The status bar reports the focused surface, not the tab.</li>
+                      <li>Search (Cmd+F) is scoped to the focused surface.</li>
+                      <li>An unfocused markdown surface keeps the sidebar bed, not the document bed.</li>
+                    </ul>
+                  </MarkdownSurface>
+                </div>
+              </>
             ) : (
               <>
                 <div className="shell__pane shell__pane--agent">
@@ -230,7 +265,7 @@ export function AppShell({ heading = "Workspaces", task = "cut release 0.7.1" })
             )}
           </div>
           <div className="shell__status">
-            <StatusBar surfaceId={tab && tab.kind === "markdown" ? "s_03MD" : "s_02JK"} theme={theme}
+            <StatusBar surfaceId={tab && tab.kind === "markdown" ? "s_03MD" : tab && tab.kind === "split" ? "s_04SC" : "s_02JK"} theme={theme}
               onTheme={() => setTheme(theme === "latte" ? "mocha" : "latte")}
               onPalette={() => setOverlay("palette")} />
           </div>

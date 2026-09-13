@@ -86,10 +86,11 @@ function TerminalPane({ session, focused, searchOpen, onSearchClose }) {
   );
 }
 
-function MarkdownSurface({ focused }) {
+function MarkdownSurface({ focused, path = "~/work/tasty/README.md", children }) {
   return (
     <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column",
-      background: "var(--tasty-surface-markdown-unfocused-bg)", color: "var(--tasty-text-primary)",
+      background: focused ? "var(--tasty-surface-markdown-focused-bg)" : "var(--tasty-surface-markdown-unfocused-bg)",
+      color: focused ? "var(--tasty-surface-markdown-focused-fg)" : "var(--tasty-text-primary)",
       border: "var(--tasty-border-width) solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
       {/* address-bar chrome — path display/edit + Go (mirrors gallery markdown_viewer) */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-size-36)", flex: "none",
@@ -98,11 +99,12 @@ function MarkdownSurface({ focused }) {
           background: "var(--tasty-input-bg)", border: "var(--tasty-border-width) solid var(--tasty-input-border)", borderRadius: "var(--tasty-radius)" }}>
           <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-input-icon-fg)" }}>{ic.file}</span>
           <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-text-secondary)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>~/work/tasty/README.md</span>
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</span>
         </div>
         <IconButton size="sm" aria-label="Go"><KIcon d={<path d="M5 12h14M13 6l6 6-6 6" />} /></IconButton>
       </div>
       <div className="tasty-scroll" style={{ padding: "var(--tasty-space-lg) var(--tasty-space-xl)", overflow: "auto", lineHeight: 1.6, maxWidth: 620 }}>
+        {children || <>
         <h1 style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-prose-h1)", margin: "0 0 var(--tasty-space-xs)" }}>Tasty</h1>
         <p style={{ color: "var(--tasty-text-secondary)", fontSize: "var(--tasty-font-size-body)", margin: "0 0 var(--tasty-space-lg)" }}>
           A cross-platform, GPU-accelerated terminal emulator purpose-built for AI coding agents.</p>
@@ -110,6 +112,7 @@ function MarkdownSurface({ focused }) {
         <p style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", margin: 0 }}>
           User actions and agent actions are strictly separated. An agent can open and close a
           hundred surfaces without ever touching your focus, history, or selection.</p>
+        </>}
       </div>
     </div>
   );

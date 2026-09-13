@@ -45,6 +45,21 @@ const userSession = {
   ],
 };
 
+// t3 — a MIXED split: your terminal on the left, the doc you're following on the right.
+const scratchSession = {
+  id: "s_04SC", label: "zsh · ~/tasty/notes", owner: "user", activity: "idle",
+  plainLines: [
+    "~/tasty main via \u{1F980} v1.84",
+    "❯ tasty surface open --kind markdown notes/split-layout.md --right",
+    "opened s_05MD in pane 2",
+  ],
+  lines: [
+    <Prompt branch="main" />,
+    <><span style={{ color: "var(--tasty-color-mauve)" }}>❯</span> tasty surface open --kind markdown notes/split-layout.md --right</>,
+    <span style={{ color: "var(--tasty-color-neutral-700)" }}>opened s_05MD in pane 2</span>,
+  ],
+};
+
 function App() {
   const [theme, setTheme] = React.useState("mocha");
   const [overlay, setOverlay] = React.useState(null);
@@ -64,7 +79,7 @@ function App() {
   const [tabs, setTabs] = React.useState([
     { id: "t1", title: "build · cargo", kind: "terminal", owner: "agent", activity: "running" },
     { id: "t2", title: "README.md", kind: "markdown", owner: "user", activity: "idle", notif: true },
-    { id: "t3", title: "scratch", kind: "terminal", owner: "user", activity: "idle" },
+    { id: "t3", title: "scratch", kind: "split", owner: "user", activity: "idle" },
   ]);
   const seq = React.useRef(4);
 
@@ -167,7 +182,24 @@ function App() {
           <div style={{ flex: 1, display: "flex", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-xs)", minHeight: 0,
             background: "var(--tasty-bg-panel)" }}>
             {tab && tab.kind === "markdown" ? (
-              <MarkdownSurface />
+              <MarkdownSurface focused />
+            ) : tab && tab.kind === "split" ? (
+              <>
+                <TerminalPane session={scratchSession} focused
+                  searchOpen={searchOpen} onSearchClose={() => setSearchOpen(false)} />
+                <MarkdownSurface path="~/work/tasty/notes/split-layout.md">
+                  <h1 style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-prose-h1)", margin: "0 0 var(--tasty-space-xs)" }}>Split layout</h1>
+                  <p style={{ color: "var(--tasty-text-secondary)", fontSize: "var(--tasty-font-size-body)", margin: "0 0 var(--tasty-space-lg)" }}>
+                    A pane group holds surfaces of different kinds. Terminal and markdown sit side by side
+                    in one tab; only one of them has focus.</p>
+                  <h2 style={{ fontSize: "var(--tasty-font-size-max)", margin: "0 0 var(--tasty-space-sm)", color: "var(--tasty-accent-primary)" }}>Rules</h2>
+                  <ul style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", margin: 0, paddingLeft: "var(--tasty-space-lg)" }}>
+                    <li>The status bar reports the focused surface, not the tab.</li>
+                    <li>Search (Cmd+F) is scoped to the focused surface.</li>
+                    <li>An unfocused markdown surface keeps the sidebar bed, not the document bed.</li>
+                  </ul>
+                </MarkdownSurface>
+              </>
             ) : (
               <>
                 <TerminalPane session={agentSession} focused={false} />
@@ -175,7 +207,7 @@ function App() {
                   searchOpen={searchOpen} onSearchClose={() => setSearchOpen(false)} />              </>
             )}
           </div>
-          <StatusBar surfaceId={tab && tab.kind === "markdown" ? "s_03MD" : "s_02JK"} theme={theme}
+          <StatusBar surfaceId={tab && tab.kind === "markdown" ? "s_03MD" : tab && tab.kind === "split" ? "s_04SC" : "s_02JK"} theme={theme}
             onTheme={() => setTheme((t) => (t === "latte" ? "mocha" : "latte"))} onPalette={() => setOverlay("palette")} />
         </div>
       </div>
