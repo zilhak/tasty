@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: [0256](../../adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 · [XXXX(번호 미정)](../../adr/XXXX-keybinding-import-applies-selected-rows-onto-the-draft.md) 가져오기 적용 단위 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
+- **ADR**: [0256](../../adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md) 파서 위치 · [0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md) 이식 번들 · [0269](../../adr/0269-keybinding-import-applies-selected-rows-onto-the-draft.md) 가져오기 적용 단위 (그 밖의 정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
 - **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs` · 가져오기/내보내기 화면 `src/view/settings/ui/keybindings_tab/import_export.rs`
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
@@ -256,7 +256,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 - **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 
-결정의 근거·대안·재검토 조건은 [ADR-XXXX](../../adr/XXXX-keybinding-import-applies-selected-rows-onto-the-draft.md)(번호 미정).
+결정의 근거·대안·재검토 조건은 [ADR-0269](../../adr/0269-keybinding-import-applies-selected-rows-onto-the-draft.md).
 
 ### 설정 탭 구성 (서브탭·항목 순서)
 

@@ -14,7 +14,7 @@
 //!   `plugin_shortcuts_draft` 에 쓴다. footer Save 가 둘 다 커밋한다(Preset 과 같은 경계).
 //!
 //! 적용 규칙(행 단위 · 번들에 없는 plugin override 보존 · 비워 두기 · 충돌 판정 범위)의
-//! 근거는 `docs/adr/XXXX-keybinding-import-applies-selected-rows-onto-the-draft.md`.
+//! 근거는 `docs/adr/0269-keybinding-import-applies-selected-rows-onto-the-draft.md`.
 
 mod model;
 
