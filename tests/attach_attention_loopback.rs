@@ -12,15 +12,21 @@
 //! raise → (3) 1Hz forward tick 이 `attention` Control 프레임을 원격 surface id 와
 //! 함께 push 하는 전체 경로를 프로토콜 레벨에서 실행한다.
 //! `docs/features/surface-highlight/index.md` "검증 한계" 절 참고.
+//!
+//! 같은 1Hz tick 을 타는 **surface cwd push**(`StreamControl::Cwd`)도 이 binary 에서 검증한다 —
+//! 인스턴스를 띄우는 test binary 수를 늘리지 않으려는 것이다(`docs/dev-guide/e2e-tests.md`).
+//! cwd 는 OSC 7 에 기대지 않는 값(워크스페이스 명시 cwd, holder 입력으로 `cd`)으로 본다 — mirror
+//! terminal 이 OSC 7 없이는 cwd 를 모른다는 것이 그 채널이 존재하는 이유다
+//! (`docs/adr/0267-mirror-surface-cwd-is-pushed-by-the-server.md`).
 
 mod attach_common;
 mod common;
 
 use std::io::Read;
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use attach_common::{TAG_CONTROL, open_workspace_attach};
+use attach_common::{TAG_CONTROL, open_workspace_attach, read_frame, write_workspace_input};
 use serde_json::{Value, json};
 
 /// dedup(스팸 없음) 확인용 정적 대기 — 1Hz forward tick 을 여러 번 지나칠 만큼만
@@ -356,4 +362,96 @@ fn attention_clear_is_rejected_while_hard_occupied() {
         json!({ "surface_id": ws.surface_id }),
     );
     assert_eq!(after["kind"], "needs_input", "{after:?}");
+}
+
+// ---- surface cwd push ----
+
+/// 이 surface 에 대한 `cwd` control 이벤트 중 `expected` 값을 가진 것이 올 때까지 읽는다.
+/// 1Hz tick 이라 상한은 넉넉히 둔다. 도중에 본 값은 실패문에 싣는다.
+fn wait_for_cwd(
+    stream: &mut TcpStream,
+    surface_id: u64,
+    expected: &str,
+    limit: Duration,
+) -> Vec<Value> {
+    let start = Instant::now();
+    let mut seen = Vec::new();
+    while start.elapsed() < limit {
+        let (tag, payload) = read_frame(stream);
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let Ok(v) = serde_json::from_slice::<Value>(&payload) else {
+            continue;
+        };
+        if v["event"] != "cwd" || v["surface_id"].as_u64() != Some(surface_id) {
+            continue;
+        }
+        let hit = v["cwd"].as_str() == Some(expected);
+        seen.push(v);
+        if hit {
+            return seen;
+        }
+    }
+    panic!(
+        "surface {surface_id} 의 cwd 가 {limit:?} 안에 {expected:?} 로 push 되지 않았다. 본 값: {seen:?}"
+    );
+}
+
+fn temp_dir(tag: &str, server_pid: u32) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "tasty_cwd_push_{tag}_{}_{server_pid}_{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).expect("이전 실행의 잔여 디렉토리 정리");
+    }
+    std::fs::create_dir_all(&dir).unwrap();
+    // `/proc/<pid>/cwd` 는 심볼릭 링크를 푼 경로를 돌려준다(macOS 의 `/var` → `/private/var` 등).
+    dir.canonicalize().unwrap()
+}
+
+#[test]
+fn server_pushes_the_occupied_terminal_cwd_and_follows_cd() {
+    let server = common::shared();
+    let start_dir = temp_dir("start", server.pid());
+    let moved_dir = temp_dir("moved", server.pid());
+
+    let created = server.call(
+        "workspace.create",
+        json!({ "name": "cwd-push", "cwd": start_dir.to_string_lossy() }),
+    );
+    let ws_id = created["id"].as_u64().expect("workspace id");
+    let sid = created["surface_id"].as_u64().expect("surface id");
+    server.wait_for_shell(sid);
+
+    let mut stream = open_workspace_attach(server.port(), ws_id);
+
+    // 점유 직후의 초기 push — 셸의 시작 cwd.
+    wait_for_cwd(
+        &mut stream,
+        sid,
+        &start_dir.to_string_lossy(),
+        Duration::from_secs(10),
+    );
+
+    // 셸이 이동하면 다음 tick 들 안에 새 값이 나간다.
+    // 점유 중에는 서버 로컬 입력이 막히므로 holder 입력 프레임으로 보낸다.
+    write_workspace_input(
+        &mut stream,
+        sid as u32,
+        format!("cd '{}'\r", moved_dir.to_string_lossy()).as_bytes(),
+    );
+    wait_for_cwd(
+        &mut stream,
+        sid,
+        &moved_dir.to_string_lossy(),
+        Duration::from_secs(10),
+    );
+
+    std::fs::remove_dir_all(&start_dir).expect("임시 디렉토리 정리");
+    std::fs::remove_dir_all(&moved_dir).expect("임시 디렉토리 정리");
 }
