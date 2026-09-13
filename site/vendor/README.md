@@ -27,6 +27,22 @@ Claude Design 프로젝트 **Tasty Design System** 에서 받아온 사본이다
 - **`_ds_bundle.js`** — 브라우저 직접 실행용 전역 번들. 사이트는 `components/` 를 직접
   번들하므로 필요 없다.
 - **프리뷰 `index.html`** — 위 번들에 의존하는 킷 자체 미리보기. 원본에만 둔다.
+  `ui_kits/terminal/overlays/*.html` · `titlebar/*.html` 의 컴포넌트별 단독 미리보기와
+  킷 `README.md` 도 같은 이유로 가져오지 않는다 — 사이트는 `.jsx` 만 변환해 쓴다.
+
+## 원본과 다르게 둔 자리
+
+사본은 원격 파일을 그대로 옮기는 것이 기본이다. 아래만 예외로, 갱신할 때 원격 파일로
+덮은 뒤 다시 적용한다.
+
+- **커밋되지 않는 로컬 문서를 가리키는 문구** — 원격 킷의 주석·노트 문자열에 이 레포에
+  커밋되지 않는 로컬 작업 폴더나 그 안의 티켓을 가리키는 자리가 있다. 레포는 그런 언급을
+  추적 파일에 들이지 않으므로(`crates/tasty-doc-guards/tests/no_todo_file_citation.rs`)
+  사본에서는 뜻만 남기고 문구를 바꾼다. 렌더되는 구조와 값은 건드리지 않는다.
+  - `ui_kits/terminal/overlays/settings_window.jsx` — Hook Handlers 서브탭 설명 주석의
+    "see … todo" → "not yet built".
+  - `gallery/components.jsx` — AutoComplete 노트의 "tracked as a separate implementation
+    TODO" → "tracked as separate implementation work".
 
 ## 통합 시 주의
 

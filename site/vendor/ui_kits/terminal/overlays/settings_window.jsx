@@ -678,6 +678,11 @@ const IS_WINDOWS = true; // preview assumes Windows. Misc has Tastyrc (Windows-o
 // the same agent-dot marker the Plugins tab uses.
 const APPEARANCE_PLUGIN_PAGES = ["Diff colors"];
 const L1_TABS = ["General", "Terminal", "Appearance", "Keybindings", "FileHandler", "Misc", "Plugins"];
+// NEW AXIS on the L2 row (the Rust `L2Section` has only a label + is_plugin):
+// a section can ask for a SEPARATOR above it. Used by exactly one row today —
+// Keybindings › Import / Export, which moves a configuration rather than
+// editing bindings, so it reads as a different kind of destination.
+const KB_L2_SEPARATED = ["Import / Export"];
 // L1 "File Handler" was generalized to "Handler" (inbound-hook server work): the
 // same tab now hosts BOTH the file-routing subtabs (prefixed "File …") and the
 // new Hook Handlers registry. Internal key stays `FileHandler` to avoid a rename
@@ -688,7 +693,11 @@ const L2 = {
   General: ["General", "Notifications", "Accessibility"],
   Terminal: ["General", "Mouse Capture", "TUI", "Performance"],
   Appearance: ["Theme", "Colors", "General", "Display", "Tasty", "Terminal", ...APPEARANCE_PLUGIN_PAGES, "HTML"],
-  Keybindings: ["General", "Workspace", "Pane", "Tab", "Surface", "Clipboard", "Zoom", "Image", "Preset", "Plugins"],
+  // Keybindings L2 — TRANSCRIBED from src/view/settings/ui.rs:906-950 (eleven
+  // sections; the old design list carried a phantom "Image" and was missing
+  // Explorer + Scripts). "Import / Export" is appended LAST, after Plugins, and
+  // is the one SEPARATED row (see KB_L2_SEPARATED — a new axis on the L2 row).
+  Keybindings: ["General", "Workspace", "Pane", "Tab", "Surface", "Clipboard", "Zoom", "Explorer", "Scripts", "Preset", "Plugins", "Import / Export"],
   FileHandler: ["File Extension Mapping", "File Detectors", "File Handlers", "Hook Handlers"],
   Misc: IS_WINDOWS ? ["Scripts", "Tastyrc"] : ["Scripts"],
   Plugins: ["git-helper", "ai-review", "docker", "k8s-lens"],
@@ -698,12 +707,18 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
   const [l1, setL1] = React.useState("Appearance");
   const [l2, setL2] = React.useState("Theme");
   const [filter, setFilter] = React.useState("");
+  const [toast, setToast] = React.useState(null);
+  React.useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(t);
+  }, [toast]);
   const isPlugins = l1 === "Plugins";
   const isPluginSection = (s) => isPlugins || (l1 === "Appearance" && APPEARANCE_PLUGIN_PAGES.includes(s));
   // The Preset subtab is a self-contained DrillDown that owns its own padding
   // + internal scroll (list full-width, detail table scrolls). It renders
   // full-bleed — outside the standard padded/scrolling content wrapper.
-  const fullBleed = l1 === "Keybindings" && l2 === "Preset";
+  const fullBleed = l1 === "Keybindings" && (l2 === "Preset" || l2 === "Import / Export");
   const pickL1 = (t) => { setL1(t); setL2(L2[t][0] ?? null); setFilter(""); };
   const shown = L2[l1].filter((s) => s.toLowerCase().includes(filter.toLowerCase()));
 
@@ -894,8 +909,11 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
           {l2 === "Surface" && <><KeyRow action="Convert surface" keys="Ctrl+Shift+C" /><KeyRow action="Focus next surface" keys="Alt+]" /></>}
           {l2 === "Clipboard" && <><KeyRow action="Copy" keys="Ctrl+Shift+C" /><KeyRow action="Paste" keys="Ctrl+Shift+V" /><KeyRow action="Clipboard history" keys="Ctrl+Alt+V" /></>}
           {l2 === "Zoom" && <><KeyRow action="Terminal font: zoom in" keys="Ctrl++" /><KeyRow action="Terminal font: zoom out" keys="Ctrl+-" /><KeyRow action="Terminal font: reset" keys="Ctrl+0" /></>}
-          {l2 === "Image" && <><KeyRow action="Undo" keys="Ctrl+Z" /><KeyRow action="Redo" keys="Ctrl+Shift+Z" /></>}
+          {l2 === "Explorer" && <><KeyRow action="Explorer: open surface" keys="Ctrl+Shift+E" /><KeyRow action="Explorer: reveal current path" keys="Ctrl+Alt+E" /><KeyRow action="Explorer: toggle favorites" keys="None" /></>}
+          {l2 === "Scripts" && <><KeyRow action="deploy-staging.lua" keys="Ctrl+Alt+1" /><KeyRow action="rotate-logs.lua" keys="Ctrl+Alt+2" /></>}
           {l2 === "Preset" && <PresetSubtab />}
+          {l2 === "Import / Export" && window.TastyKit.KbImportExportSubtab &&
+            <window.TastyKit.KbImportExportSubtab onFlash={setToast} />}
           {l2 === "Plugins" && <>
             <Mono>Plugin command shortcuts</Mono>
             <KeyRow action="git-helper: Stage hunk" keys="Ctrl+Alt+G" />
@@ -1076,7 +1094,12 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
             </div>
             <div className="tasty-scroll" style={{ flex: 1, overflow: "auto", padding: "var(--tasty-space-sm)" }}>
               {shown.map((s) => (
-                <div key={s} onClick={() => setL2(s)} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)",
+                <React.Fragment key={s}>
+                  {KB_L2_SEPARATED.includes(s) && l1 === "Keybindings" && !filter && (
+                    <div style={{ height: "var(--tasty-border-width)", background: "var(--tasty-separator)",
+                      margin: "var(--tasty-space-sm) var(--tasty-space-sm)" }} />
+                  )}
+                  <div onClick={() => setL2(s)} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)",
                   padding: "var(--tasty-space-xs) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)", fontSize: 13, cursor: "pointer",
                   color: s === l2 ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)",
                   background: s === l2 ? "var(--tasty-surface-active)" : "transparent" }}>
@@ -1084,13 +1107,14 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
                     background: "var(--tasty-accent-agent)", flex: "none" }} />}
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s}</span>
                 </div>
+                </React.Fragment>
               ))}
               {shown.length === 0 && <div style={{ padding: "var(--tasty-space-md)", fontSize: 12, color: "var(--tasty-text-muted)" }}>{filter ? "No matches" : "No sections"}</div>}
             </div>
           </div>
 
           {/* content */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
             {fullBleed ? (
               <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 {body()}
@@ -1098,6 +1122,18 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
             ) : (
               <div className="tasty-scroll" style={{ flex: 1, padding: "var(--tasty-space-lg)", overflow: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
                 {body()}
+              </div>
+            )}
+            {/* The window runs its own ToastManager (settings.rs) — export
+                confirmation lands here, not in the main window. */}
+            {toast && (
+              <div style={{ position: "absolute", left: "50%", bottom: 64, transform: "translateX(-50%)", zIndex: 4,
+                display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", maxWidth: 520,
+                padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderRadius: "var(--tasty-radius)",
+                background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
+                boxShadow: "var(--tasty-shadow-modal)", fontSize: 12, color: "var(--tasty-text-secondary)" }}>
+                <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-success)" }}><Icon name="check" size={14} /></span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast}</span>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "var(--tasty-space-md) var(--tasty-size-14)",
