@@ -131,6 +131,29 @@ pub struct OptionBinding {
 /// 위치 → 대체 값.
 pub type MigrationPlan = BTreeMap<BindingSite, String>;
 
+/// 한 자리를 어떻게 해소하는가 — 대체 값을 주거나, 그 바인딩을 버린다.
+///
+/// "버린다" 는 사용자가 이 환경에서 그 단축키를 **의도적으로 비워 두는** 선택이라
+/// 해소로 센다. 버리면 그 자리는 콤보가 아니게 되므로 대체 값 검증을 받지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolution {
+    Replace(String),
+    Unbind,
+}
+
+/// 위치 → 해소 방법.
+pub type ResolutionPlan = BTreeMap<BindingSite, Resolution>;
+
+/// 대체 값이 **이번에 생긴** 충돌을 만들 때 어떻게 하는가.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictPolicy {
+    /// 거절한다([`MigrationError::Conflicts`]).
+    Reject,
+    /// 충돌 상대 중 **계획 밖의 자리**를 비운다 — 설정 창 충돌 확인의 "적용" 과 같은
+    /// 뜻이다. 양쪽이 모두 계획 안이면(대체 값끼리 겹침) 비울 쪽을 정할 수 없어 거절한다.
+    UnbindOther,
+}
+
 /// 대체 적용이 거절되는 이유.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MigrationError {
@@ -152,6 +175,9 @@ pub enum MigrationError {
     /// 적용 결과가 새 충돌을 만든다(기존 바인딩과, 또는 대체 값끼리).
     #[error("대체 값이 충돌을 만든다: {}", join_conflicts(.0))]
     Conflicts(Vec<BindingConflict>),
+    /// 비울 수 없는 자리를 비우라고 했다 — 축 modifier 는 조합 하나를 반드시 가진다.
+    #[error("이 자리는 비울 수 없다: {site}")]
+    CannotUnbind { site: BindingSite },
     /// 적용 후에도 `option` 이 남았다 — 스캔과 적용이 갈렸다는 뜻이므로 값으로 받는다.
     #[error("적용 후에도 option 이 남았다: {}", join_sites(.sites))]
     OptionRemains { sites: Vec<BindingSite> },
@@ -307,6 +333,26 @@ pub fn apply_migration(
     overrides: &PluginShortcutOverrides,
     plan: &MigrationPlan,
 ) -> Result<(KeybindingSettings, PluginShortcutOverrides), MigrationError> {
+    let plan: ResolutionPlan = plan
+        .iter()
+        .map(|(site, value)| (site.clone(), Resolution::Replace(value.clone())))
+        .collect();
+    resolve_migration(kb, overrides, &plan, ConflictPolicy::Reject)
+}
+
+/// [`apply_migration`] 의 일반형 — 자리마다 대체하거나 버릴 수 있고, 충돌을 만났을 때의
+/// 처리를 고른다.
+///
+/// 순서가 요점이다. 대체를 먼저 쓰고(자리 좌표가 그대로다), 그 상태에서 충돌 차분을 본
+/// 뒤, **마지막에** 버리는 자리를 지운다. 지우기를 먼저 하면 같은 필드·같은 override 의
+/// 뒤쪽 원소가 앞으로 당겨져 좌표가 바뀌고, 좌표로 키를 잡는 충돌 차분이 원래 있던 충돌을
+/// 새것으로 오판한다. 버리는 자리는 차분에서 뺀다 — 곧 사라질 값이다.
+pub fn resolve_migration(
+    kb: &KeybindingSettings,
+    overrides: &PluginShortcutOverrides,
+    plan: &ResolutionPlan,
+    policy: ConflictPolicy,
+) -> Result<(KeybindingSettings, PluginShortcutOverrides), MigrationError> {
     let found = scan_option_bindings(kb, overrides, TargetOs::NonMac);
     let found_sites: BTreeSet<&BindingSite> = found.iter().map(|f| &f.site).collect();
 
@@ -324,27 +370,47 @@ pub fn apply_migration(
         return Err(MigrationError::Unassigned { sites: unassigned });
     }
 
-    for (site, value) in plan {
-        validate_replacement(site, value)?;
+    for (site, resolution) in plan {
+        match resolution {
+            Resolution::Replace(value) => validate_replacement(site, value)?,
+            Resolution::Unbind => validate_unbind(site)?,
+        }
     }
-
-    let before = conflicting_pairs(kb, overrides);
 
     let mut new_kb = kb.clone();
     let mut new_overrides = overrides.clone();
-    for (site, value) in plan {
-        write_site(&mut new_kb, &mut new_overrides, site, value);
+    let mut unbind: BTreeSet<BindingSite> = BTreeSet::new();
+    for (site, resolution) in plan {
+        match resolution {
+            Resolution::Replace(value) => write_site(&mut new_kb, &mut new_overrides, site, value),
+            Resolution::Unbind => {
+                unbind.insert(site.clone());
+            }
+        }
     }
 
-    let after = conflicting_pairs(&new_kb, &new_overrides);
-    let introduced: Vec<BindingConflict> = after
-        .into_iter()
-        .filter(|(pair, _)| !before.contains_key(pair))
-        .map(|((a, b), combo)| BindingConflict { combo, a, b })
-        .collect();
+    let introduced = introduced_between(kb, overrides, &new_kb, &new_overrides, &unbind);
     if !introduced.is_empty() {
-        return Err(MigrationError::Conflicts(introduced));
+        match policy {
+            ConflictPolicy::Reject => return Err(MigrationError::Conflicts(introduced)),
+            ConflictPolicy::UnbindOther => {
+                let unresolvable: Vec<BindingConflict> = introduced
+                    .iter()
+                    .filter(|c| plan.contains_key(&c.a) && plan.contains_key(&c.b))
+                    .cloned()
+                    .collect();
+                if !unresolvable.is_empty() {
+                    return Err(MigrationError::Conflicts(unresolvable));
+                }
+                for c in &introduced {
+                    let other = if plan.contains_key(&c.a) { &c.b } else { &c.a };
+                    unbind.insert(other.clone());
+                }
+            }
+        }
     }
+
+    unbind_sites(&mut new_kb, &mut new_overrides, &unbind);
 
     let remaining = scan_option_bindings(&new_kb, &new_overrides, TargetOs::NonMac);
     if !remaining.is_empty() {
@@ -354,6 +420,115 @@ pub fn apply_migration(
     }
 
     Ok((new_kb, new_overrides))
+}
+
+/// 계획이 **아직 덜 채워졌어도** 지금 정해진 해소들이 만들 충돌을 돌려준다.
+///
+/// 마이그레이션 화면이 값을 하나 고를 때마다 그 자리에 충돌 사유를 붙이는 데 쓴다 —
+/// [`resolve_migration`] 은 미지정 자리가 있으면 충돌을 보기 전에 거절하므로 그 용도로
+/// 못 쓴다. 검증에 걸리는 값(콤보가 아닌 값 등)과 스캔에 없는 자리는 건너뛴다.
+pub fn introduced_conflicts(
+    kb: &KeybindingSettings,
+    overrides: &PluginShortcutOverrides,
+    plan: &ResolutionPlan,
+) -> Vec<BindingConflict> {
+    let found: BTreeSet<BindingSite> = scan_option_bindings(kb, overrides, TargetOs::NonMac)
+        .into_iter()
+        .map(|f| f.site)
+        .collect();
+    let mut new_kb = kb.clone();
+    let mut new_overrides = overrides.clone();
+    let mut unbind = BTreeSet::new();
+    for (site, resolution) in plan {
+        if !found.contains(site) {
+            continue;
+        }
+        match resolution {
+            Resolution::Replace(value) => {
+                if validate_replacement(site, value).is_ok() {
+                    write_site(&mut new_kb, &mut new_overrides, site, value);
+                }
+            }
+            Resolution::Unbind => {
+                unbind.insert(site.clone());
+            }
+        }
+    }
+    introduced_between(kb, overrides, &new_kb, &new_overrides, &unbind)
+}
+
+/// 적용 전후 충돌 차분 — 버릴 자리가 낀 쌍은 뺀다.
+fn introduced_between(
+    before_kb: &KeybindingSettings,
+    before_overrides: &PluginShortcutOverrides,
+    after_kb: &KeybindingSettings,
+    after_overrides: &PluginShortcutOverrides,
+    unbind: &BTreeSet<BindingSite>,
+) -> Vec<BindingConflict> {
+    let before = conflicting_pairs(before_kb, before_overrides);
+    conflicting_pairs(after_kb, after_overrides)
+        .into_iter()
+        .filter(|(pair, _)| !before.contains_key(pair))
+        .filter(|((a, b), _)| !unbind.contains(a) && !unbind.contains(b))
+        .map(|((a, b), combo)| BindingConflict { combo, a, b })
+        .collect()
+}
+
+/// 비울 수 있는 자리인지 — 축 modifier 는 조합 하나를 반드시 가진다.
+fn validate_unbind(site: &BindingSite) -> Result<(), MigrationError> {
+    match site {
+        BindingSite::AxisModifier { .. } => {
+            Err(MigrationError::CannotUnbind { site: site.clone() })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// 자리들을 비운다. 같은 필드·같은 override 안에서는 **뒤 좌표부터** 지운다 — 앞을 먼저
+/// 지우면 뒤 좌표가 당겨져 엉뚱한 원소를 지운다.
+fn unbind_sites(
+    kb: &mut KeybindingSettings,
+    overrides: &mut PluginShortcutOverrides,
+    sites: &BTreeSet<BindingSite>,
+) {
+    for site in sites.iter().rev() {
+        match site {
+            BindingSite::GeneralBinding { field_id, index } => {
+                kb.remove_binding(field_id, *index);
+            }
+            // `validate_unbind` 가 막는다. 충돌 상대로도 오지 않는다 — 명부의 축 항목은
+            // 슬롯·다음/이전이다.
+            BindingSite::AxisModifier { .. } => {}
+            BindingSite::AxisSlot { axis, index } => {
+                axis.set_slot(kb, *index, "");
+            }
+            BindingSite::AxisStep { axis, step } => axis.set_step(kb, *step, ""),
+            BindingSite::ScriptBinding { script_id } => {
+                kb.remove_script_binding(script_id);
+            }
+            BindingSite::PluginOverride {
+                plugin_id,
+                command_id,
+                index,
+            } => {
+                if let Some(ov) = overrides
+                    .get_mut(plugin_id)
+                    .and_then(|m| m.get_mut(command_id))
+                {
+                    if let ShortcutOverride::Key { value: keys } = ov
+                        && *index < keys.len()
+                    {
+                        keys.remove(*index);
+                    }
+                    // 키가 하나도 안 남은 override 는 "단축키 없음" 이다 — 빈 `Key` 로 두면
+                    // 표시·매칭이 그 뜻을 따로 해석해야 한다.
+                    if matches!(ov, ShortcutOverride::Key { value } if value.is_empty()) {
+                        *ov = ShortcutOverride::None;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// 대체 값이 그 자리의 종류에 맞고, 다시 `option` 을 담지 않는지.

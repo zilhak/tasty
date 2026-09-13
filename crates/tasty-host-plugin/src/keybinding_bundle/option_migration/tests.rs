@@ -455,3 +455,152 @@ fn the_host_target_matches_the_build() {
     };
     assert_eq!(TargetOs::host(), expected);
 }
+
+// ── resolve_migration — 버리기 · 충돌 상대 비우기 · 부분 계획의 충돌 ────────────────
+
+/// 버린 자리는 해소로 세고, 그 바인딩만 사라진다. 같은 필드의 다른 바인딩은 남는다.
+#[test]
+fn unbinding_removes_only_that_binding() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.add_binding("new_tab", "option+t".into());
+    kb.add_binding("new_tab", "ctrl+alt+shift+t".into());
+    let overrides = plugin_key("com.example.x", "x.go", "option+g");
+    let mut plan = ResolutionPlan::new();
+    for f in scan_option_bindings(&kb, &overrides, TargetOs::NonMac) {
+        plan.insert(f.site, Resolution::Unbind);
+    }
+    let (new_kb, new_overrides) =
+        resolve_migration(&kb, &overrides, &plan, ConflictPolicy::Reject).expect("해소돼야 한다");
+    let tab = new_kb.get_bindings("new_tab").unwrap();
+    assert!(!tab.iter().any(|b| b.contains("option")), "{tab:?}");
+    assert!(tab.iter().any(|b| b == "ctrl+alt+shift+t"), "{tab:?}");
+    assert_eq!(
+        new_overrides["com.example.x"]["x.go"],
+        ShortcutOverride::None,
+        "키가 다 빠진 override 는 단축키 없음이다"
+    );
+}
+
+/// 같은 필드에서 앞 원소를 버리고 뒤 원소를 대체해도 좌표가 엇갈리지 않는다.
+#[test]
+fn unbinding_an_earlier_index_does_not_shift_a_later_replacement() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.new_tab = vec!["option+t".into(), "option+y".into()];
+    let overrides = PluginShortcutOverrides::new();
+    let plan: ResolutionPlan = [
+        (
+            BindingSite::GeneralBinding {
+                field_id: "new_tab",
+                index: 0,
+            },
+            Resolution::Unbind,
+        ),
+        (
+            BindingSite::GeneralBinding {
+                field_id: "new_tab",
+                index: 1,
+            },
+            Resolution::Replace("ctrl+alt+shift+y".into()),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let (new_kb, _) =
+        resolve_migration(&kb, &overrides, &plan, ConflictPolicy::Reject).expect("해소돼야 한다");
+    assert_eq!(new_kb.new_tab, vec!["ctrl+alt+shift+y".to_string()]);
+}
+
+#[test]
+fn an_axis_modifier_cannot_be_unbound() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.category_switch_modifier = "option".into();
+    let plan: ResolutionPlan = [(
+        BindingSite::AxisModifier {
+            axis: SwitchAxis::Category,
+        },
+        Resolution::Unbind,
+    )]
+    .into_iter()
+    .collect();
+    assert!(matches!(
+        resolve_migration(
+            &kb,
+            &PluginShortcutOverrides::new(),
+            &plan,
+            ConflictPolicy::Reject
+        ),
+        Err(MigrationError::CannotUnbind { .. })
+    ));
+}
+
+/// 충돌을 수락하면 계획 밖의 상대가 비워지고 대체 값이 들어간다.
+#[test]
+fn unbind_other_clears_the_binding_outside_the_plan() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    let taken = kb.copy[0].clone();
+    kb.new_tab = vec!["option+t".into()];
+    let overrides = PluginShortcutOverrides::new();
+    let site = BindingSite::GeneralBinding {
+        field_id: "new_tab",
+        index: 0,
+    };
+    let plan: ResolutionPlan = [(site.clone(), Resolution::Replace(taken.clone()))]
+        .into_iter()
+        .collect();
+
+    let conflicts = introduced_conflicts(&kb, &overrides, &plan);
+    assert!(
+        conflicts.iter().any(|c| c.a == site || c.b == site),
+        "부분 계획에서도 충돌이 보여야 한다: {conflicts:?}"
+    );
+    assert!(matches!(
+        resolve_migration(&kb, &overrides, &plan, ConflictPolicy::Reject),
+        Err(MigrationError::Conflicts(_))
+    ));
+    let (new_kb, _) = resolve_migration(&kb, &overrides, &plan, ConflictPolicy::UnbindOther)
+        .expect("상대를 비우면 해소된다");
+    assert_eq!(new_kb.new_tab, vec![taken.clone()]);
+    assert!(!new_kb.copy.contains(&taken), "{:?}", new_kb.copy);
+}
+
+/// 대체 값끼리 겹치면 어느 쪽을 비울지 정할 수 없어 수락해도 거절한다.
+#[test]
+fn unbind_other_still_rejects_two_replacements_that_collide() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.new_tab = vec!["option+t".into()];
+    kb.new_workspace = vec!["option+w".into()];
+    let plan: ResolutionPlan = [
+        (
+            BindingSite::GeneralBinding {
+                field_id: "new_tab",
+                index: 0,
+            },
+            Resolution::Replace("ctrl+alt+shift+q".into()),
+        ),
+        (
+            BindingSite::GeneralBinding {
+                field_id: "new_workspace",
+                index: 0,
+            },
+            Resolution::Replace("ctrl+alt+shift+q".into()),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    assert!(matches!(
+        resolve_migration(
+            &kb,
+            &PluginShortcutOverrides::new(),
+            &plan,
+            ConflictPolicy::UnbindOther
+        ),
+        Err(MigrationError::Conflicts(_))
+    ));
+}
+
+/// 미지정 자리가 남은 부분 계획에서도 충돌 조회는 정해진 것만 본다.
+#[test]
+fn introduced_conflicts_ignores_unassigned_sites() {
+    let (kb, overrides) = five_sites();
+    assert!(introduced_conflicts(&kb, &overrides, &ResolutionPlan::new()).is_empty());
+}
