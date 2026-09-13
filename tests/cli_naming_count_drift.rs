@@ -28,7 +28,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("host", 1), // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
     ("image", 8),
     ("markdown", 1),
-    ("markdown_mirror", 1),
+    ("markdown_mirror", 1), // markdown_mirror.content_request — plugin 전용 host 메서드, CLI 진입점 없음
     ("memory", 49),
     ("message", 4),
     ("notification", 2),
