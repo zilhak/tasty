@@ -258,6 +258,48 @@ mod tests {
         );
     }
 
+    /// markdown 문서가 다시 그려지면(`webview.set_url`) 워크스페이스를 점유한 attach client
+    /// 에 `markdown_changed` 가 간다 — ADR-0255 항목 5 의 신호원이 이 핸들러다. 수신자
+    /// 집합·화이트리스트 판정은 `attach_runtime::markdown_changed_tests` 가 따로 재고, 여기서
+    /// 재는 것은 **이 핸들러가 그 함수를 부르는가** 하나다(부르지 않아도 그쪽 시험은 초록이다).
+    /// 신호는 그 surface 에 대해 한 번만 가고, set_url 이 실패한 surface 에는 가지 않는다.
+    #[test]
+    fn set_url_on_markdown_surface_signals_attached_clients() {
+        use crate::adapters::production::stream_hub::StreamHub;
+
+        let (state, mut engine) = crate::state::tests::test_state();
+        let terminal_sid = focused_surface_id(&state, &engine);
+        let md_sid = split_in_kind_surface(
+            &state,
+            &mut engine,
+            terminal_sid,
+            "markdown",
+            &json!({ "file": "/workspace/proj/readme.md" }),
+        );
+        let hub = StreamHub::new();
+        let client = hub.alloc_id();
+        let rx = hub.register(client);
+        engine.attach.set_notifier(hub);
+        let ws_id = engine.workspaces[state.active_workspace].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)
+            .expect("acquire workspace");
+
+        assert!(set_url(&state, &engine, md_sid).error.is_none());
+        let frame = rx.try_recv().expect("markdown_changed frame");
+        let payload: Value = serde_json::from_slice(&frame.payload).expect("json payload");
+        assert_eq!(payload["event"], "markdown_changed");
+        assert_eq!(payload["surface_id"], md_sid);
+        assert!(rx.try_recv().is_err(), "한 번의 set_url 에 신호는 한 번");
+
+        assert!(set_url(&state, &engine, terminal_sid).error.is_some());
+        assert!(
+            rx.try_recv().is_err(),
+            "webview surface 가 아니면 신호가 없다"
+        );
+    }
+
     /// webview 가 아닌 surface 는 기존대로 명시적 에러를 낸다(비포커스 leaf 라도).
     #[test]
     fn set_url_on_terminal_leaf_reports_not_webview() {
