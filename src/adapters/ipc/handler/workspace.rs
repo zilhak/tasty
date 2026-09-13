@@ -180,7 +180,9 @@ pub fn handle_workspace_create(
     }
 
     // terminal 의 cwd inherit 은 호출자가 미리 결정해 payload 로 넘긴다 (Core 는
-    // focus state 모름). 그 외 kind 는 cwd 미사용.
+    // focus state 모름). 그 외 kind 는 cwd 미사용. 새 워크스페이스는 로컬이므로 focus 가
+    // mirror surface 면 inherit 은 `None`(= 홈)이고, 명시 `cwd` 는 그대로 존중한다
+    // (`docs/architecture/invariants/surface-cwd.md` §3-2).
     let resolved_cwd = if kind == "terminal" {
         explicit_cwd.or_else(|| state.resolve_inherit_cwd(engine))
     } else {

@@ -1605,17 +1605,24 @@ impl AppState {
 
     /// Get the working directory to inherit from the focused surface, if enabled.
     ///
-    /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.
-    /// (terminal/explorer/markdown/html → 자체 cwd, image/empty/clipboard → None)
+    /// 사용자가 현재 포커스한 surface 본인의 cwd 를 사용한다
+    /// (terminal/explorer/markdown/html → 자체 cwd, image/empty/clipboard → None).
+    ///
+    /// **로컬 출처만** 돌려준다 — 이 값은 로컬 PTY `working_dir` 등 로컬에서 실행되는
+    /// 생성 자리에 들어가므로, mirror surface 의 원격 경로는 `None` 이 된다
+    /// (`docs/architecture/invariants/surface-cwd.md` §3-2). mirror 워크스페이스 안의 구조
+    /// 변경은 원격으로 forward 되고 서버가 자기 PTY 에서 cwd 를 resolve 하므로 이 `None`
+    /// 으로 잃는 것이 없다.
     pub(crate) fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<std::path::PathBuf> {
         if !engine.settings.general.inherit_cwd || engine.workspaces.is_empty() {
             return None;
         }
         let sid = self.focused_surface_id(engine)?;
-        cwd_from_surface(engine, sid)
+        engine.local_surface_cwd(sid)
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
+    /// [`Self::resolve_inherit_cwd`] 와 같이 **로컬 출처만** 돌려준다.
     pub(crate) fn resolve_inherit_cwd_from_surface(
         &self,
         engine: &CoreState,
@@ -1624,18 +1631,7 @@ impl AppState {
         if !engine.settings.general.inherit_cwd {
             return None;
         }
-        cwd_from_surface(engine, surface_id)
-    }
-}
-
-/// surface_id 의 source_cwd 를 결정. Terminal kind 는 store 의 Terminal.get_cwd(),
-/// 그 외 kind 는 Surface trait 의 default source_cwd() (markdown 은 파일 부모 등).
-fn cwd_from_surface(engine: &CoreState, surface_id: u32) -> Option<std::path::PathBuf> {
-    let surface = engine.find_surface_by_id(surface_id)?;
-    if surface.kind() == "terminal" {
-        engine.terminals.get(surface_id).and_then(|t| t.get_cwd())
-    } else {
-        surface.source_cwd()
+        engine.local_surface_cwd(surface_id)
     }
 }
 

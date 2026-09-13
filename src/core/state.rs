@@ -1585,9 +1585,11 @@ mod message;
 mod pty;
 mod shell_integration_hint;
 mod soft_occupancy;
+mod surface_cwd;
 mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
+pub(crate) use surface_cwd::{RemoteCwd, SurfaceCwd};
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;

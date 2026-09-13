@@ -60,6 +60,10 @@ fn new_workspace(
     }
     let kind = kind.unwrap_or("terminal");
     // 호출자가 cwd 결정 (terminal kind + null params 면 inherit, 그 외 None).
+    // 새 워크스페이스는 mirror 가 아니라 **로컬** 워크스페이스라 첫 PTY 가 로컬에서 뜬다.
+    // focus 가 mirror surface 면 `resolve_inherit_cwd` 가 원격 출처를 버려 `None`(= 홈)
+    // 으로 떨어진다 — 원격 경로를 로컬 `working_dir` 로 넘기면 셸이 실패하거나 조용히 홈으로
+    // 떨어지는데, 명시 cwd 만 허용하는 쪽은 사용자 단축키에 줄 명시값이 없어 고르지 않았다.
     let cwd = if kind == "terminal" && params.is_null() {
         state.resolve_inherit_cwd(engine)
     } else {

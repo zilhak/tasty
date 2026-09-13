@@ -16,10 +16,10 @@
 **그러나 mirror 에 원격 절대경로가 없는 것은 아니다.** 서버가 mirror explorer 디스크립터에
 원격 `root` 를 싣고(`src/core/attach_runtime.rs`), client 가 그 값으로 `ExplorerPanel` 을 만들며,
 `ExplorerPanel::source_cwd()` 는 그 root 를 그대로 돌려준다. 즉 이 결정 시점에 원격 절대경로가
-구분 없는 `Option<PathBuf>` 로 `cwd_from_surface`(`src/state.rs`) 를 통해 **로컬 소비자에게 이미
-흘러간다** — mirror explorer 를 focus 한 채 새 워크스페이스를 만들면 로컬 PTY 가 원격 root 를
-`working_dir` 로 받는다. 같은 함수의 둘째 사본 `CoreState::surface_cwd`(`src/core/state/branch.rs`)
-는 그 경로로 **로컬 디스크**를 뒤져 git 브랜치를 찾는다.
+구분 없는 `Option<PathBuf>` 로 `AppState` 의 cwd 판정 함수(`cwd_from_surface`)를 통해 **로컬 소비자에게
+이미 흘러간다** — mirror explorer 를 focus 한 채 새 워크스페이스를 만들면 로컬 PTY 가 원격 root 를
+`working_dir` 로 받는다. 같은 함수의 둘째 사본(StatusBar git 브랜치 캐시 모듈의 `surface_cwd`)은
+그 경로로 **로컬 디스크**를 뒤져 git 브랜치를 찾는다.
 
 **소비자마다 우회로가 따로 났다.**
 

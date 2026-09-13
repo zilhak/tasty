@@ -91,7 +91,7 @@ pub trait Surface: Any + Send {
     /// `docs/architecture/invariants/surface-cwd.md`).
     ///
     /// - TerminalSurface: 터미널의 OSC 7 cwd (engine.terminals 경유 — trait 는
-    ///   None 반환; cwd_from_surface 가 분기)
+    ///   None 반환; host 의 `CoreState::surface_cwd` 가 분기)
     /// - EguiMeshSurface(markdown 등): 파일의 부모 디렉터리
     /// - EmptySurface: None (또는 carry 받은 cwd)
     /// - RemoteSurface: 호스트가 carry 한 cwd (None 또는 ctx.cwd 그대로)

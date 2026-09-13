@@ -2,7 +2,7 @@
 
 각 surface 가 자기 "현재 폴더"(cwd)를 **정의·갱신**하는 방식. 이 cwd 는 surface 전환·새 탭 cwd 상속·split carry·터미널 링크 해석·닫힌 항목 복원에 쓰인다. 생성 시 cwd 가 *손실 없이 carry* 되는 invariant 는 [surface-cwd invariant](../../architecture/invariants/surface-cwd.md) — 본 문서는 *각 surface 가 자기 cwd 를 어떻게 정의/갱신하는가* 다.
 
-호스트는 `cwd_from_surface(engine, sid)`(`src/state.rs`)로 조회 — terminal kind 면 `engine.terminals.get(sid).get_cwd()`(store 경유), 그 외는 `Surface::source_cwd()`.
+호스트는 `CoreState::surface_cwd(sid)`(`src/core/state/surface_cwd.rs`)로 조회 — terminal kind 면 `engine.terminals.get(sid).get_cwd()`(store 경유), 그 외는 `Surface::source_cwd()`. 반환값은 출처가 구분된 `SurfaceCwd`(`Local` / `Remote`)이고, mirror 워크스페이스의 surface 는 `Remote` 다 — 원격 경로가 로컬 실행 자리로 새지 않게 하는 규칙은 [surface-cwd §3-2](../../architecture/invariants/surface-cwd.md).
 
 ## Surface 별 cwd
 

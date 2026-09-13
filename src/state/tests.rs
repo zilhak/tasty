@@ -1576,6 +1576,67 @@ fn resolve_inherit_cwd_from_unknown_surface_is_none() {
     assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, 99999), None);
 }
 
+// ---- 원격 출처 cwd 는 로컬 실행 자리로 새지 않는다 (surface-cwd §3-2) ----
+
+/// explorer 탭을 열어 focus 시키고 그 surface id 를 돌려준다. explorer root 는 서버가 mirror
+/// 디스크립터에 싣는 원격 root 가 오늘도 `source_cwd()` 로 흘러나오는 갈래라, push 채널 없이도
+/// 원격 출처 cwd 를 재현하는 가장 짧은 경로다.
+fn focused_explorer(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+) -> (u32, std::path::PathBuf) {
+    let root = crate::test_support::abs_path("remote/proj");
+    let (_tab, sid) = state
+        .add_kind_tab(
+            engine,
+            "explorer",
+            &serde_json::json!({ "path": root.to_string_lossy() }),
+        )
+        .expect("add explorer tab");
+    assert_eq!(
+        state.focused_surface_id(engine),
+        Some(sid),
+        "새 탭이 focus 를 받는다"
+    );
+    (sid, root)
+}
+
+#[test]
+fn local_explorer_cwd_is_local_and_inherited() {
+    let (mut state, mut engine) = test_state();
+    let (sid, root) = focused_explorer(&mut state, &mut engine);
+    assert_eq!(
+        engine.surface_cwd(sid),
+        Some(crate::core::state::SurfaceCwd::Local(root.clone()))
+    );
+    assert_eq!(state.resolve_inherit_cwd(&engine), Some(root.clone()));
+    assert_eq!(
+        state.resolve_inherit_cwd_from_surface(&engine, sid),
+        Some(root)
+    );
+}
+
+/// mirror explorer 를 focus 한 채 새 워크스페이스를 만들면 그 첫 PTY 의 `working_dir` 은
+/// `resolve_inherit_cwd` 에서 온다(`intent/workspace.rs` · `handler/workspace.rs`). 그 값이 원격
+/// root 가 아니라 `None`(= 홈)이어야 한다.
+#[test]
+fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
+    let (mut state, mut engine) = test_state();
+    let (sid, root) = focused_explorer(&mut state, &mut engine);
+    state.active_workspace_mut(&mut engine).mirror = true;
+
+    assert_eq!(
+        engine.surface_cwd(sid),
+        Some(crate::core::state::SurfaceCwd::Remote(
+            crate::core::state::RemoteCwd::new(root.to_string_lossy().into_owned())
+        )),
+        "mirror 워크스페이스의 cwd 는 원격 출처로 분류된다"
+    );
+    assert_eq!(engine.local_surface_cwd(sid), None);
+    assert_eq!(state.resolve_inherit_cwd(&engine), None);
+    assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, sid), None);
+}
+
 #[test]
 fn surface_display_path_returns_workspace_and_tab_names() {
     let (mut state, mut engine) = test_state();

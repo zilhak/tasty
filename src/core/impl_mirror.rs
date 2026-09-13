@@ -188,11 +188,11 @@ fn build_mirror_forward_op(
         }),
         D::ConvertSurface { surface_id, target } => {
             use crate::core::intent::ConvertSurfaceTarget;
-            // cwd 는 intent handler 가 이미 source surface 에서 carry 해둔 값이다
-            // (`docs/architecture/invariants/surface-cwd.md` §3) — forward 경로에서
-            // 버리지 않고 그대로 실어보낸다. mirror 터미널은 PTY 가 없어 원격 셸이
-            // OSC 7 을 방출한 경우에만 값이 있고, 없으면 `None` 으로 나가 서버가
-            // 자기 트리에서 직접 resolve 한다.
+            // cwd 는 intent handler 가 결정한 값이다(`docs/architecture/invariants/surface-cwd.md`
+            // §3) — forward 경로에서 버리지 않고 그대로 실어보낸다. mirror surface 에서 carry
+            // 한 cwd 는 원격 출처라 로컬 carry 헬퍼가 `None` 을 돌려주므로, 여기 값이 있는
+            // 것은 호출자가 명시한 경우뿐이다. `None` 이면 서버가 자기 PTY 에서 직접
+            // resolve 한다 — 그 값이 진실 원천이고 client 가 가진 값은 그 사본이다(§3-2).
             let (surface_kind, params, cwd) = match target {
                 ConvertSurfaceTarget::Terminal { cwd } => {
                     ("terminal".to_string(), serde_json::json!({}), cwd.clone())

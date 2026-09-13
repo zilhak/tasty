@@ -19,6 +19,9 @@
 //! 순회 대상이 terminal 로 한정되지 않는 것도 이 설계의 결과다 — cwd 는
 //! [`CoreState::surface_cwd`] 가 terminal 이면 OSC 7 캐시(`get_cwd`), 그 외에는
 //! `source_cwd()` 로 결정하므로 explorer 등 비-terminal surface 도 그대로 잡힌다.
+//! 조회는 **로컬 출처만**(`local_surface_cwd`) 쓴다 — 브랜치 탐색은 로컬 디스크를 cwd
+//! 부터 상위로 뒤지므로, mirror surface 의 원격 경로가 들어오면 엉뚱한 로컬 디렉토리를
+//! 읽는다. 그래서 mirror surface 는 브랜치가 표시되지 않는다.
 //!
 //! ## headless 는 대상이 아니다
 //! StatusBar 를 그리는 유일한 지점이 `gfx/gpu/egui_bridge.rs` 라
@@ -52,7 +55,7 @@ impl CoreState {
     /// 초당 `.git/HEAD` 1~2 회 open 이다.
     pub(crate) fn refresh_status_bar_branch(&mut self, surface_id: Option<u32>) -> bool {
         let branch = surface_id
-            .and_then(|sid| self.surface_cwd(sid))
+            .and_then(|sid| self.local_surface_cwd(sid))
             .and_then(|cwd| git_branch(&cwd));
         let changed =
             self.branch_cache.surface_id != surface_id || self.branch_cache.branch != branch;
@@ -68,17 +71,6 @@ impl CoreState {
             return None;
         }
         self.branch_cache.branch.as_deref()
-    }
-
-    /// surface 의 cwd 결정(terminal 은 store 의 `get_cwd()`, 그 외는 trait
-    /// `source_cwd()`). state.rs 의 `cwd_from_surface` 와 동일 규칙.
-    fn surface_cwd(&self, surface_id: u32) -> Option<PathBuf> {
-        let surface = self.find_surface_by_id(surface_id)?;
-        if surface.kind() == "terminal" {
-            self.terminals.get(surface_id).and_then(|t| t.get_cwd())
-        } else {
-            surface.source_cwd()
-        }
     }
 }
 
