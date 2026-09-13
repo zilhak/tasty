@@ -46,16 +46,6 @@ const PLUGIN_LIST = [
     perms: ["ipc:pomodoro.*"], cmd: "pomodoro: start", key: "" },
 ];
 
-const CAT_COLOR = {
-  "Source control": "var(--tasty-accent-primary)",
-  "AI": "var(--tasty-accent-agent)",
-  "DevOps": "var(--tasty-accent-success)",
-  "Editing": "var(--tasty-accent-warning)",
-  "Appearance": "var(--tasty-accent-primary)",
-  "Cloud": "var(--tasty-accent-agent)",
-  "Productivity": "var(--tasty-accent-success)",
-};
-
 // ── Needs-attention cases ───────────────────────────────────────────────
 // Plugins that are installed/bundled but were REJECTED at registration
 // (signature/trust) or are ENABLED-but-failing (health error). Mirrors
@@ -90,15 +80,24 @@ const ATTENTION_LIST = [
     detail: { note: "tasty-plugin.sig is absent or does not match the manifest hash. Re-download the plugin from its source." } },
 ];
 
-function PluginAvatar({ plugin, size = 36 }) {
-  const c = CAT_COLOR[plugin.cat] || "var(--tasty-accent-primary)";
+// The plugin identity mark — a square with the name's initial (plugin manifests
+// carry no image). CANONICAL, single copy: every avatar in this window goes
+// through here. Two sizes only — "sm" (32) on list rows, "lg" (46) on a detail
+// or manifest-preview identity block. The tint mixes into surface-raised, a
+// FIXED bed, so the mark reads the same on default / hover / selected rows, and
+// the colour never varies by plugin: a manifest has no category field, so the
+// mark carries identity (the initial), not classification.
+function PluginAvatar({ plugin, size = "sm" }) {
+  const lg = size === "lg";
   return (
-    <span style={{ width: size, height: size, flex: "none", borderRadius: "var(--tasty-radius)",
+    <span style={{ width: `var(--tasty-plugin-avatar-size-${lg ? "lg" : "sm"})`, height: `var(--tasty-plugin-avatar-size-${lg ? "lg" : "sm"})`,
+      flex: "none", borderRadius: "var(--tasty-plugin-avatar-radius)",
       display: "inline-flex", alignItems: "center", justifyContent: "center",
-      background: `color-mix(in srgb, ${c} 18%, var(--tasty-surface-raised))`,
-      border: `1px solid color-mix(in srgb, ${c} 38%, transparent)`,
-      fontFamily: "var(--tasty-font-mono)", fontWeight: 700, color: c,
-      fontSize: Math.round(size * 0.42), lineHeight: 1 }}>
+      background: "var(--tasty-plugin-avatar-bg)",
+      border: "var(--tasty-plugin-avatar-border-width) solid var(--tasty-plugin-avatar-border)",
+      fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-plugin-avatar-initial-weight)",
+      color: "var(--tasty-plugin-avatar-fg)",
+      fontSize: `var(--tasty-plugin-avatar-initial-font-size-${lg ? "lg" : "sm"})`, lineHeight: 1 }}>
       {plugin.name.charAt(0).toUpperCase()}
     </span>
   );
@@ -166,13 +165,7 @@ function AddPluginForm({ onAdded, onCancel }) {
             <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)",
               background: "var(--tasty-surface-raised)", padding: 16, display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)" }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <span style={{ width: 42, height: 42, flex: "none", borderRadius: "var(--tasty-radius)",
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  background: "color-mix(in srgb, var(--tasty-accent-primary) 16%, var(--tasty-surface-active))",
-                  border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-primary) 34%, transparent)",
-                  fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-font-weight-bold)", color: "var(--tasty-accent-primary)", fontSize: "var(--tasty-font-size-max)" }}>
-                  {manifest.name.charAt(0).toUpperCase()}
-                </span>
+                <PluginAvatar plugin={manifest} size="lg" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{manifest.name}</span>
@@ -293,7 +286,7 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
               gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", cursor: "pointer",
               background: on ? "var(--tasty-surface-active)" : "transparent",
               boxShadow: on ? `inset var(--tasty-size-2) 0 0 ${pc}` : "none" }}>
-              <PluginAvatar plugin={p} size={32} />
+              <PluginAvatar plugin={p} size="sm" />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: on ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)",
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
@@ -312,7 +305,7 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
           display: "flex", flexDirection: "column", gap: 16 }}>
           {/* identity */}
           <div style={{ display: "flex", gap: "var(--tasty-space-md)", alignItems: "flex-start" }}>
-            <PluginAvatar plugin={sel} size={46} />
+            <PluginAvatar plugin={sel} size="lg" />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{sel.name}</span>
@@ -492,7 +485,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
           display: "flex", flexDirection: "column", gap: 16 }}>
           {/* identity */}
           <div style={{ display: "flex", gap: "var(--tasty-space-md)", alignItems: "flex-start" }}>
-            <PluginAvatar plugin={sel} size={46} />
+            <PluginAvatar plugin={sel} size="lg" />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{sel.name}</span>
@@ -609,7 +602,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
                   gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", cursor: "pointer",
                   background: on ? "var(--tasty-surface-active)" : "transparent",
                   boxShadow: on ? "inset var(--tasty-size-2) 0 0 var(--tasty-accent-primary)" : "none" }}>
-                  <PluginAvatar plugin={p} size={32} />
+                  <PluginAvatar plugin={p} size="sm" />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
                       <span style={{ fontSize: 13, color: on ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)",
