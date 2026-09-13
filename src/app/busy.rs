@@ -13,7 +13,8 @@ impl App {
     /// push, so a remote mirror's status dot never lags local by more than one
     /// tick. Attention pushes (`StreamControl::Attention`) ride the same tick
     /// for the same reason — the mirror's count badges / border / tab title
-    /// color track the owning instance within one tick. `stream_hub` is cloned once up front (cheap — internal `Arc`) so
+    /// color track the owning instance within one tick. Cwd pushes
+    /// (`StreamControl::Cwd`) ride it too — a mirror has no PTY to ask. `stream_hub` is cloned once up front (cheap — internal `Arc`) so
     /// the per-engine forward calls don't need to borrow all of `self` while
     /// `self.view.views.values_mut()` already holds a mutable borrow.
     pub(crate) fn poll_busy_states(&mut self) {
@@ -35,6 +36,8 @@ impl App {
                     // attention 도 같은 tick 에 편승한다 — 서버가 소유한 surface 의
                     // attention 변화분을 점유 client(mirror)로 push(server→client).
                     main.core_state.forward_attention(&hub);
+                    // cwd 도 같은 tick 에 편승한다 — mirror 는 OSC 7 없이는 cwd 를 모른다.
+                    main.core_state.forward_surface_cwd(&hub);
                     close_stale_mouse_capture_banners(&mut main.state, &main.core_state);
                     changed
                 }
@@ -50,6 +53,7 @@ impl App {
             crate::core::Core::update_busy_surfaces(engine);
             engine.forward_busy_activity(&hub);
             engine.forward_attention(&hub);
+            engine.forward_surface_cwd(&hub);
         }
     }
 }

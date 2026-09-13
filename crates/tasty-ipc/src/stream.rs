@@ -456,6 +456,31 @@ pub enum StreamControl {
         /// The attention kind now recorded on the remote, or `None` if cleared.
         kind: Option<AttentionKindWire>,
     },
+    /// A remote surface's working directory, as the remote instance itself resolves
+    /// it (terminal: OSC 7 cache, then the PTY process's cwd from the OS; other
+    /// kinds: the surface's own `source_cwd`). Mirror terminals have no local PTY,
+    /// so without OSC 7 they can never compute this themselves — like
+    /// [`StreamControl::Activity`], this push is the *only* source that works for
+    /// every shell. The client stores it as a **remote-origin** path: the two
+    /// instances' filesystems differ, so it is never used for a local filesystem
+    /// operation (ADR-0267).
+    ///
+    /// Not gated by the remote's `inherit_cwd` setting — this is an observation, not
+    /// an execution; the consumer applies that gate.
+    ///
+    /// `cwd: None` means the remote no longer knows the cwd — the client drops its
+    /// stored value so a stale path does not linger. The frame is idempotent state,
+    /// not a delta: pushed once per 1Hz tick per occupied surface whose value (or
+    /// holder) changed since the last push, so a dropped/lagged frame self-heals on
+    /// the next tick.
+    ///
+    /// Direction: **server→client**.
+    Cwd {
+        /// Remote surface id, resolved the same way as [`StreamControl::Resize`].
+        surface_id: u32,
+        /// The remote path, or `None` if the remote cwd is unknown.
+        cwd: Option<String>,
+    },
     /// The requested `surface_id` in a [`StreamControl::MeshContext`] is not a
     /// mesh-mirrorable surface on the remote (not found, not a bundled
     /// egui-mesh-whitelisted kind, or the surface's plugin isn't running) — a
@@ -973,6 +998,27 @@ mod tests {
         assert!(s.contains(r#""event":"activity""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_cwd_roundtrip_including_cleared() {
+        for cwd in [Some("/srv/proj".to_string()), None] {
+            let msg = StreamControl::Cwd { surface_id: 9, cwd };
+            let s = serde_json::to_string(&msg).unwrap();
+            assert!(s.contains(r#""event":"cwd""#));
+            let back: StreamControl = serde_json::from_str(&s).unwrap();
+            assert_eq!(back, msg);
+        }
+        // 값 소멸 edge 는 `null` 로 표현된다 — 키가 빠진 프레임과 구분할 필요는 없지만
+        // 구버전 파서가 모르는 variant 로 무시하는 것은 `event` 태그 하나로 정해진다.
+        let cleared = r#"{"event":"cwd","surface_id":3,"cwd":null}"#;
+        assert_eq!(
+            serde_json::from_str::<StreamControl>(cleared).unwrap(),
+            StreamControl::Cwd {
+                surface_id: 3,
+                cwd: None
+            }
+        );
     }
 
     #[test]

@@ -308,6 +308,21 @@ pub struct CoreState {
     pub(crate) last_forwarded_attention:
         std::collections::HashMap<u32, Option<attention::AttentionKind>>,
 
+    /// cwd of **mirror** (client-side attach) surfaces, pushed by the remote host as
+    /// `StreamControl::Cwd`. The value is always a remote path (`RemoteCwd` — no
+    /// conversion to a local `Path`), because the two instances' filesystems differ.
+    /// Kept per surface id for every kind, not only terminals (explorer root and
+    /// markdown file parent are cwds too), and cleared on teardown and on any kind
+    /// change. `surface_cwd` prefers it over the mirror's own derivation (ADR-0267).
+    pub(crate) mirror_surface_cwd: std::collections::HashMap<u32, RemoteCwd>,
+
+    /// Server-side dedup cache for `surface_cwd_forwards`: last `(holder, cwd)` pushed
+    /// per occupied surface. The holder is part of the record — keyed on the value
+    /// alone, a holder swap inside one tick window would survive the `retain` and the
+    /// new holder would never get a baseline.
+    pub(crate) last_forwarded_cwd:
+        std::collections::HashMap<u32, (crate::core::attach::AttachClientId, Option<String>)>,
+
     // ── Surface attention state. Producer-neutral shared primitive: any producer
     // (toast notification, completion IPC/CLI, OSC 133 command completion, …) may
     // raise it, and it is cleared when the surface gains real render-time focus
@@ -808,6 +823,8 @@ impl CoreState {
             busy_surfaces: std::collections::HashSet::new(),
             mirror_busy_surfaces: std::collections::HashSet::new(),
             last_forwarded_busy: std::collections::HashMap::new(),
+            mirror_surface_cwd: std::collections::HashMap::new(),
+            last_forwarded_cwd: std::collections::HashMap::new(),
             last_forwarded_attention: std::collections::HashMap::new(),
             attention: attention::AttentionStore::default(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
@@ -1589,7 +1606,10 @@ mod surface_cwd;
 mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
-pub(crate) use surface_cwd::{RemoteCwd, SurfaceCwd};
+pub(crate) use surface_cwd::RemoteCwd;
+// 로컬 소비자는 `local_surface_cwd` 로 충분하고 출처를 직접 가르는 소비자는 테스트뿐이다.
+#[cfg(test)]
+pub(crate) use surface_cwd::SurfaceCwd;
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;

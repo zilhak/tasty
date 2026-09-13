@@ -82,6 +82,10 @@ pub(crate) enum MirrorEvent {
     /// 가 스스로 만들 수 없다 — 이 push 가 mirror attention 의 유일한 소스다
     /// (`CoreState::set_mirror_surface_attention`).
     Attention(u32, Option<tasty_ipc::stream::AttentionKindWire>),
+    /// 원격 surface 의 cwd `(remote_surface_id, cwd)` — `None` 은 원격도 모르게 됐다는 뜻.
+    /// 값은 원격 경로라 로컬 파일시스템에 쓰지 않는다(`CoreState::set_mirror_surface_cwd`,
+    /// ADR-0267).
+    Cwd(u32, Option<String>),
     /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
     /// 메인루프가 실패 toast 를 띄운다.
     StructuralFailed(String),
@@ -1633,6 +1637,7 @@ fn remove_mirror_workspace_from_engine(
         engine.terminals.remove(local);
         engine.forget_mirror_surface_busy(local);
         engine.forget_mirror_surface_attention(local);
+        engine.forget_mirror_surface_cwd(local);
         engine.attach_mesh_frames.remove(local);
     }
     engine.workspaces.remove(pos);
@@ -1914,6 +1919,9 @@ fn spawn_attach_reader_thread(
                                 }
                                 Ok(StreamControl::Attention { surface_id, kind }) => {
                                     Some(MirrorEvent::Attention(surface_id, kind))
+                                }
+                                Ok(StreamControl::Cwd { surface_id, cwd }) => {
+                                    Some(MirrorEvent::Cwd(surface_id, cwd))
                                 }
                                 // 2단계: forward 실패 회신 → 실패 toast.
                                 Ok(StreamControl::StructuralResult {
@@ -2212,6 +2220,10 @@ fn merge_survivor_mapping(
                         engine.terminals.remove(l);
                         engine.forget_mirror_surface_busy(l);
                     }
+                    // cwd 는 terminal 만의 값이 아니다(explorer root · markdown 파일 부모) —
+                    // 옛 kind 가 뭐였든 그 kind 의 cwd 이므로 버린다. 새 kind 의 값은 다음
+                    // tick 의 push 가 채운다(서버 diff 가 값 변화를 본다).
+                    engine.forget_mirror_surface_cwd(l);
                     // 옛 kind 가 뭐였든, 캐시된 mesh frame 은 새 kind 의 것이 아니므로
                     // 버린다 — 새 frame 이 도착하기 전까지 옛 kind 의 화면이 잠깐이라도
                     // 그려지는 걸 막는다.
@@ -2293,6 +2305,7 @@ fn merge_survivor_mapping(
             engine.terminals.remove(local_id);
             engine.forget_mirror_surface_busy(local_id);
             engine.forget_mirror_surface_attention(local_id);
+            engine.forget_mirror_surface_cwd(local_id);
             engine.attach_mesh_frames.remove(local_id);
         }
     }
@@ -2471,6 +2484,11 @@ fn apply_one_mirror_event(
         MirrorEvent::Activity(remote_id, busy) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id) {
                 host.engine.set_mirror_surface_busy(local, busy);
+            }
+        }
+        MirrorEvent::Cwd(remote_id, cwd) => {
+            if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+                host.engine.set_mirror_surface_cwd(local, cwd);
             }
         }
         MirrorEvent::Attention(remote_id, kind) => {
@@ -3913,6 +3931,7 @@ mod tests {
             .terminals
             .insert(local_surface, Terminal::new_detached(80, 24));
         engine.set_mirror_surface_busy(local_surface, true);
+        engine.set_mirror_surface_cwd(local_surface, Some("/srv/remote".to_string()));
         engine
             .attach_mesh_frames
             .update(local_surface, vec![1, 2, 3], 0, 0, true);
@@ -3939,6 +3958,10 @@ mod tests {
         assert!(
             engine.attach_mesh_frames.get(local_surface).is_none(),
             "mesh 프레임 캐시 제거"
+        );
+        assert!(
+            engine.mirror_surface_cwd.is_empty(),
+            "mirror cwd 엔트리 제거"
         );
         assert_eq!(
             state.active_workspace,
@@ -4926,6 +4949,9 @@ mod tests {
         );
         ws.mirror = true;
         engine.workspaces.push(ws);
+        // cwd 는 terminal 만의 값이 아니다 — mesh(비-terminal)에서 출발한 전환도 옛 kind 의
+        // cwd 를 버려야 한다(busy 의 "terminal 출발만" 조건과 다르다).
+        engine.set_mirror_surface_cwd(local_20, Some("/srv/remote/docs".to_string()));
 
         let surfaces_v2 = vec![serde_json::json!({
             "remote_id": 20, "role": "terminal", "cols": 80, "rows": 24,
@@ -4944,8 +4970,74 @@ mod tests {
         assert!(new2.is_empty(), "survivor 는 신규 취급되면 안 된다");
         assert!(term2.contains(&local_20));
         assert!(
+            !engine.mirror_surface_cwd.contains_key(&local_20),
+            "kind 전환은 비-terminal 출발이어도 옛 cwd 를 버린다"
+        );
+        assert!(
             engine.terminals.get(local_20).is_some(),
             "mesh → terminal convert 는 새 Terminal 을 만들어야 한다(안 그러면 입력이 안 감)"
+        );
+    }
+
+    /// 서버가 push 한 cwd 는 원격→로컬 id 로 치환돼 mirror surface 에 **원격 출처**로 붙고,
+    /// 로컬 상속 헬퍼로는 새지 않으며, `cwd: null` push 가 그 값을 지운다.
+    #[test]
+    fn cwd_push_applies_as_remote_origin_and_null_clears_it() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let ws_id = 9_000u32;
+        let (pane_id, tab_id, local_surface) = (9_001u32, 9_002u32, 9_003u32);
+        let remote_surface = 42u32;
+        let mut mirror_ws = Workspace::new_with_terminal_marker(
+            ws_id,
+            "mirror".to_string(),
+            pane_id,
+            tab_id,
+            local_surface,
+        );
+        mirror_ws.mirror = true;
+        engine.workspaces.push(mirror_ws);
+        engine
+            .terminals
+            .insert(local_surface, Terminal::new_detached(80, 24));
+        let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
+        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+
+        {
+            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            apply_mirror_events(
+                &mut sess,
+                &mut host,
+                &mut plugin_manager,
+                vec![MirrorEvent::Cwd(
+                    remote_surface,
+                    Some("/srv/remote/proj".to_string()),
+                )],
+            );
+        }
+        assert_eq!(
+            engine.surface_cwd(local_surface),
+            Some(crate::core::state::SurfaceCwd::Remote(
+                crate::core::state::RemoteCwd::new("/srv/remote/proj")
+            ))
+        );
+        assert_eq!(
+            state.resolve_inherit_cwd_from_surface(&engine, local_surface),
+            None,
+            "원격 cwd 는 로컬 실행 자리로 새지 않는다"
+        );
+
+        {
+            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            apply_mirror_events(
+                &mut sess,
+                &mut host,
+                &mut plugin_manager,
+                vec![MirrorEvent::Cwd(remote_surface, None)],
+            );
+        }
+        assert!(
+            engine.mirror_surface_cwd.is_empty(),
+            "null push 는 옛 원격 경로를 남기지 않는다"
         );
     }
 

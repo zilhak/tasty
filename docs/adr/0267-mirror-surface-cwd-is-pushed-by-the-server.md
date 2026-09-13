@@ -56,8 +56,8 @@ source" 라고 적고, `Attention` 도 같다. cwd 도 진실 원천이 PTY 를 
    holder 에 보낸다. 배선 지점은 busy/attention 과 같은 셋(gui 포커스 window · gui parked engine
    · headless)이다.
 
-2. **저장 위치는 `CoreState` 의 별도 맵이다** — `mirror_surface_cwd: HashMap<u32, String>`
-   (로컬 mirror surface id → 원격 경로 문자열). `busy_surfaces`/`mirror_busy_surfaces` 분리와 같은
+2. **저장 위치는 `CoreState` 의 별도 맵이다** — `mirror_surface_cwd: HashMap<u32, RemoteCwd>`
+   (로컬 mirror surface id → 원격 경로, 결정 3 의 newtype). `busy_surfaces`/`mirror_busy_surfaces` 분리와 같은
    형태이고, 정리는 `forget_mirror_surface_cwd` 가 busy 의 세 teardown 호출처에서 함께 돈다. cwd 는
    terminal 만의 값이 아니므로(explorer root · markdown 파일 부모) **kind 전환 전부**에서 정리한다
    — busy 의 "terminal 에서 출발한 전환만" 조건을 따르지 않는다. `Terminal::cached_cwd` 에 직접
@@ -164,3 +164,6 @@ source" 라고 적고, `Attention` 도 같다. cwd 도 진실 원천이 PTY 를 
 - [ADR-0086](0086-reject-terminal-spawn-into-mirror-workspace.md) — mirror 안 로컬 실행 거부(이미 닫힌 유출구)
 - [ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) — Context 의 수치는 측정 시점 값이다
 - [ADR-0255](0255-markdown-attach-mirror-forwards-content-not-pixels.md) — 원격 문자열을 opaque 로 둔 선례
+- 코드 근거(결정이 실현된 현재 위치): `crates/tasty-ipc/src/stream.rs` 의 `StreamControl::Cwd` ·
+  `src/core/state/surface_cwd.rs` 의 `SurfaceCwd`/`RemoteCwd`/`CoreState::surface_cwd`/`surface_cwd_forwards` ·
+  `src/core/attach_runtime.rs` 의 `forward_surface_cwd` · `src/app/attach_client.rs` 의 `MirrorEvent::Cwd`

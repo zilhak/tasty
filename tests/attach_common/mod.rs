@@ -179,6 +179,23 @@ pub fn read_frame_result(stream: &mut TcpStream) -> std::io::Result<(u8, Vec<u8>
     Ok((tag, payload))
 }
 
+/// workspace attach holder 의 입력 프레임 하나를 보낸다 — `Data` 태그 + surface-prefixed
+/// payload(`tasty_ipc::stream::encode_mux`). 점유 중에는 서버 로컬 입력(`surface.send`)이
+/// 막히므로, 점유한 surface 의 셸을 움직이려면 이 경로를 쓴다.
+pub fn write_workspace_input(stream: &mut TcpStream, surface_id: u32, bytes: &[u8]) {
+    let payload = tasty_ipc::stream::encode_mux(surface_id, bytes);
+    let mut hdr = [0u8; 5];
+    hdr[0] = TAG_DATA;
+    hdr[1..5].copy_from_slice(&(payload.len() as u32).to_be_bytes());
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    stream
+        .write_all(&hdr)
+        .unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 헤더 쓰기", &e)));
+    stream
+        .write_all(&payload)
+        .unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 payload 쓰기", &e)));
+}
+
 /// control 프레임 하나를 보낸다.
 pub fn write_control_frame(stream: &mut TcpStream, payload: &Value) {
     let bytes = serde_json::to_vec(payload).unwrap();

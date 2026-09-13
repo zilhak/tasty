@@ -555,6 +555,23 @@ impl CoreState {
         }
     }
 
+    /// 점유 surface 의 cwd 변화분을 attach client 에 push 한다(`forward_busy_activity` 동형
+    /// — 같은 1Hz tick 에서 나란히 호출된다).
+    ///
+    /// mirror terminal 은 로컬 PTY 가 없어 원격 셸이 OSC 7 을 방출할 때만 cwd 를 알 수
+    /// 있다. 서버는 PTY 를 소유하므로 OSC 7 이 없어도 OS 조회로 안다 — 아는 쪽이 모르는
+    /// 쪽으로 보내는 채널이다(ADR-0267).
+    pub fn forward_surface_cwd(&mut self, hub: &StreamHub) {
+        for (client_id, surface_id, cwd) in self.surface_cwd_forwards() {
+            let msg = StreamControl::Cwd { surface_id, cwd };
+            let frame = StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&msg).unwrap_or_default(),
+            );
+            let _ = hub.push(client_id, frame); // best-effort cwd 통지 — client 끊김 시 무해, 다음 tick 이 재수렴.
+        }
+    }
+
     /// workspace attach 디스크립터: 트리(분할 비율 포함) + per-surface role/cols/rows/kind.
     fn build_workspace_descriptor(
         &self,
