@@ -409,22 +409,18 @@ impl SettingsUiState {
 
     pub fn new() -> Self {
         let mut popups = PopupManager::new();
-        popups.register(
-            PopupState::new(
-                "keybinding_conflict",
-                t("settings.keybindings.conflict_title"),
-                egui::vec2(340.0, 120.0),
-            )
-            .with_close_on_outside_click(false),
-        );
-        popups.register(
-            PopupState::new(
-                IMPORT_CONFLICT_POPUP_ID,
-                t("settings.keybindings.conflict_title"),
-                egui::vec2(340.0, 120.0),
-            )
-            .with_close_on_outside_click(false),
-        );
+        // 녹화 충돌과 가져오기 충돌은 같은 모양의 확인 popup 이다. 크기는 열 때
+        // `conflict_popup_size` 가 다시 정하므로 등록 값은 첫 프레임 placeholder 다.
+        for id in ["keybinding_conflict", IMPORT_CONFLICT_POPUP_ID] {
+            popups.register(
+                PopupState::new(
+                    id,
+                    t("settings.keybindings.conflict_title"),
+                    egui::vec2(340.0, 120.0),
+                )
+                .with_close_on_outside_click(false),
+            );
+        }
         // 크기·타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
         popups.register(
             PopupState::new(

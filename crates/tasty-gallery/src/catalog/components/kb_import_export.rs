@@ -46,6 +46,9 @@ const ENTRY_W: LogicalPx = LogicalPx(620.0);
 const PREVIEW_H: LogicalPx = LogicalPx(420.0);
 /// 마이그레이션 DrillDown 높이 — back bar + 미완료 카드.
 const MIGRATION_H: LogicalPx = LogicalPx(440.0);
+// 아래 치수 중 32 · 288 · 120 · 24 · 14 는 `size-*` 스케일 위의 값이다. jsx 는 원시 스케일
+// 토큰을 직접 부르는데 그 스케일은 토큰 크레이트 밖에 열려 있지 않고, 같은 뜻의 semantic
+// 이름도 없다 — jsx 를 인용한 명명 상수로 둔다.
 /// 표 선택 열 — jsx `gridTemplateColumns: "var(--tasty-size-32) …"`.
 const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
 /// 마이그레이션 행 라벨 열 — jsx `--tasty-size-288`(ja 최장 액션 라벨 실측 255px). 본체

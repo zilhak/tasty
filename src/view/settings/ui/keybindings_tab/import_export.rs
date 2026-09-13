@@ -51,6 +51,11 @@ use model::{
 
 use super::{FieldKind, KeyCapture, LABEL_COL_WIDTH, RecordingSlot};
 
+// 아래 치수 중 32 · 120 · 24 · 14 는 `size-*` 스케일 위의 값이다. jsx 는 원시 스케일 토큰을
+// 직접 부르는데 그 스케일은 토큰 크레이트 밖에 열려 있지 않고(`generated::primitive` 는
+// `pub(crate)`), 같은 뜻의 semantic 이름도 없다. 이름을 새로 여는 것은 디자인 토큰 결정이라
+// 여기서는 jsx 를 인용한 명명 상수로 둔다(갤러리 `kb_import_export.rs` 와 짝 — 두 값의 일치는
+// `gallery_copied_dimensions` 가 본다).
 /// 표 선택 열 — jsx `gridTemplateColumns: "var(--tasty-size-32) …"`.
 const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
 /// 마이그레이션 행 원래 조합 열 — jsx `--tasty-size-120`.

@@ -324,6 +324,46 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(HOST_HOOK_HANDLERS, "HOOK_CMD_LABEL_W"),
         Side::Lit(GALLERY_SETTINGS_HANDLER, "HOOK_CMD_LABEL_W"),
     ),
+    (
+        "단축키 가져오기 마이그레이션 행 라벨 열",
+        Side::Lit(HOST_KEYBINDINGS_TAB, "LABEL_COL_WIDTH"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
+    ),
+    (
+        "단축키 가져오기 표 선택 열 폭",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "SELECT_COL_W"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "SELECT_COL_W"),
+    ),
+    (
+        "단축키 가져오기 마이그레이션 원래 조합 열",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "MIGRATE_FROM_W"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "MIGRATE_FROM_W"),
+    ),
+    (
+        "단축키 가져오기 녹화 슬롯 최소 폭",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "RECORD_SLOT_MIN_W"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "RECORD_SLOT_MIN_W"),
+    ),
+    (
+        "단축키 가져오기 녹화 슬롯 높이",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "RECORD_SLOT_H"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "RECORD_SLOT_H"),
+    ),
+    (
+        "단축키 가져오기 카드 가로 패딩",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "CARD_PAD_X"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "CARD_PAD_X"),
+    ),
+    (
+        "단축키 가져오기 그룹 헤더 chevron 간격",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "GROUP_CHEVRON_GAP"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "GROUP_CHEVRON_GAP"),
+    ),
+    (
+        "단축키 가져오기 plugin 점 간격",
+        Side::Lit(HOST_KB_IMPORT_EXPORT, "PLUGIN_DOT_GAP"),
+        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "PLUGIN_DOT_GAP"),
+    ),
 ];
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
@@ -347,6 +387,10 @@ const HOST_TUTORIAL_CALLOUT: &str = "src/adapters/ui/tutorial/callout.rs";
 const HOST_EXPLORER: &str = "src/adapters/ui/surface/explorer.rs";
 const HOST_DAG_CHROME: &str = "src/adapters/ui/surface/dag_graph/chrome.rs";
 const HOST_HOOK_HANDLERS: &str = "src/view/settings/ui/file_handler_tab/hook_handlers.rs";
+const HOST_KEYBINDINGS_TAB: &str = "src/view/settings/ui/keybindings_tab.rs";
+const HOST_KB_IMPORT_EXPORT: &str = "src/view/settings/ui/keybindings_tab/import_export.rs";
+const GALLERY_KB_IMPORT_EXPORT: &str =
+    "crates/tasty-gallery/src/catalog/components/kb_import_export.rs";
 const GALLERY_PRESET_EDITOR: &str = "crates/tasty-gallery/src/catalog/components/preset_editor.rs";
 const GALLERY_INFO_MODAL: &str = "crates/tasty-gallery/src/catalog/components/info_modal.rs";
 const GALLERY_POPUP_FRAME: &str = "crates/tasty-gallery/src/catalog/popup_frame.rs";
@@ -394,7 +438,8 @@ fn theme_site(masked: &str, name: &str) -> Option<(usize, f32)> {
 
 /// `[pub[(crate)]] const NAME:` 로 시작하는 줄을 찾는다.
 ///
-/// 가시성 접두사를 허용하는 이유는 생성 토큰이 `pub(crate) const` 이기 때문이다. 이름은
+/// 가시성 접두사를 허용하는 이유는 생성 토큰이 `pub(crate) const` 이고, 본체 쪽 짝이 부모 모듈에만
+/// 여는 `pub(super) const` 이기도 하기 때문이다(단축키 탭 `LABEL_COL_WIDTH`). 이름은
 /// **접두사가 아니라 낱말**로 맞춘다 — `MIN_HEIGHT` 로 `MIN_HEIGHT_LG` 를 집으면 엉뚱한
 /// 값이 비교된다.
 fn find_const_line<'a>(masked: &'a str, name: &str) -> Option<(usize, &'a str)> {
@@ -403,6 +448,7 @@ fn find_const_line<'a>(masked: &'a str, name: &str) -> Option<(usize, &'a str)> 
         let t = l
             .trim_start()
             .strip_prefix("pub(crate) ")
+            .or_else(|| l.trim_start().strip_prefix("pub(super) "))
             .or_else(|| l.trim_start().strip_prefix("pub "))
             .unwrap_or(l.trim_start());
         t.starts_with(&needle).then_some((i + 1, l))
@@ -518,10 +564,12 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // `theme.port_star_col_width()` 를 부른다 — 사본이 없어진 것이라 명부에서 빠진다.
     // 11 -> 44: 자백하지 않은 사본 33 쌍을 손으로 등재했다(명부 안의 구분선 주석 참조).
     // 사본이 새로 생긴 것이 아니라 **원래 있던 것이 안 보이고 있었다.**
+    // 44 -> 52: 단축키 가져오기/내보내기 화면이 본체에 들어오며 갤러리 specimen 의 치수 8 개가
+    // 본체 상수와 짝을 얻었다(라벨 열은 단축키 탭의 기존 `LABEL_COL_WIDTH`).
     assert_eq!(
         COPIED.len(),
-        44,
-        "사본 명부가 {} 쌍이다(기록 44). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        52,
+        "사본 명부가 {} 쌍이다(기록 52). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );
@@ -587,13 +635,22 @@ const SHARES_ONE_ITEM: &[(&str, &str, &str, &str, &str)] = &[(
 ///
 /// 셋째 칸이 사유의 반증 조건이다 — "같은 치수가 아니다" 는 본체에 대응하는 이름이 생기는
 /// 순간 다시 봐야 한다. 그것만 기계가 묻는다.
-const DECLARED_DIFFERENT: &[(&str, &str, &str, &str)] = &[(
-    "crates/tasty-gallery/src/catalog/components/script_manager.rs",
-    "FRAME_MAX_W",
-    "FRAME_MAX_W",
-    "본체는 settings content 폭을 상속하고 갤러리 미러만 카드로 감싸 bound 한다 — \
-     같은 치수가 아니라는 것을 그 자리가 스스로 적는다",
-)];
+const DECLARED_DIFFERENT: &[(&str, &str, &str, &str)] = &[
+    (
+        "crates/tasty-gallery/src/catalog/components/script_manager.rs",
+        "FRAME_MAX_W",
+        "FRAME_MAX_W",
+        "본체는 settings content 폭을 상속하고 갤러리 미러만 카드로 감싸 bound 한다 — \
+         같은 치수가 아니라는 것을 그 자리가 스스로 적는다",
+    ),
+    (
+        GALLERY_KB_IMPORT_EXPORT,
+        "SPECIMEN_W",
+        "SETTINGS_CONTENT_W",
+        "본체 콘텐츠 컬럼은 이름 붙은 치수가 아니라 창 폭에서 매 프레임 남는 폭이다 — \
+         갤러리만 기본 창 크기에서 한 번 계산한 값으로 specimen 을 bound 한다",
+    ),
+];
 
 /// 갤러리에서 **본체를 지목하는 doc 이 붙은** 길이 상수 선언을 모은다.
 ///
@@ -925,6 +982,8 @@ const CONFESSED: &[(&str, &str)] = &[
         "crates/tasty-gallery/src/catalog/components/script_manager.rs",
         "FRAME_MAX_W",
     ),
+    (GALLERY_KB_IMPORT_EXPORT, "SPECIMEN_W"),
+    (GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
 ];
 
 /// 갤러리 상수의 초기화식이 **공용 항목을 가리키는 경로식**인가.

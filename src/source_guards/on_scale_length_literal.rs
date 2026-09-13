@@ -214,7 +214,11 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 애초에 이 가드의 바늘 밖이었다 — `size-*` 에 6 이 없다.
         // 29 -> 27 도 퇴화 방지 하한 둘이다(`main/redraw.rs` 의 `.max(..)` ·
         // `settings/ui.rs` 의 `(w - margin*2).max(LogicalPx(1.0))`).
-        27,
+        // 27 -> 31 은 단축키 가져오기/내보내기 화면(`keybindings_tab/import_export.rs`)의 명명
+        // 상수 넷(선택 열 32 · 원래 조합 열 120 · 녹화 슬롯 높이 24 · 카드 패딩 14)이다. jsx 가
+        // `--tasty-size-*` 원시 스케일을 직접 부르는데 그 스케일이 크레이트 밖에 안 열려 있고
+        // 같은 뜻의 semantic 이름도 없다 — 못 고치는 이유는 그 자리 주석에 있다.
+        31,
         "설정 화면의 폼 레이아웃",
     ),
     (
@@ -231,7 +235,9 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-gallery/",
-        85,
+        // 85 -> 90 은 같은 화면의 specimen(`kb_import_export.rs`) — 본체 넷에 마이그레이션
+        // 라벨 열 288 을 더한 다섯이다. 사유는 본체 쪽과 같고 그 자리 주석에 있다.
+        90,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
          한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
          갈래는 `the_gallery_share_splits_into_four_kinds` 가 든다",
@@ -824,7 +830,8 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         // 것이다. 이름 붙은 치수였던 `FAV_COL_WIDTH`(28) 상수를 지우고
         // `theme.port_star_col_width()` 로 바꿨고(앞 갈래 -1), 컬럼 폭 리터럴이
         // 타입을 얻으면서 그중 200 이 인라인 자리로 보이게 됐다(뒤 갈래 +1).
-        (22, 52, 1, 15),
+        // 22 -> 27 은 `kb_import_export.rs` 의 명명 상수 다섯이다(jsx 인용 · 이름 붙은 치수).
+        (27, 52, 1, 15),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
@@ -984,7 +991,9 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 기대 rect 를 `PhysicalRect`/`PhysicalPx` 리터럴로 적으면서 늘었다(실측 +18).
         // 화면에 안 나가는 시험 전용 구간이라 판정 대상이 아니다 — 그 변환은 창 좌표
         // 산술이고 디자인 토큰으로 대체할 값이 아니다.
-        (172, 216),
+        // 172 -> 174 는 단축키 가져오기/내보내기 그룹 헤더의 `shrink2(vec2(spacing_md, 0.0))`
+        // 둘(본체 · 갤러리)이다 — 세로로는 안 줄인다.
+        (174, 216),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );
