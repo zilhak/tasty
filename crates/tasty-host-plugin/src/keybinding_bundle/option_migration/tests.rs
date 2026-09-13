@@ -604,3 +604,32 @@ fn introduced_conflicts_ignores_unassigned_sites() {
     let (kb, overrides) = five_sites();
     assert!(introduced_conflicts(&kb, &overrides, &ResolutionPlan::new()).is_empty());
 }
+
+/// 미리보기는 정해진 해소만 반영하고, 아직 안 정한 자리는 원래 값 그대로 둔다.
+#[test]
+fn preview_applies_only_the_resolutions_chosen_so_far() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.new_tab = vec!["option+t".into(), "option+y".into()];
+    kb.new_workspace = vec!["option+w".into()];
+    let plan: ResolutionPlan = [
+        (
+            BindingSite::GeneralBinding {
+                field_id: "new_tab",
+                index: 0,
+            },
+            Resolution::Unbind,
+        ),
+        (
+            BindingSite::GeneralBinding {
+                field_id: "new_tab",
+                index: 1,
+            },
+            Resolution::Replace("ctrl+alt+shift+y".into()),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let (preview, _) = preview_resolution(&kb, &PluginShortcutOverrides::new(), &plan);
+    assert_eq!(preview.new_tab, vec!["ctrl+alt+shift+y".to_string()]);
+    assert_eq!(preview.new_workspace, vec!["option+w".to_string()]);
+}

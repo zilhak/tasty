@@ -432,6 +432,34 @@ pub fn introduced_conflicts(
     overrides: &PluginShortcutOverrides,
     plan: &ResolutionPlan,
 ) -> Vec<BindingConflict> {
+    let (new_kb, new_overrides, unbind) = write_partial(kb, overrides, plan);
+    introduced_between(kb, overrides, &new_kb, &new_overrides, &unbind)
+}
+
+/// 계획이 **아직 덜 채워졌어도** 지금 정해진 해소를 반영한 구성 — 미리보기 표가 "지금
+/// 고른 값이면 무엇이 되는가" 를 그리는 데 쓴다. 검증에 걸리는 값과 스캔에 없는 자리는
+/// 건너뛰고, 충돌은 보지 않는다(그것은 [`introduced_conflicts`] 의 일이다).
+pub fn preview_resolution(
+    kb: &KeybindingSettings,
+    overrides: &PluginShortcutOverrides,
+    plan: &ResolutionPlan,
+) -> (KeybindingSettings, PluginShortcutOverrides) {
+    let (mut new_kb, mut new_overrides, unbind) = write_partial(kb, overrides, plan);
+    unbind_sites(&mut new_kb, &mut new_overrides, &unbind);
+    (new_kb, new_overrides)
+}
+
+/// 부분 계획의 대체 값을 쓰고, 비울 자리는 모아서 돌려준다(아직 지우지 않는다 — 좌표가
+/// 당겨지면 충돌 차분이 어긋난다).
+fn write_partial(
+    kb: &KeybindingSettings,
+    overrides: &PluginShortcutOverrides,
+    plan: &ResolutionPlan,
+) -> (
+    KeybindingSettings,
+    PluginShortcutOverrides,
+    BTreeSet<BindingSite>,
+) {
     let found: BTreeSet<BindingSite> = scan_option_bindings(kb, overrides, TargetOs::NonMac)
         .into_iter()
         .map(|f| f.site)
@@ -450,11 +478,13 @@ pub fn introduced_conflicts(
                 }
             }
             Resolution::Unbind => {
-                unbind.insert(site.clone());
+                if validate_unbind(site).is_ok() {
+                    unbind.insert(site.clone());
+                }
             }
         }
     }
-    introduced_between(kb, overrides, &new_kb, &new_overrides, &unbind)
+    (new_kb, new_overrides, unbind)
 }
 
 /// 적용 전후 충돌 차분 — 버릴 자리가 낀 쌍은 뺀다.
