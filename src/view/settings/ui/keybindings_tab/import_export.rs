@@ -733,6 +733,8 @@ fn build_view_model(
 
 // ── 그리기 ───────────────────────────────────────────────────────────────────────
 
+// reason: 설정 draft · plugin draft · 녹화 슬롯 · 이 화면 상태는 호출부가 서로 다른 필드에서 따로
+// 빌리는 가변 참조다 — 한 구조체로 묶으면 `draw_keybindings_tab` 의 다른 서브탭 갈래와 빌림이 겹친다.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_import_export_subtab(
     ui: &mut egui::Ui,
@@ -1156,6 +1158,8 @@ fn diff_table(
 
 /// 그룹 헤더 — 네 열을 가로지르는 한 행(surface-raised). select-all · chevron · 그룹명 ·
 /// `N changed · M total`. 열 헤더를 반복하지 않는다.
+// reason: 표시 값(g · shown)과 두 선택 상태(collapsed · deselected)의 가변 빌림이 따로 온다 —
+// 묶으면 `diff_table` 의 행 순회와 빌림이 겹친다.
 #[allow(clippy::too_many_arguments)]
 fn group_header(
     ui: &mut egui::Ui,
