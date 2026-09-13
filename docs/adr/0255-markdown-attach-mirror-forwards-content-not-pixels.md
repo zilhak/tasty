@@ -214,7 +214,9 @@ push 하고, client 는 그것으로 **refresh affordance 의 색만 바꾼다**
 `reload_webview` 가 항상 `push_html` → `webview.set_url` IPC 로 host 에 도달하고
 (`src/adapters/ipc/handler/webview.rs`), host 는 그 surface 가 markdown kind 의 `RemoteSurface`
 라는 것을 그 자리에서 안다. 그러므로 신호원은 **`webview.set_url` 을 받은 markdown kind
-surface** 로 정한다. 새 plugin→host 메서드도, SDK 변경도 필요 없다.
+surface** 로 정한다. **신호원에는** 새 plugin→host 메서드도, SDK 변경도 필요 없다 —
+이 문장은 신호 축에만 걸린다. 내용을 *가져오는* 축은 다르다: 항목 2 의 client↔server 다리
+밖에 plugin↔host 다리가 하나 더 있고, 그쪽에는 새 메서드가 생긴다(항목 8).
 
 **수신자는 새로 설계하지 않는다 — 항목 2 의 인가 술어를 그대로 뒤집어 쓴다.**
 `client_holds_workspace` 가 참인 client(들), 즉 **이 engine 의 워크스페이스를 하나라도 hard 점유한
@@ -262,6 +264,28 @@ git_query · 캡처)이 전부 넓은 쪽이라 이 채널만 규칙이 달라�
   "이 surface 가 지금 열고 있는 문서" 하나만 나른다.
 - **원격 문서 편집·저장**: markdown surface 는 애초에 뷰어다. 스코프 밖이 아니라 기능이 없다.
 
+### 8. plugin↔host 다리의 이름 — `markdown_mirror.*`
+
+항목 2 가 정한 `markdown_content_request`/`markdown_content_result` 는 **client↔server** 의 wire
+이벤트 이름이다. 그런데 그 원문이 실제로 그려지려면 다리가 하나 더 필요하다 — client 안에서
+**markdown plugin 과 host 사이**다. plugin 은 원격 경로를 읽을 수 없으므로 host 에게 물어야 하고,
+host 는 받은 원문을 plugin 에게 돌려줘야 한다. 그 다리의 이름을 여기서 정한다:
+
+- `markdown_mirror.content_request` — plugin → host **메서드**. 이 surface 의 원문을 달라고 묻는다.
+  인가는 `FsRead`(`crates/tasty-ipc/src/method_meta.rs`) — 원격 파일이라도 읽기는 읽기다.
+- `markdown_mirror.content_result` — host → plugin **이벤트**. 회신 원문. host 가 `surface_id` 를
+  **로컬 id 로 바꿔** 보낸다(plugin 은 원격 id 를 모른다).
+- `markdown_mirror.changed` — host → plugin **이벤트**. 원문은 안 실린다. plugin 은 stale 표시만
+  켜고 다시 받지 않는다 — 항목 5 가 정한 "자동 재수신 없음" 이 이 다리에서도 같다.
+
+**wire 이름과 따로 두는 이유**: 두 다리는 끝점도 인가 축도 다르다. wire 쪽은 attach 채널의 raw JSON
+`event` 태그이고 인가는 `client_holds_workspace` 다. plugin 쪽은 plugin IPC 이고 인가는 매니페스트
+권한이다. 한 이름을 양쪽에 쓰면 "어느 인가가 이 호출을 봤는가" 가 이름으로 안 갈린다.
+
+**`markdown.` 이 아니라 `markdown_mirror.` 인 이유**: `markdown.*` 는 로컬 문서를 여는 기존
+네임스페이스라, 거기에 얹으면 로컬 경로로 부를 수 있는 것과 mirror 에서만 뜻이 있는 것이 한 이름
+공간에 섞인다.
+
 ## Consequences
 
 - **얻은 것**: mirror 워크스페이스의 markdown surface 가 빈칸 대신 실제 문서를 보여준다. client 가
@@ -287,7 +311,12 @@ git_query · 캡처)이 전부 넓은 쪽이라 이 채널만 규칙이 달라�
   세 이벤트 이름과 role 문자열 `"markdown"` 이 서버(`src/core/attach_runtime.rs`)와
   client(`src/app/attach_client.rs`) 양쪽에 리터럴로 중복 정의된다 — git-viewer 가 이미 같은
   형태이고([ADR-0056](0056-git-viewer-remote-attach-git-query-channel.md) Consequences), 동기화는
-  커밋 시점 수동 관리다. `attach_content_info()` 는 `RemoteSurface` **전체**에 붙으므로, 화이트리스트
+  커밋 시점 수동 관리다. **같은 사실이 적힌 자리는 그 둘이 끝이 아니다** — 항목 8 의 세 이름
+(`markdown_mirror.content_request`/`.content_result`/`.changed`)이 host
+(`src/adapters/ipc/handler/markdown_mirror.rs`)와 plugin
+(`crates/tasty-plugin-markdown/src/main.rs` 의 상수 셋)에 다시 리터럴로 갈라져 있고,
+`crates/tasty-ipc/src/method_meta.rs` 의 인가 표가 셋째 자리다. 하나를 고치면 셋을 함께
+옮긴다. `attach_content_info()` 는 `RemoteSurface` **전체**에 붙으므로, 화이트리스트
   (항목 1)를 넓히지 않는 한 다른 webview kind 는 계속 placeholder 다 — 새 kind 를 이 채널에 태우려면
   그 화이트리스트를 명시적으로 늘려야 한다.
 
