@@ -36,6 +36,11 @@ browse = "Browse…"
 open = "Open"
 cancel = "Cancel"
 
+[markdown.remote]
+loading = "Loading the remote document…"
+refresh = "Refresh from the remote host"
+refresh_stale = "The remote file has changed — refresh to see it"
+
 [markdown.addr]
 placeholder = "Path to markdown file"
 go = "Open (Enter)"

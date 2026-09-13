@@ -208,3 +208,170 @@ fn reload_webview_without_host_is_noop() {
     p.docs.insert(7, MdDoc::new(None));
     p.reload_webview(7); // host 없음 — panic 하지 않아야 한다.
 }
+
+fn mirror_create(p: &mut MarkdownPlugin, surface_id: u32, file: &str) -> SurfaceResult {
+    p.create_surface(SurfaceCreateCtx {
+        surface_id,
+        kind: "markdown".into(),
+        cwd: None,
+        params: json!({
+            "surface_id": surface_id,
+            "kind": "markdown",
+            "params": { "display_name": "notes.md", "remote": { "file": file } }
+        }),
+    })
+}
+
+fn content_result(
+    surface_id: u32,
+    request_id: u64,
+    ok: bool,
+    source: &str,
+) -> MirrorContentResultWire {
+    MirrorContentResultWire {
+        surface_id,
+        request_id,
+        ok,
+        source: ok.then(|| source.to_string()),
+        reason: (!ok).then(|| source.to_string()),
+    }
+}
+
+/// mirror 문서는 경로가 이 머신에 실재해도 읽지 않는다 — 그 경로는 원격 호스트의 것이다.
+#[test]
+fn remote_create_never_reads_the_local_file() {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path =
+        std::env::temp_dir().join(format!("tasty-md-remote-{}-{seq}.md", std::process::id()));
+    std::fs::write(&path, b"# local content").unwrap();
+    let mut p = MarkdownPlugin::new(Translator::default());
+    let res = mirror_create(&mut p, 5, &path.to_string_lossy());
+    let doc = p.docs.get(&5).expect("doc inserted");
+    assert!(doc.content.is_empty(), "로컬 파일을 읽으면 안 된다");
+    assert!(doc.load_error.is_none());
+    assert!(
+        doc.base_dir.is_none(),
+        "상대경로가 로컬 디렉토리로 풀리면 안 된다"
+    );
+    assert_eq!(
+        doc.file_path.as_deref(),
+        Some(path.to_string_lossy().as_ref())
+    );
+    assert!(doc.remote.is_some());
+    // mirror 워크스페이스는 저장되지 않는다 — 원격 경로를 로컬 layout 에 남기지 않는다.
+    assert_eq!(res.snapshot, None);
+
+    // 재읽기 경로(idle 감시·markdown.reload)도 로컬 read 로 흘러가지 않는다.
+    p.docs.get_mut(&5).unwrap().force_reload();
+    assert!(p.docs[&5].content.is_empty());
+    let resp = p.markdown_reload(&json!({ "surface": 5 })).unwrap();
+    assert_eq!(resp["ok"], json!(true));
+    assert!(p.docs[&5].content.is_empty());
+
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
+#[test]
+fn surface_param_remote_file_requires_the_remote_object() {
+    assert_eq!(
+        surface_param_remote_file(&json!({ "params": { "remote": { "file": "/r/a.md" } } }))
+            .as_deref(),
+        Some("/r/a.md")
+    );
+    // 원격이 파일 없이 연 문서도 mirror 문서다.
+    assert_eq!(
+        surface_param_remote_file(&json!({ "params": { "remote": {} } })).as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        surface_param_remote_file(&json!({ "params": { "file": "/l/a.md" } })),
+        None
+    );
+    assert_eq!(
+        surface_param_remote_file(&json!({ "remote": { "file": "/r/a.md" } })),
+        None
+    );
+}
+
+#[test]
+fn remote_result_applies_only_to_the_pending_request() {
+    let mut doc = MdDoc::new_remote("/r/notes.md".into());
+    // 대기 중인 요청이 없으면 아무것도 반영하지 않는다.
+    assert!(!doc.apply_remote_result(content_result(1, 7, true, "# a")));
+    assert!(doc.content.is_empty());
+
+    doc.remote.as_mut().unwrap().pending = Some(8);
+    doc.remote.as_mut().unwrap().stale = true;
+    // 옛 요청의 늦은 회신은 버린다.
+    assert!(!doc.apply_remote_result(content_result(1, 7, true, "# old")));
+    assert!(doc.content.is_empty());
+
+    assert!(doc.apply_remote_result(content_result(1, 8, true, "# new")));
+    assert_eq!(doc.content, "# new");
+    let remote = doc.remote.as_ref().unwrap();
+    assert_eq!(remote.pending, None);
+    assert!(remote.loaded);
+    assert!(!remote.stale, "최신 원문을 받으면 stale 표시가 풀린다");
+    assert_eq!(
+        doc.remote_view(),
+        Some(render::RemoteView {
+            loading: false,
+            stale: false
+        })
+    );
+}
+
+#[test]
+fn remote_failure_moves_reason_into_load_error() {
+    let mut doc = MdDoc::new_remote("/r/notes.md".into());
+    doc.remote.as_mut().unwrap().pending = Some(3);
+    assert!(doc.apply_remote_result(content_result(1, 3, false, "permission denied")));
+    assert_eq!(doc.load_error.as_deref(), Some("permission denied"));
+    assert_eq!(doc.remote.as_ref().unwrap().pending, None);
+}
+
+/// 연결이 끊겨 회신이 영영 안 올 때 host 가 보내는 abandon 은 대기 중인 로딩만 끝낸다 —
+/// 이미 받은 문서를 지우지 않는다.
+#[test]
+fn abandon_ends_only_a_pending_load() {
+    let mut loading = MdDoc::new_remote("/r/notes.md".into());
+    loading.remote.as_mut().unwrap().pending = Some(4);
+    assert!(loading.apply_remote_result(content_result(
+        1,
+        MIRROR_ABANDON_REQUEST_ID,
+        false,
+        "gone"
+    )));
+    assert_eq!(loading.load_error.as_deref(), Some("gone"));
+
+    let mut idle = MdDoc::new_remote("/r/notes.md".into());
+    assert!(!idle.apply_remote_result(content_result(1, MIRROR_ABANDON_REQUEST_ID, false, "gone")));
+    assert!(idle.load_error.is_none());
+
+    let mut loaded = MdDoc::new_remote("/r/notes.md".into());
+    loaded.remote.as_mut().unwrap().pending = Some(5);
+    assert!(loaded.apply_remote_result(content_result(1, 5, true, "# kept")));
+    loaded.remote.as_mut().unwrap().pending = Some(6);
+    assert!(!loaded.apply_remote_result(content_result(
+        1,
+        MIRROR_ABANDON_REQUEST_ID,
+        false,
+        "gone"
+    )));
+    assert_eq!(loaded.content, "# kept");
+    assert!(loaded.load_error.is_none());
+    assert_eq!(loaded.remote.as_ref().unwrap().pending, None);
+}
+
+#[test]
+fn change_signal_marks_stale_once_and_ignores_local_documents() {
+    let mut doc = MdDoc::new_remote("/r/notes.md".into());
+    assert!(doc.mark_remote_stale());
+    assert!(
+        !doc.mark_remote_stale(),
+        "이미 stale 이면 다시 그리지 않는다"
+    );
+    assert!(doc.content.is_empty(), "신호만으로 원문을 다시 받지 않는다");
+    assert!(!MdDoc::new(None).mark_remote_stale());
+}

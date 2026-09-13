@@ -36,6 +36,11 @@ browse = "찾아보기…"
 open = "열기"
 cancel = "취소"
 
+[markdown.remote]
+loading = "원격 문서를 불러오는 중…"
+refresh = "원격 호스트에서 다시 불러오기"
+refresh_stale = "원격 파일이 바뀌었습니다 — 새로고침하면 보입니다"
+
 [markdown.addr]
 placeholder = "마크다운 파일 경로"
 go = "열기 (Enter)"

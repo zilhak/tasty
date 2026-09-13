@@ -543,6 +543,7 @@ Theme 토큰 매핑이다.
 |---|---|---|---|
 | 문서 배경/전경 | `--md-bg` / `--md-fg` | `bg-app`(=crust) · `text-secondary` | webview 렌더 경로엔 focus 신호가 없어 `bg-app` 이 문서의 유일한 배경(`surfaces.markdown.focused_bg` 설정값은 이 경로에서 쓰지 않음) |
 | 주소창 바 | `#tasty-addr-bar` | `bg-sidebar` · 40px sticky top | `<input list>`+native `<datalist>`(최근목록)+Go `<button>` — 전부 문서 HTML |
+| 새로고침 버튼(attach mirror 문서) | `#tasty-refresh` | 평소 `surface-raised` 배경 · `text-secondary` / `data-stale="true"` 이면 `accent-primary` 배경·보더 · `text-on-accent` | mirror 문서에서만 주소창 우측 끝에 Go 대신 붙는다. 주소창 입력은 `readonly` 이고 글자색이 `text-muted` |
 | 강조 텍스트 | `--md-strong` | `text-primary` | heading, `<strong>` |
 | 링크 | `--md-link` | `accent-primary` | nav-fragment 로 rewrite 된 `href` |
 | 코드 배경/보더 | `--md-code-bg` / `--md-code-border` | `surface-raised` / `separator` | 인라인 `<code>` + `<pre>` |

@@ -1,4 +1,4 @@
-<!-- source-hash: c986f3cc4caa -->
+<!-- source-hash: 3f0127305fc2 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -98,7 +98,7 @@ tasty remote attach --ssh me@10.0.0.5 --workspace 3        # one-off, without a 
 tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/proj   # create a Workspace on the remote
 ```
 
-- A Workspace attach mirrors the terminals inside it, including the split structure. Image Surfaces show their content as well, and clicks and key presses reach the remote. The explorer can only be browsed — renaming, deleting and opening files are blocked. Markdown and HTML Surfaces still only take up their place; their content is not shown yet.
+- A Workspace attach mirrors the terminals inside it, including the split structure. Image Surfaces show their content as well, and clicks and key presses reach the remote. The explorer can only be browsed — renaming, deleting and opening files are blocked. Markdown Surfaces show the remote document in this computer's theme, and the refresh button at the document's top right fetches the latest content again. Relative image paths and file links inside a remote document don't open, and the address bar can't open another file. HTML Surfaces still only take up their place; their content is not shown yet.
 - `--raw` works only at the Surface level.
 - Unless you pass `--no-reconnect`, it automatically tries to reconnect when SSH drops.
 

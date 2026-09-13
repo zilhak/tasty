@@ -67,6 +67,22 @@ const LARGE_FILE_EVENT_KEY: &str = "com.tasty.markdown.large_file_confirm";
 /// 받을 때마다 살아있는 모든 문서를 재생성한다.
 const THEME_CHANGED_EVENT: &str = "theme.changed";
 
+/// attach mirror 문서의 원문 조회를 host 에 거는 메서드. host 는 `request_id` 만 즉시
+/// 돌려주고 원문은 [`MIRROR_CONTENT_RESULT_EVENT`] 로 나중에 온다
+/// (`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`).
+const MIRROR_CONTENT_REQUEST_METHOD: &str = "markdown_mirror.content_request";
+
+/// host 가 이 plugin 에 unicast 하는 원문 조회 회신 이벤트.
+const MIRROR_CONTENT_RESULT_EVENT: &str = "markdown_mirror.content_result";
+
+/// host 가 이 plugin 에 unicast 하는 원격 파일 변경 신호. 받아도 원문을 다시 받지 않고
+/// 새로고침 버튼 색만 바꾼다 — 다시 받는 것은 사용자가 버튼을 눌렀을 때다.
+const MIRROR_CHANGED_EVENT: &str = "markdown_mirror.changed";
+
+/// host 가 대기 중인 요청을 버리라고 알릴 때 쓰는 `request_id`. host 는 이 값을 발급하지
+/// 않는다(attach 연결이 끊겨 회신이 영영 안 올 때 보낸다).
+const MIRROR_ABANDON_REQUEST_ID: u64 = 0;
+
 /// Per-surface markdown document state owned by the plugin (content, load outcome, base
 /// dir for relative paths). Tracking to *decide when* to reload lives in the SDK's `file_watch`,
 /// not here — `MdDoc` only knows how to (re-)read once asked.
@@ -78,6 +94,32 @@ struct MdDoc {
     /// 대용량 확인 대기 중이면 true — 파일을 아직 읽지 않았다(빈 콘텐츠). 확인 팝업의
     /// [열기] 확정 시 [`MdDoc::resume_load`] 가 실제 read 를 재개한다.
     pending_large: bool,
+    /// attach mirror 문서면 `Some` — 원문은 로컬 파일이 아니라 host 가 원격에서 가져다
+    /// 준다. 이 문서는 파일을 **한 번도 읽지 않는다**(`file_path` 는 원격 경로라 표시 전용).
+    remote: Option<RemoteDoc>,
+}
+
+/// attach mirror 문서의 원격 조회 상태.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct RemoteDoc {
+    /// 회신을 기다리는 요청. 새 요청이 나가면 덮어써져 늦게 온 옛 회신은 버려진다.
+    pending: Option<u64>,
+    /// 원문을 한 번이라도 받았는가 — 받기 전에는 본문 자리에 로딩 상태를 그린다.
+    loaded: bool,
+    /// 받은 뒤 원격 파일이 바뀌었다는 신호가 왔는가.
+    stale: bool,
+}
+
+/// `markdown_mirror.content_result` 페이로드. host 가 surface_id 를 로컬 id 로 바꿔 보낸다.
+#[derive(Debug, serde::Deserialize)]
+struct MirrorContentResultWire {
+    surface_id: u32,
+    request_id: u64,
+    ok: bool,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 impl MdDoc {
@@ -98,7 +140,70 @@ impl MdDoc {
             content,
             load_error,
             pending_large: false,
+            remote: None,
         }
+    }
+
+    /// attach mirror 문서 — 파일을 읽지 않고 `base_dir` 도 두지 않는다. 상대경로 이미지·
+    /// 링크가 이 머신의 파일로 풀리면 원격 문서가 로컬 파일을 끌어다 쓰게 된다.
+    fn new_remote(file: String) -> Self {
+        Self {
+            file_path: (!file.is_empty()).then_some(file),
+            base_dir: None,
+            content: String::new(),
+            load_error: None,
+            pending_large: false,
+            remote: Some(RemoteDoc::default()),
+        }
+    }
+
+    /// 원문 조회 회신을 반영한다. 다시 그려야 하면 true.
+    ///
+    /// 대기 중인 요청과 id 가 다르면 버린다(새로고침을 연달아 눌러 옛 회신이 늦게 온 경우).
+    /// abandon id 는 대기 중일 때만 실패로 반영한다 — 이미 받은 문서를 연결 끊김 하나로
+    /// 지우지 않는다.
+    fn apply_remote_result(&mut self, reply: MirrorContentResultWire) -> bool {
+        let Some(remote) = self.remote.as_mut() else {
+            return false;
+        };
+        let Some(pending) = remote.pending else {
+            return false;
+        };
+        if reply.request_id != MIRROR_ABANDON_REQUEST_ID && reply.request_id != pending {
+            return false;
+        }
+        remote.pending = None;
+        if reply.request_id == MIRROR_ABANDON_REQUEST_ID && remote.loaded {
+            return false;
+        }
+        if reply.ok {
+            self.content = reply.source.unwrap_or_default();
+            self.load_error = None;
+            remote.loaded = true;
+            remote.stale = false;
+        } else {
+            self.load_error = Some(reply.reason.unwrap_or_default());
+        }
+        true
+    }
+
+    /// 원격 파일 변경 신호를 반영한다. 색이 바뀌어야 하면 true — 이미 stale 이면 다시
+    /// 그리지 않는다(같은 파일이 연달아 저장될 때 문서를 매번 통째로 다시 싣지 않게).
+    fn mark_remote_stale(&mut self) -> bool {
+        match self.remote.as_mut() {
+            Some(remote) if !remote.stale => {
+                remote.stale = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn remote_view(&self) -> Option<render::RemoteView> {
+        self.remote.as_ref().map(|r| render::RemoteView {
+            loading: !r.loaded,
+            stale: r.stale,
+        })
     }
 
     /// 대용량 파일을 **읽지 않고** 경로만 보관한 문서를 만든다(확인 팝업 대기). 확인
@@ -113,6 +218,7 @@ impl MdDoc {
             content: String::new(),
             load_error: None,
             pending_large: true,
+            remote: None,
         }
     }
 
@@ -129,6 +235,10 @@ impl MdDoc {
     /// `paint_surface` never fires for a webview-kind surface, so there's no per-frame
     /// throttled poll to gate anymore — see the module doc on the removed `poll_reload`).
     fn force_reload(&mut self) {
+        // mirror 문서의 경로는 원격 호스트의 것이다 — 로컬에서 읽으면 엉뚱한 파일이 뜬다.
+        if self.remote.is_some() {
+            return;
+        }
         let Some(f) = self.file_path.clone() else {
             return;
         };
@@ -264,6 +374,9 @@ impl Plugin for MarkdownPlugin {
         // read 를 보류하고(확인 대기), large-file 이벤트를 발행한다. host 는 파일 크기를
         // stat 하지 않는다(크기게이트는 plugin 소유). 이벤트 → host `fire_popup_triggers`
         // → 이 plugin 의 `[[contributes.popup]]`(event trigger) 확인 팝업이 열린다.
+        if let Some(remote_file) = surface_param_remote_file(&ctx.params) {
+            return self.open_remote_surface(ctx.surface_id, remote_file);
+        }
         let file = surface_param_file(&ctx.params);
         self.open_file_surface(ctx.surface_id, file)
     }
@@ -403,6 +516,41 @@ impl Plugin for MarkdownPlugin {
             // 재생성한다 — webview-kind surface 는 `surface.set_context` 를 받지 않아
             // Theme 이 자동으로 밀리지 않는다(`host_api/webview.rs::handle_theme_query` 문서).
             THEME_CHANGED_EVENT => self.reload_all_webviews(),
+            MIRROR_CONTENT_RESULT_EVENT => {
+                let Ok(reply) =
+                    serde_json::from_value::<MirrorContentResultWire>(ctx.envelope.payload)
+                else {
+                    tracing::warn!("markdown: malformed {MIRROR_CONTENT_RESULT_EVENT} event");
+                    return;
+                };
+                let surface_id = reply.surface_id;
+                if self
+                    .docs
+                    .get_mut(&surface_id)
+                    .is_some_and(|doc| doc.apply_remote_result(reply))
+                {
+                    self.reload_webview(surface_id);
+                }
+            }
+            MIRROR_CHANGED_EVENT => {
+                let Some(surface_id) = ctx
+                    .envelope
+                    .payload
+                    .get("surface_id")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+                else {
+                    tracing::warn!("markdown: malformed {MIRROR_CHANGED_EVENT} event");
+                    return;
+                };
+                if self
+                    .docs
+                    .get_mut(&surface_id)
+                    .is_some_and(MdDoc::mark_remote_stale)
+                {
+                    self.reload_webview(surface_id);
+                }
+            }
             _ => {}
         }
     }
@@ -422,7 +570,22 @@ impl Plugin for MarkdownPlugin {
             );
             return;
         };
+        let is_remote = self
+            .docs
+            .get(&ctx.surface_id)
+            .is_some_and(|d| d.remote.is_some());
         match intent {
+            render::NavIntent::Refresh if is_remote => self.request_remote_content(ctx.surface_id),
+            // 버튼은 mirror 문서에만 그려진다 — 로컬 문서에 온 것은 이 plugin 이 낸 것이 아니다.
+            render::NavIntent::Refresh => {}
+            // mirror 문서의 파일 링크와 주소창 경로는 원격 호스트의 것이라 이 머신에서 열 수
+            // 없다. 외부 URL 만 연다.
+            render::NavIntent::Link(dest) if is_remote => {
+                if let Some(render::LinkClick::External(url)) = render::classify_link(&dest, None) {
+                    dispatch_external_link(&url);
+                }
+            }
+            render::NavIntent::Addr(_) if is_remote => {}
             render::NavIntent::Link(dest) => {
                 let base_dir = self
                     .docs
@@ -444,6 +607,15 @@ impl MarkdownPlugin {
             .and_then(|v| v.as_u64())
             .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))?
             as u32;
+        // mirror 문서는 원격 원문을 다시 요청한다 — 회신이 오면 그때 다시 그린다.
+        if self
+            .docs
+            .get(&surface_id)
+            .is_some_and(|d| d.remote.is_some())
+        {
+            self.request_remote_content(surface_id);
+            return Ok(json!({ "ok": true, "surface_id": surface_id }));
+        }
         if let Some(doc) = self.docs.get_mut(&surface_id) {
             doc.force_reload();
         }
@@ -471,6 +643,54 @@ impl MarkdownPlugin {
             display_name: None,
             snapshot: file.as_ref().map(|f| json!({ "file": f })),
         }
+    }
+
+    /// attach mirror 문서를 연다. 파일 감시도 snapshot 도 없다 — 원문의 주인은 원격이고,
+    /// mirror 워크스페이스는 저장되지 않는다. 원문 요청을 먼저 걸고 로딩 상태를 그린다.
+    fn open_remote_surface(&mut self, surface_id: u32, file: String) -> SurfaceResult {
+        self.docs.insert(surface_id, MdDoc::new_remote(file));
+        self.request_remote_content(surface_id);
+        SurfaceResult {
+            display_name: None,
+            snapshot: None,
+        }
+    }
+
+    /// mirror 문서의 원문을 host 에 요청하고 다시 그린다. 호출이 실패하면 그 사유를 문서의
+    /// 실패 상태로 둔다 — 회신이 올 길이 없으므로 로딩 상태로 남기지 않는다.
+    fn request_remote_content(&mut self, surface_id: u32) {
+        let Some(host) = self.host.clone() else {
+            tracing::warn!(
+                "markdown surface {surface_id}: no host handle yet — cannot request remote content"
+            );
+            return;
+        };
+        let outcome = host
+            .call(
+                MIRROR_CONTENT_REQUEST_METHOD,
+                json!({ "surface_id": surface_id }),
+            )
+            .map_err(|e| e.to_string())
+            .and_then(|v| {
+                v.get("request_id")
+                    .and_then(|id| id.as_u64())
+                    .ok_or_else(|| format!("{MIRROR_CONTENT_REQUEST_METHOD}: no request_id"))
+            });
+        let Some(doc) = self.docs.get_mut(&surface_id) else {
+            return;
+        };
+        let Some(remote) = doc.remote.as_mut() else {
+            return;
+        };
+        match outcome {
+            Ok(request_id) => remote.pending = Some(request_id),
+            Err(e) => {
+                tracing::warn!("markdown surface {surface_id}: remote content request failed: {e}");
+                remote.pending = None;
+                doc.load_error = Some(e);
+            }
+        }
+        self.reload_webview(surface_id);
     }
 
     fn make_doc(&self, file: Option<String>, surface_id: u32) -> MdDoc {
@@ -552,6 +772,7 @@ impl MarkdownPlugin {
             load_error: doc.load_error.as_deref(),
             base_dir: doc.base_dir.as_deref(),
             recent: &recent,
+            remote: doc.remote_view(),
         });
         push_html(host, surface_id, file_path, html);
     }
@@ -683,6 +904,20 @@ impl MarkdownPlugin {
     /// unix/windows 외에는 egui-mesh 채널이 비활성이라 파일열기 팝업 렌더는 no-op.
     #[cfg(not(any(unix, windows)))]
     fn paint_file_open(&mut self, _ctx: PopupSetContextCtx) {}
+}
+
+/// surface.create envelope 에서 attach mirror 문서의 원격 경로를 꺼낸다(`params.remote.file`).
+/// `remote` 객체가 있으면 mirror 문서다 — 경로가 비어 있어도(원격이 파일 없이 연 문서) 그렇다.
+/// 최상위 `file` 과 자리를 나눈 것은 그 키가 로컬 읽기·감시·cwd 도출을 모두 켜기 때문이다.
+fn surface_param_remote_file(envelope: &Value) -> Option<String> {
+    let remote = envelope.get("params")?.get("remote")?.as_object()?;
+    Some(
+        remote
+            .get("file")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    )
 }
 
 /// surface.create envelope 에서 `file` 을 꺼낸다. SDK 가 `ctx.params` 로 넘기는 것은

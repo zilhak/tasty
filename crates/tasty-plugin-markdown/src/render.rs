@@ -53,10 +53,14 @@ use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
 /// Marker preceding the encoded payload in every internal-nav URL fragment
-/// (`#tasty-nav:link:<enc>` / `#tasty-nav:addr:<enc>`). Shared by the generator
+/// (`#tasty-nav:link:<enc>` / `#tasty-nav:addr:<enc>` / `#tasty-nav:refresh:<nonce>`). Shared by the generator
 /// ([`rewrite_link_dest`], [`nav_script`]) and the consumer (`main.rs`'s
 /// `on_webview_navigation_attempt` handler via [`parse_nav_fragment`]).
 pub const NAV_FRAGMENT_MARKER: &str = "tasty-nav:";
+
+/// `#tasty-nav:refresh:<nonce>` 의 종류 접두. nonce 는 매 클릭 달라야 한다 — 같은 hash 를
+/// 다시 대입하면 WebView 가 navigation 을 시도하지 않아 두 번째 클릭이 사라진다.
+const NAV_REFRESH_PREFIX: &str = "refresh:";
 
 /// Outcome of clicking a markdown link or submitting the address bar, raised so the plugin
 /// shell performs the side effect (host `file_handler.dispatch` for files / OS open for URLs).
@@ -76,6 +80,8 @@ pub enum NavIntent {
     Link(String),
     /// The address bar's Go action (click or Enter) fired — `path` is the input's raw value.
     Addr(String),
+    /// attach mirror 문서의 새로고침 버튼이 눌렸다 — 원격 원문을 다시 요청한다.
+    Refresh,
 }
 
 /// Parser options mirroring GFM: tables, task lists, strikethrough, footnotes, definition
@@ -122,6 +128,19 @@ pub struct DocumentInput<'a> {
     /// address bar's `<datalist>` at generation time (no async JS fetch / native message
     /// bridge exists for a webview surface, see module doc).
     pub recent: &'a [String],
+    /// attach mirror 문서면 `Some` — 원문이 로컬 파일이 아니라 원격에서 주입된 것이다
+    /// (`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`). 주소창은
+    /// 읽기 전용이 되고 우측 상단에 새로고침 버튼이 붙는다.
+    pub remote: Option<RemoteView>,
+}
+
+/// attach mirror 문서의 표시 상태.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RemoteView {
+    /// 원문을 아직 한 번도 받지 못했다 — 본문 자리에 로딩 상태를 그린다.
+    pub loading: bool,
+    /// 받은 뒤 원격 파일이 바뀌었다는 신호가 왔다 — 새로고침 버튼 색이 바뀐다.
+    pub stale: bool,
 }
 
 /// Build the complete, self-contained HTML5 document for the markdown webview surface.
@@ -134,13 +153,22 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         load_error,
         base_dir,
         recent,
+        remote,
     } = input;
 
     let base_tag = base_dir
         .map(|dir| format!(r#"<base href="{}">"#, attr_escape(&file_dir_uri(dir))))
         .unwrap_or_default();
 
-    let (body_html, headings) = if let Some(err) = load_error {
+    let (body_html, headings) = if remote.is_some_and(|r| r.loading) && load_error.is_none() {
+        (
+            format!(
+                r#"<div class="tasty-state">{}</div>"#,
+                html_escape(tr.t("markdown.remote.loading"))
+            ),
+            Vec::new(),
+        )
+    } else if let Some(err) = load_error {
         (
             format!(
                 r#"<div class="tasty-state tasty-state-error"><div class="tasty-state-title">{}</div><pre class="tasty-state-detail">{}</pre></div>"#,
@@ -228,7 +256,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}{math}</body></html>"#,
         base_tag = base_tag,
         css = theme_css(theme),
-        addr_bar = addr_bar_html(tr, file_path, recent),
+        addr_bar = addr_bar_html(tr, file_path, recent, remote),
         find_bar = find_bar_html(tr),
         toc_html = toc_html,
         body_html = body_html,
@@ -271,6 +299,9 @@ pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     }
     if let Some(enc) = payload.strip_prefix("addr:") {
         return Some(NavIntent::Addr(percent_decode(enc)));
+    }
+    if payload.starts_with(NAV_REFRESH_PREFIX) {
+        return Some(NavIntent::Refresh);
     }
     None
 }
@@ -2029,6 +2060,9 @@ body{{background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,Blink
 #tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:40px;padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
 #tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
+#tasty-addr-input[readonly]{{color:{muted};}}
+#tasty-refresh{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
+#tasty-refresh[data-stale="true"]{{background:{accent};border-color:{accent};color:{on_accent};}}
 #tasty-find-bar{{position:fixed;top:calc(40px + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
 #tasty-find-bar[hidden]{{display:none;}}
 #tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
@@ -2135,6 +2169,8 @@ li input[type=checkbox]{{margin-right:0.4em;}}
             .to_hex(),
         find_current_bg = theme.accent_primary().to_hex(),
         find_current_fg = theme.text_on_accent().to_hex(),
+        accent = theme.accent_primary().to_hex(),
+        on_accent = theme.text_on_accent().to_hex(),
     )
 }
 
@@ -2254,7 +2290,29 @@ fn heading_sizes_px(theme: &Theme) -> [f32; 6] {
 /// no custom dropdown JS needed) + a Go button. Baked with the *current* path/recent list at
 /// document-generation time (there's no live JS↔plugin message channel for a webview surface —
 /// see module doc — so unlike the old `PathField` there's no reactive fetch-on-focus).
-fn addr_bar_html(tr: &Translator, file_path: &str, recent: &[String]) -> String {
+///
+/// attach mirror 문서(`remote`)는 주소창을 읽기 전용으로 두고 Go 대신 새로고침 버튼을 단다 —
+/// 경로는 원격 호스트의 것이라 이 머신에서 열 수 없고, 최근목록도 이 머신의 것이라 후보로
+/// 내지 않는다. 버튼의 `data-stale` 이 변경 신호를 색으로 보인다(CSS 는 [`theme_css`]).
+fn addr_bar_html(
+    tr: &Translator,
+    file_path: &str,
+    recent: &[String],
+    remote: Option<RemoteView>,
+) -> String {
+    if let Some(view) = remote {
+        let tooltip = if view.stale {
+            tr.t("markdown.remote.refresh_stale")
+        } else {
+            tr.t("markdown.remote.refresh")
+        };
+        return format!(
+            r#"<div id="tasty-addr-bar"><input id="tasty-addr-input" value="{value}" readonly><button id="tasty-refresh" type="button" data-stale="{stale}" title="{tooltip}" aria-label="{tooltip}">&#8635;</button></div>"#,
+            value = attr_escape(file_path),
+            stale = view.stale,
+            tooltip = attr_escape(tooltip),
+        );
+    }
     let options: String = recent
         .iter()
         .map(|p| format!(r#"<option value="{}"></option>"#, attr_escape(p)))
@@ -2272,7 +2330,8 @@ fn addr_bar_html(tr: &Translator, file_path: &str, recent: &[String]) -> String 
 /// Two responsibilities:
 /// 1. Builds the `#tasty-nav:addr:<enc>` fragment from the address bar's current input value on
 ///    Enter/Go-click; module doc explains why a fragment assignment (rather than a real
-///    navigation) is the only safe way to signal the host.
+///    navigation) is the only safe way to signal the host. The attach mirror refresh button
+///    (`#tasty-refresh`, [`addr_bar_html`]) signals the same way with `#tasty-nav:refresh:<nonce>`.
 /// 2. Best-effort scroll-position preservation across `webview.set_url` reloads (idle-watch
 ///    auto-reload and `markdown.reload` both replace the whole document via `load_html` — there
 ///    is no in-place DOM patch, so the native WebView's own scroll position is always reset to
@@ -2294,6 +2353,8 @@ if(!v)return;
 location.hash='tasty-nav:addr:'+encodeURIComponent(v);
 }}
 if(g)g.addEventListener('click',go);
+var r=document.getElementById('tasty-refresh');
+if(r)r.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+Date.now();}});
 if(i)i.addEventListener('keydown',function(e){{if(e.key==='Enter')go();}});
 var toc=document.getElementById('tasty-toc');
 var tocToggle=document.getElementById('tasty-toc-toggle');
@@ -3814,6 +3875,7 @@ mod tests {
             load_error: None,
             base_dir: Some(Path::new("/a")),
             recent: &recent,
+            remote: None,
         });
         assert!(html.contains("<style>"));
         assert!(html.contains("tasty-addr-bar"));
@@ -3822,6 +3884,123 @@ mod tests {
         assert!(html.contains("<base href="));
         assert!(html.contains("Hello"));
         assert!(!html.contains("<script>alert"));
+    }
+
+    fn remote_document(source: &str, load_error: Option<&str>, view: RemoteView) -> String {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/remote/notes.md",
+            source,
+            load_error,
+            base_dir: None,
+            recent: &["/local/recent.md".to_string()],
+            remote: Some(view),
+        })
+    }
+
+    #[test]
+    fn remote_document_swaps_go_for_a_refresh_button_that_carries_the_stale_flag() {
+        let fresh = remote_document(
+            "# Remote",
+            None,
+            RemoteView {
+                loading: false,
+                stale: false,
+            },
+        );
+        assert!(fresh.contains(r#"id="tasty-refresh""#));
+        assert!(fresh.contains(r#"data-stale="false""#));
+        assert!(fresh.contains("readonly"));
+        // 경로는 원격 호스트의 것이라 여기서 열 수 없다 — Go 와 이 머신의 최근목록을 내지 않는다.
+        assert!(!fresh.contains(r#"id="tasty-addr-go""#));
+        assert!(!fresh.contains("/local/recent.md"));
+        assert!(!fresh.contains("<base href="));
+        assert!(fresh.contains("markdown.remote.refresh"));
+
+        let stale = remote_document(
+            "# Remote",
+            None,
+            RemoteView {
+                loading: false,
+                stale: true,
+            },
+        );
+        assert!(stale.contains(r#"data-stale="true""#));
+        assert!(stale.contains("markdown.remote.refresh_stale"));
+    }
+
+    #[test]
+    fn stale_refresh_button_color_comes_from_theme_accent_tokens() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = theme_css(&theme);
+        let rule = css
+            .lines()
+            .find(|l| l.starts_with(r#"#tasty-refresh[data-stale="true"]"#))
+            .expect("stale rule");
+        assert!(rule.contains(&theme.accent_primary().to_hex()), "{rule}");
+        assert!(rule.contains(&theme.text_on_accent().to_hex()), "{rule}");
+    }
+
+    #[test]
+    fn remote_document_shows_loading_until_content_arrives_and_error_wins() {
+        let loading = remote_document(
+            "",
+            None,
+            RemoteView {
+                loading: true,
+                stale: false,
+            },
+        );
+        assert!(loading.contains("markdown.remote.loading"));
+        assert!(!loading.contains("markdown.state.empty"));
+
+        let failed = remote_document(
+            "",
+            Some("mirror workspace disconnected"),
+            RemoteView {
+                loading: true,
+                stale: false,
+            },
+        );
+        assert!(failed.contains("markdown.state.failed"));
+        assert!(failed.contains("mirror workspace disconnected"));
+        assert!(!failed.contains("markdown.remote.loading"));
+    }
+
+    #[test]
+    fn remote_document_does_not_inline_images_from_the_local_disk() {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("tasty-md-remote-img-{}-{seq}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let img = dir.join("pic.png");
+        std::fs::write(&img, b"\x89PNG\r\n\x1a\n").unwrap();
+        let source = format!("![pic]({})", img.display());
+        let html = remote_document(&source, None, RemoteView::default());
+        assert!(
+            !html.contains("data:image/png;base64"),
+            "로컬 파일을 끌어오면 안 된다"
+        );
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+    }
+
+    #[test]
+    fn refresh_script_uses_a_nonce_so_repeat_clicks_still_navigate() {
+        let script = nav_script("/remote/notes.md");
+        assert!(script.contains("tasty-nav:refresh:'+Date.now()"));
+    }
+
+    #[test]
+    fn parse_nav_fragment_reads_refresh_with_any_nonce() {
+        assert_eq!(
+            parse_nav_fragment("about:blank#tasty-nav:refresh:1757750000000"),
+            Some(NavIntent::Refresh)
+        );
+        assert_eq!(parse_nav_fragment("about:blank#tasty-nav:refreshx"), None);
     }
 
     #[test]
@@ -3848,6 +4027,7 @@ mod tests {
             load_error: Some("No such file"),
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains("No such file"));
     }
@@ -3864,6 +4044,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(with_mermaid.contains(r#"class="language-mermaid""#));
         assert!(with_mermaid.contains("mermaid.initialize"));
@@ -3879,6 +4060,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(without_mermaid.contains(r#"class="language-rust""#));
         assert!(!without_mermaid.contains("mermaid.initialize"));
@@ -3953,6 +4135,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(with_code.contains(r#"class="language-rust""#));
         assert!(with_code.contains("hljs.getLanguage"));
@@ -3966,6 +4149,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(!without_code.contains("hljs.getLanguage"));
         assert!(!without_code.contains("hljs.highlightElement"));
@@ -4053,6 +4237,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
         // The only `<script` occurrences in the whole document must be tasty's own trusted
@@ -4096,6 +4281,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         // `.tasty-copy-btn` itself is always in the document (it's a CSS rule in `theme_css`,
         // emitted unconditionally like every other selector) — the actual conditional signal is
@@ -4110,6 +4296,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(!without_code.contains("#tasty-md-body pre > code"));
     }
@@ -4130,6 +4317,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains("<pre><code>"));
         assert!(html.contains("#tasty-md-body pre > code"));
@@ -4150,6 +4338,7 @@ mod tests {
             load_error: Some("No such file"),
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains("tasty-state-detail"));
         assert!(!html.contains("#tasty-md-body pre > code"));
@@ -4241,6 +4430,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(with_image.contains("<img"));
         assert!(with_image.contains("#tasty-md-body img"));
@@ -4253,6 +4443,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(!without_image.contains("#tasty-md-body img"));
     }
@@ -4271,6 +4462,7 @@ mod tests {
             load_error: Some("No such file"),
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(!html.contains("#tasty-md-body img"));
     }
@@ -4355,6 +4547,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(with_math.contains(r#"class="math math-inline""#));
         assert!(with_math.contains(r#"class="math math-display""#));
@@ -4368,6 +4561,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(!without_math.contains("katex.render"));
     }
@@ -4387,6 +4581,7 @@ mod tests {
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains("a &lt; b"), "got: {html}");
     }
@@ -4403,6 +4598,7 @@ mod tests {
             load_error: Some("No such file"),
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(!html.contains("katex.render"));
     }
@@ -4885,6 +5081,7 @@ Outro\n";
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         // `#tasty-toc{...}` still appears in the static `<style>` block regardless of
         // headings (theme_css isn't conditional) — assert on the actual `<nav>` element, not
@@ -4904,6 +5101,7 @@ Outro\n";
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains(r#"id="tasty-toc""#), "got: {html}");
         assert!(html.contains(r##"href="#intro""##), "got: {html}");
@@ -4930,6 +5128,7 @@ Outro\n";
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         // Match the actual elements, not the bare id substrings — those also appear earlier,
         // in the static `<style>` block's `#tasty-addr-bar{...}`/`#tasty-md-body{...}`/
@@ -4961,6 +5160,7 @@ Outro\n";
             load_error: None,
             base_dir: None,
             recent: &[],
+            remote: None,
         });
         assert!(html.contains(r#"id="tasty-find-bar""#), "got: {html}");
         // hidden by default — the bar only appears on Ctrl+F, never on load.

@@ -36,6 +36,11 @@ browse = "参照…"
 open = "開く"
 cancel = "キャンセル"
 
+[markdown.remote]
+loading = "リモートのドキュメントを読み込み中…"
+refresh = "リモートホストから再読み込み"
+refresh_stale = "リモートのファイルが変更されました — 再読み込みすると表示されます"
+
 [markdown.addr]
 placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"

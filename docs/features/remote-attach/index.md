@@ -251,6 +251,8 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
   - client GUI 가 그 원문을 실제로 렌더하는 것 — 미검증(실제 GUI 두 인스턴스 attach 로 화면을 본 적이 없다).
 - Given client 에 번들 markdown plugin 이 등록돼 있음 When mirror 트리에 markdown role leaf 가 있음 Then 그 leaf 는 빈 surface 가 아니라 markdown kind 로컬 surface 로 만들어지고 원격 파일 경로가 plugin 에 전달된다 — 구조 delta 로 트리가 다시 와도 같은 surface 를 재사용한다(`src/app/attach_client.rs` 단위 테스트).
 - Given client 에 번들 markdown plugin 이 없거나 `markdown` kind 를 다른 plugin 이 차지함 When 같은 트리 Then 그 leaf 는 빈 surface 로 남는다(`src/app/attach_client.rs` 단위 테스트).
+- Given mirror markdown 문서 When plugin 이 그 문서를 연다 Then 원격 경로가 이 머신에 실재해도 파일을 읽지 않고, 상대경로를 풀 디렉토리를 두지 않으며, layout 에 남길 snapshot 도 내지 않는다 — 원문은 요청해 받은 것만 그린다(`crates/tasty-plugin-markdown/src/tests.rs`).
+- Given mirror markdown 문서 When 새로고침 버튼을 누르거나 `markdown.reload` 를 부른다 Then 원격 원문을 다시 요청하고, 늦게 온 옛 회신은 버린다(`crates/tasty-plugin-markdown/src/tests.rs`). 버튼 클릭이 실제 WebView 에서 재요청으로 이어지는 것 — 미검증.
 - Given mirror 문서가 원문을 기다리는 중 When attach 연결이 끊김 Then plugin 에 실패 결과가 가서 문서가 로딩 상태로 멈추지 않는다 — 요청 송신 자체가 실패해도 같은 실패 결과가 간다. 미검증(실행 시나리오로 확인한 적 없음).
 - Given 전송 형태로 예산(700 KiB)을 넘는 문서 When client 가 원문을 요청 Then 세션이 끊기지 않고 잘린 원문이 "잘렸다" 표시와 함께 도착하며, 그 판정은 원문 바이트가 아니라 이스케이프된 길이로 이뤄진다(`tests/attach_markdown_content_loopback.rs`).
 - Given attach 점유가 없는 client When 원문을 요청 Then 파일을 한 바이트도 읽히지 않고 거절된다(`tests/attach_markdown_content_loopback.rs`).
