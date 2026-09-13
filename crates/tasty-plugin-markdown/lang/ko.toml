@@ -40,6 +40,7 @@ cancel = "취소"
 loading = "원격 문서를 불러오는 중…"
 refresh = "원격 호스트에서 다시 불러오기"
 refresh_stale = "원격 파일이 바뀌었습니다 — 새로고침하면 보입니다"
+disconnected = "원격 연결이 끊어졌습니다 — 이 문서는 더 이상 최신이 아닙니다"
 
 [markdown.addr]
 placeholder = "마크다운 파일 경로"

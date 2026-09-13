@@ -785,6 +785,14 @@ impl App {
         sess.pending_list_dir_consumers.clear();
         sess.state = SessionState::Connected;
         sess.remote_label = format!("127.0.0.1:{port}");
+        // (ADR-0255) 끊긴 동안의 변경 신호는 쌓이지 않았고, survivor markdown 문서는 핸들을
+        // 공유해 이어지므로 원문을 다시 받지 않는다 — 그대로 두면 끊김 화면(또는 끊기기 전
+        // 원문)이 남는다. 문서마다 변경 신호를 한 번 보내 plugin 이 판단하게 한다: 원문을
+        // 보여 주던 문서는 stale 표시, 끊김·실패를 보여 주던 문서는 재요청이다.
+        let markdown_locals: Vec<u32> = sess.markdown_locals.iter().copied().collect();
+        for local in markdown_locals {
+            push_markdown_changed(&mut self.plugin_manager, local);
+        }
         tracing::info!(
             "gui attach: mirror workspace {local_workspace} 재연결 성공 (remote ws {workspace})"
         );
@@ -920,8 +928,9 @@ impl App {
         };
         // (ADR-0255) mirror markdown 문서는 살아 있지만 끊긴 연결에 물린 원문 요청의 응답은
         // 영영 안 온다. host 는 plugin 이 어느 request_id 를 기다리는지 모르므로 surface
-        // 마다 abandon sentinel(`request_id = 0`)을 보낸다 — 기다리던 요청이 없던 문서는
-        // plugin 이 그대로 둔다.
+        // 마다 abandon sentinel(`request_id = 0`)을 보낸다 — plugin 은 기다리던 요청을 끝내고,
+        // 원문을 이미 보여 주던 문서도 끊김 화면으로 바꾼다(끊긴 동안의 변경은 신호가 안 와
+        // 옛 원문을 최신처럼 둘 수 없다). 재연결 뒤 되돌리는 쪽은 `reconnect_session` 이다.
         for local in markdown_locals {
             push_markdown_content_result(
                 &mut self.plugin_manager,
@@ -2453,6 +2462,23 @@ fn destroy_mirror_markdown_surfaces(
     }
 }
 
+/// markdown plugin 에 `markdown_mirror.changed` 를 unicast 한다. `local_surface_id` 는 **로컬**
+/// surface id 여야 한다.
+fn push_markdown_changed(
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    local_surface_id: u32,
+) {
+    let Some(mgr) = plugin_manager.as_mut() else {
+        return;
+    };
+    mgr.emit_host_event_to_plugin(
+        MARKDOWN_PLUGIN_ID,
+        MARKDOWN_MIRROR_CHANGED_EVENT,
+        &serde_json::json!({ "surface_id": local_surface_id }),
+        tasty_plugin_protocol::EventScope::System,
+    );
+}
+
 /// markdown plugin 에 `markdown_mirror.content_result` 를 unicast 한다. `payload.surface_id`
 /// 는 **로컬** surface id 여야 한다(plugin 은 원격 id 를 모른다).
 fn push_markdown_content_result(
@@ -2660,15 +2686,8 @@ fn apply_one_mirror_event(
         }
         MirrorEvent::MarkdownChanged { surface_id } => {
             // 자기가 mirror 하지 않는 문서의 신호는 물들일 곳이 없어 버린다(ADR-0255 항목 5).
-            if let Some(local) = markdown_mirror_local(sess, surface_id)
-                && let Some(mgr) = plugin_manager.as_mut()
-            {
-                mgr.emit_host_event_to_plugin(
-                    MARKDOWN_PLUGIN_ID,
-                    MARKDOWN_MIRROR_CHANGED_EVENT,
-                    &serde_json::json!({ "surface_id": local }),
-                    tasty_plugin_protocol::EventScope::System,
-                );
+            if let Some(local) = markdown_mirror_local(sess, surface_id) {
+                push_markdown_changed(plugin_manager, local);
             }
         }
         MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {

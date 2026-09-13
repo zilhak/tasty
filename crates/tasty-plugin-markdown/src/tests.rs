@@ -330,7 +330,8 @@ fn remote_result_applies_only_to_the_pending_request() {
         doc.remote_view(),
         Some(render::RemoteView {
             loading: false,
-            stale: false
+            stale: false,
+            disconnected: false,
         })
     );
 }
@@ -344,10 +345,11 @@ fn remote_failure_moves_reason_into_load_error() {
     assert_eq!(doc.remote.as_ref().unwrap().pending, None);
 }
 
-/// 연결이 끊겨 회신이 영영 안 올 때 host 가 보내는 abandon 은 대기 중인 로딩만 끝낸다 —
-/// 이미 받은 문서를 지우지 않는다.
+/// 연결이 끊겨 회신이 영영 안 올 때 host 가 보내는 abandon 은 기다리던 요청을 끝내고 문서를
+/// 끊김 상태로 둔다 — 이미 원문을 받은 문서도 그렇다. 받은 원문은 지우지 않고, 다음 성공
+/// 회신이 끊김을 푼다.
 #[test]
-fn abandon_ends_only_a_pending_load() {
+fn abandon_marks_the_document_disconnected_even_after_content_arrived() {
     let mut loading = MdDoc::new_remote("/r/notes.md".into());
     loading.remote.as_mut().unwrap().pending = Some(4);
     assert!(loading.apply_remote_result(content_result(
@@ -356,37 +358,70 @@ fn abandon_ends_only_a_pending_load() {
         false,
         "gone"
     )));
-    assert_eq!(loading.load_error.as_deref(), Some("gone"));
-
-    let mut idle = MdDoc::new_remote("/r/notes.md".into());
-    assert!(!idle.apply_remote_result(content_result(1, MIRROR_ABANDON_REQUEST_ID, false, "gone")));
-    assert!(idle.load_error.is_none());
+    assert_eq!(loading.remote.as_ref().unwrap().pending, None);
+    assert!(loading.remote_view().unwrap().disconnected);
 
     let mut loaded = MdDoc::new_remote("/r/notes.md".into());
     loaded.remote.as_mut().unwrap().pending = Some(5);
     assert!(loaded.apply_remote_result(content_result(1, 5, true, "# kept")));
+    assert!(
+        loaded.apply_remote_result(content_result(1, MIRROR_ABANDON_REQUEST_ID, false, "gone")),
+        "원문을 받은 문서도 끊김을 그리러 다시 그린다"
+    );
+    assert!(loaded.remote_view().unwrap().disconnected);
+    assert_eq!(loaded.content, "# kept", "받은 원문은 지우지 않는다");
+    assert!(
+        !loaded.apply_remote_result(content_result(1, MIRROR_ABANDON_REQUEST_ID, false, "gone")),
+        "이미 끊김이면 다시 그리지 않는다"
+    );
+
     loaded.remote.as_mut().unwrap().pending = Some(6);
-    assert!(!loaded.apply_remote_result(content_result(
+    assert!(loaded.apply_remote_result(content_result(1, 6, true, "# back")));
+    assert!(!loaded.remote_view().unwrap().disconnected);
+    assert_eq!(loaded.content, "# back");
+}
+
+#[test]
+fn change_signal_marks_a_shown_document_stale_once_and_ignores_local_documents() {
+    let mut doc = MdDoc::new_remote("/r/notes.md".into());
+    doc.remote.as_mut().unwrap().pending = Some(1);
+    assert!(doc.apply_remote_result(content_result(1, 1, true, "# shown")));
+    assert_eq!(doc.on_remote_changed(), RemoteChange::Redraw);
+    assert_eq!(
+        doc.on_remote_changed(),
+        RemoteChange::Ignore,
+        "이미 stale 이면 다시 그리지 않는다"
+    );
+    assert_eq!(doc.content, "# shown", "신호만으로 원문을 다시 받지 않는다");
+    assert_eq!(MdDoc::new(None).on_remote_changed(), RemoteChange::Ignore);
+}
+
+/// 원문 대신 끊김·실패를 보여 주는 문서는 신호에 다시 요청한다 — 재연결 직후 host 가 보내는
+/// 신호가 끊김 화면을 스스로 걷어내는 경로다. 이미 받는 중이면 그 회신을 기다린다.
+#[test]
+fn change_signal_refetches_a_document_that_shows_no_content() {
+    let mut disconnected = MdDoc::new_remote("/r/notes.md".into());
+    disconnected.remote.as_mut().unwrap().pending = Some(1);
+    assert!(disconnected.apply_remote_result(content_result(1, 1, true, "# shown")));
+    assert!(disconnected.apply_remote_result(content_result(
         1,
         MIRROR_ABANDON_REQUEST_ID,
         false,
         "gone"
     )));
-    assert_eq!(loaded.content, "# kept");
-    assert!(loaded.load_error.is_none());
-    assert_eq!(loaded.remote.as_ref().unwrap().pending, None);
-}
-
-#[test]
-fn change_signal_marks_stale_once_and_ignores_local_documents() {
-    let mut doc = MdDoc::new_remote("/r/notes.md".into());
-    assert!(doc.mark_remote_stale());
+    assert_eq!(disconnected.on_remote_changed(), RemoteChange::Refetch);
     assert!(
-        !doc.mark_remote_stale(),
-        "이미 stale 이면 다시 그리지 않는다"
+        !disconnected.remote.as_ref().unwrap().stale,
+        "끊김 화면에는 stale 표시를 켜지 않는다"
     );
-    assert!(doc.content.is_empty(), "신호만으로 원문을 다시 받지 않는다");
-    assert!(!MdDoc::new(None).mark_remote_stale());
+
+    let mut failed = MdDoc::new_remote("/r/notes.md".into());
+    failed.remote.as_mut().unwrap().pending = Some(2);
+    assert!(failed.apply_remote_result(content_result(1, 2, false, "permission denied")));
+    assert_eq!(failed.on_remote_changed(), RemoteChange::Refetch);
+
+    failed.remote.as_mut().unwrap().pending = Some(3);
+    assert_eq!(failed.on_remote_changed(), RemoteChange::Ignore);
 }
 
 // ---- 찾아보기… 의 출발 폴더 ----

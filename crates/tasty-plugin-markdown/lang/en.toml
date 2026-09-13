@@ -40,6 +40,7 @@ cancel = "Cancel"
 loading = "Loading the remote document…"
 refresh = "Refresh from the remote host"
 refresh_stale = "The remote file has changed — refresh to see it"
+disconnected = "The connection to the remote host was lost — this document is no longer up to date"
 
 [markdown.addr]
 placeholder = "Path to markdown file"

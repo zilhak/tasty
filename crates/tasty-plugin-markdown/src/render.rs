@@ -141,6 +141,9 @@ pub struct RemoteView {
     pub loading: bool,
     /// 받은 뒤 원격 파일이 바뀌었다는 신호가 왔다 — 새로고침 버튼 색이 바뀐다.
     pub stale: bool,
+    /// attach 연결이 끊겼다 — 본문 자리에 끊김을 그린다. 로딩·실패·원문보다 앞선다:
+    /// 끊긴 뒤의 원문은 연결이 살아 있는 화면과 구분되지 않는다.
+    pub disconnected: bool,
 }
 
 /// Build the complete, self-contained HTML5 document for the markdown webview surface.
@@ -160,7 +163,15 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         .map(|dir| format!(r#"<base href="{}">"#, attr_escape(&file_dir_uri(dir))))
         .unwrap_or_default();
 
-    let (body_html, headings) = if remote.is_some_and(|r| r.loading) && load_error.is_none() {
+    let (body_html, headings) = if remote.is_some_and(|r| r.disconnected) {
+        (
+            format!(
+                r#"<div class="tasty-state tasty-state-error"><div class="tasty-state-title">{}</div></div>"#,
+                html_escape(tr.t("markdown.remote.disconnected"))
+            ),
+            Vec::new(),
+        )
+    } else if remote.is_some_and(|r| r.loading) && load_error.is_none() {
         (
             format!(
                 r#"<div class="tasty-state">{}</div>"#,
@@ -3909,6 +3920,7 @@ mod tests {
             RemoteView {
                 loading: false,
                 stale: false,
+                ..RemoteView::default()
             },
         );
         assert!(fresh.contains(r#"id="tasty-refresh""#));
@@ -3926,6 +3938,7 @@ mod tests {
             RemoteView {
                 loading: false,
                 stale: true,
+                ..RemoteView::default()
             },
         );
         assert!(stale.contains(r#"data-stale="true""#));
@@ -3952,6 +3965,7 @@ mod tests {
             RemoteView {
                 loading: true,
                 stale: false,
+                ..RemoteView::default()
             },
         );
         assert!(loading.contains("markdown.remote.loading"));
@@ -3963,11 +3977,41 @@ mod tests {
             RemoteView {
                 loading: true,
                 stale: false,
+                ..RemoteView::default()
             },
         );
         assert!(failed.contains("markdown.state.failed"));
         assert!(failed.contains("mirror workspace disconnected"));
         assert!(!failed.contains("markdown.remote.loading"));
+    }
+
+    /// 연결이 끊긴 문서는 받은 원문이 있어도 원문 대신 끊김을 그린다 — 옛 원문을 그대로
+    /// 두면 연결이 살아 있는 화면과 구분되지 않는다. 로딩·실패보다도 앞선다.
+    #[test]
+    fn disconnected_remote_document_shows_the_disconnect_instead_of_the_old_source() {
+        let disconnected = RemoteView {
+            disconnected: true,
+            ..RemoteView::default()
+        };
+        let html = remote_document("# Old heading", None, disconnected);
+        assert!(html.contains("markdown.remote.disconnected"));
+        assert!(!html.contains("Old heading"));
+        assert!(
+            html.contains(r#"id="tasty-refresh""#),
+            "새로고침은 그대로 누를 수 있다"
+        );
+
+        let while_loading = remote_document(
+            "",
+            Some("boom"),
+            RemoteView {
+                loading: true,
+                ..disconnected
+            },
+        );
+        assert!(while_loading.contains("markdown.remote.disconnected"));
+        assert!(!while_loading.contains("markdown.remote.loading"));
+        assert!(!while_loading.contains("markdown.state.failed"));
     }
 
     #[test]

@@ -108,6 +108,21 @@ struct RemoteDoc {
     loaded: bool,
     /// 받은 뒤 원격 파일이 바뀌었다는 신호가 왔는가.
     stale: bool,
+    /// attach 연결이 끊겼다는 통지(abandon)를 받은 뒤 아직 원문을 다시 받지 못했는가. 받은
+    /// 원문은 버리지 않지만 화면은 끊김을 그린다 — 옛 원문을 그대로 두면 연결이 살아 있는
+    /// 화면과 구분되지 않는다.
+    disconnected: bool,
+}
+
+/// [`MdDoc::on_remote_changed`] 의 결정 — 변경 신호 하나에 plugin 이 할 일.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteChange {
+    /// 할 일이 없다(로컬 문서 · 이미 stale · 이미 받는 중).
+    Ignore,
+    /// stale 표시를 켰다 — 다시 그린다.
+    Redraw,
+    /// 원문을 보여 주지 못하는 문서다 — 다시 요청한다.
+    Refetch,
 }
 
 /// `markdown_mirror.content_result` 페이로드. host 가 surface_id 를 로컬 id 로 바꿔 보낸다.
@@ -160,49 +175,69 @@ impl MdDoc {
     /// 원문 조회 회신을 반영한다. 다시 그려야 하면 true.
     ///
     /// 대기 중인 요청과 id 가 다르면 버린다(새로고침을 연달아 눌러 옛 회신이 늦게 온 경우).
-    /// abandon id 는 대기 중일 때만 실패로 반영한다 — 이미 받은 문서를 연결 끊김 하나로
-    /// 지우지 않는다.
+    /// abandon id 는 연결이 끊겼다는 통지다 — 기다리던 요청을 끝내고, 원문을 이미 받은
+    /// 문서도 끊김 상태로 둔다. 받은 원문은 지우지 않는다(다시 받으면 그대로 갈아끼운다).
     fn apply_remote_result(&mut self, reply: MirrorContentResultWire) -> bool {
         let Some(remote) = self.remote.as_mut() else {
             return false;
         };
+        if reply.request_id == MIRROR_ABANDON_REQUEST_ID {
+            remote.pending = None;
+            let changed = !remote.disconnected;
+            remote.disconnected = true;
+            return changed;
+        }
         let Some(pending) = remote.pending else {
             return false;
         };
-        if reply.request_id != MIRROR_ABANDON_REQUEST_ID && reply.request_id != pending {
+        if reply.request_id != pending {
             return false;
         }
         remote.pending = None;
-        if reply.request_id == MIRROR_ABANDON_REQUEST_ID && remote.loaded {
-            return false;
-        }
         if reply.ok {
             self.content = reply.source.unwrap_or_default();
             self.load_error = None;
             remote.loaded = true;
             remote.stale = false;
+            remote.disconnected = false;
         } else {
             self.load_error = Some(reply.reason.unwrap_or_default());
         }
         true
     }
 
-    /// 원격 파일 변경 신호를 반영한다. 색이 바뀌어야 하면 true — 이미 stale 이면 다시
-    /// 그리지 않는다(같은 파일이 연달아 저장될 때 문서를 매번 통째로 다시 싣지 않게).
-    fn mark_remote_stale(&mut self) -> bool {
-        match self.remote.as_mut() {
-            Some(remote) if !remote.stale => {
-                remote.stale = true;
-                true
+    /// 원격 파일 변경 신호에 어떻게 반응할지 정한다.
+    ///
+    /// 원문을 보여 주고 있는 문서는 다시 받지 않고 stale 표시만 켠다 — 사용자가 읽던 자리를
+    /// 말없이 갈아치우지 않기 위해서다(ADR-0255 항목 5). 이미 stale 이면 다시 그리지 않는다
+    /// (같은 파일이 연달아 저장될 때 문서를 매번 통째로 다시 싣지 않게).
+    ///
+    /// 원문 대신 끊김·실패를 보여 주는 문서는 **다시 받는다** — 지킬 읽던 자리가 없고, 그
+    /// 상태로 두면 원격이 되살아나도 사용자가 누르기 전까지 끊김 화면이 남는다. host 가
+    /// 재연결 직후 이 신호를 보내는 이유가 그것이다. 이미 받는 중이면 그 회신을 기다린다.
+    fn on_remote_changed(&mut self) -> RemoteChange {
+        let showing_error = self.load_error.is_some();
+        let Some(remote) = self.remote.as_mut() else {
+            return RemoteChange::Ignore;
+        };
+        if remote.loaded && !remote.disconnected && !showing_error {
+            if remote.stale {
+                return RemoteChange::Ignore;
             }
-            _ => false,
+            remote.stale = true;
+            return RemoteChange::Redraw;
         }
+        if remote.pending.is_some() {
+            return RemoteChange::Ignore;
+        }
+        RemoteChange::Refetch
     }
 
     fn remote_view(&self) -> Option<render::RemoteView> {
         self.remote.as_ref().map(|r| render::RemoteView {
             loading: !r.loaded,
             stale: r.stale,
+            disconnected: r.disconnected,
         })
     }
 
@@ -633,7 +668,8 @@ impl MarkdownPlugin {
         }
     }
 
-    /// `markdown_mirror.changed` — 원문은 다시 받지 않고 stale 표시만 켠다.
+    /// `markdown_mirror.changed` — 원문을 보여 주는 문서는 stale 표시만 켜고, 끊김·실패를
+    /// 보여 주는 문서는 다시 요청한다([`MdDoc::on_remote_changed`]).
     fn on_mirror_changed(&mut self, payload: &Value) {
         let Some(surface_id) = payload
             .get("surface_id")
@@ -643,12 +679,14 @@ impl MarkdownPlugin {
             tracing::warn!("markdown: malformed {MIRROR_CHANGED_EVENT} event");
             return;
         };
-        if self
+        let change = self
             .docs
             .get_mut(&surface_id)
-            .is_some_and(MdDoc::mark_remote_stale)
-        {
-            self.reload_webview(surface_id);
+            .map_or(RemoteChange::Ignore, MdDoc::on_remote_changed);
+        match change {
+            RemoteChange::Ignore => {}
+            RemoteChange::Redraw => self.reload_webview(surface_id),
+            RemoteChange::Refetch => self.request_remote_content(surface_id),
         }
     }
 
