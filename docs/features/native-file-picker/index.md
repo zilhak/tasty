@@ -118,6 +118,26 @@ host 자체 egui popup 은 그와 별개로 OS 가 대신 블로킹해주지 않
 직전 `matches_filters` 로 파일 엔트리만 걸러낸다(디렉토리는 필터와 무관하게 항상 표시 —
 내비게이션 대상이라 숨기면 하위로 못 들어간다).
 
+**시작 위치 — `start_dir?: string` · `origin_surface_id?: u32`**: 피커는 그것을 띄운 surface 의
+폴더에서 출발한다(`FilePickerStart`, `src/adapters/ui/popup/file_picker.rs`). 두 필드 모두
+옵셔널이라 기존 호출자는 그대로 동작한다.
+
+- **로컬/원격 판정은 출발 surface 의 workspace 로 한다** — `origin_surface_id` 가 있고 찾아지면
+  그 surface 가 속한 workspace 가 mirror 인지 보고, 없으면 활성 workspace 로 폴백한다. 에이전트
+  트리거는 활성 workspace 와 무관할 수 있기 때문이다(포커스 독립성).
+- **시작 디렉토리**: `start_dir` 가 있으면 그것, 없으면 출발 surface 의 cwd
+  (`CoreState::surface_cwd` — mirror 면 서버가 push 한 원격 cwd). 로컬은 **절대경로인 디렉토리일
+  때만** 채택하고 아니면 홈으로 폴백한다(없는 경로로 열면 빈 에러 화면이 뜬다). 원격은 로컬에서
+  stat 할 수 없으므로 그대로 `list_dir_request` 에 싣고 서버의 에러 회신에 맡긴다. 둘 다 없으면
+  종전대로 로컬 홈 / 원격 홈(빈 `dir`)이다.
+- **`inherit_cwd` 설정과 무관하다** — 그 설정은 "새 surface 가 cwd 를 상속하는가" 이고 피커는 새
+  surface 를 만들지 않는다([ADR-0267](../../adr/0267-mirror-surface-cwd-is-pushed-by-the-server.md)
+  결정 5). Tools 메뉴·단축키로 연 피커도 focus surface 의 폴더에서 출발한다.
+- plugin 은 popup context 의 `observed_cwd`(로컬) / `remote_cwd`(mirror) 와 `origin_surface_id` 를
+  그대로 실어 보내면 된다(키 의미는 `AppState::popup_surface_context`). 게이트가 걸린 `cwd` 키를
+  쓰면 설정을 끈 사용자에게서 시작 위치가 사라진다.
+- `path_input` 등 plugin 팝업에 사용자가 이미 적어 둔 경로를 시작점으로 삼는 것은 다루지 않는다.
+
 **동시성 정책(ADR-0058 이 이 구현에 위임한 결정)**: `file_picker` popup 은 단일 인스턴스만
 존재한다. 이미 열려 있는 상태에서 두 번째 `file_picker.trigger` 가 오면 **거부**한다(즉시
 `-32000` JSON-RPC 에러) — "이전 요청을 대체" 는 채택하지 않았다. 트리거 핸들러는 `CoreState`
@@ -198,10 +218,19 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 
 ## Acceptance Criteria
 
-- Given 로컬(비-mirror) workspace 가 활성 When Tools 메뉴에서 파일 피커를 열면 Then 로컬 홈
-  디렉토리 엔트리가 즉시(동기) 로드되어 표시된다.
-- Given mirror workspace 가 활성 When Tools 메뉴에서 파일 피커를 열면 Then `Loading` 상태를
-  거쳐 attach 채널로 받은 원격 홈 디렉토리 엔트리가 표시되고 헤더에 host 배지가 뜬다.
+- Given 로컬(비-mirror) workspace 가 활성이고 focus surface 의 cwd 를 알 수 없음 When Tools 메뉴에서
+  파일 피커를 열면 Then 로컬 홈 디렉토리 엔트리가 즉시(동기) 로드되어 표시된다.
+- Given focus 된 로컬 터미널의 cwd 가 `/tmp` When Tools 메뉴에서 파일 피커를 열면 Then `/tmp` 의
+  엔트리가 표시된다(`inherit_cwd` 가 꺼져 있어도 같다).
+- Given mirror workspace 가 활성이고 원격 cwd 를 모름 When Tools 메뉴에서 파일 피커를 열면 Then
+  `Loading` 상태를 거쳐 attach 채널로 받은 원격 홈 디렉토리 엔트리가 표시되고 헤더에 host 배지가
+  뜬다.
+- Given mirror surface 에 서버가 원격 cwd 를 push 함 When 그 surface 에서 파일 피커를 열면 Then 원격
+  홈이 아니라 그 원격 cwd 의 엔트리를 요청한다.
+- Given `file_picker.trigger` 에 존재하지 않는 로컬 `start_dir` 를 실음 Then 에러 화면이 아니라 홈에서
+  출발한다.
+- Given 활성 workspace 는 로컬이고 `origin_surface_id` 가 mirror workspace 의 surface 임 When
+  `file_picker.trigger` 가 옴 Then 피커는 원격으로 열린다.
 - Given 원격 요청 전송 후 8 초 안에 응답이 없음 Then `ErrorConn` 상태로 전이한다.
 - Given mirror workspace 가 도중에 사라짐(disconnect) Then popup 이 즉시 `ErrorConn` 으로
   전이한다(soft timeout 만료를 기다리지 않음).

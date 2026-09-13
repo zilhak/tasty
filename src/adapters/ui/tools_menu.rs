@@ -131,7 +131,11 @@ pub fn draw_tools_menu(
         }
     }
     if open_file_picker {
-        popup::file_picker::open(state, engine, None, Vec::new());
+        let start = popup::file_picker::FilePickerStart::from_surface(
+            engine,
+            state.focused_surface_id(engine),
+        );
+        popup::file_picker::open(state, engine, None, Vec::new(), start);
         return PopupAction::Close;
     }
     if let Some(popup_id) = open_workspace_popup {
@@ -226,28 +230,13 @@ pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, it
             // `<plugin_id>/<popup_id>` 형식. split하여 plugin_manager로 dispatch할
             // 수 있도록 pending_popup_opens에 enqueue. App 메인 루프가 drain.
             //
-            // 사용자 메뉴 클릭은 활성 surface 컨텍스트에 매여 있으므로 context payload에
-            // 활성 surface의 상속 cwd를 실어 plugin이 popup.open 단계에서 사용할 수 있게
-            // 한다. cwd 미상이면 `null`.
+            // 사용자 메뉴 클릭은 활성 surface 컨텍스트에 매여 있으므로 focus surface 의
+            // 컨텍스트(cwd · mirror 판별)를 실어 plugin 이 popup.open 단계에서 쓰게 한다.
+            // `local_surface_id` 는 popup 이 이 mirror surface 를 앵커로 원격 조회
+            // (`git_viewer.query` IPC)를 트리거할 때 그대로 echo 한다. 키 목록과 의미는
+            // `AppState::popup_surface_context`.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
-                let cwd = state
-                    .resolve_inherit_cwd(engine)
-                    .map(|p| p.to_string_lossy().into_owned());
-                let mut context = serde_json::json!({ "cwd": cwd });
-                // mirror workspace 판별(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`
-                // 참고) — cwd 와 마찬가지로 generic 하게 채운다(git-viewer 전용 분기
-                // 아님). `inherit_cwd` 설정과 무관하게 항상 판정한다 — "원격 인지"는
-                // 그 설정이 꺼져 있어도 필요한 정보다.
-                // `local_surface_id` 는 popup 이 이 mirror surface 를 앵커로 원격
-                // 조회(`git_viewer.query` IPC)를 트리거할 때 그대로 echo 한다.
-                if let Some(sid) = state.focused_surface_id(engine)
-                    && let Some((idx, _)) = engine.find_workspace_index_for_surface(sid)
-                    && engine.workspaces[idx].mirror
-                    && let Some(obj) = context.as_object_mut()
-                {
-                    obj.insert("mirror".to_string(), serde_json::json!(true));
-                    obj.insert("local_surface_id".to_string(), serde_json::json!(sid));
-                }
+                let context = state.popup_surface_context(engine, state.focused_surface_id(engine));
                 state.pending_popup_opens.push((
                     plugin_id.to_string(),
                     local_id.to_string(),

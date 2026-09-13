@@ -1606,10 +1606,7 @@ mod surface_cwd;
 mod terminal_finders;
 
 pub(crate) use attention::AttentionKind;
-pub(crate) use surface_cwd::RemoteCwd;
-// 로컬 소비자는 `local_surface_cwd` 로 충분하고 출처를 직접 가르는 소비자는 테스트뿐이다.
-#[cfg(test)]
-pub(crate) use surface_cwd::SurfaceCwd;
+pub(crate) use surface_cwd::{RemoteCwd, SurfaceCwd};
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;

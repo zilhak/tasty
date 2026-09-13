@@ -1134,16 +1134,60 @@ impl AppState {
             tracing::warn!("convert-input popup: malformed convert_input_popup '{popup_ref}'");
             return false;
         };
-        let cwd = self
-            .resolve_inherit_cwd(engine)
-            .map(|p| p.to_string_lossy().into_owned());
-        let mut context = serde_json::json!({ "cwd": cwd });
+        // cwd 는 **팝업의 대상 surface** 기준이다 — 제자리 변환이면 그 surface, 새 탭이면
+        // focus. 대상을 지정한 호출자(컨텍스트 메뉴 등)에서 focus 와 대상이 어긋나도 그 대상의
+        // 폴더를 본다.
+        let origin = convert_surface_id.or_else(|| self.focused_surface_id(engine));
+        let mut context = self.popup_surface_context(engine, origin);
         if let Some(sid) = convert_surface_id {
             context["surface_id"] = serde_json::json!(sid);
         }
         self.pending_popup_opens
             .push((plugin_id.to_string(), local_id.to_string(), context));
         true
+    }
+
+    /// plugin popup 에 넘기는 surface 컨텍스트 — Tools 메뉴 popup 과 변환 입력 popup 이 같은
+    /// 식을 쓴다(둘로 두면 한쪽만 바뀐다).
+    ///
+    /// 키:
+    /// - `cwd` — `inherit_cwd` 게이트를 건 **로컬** cwd(없으면 `null`). 새 surface 를 만드는
+    ///   소비자용이다. mirror surface 면 원격 경로라 `null` 이다.
+    /// - `observed_cwd` — 게이트 없는 로컬 cwd. "지금 어느 폴더를 보고 있나" 를 알려 주는
+    ///   소비자(파일 피커 시작 위치)용이다(ADR-0267 결정 5).
+    /// - `remote_cwd` — mirror surface 의 원격 cwd 문자열. `cwd` 키에는 절대 싣지 않는다 —
+    ///   이 구분을 모르는 plugin 이 원격 경로를 로컬 경로로 쓰지 못하게 한다(ADR-0267 결정 3).
+    /// - `origin_surface_id` — 이 컨텍스트가 유래한 로컬 surface id.
+    /// - `mirror: true` · `local_surface_id` — mirror workspace 판별
+    ///   (`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`). `inherit_cwd` 와
+    ///   무관하게 항상 판정한다 — "원격 인지" 는 그 설정이 꺼져 있어도 필요한 정보다.
+    pub(crate) fn popup_surface_context(
+        &self,
+        engine: &CoreState,
+        surface_id: Option<u32>,
+    ) -> serde_json::Value {
+        use crate::core::state::SurfaceCwd;
+        let Some(sid) = surface_id else {
+            return serde_json::json!({ "cwd": null });
+        };
+        let cwd = self
+            .resolve_inherit_cwd_from_surface(engine, sid)
+            .map(|p| p.to_string_lossy().into_owned());
+        let mut context = serde_json::json!({ "cwd": cwd, "origin_surface_id": sid });
+        match engine.surface_cwd(sid) {
+            Some(SurfaceCwd::Local(p)) => {
+                context["observed_cwd"] = serde_json::json!(p.to_string_lossy());
+            }
+            Some(SurfaceCwd::Remote(r)) => {
+                context["remote_cwd"] = serde_json::json!(r.as_str());
+            }
+            None => {}
+        }
+        if engine.is_mirror_surface(sid) {
+            context["mirror"] = serde_json::json!(true);
+            context["local_surface_id"] = serde_json::json!(sid);
+        }
+        context
     }
 
     /// Returns true if any dialog with text input is open.

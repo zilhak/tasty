@@ -738,10 +738,64 @@ fn apply_action(
     }
 }
 
-/// Tools 메뉴 항목 클릭 또는 `file_picker.trigger` IPC(ADR-0058) 진입점 —
-/// 현재 활성 workspace 가 mirror 인지로 로컬/원격을 판별해 [`crate::state::FilePickerData`]
-/// 를 채우고 popup 을 연다. 원격이면 `navigate` 가 `pending_list_dir_forward` 를
-/// 큐잉(홈 디렉토리 = 빈 `dir`), 로컬이면 즉시 동기 로드한다.
+/// 파일 피커가 어디서 출발하는가 — 시작 디렉토리와 그것을 띄운 surface.
+///
+/// 피커는 "지금 보고 있는 surface" 의 폴더에서 연다. 이 값은 `inherit_cwd` 설정과 무관하다
+/// — 그 설정은 "새 surface 가 cwd 를 상속하는가" 이고, 피커는 새 surface 를 만들지 않는다
+/// (ADR-0267 결정 5).
+#[derive(Debug, Clone, Default)]
+pub struct FilePickerStart {
+    /// 시작 디렉토리. 로컬 출발이면 로컬 절대경로, 원격(mirror) 출발이면 원격 경로 문자열.
+    pub dir: Option<String>,
+    /// 피커를 띄운 surface. 로컬/원격 판정을 **활성 workspace 가 아니라** 이 surface 의
+    /// workspace 로 한다 — 에이전트 트리거는 활성 workspace 와 무관할 수 있다.
+    pub origin_surface_id: Option<u32>,
+}
+
+impl FilePickerStart {
+    /// surface 의 cwd 에서 출발한다. mirror surface 면 원격 cwd 문자열을 그대로 싣는다.
+    pub fn from_surface(engine: &crate::core::CoreState, surface_id: Option<u32>) -> Self {
+        use crate::core::state::SurfaceCwd;
+        let dir = surface_id
+            .and_then(|sid| engine.surface_cwd(sid))
+            .map(|cwd| match cwd {
+                SurfaceCwd::Local(p) => p.to_string_lossy().into_owned(),
+                SurfaceCwd::Remote(r) => r.as_str().to_string(),
+            });
+        Self {
+            dir,
+            origin_surface_id: surface_id,
+        }
+    }
+}
+
+/// 시작 디렉토리를 정한다. 원격이면 주어진 문자열을 그대로 쓴다 — 로컬에서 stat 할 수 없으니
+/// 서버의 에러 회신에 맡기고, 없으면 빈 문자열(서버가 원격 홈으로 해석)이다. 로컬이면 절대경로인
+/// 디렉토리일 때만 채택하고, 아니면 홈으로 폴백한다(존재하지 않는 경로로 열면 빈 에러 화면이
+/// 뜬다).
+fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
+    if is_remote {
+        return requested.unwrap_or_default();
+    }
+    requested
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute() && p.is_dir())
+        .unwrap_or_else(|| {
+            directories::BaseDirs::new()
+                .map(|d| d.home_dir().to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("/"))
+        })
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Tools 메뉴 항목 클릭 · 단축키 · `file_picker.trigger` IPC(ADR-0058) 진입점 —
+/// 출발 surface(없으면 활성 workspace)가 mirror 인지로 로컬/원격을 판별해
+/// [`crate::state::FilePickerData`] 를 채우고 popup 을 연다. 원격이면 `navigate` 가
+/// `pending_list_dir_forward` 를 큐잉하고, 로컬이면 즉시 동기 로드한다.
+///
+/// `start`: 시작 디렉토리와 출발 surface. `path_input` 등 사용자가 이미 적어 둔 경로를
+/// 시작점으로 삼는 것은 다루지 않는다 — 그 입력은 호출자(plugin 팝업)의 상태라 host 가 모른다.
 ///
 /// `requester`: `Some` 이면 `file_picker.trigger` 로 이 popup 을 연 plugin — 확정/취소
 /// 시 `app::dispatch::file_picker` 가 `"file_picker.result"` 이벤트를 이 plugin 에만
@@ -752,23 +806,19 @@ pub fn open(
     engine: &mut crate::core::CoreState,
     requester: Option<crate::state::FilePickerRequester>,
     filters: Vec<String>,
+    start: FilePickerStart,
 ) {
+    let origin_ws = start
+        .origin_surface_id
+        .and_then(|sid| engine.find_workspace_index_for_surface(sid))
+        .map(|(idx, _)| idx);
     let mirror_ws_id = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(origin_ws.unwrap_or(state.active_workspace))
         .filter(|ws| ws.mirror)
         .map(|ws| ws.id);
 
-    let initial_dir = if mirror_ws_id.is_some() {
-        // 빈 dir → 서버(`list_dir_for_request`)가 원격 홈 디렉토리로 해석.
-        String::new()
-    } else {
-        directories::BaseDirs::new()
-            .map(|d| d.home_dir().to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("/"))
-            .to_string_lossy()
-            .to_string()
-    };
+    let initial_dir = initial_dir(mirror_ws_id.is_some(), start.dir);
 
     state.dialogs.file_picker = Some(crate::state::FilePickerData {
         mirror_ws_id,

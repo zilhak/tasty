@@ -276,6 +276,42 @@ struct LargeFileConfirm {
 struct FileOpenState {
     path_input: String,
     convert_surface_id: Option<u32>,
+    /// **찾아보기…** 가 여는 host 파일 피커의 출발점 — 이 팝업을 띄운 surface 의 폴더.
+    picker_start: PickerStart,
+}
+
+/// host 파일 피커를 어디서 출발시킬지. popup context 에서 한 번 읽어 둔다.
+#[derive(Debug, Default, Clone, PartialEq)]
+struct PickerStart {
+    /// 시작 디렉토리. mirror 출발이면 원격 경로 문자열(`remote_cwd`), 아니면 로컬 경로
+    /// (`observed_cwd`). 둘 다 `inherit_cwd` 설정과 무관한 키다 — 게이트가 걸린 `cwd` 는
+    /// "새 surface 가 상속하는가" 의 값이라 피커의 출발점과 다른 물음이다.
+    dir: Option<String>,
+    /// 팝업을 띄운 로컬 surface — host 가 로컬/원격 판정을 이 surface 의 workspace 로 한다.
+    origin_surface_id: Option<u32>,
+}
+
+impl PickerStart {
+    /// popup context 에서 읽는다. 키가 없거나 `null` 이어도(구버전 host · cwd 미상) 깨지지
+    /// 않고 `None` 이 된다 — 그때 host 가 출발 surface 에서 직접 판정하거나 홈에서 연다.
+    fn from_context(context: &Value) -> Self {
+        let is_mirror = context
+            .get("mirror")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let key = if is_mirror {
+            "remote_cwd"
+        } else {
+            "observed_cwd"
+        };
+        Self {
+            dir: context.get(key).and_then(Value::as_str).map(str::to_string),
+            origin_surface_id: context
+                .get("origin_surface_id")
+                .and_then(Value::as_u64)
+                .map(|v| v as u32),
+        }
+    }
 }
 
 struct MarkdownPlugin {
@@ -455,6 +491,7 @@ impl Plugin for MarkdownPlugin {
                     FileOpenState {
                         path_input: String::new(),
                         convert_surface_id,
+                        picker_start: PickerStart::from_context(&ctx.context),
                     },
                 );
             }
@@ -873,7 +910,12 @@ impl MarkdownPlugin {
                 // (원격) workspace 에서도 동작한다(native rfd 다이얼로그와 달리 원격
                 // 개념이 있다). 즉시 request_id 만 돌아오고, 실제 선택 결과는 나중에
                 // `on_event` 의 `"file_picker.result"` 로 비동기 도착한다.
-                if let Some(request_id) = trigger_file_picker(&ctx.host, iid) {
+                let start = self
+                    .file_open
+                    .get(&iid)
+                    .map(|st| st.picker_start.clone())
+                    .unwrap_or_default();
+                if let Some(request_id) = trigger_file_picker(&ctx.host, iid, &start) {
                     self.pending_file_picker.insert(request_id, iid);
                 }
             }
@@ -1091,18 +1133,17 @@ struct FilePickerResultWire {
 /// 곧장 반환된다).
 ///
 /// `owner_popup_instance` 로 자기 popup instance 를 함께 신고한다 — host 가 두 팝업을
-/// 부모-자식 스택으로 다루는 근거다(ADR-0084).
+/// 부모-자식 스택으로 다루는 근거다(ADR-0084). `start` 는 피커의 출발 폴더와 출발 surface
+/// 다 — 없으면 host 가 홈에서 연다.
 #[cfg(any(unix, windows))]
-fn trigger_file_picker(host: &HostHandle, owner_popup_instance: u64) -> Option<u64> {
+fn trigger_file_picker(
+    host: &HostHandle,
+    owner_popup_instance: u64,
+    start: &PickerStart,
+) -> Option<u64> {
     match host.call(
         "file_picker.trigger",
-        json!({
-            "filters": ["md", "markdown"],
-            // 부모-자식 스택을 host 가 세울 수 있게 자기 popup instance 를 신고한다
-            // (ADR-0084). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
-            // 고른 파일이 조용히 버려진다.
-            "owner_popup_instance": owner_popup_instance,
-        }),
+        file_picker_trigger_params(owner_popup_instance, start),
     ) {
         Ok(v) => v.get("request_id").and_then(Value::as_u64),
         Err(e) => {
@@ -1110,6 +1151,20 @@ fn trigger_file_picker(host: &HostHandle, owner_popup_instance: u64) -> Option<u
             None
         }
     }
+}
+
+/// `file_picker.trigger` 파라미터. 호출(`HostHandle`)과 떼어 두어 단위 테스트가 wire 모양을 본다.
+#[cfg(any(unix, windows))]
+fn file_picker_trigger_params(owner_popup_instance: u64, start: &PickerStart) -> Value {
+    json!({
+        "filters": ["md", "markdown"],
+        // 부모-자식 스택을 host 가 세울 수 있게 자기 popup instance 를 신고한다
+        // (ADR-0084). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
+        // 고른 파일이 조용히 버려진다.
+        "owner_popup_instance": owner_popup_instance,
+        "start_dir": start.dir,
+        "origin_surface_id": start.origin_surface_id,
+    })
 }
 
 /// 입력/선택한 markdown 파일을 host `file_handler.dispatch` 로 연다(origin 없이 → focused

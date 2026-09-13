@@ -1637,6 +1637,41 @@ fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
     assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, sid), None);
 }
 
+/// popup context 의 cwd 키 셋 — `cwd`(게이트·로컬) · `observed_cwd`(게이트 없음·로컬) ·
+/// `remote_cwd`(mirror) 가 서로 섞이지 않는다.
+#[test]
+fn popup_context_splits_cwd_keys_by_gate_and_provenance() {
+    let (mut state, mut engine) = test_state();
+    let (sid, root) = focused_explorer(&mut state, &mut engine);
+    let root_s = root.to_string_lossy().into_owned();
+
+    let local = state.popup_surface_context(&engine, Some(sid));
+    assert_eq!(local["cwd"], serde_json::json!(root_s));
+    assert_eq!(local["observed_cwd"], serde_json::json!(root_s));
+    assert_eq!(local["origin_surface_id"], serde_json::json!(sid));
+    assert!(local.get("remote_cwd").is_none());
+    assert!(local.get("mirror").is_none());
+
+    // `inherit_cwd` off — 새 surface 용 `cwd` 만 비고, 보고 있는 폴더는 남는다.
+    engine.settings.general.inherit_cwd = false;
+    let gated = state.popup_surface_context(&engine, Some(sid));
+    assert!(gated["cwd"].is_null());
+    assert_eq!(gated["observed_cwd"], serde_json::json!(root_s));
+
+    // mirror — 원격 경로는 `remote_cwd` 에만 실린다.
+    engine.settings.general.inherit_cwd = true;
+    state.active_workspace_mut(&mut engine).mirror = true;
+    let mirror = state.popup_surface_context(&engine, Some(sid));
+    assert!(
+        mirror["cwd"].is_null(),
+        "원격 경로는 `cwd` 키로 새지 않는다"
+    );
+    assert!(mirror.get("observed_cwd").is_none());
+    assert_eq!(mirror["remote_cwd"], serde_json::json!(root_s));
+    assert_eq!(mirror["mirror"], serde_json::json!(true));
+    assert_eq!(mirror["local_surface_id"], serde_json::json!(sid));
+}
+
 #[test]
 fn surface_display_path_returns_workspace_and_tab_names() {
     let (mut state, mut engine) = test_state();

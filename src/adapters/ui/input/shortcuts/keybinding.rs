@@ -825,7 +825,10 @@ impl MainView {
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
     ) {
-        crate::adapters::ui::popup::file_picker::open(state, engine, None, Vec::new());
+        use crate::adapters::ui::popup::file_picker;
+        let start =
+            file_picker::FilePickerStart::from_surface(engine, state.focused_surface_id(engine));
+        file_picker::open(state, engine, None, Vec::new(), start);
     }
 
     /// 새 탭으로 탐색기 열기 — 단발 키·명령 팔레트·double-tap 이 공유한다.

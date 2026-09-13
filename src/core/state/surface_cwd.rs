@@ -22,6 +22,11 @@ impl RemoteCwd {
     pub fn new(path: impl Into<String>) -> Self {
         Self(path.into())
     }
+
+    /// 표시·wire·원격 조회 요청에 싣는 문자열. 로컬 `Path` 로 감싸 쓰지 않는다.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// 출처가 구분된 surface cwd.

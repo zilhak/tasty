@@ -29,7 +29,8 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use crate::state::{AppState, FilePickerRequester};
 
-/// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64 }` 요청.
+/// `file_picker.trigger { filters?: string[], owner_popup_instance?: u64, start_dir?: string,
+/// origin_surface_id?: u32 }` 요청.
 #[derive(Deserialize)]
 struct FilePickerTriggerReq {
     /// 확장자 필터(점 없이, 예: `["md", "markdown"]`). 비면 필터 없음.
@@ -41,6 +42,15 @@ struct FilePickerTriggerReq {
     /// popup 밖(surface 위젯 등)에서 호출하면 생략한다.
     #[serde(default)]
     owner_popup_instance: Option<u64>,
+    /// 시작 디렉토리. 로컬 출발이면 절대경로여야 하고 디렉토리가 아니면 홈으로 폴백한다.
+    /// 원격(mirror) 출발이면 원격 경로 문자열을 그대로 서버에 보낸다. 생략하면 출발
+    /// surface 의 cwd, 그것도 없으면 홈.
+    #[serde(default)]
+    start_dir: Option<String>,
+    /// 피커를 띄운 **로컬** surface id. 로컬/원격 판정을 이 surface 의 workspace 로 한다
+    /// (생략하면 활성 workspace).
+    #[serde(default)]
+    origin_surface_id: Option<u32>,
 }
 
 /// `file_picker.trigger` — `file_picker` popup 을 열고 `request_id` 만 즉시
@@ -76,7 +86,15 @@ pub fn handle_trigger(
         CallerContext::Local | CallerContext::Agent { .. } => None,
     };
 
-    crate::adapters::ui::popup::file_picker::open(state, engine, requester, req.filters);
+    use crate::adapters::ui::popup::file_picker::FilePickerStart;
+    let start = match req.start_dir {
+        Some(dir) => FilePickerStart {
+            dir: Some(dir),
+            origin_surface_id: req.origin_surface_id,
+        },
+        None => FilePickerStart::from_surface(engine, req.origin_surface_id),
+    };
+    crate::adapters::ui::popup::file_picker::open(state, engine, requester, req.filters, start);
 
     JsonRpcResponse::success(id, json!({ "request_id": request_id }))
 }
@@ -210,5 +228,117 @@ mod tests {
         assert!(resp.result.is_some());
         let data = state.dialogs.file_picker.as_ref().expect("popup open");
         assert_eq!(data.filters, vec!["md".to_string(), "markdown".to_string()]);
+    }
+
+    // ---- 시작 디렉토리와 출발 surface ----
+
+    fn home() -> String {
+        directories::BaseDirs::new()
+            .map(|d| d.home_dir().to_string_lossy().into_owned())
+            .expect("home dir")
+    }
+
+    #[test]
+    fn local_start_dir_is_used_when_it_is_a_directory() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "tasty_fp_start_{}_{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let (mut state, mut engine) = make_test_state();
+        let resp = handle_trigger(
+            &mut state,
+            &mut engine,
+            &plugin_caller("com.tasty.markdown"),
+            json!(1),
+            &json!({ "start_dir": dir.to_string_lossy() }),
+        );
+        assert!(resp.result.is_some());
+        let data = state.dialogs.file_picker.as_ref().expect("popup open");
+        assert!(data.mirror_ws_id.is_none());
+        assert_eq!(data.current_dir, dir.to_string_lossy());
+        std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
+    }
+
+    /// 존재하지 않는 경로로 열면 빈 에러 화면이 아니라 홈에서 출발한다.
+    #[test]
+    fn missing_local_start_dir_falls_back_to_home() {
+        let (mut state, mut engine) = make_test_state();
+        let resp = handle_trigger(
+            &mut state,
+            &mut engine,
+            &plugin_caller("com.tasty.markdown"),
+            json!(1),
+            &json!({ "start_dir": "/definitely/not/a/tasty/dir" }),
+        );
+        assert!(resp.result.is_some());
+        let data = state.dialogs.file_picker.as_ref().expect("popup open");
+        assert_eq!(data.current_dir, home());
+    }
+
+    /// 활성 workspace 에 딸린 mirror workspace 를 하나 붙이고 그 surface id 를 돌려준다.
+    /// 활성 workspace 는 로컬 그대로라, 판정이 활성 기준이면 로컬로 나온다.
+    fn push_background_mirror(engine: &mut crate::core::CoreState) -> (u32, u32) {
+        let (ws_id, surface_id) = (9_000u32, 9_003u32);
+        let mut ws = crate::model::Workspace::new_with_terminal_marker(
+            ws_id,
+            "mirror".to_string(),
+            9_001,
+            9_002,
+            surface_id,
+        );
+        ws.mirror = true;
+        engine.workspaces.push(ws);
+        (ws_id, surface_id)
+    }
+
+    #[test]
+    fn origin_surface_decides_remote_even_when_active_workspace_is_local() {
+        let (mut state, mut engine) = make_test_state();
+        let (ws_id, sid) = push_background_mirror(&mut engine);
+        assert!(!engine.workspaces[state.active_workspace].mirror);
+
+        let resp = handle_trigger(
+            &mut state,
+            &mut engine,
+            &plugin_caller("com.tasty.markdown"),
+            json!(1),
+            &json!({ "start_dir": "/srv/remote/proj", "origin_surface_id": sid }),
+        );
+        assert!(resp.result.is_some());
+        let data = state.dialogs.file_picker.as_ref().expect("popup open");
+        assert_eq!(data.mirror_ws_id, Some(ws_id));
+        assert_eq!(data.current_dir, "/srv/remote/proj");
+        let forward = engine
+            .pending_list_dir_forward
+            .last()
+            .expect("원격 조회가 큐잉된다");
+        assert_eq!(
+            forward.dir, "/srv/remote/proj",
+            "원격 경로는 stat 없이 그대로 간다"
+        );
+    }
+
+    /// 시작 경로를 안 실어도 출발 surface 가 mirror 면 서버가 push 한 원격 cwd 에서 연다.
+    #[test]
+    fn origin_without_start_dir_uses_the_pushed_remote_cwd() {
+        let (mut state, mut engine) = make_test_state();
+        let (ws_id, sid) = push_background_mirror(&mut engine);
+        engine.set_mirror_surface_cwd(sid, Some("/srv/pushed".to_string()));
+
+        let resp = handle_trigger(
+            &mut state,
+            &mut engine,
+            &CallerContext::Local,
+            json!(1),
+            &json!({ "origin_surface_id": sid }),
+        );
+        assert!(resp.result.is_some());
+        let data = state.dialogs.file_picker.as_ref().expect("popup open");
+        assert_eq!(data.mirror_ws_id, Some(ws_id));
+        assert_eq!(data.current_dir, "/srv/pushed");
     }
 }

@@ -375,3 +375,54 @@ fn change_signal_marks_stale_once_and_ignores_local_documents() {
     assert!(doc.content.is_empty(), "신호만으로 원문을 다시 받지 않는다");
     assert!(!MdDoc::new(None).mark_remote_stale());
 }
+
+// ---- 찾아보기… 의 출발 폴더 ----
+
+#[test]
+fn picker_start_reads_local_observed_cwd_not_the_gated_cwd() {
+    // `inherit_cwd` 가 꺼져 `cwd` 가 null 이어도 피커는 보고 있던 폴더에서 출발한다.
+    let start = PickerStart::from_context(&json!({
+        "cwd": null,
+        "observed_cwd": "/work/proj",
+        "origin_surface_id": 7,
+    }));
+    assert_eq!(start.dir.as_deref(), Some("/work/proj"));
+    assert_eq!(start.origin_surface_id, Some(7));
+}
+
+#[test]
+fn picker_start_on_mirror_reads_remote_cwd_only() {
+    // mirror 면 원격 경로 키만 읽는다 — 로컬 키가 섞여 와도 원격 피커에 로컬 경로를 싣지 않는다.
+    let start = PickerStart::from_context(&json!({
+        "mirror": true,
+        "local_surface_id": 9,
+        "origin_surface_id": 9,
+        "remote_cwd": "/srv/remote",
+        "observed_cwd": "/should/not/be/used",
+    }));
+    assert_eq!(start.dir.as_deref(), Some("/srv/remote"));
+    assert_eq!(start.origin_surface_id, Some(9));
+}
+
+#[test]
+fn picker_start_tolerates_missing_keys() {
+    // 구버전 host(`cwd` 만 싣는다) — 깨지지 않고 비어 있다.
+    assert_eq!(
+        PickerStart::from_context(&json!({ "cwd": "/old" })),
+        PickerStart::default()
+    );
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn trigger_params_carry_start_dir_and_origin() {
+    let start = PickerStart {
+        dir: Some("/work/proj".to_string()),
+        origin_surface_id: Some(7),
+    };
+    let params = file_picker_trigger_params(42, &start);
+    assert_eq!(params["owner_popup_instance"], json!(42));
+    assert_eq!(params["start_dir"], json!("/work/proj"));
+    assert_eq!(params["origin_surface_id"], json!(7));
+    assert_eq!(params["filters"], json!(["md", "markdown"]));
+}
