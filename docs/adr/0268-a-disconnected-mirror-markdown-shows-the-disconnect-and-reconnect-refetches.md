@@ -1,4 +1,4 @@
-# ADR-XXXX: 끊긴 mirror markdown 문서는 옛 원문 대신 끊김을 보이고, 재연결은 변경 신호 한 번으로 되돌린다 — ADR-0255 의 항목 5·6 개정
+# ADR-0268: 끊긴 mirror markdown 문서는 옛 원문 대신 끊김을 보이고, 재연결은 변경 신호 한 번으로 되돌린다 — ADR-0255 의 항목 5·6 개정
 
 - **Status**: Accepted
 - **Date**: 2026-09-13

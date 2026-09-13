@@ -395,4 +395,4 @@ host 는 받은 원문을 plugin 에게 돌려줘야 한다. 그 다리의 이�
   `src/adapters/ipc/handler/webview.rs`(`webview.set_url` — 항목 5 의 신호원),
   `crates/tasty-plugin-markdown/src/render.rs::render_document`,
   `crates/tasty-plugin-sdk/src/file_watch.rs`.
-- 부분 개정: [XXXX](XXXX-a-disconnected-mirror-markdown-shows-the-disconnect-and-reconnect-refetches.md) (항목 5 의 재연결 서술, 항목 6 개정)
+- 부분 개정: [ADR-0268](0268-a-disconnected-mirror-markdown-shows-the-disconnect-and-reconnect-refetches.md) (항목 5 의 재연결 서술, 항목 6 개정)
