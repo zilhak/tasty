@@ -29,6 +29,7 @@ pub(crate) mod image;
 mod input_source;
 #[cfg(feature = "gui")]
 mod markdown;
+mod markdown_mirror;
 mod memory;
 mod message;
 mod meta;
@@ -795,6 +796,12 @@ fn route_engine_handler(
         // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
         // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
+        // (docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md) markdown
+        // plugin 이 mirror 문서의 원격 원문을 요청한다 — `git_viewer.query` 와 같은 비동기
+        // accept(큐잉 + request_id 회신). 결과는 attach 응답 도착 후 unicast 이벤트로 간다.
+        "markdown_mirror.content_request" => {
+            markdown_mirror::handle_content_request(engine, id, &request.params)
+        }
         // (ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
         // 여는 UI state 변경이라 gui feature 전용.
         #[cfg(feature = "gui")]

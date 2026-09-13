@@ -89,6 +89,7 @@ pub const RESERVED_IPC_PREFIXES: &[&str] = &[
     "host",
     "ime",
     "ipc",
+    "markdown_mirror",
     "memory",
     "message",
     "notification",

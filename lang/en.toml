@@ -1249,6 +1249,9 @@ mirror_structural_forward_failed = "The remote workspace couldn't apply that cha
 # Forwarded restore found nothing in the remote workspace's restore stack. Not a
 # failure — the generic forward-failure wording above would read as an error.
 mirror_restore_empty = "Nothing to restore in the remote workspace."
+# A mirrored markdown document arrived cut at the attach frame budget (the remote
+# file is bigger than one frame can carry), so the view below is incomplete.
+mirror_markdown_truncated = "The remote document is too large to show in full — the mirror shows it truncated."
 # Shown when a close would destroy a surface a remote attach session hard-occupies.
 # Occupancy means someone is working in that terminal right now, so closing would kill
 # their session without warning. Reclaim it with the force-detach button, then close.

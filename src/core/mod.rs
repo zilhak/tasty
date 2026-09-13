@@ -99,6 +99,19 @@ pub(crate) fn next_git_query_request_id() -> u64 {
     NEXT_GIT_QUERY_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// markdown mirror(ADR-0255) `markdown_content_request` id 시퀀스 —
+/// `next_list_dir_request_id` 와 동일 근거(프로세스 내 유일성만 필요). **0 은 발급하지
+/// 않는다** — host 가 "기다리던 요청이 있으면 버려라" sentinel 로 쓴다
+/// (`markdown_mirror.content_result` 의 `request_id = 0`, git-viewer 의 abandon 과 같은 형태).
+static NEXT_MARKDOWN_CONTENT_REQUEST_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+/// 다음 markdown_content_request id 발급. `markdown_mirror.content_request` IPC 핸들러
+/// (`adapters::ipc::handler::markdown_mirror`)가 원격 원문 조회를 접수할 때 호출.
+pub(crate) fn next_markdown_content_request_id() -> u64 {
+    NEXT_MARKDOWN_CONTENT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `file_picker.trigger` IPC(ADR-0058) 요청 id 시퀀스 — `next_list_dir_request_id`
 /// 와 동일 근거(프로세스 내 유일성만 필요). **주의**: 이 id 는 `FpLoadState::Loading`
 /// 의 (popup 내부 원격 디렉토리 나열 요청 상관관계) `request_id` 와 완전히 별개의
@@ -165,6 +178,21 @@ pub(crate) struct PendingGitQueryForward {
     pub(crate) worktree_path: Option<String>,
     /// `kind = Diff` 전용.
     pub(crate) diff_path: Option<String>,
+}
+
+/// markdown mirror 원문 조회 forward 큐(`CoreState::pending_markdown_content_forward`)의
+/// 원소(ADR-0255). `markdown_mirror.content_request` IPC 핸들러(markdown plugin 이
+/// host.call 로 트리거)가 push, App 이 `about_to_wait` 에서 drain 해 mirror 세션의 attach
+/// 채널로 `markdown_content_request` 를 전송한다 — `PendingGitQueryForward` 와 동형.
+///
+/// 앵커는 **surface_id** 다 — markdown 은 surface 하나가 문서 하나이고, 회신에도
+/// `surface_id` 가 실려 오므로 host 는 `request_id → consumer` 표를 만들지 않는다
+/// (pending 추적은 plugin 이 surface 별로 한다, ADR-0255 항목 2).
+#[derive(Debug, Clone)]
+pub(crate) struct PendingMarkdownContentForward {
+    /// 원문을 기다리는 **로컬** mirror markdown surface id.
+    pub(crate) local_surface_id: u32,
+    pub(crate) request_id: u64,
 }
 
 /// 도메인 본체. 10 outbound port (6 external + 4 internal) + preset_store 직속.

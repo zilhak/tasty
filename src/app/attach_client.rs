@@ -49,6 +49,17 @@ const GIT_VIEWER_PLUGIN_ID: &str = "com.tasty.git-viewer";
 /// 의 `on_event` 가 이 key 로 매칭한다.
 const GIT_VIEWER_QUERY_RESULT_EVENT: &str = "git_viewer.query_result";
 
+/// markdown mirror(ADR-0255) 의 surface kind 와 그것을 소유해야 하는 plugin id. 서버의
+/// content 화이트리스트(`attach_runtime::is_attach_content_allowed`)와 같은 쌍이다 —
+/// client 도 이 쌍이 등록돼 있을 때만 로컬 markdown surface 를 만든다. 다른 plugin 이 같은
+/// kind 이름을 등록했으면 아래 이벤트를 받을 주체가 없으므로 지금처럼 빈 surface 로 둔다.
+/// 별도 프로세스(plugin)라 공유 crate 가 없어 리터럴로 중복한다(git-viewer 와 같은 근거).
+const MARKDOWN_MIRROR_KIND: &str = "markdown";
+const MARKDOWN_PLUGIN_ID: &str = "com.tasty.markdown";
+/// host → markdown plugin unicast event key — 원격 원문 조회 결과. plugin 의 `on_event`
+/// 가 이 key 로 매칭한다(`crates/tasty-plugin-markdown/src/main.rs` 에 같은 리터럴).
+const MARKDOWN_MIRROR_CONTENT_RESULT_EVENT: &str = "markdown_mirror.content_result";
+
 /// reader thread 가 원격에서 받은 mirror 갱신 이벤트. 출력 바이트와 resize 통지를
 /// **한 버퍼에 순서대로** 담아 프레임 도착 순서(원격의 apply 순서)를 보존한다 —
 /// resize 앞뒤 출력이 올바른 그리드에서 재생되도록.
@@ -123,6 +134,19 @@ pub(crate) enum MirrorEvent {
         ok: bool,
         kind: String,
         data: Option<Value>,
+        truncated: bool,
+        reason: Option<String>,
+    },
+    /// (ADR-0255) markdown mirror — 원격이 이 세션의 `markdown_content_request` 를 처리한
+    /// 결과(`markdown_content_result` 커스텀 이벤트, `StreamControl` enum 밖).
+    /// `surface_id` 는 **원격** id 다(회신에 실려 온다 — host 는 request_id 표를 두지
+    /// 않는다). 성공이면 `file`/`source`, 실패면 `reason`.
+    MarkdownContentResult {
+        request_id: u64,
+        surface_id: u32,
+        ok: bool,
+        file: Option<String>,
+        source: Option<String>,
         truncated: bool,
         reason: Option<String>,
     },
@@ -342,6 +366,12 @@ pub(crate) struct AttachClientSession {
     /// Decision 5), 보낼 때 여기 기록해뒀다가 응답 도착 시 꺼내 라우팅을 분기한다.
     /// 응답을 소비하면(성공/실패 무관) 제거 — stale 재사용 없음.
     pending_list_dir_consumers: HashMap<u64, Option<u32>>,
+    /// (ADR-0255) 이 세션이 만든 **로컬 markdown surface**(plugin 소유 `RemoteSurface`)의
+    /// local id. 이 surface 들은 로컬에서 닫히는 경로(lifecycle 큐)를 안 타고 mirror 트리
+    /// 교체·세션 정리로 사라지므로, host 가 직접 plugin 에 `surface.destroy` 를 보내야
+    /// plugin 의 per-surface 문서 상태가 남지 않는다. 재구성마다 새 집합과 견줘 빠진
+    /// 것을 destroy 하고, 끊김(Reconnecting) 때는 이 집합에 원문 대기 abandon 을 알린다.
+    markdown_locals: HashSet<u32>,
 }
 
 impl AttachClientSession {
@@ -497,6 +527,7 @@ impl App {
         // (실시간 갱신 — 서버 readonly 의 3초 cadence 와 분리).
         let proxy;
         let remote_to_local: HashMap<u32, u32>;
+        let markdown_locals: HashSet<u32>;
         {
             let Some(main) = self.focused_window_mut() else {
                 anyhow::bail!("no focused window to host mirror workspace");
@@ -505,9 +536,10 @@ impl App {
             let engine = &mut main.core_state;
             let ids = engine.next_ids.clone();
 
-            let (new_map, terminal_locals, mesh_locals, explorer_locals, _newly_created) =
+            let mut mapping =
                 merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, engine);
-            remote_to_local = new_map;
+            markdown_locals = mapping.markdown_ids();
+            remote_to_local = std::mem::take(&mut mapping.remote_to_local);
 
             local_ws_id = ids.next_workspace();
             let mut ws = build_mirror_workspace(
@@ -516,9 +548,10 @@ impl App {
                 &tree,
                 &ids,
                 &remote_to_local,
-                &terminal_locals,
-                &mesh_locals,
-                &explorer_locals,
+                &mapping.terminals,
+                &mapping.mesh,
+                &mapping.explorer,
+                &mut mapping.markdown,
             );
             // client mirror 표식 — 사이드바 이름 앞 하늘색 glyph(레일=우하단 chip)로 표시
             // (로컬 ws 와 구분; status dot 은 실행상태 전용). 상세 view.rs draw_workspace_card.
@@ -577,6 +610,7 @@ impl App {
             last_forwarded_resize: HashMap::new(),
             remote_label: format!("127.0.0.1:{port}"),
             pending_list_dir_consumers: HashMap::new(),
+            markdown_locals,
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -623,6 +657,7 @@ impl App {
             );
         };
         let proxy;
+        let removed_markdown: Vec<u32>;
         {
             // `sess`/`main` 을 같은 스코프에서 직접 field projection 으로 각각 얻는다
             // (disjoint borrow — `apply_attach_client_output` 과 동일 패턴). 이후 클로저가
@@ -642,15 +677,21 @@ impl App {
                 .find(|w| w.id == local_workspace)
                 .and_then(|ws| capture_focused_remote(ws, &sess.remote_to_local));
 
-            let (new_map, terminal_locals, mesh_locals, explorer_locals, _newly_created) =
-                merge_survivor_mapping(
-                    &sess.remote_to_local,
-                    &surfaces,
-                    &ids,
-                    &shared_frame_tx,
-                    engine,
-                );
-            sess.remote_to_local = new_map;
+            let mut mapping = merge_survivor_mapping(
+                &sess.remote_to_local,
+                &surfaces,
+                &ids,
+                &shared_frame_tx,
+                engine,
+            );
+            sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+            let new_markdown = mapping.markdown_ids();
+            removed_markdown = sess
+                .markdown_locals
+                .difference(&new_markdown)
+                .copied()
+                .collect();
+            sess.markdown_locals = new_markdown;
 
             let Some(pos) = engine
                 .workspaces
@@ -667,9 +708,10 @@ impl App {
                 &tree,
                 &ids,
                 &sess.remote_to_local,
-                &terminal_locals,
-                &mesh_locals,
-                &explorer_locals,
+                &mapping.terminals,
+                &mapping.mesh,
+                &mapping.explorer,
+                &mut mapping.markdown,
             );
             ws.mirror = true;
             if !restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local) {
@@ -685,6 +727,7 @@ impl App {
             );
             main.mark_dirty();
         }
+        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, removed_markdown);
 
         // 3. reader thread — 신규 attach 와 동일 계약(새 output 버퍼/disconnected).
         let output = MirrorOutbox::new();
@@ -855,11 +898,25 @@ impl App {
     /// 터미널을 살려둔 채 `Reconnecting` 으로 전이시킨다(완전 정리 대신). `auto_attach.rs`
     /// 의 backoff 스케줄러가 이 상태의 세션을 찾아 `reconnect_session` 재시도를 건다.
     fn enter_reconnecting(&mut self, idx: usize) {
-        let (anchor, local_workspace) = {
+        let (anchor, local_workspace, markdown_locals) = {
             let sess = &mut self.attach_client_sessions[idx];
             sess.state = SessionState::Reconnecting;
-            (sess.anchor_ws_id, sess.local_workspace)
+            (
+                sess.anchor_ws_id,
+                sess.local_workspace,
+                sess.markdown_locals.clone(),
+            )
         };
+        // (ADR-0255) mirror markdown 문서는 살아 있지만 끊긴 연결에 물린 원문 요청의 응답은
+        // 영영 안 온다. host 는 plugin 이 어느 request_id 를 기다리는지 모르므로 surface
+        // 마다 abandon sentinel(`request_id = 0`)을 보낸다 — 기다리던 요청이 없던 문서는
+        // plugin 이 그대로 둔다.
+        for local in markdown_locals {
+            push_markdown_content_result(
+                &mut self.plugin_manager,
+                &markdown_content_failure(local, 0, "mirror workspace disconnected"),
+            );
+        }
         // 재진입 대기 등록 — 기존 엣지(워크스페이스 전환) 트리거와 신규 backoff 트리거가
         // 둘 다 이 집합을 게이트로 쓴다(auto_attach.rs).
         if let Some(anchor) = anchor {
@@ -953,6 +1010,9 @@ impl App {
         if from_disconnect {
             self.notify_git_viewer_mirror_lost();
         }
+        // (ADR-0255) mirror workspace 가 통째로 사라지면 그 안의 로컬 markdown surface 도
+        // 사라진다 — 그 경로는 lifecycle 큐를 안 타므로 plugin 문서 상태를 직접 정리한다.
+        destroy_mirror_markdown_surfaces(&mut self.plugin_manager, sess.markdown_locals.clone());
         // heartbeat 스레드 종료 신호 — 사용자 close 경로(disconnected 가 아직 false)도
         // 포함해 여기서 항상 set. 안 하면 그 스레드가 writer(Arc) 를 계속 붙들어 세션이
         // 이미 정리된 뒤에도 소켓이 살아있고 Ping 이 무의미하게 계속 나간다.
@@ -1183,6 +1243,36 @@ impl App {
                     req.request_id
                 );
                 self.fail_pending_git_query(req.request_id, req.kind, &e.to_string());
+            }
+        }
+    }
+
+    /// `about_to_wait` 에서 호출 — `markdown_mirror.content_request` IPC 핸들러가 쌓은
+    /// 원격 markdown 원문 조회 forward 큐(`CoreState::pending_markdown_content_forward`)를
+    /// drain 해 각 요청을 해당 mirror 세션의 attach 채널로 보낸다(ADR-0255,
+    /// `dispatch_pending_git_query_forwards` 와 동형). 보낼 수 없으면(세션 없음·재연결 중·
+    /// 전송 실패) 응답을 기다리지 않고 **그 자리에서** 실패 결과를 plugin 에 돌려준다 —
+    /// 안 그러면 문서가 로딩 상태로 멈춘다.
+    pub(crate) fn dispatch_pending_markdown_content_forwards(&mut self) {
+        let mut pending: Vec<crate::core::PendingMarkdownContentForward> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.append(&mut main.core_state.pending_markdown_content_forward);
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.append(&mut e.pending_markdown_content_forward);
+        }
+        for req in pending {
+            if let Err(e) = self.send_markdown_content_request(req.local_surface_id, req.request_id)
+            {
+                tracing::warn!(
+                    "markdown_content_request send 실패 (local surface {}, request {}): {e}",
+                    req.local_surface_id,
+                    req.request_id
+                );
+                push_markdown_content_result(
+                    &mut self.plugin_manager,
+                    &markdown_content_failure(req.local_surface_id, req.request_id, &e.to_string()),
+                );
             }
         }
     }
@@ -1846,7 +1936,8 @@ fn spawn_attach_reader_thread(
                                 // 비수정 — parse_capture_result/parse_list_dir_result 참조).
                                 Ok(_) | Err(_) => parse_capture_result(&frame.payload)
                                     .or_else(|| parse_list_dir_result(&frame.payload))
-                                    .or_else(|| parse_git_query_result(&frame.payload)),
+                                    .or_else(|| parse_git_query_result(&frame.payload))
+                                    .or_else(|| parse_markdown_content_result(&frame.payload)),
                             };
                         if let Some(ev) = mirror_ev
                             && output.push(ev)
@@ -2052,24 +2143,26 @@ fn pending_op_focus_for(
 /// (재연결 — attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고)이 공유하는 핵심 로직 — 두
 /// 시나리오 모두 "새 handshake/delta 를 기존 세션 상태에 diff 적용"이라는 점에서
 /// 구조적으로 동일하다.
+///
+/// markdown role(ADR-0255)은 로컬 plugin surface 를 **이 함수가 미리 만들어**
+/// [`SurvivorMapping::markdown`] 에 담는다 — registry 에 닿는 지점(`engine`)을 쥔 곳이 여기라
+/// `build_layout` 은 그것을 트리에 꽂기만 한다. survivor 는 옛 surface 의 핸들을 공유한
+/// 값을 담아(`RemoteSurface::share_handles`) plugin 에 `surface.create` 를 다시 보내지 않는다 —
+/// 다시 보내면 구조 delta 가 올 때마다 문서가 로딩부터 다시 시작한다.
 fn merge_survivor_mapping(
     old_map: &HashMap<u32, u32>,
     surfaces: &[Value],
     ids: &crate::core::state::IdGenerator,
     frame_tx: &SharedFrameSender,
     engine: &mut crate::core::CoreState,
-) -> (
-    HashMap<u32, u32>,
-    HashSet<u32>,
-    HashMap<u32, MirrorMeshInfo>,
-    HashMap<u32, std::path::PathBuf>,
-    Vec<u32>,
-) {
+) -> SurvivorMapping {
     let mut new_map: HashMap<u32, u32> = HashMap::new();
     let mut terminal_locals: HashSet<u32> = HashSet::new();
     let mut mesh_locals: HashMap<u32, MirrorMeshInfo> = HashMap::new();
     let mut explorer_locals: HashMap<u32, std::path::PathBuf> = HashMap::new();
+    let mut markdown_locals: MirrorMarkdownLeaves = HashMap::new();
     let mut newly_created_remote_ids: Vec<u32> = Vec::new();
+    let markdown_available = markdown_mirror_available(engine);
     for s in surfaces {
         let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let role = s.get("role").and_then(|v| v.as_str());
@@ -2077,25 +2170,33 @@ fn merge_survivor_mapping(
         // 이번 delta 가 실어보낸 실제 kind — client 가 그 role 에 대해 실제로 구성할
         // `Surface::kind()` 값과 1:1 대응(아래 survivor 분기의 "바뀌었는가" 판정 기준).
         // terminal/explorer 는 role 자체가 kind, mesh 는 서버가 함께 보낸 kind 필드,
+        // markdown 은 client 에 그 plugin 이 등록돼 있을 때만 "markdown"(아니면 빈 surface),
         // 나머지(placeholder — 비-whitelist mesh 포함)는 client 가 `EmptySurface`
-        // ("empty")로 구성한다.
+        // ("empty")로 구성한다. markdown 갈래를 빠뜨리면 재연결·delta 마다 survivor 가
+        // "kind 가 바뀌었다" 로 판정돼 매번 새로 만들어진다.
         let new_kind: &str = if is_terminal {
             "terminal"
         } else if role == Some("mesh") {
             s.get("kind").and_then(|v| v.as_str()).unwrap_or("mesh")
         } else if role == Some("explorer") {
             "explorer"
+        } else if role == Some("markdown") && markdown_available {
+            MARKDOWN_MIRROR_KIND
         } else {
             "empty"
         };
-        let local_id = match old_map.get(&remote_id) {
-            Some(&l) => {
+        let survivor_local = old_map.get(&remote_id).copied();
+        let old_kind: Option<&'static str> =
+            survivor_local.and_then(|l| engine.find_surface_by_id(l).map(|s| s.kind()));
+        let local_id = match survivor_local {
+            Some(l) => {
                 // survivor — local id 는 그대로 재사용(터미널/mesh 프레임 캐시 유지).
                 // 단, convert 로 kind 자체가 바뀐 survivor 는 옛 kind 에 종속된 로컬
                 // 리소스가 새 kind 와 안 맞게 된다 — 즉시 정리/생성하지 않으면 이 surface
                 // 가 나중에 닫힐 때까지 orphan Terminal 객체(입력 forwarder 스레드 포함)
-                // 나 stale mesh frame 캐시, busy state 가 그대로 남는다.
-                let old_kind = engine.find_surface_by_id(l).map(|s| s.kind());
+                // 나 stale mesh frame 캐시, busy state 가 그대로 남는다. (markdown 이
+                // 다른 kind 로 바뀐 경우의 plugin 문서 정리는 호출부가 `markdown_locals`
+                // 집합 차이로 한다 — 여기엔 plugin manager 가 없다.)
                 if old_kind != Some(new_kind) {
                     if old_kind == Some("terminal") {
                         // terminal → 다른 kind: 옛 Terminal(+ 입력 forwarder) 과 busy
@@ -2164,6 +2265,15 @@ fn merge_survivor_mapping(
                 .map(std::path::PathBuf::from)
                 .unwrap_or_default();
             explorer_locals.insert(local_id, root);
+        } else if new_kind == MARKDOWN_MIRROR_KIND {
+            let reused = (old_kind == Some(MARKDOWN_MIRROR_KIND))
+                .then(|| share_mirror_markdown_surface(engine, local_id))
+                .flatten();
+            if let Some(surface) =
+                reused.or_else(|| create_mirror_markdown_surface(s, local_id, engine))
+            {
+                markdown_locals.insert(local_id, surface);
+            }
         }
         new_map.insert(remote_id, local_id);
     }
@@ -2179,13 +2289,149 @@ fn merge_survivor_mapping(
         }
     }
 
-    (
-        new_map,
-        terminal_locals,
-        mesh_locals,
-        explorer_locals,
+    SurvivorMapping {
+        remote_to_local: new_map,
+        terminals: terminal_locals,
+        mesh: mesh_locals,
+        explorer: explorer_locals,
+        markdown: markdown_locals,
         newly_created_remote_ids,
-    )
+    }
+}
+
+/// 로컬 markdown surface(ADR-0255)를 담는 맵 — local id → 이미 만든 plugin surface.
+/// `build_layout` 이 leaf 를 만날 때 꺼내(`remove`) 트리에 꽂는다.
+type MirrorMarkdownLeaves = HashMap<u32, Box<dyn Surface>>;
+
+/// [`merge_survivor_mapping`] 의 결과 — 재구성에 필요한 role 별 로컬 자원.
+struct SurvivorMapping {
+    remote_to_local: HashMap<u32, u32>,
+    terminals: HashSet<u32>,
+    mesh: HashMap<u32, MirrorMeshInfo>,
+    explorer: HashMap<u32, std::path::PathBuf>,
+    markdown: MirrorMarkdownLeaves,
+    /// 이번 병합에서 처음 매핑된 remote surface(08 — new-tab/split 성공 시 focus 대상 후보).
+    newly_created_remote_ids: Vec<u32>,
+}
+
+impl SurvivorMapping {
+    /// 이번 병합이 만든(또는 공유한) 로컬 markdown surface 의 local id 집합.
+    fn markdown_ids(&self) -> HashSet<u32> {
+        self.markdown.keys().copied().collect()
+    }
+}
+
+/// client 가 markdown mirror 를 로컬 surface 로 그릴 수 있는가(ADR-0255 항목 6).
+/// `"markdown"` kind 가 번들 markdown plugin 에서 등록돼 있어야 한다 — plugin 이 없거나
+/// 아직 hello 를 안 보냈으면 `false` 이고, 그때 leaf 는 지금처럼 `EmptySurface` 다. 늦게
+/// 등록되면 다음 재구성(구조 delta·재연결)에서 survivor 의 kind 가 "empty"→"markdown" 으로
+/// 바뀐 것으로 판정돼 그때 만들어진다.
+fn markdown_mirror_available(engine: &crate::core::CoreState) -> bool {
+    engine
+        .surface_registry
+        .get(MARKDOWN_MIRROR_KIND)
+        .is_some_and(|def| {
+            matches!(
+                &def.source,
+                crate::core::surface_registry::KindSource::Plugin(p) if p == MARKDOWN_PLUGIN_ID
+            )
+        })
+}
+
+/// survivor markdown surface 의 핸들을 공유한 새 값을 만든다 — plugin 에 아무것도 보내지
+/// 않는다(문서·webview URL 캐시가 그대로 이어진다). 옛 surface 가 `RemoteSurface` 가 아니면
+/// (있을 수 없는 상태) `None` 이라 호출부가 새로 만든다.
+fn share_mirror_markdown_surface(
+    engine: &crate::core::CoreState,
+    local_id: u32,
+) -> Option<Box<dyn Surface>> {
+    let rs = engine
+        .find_surface_by_id(local_id)?
+        .as_any()
+        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()?;
+    Some(Box::new(rs.share_handles()))
+}
+
+/// 새 로컬 markdown surface 를 registry 로 만든다 — 로컬에서 markdown 탭을 여는 것과 같은
+/// 경로(`HostCmd::RemoteSurfaceCreated` → plugin `surface.create`)다. params 에 `file` 이
+/// 아니라 `remote.file` 을 싣는다: `file` 로 실으면 plugin 이 **client 로컬의 같은 경로**를
+/// 읽고, host 도 그 값으로 cwd 를 파생한다(ADR-0255 항목 1 — 그 값은 표시 전용의 opaque
+/// 문자열이다). 원문은 plugin 이 `markdown_mirror.content_request` 로 따로 가져온다.
+fn create_mirror_markdown_surface(
+    descriptor: &Value,
+    local_id: u32,
+    engine: &crate::core::CoreState,
+) -> Option<Box<dyn Surface>> {
+    let file = descriptor
+        .get("file")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let display_name = descriptor
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(MARKDOWN_MIRROR_KIND);
+    let params = serde_json::json!({
+        "display_name": display_name,
+        "remote": { "file": file },
+    });
+    match engine.create_surface_via_registry(MARKDOWN_MIRROR_KIND, local_id, None, &params) {
+        Ok(surface) => Some(surface),
+        Err(e) => {
+            // 빈 surface 로 떨어진다. 다음 재구성이 kind 차이로 다시 시도한다.
+            tracing::warn!(
+                "attach mirror: markdown surface {local_id} 생성 실패 — 빈 surface: {e}"
+            );
+            None
+        }
+    }
+}
+
+/// 사라진 로컬 markdown mirror surface 를 소유 plugin 에 `surface.destroy` 로 알린다.
+/// 이 surface 들은 lifecycle 큐(`dispatch_pending_surface_lifecycle`)를 안 타므로 여기서
+/// 직접 보내지 않으면 plugin 의 문서 상태가 plugin 수명 내내 남는다.
+fn destroy_mirror_markdown_surfaces(
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    ids: impl IntoIterator<Item = u32>,
+) {
+    let Some(mgr) = plugin_manager.as_mut() else {
+        return;
+    };
+    for id in ids {
+        mgr.destroy_remote_surface(id, Some(MARKDOWN_MIRROR_KIND));
+    }
+}
+
+/// markdown plugin 에 `markdown_mirror.content_result` 를 unicast 한다. `payload.surface_id`
+/// 는 **로컬** surface id 여야 한다(plugin 은 원격 id 를 모른다).
+fn push_markdown_content_result(
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    payload: &Value,
+) {
+    let Some(mgr) = plugin_manager.as_mut() else {
+        return;
+    };
+    mgr.emit_host_event_to_plugin(
+        MARKDOWN_PLUGIN_ID,
+        MARKDOWN_MIRROR_CONTENT_RESULT_EVENT,
+        payload,
+        tasty_plugin_protocol::EventScope::System,
+    );
+}
+
+/// host 가 합성하는 실패 결과 — 요청이 원격에 닿지 못했거나(세션 없음·전송 실패) 연결이
+/// 끊겨 응답이 영영 안 올 때. `request_id = 0` 은 "기다리던 요청이 있으면 버려라"
+/// sentinel 이다(발급은 1 부터 — `next_markdown_content_request_id`). host 는 plugin 이 어느
+/// id 를 기다리는지 모르므로, 끊김 때는 surface 마다 이 값으로 알린다.
+fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str) -> Value {
+    serde_json::json!({
+        "surface_id": local_surface_id,
+        "request_id": request_id,
+        "ok": false,
+        "file": Value::Null,
+        "source": Value::Null,
+        "truncated": false,
+        "reason": reason,
+    })
 }
 
 /// 드레인된 `MirrorEvent` 한 건을 mirror 세션/engine 상태에 적용한다. 대상은
@@ -2270,7 +2516,7 @@ fn apply_one_mirror_event(
             // 원격 구조 변경 역반영: survivor 터미널 local id 를
             // 유지하며 mirror 트리를 재구성(신규 추가/사라진 것 제거).
             let pending_focus = sess.next_delta_focus.take();
-            apply_mirror_structural_delta(
+            let removed_markdown = apply_mirror_structural_delta(
                 sess,
                 host.engine,
                 workspace_id,
@@ -2278,6 +2524,7 @@ fn apply_one_mirror_event(
                 &surfaces,
                 pending_focus,
             );
+            destroy_mirror_markdown_surfaces(plugin_manager, removed_markdown);
         }
         MirrorEvent::CaptureResult { ok, path, reason } => {
             // (03) 원격이 이 세션의 캡처 업로드를 처리한 결과.
@@ -2328,6 +2575,28 @@ fn apply_one_mirror_event(
                 ok,
                 kind,
                 data,
+                truncated,
+                reason,
+            );
+        }
+        MirrorEvent::MarkdownContentResult {
+            request_id,
+            surface_id,
+            ok,
+            file,
+            source,
+            truncated,
+            reason,
+        } => {
+            apply_markdown_content_result_event(
+                sess,
+                host,
+                plugin_manager,
+                request_id,
+                surface_id,
+                ok,
+                file,
+                source,
                 truncated,
                 reason,
             );
@@ -2473,6 +2742,50 @@ fn apply_git_query_result_event(
     }
 }
 
+/// (ADR-0255) `MirrorEvent::MarkdownContentResult` 한 건을 적용한다 — 원격 surface id 를
+/// 이 세션의 로컬 markdown surface 로 되돌려 그 plugin 에 unicast 한다. host 는 원문을
+/// 해석하지 않는다(plugin 이 그린다). `truncated` 는 toast 로 알린다 — 문서 본문에
+/// "여기서 잘렸다" 를 심지 않는다(ADR-0255 항목 3, File Picker 의 `list_dir` 과 같은 방식).
+///
+/// 로컬 markdown surface 로 매핑되지 않는 회신(그 사이 surface 가 사라졌거나 다른 kind 로
+/// 바뀜)은 조용히 버린다 — 받을 문서가 없다.
+#[allow(clippy::too_many_arguments)] // reason: wire 회신 필드를 풀어 받는다(GitQueryResult 적용과 같은 형태)
+fn apply_markdown_content_result_event(
+    sess: &AttachClientSession,
+    host: &mut MirrorHost<'_>,
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    request_id: u64,
+    remote_surface_id: u32,
+    ok: bool,
+    file: Option<String>,
+    source: Option<String>,
+    truncated: bool,
+    reason: Option<String>,
+) {
+    let Some(&local) = sess.remote_to_local.get(&remote_surface_id) else {
+        return;
+    };
+    if !sess.markdown_locals.contains(&local) {
+        return;
+    }
+    let payload = serde_json::json!({
+        "surface_id": local,
+        "request_id": request_id,
+        "ok": ok,
+        "file": file,
+        "source": source,
+        "truncated": truncated,
+        "reason": reason,
+    });
+    push_markdown_content_result(plugin_manager, &payload);
+    if ok && truncated {
+        host.toast(
+            crate::i18n::t("attach.toast.mirror_markdown_truncated").to_string(),
+            crate::adapters::ui::ToastKind::Warning,
+        );
+    }
+}
+
 /// 원격 구조 변경 delta(3단계 역반영)를 mirror 트리에 적용한다. 원격 ws 의 실행 후 전체
 /// 트리+surfaces 를 받아:
 /// 1. survivor(기존 매핑에 있는 remote_id)는 **기존 local id 를 재사용**(터미널을
@@ -2491,6 +2804,9 @@ fn apply_git_query_result_event(
 /// focus 가 매번 그 고정값으로 되돌아간다 — 이를 막기 위해 교체 **전** 로컬에서 실제로
 /// focus 돼 있던 surface 를 remote id 기준으로 캡처해뒀다가, 교체 **후** 새 트리에서
 /// 그 surface 를 찾아 focus 를 복원한다(서버 상태는 건드리지 않음 — client-only 보정).
+///
+/// 반환값은 이 delta 로 **사라진 로컬 markdown surface**(ADR-0255)의 local id 다 — 이
+/// 함수는 plugin manager 를 모르므로, 호출부가 그것을 plugin 에 `surface.destroy` 로 알린다.
 fn apply_mirror_structural_delta(
     sess: &mut AttachClientSession,
     engine: &mut crate::core::CoreState,
@@ -2498,7 +2814,7 @@ fn apply_mirror_structural_delta(
     tree: &Value,
     surfaces: &[Value],
     pending_focus: Option<PendingOpFocus>,
-) {
+) -> Vec<u32> {
     let ids = engine.next_ids.clone();
 
     // focus 캡처(교체 전) — 로컬에서 실제로 focus 돼 있던 surface 를, 재구성마다 바뀌는
@@ -2513,17 +2829,24 @@ fn apply_mirror_structural_delta(
     // 공유하는 `merge_survivor_mapping`). 이 op 으로 새로 생긴 remote surface(=이전
     // 매핑에 없던 것)도 순서대로 받아둔다(08 — new-tab/split 성공 시 focus 를 옮길 대상
     // 후보).
-    let (new_map, terminal_locals, mesh_locals, explorer_locals, newly_created_remote_ids) =
-        merge_survivor_mapping(
-            &sess.remote_to_local,
-            surfaces,
-            &ids,
-            &sess.frame_tx,
-            engine,
-        );
+    let mut mapping = merge_survivor_mapping(
+        &sess.remote_to_local,
+        surfaces,
+        &ids,
+        &sess.frame_tx,
+        engine,
+    );
+    let newly_created_remote_ids = std::mem::take(&mut mapping.newly_created_remote_ids);
 
     // 매핑 교체(이후 같은 drain 의 Data 는 갱신된 매핑으로 라우팅된다).
-    sess.remote_to_local = new_map;
+    sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+    let new_markdown = mapping.markdown_ids();
+    let removed_markdown: Vec<u32> = sess
+        .markdown_locals
+        .difference(&new_markdown)
+        .copied()
+        .collect();
+    sess.markdown_locals = new_markdown;
 
     // 4. 트리 재구성 → 같은 local ws id 로 in-place 교체(survivor local id 유지 →
     //    위치·구성만 갱신, active_workspace 인덱스 불변).
@@ -2539,9 +2862,10 @@ fn apply_mirror_structural_delta(
             tree,
             &ids,
             &sess.remote_to_local,
-            &terminal_locals,
-            &mesh_locals,
-            &explorer_locals,
+            &mapping.terminals,
+            &mapping.mesh,
+            &mapping.explorer,
+            &mut mapping.markdown,
         );
         ws.mirror = true;
 
@@ -2583,6 +2907,7 @@ fn apply_mirror_structural_delta(
             sess.local_workspace
         );
     }
+    removed_markdown
 }
 
 /// delta 로 새로 만들어진 `ws` 에 `old_focused_remote`(교체 전 캡처한 remote surface
@@ -2670,6 +2995,7 @@ fn build_pane_from_json(
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
     explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
 ) -> Pane {
     let tabs_json = p
         .get("tabs")
@@ -2680,8 +3006,8 @@ fn build_pane_from_json(
     let mut active_tab = 0usize;
     for (i, t) in tabs_json.iter().enumerate() {
         let layout_json = t.get("layout").cloned().unwrap_or(Value::Null);
-        let layout =
-            build_layout(&layout_json, ids, map, term, mesh, explorer).unwrap_or_else(|| {
+        let layout = build_layout(&layout_json, ids, map, term, mesh, explorer, markdown)
+            .unwrap_or_else(|| {
                 SurfaceLayout::Leaf(Box::new(EmptySurface::new(ids.next_surface())))
             });
         let remote_focus = t
@@ -2744,12 +3070,13 @@ fn build_pane_node(
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
     explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
     pane_id_map: &mut HashMap<u32, u32>,
 ) -> Option<PaneNode> {
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
             let remote_pane = node.get("id").and_then(|v| v.as_u64())? as u32;
-            let pane = build_pane_from_json(node, ids, map, term, mesh, explorer);
+            let pane = build_pane_from_json(node, ids, map, term, mesh, explorer, markdown);
             pane_id_map.insert(remote_pane, pane.id);
             Some(PaneNode::Leaf(pane))
         }
@@ -2766,6 +3093,7 @@ fn build_pane_node(
                 term,
                 mesh,
                 explorer,
+                markdown,
                 pane_id_map,
             )?;
             let second = build_pane_node(
@@ -2775,6 +3103,7 @@ fn build_pane_node(
                 term,
                 mesh,
                 explorer,
+                markdown,
                 pane_id_map,
             )?;
             Some(PaneNode::Split {
@@ -2806,6 +3135,7 @@ fn build_mirror_workspace(
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
     explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
 ) -> Workspace {
     let remote_focused_pane = tree
         .get("focused_pane")
@@ -2822,6 +3152,7 @@ fn build_mirror_workspace(
             term,
             mesh,
             explorer,
+            markdown,
             &mut pane_id_map,
         ) {
             let focused_local_pane = pane_id_map
@@ -2851,7 +3182,7 @@ fn build_mirror_workspace(
         let remote_pane = p.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         local_panes.push((
             remote_pane,
-            build_pane_from_json(p, ids, map, term, mesh, explorer),
+            build_pane_from_json(p, ids, map, term, mesh, explorer, markdown),
         ));
     }
 
@@ -2904,8 +3235,9 @@ fn build_mirror_workspace(
 
 /// `to_tree_json_full` JSON → `SurfaceLayout`(분할 방향/비율/focus 보존). leaf 의 remote
 /// id 는 `map` 으로 로컬 치환하고, 터미널이면 `TerminalSurface`(mirror grid 가 store 에
-/// 있음), attach mesh mirror(`mesh`)면 `AttachMeshSurface`(attach-behavior.md#mesh-mirror-채널 참고), 그 외엔 placeholder
-/// `EmptySurface` leaf 로 만든다.
+/// 있음), attach mesh mirror(`mesh`)면 `AttachMeshSurface`(attach-behavior.md#mesh-mirror-채널 참고), explorer 면
+/// `ExplorerPanel`, markdown(`markdown`, ADR-0255)이면 미리 만든 로컬 plugin surface, 그 외엔
+/// placeholder `EmptySurface` leaf 로 만든다.
 fn build_layout(
     node: &Value,
     ids: &crate::core::state::IdGenerator,
@@ -2913,6 +3245,7 @@ fn build_layout(
     term: &HashSet<u32>,
     mesh: &HashMap<u32, MirrorMeshInfo>,
     explorer: &HashMap<u32, std::path::PathBuf>,
+    markdown: &mut MirrorMarkdownLeaves,
 ) -> Option<SurfaceLayout> {
     match node.get("type").and_then(|v| v.as_str())? {
         "Leaf" => {
@@ -2934,6 +3267,11 @@ fn build_layout(
             } else if let Some(root) = explorer.get(&local) {
                 // (ADR-0059 참고) cwd == root 단순화 — wire 는 root 만 싣는다.
                 Box::new(ExplorerPanel::new(local, root.clone()))
+            } else if let Some(surface) = markdown.remove(&local) {
+                // (ADR-0255) `merge_survivor_mapping` 이 registry 로 미리 만든 로컬
+                // markdown surface. client 에 markdown plugin 이 없으면 여기 없고 아래
+                // 빈 surface 로 떨어진다.
+                surface
             } else {
                 Box::new(EmptySurface::new(local))
             };
@@ -2949,8 +3287,16 @@ fn build_layout(
                 .get("focus_second")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let first = build_layout(node.get("first")?, ids, map, term, mesh, explorer)?;
-            let second = build_layout(node.get("second")?, ids, map, term, mesh, explorer)?;
+            let first = build_layout(node.get("first")?, ids, map, term, mesh, explorer, markdown)?;
+            let second = build_layout(
+                node.get("second")?,
+                ids,
+                map,
+                term,
+                mesh,
+                explorer,
+                markdown,
+            )?;
             Some(SurfaceLayout::Split {
                 direction,
                 ratio,
@@ -3143,6 +3489,43 @@ fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
     })
 }
 
+/// (ADR-0255) `markdown_content_result` wire — 서버
+/// `attach_runtime::handle_markdown_content_request` 가 만드는 모양 그대로. 성공이면
+/// `file`/`source`/`truncated`, 실패면 `reason` 만 온다.
+#[derive(serde::Deserialize)]
+struct MarkdownContentResultWire {
+    request_id: u64,
+    surface_id: u32,
+    ok: bool,
+    #[serde(default)]
+    file: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    truncated: bool,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// `markdown_content_result` 커스텀 이벤트를 파싱한다(`parse_git_query_result` 와 동형 —
+/// 다른 event 면 `None`).
+fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEvent> {
+    let value: Value = serde_json::from_slice(payload).ok()?;
+    if value.get("event").and_then(|v| v.as_str()) != Some("markdown_content_result") {
+        return None;
+    }
+    let wire: MarkdownContentResultWire = serde_json::from_value(value).ok()?;
+    Some(MirrorEvent::MarkdownContentResult {
+        request_id: wire.request_id,
+        surface_id: wire.surface_id,
+        ok: wire.ok,
+        file: wire.file,
+        source: wire.source,
+        truncated: wire.truncated,
+        reason: wire.reason,
+    })
+}
+
 impl App {
     /// (03) 캡처된 로컬 스크린샷을 `local_ws_id` mirror 세션의 attach 채널로
     /// 업로드하고, 완료 시 원격이 그 경로를 원격 클립보드에 쓰도록 요청한다.
@@ -3260,6 +3643,40 @@ impl App {
             "kind": kind.as_wire_str(),
             "worktree_path": worktree_path,
             "diff_path": diff_path,
+        });
+        send_capture_control_frame(&sess.frame_tx, &msg)
+    }
+
+    /// (ADR-0255) `local_surface_id`(로컬 mirror markdown surface)를 보유한 세션의 attach
+    /// 채널로 `markdown_content_request` 를 보낸다. 원격 id 치환은 `send_git_query_request`
+    /// 와 같다. 응답은 reader thread 가 `MirrorEvent::MarkdownContentResult` 로 흘려보낸다.
+    pub(crate) fn send_markdown_content_request(
+        &mut self,
+        local_surface_id: u32,
+        request_id: u64,
+    ) -> anyhow::Result<()> {
+        let Some(sess) = self
+            .attach_client_sessions
+            .iter()
+            .find(|s| s.markdown_locals.contains(&local_surface_id))
+        else {
+            anyhow::bail!("no attach session holds mirror markdown surface {local_surface_id}");
+        };
+        let Some(remote_sid) = sess
+            .remote_to_local
+            .iter()
+            .find(|&(_, &l)| l == local_surface_id)
+            .map(|(&r, _)| r)
+        else {
+            anyhow::bail!("no remote surface id for mirror surface {local_surface_id}");
+        };
+        if sess.state != SessionState::Connected {
+            anyhow::bail!("mirror session is reconnecting");
+        }
+        let msg = serde_json::json!({
+            "event": "markdown_content_request",
+            "request_id": request_id,
+            "surface_id": remote_sid,
         });
         send_capture_control_frame(&sess.frame_tx, &msg)
     }
@@ -3653,8 +4070,16 @@ mod tests {
             "first": { "type": "Leaf", "id": 100, "kind": "terminal" },
             "second": { "type": "Leaf", "id": 101, "kind": "empty" },
         });
-        let layout = build_layout(&node, &ids, &map, &term, &HashMap::new(), &HashMap::new())
-            .expect("layout");
+        let layout = build_layout(
+            &node,
+            &ids,
+            &map,
+            &term,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut HashMap::new(),
+        )
+        .expect("layout");
         match layout {
             SurfaceLayout::Split {
                 direction,
@@ -3687,7 +4112,16 @@ mod tests {
         let mesh = HashMap::new();
         let explorer = HashMap::from([(9u32, std::path::PathBuf::from("/remote/project"))]);
         let node = serde_json::json!({ "type": "Leaf", "id": 200, "kind": "explorer" });
-        let layout = build_layout(&node, &ids, &map, &term, &mesh, &explorer).expect("layout");
+        let layout = build_layout(
+            &node,
+            &ids,
+            &map,
+            &term,
+            &mesh,
+            &explorer,
+            &mut HashMap::new(),
+        )
+        .expect("layout");
         let SurfaceLayout::Leaf(surface) = layout else {
             panic!("expected Leaf");
         };
@@ -3730,6 +4164,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         assert_eq!(ws.id, 99);
         // mirror surface = 로컬 50 (remote 1 재매핑).
@@ -3777,6 +4212,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         let sids = ws.all_surface_ids();
         assert!(
@@ -3805,6 +4241,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         assert_eq!(ws.id, 1);
         assert_eq!(ws.all_surface_ids().len(), 1);
@@ -3837,6 +4274,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         match ws.pane_layout() {
             PaneNode::Split {
@@ -3889,6 +4327,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         match ws.pane_layout() {
             PaneNode::Split {
@@ -3941,6 +4380,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         assert_eq!(
             capture_focused_remote(&ws, &map),
@@ -3995,6 +4435,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
 
         // 사용자가 로컬에서 pane B, tab2 로 이동한다 — 순수 클릭/키보드 네비게이션이라
@@ -4052,6 +4493,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
 
         // 대조군 — 복원 없이 그대로 두면 pane A(원격의 고정값)에 focus 가 있다(버그 재현).
@@ -4122,6 +4564,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         let untouched_focused_pane = ws.focused_pane;
 
@@ -4170,6 +4613,7 @@ mod tests {
             &term,
             &HashMap::new(),
             &HashMap::new(),
+            &mut HashMap::new(),
         );
         let local_b = *map.get(&2).unwrap();
 
@@ -4284,11 +4728,12 @@ mod tests {
             }),
         ];
 
-        let (map, _term, mesh, _explorer, _new) =
+        let mapping =
             merge_survivor_mapping(&HashMap::new(), &surfaces, &ids, &frame_tx, &mut engine);
+        let mesh = &mapping.mesh;
 
-        let local_10 = map[&10];
-        let local_11 = map[&11];
+        let local_10 = mapping.remote_to_local[&10];
+        let local_11 = mapping.remote_to_local[&11];
         assert_eq!(mesh[&local_10].display_name, "README.md");
         assert_eq!(
             mesh[&local_11].display_name, "image",
@@ -4315,8 +4760,9 @@ mod tests {
         let surfaces_v1 = vec![serde_json::json!({
             "remote_id": 10, "role": "terminal", "cols": 80, "rows": 24,
         })];
-        let (map1, term1, mesh1, explorer1, _new1) =
+        let mut m1 =
             merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+        let map1 = m1.remote_to_local.clone();
         let local_10 = map1[&10];
         assert!(
             engine.terminals.get(local_10).is_some(),
@@ -4340,7 +4786,15 @@ mod tests {
             } ]
         });
         let mut ws = build_mirror_workspace(
-            999, "mirror", &tree, &ids, &map1, &term1, &mesh1, &explorer1,
+            999,
+            "mirror",
+            &tree,
+            &ids,
+            &map1,
+            &m1.terminals,
+            &m1.mesh,
+            &m1.explorer,
+            &mut m1.markdown,
         );
         ws.mirror = true;
         engine.workspaces.push(ws);
@@ -4353,8 +4807,13 @@ mod tests {
             "plugin_id": "com.tasty.markdown",
             "display_name": "a.md",
         })];
-        let (map2, term2, mesh2, _explorer2, new2) =
-            merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+        let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+        let (map2, term2, mesh2, new2) = (
+            &m2.remote_to_local,
+            &m2.terminals,
+            &m2.mesh,
+            &m2.newly_created_remote_ids,
+        );
 
         assert_eq!(
             map2[&10], local_10,
@@ -4399,8 +4858,9 @@ mod tests {
             "plugin_id": "com.tasty.markdown",
             "display_name": "a.md",
         })];
-        let (map1, term1, mesh1, explorer1, _new1) =
+        let mut m1 =
             merge_survivor_mapping(&HashMap::new(), &surfaces_v1, &ids, &frame_tx, &mut engine);
+        let map1 = m1.remote_to_local.clone();
         let local_20 = map1[&20];
         assert!(
             engine.terminals.get(local_20).is_none(),
@@ -4418,7 +4878,15 @@ mod tests {
             } ]
         });
         let mut ws = build_mirror_workspace(
-            999, "mirror", &tree, &ids, &map1, &term1, &mesh1, &explorer1,
+            999,
+            "mirror",
+            &tree,
+            &ids,
+            &map1,
+            &m1.terminals,
+            &m1.mesh,
+            &m1.explorer,
+            &mut m1.markdown,
         );
         ws.mirror = true;
         engine.workspaces.push(ws);
@@ -4426,8 +4894,12 @@ mod tests {
         let surfaces_v2 = vec![serde_json::json!({
             "remote_id": 20, "role": "terminal", "cols": 80, "rows": 24,
         })];
-        let (map2, term2, _mesh2, _explorer2, new2) =
-            merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+        let m2 = merge_survivor_mapping(&map1, &surfaces_v2, &ids, &frame_tx, &mut engine);
+        let (map2, term2, new2) = (
+            &m2.remote_to_local,
+            &m2.terminals,
+            &m2.newly_created_remote_ids,
+        );
 
         assert_eq!(
             map2[&20], local_20,
@@ -4467,7 +4939,290 @@ mod tests {
             last_forwarded_resize: HashMap::new(),
             remote_label: "127.0.0.1:0".to_string(),
             pending_list_dir_consumers: HashMap::new(),
+            markdown_locals: HashSet::new(),
         }
+    }
+
+    /// 번들 markdown plugin 이 hello 에서 하는 kind 등록을 재현한다 — 실제
+    /// `register_remote_kind` 를 그대로 태워 create 가 진짜 `RemoteSurface` 와
+    /// `HostCmd::RemoteSurfaceCreated` 를 만들게 한다. 반환한 수신측으로 plugin 에 무엇이
+    /// 갔는지 본다.
+    fn register_markdown_kind(
+        engine: &crate::core::CoreState,
+        plugin_id: &str,
+    ) -> std::sync::mpsc::Receiver<crate::plugin_bridge::host_cmd::HostCmd> {
+        let decl: crate::plugin::manifest::SurfaceKindDecl =
+            serde_json::from_value(serde_json::json!({
+                "kind": "markdown",
+                "display_name_i18n_key": "surface.kind.markdown",
+                "rendering": "webview",
+            }))
+            .expect("test SurfaceKindDecl");
+        let (tx, rx) = std::sync::mpsc::channel();
+        crate::plugin_bridge::remote_kind::register_remote_kind(
+            &engine.surface_registry,
+            plugin_id,
+            &decl,
+            tx,
+        );
+        rx
+    }
+
+    /// `RemoteSurfaceCreated` 만 골라 `(surface_id, params)` 로 모은다.
+    fn created_surfaces(
+        rx: &std::sync::mpsc::Receiver<crate::plugin_bridge::host_cmd::HostCmd>,
+    ) -> Vec<(u32, Value)> {
+        rx.try_iter()
+            .filter_map(|cmd| match cmd {
+                crate::plugin_bridge::host_cmd::HostCmd::RemoteSurfaceCreated {
+                    surface_id,
+                    params,
+                    ..
+                } => Some((surface_id, params)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn markdown_descriptor(remote_id: u32) -> Value {
+        serde_json::json!({
+            "remote_id": remote_id,
+            "role": "markdown",
+            "file": "/remote/docs/README.md",
+            "display_name": "README.md",
+        })
+    }
+
+    fn single_leaf_tree(remote_id: u32) -> Value {
+        serde_json::json!({
+            "id": 9, "name": "mirror", "focused_pane": 7,
+            "panes": [ {
+                "id": 7,
+                "tabs": [ {
+                    "id": 3, "name": "README.md", "active": true, "focused_surface": remote_id,
+                    "layout": { "type": "Leaf", "id": remote_id, "kind": "markdown" }
+                } ]
+            } ]
+        })
+    }
+
+    /// (ADR-0255) role=markdown 디스크립터는 client 에 번들 markdown plugin 의 kind 가
+    /// 등록돼 있으면 **로컬 plugin surface** 가 된다 — 빈 surface 가 아니다. plugin 에는
+    /// `file` 이 아니라 `remote.file` 로 경로가 간다(client 로컬의 같은 경로를 읽지 않게).
+    #[test]
+    fn merge_survivor_mapping_builds_local_markdown_surface_for_markdown_role() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
+        let ids = engine.next_ids.clone();
+        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+        let mut mapping = merge_survivor_mapping(
+            &HashMap::new(),
+            &[markdown_descriptor(30)],
+            &ids,
+            &frame_tx,
+            &mut engine,
+        );
+        let local = mapping.remote_to_local[&30];
+        assert_eq!(mapping.markdown_ids(), HashSet::from([local]));
+
+        let created = created_surfaces(&rx);
+        assert_eq!(created.len(), 1, "plugin 에 surface.create 가 한 번 간다");
+        assert_eq!(created[0].0, local);
+        assert_eq!(created[0].1["remote"]["file"], "/remote/docs/README.md");
+        assert!(
+            created[0].1.get("file").is_none(),
+            "원격 경로를 `file` 로 실으면 plugin 이 client 로컬 파일을 읽는다"
+        );
+
+        let ws = build_mirror_workspace(
+            999,
+            "mirror",
+            &single_leaf_tree(30),
+            &ids,
+            &mapping.remote_to_local,
+            &mapping.terminals,
+            &mapping.mesh,
+            &mapping.explorer,
+            &mut mapping.markdown,
+        );
+        let pane = ws.pane_layout().first_pane().expect("pane");
+        let leaf = pane.tabs[0]
+            .layout_if_initialized()
+            .and_then(|l| l.find_surface(local))
+            .expect("markdown leaf");
+        assert_eq!(
+            leaf.kind(),
+            "markdown",
+            "빈 surface 가 아니라 markdown surface"
+        );
+    }
+
+    /// plugin 이 없으면(또는 다른 plugin 이 같은 kind 이름을 등록했으면) 지금과 똑같이
+    /// 빈 surface — 회귀 없음(ADR-0255 항목 6).
+    #[test]
+    fn markdown_role_falls_back_to_empty_surface_without_the_bundled_plugin() {
+        for plugin in [None, Some("com.example.other-markdown")] {
+            let waker: crate::terminal::Waker = Arc::new(|| {});
+            let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+            let rx = plugin.map(|p| register_markdown_kind(&engine, p));
+            let ids = engine.next_ids.clone();
+            let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
+            let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+            let mut mapping = merge_survivor_mapping(
+                &HashMap::new(),
+                &[markdown_descriptor(30)],
+                &ids,
+                &frame_tx,
+                &mut engine,
+            );
+            assert!(mapping.markdown.is_empty(), "{plugin:?}");
+            if let Some(rx) = &rx {
+                assert!(created_surfaces(rx).is_empty(), "{plugin:?}");
+            }
+            let local = mapping.remote_to_local[&30];
+            let ws = build_mirror_workspace(
+                999,
+                "mirror",
+                &single_leaf_tree(30),
+                &ids,
+                &mapping.remote_to_local,
+                &mapping.terminals,
+                &mapping.mesh,
+                &mapping.explorer,
+                &mut mapping.markdown,
+            );
+            let pane = ws.pane_layout().first_pane().expect("pane");
+            let leaf = pane.tabs[0]
+                .layout_if_initialized()
+                .and_then(|l| l.find_surface(local))
+                .expect("leaf");
+            assert_eq!(leaf.kind(), "empty", "{plugin:?}");
+        }
+    }
+
+    /// 구조 delta 가 markdown survivor 를 **다시 만들지 않는다** — plugin 에 두 번째
+    /// `surface.create` 가 가지 않고, 새 트리의 surface 는 옛 surface 의 webview 핸들을
+    /// 공유한다. 그리고 그 surface 가 delta 에서 빠지면 호출부가 plugin 에 destroy 를
+    /// 보내도록 반환값에 실린다.
+    #[test]
+    fn structural_delta_reuses_markdown_survivor_and_reports_removed_ones() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
+        let ids = engine.next_ids.clone();
+        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+        let mut m1 = merge_survivor_mapping(
+            &HashMap::new(),
+            &[markdown_descriptor(30)],
+            &ids,
+            &frame_tx,
+            &mut engine,
+        );
+        let local = m1.remote_to_local[&30];
+        let ws_id = 999;
+        let mut ws = build_mirror_workspace(
+            ws_id,
+            "mirror",
+            &single_leaf_tree(30),
+            &ids,
+            &m1.remote_to_local,
+            &m1.terminals,
+            &m1.mesh,
+            &m1.explorer,
+            &mut m1.markdown,
+        );
+        ws.mirror = true;
+        engine.workspaces.push(ws);
+        assert_eq!(created_surfaces(&rx).len(), 1);
+        let webview_url = engine
+            .find_surface_by_id(local)
+            .and_then(|s| {
+                s.as_any()
+                    .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+            })
+            .map(|rs| Arc::clone(&rs.webview_url))
+            .expect("RemoteSurface");
+
+        let mut sess = test_session(ws_id, m1.remote_to_local.clone());
+        sess.markdown_locals = HashSet::from([local]);
+
+        // 1. 같은 surface 가 살아남는 delta.
+        let removed = apply_mirror_structural_delta(
+            &mut sess,
+            &mut engine,
+            7,
+            &single_leaf_tree(30),
+            &[markdown_descriptor(30)],
+            None,
+        );
+        assert!(removed.is_empty());
+        assert!(
+            created_surfaces(&rx).is_empty(),
+            "survivor 에 surface.create 를 다시 보내면 문서가 로딩부터 다시 시작한다"
+        );
+        let shared = engine
+            .find_surface_by_id(local)
+            .and_then(|s| {
+                s.as_any()
+                    .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+            })
+            .expect("still a RemoteSurface");
+        assert!(Arc::ptr_eq(&shared.webview_url, &webview_url));
+
+        // 2. 그 surface 가 terminal 로 convert 된 delta — markdown 집합에서 빠진다.
+        let removed = apply_mirror_structural_delta(
+            &mut sess,
+            &mut engine,
+            7,
+            &single_leaf_tree(30),
+            &[serde_json::json!({ "remote_id": 30, "role": "terminal", "cols": 80, "rows": 24 })],
+            None,
+        );
+        assert_eq!(removed, vec![local]);
+        assert!(sess.markdown_locals.is_empty());
+    }
+
+    /// `markdown_content_result` wire 를 성공·실패 두 모양 모두 읽고, 다른 event 는
+    /// 건드리지 않는다(reader 체인에서 다음 파서로 넘어가야 한다).
+    #[test]
+    fn parse_markdown_content_result_reads_both_shapes_and_ignores_other_events() {
+        let ok = serde_json::json!({
+            "event": "markdown_content_result", "request_id": 4, "surface_id": 30,
+            "ok": true, "file": "/r/a.md", "source": "# hi", "truncated": true,
+        });
+        match parse_markdown_content_result(&serde_json::to_vec(&ok).unwrap()) {
+            Some(MirrorEvent::MarkdownContentResult {
+                request_id: 4,
+                surface_id: 30,
+                ok: true,
+                file,
+                source,
+                truncated: true,
+                reason: None,
+            }) => {
+                assert_eq!(file.as_deref(), Some("/r/a.md"));
+                assert_eq!(source.as_deref(), Some("# hi"));
+            }
+            _ => panic!("success shape not parsed"),
+        }
+        let failed = serde_json::json!({
+            "event": "markdown_content_result", "request_id": 5, "surface_id": 30,
+            "ok": false, "reason": "permission denied",
+        });
+        match parse_markdown_content_result(&serde_json::to_vec(&failed).unwrap()) {
+            Some(MirrorEvent::MarkdownContentResult {
+                ok: false, reason, ..
+            }) => assert_eq!(reason.as_deref(), Some("permission denied")),
+            _ => panic!("failure shape not parsed"),
+        }
+        let other = serde_json::json!({ "event": "git_query_result", "request_id": 1 });
+        assert!(parse_markdown_content_result(&serde_json::to_vec(&other).unwrap()).is_none());
     }
 
     /// parked engine 두 개 — mirror 워크스페이스(터미널 `local_surface` 하나)는 **두

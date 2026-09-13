@@ -110,6 +110,24 @@ impl RemoteSurface {
         }
     }
 
+    /// 같은 surface 를 가리키는 두 번째 값 — 모든 공유 상태(snapshot·이름·webview URL·
+    /// navigation 상태·cwd)의 `Arc` 를 그대로 나눠 갖는다. plugin 에는 아무것도 보내지
+    /// 않는다. attach mirror 가 트리를 통째로 다시 지을 때 survivor surface 를 새 트리에
+    /// 옮겨 싣는 데 쓴다(`src/app/attach_client.rs` 의 markdown mirror 재구성) — 새로
+    /// 만들면 plugin 이 `surface.create` 를 다시 받아 문서를 처음부터 연다.
+    pub fn share_handles(&self) -> Self {
+        Self {
+            id: self.id,
+            kind_static: self.kind_static,
+            plugin_id: self.plugin_id.clone(),
+            snapshot_cache: Arc::clone(&self.snapshot_cache),
+            display_name: Arc::clone(&self.display_name),
+            webview_url: Arc::clone(&self.webview_url),
+            nav_state: Arc::clone(&self.nav_state),
+            cwd: Arc::clone(&self.cwd),
+        }
+    }
+
     /// `webview.set_url` IPC 가 호출 — webview-enabled kind 의 surface 만 의미 있음.
     pub fn set_webview_url(&self, url: Option<String>) {
         *crate::poison::recover_mutex(

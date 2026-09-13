@@ -443,6 +443,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 비동기 수신(아래 apply_attach_client_output 경로) → `emit_host_event_to_plugin`
         // 으로 plugin 에 push.
         self.dispatch_pending_git_query_forwards();
+        // markdown mirror(원격, `docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`)
+        // — `markdown_mirror.content_request` IPC 핸들러가 쌓은 원문 조회 forward 큐를 drain 해
+        // 원격에 전송한다. 응답은 `MirrorEvent::MarkdownContentResult` 로 비동기 수신 →
+        // markdown plugin 에 unicast.
+        self.dispatch_pending_markdown_content_forwards();
         // attach mesh mirror surface 의 텍스처 delta 체인 단절을 GPU 렌더 prepare 가
         // 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다(상세
         // `docs/dev-guide/egui-mesh-channel.md` "텍스처 상태 수명 + delta 체인").

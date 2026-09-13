@@ -1231,6 +1231,7 @@ mirror_structural_forward_failed = "원격 워크스페이스가 그 변경을 �
 # forward 된 복원이 원격 스택에서 꺼낼 것을 못 찾은 경우. 실패가 아니다 — 위 일반
 # forward 실패 문구로 내보내면 오류로 읽힌다.
 mirror_restore_empty = "원격 워크스페이스에 복원할 항목이 없습니다."
+mirror_markdown_truncated = "원격 문서가 너무 커서 전부 표시할 수 없습니다 — mirror 에는 잘린 채로 표시됩니다."
 # 원격 attach 가 하드 점유 중인 surface 를 닫으려 했을 때 표시. 점유는 "지금 원격
 # 사용자가 이 터미널을 쓰고 있다" 는 선언이라 닫으면 그 세션이 예고 없이 죽는다.
 # 회수하려면 점유 표시 위의 강제 끊기 버튼을 누른 뒤 다시 닫는다.

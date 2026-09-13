@@ -516,6 +516,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
         // 없음). 임의 원격 경로 read 라 FsRead(파일을 고르는 read 관심사, `file_picker.trigger` 와 동일 근거).
         ("git_viewer.query", plugin(&[FsRead])),
+        // ── markdown_mirror.* (docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md
+        // — 원격 attach mirror markdown 원문 조회 트리거) ─
+        // markdown plugin 이 mirror 문서의 원격 원문을 요청한다. host 는 즉시 request_id 만
+        // 회신하고(비동기 accept), 원문은 attach Control 채널 왕복 후 `event.dispatch`
+        // unicast 로 plugin 에 push 된다. 원격 파일 read 라 FsRead(`git_viewer.query` 와
+        // 동일 근거).
+        ("markdown_mirror.content_request", plugin(&[FsRead])),
         // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
         // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(ADR-0053)을
         // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
