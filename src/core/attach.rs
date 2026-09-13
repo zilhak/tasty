@@ -558,6 +558,18 @@ impl OccupancyRegistry {
         self.workspace_locks.values().any(|l| l.holder == client_id)
     }
 
+    /// workspace 를 하나라도 점유 중인 client 전부(중복 없이, 오름차순). 술어
+    /// [`Self::client_holds_workspace`] 가 참인 집합과 같다 — markdown 원문 채널이 요청을
+    /// 인가하는 집합과 변경 신호를 받는 집합이 갈라지지 않게 같은 표에서 뽑는다
+    /// (`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md` 항목 5).
+    pub fn workspace_holders(&self) -> Vec<AttachClientId> {
+        let mut holders: Vec<AttachClientId> =
+            self.workspace_locks.values().map(|l| l.holder).collect();
+        holders.sort_unstable();
+        holders.dedup();
+        holders
+    }
+
     /// workspace 강제 해제(서버 권한, D6). workspace_lock + 멤버 surface_locks +
     /// surface_to_workspace 를 일괄 정리하고 holder 에게 종료 통지 push.
     /// 반환: 강제로 끊긴 holder(점유 중이 아니었으면 None).

@@ -254,6 +254,7 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - Given mirror markdown 문서 When plugin 이 그 문서를 연다 Then 원격 경로가 이 머신에 실재해도 파일을 읽지 않고, 상대경로를 풀 디렉토리를 두지 않으며, layout 에 남길 snapshot 도 내지 않는다 — 원문은 요청해 받은 것만 그린다(`crates/tasty-plugin-markdown/src/tests.rs`).
 - Given mirror markdown 문서 When 새로고침 버튼을 누르거나 `markdown.reload` 를 부른다 Then 원격 원문을 다시 요청하고, 늦게 온 옛 회신은 버린다(`crates/tasty-plugin-markdown/src/tests.rs`). 버튼 클릭이 실제 WebView 에서 재요청으로 이어지는 것 — 미검증.
 - Given mirror 문서가 원문을 기다리는 중 When attach 연결이 끊김 Then plugin 에 실패 결과가 가서 문서가 로딩 상태로 멈추지 않는다 — 요청 송신 자체가 실패해도 같은 실패 결과가 간다. 미검증(실행 시나리오로 확인한 적 없음).
+- Given mirror markdown 문서가 원문을 받아 표시 중 When 원격(GUI 서버)에서 그 문서가 다시 그려짐(파일 수정·테마 변경 등) Then client 는 원문을 자동으로 다시 받지 않고 새로고침 버튼 색만 바뀌며, 버튼을 누르면 그때 최신 원문이 온다 — 서버가 신호를 워크스페이스를 점유한 client 전부에 한 번씩 보내는 것과 점유가 없으면 아무것도 안 보내는 것(`src/core/attach_runtime.rs` 단위 테스트), client 가 자기 mirror 문서의 신호만 plugin 에 넘기는 것(`src/app/attach_client.rs` 단위 테스트), plugin 이 신호로는 stale 표시만 켜는 것(`crates/tasty-plugin-markdown/src/tests.rs`)을 각각 고정한다. 원격 파일 수정부터 버튼 색까지 이어지는 실제 두 인스턴스 시나리오 — 미검증. 서버가 헤드리스면 이 신호는 없다(원격 문서가 다시 그려지는 경로가 host 에 닿지 않는다).
 - Given 전송 형태로 예산(700 KiB)을 넘는 문서 When client 가 원문을 요청 Then 세션이 끊기지 않고 잘린 원문이 "잘렸다" 표시와 함께 도착하며, 그 판정은 원문 바이트가 아니라 이스케이프된 길이로 이뤄진다(`tests/attach_markdown_content_loopback.rs`).
 - Given attach 점유가 없는 client When 원문을 요청 Then 파일을 한 바이트도 읽히지 않고 거절된다(`tests/attach_markdown_content_loopback.rs`).
 - Given 워크스페이스 둘 중 **한쪽만** 점유한 client When 다른 워크스페이스의 markdown 원문을 요청 Then 인가되어 원문이 도착한다 — 점유는 인스턴스 단위 신뢰이지 워크스페이스별 권한이 아니다(`tests/attach_markdown_content_loopback.rs`).

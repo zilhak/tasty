@@ -59,6 +59,9 @@ const MARKDOWN_PLUGIN_ID: &str = "com.tasty.markdown";
 /// host → markdown plugin unicast event key — 원격 원문 조회 결과. plugin 의 `on_event`
 /// 가 이 key 로 매칭한다(`crates/tasty-plugin-markdown/src/main.rs` 에 같은 리터럴).
 const MARKDOWN_MIRROR_CONTENT_RESULT_EVENT: &str = "markdown_mirror.content_result";
+/// host → markdown plugin unicast event key — 원격 문서가 다시 그려졌다는 신호. plugin 은
+/// 원문을 다시 받지 않고 새로고침 버튼 색만 바꾼다(같은 파일에 같은 리터럴).
+const MARKDOWN_MIRROR_CHANGED_EVENT: &str = "markdown_mirror.changed";
 
 /// reader thread 가 원격에서 받은 mirror 갱신 이벤트. 출력 바이트와 resize 통지를
 /// **한 버퍼에 순서대로** 담아 프레임 도착 순서(원격의 apply 순서)를 보존한다 —
@@ -150,6 +153,10 @@ pub(crate) enum MirrorEvent {
         truncated: bool,
         reason: Option<String>,
     },
+    /// (ADR-0255 항목 5) 원격 markdown 문서가 다시 그려졌다(`markdown_changed` 커스텀
+    /// 이벤트). `surface_id` 는 **원격** id. 이 세션이 mirror 하지 않는 문서의 신호도 온다
+    /// — 수신자가 워크스페이스 holder 가 아니라 점유 client 전부라서다.
+    MarkdownChanged { surface_id: u32 },
 }
 
 /// [`MirrorOutbox`] 를 담는 **모듈 경계**.
@@ -1937,7 +1944,8 @@ fn spawn_attach_reader_thread(
                                 Ok(_) | Err(_) => parse_capture_result(&frame.payload)
                                     .or_else(|| parse_list_dir_result(&frame.payload))
                                     .or_else(|| parse_git_query_result(&frame.payload))
-                                    .or_else(|| parse_markdown_content_result(&frame.payload)),
+                                    .or_else(|| parse_markdown_content_result(&frame.payload))
+                                    .or_else(|| parse_markdown_changed(&frame.payload)),
                             };
                         if let Some(ev) = mirror_ev
                             && output.push(ev)
@@ -2601,6 +2609,19 @@ fn apply_one_mirror_event(
                 reason,
             );
         }
+        MirrorEvent::MarkdownChanged { surface_id } => {
+            // 자기가 mirror 하지 않는 문서의 신호는 물들일 곳이 없어 버린다(ADR-0255 항목 5).
+            if let Some(local) = markdown_mirror_local(sess, surface_id)
+                && let Some(mgr) = plugin_manager.as_mut()
+            {
+                mgr.emit_host_event_to_plugin(
+                    MARKDOWN_PLUGIN_ID,
+                    MARKDOWN_MIRROR_CHANGED_EVENT,
+                    &serde_json::json!({ "surface_id": local }),
+                    tasty_plugin_protocol::EventScope::System,
+                );
+            }
+        }
         MirrorEvent::Mesh(remote_id, generation, frame_seq, full, bytes) => {
             // attach mesh mirror: GPU 렌더은 다음 프레임
             // `AttachMeshFrameStore` 를 읽는다 — 여기선 저장만.
@@ -2742,6 +2763,13 @@ fn apply_git_query_result_event(
     }
 }
 
+/// 원격 surface id 를 이 세션의 **로컬 mirror markdown surface** 로 되돌린다. 매핑이 없거나
+/// 그 사이 다른 kind 로 바뀐 leaf 면 `None` — plugin 에 보낼 문서가 없다.
+fn markdown_mirror_local(sess: &AttachClientSession, remote_surface_id: u32) -> Option<u32> {
+    let &local = sess.remote_to_local.get(&remote_surface_id)?;
+    sess.markdown_locals.contains(&local).then_some(local)
+}
+
 /// (ADR-0255) `MirrorEvent::MarkdownContentResult` 한 건을 적용한다 — 원격 surface id 를
 /// 이 세션의 로컬 markdown surface 로 되돌려 그 plugin 에 unicast 한다. host 는 원문을
 /// 해석하지 않는다(plugin 이 그린다). `truncated` 는 toast 로 알린다 — 문서 본문에
@@ -2762,12 +2790,9 @@ fn apply_markdown_content_result_event(
     truncated: bool,
     reason: Option<String>,
 ) {
-    let Some(&local) = sess.remote_to_local.get(&remote_surface_id) else {
+    let Some(local) = markdown_mirror_local(sess, remote_surface_id) else {
         return;
     };
-    if !sess.markdown_locals.contains(&local) {
-        return;
-    }
     let payload = serde_json::json!({
         "surface_id": local,
         "request_id": request_id,
@@ -3524,6 +3549,17 @@ fn parse_markdown_content_result(payload: &[u8]) -> Option<MirrorEvent> {
         truncated: wire.truncated,
         reason: wire.reason,
     })
+}
+
+/// `markdown_changed` 커스텀 이벤트를 파싱한다(다른 event 면 `None`). 서버
+/// `attach_runtime::notify_markdown_changed` 가 만드는 모양이다.
+fn parse_markdown_changed(payload: &[u8]) -> Option<MirrorEvent> {
+    let value: Value = serde_json::from_slice(payload).ok()?;
+    if value.get("event").and_then(|v| v.as_str()) != Some("markdown_changed") {
+        return None;
+    }
+    let surface_id = u32::try_from(value.get("surface_id")?.as_u64()?).ok()?;
+    Some(MirrorEvent::MarkdownChanged { surface_id })
 }
 
 impl App {
@@ -5223,6 +5259,36 @@ mod tests {
         }
         let other = serde_json::json!({ "event": "git_query_result", "request_id": 1 });
         assert!(parse_markdown_content_result(&serde_json::to_vec(&other).unwrap()).is_none());
+    }
+
+    #[test]
+    fn parse_markdown_changed_reads_the_remote_id_and_ignores_other_events() {
+        let changed = serde_json::json!({ "event": "markdown_changed", "surface_id": 30 });
+        assert!(matches!(
+            parse_markdown_changed(&serde_json::to_vec(&changed).unwrap()),
+            Some(MirrorEvent::MarkdownChanged { surface_id: 30 })
+        ));
+        let result = serde_json::json!({
+            "event": "markdown_content_result", "request_id": 4, "surface_id": 30, "ok": true,
+        });
+        assert!(parse_markdown_changed(&serde_json::to_vec(&result).unwrap()).is_none());
+        // 신호가 결과 파서에 먹히면 체인의 다음 파서에 안 닿는다.
+        assert!(parse_markdown_content_result(&serde_json::to_vec(&changed).unwrap()).is_none());
+    }
+
+    /// 변경 신호·원문 회신은 이 세션의 mirror markdown leaf 로만 간다 — 매핑이 없거나 다른
+    /// kind 로 바뀐 leaf 는 받을 문서가 없다.
+    #[test]
+    fn markdown_mirror_local_maps_only_markdown_leaves() {
+        let mut sess = test_session(1, HashMap::from([(30, 300), (31, 310)]));
+        sess.markdown_locals.insert(300);
+        assert_eq!(markdown_mirror_local(&sess, 30), Some(300));
+        assert_eq!(markdown_mirror_local(&sess, 31), None, "터미널 leaf");
+        assert_eq!(
+            markdown_mirror_local(&sess, 99),
+            None,
+            "이 세션이 mirror 하지 않는 문서"
+        );
     }
 
     /// parked engine 두 개 — mirror 워크스페이스(터미널 `local_surface` 하나)는 **두

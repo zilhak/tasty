@@ -11,6 +11,20 @@ use crate::plugin::PluginManager;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+/// attach mirror 문서의 변경 신호원(ADR-0255 항목 5) — 다시 그려진 surface 를 attach
+/// client 들에 알린다. 화이트리스트·수신자·점유 없음의 판정은 전부
+/// `attach_runtime::notify_markdown_changed` 가 한다.
+fn notify_content_changed(
+    engine: &crate::core::CoreState,
+    surface: &crate::plugin_bridge::remote_surface::RemoteSurface,
+    sid: u32,
+) {
+    use crate::model::Surface;
+    if let Some((kind, plugin_id, _)) = surface.attach_content_info() {
+        crate::core::attach_runtime::notify_markdown_changed(&engine.attach, kind, plugin_id, sid);
+    }
+}
+
 /// `webview.set_url(surface_id, url)` — webview-enabled kind 의 RemoteSurface 에 URL 설정.
 ///
 /// 시그니처는 *read-only* (`&AppState + &CoreState`) — `_state` 는 미사용,
@@ -49,6 +63,7 @@ pub fn handle_set_url(
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
                     ) {
                         rs.set_webview_url(Some(url));
+                        notify_content_changed(engine, rs, sid);
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
                     // plugin 쪽에도 에러가 돌아가지만 그 줄은 plugin 로그에만 남는다.

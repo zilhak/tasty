@@ -1801,6 +1801,61 @@ pub(crate) fn handle_markdown_content_request(
     let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
 }
 
+/// markdown 원문 채널의 변경 신호(ADR-0255 항목 5) — 서버가 알리기만 하고 client 는 다시
+/// 받지 않는다.
+#[cfg(feature = "gui")]
+const MARKDOWN_CHANGED_EVENT: &str = "markdown_changed";
+
+/// 문서가 다시 그려졌다는 사실을 attach client 들에 알린다. 호출처는 `webview.set_url` 핸들러
+/// 하나다 — markdown plugin 의 재렌더(파일 감시·`markdown.reload`·테마 변경·최초 생성)는 전부
+/// 그 IPC 로 host 에 도달하므로 host 가 plugin 을 고치지 않고 신호원을 갖는다. 그래서 신호는
+/// 실제 파일 변경의 **상위 집합**이고, client 쪽 대가는 "눌러 보니 같은 내용" 뿐이다.
+///
+/// 수신자는 [`crate::core::attach::OccupancyRegistry::workspace_holders`] — 원문 요청을
+/// 인가하는 집합과 같다. 점유가 없거나 notifier 가 주입되지 않았으면 아무것도 안 한다(다음
+/// attach 의 핸드셰이크가 최신 상태를 싣고 오므로 쌓아 둘 이유가 없다). 화이트리스트 밖
+/// kind(html 등)는 원문 채널을 안 타므로 신호도 없다. 반환은 실제로 큐에 실린 client 수.
+///
+/// `webview.set_url` 이 gui 전용이라 이 함수도 gui 전용이다 — 헤드리스 서버에서는 markdown
+/// plugin 의 재렌더가 host 에 닿지 않아 신호원이 없다.
+#[cfg(feature = "gui")]
+pub(crate) fn notify_markdown_changed(
+    attach: &crate::core::attach::OccupancyRegistry,
+    kind: &str,
+    plugin_id: &str,
+    surface_id: SurfaceId,
+) -> usize {
+    if !is_attach_content_allowed(kind, plugin_id) {
+        return 0;
+    }
+    let Some(hub) = attach.notifier() else {
+        return 0;
+    };
+    let holders = attach.workspace_holders();
+    if holders.is_empty() {
+        return 0;
+    }
+    let payload = serde_json::json!({
+        "event": MARKDOWN_CHANGED_EVENT,
+        "surface_id": surface_id,
+    });
+    let bytes = serde_json::to_vec(&payload).unwrap_or_default();
+    let mut sent = 0;
+    for client_id in holders {
+        match hub.push(
+            client_id,
+            StreamFrame::new(StreamTag::Control, bytes.clone()),
+        ) {
+            PushResult::Sent => sent += 1,
+            // 신호는 색만 바꾼다 — 놓치면 다음 신호나 다음 attach 가 채운다.
+            other => tracing::debug!(
+                "attach: markdown_changed surface={surface_id} client={client_id} not queued: {other:?}"
+            ),
+        }
+    }
+    sent
+}
+
 /// `surface_id`(원격 id)를 content mirror 대상으로 확인하고 그 파일의 원문을 예산 안에서
 /// 읽는다. 반환은 `(file, source, truncated)`.
 ///
@@ -1987,6 +2042,79 @@ mod markdown_content_tests {
         let (source, truncated) = markdown_source_wire_capped_with_budget(&[0xff, 0xfe], 64);
         assert!(!source.is_empty());
         assert!(!truncated);
+    }
+}
+
+#[cfg(all(test, feature = "gui"))]
+mod markdown_changed_tests {
+    use super::notify_markdown_changed;
+    use crate::adapters::production::stream_hub::StreamHub;
+    use crate::core::attach::OccupancyRegistry;
+    use crate::ipc::stream::StreamTag;
+
+    fn changed_surface_id(frame: &crate::ipc::stream::StreamFrame) -> Option<u64> {
+        assert_eq!(frame.tag, StreamTag::Control);
+        let v: serde_json::Value = serde_json::from_slice(&frame.payload).ok()?;
+        (v.get("event")?.as_str()? == "markdown_changed").then_some(())?;
+        v.get("surface_id")?.as_u64()
+    }
+
+    /// 수신자는 그 surface 를 담은 워크스페이스의 holder 가 아니라 **아무** 워크스페이스든
+    /// 점유한 client 전부다 — 원문 요청의 인가 집합과 같아야 한다.
+    #[test]
+    fn every_workspace_holder_receives_the_signal_once() {
+        let hub = StreamHub::new();
+        let a = hub.alloc_id();
+        let b = hub.alloc_id();
+        let bystander = hub.alloc_id();
+        let rx_a = hub.register(a);
+        let rx_b = hub.register(b);
+        let rx_bystander = hub.register(bystander);
+        let mut reg = OccupancyRegistry::new();
+        reg.set_notifier(hub);
+        reg.acquire_workspace(100, &[10], &[10, 11], a).unwrap();
+        reg.acquire_workspace(200, &[20], &[20], b).unwrap();
+        reg.acquire_workspace(300, &[30], &[30], a).unwrap();
+
+        assert_eq!(
+            notify_markdown_changed(&reg, "markdown", "com.tasty.markdown", 11),
+            2
+        );
+        assert_eq!(changed_surface_id(&rx_a.try_recv().unwrap()), Some(11));
+        assert!(
+            rx_a.try_recv().is_err(),
+            "두 워크스페이스를 점유해도 신호는 한 번"
+        );
+        assert_eq!(changed_surface_id(&rx_b.try_recv().unwrap()), Some(11));
+        assert!(
+            rx_bystander.try_recv().is_err(),
+            "점유하지 않은 client 에는 가지 않는다"
+        );
+    }
+
+    #[test]
+    fn no_holder_or_non_content_kind_is_a_no_op() {
+        let hub = StreamHub::new();
+        let a = hub.alloc_id();
+        let rx = hub.register(a);
+        let mut reg = OccupancyRegistry::new();
+        reg.set_notifier(hub);
+        assert_eq!(
+            notify_markdown_changed(&reg, "markdown", "com.tasty.markdown", 11),
+            0
+        );
+        assert!(rx.try_recv().is_err());
+
+        reg.acquire_workspace(100, &[10], &[10, 11], a).unwrap();
+        assert_eq!(
+            notify_markdown_changed(&reg, "html", "com.tasty.html", 11),
+            0
+        );
+        assert_eq!(
+            notify_markdown_changed(&reg, "markdown", "com.thirdparty.markdown", 11),
+            0
+        );
+        assert!(rx.try_recv().is_err());
     }
 }
 
