@@ -19,7 +19,6 @@
 use std::path::{Path, PathBuf};
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, Input};
 
 // 크기는 메인 창 파일 피커와 같은 상수를 읽는다 — view 의 본문 높이가 그 높이를 전제로
@@ -168,12 +167,12 @@ impl SettingsFileChooser {
 
 /// 열려 있는 모드에 맞는 popup 크기. 저장 모드는 view 아래 입력 행만큼 높다.
 pub(crate) fn chooser_size(th: &Theme, save_mode: bool) -> egui::Vec2 {
-    let extra = if save_mode {
-        th.item_height_interactive + th.spacing_sm.scaled(2.0)
+    let height = if save_mode {
+        POPUP_HEIGHT + th.item_height_interactive + th.spacing_sm.scaled(2.0)
     } else {
-        LogicalPx(0.0)
+        POPUP_HEIGHT
     };
-    egui::vec2(POPUP_WIDTH.value(), (POPUP_HEIGHT + extra).value())
+    egui::vec2(POPUP_WIDTH.value(), height.value())
 }
 
 /// popup 타이틀. view 헤더도 같은 문자열을 쓴다.
@@ -489,11 +488,17 @@ mod tests {
 
     #[test]
     fn unreadable_directory_is_an_error_state_not_a_hang() {
+        let dir = tempdir();
         let mut ch = SettingsFileChooser::default();
-        let missing = std::env::temp_dir().join("tasty-settings-file-chooser-does-not-exist");
-        ch.begin_at(C, FileChooserMode::Open, Vec::new(), missing);
+        ch.begin_at(
+            C,
+            FileChooserMode::Open,
+            Vec::new(),
+            dir.join("does-not-exist"),
+        );
         assert!(matches!(session(&mut ch).load, FpViewState::ErrorPerm(_)));
         assert_eq!(session(&mut ch).confirm_save(), None);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
