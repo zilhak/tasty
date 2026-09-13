@@ -516,41 +516,8 @@ impl Plugin for MarkdownPlugin {
             // 재생성한다 — webview-kind surface 는 `surface.set_context` 를 받지 않아
             // Theme 이 자동으로 밀리지 않는다(`host_api/webview.rs::handle_theme_query` 문서).
             THEME_CHANGED_EVENT => self.reload_all_webviews(),
-            MIRROR_CONTENT_RESULT_EVENT => {
-                let Ok(reply) =
-                    serde_json::from_value::<MirrorContentResultWire>(ctx.envelope.payload)
-                else {
-                    tracing::warn!("markdown: malformed {MIRROR_CONTENT_RESULT_EVENT} event");
-                    return;
-                };
-                let surface_id = reply.surface_id;
-                if self
-                    .docs
-                    .get_mut(&surface_id)
-                    .is_some_and(|doc| doc.apply_remote_result(reply))
-                {
-                    self.reload_webview(surface_id);
-                }
-            }
-            MIRROR_CHANGED_EVENT => {
-                let Some(surface_id) = ctx
-                    .envelope
-                    .payload
-                    .get("surface_id")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32)
-                else {
-                    tracing::warn!("markdown: malformed {MIRROR_CHANGED_EVENT} event");
-                    return;
-                };
-                if self
-                    .docs
-                    .get_mut(&surface_id)
-                    .is_some_and(MdDoc::mark_remote_stale)
-                {
-                    self.reload_webview(surface_id);
-                }
-            }
+            MIRROR_CONTENT_RESULT_EVENT => self.on_mirror_content_result(ctx.envelope.payload),
+            MIRROR_CHANGED_EVENT => self.on_mirror_changed(&ctx.envelope.payload),
             _ => {}
         }
     }
@@ -601,6 +568,41 @@ impl Plugin for MarkdownPlugin {
 }
 
 impl MarkdownPlugin {
+    /// `markdown_mirror.content_result` — 대기 중인 요청의 회신이면 문서에 반영하고 다시 그린다.
+    fn on_mirror_content_result(&mut self, payload: Value) {
+        let Ok(reply) = serde_json::from_value::<MirrorContentResultWire>(payload) else {
+            tracing::warn!("markdown: malformed {MIRROR_CONTENT_RESULT_EVENT} event");
+            return;
+        };
+        let surface_id = reply.surface_id;
+        if self
+            .docs
+            .get_mut(&surface_id)
+            .is_some_and(|doc| doc.apply_remote_result(reply))
+        {
+            self.reload_webview(surface_id);
+        }
+    }
+
+    /// `markdown_mirror.changed` — 원문은 다시 받지 않고 stale 표시만 켠다.
+    fn on_mirror_changed(&mut self, payload: &Value) {
+        let Some(surface_id) = payload
+            .get("surface_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+        else {
+            tracing::warn!("markdown: malformed {MIRROR_CHANGED_EVENT} event");
+            return;
+        };
+        if self
+            .docs
+            .get_mut(&surface_id)
+            .is_some_and(MdDoc::mark_remote_stale)
+        {
+            self.reload_webview(surface_id);
+        }
+    }
+
     fn markdown_reload(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
         let surface_id = params
             .get("surface")
