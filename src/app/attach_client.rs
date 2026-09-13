@@ -36,8 +36,8 @@ use crate::AppEvent;
 use crate::app::App;
 use crate::ipc::stream::{self, STREAM_PROTO, StreamControl, StreamTag, StructuralOp};
 use crate::model::{
-    EmptySurface, ExplorerPanel, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab,
-    TerminalSurface, Workspace,
+    DeferredPlugin, EmptySurface, ExplorerPanel, Pane, PaneNode, SplitDirection, Surface,
+    SurfaceLayout, Tab, TerminalSurface, Workspace,
 };
 use crate::view::ui::View as _;
 
@@ -2294,6 +2294,16 @@ fn merge_survivor_mapping(
             {
                 markdown_locals.insert(local_id, surface);
             }
+        } else if role == Some("markdown")
+            && engine.surface_registry.get(MARKDOWN_MIRROR_KIND).is_none()
+        {
+            // plugin kind 가 아직 없다(꺼져 있던 plugin 을 켜는 경우 등). 그냥 빈 surface 로
+            // 두면 kind 가 나중에 등록돼도 다음 구조 delta·재연결 전까지 아무도 다시 시도하지
+            // 않는다. layout 복원과 같은 kind 대기 placeholder 로 두면 표시 시점의 reify 가
+            // kind 등록을 기다렸다가 실제화한다(`CoreState::reify_plugin_surface`).
+            // 같은 이름을 **다른** plugin 이 이미 등록했으면 대기하지 않는다 — reify 는 소유자를
+            // 가리지 않으므로 그 plugin 으로 실제화된다(ADR-0255 항목 1 의 화이트리스트).
+            markdown_locals.insert(local_id, deferred_mirror_markdown_surface(s, local_id));
         }
         new_map.insert(remote_id, local_id);
     }
@@ -2344,9 +2354,10 @@ impl SurvivorMapping {
 
 /// client 가 markdown mirror 를 로컬 surface 로 그릴 수 있는가(ADR-0255 항목 6).
 /// `"markdown"` kind 가 번들 markdown plugin 에서 등록돼 있어야 한다 — plugin 이 없거나
-/// 아직 hello 를 안 보냈으면 `false` 이고, 그때 leaf 는 지금처럼 `EmptySurface` 다. 늦게
-/// 등록되면 다음 재구성(구조 delta·재연결)에서 survivor 의 kind 가 "empty"→"markdown" 으로
-/// 바뀐 것으로 판정돼 그때 만들어진다.
+/// 아직 hello 를 안 보냈으면 `false` 이고, 그때 leaf 는 kind 대기 placeholder
+/// ([`deferred_mirror_markdown_surface`])다 — 표시 시점의 reify 가 kind 등록 뒤 실제화한다.
+/// 그 전에 구조 delta·재연결이 오면 survivor 의 kind 가 "empty"→"markdown" 으로 바뀐 것으로
+/// 판정돼 그 자리에서 만들어진다.
 fn markdown_mirror_available(engine: &crate::core::CoreState) -> bool {
     engine
         .surface_registry
@@ -2383,18 +2394,7 @@ fn create_mirror_markdown_surface(
     local_id: u32,
     engine: &crate::core::CoreState,
 ) -> Option<Box<dyn Surface>> {
-    let file = descriptor
-        .get("file")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let display_name = descriptor
-        .get("display_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(MARKDOWN_MIRROR_KIND);
-    let params = serde_json::json!({
-        "display_name": display_name,
-        "remote": { "file": file },
-    });
+    let params = mirror_markdown_params(descriptor);
     match engine.create_surface_via_registry(MARKDOWN_MIRROR_KIND, local_id, None, &params) {
         Ok(surface) => Some(surface),
         Err(e) => {
@@ -2405,6 +2405,37 @@ fn create_mirror_markdown_surface(
             None
         }
     }
+}
+
+/// 서버 디스크립터로 로컬 markdown surface 의 생성 params 를 만든다. 생성(`surface.create`)과
+/// kind 대기 placeholder 의 실제화(`surface.restore`)가 **같은 모양**을 plugin 에 넘긴다 —
+/// plugin 은 어느 쪽이든 `remote` 키로 mirror 문서임을 안다.
+fn mirror_markdown_params(descriptor: &Value) -> Value {
+    let file = descriptor
+        .get("file")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let display_name = descriptor
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(MARKDOWN_MIRROR_KIND);
+    serde_json::json!({
+        "display_name": display_name,
+        "remote": { "file": file },
+    })
+}
+
+/// markdown kind 가 아직 등록되지 않았을 때의 leaf — kind 등록을 기다리는 placeholder 다.
+/// 실제화는 registry 의 `restore` 로 일어나고 plugin 은 `surface.restore` 의 data 로
+/// [`mirror_markdown_params`] 를 받는다.
+fn deferred_mirror_markdown_surface(descriptor: &Value, local_id: u32) -> Box<dyn Surface> {
+    Box::new(EmptySurface::new_deferred_plugin(
+        local_id,
+        DeferredPlugin {
+            kind: MARKDOWN_MIRROR_KIND.to_string(),
+            snapshot: mirror_markdown_params(descriptor),
+        },
+    ))
 }
 
 /// 사라진 로컬 markdown mirror surface 를 소유 plugin 에 `surface.destroy` 로 알린다.
@@ -3312,8 +3343,8 @@ fn build_layout(
                 Box::new(ExplorerPanel::new(local, root.clone()))
             } else if let Some(surface) = markdown.remove(&local) {
                 // (ADR-0255) `merge_survivor_mapping` 이 registry 로 미리 만든 로컬
-                // markdown surface. client 에 markdown plugin 이 없으면 여기 없고 아래
-                // 빈 surface 로 떨어진다.
+                // markdown surface — kind 가 아직 없으면 kind 대기 placeholder 다. 생성이
+                // 실패했을 때만 여기 없고 아래 빈 surface 로 떨어진다.
                 surface
             } else {
                 Box::new(EmptySurface::new(local))
@@ -5188,48 +5219,114 @@ mod tests {
         );
     }
 
-    /// plugin 이 없으면(또는 다른 plugin 이 같은 kind 이름을 등록했으면) 지금과 똑같이
-    /// 빈 surface — 회귀 없음(ADR-0255 항목 6).
+    /// 다른 plugin 이 같은 kind 이름을 등록했으면 지금과 똑같이 빈 surface — 회귀 없음
+    /// (ADR-0255 항목 6). kind 대기 placeholder 도 아니다: reify 는 소유자를 가리지 않아
+    /// 그 plugin 으로 실제화되기 때문이다.
     #[test]
-    fn markdown_role_falls_back_to_empty_surface_without_the_bundled_plugin() {
-        for plugin in [None, Some("com.example.other-markdown")] {
-            let waker: crate::terminal::Waker = Arc::new(|| {});
-            let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
-            let rx = plugin.map(|p| register_markdown_kind(&engine, p));
-            let ids = engine.next_ids.clone();
-            let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
-            let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+    fn markdown_role_stays_empty_when_another_plugin_owns_the_kind() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let rx = register_markdown_kind(&engine, "com.example.other-markdown");
+        let ids = engine.next_ids.clone();
+        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
 
-            let mut mapping = merge_survivor_mapping(
-                &HashMap::new(),
-                &[markdown_descriptor(30)],
-                &ids,
-                &frame_tx,
-                &mut engine,
-            );
-            assert!(mapping.markdown.is_empty(), "{plugin:?}");
-            if let Some(rx) = &rx {
-                assert!(created_surfaces(rx).is_empty(), "{plugin:?}");
-            }
-            let local = mapping.remote_to_local[&30];
-            let ws = build_mirror_workspace(
-                999,
-                "mirror",
-                &single_leaf_tree(30),
-                &ids,
-                &mapping.remote_to_local,
-                &mapping.terminals,
-                &mapping.mesh,
-                &mapping.explorer,
-                &mut mapping.markdown,
-            );
-            let pane = ws.pane_layout().first_pane().expect("pane");
-            let leaf = pane.tabs[0]
-                .layout_if_initialized()
-                .and_then(|l| l.find_surface(local))
-                .expect("leaf");
-            assert_eq!(leaf.kind(), "empty", "{plugin:?}");
-        }
+        let mut mapping = merge_survivor_mapping(
+            &HashMap::new(),
+            &[markdown_descriptor(30)],
+            &ids,
+            &frame_tx,
+            &mut engine,
+        );
+        assert!(mapping.markdown.is_empty());
+        assert!(created_surfaces(&rx).is_empty());
+        let local = mapping.remote_to_local[&30];
+        let ws = build_mirror_workspace(
+            999,
+            "mirror",
+            &single_leaf_tree(30),
+            &ids,
+            &mapping.remote_to_local,
+            &mapping.terminals,
+            &mapping.mesh,
+            &mapping.explorer,
+            &mut mapping.markdown,
+        );
+        let pane = ws.pane_layout().first_pane().expect("pane");
+        let leaf = pane.tabs[0]
+            .layout_if_initialized()
+            .and_then(|l| l.find_surface(local))
+            .expect("leaf");
+        assert_eq!(leaf.kind(), "empty");
+        assert!(!pane.tabs[0].is_surface_deferred(local));
+    }
+
+    /// plugin kind 가 아직 없을 때 attach 하면 leaf 는 kind 대기 placeholder 가 되고, kind 가
+    /// 등록된 뒤의 reify 가 그것을 **mirror** markdown surface 로 실제화한다 — plugin 에는
+    /// `surface.restore` 로 `remote.file` 이 간다(로컬 `file` 이 아니다). 빈 surface 로
+    /// 만들면 kind 가 나중에 등록돼도 다음 구조 delta·재연결 전까지 다시 시도되지 않았다.
+    #[test]
+    fn markdown_role_waits_for_the_plugin_kind_and_reifies_as_a_mirror_document() {
+        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
+        let ids = engine.next_ids.clone();
+        let (tx, _frames) = std::sync::mpsc::channel::<OutFrame>();
+        let frame_tx: SharedFrameSender = Arc::new(Mutex::new(tx));
+
+        let mut mapping = merge_survivor_mapping(
+            &HashMap::new(),
+            &[markdown_descriptor(30)],
+            &ids,
+            &frame_tx,
+            &mut engine,
+        );
+        let local = mapping.remote_to_local[&30];
+        assert_eq!(
+            mapping.markdown_ids(),
+            HashSet::from([local]),
+            "placeholder 도 이 세션의 markdown leaf 로 센다 — destroy·끊김 통지 대상"
+        );
+        let ws = build_mirror_workspace(
+            999,
+            "mirror",
+            &single_leaf_tree(30),
+            &ids,
+            &mapping.remote_to_local,
+            &mapping.terminals,
+            &mapping.mesh,
+            &mapping.explorer,
+            &mut mapping.markdown,
+        );
+        assert!(
+            ws.pane_layout().first_pane().expect("pane").tabs[0].is_surface_deferred(local),
+            "kind 가 없으면 kind 대기 placeholder"
+        );
+        engine.workspaces.push(ws);
+
+        assert!(
+            !engine.reify_plugin_surface(local),
+            "kind 등록 전에는 실제화되지 않는다"
+        );
+        let rx = register_markdown_kind(&engine, MARKDOWN_PLUGIN_ID);
+        assert!(engine.reify_plugin_surface(local));
+
+        let leaf = engine.find_surface_by_id(local).expect("leaf");
+        assert_eq!(leaf.kind(), "markdown");
+        let restored: Vec<Value> = rx
+            .try_iter()
+            .filter_map(|cmd| match cmd {
+                crate::plugin_bridge::host_cmd::HostCmd::RemoteSurfaceRestored {
+                    surface_id,
+                    data,
+                    ..
+                } if surface_id == local => Some(data),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(restored.len(), 1, "plugin 에 surface.restore 가 한 번 간다");
+        assert_eq!(restored[0]["remote"]["file"], "/remote/docs/README.md");
+        assert_eq!(restored[0]["display_name"], "README.md");
+        assert!(restored[0].get("file").is_none());
     }
 
     /// 구조 delta 가 markdown survivor 를 **다시 만들지 않는다** — plugin 에 두 번째

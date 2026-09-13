@@ -422,6 +422,18 @@ impl Plugin for MarkdownPlugin {
     // 구현하지 않으면 재시작 시 markdown 이 file 을 잃고 빈 채로 살아난다. create 가
     // 실어 둔 snapshot(`{"file": ...}`)을 그대로 받아 같은 문서를 연다.
     fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
+        // attach mirror 문서가 plugin kind 등록을 기다렸다 실제화될 때도 이 경로를 탄다 —
+        // host 는 생성 params 와 같은 모양(`{display_name, remote: {file}}`)을 data 로 싣는다.
+        // 그 경로에는 생성 params 가 없어 탭 제목을 여기서 돌려준다.
+        if let Some(remote_file) = remote_file_of(&ctx.data) {
+            let mut result = self.open_remote_surface(ctx.surface_id, remote_file);
+            result.display_name = ctx
+                .data
+                .get("display_name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            return result;
+        }
         let file = ctx
             .data
             .get("file")
@@ -954,7 +966,12 @@ impl MarkdownPlugin {
 /// `remote` 객체가 있으면 mirror 문서다 — 경로가 비어 있어도(원격이 파일 없이 연 문서) 그렇다.
 /// 최상위 `file` 과 자리를 나눈 것은 그 키가 로컬 읽기·감시·cwd 도출을 모두 켜기 때문이다.
 fn surface_param_remote_file(envelope: &Value) -> Option<String> {
-    let remote = envelope.get("params")?.get("remote")?.as_object()?;
+    remote_file_of(envelope.get("params")?)
+}
+
+/// 생성 params(또는 restore data) 객체에서 mirror 문서의 원격 경로를 꺼낸다(`remote.file`).
+fn remote_file_of(params: &Value) -> Option<String> {
+    let remote = params.get("remote")?.as_object()?;
     Some(
         remote
             .get("file")

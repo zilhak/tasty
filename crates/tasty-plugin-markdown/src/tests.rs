@@ -294,6 +294,19 @@ fn surface_param_remote_file_requires_the_remote_object() {
     );
 }
 
+/// restore data 는 envelope 이 아니라 params 객체 그 자체다 — kind 대기 placeholder 가
+/// 실제화될 때 host 가 생성 params 와 같은 모양을 싣는다. 로컬 문서의 snapshot
+/// (`{"file": ...}`)은 mirror 문서로 읽히면 안 된다.
+#[test]
+fn remote_file_of_reads_restore_data_and_ignores_local_snapshots() {
+    assert_eq!(
+        remote_file_of(&json!({ "display_name": "a.md", "remote": { "file": "/r/a.md" } }))
+            .as_deref(),
+        Some("/r/a.md")
+    );
+    assert_eq!(remote_file_of(&json!({ "file": "/l/a.md" })), None);
+}
+
 #[test]
 fn remote_result_applies_only_to_the_pending_request() {
     let mut doc = MdDoc::new_remote("/r/notes.md".into());
