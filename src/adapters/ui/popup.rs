@@ -777,10 +777,8 @@ impl PopupManager {
     /// 열려 있는 popup 의 `(z_seq, 화면 rect)`. 닫혀 있거나 없으면 `None`.
     ///
     /// `PopupState` 내부(z_seq / `popup_rect`)를 밖으로 넓히지 않고 debug 관찰면
-    /// (`debug.host_popup.list`)에 필요한 만큼만 내주는 좁은 접근자다.
-    // 이유: 호출부가 debug.rs(`#[cfg(debug_assertions)]`)뿐이라 release 빌드에서
-    // 미사용으로 잡힌다.
-    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    /// (`debug.host_popup.list`)와 설정 창 popup 끼리의 Esc 소유 판정에 필요한 만큼만
+    /// 내주는 좁은 접근자다.
     pub fn open_geometry(&self, id: PopupId) -> Option<(u64, egui::Rect)> {
         self.popups
             .iter()

@@ -1128,6 +1128,13 @@ reconnect = "Reconnect"
 session_lost = "The remote session is no longer attached."
 timeout = "The remote host did not respond in time."
 
+[filepicker.save]
+title = "Save File"
+name_label = "File name:"
+name_placeholder = "file name"
+save_button = "Save"
+overwrite_button = "Overwrite"
+
 [file_drop]
 hover_label = "Drop to open"
 multi_files = "{n} files"

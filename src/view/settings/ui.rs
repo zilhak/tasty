@@ -1,3 +1,4 @@
+mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
 mod tabs;
@@ -219,6 +220,8 @@ pub struct SettingsUiState {
     pending_binding: Option<PendingBinding>,
     /// Popup manager for settings-window popups (e.g. keybinding conflict).
     popups: PopupManager,
+    /// 설정 창 안의 로컬 파일 선택(`file_chooser`). popup 은 위 `popups` 에 등록된다.
+    file_chooser: file_chooser::SettingsFileChooser,
     /// 충돌 팝업에서 수락/거부 결과를 전달하는 플래그.
     conflict_accepted: bool,
     conflict_cancelled: bool,
@@ -405,6 +408,15 @@ impl SettingsUiState {
             )
             .with_close_on_outside_click(false),
         );
+        // 크기·타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
+        popups.register(
+            PopupState::new(
+                file_chooser::FILE_CHOOSER_POPUP_ID,
+                file_chooser::chooser_title(false),
+                file_chooser::chooser_size(&crate::theme::theme(), false),
+            )
+            .with_close_on_outside_click(false),
+        );
         Self {
             active_tab: SettingsTab::General,
             draft: None,
@@ -426,6 +438,7 @@ impl SettingsUiState {
             selected_preset: None,
             pending_binding: None,
             popups,
+            file_chooser: file_chooser::SettingsFileChooser::default(),
             conflict_accepted: false,
             conflict_cancelled: false,
             font_families: None,
@@ -439,6 +452,26 @@ impl SettingsUiState {
             plugin_shortcuts_draft: std::collections::BTreeMap::new(),
             settings_pages: Vec::new(),
         }
+    }
+
+    /// 설정 창 안에서 로컬 파일 선택 popup 을 연다. 결과는 `consumer` 키로
+    /// `file_chooser.take_outcome` 해 가져간다. 이미 열려 있던 선택은 취소로 끝난다.
+    fn open_file_chooser(
+        &mut self,
+        consumer: &'static str,
+        mode: file_chooser::FileChooserMode,
+        filters: Vec<String>,
+    ) {
+        self.file_chooser.cancel();
+        self.file_chooser.begin(consumer, mode, filters);
+        let save_mode = self.file_chooser.is_save_mode();
+        if let Some(p) = self.popups.get_mut(file_chooser::FILE_CHOOSER_POPUP_ID) {
+            p.size = file_chooser::chooser_size(&crate::theme::theme(), save_mode);
+            p.title = file_chooser::chooser_title(save_mode).to_string();
+        }
+        // intent-exempt: 설정 창 내부 PopupManager 의 sub-popup open(충돌 팝업과 같은 경로).
+        self.popups
+            .open_centered_focused(file_chooser::FILE_CHOOSER_POPUP_ID);
     }
 
     /// Plugin 이 contribute 한 settings page 스냅샷을 주입한다. 모달 오픈 직전에
@@ -754,14 +787,24 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 });
         });
 
-    // Draw popups (충돌 확인 등)
+    // Esc 는 좌표가 없어 한 popup 만 가져야 한다 — 둘 다 열려 있으면 위에 있는 쪽.
+    let escape_owner = settings_escape_owner(&ui_state.popups);
+
+    // Draw popups (충돌 확인 · 파일 선택)
+    let mut chooser_done = false;
     let popup_result = {
         let pending = ui_state.pending_binding.clone();
         let accepted = &mut ui_state.conflict_accepted;
         let cancelled = &mut ui_state.conflict_cancelled;
+        let chooser = &mut ui_state.file_chooser;
+        let chooser_owns_escape = escape_owner == Some(file_chooser::FILE_CHOOSER_POPUP_ID);
         ui_state.popups.draw(
             ctx,
             &mut |id, ui| {
+                if id == file_chooser::FILE_CHOOSER_POPUP_ID {
+                    chooser_done |= chooser.draw(ui, &th, chooser_owns_escape);
+                    return;
+                }
                 if id == "keybinding_conflict"
                     && let Some(pending) = &pending
                 {
@@ -794,8 +837,22 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         ui_state.pending_binding = None;
     }
 
-    // 키보드로 충돌 팝업 수락/거부
-    if ui_state.popups.is_open("keybinding_conflict") {
+    // 파일 선택: view 가 끝냈으면 popup 을 닫고, 타이틀바 ✕ 로 닫혔으면 취소로 남긴다.
+    if chooser_done {
+        // intent-exempt: 설정 창 내부 sub-popup close.
+        ui_state.popups.close(file_chooser::FILE_CHOOSER_POPUP_ID);
+    }
+    if popup_result
+        .closed
+        .contains(&file_chooser::FILE_CHOOSER_POPUP_ID)
+    {
+        ui_state.file_chooser.cancel();
+    }
+    apply_file_chooser_outcomes(ui_state);
+
+    // 키보드로 충돌 팝업 수락/거부 — 파일 선택이 그 위에 떠 있으면 키는 그쪽 것이다.
+    if ui_state.popups.is_open("keybinding_conflict") && escape_owner == Some("keybinding_conflict")
+    {
         ctx.input(|i| {
             if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Y) {
                 ui_state.conflict_accepted = true;
@@ -807,6 +864,25 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     }
 
     result
+}
+
+/// 설정 창 popup 중 Esc 를 받을 하나 — 열린 것 중 z 순서가 가장 위인 것.
+fn settings_escape_owner(popups: &PopupManager) -> Option<&'static str> {
+    ["keybinding_conflict", file_chooser::FILE_CHOOSER_POPUP_ID]
+        .into_iter()
+        .filter_map(|id| popups.open_geometry(id).map(|(z, _)| (z, id)))
+        .max_by_key(|(z, _)| *z)
+        .map(|(_, id)| id)
+}
+
+/// 닫힌 파일 선택의 결과를 그것을 연 화면 상태로 돌려준다.
+fn apply_file_chooser_outcomes(ui_state: &mut SettingsUiState) {
+    if let Some(file_chooser::FileChooserOutcome::Confirmed(path)) = ui_state
+        .file_chooser
+        .take_outcome(ScriptsUiState::BROWSE_CONSUMER)
+    {
+        ui_state.scripts.apply_browsed_file(&path);
+    }
 }
 
 // ── L2 사이드바 모델 ──────────────────────────────────────────────────────
@@ -1637,7 +1713,15 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
         MiscSubTab::Scripts => {
             // 관리 창은 바인딩을 편집하지 않는다(04 Keybindings 소유) — bind 버튼은
             // Keybindings › Scripts 로 진입만 한다. 진입 요청은 intent 로 받아 여기서 적용.
-            if draw_scripts_subtab(ui, draft, &mut ui_state.scripts) {
+            let navigate = draw_scripts_subtab(ui, draft, &mut ui_state.scripts);
+            if ui_state.scripts.take_browse_request() {
+                ui_state.open_file_chooser(
+                    ScriptsUiState::BROWSE_CONSUMER,
+                    file_chooser::FileChooserMode::Open,
+                    vec!["lua".to_string()],
+                );
+            }
+            if navigate {
                 ui_state.active_tab = SettingsTab::Keybindings;
                 ui_state.keybindings_sub_tab = KeybindingsSubTab::Scripts;
                 ui_state.l2_filter.clear();

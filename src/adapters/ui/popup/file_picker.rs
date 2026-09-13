@@ -42,8 +42,8 @@ use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spi
 
 pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
-const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
-const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
+pub(crate) const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
+pub(crate) const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 // 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
 // `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
@@ -802,7 +802,7 @@ pub fn open(
 
 /// 파일명이 확장자 필터에 매치하는지 — 대소문자 무시, 점 없는 확장자 비교.
 /// `filters` 가 비면 항상 통과(필터 없음).
-fn matches_filters(filters: &[String], name: &str) -> bool {
+pub(crate) fn matches_filters(filters: &[String], name: &str) -> bool {
     if filters.is_empty() {
         return true;
     }
@@ -899,7 +899,7 @@ fn join_dir(is_remote: bool, dir: &str, name: &str) -> String {
 /// 타깃 둘 다 이 목록에서 유도한다. 로컬은 `Path` 컴포넌트 기반이라 Windows 드라이브
 /// 루트도 정확히 다룬다. 원격은 문자열 분해인데, `is_windows_style_remote_path` 로
 /// POSIX(`/`)와 Windows(`\`, 드라이브 루트 보존) 를 분기한다.
-fn path_ancestors(is_remote: bool, current_dir: &str) -> Vec<String> {
+pub(crate) fn path_ancestors(is_remote: bool, current_dir: &str) -> Vec<String> {
     if is_remote {
         if is_windows_style_remote_path(current_dir) {
             let mut segs = current_dir.split('\\').filter(|s| !s.is_empty());
@@ -939,7 +939,7 @@ fn path_ancestors(is_remote: bool, current_dir: &str) -> Vec<String> {
     }
 }
 
-fn crumb_label(is_remote: bool, full_path: &str) -> String {
+pub(crate) fn crumb_label(is_remote: bool, full_path: &str) -> String {
     if full_path == "/" {
         return "/".to_string();
     }

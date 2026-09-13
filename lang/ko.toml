@@ -1115,6 +1115,13 @@ reconnect = "재연결"
 session_lost = "원격 세션이 더 이상 연결되어 있지 않습니다."
 timeout = "원격 호스트가 제시간에 응답하지 않았습니다."
 
+[filepicker.save]
+title = "파일 저장"
+name_label = "파일 이름:"
+name_placeholder = "파일 이름"
+save_button = "저장"
+overwrite_button = "덮어쓰기"
+
 [file_drop]
 hover_label = "여기에 드롭하여 열기"
 multi_files = "{n}개 파일"

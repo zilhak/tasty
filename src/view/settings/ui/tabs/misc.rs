@@ -50,6 +50,29 @@ pub struct ScriptsUiState {
     /// id → changed(디스크 해시 ≠ 저장 해시). `None` = 미계산(다음 draw 에서 계산).
     /// add/remove 시 무효화(재계산). 오픈마다 리셋.
     changed: Option<HashMap<String, bool>>,
+    /// Add card 의 Browse… 가 눌렸다. 파일 선택 popup 은 설정 창 popup 매니저가 소유하므로
+    /// 이 탭은 요청만 남기고, 결과는 [`ScriptsUiState::apply_browsed_file`] 로 돌아온다.
+    browse_requested: bool,
+}
+
+impl ScriptsUiState {
+    /// 설정 창 파일 선택에서 이 탭의 결과를 가려내는 키.
+    pub(crate) const BROWSE_CONSUMER: &'static str = "scripts_add_file";
+
+    /// Browse… 요청을 1 회 가져간다.
+    pub(crate) fn take_browse_request(&mut self) -> bool {
+        std::mem::take(&mut self.browse_requested)
+    }
+
+    /// 고른 파일을 Add card 에 채운다. 표시 이름이 비어 있으면 파일 stem 으로 채운다.
+    pub(crate) fn apply_browsed_file(&mut self, path: &std::path::Path) {
+        if self.draft_name.trim().is_empty()
+            && let Some(stem) = path.file_stem()
+        {
+            self.draft_name = stem.to_string_lossy().into_owned();
+        }
+        self.draft_path = path.to_string_lossy().into_owned();
+    }
 }
 
 /// RTL 액션 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를
@@ -670,18 +693,11 @@ fn draw_add_card(
                         })
                         .show(ui, th)
                         .clicked()
-                        && let Some(path) = crate::stall_watchdog::without_stall_watch(|| {
-                            rfd::FileDialog::new()
-                                .add_filter("Lua", &["lua"])
-                                .pick_file()
-                        })
                     {
-                        if st.draft_name.trim().is_empty()
-                            && let Some(stem) = path.file_stem()
-                        {
-                            st.draft_name = stem.to_string_lossy().into_owned();
-                        }
-                        st.draft_path = path.to_string_lossy().into_owned();
+                        // OS 네이티브 다이얼로그가 아니라 설정 창 안의 파일 선택을 연다 —
+                        // 포털 없는 Linux 에서 네이티브 다이얼로그는 끝나지 않는다
+                        // (docs/adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md).
+                        st.browse_requested = true;
                     }
                     Input::new()
                         .mono(true)

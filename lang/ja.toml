@@ -1115,6 +1115,13 @@ reconnect = "再接続"
 session_lost = "リモートセッションは既に切断されています。"
 timeout = "リモートホストが時間内に応答しませんでした。"
 
+[filepicker.save]
+title = "ファイルを保存"
+name_label = "ファイル名:"
+name_placeholder = "ファイル名"
+save_button = "保存"
+overwrite_button = "上書き"
+
 [file_drop]
 hover_label = "ドロップして開く"
 multi_files = "{n}個のファイル"
