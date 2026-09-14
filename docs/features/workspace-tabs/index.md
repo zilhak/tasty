@@ -35,7 +35,7 @@
 
 - **leading 아이콘** — surface kind 별(terminal/markdown/…). 아이콘은 registry `SurfaceKindDef.icon`(매니페스트 `icon` 이름)을 `icons::from_name` 으로 해석한다 — host 가 kind 를 하드코딩 분기하지 않는다.
 - **알림 표지** — attention kind 에 따른 라벨(`tab_attention_kind`: `NeedsInput`=노랑, `Completion`=파랑, 없으면 평상시 색).
-- **busy 점** — 녹색 점(`tab_is_busy`, 포그라운드 프로세스 ≠ shell).
+- **busy 점** — 녹색 점(`tab_is_busy`). 판정은 [busy indicator 정책](../../design/policies/busy-indicator.md) — 셸이 아닌 프로그램이 최근 출력을 냈을 때이고, 이미 busy 인 탭은 타이핑해도 꺼지지 않는다.
 - **활성/포커스** — active 탭 강조, 포커스된 Pane 인지에 따라 스트립 배경이 달라짐.
 
 탭 1개 너비·라벨 폰트 크기는 **사용자 옵션**(`tab_width`/`tab_font_size`).

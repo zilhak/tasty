@@ -28,7 +28,7 @@ pub mod testing;
 pub mod waker_factory;
 
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
 use std::thread;
 
@@ -456,7 +456,18 @@ pub struct Terminal {
     /// would keep draining the stale key and the promoted terminal would appear
     /// frozen. `None` for a detached mirror.
     waker: Arc<Mutex<Waker>>,
+    /// Foreground PID that the last *observed* busy decision was made for, or
+    /// [`BUSY_LATCH_NONE`]. It is the "was busy a moment ago" state of ADR-0261:
+    /// while it names the current foreground, user input can no longer push the
+    /// terminal back to idle — only the shell regaining the foreground or the
+    /// output going quiet can. Keying it by PID means a newly started program
+    /// never inherits the previous program's busy. Atomic so the shell-foreground
+    /// release path can clear it without taking the parser lock.
+    busy_latch: AtomicU64,
 }
+
+/// [`Terminal::busy_latch`] value meaning "not latched".
+pub(crate) const BUSY_LATCH_NONE: u64 = u64::MAX;
 
 /// How long after the last PTY output a terminal still counts as busy.
 pub(crate) const BUSY_OUTPUT_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
@@ -978,6 +989,7 @@ impl Terminal {
             last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
             process_exit_emitted: false,
             waker: waker_holder,
+            busy_latch: AtomicU64::new(BUSY_LATCH_NONE),
         })
     }
 
@@ -1011,6 +1023,7 @@ impl Terminal {
             process_exit_emitted: false,
             // No parser thread — a no-op waker keeps the field total.
             waker: Arc::new(Mutex::new(Arc::new(|| {}))),
+            busy_latch: AtomicU64::new(BUSY_LATCH_NONE),
         }
     }
 

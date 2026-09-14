@@ -4,13 +4,15 @@
 //! 를 만지는 접근자는 `impl Terminal` (핸들). 핸들 쪽 메서드는 필요 시 짧게 락을
 //! 잡아 상태 필드를 읽는다 (ADR-0002).
 
+use std::sync::atomic::Ordering;
+
 use termwiz::surface::Surface;
 
 #[cfg(windows)]
 use crate::CURSOR_OUTPUT_SUPPRESS_WINDOW;
 use crate::{
-    BUSY_OUTPUT_WINDOW, INPUT_ECHO_WINDOW, Terminal, TerminalEvent, TerminalState, cwd,
-    foreground_process,
+    BUSY_LATCH_NONE, BUSY_OUTPUT_WINDOW, INPUT_ECHO_WINDOW, Terminal, TerminalEvent, TerminalState,
+    cwd, foreground_process,
 };
 
 impl TerminalState {
@@ -98,7 +100,8 @@ impl Terminal {
     /// Whether the terminal is currently considered "active" — a non-shell
     /// foreground program is running AND the PTY produced output within the last
     /// `BUSY_OUTPUT_WINDOW`. Output within `INPUT_ECHO_WINDOW` after the last
-    /// keystroke is treated as echo and ignored.
+    /// keystroke is treated as echo, but only blocks *entering* busy; a terminal
+    /// that was already busy stays busy while the user types (ADR-0261).
     pub fn is_busy(&self) -> bool {
         let Some(shell_pid) = self.process_id() else {
             return false;
@@ -113,24 +116,31 @@ impl Terminal {
     /// system snapshot and then calls this per terminal, turning a per-surface
     /// snapshot into one snapshot per tick. `shell_pid` must be this terminal's
     /// own child PID and `foreground` the result of resolving it.
+    ///
+    /// The decision carries state (`busy_latch`), in the order ADR-0261 fixes:
+    /// the shell holding the foreground and the output going quiet release first
+    /// and clear the latch; input echo is consulted last and only when the latch
+    /// does not name the current foreground. Asking twice in a row returns the
+    /// same answer — the latch is only set when the answer is already `true`.
     pub fn busy_with_foreground(
         &self,
         shell_pid: u32,
         foreground: Option<&foreground_process::ForegroundProcessInfo>,
     ) -> bool {
         let Some(info) = foreground else {
+            self.clear_busy_latch();
             return false;
         };
-        if info.pid == shell_pid {
-            return false;
-        }
-        if foreground_process::is_known_shell_name(&info.name) {
+        if info.pid == shell_pid || foreground_process::is_known_shell_name(&info.name) {
+            self.clear_busy_latch();
             return false;
         }
         // Non-blocking: `refresh_busy_surfaces` polls every terminal at 1Hz, and a
         // blocking lock here would wait on each busy parser thread mid-ingest,
         // spiking the input thread's tail latency (ADR-0002). A contended lock
-        // means the parser is actively ingesting output → that is "busy".
+        // means the parser is actively ingesting output → that is "busy". That
+        // `true` is a guess, not an observation, so it neither sets nor clears
+        // the latch (ADR-0261).
         let st = match self.state.try_lock() {
             Ok(st) => st,
             Err(std::sync::TryLockError::WouldBlock) => return true,
@@ -140,11 +150,27 @@ impl Terminal {
                 &crate::STATE_POISON_REPORTED,
             ),
         };
-        // Ignore output that looks like echo of recent user input.
-        if st.last_output_at <= st.last_input_at + INPUT_ECHO_WINDOW {
+        if st.last_output_at.elapsed() >= BUSY_OUTPUT_WINDOW {
+            self.clear_busy_latch();
             return false;
         }
-        st.last_output_at.elapsed() < BUSY_OUTPUT_WINDOW
+        let latch = u64::from(info.pid);
+        if self.busy_latch.load(Ordering::Relaxed) != latch {
+            // Echo must come *after* the input it echoes: output that predates the
+            // last keystroke is never suppressed.
+            let is_echo = st.last_input_at <= st.last_output_at
+                && st.last_output_at <= st.last_input_at + INPUT_ECHO_WINDOW;
+            if is_echo {
+                self.clear_busy_latch();
+                return false;
+            }
+        }
+        self.busy_latch.store(latch, Ordering::Relaxed);
+        true
+    }
+
+    fn clear_busy_latch(&self) {
+        self.busy_latch.store(BUSY_LATCH_NONE, Ordering::Relaxed);
     }
 
     /// PTY 가 마지막으로 non-empty 출력을 낸 시각. `IdleTimeout` 훅의 idle

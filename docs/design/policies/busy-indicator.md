@@ -2,22 +2,37 @@
 
 탭·워크스페이스가 "지금 무언가 실행 중인지" 를 시각적으로 알리는 정책. focus 와 무관하게 동작한다([focus](focus.md)).
 
-## 판정 — 세 조건 모두 (AND)
+## 판정 — 해제 두 조건 · 진입 조건 하나
 
-**Busy 한 surface(terminal)** = 다음을 *모두* 만족:
+busy 는 순간값이 아니라 **상태**다. 입력은 idle → busy **진입만** 막고, 이미 busy 인 surface 를 idle 로 밀지 못한다([ADR-0261](../../adr/0261-busy-is-a-state-and-input-blocks-only-entry.md)).
 
-1. PTY foreground 프로세스가 shell 자신도, 알려진 shell 이름(`bash`/`zsh`/`fish`/`sh`/`pwsh`/`powershell`/`cmd`)도 아니다.
-2. 최근 `BUSY_OUTPUT_WINDOW`(2초) 안에 PTY 출력 바이트를 처리한 적이 있다.
-3. 그 출력이 사용자 입력 에코가 아니다 — 마지막 PTY 출력이 마지막 사용자 입력(`send_key`/`send_bytes`) + `INPUT_ECHO_WINDOW`(200ms) 이후.
+**Busy 한 surface(terminal)** 는 다음 순서로 판정한다 — 앞의 둘이 해제 권한을 먼저 갖는다.
 
-- 셸이 prompt 대기 → (1) 위반 = **idle**.
-- `vim` 띄워두고 정적이거나 `claude` 가 입력 대기 → (2) 위반 = **idle**.
-- `claude` 프롬프트에 타이핑 중 → (3) 위반 = **idle**(에코만 발생).
+1. PTY foreground 프로세스가 shell 자신이거나 알려진 shell 이름(`is_known_shell_name`)이면 **idle**.
+2. 마지막 PTY 출력이 `BUSY_OUTPUT_WINDOW`(2초)보다 오래됐으면 **idle**.
+3. 진입 억제 — 직전 판정이 **같은 foreground 프로세스에 대해 busy 가 아니었고**, 마지막 출력이 사용자 입력 에코 구간(`last_input_at <= last_output_at <= last_input_at + INPUT_ECHO_WINDOW`, 200ms) 안이면 **idle**.
+4. 나머지는 **busy**.
+
+해제 사유는 (1)·(2) 둘뿐이고, 입력은 해제 사유가 아니다. (3) 의 억제는 방향을 갖는다 — 에코는 입력 **이후**의 출력이므로, 마지막 입력보다 앞선 출력은 억제하지 않는다.
+
+"직전 판정이 busy 였는가" 는 `Terminal` 핸들의 래치가 담는다. 래치는 **busy 로 관측한 foreground PID** 를 기억하므로:
+
+- (1)·(2) 로 idle 이 되면 래치가 지워진다. 같은 프로그램이 다시 foreground 로 와도(중단 후 `fg`) busy 를 물려받지 않는다.
+- foreground 가 다른 프로세스로 바뀌면 PID 가 달라 래치가 적용되지 않는다 — 새 프로그램은 이전 프로그램의 busy 를 물려받지 않는다.
+- 상태 락이 경합 중이면(파서가 ingest 중) 그 tick 은 busy 로 **추정**하되([ADR-0002](../../adr/0002-vte-parsing-off-input-thread.md)), 그 추정은 래치를 만들지도 지우지도 않는다.
+- 래치는 busy 로 답할 때만 세워지므로 같은 판정을 연달아 물어도 답이 같다.
+
+예시:
+
+- 셸이 prompt 대기 → (1) = **idle**.
+- `vim` 띄워두고 정적이거나 `claude` 가 입력 대기 → (2) = **idle**.
+- idle 인 `vim`·`claude` 프롬프트에 타이핑을 시작 → (3) = **idle**(에코만 발생).
+- `claude` 가 응답을 흘리는 중에 다음 질문을 타이핑 → 직전이 busy 라 (3) 이 적용되지 않음 = **busy**. 응답이 멈춰 2초가 지나면 (2) 로 **idle**.
 - `cargo build` 출력 흐름·`claude` 응답 토큰 흘림 → **busy**.
-- 마우스 트래킹 TUI 위에서 마우스만 움직이는 중 → 마우스 리포트도 입력이므로 (3) 위반 = **idle**.
+- 직전이 idle 인 마우스 트래킹 TUI 위에서 마우스만 움직이는 중 → 마우스 리포트도 입력이므로 (3) = **idle**. 직전이 busy 였다면 출력이 이어지는 동안 **busy**.
 - DSR(`ESC[6n`)·DA·OSC 색상 질의를 반복하는 TUI 가 출력도 내는 중 → 응답은 입력이 아니므로 **busy**.
 
-(2)는 tmux/iTerm2/WezTerm 의 activity-monitor 와 같은 시멘틱("프로세스는 떠 있지만 일하진 않음" 을 걸러냄), (3)은 타이핑 에코를 활동으로 오인 방지. 비-터미널 surface(Markdown/Explorer/Image)는 판정 대상 아님(항상 idle).
+(2)는 tmux/iTerm2/WezTerm 의 activity-monitor 와 같은 시멘틱("프로세스는 떠 있지만 일하진 않음" 을 걸러냄), (3)은 idle 한 프로그램에 타이핑한 에코를 활동으로 오인하는 것을 막는다. 연속 타이핑 간격이 200ms 보다 짧으면 그동안 시작된 출력도 에코 구간 안에 들어가 진입이 미뤄지고, 타이핑이 멈춘 뒤 다음 폴링에서 진입한다. 비-터미널 surface(Markdown/Explorer/Image)는 판정 대상 아님(항상 idle).
 
 ### (3) 의 억제 창을 갱신하는 write / 갱신하지 않는 write
 
@@ -35,7 +50,7 @@ PTY 로 나가는 write 는 모두 같은 채널을 타지만, 억제 창(`last_
 
 | 단위 | busy 판정 |
 |------|-----------|
-| Surface(terminal) | 위 3조건 |
+| Surface(terminal) | 위 판정 |
 | Tab | 포함 surface 중 **하나라도 busy** |
 | Workspace | 포함 surface 중 **하나라도 busy** (+ count 노출) |
 

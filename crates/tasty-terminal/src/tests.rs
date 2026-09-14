@@ -2187,3 +2187,144 @@ fn terminal_query_response_still_reaches_pty() {
     );
     assert_eq!(terminal.lock_state().enqueued_count, 1);
 }
+
+// ---- busy 판정: 입력은 진입만 막고 유지는 못 끊는다 (ADR-0261) ----
+
+const FAKE_SHELL_PID: u32 = 1;
+
+fn fake_fg(name: &str, pid: u32) -> foreground_process::ForegroundProcessInfo {
+    foreground_process::ForegroundProcessInfo {
+        name: name.to_string(),
+        pid,
+    }
+}
+
+/// 두 타임스탬프를 "지금으로부터 얼마 전" 으로 직접 박는다. 실시간 경과에 기대지
+/// 않으므로 판정이 부하와 무관하게 결정론적이다.
+fn set_times(t: &Terminal, output_ago: std::time::Duration, input_ago: std::time::Duration) {
+    let now = std::time::Instant::now();
+    let mut st = t.lock_state();
+    st.last_output_at = now.checked_sub(output_ago).expect("instant underflow");
+    st.last_input_at = now.checked_sub(input_ago).expect("instant underflow");
+}
+
+fn ms(n: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(n)
+}
+
+/// 출력이 입력 직후 에코 창 안에 있는 "타이핑 에코" 형태.
+fn set_echo_after_input(t: &Terminal) {
+    set_times(t, ms(200), ms(300));
+}
+
+/// 입력과 무관한 최근 프로그램 출력으로 busy 에 진입시킨다.
+fn enter_busy(t: &Terminal, fg: &foreground_process::ForegroundProcessInfo) {
+    set_times(t, ms(100), ms(1000));
+    assert!(
+        t.busy_with_foreground(FAKE_SHELL_PID, Some(fg)),
+        "전제: 입력과 무관한 최근 출력은 busy 다",
+    );
+}
+
+#[test]
+fn busy_is_kept_while_typing_over_output() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("claude", 2);
+    enter_busy(&t, &fg);
+    set_echo_after_input(&t);
+    assert!(
+        t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)),
+        "직전이 busy 면 입력 에코 구간이어도 busy 를 유지해야 한다",
+    );
+}
+
+#[test]
+fn typing_into_idle_program_does_not_enter_busy() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("vim", 2);
+    set_echo_after_input(&t);
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+    // 억제된 판정은 래치를 만들지 않는다 — 다시 물어도 idle.
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn input_does_not_invalidate_earlier_output() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("cargo", 2);
+    // 출력 500ms 전, 입력은 그 뒤인 100ms 전 — 출력이 입력보다 앞선다.
+    set_times(&t, ms(500), ms(100));
+    assert!(
+        t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)),
+        "입력 이전의 출력은 에코가 아니므로 억제 대상이 아니다",
+    );
+}
+
+#[test]
+fn busy_releases_when_output_goes_quiet() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("cargo", 2);
+    enter_busy(&t, &fg);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+    // 만료가 래치를 지웠으므로 뒤이은 타이핑 에코는 진입이 막힌다.
+    set_echo_after_input(&t);
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn output_expiry_wins_over_recent_input() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("claude", 2);
+    enter_busy(&t, &fg);
+    // 출력은 창 밖으로 멈췄고 키는 방금 쳤다.
+    set_times(&t, BUSY_OUTPUT_WINDOW + ms(500), ms(0));
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+    set_echo_after_input(&t);
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn shell_foreground_releases_latched_busy() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("vim", 2);
+    enter_busy(&t, &fg);
+    set_echo_after_input(&t);
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fake_fg("bash", 3))));
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fake_fg("zsh", FAKE_SHELL_PID))));
+    // 같은 프로그램이 다시 foreground 로 와도(예: 중단 후 fg) 래치는 이미 풀려 있다.
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn foreground_change_does_not_inherit_busy() {
+    let t = Terminal::new_detached(80, 24);
+    enter_busy(&t, &fake_fg("cargo", 2));
+    set_echo_after_input(&t);
+    assert!(
+        !t.busy_with_foreground(FAKE_SHELL_PID, Some(&fake_fg("vim", 4))),
+        "다른 프로그램은 이전 프로그램의 busy 를 물려받지 않는다",
+    );
+}
+
+#[test]
+fn contended_lock_guess_does_not_latch() {
+    let t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("claude", 2);
+    set_echo_after_input(&t);
+    {
+        let _held = t.lock_state();
+        assert!(
+            t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)),
+            "락 경합은 그 tick 에 한해 busy 로 추정한다",
+        );
+    }
+    assert!(
+        !t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)),
+        "추정 갈래의 true 가 유지 상태의 근거가 되면 안 된다",
+    );
+}
