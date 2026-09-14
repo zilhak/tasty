@@ -1,4 +1,4 @@
-<!-- source-hash: ff83de64efe1 -->
+<!-- source-hash: 2ce84305ce20 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -157,6 +157,11 @@ tasty session revoke --token <token>
 ```
 
 A child holding the issued token in `TASTY_SESSION_TOKEN` may use exactly the permissions named on it.
+
+Commands that a plugin adds (`tasty markdown recent`, `tasty codex spawn` and so on) need a permission too.
+For `tasty <command> …`, add `--permission ipc.invoke:<command>` — `tasty markdown …` needs
+`ipc.invoke:markdown`, and a `-` in the command name becomes `_`. Without it the call is refused and a permission approval request goes to a person.
+A Claude started with `tasty claude spawn` already holds the permissions for `tasty claude …` and `tasty codex …`.
 
 ## Sending notifications
 

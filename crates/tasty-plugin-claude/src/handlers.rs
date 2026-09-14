@@ -989,6 +989,12 @@ fn claude_launch_command_with_prompt(
 
 /// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다. 부모(claude plugin)의
 /// 권한 부분집합만 발급되며, 발급 실패는 치명적이지 않으므로 `Option` 반환.
+///
+/// `ipc.invoke:claude` 는 자식이 이 plugin 으로 돌아오는 호출(`tasty claude hook` 완료
+/// 알림, 손자 spawn·tell)의 자격이다 — 호스트는 권한 셋을 가진 caller 가 plugin
+/// namespace 를 부를 때 그 토큰을 요구하고, 자기 namespace 토큰은 소유 plugin 이 쥐지
+/// 않고도 넘길 수 있다. `ipc.invoke:codex` 는 자식이 Codex 교차 검증을 띄우는 자격이라
+/// 매니페스트에 선언해 쥔 것을 넘긴다(docs/adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md).
 pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<String> {
     let resp = match host.call(
         "session.issue",
@@ -1002,6 +1008,8 @@ pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<S
                 "notification",
                 "telemetry",
                 "agent",
+                "ipc.invoke:claude",
+                "ipc.invoke:codex",
             ],
         }),
     ) {

@@ -26,6 +26,7 @@
 
 ### Changed
 
+- (BREAK) **세션 토큰을 든 에이전트가 plugin 명령을 부르려면 그 plugin 의 `ipc.invoke:<prefix>` 가 필요하다.** 지금까지는 권한을 하나도 안 담은 토큰으로도 plugin 이 더한 명령(`tasty markdown recent` 등)을 부를 수 있었다 — plugin 프로세스끼리의 호출은 이미 그 토큰을 요구했는데 에이전트 토큰만 검사를 건너뛰었다. 이제 없으면 `-32001 missing permission 'ipc.invoke:<prefix>'` 로 거부되고 권한 승인 요청이 발행된다. `tasty session issue` 로 직접 토큰을 발급하는 경우 `--permission ipc.invoke:<prefix>` 를 더해야 한다. `tasty claude spawn` 등으로 뜬 자식 Claude 는 `ipc.invoke:claude` · `ipc.invoke:codex` 를 받으므로 완료 훅·손자 spawn·Codex 교차 검증은 그대로 동작한다(claude plugin 매니페스트에 `ipc.invoke:codex` 가 더해졌다). plugin 은 자기가 점유한 namespace 의 `ipc.invoke` 를 쥐지 않고도 `session.issue` 로 자식에게 넘길 수 있다. 토큰 없는 CLI 호출은 바뀌지 않는다.
 - **파일 선택 창이 지금 보고 있는 폴더에서 열린다.** 사이드바 **도구** > **파일 열기…**, 그 단축키, 마크다운 파일열기 팝업의 **찾아보기…** 가 지금까지는 늘 홈에서 시작했다. 이제 그것을 띄운 터미널·탐색기의 현재 폴더에서 시작하고, 원격 attach 한 워크스페이스에서는 원격 셸의 현재 폴더에서 시작한다(원격 셸이 OSC 7 을 쏘지 않아도 된다). "새 surface 가 cwd 를 상속" 설정을 꺼도 시작 위치는 같다 — 그 설정은 새로 만드는 surface 의 것이다. 폴더를 알 수 없거나 로컬 경로가 없어졌으면 종전대로 홈에서 연다. plugin 용 `file_picker.trigger` 에 옵셔널 `start_dir` · `origin_surface_id` 가 생겼고, 로컬/원격 판정은 활성 워크스페이스가 아니라 `origin_surface_id` 의 워크스페이스로 한다(생략 시 종전). plugin popup open context 에 `observed_cwd` · `remote_cwd` · `origin_surface_id` 키가 더해졌다 — 기존 `cwd` 키의 의미는 그대로다.
 - **드롭다운 메뉴의 그림자가 나머지 떠 있는 표면과 같아진다.** 설정 창의 선택 드롭다운, MultiSelect/Select, 포트 스캐너·remote tool·DAG 크롬의 콤보박스는 지금까지 UI 프레임워크의 기본 그림자를 그렸다 — 테마마다 진하기가 갈려(다크에서 짙고 라이트에서 옅다) 같은 화면에 나란히 뜨는 배너·tooltip·autocomplete 와 단차가 달랐다. 이제 넷 다 같은 popover 단차를 쓴다.
 

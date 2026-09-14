@@ -421,6 +421,121 @@ fn plugin_prefix_registration_resolves() {
     let m = method_meta("codex.spawn").expect("registered via runtime");
     assert!(m.plugin_callable);
     assert!(m.required.is_empty());
+    assert!(
+        m.namespace_forward,
+        "a name resolved through a plugin prefix must carry the forward mark, or the gate \
+         cannot ask for ipc.invoke:<prefix>"
+    );
+    ns_clear();
+}
+
+fn gated(kind: &str, id: &str, perms: &[Permission]) -> crate::caller::CallerContext {
+    let permissions = std::sync::Arc::new(perms.iter().cloned().collect());
+    match kind {
+        "plugin" => crate::caller::CallerContext::Plugin {
+            plugin_id: id.into(),
+            permissions,
+        },
+        _ => crate::caller::CallerContext::Agent {
+            agent_id: id.into(),
+            permissions,
+        },
+    }
+}
+
+/// 표에 없는 plugin namespace 이름은 권한 셋을 가진 caller 에게 `ipc.invoke:<prefix>` 를
+/// 요구한다. 이 검사가 없던 때에는 권한 0 agent 토큰이 `markdown.recent` 같은 이름으로
+/// 설치된 plugin 의 namespace 전체를 불렀다.
+#[test]
+fn a_gated_caller_needs_the_namespace_token_to_reach_a_plugin_namespace() {
+    let _g = test_lock();
+    ns_clear();
+    ns_register("codex");
+
+    let err = gated("agent", "child:1", &[])
+        .ensure_allowed("codex.spawn")
+        .expect_err("a zero-permission agent must not reach a plugin namespace");
+    assert!(
+        matches!(
+            &err,
+            crate::caller::CallerError::MissingPermission { permission, .. }
+                if *permission == Permission::IpcInvoke("codex".into())
+        ),
+        "the refusal must name ipc.invoke:codex so elevation can offer it, got {err:?}"
+    );
+    assert!(
+        gated("agent", "child:1", &[Permission::IpcInvoke("codex".into())])
+            .ensure_allowed("codex.spawn")
+            .is_ok()
+    );
+    // 다른 namespace 의 토큰으로는 안 열린다.
+    assert!(
+        gated(
+            "agent",
+            "child:1",
+            &[Permission::IpcInvoke("claude".into())]
+        )
+        .ensure_allowed("codex.spawn")
+        .is_err()
+    );
+    // plugin caller 도 같은 토큰을 요구한다 — plugin→plugin forward 가 요구하던 것과 같다.
+    assert!(
+        gated("plugin", "com.other.plugin", &[])
+            .ensure_allowed("codex.spawn")
+            .is_err()
+    );
+    // Local 은 여전히 무검사다.
+    assert!(
+        crate::caller::CallerContext::Local
+            .ensure_allowed("codex.spawn")
+            .is_ok()
+    );
+    ns_clear();
+}
+
+/// 소유 plugin 이 자기 namespace 를 부르는 것은 trampoline 이라 토큰을 요구하지 않는다.
+/// 그 면제는 **plugin 프로세스**에만 선다 — agent 의 `agent_id` 는 발급자가 고른 문자열이라
+/// 소유자 id 와 같게 지을 수 있다.
+#[test]
+fn only_the_owning_plugin_process_is_exempt_from_the_namespace_token() {
+    let _g = test_lock();
+    ns_clear();
+    ns_register("codex");
+
+    assert!(
+        gated("plugin", TEST_OWNER, &[])
+            .ensure_allowed("codex.spawn")
+            .is_ok(),
+        "the owner calling its own namespace is a trampoline and must not need ipc.invoke:<self>"
+    );
+    assert!(
+        gated("agent", TEST_OWNER, &[])
+            .ensure_allowed("codex.spawn")
+            .is_err(),
+        "an agent named after the owner must not inherit the owner exemption"
+    );
+    ns_clear();
+}
+
+/// 표에 이름 그대로 있는 것은 plugin prefix 아래여도 표가 적은 권한만 요구한다 —
+/// 그 이름들은 host 가 답하는 메서드다.
+#[test]
+fn a_table_name_under_a_plugin_prefix_keeps_the_table_requirement_only() {
+    let _g = test_lock();
+    ns_clear();
+    ns_register("image");
+
+    let m = method_meta("image.open").expect("static");
+    assert!(!m.namespace_forward);
+    assert!(
+        gated(
+            "agent",
+            "child:1",
+            &[Permission::SurfaceWrite, Permission::FsRead]
+        )
+        .ensure_allowed("image.open")
+        .is_ok()
+    );
     ns_clear();
 }
 

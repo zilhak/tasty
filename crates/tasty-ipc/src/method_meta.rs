@@ -30,6 +30,15 @@ pub struct MethodMeta {
     pub plugin_only: bool,
     /// plugin이 호출하려면 매니페스트에 이 권한들이 모두 선언돼 있어야 함.
     pub required: &'static [Permission],
+    /// 이 이름이 **표가 아니라 plugin 이 점유한 prefix 로** 해소됐는가.
+    ///
+    /// 참이면 요구 권한이 정적 `required` 로 적히지 않는다 — 필요한 것은
+    /// `ipc.invoke:<prefix>` 이고 그 prefix 는 이름에서만 나온다. 그래서 게이트
+    /// (`CallerContext::ensure_allowed`)가 이 표시를 보고 그 토큰을 직접 요구한다.
+    /// 이 칸이 없던 때에는 이 갈래가 `required: []` 로만 답해, 권한을 하나도 안 가진
+    /// agent 토큰이 설치된 plugin 의 namespace 전체를 부를 수 있었다
+    /// ([ADR-0271](../../../docs/adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md)).
+    pub namespace_forward: bool,
 }
 
 const fn plugin(required: &'static [Permission]) -> MethodMeta {
@@ -37,6 +46,7 @@ const fn plugin(required: &'static [Permission]) -> MethodMeta {
         plugin_callable: true,
         plugin_only: false,
         required,
+        namespace_forward: false,
     }
 }
 
@@ -49,6 +59,7 @@ const fn plugin_only(required: &'static [Permission]) -> MethodMeta {
         plugin_callable: true,
         plugin_only: true,
         required,
+        namespace_forward: false,
     }
 }
 
@@ -57,6 +68,7 @@ const fn local_only() -> MethodMeta {
         plugin_callable: false,
         plugin_only: false,
         required: &[],
+        namespace_forward: false,
     }
 }
 
@@ -762,6 +774,25 @@ pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
     guard.owns_prefix(prefix)
 }
 
+/// `plugin_id` 가 `prefix` 를 `[[contributes.ipc_namespace]]` 로 점유하고 있는가.
+///
+/// [`is_registered_plugin_prefix`] 는 "누군가 점유했나" 를 묻고, 여기는 "**이 plugin 이**
+/// 점유했나" 를 묻는다. 게이트가 둘을 가르는 자리는 둘이다 — plugin 이 자기 namespace 를
+/// 부르는 trampoline 은 `ipc.invoke:<자기>` 를 요구하지 않고, `session.issue` 는 소유자가
+/// 자기 namespace 의 토큰을 자식에게 넘기는 것을 허용한다. 락 poison 처리는
+/// [`is_registered_plugin_prefix`] 와 같다.
+pub fn plugin_owns_prefix(plugin_id: &str, prefix: &str) -> bool {
+    let Some(table) = NAMESPACE_TABLE.get() else {
+        return false;
+    };
+    let guard = tasty_utils::poison::recover_read(
+        table.read(),
+        NAMESPACES_WHAT,
+        &NAMESPACES_POISON_REPORTED,
+    );
+    guard.prefixes_of(plugin_id).iter().any(|p| p == prefix)
+}
+
 /// 이 이름이 **표에 그 이름 그대로 적혀 있는가**. prefix fallback 은 보지 않는다.
 ///
 /// `method_meta()` 와 다른 물음이다. 저쪽은 "이 이름을 어떻게 다뤄야 하나" 를 묻고
@@ -798,12 +829,14 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     if let Some(dot) = method.find('.')
         && is_registered_plugin_prefix(&method[..dot])
     {
-        // plugin namespace 아래의 이름은 **무엇이든** plugin 이 받는다. 세부 권한은
-        // host-plugin 의 `validate_namespace_call`(`IpcInvoke(prefix)`)이 분배한다.
+        // plugin namespace 아래의 이름은 **무엇이든** plugin 이 받는다. 요구 권한은
+        // 이름에서 나오는 `ipc.invoke:<prefix>` 하나라 정적 칸에 못 적는다 — 표시만
+        // 남기고 게이트가 그 토큰을 요구한다(`CallerContext::ensure_allowed`).
         return Some(MethodMeta {
             plugin_callable: true,
             plugin_only: false,
             required: &[],
+            namespace_forward: true,
         });
     }
     None

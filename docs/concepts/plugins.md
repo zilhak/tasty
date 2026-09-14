@@ -51,7 +51,7 @@ surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (�
 `surface.read` · `surface.write` · `fs.read` · `fs.write` · `clipboard.read` · `clipboard.write` · `notification` · `process.spawn` · `terminal.spawn` · `terminal.write` · `terminal.read` · `network` · `memory.read` · `memory.write` · `memory.secret` · `approval` · `telemetry` · `agent` · `ui.tool_item` · `ui.popup` · `ui.banner` · `ui.settings_page` · `window.spawn` · `file_handler.define` · `hook_handler.define` · `completion_strategy.define`
 
 **Scope 있는 토큰** (`<name>:<scope>`):
-`ipc.invoke:<prefix>`(다른 플러그인 namespace 호출) · `ext:<plugin_id>`(다른 플러그인 확장) · `file_handler.extend:<id>` · `file_handler.handle:<id>` · `hook_handler.handle:<id>`
+`ipc.invoke:<prefix>`(다른 플러그인 namespace 호출 — agent 토큰에도 같은 뜻) · `ext:<plugin_id>`(다른 플러그인 확장) · `file_handler.extend:<id>` · `file_handler.handle:<id>` · `hook_handler.handle:<id>`
 
 각 토큰이 **실제로 무엇을 여는지**(요구하는 호스트 IPC 메서드 · contribute 게이트)는 [dev-guide/plugin-permissions "토큰 전체"](../dev-guide/plugin-permissions.md#토큰-전체--무엇을-여나) — 토큰 이름이 가리키는 범주보다 좁은 것들이 있다.
 

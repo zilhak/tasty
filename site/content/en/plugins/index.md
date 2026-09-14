@@ -1,4 +1,4 @@
-<!-- source-hash: c20f7ed038b5 -->
+<!-- source-hash: 8b4e3f859592 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -100,7 +100,7 @@ Permissions granted to the bundled plugins:
 | HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `ui.settings_page` |
 | Clipboard Viewer | `clipboard.read` `ui.popup` `ui.tool_item` |
 | Git Viewer | `ui.popup` `ui.tool_item` `fs.read` |
-| Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `ui.settings_page` `completion_strategy.define` `memory.read` |
+| Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |
 | Codex | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.write` `notification` `ui.settings_page` `completion_strategy.define` |
 
 Removing or restoring individual permissions is done only from the CLI (below).

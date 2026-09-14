@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.90"
+version = "0.1.91"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -23,6 +23,11 @@ permissions = [
     # Stop-훅 게이트가 발화 surface 의 goal(`memory.goal_get`)을 읽어 본문에
     # 주입한다. 읽기 전용 — goal 은 CLI(`_host`)가 쓰고 이 plugin 은 읽기만 한다.
     "memory.read",
+    # 자식 Claude 가 `tasty codex spawn`/`tell` 로 교차 검증을 띄울 수 있게 자식 토큰에
+    # 넘긴다 — 넘기려면 쥐고 있어야 한다. 권한 셋을 가진 caller 는 plugin namespace 를
+    # 부를 때 그 namespace 의 이 토큰이 필요하다. 자기 namespace(`ipc.invoke:claude`)는
+    # 소유자라 쥐지 않고도 넘긴다.
+    "ipc.invoke:codex",
 ]
 lang_dir = "lang"
 

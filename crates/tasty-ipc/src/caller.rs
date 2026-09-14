@@ -153,12 +153,12 @@ impl CallerContext {
             CallerContext::Plugin {
                 plugin_id,
                 permissions,
-            } => check_permissions(plugin_id, permissions, method),
+            } => check_permissions(plugin_id, Some(plugin_id), permissions, method),
             CallerContext::Agent {
                 agent_id,
                 permissions,
                 ..
-            } => check_permissions(agent_id, permissions, method),
+            } => check_permissions(agent_id, None, permissions, method),
         }
     }
 
@@ -209,8 +209,12 @@ impl CallerContext {
     }
 }
 
+/// `caller_plugin_id` 는 caller 가 **plugin 프로세스일 때만** 준다. agent 의 `agent_id` 는
+/// 발급자가 고른 문자열이라 plugin id 와 같은 값일 수 있고, 그 값으로 소유자 면제를 받으면
+/// 토큰을 발급할 수 있는 누구나 임의 namespace 를 여는 셈이 된다.
 fn check_permissions(
     caller_label: &str,
+    caller_plugin_id: Option<&str>,
     permissions: &Arc<HashSet<Permission>>,
     method: &str,
 ) -> Result<(), CallerError> {
@@ -227,6 +231,23 @@ fn check_permissions(
                 caller_label: caller_label.to_string(),
                 method: method.to_string(),
                 permission: needed.clone(),
+            });
+        }
+    }
+    if meta.namespace_forward {
+        // 표에 없는 plugin namespace 이름. 권한 셋을 가진 caller 는 plugin 이든 agent 든
+        // 그 namespace 의 `ipc.invoke:<prefix>` 를 가져야 한다 — plugin→plugin forward 가
+        // 이미 요구하던 같은 토큰이다. 소유 plugin 자신의 호출은 forward 가 아니라
+        // trampoline(host 가 답한다)이라 면제한다.
+        let prefix = method.split('.').next().unwrap_or("");
+        let is_owner =
+            caller_plugin_id.is_some_and(|id| crate::method_meta::plugin_owns_prefix(id, prefix));
+        let needed = Permission::IpcInvoke(prefix.to_string());
+        if !is_owner && !permissions.contains(&needed) {
+            return Err(CallerError::MissingPermission {
+                caller_label: caller_label.to_string(),
+                method: method.to_string(),
+                permission: needed,
             });
         }
     }

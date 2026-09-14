@@ -187,3 +187,7 @@ Agent caller 가 `tab.create {type:"markdown"}` 을 언제 불러도 kind 가 �
   [self-verification.md](../dev-guide/self-verification.md) "headless 빌드에서 무엇이 없는가" ·
   [plugin-permissions.md](../dev-guide/plugin-permissions.md) "비-Local caller 가 유발할 수 있는
   plugin 수명주기".
+- 후속: [ADR-0271](0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md) — 위
+  "신뢰 경계" 표의 둘째 줄을 닫았다. 표에 없는 이름도 권한 셋을 가진 caller 에게
+  `ipc.invoke:<prefix>` 를 요구해, 권한 0 토큰의 그 호출은 forward 앞에서 거부되고 plugin 을 띄우지
+  않는다. 토큰을 가진 caller 의 forward 가 설치된 전부를 띄우는 기동 경로는 바꾸지 않았다.

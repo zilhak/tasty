@@ -40,6 +40,35 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
     }
 }
 
+/// caller 가 자식 토큰에 `p` 를 넣을 수 있는가 — 자기 권한 셋에 있는 것만 넘긴다.
+///
+/// 예외 하나: plugin 은 **자기가 점유한 namespace** 의 `ipc.invoke:<prefix>` 를 쥐지 않고도
+/// 넘길 수 있다. 자기 namespace 호출은 게이트가 토큰 없이 통과시키므로 그 토큰은 plugin
+/// 자신에게 쓸모가 없고, 그렇다고 넘기지 못하면 자식 agent 가 발급자에게 돌아오는 호출
+/// (예: `claude.hook`)이 막힌다. 이 면제는 plugin 프로세스 caller 에만 선다 — agent 는
+/// 이미 받은 토큰 안에서만 넘긴다(ADR-0271).
+///
+/// `owns_prefix(plugin_id, prefix)` 는 운영에서 `tasty_ipc::method_meta::plugin_owns_prefix`
+/// 다. 인자로 받는 것은 소유 표가 프로세스 전역이라 테스트가 그것을 바꿔 끼울 수 없어서다.
+fn caller_may_grant(
+    caller: &CallerContext,
+    p: &Permission,
+    owns_prefix: impl Fn(&str, &str) -> bool,
+) -> bool {
+    let Some(own) = caller.permissions() else {
+        return true;
+    };
+    if own.contains(p) {
+        return true;
+    }
+    match (caller, p) {
+        (CallerContext::Plugin { plugin_id, .. }, Permission::IpcInvoke(prefix)) => {
+            owns_prefix(plugin_id, prefix)
+        }
+        _ => false,
+    }
+}
+
 /// `session.issue` — 자식 agent 에게 새 SessionToken 발급.
 ///
 /// params:
@@ -105,18 +134,16 @@ pub fn handle_issue(
 
     // Escalation 방지: caller 가 가진 권한의 부분집합만 발급 가능.
     // Local/Internal 은 무제한. Plugin/Agent 는 자기 권한 셋을 기준으로 검사.
-    if let Some(caller_perms) = caller.permissions() {
-        for p in &perms {
-            if !caller_perms.contains(p) {
-                return JsonRpcResponse::error(
-                    id,
-                    -32001,
-                    format!(
-                        "caller cannot grant permission '{}' (not in own permissions)",
-                        p.as_token()
-                    ),
-                );
-            }
+    for p in &perms {
+        if !caller_may_grant(caller, p, tasty_ipc::method_meta::plugin_owns_prefix) {
+            return JsonRpcResponse::error(
+                id,
+                -32001,
+                format!(
+                    "caller cannot grant permission '{}' (not in own permissions)",
+                    p.as_token()
+                ),
+            );
         }
     }
 
@@ -402,3 +429,67 @@ pub fn handle_request_permission(
 // 옛 handler validation 단위 테스트 모듈은 D.3.C.M.14 에서 제거.
 // 핸들러 시그니처에 `&Core` 가 들어가면서 mock 비용이 크고, 핵심인 영속 통합은
 // `crate::ipc::session::tests` 가 SessionStore 직접 호출로 이미 검증한다.
+
+#[cfg(test)]
+mod grant_tests {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    use super::*;
+
+    const OWNER: &str = "com.test.owner";
+
+    fn owns(plugin_id: &str, prefix: &str) -> bool {
+        plugin_id == OWNER && prefix == "own"
+    }
+
+    fn with(kind: &str, id: &str, perms: &[Permission]) -> CallerContext {
+        let permissions: Arc<HashSet<Permission>> = Arc::new(perms.iter().cloned().collect());
+        match kind {
+            "plugin" => CallerContext::Plugin {
+                plugin_id: id.into(),
+                permissions,
+            },
+            _ => CallerContext::Agent {
+                agent_id: id.into(),
+                permissions,
+            },
+        }
+    }
+
+    #[test]
+    fn a_plugin_may_hand_its_own_namespace_token_to_a_child_without_holding_it() {
+        let own = Permission::IpcInvoke("own".into());
+        assert!(caller_may_grant(&with("plugin", OWNER, &[]), &own, owns));
+    }
+
+    #[test]
+    fn the_owner_exemption_does_not_cover_other_namespaces_or_other_permissions() {
+        let owner = with("plugin", OWNER, &[]);
+        assert!(!caller_may_grant(
+            &owner,
+            &Permission::IpcInvoke("other".into()),
+            owns
+        ));
+        assert!(!caller_may_grant(&owner, &Permission::SurfaceWrite, owns));
+        // 남의 namespace 는 쥐고 있어야 넘긴다.
+        let holder = with("plugin", OWNER, &[Permission::IpcInvoke("other".into())]);
+        assert!(caller_may_grant(
+            &holder,
+            &Permission::IpcInvoke("other".into()),
+            owns
+        ));
+    }
+
+    #[test]
+    fn an_agent_named_after_the_owner_does_not_get_the_owner_exemption() {
+        let own = Permission::IpcInvoke("own".into());
+        assert!(!caller_may_grant(&with("agent", OWNER, &[]), &own, owns));
+        assert!(!caller_may_grant(
+            &with("plugin", "com.test.stranger", &[]),
+            &own,
+            owns
+        ));
+        assert!(caller_may_grant(&CallerContext::Local, &own, owns));
+    }
+}

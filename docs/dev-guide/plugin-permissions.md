@@ -59,7 +59,7 @@
 | `file_handler.define` | 없음 | `[[contributes.detector]]` 로 **신규** detector id 를 선언할 때 요구 |
 | `hook_handler.define` | 없음 | `[[contributes.hook_handler]]` 매니페스트 게이트 |
 | `completion_strategy.define` | 없음 | `[[contributes.completion_strategy]]` 매니페스트 게이트 |
-| `ipc.invoke:<prefix>` | 그 prefix 를 점유한 plugin 의 namespace 메서드 | `manager/ipc_dispatch.rs` 런타임 게이트(없으면 `-32001`). 자기 namespace 는 별도로 차단 |
+| `ipc.invoke:<prefix>` | 그 prefix 를 점유한 plugin 의 namespace 메서드 중 `METHOD_TABLE` 에 이름이 없는 것 전부 — plugin 과 agent 에게 똑같이 | `ensure_allowed` 가 요구(없으면 `-32001`, agent 면 elevation 발행) + plugin→plugin 은 `manager/ipc_dispatch.rs` 가 한 번 더 본다. 소유 plugin 자신의 호출은 면제 |
 | `ext:<plugin_id>` | 없음 | `[extends]` 매니페스트 게이트 + grant 되어야 extension 이 활성(`recompute_extensions`) |
 | `file_handler.extend:<id>` | 없음 | 기존 detector id 재선언(rule 추가) 시 요구 |
 | `file_handler.handle:<id>` | 없음 | `[[contributes.handler]]` 가 그 detector 에 붙을 때 요구 |
@@ -129,7 +129,7 @@ approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는
 
 owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게 깔려도 A 매니페스트가 거부되면 안 됨), **disable/enable 견고성**, dangling 호출은 runtime 에 명확히 실패 — 그 namespace 를 **아무도 설치하지 않았으면** `-32601 method not found`, **설치돼 있는데 안 떠 있으면**(disable·재시작 중) `-32002 plugin '<id>' is not running` ([ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)). 같은 prefix 는 두 플러그인이 동시에 점유 불가(두 번째 install 거부) — 임의 시점에 scope 는 정확히 한 플러그인에 귀속 또는 무소속.
 
-**자기 namespace `ipc.invoke:<self>` 는 무용**(self-loop 를 `-32001` 로 차단) — 매니페스트에 두지 않는다.
+**자기 namespace `ipc.invoke:<self>` 는 매니페스트에 두지 않는다.** plugin 자신의 호출에는 필요 없고(소유자 면제 — plugin→plugin forward 경로의 self-loop 는 `-32001` 로 차단), 자식 agent 에게 넘길 때도 쥐고 있을 필요가 없다(아래 [Agent caller](#agent-caller--session-token--temp-grants)).
 
 ## 새 IPC 메서드 추가 절차
 
@@ -210,7 +210,8 @@ grant/revoke → `plugins.toml` 저장 → `refresh_plugin_permissions` 가 (매
 
 `claude.spawn` 같은 호스트-launched 자식은 `session.issue` 로 64-char hex 토큰을 받아 `TASTY_SESSION_TOKEN` 으로 전달, IPC envelope 의 `session_token` 으로 첨부 → `CallerContext::Agent`. invalid/expired/revoked 는 `-32001` 즉시 거부(Local fallback 안 함 — 환경변수 위조 방어).
 
-- **base_permissions**: `session.issue` 시점 고정. caller 권한의 부분집합만(escalation 방지).
+- **base_permissions**: `session.issue` 시점 고정. caller 권한의 부분집합만(escalation 방지). **예외 하나** — plugin 프로세스 caller 는 **자기가 점유한 namespace** 의 `ipc.invoke:<prefix>` 를 쥐지 않고도 넘긴다. 자기 namespace 의 주인이 입장권을 나눠 주는 것이고, agent 는 이 예외를 받지 않는다(`agent_id` 는 발급자가 고른 문자열이라 plugin id 로 지을 수 있다). [ADR-0271](../adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md)
+- **plugin namespace 는 토큰으로 연다.** 표에 없는 plugin namespace 이름은 agent 에게도 `ipc.invoke:<prefix>` 를 요구한다. 번들 claude plugin 이 자식 Claude 에게 주는 토큰은 `surface.read` · `surface.write` · `terminal.read` · `terminal.write` · `notification` · `telemetry` · `agent` · `ipc.invoke:claude`(완료 훅 · 손자 spawn·tell) · `ipc.invoke:codex`(교차 검증)다. 뒤엣것은 남의 namespace 라 claude plugin 매니페스트가 선언해 쥐고 넘긴다.
 - **temp_grants**: runtime `plugin.grant_agent_permission` 추가, 만료 lazy evict. `effective = base ∪ non-expired temp`.
 
 **Capability elevation 자동 발행**: Agent 가 `MissingPermission` 으로 거부되면 `approval.request{kind:capability_elevation}` 발행(같은 (agent,permission) Pending 은 approval_id 재사용). `approve`(TTL grant) / `approve_permanently`(무기한) / `deny`.
@@ -225,31 +226,34 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 | 경로 | 필요한 권한 | 비-Local 결과 | 그 뒤 뜨는 프로세스 |
 |---|---|---|---|
 | `plugin.enable` / `plugin.disable` | — (`local_only`) | `-32001 permission_denied` | 0 |
-| namespace forward · **`METHOD_TABLE` 에 없는 이름** (예 `markdown.recent`) | **없음** | 정상 응답 | **9 (설치된 전부)** |
+| namespace forward · **`METHOD_TABLE` 에 없는 이름** (예 `markdown.recent`), 토큰에 `ipc.invoke:<prefix>` 없음 | `ipc.invoke:<prefix>` | `-32001 permission_denied` | 0 |
+| 같은 호출, 토큰에 `ipc.invoke:<prefix>` 있음 | `ipc.invoke:<prefix>` | 정상 응답 | **9 (설치된 전부)** |
 | namespace forward · **표에 있는 이름** (예 `markdown.navigate` · `image.list`) | 그 표가 적은 것 (`fs.read` · `surface.read`) | `-32001 permission_denied` | 0 |
 | plugin kind 를 지목한 생성 요청 (`tab.create` 등의 `type`) | `surface.write` | 정상 응답 | **1 (그 kind 의 소유자)** |
 
-- **둘째 줄과 셋째 줄을 가르는 것은 namespace 가 아니라 이름이다.** `method_meta()` 는
-  `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → **런타임 등록 plugin prefix**
-  순으로 해소한다. 앞 단계에서 걸린 이름은 그 자리가 적은 권한을 그대로 요구하고, 마지막
-  갈래까지 내려온 이름만 `plugin_callable: true, required: []` 가 되어 권한을 하나도 안
-  담은 Agent 토큰으로 통과한다. 실측(2026-09-10, 같은 데몬·같은 토큰): `markdown.recent`
-  는 통과하고 **같은 namespace 의** `markdown.navigate` 는 `fs.read` 가 없다고 거부된다.
-  경계의 크기도 값이다 — 번들 plugin 이 선언한 namespace 여섯 중 표에 이름이 있는 것은
-  `image` 8 건 · `markdown` 1 건뿐이고 나머지 넷(`agent_stream`·`claude`·`codex`·`html`)은
-  0 건이라, 대부분의 이름이 마지막 갈래로 내려온다.
-- 둘째 줄은 **의도된 개방이 아니라 그 해소 규칙에서 나온 성질**이다. 좁히려면 소유자를
-  아는 `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다 — 아직 안 했다.
-- **어느 줄도 설치나 grant 를 하지 않는다.** 실측(2026-09-10, 정상 홈): 권한 0
+- **표에 없는 이름의 두 줄은 실측 2026-09-14 다**(갓 만든 격리 홈, 각 호출이 부팅 후 첫
+  호출). 권한 0 토큰은 `missing permission 'ipc.invoke:markdown'` 으로 거부되고 그 뒤
+  `running` 이 0 — 거부가 forward 앞에서 나기 때문이다. `ipc.invoke:markdown` 만 준 토큰은
+  통과하고 `running` 이 9 다. 이 둘을 가르는 것이 `method_meta()` 해소 규칙의 마지막 갈래다 —
+  `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` 에서 걸린 이름은 그 자리가 적은
+  권한을 요구하고, **런타임 등록 plugin prefix** 까지 내려온 이름은 `namespace_forward` 표시를
+  달고 게이트가 그 prefix 의 `ipc.invoke` 를 요구한다. 그래서 같은 namespace 안에서도
+  `markdown.recent` 와 `markdown.navigate` 는 요구하는 토큰이 다르다. 경계의 크기 — 번들
+  plugin 이 선언한 namespace 여섯 중 표에 이름이 있는 것은 `image` 8 건 · `markdown` 1 건뿐이고
+  나머지 넷(`agent_stream`·`claude`·`codex`·`html`)은 0 건이라, 대부분의 이름이 마지막 갈래의
+  토큰을 요구한다. 근거와 기각한 대안은 [ADR-0271](../adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md).
+- 토큰을 가진 호출이 **설치된 전부**를 띄우는 것은 그대로다(다섯째 줄의 1 과 대비). 좁히려면
+  소유자를 아는 `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다 — 아직 안 했다.
+- **어느 줄도 설치나 grant 를 하지 않는다.** 실측(2026-09-10, 정상 홈 — 권한 0 토큰이 그 호출을 통과하던 때): 권한 0
   `markdown.recent` 전후로 `plugins.toml` 의 md5 가 같고 `plugins/` 아래 파일 45 개의
   목록 md5 도 같다. 번들 설치는 부팅에 걸려 있어 그 시점엔 이미 끝나 있고, 반대로 설치가
   안 된 홈에서는 prefix 가 등록돼 있지 않아 그 호출이 forward 에 닿지도 못한다(권한 0
   토큰에 `-32001 unknown ipc method`, 토큰 없는 Local 에 `-32601`).
-- 넷째 줄은 위 둘째 줄보다 **좁다**(권한을 더 요구하고, 하나만 띄운다). 그래서 caller
+- 다섯째 줄은 위 셋째 줄보다 **좁다**(권한을 더 요구하고, 하나만 띄운다). 그래서 caller
   종류로 가르지 않는다 — 근거와 기각한 대안은
   [ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md) 의 "신뢰 경계".
 - **이 표는 헤드리스 기준이다.** gui 는 첫 창을 만들 때 `discover_and_start` 로 전부
-  띄우므로, 넷째 줄의 트리거가 거기서는 할 일이 없다.
+  띄우므로, 다섯째 줄의 트리거가 거기서는 할 일이 없다.
 
 ## Audit log
 
