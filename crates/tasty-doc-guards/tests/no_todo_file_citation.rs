@@ -123,7 +123,7 @@ const ALLOWLIST: &[(&str, &[&str])] = &[
     ),
     (
         "crates/tasty-doc-guards/tests/no_todo_file_citation.rs",
-        &["P7", "P8"],
+        &["P7", "P8", "P9", "P10"],
     ),
     ("scripts/check-allow-reason.sh", &["P7"]),
 ];
@@ -139,6 +139,8 @@ const PATTERNS: &[(&str, &str, Finder)] = &[
     ("P6", "로컬 폴더 언급", find_p6),
     ("P7", "산문 TODO 언급", find_p7),
     ("P8", "작업 분할 번호", find_p8),
+    ("P9", "작업 계획 좌표", find_p9),
+    ("P10", "회차 번호", find_p10),
 ];
 
 /// 순회에서 통째로 가지치기할 **이름**. 빌드 산출물·워크트리·VCS·의존성 +
@@ -611,6 +613,85 @@ fn find_p8(line: &str) -> Option<String> {
         {
             return Some(line[start..start + 4].to_string());
         }
+    }
+    None
+}
+
+/// P9 — 점으로 이은 **작업 계획 좌표**(`D.3.C.B.1` · `D.3.C.G.3.c` · `D.3.C.B.10.1`).
+/// 기능 하나를 단계로 쪼갠 계획의 마디 번호이고, 그 계획은 커밋되지 않는 로컬 문서다.
+/// P8 이 잡는 `(0N)` 과 출처가 같다 — 2026-05 커밋 제목이 그 좌표를 달고 있었다
+/// (`refactor(engine): ... (D.3.C.B.1 step 1)`).
+///
+/// 실측 2026-09-14: 이 형태가 53 자리에 있었고, 레포의 `.md` 어디에도 그 좌표를
+/// 정의한 자리가 **0 곳**이었다. 읽는 사람은 번호를 보고 갈 곳이 없다.
+///
+/// **네 마디까지만 본다** — `<대문자>.<숫자>.<대문자>.<대문자>`. 뒤에 마디가 더 붙든
+/// (`.19` · `.3.c`) 안 붙든 앞 네 마디가 이 부류를 고르게 집는다. 숫자만 점으로 이은
+/// 것(버전 `1.2.3`)이나 문장 끝의 약어는 대문자와 숫자가 번갈아 오지 않아 안 걸린다.
+/// 실측: 이 모양의 잔여가 0 인 트리에서 이 판정기가 잡는 자리도 0 이다.
+fn find_p9(line: &str) -> Option<String> {
+    let b = line.as_bytes();
+    for i in 0..b.len() {
+        // 앞이 단어 문자면 좌표의 머리가 아니다.
+        if i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'.') {
+            continue;
+        }
+        if !b[i].is_ascii_uppercase() || b.get(i + 1) != Some(&b'.') {
+            continue;
+        }
+        let mut j = i + 2;
+        let ds = j;
+        while b.get(j).is_some_and(u8::is_ascii_digit) {
+            j += 1;
+        }
+        if j == ds || b.get(j) != Some(&b'.') {
+            continue;
+        }
+        j += 1;
+        if !b.get(j).is_some_and(u8::is_ascii_uppercase) || b.get(j + 1) != Some(&b'.') {
+            continue;
+        }
+        j += 2;
+        if b.get(j).is_some_and(u8::is_ascii_uppercase) {
+            return Some(line[i..=j].to_string());
+        }
+    }
+    None
+}
+
+/// P10 — `R` + 두 자리 이상 숫자(`R56` · `R476` · `R1147`). 회차 분석 기록의 번호이고,
+/// 그 기록은 커밋되지 않는 로컬 문서다. 번호만 홀로 서서 `TODO` 라는 낱말이 없으므로
+/// P1 의 어느 어순으로도 안 걸린다.
+///
+/// 실측 2026-09-14: 이 형태가 414 자리·74 파일에 있었다. 소스 주석과 문서 본문 양쪽에
+/// 퍼져 있었고, 절반 가까이는 `(R476)` 처럼 괄호 하나로 문장 끝에 달려 있었다 —
+/// 그 괄호가 근거를 대신하고 있었으므로 빼면 근거가 사라지는 자리가 많았다. 그래서
+/// 처방은 번호를 빼는 것이 아니라 **번호가 대신하던 명제를 그 자리에 적는 것**이다.
+///
+/// **두 자리부터 본다.** 한 자리 `R1` 은 데이터 쪽이 압도적이다(좌표축·순번). 두 자리
+/// 이상은 이 레포에서 전부 회차 번호였다 — 실측으로 확인한 선이지 어림이 아니다.
+fn find_p10(line: &str) -> Option<String> {
+    let b = line.as_bytes();
+    for i in 0..b.len() {
+        if b[i] != b'R' {
+            continue;
+        }
+        if i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_') {
+            continue;
+        }
+        let mut j = i + 1;
+        while b.get(j).is_some_and(u8::is_ascii_digit) {
+            j += 1;
+        }
+        if j - (i + 1) < 2 {
+            continue;
+        }
+        if b.get(j)
+            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+        {
+            continue;
+        }
+        return Some(line[i..j].to_string());
     }
     None
 }
@@ -1111,6 +1192,47 @@ fn p7_catches_prose_todo_but_not_task_markers() {
     // 소문자는 보지 않는다 — 식별자·영단어로 흔하다.
     assert_eq!(find_p7("let todo = 3; // todo list 를 만든다"), None);
     assert_eq!(find_p7("fn todo_marker() {}"), None);
+}
+
+#[test]
+fn p9_catches_dotted_plan_coordinates_only() {
+    assert_eq!(
+        find_p9("refactor (D.3.C.B.1 step 1)"),
+        Some("D.3.C.B".into())
+    );
+    assert_eq!(
+        find_p9("계획 D.3.C.G.3.c 의 마지막"),
+        Some("D.3.C.G".into())
+    );
+    // 마디가 더 붙어도 앞 넷으로 집는다.
+    assert_eq!(find_p9("D.3.C.B.10.1 을 본다"), Some("D.3.C.B".into()));
+    // 숫자만 점으로 이은 것은 버전이지 좌표가 아니다.
+    assert_eq!(find_p9("tasty 0.9.31 릴리스"), None);
+    assert_eq!(find_p9("1.2.3.4"), None);
+    // 넷째 마디가 대문자가 아니면 좌표의 모양이 아니다.
+    assert_eq!(find_p9("A.1.B.c 는 아니다"), None);
+    // 둘째 마디에 숫자가 없으면 약어의 나열이다.
+    assert_eq!(find_p9("U.S.A.B 형식"), None);
+    // 앞이 단어 문자면 좌표의 머리가 아니다 — 파일명 안의 조각을 안 집는다.
+    assert_eq!(find_p9("xD.3.C.B.1"), None);
+}
+
+#[test]
+fn p10_catches_round_numbers_only() {
+    assert_eq!(find_p10("위 R476 과 같은 부류다"), Some("R476".into()));
+    assert_eq!(find_p10("(R56)"), Some("R56".into()));
+    assert_eq!(find_p10("R1147 축"), Some("R1147".into()));
+    // 한 자리는 데이터 쪽이 압도적이라 안 본다.
+    assert_eq!(find_p10("R1 축과 R2 축"), None);
+    // 뒤에 단어 문자가 이어지면 식별자의 조각이다.
+    assert_eq!(find_p10("let R12x = 1;"), None);
+    assert_eq!(find_p10("RGB12_FOO"), None);
+    // 앞이 단어 문자면 이것도 식별자의 조각이다.
+    assert_eq!(find_p10("VAR12"), None);
+    assert_eq!(find_p10("xR476"), None);
+    assert_eq!(find_p10("_R476"), None);
+    // 소문자는 대상이 아니다.
+    assert_eq!(find_p10("r476"), None);
 }
 
 #[test]
