@@ -338,6 +338,7 @@ fn pending_menu_kind(menu: &crate::state::PendingNativeMenu) -> (&'static str, O
         M::Pane { .. } => ("Pane", None),
         M::Workspace { .. } => ("Workspace", None),
         M::TerminalSurface { surface_id, .. } => ("TerminalSurface", Some(*surface_id)),
+        M::TerminalLink { link, .. } => ("TerminalLink", Some(link.surface_id)),
         M::Surface { surface_id, .. } => ("Surface", Some(*surface_id)),
         M::Explorer { surface_id, .. } => ("Explorer", Some(*surface_id)),
         M::ExplorerFavorite { surface_id, .. } => ("ExplorerFavorite", Some(*surface_id)),

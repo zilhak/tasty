@@ -669,6 +669,9 @@ copy_no_newline = "Copy Without Line Breaks"
 copy_surface_id = "Copy Terminal ID"
 open_file = "Open File"
 open_folder = "Open Folder"
+link_select = "Select"
+link_copy = "Copy"
+link_open_with = "Open With…"
 
 [surface_context_menu]
 cut = "Cut"

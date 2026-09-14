@@ -583,6 +583,15 @@ impl MainView {
     /// 우클릭 라우팅: 트래킹 ON+Shift없음이면 앱 위임(ADR-0019), 아니면 tasty 컨텍스트
     /// 메뉴(terminal/비-terminal 별도). 결정은 순수 `right_click_delegates_to_app`.
     fn handle_right_button(&mut self, button_state: ElementState) {
+        // 링크 메뉴 스냅샷은 한 클릭 사이클의 것이다 — press 는 이전 값을 버리고, release 는
+        // 아래 early return 보다 먼저 회수해 다음 사이클로 새지 않게 한다.
+        let released_link = match button_state {
+            ElementState::Pressed => {
+                self.right_link_press = None;
+                None
+            }
+            ElementState::Released => self.right_link_press.take(),
+        };
         let terminal_rect = self.compute_terminal_rect();
         let Some(pos) = self.cursor_position else {
             return;
@@ -612,6 +621,19 @@ impl MainView {
             // (mouse-tracking/ADR-0022).
             return;
         };
+        // 링크 위 우클릭은 tracking 위임보다 먼저 로컬 링크 메뉴로 간다 — 좌클릭이
+        // `try_handle_link_click` 을 위임 판정보다 먼저 부르는 것과 같은 게이트다.
+        let link = match button_state {
+            ElementState::Pressed => {
+                self.right_link_press = self.terminal_link_menu_target(surface_id);
+                self.right_link_press.clone()
+            }
+            ElementState::Released => released_link,
+        };
+        if let Some(link) = link {
+            self.queue_terminal_link_menu(link, button_state, x, y);
+            return;
+        }
         // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.
         let tracking = self.effective_click_tracking(surface_id, tracking);
         let shift = self.base.modifiers.shift_key();
@@ -642,11 +664,7 @@ impl MainView {
         // release 시점에 발화해 원래도 이 문제를 안 겪었다. macOS/Windows 는
         // `MenuOutcome::Ready` 로 항상 동기 처리되어 이 제약이 없으므로 기존
         // press 시점 동작을 그대로 유지한다(불필요한 플랫폼 공통 동작 변경 방지).
-        #[cfg(target_os = "linux")]
-        let open_button_state = ElementState::Released;
-        #[cfg(not(target_os = "linux"))]
-        let open_button_state = ElementState::Pressed;
-        if button_state == open_button_state {
+        if button_state == terminal_menu_open_state() {
             let sf = self.base.gpu.scale_factor();
             self.state.dialogs.pending_native_menu =
                 Some(crate::state::PendingNativeMenu::TerminalSurface {
@@ -791,15 +809,10 @@ impl MainView {
                 crate::file_dispatch::LinkKind::FileTarget(path) => {
                     if is_mirror {
                         // 원격 경로: 로컬 핸들러 lookup/identify 를 타지 않고 빈
-                        // picker(placeholder)만 띄운다 — empty-state, 실제 동작 없음.
-                        crate::file::dispatch::open_picker(
+                        // picker(placeholder)만 띄운다 — 후보도 recent 도 없다.
+                        crate::file::dispatch::open_remote_placeholder_picker(
                             &mut self.state,
-                            &mut self.core_state,
-                            crate::file::format::FileTarget::new(path).into(),
-                            None,
-                            Vec::new(),
-                            false,
-                            false,
+                            crate::file::format::FileTarget::new(path),
                         );
                     } else {
                         self.state.dispatch_intent(
@@ -1433,6 +1446,16 @@ fn encode_wheel_report(sgr: bool, btn: u32, col: usize, row: usize, count: usize
         ));
     }
     bytes
+}
+
+/// terminal 우클릭 메뉴를 세우는 버튼 상태. Linux 는 release, 그 외는 press — 이유는
+/// `handle_right_button` 의 주석(GTK `popup_at_rect` 가 버튼이 눌린 채로는 no-op).
+pub(super) fn terminal_menu_open_state() -> ElementState {
+    if cfg!(target_os = "linux") {
+        ElementState::Released
+    } else {
+        ElementState::Pressed
+    }
 }
 
 /// 우클릭을 앱(PTY)에 위임할지 결정한다. 트래킹 ON 이고 Shift 가 없을 때만 위임하고

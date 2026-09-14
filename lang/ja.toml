@@ -669,6 +669,9 @@ copy_no_newline = "改行なしでコピー"
 copy_surface_id = "ターミナルIDをコピー"
 open_file = "ファイルを開く"
 open_folder = "フォルダを開く"
+link_select = "選択"
+link_copy = "コピー"
+link_open_with = "プログラムから開く"
 
 [surface_context_menu]
 cut = "切り取り"

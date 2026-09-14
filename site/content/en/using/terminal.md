@@ -1,4 +1,4 @@
-<!-- source-hash: 17e44457f1a0 -->
+<!-- source-hash: 86fa01ca0728 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -75,6 +75,14 @@ tasty clipboard set-text "text to copy"
 ## Opening links and paths
 
 Hold `Ctrl` and hover a URL or path and a blue underline appears; click to open it in the browser or the associated program. Relative paths such as `src/main.rs` also work, but only those that actually exist relative to the current directory become links.
+
+Right-click an underlined link to open a link menu.
+
+- **Select** — selects the whole link text.
+- **Copy** — copies the link text as shown on screen.
+- **Open With…** — instead of opening right away, shows a list to choose which program opens it. `http(s)://` addresses can be chosen too; picking the HTML viewer, for example, opens the page in a Tasty tab instead of the browser. A path in a remotely attached terminal cannot be opened on this computer, so the list is empty.
+
+Even while a program that uses the mouse (vim · tmux and so on) is running, right-clicking a link shows this menu instead of going to that program. Right-clicking anywhere else works as before.
 
 Choose the modifier under **Settings** > **Terminal** > **Link click modifier** from `Ctrl` · `Alt` · **None (plain click)**. With None, a plain click opens links, which overlaps with text selection.
 

@@ -28,16 +28,12 @@ use crate::state::{AppState, FileHandlerPickerData, PickerHandlerSummary};
 pub enum DispatchTarget {
     File(FileTarget),
     /// `http://` 또는 `https://` URL 원문. [`DispatchTarget::http_url`] 로만 만든다.
-    // reason: 이 대상을 만드는 첫 생산자(터미널 링크 우클릭 메뉴)가 뒤따르는 커밋에서 붙는다.
-    #[allow(dead_code)]
     Url(String),
 }
 
 impl DispatchTarget {
     /// `http(s)://` URL 이면 `Url` 대상을 만든다. 다른 scheme(mailto/ssh/ftp 등)은
     /// 핸들러로 열 곳이 없어 `None` — 그쪽은 OS opener 경로에 남는다.
-    // reason: 이 대상을 만드는 첫 생산자(터미널 링크 우클릭 메뉴)가 뒤따르는 커밋에서 붙는다.
-    #[allow(dead_code)]
     pub fn http_url(uri: &str) -> Option<Self> {
         let (scheme, rest) = uri.split_once("://")?;
         let is_http = scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https");
@@ -234,6 +230,30 @@ fn picker_lists(
         .map(handler_to_summary)
         .collect();
     (recent, cand)
+}
+
+/// 원격(mirror) surface 의 경로 링크용 빈 picker. 화면 경로가 원격 호스트 경로라 로컬
+/// 핸들러로 열 수 없으므로 후보도 **recent 도** 싣지 않는다 — `open_picker` 는 recent 를
+/// 저장 파일에서 채우므로, 그것을 쓰면 사용자가 recent 를 골라 로컬 핸들러가 원격 경로로
+/// 실행된다.
+pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileTarget) {
+    let target = DispatchTarget::File(target);
+    let target_display = target.display();
+    state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
+        target,
+        target_display,
+        detector: None,
+        candidates: Vec::new(),
+        candidates_are_fallback: false,
+        recent: Vec::new(),
+        selected: None,
+        result: None,
+        ignore_size_limit: false,
+    });
+    #[cfg(feature = "gui")]
+    state
+        .popups
+        .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
 }
 
 fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
@@ -560,6 +580,46 @@ mod tests {
             vec!["host/md", "com.example.x/open", "host/html"]
         );
         assert_eq!(ids(&cand_rows), vec!["host/system"]);
+    }
+
+    /// 원격 경로 picker 는 recent 가 차 있어도 어느 열에도 핸들러를 싣지 않는다 — 실으면
+    /// 사용자가 recent 를 골라 로컬 핸들러가 원격 호스트 경로로 실행된다. 갓 만든 프로필은
+    /// recent 가 비어 있어 이 결함이 안 드러나므로 recent 를 먼저 채운다.
+    #[test]
+    fn remote_placeholder_picker_carries_no_recent_even_when_recent_is_populated() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let any = engine
+            .file_handler
+            .all_handlers()
+            .into_iter()
+            .next()
+            .expect("host default handlers exist");
+        engine.file_handler_recent.record(&any.id);
+
+        // 같은 recent 로 일반 picker 를 열면 recent 열이 찬다(전제 확인).
+        open_picker(
+            &mut state,
+            &mut engine,
+            file("/remote/a.md"),
+            None,
+            Vec::new(),
+            false,
+            false,
+        );
+        assert!(
+            !state
+                .dialogs
+                .file_handler_picker
+                .as_ref()
+                .unwrap()
+                .recent
+                .is_empty()
+        );
+
+        open_remote_placeholder_picker(&mut state, FileTarget::new("/remote/a.md"));
+        let picker = state.dialogs.file_handler_picker.as_ref().unwrap();
+        assert!(picker.recent.is_empty());
+        assert!(picker.candidates.is_empty());
     }
 
     #[cfg(windows)]

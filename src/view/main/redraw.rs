@@ -1022,7 +1022,7 @@ impl MainView {
     /// 동일), Linux/GTK 는 `Pending` 이라 핸들을 슬롯에 두고 매 프레임
     /// `poll_pending_native_menu` 가 완료를 기다린다. 모든 메뉴 호출은 이
     /// 헬퍼를 거친다 — 직접 `show_context_menu` 를 부르면 Pending 을 흘린다.
-    fn open_native_menu(
+    pub(super) fn open_native_menu(
         &mut self,
         x: f32,
         y: f32,
@@ -1141,6 +1141,9 @@ impl MainView {
             }
             PendingNativeMenu::TerminalSurface { surface_id, x, y } => {
                 self.handle_terminal_surface_native_menu(surface_id, x, y)
+            }
+            PendingNativeMenu::TerminalLink { link, x, y } => {
+                self.handle_terminal_link_native_menu(link, x, y)
             }
             PendingNativeMenu::Surface { surface_id, x, y } => {
                 self.handle_surface_native_menu(surface_id, x, y)

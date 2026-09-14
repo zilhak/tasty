@@ -7,6 +7,7 @@ mod egui_mesh;
 mod file_drop;
 mod fullscreen_window;
 mod keyboard;
+mod link_menu;
 mod mouse;
 mod preset_actions;
 mod redraw;
@@ -71,6 +72,11 @@ pub struct MainView {
     /// 전달되면, 자체 URL-오픈 기능이 있는 TUI 앱(vim/tmux 등)이 이를 클릭으로
     /// 해석해 링크를 중복으로 열 수 있다.
     pub(crate) link_click_consumed: bool,
+    /// 이번 우클릭 press 가 링크 위였다면 그 시점에 찍은 링크 메뉴 스냅샷. press 에서
+    /// 세우고 release 에서 회수한다 — Linux 는 메뉴를 release 에 여는데 그 사이
+    /// 수식키를 떼거나 포인터가 움직이면 `hovered_link` 가 이미 바뀌어 있다. `Some` 인
+    /// 동안 release 도 로컬 소비돼 tracking 앱으로 새지 않는다(`link_menu.rs`).
+    pub(crate) right_link_press: Option<crate::state::TerminalLinkMenu>,
     /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 `(surface_id, col, row)`. motion 을
     /// 셀 단위로만 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
     ///
@@ -244,6 +250,7 @@ impl MainView {
             report_buttons_down: Vec::new(),
             left_select_bypass: false,
             link_click_consumed: false,
+            right_link_press: None,
             last_mouse_report_cell: None,
             last_click_time: None,
             last_click_pos: None,
