@@ -44,6 +44,12 @@ impl FileFormatRegistry {
     /// `extension_priority` 표 + `install_order` 순서로 결정적 1순위 선택. 표 적용 결과가
     /// 비면 기존 BTreeMap 순회 (PathGlob / IsDirectory / Magic / MIME 등) 로 fallback.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
+        // URL 이 경로 자리에 담겨 들어오면 식별하지 않는다 — 확장자 fast path 와 PathGlob
+        // 이 `https://example.com/a.md` 의 `a.md` 를 로컬 파일로 알고 매칭한다. URL 은
+        // 핸들러 dispatch 계층의 `DispatchTarget::Url` 이 detector 없이 다룬다.
+        if target.is_url_shaped() {
+            return None;
+        }
         self.ensure_finalized();
         let inner = self.lock_read();
         let is_dir = target.is_directory();

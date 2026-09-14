@@ -13,6 +13,8 @@ use std::path::PathBuf;
 use crate::core::Core;
 use crate::core::CoreState;
 #[cfg(feature = "gui")]
+use crate::file::dispatch::DispatchTarget;
+#[cfg(feature = "gui")]
 use crate::file::format::{DetectorId, FileTarget};
 #[cfg(feature = "gui")]
 use crate::state::{AppState, FileHandlerPickerResult};
@@ -52,6 +54,7 @@ impl Core {
             Some(d) => engine.file_handler.handlers_for(d),
             None => Vec::new(),
         };
+        let target = DispatchTarget::File(target);
         if handlers.is_empty() {
             // 이 detector 에 매칭되는 handler 가 없다 — 시스템에 등록된 다른
             // handler 라도 fallback 후보로 보여준다(picker 의 empty-state 완화).
@@ -70,6 +73,7 @@ impl Core {
         }
         // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
         let first = handlers.into_iter().next().expect("non-empty checked");
+        // 파일 대상은 모든 핸들러가 받으므로(`handler_accepts_target`) 거절되지 않는다.
         crate::file::dispatch::execute_handler_action(
             self,
             state,
@@ -91,28 +95,33 @@ impl Core {
         &mut self,
         state: &mut AppState,
         engine: &mut CoreState,
-        target: FileTarget,
+        target: DispatchTarget,
         result: FileHandlerPickerResult,
         ignore_size_limit: bool,
     ) {
         match result {
             FileHandlerPickerResult::Selected(handler_id) => {
-                match engine.file_handler.get(&handler_id) {
-                    Some(handler) => crate::file::dispatch::execute_handler_action(
-                        self,
-                        state,
-                        engine,
-                        &handler,
-                        &target,
-                        None,
-                        ignore_size_limit,
-                    ),
-                    None => tracing::warn!(
+                let Some(handler) = engine.file_handler.get(&handler_id) else {
+                    tracing::warn!(
                         handler_id = %handler_id,
                         "apply_file_picker_result: handler id from picker no longer in registry",
-                    ),
+                    );
+                    engine.record_file_handler_pick(&handler_id);
+                    return;
+                };
+                // 대상을 받지 못하는 핸들러(URL 대상의 Ipc 핸들러 등)는 실행되지 않고
+                // recent 에도 기록하지 않는다 — 기록하면 다음 picker 의 recent 로 되돌아온다.
+                if crate::file::dispatch::execute_handler_action(
+                    self,
+                    state,
+                    engine,
+                    &handler,
+                    &target,
+                    None,
+                    ignore_size_limit,
+                ) {
+                    engine.record_file_handler_pick(&handler_id);
                 }
-                engine.record_file_handler_pick(&handler_id);
             }
             FileHandlerPickerResult::Cancelled => {
                 // recent 갱신 없음.
@@ -224,5 +233,46 @@ mod tests {
             picker.candidates_are_fallback,
             "candidates originate from all_handlers() fallback, not a detector match"
         );
+    }
+
+    /// URL 대상을 URL 을 못 받는 핸들러(Ipc)로 실행하려 하면 picker 결과가 와도 실행하지
+    /// 않는다 — plugin 에 `{"path": "https://…"}` 가 가지 않고, recent 에도 안 남는다.
+    #[test]
+    fn picker_result_does_not_run_an_ipc_handler_on_a_url_target() {
+        use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
+        let (mut core, mut engine) = build_test_core();
+        FileHandlerRegistryPort::install_plugin_handlers(
+            engine.file_handler.as_ref(),
+            "com.example.urlprobe",
+            &[serde_json::json!({
+                "id": "open",
+                "detector": "markdown",
+                "priority": 50,
+                "action": { "kind": "ipc", "method": "com.example.urlprobe.open" },
+            })],
+        );
+        let handler_id = crate::file::handler::HandlerId::new("com.example.urlprobe/open");
+        assert!(engine.file_handler.get(&handler_id).is_some());
+        let recent_before = engine.file_handler_recent.list().len();
+
+        let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
+            Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let memory: Arc<Mutex<dyn tasty_memory::MemoryStorage>> =
+            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        let mut state = AppState::new(&mut engine, preset_store, memory);
+
+        core.apply_file_picker_result(
+            &mut state,
+            &mut engine,
+            DispatchTarget::http_url("https://example.com/page").expect("url"),
+            FileHandlerPickerResult::Selected(handler_id),
+            false,
+        );
+
+        assert!(
+            state.pending_handler_ipc.is_empty(),
+            "a URL must not be enqueued for an Ipc handler (it would be sent as `path`)"
+        );
+        assert_eq!(engine.file_handler_recent.list().len(), recent_before);
     }
 }

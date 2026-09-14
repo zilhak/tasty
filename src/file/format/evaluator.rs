@@ -43,7 +43,17 @@ impl DeepCtx {
     pub(super) fn entry(&mut self, target: &FileTarget) -> &DeepCacheEntry {
         let path = target.as_path().to_path_buf();
         if !self.cache.contains_key(&path) {
-            let e = read_entry(&path);
+            // URL 은 IO 없이 "regular file 아님" 으로 캐시한다 — `evaluate_deep` 이 이미
+            // 막지만 `lua_eval` 등 이 캐시를 직접 여는 평가기가 따로 있다.
+            let e = if target.is_url_shaped() {
+                DeepCacheEntry {
+                    is_regular: false,
+                    head: None,
+                    mime: None,
+                }
+            } else {
+                read_entry(&path)
+            };
             self.cache.insert(path.clone(), e);
         }
         self.cache.get(&path).expect("just inserted")
@@ -93,6 +103,10 @@ fn read_head(path: &std::path::Path, cap: usize) -> Option<Vec<u8>> {
 /// 디렉토리 분기는 호출자(registry::identify)가 pre-filter 로 처리하므로 여기서는
 /// rule kind 별로 매칭 여부만 판단.
 pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
+    // registry 를 우회해 평가기를 직접 부르는 자리도 URL 을 파일로 매칭하지 않는다.
+    if target.is_url_shaped() {
+        return false;
+    }
     let path = target.as_path();
     match rule {
         DetectorRuleKind::Extension { values } => path
@@ -135,6 +149,10 @@ pub fn evaluate_cheap(rule: &DetectorRuleKind, target: &FileTarget) -> bool {
 ///
 /// `ctx` 는 같은 `identify` 호출 안에서 재사용. head/metadata 가 캐시된다.
 pub fn evaluate_deep(rule: &DetectorRuleKind, target: &FileTarget, ctx: &mut DeepCtx) -> bool {
+    // URL 에 파일 IO(metadata / open / Lua / structure-check)를 시도하지 않는다.
+    if target.is_url_shaped() {
+        return false;
+    }
     match rule {
         DetectorRuleKind::Magic { offset, bytes } => {
             // safety: regular file 아닌 경우 read entry 가 is_regular=false 로 표시.
@@ -476,5 +494,32 @@ mod tests {
         };
         let mut ctx = DeepCtx::new();
         assert!(evaluate_deep(&rule, &target("a.md"), &mut ctx));
+    }
+
+    /// registry 를 우회해 평가기를 직접 불러도 URL 은 매칭하지 않고 파일 IO 도 안 한다.
+    /// Magic 은 원래 IO 를 해야 판정되는 rule 이라 캐시 항목이 regular 가 아닌지로 확인한다.
+    #[test]
+    fn url_target_is_never_matched_or_read() {
+        let url = target("https://example.com/a.md");
+        let ext = DetectorRuleKind::Extension {
+            values: vec!["md".into()],
+        };
+        let glob = DetectorRuleKind::PathGlob {
+            pattern: "*.md".into(),
+        };
+        assert!(!evaluate_cheap(&ext, &url));
+        assert!(!evaluate_cheap(&glob, &url));
+        let mut ctx = DeepCtx::new();
+        assert!(!evaluate_deep(&ext, &url, &mut ctx));
+        assert!(!evaluate_deep(
+            &DetectorRuleKind::Magic {
+                offset: 0,
+                bytes: b"https".to_vec(),
+            },
+            &url,
+            &mut ctx,
+        ));
+        assert!(!ctx.entry(&url).is_regular);
+        assert!(ctx.entry(&url).head.is_none());
     }
 }

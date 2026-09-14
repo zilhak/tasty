@@ -1,4 +1,4 @@
-<!-- source-hash: 2ce84305ce20 -->
+<!-- source-hash: dbf599f3ebfb -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -277,6 +277,8 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 ```
 
 `set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
+
+`file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error.
 
 ## Frequently used commands
 

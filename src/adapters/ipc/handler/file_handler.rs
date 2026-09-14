@@ -79,6 +79,18 @@ pub fn handle_dispatch(
             );
         }
     };
+    // 이 IPC 는 파일 경로만 받는다. URL 을 여는 것은 이 메서드의 권한 토큰(`FsRead`)이
+    // 덮는 능력이 아니고, 경로 자리에 담긴 URL 은 확장자로 오식별된다 — 거절한다.
+    if crate::file::format::looks_like_url(&req.path) {
+        return JsonRpcResponse::error(
+            id,
+            -32602,
+            format!(
+                "invalid path '{}': file_handler.dispatch accepts file paths, not URLs",
+                req.path
+            ),
+        );
+    }
     let target = FileTarget::new(PathBuf::from(&req.path));
     state.dispatch_intent(
         crate::core::intent::DomainIntent::DispatchFile {
@@ -117,5 +129,28 @@ mod tests {
         )
         .unwrap();
         assert!(req.ignore_size_limit);
+    }
+
+    /// 경로 자리에 URL 이 오면 dispatch 인텐트를 세우지 않고 거절한다 — 세우면
+    /// `https://example.com/a.md` 가 확장자로 markdown 핸들러에 걸린다.
+    #[test]
+    fn dispatch_rejects_a_url_in_the_path_param() {
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let resp = handle_dispatch(
+            &mut state,
+            serde_json::json!(1),
+            serde_json::json!({ "path": "https://example.com/a.md" }),
+        );
+        let err = resp.error.expect("URL path must be rejected");
+        assert_eq!(err.code, -32602);
+        assert!(state.pending_intents.is_empty());
+
+        let resp = handle_dispatch(
+            &mut state,
+            serde_json::json!(2),
+            serde_json::json!({ "path": "/tmp/a.md" }),
+        );
+        assert!(resp.error.is_none());
+        assert_eq!(state.pending_intents.len(), 1);
     }
 }

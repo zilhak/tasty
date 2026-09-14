@@ -769,7 +769,7 @@ pub struct PickerHandlerSummary {
 pub struct FileHandlerPickerData {
     /// 원본 dispatch target. picker 가 닫힌 뒤 host 가 handler 를 실행할 때
     /// 사용한다 — `target_display` 는 화면용이라 escape/축약이 들어갈 수 있다.
-    pub(crate) target: crate::file::format::FileTarget,
+    pub(crate) target: crate::file::dispatch::DispatchTarget,
     /// 표시용 — picker 헤더에 보일 대상 (예: 파일 경로).
     pub(crate) target_display: String,
     /// 탐지된 detector — 없을 수도 있음 ($unknown 등 unmatched).

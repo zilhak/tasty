@@ -795,7 +795,7 @@ impl MainView {
                         crate::file::dispatch::open_picker(
                             &mut self.state,
                             &mut self.core_state,
-                            crate::file::format::FileTarget::new(path),
+                            crate::file::format::FileTarget::new(path).into(),
                             None,
                             Vec::new(),
                             false,

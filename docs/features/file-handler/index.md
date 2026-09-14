@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`file_handler.dispatch`) · plugin (contribute)
-- **ADR**: 없음
+- **ADR**: [URL 대상은 picker·실행 계층에만](../../adr/0272-url-targets-enter-the-handler-picker-not-identify.md)
 - **코드**: `src/file/format/`(식별) + `src/file/handler/`(디스패치); IPC `file_handler.{reload,dispatch}`
 - **화면**: [설정 창](../settings/screens/settings.md) Handler 탭의 파일 서브탭 3종 · file_handler_picker popup
 
@@ -22,6 +22,18 @@ DetectorId 는 일반 `[a-z0-9-]` / 호스트 예약 `$<word>`(예: `$directory`
 
 HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction: `OpenSurface{surface_kind, param_key}` · `Ipc{method}` · `System`(OS 위임). actor 별 schema 강제 — **plugin TOML 은 System 금지**(sandbox 일관성), user TOML 은 전부 허용. `handlers_for` 정렬: priority asc → owner(`user > plugin > host`) → id 사전순. 같은 detector 에 핸들러 여럿이면 picker 없이 1순위 자동(결정론적).
 
+### 대상 — 파일 경로와 URL
+
+dispatch 대상(`DispatchTarget`)은 파일 경로(`File`) 또는 `http`/`https` URL(`Url`)이다. 형식 식별은 파일에만 돌고, URL 은 detector 없이 picker 로 직행한다 — 그래서 URL 에는 1순위 자동 실행이 없다. 식별·평가 계층은 경로 문자열에 URL(`<scheme>://`, scheme 두 글자 이상)이 담겨 들어와도 매칭하지도 읽지도 않는다.
+
+액션별로 URL 을 받는지는 한 판정이 정하고, picker 의 후보 열 · recent 열 · 최종 실행에 똑같이 걸린다(거절된 선택은 recent 에 기록하지 않는다).
+
+| 액션 | 파일 대상 | URL 대상 |
+|------|-----------|----------|
+| `OpenSurface` | `{param_key: 경로}` | `param_key = "url"` 인 핸들러만 — `{url: 원문}` (html 핸들러 → webview) |
+| `System` | `file://` URI 로 OS opener | 원문 그대로 OS opener |
+| `Ipc` | plugin 에 `{"path": 경로}` | 받지 않음 |
+
 ### Contribution 머지 + 부팅 자동 등록
 
 두 registry 모두 출처별(Host/Plugin/User) contribution 을 보관하고 finalize 시 patch 머지(last-writer-wins, rules union+dedupe). **부팅 시** enabled plugin(빌트인 포함)의 detector/handler 가 plugin spawn 과 **분리되어** 등록된다 — 그래서 앱 켠 직후 별도 enable 없이 `.md`/이미지 등이 동작. 멱등(retain 교체)이라 disable→enable·다중 윈도우에서 중복 없음. plugin uninstall 시 그 contribution 만 제거.
@@ -39,7 +51,7 @@ HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction
 ## 인터페이스
 
 - **사용자**: Settings **Handler** 탭의 파일 서브탭(File Detectors / File Handlers / File Extension Mapping — 토글·user 항목 추가/삭제, 확장자 우선순위). user 설정은 `~/.tasty/file-handlers.toml`(부팅 1회 로드, atomic write). 같은 탭의 Hook Handlers 서브탭은 파일 핸들러가 아니라 [공유 훅 핸들러 레지스트리](../webhook/index.md) 편집이다.
-- **AI Agent / CLI**: `file_handler.dispatch`(임의 경로를 흐름에 진입, plugin 호출은 FsRead 권한) · `file_handler.reload`(user 설정 reload) · `tasty file-handler` CLI.
+- **AI Agent / CLI**: `file_handler.dispatch`(임의 경로를 흐름에 진입, plugin 호출은 FsRead 권한 — 경로 자리의 URL 은 `-32602` 로 거절) · `file_handler.reload`(user 설정 reload) · `tasty file-handler` CLI.
 
 ## 비-목표
 

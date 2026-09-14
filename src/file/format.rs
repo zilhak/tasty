@@ -18,5 +18,5 @@ pub use info::DetectorInfo;
 pub use registry::FileFormatRegistry;
 pub use types::{
     DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
-    RuleOrigin, is_valid_detector_id,
+    RuleOrigin, is_valid_detector_id, looks_like_url,
 };

@@ -1092,3 +1092,46 @@ fn a_poisoned_registry_still_installs_and_identifies() {
         "poison 이후에도 설치가 반영되고 식별이 된다"
     );
 }
+
+/// `https://example.com/a.md` 의 확장자 `md` 로 markdown 을 고르던 fast path 가 URL 에서
+/// 돌지 않는다. 같은 파일명의 로컬 경로는 그대로 markdown 이다(회귀 방지).
+#[test]
+fn identify_does_not_extension_match_a_url_target() {
+    let reg = FileFormatRegistry::new();
+    install_host_with_markdown(&reg);
+    let url = target("https://example.com/a.md");
+    assert_eq!(reg.identify(&url, DetectDepth::Cheap), None);
+    assert_eq!(reg.identify(&url, DetectDepth::Deep), None);
+    assert_eq!(
+        reg.identify(&target("/tmp/a.md"), DetectDepth::Cheap),
+        Some(DetectorId("markdown".into())),
+    );
+}
+
+/// PathGlob 은 파일명(`file_name`)만 보므로 URL 의 마지막 세그먼트에 걸린다 — URL 에서는
+/// glob 규칙도 매칭하지 않는다.
+#[test]
+fn identify_does_not_path_glob_match_a_url_target() {
+    let reg = FileFormatRegistry::new();
+    let decls = vec![DetectorDecl {
+        id: "dockerfile".into(),
+        display_name_i18n_key: None,
+        icon: None,
+        disabled: false,
+        rule: vec![DetectorRuleDecl::PathGlob {
+            pattern: "Dockerfile".into(),
+        }],
+    }];
+    reg.install_plugin_detectors("com.example.docker", &decls);
+    assert_eq!(
+        reg.identify(&target("/repo/Dockerfile"), DetectDepth::Cheap),
+        Some(DetectorId("dockerfile".into())),
+    );
+    assert_eq!(
+        reg.identify(
+            &target("https://example.com/repo/Dockerfile"),
+            DetectDepth::Cheap
+        ),
+        None,
+    );
+}

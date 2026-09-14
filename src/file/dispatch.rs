@@ -18,6 +18,85 @@ use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction, HandlerId};
 use crate::state::{AppState, FileHandlerPickerData, PickerHandlerSummary};
 
+/// 핸들러 dispatch 의 대상 — 파일 경로 또는 `http(s)` URL.
+///
+/// 식별(`FileFormatRegistry::identify`)은 `File` 만 받는다. `Url` 은 detector 를 거치지
+/// 않고 picker 와 액션 실행으로 곧장 간다. 각 액션이 URL 을 어떻게 다루는지는
+/// [`handler_accepts_target`] 과 `execute_handler_action` 이 정한다 — 결정 근거는
+/// `docs/adr/0272-url-targets-enter-the-handler-picker-not-identify.md`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DispatchTarget {
+    File(FileTarget),
+    /// `http://` 또는 `https://` URL 원문. [`DispatchTarget::http_url`] 로만 만든다.
+    // reason: 이 대상을 만드는 첫 생산자(터미널 링크 우클릭 메뉴)가 뒤따르는 커밋에서 붙는다.
+    #[allow(dead_code)]
+    Url(String),
+}
+
+impl DispatchTarget {
+    /// `http(s)://` URL 이면 `Url` 대상을 만든다. 다른 scheme(mailto/ssh/ftp 등)은
+    /// 핸들러로 열 곳이 없어 `None` — 그쪽은 OS opener 경로에 남는다.
+    // reason: 이 대상을 만드는 첫 생산자(터미널 링크 우클릭 메뉴)가 뒤따르는 커밋에서 붙는다.
+    #[allow(dead_code)]
+    pub fn http_url(uri: &str) -> Option<Self> {
+        let (scheme, rest) = uri.split_once("://")?;
+        let is_http = scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https");
+        (is_http && !rest.is_empty()).then(|| Self::Url(uri.to_string()))
+    }
+
+    /// picker 헤더 등 화면 표시용 문자열.
+    pub fn display(&self) -> String {
+        match self {
+            Self::File(f) => f.display(),
+            Self::Url(u) => u.clone(),
+        }
+    }
+
+    /// `OpenSurface` 파라미터로 넘길 값 — 경로는 lossy 문자열, URL 은 원문.
+    fn surface_param_value(&self) -> String {
+        match self {
+            Self::File(f) => f.as_path().to_string_lossy().into_owned(),
+            Self::Url(u) => u.clone(),
+        }
+    }
+
+    /// `System` 액션이 OS opener 에 넘길 URI. 경로는 `file://` URI 로 감싸고 URL 은
+    /// 원문 그대로 — URL 을 `path_to_file_uri` 에 통과시키면 `file:///https://…` 가 된다.
+    fn system_open_uri(&self) -> String {
+        match self {
+            Self::File(f) => path_to_file_uri(f.as_path()),
+            Self::Url(u) => u.clone(),
+        }
+    }
+}
+
+impl From<FileTarget> for DispatchTarget {
+    fn from(target: FileTarget) -> Self {
+        Self::File(target)
+    }
+}
+
+/// `URL 을 받는 surface 파라미터` 의 이름. `OpenSurface` 핸들러는 이 키를 선언했을 때만
+/// URL 대상의 후보가 된다 — html 핸들러(`param_key = "url"`)가 본보기다. 다른 키
+/// (`file`/`path`)는 그 surface 가 로컬 파일 경로를 기대한다는 선언이다.
+pub const URL_SURFACE_PARAM_KEY: &str = "url";
+
+/// 이 핸들러가 이 대상을 받을 수 있는지. 파일은 모든 핸들러가 받는다. URL 은
+/// `System`(OS opener) 과 `param_key = "url"` 인 `OpenSurface` 만 받는다. `Ipc` 는
+/// plugin 에 `path` 키로 보내는 규약이라 URL 을 받지 않는다.
+///
+/// picker 후보 · recent 목록 · 최종 실행 세 자리가 모두 이 판정 하나를 쓴다.
+pub fn handler_accepts_target(action: &HandlerAction, target: &DispatchTarget) -> bool {
+    match target {
+        DispatchTarget::File(_) => true,
+        DispatchTarget::Url(_) => match action {
+            HandlerAction::System => true,
+            HandlerAction::OpenSurface { param_key, .. } => param_key == URL_SURFACE_PARAM_KEY,
+            HandlerAction::Ipc { .. } => false,
+        },
+    }
+}
+
 /// 클릭/드롭된 URI 의 종류.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LinkKind {
@@ -91,10 +170,13 @@ fn hex_val(b: u8) -> Option<u8> {
 /// `candidates_are_fallback` 이 true 면 `candidates` 는 detector 매칭이 아니라
 /// `FileHandlerRegistry::all_handlers()` fallback 목록 — `recent` 와 겹치는 항목은
 /// 좌측 후보 열에서 제외한다(중복 표시 방지).
+///
+/// 대상이 받지 못하는 핸들러([`handler_accepts_target`])는 후보에서도 recent 에서도
+/// 뺀다 — recent 는 `candidates` 와 무관하게 저장 파일에서 읽히므로 따로 거른다.
 pub(crate) fn open_picker(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
-    target: FileTarget,
+    target: DispatchTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
     candidates_are_fallback: bool,
@@ -106,16 +188,11 @@ pub(crate) fn open_picker(
         .iter()
         .map(|e| e.handler_id.clone())
         .collect();
-    let recent: Vec<_> = recent_ids
+    let recent_handlers: Vec<FileHandler> = recent_ids
         .iter()
         .filter_map(|id| engine.file_handler.get(id))
-        .map(|h| handler_to_summary(&h))
         .collect();
-    let cand: Vec<_> = candidates
-        .iter()
-        .filter(|h| !recent_ids.contains(&h.id))
-        .map(handler_to_summary)
-        .collect();
+    let (recent, cand) = picker_lists(&target, &recent_handlers, &candidates);
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
         target,
@@ -134,6 +211,29 @@ pub(crate) fn open_picker(
         .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
     #[cfg(not(feature = "gui"))]
     let _ = state; // headless: picker popup unavailable.
+}
+
+/// picker 의 두 목록(recent, 후보)을 만든다. 둘 다 대상이 받지 못하는 핸들러를 빼고,
+/// 후보는 recent 와 겹치는 항목을 뺀다(중복 표시 방지). recent 에서 걸러진 핸들러는
+/// 후보 쪽 중복 제거에도 쓰이지 않는다 — 걸러졌으면 어느 열에도 없다.
+fn picker_lists(
+    target: &DispatchTarget,
+    recent_handlers: &[FileHandler],
+    candidates: &[FileHandler],
+) -> (Vec<PickerHandlerSummary>, Vec<PickerHandlerSummary>) {
+    let recent_ids: Vec<&HandlerId> = recent_handlers.iter().map(|h| &h.id).collect();
+    let recent = recent_handlers
+        .iter()
+        .filter(|h| handler_accepts_target(&h.action, target))
+        .map(handler_to_summary)
+        .collect();
+    let cand = candidates
+        .iter()
+        .filter(|h| handler_accepts_target(&h.action, target))
+        .filter(|h| !recent_ids.contains(&&h.id))
+        .map(handler_to_summary)
+        .collect();
+    (recent, cand)
 }
 
 fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
@@ -161,22 +261,31 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 /// `origin_surface_id` 가 Some 이면 OpenSurface 는 그 surface 가 속한 *Pane* 에
 /// 새 tab 으로 결과를 추가한다 (focus 독립). None 이면 focused pane 의 새 탭
 /// (기존 동작). 다른 action (Ipc / System) 은 origin 영향 없음.
+///
+/// 대상을 받지 못하는 핸들러([`handler_accepts_target`])면 아무것도 실행하지 않고
+/// `false` 를 돌려준다 — picker 가 이미 걸렀어도 실행 지점이 마지막 방어선이다.
 pub fn execute_handler_action(
     core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     handler: &FileHandler,
-    target: &FileTarget,
+    target: &DispatchTarget,
     origin_surface_id: Option<u32>,
     ignore_size_limit: bool,
-) {
+) -> bool {
+    if !handler_accepts_target(&handler.action, target) {
+        tracing::warn!(
+            handler_id = %handler.id,
+            target = %target.display(),
+            "file handler does not accept this dispatch target; not executed",
+        );
+        return false;
+    }
     match &handler.action {
         HandlerAction::OpenSurface {
             surface_kind,
             param_key,
         } => {
-            let path_str = target.as_path().to_string_lossy().into_owned();
-
             // 대용량 파일 확인 게이트는 **plugin 소유**로 이전됐다: 크기 감지도 확인 팝업도
             // plugin in-process(`crates/tasty-plugin-markdown`)가 소유하고, host 는 파일
             // 크기를 stat 하지 않는다(불가침 원칙 — host 는 특정 kind 의 크기게이트를 모른다).
@@ -184,24 +293,40 @@ pub fn execute_handler_action(
             // 한다(dispatch 파이프라인 호출부 시그니처는 그대로 유지).
             let _ = ignore_size_limit;
 
-            let params = serde_json::json!({ param_key.as_str(): path_str });
+            let params = open_surface_params(param_key, target);
             open_surface_tab(core, state, engine, surface_kind, params, origin_surface_id);
         }
         HandlerAction::Ipc { method, .. } => {
             // 이 분기는 state.pending_handler_ipc 에 enqueue 만 — core/engine 미사용.
-            state
-                .pending_handler_ipc
-                .push((method.clone(), target.clone()));
+            // 큐는 `FileTarget` 만 담는다 — plugin 은 `path` 키를 파일 경로로 해석한다.
+            match target {
+                DispatchTarget::File(file) => state
+                    .pending_handler_ipc
+                    .push((method.clone(), file.clone())),
+                // 위 `handler_accepts_target` 가 이미 거절한 조합이다. 판정이 바뀌어
+                // 여기에 도달하더라도 URL 을 `path` 키로 보내지 않는다.
+                DispatchTarget::Url(_) => {
+                    tracing::warn!(handler_id = %handler.id, "Ipc handler reached with a URL target");
+                    return false;
+                }
+            }
         }
         HandlerAction::System => {
             // OS 기본 opener 만 호출 — core/state/engine 미사용.
-            let uri = path_to_file_uri(target.as_path());
+            let uri = target.system_open_uri();
             #[cfg(feature = "gui")]
             crate::terminal_link::open_uri(&uri);
             #[cfg(not(feature = "gui"))]
             tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
         }
     }
+    true
+}
+
+/// `OpenSurface` 액션이 surface 에 넘길 파라미터 — `{param_key: 대상}`. URL 대상은
+/// 원문이 그대로 간다(html 핸들러 `param_key = "url"` → webview 가 그 URL 을 연다).
+fn open_surface_params(param_key: &str, target: &DispatchTarget) -> serde_json::Value {
+    serde_json::json!({ param_key: target.surface_param_value() })
 }
 
 /// OpenSurface 결과를 실제 tab 으로 연다. `origin_surface_id` 가 Some 이면 그 surface
@@ -308,6 +433,133 @@ mod tests {
             parse_link("file:///home/%ZZ/a"),
             LinkKind::FileTarget(PathBuf::from("/home/%ZZ/a")),
         );
+    }
+
+    fn handler(id: &str, action: HandlerAction) -> FileHandler {
+        FileHandler {
+            id: HandlerId::new(id),
+            detector: DetectorId::new("markdown"),
+            priority: 50,
+            owner: crate::file::handler::HandlerOwner::Host,
+            action,
+            display_name_i18n_key: None,
+            disabled: false,
+        }
+    }
+
+    fn open_surface(kind: &str, key: &str) -> HandlerAction {
+        HandlerAction::OpenSurface {
+            surface_kind: kind.into(),
+            param_key: key.into(),
+        }
+    }
+
+    fn ipc() -> HandlerAction {
+        HandlerAction::Ipc {
+            method: "com.example.x.open".into(),
+            owner_plugin_id: "com.example.x".into(),
+        }
+    }
+
+    fn url(u: &str) -> DispatchTarget {
+        DispatchTarget::http_url(u).expect("http(s) url")
+    }
+
+    fn file(p: &str) -> DispatchTarget {
+        DispatchTarget::File(FileTarget::new(p))
+    }
+
+    #[test]
+    fn http_url_accepts_only_http_and_https() {
+        assert_eq!(
+            DispatchTarget::http_url("https://example.com/page"),
+            Some(DispatchTarget::Url("https://example.com/page".into())),
+        );
+        assert!(DispatchTarget::http_url("HTTP://example.com").is_some());
+        assert_eq!(DispatchTarget::http_url("mailto:a@b.com"), None);
+        assert_eq!(DispatchTarget::http_url("ftp://example.com/a"), None);
+        assert_eq!(DispatchTarget::http_url("file:///tmp/a.md"), None);
+        assert_eq!(DispatchTarget::http_url("https://"), None);
+    }
+
+    /// 수정 전 코드는 모든 대상을 `path_to_file_uri` 에 통과시켜
+    /// `file:///https://example.com/page` 를 OS opener 에 넘겼다.
+    #[test]
+    fn system_action_passes_url_through_unwrapped() {
+        assert_eq!(
+            url("https://example.com/page").system_open_uri(),
+            "https://example.com/page",
+        );
+    }
+
+    #[test]
+    fn open_surface_action_forwards_url_as_param() {
+        let params = open_surface_params("url", &url("https://example.com/page"));
+        assert_eq!(
+            params,
+            serde_json::json!({ "url": "https://example.com/page" })
+        );
+    }
+
+    #[test]
+    fn path_targets_are_unchanged() {
+        let t = file("/tmp/a.md");
+        assert_eq!(t.system_open_uri(), "file:///tmp/a.md");
+        assert_eq!(
+            open_surface_params("file", &t),
+            serde_json::json!({ "file": "/tmp/a.md" }),
+        );
+        for action in [
+            open_surface("markdown", "file"),
+            open_surface("html", "url"),
+            ipc(),
+            HandlerAction::System,
+        ] {
+            assert!(handler_accepts_target(&action, &t));
+        }
+    }
+
+    /// URL 대상에서 각 액션 종류가 받는지의 표. Ipc 는 `path` 키 규약이라 받지 않고,
+    /// OpenSurface 는 `url` 파라미터를 선언한 surface 만 받는다.
+    #[test]
+    fn url_target_acceptance_per_action_kind() {
+        let t = url("https://example.com/page");
+        assert!(handler_accepts_target(&HandlerAction::System, &t));
+        assert!(handler_accepts_target(&open_surface("html", "url"), &t));
+        assert!(!handler_accepts_target(
+            &open_surface("markdown", "file"),
+            &t
+        ));
+        assert!(!handler_accepts_target(&open_surface("x", "path"), &t));
+        assert!(!handler_accepts_target(&ipc(), &t));
+    }
+
+    /// recent 는 candidates 와 무관하게 저장 파일에서 읽힌다 — URL 을 못 받는 핸들러가
+    /// recent 에 있어도 picker 의 어느 열에도 실리지 않아야 한다.
+    #[test]
+    fn picker_lists_drop_handlers_that_cannot_take_a_url_from_recent_and_candidates() {
+        let md = handler("host/md", open_surface("markdown", "file"));
+        let html = handler("host/html", open_surface("html", "url"));
+        let plugin = handler("com.example.x/open", ipc());
+        let system = handler("host/system", HandlerAction::System);
+        let recent = vec![md.clone(), plugin.clone(), html.clone()];
+        let candidates = vec![md, html, plugin, system];
+
+        let (recent_rows, cand_rows) =
+            picker_lists(&url("https://example.com/page"), &recent, &candidates);
+        let ids = |rows: &[PickerHandlerSummary]| -> Vec<String> {
+            rows.iter().map(|r| r.id.as_str().to_string()).collect()
+        };
+        assert_eq!(ids(&recent_rows), vec!["host/html"]);
+        assert_eq!(ids(&cand_rows), vec!["host/system"]);
+
+        // 같은 목록이 파일 대상이면 아무것도 걸러지지 않는다(recent 중복 제거만).
+        let (recent_rows, cand_rows) = picker_lists(&file("/tmp/a.md"), &recent, &candidates);
+        assert_eq!(
+            ids(&recent_rows),
+            vec!["host/md", "com.example.x/open", "host/html"]
+        );
+        assert_eq!(ids(&cand_rows), vec!["host/system"]);
     }
 
     #[cfg(windows)]

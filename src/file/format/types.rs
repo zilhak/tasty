@@ -7,6 +7,12 @@ use std::path::{Path, PathBuf};
 
 /// 파일 식별 시스템의 입력. **path-confirmed 파일만** 받는다.
 /// `file://` URI / `http://` URL 등의 scheme parsing 은 호출자 책임.
+///
+/// URL 은 이 타입이 아니라 핸들러 dispatch 계층의 `DispatchTarget::Url` 로 표현한다
+/// (`src/file/dispatch.rs`). 그래도 문자열로 들어온 URL 이 이 타입에 담기는 입구가
+/// 남아 있으므로(IPC 경로 문자열 등) 식별·평가 계층은 [`FileTarget::is_url_shaped`] 로
+/// 한 번 더 막는다 — `https://example.com/a.md` 의 확장자 `md` 가 markdown 으로
+/// 오식별되는 것을 막기 위함이다.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FileTarget(pub PathBuf);
 
@@ -26,6 +32,24 @@ impl FileTarget {
     pub fn is_directory(&self) -> bool {
         self.0.is_dir()
     }
+
+    /// 경로 문자열이 `<scheme>://` 로 시작하는지. 경로가 아니라 URL 이 담긴 것이다.
+    pub fn is_url_shaped(&self) -> bool {
+        self.0.to_str().is_some_and(looks_like_url)
+    }
+}
+
+/// `<scheme>://` 접두 판정. scheme 은 RFC 3986 문법(영문자로 시작, 영숫자·`+`·`-`·`.`)이고
+/// **두 글자 이상**을 요구한다 — `C://dir` 같은 Windows 드라이브 경로를 URL 로 오판하지
+/// 않기 위함이다.
+pub fn looks_like_url(s: &str) -> bool {
+    let Some((scheme, _)) = s.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    scheme.len() >= 2
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
 }
 
 /// 파일 형식 식별자.
@@ -139,4 +163,22 @@ pub enum DetectDepth {
     Cheap,
     /// + magic bytes + MIME + Lua/structure-check.
     Deep,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn looks_like_url_detects_schemes_but_not_paths_or_drives() {
+        assert!(looks_like_url("https://example.com/a.md"));
+        assert!(looks_like_url("http://x"));
+        assert!(looks_like_url("git+ssh://host/repo"));
+        assert!(!looks_like_url("/tmp/a.md"));
+        assert!(!looks_like_url("./a.md"));
+        assert!(!looks_like_url("C://Users/a.md"));
+        assert!(!looks_like_url("C:\\Users\\a.md"));
+        assert!(!looks_like_url("1http://x"));
+        assert!(!looks_like_url("dir with space://x"));
+    }
 }
