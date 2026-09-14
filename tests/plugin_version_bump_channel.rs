@@ -794,6 +794,11 @@ fn an_unreadable_dependency_closure_is_undecidable_and_says_why() {
         "의존 폐포를 못 읽었는데 판정 불가가 아니다 — 0 이면 링크된 크레이트의 변경이 조용히 통과한 것이다"
     );
     assert!(
+        run.output.contains("cargo tree 가 실패했다"),
+        "다른 거절이 대신 rc 2 를 냈다 — 폐포 거절 자리의 문구가 없다:\n{}",
+        run.output
+    );
+    assert!(
         run.output.contains(MARK),
         "판정 불가의 사유(cargo 의 stderr)가 출력에 없다:\n{}",
         run.output

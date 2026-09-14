@@ -143,7 +143,10 @@ fn root() -> PathBuf {
 /// 자기 말을 아직 못 가진 거절 자리의 **상한**. 양방향이다.
 ///
 /// 실측 2026-09-08: 게이트의 거절 자리 26 중 자기 말이 있는 것 6, 없는 것 20.
-const CAP: usize = 20;
+/// 2026-09-14: `check-plugin-version-bump.sh` 의 의존 폐포 거절(`cargo tree 가 실패했다`)이
+/// 자기 말을 가져 19. 그 문구를 단정하는 시험은 `tests/plugin_version_bump_channel.rs` 의
+/// `an_unreadable_dependency_closure_is_undecidable_and_says_why`.
+const CAP: usize = 19;
 
 /// 증거로 인정할 리터럴의 최소 길이(문자 수).
 ///
