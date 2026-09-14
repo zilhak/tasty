@@ -1,4 +1,4 @@
-//! Plugin lifecycle mutate 의 `App` method wrapper (D.3.C.G.2.c).
+//! Plugin lifecycle mutate 의 `App` method wrapper.
 //!
 //! 옛 `plugin::handler::handle_{install,remove,enable,disable,grant,revoke}`
 //! 가 PluginManager 를 직접 mutate 했다. 본 wrapper 는 IPC handler 에서

@@ -107,7 +107,7 @@ pub(super) fn build_engine_and_plugins(
 
 /// 첫 부팅의 CoreState 생성 (T2.6 계측 포함). 공유 source 없음 —
 /// `CoreState::new` 의 기본 Arc 사용. preset_store 는 Core 가 유일 owner
-/// (D.3.C.M.2) — engine 에는 더 이상 없다.
+/// 이며 engine 에는 더 이상 없다.
 fn build_core_state_first_boot(
     cols: usize,
     rows: usize,
@@ -243,7 +243,7 @@ impl App {
         // 한 번에 일어난다 — caller 는 events 만 검사.
         //
         // Intent 큐 우회 직접 apply — bootstrap context (main loop 진입 전) 라
-        // 큐 drain 이 일어나지 않는다. D.3.C.D.4.c 결정.
+        // 큐 drain 이 일어나지 않는다.
         let restored_idx_after_layout = if self.core_state().pending_layout_restore.is_some() {
             self.boot_wait_for_required_plugin_kinds();
             let restored = self.boot_apply_pending_layout_restore();
@@ -834,7 +834,7 @@ fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<Stri
         tracing::warn!("failed to persist normalized settings: {e}");
     }
 
-    // memory.db 는 boot 가 App::new 이전에 초기화함 (D.3.C.M.1).
+    // memory.db 는 boot 가 App::new 이전에 초기화한다.
 
     // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
     let invalid_theme_name = boot_apply_theme(&mut settings);

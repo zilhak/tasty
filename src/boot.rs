@@ -156,7 +156,7 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
     // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
     // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
 
-    // Phase D.3.C.M.19 — Settings 와 Memory store 를 App 생성 *이전* 에 초기화.
+    // Settings 와 Memory store 를 App 생성 *이전* 에 초기화.
     // Core 가 처음부터 실 Memory store 의 Arc 를 보유한다. 글로벌 STORE 싱글톤은
     // 폐기됨 — Arc 가 유일한 store handle.
     let boot_settings = crate::settings::Settings::load();

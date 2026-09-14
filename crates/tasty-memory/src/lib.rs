@@ -1532,7 +1532,7 @@ pub fn default_db_path() -> Option<PathBuf> {
 
 // ---- Init helper ----
 //
-// Phase D.3.C.M.19 — 글로벌 `OnceLock<STORE>` + `with_store` 인프라 폐기.
+// 글로벌 `OnceLock<STORE>` + `with_store` 인프라는 폐기됐다.
 // host 가 `init_with_config` 로 Arc 를 받아 `Core.memory` 에 직접 inject 한다.
 
 /// 앱 시작 시 1회. Settings.memory 에서 도출한 [`MemoryConfig`] 로 연다.

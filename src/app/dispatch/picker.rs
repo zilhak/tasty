@@ -3,7 +3,7 @@
 //! popup draw_fn 이 `state.dialogs.file_handler_picker.result` 에 채워둔
 //! `FileHandlerPickerResult` 를 본 dispatcher 가 매 frame begin 에 검사.
 //! 채워져 있으면 슬롯 해제 + `Core::apply_file_picker_result` Method 호출.
-//! Phase D D.3.C.G.3.c — 옛 `file_dispatch::consume_picker_result` 의 자리.
+//! 옛 `file_dispatch::consume_picker_result` 의 자리.
 
 use crate::app::App;
 use crate::view::ui::View;

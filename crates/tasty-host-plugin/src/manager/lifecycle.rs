@@ -513,7 +513,7 @@ impl PluginManager {
         // capture 가 None 으로 끝남 — 다음 check_for_updates 에서 비교 대상
         // 없으면 skip.
         self.capture_plugin_baseline(&pkg.manifest.id);
-        // `plugin.loaded` 발화 위치 — D.3.C.G.2.e 부터 hello 수신 후 호출자
+        // `plugin.loaded` 발화 위치 — hello 수신 후 호출자
         // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
         // 발화는 제거 (이중 발화 회피).
         //
@@ -666,7 +666,7 @@ impl PluginManager {
                 self.start_plugin_internal(&pkg);
             }
         }
-        // `plugin.enabled` 발화는 D.3.C.G.2.b cascade 가 처리 (App::plugin_enable
+        // `plugin.enabled` 발화는 cascade 가 처리 (App::plugin_enable
         // 의 CoreEvent::PluginEnableToggled → cascade).
         Ok(())
     }
@@ -705,7 +705,7 @@ impl PluginManager {
         if let Some(cs) = &self.completion_strategy {
             cs.uninstall_plugin(cs_owner_id.as_deref().unwrap_or(plugin_id));
         }
-        // `plugin.unloaded` / `plugin.disabled` 발화는 D.3.C.G.2.b cascade 가 처리
+        // `plugin.unloaded` / `plugin.disabled` 발화는 cascade 가 처리
         // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded
         // → cascade). was_running 분기는 App::plugin_disable 가 사전 캡처하므로 본
         // 메서드 안에서는 사용 안 함.

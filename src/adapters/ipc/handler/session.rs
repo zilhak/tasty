@@ -426,7 +426,7 @@ pub fn handle_request_permission(
     }
 }
 
-// 옛 handler validation 단위 테스트 모듈은 D.3.C.M.14 에서 제거.
+// 옛 handler validation 단위 테스트 모듈은 제거했다.
 // 핸들러 시그니처에 `&Core` 가 들어가면서 mock 비용이 크고, 핵심인 영속 통합은
 // `crate::ipc::session::tests` 가 SessionStore 직접 호출로 이미 검증한다.
 

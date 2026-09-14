@@ -65,12 +65,12 @@ pub(crate) enum RestoreScope {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub(crate) enum DomainIntent {
-    // ─── Settings (D.3.C.A.2) ───
+    // ─── Settings ───
     /// Settings 전체 교체. cascade — Theme apply / Scrollback limit / clipboard
     /// max / notification coalesce 가 Core 내부에서 자동 발동.
     UpdateSettings(Settings),
 
-    // ─── Workspace lifecycle (D.3.C.B.1) ───
+    // ─── Workspace lifecycle ───
     /// 새 workspace 를 생성. focused 의존 없음 — `cwd` 는 호출자가 미리
     /// 결정해 payload 로 넘긴다 (terminal kind 에서 사용). `kind="empty"` 는
     /// 거부. `name` 이 None 이면 자동 ("Workspace N"). cascade 가 host event
@@ -98,7 +98,7 @@ pub(crate) enum DomainIntent {
     /// *사용자가 보던 동일 ws 가 계속 active 유지* 되도록 보정.
     MoveWorkspace { from_index: usize, to_index: usize },
 
-    // ─── Tab lifecycle (D.3.C.B.5) ───
+    // ─── Tab lifecycle ───
     /// 특정 pane 에 새 tab 생성. focused pane 의존 없음 — 호출자가 pane_id
     /// 미리 결정. `cwd` 는 terminal kind 에서만 사용 (호출자가 inherit 결정).
     CreateTab {
@@ -131,7 +131,7 @@ pub(crate) enum DomainIntent {
     /// 성공 시 `CoreEvent::TabCreated` 를 발행 — cascade 는 `CreateTab` 과 동형.
     AdoptTerminal { pane_id: u32, pty_id: u32 },
 
-    // ─── Pane lifecycle (D.3.C.B.3) ───
+    // ─── Pane lifecycle ───
     /// 특정 pane 을 split. focused 의존 없음 — 호출자가 target_pane_id 결정.
     /// cwd 는 terminal kind 에서만 사용 (호출자가 inherit 결정).
     /// cascade 가 host event (PaneSplit) 발화 + (User origin 이면) focused_pane
@@ -182,7 +182,7 @@ pub(crate) enum DomainIntent {
         target_surface_id: u32,
     },
 
-    // ─── Terminal send (D.3.C.C.1) ───
+    // ─── Terminal send ───
     /// terminal surface 에 입력 전송. payload 의 종류에 따라 send_bytes 또는
     /// send_key 호출. ensure_surface_initialized 도 Core 가 처리.
     SendToSurface {
@@ -196,7 +196,7 @@ pub(crate) enum DomainIntent {
         cwd: Option<PathBuf>,
     },
 
-    // ─── Notifications (D.3.C.E.2) ───
+    // ─── Notifications ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
     /// notifications store 에 add (coalesce 자동) + host event enqueue.
     /// `source` 는 host event 의 source 태그 ("host" / "telemetry.cap" 등).
@@ -214,12 +214,12 @@ pub(crate) enum DomainIntent {
     /// `notifications.mark_all_read()` 호출.
     MarkAllNotificationsRead,
 
-    // ─── Surface lifecycle (D.3.C.E.6) ───
+    // ─── Surface lifecycle ───
     /// Terminal 이 OSC 7 등으로 cwd 변경을 알림. cascade 가
     /// `refresh_tab_display_name` + `mark_layout_dirty` 수행.
     SurfaceCwdChanged { surface_id: u32 },
 
-    // ─── Terminal control (D.3.C.C.3) ───
+    // ─── Terminal control ───
     /// 특정 surface 의 read mark 설정. cascade 가 main/parked 의 engine
     /// 순회 후 terminal.set_mark() 호출. surface_id 가 None 이면 focused.
     SetTerminalMark { surface_id: u32 },
@@ -251,7 +251,7 @@ pub(crate) enum DomainIntent {
         kind: Option<super::AttentionKind>,
     },
 
-    // ─── Closed items (D.3.C.D.5) ───
+    // ─── Closed items ───
     /// closed_items 에서 `scope` 가 정하는 가장 최근 항목을 pop 해 복원.
     /// `target_pane_id` 는 *호출자가 결정한* attach 대상 (focused pane).
     /// Workspace 복원 시에는 사용 안 함.
@@ -263,7 +263,7 @@ pub(crate) enum DomainIntent {
         scope: RestoreScope,
     },
 
-    // ─── Tab name (D.3.C.C.8) ───
+    // ─── Tab name ───
     /// Terminal 의 OSC 0/2 title 변경 등으로 tab 표시명을 갱신. surface_id 가
     /// 속한 tab 을 모든 workspace 에서 찾아 `osc_title` 필드 set. explicit_name
     /// 은 *건드리지 않음* — 사용자가 직접 이름 지은 tab 의 이름은 OSC title 에
@@ -271,7 +271,7 @@ pub(crate) enum DomainIntent {
     /// osc_title > cached_display_name > name).
     UpdateTabName { surface_id: u32, name: String },
 
-    // ─── Layout persistence (D.3.C.D.4) ───
+    // ─── Layout persistence ───
     /// 현재 layout 을 ~/.tasty/layouts/NN.json 슬롯 파일에 저장.
     /// - `active_workspace`: 호출자가 결정한 active workspace 인덱스 (AppState 가
     ///   들고 있는 정보이므로 Intent 발화 시 동봉).
@@ -291,7 +291,7 @@ pub(crate) enum DomainIntent {
     /// pending_layout_restore 가 None 이면 no-op (`restored=false`).
     ApplyPendingLayoutRestore,
 
-    // ─── File dispatch (D.3.C.G.3) ───
+    // ─── File dispatch ───
     /// 파일 dispatch 진입점. mouse ctrl+click / drag&drop / IPC `file_handler.dispatch`
     /// 가 발화. apply 분기에서 `engine.identify_worker.spawn(target, depth)` 호출 —
     /// Cheap/Deep 모두 worker thread 경유 (통일된 경로). 결과는
@@ -317,11 +317,11 @@ pub(crate) enum DomainIntent {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: event queue 의 Box 화는 alloc/clone 비용 큼
 pub(crate) enum CoreEvent {
-    // ─── Settings (D.3.C.A.2) ───
+    // ─── Settings ───
     /// Settings 가 갱신됨. 새 값 동봉.
     SettingsUpdated(Settings),
 
-    // ─── Workspace lifecycle (D.3.C.B.1) ───
+    // ─── Workspace lifecycle ───
     /// 새 workspace 생성 완료. cascade 가 host event (WorkspaceRenamed —
     /// name/subtitle/description 이 설정된 경우) 발화 + (User origin 이면)
     /// active 전환. `surface_id` 는 focused tab 의 surface.
@@ -349,7 +349,7 @@ pub(crate) enum CoreEvent {
         moved: bool,
     },
 
-    // ─── Tab lifecycle (D.3.C.B.5) ───
+    // ─── Tab lifecycle ───
     /// 새 tab 생성 완료. cascade 추가 처리 없음 (main.mark_dirty 만).
     TabCreated {
         pane_id: u32,
@@ -371,7 +371,7 @@ pub(crate) enum CoreEvent {
     /// tab 이동 완료. `moved=false` 면 no-op (pane 없음 / from==to / out-of-range).
     TabMoved { moved: bool },
 
-    // ─── Pane lifecycle (D.3.C.B.3) ───
+    // ─── Pane lifecycle ───
     /// pane split 완료. cascade 가 host event (PaneSplit) 발화 + (User origin
     /// 이면) focused_pane 변경.
     PaneSplit {
@@ -456,7 +456,7 @@ pub(crate) enum CoreEvent {
         error: Option<String>,
     },
 
-    // ─── Notifications (D.3.C.E.2) ───
+    // ─── Notifications ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.
     NotificationPushRequested {
         ws_id: u32,
@@ -470,11 +470,11 @@ pub(crate) enum CoreEvent {
     /// 모든 알림 읽음 처리 요청.
     AllNotificationsReadRequested,
 
-    // ─── Surface lifecycle (D.3.C.E.6) ───
+    // ─── Surface lifecycle ───
     /// Surface 의 cwd 변경 알림. cascade 가 tab display name / layout dirty 갱신.
     SurfaceCwdChanged { surface_id: u32 },
 
-    // ─── Terminal control (D.3.C.C.3) ───
+    // ─── Terminal control ───
     /// Terminal read mark 설정 요청. cascade 가 surface 보유 engine 에 적용.
     TerminalMarkSet { surface_id: u32 },
 
@@ -495,14 +495,14 @@ pub(crate) enum CoreEvent {
         kind: Option<super::AttentionKind>,
     },
 
-    // ─── Closed items (D.3.C.D.5) ───
+    // ─── Closed items ───
     /// closed_items pop + 복원 완료. cascade 가 (Workspace kind 인 경우)
     /// active_workspace 를 새 인덱스로 옮긴다.
     /// - `restored=false`: closed_items 가 비었거나 rebuild 실패.
     /// - `kind`: 어떤 종류가 복원되었는지 + cascade 가 알아야 할 인덱스.
     ClosedItemRestored { restored: bool, kind: RestoredKind },
 
-    // ─── Terminal cascade (D.3.C.C.8) — PTY emit 발화 ───
+    // ─── Terminal cascade — PTY emit 발화 ───
     /// PTY child process exit. cascade 가 hook 발화 + ProcessExited host event
     /// enqueue + closed_items snapshot 분류 + 후속 `DomainIntent::CloseSurface
     /// { save_snapshot: true }` 발행.
@@ -563,7 +563,7 @@ pub(crate) enum CoreEvent {
         skipped_explicit: bool,
     },
 
-    // ─── Layout persistence (D.3.C.D.4) ───
+    // ─── Layout persistence ───
     /// `SaveLayoutNow` 결과 알림 — 저장/skip(설정 off 또는 dirty 아님 + force=false)
     /// 여부와 무관하게 cascade 없음.
     LayoutSaved,
@@ -576,7 +576,7 @@ pub(crate) enum CoreEvent {
         active_workspace: Option<usize>,
     },
 
-    // ─── Plugin lifecycle (D.3.C.G.2) ───
+    // ─── Plugin lifecycle ───
     /// Plugin process 가 spawn 되어 hello 까지 완료. cascade 가
     /// PendingHostEvent::PluginLoaded enqueue + plugin event_bus broadcast.
     PluginLoaded { plugin_id: String, version: String },

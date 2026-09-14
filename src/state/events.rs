@@ -188,7 +188,7 @@ pub enum PendingHostEvent {
         /// 판정에 쓴다(exit 0 → Succeeded, 비-0 → Failed). 다른 이벤트는 `None`.
         exit_code: Option<i32>,
     },
-    // ─── Plugin lifecycle (D.3.C.G.2) ───
+    // ─── Plugin lifecycle ───
     /// Plugin spawn 성공 후 hello 까지 완료.
     PluginLoaded {
         plugin_id: String,

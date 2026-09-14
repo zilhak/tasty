@@ -111,7 +111,7 @@ impl PluginManager {
     /// 반환: 본 tick 에서 *처음 hello 받은 plugin* 의 `(plugin_id, version)`
     /// 리스트. 호출자 (App) 가 `finalize_plugin_hello` 로 surface_kind registry
     /// 등록 + CoreEvent (PluginLoaded / PluginSurfaceKindRegistered) 발화를
-    /// 처리한다 (D.3.C.G.2.e). 비어있으면 finalize 안 호출.
+    /// 처리한다. 비어있으면 finalize 안 호출.
     pub fn pump(&mut self, now: Instant) -> Vec<(String, String)> {
         // 1. plugin → 호스트 이벤트 수집 후 일괄 처리 (수집 순서·부수효과 보존).
         let collected = self.collect_plugin_events();

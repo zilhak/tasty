@@ -57,7 +57,7 @@ pub(super) fn emit_hook_fired(
     mgr.emit_host_event("hook.fired", &payload, scope);
 }
 
-// ─── Plugin lifecycle (D.3.C.G.2.b) ───
+// ─── Plugin lifecycle ───
 
 pub(super) fn emit_plugin_loaded(mgr: &mut PluginManager, plugin_id: String, version: String) {
     let payload = PluginLoaded { plugin_id, version };

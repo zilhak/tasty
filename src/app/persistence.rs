@@ -12,7 +12,7 @@ impl App {
     ///   설정이 켜져 있으면 layout_dirty 가 false 여도 저장.
     ///
     /// 조건 분기 + `layout_dirty.clear()` 는 Core::apply 안에서 처리.
-    /// Intent 큐 우회 — *system loop tick / shutdown* 의 부수효과 (D.3.C.D.4 §8.H).
+    /// Intent 큐 우회 — *system loop tick / shutdown* 의 부수효과다.
     pub(crate) fn flush_layout_persistence(&mut self, force: bool) {
         let label = if force { "final" } else { "tick" };
         for w in self.view.views.values_mut() {

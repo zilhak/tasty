@@ -1,4 +1,4 @@
-//! File 도메인의 Core method wrapper (D.3.C.G.3).
+//! File 도메인의 Core method wrapper.
 //!
 //! `Core::apply` 시그니처 (engine 만 받음) 가 *AppState 를 mutate 할 수 없는*
 //! 분기들을 본 모듈의 Method 로 흡수한다. `apply_identify_result` /

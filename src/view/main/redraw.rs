@@ -101,7 +101,7 @@ impl MainView {
         // 스킵된 wake 의 데이터까지 커버한다 (형식적 메모리모델 잔여 윈도우는
         // 실하드웨어에서 사실상 0 — ns 급 store 가시화 지연 vs µs 급 핸들러 경로).
 
-        // D.3.C.C.8: TerminalEvent → CoreEvent 변환은 Core::process_pty_output 이
+        // TerminalEvent → CoreEvent 변환은 Core::process_pty_output 이
         // event_handler 의 AppEvent::TerminalOutput 처리 안에서 수행한다.
         // redraw 는 더 이상 collect_events 분기를 가지지 않는다.
 
@@ -153,7 +153,7 @@ impl MainView {
         self.process_pending_native_menu();
 
         // file handler picker result 슬롯은 App::dispatch_pending_picker_results
-        // 가 다음 frame begin 에 drain (D.3.C.G.3.c) — redraw 인라인 호출 폐기.
+        // 가 다음 frame begin 에 drain 한다 — redraw 에는 인라인 호출이 없다.
 
         // 외부 drag&drop 으로 받은 파일 큐 처리.
         self.process_pending_file_drops();

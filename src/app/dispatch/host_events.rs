@@ -166,7 +166,7 @@ impl App {
                     surface_id,
                     exit_code: _,
                 } => misc::emit_hook_fired(mgr, hook_id, event_kind, surface_id),
-                // ─── Plugin lifecycle (D.3.C.G.2.b) ───
+                // ─── Plugin lifecycle ───
                 PendingHostEvent::PluginLoaded { plugin_id, version } => {
                     misc::emit_plugin_loaded(mgr, plugin_id, version)
                 }

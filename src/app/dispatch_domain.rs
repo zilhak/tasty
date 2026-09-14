@@ -361,7 +361,7 @@ impl App {
                 }
             }
 
-            // ─── Terminal cascade (D.3.C.C.8) — PTY emit 변환 ───
+            // ─── Terminal cascade — PTY emit 변환 ───
             CoreEvent::TerminalNotification {
                 surface_id,
                 title,
@@ -409,11 +409,11 @@ impl App {
                 // 추가 cascade 없음 — disk I/O + layout_dirty.clear() 는 Core::apply 에서 완료.
             }
             CoreEvent::LayoutRestored { .. } => {
-                // caller 가 events 직접 검사하는 패턴 (D.3.C.D.4) — bootstrap context
+                // caller 가 events 직접 검사하는 패턴 — bootstrap context
                 // 에서 active_workspace 추출해 state.switch_workspace 수행. 큐 경로
                 // 라우팅이 아닌 직접 Core::apply 호출이라 본 arm 은 비워둔다.
             }
-            // ─── Plugin lifecycle (D.3.C.G.2) ───
+            // ─── Plugin lifecycle ───
             CoreEvent::PluginLoaded { plugin_id, version } => {
                 self.cascade_plugin_loaded(plugin_id, version)
             }
@@ -1158,7 +1158,7 @@ impl App {
         }
     }
 
-    // ─── Plugin lifecycle cascade (D.3.C.G.2.b) ───
+    // ─── Plugin lifecycle cascade ───
     //
     // 모두 *첫 main window* 의 state 에 PendingHostEvent 를 enqueue. 본 큐는
     // `dispatch/host_events.rs` 가 drain → `misc::emit_plugin_*` helper 호출 →

@@ -29,7 +29,7 @@ fn notify_content_changed(
 ///
 /// 시그니처는 *read-only* (`&AppState + &CoreState`) — `_state` 는 미사용,
 /// `engine` 도 `&engine.workspaces` 순회 + `RemoteSurface::set_webview_url`
-/// (interior-mut `&self` 메서드) 만 호출. `handle_tree` 와 동일 패턴 (D.3.C.H.2).
+/// (interior-mut `&self` 메서드) 만 호출. `handle_tree` 와 동일 패턴이다.
 pub fn handle_set_url(
     _state: &AppState,
     engine: &crate::core::CoreState,

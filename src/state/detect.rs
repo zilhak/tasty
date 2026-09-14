@@ -66,7 +66,7 @@ impl AppState {
     }
 
     /// Tab 의 cross-pane 이동 (`tab.moved`) 만 polling 으로 감지한다.
-    /// `tab.created` / `tab.closed` 는 D.3.C.B.10.1 이후 cascade 시점에 직접
+    /// `tab.created` / `tab.closed` 는 cascade 시점에 직접
     /// enqueue 하므로 여기서 다루지 않는다 (중복 발화 방지). cross-pane move 는
     /// 별 DomainIntent 가 없어 polling 으로 잡는다.
     /// 첫 호출(스냅샷이 `None`)에서는 베이스라인만 기록한다.

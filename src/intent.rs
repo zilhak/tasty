@@ -322,8 +322,7 @@ pub enum OpenPopupMode {
 /// 두지 않는다 (`popup-system.md` "Popup 발화 정책").
 ///
 /// `source` 페이로드는 audit/debug trace 용 — match arm 에서 destructure 하지
-/// 않으나 `Debug` derive 로 노출. D.3.C.F.3 Audit log 가 본 정보를 읽기
-/// 시작 예정.
+/// 않으나 `Debug` derive 로 노출 — 아직 이 값을 읽는 소비처는 없다.
 #[derive(Debug, Clone)]
 pub enum IntentOrigin {
     User {

@@ -172,7 +172,7 @@ impl App {
     /// 사용자 theme 배경으로 그린다 (부팅 중 배경색 전환 방지). state.db 는
     /// create_app_state(엔진 초기화) 이전 필수 선행이라 같은 스텝에 묶는다 —
     /// 구 init_app_state 선두와 동일 순서. memory.db 는 boot 가 App::new 이전에
-    /// 이미 초기화함 (D.3.C.M.1).
+    /// 이미 초기화함.
     fn init_boot_db_and_theme(
         settings: &mut crate::settings::Settings,
     ) -> (Option<crate::db::DbInitError>, Option<String>) {
