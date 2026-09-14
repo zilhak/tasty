@@ -650,9 +650,9 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   user-origin 행만(호스트/플러그인 base 는 finalize 가 되살림), IpcSequence 행은 인라인
   편집 대신 mono 요약. intro copy 의 priority 방향은 엔진 규약(낮을수록 먼저)으로 기술.
 
-## Settings › General › Remote transfer (07-UI)
+## Settings › General › Remote transfer
 
-General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(06/07)
+General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [ADR-0054](../../adr/0054-remote-filesystem-native-over-attach-stream.md))
 수신측 저장 정책(`RemoteTransferSettings{dir, max_mb}`) 편집. 디자인:
 `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` + `gallery/overlays-windows.jsx`
 "Settings · General › Remote transfer" spec. 백엔드는 이미 merge(d6eeecf5), 이번은 UI 만.
@@ -715,11 +715,11 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
 기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.
 
-## Remote file transfer 팝업 (Overlays) — 진행 + 실패 (09)
+## Remote file transfer 팝업 (Overlays) — 진행 + 실패
 
-디자인 `gallery/overlays-shared.jsx` `TransferProgressFrame`(09a) / `TransferErrorFrame`(09b)
+디자인 `gallery/overlays-shared.jsx` `TransferProgressFrame` / `TransferErrorFrame`
 ↔ 본체 `src/adapters/ui/popup/transfer.rs`(PopupDef `transfer_progress` / `transfer_error`)
-↔ 갤러리 `catalog/components/transfer.rs`. 06 bulk 전송 + 08 이미지 paste 업로드에 대한
+↔ 갤러리 `catalog/components/transfer.rs`. bulk 파일 전송 + mirror 터미널 이미지 붙여넣기 업로드에 대한
 사용자 피드백 UI. **진행은 시스템 최초 determinate progress bar**(indeterminate `Spinner` 와 구분).
 
 | 디자인 jsx | 본체 함수 (`popup/transfer.rs`) | 갤러리 함수 (`components/transfer.rs`) |
@@ -744,9 +744,9 @@ determinate bar 는 `Spinner` 처럼 위젯화하지 않고 painter 인라인(tr
 0ms). **신규 Theme 필드 0** — 전부 기존 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
 i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suffix,dismiss,retry}`).
 
-**본체 배선(06/08)**: 진행률은 `upload_file_over_bulk` 에 `on_progress(sent,total)` 콜백을 추가해
-청크마다 통지 → 08 워커가 `transfer_progress` 채널로 흘림 → `drain_transfer_progress` 가 행 갱신.
-실패는 08 `drain_image_upload_results` 의 `Err` 분기를 (구) Warning toast 에서 실패 팝업으로 승격 —
+**본체 배선(bulk 송신 + 이미지 붙여넣기 업로드)**: 진행률은 `upload_file_over_bulk` 에 `on_progress(sent,total)` 콜백을 추가해
+청크마다 통지 → 이미지 업로드 워커가 `transfer_progress` 채널로 흘림 → `drain_transfer_progress` 가 행 갱신.
+실패는 이미지 업로드의 `drain_image_upload_results` 의 `Err` 분기를 (구) Warning toast 에서 실패 팝업으로 승격 —
 `BULK_REJECT_PREFIX`(원격 거부) 면 Dismiss 단독, 아니면 Retry(재큐잉). 상세
 [features/remote-attach](../../features/remote-attach/index.md).
 

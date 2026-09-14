@@ -50,7 +50,7 @@ workspace mirror 의 **탭 제목**은 스냅샷 pane JSON 의 tab `name`(원격
 
 Control 채널을 흐르는 server→client 상태 push 는 현재 네 종류다 — `Resize`(확정 grid), `Activity`(busy/idle), `Attention`(주의 환기), `Cwd`(surface 의 현재 폴더). 넷 다 델타가 아니라 **멱등 상태**이고, 서버가 매번 자기 live 상태에서 재-diff 하므로 **프레임이 유실돼도** 다음 tick 에 자동 수렴한다(client ack 없음). 수렴이 보장되는 축은 이 wire 유실 하나뿐이다 — client 가 자기 로컬 상태를 직접 바꾸면 서버 값은 그대로라 재-push 가 없다. 그래서 attention 은 미러가 자기 값을 바꾸는 두 축을 각각 다르게 다룬다: **발동**은 미러에서 아예 일어나지 않게 막고, **해제**는 `ClientAttentionClear`(client→server) 로 소유 인스턴스에 되돌린다. 상세는 [attach-behavior "주의 환기(attention) 전파"](../../dev-guide/attach-behavior.md#주의-환기attention-전파).
 
-client→server 요청 채널은 `ClientResize`(geometry 구동), `ClientAttentionClear`(주의 환기 해제 edge), `StructuralOp`(구조 변경 forward), `MeshContext`/`MeshInput`/`MeshFullResendRequest`(mesh mirror), 그리고 (03) 캡처 업로드 · (04) 디렉토리 조회 · git 조회 · markdown 원문 조회다. 이들은 **점유한 연결 자체가 권한**(ADR-0040 하드 점유)이라는 같은 원칙을 쓰되 검증 지점이 두 갈래다 — 앞의 네 종류는 요청에 실린 **anchor 의 holder 인지**를 직접 확인하고(`workspace_holder(ws) == client`), 캡처·디렉토리·git·markdown 원문 조회 네 종류는 그 client 가 점유한 워크스페이스를 가진 engine(`client_holds_workspace`)을 찾아 그 engine 안에서 처리한다 — 인가되는 집합이 그 engine 전체라는 뜻이다([ADR-0255](../../adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md)). (06) 네이티브 bulk 파일 전송은 이 모델 **밖**이다 — 전용 연결이라 holder 가 아니고, 결속 workspace 를 **소유한** engine 으로 라우팅한 뒤 commit 시점의 finalize 가 인가를 확인한다.
+client→server 요청 채널은 `ClientResize`(geometry 구동), `ClientAttentionClear`(주의 환기 해제 edge), `StructuralOp`(구조 변경 forward), `MeshContext`/`MeshInput`/`MeshFullResendRequest`(mesh mirror), 그리고 원격 스크린샷 캡처 업로드([remote-screenshot-clipboard](../remote-screenshot-clipboard/index.md)) · 원격 디렉토리 조회(native file picker, [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md)) · git 조회 · markdown 원문 조회다. 이들은 **점유한 연결 자체가 권한**(ADR-0040 하드 점유)이라는 같은 원칙을 쓰되 검증 지점이 두 갈래다 — 앞의 네 종류는 요청에 실린 **anchor 의 holder 인지**를 직접 확인하고(`workspace_holder(ws) == client`), 캡처·디렉토리·git·markdown 원문 조회 네 종류는 그 client 가 점유한 워크스페이스를 가진 engine(`client_holds_workspace`)을 찾아 그 engine 안에서 처리한다 — 인가되는 집합이 그 engine 전체라는 뜻이다([ADR-0255](../../adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md)). 네이티브 bulk 파일 전송([ADR-0054](../../adr/0054-remote-filesystem-native-over-attach-stream.md))은 이 모델 **밖**이다 — 전용 연결이라 holder 가 아니고, 결속 workspace 를 **소유한** engine 으로 라우팅한 뒤 commit 시점의 finalize 가 인가를 확인한다.
 
 ### 모드
 
@@ -199,7 +199,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 - **로컬 self attach**: 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)).
 - **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
 
-## 원격 파일 전송 수신측 저장 정책 (07)
+## 원격 파일 전송 수신측 저장 정책
 
 원격 attach 채널 위 native bulk 파일 전송(ADR-0054)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
 
@@ -207,21 +207,21 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 - **GUI 설정**: 디자인 시안 확정 후 별도 구현 예정(gallery-first) — 현재는 IPC/CLI 로만 조작.
 - **용량 사전 거부**: 전송 시작(`BulkBegin.total_size`) 시점에 `현재 폴더 사용량 + total_size` 가 상한을 넘으면 청크 수신 전에 거부하고 `BulkResult{ok:false, reason:"capacity exceeded"}` 를 회신한다(경계 `== max` 는 허용, `> max` 거부). 폴더 사용량은 1-depth 파일 크기 단순 합산.
 
-## mirror 터미널 이미지 붙여넣기 → 원격 경로 삽입 (08)
+## mirror 터미널 이미지 붙여넣기 → 원격 경로 삽입
 
-mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로컬 PNG 경로 대신 그 이미지를 06 bulk 채널로 원격에 업로드하고 **원격 파일시스템 경로**를 터미널 입력에 삽입한다(원격이 읽을 수 있는 경로). 로컬(비-mirror) 터미널의 이미지 붙여넣기는 기존대로 로컬 temp PNG 경로를 삽입한다(회귀 없음). 텍스트 붙여넣기는 mirror 여부와 무관하게 불변.
+mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로컬 PNG 경로 대신 그 이미지를 bulk 파일 전송 채널(ADR-0054)로 원격에 업로드하고 **원격 파일시스템 경로**를 터미널 입력에 삽입한다(원격이 읽을 수 있는 경로). 로컬(비-mirror) 터미널의 이미지 붙여넣기는 기존대로 로컬 temp PNG 경로를 삽입한다(회귀 없음). 텍스트 붙여넣기는 mirror 여부와 무관하게 불변.
 
 - **호스트 generic**: surface kind/claude 특화가 아니라 모든 mirror 터미널에 적용된다(claude CLI 가 그 경로 포맷을 인식하는지는 런타임 외부 동작 — 범위 밖).
 - **판정**: 붙여넣기 시점에 focused surface 가 mirror workspace(`Workspace.mirror`) 소속인지로 mirror/로컬을 가른다(판정을 트리거 시점에 끝내 업로드 완료 전 포커스 변경에 흔들리지 않게).
-- **비동기**: 업로드(블로킹)는 백그라운드 스레드에서 수행하고(메인 루프 무블록), 완료 시 원격 경로를 그 mirror surface 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격 PTY stdin 에 투명 전달되므로 별도 삽입 API 가 없다. 진행/완료/실패 피드백은 09 팝업이 담당한다(아래).
+- **비동기**: 업로드(블로킹)는 백그라운드 스레드에서 수행하고(메인 루프 무블록), 완료 시 원격 경로를 그 mirror surface 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격 PTY stdin 에 투명 전달되므로 별도 삽입 API 가 없다. 진행/완료/실패 피드백은 전송 진행 · 실패 팝업이 담당한다(아래).
 
-## 전송 진행 · 실패 팝업 (09)
+## 전송 진행 · 실패 팝업
 
-원격 파일 전송(06/08)에 대한 사용자 피드백 UI 2종(scrim 중앙 headless PopupDef). 현재 트리거 소스는 08 이미지 paste 하나다(일반 파일 전송 UI 는 후속).
+bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대한 사용자 피드백 UI 2종(scrim 중앙 headless PopupDef). 현재 트리거 소스는 mirror 터미널 이미지 붙여넣기 하나다(일반 파일 전송 UI 는 후속).
 
 - **진행 팝업(`transfer_progress`)**: download glyph + "Receiving file" + mono pct → 파일명(mono 말줄임) → **determinate 4px progress bar**(recessed track `bg-app` + accent fill `accent-primary`, **0ms 무애니** — 바이트 수신 시에만 fill 폭 이동, 시스템 최초 determinate) → `transferred / total` + rate → ghost Cancel. `close_on_outside_click=false`(전송 중 실수 dismiss 방지), 모든 파일 완료 시 self-close. 다중 파일은 행 반복. Cancel 은 진행 관망만 중단(동기 워커라 실제 전송 abort 불가 — 백그라운드 전송은 완료됨).
-- **실패 팝업(`transfer_error`)**: danger glyph + "Transfer failed" + `<파일명> could not be received.` + mono reason well(command-well: `bg-app`+separator, danger 텍스트). 기본 dismiss(Esc/scrim). danger-fill 버튼 금지. **원격 거부**(07 capacity 등 `BulkResult{ok:false}`)면 재시도 무의미 → **Dismiss 단독**; **전송 중 실패**(전송/프로토콜 에러)면 → **Dismiss + Retry**(원본 바이트를 기존 업로드 큐에 재투입). 거부 vs 전송에러 판정은 `upload_file_over_bulk` 의 `Err` 접두(`BULK_REJECT_PREFIX`)로 한다.
-- **진행률 배선**: `upload_file_over_bulk` 에 `on_progress(sent, total)` 콜백을 추가해 청크 전송마다 통지 → 08 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick` 로 메인에 흘림 → `drain_transfer_progress` 가 해당 행을 갱신. 완료(Ok/Err)는 기존 `ImageUploadReady` 경로가 행 제거 + 성공 삽입/실패 승격을 처리한다.
+- **실패 팝업(`transfer_error`)**: danger glyph + "Transfer failed" + `<파일명> could not be received.` + mono reason well(command-well: `bg-app`+separator, danger 텍스트). 기본 dismiss(Esc/scrim). danger-fill 버튼 금지. **원격 거부**(수신측 용량 상한 초과 등 `BulkResult{ok:false}`)면 재시도 무의미 → **Dismiss 단독**; **전송 중 실패**(전송/프로토콜 에러)면 → **Dismiss + Retry**(원본 바이트를 기존 업로드 큐에 재투입). 거부 vs 전송에러 판정은 `upload_file_over_bulk` 의 `Err` 접두(`BULK_REJECT_PREFIX`)로 한다.
+- **진행률 배선**: `upload_file_over_bulk` 에 `on_progress(sent, total)` 콜백을 추가해 청크 전송마다 통지 → 이미지 업로드 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick` 로 메인에 흘림 → `drain_transfer_progress` 가 해당 행을 갱신. 완료(Ok/Err)는 기존 `ImageUploadReady` 경로가 행 제거 + 성공 삽입/실패 승격을 처리한다.
 
 ## 비-목표 (Out of scope)
 
@@ -275,8 +275,8 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - IPC: `src/adapters/ipc/handler/attach.rs`(`attach.*`). 원격 브라우징/attach IPC(`remote.workspaces`/`remote.attach`)는 `src/app/ipc/app_methods.rs`(워커 스레드+지연 회신). focus 중립 mirror 생성은 `src/app/auto_attach.rs`(수동 트리거 `anchor=None` 재사용) → `src/app/attach_client.rs::start_gui_attach`(`workspaces.push` 만, `active_workspace` 불변; 새 mirror ws id 반환).
 - GUI picker 팝업(사용자 경로): `src/adapters/ui/popup/remote_attach.rs`(2-pane 상태머신 + browse 워커 폴링), `defs.rs`(headless PopupDef), 진입 컨텍스트 메뉴 2곳 `src/view/main/redraw.rs`(NewWorkspaceButton / Workspace). Connect → `CoreState.pending_gui_attach_user` 큐 → `App::dispatch_pending_gui_attach`(사용자 경로 drain) → `start_gui_attach` + `focus_mirror_workspace`(새 mirror 로 focus 이동, 사용자 경로 전용). "+ 새 워크스페이스" 확정은 그 큐에 넣기 전에 원격 `workspace.create` 워커(`spawn_create`/`poll_create`) 한 번을 끼우고, 성공 응답의 id 로 **같은 큐**에 합류한다. 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/remote_attach.rs`(loaded / 새 행 5상태 / 우측 pane 상태).
 - mirror 비영속: `src/core/layout_persistence/capture.rs`(`SavedLayout::capture` 가 `ws.mirror` 제외 + active 인덱스 remap). 회귀 테스트 `core::state` `mirror_workspace_not_persisted`.
-- (08) mirror 이미지 paste → 원격 업로드: `src/view/main/clipboard.rs`(이미지 분기에서 `Workspace.mirror` 판정 → `CoreState.pending_image_uploads` 큐에 PNG 바이트 push, 비-mirror 는 기존 로컬 PNG 경로 유지), `src/app/image_upload.rs`(`poll_image_uploads`: 큐 drain → 백그라운드 `upload_file_over_bulk` → 결과 채널 → `dispatch_paste`(원격 경로 삽입) 또는 09 실패 팝업 승격). 업로드 API 는 `src/app/attach_client.rs::upload_file_over_bulk`(06-β, 동기 블로킹).
-- (09) 전송 진행/실패 팝업: 호스트 팝업 `src/adapters/ui/popup/transfer.rs`(`TRANSFER_PROGRESS_POPUP_ID`/`TRANSFER_ERROR_POPUP_ID`, `TransferProgress`/`TransferRow`/`TransferError` + draw/sizer), PopupDef 등록 `defs.rs`(둘 다 headless scrim; progress `close_on_outside_click=false`), scrim/bg 매칭 `popup.rs`·`popup/draw.rs`, DialogState 슬롯 `src/state.rs`(`transfer_progress: Option` + `transfer_error: VecDeque`), self-close cleanup `PopupDef.on_close`(`transfer.rs`의 `on_close_transfer_progress`/`on_close_transfer_error`). 진행률 배선: `upload_file_over_bulk` 의 `on_progress(sent,total)` 콜백(06 침범 최소) → 08 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick`(`event.rs`/`event_handler.rs`) → `image_upload.rs`(`begin/drain/finish_transfer_progress_row`, `push_transfer_error`, `format_rate`; 실패 분류는 `BULK_REJECT_PREFIX` 접두로 거부 vs 전송에러). 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs`(progress/error 2종). i18n `[transfer.progress]`/`[transfer.error]`.
+- mirror 이미지 붙여넣기 → 원격 업로드: `src/view/main/clipboard.rs`(이미지 분기에서 `Workspace.mirror` 판정 → `CoreState.pending_image_uploads` 큐에 PNG 바이트 push, 비-mirror 는 기존 로컬 PNG 경로 유지), `src/app/image_upload.rs`(`poll_image_uploads`: 큐 drain → 백그라운드 `upload_file_over_bulk` → 결과 채널 → `dispatch_paste`(원격 경로 삽입) 또는 전송 실패 팝업 승격). 업로드 API 는 `src/app/attach_client.rs::upload_file_over_bulk`(bulk 클라 송신, 동기 블로킹).
+- 전송 진행/실패 팝업: 호스트 팝업 `src/adapters/ui/popup/transfer.rs`(`TRANSFER_PROGRESS_POPUP_ID`/`TRANSFER_ERROR_POPUP_ID`, `TransferProgress`/`TransferRow`/`TransferError` + draw/sizer), PopupDef 등록 `defs.rs`(둘 다 headless scrim; progress `close_on_outside_click=false`), scrim/bg 매칭 `popup.rs`·`popup/draw.rs`, DialogState 슬롯 `src/state.rs`(`transfer_progress: Option` + `transfer_error: VecDeque`), self-close cleanup `PopupDef.on_close`(`transfer.rs`의 `on_close_transfer_progress`/`on_close_transfer_error`). 진행률 배선: `upload_file_over_bulk` 의 `on_progress(sent,total)` 콜백(bulk 송신 경로 침범 최소) → 이미지 업로드 워커가 `transfer_progress` 채널 + `AppEvent::TransferProgressTick`(`event.rs`/`event_handler.rs`) → `image_upload.rs`(`begin/drain/finish_transfer_progress_row`, `push_transfer_error`, `format_rate`; 실패 분류는 `BULK_REJECT_PREFIX` 접두로 거부 vs 전송에러). 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs`(progress/error 2종). i18n `[transfer.progress]`/`[transfer.error]`.
 - 브라우징 코어(CLI/IPC 공유): `crates/tasty-remote/src/browse.rs`(`browse`/`resolve_endpoint`/`probe_method` — loopback 직결 + `workspace.list`+`attach.list` 병합).
 - mesh mirror(bundled egui-mesh surface): 프로토콜/분류/서버 구독·forward/클라이언트 렌더·입력 전체 상세는 [dev-guide/egui-mesh-channel "attach mesh mirror 소비 경로"](../../dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로).
 - CLI: `crates/tasty-cli/src/commands/remote.rs`(clap 선언), `crates/tasty-cli/src/dispatch.rs`(갈래 판정), `local/attach.rs`(`run_attach_*` 세션 머신), `local/remote_check.rs`, `local/remote_workspaces.rs`(browse 얇은 래퍼), `crates/tasty-ssh/src/lib.rs`(SSH 결선 + `PortDiscoveryError`/`PortDiscoveryFailureKind` 원인 분류, `pick_most_informative` 로 auto 체인 대표 에러 선택).
