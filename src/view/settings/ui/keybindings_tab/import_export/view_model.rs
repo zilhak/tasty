@@ -13,6 +13,7 @@ use tasty_host_plugin::keybinding_bundle::option_migration::{
 use crate::i18n::{t, t_args, t_fmt, t_fmt2};
 use crate::settings::KeybindingSettings;
 
+use super::bundle_notices::BundleNotice;
 use super::labels::{Labels, trim_label};
 use super::model::{
     Group, MigrationValue, RowKey, override_of, plan_of, row_changed, row_keys, unresolved_count,
@@ -55,6 +56,10 @@ pub(super) struct ViewModel {
     pub(super) migration: Vec<MigrationView>,
     pub(super) intro: String,
     pub(super) dropped: Option<String>,
+    /// 경고 블록의 줄(고정 순서).
+    pub(super) notices: Vec<String>,
+    /// 충돌 부제가 붙은 마이그레이션 행 수 — 카드의 개수 줄이 쓴다.
+    pub(super) conflicts: usize,
 }
 
 pub(super) fn build_view_model(
@@ -185,7 +190,7 @@ pub(super) fn build_view_model(
     } else {
         introduced_conflicts(&preview.keybindings, &preview.overrides, &plan)
     };
-    let migration = preview
+    let migration: Vec<MigrationView> = preview
         .migration
         .iter()
         .map(|r| {
@@ -250,6 +255,24 @@ pub(super) fn build_view_model(
         t_fmt2("settings.keybindings.ie_dropped", &count.to_string(), &list)
     });
 
+    let notices = preview
+        .notices
+        .iter()
+        .map(|n| match n {
+            BundleNotice::NewerSchema { found, known } => t_fmt2(
+                "settings.keybindings.ie_notice_newer_schema",
+                &found.to_string(),
+                &known.to_string(),
+            ),
+            BundleNotice::UnknownActions(names) => t_fmt2(
+                "settings.keybindings.ie_notice_unknown_actions",
+                &names.len().to_string(),
+                &names.join(", "),
+            ),
+        })
+        .collect();
+    let conflicts = migration.iter().filter(|m| m.conflict.is_some()).count();
+
     ViewModel {
         groups,
         total,
@@ -258,5 +281,7 @@ pub(super) fn build_view_model(
         migration,
         intro,
         dropped,
+        notices,
+        conflicts,
     }
 }

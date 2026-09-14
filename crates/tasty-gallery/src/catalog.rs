@@ -1169,6 +1169,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::kb_import_export::draw_migration,
                         ),
+                        spec(
+                            "kbimportexport-open-values",
+                            "The six open values — failure, notices, conflicts, placeholder, tokens",
+                            Some(
+                                "export failure inline in its row · one warning block, 3 lines then fold · parse copy without a line · conflict count from 2 · Select a modifier",
+                            ),
+                            components::kb_import_export::draw_open_values,
+                        ),
                     ],
                 ),
                 section(

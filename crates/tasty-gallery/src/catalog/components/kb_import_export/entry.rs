@@ -189,6 +189,8 @@ fn entry(ui: &mut egui::Ui, theme: &Theme) {
          to one file.",
         "Export…",
         ButtonVariant::Secondary,
+        true,
+        None,
     );
     action_row(
         ui,
@@ -199,11 +201,16 @@ fn entry(ui: &mut egui::Ui, theme: &Theme) {
          anything is written.",
         "Import…",
         ButtonVariant::Primary,
+        true,
+        None,
     );
 }
 
-/// jsx `IeActionRow` — glyph · 제목(13 primary) + 설명(12 muted, measure-md) · trailing 버튼.
-fn action_row(
+/// jsx `IeActionRow` — glyph · 제목(13 primary) + 설명(12 muted, measure-md) · trailing 버튼,
+/// 그 아래 `notice` 자리. `enabled == false` 면 trailing 버튼이 꺼진다(notice 가 재시도를 든 동안).
+// reason: jsx `IeActionRow` 의 prop 을 그대로 받는다 — 본체 짝과 같은 모양이다.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn action_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     glyph: MockGlyph,
@@ -211,6 +218,8 @@ fn action_row(
     desc: &str,
     button: &str,
     variant: ButtonVariant,
+    enabled: bool,
+    notice: Option<&mut dyn FnMut(&mut egui::Ui)>,
 ) {
     egui::Frame::new()
         .fill(theme.surface_raised().to_egui())
@@ -222,6 +231,7 @@ fn action_row(
         .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, theme.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
                 glyph_at(
@@ -234,6 +244,7 @@ fn action_row(
                     Button::new(button)
                         .variant(variant)
                         .size(ControlSize::Sm)
+                        .enabled(enabled)
                         .show(ui, theme);
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.spacing_mut().item_spacing.y =
@@ -254,6 +265,9 @@ fn action_row(
                     });
                 });
             });
+            if let Some(notice) = notice {
+                notice(ui);
+            }
         });
 }
 

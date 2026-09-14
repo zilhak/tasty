@@ -4,7 +4,9 @@
 //! 경계: 본체 `import_export/migrate.rs` 와 같은 자리 — 마이그레이션 카드 한 덩어리의 그리기다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, select, tag};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, TagVariant, select, select_or_placeholder, tag,
+};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -12,9 +14,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use super::notices::notices;
 use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
 use super::{
-    CARD_PAD_X, GROUP_CHEVRON_GAP, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL, MIGRATE_FROM_W,
-    MIGRATE_LABEL_W, MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState, RECORD_SLOT_H,
-    RECORD_SLOT_MIN_W, SPECIMEN_W, STATE, State, Widget, detail_frame,
+    CARD_PAD_X, CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_CARD_BORDER,
+    MIGRATE_CARD_FILL, MIGRATE_FROM_W, MIGRATE_LABEL_W, MIGRATION_H, MODIFIER_OPTIONS, MigrateRow,
+    MigrateState, RECORD_SLOT_H, RECORD_SLOT_MIN_W, SPECIMEN_W, STATE, State, Widget, detail_frame,
 };
 
 // ── Spec 3: Option 마이그레이션 — 미완료 · 완료 · 충돌 · unbound · 불필요 · 실패 ─────────
@@ -118,7 +120,7 @@ pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// jsx `IeMigrateCard` — 톤 틴트 카드(헤더 · 설명 · 행들).
+/// jsx `IeMigrateCard` — 미완료 · 완료 데모 데이터로 카드를 세운다.
 fn migrate_card(ui: &mut egui::Ui, theme: &Theme, done: bool, st: &mut State) {
     let rows: &[MigrateRow] = if done {
         &[
@@ -190,16 +192,31 @@ fn migrate_card(ui: &mut egui::Ui, theme: &Theme, done: bool, st: &mut State) {
             },
         ]
     };
-    let tone = if done {
-        theme.accent_success().to_egui()
-    } else {
-        theme.accent_warning().to_egui()
-    };
     let total = if done { 4 } else { rows.len() };
     let left = rows
         .iter()
         .filter(|r| r.state == MigrateState::Unset)
         .count();
+    card(ui, theme, done, rows, (left, total), st);
+}
+
+/// jsx `IeMigrateCard` — 톤 틴트 카드(헤더 · 설명 · 충돌 개수 줄 · 행들). `counter` 는
+/// (미해결, 전체).
+pub(super) fn card(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    done: bool,
+    rows: &[MigrateRow],
+    counter: (usize, usize),
+    st: &mut State,
+) {
+    let (left, total) = counter;
+    let tone = if done {
+        theme.accent_success().to_egui()
+    } else {
+        theme.accent_warning().to_egui()
+    };
+    let conflicts = rows.iter().filter(|r| r.conflict.is_some()).count();
     egui::Frame::new()
         .fill(tone.gamma_multiply(MIGRATE_CARD_FILL))
         .stroke(egui::Stroke::new(
@@ -254,11 +271,41 @@ fn migrate_card(ui: &mut egui::Ui, theme: &Theme, done: bool, st: &mut State) {
                      disabled until none are left."
                 },
             );
+            // 충돌 개수 줄 — 2 건부터. 행마다의 인라인 이유는 그대로 남는다.
+            if conflicts >= CONFLICT_SUMMARY_FROM {
+                conflict_summary(ui, theme, conflicts);
+            }
             tasty_ui_widgets::vspace(ui, theme.spacing_xs);
             for (i, r) in rows.iter().enumerate() {
                 migrate_row(ui, theme, r, done, i, st);
             }
         });
+}
+
+/// 충돌 개수 줄 — jsx `IeMigrateCard` 의 `conflicts > 1` 문단. 개수(danger 강조) 먼저.
+fn conflict_summary(ui: &mut egui::Ui, theme: &Theme, conflicts: usize) {
+    let size = theme.font_size_term_sm.value();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &format!("{conflicts} conflicts"),
+        0.0,
+        egui::TextFormat::simple(
+            egui::FontId::proportional(size),
+            theme.accent_danger().to_egui(),
+        ),
+    );
+    job.append(
+        " — those shortcuts are already bound. The shortcut-conflict popup opens on Apply.",
+        0.0,
+        egui::TextFormat::simple(
+            egui::FontId::proportional(size),
+            theme.text_secondary().to_egui(),
+        ),
+    );
+    ui.scope(|ui| {
+        ui.set_max_width(theme.measure_lg.value());
+        ui.label(job);
+    });
 }
 
 /// jsx `IeMigrateRow` — 라벨 288 · 원래 조합 120 · → · 위젯 · trailing(check / Not set +
@@ -326,12 +373,13 @@ fn migrate_row(
                             true,
                         );
                     } else {
-                        select(
+                        select_or_placeholder(
                             ui,
                             theme,
                             &format!("kb_ie_modifier_{index}"),
                             &mut st.pending_modifier,
                             MODIFIER_OPTIONS,
+                            IE_PICK,
                             theme.field_width_md.value(),
                             true,
                         );

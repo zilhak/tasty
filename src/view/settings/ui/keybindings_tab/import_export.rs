@@ -18,11 +18,12 @@
 //!
 //! 모듈 경계는 **상태·계산 대 화면 단위 그리기**다. 이 파일은 서브탭 상태와 그 전이(export ·
 //! import · apply)와 진입 함수를 들고, 계산은 `model`(행 모델) · `labels`(표시 문자열) ·
-//! `view_model`(한 프레임의 표시값)이, 그리기는 jsx 컴포넌트 단위로 `entry`(`IeActionRow`) ·
+//! `view_model`(한 프레임의 표시값) · `bundle_notices`(경고 블록에 오를 줄)가, 그리기는 jsx 컴포넌트 단위로 `entry`(`IeActionRow`) ·
 //! `diff_table`(`IeDiffTable`) · `migrate`(`IeMigrateCard`/`IeMigrateRow`) · `notices` 가,
 //! 그 넷이 함께 쓰는 칠하기 헬퍼는 `paint` 가 든다. 치수 상수는 여기 남는다 — 갤러리 짝과의
 //! 값 일치를 보는 가드가 이 경로에서 읽는다.
 
+mod bundle_notices;
 mod diff_table;
 mod entry;
 mod labels;
@@ -34,7 +35,7 @@ mod view_model;
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tasty_host_plugin::keybinding_bundle::option_migration::{
     ConflictPolicy, MigrationError, TargetOs, resolve_migration, scan_option_bindings,
@@ -61,7 +62,7 @@ use diff_table::diff_table;
 use entry::action_row;
 use labels::Labels;
 use migrate::migrate_card;
-use notices::{dropped_notice, parse_failure};
+use notices::{ExportFailureAction, bundle_notices, dropped_notice, export_failure, parse_failure};
 use paint::intro;
 use view_model::build_view_model;
 
@@ -80,7 +81,7 @@ const RECORD_SLOT_MIN_W: LogicalPx = LogicalPx(140.0);
 const RECORD_SLOT_H: LogicalPx = LogicalPx(24.0);
 /// 액션 행 · 마이그레이션 카드 · 실패 블록의 가로 패딩 — jsx `--tasty-size-14`.
 const CARD_PAD_X: LogicalPx = LogicalPx(14.0);
-/// 그룹 헤더 chevron ↔ 그룹명, 충돌 부제 아이콘 ↔ 문구 간격 — jsx `gap: 6`.
+/// 그룹 헤더 chevron ↔ 그룹명, 충돌 부제 아이콘 ↔ 문구, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`.
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.
 const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
@@ -88,10 +89,13 @@ const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
 const MIGRATE_CARD_FILL: f32 = 0.11;
 /// 마이그레이션 카드 테두리 — jsx `color-mix(tone 36%)`.
 const MIGRATE_CARD_BORDER: f32 = 0.36;
-/// 파싱 실패 블록 채움 — jsx `color-mix(accent-danger 12%)`.
-const FAILURE_FILL: f32 = 0.12;
-/// 파싱 실패 블록 테두리 — jsx `color-mix(accent-danger 35%)`.
-const FAILURE_BORDER: f32 = 0.35;
+/// 알림 블록(파싱 실패 · 내보내기 실패 · 번들 경고) 채움 — jsx `IeBlockG` `color-mix(tone 12%)`.
+const NOTICE_BLOCK_FILL: f32 = 0.12;
+/// 알림 블록 테두리 — jsx `IeBlockG` `color-mix(tone 35%)`.
+const NOTICE_BLOCK_BORDER: f32 = 0.35;
+
+/// 충돌 개수 줄이 서는 최소 충돌 수 — 하나일 때는 행의 인라인 이유가 혼자 싣는다.
+const CONFLICT_SUMMARY_FROM: usize = 2;
 
 /// 내보내기 파일 선택의 결과 키.
 pub(crate) const EXPORT_CONSUMER: &str = "keybindings_export";
@@ -125,6 +129,8 @@ struct Preview {
     overrides: PluginShortcutOverrides,
     /// 이 환경에 없는 plugin 과 버린 override 수.
     dropped: Vec<(String, usize)>,
+    /// 경고 블록에 오를 줄(고정 순서).
+    notices: Vec<bundle_notices::BundleNotice>,
     migration: Vec<MigrationRow>,
 }
 
@@ -134,10 +140,39 @@ struct Failure {
     line: Option<usize>,
 }
 
+/// 쓰지 못한 내보내기 — 재시도가 같은 경로를 다시 쓴다.
+struct ExportFailure {
+    path: PathBuf,
+    reason: ExportFailReason,
+}
+
+/// 내보내기 실패의 이유 — 블록 본문 가운데 구절.
+enum ExportFailReason {
+    /// 권한 · 읽기 전용 파일시스템 — 디자인 문구가 있는 갈래.
+    ReadOnly,
+    /// 그 밖의 실패 — 디자인 문구가 없어 OS 가 낸 문장을 그대로 싣는다.
+    Other(String),
+}
+
+impl ExportFailReason {
+    fn of_io(e: &std::io::Error) -> Self {
+        match e.kind() {
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem => {
+                ExportFailReason::ReadOnly
+            }
+            _ => ExportFailReason::Other(e.to_string()),
+        }
+    }
+}
+
 /// 서브탭 상태 — `SettingsUiState` 가 소유한다.
 pub struct ImportExportState {
     preview: Option<Preview>,
     failure: Option<Failure>,
+    /// 내보내기 실패 — 떠 있는 동안 Export 버튼이 꺼진다.
+    export_failure: Option<ExportFailure>,
+    /// 경고 블록의 접힌 줄을 펼쳤는가.
+    notices_expanded: bool,
     /// 디자인 기본값: 변경된 행만.
     changed_only: bool,
     collapsed: BTreeSet<Group>,
@@ -155,6 +190,8 @@ impl Default for ImportExportState {
         Self {
             preview: None,
             failure: None,
+            export_failure: None,
+            notices_expanded: false,
             changed_only: true,
             collapsed: BTreeSet::new(),
             deselected: BTreeSet::new(),
@@ -195,17 +232,30 @@ impl ImportExportState {
     ) {
         let overrides = merged_overrides(&ctx.overrides, plugin_draft);
         let written = encode(keybindings, &overrides)
-            .map_err(|e| e.to_string())
-            .and_then(|text| std::fs::write(path, text).map_err(|e| e.to_string()));
+            .map_err(|e| {
+                tracing::error!("keybinding export: encode failed: {e}");
+                ExportFailReason::Other(e.to_string())
+            })
+            .and_then(|text| {
+                std::fs::write(path, text).map_err(|e| {
+                    tracing::error!("keybinding export to {} failed: {e}", path.display());
+                    ExportFailReason::of_io(&e)
+                })
+            });
         match written {
             Ok(()) => {
+                self.export_failure = None;
                 self.toast = Some(t_fmt(
                     "settings.keybindings.ie_exported_toast",
                     &path.display().to_string(),
                 ));
             }
-            // 실패 표시는 디자인이 정하지 않았다 — 자리를 비워 두고 로그만 남긴다.
-            Err(e) => tracing::error!("keybinding export to {} failed: {e}", path.display()),
+            Err(reason) => {
+                self.export_failure = Some(ExportFailure {
+                    path: path.to_path_buf(),
+                    reason,
+                });
+            }
         }
     }
 
@@ -231,6 +281,7 @@ impl ImportExportState {
             }
         };
         let dropped = dropped_plugins(path, &decoded.warnings);
+        let notices = bundle_notices::bundle_notices(&decoded.warnings);
         let migration = scan_option_bindings(
             &decoded.keybindings,
             &decoded.plugin_keybindings,
@@ -251,8 +302,10 @@ impl ImportExportState {
             keybindings: decoded.keybindings,
             overrides: decoded.plugin_keybindings,
             dropped,
+            notices,
             migration,
         });
+        self.notices_expanded = false;
         self.changed_only = true;
         self.collapsed.clear();
         self.deselected.clear();
@@ -341,17 +394,20 @@ fn read_bundle(
     })
 }
 
-/// 버린 plugin 경고만 화면 몫으로 모은다. 나머지 경고는 로그로만 남는다.
+/// 버린 plugin 을 정보 줄 몫으로 모은다. 화면 어디에도 안 오르는 경고는 로그로만 남는다.
 fn dropped_plugins(path: &Path, warnings: &[BundleWarning]) -> Vec<(String, usize)> {
     let mut dropped = Vec::new();
     for w in warnings {
-        match w {
-            BundleWarning::DroppedUninstalledPlugin {
-                plugin_id,
-                commands,
-            } => dropped.push((plugin_id.clone(), *commands)),
-            // 이 경고들의 표시는 디자인이 정하지 않았다 — 자리를 비워 두고 로그만 남긴다.
-            other => tracing::warn!("keybinding import {}: {other}", path.display()),
+        if let BundleWarning::DroppedUninstalledPlugin {
+            plugin_id,
+            commands,
+        } = w
+        {
+            dropped.push((plugin_id.clone(), *commands));
+        }
+        if !bundle_notices::is_shown(w) {
+            // 이 경고들의 표시 문구는 디자인이 정하지 않았다 — 자리를 비워 두고 로그만 남긴다.
+            tracing::warn!("keybinding import {}: {w}", path.display());
         }
     }
     dropped
@@ -411,6 +467,8 @@ pub(crate) fn draw_import_export_subtab(
     let apply_clicked = Cell::new(false);
     let toggle_clicked = Cell::new(false);
     let choose_another = Cell::new(false);
+    let show_more_notices = Cell::new(false);
+    let export_action = Cell::new(None::<ExportFailureAction>);
 
     let current_overrides = merged_overrides(&ctx.overrides, plugin_draft);
     let back_clicked = {
@@ -474,6 +532,8 @@ pub(crate) fn draw_import_export_subtab(
         };
 
         let failure = state.failure.as_ref();
+        let export_fail = state.export_failure.as_ref();
+        let notices_expanded = state.notices_expanded;
         let out = DrillDown::new("settings_kb_import_export")
             .view(view)
             .title(t("settings.keybindings.ie_detail_title"))
@@ -492,6 +552,13 @@ pub(crate) fn draw_import_export_subtab(
                                 th.measure_md,
                                 t("settings.keybindings.ie_entry_intro"),
                             );
+                            let mut export_notice = |ui: &mut egui::Ui| {
+                                if let Some(f) = export_fail
+                                    && let Some(action) = export_failure(ui, th, f)
+                                {
+                                    export_action.set(Some(action));
+                                }
+                            };
                             if action_row(
                                 ui,
                                 th,
@@ -500,6 +567,9 @@ pub(crate) fn draw_import_export_subtab(
                                 t("settings.keybindings.ie_export_desc"),
                                 t("settings.keybindings.ie_export_button"),
                                 ButtonVariant::Secondary,
+                                export_fail.is_none(),
+                                export_fail
+                                    .map(|_| &mut export_notice as &mut dyn FnMut(&mut egui::Ui)),
                             ) {
                                 export_clicked.set(true);
                             }
@@ -511,6 +581,8 @@ pub(crate) fn draw_import_export_subtab(
                                 t("settings.keybindings.ie_import_desc"),
                                 t("settings.keybindings.ie_import_button"),
                                 ButtonVariant::Primary,
+                                true,
+                                None,
                             ) {
                                 import_clicked.set(true);
                             }
@@ -544,6 +616,11 @@ pub(crate) fn draw_import_export_subtab(
                             if let Some(dropped) = &vm.dropped {
                                 dropped_notice(ui, th, dropped);
                             }
+                            if !vm.notices.is_empty()
+                                && bundle_notices(ui, th, &vm.notices, notices_expanded)
+                            {
+                                show_more_notices.set(true);
+                            }
                             diff_table(
                                 ui,
                                 th,
@@ -561,6 +638,21 @@ pub(crate) fn draw_import_export_subtab(
 
     if export_clicked.get() {
         state.request = Some(ImportExportRequest::Export);
+    }
+    match export_action.get() {
+        Some(ExportFailureAction::Retry) => {
+            if let Some(path) = state.export_failure.as_ref().map(|f| f.path.clone()) {
+                state.export_to(&path, &settings.keybindings, ctx, plugin_draft);
+            }
+        }
+        Some(ExportFailureAction::ChooseAnother) => {
+            state.export_failure = None;
+            state.request = Some(ImportExportRequest::Export);
+        }
+        None => {}
+    }
+    if show_more_notices.get() {
+        state.notices_expanded = true;
     }
     if import_clicked.get() || choose_another.get() {
         state.failure = None;
@@ -593,5 +685,51 @@ fn state_migration(preview: &mut Option<Preview>) -> &mut [MigrationRow] {
     match preview.as_mut() {
         Some(p) => &mut p.migration,
         None => &mut [],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn export(state: &mut ImportExportState, path: &Path) {
+        state.export_to(
+            path,
+            &KeybindingSettings::default(),
+            &PluginBundleContext::default(),
+            &PluginShortcutDraft::new(),
+        );
+    }
+
+    /// 쓰지 못하면 toast 가 아니라 실패 블록이 선다 — 읽기 전용이면 디자인 문구 갈래다. 같은
+    /// 경로가 다시 쓰일 수 있게 되면 성공이 블록을 걷는다(재시도가 닫는 경로).
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_export_raises_the_inline_block_and_a_later_success_clears_it() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("임시 디렉토리");
+        let path = dir.path().join("kb.toml");
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
+            .expect("읽기 전용으로");
+        let mut state = ImportExportState::default();
+        export(&mut state, &path);
+        // root 로 돌면 권한이 안 막는다 — 그때는 이 단정이 무엇도 재지 않으므로 멈춘다.
+        if std::fs::metadata(&path).is_ok() {
+            return;
+        }
+        assert!(state.toast.is_none(), "실패인데 toast 가 섰다");
+        let failure = state.export_failure.as_ref().expect("실패 블록이 없다");
+        assert_eq!(failure.path, path);
+        assert!(matches!(failure.reason, ExportFailReason::ReadOnly));
+
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
+            .expect("쓰기 가능으로");
+        export(&mut state, &path);
+        assert!(
+            state.export_failure.is_none(),
+            "성공했는데 실패 블록이 남았다"
+        );
+        assert!(state.take_toast().is_some(), "성공 toast 가 없다");
     }
 }

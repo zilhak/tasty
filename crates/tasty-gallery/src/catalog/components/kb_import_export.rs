@@ -3,8 +3,9 @@
 //! 전사 원본: `ui_kits/terminal/overlays/kb_import_export.jsx`(`KbImportExportSubtab` ·
 //! `IeDiffTable` · `IeMigrateCard`/`IeMigrateRow` · `IeActionRow`) +
 //! `ui_kits/terminal/overlays/settings_window.jsx`(`KB_L2_SEPARATED` · 창 자체 toast) +
-//! `gallery/overlays-windows.jsx` 의 Spec 3 종(`IeL2Tail` · `IeEntry` · `IeGrid` ·
-//! `IeMigrateG` · `IeBackBarG` · `IeNotices`).
+//! `gallery/overlays-windows.jsx` 의 Spec 4 종(`IeL2Tail` · `IeEntry` · `IeGrid` ·
+//! `IeMigrateG` · `IeBackBarG` · `IeNotices` · `IeBlockG` · `IeExportFailG` · `IeBundleNoticesG` ·
+//! `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG`).
 //!
 //! 본체 자리: `src/view/settings/ui/keybindings_tab.rs` 의 서브탭. 갤러리는 본체 binary 에
 //! 의존하지 않으므로 같은 위젯(`DrillDown` · `Button` · `checkbox` · `select` · `tag`)과
@@ -25,7 +26,8 @@
 
 //!
 //! 모듈 경계는 본체 `keybindings_tab/import_export/` 와 **같은 이름**으로 가른다 — 화면 단위 그리기는
-//! `entry`(Spec 1) · `diff_table`(Spec 2) · `migrate`(Spec 3) · `notices`, 공용 칠하기 헬퍼는
+//! `entry`(Spec 1) · `diff_table`(Spec 2) · `migrate`(Spec 3) · `notices` · `open_values`(Spec 4 —
+//! 첫 시안이 비워 둔 값 여섯), 공용 칠하기 헬퍼는
 //! `paint`. 이 파일은 데모 데이터 · 상호작용 상태 · 두 Spec 이 함께 쓰는 `detail_frame` 과 치수
 //! 상수를 든다(치수 상수는 본체 짝과의 값 일치 가드가 이 경로에서 읽는다).
 
@@ -33,6 +35,7 @@ mod diff_table;
 mod entry;
 mod migrate;
 mod notices;
+mod open_values;
 mod paint;
 
 use std::cell::RefCell;
@@ -45,6 +48,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, DrillDown, DrillDownV
 pub use diff_table::draw_preview;
 pub use entry::draw_entry;
 pub use migrate::draw_migration;
+pub use open_values::draw_open_values;
 
 /// specimen 폭 — 본체 설정 창 콘텐츠 컬럼(1100 창 − L2 200 − 좌우 패딩 16×2). jsx gallery 의
 /// `maxWidth: 620` 에서는 ui kit 의 288 · 120 라벨 열이 들어가지 않아 본체 폭으로 둔다.
@@ -71,18 +75,23 @@ const RECORD_SLOT_MIN_W: LogicalPx = LogicalPx(140.0);
 const RECORD_SLOT_H: LogicalPx = LogicalPx(24.0);
 /// 액션 행 · 마이그레이션 카드 · 실패 블록의 가로 패딩 — jsx `--tasty-size-14`.
 const CARD_PAD_X: LogicalPx = LogicalPx(14.0);
-/// 그룹 헤더의 chevron ↔ 그룹명 간격 — jsx `gap: 6`(그리드 밖 값, 스냅하지 않는다).
+/// 그룹 헤더의 chevron ↔ 그룹명, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`(그리드 밖 값,
+/// 스냅하지 않는다).
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.
 const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
+/// 충돌 개수 줄이 서는 최소 충돌 수 — 하나일 때는 행의 인라인 이유가 혼자 싣는다.
+const CONFLICT_SUMMARY_FROM: usize = 2;
+/// 경고 블록이 접기 전에 보이는 줄 수.
+const NOTICE_FOLD_AT: usize = 3;
 /// 마이그레이션 카드 채움 — jsx `color-mix(tone 11%)`.
 const MIGRATE_CARD_FILL: f32 = 0.11;
 /// 마이그레이션 카드 테두리 — jsx `color-mix(tone 36%)`.
 const MIGRATE_CARD_BORDER: f32 = 0.36;
-/// 파싱 실패 블록 채움 — jsx `color-mix(accent-danger 12%)`.
-const FAILURE_FILL: f32 = 0.12;
-/// 파싱 실패 블록 테두리 — jsx `color-mix(accent-danger 35%)`.
-const FAILURE_BORDER: f32 = 0.35;
+/// 알림 블록(파싱 실패 · 내보내기 실패 · 번들 경고) 채움 — jsx `IeBlockG` `color-mix(tone 12%)`.
+const NOTICE_BLOCK_FILL: f32 = 0.12;
+/// 알림 블록 테두리 — jsx `IeBlockG` `color-mix(tone 35%)`.
+const NOTICE_BLOCK_BORDER: f32 = 0.35;
 
 // ── 데모 데이터 (jsx `IE_GROUPS` · `IE_MIGRATE` · `IE_DISCARDED` 미러) ─────────────
 
@@ -174,10 +183,12 @@ const GROUPS: &[Group] = &[
     },
 ];
 
-/// 축 modifier Select 의 선택지 — jsx `MODIFIER_COMBOS`(비-macOS 7 종) 앞에 "아직 안 고름"
-/// sentinel(`IE_PICK`)을 둔다.
+/// 축 modifier Select 의 "아직 안 고름" placeholder — jsx `IE_PICK`. 값이 아니라 UI 폰트 ·
+/// `text_placeholder` 색으로 그리고, 고르면 목록에서 빠진다.
+const IE_PICK: &str = "Select a modifier";
+
+/// 축 modifier Select 의 선택지 — jsx `MODIFIER_COMBOS`(비-macOS 7 종).
 const MODIFIER_OPTIONS: &[&str] = &[
-    "— pick a modifier —",
     "Ctrl",
     "Alt",
     "Shift",
@@ -222,7 +233,12 @@ struct State {
     collapsed: BTreeSet<&'static str>,
     deselected: BTreeSet<(&'static str, &'static str)>,
     l2_filter_active: bool,
-    pending_modifier: usize,
+    /// 미완료 카드의 축 modifier — 처음엔 안 고른 상태라 placeholder 가 보인다.
+    pending_modifier: Option<usize>,
+    /// Spec 4 경고 블록의 접힌 줄을 펼쳤는가.
+    notices_expanded: bool,
+    /// Spec 4 내보내기 실패 블록이 떠 있는가 — Try again · Choose another location 이 닫는다.
+    export_failed: bool,
 }
 
 thread_local! {
@@ -231,7 +247,9 @@ thread_local! {
         collapsed: BTreeSet::from(["scripts"]),
         deselected: BTreeSet::new(),
         l2_filter_active: false,
-        pending_modifier: 0,
+        pending_modifier: None,
+        notices_expanded: false,
+        export_failed: true,
     });
 }
 

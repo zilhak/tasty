@@ -5,11 +5,13 @@
 
 use tasty_host_plugin::keybinding_bundle::option_migration::ReplacementKind;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, select, tag, vspace};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, TagVariant, select_or_placeholder, tag, vspace,
+};
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
-use crate::i18n::{t, t_fmt2};
+use crate::i18n::{t, t_fmt, t_fmt2};
 
 use super::super::{FieldKind, LABEL_COL_WIDTH, RecordingSlot};
 use super::labels::Labels;
@@ -17,8 +19,8 @@ use super::model::{MigrationRow, MigrationValue};
 use super::paint::{fixed_label, glyph_at};
 use super::view_model::{MigrationView, ViewModel};
 use super::{
-    CARD_PAD_X, GROUP_CHEVRON_GAP, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL, MIGRATE_FROM_W,
-    RECORD_SLOT_H, RECORD_SLOT_MIN_W, RECORDING_FIELD,
+    CARD_PAD_X, CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL,
+    MIGRATE_FROM_W, RECORD_SLOT_H, RECORD_SLOT_MIN_W, RECORDING_FIELD,
 };
 
 /// jsx `IeMigrateCard` — 톤 틴트 카드(헤더 · 설명 · 행들).
@@ -100,11 +102,44 @@ pub(super) fn migrate_card(
                     .color(th.text_secondary()),
                 );
             });
+            if vm.conflicts >= CONFLICT_SUMMARY_FROM {
+                conflict_summary(ui, th, vm.conflicts);
+            }
             vspace(ui, th.spacing_xs);
             for (i, (row, view)) in rows.iter_mut().zip(&vm.migration).enumerate() {
                 migrate_row(ui, th, i, row, view, recording_field, labels);
             }
         });
+}
+
+/// 충돌 개수 줄 — 개수(danger 강조) 먼저, 이어서 무엇이 일어나는지. 행마다의 인라인 이유는
+/// 그대로 남으므로(어느 바인딩인지를 말한다) 이 줄은 목록을 되풀이하지 않는다.
+fn conflict_summary(ui: &mut egui::Ui, th: &Theme, conflicts: usize) {
+    let size = th.font_size_term_sm.value();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &t_fmt(
+            "settings.keybindings.ie_migrate_conflicts_count",
+            &conflicts.to_string(),
+        ),
+        0.0,
+        egui::TextFormat::simple(
+            egui::FontId::proportional(size),
+            th.accent_danger().to_egui(),
+        ),
+    );
+    job.append(
+        t("settings.keybindings.ie_migrate_conflicts_tail"),
+        0.0,
+        egui::TextFormat::simple(
+            egui::FontId::proportional(size),
+            th.text_secondary().to_egui(),
+        ),
+    );
+    ui.scope(|ui| {
+        ui.set_max_width(th.measure_lg.value());
+        ui.label(job);
+    });
 }
 
 /// jsx `IeMigrateRow` — 라벨 288 · 원래 조합 120 · → · 위젯 · trailing + 부제(충돌 · fan-out).
@@ -161,30 +196,23 @@ fn migrate_row(
                         .map(|c| c.name())
                         .filter(|n| !n.contains("option"))
                         .collect();
-                    let unset = row.value == MigrationValue::Unset;
-                    let mut options: Vec<String> = Vec::new();
-                    if unset {
-                        options.push(t("settings.keybindings.ie_pick_modifier").to_string());
-                    }
-                    options.extend(combos.iter().map(|n| labels.combo(n)));
+                    let options: Vec<String> = combos.iter().map(|n| labels.combo(n)).collect();
                     let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-                    let base = usize::from(unset);
                     let mut idx = match &row.value {
-                        MigrationValue::Set(v) => {
-                            combos.iter().position(|n| n == v).map_or(0, |p| p + base)
-                        }
-                        _ => 0,
+                        MigrationValue::Set(v) => combos.iter().position(|n| n == v),
+                        _ => None,
                     };
-                    if select(
+                    // 안 고른 상태는 값이 아니다 — placeholder 색 · UI 폰트로 그리고 고르면 빠진다.
+                    if select_or_placeholder(
                         ui,
                         th,
                         &format!("kb_ie_modifier_{index}"),
                         &mut idx,
                         &option_refs,
+                        t("settings.keybindings.ie_pick_modifier"),
                         th.field_width_md.value(),
                         true,
-                    ) && idx >= base
-                        && let Some(name) = combos.get(idx - base)
+                    ) && let Some(name) = idx.and_then(|i| combos.get(i))
                     {
                         row.value = MigrationValue::Set(name.clone());
                     }

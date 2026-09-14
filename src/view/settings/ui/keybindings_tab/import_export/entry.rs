@@ -10,7 +10,14 @@ use crate::adapters::ui::icons;
 use super::CARD_PAD_X;
 use super::paint::glyph_at;
 
-/// jsx `IeActionRow` — glyph · 제목(13 primary) + 설명(12 muted, measure-md) · trailing 버튼.
+/// jsx `IeActionRow` — glyph · 제목(13 primary) + 설명(12 muted, measure-md) · trailing 버튼,
+/// 그 아래 `notice` 자리(그 행이 시작한 일의 실패를 그 행 안에서 알린다).
+///
+/// `enabled == false` 면 trailing 버튼이 꺼진다 — notice 가 재시도를 들고 있는 동안 같은 일을
+/// 시작하는 입구가 둘이 되지 않게.
+// reason: jsx `IeActionRow` 의 prop(glyph · title · desc · action · notice)을 그대로 받는다 —
+// 묶으면 두 호출부가 같은 구조체를 채우는 코드만 늘어난다.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn action_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -19,6 +26,8 @@ pub(super) fn action_row(
     desc: &str,
     button: &str,
     variant: ButtonVariant,
+    enabled: bool,
+    notice: Option<&mut dyn FnMut(&mut egui::Ui)>,
 ) -> bool {
     let mut clicked = false;
     egui::Frame::new()
@@ -31,6 +40,7 @@ pub(super) fn action_row(
         .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, th.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = th.spacing_md.value();
                 glyph_at(ui, glyph, th.icon_glyph_size_md, th.text_muted().to_egui());
@@ -38,6 +48,7 @@ pub(super) fn action_row(
                     clicked = Button::new(button)
                         .variant(variant)
                         .size(ControlSize::Sm)
+                        .enabled(enabled)
                         .show(ui, th)
                         .clicked();
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -59,6 +70,9 @@ pub(super) fn action_row(
                     });
                 });
             });
+            if let Some(notice) = notice {
+                notice(ui);
+            }
         });
     clicked
 }

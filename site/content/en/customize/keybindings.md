@@ -1,4 +1,4 @@
-<!-- source-hash: 207ce7faf5b7 -->
+<!-- source-hash: 5d2c6db9343e -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -128,6 +128,8 @@ To export:
 2. Pick a folder and a file name. The default name is `tasty-keybindings-<date>.toml`.
 3. Once written, a notification shows the file path. Edits you haven't saved yet are included.
 
+If the file can't be written (for example, the folder is read-only), **The export wasn't written** appears inside the **Export** row. Use **Try again** to write to the same place, or **Choose another location…** to pick somewhere else. While that notice is up, the **Export…** button is disabled.
+
 To import:
 
 1. Press **Import…** and open the file you brought over. Nothing is applied yet — a comparison view opens.
@@ -140,6 +142,7 @@ Good to know:
 
 - Quick switch moves one axis at a time (Tab · Workspace · Category) — the modifier and the slot keys move together.
 - Plugin keybindings that exist only on this computer are not removed just because the file lacks them. Conversely, keybindings for plugins not installed on this computer are not imported, and the comparison view says so in one line.
+- If parts of the file had to be skipped (a file written by a newer tasty, actions this version doesn't know), they are listed one per line in a **Read with warnings** box above the comparison. With four or more, three show and the rest open with **Show N more**.
 - If you pick something that isn't a keybinding file, you get **This file can't be read as keybindings** instead of the comparison, and nothing changes. Use **Choose another file** to try again.
 
 ### Importing a file made on a Mac into Windows or Linux
@@ -147,8 +150,8 @@ Good to know:
 Keybindings that contain the Mac `Option` key never work on Windows or Linux. If there are any, an **Option bindings need a replacement** card appears above the comparison, and **Apply** stays disabled until every one is settled.
 
 - A regular keybinding — click the slot on the right and press the combination to use instead. To not use it on this computer, press **Leave unbound**.
-- A number-switch modifier — choose a replacement modifier combination from the dropdown. A modifier can't be left unbound.
-- If the combination you choose collides with another action in the file, it is shown under that row, and the **Shortcut already in use** popup appears when you **Apply**. Choosing **Overwrite** clears the other action.
+- A number-switch modifier — choose a replacement modifier combination from the dropdown (it starts empty, showing **Select a modifier**). A modifier can't be left unbound.
+- If the combination you choose collides with another action in the file, it is shown under that row (with two or more collisions, a **N conflicts** line comes first at the top of the card), and the **Shortcut already in use** popup appears when you **Apply**. Choosing **Overwrite** clears the other action.
 
 ## Changing one keybinding
 
