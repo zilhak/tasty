@@ -33,7 +33,7 @@ cargo test -p tasty-doc-guards --locked --test ci_channel_claims_match_workflows
 
 **함정**: 고발 목록은 `test result` 줄 위에 나오고, 통과하면 아예 안 나온다. 그래서 줄 수를
 세기 전에 `test result` 가 `FAILED` 인지부터 본다 — `ok` 인데 0 줄인 것과 필터가 빗나가
-아무것도 안 돈 것은 화면이 같다(R8·R116). `40 filtered out` 이 아니라 `41 filtered out` 이면
+아무것도 안 돈 것은 화면이 같다. `40 filtered out` 이 아니라 `41 filtered out` 이면
 이 이름이 실제로 잡힌 것이다.
 
 이 대비가 이 ADR 의 근거 전부다. 앞서 사람이 **찔러서** 찾은 표본은 2 건이었고 둘 다
