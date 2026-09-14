@@ -138,7 +138,14 @@ cleanup() {
 trap cleanup EXIT
 
 WORK="$(mktemp -d)/base"
-git worktree add --detach "$WORK" "$BASE_SHA" >/dev/null 2>&1
+# 성공할 때의 안내 줄은 소음이라 받아 두고, 실패하면 그것을 사유로 찍는다. 예전에는 둘 다
+# 버렸고 `set -e` 가 git 의 rc 로 **아무 말 없이** 끝냈다 — 호출한 쪽에는 빈 출력과 비영 rc
+# 만 남아, 게이트가 판정을 거부한 것과 이 도구가 base 를 못 편 것이 구별되지 않았다.
+if ! wt_out=$(git worktree add --detach "$WORK" "$BASE_SHA" 2>&1); then
+    echo "[delta] base 트리를 못 폈다: git worktree add --detach $WORK $BASE_SHA" >&2
+    printf '%s\n' "$wt_out" >&2
+    exit 2
+fi
 
 # 판정기를 base 트리에 넘긴다. base 에는 `target/` 이 없어서 이것 없이는 반드시 거부한다.
 # 넘긴다고 반드시 쓰이는 것은 아니다 — 판정기가 base 의 판정기 소스로 지어진 것이
@@ -162,6 +169,24 @@ read_value() {
     printf '%s' "${_rv_all%%$'\n'*}"
 }
 
+# 게이트 한쪽의 출력 꼬리를 찍는다. **실패 갈래에서만 부른다.**
+#
+# 두 트리의 출력은 값 줄을 읽으려고 받아 두는데, 거부·해석 실패 갈래는 한때 그것을 한 줄도
+# 안 찍고 "게이트 자신의 출력이 어느 갈래인지 말한다" 고만 적었다 — 가리키는 출력이 화면에
+# 없었다. 무엇이 거부했는지는 다시 돌려야 알았고, base 트리는 그때 이미 지워진 뒤다.
+#
+# 꼬리만 찍는 이유: 위반 목록을 가진 게이트는 수백 줄을 낸다. 판정 불가 사유와 값 줄은
+# 끝에 온다. 잘랐으면 잘랐다고 적는다 — 안 적으면 보이는 것이 전부로 읽힌다.
+show_gate_output() {  # <label> <rc> <output>
+    local label="$1" rc="$2" out="$3" keep=30 total
+    local -a lines
+    mapfile -t lines <<<"$out"
+    total=${#lines[@]}
+    echo "        --- $label 출력 (rc=$rc, ${total} 줄$([ "$total" -gt "$keep" ] && printf ' 중 마지막 %s' "$keep")) ---" >&2
+    local start=$(( total > keep ? total - keep : 0 ))
+    printf '        | %s\n' "${lines[@]:start}" >&2
+}
+
 status=0
 measured=0
 refused=0
@@ -181,11 +206,13 @@ for g in "${GATES[@]}"; do
         echo "        rc=2 는 이 계열의 **판정 불가**다 — 값이 유효하지 않다는 뜻이라 뺄 것이 없다." >&2
         echo "        흔한 원인은 판정기가 없거나 그 트리의 판정기 소스로 지어진 것이 아닌 것이다." >&2
         echo "        (좌변이 비었거나 인덱스에 없는 타깃이 있어도 같은 rc 로 나온다 — 그 경우" >&2
-        echo "         게이트 자신의 출력이 어느 갈래인지 말한다. 위 두 줄을 읽어라.)" >&2
+        echo "         게이트 자신의 출력이 어느 갈래인지 말한다. 아래 두 출력을 읽어라.)" >&2
         echo "        판정기를 base 의 판정기 소스로 지어라:" >&2
         echo "          git worktree add --detach <경로> $BASE_SHA" >&2
         echo "          (그 트리에서) cargo build -p tasty-doc-guards --bin mask-source" >&2
         echo "          TASTY_MASK_SOURCE_BIN=<그 경로> scripts/gate-delta.sh $BASE_REV" >&2
+        show_gate_output "HEAD" "$h_rc" "$h_out"
+        show_gate_output "base" "$b_rc" "$b_out"
         refused=$((refused + 1))
         status=1
         continue
@@ -201,6 +228,8 @@ for g in "${GATES[@]}"; do
         echo "        ③ base 쪽에서 게이트가 죽었다. 판정기를 \`scripts/lib/judge-bin.sh\` 의" >&2
         echo "           resolve_judge 로 안 찾는 게이트는 환경변수를 안 읽고 자기 트리의" >&2
         echo "           target/ 만 보므로, 새 워크트리에서 그냥 죽는다." >&2
+        show_gate_output "HEAD" "$h_rc" "$h_out"
+        show_gate_output "base" "$b_rc" "$b_out"
         refused=$((refused + 1))
         status=1
         continue
