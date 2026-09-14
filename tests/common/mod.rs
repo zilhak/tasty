@@ -203,61 +203,6 @@ link_click_modifier = "ctrl"
         .expect("failed to write isolated config.toml");
 }
 
-/// `Command::spawn()` 대신 이걸 쓴다(Linux). 그냥 `pre_exec` 로 `PR_SET_PDEATHSIG` 를
-/// 걸면 **호출한 스레드**에 묶이는데(`man 2 prctl`: "the parent ... is considered to
-/// be the thread that created this process"), [`shared()`] 의 최초 호출자는 그
-/// 스레드가 곧 죽는 cargo test 워커다 — libtest 는 테스트마다 전용 스레드를 새로
-/// 만들고 그 테스트가 끝나면 그 스레드가 종료된다. 그 스레드가 죽는 순간 공유
-/// 인스턴스까지 죽어버려, 그 뒤로 다른 스레드에서 도는 나머지 테스트가 전부
-/// "Connection reset" 으로 깨진다(실측: 이 함수 없이 naive 하게 걸었을 때
-/// `attach_git_query_loopback`/`shared_instance_harness` 가 바로 이 증상으로 실패).
-///
-/// fork 자체를 **프로세스 수명 동안 파킹만 하는 전용 스레드**에서 실행해 커널이
-/// 추적하는 "부모 스레드" 를 프로세스 수명과 맞춘다 — 전용 인스턴스(스폰 스레드가
-/// 곧 죽는 사용처)에도, 공유 인스턴스(여러 스레드에 걸쳐 오래 쓰이는 사용처)에도
-/// 안전한 유일한 형태다.
-#[cfg(target_os = "linux")]
-fn spawn_with_stable_pdeathsig_anchor(mut command: Command) -> std::io::Result<Child> {
-    use std::os::unix::process::CommandExt;
-    use std::sync::mpsc;
-
-    // SAFETY: 클로저는 fork 이후 exec 이전, 자식 프로세스 단독 스레드에서
-    // 실행된다. 호출하는 prctl/getppid 둘 다 인자를 포인터로 받지 않는
-    // async-signal-safe 순수 시스템 콜이라(힙 할당·락 없음) pre_exec 의 제약을
-    // 지킨다.
-    unsafe {
-        command.pre_exec(|| {
-            let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
-            if ret != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            // fork 와 위 prctl 호출 사이에 부모(anchor 스레드)가 이미 죽었을
-            // 경우의 레이스 — 그 경우 death 이벤트 자체가 이미 지나가버려
-            // 시그널이 오지 않는다. getppid()==1 이면 이미 init 으로
-            // reparent 된 것이므로 직접 자결한다.
-            if libc::getppid() == 1 {
-                return Err(std::io::Error::other("parent already gone before exec"));
-            }
-            Ok(())
-        });
-    }
-
-    let (tx, rx) = mpsc::channel();
-    std::thread::Builder::new()
-        .name("tasty-test-fork-anchor".into())
-        .spawn(move || {
-            let result = command.spawn();
-            let _ = tx.send(result);
-            // 절대 반환하지 않는다 — 반환/종료하는 순간이 곧 위 prctl 이
-            // 추적하는 "부모 스레드 종료" 라, 그 즉시 방금 띄운 자식이 죽는다.
-            loop {
-                std::thread::park();
-            }
-        })
-        .expect("spawn fork-anchor thread");
-    rx.recv().expect("fork-anchor thread died before replying")
-}
-
 impl TastyInstance {
     /// **전용** 인스턴스를 새로 띄운다. 테스트마다 GUI 창이 하나씩 더 뜨므로,
     /// 전용 프로세스가 꼭 필요한 경우가 아니면 [`shared()`] 를 쓴다
@@ -335,31 +280,27 @@ impl TastyInstance {
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
         // 자식을 대신 죽여준다. 아래 Drop 은 부모가 살아서 unwind 될 때만 자식을
         // 정리하므로, 부모가 그 전에 죽으면 Drop 이 실행되지 않아 자식이 고아로
-        // 영구히 남는다 — spawn_with_stable_pdeathsig_anchor 의 doc 을 반드시
+        // 영구히 남는다 — `spawn_diag::spawn_child` 의 doc 을 반드시
         // 함께 읽을 것(스레드 종속성 문제로 naive prctl 은 공유 인스턴스를 깨뜨린다).
-        #[cfg(target_os = "linux")]
-        let mut process =
-            spawn_with_stable_pdeathsig_anchor(command).expect("failed to spawn tasty");
-        #[cfg(not(target_os = "linux"))]
-        let mut process = command.spawn().expect("failed to spawn tasty");
+        //
+        // 핸들(`Self`)이 서기 전의 패닉은 `Drop` 을 못 부른다 — 그 구간은 회수기가 소유한다.
+        let mut process = spawn_diag::ChildReaper::new(
+            spawn_diag::spawn_child(command).expect("failed to spawn tasty"),
+        );
 
         // stderr 를 배경 스레드로 빨아들인다 — 안 읽으면 OS 파이프 역압에 자식이 막힌다
         // (Linux 64 KB / macOS 16 KB). 꼬리 줄과 마지막 줄의 시각이 spawn 단계 패닉의
         // 진단이 된다.
-        let mut stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
+        let mut stderr = StderrCapture::start(process.child().stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > SPAWN_PORT_TIMEOUT {
-                // 아직 `Self` 를 못 만들어 `Drop` 이 없다 — `Child` 의 Drop 은 kill 하지
-                // 않으므로 여기서 직접 회수하지 않으면 GUI 프로세스가 그대로 orphan 이
-                // 된다(느린 머신에서 부팅이 timeout 을 넘겨 뒤늦게 뜨는 경우).
-                force_kill(process.id());
-                // 아래 셋 다 실패해도 할 수 있는 게 없다 — 곧바로 panic 으로 테스트를
-                // 실패시키므로 회수 실패를 추가로 보고할 자리도 의미도 없다.
-                let _ = process.wait();
-                // 회수 실패해도 곧바로 panic 이라 보고할 자리가 없다.
+                // 아직 `Self` 를 못 만들어 `Drop` 이 없다. 자식은 `process`(회수기)가
+                // 패닉의 되감기에서 죽이고 거둔다 — 느린 머신에서 부팅이 상한을 넘겨
+                // 뒤늦게 뜨는 인스턴스가 고아로 남지 않는다.
+                // 아래 둘 다 실패해도 곧바로 panic 이라 보고할 자리가 없다.
                 let _ = std::fs::remove_file(&port_file);
                 // 위와 동일.
                 let _ = std::fs::remove_dir_all(&isolated_home);
@@ -386,7 +327,7 @@ impl TastyInstance {
             }
             // 자식이 이미 죽었으면 더 기다릴 이유가 없다. 부팅 실패는 대부분
             // 즉사라, 이 확인 하나가 상한 전체를 기다리는 것을 막는다.
-            if let Ok(Some(status)) = process.try_wait() {
+            if let Ok(Some(status)) = process.child().try_wait() {
                 // 정리 실패해도 곧바로 panic 이라 보고할 자리가 없다(위 timeout 경로와 동일).
                 let _ = std::fs::remove_file(&port_file);
                 // 위와 동일.
@@ -407,7 +348,7 @@ impl TastyInstance {
         };
 
         let instance = Self {
-            process,
+            process: process.release(),
             port,
             port_file,
             isolated_home,

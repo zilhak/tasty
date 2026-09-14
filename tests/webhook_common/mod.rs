@@ -174,56 +174,6 @@ impl Builder {
     }
 }
 
-/// `Command::spawn()` 대신 이걸 쓴다(Linux). 그냥 `pre_exec` 로 `PR_SET_PDEATHSIG` 를
-/// 걸면 **호출한 스레드**에 묶인다(`man 2 prctl`: "the parent ... is considered to be
-/// the thread that created this process") — 지금은 이 하네스가 인스턴스마다 전용
-/// spawn 이라 호출 스레드가 인스턴스 수명 내내 살아있어 우연히 안전하지만, 그 우연에
-/// 기대지 않는다(공유 진입점이 나중에 생기거나 스레드를 넘나드는 사용이 생기면 바로
-/// 깨지는 함정이다 — `tests/common/mod.rs` 의 동명 함수가 실제로 이 증상으로 한 번
-/// 깨졌다). fork 자체를 **프로세스 수명 동안 파킹만 하는 전용 스레드**에서 실행해
-/// 커널이 추적하는 "부모 스레드" 를 프로세스 수명과 맞춘다.
-#[cfg(target_os = "linux")]
-fn spawn_with_stable_pdeathsig_anchor(mut command: Command) -> std::io::Result<Child> {
-    use std::os::unix::process::CommandExt;
-    use std::sync::mpsc;
-
-    // SAFETY: 클로저는 fork 이후 exec 이전, 자식 프로세스 단독 스레드에서
-    // 실행된다. 호출하는 prctl/getppid 둘 다 인자를 포인터로 받지 않는
-    // async-signal-safe 순수 시스템 콜이라(힙 할당·락 없음) pre_exec 의 제약을
-    // 지킨다.
-    unsafe {
-        command.pre_exec(|| {
-            let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
-            if ret != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            // fork 와 위 prctl 호출 사이에 부모(anchor 스레드)가 이미 죽었을
-            // 경우의 레이스 — 그 경우 death 이벤트 자체가 이미 지나가버려
-            // 시그널이 오지 않는다. getppid()==1 이면 이미 init 으로
-            // reparent 된 것이므로 직접 자결한다.
-            if libc::getppid() == 1 {
-                return Err(std::io::Error::other("parent already gone before exec"));
-            }
-            Ok(())
-        });
-    }
-
-    let (tx, rx) = mpsc::channel();
-    std::thread::Builder::new()
-        .name("tasty-wh-test-fork-anchor".into())
-        .spawn(move || {
-            let result = command.spawn();
-            let _ = tx.send(result);
-            // 절대 반환하지 않는다 — 반환/종료하는 순간이 곧 위 prctl 이
-            // 추적하는 "부모 스레드 종료" 라, 그 즉시 방금 띄운 자식이 죽는다.
-            loop {
-                std::thread::park();
-            }
-        })
-        .expect("spawn fork-anchor thread");
-    rx.recv().expect("fork-anchor thread died before replying")
-}
-
 /// 한 번의 spawn 에 필요한 입력. [`Builder`] 를 그대로 넘기면 재시도 때마다 소비돼
 /// 버려서(홈/파일 목록이 move 된다) 스펙만 빌려 주는 형태로 분리한다.
 struct SpawnSpec<'a> {
@@ -422,19 +372,20 @@ impl WebhookInstance {
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
         // 자식을 대신 죽여준다. 아래 Drop 은 부모가 살아서 unwind 될 때만 자식을
         // 정리하므로, 부모가 그 전에 죽으면 Drop 이 실행되지 않아 자식이 고아로
-        // 영구히 남는다 — spawn_with_stable_pdeathsig_anchor 의 doc 을 반드시
+        // 영구히 남는다 — `spawn_diag::spawn_child` 의 doc 을 반드시
         // 함께 읽을 것(스레드 종속성 문제로 naive prctl 은 이 스레드가 먼저
         // 끝나는 사용 패턴을 깨뜨린다).
-        #[cfg(target_os = "linux")]
-        let mut process =
-            spawn_with_stable_pdeathsig_anchor(command).expect("failed to spawn tasty");
-        #[cfg(not(target_os = "linux"))]
-        let mut process = command.spawn().expect("failed to spawn tasty");
+        //
+        // 핸들(`Self`)이 서기 전의 패닉은 `Drop` 을 못 부른다 — 그 구간은 회수기가 소유한다.
+        // 이것이 없던 동안 아래 상한 초과 갈래는 자식을 **살려 둔 채** 패닉했다.
+        let mut process = spawn_diag::ChildReaper::new(
+            spawn_diag::spawn_child(command).expect("failed to spawn tasty"),
+        );
 
         // stderr 를 배경 스레드로 빨아들인다 — 안 읽으면 OS 파이프 역압에 자식이 막힌다.
         // 마지막 줄이 **언제** 왔는지가 "느리다" 와 "멈췄다" 를 가르는 값이다
         // (`spawn_diag::stderr_silence_verdict`).
-        let mut stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
+        let mut stderr = StderrCapture::start(process.child().stderr.take(), STDERR_TAIL_LINES);
 
         let start = Instant::now();
         let port = loop {
@@ -459,7 +410,7 @@ impl WebhookInstance {
                 break port;
             }
             // 자식이 이미 죽었으면 상한을 기다리지 않는다 (`tests/common` 과 동일).
-            if let Ok(Some(status)) = process.try_wait() {
+            if let Ok(Some(status)) = process.child().try_wait() {
                 panic!(
                     "{}",
                     spawn_diag::early_exit_message(
@@ -476,7 +427,7 @@ impl WebhookInstance {
         };
 
         let instance = Self {
-            process,
+            process: process.release(),
             port,
             webhook_port,
             port_file,

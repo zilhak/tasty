@@ -233,7 +233,15 @@ impl GuiTestInstance {
         // 번들 전량(debug 45 파일 ≈ 1.1 GB)을 복사한다. 명부·판정은 `spawn_diag` 한 곳이다.
         spawn_diag::apply_bundle_opt_in(&mut command);
 
-        let mut process = command.spawn().expect("failed to spawn tasty GUI");
+        // 두 겹으로 회수한다. 형제 하네스 둘은 이미 가진 것이고 이 하네스만 둘 다 없었다.
+        //   ① `spawn_child` — 이 테스트 바이너리가 즉사하면(배경 작업이 끊기거나 사람이
+        //      회차를 멈추면) 커널이 창을 대신 죽인다(Linux). `Drop`·atexit 은 그때 안 돈다.
+        //   ② `ChildReaper` — 핸들이 서기 전의 패닉(포트 파일 상한 초과 · 창 대기 ·
+        //      입력 장치 생성 실패)에서 창을 죽이고 거둔다. 이것이 없던 동안 상한 초과
+        //      갈래는 창을 **살려 둔 채** 패닉했고, 뒤늦게 뜬 창은 시험보다 오래 살았다.
+        let mut process = spawn_diag::ChildReaper::new(
+            spawn_diag::spawn_child(command).expect("failed to spawn tasty GUI"),
+        );
 
         // stderr 를 링에 담고 마지막 줄의 시각을 남긴다 — `tests/common`·`tests/webhook_common`
         // 과 같은 형태다. 이 하네스만 **셋 다 없었다**: 꼬리도, 죽은 자식 판정도, 느림/멈춤
@@ -243,7 +251,7 @@ impl GuiTestInstance {
         // ★ 이 포착은 spawn 단계에서만 쓰고 인스턴스에 안 싣는다 — 형제 둘과 다른 점이고,
         // 이 회차가 바꾸지 않은 것이다. `join()` 을 안 부르므로 배출 스레드는 자식이 죽어
         // 파이프가 EOF 를 낼 때 스스로 끝난다(이동 전 동작과 같다).
-        let mut stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
+        let mut stderr = StderrCapture::start(process.child().stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file (IPC ready)
         let start = Instant::now();
@@ -270,7 +278,7 @@ impl GuiTestInstance {
             }
             // 자식이 이미 죽었으면 상한을 기다리지 않는다. GUI 부팅 실패는 대부분 즉사라
             // (디스플레이 부재·GPU 초기화 실패) 이 확인 하나가 15 초를 통째로 아낀다.
-            if let Ok(Some(status)) = process.try_wait() {
+            if let Ok(Some(status)) = process.child().try_wait() {
                 panic!(
                     "{}",
                     spawn_diag::early_exit_message(
@@ -296,7 +304,7 @@ impl GuiTestInstance {
         let enigo = Enigo::new(&EnigoSettings::default()).expect("failed to create enigo instance");
 
         let instance = Self {
-            process,
+            process: process.release(),
             port,
             port_file,
             isolated_home,

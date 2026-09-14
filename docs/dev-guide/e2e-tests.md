@@ -152,7 +152,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 | 직렬화 | **안 한다** — lock 없이 `&'static` 만 공유 | IPC 서버는 연결마다 별도 스레드로 받아 mpsc 로 큐잉하므로 동시 호출이 안전하다. (`gui_common::shared()` 가 `MutexGuard` 로 완전 직렬화하는 건 실제 데스크톱 마우스/포커스를 뺏는 입력 주입을 쓰기 때문이고, 이쪽은 IPC 전용이라 해당 없음) |
 | 테스트 격리 | `TastyInstance::create_workspace()` 로 테스트마다 자기 workspace | IPC 생성은 `IntentOrigin::Agent` 라 active 를 전환하지 않고(원칙 1·3), attach 점유도 workspace/surface 단위 lock 이라 서로 다른 workspace 는 병렬 공존한다 |
 | 정리 | `Drop` 이 아니라 `atexit` | 정적 저장이라 `Drop` 이 영원히 돌지 않는다. atexit 가 graceful `system.shutdown` → force kill → port file·격리 HOME 삭제를 수행한다. `Drop` 은 전용 인스턴스 경로로 그대로 남는다. 다만 Drop/atexit 둘 다 프로세스가 강제로 죽으면 실행되지 않는다 — 그 구멍은 §2-1 참조 |
-| spawn 실패 | 첫 실패 후 **재시도하지 않는다** | `OnceLock::get_or_init` 은 초기화 클로저가 panic 하면 미초기화로 남아 다음 테스트가 그대로 재시도한다 — 부팅 timeout 상황에서 테스트 수만큼 GUI 프로세스가 더 뜨는 증폭을 막는다. S1 timeout panic 자체도 자기 child 를 kill 하고 격리 HOME 을 지운다(`Child` 의 Drop 은 kill 하지 않아 그냥 두면 orphan 이 된다) |
+| spawn 실패 | 첫 실패 후 **재시도하지 않는다** | `OnceLock::get_or_init` 은 초기화 클로저가 panic 하면 미초기화로 남아 다음 테스트가 그대로 재시도한다 — 부팅 timeout 상황에서 테스트 수만큼 GUI 프로세스가 더 뜨는 증폭을 막는다. 핸들이 서기 **전**의 패닉(S1 timeout · 조기 종료 · 입력 장치 생성 실패 등)은 `Drop` 을 못 부르므로, 그 구간의 자식은 `spawn_diag::ChildReaper` 가 소유해 되감기에서 kill 하고 거둔다(`Child` 의 Drop 은 kill 하지 않아 그냥 두면 orphan 이 된다). 세 하네스(`common`·`webhook_common`·`gui_common`) 모두 같은 타입을 거친다. 회수기 자체의 계약은 `spawn_diag` 의 단위 시험 둘이 잰다(패닉하면 죽이고 거둔다 · 넘기면 산 채로 넘긴다). 하네스가 그것을 실제 갈래에서 쓰는지는 시험이 없다 — 재는 법은 §2-1 끝 |
 
 격리 헬퍼가 돌려주는 `TestWorkspace` 는 `workspace.create` 응답의 `id` / `index` / `surface_id` 를 그대로 담는다. 공유 경로에서는 `first_surface_id()` / `first_pane_id()`(목록의 `[0]` 번째를 집는다 — 전용 인스턴스 전용) 대신 `first_surface_id_in_workspace()` / `first_pane_id_in_workspace()` 를 쓴다. 갓 만든 workspace 의 PTY 가 필요하면 `wait_for_shell()` 로 첫 프롬프트를 기다린다.
 
@@ -166,9 +166,16 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 위 표의 "정리"(Drop/atexit)는 **test 프로세스가 정상적으로든 panic 으로든 unwind 하며 끝날 때만** 동작한다. test 프로세스 자체가 `SIGKILL` 등으로 즉사하면(예: CI 러너 timeout, 셸 도구의 강제 종료) Drop 도 atexit 도 실행되지 않아, 이미 spawn 된 tasty 자식이 영구히 orphan 으로 남는다 — 실제로 이 경로로 leak 된 프로세스가 발견된 적이 있다.
 
-`tests/common/mod.rs`·`tests/webhook_common/mod.rs` 각각의 `spawn_with_stable_pdeathsig_anchor()` 가 이 구멍을 막는다: 자식에 `prctl(PR_SET_PDEATHSIG, SIGKILL)` 을 걸어, 부모가 어떤 식으로 죽든 커널이 자식을 대신 죽이게 한다(Linux 전용 — `#[cfg(target_os = "linux")]`, 다른 OS 는 이 보호 없이 기존 `Command::spawn()` 그대로).
+`tests/spawn_diag/mod.rs` 의 `spawn_child()` 가 이 구멍을 막는다: 자식에 `prctl(PR_SET_PDEATHSIG, SIGKILL)` 을 걸어, 부모가 어떤 식으로 죽든 커널이 자식을 대신 죽이게 한다(Linux 전용 — `#[cfg(target_os = "linux")]`, 다른 OS 는 이 보호 없이 `Command::spawn()` 그대로). 세 하네스(`common`·`webhook_common`·`gui_common`)가 모두 이 함수로 띄운다.
 
 **함정 — PDEATHSIG 는 프로세스가 아니라 스레드에 묶인다** (`man 2 prctl` 경고: "the parent ... is considered to be the thread that created this process"). `common::shared()` 의 최초 호출자는 자기 테스트가 끝나면 죽는 cargo test 워커 스레드라, naive 하게 호출 스레드에서 그대로 fork 하면 **그 스레드가 죽는 순간 공유 인스턴스까지 죽어** 이후 다른 스레드에서 도는 나머지 테스트가 전부 "Connection reset" 으로 깨진다(실측: 최초 구현이 정확히 이 증상으로 `attach_git_query_loopback`/`shared_instance_harness` 를 깨뜨렸다). 그래서 실제 fork 는 **프로세스 수명 동안 파킹만 하는 전용 스레드**에서 수행한다 — 커널이 추적하는 "부모 스레드" 를 프로세스 수명과 맞추는 것이 핵심이다. 이 하네스를 고칠 때 fork 지점을 다시 호출 스레드로 되돌리지 말 것.
+
+**두 회수 경로가 하네스에서 실제로 도는지는 자동 채널이 없다.** 둘 다 실패하는 부팅이나 죽는 바이너리에서만 드러나고, 그 조건을 만드는 잡이 없다. 손으로 재는 법 — 대조 팔(회수 코드를 뺀 사본)과 같이 돌려야 값이 된다:
+
+- **핸들 전 패닉**(`ChildReaper`): 웹훅·범용 하네스는 `TASTY_E2E_BIN` 을 포트 파일을 안 쓰고 자기 pid 를 파일에 적은 뒤 오래 자는 셸 스크립트로 덮고, override 를 받는 스위트에 `catch_unwind` 로 spawn 을 감싼 임시 시험을 넣어 패닉 **뒤에** 그 pid 가 사는지 본다. 바이너리가 끝나면 PDEATHSIG 가 어차피 죽이므로 반드시 **같은 프로세스 안에서** 물어야 한다. GUI 하네스는 바이너리를 덮을 수 없어 부팅 상한 상수를 0 으로 바꾼 사본을 전용 Xvfb 에서 돌리고 `/proc/*/environ` 의 격리 `TASTY_HOME` 접두(`tasty-gui-test-home-<시험 pid>-`)로 남은 프로세스를 센다.
+- **바이너리 즉사**(`spawn_child`): 부팅에 성공한 뒤 시험이 자기에게 `SIGKILL` 을 보내게 하고, 자식 pid 가 남는지 본다. `xvfb-run` 은 끝나며 X 서버를 내려 GUI 를 함께 죽이므로 이 물음을 가린다 — Xvfb 를 직접 띄우고 그 PID 를 저장해 두었다가 확인 뒤에 내린다.
+
+실측 2026-09-14(Linux, 대조 팔 = 회수 코드가 없던 사본): 웹훅 하네스 상한 초과 뒤 가짜 데몬 생존 `true` → `false`, GUI 하네스 상한 초과 뒤 생존 프로세스 2 → 0, GUI 하네스 바이너리 `SIGKILL` 뒤 창 생존(부모가 init 계열로 바뀐 고아) → 소멸.
 
 ### 2-1-1. 도는 인스턴스를 찾을 때 port 파일을 **글롭으로 잡지 마라**
 

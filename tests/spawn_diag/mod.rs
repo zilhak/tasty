@@ -637,6 +637,142 @@ fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// 인스턴스 핸들이 **서기 전**의 자식을 소유한다 — 그 사이에 패닉하면 자식을 죽이고 거둔다.
+///
+/// 하네스의 정리는 핸들(`TastyInstance` · `WebhookInstance` · `GuiTestInstance`)의 `Drop`
+/// 에 있다. 그런데 부팅 대기(포트 파일 · 창 · 입력 장치)는 핸들을 만들기 **전**이고,
+/// 그 구간의 패닉은 `Drop` 이 없는 맨 `Child` 를 떨어뜨린다. `Child` 의 `Drop` 은 죽이지
+/// 않는다. 그러면 뒤늦게 부팅을 마친 인스턴스가 **시험이 끝난 뒤에도 산다.**
+///
+/// 그 고아가 무엇을 망가뜨리나: 레인은 idle 로 보이는데 CPU·메모리·디스플레이를 계속 쓰고,
+/// 그것을 띄운 셸이나 배경 작업을 죽여도 안 잡힌다(부모가 이미 없다). 같은 기계의 다음
+/// 회차 벽시계가 그만큼 편향된다.
+///
+/// 세 하네스 중 하나만 이 구간을 손으로 막고 있었다(상한 초과 갈래에서 직접 kill). 나머지
+/// 둘은 같은 자리에서 그냥 패닉했다. 손으로 막으면 **갈래마다** 막아야 하고, 갈래가 늘면
+/// 빠진 갈래가 조용하다 — 그래서 소유로 막는다: 핸들로 넘기는 [`Self::release`] 를
+/// 거치지 않은 모든 경로가 여기서 회수된다.
+pub struct ChildReaper {
+    child: Option<std::process::Child>,
+}
+
+impl ChildReaper {
+    pub fn new(child: std::process::Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    /// 대기 루프가 `try_wait` · `id` 를 부를 자리.
+    pub fn child(&mut self) -> &mut std::process::Child {
+        self.child
+            .as_mut()
+            .expect("release 뒤에는 이 값이 없다 — release 는 self 를 소비한다")
+    }
+
+    /// 부팅이 끝나 핸들이 수명을 넘겨받는다. 이 뒤로는 핸들의 `Drop` 이 회수한다.
+    pub fn release(mut self) -> std::process::Child {
+        self.child
+            .take()
+            .expect("release 는 한 번만 불린다 — self 를 소비한다")
+    }
+}
+
+impl Drop for ChildReaper {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            kill_process_tree(&mut child);
+            // 이유: 되감기 중의 정리 경로다. 거두기 실패를 되던지면 이중 패닉으로 프로세스가
+            // 중단되어 **원래 실패 문구(stderr 꼬리)가 안 나간다.** kill 이 이미 보냈으므로
+            // 거두지 못해도 자식은 죽는다.
+            let _ = child.wait();
+        }
+    }
+}
+
+/// 자식과 그 아래(셸)를 죽인다. Windows 는 `Child::kill` 이 부모만 죽여 셸이 남으므로
+/// 트리째 죽인다.
+pub fn kill_process_tree(child: &mut std::process::Child) {
+    #[cfg(target_os = "windows")]
+    {
+        // 이유: 이미 끝난 pid 면 taskkill 이 실패로 끝난다 — 목적(살아 있으면 죽인다)은
+        // 어느 쪽이든 달성된다.
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &child.id().to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // 이유: 이미 끝난 자식이면 `InvalidInput` 이다 — 목적은 같다.
+        let _ = child.kill();
+    }
+}
+
+/// `Command::spawn()` 대신 이것을 쓴다. Linux 에서는 **이 테스트 바이너리가 어떤 이유로든
+/// (SIGKILL 포함) 즉사하면** 커널이 자식을 대신 죽인다. 다른 OS 는 그냥 `spawn` 이다.
+///
+/// 하네스의 `Drop`·atexit 은 바이너리가 살아서 끝날 때만 돈다. 배경 작업이 완주 전에
+/// 죽거나 사람이 회차를 끊으면 둘 다 안 돌고, 자식은 init 으로 넘어가 **영구히 남는다.**
+///
+/// 그냥 `pre_exec` 로 `PR_SET_PDEATHSIG` 를 걸면 **호출한 스레드**에 묶인다(`man 2 prctl`:
+/// "the parent ... is considered to be the thread that created this process"). 공유
+/// 인스턴스의 최초 호출자는 곧 끝나는 cargo test 워커 스레드라, 그 스레드가 끝나는 순간
+/// 공유 인스턴스가 죽고 나머지 시험이 전부 "Connection reset" 으로 깨진다(실측: 이 함수
+/// 없이 naive 하게 걸었을 때 `attach_git_query_loopback`/`shared_instance_harness` 가 바로
+/// 그 증상으로 실패). 그래서 fork 자체를 **프로세스 수명 동안 파킹만 하는 전용 스레드**에서
+/// 실행해 커널이 추적하는 "부모 스레드" 를 프로세스 수명과 맞춘다.
+///
+/// 이 함수는 한때 `tests/common` 과 `tests/webhook_common` 에 한 벌씩 있었고
+/// `tests/gui_common` 에는 없었다 — 셋 중 GUI 를 띄우는 쪽만 바이너리가 죽을 때 창이 남았다.
+pub fn spawn_child(mut command: std::process::Command) -> std::io::Result<std::process::Child> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::process::CommandExt;
+
+        let bind_to_parent = || {
+            // SAFETY: 인자를 포인터로 받지 않는 async-signal-safe 시스템 콜이다(힙 할당·락 없음).
+            let ret = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) };
+            if ret != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // fork 와 위 prctl 호출 사이에 부모(anchor 스레드)가 이미 죽었을
+            // 경우의 레이스 — 그 경우 death 이벤트 자체가 이미 지나가버려
+            // 시그널이 오지 않는다. getppid()==1 이면 이미 init 으로
+            // reparent 된 것이므로 직접 자결한다.
+            // SAFETY: 인자가 없는 async-signal-safe 시스템 콜이다.
+            if unsafe { libc::getppid() } == 1 {
+                return Err(std::io::Error::other("parent already gone before exec"));
+            }
+            Ok(())
+        };
+        // SAFETY: 클로저는 fork 이후 exec 이전, 자식 프로세스 단독 스레드에서
+        // 실행된다. 안에서 부르는 것은 위 두 시스템 콜뿐이라 pre_exec 의 제약을 지킨다.
+        unsafe {
+            command.pre_exec(bind_to_parent);
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("tasty-test-fork-anchor".into())
+            .spawn(move || {
+                let result = command.spawn();
+                // 이유: 받는 쪽은 바로 아래 `recv` 이고, 그쪽이 없으면 보고할 자리도 없다.
+                let _ = tx.send(result);
+                // 절대 반환하지 않는다 — 반환/종료하는 순간이 곧 위 prctl 이
+                // 추적하는 "부모 스레드 종료" 라, 그 즉시 방금 띄운 자식이 죽는다.
+                loop {
+                    std::thread::park();
+                }
+            })
+            .expect("spawn fork-anchor thread");
+        rx.recv().expect("fork-anchor thread died before replying")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        command.spawn()
+    }
+}
+
 /// stderr 시그니처로 가릴 수 있는 것. **두 갈래의 확신 수준이 다르다.**
 enum BootBlocker {
     /// 디스플레이 서버가 아예 없다 — winit 이 즉시 죽는다. 이 시그니처는 부팅에
@@ -1227,6 +1363,75 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
         // 유일한 정의 자리이므로, 어느 한쪽이 자기 값을 되살리면 여기 상수가 안 쓰여
         // dead_code 로 드러난다. 상한 순서(S1 > S2)만 여기서 고정한다.
         assert!(SPAWN_PORT_TIMEOUT > SPAWN_SHELL_TIMEOUT);
+    }
+
+    /// 오래 사는 자식. 회수기가 죽이지 않으면 시험보다 오래 산다.
+    #[cfg(unix)]
+    fn long_lived_child() -> std::process::Child {
+        std::process::Command::new("sleep")
+            .arg("60")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("오래 사는 자식을 못 띄웠다")
+    }
+
+    /// 그 pid 의 프로세스가 아직 있는가(좀비 포함 — 거두지 않았으면 있다).
+    #[cfg(unix)]
+    fn pid_exists(pid: u32) -> bool {
+        // SAFETY: 시그널 0 은 아무것도 보내지 않고 존재·권한만 묻는다. 인자는 정수뿐이다.
+        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        rc == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+
+    /// 핸들을 만들기 전에 패닉하면 **자식은 죽고 거둬진다.**
+    ///
+    /// 하네스의 부팅 대기 갈래(상한 초과 · 입력 장치 실패 등)가 전부 이 경로다. 회수가
+    /// 빠지면 pid 가 남고(거두지도 죽이지도 않음), kill 만 빠지면 `wait` 가 자식의 남은
+    /// 수명만큼 막힌다 — 두 변이가 서로 다른 단정에서 죽도록 둘 다 잰다.
+    #[cfg(unix)]
+    #[test]
+    fn a_panic_before_the_handle_exists_kills_and_reaps_the_child() {
+        let child = long_lived_child();
+        let pid = child.id();
+        let started = std::time::Instant::now();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _reaper = ChildReaper::new(child);
+            panic!("부팅 대기 중 실패를 흉내 낸다");
+        }));
+        assert!(
+            result.is_err(),
+            "패닉 경로를 안 탔다 — 이 시험은 아무것도 안 쟀다"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "회수가 자식의 수명({:?})만큼 막혔다 — 죽이지 않고 기다리기만 했다",
+            started.elapsed()
+        );
+        assert!(
+            !pid_exists(pid),
+            "핸들이 서기 전에 패닉했는데 자식(pid {pid})이 남았다 — 그 인스턴스는 시험이 \
+             끝난 뒤에도 산다"
+        );
+    }
+
+    /// 대조: 핸들로 넘긴 자식은 **살아 있다.** 이것이 없으면 위 시험은 "무조건 죽이는
+    /// 회수기" 로도 통과한다.
+    #[cfg(unix)]
+    #[test]
+    fn a_released_child_is_handed_over_alive() {
+        let mut reaper = ChildReaper::new(long_lived_child());
+        assert!(
+            reaper.child().try_wait().expect("try_wait").is_none(),
+            "넘기기 전에 이미 죽었다 — 대조 조건이 안 섰다"
+        );
+        let mut child = reaper.release();
+        assert!(
+            child.try_wait().expect("try_wait").is_none(),
+            "release 가 자식을 죽였다 — 핸들이 넘겨받은 인스턴스가 즉사한다"
+        );
+        kill_process_tree(&mut child);
+        child.wait().expect("대조 자식을 못 거뒀다");
     }
 
     /// 줄을 많이 뱉는 자식. 링 용량을 넘겨야 링이 도는지 볼 수 있다.
