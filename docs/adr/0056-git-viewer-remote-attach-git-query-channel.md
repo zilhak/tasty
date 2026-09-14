@@ -106,7 +106,7 @@ need_full` 일 때만 host → plugin 으로 나가므로(`src/plugin_bridge/pop
 
 ## Alternatives Considered
 
-- **TODO 원안: `popup.set_context.context` 확장**: 기각 — 그런 필드가 프로토콜에 없다(사실 오류).
+- **처음 제안된 안: `popup.set_context.context` 확장**: 기각 — 그런 필드가 프로토콜에 없다(사실 오류).
   있었다 해도 dirty-gate 문제(항목 5)는 별도로 풀어야 했다.
 - **snapshot 전용(최초 로드만 원격, 상호작용은 미지원)**: 기각 — refresh/worktree 전환/diff 클릭이
   전부 로컬 상태만 재바인딩하고 끝나 원격에서는 아무 반응이 없거나 stale 데이터를 계속 보여주게

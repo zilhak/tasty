@@ -230,7 +230,7 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
    mirror 경로(`attach_mesh_input.rs`/`mesh_forward.rs`/`stream_hub.rs`/`mesh_mirror.rs`)와
    popup/banner forward(`popup_render.rs`/`banner_render.rs`)는 아직 `time: None` 그대로다
    — 위 1번(self-repaint)만으로 "유휴 상태 방치" 증상 자체는 해소되므로 필수는 아니었고,
-   범위를 넓히면 손대는 파일이 늘어 이번 TODO 는 실제 버그 재현 경로(markdown surface)에
+   범위를 넓히면 손대는 파일이 늘어 실제 버그 재현 경로(markdown surface)에
    한정했다. 필요해지면 같은 패턴으로 확장 가능.
 
 **popup(git-viewer/clipboard-viewer)도 같은 결함을 안고 있었다** — `EguiMeshCore` 를

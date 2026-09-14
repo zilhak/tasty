@@ -522,7 +522,7 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **근거**: 디자인 `gallery/plugins.jsx` `PathField`(:59). 소스
   `crates/tasty-ui-widgets/src/path_field.rs`, specimen
   `crates/tasty-gallery/src/catalog/components/prim_path_field.rs`. 소비처 전환(markdown/explorer)은
-  후속 TODO.
+  이 항목의 범위 밖이었다.
 
 ## transfer 팝업 — scrim_backdrop 스테이지가 카드보다 짧으면 클러스터가 겹친다 (2026-07-23)
 

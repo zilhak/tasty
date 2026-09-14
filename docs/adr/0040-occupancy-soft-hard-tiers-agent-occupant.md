@@ -75,7 +75,7 @@
   - actors 모델의 "AI Agent = 점유 없음" 이라는 단정이 사라진다 — [`concepts/actors.md`](../concepts/actors.md) · [`identity.md`](../identity.md) §2.1 표/서술 개정 필요.
   - soft/hard 테두리 색은 **신규 시각 요소** 였고, 디자인이 소유 토큰을 확정했다(2026-07-07: soft=green / hard=peach, 완료=blue 유지 — semantic 토큰 + gallery specimen 포함).
 - **운영 비용 / 유지 부담**:
-  - 강한 점유(attach `AttachRegistry`)와 약한 점유를 **하나의 통합 점유 레지스트리** 로 묶는 방향을 선호하되, 실현가능성·수정범위는 구현 TODO 에서 확정한다(통합이 적절하면 통합, 아니면 분리 유지).
+  - 강한 점유(attach `AttachRegistry`)와 약한 점유를 **하나의 통합 점유 레지스트리** 로 묶는 방향을 선호하되, 실현가능성·수정범위는 구현 단계에서 확정한다(통합이 적절하면 통합, 아니면 분리 유지).
   - 약한 점유의 지연 해제(focus 시 parent 부재 청소)는 포커스 경로에 점유 정합 로직을 얹는다 — surface-highlight 의 실-포커스-해제 경로와 같은 자리라 재사용 여지가 있다.
 
 ## Alternatives Considered

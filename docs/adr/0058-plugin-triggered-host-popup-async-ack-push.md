@@ -135,7 +135,7 @@ plugin이 왜 요청했는지 몰라도 되며(`context`/결과 필드는 순전
   경우엔 필요 없다.
 - **잃은 것**: `file_picker`가 "Tools 메뉴 단일 트리거"에서 "Tools 메뉴 + 임의 plugin"
   다중 트리거 대상으로 넓어져 동시성 정책(같은 시점에 두 요청이 겹치는 경우 거부/큐잉)이
-  필요해진다 — 이 ADR은 그 정책 자체를 확정하지 않는다(구현 TODO의 몫). `request_id`
+  필요해진다 — 이 ADR은 그 정책 자체를 확정하지 않는다(구현 단계의 몫). `request_id`
   네임스페이스가 하나 더 늘어(ADR-0053의 내부 `list_dir` request_id와 별개) 구현 시 혼동
   가능성이 생긴다.
 - **운영 비용 / 유지 부담**: `"file_picker.result"` 이벤트 key와 `request_id` 상관관계

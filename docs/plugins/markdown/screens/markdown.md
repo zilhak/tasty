@@ -281,7 +281,7 @@ attribute 가 필요 없다).
 GFM 의 확장 autolink(스킴 없는 bare URL 인식 포함)는 구현하지 않으므로(`Options::ENABLE_GFM` 는 alert
 blockquote 태그만 켠다), `render.rs::autolink_bare_urls`/`split_bare_urls` 가 이벤트 스트림에서 직접
 스캔해 `Tag::Link` 로 쪼갠다. **이번 스코프는 `http(s)://` 스킴만이다** — `www.`-prefix(스킴 없는
-호스트)나 이메일 자동링크는 제외(필요성이 확인되면 별도 TODO).
+호스트)나 이메일 자동링크는 제외(필요성이 확인되면 따로 다룬다).
 
 이 pass 는 상태를 가진 스캔이다(단순 무상태 `map()` 이 아님) — 다음을 명시적으로 제외한다:
 

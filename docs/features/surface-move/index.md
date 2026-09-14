@@ -41,7 +41,7 @@
 - 복사(copy)·surface 스냅샷 이동·drag-and-drop UI.
 - 잘라내기 시각 피드백(흐림 등) · 이동 전 확인 다이얼로그.
 - 에이전트용 IPC/CLI — 잘라내기/이동은 사용자 우클릭 클립보드형 조작이라 GUI 전용이다([convert-surface](../convert-surface/index.md) 의 사용자 전용 팝업과 동궤). 슬롯 `pending_move_surface` 는 사용자 상태다.
-- plugin 전용 컨텍스트 항목의 실제 선언 — 빈공간 판정 골격까지만. plugin 컨텍스트 메뉴 protocol 은 후속 TODO (UiNode DSL 제거로 선언 방식 재설계 필요).
+- plugin 전용 컨텍스트 항목의 실제 선언 — 빈공간 판정 골격까지만. plugin 컨텍스트 메뉴 protocol 은 이 기능의 범위 밖이다 (UiNode DSL 제거로 선언 방식 재설계 필요).
 
 ## 관련
 

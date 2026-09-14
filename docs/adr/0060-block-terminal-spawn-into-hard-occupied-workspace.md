@@ -84,7 +84,7 @@ workspace 가 hard-occupied 상태)은 **tab/surface 를 전혀 생성하지 않
   (ADR-0040)을 spawn 경로에서만 예외 처리하는 것이라 점유 모델의 일관성이 깨진다. 또한 holder 가
   전혀 모르는 사이 자기 mirror 안에 안 보이는 surface 가 생기는 것도 별도 문제라 기각.
 - **`pty.attach_surface` 까지 동시에 가드 대상에 포함** — 코드상 같은 취약점을 가질 가능성이
-  높지만, 이번 TODO 의 확인된 필수 스코프 밖이라 별도 검토 없이 포함시키지 않는다(재검토 조건
+  높지만, 이 결정이 확인한 필수 스코프 밖이라 별도 검토 없이 포함시키지 않는다(재검토 조건
   참고).
 
 ## Reconsideration Triggers

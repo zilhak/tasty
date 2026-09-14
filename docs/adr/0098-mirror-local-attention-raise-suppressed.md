@@ -64,7 +64,7 @@ OSC 9/777 알림이 미러에서도 나온다. 여기에 더해 `surface.complet
 
 ## Alternatives Considered
 
-- **A: producer cascade 마다 게이트를 넣는다** — TODO 가 지목한 3 개 호출부에 각각
+- **A: producer cascade 마다 게이트를 넣는다** — 처음 지목된 3 개 호출부에 각각
   `is_mirror_surface` 분기를 둔다. 실제로는 `cascade_surface_completion` 까지 4 개 호출부이고,
   새 producer 가 추가될 때마다 누락 위험이 생긴다. 억제 이유가 producer 별 사정이 아니라
   "미러는 소유자가 아니다" 라는 단일 사실이므로 단일 진입점이 맞다.
