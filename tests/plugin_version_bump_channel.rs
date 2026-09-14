@@ -742,6 +742,64 @@ fn a_change_in_an_unlinked_workspace_crate_does_not() {
     );
 }
 
+/// 의존 폐포를 못 읽으면 **판정 불가**이고, 그 실패의 사유(cargo 의 stderr)가 출력에 남는다.
+///
+/// 폐포 계산은 `links` 가 `$(...)` 안에서 부른다. 그 안의 `die` 는 **서브셸만** 끝내므로,
+/// 그대로 두면 게이트는 빈 폐포를 "아무 plugin 도 링크하지 않는다" 로 읽고 계속 간다 —
+/// 링크된 크레이트가 바뀌었는데 **rc 0 으로 통과한다.** 실패 문장은 stderr 에 한 줄 찍히지만
+/// 판정은 rc 가 하므로 CI 는 초록이다. 게다가 그 서브셸이 빈 캐시 파일을 남겨, 다음 호출은
+/// 비었는지 묻지도 않고 빈 폐포를 돌려준다.
+///
+/// 스텁 `cargo` 는 `tree` 에서만 죽는다 — 다른 이유로 죽은 것과 가르려고 표지를 stderr 에 찍는다.
+#[test]
+fn an_unreadable_dependency_closure_is_undecidable_and_says_why() {
+    const MARK: &str = "zz-cargo-tree-died-here";
+    let tmp = seed_workspace();
+    let d = tmp.path();
+    write(
+        d,
+        "crates/tasty-shared/src/lib.rs",
+        "pub fn greet() {\n    let _ = 2;\n}\n",
+    );
+    commit_all(d, "fix(shared): change behaviour");
+
+    let stub = tempfile::tempdir().expect("스텁 디렉토리");
+    let cargo = stub.path().join("cargo");
+    fs::write(
+        &cargo,
+        format!("#!/bin/sh\nif [ \"$1\" = tree ]; then echo {MARK} >&2; exit 101; fi\nexit 0\n"),
+    )
+    .expect("스텁 작성");
+    let mut perm = fs::metadata(&cargo).expect("스텁 metadata").permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+    fs::set_permissions(&cargo, perm).expect("실행권한");
+
+    let out = Command::new("bash")
+        .arg(script())
+        .args(["--range", "HEAD^", "HEAD"])
+        .current_dir(d)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub.path().display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .output()
+        .expect("게이트 스크립트 실행");
+    let run = gate_env::GateRun::from_output(&out);
+    assert_eq!(
+        run, 2,
+        "의존 폐포를 못 읽었는데 판정 불가가 아니다 — 0 이면 링크된 크레이트의 변경이 조용히 통과한 것이다"
+    );
+    assert!(
+        run.output.contains(MARK),
+        "판정 불가의 사유(cargo 의 stderr)가 출력에 없다:\n{}",
+        run.output
+    );
+}
+
 #[test]
 fn a_missing_shipping_judge_widens_and_says_so() {
     let tmp = seed_repo();

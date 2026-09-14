@@ -158,31 +158,45 @@ exists_at() { git cat-file -e "$1" 2>/dev/null; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# 이 plugin 이 링크하는 **워크스페이스 내부** 크레이트 이름들(한 줄에 하나). 값을 캐시한다 —
-# 후보 선정과 파일 집합 계산에서 두 번 묻는다.
+# 이 plugin 이 링크하는 **워크스페이스 내부** 크레이트 이름들(한 줄에 하나)을 캐시 파일에
+# 쓰고 그 경로를 `CLOSURE_FILE` 에 둔다. 후보 선정과 파일 집합 계산에서 두 번 묻는다.
 #
 # 이름 **정확 일치**로 본다. 부분 문자열로 보면 `tasty-utils` 가 `tasty-utils-extra` 에도
 # 걸려 엉뚱한 plugin 을 판정 대상으로 끌어들인다.
+#
+# **값을 표준출력으로 돌려주지 않는다 — 반드시 본 셸에서 부른다.** 한때 `$(closure_of …)`
+# 로 불렸고, 그러면 안의 `die` 가 **서브셸만** 끝낸다. 게이트는 빈 폐포를 "아무 plugin 도
+# 링크하지 않는다" 로 읽고 계속 가, 링크된 크레이트가 바뀌었는데 `통과` · rc 0 으로 끝났다
+# (실패 문장은 stderr 에 한 줄 남지만 판정은 rc 가 한다). 그 서브셸은 빈 캐시 파일까지
+# 남겨, 다음 호출은 비었는지 묻지도 않고 빈 폐포를 돌려줬다. 그래서 캐시는 성공한 뒤에만
+# 제자리로 옮긴다.
+#
+# cargo 의 stderr 는 버리지 않고 받아 둔다 — 성공할 때는 경고라 안 찍고, 실패할 때는 그것이
+# 판정 불가의 **사유**다. 버리면 "cargo tree 가 실패했다" 한 줄만 남아 다시 돌려야 안다.
+# 시험: tests/plugin_version_bump_channel.rs 의 an_unreadable_dependency_closure_is_undecidable_and_says_why
 closure_of() {
     local pname="$1" cache="$WORK/closure.$1"
-    if [ ! -f "$cache" ]; then
-        cargo tree -p "$pname" -e normal,build --prefix none --offline 2>/dev/null \
-            | awk '{print $1}' | sort -u > "$cache" \
-            || die "판정 불가: cargo tree 가 실패했다 ($pname)."
-        [ -s "$cache" ] || die "판정 불가: $pname 의 의존 폐포가 비었다 — 빈 모수는 측정 실패다."
+    CLOSURE_FILE="$cache"
+    [ -f "$cache" ] && return 0
+    if ! cargo tree -p "$pname" -e normal,build --prefix none --offline 2>"$cache.err" \
+        | awk '{print $1}' | sort -u > "$cache.tmp"; then
+        die "판정 불가: cargo tree 가 실패했다 ($pname). cargo 의 stderr:
+$(cat "$cache.err")"
     fi
-    cat "$cache"
+    [ -s "$cache.tmp" ] || die "판정 불가: $pname 의 의존 폐포가 비었다 — 빈 모수는 측정 실패다."
+    mv "$cache.tmp" "$cache"
 }
 
 # 이 plugin 의 폐포에 그 크레이트가 있는가.
 #
-# **파이프로 쓰지 않는다.** `grep -q` 는 첫 일치에서 입력을 닫고, 그러면 왼쪽의
-# `closure_of`(마지막이 `cat`)가 SIGPIPE 로 죽는다 — `pipefail` 이 켜져 있으므로
-# 파이프라인 rc 가 141 이 되어 **찾았는데 못 찾은 것이 된다.** 이 함수의 반환값은
-# 판정 대상 집합을 정하므로, 뒤집히면 게이트가 조용히 반대로 판정한다.
+# **파이프로 쓰지 않는다.** `grep -q` 는 첫 일치에서 입력을 닫고, 그러면 왼쪽 단이
+# SIGPIPE 로 죽는다 — `pipefail` 이 켜져 있으므로 파이프라인 rc 가 141 이 되어 **찾았는데
+# 못 찾은 것이 된다.** 이 함수의 반환값은 판정 대상 집합을 정하므로, 뒤집히면 게이트가
+# 조용히 반대로 판정한다. 그래서 캐시 파일을 직접 읽는다.
 # 가드: crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs
 links() {  # <pname> <crate-name>
-    grep -qxF "$2" <<<"$(closure_of "$1")"
+    closure_of "$1"
+    grep -qxF "$2" "$CLOSURE_FILE"
 }
 
 # 사용: materialize <라벨> <tree-ish> <crate 경로>...
