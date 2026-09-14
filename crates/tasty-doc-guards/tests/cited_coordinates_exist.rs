@@ -873,7 +873,7 @@ fn cited_markdown_links_resolve_from_their_own_document() {
         }
     }
 
-    // R445 — 측정값은 단정보다 앞에. 이 줄이 생기기 전의 판별식은 "상수를 크게 올려 실패
+    // 측정값은 단정보다 앞에. 이 줄이 생기기 전의 판별식은 "상수를 크게 올려 실패
     // 메시지로 읽어라" 였는데, 그건 재려고 트리를 건드리게 한다(상수 doc 참조).
     println!("[인용 좌표] 확인한 링크 {checked} · 하한 {MIN_LINKS}");
     assert!(
@@ -924,7 +924,7 @@ fn cited_markdown_links_resolve_from_their_own_document() {
 /// **판별식** — 종전에 이 자리가 적어 둔 재는 법은 "지금 몇인지 알아야 하면 이 상수를
 /// 크게 올려 실패 메시지로 읽는다" 였다. 답은 나오지만 **재려고 트리를 건드려야 한다.**
 /// 하한을 확인하는 일이 소스 수정을 요구하면, 재는 사람이 그 수정을 되돌리는 것을
-/// 잊는 형태가 남는다. 그래서 단정 앞에서 실측값을 찍게 바꿨다(R445):
+/// 잊는 형태가 남는다. 그래서 단정 앞에서 실측값을 찍게 바꿨다:
 ///
 /// ```text
 /// cargo test -p tasty-doc-guards --test cited_coordinates_exist -- --nocapture

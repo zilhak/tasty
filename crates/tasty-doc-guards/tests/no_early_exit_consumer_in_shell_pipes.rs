@@ -579,7 +579,7 @@ fn a_pipe_inside_quotes_is_not_a_pipe() {
 
 #[test]
 fn the_scan_refuses_to_report_zero_from_an_empty_input() {
-    // R31 의 형태 — 입력이 없을 때 판정기가 무엇을 하는지 먼저 본다.
+    // 입력이 없을 때 판정기가 무엇을 하는지 먼저 본다.
     assert!(violations("").is_empty());
     assert!(logical_lines("").is_empty());
     // 그리고 그 "위반 0" 이 초록으로 새지 않도록 막는 것이 하한이다 — **0 이 안 통과하는

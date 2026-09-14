@@ -140,7 +140,7 @@ mod tests {
 
     /// ⓪ 대조군 — 유효한 폰트 파일은 반드시 resolve 에 성공해야 한다. 이것이 실패하면
     /// 아래 실패 케이스들의 `Failed` 가 "제대로 걸러서" 인지 "하네스가 다 죽어서" 인지
-    /// 구분되지 않는다(R774).
+    /// 구분되지 않는다.
     #[test]
     fn valid_bundled_font_file_resolves() {
         let dir = tmp_pack("valid");

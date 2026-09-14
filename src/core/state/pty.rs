@@ -178,7 +178,7 @@ impl CoreState {
     /// plugin placeholder(`Deferred::Plugin`)를 registry 로 실제화한다 — terminal
     /// reify(`ensure_surface_initialized`)의 plugin 짝. `SurfaceKindRegistry.get`
     /// 은 값을 새로 만들지 않는 싼 read 라, kind 가 아직 없으면(plugin hello 전)
-    /// 매 프레임 재시도해도 자원이 쌓이지 않는다(R214 — 실패가 자기 재시도를 부르는
+    /// 매 프레임 재시도해도 자원이 쌓이지 않는다(실패가 자기 재시도를 부르는
     /// 고리가 없다). kind 가 등록되는 순간 `restore` 로 실제 surface 를 만들어 leaf 를
     /// 교체한다. kind 가 영영 안 오면(plugin 이 죽었거나 매니페스트에서 사라짐)
     /// placeholder 가 그대로 남는다 — 의도된 상태다(`to_tree_json` 이 `ready:false`

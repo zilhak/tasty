@@ -60,7 +60,7 @@
 //! **타깃**이었다 — [`cited_tests`] 는 `tests/<이름>.rs` 형태만 지목으로 읽는다. 내가
 //! 심은 `multi_window_owner_routing` 은 타깃이 아니라 `e2e_tests` 안의 **시험 함수**라,
 //! 조기 반환이 없었어도 이 축은 그것을 못 봤다. **B 는 양성 대조가 아니었다** — C⁻·D⁻ 와
-//! 같은 부류이고, 이번 회차에 내가 R1142 를 세 번째로 밟은 자리다.
+//! 같은 부류다.
 //! 타깃 단위에서 "좁혀지지 않음 ⇒ 전부 돈다" 는 참이다.
 //!
 //! **그래도 그 전제가 깨지는 갈래가 하나 남는다** — `--skip` 이 한 타깃의 **모든** 시험을
@@ -113,8 +113,8 @@
 //! # 이 가드가 **모수에 넣지도 못하는** 자리 (줄바꿈)
 //!
 //! 표지를 리터럴 부분문자열로 찾는다. 그래서 표지가 **줄바꿈에 쪼개지면** 그 자리는
-//! 위반이 아니라 **모수 밖**이 된다 — "0 건 발견" 과 "안 봤다" 가 화면에서 같아진다
-//! (R8). 실측(2026-09-05, 스캔 1708 파일): 리터럴로 잡힌 표지 **222**, 줄바꿈에 쪼개져
+//! 위반이 아니라 **모수 밖**이 된다 — "0 건 발견" 과 "안 봤다" 가 화면에서 같아진다.
+//! 실측(2026-09-05, 스캔 1708 파일): 리터럴로 잡힌 표지 **222**, 줄바꿈에 쪼개져
 //! 놓친 표지 **7**(약 3%). 그 7 중 둘이 실제로 낡은 문장이었고, 하나는 이 가드로
 //! "고쳤다" 고 보고된 뒤에도 같은 파일에 남아 있던 자리다 —
 //! **고침의 완료 판정을 이 가드로만 하면 안 된다.**
@@ -167,7 +167,7 @@
 //!
 //!   앞의 둘이 사각이다. 그러니 **"이 가드가 채널 주장을 지킨다" 는 문장은 범위를 넘는다**
 //!   — 지키는 것은 *테스트 타깃에 대한* 채널 주장이다. 워크플로·스크립트 게이트를 두고
-//!   "자동 채널 없음" 이라 적으면 아무도 안 본다(R477: 가드가 있다 ≠ 가드가 덮는다).
+//!   "자동 채널 없음" 이라 적으면 아무도 안 본다(가드가 있다 ≠ 가드가 덮는다).
 //!   메우려면 주어 부류를 워크플로 이름까지 넓혀야 하는데, 그러면 워크플로를 *언급만* 하는
 //!   문장이 전부 후보가 되어 오탐이 지배한다 — 그 판별식을 먼저 짓기 전에는 넓히지 마라.
 //!
@@ -253,7 +253,7 @@
 //! 앉는지 먼저 보라.** 도식(`| <축> | <스크립트> | <워크플로> |`)으로 적으면 안 앉는다.
 //! 회차 92 의 사각 판정을 적을 때 이미 이 규칙을 썼고, 그래서 첫 칸이 안 움직였다.
 //!
-//! **R1061 은 이 파일의 순회에 안 닿는다.** `collect_files` 는 점으로 시작하는
+//! **로컬 작업 폴더가 트리마다 모양이 다른 문제는 이 파일의 순회에 안 닿는다.** `collect_files` 는 점으로 시작하는
 //! 디렉토리를 (`.github` 만 빼고) 통째로 건너뛰므로, worktree 에서 심볼릭 링크이고
 //! 원본에서 실물인 그 로컬 작업 폴더가 **두 트리 모두에서 모수 밖**이다. 실측으로
 //! 확인했다(그 접두를 가진 파일이 수집 목록에 0 건). 그러니 이 파일의 하한은 lane 에서
@@ -294,11 +294,11 @@
 //! (`--target x86_64-pc-windows-gnu`)는 5 를 통과시켰다 — 그 자리는 타입이 맞고 문자열
 //! 비교도 합법이다. 앞엣것만 재는 명령으로 뒤엣것을 결론짓지 마라.
 //!
-//! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**(R16). 아래 셋은 이 축의 채널
+//! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**. 아래 셋은 이 축의 채널
 //! 모델이 딛고 선 사실인데, 이 레포에서 실행으로 확인할 방법이 없다. (부재의 주어는 아래
 //! 세 전제이지 이 타깃의 실행 채널이 아니다.) 변이를 지어내지도
 //! 침묵하지도 않고 부재를 명시한다. 좌표는 base `db6571d7` — base 가 옮겨가 확인 수단이
-//! 생기면 이 선언은 만료되고, 그때는 선언을 지우고 검사를 넣는다(R16-b).
+//! 생기면 이 선언은 만료되고, 그때는 선언을 지우고 검사를 넣는다.
 //!
 //! - **libtest 의 `--skip` 은 부분일치다.** 그래서 한 타깃의 모든 테스트 이름이 skip
 //!   문자열을 포함할 때만 그 타깃이 통째로 빠진다고 본다. libtest 의 매칭 규칙 자체를
@@ -318,10 +318,10 @@
 //!     -> rc 0, 빌드된다
 //!   ```
 //!
-//!   **그래도 검사로 넣지 않는다**(R16-b 의 문자 그대로라면 넣어야 한다). 이 판정은
+//!   **그래도 검사로 넣지 않는다**(위 만료 규칙을 문자 그대로 따르면 넣어야 한다). 이 판정은
 //!   테스트 안에서 cargo 를 다시 부르는 형태여야 하는데, 재귀 cargo 호출은 상위 빌드의
 //!   락과 프로필을 물고 분 단위로 늘어난다 — 이 가드의 나머지 42 항목이 초 단위인 것과
-//!   맞지 않는다. 값이 확인된 전제를 **비싼 검사로 바꾸는 것**은 R303 이 말리는 쪽이다.
+//!   맞지 않는다. 값이 확인된 전제를 **비싼 검사로 바꾸지 않는다.**
 //!   대신 위 명령과 결과를 여기 남긴다: 다음 사람은 재현에 두 줄이면 된다.
 //! - **조합 한정 표지 목록의 완전성.** "어느 조합인지 함께 적었다" 를 판정하는 문자열
 //!   목록이 정확히 쓴 문장을 빠짐없이 덮는지는, 아직 쓰이지 않은 문장을 대상으로 하므로
@@ -2320,7 +2320,7 @@ fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
     assert!(
         e2e_fns.len() > 10,
         "e2e_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽으면 아래 판정이 \
-         언제나 참이 된다(R435)",
+         언제나 참이 된다",
         e2e_fns.len()
     );
     let one = e2e_fns
@@ -2336,7 +2336,7 @@ fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
     let invocations = automatic_test_invocations(&root);
     assert!(
         !invocations.is_empty(),
-        "자동 잡의 `cargo test` 호출을 하나도 못 뽑았다 — 추출이 죽었다(R435)"
+        "자동 잡의 `cargo test` 호출을 하나도 못 뽑았다 — 추출이 죽었다"
     );
     let selected = invocations.iter().any(|(_, tail)| {
         let (filters, exact) = positive_filters(tail);
@@ -2358,7 +2358,7 @@ fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
 /// 층 2 — gui 스위트가 요구하는 것은 디스플레이가 아니라 **플래그**다.
 ///
 /// `gui_tests` 는 전수 `#[ignore]` 라, 창이 있어도 평범한 `cargo test` 는 한 건도 안
-/// 돌린다(R417: `#[ignore]` 는 실행만 막고 컴파일은 막지 않는다). 여기서 무시 표시가
+/// 돌린다(`#[ignore]` 는 실행만 막고 컴파일은 막지 않는다). 여기서 무시 표시가
 /// 하나라도 빠지면 그 테스트는 **어느 자동 잡도 안 보는데** 아무도 그 사실을 모른다.
 #[test]
 fn the_gui_suite_needs_a_flag_not_a_display() {
@@ -2368,7 +2368,7 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
     let gui_fns = test_fns_with_ignore(&gui_text);
     assert!(
         gui_fns.len() > 10,
-        "gui_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽었다(R435)",
+        "gui_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽었다",
         gui_fns.len()
     );
     let running: Vec<&String> = gui_fns
@@ -2409,7 +2409,7 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
 /// 래치의 성질은 "읽는다" 가 아니라 "첫 실패를 표시하고 그 사실을 되돌려 받는다" 이고,
 /// `swap(true` 가 정확히 그 자리다.
 ///
-/// `None` 은 "구조가 바뀌어 못 찾았다" 이고 **판정 불가 = 실패**로 다룬다(R435).
+/// `None` 은 "구조가 바뀌어 못 찾았다" 이고 **판정 불가 = 실패**로 다룬다.
 fn gui_amplifiers_live(src: &str) -> Option<(bool, bool)> {
     let at = src.find("static SHARED_INSTANCE")?;
     let tail = &src[at..];
@@ -2463,7 +2463,7 @@ fn the_gui_ignored_layer_has_no_single_value() {
     let common_text = std::fs::read_to_string(&common).expect("tests/gui_common/mod.rs 가 없다");
     let (a_live, b_live) = gui_amplifiers_live(&common_text).expect(
         "gui 하네스의 공유 인스턴스 표지를 못 찾았다 — 구조가 바뀌었으면 이 층을 다시 재라. \
-         판정 불가는 통과가 아니라 실패다(R435)",
+         판정 불가는 통과가 아니라 실패다",
     );
     assert!(
         a_live || b_live,
@@ -2498,12 +2498,12 @@ fn the_gui_ignored_layer_has_no_single_value() {
     }
     assert!(
         scanned > 0,
-        "`gui_tests` 를 언급하는 문서를 하나도 못 찾았다 — 수집이 죽었다(R435)"
+        "`gui_tests` 를 언급하는 문서를 하나도 못 찾았다 — 수집이 죽었다"
     );
     assert!(
         carries_marker,
         "{CLAIM_DOC} 에서 '{MARKER}' 가 사라졌다. 그 단정이 이 층의 **값 자리**라, \
-         없어지면 이 판정은 지킬 것이 없는 채로 언제나 초록이 된다(R435)"
+         없어지면 이 판정은 지킬 것이 없는 채로 언제나 초록이 된다"
     );
     assert!(
         violations.is_empty(),
@@ -2530,7 +2530,7 @@ fn the_gui_ignored_layer_has_no_single_value() {
 /// ☆ **수동 잡은 안 본다 — 의도된 것이다.** 물음이 "**자동** 채널이 있는가" 이므로
 /// [`automatic_job_bodies_of_dir`] 가 `workflow_dispatch` 전용 잡을 걸러낸다. 실측으로
 /// 밟았다: `test.yml` 의 `test-linux-x64` 에 `--ignored` 를 심는 첫 양성 대조가 **안 죽었고**,
-/// 원인은 판정이 아니라 그 잡이 수동 전용이라는 사실이었다(R522 — 대조가 안 죽으면
+/// 원인은 판정이 아니라 그 잡이 수동 전용이라는 사실이었다(대조가 안 죽으면
 /// 표적보다 **모형**을 먼저 의심한다). 자동 잡에 다시 심으니 죽는다.
 /// ⇒ 그 잡에 `-- --ignored` 를 얹는 선택지를 고르면 이 층은 잠잠하다. 그때 낡는 것은
 /// 이 층의 문장이 아니라 "담는다 ≠ 돌린다" 쪽이고, 그건 배치별 표가 갖는다.
@@ -2554,7 +2554,7 @@ fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
     assert!(
         bodies.len() >= 8,
         "자동 잡을 {}개밖에 못 읽었다 — 판독이 죽으면 `--ignored` 가 있어도 0 이 나오고 \
-         이 층은 언제나 '부재' 쪽으로 판정한다(R435)",
+         이 층은 언제나 '부재' 쪽으로 판정한다",
         bodies.len()
     );
 
@@ -2580,7 +2580,7 @@ fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
     assert!(
         doc_text.contains("gui_tests"),
         "{CLAIM_DOC} 이 `gui_tests` 를 아예 언급하지 않는다 — 읽기가 죽었거나 문서가 \
-         통째로 바뀌었다. 어느 쪽이든 아래 방향 판정은 뜻이 없다(R435)"
+         통째로 바뀌었다. 어느 쪽이든 아래 방향 판정은 뜻이 없다"
     );
     let says_absent = unwrapped(&doc_text).contains(ABSENCE_CLAIM);
 
@@ -2773,7 +2773,7 @@ fn named(names: &[&str]) -> std::collections::BTreeSet<String> {
 /// 레포 판정([`no_file_claims_ci_enforces_an_integration_target_no_automatic_job_runs`])이
 /// 오늘 위반 0 이라, 그 0 이 "그런 서술이 없다" 인지 "그런 서술을 못 본다" 인지 이 조각이
 /// 답한다. 지목은 `gui_tests` 다 — 실측으로 **조합이 0 인 실물**이라(`--features gui` 가
-/// 없으면 어느 자동 잡도 안 돌린다) 합성 이름을 지어내지 않았다(R1078).
+/// 없으면 어느 자동 잡도 안 돌린다) 합성 이름을 지어내지 않았다.
 #[test]
 fn a_target_with_no_automatic_combo_is_caught_as_an_enforcer() {
     let text = format!("`tests/gui_tests.rs` 를 {}.\n", enforce());
@@ -4212,7 +4212,7 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
 /// [`TIME_MARKERS`] 가 [`TIME_NOTE`] 를 대신하는 근거는 "명부는 안 읽어도 동작한다" 인데,
 /// 동작하는지를 재는 것이 없으면 그 근거가 말뿐이다. 합성 범위로 양극을 건다.
 ///
-/// ★ 표지의 *값*을 여기 안 베낀다(R1078) — 명부에서 런타임에 꺼내 쓴다. 그래서 이 대조는
+/// ★ 표지의 *값*을 여기 안 베낀다 — 명부에서 런타임에 꺼내 쓴다. 그래서 이 대조는
 /// 명부에 무엇이 들었는지가 아니라 **명부로 가른다는 사실**을 잰다.
 #[test]
 fn the_time_marker_reader_answers_both_yes_and_no() {

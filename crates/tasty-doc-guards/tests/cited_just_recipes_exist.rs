@@ -163,7 +163,7 @@ fn citations(root: &Path) -> Vec<(String, usize, String)> {
 ///
 /// 하한을 함수 안에 박아 두면 이 판독을 합성 트리로 잴 길이 없다. 레포의 `.md` 수와
 /// 합성 트리의 `.md` 수는 애초에 다른 모수인데, 상수 하나가 둘을 다 판정하려 들면
-/// 둘 중 하나는 반드시 틀린다(R1072).
+/// 둘 중 하나는 반드시 틀린다.
 fn citations_under(root: &Path, floor: &Floor) -> Vec<(String, usize, String)> {
     let docs = walk_with_floor(
         root,
@@ -290,7 +290,7 @@ fn the_extractor_reads_command_position_only() {
 ///   - `citations` 가 **덜** 걷으면 깨진 인용이 조용히 통과한다.
 /// 하한 셋(`DOC_FLOOR`·`MIN_RECIPES`·`MIN_CITATIONS`)은 이 중 뒤쪽 하나만 본다.
 ///
-/// ★ recipe 이름·문서 내용은 전부 합성이다(R1078) — 진짜 `Justfile` 의 값을 안 쓴다.
+/// ★ recipe 이름·문서 내용은 전부 합성이다 — 진짜 `Justfile` 의 값을 안 쓴다.
 #[test]
 fn the_recipe_and_citation_readers_answer_on_a_substituted_tree() {
     let probe = Scratch::new("just-citation");

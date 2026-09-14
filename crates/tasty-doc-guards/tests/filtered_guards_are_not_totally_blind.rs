@@ -132,7 +132,7 @@ const PARTIALLY_FILTERED: &[(&str, &str)] = &[(
 /// 들어왔다. 여유를 6 만 둔다: 하한이 실제보다 한참 낮으면 술어가 절반 죽어도 통과한다.
 ///
 /// **판별식** — 이 수가 지금도 옳은지는 이 시험 자신이 답한다. 단정 앞에서 실측값을 찍게
-/// 해 뒀으므로(R445) 그 줄이 곧 계기다:
+/// 해 뒀으므로 그 줄이 곧 계기다:
 ///
 /// ```text
 /// cargo test -p tasty-doc-guards --test filtered_guards_are_not_totally_blind -- --nocapture
@@ -488,7 +488,7 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
         }
     }
 
-    // R445 — 측정값은 단정보다 **앞에**. 이 수는 형제 가드
+    // 측정값은 단정보다 **앞에**. 이 수는 형제 가드
     // (`filter_free_channel_still_exists` 의 `MIN_GUARDED`)와 산술로 묶여 있어서,
     // 둘을 나란히 읽을 수 있어야 어느 쪽이 움직였는지 갈린다.
     println!("[필터 뒤 스캔 가드] {scanned} · 하한 {MIN_SCANNED}");

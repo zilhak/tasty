@@ -367,7 +367,7 @@ struct Corpus {
 
 impl Corpus {
     /// 합성 좌변. `(경로, 원문)` 만 주면 앵커 집합은 [`anchors_of`] 가 만든다 — 앵커를
-    /// 손으로 적어 넣으면 그 판독기가 픽스처에서 빠져 동어반복이 된다(R1078).
+    /// 손으로 적어 넣으면 그 판독기가 픽스처에서 빠져 동어반복이 된다.
     fn from_pairs(pairs: &[(&str, &str)]) -> Self {
         let mut anchors_by_rel = BTreeMap::new();
         let mut contents_by_rel = BTreeMap::new();
@@ -622,7 +622,7 @@ fn the_site_anchor_judge_is_still_wired() {
 /// (`resolve_rel` 의 `..` 접기만은 생산 트리가 이미 잡는다 — rc=1.)
 ///
 /// ★ 합성 문서의 제목·경로·앵커는 전부 이 시험이 짓는다. 앵커 집합은 손으로 안 적고
-/// [`anchors_of`] 에게 만들게 한다 — 적어 넣으면 그 판독기가 픽스처에서 빠진다(R1078).
+/// [`anchors_of`] 에게 만들게 한다 — 적어 넣으면 그 판독기가 픽스처에서 빠진다.
 #[test]
 fn the_audit_reports_an_unresolved_anchor_and_skips_only_the_two_ended_site_links() {
     let corpus = Corpus::from_pairs(&[

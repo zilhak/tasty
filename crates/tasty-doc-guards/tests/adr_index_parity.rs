@@ -415,7 +415,7 @@ fn header_field(body: &str, name: &str) -> Option<String> {
 #[test]
 fn an_adr_number_names_exactly_one_document() {
     let rows = index_rows(&repo_root());
-    // R445 — 측정값은 단정보다 앞에. 이 파일의 세 시험이 같은 하한을 쓰고 서로 다른 수를
+    // 측정값은 단정보다 앞에. 이 파일의 세 시험이 같은 하한을 쓰고 서로 다른 수를
     // 재므로, 그 수들을 나란히 읽는 것이 곧 하한의 판별식이다(상수 doc 참조).
     println!("[ADR 인덱스] 인덱스 행 {} · 하한 {MIN_ADRS}", rows.len());
     assert!(
@@ -730,7 +730,7 @@ fn an_index_row_mirrors_its_adr_header() {
     }
 
     // ★ 아래 하한들은 **하한이지 모수가 아니다.** "표류 0" 이 안 봐서 0 인지 정말
-    // 없어서 0 인지는 그 초록만으로 안 갈린다(R473 형태). 그래서 모수를 여기서 싣는다.
+    // 없어서 0 인지는 그 초록만으로 안 갈린다(조용한 0 의 형태). 그래서 모수를 여기서 싣는다.
     // libtest 는 통과한 테스트의 출력을 삼키므로 `-- --nocapture` 로 읽는다.
     // `tracing` 은 여기서 못 쓴다 — 이 크레이트는 의존이 0 인 것이 존재 이유라
     // (ADR-0138) subscriber 자체가 없다.

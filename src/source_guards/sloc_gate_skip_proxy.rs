@@ -186,8 +186,8 @@ const GENERATED_MARKER: &str = "DO NOT EDIT";
 
 /// 크레이트 루트 바로 아래 `tests/` 인가 — 판정을 정본
 /// [`tasty_doc_guards::shipping_scope::is_cargo_test_target`] 으로 **위임**한다. 같은 물음을
-/// `test_only_files` 도 쓰므로(그게 이 성질을 출하 판정에 넣는다) 사본을 두면 답이 갈린다
-/// (R414). 여기서는 `Backing` 분류에만 쓴다.
+/// `test_only_files` 도 쓰므로(그게 이 성질을 출하 판정에 넣는다) 사본을 두면 답이 갈린다.
+/// 여기서는 `Backing` 분류에만 쓴다.
 fn is_cargo_test_target(rel: &str) -> bool {
     tasty_doc_guards::shipping_scope::is_cargo_test_target(&repo_root(), Path::new(rel))
 }
@@ -493,7 +493,7 @@ fn a_shipping_file_renamed_to_a_test_name_is_caught() {
     );
     let renamed = victim.rel.replace(".rs", "_tests.rs");
 
-    // R79 ② — 변이 후에도 **약한 쪽은 통과한다**. 게이트는 이 개명을 면제로 읽는다.
+    // 변이 후에도 **약한 쪽은 통과한다**. 게이트는 이 개명을 면제로 읽는다.
     assert!(
         name_skipped(&renamed, &patterns),
         "개명이 게이트의 면제 패턴에 걸리지 않는다 — 이 변이는 게이트를 우회하지 못하므로 \

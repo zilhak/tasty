@@ -284,7 +284,7 @@ mod deferred_plugin_tests {
     //        → missing_plugin_kind_preserves_sibling_tabs
     //   ③ 형제 pane 이 산다(2차 전파 = rebuild_pane_node::Split 의 `?`)
     //        → deadline_zero_apply_preserves_sibling_panes
-    // 양성 대조(R136): kind 가 등록돼 있으면(=hello 후) 같은 경로가 placeholder 가
+    // 양성 대조: kind 가 등록돼 있으면(=hello 후) 같은 경로가 placeholder 가
     // 아니라 실제 surface 를 낸다 → registered_kind_restores_real_surface_not_placeholder.
 
     fn engine() -> CoreState {
@@ -419,7 +419,7 @@ mod deferred_plugin_tests {
         });
     }
 
-    // 양성 대조(R136): kind 가 registry 에 등록돼 있으면(=hello 도착 후) 같은 miss
+    // 양성 대조: kind 가 registry 에 등록돼 있으면(=hello 도착 후) 같은 miss
     // 경로가 placeholder 가 아니라 restore 가 만든 실제 surface 를 낸다. 이게 없으면
     // "무조건 placeholder 가 나오는 것 아니냐" 를 배제하지 못한다.
     #[test]

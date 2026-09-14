@@ -169,7 +169,7 @@ pub struct Scan {
 /// 이 알맹이가 `#[test]` 본문 안에 인라인이면 합성 코퍼스로 잴 길이가 없다. 특히
 /// **면제 라우팅**은 여기서만 일어나고, 그것이 넓어지면 진짜 위반이 `sites` 에서
 /// 조용히 빠진다 — `exempt_hits` 는 **늘어나므로** 죽은 면제 단정도 안 걸리고,
-/// `EXEMPT_BUDGET` 은 명부의 *크기*만 보므로 역시 안 걸린다(R1072).
+/// `EXEMPT_BUDGET` 은 명부의 *크기*만 보므로 역시 안 걸린다.
 fn scan(sources: &[(PathBuf, String)], exempt: &[(&str, &str, &str)]) -> Scan {
     let mut acquisitions = 0usize;
     let mut sites: Vec<String> = Vec::new();
@@ -347,7 +347,7 @@ fn test_harness_locks_do_not_unwrap_bare() {
 /// 경로 비교가 헐거워지면 면제 하나가 그 줄을 가진 모든 파일을 덮는다. 그 형태는 두
 /// 경로에 같은 줄이 있을 때만 드러난다.
 ///
-/// ★ 코퍼스도 면제 명부도 전부 합성이다(R1078) — 실재 경로·실재 [`EXEMPT`] 값을 안 쓴다.
+/// ★ 코퍼스도 면제 명부도 전부 합성이다 — 실재 경로·실재 [`EXEMPT`] 값을 안 쓴다.
 #[test]
 fn the_exempt_routing_answers_on_a_substituted_corpus() {
     // 두 파일에 **똑같이** 들어가는 줄. 면제는 이 중 한 경로에만 걸린다.

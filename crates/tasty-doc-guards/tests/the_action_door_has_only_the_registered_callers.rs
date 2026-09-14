@@ -112,7 +112,7 @@ fn code_uses(needle: &str, own: &str) -> BTreeSet<String> {
     code_uses_in(&sources(), needle, own)
 }
 
-/// 위 술어의 알맹이 — **모수를 인자로 받는다.** 같은 이유다(R1072).
+/// 위 술어의 알맹이 — **모수를 인자로 받는다.** 같은 이유다.
 fn code_uses_in(sources: &[(PathBuf, String)], needle: &str, own: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for (rel, text) in sources {
@@ -291,7 +291,7 @@ fn every_registered_place_carries_a_reason() {
 /// 처방을 낸다. 넓어진 술어가 짚은 자리는 **애초에 호출자가 아니므로** 그 처방은 없는
 /// 위반에 대한 것이다. 이 저장소는 그 오탐을 실제로 밟았다(2026-09-07, doc 주석 둘).
 ///
-/// ★ 바늘은 합성이다(R1078) — `DOOR`·`PALETTE_SLOT` 의 *값*을 안 쓴다. 그래서 이 대조는
+/// ★ 바늘은 합성이다 — `DOOR`·`PALETTE_SLOT` 의 *값*을 안 쓴다. 그래서 이 대조는
 /// 그 상수가 무엇인지가 아니라 **주석·문자열을 덮고 센다는 사실**을 잰다.
 #[test]
 fn the_predicate_counts_code_and_not_prose_on_a_substituted_tree() {

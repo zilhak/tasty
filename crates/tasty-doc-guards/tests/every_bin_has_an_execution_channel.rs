@@ -354,7 +354,7 @@ fn with_bins(tag: &str, line: u32, names: &[&str]) -> PathBuf {
 /// 판별식은 지금 값이 옳은지를 말하지, 이 계기가 반응하는지를 말하지 않는다.
 ///
 /// 세 칸을 함께 두는 이유: 0 만 보이면 "이 함수는 언제나 0 을 낸다" 와 구별이 안 된다.
-/// 마지막 칸이 그 비영 대조다(R56).
+/// 마지막 칸이 그 비영 대조다.
 #[test]
 fn the_bin_floor_sees_a_collapsed_collection() {
     let empty = with_bins("empty", line!(), &[]);

@@ -145,7 +145,7 @@ fn no_shipping_lock_is_recovered_without_a_report() {
 /// `poison_recovery` 의 lib 유닛 여덟은 전부 `classify`(한 파일의 술어)를 건다. **아무도
 /// `census` 를 부르지 않는다** — 걷기·test-only 라우팅·줄 번호 조립은 그 아래 층이다.
 ///
-/// ★ 스캔 뿌리는 합성 이름(`zone`)이다(R1078) — `SCAN_ROOTS` 의 값을 안 쓴다.
+/// ★ 스캔 뿌리는 합성 이름(`zone`)이다 — `SCAN_ROOTS` 의 값을 안 쓴다.
 #[test]
 fn the_census_routes_and_counts_on_a_substituted_tree() {
     let probe = Scratch::new("poison-census");

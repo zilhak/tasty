@@ -26,7 +26,7 @@
 //! (`#[cfg(debug_assertions)]`) 안에 있어 release 에는 없고, PTY 에도 OS 에도 안 나간다.
 //! ADR 의 결정 · 각주 본문의 열거 · 게이트 호출처 **셋이 이미 일치**했고 † 만 어긋났다.
 //!
-//! # 사거리 (R16)
+//! # 사거리
 //!
 //! 게이트가 **걸렸는지**만 본다. 게이트가 **옳게 동작하는지**는 안 본다 — 그건
 //! `tests/ipc_release_table_excludes_input_reproduction.rs` 와 ADR-0115 의 몫이다.
@@ -51,7 +51,7 @@ const DISPATCH: &str = "src/adapters/ipc/handler.rs";
 const HANDLER_DIR: &str = "src/adapters/ipc/handler";
 
 /// 게이트 함수의 이름. 이 파일이 그 이름을 담으므로 스캔 대상에서 자기를 빼는 대신
-/// **스캔 루트를 핸들러 트리로 좁혀** 애초에 자기가 안 들어오게 한다(R80 짝).
+/// **스캔 루트를 핸들러 트리로 좁혀** 애초에 자기가 안 들어오게 한다.
 const GATE: &str = "require_input_simulation";
 
 /// dispatch 팔 수의 하한 — 연기 검사. 파서가 죽으면 0 이 되고, 0 은 "게이트가 없다" 로

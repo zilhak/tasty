@@ -122,7 +122,7 @@ pub(crate) fn handle_cursor_position(
 /// | `effective_click_mode` · `effective_click_tracking` | 클릭 축에서 핸들러가 실제로 존중할 레벨 |
 /// | `degraded_by` | 격하 사유들. 빈 배열이면 두 축이 일치한다 |
 ///
-/// **이 값이 답하지 못하는 것**(R582):
+/// **이 값이 답하지 못하는 것**:
 /// - **개별 레지스터**(1000/1002/1003 각각)는 안 낸다. `terminal_mode` 는 실효 레벨이라
 ///   "1003 을 끄지 않은 채 1002 를 켰다" 는 이 값으로 구분되지 않는다 — 그 구분은
 ///   `tasty-terminal` 의 단위 시험이 갖고 있다.

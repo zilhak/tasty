@@ -241,7 +241,7 @@ struct IdScan {
 /// `sources` 는 `(repo-relative 경로, 원문)` 짝, `plugins` 는 `(크레이트 이름,
 /// 매니페스트 id)` 명부다. **둘 다 인자다** — 이 판정이 지키는 성질은 지금 저장소에
 /// 어떤 plugin 이 있는가가 아니라 "plugin 마다 상수를 찾았고 값이 같은가" 라는 모양이고,
-/// 그 모양은 명부와 무관하게 성립해야 한다(R1072).
+/// 그 모양은 명부와 무관하게 성립해야 한다.
 fn id_scan(sources: &[Source], plugins: &[(String, String)]) -> IdScan {
     let mut blind = Vec::new();
     let mut mismatches = Vec::new();

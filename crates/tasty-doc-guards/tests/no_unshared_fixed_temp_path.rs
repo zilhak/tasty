@@ -1,5 +1,5 @@
 //! **공유 temp 아래 고정 이름 임시 경로가 새로 생기지 않는가** 를 워크스페이스 전역에서
-//! 본다(ADR-0129 형태 B). 판정 규칙·극성·유니크화 인정 기준·R16 사각은
+//! 본다(ADR-0129 형태 B). 판정 규칙·극성·유니크화 인정 기준·잡지 못하는 사각은
 //! [`tasty_doc_guards::temp_path`] 모듈 주석에 있다.
 //!
 //! ## 극성과 사유 — 왜 명부가 아닌가
@@ -8,10 +8,10 @@
 //! **기본값을 "유니크화돼야 한다"** 로 두고, 의도된 공유는 **그 자리에 사유**(`이유:`/
 //! `reason:`)로 적는다 — `check-allow-reason` 의 마커 관례를 그대로 빌린다(그 스크립트는
 //! `#[allow]` 만 보므로 스캐너 자체는 재사용 못 한다, 관례만 빌린다). 명부를 안 쓰는 이유:
-//! 명부는 자기 대상을 이름으로 지목해 "쓰이는 것" 으로 만들고(R395), 정당한 예외가
-//! 구조적인 곳에서는 지키려는 표보다 빨리 썩는다(R380).
+//! 명부는 자기 대상을 이름으로 지목해 "쓰이는 것" 으로 만들고, 정당한 예외가
+//! 구조적인 곳에서는 지키려는 표보다 빨리 썩는다.
 //!
-//! ## 이 부류의 창립 멤버 (R399)
+//! ## 이 부류의 창립 멤버
 //!
 //! 면제(=사유) 기구를 처음 들이는 것은 **부류를 만드는 일**이다. 이 가드가 드는 첫
 //! 예외는 실측(2026-09-05)으로 잡은 **다섯**이고, 전부 "의도된 공유" 다:
@@ -138,7 +138,7 @@ const RECALL_BLIND_RATCHET: usize = 38;
 ///
 /// 왜 상수를 직접 읽지 않는가: 값이 함수 안에 박혀 있으면 그 판정을 발화시키려면
 /// **레포를 그 값 밑으로 줄이는 수밖에 없다** — 즉 실패 문구를 합성 입력으로 못 읽는다.
-/// 인자로 빼면 픽스처가 자기 하한을 들고 와서 문구를 그 자리에서 읽을 수 있다(R1072).
+/// 인자로 빼면 픽스처가 자기 하한을 들고 와서 문구를 그 자리에서 읽을 수 있다.
 struct Floors {
     files: usize,
     sites: usize,
@@ -359,7 +359,7 @@ const CHAINS_NOT_SEEN_RATCHET: usize = 1;
 /// 옮긴 것**이다 — 그 전까지 이 성질은 아무 채널도 안 지켰다.
 ///
 /// ★ 0 이라 이 시험은 오늘 아무것도 안 잡는다. 그래서 아래 픽스처 둘이 이 판정이
-/// 살아 있음을 대신 보인다(R1080).
+/// 살아 있음을 대신 보인다.
 #[test]
 fn no_two_callers_hand_the_same_discriminator_to_a_temp_path_helper() {
     let root = repo_root();
@@ -421,7 +421,7 @@ fn no_two_callers_hand_the_same_discriminator_to_a_temp_path_helper() {
 ///
 /// 위 시험이 오늘 0 이라 그 자체로는 살아 있는지 안 보인다. 이 조각은 레포의 실제
 /// 모양(`src/boot/locale_font.rs` 의 `tmp_pack(tag)`)에서 **인자 하나만** 겹치게 바꾼
-/// 것이다 — 가드의 상수에서 짓지 않았다(R1078).
+/// 것이다 — 가드의 상수에서 짓지 않았다.
 #[test]
 fn a_repeated_discriminator_is_caught() {
     let src = "fn tmp_pack(tag: &str) -> PathBuf {\n    \
@@ -461,7 +461,7 @@ fn distinct_discriminators_are_not_caught() {
 
 /// 일곱 판정의 **문구** 양성 대조. 발화 여부가 아니라 *어느 문구가 나왔는가* 를 잰다.
 ///
-/// ## 왜 가드의 상수를 안 쓰는가 (R1078)
+/// ## 왜 가드의 상수를 안 쓰는가
 ///
 /// 아래 `F` 는 `FLOORS` 가 아니라 **이 모듈이 정한 리터럴**이다. `MIN_FILES` 로 지으면
 /// 그 상수를 바꾸는 변이에 픽스처의 입력도 같이 움직여 **항진명제**가 된다 — 상수를
@@ -712,7 +712,7 @@ mod wording {
 #[test]
 fn the_handle_socket_key_still_carries_all_three_components() {
     // 이 시험의 창·앵커는 전부 자기 리터럴이다 — 가드 상수를 빌리면 그 상수에 대해
-    // 항진명제가 된다(R1078).
+    // 항진명제가 된다.
     const OWNER: &str = "crates/tasty-host-plugin/src/handle_channel.rs";
     let path = repo_root().join(OWNER);
     let text = std::fs::read_to_string(&path)

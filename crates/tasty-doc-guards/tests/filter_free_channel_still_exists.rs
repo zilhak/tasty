@@ -47,7 +47,7 @@ const PACKAGE: &str = "tasty-doc-guards";
 /// 채널이 지켜 주는 순수 스캔 가드 수의 하한. 실측 17 (2026-09-05).
 /// 모수가 비면 "채널이 있다" 는 아무것도 안 지키는 참이 된다.
 ///
-/// **판별식** — 단정 앞에서 실측값을 찍게 해 뒀으므로(R445) 그 줄이 계기다:
+/// **판별식** — 단정 앞에서 실측값을 찍게 해 뒀으므로 그 줄이 계기다:
 ///
 /// ```text
 /// cargo test -p tasty-doc-guards --test filter_free_channel_still_exists -- --nocapture
@@ -139,8 +139,8 @@ fn a_filter_free_job_runs_this_package_whole() {
     );
 
     let guarded = guarded_targets(&root);
-    // R445 — 측정값은 단정보다 **앞에** 찍는다. 단정이 죽으면 뒤의 출력은 안 돌고,
-    // 그러면 다음 사람이 하한을 검사하려고 술어를 손으로 흉내 내게 된다(R460 위반을 강요).
+    // 측정값은 단정보다 **앞에** 찍는다. 단정이 죽으면 뒤의 출력은 안 돌고,
+    // 그러면 다음 사람이 하한을 검사하려고 술어를 손으로 흉내 내게 된다.
     println!(
         "[필터 없는 채널] 순수 스캔 가드 {} · 하한 {MIN_GUARDED}",
         guarded.len()
@@ -206,7 +206,7 @@ fn the_move_target_and_the_guarded_channel_are_the_same_directory() {
 ///
 /// 그리고 이 수집기는 하나가 아니라 **두 술어의 곱**이라(읽는가 AND spawn 안 하는가),
 /// 어느 한쪽이 굳어도 수가 틀어진다. 그래서 칸을 넷 둔다 — 빈 입력 · 읽지 않는 파일 ·
-/// 읽으면서 spawn 하는 파일 · 세는 파일. 마지막 칸이 비영 대조다(R56): 앞 셋만 있으면
+/// 읽으면서 spawn 하는 파일 · 세는 파일. 마지막 칸이 비영 대조다: 앞 셋만 있으면
 /// "이 수집기는 언제나 0 을 낸다" 와 구별되지 않는다.
 #[test]
 fn the_guarded_floor_sees_a_collapsed_collection() {

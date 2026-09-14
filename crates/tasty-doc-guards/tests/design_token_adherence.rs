@@ -1026,7 +1026,7 @@ fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
 ///
 /// 정본 값에 묶어 두면 이 추출을 합성 트리로 잴 길이 없다. 레포의 UI 파일 수(실측 185)와
 /// 합성 트리의 파일 수는 애초에 다른 모수이고, 상수 하나가 둘을 다 판정하려 들면 둘 중
-/// 하나는 반드시 틀린다(R1072).
+/// 하나는 반드시 틀린다.
 fn length_setter_literals_under(
     root: &Path,
     scan_roots: &[&'static str],
@@ -1169,7 +1169,7 @@ fn no_new_length_literal_at_call_sites() {
 /// 줄이었고, 그런 줄은 다음 사람이 "안 쓰는 것 같다" 며 지운다. 이 대조가 그 줄에
 /// 입력을 준다.
 ///
-/// ★ 접두의 *값*은 여기 안 베낀다(R1078). 감싸는 짝을 명부에서 **런타임에 찾아** 쓴다 —
+/// ★ 접두의 *값*은 여기 안 베낀다. 감싸는 짝을 명부에서 **런타임에 찾아** 쓴다 —
 /// 그래서 이 대조는 명부에 무엇이 들었는지가 아니라 **경계로 가른다는 사실**을 잰다.
 #[test]
 fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {

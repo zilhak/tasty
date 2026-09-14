@@ -608,7 +608,7 @@ fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
 /// 이 픽스처가 새로 얻는 것은 **보고 갈래 하나**이고, 그 크기를 과장하지 않는다.
 ///
 /// ★ 심는 문자열 `tasty_cli::` 는 **리터럴로 쓴다.** [`FORBIDDEN`] 을 참조하면 그 상수를
-/// 무엇으로 바꿔도 이 픽스처가 초록이라 동어반복이 된다(R1078). 이 이름은 가드 밖에서
+/// 무엇으로 바꿔도 이 픽스처가 초록이라 동어반복이 된다. 이 이름은 가드 밖에서
 /// 온다 — `crates/tasty-cli/Cargo.toml` 의 패키지 이름이다. 명부 셋도 마찬가지로
 /// [`ALLOWED_PATHS`]·[`TEST_ONLY_FILES`] 를 안 읽고 이 시험이 직접 짓는다.
 #[test]

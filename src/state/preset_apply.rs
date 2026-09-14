@@ -355,9 +355,9 @@ impl AppState {
             // 미등록 kind 를 restore(rebuild_surface)와 동형으로 deferred plugin placeholder 로
             // 흡수한다. Err 전파는 build_surface_layout 의 Split 에서 `?` 로 퍼져 이 leaf 의
             // 형제(무고한 terminal 포함)까지 통째로 버린다 — 같은 kind miss 를 restore 는
-            // 흡수하고 apply 는 거부하면 그 자체가 결함이다(R275).
+            // 흡수하고 apply 는 거부하면 그 자체가 결함이다.
             //
-            // ★ restore 와 다른 점을 명시한다(R323 — 다음 사람이 "restore 와 같으니 reify 가
+            // ★ restore 와 다른 점을 명시한다(다음 사람이 "restore 와 같으니 reify 가
             // 반드시 온다"로 읽으면 틀린다): restore 의 kind miss 는 plugin hello 전 **일시
             // 부재**라 reify(`reify_displayed_surfaces`)가 뒤따른다. apply 의 미등록은 plugin
             // 미설치·제거인 **영구 부재일 수 있어** placeholder 가 빈 채 남을 수 있다(reify 가

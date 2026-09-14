@@ -827,7 +827,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
             (false, false) => inline_plain += 1,
         }
     }
-    // R435 하한 — 주석 추출이 죽으면 `cites_the_design` 이 전부 거짓이 되고 이 단정은
+    // 하한 — 주석 추출이 죽으면 `cites_the_design` 이 전부 거짓이 되고 이 단정은
     // 언제나 참이 된다. 그 상태의 0 은 "인용이 없다" 가 아니라 "안 읽었다" 다.
     assert!(
         with_comment >= 40,
@@ -869,7 +869,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
 fn the_gallery_share_splits_into_four_kinds() {
     let files = rust_sources();
     let named_values = theme_named_values();
-    // R415 양성 대조 — 이름 집합이 비면 아래 판정이 전부 "이름 없음" 으로 쏠린다.
+    // 양성 대조 — 이름 집합이 비면 아래 판정이 전부 "이름 없음" 으로 쏠린다.
     assert!(
         named_values.len() > 30 && named_values.contains(&28.0),
         "Theme 이름 값을 못 읽었다({} 개) — 그 상태의 판정은 전부 거짓이다",

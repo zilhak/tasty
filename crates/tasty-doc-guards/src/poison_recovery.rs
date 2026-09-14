@@ -21,7 +21,7 @@
 //! 실측(2026-09-05): shipping 파일 안 `#[cfg(test)]` 블록에 조용한 복구가 스물 남짓
 //! 있어서 줄 단위 판정이 없으면 전부 오탐이 된다.
 //!
-//! ## 잡지 못하는 것 (R16)
+//! ## 잡지 못하는 것
 //!
 //! 이 가드는 **인라인 세 형태**만 본다 — `x.lock().unwrap_or_else(|p| p.into_inner())`,
 //! `Err(p) => p.into_inner()`, `Err(TryLockError::Poisoned(p)) => p.into_inner()`.
@@ -194,7 +194,7 @@ mod tests {
         classify(&masked, &cfg_test)
     }
 
-    // ── 합성 회귀 (R363) : 세 인라인 형태를 조용/보고로 가른다 ──────────────────
+    // ── 합성 회귀: 세 인라인 형태를 조용/보고로 가른다 ──────────────────
 
     /// 형태 ① closure — 보고 없는 `unwrap_or_else` 는 조용하다.
     #[test]
@@ -278,7 +278,7 @@ mod tests {
     }
 
     /// 함수 인자로 받은 `PoisonError` 를 into_inner 하는 형태(recover_poisoned 모양)는
-    /// 복구 헤드가 근처에 없어 보지 않는다 — R16 에 적은 사각을 못박는다.
+    /// 복구 헤드가 근처에 없어 보지 않는다 — 모듈 주석의 '잡지 못하는 것' 에 적은 사각을 못박는다.
     #[test]
     fn a_param_binder_poison_into_inner_is_out_of_scope() {
         let fc = classify_src(
