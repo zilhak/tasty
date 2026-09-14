@@ -83,6 +83,29 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
   (`draw_file_picker_view` 의 `can_open`), wrapper 의 `apply_action` 도 동일 조건을 다시
   확인한다(방어적 중복 검증). 디렉토리는 더블클릭으로만 진입한다.
 
+### 긴 경로 — 넘침은 path bar 가 흡수한다
+
+경로가 아무리 깊거나 성분 이름이 길어도 footer 의 취소·확정 버튼은 popup 안에 온전히 남는다.
+`draw_file_picker_view` 는 헤더와 path bar 를 위에서, **footer 를 아래에서 먼저** 자리 잡고 남은
+높이를 본문(목록·상태 화면)에 준다. 그래서 footer 가 커지는 경우(저장 모드의 덮어쓰기 경고 줄)에도
+줄어드는 쪽은 본문이다.
+
+- **path bar**: 상위 폴더·새로고침 버튼이 오른쪽 끝을 먼저 차지하고, breadcrumb 은 남은 폭 안에서만
+  그려지고 그 밖은 잘린다. 가로 스크롤은 없다.
+- **가운데 생략**: 전체 breadcrumb 이 그 폭에 안 들어가면 root + `…` + 마지막 두 성분(현재 폴더와 그
+  부모)만 보인다(`crumb_slots`). 들어가면 접지 않는다. 성분 하나는 180px 에서 말줄임한다.
+- **`…` 메뉴**: `…` 를 누르면 숨긴 조상들이 메뉴로 나열되고, 고르면 그 폴더로 이동한다. hover 하면
+  숨긴 폴더 수를 보여 준다(`filepicker.hidden_folders`).
+- **생략은 렌더 규칙이다**: view 가 받는 `FilePickerProps.crumbs` 는 항상 root 부터 현재 폴더까지
+  전체이고, 접는 판단은 그리는 순간에만 한다 — `…` 메뉴가 숨긴 조상을 열 수 있는 이유다.
+- **footer 행**: 이름 행은 라벨(고정폭, 줄지 않음) + 이름 칸(남은 폭), 버튼 행은 오른쪽 끝에서 확정 ·
+  취소 순으로 자리 잡는다. 줄어드는 것은 이름 칸뿐이다.
+- **고정 수단**: `src/adapters/ui/popup/file_picker/layout_tests.rs` 가 popup 매니저와 같은
+  조건(콘텐츠 사각형 고정 · 그 사각형으로 clip)으로 한 프레임을 헤드리스로 그리고, 칠해진 버튼 라벨이
+  보이는 영역 안에 온전히 들어갔는지를 경로 깊이 · 성분 길이 · 모드(열기/저장/덮어쓰기) · popup 크기
+  조합마다 확인한다. 깊은 경로에서 root · `…` · 마지막 두 성분이 보이고 숨긴 성분이 안 칠해지는 것도
+  같은 방식으로 본다.
+
 ### 원격 경로 구분자(POSIX/Windows)
 
 원격 host 의 OS 는 client 가 사전에 알 수 없다 — `path_ancestors`/`join_dir`/`crumb_label` 은
@@ -163,19 +186,32 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `FilePickerData` 와 별개이며 `src/state.rs` 를 거치지 않는다. 한 번에 하나만 열리고, 새로 열면
   열려 있던 선택은 취소로 끝난다.
 - **popup**: 설정 창 자체 `PopupManager` 에 `settings_file_chooser` 로 등록된다(단축키 충돌 확인
-  popup 과 같은 매니저). 크기는 메인 피커와 같은 상수(640×480)를 읽고, 저장 모드는 입력 행만큼
-  높다.
+  popup 과 같은 매니저). 크기는 두 모드 모두 메인 피커와 같은 상수(640×480)다.
 - **로컬 전용**: 원격(mirror) 조회 경로(`pending_list_dir_forward` → attach client)는 메인 창 App
   루프가 소유하므로 설정 창에는 없다. 설정은 이 인스턴스 자신의 구성이라 로컬 파일시스템만 본다.
   목록은 위 "로컬 브라우징" 과 같은 `read_dir_entries` + `sort_entries` 동기 호출로 채운다.
 - **블로킹의 성질**: 동기 I/O 라 느린 디스크에서는 그 프레임이 늘어지지만 유한하게 끝난다 — 메인
   피커의 로컬 경로와 같은 성질이다. OS 네이티브 다이얼로그는 쓰지 않는다(포털 없는 Linux 에서
   끝나지 않는다, ADR-0162).
-- **모드**: `Open`(기존 파일 하나) · `Save { default_name }`(디렉토리를 고르고 파일명을 입력).
-  view 는 열기 전용이라 저장 모드의 파일명 입력 행(라벨 · 입력 · 저장 버튼)은 view 가 아니라
-  wrapper 가 view 아래에 덧붙인다. 목록에서 기존 파일을 고르면 그 이름이 입력으로 가고, view 의
-  확정 버튼은 "덮어쓰기" 라벨로 그 기존 파일을 대상으로 확정한다. 파일명은 한 경로 성분이어야 한다
-  (`/`·`\`·`.`·`..` 거부). 저장 모드는 경로를 정할 뿐 파일을 만들지 않는다.
+- **모드**: `Open`(기존 파일 하나) · `Save { default_name }`(디렉토리를 고르고 파일명을 정한다).
+  view 는 `FilePickerMode` 로 두 모드를 함께 그린다. 저장 모드는 파일명을 정할 뿐 파일을 만들지 않는다.
+- **저장 모드의 확정 수단은 하나다**: footer 의 이름 칸이 편집 가능해지고 footer primary 버튼만이
+  확정한다 — view 아래에 덧붙는 행은 없다. 버튼은 **이름 칸만** 읽는다.
+  - 목록에서 **파일** 행을 고르면 확정이 아니라 그 이름이 이름 칸에 들어가고 그 행이 선택된다.
+    나열된 이름이므로 곧 덮어쓰기 상태가 된다. **폴더** 행 한 번 클릭은 선택도 이름도 바꾸지 않는다
+    (진입은 더블클릭).
+  - 이름을 고쳐 고른 행과 달라지는 순간 선택이 풀린다(`FilePickerAction::EditName`). 같은 값이면
+    선택이 유지된다. 그래서 "고른 파일" 과 "입력한 이름" 이 서로 다른 경로를 가리키는 상태가 없다.
+  - **덮어쓰기**: 입력한 이름(앞뒤 공백 제외)이 지금 나열된 폴더에 **보이는 파일**로 있으면 버튼 위에
+    경고 줄(`filepicker.save.overwrite_warning`, 이름만 mono · `accent-warning`)이 뜨고 버튼 라벨이
+    **Overwrite** 로 바뀐다. 확인 대화상자는 없다. 판정은 나열된 목록 조회뿐이다 — 필터에 걸려 안 보이는
+    파일이나 나열되지 않은 경로는 stat 하지 않는다.
+  - **확정 조건**: 현재 디렉토리가 읽혔고, 이름이 한 경로 성분이며(`/`·`\`·`.`·`..`·빈 이름 거부),
+    나열된 폴더 이름과 겹치지 않을 때만 버튼이 활성이다.
+  - 저장 모드에서 파일 행 **더블클릭**은 확정하지 않고 고르기와 같다 — 덮어쓰기 경고를 보지 않고 기존
+    파일로 확정하는 길을 두지 않는다.
+  - 열기 모드의 이름 칸은 읽기 전용으로 현재 선택을 보여 주고, 비었으면 `filepicker.no_file_selected`
+    를 placeholder 로 쓴다.
 - **호출자**: Misc › Scripts(Lua 스크립트 파일 열기) · Keybindings › Import / Export(번들 내보내기는
   저장 모드, 가져오기는 열기 모드 — [단축키 가져오기 / 내보내기](../keybindings/index.md#가져오기--내보내기)).
 - **제목**: 기본은 모드의 제목이고, 여는 쪽이 `set_title` 로 덮어쓸 수 있다(가져오기/내보내기가 자기 제목을 쓴다).
@@ -186,16 +222,18 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **Esc**: 설정 창 popup 중 열려 있는 것의 z 순서가 가장 높은 하나만 받는다
   (`settings_escape_owner`). 파일 선택이 충돌 확인 popup 위에 떠 있으면 충돌 popup 의 키 처리
   (Enter/Y/Esc/N)는 돌지 않는다. Esc 는 설정 창 자체를 닫지 않는다.
-- **호출처**: 설정 › 기타 › 스크립트의 Add card **Browse…**(`Open`, `lua` 필터). 저장 모드의
-  호출처는 아직 없다.
-- **배치**: 저장 모드 입력 행의 배치는 디자인이 정하지 않은 최소 배치다.
+- **호출처**: 설정 › 기타 › 스크립트의 Add card **Browse…**(`Open`, `lua` 필터) · Keybindings ›
+  Import / Export 의 **Export…**(`Save`, `toml` 필터) · **Import…**(`Open`, `toml` 필터).
+- **배치**: 갤러리 specimen `Overlays › File picker › Save mode — one confirm, in the footer`
+  (`crates/tasty-gallery/src/catalog/components/file_picker.rs` 의 `draw_save_mode`)가 정본 배치다.
 
 ## 인터페이스
 
 - **사용자 트리거**: Tools 메뉴 "파일 열기…"(`filepicker.tools_menu_item`), 설정 › 기타 › 스크립트
   Add card 의 Browse…(설정 창 안의 로컬 전용 재사용). 목록 행 더블클릭
-  (디렉토리는 진입, 파일은 즉시 확정) / 브레드크럼 클릭 / 상위 폴더 버튼 / 새로고침 버튼 /
-  ESC(취소) / X 버튼(취소).
+  (디렉토리는 진입, 파일은 즉시 확정 — 저장 모드에서는 이름 칸 채우기) / 브레드크럼 클릭 / `…`
+  메뉴의 숨긴 조상 / 상위 폴더 버튼 / 새로고침 버튼 / ESC(취소) / X 버튼(취소). 저장 모드는 이름 칸
+  편집이 더해진다.
 - **AI Agent (IPC/CLI)**: 없음 — popup 조작(선택/확정/취소) 자체는 순수 로컬 사용자 입력
   UI 다(release 의 사용자 입력 재현 금지 원칙). 단, **popup 을 여는 트리거**는
   `file_picker.trigger` IPC 로 plugin 에 열려 있다(ADR-0058) — markdown Browse
@@ -210,8 +248,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **원격 파일 내용 fetch** — 디렉토리 나열만. 확정 시 클립보드 복사 + toast 로 그친다. 이건
   `file_picker.trigger` 로 열린 경우도 동일 — 확정 결과는 plugin 에 `paths` 로만 전달되고,
   그 경로의 내용을 이 세션으로 가져오는 fetch 는 없다.
-- **멀티 셀렉트 / 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected` 는 매번
-  교체). 파일명 텍스트 편집 필드도 없다 — footer 는 선택된 이름을 읽기전용으로 보여줄 뿐이다.
+- **멀티 셀렉트 / 메인 피커의 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected`
+  는 매번 교체). 메인 피커는 열기 전용이라 footer 이름 칸이 읽기 전용이다 — 편집 가능한 이름 칸은
+  설정 창의 저장 모드에만 있다.
+- **타입 필터 칩** — 디자인 footer 의 "All files ▾" 칩은 구현되지 않았다. 필터는 호출처가 정하는
+  `filters` 뿐이다.
 - **`StreamControl` enum 확장** — capture 패턴과 동일하게 그 enum 을 건드리지 않고 별도 `event`
   태그를 같은 채널에 얹었다.
 - **대형 원격 디렉토리의 페이지네이션** — 700KiB 예산을 넘는 나머지는 truncation 으로만
@@ -271,8 +312,17 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   (스크립트 Add card 는 파일 경로와, 비어 있으면 표시 이름을 채운다).
 - Given 설정 창 파일 선택이 Esc 또는 타이틀바 ✕ 로 닫힘 Then 결과는 `Cancelled` 이고 연 쪽의
   입력은 바뀌지 않는다.
-- Given 저장 모드 When 파일명을 입력하고 저장을 누르면 Then 현재 디렉토리 + 파일명 경로가
-  돌아가고, 파일명이 비었거나 경로 구분자·`.`·`..` 이면 저장 버튼이 비활성이다.
+- Given 저장 모드 When 파일명을 입력하고 확정하면 Then 현재 디렉토리 + 파일명 경로가 돌아가고,
+  파일명이 비었거나 경로 구분자·`.`·`..` 이거나 나열된 폴더 이름이면 확정 버튼이 비활성이다.
+- Given 저장 모드가 열려 있다 When 화면을 본다 Then 확정 수단은 footer primary 버튼 하나뿐이다.
+- Given 저장 모드 When 목록에서 기존 파일을 고른다 Then 확정되지 않고 그 이름이 이름 칸에 들어가며,
+  경고 줄이 뜨고 버튼 라벨이 Overwrite 가 된다.
+- Given 기존 파일을 고른 뒤 When 이름을 고친다 Then 선택이 풀리고 라벨이 Save 로 돌아오며, 확정하면
+  고친 이름의 경로가 돌아간다.
+- Given 어떤 깊이 · 어떤 성분 길이의 경로든 When 메인 피커나 설정 창 파일 선택이 열린다 Then footer 의
+  취소·확정 버튼이 온전히 보인다.
+- Given breadcrumb 이 path bar 폭을 넘는 깊은 경로 When 그린다 Then root · `…` · 마지막 두 성분만 보이고,
+  `…` 를 누르면 숨긴 조상이 나열되며 고르면 그 폴더로 이동한다.
 
 > **검증 한계(문서화)**: 원격 attach loopback e2e(`--ssh 127.0.0.1:<port>`)로 실제 GUI 두
 > 인스턴스를 띄워 popup 을 열고 눈으로 확인하는 것은 이 headless 작업 환경(GPU 디스플레이
@@ -301,9 +351,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 
 ## 구현
 
-- Popup: `src/adapters/ui/popup/file_picker.rs`(`FilePickerProps`/`FilePickerAction`/
+- Popup: `src/adapters/ui/popup/file_picker.rs`(`FilePickerProps`/`FilePickerMode`/`FilePickerAction`/
   `draw_file_picker_view`/`draw_file_picker`/`on_close_file_picker` — X 버튼/외부 클릭 등
   draw_fn 을 거치지 않는 닫힘도 `PopupDef.on_close` 훅으로 `Cancelled` 명시),
+  같은 디렉토리의 `file_picker/path_bar.rs`(breadcrumb · 가운데 생략 · `…` 메뉴) ·
+  `file_picker/footer.rs`(이름 행 · 덮어쓰기 경고 · 버튼 행) · `file_picker/layout_tests.rs`,
   `src/adapters/ui/popup/defs.rs`(`PopupDef` 등록), `src/adapters/ui/popup.rs`(모듈 선언).
 - 공유 나열: `src/core/fs_list.rs`(`DirEntryInfo`/`read_dir_entries`/`sort_entries`/`human_size`/
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
@@ -332,11 +384,11 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   진입점에서 동일 서버 로직을 호출.
 - Popup 상태: `src/state.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult`).
 - 설정 창 재사용: `src/view/settings/ui/file_chooser.rs`(`SettingsFileChooser`/`FileChooserMode`/
-  `FileChooserOutcome`, 저장 모드 입력 행), `src/view/settings/ui.rs`(`PopupManager` 등록 ·
+  `FileChooserOutcome`, 저장 모드 이름 칸·덮어쓰기 판정), `src/view/settings/ui.rs`(`PopupManager` 등록 ·
   `open_file_chooser` · `settings_escape_owner` · `apply_file_chooser_outcomes`),
   `src/view/settings/ui/tabs/misc.rs`(`ScriptsUiState::BROWSE_CONSUMER`/`apply_browsed_file`).
 - i18n: `lang/{en,ko,ja}.toml` `[filepicker]`/`[filepicker.error_perm]`/`[filepicker.error_conn]`/`[filepicker.save]`.
-- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`.
+- 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`(`draw` · `draw_states` · `draw_save_mode`) + `file_picker/{path_bar,footer}.rs`.
 - 테스트: `src/adapters/production/stream_hub.rs`(`pump_inbound_classifies_list_dir_request`),
   `src/core/fs_list.rs`(`human_size_units`/`sort_dirs_first`/`read_dir_entries_lists_files_and_dirs`),
   `src/core/attach_runtime.rs`(`list_dir_entries_wire_capped_tests` — byte-budget truncation),
@@ -346,4 +398,6 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `crates/tasty-ipc/src/method_meta_tests.rs`(`file_picker_trigger_requires_fs_read`),
   `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3종 — 성공/디렉토리
   없음 에러/attach 점유 없는 client 거부), `src/view/settings/ui/file_chooser.rs`(`tests` — 설정 창
-  재사용의 확정·필터·이동·읽기 실패·저장 이름 검증·외부 닫힘).
+  재사용의 확정·필터·이동·읽기 실패·저장 이름 검증·외부 닫힘 · 저장 모드의 단일 확정 대상·선택 해제·
+  덮어쓰기 판정·더블클릭), `src/adapters/ui/popup/file_picker/layout_tests.rs`(헤드리스 렌더로 footer
+  버튼 무잘림 · 깊은 경로 가운데 생략 · 짧은 경로 비생략 · `crumb_slots` 전수 덮음).

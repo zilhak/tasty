@@ -704,7 +704,7 @@ design-request: `design-request/07151555-design-request-remote-file-picker.md`. 
 C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 코드화한다 — B/C 는
 미채택 대안이라 반영하지 않는다.
 
-| 디자인 jsx 컴포넌트 | 갤러리 함수 (`file_picker.rs`) | 비고 |
+| 디자인 jsx 컴포넌트 | 갤러리 함수 (`file_picker.rs` · `file_picker/{path_bar,footer}.rs`) | 비고 |
 |---|---|---|
 | `FilePickerFrame`(container) | `card` | 640×480 · bg-panel · border-strong · modal shadow |
 | header(glyph·title·host indicator·✕) | `header` | 글리프 항상 `FILE`(B안의 remote 글리프 스왑 미반영) |
@@ -713,12 +713,16 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
 | `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
 | 로딩/빈폴더/에러(권한·연결끊김) | `center`(state 분기) | Spinner · folderOpen · ALERT_TRIANGLE + Retry/Reconnect |
-| footer(name field+type filter+Cancel/Open) | `footer` + `type_filter_chip` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성 |
+| footer(name field+type filter+Cancel/Open) | `footer` + `type_filter_chip` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
+| footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning`. footer 가 커지면 본문이 준다 |
+| `FilePickerFrame mode/save/deep` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
+| `FpCrumbs elide` | `crumbs`(`DEEP_CRUMBS`) | root + `…` + 마지막 두 성분, 성분 `CRUMB_MAX_W`(180) 말줄임, path bar 는 refresh 가 먼저 자리 잡고 crumbs 는 남은 폭으로 clip |
+| `overlays-windows.jsx` "Save mode — one confirm, in the footer" | `draw_save_mode` | 4 프레임(new · picked · edited · deep) + Meta + Note |
 
 **갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)
-대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사. 브레드크럼 세그먼트별
-`maxWidth:180` ellipsis 는 미반영(시드 문자열이 짧아 발생하지 않음 — 실 데이터 연결 시
-`elide()` 재사용 검토). **신규 Theme 필드 0** — 전부 기존 semantic 접근자
+대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다 — 브레드크럼 세그먼트별
+`maxWidth:180` ellipsis 도 같은 `elide()` 로 근사한다. 갤러리의 가운데 생략은 jsx 와 같이
+`deep` prop 으로 켜고, 본체는 전체 breadcrumb 이 폭을 넘을 때 켠다. **신규 Theme 필드 0** — 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
 기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.
 

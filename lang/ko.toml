@@ -1157,7 +1157,9 @@ open_settings_button = "설정에서 핸들러 등록"
 [filepicker]
 title = "파일 열기"
 tools_menu_item = "파일 열기…"
-name_field_label = "선택됨:"
+name_field_label = "파일 이름"
+no_file_selected = "선택한 파일 없음"
+hidden_folders = "숨긴 폴더 {}개"
 open_button = "열기"
 empty = "이 폴더는 비어 있습니다."
 loading = "불러오는 중…"
@@ -1180,10 +1182,10 @@ timeout = "원격 호스트가 제시간에 응답하지 않았습니다."
 
 [filepicker.save]
 title = "파일 저장"
-name_label = "파일 이름:"
-name_placeholder = "파일 이름"
+name_placeholder = "파일 이름을 입력하세요"
 save_button = "저장"
 overwrite_button = "덮어쓰기"
+overwrite_warning = "이 폴더에 {name} 이(가) 이미 있습니다. 저장하면 덮어씁니다."
 
 [file_drop]
 hover_label = "여기에 드롭하여 열기"

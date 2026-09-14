@@ -1,4 +1,4 @@
-<!-- source-hash: 5d2c6db9343e -->
+<!-- source-hash: 08e9550af9d3 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -125,7 +125,7 @@ Applying a preset resets every keybinding you changed by hand back to the preset
 To export:
 
 1. Press **Export…**.
-2. Pick a folder and a file name. The default name is `tasty-keybindings-<date>.toml`.
+2. Pick a folder, set the name in the **File name** box at the bottom and press **Save**. The default name is `tasty-keybindings-<date>.toml`. Clicking an existing file in the list puts its name in the box; if that name already exists, a warning appears and the button changes to **Overwrite**.
 3. Once written, a notification shows the file path. Edits you haven't saved yet are included.
 
 If the file can't be written (for example, the folder is read-only), **The export wasn't written** appears inside the **Export** row. Use **Try again** to write to the same place, or **Choose another location…** to pick somewhere else. While that notice is up, the **Export…** button is disabled.

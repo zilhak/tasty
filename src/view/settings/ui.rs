@@ -421,12 +421,12 @@ impl SettingsUiState {
                 .with_close_on_outside_click(false),
             );
         }
-        // 크기·타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
+        // 타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
         popups.register(
             PopupState::new(
                 file_chooser::FILE_CHOOSER_POPUP_ID,
                 file_chooser::chooser_title(false),
-                file_chooser::chooser_size(&crate::theme::theme(), false),
+                file_chooser::chooser_size(),
             )
             .with_close_on_outside_click(false),
         );
@@ -485,10 +485,9 @@ impl SettingsUiState {
         if let Some(title) = title {
             self.file_chooser.set_title(title);
         }
-        let save_mode = self.file_chooser.is_save_mode();
         let title = self.file_chooser.title();
         if let Some(p) = self.popups.get_mut(file_chooser::FILE_CHOOSER_POPUP_ID) {
-            p.size = file_chooser::chooser_size(&crate::theme::theme(), save_mode);
+            p.size = file_chooser::chooser_size();
             p.title = title.to_string();
         }
         // intent-exempt: 설정 창 내부 PopupManager 의 sub-popup open(충돌 팝업과 같은 경로).

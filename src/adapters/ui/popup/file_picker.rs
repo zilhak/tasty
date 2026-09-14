@@ -24,6 +24,11 @@
 //!   `MirrorEvent::ListDirResult` 로 이 popup 상태에 직접 반영(`attach_client.rs`).
 //!   soft timeout(응답 없음) 은 wrapper 가 매 프레임 `sent_at.elapsed()` 로 자체 판정.
 
+mod footer;
+#[cfg(test)]
+mod layout_tests;
+mod path_bar;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tasty_type_geometry::length::LogicalPx;
@@ -33,7 +38,7 @@ use crate::adapters::ui::icons;
 /// 경로 breadcrumb 의 구분자 글리프. 아이콘 스케일 밖(13) — 스케일의 12 와 14 사이다.
 /// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0126 과 같은
 /// 처리). 갤러리 specimen 이 같은 값을 같은 이름으로 갖는다.
-const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
+pub(super) const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::{AppState, FilePickerResult, FpLoadState};
@@ -47,9 +52,7 @@ pub(crate) const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 // 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
 // `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
-use tasty_ui_widgets::tokens::{
-    CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE, STRUCT_GAP_2,
-};
+use tasty_ui_widgets::tokens::{CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE};
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
 /// `disconnected` 플래그만으론 "서버는 살아있는데 응답이 안 오는" 케이스를 못 잡는다).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -86,17 +89,34 @@ pub struct CrumbView {
     pub label: String,
 }
 
+/// 피커가 무엇을 하는가 — footer 이름 칸의 성질이 여기서 갈린다.
+#[derive(Clone, Copy)]
+pub enum FilePickerMode<'a> {
+    /// 기존 파일을 고른다. 이름 칸은 읽기 전용으로 현재 선택을 보여준다.
+    Open { selection_text: &'a str },
+    /// 경로를 만든다. 이름 칸이 **유일한 확정 대상**이고 편집 가능하다.
+    Save {
+        name: &'a str,
+        /// 입력한 이름이 지금 나열된 폴더에 이미 있다 — 경고 줄을 띄운다.
+        overwrite: bool,
+        /// 확정 버튼 활성 여부(빈 이름·경로 같은 이름이면 `false`). 판정은 wrapper 가 한다.
+        can_confirm: bool,
+    },
+}
+
 /// 순수 시각 view 의 입력. AppState/CoreState 의존 없음.
 pub struct FilePickerProps<'a> {
     pub theme: &'a Theme,
     /// `Some(host)` 면 헤더에 host 배지 렌더(원격 브라우징).
     pub remote_host: Option<&'a str>,
+    /// root 부터 현재 폴더까지 **전체** 경로. 가운데 생략은 렌더 규칙이라 여기서 줄이지 않는다
+    /// — `…` 메뉴가 숨긴 조상을 열어야 한다.
     pub crumbs: &'a [CrumbView],
     pub state: FpViewState,
     pub entries: &'a [FilePickerEntryView],
     /// 선택된 엔트리 이름(현재 디렉토리 기준).
     pub selected: &'a [String],
-    pub name_filter_text: &'a str,
+    pub mode: FilePickerMode<'a>,
     /// 이 프레임에 Esc 를 소비할 자격이 있는가(규칙 7 의 키보드 판, ADR-0084).
     /// `false` 면 위에 다른 popup 이 있다는 뜻이라 Esc 를 무시한다 — 한 번의 Esc 로
     /// 스택 전체가 닫히는 것을 막는다. 판정은 `AppState.popup_escape_owner`.
@@ -105,8 +125,15 @@ pub struct FilePickerProps<'a> {
     // i18n — 호출처가 t() 로 미리 해상해서 전달(file_handler_picker.rs 관례).
     pub title_label: &'a str,
     pub name_field_label: &'a str,
+    /// 이름 칸이 비었을 때의 placeholder(열기: 선택 없음 / 저장: 이름 입력 안내).
+    pub name_placeholder: &'a str,
     pub cancel_label: &'a str,
-    pub open_label: &'a str,
+    /// footer primary 버튼 라벨(Open / Save / Overwrite — 모드와 덮어쓰기 여부로 호출처가 고른다).
+    pub confirm_label: &'a str,
+    /// 덮어쓰기 경고 줄. `{name}` 자리에 이름이 mono 로 들어간다.
+    pub overwrite_warning: &'a str,
+    /// `…` 크럼의 hover 설명. `{}` 자리에 숨긴 폴더 수.
+    pub hidden_folders_label: &'a str,
     pub empty_label: &'a str,
     pub loading_label: &'a str,
     pub loading_body_local: &'a str,
@@ -127,19 +154,26 @@ pub enum FilePickerAction {
     Select(String),
     /// 디렉토리 행 더블클릭 — 그 하위로 내비게이트.
     NavigateInto(String),
-    /// 브레드크럼 세그먼트 클릭 — 그 인덱스까지의 경로로 내비게이트.
+    /// 브레드크럼 세그먼트(또는 `…` 메뉴의 숨긴 조상) 클릭 — 그 인덱스까지의 경로로 내비게이트.
     NavigateTo(usize),
     /// 상위 폴더로.
     NavigateUp,
     /// path bar 의 refresh 버튼 또는 에러 상태의 Retry/Reconnect 버튼.
     Refresh,
-    /// [열기] 버튼 — 현재 `selected` 로 확정.
+    /// footer primary 버튼 — 열기는 현재 `selected`, 저장은 이름 칸으로 확정.
     Confirm,
     /// 파일 행 더블클릭 — 선택 상태와 무관하게 그 엔트리 하나로 즉시 확정.
     ConfirmEntry(String),
+    /// 저장 모드 이름 칸이 편집됐다 — 새 전체 값.
+    EditName(String),
 }
 
 /// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
+///
+/// 레이아웃 순서가 넘침을 흡수하는 자리를 정한다(디자인 "long-path shrink rule"):
+/// 헤더와 path bar 를 위에서, **footer 를 아래에서 먼저** 자리 잡고 남은 높이를 본문에
+/// 준다. path bar 는 버튼이 오른쪽을 먼저 차지하고 breadcrumb 이 남은 폭 안에서 잘리거나
+/// 접히므로, 경로가 아무리 길어도 footer 의 취소·확정 버튼은 popup 안에 남는다.
 pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> FilePickerAction {
     let ctx = ui.ctx().clone();
     if props.owns_escape && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -177,133 +211,70 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     ui.add_space(th.spacing_xs.value());
     hline(ui, th);
 
-    // ── Path bar (breadcrumbs + refresh) ────────────────────────────────
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
-        for (i, crumb) in props.crumbs.iter().enumerate() {
-            if i > 0 {
-                ui.add(icons::CHEVRON_RIGHT.image(CRUMB_GLYPH.value(), th.text_disabled().into()));
-            }
-            let is_current = i + 1 == props.crumbs.len();
-            let color = if is_current {
-                th.text_primary()
-            } else {
-                th.accent_primary()
-            };
-            let mut rt = egui::RichText::new(&crumb.label)
-                .size(th.font_size_caption.value())
-                .color(color);
-            if is_current {
-                rt = rt.strong();
-            }
-            if is_current {
-                ui.label(rt);
-            } else if ui.link(rt).clicked() {
-                action = FilePickerAction::NavigateTo(i);
-            }
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
-                })
-                .clicked()
-            {
-                action = FilePickerAction::Refresh;
-            }
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::CHEVRON_UP.image(rect.height(), c).paint_at(ui, rect)
-                })
-                .clicked()
-            {
-                action = FilePickerAction::NavigateUp;
-            }
-        });
-    });
+    // ── Path bar (breadcrumbs + up + refresh) ────────────────────────────
+    path_bar::path_bar(ui, props, &mut action);
     ui.add_space(th.spacing_xs.value());
     hline(ui, th);
 
+    // ── Footer 를 아래에서 먼저 자리 잡고, 남은 높이가 본문이다 ─────────────
+    let rest = ui.available_rect_before_wrap();
+    let footer_h =
+        footer::footer_height(ui, props).min(LogicalPx(rest.height()).max(LogicalPx(0.0)));
+    let footer_rect = egui::Rect::from_min_max(
+        egui::pos2(rest.left(), rest.bottom() - footer_h.value()),
+        rest.max,
+    );
+    let body_rect = egui::Rect::from_min_max(rest.min, egui::pos2(rest.right(), footer_rect.top()));
+
     // ── Body ─────────────────────────────────────────────────────────
-    let body_height =
-        (POPUP_HEIGHT - LogicalPx(44.0) - LogicalPx(36.0) - LogicalPx(84.0)).max(LogicalPx(60.0));
+    let mut body_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("file_picker_body")
+            .max_rect(body_rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    body_ui.set_clip_rect(body_rect.intersect(ui.clip_rect()));
+    draw_body(
+        &mut body_ui,
+        props,
+        LogicalPx(body_rect.height()),
+        &mut action,
+    );
+
+    // ── Footer ───────────────────────────────────────────────────────
+    let mut footer_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt("file_picker_footer")
+            .max_rect(footer_rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
+    footer::draw_footer(&mut footer_ui, props, &mut action);
+
+    ui.advance_cursor_after_rect(rest);
+    action
+}
+
+fn draw_body(
+    ui: &mut egui::Ui,
+    props: &FilePickerProps<'_>,
+    body_height: LogicalPx,
+    action: &mut FilePickerAction,
+) {
+    let th = props.theme;
     match &props.state {
         FpViewState::Loaded => {
             egui::ScrollArea::vertical()
                 .id_salt("file_picker_list")
                 .max_height(body_height.value())
+                .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for entry in props.entries {
-                        let selected = props.selected.iter().any(|s| s == &entry.name);
-                        let (rect, resp) = ui.allocate_exact_size(
-                            egui::vec2(ui.available_width(), 28.0),
-                            egui::Sense::click(),
-                        );
-                        if selected {
-                            ui.painter()
-                                .rect_filled(rect, 0.0, th.surface_active().to_egui());
-                        } else if resp.hovered() {
-                            ui.painter().rect_filled(
-                                rect,
-                                0.0,
-                                th.hover_overlay.to_egui_premultiplied(),
-                            );
-                        }
-                        if resp.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        }
-                        let (glyph, glyph_color) = if entry.is_dir {
-                            (icons::FOLDER, th.accent_primary())
-                        } else {
-                            (icons::FILE, th.text_muted())
-                        };
-                        let glyph_size = th.icon_glyph_size_md.value();
-                        let icon_rect = egui::Rect::from_min_size(
-                            egui::pos2(
-                                rect.left() + th.spacing_sm.value(),
-                                rect.center().y - glyph_size * 0.5,
-                            ),
-                            egui::vec2(glyph_size, glyph_size),
-                        );
-                        glyph
-                            .image(glyph_size, glyph_color.into())
-                            .paint_at(ui, icon_rect);
-                        ui.painter().text(
-                            egui::pos2(icon_rect.right() + 6.0, rect.center().y),
-                            egui::Align2::LEFT_CENTER,
-                            &entry.name,
-                            egui::FontId::proportional(th.font_size_body.value()),
-                            if selected {
-                                th.text_primary().into()
-                            } else {
-                                th.text_secondary().into()
-                            },
-                        );
-                        let mono = egui::FontId::monospace(th.font_size_caption.value());
-                        ui.painter().text(
-                            egui::pos2(rect.right() - 116.0, rect.center().y),
-                            egui::Align2::RIGHT_CENTER,
-                            &entry.size_display,
-                            mono.clone(),
-                            th.text_muted().into(),
-                        );
-                        ui.painter().text(
-                            egui::pos2(rect.right() - th.spacing_sm.value(), rect.center().y),
-                            egui::Align2::RIGHT_CENTER,
-                            &entry.modified_display,
-                            mono,
-                            th.text_muted().into(),
-                        );
-                        if resp.double_clicked() {
-                            action = if entry.is_dir {
-                                FilePickerAction::NavigateInto(entry.name.clone())
-                            } else {
-                                FilePickerAction::ConfirmEntry(entry.name.clone())
-                            };
-                        } else if resp.clicked() && matches!(action, FilePickerAction::None) {
-                            action = FilePickerAction::Select(entry.name.clone());
+                        if let Some(a) = entry_row(ui, props, entry)
+                            && (matches!(action, FilePickerAction::None)
+                                || !matches!(a, FilePickerAction::Select(_)))
+                        {
+                            *action = a;
                         }
                     }
                 });
@@ -345,7 +316,7 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
                 Some(props.error_perm_retry),
             );
             if retry {
-                action = FilePickerAction::Refresh;
+                *action = FilePickerAction::Refresh;
             }
         }
         FpViewState::ErrorConn(reason) => {
@@ -359,55 +330,85 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
                 Some(props.error_conn_reconnect),
             );
             if retry {
-                action = FilePickerAction::Refresh;
+                *action = FilePickerAction::Refresh;
             }
         }
     }
+}
 
-    // ── Footer ───────────────────────────────────────────────────────
-    ui.add_space(th.spacing_xs.value());
-    hline(ui, th);
-    ui.add_space(th.spacing_sm.value());
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        ui.label(
-            egui::RichText::new(props.name_field_label)
-                .size(th.font_size_caption.value())
-                .color(th.text_muted()),
-        );
-        ui.label(
-            egui::RichText::new(props.name_filter_text)
-                .size(th.font_size_caption.value())
-                .monospace()
-                .color(th.text_secondary()),
-        );
-    });
-    ui.add_space(th.spacing_sm.value());
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 디렉토리는 [열기] 로 확정할 수 없다 — 더블클릭으로 진입해야 한다.
-            // 단일 선택만이 아니라 selected 전원이 파일이어야 활성화(멀티 선택 확장 대비).
-            let can_open = matches!(props.state, FpViewState::Loaded)
-                && !props.selected.is_empty()
-                && props.selected.iter().all(|name| {
-                    props
-                        .entries
-                        .iter()
-                        .find(|e| &e.name == name)
-                        .is_some_and(|e| !e.is_dir)
-                });
-            ui.add_enabled_ui(can_open, |ui| {
-                if ui.button(props.open_label).clicked() {
-                    action = FilePickerAction::Confirm;
-                }
-            });
-            if ui.button(props.cancel_label).clicked() {
-                action = FilePickerAction::Cancel;
-            }
-        });
-    });
-
-    action
+/// 목록 한 행. 클릭 의도가 있으면 돌려준다.
+fn entry_row(
+    ui: &mut egui::Ui,
+    props: &FilePickerProps<'_>,
+    entry: &FilePickerEntryView,
+) -> Option<FilePickerAction> {
+    let th = props.theme;
+    let selected = props.selected.iter().any(|s| s == &entry.name);
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 0.0, th.surface_active().to_egui());
+    } else if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+    }
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let (glyph, glyph_color) = if entry.is_dir {
+        (icons::FOLDER, th.accent_primary())
+    } else {
+        (icons::FILE, th.text_muted())
+    };
+    let glyph_size = th.icon_glyph_size_md.value();
+    let icon_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            rect.left() + th.spacing_sm.value(),
+            rect.center().y - glyph_size * 0.5,
+        ),
+        egui::vec2(glyph_size, glyph_size),
+    );
+    glyph
+        .image(glyph_size, glyph_color.into())
+        .paint_at(ui, icon_rect);
+    ui.painter().text(
+        egui::pos2(icon_rect.right() + 6.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        &entry.name,
+        egui::FontId::proportional(th.font_size_body.value()),
+        if selected {
+            th.text_primary().into()
+        } else {
+            th.text_secondary().into()
+        },
+    );
+    let mono = egui::FontId::monospace(th.font_size_caption.value());
+    ui.painter().text(
+        egui::pos2(rect.right() - 116.0, rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        &entry.size_display,
+        mono.clone(),
+        th.text_muted().into(),
+    );
+    ui.painter().text(
+        egui::pos2(rect.right() - th.spacing_sm.value(), rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        &entry.modified_display,
+        mono,
+        th.text_muted().into(),
+    );
+    if resp.double_clicked() {
+        Some(if entry.is_dir {
+            FilePickerAction::NavigateInto(entry.name.clone())
+        } else {
+            FilePickerAction::ConfirmEntry(entry.name.clone())
+        })
+    } else if resp.clicked() {
+        Some(FilePickerAction::Select(entry.name.clone()))
+    } else {
+        None
+    }
 }
 
 enum CenterGlyph {
@@ -609,11 +610,10 @@ pub fn draw_file_picker(
         FpLoadState::ErrorConn(r) => FpViewState::ErrorConn(r.clone()),
     };
 
-    let name_filter_text = data.selected.join(", ");
+    let selection_text = data.selected.join(", ");
     let title_label = t("filepicker.title");
     let name_field_label = t("filepicker.name_field_label");
     let cancel_label = t("button.cancel");
-    let open_label = t("filepicker.open_button");
     let empty_label = t("filepicker.empty");
     let loading_label = t("filepicker.loading");
     let loading_body_local = t("filepicker.loading_body_local");
@@ -630,12 +630,17 @@ pub fn draw_file_picker(
         state: view_state,
         entries: &view_entries,
         selected: &data.selected,
-        name_filter_text: &name_filter_text,
+        mode: FilePickerMode::Open {
+            selection_text: &selection_text,
+        },
         owns_escape,
         title_label,
         name_field_label,
+        name_placeholder: t("filepicker.no_file_selected"),
         cancel_label,
-        open_label,
+        confirm_label: t("filepicker.open_button"),
+        overwrite_warning: t("filepicker.save.overwrite_warning"),
+        hidden_folders_label: t("filepicker.hidden_folders"),
         empty_label,
         loading_label,
         loading_body_local,
@@ -663,6 +668,8 @@ fn apply_action(
             }
             PopupAction::Close
         }
+        // 메인 피커는 열기 전용이라 이름 칸이 편집되지 않는다.
+        FilePickerAction::EditName(_) => PopupAction::None,
         FilePickerAction::Select(name) => {
             if let Some(d) = state.dialogs.file_picker.as_mut() {
                 d.selected = vec![name];

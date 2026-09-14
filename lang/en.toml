@@ -1170,7 +1170,9 @@ open_settings_button = "Register handler in Settings"
 [filepicker]
 title = "Open File"
 tools_menu_item = "Open File…"
-name_field_label = "Selected:"
+name_field_label = "File name"
+no_file_selected = "No file selected"
+hidden_folders = "{} folders hidden"
 open_button = "Open"
 empty = "This folder is empty."
 loading = "Loading…"
@@ -1193,10 +1195,10 @@ timeout = "The remote host did not respond in time."
 
 [filepicker.save]
 title = "Save File"
-name_label = "File name:"
-name_placeholder = "file name"
+name_placeholder = "Type a file name"
 save_button = "Save"
 overwrite_button = "Overwrite"
+overwrite_warning = "{name} already exists in this folder. Saving replaces it."
 
 [file_drop]
 hover_label = "Drop to open"

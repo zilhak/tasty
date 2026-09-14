@@ -244,7 +244,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 라벨 열 288 을 더한 다섯이다. 사유는 본체 쪽과 같고 그 자리 주석에 있다.
         // 90 -> 88 은 본체와 같은 둘(24 · 14)이 Theme 을 읽게 된 것이다. 남은 셋(32 · 288 · 120)은
         // export 에 컴포넌트 토큰이 들어오면 없어진다 — 디자인이 기대한 끝값은 85 다.
-        88,
+        // 거기서 +1 은 `file_picker.rs` specimen 의 `CRUMB_MAX_W`(180) — 디자인 `FpCrumbs` 의
+        // 성분 maxWidth 이고, 대응 `Theme` 토큰이 없으며 디자인 회신도 새 토큰을 두지 않았다.
+        89,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
          한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
          갈래는 `the_gallery_share_splits_into_four_kinds` 가 든다",
@@ -839,7 +841,8 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         // 타입을 얻으면서 그중 200 이 인라인 자리로 보이게 됐다(뒤 갈래 +1).
         // 22 -> 27 은 `kb_import_export.rs` 의 명명 상수 다섯이다(jsx 인용 · 이름 붙은 치수).
         // 27 -> 25 는 그중 둘(`RECORD_SLOT_H` · `CARD_PAD_X`)이 지워지고 Theme 을 읽게 된 것이다.
-        (25, 52, 1, 15),
+        // 거기서 +1 은 `file_picker.rs` 의 `CRUMB_MAX_W`(180, jsx `FpCrumbs` maxWidth 인용)다.
+        (26, 52, 1, 15),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
@@ -908,7 +911,8 @@ fn the_gallery_share_splits_into_four_kinds() {
         // 10 -> 11 은 위와 같은 자리다 — 컬럼 최소폭 200 이 타입을 얻어 보이게 됐고,
         // 같은 값을 가진 `Theme` 이름이 있다(그 이름이 이 자리에 맞는다는 뜻은 아니다 —
         // 이 갈래의 doc 참조).
-        (roster, 11, 1, ratcheted - 11 - 1),
+        // 1 -> 2 는 `file_picker.rs` 의 `CRUMB_MAX_W`(180)다 — 같은 값의 `Theme` 이름이 없다.
+        (roster, 11, 2, ratcheted - 11 - 2),
         "갤러리 몫의 갈래가 바뀌었다 — 전시(래칫 밖) · 같은 값의 이름이 있다 · 이름이 \
          없다 · 그 줄이 스스로 치수를 이름 짓는다"
     );
@@ -1003,7 +1007,11 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 둘(본체 · 갤러리)이다 — 세로로는 안 줄인다.
         // 216 -> 218 은 `tasty-ui-widgets/tests/select_placeholder.rs` 의 headless 화면
         // `vec2(600.0, 200.0)` 두 인자다 — 시험 전용 구간이라 판정 대상이 아니다.
-        (174, 218),
+        // 174 -> 177 은 파일 피커 footer 의 `0.0` 셋이다 — 이름 행의 가로 전용 간격
+        // `vec2(spacing_sm, 0.0)`, 읽기전용 이름 칸의 `shrink2(vec2(input_padding_x, 0.0))`,
+        // footer 높이를 남은 높이로 자를 때의 하한 `.max(LogicalPx(0.0))` 이다.
+        // 218 -> 219 는 파일 피커 `layout_tests.rs` 가 popup 크기를 리터럴로 적은 한 자리다.
+        (177, 219),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );

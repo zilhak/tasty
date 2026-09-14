@@ -11,21 +11,20 @@
 //!   (`docs/adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md`). 여기서
 //!   쓰는 `read_dir_entries` 는 프레임 안의 동기 I/O 라 느린 디스크에서는 그 프레임이
 //!   늘어지지만 **유한하게 끝난다** — 메인 창 파일 피커의 로컬 경로와 같은 성질이다.
-//! - **저장 모드**: 피커 view 는 "열기" 전용이라, 디렉토리 이동은 view 로 하고 파일명
-//!   입력 행을 이 wrapper 가 view 아래에 덧붙인다(view 는 건드리지 않는다).
+//! - **저장 모드**: view 의 footer 이름 칸이 편집 가능해지고 footer primary 버튼이 **유일한
+//!   확정 수단**이다. 목록에서 파일을 고르면 확정이 아니라 이름 칸이 채워지고, 이름이 고른
+//!   행과 달라지는 순간 선택이 풀린다 — "고른 파일" 과 "입력한 이름" 이 두 경로가 되지 않는다.
 //!
 //! 기능 문서: `docs/features/native-file-picker/index.md` "설정 창에서의 로컬 전용 재사용".
 
 use std::path::{Path, PathBuf};
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, Input};
 
-// 크기는 메인 창 파일 피커와 같은 상수를 읽는다 — view 의 본문 높이가 그 높이를 전제로
-// 계산되므로 열기 모드는 그대로 쓴다.
+// 크기는 메인 창 파일 피커와 같은 상수를 읽는다 — 저장 모드도 같은 640×480 프레임이다.
 use crate::adapters::ui::popup::file_picker::{
-    CrumbView, FilePickerAction, FilePickerEntryView, FilePickerProps, FpViewState, POPUP_HEIGHT,
-    POPUP_WIDTH, crumb_label, draw_file_picker_view, matches_filters, path_ancestors,
+    CrumbView, FilePickerAction, FilePickerEntryView, FilePickerMode, FilePickerProps, FpViewState,
+    POPUP_HEIGHT, POPUP_WIDTH, crumb_label, draw_file_picker_view, matches_filters, path_ancestors,
 };
 use crate::core::fs_list::DirEntryInfo;
 use crate::i18n::t;
@@ -38,7 +37,7 @@ pub(crate) const FILE_CHOOSER_POPUP_ID: &str = "settings_file_chooser";
 pub(crate) enum FileChooserMode {
     /// 기존 파일 하나를 고른다.
     Open,
-    /// 디렉토리를 고르고 파일명을 입력해 저장 경로를 정한다. `default_name` 은 입력 행의
+    /// 디렉토리를 고르고 파일명을 입력해 저장 경로를 정한다. `default_name` 은 이름 칸의
     /// 초깃값이다.
     Save { default_name: String },
 }
@@ -57,6 +56,7 @@ struct ChooserSession {
     current_dir: PathBuf,
     entries: Vec<DirEntryInfo>,
     load: FpViewState,
+    /// 선택된 행. 저장 모드에서는 비었거나 `[save_name]`(나열된 파일) 둘 중 하나다.
     selected: Vec<String>,
     /// 확장자 필터(점 없이). 비면 필터 없음. 디렉토리는 거르지 않는다.
     filters: Vec<String>,
@@ -116,13 +116,6 @@ impl SettingsFileChooser {
         self.outcome = None;
     }
 
-    pub(crate) fn is_save_mode(&self) -> bool {
-        matches!(
-            self.session.as_ref().map(|s| &s.mode),
-            Some(FileChooserMode::Save { .. })
-        )
-    }
-
     /// 열려 있는 선택의 타이틀을 호출처 문구로 바꾼다(popup 타이틀과 view 헤더 공용).
     pub(crate) fn set_title(&mut self, title: &'static str) {
         if let Some(s) = self.session.as_mut() {
@@ -160,11 +153,7 @@ impl SettingsFileChooser {
             return true;
         };
         let action = draw_view(ui, th, s, owns_escape);
-        let mut outcome = s.apply(action);
-        if outcome.is_none() && matches!(s.mode, FileChooserMode::Save { .. }) {
-            outcome = draw_save_row(ui, th, s);
-        }
-        match outcome {
+        match s.apply(action) {
             Some(o) => {
                 self.finish(o);
                 true
@@ -180,14 +169,10 @@ impl SettingsFileChooser {
     }
 }
 
-/// 열려 있는 모드에 맞는 popup 크기. 저장 모드는 view 아래 입력 행만큼 높다.
-pub(crate) fn chooser_size(th: &Theme, save_mode: bool) -> egui::Vec2 {
-    let height = if save_mode {
-        POPUP_HEIGHT + th.item_height_interactive + th.spacing_sm.scaled(2.0)
-    } else {
-        POPUP_HEIGHT
-    };
-    egui::vec2(POPUP_WIDTH.value(), height.value())
+/// popup 크기 — 두 모드 모두 메인 피커와 같은 640×480 이다. 저장 모드의 이름 칸·경고 줄은
+/// footer 안에 있고 본문이 그만큼 준다.
+pub(crate) fn chooser_size() -> egui::Vec2 {
+    egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
 /// popup 타이틀. view 헤더도 같은 문자열을 쓴다.
@@ -253,17 +238,42 @@ impl ChooserSession {
             .any(|e| e.name == name && !e.is_dir && self.visible(e))
     }
 
+    fn is_save(&self) -> bool {
+        matches!(self.mode, FileChooserMode::Save { .. })
+    }
+
+    /// 저장 모드: 입력한 이름이 지금 나열된 폴더에 파일로 이미 있다(덮어쓰기 상태).
+    /// 판정은 나열된 목록만 본다 — 나열되지 않은 경로를 stat 하지 않는다.
+    fn overwrites(&self) -> bool {
+        self.is_save() && self.is_file_entry(self.save_name.trim())
+    }
+
     /// view 의 의도를 상태 변경으로 환원한다. 선택이 끝났으면 결과를 낸다.
     fn apply(&mut self, action: FilePickerAction) -> Option<FileChooserOutcome> {
         match action {
             FilePickerAction::None => None,
             FilePickerAction::Cancel => Some(FileChooserOutcome::Cancelled),
             FilePickerAction::Select(name) => {
-                // 저장 모드에서 기존 파일을 고르면 그 이름이 입력 행으로 간다.
-                if matches!(self.mode, FileChooserMode::Save { .. }) && self.is_file_entry(&name) {
-                    self.save_name = name.clone();
+                if self.is_save() {
+                    // 저장 모드에서 행을 고르는 것은 확정이 아니라 이름 칸을 채우는 것이다.
+                    // 폴더 행은 이름이 될 수 없으므로 선택도 이름도 바꾸지 않는다(진입은 더블클릭).
+                    if self.is_file_entry(&name) {
+                        self.save_name = name.clone();
+                        self.selected = vec![name];
+                    }
+                } else {
+                    self.selected = vec![name];
                 }
-                self.selected = vec![name];
+                None
+            }
+            FilePickerAction::EditName(name) => {
+                if self.is_save() {
+                    // 이름이 고른 행과 달라지는 순간 선택이 풀린다 — 화면에 두 답이 남지 않는다.
+                    if self.selected.first() != Some(&name) {
+                        self.selected.clear();
+                    }
+                    self.save_name = name;
+                }
                 None
             }
             FilePickerAction::NavigateInto(name) => {
@@ -288,6 +298,8 @@ impl ChooserSession {
                 self.reload();
                 None
             }
+            // 저장 모드의 확정 대상은 이름 칸 하나다.
+            FilePickerAction::Confirm if self.is_save() => self.confirm_save(),
             FilePickerAction::Confirm => {
                 // view 의 활성 조건을 우회해도 디렉토리를 파일로 확정하지 않는다.
                 let [name] = self.selected.as_slice() else {
@@ -296,23 +308,31 @@ impl ChooserSession {
                 self.is_file_entry(name)
                     .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name)))
             }
+            // 저장 모드의 파일 행 더블클릭은 고르기와 같다 — 덮어쓰기 경고를 보지 않고 기존
+            // 파일을 확정하는 길을 만들지 않는다.
+            FilePickerAction::ConfirmEntry(name) if self.is_save() => {
+                self.apply(FilePickerAction::Select(name))
+            }
             FilePickerAction::ConfirmEntry(name) => self
                 .is_file_entry(&name)
                 .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name))),
         }
     }
 
-    /// 저장 모드 입력 행의 확정 — 현재 디렉토리가 읽혔고 파일명이 한 경로 성분일 때만.
+    /// 저장 모드 이름 칸의 확정 — 현재 디렉토리가 읽혔고 파일명이 한 경로 성분이며, 나열된
+    /// 폴더 이름과 겹치지 않을 때만(폴더 자리에 파일을 쓸 수 없다).
     fn confirm_save(&self) -> Option<FileChooserOutcome> {
         if !matches!(self.load, FpViewState::Loaded | FpViewState::Empty) {
             return None;
         }
         let name = self.save_name.trim();
-        is_plain_file_name(name).then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name)))
+        let is_listed_dir = self.entries.iter().any(|e| e.is_dir && e.name == name);
+        (is_plain_file_name(name) && !is_listed_dir)
+            .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name)))
     }
 }
 
-/// 디렉토리 구분자·`.`·`..` 가 없는 한 성분짜리 이름인가. 입력 행이 다른 디렉토리를
+/// 디렉토리 구분자·`.`·`..` 가 없는 한 성분짜리 이름인가. 이름 칸이 다른 디렉토리를
 /// 가리키게 두지 않는다 — 디렉토리 이동은 목록이 한다.
 fn is_plain_file_name(name: &str) -> bool {
     let mut comps = Path::new(name).components();
@@ -346,8 +366,31 @@ fn draw_view(
             modified_display: crate::core::fs_list::format_modified(e.modified),
         })
         .collect();
-    let save_mode = matches!(s.mode, FileChooserMode::Save { .. });
-    let name_filter_text = s.selected.join(", ");
+    let selection_text = s.selected.join(", ");
+    let overwrite = s.overwrites();
+    let (mode, name_placeholder, confirm_label) = if s.is_save() {
+        (
+            FilePickerMode::Save {
+                name: &s.save_name,
+                overwrite,
+                can_confirm: s.confirm_save().is_some(),
+            },
+            t("filepicker.save.name_placeholder"),
+            if overwrite {
+                t("filepicker.save.overwrite_button")
+            } else {
+                t("filepicker.save.save_button")
+            },
+        )
+    } else {
+        (
+            FilePickerMode::Open {
+                selection_text: &selection_text,
+            },
+            t("filepicker.no_file_selected"),
+            t("filepicker.open_button"),
+        )
+    };
     let props = FilePickerProps {
         theme: th,
         remote_host: None,
@@ -355,17 +398,15 @@ fn draw_view(
         state: s.load.clone(),
         entries: &entries,
         selected: &s.selected,
-        name_filter_text: &name_filter_text,
+        mode,
         owns_escape,
         title_label: s.title(),
         name_field_label: t("filepicker.name_field_label"),
+        name_placeholder,
         cancel_label: t("button.cancel"),
-        // 저장 모드에서 view 의 확정 버튼은 목록에서 고른 기존 파일을 대상으로 한다.
-        open_label: if save_mode {
-            t("filepicker.save.overwrite_button")
-        } else {
-            t("filepicker.open_button")
-        },
+        confirm_label,
+        overwrite_warning: t("filepicker.save.overwrite_warning"),
+        hidden_folders_label: t("filepicker.hidden_folders"),
         empty_label: t("filepicker.empty"),
         loading_label: t("filepicker.loading"),
         loading_body_local: t("filepicker.loading_body_local"),
@@ -376,55 +417,6 @@ fn draw_view(
         error_conn_reconnect: t("filepicker.error_conn.reconnect"),
     };
     draw_file_picker_view(ui, &props)
-}
-
-/// 저장 모드의 파일명 입력 행. 배치는 디자인이 아직 정하지 않았다 — 자료 흐름이 서는
-/// 최소 배치(라벨 · 입력 · 저장 버튼 한 줄)다.
-fn draw_save_row(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    s: &mut ChooserSession,
-) -> Option<FileChooserOutcome> {
-    let mut outcome = None;
-    ui.add_space(th.spacing_sm.value());
-    // 긴 경로의 breadcrumb 은 view 의 폭을 popup 밖으로 넓힌다. 이 행은 오른쪽 끝에
-    // 저장 버튼을 두므로 보이는 영역(clip) 안의 사각형을 따로 잡아야 버튼이 잘리지 않는다.
-    let left = ui.cursor().left();
-    let right = ui.clip_rect().right().max(left);
-    let top = ui.cursor().top();
-    let row = egui::Rect::from_min_max(
-        egui::pos2(left, top),
-        egui::pos2(right, top + th.item_height_interactive.value()),
-    );
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .max_rect(row)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-            ui.label(
-                egui::RichText::new(t("filepicker.save.name_label"))
-                    .size(th.font_size_caption.value())
-                    .color(th.text_muted()),
-            );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let can_save = s.confirm_save().is_some();
-                if Button::new(t("filepicker.save.save_button"))
-                    .variant(ButtonVariant::Primary)
-                    .enabled(can_save)
-                    .show(ui, th)
-                    .clicked()
-                {
-                    outcome = s.confirm_save();
-                }
-                Input::new()
-                    .mono(true)
-                    .placeholder(t("filepicker.save.name_placeholder"))
-                    .show(ui, th, &mut s.save_name);
-            });
-        },
-    );
-    outcome
 }
 
 #[cfg(test)]
@@ -533,22 +525,117 @@ mod tests {
             Vec::new(),
             dir.clone(),
         );
-        assert!(ch.is_save_mode());
         let s = session(&mut ch);
+        assert!(s.is_save());
         assert_eq!(
             s.confirm_save(),
             Some(FileChooserOutcome::Confirmed(dir.join("keys.toml")))
         );
-        for bad in ["", "  ", ".", "..", "sub/x.toml", "../x.toml", "a\\b"] {
+        for bad in [
+            "",
+            "  ",
+            ".",
+            "..",
+            "sub/x.toml",
+            "../x.toml",
+            "a\\b",
+            "sub",
+        ] {
             s.save_name = bad.into();
             assert_eq!(s.confirm_save(), None, "{bad:?} 는 저장 이름이 아니다");
         }
         // 기존 파일을 고르면 그 이름이 입력으로 간다.
         s.apply(FilePickerAction::Select("b.txt".into()));
         assert_eq!(s.save_name, "b.txt");
-        // 디렉토리를 고르는 것은 입력을 바꾸지 않는다.
+        // 디렉토리를 고르는 것은 입력도 선택도 바꾸지 않는다.
         s.apply(FilePickerAction::Select("sub".into()));
         assert_eq!(s.save_name, "b.txt");
+        assert_eq!(s.selected, vec!["b.txt".to_string()]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn save_session(dir: &Path) -> SettingsFileChooser {
+        let mut ch = SettingsFileChooser::default();
+        ch.begin_at(
+            C,
+            FileChooserMode::Save {
+                default_name: "keys.toml".into(),
+            },
+            Vec::new(),
+            dir.to_path_buf(),
+        );
+        ch
+    }
+
+    /// 저장 모드의 확정 대상은 이름 칸 하나다 — 목록에서 고른 뒤 이름을 고치면 확정은 고친
+    /// 이름을 돌려주고, 고른 행은 풀린다.
+    #[test]
+    fn save_mode_has_one_target_the_name_field() {
+        let dir = tempdir();
+        let mut ch = save_session(&dir);
+        let s = session(&mut ch);
+
+        // 새 이름 — 덮어쓰기 아님.
+        assert!(!s.overwrites());
+
+        // 기존 파일을 고르면 확정이 아니라 이름 칸이 채워지고, 곧 덮어쓰기 상태다.
+        assert_eq!(s.apply(FilePickerAction::Select("a.lua".into())), None);
+        assert_eq!(s.save_name, "a.lua");
+        assert_eq!(s.selected, vec!["a.lua".to_string()]);
+        assert!(s.overwrites());
+
+        // 이름을 고친 순간 선택이 풀리고 덮어쓰기에서 벗어난다.
+        assert_eq!(s.apply(FilePickerAction::EditName("a2.lua".into())), None);
+        assert!(
+            s.selected.is_empty(),
+            "이름이 고른 행과 달라지면 선택이 풀린다"
+        );
+        assert!(!s.overwrites());
+
+        // 확정은 이름 칸을 읽는다 — 앞서 고른 파일이 아니다.
+        assert_eq!(
+            s.apply(FilePickerAction::Confirm),
+            Some(FileChooserOutcome::Confirmed(dir.join("a2.lua")))
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 고른 이름과 같은 값으로의 편집(예: 같은 글자를 지웠다 다시 씀)은 선택을 유지한다.
+    #[test]
+    fn save_mode_keeps_selection_while_the_name_still_matches() {
+        let dir = tempdir();
+        let mut ch = save_session(&dir);
+        let s = session(&mut ch);
+        s.apply(FilePickerAction::Select("a.lua".into()));
+        s.apply(FilePickerAction::EditName("a.lua".into()));
+        assert_eq!(s.selected, vec!["a.lua".to_string()]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 직접 입력한 이름이 나열된 파일과 같아도 덮어쓰기 상태다(판정은 나열된 폴더 조회).
+    #[test]
+    fn typed_existing_name_is_an_overwrite() {
+        let dir = tempdir();
+        let mut ch = save_session(&dir);
+        let s = session(&mut ch);
+        s.apply(FilePickerAction::EditName("b.txt".into()));
+        assert!(s.overwrites());
+        assert!(s.selected.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 저장 모드에서 파일 행 더블클릭은 확정하지 않는다 — 덮어쓰기 경고를 건너뛰는 길이다.
+    #[test]
+    fn save_mode_double_click_fills_the_name_instead_of_confirming() {
+        let dir = tempdir();
+        let mut ch = save_session(&dir);
+        let s = session(&mut ch);
+        assert_eq!(
+            s.apply(FilePickerAction::ConfirmEntry("a.lua".into())),
+            None
+        );
+        assert_eq!(s.save_name, "a.lua");
+        assert!(s.overwrites());
         std::fs::remove_dir_all(&dir).ok();
     }
 

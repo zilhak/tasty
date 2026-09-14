@@ -1157,7 +1157,9 @@ open_settings_button = "設定でハンドラを登録"
 [filepicker]
 title = "ファイルを開く"
 tools_menu_item = "ファイルを開く…"
-name_field_label = "選択済み:"
+name_field_label = "ファイル名"
+no_file_selected = "ファイルが選択されていません"
+hidden_folders = "{} 個のフォルダーを省略"
 open_button = "開く"
 empty = "このフォルダは空です。"
 loading = "読み込み中…"
@@ -1180,10 +1182,10 @@ timeout = "リモートホストが時間内に応答しませんでした。"
 
 [filepicker.save]
 title = "ファイルを保存"
-name_label = "ファイル名:"
-name_placeholder = "ファイル名"
+name_placeholder = "ファイル名を入力"
 save_button = "保存"
 overwrite_button = "上書き"
+overwrite_warning = "{name} はこのフォルダーに既に存在します。保存すると置き換えられます。"
 
 [file_drop]
 hover_label = "ドロップして開く"
