@@ -17,6 +17,75 @@ pub fn select(
     width: f32,
     enabled: bool,
 ) -> bool {
+    match select_impl(
+        ui,
+        theme,
+        id_salt,
+        Some(*selected),
+        options,
+        None,
+        width,
+        enabled,
+    ) {
+        Some(i) => {
+            *selected = i;
+            true
+        }
+        None => false,
+    }
+}
+
+/// "아직 안 고름" 상태를 가진 드롭다운. `selected == None` 이면 트리거에 `placeholder` 를
+/// `text_placeholder` 색으로 그리고, 메뉴 맨 앞에 같은 문구를 sentinel 로 둔다 — 고르면
+/// 그 sentinel 은 목록에서 빠진다. placeholder 는 값이 아니므로 sentinel 을 누르는 것은
+/// 선택으로 치지 않는다. 선택이 바뀌면 `true`.
+///
+/// `select` 에 sentinel 을 첫 옵션으로 끼워 넣는 방식으로는 이 상태를 못 그린다 — 트리거
+/// 색이 `select_fg` 하나라 placeholder 가 값처럼 읽힌다.
+// reason: `select` 와 같은 인자 모양에 placeholder 하나를 더한 것이다 — 묶으면 두 드롭다운의
+// 호출 모양이 갈린다.
+#[allow(clippy::too_many_arguments)]
+pub fn select_or_placeholder(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    id_salt: &str,
+    selected: &mut Option<usize>,
+    options: &[&str],
+    placeholder: &str,
+    width: f32,
+    enabled: bool,
+) -> bool {
+    match select_impl(
+        ui,
+        theme,
+        id_salt,
+        *selected,
+        options,
+        Some(placeholder),
+        width,
+        enabled,
+    ) {
+        Some(i) => {
+            *selected = Some(i);
+            true
+        }
+        None => false,
+    }
+}
+
+/// 두 드롭다운의 한 원문 — 새로 고른 옵션 인덱스를 돌려준다(안 바뀌면 `None`).
+// reason: 공개 함수 둘의 인자를 그대로 받는 내부 원문이다.
+#[allow(clippy::too_many_arguments)]
+fn select_impl(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    id_salt: &str,
+    selected: Option<usize>,
+    options: &[&str],
+    placeholder: Option<&str>,
+    width: f32,
+    enabled: bool,
+) -> Option<usize> {
     // 높이·반경·선굵기는 공용 헬퍼(`alloc_trigger`·`paint_trigger_box`)가 읽는다.
     let pad_x = theme.select_padding_x().value();
     let body = theme.select_font_size().value();
@@ -43,7 +112,13 @@ pub fn select(
     paint_trigger_box(ui.painter(), theme, rect, border, enabled);
     // 현재 값 — 가용 폭(좌 padding ~ chevron 앞) 초과 시 말줄임(truncate_at_width)으로
     // border/chevron 침범 방지.
-    let label = options.get(*selected).copied().unwrap_or("");
+    let (label, label_fg) = match (selected, placeholder) {
+        (None, Some(p)) => (p, theme.text_placeholder()),
+        (s, _) => (
+            s.and_then(|i| options.get(i)).copied().unwrap_or(""),
+            theme.select_fg(),
+        ),
+    };
     let text_max_width = (rect.right() - chevron_room - (rect.left() + pad_x)).max(0.0);
     let mut job = egui::text::LayoutJob::simple_singleline(
         label.to_owned(),
@@ -57,7 +132,7 @@ pub fn select(
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter()
-        .galley(text_pos, galley, dim(theme.select_fg().to_egui()));
+        .galley(text_pos, galley, dim(label_fg.to_egui()));
     // chevron (▾) — 우측.
     let cx = rect.right() - chevron_room * 0.5;
     let ch = dim(theme.select_chevron_fg().to_egui());
@@ -68,7 +143,7 @@ pub fn select(
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
 
-    let mut changed = false;
+    let mut picked = None;
     egui::popup_below_widget(
         ui,
         popup_id,
@@ -76,15 +151,18 @@ pub fn select(
         egui::PopupCloseBehavior::CloseOnClick,
         |ui| {
             ui.set_min_width(width);
+            if let (None, Some(p)) = (selected, placeholder) {
+                // sentinel — 누르면 메뉴만 닫힌다(값이 아니므로 응답을 읽지 않는다).
+                let _sentinel = ui.selectable_label(true, p);
+            }
             for (i, opt) in options.iter().enumerate() {
-                if ui.selectable_label(i == *selected, *opt).clicked() && i != *selected {
-                    *selected = i;
-                    changed = true;
+                if ui.selectable_label(selected == Some(i), *opt).clicked() && selected != Some(i) {
+                    picked = Some(i);
                 }
             }
         },
     );
-    changed
+    picked
 }
 
 /// Select 계열 트리거의 chevron 글리프 — 꺾은선 2 segment.

@@ -82,7 +82,7 @@ pub use multi_select::{
 pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use segmented::segmented;
-pub use select::select;
+pub use select::{select, select_or_placeholder};
 pub use spacing::{hspace, margin_all, margin_sym, vspace};
 pub use spinner::Spinner;
 pub use status_bar::{StatusBarAction, StatusBarData, StatusBarDrawResult, draw_status_bar_view};

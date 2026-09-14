@@ -9,7 +9,8 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    MultiSelectAllToggle, MultiSelectLabels, checkbox, multi_select, select, switch,
+    MultiSelectAllToggle, MultiSelectLabels, checkbox, multi_select, select, select_or_placeholder,
+    switch,
 };
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
@@ -19,6 +20,7 @@ thread_local! {
         RefCell::new(FormState {
             sel: 0,
             sel_long: 3,
+            sel_placeholder: None,
             multi: [true, true, true, false, false],
             multi_long: [false, true, false, false],
             multi_scroll: [false; 20],
@@ -36,6 +38,8 @@ thread_local! {
 struct FormState {
     sel: usize,
     sel_long: usize,
+    /// "아직 안 고름" 상태를 가진 Select — 처음엔 비어 있어 placeholder 가 보인다.
+    sel_placeholder: Option<usize>,
     /// Multi-select 데모 — DAG 상태 필터를 본뜬 5종.
     multi: [bool; 5],
     /// 긴 라벨 회귀 케이스용 4종.
@@ -145,6 +149,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     "gallery_select_long",
                     &mut st.sel_long,
                     &opts,
+                    field_md,
+                    true,
+                );
+            });
+            // placeholder 는 값이 아니다 — `text_placeholder` 색으로 그리고 메뉴 맨 앞의
+            // sentinel 은 한 번 고르면 빠진다(단축키 가져오기 modifier 선택이 첫 소비자).
+            cluster(ui, theme, "Select (placeholder)", |ui| {
+                let opts = ["Ctrl", "Alt", "Ctrl+Alt"];
+                select_or_placeholder(
+                    ui,
+                    theme,
+                    "gallery_select_placeholder",
+                    &mut st.sel_placeholder,
+                    &opts,
+                    "Select a modifier",
                     field_md,
                     true,
                 );
