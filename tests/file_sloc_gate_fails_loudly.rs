@@ -62,16 +62,18 @@ fn stub_dir(body: &str) -> tempfile::TempDir {
 /// 사본 수를 맞춰 본다. 사본을 하나도 안 만드는 이 스텁은 0 을 말해야 그 대조를 통과한다.
 /// 수를 아예 안 내면 게이트는 판정 불가로 나가고, 그러면 아래 시험들이 재려는 것이
 /// 아니라 **대조 실패**를 재게 된다.
-fn run_gate_with(body: &str) -> i32 {
+fn run_gate_with(body: &str) -> gate_env::GateRun {
     run_gate(body, "mkdir -p \"$1\"\necho 0\nexit 0")
 }
 
-/// tokei 스텁과 판정기 스텁을 주입하고 게이트를 돌려 **종료코드만** 얻는다.
-fn run_gate(tokei_body: &str, strip_body: &str) -> i32 {
-    run_gate_full(tokei_body, strip_body).0
+/// tokei 스텁과 판정기 스텁을 주입하고 게이트를 돌린다. 단정은 **종료코드만** 본다 —
+/// 돌려주는 값이 `i32` 와 비교되고, 깨지면 그 회차의 출력이 실패 문구에 실린다.
+fn run_gate(tokei_body: &str, strip_body: &str) -> gate_env::GateRun {
+    let (code, output) = run_gate_full(tokei_body, strip_body);
+    gate_env::GateRun { code, output }
 }
 
-/// 종료코드와 표준출력을 함께 얻는다.
+/// 종료코드와 출력(stdout+stderr)을 함께 얻는다.
 ///
 /// 경고 띠(`WARN_BAND`)는 **rc 에 안 들어가므로 종료코드로는 관측이 안 된다** — 띠가
 /// 조용히 사라져도 위 테스트들은 전부 초록이다. 그래서 그 칸만 출력을 본다. 단정은
@@ -107,10 +109,8 @@ fn run_gate_raw(tokei_body: &str, strip_script: &str) -> (i32, String) {
         .current_dir(root)
         .output()
         .expect("게이트 실행");
-    (
-        out.status.code().unwrap_or(-1),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-    )
+    let run = gate_env::GateRun::from_output(&out);
+    (run.code, run.output)
 }
 
 /// tokei 가 정상 동작해 임계 이하만 보고하는 JSON.
@@ -146,6 +146,25 @@ fn a_failing_tokei_is_not_a_pass() {
         run_gate_with("echo boom >&2\nexit 7"),
         2,
         "tokei 가 죽으면 측정 실패(exit 2)여야 한다 — 통과(0)도 위반(1)도 아니다"
+    );
+}
+
+/// 코드만 보는 단정이 깨지면 **그 회차의 stderr 가 실패 문구에 남는다.**
+///
+/// 이 파일의 단정 대부분은 종료 코드만 본다. 헬퍼가 코드만 돌려주던 동안 실패는
+/// `left: 1, right: 2` 한 줄이었고, 게이트가 왜 그 코드로 나갔는지는 그 회차와 함께
+/// 사라졌다 — 다시 돌려야 알고, 확률적 빨강이면 다시 돌려도 안 나온다. 그 성질을 여기서
+/// 건다: 도구가 stderr 에 남긴 표지가 단정 실패 시 찍힐 문자열(`Debug`)에 있어야 한다.
+#[test]
+fn a_code_only_assertion_carries_the_gate_stderr_into_its_failure_text() {
+    const MARK: &str = "zz-tokei-died-here";
+    let run = run_gate_with(&format!("echo {MARK} >&2\nexit 7"));
+    assert_eq!(run, 2, "대조 조건이 안 섰다 — tokei 가 죽으면 판정 불가다");
+    let shown = format!("{run:?}");
+    assert!(
+        shown.contains(MARK),
+        "코드 단정이 깨졌을 때 찍힐 문구에 게이트의 stderr 가 없다 — 실패의 원인이 그 회차와 \
+         함께 사라진다:\n{shown}"
     );
 }
 
@@ -230,7 +249,7 @@ fn zero_judged_files_is_not_a_pass() {
 /// 이 시험은 그 성질을 건다 — 스텁이 신선도에서 한 줄 찍어도 판정은 평소와 같다.
 #[test]
 fn a_judge_that_prints_while_answering_freshness_does_not_poison_the_path() {
-    let (code, _out) = run_gate_raw(
+    let (code, out) = run_gate_raw(
         UNDER_THRESHOLD,
         &format!(
             "if [ \"$1\" = \"--check-fresh\" ]; then echo POLLUTION; exit 3; fi\n\
@@ -239,7 +258,7 @@ fn a_judge_that_prints_while_answering_freshness_does_not_poison_the_path() {
     );
     assert_eq!(
         code, 0,
-        "신선도 갈래의 출력이 판정기 경로를 오염시켰다 — 반환이 표준출력으로 되돌아갔다"
+        "신선도 갈래의 출력이 판정기 경로를 오염시켰다 — 반환이 표준출력으로 되돌아갔다:\n{out}"
     );
 }
 
@@ -271,7 +290,7 @@ fn a_missing_stripper_is_not_a_pass() {
         .current_dir(root)
         .output()
         .expect("게이트 실행");
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(gate_env::GateRun::from_output(&out), 2);
 }
 
 // ── 경고 띠 (900↑) ────────────────────────────────────────────────────────
@@ -295,7 +314,7 @@ const VIOLATION_AND_WARNING: &str = r#"echo '{"Rust":{"reports":[{"name":"src/zz
 fn nothing_in_the_band_prints_no_warning_section() {
     // ⓪ 대조군. 이게 없으면 아래 두 테스트는 "경고 절을 항상 찍는 게이트" 로도 통과한다.
     let (code, out) = run_gate_full(BELOW_WARN_BAND, "mkdir -p \"$1\"\necho 0\nexit 0");
-    assert_eq!(code, 0, "899 는 임계 미만이라 통과여야 한다");
+    assert_eq!(code, 0, "899 는 임계 미만이라 통과여야 한다:\n{out}");
     assert!(
         out.contains("경고(900↑) 0"),
         "경고 0 을 값으로 찍어야 한다 — 침묵은 '띠가 없다' 와 구분이 안 된다: {out}"
@@ -309,7 +328,10 @@ fn nothing_in_the_band_prints_no_warning_section() {
 #[test]
 fn the_warning_band_names_the_file_and_keeps_the_exit_code() {
     let (code, out) = run_gate_full(IN_WARN_BAND, "mkdir -p \"$1\"\necho 0\nexit 0");
-    assert_eq!(code, 0, "경고는 rc 에 안 들어간다 — 띠 안이어도 통과다");
+    assert_eq!(
+        code, 0,
+        "경고는 rc 에 안 들어간다 — 띠 안이어도 통과다:\n{out}"
+    );
     assert!(out.contains("경고(900↑) 1"), "경고 수를 찍어야 한다: {out}");
     assert!(
         out.contains("src/zz_stub_warn.rs"),
@@ -330,7 +352,7 @@ fn a_violation_and_a_warning_stay_separate() {
     // 같은 트리에 둘이 있으면 서로 다른 칸으로 세어야 한다. 한 칸으로 뭉치면
     // "임계초과 2" 가 되어 위반 수가 부풀고, 그 수를 보고 lane 이 잘못 움직인다.
     let (code, out) = run_gate_full(VIOLATION_AND_WARNING, "mkdir -p \"$1\"\necho 0\nexit 0");
-    assert_eq!(code, 1, "임계 초과가 있으면 여전히 exit 1 이다");
+    assert_eq!(code, 1, "임계 초과가 있으면 여전히 exit 1 이다:\n{out}");
     assert!(
         out.contains("임계초과 1") && out.contains("경고(900↑) 1"),
         "위반과 경고가 서로 다른 칸이어야 한다: {out}"
@@ -601,7 +623,7 @@ fn a_missing_tokei_is_not_a_pass() {
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("게이트 실행");
-    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = gate_env::GateRun::from_output(&out).output;
     assert_eq!(
         out.status.code(),
         Some(2),
@@ -629,7 +651,7 @@ fn a_missing_python_is_not_a_pass() {
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("게이트 실행");
-    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = gate_env::GateRun::from_output(&out).output;
     assert_eq!(
         out.status.code(),
         Some(2),
@@ -695,7 +717,7 @@ fn an_uncountable_copy_count_is_not_a_pass() {
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("게이트 실행");
-    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = gate_env::GateRun::from_output(&out).output;
     assert_eq!(
         out.status.code(),
         Some(2),

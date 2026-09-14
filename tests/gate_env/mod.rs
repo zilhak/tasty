@@ -16,6 +16,12 @@
 //! `rustc --print cfg --target x86_64-pc-windows-gnu` 에 `unix` 선언이 없다). 그래서
 //! `std::os::unix` 를 조건 없이 쓴다.
 
+//!
+//! 한 가지를 더 둔다 — 게이트 한 번의 **종료 코드와 그 회차의 출력**을 함께 들고 다니는
+//! [`GateRun`]. 종료 코드만 돌려주는 헬퍼는 실패하면 `left: 1, right: 2` 만 남기고, 게이트가
+//! 왜 그 코드로 나갔는지(스텁이 어디서 죽었는지 · 판정기가 무엇을 말했는지)는 **그 회차와
+//! 함께 사라진다.** 다시 돌려 봐야 알고, 확률적 빨강이면 다시 돌려도 안 나온다.
+
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
@@ -43,4 +49,45 @@ pub fn only(names: &[&str]) -> TempDir {
         }
     }
     d
+}
+
+/// 게이트 한 번의 결과 — 종료 코드와 **stdout·stderr 를 이어 붙인 출력**.
+///
+/// `i32` 와 직접 비교된다(`assert_eq!(run(..), 2, "..")`). 그래서 종료 코드만 보던 호출부를
+/// 한 줄도 안 고치고 바꿔 끼울 수 있고, 단정이 깨지면 `Debug` 가 **그 회차의 출력 전체**를
+/// 실패 문구에 싣는다. stderr 까지 담는 이유는 게이트가 판정 불가를 말하는 자리와 셸이
+/// 스스로 죽는 자리(문법 오류 · 없는 명령)가 대개 stderr 이기 때문이다.
+pub struct GateRun {
+    pub code: i32,
+    pub output: String,
+}
+
+impl GateRun {
+    pub fn from_output(out: &std::process::Output) -> Self {
+        Self {
+            // 시그널로 죽으면 코드가 없다 — 0·1·2 어느 것과도 안 겹치는 값으로 둔다.
+            code: out.status.code().unwrap_or(-1),
+            output: format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        }
+    }
+}
+
+impl PartialEq<i32> for GateRun {
+    fn eq(&self, other: &i32) -> bool {
+        self.code == *other
+    }
+}
+
+impl std::fmt::Debug for GateRun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "rc {}\n--- 게이트 출력 (stdout+stderr) ---\n{}--- 끝 ---",
+            self.code, self.output
+        )
+    }
 }

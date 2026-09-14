@@ -97,9 +97,8 @@ fn check_without_the_stripper(dir: &Path, args: &[&str]) -> (i32, String) {
         .env("TASTY_STRIP_CFG_TEST_BIN", "/nonexistent/strip-cfg-test")
         .output()
         .expect("게이트 스크립트 실행");
-    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.code().unwrap_or(-1), text)
+    let run = gate_env::GateRun::from_output(&out);
+    (run.code, run.output)
 }
 
 /// 스크립트를 돌리고 (exit code, stdout+stderr) 를 돌려준다.
@@ -110,9 +109,8 @@ fn check(dir: &Path, args: &[&str]) -> (i32, String) {
         .current_dir(dir)
         .output()
         .expect("게이트 스크립트 실행");
-    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.code().unwrap_or(-1), text)
+    let run = gate_env::GateRun::from_output(&out);
+    (run.code, run.output)
 }
 
 const PLUGIN: &str = "crates/tasty-plugin-fixture";
@@ -151,9 +149,8 @@ fn check_with(gate: &str, dir: &Path, args: &[&str]) -> (i32, String) {
         .current_dir(dir)
         .output()
         .expect("게이트 스크립트 실행");
-    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.code().unwrap_or(-1), text)
+    let run = gate_env::GateRun::from_output(&out);
+    (run.code, run.output)
 }
 
 /// 루트 Cargo.toml(스크립트가 edition 을 읽는다) + plugin 한 벌을 담은 저장소를 만들고

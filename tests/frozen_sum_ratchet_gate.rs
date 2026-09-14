@@ -117,7 +117,9 @@ fn root_with_bias(
 const EAT_FLAGS: &str = "while [ \"${1#--}\" != \"$1\" ]; do shift; done\n";
 
 /// 스텁 tokei · 스텁 판정기를 물려 게이트를 돌리고 종료코드를 얻는다.
-fn run(root: &Path, tokei_body: &str) -> i32 {
+/// 종료 코드와 출력을 함께 돌려준다 — `i32` 와 비교되므로 단정은 코드만 보고, 깨지면
+/// 그 회차의 출력이 실패 문구에 실린다([`gate_env::GateRun`]).
+fn run(root: &Path, tokei_body: &str) -> gate_env::GateRun {
     let bin = tempfile::tempdir().expect("스텁 디렉토리");
     write_exec(
         &bin.path().join("tokei"),
@@ -139,10 +141,8 @@ fn run(root: &Path, tokei_body: &str) -> i32 {
         .env("TASTY_STRIP_CFG_TEST_BIN", &strip)
         .current_dir(root)
         .output()
+        .map(|out| gate_env::GateRun::from_output(&out))
         .expect("게이트 실행")
-        .status
-        .code()
-        .unwrap_or(-1)
 }
 
 /// 목록의 파일 하나에 `code` 를 실어 보고하는 tokei 스텁.
