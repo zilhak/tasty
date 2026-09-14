@@ -123,7 +123,7 @@ const ALLOWLIST: &[(&str, &[&str])] = &[
     ),
     (
         "crates/tasty-doc-guards/tests/no_todo_file_citation.rs",
-        &["P7"],
+        &["P7", "P8"],
     ),
     ("scripts/check-allow-reason.sh", &["P7"]),
 ];
@@ -138,6 +138,7 @@ const PATTERNS: &[(&str, &str, Finder)] = &[
     ("P5", "앵커 슬러그 번호", find_p5),
     ("P6", "로컬 폴더 언급", find_p6),
     ("P7", "산문 TODO 언급", find_p7),
+    ("P8", "작업 분할 번호", find_p8),
 ];
 
 /// 순회에서 통째로 가지치기할 **이름**. 빌드 산출물·워크트리·VCS·의존성 +
@@ -574,6 +575,41 @@ fn find_p7(line: &str) -> Option<String> {
         from = after;
         if todo_marker_end(line, after).is_none() {
             return Some(line[start..after].to_string());
+        }
+    }
+    None
+}
+
+/// P8 — 괄호로 감싼 **작업 분할 번호**(`(01)`~`(09)`). 기능 하나를 여러 단계로 쪼갠
+/// 작업 계획의 "몇 번째 항목" 이고, 그 계획은 커밋되지 않는 로컬 문서다. P1 이 잡는
+/// 번호는 `TODO` 라는 낱말을 옆에 달고 있지만 이쪽은 번호만 홀로 선다 — 그래서 P1 의
+/// 어느 어순으로도 안 걸린다.
+///
+/// 실측 2026-09-14: 이 형태가 180 자리에 있었고, 그중 한 갈래는 문서 어디에도 대응
+/// 항목이 없었다(`(05)` — 그 작업 항목이 문서를 안 남겼다). 나머지도 "번호 = 뜻" 을
+/// 세운 자리가 없어, 읽는 사람은 번호를 보고 갈 곳이 없다. 커밋 제목이 그 번호를 달고
+/// 있던 것이 출처다(`... 갤러리 specimen (09)`).
+///
+/// **두 자리·앞자리 0 만 본다.** 한 자리(`(3)`)나 앞자리가 0 이 아닌 수(`(12)`)는 데이터
+/// 쪽이 압도적으로 많다 — 각주·항목 번호·측정값. 앞자리 0 은 자리수를 맞춘 **일련번호**
+/// 표기라 이 부류를 고르게 집는다. ADR 좌표는 네 자리(`ADR-0054`)라 걸리지 않는다.
+///
+/// **맨번호는 안 본다** — `06 bulk 채널` 처럼 괄호 없이 문장에 녹은 형태도 같은 부류지만,
+/// 날짜·버전·측정값과 구분할 표지가 없어 세면 오탐이 본문을 덮는다. 그쪽은 사람이
+/// 문장을 다시 써야 하고, 이 가드는 다시 스며드는 입구만 막는다.
+fn find_p8(line: &str) -> Option<String> {
+    let bytes = line.as_bytes();
+    let mut from = 0;
+    while let Some(pos) = line[from..].find('(') {
+        let start = from + pos;
+        from = start + 1;
+        let d0 = bytes.get(start + 1);
+        let d1 = bytes.get(start + 2);
+        if d0 == Some(&b'0')
+            && d1.is_some_and(|c| c.is_ascii_digit() && *c != b'0')
+            && bytes.get(start + 3) == Some(&b')')
+        {
+            return Some(line[start..start + 4].to_string());
         }
     }
     None
