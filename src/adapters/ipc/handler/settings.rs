@@ -36,7 +36,7 @@ pub fn handle_get_plugin_setting(
 }
 
 /// `settings.get_remote_transfer {}` → `RemoteTransferSettings` 직렬화
-/// (`{ "dir": <string>, "max_mb": <u64> }`). 07 원격 전송 저장 정책 조회.
+/// (`{ "dir": <string>, "max_mb": <u64> }`). 원격 전송 저장 정책 조회.
 pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcResponse {
     match serde_json::to_value(&engine.settings.remote_transfer) {
         Ok(v) => JsonRpcResponse::success(id, v),

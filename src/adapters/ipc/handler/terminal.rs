@@ -2,16 +2,16 @@
 //!
 //! 에이전트가 자식 터미널 surface 를 spawn/tell/wait/kill 하는 **범용 기계**. 지금까지
 //! codex/claude 플러그인에 중복 구현돼 있던 부분을 호스트 1급으로 끌어올린다. 에이전트
-//! 특화(codex/claude 바이너리 command 빌더, hook/trust, telemetry)는 플러그인에 잔류
-//! (05). 여기서는 호출자가 넘긴 **임의 command 문자열**을 그대로 터미널에 붙인다.
+//! 특화(codex/claude 바이너리 command 빌더, hook/trust, telemetry)는 플러그인에
+//! 잔류한다. 여기서는 호출자가 넘긴 **임의 command 문자열**을 그대로 터미널에 붙인다.
 //!
 //! 구현은 sibling 핸들러(`tab.create` / `surface.send` / `surface.close` /
 //! `surface.locate` / `surface.respawn_terminal`)를 **in-process 재사용** 한다 — 플러그인이
 //! `host.call(...)` 로 조합하던 것과 byte-for-byte 동형이되 IPC 왕복이 없다.
 //!
-//! **soft 점유 (03 소비)**: spawn 성공 시 child 를 `occupy_soft(child, parent)` 로 등록,
+//! **soft 점유 (ADR-0040 soft tier 소비)**: spawn 성공 시 child 를 `occupy_soft(child, parent)` 로 등록,
 //! kill 시 `release_occupancy(child)` 로 해제 — 둘 다 in-process core 함수 호출이다
-//! (`occupancy.*` IPC method 는 만들지 않는다, 03 경계).
+//! (`occupancy.*` IPC method 는 만들지 않는다 — soft 점유의 경계는 core 함수다).
 
 use serde_json::{Value, json};
 
@@ -342,7 +342,7 @@ pub(crate) fn handle_spawn(
     };
     // command 는 optional. 지정되면 tab 생성 직후 그대로 붙여 제출한다. 생략되면
     // 아무것도 보내지 않고 tab 생성·registry 등록·soft 점유·surface_id 반환만 한다
-    // — codex/claude plugin(05)이 이 2단계 spawn 을 소비한다: 먼저 command 없이
+    // — codex/claude plugin 이 이 2단계 spawn 을 소비한다: 먼저 command 없이
     // 호출해 host registry 에 자식을 등록하고 child_surface_id 를 받은 뒤, 그
     // surface_id 를 박은 에이전트 특화 command(TASTY_SURFACE_ID=... / session token
     // 등)를 `surface.send` 로 별도 전송한다.
@@ -436,7 +436,7 @@ pub(crate) fn handle_spawn(
     );
     engine.child_terminals.save();
 
-    // soft 점유 등록(03 소비): 주체 = spawn 을 발동한 parent surface. 라벨은
+    // soft 점유 등록(ADR-0040): 주체 = spawn 을 발동한 parent surface. 라벨은
     // nickname > role. in-process 호출(occupancy.* IPC 아님).
     let label = nickname.or(role);
     if let Err(e) = engine.occupy_soft(new_surface_id, parent, label) {
@@ -628,7 +628,7 @@ pub(crate) fn handle_kill(
     };
     engine.child_terminals.save();
 
-    // soft 점유 해제(03 소비): surface.close 이전에 명시적 release. tier 무관 강제
+    // soft 점유 해제(ADR-0040): surface.close 이전에 명시적 release. tier 무관 강제
     // 해제(soft 이면 주체 검증 없이 clear). in-process 호출.
     engine.release_occupancy(removed.child_surface_id);
 
@@ -956,7 +956,7 @@ pub(crate) fn handle_broadcast(
 }
 
 /// 에이전트 hook 이 idle/needs_input 신호를 넣는 진입점. state ∈ {idle, needs_input,
-/// active}. 05 에서 codex/claude hook 핸들러가 이 method 를 호출한다.
+/// active}. codex/claude plugin 의 hook 핸들러가 이 method 를 호출한다.
 ///
 /// **파생 상태는 입력으로 받지 않는다 (출력 전용)** — `exited`/`stale` 은 호스트가
 /// 라이브 트리·PTY 관측에서만 만들어내는 값이라(`core/state/child_liveness.rs`),
@@ -1137,7 +1137,7 @@ mod tests {
 
     #[test]
     fn spawn_kill_occupancy_wiring() {
-        // handle_spawn/handle_kill 이 소비하는 03 경계(occupy_soft/release_occupancy)를
+        // handle_spawn/handle_kill 이 소비하는 soft 점유 경계(occupy_soft/release_occupancy)를
         // registry 등록/해제와 함께 CoreState 레벨에서 검증한다. tab.create/surface.send
         // GUI 파트는 이미 검증된 재사용 핸들러라 제외(그 경로 e2e 는 debug 인스턴스).
         let mut e = engine();

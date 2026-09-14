@@ -82,7 +82,7 @@ pub(crate) struct MeshForwardState {
     /// 직전 forward 의 focused 상태. 포커스만 바뀌어도(입력·크기·테마 무변) set_context
     /// 재전송을 트리거하기 위해 추적한다 — markdown 등 focused/unfocused 배경 즉시 전환.
     last_focused: Option<bool>,
-    /// plugin 이 `SurfaceInvalidated` 로 알렸다(단계 06) — 다음 forward 게이트에서
+    /// plugin 이 `SurfaceInvalidated` 로 알렸다 — 다음 forward 게이트에서
     /// 무입력 재-forward 를 1회 트리거한다(송신 시 소거). idle(입력 무) 상태에서도
     /// 파일 변경이 반영되게 하는 유일한 진입점 — `App::event_handler` 가
     /// `mark_surface_invalidated` 로 세팅한다.
@@ -96,7 +96,7 @@ impl MeshForwardState {
         self.common.pending_full = true;
     }
 
-    /// idle 상태에서 plugin 이 알린 파일 변경을 다음 forward 게이트에 무장한다(단계 06).
+    /// idle 상태에서 plugin 이 알린 파일 변경을 다음 forward 게이트에 무장한다.
     pub(crate) fn set_invalidated(&mut self) {
         self.invalidated = true;
     }
@@ -297,7 +297,7 @@ impl MainView {
         st.events.push(RawInputEventWire::Ime { event });
     }
 
-    /// plugin 이 `SurfaceInvalidated` 로 알린 surface 를 dirty 표시한다(단계 06). 다음
+    /// plugin 이 `SurfaceInvalidated` 로 알린 surface 를 dirty 표시한다. 다음
     /// forward 게이트에서 무입력 재-forward 를 트리거해, idle(입력 무) 상태에서도 파일
     /// 변경이 `RELOAD_CHECK_INTERVAL_SECS` 내 반영되게 한다. 이 View 의 layout 에 없는
     /// surface_id 는 무시(`App` 이 모든 window 의 View 를 순회하며 호출하므로 다른
@@ -410,7 +410,7 @@ impl MainView {
             // 포커스 변화만으로도 재forward — 입력 없이 포커스만 잃는 경우(다른 surface
             // 클릭 등)에 markdown 배경이 focused 로 잔류하지 않도록 (B).
             let focus_changed = st.last_focused != Some(is_focused);
-            // idle 상태에서 plugin 이 파일 변경을 알렸다(단계 06) — 입력/geom/theme/focus
+            // idle 상태에서 plugin 이 파일 변경을 알렸다(`SurfaceInvalidated`) — 입력/geom/theme/focus
             // 무변이어도 이 무입력 재-forward 로 다음 paint 의 poll_reload 가 돈다.
             let invalidated = st.invalidated;
 

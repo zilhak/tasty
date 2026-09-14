@@ -1,4 +1,4 @@
-//! OS 네이티브 인터랙티브 화면 캡처 (03 — 원격 attach 스크린샷→클립보드).
+//! OS 네이티브 인터랙티브 화면 캡처 (원격 attach 스크린샷→클립보드용).
 //!
 //! `ui.screenshot`(`src/gfx/gpu/screenshot.rs`)은 tasty **자신이 렌더링한** 프레임만
 //! 캡처한다(GPU 텍스처 readback). 이 모듈은 그와 달리 **임의 화면**(다른 앱 포함)을

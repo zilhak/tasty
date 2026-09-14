@@ -89,7 +89,7 @@ pub(crate) enum MirrorEvent {
     /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
     /// 메인루프가 실패 toast 를 띄운다.
     StructuralFailed(String),
-    /// forward 한 구조 op 가 원격에서 **성공**했다(2단계) — 페이로드는 `op_id`. 08/09
+    /// forward 한 구조 op 가 원격에서 **성공**했다(2단계) — 페이로드는 `op_id`.
     /// client-only focus 보정 대상 op(`user_triggered`)만 correlate 할 필요가 있어
     /// 세션의 `pending_op_focus`에서 이 id 를 찾아 `next_delta_focus`로 옮겨두는 데
     /// 쓰인다(찾지 못하면 이 op 은 focus 보정 대상이 아니었다는 뜻 — 조용히 무시).
@@ -103,7 +103,7 @@ pub(crate) enum MirrorEvent {
         tree: Value,
         surfaces: Vec<Value>,
     },
-    /// (03 screenshot→remote-clipboard) 원격이 이 mirror 세션이 업로드한 캡처를
+    /// (screenshot→remote-clipboard) 원격이 이 mirror 세션이 업로드한 캡처를
     /// 처리한 결과(`capture_result` 커스텀 이벤트 — `StreamControl` enum 밖, 그
     /// enum 이 인식 못 하는 별도 "event" 값으로 같은 Control 채널을 탄다). 성공 시
     /// `path` 가 원격 파일시스템 경로, 실패 시 `reason`.
@@ -112,7 +112,7 @@ pub(crate) enum MirrorEvent {
         path: Option<String>,
         reason: Option<String>,
     },
-    /// (04) file picker — 원격이 이 mirror 세션의 `list_dir_request` 를 처리한 결과
+    /// file picker — 원격이 이 mirror 세션의 `list_dir_request` 를 처리한 결과
     /// (`list_dir_result` 커스텀 이벤트 — capture_result 와 동일하게 `StreamControl`
     /// enum 밖). 성공 시 `dir`(echo 된 절대경로)과 `entries`, 실패 시 `reason`.
     ListDirResult {
@@ -333,11 +333,11 @@ pub(crate) struct AttachClientSession {
     // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
-    /// (06) bulk 파일 전송(ADR-0054)이 결속할 **원격** workspace id. 대화형 attach 가
+    /// bulk 파일 전송(ADR-0054)이 결속할 **원격** workspace id. 대화형 attach 가
     /// `open_attach_workspace` 에 넘긴 그 값 — 전용 bulk 연결의 `open_bulk` 가 이 값을
-    /// 서버에 실어 "이 ws 의 holder 가 존재하는가" 인가의 근거로 삼는다(06-α 서버 검증).
+    /// 서버에 실어 "이 ws 의 holder 가 존재하는가" 인가의 근거로 삼는다(서버측 검증).
     remote_workspace: u32,
-    /// (06) bulk 전용 연결이 두 번째 `TcpStream::connect` 를 걸 로컬 포트. 대화형 attach
+    /// bulk 전용 연결이 두 번째 `TcpStream::connect` 를 걸 로컬 포트. 대화형 attach
     /// 가 쓴 포트와 동일(자동 attach 는 `tunnel.local_port`, 수동/loopback 은 직접 포트) —
     /// 같은 `ssh -L` 터널/포워딩을 재사용하므로 별도 인프라가 필요 없다.
     bulk_port: u16,
@@ -350,7 +350,7 @@ pub(crate) struct AttachClientSession {
     anchor_ws_id: Option<u32>,
     /// forward 한 구조 op 의 op_id 시퀀스(2단계). 회신 correlate/로그용 — 단조 증가.
     op_seq: u64,
-    /// 08/09 — `user_triggered` op 중 focus 보정이 필요한 것의 `op_id → 의도`.
+    /// `user_triggered` op 중 client-only focus 보정이 필요한 것의 `op_id → 의도`.
     /// `forward_one_structural_op` 이 전송 시 채우고, 그 op 의 성공 회신
     /// (`StructuralResult{ok:true}`)이 오면 `next_delta_focus`로 옮겨지며 제거된다.
     /// 실패 회신은 그냥 버려짐(딜타가 안 오므로 여기 남아도 다음 op 와 섞이지 않게
@@ -366,7 +366,7 @@ pub(crate) struct AttachClientSession {
     /// 네트워크 프레임 폭주를 막는다(서버측 동일값 no-op 이 2차 방어). TCP 는 신뢰
     /// 전송이라 한 번 보낸 값은 도달이 보장돼 재전송이 불필요하다.
     last_forwarded_resize: HashMap<u32, (usize, usize)>,
-    /// (04) 파일 피커 원격 host 배지에 쓰이는 표시 문자열. attach 확립 시점의
+    /// 파일 피커 원격 host 배지에 쓰이는 표시 문자열. attach 확립 시점의
     /// loopback 엔드포인트(`127.0.0.1:<port>`)로 채운다 — SSH 프로필의 실제
     /// `user@host` 는 이 세션까지 threading 되어 있지 않아(auto_attach/remote_attach
     /// 팝업 모두 `port` 만 넘김) 후속 개선 대상으로 남긴다.
@@ -1116,7 +1116,7 @@ impl App {
     /// 세션을 찾아 local→remote 치환 후 `StructuralOp` 프레임을 write half 로 보낸다.
     /// 세션을 못 찾으면(예상 밖) warn 후 drop.
     ///
-    /// `user_triggered`(08/09)면, 이 op 의 op_id 에 대응하는 focus 의도(`PendingOpFocus`)
+    /// `user_triggered`면, 이 op 의 op_id 에 대응하는 focus 의도(`PendingOpFocus`)
     /// 를 세션에 등록해둔다 — 성공 회신(`StructuralResult{ok:true}`) 이 오면 그 직후
     /// (프로토콜 보장) 도착하는 `StructuralDelta` 적용 시 소비된다. `close_focus_
     /// candidates`(로컬 id)는 여기서 anchor 와 같은 방식으로 원격 id 로 치환한다 —
@@ -1207,7 +1207,7 @@ impl App {
         sess.last_forwarded_resize.insert(remote_sid, (cols, rows));
     }
 
-    /// `about_to_wait` 에서 호출 — (04) 파일 피커 popup wrapper 가 쌓은 원격
+    /// `about_to_wait` 에서 호출 — 파일 피커 popup wrapper 가 쌓은 원격
     /// 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)를 drain 해
     /// 각 요청을 해당 mirror 세션의 attach 채널로 전송한다(구조 op/resize forward 와
     /// 동일한 "domain 이 큐에 push, App 이 drain 해 소켓 IO" 패턴). 세션을 못 찾으면
@@ -1939,7 +1939,7 @@ fn spawn_attach_reader_thread(
                                     Some(MirrorEvent::StructuralFailed(reason.unwrap_or_default()))
                                 }
                                 // 성공 회신 — UX 로는 무음이지만(구조 반영은
-                                // 뒤따르는 StructuralDelta), 08/09 focus 보정
+                                // 뒤따르는 StructuralDelta), client-only focus 보정
                                 // op 를 correlate 하려면 op_id 가 필요하다.
                                 Ok(StreamControl::StructuralResult {
                                     ok: true, op_id, ..
@@ -1954,8 +1954,8 @@ fn spawn_attach_reader_thread(
                                     tree,
                                     surfaces,
                                 }),
-                                // StreamControl 이 인식 못 하는 payload — (03)
-                                // capture_result 또는 (04) list_dir_result
+                                // StreamControl 이 인식 못 하는 payload —
+                                // capture_result 또는 list_dir_result
                                 // 커스텀 이벤트인지 확인(별도 enum, StreamControl
                                 // 비수정 — parse_capture_result/parse_list_dir_result 참조).
                                 Ok(_) | Err(_) => parse_capture_result(&frame.payload)
@@ -2103,19 +2103,19 @@ fn make_mirror_surface(
 }
 
 /// forward 한 `user_triggered` op 하나에 대해, 성공 시 어떤 client-only focus 보정을
-/// 해야 하는지(08/09). `op_id`로 세션에 등록해뒀다가 그 op 의 성공 회신 직후 도착하는
+/// 해야 하는지. `op_id`로 세션에 등록해뒀다가 그 op 의 성공 회신 직후 도착하는
 /// `StructuralDelta` 적용에서 1회 소비된다.
 #[derive(Debug, Clone)]
 enum PendingOpFocus {
-    /// new-tab/split(08): 결과 delta 에서 새로 생긴 surface 로 focus 를 옮긴다.
+    /// new-tab/split: 결과 delta 에서 새로 생긴 surface 로 focus 를 옮긴다.
     NewResource,
-    /// close(09): 캡처해둔 이전 focus 가 이번 op 로 사라지면(=이번 op 이 바로 그
+    /// close: 캡처해둔 이전 focus 가 이번 op 로 사라지면(=이번 op 이 바로 그
     /// surface/tab 을 닫은 것), 아래 후보(**remote** id, 우선순위 순) 중 delta 이후에도
     /// 살아남은 첫번째로 focus 를 옮긴다. 후보가 다 없으면 기존 동작(원격 고정값) 유지.
     Close { candidates: Vec<u32> },
 }
 
-/// `forward_one_structural_op` 이 op 하나를 세션에 실어 보내기 직전, 이 op 이 08/09
+/// `forward_one_structural_op` 이 op 하나를 세션에 실어 보내기 직전, 이 op 이 client-only
 /// focus 보정 대상인지 판정한다. new-tab/split 계열은 항상 `NewResource`. close 계열은
 /// `close_focus_candidates`(로컬 id, `AppState` 가 닫히기 **전** 트리에서 계산해둔 것)를
 /// `remote_to_local`(전송 시점 기준 — anchor 치환과 동일 스냅샷)로 원격 id 로 치환해
@@ -2350,7 +2350,7 @@ struct SurvivorMapping {
     mesh: HashMap<u32, MirrorMeshInfo>,
     explorer: HashMap<u32, std::path::PathBuf>,
     markdown: MirrorMarkdownLeaves,
-    /// 이번 병합에서 처음 매핑된 remote surface(08 — new-tab/split 성공 시 focus 대상 후보).
+    /// 이번 병합에서 처음 매핑된 remote surface(new-tab/split 성공 시 focus 대상 후보).
     newly_created_remote_ids: Vec<u32>,
 }
 
@@ -2583,7 +2583,7 @@ fn apply_one_mirror_event(
             host.toast(msg, crate::adapters::ui::ToastKind::Warning);
         }
         MirrorEvent::StructuralSucceeded(op_id) => {
-            // 08/09 — 이 op 이 focus 보정 대상(user_triggered)으로
+            // 이 op 이 client-only focus 보정 대상(user_triggered)으로
             // 등록돼 있었으면, 뒤따르는(프로토콜 보장) 다음
             // StructuralDelta 적용 시 1회 소비할 의도로 옮겨둔다.
             // 등록돼 있지 않았으면(에이전트/IPC 유래 등) no-op.
@@ -2610,7 +2610,7 @@ fn apply_one_mirror_event(
             destroy_mirror_markdown_surfaces(plugin_manager, removed_markdown);
         }
         MirrorEvent::CaptureResult { ok, path, reason } => {
-            // (03) 원격이 이 세션의 캡처 업로드를 처리한 결과.
+            // 원격이 이 세션의 캡처 업로드를 처리한 결과.
             let msg = if ok {
                 format!(
                     "{} ({})",
@@ -2702,7 +2702,7 @@ fn apply_one_mirror_event(
     }
 }
 
-/// (04, ADR-0059) `MirrorEvent::ListDirResult` 한 건을 적용한다. 이 요청의 소비자
+/// (ADR-0059) `MirrorEvent::ListDirResult` 한 건을 적용한다. 이 요청의 소비자
 /// 태그로 분기 — `None` = File Picker(기존 로직), `Some(surface_id)` = explorer(그
 /// surface 의 `ExplorerView` 로 라우팅). 태그가 없으면(세션이 이미 재연결로
 /// 지워졌거나 stale) 조용히 무시한다.
@@ -2744,7 +2744,7 @@ fn apply_list_dir_result_event(
         }
         return;
     }
-    // (04) 원격이 이 세션의 list_dir_request 를 처리한 결과 — popup 이 열려 있고 그
+    // 원격이 이 세션의 list_dir_request 를 처리한 결과 — popup 이 열려 있고 그
     // 요청을 아직 기다리는 중일 때만 반영(다른 요청/이미 닫힌 popup 응답은 조용히
     // 무시 — stale reply).
     let Some(picker) = host.state.dialogs.file_picker.as_mut() else {
@@ -2920,7 +2920,7 @@ fn apply_mirror_structural_delta(
 
     // 1·2·3. survivor 유지 + 신규 할당 + 사라진 것 제거(재연결 `reconnect_session` 과
     // 공유하는 `merge_survivor_mapping`). 이 op 으로 새로 생긴 remote surface(=이전
-    // 매핑에 없던 것)도 순서대로 받아둔다(08 — new-tab/split 성공 시 focus 를 옮길 대상
+    // 매핑에 없던 것)도 순서대로 받아둔다(new-tab/split 성공 시 focus 를 옮길 대상
     // 후보).
     let mut mapping = merge_survivor_mapping(
         &sess.remote_to_local,
@@ -2962,9 +2962,9 @@ fn apply_mirror_structural_delta(
         );
         ws.mirror = true;
 
-        // 08 — 이번 op 이 user_triggered new-tab/split 이면, 옛 focus 를 복원하는 대신
+        // 이번 op 이 user_triggered new-tab/split 이면, 옛 focus 를 복원하는 대신
         // 새로 생긴 surface 로 focus 를 옮긴다(옛 focus 는 새 리소스를 만든 op 으로는
-        // 거의 항상 살아남으므로, restore 를 먼저 태우면 08 의 목적과 반대로 옛 위치에
+        // 거의 항상 살아남으므로, restore 를 먼저 태우면 새 리소스로 focus 를 옮기려는 목적과 반대로 옛 위치에
         // 눌러앉는다 — 그래서 NewResource 는 restore 를 아예 건너뛴다).
         let mut focus_handled = false;
         if matches!(pending_focus, Some(PendingOpFocus::NewResource))
@@ -2977,7 +2977,7 @@ fn apply_mirror_structural_delta(
         if !focus_handled {
             let restored =
                 restore_focus_after_delta(&mut ws, old_focused_remote, &sess.remote_to_local);
-            // 09 — 옛 focus 복원이 실패했다(=캡처해둔 surface 가 이번 op 으로 사라짐,
+            // close focus fallback — 옛 focus 복원이 실패했다(=캡처해둔 surface 가 이번 op 으로 사라짐,
             // 전형적으로 그 surface/tab 자체를 닫은 경우) — user_triggered close 로 미리
             // 계산해둔 인접 후보(remote id, 우선순위 순) 중 delta 이후에도 살아있는
             // 첫번째로 fallback 한다. 후보가 다 사라졌으면(예상 밖) 기존 동작대로 원격의
@@ -3007,7 +3007,7 @@ fn apply_mirror_structural_delta(
 /// id)가 가리키던 위치로 focus 를 되돌린다. 캡처해둔 surface 가 새 트리에도 살아있으면
 /// (이번 op 로 사라지지 않았으면) `ws.focused_pane`/해당 pane 의 `active_tab`/그 tab 의
 /// `focused_surface` 를 그 위치로 맞추고 `true`. surface 자체가 이번 op 로 없어졌으면
-/// (예: 그 surface 를 닫은 CloseSurface) 억지로 복원하지 않고 `false` — 호출부(09)가
+/// (예: 그 surface 를 닫은 CloseSurface) 억지로 복원하지 않고 `false` — 호출부(close focus fallback)가
 /// 인접 후보 fallback 을 시도할지 판단하는 신호로 쓴다.
 fn restore_focus_after_delta(
     ws: &mut Workspace,
@@ -3403,10 +3403,10 @@ fn build_layout(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// (03) screenshot→remote-clipboard — mirror client 측 업로드 송신.
+// screenshot→remote-clipboard — mirror client 측 업로드 송신.
 //
 // 이 블록은 위 구조 op forward/역반영 로직(특히 `apply_mirror_structural_delta`)과
-// 완전히 독립적이다 — 별도 기능(신규 03)이라 별도 impl 블록 + 전용 free fn 으로
+// 완전히 독립적이다 — 별도 기능이라 별도 impl 블록 + 전용 free fn 으로
 // 분리해 둔다(병행 작업 merge 충돌 최소화).
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -3418,7 +3418,7 @@ fn next_capture_upload_id() -> u64 {
     NEXT_CAPTURE_UPLOAD_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-/// (06) bulk 파일 전송의 transfer_id 발급기. 프로세스 내 단조 증가(원격은 client_id
+/// bulk 파일 전송의 transfer_id 발급기. 프로세스 내 단조 증가(원격은 client_id
 /// 로 연결이 구분되므로 재기동 간 유일성 불필요 — capture 와 동일 근거).
 static NEXT_BULK_TRANSFER_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -3426,14 +3426,14 @@ fn next_bulk_transfer_id() -> u64 {
     NEXT_BULK_TRANSFER_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-/// (06) 한 bulk `Data` 청크의 raw payload 크기 상한 = `MAX_FRAME_LEN - BULK_CHUNK_HEADER_LEN`.
+/// 한 bulk `Data` 청크의 raw payload 크기 상한 = `MAX_FRAME_LEN - BULK_CHUNK_HEADER_LEN`.
 /// binary sub-header(`[transfer_id u64][seq u32]`) 를 얹어도 프레임이 1 MiB 를 넘지
 /// 않게 한다. base64 를 쓰지 않으므로 capture(700 KiB)보다 크게 잡을 수 있다.
 const BULK_CHUNK_RAW_LEN: usize = stream::MAX_FRAME_LEN as usize - stream::BULK_CHUNK_HEADER_LEN;
 
-/// (09) 원격이 begin/commit 을 거부(`BulkResult{ok:false}`)했을 때 `upload_file_over_bulk`
-/// 이 반환하는 `Err` 메시지의 접두. **거부 vs 전송 에러**를 소비자(08 결과 처리)가
-/// 구분하는 안정 계약이다 — 이 접두면 원격 정책 거부(예: 07 capacity exceeded)라 재시도가
+/// 원격이 begin/commit 을 거부(`BulkResult{ok:false}`)했을 때 `upload_file_over_bulk`
+/// 이 반환하는 `Err` 메시지의 접두. **거부 vs 전송 에러**를 소비자(이미지 붙여넣기 업로드 결과 처리)가
+/// 구분하는 안정 계약이다 — 이 접두면 원격 정책 거부(예: 수신측 capacity exceeded)라 재시도가
 /// 무의미(실패 팝업 Dismiss 단독), 아니면 전송/프로토콜 에러라 재시도 가능(Retry). 문자열
 /// 매칭이지만 생산·소비가 같은 크레이트라 이 const 로 계약을 고정한다.
 pub(crate) const BULK_REJECT_PREFIX: &str = "remote rejected bulk upload: ";
@@ -3454,7 +3454,7 @@ struct CaptureResultWire {
     reason: Option<String>,
 }
 
-/// `frame.payload` 가 (03) `capture_result` 커스텀 이벤트인지 확인해 `MirrorEvent`
+/// `frame.payload` 가 `capture_result` 커스텀 이벤트인지 확인해 `MirrorEvent`
 /// 로 변환한다. `event` 필드가 다르거나 형태가 안 맞으면 `None`(다른 미지 이벤트와
 /// 동일하게 조용히 무시 — 전방 호환).
 fn parse_capture_result(payload: &[u8]) -> Option<MirrorEvent> {
@@ -3500,7 +3500,7 @@ struct ListDirResultWire {
     reason: Option<String>,
 }
 
-/// `frame.payload` 가 (04) `list_dir_result` 커스텀 이벤트인지 확인해 `MirrorEvent`
+/// `frame.payload` 가 `list_dir_result` 커스텀 이벤트인지 확인해 `MirrorEvent`
 /// 로 변환한다. `event` 필드가 다르거나 형태가 안 맞으면 `None`(다른 미지 이벤트와
 /// 동일하게 조용히 무시 — 전방 호환).
 fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
@@ -3631,7 +3631,7 @@ fn parse_markdown_changed(payload: &[u8]) -> Option<MirrorEvent> {
 }
 
 impl App {
-    /// (03) 캡처된 로컬 스크린샷을 `local_ws_id` mirror 세션의 attach 채널로
+    /// 캡처된 로컬 스크린샷을 `local_ws_id` mirror 세션의 attach 채널로
     /// 업로드하고, 완료 시 원격이 그 경로를 원격 클립보드에 쓰도록 요청한다.
     /// `StreamControl` enum(다른 worktree 가 동시 수정 중)은 건드리지 않고, 그
     /// enum 이 인식 못 하는 별도 "event" 값의 raw JSON 을 같은
@@ -3678,7 +3678,7 @@ impl App {
         send_capture_control_frame(&frame_tx, &commit)
     }
 
-    /// (04) file picker/explorer(ADR-0059) — `local_ws_id` mirror 세션의 attach
+    /// file picker/explorer(ADR-0059) — `local_ws_id` mirror 세션의 attach
     /// 채널로 `list_dir_request` 를 보낸다. `consumer`(`None`=File Picker,
     /// `Some(surface_id)`=explorer)는 응답 도착 시 라우팅에 쓰도록 세션에 기록해둔다
     /// (wire 엔 안 실림 — ADR-0059 Decision 5). 응답은 reader thread 가 비동기로 받아
@@ -3786,7 +3786,7 @@ impl App {
     }
 }
 
-/// (03) capture_chunk/capture_commit JSON 하나를 `StreamTag::Control` 프레임으로
+/// capture_chunk/capture_commit JSON 하나를 `StreamTag::Control` 프레임으로
 /// 직렬화해 보낸다.
 fn send_capture_control_frame(
     frame_tx: &SharedFrameSender,
@@ -3803,7 +3803,7 @@ fn send_capture_control_frame(
 }
 
 impl App {
-    /// (08) `local_ws_id` mirror 세션의 bulk 업로드 대상 `(local port, remote workspace)`
+    /// `local_ws_id` mirror 세션의 bulk 업로드 대상 `(local port, remote workspace)`
     /// 를 뽑는다. 백그라운드 스레드는 `&self`(세션)를 들 수 없으므로, 메인 스레드에서
     /// 이 값만 미리 뽑아 자유 함수 [`upload_file_over_bulk`] 에 넘긴다. 세션이 없으면
     /// (정리됨) `None`.
@@ -3815,14 +3815,14 @@ impl App {
     }
 }
 
-/// (06) 전용 bulk 연결 하나의 전 수명을 동기로 수행: `127.0.0.1:port` 에 connect →
+/// 전용 bulk 연결 하나의 전 수명을 동기로 수행: `127.0.0.1:port` 에 connect →
 /// `open_bulk(remote_ws)` → begin/chunk/commit 송신 → `BulkResult` 수신 → detach.
 /// 성공 시 원격 절대경로, 실패 시 원격 사유(또는 전송/프로토콜 에러)를 `Err`.
 ///
 /// 세션 상태(`&self`)에 의존하지 않으므로 호출자가 백그라운드 스레드로 오프로드하기
 /// 쉽다(세션에서 `(port, remote_ws)` 만 미리 뽑으면 됨). 전용 연결도 heartbeat/TTL
-/// (ADR-0052)·인가(bulk_workspace holder 결속, 06-α 서버가 검증)를 그대로 탄다.
-/// (06) 파일 바이트를 bulk `Data` 프레임 payload 시퀀스로 청킹한다(각 원소는
+/// (ADR-0052)·인가(bulk_workspace holder 결속, 서버가 검증)를 그대로 탄다.
+/// 파일 바이트를 bulk `Data` 프레임 payload 시퀀스로 청킹한다(각 원소는
 /// `[transfer_id u64][seq u32][part]`). 순수 함수 — 네트워크 없이 청킹 경계·seq·헤더
 /// 인코딩을 검증할 수 있다. 빈 입력은 청크 0개(begin→commit 만으로 0바이트 저장).
 fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
@@ -3849,7 +3849,7 @@ fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConne
 }
 
 /// `transfer_id` 로 begin→chunk(들)→commit 를 순서대로 보낸다. `on_progress(sent,
-/// total)`(09)을 각 청크 전송 직후 호출해 누적 전송 바이트를 통지 — 시작 시
+/// total)`을 각 청크 전송 직후 호출해 누적 전송 바이트를 통지 — 시작 시
 /// 1회(0, total)로도 발화해 0% 프레임을 즉시 띄운다.
 fn send_bulk_payload(
     conn: &mut StreamConnection,
@@ -3858,7 +3858,7 @@ fn send_bulk_payload(
     bytes: &[u8],
     on_progress: impl Fn(u64, u64),
 ) -> anyhow::Result<()> {
-    // begin(파일명·총 크기) — 서버가 basename 안전화·용량 승인(07)의 입력으로 쓴다.
+    // begin(파일명·총 크기) — 서버가 basename 안전화·용량 사전 승인의 입력으로 쓴다.
     let begin = StreamControl::BulkBegin {
         transfer_id,
         filename: file_name.to_string(),
@@ -3931,12 +3931,12 @@ fn await_bulk_result(conn: &mut StreamConnection, transfer_id: u64) -> anyhow::R
     }
 }
 
-// 06-β 가 완성한 전송 자유 함수 — 08(이미지 paste)이 백그라운드 스레드에서 호출한다.
+// 클라이언트측 bulk 전송 자유 함수 — 이미지 붙여넣기 업로드가 백그라운드 스레드에서 호출한다.
 //
-// `on_progress(sent, total)` (09): 각 청크 전송 직후 누적 전송 바이트를 통지한다. 호출자
-// (08 워커)가 이 콜백으로 진행 이벤트를 메인 루프에 흘려 determinate progress 팝업을
+// `on_progress(sent, total)`: 각 청크 전송 직후 누적 전송 바이트를 통지한다. 호출자
+// (이미지 붙여넣기 업로드 워커)가 이 콜백으로 진행 이벤트를 메인 루프에 흘려 determinate progress 팝업을
 // 갱신한다. 전송 시작 시 1회(0, total) 로도 발화해 0% 프레임을 즉시 띄운다. 통지가
-// 필요 없으면 `|_, _| {}` 를 넘긴다. 06 전송 로직 자체는 불변 — 콜백 호출만 추가.
+// 필요 없으면 `|_, _| {}` 를 넘긴다. 콜백은 전송 로직에 관여하지 않는다 — 통지만 한다.
 pub(crate) fn upload_file_over_bulk(
     port: u16,
     remote_ws: u32,
@@ -4119,7 +4119,7 @@ mod tests {
         ));
     }
 
-    /// (06) bulk 청킹/시퀀스/헤더 인코딩 라운드트립: 각 프레임이 올바른
+    /// bulk 청킹/시퀀스/헤더 인코딩 라운드트립: 각 프레임이 올바른
     /// transfer_id·seq 를 달고, 파트를 순서대로 이으면 원본과 바이트 동일해야 한다.
     #[test]
     fn bulk_chunk_frames_roundtrip_and_reassembly() {
@@ -4144,13 +4144,13 @@ mod tests {
         assert_eq!(reassembled, data, "재조립 바이트가 원본과 동일");
     }
 
-    /// (06) 빈 파일: 청크 0개(begin→commit 만으로 0바이트 저장).
+    /// 빈 파일: 청크 0개(begin→commit 만으로 0바이트 저장).
     #[test]
     fn bulk_chunk_frames_empty_is_zero_chunks() {
         assert!(bulk_chunk_frames(1, &[]).is_empty());
     }
 
-    /// (06) 정확히 한 청크 상한 크기: 파트 1개, 경계에서 분할이 새지 않는다.
+    /// 정확히 한 청크 상한 크기: 파트 1개, 경계에서 분할이 새지 않는다.
     #[test]
     fn bulk_chunk_frames_exact_boundary_is_single_chunk() {
         let data = vec![7u8; BULK_CHUNK_RAW_LEN];
@@ -4688,7 +4688,7 @@ mod tests {
 
     /// `set_focus_to_surface` — 존재하는 surface 로는 focused_pane/active_tab/
     /// focused_surface 를 모두 갱신하고 `true`, 없는 surface 로는 아무것도 안 바꾸고
-    /// `false`(08/09 가 공유하는 핵심 primitive).
+    /// `false`(new-tab/split focus 이동과 close focus fallback 이 공유하는 핵심 primitive).
     #[test]
     fn set_focus_to_surface_updates_pane_tab_surface_or_reports_false() {
         let ids = IdGenerator::new();
@@ -4740,7 +4740,7 @@ mod tests {
         );
     }
 
-    /// 08 — new-tab/split 계열은 항상 `NewResource`(원격 id map 과 무관).
+    /// new-tab/split 계열은 항상 `NewResource`(원격 id map 과 무관).
     #[test]
     fn pending_op_focus_for_new_tab_and_split_is_new_resource() {
         let map = HashMap::new();
@@ -4774,7 +4774,7 @@ mod tests {
         }
     }
 
-    /// 09 — close 계열은 `close_focus_candidates`(로컬 id)를 map 으로 원격 id 로
+    /// close 계열은 `close_focus_candidates`(로컬 id)를 map 으로 원격 id 로
     /// 치환해 담는다. map 에 없는 후보만 있으면 `None`(fallback 대상 없음).
     #[test]
     fn pending_op_focus_for_close_translates_candidates_or_none() {
@@ -4796,7 +4796,7 @@ mod tests {
         assert!(pending_op_focus_for(&op, &[], &map).is_none());
     }
 
-    /// move-tab/convert 등 08/09 대상이 아닌 op 은 후보가 있어도 항상 `None`.
+    /// move-tab/convert 등 focus 보정 대상이 아닌 op 은 후보가 있어도 항상 `None`.
     #[test]
     fn pending_op_focus_for_non_target_ops_is_none() {
         let mut map = HashMap::new();

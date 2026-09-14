@@ -1,7 +1,7 @@
-//! (06) native bulk 파일 전송 서버측 — 전용 bulk 연결이 나른 파일 청크를
+//! native bulk 파일 전송 서버측 — 전용 bulk 연결이 나른 파일 청크를
 //! `(client_id, transfer_id)` 단위로 누적하는 버퍼(ADR-0054).
 //!
-//! (03) 캡처 업로드([`CaptureUploadRegistry`](crate::core::capture_upload))의 일반화
+//! 스크린샷 캡처 업로드([`CaptureUploadRegistry`](crate::core::capture_upload))의 일반화
 //! 버전이며 **병렬 신설**이다(캡처 경로는 그대로 유지). 차이:
 //! - 키가 `(client_id, transfer_id)` 이고, **메타데이터(파일명·총 크기)를 begin 에서**
 //!   먼저 받아 보관한다(캡처는 commit 에서 파일명을 받음). 청크는 이후 append.
@@ -18,7 +18,7 @@ use std::collections::HashMap;
 /// append, `commit` 이 통째로 take.
 struct BulkPartial {
     filename: String,
-    /// begin 이 통지한 총 크기(진단·07 용량 승인 입력). 저장 자체엔 쓰지 않는다.
+    /// begin 이 통지한 총 크기(진단·용량 사전 승인 입력). 저장 자체엔 쓰지 않는다.
     #[allow(dead_code)]
     total_size: u64,
     bytes: Vec<u8>,

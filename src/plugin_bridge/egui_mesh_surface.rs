@@ -64,7 +64,7 @@ impl Surface for EguiMeshSurface {
 
     /// file 기반 egui-mesh surface(markdown 등)의 cwd 는 그 파일이 속한 폴더다.
     /// 이 surface 에서 새 터미널 split 등을 열 때 시작 폴더로 상속되고, markdown
-    /// 제자리 이동(04) 후엔 새 파일의 부모로 따라간다. file 이 없는 kind(mesh-demo
+    /// 제자리 이동(`markdown.navigate`) 후엔 새 파일의 부모로 따라간다. file 이 없는 kind(mesh-demo
     /// 등)는 고유 cwd 의미가 없어 None.
     fn source_cwd(&self) -> Option<PathBuf> {
         self.file

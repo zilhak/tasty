@@ -185,7 +185,7 @@ pub(crate) struct GuiAttachUserReq {
     pub(crate) tunnel: Option<tasty_ssh::SshTunnel>,
 }
 
-/// (08) mirror 터미널에 클립보드 이미지를 붙여넣을 때의 원격 업로드 요청. paste 시점에
+/// mirror 터미널에 클립보드 이미지를 붙여넣을 때의 원격 업로드 요청. paste 시점에
 /// mirror 판정을 끝내 두고(포커스가 업로드 완료 전에 바뀌어도 삽입 대상이 흔들리지
 /// 않게), 실제 bulk 업로드(블로킹, ADR-0054)는 `App::poll_image_uploads` 가 백그라운드
 /// 스레드에서 수행한다. 완료 시 원격 절대경로를 `surface_id`(=paste 시점 mirror surface)
@@ -467,7 +467,7 @@ pub struct CoreState {
     /// (focus 비의존, plan §5). headless 는 GUI 가 없어 drain 되지 않는다.
     pub(crate) pending_gui_attach: Vec<(u16, u32)>,
 
-    /// (03) 스크린샷→클립보드 키바인딩 트리거 큐. `Some(local mirror workspace id)`
+    /// 스크린샷→클립보드 키바인딩 트리거 큐. `Some(local mirror workspace id)`
     /// 면 트리거 시점에 포커스된 surface 가 원격 mirror workspace 소속이었다는 뜻
     /// (캡처 완료 후 그 mirror 의 attach 세션으로 원격 전송), `None` 이면 로컬(캡처
     /// 후 로컬 클립보드에 직접 기록). mirror 판별은 트리거 시점에 끝내 두고(포커스가
@@ -475,21 +475,21 @@ pub struct CoreState {
     /// `App::poll_screenshot_captures` 가 백그라운드 스레드에서 수행한다.
     pub(crate) pending_screenshot_captures: Vec<Option<u32>>,
 
-    /// (08) mirror 터미널 이미지 paste → 원격 업로드 트리거 큐. `MainView::paste_to_terminal`
+    /// mirror 터미널 이미지 paste → 원격 업로드 트리거 큐. `MainView::paste_to_terminal`
     /// 의 이미지 분기가 focused surface 가 mirror workspace 소속일 때 push 한다. App 이
     /// `about_to_wait`(`poll_image_uploads`)에서 drain 해 백그라운드 스레드로 bulk 업로드를
     /// 수행하고, 완료 시 원격 경로를 그 mirror surface 입력에 삽입한다. mirror client 는
     /// 항상 GUI 라 headless 에서는 채워지지 않는다.
     pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
 
-    /// (03) attach 서버측 — mirror client 가 청크로 보내는 캡처 파일 바이트를
+    /// 스크린샷→원격 클립보드의 attach 서버측 — mirror client 가 청크로 보내는 캡처 파일 바이트를
     /// upload_id 단위로 누적한다. `StreamTag::Control` 채널(기존 `StreamControl` enum
     /// 은 그대로 두고, 그 enum 이 인식 못 하는 별도 "event" 값의 raw JSON 을 실어
     /// 보낸다 — 파싱 실패 시 조용히 스킵되는 특성을 그대로 이용) 로 도착. gui/headless
     /// 양쪽 `StreamReady` 처리부가 공유한다(attach 서버는 어느 빌드든 될 수 있음).
     pub(crate) capture_uploads: crate::core::capture_upload::CaptureUploadRegistry,
 
-    /// (06) attach 서버측 — 전용 bulk 연결(ADR-0054)이 나른 파일 청크를
+    /// bulk 파일 전송의 attach 서버측 — 전용 bulk 연결(ADR-0054)이 나른 파일 청크를
     /// `(client_id, transfer_id)` 단위로 누적한다. 캡처(`capture_uploads`)의 일반화
     /// 병렬 신설이며, begin 에서 파일명·총 크기를 먼저 받고 이후 `Data` 프레임
     /// (`decode_bulk_chunk`)의 청크를 append 한 뒤 commit 에서 저장 확정한다.
@@ -503,7 +503,7 @@ pub struct CoreState {
     /// [`StructuralOp`] 의 anchor 는 아직 **로컬** id(전송 직전 세션 매핑으로 원격
     /// 치환). mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
     ///
-    /// 각 원소는 `StructuralOp` 자체 외에 08/09 client-only focus 보정용 태그
+    /// 각 원소는 `StructuralOp` 자체 외에 client-only focus 보정용 태그
     /// (`user_triggered`/`close_focus_candidates`)를 함께 싣는다 —
     /// [`crate::core::PendingStructuralForward`] 참고.
     pub(crate) pending_structural_forward: Vec<crate::core::PendingStructuralForward>,
@@ -530,7 +530,7 @@ pub struct CoreState {
     /// GUI 라 headless 에서는 채워지지 않는다).
     pub(crate) pending_attention_clear_forward: std::collections::HashSet<u32>,
 
-    /// (04) 파일 피커 원격 디렉토리 목록 forward 큐. popup wrapper
+    /// 파일 피커 원격 디렉토리 목록 forward 큐. popup wrapper
     /// (`adapters::ui::popup::file_picker::draw_file_picker`)가 mirror 워크스페이스에서
     /// 디렉토리 조회가 필요할 때 여기 push 하고, App 이 `about_to_wait`
     /// (`dispatch_pending_list_dir_forwards`)에서 drain 해 세션의 attach 채널로
@@ -595,8 +595,8 @@ pub struct CoreState {
     // ── CWD polling (round-robin) ──
     // macOS/Linux 전용. Windows에서는 폴링을 돌지 않아 필드 자체가 없음.
     // ── Surface kind registry ──
-    /// Surface 종류별 메타·동작 lookup. 단계 03C에서는 빈 레지스트리만 보유한다 —
-    /// 03D에서 본체 7종이 등록되며, 단계 05에서 plugin이 추가될 예정.
+    /// Surface 종류별 메타·동작 lookup. 본체 kind 는 부팅 시, plugin kind 는 hello
+    /// 시점에 등록된다.
     pub(crate) surface_registry: Arc<SurfaceKindRegistry>,
 
     /// Plugin 이 manifest `[[contributes.hook_events]]` 로 선언한 surface hook

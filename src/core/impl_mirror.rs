@@ -41,10 +41,10 @@ impl std::error::Error for MirrorStructuralBlocked {}
 /// 아예 없이 항상 GUI 직접 호출인 `state::AppState::forward_mirror_structural`)가
 /// 사후에 `user_triggered`를 뒤집거나(전자) 처음부터 `true`로 push한다(후자).
 ///
-/// 08/09 두 이슈가 이 태그를 근거로 client-only focus 보정을 한다:
-/// - **08**(새 리소스로 focus 이동): `user_triggered`가 true 인 new-tab/split 이
+/// 두 client-only focus 보정이 이 태그를 근거로 한다:
+/// - **새 리소스로 focus 이동**: `user_triggered`가 true 인 new-tab/split 이
 ///   성공하면, 그 결과 delta 에서 새로 생긴 surface 로 focus 를 옮긴다.
-/// - **09**(close 시 인접 대상 fallback): `close_focus_candidates`(로컬 surface id,
+/// - **close 시 인접 대상 fallback**: `close_focus_candidates`(로컬 surface id,
 ///   우선순위 순)를 담아두면, 닫힌 surface 가 focus 였던 경우(=기존 `restore_focus_
 ///   after_delta`가 복원할 대상을 잃는 경우) 첫 번째로 살아남은 후보로 focus 를
 ///   옮긴다. new-tab/split 등 close 가 아닌 op 은 항상 빈 벡터.
@@ -66,7 +66,7 @@ impl PendingStructuralForward {
 }
 
 /// `core.apply(...)`가 mirror-block+forward 로 방금 push 한 **마지막** op 를 "사용자
-/// GUI 조작 유래"로 표시한다(08). `err` 가 `forwarded=true`인 `MirrorStructuralBlocked`
+/// GUI 조작 유래"로 표시한다(new-tab/split focus 이동의 근거). `err` 가 `forwarded=true`인 `MirrorStructuralBlocked`
 /// 가 아니거나 `origin` 이 사용자가 아니면 no-op(기본 `false` 유지) — 다른 이유의
 /// 실패로 큐에 아무것도 안 쌓였는데 엉뚱한 이전 op 를 잘못 표시하는 것을 막는다.
 pub(crate) fn mark_last_forward_user_triggered(
@@ -1139,7 +1139,7 @@ mod mirror_structural_guard_tests {
         let queued = &engine.pending_structural_forward[0];
         assert!(
             !queued.user_triggered,
-            "Core::apply 는 origin 을 모르므로 기본 user_triggered=false(08)"
+            "Core::apply 는 origin 을 모르므로 기본 user_triggered=false"
         );
         match &queued.op {
             StructuralOp::SplitSurface { surface_id, .. } => {
@@ -1442,7 +1442,7 @@ mod mirror_structural_guard_tests {
         assert!(engine.pending_structural_forward.is_empty());
     }
 
-    /// 08 — `mark_last_forward_user_triggered` 는 `forwarded=true` + user origin 일
+    /// `mark_last_forward_user_triggered` 는 `forwarded=true` + user origin 일
     /// 때만 마지막 pending forward 를 `user_triggered=true` 로 뒤집는다.
     #[test]
     fn mark_last_forward_user_triggered_flips_on_user_origin() {
@@ -1478,7 +1478,7 @@ mod mirror_structural_guard_tests {
         );
     }
 
-    /// 08 — agent/IPC origin 이면 forwarded=true 여도 그대로 false 로 남는다(기존 동작
+    /// agent/IPC origin 이면 forwarded=true 여도 그대로 false 로 남는다(기존 동작
     /// 유지, IPC 경로는 focus 를 옮기지 않아야 하므로).
     #[test]
     fn mark_last_forward_user_triggered_stays_false_on_agent_origin() {
@@ -1513,7 +1513,7 @@ mod mirror_structural_guard_tests {
         );
     }
 
-    /// 08 — `forwarded=false`(workspace 경계를 넘는 MoveSurface 등 forward 불가
+    /// `forwarded=false`(workspace 경계를 넘는 MoveSurface 등 forward 불가
     /// op)면 origin 이 user 여도 아무것도 건드리지 않는다(애초에 큐가 비어 있으므로
     /// no-op).
     #[test]

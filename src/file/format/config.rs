@@ -19,7 +19,7 @@ use std::fmt;
 /// ```
 ///
 /// `order` 에 적힌 detector 가 우선. 표에 없는 detector 는 `install_order` 오름차순으로
-/// 뒤에 붙는다 (`04-lookup-flow.md` 참조). 미설치 detector id 는 silently skip.
+/// 뒤에 붙는다 (`identify_by_extension_priority` 참조). 미설치 detector id 는 silently skip.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExtensionPriorityDecl {
     pub extension: String,
@@ -30,7 +30,7 @@ pub struct ExtensionPriorityDecl {
 /// detector 정의 TOML entry.
 ///
 /// 같은 id 를 여러 출처(host/plugin/user)가 정의하면 registry merge 시 rule union +
-/// 메타 patch semantics 적용 (자세히는 `02-config-and-merge.md`).
+/// 메타 patch semantics 적용 (자세히는 `FileFormatRegistry::ensure_finalized`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct DetectorDecl {
     pub id: String,

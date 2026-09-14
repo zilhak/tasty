@@ -628,7 +628,7 @@ impl MainView {
                 return true;
             }
         };
-        // TOFU 게이트(06): 등록 해시와 현재 파일 해시 비교. 같으면 조용히 실행,
+        // TOFU 게이트(ADR-0031): 등록 해시와 현재 파일 해시 비교. 같으면 조용히 실행,
         // 다르면 실행 보류 + 변경 확인 팝업(수동 발화 = popup).
         let current_hash = tasty_settings::hash_bytes(source.as_bytes());
         if current_hash == stored_hash {

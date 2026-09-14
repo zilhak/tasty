@@ -4,7 +4,7 @@
 //! 동적 kind 문자열은 여기서 한 번 `Box::leak`으로 정적화한다 (plugin 종류당 1회).
 //!
 //! 등록된 kind의 `create`/`restore`는 빈 `RemoteSurface`를 반환한다. 실제 트리는
-//! plugin이 비동기로 보내오는 `surface.create` 응답에서 set된다 (단계 06D에서 라우팅).
+//! plugin이 비동기로 보내오는 `surface.create` 응답에서 set된다.
 
 use std::sync::Arc;
 use std::sync::mpsc::Sender;

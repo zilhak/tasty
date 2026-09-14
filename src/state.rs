@@ -189,8 +189,8 @@ pub struct AppState {
     /// switch-number overlay 활성 스냅샷. 현재 눌린 modifier 가 tab/workspace 전환
     /// 단축키와 일치하면 그 대상(+Tab 이면 focused pane id)을 담는다. `MainView` 의
     /// `ModifiersChanged` 가 [`crate::adapters::ui::switch_overlay::switch_target_for`]
-    /// 로 갱신하고, 창 비활성/포커스 상실 시 `None` 으로 clear 된다. draw 경로(04 탭
-    /// /05 사이드바)가 매 프레임 읽어 숫자 키캡 오버레이를 표시할지 결정한다.
+    /// 로 갱신하고, 창 비활성/포커스 상실 시 `None` 으로 clear 된다. draw 경로(탭 바
+    /// / 사이드바)가 매 프레임 읽어 숫자 키캡 오버레이를 표시할지 결정한다.
     #[cfg(feature = "gui")]
     pub(crate) switch_overlay: Option<crate::adapters::ui::switch_overlay::SwitchOverlayState>,
     /// modifier-hint 오버레이 런타임 상태 — 홀드 시작 시각·anchor modifier·세션 dismiss·
@@ -609,7 +609,7 @@ pub struct DialogState {
     pub(crate) approval_comment_buffer: String,
     /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
     pub(crate) file_handler_picker: Option<FileHandlerPickerData>,
-    /// 네이티브 파일 피커(04) popup 의 내비게이션/로딩/선택 상태. `None` 이면 popup 미오픈.
+    /// 네이티브 파일 피커(ADR-0053) popup 의 내비게이션/로딩/선택 상태. `None` 이면 popup 미오픈.
     pub(crate) file_picker: Option<FilePickerData>,
     /// DAG 목록 popup 의 전 상태(검색/필터/열린 DAG/그래프 뷰). `on_close` 가
     /// 통째로 기본값으로 되돌린다 — popup 은 surface 가 아니라 snapshot/restore
@@ -649,11 +649,11 @@ pub struct DialogState {
     /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
     /// 워커에서 실행하며, [취소]/Esc 면 슬롯을 폐기한다.
     pub(crate) pending_script_confirm: Option<PendingScriptConfirm>,
-    /// (09) 원격 전송 진행 팝업(`transfer_progress`) 상태. 진행 중인 파일 행들을 담고,
-    /// 08 워커 진행 이벤트가 갱신한다. 모든 행이 끝나면 `None` + 팝업 self-close.
+    /// 원격 전송 진행 팝업(`transfer_progress`) 상태. 진행 중인 파일 행들을 담고,
+    /// 이미지 붙여넣기 업로드 워커의 진행 이벤트가 갱신한다. 모든 행이 끝나면 `None` + 팝업 self-close.
     #[cfg(feature = "gui")]
     pub(crate) transfer_progress: Option<TransferProgress>,
-    /// (09) 원격 전송 실패 팝업(`transfer_error`) 큐. 전송 실패/거부 시 push, Dismiss 시
+    /// 원격 전송 실패 팝업(`transfer_error`) 큐. 전송 실패/거부 시 push, Dismiss 시
     /// pop(큐가 비면 팝업 닫힘 — info_modal 큐 패턴). head 가 현재 화면.
     #[cfg(feature = "gui")]
     pub(crate) transfer_error: VecDeque<TransferError>,
@@ -661,7 +661,7 @@ pub struct DialogState {
 
 /// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031).
 ///
-/// 단축키 발화 시 등록 해시(03)와 현재 파일 해시가 다르면 실행 대신 이 값을 채우고
+/// 단축키 발화 시 등록 해시(`ScriptRegistry`)와 현재 파일 해시가 다르면 실행 대신 이 값을 채우고
 /// 확인 팝업을 띄운다. [실행] 확정 시 `new_hash` 로 레지스트리를 갱신·영속하고 워커에서 실행.
 #[derive(Debug, Clone)]
 pub struct PendingScriptConfirm {
@@ -806,7 +806,7 @@ pub enum FileHandlerPickerResult {
     OpenSettings,
 }
 
-/// 네이티브 파일 피커(04) 의 디렉토리 로드 상태. gallery specimen `FpState` 와 1:1
+/// 네이티브 파일 피커의 디렉토리 로드 상태. gallery specimen `FpState` 와 1:1
 /// 대응 — `ErrorConn` 은 원격(mirror) 전용, 로컬은 `ErrorPerm`/`Loaded`/`Empty` 만 쓴다.
 #[derive(Debug, Clone)]
 pub(crate) enum FpLoadState {
@@ -847,7 +847,7 @@ pub(crate) struct FilePickerRequester {
     pub(crate) owner_popup_instance: Option<u64>,
 }
 
-/// 네이티브 파일 피커(04) popup 의 상태. `file_handler_picker` 와 동일하게 popup
+/// 네이티브 파일 피커 popup 의 상태. `file_handler_picker` 와 동일하게 popup
 /// 은 직접 dispatch 하지 않고 결과를 [`FilePickerData::result`] 에 남긴다 — host
 /// 본체 layer(`app::dispatch::file_picker`)가 frame 끝에 소비한다.
 pub(crate) struct FilePickerData {
@@ -877,7 +877,7 @@ pub(crate) struct FilePickerData {
     pub(crate) filters: Vec<String>,
 }
 
-/// 네이티브 파일 피커(04) 의 닫기 사유.
+/// 네이티브 파일 피커의 닫기 사유.
 #[derive(Debug, Clone)]
 pub(crate) enum FilePickerResult {
     /// 취소 또는 ESC — dispatch 없음.

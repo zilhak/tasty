@@ -119,7 +119,7 @@ pub(crate) enum GeneralSubTab {
     /// 오버레이류(토스트 등) 표시 설정. 현재는 토스트 수명 1행.
     Overlay,
     /// 원격(mirror) 파일 전송 수신측 저장 정책(저장 폴더 + 용량 상한). 백엔드는
-    /// `RemoteTransferSettings`(06/07).
+    /// `RemoteTransferSettings`.
     RemoteTransfer,
     /// Alt/Option/Shift 키 표시 스타일. macOS 전용 — 아이콘 글리프 개념이
     /// 없는 Windows/Linux 에서는 dead variant 가 되지만 `MiscSubTab::Tastyrc` 와
@@ -150,7 +150,7 @@ pub(crate) enum TerminalSubTab {
 /// L2 section within the Misc L1 tab.
 ///
 /// 디자인 Misc L2 = `["Scripts", "Tastyrc"]`(Windows) / `["Scripts"]`(그 외).
-/// **Scripts 는 전 플랫폼·최상단** (Lua 스크립트 관리, 05). `Tastyrc` 는 Windows
+/// **Scripts 는 전 플랫폼·최상단** (Lua 스크립트 관리). `Tastyrc` 는 Windows
 /// 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는 dead variant 가 되지만
 /// exhaustive match 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로
 /// 경고만 억제한다.
@@ -198,7 +198,7 @@ pub struct SettingsUiState {
     /// Active L2 section within the Misc L1 tab. Scripts 는 전 플랫폼, Tastyrc 는
     /// Windows 전용.
     misc_sub_tab: MiscSubTab,
-    /// Misc › Scripts 관리 창(05)의 UI-only 상호작용 상태 (add-card / 인라인
+    /// Misc › Scripts 관리 창의 UI-only 상호작용 상태 (add-card / 인라인
     /// rename·remove draft + changed 캐시). 스크립트 데이터 자체는 `draft.scripts`.
     scripts: ScriptsUiState,
     /// L2 사이드바 섹션 필터 텍스트. L1 전환 시 클리어. 7개 L1 탭이 공유한다
@@ -1897,12 +1897,12 @@ fn draw_active_content(
     }
 }
 
-/// Misc 콘텐츠. Scripts(전 플랫폼) = Lua 스크립트 관리(05), Tastyrc(Windows) =
+/// Misc 콘텐츠. Scripts(전 플랫폼) = Lua 스크립트 관리, Tastyrc(Windows) =
 /// tasty 빌트인 bashrc 편집.
 fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut SettingsUiState) {
     match ui_state.misc_sub_tab {
         MiscSubTab::Scripts => {
-            // 관리 창은 바인딩을 편집하지 않는다(04 Keybindings 소유) — bind 버튼은
+            // 관리 창은 바인딩을 편집하지 않는다(Keybindings › Scripts 소유) — bind 버튼은
             // Keybindings › Scripts 로 진입만 한다. 진입 요청은 intent 로 받아 여기서 적용.
             let navigate = draw_scripts_subtab(ui, draft, &mut ui_state.scripts);
             if ui_state.scripts.take_browse_request() {

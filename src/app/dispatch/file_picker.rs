@@ -1,4 +1,4 @@
-//! Native file picker (04) popup 의 result 슬롯 드레인.
+//! Native file picker popup 의 result 슬롯 드레인.
 //!
 //! popup draw_fn(`crate::adapters::ui::popup::file_picker`)이
 //! `state.dialogs.file_picker.result` 에 채워둔 `FilePickerResult` 를 본

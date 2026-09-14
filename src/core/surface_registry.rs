@@ -2,17 +2,15 @@
 //!
 //! 본체 4종(Terminal/Markdown/Html/Empty)이 부팅 시 등록된다. Explorer/Image
 //! 등은 plugin이 hello 시점에 같은 레지스트리에 자기 kind를 추가한다.
-//! 외부 plugin은 단계 05에서 같은 레지스트리에 추가될 예정.
 //!
-//! # 단계
+//! # 등록하는 것과 아직 없는 것
 //!
-//! - **03C**: 빈 골격(kind 식별자만).
-//! - **03D-A** (현재): `create` / `restore` / `snapshot` 함수 포인터 등록. 03E에서
-//!   `SavedSurface::Generic`이 snapshot/restore를 호출하고, 03F에서 IPC handler가
-//!   create를 호출한다.
-//! - **추후**: render 함수 + RenderStores + SurfaceCtx + SurfaceAction을 도입해
-//!   `egui_panels::draw_egui_panels`의 다운캐스트 분기를 dispatch로 대체한다 (이후
-//!   단계에서 다운캐스트 메서드 6종 제거).
+//! - kind 마다 `create` / `restore` / `snapshot` 함수 포인터를 등록한다.
+//!   `SavedSurface::Generic`이 snapshot/restore를 호출하고, surface 생성 funnel
+//!   (`CoreState::create_surface_via_registry`)이 create를 호출한다.
+//! - **아직 없음**: render 함수 + RenderStores + SurfaceCtx + SurfaceAction. 이것이
+//!   들어오면 `egui_panels::draw_egui_panels`의 다운캐스트 분기를 dispatch로 대체하고
+//!   다운캐스트 메서드 6종을 제거한다.
 
 pub mod builtins;
 pub mod meta;
@@ -215,7 +213,7 @@ pub struct SurfaceKindDef {
     pub source: KindSource,
 
     /// 사용자에게 표시되는 표시명 i18n 키. 예: `"surface.kind.markdown"`.
-    /// 03D-A에서는 자리만 둔다 — 현재 표시명은 surface 자체의 `display_name()` 메서드를 사용.
+    /// 지금은 자리만 둔다 — 현재 표시명은 surface 자체의 `display_name()` 메서드를 사용.
     pub display_name_i18n_key: &'static str,
 
     /// 탭/프리셋 leading 아이콘의 아이콘 **이름**(매니페스트 `icon`). host 는 이 이름을
@@ -224,7 +222,7 @@ pub struct SurfaceKindDef {
     /// `None` 이면 UI fallback(FILE).
     pub icon: Option<String>,
 
-    /// 새 surface 인스턴스를 만든다. 03F에서 IPC handler / `add_kind_tab` /
+    /// 새 surface 인스턴스를 만든다. IPC handler / `add_kind_tab` /
     /// `split_pane_targeted` 가 이 함수를 호출하여 종류별 분기를 일원화한다.
     ///
     /// `cwd` 는 호출자가 결정한 *carry cwd* — 사용자가 보고 있던 surface 의 source_cwd
@@ -242,7 +240,7 @@ pub struct SurfaceKindDef {
     >,
 
     /// 영속화된 데이터(`SavedSurface::Generic.data`)에서 surface를 복원한다.
-    /// 03E에서 layout.json v1→v2 마이그레이션 후 사용된다.
+    /// layout 복원(`layout_persistence::restore`)이 `SavedSurface::Generic` 을 만나면 호출한다.
     ///
     /// Terminal은 PTY spawn이 호스트 책임이라 별도 경로(`SavedSurface::Terminal`)를 거치며,
     /// terminal builtin의 `restore`는 호출되지 않는다 (안전한 sentinel을 반환).
@@ -252,7 +250,7 @@ pub struct SurfaceKindDef {
     >,
 
     /// surface의 직렬화 가능한 영속 데이터를 반환한다. `None`이면 영속화에서 제외.
-    /// 03E의 `SavedSurface::capture_surface`가 호출한다. 휘발성 surface는 `None`을
+    /// `SavedSurface::capture_surface`가 호출한다. 휘발성 surface는 `None`을
     /// 반환하여 layout 저장에서 빠진다.
     pub snapshot: SurfaceSnapshotFn,
 

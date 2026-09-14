@@ -1141,7 +1141,7 @@ fn structural_params(base: &serde_json::Value, control: serde_json::Value) -> se
     serde_json::Value::Object(obj)
 }
 
-/// (03 screenshot→remote-clipboard) mirror client 가 워크스페이스 attach 채널로
+/// (screenshot→remote-clipboard) mirror client 가 워크스페이스 attach 채널로
 /// 보낸 캡처 업로드의 commit 을 처리한다. `client_id` 가 이 engine 이 호스팅하는
 /// 어떤 workspace 든 점유(holder)하고 있어야 신뢰한다(구조 op forward 와 동일한
 /// "attach 점유 = 권한" 원칙 — 별도 캡슐화된 권한 레이어 없음). 누적 바이트를
@@ -1206,7 +1206,7 @@ fn save_capture_and_set_clipboard(
 
 /// 일반 파일 저장 원자: `file_name` 의 basename 만 취해(경로 조작 방지) `dir` 밑에
 /// 쓰고 그 절대경로 문자열을 돌려준다. 저장 위치(`dir`)는 **인자**로 받아 하드코딩을
-/// 피한다 — 07(용량·지정 폴더 설정)이 나중에 설정값을 주입할 수 있는 훅이다. 캡처의
+/// 피한다 — 호출자가 설정값(`remote_transfer.dir`)을 주입하는 훅이다. 캡처의
 /// 클립보드 기록 같은 소비자-특화 후처리는 이 함수 밖에서 한다(bulk 는 경로만 회신).
 /// basename 이 비면 `fallback_name` 을 쓴다.
 fn save_bulk_file(
@@ -1232,7 +1232,7 @@ pub(crate) fn default_bulk_transfer_dir() -> Option<std::path::PathBuf> {
     crate::paths::tasty_home().map(|h| h.join("transfers"))
 }
 
-/// (07) 원격 전송 저장 폴더 결정: 설정된 `remote_transfer.dir` 가 비어있지 않으면 그
+/// 원격 전송 저장 폴더 결정: 설정된 `remote_transfer.dir` 가 비어있지 않으면 그
 /// 경로, 비었으면 기본 폴더(`~/.tasty/transfers/`). begin 용량 판정·commit 저장이
 /// 공유한다(같은 폴더 기준이어야 사용량 계산과 저장 위치가 일치).
 pub(crate) fn resolve_bulk_transfer_dir(
@@ -1246,7 +1246,7 @@ pub(crate) fn resolve_bulk_transfer_dir(
     }
 }
 
-/// (07) 지정 폴더의 사용량(바이트) — 1-depth 파일 크기 단순 합산. 폴더가 없으면 0
+/// 지정 폴더의 사용량(바이트) — 1-depth 파일 크기 단순 합산. 폴더가 없으면 0
 /// (첫 전송 전). 하위 디렉토리·심볼릭 링크는 세지 않는다(재귀/캐시는 후속 과제).
 pub(crate) fn dir_used_bytes(dir: &std::path::Path) -> u64 {
     let Ok(rd) = std::fs::read_dir(dir) else {
@@ -1259,17 +1259,17 @@ pub(crate) fn dir_used_bytes(dir: &std::path::Path) -> u64 {
         .sum()
 }
 
-/// (07) 용량 판정 술어: 저장 폴더 사용량 + 유입 파일 크기가 상한을 넘는지. 경계
+/// 용량 판정 술어: 저장 폴더 사용량 + 유입 파일 크기가 상한을 넘는지. 경계
 /// `used + incoming == max_bytes` 는 허용, `> max_bytes` 는 거부(`>` 비교).
 /// `saturating_add` 로 u64 오버플로 시에도 거부 쪽으로 안전하게 수렴한다.
 fn exceeds_capacity(used: u64, incoming: u64, max_bytes: u64) -> bool {
     used.saturating_add(incoming) > max_bytes
 }
 
-/// (07) begin 단계 용량 사전판정 + 등록. `resolve_bulk_transfer_dir` 사용량 +
+/// begin 단계 용량 사전판정 + 등록. `resolve_bulk_transfer_dir` 사용량 +
 /// `total_size` 가 `remote_transfer.max_mb` 상한을 넘으면 전송을 **등록하지 않고**
 /// 즉시 `BulkResult{ok:false, reason:"capacity exceeded"}` 를 회신한다(청크가 한
-/// 바이트도 수신·저장되지 않음 — 09 실패 팝업의 입력). 경계: `used + total_size ==
+/// 바이트도 수신·저장되지 않음 — 전송 실패 팝업의 입력). 경계: `used + total_size ==
 /// max` 는 허용, `> max` 는 거부(`>` 비교). 통과 시 registry 에 begin 등록한다.
 pub(crate) fn begin_bulk_transfer(
     engine: &mut CoreState,
@@ -1308,7 +1308,7 @@ pub(crate) fn begin_bulk_transfer(
         .begin(client_id, transfer_id, filename, total_size);
 }
 
-/// (06) bulk 전송 commit 처리: 인가 검증 → 누적 바이트 저장 → 원격 경로 회신
+/// bulk 전송 commit 처리: 인가 검증 → 누적 바이트 저장 → 원격 경로 회신
 /// (ADR-0054). `finalize_capture_upload` 와 동형의 일반화 버전이다.
 ///
 /// **인가(조사 §6/E)**: 전용 bulk 연결은 workspace holder 가 아니므로
@@ -1318,7 +1318,7 @@ pub(crate) fn begin_bulk_transfer(
 /// 같은 터널을 통과했다는 사실이 이미 SSH 위임 인가의 증거이며(ADR-0054 decision#5),
 /// holder 존재 확인은 "이 워크스페이스가 실제 attach 중"이라는 타겟 유효성 검증이다.
 ///
-/// `dir` 은 저장 폴더(07 이 주입, `None` 이면 홈 미확인). 클립보드 기록 같은
+/// `dir` 은 저장 폴더(호출자가 `resolve_bulk_transfer_dir` 로 주입, `None` 이면 홈 미확인). 클립보드 기록 같은
 /// 소비자-특화 후처리는 하지 않는다 — bulk 는 경로만 `BulkResult` 로 회신한다.
 pub(crate) fn finalize_bulk_transfer(
     engine: &mut CoreState,
@@ -1363,7 +1363,7 @@ pub(crate) fn finalize_bulk_transfer(
     let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
 }
 
-/// (04) file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
+/// file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
 /// 하나를 처리한다. `client_id` 가 이 engine 이 호스팅하는 어떤 workspace 든
 /// 점유(holder)해야 신뢰한다(구조 op forward/캡처 업로드와 동일한 "attach 점유 =
 /// 권한" 원칙 — 로컬 plugin IPC 의 `FsRead` 권한 게이트와는 다른 신뢰
@@ -4082,7 +4082,7 @@ mod forward_exec_tests {
 
 #[cfg(test)]
 mod bulk_capacity_tests {
-    //! (07) 저장 폴더 사용량 합산 + 용량 경계 판정.
+    //! 저장 폴더 사용량 합산 + 용량 경계 판정.
     use super::{dir_used_bytes, exceeds_capacity};
 
     #[test]

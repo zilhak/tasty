@@ -235,7 +235,7 @@ fn mirror_close_active_surface_forwards_close_surface() {
     let queued = &engine.pending_structural_forward[0];
     assert!(
         queued.user_triggered,
-        "AppState 직접 호출 경로는 항상 GUI 유래(08)"
+        "AppState 직접 호출 경로는 항상 GUI 유래"
     );
     match &queued.op {
         StructuralOp::CloseSurface { surface_id } => assert_eq!(*surface_id, sid),
@@ -334,7 +334,7 @@ fn mirror_add_tab_forwards_new_tab() {
 
 // ---- 09: close 시 client-only 인접 focus 후보 계산 ----
 
-/// 09 — 같은 pane 안 탭이 2개일 때 마지막 탭을 닫으면(닫히는 탭이 마지막이므로) 이전
+/// close focus fallback — 같은 pane 안 탭이 2개일 때 마지막 탭을 닫으면(닫히는 탭이 마지막이므로) 이전
 /// 탭의 focused surface 가 1순위 인접 후보로 담긴다.
 #[test]
 fn mirror_close_active_tab_computes_sibling_candidate() {
@@ -361,7 +361,7 @@ fn mirror_close_active_tab_computes_sibling_candidate() {
     }
 }
 
-/// 09 — split 된 tab 안에서 focus 된 surface 를 닫으면, 같은 tab 안의 형제 surface
+/// close focus fallback — split 된 tab 안에서 focus 된 surface 를 닫으면, 같은 tab 안의 형제 surface
 /// 가 인접 후보로 담긴다(pane 자체가 사라지지 않으므로 tab 레벨로 안 올라간다).
 #[test]
 fn mirror_close_active_surface_split_computes_sibling_candidate() {
@@ -589,7 +589,7 @@ fn close_pane_then_restore_reinserts_pane() {
     assert_eq!(engine.closed_items.len(), 0, "복원 후 스택은 비어야 한다");
 }
 
-/// 09 — pane 레벨 close(`close_active_pane`)는 후보를 계산하지 않는다(로컬도
+/// close focus fallback — pane 레벨 close(`close_active_pane`)는 후보를 계산하지 않는다(로컬도
 /// cascade 시 "워크스페이스 첫 pane" 으로 무조건 이동하는 것과 같은 스코프 결정).
 #[test]
 fn mirror_close_active_pane_has_no_focus_candidates() {

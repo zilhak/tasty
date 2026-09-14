@@ -44,7 +44,7 @@ impl App {
         engine.publish_snapshot(LuaSnapshot { tree });
     }
 
-    /// 스크립트 TOFU 변경 확인 팝업(06)의 결정 슬롯 drain.
+    /// 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain.
     ///
     /// popup wrapper 가 `pending_script_confirm.result` 를 채우면 frame begin 에 검사 —
     /// `true` 면 레지스트리 해시를 `new_hash` 로 갱신·영속(config.toml)하고 워커에서 실행,

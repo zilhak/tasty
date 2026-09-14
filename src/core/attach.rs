@@ -55,7 +55,7 @@ pub enum AttachError {
 // hard 점유(원격 attach)와 soft 점유(표시만)를 하나의 레지스트리가 관리한다.
 // hard 는 기존 `AttachLock`(holder=StreamClient) 저장을 **그대로 보존** 하고, soft 는
 // 별도 테이블(`soft`)에 additive 로 얹는다. 두 계층은 `occupancy_of` 로 단일 조회되며
-// (작업 02 테두리 렌더 소비), soft 는 절대 hard 술어(`is_hard_occupied`)를 true 로
+// (테두리 렌더 `draw_occupied_overlays` 가 소비), soft 는 절대 hard 술어(`is_hard_occupied`)를 true 로
 // 만들지 않는다(입력차단/mirror 회귀 0). soft 경로는 StreamHub/gui 비의존이라
 // headless 컴파일·동작한다.
 
@@ -75,7 +75,7 @@ pub enum Holder {
     Subject { label: Option<String> },
 }
 
-/// 한 surface 의 통합 점유 뷰(tier 무관 단일 조회, 작업 02 소비). `occupancy_of` 가
+/// 한 surface 의 통합 점유 뷰(tier 무관 단일 조회, 테두리 렌더가 소비). `occupancy_of` 가
 /// tier 별 내부 저장(`surface_locks`/`soft`)을 이 값으로 투영해 반환한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Occupancy {
@@ -187,9 +187,9 @@ impl OccupancyRegistry {
         self.surface_locks.contains_key(&surface_id)
     }
 
-    /// 통합 점유 조회(작업 02 테두리 렌더 소비). tier 를 한 번에 판별한다. hard 가
+    /// 통합 점유 조회. tier 를 한 번에 판별한다. hard 가
     /// soft 를 가린다(ADR-0040 테두리 우선순위: 점유 surface 는 hard 표시가 soft 를 덮음).
-    /// 점유 없으면 None. 작업 02 테두리 렌더(egui_panels.rs::draw_occupied_overlays)가 소비.
+    /// 점유 없으면 None. 테두리 렌더(egui_panels.rs::draw_occupied_overlays)가 소비.
     pub fn occupancy_of(&self, surface_id: SurfaceId) -> Option<Occupancy> {
         if let Some(lock) = self.surface_locks.get(&surface_id) {
             return Some(Occupancy {

@@ -1,7 +1,7 @@
-//! Keybindings › Scripts 서브탭 — 등록 스크립트(03)에 단축키를 바인딩한다 (ADR-0031).
+//! Keybindings › Scripts 서브탭 — 등록 스크립트(`Settings.scripts`)에 단축키를 바인딩한다 (ADR-0031).
 //!
 //! 고정 액션과 달리 스크립트는 동적이라 `RecordingSlot.field_id` 를 `script:<id>` 규약으로
-//! 재사용한다. 바인딩 소유권은 이 탭에 있고(05 관리 창은 조회·진입만), combo 충돌은
+//! 재사용한다. 바인딩 소유권은 이 탭에 있고(Misc › Scripts 관리 창은 조회·진입만), combo 충돌은
 //! 고정 액션 + 다른 스크립트 바인딩과 함께 검사한다.
 
 use crate::i18n::t;

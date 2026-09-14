@@ -305,7 +305,7 @@ pub(crate) enum DomainIntent {
         /// None 이면 focused pane 의 새 탭 (기존 동작).
         origin_surface_id: Option<u32>,
         /// true 면 대용량 markdown 확인 게이트를 건너뛰고 즉시 연다(에이전트/IPC
-        /// 강제 열기, `02-md-ipc-size-bypass-flag`). 기본 false — 게이트(팝업) 적용.
+        /// 강제 열기). 기본 false — 게이트(팝업) 적용.
         ignore_size_limit: bool,
     },
 }

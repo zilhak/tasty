@@ -1,6 +1,6 @@
 //! Lua 스크립트 TOFU 변경 확인 팝업 (`script_changed_confirm`) — ADR-0031.
 //!
-//! 단축키 발화 시 등록 해시(03)와 현재 파일 해시가 다르면 게이트가 실행을 보류하고
+//! 단축키 발화 시 등록 해시(`ScriptRegistry`)와 현재 파일 해시가 다르면 게이트가 실행을 보류하고
 //! 이 팝업을 띄운다. [실행] 확정 시에만 `App::dispatch_pending_script_confirm` 이 해시를
 //! 갱신·영속하고 워커에서 실행한다. 구조는 `size_confirm.rs` 와 동일하게 순수 view +
 //! 본체 wrapper 로 분리한다.

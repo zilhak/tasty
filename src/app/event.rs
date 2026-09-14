@@ -158,17 +158,17 @@ pub(crate) enum AppEvent {
     /// Debug 라 핸들을 싣지 않는다).
     #[cfg(feature = "gui")]
     AutoAttachReady,
-    /// (03) 스크린샷→클립보드 캡처 워커 스레드가 OS 인터랙티브 캡처를 마치면
+    /// 스크린샷→클립보드 캡처 워커 스레드가 OS 인터랙티브 캡처를 마치면
     /// 보내는 wake 신호. App 이 결과 채널(`screenshot_capture_rx`)을 drain 해
     /// 로컬 클립보드에 기록하거나 mirror 세션으로 업로드한다.
     #[cfg(feature = "gui")]
     ScreenshotCaptureReady,
-    /// (08) mirror 이미지 paste 업로드 워커 스레드가 bulk 업로드를 마치면 보내는 wake
+    /// mirror 이미지 paste 업로드 워커 스레드가 bulk 업로드를 마치면 보내는 wake
     /// 신호. App 이 결과 채널(`image_upload_rx`)을 drain 해 성공 시 원격 경로를 대상
     /// mirror surface 입력에 삽입하거나(실패 시 Warning toast) 처리한다.
     #[cfg(feature = "gui")]
     ImageUploadReady,
-    /// (09) mirror 파일 전송 업로드 워커의 진행 이벤트(청크 전송)가 도착했다는 wake 신호.
+    /// mirror 파일 전송 업로드 워커의 진행 이벤트(청크 전송)가 도착했다는 wake 신호.
     /// App 이 진행 채널(`transfer_progress_rx`)을 drain 해 진행 팝업의 행(바이트/속도/
     /// determinate bar)을 갱신한다.
     #[cfg(feature = "gui")]

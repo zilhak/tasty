@@ -77,7 +77,7 @@ pub(crate) use impl_mirror::{
 };
 pub(crate) use impl_workspace::{WorkspaceCreationParams, apply_create_workspace_inner};
 
-/// (04) 파일 피커 원격 `list_dir_request` id 시퀀스 — 프로세스 내 유일성만 필요
+/// 파일 피커 원격 `list_dir_request` id 시퀀스 — 프로세스 내 유일성만 필요
 /// (capture 의 `upload_id` 시퀀스와 동일 근거).
 static NEXT_LIST_DIR_REQUEST_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);

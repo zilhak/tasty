@@ -1,6 +1,7 @@
-//! (09) 원격 파일 전송 피드백 팝업 2종 — 진행(progress) + 실패(error).
+//! 원격 파일 전송 피드백 팝업 2종 — 진행(progress) + 실패(error).
 //!
-//! 06 bulk 전송(ADR-0054) + 08 이미지 paste 업로드가 실제 전송을 담당하고, 이 모듈은
+//! bulk 파일 전송(ADR-0054) + mirror 터미널의 이미지 붙여넣기 업로드(`app::image_upload`)가
+//! 실제 전송을 담당하고, 이 모듈은
 //! 그 전송에 대한 사용자 피드백 UI 를 PopupDef 로 제공한다(egui::Window 직접 사용 금지).
 //! 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs` 의 본체 대응이다
 //! (gallery-first — 갤러리에서 시각 확정 후 여기 반영).
@@ -14,7 +15,7 @@
 //! - error(`transfer_error`): 기본 dismiss(Esc/scrim), 전송 중 실패만 Retry.
 //!
 //! 상태 공급: `AppState.dialogs.transfer_progress`(진행 행 Vec) / `transfer_error`(실패 큐).
-//! 08 워커가 진행 이벤트로 행을 갱신하고, 완료/실패 시 App 이 팝업을 open/close/승격한다.
+//! 이미지 붙여넣기 업로드 워커가 진행 이벤트로 행을 갱신하고, 완료/실패 시 App 이 팝업을 open/close/승격한다.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
@@ -46,7 +47,7 @@ const BODY_GAP: LogicalPx = LogicalPx(10.0);
 /// 헤더/푸터 콘텐츠 높이 근사(glyph 16 / 제목 14 line ≈ 20).
 const HEADER_CONTENT_H: LogicalPx = LogicalPx(20.0);
 
-/// 진행 팝업 상태 — 진행 중인 파일 행들. 08 워커 진행 이벤트가 `row_by_id` 로 갱신한다.
+/// 진행 팝업 상태 — 진행 중인 파일 행들. 업로드 워커 진행 이벤트가 `row_by_id` 로 갱신한다.
 #[derive(Debug, Default, Clone)]
 pub struct TransferProgress {
     pub rows: Vec<TransferRow>,
@@ -62,7 +63,7 @@ impl TransferProgress {
 /// 한 파일의 진행 상태.
 #[derive(Debug, Clone)]
 pub struct TransferRow {
-    /// UI 상관 id(08 이 발급, 진행 이벤트가 이 id 로 행을 지목).
+    /// UI 상관 id(`app::image_upload` 가 발급, 진행 이벤트가 이 id 로 행을 지목).
     pub id: u64,
     /// 표시 파일명(mono 말줄임).
     pub name: String,
@@ -81,7 +82,7 @@ pub struct TransferError {
     /// 실패 사유(원격 reason 또는 전송/프로토콜 에러 메시지).
     pub reason: String,
     /// `Some` = 전송 중 실패(재시도 가능) → Retry 버튼 + 재전송 페이로드. `None` = 원격
-    /// 거부(07 capacity 등, 재시도 무의미) → Dismiss 단독. 판정은 08 이 [`BULK_REJECT_PREFIX`]
+    /// 거부(수신측 용량 초과 등, 재시도 무의미) → Dismiss 단독. 판정은 업로드 결과 처리가 [`BULK_REJECT_PREFIX`]
     /// 로 한다.
     ///
     /// [`BULK_REJECT_PREFIX`]: crate::app::attach_client::BULK_REJECT_PREFIX
@@ -303,7 +304,7 @@ pub fn draw_transfer_error(
 
     if retry {
         // 전송 중 실패 재시도 — 저장해둔 페이로드를 기존 업로드 트리거 큐에 재투입한다
-        // (clipboard.rs 가 쓰는 그 큐 — 새 트리거 경로가 아니라 재사용). 08 워커가 다시
+        // (clipboard.rs 가 쓰는 그 큐 — 새 트리거 경로가 아니라 재사용). 업로드 워커가 다시
         // 진행 팝업을 띄운다.
         if let Some(err) = state.dialogs.transfer_error.pop_front()
             && let Some(payload) = err.retry

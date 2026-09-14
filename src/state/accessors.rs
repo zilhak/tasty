@@ -97,7 +97,7 @@ impl AppState {
         self.active_workspace(engine).focused_pane
     }
 
-    /// 현재 switch-number overlay 스냅샷. draw 경로(04 탭 `draw_pane_tab_bars` / 05 사이드바)가
+    /// 현재 switch-number overlay 스냅샷. draw 경로(탭 바 `draw_pane_tab_bars` / 사이드바)가
     /// 매 프레임 읽어 숫자 키캡 오버레이를 표시할 focused pane / 대상을 판단한다.
     #[cfg(feature = "gui")]
     pub(crate) fn switch_overlay(

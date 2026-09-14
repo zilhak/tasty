@@ -618,7 +618,7 @@ where
         });
 }
 
-/// 점유된 surface 의 **tier 별 테두리 + force-detach 오버레이**(ADR-0040 / 작업 02).
+/// 점유된 surface 의 **tier 별 테두리 + force-detach 오버레이**(ADR-0040).
 ///
 /// 점유 tier 를 색으로 구분해 1px 테두리로 표시한다(하나의 시각 채널 = surface 테두리):
 /// - **soft**(협조 신호, write 제한 없음) → green(`accent-occupied-soft`), force-detach 없음.

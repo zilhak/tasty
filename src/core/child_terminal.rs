@@ -2,7 +2,7 @@
 //!
 //! 에이전트가 spawn 한 **자식 터미널 surface** 의 부모/인덱스/상태 매핑을 호스트가
 //! 단일 SoT 로 보관한다. 지금까지 이 기계는 `tasty-plugin-codex`(`CodexState`) 와
-//! `tasty-plugin-claude`(`ClaudeState`) 에 각각 중복 구현돼 있었다 — 04 가 그 범용
+//! `tasty-plugin-claude`(`ClaudeState`) 에 각각 중복 구현돼 있었다 — 이 모듈이 그 범용
 //! 부분(registry + spawn 조합 + self-heal)을 호스트로 내재화한다. 영속화 경로는
 //! 호스트 데이터 디렉토리(`~/.tasty/child-terminals.json`).
 //!

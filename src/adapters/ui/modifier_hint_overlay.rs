@@ -930,7 +930,7 @@ fn prettify_binding(binding: &str) -> String {
         .join("+")
 }
 
-/// 행 출처 → (표시 라벨, plugin 여부). 라벨 해석은 03 책임(모델은 키만 반환).
+/// 행 출처 → (표시 라벨, plugin 여부). 라벨 해석은 이 오버레이 책임(모델은 키만 반환).
 fn row_label(source: &HintRowSource) -> (String, bool) {
     match source {
         HintRowSource::Host { label_key } => (t(label_key).to_string(), false),
@@ -1203,8 +1203,8 @@ mod tests {
         assert_eq!(grown.size(), egui::vec2(250.0, 420.0));
     }
 
-    // 빈 섹션 억제·정렬은 modifier-hint-02(build_hint_sections)에서 이미 테스트됨. 여기서는
-    // 03 이 그 결과를 그대로 소비함만 확인(계약 회귀 방지).
+    // 빈 섹션 억제·정렬은 `build_hint_sections` 쪽 테스트(modifier_hint.rs)가 이미 본다. 여기서는
+    // 오버레이가 그 결과를 그대로 소비함만 확인(계약 회귀 방지).
     #[test]
     fn consumes_build_hint_sections() {
         use tasty_settings::KeybindingSettings;

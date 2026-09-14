@@ -36,11 +36,11 @@ pub enum SwitchTarget {
     Category,
 }
 
-/// draw 경로(04 탭 / 05 사이드바)가 매 프레임 읽는 switch-number overlay 스냅샷.
+/// draw 경로(탭 바 / 사이드바)가 매 프레임 읽는 switch-number overlay 스냅샷.
 ///
 /// `MainView` 가 `ModifiersChanged` 마다 [`switch_target_for`] 로 갱신한다. 창
 /// 비활성/포커스 상실 시 `None` 으로 clear 된다. `pane_id` 는 `Tab` 대상일 때만
-/// `Some` — 04 가 오버레이를 그릴 focused pane 을 식별하는 데 쓴다.
+/// `Some` — 탭 바 draw 경로가 오버레이를 그릴 focused pane 을 식별하는 데 쓴다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchOverlayState {
     /// 현재 held modifier 가 가리키는 전환 대상.

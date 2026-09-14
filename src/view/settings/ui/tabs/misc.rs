@@ -1,4 +1,4 @@
-//! Misc 탭 콘텐츠 — Scripts(전 플랫폼, Lua 스크립트 관리 05) + tastyrc 편집(Windows 전용).
+//! Misc 탭 콘텐츠 — Scripts(전 플랫폼, Lua 스크립트 관리) + tastyrc 편집(Windows 전용).
 //!
 //! 구 "Misc" 탭은 General L1 의 L2 섹션으로 분해됨 — Accessibility/Performance 는
 //! 각자 `accessibility.rs`/`performance.rs` 가 소유한다. 여기에는 Scripts 관리 창과
@@ -7,8 +7,8 @@
 //! Scripts 관리 창 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
 //! `ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge` (구조 전사).
 //! 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/script_manager.rs`.
-//! 데이터는 `Settings.scripts`(03, `ScriptRegistry`), 바운드 단축키는
-//! `Settings.keybindings`(04)에서 **조회만**(편집은 Keybindings › Scripts 소유).
+//! 데이터는 `Settings.scripts`(`ScriptRegistry`), 바운드 단축키는
+//! `Settings.keybindings`에서 **조회만**(편집은 Keybindings › Scripts 소유).
 
 use std::collections::HashMap;
 use tasty_type_geometry::length::LogicalPx;
@@ -131,7 +131,7 @@ pub fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<Str
         });
 }
 
-// ── Scripts 관리 창 (05) ───────────────────────────────────────────────────
+// ── Scripts 관리 창 ───────────────────────────────────────────────────────
 
 /// Misc › Scripts — 등록 Lua 스크립트 목록 관리(추가/이름변경/제거) + 바운드
 /// 단축키 표시 + changed(해시 불일치) 시각화. 반환 `true` = bind 버튼 클릭

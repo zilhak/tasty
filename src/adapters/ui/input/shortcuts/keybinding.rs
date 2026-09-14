@@ -529,7 +529,7 @@ impl MainView {
         false
     }
 
-    /// (03) 스크린샷→클립보드: `screenshot_to_clipboard`. 포커스된 surface 기준으로
+    /// 스크린샷→클립보드: `screenshot_to_clipboard`. 포커스된 surface 기준으로
     /// 로컬/원격(mirror) 을 **여기서** 판별해 `engine.pending_screenshot_captures`
     /// 에 push 만 한다 — 실제 OS 캡처(블로킹)는 `App::poll_screenshot_captures` 가
     /// 백그라운드 스레드에서 수행(메인 루프 무블록). 판별을 트리거 시점에 끝내 두는

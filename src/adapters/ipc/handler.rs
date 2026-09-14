@@ -411,7 +411,7 @@ pub fn record_plugin_rss_samples(
     }
 }
 
-/// engine-substate handlers — UI에 의존하지 않음. 단계 07 권한 게이트 대상.
+/// engine-substate handlers — UI에 의존하지 않음. 권한 게이트(`check_permission_gate`) 대상.
 ///
 /// 현재는 시그니처가 `&mut AppState`이지만 본문이 GUI를 만지지 않는다. 향후
 /// AppState 메서드들이 `CoreState`로 이전되면 시그니처를 `&mut CoreState`로
@@ -784,10 +784,10 @@ fn route_engine_handler(
         // 전역 싱글턴이라 core/state/engine 미사용. reload/dispatch 대응물 없음
         // (전략은 판정 함수, "발화" 대상 아님).
         "completion_strategy.list" => completion_strategy::handle_list(id),
-        // markdown 제자리 이동 (04) — 주소창(03) 플러그인이 자기 surface 를 새 파일로 교체.
+        // markdown 제자리 이동 — markdown plugin 의 주소창이 자기 surface 를 새 파일로 교체.
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),
-        // generic per-kind 최근목록 조회 — 주소창(03) 드롭다운 데이터 공급원(markdown
+        // generic per-kind 최근목록 조회 — markdown 주소창 드롭다운 데이터 공급원(markdown
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
         "recent.query" => recent::handle_query(state, id, request.params.clone()),
@@ -946,7 +946,7 @@ fn route_engine_handler(
         "settings.get_plugin_setting" => {
             settings::handle_get_plugin_setting(engine, caller, id, &request.params)
         }
-        // settings.remote_transfer (07 원격 전송 저장 폴더 + 용량 상한 get/set)
+        // settings.remote_transfer (원격 전송 저장 폴더 + 용량 상한 get/set)
         "settings.get_remote_transfer" => settings::handle_get_remote_transfer(engine, id),
         "settings.set_remote_transfer" => {
             settings::handle_set_remote_transfer(state, engine, id, &request.params)

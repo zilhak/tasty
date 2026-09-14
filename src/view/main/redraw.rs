@@ -1955,7 +1955,7 @@ impl MainView {
             .as_ref()
             .map(|c| !c.paths.is_empty())
             .unwrap_or(false);
-        // (03) mirror(attach 원격 점유) explorer 는 browse-only — 로컬 fs 를 건드리는
+        // mirror(attach 원격 점유) explorer 는 browse-only(ADR-0059) — 로컬 fs 를 건드리는
         // 항목(붙여넣기/삭제/이름변경/새탭/시스템에서 열기/잘라내기)은 메뉴에서부터
         // 숨긴다. 액션별 개별 가드(아래 각 핸들러)는 그대로 유지한다(방어적 이중화 —
         // 이 native 메뉴가 아닌 다른 경로로 같은 핸들러가 불릴 가능성 대비).
@@ -1993,7 +1993,7 @@ impl MainView {
 
     /// explorer 컨텍스트 메뉴 아이템 목록 구성 (design §3.3). `is_mirror` 면 로컬 fs
     /// 쓰기 항목(붙여넣기/잘라내기/이름변경/삭제/시스템에서 열기/새탭으로 열기)을
-    /// 숨긴다(03) — copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 fs 를 쓰지
+    /// 숨긴다 — copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 fs 를 쓰지
     /// 않거나(즐겨찾기 추가는 클릭 시 별도 가드) 안전해 그대로 노출한다.
     fn build_explorer_context_menu(
         multi: bool,
@@ -2017,7 +2017,7 @@ impl MainView {
             ));
         }
         // 단일 폴더: 새 탭으로 열기 / 이 폴더로 루트 설정 (빈 영역=cwd 자기
-        // 자신엔 무의미 → 제외). 새 탭으로 열기는 mirror 에서 숨김(03 — 로컬 전용
+        // 자신엔 무의미 → 제외). 새 탭으로 열기는 mirror 에서 숨김(로컬 전용
         // 유령 tab 생성 방지). 이 폴더로 루트 설정은 순수 로컬 뷰 이동이라 mirror 에서도 노출.
         if is_folder {
             if !is_mirror {
@@ -2041,7 +2041,7 @@ impl MainView {
                 ));
             }
         } else {
-            // 파일/폴더/다중: 복사 · 잘라내기. 잘라내기는 mirror 에서 숨김(03 — 원격
+            // 파일/폴더/다중: 복사 · 잘라내기. 잘라내기는 mirror 에서 숨김(원격
             // 경로가 전역 클립보드에 남아 다른 로컬 explorer 붙여넣기를 오염시킴).
             // 복사는 fs 접근이 없어 mirror 에서도 안전하게 노출.
             items.push(MenuItem::new(
@@ -2088,7 +2088,7 @@ impl MainView {
         items
     }
 
-    /// (03, ADR-0059) mirror explorer 쓰기 조작 차단 안내 — `apply_explorer_action`
+    /// (ADR-0059) mirror explorer 쓰기 조작 차단 안내 — `apply_explorer_action`
     /// 의 `OpenFile` mirror 가드(`egui_panels.rs`)와 동일한 toast kind/scope. 컨텍스트
     /// 메뉴/단축키의 각 쓰기 핸들러(paste/trash/rename/open_in_system/add_favorite/
     /// open_in_new_tab/cut)가 공유한다.
@@ -2128,7 +2128,7 @@ impl MainView {
 
     /// 복사(cut=false, 아이템 10) / 잘라내기(cut=true, 아이템 11) 클립보드 설정.
     /// 컨텍스트 메뉴와 키보드 단축키(`handle_explorer_shortcut`) 양쪽에서 공유한다.
-    /// (03) 잘라내기(cut=true)만 mirror 에서 차단한다 — 원격 경로가 전역
+    /// 잘라내기(cut=true)만 mirror 에서 차단한다 — 원격 경로가 전역
     /// `explorer_clipboard` 에 남으면 이후 무관한 로컬(비-mirror) explorer 에
     /// 붙여넣을 때 그 원격 경로 문자열이 소스로 쓰인다. 복사(cut=false)는 fs 접근이
     /// 없어 무해하므로 그대로 둔다.
@@ -2156,7 +2156,7 @@ impl MainView {
         cwd: &std::path::Path,
         is_folder: bool,
     ) {
-        // (03, ADR-0059) mirror explorer 는 browse-only — 표시된 경로는 원격
+        // (ADR-0059) mirror explorer 는 browse-only — 표시된 경로는 원격
         // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
         // 문자열로 오조작(우연히 동일 경로 존재)하거나 조용히 실패한다.
         if self.core_state.is_mirror_surface(surface_id) {
@@ -2186,7 +2186,7 @@ impl MainView {
 
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
     fn explorer_menu_trash(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        // (03, ADR-0059) mirror explorer 는 browse-only.
+        // (ADR-0059) mirror explorer 는 browse-only.
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2208,7 +2208,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
     ) {
-        // (03, ADR-0059) mirror explorer 는 browse-only.
+        // (ADR-0059) mirror explorer 는 browse-only.
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2221,7 +2221,7 @@ impl MainView {
 
     /// 이름 변경 (아이템 40).
     fn explorer_menu_rename(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        // (02/03, ADR-0059) mirror explorer 는 browse-only — 이 가드가 먼저 막아서
+        // (ADR-0059) mirror explorer 는 browse-only — 이 가드가 먼저 막아서
         // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
         // `path.exists()` 게이트까지 도달하지 않음).
         if self.core_state.is_mirror_surface(surface_id) {
@@ -2254,7 +2254,7 @@ impl MainView {
         cwd: &std::path::Path,
         is_empty_target: bool,
     ) {
-        // (02, ADR-0059) mirror explorer 의 경로는 원격 호스트 경로라, 전역·surface
+        // (ADR-0059) mirror explorer 의 경로는 원격 호스트 경로라, 전역·surface
         // 무관 즐겨찾기 저장소(`~/.tasty/explorer-favorites.toml`)에 그대로 넣으면
         // 로컬/다른 호스트 explorer 의 사이드바를 오염시킨다. 팝업을 아예 열지 않고
         // 여기서 차단한다(`RenameTarget::ExplorerAddFavorite` 이 surface_id 를 갖지
@@ -2287,7 +2287,7 @@ impl MainView {
     /// 새 탭으로 열기 (아이템 60) — 대상 폴더를 cwd 로 하는 새 explorer 를
     /// 우클릭 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
     ///
-    /// (03) mirror 워크스페이스에서는 차단한다: `add_kind_tab_by_owner`
+    /// mirror 워크스페이스에서는 차단한다: `add_kind_tab_by_owner`
     /// (`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 `forward_mirror_structural`
     /// 을 거치지 않고 로컬 pane 을 직접 mutate한다. mirror 트리 동기화
     /// (`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격
@@ -2329,7 +2329,7 @@ impl MainView {
         y: f32,
     ) {
         use crate::platform::native_menu::MenuItem;
-        // (03) 즐겨찾기 행의 "새 탭으로 열기" 도 `add_kind_tab_by_owner` 를 공유하는
+        // 즐겨찾기 행의 "새 탭으로 열기" 도 `add_kind_tab_by_owner` 를 공유하는
         // 동일 mirror 문제(`explorer_menu_open_in_new_tab` 주석 참고) — mirror 에서는
         // 메뉴에서부터 숨긴다. "이 폴더로 루트 설정"/"즐겨찾기에서 제거"는 로컬 뷰
         // 상태만 바꾸는 안전한 동작이라 그대로 노출.
@@ -2695,7 +2695,7 @@ mod tests {
         );
     }
 
-    // (03) mirror explorer 는 로컬 fs 쓰기 항목(붙여넣기/잘라내기/이름변경/삭제/
+    // mirror explorer 는 로컬 fs 쓰기 항목(붙여넣기/잘라내기/이름변경/삭제/
     // 시스템에서 열기/새탭으로 열기)이 메뉴에서부터 숨는다. copy_path/복사/즐겨찾기
     // 추가/이 폴더로 루트 설정은 mirror 에서도 그대로 노출된다.
 

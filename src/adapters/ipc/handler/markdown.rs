@@ -1,7 +1,7 @@
-//! `markdown.*` IPC 메서드 — 제자리 이동(in-place navigation, 04).
+//! `markdown.*` IPC 메서드 — 제자리 이동(in-place navigation).
 //!
 //! `markdown.navigate`: 주어진 surface 를 **그 자리에서** 다른 파일의 markdown 으로
-//! 교체한다(새 탭 아님). 주소창(03) 플러그인이 자기 surface_id + 새 경로로 호출한다.
+//! 교체한다(새 탭 아님). markdown plugin 의 주소창이 자기 surface_id + 새 경로로 호출한다.
 //! 확장자 무관하게 markdown 으로 연다.
 //!
 //! 교체는 `ConvertSurface`(kind="markdown", params={file}) 재사용 — 같은 surface_id.

@@ -1,5 +1,5 @@
-//! (08) mirror 터미널 이미지 paste → 원격 bulk 업로드 → 원격 경로 삽입.
-//! (09) 그 업로드에 진행 팝업(determinate) + 실패 팝업(승격)을 배선한다.
+//! mirror 터미널 이미지 paste → 원격 bulk 업로드 → 원격 경로 삽입.
+//! 그 업로드에 진행 팝업(determinate) + 실패 팝업(승격)을 배선한다.
 //!
 //! `MainView::paste_to_terminal` 의 이미지 분기가 focused surface 가 mirror workspace
 //! 소속일 때 `CoreState::pending_image_uploads` 큐에 PNG 바이트 + 대상 surface 를 push
@@ -9,13 +9,13 @@
 //!
 //! ```text
 //! [about_to_wait] poll_image_uploads
-//!   ├─ trigger_pending_image_uploads: 큐 drain → (09) 진행 행 추가 + 진행 팝업 open →
+//!   ├─ trigger_pending_image_uploads: 큐 drain → 진행 행 추가 + 진행 팝업 open →
 //!   │     워커 스레드 spawn (워커: upload_file_over_bulk 가 begin/chunk/commit →
 //!   │     BulkResult 수신까지 블록, 청크마다 on_progress → 진행 채널)
 //!   └─ drain_image_upload_results: 결과 채널 drain
-//!        ├─ (09) 진행 행 제거(비면 진행 팝업 close)
+//!        ├─ 진행 행 제거(비면 진행 팝업 close)
 //!        ├─ Ok(원격경로): 대상 mirror surface 입력에 dispatch_paste(원격 경로 삽입)
-//!        └─ Err(사유): (09) 실패 팝업으로 승격(전송 중 실패=Retry / 원격 거부=Dismiss)
+//!        └─ Err(사유): 실패 팝업으로 승격(전송 중 실패=Retry / 원격 거부=Dismiss)
 //! [AppEvent::TransferProgressTick] drain_transfer_progress: 진행 이벤트 → 행 갱신
 //! ```
 //!
@@ -32,7 +32,7 @@ use crate::adapters::ui::popup::transfer::{
 use crate::app::App;
 use crate::view::ui::View as _;
 
-/// (09) UI 진행 행 상관 id 발급기 — bulk transfer_id 와 독립(순수 UI 상관용). 진행
+/// UI 진행 행 상관 id 발급기 — bulk transfer_id 와 독립(순수 UI 상관용). 진행
 /// 채널 메시지가 이 id 로 행을 지목한다.
 static NEXT_UI_TRANSFER_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -48,17 +48,17 @@ pub(crate) struct ImageUploadOutcome {
     pub(crate) surface_id: u32,
     /// 삽입 시 bracketed paste 로 감쌀지.
     pub(crate) bracketed: bool,
-    /// (09) 이 업로드의 UI 진행 행 id — 완료 시 행 제거에 사용.
+    /// 이 업로드의 UI 진행 행 id — 완료 시 행 제거에 사용.
     pub(crate) transfer_id: u64,
-    /// (09) 실패 팝업 표시 + 재시도 재구성용 파일명.
+    /// 실패 팝업 표시 + 재시도 재구성용 파일명.
     pub(crate) file_name: String,
-    /// (09) 재시도 재전송용 원본 바이트(Ok 면 드롭, Err+retryable 이면 재큐잉).
+    /// 재시도 재전송용 원본 바이트(Ok 면 드롭, Err+retryable 이면 재큐잉).
     pub(crate) png_bytes: Vec<u8>,
     /// 성공 시 원격 절대경로, 실패 시 사유(용량 초과·전송/프로토콜 에러 등).
     pub(crate) result: anyhow::Result<String>,
 }
 
-/// (09) 업로드 워커 → 메인 루프 진행 이벤트. `on_progress` 콜백이 청크마다 보낸다.
+/// 업로드 워커 → 메인 루프 진행 이벤트. `on_progress` 콜백이 청크마다 보낸다.
 pub(crate) struct TransferProgressMsg {
     /// 대상 UI 진행 행 id.
     pub(crate) id: u64,
@@ -79,7 +79,7 @@ impl App {
     }
 
     /// 모든 main window + 세션리스 engine + parked state 의 `pending_image_uploads`
-    /// 큐를 drain 해 각 요청마다 (09) 진행 행을 추가·진행 팝업을 열고 bulk 업로드 워커
+    /// 큐를 drain 해 각 요청마다 진행 행을 추가·진행 팝업을 열고 bulk 업로드 워커
     /// 스레드를 spawn 한다(메인 루프 무블록 — bulk 업로드는 BulkResult 수신까지 블록할
     /// 수 있다). 세션 `(port, remote_ws)` 는 메인 스레드에서 미리 뽑아 넘긴다(백그라운드는
     /// `&self` 를 들 수 없다).
@@ -104,7 +104,7 @@ impl App {
             } = req;
             let transfer_id = next_ui_transfer_id();
             let total = png_bytes.len() as u64;
-            // (09) 진행 행 추가 + 진행 팝업 open(대상 surface 소유 창에).
+            // 진행 행 추가 + 진행 팝업 open(대상 surface 소유 창에).
             self.begin_transfer_progress_row(surface_id, transfer_id, &file_name, total);
             // 세션에서 (port, remote_ws) 추출 — 없으면(정리됨) 실패로 처리한다.
             let target = self.bulk_target_for(mirror_ws_id);
@@ -157,7 +157,7 @@ impl App {
         }
     }
 
-    /// (09) `AppEvent::TransferProgressTick` — 워커 진행 이벤트를 해당 행에 적용한다.
+    /// `AppEvent::TransferProgressTick` — 워커 진행 이벤트를 해당 행에 적용한다.
     /// 어느 창의 `transfer_progress` 가 그 행 id 를 갖는지 순회로 찾는다(행 id 는 전역
     /// 유일). 취소돼 행이 없으면(팝업 dismiss) 조용히 무시.
     pub(crate) fn drain_transfer_progress(&mut self) {
@@ -184,7 +184,7 @@ impl App {
         }
     }
 
-    /// (09) 진행 행 하나를 대상 surface 소유 창에 추가하고 진행 팝업을 연다(없으면 새로).
+    /// 진행 행 하나를 대상 surface 소유 창에 추가하고 진행 팝업을 연다(없으면 새로).
     /// 팝업은 focus 를 훔치지 않게 `open_centered`(사용자가 계속 타이핑 가능; 클릭은
     /// focus 없이도 동작).
     fn begin_transfer_progress_row(
@@ -216,9 +216,9 @@ impl App {
         }
     }
 
-    /// 워커가 보낸 업로드 결과를 적용한다 — (09) 진행 행 제거(비면 진행 팝업 close) 후
+    /// 워커가 보낸 업로드 결과를 적용한다 — 진행 행 제거(비면 진행 팝업 close) 후
     /// 성공이면 원격 경로를 대상 mirror surface 입력에 삽입(forwarder 로 원격 전달),
-    /// 실패면 (09) 실패 팝업으로 승격한다(원격 거부=Dismiss / 전송 중 실패=Retry).
+    /// 실패면 실패 팝업으로 승격한다(원격 거부=Dismiss / 전송 중 실패=Retry).
     pub(crate) fn drain_image_upload_results(&mut self) {
         while let Ok(outcome) = self.image_upload_rx.try_recv() {
             let ImageUploadOutcome {
@@ -230,7 +230,7 @@ impl App {
                 png_bytes,
                 result,
             } = outcome;
-            // (09) 진행 행 제거 + 비면 진행 팝업 self-close.
+            // 진행 행 제거 + 비면 진행 팝업 self-close.
             self.finish_transfer_progress_row(surface_id, mirror_ws_id, transfer_id);
             match result {
                 Ok(remote_path) => {
@@ -253,7 +253,7 @@ impl App {
                 }
                 Err(e) => {
                     tracing::warn!("image upload to mirror workspace {mirror_ws_id} failed: {e}");
-                    // (09) 원격 거부(BULK_REJECT_PREFIX)면 재시도 무의미(Dismiss 단독) — 접두
+                    // 원격 거부(BULK_REJECT_PREFIX)면 재시도 무의미(Dismiss 단독) — 접두
                     // 를 벗겨 clean reason 만 표시. 그 외(전송/프로토콜 에러)는 재시도 가능.
                     let raw = e.to_string();
                     let (retryable, reason) =
@@ -280,7 +280,7 @@ impl App {
         }
     }
 
-    /// (09) 완료된 업로드의 진행 행을 제거하고, 남은 행이 없으면 진행 팝업을 닫는다.
+    /// 완료된 업로드의 진행 행을 제거하고, 남은 행이 없으면 진행 팝업을 닫는다.
     fn finish_transfer_progress_row(
         &mut self,
         surface_id: u32,
@@ -305,7 +305,7 @@ impl App {
         }
     }
 
-    /// (09) 실패를 실패 팝업 큐에 push 하고 팝업을 연다(대상 surface 소유 창, 없으면 mirror
+    /// 실패를 실패 팝업 큐에 push 하고 팝업을 연다(대상 surface 소유 창, 없으면 mirror
     /// ws 소유 창). `retry` 가 Some 이면 Retry 버튼 + 재전송 페이로드.
     fn push_transfer_error(
         &mut self,
@@ -334,7 +334,7 @@ impl App {
     }
 }
 
-/// (09) 평균 전송률 문자열 — `sent / elapsed` 을 "12.3 MiB/s" 로. 경과 0 이면 "—".
+/// 평균 전송률 문자열 — `sent / elapsed` 을 "12.3 MiB/s" 로. 경과 0 이면 "—".
 fn format_rate(sent: u64, elapsed: std::time::Duration) -> String {
     let secs = elapsed.as_secs_f64();
     if secs <= 0.0 {

@@ -1,4 +1,4 @@
-//! (03) attach 서버측 — mirror client 가 스트리밍 채널로 보내는 캡처 파일 바이트
+//! 스크린샷→원격 클립보드의 attach 서버측 — mirror client 가 스트리밍 채널로 보내는 캡처 파일 바이트
 //! 청크를 누적하는 순수 버퍼. 파싱/전송 프로토콜은 `stream_hub.rs`(`CaptureUploadMsg`),
 //! holder 검증 + 파일 저장 + 클립보드 기록은 `attach_runtime.rs`
 //! (`finalize_capture_upload`) 담당 — 이 파일은 그 사이의 상태만 보관한다.

@@ -119,14 +119,14 @@ pub struct PumpOutcome {
         u32,
         tasty_plugin_protocol::protocol::RawInputWire,
     )>,
-    /// `(client_id, msg)` — (03) screenshot→remote-clipboard upload chunks/commit
+    /// `(client_id, msg)` — screenshot→remote-clipboard upload chunks/commit
     /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::ipc::stream::StreamControl)
     /// variant (that enum is a concurrent workstream's file) — it rides the same
     /// `StreamTag::Control` channel as a raw JSON payload with an "event" tag value
     /// `StreamControl`'s tagged parse doesn't recognize, so it falls through to the
     /// `Err(_)` arm below rather than colliding with a real `StreamControl` message.
     pub capture_uploads: Vec<(StreamClientId, CaptureUploadMsg)>,
-    /// `(client_id, msg)` — (04) file picker directory-listing requests from a
+    /// `(client_id, msg)` — file picker directory-listing requests from a
     /// mirror client (mirror asking the remote/holder side to list a directory
     /// over the same attach channel, capture-upload pattern). Same "not a
     /// `StreamControl` variant" rationale as `capture_uploads` above — rides the
@@ -141,18 +141,18 @@ pub struct PumpOutcome {
     /// (ADR-0255). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
     /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
-    /// `(client_id, event)` — (06) native bulk 파일 전송의 begin/chunk/commit 을
+    /// `(client_id, event)` — native bulk 파일 전송(ADR-0054)의 begin/chunk/commit 을
     /// **도착 순서 그대로** 담는 단일 벡터. begin(Control)·chunk(Data)·commit(Control)이
     /// 서로 다른 프레임 태그로 오지만 같은 배치에 섞여 drain 될 수 있으므로, 분리된
     /// 두 벡터로 담으면 라우팅이 chunk 를 begin 보다 먼저 처리해(별도 pass) 미등록
-    /// transfer 에 청크를 흘려 **전량 폐기 + 빈 파일 성공 오보**가 난다. 그래서 (03)
+    /// transfer 에 청크를 흘려 **전량 폐기 + 빈 파일 성공 오보**가 난다. 그래서 스크린샷
     /// capture(`CaptureChunk`/`CaptureCommit` 단일 벡터)와 동형으로 순서를 보존한다 —
     /// 라우팅은 이 벡터를 순서대로 match 해 등록/누적/확정한다. 결속 workspace 는 이
     /// 이벤트가 아니라 연결-단위 bulk 결속([`StreamHub::bulk_workspace`])에서 조회.
     pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
 }
 
-/// (06) native bulk 파일 전송의 client→server 이벤트를 **도착 순서 그대로** 담기 위한
+/// native bulk 파일 전송의 client→server 이벤트를 **도착 순서 그대로** 담기 위한
 /// 통합 enum. begin/commit 은 wire 상 [`StreamControl::BulkBegin`](crate::ipc::stream::StreamControl)
 /// / [`StreamControl::BulkCommit`](crate::ipc::stream::StreamControl) (Control 프레임),
 /// chunk 는 [`decode_bulk_chunk`](crate::ipc::stream::decode_bulk_chunk)로 뜯은 Data
@@ -160,7 +160,7 @@ pub struct PumpOutcome {
 /// commit 을 올바른 순서로 처리하게 한다(capture 의 `CaptureUploadMsg` 와 동형).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BulkEvent {
-    /// 전송 시작 — 파일명·총 크기 통지. `total_size` 는 사전 용량 승인(07)의 입력.
+    /// 전송 시작 — 파일명·총 크기 통지. `total_size` 는 수신측 사전 용량 승인(`begin_bulk_transfer`)의 입력.
     Begin {
         transfer_id: u64,
         filename: String,
@@ -177,7 +177,7 @@ pub enum BulkEvent {
     Commit { transfer_id: u64 },
 }
 
-/// (03) screenshot→remote-clipboard mid-session control messages. See
+/// Screenshot→remote-clipboard mid-session control messages. See
 /// [`PumpOutcome::capture_uploads`] doc for why this lives outside `StreamControl`.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
@@ -200,9 +200,9 @@ pub enum CaptureUploadMsg {
     CaptureCommit { upload_id: u64, file_name: String },
 }
 
-/// (04) file picker mid-session control messages — mirror client asking the
+/// File picker mid-session control messages — mirror client asking the
 /// remote/holder side to list a directory. See [`PumpOutcome::list_dir_requests`]
-/// doc for why this lives outside `StreamControl`. Trust model matches the (03)
+/// doc for why this lives outside `StreamControl`. Trust model matches the screenshot
 /// capture-upload channel: "attach occupancy = trust", no separate `FsRead`-style
 /// permission gate (a local plugin IPC method's gate does not apply here
 /// — see ADR-0042/0046).
@@ -471,11 +471,11 @@ impl StreamHub {
                         crate::ipc::stream::StreamTag::Control => {
                             // Client→server Control messages: `StructuralOp`
                             // (split/new-tab/close/move forward), `ClientResize`
-                            // (client-driven mirror geometry), and the (06) native
+                            // (client-driven mirror geometry), and the native
                             // bulk transfer control-plane (`BulkBegin`/`BulkCommit`).
                             // Any other `StreamControl` variant (server→client only)
                             // is ignored; a payload that isn't a `StreamControl` at
-                            // all falls to `Err` and is tried against the (03)
+                            // all falls to `Err` and is tried against the screenshot
                             // capture-upload mini-protocol before being dropped.
                             match serde_json::from_slice(&frame.payload) {
                                 Ok(crate::ipc::stream::StreamControl::StructuralOp {
@@ -839,7 +839,7 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_capture_chunk_and_commit() {
-        // (03) The capture-upload mini-protocol lives outside `StreamControl` — its
+        // The capture-upload mini-protocol lives outside `StreamControl` — its
         // payloads must fail the `StreamControl` parse (unrecognized "event") and
         // fall through to the `CaptureUploadMsg` attempt.
         let hub = StreamHub::new();
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_list_dir_request() {
-        // (04) file picker: same "outside StreamControl" pattern as capture upload,
+        // File picker: same "outside StreamControl" pattern as capture upload,
         // tried only after CaptureUploadMsg fails to parse.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
@@ -977,7 +977,7 @@ mod tests {
 
     #[test]
     fn pump_inbound_bulk_connection_data_is_chunk_not_input() {
-        // (06) bulk 로 태깅된 연결의 Data 는 파일 청크(bulk_events::Chunk)로 분류되고
+        // bulk 로 태깅된 연결의 Data 는 파일 청크(bulk_events::Chunk)로 분류되고
         // input_frames(PTY)로 새지 않는다.
         let hub = StreamHub::new();
         hub.register_bulk(7, 3); // client 7 = bulk 연결(ws 3 결속)

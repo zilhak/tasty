@@ -126,17 +126,17 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::AutoAttachReady => {
                 self.drain_auto_attach_results();
             }
-            // (03) 스크린샷→클립보드 캡처 워커가 완료됐다(wake). 결과를 drain 해
+            // 스크린샷→클립보드 캡처 워커가 완료됐다(wake). 결과를 drain 해
             // 로컬 클립보드 기록 또는 mirror 세션 업로드를 적용한다.
             AppEvent::ScreenshotCaptureReady => {
                 self.drain_screenshot_capture_results();
             }
-            // (08) mirror 이미지 paste 업로드 워커가 완료됐다(wake). 결과를 drain 해
+            // mirror 이미지 paste 업로드 워커가 완료됐다(wake). 결과를 drain 해
             // 원격 경로 삽입 또는 실패 toast 를 적용한다.
             AppEvent::ImageUploadReady => {
                 self.drain_image_upload_results();
             }
-            // (09) mirror 파일 전송 진행 이벤트(청크 전송)가 도착했다. 진행 채널을 drain 해
+            // mirror 파일 전송 진행 이벤트(청크 전송)가 도착했다. 진행 채널을 drain 해
             // 진행 팝업 행(바이트/속도/determinate bar)을 갱신한다.
             AppEvent::TransferProgressTick => {
                 self.drain_transfer_progress();
@@ -433,7 +433,7 @@ impl ApplicationHandler<AppEvent> for App {
         // reflow 결과는 기존 server→client Resize echo 로 mirror 에 반영된다.
         self.dispatch_pending_resize_forwards();
 
-        // (04) 파일 피커 — popup wrapper 가 쌓은 원격 디렉토리 목록 forward 큐를
+        // 파일 피커 — popup wrapper 가 쌓은 원격 디렉토리 목록 forward 큐를
         // drain 해 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::ListDirResult`
         // 로 비동기 수신(아래 apply_attach_client_output 경로).
         self.dispatch_pending_list_dir_forwards();
@@ -469,11 +469,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).
         self.poll_auto_attach();
 
-        // (03) 스크린샷→클립보드: 신규 키바인딩이 쌓은 트리거 큐를 drain 해 캡처
+        // 스크린샷→클립보드: 키바인딩이 쌓은 트리거 큐를 drain 해 캡처
         // 워커를 spawn 하고, 완료된 결과를 로컬 클립보드/mirror 세션에 적용한다.
         self.poll_screenshot_captures();
 
-        // (08) mirror 이미지 paste: 트리거 큐를 drain 해 백그라운드 bulk 업로드를 spawn
+        // mirror 이미지 paste: 트리거 큐를 drain 해 백그라운드 bulk 업로드를 spawn
         // 하고, 완료된 결과(원격 경로 삽입/실패 toast)를 적용한다.
         self.poll_image_uploads();
 
@@ -517,7 +517,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_handler_ipc();
         // 파일 handler picker popup 의 result 슬롯 drain (D.3.C.G.3.c).
         self.dispatch_pending_picker_results();
-        // Native file picker(04) popup 의 result 슬롯 drain — 로컬은 DispatchFile,
+        // Native file picker popup 의 result 슬롯 drain — 로컬은 DispatchFile,
         // 원격은 클립보드 복사 + toast.
         self.dispatch_pending_file_picker_results();
         // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0031).
@@ -799,7 +799,7 @@ impl App {
         }
     }
 
-    /// `about_to_wait()` 지원 — SurfaceInvalidated(단계 06): plugin 이 idle 상태(입력
+    /// `about_to_wait()` 지원 — SurfaceInvalidated: plugin 이 idle 상태(입력
     /// 무)에서 파일 변경을 알리면 그 surface 를 dirty 표시해 다음 redraw 에서 무입력
     /// 재-forward → 기존 poll_reload 가 새 내용을 읽게 한다. paint 에 종속된
     /// egui_mesh.rs 게이트의 유일한 예외 진입점. 어느 window 소관인지 몰라 전 View 를
@@ -1630,7 +1630,7 @@ impl App {
             if let Some(main) = w.as_main_mut() {
                 for &cid in clients {
                     main.core_state.attach.release_all_for_client(cid);
-                    // (06) bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
+                    // bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
                     main.core_state.bulk_transfers.clear_client(cid);
                     // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소.
                     main.core_state.capture_uploads.clear_client(cid);
@@ -1679,16 +1679,16 @@ impl App {
         self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
         self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
 
-        // (03) screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
+        // screenshot→remote-clipboard: mirror client 가 attach 채널로 보낸
         // 캡처 업로드 청크/커밋. holder(그 client 가 점유한 워크스페이스를 가진
         // engine)를 찾아 누적/커밋한다.
         self.apply_capture_uploads_batch(outcome.capture_uploads, &hub);
-        // (04) file picker: mirror client 가 attach 채널로 보낸 디렉토리 목록 조회
+        // file picker: mirror client 가 attach 채널로 보낸 디렉토리 목록 조회
         // 요청. holder(그 client 가 점유한 워크스페이스를 가진 engine)를 찾아 처리.
         self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
         self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
         self.apply_markdown_content_requests_batch(outcome.markdown_content_requests, &hub);
-        // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서 그대로**
+        // native bulk 파일 전송(ADR-0054): begin/chunk/commit 을 **도착 순서 그대로**
         // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
         // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
         // ws 는 연결-단위 bulk 태깅에서 조회.
@@ -2268,7 +2268,7 @@ impl App {
         }
     }
 
-    /// (03) screenshot→remote-clipboard — mirror client 가 보낸 캡처 업로드 청크/커밋
+    /// screenshot→remote-clipboard — mirror client 가 보낸 캡처 업로드 청크/커밋
     /// 하나를 적용한다. `client_id` 가 워크스페이스를 점유(holder)한 engine 을 찾아
     /// 그 engine 의 `capture_uploads` 레지스트리에 누적하거나(청크) 완결 처리한다
     /// (커밋 — `finalize_capture_upload` 가 파일 저장 + 클립보드 기록 + 회신까지 담당).
@@ -2343,7 +2343,7 @@ impl App {
         }
     }
 
-    /// (04) file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
+    /// file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
     /// 하나를 적용한다. `client_id` 가 워크스페이스를 점유(holder)한 engine 을 찾아
     /// `attach_runtime::handle_list_dir_request` 로 위임(holder 검증 + 디렉토리
     /// 읽기 + `list_dir_result` 회신까지 그 함수가 담당).
@@ -2508,7 +2508,7 @@ impl App {
         let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
     }
 
-    /// (06) native bulk 파일 전송 이벤트(begin/chunk/commit) 하나를 결속
+    /// native bulk 파일 전송 이벤트(begin/chunk/commit) 하나를 결속
     /// workspace(`bulk_ws`)를 **소유한** engine 으로 라우팅한다. 호출자가 이 메서드를
     /// `bulk_events` 순서대로 부르므로 begin→chunk→commit 이 올바른 순서로 같은
     /// engine 에 도착한다. bulk 연결은 holder 가 아니므로(조사 §6)
@@ -2533,7 +2533,7 @@ impl App {
             } => {
                 if self
                     .with_bulk_ws_engine(bulk_ws, |engine| {
-                        // (07) 용량 사전판정 — 초과면 등록하지 않고 capacity-exceeded
+                        // 용량 사전판정 — 초과면 등록하지 않고 capacity-exceeded
                         // 회신(청크 0바이트 수신). 통과 시 begin 등록.
                         crate::core::attach_runtime::begin_bulk_transfer(
                             engine,
@@ -2565,7 +2565,7 @@ impl App {
             }
             BulkEvent::Commit { transfer_id } => {
                 let found = self.with_bulk_ws_engine(bulk_ws, |engine| {
-                    // (07) 저장 dir 은 설정값(빈 값이면 기본 폴더) — begin 용량 판정과
+                    // 저장 dir 은 설정값(빈 값이면 기본 폴더) — begin 용량 판정과
                     // 같은 폴더 기준. 소유 engine 의 settings 에서 도출한다.
                     let dir =
                         crate::core::attach_runtime::resolve_bulk_transfer_dir(&engine.settings);

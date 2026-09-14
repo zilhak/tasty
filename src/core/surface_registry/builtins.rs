@@ -1,7 +1,7 @@
 //! 본체 7종 surface의 SurfaceKindDef 등록.
 //!
-//! 03D-A에서는 create/restore/snapshot 함수만 채운다. render/on_close는 추후 단계에서
-//! 추가될 예정 (egui_panels.rs dispatch 통합과 함께).
+//! create/restore/snapshot 함수만 채운다. render/on_close는 아직 없다 — 들어온다면
+//! egui_panels.rs 의 다운캐스트 분기를 dispatch 로 통합할 때다.
 
 use std::sync::Arc;
 

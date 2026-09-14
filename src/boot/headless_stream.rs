@@ -221,10 +221,10 @@ fn push_mesh_error(app: &App, client_id: StreamClientId, surface_id: u32) {
     let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
 }
 
-/// (03) screenshot→remote-clipboard 업로드 청크/커밋.
+/// screenshot→remote-clipboard 업로드 청크/커밋.
 fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for (client_id, msg) in std::mem::take(&mut outcome.capture_uploads) {
-        // (03) screenshot→remote-clipboard: mirror client 가 이 headless
+        // screenshot→remote-clipboard: mirror client 가 이 headless
         // 인스턴스로 화면 캡처를 업로드 — headless 는 단일 engine 이라
         // gui 의 holder 순회가 필요 없다. holder 검증은 finalize 내부.
         use crate::adapters::production::stream_hub::CaptureUploadMsg;
@@ -269,11 +269,11 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
     }
 }
 
-/// 미러가 이 인스턴스에 묻는 파일계 조회 — (04) file picker · git-viewer ·
+/// 미러가 이 인스턴스에 묻는 파일계 조회 — file picker · git-viewer ·
 /// markdown 원문(ADR-0255).
 fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for (client_id, msg) in std::mem::take(&mut outcome.list_dir_requests) {
-        // (04) file picker: mirror client 가 이 headless 인스턴스로
+        // file picker: mirror client 가 이 headless 인스턴스로
         // 디렉토리 목록을 요청 — headless 는 단일 engine 이라 gui 의
         // holder 순회가 필요 없다. holder 검증은 핸들러 내부.
         use crate::adapters::production::stream_hub::ListDirRequestMsg;
@@ -329,10 +329,10 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
     }
 }
 
-/// (06) native bulk 파일 전송 — begin/chunk/commit 을 도착 순서 그대로.
+/// native bulk 파일 전송(ADR-0054) — begin/chunk/commit 을 도착 순서 그대로.
 fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for (client_id, event) in std::mem::take(&mut outcome.bulk_events) {
-        // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서
+        // native bulk 파일 전송: begin/chunk/commit 을 **도착 순서
         // 그대로** 처리한다(단일 벡터라 chunk 가 begin 을 앞지르지 않음 —
         // 분리 벡터 시절의 전량 폐기 + 빈 파일 성공 오보 결함 방지). 결속
         // workspace 는 연결-단위 bulk 태깅에서 조회(begin 이 ws 를 싣지 않음).
@@ -347,7 +347,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
                 filename,
                 total_size,
             } => {
-                // (07) 용량 사전판정 — 초과면 등록하지 않고 capacity-exceeded
+                // 용량 사전판정 — 초과면 등록하지 않고 capacity-exceeded
                 // 회신(청크 0바이트 수신). 통과 시 begin 등록.
                 crate::core::attach_runtime::begin_bulk_transfer(
                     engine,
@@ -373,7 +373,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
                 }
             }
             BulkEvent::Commit { transfer_id } => {
-                // (07) 저장 dir 은 설정값(빈 값이면 기본 폴더) — begin 용량
+                // 저장 dir 은 설정값(빈 값이면 기본 폴더) — begin 용량
                 // 판정과 같은 폴더 기준.
                 let dir = crate::core::attach_runtime::resolve_bulk_transfer_dir(&engine.settings);
                 crate::core::attach_runtime::finalize_bulk_transfer(

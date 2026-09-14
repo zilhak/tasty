@@ -277,19 +277,19 @@ pub(crate) struct App {
     /// 해당 anchor 항목을 제거한다.
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_reconnect: std::collections::HashMap<u32, auto_attach::ReconnectSlot>,
-    /// (03) 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
+    /// 스크린샷→클립보드 캡처 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_tx:
         std::sync::mpsc::Sender<screenshot_capture::ScreenshotCaptureOutcome>,
     #[cfg(feature = "gui")]
     pub(crate) screenshot_capture_rx:
         std::sync::mpsc::Receiver<screenshot_capture::ScreenshotCaptureOutcome>,
-    /// (08) mirror 이미지 paste 업로드 워커 스레드 → 메인 루프 결과 채널.
+    /// mirror 이미지 paste 업로드 워커 스레드 → 메인 루프 결과 채널.
     #[cfg(feature = "gui")]
     pub(crate) image_upload_tx: std::sync::mpsc::Sender<image_upload::ImageUploadOutcome>,
     #[cfg(feature = "gui")]
     pub(crate) image_upload_rx: std::sync::mpsc::Receiver<image_upload::ImageUploadOutcome>,
-    /// (09) mirror 파일 전송 진행 이벤트 채널 — 업로드 워커 on_progress → 메인 루프.
+    /// mirror 파일 전송 진행 이벤트 채널 — 업로드 워커 on_progress → 메인 루프.
     /// 진행 팝업의 determinate bar/바이트/속도를 갱신한다(`drain_transfer_progress`).
     #[cfg(feature = "gui")]
     pub(crate) transfer_progress_tx: std::sync::mpsc::Sender<image_upload::TransferProgressMsg>,

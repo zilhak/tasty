@@ -42,7 +42,7 @@ enum BuiltinAction {
     /// workspace 로 정해지므로 `OpenPopup` 과 분기가 다르다 — 이 창은 그 workspace
     /// 를 벗어나면 숨고 돌아오면 다시 뜬다.
     OpenWorkspacePopup(&'static str),
-    /// 파일 피커(04) — 단순 `OpenPopup` 과 달리 여는 *전* 활성 workspace 의
+    /// 파일 피커(ADR-0053) — 단순 `OpenPopup` 과 달리 여는 *전* 활성 workspace 의
     /// mirror 여부로 로컬/원격을 판별해 `state.dialogs.file_picker` 를 채워야 하므로
     /// 별도 분기.
     OpenFilePicker,

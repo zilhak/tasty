@@ -72,18 +72,18 @@ pub fn binding_leaf(binding: &str) -> &str {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HintRow {
     pub source: HintRowSource,
-    /// 이 행의 원본 바인딩 문자열(예: `"ctrl+shift+t"`). 03 이 키캡으로 분해해 그린다.
+    /// 이 행의 원본 바인딩 문자열(예: `"ctrl+shift+t"`). 오버레이(`modifier_hint_overlay`)가 키캡으로 분해해 그린다.
     pub binding: String,
 }
 
-/// 항목의 출처 — 라벨 해석 방식을 결정한다(모델은 키만 반환, 문자열 해석은 03).
+/// 항목의 출처 — 라벨 해석 방식을 결정한다(모델은 키만 반환, 문자열 해석은 오버레이).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HintRowSource {
     /// 고정 호스트 액션 — 라벨 i18n 키(`settings.keybindings.*_label`).
     Host { label_key: &'static str },
-    /// 사용자 스크립트 — `script_id`. 03 이 `ScriptRegistry` 로 이름을 해석한다.
+    /// 사용자 스크립트 — `script_id`. 오버레이가 `ScriptRegistry` 로 이름을 해석한다.
     Script { script_id: String },
-    /// Plugin command — `plugin_id` + command title i18n 키. 03 이 "plugin_id: title" 로 표기.
+    /// Plugin command — `plugin_id` + command title i18n 키. 오버레이가 "plugin_id: title" 로 표기.
     Plugin {
         plugin_id: String,
         title_i18n_key: String,
@@ -106,7 +106,7 @@ pub enum HintRole {
 }
 
 impl HintRole {
-    /// 역할 설명 i18n 키. 03 이 `t()` 로 해석한다.
+    /// 역할 설명 i18n 키. 오버레이가 `t()` 로 해석한다.
     pub fn desc_key(&self) -> &'static str {
         match self {
             HintRole::MouseCaptureBypass => "modifier_hint.role.mouse_capture_bypass",
@@ -139,7 +139,7 @@ impl HintSection {
 /// Plugin command 하나의 표시용 입력(effective 바인딩 해석 결과).
 ///
 /// [`EffectiveBinding`] 을 재사용해 실제 매칭 키로 환원한 값을 담는다. registry 순회·
-/// override 소스·focus 스코핑은 03 wiring 이 담당하고, 이 모델은 완성된 입력을 받는다
+/// override 소스·focus 스코핑은 오버레이 wiring 이 담당하고, 이 모델은 완성된 입력을 받는다
 /// (순수 함수 테스트 가능성 유지).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginBindingInput {
@@ -248,7 +248,7 @@ pub fn build_hint_sections(
         );
     }
 
-    // 3. Plugin command (전량 노출 — focus 스코핑은 03 결정, open).
+    // 3. Plugin command (전량 노출 — focus 스코핑은 오버레이 wiring 의 결정으로 남은 미결).
     for pb in plugin_bindings {
         for b in &pb.bindings {
             let Some(parsed) = parse_binding(b) else {

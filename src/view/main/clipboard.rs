@@ -5,8 +5,8 @@ use crate::core::intent::{DomainIntent, SendPayload};
 /// 그대로 Core::apply 가 처리하므로 200~ → text → 201~ 순서로 PTY write).
 ///
 /// mirror surface 에 대해서도 그대로 쓸 수 있다 — `SendToSurface` 는 detached mirror
-/// 터미널의 `input_sink` → forwarder → 원격 PTY stdin 으로 투명 전달되므로, 08 의 원격
-/// 경로 삽입(비동기 업로드 완료 후)도 이 진입점을 재사용한다.
+/// 터미널의 `input_sink` → forwarder → 원격 PTY stdin 으로 투명 전달되므로, 이미지 붙여넣기
+/// 업로드의 원격 경로 삽입(비동기 업로드 완료 후)도 이 진입점을 재사용한다.
 pub(crate) fn dispatch_paste(w: &mut MainView, surface_id: u32, bracketed: bool, text: String) {
     if text.is_empty() {
         return;
@@ -85,7 +85,7 @@ impl MainView {
             return;
         };
 
-        // (08) mirror 판정: focused surface 가 mirror workspace 소속이면 그 로컬 ws id.
+        // mirror 판정: focused surface 가 mirror workspace 소속이면 그 로컬 ws id.
         // 로컬 PNG 경로는 원격에서 무의미하므로, mirror 면 원격 업로드 후 원격 경로를
         // 삽입한다(비동기). 비-mirror 는 기존 로컬 경로 삽입을 그대로 유지.
         let mirror_ws_id = self
@@ -96,7 +96,7 @@ impl MainView {
 
         match mirror_ws_id {
             Some(ws_id) => {
-                // mirror: PNG 바이트를 메모리에서 확보해 06 bulk 채널 업로드 트리거 큐에
+                // mirror: PNG 바이트를 메모리에서 확보해 bulk 파일 전송 채널(ADR-0054) 업로드 트리거 큐에
                 // 넣는다. 실제 업로드(블로킹)와 원격 경로 삽입은 App 이 백그라운드에서 처리.
                 match encode_clipboard_image_as_png(&image) {
                     Ok(png_bytes) => {
@@ -142,7 +142,7 @@ fn clipboard_image_file_name() -> String {
 }
 
 /// Encode clipboard image data (RGBA) as PNG into an in-memory byte buffer.
-/// mirror 업로드는 파일을 거치지 않고 이 바이트를 06 채널로 바로 올린다.
+/// mirror 업로드는 파일을 거치지 않고 이 바이트를 bulk 파일 전송 채널로 바로 올린다.
 fn encode_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::new();
     {
@@ -173,7 +173,7 @@ fn save_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Result
 mod tests {
     use super::*;
 
-    /// (08) mirror 업로드가 파일을 거치지 않고 06 채널에 실을 PNG 바이트가, 유효한
+    /// mirror 업로드가 파일을 거치지 않고 bulk 파일 전송 채널에 실을 PNG 바이트가, 유효한
     /// PNG 시그니처를 갖고 원본 RGBA 픽셀·크기 그대로 라운드트립되는지 검증한다.
     #[test]
     fn encode_clipboard_image_as_png_roundtrips_rgba() {

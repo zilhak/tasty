@@ -1,5 +1,5 @@
 //! General › Remote transfer — 원격(mirror) 파일 전송 채널의 수신측 저장 정책
-//! 편집. `RemoteTransferSettings{dir, max_mb}`(06/07 백엔드, 이미 merge)를 두 행으로
+//! 편집. `RemoteTransferSettings{dir, max_mb}`(수신측 백엔드)를 두 행으로
 //! 편집한다.
 //!
 //! 디자인 구조 전사: `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame`

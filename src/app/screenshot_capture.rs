@@ -1,4 +1,4 @@
-//! (03) 원격 attach(mirror) surface 대상 스크린샷→클립보드.
+//! 원격 attach(mirror) surface 대상 스크린샷→클립보드.
 //!
 //! 신규 키바인딩(`KeybindingSettings::screenshot_to_clipboard`) 트리거 → 포커스된
 //! surface 기준으로 로컬/mirror 를 판별(`match_capture_bindings`, 키바인딩 시점에

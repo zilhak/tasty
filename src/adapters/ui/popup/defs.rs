@@ -292,7 +292,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::remote_attach::draw_remote_attach_popup,
                 on_close: Some(super::remote_attach::on_close_remote_attach_popup),
             },
-            // (09) 원격 전송 진행 — scrim 중앙 headless, close_on_outside_click=false
+            // 원격 전송 진행 — scrim 중앙 headless, close_on_outside_click=false
             // (전송 중 실수 dismiss 방지), 모든 행 완료 시 draw_fn 이 self-close.
             PopupDef {
                 id: super::transfer::TRANSFER_PROGRESS_POPUP_ID,
@@ -311,7 +311,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: super::transfer::draw_transfer_progress,
                 on_close: Some(super::transfer::on_close_transfer_progress),
             },
-            // (09) 원격 전송 실패 — scrim 중앙 headless, 기본 dismiss(Esc/scrim). Retry 는
+            // 원격 전송 실패 — scrim 중앙 headless, 기본 dismiss(Esc/scrim). Retry 는
             // 전송 중 실패만(draw_fn 이 판정). danger-fill 버튼 금지.
             PopupDef {
                 id: super::transfer::TRANSFER_ERROR_POPUP_ID,
