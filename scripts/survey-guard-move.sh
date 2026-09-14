@@ -180,7 +180,7 @@ section "M-a 목적지 뿌리를 세는 스캐너 (후보)"
 cmd "grep -rln '\"$TO_ROOT\"' <뿌리 목록 상수를 가진 타깃>"
 # 소속을 정하는 자리는 **상수 목록만이 아니다.** 뿌리를 상수로 선언하지 않고 술어 함수로
 # 판정하는 스캐너가 있고(`fn is_scan_target` 이 경로 접두를 직접 본다), 그런 자리는 `ROOTS`
-# 를 찾는 grep 으로 영원히 안 나온다 — R937 이 "뿌리 목록이 아니라 뿌리를 얻는 표현식" 이었던
+# 를 찾는 grep 으로 영원히 안 나온다 — 뿌리가 "목록이 아니라 뿌리를 얻는 표현식" 이었던
 # 것과 같은 종류의 구멍이다. 그래서 셋을 함께 찾는다: 뿌리 상수 · 소속 술어 · 경로 접두 판정.
 ROOT_DECLS="$(grep -rln -E "ROOTS: &\[|SCAN_ROOTS|fn is_scan_target|starts_with\(\"$TO_ROOT/" --include='*.rs' "${EXCL[@]}" src crates tests 2>/dev/null || true)"
 CANDS=""

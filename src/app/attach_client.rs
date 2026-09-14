@@ -17,9 +17,8 @@
 //!
 //! client mirror 는 내가 직접 다루는 대상이라 로컬 워크스페이스처럼 **데이터가 오는 즉시**
 //! 갱신한다(로컬 PTY 의 TerminalOutput wake 와 동형). 서버측 readonly 뷰(`attach_poll` ①)만
-//! 3초 cadence 로 게이트한다(plan §4). 범위는 작업 J — 자동 매핑(ssh-profiles/
-//! workspace.attach_mapping)은 단계 7. 이 모듈의 `start_gui_attach` 가 단계 7 Phase B2 의
-//! 호출 진입점이다.
+//! 3초 cadence 로 게이트한다. 자동 매핑(ssh-profiles/`workspace.attach_mapping`)은 이
+//! 모듈 밖에서 정해지고, 이 모듈의 `start_gui_attach` 가 그쪽이 부르는 진입점이다.
 
 use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;

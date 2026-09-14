@@ -861,7 +861,7 @@ fn without_the_stripper_a_test_only_change_is_told_to_bump_and_that_is_deliberat
     );
 }
 
-/// ★ R1056 축 — **판정 대상 수는 rc 에 안 들어간다.**
+/// ★ 출력에만 실리는 값 축 — **판정 대상 수는 rc 에 안 들어간다.**
 ///
 /// 이 게이트의 rc 는 `VIOLATIONS` 와 `BEHIND` 가 정한다. 통과줄과 실패줄이 함께 찍는
 /// `판정 대상 N 건` 은 판정에 안 들어가고, 실측(2026-09-08) 그 문구를 바꾸는 변이에서

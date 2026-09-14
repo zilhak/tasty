@@ -513,7 +513,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_lua_commands();
         // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.
         self.dispatch_pending_popup_opens();
-        // 파일 핸들러 IPC action 큐 drain (Phase C1: warn 로그만, Phase C3: 본격 dispatch).
+        // 파일 핸들러 IPC action 큐 drain.
         self.dispatch_pending_handler_ipc();
         // 파일 handler picker popup 의 result 슬롯 drain.
         self.dispatch_pending_picker_results();
