@@ -55,4 +55,4 @@ host 가 plugin 팝업을 여는 generic API 는 이미 존재한다: `PluginMan
 - [ADR-0042: fs.pick_file native dialog host delegation](0042-fs-pick-file-native-dialog-host-delegation.md) — file-open 팝업의 browse 위임
 - `src/core/surface_registry.rs` (`SurfaceKindDef`), `src/core/surface_registry/{egui_mesh,remote_kind... }` — qualify 등록
 - `src/state.rs` (`AppState::enqueue_convert_input_popup`), `src/adapters/ui/popup/convert.rs` (`ConvertAction::RequiresInput`)
-- `crates/tasty-plugin-markdown/tasty-plugin.toml`, `crates/tasty-plugin-markdown/src/main.rs` (`FileOpenState`)
+- `crates/tasty-plugin-markdown/tasty-plugin.toml`, `crates/tasty-plugin-markdown/src/popup.rs` (`FileOpenState`)

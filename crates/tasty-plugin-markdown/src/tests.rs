@@ -468,7 +468,7 @@ fn trigger_params_carry_start_dir_and_origin() {
         dir: Some("/work/proj".to_string()),
         origin_surface_id: Some(7),
     };
-    let params = file_picker_trigger_params(42, &start);
+    let params = popup::file_picker_trigger_params(42, &start);
     assert_eq!(params["owner_popup_instance"], json!(42));
     assert_eq!(params["start_dir"], json!("/work/proj"));
     assert_eq!(params["origin_surface_id"], json!(7));

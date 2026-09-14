@@ -3,7 +3,7 @@
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty markdown` CLI)
 - **배포/통합**: bundled · surface_kind(webview) · 파일 핸들러 — [plugins 개념](../../concepts/plugins.md)
-- **코드**: `crates/tasty-plugin-markdown/`(`crates/tasty-plugin-markdown/src/render.rs` = `pulldown-cmark` → sanitize(`ammonia`) → CSS 주입 HTML 문서 생성, `crates/tasty-plugin-markdown/src/main.rs` surface 라이프사이클/네비게이션/팝업,
+- **코드**: `crates/tasty-plugin-markdown/`(`crates/tasty-plugin-markdown/src/render.rs` = `pulldown-cmark` → sanitize(`ammonia`) → CSS 주입 HTML 문서 생성, `crates/tasty-plugin-markdown/src/main.rs` surface 라이프사이클/네비게이션, `crates/tasty-plugin-markdown/src/popup.rs` egui-mesh 팝업(file-open/large-file-confirm),
   idle 자동 리로드는 SDK 공용 `crates/tasty-plugin-sdk/src/file_watch.rs`) — [ADR-0065](../../adr/0065-markdown-webview-render-channel.md)(EguiMesh→Webview 전환 결정) · [ADR-0028](../../adr/0028-plugin-egui-mesh-render-channel.md)(egui-mesh 채널, 팝업만 계속 사용)
 - **권한**: `surface.read/write`, `fs.read`(파일 읽기 + 링크 dispatch), `file_handler.*`, `ui.settings_page`, `ui.popup`(file-open/large-file-confirm 만 자가 렌더 — 본문은 아님) (매니페스트 `permissions`)
 - **화면**: [screens/markdown.md](screens/markdown.md)

@@ -13,12 +13,13 @@
 
 use tasty_doc_guards::repo_root;
 
-/// egui UI 를 그려 폰트 스택을 만드는 번들 plugin 넷. 이 목록이 곧 모수다.
-const UI_PLUGINS: &[&str] = &[
-    "tasty-plugin-clipboard-viewer",
-    "tasty-plugin-git-viewer",
-    "tasty-plugin-image",
-    "tasty-plugin-markdown",
+/// egui UI 를 그려 폰트 스택을 만드는 번들 plugin 넷과, 그 plugin 의 `install_fonts` 가 사는
+/// 파일(크레이트 상대). 이 목록이 곧 모수다 — 파일을 옮기면 여기도 옮긴다(못 읽으면 panic).
+const UI_PLUGINS: &[(&str, &str)] = &[
+    ("tasty-plugin-clipboard-viewer", "src/main.rs"),
+    ("tasty-plugin-git-viewer", "src/main.rs"),
+    ("tasty-plugin-image", "src/main.rs"),
+    ("tasty-plugin-markdown", "src/popup.rs"),
 ];
 
 /// host 가 resolve 한 폰트 경로를 자식에 물려주는 env 이름. 넷이 이 철자를 읽어야 한다.
@@ -33,8 +34,8 @@ fn every_ui_plugin_reads_the_same_locale_font_env_and_calls_the_shared_helper() 
     let mut missing_env = Vec::new();
     let mut missing_helper = Vec::new();
 
-    for plugin in UI_PLUGINS {
-        let path = root.join("crates").join(plugin).join("src/main.rs");
+    for (plugin, file) in UI_PLUGINS {
+        let path = root.join("crates").join(plugin).join(file);
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
         checked += 1;

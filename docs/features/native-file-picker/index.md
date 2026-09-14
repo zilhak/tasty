@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC)
 - **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0162](../../adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
-- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/main.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
+- **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
 ## 목적
@@ -318,8 +318,9 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `filters`), `src/core/mod.rs`(`next_file_picker_trigger_request_id` — `FpLoadState::Loading`
   의 내부 `request_id` 와 별개 네임스페이스), `src/intent.rs`(`Intent`/`UiIntent::
   from_agent_plugin` — 이 트리거가 첫 실사용처).
-- plugin caller: `crates/tasty-plugin-markdown/src/main.rs`(`trigger_file_picker`,
-  `pending_file_picker`, `on_event` 의 `"file_picker.result"` 수신, `FILE_PICKER_RESULT_EVENT`).
+- plugin caller: `crates/tasty-plugin-markdown/src/popup.rs`(`trigger_file_picker`,
+  `FILE_PICKER_RESULT_EVENT`), `crates/tasty-plugin-markdown/src/main.rs`(`pending_file_picker`,
+  `on_event` 의 `"file_picker.result"` 수신).
 - 원격 요청 큐: `src/core/mod.rs`(`PendingListDirForward`, `next_list_dir_request_id`),
   `src/core/state.rs`(`CoreState.pending_list_dir_forward`).
 - 원격 전송(client): `src/app/attach_client.rs`(`send_list_dir_request`, `parse_list_dir_result`,
