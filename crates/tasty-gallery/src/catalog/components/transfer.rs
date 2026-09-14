@@ -1,7 +1,7 @@
 //! Remote file-transfer feedback popups — progress + failed.
 //!
-//! 디자인 canonical: `gallery/overlays-shared.jsx` `TransferProgressFrame`(09a) /
-//! `TransferErrorFrame`(09b) — scrim 중앙 headless 모달 2종. 본체
+//! 디자인 canonical: `gallery/overlays-shared.jsx` `TransferProgressFrame` /
+//! `TransferErrorFrame` — scrim 중앙 headless 모달 2종. 본체
 //! `src/adapters/ui/popup/transfer.rs` (PopupDef `transfer_progress` /
 //! `transfer_error`) 의 시각 미러다 (갤러리는 main 바이너리 비의존 → 구조·토큰만 전사).
 //!

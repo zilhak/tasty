@@ -11,7 +11,7 @@ pub const CATEGORY_SWITCH_SLOT_COUNT: usize = 10;
 /// 사용자 스크립트↔단축키 동적 바인딩 (ADR-0031).
 ///
 /// 고정 액션 필드(`Vec<String>`)와 달리 스크립트는 N 개 동적이라 별도 표현이 필요하다.
-/// 스크립트당 combo 하나(디자인 05: 행마다 Kbd 1개). `script_id` 는 `ScriptRegistry`(03) 참조.
+/// 스크립트당 combo 하나(관리 창 디자인: 행마다 Kbd 1개). `script_id` 는 `ScriptRegistry` 참조.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptBinding {
     pub script_id: String,
@@ -111,7 +111,7 @@ pub struct KeybindingSettings {
     pub next_tab: Vec<String>,
     /// Focus previous tab in the current pane.
     pub prev_tab: Vec<String>,
-    /// (03) 화면을 인터랙티브하게 캡처해 경로를 클립보드에 복사한다. 포커스된
+    /// 화면을 인터랙티브하게 캡처해 경로를 클립보드에 복사한다. 포커스된
     /// surface 가 원격 attach(mirror) workspace 소속이면 캡처 파일을 원격으로
     /// 전송해 원격 클립보드에 경로를 기록한다(로컬이면 로컬 클립보드).
     ///
@@ -263,7 +263,7 @@ fn default_category_switch_modifier() -> String {
     "ctrl+shift".to_string()
 }
 
-/// (03) 스크린샷→클립보드 기본 바인딩 `"ctrl+alt+s"`. 4 프리셋 공통 — macOS
+/// 스크린샷→클립보드 기본 바인딩 `"ctrl+alt+s"`. 4 프리셋 공통 — macOS
 /// 시스템 스크린샷 예약(`⌘⇧3/4/5/6`, 이 스킴의 `alt+shift+3/4/5/6`)과 겹치지
 /// 않는다(어느 프리셋도 그 조합을 안 씀). 구 config(필드 없음) 로드 시 이 값으로 채워진다.
 fn default_screenshot_to_clipboard() -> Vec<String> {

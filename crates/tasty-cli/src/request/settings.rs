@@ -1,4 +1,4 @@
-//! `tasty settings` CLI → JsonRpcRequest 매핑 (07 원격 전송 저장 정책).
+//! `tasty settings` CLI → JsonRpcRequest 매핑 (원격 전송 저장 정책).
 
 use crate::commands::SettingsCommands;
 

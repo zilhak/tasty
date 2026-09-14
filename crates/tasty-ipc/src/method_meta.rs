@@ -180,7 +180,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.respawn_terminal", plugin(&[TerminalSpawn])),
         ("surface.is_typing", plugin(&[TerminalRead])),
         // ── child-terminal 관리 (ADR-0040 / occupancy-04) ─────────────
-        // 호스트가 내재화한 자식 터미널 registry. codex/claude plugin(05)이
+        // 호스트가 내재화한 자식 터미널 registry. codex/claude plugin 이
         // 자체 registry 를 걷어내고 이 method 들로 위임한다. 권한은 각 method 가
         // 내부에서 조합하는 sibling 핸들러(tab.create=SurfaceWrite, surface.send=
         // TerminalWrite, surface.respawn_terminal=TerminalSpawn, surface.close=
@@ -470,7 +470,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 동일 권한으로 게이트한다. caller_plugin_id 는 요청 파라미터가 아니라
         // CallerContext 에서 강제 도출 — 다른 plugin 값 조회 불가.
         ("settings.get_plugin_setting", plugin(&[UiSettingsPage])),
-        // ── settings.remote_transfer (07 원격 전송 저장 정책 get/set) ──────
+        // ── settings.remote_transfer (원격 전송 저장 정책 get/set) ──────
         // general settings 전역 read/write 라 plugin 권한 모델에 대응 variant 가
         // 없다 — memory.gc / system.gpu_stats 처럼 local_only 로 두어 plugin 에는
         // 노출하지 않고 로컬 IPC(CLI·에이전트)만 조작한다. focus 독립(전역 설정,
@@ -500,10 +500,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // reload/dispatch 대응물 없음: "발화" 개념이 없고(판정 함수일 뿐),
         // user config 재로드는 아직 노출하지 않는다(Settings UI CRUD 표면 없음).
         ("completion_strategy.list", local_only()),
-        // markdown surface 제자리 이동 (04) — 주어진 surface 를 새 파일의 markdown
-        // 으로 교체한다. 임의 path 를 읽으므로 FsRead. 주소창(03) 플러그인이 caller.
+        // markdown surface 제자리 이동 — 주어진 surface 를 새 파일의 markdown
+        // 으로 교체한다. 임의 path 를 읽으므로 FsRead. markdown 주소창 플러그인이 caller.
         ("markdown.navigate", plugin(&[FsRead])),
-        // generic per-kind 최근목록 조회 — 주소창(03) 드롭다운 데이터 공급원(plugin 이
+        // generic per-kind 최근목록 조회 — 주소창 드롭다운 데이터 공급원(plugin 이
         // kind 를 채워 호출). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 더
         // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
         ("recent.query", plugin(&[SurfaceRead])),

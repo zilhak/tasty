@@ -3,7 +3,7 @@
 //! 전사 원본: `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` +
 //! `gallery/overlays-windows.jsx` "Settings · General › Remote transfer" spec.
 //! 본체: `src/view/settings/ui/tabs/remote_transfer.rs::draw_remote_transfer_tab`
-//! (`RemoteTransferSettings{dir, max_mb}` 편집, 06/07 백엔드).
+//! (`RemoteTransferSettings{dir, max_mb}` 편집 — 백엔드는 bulk 파일 전송(ADR-0054) 수신측 저장 정책).
 //!
 //! 콘텐츠 컬럼 = mono uppercase 섹션 헤딩("Received files") + 150px 라벨 grid 2행
 //! (Save folder = mono path Input + Browse… secondary/folder / Maximum size =

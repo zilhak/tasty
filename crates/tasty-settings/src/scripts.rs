@@ -1,9 +1,9 @@
 //! 사용자 등록 Lua 스크립트 목록 저장소 + SHA256 (ADR-0031).
 //!
-//! 단축키 트리거(04)·관리 창(05)·TOFU 게이트(06)가 모두 이 "등록 목록" 을 전제로 한다.
+//! 단축키 트리거·관리 창·TOFU 게이트가 모두 이 "등록 목록" 을 전제로 한다.
 //! `Settings.scripts` 로 `~/.tasty/config.toml` 에 영속된다.
 //!
-//! **단축키 combo 는 여기 저장하지 않는다.** 바인딩 소유권은 `KeybindingSettings`(04)에
+//! **단축키 combo 는 여기 저장하지 않는다.** 바인딩 소유권은 `KeybindingSettings` 에
 //! 있고(`script_id` 로 참조), 관리 창은 그 값을 조회해 표시만 한다 — 저장 위치 이중화 방지.
 
 use std::path::{Path, PathBuf};
@@ -51,13 +51,13 @@ pub enum AutoTrigger {
 /// 등록된 스크립트 1개.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptEntry {
-    /// 안정적 고유 id. 04 바인딩이 이 값으로 스크립트를 참조하므로 제거 후 재사용하지 않는다.
+    /// 안정적 고유 id. 단축키 바인딩이 이 값으로 스크립트를 참조하므로 제거 후 재사용하지 않는다.
     pub id: String,
     /// 표시 이름. 미지정 시 파일명으로 대체(호출자 책임).
     pub name: String,
     /// 스크립트 파일 절대 경로.
     pub path: PathBuf,
-    /// 등록/승인 시점의 **엔트리 파일** SHA256(hex). TOFU(06) 기준값.
+    /// 등록/승인 시점의 **엔트리 파일** SHA256(hex). TOFU 기준값.
     /// transitive `require` 의존 파일은 커버하지 않는다(ADR-0031 한계).
     pub sha256: String,
     /// 자동실행 트리거 목록 (N개 허용). 기존 config 에 키가 없으면 빈 vec
@@ -71,7 +71,7 @@ pub struct ScriptEntry {
 pub struct ScriptRegistry {
     #[serde(default)]
     scripts: Vec<ScriptEntry>,
-    /// 다음 id 시퀀스. 제거 후 재사용 방지(04 바인딩 안정성).
+    /// 다음 id 시퀀스. 제거 후 재사용 방지(단축키 바인딩 안정성).
     #[serde(default)]
     next_id: u64,
 }
@@ -155,7 +155,7 @@ impl ScriptRegistry {
         self.scripts.len() != before
     }
 
-    /// 이름 변경(05). 존재했으면 true.
+    /// 이름 변경. 존재했으면 true.
     pub fn rename(&mut self, id: &str, name: String) -> bool {
         match self.scripts.iter_mut().find(|s| s.id == id) {
             Some(e) => {
@@ -166,7 +166,7 @@ impl ScriptRegistry {
         }
     }
 
-    /// 승인 시 해시 갱신(06 TOFU). 존재했으면 true.
+    /// 승인 시 해시 갱신(TOFU). 존재했으면 true.
     pub fn update_hash(&mut self, id: &str, sha256: String) -> bool {
         match self.scripts.iter_mut().find(|s| s.id == id) {
             Some(e) => {

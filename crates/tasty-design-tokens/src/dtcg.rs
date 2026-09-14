@@ -1021,7 +1021,7 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
                     Err(reason) => skips.push(reason),
                 }
             }
-            // number/fontWeight component 토큰 — 04 범위 밖. 테마 불변이고 무단위라
+            // number/fontWeight component 토큰 — component 접근자 생성 범위 밖. 테마 불변이고 무단위라
             // `generated::component` 의 raw const 로 이미 충분.
             _ => {}
         }
@@ -1052,7 +1052,7 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
 //
 // theme.rs 가 수기로 들고 있던 semantic 색 접근자(`bg_app`/`accent_primary`/
 // `border_default` 등)를 DTCG semantic 색 토큰에서 생성으로 전환한다. 각 접근자는
-// `&Theme` 의 primitive 필드를 그대로 반환 — component 색 접근자(04)가 이 semantic
+// `&Theme` 의 primitive 필드를 그대로 반환 — component 색 접근자가 이 semantic
 // 접근자를 `self.accent_primary()` 처럼 호출하므로 inherent method 이름을 유지한다.
 // 분기(is_light)·도출(overlay)·합성(scrim)·리터럴(OS/brand) 접근자는 생성 불가라
 // theme.rs 에 수기로 남는다 (`SEMANTIC_COLOR_HAND_WRITTEN` 참조).

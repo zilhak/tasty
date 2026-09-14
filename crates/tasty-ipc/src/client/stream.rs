@@ -56,8 +56,8 @@ impl StreamConnection {
     /// 프레임을 서버가 파일 청크(`encode_bulk_chunk`)로 분류하도록 bulk 로 태깅한다.
     /// `workspace` 는 저장·인가의 결속 대상(서버는 그 ws 에 활성 holder 가 있을 때만
     /// 수락). 같은 `ssh -L` 터널의 `127.0.0.1:<local_port>` 에 두 번째로 열어 대화형
-    /// attach 스트림과 소켓을 분리한다(HOL 방지). ※ 06-β(클라 송신)가 이 진입점을
-    /// 호출한다 — 06-α 는 시그니처만 정의.
+    /// attach 스트림과 소켓을 분리한다(HOL 방지). ※ 클라 송신 경로(`upload_file_over_bulk`)가
+    /// 이 진입점을 호출한다.
     pub fn open_bulk(stream: TcpStream, proto: u32, workspace: u32) -> Result<(Self, u32)> {
         Self::open_with(stream, proto, None, None, Some(workspace))
     }

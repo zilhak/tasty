@@ -74,7 +74,7 @@ pub struct Settings {
     /// Modifier 키 홀드 안내 오버레이의 표시 토글 + 위치·크기 영속 슬롯.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 enabled=true, pos/size=None).
     pub modifier_hint: ModifierHintSettings,
-    /// 원격 전송(06 bulk 파일 채널) 수신측 저장 폴더 + 용량 상한(07).
+    /// 원격 전송(bulk 파일 전송 채널, ADR-0054) 수신측 저장 폴더 + 용량 상한.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 dir="", max_mb=500).
     pub remote_transfer: RemoteTransferSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.

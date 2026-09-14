@@ -1,6 +1,6 @@
 //! Rate limit primitive — token bucket 기반 시간당 비율 제한.
 //!
-//! 04 의 `telemetry.cap` 과 구분되는 점:
+//! `telemetry.cap` 과 구분되는 점:
 //!
 //! | 시스템 | 의미 |
 //! |---|---|

@@ -1,4 +1,4 @@
-//! (04) Native file picker — 원격 attach 채널의 `list_dir_request`/`list_dir_result`
+//! Native file picker(ADR-0053) — 원격 attach 채널의 `list_dir_request`/`list_dir_result`
 //! 왕복을 loopback `TcpStream` 으로 실제 실행 중인 서버 인스턴스에 대해 검증한다.
 //!
 //! frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 를 공유한다 — attach client 는

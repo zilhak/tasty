@@ -972,7 +972,7 @@ fn dispatch_external_link(url: &str) {
     }
 }
 
-/// 주소창 확정 이동을 host `markdown.navigate`(04) 로 보낸다 — 같은 surface 제자리 이동.
+/// 주소창 확정 이동을 host `markdown.navigate` 로 보낸다 — 같은 surface 제자리 이동.
 fn navigate(host: &HostHandle, sid: u32, path: &str) {
     let path = path.trim();
     if path.is_empty() {

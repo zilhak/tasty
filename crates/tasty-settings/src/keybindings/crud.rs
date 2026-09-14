@@ -452,7 +452,7 @@ impl KeybindingSettings {
         }
     }
 
-    /// script_id 에 바인딩된 combo (없으면 None). 관리 창(05)이 표시에 사용.
+    /// script_id 에 바인딩된 combo (없으면 None). 관리 창이 표시에 사용.
     pub fn script_binding_combo(&self, script_id: &str) -> Option<&str> {
         self.script_bindings
             .iter()
@@ -471,7 +471,7 @@ impl KeybindingSettings {
         }
     }
 
-    /// script_id 의 바인딩 제거. 스크립트 삭제(05) 시 연결 해제에 사용. 있었으면 true.
+    /// script_id 의 바인딩 제거. 관리 창의 스크립트 삭제 시 연결 해제에 사용. 있었으면 true.
     pub fn remove_script_binding(&mut self, script_id: &str) -> bool {
         let before = self.script_bindings.len();
         self.script_bindings.retain(|b| b.script_id != script_id);

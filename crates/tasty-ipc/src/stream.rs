@@ -342,7 +342,7 @@ pub enum StreamControl {
     },
     /// bulk 파일 전송(ADR-0054)의 control-plane 시작 메시지. 전용 bulk 연결에서
     /// 실제 파일 바이트(`Data` 프레임, [`encode_bulk_chunk`])에 앞서 파일명·총 크기를
-    /// 알린다. 서버는 `total_size` 를 사전 용량 승인(07)의 입력으로 쓰고, `transfer_id`
+    /// 알린다. 서버는 `total_size` 를 사전 용량 승인의 입력으로 쓰고, `transfer_id`
     /// 단위로 청크를 누적한다. 저장 dir 결정·경로 회신은 `commit` 에서 확정.
     ///
     /// Direction: **client→server**.
@@ -357,7 +357,7 @@ pub enum StreamControl {
     /// Direction: **client→server**.
     BulkCommit { transfer_id: u64 },
     /// bulk 전송 결과. `ok=true` 면 `path` 에 원격 파일시스템 절대경로, `ok=false` 면
-    /// `reason` 에 실패사유(용량 초과·미인가·저장 실패 등). 소비자(08/09)가 이 경로를
+    /// `reason` 에 실패사유(용량 초과·미인가·저장 실패 등). 소비자(mirror 터미널 이미지 붙여넣기 업로드 · 전송 진행/실패 팝업)가 이 경로를
     /// 대화형 스트림에 삽입하거나 진행 UI 에 표시한다.
     ///
     /// Direction: **server→client**.
@@ -963,7 +963,7 @@ mod tests {
             serde_json::from_str::<StreamControl>(&begin).unwrap(),
             StreamControl::BulkBegin { .. }
         ));
-        // The (03) capture-upload events are NOT StreamControl variants — they must
+        // The screenshot capture-upload events are NOT StreamControl variants — they must
         // still fail to parse as one (bulk added no accidental collision).
         for capture in [
             r#"{"event":"capture_chunk","upload_id":1,"seq":0,"total":1,"data_b64":"AA=="}"#,
