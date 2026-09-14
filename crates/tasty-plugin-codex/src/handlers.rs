@@ -186,7 +186,10 @@ const PROMPT_FILE_PREFIX: &str = "tasty-codex-prompt-";
 /// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
 /// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
 fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) -> String {
-    let prefix = format!("TASTY_SURFACE_ID={surface_id} {} ", crate::CODEX_COMMAND);
+    let prefix = format!(
+        "TASTY_SURFACE_ID={surface_id} {} ",
+        crate::POSIX_CODEX_COMMAND
+    );
     let policy_suffix = if policy_args.is_empty() {
         String::new()
     } else {
@@ -1548,17 +1551,11 @@ mod tests {
     fn make_codex_command_no_prompt() {
         assert_eq!(
             make_codex_command(42, None, ""),
-            format!(
-                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust\r",
-                crate::CODEX_COMMAND
-            )
+            "TASTY_SURFACE_ID=42 command codex --dangerously-bypass-hook-trust\r"
         );
         assert_eq!(
             make_codex_command(42, Some(""), ""),
-            format!(
-                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust\r",
-                crate::CODEX_COMMAND
-            )
+            "TASTY_SURFACE_ID=42 command codex --dangerously-bypass-hook-trust\r"
         );
     }
 
@@ -1569,7 +1566,7 @@ mod tests {
         assert!(
             cmd.starts_with(&format!(
                 "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust \"$(cat '",
-                crate::CODEX_COMMAND
+                crate::POSIX_CODEX_COMMAND
             )),
             "got {cmd}"
         );
@@ -1600,7 +1597,7 @@ mod tests {
             make_codex_command(42, None, "-a never -s read-only"),
             format!(
                 "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust -a never -s read-only\r",
-                crate::CODEX_COMMAND
+                crate::POSIX_CODEX_COMMAND
             )
         );
     }
@@ -1611,7 +1608,7 @@ mod tests {
         let cmd = make_codex_command(surface_id, Some("hello"), "-a never");
         assert!(
             cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust -a never \"$(cat '", crate::CODEX_COMMAND
+                "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust -a never \"$(cat '", crate::POSIX_CODEX_COMMAND
             )),
             "got {cmd}"
         );
@@ -1625,7 +1622,7 @@ mod tests {
             make_codex_command(42, None, "--dangerously-bypass-approvals-and-sandbox"),
             format!(
                 "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r",
-                crate::CODEX_COMMAND
+                crate::POSIX_CODEX_COMMAND
             )
         );
     }

@@ -109,7 +109,7 @@ Codex 자식이 도구 실행 승인 프롬프트에서 멈추면 상태가 `nee
 
 `tasty codex spawn/launch/respawn/reboot` 는 Codex 의 승인·샌드박스 정책을 플래그로 받습니다.
 
-`launch`/`spawn`/`respawn`/`reboot` 는 셸의 `codex` alias나 function이 추가하는 옵션을 사용하지 않습니다. sh/bash/zsh에서는 `PATH`에 설치된 Codex를 실행합니다. alias에 넣어 둔 승인·샌드박스 옵션은 아래 플래그나 전역 설정으로 지정하세요. Windows에서 `reboot`는 외부 Codex 실행 파일 또는 `.cmd` 런처를 사용합니다. 새 세션의 환경변수·프롬프트 전달은 현재 POSIX 셸 구문을 사용하므로 Windows cmd/PowerShell에서는 지원되지 않습니다.
+`launch`/`spawn`/`respawn` 는 sh/bash/zsh 및 Windows Git Bash에서 셸의 `codex` alias나 function을 건너뛰고 `PATH`에 설치된 Codex를 실행합니다. alias에 넣어 둔 승인·샌드박스 옵션은 아래 플래그나 전역 설정으로 지정하세요. `reboot`의 alias/function 우회는 Linux/macOS에 적용됩니다. Windows의 `reboot`는 기존 실행 방식을 유지하며 alias/function 우회는 아직 지원하지 않습니다.
 
 - **승인**: `--approval untrusted|on-request|never`. 아무것도 안 주면 **`never`** 로 실행됩니다 — 자동화 중 승인 프롬프트에 걸려 영원히 멈추는 것을 막기 위해서입니다. 사람이 옆에서 승인해 줄 때만 `untrusted` / `on-request` 를 명시합니다.
 - **샌드박스**: `--sandbox read-only|workspace-write|danger-full-access`. 안 주면 Codex 기본값. 리뷰·교차검증용 자식은 `read-only` 가 적당합니다.

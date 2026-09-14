@@ -14,7 +14,7 @@ tasty 에 **동봉되어 첫 부팅 시 자동 install** 되는 공식 플러그
 | [clipboard-viewer](clipboard-viewer/index.md) — `com.tasty.clipboard-viewer` | 클립보드 뷰어(현재 내용) | 도구 메뉴 · popup |
 | [git-viewer](git-viewer/index.md) — `com.tasty.git-viewer` | git status/log/diff 뷰어 | 도구 메뉴 · popup |
 | [claude](claude/index.md) — `com.tasty.claude` | Claude Code CLI 통합 | cli · ipc · 멀티에이전트 |
-| [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 · Codex 호환 훅 응답 · alias/function 우회 실행 |
+| [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 · Codex 호환 훅 응답 · POSIX alias/function 우회 실행 |
 | mesh-demo — `com.tasty.mesh-demo` (전용 문서 없음) | egui-mesh 채널 PoC(A1), `bundle=false`로 배포 제외 | surface_kind(egui-mesh) · popup |
 | [agent-stream](agent-stream/index.md) — `com.tasty.agent-stream` | 에이전트 세션 transcript tail → 구조화 스트림 이벤트 수집 + SSE 엔드포인트 방출(headless), `bundle=false`로 배포 제외 | cli · ipc · sse |
 

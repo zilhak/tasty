@@ -219,8 +219,9 @@ fn fetch_session_id(
     Ok(session_id)
 }
 
-/// 셸에 전송할 resume 명령 (제출 `\r` 포함). 실행어는 플랫폼별로
-/// alias/function 을 우회한다. `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
+/// 셸에 전송할 resume 명령 (제출 `\r` 포함). POSIX OS 에서는 alias/function 을
+/// 우회하고 Windows 는 기존 bare codex 실행어를 유지한다(셸 종류는 여기서 모른다).
+/// `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
 /// — 켜져 있으면 기동이 메뉴 다이얼로그에 가로채여 안내 프롬프트의 Enter 가
 /// "Update now" 를 확정해 버린다. `--dangerously-bypass-hook-trust` 로 재시작된
 /// codex 도 hook 이 항상 fire 되게 한다(`handlers::make_codex_command` 와 동일 이유).
@@ -230,6 +231,13 @@ fn fetch_session_id(
 /// codex 도 원래 기동과 같은 승인/샌드박스 정책 해석 규칙을 따른다
 /// (docs/plugins/codex/index.md 의 승인/샌드박스 정책 플래그 절 참조).
 pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
+    // Windows surfaces may use Git Bash, cmd, or PowerShell. Preserve the existing
+    // token until the receiving shell family is known; cmd switches break in MSYS.
+    let command = if cfg!(windows) {
+        "codex"
+    } else {
+        crate::POSIX_CODEX_COMMAND
+    };
     let policy_suffix = if policy_args.is_empty() {
         String::new()
     } else {
@@ -237,7 +245,7 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
     };
     format!(
         "{} resume --dangerously-bypass-hook-trust{policy_suffix} -c check_for_update_on_startup=false {session_id}\r",
-        crate::CODEX_COMMAND
+        command
     )
 }
 
@@ -406,7 +414,11 @@ mod tests {
             resume_command("019f55e7-3dfa", ""),
             format!(
                 "{} resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false 019f55e7-3dfa\r",
-                crate::CODEX_COMMAND
+                if cfg!(windows) {
+                    "codex"
+                } else {
+                    "command codex"
+                }
             )
         );
     }
@@ -417,7 +429,11 @@ mod tests {
             resume_command("019f55e7-3dfa", "-a never -s read-only"),
             format!(
                 "{} resume --dangerously-bypass-hook-trust -a never -s read-only -c check_for_update_on_startup=false 019f55e7-3dfa\r",
-                crate::CODEX_COMMAND
+                if cfg!(windows) {
+                    "codex"
+                } else {
+                    "command codex"
+                }
             )
         );
     }

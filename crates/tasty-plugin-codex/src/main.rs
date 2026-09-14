@@ -21,13 +21,9 @@
 // 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
-// POSIX command bypasses codex aliases/functions while retaining the shell PATH.
-// On Windows, cmd resolves external executables and npm .cmd launchers without
-// inheriting PowerShell functions/aliases; /d disables cmd AutoRun injection.
-#[cfg(not(windows))]
-const CODEX_COMMAND: &str = "command codex";
-#[cfg(windows)]
-const CODEX_COMMAND: &str = "cmd.exe /d /c codex";
+// New-session commands already use POSIX environment/prompt syntax, including
+// Git Bash on Windows. Keep execution in that shell instead of nesting cmd.exe.
+const POSIX_CODEX_COMMAND: &str = "command codex";
 
 mod handlers;
 mod reboot;

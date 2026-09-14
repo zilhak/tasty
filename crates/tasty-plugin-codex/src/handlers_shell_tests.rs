@@ -3,6 +3,21 @@ use super::*;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
+// Only child startup configuration is isolated. Ordinary inherited environment
+// remains available so the sentinel and surface-ID assertions still test it.
+fn isolated_shell(shell: &str) -> Command {
+    let mut process = Command::new(shell);
+    for key in ["BASH_ENV", "ENV", "ZDOTDIR", "SHELLOPTS", "BASHOPTS"] {
+        process.env_remove(key);
+    }
+    if shell == "bash" {
+        process.args(["--noprofile", "--norc", "-O", "expand_aliases"]);
+    } else if shell == "zsh" {
+        process.arg("-f");
+    }
+    process
+}
+
 #[test]
 fn external_codex_preserves_argv_environment_and_prompt() {
     let subscriber = tracing_subscriber::fmt()
@@ -27,10 +42,13 @@ fn external_codex_preserves_argv_environment_and_prompt() {
     let mut executions = 0;
     for shell in ["sh", "bash", "zsh"] {
         // sh is required everywhere; additional shells are exercised when installed.
-        if Command::new(shell).arg("-c").arg(":").status().is_err() {
-            assert_ne!(shell, "sh", "POSIX sh is required");
-            tracing::warn!("SKIP {shell}: shell not installed");
-            continue;
+        match isolated_shell(shell).args(["-c", ":"]).output() {
+            Ok(output) => assert!(output.status.success(), "{shell}: {output:?}"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && shell != "sh" => {
+                tracing::warn!("SKIP {shell}: shell not installed");
+                continue;
+            }
+            Err(error) => panic!("cannot start {shell}: {error}"),
         }
         for wrapper in ["alias", "function"] {
             let setup = if wrapper == "alias" {
@@ -39,12 +57,7 @@ fn external_codex_preserves_argv_environment_and_prompt() {
                 format!("codex() {{ command codex {bypass} \"$@\"; }}\n")
             };
             let run = |command: &str| {
-                let mut process = Command::new(shell);
-                if shell == "bash" {
-                    process.args(["--noprofile", "--norc", "-O", "expand_aliases"]);
-                } else if shell == "zsh" {
-                    process.arg("-f");
-                }
+                let mut process = isolated_shell(shell);
                 let output = process
                     .args([
                         "-c",

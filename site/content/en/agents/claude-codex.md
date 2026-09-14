@@ -1,4 +1,4 @@
-<!-- source-hash: b841fc827fd3 -->
+<!-- source-hash: d5bba424a7b0 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -109,7 +109,7 @@ When a Codex child pauses at a tool-execution approval prompt, its state becomes
 
 `tasty codex spawn/launch/respawn/reboot` accept Codex's approval and sandbox policies as flags.
 
-`launch`/`spawn`/`respawn`/`reboot` do not use options added by a shell `codex` alias or function. In sh/bash/zsh, they run Codex installed on `PATH`. Specify approval and sandbox options through the flags below or global settings. On Windows, `reboot` uses an external Codex executable or `.cmd` launcher. Environment and prompt delivery for new sessions currently uses POSIX shell syntax and is not supported in Windows cmd/PowerShell.
+`launch`/`spawn`/`respawn` bypass shell `codex` aliases and functions in sh/bash/zsh and Windows Git Bash, running Codex installed on `PATH`. Specify approval and sandbox options through the flags below or global settings. Alias/function bypass for `reboot` applies on Linux/macOS. Windows `reboot` keeps its existing launch behavior and does not yet bypass aliases or functions.
 
 - **Approval**: `--approval untrusted|on-request|never`. If you pass nothing, it runs with **`never`** — to prevent automation from getting stuck forever at an approval prompt. Specify `untrusted` / `on-request` only when a person is beside it to approve.
 - **Sandbox**: `--sandbox read-only|workspace-write|danger-full-access`. If not given, the Codex default. `read-only` suits children used for review and cross-checking.
