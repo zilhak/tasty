@@ -415,10 +415,9 @@ pub struct AppState {
     /// 루프가 drain해 `PluginManager::emit_host_event`로 발화한다.
     pub(crate) pending_tool_events: Vec<(String, serde_json::Value)>,
 
-    /// `ToolAction::OpenPopup` 클릭 시 열어야 할 popup 큐.
-    /// (plugin_id, popup_id, context). App 메인 루프가 drain해
+    /// 열어야 할 plugin popup 큐(도구 메뉴 · 변환 입력 popup). App 메인 루프가 drain해
     /// `PluginManager::open_popup_instance`로 dispatch.
-    pub(crate) pending_popup_opens: Vec<(String, String, serde_json::Value)>,
+    pub(crate) pending_popup_opens: Vec<PendingPopupOpen>,
 
     /// file_handler 디스패치 결과가 plugin IPC method 일 때의 호출 큐.
     /// `(ipc_method, target)`. App 메인 루프가 drain 해 `PluginManager` 로 forward.
@@ -684,6 +683,20 @@ pub struct DialogState {
     /// pop(큐가 비면 팝업 닫힘 — info_modal 큐 패턴). head 가 현재 화면.
     #[cfg(feature = "gui")]
     pub(crate) transfer_error: VecDeque<TransferError>,
+}
+
+/// 열기를 기다리는 plugin popup 한 건.
+///
+/// `context` 는 plugin 에 넘기는 open context 이고, `target_surface` 는 **host 가** 이 popup
+/// 의 소속 범위 대상으로 바인딩할 surface 다. 둘을 가르는 이유는 plugin context 의 키
+/// 이름(`surface_id` 등)을 host 가 해석하지 않기 위해서다. 선언이 `scope = "surface"` 가
+/// 아니면 `target_surface` 는 쓰이지 않는다.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingPopupOpen {
+    pub(crate) plugin_id: String,
+    pub(crate) popup_id: String,
+    pub(crate) context: serde_json::Value,
+    pub(crate) target_surface: Option<u32>,
 }
 
 /// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031).
@@ -1169,8 +1182,14 @@ impl AppState {
         if let Some(sid) = convert_surface_id {
             context["surface_id"] = serde_json::json!(sid);
         }
-        self.pending_popup_opens
-            .push((plugin_id.to_string(), local_id.to_string(), context));
+        // 소속 범위의 대상도 같은 origin 이다 — popup 이 다루는 surface 와 popup 이 뜨는
+        // surface 가 갈리지 않는다. 쓸지는 매니페스트 `scope` 가 정한다.
+        self.pending_popup_opens.push(PendingPopupOpen {
+            plugin_id: plugin_id.to_string(),
+            popup_id: local_id.to_string(),
+            context,
+            target_surface: origin,
+        });
         true
     }
 

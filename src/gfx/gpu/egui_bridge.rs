@@ -217,13 +217,16 @@ impl GpuState {
             // 어기면 화면은 멀쩡하다. 어긋난 rect 로 히트테스트가 한 프레임 틀릴 뿐이라
             // 컴파일도 되고 시험도 통과한다 — 그래서 `source_guards::frame_draw_order` 가
             // 이 두 줄의 순서를 값으로 문다.
-            ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
+            let popup_layout =
+                ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
+            // 소속 범위 판정은 host popup 이 방금 쓴 것과 같은 layout 으로 한다.
             crate::plugin_bridge::popup_render::draw_plugin_popups(
                 ctx,
                 state,
                 engine,
                 plugin_manager,
+                Some(&popup_layout),
             );
             enforce_foreground_z_order(
                 ctx,

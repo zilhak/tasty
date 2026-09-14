@@ -236,12 +236,16 @@ pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, it
             // (`git_viewer.query` IPC)를 트리거할 때 그대로 echo 한다. 키 목록과 의미는
             // `AppState::popup_surface_context`.
             if let Some((plugin_id, local_id)) = popup_id.split_once('/') {
-                let context = state.popup_surface_context(engine, state.focused_surface_id(engine));
-                state.pending_popup_opens.push((
-                    plugin_id.to_string(),
-                    local_id.to_string(),
-                    context,
-                ));
+                let origin = state.focused_surface_id(engine);
+                let context = state.popup_surface_context(engine, origin);
+                state
+                    .pending_popup_opens
+                    .push(crate::state::PendingPopupOpen {
+                        plugin_id: plugin_id.to_string(),
+                        popup_id: local_id.to_string(),
+                        context,
+                        target_surface: origin,
+                    });
             } else {
                 tracing::warn!(
                     "invoke_tool: open_popup '{}' is not in '<plugin_id>/<id>' form",

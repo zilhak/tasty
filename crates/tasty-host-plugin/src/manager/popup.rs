@@ -64,6 +64,7 @@ impl PluginManager {
                 popup_id: popup_id.to_string(),
                 contribute,
                 z_seq: super::next_popup_z_seq(),
+                scope_surface: None,
             },
         );
         self.send_surface_request(
@@ -77,6 +78,17 @@ impl PluginManager {
             PendingRequestKind::PopupOpen { instance_id },
         );
         Some(instance_id)
+    }
+
+    /// 열린 popup 인스턴스에 소속 surface 를 바인딩한다. 이미 바인딩돼 있으면 그대로 둔다 —
+    /// 단일 인스턴스 가드로 기존 인스턴스가 재사용될 때 plugin 이 받은 open context 의
+    /// 대상과 host 가 그리는 범위가 갈리지 않게 하려는 것이다.
+    pub fn bind_popup_instance_surface(&mut self, instance_id: u64, surface_id: u32) {
+        if let Some(inst) = self.popup_instances.get_mut(&instance_id)
+            && inst.scope_surface.is_none()
+        {
+            inst.scope_surface = Some(surface_id);
+        }
     }
 
     /// 단일 인스턴스 가드: 같은 (plugin_id, popup_id) 인스턴스가 이미 열려 있으면 그 id.

@@ -120,7 +120,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 ### 도구 메뉴 항목 + popup
 
 - `[[contributes.tool]]`(`ui.tool_item`) — [도구 메뉴](../features/tools-menu/index.md)에 항목. `action.kind`: `event`(Event Bus 발화) / `open_surface`(탭 추가) / `open_popup`(`popup_id = <plugin_id>/<id>`). `order_hint` 오름차순(빌트인 0..99).
-- `[[contributes.popup]]`(`ui.popup`) — trigger `event`(자동 open) 또는 `ipc`(명시 호출). SDK 콜백 `open_popup`/`paint_popup`/`on_popup_closed`(egui-mesh). 동일 `popup_id` 라도 `instance_id` 가 다르면 별개 인스턴스. 예: [git-viewer](../plugins/git-viewer/index.md)·[clipboard-viewer](../plugins/clipboard-viewer/index.md).
+- `[[contributes.popup]]`(`ui.popup`) — trigger `event`(자동 open) 또는 `ipc`(명시 호출). `scope` 로 소속 범위를 선언한다 — `window`(기본, 필드 생략 시) 또는 `surface`. `surface` 는 host 진입점(변환 입력 popup · 도구 메뉴)이 대상 surface 를 바인딩할 때만 효과가 있고, plugin 이 스스로 연 popup 은 `window` 로 뜬다([design/systems/popup.md](../design/systems/popup.md) §plugin popup 의 스코프). SDK 콜백 `open_popup`/`paint_popup`/`on_popup_closed`(egui-mesh). 동일 `popup_id` 라도 `instance_id` 가 다르면 별개 인스턴스. 예: [git-viewer](../plugins/git-viewer/index.md)·[clipboard-viewer](../plugins/clipboard-viewer/index.md).
 
 ### CLI + IPC namespace
 

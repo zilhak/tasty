@@ -15,6 +15,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 | 셸(scrim·border·이동·리사이즈·outside-click·Esc) | `PopupManager` | **host `PopupManager`** (동일 — 셸은 언제나 host 소유) |
 | 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host event 발행이 발화, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0043](../adr/0043-convert-input-popup-capability.md)) |
 | 상태·입력 버퍼 | host `AppState.dialogs` | **plugin 프로세스** 내 인스턴스 상태(`instance_id` 키) |
+| 스코프(가시성·경계) | `PopupDef.default_scope` + 여는 쪽 `OpenPopupMode::WithScope` | 매니페스트 `scope`(`window` 기본 / `surface`) + 여는 host 진입점이 대상 surface 바인딩 — 판정 함수는 host 와 같다([design/systems/popup.md](../design/systems/popup.md) §plugin popup 의 스코프) |
 
 **선택 기준 — 콘텐츠의 소유자가 누구인가:**
 
@@ -24,7 +25,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 **현재 plugin 팝업 (markdown, egui-mesh):**
 
 - `large-file-confirm` — 대용량 파일 열기 확인. 크기 감지·확인 로직이 plugin in-process 소유(host 는 파일 크기를 stat 하지 않는다). plugin 이 `com.tasty.markdown.large_file_confirm` 이벤트를 발행하면 열린다.
-- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host 소유 file_picker popup(`file_picker.trigger`, [ADR-0058](../adr/0058-plugin-triggered-host-popup-async-ack-push.md))으로 위임하고 팝업을 띄운 surface 의 폴더에서 출발시킨다, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 상세: [plugins/markdown](../plugins/markdown/index.md).
+- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). `scope = "surface"` 라 대상 surface 가 보일 때만 그 영역 안에 뜬다. host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host 소유 file_picker popup(`file_picker.trigger`, [ADR-0058](../adr/0058-plugin-triggered-host-popup-async-ack-push.md))으로 위임하고 팝업을 띄운 surface 의 폴더에서 출발시킨다, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 상세: [plugins/markdown](../plugins/markdown/index.md).
 
 plugin 팝업 제작 절차는 [plugin-development](plugin-development.md) · [egui-mesh-channel](egui-mesh-channel.md) 참조. 갤러리 specimen 은 host-side 미러로 유지한다(gallery-completeness — plugin egui-mesh 를 갤러리가 직접 렌더하지 않으므로 폼/토큰/구조만 정합).
 

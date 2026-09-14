@@ -1850,8 +1850,39 @@ fn popup_event_trigger_parses_with_defaults() {
         other => panic!("expected event trigger, got {other:?}"),
     }
     assert_eq!(p.anchor, PopupAnchor::ScreenCenter);
+    // scope 필드가 없는 기존 매니페스트는 window 로 읽힌다 — 하위 호환의 자리.
+    assert_eq!(p.scope, PopupScopeDecl::Window);
     assert!(p.dismiss_on_outside_click);
     assert!(p.size_hint.is_none());
+}
+
+#[test]
+fn popup_scope_surface_parses() {
+    let s = popup_skeleton(
+        r#"
+            [[contributes.popup]]
+            id = "search"
+            trigger = { kind = "ipc" }
+            scope = "surface"
+        "#,
+    );
+    let m = parse(&s).expect("popup with surface scope should parse");
+    assert_eq!(m.contributes.popup[0].scope, PopupScopeDecl::Surface);
+}
+
+#[test]
+fn popup_scope_rejects_unknown_kind() {
+    // host 전용 스코프(pane/tab/workspace)는 plugin 선언에 열려 있지 않다.
+    let s = popup_skeleton(
+        r#"
+            [[contributes.popup]]
+            id = "search"
+            trigger = { kind = "ipc" }
+            scope = "pane"
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("scope") || err.contains("pane"), "got: {err}");
 }
 
 #[test]

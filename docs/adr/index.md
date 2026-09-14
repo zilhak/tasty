@@ -253,3 +253,4 @@
 | 0270 | [좌변이 그 사실을 재는가에는 자동 채널을 안 붙인다 — 기계가 읽는 두 모양만 가드가 본다](0270-whether-a-left-side-measures-the-fact-has-no-automatic-channel.md) | Accepted | 2026-09-14 | docs, guards, channels, mutation-testing, false-positive, observability, adr-0142, adr-0151, adr-0220 |
 | 0271 | [plugin namespace 는 권한 셋을 가진 모든 caller 에게 그 namespace 의 토큰으로 열린다](0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md) | Accepted | 2026-09-14 | permissions, plugin, ipc, agent, session-token |
 | 0272 | [URL 대상은 핸들러 picker 와 실행 계층에만 들어가고 형식 식별에는 들어가지 않는다](0272-url-targets-enter-the-handler-picker-not-identify.md) | Accepted | 2026-09-14 | file-handler, terminal-link, dispatch, url |
+| 0273 | [plugin popup 은 소속 범위의 종류만 선언하고 대상은 host 가 바인딩한다](0273-plugin-popup-declares-a-scope-kind-and-the-host-binds-the-target.md) | Accepted | 2026-09-14 | popup, plugin, scope, manifest |

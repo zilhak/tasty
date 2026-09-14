@@ -854,7 +854,8 @@ pub struct WindowSizeHint {
 ///   호스트는 `<plugin_id>/<popup_id>`로 전역 식별.
 /// - `trigger`: 어떤 조건으로 popup을 여는지. `event` 또는 `ipc`.
 /// - `size_hint`: 옵션. 호스트가 LogicalPx 단위로 popup 크기에 적용.
-/// - `anchor`: 옵션. 위치 정책. 기본 `screen-center`.
+/// - `anchor`: 옵션. 위치 정책. 기본 `screen-center`. 기준 사각형은 `scope` 의 경계다.
+/// - `scope`: 옵션. popup 의 소속 범위(가시성 + 경계 clamp). 기본 `window`.
 /// - `dismiss_on_outside_click`: 옵션. 기본 true.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PopupContribute {
@@ -864,6 +865,10 @@ pub struct PopupContribute {
     pub size_hint: Option<PopupSizeHint>,
     #[serde(default = "default_popup_anchor")]
     pub anchor: PopupAnchor,
+    /// popup 이 속한 범위. 필드가 없는 매니페스트는 `window` 로 읽혀 이전 동작(항상
+    /// 보이고 창 전체에 clamp)을 그대로 갖는다.
+    #[serde(default)]
+    pub scope: PopupScopeDecl,
     #[serde(default = "default_dismiss_on_outside_click")]
     pub dismiss_on_outside_click: bool,
     /// popup 콘텐츠 렌더링 방식. `egui-mesh`(기본이자 유일) — plugin 이 자기
@@ -914,6 +919,22 @@ pub enum PopupTrigger {
 pub struct PopupSizeHint {
     pub width: u32,
     pub height: u32,
+}
+
+/// plugin popup 이 매니페스트에서 선언하는 소속 범위.
+///
+/// 선언은 **종류**만 정한다. 대상 surface 는 런타임에야 알 수 있으므로 popup 을 여는
+/// host 진입점이 바인딩한다(host `PopupDef` 의 `OpenPopupMode::WithScope` 와 같은 분담).
+/// 바인딩된 대상이 없으면(plugin 이 스스로 연 popup 등) host 는 `window` 로 다룬다.
+/// 근거는 `docs/adr/0273-plugin-popup-declares-a-scope-kind-and-the-host-binds-the-target.md`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PopupScopeDecl {
+    /// 항상 보이고 창 전체에 clamp 된다.
+    #[default]
+    Window,
+    /// 여는 진입점이 지목한 surface 가 보일 때만 그려지고 그 surface 영역에 clamp 된다.
+    Surface,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

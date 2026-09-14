@@ -15,14 +15,15 @@
 use std::collections::HashSet;
 
 use egui::{Context, Event, Id, ImeEvent, Order, Pos2, Rect, Stroke, Vec2};
-use tasty_plugin_manifest::PopupRendering;
+use tasty_plugin_manifest::{PopupRendering, PopupScopeDecl};
 use tasty_plugin_protocol::{
     ImeWire, ModifiersWire, PointerButtonWire, PopupCloseReason, PopupSetContextParams,
     RawInputEventWire, RawInputWire, ThemeWire,
 };
 
-use crate::adapters::ui::popup;
+use crate::adapters::ui::LayoutContext;
 use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
+use crate::adapters::ui::popup::{self, PopupManager, PopupScope};
 use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
@@ -36,12 +37,21 @@ const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
 ///    `state.plugin_mesh_popup_regions` 에 적재(실 합성은 `gpu.render`),
 ///  - 외부 클릭/Escape를 감지해 `state.plugin_popup_closes`에 적재.
 ///
+/// 각 인스턴스는 선언한 소속 범위([`popup_scope`])의 가시성·경계를 host popup 과 **같은
+/// 판정 함수**(`PopupManager::is_scope_visible`/`scope_rect`)로 따른다. 범위가 안 보이는
+/// 인스턴스는 이 frame 에 **존재하지 않는 것**으로 다룬다 — 셸·합성 영역·히트테스트 rect·
+/// Esc/outside-click·키 게이트 어디에도 안 들어간다. 안 빠지면 보이지도 않는 rect 가 클릭을
+/// 삼킨다. 인스턴스 자신과 forward 추적은 그대로 두어 범위가 다시 보이면 상태째 복원된다.
+///
+/// `layout` 은 host popup 이 같은 frame 에 쓴 것과 같은 값이다(`ui::draw_popups` 가 돌려준다).
+///
 /// `mgr`이 `None`이거나 popup_instances가 비어있으면 mesh 영역만 비우고 반환.
 pub fn draw_plugin_popups(
     ctx: &Context,
     state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
+    layout: Option<&LayoutContext>,
 ) {
     // 매 frame mesh 합성 영역/셸 레이어 목록을 새로 수집한다 — 이전 frame 잔재가
     // 합성되거나 `enforce_host_plugin_popup_z_order`(egui_bridge.rs)에 남지 않게.
@@ -75,54 +85,13 @@ pub fn draw_plugin_popups(
 
     // popup_instances를 즉시 owned snapshot으로 복사. 이후 loop에서 `state`를 mutable로
     // borrow하기 위함.
-    struct MeshSnap {
-        instance_id: u64,
-        plugin_id: String,
-        anchor: PopupAnchor,
-        size: Vec2,
-        dismiss_on_outside_click: bool,
-        z_seq: u64,
-    }
-    let mut mesh_snaps: Vec<MeshSnap> = Vec::new();
-    for (id, inst) in mgr.popup_instances() {
-        let size = inst
-            .contribute
-            .size_hint
-            .map(|s| Vec2::new(s.width as f32, s.height as f32))
-            .unwrap_or(DEFAULT_POPUP_SIZE);
-        match inst.contribute.rendering {
-            PopupRendering::EguiMesh => mesh_snaps.push(MeshSnap {
-                instance_id: id,
-                plugin_id: inst.plugin_id.clone(),
-                anchor: inst.contribute.anchor,
-                size,
-                dismiss_on_outside_click: inst.contribute.dismiss_on_outside_click,
-                z_seq: inst.z_seq,
-            }),
-        }
-    }
-    // `popup_instances` 는 HashMap 이라 순회 순서가 비결정적 — z_seq 오름차순으로 정렬해야
-    // `plugin_mesh_popup_regions`(GPU 콘텐츠 합성 순서, 뒤에 push된 것이 위)에서 여러
-    // plugin popup 이 동시에 열려 있을 때도 나중에 열리거나 클릭된 것이 콘텐츠 상 위에
-    // 온다. 단, 이 정렬은 **셸(scrim/bg/border) 순서에는 영향이 없다** — 셸은
-    // `ctx.layer_painter`로 직접 그리는 raw layer 라 `egui::Area`(`Areas::order`)를 거치지
-    // 않으므로, 프레임 내 그리기 호출 순서가 최종 페인트 순서를 결정하지 않는다(egui
-    // `GraphicLayers::drain` 소스 — order 밖 레이어는 별도 맵 순회로 덧붙여짐, 순서 보장
-    // 없음). 여러 plugin popup 이 동시에 열렸을 때 그들끼리의 셸 순서까지 정확히
-    // 강제하려면 host↔plugin 관계와 마찬가지로 `set_sublayer` 체인이 필요하지만
-    // egui 는 1단 중첩만 지원해 N>2 개에서는 안전하지 않다 — 최소 설계 범위 밖으로 남긴다
-    // (`gfx/gpu/egui_bridge.rs` 의 `enforce_host_plugin_popup_z_order` 문서 참고).
-    mesh_snaps.sort_by_key(|s| s.z_seq);
+    let mesh_snaps = mesh_snapshots(mgr.popup_instances());
 
     // 닫힌 mesh popup 의 forward 추적 정리 — 한 맵이라 칸별로 빠뜨릴 자리가 없다.
     let live_mesh: HashSet<u64> = mesh_snaps.iter().map(|s| s.instance_id).collect();
     state
         .plugin_mesh_popup_forward
         .retain(|k, _| live_mesh.contains(k));
-
-    if mesh_snaps.is_empty() {
-        return;
-    }
 
     let screen_rect = ctx.screen_rect();
     let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
@@ -132,18 +101,11 @@ pub fn draw_plugin_popups(
     // 히트테스트를 하려면 자기 rect 만으로는 부족하다 — "이 좌표를 나보다 위 popup 이
     // 덮는가"를 물어야 하므로 형제 plugin popup 과 host popup 의 rect 가 함께 필요하다.
     // 그래서 셸 rect 를 먼저 전부 확정한 뒤 본 루프를 돈다.
-    let placed: Vec<(MeshSnap, Rect)> = mesh_snaps
-        .into_iter()
-        .map(|snap| {
-            let pos = clamp_to_screen(
-                anchor_pos(snap.anchor, snap.size, screen_rect, pointer_pos),
-                snap.size,
-                screen_rect,
-            );
-            let rect = Rect::from_min_size(pos, snap.size);
-            (snap, rect)
-        })
-        .collect();
+    let placed = place_visible(mesh_snaps, layout, screen_rect, pointer_pos);
+
+    if placed.is_empty() {
+        return;
+    }
 
     // 이번 frame 의 occluder 집합. z_seq 는 host/plugin 공용 전역 카운터라
     // (`tasty_host_plugin::next_popup_z_seq`) 두 종류를 한 배열에서 비교할 수 있다.
@@ -389,6 +351,81 @@ pub fn draw_plugin_popups(
     }
 }
 
+/// 한 frame 동안 쓰는 popup 인스턴스의 owned 사본.
+struct MeshSnap {
+    instance_id: u64,
+    plugin_id: String,
+    anchor: PopupAnchor,
+    scope: PopupScope,
+    size: Vec2,
+    dismiss_on_outside_click: bool,
+    z_seq: u64,
+}
+
+/// 열린 인스턴스 전부의 사본을 z_seq 오름차순으로 만든다. 범위 가시성은 여기서 거르지
+/// 않는다 — forward 추적 정리가 "살아 있는 인스턴스" 전체를 봐야 범위가 다시 보일 때
+/// 상태째 복원된다.
+fn mesh_snapshots<'a>(
+    instances: impl Iterator<Item = (u64, &'a tasty_host_plugin::PopupInstance)>,
+) -> Vec<MeshSnap> {
+    let mut mesh_snaps: Vec<MeshSnap> = Vec::new();
+    for (id, inst) in instances {
+        let size = inst
+            .contribute
+            .size_hint
+            .map(|s| Vec2::new(s.width as f32, s.height as f32))
+            .unwrap_or(DEFAULT_POPUP_SIZE);
+        match inst.contribute.rendering {
+            PopupRendering::EguiMesh => mesh_snaps.push(MeshSnap {
+                instance_id: id,
+                plugin_id: inst.plugin_id.clone(),
+                anchor: inst.contribute.anchor,
+                scope: popup_scope(inst.contribute.scope, inst.scope_surface),
+                size,
+                dismiss_on_outside_click: inst.contribute.dismiss_on_outside_click,
+                z_seq: inst.z_seq,
+            }),
+        }
+    }
+    // `popup_instances` 는 HashMap 이라 순회 순서가 비결정적 — z_seq 오름차순으로 정렬해야
+    // `plugin_mesh_popup_regions`(GPU 콘텐츠 합성 순서, 뒤에 push된 것이 위)에서 여러
+    // plugin popup 이 동시에 열려 있을 때도 나중에 열리거나 클릭된 것이 콘텐츠 상 위에
+    // 온다. 단, 이 정렬은 **셸(scrim/bg/border) 순서에는 영향이 없다** — 셸은
+    // `ctx.layer_painter`로 직접 그리는 raw layer 라 `egui::Area`(`Areas::order`)를 거치지
+    // 않으므로, 프레임 내 그리기 호출 순서가 최종 페인트 순서를 결정하지 않는다(egui
+    // `GraphicLayers::drain` 소스 — order 밖 레이어는 별도 맵 순회로 덧붙여짐, 순서 보장
+    // 없음). 여러 plugin popup 이 동시에 열렸을 때 그들끼리의 셸 순서까지 정확히
+    // 강제하려면 host↔plugin 관계와 마찬가지로 `set_sublayer` 체인이 필요하지만
+    // egui 는 1단 중첩만 지원해 N>2 개에서는 안전하지 않다 — 최소 설계 범위 밖으로 남긴다
+    // (`gfx/gpu/egui_bridge.rs` 의 `enforce_host_plugin_popup_z_order` 문서 참고).
+    mesh_snaps.sort_by_key(|s| s.z_seq);
+    mesh_snaps
+}
+
+/// 이번 frame 에 그릴 인스턴스와 그 셸 rect. 범위가 안 보이는 인스턴스는 빠진다
+/// (`place_popup` 이 `None`) — 이 목록이 셸·합성 영역·히트테스트·Esc 의 유일한 재료다.
+fn place_visible(
+    snaps: Vec<MeshSnap>,
+    layout: Option<&LayoutContext>,
+    screen_rect: Rect,
+    pointer_pos: Option<Pos2>,
+) -> Vec<(MeshSnap, Rect)> {
+    snaps
+        .into_iter()
+        .filter_map(|snap| {
+            let rect = place_popup(
+                snap.anchor,
+                &snap.scope,
+                snap.size,
+                layout,
+                screen_rect,
+                pointer_pos,
+            )?;
+            Some((snap, rect))
+        })
+        .collect()
+}
+
 /// popup 콘텐츠 영역 위 egui 입력을 surface-local 논리 포인트(좌상단 0,0) 와이어로 변환.
 ///
 /// host 가 받은 *실제* 사용자 입력만 forward 한다(identity 원칙 1·3). 포인터 이벤트는
@@ -572,35 +609,60 @@ fn paint_shell_background_excluding_content(
     );
 }
 
-/// 화면 경계 안으로 popup 좌상단을 clamp.
-fn clamp_to_screen(pos: egui::Pos2, size: Vec2, screen_rect: egui::Rect) -> egui::Pos2 {
+/// 매니페스트 선언과 host 가 바인딩한 대상으로 인스턴스의 소속 범위를 정한다.
+///
+/// `surface` 를 선언했어도 바인딩된 대상이 없으면(plugin 이 IPC·이벤트로 스스로 연 popup)
+/// `Window` 다 — plugin 이 남의 surface 를 지목할 길을 열지 않으려고 대상은 host 진입점만
+/// 채운다.
+fn popup_scope(decl: PopupScopeDecl, scope_surface: Option<u32>) -> PopupScope {
+    match (decl, scope_surface) {
+        (PopupScopeDecl::Surface, Some(sid)) => PopupScope::Surface(sid),
+        (PopupScopeDecl::Surface, None) | (PopupScopeDecl::Window, _) => PopupScope::Window,
+    }
+}
+
+/// 인스턴스의 셸 rect. 범위가 이 frame 에 안 보이면 `None`.
+///
+/// 가시성과 경계는 host popup 과 같은 함수로 판정한다. 경계가 없는 범위(`Window`)는 화면이다.
+fn place_popup(
+    anchor: PopupAnchor,
+    scope: &PopupScope,
+    size: Vec2,
+    layout: Option<&LayoutContext>,
+    screen_rect: Rect,
+    pointer_pos: Option<Pos2>,
+) -> Option<Rect> {
+    if !PopupManager::is_scope_visible(scope, layout) {
+        return None;
+    }
+    let bounds = PopupManager::scope_rect(scope, layout).unwrap_or(screen_rect);
+    let pos = clamp_to_bounds(anchor_pos(anchor, size, bounds, pointer_pos), size, bounds);
+    Some(Rect::from_min_size(pos, size))
+}
+
+/// 범위 경계 안으로 popup 좌상단을 clamp.
+fn clamp_to_bounds(pos: Pos2, size: Vec2, bounds: Rect) -> Pos2 {
     egui::pos2(
-        pos.x.clamp(
-            screen_rect.min.x,
-            (screen_rect.max.x - size.x).max(screen_rect.min.x),
-        ),
-        pos.y.clamp(
-            screen_rect.min.y,
-            (screen_rect.max.y - size.y).max(screen_rect.min.y),
-        ),
+        pos.x
+            .clamp(bounds.min.x, (bounds.max.x - size.x).max(bounds.min.x)),
+        pos.y
+            .clamp(bounds.min.y, (bounds.max.y - size.y).max(bounds.min.y)),
     )
 }
 
-fn anchor_pos(
-    anchor: PopupAnchor,
-    size: Vec2,
-    screen_rect: egui::Rect,
-    pointer_pos: Option<egui::Pos2>,
-) -> egui::Pos2 {
+/// 앵커 위치. 가운데 정렬의 기준은 화면이 아니라 **범위 경계**다(host popup 의
+/// `request_center` 와 같다) — `window` 범위에서는 둘이 같다.
+fn anchor_pos(anchor: PopupAnchor, size: Vec2, bounds: Rect, pointer_pos: Option<Pos2>) -> Pos2 {
     let centered = egui::pos2(
-        screen_rect.center().x - size.x / 2.0,
-        screen_rect.center().y - size.y / 2.0,
+        bounds.center().x - size.x / 2.0,
+        bounds.center().y - size.y / 2.0,
     );
     match anchor {
         PopupAnchor::ScreenCenter => centered,
         PopupAnchor::Cursor => pointer_pos.unwrap_or(centered),
-        // ActiveSurfaceCenter는 현재 미구현 — 호스트 layout context 통합 필요.
-        // 그동안은 ScreenCenter로 fallback.
+        // 활성 surface 를 따로 찾지 않는다 — 그 surface 에 붙고 싶은 popup 은
+        // `scope = "surface"` 를 선언하고, 그러면 경계 자체가 그 surface 라 가운데가 곧
+        // surface 가운데다. `window` 범위에서는 화면 가운데와 같다.
         PopupAnchor::ActiveSurfaceCenter => centered,
     }
 }
@@ -608,6 +670,115 @@ fn anchor_pos(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SCREEN: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1600.0, 1000.0),
+    };
+    /// 오른쪽 아래 1/4 에 있는 surface 7.
+    const SURFACE_7: Rect = Rect {
+        min: Pos2::new(800.0, 500.0),
+        max: Pos2::new(1600.0, 1000.0),
+    };
+
+    fn layout_with_surface_7(visible: bool) -> LayoutContext {
+        LayoutContext {
+            active_workspace: 0,
+            pane_rects: Vec::new(),
+            surface_rects: if visible {
+                vec![(7, SURFACE_7)]
+            } else {
+                Vec::new()
+            },
+            active_tabs: Vec::new(),
+        }
+    }
+
+    fn instance(
+        scope: PopupScopeDecl,
+        scope_surface: Option<u32>,
+        anchor: PopupAnchor,
+    ) -> tasty_host_plugin::PopupInstance {
+        tasty_host_plugin::PopupInstance {
+            plugin_id: "com.example.p".into(),
+            popup_id: "file-open".into(),
+            contribute: tasty_plugin_manifest::PopupContribute {
+                id: "file-open".into(),
+                trigger: tasty_plugin_manifest::PopupTrigger::Ipc,
+                size_hint: Some(tasty_plugin_manifest::PopupSizeHint {
+                    width: 400,
+                    height: 200,
+                }),
+                anchor,
+                scope,
+                dismiss_on_outside_click: true,
+                rendering: PopupRendering::EguiMesh,
+            },
+            z_seq: 1,
+            scope_surface,
+        }
+    }
+
+    /// 인스턴스 → 사본 → 배치의 **draw 가 쓰는 두 단계 그대로** 통과시켜 셸 rect 를 잰다.
+    fn placed_rect(
+        inst: &tasty_host_plugin::PopupInstance,
+        layout: &LayoutContext,
+        pointer: Option<Pos2>,
+    ) -> Option<Rect> {
+        let snaps = mesh_snapshots(std::iter::once((1, inst)));
+        place_visible(snaps, Some(layout), SCREEN, pointer)
+            .into_iter()
+            .next()
+            .map(|(_, r)| r)
+    }
+
+    /// surface 범위 popup 은 그 surface 영역 가운데에 놓인다 — 화면 가운데가 아니다.
+    #[test]
+    fn a_surface_scoped_popup_centers_on_its_surface() {
+        let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::ScreenCenter);
+        let rect = placed_rect(&inst, &layout_with_surface_7(true), None)
+            .expect("surface 가 보이면 그려져야 한다");
+        assert_eq!(rect.center(), SURFACE_7.center());
+    }
+
+    /// surface 가 이 frame layout 에 없으면(다른 워크스페이스·탭) 그리지 않는다 — 셸·히트
+    /// 테스트·Esc 의 재료인 배치 목록에서 빠진다.
+    #[test]
+    fn a_surface_scoped_popup_is_not_placed_while_its_surface_is_hidden() {
+        let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::ScreenCenter);
+        assert_eq!(
+            placed_rect(&inst, &layout_with_surface_7(false), None),
+            None
+        );
+    }
+
+    /// 위치 clamp 의 경계는 화면이 아니라 surface 다 — 포인터가 surface 밖 왼쪽 위에 있어도
+    /// popup 좌상단은 surface 안에 머문다.
+    #[test]
+    fn a_surface_scoped_popup_is_clamped_to_its_surface() {
+        let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::Cursor);
+        let rect = placed_rect(
+            &inst,
+            &layout_with_surface_7(true),
+            Some(Pos2::new(10.0, 10.0)),
+        )
+        .expect("surface 가 보이면 그려져야 한다");
+        assert_eq!(rect.min, SURFACE_7.min);
+    }
+
+    /// 선언이 없거나(`window`) 대상이 바인딩되지 않은 surface 선언은 이전 동작 그대로다 —
+    /// 항상 보이고 화면 가운데.
+    #[test]
+    fn window_scope_and_unbound_surface_scope_keep_the_screen() {
+        let hidden = layout_with_surface_7(false);
+        for inst in [
+            instance(PopupScopeDecl::Window, Some(7), PopupAnchor::ScreenCenter),
+            instance(PopupScopeDecl::Surface, None, PopupAnchor::ScreenCenter),
+        ] {
+            let rect = placed_rect(&inst, &hidden, None).expect("창 범위는 항상 그려진다");
+            assert_eq!(rect.center(), SCREEN.center());
+        }
+    }
 
     /// popup 콘텐츠 위에서 휠 이벤트 하나를 받았을 때 와이어에 실리는 `Scroll` 값을
     /// **실제 수집 함수**로 재서 돌려준다(논리 포인트). 스크롤 이벤트가 없으면 `None`.

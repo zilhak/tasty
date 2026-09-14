@@ -443,6 +443,10 @@ pub struct PopupInstance {
     /// host↔plugin popup 통합 z-order 순번(`next_popup_z_seq`). open 시 발급되고, 콘텐츠
     /// 영역 클릭 시(host 쪽 `touch_popup_instance_z`) 갱신된다.
     pub z_seq: u64,
+    /// `contribute.scope = "surface"` popup 이 속한 host surface id. popup 을 여는 host
+    /// 진입점이 [`PluginManager::bind_popup_instance_surface`] 로 채운다. `None` 이면
+    /// 렌더는 선언과 무관하게 window 범위로 다룬다(plugin 이 스스로 연 popup 등).
+    pub scope_surface: Option<u32>,
 }
 
 /// 호스트가 추적 중인 banner 인스턴스 한 건(A3). plugin process가 죽으면 함께 제거된다.

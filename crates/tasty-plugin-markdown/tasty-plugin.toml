@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.97"
+version = "0.1.98"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -99,12 +99,17 @@ dismiss_on_outside_click = true
 # browse 는 host 소유 file_picker popup(`file_picker.trigger`)으로 위임, 열기는 surface_id
 # 유무로 분기한다:
 # 있으면 `markdown.navigate`(제자리), 없으면 `file_handler.dispatch`(새 탭).
+# `scope = "surface"` — host 진입점이 대상 surface(제자리 변환이면 그 surface, 새 탭이면
+# 여는 시점의 focus surface)에 이 팝업을 묶는다. 그 surface 가 안 보이면 그리지 않고,
+# 위치는 그 surface 영역 가운데로 잡혀 그 영역 안으로 clamp 된다. event trigger 로 열린
+# 경우는 host 가 대상을 모르므로 창 범위로 뜬다.
 [[contributes.popup]]
 id = "file-open"
 trigger = { kind = "event", event_key = "com.tasty.markdown.file_open" }
 rendering = "egui-mesh"
 size_hint = { width = 420, height = 170 }
 anchor = "screen-center"
+scope = "surface"
 dismiss_on_outside_click = true
 
 [[contributes.detector]]

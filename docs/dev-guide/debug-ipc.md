@@ -58,7 +58,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.switch_tab` | `index` (0-based) | 포커스 pane 의 활성 탭 전환 — 사용자 탭 클릭 재현 (egui-mesh 탭 가시성 시나리오 검증 등). **대상이 포커스된 창의 포커스된 pane 이라 포커스 독립성을 만족하지 않는다** — 재현하려는 클릭 자체가 그 pane 에서 일어나므로 그것이 정답이다. 응답은 세 갈래다 — 옮겼으면 `switched:true`, **이미 그 탭을 보고 있었으면 성공에 `switched:false`**(정상이고 바뀔 것이 없었을 뿐이다), 그런 탭이 없으면 실패에 실제 탭 수를 실어 보낸다. 앞의 둘을 하나로 누르면 범위 안 인덱스가 "out of range" 로 나가고, 그 문구를 믿은 호출자가 대상을 의심하는 대신 없는 탭을 찾는다 |
 | `debug.tool.list` | `{}` | 도구 메뉴 항목 전체를 표시 순서대로 |
 | `debug.tool.invoke` | `key` (`<plugin_id>/<tool_id>`) | 도구 항목을 사용자 클릭과 동일하게 dispatch |
-| `debug.popup.list` | `{}` | contribute 된 popup 정의 + 현재 열린 instance (각 instance 에 `z_seq` — host popup 과 공유하는 전역 시퀀스라 `debug.host_popup.list` 값과 직접 비교 가능) |
+| `debug.popup.list` | `{}` | contribute 된 popup 정의 + 현재 열린 instance (각 instance 에 `z_seq` — host popup 과 공유하는 전역 시퀀스라 `debug.host_popup.list` 값과 직접 비교 가능 — 와 소속 범위 `scope`(매니페스트 선언) · `scope_surface`(host 진입점이 바인딩한 대상, 없으면 `null`)) |
 | `debug.popup.open` | `plugin_id, popup_id, context?` | popup 인스턴스 강제 open (응답에 `instance_id`) |
 | `debug.popup.close` | `instance_id` | popup 인스턴스 강제 close. release 경로(plugin 의 `popup.close`)와 **같은 close 큐**로 합류한다([ADR-0084](../adr/0084-plugin-triggered-host-popup-ownership.md) Decision 3) — 여기서 매니저를 직접 치면 부모-자식 연쇄 정리를 건너뛰어, 이 표면으로 하는 재현 검증이 실제 동작과 어긋난다 |
 | `debug.host_popup.list` | `{}` | 호스트 빌트인 popup(`PopupDef`) 전체 목록 (id + title_key + `close_on_outside_click`). 열려 있는 항목은 `open:true` 와 함께 `z_seq`·`rect`(논리 pt) 를 노출한다 — 겹친 popup 의 마우스 소유권 판정을 좌표 실측 없이 검증하기 위한 관찰면 |

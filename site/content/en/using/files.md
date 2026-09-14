@@ -1,4 +1,4 @@
-<!-- source-hash: 39a10f0c390b -->
+<!-- source-hash: dbef81bc7f40 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -69,7 +69,7 @@ Renders `.md` files. When the file changes, it redraws automatically within 1 se
 - Links in the document — other Markdown · files open in a new Tab in the same Pane, and `http(s)://` goes to the browser. Relative paths are relative to the folder the document is in.
 - Files over 1MB are asked about once with **Open large file?**.
 
-**New Markdown...** or `Alt+'` > **Markdown** opens the **Open Markdown File** window. Type a path or choose one with **Browse…**. Browse starts in the current folder of the terminal you are looking at.
+**New Markdown...** or `Alt+'` > **Markdown** opens the **Open Markdown File** window. Type a path or choose one with **Browse…**. Browse starts in the current folder of the terminal you are looking at. The window appears centered over that surface, and it hides while you switch to another workspace or tab and comes back as you left it when you return.
 
 ```sh
 tasty markdown recent

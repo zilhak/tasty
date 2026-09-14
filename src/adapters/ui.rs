@@ -97,6 +97,8 @@ pub fn draw_fullscreen_stage(
     fullscreen::draw_fullscreen_stage(ctx, state, engine);
 }
 
+/// host popup 층과 오버레이를 그리고, 그 판정에 쓴 [`LayoutContext`] 를 돌려준다 — 같은
+/// frame 의 plugin popup 이 같은 값으로 소속 범위를 판정하도록(`draw_plugin_popups`).
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut crate::state::AppState,
@@ -104,7 +106,7 @@ pub fn draw_popups(
     pane_rects: &[(u32, crate::model::PhysicalRect)],
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
-) {
+) -> LayoutContext {
     let draw_ctx = layout_context::build_layout_context(
         state,
         engine,
@@ -119,6 +121,7 @@ pub fn draw_popups(
 
     popup::frame::draw_popup_layer(ctx, state, engine, &draw_ctx);
     overlay::draw_overlays(ctx, state, engine, &draw_ctx, terminal_rect, scale_factor);
+    draw_ctx
 }
 
 /// 물리 사각형을 egui 가 그리는 논리 좌표 사각형으로 내린다.

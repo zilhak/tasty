@@ -113,6 +113,26 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 `Workspace` 스코프 팝업은 워크스페이스를 옮기면 **그리지 않는다** — 상태는 그대로 남아 있어
 돌아오면 보던 화면이 그대로 복원된다. 그 상태의 수명은 스코프가 아니라 `on_close` 가 정한다.
 
+### plugin popup 의 스코프
+
+plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 **종류**만 선언한다 —
+`window`(기본) 또는 `surface`. 대상 surface 는 popup 을 여는 host 진입점이 인스턴스에
+바인딩한다([ADR-0273](../../adr/0273-plugin-popup-declares-a-scope-kind-and-the-host-binds-the-target.md)).
+가시성·경계는 위 표와 같은 판정 함수로 같은 frame 의 `LayoutContext` 에서 정한다.
+
+| 진입점 | 바인딩되는 대상 |
+|--------|----------------|
+| 변환 입력 popup(`convert_input_popup`) | 제자리 변환이면 그 surface, 새 탭이면 여는 시점의 focus surface |
+| 도구 메뉴 popup | 여는 시점의 focus surface |
+| plugin 이 IPC·이벤트로 연 popup | 없음 — 선언이 `surface` 여도 `window` 로 뜬다 |
+
+`surface` 범위 popup 은 앵커의 가운데 기준도 그 surface 영역이다. 범위가 안 보이는 frame 에는
+셸·콘텐츠 합성·히트테스트 rect·Esc·바깥 클릭·키 게이트 어디에도 들어가지 않는다 — 보이지
+않는 rect 가 클릭을 삼키지 않는다. 인스턴스는 살아 있어 범위가 다시 보이면 그대로 복원된다.
+scrim 은 범위와 무관하게 창 전체에 깔린다.
+
+현재 `scope = "surface"` 선언: markdown `file-open`.
+
 ## Modal 과의 차이
 
 | 항목 | Popup | Modal |

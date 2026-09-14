@@ -699,7 +699,7 @@ impl PopupManager {
             .map(|p| (p.id, p.z_seq))
     }
 
-    fn is_scope_visible(scope: &PopupScope, ctx: Option<&LayoutContext>) -> bool {
+    pub(crate) fn is_scope_visible(scope: &PopupScope, ctx: Option<&LayoutContext>) -> bool {
         let Some(ctx) = ctx else { return true };
         match scope {
             PopupScope::Window => true,
@@ -716,7 +716,10 @@ impl PopupManager {
     }
 
     /// Get the bounding rect for a popup's scope.
-    fn scope_rect(scope: &PopupScope, ctx: Option<&LayoutContext>) -> Option<egui::Rect> {
+    pub(crate) fn scope_rect(
+        scope: &PopupScope,
+        ctx: Option<&LayoutContext>,
+    ) -> Option<egui::Rect> {
         let ctx = ctx?;
         match scope {
             PopupScope::Window => None,       // use screen_rect (caller default)
