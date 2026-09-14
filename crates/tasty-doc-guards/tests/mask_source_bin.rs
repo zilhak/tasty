@@ -63,13 +63,21 @@ fn run(root: &Path, out: &Path, flag: Option<&str>) {
     if let Some(f) = flag {
         cmd.arg(f);
     }
-    let status = cmd
+    // `.status()` 가 아니라 `.output()` 이다 — 앞의 것은 자식의 stderr 를 시험 하네스의
+    // 포착 밖(프로세스 fd 2)으로 흘려보내, 병렬 회차에서는 **어느 시험의 것인지 모를 줄**로
+    // 섞이고 실패 문구에는 종료 코드만 남는다.
+    let result = cmd
         .arg(out)
         .arg(root)
         .arg("crates")
-        .status()
+        .output()
         .expect("mask-source 를 실행할 수 없다");
-    assert!(status.success(), "종료코드 {status:?}");
+    assert!(
+        result.status.success(),
+        "종료코드 {:?}\nstderr:\n{}",
+        result.status,
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 fn masked(flag: Option<&str>, tag: &str) -> String {
@@ -130,15 +138,16 @@ fn an_empty_scan_is_a_failure_not_a_success() {
     let root = Tmp::new("empty-root");
     let out = Tmp::new("empty-out");
     std::fs::create_dir_all(root.path().join("crates")).expect("빈 스캔 루트");
-    let status = Command::new(BIN)
+    let result = Command::new(BIN)
         .arg(out.path())
         .arg(root.path())
         .arg("crates")
-        .status()
+        .output()
         .expect("실행");
     assert_eq!(
-        status.code(),
+        result.status.code(),
         Some(2),
-        "빈 모수를 성공으로 냈다 — 게이트가 아무것도 안 세고 초록이 된다"
+        "빈 모수를 성공으로 냈다 — 게이트가 아무것도 안 세고 초록이 된다\nstderr:\n{}",
+        String::from_utf8_lossy(&result.stderr)
     );
 }

@@ -145,13 +145,21 @@ fn run(root: &Path, out: &Path, flag: Option<&str>) {
     if let Some(f) = flag {
         cmd.arg(f);
     }
-    let status = cmd
+    // `.status()` 가 아니라 `.output()` 이다 — 앞의 것은 자식의 stderr 를 시험 하네스의
+    // 포착 밖(프로세스 fd 2)으로 흘려보내, 병렬 회차에서는 **어느 시험의 것인지 모를 줄**로
+    // 섞이고 실패 문구에는 종료 코드만 남는다.
+    let result = cmd
         .arg(out)
         .arg(root)
         .arg("crates")
-        .status()
+        .output()
         .expect("strip-cfg-test 를 실행할 수 없다");
-    assert!(status.success(), "종료코드 {status:?}");
+    assert!(
+        result.status.success(),
+        "종료코드 {:?}\nstderr:\n{}",
+        result.status,
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 #[test]

@@ -49,16 +49,22 @@ fn wait_for_git_query_result(stream: &mut TcpStream, request_id: u64) -> Value {
 }
 
 fn git(dir: &std::path::Path, args: &[&str]) {
-    let status = Command::new("git")
+    // `.output()` 인 이유: `.status()` 는 git 의 stderr 를 시험 포착 밖으로 흘려보내 실패
+    // 문구에 원인이 안 남는다(병렬 회차에서는 남의 줄과 섞인다).
+    let out = Command::new("git")
         .args(args)
         .current_dir(dir)
         .env("GIT_AUTHOR_NAME", "Tasty Test")
         .env("GIT_AUTHOR_EMAIL", "test@tasty.invalid")
         .env("GIT_COMMITTER_NAME", "Tasty Test")
         .env("GIT_COMMITTER_EMAIL", "test@tasty.invalid")
-        .status()
+        .output()
         .unwrap_or_else(|e| panic!("failed to run git {args:?}: {e}"));
-    assert!(status.success(), "git {args:?} failed in {dir:?}");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed in {dir:?}: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
 }
 
 /// 실제 디스크에 커밋 1개 + 추적되지 않은 파일 1개가 있는 git 저장소를 만든다.

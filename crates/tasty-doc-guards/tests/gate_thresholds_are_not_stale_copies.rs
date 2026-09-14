@@ -718,7 +718,11 @@ fn tracked_text_files() -> Vec<String> {
         .args(["ls-files"])
         .output()
         .unwrap_or_else(|e| panic!("`git ls-files` 를 실행할 수 없다 — {e}"));
-    assert!(out.status.success(), "`git ls-files` 가 실패했다");
+    assert!(
+        out.status.success(),
+        "`git ls-files` 가 실패했다: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
     let exts = [".md", ".rs", ".toml", ".sh", ".yml", ".yaml"];
     String::from_utf8_lossy(&out.stdout)
         .lines()

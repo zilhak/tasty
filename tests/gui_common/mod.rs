@@ -377,14 +377,15 @@ impl GuiTestInstance {
         if let Some(modal) =
             self.call("ui.state", serde_json::json!({}))["active_modal_id"].as_u64()
         {
-            let status = Command::new("xdotool")
+            let out = Command::new("xdotool")
                 .args(["windowfocus", &modal.to_string()])
-                .status()
+                .output()
                 .expect("xdotool windowfocus 를 못 돌렸다");
             assert!(
-                status.success(),
+                out.status.success(),
                 "모달 창 {modal} 에 포커스를 못 줬다 — 이대로 키를 넣으면 main 이 받고 \
-                 main 은 모달 중에 키를 끊는다. 자극이 아무 데도 안 닿는다."
+                 main 은 모달 중에 키를 끊는다. 자극이 아무 데도 안 닿는다.\nxdotool stderr: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
             );
             std::thread::sleep(Duration::from_millis(50));
             return;
@@ -438,11 +439,18 @@ impl GuiTestInstance {
             }
         }
         let (_, wid) = best.unwrap_or_else(|| panic!("pid {pid} 의 X 창을 못 찾았다"));
-        let status = Command::new("xdotool")
+        // `.output()` 인 이유: `.status()` 는 xdotool 의 stderr(창이 없다 · 디스플레이를 못
+        // 연다)를 시험 포착 밖으로 흘려보내 실패 문구에 종료 코드만 남긴다.
+        let out = Command::new("xdotool")
             .args(["windowfocus", &wid])
-            .status()
+            .output()
             .expect("xdotool windowfocus 를 못 돌렸다");
-        assert!(status.success(), "xdotool windowfocus {wid} 실패: {status}");
+        assert!(
+            out.status.success(),
+            "xdotool windowfocus {wid} 실패: {}\nxdotool stderr: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
 
     /// Send a JSON-RPC request and return the result.
