@@ -1302,7 +1302,7 @@ mirror_reconnected = "원격 워크스페이스에 다시 연결했습니다."
 # 돌아오면 여전히 수동으로 재시도된다.
 mirror_reconnect_giveup = "여러 번 시도했지만 재연결하지 못했습니다. 이 워크스페이스에서 벗어났다가 돌아오면 다시 시도합니다."
 
-# (09) 원격 파일 전송 피드백 팝업 — 진행(determinate) + 실패.
+# 원격 파일 전송 피드백 팝업 — 진행(determinate) + 실패.
 [transfer.progress]
 # 전송 진행 팝업 헤더(download 글리프). 수신 측(원격 인스턴스가 파일을 받는다) 관점.
 title = "파일 수신 중"

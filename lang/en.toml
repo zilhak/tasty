@@ -1324,7 +1324,7 @@ mirror_reconnected = "Reconnected to the remote workspace."
 # Switching away from and back to the workspace still retries manually.
 mirror_reconnect_giveup = "Couldn't reconnect after several attempts. Switch away and back to this workspace to retry."
 
-# (09) Remote file-transfer feedback popups — progress (determinate) + failed.
+# Remote file-transfer feedback popups — progress (determinate) + failed.
 [transfer.progress]
 # Header of the transfer progress popup (download glyph). Framed from the
 # receiving side (the remote instance receives the file being uploaded).
