@@ -18,17 +18,27 @@
 //! `draw` = 개요(로컬/원격 loaded 나란히). `draw_states` = loading·empty·
 //! permission-denied·connection-lost·multi-select 5상태. 키보드 focus-ring 은
 //! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
+//! `draw_save_mode` = 저장 모드 4상태(새 이름 · 기존 파일 선택 → 덮어쓰기 · 선택 후 이름 수정 ·
+//! 깊은 경로의 가운데 생략). 저장 모드의 확정 수단은 footer 의 primary 버튼 **하나**이고,
+//! 목록 행 선택은 확정이 아니라 이름 칸을 채운다.
+//!
+//! **긴 경로 축소 규칙**(열기 모드에도 적용): 넘침은 path bar 가 흡수한다 — breadcrumb 이
+//! 유일한 가변 자식(`flex:1; min-width:0; overflow:hidden`)이고 깊으면 가운데를 접는다
+//! (root + `…` + 마지막 두 성분). footer 의 라벨·버튼은 줄지 않고 이름 칸만 준다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{
-    CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
+    CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH,
 };
 use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, checkbox};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
+
+mod footer;
+mod path_bar;
 
 // ── 프레임 고정 치수 (디자인 raw px 근사 — 화면 전용 고정값, token-policy §c) ──
 const FRAME_W: LogicalPx = LogicalPx(640.0);
@@ -37,12 +47,14 @@ const HEADER_H: LogicalPx = LogicalPx(44.0); // padding ~8/8(디자인 10/10 근
 const HEADER_PAD_L: LogicalPx = LogicalPx(14.0); // 디자인 L14
 const PATH_H: LogicalPx = LogicalPx(36.0); // padding ~6/6 + refresh IconButton(sm)
 const LIST_HEAD_H: LogicalPx = LogicalPx(26.0); // caption row — loaded/multi 상태만
-const FOOTER_H: LogicalPx = LogicalPx(84.0); // name row(28) + gap(8) + action row(28) + padding 10/10 근사
-const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H).minus(PATH_H).minus(FOOTER_H);
+const FOOTER_H: LogicalPx = LogicalPx(84.0); // name row(28) + gap(8) + action row(28) + padding 10/10 근사 — 덮어쓰기 경고 줄은 `footer_height` 가 더한다
 const ROW_H: LogicalPx = LogicalPx(28.0); // FpRow padding 6/space-md + content 16
 const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라벨 고정폭
+/// 브레드크럼 한 성분의 최대 폭(디자인 `FpCrumbs` span `maxWidth:180`, 넘치면 말줄임).
+/// 대응 Theme 토큰이 없는 구조 폭이다.
+const CRUMB_MAX_W: LogicalPx = LogicalPx(180.0);
 const FOOTER_CHIP_W: LogicalPx = LogicalPx(92.0); // "All files ▾" 타입필터 칩
 
 /// 원격 host 배지 칩의 높이(디자인 size-22). 4px 그리드 밖이고 대응 Theme 토큰이
@@ -129,13 +141,86 @@ const FILES: &[Row] = &[
 // 디자인 multi 상태 checked seed (README.md / package.json / pipeline.yaml).
 const MULTI_PICKED: &[&str] = &["README.md", "package.json", "pipeline.yaml"];
 
+/// 무엇을 하는 피커인가 — 디자인 `FilePickerFrame` `mode`/`save` prop.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Open,
+    Save(SaveState),
+}
+
+/// 저장 모드의 이름 칸 상태 — 디자인 `save="new"|"picked"|"edited"`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SaveState {
+    /// 새 이름을 입력했다 — 목록 선택 없음, 버튼 Save.
+    New,
+    /// 목록에서 기존 파일을 골랐다 — 이름 칸에 그 이름, 곧 덮어쓰기 상태.
+    Picked,
+    /// 고른 뒤 이름을 고쳤다 — 선택이 풀리고 버튼이 Save 로 돌아온다.
+    Edited,
+}
+
+impl SaveState {
+    // 디자인 seed 1:1 (overlays-shared.jsx `saveName`).
+    fn name(self) -> &'static str {
+        match self {
+            SaveState::Picked => "pipeline.yaml",
+            SaveState::Edited => "pipeline-v2.yaml",
+            SaveState::New => "keybindings-2026-09-14.toml",
+        }
+    }
+
+    fn selected(self) -> Option<&'static str> {
+        match self {
+            SaveState::Picked => Some("pipeline.yaml"),
+            _ => None,
+        }
+    }
+}
+
+/// 카드 한 장의 변형 — 디자인 `FilePickerFrame` prop 묶음.
+#[derive(Clone, Copy)]
+struct Variant {
+    state: FpState,
+    remote: bool,
+    multi: bool,
+    mode: Mode,
+    /// 깊은 경로 — breadcrumb 가운데 생략.
+    deep: bool,
+}
+
+impl Variant {
+    const fn open(state: FpState, remote: bool, multi: bool) -> Self {
+        Self {
+            state,
+            remote,
+            multi,
+            mode: Mode::Open,
+            deep: false,
+        }
+    }
+
+    const fn save(save: SaveState, deep: bool) -> Self {
+        Self {
+            state: FpState::Loaded,
+            remote: false,
+            multi: false,
+            mode: Mode::Save(save),
+            deep,
+        }
+    }
+
+    fn overwrite(self) -> bool {
+        matches!(self.mode, Mode::Save(SaveState::Picked))
+    }
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "local", |ui| {
-            card(ui, theme, FpState::Loaded, false, false);
+            card(ui, theme, Variant::open(FpState::Loaded, false, false));
         });
         spec::cluster(ui, theme, "remote (host badge)", |ui| {
-            card(ui, theme, FpState::Loaded, true, false);
+            card(ui, theme, Variant::open(FpState::Loaded, true, false));
         });
     });
 
@@ -191,19 +276,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "loading (remote)", |ui| {
-            card(ui, theme, FpState::Loading, true, false);
+            card(ui, theme, Variant::open(FpState::Loading, true, false));
         });
         spec::cluster(ui, theme, "empty folder", |ui| {
-            card(ui, theme, FpState::Empty, false, false);
+            card(ui, theme, Variant::open(FpState::Empty, false, false));
         });
         spec::cluster(ui, theme, "permission denied (local)", |ui| {
-            card(ui, theme, FpState::ErrorPerm, false, false);
+            card(ui, theme, Variant::open(FpState::ErrorPerm, false, false));
         });
         spec::cluster(ui, theme, "connection lost (remote)", |ui| {
-            card(ui, theme, FpState::ErrorConn, true, false);
+            card(ui, theme, Variant::open(FpState::ErrorConn, true, false));
         });
         spec::cluster(ui, theme, "multi-select (remote)", |ui| {
-            card(ui, theme, FpState::Loaded, true, true);
+            card(ui, theme, Variant::open(FpState::Loaded, true, true));
         });
     });
 
@@ -243,9 +328,78 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "save — typed name (new file)", |ui| {
+            card(ui, theme, Variant::save(SaveState::New, false));
+        });
+        spec::cluster(
+            ui,
+            theme,
+            "save — existing file picked → Overwrite",
+            |ui| {
+                card(ui, theme, Variant::save(SaveState::Picked, false));
+            },
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "save — name edited after the pick → selection cleared",
+            |ui| {
+                card(ui, theme, Variant::save(SaveState::Edited, false));
+            },
+        );
+        spec::cluster(ui, theme, "deep path — middle-elided breadcrumb", |ui| {
+            card(ui, theme, Variant::save(SaveState::New, true));
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("title", "Save file (open mode: Open file)"),
+            ("confirm", "footer primary only — one control"),
+            ("labels", "Save · Overwrite when the name exists"),
+            ("input", "editable · placeholder “Type a file name”"),
+            ("list pick", "writes the name into the input → Overwrite"),
+            ("selection", "clears as soon as the name diverges → Save"),
+            ("overwrite", "11px warning line above the buttons"),
+            ("disabled", "Save disabled while the name is empty"),
+            ("breadcrumb", "root + … + last two segments"),
+            ("footer", "never shrinks — the input absorbs it"),
+        ],
+        &[
+            TokenChip::new(
+                "accent-warning",
+                "overwrite line",
+                theme.accent_warning().to_egui(),
+            ),
+            TokenChip::new("input-bg", "name field", theme.input_bg().to_egui()),
+            TokenChip::new(
+                "text-placeholder",
+                "empty name",
+                theme.text_placeholder().to_egui(),
+            ),
+            TokenChip::new("separator", "footer rule", theme.separator.to_egui()),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Long-path shrink rule (fixes a defect in open mode too). Overflow is absorbed in the \
+         path bar, never by the footer: the breadcrumb is the only flexible child \
+         (flex:1; min-width:0) and elides in the middle — root + … + the last two segments, \
+         since the current folder and its parent are what orient you; the … lists the hidden \
+         ancestors on click. Footer label, filter chip and both buttons are flex:none; only the \
+         name input shrinks. No horizontal scroll, and Cancel / Open / Save can never be clipped.",
+    );
+}
+
 // ════════════════════════════════════════════════════════════════════════
 /// 640×480 카드 한 장.
-fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: bool) {
+fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
         .stroke(egui::Stroke::new(
@@ -260,15 +414,18 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
             ui.vertical(|ui| {
                 ui.set_width(FRAME_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                header(ui, theme, remote);
-                path_bar(ui, theme, remote);
-                body(ui, theme, state, multi);
-                footer(ui, theme, state, multi);
+                header(ui, theme, v);
+                path_bar::path_bar(ui, theme, v);
+                // footer 를 먼저 재고 남은 높이를 본문에 준다 — 덮어쓰기 경고 줄이 footer 를
+                // 키우면 본문이 줄지 footer 가 밀려나지 않는다.
+                let footer_h = footer::footer_height(ui, theme, v);
+                body(ui, theme, v, FRAME_H - HEADER_H - PATH_H - footer_h);
+                footer::footer(ui, theme, v, footer_h);
             });
         });
 }
 
-fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
+fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(FRAME_W.value(), HEADER_H.value()),
         egui::Sense::hover(),
@@ -301,8 +458,15 @@ fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
         theme.icon_glyph_size_md,
         theme.text_muted().to_egui(),
     );
-    kit::title(&mut child, theme, "Open file");
-    if remote {
+    kit::title(
+        &mut child,
+        theme,
+        match v.mode {
+            Mode::Open => "Open file",
+            Mode::Save(_) => "Save file",
+        },
+    );
+    if v.remote {
         host_badge(&mut child, theme, HOST);
     }
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -352,121 +516,6 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter().galley(pos, galley, info);
-}
-
-fn path_bar(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), PATH_H.value()),
-        egui::Sense::hover(),
-    );
-    ui.painter()
-        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
-    let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
-        egui::pos2(rect.right() - theme.spacing_sm.value(), rect.bottom()),
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    crumbs(&mut child, theme, remote);
-    child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        IconButton::new()
-            .variant(IconButtonVariant::Ghost)
-            .show(ui, theme, &|ui, rect, c| {
-                icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
-            });
-    });
-}
-
-struct Crumb {
-    label: &'static str,
-    root: bool,
-    current: bool,
-}
-
-/// 브레드크럼 — root(mono) → 중간(accent 링크) → current(bold, 비클릭).
-fn crumbs(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    const REMOTE_CRUMBS: &[Crumb] = &[
-        Crumb {
-            label: HOST,
-            root: true,
-            current: false,
-        },
-        Crumb {
-            label: "home",
-            root: false,
-            current: false,
-        },
-        Crumb {
-            label: "deploy",
-            root: false,
-            current: false,
-        },
-        Crumb {
-            label: "agents-prod",
-            root: false,
-            current: true,
-        },
-    ];
-    const LOCAL_CRUMBS: &[Crumb] = &[
-        Crumb {
-            label: "/",
-            root: true,
-            current: false,
-        },
-        Crumb {
-            label: "Users",
-            root: false,
-            current: false,
-        },
-        Crumb {
-            label: "maya",
-            root: false,
-            current: false,
-        },
-        Crumb {
-            label: "projects",
-            root: false,
-            current: true,
-        },
-    ];
-    let items = if remote { REMOTE_CRUMBS } else { LOCAL_CRUMBS };
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
-        for (i, it) in items.iter().enumerate() {
-            if i > 0 {
-                kit::icon(
-                    ui,
-                    icons::CHEVRON_RIGHT,
-                    CRUMB_GLYPH,
-                    theme.text_disabled().to_egui(),
-                );
-            }
-            let color = if it.current {
-                theme.text_primary()
-            } else {
-                theme.accent_primary()
-            };
-            let mut rt = egui::RichText::new(it.label)
-                .size(theme.font_size_caption.value())
-                .color(color.to_egui());
-            if it.root {
-                rt = rt.monospace();
-            }
-            if it.current {
-                rt = rt.strong();
-            }
-            ui.label(rt);
-        }
-    });
 }
 
 /// 행 컬럼 x좌표 — list header 와 `row` 가 동일 레이아웃을 공유.
@@ -651,12 +700,13 @@ fn row(
     );
 }
 
-fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
-    match state {
+fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
+    let multi = v.multi;
+    match v.state {
         FpState::Loaded => {
             list_header(ui, theme, multi);
             let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(FRAME_W.value(), (BODY_H - LIST_HEAD_H).value()),
+                egui::vec2(FRAME_W.value(), (body_h - LIST_HEAD_H).value()),
                 egui::Sense::hover(),
             );
             let mut col = ui.new_child(
@@ -664,10 +714,16 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
                     .max_rect(rect)
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
+            col.set_clip_rect(rect.intersect(ui.clip_rect()));
             col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             for f in FILES {
-                let selected = !multi && f.name == "README.md";
-                let focus = !multi && f.name == "pipeline.yaml";
+                let (selected, focus) = match v.mode {
+                    Mode::Save(save) => (save.selected() == Some(f.name), false),
+                    Mode::Open => (
+                        !multi && f.name == "README.md",
+                        !multi && f.name == "pipeline.yaml",
+                    ),
+                };
                 let checked = multi && MULTI_PICKED.contains(&f.name);
                 row(&mut col, theme, f, multi, checked, selected, focus);
             }
@@ -675,6 +731,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::Loading => center(
             ui,
             theme,
+            body_h,
             icons::FOLDER,
             theme.text_placeholder().to_egui(),
             true,
@@ -686,6 +743,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::Empty => center(
             ui,
             theme,
+            body_h,
             icons::FOLDER_OPEN,
             theme.text_placeholder().to_egui(),
             false,
@@ -697,6 +755,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::ErrorPerm => center(
             ui,
             theme,
+            body_h,
             icons::ALERT_TRIANGLE,
             theme.accent_danger().to_egui(),
             false,
@@ -710,6 +769,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::ErrorConn => center(
             ui,
             theme,
+            body_h,
             icons::ALERT_TRIANGLE,
             theme.accent_danger().to_egui(),
             false,
@@ -725,6 +785,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
 fn center(
     ui: &mut egui::Ui,
     theme: &Theme,
+    body_h: LogicalPx,
     glyph: MockGlyph,
     glyph_color: egui::Color32,
     spinner: bool,
@@ -734,7 +795,7 @@ fn center(
     action: Option<&str>,
 ) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), BODY_H.value()),
+        egui::vec2(FRAME_W.value(), body_h.value()),
         egui::Sense::hover(),
     );
     let mut col = ui.new_child(
@@ -742,7 +803,7 @@ fn center(
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    col.add_space(((BODY_H - LogicalPx(EMPTY_BLOCK_H)).max(LogicalPx(0.0)) * 0.5).value());
+    col.add_space(((body_h - LogicalPx(EMPTY_BLOCK_H)).max(LogicalPx(0.0)) * 0.5).value());
     col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
     if spinner {
         Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
@@ -770,124 +831,4 @@ fn center(
             .leading_icon(&|ui, rect, c| icons::REFRESH.image(rect.height(), c).paint_at(ui, rect))
             .show(&mut col, theme);
     }
-}
-
-fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), FOOTER_H.value()),
-        egui::Sense::hover(),
-    );
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
-    let inner = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left() + theme.spacing_lg.value(),
-            rect.top() + theme.spacing_sm.value(),
-        ),
-        egui::pos2(
-            rect.right() - theme.spacing_lg.value(),
-            rect.bottom() - theme.spacing_sm.value(),
-        ),
-    );
-    let mut col = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-    col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-
-    let (name_text, placeholder): (String, bool) = match state {
-        FpState::Loaded if multi => (MULTI_PICKED.join(", "), false),
-        FpState::Loaded => ("README.md".to_owned(), false),
-        _ => (String::new(), true),
-    };
-    col.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        ui.allocate_ui_with_layout(
-            egui::vec2(FOOTER_LABEL_W.value(), 0.0),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.label(
-                    egui::RichText::new("File name")
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_muted().to_egui()),
-                );
-            },
-        );
-        let remaining = ui.available_width();
-        let input_w = (LogicalPx(remaining) - FOOTER_CHIP_W - theme.spacing_sm).max(LogicalPx(0.0));
-        kit::field(
-            ui,
-            theme,
-            Some(input_w),
-            if placeholder {
-                "No file selected"
-            } else {
-                name_text.as_str()
-            },
-            placeholder,
-            false,
-        );
-        type_filter_chip(ui, theme);
-    });
-
-    col.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        if multi {
-            ui.label(
-                egui::RichText::new(format!("{} selected", MULTI_PICKED.len()))
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_muted().to_egui()),
-            );
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let can_open = state == FpState::Loaded;
-            Button::new("Open")
-                .variant(ButtonVariant::Primary)
-                .enabled(can_open)
-                .show(ui, theme);
-            Button::new("Cancel")
-                .variant(ButtonVariant::Ghost)
-                .show(ui, theme);
-        });
-    });
-}
-
-/// "All files ▾" 타입 필터 칩 — 정적(팝오버 미열림) specimen.
-fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
-    let h = theme.item_height_interactive.value();
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W.value(), h), egui::Sense::hover());
-    ui.painter().rect_filled(
-        rect,
-        theme.corner_radius.value(),
-        theme.bg_panel().to_egui(),
-    );
-    ui.painter().rect_stroke(
-        rect,
-        theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    let pad = theme.spacing_sm.value();
-    ui.painter().text(
-        egui::pos2(rect.left() + pad, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        "All files",
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        theme.text_secondary().to_egui(),
-    );
-    let ir = egui::Rect::from_min_size(
-        egui::pos2(
-            rect.right() - pad - CRUMB_GLYPH.value(),
-            rect.center().y - CRUMB_GLYPH.value() * 0.5,
-        ),
-        egui::vec2(CRUMB_GLYPH.value(), CRUMB_GLYPH.value()),
-    );
-    icons::CHEVRON_DOWN
-        .image(CRUMB_GLYPH.value(), theme.text_muted().to_egui())
-        .paint_at(ui, ir);
 }

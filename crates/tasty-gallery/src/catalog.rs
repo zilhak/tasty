@@ -905,6 +905,14 @@ pub fn pages() -> Vec<Page> {
                             Some("body swaps list ↔ status without changing the frame"),
                             components::file_picker::draw_states,
                         ),
+                        spec(
+                            "filepicker-save-mode",
+                            "Save mode — one confirm, in the footer",
+                            Some(
+                                "list pick fills the name · Overwrite inline · deep paths elide in the middle",
+                            ),
+                            components::file_picker::draw_save_mode,
+                        ),
                     ],
                 ),
                 section(
