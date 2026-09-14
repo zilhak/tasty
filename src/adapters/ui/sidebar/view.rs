@@ -516,7 +516,7 @@ pub fn draw_full_sidebar_view(
                         // 목록 블록 상단 보더는 그리지 않는다 — 헤더 밴드의 bottom hairline이
                         // 이미 그 경계를 그린다(이중선 방지, 디자인 "헤더 밑 첫 행의 top border
                         // 는 그리지 말 것" 규칙).
-                        // SC05: 키캡은 **active 카테고리**에서만, 그 카테고리 내 **로컬 인덱스**
+                        // 키캡은 **active 카테고리**에서만, 그 카테고리 내 **로컬 인덱스**
                         // 로 표시(전역 인덱스 아님). 비활성 카테고리 행은 키캡 미표시 —
                         // 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(표시=동작).
                         let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
@@ -857,7 +857,7 @@ pub fn draw_collapsed_sidebar_view(
                     });
                 }
                 if !section.collapsed {
-                    // SC05: active 카테고리에서만, 로컬 인덱스로 키캡(full 사이드바와 동일).
+                    // active 카테고리에서만, 로컬 인덱스로 키캡(full 사이드바와 동일).
                     let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
                     for (row_i, (global_idx, ws)) in section.entries.iter().enumerate() {
                         let switch_digit = if props.workspace_switch_held && active_sec {
@@ -1168,7 +1168,7 @@ fn draw_ws_row(
     ws: &WorkspaceEntryView,
     // switch-number overlay: workspace_switch_modifier 홀드 시 leading status dot 을
     // 대체할 키캡 문자. 호출부(섹션 루프)가 로컬 인덱스·active 카테고리 여부를 판단해
-    // 넘긴다(SC05). None 이면 원래 status dot 유지.
+    // 넘긴다. None 이면 원래 status dot 유지.
     switch_digit: Option<&str>,
     // 활성 인덱스가 이번 프레임에 바뀌었을 때만 true — 이 행이 active 면 뷰포트 안으로
     // 스크롤을 보정한다(호출부에서 프레임당 한 번 계산, 매 프레임 강제 스크롤 방지).
@@ -1351,7 +1351,7 @@ fn draw_collapsed_avatar(
     props: &SidebarCollapsedProps<'_>,
     global_idx: usize,
     ws: &WorkspaceEntryView,
-    // switch-number overlay 키캡 문자(SC05, 호출부 판단). None 이면 letter avatar 유지.
+    // switch-number overlay 키캡 문자(호출부 판단). None 이면 letter avatar 유지.
     switch_digit: Option<&str>,
     actions: &mut Vec<SidebarCollapsedAction>,
     resize_priority_hovered: &mut bool,
@@ -2087,7 +2087,7 @@ mod tests {
 
     #[test]
     fn grouped_switch_overlay_local_index_paths_do_not_panic() {
-        // SC05: 카테고리 그룹 + workspace_switch_held. active 워크스페이스(전역 3)가
+        // 카테고리 그룹 + workspace_switch_held. active 워크스페이스(전역 3)가
         // 두 번째 카테고리에 속하고, 그 카테고리 로컬 인덱스는 [0,1] — 첫 카테고리
         // (비활성)는 키캡 미표시(None), 활성 카테고리는 로컬 인덱스 기준 키캡. 두 경로
         // (active/비active 카테고리, 로컬 인덱스 산출) 가 패닉 없이 layout 되는지.

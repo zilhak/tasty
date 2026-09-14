@@ -882,7 +882,7 @@ impl App {
     /// **focus 중립(원칙 1 핵심)**: 이 IPC/에이전트 경로는 mirror workspace 를 *생성만*
     /// 하고 focus 를 그 ws 로 옮기지 않는다. mirror 생성 실체(`start_gui_attach`)는
     /// `engine.workspaces.push` 만 하고 `active_workspace` 를 건드리지 않는다(조용한 생성).
-    /// 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**다(RA02 팝업에서
+    /// 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**다(원격 워크스페이스 추가 팝업에서
     /// 사용자가 확정할 때) — release IPC 에는 focus 변경 API 가 없다(원칙 3).
     /// 원격측 active 도 바뀌지 않는다(`workspace.create` 는 Agent origin).
     ///

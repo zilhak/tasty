@@ -218,7 +218,7 @@ impl AppState {
     /// 전역 인덱스만 뽑아 불변 빌림을 끝낸 뒤 [`switch_workspace`](Self::switch_workspace)
     /// 를 재사용하므로 active 보정 로직을 그대로 탄다.
     //
-    // quick-switch 키바인딩(QS03)에서 **사용자 키 경로로만** 호출된다. (원칙 1/3:
+    // quick-switch 키바인딩(`handle_numeric_switch_shortcuts`)에서 **사용자 키 경로로만** 호출된다. (원칙 1/3:
     // active_workspace 를 바꾸는 사용자 포커스 이동 — release IPC/CLI 로 노출 금지.)
     pub fn next_workspace_in_active_category(&mut self, engine: &mut CoreState) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, 1) {
@@ -230,7 +230,7 @@ impl AppState {
     /// [`next_workspace_in_active_category`](Self::next_workspace_in_active_category) 의
     /// 역방향(첫 항목에서 이전으로 가면 `workspace_switch_crosses_category` off 시 마지막
     /// 항목으로 wrap-around, on 시 이전 카테고리의 마지막 워크스페이스로 이동).
-    // QS03 에서 사용자 키 경로로 호출 (next_ 동일).
+    // quick-switch 키바인딩에서 사용자 키 경로로 호출 (next_ 동일).
     pub fn prev_workspace_in_active_category(&mut self, engine: &mut CoreState) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, -1) {
             self.switch_workspace(engine, target);

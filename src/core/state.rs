@@ -174,7 +174,7 @@ pub struct ExplorerClipboard {
     pub cut: bool,
 }
 
-/// N-RA02 — 원격 워크스페이스 추가 팝업의 Connect 가 메인 루프로 넘기는 사용자-경로
+/// 원격 워크스페이스 추가 팝업의 Connect 가 메인 루프로 넘기는 사용자-경로
 /// GUI attach 요청. `port`/`workspace` 는 attach 대상, `tunnel` 은 조회에 쓴 SSH 터널을
 /// 재사용(loopback 이면 None). `App::dispatch_pending_gui_attach` 가 drain 해
 /// `start_gui_attach` 로 mirror 를 띄우고, 성공 시 새 mirror ws 로 focus 를 옮긴다.
@@ -579,7 +579,7 @@ pub struct CoreState {
     pub(crate) pending_mesh_input_forward:
         std::collections::HashMap<u32, tasty_plugin_protocol::protocol::RawInputWire>,
 
-    /// N-RA02 — **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
+    /// **사용자 입력 경로 전용** GUI attach 트리거 큐. 원격 워크스페이스 추가
     /// 팝업(remote_attach)의 Connect 클릭이 조회에 쓴 터널을 실어 push 한다. 위
     /// `pending_gui_attach`(IPC/에이전트 경로, focus 중립)와 분리된 이유: 이 큐 drain 은
     /// attach 성공 시 새 mirror ws 로 **focus 를 이동**하는데(사용자 확정 동작), 그 focus
@@ -1893,7 +1893,7 @@ mod category_tests {
     #[test]
     fn mirror_workspace_not_persisted() {
         use crate::core::layout_persistence::SavedLayout;
-        // N-RA02 회귀: 원격 attach 가 만드는 mirror workspace 는 layout.json 에 저장되면
+        // 회귀: 원격 attach 가 만드는 mirror workspace 는 layout.json 에 저장되면
         // 안 된다(재시작 시 원격 없는 죽은 일반 ws 로 복원되는 버그). capture 가 제외하고
         // active 인덱스도 필터 후 위치로 remap 하는지 확인.
         let mut e = engine();

@@ -414,7 +414,7 @@ fn zoom_out_clamps_at_6px() {
     );
 }
 
-// ── handle_numeric_switch_shortcuts: quick-switch 슬롯/next/prev 배선 (QS03) ──
+// ── handle_numeric_switch_shortcuts: quick-switch 슬롯/next/prev 배선 ──
 //
 // 기본 프리셋: tab modifier=ctrl, workspace modifier=alt, tab next/prev="l"/"h",
 // workspace next/prev="j"/"k", workspace_categories_enabled=false.

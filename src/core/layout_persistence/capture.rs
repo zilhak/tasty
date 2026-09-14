@@ -59,7 +59,7 @@ impl SavedLayout {
         let mut seen_refs = SeenRefs::new();
         // mirror workspace(원격 attach 세션이 만든 로컬 미러)는 **비영속** 이다 — 원격 점유가
         // 살아있는 동안만 의미가 있고, layout.json 에 저장하면 재시작 시 원격 없는 **죽은 일반
-        // workspace** 로 복원돼 버린다(N-RA02). capture 순회에서 제외한다. 제외로 인덱스가
+        // workspace** 로 복원돼 버린다. capture 순회에서 제외한다. 제외로 인덱스가
         // 밀리므로 `active_workspace`(라이브 인덱스)도 필터 후 위치로 remap 한다.
         let active_workspace = engine
             .workspaces
@@ -420,7 +420,7 @@ mod tests {
         }
     }
 
-    // ── N-RA02 회귀: mirror workspace 비영속 + active_workspace remap/clamp ──
+    // ── 회귀: mirror workspace 비영속 + active_workspace remap/clamp ──
 
     /// mirror workspace 하나를 담은 마커 워크스페이스를 만든다. capture 순회가
     /// 패닉 없이 통과하도록 TerminalSurface 마커를 채워둔다(내용은 검증 대상 아님).

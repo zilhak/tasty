@@ -1,7 +1,7 @@
 //! 원격 워크스페이스 추가 팝업 (사이드바 우클릭 > 원격 워크스페이스 추가).
 //!
 //! 좌 240px attach 프로필 리스트(single select) → 우 flex pane. 프로필을 고르면
-//! 워커 스레드가 RA01 공유 코어(`tasty_remote::browse`)로 원격 tasty 에 붙어
+//! 워커 스레드가 공유 코어(`tasty_remote::browse`)로 원격 tasty 에 붙어
 //! `workspace.list`+`attach.list` 를 병합 조회하고, 우측을 4상태(initial / connecting /
 //! error / loaded[+empty])로 표시한다. 원격 ws 를 골라 **Connect** 하면 조회에 쓴 터널을
 //! 재사용해 로컬 mirror workspace 로 attach 한다.

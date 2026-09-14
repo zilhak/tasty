@@ -3587,7 +3587,7 @@ mod tests {
     #[test]
     fn zone_before_split_preserves_existing_leaf_id() {
         // 좌측 존 클릭과 동형(row=true, before=true): 기존 leaf id 는 보존되고 새
-        // leaf 만 신규 id 를 받는다(PE04 불변식 — 존 클릭 경로에서도 성립).
+        // leaf 만 신규 id 를 받는다("leaf id 만 보존" 불변식 — 존 클릭 경로에서도 성립).
         let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
