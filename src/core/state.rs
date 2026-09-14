@@ -290,23 +290,32 @@ pub struct CoreState {
     /// cleared when the mirror surface/workspace is torn down.
     pub(crate) mirror_busy_surfaces: std::collections::HashSet<u32>,
 
-    /// Server-side dedup cache for `busy_activity_forwards`: last busy value
-    /// pushed to an attach client per occupied surface, so a tick only forwards
-    /// an `Activity` frame when the value actually flipped. Entries for surfaces
-    /// no longer hard-occupied are dropped each call (not merely on detach) so a
-    /// later re-attach — possibly by a different client — always gets a fresh
-    /// initial push regardless of the surface's last-seen value.
-    pub(crate) last_forwarded_busy: std::collections::HashMap<u32, bool>,
+    /// Server-side dedup cache for `busy_activity_forwards`: last `(holder, busy)`
+    /// pushed per occupied surface, so a tick only forwards an `Activity` frame
+    /// when the value actually flipped. Entries for surfaces no longer
+    /// hard-occupied are dropped each call (not merely on detach) so a later
+    /// re-attach — possibly by a different client — always gets a fresh initial
+    /// push regardless of the surface's last-seen value. The holder is part of
+    /// the record — keyed on the value alone, a holder swap inside one tick
+    /// window would survive the `retain` and the new holder would never get a
+    /// baseline.
+    pub(crate) last_forwarded_busy:
+        std::collections::HashMap<u32, (crate::core::attach::AttachClientId, bool)>,
 
-    /// Server-side dedup cache for `attention_forwards`: last attention kind
-    /// pushed to an attach client per occupied surface (`None` = cleared), so a
-    /// tick only forwards a `StreamControl::Attention` frame when the value
-    /// actually changed. Same lifecycle rule as `last_forwarded_busy` — entries
-    /// for surfaces no longer hard-occupied are dropped each call, so a later
-    /// re-attach always gets a fresh baseline push regardless of the surface's
-    /// last-seen value.
-    pub(crate) last_forwarded_attention:
-        std::collections::HashMap<u32, Option<attention::AttentionKind>>,
+    /// Server-side dedup cache for `attention_forwards`: last `(holder, kind)`
+    /// pushed per occupied surface (`None` kind = cleared), so a tick only
+    /// forwards a `StreamControl::Attention` frame when the value actually
+    /// changed. Same lifecycle rule as `last_forwarded_busy` — entries for
+    /// surfaces no longer hard-occupied are dropped each call, and the holder is
+    /// part of the record so a holder swap inside one tick window still gets a
+    /// fresh baseline push.
+    pub(crate) last_forwarded_attention: std::collections::HashMap<
+        u32,
+        (
+            crate::core::attach::AttachClientId,
+            Option<attention::AttentionKind>,
+        ),
+    >,
 
     /// cwd of **mirror** (client-side attach) surfaces, pushed by the remote host as
     /// `StreamControl::Cwd`. The value is always a remote path (`RemoteCwd` — no

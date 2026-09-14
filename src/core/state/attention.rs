@@ -342,6 +342,11 @@ impl CoreState {
     /// 점유가 풀린 surface 의 엔트리는 매 호출 정리해, 나중에 재attach(다른 client 일
     /// 수 있음) 하면 값이 이전과 같아도 baseline push 를 다시 받는다.
     ///
+    /// 캐시는 **(holder, kind)** 를 함께 기억한다. 위 정리는 점유 공백이 tick 경계를 넘을
+    /// 때만 성립한다 — 해제와 다른 client 의 획득이 한 tick 창 안에 끝나면 엔트리가
+    /// `retain` 을 살아남고, 값만 기억하면 새 holder 가 baseline 을 못 받는다
+    /// (`surface_cwd_forwards` 와 같은 edge, ADR-0267 결정 4).
+    ///
     /// 첫 호출은 attention 이 없는 surface 에 대해서도 `None` baseline 을 1회
     /// 내보낸다 — busy 가 초기 `false` 를 내보내는 것과 같은 성질이고, mirror 쪽
     /// 초기 상태를 서버 기준으로 확정시킨다(client 에는 무해한 no-op 해제).
@@ -358,10 +363,10 @@ impl CoreState {
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
-            let kind = self.attention.kind_of(sid);
-            if self.last_forwarded_attention.get(&sid) != Some(&kind) {
-                self.last_forwarded_attention.insert(sid, kind);
-                out.push((lock.holder, sid, kind));
+            let record = (lock.holder, self.attention.kind_of(sid));
+            if self.last_forwarded_attention.get(&sid) != Some(&record) {
+                self.last_forwarded_attention.insert(sid, record);
+                out.push((record.0, sid, record.1));
             }
         }
         out
@@ -669,6 +674,31 @@ mod tests {
             vec![(9, sid, Some(AttentionKind::NeedsInput))],
             "재획득 후에는 값이 이전과 같아도 새 holder 에게 다시 push"
         );
+    }
+
+    /// 한 tick 창 안에서 holder 만 바뀐 경우 — `busy_activity_forwards` 의 같은 이름 테스트
+    /// 미러. 해제와 재획득 사이에 diff 호출이 없으면 캐시 엔트리가 살아남는다.
+    #[test]
+    fn attention_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
+        let mut e = state();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.raise_attention(sid, AttentionKind::NeedsInput);
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(7, sid, Some(AttentionKind::NeedsInput))]
+        );
+
+        e.attach.release(sid, 7).expect("release");
+        e.attach
+            .acquire(sid, 9)
+            .expect("같은 tick 창 안의 다른 client 획득");
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(9, sid, Some(AttentionKind::NeedsInput))],
+            "값이 그대로여도 새 holder 는 초기 push 를 받아야 한다"
+        );
+        assert!(e.attention_forwards().is_empty());
     }
 
     /// 원격 push 반영 진입점은 로컬 producer API 와 분리되어 있지만, 결과는 같은

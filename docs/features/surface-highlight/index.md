@@ -142,7 +142,9 @@ PTY 가 있는 인스턴스에서만 발화하고 그 훅 신호는 미러에 �
   **점유 중 surface 의 변화분**만 `StreamControl::Attention{surface_id, kind}` 로 holder
   client 에 push 한다. `kind: null` 이 해제 — 별도 변형이 아니라 kind 의 부재다.
   `last_forwarded_attention` 캐시로 값이 실제로 바뀐 tick 에만 프레임이 나가고(스팸 없음),
-  점유가 풀렸다 재점유되면 캐시를 버려 새 holder 가 baseline 을 다시 받는다.
+  점유가 풀렸다 재점유되면 캐시를 버려 새 holder 가 baseline 을 다시 받는다. 캐시가 holder 도
+  함께 기억하므로 해제와 다른 client 의 재점유가 한 tick 창 안에 끝나도 새 holder 가 baseline 을
+  받는다.
 - **client 측**: reader 스레드가 `MirrorEvent::Attention` 으로 버퍼링하고, 세션의
   `remote_to_local` 매핑으로 로컬 mirror surface id 를 찾아
   `CoreState::set_mirror_surface_attention` 으로 적용한다. 값은 **기존 `AttentionStore` 에

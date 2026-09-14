@@ -186,6 +186,13 @@ impl CoreState {
     /// from the cache on every call, so a later re-attach (possibly by a
     /// different client) always gets a fresh initial push.
     ///
+    /// The cache records `(holder, busy)`, not the value alone. Dropping
+    /// unoccupied entries only helps when the occupancy gap spans a tick: if a
+    /// release and another client's acquire both land inside one tick window,
+    /// the entry survives the `retain`, and a value-only cache would leave the
+    /// new holder without a baseline (same edge as `surface_cwd_forwards`,
+    /// ADR-0267 decision 4).
+    ///
     /// Only ever considers `busy_surfaces` (this instance's own local
     /// foreground-process polling) — the attach lock registry only ever holds
     /// locks over surfaces *this* instance hosts (real or deferred PTYs), never
@@ -200,10 +207,10 @@ impl CoreState {
             .retain(|sid, _| occupied.contains(sid));
         let mut out = Vec::new();
         for (sid, lock) in locks {
-            let busy = self.busy_surfaces.contains(&sid);
-            if self.last_forwarded_busy.get(&sid) != Some(&busy) {
-                self.last_forwarded_busy.insert(sid, busy);
-                out.push((lock.holder, sid, busy));
+            let record = (lock.holder, self.busy_surfaces.contains(&sid));
+            if self.last_forwarded_busy.get(&sid) != Some(&record) {
+                self.last_forwarded_busy.insert(sid, record);
+                out.push((record.0, sid, record.1));
             }
         }
         out
@@ -345,6 +352,29 @@ mod tests {
             vec![(9, sid, false)],
             "재획득 후에는 값이 이전과 같아도(false) 새 holder 에게 다시 push"
         );
+    }
+
+    /// 한 tick 창 안에서 holder 만 바뀐 경우 — 해제와 다른 client 의 획득 사이에 diff 호출이
+    /// 없으면 캐시 엔트리가 `retain` 을 살아남는다. 값만 기억하는 캐시라면 새 holder 는
+    /// 아무 프레임도 못 받는다.
+    #[test]
+    fn busy_activity_forwards_holder_swap_within_one_tick_pushes_to_the_new_holder() {
+        let mut e = engine();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.busy_surfaces.insert(sid);
+        e.attach.acquire(sid, 7).expect("lock 획득");
+        assert_eq!(e.busy_activity_forwards(), vec![(7, sid, true)]);
+
+        e.attach.release(sid, 7).expect("release");
+        e.attach
+            .acquire(sid, 9)
+            .expect("같은 tick 창 안의 다른 client 획득");
+        assert_eq!(
+            e.busy_activity_forwards(),
+            vec![(9, sid, true)],
+            "값이 그대로여도 새 holder 는 초기 push 를 받아야 한다"
+        );
+        assert!(e.busy_activity_forwards().is_empty());
     }
 
     /// 이전 tick=vim(비-쉘), 이번 tick=bash(쉘) — 이름이 바뀌었으니 generation 이
