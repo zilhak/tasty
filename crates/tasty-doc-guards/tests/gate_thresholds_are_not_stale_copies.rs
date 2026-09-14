@@ -475,9 +475,9 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "옛 어긋남 사건의 기록 · 계측 편향의 시점 재측정",
     ),
     (
-        "docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md",
-        Kind::Dated,
-        "계측 편향을 결정한 ADR — 본문의 수는 2026-09-09 재측정이라 편향이 움직여도 안 고친다",
+        "docs/adr/0183-a-green-check-is-not-evidence-without-a-control.md",
+        Kind::OtherMeaning,
+        "실패 계수 서술의 수 — 진짜 1 / 오염 30 / 보이는 31 은 연쇄 실패를 세는 값이고 계측 편향과 뜻이 다르다",
     ),
     (
         "CHANGELOG.md",
