@@ -219,8 +219,8 @@ fn fetch_session_id(
     Ok(session_id)
 }
 
-/// 셸에 전송할 resume 명령 (제출 `\r` 포함). 모든 셸(cmd/pwsh/bash)에서 동일하게
-/// 동작하는 평문. `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
+/// 셸에 전송할 resume 명령 (제출 `\r` 포함). 실행어는 플랫폼별로
+/// alias/function 을 우회한다. `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
 /// — 켜져 있으면 기동이 메뉴 다이얼로그에 가로채여 안내 프롬프트의 Enter 가
 /// "Update now" 를 확정해 버린다. `--dangerously-bypass-hook-trust` 로 재시작된
 /// codex 도 hook 이 항상 fire 되게 한다(`handlers::make_codex_command` 와 동일 이유).
@@ -236,7 +236,8 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
         format!(" {policy_args}")
     };
     format!(
-        "codex resume --dangerously-bypass-hook-trust{policy_suffix} -c check_for_update_on_startup=false {session_id}\r"
+        "{} resume --dangerously-bypass-hook-trust{policy_suffix} -c check_for_update_on_startup=false {session_id}\r",
+        crate::CODEX_COMMAND
     )
 }
 
@@ -403,7 +404,10 @@ mod tests {
     fn resume_command_disables_update_prompt_and_submits() {
         assert_eq!(
             resume_command("019f55e7-3dfa", ""),
-            "codex resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false 019f55e7-3dfa\r"
+            format!(
+                "{} resume --dangerously-bypass-hook-trust -c check_for_update_on_startup=false 019f55e7-3dfa\r",
+                crate::CODEX_COMMAND
+            )
         );
     }
 
@@ -411,7 +415,10 @@ mod tests {
     fn resume_command_includes_policy_args_when_present() {
         assert_eq!(
             resume_command("019f55e7-3dfa", "-a never -s read-only"),
-            "codex resume --dangerously-bypass-hook-trust -a never -s read-only -c check_for_update_on_startup=false 019f55e7-3dfa\r"
+            format!(
+                "{} resume --dangerously-bypass-hook-trust -a never -s read-only -c check_for_update_on_startup=false 019f55e7-3dfa\r",
+                crate::CODEX_COMMAND
+            )
         );
     }
 

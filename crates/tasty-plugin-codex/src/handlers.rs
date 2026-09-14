@@ -186,7 +186,7 @@ const PROMPT_FILE_PREFIX: &str = "tasty-codex-prompt-";
 /// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
 /// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
 fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) -> String {
-    let prefix = format!("TASTY_SURFACE_ID={surface_id} ");
+    let prefix = format!("TASTY_SURFACE_ID={surface_id} {} ", crate::CODEX_COMMAND);
     let policy_suffix = if policy_args.is_empty() {
         String::new()
     } else {
@@ -201,11 +201,11 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) 
                 tracing::warn!("Failed to write codex prompt file: {e}");
             }
             format!(
-                "{prefix}codex --dangerously-bypass-hook-trust{policy_suffix} \"$(cat '{}')\"\r",
+                "{prefix}--dangerously-bypass-hook-trust{policy_suffix} \"$(cat '{}')\"\r",
                 prompt_path.display()
             )
         }
-        _ => format!("{prefix}codex --dangerously-bypass-hook-trust{policy_suffix}\r"),
+        _ => format!("{prefix}--dangerously-bypass-hook-trust{policy_suffix}\r"),
     }
 }
 
@@ -1548,11 +1548,17 @@ mod tests {
     fn make_codex_command_no_prompt() {
         assert_eq!(
             make_codex_command(42, None, ""),
-            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust\r"
+            format!(
+                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust\r",
+                crate::CODEX_COMMAND
+            )
         );
         assert_eq!(
             make_codex_command(42, Some(""), ""),
-            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust\r"
+            format!(
+                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust\r",
+                crate::CODEX_COMMAND
+            )
         );
     }
 
@@ -1562,7 +1568,8 @@ mod tests {
         let cmd = make_codex_command(surface_id, Some("hello"), "");
         assert!(
             cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} codex --dangerously-bypass-hook-trust \"$(cat '"
+                "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust \"$(cat '",
+                crate::CODEX_COMMAND
             )),
             "got {cmd}"
         );
@@ -1591,7 +1598,10 @@ mod tests {
     fn make_codex_command_with_policy_args_no_prompt() {
         assert_eq!(
             make_codex_command(42, None, "-a never -s read-only"),
-            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust -a never -s read-only\r"
+            format!(
+                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust -a never -s read-only\r",
+                crate::CODEX_COMMAND
+            )
         );
     }
 
@@ -1601,7 +1611,7 @@ mod tests {
         let cmd = make_codex_command(surface_id, Some("hello"), "-a never");
         assert!(
             cmd.starts_with(&format!(
-                "TASTY_SURFACE_ID={surface_id} codex --dangerously-bypass-hook-trust -a never \"$(cat '"
+                "TASTY_SURFACE_ID={surface_id} {} --dangerously-bypass-hook-trust -a never \"$(cat '", crate::CODEX_COMMAND
             )),
             "got {cmd}"
         );
@@ -1613,7 +1623,10 @@ mod tests {
     fn make_codex_command_with_full_auto_bypass() {
         assert_eq!(
             make_codex_command(42, None, "--dangerously-bypass-approvals-and-sandbox"),
-            "TASTY_SURFACE_ID=42 codex --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r"
+            format!(
+                "TASTY_SURFACE_ID=42 {} --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox\r",
+                crate::CODEX_COMMAND
+            )
         );
     }
 
@@ -2770,3 +2783,7 @@ trusted_hash = "sha256:xyz"
         );
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "handlers_shell_tests.rs"]
+mod shell_tests;
