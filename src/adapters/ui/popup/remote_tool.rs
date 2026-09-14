@@ -388,7 +388,7 @@ pub fn draw_remote_tool_popup(
     ui.spacing_mut().item_spacing.y = 0.0;
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
 
-    // 헤더 — 디자인 padding T11 R12 B11 L14 + borderBottom separator.
+    // 헤더 — 디자인 padding 위 11 · 오른쪽 12 · 아래 11 · 왼쪽 14 + borderBottom separator.
     let header_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
             left: PANEL_PAD_L,

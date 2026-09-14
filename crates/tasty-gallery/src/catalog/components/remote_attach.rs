@@ -453,7 +453,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
         rect.bottom(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
-    // 디자인 padding T10 R10 B10 L14.
+    // 디자인 padding 위 10 · 오른쪽 10 · 아래 10 · 왼쪽 14.
     let inner = egui::Rect::from_min_max(
         egui::pos2(
             rect.left() + HEADER_PAD_L.value(),
