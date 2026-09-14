@@ -7,7 +7,6 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::adapters::ui::icons;
 
-use super::CARD_PAD_X;
 use super::paint::glyph_at;
 
 /// jsx `IeActionRow` — glyph · 제목(13 primary) + 설명(12 muted, measure-md) · trailing 버튼,
@@ -37,7 +36,7 @@ pub(super) fn action_row(
             th.border_default().to_egui(),
         ))
         .corner_radius(th.corner_radius.value())
-        .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, th.spacing_md))
+        .inner_margin(tasty_ui_widgets::margin_all(th.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();

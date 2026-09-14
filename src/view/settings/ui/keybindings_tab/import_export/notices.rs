@@ -13,7 +13,7 @@ use crate::i18n::{t, t_fmt, t_fmt2};
 
 use super::paint::glyph_at;
 use super::{
-    CARD_PAD_X, ExportFailReason, ExportFailure, Failure, GROUP_CHEVRON_GAP, NOTICE_BLOCK_BORDER,
+    ExportFailReason, ExportFailure, Failure, GROUP_CHEVRON_GAP, NOTICE_BLOCK_BORDER,
     NOTICE_BLOCK_FILL,
 };
 
@@ -64,7 +64,7 @@ pub(super) fn notice_block(
             tone.gamma_multiply(NOTICE_BLOCK_BORDER),
         ))
         .corner_radius(th.corner_radius.value())
-        .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, th.spacing_md))
+        .inner_margin(tasty_ui_widgets::margin_all(th.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = th.spacing_xs.value();

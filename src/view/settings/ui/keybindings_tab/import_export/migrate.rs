@@ -19,8 +19,8 @@ use super::model::{MigrationRow, MigrationValue};
 use super::paint::{fixed_label, glyph_at};
 use super::view_model::{MigrationView, ViewModel};
 use super::{
-    CARD_PAD_X, CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL,
-    MIGRATE_FROM_W, RECORD_SLOT_H, RECORD_SLOT_MIN_W, RECORDING_FIELD,
+    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL,
+    MIGRATE_FROM_W, RECORD_SLOT_MIN_W, RECORDING_FIELD,
 };
 
 /// jsx `IeMigrateCard` — 톤 틴트 카드(헤더 · 설명 · 행들).
@@ -47,7 +47,7 @@ pub(super) fn migrate_card(
             tone.gamma_multiply(MIGRATE_CARD_BORDER),
         ))
         .corner_radius(th.corner_radius.value())
-        .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, th.spacing_md))
+        .inner_margin(tasty_ui_widgets::margin_all(th.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
@@ -326,8 +326,10 @@ fn record_slot(
     let galley = ui.painter().layout_no_wrap(text, font, fg.to_egui());
     let pad = th.spacing_sm.value();
     let w = (galley.rect.width() + pad * 2.0).max(RECORD_SLOT_MIN_W.value());
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(w, RECORD_SLOT_H.value()), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(w, th.item_height_tab.value()),
+        egui::Sense::click(),
+    );
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let border = if view.conflict.is_some() {
         th.accent_danger()

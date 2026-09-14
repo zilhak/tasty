@@ -345,16 +345,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_KB_IMPORT_EXPORT, "RECORD_SLOT_MIN_W"),
     ),
     (
-        "단축키 가져오기 녹화 슬롯 높이",
-        Side::Lit(HOST_KB_IMPORT_EXPORT, "RECORD_SLOT_H"),
-        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "RECORD_SLOT_H"),
-    ),
-    (
-        "단축키 가져오기 카드 가로 패딩",
-        Side::Lit(HOST_KB_IMPORT_EXPORT, "CARD_PAD_X"),
-        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "CARD_PAD_X"),
-    ),
-    (
         "단축키 가져오기 그룹 헤더 chevron 간격",
         Side::Lit(HOST_KB_IMPORT_EXPORT, "GROUP_CHEVRON_GAP"),
         Side::Lit(GALLERY_KB_IMPORT_EXPORT, "GROUP_CHEVRON_GAP"),
@@ -566,10 +556,13 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 사본이 새로 생긴 것이 아니라 **원래 있던 것이 안 보이고 있었다.**
     // 44 -> 52: 단축키 가져오기/내보내기 화면이 본체에 들어오며 갤러리 specimen 의 치수 8 개가
     // 본체 상수와 짝을 얻었다(라벨 열은 단축키 탭의 기존 `LABEL_COL_WIDTH`).
+    // 52 -> 50: 같은 화면의 두 쌍(녹화 슬롯 높이 24 · 카드 패딩 14)이 사본이 아니게 됐다. 디자인이
+    // 두 치수에 semantic 별칭 토큰을 열어(`kb-ie-slot-height` → `control-height-tab`,
+    // `kb-ie-notice-inset` → `space-md`, 14 는 12 로 스냅) 양쪽이 Theme 을 읽는다.
     assert_eq!(
         COPIED.len(),
-        52,
-        "사본 명부가 {} 쌍이다(기록 52). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        50,
+        "사본 명부가 {} 쌍이다(기록 50). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );

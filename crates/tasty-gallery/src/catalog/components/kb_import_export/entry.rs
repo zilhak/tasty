@@ -11,7 +11,7 @@ use crate::catalog::toast_card::{self, CardColors, ToastKind};
 use crate::catalog::widgets::dialog as kit;
 
 use super::paint::{caption, glyph_at, intro};
-use super::{CARD_PAD_X, ENTRY_W, IE_FILE, STATE};
+use super::{ENTRY_W, IE_FILE, STATE};
 
 // ── Spec 1: L2 배치 · 진입 화면 · 내보내기 피드백 ─────────────────────────────────
 
@@ -228,7 +228,7 @@ pub(super) fn action_row(
             theme.border_default().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, theme.spacing_md))
+        .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();

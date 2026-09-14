@@ -59,22 +59,19 @@ const ENTRY_W: LogicalPx = LogicalPx(620.0);
 const PREVIEW_H: LogicalPx = LogicalPx(420.0);
 /// 마이그레이션 DrillDown 높이 — back bar + 미완료 카드.
 const MIGRATION_H: LogicalPx = LogicalPx(440.0);
-// 아래 치수 중 32 · 288 · 120 · 24 · 14 는 `size-*` 스케일 위의 값이다. jsx 는 원시 스케일
-// 토큰을 직접 부르는데 그 스케일은 토큰 크레이트 밖에 열려 있지 않고, 같은 뜻의 semantic
-// 이름도 없다 — jsx 를 인용한 명명 상수로 둔다.
-/// 표 선택 열 — jsx `gridTemplateColumns: "var(--tasty-size-32) …"`.
+// 아래 치수 중 32 · 288 · 120 은 `size-*` 스케일 위의 값이다(140 은 스케일에 아직 없다). 디자인은
+// 이 넷에 컴포넌트 토큰을 열었지만 vendor 한 DTCG export 에는 아직 그 이름이 없어 읽을 수 없다 —
+// 그래서 지금은 명명 상수다. semantic 별칭인 둘(카드 inset `space-md` · 슬롯 높이
+// `control-height-tab`)은 이미 Theme 에서 읽는다.
+/// 표 선택 열 — 디자인 `--tasty-kb-ie-select-column-width`(→ `size-32`).
 const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
-/// 마이그레이션 행 라벨 열 — jsx `--tasty-size-288`(ja 최장 액션 라벨 실측 255px). 본체
-/// 단축키 탭의 `LABEL_COL_WIDTH` 와 같은 값이다.
+/// 마이그레이션 행 라벨 열 — 디자인 `--tasty-kb-ie-action-column-width`(→ `size-288`, ja 최장 액션
+/// 라벨 실측 255px). 본체 단축키 탭의 `LABEL_COL_WIDTH` 와 같은 값이다.
 const MIGRATE_LABEL_W: LogicalPx = LogicalPx(288.0);
-/// 마이그레이션 행 원래 조합 열 — jsx `--tasty-size-120`.
+/// 마이그레이션 행 원래 조합 열 — 디자인 `--tasty-kb-ie-from-column-width`(→ `size-120`).
 const MIGRATE_FROM_W: LogicalPx = LogicalPx(120.0);
-/// 녹화 슬롯 최소 폭 — jsx `minWidth: 140`.
+/// 녹화 슬롯 최소 폭 — 디자인 `--tasty-kb-ie-slot-min-width`(→ `size-140`).
 const RECORD_SLOT_MIN_W: LogicalPx = LogicalPx(140.0);
-/// 녹화 슬롯 높이 — jsx `--tasty-size-24`.
-const RECORD_SLOT_H: LogicalPx = LogicalPx(24.0);
-/// 액션 행 · 마이그레이션 카드 · 실패 블록의 가로 패딩 — jsx `--tasty-size-14`.
-const CARD_PAD_X: LogicalPx = LogicalPx(14.0);
 /// 그룹 헤더의 chevron ↔ 그룹명, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`(그리드 밖 값,
 /// 스냅하지 않는다).
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);

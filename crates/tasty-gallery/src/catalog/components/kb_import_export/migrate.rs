@@ -14,9 +14,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use super::notices::notices;
 use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
 use super::{
-    CARD_PAD_X, CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_CARD_BORDER,
-    MIGRATE_CARD_FILL, MIGRATE_FROM_W, MIGRATE_LABEL_W, MIGRATION_H, MODIFIER_OPTIONS, MigrateRow,
-    MigrateState, RECORD_SLOT_H, RECORD_SLOT_MIN_W, SPECIMEN_W, STATE, State, Widget, detail_frame,
+    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL,
+    MIGRATE_FROM_W, MIGRATE_LABEL_W, MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState,
+    RECORD_SLOT_MIN_W, SPECIMEN_W, STATE, State, Widget, detail_frame,
 };
 
 // ── Spec 3: Option 마이그레이션 — 미완료 · 완료 · 충돌 · unbound · 불필요 · 실패 ─────────
@@ -224,7 +224,7 @@ pub(super) fn card(
             tone.gamma_multiply(MIGRATE_CARD_BORDER),
         ))
         .corner_radius(theme.corner_radius.value())
-        .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, theme.spacing_md))
+        .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
@@ -469,8 +469,10 @@ fn record_slot(ui: &mut egui::Ui, theme: &Theme, r: &MigrateRow) {
         .layout_no_wrap(r.value.to_string(), font, fg.to_egui());
     let pad = theme.spacing_sm.value();
     let w = (galley.rect.width() + pad * 2.0).max(RECORD_SLOT_MIN_W.value());
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(w, RECORD_SLOT_H.value()), egui::Sense::click());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(w, theme.item_height_tab.value()),
+        egui::Sense::click(),
+    );
     let border = if r.state == MigrateState::Conflict {
         theme.accent_danger()
     } else {

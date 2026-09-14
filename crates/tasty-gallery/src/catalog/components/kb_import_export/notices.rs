@@ -12,9 +12,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 use crate::catalog::icons::{self, MockGlyph};
 
 use super::paint::{glyph_at, intro, intro_secondary};
-use super::{
-    CARD_PAD_X, GROUP_CHEVRON_GAP, IE_DISCARDED, IE_FILE, NOTICE_BLOCK_BORDER, NOTICE_BLOCK_FILL,
-};
+use super::{GROUP_CHEVRON_GAP, IE_DISCARDED, IE_FILE, NOTICE_BLOCK_BORDER, NOTICE_BLOCK_FILL};
 
 /// jsx `IeNotices` — 버린 plugin override 안내(정보, 경고 아님) · 마이그레이션 불필요 안내문 ·
 /// 파싱 실패 인라인 블록.
@@ -73,7 +71,7 @@ pub(super) fn notice_block(
             tone.gamma_multiply(NOTICE_BLOCK_BORDER),
         ))
         .corner_radius(theme.corner_radius.value())
-        .inner_margin(tasty_ui_widgets::margin_sym(CARD_PAD_X, theme.spacing_md))
+        .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_md))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();

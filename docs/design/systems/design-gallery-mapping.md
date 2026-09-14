@@ -607,7 +607,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 | 디자인 jsx | 갤러리 | 비고 |
 |---|---|---|
 | `IeL2Tail` · `KB_L2_SEPARATED` | `l2_tail` · `l2_separator` · `l2_row` | **신규 축** — L2 행 위 1px separator(margin space-sm), 필터 활성 시 숨김 |
-| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding space-md/size-14. Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
+| `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding `kb-ie-notice-inset`(→ space-md, 양축 — 옛 14 는 12 로 스냅). Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
 | 창 toast(export 경로) | `export_toast`(`toast_card::draw_card`, Success) | 설정 창 자체 `ToastManager` 의 카드 |
 | `DrillDown` detail + back bar actions | `detail_frame`(실제 `DrillDown`) | 우측 슬롯: `Show all {n}`/`Changed only` ghost · `{n} unresolved`(mono caption warning) · Apply primary(미해결 시 비활성) |
 | `IeDiffTable` (grid `size-32 minmax(0,1.6fr) 1fr 1fr`) | `diff_table` | **신규 축 둘** — 선두 선택 열(32) · 그룹 헤더 행(surface-raised, select-all · chevron · mono micro caps 그룹명 · `N changed · M total`). 변경 = accent-primary, 미해결 = accent-warning |
@@ -622,8 +622,13 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 - `letter-spacing-caps` 는 egui 미지원이라 mono `font-size-micro` uppercase, `fontWeight: 600` 은
   색 강조로 둔다(Preset · Hook Handlers 관례). `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
-- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5 · 선택 열 32 · 라벨 288/120 · 슬롯 140×24 ·
-  패딩 14)은 스냅하지 않고 명명 const 로 둔다([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)).
+- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 스냅하지 않고 명명 const 로 둔다([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)).
+- 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 은 디자인이 컴포넌트 토큰(`kb-ie-select-column-width` ·
+  `kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width`)을 열었지만 vendor 한
+  DTCG export(`crates/tasty-design-tokens/dtcg/tasty.tokens.json`)에 아직 그 이름이 없어 명명 const 로
+  남아 있다. export 에 들어오면 const 를 지우고 토큰을 읽는다. semantic 별칭인 둘 — 카드·알림 inset
+  (`kb-ie-notice-inset` → `space-md`)과 슬롯 높이(`kb-ie-slot-height` → `control-height-tab` =
+  `item_height_tab`) — 는 이미 Theme 을 읽는다.
 - specimen 폭은 본체 설정 창 콘텐츠 컬럼(868)이다 — jsx gallery 의 620 에는 ui kit 의 288·120
   라벨 열이 들어가지 않는다. 진입 화면 컬럼만 620 을 따른다.
 

@@ -66,21 +66,19 @@ use notices::{ExportFailureAction, bundle_notices, dropped_notice, export_failur
 use paint::intro;
 use view_model::build_view_model;
 
-// 아래 치수 중 32 · 120 · 24 · 14 는 `size-*` 스케일 위의 값이다. jsx 는 원시 스케일 토큰을
-// 직접 부르는데 그 스케일은 토큰 크레이트 밖에 열려 있지 않고(`generated::primitive` 는
-// `pub(crate)`), 같은 뜻의 semantic 이름도 없다. 이름을 새로 여는 것은 디자인 토큰 결정이라
-// 여기서는 jsx 를 인용한 명명 상수로 둔다(갤러리 `kb_import_export.rs` 와 짝 — 두 값의 일치는
-// `gallery_copied_dimensions` 가 본다).
-/// 표 선택 열 — jsx `gridTemplateColumns: "var(--tasty-size-32) …"`.
+// 아래 치수 중 32 · 120 은 `size-*` 스케일 위의 값이다(140 은 스케일에 아직 없다). 디자인은
+// 이 셋에 컴포넌트 토큰을 열었지만(`kb-ie-select-column-width` · `kb-ie-from-column-width` ·
+// `kb-ie-slot-min-width`) vendor 한 DTCG export 에는 아직 그 이름이 없어 읽을 수 없다 — 그래서
+// 지금은 명명 상수다(갤러리 `kb_import_export.rs` 와 짝 — 두 값의 일치는
+// `gallery_copied_dimensions` 가 본다). 같은 회신이 연 토큰 중 semantic 별칭인 둘은 이미 읽는다:
+// 카드 inset 은 `space-md`(14 에서 스냅, 양축), 슬롯 높이는 `control-height-tab`
+// (`item_height_tab`).
+/// 표 선택 열 — 디자인 `--tasty-kb-ie-select-column-width`(→ `size-32`).
 const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
-/// 마이그레이션 행 원래 조합 열 — jsx `--tasty-size-120`.
+/// 마이그레이션 행 원래 조합 열 — 디자인 `--tasty-kb-ie-from-column-width`(→ `size-120`).
 const MIGRATE_FROM_W: LogicalPx = LogicalPx(120.0);
-/// 녹화 슬롯 최소 폭 — jsx `minWidth: 140`.
+/// 녹화 슬롯 최소 폭 — 디자인 `--tasty-kb-ie-slot-min-width`(→ `size-140`).
 const RECORD_SLOT_MIN_W: LogicalPx = LogicalPx(140.0);
-/// 녹화 슬롯 높이 — jsx `--tasty-size-24`.
-const RECORD_SLOT_H: LogicalPx = LogicalPx(24.0);
-/// 액션 행 · 마이그레이션 카드 · 실패 블록의 가로 패딩 — jsx `--tasty-size-14`.
-const CARD_PAD_X: LogicalPx = LogicalPx(14.0);
 /// 그룹 헤더 chevron ↔ 그룹명, 충돌 부제 아이콘 ↔ 문구, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`.
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.
