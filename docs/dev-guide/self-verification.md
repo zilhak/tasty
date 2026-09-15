@@ -90,13 +90,13 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
    |---|---|---|
    | `plugin enable <id>` | 지목한 1 개 | — |
    | kind 지목 생성 요청 (`--type markdown`) | 그 kind 의 **소유자 1 개** | 0.14 s (두 번째 0.09 s) |
-   | plugin namespace 한 번 (`markdown recent`) | 설치된 **9 개 전부** | — |
+   | plugin namespace 한 번 (`markdown recent`) | 활성 owner + 매칭 IPC hook의 active extension | 기존 전량 기동에서 범위 축소(ADR-0282) |
    | attach mesh mirror 세션 | 설치된 **9 개 전부** | — |
 
    kind 지목은 소속을 **매니페스트 ∩ `plugins.toml`** 로 먼저 묻는다([ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md)). 그래서 ① 없는 이름은 plugin 을 하나도 안 띄우고(실측 `--type nosuchkind` 0.09 s, `running` 0), ② **`plugin disable` 한 plugin 의 kind 도 안 띄운다**(실측 0.09 s, `running` 0). ②가 없으면 그 요청이 영영 안 뜰 plugin 을 기다려 **데몬 IPC 전체가 선다** — 고치기 전 실측이 그 요청 5.34 s · 무관한 `list info` 5.04 s · 덤으로 8 개 기동이었다.
 2. **하나만 띄우려면 `plugin enable <id>` 를 쓴다.** 이 둘은 헤드리스에도 배선돼 있고(`plugin.enable` · `plugin.disable`), **지목한 하나만** 기동한다. 실측(2026-09-09, 격리 홈 데몬): 부팅 직후 9 개 전부 `running=false` → `tasty plugin enable com.tasty.image` → `{"enabled":"com.tasty.image"}` → `plugin list` 의 `running` 이 `["com.tasty.image"]` 하나다. 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다 — `plugin.install`·`remove`·`grant`·`revoke`·`upgrade_builtins`·`audit_follow` 는 아직 없어서 `-32017 … gated out of this build combination (headless / release)` 로 답한다.
 
-   ★ **plugin namespace 를 한 번 부르는 것도 여전히 기동을 유발하는데, 그쪽은 9 개가 전부 뜬다.** 그 경로(`forward_to_plugin_namespace` → `ensure_plugin_manager` → `discover_and_start`)는 개별 지목이 없기 때문이다. 실측(2026-09-09, 갓 만든 격리 홈): `tasty image list` 는 그 자체로는 `-32017` 로 실패하는데, 그 뒤 `plugin list` 의 `running` 이 설치된 9 개 전부다. **하나만 재고 싶으면 namespace 를 부르지 말고 `plugin enable` 을 써라** — 관측 대상을 여덟 개 더 만들지 않는다.
+   namespace 호출은 공통 manager에서 owner만 준비한다. 매칭 pre/post IPC hook이 있는 active extension은 그 호출에 필요한 경우에만 함께 준비한다. 미등록 prefix·disabled owner·게이트 거부는 기동 0이며, 이미 running이면 재시작하지 않는다. 등록 prefix 안의 오타는 완전한 IPC 메서드 명부가 없어 owner가 판정한다. [ADR-0282](../adr/0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md). 기동 수는 fresh 격리 홈의 fake plugin start 로그와 plugin.list를 전후 대조하고 GUI의 부팅 기동과 호출의 추가 기동을 구분한다.
 3. **선언된 surface kind 는 plugin 이 뜨는 순간 전부 등록된다 — 조합에 따라 갈리지 않는다.** `register_one_surface_kind` 는 `rendering` 세 종류(`webview`/`remote`/`egui-mesh`)를 모두 등록한다([ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md)). 실측(2026-09-09, 갓 만든 격리 홈 헤드리스 데몬, 9 개 기동 후):
 
    | kind | 선언 (`plugin.show` 의 `declared_rendering`) | 등록됐나 (`registered`) | `new workspace --type <kind>` |

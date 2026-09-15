@@ -83,7 +83,7 @@ host 내장 넷만 나온다. 실측(2026-09-09, 갓 만든 격리
 
 소속이 맞으면 그 하나만 뜬다 — `--type markdown` 첫 호출 0.14 s 뒤 `running` 이
 `['com.tasty.markdown']` 이고, 이어서 `--type image` 를 부르면 둘이 된다. **namespace
-forward 와 갈리는 자리가 여기다**: 그쪽은 `discover_and_start` 라 한 번에 9 개를 띄운다.
+forward도 owner만 준비한다**: namespace에 매칭 IPC hook이 있으면 해당 active extension을 함께 준비한다(ADR-0282).
 
 ## `plugin.*` — 19 개 메서드의 판정
 

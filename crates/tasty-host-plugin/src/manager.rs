@@ -556,7 +556,7 @@ prefix = "{prefix}"
 
     #[test]
     fn validate_namespace_call_method_not_found() {
-        let mgr = PluginManager::new(empty_waker());
+        let mut mgr = PluginManager::new(empty_waker());
         let err = mgr
             .validate_namespace_call("nope.method", None)
             .unwrap_err();
@@ -577,7 +577,9 @@ prefix = "{prefix}"
 
     #[test]
     fn validate_namespace_call_target_not_running() {
-        let mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        let _home = crate::test_support::HomeEnvGuard::tasty_home();
+        let mut mgr = mgr_with_namespace_owner("com.example.codex", "codex");
+        mgr.auto_disabled.insert("com.example.codex".into());
         let err = mgr
             .validate_namespace_call("codex.spawn", None)
             .unwrap_err();
@@ -762,3 +764,6 @@ prefix = "{prefix}"
         assert!(err.contains("handle channel not available"), "got: {err}");
     }
 }
+
+#[cfg(test)]
+mod tests_namespace_start;

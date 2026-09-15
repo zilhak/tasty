@@ -1,4 +1,4 @@
-<!-- source-hash: 88ebb0581a7e -->
+<!-- source-hash: 54d7767c0620 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -312,3 +312,5 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.
 
 For agents using session tokens, call limits apply to plugin commands and combined list queries as well as ordinary commands. Each admitted request is counted once; requests over the limit return an error without running. The existing exemption for local CLI calls without a token remains.
+
+A plugin namespace call starts only its enabled owner and any active extension needed for matching IPC hooks. It does not enable a disabled plugin or start unrelated plugins. An unknown namespace starts none; a misspelled method inside a known namespace may start its owner before returning an error.

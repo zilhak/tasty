@@ -69,8 +69,8 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) 
     app.plugin_manager = Some(mgr);
 }
 
-/// attach 세션이 mesh mirror 후보를 mirror 하려 할 때, 또는 plugin namespace 로
-/// forward 해야 할 때 호출 — 이미 **기동까지** 끝나 있으면 no-op.
+/// attach 세션이 mesh mirror 후보를 mirror 하려 할 때 호출한다.
+/// namespace forward는 이 전량 기동 경로 대신 공통 manager의 owner 준비를 쓴다.
 ///
 /// [`ensure_plugin_manager_metadata`] 위에 번들 설치와 프로세스 기동을 얹는다.
 /// 조회 경로에서 부르지 않는다(위 함수의 주석 참조).

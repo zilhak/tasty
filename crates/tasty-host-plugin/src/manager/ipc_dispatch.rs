@@ -130,6 +130,8 @@ impl PluginManager {
         caller_plugin_id: Option<String>,
         final_caller: FinalCaller,
     ) {
+        // Metadata-only startup also needs the configured extension selection.
+        self.recompute_extensions();
         let extension_self = match (
             caller_plugin_id.as_deref(),
             self.extensions
@@ -151,6 +153,10 @@ impl PluginManager {
                 let pre = pre_opt.filter(|p| !self.is_hook_in_backoff(&ext_id, &p.method));
                 let post = post_opt.filter(|p| !self.is_hook_in_backoff(&ext_id, &p.method));
 
+                // Only a hook that will actually run needs its extension process.
+                if pre.is_some() || post.is_some() {
+                    self.start_one_enabled(&ext_id);
+                }
                 if let Some(pre) = pre {
                     let payload = serde_json::json!({
                         "method": method,
@@ -445,10 +451,10 @@ impl PluginManager {
         }
     }
 
-    /// namespace 메서드 호출의 유효성 검사. 성공 시 target plugin id를 반환.
+    /// 소유·caller 권한을 확인한 뒤 활성 owner만 준비한다. 성공 시 owner id를 반환.
     /// 실패 시 (JSON-RPC code, message) 페어를 반환.
     pub(super) fn validate_namespace_call(
-        &self,
+        &mut self,
         method: &str,
         caller_plugin_id: Option<&str>,
     ) -> Result<String, (i32, String)> {
@@ -481,6 +487,8 @@ impl PluginManager {
                 ));
             }
         }
+        // Does not enable, install, grant, or restart an already running owner.
+        self.start_one_enabled(&plugin_id);
         if !self.processes.contains_key(&plugin_id) {
             return Err((-32002, format!("plugin '{plugin_id}' is not running")));
         }

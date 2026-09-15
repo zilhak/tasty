@@ -131,8 +131,8 @@ pub(crate) fn pump_ipc(
         //     기동은 소속이 맞은 뒤에만 한다. 다른 것은 묻는 대상뿐이다(메서드 이름 vs
         //     surface kind).
         //
-        //     **띄우는 범위는 위 forward 와 다르다.** 그쪽은 `discover_and_start` 라
-        //     설치된 것을 전부 띄우고, 여기는 kind 를 선언한 소유자 하나만 띄운다
+        //     namespace는 매칭 IPC hook extension도 준비할 수 있지만, kind는
+        //     그 kind를 선언한 소유자 하나만 준비한다
         //     (`start_one_enabled`). 설치·권한 grant 도 여기엔 없다. 근거·대기 시한은
         //     `headless_plugins::ensure_plugin_for_surface_kind`.
         super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
@@ -432,13 +432,13 @@ fn intercept_debug_app_layer(
 /// 두 층을 나눠 부른다. 먼저 `ensure_plugin_manager_metadata` 는 `~/.tasty/plugins/`
 /// 를 스캔해 매니페스트를 읽을 뿐 프로세스를 하나도 안 띄운다. namespace 소유는
 /// 그 매니페스트가 선언하는 정적 사실이므로 그것만으로 답이 난다(ADR-0173).
-/// 소속이 맞은 뒤에야 `ensure_plugin_manager` 로 기동한다.
+/// 소속이 맞으면 공통 manager forward가 활성 owner와 매칭 IPC hook extension만 준비한다.
 ///
 /// 이 순서가 왜 필요한지는 실측돼 있다(2026-09-05, 설치 끝난 홈): 소속을 묻기 위해
 /// 먼저 기동하던 형태에서는 **호스트가 모르는 이름을 한 번 부르는 것만으로**(오타
 /// 포함) 그 데몬이 plugin 9 개를 띄웠고 첫 응답이 1272 ms(기동 후 92 ms)였으며 그
-/// 프로세스들은 데몬 수명 내내 남았다. 지금은 오타가 아무것도 안 띄운다 — 소속이
-/// 안 맞으면 스캔에서 끝난다.
+/// 프로세스들은 데몬 수명 내내 남았다. 미등록 prefix는 스캔에서 끝난다. 등록 prefix
+/// 안의 메서드 오타는 전체 메서드 명부가 없는 기존 계약대로 owner가 판정한다.
 #[cfg(not(feature = "gui"))]
 fn forward_to_plugin_namespace(
     app: &mut App,
@@ -453,7 +453,6 @@ fn forward_to_plugin_namespace(
     if !owns {
         return false;
     }
-    super::headless_plugins::ensure_plugin_manager(app, engine);
     let Some(mgr) = app.plugin_manager.as_mut() else {
         return false;
     };

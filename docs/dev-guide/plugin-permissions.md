@@ -127,7 +127,7 @@ approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는
 |----------|--------------|
 | 형식 valid / 예약어 아님 | 그 namespace 를 점유한 플러그인이 설치/활성/running 인가 |
 
-owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게 깔려도 A 매니페스트가 거부되면 안 됨), **disable/enable 견고성**, dangling 호출은 runtime 에 명확히 실패 — 그 namespace 를 **아무도 설치하지 않았으면** `-32601 method not found`, **설치돼 있는데 안 떠 있으면**(disable·재시작 중) `-32002 plugin '<id>' is not running` ([ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)). 같은 prefix 는 두 플러그인이 동시에 점유 불가(두 번째 install 거부) — 임의 시점에 scope 는 정확히 한 플러그인에 귀속 또는 무소속.
+owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게 깔려도 A 매니페스트가 거부되면 안 됨), **disable/enable 견고성**, dangling 호출은 runtime 에 명확히 실패 — 그 namespace 를 **아무도 설치하지 않았으면** `-32601 method not found`, **설치된 owner가 비활성·자동 비활성이거나 기동에 실패하면** `-32002 plugin '<id>' is not running` ([ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)). 같은 prefix 는 두 플러그인이 동시에 점유 불가(두 번째 install 거부) — 임의 시점에 scope 는 정확히 한 플러그인에 귀속 또는 무소속.
 
 **자기 namespace `ipc.invoke:<self>` 는 매니페스트에 두지 않는다.** plugin 자신의 호출에는 필요 없고(소유자 면제 — plugin→plugin forward 경로의 self-loop 는 `-32001` 로 차단), 자식 agent 에게 넘길 때도 쥐고 있을 필요가 없다(아래 [Agent caller](#agent-caller--session-token--temp-grants)).
 
@@ -220,40 +220,22 @@ grant/revoke → `plugins.toml` 저장 → `refresh_plugin_permissions` 가 (매
 
 이 문서의 나머지는 "그 호출이 통과하는가" 를 다룬다. 이 절은 **통과한 호출의 부수효과가
 plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니라 각 경로가 무엇을 하느냐로
-정해지는 축이라, 표를 따로 둔다. 실측(2026-09-10, 격리 홈 헤드리스 데몬, `session issue`
-로 발급한 토큰을 `TASTY_SESSION_TOKEN` 으로 붙여 호출):
+정해지는 축이라, 표를 따로 둔다. 현재 정책은 [ADR-0282](../adr/0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md)다.
 
-| 경로 | 필요한 권한 | 비-Local 결과 | 그 뒤 뜨는 프로세스 |
-|---|---|---|---|
-| `plugin.enable` / `plugin.disable` | — (`local_only`) | `-32001 permission_denied` | 0 |
-| namespace forward · **`METHOD_TABLE` 에 없는 이름** (예 `markdown.recent`), 토큰에 `ipc.invoke:<prefix>` 없음 | `ipc.invoke:<prefix>` | `-32001 permission_denied` | 0 |
-| 같은 호출, 토큰에 `ipc.invoke:<prefix>` 있음 | `ipc.invoke:<prefix>` | 정상 응답 | **9 (설치된 전부)** |
-| namespace forward · **표에 있는 이름** (예 `markdown.navigate` · `image.list`) | 그 표가 적은 것 (`fs.read` · `surface.read`) | `-32001 permission_denied` | 0 |
-| plugin kind 를 지목한 생성 요청 (`tab.create` 등의 `type`) | `surface.write` | 정상 응답 | **1 (그 kind 의 소유자)** |
+| 경로 | 필요한 권한 | 기동 범위 |
+|---|---|---|
+| `plugin.enable` / `plugin.disable` | Local 전용 | 비-Local 거부 시 0 |
+| namespace 호출 권한·cap·rate 거부 | 기존 공통 게이트 | 0 |
+| 허용된 namespace 호출 | 기존 METHOD_TABLE/PREFIX_RULES 또는 `ipc.invoke:<prefix>` | 활성 owner, 그리고 실제 실행할 매칭 IPC hook의 active extension만 |
+| 미등록 prefix | 기존 unknown-method 오류 | 0 |
+| disabled/auto-disabled owner | 기존 not-running 오류 | 0 |
+| plugin kind 지목 생성 | `surface.write` | 해당 kind의 활성 owner만 |
 
-- **표에 없는 이름의 두 줄은 실측 2026-09-14 다**(갓 만든 격리 홈, 각 호출이 부팅 후 첫
-  호출). 권한 0 토큰은 `missing permission 'ipc.invoke:markdown'` 으로 거부되고 그 뒤
-  `running` 이 0 — 거부가 forward 앞에서 나기 때문이다. `ipc.invoke:markdown` 만 준 토큰은
-  통과하고 `running` 이 9 다. 이 둘을 가르는 것이 `method_meta()` 해소 규칙의 마지막 갈래다 —
-  `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` 에서 걸린 이름은 그 자리가 적은
-  권한을 요구하고, **런타임 등록 plugin prefix** 까지 내려온 이름은 `namespace_forward` 표시를
-  달고 게이트가 그 prefix 의 `ipc.invoke` 를 요구한다. 그래서 같은 namespace 안에서도
-  `markdown.recent` 와 `markdown.navigate` 는 요구하는 토큰이 다르다. 경계의 크기 — 번들
-  plugin 이 선언한 namespace 여섯 중 표에 이름이 있는 것은 `image` 8 건 · `markdown` 1 건뿐이고
-  나머지 넷(`agent_stream`·`claude`·`codex`·`html`)은 0 건이라, 대부분의 이름이 마지막 갈래의
-  토큰을 요구한다. 근거와 기각한 대안은 [ADR-0271](../adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md).
-- 토큰을 가진 호출이 **설치된 전부**를 띄우는 것은 그대로다(다섯째 줄의 1 과 대비). 좁히려면
-  소유자를 아는 `owns_namespace` 를 id 를 돌려주는 형태로 바꿔야 한다 — 아직 안 했다.
-- **어느 줄도 설치나 grant 를 하지 않는다.** 실측(2026-09-10, 정상 홈 — 권한 0 토큰이 그 호출을 통과하던 때): 권한 0
-  `markdown.recent` 전후로 `plugins.toml` 의 md5 가 같고 `plugins/` 아래 파일 45 개의
-  목록 md5 도 같다. 번들 설치는 부팅에 걸려 있어 그 시점엔 이미 끝나 있고, 반대로 설치가
-  안 된 홈에서는 prefix 가 등록돼 있지 않아 그 호출이 forward 에 닿지도 못한다(권한 0
-  토큰에 `-32001 unknown ipc method`, 토큰 없는 Local 에 `-32601`).
-- 다섯째 줄은 위 셋째 줄보다 **좁다**(권한을 더 요구하고, 하나만 띄운다). 그래서 caller
-  종류로 가르지 않는다 — 근거와 기각한 대안은
-  [ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md) 의 "신뢰 경계".
-- **이 표는 헤드리스 기준이다.** gui 는 첫 창을 만들 때 `discover_and_start` 로 전부
-  띄우므로, 다섯째 줄의 트리거가 거기서는 할 일이 없다.
+- namespace 소유는 설치된 manifest의 prefix registry에서 찾는다. `commands`는 전체 IPC 메서드 명부가 아니므로 사전 allowlist로 쓰지 않는다. **등록 prefix 안의 오타는 owner가 시작된 뒤 오류를 반환할 수 있다.** 무관한 plugin은 시작하지 않는다.
+- owner를 찾거나 권한을 검사할 때는 기동하지 않는다. 이미 running인 owner/extension은 다시 시작하지 않는다. 매칭 hook이 없거나 self-loop/backoff로 우회되면 그 extension을 기동할 이유도 없다.
+- 설치·enable·grant·사용자 설정 저장은 namespace 준비 경로에 없다. 다른 namespace를 호출해 agent-stream의 저장된 SSE가 우연히 재개되는 동작에 의존하지 않는다. 재개하려는 plugin을 명시적으로 사용하거나 Local enable 경로로 시작한다.
+- GUI의 첫 창에서 활성 plugin을 시작하는 기존 부팅 정책과 attach mesh mirror의 별도 기동 트리거는 유지한다. **호출로 인한 추가 기동**은 GUI/headless 공통 manager가 같은 범위로 처리한다.
+- 권한 해소 순서는 기존 `METHOD_TABLE` → `DEBUG_METHODS` → 정적 `PREFIX_RULES` → 등록 plugin prefix다. 표에 있는 `image.list` 같은 이름의 권한을 `ipc.invoke`로 대체하지 않는다. 거부·cap·rate·허용 관측은 [ADR-0277](../adr/0277-ipc-admission-and-observation-run-once.md)의 공통 진입 검사를 유지한다.
 
 ## Audit log
 
