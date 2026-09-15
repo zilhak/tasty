@@ -143,6 +143,22 @@ tray 상주 상태의 1Hz busy forward 를 실증하기 전에는 채택할 수 
 **headless 는 waker 스레드조차 없다.** 메인 루프가 `rx.recv_timeout(deadline - now)` 로
 직접 데드라인을 지키므로 wake 신호가 필요 없다(`AppEvent::TimerTick` 은 gui 전용).
 
+### waker 상태 락의 poison 복구
+
+waker가 보호하는 값은 다음 데드라인과 정지 플래그다. 임계구역은 이 값만 교체하고
+사용자 콜백은 락 밖에서 실행하므로, poison 이후에도 상태를 복구해 다음 데드라인
+발화와 정지를 처리한다. 이것은 죽은 waker 스레드를 재시작한다는 보장은 아니다.
+
+최초 `Mutex::lock` 과 `Condvar::wait`·`wait_timeout` 재획득은 모두
+`tasty_utils::poison` 헬퍼를 거친다. **waker 인스턴스마다 최초 한 번** error 로그에
+`timer waker state lock poisoned` 를 남기며, 세 경로가 같은 보고 플래그를 공유한다.
+대기 시작 후 다른 스레드가 poison을 만들 수도 있어 재획득의 보고를 생략하지 않는다.
+로그 규약은 [error-handling](error-handling.md)의 락 poison 절을 따른다.
+
+`crates/tasty-timer/src/waker_poison_tests.rs` 는 독립된 상태 락을 실제로 poison시키고
+최초 획득·무기한 대기·시간제한 대기 각각의 error 로그 한 번, 데드라인 발화,
+정지 처리를 검증한다. 사용자 환경이나 GUI 인스턴스를 사용하지 않는다.
+
 ## 실행부
 
 ### gui — `about_to_wait`

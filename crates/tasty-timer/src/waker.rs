@@ -13,6 +13,7 @@
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 #[derive(Debug)]
@@ -26,6 +27,8 @@ struct State {
 struct TimerWaker {
     state: Mutex<State>,
     cv: Condvar,
+    // All acquisitions of this state share one report, including Condvar reacquisition.
+    poison_reported: AtomicBool,
 }
 
 impl TimerWaker {
@@ -47,11 +50,13 @@ impl TimerWaker {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        // poisoned = waker 스레드가 panic 한 것. 타이머 스케줄은 복구 가능한 상태
-        // (다음 set_deadline 이 통째로 덮어쓴다)라 그대로 이어서 쓴다.
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        // A holder panicked. Only deadline/stopped assignments happen under this lock;
+        // the fire callback runs outside it. Keep the state and report the first recovery.
+        tasty_utils::poison::recover_mutex(
+            self.state.lock(),
+            "timer waker state",
+            &self.poison_reported,
+        )
     }
 }
 
@@ -88,6 +93,7 @@ pub fn spawn_timer_waker(mut fire: impl FnMut() -> bool + Send + 'static) -> Tim
             stopped: false,
         }),
         cv: Condvar::new(),
+        poison_reported: AtomicBool::new(false),
     });
     let thread_waker = Arc::clone(&waker);
     let spawned = std::thread::Builder::new()
@@ -110,7 +116,13 @@ pub fn spawn_timer_waker(mut fire: impl FnMut() -> bool + Send + 'static) -> Tim
 /// 다음 데드라인까지 park 한다. `true` = 데드라인 도달(발화해야 함),
 /// `false` = 정지 요청.
 fn wait_for_deadline(waker: &TimerWaker) -> bool {
-    let mut st = waker.lock();
+    wait_for_deadline_with_state(waker, waker.lock())
+}
+
+fn wait_for_deadline_with_state(
+    waker: &TimerWaker,
+    mut st: std::sync::MutexGuard<'_, State>,
+) -> bool {
     loop {
         if st.stopped {
             return false;
@@ -118,10 +130,13 @@ fn wait_for_deadline(waker: &TimerWaker) -> bool {
         match st.deadline {
             // 깨울 이유가 없다 — 등록이 생길 때까지 무기한 park(idle wakeup 0).
             None => {
-                st = waker
-                    .cv
-                    .wait(st)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                st = waker.cv.wait(st).unwrap_or_else(|poisoned| {
+                    tasty_utils::poison::recover_poisoned(
+                        poisoned,
+                        "timer waker state",
+                        &waker.poison_reported,
+                    )
+                });
             }
             Some(at) => {
                 let now = Instant::now();
@@ -134,7 +149,13 @@ fn wait_for_deadline(waker: &TimerWaker) -> bool {
                 let (next, _) = waker
                     .cv
                     .wait_timeout(st, at - now)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    .unwrap_or_else(|poisoned| {
+                        tasty_utils::poison::recover_poisoned(
+                            poisoned,
+                            "timer waker state",
+                            &waker.poison_reported,
+                        )
+                    });
                 st = next;
             }
         }
@@ -195,3 +216,7 @@ mod tests {
         handle.set_deadline(Some(Instant::now() + Duration::from_millis(10)));
     }
 }
+
+#[cfg(test)]
+#[path = "waker_poison_tests.rs"]
+mod poison_tests;

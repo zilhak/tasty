@@ -6,7 +6,11 @@ license = "MIT"
 description = "Central timer hub for tasty — deadline-driven periodic work on the main loop"
 
 [dependencies]
+tasty-utils = { path = "../tasty-utils" }
 tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [lints]
 workspace = true

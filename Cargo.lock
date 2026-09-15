@@ -6357,7 +6357,9 @@ dependencies = [
 name = "tasty-timer"
 version = "0.1.0"
 dependencies = [
+ "tasty-utils",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
