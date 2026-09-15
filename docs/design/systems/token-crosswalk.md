@@ -95,7 +95,7 @@ base 필드 이름으로 이미 불리고 있을 수 있고(예: `titlebar-capti
 
 | 토큰 | 토큰 값 | 지금 그리는 값 | 자리 |
 |---|---|---|---|
-| `component.tab-dot-size` | 8 | **6** | `src/adapters/ui/tab_bar.rs` (`TAB_BUSY_DOT_SIZE`) |
+| `component.tab-dot-size` | 8 | **6** | `src/adapters/ui/tab_bar/tab.rs` (`TAB_BUSY_DOT_SIZE`) |
 | `component.status-dot-size` (+ `badge-`/`tag-`/`tab-` 별칭) | 8 | **7** | `crates/tasty-ui-widgets/src/status_bar.rs` (`DOT_SIZE`) |
 | `component.status-dot-attached-ring-width` | 2 | **1.5** | `src/adapters/ui/sidebar/view.rs` (`ATTACHED_OUTLINE_WIDTH`) |
 | `component.status-dot-attached-ring-offset` | 2 | **1.5** | 같은 자리 (ring 반경 계산) |

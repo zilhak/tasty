@@ -152,14 +152,14 @@ zoom 을 타고 있었고 반경만 고정이었다.
 (`src/view/plugins/ui/attention.rs` 둘 + `crates/tasty-ui-widgets/src/status_bar.rs` 둘),
 5 가 넷(`src/adapters/ui/tutorial/callout.rs` 하나 +
 `src/view/settings/ui/tabs/appearance.rs` 셋), 6 이 둘(`src/adapters/ui/sidebar/view.rs` ·
-`src/adapters/ui/tab_bar.rs`). 그래서 이 축의 스케일 밖 값들은 "가장 가까운 토큰으로 보내면
+`src/adapters/ui/tab_bar/tab.rs`). 그래서 이 축의 스케일 밖 값들은 "가장 가까운 토큰으로 보내면
 되는 실수" 가 아니라 **이름이 아직 없는 역할**로 다룬다. 앞의 두 축에는 이 판별식이
 필요 없었다 — 폰트는 반올림이, 반경은 배율 가변성이 혼자 결론을 냈다.
 
 **세 번째 실패 형태도 이 축에서 처음 나왔다.** 앞의 둘은 "값이 스케일 밖" 과 "토큰의
 사본" 두 형태였는데, 여기에는 **이름은 있는데 코드가 그 이름에 도달하지 못한** 자리가
 있다 — `component.tab-dot-size` 는 DTCG 에 정식 등재돼 접근자까지 생성돼 있으나 호출처가
-0 이고, 그 이름이 겨냥하는 `src/adapters/ui/tab_bar.rs` 는 값 6 을 쓴다. 이 형태는
+0 이고, 그 이름이 겨냥하는 `src/adapters/ui/tab_bar/tab.rs` 는 값 6 을 쓴다. 이 형태는
 **부르면 픽셀이 바뀌므로**(6 → 8) 리터럴 정리가 곁다리로 닫을 수 없다. 그 토큰의 8 이
 디자인이 정한 값인지 다른 세 dot 이름을 만들 때 대칭으로 딸려 나온 값인지가 먼저
 갈려야 한다 — 그때까지 상수 주석이 그 물음을 들고 있는다.
@@ -276,9 +276,9 @@ primitive 는 한 덩이가 아니라 가족이 여럿이다 — `size-*`(구조
 
 | 자리 | 겨냥할 이름 | 값 | 결과 |
 |---|---|---|---|
-| `src/adapters/ui/tab_bar.rs` 활성 탭 밑줄 두께 | `component.tab-indicator-width` | 2 = 2 | **불렀다** — 픽셀 0 |
+| `src/adapters/ui/tab_bar/tab.rs` 활성 탭 밑줄 두께 | `component.tab-indicator-width` | 2 = 2 | **불렀다** — 픽셀 0 |
 | `src/adapters/ui/popup/remote_attach.rs` 선택 행 좌측 바 | 같은 토큰 | 2 = 2 | **불렀다** — 픽셀 0 |
-| `src/adapters/ui/tab_bar.rs` busy 점 | `component.tab-dot-size` | 8 ≠ 6 | **못 부른다** |
+| `src/adapters/ui/tab_bar/tab.rs` busy 점 | `component.tab-dot-size` | 8 ≠ 6 | **못 부른다** |
 | `crates/tasty-gallery/src/host_shell.rs` UI scale 세그 | `AppearanceSettings::ui_scale_factor_for` | 0.85 ≠ 0.8 | **갈라져 있었다** |
 | `src/adapters/ui/popup.rs` 타이틀 버튼 치수 | `tasty-gallery` 의 `popup_frame::TITLE_BTN_SIZE`·`TITLE_BTN_EDGE_PAD` | 20·4 = 20·4 | **방향이 반대** → 공유 자리로 올렸다 |
 
@@ -437,7 +437,7 @@ UI scale 사본은 "안 불러서 **갈라졌다**" 다. 그 사본은 주석에
   승인이면 명명 const 가 토큰으로 가고, 수렴이면 **픽셀이 바뀌므로** 그 변경은 리터럴
   정리가 아니라 값 변경 커밋으로 따로 간다.
 - **(점 치수 축)** `component.tab-dot-size` 의 값 8 의 출처가 갈린다 — 디자인이 정한
-  값이면 `src/adapters/ui/tab_bar.rs` 의 6 이 그리로 가고(픽셀 변경), 대칭으로 딸려 나온
+  값이면 `src/adapters/ui/tab_bar/tab.rs` 의 6 이 그리로 가고(픽셀 변경), 대칭으로 딸려 나온
   값이면 토큰 쪽이 6 으로 내려온다. **어느 쪽이든 오늘의 "부르지 않는다" 가 끝난다.**
 - **(점 치수 축)** 값이 점 토큰(8)과 같은 명명 const 가 점 자리에 나타난다 — 대응 판정이
   아직 없어 **사람이 리뷰에서 읽어야 발화한다.** 나타나면 두 자매 가드와 같은

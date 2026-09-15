@@ -39,7 +39,7 @@ const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 /// 같은 파일의 확장 사이드바 점(`badge_dot_size`, 8)과 값이 다른 것은 rail 이 52px 폭이라
 /// 같은 크기를 못 쓰기 때문이다.
 ///
-/// **같은 6 을 `src/adapters/ui/tab_bar.rs` 의 busy 점도 쓴다** — 무관한 두 화면이
+/// **같은 6 을 `src/adapters/ui/tab_bar/tab.rs` 의 busy 점도 쓴다** — 무관한 두 화면이
 /// 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
 const RAIL_STATUS_DOT_SIZE: LogicalPx = LogicalPx(6.0);
 

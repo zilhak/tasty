@@ -375,7 +375,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   와 1:1 — `corner_radius_sm` radius, `border_width` 1px stroke(Inside), 하단 2px line(=
   switch-overlay-shadow-depth=size-2), `font_size_micro` mono, fill `surface_raised`/border
   `border_strong`/fg `text_secondary`. active 변종만 `accent_primary` fill + `text_on_accent`
-  숫자. tab_bar.rs 가 본체 tab 시각을 painter 로 재현하는 것과 같은 방식.
+  숫자. tab_bar/tab.rs 가 본체 tab 시각을 painter 로 재현하는 것과 같은 방식.
 - **근거(2026-06-25)**: `crates/tasty-gallery/src/catalog/components/switch_overlay.rs`. 신규
   Theme 필드 없음(P0). 본체 P2 draw 도 같은 좌표 painting 이 될 것이므로 형상 로직 공유 가능.
 
@@ -555,7 +555,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   이미 `accent_warning` 으로 존재하던 "주의 필요" 시맨틱과 자연스럽게 맞고 파랑은
   워크스페이스 배지·로고 등 기존 `accent_primary` 용례(중립적 정보 강조)와 맞아
   완료 쪽에 배정했다.
-- **근거**: `src/adapters/ui/tab_bar.rs` `text_color` match(`AttentionKind` 분기). 상세는
+- **근거**: `src/adapters/ui/tab_bar/tab.rs` `text_color` match(`AttentionKind` 분기). 상세는
   [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
   · [design-gallery-mapping §Attention kind](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062).
 

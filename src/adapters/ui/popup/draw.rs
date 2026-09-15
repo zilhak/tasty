@@ -18,7 +18,7 @@ const RESIZE_BAND: LogicalPx = LogicalPx(6.0);
 /// `rail_category` ← `sidebar/collapsed.rs`, 배너 더보기 메뉴 ← `mouse_capture_menu.rs`),
 /// **`search_bar` 만 트리거 rect 를 안 쓴다** — `OpenPopupMode::AtTopOfScope` 로 열려
 /// scope 상단에 가로 중앙 정렬된다(`super::open_at_top_of_scope`). 여는 자리가 셋이다:
-/// `tab_bar.rs` · `input/shortcuts/keybinding.rs` · `input/shortcuts/dispatch.rs`.
+/// `tab_bar/apply.rs` · `input/shortcuts/keybinding.rs` · `input/shortcuts/dispatch.rs`.
 /// 그래도 anchored 갈래인 이유는 좌표의 출처가 아니라 형태다 — scrim 없이 살아 있는
 /// surface 위에 얹힌다.
 ///

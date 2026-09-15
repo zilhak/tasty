@@ -108,7 +108,7 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
 | `NumCap`(키캡) | `num_cap` (헬퍼) — 공용 위젯 `tasty_ui_widgets::num_keycap` 호출 | ✅ `switch_overlay::paint_keycap` (공통, P2a) — 같은 그림을 `paint_num_keycap` 으로 호출 |
-| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar.rs` `draw_pane_tab_bars_view` (leading 교체, P2a) |
+| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar/view.rs` `draw_pane_tab_bars_view` → `tab_bar/tab.rs` `draw_tab` (leading 교체, P2a) |
 | `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (status dot 교체, P2b) |
 | `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
 | `CatSwitchSidebarMock` | `full_cat` → `draw_category` (`switch-cat` specimen, full) | ✅ `sidebar/view.rs` (헤더 우측 키캡, `category_switch_held`) |
@@ -786,7 +786,7 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 | `StatusDot status="needs-input"` | `sidebar/view.rs::draw_collapsed_avatar` 우상단 dot 분기 | `sidebar.rs::attention_rail_demo` | collapsed rail — kind 우선순위로 대표색 1개 |
 | `StatusDot status="completion"`(기존 notif) | 동 | 동 | 값 불변(파랑), 분기 순서만 needs-input 다음으로 |
 | surface border(occPane 확장) | `divider.rs::highlight_stroke_color`/`regions_from_state` | `occupancy_borders.rs::occ_pane`(`Kind::NeedsInput`) | 우선순위: NeedsInput > 점유 > Completion |
-| 탭 제목 색(위계) | `tab_bar.rs` `text_color` match(kind) | `tab_bar.rs::attention_strip` | 기존 "divergence: accent_warning 값-보존" 주석 해소(Completion 이 이제 정말 파랑) |
+| 탭 제목 색(위계) | `tab_bar/tab.rs` `text_color` match(kind) | `tab_bar.rs::attention_strip` | 기존 "divergence: accent_warning 값-보존" 주석 해소(Completion 이 이제 정말 파랑) |
 
 **신규 Theme 필드 0** — 전부 기존 semantic 접근자(`accent_warning`/`accent_primary`/
 `text_on_accent`/`focus_ring_width`/`spacing_xs`)로 해소([design-token-mapping

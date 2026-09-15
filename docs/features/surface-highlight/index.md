@@ -117,7 +117,7 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
      멈춘다"는 신호를 점유가 가리면 안 되기 때문).
   2. **탭 제목** — 그 탭에 속한 surface 들의 `attention_dominant_kind` 로 제목색 결정.
      순서: `NeedsInput`(노랑) → `Completion`(파랑) → active(`text_primary`) → 평상시
-     (`text_muted`). busy 녹색 dot 과 별개 채널(`tab_bar.rs`).
+     (`text_muted`). busy 녹색 dot 과 별개 채널(`tab_bar/tab.rs`).
   3. **워크스페이스 배지/dot** — 사이드바 워크스페이스 행 우측: full 은 kind 별 개수
      숫자 배지 2종(트레일링 슬롯은 kind 무관 유지 — 1개면 단독 그 자리, 2개면 `NeedsInput`
      이 좌측·`Completion`이 우측, 간격 `badge-group-gap`=`spacing_xs`), collapsed 은 dot

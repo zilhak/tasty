@@ -2,7 +2,7 @@
 //!
 //! 한 pane 안의 탭 줄. tab 24×150, strip 은 bg-sidebar + 하단 border.
 //! Tab×3 + `+` IconButton, 우측에 Split / Search. 활성 탭은 bg-panel +
-//! accent top bar 로 구분. 본체 `src/adapters/ui/tab_bar.rs` 의 시각 패턴을
+//! accent top bar 로 구분. 본체 `src/adapters/ui/tab_bar/tab.rs` 의 시각 패턴을
 //! Theme 토큰만으로 정적 재현 (binary 미의존).
 
 use tasty_type_appearance::theme::Theme;
@@ -126,7 +126,7 @@ fn paint_icon(
     glyph.image(size, color).paint_at(ui, icon_rect);
 }
 
-/// 탭 제목 색 위계 데모 — 본체 `tab_bar.rs` 의 `text_color` 분기(NeedsInput → \
+/// 탭 제목 색 위계 데모 — 본체 `tab_bar/tab.rs` 의 `text_color` 분기(NeedsInput → \
 /// Completion → active → 평상시)를 3탭으로 재현.
 fn attention_strip(ui: &mut egui::Ui, theme: &Theme) {
     let bar_h = theme.tab_bar_height.value();

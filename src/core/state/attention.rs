@@ -391,7 +391,7 @@ impl CoreState {
     /// 목록(탭/워크스페이스에 속한 surface) 중 가장 높은 우선순위의 attention
     /// kind — `NeedsInput > Completion` 순서(디자인 rank 토큰 미러링). 탭 제목·
     /// collapsed rail dot 처럼 "여러 surface 를 하나의 색으로 압축" 해야 하는
-    /// 소비처 전용(`tab_bar.rs`, `sidebar/view.rs` collapsed dot).
+    /// 소비처 전용(`tab_bar/tab.rs`, `sidebar/view.rs` collapsed dot).
     pub fn attention_dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
         self.attention.dominant_kind(surface_ids)
     }

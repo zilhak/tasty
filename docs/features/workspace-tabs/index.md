@@ -27,7 +27,7 @@
 
 ### 클릭 → Pane focus 이동
 
-**비-focused Pane 의 탭 스트립을 primary click 하면(탭 본체·빈 영역·스크롤 화살표·+/split/search 버튼) 그 Pane 으로 focus 가 이동한다** — 콘텐츠 영역 클릭과 대칭. 탭 전환(`SwitchTab`)과 focus 이동은 독립적이라, 빈 영역 클릭은 focus 만 옮기고 `active_tab` 은 그대로 둔다. 우클릭 컨텍스트 메뉴 3종(`OpenContextMenu`/`OpenPaneContextMenu`/`OpenNewTabButtonContextMenu`)은 대상 `pane_id`/`tab_index` 를 메뉴 항목에 직접 실어 나르므로 focus 이동이 없다. 사용자 마우스 클릭에 의한 이동이라 [focus 정책](../../design/policies/focus.md)의 "CLI/IPC 포커스 독립 원칙"과 무충돌(그 원칙은 IPC/CLI/에이전트 유래 focus 강제를 막는 것). 구현: `TabBarAction::focus_target_pane` + `apply_tab_bar_actions`(`src/adapters/ui/tab_bar.rs`).
+**비-focused Pane 의 탭 스트립을 primary click 하면(탭 본체·빈 영역·스크롤 화살표·+/split/search 버튼) 그 Pane 으로 focus 가 이동한다** — 콘텐츠 영역 클릭과 대칭. 탭 전환(`SwitchTab`)과 focus 이동은 독립적이라, 빈 영역 클릭은 focus 만 옮기고 `active_tab` 은 그대로 둔다. 우클릭 컨텍스트 메뉴 3종(`OpenContextMenu`/`OpenPaneContextMenu`/`OpenNewTabButtonContextMenu`)은 대상 `pane_id`/`tab_index` 를 메뉴 항목에 직접 실어 나르므로 focus 이동이 없다. 사용자 마우스 클릭에 의한 이동이라 [focus 정책](../../design/policies/focus.md)의 "CLI/IPC 포커스 독립 원칙"과 무충돌(그 원칙은 IPC/CLI/에이전트 유래 focus 강제를 막는 것). 구현: `TabBarAction::focus_target_pane` + `apply_tab_bar_actions`(`src/adapters/ui/tab_bar/apply.rs`).
 
 ### 탭 표시
 
@@ -66,9 +66,11 @@
 
 ## 구현
 
-- view: `src/adapters/ui/tab_bar.rs` — `draw_pane_tab_bars_view`(props→`PaneTabBarsOutput{actions, measured_height}`), `compute_drop_index`(드래그 drop 위치).
+- view: `src/adapters/ui/tab_bar/view.rs` — `draw_pane_tab_bars_view`(props→`PaneTabBarsOutput{actions, measured_height}`), `compute_drop_index`(드래그 drop 위치).
+- 탭 한 칸 렌더링: `src/adapters/ui/tab_bar/tab.rs` — `TabRenderContext`/`draw_tab`(표시·클립·클릭·드래그). strip 조립과 drag overlay는 `view.rs`의 `strip_geometry`를 함께 사용한다.
+- 공개 진입점과 재수출: `src/adapters/ui/tab_bar.rs`.
 - props: `PaneTabBarView`(pane별 탭명/kind/알림/busy/active/focus/scroll), `PaneTabBarsProps`(테마/탭폭/폰트/drag).
-- 액션 반영: `apply_tab_bar_actions`(`src/adapters/ui/tab_bar.rs`) — `TabBarAction::focus_target_pane` 로 primary-click 계열 액션 처리 전 focus 를 선-이동한다.
+- 액션 반영: `apply_tab_bar_actions`(`src/adapters/ui/tab_bar/apply.rs`) — `TabBarAction::focus_target_pane` 로 primary-click 계열 액션 처리 전 focus 를 선-이동한다.
 - drag 상태: `src/state.rs` `TabDragState`(UI 전용, 비영속).
 
 ## 화면

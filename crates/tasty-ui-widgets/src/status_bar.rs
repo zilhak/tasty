@@ -28,7 +28,7 @@ const CELL_GAP: LogicalPx = LogicalPx(6.0);
 /// `badge-`/`tab-`/`tag-dot-size` 셋이 그것을 별칭으로 쓴다. 부르면 7 → 8 로 배율 1
 /// 에서 픽셀이 바뀌므로 부르지 않았다(ADR-0126 대로 값을 지키고 이름만 남긴다).
 ///
-/// **점 지름이 지금 셋이다** — 여기 7 · `src/adapters/ui/tab_bar.rs` 의 busy 점 6 ·
+/// **점 지름이 지금 셋이다** — 여기 7 · `src/adapters/ui/tab_bar/tab.rs` 의 busy 점 6 ·
 /// 토큰 8. 세 자리가 각자 디자인 시안의 inline 값을 옮겨 온 것이라, 토큰의 8 이
 /// 디자인이 정한 값인지 dot 이름들을 만들 때 대칭으로 딸려 나온 값인지가 갈려야
 /// 셋이 한 이름으로 모인다. 어긋난 자리의 대조표는 `docs/design/systems/token-crosswalk.md`.
