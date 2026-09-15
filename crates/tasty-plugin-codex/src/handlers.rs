@@ -553,8 +553,8 @@ fn fetch_screen_text_for_hint<H: HostCall>(host: &H, target: u32) -> Option<Stri
     .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_string))
 }
 
-/// child(=target) 가 완료(codex-idle 또는 process-exit)되면 caller 에게 1 회성 알림을
-/// 보내도록 hook 2개를 등록한다. 두 hook 의 command 는 완전히 동일한 `codex
+/// child(=target)의 codex-idle·needs-input·process-exit에 caller 알림을 보내도록
+/// once hook 3개를 등록한다. 세 hook의 command는 완전히 동일한 `codex
 /// notify-caller` 호출이며, fire 시점에 `hook.list` 를 command 문자열로 매칭해 자기
 /// 그룹의 남은 형제를 정리한다 — 어느 이벤트가 먼저 fire 하는지에 무관하게 대칭적으로
 /// 동작하고, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에 spawn/tell 이 겹쳐
