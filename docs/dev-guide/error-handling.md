@@ -284,8 +284,9 @@ let mut inner = self.inner.lock().expect("poisoned");
 위 **무음 `return`** ❌ 는 가드가 잡지 못한다 — 읽는 사람이 여기서 가장 자주 오해하는
 자리라 적어 둔다. `crates/tasty-utils/src/poison.rs` 의 삼킴 판정기
 (`silently_skipped_lock_lines`)는 `match` 와 `let Ok(..) else` 를 "poison 을 다루는
-형태" 로 분류해 지나치고, `.ok()` · `.unwrap_or(..)` · else 없는 `if let Ok(..)` 셋만
-본다. 그 분류는 의도된 것이다: 두 형태는 `Err` 갈래를 **쓴** 자리라, 그 갈래에 로그나
+형태" 로 분류해 지나친다. 검사 대상은 락 verb 바로 뒤의 `.ok()`, 체인의
+`.unwrap_or(..)`·`.unwrap_or_default()`, else 없는 `if let Ok(..)`·`while let Ok(..)`·
+`&& let Ok(..)` 이다. 그 분류는 의도된 것이다: 두 형태는 `Err` 갈래를 **쓴** 자리라, 그 갈래에 로그나
 사유가 들어 있는지를 모양만으로는 가릴 수 없다. 그래서 이 ❌ 는 자동으로 잡히는 금지가
 아니라 **리뷰가 보는 금지**다. 판정기를 넓힐 생각이면 그 유닛 테스트가 두 형태를
 "허용 — 못 잡는 것이 의도다" 로 못 박아 두었으니 거기서부터 시작한다.
@@ -295,16 +296,18 @@ let mut inner = self.inner.lock().expect("poisoned");
 **가드가 보는 축은 하나다** — `crates/tasty-utils/src/poison.rs` 의 `FORBIDDEN_LOCKS` 스캔은
 **복구하면 안 되는 락을 복구하거나 조용히 지나치는 것**을 잡는다. 그 밖은 안 본다.
 
-**안 보는 축이 하나 남아 있다**: "복구는 해도 되지만 **보고를 거쳐야 한다**". 헬퍼
-(`recover_mutex` 계열)를 거치지 않고 `PoisonError::into_inner()` 로 직접 복구하면 아무
-흔적이 남지 않는데, 그것을 막는 자동 채널이 없다. **그 자리의 수는 여기 안 적는다** —
-커밋마다 바뀌어서 어떤 시점을 붙여도 하루를 못 산다. 세야 하면 그 자리에서 센다:
-`into_inner()` 계열 문자열을 `src/` 에서 찾고 `#[cfg(test)]` 블록 이후를 잘라내는 근사이며,
-`#[cfg(test)]` 가 여러 번 나오는 파일에서는 **과소계수**한다.
+**보고 없는 복구는 별도 검사다.**
+`crates/tasty-doc-guards/tests/no_silent_poison_recovery.rs` 가 `src`·`crates` 를
+훑고, `poison_recovery` 판정기가 인라인 closure/Err arm의 `into_inner()` 에 보고가
+있는지 본다. 테스트 전용 코드는 제외한다. 검사 실행 채널은 [ci-gates](ci-gates.md),
+구체적인 인식 범위는 `crates/tasty-doc-guards/src/poison_recovery.rs` 에 있다.
 
-**그 자리들은 "판단해서 남긴 것" 이다** — 대부분 임계구역이 맵 insert/remove 나 카운터라
-복구 자체는 옳다. 틀린 것은 복구가 아니라 **흔적이 없다는 것**이고, 그 판정은 자리마다
-달라 일괄 치환이 답이 아니다. 새로 생기는 것을 막을 채널이 없다는 것이 지금의 상태다.
+**인식 밖의 복구가 초록에 섞일 수 있다.** `PoisonError::into_inner` 함수 포인터와
+복구 헤드 없이 함수 인자로 받은 오류를 풀어내는 형태는 이 검사가 세지 못한다.
+따라서 이 검사 통과가 모든 복구의 관측을 증명하지 않는다. 그런 자리도 같은 로그
+규약을 따르며, 이미 받은 오류는 `tasty_utils::poison::recover_poisoned` 로 보고한다.
+Condvar 대기 중 발생한 poison은 최초 lock 성공 뒤에 생기므로 **재획득 경로에서도**
+같은 보고 플래그를 전달해야 한다. [timer-hub](timer-hub.md)의 waker가 이 계약을 따른다.
 
 
 ## stdout 쓰기 (CLI 클라이언트)

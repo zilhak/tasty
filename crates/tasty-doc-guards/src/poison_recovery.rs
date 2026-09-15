@@ -28,7 +28,9 @@
 //! 이미 손에 쥔 `PoisonError` 를 함수 인자로 받아 `p.into_inner()` 하는 형태(복구 헤드가
 //! 근처에 없는 형태)는 텍스트로 poison 인지 확정할 수 없어 보지 않는다 — 그 형태는
 //! `recover_poisoned` 가 존재하는 이유이고, 현재 트리의 그런 자리(condvar 재획득 등)는
-//! 모두 그 헬퍼를 지난다. 새 그런 자리는 이 가드가 아니라 `recover_poisoned` 규율로 막는다.
+//! `recover_poisoned` 를 사용해야 한다. 함수 포인터 `PoisonError::into_inner` 도
+//! `.into_inner()` 호출이나 복구 바인더가 없어 인식하지 못한다. 이 검사 통과를
+//! 모든 복구 경로의 관측 증명으로 읽지 않는다.
 
 use std::path::{Path, PathBuf};
 
