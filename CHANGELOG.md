@@ -83,6 +83,7 @@
 
 - Keep explicitly targeted file dispatch in its origin pane through asynchronous identification and handler selection; stop safely when the origin closes.
 
+
 - **방향키의 보조키가 터미널 프로그램에 전달된다.** Shift·Ctrl·Alt(macOS Option)+방향키가 일반 방향키와 같은 입력으로 보내지던 문제를 고쳤다. Option as Meta 설정과 무관하게 조합을 구분하며, 일반 방향키의 애플리케이션 커서 모드와 Tasty 단축키 우선순위는 유지한다.
 
 - **최근 파일 목록이 윈도우 사이에서 즉시 일치한다.** 다른 윈도우에서 연 파일도 마크다운 최근 목록과 주소창 후보에 반영된다. 종류별 최신순, 중복 제거, 최대 10개 상한과 기존 명령 형식은 유지한다.

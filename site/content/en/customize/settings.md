@@ -1,4 +1,5 @@
 <!-- source-hash: 5c88d5d18ef5 -->
+<!-- source-hash: eb2e84e5c611 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
