@@ -23,6 +23,9 @@
 #[path = "../spawn_diag/mod.rs"]
 mod spawn_diag;
 
+#[cfg(all(test, target_os = "linux"))]
+mod stderr_tests;
+
 // stderr 포착의 생산자는 `spawn_diag` 한 곳이다 — 이 하네스가 들고 있던 링·시각·배출
 // 스레드가 형제 둘과 바이트 단위로 같았다.
 use spawn_diag::{STDERR_TAIL_LINES, StderrCapture};
@@ -143,6 +146,8 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
 /// GUI test instance: a running tasty GUI process with IPC access and input simulation.
 pub struct GuiTestInstance {
     process: Child,
+    /// 부팅 뒤에도 실패 진단에 쓰며, 자식을 거둔 뒤 배출 스레드를 join 한다.
+    stderr: StderrCapture,
     port: u16,
     port_file: PathBuf,
     /// 이 인스턴스 전용 `TASTY_HOME`. `Drop` 이 지운다.
@@ -305,6 +310,7 @@ impl GuiTestInstance {
 
         let instance = Self {
             process: process.release(),
+            stderr,
             port,
             port_file,
             isolated_home,
@@ -456,7 +462,7 @@ impl GuiTestInstance {
     /// Send a JSON-RPC request and return the result.
     pub fn call(&self, method: &str, params: Value) -> Value {
         let mut stream = TcpStream::connect(format!("127.0.0.1:{}", self.port))
-            .expect("failed to connect to tasty IPC");
+            .unwrap_or_else(|e| self.fail(format_args!("failed to connect for '{method}': {e}")));
         stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
         let request = serde_json::json!({
@@ -470,19 +476,30 @@ impl GuiTestInstance {
         msg.push('\n');
         stream
             .write_all(msg.as_bytes())
-            .expect("failed to send IPC");
+            .unwrap_or_else(|e| self.fail(format_args!("failed to send '{method}': {e}")));
 
         let mut reader = BufReader::new(&stream);
         let mut line = String::new();
         reader
             .read_line(&mut line)
-            .expect("failed to read IPC response");
+            .unwrap_or_else(|e| self.fail(format_args!("failed to read '{method}': {e}")));
 
-        let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
+        let resp: Value = serde_json::from_str(&line).unwrap_or_else(|e| {
+            self.fail(format_args!("invalid JSON response for '{method}': {e}"))
+        });
         if let Some(error) = resp.get("error") {
-            panic!("IPC error: {}", error);
+            self.fail(format_args!("IPC error for '{method}': {error}"));
         }
         resp.get("result").cloned().unwrap_or(Value::Null)
+    }
+
+    /// 살아 있는 자식을 join 하지 않고, 지금까지 수집한 stderr 를 실패에 붙인다.
+    fn fail(&self, message: impl std::fmt::Display) -> ! {
+        panic!(
+            "{message}\n--- stderr (last {} lines, captured so far) ---\n{}",
+            self.stderr.tail_lines(),
+            self.stderr.tail(),
+        );
     }
 
     /// Query the UI overlay state.
@@ -873,10 +890,10 @@ impl GuiTestInstance {
                 return state;
             }
             if start.elapsed() > timeout {
-                panic!(
+                self.fail(format_args!(
                     "Timeout waiting for UI condition: {}. Current state: {:?}",
                     description, state
-                );
+                ));
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -928,6 +945,8 @@ impl Drop for GuiTestInstance {
             let _ = self.process.kill();
         }
         let _ = self.process.wait();
+        // 파이프 EOF 는 자식 종료 뒤 온다. 살아 있는 자식보다 먼저 join 하면 멈춘다.
+        self.stderr.join();
         let _ = std::fs::remove_file(&self.port_file);
         // reason: 정리 실패가 시험 판정을 바꾸지 않는다 — 이미 끝난 인스턴스의 임시
         // 디렉터리이고, 지우다 실패해도 `/tmp` 에 남을 뿐이라 다음 회차는 자기 `unique`

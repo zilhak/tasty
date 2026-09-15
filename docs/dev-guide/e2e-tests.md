@@ -280,6 +280,19 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `TASTY_LOG` 로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어) — 값은 §4 의 env 표대로 **본체 기본 필터와 같은 모양**이어야 한다. 30 줄짜리 tail 은 노이즈 몇 줄에도 밀려나므로, 필터를 느슨하게 주는 것이 곧 진단 손실이다.
 
+GUI 하네스도 `StderrCapture` 를 `GuiTestInstance` 필드로 보관한다. 부팅 뒤 IPC
+연결·송신·응답 해석 실패와 UI 조건 대기 만료는 원래 오류/상태와 함께 **지금까지 수집한**
+stderr 꼬리를 낸다. 살아 있는 자식의 실패 진단에서 drain을 join하지 않는다.
+전용 인스턴스의 `Drop` 은 자식 kill → wait → stderr join → 임시파일 정리 순서다.
+공유 `static` 인스턴스는 Rust가 Drop하지 않으므로 기존 atexit 정리 경로를 사용하며,
+그 경로의 drain 합류를 이 Drop 계약이 보장하지는 않는다.
+
+`gui_common::stderr_tests` 는 실제 Tasty 대신 가짜 셸·IPC 서버로 부팅 후 진단과
+자식 회수를 검사한다. Enigo 필드 생성에 디스플레이가 필요해 기본은 ignored이며,
+Linux 격리 X 디스플레이에서 `cargo test --locked --test gui_tests gui_common::stderr_tests -- --ignored --test-threads=1` 로 실행한다. 데스크톱 입력은 보내지 않는다.
+자동 실행 채널은 없다. 이 시험은 자식 회수와 꼬리 보존을 검사하며, drain의 명시적
+join 호출 자체는 별도 계측 없이는 합류 누락과 빠른 자연 종료를 구분하지 못한다.
+
 ## 5-1. 마커 대기 만료 진단 (`tests/marker_wait`)
 
 훅이 남기는 마커 파일을 기다리는 자리는 셋이다(`hooks_detection_e2e` · `hook_env_integration` ·
