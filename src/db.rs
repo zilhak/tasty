@@ -249,6 +249,10 @@ pub fn init() -> Result<(), DbInitError> {
 /// type and accessor shared even though only GUI boot initializes this database;
 /// an uninitialized database continues to return None to its existing callers.
 ///
+/// Recent-file queries also use this path in headless builds. Keep the connection
+/// type and accessor shared even though only GUI boot initializes this database;
+/// an uninitialized database continues to return None to its existing callers.
+///
 /// poison 은 복구한다. 미완 트랜잭션은 unwind 때 rusqlite 의 RAII guard 가 rollback
 /// 하므로 연결은 불변식을 유지하고, 여기서 패닉하면 메인 스레드를 포함한 아무 데서나
 /// 호출되는 접근자라 창 전체가 죽는다. 조용히 `None` 을 돌려주면 호출자가 **"DB 가
