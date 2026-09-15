@@ -255,3 +255,4 @@
 | 0272 | [URL 대상은 핸들러 picker 와 실행 계층에만 들어가고 형식 식별에는 들어가지 않는다](0272-url-targets-enter-the-handler-picker-not-identify.md) | Accepted | 2026-09-14 | file-handler, terminal-link, dispatch, url |
 | 0273 | [plugin popup 은 소속 범위의 종류만 선언하고 대상은 host 가 바인딩한다](0273-plugin-popup-declares-a-scope-kind-and-the-host-binds-the-target.md) | Accepted | 2026-09-14 | popup, plugin, scope, manifest |
 | 0274 | [하네스 락은 선언 위치가 아니라 획득 형태를 검사한다](0274-harness-locks-are-checked-at-acquisition.md) | Accepted | 2026-09-15 | tests, mutex, poison, acquisition, scope |
+| 0275 | [최근 목록 캐시는 state.db 수명에 귀속한다](0275-recent-cache-belongs-to-the-state-database.md) | Accepted | 2026-09-15 | storage, recent-files, focus, multi-window |

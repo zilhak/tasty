@@ -1,7 +1,7 @@
 //! `recent.query {kind}` IPC — generic per-kind 최근 파일 목록 조회.
 //!
 //! host 는 특정 surface_kind 이름을 모른다. plugin(예: 주소창 드롭다운)이 자기 kind 를
-//! 넘겨 최근 목록을 조회한다. **읽기 전용** — `AppState.recent_files` 캐시를 조회할 뿐
+//! 넘겨 최근 목록을 조회한다. **읽기 전용** — 전 창이 공유하는 `AppState.recent_files` 캐시를 조회할 뿐
 //! 사용자 상태(포커스/선택/히스토리)를 건드리지 않는다(불가침 원칙). 임의 경로 read 가
 //! 아니라 이미 열었던 목록 반환뿐이라 `FsRead` 가 아닌 `SurfaceRead` 권한.
 //!
@@ -61,13 +61,37 @@ pub fn handle_query(
         Ok(r) => r,
         Err(e) => return JsonRpcResponse::error(id, -32602, format!("invalid params: {e}")),
     };
-    let entries = recent_entries(state.recent_files.get(&req.kind));
+    let entries = recent_entries(&state.recent_files.get(&req.kind));
     JsonRpcResponse::success(id, json!({ "recent": entries }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_query_agrees_across_states_after_either_window_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = crate::db::Db::open(&dir.path().join("state.db")).unwrap();
+        let (mut first, _first_engine) = crate::state::tests::test_state();
+        let (mut second, _second_engine) = crate::state::tests::test_state();
+        first.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
+        second.recent_files = crate::recent_files::RecentFiles::for_db(&mut db);
+        first.record_recent("markdown", &json!({"file": "/notes/one.md"}));
+        second.record_recent("markdown", &json!({"file": "/notes/two.md"}));
+        let query = |state: &AppState| {
+            handle_query(state, json!(1), json!({"kind": "markdown"}))
+                .result
+                .unwrap()
+        };
+        let expected = json!({"recent": [
+            {"path": "/notes/two.md", "file_name": "two.md"},
+            {"path": "/notes/one.md", "file_name": "one.md"}
+        ]});
+        assert_eq!(query(&first), expected);
+        assert_eq!(query(&second), expected);
+        assert_eq!(query(&first), expected);
+    }
 
     #[test]
     fn recent_entries_preserves_order_and_derives_file_name() {

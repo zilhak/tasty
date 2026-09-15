@@ -31,7 +31,7 @@
 | [banner](systems/banner.md) | 스코프 상단의 지속·인터랙티브 안내+조치 오버레이(4번째 오버레이 개념) |
 | [fullscreen-stage](systems/fullscreen-stage.md) | 창 전체를 독점하는 독립 표면 — 기존 트리 밖의 무대 |
 | [memory](systems/memory.md) | 에이전트 메모리 `memory.db` 의 가시성·소유권 모델 |
-| [storage](systems/storage.md) | 영속 데이터의 텍스트(TOML/셸) ↔ SQLite 하이브리드 분할 |
+| [storage](systems/storage.md) | 영속 데이터의 텍스트(TOML/셸) ↔ SQLite 분할, 창 간 공유 최근 목록 |
 
 ## 흐름 (flows/)
 

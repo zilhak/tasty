@@ -153,7 +153,7 @@ pub fn draw_egui_panels(
         .unwrap_or_default();
     // 최근 방문 디렉토리(주소창 자동완성 후보) — 프레임당 1회 스냅샷(≤10, clone 무시 가능).
     // 루프 안에서 state 가 가변 차용되는 동안 읽을 수 없어 owned Vec 로 뽑아 둔다.
-    let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND).to_vec();
+    let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND);
 
     for info in &infos {
         let id_suffix = info

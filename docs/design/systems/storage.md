@@ -8,7 +8,7 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
 
 | 경로 | 포맷 | 내용 | 관리 주체 | 코드 |
 |------|------|------|-----------|------|
-| `state.db` (+ `-wal`/`-shm`) | SQLite | 최근 markdown 파일 | 앱 | `src/db.rs` |
+| `state.db` (+ `-wal`/`-shm`) | SQLite | 종류별 최근 파일·폴더 | 앱 | `src/db.rs` |
 | `memory.db` (+ `-wal`/`-shm`) | SQLite | 에이전트 메모리 (별도 스키마·연결) | 앱 | `crates/tasty-memory/` |
 | `config.toml` | TOML | 사용자 설정(셸·외관·단축키·언어 등) | 사용자 | `crates/tasty-settings/` |
 | `remote-profiles.toml` (+ `passkeys.toml`) | TOML | 원격 접속 프로필(`ssh`/`tasty-attach` kind) + 자격증명 — `config.toml` 과 분리해 손편집 보존 | 사용자 | `crates/tasty-remote-profiles/` |
@@ -38,22 +38,36 @@ CREATE TABLE meta (              -- 스키마 메타데이터 (key-value)
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-CREATE TABLE recent_markdown (   -- 최근 연 Markdown 경로
-    path TEXT PRIMARY KEY,
-    opened_at INTEGER NOT NULL
+CREATE TABLE recent_files (      -- 종류별 최근 경로
+    kind TEXT NOT NULL,
+    path TEXT NOT NULL,
+    opened_at INTEGER NOT NULL,
+    PRIMARY KEY(kind, path)
 );
 ```
 
-- `recent_markdown` 만 실제로 read/write 된다(`src/store/recent_files.rs`).
-- 북마크·recent HTML 테이블은 없다 — explorer / html 이 plugin 으로 분리되며 host DB 에서 빠졌다.
+- `recent_files`에 현재 목록을 기록한다(`src/store/recent_files.rs`). `recent_markdown`은 레거시 호환 테이블이며 최초 로드 시 한 번만 이관한다.
+- 파일 종류는 `kind`로 구분한다. 탐색기의 최근 방문 폴더도 `directory` kind로 같은 테이블을 쓴다.
 - **경로 dedup**: 같은 파일의 다른 표기(구분자 `\`↔`/`, `\\?\` verbatim, `.`/`..`,
   Windows 대소문자 차)를 정규화 키(`strip_verbatim_prefix`+`lexically_normalize`+Windows
   case fold)로 접는다. PK 는 여전히 raw path(표시·열기용)이며 정규화 키는 비교 전용.
   `RecentFiles::add` 가 같은 키의 옛 행을 제거 후 저장하고, `load()` 는 마이그레이션 체인이
   없는 fresh-start 정책이라 로드 시 1회 정규화 dedup 패스로 기존 중복을 접는다.
 - **기록 진입점**: markdown-open 이 수렴하는 인텐트 계층(`Intent::NewTab`/
-  `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `AppState::record_recent_markdown`
+  `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `AppState::record_recent`
   로 1회 기록한다 — 파일-열기 팝업·주소창 navigate·링크 클릭이 모두 반영된다.
+
+### 최근 목록의 창 간 일관성
+
+`state.db`의 `Db`가 최근 목록 캐시를 한 벌 소유하고, `RecentFiles::load`는 그 캐시의
+공유 핸들을 반환한다. 먼저 열린 창, 나중에 열린 창, 창이 닫힌 뒤 다시 열린 창 모두
+같은 인스턴스의 목록을 본다. 종류별 최신순·정규화 중복 제거·10개 상한과 raw 경로 표기는
+유지한다. 읽기는 최대 10개 경로의 스냅샷이며 DB 재조회나 목록 갱신을 하지 않는다.
+
+기록은 캐시 갱신과 기존 DB 저장을 같은 캐시 락 안에서 순서대로 수행한다. DB 저장에
+실패해도 이미 반영된 메모리 목록은 모든 창에 동일하게 남고, 오류는 기존 저장 경로가
+로그로 남긴다. 인스턴스 간 공유나 외부 프로세스의 DB 직접 수정 감지는 지원하지 않는다.
+근거는 [최근 캐시 소유권](../../adr/0275-recent-cache-belongs-to-the-state-database.md).
 
 ### 접근 규칙
 

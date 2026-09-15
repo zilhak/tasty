@@ -28,6 +28,8 @@ pub use migrations::DbSchemaError;
 
 pub struct Db {
     pub conn: Connection,
+    /// DB 수명에 묶인 최근 파일 캐시. 창마다 새 스냅샷을 만들지 않는다.
+    pub(crate) recent_files: Option<crate::recent_files::RecentFiles>,
 }
 
 impl Db {
@@ -68,7 +70,10 @@ impl Db {
             }
             DbSchemaError::Sql(e) => classify_sql(e, path),
         })?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            recent_files: None,
+        })
     }
 }
 

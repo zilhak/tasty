@@ -92,7 +92,7 @@ ports-and-adapters 배치:
 | `intent/` | **Intent 큐** — 호스트 내부 동작 디스패치. — [action-dispatch](../design/flows/action-dispatch.md) |
 | `host_api/` | 호스트가 외부(plugin/agent)에 제공하는 인터페이스 — hooks, webview |
 | `plugin_bridge/` | 호스트 측 plugin 라우팅 facade |
-| `store/` | 인메모리 스토어 — notification, recent_files |
+| `store/` | 인메모리 스토어 — notification, state.db 수명의 창 간 공유 recent_files |
 | `db/` | SQLite `state.db`. — [storage](../design/systems/storage.md) |
 | `file/` · `clipboard/` · `platform/` | 파일 핸들러/포맷 · 클립보드 · 플랫폼별(crash_report·native menu 등) |
 

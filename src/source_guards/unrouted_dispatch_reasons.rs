@@ -611,8 +611,8 @@ const ROSTER: &[(&str, Why, &str)] = &[
     ),
     (
         "recent.query",
-        PerWindowOpenDefect,
-        "`AppState.recent_files` 는 창을 만들 때 DB 에서 한 번 `load()` 한 인메모리 캐시다. 다른 창에서 연 파일은 DB 에 앉지만 이 창의 캐시에는 안 들어와, 답이 요청이 닿은 창에 따라 달라진다",
+        NotWindowOwned,
+        "`RecentFiles::load` 가 state.db 에 귀속된 캐시의 공유 핸들을 반환한다. 모든 창이 같은 목록을 읽고 쓰므로 요청이 닿은 창에 따라 답이 바뀌지 않는다",
     ),
     (
         "git_viewer.query",
@@ -746,7 +746,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .collect();
     assert_eq!(
         open.len(),
-        5,
+        4,
         "창 소유인데 대상 축도 합산도 없는 항목의 수가 바뀌었다: {open:?}"
     );
 }

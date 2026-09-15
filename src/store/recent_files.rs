@@ -1,7 +1,8 @@
 //! 최근 연 파일 저장소 (generic per-kind).
 //!
 //! 저장: `~/.tasty/state.db` (SQLite) — `recent_files(kind, path, opened_at)` 테이블.
-//! 인메모리 캐시(`AppState.recent_files`)가 매 뮤테이션마다 DB에 반영된다. host 는
+//! DB 가 소유한 인메모리 캐시를 모든 창의 `AppState.recent_files` 가 공유하며,
+//! 매 뮤테이션마다 DB에 반영된다. host 는
 //! 특정 surface_kind 이름을 모르고, 매니페스트 `records_recent` 를 선언한 kind 만
 //! 파일-open 진입점에서 기록 대상이 된다(generic per-kind — kind 하드코딩 없음).
 //! 그 외에 builtin host surface 가 자체 kind 로 직접 적재하기도 한다(예: explorer 가
@@ -21,15 +22,16 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 파일 유형별 최대 보관 개수.
 const MAX_ENTRIES: usize = 10;
 
-#[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct RecentFiles {
     /// surface_kind → 최신순 경로 목록. `records_recent` 를 선언한 kind 만 채워진다.
-    pub by_kind: HashMap<String, Vec<String>>,
+    by_kind: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 fn now_secs() -> i64 {
@@ -77,46 +79,65 @@ fn dedup_rows(rows: Vec<(String, i64)>) -> (Vec<String>, Vec<String>) {
 }
 
 impl RecentFiles {
-    /// 앱 시작 시 1회 호출. 이후는 캐시를 사용.
+    /// 같은 state.db 를 쓰는 창들은 캐시도 공유한다. 읽을 때 DB 를 다시 열지 않는다.
     ///
     /// `recent_files` 테이블을 보장(레거시 DB 대비)하고 `recent_markdown` 레거시
     /// 데이터를 1회 마이그레이션한 뒤, kind 별로 로드한다. 기존 저장분의 중복(구분자/
     /// 대소문자/verbatim 차로 갈라진 행)을 정규화 키 기준으로 접어(최신 opened_at 만
     /// 남기고 나머지 행 DELETE) 로드한다.
     pub fn load() -> Self {
-        crate::db::with_db(|db| {
-            ensure_recent_files_table(&db.conn);
-            migrate_recent_markdown(&db.conn);
-            let rows = query_kind_rows(
-                &db.conn,
-                "SELECT kind, path, opened_at FROM recent_files ORDER BY opened_at DESC",
-            );
-            let mut grouped: HashMap<String, Vec<(String, i64)>> = HashMap::new();
-            for (kind, path, ts) in rows {
-                grouped.entry(kind).or_default().push((path, ts));
-            }
-            let mut by_kind: HashMap<String, Vec<String>> = HashMap::new();
-            for (kind, kind_rows) in grouped {
-                let (mut kept, stale) = dedup_rows(kind_rows);
-                delete_paths(&db.conn, &kind, &stale);
-                kept.truncate(MAX_ENTRIES);
-                by_kind.insert(kind, kept);
-            }
-            Self { by_kind }
-        })
-        .unwrap_or_default()
+        crate::db::with_db(Self::for_db).unwrap_or_default()
     }
 
-    /// `kind` 의 최근 목록(최신순). 기록이 없으면 빈 슬라이스.
-    pub fn get(&self, kind: &str) -> &[String] {
-        self.by_kind.get(kind).map_or(&[], |v| v.as_slice())
+    pub(crate) fn for_db(db: &mut crate::db::Db) -> Self {
+        if let Some(recent) = &db.recent_files {
+            return recent.clone();
+        }
+        let recent = Self::load_from_connection(&db.conn);
+        db.recent_files = Some(recent.clone());
+        recent
+    }
+
+    fn load_from_connection(conn: &rusqlite::Connection) -> Self {
+        ensure_recent_files_table(conn);
+        migrate_recent_markdown(conn);
+        let rows = query_kind_rows(
+            conn,
+            "SELECT kind, path, opened_at FROM recent_files ORDER BY opened_at DESC",
+        );
+        let mut grouped: HashMap<String, Vec<(String, i64)>> = HashMap::new();
+        for (kind, path, ts) in rows {
+            grouped.entry(kind).or_default().push((path, ts));
+        }
+        let mut by_kind: HashMap<String, Vec<String>> = HashMap::new();
+        for (kind, kind_rows) in grouped {
+            let (mut kept, stale) = dedup_rows(kind_rows);
+            delete_paths(conn, &kind, &stale);
+            kept.truncate(MAX_ENTRIES);
+            by_kind.insert(kind, kept);
+        }
+        Self {
+            by_kind: Arc::new(Mutex::new(by_kind)),
+        }
+    }
+
+    /// `kind` 의 최근 목록 스냅샷(최신순). 기록이 없으면 빈 배열.
+    pub fn get(&self, kind: &str) -> Vec<String> {
+        self.lock().get(kind).cloned().unwrap_or_default()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<String>>> {
+        static POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        crate::poison::recover_mutex(self.by_kind.lock(), "recent files cache", &POISONED)
     }
 
     /// `kind` 의 최근 목록에 `path` 를 최신으로 추가한다(정규화 dedup + 상한).
     pub fn add(&mut self, kind: &str, path: String) {
         let key = dedup_key(&path);
         // 인메모리: 같은 정규화 키를 가진 옛 표기를 제거하고 최신 raw path 를 앞에.
-        let list = self.by_kind.entry(kind.to_string()).or_default();
+        // 캐시 순서와 DB 쓰기 순서가 서로 뒤집히지 않도록 저장까지 같은 락 안에서 한다.
+        let mut by_kind = self.lock();
+        let list = by_kind.entry(kind.to_string()).or_default();
         list.retain(|p| dedup_key(p) != key);
         list.insert(0, path.clone());
         list.truncate(MAX_ENTRIES);
@@ -275,6 +296,37 @@ fn prune_kind(kind: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_using_the_same_database_share_recent_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = crate::db::Db::open(&dir.path().join("state.db")).unwrap();
+        let mut first = RecentFiles::for_db(&mut db);
+        let mut second = RecentFiles::for_db(&mut db);
+        assert!(first.get("markdown").is_empty());
+        assert!(second.get("markdown").is_empty());
+        first.add("markdown", "/notes/first.md".into());
+        assert_eq!(second.get("markdown"), vec!["/notes/first.md"]);
+        second.add("markdown", "/notes/second.md".into());
+        first.add("markdown", "/notes/./first.md".into());
+        assert_eq!(first.get("markdown"), second.get("markdown"));
+        assert_eq!(second.get("markdown")[0], "/notes/./first.md");
+        for i in 0..12 {
+            second.add("markdown", format!("/notes/{i}.md"));
+        }
+        assert_eq!(first.get("markdown"), second.get("markdown"));
+        assert_eq!(first.get("markdown").len(), MAX_ENTRIES);
+        assert_eq!(first.get("markdown")[0], "/notes/11.md");
+        let later = RecentFiles::for_db(&mut db);
+        assert_eq!(later.get("markdown"), first.get("markdown"));
+        assert!(later.get("directory").is_empty());
+        let mut other_db = crate::db::Db::open(&dir.path().join("other.db")).unwrap();
+        assert!(
+            RecentFiles::for_db(&mut other_db)
+                .get("markdown")
+                .is_empty()
+        );
+    }
 
     #[test]
     #[cfg(windows)]
