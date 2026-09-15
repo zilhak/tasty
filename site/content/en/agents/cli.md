@@ -1,4 +1,4 @@
-<!-- source-hash: a84cccd94391 -->
+<!-- source-hash: 7a277ca26c0e -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -13,7 +13,7 @@ Start by listing terminals, then try sending a command and reading its output. A
 
 ```sh
 echo $TASTY_SURFACE_ID     # e.g. 42
-tasty list info            # version, Workspace count, etc. — use it to confirm the connection
+tasty list info            # version and the queried window’s Workspace count — connection check
 ```
 
 ## Terms and IDs
@@ -282,6 +282,8 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 `set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
 
 `file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error.
+
+The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
 
 ## Frequently used commands
 

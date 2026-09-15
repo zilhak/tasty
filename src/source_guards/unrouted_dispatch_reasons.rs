@@ -77,6 +77,8 @@ enum Why {
     TargetReadByDeserializer,
     /// debug 표면. 사용자 조작 재현이라 포커스 독립 축의 범위 밖이다.
     DebugOnly,
+    /// 창별 관측값임을 응답의 소유 ID로 명시한다. 상태를 바꾸거나 전역값으로 위장하지 않는다.
+    ScopedObservation,
     /// **창 소유인데 대상 축도 합산도 없다 — 열린 결함.** 무엇이 막고 있는지를 사유에 적는다.
     PerWindowOpenDefect,
 }
@@ -607,8 +609,8 @@ const ROSTER: &[(&str, Why, &str)] = &[
     ),
     (
         "system.info",
-        PerWindowOpenDefect,
-        "engine 하나의 `workspace_count` 와 그 창의 `active_workspace` 를 답하는데, 창이 둘이면 **어느 창의 값인지가 응답에 안 적힌다**",
+        ScopedObservation,
+        "version은 전역이고 기존 count/index는 조회 engine 값이다. scope=engine, workspace_ids, active_workspace_id, layout_slot으로 귀속을 명시한다. 기존 ID 라우팅으로 비포커스 engine을 조회할 수 있고 전역 목록은 workspace.list가 소유한다",
     ),
     (
         "recent.query",
@@ -742,7 +744,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .collect();
     assert_eq!(
         open.len(),
-        2,
+        1,
         "창 소유인데 대상 축도 합산도 없는 항목의 수가 바뀌었다: {open:?}"
     );
 }

@@ -58,6 +58,8 @@
 
 - **링크 클릭 수식키의 `none` 선택지를 “좌클릭 열기 끄기”로 바로잡았다.** 좌클릭으로 링크를 연다고 잘못 안내하던 설정 라벨과 사용자 가이드를 실제 동작에 맞췄다. 링크 위 우클릭 메뉴는 계속 사용할 수 있으며, 수식키 없이도 링크 표시가 가능하지만 팝업·배너 등 기존 차단 조건은 적용된다. 클릭·hover 동작 자체는 바뀌지 않는다.
 
+- **시스템 정보의 윈도우별 값이 어느 워크스페이스에 속하는지 표시된다.** 기존 count/index는 유지하고 소유 ID를 함께 반환한다. 윈도우 목록에서도 같은 관측값을 볼 수 있다. 전체 워크스페이스 목록의 전역 계약은 유지한다.
+
 - **출처 서피스를 지정해 파일을 열어도 기존 탭 선택이 유지된다.** 비터미널 결과를 새 탭으로 추가하거나 핸들러 picker에서 선택해도 해당 페인의 활성 탭을 바꾸지 않는다. 출처를 생략한 사용자 새 탭 동작은 유지한다.
 
 - Keep explicitly targeted file dispatch in its origin pane through asynchronous identification and handler selection; stop safely when the origin closes.

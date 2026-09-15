@@ -290,12 +290,12 @@ impl App {
             .iter()
             .filter_map(|(id, w)| {
                 let main = w.as_main()?;
-                Some(serde_json::json!({
-                    "id": u64::from(*id),
-                    "focused": focused_id == Some(*id),
-                    "title": main.state.active_workspace(&main.core_state).name,
-                    "layout_slot": main.core_state.layout_slot,
-                }))
+                let mut info = host_ipc::handler::system_info_fields(&main.state, &main.core_state);
+                info["id"] = serde_json::json!(u64::from(*id));
+                info["focused"] = serde_json::json!(focused_id == Some(*id));
+                info["title"] =
+                    serde_json::json!(main.state.active_workspace(&main.core_state).name);
+                Some(info)
             })
             .collect();
         let response = host_ipc::protocol::JsonRpcResponse::success(

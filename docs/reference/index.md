@@ -4,7 +4,7 @@
 
 | 문서 | 내용 | 코드 SoT |
 |------|------|----------|
-| [api.md](api.md) | 전체 IPC/CLI 표면 — 네임스페이스별 메서드 + 권한 | `crates/tasty-ipc/src/method_meta.rs` |
+| [api.md](api.md) | 전체 IPC/CLI 표면 — 네임스페이스별 메서드·권한·시스템/윈도우 관측 범위 | `crates/tasty-ipc/src/method_meta.rs` |
 | [event-catalog.md](event-catalog.md) | Event Bus 1.0 wire 계약 (plugin 공개 API) | `tasty_plugin_protocol::events` |
 | [output-parsers.md](output-parsers.md) | 터미널 출력 파서 카탈로그 | `tasty-output` |
 | [environments.md](environments.md) | OS별 경로·에이전트 부트스트랩 패턴 | — |

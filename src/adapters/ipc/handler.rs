@@ -1358,14 +1358,23 @@ fn handle_system_info(
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "workspace_count": engine.workspaces.len(),
-            "active_workspace": state.active_workspace,
-        }),
-    )
+    JsonRpcResponse::success(id, system_info_fields(state, engine))
+}
+
+/// Version is process-wide; the legacy count/index describe this engine. Include
+/// its workspace IDs so an observation never silently looks like a global count.
+/// window.list reuses the same fields beside the OS window ID.
+pub(crate) fn system_info_fields(state: &AppState, engine: &CoreState) -> serde_json::Value {
+    let active_workspace = state.active_workspace;
+    json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "scope": "engine",
+        "layout_slot": engine.layout_slot,
+        "workspace_count": engine.workspaces.len(),
+        "workspace_ids": engine.workspaces.iter().map(|ws| ws.id).collect::<Vec<_>>(),
+        "active_workspace": active_workspace,
+        "active_workspace_id": engine.workspaces.get(active_workspace).map(|ws| ws.id),
+    })
 }
 
 fn handle_tree(
@@ -1606,5 +1615,35 @@ mod require_surface_id_tests {
         // 실사용에서 관측된 오염 id.
         assert!(require_surface_id(&json!({ "surface_id": 2147484147u64 }), &id).is_err());
         assert!(require_surface_id(&json!({ "surface_id": u32::MAX }), &id).is_err());
+    }
+}
+
+#[cfg(test)]
+mod system_info_tests {
+    use super::system_info_fields;
+
+    #[test]
+    fn system_info_identifies_the_engine_and_the_active_workspace_by_id() {
+        let (state, engine) = crate::state::tests::test_state();
+        let info = system_info_fields(&state, &engine);
+        assert_eq!(info["scope"], "engine");
+        assert_eq!(info["workspace_count"], engine.workspaces.len());
+        assert_eq!(info["active_workspace"], 0);
+        assert_eq!(info["active_workspace_id"], engine.workspaces[0].id);
+        assert_eq!(
+            info["workspace_ids"],
+            serde_json::json!([engine.workspaces[0].id])
+        );
+    }
+
+    #[test]
+    fn system_info_does_not_invent_an_active_workspace_for_an_empty_engine() {
+        let (state, mut engine) = crate::state::tests::test_state();
+        engine.workspaces.clear();
+        let info = system_info_fields(&state, &engine);
+        assert_eq!(info["workspace_count"], 0);
+        assert_eq!(info["active_workspace"], state.active_workspace);
+        assert!(info["active_workspace_id"].is_null());
+        assert_eq!(info["workspace_ids"], serde_json::json!([]));
     }
 }

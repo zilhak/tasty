@@ -137,8 +137,8 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/adapters/ipc/handler.rs",
         Report,
-        2,
-        "debug 상태 덤프의 active_workspace 필드와 워크스페이스 표의 \"active\" 플래그",
+        5,
+        "system_info의 활성 index 선언·응답·ID 해소와 워크스페이스 표의 활성 플래그",
     ),
     (
         "src/adapters/ipc/handler/approval.rs",

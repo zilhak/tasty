@@ -12,7 +12,7 @@
 
 ```sh
 echo $TASTY_SURFACE_ID     # 예: 42
-tasty list info            # 버전·워크스페이스 수 등 — 접속 확인용
+tasty list info            # 버전·조회한 윈도우의 워크스페이스 수 — 접속 확인용
 ```
 
 ## 용어와 ID
@@ -293,6 +293,8 @@ tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 �
 `set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 지원하지 않는 대상이라는 오류를 반환합니다.
 
 `file-handler dispatch` 는 파일 경로만 받습니다. `https://…` 같은 웹 주소를 넘기면 오류를 반환합니다.
+
+`list info`의 워크스페이스 수와 활성 위치는 조회한 윈도우의 값이며, 함께 반환된 워크스페이스 ID로 소속을 확인할 수 있습니다. 전체 워크스페이스는 `list workspaces`, 각 윈도우의 상태는 `list windows`로 확인하세요.
 
 ## 자주 쓰는 명령 표
 

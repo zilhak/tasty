@@ -114,8 +114,12 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 (`RoutedOutsideRequestTarget`), 그리고 debug 표면(`DebugOnly`). 사각을 술어에서 지우는
 대신 명부의 행으로 만들어 검토받게 한다.
 
-**그 명부에 남은 열린 항목이 둘이다** — `notification.list`(합산 정책 미결) ·
-`system.info`(한 창의 워크스페이스 수를 답하는데 어느 창인지 안 적힌다).
+**그 명부에 남은 열린 항목은 `notification.list`다**(합산 정책 미결).
+`system.info`는 기존 count/index를 engine 관측값으로 유지하되 `scope=engine`,
+`workspace_ids`, `active_workspace_id`, `layout_slot`으로 소속을 명시한다.
+`workspace_id` 등 기존 대상 키로 비포커스 engine도 조회할 수 있다. `window.list`는
+같은 관측 필드를 OS window ID와 함께 전 창에 대해 반환한다. 전역 workspace 목록과
+총수는 기존 `workspace.list`가 소유하며 parked engine도 포함한다. 버전은 프로세스 전역이다.
 `git_viewer.query`는 창별 큐를 전 main에서 수집한 뒤 전역 attach 세션에서
 `local_surface_id`를 해소한다. 큐 위치만으로 다른 창을 조회한다고 판단하지 않는다.
 parked 큐의 생명주기와 SSH 전송 성공은 이 대상 선택 판정과 별개다.
