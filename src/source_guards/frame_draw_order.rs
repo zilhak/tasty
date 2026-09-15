@@ -87,3 +87,16 @@ fn the_guard_reads_the_frame_closure_and_not_some_other_function() {
         );
     }
 }
+
+#[test]
+fn child_scope_is_resolved_before_the_first_host_paint() {
+    let body = frame_body();
+    let inherit = body
+        .find("popup_scope::inherit_file_picker_scope(")
+        .expect("child scope resolution");
+    let host = body.find(HOST_DRAW).expect("host draw");
+    assert!(
+        inherit < host,
+        "child scope must be applied before host paint and hit testing"
+    );
+}

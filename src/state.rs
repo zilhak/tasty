@@ -1321,7 +1321,7 @@ impl AppState {
         // 반드시 `set_visible(false)` 가 필요하고, 그 게이트가 바로 이 함수다.
         #[cfg(feature = "gui")]
         let open = open
-            || self.popups.has_any_open()
+            || self.popups.has_visible_open()
             || self.fullscreen_stage.is_some()
             || self.tutorial.active.is_some();
         open

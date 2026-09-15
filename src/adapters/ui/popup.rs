@@ -153,8 +153,10 @@ pub struct PopupState {
     pub id: PopupId,
     /// Title text displayed in the title bar.
     pub title: String,
-    /// Whether the popup is currently visible.
+    /// Whether the popup is open (a hidden scope does not close it).
     pub open: bool,
+    /// Scope visibility from the latest draw; focus intent survives while hidden.
+    scope_visible: bool,
     /// Position in logical pixels (top-left corner).
     pub pos: egui::Pos2,
     /// Size in logical pixels.
@@ -333,6 +335,7 @@ impl PopupState {
             id,
             title: title.into(),
             open: false,
+            scope_visible: true,
             pos: egui::pos2(100.0, 100.0),
             size: default_size,
             dragging: false,
@@ -721,14 +724,16 @@ impl PopupManager {
 
     /// Check if any popup currently has keyboard focus.
     pub fn has_focused(&self) -> bool {
-        self.popups.iter().any(|p| p.open && p.focused)
+        self.popups
+            .iter()
+            .any(|p| p.open && p.scope_visible && p.focused)
     }
 
     /// Check whether a specific popup currently has keyboard focus.
     pub fn is_focused(&self, id: PopupId) -> bool {
         self.popups
             .iter()
-            .any(|p| p.id == id && p.open && p.focused)
+            .any(|p| p.id == id && p.open && p.scope_visible && p.focused)
     }
 
     /// 지금 키보드 포커스를 가진 popup — 그 id 와 "바깥 클릭에 닫히는가" 를 함께 낸다.
@@ -740,7 +745,7 @@ impl PopupManager {
     pub fn focused_dismissal_target(&self) -> Option<(PopupId, bool)> {
         self.popups
             .iter()
-            .find(|p| p.open && p.focused)
+            .find(|p| p.open && p.scope_visible && p.focused)
             .map(|p| (p.id, p.close_on_outside_click))
     }
 
@@ -752,9 +757,9 @@ impl PopupManager {
         }
     }
 
-    /// Check if any popup is currently open.
-    pub fn has_any_open(&self) -> bool {
-        self.popups.iter().any(|p| p.open)
+    /// Whether an open popup is visible in the latest draw (native overlay gate).
+    pub fn has_visible_open(&self) -> bool {
+        self.popups.iter().any(|p| p.open && p.scope_visible)
     }
 
     /// Bring a popup to the front (topmost z-order). 클릭에 의한 승격도 open() 계열과

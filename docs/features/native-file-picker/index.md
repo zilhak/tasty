@@ -171,6 +171,14 @@ host 자체 egui popup 은 그와 별개로 OS 가 대신 블로킹해주지 않
   쓰면 설정을 끈 사용자에게서 시작 위치가 사라진다.
 - `path_input` 등 plugin 팝업에 사용자가 이미 적어 둔 경로를 시작점으로 삼는 것은 다루지 않는다.
 
+**부모 범위와 숨김**: `owner_popup_instance`가 요청자 plugin의 부모 popup을 가리키면 host가
+선언 종류와 target으로 유효 scope를 해석해 첫 paint 전에 적용한다([ADR-0278](../../adr/0278-child-file-picker-inherits-parent-scope-and-preserves-hidden-work.md)).
+Surface 부모가 보이지 않으면 자식도 paint/hit/Esc/키 게이트에서 빠진다. 숨김은 close가 아니며
+부모·자식 draft, 선택, 요청 ID를 보존한다. 돌아오면 같은 작업을 계속한다. Window 부모와
+owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp가 피커 크기를 제한한다.
+부모 close는 기존 cancel/settled 규약을 따른다. 확정 이벤트를 받은 markdown은 경로 입력만
+채우며, 부모 Open에서 최초 context의 대상을 실행한다. host의 별도 로컬 DispatchFile은 유지한다.
+
 **동시성 정책(ADR-0058 이 이 구현에 위임한 결정)**: `file_picker` popup 은 단일 인스턴스만
 존재한다. 이미 열려 있는 상태에서 두 번째 `file_picker.trigger` 가 오면 **거부**한다(즉시
 `-32000` JSON-RPC 에러) — "이전 요청을 대체" 는 채택하지 않았다. 트리거 핸들러는 `CoreState`

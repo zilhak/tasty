@@ -48,11 +48,12 @@ plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host
 
 관계가 성립하면:
 
+- **범위 상속·숨김 보존** — host는 요청자와 부모 instance를 대조해 선언 종류+target의 유효 범위를 자식 파일 피커에 적용한다([ADR-0278](../../adr/0278-child-file-picker-inherits-parent-scope-and-preserves-hidden-work.md)). 부모가 숨으면 자식도 paint/hit/Esc/키 게이트에서 빠지고, 돌아오면 draft·선택·pending 요청을 그대로 이어간다. 숨김은 close를 발화하지 않는다. Window 부모와 owner 없는 피커는 창 범위다.
 - **스택 유지** — 자식이 열려 있는 동안 부모는 outside-click dismiss 대상에서 빠진다. 부모를 모달로 잠그는 것이 아니라 dismiss 목록에서만 제외한다(popup 은 포커스를 독점하지 않으므로).
 - **Esc 소유권** — host/plugin 통틀어 그 프레임 최상단 popup **하나만** Esc 를 소비한다. Esc 를 한 번 누르면 스택이 한 단계 벗겨진다. host 쪽 판정은 `AppState.popup_escape_owner`(`popup::frame` 이 매 프레임 결정), plugin 쪽은 `popup_render` 가 같은 z 축으로 비교한다. **host popup 끼리의 Esc 중재는 범위 밖** — 각 view 가 자기 Esc 를 직접 소비하며, 현재 스택에 참여하는 `file_picker` 에만 게이트가 붙어 있다.
 - **연쇄 정리** — 부모가 어떤 경로로 닫히든 자식 피커에 취소 결과가 채워져, 평소 result 경로 그대로 plugin 에 `cancelled: true` 가 전달되고 피커도 닫힌다. 고아 피커와 조용한 결과 유실이 생기지 않는다. 사용자가 이미 확정한 결과는 덮지 않는다.
 
-소유 관계는 자식(요청자 기록) 한 곳에만 있다 — 부모 쪽 사본이 없어 둘이 어긋날 수 없다. host 는 plugin id/kind 를 보지 않는다.
+소유 관계는 자식(요청자 기록) 한 곳에만 있다 — 부모 쪽 사본이 없어 둘이 어긋날 수 없다. host는 특정 plugin 이름/kind로 분기하지 않는다. 범위 상속에서는 요청자 plugin과 부모 소유자가 같은지만 확인한다.
 
 ## 발화 정책 (CRITICAL)
 
@@ -68,7 +69,7 @@ plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host
 
 ## 포커스
 
-팝업은 **포커스 상태**를 가진다. 포커스된 팝업이 있으면 키보드 입력이 터미널로 안 간다. 여러 팝업이 겹쳐 있을 때 Esc 를 누가 받는지는 위 [§수명 계약](#plugin-popup--host-popup-부모-자식)의 "Esc 소유권" 을 따른다. 클릭 → 포커스(다른 팝업 언포커스), 바깥 클릭 → 전체 언포커스(터미널 복귀), 닫기 → 자동 언포커스. `PopupManager::has_focused()` 로 확인.
+팝업은 **포커스 상태**를 가진다. 보이는 범위에 포커스된 팝업이 있으면 키보드 입력이 터미널로 안 간다. 여러 팝업이 겹쳐 있을 때 Esc 를 누가 받는지는 위 [§수명 계약](#plugin-popup--host-popup-부모-자식)의 "Esc 소유권" 을 따른다. 클릭 → 포커스(다른 팝업 언포커스), 바깥 클릭 → 전체 언포커스(터미널 복귀), 닫기 → 자동 언포커스. `PopupManager::has_focused()`로 확인한다. 이 조회는 최신 draw의 범위 가시성을 포함한다. 숨은 popup의 포커스 의도는 보존하며 다른 화면의 클릭은 그 의도를 바꾸거나 popup을 dismiss하지 않는다. 숨김 때 드래그·리사이즈 캡처는 해제한다. native WebView를 가리는 overlay 판정도 열린 popup 중 보이는 것만 센다.
 
 Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드만** 차단하고, 마우스는 [입력 계층](../../architecture/input-layer.md)에 따라 팝업이 소비한다.
 
@@ -109,6 +110,7 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 |------|--------|----------------------|
 | [DAG 목록](../../features/agent-collaboration/screens/dag-list-popup.md) (`dag_list`) | Workspace | 여는 시점의 활성 workspace 인덱스 |
 | 변환(`convert_surface`) · 검색바(`search_bar`) | Surface | 포커스 surface id |
+| 부모가 있는 파일 피커(`file_picker`) | 부모의 유효 범위 | host가 첫 paint 전에 부모 선언 종류+target을 해석 |
 
 `Workspace` 스코프 팝업은 워크스페이스를 옮기면 **그리지 않는다** — 상태는 그대로 남아 있어
 돌아오면 보던 화면이 그대로 복원된다. 그 상태의 수명은 스코프가 아니라 `on_close` 가 정한다.

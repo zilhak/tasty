@@ -190,6 +190,16 @@ impl PopupManager {
         let primary_down = ctx.input(|i| i.pointer.primary_down());
         let primary_released = ctx.input(|i| i.pointer.any_released());
 
+        // Hidden scopes retain focus intent, but cannot hold the keyboard gate or
+        // continue a pointer gesture started before the scope disappeared.
+        for popup in &mut self.popups {
+            popup.scope_visible = Self::is_scope_visible(&popup.scope, draw_ctx);
+            if !popup.scope_visible {
+                popup.dragging = false;
+                popup.resizing = None;
+            }
+        }
+
         // Collect open popup indices, filtered by scope visibility
         let open_indices: Vec<usize> = self
             .popups
@@ -286,7 +296,9 @@ impl PopupManager {
                 bring_front = Some(id);
                 // Focus this popup, unfocus all others
                 for popup in &mut self.popups {
-                    popup.focused = popup.id == id;
+                    if popup.scope_visible {
+                        popup.focused = popup.id == id;
+                    }
                 }
             } else {
                 // Clicked outside all *host* popups. 그 좌표를 나보다 위에 있는 plugin
@@ -298,6 +310,9 @@ impl PopupManager {
                 // 방금 닫힌 plugin popup 이 outside-click 한 번을 더 삼킬 수 있지만,
                 // 반대(가려진 popup 이 잘못 닫히는 것)보다 회복이 쉬운 쪽을 택했다.
                 for popup in &mut self.popups {
+                    if !popup.scope_visible {
+                        continue;
+                    }
                     let occluded = pointer_pos.is_some_and(|p| {
                         matches!(
                             point_ownership(popup.popup_rect(), popup.z_seq, plugin_occluders, p),

@@ -26,7 +26,7 @@
 | [design-gallery-mapping](systems/design-gallery-mapping.md) | 디자인 jsx 하위 컴포넌트 ↔ 갤러리 specimen ↔ 호스트 함수 3자 매핑 (원격 picker 행·pane 포함) |
 | [design-parity-notes](systems/design-parity-notes.md) | 디자인(html/CSS) ↔ 구현(winit/egui) 의 구조적 차이와 전사 원칙 |
 | [icons](systems/icons.md) | 라인/필 아이콘 세트 — SVG 지오메트리 단일 소스와 소비 구조 |
-| [popup](systems/popup.md) | View 내부 가상 창 — `PopupManager` + `PopupDef` 로 관리, 포커스 비독점 |
+| [popup](systems/popup.md) | View 내부 가상 창 — `PopupManager` + `PopupDef` 로 관리, 포커스 비독점 · 자식 파일 피커 범위 상속/숨김 보존 |
 | [toast](systems/toast.md) | 자동으로 사라지는 휘발성 피드백 UI — `ToastManager` |
 | [banner](systems/banner.md) | 스코프 상단의 지속·인터랙티브 안내+조치 오버레이(4번째 오버레이 개념) |
 | [fullscreen-stage](systems/fullscreen-stage.md) | 창 전체를 독점하는 독립 표면 — 기존 트리 밖의 무대 |

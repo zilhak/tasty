@@ -14,8 +14,11 @@
 
 use std::collections::HashSet;
 
+use super::popup_scope::popup_scope;
 use egui::{Context, Event, Id, ImeEvent, Order, Pos2, Rect, Stroke, Vec2};
-use tasty_plugin_manifest::{PopupRendering, PopupScopeDecl};
+use tasty_plugin_manifest::PopupRendering;
+#[cfg(test)]
+use tasty_plugin_manifest::PopupScopeDecl;
 use tasty_plugin_protocol::{
     ImeWire, ModifiersWire, PointerButtonWire, PopupCloseReason, PopupSetContextParams,
     RawInputEventWire, RawInputWire, ThemeWire,
@@ -607,18 +610,6 @@ fn paint_shell_background_excluding_content(
         0.0,
         bg_fill,
     );
-}
-
-/// 매니페스트 선언과 host 가 바인딩한 대상으로 인스턴스의 소속 범위를 정한다.
-///
-/// `surface` 를 선언했어도 바인딩된 대상이 없으면(plugin 이 IPC·이벤트로 스스로 연 popup)
-/// `Window` 다 — plugin 이 남의 surface 를 지목할 길을 열지 않으려고 대상은 host 진입점만
-/// 채운다.
-fn popup_scope(decl: PopupScopeDecl, scope_surface: Option<u32>) -> PopupScope {
-    match (decl, scope_surface) {
-        (PopupScopeDecl::Surface, Some(sid)) => PopupScope::Surface(sid),
-        (PopupScopeDecl::Surface, None) | (PopupScopeDecl::Window, _) => PopupScope::Window,
-    }
 }
 
 /// 인스턴스의 셸 rect. 범위가 이 frame 에 안 보이면 `None`.

@@ -217,6 +217,12 @@ impl GpuState {
             // 어기면 화면은 멀쩡하다. 어긋난 rect 로 히트테스트가 한 프레임 틀릴 뿐이라
             // 컴파일도 되고 시험도 통과한다 — 그래서 `source_guards::frame_draw_order` 가
             // 이 두 줄의 순서를 값으로 문다.
+            crate::plugin_bridge::popup_scope::inherit_file_picker_scope(
+                state,
+                plugin_manager
+                    .into_iter()
+                    .flat_map(|mgr| mgr.popup_instances()),
+            );
             let popup_layout =
                 ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.

@@ -42,7 +42,7 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRp
                 "z_seq": inst.z_seq,
                 // 소속 범위 관찰면 — 선언(`scope`)과 host 진입점이 바인딩한 대상
                 // (`scope_surface`)을 따로 낸다. 선언이 `surface` 인데 대상이 `null` 이면
-                // 렌더는 창 범위다(`popup_render::popup_scope`).
+                // 렌더는 창 범위다(`popup_scope::popup_scope`).
                 "scope": match inst.contribute.scope {
                     crate::plugin::manifest::PopupScopeDecl::Window => "window",
                     crate::plugin::manifest::PopupScopeDecl::Surface => "surface",

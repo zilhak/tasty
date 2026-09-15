@@ -91,5 +91,5 @@ markdown `file-open` 은 `scope = "surface"` 를 선언한다.
 - [dev-guide/popup-implementation.md](../dev-guide/popup-implementation.md) — 두 팝업 시스템 비교
 - [ADR-0043](0043-convert-input-popup-capability.md) — 변환 입력 popup 을 host 가 여는 경로
 - 코드 근거(결정이 실현된 현재 위치): `PopupScopeDecl`(`crates/tasty-plugin-manifest/src/types.rs`),
-  `popup_scope` · `place_popup`(`src/plugin_bridge/popup_render.rs`),
+  `popup_scope`(`src/plugin_bridge/popup_scope.rs`) · `place_popup`(`src/plugin_bridge/popup_render.rs`),
   `PluginManager::bind_popup_instance_surface`(`crates/tasty-host-plugin/src/manager/popup.rs`)

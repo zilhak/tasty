@@ -40,6 +40,11 @@ pub(crate) fn cancel_child_file_picker(
             req.owner_popup_instance = None;
         }
     }
+    // A hidden child never runs its draw callback. Close the shell here while
+    // leaving its settled result for the existing exactly-once drain.
+    state
+        .popups
+        .close(crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID); // intent-exempt: parent-close lifecycle.
 }
 
 impl App {

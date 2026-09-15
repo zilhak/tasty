@@ -14,6 +14,8 @@ pub mod manifest_validate;
 pub mod mesh_forward;
 #[cfg(feature = "gui")]
 pub mod popup_render;
+#[cfg(feature = "gui")]
+pub(crate) mod popup_scope;
 pub mod remote_kind;
 pub mod remote_surface;
 #[cfg(feature = "gui")]

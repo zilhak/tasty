@@ -342,3 +342,7 @@ mod tests {
         assert_eq!(data.current_dir, "/srv/pushed");
     }
 }
+
+#[cfg(test)]
+#[path = "file_picker_scope_tests.rs"]
+mod scope_tests;
