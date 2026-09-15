@@ -62,16 +62,19 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
 `gallery/overlays-shared.jsx` `RemoteAttachFrame({state})`) ↔ 본체
 `src/adapters/ui/popup/remote_attach.rs`.
 
-| 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/remote_attach.rs`) | 본체 함수 |
+갤러리 공개 진입점 `remote_attach::{draw, draw_new_row, draw_states}`와 본체 대조용
+치수 상수는 `catalog/components/remote_attach.rs`에 유지한다. 행·pane 구현 좌표는 아래와 같다.
+
+| 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/` 기준) | 본체 함수 |
 |---|---|---|
-| `RemoteAttach`(container) | `ra_card` (`header`+`body`+`footer`, 680×460 프레임) | `draw_remote_attach_popup` |
-| `RaAttachProfileRow` | `profile_row` (`remote-workspace-attach` spec 좌 pane) | `profile_row` |
-| `RaNewWsRow` | `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | `new_ws_row` (`draw_ws_list` 첫 행) |
-| `RaRemoteWsRow` | `ws_row` (+ `dot_slot_status`) | `ws_row` |
-| `RaCenterState` | `center_state` (`remote-workspace-attach-states` spec) | `center_state` |
-| `RaInUseBadge` | `badge` | `badge` |
-| loaded 렌더 경로(`conn==="loaded"`) | `loaded_pane` (+ `empty_line`) | `draw_right_pane` 의 `Loaded` 분기 |
-| footer `Connect` / `Create & connect` | `footer` | `draw_footer` |
+| `RemoteAttach`(container) | `remote_attach.rs`의 `ra_card` (`header`+`body`+`footer`, 680×460 프레임) | `draw_remote_attach_popup` |
+| `RaAttachProfileRow` | `remote_attach/rows.rs`의 `profile_row` (`remote-workspace-attach` spec 좌 pane) | `profile_row` |
+| `RaNewWsRow` | `remote_attach/new_row.rs`의 `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | `draw_ws_list` → `new_ws_row` (+ `dot_slot_glyph` / `new_ws_error` / `row_separator`) |
+| `RaRemoteWsRow` | `remote_attach/rows.rs`의 `ws_row` (+ `dot_slot_status`) | `ws_row` |
+| `RaCenterState` | `remote_attach/panes.rs`의 `center_state` (`remote-workspace-attach-states` spec) | `center_state` |
+| `RaInUseBadge` | `remote_attach/rows.rs`의 `badge` | `badge` |
+| loaded 렌더 경로(`conn==="loaded"`) | `remote_attach/panes.rs`의 `loaded_pane` (+ `remote_attach/rows.rs`의 `empty_line`) | `draw_right_pane`의 `Loaded` 분기 → `draw_ws_list` |
+| footer `Connect` / `Create & connect` | `remote_attach.rs`의 `footer` | `draw_footer` |
 
 **"+ New workspace" 행 (RA02).** 우측 목록의 **첫 행**으로, 원격에 워크스페이스를 하나
 만들어 그것을 mirror 하는 경로다(이름/cwd 를 묻지 않는다 — 원격 기본값). 버튼이 아니라
@@ -88,16 +91,19 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
   진다.
 - **글리프는 status-dot 슬롯(8px) 안에서 center.** 14px `plus` 가 슬롯 좌우로 대칭
   overflow 하므로 이름 열의 좌측 정렬선이 아래 ws 행들과 픽셀 동일하다. 갤러리에서는 ws
-  행의 dot 도 같은 `dot_slot` 으로 슬롯을 잡는다 — `status_dot` 위젯이 라벨이 비어도 dot
+  행의 dot 도 `remote_attach/rows.rs`의 같은 `dot_slot`으로 슬롯을 잡는다 — `status_dot` 위젯이 라벨이 비어도 dot
   뒤에 자기 gap 을 할당해서, 그대로 부르면 두 행의 이름 열이 6px 어긋난다.
 - **생성 중 / 실패는 행 인라인.** 왕복이 1~3초라 pane 을 통째로 바꾸면 사용자가 읽던 목록을
   버린다(생성 중엔 아래 목록 dim + inert). 실패도 목록을 가리지 않는다 — 실패 후 다음 수가
   보통 기존 워크스페이스 선택이기 때문. 원격 메시지는 3줄 clamp + 전문은 tooltip.
 
-**본체 배선**: 본체 `draw_ws_list` 가 스크롤 목록의 첫 행으로 `new_ws_row` 를 그리고, 확정되면
-살아 있는 터널 포트로 원격 `workspace.create` 를 한 번 보내 받은 ws id 를 mirror 한다(왕복 상한은
-`src/adapters/ui/popup/remote_attach.rs` 의 상수). 갤러리 specimen 이 gallery-first 로 먼저
-들어간 순서다(ADR-0020, [gallery-first](../../dev-guide/gallery-first.md)).
+**본체 구현**: `draw_ws_list`의 첫 행 `new_ws_row`가 `ListAction::Select(WsSel::New)`를
+반환한다. footer 확정은 `start_create` → `spawn_create`의 원격 `workspace.create`로
+이어지고, `poll_create`가 받은 새 workspace ID는 `push_attach`를 통해 기존 attach 큐에
+합류한다. 상세 동작은 [remote-attach](../../features/remote-attach/index.md)의 GUI picker 절을 따른다.
+살아 있는 터널 포트로 생성 요청을 보내며 왕복 상한은 `src/adapters/ui/popup/remote_attach.rs`의
+상수를 따른다. 갤러리 specimen이 gallery-first로 먼저 들어간 순서다(ADR-0020,
+[gallery-first](../../dev-guide/gallery-first.md)).
 
 ## switch_overlay (Overlays)
 
