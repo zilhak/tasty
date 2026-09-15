@@ -1,6 +1,5 @@
-// 이유: 크래시 리포터를 설치하는 것이 gui 부팅 경로뿐이라 headless 빌드엔 호출자가 없다. 모듈을
-// `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
+//! Panic reporting and host logs are shared by GUI, headless and CLI startup.
+//! Only winit stall reports and the GUI error-loop detector require the GUI feature.
 
 use std::backtrace::Backtrace;
 use std::fs;
@@ -110,6 +109,7 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
 ///
 /// 공유 로그(`debug.log`)가 아니라 별도 파일인 이유: 그 로그는 host 프로세스가 뜰 때마다
 /// truncate 되므로, 행을 겪고 강제 종료 후 다시 띄우는 순간 증거가 지워진다.
+#[cfg(feature = "gui")]
 pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathBuf> {
     let dir = crash_report_dir()?;
     fs::create_dir_all(&dir).ok()?;
@@ -337,7 +337,7 @@ fn open_host_log_file() -> Result<fs::File, String> {
 // Debug-only: error loop detection
 // =============================================================================
 
-#[cfg(debug_assertions)]
+#[cfg(all(feature = "gui", debug_assertions))]
 pub mod error_loop {
     use std::sync::atomic::AtomicBool;
     use std::sync::{LazyLock, Mutex};
@@ -423,10 +423,10 @@ pub mod error_loop {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(feature = "gui", debug_assertions))]
 pub use error_loop::record_error;
 
 /// Record an error for loop detection (debug builds only, no-op in release).
-#[cfg(not(debug_assertions))]
+#[cfg(all(feature = "gui", not(debug_assertions)))]
 #[inline(always)]
 pub fn record_error(_msg: &str) {}

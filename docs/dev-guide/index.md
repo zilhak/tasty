@@ -32,7 +32,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 
 | 문서 | 내용 |
 |------|------|
-| [build](build.md) | 워크스페이스·빌드 프로필 |
+| [build](build.md) | 워크스페이스·빌드 프로필 · 공용 모듈의 GUI 정의 경계 |
 | [dist-build](dist-build.md) | 로컬 dist 산출물 명령 |
 | [release](release.md) | 릴리스 워크플로(버전 bump → 태그 → CI) |
 | [release-runners](release-runners.md) | self-hosted runner 인벤토리·운영 |
@@ -53,7 +53,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [dag-layout](dag-layout.md) | Task DAG 좌표 계산(`tasty-dag-layout`) — 레이어 배치·엣지 라우팅·어댑터 경계 |
 | [context-menu](context-menu.md) | OS 네이티브 컨텍스트 메뉴 |
 | [timer-hub](timer-hub.md) | 중앙 타이머 허브 — 메인 루프 시간축 폴링 등록/실행, Strict·Lax, 대기 전략·waker poison 관측 |
-| [crash-diagnostics](crash-diagnostics.md) | 크래시 진단·로그 위치 |
+| [crash-diagnostics](crash-diagnostics.md) | 크래시 진단·로그 위치 · GUI/headless 진단 범위 |
 | [memory-leak-soak](memory-leak-soak.md) | 메모리 누수 soak 테스트 — 4계층 지표·판정·플랫폼별 attribution |
 
 ## IPC / Agent

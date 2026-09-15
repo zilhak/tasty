@@ -55,6 +55,25 @@ cargo build --workspace --no-default-features   # headless 빌드
 
 gui 전용 심볼(`AppState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 없이 쓰면 gui 빌드는 통과하지만 headless 빌드만 깨진다. 이 회귀는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡(`cargo check --workspace --no-default-features --locked`)이 `main` push 마다 자동 검출한다(문서만 바뀐 push 는 제외).
 
+#### 공용 모듈 안의 GUI 전용 정의
+
+headless 미사용 경고는 모듈 이름으로 분류하지 않고 **정의의 실제 호출자**로 가른다.
+GUI에서만 호출되는 정의는 `cfg(feature = "gui")`로 제외한다. 순수 단위 테스트가
+그 정의를 검사하면 `cfg(any(feature = "gui", test))`로 headless 테스트에서도 유지한다.
+공용 타입/접근자는 그대로 두며, 모듈 전체 `allow(dead_code)`로 덮지 않는다.
+
+| 정의 | 빌드 경계 | 공용으로 남는 부분 |
+|---|---|---|
+| `db::init`, `default_db_path` | GUI 부팅만 호출 | `Db`, `with_db`는 headless 최근 파일 조회에서도 사용 |
+| `Db::open`·스키마·초기화 오류 분류 | GUI 또는 단위 테스트 | headless의 미초기화 `with_db`는 기존대로 `None` 반환 |
+| `crash_report::write_hang_report` | winit watchdog을 가진 GUI | panic 리포터 설치와 host 파일 로그는 GUI/headless/CLI 역할별 공용 부팅에서 사용 |
+| `crash_report::error_loop`, `record_error` | GUI; detector는 debug, release는 no-op | headless panic/파일 로깅 경로를 함께 제거하지 않음 |
+
+`state.db` 초기화와 `memory.db` 초기화는 다른 경로다. 이 빌드 경계가 headless의
+메모리 저장소나 최근 파일 IPC를 끄는 것은 아니다. 오류 관측의 범위는
+[crash-diagnostics](crash-diagnostics.md), 저장소 접근은
+[storage](../design/systems/storage.md)를 따른다.
+
 본체+플러그인을 한 번에 다루는 래퍼가 있다. `just build` 는 빌드·스테이징만(실행 X), `just run` 은 빌드 후 호스트까지 실행한다. 둘 다 플러그인을 빌드·스테이징하며, 호스트는 부팅 시 builtin 을 강제 덮어쓰기 설치하므로 플러그인 소스 변경이 (`just build` 면 다음 실행 시, `just run` 이면 그 실행에서) 반영된다.
 
 ```bash

@@ -1,6 +1,3 @@
-// 이유: 이 저장소를 여닫는 것이 gui 부팅 경로뿐이라 headless 빌드엔 호출자가 없다. 모듈을
-// `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! SQLite 기반 영속 상태 저장소 (`~/.tasty/state.db`).
 //!
 //! 대상 도메인:
@@ -16,14 +13,21 @@
 //! - `init()`이 먼저 호출되어야 함. 실패하면 `DbInitError`로 반환되며,
 //!   호출자는 사용자에게 안내한 뒤 종료해야 한다 — 인메모리 폴백 없음.
 
+// Disk initialization belongs to GUI boot; pure database tests also exercise it.
+#[cfg(any(feature = "gui", test))]
 mod migrations;
 
+#[cfg(any(feature = "gui", test))]
 use std::io;
+#[cfg(any(feature = "gui", test))]
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use rusqlite::{Connection, ErrorCode};
+use rusqlite::Connection;
+#[cfg(any(feature = "gui", test))]
+use rusqlite::ErrorCode;
 
+#[cfg(any(feature = "gui", test))]
 pub use migrations::DbSchemaError;
 
 pub struct Db {
@@ -32,6 +36,7 @@ pub struct Db {
     pub(crate) recent_files: Option<crate::recent_files::RecentFiles>,
 }
 
+#[cfg(any(feature = "gui", test))]
 impl Db {
     /// 디스크 경로로 엶. 실패 시 Err.
     pub fn open(path: &Path) -> Result<Self, DbInitError> {
@@ -79,6 +84,7 @@ impl Db {
 
 /// `init()` 결과. 각 variant가 사용자에게 보여줄 i18n key와 인자를 알고 있다.
 #[derive(Debug)]
+#[cfg(any(feature = "gui", test))]
 pub enum DbInitError {
     HomeDirMissing,
     PermissionDenied(PathBuf),
@@ -89,6 +95,7 @@ pub enum DbInitError {
     Other(String),
 }
 
+#[cfg(any(feature = "gui", test))]
 impl DbInitError {
     /// i18n key와 포맷용 인자 0~2개. main 쪽에서 `t`/`t_fmt`/`t_fmt2`로 분기한다.
     pub fn user_message_i18n(&self) -> (&'static str, Vec<String>) {
@@ -109,6 +116,7 @@ impl DbInitError {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 impl std::fmt::Display for DbInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -127,8 +135,10 @@ impl std::fmt::Display for DbInitError {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 impl std::error::Error for DbInitError {}
 
+#[cfg(any(feature = "gui", test))]
 fn classify_io(err: io::Error, path: &Path) -> DbInitError {
     match err.kind() {
         io::ErrorKind::PermissionDenied => DbInitError::PermissionDenied(path.to_path_buf()),
@@ -140,15 +150,18 @@ fn classify_io(err: io::Error, path: &Path) -> DbInitError {
 }
 
 #[cfg(unix)]
+#[cfg(any(feature = "gui", test))]
 fn libc_enospc() -> i32 {
     28 // ENOSPC
 }
 
 #[cfg(windows)]
+#[cfg(any(feature = "gui", test))]
 fn libc_enospc() -> i32 {
     112 // ERROR_DISK_FULL
 }
 
+#[cfg(any(feature = "gui", test))]
 fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
     if let rusqlite::Error::SqliteFailure(sqlite_err, _) = &err {
         match sqlite_err.code {
@@ -176,11 +189,13 @@ static DB_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 const DB_WHAT: &str = "state.db connection";
 
 /// `state.db` 경로 (`tasty_home()/state.db`). `None`이면 홈 디렉터리 미확인.
+#[cfg(feature = "gui")]
 pub fn default_db_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("state.db"))
 }
 
 /// 앱 시작 시 1회 호출. 실패하면 호출자가 사용자에게 안내하고 종료해야 한다.
+#[cfg(feature = "gui")]
 pub fn init() -> Result<(), DbInitError> {
     if DB.get().is_some() {
         return Ok(());
@@ -196,6 +211,10 @@ pub fn init() -> Result<(), DbInitError> {
 }
 
 /// 싱글톤 접근. `init()`이 호출되지 않았으면 None.
+///
+/// Recent-file queries also use this path in headless builds. Keep the connection
+/// type and accessor shared even though only GUI boot initializes this database;
+/// an uninitialized database continues to return None to its existing callers.
 ///
 /// poison 은 복구한다. 미완 트랜잭션은 unwind 때 rusqlite 의 RAII guard 가 rollback
 /// 하므로 연결은 불변식을 유지하고, 여기서 패닉하면 메인 스레드를 포함한 아무 데서나

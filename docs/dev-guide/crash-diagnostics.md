@@ -86,14 +86,17 @@ markdown / html surface 는 mesh 를 그리지 않고 native webview overlay 로
 
 ## 에러 루프 자동 감지 (dev 전용)
 
-dev 빌드는 **`ErrorLoopDetector`** 를 가진다 — 같은 에러 메시지가 **1초 내 100회 이상** 반복되면 의도적으로 panic 을 발생시켜 crash report 로 떨군다. 무한 에러 루프(GPU 재시도 폭주 등)를 영원히 도는 대신 즉시 멈춰 흔적을 남기기 위함.
+GUI dev 빌드는 **`ErrorLoopDetector`** 를 가진다 — 같은 에러 메시지가 **1초 내 100회 이상** 반복되면 의도적으로 panic 을 발생시켜 crash report 로 떨군다. 무한 에러 루프(GPU 재시도 폭주 등)를 영원히 도는 대신 즉시 멈춰 흔적을 남기기 위함.
 
 ```
 Error loop detected! The following error repeated 100 times in 1s:
 <반복된 에러 메시지>
 ```
 
-호출 지점은 재발 가능성이 높은 루프 — 렌더 루프(`src/view/main/redraw.rs`, 예: "GPU out of memory")와 이벤트 루프(`src/app/event_handler.rs`). 호출 API 는 `crash_report::record_error(msg)` 이며 **release 에서는 no-op**(`#[inline(always)]` 빈 함수)이라 비용·동작이 없다.
+이 감지기는 GUI 렌더·이벤트 루프 전용으로 컴파일된다. headless·CLI도 panic 리포터와
+host 역할의 파일 로그는 공용 부팅 경로에서 설치한다.
+
+호출 지점은 재발 가능성이 높은 루프 — 렌더 루프(`src/view/main/redraw.rs`, 예: "GPU out of memory")와 이벤트 루프(`src/app/event_handler.rs`). 호출 API 는 `crash_report::record_error(msg)` 이며 **GUI release 에서는 no-op**(`#[inline(always)]` 빈 함수)이라 비용·동작이 없다.
 
 ## 빌드 모드별 차이 요약
 
@@ -102,7 +105,7 @@ Error loop detected! The following error repeated 100 times in 1s:
 | crash report 파일 | ✅ | ✅ |
 | stderr panic + backtrace | ✅ | ✅ |
 | 파일 tracing | ✅ `debug.log`(warn 이상) | ✅ `debug-dev.log`(전체 debug) |
-| 에러 루프 자동 감지 | ✗ (no-op) | ✅ |
+| 에러 루프 자동 감지 | GUI는 no-op; headless는 제외 | GUI에서만 동작 |
 | 심볼 / backtrace 품질 | `strip = true` 라 함수명 제한 → 주소만 보일 수 있음 | 미최적화·전 심볼 → 정확한 스택트레이스 |
 
 **release 에서 backtrace 가 주소만 나올 때**: `RUST_BACKTRACE=full tasty` 로 강화하되, strip 된 상태에선 한계가 있다 — 정확한 함수명이 필요하면 dev 빌드로 재현한다.
