@@ -125,7 +125,7 @@ impl PluginProcess {
             &token,
             log_file,
             log_clone,
-        );
+        )?;
         inject_plugin_data_env(&mut cmd, package, &log_path)?;
 
         // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에
@@ -612,9 +612,8 @@ fn build_plugin_command(
     token: &str,
     log_file: std::fs::File,
     log_clone: std::fs::File,
-) -> (Command, Option<mpsc::Receiver<HandleStream>>) {
-    let entry_path = package.entry_command_path();
-    let mut cmd = Command::new(&entry_path);
+) -> io::Result<(Command, Option<mpsc::Receiver<HandleStream>>)> {
+    let mut cmd = launch::command(package)?;
     // Windows GUI 서브시스템 호스트가 콘솔 서브시스템 플러그인 바이너리를
     // spawn 할 때 빈 콘솔 창이 뜨는 것을 막는다 (비-Windows 에서는 no-op).
     tasty_utils::process::hide_console(&mut cmd);
@@ -627,8 +626,6 @@ fn build_plugin_command(
         .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)
         .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
         .env("TASTY_PLUGIN_TOKEN", token)
-        .env("TASTY_PLUGIN_DIR", &package.dir)
-        .current_dir(&package.dir)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_clone));
@@ -639,7 +636,7 @@ fn build_plugin_command(
     } else {
         None
     };
-    (cmd, handle_stream_rx)
+    Ok((cmd, handle_stream_rx))
 }
 
 /// 활성 로케일 env 주입. 이 크레이트는 `tasty-i18n` 에 의존하지 않는다 — 활성 언어는
@@ -1296,3 +1293,5 @@ mod shutdown_tests {
 
 #[cfg(test)]
 mod tests_parent_home;
+
+mod launch;

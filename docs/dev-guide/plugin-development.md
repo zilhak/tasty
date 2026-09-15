@@ -252,7 +252,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 |----------|-----|
 | `TASTY_PARENT_HOME` | host 데이터 루트. 상대 홈은 host CWD 기준 절대경로로 확정한다. 같은 루트에서 파생하는 DATA_DIR·CONFIG_PATH도 절대경로이며, 확정 실패는 spawn 오류다 |
 | `TASTY_PLUGIN_ID` | plugin id |
-| `TASTY_PLUGIN_DIR` | 본체 디렉터리(읽기 전용) |
+| `TASTY_PLUGIN_DIR` | host CWD 기준 절대 설치 디렉터리(읽기 전용). 자식의 초기 CWD도 같은 경로 |
 | `TASTY_PLUGIN_DATA_DIR` / `TASTY_PLUGIN_CONFIG_PATH` / `TASTY_PLUGIN_LOG_PATH` | 데이터·설정·로그 경로 |
 | `TASTY_HOST_IPC_PORT` | 호스트 listener 포트 |
 | `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1회용) |
@@ -261,6 +261,14 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 | `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([ADR-0103](../adr/0103-plugin-locale-via-host-process-env.md)) |
 | `TASTY_LOCALE_FONT` | 언어팩이 제공하는 폰트 파일의 절대경로 — **언어팩 폰트가 resolve 됐을 때만** 주입(내장 폰트 · 미제공이면 미설정, 셸에서 상속된 값도 자식에서 제거). 출처와 고정 시점은 `TASTY_LOCALE` 과 같다 |
 | `TASTY_HOST_PID` | 호스트 프로세스 PID (**macOS 만** — SDK watchdog 가 부모 사망 감지에 사용) |
+
+설치 디렉터리는 실행 명령을 만들 때 host CWD 기준으로 확정한다. 설치본 entry 탐색,
+자식 CWD, `TASTY_PLUGIN_DIR`가 같은 루트를 사용하므로 상대 `TASTY_HOME`에서도
+실행파일과 설치본 `lang/`가 자식 CWD에서 다시 상대 해석되지 않는다. canonicalize를
+쓰지 않아 존재 여부나 symlink 해소를 새 전제조건으로 삼지 않는다. 기존 entry 문법은
+유지한다: 절대 command는 그대로, 설치 디렉터리에서 찾은 bare/상대 command는 그
+설치본을 실행하며, 찾지 못하면 원 command의 OS 탐색/실패 의미를 유지한다.
+SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
 
 ### 생명주기 (healthcheck / 자동 재시작·비활성화)
 
