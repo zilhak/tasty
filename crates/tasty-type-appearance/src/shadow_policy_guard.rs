@@ -1,20 +1,16 @@
-//! 그림자 정책 집행 가드 — "떠 있는 표면 그림자는 정본 토큰(`SHADOW_POPOVER` /
-//! `SHADOW_MODAL`)에서만 나온다" 를 소스에서 강제한다. 어느 표면이 어느 쪽을 쓰는지는
-//! `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE.
+//! 그림자 정책의 명시적 생성·기하 재대입·접근자 명부를 검사하는 소스 가드.
 //!
-//! `theme.rs` 주석이 "허용된 단 하나의 popover 그림자, 새 그림자 금지" 를 선언하지만
-//! 그것을 집행하는 장치가 없어, `shell_setup.rs` 가 그 선언을 어긴 채(색이 앱 배경으로
-//! 표류한 halo) 아무도 모르게 남아 있었다. 이 가드가 그 종류를 잡는다.
+//! 떠 있는 표면의 정본 토큰은 `SHADOW_POPOVER` 와 `SHADOW_MODAL` 둘이다.
+//! `Theme::shadow_popover()` / `shadow_modal()` 이 값을 내고 `ShadowToken::to_egui()` 가
+//! egui 그림자로 변환한다. 어느 표면이 어느 쪽을 쓰는지는
+//! `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE 이 정한다.
 //!
 //! # 왜 lib 유닛 테스트인가 (관례 예외 — `tests/` 로 되돌리지 마라)
-//! 소스를 런타임에 스캔하는 드리프트 가드다. `tests/*.rs` 로 두면 실행 채널이 **헤드리스
-//! 조합 하나**뿐이다(정본 `docs/dev-guide/ci-gates.md`) — 기본 조합의 자동 잡은
-//! `--lib --bins` 라 통합 타깃을 못 본다. 스캔이 본체인 가드에겐 채널 하나를 통째로 잃는
-//! 것이다. 크레이트 `src/` 안 `#[cfg(test)]` 로 두면 Windows 잡(`--lib --bins`)과 헤드리스
-//! 잡(전체 스위트) 두 자동 잡에서 **실행**된다. 이 가드는 egui 를
-//! 부르지 않는 순수 텍스트 스캔이라 `--no-default-features`(egui-compat off)에서도 선다.
-//! 관례(`tests/*_chokepoint.rs`)를 깨는 이유는 그 자동 실행 하나다 — `tests/` 로 옮기면
-//! 조용히 자동 채널을 잃는다.
+//! 소스를 런타임에 스캔하므로 컴파일만으로는 판정하지 않는다. lib 유닛 테스트는
+//! `cargo test --lib --bins` 에 포함되지만 `tests/*.rs` 통합 타깃은 포함되지 않는다.
+//! 따라서 통합 타깃으로 옮기면 그 실행 경로를 잃는다. 실행 채널과 빌드 조합의 정본은
+//! `docs/dev-guide/ci-gates.md` 다. 이 가드는 egui 를 부르지 않는 순수 텍스트 스캔이라
+//! `--no-default-features`(egui-compat off)에서도 검사할 수 있다.
 //!
 //! # 스캔 루트와 하한
 //! 레포 루트는 `CARGO_MANIFEST_DIR/../..` 로 올라가 찾는다(이 크레이트는
@@ -23,18 +19,25 @@
 //! Windows 잡에서도 도므로 경로는 `std::path` 로만 다루고(구분자 하드코딩 금지) 줄은
 //! `trim_end`(CRLF) 를 거친다.
 //!
-//! # 정책의 구멍 (기록만 — 여기서 메우지 않는다)
-//! 이 가드는 **명시적 `Shadow {}` 리터럴 생성**만 본다. `crates/tasty-egui-theme` 은
-//! `visuals.window_shadow` 를 매핑하지 않아(그 크레이트 주석이 밝힌다) egui 기본 그림자가
-//! 잔류할 수 있는데, 그건 리터럴 생성이 아니라 이 스캔에 안 잡힌다. 정본 토큰 정책은
-//! egui 기본 그림자에 대해 아무 말도 하지 않는다 = 정책의 구멍이다.
+//! # 검사 범위와 한계
+//! 검사는 셋이다: 인식하는 `Shadow {}` 리터럴이 변환기 밖에 있는가,
+//! 같은 줄의 `let mut` 와 그림자 접근자 이름으로 찾은 변수의 `offset`/`blur`/`spread` 에
+//! 재대입하는가, 그리고 [`SHADOW_ACCESSORS`] 가 실제 `Theme` 접근자 명부와 같은가.
+//! `color` 재대입은 페이드를 위해 허용한다. 줄 단위 텍스트 검사이며 별칭이나 다른
+//! 생성·대입 형태까지 타입/데이터 흐름으로 추적하는 검사는 아니다.
 //!
-//! 두 번째 구멍은 **어느 표면이 어느 토큰을 쓰는가**다. 이 가드는 값의 *출처*(정본
-//! 접근자를 통과했는가, 그 결과의 기하를 덮어쓰지 않았는가)만 본다. SCOPE RULE 의
+//! egui 기본 그림자는 이미 `crates/tasty-egui-theme/src/lib.rs` 에서 매핑한다:
+//! `visuals.popup_shadow` 는 popover, `visuals.window_shadow` 는 modal 이다.
+//! **매핑 구현과 그 매핑을 검사하는 것은 별개다.** 이 가드는 두 필드의 대입을
+//! 검증하지 않으므로, 매핑이 빠져도 위 세 검사로는 알 수 없다. 토큰 상수와 디자인
+//! 정본의 값 대조는 별도 `crates/tasty-design-tokens/tests/shadow_parity.rs` 가 맡는다.
+//!
+//! **어느 표면이 어느 토큰을 쓰는가**도 이 가드의 검사 밖이다. SCOPE RULE 의
 //! 갈래는 표면의 형태(트리거에 앵커되는가 · 뷰포트를 점유하는가)로 정해지는데 —
 //! **scrim 유무는 갈래를 가르는 술어가 아니다**(ADR-0254 Decision: modal 을 받는 표면
 //! 중 실제로 scrim 이 깔리는 것은 일부다) — 그 형태를 소스에서 읽을 방법이 없어(위치는
-//! 여는 시점의 `OpenPopupMode` 가 정한다) 판정기를 만들 수 없다. 그 축은 리뷰가 지킨다.
+//! 여는 시점의 `OpenPopupMode` 가 정한다) 이 텍스트 검사는 갈래를 판정하지 않는다.
+//! 그 축은 리뷰가 지킨다.
 //!
 //! # 검출은 순수 함수 — 면제 변이를 합성 입력으로 찌른다
 //! 판정([`is_shadow_literal`]·[`shadow_literal_violations`]·[`geom_reassign_violations`])은
@@ -225,8 +228,9 @@ fn rel_of(root: &Path, f: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// 정책: 모든 `Shadow {}` 생성은 `theme.rs::to_egui`(= `SHADOW_POPOVER` 변환) 안에서만.
-/// 그 밖에서 그림자를 만들면 `theme.shadow_popover().to_egui()` 로 라우팅해야 한다.
+/// 정책: `Shadow {}` 생성은 두 토큰의 공용 변환기 `ShadowToken::to_egui` 안에서만.
+/// 그 밖에서는 표면에 맞는 `shadow_popover()` / `shadow_modal()` 을 거쳐 변환한다.
+/// 이 검사는 그 정책 중 [`is_shadow_literal`] 이 인식하는 리터럴의 위치를 본다.
 #[test]
 fn shadow_creation_is_confined_to_the_token_converter() {
     let root = repo_root();

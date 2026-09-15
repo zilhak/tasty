@@ -215,7 +215,9 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 **그 키트가 갤러리의 전부는 아니다.** 셸을 직접 그리는 specimen 이 여럿 있고(예: `components/dag/window.rs`·`components/remote_attach.rs`·`components/transfer.rs`·`components/file_picker.rs`·`catalog/popup_frame.rs`), 그것들은 같은 판정을 **그 자리에서** 얹는다. 그래서 갈래를 감사할 때 키트 호출부만 훑으면 그 specimen 들이 모수 밖으로 빠진다 — popup specimen 의 모수는 `src/source_guards/gallery_specimen_parity.rs` 의 id↔specimen 표이고, 그 표의 각 id 를 `src/adapters/ui/popup/draw.rs::popup_shadow` 에 물어 대조한다.
 
-값을 새로 만들지 않고 이 둘만 쓴다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다. 이 규칙은 `crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)가 소스 스캔으로 집행한다 — 값의 **출처**는 집행하지만 어느 표면이 어느 값을 쓰는가는 집행하지 않는다(표면의 형태를 소스에서 읽을 방법이 없다).
+값을 새로 만들지 않고 이 둘만 쓴다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다.
+
+`crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)의 검사는 이 정책보다 좁다. 인식하는 `Shadow` 리터럴의 생성 위치, 같은 줄의 `let mut` 와 접근자 이름으로 찾은 변수의 기하 재대입, 접근자 명부의 정합을 본다. 줄 단위 텍스트 검사라 별칭이나 다른 생성·대입 형태의 데이터 흐름까지 추적하지 않는다. **egui 기본 그림자 두 필드의 매핑 유지 여부와 표면별 토큰 선택은 검사하지 않는다.** 아래 매핑이 구현돼 있다는 사실과 이 가드가 그것을 검증한다는 주장은 구분한다.
 
 두 상수가 디자인 정본을 제대로 옮겨 적었는지는 `crates/tasty-design-tokens/tests/shadow_parity.rs` 가 vendor json 과 필드 단위로 대조한다 — 그림자는 `$type: shadow` 라 생성기가 건너뛰고 값이 **손으로 옮겨지므로**, 이 대조가 없으면 전사 오차가 조용히 남는다(실제로 남아 있었다). 같은 파일이 정본 쪽 모수도 잠근다: raw 그림자 토큰 명부의 완전성, alias 토큰이 명부 안의 값으로 귀착하는지, `-shadow` 로 끝나는 이름이 떠 있는 그림자가 아닌 치수 축(`kbd-shadow-depth`)과 섞이지 않는지. 통합 테스트라 자동 실행은 헤드리스 잡뿐이다(`docs/dev-guide/ci-gates.md`).
 

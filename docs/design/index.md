@@ -20,7 +20,7 @@
 
 | 문서 | 내용 |
 |------|------|
-| [theme](systems/theme.md) | 색·타이포·간격의 단일 출처 `Theme` + UI 디자인 규칙(4px 그리드·폰트 상한·보더·대비) |
+| [theme](systems/theme.md) | 색·타이포·간격의 단일 출처 `Theme` + UI 디자인 규칙·그림자 토큰과 검사 범위 |
 | [token-crosswalk](systems/token-crosswalk.md) | DTCG 토큰 ↔ Rust `Theme` 필드 ↔ 호출처 매핑 참조 |
 | [design-token-mapping](systems/design-token-mapping.md) | claude design semantic 토큰을 `Theme` 필드로 옮기는 매핑 |
 | [design-gallery-mapping](systems/design-gallery-mapping.md) | 디자인 jsx 하위 컴포넌트 ↔ 갤러리 specimen ↔ 호스트 함수 3자 매핑 |
