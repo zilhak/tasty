@@ -20,6 +20,7 @@ use crate::registry::{
     TurnError, new_watch,
 };
 use crate::resolve::{self, CLAUDE_SESSION_META_KEY, HostCall, ResolveError};
+use crate::sse::hub::SseHub;
 use crate::sse::server::{self, SseServer};
 use crate::sse::{ConfigError, ServeConfig};
 
@@ -385,6 +386,17 @@ pub(crate) fn handle_serve(
     tr: &Translator,
     params: Value,
 ) -> Result<Value, IpcMethodError> {
+    handle_serve_with(registry, server, tr, params, server::start)
+}
+
+// The starter owns the bind operation; validation and persistence stay on this path.
+fn handle_serve_with(
+    registry: &Shared,
+    server: &mut Option<SseServer>,
+    tr: &Translator,
+    params: Value,
+    start: impl FnOnce(ServeConfig, Arc<SseHub>, Shared) -> Result<SseServer, String>,
+) -> Result<Value, IpcMethodError> {
     let config = serve_config_from(&params, tr)?;
     let replaced = server.is_some();
     // 옛 리스너를 내리기 **전에** 레지스트리 락을 한 번 잡아 둔다. 순서를 뒤집으면
@@ -396,7 +408,7 @@ pub(crate) fn handle_serve(
     if let Some(mut old) = server.take() {
         old.shutdown();
     }
-    let started = match server::start(config.clone(), hub, registry.clone()) {
+    let started = match start(config.clone(), hub, registry.clone()) {
         Ok(started) => started,
         Err(e) => {
             // 옛 리스너는 이미 내려갔고 새 bind 는 실패했다 — 런타임 상태는 "닫힘" 이다.
@@ -569,17 +581,7 @@ mod tests {
         Arc::new(Mutex::new(StreamRegistry::new(None)))
     }
 
-    /// 지금 비어 있는 루프백 포트 하나. 바인드해 번호를 읽고 바로 놓는다.
-    /// 임시 포트를 리스너째 예약해 반환한다. 소비자(`handle_serve`)는 port 번호만 받으므로,
-    /// 실제 bind 직전에 이 리스너를 drop 해 예약~bind 사이의 TOCTOU 창을 최소화한다
-    /// (ADR-0129 형태 B 정방향, `tasty-ssh::reserve_local_port` 와 동형). 그냥 bind 후
-    /// 곧바로 놓아 port 번호만 돌려주면, 그 사이 같은 머신의 다른 완주가 포트를 집어가
-    /// `serve_bind_failed` 로 확률적 red 가 난다.
-    fn reserve_port() -> (std::net::TcpListener, u16) {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("addr").port();
-        (listener, port)
-    }
+    use crate::sse::server::test_support::ReservedEndpoint;
 
     /// 레지스트리 락을 실제로 poisoned 로 만든다 — 락을 쥔 스레드를 패닉시키는 것이
     /// 유일한 방법이라(std 에 강제 poison API 가 없다) 그대로 재현한다. 이 테스트가
@@ -609,13 +611,14 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
-        let (reservation, port) = reserve_port();
-        drop(reservation);
-        handle_serve(
+        let reservation = ReservedEndpoint::new();
+        let port = reservation.port();
+        handle_serve_with(
             &registry,
             &mut server,
             &tr,
             json!({"port": port, "bind": "127.0.0.1"}),
+            |config, hub, registry| reservation.start(config, hub, registry),
         )
         .expect("the first bind succeeds");
         assert_ne!(snapshot_serve(dir.path()), Value::Null);
@@ -658,26 +661,33 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
-        let (reservation, first_port) = reserve_port();
-        drop(reservation);
-        handle_serve(
+        let reservation = ReservedEndpoint::new();
+        let first_port = reservation.port();
+        handle_serve_with(
             &registry,
             &mut server,
             &tr,
             json!({"port": first_port, "bind": "127.0.0.1"}),
+            |config, hub, registry| reservation.start(config, hub, registry),
         )
         .expect("the first bind succeeds");
 
         poison_registry(&registry);
 
-        // poison 으로 bind 도달 전에 실패하므로 port 는 쓰이지 않는다 — 예약을 잡지 않는다.
-        let err = handle_serve(
+        // Rejection must happen before the starter or the old endpoint is touched.
+        let starts = std::cell::Cell::new(0);
+        let err = handle_serve_with(
             &registry,
             &mut server,
             &tr,
-            json!({"port": reserve_port().1, "bind": "127.0.0.1"}),
+            json!({"port": first_port, "bind": "127.0.0.1"}),
+            |config, hub, registry| {
+                starts.set(starts.get() + 1);
+                server::start(config, hub, registry)
+            },
         )
         .expect_err("a poisoned registry must be reported, not swallowed");
+        assert_eq!(starts.get(), 0, "poison rejection must precede the starter");
         assert!(
             err.message.contains("registry_poisoned") || err.message.contains("poisoned"),
             "{}",
@@ -702,27 +712,32 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
-        let (reservation, port) = reserve_port();
-        drop(reservation);
-        handle_serve(
+        let reservation = ReservedEndpoint::new();
+        let port = reservation.port();
+        handle_serve_with(
             &registry,
             &mut server,
             &tr,
             json!({"port": port, "bind": "127.0.0.1"}),
+            |config, hub, registry| reservation.start(config, hub, registry),
         )
         .expect("the first bind succeeds");
         assert!(registry.lock().expect("lock").serve_config().is_some());
 
-        // 이 주소는 이 호스트의 것이 아니다(TEST-NET-3) — bind 가 반드시 실패한다.
+        // Keep a competing listener alive: production bind must fail, without a retry.
+        let occupied = ReservedEndpoint::new();
         let err = handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": reserve_port().1, "bind": "192.0.2.1", "token": "t"}),
+            json!({"port": occupied.port(), "bind": "127.0.0.1"}),
         )
-        .expect_err("binding a foreign address must fail");
+        .expect_err("binding an occupied address must fail");
         assert!(
-            err.message.contains("serve_bind_failed") || err.message.contains("192.0.2.1"),
+            err.message.contains("serve_bind_failed")
+                || err
+                    .message
+                    .contains(&format!("127.0.0.1:{}", occupied.port())),
             "{}",
             err.message
         );
@@ -736,6 +751,29 @@ mod tests {
         )
         .expect("json");
         assert_eq!(snapshot["serve"], Value::Null, "{snapshot}");
+    }
+
+    #[test]
+    fn missing_or_zero_port_is_rejected_before_starting() {
+        for params in [json!({}), json!({"port": 0})] {
+            let starts = std::cell::Cell::new(0);
+            let err = handle_serve_with(
+                &shared(),
+                &mut None,
+                &Translator::default(),
+                params.clone(),
+                |config, hub, registry| {
+                    starts.set(starts.get() + 1);
+                    server::start(config, hub, registry)
+                },
+            )
+            .expect_err("an explicit nonzero port is required");
+            assert_eq!(err.code, -32602);
+            assert_eq!(starts.get(), 0);
+            let public_err = handle_serve(&shared(), &mut None, &Translator::default(), params)
+                .expect_err("the public path also rejects zero");
+            assert_eq!(err.code, public_err.code);
+        }
     }
 
     #[test]

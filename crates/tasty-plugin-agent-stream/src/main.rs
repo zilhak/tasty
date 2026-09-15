@@ -77,6 +77,17 @@ impl AgentStreamPlugin {
     /// 한다는 이 설계의 전제가 무너진다. bind 실패는 경고만 남기고 plugin 은 계속 뜬다 —
     /// 수집은 엔드포인트 없이도 유효하다(`poll` 로 읽을 수 있다).
     fn restore_endpoint(&mut self) {
+        self.restore_endpoint_with(sse::server::start);
+    }
+
+    fn restore_endpoint_with(
+        &mut self,
+        start: impl FnOnce(
+            sse::ServeConfig,
+            Arc<sse::hub::SseHub>,
+            Arc<Mutex<StreamRegistry>>,
+        ) -> Result<SseServer, String>,
+    ) {
         let reg = match self.registry.lock() {
             Ok(reg) => reg,
             Err(e) => {
@@ -91,7 +102,7 @@ impl AgentStreamPlugin {
         };
         let hub = reg.hub();
         drop(reg);
-        match sse::server::start(config.clone(), hub, self.registry.clone()) {
+        match start(config.clone(), hub, self.registry.clone()) {
             Ok(server) => self.server = Some(server),
             Err(e) => tracing::warn!(
                 "agent-stream: cannot reopen the SSE endpoint on {}:{} after restart: {e} — collection continues, subscribe again after `tasty agent-stream serve`",
@@ -182,19 +193,13 @@ fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    /// 임시 포트를 리스너째 예약해 반환한다. 소비자(`restore_endpoint`)는 port 번호만 받으므로,
-    /// 실제 bind 직전에 이 리스너를 drop 해 예약~bind 사이의 TOCTOU 창을 최소화한다
-    /// (ADR-0129 형태 B 정방향, `tasty-ssh::reserve_local_port` 와 동형).
-    fn reserve_port() -> (std::net::TcpListener, u16) {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("addr").port();
-        (listener, port)
-    }
+    use sse::server::test_support::ReservedEndpoint;
 
     #[test]
     fn a_persisted_endpoint_is_reopened_on_the_same_address_after_a_restart() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let (reservation, port) = reserve_port();
+        let reservation = ReservedEndpoint::new();
+        let port = reservation.port();
 
         // 1 회차: 설정을 영속한다. (예약 리스너를 쥔 채라 이 사이 포트를 남이 못 가져간다.)
         {
@@ -207,12 +212,17 @@ mod tests {
             reg.save_if_dirty();
         }
 
-        // 2 회차: 재시작 상당. `new()` 가 스냅샷을 읽고 `restore_endpoint` 가 다시 연다.
-        // restore_endpoint 가 이 port 에 실제 bind 하므로, 그 직전에 예약을 놓는다.
-        drop(reservation);
+        // Restore the persisted address using the listener that still owns that address.
         let mut plugin =
             AgentStreamPlugin::new(Some(dir.path().to_path_buf()), Translator::default());
-        plugin.restore_endpoint();
+        let starts = std::cell::Cell::new(0);
+        plugin.restore_endpoint_with(|config, hub, registry| {
+            starts.set(starts.get() + 1);
+            assert_eq!(config.port, port, "restore uses the saved address");
+            assert_eq!(config.token.as_deref(), Some("t"));
+            reservation.start(config, hub, registry)
+        });
+        assert_eq!(starts.get(), 1);
         let info = plugin
             .server
             .as_ref()
@@ -223,9 +233,52 @@ mod tests {
             Value::from(format!("http://127.0.0.1:{port}/events")),
             "주소가 바뀌면 붙어 있던 소비자가 조용히 떨어진다"
         );
+        assert_eq!(info["port"], Value::from(port));
+        assert_eq!(
+            plugin
+                .registry
+                .lock()
+                .expect("lock")
+                .serve_config()
+                .unwrap()
+                .port,
+            port,
+        );
         // 토큰은 공개 뷰에 실리지 않는다.
         assert!(!info.to_string().contains("\"t\""), "{info}");
         plugin.server.take().expect("server").shutdown();
+    }
+
+    #[test]
+    fn an_occupied_restore_address_is_not_replaced_or_forgotten() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let occupied = ReservedEndpoint::new();
+        {
+            let mut registry = StreamRegistry::new(Some(dir.path()));
+            registry.set_serve_config(Some(sse::ServeConfig {
+                bind: "127.0.0.1".into(),
+                port: occupied.port(),
+                token: None,
+            }));
+            registry.save_if_dirty();
+        }
+        let saved = std::fs::read(dir.path().join("watches.json")).unwrap();
+        let mut plugin =
+            AgentStreamPlugin::new(Some(dir.path().to_path_buf()), Translator::default());
+        // Use the production starter while another owned listener holds the address.
+        plugin.restore_endpoint();
+        assert!(
+            plugin.server.is_none(),
+            "restore must not fall back to another port"
+        );
+        assert_eq!(
+            plugin.registry.lock().unwrap().serve_config().unwrap().port,
+            occupied.port(),
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("watches.json")).unwrap(),
+            saved
+        );
     }
 
     #[test]

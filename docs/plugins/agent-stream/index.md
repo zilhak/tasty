@@ -190,6 +190,27 @@ SSE 의 `id` 는 수집 파이프라인의 전역 단조 증가 `seq` 이고, �
 
 > **토큰은 그 스냅샷 파일에 평문으로 남는다.** 본체 웹훅 토큰과 같은 신뢰 수준·같은 저장 방식이다(설정 파일 평문). unix 에서는 스냅샷 파일을 `0600` 으로 만들어 같은 머신의 다른 사용자에게 열리지 않게 한다(Windows 는 파일 ACL 기본값을 따른다).
 
+### SSE 시작 경로의 검증
+
+생산 시작은 `sse::server::start`에서 요청 주소로 `tiny_http::Server::http`를 호출하고,
+bind 뒤의 스레드·상태 구성은 `start_bound`가 맡는다. `handle_serve_with`와
+`restore_endpoint_with`는 private starter를 받아 같은 검증·영속화·복원 흐름을 실행하며,
+생산 wrapper는 항상 기존 `server::start`를 전달한다. 공개 IPC의 포트 필수·0 거부와
+bind 실패 시 다른 주소로 폴백하지 않는 계약은 그대로다.
+
+시험의 `sse::server::test_support::ReservedEndpoint`는 예약 리스너를 해제하지 않고
+`tiny_http::Server::from_listener`로 소유권을 넘겨 같은 `start_bound`를 실행한다.
+이 모듈은 `cfg(test)`에서만 포함된다. 설정 주소와 예약 주소를 대조하므로, 재시작 시험도
+스냅샷의 주소를 다른 포트로 바꾸지 않는다. 이전처럼 번호만 남기고 다시 bind하는 창이나
+실패를 덮는 재시도는 없다. 전달 전·후의 경쟁 bind 거부와 전달된 리스너의 HTTP 응답을
+`ownership_transfer_keeps_the_reserved_address_occupied`가 검사한다.
+
+poison 이전 거부는 starter 호출 0회와 기존 엔드포인트·스냅샷 보존을 검사한다.
+생산 bind 실패는 시험이 계속 점유한 loopback 리스너로 유발한다: `serve` 재호출은
+엔드포인트·스냅샷을 비우고, 기동 복원 실패는 기존 저장 주소를 유지한 채 서버 없이
+진행한다. 포트 소유권을 인계한 복원 시험은 실제 프로세스 재시작이 아니라 새 registry가
+스냅샷을 읽는 경로의 시험이며, 생산 복원의 재bind까지 무경합으로 만든다는 뜻은 아니다.
+
 ## 턴 correlation + 웹훅 인바운드 배선
 
 목표 구성은 **웹 FE 가 프롬프트를 보내고 그 응답을 받아 화면에 뿌리는 것**이다. 인바운드(웹훅)와 아웃바운드(SSE)는 **서로 다른 채널**이라, FE 는 도착한 SSE 이벤트가 자기가 보낸 어느 요청의 결과인지 알 방법이 없다. 이 절이 그 둘을 잇는다.

@@ -13,6 +13,9 @@
 //! - **연결당 스레드 1 개** — 구독 후 자기 큐만 보며 프레임을 쓴다. 레지스트리 락은
 //!   연결 시작 시 replay 를 읽을 때 한 번만 잡는다.
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -100,6 +103,15 @@ impl std::fmt::Debug for SseServer {
 pub fn start(config: ServeConfig, hub: Arc<SseHub>, registry: Shared) -> Result<SseServer, String> {
     let addr = format!("{}:{}", config.bind, config.port);
     let server = Server::http(addr.as_str()).map_err(|e| e.to_string())?;
+    start_bound(config, server, hub, registry)
+}
+
+fn start_bound(
+    config: ServeConfig,
+    server: Server,
+    hub: Arc<SseHub>,
+    registry: Shared,
+) -> Result<SseServer, String> {
     let bound = server.server_addr().to_ip();
     let stop = Arc::new(AtomicBool::new(false));
     let connections: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -118,7 +130,11 @@ pub fn start(config: ServeConfig, hub: Arc<SseHub>, registry: Shared) -> Result<
             move || accept_loop(server, ctx, connections)
         })
         .map_err(|e| e.to_string())?;
-    tracing::info!("agent-stream: SSE endpoint listening on http://{addr}/events");
+    tracing::info!(
+        "agent-stream: SSE endpoint listening on http://{}:{}/events",
+        config.bind,
+        config.port
+    );
     Ok(SseServer {
         config,
         bound,
@@ -455,13 +471,14 @@ mod tests {
     }
 
     #[test]
-    fn a_bad_bind_address_fails_loudly_instead_of_falling_back_to_another_port() {
+    fn an_occupied_address_fails_loudly_instead_of_falling_back_to_another_port() {
         let registry = Arc::new(Mutex::new(StreamRegistry::new(None)));
         let hub = Arc::new(SseHub::default());
-        // 존재하지 않는 로컬 주소 — 커널이 bind 를 거부한다.
+        // The competing listener remains owned throughout the production bind attempt.
+        let occupied = test_support::ReservedEndpoint::new();
         let config = ServeConfig {
-            bind: "192.0.2.1".into(),
-            port: 9,
+            bind: "127.0.0.1".into(),
+            port: occupied.port(),
             token: Some("t".into()),
         };
         let err = start(config, hub, registry).expect_err("bind must fail");
