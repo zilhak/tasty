@@ -46,9 +46,11 @@ arm" 이고, 명부와 **집합 동등**이다([ADR-0133](0133-guard-scan-popula
 
 - **얻은 것**: 폴백으로 가는 113 개가 이름과 사유로 남았다. 새 메서드가 지목 없이
   들어오면 집합 동등이 잡고, 지목이 생겨 명부가 낡아도 반대 방향으로 잡는다.
-  실측으로 열린 결함 다섯이 드러났다 — `notification.list` · `system.info` ·
-  `recent.query` · `git_viewer.query` · `file_handler.dispatch`. 뒤의 넷은 이 명부를
-  만들기 전에는 어느 문서에도 없었다.
+  창 소유 상태를 읽거나 큐를 쓰는 후보로 `notification.list` · `system.info` ·
+  `recent.query` · `git_viewer.query` · `file_handler.dispatch`가 분류됐다.
+  이들을 모두 실행으로 확인한 결함이라고 한 서술은 부정확했다.
+  특히 `git_viewer.query`는 창별 큐 이후 전역 세션에서 `local_surface_id`를
+  해소하므로, 큐가 다른 창에 있다는 사실만으로 대상 선택 결함이 되지 않는다.
 - **잃은 것**: 명부가 크다(113 행). 크기가 뜻을 죽이지 않도록 같은 근거를 공유하는
   행은 "상동 —" 으로 줄이되, 그룹의 첫 행이 근거를 온전히 든다.
 - **운영 비용 / 유지 부담**: dispatch arm 이 늘 때마다 그 메서드가 지목을 받는지

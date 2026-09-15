@@ -617,8 +617,8 @@ const ROSTER: &[(&str, Why, &str)] = &[
     ),
     (
         "git_viewer.query",
-        PerWindowOpenDefect,
-        "`local_surface_id` 를 serde 로 읽고 요청이 닿은 engine 의 `pending_git_query_forward` 에 큐잉한다. 그 키는 `params_resource_id` 의 범용 키가 아니라 **라우팅도 못 푼다** — 다른 창의 surface 를 지목해도 이 창에 쌓인다",
+        TargetReadByDeserializer,
+        "`local_surface_id` 를 serde 로 읽어 창별 큐에 넣지만 App이 모든 main 큐를 drain한 뒤 전역 attach_client_sessions에서 그 ID의 세션을 찾는다. 큐를 받은 창이 조회 대상을 결정하지 않는다. parked 큐의 drain 여부와 실제 SSH 성공은 별도 생명주기/전송 축이다",
     ),
 ];
 
@@ -742,7 +742,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .collect();
     assert_eq!(
         open.len(),
-        3,
+        2,
         "창 소유인데 대상 축도 합산도 없는 항목의 수가 바뀌었다: {open:?}"
     );
 }
