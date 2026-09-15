@@ -35,6 +35,9 @@
 #[path = "../spawn_diag/mod.rs"]
 pub mod spawn_diag;
 
+mod startup;
+use startup::{StartupFailure, StartupTimeline};
+
 /// 실패 문구 끝에 이어 붙이는 번들 스테이징 진단 — 정의와 근거는 `spawn_diag`.
 ///
 /// 이유: 이 helper 는 raw 응답을 스스로 단언하는 스위트에서만 직접 불린다.
@@ -165,6 +168,7 @@ pub struct TastyInstance {
     /// 자식 stderr 의 꼬리와 **마지막 줄의 시각** — 상한을 넘겼을 때 "느리다" 와
     /// "멈췄다" 를 가른다. 생산자는 `spawn_diag` 한 곳이다.
     stderr: StderrCapture,
+    startup: StartupTimeline,
 }
 
 fn write_isolated_config(isolated_home: &std::path::Path, inherit_cwd: bool) {
@@ -284,9 +288,22 @@ impl TastyInstance {
         // 함께 읽을 것(스레드 종속성 문제로 naive prctl 은 공유 인스턴스를 깨뜨린다).
         //
         // 핸들(`Self`)이 서기 전의 패닉은 `Drop` 을 못 부른다 — 그 구간은 회수기가 소유한다.
-        let mut process = spawn_diag::ChildReaper::new(
-            spawn_diag::spawn_child(command).expect("failed to spawn tasty"),
-        );
+        let started = Instant::now();
+        let process = spawn_diag::spawn_child(command).expect("failed to spawn tasty");
+        Self::finish_startup(process, port_file, isolated_home, started)
+    }
+
+    /// Complete the normal startup path with an owned child. The harness regression test
+    /// supplies its own fake child here, without binary overrides or user configuration.
+    pub(super) fn finish_startup(
+        process: Child,
+        port_file: PathBuf,
+        isolated_home: PathBuf,
+        started: Instant,
+    ) -> Self {
+        let mut process = spawn_diag::ChildReaper::new(process);
+        let startup = StartupTimeline::new(started, process.child().id());
+        let _failure = StartupFailure::new(&startup, None);
 
         // stderr 를 배경 스레드로 빨아들인다 — 안 읽으면 OS 파이프 역압에 자식이 막힌다
         // (Linux 64 KB / macOS 16 KB). 꼬리 줄과 마지막 줄의 시각이 spawn 단계 패닉의
@@ -323,6 +340,7 @@ impl TastyInstance {
             if let Ok(content) = std::fs::read_to_string(&port_file)
                 && let Ok(port) = content.trim().parse::<u16>()
             {
+                startup.port_found();
                 break port;
             }
             // 자식이 이미 죽었으면 더 기다릴 이유가 없다. 부팅 실패는 대부분
@@ -353,10 +371,12 @@ impl TastyInstance {
             port_file,
             isolated_home,
             stderr,
+            startup: startup.clone(),
         };
 
         // Wait until the shell is actually ready (has screen content).
         instance.wait_for_shell(instance.first_surface_id());
+        instance.startup.shell_ready();
 
         instance
     }
@@ -390,6 +410,7 @@ impl TastyInstance {
     /// Send a JSON-RPC request and return the result value.
     /// Retries on timeout (event loop may be slow when window is unfocused).
     pub fn call(&self, method: &str, params: Value) -> Value {
+        let _failure = StartupFailure::new(&self.startup, Some(&self.stderr));
         for attempt in 0..3 {
             let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", self.port)) {
                 Ok(s) => s,
@@ -432,6 +453,7 @@ impl TastyInstance {
             }
 
             let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
+            self.startup.first_response();
             if let Some(error) = resp.get("error") {
                 panic!(
                     "IPC error for '{}': {}{}",
@@ -443,6 +465,11 @@ impl TastyInstance {
             return resp.get("result").cloned().unwrap_or(Value::Null);
         }
         unreachable!()
+    }
+
+    /// Fixed startup observations, independent of the rolling stderr tail.
+    pub fn startup_diagnostics(&self) -> String {
+        self.startup.snapshot()
     }
 
     /// Send a JSON-RPC request and return the full response (including errors).

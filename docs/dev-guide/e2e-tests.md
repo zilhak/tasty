@@ -293,6 +293,33 @@ Linux 격리 X 디스플레이에서 `cargo test --locked --test gui_tests gui_c
 자동 실행 채널은 없다. 이 시험은 자식 회수와 꼬리 보존을 검사하며, drain의 명시적
 join 호출 자체는 별도 계측 없이는 합류 누락과 빠른 자연 종료를 구분하지 못한다.
 
+### 범용 하네스의 부팅 이정표
+
+`tests/common`은 spawn 호출 직전의 `Instant` 하나를 기준으로 자식 PID와
+`spawn_returned_ms`, `port_found_ms`, `first_ipc_response_ms`, `shell_ready_ms`를 기록한다.
+첫 IPC 응답은 JSON 해석이 성공한 응답(error 응답 포함), shell-ready는 초기 surface의
+첫 non-empty 화면 관측이다. 이후 IPC 호출과 새 workspace의 출력은 이 첫 시각들을
+덮어쓰지 않는다. `pending`은 아직 관측하지 못한 다음 단계이며 원인 판정은 아니다.
+
+이정표는 stderr ring 밖의 고정 슬롯에 보관한다. spawn/IPC 패닉의 unwind에서
+`startup failure` 스냅샷을 다시 출력하므로, 후속 stderr가 30줄 tail을 밀어내도 초기
+시각은 실패 출력에 남는다. `startup_diagnostics()`로 성공한 인스턴스의 값도 읽는다.
+출력은 기존 `spawn_diag::init_test_tracing()`의 libtest writer를 사용한다. 이미 등록된
+subscriber는 교체하지 않으므로 그 subscriber가 로그를 차단하면 수집되지 않는다.
+새 ring, 전역 panic hook, 타임아웃 상향은 사용하지 않는다. 외부 SIGKILL이나 출력
+수집기 자체의 유실은 unwind 진단이 보장하지 못한다.
+
+`shared_instance_harness`의 `startup_tests`는 소유한 fake 자식과 loopback IPC로
+포트 전 지연·포트 후 응답 지연·조기사망·응답 오류를 유발해 실제 공용 경로를 검사한다.
+필터 실행: `cargo test --locked --test shared_instance_harness startup_tests -- --nocapture`.
+실제 Tasty/GUI를 띄우는 같은 타깃의 다른 시험과 구분한다.
+
+시각은 부모가 관측한 경과이며 자식 내부의 복사·bootstrap 시간으로 귀속하지 않는다.
+GUI 내부 구간은 기존 `tasty::boot` trace를 별도로 읽는다. headless port 파일도 dispatch
+준비 완료를 뜻하지 않는다. 내부 원인 분해에는 같은 실행의 추가 근거가 필요하다.
+attention의 quiet window와 frame 대기에는 이 계측을 일반화하지 않는다. 재발한 시험의
+handshake/raise/read/clear/quiet 경과와 frame tag가 없는 과거 총시간은 미귀속이다.
+
 ## 5-1. 마커 대기 만료 진단 (`tests/marker_wait`)
 
 훅이 남기는 마커 파일을 기다리는 자리는 셋이다(`hooks_detection_e2e` · `hook_env_integration` ·
@@ -316,7 +343,7 @@ join 호출 자체는 별도 계측 없이는 합류 누락과 빠른 자연 종
    - "GPU 가속 경로 폴백 흔적이 있다 — 이것만으로는 원인 판정이 되지 않는다" → **단정이 아니다.** 아래 6-1 로 가되, 거기서 GPU 경합이 아니라고 판명되면 1~4 의 일반 절차를 그대로 밟는다. 이 줄을 봤다고 코드를 건너뛰지 않는다.
    - "부팅 차단 시그니처는 없다" → 아래 1~4 의 일반 절차로.
 1. panic 의 `--- stderr (last 30 lines) ---` 확인.
-2. 마지막 `tracing::info!` 단계 식별: `IPC server listening on 127.0.0.1:{port}` 가 보이면 **S2**(PTY prompt) timeout → shell path/rc 점검. 안 보이면 **S1** → config.toml shell 유효성·plugin·theme init 점검.
+2. 범용 하네스는 `startup failure`의 `pending`과 네 이정표로 포트 전·첫 응답 전·셸 출력 전을 구분한다. 다른 하네스는 실패한 호출 단계를 함께 읽는다. `IPC server listening` 줄의 부재는 기본 필터·tail 탈락으로도 생기고, 존재는 dispatch 준비를 보증하지 않으므로 그 한 줄로 S1/S2를 판정하지 않는다.
 3. 재현: `cargo test --test e2e_tests -- --nocapture`.
 4. 결정적 차단이 깨졌으면 `TastyInstance::spawn` 의 env/config 보강.
 

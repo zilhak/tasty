@@ -237,3 +237,6 @@ fn per_test_workspace_surface_runs_a_shell() {
         Duration::from_secs(10),
     );
 }
+
+#[path = "common/startup_tests.rs"]
+mod startup_tests;
