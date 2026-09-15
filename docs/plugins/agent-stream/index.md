@@ -231,11 +231,9 @@ FE 가 요청마다 **자기가 만든 `request_id`** 를 웹훅 페이로드에
 | 거대 `request_id` (증폭) | **거부**(`request_id_too_long`, 512 바이트 상한). 상한이 없으면 거대한 값이 열린 턴에 저장돼 그 턴의 **모든** 이벤트(SSE·poll)에 복제된다 — 한 번의 큰 페이로드가 스트림 전체로 증폭되는 것을 저장 단계에서 막는다. 자르지 않고 거부해 잘린 id 가 매칭을 깨는 것도 피한다. 타입은 문자열/숫자만 받아 문자열로 정규화한다 |
 | `timeout_secs` 극단값 | 범위로 **클램프**(10s~86400s). 0 이나 과대값으로 타임아웃 안전망을 무력화할 수 없다 |
 
-> **상류 body 상한은 이 plugin 밖이다 — 그리고 인증이 그것을 막아주지 않는다.** 웹훅 요청 body 자체를 읽는 것은 본체 리스너(`src/webhook/listener.rs`)이고, 현재 그 리더에는 body 바이트 상한이 없다(SSE `serve` 의 HTTP 레이어 상한 부재와 같은 성격, [인증](#인증) 절 참고). `request_id` 상한은 이 plugin 이 저장·증폭하는 값을 막지만, body 전체를 메모리에 받는 단계는 그보다 앞이다.
+> **웹훅 body 상한은 본체 리스너가 적용한다.** 요청당 기본 1 MiB이며 `TASTY_WEBHOOK_MAX_BODY_BYTES`로 조정한다. 선언된 `Content-Length`가 상한을 넘거나 chunked body가 상한을 넘으면 `413 payload too large`로 거부하고 시퀀스를 실행하지 않는다. `request_id`의 512바이트 상한은 그 다음 단계에서 이벤트마다 복제되는 값을 제한한다.
 >
-> **토큰을 걸어도 이 단계는 보호되지 않는다.** 리스너는 body 를 **먼저 전부 읽고**(`read_json_body`) 그 뒤에 경로 매칭과 토큰 검증을 한다(`resolve_ack` → `Auth::verify`). 즉 토큰이 틀린 요청도 body 는 이미 메모리에 올라간 뒤에 `401` 을 받는다. 남용 차단(쿨다운 `429`)은 `401` 반복을 세므로([ADR-0195](../../adr/0195-abuse-counting-includes-rejected-tokens.md)) 그 홍수는 임계치에서 멎지만, **멎기 전까지의 요청은 이미 body 를 읽은 뒤**라 이 단계 자체를 막지는 않는다.
->
-> 따라서 **비-loopback 으로 노출한다면 리버스 프록시의 body 크기 제한이 현재 유일한 실효 방어**다(그 다음은 본체 리스너 자체를 고치는 몫). 인증은 여전히 필수지만 그것이 막는 것은 **다른 위협**이다 — 토큰이 없으면 시퀀스가 실행되지 않아 claude 에 프롬프트가 주입되지 않는다(아래 [등록 예시](#등록-예시)). owner 신뢰 모델(ADR-0046)이 덮는 범위도 "누가 이 IPC 를 트리거할 수 있는가" 까지이고, "얼마나 큰 body 를 메모리에 받는가" 는 그 바깥이다.
+> body 크기는 경로 매칭·인증보다 먼저 검사한다. 따라서 인증은 이 크기 제한을 대신하지 않으며, 토큰 없는 작은 요청은 `401 unauthorized`, 상한을 넘는 요청은 인증 전에 `413`을 받는다. 남용차단은 `401`·`413` 반복도 집계한다. 요청당 상한이 동시 요청 수나 연결 수를 제한하지는 않으므로, 외부 노출 시 프록시에서 연결 제한·타임아웃·TLS를 설정한다. 세부 계약은 [웹훅 body 상한](../../features/webhook/index.md#body-상한-요청당)과 [ADR-0200](../../adr/0200-webhook-body-has-a-per-request-byte-cap.md)을 따른다.
 
 ### 정책 — 겹침 · 중복 · 막힌 턴 · 턴 밖 이벤트
 
@@ -251,7 +249,7 @@ FE 가 요청마다 **자기가 만든 `request_id`** 를 웹훅 페이로드에
 
 ### 등록 예시
 
-`Persistent` + `Unlimited`(FE 서버가 상시 호출) + **인증 토큰** 조합으로 등록한다. 이 조합만 `~/.tasty/webhooks.toml` 에 저장돼 재시작 후 복원된다.
+`Persistent` + `Unlimited`(FE 서버가 상시 호출) + **인증 토큰** 조합으로 등록한다. `--ttl-secs`와 `--count`를 생략하면 `Unlimited`다. `Persistent` 등록은 제한 종류와 무관하게 `~/.tasty/webhooks.toml`에 저장되며, 재시작 때 아직 만료되지 않은 등록만 복원된다.
 
 ```bash
 # 대상 surface(예: 42)를 먼저 watch 한다 — turn_start 는 watch 중인 surface 만 받는다.
@@ -268,10 +266,10 @@ tasty webhook register \
   ]'
 ```
 
-등록하면 opaque URL(`/webhook/<16-hex>`)이 반환된다. FE 는 그 URL 로 POST 한다.
+등록하면 `http://<host>:<port>/<16-hex>` 형태의 opaque URL이 반환된다. 반환된 URL을 `WEBHOOK_URL`에 담아 그대로 POST한다. 외부에서는 접속할 호스트·포트 또는 HTTPS 프록시 주소로 바꾸되, 발급된 경로를 유지한다. `/webhook/` 접두사는 붙이지 않는다.
 
 ```bash
-curl -X POST https://<host>/webhook/<hex> \
+curl -X POST "$WEBHOOK_URL" \
   -H "Authorization: Bearer $WEBHOOK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"request_id":"req-8f3a","prompt":"summarize the last build log"}'
@@ -279,7 +277,7 @@ curl -X POST https://<host>/webhook/<hex> \
 
 그러면 surface 42 의 claude 가 그 프롬프트를 받아 실행하고, 그 실행이 만든 SSE 이벤트에 `"request_id":"req-8f3a"` 가 실린다. 그 요청의 `turn_end` 도 같은 값으로 실려 종료를 알린다.
 
-> **인증 토큰을 반드시 건다.** 이 배선은 외부 발신자가 claude 에게 임의 자연어를 주입하게 하고 claude 는 셸에 닿는다. ADR-0046 은 이 경우를 이미 다룬다 — owner 가 값 슬롯에 민감한 IPC 를 열면 그 트리거 책임은 owner 몫이고, **대응책은 인증으로 트리거 주체를 좁히는 것**이다. 무인증 배선을 예시로 쓰지 않는다. 토큰 없는/틀린 호출은 본체 웹훅 리스너가 `401` 로 거부하고 claude 는 실행되지 않는다(거부 바디는 비어 있다 — 불변식 2). 웹훅 토큰은 SSE 토큰과 같은 신뢰 수준·같은 저장(설정 파일 평문, unix `0600`)이다.
+> **인증 토큰을 반드시 건다.** 이 배선은 외부 발신자가 claude 에게 임의 자연어를 주입하게 하고 claude 는 셸에 닿는다. ADR-0046 은 이 경우를 이미 다룬다 — owner 가 값 슬롯에 민감한 IPC 를 열면 그 트리거 책임은 owner 몫이고, **대응책은 인증으로 트리거 주체를 좁히는 것**이다. 무인증 배선을 예시로 쓰지 않는다. 토큰 없는/틀린 호출은 본체 웹훅 리스너가 `401 unauthorized`로 거부하고 시퀀스를 실행하지 않는다. 웹훅의 거부 바디는 고정 문자열이며, SSE 구독의 빈 `401` 바디와 다르다. body 상한 초과나 남용차단 중인 요청은 각각 `413`·`429`가 먼저 적용된다. 웹훅 토큰은 SSE 토큰과 같은 신뢰 수준·같은 저장(설정 파일 평문, unix `0600`)이다.
 
 ### FE 계약 요약
 

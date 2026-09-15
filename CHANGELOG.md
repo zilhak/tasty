@@ -103,6 +103,7 @@
 - 상대 `TASTY_HOME`으로 실행해도 플러그인이 본체와 같은 사용자 번역 파일을 읽습니다. 플러그인 작업 디렉터리 아래 같은 상대경로의 파일을 잘못 읽지 않습니다.
 
 
+- **Agent Stream 웹훅 연동 안내를 실제 동작에 맞췄습니다.** 발급 URL의 경로, 인증 실패의 고정 응답, 제한 종류별 재시작 복원과 인증보다 먼저 적용되는 요청 본문 상한을 명확히 했습니다.
 
 - **Codex 의 POSIX 셸 실행 시 alias/function 의 옵션이 섞이지 않는다.** `launch`/`spawn`/`respawn`(Windows Git Bash 포함) 과 Linux/macOS 의 `reboot` 가 외부 Codex 를 실행해, 사용자 alias 가 추가한 `--dangerously-bypass-approvals-and-sandbox` 와 기본 `-a never` 의 충돌을 막는다. 기존 승인·샌드박스 기본값과 명시 옵션은 유지한다. Windows `reboot` 는 기존 실행어를 유지하며 alias/function 우회는 후속 지원 범위다.
 

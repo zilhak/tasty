@@ -1,4 +1,5 @@
 <!-- source-hash: 1c561d524541 -->
+<!-- source-hash: 566aeb51a6d8 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -183,7 +184,7 @@ tasty webhook register --method POST \
   --auth-location header --auth-key X-Token --auth-token s3cret
 ```
 
-Registering prints a URL of the form `http://127.0.0.1:28429/<16-character id>`. When calling from outside, replace the host part with the real address — that host is printed so you can `curl` it right there, and is not the address the listener binds.
+Registering prints a URL of the form `http://127.0.0.1:28429/<16-character id>`. When calling from outside, replace the host part with the real address — that host is printed so you can `curl` it right there, and is not the address the listener binds. Use the returned path unchanged; do not add a `/webhook/` prefix.
 
 | Option | Meaning |
 |---|---|
@@ -192,6 +193,8 @@ Registering prints a URL of the form `http://127.0.0.1:28429/<16-character id>`.
 | `--persistent` | Kept across restarts (by default it disappears on restart). If you also set `--auth-token`, that token is stored in plain text in `~/.tasty/webhooks.toml` |
 | `--ttl-secs <secs>` / `--count <N>` | Time limit / **accepted** call count limit (one of the two). A rejected token (`401`) and a method that is not allowed (`405`) do not spend the count |
 | `--auth-location query\|bearer\|body\|header` + `--auth-token` (+ `--auth-key`) | Optional authentication. No auth if not set |
+
+Omit both `--ttl-secs` and `--count` for unlimited calls. `--persistent` can be combined with either limit; restarting restores registrations whose time or call allowance has not expired.
 
 Check the available handler ids with `tasty hook-handler list`. `--sequence` is a JSON list of Tasty-internal actions (send a notification, send text, etc.) written in order.
 
@@ -204,12 +207,14 @@ The calling service receives a status code and a fixed response message. The res
 | Code | Meaning |
 |---|---|
 | 200 `received` | Accepted (the action runs in the background) |
-| 401 | Authentication failed (repeat it and you are blocked with 429) |
+| 401 `unauthorized` | Authentication failed (repeat it and you are blocked with 429) |
 | 404 | Unknown URL |
 | 405 | Method not allowed |
 | 410 | Time or count limit expired |
 | 413 | The body exceeded the per-request size cap (1 MiB by default) |
-| 429 | The same source failed (`401`, `404` or `405`) 20 or more times in 10 seconds and is blocked for 60 seconds |
+| 429 | The same source failed (`401`, `404`, `405` or `413`) 20 or more times in 10 seconds and is blocked for 60 seconds |
+
+The body size cap is checked before authentication. An oversized request receives `413 payload too large` even without a token, and no action runs. This cap limits each request, not the number of simultaneous connections.
 
 The block lives in memory only — restart Tasty and the remaining block time is gone, so that source starts over.
 
