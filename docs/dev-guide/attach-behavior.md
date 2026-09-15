@@ -35,7 +35,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 - **끊긴 holder 는 재attach 를 막지 못한다** ([ADR-0157](../adr/0157-a-disconnected-holder-does-not-block-a-reattach.md)). inbound 한 배치(`PumpOutcome`)의 적용 순서는 attach 결선이 먼저, 연결 종료 *정리*가 마지막이다 — 끊긴 client 의 잔여 입력 프레임이 그 client 의 점유가 살아 있는 동안 적용돼야 하기 때문이다. 그래서 한 배치에 "C1 끊김" 과 "C2 attach" 가 함께 실리면 C2 가 곧 사라질 C1 의 lock 에 막힌다. 이를 막기 위해 두 pump(`App::apply_stream_outcome` · `boot::headless_stream::apply`)가 배치 **머리**에서 `mark_clients_disconnected` 로 *사실만* 먼저 알리고, `acquire`/`acquire_workspace` 는 자기를 막고 선 holder 가 그 표시를 가지면 그 자리에서 점유를 회수한다. 회수는 경쟁이 있을 때만 하므로 경쟁이 없는 잔여 입력은 그대로 처리된다. 표시는 `release_all_for_client` 가 lock 과 함께 지워 한 배치를 넘지 않는다.
 - **입력 격리**: `apply_send_to_surface` 가 `is_hard_occupied` 면 서버 로컬 입력 거부, client 입력만 `feed_attached_input` 우회 경로로 PTY 도달. (soft 점유는 write 를 막지 않는다 — hard 만 격리.)
 - **점유는 핸드셰이크가 검증된 뒤에만 잡힌다** ([ADR-0116](../adr/0116-attach-handshake-validated-before-occupancy.md)). 점유를 잡는 유일한 진입점은 `dispatch_stream_attach` → `attach_workspace_for_stream`/`attach_surface_for_stream` 인데, 그 **앞에** `tcp_ipc_server.rs::validate_stream_proto` 가 있다. `stream.open` params 의 `proto` 가 `STREAM_PROTO` 와 다르면(생략 시 serde default `0`) attach 를 dispatch 하지 않고 `StreamAck{ok:false, proto, error}` 로 거절한다 — 점유가 애초에 잡히지 않는다. 없을 때의 문제: 프로토콜이 안 맞는 client 는 그 점유를 **쓸 수 없는데도** 가져가고, 소켓을 닫지 않는 구버전/hung peer 면 아래 EOF 가 오지 않아 heartbeat TTL(20초)까지 그 workspace 가 붙잡혀 정상 attach 가 `already_attached` 로 거절됐다. 거절 ack 는 client(`StreamConnection::open_with`)가 이미 검사하는 형식이라 실패 사유가 그대로 사용자에게 전달된다.
-- **self-attach 는 그보다 앞, client 측 dispatch 에서 거절된다**: `attach_client.rs::reject_self_attach` 가 요청 포트를 이 인스턴스의 IPC 포트와 비교한다(debug/release 공통). 이 경로의 핸드셰이크는 GUI 메인 스레드에서 동기 블로킹으로 도는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 **반드시 실패**하고, 실패하는 동안 대상 workspace 점유만 남는다. 서버 accept 층에서는 막을 수 없다 — 자기 자신과 `ssh -L` 로 도착하는 정상 원격 mirror 는 둘 다 loopback 연결이라 구분되지 않고, 요청 포트와 자기 IPC 포트를 함께 아는 것은 client 측 dispatch 뿐이다. 로컬 self-mirror 검증은 별도 프로세스인 `tasty debug attach` 로 한다.
+- **self-attach 는 그보다 앞, client 측 dispatch 에서 거절된다**: `attach_client/dispatch.rs::connect_unless_self` 가 요청 포트를 이 인스턴스의 IPC 포트와 비교한다(debug/release 공통). 이 경로의 핸드셰이크는 GUI 메인 스레드에서 동기 블로킹으로 도는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 **반드시 실패**하고, 실패하는 동안 대상 workspace 점유만 남는다. 서버 accept 층에서는 막을 수 없다 — 자기 자신과 `ssh -L` 로 도착하는 정상 원격 mirror 는 둘 다 loopback 연결이라 구분되지 않고, 요청 포트와 자기 IPC 포트를 함께 아는 것은 client 측 dispatch 뿐이다. 로컬 self-mirror 검증은 별도 프로세스인 `tasty debug attach` 로 한다.
 
 ## 초기 스냅샷 + delta
 
@@ -570,3 +570,26 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 - SSH 프로필 관리: [`features/ssh-tool`](../features/remote-profiles/index.md)
 - 로컬 self attach 격리: [`dev-guide/debug-ipc`](debug-ipc.md)
 </content>
+
+
+## Self-attach 거절 검증
+
+GUI의 IPC/user dispatch 두 경로는 `attach_client/dispatch.rs::dispatch_attach`를 공유한다.
+자기 포트면 `RejectedSelf`로 반환하고 connector를 호출하지 않는다. 다른 포트면 connector를
+정확히 한 번 호출하며 성공값/오류를 그대로 돌려준다. IPC는 성공해도 포커스를 옮기지 않고,
+사용자 경로만 기존처럼 새 mirror를 포커스한다. 이 분기는 raw stream client의 정상 로컬
+attach와 별개다.
+
+정확성 시험은 connector 진입 횟수와 결과를 직접 단언한다. debug GUI의 통합시험은
+`attach_dispatch_completed` 로그에서 자기 port/workspace/source에 대응하는 **완료**와
+`connector_entries=0`, `outcome=rejected_self`를 확인한다. 이 기록은 dispatcher 반환 뒤에
+생기며, connector에 들어갔으면 실패해 돌아와도 진입 횟수가 남는다. 기록 구현은 모듈 선언에
+`cfg(debug_assertions)`가 붙은 별도 `dispatch/debug_completion.rs`에 있다. 새 IPC나 전역
+진행 카운터는 없다.
+
+`tests/attach_silent_disconnect.rs`는 점유가 잡히지 않는 관측과 정상 재attach도 유지한다.
+6초 관측 창의 RTT 수열·최악·중앙값·2초 이상 표본 수는 진단이며 정확성 단언에 쓰지 않는다.
+GUI debug 시험의 완료 기록이 없으면 queued 응답만으로 통과하지 않는다. headless에서
+GUI 큐가 처리되지 않는 현재 동작은 별도 시험 이름으로 검사하므로, 그 초록을 GUI 거절
+검증으로 세지 않는다. release의 공통 분기는 유닛시험 대상이며 debug 로그를 요구하는
+통합시험은 debug 조합에만 있다. 근거와 대안은 [ADR-0284](../adr/0284-self-attach-is-judged-by-connector-entry.md).

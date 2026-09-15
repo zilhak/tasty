@@ -412,6 +412,11 @@ impl TastyInstance {
         }
     }
 
+    /// Read a bounded, already-drained diagnostic record without issuing another IPC.
+    pub fn find_stderr(&self, pred: impl Fn(&str) -> bool) -> Option<String> {
+        self.stderr.find(pred)
+    }
+
     /// Send a JSON-RPC request and return the result value.
     /// Retries on timeout (event loop may be slow when window is unfocused).
     pub fn call(&self, method: &str, params: Value) -> Value {

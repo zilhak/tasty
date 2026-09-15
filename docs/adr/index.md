@@ -262,6 +262,7 @@
 | 0279 | [File dispatch retains its origin through completion](0279-file-dispatch-retains-origin-through-completion.md) | Accepted | 2026-09-15 | file-handler, focus, routing, lifecycle |
 | 0281 | [웹훅 body 상한의 선행 가정 오류와 미충족 연결 정리를 기록한다](0281-webhook-parser-cap-and-connection-drain.md) | Proposed | 2026-09-15 | webhook, body-limit, tiny-http, connection-drain, resource-bound, adr-0200 |
 | 0282 | [Namespace 호출은 owner와 필요한 활성 IPC hook extension만 시작한다](0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md) | Accepted | 2026-09-15 | ipc, plugins, lifecycle, headless |
+| 0284 | [Self-attach 거절은 RTT가 아니라 connector 진입 사건으로 판정한다](0284-self-attach-is-judged-by-connector-entry.md) | Accepted | 2026-09-15 | testing, attach, flake, diagnostics, connector, adr-0181 |
 | 0288 | [Codex 부모에게 child 상태를 App Server 도구 결과로 전달한다 — ADR-0266의 Codex 부모 push 주체 개정](0288-codex-parent-tool-output-completion.md) | Superseded by 0291 | 2026-09-16 | codex, app-server, completion, outbox, lifecycle, plugin |
 | 0289 | [markdown 문서는 `<base href>` 를 싣지 않는다 — 그것이 문서 안 앵커를 문서 밖으로 보낸다](0289-the-markdown-document-carries-no-base-href.md) | Accepted | 2026-09-19 | markdown, plugin, webview, navigation, anchors, toc, footnotes, cross-platform, adr-0249, adr-0065 |
 | 0290 | [2026-09-17 결정이 divergence alias 집합과 스케일 밖 값 집합을 닫았다](0290-settled-role-gaps-close-the-divergence-and-off-scale-sets.md) | Accepted | 2026-09-19 | design-tokens, color, semantic, role, font-size, opacity, status-dot, theme, adr-0033, adr-0126 |
