@@ -459,7 +459,7 @@ pub(crate) fn handle_spawn(
         json!({"surface_id": child_sid, "text": cmd}),
     )?;
 
-    // 3) 완료 시(codex-idle/process-exit) parent 에게 1 회성 알림 등록.
+    // 3) idle/needs-input/process-exit 완료 알림의 형제 once hook 등록.
     register_notify_hooks(host, parent_surface, child_sid, "spawn");
 
     // 4) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
@@ -474,7 +474,7 @@ pub(crate) fn handle_spawn(
 }
 
 /// 완료 알림 hook 의 command 문자열 — 등록 시점과 fire 후 정리 시점이 **정확히 같은
-/// 값**을 만들어야 command 일치 정리가 성립한다. 형제(codex-idle/process-exit)는 모두
+/// 값**을 만들어야 command 일치 정리가 성립한다. 형제(codex-idle/needs-input/process-exit)는 모두
 /// 이 동일 문자열을 command 로 갖는다.
 fn notify_caller_command(caller_surface: u32, target_surface: u32, kind: &str) -> String {
     format!(
@@ -645,7 +645,7 @@ fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &
 /// 자식 인구는 [`tasty_plugin_agent_common::children::spawn_census`] 가 센다 —
 /// 그 판정(확정 stale 만 센다 · 못 읽으면 `None`)이 짝의 두 crate 에 주석까지
 /// 글자 그대로 두 벌 있었다. 여기 남는 것은 **문구 조립**뿐이다: 카탈로그
-/// namespace 와 placeholder 형태가 둘 다 crate 마다 달라서 합칠 수 없다.
+/// namespace 와 기존 placeholder 형식을 보존해 공개 카탈로그 호환성을 유지한다.
 fn compute_spawn_warning(
     host: &HostHandle,
     parent_surface_id: u32,
@@ -744,7 +744,7 @@ pub(crate) fn handle_broadcast(
 }
 
 /// ★ 짝 crate(claude)의 같은 함수는 `error_scan` 을 내리고 응답을 `{killed: true}`
-/// 로 바꾼다 — 앞은 의도된 비대칭(여기 그 하위 시스템이 없다), 뒤는 아직 안 정해진
+/// 로 바꾼다 — 앞은 의도된 비대칭(여기 그 하위 시스템이 없다), 뒤는 공개 응답 호환성을 위해 유지하는
 /// 차이다. 근거는 `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채 남는 것" 에
 /// 있다. 이쪽 shape 을 고정하는 것은 `kill_response_is_the_host_response_verbatim`
 /// 이고, 저쪽에 짝 시험이 있다.
@@ -2517,7 +2517,7 @@ trusted_hash = "sha256:xyz"
 
     /// 호스트 응답을 **그대로** 흘린다 — `{"children": […]}` 째로 나가고 필드명도
     /// 호스트 것이다. 짝 crate(claude)는 remap 한 bare 배열로 답한다. 그 차이는
-    /// 아직 안 정해진 것이라, 정해지기 전에 조용히 바뀌지 않도록 여기서 못박는다.
+    /// 기존 공개 호출자의 호환성을 위해 유지하며, 조용히 바뀌지 않도록 못박는다.
     #[test]
     fn children_response_is_the_host_response_verbatim() {
         let out = handle_children(&ShapeHost, &json!({ "surface": 1 }), &test_translator())

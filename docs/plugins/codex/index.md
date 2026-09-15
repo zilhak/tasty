@@ -69,7 +69,7 @@
 ## 인터페이스
 
 - **AI Agent / 사용자**: `tasty codex launch|spawn|tell|broadcast|kill|respawn|children|parent|hook|install …`.
-- 일반 흐름: `spawn --prompt "…"` → (선택) `tell` → 완료 알림 대기(caller surface 에 자동 주입) → 출력 확인.
+- 일반 흐름: `spawn --prompt "…"` → (선택) `tell` → 완료 알림 대기(caller의 completion-log 조회) → 출력 확인.
 
 ## 비-목표
 

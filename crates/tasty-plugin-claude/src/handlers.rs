@@ -390,8 +390,8 @@ pub(crate) fn handle_children<H: HostCall>(
 /// soft 점유 해제 + registry 제거). `child_index` → 호스트 `child` 매핑.
 /// 종료된 surface 는 error scanner 에서도 즉시 내린다.
 /// ★ `error_scan` 을 내리는 것은 **의도된 비대칭**이다(codex 에 그 하위 시스템이
-/// 없다). 그 옆의 응답 shape 차이(`{killed: true}` vs 호스트 응답 그대로)는 아직
-/// 안 정해졌고, 근거는 `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채
+/// 없다). 그 옆의 응답 shape 차이(`{killed: true}` vs 호스트 응답 그대로)는 공개
+/// 호출자의 호환성을 위해 유지하며, 근거는 `tasty_plugin_agent_common` 의 crate doc "짝이 갈린 채
 /// 남는 것" 에 있다. 이쪽 shape 을 고정하는 것은
 /// `kill_response_is_reduced_to_a_killed_flag` 이고, 저쪽에 짝 시험이 있다.
 pub(crate) fn handle_kill<H: HostCall>(
@@ -888,7 +888,7 @@ pub(crate) fn handle_spawn(
 /// 자식 인구는 [`tasty_plugin_agent_common::children::spawn_census`] 가 센다 —
 /// 그 판정(확정 stale 만 센다 · 못 읽으면 `None`)이 짝의 두 crate 에 주석까지
 /// 글자 그대로 두 벌 있었다. 여기 남는 것은 **문구 조립**뿐이다: 카탈로그
-/// namespace 와 placeholder 형태가 둘 다 crate 마다 달라서 합칠 수 없다.
+/// namespace 와 기존 placeholder 형식을 보존해 공개 카탈로그 호환성을 유지한다.
 fn compute_spawn_warning(
     host: &HostHandle,
     parent_surface_id: u32,
@@ -1092,7 +1092,7 @@ mod tests {
     /// 한동안 이쪽이 `Malformed { raw, .. }` 로 키를 버려서 정확히 그랬고, 짝
     /// plugin(codex)은 처음부터 댔다. 같은 이름의 시험이 그쪽에도 있다: 두 사본이
     /// **정보량**을 함께 고정한다(문구·placeholder 형태는 여전히 crate 마다 다르고,
-    /// 그 축은 `tasty-plugin-agent-common` 의 crate doc 이 유예한 것이다).
+    /// 그 축은 `tasty-plugin-agent-common` 의 crate doc 이 호환성을 위해 보존하는 것이다).
     ///
     /// 이 판정을 거치는 자리는 **넷**이다. 나머지 둘은 훅 경로다: 이쪽의
     /// `hook.rs::resolve_surface_id_from` 은 env 폴백이 더 붙어 있고, codex 쪽의
@@ -1942,8 +1942,8 @@ mod tests {
 
     /// 응답은 **bare 배열**이고, 호스트 `surface_id` 는 `child_surface_id` 로
     /// remap 되며, 자식마다 foreground 정보가 덧씌워진다. 짝 crate(codex)는 호스트
-    /// 응답을 그대로 흘린다 — 그 차이는 지금 의도된 것이 아니라 **아직 안 정해진**
-    /// 것이라, 정해지기 전에 조용히 바뀌지 않도록 여기서 못박는다.
+    /// 응답을 그대로 흘린다. 기존 공개 응답을 호환성 때문에 유지하므로,
+    /// 그 변환이 조용히 바뀌지 않도록 여기서 못박는다.
     #[test]
     fn children_response_is_a_bare_remapped_array() {
         let out = handle_children(&ShapeHost, &json!({ "surface_id": 1 }), &test_translator())
