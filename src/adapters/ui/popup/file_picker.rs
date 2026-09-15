@@ -50,6 +50,11 @@ pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 pub(crate) const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
 pub(crate) const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
 
+// FilePickerFrame/FpRow 열 치수 — gallery specimen 과 같은 구조 폭.
+const ROW_H: LogicalPx = LogicalPx(28.0);
+const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
+const MOD_COL_W: LogicalPx = LogicalPx(108.0);
+
 // 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
 // `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
 use tasty_ui_widgets::tokens::{CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE};
@@ -344,8 +349,10 @@ fn entry_row(
 ) -> Option<FilePickerAction> {
     let th = props.theme;
     let selected = props.selected.iter().any(|s| s == &entry.name);
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), ROW_H.value()),
+        egui::Sense::click(),
+    );
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, th.surface_active().to_egui());
@@ -364,7 +371,7 @@ fn entry_row(
     let glyph_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_min_size(
         egui::pos2(
-            rect.left() + th.spacing_sm.value(),
+            rect.left() + th.spacing_md.value(),
             rect.center().y - glyph_size * 0.5,
         ),
         egui::vec2(glyph_size, glyph_size),
@@ -372,27 +379,40 @@ fn entry_row(
     glyph
         .image(glyph_size, glyph_color.into())
         .paint_at(ui, icon_rect);
-    ui.painter().text(
-        egui::pos2(icon_rect.right() + 6.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        &entry.name,
+    // 오른쪽의 고정 열부터 배치하고 이름만 남은 폭에서 말줄임한다.
+    let modified_right = LogicalPx(rect.right()) - th.spacing_md;
+    let size_right = modified_right - MOD_COL_W - th.spacing_sm;
+    let name_right = size_right - SIZE_COL_W - th.spacing_sm;
+    let name_left = LogicalPx(icon_rect.right()) + th.spacing_sm;
+    let name_color = if selected {
+        th.text_primary().to_egui()
+    } else {
+        th.text_secondary().to_egui()
+    };
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        entry.name.clone(),
         egui::FontId::proportional(th.font_size_body.value()),
-        if selected {
-            th.text_primary().into()
-        } else {
-            th.text_secondary().into()
-        },
+        name_color,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(
+        (name_right - name_left).max(LogicalPx(0.0)).value(),
+    );
+    let galley = ui.fonts(|f| f.layout_job(job));
+    ui.painter().galley(
+        egui::pos2(name_left.value(), rect.center().y - galley.size().y * 0.5),
+        galley,
+        name_color,
     );
     let mono = egui::FontId::monospace(th.font_size_caption.value());
     ui.painter().text(
-        egui::pos2(rect.right() - 116.0, rect.center().y),
+        egui::pos2(size_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         &entry.size_display,
         mono.clone(),
         th.text_muted().into(),
     );
     ui.painter().text(
-        egui::pos2(rect.right() - th.spacing_sm.value(), rect.center().y),
+        egui::pos2(modified_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         &entry.modified_display,
         mono,

@@ -38,17 +38,25 @@ fn painted(
     crumbs: &[CrumbView],
     mode: FilePickerMode<'_>,
 ) -> (egui::Rect, Vec<(String, egui::Rect, egui::Rect)>) {
+    painted_entries(size, crumbs, mode, &entries())
+}
+
+fn painted_entries(
+    size: egui::Vec2,
+    crumbs: &[CrumbView],
+    mode: FilePickerMode<'_>,
+    entries: &[FilePickerEntryView],
+) -> (egui::Rect, Vec<(String, egui::Rect, egui::Rect)>) {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     let content = content_rect(size);
-    let entries = entries();
     let selected = vec!["file-1.toml".to_string()];
     let props = FilePickerProps {
         theme: &th,
         remote_host: None,
         crumbs,
         state: FpViewState::Loaded,
-        entries: &entries,
+        entries,
         selected: &selected,
         mode,
         owns_escape: false,
@@ -227,4 +235,44 @@ fn crumb_slots_cover_every_ancestor_exactly_once() {
         3,
         "접을 것이 없으면 접지 않는다"
     );
+}
+
+/// 긴 파일명과 짧은 파일명 모두 크기·날짜 열을 덮지 않고 온전히 보인다.
+fn assert_filenames_stay_inside_the_name_column(size: egui::Vec2) {
+    for name in ["x".repeat(120) + ".toml", "notes.md".to_string()] {
+        let rows = vec![FilePickerEntryView {
+            name: name.clone(),
+            is_dir: false,
+            size_display: "0 B".into(),
+            modified_display: "2026-09-14".into(),
+        }];
+        let (content, shapes) = painted_entries(
+            size,
+            &deep_crumbs(1, "d"),
+            FilePickerMode::Open { selection_text: "" },
+            &rows,
+        );
+        let case = format!("{size:?} name_len={}", name.len());
+        for label in [name.as_str(), "0 B", "2026-09-14"] {
+            assert_fully_visible(content, &shapes, label, &case);
+        }
+        let name_rect = shapes.iter().find(|(text, _, _)| text == &name).unwrap().1;
+        for label in ["0 B", "2026-09-14"] {
+            let meta_rect = shapes.iter().find(|(text, _, _)| text == label).unwrap().1;
+            assert!(
+                name_rect.right() < meta_rect.left(),
+                "{case}: {name_rect:?} overlaps {meta_rect:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn filenames_stay_inside_the_name_column_at_default_width() {
+    assert_filenames_stay_inside_the_name_column(egui::vec2(640.0, 480.0));
+}
+
+#[test]
+fn filenames_stay_inside_the_name_column_at_narrow_width() {
+    assert_filenames_stay_inside_the_name_column(egui::vec2(400.0, 360.0));
 }

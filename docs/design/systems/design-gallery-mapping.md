@@ -719,6 +719,10 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | `FpCrumbs elide` | `crumbs`(`DEEP_CRUMBS`) | root + `…` + 마지막 두 성분, 성분 `CRUMB_MAX_W`(180) 말줄임, path bar 는 refresh 가 먼저 자리 잡고 crumbs 는 남은 폭으로 clip |
 | `overlays-windows.jsx` "Save mode — one confirm, in the footer" | `draw_save_mode` | 4 프레임(new · picked · edited · deep) + Meta + Note |
 
+본체 `src/adapters/ui/popup/file_picker.rs::entry_row`도 `FpRow`의 오른쪽 고정 열과
+이름 가변 열 배치를 따른다. 이름은 남은 열 폭에서 egui 단일 행 galley로 말줄임하며,
+선택·확정에 사용하는 원래 이름은 보존한다.
+
 **갤러리 vs 디자인 차이**: 긴 파일명 말줄임은 jsx `text-overflow:ellipsis`(CSS 네이티브)
 대신 `elide()`(문자 단위 폭 측정 후 컷 + `…`)로 근사한다 — 브레드크럼 세그먼트별
 `maxWidth:180` ellipsis 도 같은 `elide()` 로 근사한다. 갤러리의 가운데 생략은 jsx 와 같이

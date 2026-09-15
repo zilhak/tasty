@@ -354,6 +354,21 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(HOST_KB_IMPORT_EXPORT, "PLUGIN_DOT_GAP"),
         Side::Lit(GALLERY_KB_IMPORT_EXPORT, "PLUGIN_DOT_GAP"),
     ),
+    (
+        "파일 피커 목록 행 높이",
+        Side::Lit(HOST_FILE_PICKER, "ROW_H"),
+        Side::Lit(GALLERY_FILE_PICKER, "ROW_H"),
+    ),
+    (
+        "파일 피커 크기 열 폭",
+        Side::Lit(HOST_FILE_PICKER, "SIZE_COL_W"),
+        Side::Lit(GALLERY_FILE_PICKER, "SIZE_COL_W"),
+    ),
+    (
+        "파일 피커 수정일 열 폭",
+        Side::Lit(HOST_FILE_PICKER, "MOD_COL_W"),
+        Side::Lit(GALLERY_FILE_PICKER, "MOD_COL_W"),
+    ),
 ];
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
@@ -559,10 +574,11 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 52 -> 50: 같은 화면의 두 쌍(녹화 슬롯 높이 24 · 카드 패딩 14)이 사본이 아니게 됐다. 디자인이
     // 두 치수에 semantic 별칭 토큰을 열어(`kb-ie-slot-height` → `control-height-tab`,
     // `kb-ie-notice-inset` → `space-md`, 14 는 12 로 스냅) 양쪽이 Theme 을 읽는다.
+    // 파일 피커 행 높이·크기 열·수정일 열을 본체에 전사해 세 쌍이 더해졌다.
     assert_eq!(
         COPIED.len(),
-        50,
-        "사본 명부가 {} 쌍이다(기록 50). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        53,
+        "사본 명부가 {} 쌍이다(기록 53). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );

@@ -83,6 +83,16 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
   (`draw_file_picker_view` 의 `can_open`), wrapper 의 `apply_action` 도 동일 조건을 다시
   확인한다(방어적 중복 검증). 디렉토리는 더블클릭으로만 진입한다.
 
+### 목록의 긴 파일명
+
+이름 열은 크기·수정일 열을 제외한 남은 폭을 사용하고, 긴 이름은 끝을 `…`로 말줄임한다.
+말줄임은 표시만 바꾼다 — 선택·더블클릭·확정은 전체 파일명을 사용한다. 열 배치는
+[갤러리 매핑](../../design/systems/design-gallery-mapping.md)의 `FpRow`를 따른다.
+`src/adapters/ui/popup/file_picker/layout_tests.rs`의 `filenames_stay_inside_the_name_column_at_default_width`와
+`filenames_stay_inside_the_name_column_at_narrow_width`는
+기본·좁은 popup에서 긴 이름과 짧은 이름의 실제 galley가 콘텐츠 안에 있고 크기·수정일과
+겹치지 않는지 검사한다.
+
 ### 긴 경로 — 넘침은 path bar 가 흡수한다
 
 경로가 아무리 깊거나 성분 이름이 길어도 footer 의 취소·확정 버튼은 popup 안에 온전히 남는다.

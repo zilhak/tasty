@@ -1,4 +1,4 @@
-<!-- source-hash: fdd23e90bb54 -->
+<!-- source-hash: 0f24248889ac -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -18,6 +18,8 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` is HTML, and a folder is Explorer. If there are several candidates or none, the **Choose file handler** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
 
 A Surface opened from a file is split · moved · closed · restored on restart just like any other Surface. The Tab name becomes the file name.
+
+In the file chooser, long file names end with `…` so they do not overlap the size and modification date. This only changes the display; selecting or opening an entry still uses its full name.
 
 ## Explorer
 
