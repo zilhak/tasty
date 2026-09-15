@@ -253,9 +253,9 @@ impl GuiTestInstance {
         // 구분도. 그래서 GUI 부팅이 실패하면 "15 초 안에 port file 이 안 나왔다" 한 줄이
         // 전부였고, 디스플레이 부재처럼 **즉사하는** 흔한 실패까지 그 문장을 썼다.
         //
-        // ★ 이 포착은 spawn 단계에서만 쓰고 인스턴스에 안 싣는다 — 형제 둘과 다른 점이고,
-        // 이 회차가 바꾸지 않은 것이다. `join()` 을 안 부르므로 배출 스레드는 자식이 죽어
-        // 파이프가 EOF 를 낼 때 스스로 끝난다(이동 전 동작과 같다).
+        // 부팅 성공 뒤에는 인스턴스에 보관하여 이후 실패 진단에도 쓴다. 전용 인스턴스의
+        // `Drop` 은 자식 kill → wait 뒤 배출 스레드를 join 한다. 공유 `static` 인스턴스는
+        // Drop되지 않으며, 기존 atexit 정리 경로는 배출 스레드를 join하지 않는다.
         let mut stderr = StderrCapture::start(process.child().stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file (IPC ready)
