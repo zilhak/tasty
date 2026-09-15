@@ -46,6 +46,8 @@ sysinfo = "0.35"
 wasm-poc = []
 
 [dev-dependencies]
+tasty-i18n = { path = "../tasty-i18n" }
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
 tempfile = "3"
 # 로그 **레벨**을 시험이 관측하려고 쓴다 — "설치본이 번들보다 앞섰다" 는 경고가 실제로 warn
 # 으로 나가는지, 같은 버전일 때는 안 나가는지를 문자열이 아니라 이벤트로 확인한다

@@ -126,7 +126,7 @@ impl PluginProcess {
             log_file,
             log_clone,
         );
-        inject_plugin_data_env(&mut cmd, package, &log_path);
+        inject_plugin_data_env(&mut cmd, package, &log_path)?;
 
         // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에
         // 결박되므로(단명 부트 워커에서 직접 spawn 하면 그 스레드 종료 시 plugin
@@ -679,10 +679,17 @@ fn locale_env_for_child(
 
 /// plugin별 격리 디렉터리 env 주입. 디렉터리 생성은 호스트가 미리 보장한다 —
 /// plugin이 fs.write 권한 없이도 자기 영역만은 자유롭게 쓸 수 있도록.
-fn inject_plugin_data_env(cmd: &mut Command, package: &PluginPackage, log_path: &Path) {
+fn inject_plugin_data_env(
+    cmd: &mut Command,
+    package: &PluginPackage,
+    log_path: &Path,
+) -> io::Result<()> {
     let Some(home) = tasty_utils::path::tasty_home() else {
-        return;
+        return Ok(());
     };
+    // Resolve in the host before the child changes CWD, as tasty-settings does
+    // for shell integration. No canonicalization: the home need not exist yet.
+    let home = std::path::absolute(home)?;
     let data_dir = home.join("plugin-data").join(&package.manifest.id);
     let config_path = home
         .join("plugin-config")
@@ -706,6 +713,7 @@ fn inject_plugin_data_env(cmd: &mut Command, package: &PluginPackage, log_path: 
     // debug 실행 시 격리 붕괴). notify_log_path() 가 `TASTY_PARENT_HOME` 을
     // 최우선으로 보므로 writer(plugin)/reader(conductor) 경로는 계속 일치한다.
     cmd.env("TASTY_PARENT_HOME", &home);
+    Ok(())
 }
 
 /// 송신 스레드 — `req_rx` 로 들어오는 요청을 NDJSON 한 줄씩 `writer` 에 기록.
@@ -1285,3 +1293,6 @@ mod shutdown_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests_parent_home;

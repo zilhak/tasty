@@ -1,4 +1,4 @@
-<!-- source-hash: 9abc6b5a791d -->
+<!-- source-hash: 65a36553056f -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -179,6 +179,8 @@ to your file. Blank or missing entries keep the preceding text. Invalid TOML and
 files over 2 MiB are ignored with a warning. Restart Tasty after editing. Your file
 survives plugin upgrades. Do not duplicate the same plugin entries in the host's
 `ko.toml` or `pack.toml`.
+
+When you launch Tasty with a relative `TASTY_HOME`, plugins read user translations relative to the directory where you launched Tasty.
 
 ### Changing only some text of a built-in language
 

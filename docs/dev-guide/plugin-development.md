@@ -250,6 +250,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 
 | 환경변수 | 값 |
 |----------|-----|
+| `TASTY_PARENT_HOME` | host 데이터 루트. 상대 홈은 host CWD 기준 절대경로로 확정한다. 같은 루트에서 파생하는 DATA_DIR·CONFIG_PATH도 절대경로이며, 확정 실패는 spawn 오류다 |
 | `TASTY_PLUGIN_ID` | plugin id |
 | `TASTY_PLUGIN_DIR` | 본체 디렉터리(읽기 전용) |
 | `TASTY_PLUGIN_DATA_DIR` / `TASTY_PLUGIN_CONFIG_PATH` / `TASTY_PLUGIN_LOG_PATH` | 데이터·설정·로그 경로 |
