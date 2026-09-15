@@ -80,6 +80,7 @@ markdown / html surface 는 mesh 를 그리지 않고 native webview overlay 로
 | 로드가 안 끝나 안 보이는가 | 호스트 로그 — `WebView surface <id>: still hidden ... (nav_state=…)` — 드러나야 할 자리에 놓였는데 nav 가 `Done` 이 아닌 채로 이어질 때 surface 당 한 번 | warn |
 | 로드는 끝났는데 안 보이는가 | 호스트 로그 — Linux 에서 부모 창 밖에 그려지는 경우 `WebView surface <id>: GTK window realized without a GDK window` (navigation 은 정상 완료하므로 위 보류 줄은 안 남는다) | warn |
 | 위가 다 성공했는데 자리를 못 채우는가 (Linux) | **로그에 안 남는다 — 채널이 없다.** `xwininfo` 로 직접 잰다 (아래 "렌더 타깃 크기를 재는 법") | 없음 |
+| 로드는 끝났는데 안 보이는가 | 호스트 로그 — Linux 에서 부모 창 밖에 그려지는 경우 `WebView surface <id>: GTK window realized without a GDK window` (navigation 은 정상 완료하므로 위 보류 줄은 안 남는다). Windows 의 배치·표시 API 실패는 `WebView2 SetBounds failed` / `SetWindowPos failed` / `WebView2 SetIsVisible failed` — 이 세 줄은 surface id 를 안 싣고, navigation 완료 여부와 독립적으로 발생한다 | warn |
 
 보류 줄(`still hidden`)의 판정은 **redraw 안에서** 일어난다 — 매 프레임 "드러나야 할 자리에 있는데 nav 가 `Done` 이 아닌" surface 를 모아 시간을 재는 방식이다. 그래서 이 줄이 보장하는 범위는 **프레임이 도는 동안까지**다: 렌더 루프가 그 지점에 닿지 못하면(프레임이 아예 안 돌면) 자리가 비어 있어도 warn 은 침묵한다. 그때 비어 있음의 흔적은 이 표가 아니라 hang 진단(`hang-*.log`) 쪽에 남는다.
 

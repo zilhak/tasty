@@ -54,6 +54,8 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [context-menu](context-menu.md) | OS 네이티브 컨텍스트 메뉴 |
 | [timer-hub](timer-hub.md) | 중앙 타이머 허브 — 메인 루프 시간축 폴링 등록/실행, Strict·Lax, 대기 전략·waker poison 관측 |
 | [crash-diagnostics](crash-diagnostics.md) | 크래시 진단·로그 위치 · GUI/headless 진단 범위 |
+| [timer-hub](timer-hub.md) | 중앙 타이머 허브 — 메인 루프 시간축 폴링 등록/실행, Strict·Lax, 대기 전략 |
+| [crash-diagnostics](crash-diagnostics.md) | 크래시 진단·로그 위치·WebView 로드/배치/표시 실패 |
 | [memory-leak-soak](memory-leak-soak.md) | 메모리 누수 soak 테스트 — 4계층 지표·판정·플랫폼별 attribution |
 
 ## IPC / Agent
