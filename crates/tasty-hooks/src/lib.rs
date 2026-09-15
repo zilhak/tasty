@@ -234,6 +234,12 @@ impl HookManager {
         self.hooks.len() < len_before
     }
 
+    /// Retire every binding owned by a closed surface, including persistent hooks.
+    /// Bindings already returned by `check_and_fire` remain available to execute.
+    pub fn remove_surface_hooks(&mut self, surface_id: u32) {
+        self.hooks.retain(|h| h.surface_id != surface_id);
+    }
+
     pub fn list_hooks(&self, surface_id: Option<u32>) -> Vec<&SurfaceHook> {
         self.hooks
             .iter()
@@ -582,6 +588,20 @@ mod tests {
     fn hook_manager_remove_nonexistent() {
         let mut manager = HookManager::new();
         assert!(!manager.remove_hook(999));
+    }
+
+    #[test]
+    fn closed_surface_hooks_are_retired_without_losing_fired_bindings() {
+        let mut manager = HookManager::new();
+        manager.add_hook(1, HookEvent::ProcessExit, shell("exit notice"), true);
+        manager.add_hook(1, HookEvent::Bell, shell("persistent"), false);
+        manager.add_hook(2, HookEvent::Bell, shell("other surface"), false);
+        let fired = manager.check_and_fire(1, &[HookEvent::ProcessExit]);
+        manager.remove_surface_hooks(1);
+        assert!(manager.list_hooks(Some(1)).is_empty());
+        assert_eq!(manager.list_hooks(Some(2)).len(), 1);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].binding.to_display_string(), "exit notice");
     }
 
     #[test]

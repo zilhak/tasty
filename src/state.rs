@@ -1503,6 +1503,7 @@ impl AppState {
         }
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);
+        engine.hook_manager.remove_surface_hooks(surface_id);
         engine.forget_shell_integration_hint(surface_id);
         // waker dedup 게이트 제거 — 미제거 시 surface 마다 영구 누적(누수).
         if let Some(factory) = engine.waker_factory.as_ref() {

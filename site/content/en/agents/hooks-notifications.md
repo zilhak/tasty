@@ -8,6 +8,8 @@ Get a notification when a build finishes, or run a command when a message appear
 
 ## Surface hooks
 
+Shell-exit hooks also run in headless instances. Closing a surface removes its remaining hook registrations, including hooks without `--once`.
+
 Run a shell command when an event occurs on a specific Surface (terminal).
 
 ```sh

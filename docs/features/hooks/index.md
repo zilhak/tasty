@@ -64,7 +64,8 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 
 - **once** 옵션: true 면 한 번 실행 후 자동 삭제. 기본은 persistent.
 - **비동기 실행**: 훅 동작은 백그라운드에서(메인 루프 블로킹 없음). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.
-- ProcessExit 은 surface 자동 닫기까지(surface→tab→pane→workspace 계층 정리, 마지막이면 새 셸 spawn).
+- ProcessExit은 GUI/headless 모두에서 surface 자동 닫기까지 수행한다(surface→tab→pane→workspace 계층 정리, 마지막이면 새 셸 spawn). headless는 종료 hook의 binding을 먼저 모으고 surface를 닫은 뒤 실행한다.
+- surface가 닫히면 그 surface의 once·persistent hook 등록도 제거한다. 이미 발화해 복사한 binding은 실행을 마치며, 다른 surface의 hook은 유지한다.
 
 #### 바인딩 (핸들러 참조 vs 인라인 셸)
 

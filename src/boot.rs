@@ -402,7 +402,7 @@ fn handle_terminal_output(
     crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
 }
 
-/// PTY drain 이 돌려준 `CoreEvent` 에서 `output-match` 훅만 골라 발화한다.
+/// PTY drain의 output-match와 process-exit 훅을 발화한다.
 ///
 /// gui 는 `App::cascade_terminal_output_match`(`app/dispatch_domain.rs`)가 하는
 /// 일이고, headless 에는 그 cascade 층이 없다(`app/dispatch_domain_stubs.rs`).
@@ -411,25 +411,39 @@ fn handle_terminal_output(
 /// 파일에 묶여 함께 죽어 있었다. `tasty set hook --event output-match:...` 는
 /// CLI 로 노출된 에이전트 기능이므로 headless 에서도 동작해야 한다
 /// (`docs/identity.md` 원칙 2).
+/// process-exit도 GUI의 종료 cascade와 같이 알리고 surface를 정리한다.
+/// 종료 binding은 먼저 모으고 surface를 닫은 뒤 실행해, 완료 알림이 죽은
+/// surface를 살아 있다고 보고 형제 hook을 다시 등록하지 않게 한다.
 ///
 /// 이 output-match 함수는 기존처럼 직접 훅 실행만 수행한다. process-exit는
 /// 공용 종료 처리에서 HookFired를 enqueue하며, 위 PTY drain이 headless의
 /// host-event 소비자를 호출해 task waiter를 처리한다. view/plugin broadcast는
 /// headless 소비 범위에 포함하지 않는다.
 #[cfg(not(feature = "gui"))]
-fn fire_output_match_hooks(
+fn fire_terminal_hooks(
     app: &crate::app::App,
+    state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
     events: Vec<crate::core::intent::CoreEvent>,
 ) {
     let injector = app.core.host_ipc_injector.get().cloned();
     for event in events {
-        let crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } = event else {
-            continue;
+        let (surface_id, hook_event, exited) = match event {
+            crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } => {
+                (surface_id, tasty_hooks::HookEvent::OutputMatch(text), false)
+            }
+            crate::core::intent::CoreEvent::TerminalProcessExited { surface_id } => {
+                (surface_id, tasty_hooks::HookEvent::ProcessExit, true)
+            }
+            _ => continue,
         };
         let fired = engine
             .hook_manager
-            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::OutputMatch(text)]);
+            .check_and_fire(surface_id, &[hook_event]);
+        if exited {
+            // intent-exempt: headless PTY 종료 이벤트의 cascade — GUI와 같은 종료 정리 경계다.
+            state.close_surface_by_id_no_snapshot(engine, surface_id, true);
+        }
         for f in fired {
             crate::hook_handler::trigger::execute_binding(
                 &f.binding,
