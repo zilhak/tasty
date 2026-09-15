@@ -1,3 +1,4 @@
+mod checked;
 #[cfg(test)]
 mod cli_entry_tests;
 // debug 빌드에만 있는 CLI 진입점 시험 — 배치 규율상 별도 파일이다(그 파일의 doc 참조).
@@ -72,6 +73,10 @@ pub mod plugin;
 pub mod popup;
 pub mod session;
 
+#[cfg(feature = "gui")]
+pub(crate) use checked::check_without_engine;
+pub(crate) use checked::{CheckedRequest, check_request};
+
 use std::borrow::Cow;
 
 use serde_json::json;
@@ -112,11 +117,9 @@ use crate::state::AppState;
 /// 게이트 3종(권한 / telemetry cap / rate limit)은 라우팅보다 **먼저** 돈다. plugin 이
 /// 호출한 명령이 권한을 통과하지 못하면 `permission_denied` 로 즉시 회신한다.
 ///
-/// 이 함수에 **도달하기 전에** 끝나는 경로도 있다 — GUI 앱의
-/// `App::dispatch_with_caller` 는 list 합산 응답 등을 여기 오기 전에 돌려준다. 그래서
-/// 같은 게이트가 그쪽 진입부에서도 돈다. 중복이 아니라 **경계가 둘**인 것이고, 거부는
-/// 바깥에서 단락되므로 안쪽 게이트가 다시 돌지 않는다. 그 순서를 지키는 계약은 가드
-/// `every_routing_entry_gates_before_it_answers` 가 소유한다.
+/// 직접 진입은 공통 게이트를 수행한다. 바깥에서 이미 검사한 경로는
+/// CheckedRequest를 넘겨 handle_checked_request로 실행한다(ADR-0277).
+#[cfg(test)]
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -124,33 +127,23 @@ pub fn handle_with_caller(
     request: &JsonRpcRequest,
     caller: &CallerContext,
 ) -> JsonRpcResponse {
-    let _ = core; // Phase D 진행 중 — 본 인자는 향후 도메인 핸들러 마이그레이션
-    // 에서 점진 사용. 현재는 *시그니처 통과* 만.
+    match check_request(core, state, engine, request, caller) {
+        Ok(checked) => handle_checked_request(core, state, engine, &checked),
+        Err(response) => response,
+    }
+}
+
+/// 공통 게이트를 통과한 동일 요청을 실행한다. 예산과 허용 관측을 다시 소비하지 않는다.
+pub(crate) fn handle_checked_request(
+    core: &mut crate::core::Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    checked: &CheckedRequest<'_>,
+) -> JsonRpcResponse {
+    let request = checked.request();
+    let caller = checked.caller();
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-
-    let (canonical, routed) = canonicalize_and_route(request);
-    let workspace_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
-
-    if let Some(resp) = check_permission_gate(core, engine, caller, canonical, workspace_id, &id) {
-        return resp;
-    }
-    if let Some(resp) = check_cap_gate(core, engine, caller, canonical, workspace_id, &id) {
-        return resp;
-    }
-    if let Some(resp) = check_rate_limit_gate(core, engine, caller, canonical, workspace_id, &id) {
-        return resp;
-    }
-
-    record_telemetry_and_audit(
-        core,
-        state,
-        engine,
-        caller,
-        canonical,
-        &request.params,
-        workspace_id,
-    );
-
+    let (_, routed) = canonicalize_and_route(request);
     let request = routed.as_ref();
 
     if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {
@@ -196,14 +189,11 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 /// 없으면 에이전트는 `-32001` 과 `data: null` 만 받고 무엇을 요청해야 하는지도,
 /// 요청할 자리도 알지 못한다 — 거부가 회복 불가능해진다.
 ///
-/// gui 는 이 자리에 **안 온다**: `src/app/ipc/caller_gate.rs` 의 step 1 이 모든 IPC
-/// 명령보다 먼저 `ensure_allowed` 로 Agent 를 거르고 거기서 같은 발행을 하며 팝업까지
-/// 띄운다. 헤드리스에는 그 step 이 없어 이 게이트가 **유일한 경계**이고, 그래서
-/// 발행이 여기 있어야 두 조합의 거부가 같은 봉투를 낸다(`elevation_error_data`).
-/// 창이 없으므로 팝업 enqueue 는 없고 레코드만 남는다 — 헤드리스에서도
-/// `approval.await`/`approval.list`/`approval.respond` 가 그 레코드에 닿는다.
+/// GUI·headless·plugin 진입점은 같은 게이트를 사용한다. 권한 부족의
+/// capability elevation은 공유 approval store에 기록된다.
 pub(crate) fn check_permission_gate(
     core: &mut crate::core::Core,
+    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
@@ -233,10 +223,10 @@ pub(crate) fn check_permission_gate(
         ) = (&e, caller)
         {
             let perm_token = permission.as_token();
-            if let Some(record) = approval::publish_capability_elevation_at(
+            if let Some(record) = approval::publish_capability_elevation(
                 core,
+                state,
                 engine,
-                workspace_id,
                 agent_id,
                 canonical,
                 &perm_token,

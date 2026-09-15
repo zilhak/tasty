@@ -24,16 +24,19 @@ impl App {
         for call in calls {
             let caller = Self::plugin_caller(&call);
             let request = Self::plugin_call_request(&call);
-            if let Some(resp) = self.gates_before_routing(&request, &caller) {
-                let (msg, code) = match resp.error {
-                    Some(e) => (Some(e.message), Some(e.code)),
-                    None => (None, None),
-                };
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+            let checked = match self.gates_before_routing(&request, &caller) {
+                Ok(checked) => checked,
+                Err(resp) => {
+                    let (msg, code) = match resp.error {
+                        Some(e) => (Some(e.message), Some(e.code)),
+                        None => (None, None),
+                    };
+                    if let Some(mgr) = self.plugin_manager.as_mut() {
+                        mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+                    }
+                    continue;
                 }
-                continue;
-            }
+            };
             // shared buffer 생성은 main 채널 + 보조 채널을 동시에 다뤄야 해서
             // dispatcher에 노출하지 않고 매니저가 직접 처리한다.
             if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
@@ -70,7 +73,7 @@ impl App {
                 );
                 continue;
             }
-            self.handle_ipc_default_dispatch(&call);
+            self.handle_ipc_default_dispatch(&call, &checked);
         }
     }
 
@@ -200,10 +203,12 @@ impl App {
     }
 
     /// 인터셉트/forward 대상이 아닌 일반 호출 — 호스트 dispatcher로 통과.
-    fn handle_ipc_default_dispatch(&mut self, call: &PendingPluginCall) {
-        let caller = Self::plugin_caller(call);
-        let request = Self::plugin_call_request(call);
-        let response = self.dispatch_with_caller(&request, &caller);
+    fn handle_ipc_default_dispatch(
+        &mut self,
+        call: &PendingPluginCall,
+        checked: &ipc::handler::CheckedRequest<'_>,
+    ) {
+        let response = self.dispatch_checked(checked);
         // 코드를 함께 넘긴다. 여기서 버리면 plugin 이 그 실패를 `?` 로 흘릴 때 외부
         // 호출자가 받는 코드가 전부 `-32000` 이 된다 — 호스트가 "인자를 고쳐라"
         // (`-32602`)로 거절한 것까지 "서버 사정" 으로 바뀐다.

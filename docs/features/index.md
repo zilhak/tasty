@@ -42,7 +42,7 @@
 | [child-terminal](child-terminal/index.md) — 자식 터미널 관리 (`tasty terminal`, soft 점유) | AI Agent | 없음 (headless) |
 | [headless-pty](headless-pty/index.md) — Surface 없는 PTY primitive (`tasty pty`, exit-code·승격) | AI Agent | 없음 (headless) |
 | [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |
-| [telemetry](telemetry/index.md) — 텔레메트리 (관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
+| [telemetry](telemetry/index.md) — 텔레메트리 (IPC 진입 단일 관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |
 | [capability-elevation](capability-elevation/index.md) — 권한 상승 & 감사 | AI Agent · 로컬 사용자 | elevation popup |
 | [hooks](hooks/index.md) — 훅 (surface/global, 자동 실행) | 로컬 사용자 · AI Agent | [설정 탭](settings/screens/settings.md) Hook Handlers |

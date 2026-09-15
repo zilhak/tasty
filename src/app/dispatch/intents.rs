@@ -268,53 +268,30 @@ impl App {
 
     /// 라우팅 이전에 도는 게이트 3종(권한 / telemetry cap / rate limit).
     ///
-    /// `handle_with_caller` 안에도 같은 게이트가 있다. 중복이 아니라 **다른 경계**다 —
-    /// 그쪽은 그 함수를 직접 부르는 진입점(headless · attach · routing)을 지키고,
-    /// 이쪽은 그 함수에 **도달하지 않는** 조기 응답을 지킨다. 거부는 여기서
-    /// 단락되므로 안쪽 게이트가 다시 돌지 않고, 통과는 부수효과가 없다.
-    ///
-    /// audit 기록에 쓰는 engine 은 아무 것이나 된다 — 기록 대상은 프로세스 하나가
-    /// 공유하는 memory store 이고 engine 은 workspace id 와 telemetry 순번을 줄 뿐이다.
-    pub(crate) fn gates_before_routing(
+    /// 게이트 통과 객체는 같은 요청의 하위 라우팅에 전달한다. 엔진 선택은
+    /// 감사/관측 저장소 접근용이며 요청 대상이나 포커스를 바꾸지 않는다.
+    pub(crate) fn gates_before_routing<'a>(
         &mut self,
-        request: &ipc::protocol::JsonRpcRequest,
-        caller: &ipc::caller::CallerContext,
-    ) -> Option<ipc::protocol::JsonRpcResponse> {
-        let canonical = ipc::alias::canonicalize(&request.method);
-        let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+        request: &'a ipc::protocol::JsonRpcRequest,
+        caller: &'a ipc::caller::CallerContext,
+    ) -> Result<ipc::handler::CheckedRequest<'a>, ipc::protocol::JsonRpcResponse> {
         let core = &mut self.core;
-
-        let run = |core: &mut crate::core::Core,
-                   engine: &mut crate::core::CoreState,
-                   ws: Option<u32>| {
-            ipc::handler::check_permission_gate(core, engine, caller, canonical, ws, &id)
-                .or_else(|| ipc::handler::check_cap_gate(core, engine, caller, canonical, ws, &id))
-                .or_else(|| {
-                    ipc::handler::check_rate_limit_gate(core, engine, caller, canonical, ws, &id)
-                })
-        };
-
         if let Some(w) = self.view.views.values_mut().find_map(|v| v.as_main_mut()) {
-            let ws = w
-                .core_state
-                .workspaces
-                .get(w.state.active_workspace)
-                .map(|x| x.id);
-            return run(core, &mut w.core_state, ws);
+            return ipc::handler::check_request(
+                core,
+                &mut w.state,
+                &mut w.core_state,
+                request,
+                caller,
+            );
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
-            let ws = engine.workspaces.get(state.active_workspace).map(|x| x.id);
-            return run(core, engine, ws);
+            return ipc::handler::check_request(core, state, engine, request, caller);
         }
-        // engine 이 하나도 없으면 audit 은 못 남기지만 **거부는 남는다** — 기록할 수
-        // 없다는 이유로 통과시키면 부팅 직후 창이 없는 순간이 구멍이 된다.
-        caller.ensure_allowed(canonical).err().map(|e| {
-            tracing::warn!("ipc permission denied (no engine to audit): {e}");
-            ipc::protocol::JsonRpcResponse::error(id, -32001, format!("permission_denied: {e}"))
-        })
+        ipc::handler::check_without_engine(request, caller)
     }
 
-    /// caller를 명시한 라우터 디스패치. Plugin caller도 처리할 수 있도록 핸들러
+    /// 검사 완료된 요청의 라우터 디스패치. Plugin caller도 처리할 수 있도록 핸들러
     /// 진입점에 caller를 주입한다. 호스트 자체 메서드(window.*/plugin.*)는
     /// `process_ipc`가 별도로 처리하므로 여기서는 라우터에만 위임한다.
     ///
@@ -322,19 +299,11 @@ impl App {
     /// 요청이 대상을 **지목했는가**로 갈린다.
     /// - 지목함: owner main → parked owner → **에러**. 포커스로 안 샌다.
     /// - 안 함: `"workspace"` 문자열 대상 → focused main → parked[0].
-    pub(crate) fn dispatch_with_caller(
+    pub(crate) fn dispatch_checked(
         &mut self,
-        request: &ipc::protocol::JsonRpcRequest,
-        caller: &ipc::caller::CallerContext,
+        checked: &ipc::handler::CheckedRequest<'_>,
     ) -> ipc::protocol::JsonRpcResponse {
-        // 게이트가 **라우팅보다 먼저** 돈다. 아래에는 `handle_with_caller` 에
-        // 도달하지 않고 끝나는 경로가 여럿이다(list 합산 응답 · owner 해석 실패 ·
-        // 지목한 대상이 없음 · app state 없음). 게이트가 그 안에만 있으면 그런
-        // 조기 응답 하나마다 권한·cap·rate 세 검사가 통째로 건너뛰어진다 —
-        // 실제로 `surface.list`/`workspace.list`/`pane.list` 가 그렇게 새고 있었다.
-        if let Some(resp) = self.gates_before_routing(request, caller) {
-            return resp;
-        }
+        let request = checked.request();
         // list 류는 모든 engine 결과를 합쳐 반환 (포커스 독립 원칙).
         if let Some(resp) = self.dispatch_list_global(request) {
             return resp;
@@ -357,12 +326,11 @@ impl App {
                 .get_mut(&id)
                 .and_then(|w| w.as_main_mut())
                 .map(|w| {
-                    let r = ipc::handler::handle_with_caller(
+                    let r = ipc::handler::handle_checked_request(
                         core,
                         &mut w.state,
                         &mut w.core_state,
-                        request,
-                        caller,
+                        checked,
                     );
                     w.base.dirty = true;
                     r
@@ -380,7 +348,7 @@ impl App {
         });
         if let Some((state, engine)) = owner_in_parked {
             let response =
-                ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
+                ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
             self.dispatch_pending_intents();
             return response;
         }
@@ -393,7 +361,7 @@ impl App {
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
-                ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
+                ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
             self.dispatch_pending_intents();
             return response;
         }
@@ -463,48 +431,22 @@ mod tests {
     /// 이름을 나열하지 않으므로 그런 함수가 **이 두 파일 안에** 새로 생기면 자동으로
     /// 대상이 된다.
     ///
-    /// ## 이 가드가 못 보는 것 — 모수가 gui 파일 둘이다
-    ///
-    /// `sources` 는 `intents.rs` 와 `routing.rs` 로 고정돼 있다. 그래서 **헤드리스
-    /// 조합의 진입점은 후보였던 적이 없다** — `src/boot/headless_dispatch.rs` 의
-    /// `pump_ipc` 가 `handle_with_caller` 를 부르는데, 그 함수는 caller 를 인자로 받지
-    /// 않고 `resolve_caller_from_envelope` 로 **자기가 만들고**, `impl` 밖 최상위
-    /// 함수라 이 스캐너의 함수 쪼개기(4칸 들여쓴 `fn`)에도 안 걸린다. 세 축이 전부
-    /// 어긋나 있다.
-    ///
-    /// 실제로 그 자리가 오래 무게이트였다: `timer.list` · 읽기 전용 `plugin.*` ·
-    /// `agent.task_await` · `approval.await` · debug 표면이 `handle_with_caller` 에
-    /// 도달하지 않는 조기 응답인데 앞에 게이트가 없었다 — 이 가드가 gui 에서 잡은
-    /// 것과 **같은 형태**이고, 모수가 달라서 안 잡혔다. 지금은 그 자리에
-    /// `check_permission_gate` 가 서 있다(`docs/dev-guide/headless-ipc-surface.md`
-    /// "권한 경계는 가로채기보다 앞이다"). 모수를 넓히려면 스캐너의 세 축을 함께
-    /// 고쳐야 해서, 여기서는 **못 보는 범위를 적는 것까지만** 한다.
+    /// 이 가드는 GUI 라우팅 파일 둘의 호출 또는 CheckedRequest 인자만 본다.
+    /// 실제 소비·관측 횟수는 handler::checked 단위 시험과 격리 IPC로 확인한다.
+    /// headless는 같은 공통 게이트를 사용하지만 이 텍스트 스캔의 모수는 아니다.
     #[test]
     fn every_routing_entry_gates_before_it_answers() {
         /// 게이트로 인정하는 호출. `gates_before_routing` 은 이 파일의 진입 게이트,
-        /// 나머지 둘은 라우터 안쪽과 app 단 caller 게이트가 쓰는 이름이다.
+        /// 나머지는 공통 게이트의 검사 이름이다. 검사 완료 객체를 받는 라우터는 재소비하지 않는다.
         const GATES: &[&str] = &[
             "gates_before_routing",
             "check_permission_gate",
             "ensure_allowed",
         ];
-        /// 답하기 전에 게이트가 **없어도 되는** 함수와 그 근거. 근거는 이 테스트가
-        /// 다시 검사한다 — 전제가 사라지면 면제도 같이 깨져야 하기 때문이다.
         /// 게이트 호출과 그 반환 사이에 허용하는 거리(바이트). rustfmt 가 만드는
         /// `if let Some(resp) = ... {\n    return resp;\n}` 는 60 바이트 안쪽이다.
         /// 넘으면 사이에 무언가 끼어든 것이므로 사람이 한 번 본다.
         const RETURN_WINDOW: usize = 120;
-        const EXEMPT: &[(&str, &str, &str)] = &[(
-            "ipc_step_routing",
-            "caller_gate.rs 의 step 1 이 Local 이 아닌 caller 를 이미 ensure_allowed 로 거른다",
-            "src/app/ipc/caller_gate.rs",
-        )];
-        /// 면제 전제를 확인할 때 찾는 문자열. 이름만(`ensure_allowed`) 찾으면 그
-        /// 파일의 **모듈 doc** 에도 같은 이름이 있어, 실제 호출을 지워도 주석이 남아
-        /// 전제가 살아 있는 것처럼 보인다(변이로 확인했다). 수신자까지 붙여 호출
-        /// 형태로 찾는다.
-        const PRECONDITION_CALL: &str = "caller.ensure_allowed(";
-
         let sources = [
             ("src/app/dispatch/intents.rs", include_str!("intents.rs")),
             ("src/app/ipc/routing.rs", include_str!("../ipc/routing.rs")),
@@ -534,26 +476,21 @@ mod tests {
                 let body = &head[..end];
                 rest = &head[end..];
 
-                let routes =
-                    body.contains("dispatch_list_global(") || body.contains("handle_with_caller(");
-                if !routes || !body.contains("caller: &") {
+                let routes = body.contains("dispatch_list_global(")
+                    || body.contains("handle_with_caller(")
+                    || body.contains("handle_checked_request(")
+                    || body.contains("dispatch_checked(");
+                if !routes {
+                    continue;
+                }
+                if body.contains("checked: &") && body.contains("handler::CheckedRequest") {
+                    checked += 1;
+                    continue;
+                }
+                if !body.contains("caller: &") {
                     continue;
                 }
                 checked += 1;
-                if let Some((_, why, precondition)) =
-                    EXEMPT.iter().find(|(n, _, _)| *n == name.as_str())
-                {
-                    let pre = std::fs::read_to_string(
-                        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(precondition),
-                    )
-                    .unwrap_or_else(|e| panic!("면제 전제 `{precondition}` 를 못 읽었다: {e}"));
-                    assert!(
-                        pre.contains(PRECONDITION_CALL),
-                        "`{name}` 의 면제 근거가 사라졌다 — {why}. `{precondition}` 에 \
-                         ensure_allowed 가 더는 없다."
-                    );
-                    continue;
-                }
                 let gate = GATES.iter().filter_map(|g| body.find(g)).min();
                 let first_return = body.find("return ");
                 match (gate, first_return) {
@@ -564,6 +501,7 @@ mod tests {
                     (Some(g), Some(r)) if r - g > RETURN_WINDOW => naked.push(format!(
                         "  {file}::{name} — 게이트 결과가 곧바로 반환되지 않는다"
                     )),
+                    (Some(_), None) if body.contains("Err(response) => response") => {}
                     (Some(_), None) => {
                         naked.push(format!("  {file}::{name} — 게이트 결과를 반환하지 않는다"))
                     }

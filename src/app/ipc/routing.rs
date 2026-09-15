@@ -10,7 +10,7 @@ impl App {
     pub(crate) fn ipc_step_routing(
         &mut self,
         cmd: &IpcCommand,
-        caller: &host_ipc::caller::CallerContext,
+        checked: &host_ipc::handler::CheckedRequest<'_>,
     ) -> IpcStep {
         // Plugin namespace forward: 메서드가 plugin contribute 한 prefix 에 매칭되면
         // owner plugin 으로 forward. 응답은 plugin 이 줄 때까지 보류되며 다음 tick 에서
@@ -63,12 +63,11 @@ impl App {
                 .get_mut(&id)
                 .and_then(|w| w.as_main_mut())
                 .map(|w| {
-                    let r = host_ipc::handler::handle_with_caller(
+                    let r = host_ipc::handler::handle_checked_request(
                         core,
                         &mut w.state,
                         &mut w.core_state,
-                        &cmd.request,
-                        caller,
+                        checked,
                     );
                     w.base.dirty = true;
                     r
@@ -87,13 +86,8 @@ impl App {
                 .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
         });
         if let Some((state, engine)) = owner_in_parked {
-            let response = host_ipc::handler::handle_with_caller(
-                &mut self.core,
-                state,
-                engine,
-                &cmd.request,
-                caller,
-            );
+            let response =
+                host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
             send_response(&cmd.response_tx, response);
             self.dispatch_pending_intents();
             return IpcStep::Handled;
@@ -110,13 +104,8 @@ impl App {
             return IpcStep::Handled;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
-            let response = host_ipc::handler::handle_with_caller(
-                &mut self.core,
-                state,
-                engine,
-                &cmd.request,
-                caller,
-            );
+            let response =
+                host_ipc::handler::handle_checked_request(&mut self.core, state, engine, checked);
             send_response(&cmd.response_tx, response);
             self.dispatch_pending_intents();
         }

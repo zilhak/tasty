@@ -162,3 +162,5 @@ plugin 도 같은 통로를 쓴다.
 - `src/app/dispatch/intents.rs` — `gates_before_routing` 과 가드
 - `src/adapters/ipc/handler.rs` — 안쪽 게이트 3종
 - `src/app/ipc/caller_gate.rs` — agent 경로의 대칭 지점
+
+부분 개정: [0277](0277-ipc-admission-and-observation-run-once.md) (중첩 게이트·Allow 기록 위치 개정).

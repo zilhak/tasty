@@ -1,4 +1,4 @@
-<!-- source-hash: dbf599f3ebfb -->
+<!-- source-hash: 88ebb0581a7e -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -310,3 +310,5 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 - [Claude · Codex](claude-codex.md) — Spawning child agents and receiving completion notifications.
 - [Task workflows](tasks.md) — Tying several pieces of work together by dependency.
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.
+
+For agents using session tokens, call limits apply to plugin commands and combined list queries as well as ordinary commands. Each admitted request is counted once; requests over the limit return an error without running. The existing exemption for local CLI calls without a token remains.

@@ -62,6 +62,14 @@ impl App {
                     continue;
                 }
             };
+            let checked = match self.gates_before_routing(&cmd.request, &caller) {
+                Ok(checked) => checked,
+                Err(response) => {
+                    crate::ipc::server::send_response(&cmd.response_tx, response);
+                    processed = true;
+                    continue;
+                }
+            };
             match self.ipc_step_app_methods(&cmd, &caller) {
                 #[cfg(debug_assertions)]
                 IpcStep::Shutdown => return true,
@@ -85,7 +93,7 @@ impl App {
                 processed = true;
                 continue;
             }
-            if matches!(self.ipc_step_routing(&cmd, &caller), IpcStep::Handled) {
+            if matches!(self.ipc_step_routing(&cmd, &checked), IpcStep::Handled) {
                 processed = true;
                 continue;
             }

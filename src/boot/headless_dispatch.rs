@@ -2,7 +2,7 @@
 //!
 //! gui 의 `App::process_ipc` (`src/app/ipc.rs`, `#[cfg(feature="gui")]`) 는 view /
 //! parked_states / plugin_manager 의존이 큰 5-step 라우터다. headless 는 engine 이
-//! 단 하나뿐이라 그 전부가 불필요하므로, caller 해석 → `handle_with_caller` 직결로
+//! 단 하나뿐이라 그 전부가 불필요하므로, caller 해석 → 공통 게이트 → 검사 완료 요청 실행으로
 //! 간소화한다.
 //!
 //! 생략(gui 대비):
@@ -12,7 +12,7 @@
 //!   물어볼 방법이 사라진다.
 //! - dispatch_list_global / find_request_owner / parked fallback (engine 1 개)
 //!
-//! **caller elevation / audit-on-deny 는 생략하지 않는다** — 아래 1b 가 부르는
+//! **caller elevation / audit-on-deny 는 생략하지 않는다** — 아래 1b의 공통 게이트 내부
 //! `check_permission_gate`(`src/adapters/ipc/handler.rs`)가 deny 를 audit 에
 //! `AuditDecision::Deny` 로 남기고, Agent caller 의 `MissingPermission` 이면
 //! capability elevation 을 발행해 그 좌표를 오류 `data` 에 싣는다. gui 의
@@ -64,39 +64,20 @@ pub(crate) fn pump_ipc(
                 continue;
             }
         };
-        // 1b) 권한 경계. **아래 App 층 인터셉트는 `handle_with_caller` 에 도달하지
-        //     않으므로, 게이트가 여기 없으면 그것들은 아무 검사도 안 거친다** —
-        //     `timer.list` · plugin 조회 · `agent.task_await` · `approval.await` ·
-        //     debug 표면이 전부 그 형태였다. gui 는 같은 자리를 `caller_gate.rs` 의
-        //     step 1 이 지킨다(모든 명령보다 먼저 `ensure_allowed`).
-        //
-        //     **권한 게이트만 부른다.** cap·rate-limit 까지 여기서 돌리면 이어서
-        //     `handle_with_caller` 가 같은 셋을 다시 도는 요청에서 rate-limit 이 토큰을
-        //     **두 번 소비한다**(`rate_limit_try_consume` 은 통과할 때도 소비한다).
-        //     권한 게이트는 통과 시 부수효과가 없어 두 번 돌아도 답이 같다. 거부는
-        //     여기서 단락되므로 audit 도 한 번만 남는다.
-        //
-        //     대가로 **아래 App 층 인터셉트는 rate-limit 을 아예 안 거친다** —
-        //     `handle_with_caller` 에 도달하지 않아 `check_rate_limit_gate` 가 안 돈다.
-        //
-        //     별칭을 먼저 정규화한다 — 안 하면 옛 이름으로 부르는 요청이 게이트를
-        //     지나간다(`handle_with_caller` 도 정규화 뒤에 잰다).
-        {
-            let canonical = crate::ipc::alias::canonicalize(&cmd.request.method);
-            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let ws = engine.workspaces.get(state.active_workspace).map(|w| w.id);
-            if let Some(resp) = crate::ipc::handler::check_permission_gate(
-                &mut app.core,
-                engine,
-                &caller,
-                canonical,
-                ws,
-                &id,
-            ) {
-                send_response(&cmd.response_tx, resp);
+        // 1b) 모든 조기 응답보다 먼저 검사·관측한다. 이후 같은 요청은 재소비하지 않는다.
+        let checked = match crate::ipc::handler::check_request(
+            &mut app.core,
+            state,
+            engine,
+            &cmd.request,
+            &caller,
+        ) {
+            Ok(checked) => checked,
+            Err(response) => {
+                send_response(&cmd.response_tx, response);
                 continue;
             }
-        }
+        };
         // 2) App 층 가로채기 — 창이 없어도 답이 정의되는 표면들을 engine 앞에서 답한다.
         //    어느 하나가 답했으면 응답은 그 안에서 이미 나갔다. 그 안의 갈래는
         //    **그 함수에 적힌 순서 그대로** `2-hub` / `2-plugin` / `2-toggle` /
@@ -155,15 +136,9 @@ pub(crate) fn pump_ipc(
         //     (`start_one_enabled`). 설치·권한 grant 도 여기엔 없다. 근거·대기 시한은
         //     `headless_plugins::ensure_plugin_for_surface_kind`.
         super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
-        // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
-        //    handle_with_caller 내부가 자체 수행한다.
-        let resp = crate::ipc::handler::handle_with_caller(
-            &mut app.core,
-            state,
-            engine,
-            &cmd.request,
-            &caller,
-        );
+        // 3) 이미 검사한 요청을 engine handler에 넘긴다.
+        let resp =
+            crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
         // 4) 핸들러가 발화한 Intent 를 **응답 전에** 적용한다. gui 의
         //    `App::dispatch_with_caller` 가 응답 반환 전에 `dispatch_pending_intents`
         //    를 부르는 것과 같은 계약이며, 이게 없으면 큐가 프로세스 수명 동안 쌓이고

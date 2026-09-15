@@ -438,22 +438,14 @@ fn register_one_surface_kind(
 
 /// 헤드리스 진입부의 pre-gate. GUI 의 `App::gates_before_routing` 과 같은 3종을
 /// 같은 순서로 돌린다. 헤드리스는 engine 이 항상 하나라 그쪽의 view 탐색이 필요 없다.
-fn gates_before_intercept(
+fn gates_before_intercept<'a>(
     app: &mut App,
-    state: &AppState,
+    state: &mut AppState,
     engine: &mut CoreState,
-    request: &crate::ipc::protocol::JsonRpcRequest,
-    caller: &crate::ipc::caller::CallerContext,
-) -> Option<crate::ipc::protocol::JsonRpcResponse> {
-    let canonical = crate::ipc::alias::canonicalize(&request.method);
-    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-    let ws = engine.workspaces.get(state.active_workspace).map(|w| w.id);
-    let core = &mut app.core;
-    crate::ipc::handler::check_permission_gate(core, engine, caller, canonical, ws, &id)
-        .or_else(|| crate::ipc::handler::check_cap_gate(core, engine, caller, canonical, ws, &id))
-        .or_else(|| {
-            crate::ipc::handler::check_rate_limit_gate(core, engine, caller, canonical, ws, &id)
-        })
+    request: &'a crate::ipc::protocol::JsonRpcRequest,
+    caller: &'a crate::ipc::caller::CallerContext,
+) -> Result<crate::ipc::handler::CheckedRequest<'a>, crate::ipc::protocol::JsonRpcResponse> {
+    crate::ipc::handler::check_request(&mut app.core, state, engine, request, caller)
 }
 
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.
@@ -489,16 +481,19 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         // (ADR-0152). 아래 인터셉트는 `handle_with_caller` 에 도달하지 않으므로,
         // 게이트가 그 함수 안에만 있으면 그 갈래만 권한·cap·rate·audit 를 통째로
         // 건너뛴다.
-        if let Some(resp) = gates_before_intercept(app, state, engine, &request, &caller) {
-            let (msg, code) = match resp.error {
-                Some(e) => (Some(e.message), Some(e.code)),
-                None => (None, None),
-            };
-            if let Some(mgr) = app.plugin_manager.as_mut() {
-                mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+        let checked = match gates_before_intercept(app, state, engine, &request, &caller) {
+            Ok(checked) => checked,
+            Err(resp) => {
+                let (msg, code) = match resp.error {
+                    Some(e) => (Some(e.message), Some(e.code)),
+                    None => (None, None),
+                };
+                if let Some(mgr) = app.plugin_manager.as_mut() {
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+                }
+                continue;
             }
-            continue;
-        }
+        };
         if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
             let size = call
                 .params
@@ -515,13 +510,8 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
             }
             continue;
         }
-        let response = crate::ipc::handler::handle_with_caller(
-            &mut app.core,
-            state,
-            engine,
-            &request,
-            &caller,
-        );
+        let response =
+            crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
         // plugin 호출도 같은 IPC 핸들러를 타므로(예: Claude 플러그인 훅의
         // `surface.completion`) 결과 회신 전에 Intent 큐를 적용한다 —
         // `docs/adr/0111-headless-drains-the-intent-queue.md`.

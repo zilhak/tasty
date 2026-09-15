@@ -9,7 +9,7 @@
 | `crates/tasty-plugin-manifest/src/types.rs::Permission` | 권한 enum + 토큰 매핑(`from_token`/`as_token`). 새 토큰은 여기 |
 | `crates/tasty-ipc/src/method_meta.rs::method_meta` | IPC 메서드 → 필요 권한 / plugin 호출 가능 여부 (단일 진실원) |
 | `crates/tasty-ipc/src/caller.rs::CallerContext` | 호출자 종류 (Local / Internal / Plugin / Agent) + `ensure_allowed` |
-| `src/adapters/ipc/handler.rs::handle_with_caller` | 라우터 진입에서 `ensure_allowed` + capability elevation 자동 발행 + audit |
+| `src/adapters/ipc/handler/checked.rs::check_request` | 라우터 진입에서 `ensure_allowed` + capability elevation 자동 발행 + audit |
 | `crates/tasty-host-plugin/src/manager.rs::plugin_permissions` | plugin id → `Arc<HashSet<Permission>>` 캐시 |
 | `crates/tasty-host-plugin/src/registry_state.rs` | `plugins.toml` 의 grant 영속화 |
 
@@ -257,7 +257,7 @@ plugin 프로세스를 띄우는가** 를 다룬다 — 권한 토큰이 아니�
 
 ## Audit log
 
-`handle_with_caller` 가 allow/deny 양쪽에서 `audit::record` → `tasty.audit.{ts}.{seq}` Global scope(기본 30일, lazy evict). `plugin.audit_query/summary/follow/clear` 로 조회.
+공통 `check_request`가 거부 audit과 허용 관측을 요청마다 한 번 수행한다. 허용 호출은 telemetry의 `ipc_calls`에 기록된다. `audit::record`는 기존 [ADR-0085](../adr/0085-ipc-log-retention-bounded.md) 정책에 따라 Deny만 `tasty.audit.{ts}.{seq}` Global scope에 영속한다. `plugin.audit_query/summary/follow/clear`로 조회한다. 라우터 조기 반환도 관측을 생략하지 않는다([ADR-0277](../adr/0277-ipc-admission-and-observation-run-once.md)).
 
 ## 한계
 

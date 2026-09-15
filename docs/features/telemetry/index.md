@@ -21,6 +21,17 @@ Metric(`input_tokens`/`ipc_calls`/…) × Agent(`tasty.<plugin_id>`/`cli.<exe>`/
 
 `ipc_calls` 는 dispatcher 가 plugin IPC 호출마다 자동 1회 기록(`tags.method`). `_host` 또는 `telemetry.*` 는 자기측정/재귀 방지로 skip.
 
+### IPC 진입 관측
+
+GUI·headless의 외부 소켓과 plugin host-call은 라우팅 전에 권한·cap·rate-limit을
+검사한다. 통과한 호출만 `ipc_calls`로 한 번 기록하며 App 인터셉트, namespace forward,
+전 창 합산, 일반 handler 사이에 예외를 두지 않는다. 일반 handler로 내려가도 다시
+소비하거나 기록하지 않는다. 별칭은 canonical 메서드 태그로 남는다.
+권한/한도 거부는 Allow 관측을 남기지 않고 기존 Deny audit·권한 격상 흐름을 유지한다.
+`telemetry.*`와 호스트 caller의 관측 제외, Local의 rate 면제는 그대로다.
+[ADR-0277](../../adr/0277-ipc-admission-and-observation-run-once.md).
+
+
 ### Cost Cap
 
 (agent, metric, window) raw sum 이 `threshold` 이상이면 `triggered` + 액션:

@@ -9,7 +9,7 @@
 
 ## 라우팅
 
-JSON-RPC 라우터(`src/adapters/ipc/handler.rs::handle_with_caller`)는 권한·텔레메트리 게이트를 통과시킨 뒤 핸들러를 탐색한다:
+JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate·관측을 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘겨 핸들러를 탐색한다:
 
 ```rust
 if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {

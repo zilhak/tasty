@@ -18,19 +18,15 @@ gui 는 5-step 라우터(`src/app/ipc.rs`)를 쓴다. 헤드리스 pump(`src/boo
 
 ### 권한 경계는 가로채기보다 **앞**이다
 
-caller 를 해석한 직후 `check_permission_gate` 가 한 번 돈다. 가로채는 것들은
-`handle_with_caller` 에 도달하지 않으므로, 게이트가 그 앞에 없으면 **아무 검사도 안
-거친다.** gui 는 같은 자리를 `src/app/ipc/caller_gate.rs` 의 step 1 이 지킨다.
+caller 인증 뒤 공통 `check_request`가 권한·cap·rate-limit을 검사하고 허용 호출을
+한 번 관측한다. App 인터셉트·plugin namespace·일반 handler 모두 그 뒤에 온다.
+통과한 `CheckedRequest`를 일반 handler에 전달하므로 예산과 관측을 중복 소비하지 않는다.
+GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
+[ADR-0277](../adr/0277-ipc-admission-and-observation-run-once.md).
 
-**권한 게이트만 부른다** — cap·rate-limit 까지 여기서 돌리면, 이어서
-`handle_with_caller` 가 같은 셋을 다시 도는 요청에서 rate-limit 이 토큰을 두 번 소비한다
-(`rate_limit_try_consume` 은 통과할 때도 소비한다). 권한 게이트는 통과 시 부수효과가 없어
-두 번 돌아도 답이 같고, 거부는 앞에서 단락되므로 audit 도 한 번만 남는다.
-
-그 게이트는 거부가 Agent 의 권한 부족일 때 **capability elevation 을 함께 발행한다.**
-`error.data` 에 `approval_id`·`permission`·`method` 가 실리고, 에이전트는 그것으로
-`approval.await`/`approval.respond` 에 이어붙는다. 이것이 없으면 헤드리스 거부는
-`data: null` 하나라 무엇이 부족한지도, 어디에 요청할지도 알 수 없다.
+권한 부족의 Agent 거부는 기존 capability elevation을 한 번 발행하고
+`error.data`에 approval_id·permission·method를 싣는다. 거부된 요청 동작과 Allow 관측은
+실행하지 않는다. Local 및 복구 메서드의 기존 예외는 유지한다.
 
 그리고 engine handler 앞에 판정이 하나 더 있다 — **요청이 지목한 대상을 이 engine 이
 가졌는가.** 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만, 그 판정이 없으면 대상을

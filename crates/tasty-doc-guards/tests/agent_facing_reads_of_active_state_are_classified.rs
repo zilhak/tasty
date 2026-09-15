@@ -129,7 +129,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "워크스페이스 목록에서 어느 것이 활성인지를 플래그로 알린다",
     ),
     (
-        "src/adapters/ipc/handler.rs",
+        "src/adapters/ipc/handler/checked.rs",
         PolicyScope,
         1,
         "permission·cap 게이트에 넘길 workspace_id — 요청 대상을 고르는 값이 아니라 정책을 귀속시킬 스코프다",
@@ -211,12 +211,6 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         AnyWindow,
         1,
         "appearance 의 단일 출처를 고른다. focused 가 없으면 아무 main 이든 된다고 소스 주석이 밝히므로 결과가 포커스에 안 걸린다",
-    ),
-    (
-        "src/app/dispatch/intents.rs",
-        Attribution,
-        2,
-        "audit 기록에 실을 워크스페이스 id — 없으면 거부는 그대로 남기고 기록만 못 남긴다",
     ),
 ];
 
