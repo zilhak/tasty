@@ -119,6 +119,12 @@ pub(crate) fn method_scoped_resource_id(
     method: &str,
     params: &serde_json::Value,
 ) -> Option<ResourceId> {
+    if method == "file_handler.dispatch" {
+        return numeric(params, "origin_surface_id").map(|id| ResourceId {
+            kind: Kind::Surface,
+            id,
+        });
+    }
     // surface hook 은 `engine.hook_manager` 에 있고 global hook 은 `global_hook_manager`
     // 에 있다. 두 표면이 `hook_id` 라는 **같은 키**를 쓰므로 키로는 못 가른다 — 저장소가
     // 다를 뿐 둘 다 engine 소유라, 메서드로 갈라 각각의 kind 로 푼다.
@@ -276,6 +282,11 @@ pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: Resource
 
 /// 이 요청이 겨누는 리소스 — 키 이름으로 뽑히는 것과 메서드로 한정되는 것을 합친다.
 pub(crate) fn request_resource_id(method: &str, params: &serde_json::Value) -> Option<ResourceId> {
+    // This deserialized request has exactly one target. Unused extra keys must
+    // not override it or turn the legacy no-origin path into a named request.
+    if method == "file_handler.dispatch" {
+        return method_scoped_resource_id(method, params);
+    }
     params_resource_id(params)
         .map(|(_, rid)| rid)
         .or_else(|| method_scoped_resource_id(method, params))
@@ -314,6 +325,20 @@ pub(crate) fn unowned_target_message(rid: ResourceId, method: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn file_dispatch_origin_is_its_only_method_scoped_target() {
+        let params = json!({ "origin_surface_id": 41, "surface_id": 99 });
+        let got = request_resource_id("file_handler.dispatch", &params).unwrap();
+        assert!(matches!(got.kind, Kind::Surface));
+        assert_eq!(got.id, 41);
+        assert!(method_scoped_resource_id("surface.close", &params).is_none());
+        assert!(request_resource_id("file_handler.dispatch", &json!({"surface_id":99})).is_none());
+        assert!(
+            request_resource_id("file_handler.dispatch", &json!({"origin_surface_id":null}))
+                .is_none()
+        );
+    }
 
     fn rid(params: &serde_json::Value) -> (&str, Kind, u64) {
         let (key, r) = params_resource_id(params).expect("expected a resource id");

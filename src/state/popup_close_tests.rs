@@ -910,6 +910,7 @@ fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
 
 fn mk_picker_data() -> FileHandlerPickerData {
     FileHandlerPickerData {
+        origin_surface_id: None,
         target: crate::file::format::FileTarget::new("/tmp/popup-close-test.txt").into(),
         target_display: "/tmp/popup-close-test.txt".to_string(),
         detector: None,

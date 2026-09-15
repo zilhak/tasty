@@ -1151,41 +1151,6 @@ impl App {
         }
     }
 
-    /// `AppEvent::IdentifyDone` 핸들러 — 비동기 파일 식별 결과를 focused MainView 에
-    /// 적용한다(`apply_identify_result`). split borrow 회피를 위해 focused view 를
-    /// 인덱스로 직접 접근.
-    fn handle_identify_done(
-        &mut self,
-        request_id: crate::identify_worker::IdentifyRequestId,
-        target: crate::file::format::FileTarget,
-        detector: Option<crate::file::format::DetectorId>,
-        origin_surface_id: Option<u32>,
-        ignore_size_limit: bool,
-    ) {
-        tracing::debug!(
-            request_id = %request_id,
-            target = %target.display(),
-            detector = ?detector.as_ref().map(|d| d.as_str()),
-            origin_surface_id = ?origin_surface_id,
-            ignore_size_limit,
-            "IdentifyDone",
-        );
-        // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
-        // self.core 와 충돌하므로 인덱스로 직접 접근.
-        if let Some(id) = self.view.focused_view_id
-            && let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
-        {
-            self.core.apply_identify_result(
-                &mut main.state,
-                &mut main.core_state,
-                target,
-                detector,
-                origin_surface_id,
-                ignore_size_limit,
-            );
-        }
-    }
-
     /// shell setup mode 의 `WindowEvent` 핸들러. RedrawRequested 시 setup 화면을
     /// 렌더하고 사용자 확정/종료를 처리하며, 그 외 이벤트는 egui 로 forward 한다.
     /// 항상 이벤트를 소비한다(caller 는 호출 후 즉시 return).

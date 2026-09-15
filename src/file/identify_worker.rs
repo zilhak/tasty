@@ -14,7 +14,7 @@ use winit::event_loop::EventLoopProxy;
 use crate::AppEvent;
 use crate::file::format::{DetectDepth, FileFormatRegistry, FileTarget};
 
-/// 식별 요청 식별자. 콜사이트가 마지막 요청 id 를 보관해 out-of-order 결과를 무시한다.
+/// 식별 요청의 진단용 식별자. 각 요청은 독립적으로 완료된다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IdentifyRequestId(pub u64);
 
@@ -43,8 +43,8 @@ impl IdentifyWorker {
     ///
     /// 결과는 main thread 의 winit event loop 가 `AppEvent::IdentifyDone` 으로 받는다.
     /// 동시 요청이 여러 개여도 worker 들은 독립적으로 동작하며, 결과는 도착 순서가
-    /// 보장되지 않는다 — 콜사이트는 자신이 보관한 마지막 `IdentifyRequestId` 와 비교해
-    /// 오래된 결과를 drop 해야 한다.
+    /// 보장되지 않는다. 완료는 각 요청의 origin으로 전달하며 최신 요청 하나만 남기지
+    /// 않는다. 취소 API는 없고 origin 소멸 시 완료를 안전하게 폐기한다.
     pub fn spawn(
         &self,
         target: FileTarget,

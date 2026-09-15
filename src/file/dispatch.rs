@@ -191,6 +191,7 @@ pub(crate) fn open_picker(
     let (recent, cand) = picker_lists(&target, &recent_handlers, &candidates);
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
+        origin_surface_id: None,
         target,
         target_display,
         detector,
@@ -240,6 +241,7 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileT
     let target = DispatchTarget::File(target);
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
+        origin_surface_id: None,
         target,
         target_display,
         detector: None,
@@ -280,7 +282,7 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 ///
 /// `origin_surface_id` 가 Some 이면 OpenSurface 는 그 surface 가 속한 *Pane* 에
 /// 새 tab 으로 결과를 추가한다 (focus 독립). None 이면 focused pane 의 새 탭
-/// (기존 동작). 다른 action (Ipc / System) 은 origin 영향 없음.
+/// (기존 동작). Ipc / System 의 payload 는 유지하지만 소멸한 origin 은 실행하지 않는다.
 ///
 /// 대상을 받지 못하는 핸들러([`handler_accepts_target`])면 아무것도 실행하지 않고
 /// `false` 를 돌려준다 — picker 가 이미 걸렀어도 실행 지점이 마지막 방어선이다.
@@ -293,6 +295,12 @@ pub fn execute_handler_action(
     origin_surface_id: Option<u32>,
     ignore_size_limit: bool,
 ) -> bool {
+    if let Some(sid) = origin_surface_id
+        && let Err(message) = require_origin_pane(engine, sid)
+    {
+        tracing::warn!("{message}");
+        return false;
+    }
     if !handler_accepts_target(&handler.action, target) {
         tracing::warn!(
             handler_id = %handler.id,
@@ -314,22 +322,10 @@ pub fn execute_handler_action(
             let _ = ignore_size_limit;
 
             let params = open_surface_params(param_key, target);
-            open_surface_tab(core, state, engine, surface_kind, params, origin_surface_id);
+            return open_surface_tab(core, state, engine, surface_kind, params, origin_surface_id);
         }
         HandlerAction::Ipc { method, .. } => {
-            // 이 분기는 state.pending_handler_ipc 에 enqueue 만 — core/engine 미사용.
-            // 큐는 `FileTarget` 만 담는다 — plugin 은 `path` 키를 파일 경로로 해석한다.
-            match target {
-                DispatchTarget::File(file) => state
-                    .pending_handler_ipc
-                    .push((method.clone(), file.clone())),
-                // 위 `handler_accepts_target` 가 이미 거절한 조합이다. 판정이 바뀌어
-                // 여기에 도달하더라도 URL 을 `path` 키로 보내지 않는다.
-                DispatchTarget::Url(_) => {
-                    tracing::warn!(handler_id = %handler.id, "Ipc handler reached with a URL target");
-                    return false;
-                }
-            }
+            return enqueue_handler_ipc(state, method, target);
         }
         HandlerAction::System => {
             // OS 기본 opener 만 호출 — core/state/engine 미사용.
@@ -340,6 +336,18 @@ pub fn execute_handler_action(
             tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
         }
     }
+    true
+}
+
+/// Preserve the existing path-only plugin payload, with a final type check.
+fn enqueue_handler_ipc(state: &mut AppState, method: &str, target: &DispatchTarget) -> bool {
+    let DispatchTarget::File(file) = target else {
+        tracing::warn!(method, "Ipc handler reached with a URL target");
+        return false;
+    };
+    state
+        .pending_handler_ipc
+        .push((method.to_string(), file.clone()));
     true
 }
 
@@ -358,27 +366,33 @@ pub(crate) fn open_surface_tab(
     surface_kind: &str,
     params: serde_json::Value,
     origin_surface_id: Option<u32>,
-) {
-    let origin_pane = origin_surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
+) -> bool {
+    let origin_pane = match origin_surface_id
+        .map(|sid| require_origin_pane(engine, sid))
+        .transpose()
+    {
+        Ok(pane) => pane,
+        Err(message) => {
+            tracing::warn!("{message}");
+            return false;
+        }
+    };
     match origin_pane {
         Some(pane_id) => {
             // 이 분기는 인텐트 계층을 거치지 않고 Core 로 직접 apply 하므로(링크 클릭 등
             // origin surface 의 pane 에 새 탭), 최근 목록 기록을 여기서 직접 한다. None
             // 분기는 `Intent::NewTab` 으로 위임되어 tab 핸들러가 기록한다. kind 하드코딩
             // 없이 매니페스트 `records_recent` 를 선언한 kind 만 기록(generic per-kind).
-            if engine
+            let records_recent = engine
                 .surface_registry
                 .get(surface_kind)
-                .is_some_and(|d| d.records_recent)
-            {
-                state.record_recent(surface_kind, &params);
-            }
+                .is_some_and(|d| d.records_recent);
             let intent = crate::core::intent::DomainIntent::CreateTab {
                 pane_id,
                 cwd: None,
                 kind: surface_kind.to_string(),
                 name: None,
-                surface_params: params,
+                surface_params: params.clone(),
             };
             if let Err(e) = core.apply(engine, intent) {
                 tracing::warn!(
@@ -386,6 +400,10 @@ pub(crate) fn open_surface_tab(
                     kind = %surface_kind,
                     "file_dispatch CreateTab failed: {e}",
                 );
+                return false;
+            }
+            if records_recent {
+                state.record_recent(surface_kind, &params);
             }
         }
         None => {
@@ -398,6 +416,23 @@ pub(crate) fn open_surface_tab(
             );
         }
     }
+    true
+}
+
+/// A supplied origin is a target, never permission to fall back to focus.
+pub(crate) fn require_origin_pane(
+    engine: &crate::core::CoreState,
+    surface_id: u32,
+) -> Result<u32, String> {
+    engine.find_pane_for_surface(surface_id).ok_or_else(|| {
+        crate::core::request_target::unowned_target_message(
+            crate::core::request_target::ResourceId {
+                kind: crate::core::request_target::Kind::Surface,
+                id: u64::from(surface_id),
+            },
+            "file_handler.dispatch",
+        )
+    })
 }
 
 /// `Path` → `file://` URI. terminal_link 의 같은 함수가 private 이라 여기 별도 정의.

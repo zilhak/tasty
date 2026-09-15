@@ -59,6 +59,7 @@ fn default_depth() -> String {
 ///   즉시 돌아오고 handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
 pub fn handle_dispatch(
     state: &mut AppState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -68,6 +69,11 @@ pub fn handle_dispatch(
             return JsonRpcResponse::error(id, -32602, format!("invalid params: {e}"));
         }
     };
+    if let Some(sid) = req.origin_surface_id
+        && let Err(message) = crate::file::dispatch::require_origin_pane(engine, sid)
+    {
+        return JsonRpcResponse::invalid_params(id, message);
+    }
     let depth = match req.depth.as_str() {
         "cheap" => DetectDepth::Cheap,
         "deep" => DetectDepth::Deep,
@@ -135,9 +141,10 @@ mod tests {
     /// `https://example.com/a.md` 가 확장자로 markdown 핸들러에 걸린다.
     #[test]
     fn dispatch_rejects_a_url_in_the_path_param() {
-        let (mut state, _engine) = crate::state::tests::test_state();
+        let (mut state, engine) = crate::state::tests::test_state();
         let resp = handle_dispatch(
             &mut state,
+            &engine,
             serde_json::json!(1),
             serde_json::json!({ "path": "https://example.com/a.md" }),
         );
@@ -147,10 +154,23 @@ mod tests {
 
         let resp = handle_dispatch(
             &mut state,
+            &engine,
             serde_json::json!(2),
             serde_json::json!({ "path": "/tmp/a.md" }),
         );
         assert!(resp.error.is_none());
         assert_eq!(state.pending_intents.len(), 1);
+    }
+    #[test]
+    fn dispatch_rejects_missing_origin_before_enqueueing() {
+        let (mut state, engine) = crate::state::tests::test_state();
+        let response = handle_dispatch(
+            &mut state,
+            &engine,
+            serde_json::json!(42),
+            serde_json::json!({"path":"/a", "origin_surface_id":u32::MAX}),
+        );
+        assert_eq!(response.error.unwrap().code, -32602);
+        assert!(state.pending_intents.is_empty());
     }
 }

@@ -807,6 +807,8 @@ pub struct PickerHandlerSummary {
 /// frame 끝에 result 를 확인해 실제 핸들러 실행 + RecentPicks 기록을 수행한다.
 #[derive(Debug, Clone)]
 pub struct FileHandlerPickerData {
+    /// Explicit dispatch owner, retained through picker selection and cancellation.
+    pub(crate) origin_surface_id: Option<u32>,
     /// 원본 dispatch target. picker 가 닫힌 뒤 host 가 handler 를 실행할 때
     /// 사용한다 — `target_display` 는 화면용이라 escape/축약이 들어갈 수 있다.
     pub(crate) target: crate::file::dispatch::DispatchTarget,

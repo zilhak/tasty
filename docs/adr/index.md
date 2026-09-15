@@ -258,3 +258,4 @@
 | 0275 | [최근 목록 캐시는 state.db 수명에 귀속한다](0275-recent-cache-belongs-to-the-state-database.md) | Accepted | 2026-09-15 | storage, recent-files, focus, multi-window |
 | 0276 | [plugin 사용자 번역은 host 언어 루트에서 같은 순서로 읽는다](0276-plugin-user-catalogs-share-the-host-language-root.md) | Accepted | 2026-09-15 | i18n, plugin, language-pack, compatibility |
 | 0277 | [IPC 진입 검사와 허용 관측은 요청마다 한 번 수행한다 — ADR-0152의 중첩 게이트·Allow 위치 개정](0277-ipc-admission-and-observation-run-once.md) | Accepted | 2026-09-15 | ipc, rate-limit, telemetry, permissions, headless |
+| 0279 | [File dispatch retains its origin through completion](0279-file-dispatch-retains-origin-through-completion.md) | Accepted | 2026-09-15 | file-handler, focus, routing, lifecycle |

@@ -174,16 +174,16 @@ pub(crate) enum AppEvent {
     #[cfg(feature = "gui")]
     TransferProgressTick,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
-    /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
-    /// 오래된 결과를 drop 한다.
+    /// 각 요청은 독립적으로 완료되며 request_id는 진단용이다. 명시 origin이
+    /// 사라진 결과는 다른 창으로 보내지 않고 폐기한다.
     #[cfg(feature = "gui")]
     IdentifyDone {
         request_id: crate::identify_worker::IdentifyRequestId,
         target: crate::file::format::FileTarget,
         detector: Option<crate::file::format::DetectorId>,
         /// `DispatchFile.origin_surface_id` 그대로 carry. Some 이면
-        /// `apply_identify_result` → `execute_handler_action` 가
-        /// origin 의 *Pane* 에 새 tab 으로 추가.
+        /// App routes completion to its owner, including parked engines, and
+        /// retains it through picker selection. A vanished owner is not focus.
         origin_surface_id: Option<u32>,
         /// `DispatchFile.ignore_size_limit` 그대로 carry — 대용량 markdown 게이트를
         /// 건너뛴다(에이전트/IPC 강제 열기). 비동기 식별 왕복을 통과시키기 위함.

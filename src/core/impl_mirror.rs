@@ -448,6 +448,10 @@ impl Core {
                 origin_surface_id,
                 ignore_size_limit,
             } => {
+                if let Some(sid) = origin_surface_id {
+                    crate::file::dispatch::require_origin_pane(engine, sid)
+                        .map_err(anyhow::Error::msg)?;
+                }
                 #[cfg(feature = "gui")]
                 {
                     match engine.identify_worker.as_ref() {

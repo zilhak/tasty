@@ -763,7 +763,9 @@ fn route_engine_handler(
         "file_handler.reload" => file_handler::handle_reload(core, engine, id),
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
-        "file_handler.dispatch" => file_handler::handle_dispatch(state, id, request.params.clone()),
+        "file_handler.dispatch" => {
+            file_handler::handle_dispatch(state, engine, id, request.params.clone())
+        }
         // hook handler: 공유 훅 핸들러 레지스트리 조회/재로드/수동 발화. 상태는
         // 전역 싱글턴이라 list/reload 는 core/state/engine 미사용. dispatch 만
         // IpcSequence 실행에 host injector 가 필요해 core 를 받는다.

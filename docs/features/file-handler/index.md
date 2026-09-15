@@ -48,6 +48,20 @@ dispatch 대상(`DispatchTarget`)은 파일 경로(`File`) 또는 `http`/`https`
 
 `file_handler.define`(새 detector+handler) · `file_handler.extend:<id>`(기존 detector 에 rule) · `file_handler.handle:<id>`(기존 detector 에 handler). `$` sentinel 은 모든 토큰에서 reject. ([plugin-permissions](../../dev-guide/plugin-permissions.md).)
 
+### Origin 소유권과 비동기 완료
+
+`origin_surface_id` 를 지정한 요청은 처음부터 그 surface 소유 engine으로 라우팅된다.
+식별 완료와 picker 선택도 origin을 유지하며, OpenSurface 결과는 origin의 pane에
+포커스를 바꾸지 않고 새 탭으로 추가된다. 대기 중 다른 창으로 포커스를 옮겨도 대상은
+바뀌지 않는다. 소유 engine이 parked 상태이면 그 상태에 적용한다.
+
+처음부터 없는 origin은 기존 `-32602`와 unowned-target 문구로 거절한다. 접수 후
+origin이 사라지면 경고 로그를 남기고 실행하지 않는다. 다른 창의 새 탭으로 폴백하지
+않는다. `accepted: true`는 큐 접수만 뜻하며 완료 응답을 추가로 보내지 않는다.
+picker 취소는 실행·recent 기록 모두 없다. origin 생략은 기존 focused-window /
+사용자 NewTab 동작을 유지한다. Ipc handler의 path-only payload는 그대로다.
+근거: [ADR-0279](../../adr/0279-file-dispatch-retains-origin-through-completion.md).
+
 ## 인터페이스
 
 - **사용자**: Settings **Handler** 탭의 파일 서브탭(File Detectors / File Handlers / File Extension Mapping — 토글·user 항목 추가/삭제, 확장자 우선순위). user 설정은 `~/.tasty/file-handlers.toml`(부팅 1회 로드, atomic write). 같은 탭의 Hook Handlers 서브탭은 파일 핸들러가 아니라 [공유 훅 핸들러 레지스트리](../webhook/index.md) 편집이다.

@@ -33,7 +33,7 @@
 | [clipboard](clipboard/index.md) — 클립보드 (복사/붙여넣기/선택) | 로컬 사용자 | [뷰어 plugin](../plugins/clipboard-viewer/index.md) |
 | [notifications](notifications/index.md) — 알림 (OSC/시스템/패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |
 | [surface-highlight](surface-highlight/index.md) — Surface 주의 환기 (공유 상태·3채널·completion) | AI Agent · 로컬 사용자 | 없음 (테두리/탭/배지) |
-| [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
+| [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치, origin 소유권 유지) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
 | [native-file-picker](native-file-picker/index.md) — 네이티브 파일 피커 (로컬+원격 겸용, Tools 메뉴 · plugin 트리거 · 설정 창 안의 로컬 전용 재사용 · 긴 파일명 말줄임) | 로컬 사용자 · plugin | popup (갤러리 specimen) |
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [language-packs](language-packs/index.md) — 사용자 언어팩 발견·선택 및 plugin 번역 오버라이드 | 로컬 사용자 | [설정 탭](settings/screens/settings.md) General › Language · 부팅 경고 토스트 |

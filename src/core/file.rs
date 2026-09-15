@@ -50,6 +50,12 @@ impl Core {
         origin_surface_id: Option<u32>,
         ignore_size_limit: bool,
     ) {
+        if let Some(sid) = origin_surface_id
+            && let Err(message) = crate::file::dispatch::require_origin_pane(engine, sid)
+        {
+            tracing::warn!("{message}");
+            return;
+        }
         let handlers = match &detector {
             Some(d) => engine.file_handler.handlers_for(d),
             None => Vec::new(),
@@ -69,6 +75,9 @@ impl Core {
                 true,
                 ignore_size_limit,
             );
+            if let Some(picker) = state.dialogs.file_handler_picker.as_mut() {
+                picker.origin_surface_id = origin_surface_id;
+            }
             return;
         }
         // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
@@ -97,42 +106,50 @@ impl Core {
         engine: &mut CoreState,
         target: DispatchTarget,
         result: FileHandlerPickerResult,
+        origin_surface_id: Option<u32>,
         ignore_size_limit: bool,
     ) {
-        match result {
-            FileHandlerPickerResult::Selected(handler_id) => {
-                let Some(handler) = engine.file_handler.get(&handler_id) else {
-                    tracing::warn!(
-                        handler_id = %handler_id,
-                        "apply_file_picker_result: handler id from picker no longer in registry",
-                    );
-                    engine.record_file_handler_pick(&handler_id);
-                    return;
-                };
-                // 대상을 받지 못하는 핸들러(URL 대상의 Ipc 핸들러 등)는 실행되지 않고
-                // recent 에도 기록하지 않는다 — 기록하면 다음 picker 의 recent 로 되돌아온다.
-                if crate::file::dispatch::execute_handler_action(
-                    self,
-                    state,
-                    engine,
-                    &handler,
-                    &target,
-                    None,
-                    ignore_size_limit,
-                ) {
-                    engine.record_file_handler_pick(&handler_id);
-                }
-            }
-            FileHandlerPickerResult::Cancelled => {
-                // recent 갱신 없음.
-            }
-            FileHandlerPickerResult::OpenSettings => {
-                // App 레이어(`dispatch_pending_picker_results`)가 Core 로 내려보내기
-                // 전에 직접 가로채 처리한다 — 여기 도달하면 배선 누락.
-                tracing::warn!(
-                    "apply_file_picker_result: OpenSettings should be intercepted by the App layer before reaching Core",
-                );
-            }
+        let Some(handler_id) = selected_handler_id(result) else {
+            return;
+        };
+        if let Some(sid) = origin_surface_id
+            && let Err(message) = crate::file::dispatch::require_origin_pane(engine, sid)
+        {
+            tracing::warn!("{message}");
+            return;
+        }
+        let Some(handler) = engine.file_handler.get(&handler_id) else {
+            tracing::warn!(handler_id = %handler_id,
+                "apply_file_picker_result: handler id from picker no longer in registry");
+            engine.record_file_handler_pick(&handler_id);
+            return;
+        };
+        // Record only accepted actions; rejected targets must not return as recent picks.
+        if crate::file::dispatch::execute_handler_action(
+            self,
+            state,
+            engine,
+            &handler,
+            &target,
+            origin_surface_id,
+            ignore_size_limit,
+        ) {
+            engine.record_file_handler_pick(&handler_id);
+        }
+    }
+}
+
+/// Non-selection results have no handler action or recent entry.
+#[cfg(feature = "gui")]
+fn selected_handler_id(result: FileHandlerPickerResult) -> Option<crate::file::handler::HandlerId> {
+    match result {
+        FileHandlerPickerResult::Selected(id) => Some(id),
+        FileHandlerPickerResult::Cancelled => None,
+        FileHandlerPickerResult::OpenSettings => {
+            tracing::warn!(
+                "apply_file_picker_result: OpenSettings should be intercepted by the App layer before reaching Core",
+            );
+            None
         }
     }
 }
@@ -148,6 +165,10 @@ fn user_config_path() -> PathBuf {
 }
 
 #[cfg(all(test, feature = "gui"))]
+#[path = "file_origin_tests.rs"]
+mod origin_tests;
+
+#[cfg(all(test, feature = "gui"))]
 mod tests {
     use std::sync::{Arc, Mutex};
 
@@ -157,7 +178,7 @@ mod tests {
     /// `mirror_structural_guard_tests::build_test_core` 와 동형(모든 port
     /// mock/in-memory 주입). `apply_identify_result` 의 empty-handler 분기는 어떤
     /// port 도 건드리지 않지만 메서드 자체가 `Core` 를 요구해 완전한 인스턴스가 필요.
-    fn build_test_core() -> (Core, CoreState) {
+    pub(super) fn build_test_core() -> (Core, CoreState) {
         use crate::adapters::test::{
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
             mock_process::MockProcessSpawner, tmp_home::TmpHome,
@@ -266,6 +287,7 @@ mod tests {
             &mut engine,
             DispatchTarget::http_url("https://example.com/page").expect("url"),
             FileHandlerPickerResult::Selected(handler_id),
+            None,
             false,
         );
 

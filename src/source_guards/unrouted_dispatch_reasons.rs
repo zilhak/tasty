@@ -24,9 +24,10 @@
 //! 1. **serde 로 읽는 키를 못 본다.** `serde_json::from_value::<Req>(params)` 로 받는
 //!    핸들러는 키 리터럴이 구조체 필드 이름으로만 있어 이 스캔에 안 걸린다. 실측으로
 //!    셋이 그렇다 — `markdown.navigate`(범용 키라 라우팅은 푼다) ·
-//!    `git_viewer.query` · `file_handler.dispatch`(둘은 라우팅도 못 푼다). 셋 다 명부에
-//!    갈래와 사유로 남아 있다. **짝인 두 가드도 같은 사각을 갖는다** — 그쪽도
-//!    `params.get` 형태만 훑으므로 `local_surface_id`·`origin_surface_id` 는 인식
+//!    `git_viewer.query` · `file_handler.dispatch`. 앞의 둘은 명부에 남고,
+//!    `file_handler.dispatch` 는 메서드 한정 origin 키로 라우팅되어 모수에서 빠진다.
+//!    **짝인 두 가드도 같은 사각을 갖는다** — 그쪽도
+//!    `params.get` 형태만 훑으므로 `local_surface_id` 는 인식
 //!    목록에도 면제 목록에도 안 나온다.
 //! 2. **`request_target` 밖에서 푸는 것을 못 본다.** `split` 의
 //!    `target_surface`/`target_pane` 은 `App::find_request_owner` 가 문자열 축에서
@@ -619,11 +620,6 @@ const ROSTER: &[(&str, Why, &str)] = &[
         PerWindowOpenDefect,
         "`local_surface_id` 를 serde 로 읽고 요청이 닿은 engine 의 `pending_git_query_forward` 에 큐잉한다. 그 키는 `params_resource_id` 의 범용 키가 아니라 **라우팅도 못 푼다** — 다른 창의 surface 를 지목해도 이 창에 쌓인다",
     ),
-    (
-        "file_handler.dispatch",
-        PerWindowOpenDefect,
-        "`origin_surface_id` 를 serde 로 읽어 intent 에 싣는데, 그 키도 범용 키가 아니라 라우팅이 못 푼다 — 다른 창의 surface 를 지목하면 요청이 닿은 창에서 새 탭이 열린다",
-    ),
 ];
 
 /// dispatch arm 수의 하한 — **연기 검사**다. 파서가 죽으면 예외가 아니라 조용한 0 이
@@ -746,7 +742,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .collect();
     assert_eq!(
         open.len(),
-        4,
+        3,
         "창 소유인데 대상 축도 합산도 없는 항목의 수가 바뀌었다: {open:?}"
     );
 }

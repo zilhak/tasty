@@ -114,11 +114,13 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 (`RoutedOutsideRequestTarget`), 그리고 debug 표면(`DebugOnly`). 사각을 술어에서 지우는
 대신 명부의 행으로 만들어 검토받게 한다.
 
-**그 명부에 남은 열린 항목이 넷이다** — `notification.list`(합산 정책 미결) ·
+**그 명부에 남은 열린 항목이 셋이다** — `notification.list`(합산 정책 미결) ·
 `system.info`(한 창의 워크스페이스 수를 답하는데 어느 창인지 안 적힌다) ·
-`git_viewer.query`·`file_handler.dispatch`(대상 surface 를 serde 로 받는데 그 키가 범용
-키가 아니라 라우팅이 못 푼다 — 다른 창의 surface 를 지목해도 요청이 닿은 창에서
-처리된다). `recent.query`는 state.db에 귀속된 공유 캐시를 조회하므로 어느 창에서 호출해도
+`git_viewer.query`(기존 명부 사유의 후속 검토 대상).
+`file_handler.dispatch`는 명시 origin으로 초기 요청과 비동기 완료를 같은 소유 engine에
+연결하고 picker 선택까지 유지한다. origin이 사라지면 실행하지 않고, 다른 창의
+NewTab으로 폴백하지 않는다. origin 생략의 기존 사용자 경로는 유지한다
+([ADR-0279](../../adr/0279-file-dispatch-retains-origin-through-completion.md)). `recent.query`는 state.db에 귀속된 공유 캐시를 조회하므로 어느 창에서 호출해도
 같은 종류의 최근 목록을 최신순 최대 10개 반환한다. 창이 열린 뒤 다른 창에서 기록한
 파일도 반영되며, 조회는 목록 순서나 사용자 포커스를 바꾸지 않는다.
 

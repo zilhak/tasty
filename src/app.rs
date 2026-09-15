@@ -22,6 +22,8 @@ pub(crate) mod event;
 #[cfg(feature = "gui")]
 pub(crate) mod event_handler;
 #[cfg(feature = "gui")]
+mod file_dispatch;
+#[cfg(feature = "gui")]
 pub(crate) mod global_hooks;
 #[cfg(feature = "gui")]
 pub(crate) mod idle_hooks;
