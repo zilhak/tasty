@@ -39,6 +39,8 @@ pub struct IdGenerator {
     /// 어떤 요청으로도 닿지 않는 상태가 남는다 — 실제로 그 상태가 있었고, 그때
     /// `unset --hook <id>` 가 포커스된 창의 것을 지웠다.
     global_hook: Arc<std::sync::atomic::AtomicU32>,
+    /// Instance-wide notification identity and creation order; panels stay per-engine.
+    notification: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Default for IdGenerator {
@@ -60,6 +62,7 @@ impl IdGenerator {
             observer: Arc::new(AtomicU64::new(1)),
             hook: Arc::new(AtomicU64::new(1)),
             global_hook: Arc::new(AtomicU32::new(0)),
+            notification: Arc::new(AtomicU64::new(1)),
         }
     }
 
@@ -81,6 +84,10 @@ impl IdGenerator {
     /// global hook id 카운터 — `GlobalHookManager` 가 이 Arc 를 들고 발급한다.
     pub fn global_hook_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
         Arc::clone(&self.global_hook)
+    }
+
+    pub fn notification_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        Arc::clone(&self.notification)
     }
 
     pub fn next_workspace(&self) -> u32 {
@@ -817,7 +824,7 @@ impl CoreState {
             default_rows: rows,
             waker: waker.clone(),
             settings,
-            notifications: NotificationStore::with_coalesce_ms(500),
+            notifications: NotificationStore::with_counter(500, next_ids.notification_counter()),
             hook_manager: HookManager::with_counter(next_ids.hook_counter()),
             global_hook_manager: GlobalHookManager::with_counter(next_ids.global_hook_counter()),
             closed_items: crate::model::ClosedItemStore::new(),
@@ -939,8 +946,10 @@ impl CoreState {
             .attach_detector_info(engine.file_format.clone());
 
         // Re-apply coalesce_ms from actual settings
-        engine.notifications =
-            NotificationStore::with_coalesce_ms(engine.settings.notification.coalesce_ms);
+        engine.notifications = NotificationStore::with_counter(
+            engine.settings.notification.coalesce_ms,
+            next_ids.notification_counter(),
+        );
 
         // Try restoring saved layout. plugin이 제공하는 surface kind(예: explorer)는
         // PluginManager가 hello를 처리한 후에야 registry에 등록되므로, 여기서 즉시

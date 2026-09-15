@@ -1,3 +1,7 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use crate::model::{SurfaceId, WorkspaceId};
@@ -20,18 +24,25 @@ pub struct Notification {
 pub struct NotificationStore {
     notifications: std::collections::VecDeque<Notification>,
     max_count: usize,
-    next_id: u64,
+    next_id: Arc<AtomicU64>,
     /// Coalesce window in milliseconds.
     coalesce_ms: u64,
 }
 
 impl NotificationStore {
     /// Create a notification store with a custom coalesce window.
+    #[cfg(test)]
     pub fn with_coalesce_ms(coalesce_ms: u64) -> Self {
+        Self::with_counter(coalesce_ms, Arc::new(AtomicU64::new(1)))
+    }
+
+    /// Each engine owns its panel, but notification IDs share the instance's
+    /// creation order so global IPC lists can merge entries without collisions.
+    pub fn with_counter(coalesce_ms: u64, next_id: Arc<AtomicU64>) -> Self {
         Self {
             notifications: std::collections::VecDeque::new(),
             max_count: 100,
-            next_id: 1,
+            next_id,
             coalesce_ms,
         }
     }
@@ -74,8 +85,7 @@ impl NotificationStore {
             self.notifications.pop_front();
         }
 
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         // NOTE: surface attention 발동은 이제 producer(호출처)가 담당한다
         // (`CoreState::raise_attention`). NotificationStore 는 알림 엔트리
@@ -130,6 +140,22 @@ impl NotificationStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_notification_ids_keep_creation_order_and_coalescing_identity() {
+        let ids = crate::core::state::IdGenerator::new();
+        let mut a = NotificationStore::with_counter(60_000, ids.notification_counter());
+        let mut b = NotificationStore::with_counter(60_000, ids.notification_counter());
+        let first = a.add(1, 1, "A".into(), "one".into()).unwrap();
+        let second = b.add(2, 2, "B".into(), "two".into()).unwrap();
+        assert!(first < second);
+        assert_eq!(a.add(1, 1, "updated".into(), "more".into()), None);
+        assert_eq!(a.all().next().unwrap().id, first);
+        let third = a.add(1, 3, "C".into(), "three".into()).unwrap();
+        assert!(second < third);
+        a.mark_read(first);
+        assert!(!b.all().next().unwrap().read);
+    }
 
     #[test]
     fn add_and_count() {

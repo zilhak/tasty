@@ -1,4 +1,4 @@
-<!-- source-hash: de2ba08e4962 -->
+<!-- source-hash: 76483eda6215 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -90,6 +90,9 @@ tasty notify "Build finished"                    # the title defaults to "Notifi
 tasty notify "3 tests failed" --title "cargo test"
 tasty list notifications
 ```
+
+`list notifications` returns the 50 most recently created notifications across all windows. IDs are unique across windows within one run. When nearby notifications merge into an existing entry, that entry keeps its position. The on-screen panel and read state remain local to each window.
+
 
 Notification sequences sent by terminal programs (OSC 9 / 99 / 777) and bells are collected as the same kind of notification.
 

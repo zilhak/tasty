@@ -26,6 +26,21 @@ termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC
 
 VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 같은 source 에서 설정 간격(기본 500ms) 내 연속 알림은 기존에 합침. 개별/전체 읽음 처리. 신규 알림 발화 시 그 source surface 를 attention 발동한다 — toast 는 attention(주의 환기)의 **producer 중 하나**이며, attention 상태 자체는 NotificationStore 가 아니라 producer 중립 공유 primitive(CoreState `attention: AttentionStore`)에 있다 — 알림 레코드가 곧 attention 레코드는 아니다(별개 저장소). 사이드바 워크스페이스 배지는 워크스페이스별 unread 개수가 아니라 `attention_count`(surface 단위 attention 개수) 기준이다. 상세 [`surface-highlight`](../surface-highlight/index.md).
 
+### IPC 목록의 범위·ID·순서·상한
+
+`notification.list`는 모든 main/parked engine의 알림을 합쳐 반환한다. headless는
+하나의 engine에 같은 규칙을 적용한다. UI 패널과 저장소는 여전히 창별이고, 각
+저장소의 FIFO 보존 상한 100개와 읽음 상태는 공유하지 않는다.
+
+ID는 인스턴스의 공유 IdGenerator에서 발급하는 u64이며 재시작 동안 보존되는 ID가
+아니다. 목록은 ID 내림차순, 즉 **신규 생성 순서의 역순**으로 전체 최대 50개다.
+창 순회 순서나 포커스는 결과를 바꾸지 않는다. coalescing은 기존 ID와 생성 순서를
+유지하므로 최근 내용 갱신이 항목을 앞으로 옮기지는 않는다. 기존 한 engine의 순서와
+고정 50개 응답 계약을 유지하며 새로운 limit/필터 인자를 도입하지 않는다.
+
+이는 [목록 합산 원칙](../../adr/0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md)의
+적용이며, GUI 패널을 전역 패널로 바꾸는 결정이 아니다.
+
 ### 시스템 알림 + 사운드
 
 윈도우 비활성 시 OS 네이티브 알림(notify-rust, 초당 1회 rate limit). `notification.sound` 가 true 면 신규 알림 발화 시 OS beep 1회(macOS `NSBeep` / Windows `MessageBeep` / Linux `paplay→aplay→\a` 3단 폴백, headless 는 Noop). coalesce 로 묶인 알림은 host event 미생성이라 자동 비음. 터미널 `\a`(Bell)는 OS 가 자체 beep 할 수 있어 안전 default 로 skip.

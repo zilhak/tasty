@@ -111,8 +111,8 @@ const ROSTER: &[(&str, Class, &str)] = &[
     ),
     (
         "notification.list",
-        PerEngineNotAggregated,
-        "`notifications` 가 engine 마다 새로 만들어진다. 지목 수단이 없어 다른 창의 알림은 보이지도 닿지도 않는다",
+        Aggregated,
+        "각 engine의 알림을 합치며 IdGenerator 공유 카운터가 ID 충돌을 막는다. 생성 ID 역순으로 전체 50개를 반환하고 UI 패널은 창별로 유지한다",
     ),
     (
         "approval.list",
@@ -406,7 +406,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .filter(|(_, c, _)| *c == PerEngineNotAggregated)
         .count();
     assert_eq!(
-        open, 1,
+        open, 0,
         "창별인데 합산 안 되는 항목의 수가 바뀌었다. 고쳤으면 갈래를 옮기고 이 수를 \
          함께 내려라 — 남겨 두면 다음 사람이 이미 닫힌 것을 다시 센다."
     );

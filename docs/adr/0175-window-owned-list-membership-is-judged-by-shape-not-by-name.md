@@ -154,3 +154,11 @@ hook 둘은 **틀린 것이 아니라 낡은 것**이다 — 그때는 선행 �
 - [identity §2.3 포커스 독립성](../identity.md)
 - `src/app/dispatch/list_global.rs` (합산 집합) · `src/adapters/ipc/handler.rs` (`build_engine_tree`)
 - `tests/e2e_tests.rs` (`multi_window_owner_routing`) — 회귀 단언
+
+## 구현 확정 보강 — 알림 목록 (2026-09-15)
+
+창 소유 알림도 IPC 목록 합산에 포함한다. 선행 조건인 ID 유일성은 기존
+IdGenerator 공유 카운터 방식으로 확보한다. 응답 모양과 숫자 ID 타입은 유지하며,
+전체에서 생성 ID 역순 50개를 반환한다. 각 창의 FIFO 보존 100개·병합·읽음 상태와
+UI 패널은 창별로 남는다. coalescing은 생성 ID를 유지하므로 갱신 시각 순으로
+재정렬하지 않는다. 기존 단일 engine의 목록 순서와 상한을 전역 목록에도 적용한다.

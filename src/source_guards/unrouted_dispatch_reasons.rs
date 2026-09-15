@@ -604,8 +604,8 @@ const ROSTER: &[(&str, Why, &str)] = &[
     ),
     (
         "notification.list",
-        PerWindowOpenDefect,
-        "`notifications` 가 engine 마다 새로 만들어지고 합산 집합에도 없다 — 다른 창의 알림은 보이지도 닿지도 않는다. 합칠지는 제품 결정이라 열려 있다(정본은 합산 명부)",
+        AggregatedList,
+        "engine별 패널 저장소를 전 창/parked에서 모으고 공유 생성 ID 역순으로 전체 50개만 반환한다. UI 패널과 읽음 상태의 소유권은 각 engine에 남는다",
     ),
     (
         "system.info",
@@ -744,7 +744,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .collect();
     assert_eq!(
         open.len(),
-        1,
+        0,
         "창 소유인데 대상 축도 합산도 없는 항목의 수가 바뀌었다: {open:?}"
     );
 }

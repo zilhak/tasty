@@ -45,14 +45,10 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 - **IPC/CLI 로 focus 를 변경할 수 없다.** focus 변경 API(`surface.focus` / `pane.focus` / `workspace.select` / `focus.direction`)는 release 에 없다(제거됨). focus 는 오직 사용자 행위(단축키·마우스)로만 바뀐다.
 - 모든 명령은 대상을 **ID 로 직접 지정**한다. `list` 는 **전 워크스페이스 순회**(활성 상태 비의존).
   - 순회하는 `list` 는 호스트가 명시적으로 합산하는 것뿐이다(`src/app/dispatch/list_global.rs`). **그 집합의 소속은 이름이 아니라 성질로 판정한다**(핸들러가 창 소유 컬렉션을 순회하는가 · 대상 인자가 없는가 · 합산 집합에 없는가) — 이름 모양(`*.list`)으로 훑는 눈에는 `tree` 가 안 걸려 오래 빠져 있었다([ADR-0175](../../adr/0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md)). **그 목록에 없는 `list` 는 포커스된 창의 것만 답하고, 에러가 없다.** 실측(창 둘): 창1 에서 만든 headless pty 가 창2 포커스의 `pty.list` 에 안 나오는데 `pty.read {id}` 는 그 pty 를 읽었다 — **조작할 수 있는데 볼 수 없는** 상태다. 창 소유 자원의 `list` 를 새로 만들면 거기에 등록한다.
-  - **지금 합산되지 않는 창 소유 목록이 하나 있다** — `notification.list`.
-    `notifications` 가 engine 마다 새로 만들어지는 것을 소스로 확인했다. 갈래와
-    **안 한 이유**의 정본은
-    `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs` 의 명부이고,
-    그 명부는 모든 갈래에 사유를 요구한다 — 갈래 이름만으로는 판정이 재현되지 않기
-    때문이다. 알림이 막힌 곳은 코드가 아니라 정책이다: 다른 창의 알림을 이 창에서
-    보이게 하는 것이 옳은지가 제품 결정이고, 합치면 응답의 `id` 가 창 수만큼
-    중복되므로 그 표시 규칙까지 함께 정해야 한다.
+  - `notification.list`도 main/parked engine의 알림을 합산한다. ID는 공유
+    IdGenerator에서 발급하고 생성 순서 역순으로 전체 50개를 반환한다. 병합은 기존
+    ID와 생성 순서를 유지한다. UI 알림 패널과 읽음 처리는 각 engine 소유로 남는다.
+    소속 명부는 `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs`다.
     - **`approval.list` 는 창별이 아니었다.** `CoreState` 생성자만 읽으면 engine 마다
       `Arc::new` 라 창별로 보이는데, 두 번째 main window 를 세우는
       `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의
@@ -114,7 +110,8 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 (`RoutedOutsideRequestTarget`), 그리고 debug 표면(`DebugOnly`). 사각을 술어에서 지우는
 대신 명부의 행으로 만들어 검토받게 한다.
 
-**그 명부에 남은 열린 항목은 `notification.list`다**(합산 정책 미결).
+**현재 그 명부의 열린 항목은 없다.** 이는 명부에 분류한 대상의 판정이며,
+아래 별도 IPC 진입 게이트의 소비·관측 문제까지 해결했다는 뜻은 아니다.
 `system.info`는 기존 count/index를 engine 관측값으로 유지하되 `scope=engine`,
 `workspace_ids`, `active_workspace_id`, `layout_slot`으로 소속을 명시한다.
 `workspace_id` 등 기존 대상 키로 비포커스 engine도 조회할 수 있다. `window.list`는

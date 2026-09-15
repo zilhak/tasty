@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::app::App;
 use crate::ipc as host_ipc;
 use crate::ipc::handler::{
-    attach, hooks, image, output, pane, pty, surface, workspace, workspace_category,
+    attach, hooks, image, notification, output, pane, pty, surface, workspace, workspace_category,
 };
 use crate::ipc::protocol::JsonRpcResponse;
 
@@ -28,6 +28,18 @@ impl App {
     ) -> Option<JsonRpcResponse> {
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         match request.method.as_str() {
+            "notification.list" => {
+                // A row outside its engine's newest 50 cannot be in the global top 50.
+                let rows = one(self.merge_fields(
+                    &id,
+                    |_c, s, e, id| notification::handle_notification_list(s, e, id),
+                    &[],
+                ));
+                Some(JsonRpcResponse::success(
+                    id,
+                    json!(notification::latest_notifications(rows)),
+                ))
+            }
             "workspace.list" => Some(self.collect_list(id, |_c, s, e, id| {
                 workspace::handle_workspace_list(s, e, id)
             })),
