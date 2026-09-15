@@ -44,12 +44,12 @@
 
 | 섹션 | 항목 |
 |------|------|
-| **일반** | **셸** <!-- en: Shell --> · **시작 명령어** <!-- en: Startup command --> · **스크롤백 줄 수** <!-- en: Scrollback lines --> (기본 10000) · **실행 중 프로세스 닫기 확인** <!-- en: Confirm close running process --> · **작업 디렉토리 상속** <!-- en: Inherit working directory --> · **화면 반전 플래시 (DECSCNM)** <!-- en: Reverse-screen flash (DECSCNM) --> · **벨 알림 표시** <!-- en: Show bell notification --> · **링크 클릭 수식키** <!-- en: Link click modifier --> (Ctrl / Alt / 없음) · macOS: **Option 을 Meta 로 사용** <!-- en: Use Option as Meta --> · Windows: **셸 모드** <!-- en: Shell mode --> |
+| **일반** | **셸** <!-- en: Shell --> · **시작 명령어** <!-- en: Startup command --> · **스크롤백 줄 수** <!-- en: Scrollback lines --> (기본 10000) · **실행 중 프로세스 닫기 확인** <!-- en: Confirm close running process --> · **작업 디렉토리 상속** <!-- en: Inherit working directory --> · **화면 반전 플래시 (DECSCNM)** <!-- en: Reverse-screen flash (DECSCNM) --> · **벨 알림 표시** <!-- en: Show bell notification --> · **링크 클릭 수식키** <!-- en: Link click modifier --> (Ctrl / Alt / 좌클릭 열기 끄기) · macOS: **Option 을 Meta 로 사용** <!-- en: Use Option as Meta --> · Windows: **셸 모드** <!-- en: Shell mode --> |
 | **마우스 캡처** <!-- en: Mouse Capture --> | **마우스 캡처 안내 표시** <!-- en: Show mouse-capture hint --> · **다음 프로그램에서 마우스 캡처 비활성화** <!-- en: Disable mouse capture for these programs --> · **다음 프로그램에서 캡처 안내 배너만 억제** <!-- en: Suppress the capture hint banner for these programs --> — 프로세스 이름 또는 `ht*` 같은 패턴 |
 | **TUI** | **클립보드 읽기 허용 (OSC 52)** <!-- en: Allow clipboard read (OSC 52) --> — 기본 꺼짐. 켜면 터미널 안 프로그램이 클립보드를 읽을 수 있습니다 |
 | **성능** <!-- en: Performance --> | **선택적 PTY 폴링** <!-- en: Targeted PTY polling --> · **스크롤백 디스크 스왑** <!-- en: Scrollback disk swap --> — 둘 다 재시작 후 적용 |
 
-**링크 클릭 수식키** 를 **없음** 으로 두면 일반 클릭으로 링크가 열려 텍스트 선택과 구분되지 않습니다. 마우스 캡처 항목의 의미는 [터미널 다루기](../using/terminal.md).
+**링크 클릭 수식키**를 **좌클릭 열기 끄기** <!-- en: Disable left-click opening --> 로 두면 좌클릭으로 링크를 열지 않습니다. 수식키 없이 링크에 마우스를 올려 표시할 수 있고 링크 위 우클릭 메뉴는 계속 사용할 수 있습니다. 팝업이나 배너 위에서는 링크 표시가 차단될 수 있습니다. 마우스 캡처 항목의 의미는 [터미널 다루기](../using/terminal.md).
 
 ### 외관
 

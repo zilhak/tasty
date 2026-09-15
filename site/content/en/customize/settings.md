@@ -1,4 +1,4 @@
-<!-- source-hash: 65a36553056f -->
+<!-- source-hash: 8ae2a321a0cb -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -45,12 +45,12 @@ Press the same shortcut again to close the settings window.
 
 | Section | Entries |
 |------|------|
-| **General** | **Shell** · **Startup command** · **Scrollback lines** (default 10000) · **Confirm close running process** · **Inherit working directory** · **Reverse-screen flash (DECSCNM)** · **Show bell notification** · **Link click modifier** (Ctrl / Alt / None) · macOS: **Use Option as Meta** · Windows: **Shell mode** |
+| **General** | **Shell** · **Startup command** · **Scrollback lines** (default 10000) · **Confirm close running process** · **Inherit working directory** · **Reverse-screen flash (DECSCNM)** · **Show bell notification** · **Link click modifier** (Ctrl / Alt / Disable left-click opening) · macOS: **Use Option as Meta** · Windows: **Shell mode** |
 | **Mouse Capture** | **Show mouse-capture hint** · **Disable mouse capture for these programs** · **Suppress the capture hint banner for these programs** — process names or patterns such as `ht*` |
 | **TUI** | **Allow clipboard read (OSC 52)** — off by default. When on, programs inside the terminal can read the clipboard |
 | **Performance** | **Targeted PTY polling** · **Scrollback disk swap** — both take effect after a restart |
 
-If you set **Link click modifier** to **None**, a plain click opens links and cannot be told apart from text selection. The meaning of the mouse capture entries is in [Working in the terminal](../using/terminal.md).
+Set **Link click modifier** to **Disable left-click opening** to prevent left-clicks from opening links. You can still hover a link without a modifier and use its right-click menu. Popups and banners can block link highlighting. The meaning of the mouse capture entries is in [Working in the terminal](../using/terminal.md).
 
 ### Appearance
 
