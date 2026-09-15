@@ -993,29 +993,13 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .count();
     assert_eq!(
         (zeros, in_tests),
-        // 167 -> 171 은 전부 `LogicalPx(0.0)` 이다(합의 항등원 · `.max(LogicalPx(0.0))` ·
-        // `slack > LogicalPx(0.0)`) — 이 사각이 겨냥해 두고 있던 바로 그 형태다.
-        // 191 -> 198 은 `port_scanner.rs` 의 컬럼 폭 계산 단위 테스트가 인자를 타입으로
-        // 받게 되면서 늘었다. 둘 다 화면에 안 나가는 구간이라 판정 대상이 아니다.
-        // 171 -> 175 도 전부 `0.0` 이다 — plugins 창 목록 행 넷(본체 둘 · 갤러리 둘)이
-        // 아바타 다음으로 텍스트 열을 미는 `vec2(dx, 0.0)` 을 쓴다. 세로로는 안 민다.
-        // 175 -> 174 · 198 -> 197 은 각각 한 자리이고 같은 원인이다 — `p[0]` 의 첨자가
-        // `vec2(` 인자로 세어지던 것이 `head_span_of` 의 `[` 처리로 닫혔다. 사각이
-        // 좁아진 것이라 이 수도 함께 내린다.
-        // Tutorial cards replace two zero-spacing vectors; their viewport regression adds one test-only rectangle.
-        // 198 -> 216 은 `plugin_bridge::mesh_ime_cursor_area` 의 단위 시험이 콘텐츠 origin·
-        // 기대 rect 를 `PhysicalRect`/`PhysicalPx` 리터럴로 적으면서 늘었다(실측 +18).
-        // 화면에 안 나가는 시험 전용 구간이라 판정 대상이 아니다 — 그 변환은 창 좌표
-        // 산술이고 디자인 토큰으로 대체할 값이 아니다.
-        // 172 -> 174 는 단축키 가져오기/내보내기 그룹 헤더의 `shrink2(vec2(spacing_md, 0.0))`
-        // 둘(본체 · 갤러리)이다 — 세로로는 안 줄인다.
-        // 216 -> 218 은 `tasty-ui-widgets/tests/select_placeholder.rs` 의 headless 화면
-        // `vec2(600.0, 200.0)` 두 인자다 — 시험 전용 구간이라 판정 대상이 아니다.
-        // 174 -> 177 은 파일 피커 footer 의 `0.0` 셋이다 — 이름 행의 가로 전용 간격
-        // `vec2(spacing_sm, 0.0)`, 읽기전용 이름 칸의 `shrink2(vec2(input_padding_x, 0.0))`,
-        // footer 높이를 남은 높이로 자를 때의 하한 `.max(LogicalPx(0.0))` 이다.
-        // 218 -> 219 는 파일 피커 `layout_tests.rs` 가 popup 크기를 리터럴로 적은 한 자리다.
-        (177, 219),
+        // Zero spacings and nonnegative bounds are counted, but are not token choices.
+        // file_picker::entry_row clamps the remaining filename-column width to zero
+        // when fixed columns consume it. This adds one shipped zero, not a size token.
+        // The test-only census also includes the narrow-width file-picker viewport:
+        // vec2(400, 360) contributes 400 (on size-*), while 360 is off that scale.
+        // Both sites remain visible to this census; neither needs a new exemption.
+        (178, 220),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );
@@ -1071,6 +1055,30 @@ mod detector {
         assert_eq!(
             hits("LogicalPx(24.0)"),
             vec![(1, "LogicalPx".to_owned(), 24.0)]
+        );
+    }
+
+    #[test]
+    fn a_zero_width_bound_is_counted_and_a_nonzero_bound_is_not_a_floor_exemption() {
+        let zero = "(name_right - name_left).max(LogicalPx(0.0))";
+        assert_eq!(hits(zero), vec![(1, "LogicalPx".to_owned(), 0.0)]);
+        // A real size at the same location must stay visible; do not exempt max().
+        let dimension = "(name_right - name_left).max(LogicalPx(24.0))";
+        assert_eq!(hits(dimension), vec![(1, "LogicalPx".to_owned(), 24.0)]);
+        assert!(floors(dimension).is_empty());
+    }
+
+    #[test]
+    fn a_test_viewport_is_counted_before_gating_but_not_as_shipped_geometry() {
+        let test =
+            "#[cfg(test)]\nmod layout_tests { fn narrow_width() { egui::vec2(400.0, 360.0); } }";
+        assert_eq!(hits(test), vec![(2, "vec2".to_owned(), 400.0)]);
+        assert!(hits(&blank_test_modules(&mask_non_code(test))).is_empty());
+        // Removing the test gate makes the identical viewport a shipping candidate.
+        let shipped = test.replace("#[cfg(test)]\n", "");
+        assert_eq!(
+            hits(&blank_test_modules(&mask_non_code(&shipped))),
+            vec![(1, "vec2".to_owned(), 400.0)]
         );
     }
 
