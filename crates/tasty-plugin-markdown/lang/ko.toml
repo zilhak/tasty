@@ -2,7 +2,7 @@
 markdown = "마크다운"
 
 [markdown.cli]
-desc = "마크다운 뷰어 명령 (템플릿)"
+desc = "마크다운 뷰어 명령"
 
 [markdown.namespace]
 desc = "마크다운 뷰어 surface 네임스페이스"
@@ -94,3 +94,12 @@ file_hint = "마크다운 파일 경로"
 
 [markdown.settings]
 allow_remote = "원격 콘텐츠 허용"
+
+[markdown.cli.sub.reload]
+description = "디스크에서 마크다운 서피스 강제 새로고침"
+
+[markdown.cli.sub.recent]
+description = "최근에 연 마크다운 파일 나열(최신순, 최대 10개)"
+
+[markdown.cli.arg.reload_args.surface]
+help = "대상 서피스 ID"

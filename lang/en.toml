@@ -1983,6 +1983,7 @@ about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background P
 about = "Check if a surface is currently typing (received key input within 5 seconds)"
 
 [cli.help._root.wake]
+long = "Spawn the PTY of a deferred surface (no-op if already running)\n\nSend commands auto-wake the target; use this only to start the PTY without sending input."
 about = "Spawn the PTY of a deferred surface (no-op if already running)"
 
 [cli.help._root.debug]
@@ -2039,6 +2040,7 @@ about = "Manage inbound webhooks (register/list/info/unregister) — HTTP → Ip
 about = "Print this instance's IPC port to stdout (first step of the auto remote port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC"
 
 [cli.help._root.screenshot]
+long = "Capture a screenshot to a PNG file (focus-independent).\n\nWith `--surface`, captures that terminal surface via an offscreen render at its own grid size — works for background tabs/workspaces and never changes focus or the visible frame. Otherwise captures a whole window: `--window` selects it by ID (see `list windows`); if omitted and only one window is open, that one is used.\n\nAn explicit `--window` may name a window that `list windows` does not show, such as the settings or plugins modal. Only the automatic (no `--window`) choice is limited to main windows, and it never falls back to whichever window happens to be focused."
 about = "Capture a screenshot to a PNG file (focus-independent)"
 
 [cli.help._root.list.workspaces]
@@ -4444,3 +4446,1284 @@ long = "Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml).
 
 [cli.help._root.webhook.config.arg.port]
 help = "Set the listener port (1-65535). Requires restart to take effect"
+
+[cli.help._root.list.surface-kinds]
+long = "List the surface kinds this instance has actually registered.\n\nThis is the runtime fact, not a manifest declaration: a kind shows up here only if the host registered it, so `--type <kind>` works for exactly the kinds listed. Host builtins and plugin-provided kinds both appear."
+about = "List the surface kinds this instance has actually registered"
+
+[cli.help._root.remote.attach]
+long = "Attach to a remote surface/workspace over SSH (one-shot).\n\nOpens an `ssh -L` tunnel and runs the attach session through it; the remote target comes from `--ssh` or `--profile`."
+about = "Attach to a remote surface/workspace over SSH (one-shot)"
+
+[cli.help._root.remote.attach.arg.surface]
+help = "Target surface id (given explicitly, never inferred from focus). Mutually exclusive with `--workspace`"
+
+[cli.help._root.remote.attach.arg.workspace]
+help = "Target workspace id; mirrors every terminal in it as a tree. Mutually exclusive with the `surface` positional. Non-terminal surfaces are shown as placeholders"
+
+[cli.help._root.remote.attach.arg.dump_after]
+help = "Mirror-dump mode: collect output for N ms after attaching, print the mirrored screen to stdout, then exit (automated verification without a GUI). In workspace mode each surface is printed as its own section"
+
+[cli.help._root.remote.attach.arg.send]
+help = "Input to send once right after attaching (escapes decoded: \\n \\r \\t \\xNN). For non-interactive verification"
+
+[cli.help._root.remote.attach.arg.send_to]
+help = "Remote surface id that receives the `--send` input in workspace mode"
+
+[cli.help._root.remote.attach.arg.raw]
+help = "Raw bridge mode: stdin/stdout passthrough (detach with Ctrl+\\)"
+
+[cli.help._root.remote.attach.arg.force_detach]
+help = "Forcibly release the attach lock on an occupied surface/workspace (server-side; does not attach). Sends the local `attach.force_detach` request to this server to release a remote client's lock. Mutually exclusive with `--ssh` (force-detach through a tunnel is not supported)"
+
+[cli.help._root.remote.attach.arg.ssh]
+help = "Remote SSH target, e.g. --ssh user@host or --ssh gx10. Mutually exclusive with `--profile`"
+
+[cli.help._root.remote.attach.arg.profile]
+help = "Attach using a saved tasty-attach profile name. The profile is resolved from `~/.tasty/remote-profiles.toml` to supply user/port/identity/extra options. Mutually exclusive with `--ssh`. The profile's values replace `--remote-tasty` and `--remote-port-mode`"
+
+[cli.help._root.remote.attach.arg.remote_tasty]
+help = "Path to the tasty binary on the remote host, used by the subcommand step of port discovery (`ssh host <path> port`). Defaults to \"tasty\" (assumed to be on the remote PATH)"
+
+[cli.help._root.remote.attach.arg.remote_port_mode]
+help = "Remote port discovery mode: auto (default) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.attach.arg.no_reconnect]
+help = "Disable automatic reconnection (by default the session reconnects with backoff when SSH drops)"
+
+[cli.help._root.remote.attach.arg.into_gui]
+help = "Ask the local GUI to become the client and rebuild the remote workspace as a mirror (`attach.into_gui` IPC). Requires `--workspace` and `--target-port`"
+
+[cli.help._root.remote.attach.arg.target_port]
+help = "Loopback port of the remote tasty server for `--into-gui` (the port the GUI connects to)"
+
+[cli.help._root.remote.check]
+long = "Check whether a remote tasty instance is alive over SSH.\n\nPort discovery alone (`tasty port` / the port file) can mistake a stale port file left by a dead instance for a live one, so after discovering the port this opens an `ssh -L` tunnel and sends one lightweight IPC request (`system.info`). The instance counts as alive only if it responds; a refused connection or a timeout means dead (stale port). Argument names match `remote attach`."
+about = "Check whether a remote tasty instance is alive over SSH"
+
+[cli.help._root.remote.check.arg.ssh]
+help = "Remote SSH target, e.g. --ssh user@host or --ssh gx10. Mutually exclusive with `--profile`"
+
+[cli.help._root.remote.check.arg.profile]
+help = "Check using a saved tasty-attach profile name. The profile is resolved from `~/.tasty/remote-profiles.toml` to supply user/port/identity/extra options. Mutually exclusive with `--ssh`. The profile's values replace `--remote-tasty` and `--remote-port-mode`"
+
+[cli.help._root.remote.check.arg.remote_tasty]
+help = "Path to the tasty binary on the remote host, used by the subcommand step of port discovery (`ssh host <path> port`). Defaults to \"tasty\" (assumed to be on the remote PATH)"
+
+[cli.help._root.remote.check.arg.remote_port_mode]
+help = "Remote port discovery mode: auto (default) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.workspaces]
+long = "List the workspaces of a remote tasty instance over SSH.\n\nConnects to the ssh target or attach profile, fetches the remote `workspace.list` and `attach.list`, and merges them: each workspace is reported with its id, name, pane count, busy flag, and whether another client has it attached. Use this to discover the workspace id that `remote attach --workspace` expects. Read-only; the local user's state (focus etc.) is untouched. `--ssh 127.0.0.1:<port>` connects directly over loopback without a tunnel (local end-to-end checks).\n\nThe local IPC method `remote.workspaces` exposes the same capability."
+about = "List the workspaces of a remote tasty instance over SSH"
+
+[cli.help._root.remote.workspaces.arg.ssh]
+help = "Remote SSH target, e.g. --ssh user@host, --ssh gx10, or --ssh 127.0.0.1:45123. Mutually exclusive with `--profile`"
+
+[cli.help._root.remote.workspaces.arg.profile]
+help = "List using a saved tasty-attach profile name. Mutually exclusive with `--ssh`. The profile's values replace `--remote-tasty` and `--remote-port-mode`"
+
+[cli.help._root.remote.workspaces.arg.remote_tasty]
+help = "Path to the tasty binary on the remote host (used by the subcommand step of port discovery). Defaults to \"tasty\""
+
+[cli.help._root.remote.workspaces.arg.remote_port_mode]
+help = "Remote port discovery mode: auto (default) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.workspaces.arg.json]
+help = "Print a JSON array instead of human-readable text (for scripts and UI consumers)"
+
+[cli.help._root.remote.new-workspace]
+long = "Create a new workspace on a remote tasty instance over SSH.\n\nThe write-side counterpart of `remote workspaces`. Pass the printed id to `tasty remote attach --workspace <id>` to create a workspace remotely and attach to it in one go. The remote's active workspace does not change. The local IPC method `remote.attach` exposes the same capability through its `new_workspace` option."
+about = "Create a new workspace on a remote tasty instance over SSH"
+
+[cli.help._root.remote.new-workspace.arg.ssh]
+help = "Remote SSH target, e.g. --ssh user@host, --ssh gx10, or --ssh 127.0.0.1:45123. Mutually exclusive with `--profile`"
+
+[cli.help._root.remote.new-workspace.arg.profile]
+help = "Create using a saved tasty-attach profile name. Mutually exclusive with `--ssh`. The profile's values replace `--remote-tasty` and `--remote-port-mode`"
+
+[cli.help._root.remote.new-workspace.arg.remote_tasty]
+help = "Path to the tasty binary on the remote host (used by the subcommand step of port discovery). Defaults to \"tasty\""
+
+[cli.help._root.remote.new-workspace.arg.remote_port_mode]
+help = "Remote port discovery mode: auto (default) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.new-workspace.arg.name]
+help = "Name of the new workspace (remote default if omitted)"
+
+[cli.help._root.remote.new-workspace.arg.cwd]
+help = "Working directory of the new workspace, as a path on the remote filesystem. The remote checks that it exists and rejects the request with `cwd does not exist` otherwise"
+
+[cli.help._root.remote.new-workspace.arg.json]
+help = "Print a JSON object instead of human-readable text (for scripts and agents)"
+
+[cli.help._root.notify.arg.body]
+help = "Notification body"
+
+[cli.help._root.notify.arg.title]
+help = "Optional notification title. When omitted the host fills its localized default (`notification.default_title`) — the CLI does not carry an English default of its own"
+
+[cli.help._root.surface-meta.set]
+about = "Set a metadata key-value pair on a surface"
+
+[cli.help._root.surface-meta.set.arg.key]
+help = "Key name"
+
+[cli.help._root.surface-meta.set.arg.value]
+help = "Value"
+
+[cli.help._root.surface-meta.set.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.surface-meta.get]
+about = "Get a metadata value by key"
+
+[cli.help._root.surface-meta.get.arg.key]
+help = "Key name"
+
+[cli.help._root.surface-meta.get.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.surface-meta.unset]
+about = "Remove a metadata key"
+
+[cli.help._root.surface-meta.unset.arg.key]
+help = "Key name"
+
+[cli.help._root.surface-meta.unset.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.surface-meta.list]
+about = "List all metadata for a surface"
+
+[cli.help._root.surface-meta.list.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.surface.completion]
+long = "Signal that a surface has completed its work (or needs input), raising attention highlight.\n\nThe target surface is always given explicitly with --surface; it is never inferred from focus."
+about = "Signal that a surface has completed its work (or needs input), raising attention highlight"
+
+[cli.help._root.surface.completion.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.completion.arg.kind]
+help = "Attention kind: \"completion\" (default) or \"needs_input\". Any other value is treated as \"completion\""
+
+[cli.help._root.surface.cursor-position]
+long = "Print where the cursor sits in a terminal surface, as column and row.\n\nThe target surface is always given explicitly with --surface; it is never inferred from focus."
+about = "Print where the cursor sits in a terminal surface, as column and row"
+
+[cli.help._root.surface.cursor-position.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.mouse-tracking]
+long = "Print whether the program inside a terminal surface has grabbed the mouse, and at which level.\n\nUse it before sending mouse sequences or expecting drag selection to work: when tracking is on, the program consumes mouse input; when it is off, mouse sequences would land on screen as stray characters. The target surface is always given explicitly with --surface."
+about = "Print whether the program inside a terminal surface has grabbed the mouse, and at which level"
+
+[cli.help._root.surface.mouse-tracking.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.foreground-process]
+long = "Print the process currently in the foreground of a terminal surface.\n\nUse it to tell whether a shell is idle or is running something. The target surface is always given explicitly with --surface."
+about = "Print the process currently in the foreground of a terminal surface"
+
+[cli.help._root.surface.foreground-process.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.locate]
+long = "Print which pane a surface belongs to, and whether it is still in the tree at all.\n\nUse it to check that a surface you created or are waiting on has not been closed. The target surface is always given explicitly with --surface."
+about = "Print which pane a surface belongs to, and whether it is still in the tree at all"
+
+[cli.help._root.surface.locate.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.respawn-terminal]
+long = "Restart the shell of a terminal surface in place, keeping the surface, its tab and its position.\n\nThe target surface is always given explicitly with --surface."
+about = "Restart the shell of a terminal surface in place, keeping the surface, its tab and its position"
+
+[cli.help._root.surface.respawn-terminal.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.fire-hook]
+long = "Fire a surface hook by name, as if that event had just happened.\n\nThe target surface is always given explicitly with --surface."
+about = "Fire a surface hook by name, as if that event had just happened"
+
+[cli.help._root.surface.fire-hook.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.fire-hook.arg.event]
+help = "Hook event name to fire (required)"
+
+[cli.help._root.surface.attention]
+long = "Inspect or clear the attention highlight of a surface.\n\nThe reverse of `completion`. The other two clear paths (real render focus and reading the notification) are GUI-local events, so this is the only way to clear attention on a headless instance."
+about = "Inspect or clear the attention highlight of a surface"
+
+[cli.help._root.surface.attention.get]
+long = "Show the attention kind recorded for a surface: \"completion\", \"needs_input\", or null when the surface has none.\n\nThe target surface is always given explicitly with --surface; it is never inferred from focus. Allowed while the surface is occupied by a remote attach session (this is a read-only query)."
+about = "Show the attention kind recorded for a surface: \"completion\", \"needs_input\", or null when the surface has none"
+
+[cli.help._root.surface.attention.get.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.attention.clear]
+long = "Clear the attention highlight of a surface.\n\nThe target surface is always given explicitly with --surface; it is never inferred from focus. Clearing a surface that has no attention succeeds and reports \"cleared\": false. Rejected for a surface that is hard-occupied by a remote attach session, and for a mirror surface of a remote workspace: in both cases the attention belongs to the instance that owns the surface."
+about = "Clear the attention highlight of a surface"
+
+[cli.help._root.surface.attention.clear.arg.surface]
+help = "Surface ID (required)"
+
+[cli.help._root.surface.attention.clear.arg.kind]
+help = "Only clear when the recorded kind matches: \"completion\" or \"needs_input\". Omit to clear regardless of kind. Any other value is rejected"
+
+[cli.help._root.session.issue]
+long = "Issue a session token for a child agent, naming exactly the permissions it may use.\n\nThe token is what the child puts in TASTY_SESSION_TOKEN. Pass --permission once per permission; a token with none can still call the methods that need no permission at all."
+about = "Issue a session token for a child agent, naming exactly the permissions it may use"
+
+[cli.help._root.session.issue.arg.agent_id]
+help = "Agent identity the token is issued to (required)"
+
+[cli.help._root.session.issue.arg.permissions]
+help = "Permission token to grant, repeatable (e.g. surface.read)"
+
+[cli.help._root.session.issue.arg.ttl_ms]
+help = "Lifetime in milliseconds. Omit for the server default"
+
+[cli.help._root.session.revoke]
+about = "Revoke a session token so the agent holding it stops being trusted"
+
+[cli.help._root.session.revoke.arg.token]
+help = "The token string to revoke (required)"
+
+[cli.help._root.session.list]
+about = "List the session tokens this instance currently holds"
+
+[cli.help._root.terminal.spawn]
+long = "Spawn a child terminal in a workspace and run a command in it.\n\nThe child is registered under the parent surface and marked with a soft occupancy (green border). Returns immediately — completion (idle / needs_input / exited) is reported via an agent hook wired to `terminal set-state`, not by blocking here."
+about = "Spawn a child terminal in a workspace and run a command in it"
+
+[cli.help._root.terminal.spawn.arg.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[cli.help._root.terminal.spawn.arg.workspace]
+help = "Target workspace (ID or name)"
+
+[cli.help._root.terminal.spawn.arg.pane]
+help = "Target pane ID (defaults to the first pane in the workspace)"
+
+[cli.help._root.terminal.spawn.arg.cwd]
+help = "Working directory for the child terminal"
+
+[cli.help._root.terminal.spawn.arg.command]
+help = "Command to run in the child terminal (sent as-is, submitted with Enter)"
+
+[cli.help._root.terminal.spawn.arg.role]
+help = "Role label attached to the child (used by broadcast --role)"
+
+[cli.help._root.terminal.spawn.arg.nickname]
+help = "Display nickname shown on the tab"
+
+[cli.help._root.terminal.tell]
+long = "Send a message to a child terminal (preserves line breaks, submits at end).\n\nReturns immediately."
+about = "Send a message to a child terminal (preserves line breaks, submits at end)"
+
+[cli.help._root.terminal.tell.arg.text]
+help = "Message text to send. Newlines are preserved; submitted automatically"
+
+[cli.help._root.terminal.tell.arg.surface]
+help = "Target surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[cli.help._root.terminal.children]
+about = "List children of the specified parent surface"
+
+[cli.help._root.terminal.children.arg.surface]
+help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.parent]
+about = "Return the parent surface id for a given child surface"
+
+[cli.help._root.terminal.parent.arg.surface]
+help = "Child surface ID to look up the parent of"
+
+[cli.help._root.terminal.state]
+long = "Return a single child's status: idle, needs_input, active, or exited.\n\nUnlike `set-state` (which agent hooks call to report idle/needs_input), this reads the current status — cross-checked against live surfaces, so a closed child reports `exited` instead of stale `active`."
+about = "Return a single child's status: idle, needs_input, active, or exited"
+
+[cli.help._root.terminal.state.arg.surface]
+help = "Child surface ID to query"
+
+[cli.help._root.terminal.kill]
+about = "Kill a child terminal by child index (closes the tab, releases occupancy)"
+
+[cli.help._root.terminal.kill.arg.surface]
+help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.kill.arg.child]
+help = "Child index to kill"
+
+[cli.help._root.terminal.respawn]
+about = "Respawn a child terminal (replace PTY and/or re-run a command)"
+
+[cli.help._root.terminal.respawn.arg.surface]
+help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.respawn.arg.child]
+help = "Child index to respawn"
+
+[cli.help._root.terminal.respawn.arg.cwd]
+help = "Override working directory (replaces the PTY at a new cwd)"
+
+[cli.help._root.terminal.respawn.arg.command]
+help = "Command to re-run after respawn"
+
+[cli.help._root.terminal.respawn.arg.role]
+help = "Replace the role label of the child"
+
+[cli.help._root.terminal.respawn.arg.nickname]
+help = "Replace the display nickname of the child"
+
+[cli.help._root.terminal.broadcast]
+about = "Broadcast text to all children of a parent surface"
+
+[cli.help._root.terminal.broadcast.arg.text]
+help = "Text to broadcast (sent as-is)"
+
+[cli.help._root.terminal.broadcast.arg.surface]
+help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.broadcast.arg.role]
+help = "Only send to children with this role label"
+
+[cli.help._root.terminal.set-state]
+about = "Set a child's idle/needs_input/active state (called by agent hooks)"
+
+[cli.help._root.terminal.set-state.arg.surface]
+help = "Child surface ID"
+
+[cli.help._root.terminal.set-state.arg.state]
+help = "New state: idle, needs_input, or active"
+
+[cli.help._root.terminal.adopt]
+about = "Register an already-existing surface as a child (soft occupancy), without spawning a new tab. Fails if the target is already a registered child of some parent (release it first) or is hard-occupied (remote attach)"
+
+[cli.help._root.terminal.adopt.arg.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[cli.help._root.terminal.adopt.arg.target]
+help = "Existing surface ID to adopt as a child"
+
+[cli.help._root.terminal.adopt.arg.cwd]
+help = "Working directory to record for the child"
+
+[cli.help._root.terminal.adopt.arg.role]
+help = "Role label attached to the child (used by broadcast --role)"
+
+[cli.help._root.terminal.adopt.arg.nickname]
+help = "Display nickname shown on the tab"
+
+[cli.help._root.terminal.release]
+about = "Release a child terminal from the registry (drops the parent/child relationship and soft occupancy) without closing its surface"
+
+[cli.help._root.terminal.release.arg.surface]
+help = "Parent surface ID (defaults to the single known parent)"
+
+[cli.help._root.terminal.release.arg.child]
+help = "Child index to release"
+
+[cli.help._root.pty.spawn]
+long = "Spawn a headless PTY (no Surface/tab). Returns a pty id.\n\nWith a command, it runs immediately in the PTY's shell; without one, a bare shell is started and you drive it with `pty write`."
+about = "Spawn a headless PTY (no Surface/tab). Returns a pty id"
+
+[cli.help._root.pty.spawn.arg.cwd]
+help = "Working directory for the PTY"
+
+[cli.help._root.pty.spawn.arg.command]
+help = "Command tokens to run on spawn (e.g. `pty spawn -- echo hi`)"
+
+[cli.help._root.pty.write]
+about = "Write input to a running headless PTY (sent as-is; include a newline to submit)"
+
+[cli.help._root.pty.write.arg.id]
+help = "Target pty id"
+
+[cli.help._root.pty.write.arg.text]
+help = "Text to send to the PTY's stdin"
+
+[cli.help._root.pty.read]
+about = "Read the current screen text of a headless PTY"
+
+[cli.help._root.pty.read.arg.id]
+help = "Target pty id"
+
+[cli.help._root.pty.read.arg.lines]
+help = "Last N lines of content (default: full visible screen). Trailing blank rows are skipped and the shortfall is filled from scrollback, so N means \"the last N lines actually printed\", not \"the bottom N grid rows\". The ceiling is the content, not the grid. On the alternate screen (a full-screen TUI) the fill comes from the primary buffer's scrollback and arrives with no marker, so a large N can prepend earlier shell output above the TUI's own screen"
+
+[cli.help._root.pty.read.arg.show_dim]
+help = "Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells. Default excludes them so unsubmitted UI suggestions aren't mistaken for real buffer content"
+
+[cli.help._root.pty.wait]
+about = "Poll a headless PTY's exit status (returns immediately, non-blocking)"
+
+[cli.help._root.pty.wait.arg.id]
+help = "Target pty id"
+
+[cli.help._root.pty.kill]
+about = "Kill a headless PTY's process and reclaim its slot"
+
+[cli.help._root.pty.kill.arg.id]
+help = "Target pty id"
+
+[cli.help._root.pty.list]
+about = "List all live headless PTYs (focus-independent — always the full set)"
+
+[cli.help._root.pty.attach-surface]
+about = "Promote a headless PTY into a real Surface/tab under a pane. The same process/scrollback is moved (state preserved) and the pty id leaves the headless list"
+
+[cli.help._root.pty.attach-surface.arg.pty_id]
+help = "Target pty id to promote"
+
+[cli.help._root.pty.attach-surface.arg.pane_id]
+help = "Pane to attach the promoted terminal to (new background tab)"
+
+[cli.help._root.is-typing.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.wake.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.debug.attach]
+about = "Local loopback attach to a surface/workspace and mirror it (debug builds only — local self-attach simulates user-driven mirroring, so it is isolated from the release surface per the agent/user action separation policy). Remote attach is `tasty remote attach` (release)"
+
+[cli.help._root.debug.attach.arg.surface]
+help = "Target surface id (given explicitly, never inferred from focus). Mutually exclusive with `--workspace`"
+
+[cli.help._root.debug.attach.arg.workspace]
+help = "Target workspace id; mirrors every terminal in it as a tree. Mutually exclusive with the `surface` positional. Non-terminal surfaces are shown as placeholders"
+
+[cli.help._root.debug.attach.arg.dump_after]
+help = "Mirror-dump mode: collect output for N ms after attaching, print the mirrored screen to stdout, then exit"
+
+[cli.help._root.debug.attach.arg.send]
+help = "Input to send once right after attaching (escapes decoded: \\n \\r \\t \\xNN). For non-interactive verification"
+
+[cli.help._root.debug.attach.arg.send_to]
+help = "Remote surface id that receives the `--send` input in workspace mode"
+
+[cli.help._root.debug.attach.arg.raw]
+help = "Raw bridge mode: stdin/stdout passthrough (detach with Ctrl+\\)"
+
+[cli.help._root.debug.attach.arg.force_detach]
+help = "Forcibly detach an occupied surface/workspace (server-side; does not attach)"
+
+[cli.help._root.debug.info]
+about = "Show debug info from the running tasty instance"
+
+[cli.help._root.debug.gpu-stall]
+about = "Artificially block the next frame's GPU present to reproduce an event loop stall (for verifying the stall watchdog; debug builds only)"
+
+[cli.help._root.debug.gpu-stall.arg.ms]
+help = "How long to block, in milliseconds"
+
+[cli.help._root.debug.ime-enable]
+about = "Enable IME composition mode"
+
+[cli.help._root.debug.ime-disable]
+about = "Disable IME composition mode and clear preedit"
+
+[cli.help._root.debug.ime-preedit]
+about = "Send IME preedit (composition) text"
+
+[cli.help._root.debug.ime-preedit.arg.text]
+help = "Composition text (e.g. an in-progress Hangul syllable such as U+D558)"
+
+[cli.help._root.debug.ime-preedit.arg.cursor]
+help = "Cursor position within composition"
+
+[cli.help._root.debug.ime-commit]
+about = "Commit IME composition text (finalize and send to terminal)"
+
+[cli.help._root.debug.ime-commit.arg.text]
+help = "Finalized text to commit (e.g. the completed Hangul syllable U+D55C)"
+
+[cli.help._root.debug.ime-status]
+about = "Show current IME status"
+
+[cli.help._root.debug.cell-info]
+about = "Get cell info at a specific position"
+
+[cli.help._root.debug.cell-info.arg.row]
+help = "Row (0-indexed)"
+
+[cli.help._root.debug.cell-info.arg.col]
+help = "Column (0-indexed)"
+
+[cli.help._root.debug.cell-info.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.debug.screen-attrs]
+about = "Get all cell attributes for a specific row"
+
+[cli.help._root.debug.screen-attrs.arg.row]
+help = "Row (0-indexed)"
+
+[cli.help._root.debug.screen-attrs.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.debug.glyph-color]
+about = "Get the resolved RGBA bg/fg the renderer would push to the GPU for a cell"
+
+[cli.help._root.debug.glyph-color.arg.row]
+help = "Row (0-indexed)"
+
+[cli.help._root.debug.glyph-color.arg.col]
+help = "Column (0-indexed)"
+
+[cli.help._root.debug.glyph-color.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.debug.glyph-color.arg.bg_mode]
+help = "Background mode: \"focused\" or \"unfocused\" (default: focused)"
+
+[cli.help._root.debug.switch-input-source]
+long = "Switch macOS input source (e.g. Korean IME) — macOS GUI builds only\n\nThe subcommand is offered on every platform on purpose: the method is registered everywhere, so hiding it here would answer \"no such command\" and send you looking for a typo. Elsewhere it fails fast with -32015 and says why (TISSelectInputSource has no equivalent)."
+about = "Switch macOS input source (e.g. Korean IME) — macOS GUI builds only"
+
+[cli.help._root.debug.switch-input-source.arg.source_id]
+help = "Input source ID (e.g. \"com.apple.inputmethod.Korean.2SetKorean\")"
+
+[cli.help._root.debug.raw-key]
+long = "Send a raw physical key code via CGEvent — macOS GUI builds only\n\nGoes through the OS IME pipeline. Offered on every platform for the same reason as switch-input-source; elsewhere it fails fast with -32015 and says why (CGEventPost has no equivalent)."
+about = "Send a raw physical key code via CGEvent — macOS GUI builds only"
+
+[cli.help._root.debug.raw-key.arg.keycode]
+help = "macOS virtual key code (e.g. 7=KeyX, 35=KeyP, 49=Space)"
+
+[cli.help._root.debug.event-bus]
+about = "Event Bus inspection and injection (debug builds only)"
+
+[cli.help._root.debug.event-bus.list-subscribers]
+about = "List plugins subscribing to the given event key"
+
+[cli.help._root.debug.event-bus.list-subscribers.arg.key]
+help = "Event key (e.g. \"surface.closed\")"
+
+[cli.help._root.debug.event-bus.publish]
+about = "Publish an arbitrary event from the host side"
+
+[cli.help._root.debug.event-bus.publish.arg.key]
+help = "Event key"
+
+[cli.help._root.debug.event-bus.publish.arg.payload]
+help = "JSON payload (default: `{}`)"
+
+[cli.help._root.debug.event-bus.publish.arg.scope]
+help = "Event scope: \"system\" (default) or \"surface\""
+
+[cli.help._root.debug.event-bus.trace]
+about = "Print recent envelopes with the given trace_id"
+
+[cli.help._root.debug.event-bus.trace.arg.trace_id]
+help = "trace_id (e.g. \"h2a\")"
+
+[cli.help._root.debug.extension]
+about = "Extension hook inspection and manual invocation (debug builds only)"
+
+[cli.help._root.debug.extension.invoke-hook]
+about = "Fire an extension hook manually (sends extension.invoke_hook to the specified extension and returns the response)"
+
+[cli.help._root.debug.extension.invoke-hook.arg.extension_id]
+help = "Extension plugin id (must be installed and running)"
+
+[cli.help._root.debug.extension.invoke-hook.arg.kind]
+help = "Hook kind: \"event\" or \"ipc\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.phase]
+help = "Hook phase: \"pre\" or \"post\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.mode]
+help = "Hook mode: \"transform\", \"filter\", or \"observe\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.target]
+help = "Target: event key (e.g. \"foo.bar\") or IPC method (e.g. \"codex.spawn\")"
+
+[cli.help._root.debug.extension.invoke-hook.arg.payload]
+help = "JSON payload to pass as the hook input (default: `{}`)"
+
+[cli.help._root.debug.tool]
+about = "Tool menu inspection and invocation (debug builds only)"
+
+[cli.help._root.debug.tool.list]
+about = "List all tool menu items in display order"
+
+[cli.help._root.debug.tool.invoke]
+about = "Invoke a tool menu item by key"
+
+[cli.help._root.debug.tool.invoke.arg.key]
+help = "Tool item key (`<plugin_id>/<tool_id>`, e.g. `com.tasty.clipboard-history/open-viewer`)"
+
+[cli.help._root.debug.popup]
+about = "Plugin popup inspection and open/close (debug builds only)"
+
+[cli.help._root.debug.popup.list]
+about = "List all popup contributes + currently open instances"
+
+[cli.help._root.debug.popup.open]
+about = "Open a plugin popup instance"
+
+[cli.help._root.debug.popup.open.arg.plugin_id]
+help = "Plugin id (e.g. \"com.example.popper\")"
+
+[cli.help._root.debug.popup.open.arg.popup_id]
+help = "Popup id within the plugin"
+
+[cli.help._root.debug.popup.open.arg.context]
+help = "Optional context JSON to send as the popup.open payload"
+
+[cli.help._root.debug.popup.close]
+about = "Close a popup instance by id"
+
+[cli.help._root.debug.popup.close.arg.instance_id]
+help = "Popup instance id returned by `popup open`"
+
+[cli.help._root.debug.host-popup]
+about = "Host built-in popup inspection and direct open/close (debug builds only). Forces a host popup (tools_menu / port_scanner / command_palette / remote_tool ...) open without the user-click path, for visual verification"
+
+[cli.help._root.debug.host-popup.list]
+about = "List all host built-in popups (id + title key)"
+
+[cli.help._root.debug.host-popup.open]
+about = "Force-open a host popup by id, centered on the focused window"
+
+[cli.help._root.debug.host-popup.open.arg.popup_id]
+help = "Host popup id (e.g. \"tools_menu\", \"port_scanner\", \"command_palette\")"
+
+[cli.help._root.debug.host-popup.open.arg.workspace_scope]
+help = "Open it scoped to the active workspace instead of the window, so the scope visibility gate can be exercised (e.g. \"dag_list\")"
+
+[cli.help._root.debug.host-popup.close]
+about = "Close a host popup by id"
+
+[cli.help._root.debug.host-popup.close.arg.popup_id]
+help = "Host popup id"
+
+[cli.help._root.debug.fullscreen]
+about = "Fullscreen stage inspection and direct enter/exit (debug builds only). Puts a stage on a window without the popup-titlebar click path, and dumps the window's fullscreen state, for visual verification of the stage"
+
+[cli.help._root.debug.fullscreen.list]
+about = "List all registered fullscreen stages (id + title key)"
+
+[cli.help._root.debug.fullscreen.open]
+about = "Put a stage on a window. A different stage already up is replaced; the same stage is a no-op"
+
+[cli.help._root.debug.fullscreen.open.arg.stage_id]
+help = "Stage id (e.g. \"blank\", \"notifications\")"
+
+[cli.help._root.debug.fullscreen.open.arg.window_id]
+help = "Target window. Omit only when exactly one window is open — with several, the call errors instead of guessing the focused one"
+
+[cli.help._root.debug.fullscreen.close]
+about = "Take the active stage off a window"
+
+[cli.help._root.debug.fullscreen.close.arg.window_id]
+help = "Target window (see `open --window-id`)"
+
+[cli.help._root.debug.fullscreen.state]
+about = "Dump the active stage id plus the window's fullscreen state (OS fullscreen / maximized / inner size / covered monitor)"
+
+[cli.help._root.debug.fullscreen.state.arg.window_id]
+help = "Target window (see `open --window-id`)"
+
+[cli.help._root.debug.banner]
+about = "Banner inspection and direct fire/close (debug builds only). Fires a banner without the user-action path (banners only fire from user actions in release), for visual verification of the overlay"
+
+[cli.help._root.debug.banner.list]
+about = "List built-in banner definitions + current shown/queued state"
+
+[cli.help._root.debug.banner.show]
+about = "Fire a banner by id into a scope"
+
+[cli.help._root.debug.banner.show.arg.banner_id]
+help = "Banner id (e.g. \"mouse-capture\")"
+
+[cli.help._root.debug.banner.show.arg.scope]
+help = "Target scope token: view | workspace:<i> | pane:<id> | tab:<pane>:<i> | surface:<id>"
+
+[cli.help._root.debug.banner.close]
+about = "Close a banner by id (promotes the queue head if it was shown)"
+
+[cli.help._root.debug.banner.close.arg.banner_id]
+help = "Banner id"
+
+[cli.help._root.debug.banner.set-countdown]
+about = "Force the remaining countdown of a shown TTL banner in a scope"
+
+[cli.help._root.debug.banner.set-countdown.arg.scope]
+help = "Target scope token (same format as `show --scope`)"
+
+[cli.help._root.debug.banner.set-countdown.arg.seconds]
+help = "New remaining seconds"
+
+[cli.help._root.debug.modifier-hint]
+about = "Modifier-hint overlay hold injection + render-state dump (debug builds only). Sets the overlay's held modifier combo without a real key hold and dumps the recomputed render state (narrowed sections / delay / visibility)"
+
+[cli.help._root.debug.modifier-hint.hold]
+about = "Inject a modifier hold (no flags = release). `--elapsed-ms` backdates the hold timer to instantly pass the reveal-delay gate"
+
+[cli.help._root.debug.modifier-hint.hold.arg.ctrl]
+help = "Hold the ctrl axis"
+
+[cli.help._root.debug.modifier-hint.hold.arg.alt]
+help = "Hold the `alt` token — the physical key differs by platform: Command on macOS, Alt elsewhere"
+
+[cli.help._root.debug.modifier-hint.hold.arg.option]
+help = "Hold the `option` token — real input raises it only on macOS (physical Option); on other platforms no key produces it, so setting it here forces a state that platform cannot otherwise reach"
+
+[cli.help._root.debug.modifier-hint.hold.arg.shift]
+help = "Hold the shift axis"
+
+[cli.help._root.debug.modifier-hint.hold.arg.elapsed_ms]
+help = "Backdate the hold timer by this many ms (skip the reveal delay)"
+
+[cli.help._root.debug.modifier-hint.state]
+about = "Dump the overlay render state (held / delay / alpha / visible / sections / header)"
+
+[cli.help._root.debug.settings]
+about = "Settings modal force-open (debug builds only). Opens the settings modal without the user-action path (shortcut / button click), for visual verification of the settings UI against the design"
+
+[cli.help._root.debug.settings.open]
+about = "Force-open the settings modal, optionally on a specific tab/subtab"
+
+[cli.help._root.debug.settings.open.arg.tab]
+help = "Initial L1 tab: general | terminal | appearance | keybindings | file_handler | misc | plugins (default: general)"
+
+[cli.help._root.debug.settings.open.arg.subtab]
+help = "Initial L2 section within the chosen tab (depends on --tab). e.g. appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc. Unknown keys keep the tab default"
+
+[cli.help._root.debug.settings.apply]
+about = "Apply a (partial) settings patch at runtime: the JSON object is deep-merged onto the live settings, then dispatched as UpdateSettings (same path as saving the settings modal — persists to config.toml)"
+
+[cli.help._root.debug.settings.apply.arg.json]
+help = "Settings patch as a JSON object (partial allowed). e.g. '{\"general\":{\"workspace_categories_enabled\":false}}'"
+
+[cli.help._root.debug.settings.apply.arg.file]
+help = "Read the JSON patch from a file instead of --json"
+
+[cli.help._root.debug.modal]
+about = "Active-modal close **request** (debug builds only). Reproduces the user pressing the window close button on whichever modal is up. Release `window.close` covers main views only — closing a modal is a user action, not agent work"
+
+[cli.help._root.debug.modal.close-request]
+about = "Send a close request to the active modal (no-op when none is up; the response distinguishes the two via `closed`)"
+
+[cli.help._root.debug.lua]
+about = "Arbitrary Lua injection into the host worker (debug builds only). Runs source in the isolated Lua worker (deadline-guarded, ADR-0031). Release builds have no such path — the user-input-only rule applies there"
+
+[cli.help._root.debug.lua.eval]
+about = "Inject arbitrary Lua source and run it in the host worker (fire-and-forget). Effects are observable via logs (e.g. `tasty.log`); deadline-exceeding sources are aborted by the worker (ADR-0031)"
+
+[cli.help._root.debug.lua.eval.arg.source]
+help = "Lua source to execute. e.g. 'tasty.log(\"hi from debug\")'"
+
+[cli.help._root.debug.lua.eval-file]
+about = "Read Lua source from a file and inject it (same worker path as `eval`)"
+
+[cli.help._root.debug.lua.eval-file.arg.path]
+help = "Path to a `.lua` file to read and execute"
+
+[cli.help._root.debug.sim]
+about = "VTE sequence simulator — identical to the standalone `tasty-tui-sim` binary, run from inside the current surface (emits raw VTE to stdout, no IPC). No subcommand = interactive REPL. Use `sim flood` for a heavy full-screen redraw stress load. Debug builds only"
+
+[cli.help._root.debug.sim.interactive]
+about = "Interactive REPL mode — read commands from stdin (default if no subcommand)"
+
+[cli.help._root.debug.sim.cursor]
+about = "One-shot: cursor movement test"
+
+[cli.help._root.debug.sim.cursor.arg.row]
+help = "Target row, 0-indexed"
+
+[cli.help._root.debug.sim.cursor.arg.col]
+help = "Target column, 0-indexed"
+
+[cli.help._root.debug.sim.cursor.arg.marker]
+help = "Text written at the target cell"
+
+[cli.help._root.debug.sim.cursor.arg.exit]
+help = "Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at"
+
+[cli.help._root.debug.sim.colors]
+about = "One-shot: ANSI 16 + TrueColor test"
+
+[cli.help._root.debug.sim.colors.arg.exit]
+help = "Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at"
+
+[cli.help._root.debug.sim.attrs]
+about = "One-shot: text attributes test"
+
+[cli.help._root.debug.sim.attrs.arg.exit]
+help = "Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at"
+
+[cli.help._root.debug.sim.altscreen]
+about = "One-shot: alternate screen test"
+
+[cli.help._root.debug.sim.altscreen.arg.exit]
+help = "Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at"
+
+[cli.help._root.debug.sim.unicode]
+about = "One-shot: CJK/fullwidth test"
+
+[cli.help._root.debug.sim.unicode.arg.exit]
+help = "Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at"
+
+[cli.help._root.debug.sim.scroll-region]
+about = "One-shot: scroll region test"
+
+[cli.help._root.debug.sim.scroll-region.arg.exit]
+help = "Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at"
+
+[cli.help._root.debug.sim.flood]
+about = "Stress mode: full-screen truecolor redraw every frame (reproduces input lag)"
+
+[cli.help._root.debug.sim.flood.arg.rate_ms]
+help = "Delay between frames in ms (0 = unthrottled / max throughput)"
+
+[cli.help._root.debug.sim.flood.arg.cols]
+help = "Columns (0 = auto via terminal size, fallback 200)"
+
+[cli.help._root.debug.sim.flood.arg.rows]
+help = "Rows (0 = auto via terminal size, fallback 50)"
+
+[cli.help._root.debug.sim.flood.arg.frames]
+help = "Number of frames (0 = infinite)"
+
+[cli.help._root.debug.sim.flood.arg.inline]
+help = "Stay on the main screen instead of entering the alternate screen"
+
+[cli.help._root.debug.focused-surface]
+about = "Dump the focused surface id (debug builds only). Observation only — the focused view is read, never changed"
+
+[cli.help._root.debug.selection]
+about = "Dump the current selection of the focused window (debug builds only)"
+
+[cli.help._root.debug.pending-menu]
+about = "Dump the pending native menu action of the focused window (debug builds only)"
+
+[cli.help._root.debug.ui-state]
+about = "Dump the UI state tree of the focused window (debug builds only)"
+
+[cli.help._root.debug.switch-workspace]
+about = "Switch the active workspace by index — reproduces the user's workspace tab click, so it is debug-only (user action, not agent action)"
+
+[cli.help._root.debug.switch-workspace.arg.index]
+help = "Workspace index (0-based)"
+
+[cli.help._root.debug.switch-tab]
+about = "Switch the active tab of the focused pane by index — reproduces the user's tab click. Debug builds only"
+
+[cli.help._root.debug.switch-tab.arg.index]
+help = "Tab index within the focused pane (0-based)"
+
+[cli.help._root.debug.close-workspace]
+about = "Close a workspace by index — reproduces the workspace context menu's \"Close workspace\", which touches the closed-items undo stack. Debug only"
+
+[cli.help._root.debug.close-workspace.arg.index]
+help = "Workspace index (0-based)"
+
+[cli.help._root.debug.feed-bytes]
+about = "Feed raw bytes straight into a surface's terminal parser, bypassing the PTY. Debug builds only — it fabricates output the shell never produced"
+
+[cli.help._root.debug.feed-bytes.arg.surface]
+help = "Target surface id (defaults to the current surface)"
+
+[cli.help._root.debug.feed-bytes.arg.text]
+help = "Text to feed (UTF-8). Mutually exclusive with `--bytes`"
+
+[cli.help._root.debug.feed-bytes.arg.bytes]
+help = "Bytes to feed as an even-length hex string (e.g. `1b5b3141`)"
+
+[cli.help._root.debug.inject]
+about = "Input injection — reproduces user keyboard/mouse input. Debug builds only (identity principle 1: input reproduction has no release surface)"
+
+[cli.help._root.debug.inject.key]
+about = "Inject key bytes into a surface's input path"
+
+[cli.help._root.debug.inject.key.arg.surface]
+help = "Target surface id (defaults to the current surface)"
+
+[cli.help._root.debug.inject.key.arg.text]
+help = "Text to send (UTF-8). Mutually exclusive with `--bytes`"
+
+[cli.help._root.debug.inject.key.arg.bytes]
+help = "Bytes as an even-length hex string (e.g. `1b5b41` for Up)"
+
+[cli.help._root.debug.inject.mouse]
+about = "Inject a terminal-cell mouse event (row/column addressed)"
+
+[cli.help._root.debug.inject.mouse.arg.surface]
+help = "Target surface id (defaults to the current surface)"
+
+[cli.help._root.debug.inject.mouse.arg.row]
+help = "Cell row (0-based)"
+
+[cli.help._root.debug.inject.mouse.arg.col]
+help = "Cell column (0-based)"
+
+[cli.help._root.debug.inject.mouse.arg.event_type]
+help = "One of `move`, `press`, `release`"
+
+[cli.help._root.debug.inject.mouse.arg.button]
+help = "0 = left, 1 = middle, 2 = right"
+
+[cli.help._root.debug.inject.window-mouse]
+about = "Inject a pointer event into the window mesh, addressed by normalized surface-local coordinates"
+
+[cli.help._root.debug.inject.window-mouse.arg.surface]
+help = "Target surface id"
+
+[cli.help._root.debug.inject.window-mouse.arg.fx]
+help = "Surface-local x in [0,1]"
+
+[cli.help._root.debug.inject.window-mouse.arg.fy]
+help = "Surface-local y in [0,1]"
+
+[cli.help._root.debug.inject.window-mouse.arg.event_type]
+help = "One of `move`, `press`, `release`, `scroll`"
+
+[cli.help._root.debug.inject.window-mouse.arg.button]
+help = "0 = left, 1 = middle, 2 = right"
+
+[cli.help._root.debug.inject.window-mouse.arg.unit]
+help = "Scroll unit: `line` or `pixel`"
+
+[cli.help._root.debug.inject.window-mouse.arg.scroll_dx]
+help = "Horizontal scroll delta (with `--event-type scroll`)"
+
+[cli.help._root.debug.inject.window-mouse.arg.scroll_dy]
+help = "Vertical scroll delta (with `--event-type scroll`)"
+
+[cli.help._root.debug.inject.egui-mouse]
+about = "Inject a pointer event into the egui layer (chrome: tab bar, sidebar, popups) rather than the terminal mesh"
+
+[cli.help._root.debug.inject.egui-mouse.arg.surface]
+help = "Target surface id"
+
+[cli.help._root.debug.inject.egui-mouse.arg.fx]
+help = "Surface-local x in [0,1]"
+
+[cli.help._root.debug.inject.egui-mouse.arg.fy]
+help = "Surface-local y in [0,1]"
+
+[cli.help._root.debug.inject.egui-mouse.arg.event_type]
+help = "One of `move`, `press`, `release`, `scroll`"
+
+[cli.help._root.debug.inject.egui-mouse.arg.button]
+help = "0 = left, 1 = middle, 2 = right"
+
+[cli.help._root.debug.inject.egui-mouse.arg.unit]
+help = "Scroll unit: `line` or `pixel`"
+
+[cli.help._root.debug.inject.egui-mouse.arg.scroll_dx]
+help = "Horizontal scroll delta (with `--event-type scroll`)"
+
+[cli.help._root.debug.inject.egui-mouse.arg.scroll_dy]
+help = "Vertical scroll delta (with `--event-type scroll`)"
+
+[cli.help._root.debug.inject.egui-key]
+about = "Inject a key event into the egui layer"
+
+[cli.help._root.debug.inject.egui-key.arg.key]
+help = "egui key name (e.g. `Enter`, `Escape`, `ArrowDown`)"
+
+[cli.help._root.debug.inject.egui-key.arg.pressed]
+help = "Press (default) or release with `--pressed false`"
+
+[cli.help._root.debug.plugin-banner]
+about = "Plugin-contributed banner force-open/close, bypassing the owning plugin. Debug builds only — `debug banner` is the host built-in banner instead"
+
+[cli.help._root.debug.plugin-banner.open]
+about = "Force-open a plugin-contributed banner on a surface, skipping the ownership check that a real plugin caller would go through"
+
+[cli.help._root.debug.plugin-banner.open.arg.banner_id]
+help = "Banner id declared by the owning plugin"
+
+[cli.help._root.debug.plugin-banner.open.arg.surface]
+help = "Target surface id (defaults to the current surface)"
+
+[cli.help._root.debug.plugin-banner.close]
+about = "Close a plugin banner instance by id"
+
+[cli.help._root.debug.plugin-banner.close.arg.instance_id]
+help = "Banner instance id returned by `plugin-banner open`"
+
+[cli.help._root.debug.stream-echo]
+about = "Open a streaming channel and verify the server→client push path: send N data frames and expect each one echoed back (debug builds only)"
+
+[cli.help._root.debug.stream-echo.arg.payload]
+help = "Payload sent in each frame (an index suffix `#N` is appended)"
+
+[cli.help._root.debug.stream-echo.arg.count]
+help = "Number of frames to send and expect echoed back"
+
+[cli.help._root.settings.get-remote-transfer]
+about = "Show the receive-side storage folder and size cap for remote transfers (bulk file channel)"
+
+[cli.help._root.settings.set-remote-transfer]
+about = "Set the remote-transfer storage folder and/or size cap. At least one must be given"
+
+[cli.help._root.settings.set-remote-transfer.arg.dir]
+help = "Storage folder path (empty string = default `~/.tasty/transfers/`)"
+
+[cli.help._root.settings.set-remote-transfer.arg.max_mb]
+help = "Maximum folder size in MiB"
+
+[cli.help._root.output.observe]
+about = "Observer management subcommands"
+
+[cli.help._root.output.observe.start]
+about = "Register a new observer"
+
+[cli.help._root.output.observe.start.arg.surface]
+help = "Surface ID to watch (omit = all surfaces)"
+
+[cli.help._root.output.observe.start.arg.parsers]
+help = "Comma-separated parser ids (default: path,url,prompt_boundary,exit_code)"
+
+[cli.help._root.output.observe.start.arg.kinds]
+help = "Comma-separated kind filter (default: all)"
+
+[cli.help._root.output.observe.start.arg.sink]
+help = "Sink type: \"memory\" or \"file\" (default: memory)"
+
+[cli.help._root.output.observe.start.arg.path]
+help = "File path (only when --sink file; omit = ~/.tasty/observers/<id>.jsonl)"
+
+[cli.help._root.output.observe.start.arg.max_records]
+help = "Memory sink ring-buffer cap (only when --sink memory; 0 = unlimited)"
+
+[cli.help._root.output.observe.stop]
+about = "Stop an observer by id"
+
+[cli.help._root.output.observe.stop.arg.observer]
+help = "Observer id (from `output observe list`)"
+
+[cli.help._root.output.observe.list]
+about = "List all active observers"
+
+[cli.help._root.output.observe.info]
+about = "Show stats for a single observer"
+
+[cli.help._root.output.observe.info.arg.observer]
+help = "Observer id (from `output observe list`)"
+
+[cli.help._root.file-handler.reload]
+about = "Reload `~/.tasty/file-handlers.toml`. Host and plugin entries are unaffected"
+
+[cli.help._root.file-handler.dispatch]
+about = "Open a path through the file-handler dispatch flow — the same route the explorer's double-click takes"
+
+[cli.help._root.file-handler.dispatch.arg.path]
+help = "Path to dispatch"
+
+[cli.help._root.file-handler.dispatch.arg.depth]
+help = "Detection depth: `cheap` (extension only) or `deep` (sniff contents)"
+
+[cli.help._root.file-handler.dispatch.arg.origin_surface]
+help = "Add the resulting surface as a tab of this surface's pane instead of the focused pane"
+
+[cli.help._root.file-handler.dispatch.arg.ignore_size_limit]
+help = "Skip the large-file confirmation popup and open immediately"
+
+[cli.help._root.clipboard.set-text]
+about = "Write text to the local clipboard"
+
+[cli.help._root.clipboard.set-text.arg.text]
+help = "Text to write to the clipboard"
+
+[cli.help._root.hook-handler.list]
+about = "List every registered hook handler (host/plugin/user, incl. disabled)"
+
+[cli.help._root.hook-handler.reload]
+about = "Reload `~/.tasty/hook-handlers.toml` (user source only; host/plugin unaffected)"
+
+[cli.help._root.hook-handler.dispatch]
+long = "Manually fire a registered hook handler by id (test / automation entry point).\n\nFor an IpcSequence handler, `--body`/`--header`/`--query` fill its `${body.x}`/`${header.x}`/`${query.x}` value slots. The response is an acknowledgement only — the handler runs fire-and-forget."
+about = "Manually fire a registered hook handler by id (test / automation entry point)"
+
+[cli.help._root.hook-handler.dispatch.arg.id]
+help = "Hook handler id to fire (e.g. `host/notify`, `user/wh-...`)"
+
+[cli.help._root.hook-handler.dispatch.arg.body]
+help = "Substitution body as a JSON value (object/array/scalar). Optional"
+
+[cli.help._root.hook-handler.dispatch.arg.header]
+help = "Header substitution values as a JSON object `{\"X-Sig\":\"abc\"}`. Optional"
+
+[cli.help._root.hook-handler.dispatch.arg.query]
+help = "Query substitution values as a JSON object `{\"token\":\"t\"}`. Optional"
+
+[cli.help._root.completion-strategy.list]
+about = "List every registered completion strategy (host/plugin/user, incl. disabled)"
+
+[cli.help._root.preset.list]
+about = "List presets of a given kind"
+
+[cli.help._root.preset.list.arg.kind]
+help = "\"workspace\" | \"tab\" | \"pane\""
+
+[cli.help._root.preset.get]
+about = "Show a preset's JSON"
+
+[cli.help._root.preset.get.arg.kind]
+help = "Preset kind: workspace | tab | pane"
+
+[cli.help._root.preset.get.arg.name]
+help = "Preset name to show"
+
+[cli.help._root.preset.save]
+about = "Save a preset from a JSON file (\"-\" reads stdin)"
+
+[cli.help._root.preset.save.arg.kind]
+help = "Preset kind: workspace | tab | pane"
+
+[cli.help._root.preset.save.arg.name]
+help = "Preset name to write"
+
+[cli.help._root.preset.save.arg.file]
+help = "Path to JSON file. \"-\" reads stdin"
+
+[cli.help._root.preset.save.arg.overwrite]
+help = "Allow overwriting existing preset"
+
+[cli.help._root.preset.delete]
+about = "Delete a preset"
+
+[cli.help._root.preset.delete.arg.kind]
+help = "Preset kind: workspace | tab | pane"
+
+[cli.help._root.preset.delete.arg.name]
+help = "Preset name to delete"
+
+[cli.help._root.preset.rename]
+about = "Rename a preset"
+
+[cli.help._root.preset.rename.arg.kind]
+help = "Preset kind: workspace | tab | pane"
+
+[cli.help._root.preset.rename.arg.from]
+help = "Existing preset name"
+
+[cli.help._root.preset.rename.arg.to]
+help = "New preset name"
+
+[cli.help._root.preset.capture]
+about = "Capture current workspace / tab / pane into a preset"
+
+[cli.help._root.preset.capture.arg.kind]
+help = "Preset kind: workspace | tab | pane. Decides what `--source-id` names"
+
+[cli.help._root.preset.capture.arg.source_id]
+help = "Source ID — workspace_id (kind=workspace), tab_id (kind=tab), or pane_id (kind=pane). Required; CLI is focus-independent"
+
+[cli.help._root.preset.capture.arg.name]
+help = "Preset name. Omit → auto-generated unique name"
+
+[cli.help._root.preset.apply]
+about = "Apply a preset. Focus is not changed (focus-independent CLI)"
+
+[cli.help._root.preset.apply.arg.kind]
+help = "Preset kind: workspace | tab | pane"
+
+[cli.help._root.preset.apply.arg.name]
+help = "Preset name to apply"
+
+[cli.help._root.preset.apply.arg.target_pane]
+help = "For kind=tab: target pane ID"
+
+[cli.help._root.preset.apply.arg.target_workspace]
+help = "For kind=pane: target workspace ID"
+
+[cli.help._root.workspace-category.list]
+about = "List workspace categories (sidebar folders)"
+
+[cli.help._root.workspace-category.create]
+about = "Create a new category"
+
+[cli.help._root.workspace-category.create.arg.name]
+help = "Category name ('normal' is reserved; case-insensitive duplicates rejected)"
+
+[cli.help._root.workspace-category.rename]
+about = "Rename a category (the 'normal' category cannot be renamed)"
+
+[cli.help._root.workspace-category.rename.arg.id]
+help = "Category ID (required)"
+
+[cli.help._root.workspace-category.rename.arg.name]
+help = "New name"
+
+[cli.help._root.workspace-category.delete]
+about = "Delete a category; its workspaces move to 'normal' (the 'normal' category cannot be deleted)"
+
+[cli.help._root.workspace-category.delete.arg.id]
+help = "Category ID (required)"
+
+[cli.help._root.workspace-category.move]
+long = "Reorder categories ('normal' is fixed at index 0; from/to must be ≥ 1)\n\nPrefer `--id`: a category ID names the window that owns it, so the command means the same thing no matter which window is focused. `--from` is an index inside one window, so it lands on whichever window has focus."
+about = "Reorder categories ('normal' is fixed at index 0; from/to must be ≥ 1)"
+
+[cli.help._root.workspace-category.move.arg.id]
+help = "Category ID to move (preferred; mutually exclusive with --from)"
+
+[cli.help._root.workspace-category.move.arg.from]
+help = "Source index (≥ 1, focus-dependent)"
+
+[cli.help._root.workspace-category.move.arg.to]
+help = "Destination index (≥ 1)"
+
+[cli.help._root.screenshot.arg.path]
+help = "Output PNG path"
+
+[cli.help._root.screenshot.arg.surface]
+help = "Terminal surface ID to capture (offscreen; focus-independent)"
+
+[cli.help._root.screenshot.arg.window]
+help = "Window ID to capture (whole tasty frame). Required when multiple windows are open. May name a modal window that `list windows` does not enumerate"
+
+[cli.help_frame]
+default = "Default: {}"
+usage = "Usage:"
+commands = "Commands:"
+arguments = "Arguments:"
+options = "Options:"
+help = "Print help"
+version = "Print version"
+help_command = "Print this message or the help of the given subcommand(s)"
+available = "Available subcommands for '{}':"
+required = "Required arguments for '{}':"
+optional = "Optional:"
+details = "Run '{} --help' for full details."
+error = "error:"
+
+[cli.parse]
+cause = "Parser detail: {}"
+invalid_value = "Invalid value."
+unknown_argument = "Unexpected argument."
+invalid_subcommand = "Unknown subcommand."
+no_equals = "This option requires an equals sign."
+value_validation = "The argument value failed validation."
+too_many_values = "Too many values."
+too_few_values = "Too few values."
+wrong_number = "Incorrect number of values."
+conflict = "These arguments cannot be used together."
+missing_argument = "Required arguments are missing."
+missing_subcommand = "A subcommand is required."
+invalid_utf8 = "Input is not valid UTF-8."
+io = "I/O error while reading arguments."
+format = "Unable to format arguments."
+parse = "Unable to parse arguments."
+argument = "Argument: {}"
+prior = "Conflicts with: {}"
+value = "Value: {}"
+valid_values = "Allowed values: {}"
+valid_commands = "Available commands: {}"
+actual = "Actual count: {}"
+expected = "Expected count: {}"
+minimum = "Minimum count: {}"
+suggestion = "Suggestion: {}"

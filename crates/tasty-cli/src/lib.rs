@@ -19,6 +19,8 @@ pub mod dynamic;
 pub mod events;
 pub mod format;
 pub mod help;
+mod help_error;
+mod help_frame;
 pub mod help_i18n;
 pub mod hook_failure;
 pub mod local;

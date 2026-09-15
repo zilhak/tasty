@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.html"
 name = "HTML Viewer"
-version = "0.1.31"
+version = "0.1.32"
 description = "HTML viewer surface. Uses tasty's native WebView overlay toolkit."
 api_version = "1"
 permissions = [
@@ -55,15 +55,15 @@ name = "html"
 description = "HTML viewer commands"
 description_i18n_key = "html.cli.desc"
 subcommands = [
-    { name = "open", ipc_method = "html.open", args = "open_args", description = "Open a URL as HTML surface in the focused tab" },
+    { name = "open", ipc_method = "html.open", args = "open_args", description = "Open a URL as HTML surface in the focused tab", description_i18n_key = "html.cli.sub.open.description" },
 ]
 
 [contributes.cli.arg_groups.open_args]
 positional = [
-    { name = "url", type = "string", required = true, help = "URL (http://, https://, file://) or local path" },
+    { name = "url", type = "string", required = true, help = "URL (http://, https://, file://) or local path", help_i18n_key = "html.cli.arg.open_args.url.help" },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Target surface ID (default: convert focused)" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Target surface ID (default: convert focused)", help_i18n_key = "html.cli.arg.open_args.surface.help" },
 ]
 
 # Appearance › HTML settings page. Host renders the controls (Phase 2-host) and

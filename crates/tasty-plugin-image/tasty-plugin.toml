@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.image"
 name = "Image"
-version = "0.1.42"
+version = "0.1.43"
 description = "Image surface viewer / paint canvas"
 api_version = "1"
 permissions = [
@@ -80,41 +80,41 @@ name = "image"
 description = "Image surface viewer and paint canvas"
 description_i18n_key = "image.cli.desc"
 subcommands = [
-    { name = "open",   ipc_method = "image.open",       args = "open_args",   description = "Convert a surface to image kind and load the given file" },
-    { name = "save",   ipc_method = "image.save",       args = "save_args",   description = "Save the current image surface to disk (PNG)" },
-    { name = "export", ipc_method = "image.export_png", args = "export_args", description = "Export the current image surface to the given PNG path" },
-    { name = "next",   ipc_method = "image.next",       args = "nav_args",    description = "Step to the next image in the same directory" },
-    { name = "prev",   ipc_method = "image.prev",       args = "nav_args",    description = "Step to the previous image in the same directory" },
-    { name = "paste",  ipc_method = "image.paste",      args = "nav_args",    description = "Paste a clipboard image as a floating selection" },
-    { name = "reload", ipc_method = "image.reload",     args = "nav_args",    description = "Re-read the file from disk (deferred while an edit session is active)" },
-    { name = "list",   ipc_method = "image.list",       args = "no_args",     description = "List all open image surfaces" },
+    { name = "open",   ipc_method = "image.open",       args = "open_args",   description = "Convert a surface to image kind and load the given file", description_i18n_key = "image.cli.sub.open.description" },
+    { name = "save",   ipc_method = "image.save",       args = "save_args",   description = "Save the current image surface to disk (PNG)", description_i18n_key = "image.cli.sub.save.description" },
+    { name = "export", ipc_method = "image.export_png", args = "export_args", description = "Export the current image surface to the given PNG path", description_i18n_key = "image.cli.sub.export.description" },
+    { name = "next",   ipc_method = "image.next",       args = "nav_args",    description = "Step to the next image in the same directory", description_i18n_key = "image.cli.sub.next.description" },
+    { name = "prev",   ipc_method = "image.prev",       args = "nav_args",    description = "Step to the previous image in the same directory", description_i18n_key = "image.cli.sub.prev.description" },
+    { name = "paste",  ipc_method = "image.paste",      args = "nav_args",    description = "Paste a clipboard image as a floating selection", description_i18n_key = "image.cli.sub.paste.description" },
+    { name = "reload", ipc_method = "image.reload",     args = "nav_args",    description = "Re-read the file from disk (deferred while an edit session is active)", description_i18n_key = "image.cli.sub.reload.description" },
+    { name = "list",   ipc_method = "image.list",       args = "no_args",     description = "List all open image surfaces", description_i18n_key = "image.cli.sub.list.description" },
 ]
 
 [contributes.cli.arg_groups.open_args]
 positional = [
-    { name = "path", type = "string", required = true, help = "Path to the image file to open" },
+    { name = "path", type = "string", required = true, help = "Path to the image file to open", help_i18n_key = "image.cli.arg.open_args.path.help" },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID", help_i18n_key = "image.cli.arg.open_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.save_args]
 flags = [
-    { name = "surface", type = "u32",    flag = "--surface", required = true,  help = "Target surface ID" },
-    { name = "path",    type = "string", flag = "--path",    required = false, help = "Override save path (defaults to the surface's open file with .png extension)" },
+    { name = "surface", type = "u32",    flag = "--surface", required = true,  help = "Target surface ID", help_i18n_key = "image.cli.arg.save_args.surface.help" },
+    { name = "path",    type = "string", flag = "--path",    required = false, help = "Override save path (defaults to the surface's open file with .png extension)", help_i18n_key = "image.cli.arg.save_args.path.help" },
 ]
 
 [contributes.cli.arg_groups.export_args]
 positional = [
-    { name = "path", type = "string", required = true, help = "PNG file path to export to" },
+    { name = "path", type = "string", required = true, help = "PNG file path to export to", help_i18n_key = "image.cli.arg.export_args.path.help" },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID", help_i18n_key = "image.cli.arg.export_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.nav_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID", help_i18n_key = "image.cli.arg.nav_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.no_args]

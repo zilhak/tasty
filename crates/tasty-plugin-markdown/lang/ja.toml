@@ -2,7 +2,7 @@
 markdown = "マークダウン"
 
 [markdown.cli]
-desc = "マークダウンビューアコマンド (テンプレート)"
+desc = "Markdownビューアーのコマンド"
 
 [markdown.namespace]
 desc = "マークダウンビューア surface ネームスペース"
@@ -94,3 +94,12 @@ file_hint = "マークダウンファイルのパス"
 
 [markdown.settings]
 allow_remote = "リモートコンテンツを許可"
+
+[markdown.cli.sub.reload]
+description = "ディスクからMarkdownサーフェスを強制再読み込み"
+
+[markdown.cli.sub.recent]
+description = "最近開いたMarkdownファイルを一覧表示（新しい順、最大10件）"
+
+[markdown.cli.arg.reload_args.surface]
+help = "対象サーフェス ID"

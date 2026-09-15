@@ -1,5 +1,5 @@
 [agent_stream.cli]
-desc = "AI 에이전트 세션 transcript 를 tail 해 구조화된 스트림 이벤트로 읽습니다"
+desc = "AI 에이전트 세션 기록을 추적하고 정규화된 스트림 이벤트 읽기"
 
 [agent_stream.error]
 missing_surface = "대상 surface 가 없습니다: --surface <id> 를 넘기거나 (TASTY_SURFACE_ID 가 설정되도록) tasty 터미널 안에서 실행하세요"
@@ -19,3 +19,63 @@ serve_invalid_bind = "bind 주소 {bind} 를 IP 로 해석할 수 없습니다 �
 serve_remote_bind_needs_token = "{bind} 에 토큰 없이 여는 것을 거부합니다: 이 엔드포인트는 대화 전문을 흘리므로 loopback 보다 넓은 주소에는 --token 이 필요합니다"
 serve_bind_failed = "SSE 엔드포인트를 {addr} 에 bind 할 수 없습니다: {detail} — 포트를 비우거나 다른 포트를 지정하세요(자동 폴백 없음)"
 serve_not_running = "SSE 엔드포인트가 떠 있지 않습니다"
+
+[agent_stream.cli.sub.watch]
+description = "서피스에서 실행 중인 에이전트 세션 기록 추적 시작. 서피스 메타데이터에서 세션 ID를 찾으며 없으면 명확한 오류 반환"
+
+[agent_stream.cli.sub.turn-start]
+description = "관찰 중인 서피스에 상관관계 턴을 열어 이벤트에 호출자의 request_id를 기록. webhook IpcSequence에서 claude.tell 앞의 첫 단계로 사용합니다. 관찰 중이 아니거나 이미 턴이 열려 있으면 거부"
+
+[agent_stream.cli.sub.unwatch]
+description = "서피스 추적 중지. 마지막 turn_end{reason=unwatched} 이벤트 발행"
+
+[agent_stream.cli.sub.list]
+description = "추적 중인 모든 서피스의 세션 ID·기록 경로·바이트 위치·상태 나열"
+
+[agent_stream.cli.sub.poll]
+description = "시퀀스 커서로 수집된 이벤트 읽기(비파괴). 이벤트 종류: text / thinking / tool_use / turn_end"
+
+[agent_stream.cli.sub.serve]
+description = "외부 소비자가 구독할 SSE 엔드포인트(GET /events) 열기. 포트는 필수이며 자동 폴백 없음. 다시 호출하면 새 설정으로 재바인딩"
+
+[agent_stream.cli.sub.serve-stop]
+description = "SSE 엔드포인트를 닫고 열린 모든 구독 종료"
+
+[agent_stream.cli.sub.serve-info]
+description = "SSE 엔드포인트 상태와 구독자별 계수 보고. 토큰은 노출하지 않음"
+
+[agent_stream.cli.arg.watch_args.surface]
+help = "에이전트를 실행 중인 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[agent_stream.cli.arg.watch_args.from_start]
+help = "현재 파일 끝 대신 바이트 0부터 기록 재생"
+
+[agent_stream.cli.arg.unwatch_args.surface]
+help = "추적을 중지할 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[agent_stream.cli.arg.turn_start_args.surface]
+help = "턴을 열 에이전트의 서피스(기본값: 호출자의 TASTY_SURFACE_ID). 이미 관찰 중이어야 함"
+
+[agent_stream.cli.arg.turn_start_args.request_id]
+help = "호출자가 제공한 상관관계 ID. 턴의 모든 이벤트에 request_id로 기록되며 FE가 요청과 응답을 대응시키는 데 사용"
+
+[agent_stream.cli.arg.turn_start_args.timeout_secs]
+help = "턴 유휴 제한 시간(초, 기본값 600, 범위 10-86400). 이 시간 동안 이벤트와 turn_end가 없으면 turn_end{reason=stream:turn_timeout}으로 턴 종료"
+
+[agent_stream.cli.arg.poll_args.filter_surface]
+help = "이 서피스에서 수집한 이벤트만 반환(기본값 없음. 생략하면 관찰 중인 모든 서피스)"
+
+[agent_stream.cli.arg.poll_args.after_seq]
+help = "커서보다 seq가 큰 이벤트 반환(기본값 0 = 버퍼의 가장 오래된 이벤트부터)"
+
+[agent_stream.cli.arg.poll_args.limit]
+help = "반환할 최대 이벤트 수(기본값 100, 최대 1000)"
+
+[agent_stream.cli.arg.serve_args.port]
+help = "수신할 TCP 포트. 자동 선택하지 않아 재시작 후에도 주소가 같도록 필수 지정"
+
+[agent_stream.cli.arg.serve_args.bind]
+help = "바인딩 주소(기본값 127.0.0.1). --token 없이 루프백 이외 주소는 거부"
+
+[agent_stream.cli.arg.serve_args.token]
+help = "공유 구독 토큰. 구독자는 'Authorization: Bearer <token>' 또는 '?token=<token>'으로 전달. 생략하면 인증 없음(루프백만 허용)"

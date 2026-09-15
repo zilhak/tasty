@@ -2,7 +2,7 @@
 image = "画像"
 
 [image.cli]
-desc = "画像ビューア / ペイントキャンバス"
+desc = "画像サーフェスビューアーと描画キャンバス"
 
 [image.namespace]
 desc = "Image surface IPC ネームスペース"
@@ -35,3 +35,48 @@ save = "保存"
 [preset.field]
 file = "ファイル"
 file_hint = "画像ファイルのパス"
+
+[image.cli.sub.open]
+description = "サーフェスを画像種別に変換し指定ファイルを読み込む"
+
+[image.cli.sub.save]
+description = "現在の画像サーフェスをディスクにPNGで保存"
+
+[image.cli.sub.export]
+description = "現在の画像サーフェスを指定PNGパスへ書き出す"
+
+[image.cli.sub.next]
+description = "同じディレクトリの次の画像へ移動"
+
+[image.cli.sub.prev]
+description = "同じディレクトリの前の画像へ移動"
+
+[image.cli.sub.paste]
+description = "クリップボード画像を浮動選択範囲として貼り付け"
+
+[image.cli.sub.reload]
+description = "ディスクからファイルを再読み込み（編集セッション中は延期）"
+
+[image.cli.sub.list]
+description = "開いている全画像サーフェスを一覧表示"
+
+[image.cli.arg.open_args.path]
+help = "開く画像ファイルのパス"
+
+[image.cli.arg.open_args.surface]
+help = "対象サーフェス ID"
+
+[image.cli.arg.save_args.surface]
+help = "対象サーフェス ID"
+
+[image.cli.arg.save_args.path]
+help = "保存先を上書き（既定値：サーフェスで開いたファイルの拡張子を.pngに変更）"
+
+[image.cli.arg.export_args.path]
+help = "書き出すPNGファイルのパス"
+
+[image.cli.arg.export_args.surface]
+help = "対象サーフェス ID"
+
+[image.cli.arg.nav_args.surface]
+help = "対象サーフェス ID"

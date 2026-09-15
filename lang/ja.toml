@@ -1953,6 +1953,7 @@ about = "ヘッドレス PTY を管理する（spawn/write/read/wait/kill/list�
 about = "サーフェスが現在タイピング中かを確認する（直近 5 秒以内のキー入力の有無）"
 
 [cli.help._root.wake]
+long = "遅延サーフェスのPTYを起動（実行中なら何もしません）。送信コマンドは対象を自動で起動するため、入力なしでPTYだけを開始する場合に使います。"
 about = "遅延サーフェスの PTY を起動する（すでに実行中なら何もしない）"
 
 [cli.help._root.debug]
@@ -2009,6 +2010,7 @@ about = "受信 Webhook を管理する（登録/一覧/情報/解除） — HTT
 about = "このインスタンスの IPC ポートを stdout に出力する（リモートポート自動発見チェーンの最初の一歩、`ssh host tasty port`）。ポートファイルのみを読み、IPC は使わない"
 
 [cli.help._root.screenshot]
+long = "スクリーンショットをPNGファイルに保存します（フォーカス非依存）。`--surface` は対象ターミナルサーフェスを自身のグリッドサイズでオフスクリーン描画して撮影します。バックグラウンドのタブ/ワークスペースでも動作し、フォーカスや表示中のフレームは変更しません。それ以外はウィンドウ全体を撮影します。`--window` でIDを指定（`list windows` 参照）し、省略時に開いているウィンドウが一つならそれを使用します。明示的な `--window` は設定・pluginモーダルなど `list windows` にないウィンドウも指定できます。自動選択（--windowなし）だけがメインウィンドウに制限され、フォーカス中のウィンドウへはフォールバックしません。"
 about = "スクリーンショットを PNG ファイルに取得する（フォーカスに依存しない）"
 
 [cli.help._root.list.workspaces]
@@ -4414,3 +4416,1284 @@ long = "リスナーの bind ポートを読み取る/設定する(`~/.tasty/web
 
 [cli.help._root.webhook.config.arg.port]
 help = "リスナーのポートを設定する(1-65535)。反映には再起動が必要"
+
+[cli.help._root.list.surface-kinds]
+long = "このインスタンスに実際に登録されたサーフェス種別を一覧表示します。マニフェスト宣言ではなく実行中の登録状態です。hostが登録した種別のみ表示され、列挙された種別に対して `--type <kind>` を使用できます。host組み込みとplugin提供の種別を両方含みます。"
+about = "このインスタンスに実際に登録されたサーフェス種別を一覧表示"
+
+[cli.help._root.remote.attach]
+long = "SSH経由でリモートのサーフェス/ワークスペースに一度だけattachします。`ssh -L` トンネルを開いてattachセッションを実行します。接続先は `--ssh` または `--profile` で指定します。"
+about = "SSH経由でリモートのサーフェス/ワークスペースに一度だけattach"
+
+[cli.help._root.remote.attach.arg.surface]
+help = "対象サーフェスID（明示指定。フォーカスから推測しません）。`--workspace` と併用不可"
+
+[cli.help._root.remote.attach.arg.workspace]
+help = "対象ワークスペースID。全ターミナルをツリーとしてミラーリングします。位置引数 `surface` と併用不可。ターミナル以外のサーフェスはプレースホルダーで表示"
+
+[cli.help._root.remote.attach.arg.dump_after]
+help = "ミラーダンプモード：attach後N ms出力を収集し、ミラー画面をstdoutへ出力して終了（GUIなしの自動検証）。ワークスペースモードではサーフェスごとに区切って出力"
+
+[cli.help._root.remote.attach.arg.send]
+help = "attach直後に一度送る入力（エスケープを解釈：\\\\n \\\\r \\\\t \\\\xNN）。非対話型検証用"
+
+[cli.help._root.remote.attach.arg.send_to]
+help = "ワークスペースモードで `--send` の入力を受け取るリモートサーフェスID"
+
+[cli.help._root.remote.attach.arg.raw]
+help = "生のブリッジモード：stdin/stdoutをそのまま転送（Ctrl+\\\\でdetach）"
+
+[cli.help._root.remote.attach.arg.force_detach]
+help = "占有されたサーフェス/ワークスペースのattachロックをサーバー側で強制解除（attachはしません）。このサーバーにローカルの `attach.force_detach` リクエストを送り、リモートクライアントのロックを解除します。`--ssh` と併用不可（トンネル経由の強制detachは非対応）"
+
+[cli.help._root.remote.attach.arg.ssh]
+help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10）。`--profile` と併用不可"
+
+[cli.help._root.remote.attach.arg.profile]
+help = "保存済みtasty-attachプロファイル名でattach。`~/.tasty/remote-profiles.toml` からユーザー/ポート/認証鍵/追加オプションを取得します。`--ssh` と併用不可。プロファイルの値が `--remote-tasty` と `--remote-port-mode` を置き換えます"
+
+[cli.help._root.remote.attach.arg.remote_tasty]
+help = "リモートhostのtastyバイナリのパス。ポート探索のサブコマンド段階（`ssh host <path> port`）で使用。既定値は \"tasty\"（リモートPATH上にあると想定）"
+
+[cli.help._root.remote.attach.arg.remote_port_mode]
+help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.attach.arg.no_reconnect]
+help = "自動再接続を無効化（既定ではSSH切断時に待機時間を延ばしながら再接続）"
+
+[cli.help._root.remote.attach.arg.into_gui]
+help = "ローカルGUIにクライアントとしてリモートワークスペースをミラーに再構成するよう要求（`attach.into_gui` IPC）。`--workspace` と `--target-port` が必須"
+
+[cli.help._root.remote.attach.arg.target_port]
+help = "`--into-gui` 用のリモートtastyサーバーのループバックポート（GUIの接続先）"
+
+[cli.help._root.remote.check]
+long = "SSH経由でリモートtastyインスタンスの稼働を確認します。ポート探索（`tasty port` またはポートファイル）だけでは終了したインスタンスの古いファイルを誤認するため、発見後に `ssh -L` トンネルを開き、軽量なIPCリクエスト（`system.info`）を一度送ります。応答がある場合のみ稼働中と判定し、接続拒否やタイムアウトは停止状態（古いポート）と判定します。引数名は `remote attach` と同じです。"
+about = "SSH経由でリモートtastyインスタンスの稼働を確認"
+
+[cli.help._root.remote.check.arg.ssh]
+help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10）。`--profile` と併用不可"
+
+[cli.help._root.remote.check.arg.profile]
+help = "保存済みtasty-attachプロファイル名で確認。`~/.tasty/remote-profiles.toml` からユーザー/ポート/認証鍵/追加オプションを取得します。`--ssh` と併用不可。プロファイルの値が `--remote-tasty` と `--remote-port-mode` を置き換えます"
+
+[cli.help._root.remote.check.arg.remote_tasty]
+help = "リモートhostのtastyバイナリのパス。ポート探索のサブコマンド段階（`ssh host <path> port`）で使用。既定値は \"tasty\"（リモートPATH上にあると想定）"
+
+[cli.help._root.remote.check.arg.remote_port_mode]
+help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.workspaces]
+long = "SSH経由でリモートtastyインスタンスのワークスペースを一覧表示します。SSH接続先またはattachプロファイルに接続し、リモートの `workspace.list` と `attach.list` を統合します。各ワークスペースのID、名前、ペイン数、処理中フラグ、他クライアントのattach状態を表示します。`remote attach --workspace` のIDを探す際に使います。読み取り専用でローカルユーザーの状態（フォーカスなど）を変更しません。`--ssh 127.0.0.1:<port>` はトンネルなしでループバックへ直接接続します（ローカルのエンドツーエンド検証）。ローカルIPC `remote.workspaces` も同じ機能を提供します。"
+about = "SSH経由でリモートtastyインスタンスのワークスペースを一覧表示"
+
+[cli.help._root.remote.workspaces.arg.ssh]
+help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10、--ssh 127.0.0.1:45123）。`--profile` と併用不可"
+
+[cli.help._root.remote.workspaces.arg.profile]
+help = "保存済みtasty-attachプロファイル名で一覧表示。`--ssh` と併用不可。プロファイルの値が `--remote-tasty` と `--remote-port-mode` を置き換えます"
+
+[cli.help._root.remote.workspaces.arg.remote_tasty]
+help = "リモートhostのtastyバイナリのパス（ポート探索サブコマンドで使用）。既定値は \"tasty\""
+
+[cli.help._root.remote.workspaces.arg.remote_port_mode]
+help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.workspaces.arg.json]
+help = "人向けのテキストの代わりにJSON配列を出力（スクリプト・UI向け）"
+
+[cli.help._root.remote.new-workspace]
+long = "SSH経由でリモートtastyインスタンスに新しいワークスペースを作成します。`remote workspaces` に対応する書き込みコマンドです。出力されたIDを `tasty remote attach --workspace <id>` に渡すと、リモートで作成後にattachできます。リモートのアクティブワークスペースは変わりません。ローカルIPC `remote.attach` の `new_workspace` オプションも同じ機能を提供します。"
+about = "SSH経由でリモートtastyインスタンスに新しいワークスペースを作成"
+
+[cli.help._root.remote.new-workspace.arg.ssh]
+help = "リモートSSH接続先（例：--ssh user@host、--ssh gx10、--ssh 127.0.0.1:45123）。`--profile` と併用不可"
+
+[cli.help._root.remote.new-workspace.arg.profile]
+help = "保存済みtasty-attachプロファイル名で作成。`--ssh` と併用不可。プロファイルの値が `--remote-tasty` と `--remote-port-mode` を置き換えます"
+
+[cli.help._root.remote.new-workspace.arg.remote_tasty]
+help = "リモートhostのtastyバイナリのパス（ポート探索サブコマンドで使用）。既定値は \"tasty\""
+
+[cli.help._root.remote.new-workspace.arg.remote_port_mode]
+help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.new-workspace.arg.name]
+help = "新しいワークスペース名（省略時はリモートの既定値）"
+
+[cli.help._root.remote.new-workspace.arg.cwd]
+help = "リモートファイルシステム上の新しいワークスペースの作業ディレクトリ。リモート側で存在を確認し、なければ `cwd does not exist` で拒否"
+
+[cli.help._root.remote.new-workspace.arg.json]
+help = "人向けのテキストの代わりにJSONオブジェクトを出力（スクリプト・エージェント向け）"
+
+[cli.help._root.notify.arg.body]
+help = "通知本文"
+
+[cli.help._root.notify.arg.title]
+help = "任意の通知タイトル。省略時はhostが翻訳済みの既定値（`notification.default_title`）を設定します。CLI独自の英語既定値はありません"
+
+[cli.help._root.surface-meta.set]
+about = "サーフェスにメタデータのキーと値を設定"
+
+[cli.help._root.surface-meta.set.arg.key]
+help = "キー名"
+
+[cli.help._root.surface-meta.set.arg.value]
+help = "値"
+
+[cli.help._root.surface-meta.set.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.surface-meta.get]
+about = "キーでメタデータ値を取得"
+
+[cli.help._root.surface-meta.get.arg.key]
+help = "キー名"
+
+[cli.help._root.surface-meta.get.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.surface-meta.unset]
+about = "メタデータキーを削除"
+
+[cli.help._root.surface-meta.unset.arg.key]
+help = "キー名"
+
+[cli.help._root.surface-meta.unset.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.surface-meta.list]
+about = "サーフェスの全メタデータを一覧表示"
+
+[cli.help._root.surface-meta.list.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.surface.completion]
+long = "サーフェスの作業完了または入力待ちを通知し、注意表示を有効化します。対象は必ず --surface で指定し、フォーカスから推測しません。"
+about = "サーフェスの作業完了または入力待ちを通知し、注意表示を有効化"
+
+[cli.help._root.surface.completion.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.completion.arg.kind]
+help = "注意の種類：\"completion\"（既定値）または \"needs_input\"。それ以外は \"completion\" として処理"
+
+[cli.help._root.surface.cursor-position]
+long = "ターミナルサーフェスのカーソル位置を列・行で出力します。対象は必ず --surface で指定し、フォーカスから推測しません。"
+about = "ターミナルサーフェスのカーソル位置を列・行で出力"
+
+[cli.help._root.surface.cursor-position.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.mouse-tracking]
+long = "ターミナル内プログラムのマウス入力捕捉状態とレベルを出力します。マウスシーケンス送信やドラッグ選択の前に確認してください。追跡が有効ならプログラムが入力を消費し、無効ならシーケンスが画面に不要な文字として表示されます。対象は必ず --surface で指定します。"
+about = "ターミナル内プログラムのマウス入力捕捉状態とレベルを出力"
+
+[cli.help._root.surface.mouse-tracking.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.foreground-process]
+long = "ターミナルサーフェスの現在のフォアグラウンドプロセスを出力します。シェルが待機中か処理中かの判別に使います。対象は必ず --surface で指定します。"
+about = "ターミナルサーフェスの現在のフォアグラウンドプロセスを出力"
+
+[cli.help._root.surface.foreground-process.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.locate]
+long = "サーフェスの所属ペインとツリー内に残っているかを出力します。作成した、または待機中のサーフェスが閉じられていないかの確認に使います。対象は必ず --surface で指定します。"
+about = "サーフェスの所属ペインとツリー内に残っているかを出力"
+
+[cli.help._root.surface.locate.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.respawn-terminal]
+long = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動します。対象は必ず --surface で指定します。"
+about = "サーフェス・タブ・位置を維持してターミナルサーフェスのシェルを再起動"
+
+[cli.help._root.surface.respawn-terminal.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.fire-hook]
+long = "イベントが発生した場合と同様に、名前でサーフェスフックを実行します。対象は必ず --surface で指定します。"
+about = "イベントが発生した場合と同様に、名前でサーフェスフックを実行"
+
+[cli.help._root.surface.fire-hook.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.fire-hook.arg.event]
+help = "実行するフックイベント名（必須）"
+
+[cli.help._root.surface.attention]
+long = "サーフェスの注意表示を照会または解除します。`completion` の逆の操作です。他の解除経路（実際の描画フォーカスと通知の閲覧）はGUIローカルイベントのため、headlessインスタンスではこれが唯一の解除方法です。"
+about = "サーフェスの注意表示を照会または解除"
+
+[cli.help._root.surface.attention.get]
+long = "サーフェスに記録された注意の種類を出力します：\"completion\"、\"needs_input\"、未設定ならnull。対象は必ず --surface で指定し、フォーカスから推測しません。読み取り専用のため、リモートattachセッションが占有中でも許可されます。"
+about = "サーフェスに記録された注意の種類を出力：\"completion\"、\"needs_input\"、未設定ならnull"
+
+[cli.help._root.surface.attention.get.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.attention.clear]
+long = "サーフェスの注意表示を解除します。対象は必ず --surface で指定し、フォーカスから推測しません。表示がない場合も成功し \"cleared\": false を返します。リモートattachセッションが強く占有中のサーフェスと、リモートワークスペースのミラーサーフェスは拒否します。いずれも注意表示はサーフェスを所有するインスタンスに属します。"
+about = "サーフェスの注意表示を解除"
+
+[cli.help._root.surface.attention.clear.arg.surface]
+help = "サーフェスID（必須）"
+
+[cli.help._root.surface.attention.clear.arg.kind]
+help = "記録された種類が \"completion\" または \"needs_input\" と一致する場合のみ解除。省略時は種類を問わず解除。それ以外の値は拒否"
+
+[cli.help._root.session.issue]
+long = "使用可能な権限を明示して子エージェントのセッショントークンを発行します。子はトークンをTASTY_SESSION_TOKENに設定します。権限ごとに --permission を一度指定してください。権限なしのトークンでも、権限不要のメソッドは呼び出せます。"
+about = "使用可能な権限を明示して子エージェントのセッショントークンを発行"
+
+[cli.help._root.session.issue.arg.agent_id]
+help = "トークンを発行するエージェント識別子（必須）"
+
+[cli.help._root.session.issue.arg.permissions]
+help = "付与する権限トークン。繰り返し指定可能（例：surface.read）"
+
+[cli.help._root.session.issue.arg.ttl_ms]
+help = "有効期間（ms）。省略時はサーバーの既定値"
+
+[cli.help._root.session.revoke]
+about = "セッショントークンを失効させ、保持するエージェントの信頼を解除"
+
+[cli.help._root.session.revoke.arg.token]
+help = "失効させるトークン文字列（必須）"
+
+[cli.help._root.session.list]
+about = "このインスタンスが現在保持するセッショントークンを一覧表示"
+
+[cli.help._root.terminal.spawn]
+long = "ワークスペースに子ターミナルを作成してコマンドを実行します。子は親サーフェスの下に登録され、弱い占有（緑の枠線）で表示されます。即時に戻り、完了（idle / needs_input / exited）はここで待機せず `terminal set-state` に接続されたエージェントフックで報告します。"
+about = "ワークスペースに子ターミナルを作成してコマンドを実行"
+
+[cli.help._root.terminal.spawn.arg.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[cli.help._root.terminal.spawn.arg.workspace]
+help = "対象ワークスペース（IDまたは名前）"
+
+[cli.help._root.terminal.spawn.arg.pane]
+help = "対象ペインID（既定値：ワークスペースの最初のペイン）"
+
+[cli.help._root.terminal.spawn.arg.cwd]
+help = "子ターミナルの作業ディレクトリ"
+
+[cli.help._root.terminal.spawn.arg.command]
+help = "子ターミナルで実行するコマンド（そのまま送信しEnterで確定）"
+
+[cli.help._root.terminal.spawn.arg.role]
+help = "子の役割ラベル（broadcast --roleで使用）"
+
+[cli.help._root.terminal.spawn.arg.nickname]
+help = "タブに表示するニックネーム"
+
+[cli.help._root.terminal.tell]
+long = "子ターミナルにメッセージを送信します（改行を維持し末尾で確定）。即時に戻ります。"
+about = "子ターミナルにメッセージを送信（改行を維持し末尾で確定）"
+
+[cli.help._root.terminal.tell.arg.text]
+help = "送信するメッセージ。改行を維持し自動で確定"
+
+[cli.help._root.terminal.tell.arg.surface]
+help = "対象の surface ID（デフォルト: 呼び出し元の TASTY_SURFACE_ID）"
+
+[cli.help._root.terminal.children]
+about = "指定した親サーフェスの子を一覧表示"
+
+[cli.help._root.terminal.children.arg.surface]
+help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.parent]
+about = "指定した子サーフェスの親サーフェスIDを返す"
+
+[cli.help._root.terminal.parent.arg.surface]
+help = "親を照会する子サーフェスID"
+
+[cli.help._root.terminal.state]
+long = "子一つの状態を返します：idle、needs_input、active、exited。エージェントフックがidle/needs_inputを報告する `set-state` と異なり、現在の状態を読み取ります。生存するサーフェスと照合し、閉じた子は古い `active` ではなく `exited` と報告します。"
+about = "子一つの状態を返す：idle、needs_input、active、exited"
+
+[cli.help._root.terminal.state.arg.surface]
+help = "照会する子サーフェスID"
+
+[cli.help._root.terminal.kill]
+about = "子インデックスでターミナルを終了（タブを閉じ占有を解除）"
+
+[cli.help._root.terminal.kill.arg.surface]
+help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.kill.arg.child]
+help = "終了する子インデックス"
+
+[cli.help._root.terminal.respawn]
+about = "子ターミナルを再生成（PTYの置換またはコマンド再実行）"
+
+[cli.help._root.terminal.respawn.arg.surface]
+help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.respawn.arg.child]
+help = "再生成する子インデックス"
+
+[cli.help._root.terminal.respawn.arg.cwd]
+help = "作業ディレクトリを上書き（新しいcwdでPTYを置換）"
+
+[cli.help._root.terminal.respawn.arg.command]
+help = "再生成後に再実行するコマンド"
+
+[cli.help._root.terminal.respawn.arg.role]
+help = "子の役割ラベルを置換"
+
+[cli.help._root.terminal.respawn.arg.nickname]
+help = "子の表示ニックネームを置換"
+
+[cli.help._root.terminal.broadcast]
+about = "親サーフェスの全ての子にテキストを一斉送信"
+
+[cli.help._root.terminal.broadcast.arg.text]
+help = "一斉送信するテキスト（そのまま送信）"
+
+[cli.help._root.terminal.broadcast.arg.surface]
+help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.broadcast.arg.role]
+help = "この役割ラベルの子だけに送信"
+
+[cli.help._root.terminal.set-state]
+about = "子のidle/needs_input/active状態を設定（エージェントフックから呼び出し）"
+
+[cli.help._root.terminal.set-state.arg.surface]
+help = "子サーフェスID"
+
+[cli.help._root.terminal.set-state.arg.state]
+help = "新しい状態：idle、needs_input、active"
+
+[cli.help._root.terminal.adopt]
+about = "新しいタブを作らず既存のサーフェスを子として登録（弱い占有）。既に他の親の子である場合（先に解除が必要）、または強い占有（リモートattach）状態の場合は失敗"
+
+[cli.help._root.terminal.adopt.arg.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[cli.help._root.terminal.adopt.arg.target]
+help = "子として登録する既存のサーフェスID"
+
+[cli.help._root.terminal.adopt.arg.cwd]
+help = "子に記録する作業ディレクトリ"
+
+[cli.help._root.terminal.adopt.arg.role]
+help = "子の役割ラベル（broadcast --roleで使用）"
+
+[cli.help._root.terminal.adopt.arg.nickname]
+help = "タブに表示するニックネーム"
+
+[cli.help._root.terminal.release]
+about = "サーフェスを閉じずに子ターミナルの登録を解除（親子関係と弱い占有を削除）"
+
+[cli.help._root.terminal.release.arg.surface]
+help = "親サーフェスID（既定値：既知の親が一つならその親）"
+
+[cli.help._root.terminal.release.arg.child]
+help = "解除する子インデックス"
+
+[cli.help._root.pty.spawn]
+long = "サーフェス/タブのないheadless PTYを作成してPTY IDを返します。コマンドがあればPTYのシェルで即時実行します。なければシェルだけを起動し、`pty write` で操作します。"
+about = "サーフェス/タブのないheadless PTYを作成。PTY IDを返す"
+
+[cli.help._root.pty.spawn.arg.cwd]
+help = "PTYの作業ディレクトリ"
+
+[cli.help._root.pty.spawn.arg.command]
+help = "作成時に実行するコマンドトークン（例：`pty spawn -- echo hi`）"
+
+[cli.help._root.pty.write]
+about = "実行中のheadless PTYに入力を書き込む（そのまま送信。確定には改行を含める）"
+
+[cli.help._root.pty.write.arg.id]
+help = "対象PTY ID"
+
+[cli.help._root.pty.write.arg.text]
+help = "PTYのstdinに送るテキスト"
+
+[cli.help._root.pty.read]
+about = "headless PTYの現在の画面テキストを読み取る"
+
+[cli.help._root.pty.read.arg.id]
+help = "対象PTY ID"
+
+[cli.help._root.pty.read.arg.lines]
+help = "末尾N行（既定値：表示中の全画面）。末尾の空行を除き不足分をスクロールバックで補い、実際に出力された末尾N行を返します。上限はグリッドではなく内容です。代替画面（全画面TUI）では主バッファーのスクロールバックから補い、境界表示はないため、Nが大きいと以前のシェル出力がTUI画面の上に付くことがあります。"
+
+[cli.help._root.pty.read.arg.show_dim]
+help = "淡色セル（ゴースト候補、例: Claude Code の補完オーバーレイ）も含める。既定では除外する — 未送信の UI 候補を実際のバッファ内容と取り違えないためである"
+
+[cli.help._root.pty.wait]
+about = "headless PTYの終了状態を照会（即時に戻る、非ブロッキング）"
+
+[cli.help._root.pty.wait.arg.id]
+help = "対象PTY ID"
+
+[cli.help._root.pty.kill]
+about = "headless PTYのプロセスを終了しスロットを回収"
+
+[cli.help._root.pty.kill.arg.id]
+help = "対象PTY ID"
+
+[cli.help._root.pty.list]
+about = "生存する全headless PTYを一覧表示（フォーカス非依存、常に全件）"
+
+[cli.help._root.pty.attach-surface]
+about = "headless PTYをペイン配下の実際のサーフェス/タブへ昇格。同じプロセスとスクロールバックを移して状態を維持し、PTY IDをheadless一覧から削除"
+
+[cli.help._root.pty.attach-surface.arg.pty_id]
+help = "昇格するPTY ID"
+
+[cli.help._root.pty.attach-surface.arg.pane_id]
+help = "昇格したターミナルを配置するペイン（新しいバックグラウンドタブ）"
+
+[cli.help._root.is-typing.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.wake.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.debug.attach]
+about = "ローカルループバックでサーフェス/ワークスペースにattachしてミラーリング（debugビルド専用）。ローカルself-attachはユーザーのミラー操作を再現するため、エージェント/ユーザー操作分離方針に従いrelease表面から隔離されます。リモートattachにはreleaseの `tasty remote attach` を使用"
+
+[cli.help._root.debug.attach.arg.surface]
+help = "対象サーフェスID（明示指定。フォーカスから推測しません）。`--workspace` と併用不可"
+
+[cli.help._root.debug.attach.arg.workspace]
+help = "対象ワークスペースID。全ターミナルをツリーとしてミラーリングします。位置引数 `surface` と併用不可。ターミナル以外のサーフェスはプレースホルダーで表示"
+
+[cli.help._root.debug.attach.arg.dump_after]
+help = "ミラーダンプモード：attach後N ms出力を収集し、ミラー画面をstdoutへ出力して終了"
+
+[cli.help._root.debug.attach.arg.send]
+help = "attach直後に一度送る入力（エスケープを解釈：\\\\n \\\\r \\\\t \\\\xNN）。非対話型検証用"
+
+[cli.help._root.debug.attach.arg.send_to]
+help = "ワークスペースモードで `--send` の入力を受け取るリモートサーフェスID"
+
+[cli.help._root.debug.attach.arg.raw]
+help = "生のブリッジモード：stdin/stdoutをそのまま転送（Ctrl+\\\\でdetach）"
+
+[cli.help._root.debug.attach.arg.force_detach]
+help = "占有されたサーフェス/ワークスペースを強制detach（サーバー側、attachはしません）"
+
+[cli.help._root.debug.info]
+about = "実行中のtastyインスタンスのdebug情報を表示"
+
+[cli.help._root.debug.gpu-stall]
+about = "次フレームのGPU presentを意図的に止めイベントループの停止を再現（停止監視の検証用、debugビルド専用）"
+
+[cli.help._root.debug.gpu-stall.arg.ms]
+help = "停止時間（ms）"
+
+[cli.help._root.debug.ime-enable]
+about = "IME変換モードを有効化"
+
+[cli.help._root.debug.ime-disable]
+about = "IME変換モードを無効化し未確定文字列を消去"
+
+[cli.help._root.debug.ime-preedit]
+about = "IME未確定文字列を送信"
+
+[cli.help._root.debug.ime-preedit.arg.text]
+help = "未確定文字列（例：変換中のハングル音節U+D558）"
+
+[cli.help._root.debug.ime-preedit.arg.cursor]
+help = "未確定文字列内のカーソル位置"
+
+[cli.help._root.debug.ime-commit]
+about = "IME変換文字列を確定しターミナルへ送信"
+
+[cli.help._root.debug.ime-commit.arg.text]
+help = "確定する文字列（例：完成したハングル音節U+D55C）"
+
+[cli.help._root.debug.ime-status]
+about = "現在のIME状態を表示"
+
+[cli.help._root.debug.cell-info]
+about = "指定位置のセル情報を取得"
+
+[cli.help._root.debug.cell-info.arg.row]
+help = "行（0始まり）"
+
+[cli.help._root.debug.cell-info.arg.col]
+help = "列（0始まり）"
+
+[cli.help._root.debug.cell-info.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.debug.screen-attrs]
+about = "指定行の全セル属性を取得"
+
+[cli.help._root.debug.screen-attrs.arg.row]
+help = "行（0始まり）"
+
+[cli.help._root.debug.screen-attrs.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.debug.glyph-color]
+about = "セルについてレンダラーがGPUへ送る確定済みRGBA背景色・前景色を取得"
+
+[cli.help._root.debug.glyph-color.arg.row]
+help = "行（0始まり）"
+
+[cli.help._root.debug.glyph-color.arg.col]
+help = "列（0始まり）"
+
+[cli.help._root.debug.glyph-color.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.debug.glyph-color.arg.bg_mode]
+help = "背景モード：\"focused\" または \"unfocused\"（既定値：focused）"
+
+[cli.help._root.debug.switch-input-source]
+long = "macOS入力ソースを切り替えます（例：韓国語IME）。macOS GUIビルド専用です。メソッドは全プラットフォームで登録されるためコマンドも全てに表示し、存在しないコマンドとの誤認を防ぎます。他のプラットフォームでは -32015 で即時に失敗し、TISSelectInputSourceに相当する機能がないと説明します。"
+about = "macOS入力ソースを切り替え（例：韓国語IME）。macOS GUIビルド専用"
+
+[cli.help._root.debug.switch-input-source.arg.source_id]
+help = "入力ソースID（例：\"com.apple.inputmethod.Korean.2SetKorean\"）"
+
+[cli.help._root.debug.raw-key]
+long = "CGEventで生の物理キーコードを送信します。macOS GUIビルド専用で、OSのIMEパイプラインを通ります。switch-input-sourceと同じ理由で全プラットフォームにコマンドを表示します。他では -32015 で即時に失敗し、CGEventPostに相当する機能がないと説明します。"
+about = "CGEventで生の物理キーコードを送信。macOS GUIビルド専用"
+
+[cli.help._root.debug.raw-key.arg.keycode]
+help = "macOS仮想キーコード（例：7=KeyX、35=KeyP、49=Space）"
+
+[cli.help._root.debug.event-bus]
+about = "イベントバスの照会と注入（debugビルド専用）"
+
+[cli.help._root.debug.event-bus.list-subscribers]
+about = "指定イベントキーを購読するpluginを一覧表示"
+
+[cli.help._root.debug.event-bus.list-subscribers.arg.key]
+help = "イベントキー（例：\"surface.closed\"）"
+
+[cli.help._root.debug.event-bus.publish]
+about = "host側から任意のイベントを発行"
+
+[cli.help._root.debug.event-bus.publish.arg.key]
+help = "イベントキー"
+
+[cli.help._root.debug.event-bus.publish.arg.payload]
+help = "JSONペイロード（既定値：`{}`）"
+
+[cli.help._root.debug.event-bus.publish.arg.scope]
+help = "イベント範囲：\"system\"（既定値）または \"surface\""
+
+[cli.help._root.debug.event-bus.trace]
+about = "指定trace_idの最近のイベントエンベロープを出力"
+
+[cli.help._root.debug.event-bus.trace.arg.trace_id]
+help = "trace_id（例：\"h2a\"）"
+
+[cli.help._root.debug.extension]
+about = "拡張フックの照会と手動呼び出し（debugビルド専用）"
+
+[cli.help._root.debug.extension.invoke-hook]
+about = "拡張フックを手動実行（指定拡張にextension.invoke_hookを送り応答を返す）"
+
+[cli.help._root.debug.extension.invoke-hook.arg.extension_id]
+help = "拡張plugin ID（インストール済みかつ実行中であること）"
+
+[cli.help._root.debug.extension.invoke-hook.arg.kind]
+help = "フック種別：\"event\" または \"ipc\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.phase]
+help = "フック段階：\"pre\" または \"post\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.mode]
+help = "フックモード：\"transform\"、\"filter\"、\"observe\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.target]
+help = "対象：イベントキー（例：\"foo.bar\"）またはIPCメソッド（例：\"codex.spawn\"）"
+
+[cli.help._root.debug.extension.invoke-hook.arg.payload]
+help = "フック入力として渡すJSONペイロード（既定値：`{}`）"
+
+[cli.help._root.debug.tool]
+about = "ツールメニューの照会と実行（debugビルド専用）"
+
+[cli.help._root.debug.tool.list]
+about = "表示順に全ツールメニュー項目を一覧表示"
+
+[cli.help._root.debug.tool.invoke]
+about = "キーでツールメニュー項目を実行"
+
+[cli.help._root.debug.tool.invoke.arg.key]
+help = "ツール項目キー（`<plugin_id>/<tool_id>`、例：`com.tasty.clipboard-history/open-viewer`）"
+
+[cli.help._root.debug.popup]
+about = "pluginポップアップの照会と開閉（debugビルド専用）"
+
+[cli.help._root.debug.popup.list]
+about = "全ポップアップ宣言と現在開いているインスタンスを一覧表示"
+
+[cli.help._root.debug.popup.open]
+about = "pluginポップアップインスタンスを開く"
+
+[cli.help._root.debug.popup.open.arg.plugin_id]
+help = "plugin ID（例：\"com.example.popper\"）"
+
+[cli.help._root.debug.popup.open.arg.popup_id]
+help = "plugin内のポップアップID"
+
+[cli.help._root.debug.popup.open.arg.context]
+help = "popup.openペイロードとして送る任意のコンテキストJSON"
+
+[cli.help._root.debug.popup.close]
+about = "IDでポップアップインスタンスを閉じる"
+
+[cli.help._root.debug.popup.close.arg.instance_id]
+help = "`popup open` が返したポップアップインスタンスID"
+
+[cli.help._root.debug.host-popup]
+about = "host組み込みポップアップの照会と直接開閉（debugビルド専用）。ユーザーのクリックなしでtools_menu / port_scanner / command_palette / remote_toolなどを強制的に開いて表示を検証"
+
+[cli.help._root.debug.host-popup.list]
+about = "全host組み込みポップアップを一覧表示（IDとタイトルキー）"
+
+[cli.help._root.debug.host-popup.open]
+about = "IDでhostポップアップをフォーカス中のウィンドウ中央に強制的に開く"
+
+[cli.help._root.debug.host-popup.open.arg.popup_id]
+help = "hostポップアップID（例：\"tools_menu\"、\"port_scanner\"、\"command_palette\"）"
+
+[cli.help._root.debug.host-popup.open.arg.workspace_scope]
+help = "ウィンドウではなくアクティブワークスペースの範囲で開き、範囲による表示条件を検証（例：\"dag_list\"）"
+
+[cli.help._root.debug.host-popup.close]
+about = "IDでhostポップアップを閉じる"
+
+[cli.help._root.debug.host-popup.close.arg.popup_id]
+help = "hostポップアップID"
+
+[cli.help._root.debug.fullscreen]
+about = "全画面ステージの照会と直接開始/終了（debugビルド専用）。ポップアップのタイトルバーをクリックせずウィンドウにステージを表示し、全画面状態をダンプして表示を検証"
+
+[cli.help._root.debug.fullscreen.list]
+about = "登録された全ての全画面ステージを一覧表示（IDとタイトルキー）"
+
+[cli.help._root.debug.fullscreen.open]
+about = "ウィンドウにステージを表示。異なるステージがあれば置換し、同じなら何もしません"
+
+[cli.help._root.debug.fullscreen.open.arg.stage_id]
+help = "ステージID（例：\"blank\"、\"notifications\"）"
+
+[cli.help._root.debug.fullscreen.open.arg.window_id]
+help = "対象ウィンドウ。開いているウィンドウが一つの場合のみ省略可能。複数ならフォーカスから推測せずエラーを返す"
+
+[cli.help._root.debug.fullscreen.close]
+about = "ウィンドウのアクティブステージを除去"
+
+[cli.help._root.debug.fullscreen.close.arg.window_id]
+help = "対象ウィンドウ（`open --window-id` を参照）"
+
+[cli.help._root.debug.fullscreen.state]
+about = "アクティブステージIDとウィンドウの全画面状態をダンプ（OS全画面/最大化/内部サイズ/占有モニター）"
+
+[cli.help._root.debug.fullscreen.state.arg.window_id]
+help = "対象ウィンドウ（`open --window-id` を参照）"
+
+[cli.help._root.debug.banner]
+about = "バナーの照会と直接表示/終了（debugビルド専用）。ユーザー操作なしでバナーを表示しオーバーレイを検証（releaseではユーザー操作でのみ表示）"
+
+[cli.help._root.debug.banner.list]
+about = "組み込みバナー定義と現在の表示/待機状態を一覧表示"
+
+[cli.help._root.debug.banner.show]
+about = "IDで指定範囲にバナーを表示"
+
+[cli.help._root.debug.banner.show.arg.banner_id]
+help = "バナーID（例：\"mouse-capture\"）"
+
+[cli.help._root.debug.banner.show.arg.scope]
+help = "対象範囲トークン：view | workspace:<i> | pane:<id> | tab:<pane>:<i> | surface:<id>"
+
+[cli.help._root.debug.banner.close]
+about = "IDでバナーを閉じる（表示中なら待機列の先頭を昇格）"
+
+[cli.help._root.debug.banner.close.arg.banner_id]
+help = "バナーID"
+
+[cli.help._root.debug.banner.set-countdown]
+about = "指定範囲に表示中のTTLバナーの残り時間を強制設定"
+
+[cli.help._root.debug.banner.set-countdown.arg.scope]
+help = "対象範囲トークン（`show --scope` と同じ形式）"
+
+[cli.help._root.debug.banner.set-countdown.arg.seconds]
+help = "新しい残り時間（秒）"
+
+[cli.help._root.debug.modifier-hint]
+about = "修飾キーヒントのホールド注入と描画状態ダンプ（debugビルド専用）。実際のキー保持なしで修飾キーの組み合わせを設定し、再計算した描画状態（絞り込まれた区分/遅延/表示状態）をダンプ"
+
+[cli.help._root.debug.modifier-hint.hold]
+about = "修飾キーホールドを注入（フラグなし＝解除）。`--elapsed-ms` で保持タイマーを遡らせ、表示遅延を即座に通過"
+
+[cli.help._root.debug.modifier-hint.hold.arg.ctrl]
+help = "ctrl軸を保持"
+
+[cli.help._root.debug.modifier-hint.hold.arg.alt]
+help = "`alt` トークンを保持。物理キーはmacOSではCommand、他ではAlt"
+
+[cli.help._root.debug.modifier-hint.hold.arg.option]
+help = "`option` トークンを保持。実入力ではmacOSの物理Optionキーのみが生成するため、他のプラットフォームでは通常到達できない状態を強制設定"
+
+[cli.help._root.debug.modifier-hint.hold.arg.shift]
+help = "shift軸を保持"
+
+[cli.help._root.debug.modifier-hint.hold.arg.elapsed_ms]
+help = "この時間（ms）だけ保持タイマーを遡らせる（表示遅延を省略）"
+
+[cli.help._root.debug.modifier-hint.state]
+about = "オーバーレイ描画状態をダンプ（held / delay / alpha / visible / sections / header）"
+
+[cli.help._root.debug.settings]
+about = "設定モーダルを強制的に開く（debugビルド専用）。ショートカットやボタンクリックなしで開き、設定UIとデザインの表示整合性を検証"
+
+[cli.help._root.debug.settings.open]
+about = "設定モーダルを強制的に開く。タブ/サブタブを指定可能"
+
+[cli.help._root.debug.settings.open.arg.tab]
+help = "初期第1階層タブ：general | terminal | appearance | keybindings | file_handler | misc | plugins（既定値：general）"
+
+[cli.help._root.debug.settings.open.arg.subtab]
+help = "選択タブの初期第2階層区分（--tabによる）。例：appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc。不明なキーはタブの既定値を維持"
+
+[cli.help._root.debug.settings.apply]
+about = "実行中の設定に部分パッチを適用：JSONオブジェクトを現在の設定へ深くマージしUpdateSettingsとして送信（設定モーダルの保存と同じ経路でconfig.tomlに永続化）"
+
+[cli.help._root.debug.settings.apply.arg.json]
+help = "設定パッチのJSONオブジェクト（部分指定可）。例：'{\"general\":{\"workspace_categories_enabled\":false}}'"
+
+[cli.help._root.debug.settings.apply.arg.file]
+help = "--jsonの代わりにファイルからJSONパッチを読み取る"
+
+[cli.help._root.debug.modal]
+about = "アクティブモーダルの終了要求（debugビルド専用）。表示中のモーダルの閉じるボタンを押す操作を再現します。releaseの `window.close` はメインビューのみを対象とし、モーダルを閉じるのはユーザー操作です。"
+
+[cli.help._root.debug.modal.close-request]
+about = "アクティブモーダルへ終了要求を送信（なければ何もしません。応答の `closed` で区別）"
+
+[cli.help._root.debug.lua]
+about = "host workerへ任意のLuaを注入（debugビルド専用）。期限付きの隔離Lua workerでソースを実行（ADR-0031）。releaseにはこの経路はなく、ユーザー入力専用の規則を適用"
+
+[cli.help._root.debug.lua.eval]
+about = "任意のLuaソースをhost workerに注入して実行（完了は待機しません）。効果はtasty.logなどのログで確認し、期限超過時はworkerが中断（ADR-0031）"
+
+[cli.help._root.debug.lua.eval.arg.source]
+help = "実行するLuaソース。例：'tasty.log(\"hi from debug\")'"
+
+[cli.help._root.debug.lua.eval-file]
+about = "ファイルからLuaソースを読み取り注入（`eval` と同じworker経路）"
+
+[cli.help._root.debug.lua.eval-file.arg.path]
+help = "読み取り実行する `.lua` ファイルのパス"
+
+[cli.help._root.debug.sim]
+about = "VTEシーケンスシミュレーター。単独の `tasty-tui-sim` バイナリと同じで、現在のサーフェス内で実行（stdoutに生のVTEを出力、IPCなし）。サブコマンドなしなら対話型REPL。全画面再描画の高負荷検証には `sim flood` を使用。debugビルド専用"
+
+[cli.help._root.debug.sim.interactive]
+about = "対話型REPL：stdinからコマンドを読み取る（サブコマンドなしの場合の既定値）"
+
+[cli.help._root.debug.sim.cursor]
+about = "カーソル移動を一度テスト"
+
+[cli.help._root.debug.sim.cursor.arg.row]
+help = "対象行（0始まり）"
+
+[cli.help._root.debug.sim.cursor.arg.col]
+help = "対象列（0始まり）"
+
+[cli.help._root.debug.sim.cursor.arg.marker]
+help = "対象セルに書き込むテキスト"
+
+[cli.help._root.debug.sim.cursor.arg.exit]
+help = "シナリオ描画後すぐに戻る。省略時は画面を確認できるようキーが押されるまで待機"
+
+[cli.help._root.debug.sim.colors]
+about = "ANSI 16色とTrueColorを一度テスト"
+
+[cli.help._root.debug.sim.colors.arg.exit]
+help = "シナリオ描画後すぐに戻る。省略時は画面を確認できるようキーが押されるまで待機"
+
+[cli.help._root.debug.sim.attrs]
+about = "テキスト属性を一度テスト"
+
+[cli.help._root.debug.sim.attrs.arg.exit]
+help = "シナリオ描画後すぐに戻る。省略時は画面を確認できるようキーが押されるまで待機"
+
+[cli.help._root.debug.sim.altscreen]
+about = "代替画面を一度テスト"
+
+[cli.help._root.debug.sim.altscreen.arg.exit]
+help = "シナリオ描画後すぐに戻る。省略時は画面を確認できるようキーが押されるまで待機"
+
+[cli.help._root.debug.sim.unicode]
+about = "CJK/全角文字を一度テスト"
+
+[cli.help._root.debug.sim.unicode.arg.exit]
+help = "シナリオ描画後すぐに戻る。省略時は画面を確認できるようキーが押されるまで待機"
+
+[cli.help._root.debug.sim.scroll-region]
+about = "スクロール領域を一度テスト"
+
+[cli.help._root.debug.sim.scroll-region.arg.exit]
+help = "シナリオ描画後すぐに戻る。省略時は画面を確認できるようキーが押されるまで待機"
+
+[cli.help._root.debug.sim.flood]
+about = "負荷モード：毎フレーム全画面をTrueColorで再描画（入力遅延を再現）"
+
+[cli.help._root.debug.sim.flood.arg.rate_ms]
+help = "フレーム間の遅延（ms）。0＝制限なし/最大スループット"
+
+[cli.help._root.debug.sim.flood.arg.cols]
+help = "列数（0＝ターミナルサイズから自動取得、失敗時200）"
+
+[cli.help._root.debug.sim.flood.arg.rows]
+help = "行数（0＝ターミナルサイズから自動取得、失敗時50）"
+
+[cli.help._root.debug.sim.flood.arg.frames]
+help = "フレーム数（0＝無限）"
+
+[cli.help._root.debug.sim.flood.arg.inline]
+help = "代替画面に入らず主画面を維持"
+
+[cli.help._root.debug.focused-surface]
+about = "フォーカス中のサーフェスIDをダンプ（debugビルド専用）。フォーカス中のビューを読み取るだけで変更しません"
+
+[cli.help._root.debug.selection]
+about = "フォーカス中のウィンドウの現在の選択範囲をダンプ（debugビルド専用）"
+
+[cli.help._root.debug.pending-menu]
+about = "フォーカス中のウィンドウの保留中ネイティブメニュー操作をダンプ（debugビルド専用）"
+
+[cli.help._root.debug.ui-state]
+about = "フォーカス中のウィンドウのUI状態ツリーをダンプ（debugビルド専用）"
+
+[cli.help._root.debug.switch-workspace]
+about = "インデックスでアクティブワークスペースを切り替え。ユーザーのワークスペースタブクリックを再現するためdebug専用（ユーザー操作）"
+
+[cli.help._root.debug.switch-workspace.arg.index]
+help = "ワークスペースインデックス（0始まり）"
+
+[cli.help._root.debug.switch-tab]
+about = "インデックスでフォーカス中のペインのアクティブタブを切り替え。ユーザーのタブクリックを再現し、debugビルド専用"
+
+[cli.help._root.debug.switch-tab.arg.index]
+help = "フォーカス中のペイン内のタブインデックス（0始まり）"
+
+[cli.help._root.debug.close-workspace]
+about = "インデックスでワークスペースを閉じる。閉じた項目の復元スタックを変更するコンテキストメニューの操作を再現。debug専用"
+
+[cli.help._root.debug.close-workspace.arg.index]
+help = "ワークスペースインデックス（0始まり）"
+
+[cli.help._root.debug.feed-bytes]
+about = "PTYを経由せずサーフェスのターミナルパーサーに生バイトを直接入力。シェルが生成していない出力を作るためdebugビルド専用"
+
+[cli.help._root.debug.feed-bytes.arg.surface]
+help = "対象サーフェスID（既定値：現在のサーフェス）"
+
+[cli.help._root.debug.feed-bytes.arg.text]
+help = "入力するテキスト（UTF-8）。`--bytes` と併用不可"
+
+[cli.help._root.debug.feed-bytes.arg.bytes]
+help = "入力するバイトを偶数長の16進文字列で指定（例：`1b5b3141`）"
+
+[cli.help._root.debug.inject]
+about = "入力注入：ユーザーのキーボード/マウス入力を再現。debugビルド専用（原則1：入力再現はreleaseにありません）"
+
+[cli.help._root.debug.inject.key]
+about = "サーフェスの入力経路にキーバイトを注入"
+
+[cli.help._root.debug.inject.key.arg.surface]
+help = "対象サーフェスID（既定値：現在のサーフェス）"
+
+[cli.help._root.debug.inject.key.arg.text]
+help = "送信するテキスト（UTF-8）。`--bytes` と併用不可"
+
+[cli.help._root.debug.inject.key.arg.bytes]
+help = "偶数長の16進文字列バイト（例：上矢印は `1b5b41`）"
+
+[cli.help._root.debug.inject.mouse]
+about = "行・列で指定するターミナルセルのマウスイベントを注入"
+
+[cli.help._root.debug.inject.mouse.arg.surface]
+help = "対象サーフェスID（既定値：現在のサーフェス）"
+
+[cli.help._root.debug.inject.mouse.arg.row]
+help = "セル行（0始まり）"
+
+[cli.help._root.debug.inject.mouse.arg.col]
+help = "セル列（0始まり）"
+
+[cli.help._root.debug.inject.mouse.arg.event_type]
+help = "`move`、`press`、`release` のいずれか"
+
+[cli.help._root.debug.inject.mouse.arg.button]
+help = "0＝左、1＝中央、2＝右"
+
+[cli.help._root.debug.inject.window-mouse]
+about = "正規化されたサーフェスローカル座標でウィンドウメッシュにポインターイベントを注入"
+
+[cli.help._root.debug.inject.window-mouse.arg.surface]
+help = "対象サーフェスの id"
+
+[cli.help._root.debug.inject.window-mouse.arg.fx]
+help = "サーフェスローカルx座標 [0,1]"
+
+[cli.help._root.debug.inject.window-mouse.arg.fy]
+help = "サーフェスローカルy座標 [0,1]"
+
+[cli.help._root.debug.inject.window-mouse.arg.event_type]
+help = "`move`、`press`、`release`、`scroll` のいずれか"
+
+[cli.help._root.debug.inject.window-mouse.arg.button]
+help = "0＝左、1＝中央、2＝右"
+
+[cli.help._root.debug.inject.window-mouse.arg.unit]
+help = "スクロール単位：`line` または `pixel`"
+
+[cli.help._root.debug.inject.window-mouse.arg.scroll_dx]
+help = "横スクロール量（`--event-type scroll` と併用）"
+
+[cli.help._root.debug.inject.window-mouse.arg.scroll_dy]
+help = "縦スクロール量（`--event-type scroll` と併用）"
+
+[cli.help._root.debug.inject.egui-mouse]
+about = "ターミナルメッシュではなくegui層（タブバー・サイドバー・ポップアップ）にポインターイベントを注入"
+
+[cli.help._root.debug.inject.egui-mouse.arg.surface]
+help = "対象サーフェスの id"
+
+[cli.help._root.debug.inject.egui-mouse.arg.fx]
+help = "サーフェスローカルx座標 [0,1]"
+
+[cli.help._root.debug.inject.egui-mouse.arg.fy]
+help = "サーフェスローカルy座標 [0,1]"
+
+[cli.help._root.debug.inject.egui-mouse.arg.event_type]
+help = "`move`、`press`、`release`、`scroll` のいずれか"
+
+[cli.help._root.debug.inject.egui-mouse.arg.button]
+help = "0＝左、1＝中央、2＝右"
+
+[cli.help._root.debug.inject.egui-mouse.arg.unit]
+help = "スクロール単位：`line` または `pixel`"
+
+[cli.help._root.debug.inject.egui-mouse.arg.scroll_dx]
+help = "横スクロール量（`--event-type scroll` と併用）"
+
+[cli.help._root.debug.inject.egui-mouse.arg.scroll_dy]
+help = "縦スクロール量（`--event-type scroll` と併用）"
+
+[cli.help._root.debug.inject.egui-key]
+about = "egui層にキーイベントを注入"
+
+[cli.help._root.debug.inject.egui-key.arg.key]
+help = "eguiキー名（例：`Enter`、`Escape`、`ArrowDown`）"
+
+[cli.help._root.debug.inject.egui-key.arg.pressed]
+help = "押下（既定値）、または `--pressed false` で解放"
+
+[cli.help._root.debug.plugin-banner]
+about = "所有pluginを経由せずpluginバナーを強制開閉。debugビルド専用。`debug banner` はhost組み込みバナーを対象とします"
+
+[cli.help._root.debug.plugin-banner.open]
+about = "実際のplugin呼び出し元の所有権検査を省略し、サーフェスにpluginバナーを強制表示"
+
+[cli.help._root.debug.plugin-banner.open.arg.banner_id]
+help = "所有pluginが宣言したバナーID"
+
+[cli.help._root.debug.plugin-banner.open.arg.surface]
+help = "対象サーフェスID（既定値：現在のサーフェス）"
+
+[cli.help._root.debug.plugin-banner.close]
+about = "IDでpluginバナーインスタンスを閉じる"
+
+[cli.help._root.debug.plugin-banner.close.arg.instance_id]
+help = "`plugin-banner open` が返したバナーインスタンスID"
+
+[cli.help._root.debug.stream-echo]
+about = "ストリーミングチャネルを開きサーバー→クライアントのpush経路を検証：N個のデータフレームを送り、それぞれのエコー応答を確認（debugビルド専用）"
+
+[cli.help._root.debug.stream-echo.arg.payload]
+help = "各フレームで送るペイロード（インデックス接尾辞 `#N` を追加）"
+
+[cli.help._root.debug.stream-echo.arg.count]
+help = "送信してエコー応答を待つフレーム数"
+
+[cli.help._root.settings.get-remote-transfer]
+about = "リモート転送（大容量ファイルチャネル）の受信保存フォルダーと容量上限を表示"
+
+[cli.help._root.settings.set-remote-transfer]
+about = "リモート転送の保存フォルダーまたは容量上限を設定。一つ以上が必須"
+
+[cli.help._root.settings.set-remote-transfer.arg.dir]
+help = "保存フォルダーのパス（空文字列＝既定値 `~/.tasty/transfers/`）"
+
+[cli.help._root.settings.set-remote-transfer.arg.max_mb]
+help = "フォルダーの最大サイズ（MiB）"
+
+[cli.help._root.output.observe]
+about = "オブザーバー管理サブコマンド"
+
+[cli.help._root.output.observe.start]
+about = "新しいオブザーバーを登録"
+
+[cli.help._root.output.observe.start.arg.surface]
+help = "監視するサーフェスID（省略＝全サーフェス）"
+
+[cli.help._root.output.observe.start.arg.parsers]
+help = "カンマ区切りのパーサーID（既定値：path,url,prompt_boundary,exit_code）"
+
+[cli.help._root.output.observe.start.arg.kinds]
+help = "カンマ区切りの種別フィルター（既定値：全て）"
+
+[cli.help._root.output.observe.start.arg.sink]
+help = "出力先：\"memory\" または \"file\"（既定値：memory）"
+
+[cli.help._root.output.observe.start.arg.path]
+help = "ファイルパス（--sink fileのみ。省略＝~/.tasty/observers/<id>.jsonl）"
+
+[cli.help._root.output.observe.start.arg.max_records]
+help = "メモリ出力先のリングバッファー上限（--sink memoryのみ。0＝無制限）"
+
+[cli.help._root.output.observe.stop]
+about = "IDでオブザーバーを停止"
+
+[cli.help._root.output.observe.stop.arg.observer]
+help = "オブザーバーID（`output observe list` で確認）"
+
+[cli.help._root.output.observe.list]
+about = "全アクティブオブザーバーを一覧表示"
+
+[cli.help._root.output.observe.info]
+about = "一つのオブザーバーの統計を表示"
+
+[cli.help._root.output.observe.info.arg.observer]
+help = "オブザーバーID（`output observe list` で確認）"
+
+[cli.help._root.file-handler.reload]
+about = "`~/.tasty/file-handlers.toml` を再読み込み。host・plugin項目は維持"
+
+[cli.help._root.file-handler.dispatch]
+about = "ファイルハンドラー経由でパスを開く（エクスプローラーのダブルクリックと同じ経路）"
+
+[cli.help._root.file-handler.dispatch.arg.path]
+help = "開くパス"
+
+[cli.help._root.file-handler.dispatch.arg.depth]
+help = "検出深度：`cheap`（拡張子のみ）または `deep`（内容検査）"
+
+[cli.help._root.file-handler.dispatch.arg.origin_surface]
+help = "結果のサーフェスをフォーカス中のペインではなく、このサーフェスの所属ペインのタブとして追加"
+
+[cli.help._root.file-handler.dispatch.arg.ignore_size_limit]
+help = "大容量ファイルの確認ポップアップを省略して即座に開く"
+
+[cli.help._root.clipboard.set-text]
+about = "ローカルクリップボードにテキストを書き込む"
+
+[cli.help._root.clipboard.set-text.arg.text]
+help = "クリップボードに書き込むテキスト"
+
+[cli.help._root.hook-handler.list]
+about = "登録された全フックハンドラーを一覧表示（host/plugin/user、無効なものも含む）"
+
+[cli.help._root.hook-handler.reload]
+about = "`~/.tasty/hook-handlers.toml` を再読み込み（ユーザー項目のみ、host/pluginは維持）"
+
+[cli.help._root.hook-handler.dispatch]
+long = "登録済みフックハンドラーをIDで手動実行します（テスト・自動化の入口）。IpcSequenceハンドラーでは `--body`/`--header`/`--query` で `${body.x}`/`${header.x}`/`${query.x}` の値を埋めます。応答は受付確認のみで、ハンドラーの完了は待ちません。"
+about = "登録済みフックハンドラーをIDで手動実行（テスト・自動化の入口）"
+
+[cli.help._root.hook-handler.dispatch.arg.id]
+help = "実行するフックハンドラーID（例：`host/notify`、`user/wh-...`）"
+
+[cli.help._root.hook-handler.dispatch.arg.body]
+help = "置換本文のJSON値（オブジェクト/配列/スカラー）。任意"
+
+[cli.help._root.hook-handler.dispatch.arg.header]
+help = "ヘッダー置換値のJSONオブジェクト `{\"X-Sig\":\"abc\"}`。任意"
+
+[cli.help._root.hook-handler.dispatch.arg.query]
+help = "クエリ置換値のJSONオブジェクト `{\"token\":\"t\"}`。任意"
+
+[cli.help._root.completion-strategy.list]
+about = "登録された全完了戦略を一覧表示（host/plugin/user、無効なものも含む）"
+
+[cli.help._root.preset.list]
+about = "指定種別のプリセットを一覧表示"
+
+[cli.help._root.preset.list.arg.kind]
+help = "種別: \"workspace\" | \"tab\" | \"pane\""
+
+[cli.help._root.preset.get]
+about = "プリセットのJSONを表示"
+
+[cli.help._root.preset.get.arg.kind]
+help = "プリセット種別：workspace | tab | pane"
+
+[cli.help._root.preset.get.arg.name]
+help = "表示するプリセット名"
+
+[cli.help._root.preset.save]
+about = "JSONファイルからプリセットを保存（\"-\" はstdinを読み取り）"
+
+[cli.help._root.preset.save.arg.kind]
+help = "プリセット種別：workspace | tab | pane"
+
+[cli.help._root.preset.save.arg.name]
+help = "保存するプリセット名"
+
+[cli.help._root.preset.save.arg.file]
+help = "JSONファイルのパス。\"-\" はstdinを読み取り"
+
+[cli.help._root.preset.save.arg.overwrite]
+help = "既存プリセットの上書きを許可"
+
+[cli.help._root.preset.delete]
+about = "プリセットを削除"
+
+[cli.help._root.preset.delete.arg.kind]
+help = "プリセット種別：workspace | tab | pane"
+
+[cli.help._root.preset.delete.arg.name]
+help = "削除するプリセット名"
+
+[cli.help._root.preset.rename]
+about = "プリセット名を変更"
+
+[cli.help._root.preset.rename.arg.kind]
+help = "プリセット種別：workspace | tab | pane"
+
+[cli.help._root.preset.rename.arg.from]
+help = "既存のプリセット名"
+
+[cli.help._root.preset.rename.arg.to]
+help = "新しいプリセット名"
+
+[cli.help._root.preset.capture]
+about = "現在のワークスペース/タブ/ペインをプリセットとして保存"
+
+[cli.help._root.preset.capture.arg.kind]
+help = "プリセット種別：workspace | tab | pane。`--source-id` の対象を決定"
+
+[cli.help._root.preset.capture.arg.source_id]
+help = "元のID：workspace_id（kind=workspace）、tab_id（kind=tab）、pane_id（kind=pane）。必須。CLIはフォーカス非依存"
+
+[cli.help._root.preset.capture.arg.name]
+help = "プリセット名。省略時は一意な名前を自動生成"
+
+[cli.help._root.preset.apply]
+about = "プリセットを適用。フォーカスは維持（フォーカス非依存CLI）"
+
+[cli.help._root.preset.apply.arg.kind]
+help = "プリセット種別：workspace | tab | pane"
+
+[cli.help._root.preset.apply.arg.name]
+help = "適用するプリセット名"
+
+[cli.help._root.preset.apply.arg.target_pane]
+help = "kind=tabの場合の対象ペインID"
+
+[cli.help._root.preset.apply.arg.target_workspace]
+help = "kind=paneの場合の対象ワークスペースID"
+
+[cli.help._root.workspace-category.list]
+about = "ワークスペースカテゴリ（サイドバーフォルダー）を一覧表示"
+
+[cli.help._root.workspace-category.create]
+about = "新しいカテゴリを作成"
+
+[cli.help._root.workspace-category.create.arg.name]
+help = "カテゴリ名（'normal' は予約済み。大文字・小文字を区別せず重複を拒否）"
+
+[cli.help._root.workspace-category.rename]
+about = "カテゴリ名を変更（'normal' は変更不可）"
+
+[cli.help._root.workspace-category.rename.arg.id]
+help = "カテゴリID（必須）"
+
+[cli.help._root.workspace-category.rename.arg.name]
+help = "新しい名前"
+
+[cli.help._root.workspace-category.delete]
+about = "カテゴリを削除し所属ワークスペースを 'normal' へ移動（'normal' は削除不可）"
+
+[cli.help._root.workspace-category.delete.arg.id]
+help = "カテゴリID（必須）"
+
+[cli.help._root.workspace-category.move]
+long = "カテゴリの順序を変更します（'normal' はインデックス0に固定、from/toは1以上）。`--id` を推奨します。カテゴリIDは所有ウィンドウを識別するためフォーカスに関係なく同じ対象を指します。`--from` はウィンドウ内のインデックスのため、フォーカス中のウィンドウに適用されます。"
+about = "カテゴリの順序を変更（'normal' はインデックス0に固定、from/toは1以上）"
+
+[cli.help._root.workspace-category.move.arg.id]
+help = "移動するカテゴリID（推奨、--fromと併用不可）"
+
+[cli.help._root.workspace-category.move.arg.from]
+help = "移動元インデックス（1以上、フォーカス依存）"
+
+[cli.help._root.workspace-category.move.arg.to]
+help = "移動先インデックス（1以上）"
+
+[cli.help._root.screenshot.arg.path]
+help = "出力先PNGパス"
+
+[cli.help._root.screenshot.arg.surface]
+help = "撮影するターミナルサーフェスID（オフスクリーン、フォーカス非依存）"
+
+[cli.help._root.screenshot.arg.window]
+help = "撮影するウィンドウID（tasty全フレーム）。複数のウィンドウが開いている場合は必須。`list windows` にないモーダルウィンドウも指定可能"
+
+[cli.help_frame]
+default = "既定値: {}"
+usage = "使い方:"
+commands = "コマンド:"
+arguments = "引数:"
+options = "オプション:"
+help = "ヘルプを表示"
+version = "バージョンを表示"
+help_command = "このヘルプまたは指定サブコマンドのヘルプを表示"
+available = "'{}' で使用できるサブコマンド:"
+required = "'{}' に必要な引数:"
+optional = "任意:"
+details = "詳細は '{} --help' を実行してください。"
+error = "エラー:"
+
+[cli.parse]
+cause = "パーサー詳細: {}"
+invalid_value = "無効な値です。"
+unknown_argument = "不明な引数です。"
+invalid_subcommand = "不明なサブコマンドです。"
+no_equals = "このオプションには等号が必要です。"
+value_validation = "引数値の検証に失敗しました。"
+too_many_values = "値が多すぎます。"
+too_few_values = "値が足りません。"
+wrong_number = "値の数が正しくありません。"
+conflict = "これらの引数は併用できません。"
+missing_argument = "必須引数がありません。"
+missing_subcommand = "サブコマンドが必要です。"
+invalid_utf8 = "入力が有効なUTF-8ではありません。"
+io = "引数の読み取り中に入出力エラーが発生しました。"
+format = "引数の形式を処理できませんでした。"
+parse = "引数を解析できませんでした。"
+argument = "引数: {}"
+prior = "競合する引数: {}"
+value = "値: {}"
+valid_values = "指定可能な値: {}"
+valid_commands = "使用できるコマンド: {}"
+actual = "入力数: {}"
+expected = "必要な数: {}"
+minimum = "最小数: {}"
+suggestion = "候補: {}"

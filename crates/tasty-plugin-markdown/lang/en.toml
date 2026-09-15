@@ -2,7 +2,7 @@
 markdown = "Markdown"
 
 [markdown.cli]
-desc = "Markdown viewer commands (template)"
+desc = "Markdown viewer commands"
 
 [markdown.namespace]
 desc = "Markdown viewer surface namespace"
@@ -95,3 +95,12 @@ file_hint = "path to markdown file"
 
 [markdown.settings]
 allow_remote = "Allow remote content"
+
+[markdown.cli.sub.reload]
+description = "Force reload the markdown surface from disk"
+
+[markdown.cli.sub.recent]
+description = "List recently opened markdown files (newest first, up to 10)"
+
+[markdown.cli.arg.reload_args.surface]
+help = "Target surface ID"

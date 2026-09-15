@@ -1265,6 +1265,9 @@ pub struct CliArg {
     /// 한 줄 도움말. clap의 `Arg::help`에 그대로 전달된다.
     #[serde(default)]
     pub help: Option<String>,
+    /// Optional plugin catalog key; missing translations retain `help`.
+    #[serde(default)]
+    pub help_i18n_key: Option<String>,
     /// subcommand 의 `stdin_json = true` 일 때, stdin JSON 의 어느 키에서
     /// 이 인자의 fallback 값을 가져올지. 없으면 `name` 을 그대로 키로 쓴다.
     /// 예: Claude Code hook payload 의 `session_id` 를 `--session` 인자에

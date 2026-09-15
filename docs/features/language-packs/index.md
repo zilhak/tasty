@@ -59,7 +59,7 @@ plugin의 파일은 합치지 않는다. 구체 규약은 [i18n](../../dev-guide
 ## 인터페이스
 
 - **사용자 트리거**: `~/.tasty/lang/<code>/pack.toml` 작성 → 설정 창 General › Language 에서 선택 → Save → 재시작. 또는 `config.toml` 의 `general.language` 직접 편집.
-- **AI Agent (IPC/CLI)**: 전용 메서드 없음 — `tasty debug settings apply --json '{"general":{"language":"<code>"}}'`(debug 빌드)로 설정값을 바꾸고 재시작. CLI(`tasty <subcommand>`)도 같은 부팅 경로를 타므로 팩의 `cli.*` 키가 CLI 출력에 반영된다. **`--help` 도 포함된다** — 도움말 트리는 파싱 직전에 번역되므로 팩이 `cli.help.*` 키를 담으면 그대로 보인다. 번역이 없는 자리는 영어 원문이 남고, clap 자신의 틀(`Usage:` · `Options:` · `Commands:`)은 영어다([i18n.md](../../dev-guide/i18n.md) "CLI 도움말").
+- **AI Agent (IPC/CLI)**: 전용 메서드 없음 — `tasty debug settings apply --json '{"general":{"language":"<code>"}}'`(debug 빌드)로 설정값을 바꾸고 재시작. CLI(`tasty <subcommand>`)도 같은 부팅 경로를 타므로 팩의 `cli.*` 키가 CLI 출력에 반영된다. **`--help` 도 포함된다** — 도움말 트리는 파싱 직전에 번역되므로 팩이 `cli.help.*` 키를 담으면 그대로 보인다. 번역이 없는 자리는 영어 원문이 남는다. 도움말 heading·기본값 안내·파싱 오류는 로컬 언어로 표시하고, 명령/옵션 토큰·하위 파서 원문·wire 오류는 유지한다. plugin 도움말은 같은 사용자 plugin 카탈로그를 읽는다([i18n.md](../../dev-guide/i18n.md) "CLI 도움말").
 - **원격 / 점유**: 해당 없음(로컬 인스턴스의 표시 언어).
 
 ## 비-목표 (Out of scope)
@@ -88,3 +88,5 @@ plugin의 파일은 합치지 않는다. 구체 규약은 [i18n](../../dev-guide
 ## 화면
 
 - [설정 창](../settings/screens/settings.md) — General › Language 콤보(갤러리 Settings specimen 의 `language_select` 행과 같은 위젯).
+
+CLI 도움말의 표시/프로토콜 경계는 [ADR-0280](../../adr/0280-cli-help-localizes-presentation-not-protocol.md)을 따른다.

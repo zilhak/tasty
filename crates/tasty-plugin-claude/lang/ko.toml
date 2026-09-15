@@ -1,5 +1,5 @@
 [claude.cli]
-desc = "Claude Code 자식 세션을 관리합니다"
+desc = "Claude Code CLI 연동(launch, spawn, kill 등)"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
@@ -125,3 +125,321 @@ no_active_session = "surface {} 에 활성 claude 세션이 없다 (claude-sessi
 
 [settings.subtab]
 claude = "Claude Code"
+
+[claude.cli.sub.launch]
+description = "새 워크스페이스에서 Claude Code 시작"
+
+[claude.cli.sub.spawn]
+description = "워크스페이스에 자식 Claude 생성. 즉시 반환하며 자식이 idle/needs_input으로 전환할 때마다, 그리고 종료할 때 호출자 서피스에 알림을 전달합니다. 첫 전환에만 한정되지 않습니다."
+
+[claude.cli.sub.children]
+description = "지정한 Claude 부모의 자식 나열"
+
+[claude.cli.sub.parent]
+description = "지정한 Claude 자식의 부모 표시"
+
+[claude.cli.sub.state]
+description = "자식 하나의 상태 조회: idle, needs_input, active, exited(실제 서피스와 대조)"
+
+[claude.cli.sub.tell]
+description = "Claude 인스턴스에 여러 줄 메시지 전송(끝에서 제출). 즉시 반환하며 대상이 idle/needs_input으로 전환할 때마다, 그리고 종료할 때 호출자 서피스에 알림을 전달합니다. 첫 전환에만 한정되지 않습니다."
+
+[claude.cli.sub.broadcast]
+description = "부모 Claude 인스턴스의 모든 자식에게 텍스트 일괄 전송"
+
+[claude.cli.sub.kill]
+description = "자식 인덱스로 Claude 인스턴스 종료"
+
+[claude.cli.sub.respawn]
+description = "자식 Claude 인스턴스 재생성"
+
+[claude.cli.sub.reboot]
+description = "서피스의 Claude를 재시작하고 같은 세션 재개(지연 종료 + claude -r). 턴의 마지막 동작으로 호출하세요. 지연 이후 작업은 중단됩니다."
+
+[claude.cli.sub.child-profile]
+description = "자식 인스턴스에 지속되는 Claude 세션 프로필 부착(--child의 서피스를 찾아 'claude reboot --profile'과 같은 순서 실행). 자식만 재시작하므로 reboot와 달리 호출자의 턴은 중단하지 않습니다. 자식이 idle/needs_input으로 전환하거나 종료하면 호출자 서피스에 알립니다."
+
+[claude.cli.sub.install]
+description = "~/.claude/settings.json에 tasty 훅 설치"
+
+[claude.cli.sub.uninstall]
+description = "~/.claude/settings.json에서 tasty 훅 제거"
+
+[claude.cli.sub.hook]
+description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, message, notification_type)를 읽습니다."
+
+[claude.cli.sub.checklist-hook]
+description = "Stop 훅 게이트 판정. stdin에서 JSON(session_id, prompt_id, stop_hook_active, last_assistant_message)을 읽습니다. --gate로 판정할 등록 게이트 선택(기본값: continue-checklist)."
+
+[claude.cli.sub.checklist-enable]
+description = "Stop 훅 게이트 활성화(활성 마커 생성). 기본값은 내장 continue-checklist 게이트"
+
+[claude.cli.sub.checklist-disable]
+description = "Stop 훅 게이트 비활성화(활성 마커 제거). 이미 꺼져 있어도 성공"
+
+[claude.cli.sub.checklist-status]
+description = "Stop 훅 게이트 활성 상태 표시. 모든 게이트를 한 번에 보려면 'claude gate-list' 사용"
+
+[claude.cli.sub.notify-error]
+description = "내부용: 오류 후 자식 정체 알림을 호출자 서피스에 전달(claude-error-stalled의 hook.set 명령). 자식 상태나 완료 훅을 변경·정리·재등록하지 않습니다."
+
+[claude.cli.sub.notify-done]
+description = "내부용: spawn/tell 상태 전환을 호출자에게 알리고 형제 일회성 훅을 정리합니다. 대상 서피스가 남아 있으면(process-exit이 아니면) 세 형제 훅을 다시 등록해 실제 종료까지 계속 알립니다(claude-idle/needs-input/process-exit의 hook.set 명령)."
+
+[claude.cli.sub.profile-register]
+description = "이름으로 Claude 세션 프로필 등록(plugin 전용 저장소에 파일 복사, 같은 이름 재등록은 내용 갱신)"
+
+[claude.cli.sub.profile-unregister]
+description = "등록된 Claude 세션 프로필 제거"
+
+[claude.cli.sub.profile-list]
+description = "이름으로 부착 가능한 세션 프로필·Stop 훅 게이트와 항상 설치된 내장 훅 나열"
+
+[claude.cli.sub.profile-show]
+description = "이름으로 부착할 내용 표시: 등록된 세션 프로필의 원시 settings JSON 또는 게이트에서 생성한 Stop 훅 조각"
+
+[claude.cli.sub.profile-current]
+description = "서피스에 부착된 Claude 세션 프로필(있는 경우)과 항상 설치된 내장 훅 표시"
+
+[claude.cli.sub.gate-register]
+description = "이름으로 Stop 훅 게이트 등록(plugin 전용 저장소에 본문 복사, 같은 이름 재등록은 본문과 정의 모두 교체)"
+
+[claude.cli.sub.gate-unregister]
+description = "등록된 Stop 훅 게이트 제거(정의 및 본문 사본 삭제)"
+
+[claude.cli.sub.gate-list]
+description = "등록 및 내장 Stop 훅 게이트의 유효 완료 표식·회차 제한·활성 상태 나열"
+
+[claude.cli.sub.gate-show]
+description = "Stop 훅 게이트 정의 및 본문 표시"
+
+[claude.cli.arg.launch_args.workspace]
+help = "생성할 워크스페이스 이름(기본값: \"claude\")"
+
+[claude.cli.arg.launch_args.directory]
+help = "claude 시작 전에 이동할 작업 디렉터리"
+
+[claude.cli.arg.launch_args.task]
+help = "claude에 --task <text>로 전달할 초기 작업"
+
+[claude.cli.arg.launch_args.profile_file]
+help = "claude 시작 시 --settings로 주입할 세션 프로필(settings JSON). --profile과 함께 사용 불가"
+
+[claude.cli.arg.launch_args.profile]
+help = "부착할 등록 세션 프로필 또는 Stop 훅 게이트 이름. 여러 개는 쉼표로 구분하여 한 파일로 병합('claude profile-register', 'claude gate-register' 참조). --profile-file과 함께 사용 불가"
+
+[claude.cli.arg.launch_args.permission_mode]
+help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+
+[claude.cli.arg.spawn_args.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.spawn_args.workspace]
+help = "대상 워크스페이스(ID 또는 이름)"
+
+[claude.cli.arg.spawn_args.pane]
+help = "대상 페인 ID(기본값: 워크스페이스의 첫 페인)"
+
+[claude.cli.arg.spawn_args.cwd]
+help = "자식 Claude 프로세스의 작업 디렉터리"
+
+[claude.cli.arg.spawn_args.role]
+help = "자식의 역할 라벨(broadcast --role에서 사용)"
+
+[claude.cli.arg.spawn_args.nickname]
+help = "탭에 표시할 별명"
+
+[claude.cli.arg.spawn_args.prompt]
+help = "생성 후 자식에게 보낼 초기 프롬프트"
+
+[claude.cli.arg.spawn_args.profile_file]
+help = "자식 시작 시 --settings로 주입할 Claude 세션 프로필(settings JSON). --profile과 함께 사용 불가"
+
+[claude.cli.arg.spawn_args.profile]
+help = "부착할 등록 세션 프로필 또는 Stop 훅 게이트 이름. 여러 개는 쉼표로 구분하여 한 파일로 병합('claude profile-register', 'claude gate-register' 참조). --profile-file과 함께 사용 불가"
+
+[claude.cli.arg.spawn_args.permission_mode]
+help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+
+[claude.cli.arg.children_args.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.parent_args.surface]
+help = "부모를 조회할 자식 Claude 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.state_args.surface]
+help = "조회할 자식 Claude 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.tell_args.message]
+help = "전송할 메시지. 줄바꿈을 유지하고 자동 제출"
+
+[claude.cli.arg.tell_args.surface]
+help = "메시지를 받을 Claude 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.tell_args.caller_surface]
+help = "완료 알림을 받을 서피스(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.notify_done_args.caller_surface]
+help = "spawn/tell을 호출했고 알림을 받을 서피스"
+
+[claude.cli.arg.notify_done_args.target_surface]
+help = "spawn/tell이 방금 완료된 서피스"
+
+[claude.cli.arg.notify_done_args.command]
+help = "완료된 명령: spawn 또는 tell"
+
+[claude.cli.arg.notify_error_args.caller_surface]
+help = "spawn/tell을 호출했고 알림을 받을 서피스"
+
+[claude.cli.arg.notify_error_args.target_surface]
+help = "오류 후 정체된 자식 서피스"
+
+[claude.cli.arg.broadcast_args.text]
+help = "일괄 전송할 텍스트. 제출하려면 \\r 사용(예: \"hello\\r\")"
+
+[claude.cli.arg.broadcast_args.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.broadcast_args.role]
+help = "이 역할 라벨의 자식에게만 전송"
+
+[claude.cli.arg.kill_args.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.kill_args.child_index]
+help = "종료할 자식 인덱스"
+
+[claude.cli.arg.respawn_args.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.respawn_args.child_index]
+help = "재생성할 자식 인덱스"
+
+[claude.cli.arg.respawn_args.cwd]
+help = "재생성할 프로세스의 작업 디렉터리 재정의"
+
+[claude.cli.arg.respawn_args.role]
+help = "자식 역할 라벨 교체"
+
+[claude.cli.arg.respawn_args.nickname]
+help = "자식 표시 별명 교체"
+
+[claude.cli.arg.respawn_args.prompt]
+help = "재생성한 자식에게 보낼 초기 프롬프트"
+
+[claude.cli.arg.respawn_args.profile_file]
+help = "자식 재시작 시 --settings로 주입할 Claude 세션 프로필(settings JSON). --profile과 함께 사용 불가"
+
+[claude.cli.arg.respawn_args.profile]
+help = "부착할 등록 세션 프로필 또는 Stop 훅 게이트 이름. 여러 개는 쉼표로 구분하여 한 파일로 병합('claude profile-register', 'claude gate-register' 참조). --profile-file과 함께 사용 불가"
+
+[claude.cli.arg.respawn_args.permission_mode]
+help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+
+[claude.cli.arg.reboot_args.surface]
+help = "대상 Claude 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.reboot_args.delay]
+help = "Claude 종료 전 대기 시간(초, 기본값: 5)"
+
+[claude.cli.arg.reboot_args.prompt]
+help = "재시작한 Claude의 재부팅 안내 프롬프트에 추가할 텍스트"
+
+[claude.cli.arg.reboot_args.profile_file]
+help = "재개 시 --settings로 부착할 Claude 세션 프로필(settings JSON). 서피스에 저장되어 --clear-profile로 해제할 때까지 다음 재부팅에 상속됩니다. --profile과 함께 사용 불가"
+
+[claude.cli.arg.reboot_args.profile]
+help = "부착할 등록 세션 프로필/Stop 훅 게이트 이름(복수는 쉼표 구분, 한 파일로 병합. 'claude profile-register', 'claude gate-register' 참조). 서피스에 저장되며 재부팅마다 레지스트리에서 다시 읽어 편집을 반영합니다. --clear-profile까지 상속. --profile-file과 함께 사용 불가"
+
+[claude.cli.arg.reboot_args.clear_profile]
+help = "재개 전에 기존 세션 프로필 부착 해제(경로 또는 이름 기반)"
+
+[claude.cli.arg.reboot_args.permission_mode]
+help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+
+[claude.cli.arg.child_profile_args.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.child_profile_args.child_index]
+help = "프로필을 부착할 자식 인덱스('claude children'에서 확인)"
+
+[claude.cli.arg.child_profile_args.delay]
+help = "자식 Claude 종료 전 대기 시간(초, 기본값: 5)"
+
+[claude.cli.arg.child_profile_args.prompt]
+help = "재시작한 자식의 재부팅 안내 프롬프트에 추가할 텍스트"
+
+[claude.cli.arg.child_profile_args.profile_file]
+help = "재개 시 자식에게 --settings로 부착할 Claude 세션 프로필(settings JSON). 자식 서피스에 저장되며 --clear-profile까지 다음 재부팅에 상속. --profile과 함께 사용 불가"
+
+[claude.cli.arg.child_profile_args.profile]
+help = "자식에게 부착할 등록 세션 프로필/Stop 훅 게이트 이름(복수는 쉼표 구분, 한 파일로 병합. 'claude profile-register', 'claude gate-register' 참조). 자식 서피스에 저장하고 재부팅마다 등록 정보를 다시 읽으며 --clear-profile까지 상속. --profile-file과 함께 사용 불가"
+
+[claude.cli.arg.child_profile_args.clear_profile]
+help = "재개 전에 자식의 기존 세션 프로필 부착 해제(경로 또는 이름 기반)"
+
+[claude.cli.arg.child_profile_args.permission_mode]
+help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+
+[claude.cli.arg.hook_args.event]
+help = "훅 이벤트 이름(예: stop, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)"
+
+[claude.cli.arg.hook_args.surface]
+help = "훅 대상 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.hook_args.session]
+help = "Claude Code 세션 ID. 훅 호출 시 stdin JSON의 'session_id'에서 자동 입력"
+
+[claude.cli.arg.hook_args.message]
+help = "훅 메시지(알림 토큰 추출에 사용). stdin JSON의 'message'에서 자동 입력"
+
+[claude.cli.arg.hook_args.notification_type]
+help = "Claude Code 알림 하위 종류(예: permission_prompt, idle_prompt). stdin JSON의 'notification_type'에서 자동 입력. needs_input 신호에서 idle_prompt를 제외하는 데 사용"
+
+[claude.cli.arg.checklist_hook_args.surface]
+help = "게이트 대상 서피스 ID. 해당 세션의 목표 조회에 사용. 기본값은 호출자의 TASTY_SURFACE_ID"
+
+[claude.cli.arg.checklist_hook_args.session_id]
+help = "Claude Code 세션 ID. stdin JSON의 'session_id'에서 자동 입력"
+
+[claude.cli.arg.checklist_hook_args.prompt_id]
+help = "Claude Code 프롬프트/턴 ID. 새 사용자 턴마다 바뀌고 차단 후 연장 중에는 유지됩니다. stdin JSON의 'prompt_id'에서 자동 입력"
+
+[claude.cli.arg.checklist_hook_args.stop_hook_active]
+help = "Claude Code 자체 stop-hook-active 플래그 설정 여부(주 판정 신호가 아닌 정합 확인용). stdin JSON의 'stop_hook_active'(\"true\"/\"false\")에서 자동 입력"
+
+[claude.cli.arg.checklist_hook_args.last_assistant_message]
+help = "완료 표식을 찾을 assistant의 마지막 메시지. stdin JSON의 'last_assistant_message'에서 자동 입력"
+
+[claude.cli.arg.checklist_hook_args.gate]
+help = "본문·완료 표식·회차 제한으로 판정할 Stop 훅 게이트 이름('claude gate-register' 참조). 기본값은 내장 continue-checklist"
+
+[claude.cli.arg.checklist_gate_args.gate]
+help = "활성화/비활성화/조회할 Stop 훅 게이트 이름('claude gate-register' 참조). 기본값은 내장 continue-checklist"
+
+[claude.cli.arg.profile_register_args.name]
+help = "프로필 등록 이름(영문 소문자·숫자·'-', 최대 32자)"
+
+[claude.cli.arg.profile_register_args.file]
+help = "등록할 settings JSON 파일 경로(plugin 전용 저장소에 복사)"
+
+[claude.cli.arg.profile_name_args.name]
+help = "등록된 프로필 이름"
+
+[claude.cli.arg.profile_current_args.surface]
+help = "조회할 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[claude.cli.arg.gate_register_args.name]
+help = "게이트 등록 이름(영문 소문자·숫자·'-', 최대 32자). 세션 프로필과 이름 공간을 공유하므로 반대편에 같은 이름이 있으면 가리지 않고 등록 거부"
+
+[claude.cli.arg.gate_register_args.body_file]
+help = "등록할 체크리스트 본문 마크다운 경로(plugin 전용 저장소에 복사). 모델에 완료 선언법을 알려주도록 이 게이트의 유효 완료 표식이 반드시 포함되어야 합니다."
+
+[claude.cli.arg.gate_register_args.sentinel]
+help = "턴을 끝낼 때 모델이 출력할 완료 표식. 기본값은 내장 표식. 빈 값은 모든 메시지에 일치하므로 금지"
+
+[claude.cli.arg.gate_register_args.rounds]
+help = "게이트 회차 상한(1 이상). 생략하면 plugin의 'continue-checklist round limit' 설정 사용"
+
+[claude.cli.arg.gate_name_args.name]
+help = "등록된 게이트 이름"

@@ -1,5 +1,5 @@
 [codex.cli]
-desc = "Manage Codex CLI child sessions"
+desc = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 
 [codex]
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
@@ -67,3 +67,189 @@ mkdir_failed = "could not create the codex config directory: {detail}"
 no_home = "HOME is not set — cannot locate ~/.codex/config.toml"
 encode_failed = "could not encode the codex config as TOML: {detail}"
 write_failed = "could not write the codex config file: {detail}"
+
+[codex.cli.sub.launch]
+description = "Launch a new workspace and start Codex in its terminal"
+
+[codex.cli.sub.spawn]
+description = "Spawn a child Codex instance in a split surface. Returns immediately; a notification is sent to the parent surface every time the child becomes idle, and once more when it exits — not just the first transition."
+
+[codex.cli.sub.children]
+description = "List children of the specified Codex parent"
+
+[codex.cli.sub.parent]
+description = "Return the parent Codex surface id for a given child surface"
+
+[codex.cli.sub.state]
+description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)"
+
+[codex.cli.sub.tell]
+description = "Send a message to a Codex instance (preserves line breaks, submits at end). Returns immediately; a notification is sent to the caller surface every time the target becomes idle, and once more when it exits — not just the first transition."
+
+[codex.cli.sub.notify-caller]
+description = "Internal: notify caller surface that a spawned/told child changed state, clean up the sibling once-hook, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm the sibling hooks so future transitions keep notifying until the child actually exits. Invoked by hooks registered from spawn/tell — not meant for direct use."
+
+[codex.cli.sub.broadcast]
+description = "Broadcast text to all children of a parent Codex instance"
+
+[codex.cli.sub.kill]
+description = "Kill a child Codex instance by child index"
+
+[codex.cli.sub.respawn]
+description = "Respawn a child Codex instance"
+
+[codex.cli.sub.reboot]
+description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off."
+
+[codex.cli.sub.install]
+description = "Install Tasty hook into Codex CLI configuration"
+
+[codex.cli.sub.uninstall]
+description = "Uninstall Tasty hook from Codex CLI configuration"
+
+[codex.cli.sub.hook]
+description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id) when invoked by Codex's hook system."
+
+[codex.cli.arg.launch_args.workspace]
+help = "Workspace name to create (defaults to \"codex\")"
+
+[codex.cli.arg.launch_args.directory]
+help = "Working directory to cd into before launching codex"
+
+[codex.cli.arg.launch_args.task]
+help = "Initial task passed to codex as --task <text>"
+
+[codex.cli.arg.launch_args.approval]
+help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy"
+
+[codex.cli.arg.launch_args.sandbox]
+help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only"
+
+[codex.cli.arg.launch_args.full_auto]
+help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox"
+
+[codex.cli.arg.parent_args.surface]
+help = "Child Codex surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)"
+
+[codex.cli.arg.state_args.surface]
+help = "Child Codex surface ID to query (defaults to caller's TASTY_SURFACE_ID)"
+
+[codex.cli.arg.tell_args.message]
+help = "Message text to send. Newlines are preserved; the message is submitted automatically."
+
+[codex.cli.arg.tell_args.surface]
+help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)"
+
+[codex.cli.arg.tell_args.caller_surface]
+help = "Surface ID to notify when the target reaches a terminal state (defaults to caller's TASTY_SURFACE_ID)"
+
+[codex.cli.arg.spawn_args.surface]
+help = "Parent surface ID (defaults to the focused Codex surface)"
+
+[codex.cli.arg.spawn_args.workspace]
+help = "Target workspace (ID or name)"
+
+[codex.cli.arg.spawn_args.pane]
+help = "Target pane ID (defaults to the first pane in the workspace)"
+
+[codex.cli.arg.spawn_args.cwd]
+help = "Working directory for the child Codex process"
+
+[codex.cli.arg.spawn_args.prompt]
+help = "Initial prompt sent to the child after spawn"
+
+[codex.cli.arg.spawn_args.role]
+help = "Role label attached to the child (used by broadcast --role)"
+
+[codex.cli.arg.spawn_args.nickname]
+help = "Display nickname shown on the tab"
+
+[codex.cli.arg.spawn_args.approval]
+help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset, so unattended automation is never stalled by an approval prompt — pass this only to opt into an interactive policy"
+
+[codex.cli.arg.spawn_args.sandbox]
+help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only — use \"read-only\" for review/crosscheck children that must not write files"
+
+[codex.cli.arg.spawn_args.full_auto]
+help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox"
+
+[codex.cli.arg.children_args.surface]
+help = "Parent surface ID (defaults to the focused Codex surface)"
+
+[codex.cli.arg.notify_caller_args.caller]
+help = "Surface ID to notify"
+
+[codex.cli.arg.notify_caller_args.target]
+help = "Surface ID that completed"
+
+[codex.cli.arg.notify_caller_args.kind]
+help = "spawn | tell"
+
+[codex.cli.arg.broadcast_args.text]
+help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")"
+
+[codex.cli.arg.broadcast_args.surface]
+help = "Parent surface ID (defaults to the focused Codex surface)"
+
+[codex.cli.arg.broadcast_args.role]
+help = "Only send to children with this role label"
+
+[codex.cli.arg.kill_args.surface]
+help = "Parent surface ID (defaults to the focused Codex surface)"
+
+[codex.cli.arg.kill_args.child]
+help = "Child index to kill"
+
+[codex.cli.arg.respawn_args.surface]
+help = "Parent surface ID (defaults to the focused Codex surface)"
+
+[codex.cli.arg.respawn_args.child]
+help = "Child index to respawn"
+
+[codex.cli.arg.respawn_args.cwd]
+help = "Override working directory for the respawned process"
+
+[codex.cli.arg.respawn_args.prompt]
+help = "Initial prompt sent to the respawned child"
+
+[codex.cli.arg.respawn_args.role]
+help = "Replace the role label of the child"
+
+[codex.cli.arg.respawn_args.nickname]
+help = "Replace the display nickname of the child"
+
+[codex.cli.arg.respawn_args.approval]
+help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy"
+
+[codex.cli.arg.respawn_args.sandbox]
+help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only"
+
+[codex.cli.arg.respawn_args.full_auto]
+help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox"
+
+[codex.cli.arg.reboot_args.surface]
+help = "Target Codex surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[codex.cli.arg.reboot_args.delay]
+help = "Seconds to wait before killing Codex (default: 5)"
+
+[codex.cli.arg.reboot_args.prompt]
+help = "Extra text appended to the reboot notice prompt sent to the restarted Codex"
+
+[codex.cli.arg.reboot_args.approval]
+help = "Approval policy for the resumed session (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy"
+
+[codex.cli.arg.reboot_args.sandbox]
+help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only"
+
+[codex.cli.arg.reboot_args.full_auto]
+help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox"
+
+[codex.cli.arg.hook_args.event]
+help = "Hook event name: stop, prompt-submit, session-start, permission-request, post-tool-use, interrupt"
+
+[codex.cli.arg.hook_args.surface]
+help = "Surface ID the hook is firing for"
+
+[codex.cli.arg.hook_args.session]
+help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook."

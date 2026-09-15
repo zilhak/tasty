@@ -1951,6 +1951,7 @@ about = "헤드리스 PTY 관리 (spawn/write/read/wait/kill/list) — 서피스
 about = "서피스에 지금 타이핑 중인지 확인 (최근 5초 내 키 입력 여부)"
 
 [cli.help._root.wake]
+long = "지연된 서피스의 PTY 시작(이미 실행 중이면 아무 작업 없음). 전송 명령은 대상을 자동으로 깨우므로, 입력 없이 PTY만 시작할 때 사용하세요."
 about = "지연된 서피스의 PTY 를 시작 (이미 실행 중이면 아무것도 안 한다)"
 
 [cli.help._root.debug]
@@ -2007,6 +2008,7 @@ about = "인바운드 웹훅 관리 (등록/목록/정보/해제) — HTTP → I
 about = "이 인스턴스의 IPC 포트를 stdout 에 출력 (원격 포트 자동 발견 사슬의 첫 걸음, `ssh host tasty port`). 포트 파일만 읽으며 IPC 는 쓰지 않는다"
 
 [cli.help._root.screenshot]
+long = "스크린샷을 PNG 파일로 저장합니다(포커스 독립). `--surface`는 해당 터미널 서피스를 자체 그리드 크기로 오프스크린 렌더링하여 캡처합니다. 백그라운드 탭/워크스페이스에서도 동작하며 포커스나 보이는 프레임은 바뀌지 않습니다. 그 외에는 전체 윈도우를 캡처합니다. `--window`로 ID를 지정(`list windows` 참조)하며 생략 시 열린 윈도우가 하나이면 그것을 사용합니다. 명시적 `--window`는 설정·plugin 모달처럼 `list windows`에 없는 윈도우도 지정할 수 있습니다. 자동 선택(--window 없음)만 메인 윈도우로 제한되며 포커스된 윈도우로 폴백하지 않습니다."
 about = "스크린샷을 PNG 파일로 캡처 (포커스와 무관)"
 
 [cli.help._root.list.workspaces]
@@ -4412,3 +4414,1284 @@ long = "리스너 bind 포트를 읽거나 설정한다(`~/.tasty/webhooks.toml`
 
 [cli.help._root.webhook.config.arg.port]
 help = "리스너 포트를 설정한다(1-65535). 적용되려면 재시작이 필요하다"
+
+[cli.help._root.list.surface-kinds]
+long = "이 인스턴스에 실제 등록된 서피스 종류를 나열합니다. 매니페스트 선언이 아닌 실행 중 등록 상태입니다. host에 등록된 종류만 표시되며, 나열된 종류에 정확히 `--type <kind>`를 사용할 수 있습니다. host 내장 및 plugin 제공 종류가 모두 포함됩니다."
+about = "이 인스턴스에 실제 등록된 서피스 종류 나열"
+
+[cli.help._root.remote.attach]
+long = "SSH로 원격 서피스/워크스페이스에 일회성 attach합니다. `ssh -L` 터널을 열고 그 안에서 attach 세션을 실행합니다. 원격 대상은 `--ssh` 또는 `--profile`로 지정합니다."
+about = "SSH로 원격 서피스/워크스페이스에 일회성 attach"
+
+[cli.help._root.remote.attach.arg.surface]
+help = "대상 서피스 ID(명시적으로 지정하며 포커스에서 추론하지 않음). `--workspace`와 함께 사용 불가"
+
+[cli.help._root.remote.attach.arg.workspace]
+help = "대상 워크스페이스 ID. 모든 터미널을 트리로 미러링합니다. 위치 인자 `surface`와 함께 사용 불가. 터미널이 아닌 서피스는 자리 표시자로 표시"
+
+[cli.help._root.remote.attach.arg.dump_after]
+help = "미러 덤프 모드: attach 후 N ms 동안 출력을 모아 미러 화면을 stdout에 출력하고 종료(GUI 없는 자동 검증). 워크스페이스 모드에서는 서피스별로 구분해 출력"
+
+[cli.help._root.remote.attach.arg.send]
+help = "attach 직후 한 번 보낼 입력(이스케이프 해석: \\\\n \\\\r \\\\t \\\\xNN). 비대화형 검증용"
+
+[cli.help._root.remote.attach.arg.send_to]
+help = "워크스페이스 모드에서 `--send` 입력을 받을 원격 서피스 ID"
+
+[cli.help._root.remote.attach.arg.raw]
+help = "원시 브리지 모드: stdin/stdout 그대로 전달(Ctrl+\\\\로 detach)"
+
+[cli.help._root.remote.attach.arg.force_detach]
+help = "점유된 서피스/워크스페이스의 attach 잠금을 서버에서 강제로 해제(attach하지 않음). 이 서버에 로컬 `attach.force_detach` 요청을 보내 원격 클라이언트의 잠금을 해제합니다. `--ssh`와 함께 사용 불가(터널을 통한 강제 detach 미지원)"
+
+[cli.help._root.remote.attach.arg.ssh]
+help = "원격 SSH 대상(예: --ssh user@host, --ssh gx10). `--profile`과 함께 사용 불가"
+
+[cli.help._root.remote.attach.arg.profile]
+help = "저장된 tasty-attach 프로필 이름으로 attach. `~/.tasty/remote-profiles.toml`에서 사용자/포트/인증 키/추가 옵션을 가져옵니다. `--ssh`와 함께 사용 불가. 프로필 값이 `--remote-tasty`와 `--remote-port-mode`를 대체"
+
+[cli.help._root.remote.attach.arg.remote_tasty]
+help = "원격 host의 tasty 바이너리 경로. 포트 탐색의 하위 명령 단계(`ssh host <path> port`)에 사용. 기본값은 \"tasty\"(원격 PATH에 있다고 가정)"
+
+[cli.help._root.remote.attach.arg.remote_port_mode]
+help = "원격 포트 발견 방식: auto (기본값) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.attach.arg.no_reconnect]
+help = "자동 재연결 비활성화(기본적으로 SSH 연결이 끊기면 지연을 늘리며 재연결)"
+
+[cli.help._root.remote.attach.arg.into_gui]
+help = "로컬 GUI가 클라이언트가 되어 원격 워크스페이스를 미러로 재구성하도록 요청(`attach.into_gui` IPC). `--workspace`와 `--target-port` 필수"
+
+[cli.help._root.remote.attach.arg.target_port]
+help = "`--into-gui`용 원격 tasty 서버의 루프백 포트(GUI가 연결할 포트)"
+
+[cli.help._root.remote.check]
+long = "SSH로 원격 tasty 인스턴스의 생존 여부를 확인합니다. 포트 탐색(`tasty port` 또는 포트 파일)만으로는 종료된 인스턴스의 오래된 포트 파일을 오인할 수 있어, 포트 발견 후 `ssh -L` 터널을 열고 가벼운 IPC 요청(`system.info`)을 한 번 보냅니다. 응답해야 살아 있는 것으로 판단하며 연결 거부나 시간 초과는 종료 상태(오래된 포트)를 뜻합니다. 인자 이름은 `remote attach`와 같습니다."
+about = "SSH로 원격 tasty 인스턴스의 생존 여부 확인"
+
+[cli.help._root.remote.check.arg.ssh]
+help = "원격 SSH 대상(예: --ssh user@host, --ssh gx10). `--profile`과 함께 사용 불가"
+
+[cli.help._root.remote.check.arg.profile]
+help = "저장된 tasty-attach 프로필 이름으로 확인. `~/.tasty/remote-profiles.toml`에서 사용자/포트/인증 키/추가 옵션을 가져옵니다. `--ssh`와 함께 사용 불가. 프로필 값이 `--remote-tasty`와 `--remote-port-mode`를 대체"
+
+[cli.help._root.remote.check.arg.remote_tasty]
+help = "원격 host의 tasty 바이너리 경로. 포트 탐색의 하위 명령 단계(`ssh host <path> port`)에 사용. 기본값은 \"tasty\"(원격 PATH에 있다고 가정)"
+
+[cli.help._root.remote.check.arg.remote_port_mode]
+help = "원격 포트 발견 방식: auto (기본값) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.workspaces]
+long = "SSH로 원격 tasty 인스턴스의 워크스페이스를 나열합니다. SSH 대상이나 attach 프로필로 연결하여 원격 `workspace.list`와 `attach.list`를 합칩니다. 워크스페이스별 ID, 이름, 페인 수, 실행 중 여부, 다른 클라이언트의 attach 여부를 표시합니다. `remote attach --workspace`에 필요한 ID를 찾을 때 사용합니다. 읽기 전용이며 로컬 사용자 상태(포커스 등)를 바꾸지 않습니다. `--ssh 127.0.0.1:<port>`는 터널 없이 루프백으로 직접 연결합니다(로컬 종단 간 검증). 로컬 IPC `remote.workspaces`도 같은 기능을 제공합니다."
+about = "SSH로 원격 tasty 인스턴스의 워크스페이스 나열"
+
+[cli.help._root.remote.workspaces.arg.ssh]
+help = "원격 SSH 대상(예: --ssh user@host, --ssh gx10, --ssh 127.0.0.1:45123). `--profile`과 함께 사용 불가"
+
+[cli.help._root.remote.workspaces.arg.profile]
+help = "저장된 tasty-attach 프로필 이름으로 나열. `--ssh`와 함께 사용 불가. 프로필 값이 `--remote-tasty`와 `--remote-port-mode`를 대체"
+
+[cli.help._root.remote.workspaces.arg.remote_tasty]
+help = "원격 host의 tasty 바이너리 경로(포트 탐색 하위 명령에 사용). 기본값 \"tasty\""
+
+[cli.help._root.remote.workspaces.arg.remote_port_mode]
+help = "원격 포트 발견 방식: auto (기본값) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.workspaces.arg.json]
+help = "사람용 텍스트 대신 JSON 배열 출력(스크립트·UI 소비용)"
+
+[cli.help._root.remote.new-workspace]
+long = "SSH로 원격 tasty 인스턴스에 새 워크스페이스를 생성합니다. `remote workspaces`에 대응하는 쓰기 명령입니다. 출력된 ID를 `tasty remote attach --workspace <id>`에 넘기면 원격 생성 후 attach할 수 있습니다. 원격의 활성 워크스페이스는 바뀌지 않습니다. 로컬 IPC `remote.attach`의 `new_workspace` 옵션도 같은 기능을 제공합니다."
+about = "SSH로 원격 tasty 인스턴스에 새 워크스페이스 생성"
+
+[cli.help._root.remote.new-workspace.arg.ssh]
+help = "원격 SSH 대상(예: --ssh user@host, --ssh gx10, --ssh 127.0.0.1:45123). `--profile`과 함께 사용 불가"
+
+[cli.help._root.remote.new-workspace.arg.profile]
+help = "저장된 tasty-attach 프로필 이름으로 생성. `--ssh`와 함께 사용 불가. 프로필 값이 `--remote-tasty`와 `--remote-port-mode`를 대체"
+
+[cli.help._root.remote.new-workspace.arg.remote_tasty]
+help = "원격 host의 tasty 바이너리 경로(포트 탐색 하위 명령에 사용). 기본값 \"tasty\""
+
+[cli.help._root.remote.new-workspace.arg.remote_port_mode]
+help = "원격 포트 발견 방식: auto (기본값) | subcommand | file-unix | file-windows"
+
+[cli.help._root.remote.new-workspace.arg.name]
+help = "새 워크스페이스 이름(생략하면 원격 기본값)"
+
+[cli.help._root.remote.new-workspace.arg.cwd]
+help = "원격 파일시스템상의 새 워크스페이스 작업 디렉터리. 원격에서 존재 여부를 확인하고 없으면 `cwd does not exist`로 거부"
+
+[cli.help._root.remote.new-workspace.arg.json]
+help = "사람용 텍스트 대신 JSON 객체 출력(스크립트·에이전트용)"
+
+[cli.help._root.notify.arg.body]
+help = "알림 본문"
+
+[cli.help._root.notify.arg.title]
+help = "선택적 알림 제목. 생략하면 host가 번역된 기본값(`notification.default_title`)을 채웁니다. CLI 자체 영어 기본값은 없음"
+
+[cli.help._root.surface-meta.set]
+about = "서피스에 메타데이터 키·값 설정"
+
+[cli.help._root.surface-meta.set.arg.key]
+help = "키 이름"
+
+[cli.help._root.surface-meta.set.arg.value]
+help = "값"
+
+[cli.help._root.surface-meta.set.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.surface-meta.get]
+about = "키로 메타데이터 값 조회"
+
+[cli.help._root.surface-meta.get.arg.key]
+help = "키 이름"
+
+[cli.help._root.surface-meta.get.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.surface-meta.unset]
+about = "메타데이터 키 제거"
+
+[cli.help._root.surface-meta.unset.arg.key]
+help = "키 이름"
+
+[cli.help._root.surface-meta.unset.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.surface-meta.list]
+about = "서피스의 모든 메타데이터 나열"
+
+[cli.help._root.surface-meta.list.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.surface.completion]
+long = "서피스의 작업 완료 또는 입력 필요를 알리고 주의 표시를 활성화합니다. 대상은 항상 --surface로 명시하며 포커스에서 추론하지 않습니다."
+about = "서피스의 작업 완료 또는 입력 필요를 알리고 주의 표시 활성화"
+
+[cli.help._root.surface.completion.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.completion.arg.kind]
+help = "주의 종류: \"completion\"(기본값) 또는 \"needs_input\". 다른 값은 \"completion\"으로 처리"
+
+[cli.help._root.surface.cursor-position]
+long = "터미널 서피스의 커서 위치를 열·행으로 출력합니다. 대상은 항상 --surface로 명시하며 포커스에서 추론하지 않습니다."
+about = "터미널 서피스의 커서 위치를 열·행으로 출력"
+
+[cli.help._root.surface.cursor-position.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.mouse-tracking]
+long = "터미널 안 프로그램의 마우스 입력 점유 여부와 수준을 출력합니다. 마우스 시퀀스를 보내거나 드래그 선택을 사용하기 전에 확인하세요. 추적이 켜져 있으면 프로그램이 마우스 입력을 소비하고, 꺼져 있으면 마우스 시퀀스가 화면에 잘못된 문자로 표시됩니다. 대상은 항상 --surface로 명시합니다."
+about = "터미널 안 프로그램의 마우스 입력 점유 여부와 수준 출력"
+
+[cli.help._root.surface.mouse-tracking.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.foreground-process]
+long = "터미널 서피스의 현재 포그라운드 프로세스를 출력합니다. 셸이 유휴 상태인지 작업 중인지 구분할 때 사용합니다. 대상은 항상 --surface로 명시합니다."
+about = "터미널 서피스의 현재 포그라운드 프로세스 출력"
+
+[cli.help._root.surface.foreground-process.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.locate]
+long = "서피스가 속한 페인과 트리에 남아 있는지 출력합니다. 생성하거나 기다리는 서피스가 닫히지 않았는지 확인할 때 사용합니다. 대상은 항상 --surface로 명시합니다."
+about = "서피스가 속한 페인과 트리에 남아 있는지 출력"
+
+[cli.help._root.surface.locate.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.respawn-terminal]
+long = "서피스·탭·위치를 유지하며 터미널 서피스의 셸을 재시작합니다. 대상은 항상 --surface로 명시합니다."
+about = "서피스·탭·위치를 유지하며 터미널 서피스의 셸 재시작"
+
+[cli.help._root.surface.respawn-terminal.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.fire-hook]
+long = "해당 이벤트가 발생한 것처럼 이름으로 서피스 훅을 실행합니다. 대상은 항상 --surface로 명시합니다."
+about = "해당 이벤트가 발생한 것처럼 이름으로 서피스 훅 실행"
+
+[cli.help._root.surface.fire-hook.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.fire-hook.arg.event]
+help = "실행할 훅 이벤트 이름(필수)"
+
+[cli.help._root.surface.attention]
+long = "서피스의 주의 표시를 조회하거나 해제합니다. `completion`의 반대 동작입니다. 다른 두 해제 경로(실제 렌더 포커스와 알림 읽기)는 GUI 로컬 이벤트이므로 headless 인스턴스에서 주의 표시를 해제하는 유일한 방법입니다."
+about = "서피스의 주의 표시 조회 또는 해제"
+
+[cli.help._root.surface.attention.get]
+long = "서피스에 기록된 주의 종류를 출력합니다: \"completion\", \"needs_input\", 또는 표시가 없으면 null. 대상은 항상 --surface로 명시하며 포커스에서 추론하지 않습니다. 읽기 전용 조회이므로 원격 attach 세션이 서피스를 점유한 동안에도 허용됩니다."
+about = "서피스에 기록된 주의 종류 출력: \"completion\", \"needs_input\", 또는 표시가 없으면 null"
+
+[cli.help._root.surface.attention.get.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.attention.clear]
+long = "서피스 주의 표시를 해제합니다. 대상은 항상 --surface로 명시하며 포커스에서 추론하지 않습니다. 표시가 없는 서피스도 성공하며 \"cleared\": false를 반환합니다. 원격 attach 세션이 강하게 점유한 서피스와 원격 워크스페이스의 미러 서피스는 거부합니다. 두 경우 모두 주의 표시의 소유자는 해당 서피스를 소유한 인스턴스입니다."
+about = "서피스 주의 표시 해제"
+
+[cli.help._root.surface.attention.clear.arg.surface]
+help = "서피스 ID(필수)"
+
+[cli.help._root.surface.attention.clear.arg.kind]
+help = "기록된 종류가 \"completion\" 또는 \"needs_input\"과 일치할 때만 해제. 생략하면 종류와 무관하게 해제. 다른 값은 거부"
+
+[cli.help._root.session.issue]
+long = "사용 가능한 권한을 명시하여 자식 에이전트의 세션 토큰을 발급합니다. 자식은 토큰을 TASTY_SESSION_TOKEN에 넣습니다. 권한마다 --permission을 한 번씩 지정하세요. 권한이 없는 토큰도 권한이 필요 없는 메서드를 호출할 수 있습니다."
+about = "사용 가능한 권한을 명시하여 자식 에이전트의 세션 토큰 발급"
+
+[cli.help._root.session.issue.arg.agent_id]
+help = "토큰을 받을 에이전트 식별자(필수)"
+
+[cli.help._root.session.issue.arg.permissions]
+help = "부여할 권한 토큰. 반복 지정 가능(예: surface.read)"
+
+[cli.help._root.session.issue.arg.ttl_ms]
+help = "유효 기간(ms). 생략하면 서버 기본값"
+
+[cli.help._root.session.revoke]
+about = "세션 토큰을 폐기하여 보유 에이전트의 신뢰 해제"
+
+[cli.help._root.session.revoke.arg.token]
+help = "폐기할 토큰 문자열(필수)"
+
+[cli.help._root.session.list]
+about = "이 인스턴스가 현재 보유한 세션 토큰 나열"
+
+[cli.help._root.terminal.spawn]
+long = "워크스페이스에 자식 터미널을 생성하고 명령을 실행합니다. 자식은 부모 서피스 아래에 등록되며 약한 점유(초록 테두리)로 표시됩니다. 즉시 반환하며 완료(idle / needs_input / exited)는 여기서 기다리지 않고 `terminal set-state`에 연결된 에이전트 훅으로 보고합니다."
+about = "워크스페이스에 자식 터미널을 생성하고 명령 실행"
+
+[cli.help._root.terminal.spawn.arg.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[cli.help._root.terminal.spawn.arg.workspace]
+help = "대상 워크스페이스(ID 또는 이름)"
+
+[cli.help._root.terminal.spawn.arg.pane]
+help = "대상 페인 ID(기본값: 워크스페이스의 첫 페인)"
+
+[cli.help._root.terminal.spawn.arg.cwd]
+help = "자식 터미널 작업 디렉터리"
+
+[cli.help._root.terminal.spawn.arg.command]
+help = "자식 터미널에서 실행할 명령(그대로 전송하고 Enter로 제출)"
+
+[cli.help._root.terminal.spawn.arg.role]
+help = "자식의 역할 라벨(broadcast --role에서 사용)"
+
+[cli.help._root.terminal.spawn.arg.nickname]
+help = "탭에 표시할 별명"
+
+[cli.help._root.terminal.tell]
+long = "자식 터미널에 메시지를 전송합니다(줄바꿈 유지, 끝에서 제출). 즉시 반환합니다."
+about = "자식 터미널에 메시지 전송(줄바꿈 유지, 끝에서 제출)"
+
+[cli.help._root.terminal.tell.arg.text]
+help = "전송할 메시지. 줄바꿈을 유지하고 자동 제출"
+
+[cli.help._root.terminal.tell.arg.surface]
+help = "대상 surface ID (기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[cli.help._root.terminal.children]
+about = "지정한 부모 서피스의 자식 나열"
+
+[cli.help._root.terminal.children.arg.surface]
+help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.parent]
+about = "지정한 자식 서피스의 부모 서피스 ID 반환"
+
+[cli.help._root.terminal.parent.arg.surface]
+help = "부모를 조회할 자식 서피스 ID"
+
+[cli.help._root.terminal.state]
+long = "자식 하나의 상태를 반환합니다: idle, needs_input, active, exited. 에이전트 훅이 idle/needs_input을 보고하는 `set-state`와 달리 현재 상태를 읽습니다. 살아 있는 서피스와 대조하므로 닫힌 자식은 오래된 `active` 대신 `exited`로 보고합니다."
+about = "자식 하나의 상태 반환: idle, needs_input, active, exited"
+
+[cli.help._root.terminal.state.arg.surface]
+help = "조회할 자식 서피스 ID"
+
+[cli.help._root.terminal.kill]
+about = "자식 인덱스로 터미널 종료(탭을 닫고 점유 해제)"
+
+[cli.help._root.terminal.kill.arg.surface]
+help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.kill.arg.child]
+help = "종료할 자식 인덱스"
+
+[cli.help._root.terminal.respawn]
+about = "자식 터미널 재생성(PTY 교체 또는 명령 재실행)"
+
+[cli.help._root.terminal.respawn.arg.surface]
+help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.respawn.arg.child]
+help = "재생성할 자식 인덱스"
+
+[cli.help._root.terminal.respawn.arg.cwd]
+help = "작업 디렉터리 재정의(새 cwd에서 PTY 교체)"
+
+[cli.help._root.terminal.respawn.arg.command]
+help = "재생성 후 다시 실행할 명령"
+
+[cli.help._root.terminal.respawn.arg.role]
+help = "자식 역할 라벨 교체"
+
+[cli.help._root.terminal.respawn.arg.nickname]
+help = "자식 표시 별명 교체"
+
+[cli.help._root.terminal.broadcast]
+about = "부모 서피스의 모든 자식에게 텍스트 일괄 전송"
+
+[cli.help._root.terminal.broadcast.arg.text]
+help = "일괄 전송할 텍스트(그대로 전송)"
+
+[cli.help._root.terminal.broadcast.arg.surface]
+help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.broadcast.arg.role]
+help = "이 역할 라벨의 자식에게만 전송"
+
+[cli.help._root.terminal.set-state]
+about = "자식의 idle/needs_input/active 상태 설정(에이전트 훅에서 호출)"
+
+[cli.help._root.terminal.set-state.arg.surface]
+help = "자식 서피스 ID"
+
+[cli.help._root.terminal.set-state.arg.state]
+help = "새 상태: idle, needs_input, active"
+
+[cli.help._root.terminal.adopt]
+about = "새 탭을 만들지 않고 기존 서피스를 자식으로 등록(약한 점유). 이미 다른 부모의 자식이면(먼저 해제 필요), 또는 강한 점유(원격 attach) 상태이면 실패"
+
+[cli.help._root.terminal.adopt.arg.surface]
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[cli.help._root.terminal.adopt.arg.target]
+help = "자식으로 등록할 기존 서피스 ID"
+
+[cli.help._root.terminal.adopt.arg.cwd]
+help = "자식에 기록할 작업 디렉터리"
+
+[cli.help._root.terminal.adopt.arg.role]
+help = "자식의 역할 라벨(broadcast --role에서 사용)"
+
+[cli.help._root.terminal.adopt.arg.nickname]
+help = "탭에 표시할 별명"
+
+[cli.help._root.terminal.release]
+about = "서피스를 닫지 않고 자식 터미널 등록 해제(부모·자식 관계와 약한 점유 제거)"
+
+[cli.help._root.terminal.release.arg.surface]
+help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부모)"
+
+[cli.help._root.terminal.release.arg.child]
+help = "해제할 자식 인덱스"
+
+[cli.help._root.pty.spawn]
+long = "서피스/탭 없는 headless PTY를 생성하고 PTY ID를 반환합니다. 명령이 있으면 PTY 셸에서 즉시 실행합니다. 없으면 셸만 시작하며 `pty write`로 조작합니다."
+about = "서피스/탭 없는 headless PTY 생성. PTY ID 반환"
+
+[cli.help._root.pty.spawn.arg.cwd]
+help = "PTY 작업 디렉터리"
+
+[cli.help._root.pty.spawn.arg.command]
+help = "생성 시 실행할 명령 토큰(예: `pty spawn -- echo hi`)"
+
+[cli.help._root.pty.write]
+about = "실행 중인 headless PTY에 입력 쓰기(그대로 전송, 제출하려면 줄바꿈 포함)"
+
+[cli.help._root.pty.write.arg.id]
+help = "대상 PTY ID"
+
+[cli.help._root.pty.write.arg.text]
+help = "PTY stdin에 보낼 텍스트"
+
+[cli.help._root.pty.read]
+about = "headless PTY의 현재 화면 텍스트 읽기"
+
+[cli.help._root.pty.read.arg.id]
+help = "대상 PTY ID"
+
+[cli.help._root.pty.read.arg.lines]
+help = "마지막 N줄(기본값: 보이는 전체 화면). 끝의 빈 행은 건너뛰고 부족한 줄은 스크롤백에서 채워 실제 출력된 마지막 N줄을 반환합니다. 상한은 그리드가 아닌 콘텐츠입니다. 대체 화면(전체 화면 TUI)에서는 기본 버퍼의 스크롤백으로 채우며 경계 표시는 없어, N이 크면 이전 셸 출력이 TUI 화면 위에 붙을 수 있습니다."
+
+[cli.help._root.pty.read.arg.show_dim]
+help = "흐린 셀(고스트 제안, 예: Claude Code 자동완성 오버레이)도 포함. 기본은 제외한다 — 제출되지 않은 UI 제안을 실제 버퍼 내용으로 오인하지 않기 위해서다"
+
+[cli.help._root.pty.wait]
+about = "headless PTY 종료 상태 조회(즉시 반환, 비차단)"
+
+[cli.help._root.pty.wait.arg.id]
+help = "대상 PTY ID"
+
+[cli.help._root.pty.kill]
+about = "headless PTY 프로세스를 종료하고 슬롯 회수"
+
+[cli.help._root.pty.kill.arg.id]
+help = "대상 PTY ID"
+
+[cli.help._root.pty.list]
+about = "살아 있는 모든 headless PTY 나열(포커스 독립, 항상 전체 목록)"
+
+[cli.help._root.pty.attach-surface]
+about = "headless PTY를 페인 아래 실제 서피스/탭으로 승격. 같은 프로세스·스크롤백을 옮겨 상태를 보존하고 PTY ID는 headless 목록에서 제거"
+
+[cli.help._root.pty.attach-surface.arg.pty_id]
+help = "승격할 PTY ID"
+
+[cli.help._root.pty.attach-surface.arg.pane_id]
+help = "승격한 터미널을 붙일 페인(새 백그라운드 탭)"
+
+[cli.help._root.is-typing.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.wake.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.debug.attach]
+about = "로컬 루프백으로 서피스/워크스페이스에 attach하여 미러링(debug 빌드 전용). 로컬 self-attach는 사용자 미러 조작을 재현하므로 에이전트/사용자 행동 분리 정책에 따라 release 표면에서 격리됩니다. 원격 attach는 release의 `tasty remote attach` 사용"
+
+[cli.help._root.debug.attach.arg.surface]
+help = "대상 서피스 ID(명시적으로 지정하며 포커스에서 추론하지 않음). `--workspace`와 함께 사용 불가"
+
+[cli.help._root.debug.attach.arg.workspace]
+help = "대상 워크스페이스 ID. 모든 터미널을 트리로 미러링합니다. 위치 인자 `surface`와 함께 사용 불가. 터미널이 아닌 서피스는 자리 표시자로 표시"
+
+[cli.help._root.debug.attach.arg.dump_after]
+help = "미러 덤프 모드: attach 후 N ms 동안 출력을 모아 미러 화면을 stdout에 출력하고 종료"
+
+[cli.help._root.debug.attach.arg.send]
+help = "attach 직후 한 번 보낼 입력(이스케이프 해석: \\\\n \\\\r \\\\t \\\\xNN). 비대화형 검증용"
+
+[cli.help._root.debug.attach.arg.send_to]
+help = "워크스페이스 모드에서 `--send` 입력을 받을 원격 서피스 ID"
+
+[cli.help._root.debug.attach.arg.raw]
+help = "원시 브리지 모드: stdin/stdout 그대로 전달(Ctrl+\\\\로 detach)"
+
+[cli.help._root.debug.attach.arg.force_detach]
+help = "점유된 서피스/워크스페이스를 강제로 detach(서버 측, attach하지 않음)"
+
+[cli.help._root.debug.info]
+about = "실행 중인 tasty 인스턴스의 debug 정보 표시"
+
+[cli.help._root.debug.gpu-stall]
+about = "다음 프레임의 GPU present를 의도적으로 막아 이벤트 루프 정체 재현(정체 감시기 검증용, debug 빌드 전용)"
+
+[cli.help._root.debug.gpu-stall.arg.ms]
+help = "차단 시간(ms)"
+
+[cli.help._root.debug.ime-enable]
+about = "IME 조합 모드 활성화"
+
+[cli.help._root.debug.ime-disable]
+about = "IME 조합 모드 비활성화 및 조합 중 텍스트 제거"
+
+[cli.help._root.debug.ime-preedit]
+about = "IME 조합 중 텍스트 전송"
+
+[cli.help._root.debug.ime-preedit.arg.text]
+help = "조합 중 텍스트(예: 조합 중인 한글 음절 U+D558)"
+
+[cli.help._root.debug.ime-preedit.arg.cursor]
+help = "조합 중 텍스트 안의 커서 위치"
+
+[cli.help._root.debug.ime-commit]
+about = "IME 조합 텍스트 확정 및 터미널 전송"
+
+[cli.help._root.debug.ime-commit.arg.text]
+help = "확정할 텍스트(예: 완성된 한글 음절 U+D55C)"
+
+[cli.help._root.debug.ime-status]
+about = "현재 IME 상태 표시"
+
+[cli.help._root.debug.cell-info]
+about = "지정 위치의 셀 정보 조회"
+
+[cli.help._root.debug.cell-info.arg.row]
+help = "행(0부터 시작)"
+
+[cli.help._root.debug.cell-info.arg.col]
+help = "열(0부터 시작)"
+
+[cli.help._root.debug.cell-info.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.debug.screen-attrs]
+about = "지정 행의 모든 셀 속성 조회"
+
+[cli.help._root.debug.screen-attrs.arg.row]
+help = "행(0부터 시작)"
+
+[cli.help._root.debug.screen-attrs.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.debug.glyph-color]
+about = "셀에 대해 렌더러가 GPU로 보낼 최종 RGBA 배경색·전경색 조회"
+
+[cli.help._root.debug.glyph-color.arg.row]
+help = "행(0부터 시작)"
+
+[cli.help._root.debug.glyph-color.arg.col]
+help = "열(0부터 시작)"
+
+[cli.help._root.debug.glyph-color.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.debug.glyph-color.arg.bg_mode]
+help = "배경 모드: \"focused\" 또는 \"unfocused\"(기본값: focused)"
+
+[cli.help._root.debug.switch-input-source]
+long = "macOS 입력 소스를 전환합니다(예: 한국어 IME). macOS GUI 빌드 전용입니다. 메서드가 모든 플랫폼에 등록되므로 명령도 모든 플랫폼에 표시합니다. 숨기면 없는 명령으로 오인할 수 있습니다. 다른 플랫폼에서는 -32015로 즉시 실패하며 TISSelectInputSource에 대응하는 기능이 없음을 설명합니다."
+about = "macOS 입력 소스 전환(예: 한국어 IME). macOS GUI 빌드 전용"
+
+[cli.help._root.debug.switch-input-source.arg.source_id]
+help = "입력 소스 ID(예: \"com.apple.inputmethod.Korean.2SetKorean\")"
+
+[cli.help._root.debug.raw-key]
+long = "CGEvent로 원시 물리 키 코드를 전송합니다. macOS GUI 빌드 전용이며 OS IME 파이프라인을 통과합니다. switch-input-source와 같은 이유로 모든 플랫폼에서 명령을 제공합니다. 다른 플랫폼에서는 -32015로 즉시 실패하며 CGEventPost에 대응하는 기능이 없음을 설명합니다."
+about = "CGEvent로 원시 물리 키 코드 전송. macOS GUI 빌드 전용"
+
+[cli.help._root.debug.raw-key.arg.keycode]
+help = "macOS 가상 키 코드(예: 7=KeyX, 35=KeyP, 49=Space)"
+
+[cli.help._root.debug.event-bus]
+about = "이벤트 버스 조회 및 주입(debug 빌드 전용)"
+
+[cli.help._root.debug.event-bus.list-subscribers]
+about = "지정 이벤트 키를 구독하는 plugin 나열"
+
+[cli.help._root.debug.event-bus.list-subscribers.arg.key]
+help = "이벤트 키(예: \"surface.closed\")"
+
+[cli.help._root.debug.event-bus.publish]
+about = "host 측에서 임의 이벤트 발행"
+
+[cli.help._root.debug.event-bus.publish.arg.key]
+help = "이벤트 키"
+
+[cli.help._root.debug.event-bus.publish.arg.payload]
+help = "JSON payload(기본값: `{}`)"
+
+[cli.help._root.debug.event-bus.publish.arg.scope]
+help = "이벤트 범위: \"system\"(기본값) 또는 \"surface\""
+
+[cli.help._root.debug.event-bus.trace]
+about = "지정 trace_id의 최근 이벤트 봉투 출력"
+
+[cli.help._root.debug.event-bus.trace.arg.trace_id]
+help = "trace_id(예: \"h2a\")"
+
+[cli.help._root.debug.extension]
+about = "확장 훅 조회 및 수동 호출(debug 빌드 전용)"
+
+[cli.help._root.debug.extension.invoke-hook]
+about = "확장 훅 수동 실행(지정 확장에 extension.invoke_hook을 보내고 응답 반환)"
+
+[cli.help._root.debug.extension.invoke-hook.arg.extension_id]
+help = "확장 plugin ID(설치 및 실행 상태 필수)"
+
+[cli.help._root.debug.extension.invoke-hook.arg.kind]
+help = "훅 종류: \"event\" 또는 \"ipc\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.phase]
+help = "훅 단계: \"pre\" 또는 \"post\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.mode]
+help = "훅 모드: \"transform\", \"filter\", \"observe\""
+
+[cli.help._root.debug.extension.invoke-hook.arg.target]
+help = "대상: 이벤트 키(예: \"foo.bar\") 또는 IPC 메서드(예: \"codex.spawn\")"
+
+[cli.help._root.debug.extension.invoke-hook.arg.payload]
+help = "훅 입력으로 전달할 JSON payload(기본값: `{}`)"
+
+[cli.help._root.debug.tool]
+about = "도구 메뉴 조회 및 실행(debug 빌드 전용)"
+
+[cli.help._root.debug.tool.list]
+about = "표시 순서대로 모든 도구 메뉴 항목 나열"
+
+[cli.help._root.debug.tool.invoke]
+about = "키로 도구 메뉴 항목 실행"
+
+[cli.help._root.debug.tool.invoke.arg.key]
+help = "도구 항목 키(`<plugin_id>/<tool_id>`, 예: `com.tasty.clipboard-history/open-viewer`)"
+
+[cli.help._root.debug.popup]
+about = "plugin 팝업 조회 및 열기/닫기(debug 빌드 전용)"
+
+[cli.help._root.debug.popup.list]
+about = "모든 팝업 선언과 현재 열린 인스턴스 나열"
+
+[cli.help._root.debug.popup.open]
+about = "plugin 팝업 인스턴스 열기"
+
+[cli.help._root.debug.popup.open.arg.plugin_id]
+help = "plugin ID(예: \"com.example.popper\")"
+
+[cli.help._root.debug.popup.open.arg.popup_id]
+help = "plugin 내부 팝업 ID"
+
+[cli.help._root.debug.popup.open.arg.context]
+help = "popup.open payload로 보낼 선택적 컨텍스트 JSON"
+
+[cli.help._root.debug.popup.close]
+about = "ID로 팝업 인스턴스 닫기"
+
+[cli.help._root.debug.popup.close.arg.instance_id]
+help = "`popup open`이 반환한 팝업 인스턴스 ID"
+
+[cli.help._root.debug.host-popup]
+about = "host 내장 팝업 조회 및 직접 열기/닫기(debug 빌드 전용). 사용자 클릭 없이 tools_menu / port_scanner / command_palette / remote_tool 등의 host 팝업을 강제로 열어 시각 검증"
+
+[cli.help._root.debug.host-popup.list]
+about = "모든 host 내장 팝업 나열(ID와 제목 키)"
+
+[cli.help._root.debug.host-popup.open]
+about = "ID로 host 팝업을 포커스된 윈도우 중앙에 강제로 열기"
+
+[cli.help._root.debug.host-popup.open.arg.popup_id]
+help = "host 팝업 ID(예: \"tools_menu\", \"port_scanner\", \"command_palette\")"
+
+[cli.help._root.debug.host-popup.open.arg.workspace_scope]
+help = "윈도우 대신 활성 워크스페이스 범위로 열어 범위별 표시 조건 검증(예: \"dag_list\")"
+
+[cli.help._root.debug.host-popup.close]
+about = "ID로 host 팝업 닫기"
+
+[cli.help._root.debug.host-popup.close.arg.popup_id]
+help = "host 팝업 ID"
+
+[cli.help._root.debug.fullscreen]
+about = "전체화면 무대 조회 및 직접 진입/종료(debug 빌드 전용). 팝업 제목 표시줄 클릭 없이 윈도우에 무대를 띄우고 전체화면 상태를 덤프하여 시각 검증"
+
+[cli.help._root.debug.fullscreen.list]
+about = "등록된 모든 전체화면 무대 나열(ID와 제목 키)"
+
+[cli.help._root.debug.fullscreen.open]
+about = "윈도우에 무대 표시. 다른 무대가 있으면 교체하고 같은 무대이면 아무 작업 없음"
+
+[cli.help._root.debug.fullscreen.open.arg.stage_id]
+help = "무대 ID(예: \"blank\", \"notifications\")"
+
+[cli.help._root.debug.fullscreen.open.arg.window_id]
+help = "대상 윈도우. 열린 윈도우가 정확히 하나일 때만 생략 가능. 여럿이면 포커스를 추측하지 않고 오류 반환"
+
+[cli.help._root.debug.fullscreen.close]
+about = "윈도우의 활성 무대 제거"
+
+[cli.help._root.debug.fullscreen.close.arg.window_id]
+help = "대상 윈도우(`open --window-id` 참조)"
+
+[cli.help._root.debug.fullscreen.state]
+about = "활성 무대 ID와 윈도우 전체화면 상태 덤프(OS 전체화면/최대화/내부 크기/차지한 모니터)"
+
+[cli.help._root.debug.fullscreen.state.arg.window_id]
+help = "대상 윈도우(`open --window-id` 참조)"
+
+[cli.help._root.debug.banner]
+about = "배너 조회 및 직접 표시/닫기(debug 빌드 전용). 사용자 동작 없이 배너를 표시하여 오버레이 시각 검증(release에서는 사용자 동작으로만 표시)"
+
+[cli.help._root.debug.banner.list]
+about = "내장 배너 정의와 현재 표시/대기 상태 나열"
+
+[cli.help._root.debug.banner.show]
+about = "ID로 지정 범위에 배너 표시"
+
+[cli.help._root.debug.banner.show.arg.banner_id]
+help = "배너 ID(예: \"mouse-capture\")"
+
+[cli.help._root.debug.banner.show.arg.scope]
+help = "대상 범위 토큰: view | workspace:<i> | pane:<id> | tab:<pane>:<i> | surface:<id>"
+
+[cli.help._root.debug.banner.close]
+about = "ID로 배너 닫기(표시 중이었다면 대기열 첫 항목 승격)"
+
+[cli.help._root.debug.banner.close.arg.banner_id]
+help = "배너 ID"
+
+[cli.help._root.debug.banner.set-countdown]
+about = "지정 범위에 표시 중인 TTL 배너의 남은 시간 강제 설정"
+
+[cli.help._root.debug.banner.set-countdown.arg.scope]
+help = "대상 범위 토큰(`show --scope`와 같은 형식)"
+
+[cli.help._root.debug.banner.set-countdown.arg.seconds]
+help = "새 남은 시간(초)"
+
+[cli.help._root.debug.modifier-hint]
+about = "보조키 힌트 오버레이 홀드 주입 및 렌더 상태 덤프(debug 빌드 전용). 실제 키 홀드 없이 보조키 조합을 설정하고 재계산한 렌더 상태(선별된 구역/지연/표시 여부)를 덤프"
+
+[cli.help._root.debug.modifier-hint.hold]
+about = "보조키 홀드 주입(플래그 없음 = 해제). `--elapsed-ms`로 홀드 타이머를 앞당겨 표시 지연을 즉시 통과"
+
+[cli.help._root.debug.modifier-hint.hold.arg.ctrl]
+help = "ctrl 축 홀드"
+
+[cli.help._root.debug.modifier-hint.hold.arg.alt]
+help = "`alt` 토큰 홀드. 물리 키는 macOS에서 Command, 나머지에서 Alt"
+
+[cli.help._root.debug.modifier-hint.hold.arg.option]
+help = "`option` 토큰 홀드. 실제 입력은 macOS의 물리 Option 키에서만 발생하므로 다른 플랫폼에서는 평소 도달할 수 없는 상태를 강제 설정"
+
+[cli.help._root.debug.modifier-hint.hold.arg.shift]
+help = "shift 축 홀드"
+
+[cli.help._root.debug.modifier-hint.hold.arg.elapsed_ms]
+help = "이 시간(ms)만큼 홀드 타이머를 앞당김(표시 지연 생략)"
+
+[cli.help._root.debug.modifier-hint.state]
+about = "오버레이 렌더 상태 덤프(held / delay / alpha / visible / sections / header)"
+
+[cli.help._root.debug.settings]
+about = "설정 모달 강제로 열기(debug 빌드 전용). 단축키나 버튼 클릭 없이 열어 설정 UI와 디자인의 시각 정합 검증"
+
+[cli.help._root.debug.settings.open]
+about = "설정 모달 강제로 열기. 탭/하위 탭 지정 가능"
+
+[cli.help._root.debug.settings.open.arg.tab]
+help = "초기 1단계 탭: general | terminal | appearance | keybindings | file_handler | misc | plugins(기본값: general)"
+
+[cli.help._root.debug.settings.open.arg.subtab]
+help = "선택 탭의 초기 2단계 구역(--tab에 따라 다름). 예: appearance: theme|colors|general|display|tasty|terminal; keybindings: general|workspace|pane|tab|surface|clipboard|zoom| image|preset|plugins; general: general|notifications|accessibility; terminal: general|mouse_capture|tui|performance; file_handler: extension_mapping| detectors|handlers; misc: tastyrc. 알 수 없는 키는 탭 기본값 유지"
+
+[cli.help._root.debug.settings.apply]
+about = "실행 중 설정에 부분 패치 적용: JSON 객체를 현재 설정에 깊은 병합한 뒤 UpdateSettings로 전달(설정 모달 저장과 같은 경로로 config.toml에 영속화)"
+
+[cli.help._root.debug.settings.apply.arg.json]
+help = "설정 패치 JSON 객체(부분 허용). 예: '{\"general\":{\"workspace_categories_enabled\":false}}'"
+
+[cli.help._root.debug.settings.apply.arg.file]
+help = "--json 대신 파일에서 JSON 패치 읽기"
+
+[cli.help._root.debug.modal]
+about = "활성 모달 닫기 요청(debug 빌드 전용). 열린 모달의 닫기 버튼을 누르는 사용자 행동을 재현합니다. release의 `window.close`는 메인 뷰만 다루며 모달 닫기는 사용자 행동입니다."
+
+[cli.help._root.debug.modal.close-request]
+about = "활성 모달에 닫기 요청 전송(없으면 아무 작업 없음. 응답의 `closed`로 구분)"
+
+[cli.help._root.debug.lua]
+about = "host worker에 임의 Lua 주입(debug 빌드 전용). 제한 시간이 있는 격리 Lua worker에서 소스 실행(ADR-0031). release에는 이 경로가 없으며 사용자 입력 전용 규칙 적용"
+
+[cli.help._root.debug.lua.eval]
+about = "임의 Lua 소스를 host worker에 주입하여 실행(완료를 기다리지 않음). 효과는 tasty.log 등의 로그로 확인하며 제한 시간을 넘기면 worker가 중단(ADR-0031)"
+
+[cli.help._root.debug.lua.eval.arg.source]
+help = "실행할 Lua 소스. 예: 'tasty.log(\"hi from debug\")'"
+
+[cli.help._root.debug.lua.eval-file]
+about = "파일에서 Lua 소스를 읽어 주입(`eval`과 같은 worker 경로)"
+
+[cli.help._root.debug.lua.eval-file.arg.path]
+help = "읽고 실행할 `.lua` 파일 경로"
+
+[cli.help._root.debug.sim]
+about = "VTE 시퀀스 시뮬레이터. 독립 `tasty-tui-sim` 바이너리와 같으며 현재 서피스에서 실행(stdout에 원시 VTE 출력, IPC 없음). 하위 명령 없으면 대화형 REPL. 전체화면 재그리기 부하 검증에는 `sim flood` 사용. debug 빌드 전용"
+
+[cli.help._root.debug.sim.interactive]
+about = "대화형 REPL: stdin에서 명령 읽기(하위 명령이 없을 때 기본값)"
+
+[cli.help._root.debug.sim.cursor]
+about = "일회성 커서 이동 테스트"
+
+[cli.help._root.debug.sim.cursor.arg.row]
+help = "대상 행(0부터 시작)"
+
+[cli.help._root.debug.sim.cursor.arg.col]
+help = "대상 열(0부터 시작)"
+
+[cli.help._root.debug.sim.cursor.arg.marker]
+help = "대상 셀에 쓸 텍스트"
+
+[cli.help._root.debug.sim.cursor.arg.exit]
+help = "시나리오를 그린 즉시 반환. 생략하면 화면을 확인할 수 있도록 키를 한 번 누를 때까지 대기"
+
+[cli.help._root.debug.sim.colors]
+about = "일회성 ANSI 16색 및 TrueColor 테스트"
+
+[cli.help._root.debug.sim.colors.arg.exit]
+help = "시나리오를 그린 즉시 반환. 생략하면 화면을 확인할 수 있도록 키를 한 번 누를 때까지 대기"
+
+[cli.help._root.debug.sim.attrs]
+about = "일회성 텍스트 속성 테스트"
+
+[cli.help._root.debug.sim.attrs.arg.exit]
+help = "시나리오를 그린 즉시 반환. 생략하면 화면을 확인할 수 있도록 키를 한 번 누를 때까지 대기"
+
+[cli.help._root.debug.sim.altscreen]
+about = "일회성 대체 화면 테스트"
+
+[cli.help._root.debug.sim.altscreen.arg.exit]
+help = "시나리오를 그린 즉시 반환. 생략하면 화면을 확인할 수 있도록 키를 한 번 누를 때까지 대기"
+
+[cli.help._root.debug.sim.unicode]
+about = "일회성 CJK/전각 문자 테스트"
+
+[cli.help._root.debug.sim.unicode.arg.exit]
+help = "시나리오를 그린 즉시 반환. 생략하면 화면을 확인할 수 있도록 키를 한 번 누를 때까지 대기"
+
+[cli.help._root.debug.sim.scroll-region]
+about = "일회성 스크롤 영역 테스트"
+
+[cli.help._root.debug.sim.scroll-region.arg.exit]
+help = "시나리오를 그린 즉시 반환. 생략하면 화면을 확인할 수 있도록 키를 한 번 누를 때까지 대기"
+
+[cli.help._root.debug.sim.flood]
+about = "부하 모드: 프레임마다 전체화면 TrueColor 재그리기(입력 지연 재현)"
+
+[cli.help._root.debug.sim.flood.arg.rate_ms]
+help = "프레임 사이 지연(ms). 0 = 제한 없음/최대 처리량"
+
+[cli.help._root.debug.sim.flood.arg.cols]
+help = "열 수(0 = 터미널 크기로 자동 결정, 실패 시 200)"
+
+[cli.help._root.debug.sim.flood.arg.rows]
+help = "행 수(0 = 터미널 크기로 자동 결정, 실패 시 50)"
+
+[cli.help._root.debug.sim.flood.arg.frames]
+help = "프레임 수(0 = 무한)"
+
+[cli.help._root.debug.sim.flood.arg.inline]
+help = "대체 화면에 진입하지 않고 기본 화면에 유지"
+
+[cli.help._root.debug.focused-surface]
+about = "포커스된 서피스 ID 덤프(debug 빌드 전용). 포커스된 뷰를 읽기만 하며 변경하지 않음"
+
+[cli.help._root.debug.selection]
+about = "포커스된 윈도우의 현재 선택 영역 덤프(debug 빌드 전용)"
+
+[cli.help._root.debug.pending-menu]
+about = "포커스된 윈도우의 대기 중인 네이티브 메뉴 동작 덤프(debug 빌드 전용)"
+
+[cli.help._root.debug.ui-state]
+about = "포커스된 윈도우의 UI 상태 트리 덤프(debug 빌드 전용)"
+
+[cli.help._root.debug.switch-workspace]
+about = "인덱스로 활성 워크스페이스 전환. 사용자의 워크스페이스 탭 클릭을 재현하므로 debug 전용(사용자 행동)"
+
+[cli.help._root.debug.switch-workspace.arg.index]
+help = "워크스페이스 인덱스(0부터 시작)"
+
+[cli.help._root.debug.switch-tab]
+about = "인덱스로 포커스된 페인의 활성 탭 전환. 사용자 탭 클릭을 재현하며 debug 빌드 전용"
+
+[cli.help._root.debug.switch-tab.arg.index]
+help = "포커스된 페인 안의 탭 인덱스(0부터 시작)"
+
+[cli.help._root.debug.close-workspace]
+about = "인덱스로 워크스페이스 닫기. 닫은 항목 복원 스택을 변경하는 컨텍스트 메뉴의 워크스페이스 닫기를 재현. debug 전용"
+
+[cli.help._root.debug.close-workspace.arg.index]
+help = "워크스페이스 인덱스(0부터 시작)"
+
+[cli.help._root.debug.feed-bytes]
+about = "PTY를 거치지 않고 서피스 터미널 파서에 원시 바이트 직접 입력. 셸이 생성하지 않은 출력을 만들므로 debug 빌드 전용"
+
+[cli.help._root.debug.feed-bytes.arg.surface]
+help = "대상 서피스 ID(기본값: 현재 서피스)"
+
+[cli.help._root.debug.feed-bytes.arg.text]
+help = "입력할 텍스트(UTF-8). `--bytes`와 함께 사용 불가"
+
+[cli.help._root.debug.feed-bytes.arg.bytes]
+help = "입력할 바이트를 짝수 길이 16진 문자열로 지정(예: `1b5b3141`)"
+
+[cli.help._root.debug.inject]
+about = "입력 주입: 사용자 키보드/마우스 입력 재현. debug 빌드 전용(정체성 원칙 1: 입력 재현은 release에 없음)"
+
+[cli.help._root.debug.inject.key]
+about = "서피스 입력 경로에 키 바이트 주입"
+
+[cli.help._root.debug.inject.key.arg.surface]
+help = "대상 서피스 ID(기본값: 현재 서피스)"
+
+[cli.help._root.debug.inject.key.arg.text]
+help = "전송할 텍스트(UTF-8). `--bytes`와 함께 사용 불가"
+
+[cli.help._root.debug.inject.key.arg.bytes]
+help = "짝수 길이 16진 문자열 바이트(예: 위쪽 화살표는 `1b5b41`)"
+
+[cli.help._root.debug.inject.mouse]
+about = "행·열로 지정한 터미널 셀 마우스 이벤트 주입"
+
+[cli.help._root.debug.inject.mouse.arg.surface]
+help = "대상 서피스 ID(기본값: 현재 서피스)"
+
+[cli.help._root.debug.inject.mouse.arg.row]
+help = "셀 행(0부터 시작)"
+
+[cli.help._root.debug.inject.mouse.arg.col]
+help = "셀 열(0부터 시작)"
+
+[cli.help._root.debug.inject.mouse.arg.event_type]
+help = "`move`, `press`, `release` 중 하나"
+
+[cli.help._root.debug.inject.mouse.arg.button]
+help = "0 = 왼쪽, 1 = 가운데, 2 = 오른쪽"
+
+[cli.help._root.debug.inject.window-mouse]
+about = "정규화된 서피스 로컬 좌표로 윈도우 메시의 포인터 이벤트 주입"
+
+[cli.help._root.debug.inject.window-mouse.arg.surface]
+help = "대상 서피스 id"
+
+[cli.help._root.debug.inject.window-mouse.arg.fx]
+help = "서피스 로컬 x 좌표 [0,1]"
+
+[cli.help._root.debug.inject.window-mouse.arg.fy]
+help = "서피스 로컬 y 좌표 [0,1]"
+
+[cli.help._root.debug.inject.window-mouse.arg.event_type]
+help = "`move`, `press`, `release`, `scroll` 중 하나"
+
+[cli.help._root.debug.inject.window-mouse.arg.button]
+help = "0 = 왼쪽, 1 = 가운데, 2 = 오른쪽"
+
+[cli.help._root.debug.inject.window-mouse.arg.unit]
+help = "스크롤 단위: `line` 또는 `pixel`"
+
+[cli.help._root.debug.inject.window-mouse.arg.scroll_dx]
+help = "가로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
+
+[cli.help._root.debug.inject.window-mouse.arg.scroll_dy]
+help = "세로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
+
+[cli.help._root.debug.inject.egui-mouse]
+about = "터미널 메시 대신 egui 계층(탭 바·사이드바·팝업)에 포인터 이벤트 주입"
+
+[cli.help._root.debug.inject.egui-mouse.arg.surface]
+help = "대상 서피스 id"
+
+[cli.help._root.debug.inject.egui-mouse.arg.fx]
+help = "서피스 로컬 x 좌표 [0,1]"
+
+[cli.help._root.debug.inject.egui-mouse.arg.fy]
+help = "서피스 로컬 y 좌표 [0,1]"
+
+[cli.help._root.debug.inject.egui-mouse.arg.event_type]
+help = "`move`, `press`, `release`, `scroll` 중 하나"
+
+[cli.help._root.debug.inject.egui-mouse.arg.button]
+help = "0 = 왼쪽, 1 = 가운데, 2 = 오른쪽"
+
+[cli.help._root.debug.inject.egui-mouse.arg.unit]
+help = "스크롤 단위: `line` 또는 `pixel`"
+
+[cli.help._root.debug.inject.egui-mouse.arg.scroll_dx]
+help = "가로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
+
+[cli.help._root.debug.inject.egui-mouse.arg.scroll_dy]
+help = "세로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
+
+[cli.help._root.debug.inject.egui-key]
+about = "egui 계층에 키 이벤트 주입"
+
+[cli.help._root.debug.inject.egui-key.arg.key]
+help = "egui 키 이름(예: `Enter`, `Escape`, `ArrowDown`)"
+
+[cli.help._root.debug.inject.egui-key.arg.pressed]
+help = "누르기(기본값) 또는 `--pressed false`로 떼기"
+
+[cli.help._root.debug.plugin-banner]
+about = "소유 plugin을 거치지 않고 plugin 배너 강제로 열기/닫기. debug 빌드 전용이며 `debug banner`는 host 내장 배너를 다룸"
+
+[cli.help._root.debug.plugin-banner.open]
+about = "실제 plugin 호출자의 소유권 검사를 건너뛰고 서피스에 plugin 배너 강제로 열기"
+
+[cli.help._root.debug.plugin-banner.open.arg.banner_id]
+help = "소유 plugin이 선언한 배너 ID"
+
+[cli.help._root.debug.plugin-banner.open.arg.surface]
+help = "대상 서피스 ID(기본값: 현재 서피스)"
+
+[cli.help._root.debug.plugin-banner.close]
+about = "ID로 plugin 배너 인스턴스 닫기"
+
+[cli.help._root.debug.plugin-banner.close.arg.instance_id]
+help = "`plugin-banner open`이 반환한 배너 인스턴스 ID"
+
+[cli.help._root.debug.stream-echo]
+about = "스트리밍 채널을 열어 서버→클라이언트 push 경로 검증: 데이터 프레임 N개를 보내 각각의 에코 응답 확인(debug 빌드 전용)"
+
+[cli.help._root.debug.stream-echo.arg.payload]
+help = "프레임마다 보낼 payload(인덱스 접미사 `#N` 추가)"
+
+[cli.help._root.debug.stream-echo.arg.count]
+help = "전송하고 에코 응답을 기다릴 프레임 수"
+
+[cli.help._root.settings.get-remote-transfer]
+about = "원격 전송(대량 파일 채널)의 수신 저장 폴더 및 용량 상한 표시"
+
+[cli.help._root.settings.set-remote-transfer]
+about = "원격 전송 저장 폴더 또는 용량 상한 설정. 하나 이상 필수"
+
+[cli.help._root.settings.set-remote-transfer.arg.dir]
+help = "저장 폴더 경로(빈 문자열 = 기본값 `~/.tasty/transfers/`)"
+
+[cli.help._root.settings.set-remote-transfer.arg.max_mb]
+help = "최대 폴더 크기(MiB)"
+
+[cli.help._root.output.observe]
+about = "관찰자 관리 하위 명령"
+
+[cli.help._root.output.observe.start]
+about = "새 관찰자 등록"
+
+[cli.help._root.output.observe.start.arg.surface]
+help = "관찰할 서피스 ID(생략 = 모든 서피스)"
+
+[cli.help._root.output.observe.start.arg.parsers]
+help = "쉼표로 구분한 파서 ID(기본값: path,url,prompt_boundary,exit_code)"
+
+[cli.help._root.output.observe.start.arg.kinds]
+help = "쉼표로 구분한 종류 필터(기본값: 전체)"
+
+[cli.help._root.output.observe.start.arg.sink]
+help = "출력 대상: \"memory\" 또는 \"file\"(기본값: memory)"
+
+[cli.help._root.output.observe.start.arg.path]
+help = "파일 경로(--sink file에서만 사용. 생략 = ~/.tasty/observers/<id>.jsonl)"
+
+[cli.help._root.output.observe.start.arg.max_records]
+help = "메모리 출력 대상의 링 버퍼 상한(--sink memory에서만 사용. 0 = 무제한)"
+
+[cli.help._root.output.observe.stop]
+about = "ID로 관찰자 중지"
+
+[cli.help._root.output.observe.stop.arg.observer]
+help = "관찰자 ID(`output observe list`에서 확인)"
+
+[cli.help._root.output.observe.list]
+about = "활성 관찰자 모두 나열"
+
+[cli.help._root.output.observe.info]
+about = "관찰자 하나의 통계 표시"
+
+[cli.help._root.output.observe.info.arg.observer]
+help = "관찰자 ID(`output observe list`에서 확인)"
+
+[cli.help._root.file-handler.reload]
+about = "`~/.tasty/file-handlers.toml` 다시 읽기. host·plugin 항목은 유지"
+
+[cli.help._root.file-handler.dispatch]
+about = "파일 핸들러 흐름으로 경로 열기(탐색기 더블클릭과 같은 경로)"
+
+[cli.help._root.file-handler.dispatch.arg.path]
+help = "열 경로"
+
+[cli.help._root.file-handler.dispatch.arg.depth]
+help = "검사 깊이: `cheap`(확장자만) 또는 `deep`(내용 검사)"
+
+[cli.help._root.file-handler.dispatch.arg.origin_surface]
+help = "결과 서피스를 포커스된 페인 대신 이 서피스가 속한 페인의 탭으로 추가"
+
+[cli.help._root.file-handler.dispatch.arg.ignore_size_limit]
+help = "대용량 파일 확인 팝업을 생략하고 즉시 열기"
+
+[cli.help._root.clipboard.set-text]
+about = "로컬 클립보드에 텍스트 쓰기"
+
+[cli.help._root.clipboard.set-text.arg.text]
+help = "클립보드에 쓸 텍스트"
+
+[cli.help._root.hook-handler.list]
+about = "등록된 모든 훅 핸들러 나열(host/plugin/user, 비활성 포함)"
+
+[cli.help._root.hook-handler.reload]
+about = "`~/.tasty/hook-handlers.toml` 다시 읽기(사용자 항목만, host/plugin 유지)"
+
+[cli.help._root.hook-handler.dispatch]
+long = "등록된 훅 핸들러를 ID로 수동 실행합니다(테스트·자동화 진입점). IpcSequence 핸들러에서는 `--body`/`--header`/`--query`로 `${body.x}`/`${header.x}`/`${query.x}` 값을 채웁니다. 응답은 접수 확인뿐이며 핸들러 완료를 기다리지 않습니다."
+about = "등록된 훅 핸들러를 ID로 수동 실행(테스트·자동화 진입점)"
+
+[cli.help._root.hook-handler.dispatch.arg.id]
+help = "실행할 훅 핸들러 ID(예: `host/notify`, `user/wh-...`)"
+
+[cli.help._root.hook-handler.dispatch.arg.body]
+help = "치환 본문 JSON 값(객체/배열/스칼라). 선택 사항"
+
+[cli.help._root.hook-handler.dispatch.arg.header]
+help = "헤더 치환값 JSON 객체 `{\"X-Sig\":\"abc\"}`. 선택 사항"
+
+[cli.help._root.hook-handler.dispatch.arg.query]
+help = "쿼리 치환값 JSON 객체 `{\"token\":\"t\"}`. 선택 사항"
+
+[cli.help._root.completion-strategy.list]
+about = "등록된 모든 완료 전략 나열(host/plugin/user, 비활성 포함)"
+
+[cli.help._root.preset.list]
+about = "지정 종류의 프리셋 나열"
+
+[cli.help._root.preset.list.arg.kind]
+help = "종류: \"workspace\" | \"tab\" | \"pane\""
+
+[cli.help._root.preset.get]
+about = "프리셋 JSON 표시"
+
+[cli.help._root.preset.get.arg.kind]
+help = "프리셋 종류: workspace | tab | pane"
+
+[cli.help._root.preset.get.arg.name]
+help = "표시할 프리셋 이름"
+
+[cli.help._root.preset.save]
+about = "JSON 파일에서 프리셋 저장(\"-\"는 stdin 읽기)"
+
+[cli.help._root.preset.save.arg.kind]
+help = "프리셋 종류: workspace | tab | pane"
+
+[cli.help._root.preset.save.arg.name]
+help = "저장할 프리셋 이름"
+
+[cli.help._root.preset.save.arg.file]
+help = "JSON 파일 경로. \"-\"는 stdin 읽기"
+
+[cli.help._root.preset.save.arg.overwrite]
+help = "기존 프리셋 덮어쓰기 허용"
+
+[cli.help._root.preset.delete]
+about = "프리셋 삭제"
+
+[cli.help._root.preset.delete.arg.kind]
+help = "프리셋 종류: workspace | tab | pane"
+
+[cli.help._root.preset.delete.arg.name]
+help = "삭제할 프리셋 이름"
+
+[cli.help._root.preset.rename]
+about = "프리셋 이름 변경"
+
+[cli.help._root.preset.rename.arg.kind]
+help = "프리셋 종류: workspace | tab | pane"
+
+[cli.help._root.preset.rename.arg.from]
+help = "기존 프리셋 이름"
+
+[cli.help._root.preset.rename.arg.to]
+help = "새 프리셋 이름"
+
+[cli.help._root.preset.capture]
+about = "현재 워크스페이스/탭/페인을 프리셋으로 캡처"
+
+[cli.help._root.preset.capture.arg.kind]
+help = "프리셋 종류: workspace | tab | pane. `--source-id`가 가리키는 대상 결정"
+
+[cli.help._root.preset.capture.arg.source_id]
+help = "원본 ID: workspace_id(kind=workspace), tab_id(kind=tab), pane_id(kind=pane). 필수이며 CLI는 포커스 독립"
+
+[cli.help._root.preset.capture.arg.name]
+help = "프리셋 이름. 생략하면 고유 이름 자동 생성"
+
+[cli.help._root.preset.apply]
+about = "프리셋 적용. 포커스 유지(포커스 독립 CLI)"
+
+[cli.help._root.preset.apply.arg.kind]
+help = "프리셋 종류: workspace | tab | pane"
+
+[cli.help._root.preset.apply.arg.name]
+help = "적용할 프리셋 이름"
+
+[cli.help._root.preset.apply.arg.target_pane]
+help = "kind=tab일 때 대상 페인 ID"
+
+[cli.help._root.preset.apply.arg.target_workspace]
+help = "kind=pane일 때 대상 워크스페이스 ID"
+
+[cli.help._root.workspace-category.list]
+about = "워크스페이스 카테고리(사이드바 폴더) 나열"
+
+[cli.help._root.workspace-category.create]
+about = "새 카테고리 생성"
+
+[cli.help._root.workspace-category.create.arg.name]
+help = "카테고리 이름('normal' 예약됨, 대소문자 무시 중복 거부)"
+
+[cli.help._root.workspace-category.rename]
+about = "카테고리 이름 변경('normal'은 변경 불가)"
+
+[cli.help._root.workspace-category.rename.arg.id]
+help = "카테고리 ID(필수)"
+
+[cli.help._root.workspace-category.rename.arg.name]
+help = "새 이름"
+
+[cli.help._root.workspace-category.delete]
+about = "카테고리를 삭제하고 소속 워크스페이스를 'normal'로 이동('normal'은 삭제 불가)"
+
+[cli.help._root.workspace-category.delete.arg.id]
+help = "카테고리 ID(필수)"
+
+[cli.help._root.workspace-category.move]
+long = "카테고리 순서를 변경합니다('normal'은 인덱스 0에 고정, from/to는 1 이상). `--id`를 권장합니다. 카테고리 ID는 소유 윈도우를 식별하므로 포커스에 관계없이 같은 대상을 가리킵니다. `--from`은 윈도우 내부 인덱스여서 포커스된 윈도우에 적용됩니다."
+about = "카테고리 순서 변경('normal'은 인덱스 0에 고정, from/to는 1 이상)"
+
+[cli.help._root.workspace-category.move.arg.id]
+help = "이동할 카테고리 ID(권장, --from과 함께 사용 불가)"
+
+[cli.help._root.workspace-category.move.arg.from]
+help = "원본 인덱스(1 이상, 포커스 의존)"
+
+[cli.help._root.workspace-category.move.arg.to]
+help = "목적지 인덱스(1 이상)"
+
+[cli.help._root.screenshot.arg.path]
+help = "출력 PNG 경로"
+
+[cli.help._root.screenshot.arg.surface]
+help = "캡처할 터미널 서피스 ID(오프스크린, 포커스 독립)"
+
+[cli.help._root.screenshot.arg.window]
+help = "캡처할 윈도우 ID(tasty 전체 프레임). 여러 윈도우가 열려 있으면 필수. `list windows`에 없는 모달 윈도우도 지정 가능"
+
+[cli.help_frame]
+default = "기본값: {}"
+usage = "사용법:"
+commands = "명령:"
+arguments = "인자:"
+options = "옵션:"
+help = "도움말 표시"
+version = "버전 표시"
+help_command = "이 도움말 또는 지정한 하위 명령의 도움말 표시"
+available = "'{}'에서 사용할 수 있는 하위 명령:"
+required = "'{}'에 필요한 인자:"
+optional = "선택 사항:"
+details = "자세한 내용은 '{} --help'를 실행하세요."
+error = "오류:"
+
+[cli.parse]
+cause = "파서 상세: {}"
+invalid_value = "유효하지 않은 값입니다."
+unknown_argument = "알 수 없는 인자입니다."
+invalid_subcommand = "알 수 없는 하위 명령입니다."
+no_equals = "이 옵션에는 등호가 필요합니다."
+value_validation = "인자 값이 검증을 통과하지 못했습니다."
+too_many_values = "값이 너무 많습니다."
+too_few_values = "값이 부족합니다."
+wrong_number = "값의 개수가 맞지 않습니다."
+conflict = "함께 사용할 수 없는 인자입니다."
+missing_argument = "필수 인자가 누락되었습니다."
+missing_subcommand = "하위 명령이 필요합니다."
+invalid_utf8 = "입력이 유효한 UTF-8이 아닙니다."
+io = "인자를 읽는 중 입출력 오류가 발생했습니다."
+format = "인자 형식을 처리하지 못했습니다."
+parse = "인자를 해석하지 못했습니다."
+argument = "인자: {}"
+prior = "충돌하는 인자: {}"
+value = "값: {}"
+valid_values = "허용 값: {}"
+valid_commands = "사용 가능한 명령: {}"
+actual = "입력 개수: {}"
+expected = "필요 개수: {}"
+minimum = "최소 개수: {}"
+suggestion = "추천: {}"

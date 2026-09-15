@@ -83,7 +83,10 @@ fn format_args(cmd: &clap::Command) -> String {
 /// Resolve the deepest matched command from raw CLI args.
 fn resolve_command_path() -> (clap::Command, String) {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let root = crate::help_i18n::command();
+    let root = match tasty_host_plugin::plugin_root() {
+        Some(root) => dynamic::build_augmented_cli(&dynamic::discover_plugin_clis(&root)),
+        None => crate::help_i18n::command(),
+    };
     let mut current = root.clone();
     let mut matched_path: Vec<String> = Vec::new();
 
@@ -186,17 +189,20 @@ pub fn format_parse_error(err: clap::Error) {
     use clap::error::ErrorKind;
 
     match err.kind() {
-        ErrorKind::MissingRequiredArgument
-        | ErrorKind::InvalidValue
-        | ErrorKind::UnknownArgument
-        | ErrorKind::InvalidSubcommand => {
+        ErrorKind::DisplayHelp
+        | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        | ErrorKind::DisplayVersion => err.exit(),
+        _ => {
             let (current, cmd_path) = resolve_command_path();
             let children = visible_subcommands(&current);
 
-            eprintln!("{}", err);
+            eprintln!("{}", crate::help_error::render(&err));
 
             if !children.is_empty() {
-                eprintln!("Available subcommands for '{}':", cmd_path);
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.help_frame.available", &cmd_path)
+                );
                 for sub in &children {
                     let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
                     let args = format_args(sub);
@@ -212,23 +218,23 @@ pub fn format_parse_error(err: clap::Error) {
                 let optional: Vec<_> = args.iter().filter(|a| !a.required).collect();
 
                 if !required.is_empty() {
-                    eprintln!("Required arguments for '{}':", cmd_path);
+                    eprintln!(
+                        "{}",
+                        tasty_i18n::t_fmt("cli.help_frame.required", &cmd_path)
+                    );
                     for arg in &required {
                         eprintln!("{}", arg.detail());
                     }
                 }
                 if !optional.is_empty() {
-                    eprintln!("Optional:");
+                    eprintln!("{}", tasty_i18n::t("cli.help_frame.optional"));
                     for arg in &optional {
                         eprintln!("{}", arg.detail());
                     }
                 }
             }
             eprintln!();
-            eprintln!("Run '{} --help' for full details.", cmd_path);
-        }
-        _ => {
-            err.exit();
+            eprintln!("{}", tasty_i18n::t_fmt("cli.help_frame.details", &cmd_path));
         }
     }
     std::process::exit(2);

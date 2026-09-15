@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.115"
+version = "0.1.116"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -134,13 +134,13 @@ name = "markdown"
 description = "Markdown viewer commands"
 description_i18n_key = "markdown.cli.desc"
 subcommands = [
-    { name = "reload", ipc_method = "markdown.reload", args = "reload_args", description = "Force reload the markdown surface from disk" },
-    { name = "recent", ipc_method = "markdown.recent", args = "recent_args", description = "List recently opened markdown files (newest first, up to 10)" },
+    { name = "reload", ipc_method = "markdown.reload", args = "reload_args", description = "Force reload the markdown surface from disk", description_i18n_key = "markdown.cli.sub.reload.description" },
+    { name = "recent", ipc_method = "markdown.recent", args = "recent_args", description = "List recently opened markdown files (newest first, up to 10)", description_i18n_key = "markdown.cli.sub.recent.description" },
 ]
 
 [contributes.cli.arg_groups.reload_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
+    { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID", help_i18n_key = "markdown.cli.arg.reload_args.surface.help" },
 ]
 
 # recent 조회는 인자 없음 — 빈 그룹이라도 명시적으로 가리켜야 한다(validator). plugin

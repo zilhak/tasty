@@ -1,5 +1,5 @@
 [codex.cli]
-desc = "Codex CLI 子セッションの管理"
+desc = "Codex CLI連携（launch、spawn、kill、tellなど）"
 
 [codex]
 "settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
@@ -67,3 +67,189 @@ mkdir_failed = "codex 設定ディレクトリを作成できませんでした:
 no_home = "HOME が設定されていません — ~/.codex/config.toml の場所を特定できません"
 encode_failed = "codex 設定を TOML に変換できませんでした: {detail}"
 write_failed = "codex 設定ファイルを書き込めませんでした: {detail}"
+
+[codex.cli.sub.launch]
+description = "新しいワークスペースを作成しターミナルでCodexを起動"
+
+[codex.cli.sub.spawn]
+description = "分割サーフェスに子Codexを作成。即時に戻り、子がidleになるたび、および終了時に親サーフェスへ通知します。最初の移行だけではありません。"
+
+[codex.cli.sub.children]
+description = "指定したCodex親の子を一覧表示"
+
+[codex.cli.sub.parent]
+description = "指定した子サーフェスの親CodexサーフェスIDを返す"
+
+[codex.cli.sub.state]
+description = "子一つの状態を照会：idle、needs_input、active、exited（実際のサーフェスと照合）"
+
+[codex.cli.sub.tell]
+description = "Codexインスタンスにメッセージを送信（改行を維持し末尾で確定）。即時に戻り、対象がidleになるたび、および終了時に呼び出し元へ通知します。最初の移行だけではありません。"
+
+[codex.cli.sub.notify-caller]
+description = "内部用：spawn/tellの子の状態移行を呼び出し元へ通知し、兄弟の一度限りフックを削除。対象が残る場合（process-exitでない場合）は再登録して実際の終了まで通知します。spawn/tellが登録したフックから呼び出し、直接は使用しません。"
+
+[codex.cli.sub.broadcast]
+description = "親Codexインスタンスの全ての子へテキストを一斉送信"
+
+[codex.cli.sub.kill]
+description = "子インデックスでCodexインスタンスを終了"
+
+[codex.cli.sub.respawn]
+description = "子Codexインスタンスを再生成"
+
+[codex.cli.sub.reboot]
+description = "サーフェスのCodexを再起動し同じセッションを再開（遅延終了 + codex resume）。ターンの最後の操作として呼び出してください。遅延後の処理は中断されます。"
+
+[codex.cli.sub.install]
+description = "Codex CLI設定にTastyフックをインストール"
+
+[codex.cli.sub.uninstall]
+description = "Codex CLI設定からTastyフックを削除"
+
+[codex.cli.sub.hook]
+description = "Codexフック連携（Codex CLIのフックシステムから呼び出し）。呼び出し時にstdinからJSONペイロード（session_id）を読み取ります。"
+
+[codex.cli.arg.launch_args.workspace]
+help = "作成するワークスペース名（既定値：\"codex\"）"
+
+[codex.cli.arg.launch_args.directory]
+help = "codex起動前に移動する作業ディレクトリ"
+
+[codex.cli.arg.launch_args.task]
+help = "codexに --task <text> で渡す初期タスク"
+
+[codex.cli.arg.launch_args.approval]
+help = "承認ポリシー（untrusted|on-request|never）。今回だけdefault_approval_policyを上書きします。未指定時は 'never' のため、別の対話型ポリシーを選ぶ場合のみ指定"
+
+[codex.cli.arg.launch_args.sandbox]
+help = "サンドボックスモード（read-only|workspace-write|danger-full-access）。今回だけdefault_sandbox_modeを上書き"
+
+[codex.cli.arg.launch_args.full_auto]
+help = "承認とサンドボックスを両方省略（--dangerously-bypass-approvals-and-sandbox）。--approval/--sandboxと併用不可"
+
+[codex.cli.arg.parent_args.surface]
+help = "親を照会する子CodexサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[codex.cli.arg.state_args.surface]
+help = "照会する子CodexサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[codex.cli.arg.tell_args.message]
+help = "送信するメッセージ。改行を維持して自動確定"
+
+[codex.cli.arg.tell_args.surface]
+help = "メッセージを受け取るCodexサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[codex.cli.arg.tell_args.caller_surface]
+help = "対象が終了状態に達したとき通知するサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[codex.cli.arg.spawn_args.surface]
+help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+
+[codex.cli.arg.spawn_args.workspace]
+help = "対象ワークスペース（IDまたは名前）"
+
+[codex.cli.arg.spawn_args.pane]
+help = "対象ペインID（既定値：ワークスペースの最初のペイン）"
+
+[codex.cli.arg.spawn_args.cwd]
+help = "子Codexプロセスの作業ディレクトリ"
+
+[codex.cli.arg.spawn_args.prompt]
+help = "作成後に子へ送る初期プロンプト"
+
+[codex.cli.arg.spawn_args.role]
+help = "子の役割ラベル（broadcast --roleで使用）"
+
+[codex.cli.arg.spawn_args.nickname]
+help = "タブに表示するニックネーム"
+
+[codex.cli.arg.spawn_args.approval]
+help = "承認ポリシー（untrusted|on-request|never）。今回だけdefault_approval_policyを上書きします。未指定時は 'never' なので無人自動化が承認待ちで止まりません。対話型ポリシーを希望する場合のみ指定"
+
+[codex.cli.arg.spawn_args.sandbox]
+help = "サンドボックスモード（read-only|workspace-write|danger-full-access）。今回だけdefault_sandbox_modeを上書きします。ファイルを書いてはいけないレビュー・照合用の子には \"read-only\" を使用"
+
+[codex.cli.arg.spawn_args.full_auto]
+help = "承認とサンドボックスを両方省略（--dangerously-bypass-approvals-and-sandbox）。--approval/--sandboxと併用不可"
+
+[codex.cli.arg.children_args.surface]
+help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+
+[codex.cli.arg.notify_caller_args.caller]
+help = "通知を受け取るサーフェスID"
+
+[codex.cli.arg.notify_caller_args.target]
+help = "完了したサーフェスID"
+
+[codex.cli.arg.notify_caller_args.kind]
+help = "コマンド: spawn | tell"
+
+[codex.cli.arg.broadcast_args.text]
+help = "一斉送信するテキスト。確定には \\r を使用（例：\"hello\\r\"）"
+
+[codex.cli.arg.broadcast_args.surface]
+help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+
+[codex.cli.arg.broadcast_args.role]
+help = "この役割ラベルの子だけに送信"
+
+[codex.cli.arg.kill_args.surface]
+help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+
+[codex.cli.arg.kill_args.child]
+help = "終了する子インデックス"
+
+[codex.cli.arg.respawn_args.surface]
+help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+
+[codex.cli.arg.respawn_args.child]
+help = "再生成する子インデックス"
+
+[codex.cli.arg.respawn_args.cwd]
+help = "再生成するプロセスの作業ディレクトリを上書き"
+
+[codex.cli.arg.respawn_args.prompt]
+help = "再生成した子へ送る初期プロンプト"
+
+[codex.cli.arg.respawn_args.role]
+help = "子の役割ラベルを置換"
+
+[codex.cli.arg.respawn_args.nickname]
+help = "子の表示ニックネームを置換"
+
+[codex.cli.arg.respawn_args.approval]
+help = "承認ポリシー（untrusted|on-request|never）。今回だけdefault_approval_policyを上書きします。未指定時は 'never' のため、別の対話型ポリシーを選ぶ場合のみ指定"
+
+[codex.cli.arg.respawn_args.sandbox]
+help = "サンドボックスモード（read-only|workspace-write|danger-full-access）。今回だけdefault_sandbox_modeを上書き"
+
+[codex.cli.arg.respawn_args.full_auto]
+help = "承認とサンドボックスを両方省略（--dangerously-bypass-approvals-and-sandbox）。--approval/--sandboxと併用不可"
+
+[codex.cli.arg.reboot_args.surface]
+help = "対象CodexサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[codex.cli.arg.reboot_args.delay]
+help = "Codex終了前の待機時間（秒、既定値：5）"
+
+[codex.cli.arg.reboot_args.prompt]
+help = "再起動したCodexの再起動案内プロンプトに追加するテキスト"
+
+[codex.cli.arg.reboot_args.approval]
+help = "再開セッションの承認ポリシー（untrusted|on-request|never）。今回だけdefault_approval_policyを上書きします。未指定時は 'never' のため、別の対話型ポリシーを選ぶ場合のみ指定"
+
+[codex.cli.arg.reboot_args.sandbox]
+help = "再開セッションのサンドボックスモード（read-only|workspace-write|danger-full-access）。今回だけdefault_sandbox_modeを上書き"
+
+[codex.cli.arg.reboot_args.full_auto]
+help = "承認とサンドボックスを両方省略（--dangerously-bypass-approvals-and-sandbox）。--approval/--sandboxと併用不可"
+
+[codex.cli.arg.hook_args.event]
+help = "フックイベント名：stop、prompt-submit、session-start、permission-request、post-tool-use、interrupt"
+
+[codex.cli.arg.hook_args.surface]
+help = "フック対象サーフェスID"
+
+[codex.cli.arg.hook_args.session]
+help = "CodexセッションID。Codexフック呼び出し時にstdin JSONの 'session_id' から自動設定"

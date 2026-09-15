@@ -21,3 +21,15 @@ html = "HTML"
 [preset.field]
 url = "URL"
 url_hint = "https://…"
+
+[html.cli]
+desc = "HTML viewer commands"
+
+[html.cli.sub.open]
+description = "Open a URL as HTML surface in the focused tab"
+
+[html.cli.arg.open_args.url]
+help = "URL (http://, https://, file://) or local path"
+
+[html.cli.arg.open_args.surface]
+help = "Target surface ID (default: convert focused)"

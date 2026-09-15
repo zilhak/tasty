@@ -1,5 +1,5 @@
 [claude.cli]
-desc = "Claude Code の子セッションを管理します"
+desc = "Claude Code CLI連携（launch、spawn、killなど）"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
@@ -125,3 +125,321 @@ no_active_session = "surface {} にアクティブな claude セッションが�
 
 [settings.subtab]
 claude = "Claude Code"
+
+[claude.cli.sub.launch]
+description = "新しいワークスペースでClaude Codeを起動"
+
+[claude.cli.sub.spawn]
+description = "ワークスペースに子Claudeを作成。即時に戻り、子がidle/needs_inputへ移行するたび、および終了時に呼び出し元サーフェスへ通知します。最初の移行だけではありません。"
+
+[claude.cli.sub.children]
+description = "指定したClaude親の子を一覧表示"
+
+[claude.cli.sub.parent]
+description = "指定したClaude子の親を表示"
+
+[claude.cli.sub.state]
+description = "子一つの状態を照会：idle、needs_input、active、exited（実際のサーフェスと照合）"
+
+[claude.cli.sub.tell]
+description = "Claudeインスタンスに複数行メッセージを送信（末尾で確定）。即時に戻り、対象がidle/needs_inputへ移行するたび、および終了時に呼び出し元サーフェスへ通知します。最初の移行だけではありません。"
+
+[claude.cli.sub.broadcast]
+description = "親Claudeインスタンスの全ての子へテキストを一斉送信"
+
+[claude.cli.sub.kill]
+description = "子インデックスでClaudeインスタンスを終了"
+
+[claude.cli.sub.respawn]
+description = "子Claudeインスタンスを再生成"
+
+[claude.cli.sub.reboot]
+description = "サーフェスのClaudeを再起動し同じセッションを再開（遅延終了 + claude -r）。ターンの最後の操作として呼び出してください。遅延後の処理は中断されます。"
+
+[claude.cli.sub.child-profile]
+description = "子インスタンスに永続的なClaudeセッションプロファイルを適用（--childのサーフェスを解決し 'claude reboot --profile' と同じ手順を実行）。子だけを再起動するためrebootと異なり呼び出し元のターンは中断しません。子がidle/needs_inputへ移行した時と終了時に呼び出し元へ通知します。"
+
+[claude.cli.sub.install]
+description = "~/.claude/settings.jsonにtastyフックをインストール"
+
+[claude.cli.sub.uninstall]
+description = "~/.claude/settings.jsonからtastyフックを削除"
+
+[claude.cli.sub.hook]
+description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、message、notification_type）を読み取ります。"
+
+[claude.cli.sub.checklist-hook]
+description = "Stopフックゲートの判定。stdinからJSON（session_id、prompt_id、stop_hook_active、last_assistant_message）を読み取ります。--gateで判定する登録ゲートを選択（既定値：continue-checklist）。"
+
+[claude.cli.sub.checklist-enable]
+description = "Stopフックゲートを有効化（有効マーカーを作成）。既定値は組み込みcontinue-checklistゲート"
+
+[claude.cli.sub.checklist-disable]
+description = "Stopフックゲートを無効化（有効マーカーを削除）。既に無効でも成功"
+
+[claude.cli.sub.checklist-status]
+description = "Stopフックゲートの有効状態を表示。全ゲートを一度に見るには 'claude gate-list' を使用"
+
+[claude.cli.sub.notify-error]
+description = "内部用：エラー後の子の停止通知を呼び出し元サーフェスへ送信（claude-error-stalledのhook.setコマンド）。子の状態や完了フックの変更・削除・再登録はしません。"
+
+[claude.cli.sub.notify-done]
+description = "内部用：spawn/tell状態移行を呼び出し元へ通知し、兄弟の一度限りフックを削除します。対象サーフェスが残る場合（process-exitでない場合）は三つの兄弟フックを再登録し、実際の終了まで通知を継続します（claude-idle/needs-input/process-exitのhook.setコマンド）。"
+
+[claude.cli.sub.profile-register]
+description = "名前でClaudeセッションプロファイルを登録（plugin専用領域にファイルを複製。同名の再登録は内容を更新）"
+
+[claude.cli.sub.profile-unregister]
+description = "登録済みClaudeセッションプロファイルを削除"
+
+[claude.cli.sub.profile-list]
+description = "名前で適用可能なセッションプロファイル・Stopフックゲートと常設の組み込みフックを一覧表示"
+
+[claude.cli.sub.profile-show]
+description = "名前で適用する内容を表示：登録済みプロファイルの生のsettings JSON、またはゲートから生成したStopフック断片"
+
+[claude.cli.sub.profile-current]
+description = "サーフェスに適用されたClaudeセッションプロファイル（存在する場合）と常設の組み込みフックを表示"
+
+[claude.cli.sub.gate-register]
+description = "名前でStopフックゲートを登録（plugin専用領域に本文を複製。同名の再登録は本文と定義を両方置換）"
+
+[claude.cli.sub.gate-unregister]
+description = "登録済みStopフックゲートを削除（定義と本文の複製を削除）"
+
+[claude.cli.sub.gate-list]
+description = "登録済みおよび組み込みStopフックゲートの有効完了マーカー・回数制限・有効状態を一覧表示"
+
+[claude.cli.sub.gate-show]
+description = "Stopフックゲートの定義と本文を表示"
+
+[claude.cli.arg.launch_args.workspace]
+help = "作成するワークスペース名（既定値：\"claude\"）"
+
+[claude.cli.arg.launch_args.directory]
+help = "claude起動前に移動する作業ディレクトリ"
+
+[claude.cli.arg.launch_args.task]
+help = "claudeに --task <text> で渡す初期タスク"
+
+[claude.cli.arg.launch_args.profile_file]
+help = "claude起動時に --settings で渡すセッションプロファイル（settings JSON）。--profileと併用不可"
+
+[claude.cli.arg.launch_args.profile]
+help = "適用する登録済みセッションプロファイルまたはStopフックゲート名。複数はカンマ区切りで一つのファイルに統合（'claude profile-register'、'claude gate-register' 参照）。--profile-fileと併用不可"
+
+[claude.cli.arg.launch_args.permission_mode]
+help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+
+[claude.cli.arg.spawn_args.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.spawn_args.workspace]
+help = "対象ワークスペース（IDまたは名前）"
+
+[claude.cli.arg.spawn_args.pane]
+help = "対象ペインID（既定値：ワークスペースの最初のペイン）"
+
+[claude.cli.arg.spawn_args.cwd]
+help = "子Claudeプロセスの作業ディレクトリ"
+
+[claude.cli.arg.spawn_args.role]
+help = "子の役割ラベル（broadcast --roleで使用）"
+
+[claude.cli.arg.spawn_args.nickname]
+help = "タブに表示するニックネーム"
+
+[claude.cli.arg.spawn_args.prompt]
+help = "作成後に子へ送る初期プロンプト"
+
+[claude.cli.arg.spawn_args.profile_file]
+help = "子の起動時に --settings で渡すClaudeセッションプロファイル（settings JSON）。--profileと併用不可"
+
+[claude.cli.arg.spawn_args.profile]
+help = "適用する登録済みセッションプロファイルまたはStopフックゲート名。複数はカンマ区切りで一つのファイルに統合（'claude profile-register'、'claude gate-register' 参照）。--profile-fileと併用不可"
+
+[claude.cli.arg.spawn_args.permission_mode]
+help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+
+[claude.cli.arg.children_args.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.parent_args.surface]
+help = "親を照会する子ClaudeサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.state_args.surface]
+help = "照会する子ClaudeサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.tell_args.message]
+help = "送信するメッセージ。改行を維持して自動確定"
+
+[claude.cli.arg.tell_args.surface]
+help = "メッセージを受け取るClaudeサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.tell_args.caller_surface]
+help = "完了通知を受け取るサーフェス（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.notify_done_args.caller_surface]
+help = "spawn/tellを呼び出し通知を受け取るサーフェス"
+
+[claude.cli.arg.notify_done_args.target_surface]
+help = "spawn/tellが完了したサーフェス"
+
+[claude.cli.arg.notify_done_args.command]
+help = "完了したコマンド：spawnまたはtell"
+
+[claude.cli.arg.notify_error_args.caller_surface]
+help = "spawn/tellを呼び出し通知を受け取るサーフェス"
+
+[claude.cli.arg.notify_error_args.target_surface]
+help = "エラー後に停止した子サーフェス"
+
+[claude.cli.arg.broadcast_args.text]
+help = "一斉送信するテキスト。確定には \\r を使用（例：\"hello\\r\"）"
+
+[claude.cli.arg.broadcast_args.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.broadcast_args.role]
+help = "この役割ラベルの子だけに送信"
+
+[claude.cli.arg.kill_args.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.kill_args.child_index]
+help = "終了する子インデックス"
+
+[claude.cli.arg.respawn_args.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.respawn_args.child_index]
+help = "再生成する子インデックス"
+
+[claude.cli.arg.respawn_args.cwd]
+help = "再生成するプロセスの作業ディレクトリを上書き"
+
+[claude.cli.arg.respawn_args.role]
+help = "子の役割ラベルを置換"
+
+[claude.cli.arg.respawn_args.nickname]
+help = "子の表示ニックネームを置換"
+
+[claude.cli.arg.respawn_args.prompt]
+help = "再生成した子へ送る初期プロンプト"
+
+[claude.cli.arg.respawn_args.profile_file]
+help = "子の再起動時に --settings で渡すClaudeセッションプロファイル（settings JSON）。--profileと併用不可"
+
+[claude.cli.arg.respawn_args.profile]
+help = "適用する登録済みセッションプロファイルまたはStopフックゲート名。複数はカンマ区切りで一つのファイルに統合（'claude profile-register'、'claude gate-register' 参照）。--profile-fileと併用不可"
+
+[claude.cli.arg.respawn_args.permission_mode]
+help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+
+[claude.cli.arg.reboot_args.surface]
+help = "対象ClaudeサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.reboot_args.delay]
+help = "Claude終了前の待機時間（秒、既定値：5）"
+
+[claude.cli.arg.reboot_args.prompt]
+help = "再起動したClaudeの再起動案内プロンプトに追加するテキスト"
+
+[claude.cli.arg.reboot_args.profile_file]
+help = "再開時に --settings で適用するClaudeセッションプロファイル（settings JSON）。サーフェスに保存され、--clear-profileで解除するまで次回の再起動に継承されます。--profileと併用不可"
+
+[claude.cli.arg.reboot_args.profile]
+help = "適用する登録済みセッションプロファイル/Stopフックゲート名（複数はカンマ区切りで一ファイルに統合。'claude profile-register'、'claude gate-register' 参照）。サーフェスに保存し、再起動ごとに登録情報を読み直して編集を反映します。--clear-profileまで継承。--profile-fileと併用不可"
+
+[claude.cli.arg.reboot_args.clear_profile]
+help = "再開前に既存のセッションプロファイルを解除（パスまたは名前指定）"
+
+[claude.cli.arg.reboot_args.permission_mode]
+help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+
+[claude.cli.arg.child_profile_args.surface]
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.child_profile_args.child_index]
+help = "プロファイルを適用する子インデックス（'claude children' で確認）"
+
+[claude.cli.arg.child_profile_args.delay]
+help = "子Claude終了前の待機時間（秒、既定値：5）"
+
+[claude.cli.arg.child_profile_args.prompt]
+help = "再起動した子の再起動案内プロンプトに追加するテキスト"
+
+[claude.cli.arg.child_profile_args.profile_file]
+help = "再開時に子へ --settings で適用するClaudeセッションプロファイル（settings JSON）。子サーフェスに保存し、--clear-profileまで次回の再起動に継承。--profileと併用不可"
+
+[claude.cli.arg.child_profile_args.profile]
+help = "子に適用する登録済みセッションプロファイル/Stopフックゲート名（複数はカンマ区切りで一ファイルに統合。'claude profile-register'、'claude gate-register' 参照）。子サーフェスに保存し再起動ごとに登録情報を読み直し、--clear-profileまで継承。--profile-fileと併用不可"
+
+[claude.cli.arg.child_profile_args.clear_profile]
+help = "再開前に子の既存セッションプロファイルを解除（パスまたは名前指定）"
+
+[claude.cli.arg.child_profile_args.permission_mode]
+help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+
+[claude.cli.arg.hook_args.event]
+help = "フックイベント名（例：stop、notification、session-end、prompt-submit、session-start、subagent-stop、pre-tool-use、post-tool-use）"
+
+[claude.cli.arg.hook_args.surface]
+help = "フック対象サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.hook_args.session]
+help = "Claude CodeセッションID。フック呼び出し時にstdin JSONの 'session_id' から自動設定"
+
+[claude.cli.arg.hook_args.message]
+help = "フックメッセージ（通知トークン抽出に使用）。stdin JSONの 'message' から自動設定"
+
+[claude.cli.arg.hook_args.notification_type]
+help = "Claude Code通知のサブタイプ（例：permission_prompt、idle_prompt）。stdin JSONの 'notification_type' から自動設定。needs_input信号からidle_promptを除外する際に使用"
+
+[claude.cli.arg.checklist_hook_args.surface]
+help = "ゲート対象サーフェスID。セッションの目標照会に使用。既定値は呼び出し元のTASTY_SURFACE_ID"
+
+[claude.cli.arg.checklist_hook_args.session_id]
+help = "Claude CodeセッションID。stdin JSONの 'session_id' から自動設定"
+
+[claude.cli.arg.checklist_hook_args.prompt_id]
+help = "Claude Codeのプロンプト/ターンID。新しいユーザーターンで変わり、ブロック後の延長中は維持されます。stdin JSONの 'prompt_id' から自動設定"
+
+[claude.cli.arg.checklist_hook_args.stop_hook_active]
+help = "Claude Code自身のstop-hook-activeフラグの有無（主判定ではなく整合確認用）。stdin JSONの 'stop_hook_active'（\"true\"/\"false\"）から自動設定"
+
+[claude.cli.arg.checklist_hook_args.last_assistant_message]
+help = "完了マーカーを探すassistantの最終メッセージ。stdin JSONの 'last_assistant_message' から自動設定"
+
+[claude.cli.arg.checklist_hook_args.gate]
+help = "本文・完了マーカー・回数制限で判定するStopフックゲート名（'claude gate-register' 参照）。既定値は組み込みcontinue-checklist"
+
+[claude.cli.arg.checklist_gate_args.gate]
+help = "有効化/無効化/照会するStopフックゲート名（'claude gate-register' 参照）。既定値は組み込みcontinue-checklist"
+
+[claude.cli.arg.profile_register_args.name]
+help = "プロファイルの登録名（英小文字・数字・'-'、最大32文字）"
+
+[claude.cli.arg.profile_register_args.file]
+help = "登録するsettings JSONファイルのパス（plugin専用領域に複製）"
+
+[claude.cli.arg.profile_name_args.name]
+help = "登録済みプロファイル名"
+
+[claude.cli.arg.profile_current_args.surface]
+help = "照会するサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[claude.cli.arg.gate_register_args.name]
+help = "ゲートの登録名（英小文字・数字・'-'、最大32文字）。セッションプロファイルと名前空間を共有するため、反対側に同名があれば隠さず登録を拒否"
+
+[claude.cli.arg.gate_register_args.body_file]
+help = "登録するチェックリスト本文のMarkdownパス（plugin専用領域に複製）。モデルに完了宣言方法を伝えるため、このゲートの有効な完了マーカーが必須です。"
+
+[claude.cli.arg.gate_register_args.sentinel]
+help = "ターンを終えるためモデルが出力する完了マーカー。既定値は組み込みマーカー。空値は全メッセージに一致するため禁止"
+
+[claude.cli.arg.gate_register_args.rounds]
+help = "ゲートの回数上限（1以上）。省略時はpluginの 'continue-checklist round limit' 設定を使用"
+
+[claude.cli.arg.gate_name_args.name]
+help = "登録済みゲート名"

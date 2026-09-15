@@ -74,6 +74,7 @@ fn parent_home_matrix() {
     tracing::info!("host/SDK parent home matrix: {cases} cases passed");
 }
 
+#[cfg(test)]
 fn check_sdk() {
     let expected = std::env::var("PARENT_HOME_EXPECTED").unwrap();
     let env = tasty_plugin_sdk::PluginEnv::load().unwrap();
@@ -89,6 +90,7 @@ fn check_sdk() {
     );
 }
 
+#[cfg(test)]
 fn check_host() {
     let expected = std::env::var("PARENT_HOME_EXPECTED").unwrap();
     let code = std::env::var("PARENT_HOME_CODE").unwrap();

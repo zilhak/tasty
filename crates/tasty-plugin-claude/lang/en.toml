@@ -1,5 +1,5 @@
 [claude.cli]
-desc = "Manage Claude Code child sessions"
+desc = "Claude Code CLI integration (launch, spawn, kill, etc.)"
 
 [claude]
 "settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
@@ -125,3 +125,321 @@ no_active_session = "no active claude session on surface {} (claude-session-id m
 
 [settings.subtab]
 claude = "Claude Code"
+
+[claude.cli.sub.launch]
+description = "Launch Claude Code in a new workspace"
+
+[claude.cli.sub.spawn]
+description = "Spawn a child Claude instance into a workspace. Returns immediately; a notification is delivered to the caller surface every time the child transitions to idle/needs_input, and once more when it exits — not just the first transition."
+
+[claude.cli.sub.children]
+description = "List children of the specified Claude parent"
+
+[claude.cli.sub.parent]
+description = "Show the parent of the specified Claude child"
+
+[claude.cli.sub.state]
+description = "Query a single child's status: idle, needs_input, active, or exited (live-surface cross-checked)"
+
+[claude.cli.sub.tell]
+description = "Send a message to a Claude instance (multi-line, submits at end). Returns immediately; a notification is delivered to the caller surface every time the target transitions to idle/needs_input, and once more when it exits — not just the first transition."
+
+[claude.cli.sub.broadcast]
+description = "Broadcast text to all children of a parent Claude instance"
+
+[claude.cli.sub.kill]
+description = "Kill a child Claude instance by child index"
+
+[claude.cli.sub.respawn]
+description = "Respawn a child Claude instance"
+
+[claude.cli.sub.reboot]
+description = "Restart the Claude instance in a surface and resume the same session (delayed kill + claude -r). Call this as the LAST action of a turn — anything after the delay is cut off."
+
+[claude.cli.sub.child-profile]
+description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits."
+
+[claude.cli.sub.install]
+description = "Install tasty hooks into ~/.claude/settings.json"
+
+[claude.cli.sub.uninstall]
+description = "Uninstall tasty hooks from ~/.claude/settings.json"
+
+[claude.cli.sub.hook]
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type) when invoked by Claude Code's hook system."
+
+[claude.cli.sub.checklist-hook]
+description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
+
+[claude.cli.sub.checklist-enable]
+description = "Turn on a Stop-hook gate (creates its enabled marker). Defaults to the built-in continue-checklist gate."
+
+[claude.cli.sub.checklist-disable]
+description = "Turn off a Stop-hook gate (removes its enabled marker). Succeeds even if it was already off."
+
+[claude.cli.sub.checklist-status]
+description = "Show whether a Stop-hook gate is currently on. Use 'claude gate-list' to see every gate's on/off at once."
+
+[claude.cli.sub.notify-error]
+description = "Internal: deliver a 'child stalled after an error' notification to the caller surface (invoked as the hook.set command for claude-error-stalled). Does not touch child state, and does not clean up or re-arm the completion hooks."
+
+[claude.cli.sub.notify-done]
+description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit)."
+
+[claude.cli.sub.profile-register]
+description = "Register a Claude session profile under a name (copies the file into plugin-private storage; re-registering the same name updates its content)"
+
+[claude.cli.sub.profile-unregister]
+description = "Remove a registered Claude session profile"
+
+[claude.cli.sub.profile-list]
+description = "List everything attachable by name — registered Claude session profiles and Stop-hook gates — plus the always-installed built-in hooks"
+
+[claude.cli.sub.profile-show]
+description = "Show what a name attaches — the raw settings JSON of a registered Claude session profile, or the generated Stop-hook fragment of a gate"
+
+[claude.cli.sub.profile-current]
+description = "Show which Claude session profile (if any) is attached to a surface, plus the always-installed built-in hooks"
+
+[claude.cli.sub.gate-register]
+description = "Register a Stop-hook gate under a name (copies the body file into plugin-private storage; re-registering the same name replaces both the body and the definition)"
+
+[claude.cli.sub.gate-unregister]
+description = "Remove a registered Stop-hook gate (deletes both its definition and its body copy)"
+
+[claude.cli.sub.gate-list]
+description = "List registered Stop-hook gates plus the built-in ones, with each gate's effective sentinel, round limit and on/off state"
+
+[claude.cli.sub.gate-show]
+description = "Show a Stop-hook gate's definition and body text"
+
+[claude.cli.arg.launch_args.workspace]
+help = "Workspace name to create (defaults to \"claude\")"
+
+[claude.cli.arg.launch_args.directory]
+help = "Working directory to cd into before launching claude"
+
+[claude.cli.arg.launch_args.task]
+help = "Initial task passed to claude as --task <text>"
+
+[claude.cli.arg.launch_args.profile_file]
+help = "Claude session profile (settings JSON) injected via --settings when launching claude. Mutually exclusive with --profile"
+
+[claude.cli.arg.launch_args.profile]
+help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file"
+
+[claude.cli.arg.launch_args.permission_mode]
+help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+
+[claude.cli.arg.spawn_args.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.spawn_args.workspace]
+help = "Target workspace (ID or name)"
+
+[claude.cli.arg.spawn_args.pane]
+help = "Target pane ID (defaults to the first pane in the workspace)"
+
+[claude.cli.arg.spawn_args.cwd]
+help = "Working directory for the child Claude process"
+
+[claude.cli.arg.spawn_args.role]
+help = "Role label attached to the child (used by broadcast --role)"
+
+[claude.cli.arg.spawn_args.nickname]
+help = "Display nickname shown on the tab"
+
+[claude.cli.arg.spawn_args.prompt]
+help = "Initial prompt sent to the child after spawn"
+
+[claude.cli.arg.spawn_args.profile_file]
+help = "Claude session profile (settings JSON) injected via --settings when launching the child. Mutually exclusive with --profile"
+
+[claude.cli.arg.spawn_args.profile]
+help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file"
+
+[claude.cli.arg.spawn_args.permission_mode]
+help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+
+[claude.cli.arg.children_args.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.parent_args.surface]
+help = "Child Claude surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.state_args.surface]
+help = "Child Claude surface ID to query (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.tell_args.message]
+help = "Message text to send. Newlines are preserved; the message is submitted automatically."
+
+[claude.cli.arg.tell_args.surface]
+help = "Target Claude surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.tell_args.caller_surface]
+help = "Surface that should receive the completion notification (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.notify_done_args.caller_surface]
+help = "Surface that issued the spawn/tell command and should receive the notification"
+
+[claude.cli.arg.notify_done_args.target_surface]
+help = "Surface whose spawn/tell just completed"
+
+[claude.cli.arg.notify_done_args.command]
+help = "Which command completed: spawn or tell"
+
+[claude.cli.arg.notify_error_args.caller_surface]
+help = "Surface that issued the spawn/tell command and should receive the notification"
+
+[claude.cli.arg.notify_error_args.target_surface]
+help = "Child surface that stalled after an error"
+
+[claude.cli.arg.broadcast_args.text]
+help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")"
+
+[claude.cli.arg.broadcast_args.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.broadcast_args.role]
+help = "Only send to children with this role label"
+
+[claude.cli.arg.kill_args.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.kill_args.child_index]
+help = "Child index to kill"
+
+[claude.cli.arg.respawn_args.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.respawn_args.child_index]
+help = "Child index to respawn"
+
+[claude.cli.arg.respawn_args.cwd]
+help = "Override working directory for the respawned process"
+
+[claude.cli.arg.respawn_args.role]
+help = "Replace the role label of the child"
+
+[claude.cli.arg.respawn_args.nickname]
+help = "Replace the display nickname of the child"
+
+[claude.cli.arg.respawn_args.prompt]
+help = "Initial prompt sent to the respawned child"
+
+[claude.cli.arg.respawn_args.profile_file]
+help = "Claude session profile (settings JSON) injected via --settings when relaunching the child. Mutually exclusive with --profile"
+
+[claude.cli.arg.respawn_args.profile]
+help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file"
+
+[claude.cli.arg.respawn_args.permission_mode]
+help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+
+[claude.cli.arg.reboot_args.surface]
+help = "Target Claude surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.reboot_args.delay]
+help = "Seconds to wait before killing Claude (default: 5)"
+
+[claude.cli.arg.reboot_args.prompt]
+help = "Extra text appended to the reboot notice prompt sent to the restarted Claude"
+
+[claude.cli.arg.reboot_args.profile_file]
+help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile. Mutually exclusive with --profile"
+
+[claude.cli.arg.reboot_args.profile]
+help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the surface (re-resolved from the registry on each future reboot, so edits to the profile or gate are picked up) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file"
+
+[claude.cli.arg.reboot_args.clear_profile]
+help = "Detach a previously attached session profile (path- or name-based) before resuming"
+
+[claude.cli.arg.reboot_args.permission_mode]
+help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+
+[claude.cli.arg.child_profile_args.surface]
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.child_profile_args.child_index]
+help = "Child index to attach the profile to (as reported by 'claude children')"
+
+[claude.cli.arg.child_profile_args.delay]
+help = "Seconds to wait before killing the child's Claude (default: 5)"
+
+[claude.cli.arg.child_profile_args.prompt]
+help = "Extra text appended to the reboot notice prompt sent to the restarted child"
+
+[claude.cli.arg.child_profile_args.profile_file]
+help = "Claude session profile (settings JSON) to attach to the child via --settings on resume. Persists on the child surface and is inherited by its future reboots until cleared with --clear-profile. Mutually exclusive with --profile"
+
+[claude.cli.arg.child_profile_args.profile]
+help = "Registered Claude session profile or Stop-hook gate name(s) to attach to the child, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the child surface (re-resolved from the registry on each future reboot) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file"
+
+[claude.cli.arg.child_profile_args.clear_profile]
+help = "Detach the child's previously attached session profile (path- or name-based) before resuming"
+
+[claude.cli.arg.child_profile_args.permission_mode]
+help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+
+[claude.cli.arg.hook_args.event]
+help = "Hook event name (e.g. stop, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)"
+
+[claude.cli.arg.hook_args.surface]
+help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.hook_args.session]
+help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id' when Claude Code invokes the hook."
+
+[claude.cli.arg.hook_args.message]
+help = "Hook message text (used for notification token extraction). Auto-populated from stdin JSON 'message'."
+
+[claude.cli.arg.hook_args.notification_type]
+help = "Claude Code notification subtype (e.g. permission_prompt, idle_prompt). Auto-populated from stdin JSON 'notification_type'. Used to exclude idle_prompt from the needs_input signal."
+
+[claude.cli.arg.checklist_hook_args.surface]
+help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID."
+
+[claude.cli.arg.checklist_hook_args.session_id]
+help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id'."
+
+[claude.cli.arg.checklist_hook_args.prompt_id]
+help = "Claude Code prompt/turn ID — changes on each new user turn, stays fixed within a blocked extension chain. Auto-populated from stdin JSON 'prompt_id'."
+
+[claude.cli.arg.checklist_hook_args.stop_hook_active]
+help = "Whether Claude Code's own stop-hook-active flag was set (sanity-check only, not the primary decision signal). Auto-populated from stdin JSON 'stop_hook_active' (\"true\"/\"false\")."
+
+[claude.cli.arg.checklist_hook_args.last_assistant_message]
+help = "The assistant's last message text, searched for the completion sentinel. Auto-populated from stdin JSON 'last_assistant_message'."
+
+[claude.cli.arg.checklist_hook_args.gate]
+help = "Name of the Stop-hook gate whose body, sentinel and round limit this hook decides with (see 'claude gate-register'). Defaults to the built-in continue-checklist gate."
+
+[claude.cli.arg.checklist_gate_args.gate]
+help = "Name of the Stop-hook gate to turn on/off/query (see 'claude gate-register'). Defaults to the built-in continue-checklist gate."
+
+[claude.cli.arg.profile_register_args.name]
+help = "Short name to register the profile under (lowercase letters, digits, '-', max 32 chars)"
+
+[claude.cli.arg.profile_register_args.file]
+help = "Path to the settings JSON file to register (copied into plugin-private storage)"
+
+[claude.cli.arg.profile_name_args.name]
+help = "Registered profile short name"
+
+[claude.cli.arg.profile_current_args.surface]
+help = "Surface ID to query (defaults to caller's TASTY_SURFACE_ID)"
+
+[claude.cli.arg.gate_register_args.name]
+help = "Short name to register the gate under (lowercase letters, digits, '-', max 32 chars). Shares one namespace with session profile names — registering a name that already exists on the other side is rejected rather than silently shadowed."
+
+[claude.cli.arg.gate_register_args.body_file]
+help = "Path to the checklist body (markdown) to register (copied into plugin-private storage). Must contain this gate's effective sentinel — without it the model is never told how to declare completion."
+
+[claude.cli.arg.gate_register_args.sentinel]
+help = "Completion sentinel the model must emit to end the turn. Defaults to the built-in sentinel. Cannot be empty (an empty sentinel matches every message)."
+
+[claude.cli.arg.gate_register_args.rounds]
+help = "Round-limit backstop for this gate (1 or greater). Omit to fall back to the plugin setting 'continue-checklist round limit'."
+
+[claude.cli.arg.gate_name_args.name]
+help = "Registered gate short name"

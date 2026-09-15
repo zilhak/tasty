@@ -62,6 +62,11 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 
 ⇒ clap 과 무관한 배경 설명이라도 이 파일들에서는 `///` 가 아니라 `//` 로 쓴다.
 
+실제 표시는 `help_i18n::command`로 얻은 번역 트리와 `help_frame` 템플릿을 사용한다.
+`help_error`는 clap의 구조화된 파싱 오류를 표시하며, plugin 동적 파싱도 같은 경로로
+들어간다. plugin 번역은 discovery에서 공용 카탈로그를 읽는다.
+상세: [국제화](i18n.md#cli-도움말-clap-about--help), [ADR-0280](../adr/0280-cli-help-localizes-presentation-not-protocol.md).
+
 ### 빈 설명 칸은 없다
 
 명령 축과 옵션 축 둘 다 **잔여 0** 이다 — `--help` 의 모든 서브커맨드가 about 을,

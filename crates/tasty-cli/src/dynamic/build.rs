@@ -28,8 +28,16 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
         }
         match Manifest::load(&dir) {
             Ok(manifest) => {
-                for cli in &manifest.contributes.cli {
-                    out.push(PluginCliEntry { cli: cli.clone() });
+                let user_lang = tasty_utils::path::tasty_home().map(|home| home.join("lang"));
+                let strings = tasty_i18n::plugin_catalog::load(
+                    &dir.join(&manifest.lang_dir),
+                    tasty_i18n::current_language(),
+                    &manifest.id,
+                    user_lang.as_deref(),
+                );
+                for mut cli in manifest.contributes.cli {
+                    localize_decl(&mut cli, &strings);
+                    out.push(PluginCliEntry { cli });
                 }
             }
             Err(e) => {
@@ -107,7 +115,7 @@ fn build_cli_subcommand(decl: &CliCommandDecl) -> Command {
         }
         top = top.subcommand(sc);
     }
-    top
+    crate::help_i18n::localize_frame(top)
 }
 
 fn apply_arg_group(mut cmd: Command, group: &CliArgGroup) -> Command {
@@ -148,4 +156,30 @@ fn build_arg(arg: &CliArg, positional_index: Option<usize>) -> Arg {
         a = a.help(leak_static(help));
     }
     a
+}
+
+/// Keep legacy manifest text when a key is absent; do not consult host namespaces.
+fn localize_decl(decl: &mut CliCommandDecl, strings: &std::collections::HashMap<String, String>) {
+    fn replace(
+        value: &mut Option<String>,
+        key: &Option<String>,
+        strings: &std::collections::HashMap<String, String>,
+    ) {
+        if let Some(translated) = key
+            .as_ref()
+            .and_then(|key| strings.get(key))
+            .filter(|v| !v.trim().is_empty())
+        {
+            *value = Some(translated.clone());
+        }
+    }
+    replace(&mut decl.description, &decl.description_i18n_key, strings);
+    for sub in &mut decl.subcommands {
+        replace(&mut sub.description, &sub.description_i18n_key, strings);
+    }
+    for group in decl.arg_groups.values_mut() {
+        for arg in group.positional.iter_mut().chain(&mut group.flags) {
+            replace(&mut arg.help, &arg.help_i18n_key, strings);
+        }
+    }
 }

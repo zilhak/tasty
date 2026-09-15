@@ -1,5 +1,5 @@
 [agent_stream.cli]
-desc = "AI エージェントのセッション transcript を tail し、構造化ストリームイベントとして読みます"
+desc = "AIエージェントのセッション記録を追跡し正規化されたストリームイベントを読み取る"
 
 [agent_stream.error]
 missing_surface = "対象 surface がありません: --surface <id> を渡すか、(TASTY_SURFACE_ID が設定される) tasty ターミナル内で実行してください"
@@ -19,3 +19,63 @@ serve_invalid_bind = "bind アドレス {bind} を IP として解釈できま�
 serve_remote_bind_needs_token = "{bind} にトークンなしで開くことを拒否します: このエンドポイントは会話全文を流すため、loopback より広いアドレスには --token が必要です"
 serve_bind_failed = "SSE エンドポイントを {addr} に bind できません: {detail} — ポートを空けるか別のポートを指定してください(自動フォールバックなし)"
 serve_not_running = "SSE エンドポイントは起動していません"
+
+[agent_stream.cli.sub.watch]
+description = "サーフェスで実行中のエージェントセッション記録の追跡を開始。メタデータからセッションIDを解決し、なければ明示的なエラーを返す"
+
+[agent_stream.cli.sub.turn-start]
+description = "監視中サーフェスで関連付けターンを開き、イベントに呼び出し元のrequest_idを記録。webhook IpcSequenceのclaude.tellより前の最初の手順として使用。未監視または既にターンが開いていれば拒否"
+
+[agent_stream.cli.sub.unwatch]
+description = "サーフェスの追跡を停止。最後にturn_end{reason=unwatched}イベントを発行"
+
+[agent_stream.cli.sub.list]
+description = "追跡中の全サーフェスのセッションID・記録パス・バイト位置・状態を一覧表示"
+
+[agent_stream.cli.sub.poll]
+description = "シーケンスカーソルで収集済みイベントを読み取る（非破壊）。イベント種別：text / thinking / tool_use / turn_end"
+
+[agent_stream.cli.sub.serve]
+description = "外部から購読できるSSEエンドポイント（GET /events）を開く。ポートは必須で自動フォールバックなし。再呼び出しすると新設定で再バインド"
+
+[agent_stream.cli.sub.serve-stop]
+description = "SSEエンドポイントを閉じ全ての購読を終了"
+
+[agent_stream.cli.sub.serve-info]
+description = "SSEエンドポイントの状態と購読者ごとのカウンターを報告。トークンは表示しません"
+
+[agent_stream.cli.arg.watch_args.surface]
+help = "エージェント実行中のサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[agent_stream.cli.arg.watch_args.from_start]
+help = "現在のファイル末尾ではなくバイト0から記録を再生"
+
+[agent_stream.cli.arg.unwatch_args.surface]
+help = "追跡を停止するサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
+
+[agent_stream.cli.arg.turn_start_args.surface]
+help = "ターンを開くエージェントのサーフェス（既定値：呼び出し元のTASTY_SURFACE_ID）。監視中であることが必要"
+
+[agent_stream.cli.arg.turn_start_args.request_id]
+help = "呼び出し元が提供する関連付けID。ターンの全イベントにrequest_idとして記録され、FEが要求と応答の対応に使用"
+
+[agent_stream.cli.arg.turn_start_args.timeout_secs]
+help = "ターンの無通信タイムアウト（秒、既定値600、範囲10-86400）。この間イベントもturn_endもなければturn_end{reason=stream:turn_timeout}で終了"
+
+[agent_stream.cli.arg.poll_args.filter_surface]
+help = "このサーフェスの収集イベントのみ返す（既定値なし。省略すると全監視サーフェス）"
+
+[agent_stream.cli.arg.poll_args.after_seq]
+help = "カーソルよりseqが大きいイベントを返す（既定値0＝バッファーの最古イベントから）"
+
+[agent_stream.cli.arg.poll_args.limit]
+help = "返すイベントの最大数（既定値100、最大1000）"
+
+[agent_stream.cli.arg.serve_args.port]
+help = "待ち受けるTCPポート。自動選択せず再起動後も同じアドレスを保つため必須指定"
+
+[agent_stream.cli.arg.serve_args.bind]
+help = "バインド先（既定値127.0.0.1）。--tokenなしではループバック以外を拒否"
+
+[agent_stream.cli.arg.serve_args.token]
+help = "共有購読トークン。購読者は 'Authorization: Bearer <token>' または '?token=<token>' で提示。省略すると認証なし（ループバックのみ）"

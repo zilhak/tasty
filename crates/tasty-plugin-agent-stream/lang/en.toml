@@ -1,5 +1,5 @@
 [agent_stream.cli]
-desc = "Tail AI agent session transcripts and read structured stream events"
+desc = "Tail an AI agent session transcript and read normalized stream events"
 
 [agent_stream.error]
 missing_surface = "no target surface: pass --surface <id> (or run this from inside a tasty terminal so TASTY_SURFACE_ID is set)"
@@ -19,3 +19,63 @@ serve_invalid_bind = "bind address {bind} is not an IP address — pass 127.0.0.
 serve_remote_bind_needs_token = "refusing to bind {bind} without a token: this endpoint streams full conversation transcripts, so any address wider than loopback requires --token"
 serve_bind_failed = "cannot bind the SSE endpoint on {addr}: {detail} — free the port or pick another one (there is no automatic fallback)"
 serve_not_running = "the SSE endpoint is not running"
+
+[agent_stream.cli.sub.watch]
+description = "Start tailing the transcript of the agent session running in a surface. Resolves the session id from surface meta; fails loudly when it is absent."
+
+[agent_stream.cli.sub.turn-start]
+description = "Open a correlation turn on a watched surface so the events it produces carry the caller-provided request_id. Use it as the first step of a webhook IpcSequence, before claude.tell. Rejected if the surface is not watched or a turn is already open."
+
+[agent_stream.cli.sub.unwatch]
+description = "Stop tailing a surface. Emits a final turn_end{reason=unwatched} event."
+
+[agent_stream.cli.sub.list]
+description = "List every surface currently being tailed with its session id, transcript path, byte offset and status"
+
+[agent_stream.cli.sub.poll]
+description = "Read collected stream events by sequence cursor (non-destructive). Events are text / thinking / tool_use / turn_end."
+
+[agent_stream.cli.sub.serve]
+description = "Open the SSE endpoint (GET /events) so an external consumer can subscribe. The port is required — there is no automatic fallback. Calling it again rebinds with the new settings."
+
+[agent_stream.cli.sub.serve-stop]
+description = "Close the SSE endpoint and end every open subscription"
+
+[agent_stream.cli.sub.serve-info]
+description = "Report the SSE endpoint state and per-subscriber counters. Never reports the token."
+
+[agent_stream.cli.arg.watch_args.surface]
+help = "Surface ID running the agent (defaults to caller's TASTY_SURFACE_ID)"
+
+[agent_stream.cli.arg.watch_args.from_start]
+help = "Replay the transcript from byte 0 instead of starting at the current end of file"
+
+[agent_stream.cli.arg.unwatch_args.surface]
+help = "Surface ID to stop tailing (defaults to caller's TASTY_SURFACE_ID)"
+
+[agent_stream.cli.arg.turn_start_args.surface]
+help = "Surface running the agent whose turn to open (defaults to caller's TASTY_SURFACE_ID). Must already be watched."
+
+[agent_stream.cli.arg.turn_start_args.request_id]
+help = "Caller-provided correlation id. Every event this turn produces carries it as request_id; the FE matches responses to requests by it."
+
+[agent_stream.cli.arg.turn_start_args.timeout_secs]
+help = "Idle timeout for this turn in seconds (default 600, range 10-86400). If no event and no turn_end arrive for this long, the turn is closed with turn_end{reason=stream:turn_timeout}."
+
+[agent_stream.cli.arg.poll_args.filter_surface]
+help = "Only return events collected for this surface (no default — omitting it returns every watched surface)"
+
+[agent_stream.cli.arg.poll_args.after_seq]
+help = "Return events with seq strictly greater than this cursor (default: 0 = from the oldest buffered event)"
+
+[agent_stream.cli.arg.poll_args.limit]
+help = "Maximum number of events to return (default 100, max 1000)"
+
+[agent_stream.cli.arg.serve_args.port]
+help = "TCP port to listen on. Required — the endpoint never picks a port by itself, so the address stays the same across restarts."
+
+[agent_stream.cli.arg.serve_args.bind]
+help = "Bind address (default 127.0.0.1). A non-loopback address is rejected unless --token is given."
+
+[agent_stream.cli.arg.serve_args.token]
+help = "Shared subscription token. Subscribers present it as 'Authorization: Bearer <token>' or '?token=<token>'. Omit for no authentication (loopback only)."

@@ -244,6 +244,11 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 
 플러그인 *작성* 과 별개로, 호스트가 플러그인 프로세스를 어떻게 띄우고 살려두는지 — SDK 가 의존하는 런타임 계약(`crates/tasty-host-plugin/`).
 
+CLI 기여의 명령·하위 명령 `description_i18n_key`와 인자의 선택적 `help_i18n_key`는
+plugin 카탈로그에서 해석한다. 키가 없으면 기존 `description`/`help`를 표시한다.
+CLI도 설치 영어 → 선택 언어 → host 홈의 사용자 plugin 파일 순서로 읽으며, 매니페스트의
+`lang_dir`을 따른다. [국제화](i18n.md#cli-도움말-clap-about--help) 참조.
+
 ### spawn 시 주입 환경변수
 
 호스트가 자식 프로세스에 넘기는 env (`process.rs`). SDK 가 이걸로 자기 위치·로그·호스트 접속을 안다.

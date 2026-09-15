@@ -21,3 +21,15 @@ html = "HTML"
 [preset.field]
 url = "URL"
 url_hint = "https://…"
+
+[html.cli]
+desc = "HTML ビューアコマンド"
+
+[html.cli.sub.open]
+description = "フォーカス中のタブでURLをHTMLサーフェスとして開く"
+
+[html.cli.arg.open_args.url]
+help = "URL（http://、https://、file://）またはローカルパス"
+
+[html.cli.arg.open_args.surface]
+help = "対象サーフェスID（既定値：フォーカス中のサーフェスを変換）"

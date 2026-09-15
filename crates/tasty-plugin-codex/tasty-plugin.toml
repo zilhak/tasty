@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.78"
+version = "0.1.79"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -60,95 +60,95 @@ subcommands = [
 
 [contributes.cli.arg_groups.launch_args]
 flags = [
-    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"codex\")" },
-    { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching codex" },
-    { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to codex as --task <text>" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy" },
-    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only" },
-    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
+    { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"codex\")", help_i18n_key = "codex.cli.arg.launch_args.workspace.help" },
+    { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching codex", help_i18n_key = "codex.cli.arg.launch_args.directory.help" },
+    { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to codex as --task <text>", help_i18n_key = "codex.cli.arg.launch_args.task.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy", help_i18n_key = "codex.cli.arg.launch_args.approval.help" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only", help_i18n_key = "codex.cli.arg.launch_args.sandbox.help" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.launch_args.full_auto.help" },
 ]
 
 [contributes.cli.arg_groups.parent_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to look up the parent of (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.parent_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.state_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to query (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Child Codex surface ID to query (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.state_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.tell_args]
 positional = [
-    { name = "message", type = "string", required = true, help = "Message text to send. Newlines are preserved; the message is submitted automatically." },
+    { name = "message", type = "string", required = true, help = "Message text to send. Newlines are preserved; the message is submitted automatically.", help_i18n_key = "codex.cli.arg.tell_args.message.help" },
 ]
 flags = [
-    { name = "surface",        type = "u32", flag = "--surface",        required = false, help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
-    { name = "caller_surface", type = "u32", flag = "--caller-surface", required = false, help = "Surface ID to notify when the target reaches a terminal state (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "surface",        type = "u32", flag = "--surface",        required = false, help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.tell_args.surface.help" },
+    { name = "caller_surface", type = "u32", flag = "--caller-surface", required = false, help = "Surface ID to notify when the target reaches a terminal state (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.tell_args.caller_surface.help" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
 flags = [
-    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "workspace", type = "string", flag = "--workspace", required = true,  help = "Target workspace (ID or name)" },
-    { name = "pane",      type = "u32",    flag = "--pane",      required = false, help = "Target pane ID (defaults to the first pane in the workspace)" },
-    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Working directory for the child Codex process" },
-    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
-    { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
-    { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset, so unattended automation is never stalled by an approval prompt — pass this only to opt into an interactive policy" },
-    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only — use \"read-only\" for review/crosscheck children that must not write files" },
-    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.spawn_args.surface.help" },
+    { name = "workspace", type = "string", flag = "--workspace", required = true,  help = "Target workspace (ID or name)", help_i18n_key = "codex.cli.arg.spawn_args.workspace.help" },
+    { name = "pane",      type = "u32",    flag = "--pane",      required = false, help = "Target pane ID (defaults to the first pane in the workspace)", help_i18n_key = "codex.cli.arg.spawn_args.pane.help" },
+    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Working directory for the child Codex process", help_i18n_key = "codex.cli.arg.spawn_args.cwd.help" },
+    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn", help_i18n_key = "codex.cli.arg.spawn_args.prompt.help" },
+    { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)", help_i18n_key = "codex.cli.arg.spawn_args.role.help" },
+    { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab", help_i18n_key = "codex.cli.arg.spawn_args.nickname.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset, so unattended automation is never stalled by an approval prompt — pass this only to opt into an interactive policy", help_i18n_key = "codex.cli.arg.spawn_args.approval.help" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only — use \"read-only\" for review/crosscheck children that must not write files", help_i18n_key = "codex.cli.arg.spawn_args.sandbox.help" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.spawn_args.full_auto.help" },
 ]
 
 [contributes.cli.arg_groups.children_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.children_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.notify_caller_args]
 flags = [
-    { name = "caller", type = "u32",    flag = "--caller", required = true, help = "Surface ID to notify" },
-    { name = "target",  type = "u32",   flag = "--target", required = true, help = "Surface ID that completed" },
-    { name = "kind",    type = "string", flag = "--kind",  required = true, help = "spawn | tell" },
+    { name = "caller", type = "u32",    flag = "--caller", required = true, help = "Surface ID to notify", help_i18n_key = "codex.cli.arg.notify_caller_args.caller.help" },
+    { name = "target",  type = "u32",   flag = "--target", required = true, help = "Surface ID that completed", help_i18n_key = "codex.cli.arg.notify_caller_args.target.help" },
+    { name = "kind",    type = "string", flag = "--kind",  required = true, help = "spawn | tell", help_i18n_key = "codex.cli.arg.notify_caller_args.kind.help" },
 ]
 
 [contributes.cli.arg_groups.broadcast_args]
 positional = [
-    { name = "text", type = "string", required = true, help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")" },
+    { name = "text", type = "string", required = true, help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")", help_i18n_key = "codex.cli.arg.broadcast_args.text.help" },
 ]
 flags = [
-    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "role",    type = "string", flag = "--role",    required = false, help = "Only send to children with this role label" },
+    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.broadcast_args.surface.help" },
+    { name = "role",    type = "string", flag = "--role",    required = false, help = "Only send to children with this role label", help_i18n_key = "codex.cli.arg.broadcast_args.role.help" },
 ]
 
 [contributes.cli.arg_groups.kill_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index to kill" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.kill_args.surface.help" },
+    { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index to kill", help_i18n_key = "codex.cli.arg.kill_args.child.help" },
 ]
 
 [contributes.cli.arg_groups.respawn_args]
 flags = [
-    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "child",     type = "u32",    flag = "--child",     required = true,  help = "Child index to respawn" },
-    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Override working directory for the respawned process" },
-    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the respawned child" },
-    { name = "role",      type = "string", flag = "--role",      required = false, help = "Replace the role label of the child" },
-    { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Replace the display nickname of the child" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy" },
-    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only" },
-    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.respawn_args.surface.help" },
+    { name = "child",     type = "u32",    flag = "--child",     required = true,  help = "Child index to respawn", help_i18n_key = "codex.cli.arg.respawn_args.child.help" },
+    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Override working directory for the respawned process", help_i18n_key = "codex.cli.arg.respawn_args.cwd.help" },
+    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the respawned child", help_i18n_key = "codex.cli.arg.respawn_args.prompt.help" },
+    { name = "role",      type = "string", flag = "--role",      required = false, help = "Replace the role label of the child", help_i18n_key = "codex.cli.arg.respawn_args.role.help" },
+    { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Replace the display nickname of the child", help_i18n_key = "codex.cli.arg.respawn_args.nickname.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy", help_i18n_key = "codex.cli.arg.respawn_args.approval.help" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only", help_i18n_key = "codex.cli.arg.respawn_args.sandbox.help" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.respawn_args.full_auto.help" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
 flags = [
-    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Target Codex surface ID (defaults to caller's TASTY_SURFACE_ID)" },
-    { name = "delay",     type = "u32",    flag = "--delay",     required = false, help = "Seconds to wait before killing Codex (default: 5)" },
-    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Codex" },
-    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy for the resumed session (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy" },
-    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only" },
-    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Target Codex surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.reboot_args.surface.help" },
+    { name = "delay",     type = "u32",    flag = "--delay",     required = false, help = "Seconds to wait before killing Codex (default: 5)", help_i18n_key = "codex.cli.arg.reboot_args.delay.help" },
+    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Extra text appended to the reboot notice prompt sent to the restarted Codex", help_i18n_key = "codex.cli.arg.reboot_args.prompt.help" },
+    { name = "approval",  type = "string", flag = "--approval",  required = false, help = "Approval policy for the resumed session (untrusted|on-request|never). Overrides the default_approval_policy setting for this call only. Already defaults to 'never' when unset — pass this only to choose a different (interactive) policy", help_i18n_key = "codex.cli.arg.reboot_args.approval.help" },
+    { name = "sandbox",   type = "string", flag = "--sandbox",   required = false, help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-full-access). Overrides the default_sandbox_mode setting for this call only", help_i18n_key = "codex.cli.arg.reboot_args.sandbox.help" },
+    { name = "full_auto", type = "bool",   flag = "--full-auto", required = false, help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox", help_i18n_key = "codex.cli.arg.reboot_args.full_auto.help" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
@@ -156,8 +156,8 @@ positional = [
     { name = "event", type = "string", required = true, help = "Hook event name: stop, prompt-submit, session-start, permission-request, post-tool-use, interrupt, session-end" },
 ]
 flags = [
-    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for" },
-    { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook." },
+    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for", help_i18n_key = "codex.cli.arg.hook_args.surface.help" },
+    { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook.", help_i18n_key = "codex.cli.arg.hook_args.session.help" },
 ]
 
 [contributes.cli.arg_groups.no_args]

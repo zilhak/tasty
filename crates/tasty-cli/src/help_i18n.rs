@@ -127,7 +127,7 @@ fn translated(key: &str) -> Option<String> {
 
 /// 트리를 순회하며 번역이 있는 자리만 갈아 끼운다. 없는 자리는 컴파일된 영어 그대로.
 pub fn localize(cmd: Command) -> Command {
-    localize_at(cmd, ROOT.to_string())
+    localize_frame(localize_at(cmd, ROOT.to_string()))
 }
 
 fn localize_at(mut cmd: Command, path: String) -> Command {
@@ -190,4 +190,9 @@ fn localize_at(mut cmd: Command, path: String) -> Command {
 pub fn command() -> Command {
     use clap::CommandFactory;
     localize(crate::Cli::command())
+}
+
+/// Apply localized presentation to an already translated plugin command tree.
+pub(crate) fn localize_frame(cmd: Command) -> Command {
+    crate::help_frame::localize(cmd)
 }
