@@ -63,3 +63,5 @@
 - [ADR-0195](0195-abuse-counting-includes-rejected-tokens.md) — 전수 `match` 가 새 상태의 답을 요구한 자리
 - [ADR-0046](0046-webhook-owner-trust-one-way-ack.md) — 고정 ACK 계약(413 을 고르고 연결 끊기를 버린 근거)
 - 코드 근거(결정이 실현된 현재 위치): `src/webhook/listener.rs` 의 `max_body_bytes`·`BodyTooLarge`·`Screened::read_json_body`, `src/webhook/ack.rs` 의 `AckStatus::PayloadTooLarge`, `src/webhook/abuse.rs` 의 `counts_as_failure`
+
+- 후속 증거: [ADR-0281](0281-webhook-parser-cap-and-connection-drain.md) (Proposed) — parser 보장과 Content-Length 정리의 선행 가정 오류·미충족 transport 요구. 기존 목표를 변경하거나 구현 완료를 선언하지 않는다.

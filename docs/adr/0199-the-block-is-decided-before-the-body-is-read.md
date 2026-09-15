@@ -50,3 +50,5 @@
 - [ADR-0046](0046-webhook-owner-trust-one-way-ack.md) — 불변식을 타입/함수 경계로 강제한다는 같은 형태
 - [ADR-0196](0196-abuse-thresholds-and-source-key.md) — 이 항목을 관찰로 남긴 판정과 그 소비처 계수
 - 코드 근거(결정이 실현된 현재 위치): `src/webhook/listener.rs` 의 `Screened`·`reject_if_abusive`·`handle_request`
+
+- 후속 증거: [ADR-0281](0281-webhook-parser-cap-and-connection-drain.md) (Proposed) — parser 보장과 Content-Length 정리의 선행 가정 오류·미충족 transport 요구. 기존 목표를 변경하거나 구현 완료를 선언하지 않는다.

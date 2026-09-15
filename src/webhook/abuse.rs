@@ -271,8 +271,8 @@ pub fn record_failure(source: &str) {
 /// 그 대입에 붙는 비용이 어디에도 없다([ADR-0195](../../docs/adr/0195-abuse-counting-includes-rejected-tokens.md)).
 ///
 /// `PayloadTooLarge`(413)도 센다 — 상한을 넘는 body 를 반복해 보내는 것은 그 자체가
-/// 자원을 겨눈 요청이고, 그 요청도 아무것도 얻지 못하고 끝난다. 상한 덕에 한 건의 값은
-/// 묶였지만 반복 횟수는 안 묶인다([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
+/// 자원을 겨눈 요청이고, 그 요청도 아무것도 얻지 못하고 끝난다. 상한은 한 건의 JSON 입력을
+/// 제한하지만 연결 정리 비용이나 반복 횟수를 제한하지 않는다([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
 ///
 /// 나머지 셋은 그 물음에 답이 다르다.
 /// - `Received`(200) — 정상 트래픽. 세면 남용차단이 정상 발신자를 막는다.

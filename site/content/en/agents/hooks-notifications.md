@@ -1,6 +1,7 @@
 <!-- source-hash: 1c561d524541 -->
 <!-- source-hash: 566aeb51a6d8 -->
 <!-- source-hash: 4d29d4555043 -->
+<!-- source-hash: 889e7471180f -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -215,7 +216,7 @@ The calling service receives a status code and a fixed response message. The res
 | 413 | The body exceeded the per-request size cap (1 MiB by default) |
 | 429 | The same source failed (`401`, `404`, `405` or `413`) 20 or more times in 10 seconds and is blocked for 60 seconds |
 
-The body size cap is checked before authentication. The same cap applies to chunked bodies containing invalid UTF-8 bytes. An oversized request receives `413 payload too large` even without a token, and no action runs. This cap limits each request, not the number of simultaneous connections.
+The body size cap is checked before authentication. The same cap applies to chunked bodies containing invalid UTF-8 bytes. An oversized request receives `413 payload too large` even without a token, and no action runs. This cap limits the body accepted for processing. After a 413 response, the server may still receive and discard the remaining body, so receiving the response does not mean that request input has finished. The cap does not bound total connection traffic, cleanup time, total memory use, or simultaneous connections.
 
 The block lives in memory only — restart Tasty and the remaining block time is gone, so that source starts over.
 

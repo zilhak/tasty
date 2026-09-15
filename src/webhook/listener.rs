@@ -131,14 +131,14 @@ fn handle_request(request: tiny_http::Request) {
     }
 }
 
-/// body 가 요청당 상한을 넘었다 — 그 자리에서 읽기를 멈췄다는 표시.
+/// JSON 입력 body 가 요청당 상한을 넘었다 — 파서의 읽기를 멈췄다는 표시.
 struct BodyTooLarge;
 
-/// 요청 하나가 읽는 body 의 상한(바이트).
+/// 요청 하나에서 JSON 처리에 허용하는 body 의 상한(바이트).
 ///
-/// **이 이름이 약속하는 것은 요청 하나다.** 동시에 들어오는 요청 수는 이 값이 묶지
-/// 않으므로 최악 점유는 `상한 × 동시 요청 수` 이고, 리스너는 요청마다 스레드를 띄운다.
-/// 그 곱은 이 상수의 범위 밖이다
+/// 이 값은 JSON 입력에 적용된다. 동시에 들어오는 요청 수나 HTTP 정리 중의
+/// 잔여 body 읽기·임시 할당은 제한하지 않으며, 프로세스 전체 메모리 상한이 아니다.
+/// 리스너는 요청마다 스레드를 띄운다.
 /// ([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
 ///
 /// 기본 1 MiB. `TASTY_WEBHOOK_MAX_BODY_BYTES` 로 오버라이드한다(0·파싱 실패는 기본값).
@@ -156,12 +156,11 @@ fn max_body_bytes() -> usize {
 
 /// 남용차단 선검사를 **통과한** 요청.
 ///
-/// 이 타입이 있는 이유는 하나다 — `body` 를 읽는 길이 여기밖에 없게 만드는 것.
-/// 쿨다운 중인 출처의 요청은 [`reject_if_abusive`] 가 그 자리에서 소비하므로
-/// `Screened` 가 만들어지지 않고, 따라서 **차단된 출처의 body 는 메모리에 올라가지
-/// 않는다** — `Content-Length` 가 1024 를 넘을 때. 그 이하는 `tiny_http` 이 요청을
-/// 만드는 단계에서 이미 버퍼에 읽어 두므로 이 타입이 손댈 수 있는 범위 밖이다. 순서를 주석으로 적어 두면 다음 사람이 한 줄 옮겨 깨뜨릴 수 있지만,
-/// 소유권으로 적으면 그 실수가 컴파일되지 않는다
+/// 이 타입은 body 를 JSON 입력으로 모으는 파서의 입구를 제한한다.
+/// 쿨다운 중인 요청은 [`reject_if_abusive`] 에서 소비되므로 `Screened` 가 만들어지지
+/// 않고 `read_json_body` 도 호출되지 않는다. HTTP 라이브러리의 작은 body 사전
+/// 버퍼링과 Content-Length 리더의 Drop drain 은 이 타입의 제어 범위 밖이다.
+/// 타입은 남용차단 뒤에 파서를 호출하는 순서를 강제한다.
 /// ([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)).
 struct Screened(tiny_http::Request);
 
@@ -186,18 +185,20 @@ impl Screened {
         headers
     }
 
-    /// 요청 바디를 `limit` 바이트까지만 읽어 JSON 으로 파싱. 읽기 실패/비-JSON 바디는
+    /// JSON 처리에 허용하는 body 는 `limit` 바이트(초과 판정용으로 1바이트 추가 읽기).
+    /// 읽기 실패/비-JSON 바디는
     /// `Value::Null`, 상한 초과는 [`BodyTooLarge`].
     ///
-    /// **여기가 body 가 메모리에 올라오는 유일한 자리다**([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)),
-    /// 그래서 상한도 여기 하나로 선다. 두 갈래를 함께 막는다 —
-    /// 선언된 길이(`Content-Length`)가 이미 크면 **한 바이트도 안 읽고**, 길이 선언이
+    /// **여기가 body 를 JSON 입력 버퍼로 모으는 자리다**([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)),
+    /// 이 파서의 입력 상한은 여기서 판정한다. 두 갈래를 함께 막는다 —
+    /// 선언된 길이(`Content-Length`)가 이미 크면 **이 함수에서 읽지 않고**, 길이 선언이
     /// 없는 `Transfer-Encoding: chunked` 는 상한 + 1 바이트에서 멈춘다. 뒤엣것이 없으면
     /// 상한이 상한이 아니다 — chunked 에는 선언된 길이가 아예 없다
     /// ([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
     ///
-    /// 상한을 넘겨도 남은 것은 읽지 않는다. `tiny_http` 의 `respond`/`Drop` 은 미읽은
-    /// body 를 소비하지 않으므로, 여기서 멈추면 거기서 멈춘다.
+    /// 상한을 넘기면 이 파서는 더 읽지 않는다. 다만 `tiny_http` 의 Content-Length
+    /// 리더는 응답 후 Drop 에서 잔여 body 를 읽어 버릴 수 있다. 413 전달과
+    /// HTTP 연결의 수신 정리 완료는 별개의 사건이다.
     fn read_json_body(&mut self, limit: usize) -> Result<Value, BodyTooLarge> {
         if self
             .0
