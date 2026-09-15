@@ -108,7 +108,7 @@ fn handle_request(request: tiny_http::Request) {
         Err(BodyTooLarge) => (AckStatus::PayloadTooLarge, None, Value::Null),
     };
 
-    // 매칭·인증 실패는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
+    // 매칭·인증 실패와 body 상한 초과는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
     // 무엇을 세는지는 `abuse::counts_as_failure` 가 정한다 — 무엇이 남용인가는
     // 남용차단의 정책이고, 여기 인라인 조건으로 두면 그 답이 두 곳에 생긴다.
     if abuse::counts_as_failure(ack)
@@ -206,20 +206,23 @@ impl Screened {
         {
             return Err(BodyTooLarge);
         }
-        let mut body_str = String::new();
+        let mut body_bytes = Vec::new();
         // 상한 + 1 — 딱 상한만 읽으면 "정확히 상한" 과 "더 있다" 를 못 가른다.
         let capped = limit.saturating_add(1) as u64;
-        if let Err(e) = self
-            .0
-            .as_reader()
-            .take(capped)
-            .read_to_string(&mut body_str)
-        {
+        if let Err(e) = self.0.as_reader().take(capped).read_to_end(&mut body_bytes) {
             tracing::debug!("webhook body read failed: {e}");
         }
-        if body_str.len() > limit {
+        // UTF-8 변환 실패로 바이트 수를 잃기 전에 초과를 판정한다.
+        if body_bytes.len() > limit {
             return Err(BodyTooLarge);
         }
+        let body_str = match String::from_utf8(body_bytes) {
+            Ok(body) => body,
+            Err(e) => {
+                tracing::debug!("webhook body UTF-8 decode failed: {e}");
+                return Ok(Value::Null);
+            }
+        };
         Ok(serde_json::from_str::<Value>(&body_str).unwrap_or(Value::Null))
     }
 
@@ -342,3 +345,7 @@ mod tests {
         assert!(parse_query("").is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "listener_body_tests.rs"]
+mod body_tests;
