@@ -101,10 +101,12 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 것과 명부가 낡는 것을 양방향으로 잡는다. 갈래와 사유의 근거는
 [ADR-0251](../../adr/0251-unrouted-dispatch-methods-carry-a-reason-not-a-predicate.md).
 
-갈래는 일곱이고 묻는 것은 하나다 — **주인 창이 안 정해져도 답이 옳은 이유가
+분류가 묻는 것은 하나다 — **주인 창이 안 정해져도 답이 옳은 이유가
 무엇인가.** 저장소가 창 밖이면 고칠 것이 없고(`NotWindowOwned`), 창 소유인데 합산이
 답하면 정본이 합산 명부이며(`AggregatedList`), 생성이면 실을 id 가 애초에
-없고(`CreatesWithoutATarget`), 열린 결함이면 축을 세워야 한다(`PerWindowOpenDefect`).
+없다(`CreatesWithoutATarget`). 창별 읽기 전용 관측은 응답에 소유 ID와 범위를
+명시한다(`ScopedObservation`). 기존 count/index를 전역값으로 바꾸지 않고 소속을
+밝히는 `system.info`가 여기에 해당한다. 열린 결함이면 축을 세워야 한다(`PerWindowOpenDefect`).
 남은 셋은 **이 스캔이 못 보는 자리**다: 대상 키를 serde 구조체로 읽어 안 보이는 것
 (`TargetReadByDeserializer`), `request_target` 밖에서 풀려 안 보이는 것
 (`RoutedOutsideRequestTarget`), 그리고 debug 표면(`DebugOnly`). 사각을 술어에서 지우는
