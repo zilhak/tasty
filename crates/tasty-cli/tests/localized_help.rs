@@ -36,6 +36,19 @@ fn host_and_plugin_help_use_the_selected_catalog() {
         assert!(help.contains("USER ARG"), "{help}");
         assert!(help.contains("legacy fallback"), "{help}");
         assert!(help.contains(&format!("installed {locale}")), "{help}");
+        for flag in ["nohelp", "emptyhelp", "missinghelp"] {
+            let block = help
+                .split(&format!("--{flag}"))
+                .nth(1)
+                .unwrap()
+                .split("\n      --")
+                .next()
+                .unwrap();
+            assert!(block.contains("7"), "{block}");
+        }
+        assert_generated_help(cmd.clone(), &["tasty", "help", "help"]);
+        assert_generated_help(cmd.clone(), &["tasty", "fixture", "help", "help"]);
+        assert_annotation_matrix();
         let args = ["tasty", "fixture", "show", "--translated", "value"];
         let matches = cmd.try_get_matches_from(args).unwrap();
         assert_eq!(matches.subcommand().unwrap().0, "fixture");
@@ -77,7 +90,10 @@ subcommands = [{name="show", ipc_method="fixture.show", args="show", description
 flags = [
  {name="translated", type="string", flag="--translated", help="legacy arg", help_i18n_key="fixture.arg"},
  {name="fallback", type="string", flag="--fallback", help="legacy fallback", help_i18n_key="fixture.absent"},
- {name="installed", type="string", flag="--installed", help="legacy installed", help_i18n_key="fixture.installed"}
+ {name="installed", type="string", flag="--installed", help="legacy installed", help_i18n_key="fixture.installed"},
+ {name="nohelp", type="string", flag="--nohelp", default="7"},
+ {name="emptyhelp", type="string", flag="--emptyhelp", help="", default="7"},
+ {name="missinghelp", type="string", flag="--missinghelp", help_i18n_key="fixture.absent", default="7"}
 ]
 "#,
     );
@@ -124,5 +140,108 @@ flags = [
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+}
+
+fn assert_generated_help(cmd: clap::Command, args: &[&str]) {
+    let error = cmd.try_get_matches_from(args).unwrap_err();
+    assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+    assert_eq!(error.exit_code(), 0);
+    let text = error.to_string();
+    for key in ["usage", "help_command"] {
+        assert!(
+            text.contains(tasty_i18n::t(&format!("cli.help_frame.{key}"))),
+            "{args:?}: {text}"
+        );
+    }
+    if matches!(tasty_i18n::current_language(), "ko" | "ja") {
+        for english in ["Usage:", "Commands:", "Print this message"] {
+            assert!(!text.contains(english), "{args:?}: {text}");
+        }
+    }
+}
+
+fn assert_annotation_matrix() {
+    use clap::{Arg, Command};
+    for help in [None, Some(""), Some("legacy missing translation")] {
+        for long_help in [None, Some(""), Some("long missing translation")] {
+            for default in [false, true] {
+                for possible in [false, true] {
+                    let mut arg = Arg::new("review_color").long("color");
+                    if let Some(help) = help {
+                        arg = arg.help(help);
+                    }
+                    if let Some(help) = long_help {
+                        arg = arg.long_help(help);
+                    }
+                    if default {
+                        arg = arg.default_value("red");
+                    }
+                    if possible {
+                        arg = arg.value_parser(["red", "blue"]);
+                    }
+                    let original = Command::new("annotation-fixture").arg(arg);
+                    let localized = tasty_cli::help_i18n::localize(original.clone());
+                    for long in [false, true] {
+                        let mut cmd = localized.clone();
+                        let text = if long {
+                            cmd.render_long_help()
+                        } else {
+                            cmd.render_help()
+                        }
+                        .to_string();
+                        if tasty_i18n::current_language() == "en" {
+                            let mut cmd = original.clone();
+                            let expected = if long {
+                                cmd.render_long_help()
+                            } else {
+                                cmd.render_help()
+                            }
+                            .to_string();
+                            assert_eq!(text, expected);
+                        }
+                        if default {
+                            assert!(text.contains("red"), "{text}");
+                        }
+                        if possible {
+                            assert!(text.contains("blue"), "{text}");
+                        }
+                        if tasty_i18n::current_language() != "en" {
+                            if default {
+                                assert!(
+                                    text.contains(&tasty_i18n::t_fmt(
+                                        "cli.help_frame.default",
+                                        "red"
+                                    )),
+                                    "{text}"
+                                );
+                            }
+                            if possible {
+                                assert!(
+                                    text.contains(&tasty_i18n::t_fmt(
+                                        "cli.parse.valid_values",
+                                        "red, blue"
+                                    )),
+                                    "{text}"
+                                );
+                            }
+                        }
+                    }
+                    if default {
+                        let matches = localized
+                            .clone()
+                            .try_get_matches_from(["annotation-fixture"])
+                            .unwrap();
+                        assert_eq!(matches.get_one::<String>("review_color").unwrap(), "red");
+                    }
+                    if possible {
+                        let error = localized
+                            .try_get_matches_from(["annotation-fixture", "--color", "green"])
+                            .unwrap_err();
+                        assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+                    }
+                }
+            }
+        }
     }
 }

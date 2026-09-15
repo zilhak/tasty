@@ -45,11 +45,14 @@ pub(crate) fn localize(mut cmd: Command) -> Command {
         .collect();
     for name in names {
         cmd = cmd.mut_subcommand(&name, |sub| {
-            if name == "help" {
+            // build() materializes clap's finite help subtree, including help/help.
+            // Its copied commands need the same frame as ordinary command nodes.
+            let sub = if name == "help" {
                 sub.about(t("cli.help_frame.help_command").to_owned())
             } else {
-                localize(sub)
-            }
+                sub
+            };
+            localize(sub)
         });
     }
     cmd
@@ -87,10 +90,13 @@ fn localize_annotations(mut arg: clap::Arg) -> clap::Arg {
     }
     if !notes.is_empty() {
         let notes = notes.join("; ");
-        if let Some(help) = arg.get_help() {
-            let help = format!("{help} [{notes}]");
-            arg = arg.help(help);
-        }
+        let help = arg.get_help().map(ToString::to_string).unwrap_or_default();
+        let help = if help.is_empty() {
+            format!("[{notes}]")
+        } else {
+            format!("{help} [{notes}]")
+        };
+        arg = arg.help(help);
         if let Some(help) = arg.get_long_help() {
             let help = format!("{help} [{notes}]");
             arg = arg.long_help(help);

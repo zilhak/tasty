@@ -151,7 +151,9 @@ about = "Créer une ressource"
 - Here too, **you do not have to translate everything.** Commands you leave out
   keep their English description and simply appear alongside the translated ones.
 - Usage, command and option headings, default-value hints and argument errors also follow
-  your selected language. Command names, options and accepted values stay unchanged.
+  your selected language. This includes `tasty help help` and plugin `help help` pages.
+  Default-value hints also appear for plugin arguments without descriptions.
+  Command names, options and accepted values stay unchanged.
   Details from an underlying parser and the server's original error text may remain English.
 - Plugin command descriptions and argument help can also be changed in the plugin translation
   files below. For example, put `[codex.cli]` and `desc = "My Codex commands"` in
