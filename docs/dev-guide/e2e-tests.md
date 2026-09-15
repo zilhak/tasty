@@ -311,6 +311,11 @@ subscriber는 교체하지 않으므로 그 subscriber가 로그를 차단하면
 
 `shared_instance_harness`의 `startup_tests`는 소유한 fake 자식과 loopback IPC로
 포트 전 지연·포트 후 응답 지연·조기사망·응답 오류를 유발해 실제 공용 경로를 검사한다.
+포트 전 지연은 자식의 준비 신호 → 부모의 포트 부재 확인 → 해제 신호 → 포트 공개로
+동기화한다. 부모 관측 시작과 자식 진행은 별개이므로 포트 구간에 시간 하한을 두지 않는다.
+부모가 늦게 실행되고, 공개 완료 신호까지 받은 뒤 부팅 관측을 시작하는 경우도 검사한다.
+이 경우에도 실제 부팅 완료·이정표 순서·첫 응답 시각 보존을 단언한다. 준비 신호 전에
+포트를 공개하는 변이는 포트 부재 단언으로 검출한다.
 필터 실행: `cargo test --locked --test shared_instance_harness startup_tests -- --nocapture`.
 실제 Tasty/GUI를 띄우는 같은 타깃의 다른 시험과 구분한다.
 
