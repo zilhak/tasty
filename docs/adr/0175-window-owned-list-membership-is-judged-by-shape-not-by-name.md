@@ -74,7 +74,8 @@
 ## 보강 — 새 술어로 census 를 다시 돌린 결과 (같은 날, 후속 회차)
 
 위 Alternatives C 는 "지금은 회귀 단언 하나로 두고 아래 트리거에서 다시 본다" 였고,
-**첫 트리거가 곧바로 걸렸다** — 세 성질로 전수를 다시 뽑으니 `tree` 말고 넷이 더 나왔다.
+**첫 트리거가 곧바로 걸렸다** — 아래 세 목록의 비포커스 창 누락을 실측했다.
+생성자만 읽은 approval·attach 후보는 이 실행 확인과 구분한다.
 
 실측(격리 인스턴스, 창 둘, 창1 비포커스, 창1 에 표식 자원을 심고 창2 포커스에서 조회):
 
@@ -133,14 +134,15 @@ hook 둘은 **틀린 것이 아니라 낡은 것**이다 — 그때는 선행 �
 
 - **`approval_store` 는 창 사이에 공유된다.** 두 번째 main window 를 세우는
   `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의 Arc 로
-  덮어쓴다 — 그 아홉 중 하나가 `approval_store` 다. 저장소가 어디 사는지는 **생성자와
+  덮어쓴다. 공유 항목의 전달 방식은 같지 않다: `approval_store` 등은 필드에
+  대입하지만 `next_ids`는 생성자 인자로 전달한다. 저장소가 어디 사는지는 **생성자와
   창 생성 경로를 함께** 읽어야 정해진다.
 - **`attach.list` 는 합산으로 갔다.** 점유 레지스트리는 engine 별이 맞지만, 두 배열의
   키(`surface_id` · `workspace_id`)는 위 절이 같은 자리에서 공유로 열거한 카운터 안에
   있다. 즉 id 공간은 처음부터 닫혀 있었고 합산만이 남은 일이었다.
 - **`hook.list` · `global_hook.list` 도 합산으로 갔다.** 위 절이 선행 조건으로 든 id
-  공간이 닫혔기 때문이다 — `IdGenerator` 의 공유 카운터는 위 절이 센 일곱이 아니라
-  **아홉**이고(workspace · category · pane · tab · surface · pty · observer · **hook** ·
+  공간이 닫혔기 때문이다 — 그 시점의 `IdGenerator` 공유 카운터는 위 절이 센 일곱이 아니라
+  **아홉**이었고(workspace · category · pane · tab · surface · pty · observer · **hook** ·
   **global_hook**), 두 hook 카운터가 그 안에 있다. 두 목록은 이미 `dispatch_list_global`
   의 합산 arm 이다. 지목은 합산과 별개 축이고 `Kind::Hook` · `Kind::GlobalHook` 이
   각각 푼다.
