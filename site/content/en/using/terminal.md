@@ -1,4 +1,4 @@
-<!-- source-hash: 86fa01ca0728 -->
+<!-- source-hash: 430cc40170e9 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -17,6 +17,12 @@ Set under **Settings** > **Terminal**.
 bash (4.4 or later) and zsh get shell integration with no extra setup. The Tab name follows the current directory, the git branch appears in the status bar, and you can attach hooks to command completion ([Hooks · notifications](../agents/hooks-notifications.md)). Other shells such as fish need to be set up by hand, and until then the **Shell integration not detected** banner may appear.
 
 When the program exits and the shell ends, that Surface closes automatically.
+
+## Arrow keys with modifiers
+
+Terminal programs can distinguish arrow keys pressed with `Shift`, `Ctrl`, or `Alt` from plain arrow keys. **For these combinations on macOS, use the physical `Option` key, not `Cmd`.** For example, press `Option+↑` when a program displays `⌥ + ↑`. The program inside the terminal determines the action.
+
+Modified arrow keys are forwarded with **Option as Meta** either on or off. That setting only controls whether Option+character input on macOS produces a composed character or a Meta key sequence. Keys consumed by a Tasty shortcut, copy mode, or an overlay that captures keyboard input are not also sent to the program.
 
 ## Copy · paste
 

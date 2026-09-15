@@ -38,6 +38,10 @@ termwiz `Parser`/`Surface` 로 VT 시퀀스를 파싱·grid 갱신. 지원: 텍�
 
 중앙 키보드 디스패처가 focused surface 타입에 따라 정확히 한 대상에만 전달 — Terminal 은 PTY 로 바이트. 특수 키(Enter/Backspace/Tab/Escape/방향키/Home·End/PageUp·Down/Insert·Delete/F1~F12) 매핑, DECCKM 모드에 따라 방향키 시퀀스 전환(`\x1b[{A..D}` ↔ `\x1bO{A..D}`). 복사/붙여넣기/선택/IME 는 [clipboard](../clipboard/index.md).
 
+방향키와 함께 누른 Shift·물리 Alt(macOS Option)·Ctrl은 xterm 방식 `CSI 1 ; m A/B/C/D`로 전달한다. `m`은 1 + Shift(1) + Alt(2) + Ctrl(4)이며, 보조키가 있으면 DECCKM on/off 모두 CSI를 쓴다. 예: Option/Alt+↑는 `\x1b[1;3A`, Ctrl+Shift+←는 `\x1b[1;6D`. 보조키 없는 방향키는 위 DECCKM 규칙을 유지한다. 근거: [xterm cursor-key 및 modifier 표](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys)와 [modifyCursorKeys](https://invisible-island.net/xterm/manpage/xterm.html#VT100-Widget-Resources:modifyCursorKeys).
+
+이 인코딩은 `option_as_meta`와 독립이다(그 설정은 문자 입력만 제어). 호스트 바인딩의 `alt` 토큰(macOS Command)으로 물리 Option을 치환하지 않으며, Super/Command 자체는 방향키 modifier 값에 넣지 않는다. 호스트 단축키·오버레이·vi 복사 모드가 소비한 키는 PTY로 중복 전달하지 않는다. 인코딩 결정은 `src/view/main/keyboard.rs`의 `decide_key_to_terminal`이 담당하고, 문자 Meta/compose와 IME Commit 경로는 별도로 처리한다.
+
 **Option as Meta (macOS 전용)**: 설정 `general.option_as_meta`(기본 off, macOS 빌드에만 존재). on 이면 Option(Alt)+문자 입력이 특수문자(compose, 예 `å`) 대신 `ESC` + base 문자 Meta 시퀀스(예 `Option+a` → `\x1b a`)로 PTY 에 전달돼 readline/Emacs/vim 의 Meta 바인딩(`Alt+f`/`Alt+b` 등)이 동작한다. 물리 Option 키만 대상이며(Ctrl/Cmd 동시 누름 시 제외), 좌/우 Option 을 구분하지 않는다. base 문자는 Option 합성 이전의 US 레이아웃 문자(`physical_key_to_logical`)라 비-US 레이아웃에서는 US 기준으로 인코딩되는 한계가 있다. off 면 기존 Option=특수문자 동작을 보존한다. 키바인딩이 아니라 입력 인코딩 동작이라 `GeneralSettings` 에 둔다(`KeybindingSettings` 무관). 다른 OS 에는 Option 키가 없어 설정·UI 모두 노출하지 않는다.
 
 ### 색상 / 폰트

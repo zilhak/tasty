@@ -528,48 +528,35 @@ impl MainView {
                 push_bytes(&mut payloads, b"\x1b");
                 sent = true;
             }
-            Key::Named(NamedKey::ArrowUp) => {
-                push_bytes(
-                    &mut payloads,
-                    if state.app_cursor {
-                        b"\x1bOA"
-                    } else {
-                        b"\x1b[A"
-                    },
-                );
-                sent = true;
-            }
-            Key::Named(NamedKey::ArrowDown) => {
-                push_bytes(
-                    &mut payloads,
-                    if state.app_cursor {
-                        b"\x1bOB"
-                    } else {
-                        b"\x1b[B"
-                    },
-                );
-                sent = true;
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                push_bytes(
-                    &mut payloads,
-                    if state.app_cursor {
-                        b"\x1bOC"
-                    } else {
-                        b"\x1b[C"
-                    },
-                );
-                sent = true;
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                push_bytes(
-                    &mut payloads,
-                    if state.app_cursor {
-                        b"\x1bOD"
-                    } else {
-                        b"\x1b[D"
-                    },
-                );
+            Key::Named(
+                arrow @ (NamedKey::ArrowUp
+                | NamedKey::ArrowDown
+                | NamedKey::ArrowRight
+                | NamedKey::ArrowLeft),
+            ) => {
+                let suffix = match arrow {
+                    NamedKey::ArrowUp => 'A',
+                    NamedKey::ArrowDown => 'B',
+                    NamedKey::ArrowRight => 'C',
+                    NamedKey::ArrowLeft => 'D',
+                    _ => unreachable!(),
+                };
+                // xterm cursor modifiers: 1 + Shift + 2*Alt + 4*Control.
+                // Use physical Alt (Option on macOS), not the host binding's
+                // `alt` token (Command on macOS). Super keeps its old behavior.
+                // Option-as-Meta only affects characters, not cursor keys.
+                let parameter = 1
+                    + u8::from(modifiers.shift_key())
+                    + 2 * u8::from(modifiers.alt_key())
+                    + 4 * u8::from(modifiers.control_key());
+                let sequence = if parameter == 1 {
+                    let prefix = if state.app_cursor { 'O' } else { '[' };
+                    format!("\x1b{prefix}{suffix}")
+                } else {
+                    // Modified arrows use CSI even in application cursor mode.
+                    format!("\x1b[1;{parameter}{suffix}")
+                };
+                push_bytes(&mut payloads, sequence.as_bytes());
                 sent = true;
             }
             Key::Named(NamedKey::Home) => {
@@ -943,6 +930,103 @@ mod tests {
             }
         }
         out
+    }
+
+    // Independent xterm PC-style cursor-key table: modifier parameter 2..8.
+    // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys
+    #[test]
+    fn arrow_modifiers_follow_xterm_in_both_cursor_modes() {
+        let cases = [
+            (ModifiersState::SHIFT, "2"),
+            (ModifiersState::ALT, "3"),
+            (ModifiersState::SHIFT | ModifiersState::ALT, "4"),
+            (ModifiersState::CONTROL, "5"),
+            (ModifiersState::SHIFT | ModifiersState::CONTROL, "6"),
+            (ModifiersState::ALT | ModifiersState::CONTROL, "7"),
+            (
+                ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CONTROL,
+                "8",
+            ),
+        ];
+        for (key, suffix) in [
+            (NamedKey::ArrowUp, "A"),
+            (NamedKey::ArrowDown, "B"),
+            (NamedKey::ArrowRight, "C"),
+            (NamedKey::ArrowLeft, "D"),
+        ] {
+            for app_cursor in [false, true] {
+                for option_as_meta in [false, true] {
+                    for is_alt_screen in [false, true] {
+                        for (mods, parameter) in cases {
+                            let mut state = read_state(option_as_meta);
+                            state.app_cursor = app_cursor;
+                            state.is_alt_screen = is_alt_screen;
+                            let out = MainView::decide_key_to_terminal(
+                                state,
+                                &Key::Named(key),
+                                &None,
+                                mods,
+                            );
+                            assert_eq!(
+                                collect_bytes(&out.payloads),
+                                format!("\x1b[1;{parameter}{suffix}").as_bytes()
+                            );
+                            assert_eq!(out.payloads.len(), 1);
+                            assert!(out.sent);
+                            assert!(!out.dirty);
+                            assert!(matches!(out.scroll_action, KeyboardScrollAction::None));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn arrows_without_terminal_modifiers_preserve_decckm() {
+        for (key, normal, application) in [
+            (NamedKey::ArrowUp, b"\x1b[A", b"\x1bOA"),
+            (NamedKey::ArrowDown, b"\x1b[B", b"\x1bOB"),
+            (NamedKey::ArrowRight, b"\x1b[C", b"\x1bOC"),
+            (NamedKey::ArrowLeft, b"\x1b[D", b"\x1bOD"),
+        ] {
+            for app_cursor in [false, true] {
+                for option_as_meta in [false, true] {
+                    // Super (macOS Command) is not physical Option/Alt. Preserve its
+                    // previous terminal behavior when no host shortcut consumes it.
+                    for mods in [ModifiersState::empty(), ModifiersState::SUPER] {
+                        let mut state = read_state(option_as_meta);
+                        state.app_cursor = app_cursor;
+                        let out =
+                            MainView::decide_key_to_terminal(state, &Key::Named(key), &None, mods);
+                        assert_eq!(
+                            collect_bytes(&out.payloads),
+                            if app_cursor { application } else { normal }
+                        );
+                        assert!(out.sent);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn modified_arrow_sends_once_and_returns_scrollback_to_bottom() {
+        let mut state = read_state(false);
+        state.scroll_offset = 12;
+        let out = MainView::decide_key_to_terminal(
+            state,
+            &Key::Named(NamedKey::ArrowUp),
+            &Some("ignored".into()),
+            ModifiersState::ALT,
+        );
+        assert_eq!(collect_bytes(&out.payloads), b"\x1b[1;3A");
+        assert_eq!(out.payloads.len(), 1);
+        assert!(out.sent && out.dirty);
+        assert!(matches!(
+            out.scroll_action,
+            KeyboardScrollAction::ScrollToBottom
+        ));
     }
 
     // option_as_meta = true, Option(Alt)+'a' → ESC + base 'a' (합성문자 'å' 아님).
