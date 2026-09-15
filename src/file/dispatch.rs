@@ -394,7 +394,18 @@ pub(crate) fn open_surface_tab(
                 name: None,
                 surface_params: params.clone(),
             };
-            if let Err(e) = core.apply(engine, intent) {
+            // Explicit-origin completion adds a result without selecting it. CreateTab
+            // appends synchronously, so the old index still names the same tab. Keep
+            // this policy here: user NewTab and other CreateTab callers choose focus
+            // independently, and non-terminal creation normally selects its new tab.
+            let active_tab = engine.find_pane_by_id(pane_id).map(|pane| pane.active_tab);
+            let result = core.apply(engine, intent);
+            if let Some(active_tab) = active_tab
+                && let Some(pane) = engine.find_pane_by_id_mut(pane_id)
+            {
+                pane.active_tab = active_tab;
+            }
+            if let Err(e) = result {
                 tracing::warn!(
                     pane_id,
                     kind = %surface_kind,

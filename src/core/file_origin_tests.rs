@@ -56,6 +56,8 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     .unwrap();
     state.active_workspace = 1;
     let before = engine.workspaces[0].all_surface_ids();
+    let active_tab = engine.find_pane_by_id(pane).unwrap().active_tab;
+    let focused_surface = state.focused_surface_id(&engine);
     core.apply_file_picker_result(
         &mut state,
         &mut engine,
@@ -71,6 +73,8 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         .unwrap();
     assert_eq!(engine.find_pane_for_surface(added), Some(pane));
     assert_eq!(state.active_workspace, 1);
+    assert_eq!(engine.find_pane_by_id(pane).unwrap().active_tab, active_tab);
+    assert_eq!(state.focused_surface_id(&engine), focused_surface);
     assert!(state.pending_intents.is_empty());
 }
 
@@ -214,4 +218,47 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert!(state.pending_intents.is_empty());
     assert!(state.pending_handler_ipc.is_empty());
     assert_eq!(engine.file_handler_recent.list().len(), recent_before);
+}
+
+#[test]
+fn explicit_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
+    let (mut core, _) = build_test_core();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let origin = engine.workspaces[0].all_surface_ids()[0];
+    let pane_id = engine.find_pane_for_surface(origin).unwrap();
+    // The ordinary CreateTab contract is unchanged: non-terminal creation selects
+    // its result. This also makes the saved selection different from the origin.
+    core.apply(
+        &mut engine,
+        DomainIntent::CreateTab {
+            pane_id,
+            cwd: None,
+            kind: "empty".into(),
+            name: None,
+            surface_params: serde_json::json!({}),
+        },
+    )
+    .unwrap();
+    assert_eq!(engine.find_pane_by_id(pane_id).unwrap().active_tab, 1);
+    let focused_surface = state.focused_surface_id(&engine);
+    assert_ne!(focused_surface, Some(origin));
+    for kind in ["empty", "terminal", "missing-kind"] {
+        let before = engine.find_pane_by_id(pane_id).unwrap();
+        let selected_id = before.tabs[before.active_tab].id;
+        let count = before.tabs.len();
+        let succeeded = open_surface_tab(
+            &mut core,
+            &mut state,
+            &mut engine,
+            kind,
+            serde_json::json!({}),
+            Some(origin),
+        );
+        assert_eq!(succeeded, kind != "missing-kind");
+        let after = engine.find_pane_by_id(pane_id).unwrap();
+        assert_eq!(after.tabs.len(), count + usize::from(succeeded));
+        assert_eq!(after.tabs[after.active_tab].id, selected_id, "{kind}");
+        assert_eq!(state.focused_surface_id(&engine), focused_surface, "{kind}");
+        assert!(state.pending_intents.is_empty());
+    }
 }

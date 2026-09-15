@@ -52,7 +52,9 @@ dispatch 대상(`DispatchTarget`)은 파일 경로(`File`) 또는 `http`/`https`
 
 `origin_surface_id` 를 지정한 요청은 처음부터 그 surface 소유 engine으로 라우팅된다.
 식별 완료와 picker 선택도 origin을 유지하며, OpenSurface 결과는 origin의 pane에
-포커스를 바꾸지 않고 새 탭으로 추가된다. 대기 중 다른 창으로 포커스를 옮겨도 대상은
+기존 활성 탭과 그 탭의 포커스된 surface를 유지한 채 새 탭으로 추가된다.
+터미널·비터미널 kind에 같은 규칙을 적용하며 origin 자체가 비활성 탭에 있어도
+현재 선택을 origin으로 옮기지 않는다. 대기 중 다른 창으로 포커스를 옮겨도 대상은
 바뀌지 않는다. 소유 engine이 parked 상태이면 그 상태에 적용한다.
 
 처음부터 없는 origin은 기존 `-32602`와 unowned-target 문구로 거절한다. 접수 후

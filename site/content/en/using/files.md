@@ -1,4 +1,4 @@
-<!-- source-hash: d38ccf381166 -->
+<!-- source-hash: 8be0368e2758 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -21,7 +21,7 @@ A Surface opened from a file is split · moved · closed · restored on restart 
 
 In the file chooser, long file names end with `…` so they do not overlap the size and modification date. This only changes the display; selecting or opening an entry still uses its full name.
 
-When an opening request specifies its source surface, switching windows while it is pending keeps the result in that surface’s pane. Closing the source does not open the file in another window.
+When an opening request specifies its source surface, switching windows while it is pending keeps the result in a new tab in that surface’s pane. The previously selected tab stays selected. Closing the source does not open the file in another window.
 
 ## Explorer
 
