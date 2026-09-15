@@ -1003,10 +1003,27 @@ mod tests {
     /// hello 가 여기서 조용히 무시됐다 (crates/tasty-host-plugin/src/manager.rs:263).
     #[test]
     fn disable_clears_registered_plugins_so_restart_hello_reregisters() {
-        let _home = HomeEnvGuard::tasty_home();
+        let home = HomeEnvGuard::tasty_home();
 
         let mut mgr = mgr();
         let plugin_id = "com.example.test";
+        // disable 은 설치된 패키지에만 적용된다. 이 시험의 대상도 설치 목록에 둔다.
+        mgr.set_packages_for_tests(vec![tasty_plugin_manifest::PluginPackage {
+            dir: home.path().join("plugin"),
+            manifest: toml::from_str(
+                r#"
+manifest_version = 1
+id = "com.example.test"
+name = "Test"
+version = "1.0.0"
+api_version = "1"
+[entry]
+type = "process"
+command = "unused"
+"#,
+            )
+            .expect("fixture manifest"),
+        }]);
         // 최초 hello 등록을 시뮬레이션 (finalize_plugin_hello 가 정상 시 하는 일).
         mgr.registered_plugins.insert(plugin_id.to_string());
 

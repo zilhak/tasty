@@ -635,36 +635,36 @@ impl PluginManager {
 
     /// CLI/IPC용 — plugin 활성화. 활성화 즉시 spawn 시도.
     pub fn enable(&mut self, plugin_id: &str) -> anyhow::Result<()> {
-        self.config.enable(plugin_id);
-        self.config.save()?;
-        self.auto_disabled.remove(plugin_id);
-        self.recompute_extensions();
-        if let Some(pkg) = self
+        // 설치 목록을 확인하기 전에는 설정·수명주기 상태를 바꾸지 않는다.
+        let pkg = self
             .packages
             .iter()
             .find(|p| p.manifest.id == plugin_id)
             .cloned()
-        {
-            // file_format / file_handler 두 registry 에 plugin 의 contribute 등록.
-            // plugin process spawn 과 별개로 정적 contribute 는 즉시 활성화한다.
-            self.file_format
-                .install_plugin_detectors(plugin_id, &pkg.manifest.contributes.detector);
-            self.file_handler
-                .install_plugin_handlers(plugin_id, &pkg.manifest.contributes.handler);
-            if let Some(hh) = &self.hook_handler {
-                hh.install_plugin_hook_handlers(plugin_id, &pkg.manifest.contributes.hook_handler);
-            }
-            if let Some(cs) = &self.completion_strategy {
-                cs.install_plugin_completion_strategies(
-                    completion_strategy_owner_id(&pkg),
-                    &pkg.manifest.contributes.completion_strategy,
-                );
-            }
+            .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' not installed"))?;
+        self.config.enable(plugin_id);
+        self.config.save()?;
+        self.auto_disabled.remove(plugin_id);
+        self.recompute_extensions();
+        // file_format / file_handler 두 registry 에 plugin 의 contribute 등록.
+        // plugin process spawn 과 별개로 정적 contribute 는 즉시 활성화한다.
+        self.file_format
+            .install_plugin_detectors(plugin_id, &pkg.manifest.contributes.detector);
+        self.file_handler
+            .install_plugin_handlers(plugin_id, &pkg.manifest.contributes.handler);
+        if let Some(hh) = &self.hook_handler {
+            hh.install_plugin_hook_handlers(plugin_id, &pkg.manifest.contributes.hook_handler);
+        }
+        if let Some(cs) = &self.completion_strategy {
+            cs.install_plugin_completion_strategies(
+                completion_strategy_owner_id(&pkg),
+                &pkg.manifest.contributes.completion_strategy,
+            );
+        }
 
-            if !self.processes.contains_key(plugin_id) {
-                self.ensure_listener();
-                self.start_plugin_internal(&pkg);
-            }
+        if !self.processes.contains_key(plugin_id) {
+            self.ensure_listener();
+            self.start_plugin_internal(&pkg);
         }
         // `plugin.enabled` 발화는 cascade 가 처리 (App::plugin_enable
         // 의 CoreEvent::PluginEnableToggled → cascade).
@@ -673,6 +673,13 @@ impl PluginManager {
 
     /// CLI/IPC용 — plugin 비활성화. 살아있는 process는 graceful shutdown.
     pub fn disable(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        // enable 과 같은 설치 경계. 실패한 요청은 disabled 흔적도 남기지 않는다.
+        let pkg = self
+            .packages
+            .iter()
+            .find(|p| p.manifest.id == plugin_id)
+            .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' not installed"))?;
+        let cs_owner_id = completion_strategy_owner_id(pkg).to_string();
         self.config.disable(plugin_id);
         self.config.save()?;
         self.recompute_extensions();
@@ -690,11 +697,6 @@ impl PluginManager {
         // (`completion_strategy_owner_id`)으로 계산해둔다 — install 은 ipc_namespace
         // 접두어를 owner 로 쓰므로 uninstall 도 같은 문자열로 지워야 매치된다(그냥
         // plugin_id 를 쓰면 등록은 되고 해제는 안 되는 stale 전략이 남는다).
-        let cs_owner_id: Option<String> = self
-            .packages
-            .iter()
-            .find(|p| p.manifest.id == plugin_id)
-            .map(|pkg| completion_strategy_owner_id(pkg).to_string());
         // file_format / file_handler / hook_handler / completion_strategy registry 에서
         // plugin 의 contribute 제거.
         self.file_format.uninstall_plugin(plugin_id);
@@ -703,7 +705,7 @@ impl PluginManager {
             hh.uninstall_plugin(plugin_id);
         }
         if let Some(cs) = &self.completion_strategy {
-            cs.uninstall_plugin(cs_owner_id.as_deref().unwrap_or(plugin_id));
+            cs.uninstall_plugin(&cs_owner_id);
         }
         // `plugin.unloaded` / `plugin.disabled` 발화는 cascade 가 처리
         // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded

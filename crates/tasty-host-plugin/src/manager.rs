@@ -507,6 +507,9 @@ mod tests_namespace_table;
 mod tests_timers;
 
 #[cfg(test)]
+mod tests_lifecycle_toggle;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::process::PluginProcess;

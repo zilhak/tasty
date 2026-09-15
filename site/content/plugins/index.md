@@ -121,6 +121,8 @@ Tasty 가 실행 중일 때 터미널에서 씁니다. 출력은 JSON 입니다.
 | `tasty plugin doctor <id>` | 매니페스트 진단 — 이 버전의 Tasty 가 이해하지 못하는 규칙이 있는지 |
 | `tasty plugin upgrade-builtins [--force] [--restore-removed <id>]` | 기본 제공 플러그인을 번들 버전으로 다시 맞춥니다. `--restore-removed` 는 제거했던 기본 플러그인을 되살립니다 |
 
+`enable`과 `disable`은 설치된 플러그인의 ID만 받습니다. 설치되지 않은 ID를 지정하면 오류로 끝나고 설정은 바뀌지 않습니다. ID는 `tasty plugin list`에서 확인할 수 있습니다.
+
 ```sh
 tasty plugin list
 tasty plugin permissions com.tasty.git-viewer

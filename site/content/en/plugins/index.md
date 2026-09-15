@@ -1,4 +1,4 @@
-<!-- source-hash: 8b4e3f859592 -->
+<!-- source-hash: 6133aca6944e -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -121,6 +121,8 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin grant <id> <permission>` · `revoke <id> <permission>` | Grants · revokes one permission. Only permissions declared in the manifest can be granted |
 | `tasty plugin doctor <id>` | Diagnoses the manifest — whether it has rules this version of Tasty does not understand |
 | `tasty plugin upgrade-builtins [--force] [--restore-removed <id>]` | Realigns the bundled plugins with the bundled version. `--restore-removed` brings back a bundled plugin you removed |
+
+`enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
 ```sh
 tasty plugin list

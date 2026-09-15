@@ -27,7 +27,13 @@
 
 ### CLI (`tasty plugin …`)
 
-`list` / `show <id>` / `install <path>` / `remove <id>` / `enable <id>` 등. CLI install 은 사용자 의도적 명령이라 매니페스트 권한을 자동 grant.
+`list` / `show <id>` / `install <path>` / `remove <id>` / `enable <id>` / `disable <id>` 등. CLI install 은 사용자 의도적 명령이라 매니페스트 권한을 자동 grant.
+
+`enable <id>` / `disable <id>` 는 발견된 설치 패키지가 있는 ID만 받는다. 미설치 ID는
+GUI·headless 모두 실패하며, 설정 파일과 메모리의 활성/비활성 상태를 바꾸거나 성공 이벤트를
+발행하지 않는다. 토글 실패 응답은 기존 `-32000`과 `enable failed:` / `disable failed:`
+접두어를 유지하고 `plugin '<id>' not installed`를 이유로 돌려준다. 설치·부팅은 패키지
+목록을 채운 뒤 토글을 수행한다.
 
 ### 설정(configure)
 
@@ -36,7 +42,7 @@
 ## 인터페이스
 
 - **사용자(GUI)**: 사이드바 플러그인 버튼 → 관리 창. 탭 전환, 토글/설치/제거.
-- **AI Agent(CLI)**: `tasty plugin {list,show,install,remove,enable}`.
+- **AI Agent(CLI)**: `tasty plugin {list,show,install,remove,enable,disable}`.
 - **연결**:
   - 플러그인 설정 → [`features/settings/`](../settings/index.md) (Plugins 탭)
   - 플러그인 제작/권한/민감데이터 → [plugin-development](../../dev-guide/plugin-development.md) · [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-sensitive-data](../../dev-guide/plugin-sensitive-data.md)
@@ -52,7 +58,9 @@
 - 사이드바 플러그인 버튼 클릭 시 관리 창이 열린다 (Installed / Install 탭).
 - Installed 에서 enable/disable 토글이 동작하고, 오류 플러그인에 health 인디케이터가 뜬다.
 - Install 탭에서 디렉터리 설치 시 매니페스트·권한 미리보기와 신뢰 검증을 거친다.
-- `tasty plugin list/install/remove/enable` CLI 가 동일 동작을 수행한다.
+- `tasty plugin list/install/remove/enable/disable` CLI 가 동일 동작을 수행한다.
+- 미설치 ID의 enable/disable은 GUI·headless 모두 실패하고, 기존 설정 파일은 바이트 단위로 유지되며 없던 설정 파일을 만들지 않는다.
+- 설치된 plugin은 disable 후 enable로 다시 실행할 수 있다.
 - 플러그인 설정은 설정 창 Plugins 탭에 나타난다 (이 창 아님).
 
 > GUI 는 스크린샷, 설치/관리 동작은 `tasty plugin` CLI 시나리오로 검증.
