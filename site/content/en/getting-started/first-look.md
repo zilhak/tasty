@@ -1,4 +1,5 @@
 <!-- source-hash: bb8466b0b8b0 -->
+<!-- source-hash: 7d6a53485a98 -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
