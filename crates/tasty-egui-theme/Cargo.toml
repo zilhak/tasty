@@ -7,9 +7,8 @@ description = "Theme ↔ egui adapter helpers (Visuals/Style apply, hint_text wr
 
 [dependencies]
 egui = "0.31"
-# Font validation: the same parser epaint uses, so a file egui would panic on is
-# rejected before insertion. Already in the tree transitively via egui/epaint.
-ab_glyph = "0.2"
+# Read and validate the same font bytes as the language-pack loader.
+tasty-i18n = { path = "../tasty-i18n" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 tracing = "0.1"

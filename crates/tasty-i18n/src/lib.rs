@@ -29,6 +29,8 @@
 //! with the plugin, and a user language pack — whose size is chosen by the user,
 //! not by tasty — is capped at [`MAX_PACK_BYTES`] before it is ever parsed.
 
+pub mod font;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};

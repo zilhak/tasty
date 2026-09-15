@@ -5623,7 +5623,6 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 name = "tasty"
 version = "0.10.3"
 dependencies = [
- "ab_glyph",
  "anyhow",
  "arboard",
  "base64 0.22.1",
@@ -5808,8 +5807,8 @@ version = "0.1.0"
 name = "tasty-egui-theme"
 version = "0.1.1"
 dependencies = [
- "ab_glyph",
  "egui",
+ "tasty-i18n",
  "tasty-type-appearance",
  "tasty-type-geometry",
  "tracing",
@@ -5914,7 +5913,9 @@ dependencies = [
 name = "tasty-i18n"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "tasty-utils",
+ "tempfile",
  "toml 0.8.2",
  "tracing",
 ]
@@ -6012,7 +6013,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-agent-stream"
-version = "0.1.27"
+version = "0.1.28"
 dependencies = [
  "anyhow",
  "directories",
@@ -6028,7 +6029,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.91"
+version = "0.1.92"
 dependencies = [
  "anyhow",
  "directories",
@@ -6045,7 +6046,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.43"
+version = "0.1.44"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6069,7 +6070,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.65"
+version = "0.1.66"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6083,7 +6084,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.47"
+version = "0.1.48"
 dependencies = [
  "anyhow",
  "egui",
@@ -6104,7 +6105,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6116,7 +6117,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.31"
+version = "0.1.32"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6152,7 +6153,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.98"
+version = "0.1.99"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -6178,7 +6179,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "egui",

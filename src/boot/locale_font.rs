@@ -115,9 +115,12 @@ fn family_path(name: &str) -> Option<PathBuf> {
 /// 파일을 읽어 `ab_glyph` 로 폰트인지 검증한다(바이트는 버린다 — 실제 로드는 append
 /// 지점이 다시 읽어 검증한다). egui 가 보기 전에 깨진 파일을 거르는 관문.
 fn validate(path: &Path) -> Result<(), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("cannot read: {e}"))?;
-    ab_glyph::FontRef::try_from_slice(&bytes).map_err(|_| "not a valid font file".to_string())?;
-    Ok(())
+    tasty_i18n::font::read_validated(path)
+        .map(|_| ())
+        .map_err(|error| match error {
+            tasty_i18n::font::LocaleFontError::Read(error) => format!("cannot read: {error}"),
+            tasty_i18n::font::LocaleFontError::Parse => "not a valid font file".to_string(),
+        })
 }
 
 #[cfg(test)]

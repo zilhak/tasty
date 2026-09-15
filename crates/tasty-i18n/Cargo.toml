@@ -6,9 +6,13 @@ license = "MIT"
 description = "Shared i18n store for Tasty — translation loading + t()/t_fmt() lookup. Depended on by both the main binary and tasty-cli so CLI output can use the same translation table."
 
 [dependencies]
+ab_glyph = "0.2"
 toml = "0.8"
 tracing = "0.1"
 tasty-utils = { path = "../tasty-utils" }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

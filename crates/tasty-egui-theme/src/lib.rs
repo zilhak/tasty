@@ -242,24 +242,7 @@ const LOCALE_FONT_KEY: &str = "locale_pack";
 
 /// 언어팩이 선언한 폰트 파일을 읽어 붙이지 못한 이유. 어느 쪽이든 호출부는 기본 폰트
 /// 스택을 그대로 두고(문자열은 렌더되되 팩 스크립트만 □) 경고를 띄운다.
-#[derive(Debug)]
-pub enum LocaleFontError {
-    /// 파일을 읽지 못했다(경로 없음·권한 등).
-    Read(std::io::Error),
-    /// 읽었으나 폰트로 파싱되지 않는다.
-    Parse,
-}
-
-impl std::fmt::Display for LocaleFontError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LocaleFontError::Read(e) => write!(f, "cannot read font file: {e}"),
-            LocaleFontError::Parse => write!(f, "file is not a valid font"),
-        }
-    }
-}
-
-impl std::error::Error for LocaleFontError {}
+pub use tasty_i18n::font::LocaleFontError;
 
 /// 언어팩이 선언한 폰트 파일을 `Proportional`·`Monospace` 양쪽의 **마지막** 폴백으로
 /// 붙인다. 라틴 글리프는 기본 폰트를 그대로 쓰고 팩 스크립트만 이 폰트로 흘러 내려간다
@@ -278,9 +261,7 @@ pub fn install_locale_font_fallback(
     fonts: &mut egui::FontDefinitions,
     path: &std::path::Path,
 ) -> Result<(), LocaleFontError> {
-    let bytes = std::fs::read(path).map_err(LocaleFontError::Read)?;
-    // 검증만 — 슬라이스로 파싱해 보고 성공하면 바이트는 그대로 egui 로 넘긴다.
-    ab_glyph::FontRef::try_from_slice(&bytes).map_err(|_| LocaleFontError::Parse)?;
+    let bytes = tasty_i18n::font::read_validated(path)?;
     fonts.font_data.insert(
         LOCALE_FONT_KEY.to_owned(),
         Arc::new(egui::FontData::from_owned(bytes)),
@@ -298,6 +279,26 @@ pub fn install_locale_font_fallback(
 #[cfg(test)]
 mod locale_font_tests {
     use super::*;
+
+    #[test]
+    fn validated_bytes_are_appended_without_reordering_existing_fonts() {
+        let dir =
+            std::env::temp_dir().join(format!("tasty-locale-font-valid-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("valid.ttf");
+        let bytes = include_bytes!("../../tasty-font/assets/D2Coding-ligature-Regular.ttf");
+        std::fs::write(&path, bytes).unwrap();
+        let mut fonts = egui::FontDefinitions::default();
+        let before = fonts.families.clone();
+        install_locale_font_fallback(&mut fonts, &path).unwrap();
+        assert_eq!(fonts.font_data[LOCALE_FONT_KEY].font.as_ref(), bytes);
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            let mut expected = before[&family].clone();
+            expected.push(LOCALE_FONT_KEY.to_owned());
+            assert_eq!(fonts.families[&family], expected);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn missing_file_is_a_read_error_and_leaves_fonts_untouched() {

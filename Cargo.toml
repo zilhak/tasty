@@ -285,7 +285,6 @@ dhat = { version = "0.3", optional = true }
 anyhow = "1"
 
 # Font validation for language-pack [font] resolve (already in the tree via egui/epaint).
-ab_glyph = "0.2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
