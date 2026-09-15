@@ -15,7 +15,8 @@
 //! 값 복제를 피해 `theme.tab_bar_height` 를 따라간다). 말풍선 tail 오프셋과 marker 데모
 //! 무대도 여러 지점이 나눠 쓰므로 이름을 붙였다(`TAIL_OFFSET_*` · `MARKER_DEMO_*`).
 //!
-//! 한 지점에서만 쓰는 국소 배치 오프셋은 각 그리기 지점에 인라인으로 둔다. 그중 4px
+//! 무대 높이·스크롤 상한은 한 지점에서만 써도 역할과 사유를 명명한다. 그 밖의 국소
+//! 배치 오프셋은 각 그리기 지점에 인라인으로 둔다. 그중 4px
 //! 그리드 밖인 것(dot rail 지름 5, 팝업 그림자 여백 10)은 그 자리에 이유를 적었다 —
 //! 그리드에 맞추면 원 중심이 픽셀에서 벗어나거나 그림자가 잘린다.
 //!
@@ -45,6 +46,10 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 // ── 고정 컴포넌트 치수 (구조 값 — dialog::frame_card 240.0 와 동일 관례) ──────
 const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 const POPUP_W: LogicalPx = LogicalPx(360.0);
+/// 주제 목록만 스크롤하도록 제한하는 specimen 상한. 팝업 머리와 진행 영역은 밖에 둔다.
+const TOPIC_LIST_SCROLL_MAX_H: LogicalPx = LogicalPx(200.0);
+/// 중앙 topic 팝업 주위의 scrim을 보여 주는 데모 무대 높이. marker 링 크기가 아니다.
+const TOPIC_STAGE_H: LogicalPx = LogicalPx(300.0);
 const TAIL: LogicalPx = LogicalPx(12.0); // 12px diamond → 삼각 tail
 
 // ── 재사용되는 국소 구조 값 (모듈 문서의 규칙: 재사용되면 이름을 붙인다) ─────
@@ -510,7 +515,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                 .show(ui, |ui| {
                     ui.set_width(POPUP_W.value());
                     egui::ScrollArea::vertical()
-                        .max_height(200.0)
+                        .max_height(TOPIC_LIST_SCROLL_MAX_H.value())
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
@@ -785,7 +790,10 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
 
 /// scrim 무대 위에 중앙 정렬된 topic 팝업을 얹는 데모 박스 (jsx 의 grid cell).
 fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(392.0, 300.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(392.0, TOPIC_STAGE_H.value()),
+        egui::Sense::hover(),
+    );
     let p = ui.painter_at(rect);
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
     paint_scrim(&p, rect, theme);

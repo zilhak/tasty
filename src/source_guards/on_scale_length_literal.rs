@@ -246,7 +246,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // export 에 컴포넌트 토큰이 들어오면 없어진다 — 디자인이 기대한 끝값은 85 다.
         // 거기서 +1 은 `file_picker.rs` specimen 의 `CRUMB_MAX_W`(180) — 디자인 `FpCrumbs` 의
         // 성분 maxWidth 이고, 대응 `Theme` 토큰이 없으며 디자인 회신도 새 토큰을 두지 않았다.
-        89,
+        // switch_overlay의 이름/설명 gap 두 사용처가 한 명명 상수를 공유한다.
+        // 나머지 역할 명명은 계상 자리를 선언으로 옮기므로 총수는 그대로다.
+        88,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
          한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
          갈래는 `the_gallery_share_splits_into_four_kinds` 가 든다",
@@ -842,7 +844,8 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         // 22 -> 27 은 `kb_import_export.rs` 의 명명 상수 다섯이다(jsx 인용 · 이름 붙은 치수).
         // 27 -> 25 는 그중 둘(`RECORD_SLOT_H` · `CARD_PAD_X`)이 지워지고 Theme 을 읽게 된 것이다.
         // 거기서 +1 은 `file_picker.rs` 의 `CRUMB_MAX_W`(180, jsx `FpCrumbs` maxWidth 인용)다.
-        (26, 52, 1, 15),
+        // 역할이 확정된 인라인 9자리를 명명 상수 8개로 옮겼다(같은 line gap은 공유).
+        (26, 60, 1, 6),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
@@ -912,7 +915,8 @@ fn the_gallery_share_splits_into_four_kinds() {
         // 같은 값을 가진 `Theme` 이름이 있다(그 이름이 이 자리에 맞는다는 뜻은 아니다 —
         // 이 갈래의 doc 참조).
         // 1 -> 2 는 `file_picker.rs` 의 `CRUMB_MAX_W`(180)다 — 같은 값의 `Theme` 이름이 없다.
-        (roster, 11, 2, ratcheted - 11 - 2),
+        // nudge·줄 간격·스크롤 상한·무대·정렬선의 역할 명명으로 인라인 후보 9개가 이동했다.
+        (roster, 2, 2, ratcheted - 2 - 2),
         "갤러리 몫의 갈래가 바뀌었다 — 전시(래칫 밖) · 같은 값의 이름이 있다 · 이름이 \
          없다 · 그 줄이 스스로 치수를 이름 짓는다"
     );

@@ -34,6 +34,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 const SCRIM_STAGE_H: LogicalPx = LogicalPx(200.0);
 /// 무대 안에 놓는 모달 카드의 폭. 두 변형이 같아야 anchor 차이만 눈에 남는다.
 const FRAME_CARD_W: LogicalPx = LogicalPx(240.0);
+/// top anchor 카드를 무대 위쪽에서 띄우는 데모 inset. center anchor와 위치를 비교한다.
+const TOP_ANCHOR_DEMO_INSET: LogicalPx = LogicalPx(28.0);
 
 // ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
 
@@ -300,7 +302,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme,
                 theme.measure_sm,
                 SCRIM_STAGE_H,
-                LogicalPx(28.0),
+                TOP_ANCHOR_DEMO_INSET,
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, raised_fill(theme), |ui| {
                         region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {

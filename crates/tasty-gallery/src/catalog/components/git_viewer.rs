@@ -27,6 +27,8 @@ const RAIL_W: LogicalPx = LogicalPx(232.0);
 const SECTION_H: LogicalPx = LogicalPx(28.0);
 const CTX_H: LogicalPx = LogicalPx(30.0);
 const HEADER_H: LogicalPx = LogicalPx(44.0);
+/// diff 거터 왼쪽에서 old 줄번호의 우측 정렬선까지 거리. 행 높이와 무관한 열 기하다.
+const DIFF_OLD_LINE_NUMBER_RIGHT_X: LogicalPx = LogicalPx(28.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
@@ -734,7 +736,7 @@ fn diff_line(
     let disabled = theme.text_disabled().to_egui();
     let mono = |s| egui::FontId::monospace(s);
     p.text(
-        egui::pos2(rect.left() + 28.0, cy),
+        egui::pos2(rect.left() + DIFF_OLD_LINE_NUMBER_RIGHT_X.value(), cy),
         egui::Align2::RIGHT_CENTER,
         old,
         mono(sz),

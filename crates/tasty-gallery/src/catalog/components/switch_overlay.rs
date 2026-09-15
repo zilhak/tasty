@@ -22,6 +22,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 // 키캡 slot 의 디자인 고정 px = switch-overlay-size = kbd-size = size-16.
 // 본체 `num_keycap` 위젯이 같은 16px 를 할당하므로 slot 폭/오프셋 계산과 정합한다.
 const KEYCAP_SIZE: LogicalPx = LogicalPx(16.0);
+/// 워크스페이스 이름과 설명 사이의 줄 간격. 행 높이와 설명 중심이 같은 간격을 쓴다.
+const WORKSPACE_TEXT_LINE_GAP: LogicalPx = LogicalPx(1.0);
 
 /// 공용 `num_keycap` 위젯을 16px slot 중앙(`center`)에 배치한다.
 /// specimen 은 painter 로 절대 위치에 레이아웃하므로, 위젯을 키캡 rect 크기의 child UI
@@ -253,7 +255,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     let head_h = theme.spacing_lg + theme.spacing_xs; // 10+4 ≈ 헤더 영역
     let name_lh = theme.font_size_body + theme.spacing_xs; // ≈17
     let sub_lh = theme.font_size_caption + theme.spacing_xs * 0.75; // ≈14
-    let row_h = pad + name_lh + LogicalPx(1.0) + sub_lh + pad;
+    let row_h = pad + name_lh + WORKSPACE_TEXT_LINE_GAP + sub_lh + pad;
     let h = head_h + row_h * WS_ROWS.len() as f32;
 
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
@@ -327,7 +329,8 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         p.text(
             egui::pos2(
                 row.min.x + text_x_off.value(),
-                (name_cy + name_lh.scaled(0.5) + LogicalPx(1.0) + sub_lh.scaled(0.5)).value(),
+                (name_cy + name_lh.scaled(0.5) + WORKSPACE_TEXT_LINE_GAP + sub_lh.scaled(0.5))
+                    .value(),
             ),
             egui::Align2::LEFT_CENTER,
             sub,

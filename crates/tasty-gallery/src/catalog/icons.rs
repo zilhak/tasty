@@ -124,6 +124,8 @@ const TILE_H: LogicalPx = LogicalPx(110.0);
 const TILE_GLYPH: LogicalPx = LogicalPx(22.0);
 /// `.glyph` 박스 한 변 — 글리프 수직 중심 산출용.
 const GLYPH_BOX: LogicalPx = LogicalPx(36.0);
+/// 타일 위쪽 패딩에서 glyph 박스를 아래로 미는 광학 보정. 선 굵기와 무관하다.
+const TILE_GLYPH_NUDGE_Y: LogicalPx = LogicalPx(2.0);
 
 thread_local! {
     /// system-rules 데모의 filter Input 버퍼 (egui memory 에 포커스 유지).
@@ -288,7 +290,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     painter.rect_filled(rect, 0.0, bg);
 
     // 글리프 — padding-top 18 + glyph-box 36 중심.
-    let glyph_cy = LogicalPx(rect.top()) + theme.spacing_lg + LogicalPx(2.0) + GLYPH_BOX / 2.0;
+    let glyph_cy = LogicalPx(rect.top()) + theme.spacing_lg + TILE_GLYPH_NUDGE_Y + GLYPH_BOX / 2.0;
     // hover 시 글리프도 secondary→primary 로 (web .icontile:hover .glyph).
     let glyph_color = if resp.hovered() {
         ec(theme.text_primary())

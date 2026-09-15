@@ -21,12 +21,18 @@
 //! 노출된다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, kbd, switch,
 };
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+/// 후면 배너를 아래로 내려 겹침을 드러내는 전시용 오프셋. 텍스트 크기와 무관하다.
+const STACK_REAR_OVERHANG_Y: LogicalPx = LogicalPx(14.0);
+/// 전면 배너 child 영역의 높이. 뒤쪽 배너의 아래 부분이 남도록 정한 데모 기하다.
+const STACK_FRONT_BANNER_H: LogicalPx = LogicalPx(56.0);
 
 /// 색을 opacity 로 곱한다(하위 스코프 배너 디밍 — toast 스택 fade 와 같은 관습).
 fn dim(color: egui::Color32, opacity: f32) -> egui::Color32 {
@@ -678,7 +684,7 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
 
         // 하위 스코프(Pane) 배너 — 더 크고, 40% 로 디밍되어 뒤에. overhang 만 보인다.
         let lower = egui::Rect::from_min_max(
-            egui::pos2(rect.left(), rect.top() + 14.0),
+            egui::pos2(rect.left(), rect.top() + STACK_REAR_OVERHANG_Y.value()),
             egui::pos2(rect.right(), rect.bottom()),
         );
         let mut lower_ui = ui.new_child(egui::UiBuilder::new().max_rect(lower));
@@ -694,7 +700,10 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
         });
 
         // 상위 스코프(Workspace) 배너 — 전면, full opacity, 높은 z(나중에 그림).
-        let upper = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), rect.top() + 56.0));
+        let upper = egui::Rect::from_min_max(
+            rect.min,
+            egui::pos2(rect.right(), rect.top() + STACK_FRONT_BANNER_H.value()),
+        );
         let mut upper_ui = ui.new_child(egui::UiBuilder::new().max_rect(upper));
         banner_shell(&mut upper_ui, theme, 1.0, |ui| {
             ui.horizontal(|ui| {
