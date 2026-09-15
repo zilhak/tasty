@@ -41,6 +41,21 @@ const FIRST: &str = "self.shutdown_close_surfaces()";
 /// 뒤에 와야 하는 호출 — shutdown 요청을 같은 `req_tx` 에 넣는다.
 const THEN: &str = "self.begin_plugin_shutdown()";
 
+/// The first drive can present immediately, before another normal redraw has a
+/// chance to synchronize native children. Moving the hide after it is too late.
+#[test]
+fn shutdown_entry_hides_native_children_before_the_first_drive() {
+    let src = std::fs::read_to_string(repo_root().join(HOME)).unwrap();
+    let body = strip_comments(&fn_body(&src, "fn begin_shutdown").unwrap());
+    let hide = body.find("main.hide_webviews_for_shutdown()").unwrap();
+    for drive in ["self.drive_shutdown_frame(", "self.run_shutdown_blocking("] {
+        assert!(
+            hide < body.find(drive).unwrap(),
+            "hide must precede {drive}"
+        );
+    }
+}
+
 fn step_body() -> String {
     let path = repo_root().join(HOME);
     let src = std::fs::read_to_string(&path)

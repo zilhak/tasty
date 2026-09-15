@@ -18,7 +18,8 @@
   └─ close_behavior == "quit"       (src/app/modal/quit.rs)
 
 begin_shutdown (src/app/shutdown_machine.rs)          [t0 확정]
-  ShutdownPhase 상태 머신 설치 → about_to_wait 워치독이 16ms 케이던스로 구동
+  ShutdownPhase 상태 머신 설치 → 모든 MainView 의 native webview 숨김
+  → about_to_wait 워치독이 16ms 케이던스로 구동
   (단계 본문은 src/app/shutdown_cascade.rs, 순서·대기는 상태 머신이 소유)
 
   SavingLayout
@@ -95,6 +96,17 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   대상이 하나뿐이라 겹칠 것이 없다. 요청 후 최대 2s 동기 대기를 유지한다.
 
 ## 종료 화면
+
+종료가 확정되면 첫 종료 프레임 전에 모든 MainView 가 소유한 native webview 를
+숨기고 표시 여부 캐시도 비운다. 활성 창·탭뿐 아니라 비활성 탭의 인스턴스도 대상이다.
+이 처리는 일반 redraw 가 끊기기 전의 마지막 프레임에 의존하지 않고
+`App::begin_shutdown` 에서 수행한다. native 자식 뷰는 GPU 표면보다 위에 있으므로
+로딩 프레임만 다시 그려서는 웹뷰를 가릴 수 없다.
+
+확인 모달을 열거나 취소하는 경로와 최소화는 이 진입점을 거치지 않는다.
+숨김은 포커스를 요청하거나 웹뷰를 조기 파괴하지 않으며, layout 저장·lifecycle 통지·
+plugin 종료 및 backend 최종 정리 순서는 그대로 유지한다.
+웹뷰가 없거나 부팅 중인 경우에는 숨길 인스턴스가 없어 추가 대기 없이 진행한다.
 
 상태 머신이 대기하는 프레임마다 `GpuState::render_loading` 으로 로딩 화면을
 present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 것은 phase 문구뿐이다 —

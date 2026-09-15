@@ -105,7 +105,7 @@ ports-and-adapters 배치:
 | 문서 | 설명 |
 |------|------|
 | [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 부팅 계측(T1~T7) |
-| [shutdown-sequence](shutdown-sequence.md) | 종료 cascade(layout flush→surface close→plugin 종료) + `event_loop.exit()` 이후 Drop tail, 종료 계측(S1~S5) |
+| [shutdown-sequence](shutdown-sequence.md) | 종료 확정 시 native webview 숨김 + cascade(layout flush→surface close→plugin 종료) + `event_loop.exit()` 이후 Drop tail, 종료 계측(S1~S5) |
 | [close-sequence](close-sequence.md) | 워크스페이스 close 경로 3종(gui/inline/cascade) + close 계측(C1~C5) 과 실측 기준선 |
 | [multi-window](multi-window.md) | App = Core/Hub/ViewRegistry, Window trait 계층, 모달 불변식, 단일 프로세스 근거 |
 | [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |

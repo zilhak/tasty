@@ -135,6 +135,14 @@ impl App {
             phase: ShutdownPhase::SavingLayout,
         });
 
+        // Native child views sit above the GPU loading frame. Normal redraws no
+        // longer run after shutdown starts, so hide them before the first frame.
+        for view in self.view.views.values_mut() {
+            if let Some(main) = view.as_main_mut() {
+                main.hide_webviews_for_shutdown();
+            }
+        }
+
         if self.has_shutdown_render_target() {
             // 첫 스텝은 곧바로 돌린다 — 대기가 없는 종료는 여기서 그대로 끝나고
             // (화면 없음), 대기가 있으면 첫 종료 프레임이 이 호출에서 present 된다.

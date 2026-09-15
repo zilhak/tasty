@@ -1,4 +1,4 @@
-<!-- source-hash: dae44fec3db7 -->
+<!-- source-hash: 7d6a53485a98 -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
@@ -108,6 +108,8 @@ If you want iTerm2-style `⌘`-centric combinations on macOS, pick the **Mac** p
 ## When you close the window
 
 Pressing the window's close button asks whether to **Quit** or **Minimize to background**. If you choose background, Tasty goes into the system tray (menu bar) and comes back via **Show Window** in the tray icon's menu. To stop being asked every time, change **Settings** > **General** > **Close behavior**.
+
+Once you confirm quitting, web pages and Markdown documents in all windows are hidden so the progress screen can be shown while shutdown is pending. If you cancel the confirmation or return after minimizing to the background, you can continue using the documents.
 
 When you launch Tasty again, the Workspace · Pane · Tab arrangement of the last window is restored as it was (**Settings** > **General** > **Restore layout on startup**, on by default).
 

@@ -12,6 +12,7 @@ mod mouse;
 mod preset_actions;
 mod redraw;
 pub(crate) mod selection;
+mod shutdown;
 pub(crate) mod vi_copy;
 
 pub(crate) mod ime;
@@ -140,7 +141,7 @@ pub struct MainView {
     pub(crate) webview_overlay_focus_released: bool,
     /// 마지막 `sync_webviews` 기준으로 화면에 실제로 드러난 native webview 가 하나라도
     /// 있는지. Linux 키 폴링 tick 을 이 값으로 건다 — 숨겨진(또는 없는) webview 는
-    /// 키를 받을 수 없어 폴링이 순수 낭비다.
+    /// 키를 받을 수 없어 폴링이 순수 낭비다. 종료 확정 시 숨김과 함께 false 로 지운다.
     pub(crate) webview_any_visible: bool,
     /// `webview_key_bridge` 에 마지막으로 넣은 정책의 원본 keybindings. 스냅샷 생성이
     /// 바인딩 필드 전체를 String 으로 모으는 작업이라 매 프레임 다시 만들지 않고,
