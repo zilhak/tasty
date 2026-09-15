@@ -151,6 +151,29 @@ about = "Créer une ressource"
 설정 윈도우 › **일반** › **언어** 목록에 팩이 함께 나옵니다. 고르고 **저장** 한 다음 Tasty 를
 다시 시작하면 적용됩니다.
 
+### 플러그인 문구 바꾸기
+
+플러그인 설치 폴더를 고치지 않고도 문구를 덮어쓸 수 있습니다. 한국어라면
+`~/.tasty/lang/plugins/com.tasty.clipboard-viewer/ko.toml`에 다음처럼 적으세요.
+
+```toml
+[clipboard_viewer.command]
+open_viewer = "내 클립보드 열기"
+
+[clipboard_viewer.popup]
+title = "내 클립보드"
+```
+
+플러그인의 도구 항목과 내부 화면이 같은 파일을 읽습니다. 폴더 이름은 플러그인 ID이며,
+다른 플러그인을 바꾸려면 그 플러그인의 ID와 번역 항목 이름을 사용하세요. 새 언어팩
+`fr`에서는 `~/.tasty/lang/fr/plugins/com.tasty.clipboard-viewer.toml`에 둡니다.
+먼저 `fr/pack.toml`을 만들고 그 언어를 선택해야 합니다.
+
+설치본 영어 → 설치본 선택 언어 → 사용자 파일 순서로 덮습니다. 빈 값이나 빠진 항목은
+앞 단계의 문구를 유지합니다. 파일이 잘못된 TOML이거나 2 MiB를 넘으면 무시하고 경고를
+남깁니다. 수정 후 Tasty를 다시 시작하세요. 이 파일은 플러그인을 업그레이드해도
+보존됩니다. 같은 플러그인 항목을 본체의 `ko.toml`이나 `pack.toml`에도 중복해서 넣지 마세요.
+
 ### 이미 들어 있는 언어의 문구만 바꾸고 싶다면
 
 폴더가 아니라 **파일 하나**를 둡니다 — `~/.tasty/lang/ko.toml` 처럼. 적은 문구만 기본값을

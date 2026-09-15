@@ -1,4 +1,4 @@
-<!-- source-hash: f10970fe4993 -->
+<!-- source-hash: 9abc6b5a791d -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -154,6 +154,31 @@ about = "Créer une ressource"
 
 The pack appears in Settings › **General** › **Language**. Select it, press
 **Save**, then restart Tasty.
+
+### Changing plugin text
+
+You can override plugin text without editing its installation folder. For Korean,
+create `~/.tasty/lang/plugins/com.tasty.clipboard-viewer/ko.toml` with, for example:
+
+```toml
+[clipboard_viewer.command]
+open_viewer = "내 클립보드 열기"
+
+[clipboard_viewer.popup]
+title = "내 클립보드"
+```
+
+The plugin's tool entry and internal UI read the same file. The folder name is the
+plugin ID; use the corresponding ID and translation entry names for another plugin.
+For a new `fr` language pack, use
+`~/.tasty/lang/fr/plugins/com.tasty.clipboard-viewer.toml` instead. Create
+`fr/pack.toml` and select that language first.
+
+Loading proceeds from installed English to the installed selected language, then
+to your file. Blank or missing entries keep the preceding text. Invalid TOML and
+files over 2 MiB are ignored with a warning. Restart Tasty after editing. Your file
+survives plugin upgrades. Do not duplicate the same plugin entries in the host's
+`ko.toml` or `pack.toml`.
 
 ### Changing only some text of a built-in language
 

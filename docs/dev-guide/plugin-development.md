@@ -230,6 +230,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 | 데이터 | 위치 | 비고 |
 |--------|------|------|
 | 정적 자산(아이콘/lang/README) | `TASTY_PLUGIN_DIR` | **읽기 전용** — 업그레이드 시 통째 교체 |
+| 사용자 번역 | host의 `lang/` 아래 plugin 오버라이드([i18n](i18n.md#사용자-plugin-번역)) | 설치본 lang는 수정하지 않음, SDK는 `TASTY_PARENT_HOME` 사용 |
 | 사용자 편집 설정 | `TASTY_PLUGIN_CONFIG_PATH` | 업그레이드 보존 |
 | DB·캐시·로그 | `TASTY_PLUGIN_DATA_DIR` | **쓰기 OK**, 업그레이드 보존 |
 | 작업 메타/진행 상태(≤1 MiB) | `memory.*` / `memory.secret.*` | host SQLite. cap 초과는 `ValueTooLarge` |

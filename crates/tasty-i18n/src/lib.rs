@@ -30,6 +30,7 @@
 //! not by tasty — is capped at [`MAX_PACK_BYTES`] before it is ever parsed.
 
 pub mod font;
+pub mod plugin_catalog;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -663,6 +664,8 @@ pub struct Translations {
     /// Active language code; used by `register_namespace` to decide which
     /// language file to load from a plugin's lang dir.
     language: String,
+    /// Host language root captured at initialization, also used for plugin overlays.
+    user_lang_dir: Option<PathBuf>,
 }
 
 impl Translations {
@@ -679,7 +682,7 @@ impl Translations {
         if is_builtin_code(requested) {
             let (strings, outcome) = Self::builtin_strings(requested, lang_dir);
             return (
-                Self::from_strings(strings, requested),
+                Self::from_strings(strings, requested, lang_dir),
                 LoadReport {
                     requested: requested.to_string(),
                     effective: requested.to_string(),
@@ -689,7 +692,7 @@ impl Translations {
         }
         match Self::pack_strings(requested, lang_dir) {
             Ok((strings, outcome)) => (
-                Self::from_strings(strings, requested),
+                Self::from_strings(strings, requested, lang_dir),
                 LoadReport {
                     requested: requested.to_string(),
                     effective: requested.to_string(),
@@ -700,7 +703,7 @@ impl Translations {
                 Self::warn_fallback(requested, lang_dir, &outcome);
                 let (strings, _) = Self::builtin_strings("en", lang_dir);
                 (
-                    Self::from_strings(strings, "en"),
+                    Self::from_strings(strings, "en", lang_dir),
                     LoadReport {
                         requested: requested.to_string(),
                         effective: "en".to_string(),
@@ -853,7 +856,11 @@ impl Translations {
         strings
     }
 
-    fn from_strings(strings: HashMap<String, String>, language: &str) -> Self {
+    fn from_strings(
+        strings: HashMap<String, String>,
+        language: &str,
+        user_lang_dir: Option<&Path>,
+    ) -> Self {
         tracing::info!(
             "i18n: loaded {} strings for language '{}'",
             strings.len(),
@@ -865,6 +872,7 @@ impl Translations {
             base,
             namespaces: RwLock::new(HashMap::new()),
             language: language.to_string(),
+            user_lang_dir: user_lang_dir.map(Path::to_path_buf),
         }
     }
 
@@ -923,34 +931,16 @@ impl Translations {
 
     /// Register a plugin namespace. `lang_dir` is expected to contain
     /// `<lang>.toml` files — `en.toml` is loaded as the base, then the
-    /// active language file is overlaid on top.
+    /// active language file and the host-root user override are overlaid on top.
     ///
     /// If `namespace` was previously registered, its entries are replaced.
     pub fn register_namespace(&self, namespace: &str, lang_dir: &Path) {
-        let mut strings: HashMap<String, String> = HashMap::new();
-
-        // English fallback first.
-        let en_path = lang_dir.join("en.toml");
-        if let Ok(s) = std::fs::read_to_string(&en_path) {
-            Self::parse_toml_into(&mut strings, &s);
-        }
-
-        if self.language != "en" {
-            let lang_path = lang_dir.join(format!("{}.toml", self.language));
-            if let Ok(s) = std::fs::read_to_string(&lang_path) {
-                // 활성 언어는 **덮어쓰기**라 빈 값을 그대로 얹으면 바로 위 en 문자열을
-                // 지운다. 팩·내장 오버라이드와 같은 규칙을 여기에도 건다(ADR-0124):
-                // 빈 값은 번역 없음이고, 아래 층인 그 plugin 의 영어가 보인다.
-                let mut overlay = HashMap::new();
-                Self::parse_toml_into(&mut overlay, &s);
-                drop_blank_values_warned(
-                    &mut overlay,
-                    &format!("plugin lang file {}", lang_path.display()),
-                    "fall back to the plugin's English string",
-                );
-                strings.extend(overlay);
-            }
-        }
+        let strings = plugin_catalog::load(
+            lang_dir,
+            &self.language,
+            namespace,
+            self.user_lang_dir.as_deref(),
+        );
 
         let leaked: HashMap<String, &'static str> =
             strings.into_iter().map(|(k, v)| (k, leak_str(v))).collect();
@@ -1770,6 +1760,7 @@ mod tests {
             base: HashMap::new(),
             namespaces: RwLock::new(HashMap::new()),
             language: "en".to_string(),
+            user_lang_dir: None,
         };
         // 임시 lang dir 없이 직접 namespace 삽입해 lookup만 확인
         {
@@ -1790,6 +1781,7 @@ mod tests {
             base,
             namespaces: RwLock::new(HashMap::new()),
             language: "en".to_string(),
+            user_lang_dir: None,
         };
         {
             let mut ns = tr.namespaces.write().unwrap();
@@ -1806,6 +1798,7 @@ mod tests {
             base: HashMap::new(),
             namespaces: RwLock::new(HashMap::new()),
             language: "en".to_string(),
+            user_lang_dir: None,
         };
         {
             let mut ns = tr.namespaces.write().unwrap();
@@ -1826,6 +1819,7 @@ mod tests {
             base,
             namespaces: RwLock::new(HashMap::new()),
             language: "en".to_string(),
+            user_lang_dir: None,
         };
         assert_eq!(
             tr.get_args("cli.x", &["host", "1234", "9.9.9"]),
@@ -1848,6 +1842,7 @@ mod tests {
             base: HashMap::new(),
             namespaces: RwLock::new(HashMap::new()),
             language: "ko".to_string(),
+            user_lang_dir: None,
         };
         tr.register_namespace("com.example.x", &tmp);
         // ko에서 정의된 키
@@ -1883,6 +1878,7 @@ mod tests {
             base: HashMap::new(),
             namespaces: RwLock::new(HashMap::new()),
             language: "ko".to_string(),
+            user_lang_dir: None,
         };
         tr.register_namespace("com.example.x", &tmp);
 
@@ -1908,6 +1904,7 @@ mod tests {
             base: HashMap::new(),
             namespaces: RwLock::new(HashMap::new()),
             language: "ko".to_string(),
+            user_lang_dir: None,
         };
         tr.register_namespace("com.example.x", &tmp);
 

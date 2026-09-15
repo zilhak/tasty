@@ -1,11 +1,6 @@
 //! 매니페스트 검증에 쓰이는 형식 검사 / 예약 키워드 검사 자유 함수들.
 
-pub(super) fn is_valid_plugin_id(s: &str) -> bool {
-    !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
-        && s.contains('.')
-}
+pub(super) use tasty_utils::plugin_id::is_valid_plugin_id;
 
 pub(super) fn is_valid_kind(s: &str) -> bool {
     !s.is_empty()

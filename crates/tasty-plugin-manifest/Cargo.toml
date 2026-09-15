@@ -13,6 +13,7 @@ toml = "0.8"
 anyhow = "1"
 thiserror = "1"
 tracing = "0.1"
+tasty-utils = { path = "../tasty-utils" }
 semver = "1"
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }

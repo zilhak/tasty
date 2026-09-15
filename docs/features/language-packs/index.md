@@ -23,6 +23,19 @@
 - **오버라이드** = `~/.tasty/lang/<builtin>.toml` 단일 파일. 내장 코드 전용, `[font]` 불필요. 내장이 아닌 코드의 단일 파일은 팩이 아니다(경고 후 무시). 크기 상한과 **빈 값 규칙**은 팩과 같다 — 빠진 키는 내장 `<code>.toml` 의 문구로 되돌아간다.
 - 내장 `lang/{en,ko,ja}.toml` 도 `[meta] name` 을 갖는다(`English` / `한국어` / `日本語`).
 
+### plugin 문자열 덮어쓰기
+
+사용자 파일 하나를 host의 plugin 라벨과 SDK UI가 함께 읽는다. 내장 코드면
+`~/.tasty/lang/plugins/<plugin-id>/<code>.toml`, 새 언어팩이면
+`~/.tasty/lang/<code>/plugins/<plugin-id>.toml`이다. plugin 설치본 영어 → 선택 언어 →
+사용자 파일 순서이며, 빈 값·누락 키는 앞 층의 문구를 유지한다. 잘못된 TOML이나 2 MiB를
+넘는 사용자 파일은 경고 후 무시한다. 변경 후 재시작한다. plugin 전용 키를 본체 팩에
+중복해서 넣지 않는다(본체 카탈로그 우선 조회는 유지된다).
+
+SDK는 host가 알려 준 `TASTY_PARENT_HOME` 아래에서 읽으므로 설치 자산을 고치거나
+별도 파일 권한을 요청할 필요가 없다. plugin ID·언어 코드가 경로를 선택하며 다른
+plugin의 파일은 합치지 않는다. 구체 규약은 [i18n](../../dev-guide/i18n.md#사용자-plugin-번역).
+
 ### 발견 (`available_languages`)
 
 내장 3 개(고정 순서) + `~/.tasty/lang/` 의 유효한 팩(코드순). 항목마다 코드 · 표시 이름 · 출처(`Builtin` / `BuiltinOverridden` / `Pack`) · `[font]` 선언 종류 · 경로. 파싱 실패, `[font]` 부재/무효, 크기 상한 초과, 내장 코드 이름의 디렉토리, 새 코드의 단일 파일은 전부 `tracing::warn!` + 제외. 규칙 표는 [dev-guide/i18n](../../dev-guide/i18n.md) "언어팩".
@@ -55,7 +68,7 @@
 - **"전부 팩 폰트"** — 팩 폰트는 마지막 폴백이라 라틴은 기본 폰트로 남는다(혼합 렌더). 팩 폰트를 최우선으로 두는 `priority` 옵션은 후일.
 - 재시작 없는 언어 전환.
 - 팩 설치/배포 도구(다운로드 · 서명 · 버전).
-- plugin 자체 `lang/` 의 팩화 — plugin 은 SDK `Translator` 가 `TASTY_LOCALE` 로 자기 파일을 고른다(팩 코드가 곧 파일명).
+- plugin 설치본 `lang/` 자체의 팩화 — 설치 자산은 기존 코드별 파일을 유지하며 사용자 번역만 위 별도 경로에서 덮는다.
 
 ## Acceptance Criteria
 
