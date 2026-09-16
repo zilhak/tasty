@@ -2,6 +2,7 @@
 use super::*;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Only child startup configuration is isolated. Ordinary inherited environment
 // remains available so the sentinel and surface-ID assertions still test it.
@@ -26,7 +27,13 @@ fn external_codex_preserves_argv_environment_and_prompt() {
         .without_time()
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
-    let root = std::env::temp_dir().join(format!("tasty-codex-shell-{}", std::process::id()));
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let prompt_dir = std::env::temp_dir();
+    let root = prompt_dir.join(format!(
+        "tasty-codex-shell-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir(&root).unwrap();
     let fake = root.join("codex");
     std::fs::write(
@@ -120,7 +127,7 @@ fn external_codex_preserves_argv_environment_and_prompt() {
         }
     }
     std::fs::remove_file(prompt_file::path_for(
-        &std::env::temp_dir(),
+        &prompt_dir,
         PROMPT_FILE_PREFIX,
         surface_id,
     ))

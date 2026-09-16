@@ -279,13 +279,18 @@ pub fn install_locale_font_fallback(
 #[cfg(test)]
 mod locale_font_tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn validated_bytes_are_appended_without_reordering_existing_fonts() {
-        let dir =
-            std::env::temp_dir().join(format!("tasty-locale-font-valid-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("valid.ttf");
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let valid_dir = std::env::temp_dir().join(format!(
+            "tasty-locale-font-valid-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&valid_dir).unwrap();
+        let path = valid_dir.join("valid.ttf");
         let bytes = include_bytes!("../../tasty-font/assets/D2Coding-ligature-Regular.ttf");
         std::fs::write(&path, bytes).unwrap();
         let mut fonts = egui::FontDefinitions::default();
@@ -297,7 +302,7 @@ mod locale_font_tests {
             expected.push(LOCALE_FONT_KEY.to_owned());
             assert_eq!(fonts.families[&family], expected);
         }
-        std::fs::remove_dir_all(dir).unwrap();
+        std::fs::remove_dir_all(valid_dir).unwrap();
     }
 
     #[test]

@@ -178,6 +178,11 @@ assert_eq!(result, Some(tmp.path().join("notes")));
 않는다. 금지 범위와 범위 밖 항목은
 [ADR-0105](../adr/0105-no-nongit-path-refs-in-tracked-sources.md) 가 정본이다.
 
+의존이 없는 작은 fixture에서 직접 이름을 짓는 경우에는 PID로 프로세스를 가르고,
+함수 호출 사이에 유지되는 `static` 단조 counter로 같은 프로세스의 재호출을 가른다.
+Codex 셸 실행 시험과 유효 폰트 시험은 이 두 축을 함께 쓴다. 셸 시험의 production
+prompt cleanup은 처음 받은 temp root를 재사용해 생성과 회수의 경로 규칙을 유지한다.
+
 ## 5. 확인 방법
 
 격리가 실제로 됐는지는 **같은 명령을 서로 다른 환경에서 돌려 결과가 같은지**로 본다.
