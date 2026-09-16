@@ -39,23 +39,22 @@ pub fn tick(service: &Completion) -> Result<()> {
                 let endpoint_identity = super::transport::endpoint_identity(&binding.endpoint)?;
                 let cli_version = super::diagnostics::cli_version();
                 service.change(|j| {
-                    if let Some(b) = j.bindings.get_mut(&binding.key) {
-                        if b.generation == binding.generation
-                            && b.surface == binding.surface
-                            && b.hook_session == binding.hook_session
-                        {
-                            b.phase = "verified".into();
-                            b.server = identity.server;
-                            b.codex_home = identity.home;
-                            b.daemon_pid = Some(identity.pid);
-                            b.history_mode = identity.history;
-                            b.diagnostic = String::new();
-                            b.endpoint_identity = endpoint_identity;
-                            b.connection_generation += 1;
-                            b.probe_attempts = 0;
-                            b.probe_after = 0;
-                            b.cli_version = cli_version;
-                        }
+                    if let Some(b) = j.bindings.get_mut(&binding.key)
+                        && b.generation == binding.generation
+                        && b.surface == binding.surface
+                        && b.hook_session == binding.hook_session
+                    {
+                        b.phase = "verified".into();
+                        b.server = identity.server;
+                        b.codex_home = identity.home;
+                        b.daemon_pid = Some(identity.pid);
+                        b.history_mode = identity.history;
+                        b.diagnostic = String::new();
+                        b.endpoint_identity = endpoint_identity;
+                        b.connection_generation += 1;
+                        b.probe_attempts = 0;
+                        b.probe_after = 0;
+                        b.cli_version = cli_version;
                     }
                     Ok(())
                 })?;
@@ -91,14 +90,14 @@ pub fn tick(service: &Completion) -> Result<()> {
                             b.phase = "unbound".into();
                         }
                     }
-                    if let Some(event) = event {
-                        if let Some(e) = j.events.get_mut(&event.id) {
-                            if e.phase == "pending" {
-                                defer(e, &diagnostic);
-                            } else {
-                                e.diagnostic = diagnostic;
-                                e.retry_at = now() + 10;
-                            }
+                    if let Some(event) = event
+                        && let Some(e) = j.events.get_mut(&event.id)
+                    {
+                        if e.phase == "pending" {
+                            defer(e, &diagnostic);
+                        } else {
+                            e.diagnostic = diagnostic;
+                            e.retry_at = now() + 10;
                         }
                     }
                     Ok(())
@@ -128,9 +127,12 @@ fn deliver(
                                 .into();
                     }
                     Ok(scan) => {
+                        e.diagnostic = if scan.evidence["complete"] == true {
+                            "not_in_history: busy queue acceptance remains unresolved"
+                        } else {
+                            "history_incomplete: acceptance remains unresolved"
+                        }.into();
                         e.recovery = scan.evidence;
-                        e.diagnostic =
-                            "not_in_history: busy queue acceptance remains unresolved".into()
                     }
                     Err(error) => {
                         e.diagnostic = format!("history_unavailable: {error:#}");
@@ -181,7 +183,15 @@ fn deliver(
     let result = client
         .transport
         .send(&wire)
-        .and_then(|()| client.response(id));
+        .and_then(|()| client.response(id))
+        .and_then(|reply| {
+            if reply["turn"]["id"].as_str().is_some() && reply["turn"]["status"].as_str().is_some()
+            {
+                Ok(reply)
+            } else {
+                anyhow::bail!("turn_response_invalid: acceptance cannot be inferred")
+            }
+        });
     service.change(|j| {
         let e = j
             .events

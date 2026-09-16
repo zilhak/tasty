@@ -8,6 +8,7 @@ pub struct Scan {
 }
 impl Client {
     pub fn recorded(&mut self, binding: &Binding, event: &Event) -> Result<Scan> {
+        let started_at = super::now();
         let marker = &event.delivery_id;
         let metadata = self.call(
             "thread/read",
@@ -29,7 +30,7 @@ impl Client {
             });
             return Ok(Scan {
                 matched: contains_output(&history, marker),
-                evidence: json!({"history_mode":mode,"complete":complete,"pages":1,"items_view":if complete{"full"}else{"incomplete"},"subscription":"resume_verified_for_this_connection","absence_proves_rejection":false}),
+                evidence: json!({"history_mode":mode,"complete":complete,"pages":1,"items_view":if complete{"full"}else{"incomplete"},"subscription":"resume_verified_for_this_connection","absence_proves_rejection":false,"started_at":started_at,"finished_at":super::now(),"concurrent_writes_excluded":false,"notifications_observed":self.observed.len()}),
             });
         }
         let mut cursor = Value::Null;
@@ -37,7 +38,10 @@ impl Client {
         let mut seen = std::collections::HashSet::new();
         for _ in 0..100 {
             cursors.push(cursor.clone());
-            let page=self.call("thread/items/list",json!({"threadId":binding.thread_id,"cursor":cursor,"limit":100,"sortDirection":"asc"}))?;
+            let page = match self.call("thread/items/list", json!({"threadId":binding.thread_id,"cursor":cursor,"limit":100,"sortDirection":"asc"})) {
+                Ok(page) => page,
+                Err(error) => return Ok(Scan { matched: false, evidence: json!({"history_mode":mode,"complete":false,"cursors":cursors,"failed_cursor":cursor,"error":format!("{error:#}"),"started_at":started_at,"finished_at":super::now(),"concurrent_writes_excluded":false,"absence_proves_rejection":false}) }),
+            };
             if !page["data"].is_array() {
                 bail!("history_incomplete: malformed items page");
             }
@@ -46,7 +50,7 @@ impl Client {
             if matched || cursor.is_null() {
                 return Ok(Scan {
                     matched,
-                    evidence: json!({"history_mode":mode,"complete":cursor.is_null(),"pages":cursors.len(),"cursors":cursors,"next_cursor":cursor,"items_view":"full","subscription":"resume_verified_for_this_connection","absence_proves_rejection":false}),
+                    evidence: json!({"history_mode":mode,"complete":cursor.is_null(),"pages":cursors.len(),"cursors":cursors,"next_cursor":cursor,"items_view":"full","subscription":"resume_verified_for_this_connection","absence_proves_rejection":false,"started_at":started_at,"finished_at":super::now(),"concurrent_writes_excluded":false,"notifications_observed":self.observed.len()}),
                 });
             }
             if !seen.insert(cursor.to_string()) {

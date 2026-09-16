@@ -15,11 +15,11 @@ pub enum Transport {
 }
 pub fn validate_endpoint(endpoint: &str) -> Result<()> {
     if let Some(path) = endpoint.strip_prefix("unix://") {
-        if !std::path::Path::new(path).is_absolute() {
-            bail!("explicit_absolute_socket_required");
-        }
         if !cfg!(unix) {
             bail!("unix_transport_unsupported_on_this_platform");
+        }
+        if !std::path::Path::new(path).is_absolute() {
+            bail!("explicit_absolute_socket_required");
         }
         return Ok(());
     }
@@ -29,6 +29,15 @@ pub fn validate_endpoint(endpoint: &str) -> Result<()> {
     {
         if endpoint.contains('@') || endpoint.contains('?') || endpoint.contains('#') {
             bail!("endpoint_must_not_contain_credentials_or_query");
+        }
+        #[cfg(windows)]
+        if endpoint.chars().any(|c| {
+            matches!(
+                c,
+                '"' | '\'' | '$' | '`' | '&' | '|' | '<' | '>' | '^' | '%' | '!' | '\r' | '\n'
+            )
+        }) {
+            bail!("endpoint_unsafe_for_windows_resume_shell");
         }
         return Ok(());
     }

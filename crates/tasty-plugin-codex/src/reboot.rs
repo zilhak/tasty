@@ -25,8 +25,7 @@
 //!   에서 no-op 이므로 claude 와 같은 4회 시퀀스를 그대로 쓴다. 이미 스스로
 //!   종료돼 있던 경우도 여분 Ctrl+C 는 무해하나, exit 마커가 증가하지 않으므로
 //!   보수적으로 중단된다(이미 죽은 codex 의 reboot 는 지원하지 않는다).
-//! - codex 에는 SessionEnd hook 이 없어 meta unset 경로가 없다 — 다음
-//!   session-start 가 덮어쓴다.
+//! - SessionEnd는 현재 세션 meta를 지우며 reboot는 종료 전에 세션과 연결 문맥을 캡처한다.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -110,13 +109,14 @@ pub(crate) fn handle_reboot(
             (binding["endpoint"].as_str(), binding["thread_id"].as_str())
         {
             // Endpoint was validated by the host. Keep its shell representation a single token.
+            #[cfg(windows)]
+            let quoted = format!("\"{endpoint}\"");
+            #[cfg(not(windows))]
             let quoted = format!("'{}'", endpoint.replace('\'', "'\"'\"'"));
             policy_args.push_str(&format!(" --remote {quoted}"));
             if let Some(auth) = binding["auth_env"].as_str() {
-                policy_args.push_str(&format!(
-                    " --remote-auth-token-env '{}'",
-                    auth.replace('\'', "'\"'\"'")
-                ));
+                // Verified auth references contain only ASCII identifier characters.
+                policy_args.push_str(&format!(" --remote-auth-token-env {auth}"));
             }
             session_id = thread.to_string();
         }

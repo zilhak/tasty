@@ -217,6 +217,50 @@ fn exit_preserves_a_released_subscription_reason() {
         "relation_released"
     );
 }
+#[test]
+fn released_relation_cannot_resume_after_adoption_or_retry() {
+    let service = Completion::memory().unwrap();
+    parent(&service);
+    service.session(2, "codex", "child").unwrap();
+    let old = service.subscribe(1, 2, "codex", "spawn").unwrap();
+    service.observe(2, "idle", "interrupt", "").unwrap();
+    service
+        .change(|j| {
+            j.events.values_mut().next().unwrap().phase = "blocked".into();
+            Ok(())
+        })
+        .unwrap();
+    let event = *service.snapshot().unwrap().events.keys().next().unwrap();
+    service.release(1, 2).unwrap();
+    service.session(3, "codex", "other-parent").unwrap();
+    let new = service.subscribe(3, 2, "codex", "spawn").unwrap();
+    service.observe(2, "active", "prompt-submit", "").unwrap();
+    service
+        .observe(2, "needs_input", "permission-request", "")
+        .unwrap();
+    let j = service.snapshot().unwrap();
+    assert_eq!(j.events[&event].phase, "cancelled");
+    assert!(service.retry(event, 1).is_err());
+    assert_eq!(
+        j.events.values().filter(|e| e.subscription == old).count(),
+        1
+    );
+    assert_eq!(
+        j.events.values().filter(|e| e.subscription == new).count(),
+        1
+    );
+}
+#[test]
+fn unknown_parent_preserves_event_without_guessing_a_channel() {
+    let service = Completion::memory().unwrap();
+    service.subscribe(1, 2, "claude", "tell").unwrap();
+    service
+        .observe(2, "needs_input", "permission-request", "")
+        .unwrap();
+    let j = service.snapshot().unwrap();
+    assert_eq!(j.events.values().next().unwrap().phase, "unbound");
+    assert!(j.bindings.is_empty());
+}
 #[cfg(unix)]
 mod wire {
     use super::*;
@@ -347,6 +391,27 @@ mod wire {
             1
         );
         assert!(requests.iter().any(|v| v["params"]["cursor"] == "second"));
+    }
+    #[test]
+    fn concurrent_sender_claims_do_not_duplicate_a_request() {
+        let server = Server::new(false, true, 2);
+        let service = Completion::memory().unwrap();
+        parent(&service);
+        service.bind(binding(server.endpoint.clone())).unwrap();
+        service.subscribe(1, 2, "claude", "spawn").unwrap();
+        service.observe(2, "idle", "stop", "result").unwrap();
+        let second = service.clone();
+        let first = std::thread::spawn(move || worker::tick(&second).unwrap());
+        worker::tick(&service).unwrap();
+        first.join().unwrap();
+        let requests = server.finish();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|v| v["method"] == "turn/start")
+                .count(),
+            1
+        );
     }
     #[test]
     fn unowned_disk_thread_is_not_resumed_or_sent_to() {

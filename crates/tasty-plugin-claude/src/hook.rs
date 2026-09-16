@@ -106,7 +106,7 @@ pub(crate) fn handle_claude_hook(
                 surface_id,
                 state,
                 event,
-                message.unwrap_or("Child status reported; inspect child output for result"),
+                message.unwrap_or(""),
             )?;
         }
     }

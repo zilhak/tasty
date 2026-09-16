@@ -67,7 +67,7 @@ impl Completion {
     }
     pub fn unsubscribe(&self, id: u64, parent: u32) -> Result<()> {
         self.change(|j| {
-            if !j.subscriptions.get(&id).is_some_and(|s| s.parent == parent) {
+            if j.subscriptions.get(&id).is_none_or(|s| s.parent != parent) {
                 bail!("subscription_not_owned");
             }
             j.close_subscription(id, "explicit_unsubscribe");
@@ -179,6 +179,9 @@ impl Completion {
             }
             if !matches!(e.phase.as_str(), "blocked" | "pending") {
                 bail!("only_definitely_unsent_events_can_retry");
+            }
+            if !e.binding.as_ref().and_then(|key| j.bindings.get(key)).is_some_and(|b| matches!(b.phase.as_str(), "verified" | "verifying")) {
+                bail!("binding_unbound: explicitly bind the recorded parent after correcting its diagnostic");
             }
             e.phase = "pending".into();
             e.retry_at = 0;

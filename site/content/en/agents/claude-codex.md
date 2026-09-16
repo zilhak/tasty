@@ -1,4 +1,4 @@
-<!-- source-hash: 8bf151ae5d66 -->
+<!-- source-hash: addfbe0b7bd2 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -240,3 +240,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 
 - [Task workflows](tasks.md) — Running spawn and tell as one dependency graph.
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Completion notices and approval gates.
+
+Reinstalling the Codex integration also registers SessionEnd. When the current execution ends, its task subscriptions close; results already accepted by the server are not marked as recalled.
+
+Use `tasty codex completion status --all` to inspect undelivered and cancelled records after the parent terminal has closed.

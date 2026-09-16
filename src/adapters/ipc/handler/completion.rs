@@ -35,14 +35,19 @@ fn text<'a>(params: &'a Value, name: &str) -> Result<&'a str> {
 }
 fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
     let action = text(params, "action")?;
+    if matches!(action, "status" | "diagnose") && params["all"] == true {
+        let j = engine.completion.snapshot()?;
+        return Ok(
+            json!({"sessions":j.sessions,"bindings":j.bindings.into_values().collect::<Vec<_>>(),"subscriptions":j.subscriptions.into_values().collect::<Vec<_>>(),"events":j.events.into_values().collect::<Vec<_>>(),"scope":"host journal including closed parents"}),
+        );
+    }
     let surface = number(params, "surface")?;
     // Existing sessions from before a host/plugin upgrade need positive process evidence.
-    if engine
+    if !engine
         .completion
         .snapshot()?
         .sessions
-        .get(&surface)
-        .is_none()
+        .contains_key(&surface)
     {
         let kind = engine.foreground_name(surface).and_then(|name| {
             if name.to_ascii_lowercase().contains("claude") {
@@ -93,15 +98,14 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
             Ok(json!({"subscription":id}))
         }
         "end_session" => {
-            if let Some(reported) = params["hook_session"].as_str() {
-                if service
+            if let Some(reported) = params["hook_session"].as_str()
+                && service
                     .snapshot()?
                     .sessions
                     .get(&surface)
                     .is_some_and(|s| s.hook_session != reported)
-                {
-                    return Ok(json!({"ignored_old_session":true}));
-                }
+            {
+                return Ok(json!({"ignored_old_session":true}));
             }
             service.end_execution(surface, "session-end")?;
             Ok(json!({"ended":true}))
@@ -111,9 +115,7 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
                 surface,
                 text(params, "state")?,
                 text(params, "cause")?,
-                params["summary"]
-                    .as_str()
-                    .unwrap_or("Child status reported; inspect child output for result"),
+                params["summary"].as_str().unwrap_or(""),
             )?;
             Ok(json!({"recorded":true}))
         }

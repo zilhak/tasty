@@ -112,10 +112,11 @@ impl Client {
                 return value.get("result").cloned().context("missing_rpc_result");
             }
             // Server approval/tool requests remain owned by the parent TUI. Never answer them.
-            if value.get("method").is_some() && value.get("id").is_none() {
-                if self.observed.len() < 512 {
-                    self.observed.push(value);
-                }
+            if value.get("method").is_some()
+                && value.get("id").is_none()
+                && self.observed.len() < 512
+            {
+                self.observed.push(value);
             }
         }
         bail!("app_server_response_timeout")
@@ -124,7 +125,7 @@ impl Client {
         self.next += 1;
         (
             self.next,
-            json!({"id":self.next,"method":"turn/start","params":{"threadId":binding.thread_id,"input":[],"toolOutput":{"name":"child_completion","namespace":"tasty","output":serde_json::to_string(&json!({"event_id":event.delivery_id.clone(),"subscription":event.subscription,"child":event.child,"child_kind":event.child_kind,"child_generation":event.child_generation,"epoch":event.epoch,"state":event.state,"cause":event.cause,"summary":event.summary})).expect("JSON values serialize")}}}),
+            json!({"id":self.next,"method":"turn/start","params":{"threadId":binding.thread_id,"input":[],"toolOutput":{"name":"child_completion","namespace":"tasty","output":serde_json::to_string(&json!({"event_id":event.delivery_id.clone(),"subscription":event.subscription,"child":event.child,"child_kind":event.child_kind,"child_generation":event.child_generation,"epoch":event.epoch,"state":event.state,"cause":event.cause,"summary":event.summary,"result_reference":{"kind":"tasty_surface","surface":event.child}})).expect("JSON values serialize")}}}),
         )
     }
 }

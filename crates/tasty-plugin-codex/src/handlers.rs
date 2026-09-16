@@ -617,10 +617,8 @@ pub(crate) fn handle_notify_caller<H: HostCall>(
     let screen_text = fetch_screen_text_for_hint(host, target);
     let message = append_sandbox_hint_if_detected(tr, message, screen_text.as_deref());
 
-    // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
-    // 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔 terminal.tell 도
-    // 함께 발사했으나, 자동 이벤트가 실제 사용자 발화처럼 대화 트랜스크립트에 섞여
-    // 들어가는 부작용 때문에 제거함). best-effort — 실패해도 hook 정리에 영향 없음.
+    // Claude 부모의 기존 Monitor 수신용 로그에 append한다. Codex 부모는 host outbox를 쓴다.
+    // 로그 실패는 기록하고 형제 hook 정리를 계속한다.
     if tasty_plugin_agent_common::completion::legacy_log(host, caller)
         && let Err(e) = tasty_utils::notify::append_notify_line(caller, &message)
     {
@@ -824,9 +822,9 @@ pub(crate) fn handle_respawn(
     Ok(resp)
 }
 
-/// Codex CLI hook event 가 fire 됐을 때 호출. install 이 박은 6 개
+/// Codex CLI hook event 가 fire 됐을 때 호출. install 이 박은 7 개
 /// (`Stop` / `UserPromptSubmit` / `SessionStart` / `PermissionRequest` /
-/// `PostToolUse` / `Interrupt`) 만 정상 처리한다. idle/needs_input/active 신호를
+/// `PostToolUse` / `Interrupt` / `SessionEnd`) 만 정상 처리한다. idle/needs_input/active 신호를
 /// 호스트 registry(`terminal.set_state`)에 주입한다 — 자체 state 는 없다.
 ///
 /// **반환값**: Tasty 내부 진단용 `host_call_failures`. CLI 가 이 값으로 실패를
@@ -852,6 +850,24 @@ pub(crate) fn handle_hook<H: HostCall>(
     // 전부 같은 한 문장으로 나갔다.
     let surface_id = optional_target_surface(params, tr)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
+    if event == "session-end" {
+        let ended = host_call(
+            host,
+            "terminal.completion",
+            json!({"action":"end_session","surface":surface_id,"hook_session":params.get("session")}),
+        )?;
+        let mut failures = 0;
+        if ended["ignored_old_session"] != true {
+            if let Err(error) = host.call(
+                "surface.meta.unset",
+                json!({"surface_id":surface_id,"key":"codex-session-id"}),
+            ) {
+                tracing::warn!("codex session-end metadata cleanup: {error}");
+                failures += 1;
+            }
+        }
+        return Ok(json!({"host_call_failures":failures,"session_end":ended}));
+    }
     let new_state = hook_event_to_state(event, tr)?;
     if event == "session-start"
         && let Some(session) = params.get("session").and_then(Value::as_str)
@@ -864,8 +880,8 @@ pub(crate) fn handle_hook<H: HostCall>(
     // claude 의 `deliver` 와 같은 규칙이고, 그쪽과 같은 이름으로 응답에 싣는다.
     let mut host_call_failures: usize = 0;
     // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
-    // 오면 reboot/복원용 세션 meta 를 기록한다. codex 에는 SessionEnd hook 이
-    // 없어 unset 경로는 없다 — 다음 session-start 가 덮어쓴다. resume 기동도
+    // 오면 reboot/복원용 세션 meta 를 기록한다. SessionEnd는 현재 세션 meta를 지운다.
+    // resume 기동도
     // source=resume 인 session-start 를 같은 session_id 로 다시 fire 한다(실측).
     if event == "session-start"
         && let Some(session) = params.get("session").and_then(|v| v.as_str())
@@ -927,6 +943,7 @@ pub(crate) fn handle_hook<H: HostCall>(
 fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, IpcMethodError> {
     match event {
         "stop" | "interrupt" => Ok("idle"),
+        "session-end" => Ok("exited"),
         "permission-request" => Ok("needs_input"),
         "prompt-submit" | "session-start" | "post-tool-use" => Ok("active"),
         other => Err(IpcMethodError::invalid_params(&tr.t_replace(
@@ -1152,6 +1169,26 @@ mod tests {
                 Ok(json!({}))
             }
         }
+    }
+
+    #[test]
+    fn session_end_closes_execution_without_synthesizing_an_idle_turn() {
+        let host = FlakyHost::failing(vec![]);
+        handle_hook(
+            &host,
+            &json!({"surface":99,"event":"session-end","session":"ending"}),
+            &test_translator(),
+        )
+        .unwrap();
+        let calls = host.seen.borrow();
+        assert_eq!(calls[0].0, "terminal.completion");
+        assert_eq!(calls[0].1["hook_session"], "ending");
+        assert_eq!(calls[1].0, "surface.meta.unset");
+        assert!(
+            !calls
+                .iter()
+                .any(|(method, _)| method == "terminal.set_state" || method == "surface.fire_hook")
+        );
     }
 
     /// 최선노력 호출이 조용히 실패하면 그 수가 응답에 실린다. session-start 는
@@ -1591,7 +1628,7 @@ mod tests {
 
     #[test]
     fn hook_event_to_state_rejects_unsupported() {
-        // notification / session-end / subagent-stop 은 codex 가 fire 하지 않으므로
+        // 설치하지 않는 notification은 이 상태 매핑 계약에 없으므로
         // 거부 (silent no-op 대신 invalid_params).
         let err = hook_event_to_state("notification", &test_translator()).unwrap_err();
         assert!(format!("{err:?}").contains("unknown hook event"));
@@ -1972,6 +2009,9 @@ trusted_hash = "sha256:def456"
 
 [hooks.state."{path}:session_start:0:0"]
 trusted_hash = "sha256:fff999"
+
+[hooks.state."{path}:session_end:0:0"]
+trusted_hash = "sha256:end777"
 
 [hooks.state."{path}:permission_request:0:0"]
 trusted_hash = "sha256:aaa111"

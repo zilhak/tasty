@@ -89,8 +89,8 @@ pub(crate) fn register_error_notify_hook<H: HostCall>(
 ) {
     let command = notify_error_command(caller_surface, target_surface);
     cleanup_sibling_hooks(host, target_surface, &command);
-    // best-effort — 등록 실패해도 spawn/tell 자체는 이미 성공했으므로 무시.
-    let _ = host.call(
+    // best-effort — spawn/tell은 유지하되 관측 등록 실패를 기록한다.
+    if let Err(error) = host.call(
         "hook.set",
         json!({
             "surface_id": target_surface,
@@ -98,11 +98,13 @@ pub(crate) fn register_error_notify_hook<H: HostCall>(
             "command": command,
             "once": false,
         }),
-    );
+    ) {
+        tracing::warn!("completion error observation hook registration failed: {error}");
+    }
 }
 
 /// `tasty claude notify-done` — 형제 once-hook 중 하나가 fire 되어 실행되는
-/// 커맨드. caller_surface 에 완료 메시지를 주입한 뒤, target_surface 에 남아있는
+/// 커맨드. Claude 부모의 로그에 완료 상태를 append한 뒤, target_surface 에 남아있는
 /// (아직 fire 되지 않은) 나머지 형제 hook 들을 command 문자열 일치로 찾아 정리한다.
 pub(crate) fn handle_notify_done<H: HostCall>(
     host: &H,
@@ -126,13 +128,9 @@ pub(crate) fn handle_notify_done<H: HostCall>(
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_command")))?;
 
-    // 1) caller 에게 알림 주입.
+    // 1) 부모 종류에 맞는 수신 채널을 사용한다.
     let message = notify_done_message(tr, command_name, target_surface);
-    // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle
-    // 여부와 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔
-    // terminal.tell 도 함께 발사했으나, 자동 이벤트가 실제 사용자 발화처럼 대화
-    // 트랜스크립트에 섞여 들어가는 부작용 때문에 제거함). best-effort — 실패해도
-    // 형제 hook 정리에 영향 없음.
+    // Claude 부모는 기존 Monitor 로그, Codex 부모는 host outbox를 사용한다.
     if tasty_plugin_agent_common::completion::legacy_log(host, caller_surface)
         && let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message)
     {

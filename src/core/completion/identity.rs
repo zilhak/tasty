@@ -30,6 +30,13 @@ impl Completion {
             if binding.thread_id.is_empty() || binding.session_id.is_empty() {
                 bail!("thread_and_session_required");
             }
+            if !binding
+                .thread_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                bail!("invalid_thread_identifier");
+            }
             // Remapping is an explicit binding to the same endpoint/thread, never a surface guess.
             if let Some(previous) = j.bindings.get(&binding.key) {
                 if previous.hook_session != binding.hook_session {

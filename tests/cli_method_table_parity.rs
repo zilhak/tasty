@@ -724,6 +724,27 @@ fn top_level_commands(root: &Path) -> std::collections::BTreeSet<String> {
             break;
         }
     }
+    // Bundled plugin CLI contributions are real top-level commands too.
+    let mut manifests = Vec::new();
+    collect_manifests(&root.join("crates"), &mut manifests);
+    for path in manifests {
+        let manifest: toml::Value = std::fs::read_to_string(&path)
+            .expect("plugin manifest readable")
+            .parse()
+            .expect("plugin manifest valid TOML");
+        if let Some(cli) = manifest
+            .get("contributes")
+            .and_then(|v| v.get("cli"))
+            .and_then(toml::Value::as_array)
+        {
+            for command in cli {
+                if let Some(name) = command.get("name").and_then(toml::Value::as_str) {
+                    out.insert(name.to_owned());
+                }
+            }
+        }
+    }
+
     out
 }
 

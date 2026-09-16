@@ -71,7 +71,7 @@ pub(crate) fn handle_uninstall(params: &Value, tr: &Translator) -> Result<Value,
 // Codex 가 지원하는 event(0.154.0 바이너리 실측): PreToolUse, PermissionRequest,
 // PostToolUse, PreCompact, PostCompact, SessionStart, SessionEnd, UserPromptSubmit,
 // SubagentStart, SubagentStop, Stop, Interrupt. tasty 는 idle/needs_input/active
-// 트래킹에 필요한 6 개만 박는다 ([`HOOK_EVENTS`]).
+// 트래킹에 필요한 7 개만 박는다 ([`HOOK_EVENTS`]).
 //
 // Trust gate: codex 는 새 hook entry 를 *trust* 하기 전엔 fire 하지 않고 TUI 에
 // "1 hook needs review" 표시 후 `/hooks` 명령 승인을 요구한다 (`HookStateToml`
@@ -101,6 +101,7 @@ pub(crate) const HOOK_EVENTS: &[(&str, &str, &str)] = &[
     ("Stop", "stop", "stop"),
     ("UserPromptSubmit", "prompt-submit", "user_prompt_submit"),
     ("SessionStart", "session-start", "session_start"),
+    ("SessionEnd", "session-end", "session_end"),
     (
         "PermissionRequest",
         "permission-request",
@@ -144,26 +145,31 @@ fn read_config(path: &Path, tr: &Translator) -> Result<toml::Value, IpcMethodErr
     }
 }
 fn selected_path(params: &Value, tr: &Translator) -> Result<PathBuf, IpcMethodError> {
-    if params.get("config_file").is_some() && params.get("codex_home").is_some() {
+    let file = params.get("config_file").filter(|v| !v.is_null());
+    let home = params.get("codex_home").filter(|v| !v.is_null());
+    if file.is_some() && home.is_some() {
         return Err(IpcMethodError::invalid_params(
             tr.t("codex.install.path_conflict"),
         ));
     }
-    if let Some(path) = params.get("config_file").and_then(Value::as_str) {
-        if !Path::new(path).is_absolute() {
-            return Err(IpcMethodError::invalid_params(
-                tr.t("codex.install.home_absolute"),
-            ));
-        }
-        return Ok(PathBuf::from(path));
+    let invalid = || IpcMethodError::invalid_params(tr.t("codex.install.home_absolute"));
+    if let Some(raw) = file.or(home) {
+        let path = raw
+            .as_str()
+            .map(Path::new)
+            .filter(|p| p.is_absolute())
+            .ok_or_else(invalid)?;
+        return Ok(if file.is_some() {
+            path.to_path_buf()
+        } else {
+            path.join("config.toml")
+        });
     }
-    match params.get("codex_home").and_then(Value::as_str) {
-        Some(home) if Path::new(home).is_absolute() => Ok(Path::new(home).join("config.toml")),
-        Some(_) => Err(IpcMethodError::invalid_params(
-            tr.t("codex.install.home_absolute"),
-        )),
-        None => codex_config_toml_path(tr),
+    let path = codex_config_toml_path(tr)?;
+    if !path.is_absolute() {
+        return Err(invalid());
     }
+    Ok(path)
 }
 
 pub(crate) fn write_toml(
@@ -330,4 +336,25 @@ pub(crate) fn remove_install(mut value: toml::Value) -> toml::Value {
         table.remove("hooks");
     }
     value
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn malformed_explicit_context_never_falls_back_to_default_config() {
+        let tr = Translator::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("lang"), "en");
+        for params in [
+            json!({"codex_home":42}),
+            json!({"config_file":false}),
+            json!({"codex_home":"relative"}),
+        ] {
+            assert!(selected_path(&params, &tr).is_err());
+        }
+        let dir = std::env::temp_dir();
+        assert_eq!(
+            selected_path(&json!({"codex_home":dir,"config_file":null}), &tr).unwrap(),
+            dir.join("config.toml")
+        );
+    }
 }

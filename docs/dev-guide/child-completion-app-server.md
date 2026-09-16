@@ -1,7 +1,7 @@
 # Codex 부모의 child 완료 전달
 
 부모 종류로 채널을 고른다. Codex 부모는 App Server `turn/start.toolOutput`, Claude 부모는
-기존 completion-log/Monitor를 사용한다. child는 어느 CLI여도 된다. 완료 이벤트에
+기존 completion-log/Monitor를 사용한다. child는 어느 CLI여도 된다. 결과 요약이 없으면 빈 summary와 child surface result_reference를 전달하며 성공 결과를 합성하지 않는다. 완료 이벤트에
 `terminal.tell`, 키 입력, `turn/steer`, `codex queue`를 사용하지 않는다.
 
 ## 연결
@@ -14,7 +14,7 @@ SessionStart가 관측된 뒤 바인딩한다. remote daemon이 현재 Tasty의 
 
 `unix://<절대경로>`는 Unix 소켓 위 WebSocket이다. JSONL이나 proxy 변환을 가정하지 않는다.
 `ws://127.0.0.1:<port>`, `ws://localhost:<port>`, `wss://<host>`도 WebSocket으로 연결한다.
-Windows에서는 Unix socket 바인딩을 명시적으로 거절하고 TCP/TLS를 사용한다.
+Windows에서는 Unix socket 바인딩을 명시적으로 거절하고 TCP/TLS를 사용한다. 복원 명령이 cmd/PowerShell/Git Bash에서 같은 인자를 받도록 이 플랫폼의 endpoint에는 셸 메타문자를 허용하지 않는다.
 인증은 `auth_env`로 호스트 환경변수 이름만 기록한다. 토큰 자체는 상태/로그에 기록하지 않는다.
 
 CLI는 `tasty codex completion <action>`, plugin IPC는 `codex.completion`, host IPC는
@@ -23,13 +23,13 @@ CLI는 `tasty codex completion <action>`, plugin IPC는 `codex.completion`, host
 | action | 추가 입력 | 결과 |
 |---|---|---|
 | bind | endpoint, thread_id, session_id, hook_session, 선택 auth_env | 검증 대기 바인딩 |
-| status / diagnose | 없음 | 세션·바인딩·구독·outbox 상태와 원인 |
+| status / diagnose | 선택 all | 세션·바인딩·구독·outbox 상태와 원인 |
 | retry | event | 확정 미송신 pending/blocked 이벤트 재시도 |
 | unsubscribe | subscription | 해당 부모의 구독 종료 |
 
 CLI 플래그는 `--surface`, `--endpoint`, `--thread-id`, `--session-id`, `--hook-session`,
-`--auth-env`, `--codex-home`, `--register`, `--event`, `--subscription`이다. `--surface` 생략 시 caller의
-`TASTY_SURFACE_ID`를 사용한다. 내부 producer는 session/subscribe/observe/route 액션을
+`--auth-env`, `--codex-home`, `--register`, `--all`, `--event`, `--subscription`이다. `--surface` 생략 시 caller의
+`TASTY_SURFACE_ID`를 사용한다. `status --all`/`diagnose --all`은 닫힌 부모의 기록까지 host journal 전체를 조회하므로 옛 surface가 사라진 뒤에도 취소·수락불명 근거를 볼 수 있다. 내부 producer는 session/subscribe/observe/route 액션을
 사용한다. host 진입점은 기존 SurfaceWrite 권한 게이트 뒤에 있다.
 
 hook session_id, App Server sessionId, thread.id, surface generation은 별도 보관한다.
@@ -42,7 +42,7 @@ hook session_id, App Server sessionId, thread.id, surface generation은 별도 �
 호스트 데이터 루트의 `completion.sqlite3`가 단일 outbox 정본이다. SQLite exclusive locking과
 synchronous FULL을 사용하고, 네트워크 쓰기 전에 in_flight 상태를 영속한다. sender는
 호스트 background worker 하나이며 plugin dispatch와 별개다. 같은 host의 여러 윈도우는
-서비스를 공유한다. 다른 프로세스가 같은 journal을 동시에 소유하면 저장소 열기가 실패한다.
+서비스를 공유한다. 각 부모에서 송신 가능한 이벤트는 증가하는 event ID 순서로 한 건씩 처리한다. unknown/accepted 이력 재조회는 다음 시각으로 미뤄 뒤의 미송신 결과를 영구 차단하지 않는다. 따라서 수동 retry는 더 늦게 소비될 수 있으며 event ID·epoch로 원래 발생 순서를 구분한다. 다른 프로세스가 같은 journal을 동시에 소유하면 저장소 열기가 실패한다.
 
 spawn 구독은 부모·child 실행/관계 세대를 가진다. release는 확정 미수락 이벤트를
 cancelled로 남기며 이후 상태 이벤트 생성을 막는다. 전송 claim과 release가 같은 journal
@@ -66,7 +66,7 @@ meta를 사용할 때에는 전경 프로세스도 대조한다. 부모를 판�
 | cancelled | 구독 종료 전에 미수락이 확정된 이벤트 |
 
 연결 실패는 최대 8회, 2초부터 최대 60초의 backoff로 재시도한다. 버전/식별 불일치·Unix
-소켓 교체는 재바인딩이 필요하다. unknown/accepted는 자동 재전송하지 않는다. 설치본에서
+소켓 교체는 재바인딩이 필요하다. 자동 탐색 상한으로 unbound가 된 바인딩도 원인을 해결한 뒤 같은 부모로 다시 bind하고 blocked 이벤트를 retry한다. 바인딩이 unbound인 동안 retry는 조용히 대기하지 않고 이 복구 순서를 오류로 안내한다. unknown/accepted는 자동 재전송하지 않는다. 설치본에서
 busy ACK 뒤 interrupt/crash가 queued output을 잃은 실측이 있어 ACK를 영속 완료로
 표시하지 않는다. 이미 수락된 결과를 release로 회수했다고도 표시하지 않는다.
 

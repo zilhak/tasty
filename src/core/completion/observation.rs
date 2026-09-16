@@ -10,6 +10,9 @@ impl CoreState {
                 .values()
                 .filter(|b| b.phase == "verified" && live.contains(&b.surface))
             {
+                #[cfg(windows)]
+                let quote = |s: &str| format!("\"{s}\"");
+                #[cfg(not(windows))]
                 let quote = |s: &str| format!("'{}'", s.replace('\'', "'\"'\"'"));
                 let auth = binding
                     .auth_env
