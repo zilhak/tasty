@@ -310,6 +310,18 @@ fn run_reboot_sequence(
         return;
     }
 
+    if let Some(binding) = binding {
+        // A remote frontend detach need not emit SessionEnd from the live daemon.
+        // Stop delivery until this invocation positively observes the resumed TUI.
+        if let Err(error) = host.call(
+            "terminal.completion",
+            json!({"action":"end_session","surface":surface_id,"hook_session":binding["hook_session"]}),
+        ) {
+            tracing::warn!("codex reboot completion detach failed: {error}");
+            return;
+        }
+    }
+
     if !resume_and_wait(host, surface_id, session_id, policy_args, banner_c0) {
         return;
     }

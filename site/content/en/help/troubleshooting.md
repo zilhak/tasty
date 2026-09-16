@@ -1,4 +1,4 @@
-<!-- source-hash: 59f2194514d5 -->
+<!-- source-hash: a095fa16ba87 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -135,3 +135,5 @@ Describe the problem in a [GitHub issue](https://github.com/zilhak/tasty/issues)
 ### The parent agent does not receive a child result
 
 Child attention indicators and parent delivery are separate. For a Codex parent, use `tasty codex completion diagnose` and `status` to inspect the same-server conversation binding. Preserve `unknown` results for reconciliation instead of repeatedly sending them. For Claude parents, check the existing completion log and Monitor subscription. See [connection and recovery](../agents/claude-codex.md).
+
+If Codex restarts into `Hooks need review`, review the hooks in Codex. Resume options do not guarantee that this screen is skipped. Tasty does not approve hook trust and pauses completion delivery until the resumed screen is confirmed. After reviewing the hooks and returning to the actual remote session, run `tasty codex completion bind --register` with the existing connection details.

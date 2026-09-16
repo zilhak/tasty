@@ -78,7 +78,7 @@ cursor 순환도 불완전 이력으로 남는다. notification과 이력 확인
 호스트 재시작은 옛 live surface 주소를 무효화하고 in_flight를 unknown으로 바꾼다.
 새 SessionStart의 UUID만으로 현재 TUI가 예전 endpoint에 붙었다고 판단하지 않는다. 기존 바인딩의 새 SessionStart는 unbound로 보류하며, 실제 remote TUI를 확인한 `bind --register`가 저장된 논리 세션을 새 surface로 매핑하고 endpoint/thread를 재검증한다. 동일 UUID의 일반/private resume를 예전 daemon으로 연결하지 않는다.
 옛 번호를 다른 세션이 먼저 써도 저장된 논리 부모·child의 구독을 종료하거나 그 세션에 붙이지 않는다. 부모 식별자를 확보하지 못한 구독은 재시작 시 `restart_parent_identity_unresolved`로 종료하고 기록을 보존한다. 부모는 알지만 child 식별자가 없던 구독은 새 관측을 중단하되 기존 영속 이벤트는 원래 부모에 전달할 수 있다. 늦게 도착한 다른 세션의 hook은 상태·종료 전이와 같은 journal 잠금에서 거절한다.
-Codex reboot와 복원 명령도 검증된 remote endpoint/thread를 승계한다. Tasty의 reboot는 자신이 보낸 remote resume 명령의 새 TUI 배너를 확인한 뒤 캡처한 문맥으로 bind를 다시 요청한다. 일반 수동 resume나 호스트 재시작 후에는 실제 연결을 확인한 명시 bind가 필요하다. hook 식별자에서
+Codex reboot와 복원 명령도 검증된 remote endpoint/thread를 승계한다. Tasty의 reboot는 자신이 보낸 remote resume 명령의 새 TUI 배너를 확인한 뒤 캡처한 문맥으로 bind를 다시 요청한다. remote frontend의 종료는 daemon의 SessionEnd를 보장하지 않으므로 확인된 detach 시 전달을 보류한다. 훅 검토 등으로 새 배너가 확인되지 않으면 unbound로 남고 안내 입력도 보내지 않는다. 설치된 0.154.0은 resume 시 bypass 플래그가 있어도 훅 검토 화면을 표시할 수 있으므로 사용자 신뢰 결정을 자동 승인하지 않는다. 일반 수동 resume나 호스트 재시작 후에는 실제 연결을 확인한 명시 bind가 필요하다. hook 식별자에서
 다른 thread를 유추하거나 다른 daemon에 저장 이력을 복제 resume하지 않는다.
 
 ## 설치와 검증
