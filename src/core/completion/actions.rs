@@ -19,11 +19,17 @@ impl Completion {
             bail!("invalid subscription");
         }
         self.change(|j| {
+            let relation_generation = if mode == "spawn" {
+                Some(j.current_relation(parent, child))
+            } else {
+                None
+            };
             let id = j.next();
             j.subscriptions.insert(
                 id,
                 Subscription {
                     id,
+                    relation_generation,
                     parent,
                     parent_session: j
                         .sessions
@@ -61,19 +67,27 @@ impl Completion {
                         && s.parent == parent
                         && s.child == child
                         && s.mode == "spawn"
-                        && j.owns_subscription(s, parent)
-                        && j.sessions
-                            .get(&child)
-                            .or_else(|| j.ended_sessions.get(&child))
-                            .map_or(s.child_session.is_none(), |current| {
-                                s.matches_child(current)
-                            })
+                        && match j.live_relations.get(&(parent, child)) {
+                            Some(generation) => s.relation_generation == Some(*generation),
+                            // Restored relations require known logical owners. A new
+                            // current relation above must never cancel an old generation.
+                            None => {
+                                j.owns_subscription(s, parent)
+                                    && j.sessions
+                                        .get(&child)
+                                        .or_else(|| j.ended_sessions.get(&child))
+                                        .map_or(s.child_session.is_none(), |current| {
+                                            s.matches_child(current)
+                                        })
+                            }
+                        }
                 })
                 .map(|s| s.id)
                 .collect();
             for id in ids {
                 j.close_subscription(id, "relation_released");
             }
+            j.live_relations.remove(&(parent, child));
             Ok(())
         })
     }
@@ -170,6 +184,8 @@ impl Completion {
     }
     pub fn exited(&self, surface: u32, cause: &str) -> Result<()> {
         self.change(|j| {
+            j.live_relations
+                .retain(|(parent, child), _| *parent != surface && *child != surface);
             record_observation(
                 j,
                 surface,

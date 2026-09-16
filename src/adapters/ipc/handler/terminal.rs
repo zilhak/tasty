@@ -424,6 +424,9 @@ pub(crate) fn handle_spawn(
         }
     }
 
+    if let Err(error) = engine.completion.begin_relation(parent, new_surface_id) {
+        return JsonRpcResponse::error(id, -32000, format!("completion relation: {error}"));
+    }
     engine.child_terminals.register_child(
         parent,
         ChildEntry {
@@ -758,6 +761,12 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
         return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {e:?}"));
     }
 
+    if let Err(error) = engine.completion.begin_relation(parent, target) {
+        if let Err(cleanup) = engine.release_soft_occupancy(target, parent) {
+            tracing::warn!("adopt occupancy rollback failed: {cleanup:?}");
+        }
+        return JsonRpcResponse::error(id, -32000, format!("completion relation: {error}"));
+    }
     let index = engine.child_terminals.next_index_for(parent);
     engine.child_terminals.register_child(
         parent,

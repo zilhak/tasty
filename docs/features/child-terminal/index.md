@@ -226,3 +226,5 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 표시하지 않는다. 명시 tell 구독은 별개이며 release만으로 닫히지 않는다. adopt 또는 같은
 surface의 새 실행은 새 세대다. 부모 Claude의 기존 Monitor 수명은 바꾸지 않는다.
 [완료 전달 계약](../../dev-guide/child-completion-app-server.md)을 참고한다.
+
+완료 구독의 release는 현재 host에서 생성한 spawn/adopt 관계 세대에 적용된다. 부모 SessionStart가 아직 도착하지 않아도 해제된 세대는 뒤늦은 등록으로 살아나지 않는다. 재시작 후 같은 숫자 surface가 재사용된 새 관계는 이전 논리 부모의 영속 구독과 별개다.

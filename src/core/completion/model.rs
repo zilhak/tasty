@@ -5,6 +5,10 @@ use std::collections::BTreeMap;
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Journal {
     pub sequence: u64,
+    // Only relationships established in this host lifetime can authorize an
+    // unregistered parent. Never restore this address map from the journal.
+    #[serde(skip)]
+    pub live_relations: BTreeMap<(u32, u32), u64>,
     pub instance: String,
     pub sessions: BTreeMap<u32, Session>,
     #[serde(default)]
@@ -57,6 +61,8 @@ pub struct Binding {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Subscription {
     pub id: u64,
+    #[serde(default)]
+    pub relation_generation: Option<u64>,
     pub parent: u32,
     pub parent_session: String,
     pub child: u32,

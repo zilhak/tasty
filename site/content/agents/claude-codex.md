@@ -164,6 +164,7 @@ Codex 부모의 spawn 관계를 release하면 새 결과와 확정 미수락 재
 터미널은 남습니다. 이미 수락했거나 수락 여부가 불명인 결과를 회수하는 동작은 아닙니다.
 명시 tell 구독은 관계와 별개이며 `tasty codex completion unsubscribe --subscription <ID>`로
 종료합니다. 같은 surface의 새 작업에 이전 구독을 옮기지 않습니다.
+부모 에이전트의 초기 등록이 늦어져도 이미 해제한 자식 관계의 결과 전달은 다시 시작되지 않습니다.
 
 ## 5. Codex 승인 정책
 

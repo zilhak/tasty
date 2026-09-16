@@ -37,6 +37,8 @@
 
 ### Fixed
 
+- Releasing a child before its parent SessionStart arrives now closes the current relationship generation. Delayed registration cannot revive it, while subscriptions belonging to an earlier host lifetime remain protected from reused surface addresses.
+
 - App Server I/O now enforces absolute deadlines below WebSocket and TLS reads. A peer dripping unfinished continuation frames cannot keep other parents waiting on the shared completion worker.
 
 - Child completion cancellation now checks logical session ownership, and delayed Claude error callbacks carry execution-scoped observation leases. Planned same-session resumes recover waiting tell subscriptions even when SessionEnd was missed; normal Claude SessionEnd performs its metadata and notification cleanup.

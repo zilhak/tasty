@@ -11,6 +11,9 @@ mod model;
 mod observation;
 mod protocol;
 #[cfg(test)]
+mod relation_tests;
+mod relations;
+#[cfg(test)]
 mod review_tests;
 #[cfg(test)]
 mod tests;
