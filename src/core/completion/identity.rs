@@ -43,7 +43,11 @@ impl Completion {
                     bail!("binding_session_mismatch");
                 }
                 let old_surface = previous.surface;
-                if old_surface != binding.surface && j.sessions.contains_key(&old_surface) {
+                if old_surface != binding.surface
+                    && j.sessions.get(&old_surface).is_some_and(|old| {
+                        old.kind == "codex" && old.hook_session == binding.hook_session
+                    })
+                {
                     bail!("ambiguous_live_parent_surface");
                 }
                 for sub in j
@@ -61,12 +65,51 @@ impl Completion {
             {
                 sub.parent_session = binding.hook_session.clone();
             }
-            if j.bindings.values().any(|b| {
-                b.surface == binding.surface
-                    && b.key != binding.key
-                    && b.hook_session == binding.hook_session
-            }) {
-                bail!("parent_endpoint_already_bound: preserve the recorded logical parent");
+            let predecessors: Vec<_> = j
+                .bindings
+                .values()
+                .filter(|b| {
+                    b.surface == binding.surface
+                        && b.key != binding.key
+                        && b.hook_session == binding.hook_session
+                        && b.phase != "superseded"
+                })
+                .cloned()
+                .collect();
+            for old in predecessors {
+                if old.thread_id != binding.thread_id || old.session_id != binding.session_id {
+                    bail!("explicit_rebind_must_preserve_logical_thread");
+                }
+                if !old.codex_home.is_empty() {
+                    binding.codex_home = old.codex_home.clone();
+                }
+                let generation = j.next();
+                let retired = j.bindings.get_mut(&old.key).expect("collected above");
+                retired.phase = "superseded".into();
+                retired.generation = generation;
+                retired.diagnostic =
+                    "explicit endpoint replacement; previous identity retained".into();
+                for event in j.events.values_mut().filter(|e| {
+                    e.binding.as_deref() == Some(&old.key)
+                        && matches!(
+                            e.phase.as_str(),
+                            "pending"
+                                | "blocked"
+                                | "unbound"
+                                | "accepted"
+                                | "unknown"
+                                | "in_flight"
+                        )
+                }) {
+                    if event.origin_binding.is_none() {
+                        event.origin_binding = Some(old.key.clone());
+                    }
+                    event.binding = Some(binding.key.clone());
+                    // A request already claimed on the old connection may still be accepted.
+                    if event.phase == "in_flight" {
+                        event.phase = "unknown".into();
+                    }
+                }
             }
             for event in j.events.values_mut().filter(|e| e.phase == "unbound") {
                 if j.subscriptions.get(&event.subscription).is_some_and(|s| {
@@ -93,6 +136,10 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
     {
         return Ok(());
     }
+    let previous = j
+        .sessions
+        .get(&surface)
+        .or_else(|| j.ended_sessions.get(&surface));
     let stale: Vec<_> = j
         .subscriptions
         .values()
@@ -100,17 +147,24 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
             s.active
                 && ((s.parent == surface
                     && !s.parent_session.is_empty()
-                    && s.parent_session != hook_session)
+                    && previous.is_some_and(|old| {
+                        old.hook_session == s.parent_session
+                            && (old.hook_session != hook_session || old.kind != kind)
+                    }))
                     || (s.child == surface
-                        && s.child_session
-                            .as_deref()
-                            .is_some_and(|old| old != hook_session)))
+                        && s.child_session.as_deref().is_some_and(|old| {
+                            previous.is_some_and(|prior| {
+                                prior.hook_session == old
+                                    && (old != hook_session || prior.kind != kind)
+                            })
+                        })))
         })
         .map(|s| s.id)
         .collect();
     for id in stale {
         j.close_subscription(id, "session_replaced");
     }
+    j.ended_sessions.remove(&surface);
     let generation = j.next();
     for sub in j.subscriptions.values_mut().filter(|s| s.active) {
         if sub.parent == surface && sub.parent_session.is_empty() {
@@ -118,7 +172,9 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
         }
         let restoring = sub.child_session.as_deref() == Some(hook_session)
             && sub.child_kind == kind
-            && !j.sessions.contains_key(&sub.child);
+            && j.sessions
+                .get(&sub.child)
+                .is_none_or(|old| old.kind != kind || old.hook_session != hook_session);
         if restoring || (sub.child == surface && sub.child_session.is_none()) {
             sub.child = surface;
             sub.child_generation = Some(generation);
@@ -134,7 +190,7 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
         for b in j
             .bindings
             .values_mut()
-            .filter(|b| b.hook_session == hook_session)
+            .filter(|b| b.hook_session == hook_session && b.phase != "superseded")
         {
             if ambiguous {
                 b.phase = "unbound".into();

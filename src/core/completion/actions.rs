@@ -56,7 +56,12 @@ impl Completion {
             let ids: Vec<_> = j
                 .subscriptions
                 .values()
-                .filter(|s| s.active && s.parent == parent && s.child == child && s.mode == "spawn")
+                .filter(|s| {
+                    s.accepts_pending()
+                        && s.parent == parent
+                        && s.child == child
+                        && s.mode == "spawn"
+                })
                 .map(|s| s.id)
                 .collect();
             for id in ids {
@@ -75,74 +80,94 @@ impl Completion {
         })
     }
     pub fn observe(&self, child: u32, state: &str, cause: &str, summary: &str) -> Result<()> {
+        self.change(|j| record_observation(j, child, state, cause, summary))
+    }
+    pub fn observe_session(
+        &self,
+        child: u32,
+        state: &str,
+        cause: &str,
+        summary: &str,
+        expected: Option<&str>,
+    ) -> Result<bool> {
         self.change(|j| {
-            let session = j.sessions.entry(child).or_insert(Session {
-                registration: "unobserved".into(),
-                kind: "unknown".into(),
-                hook_session: String::new(),
-                generation: 0,
-                state: "active".into(),
-                epoch: 1,
-            });
-            if state == "active" && session.state != "active" {
-                session.epoch += 1;
+            if let Some(expected) = expected {
+                if j.ended_sessions.contains_key(&child)
+                    || j.sessions
+                        .get(&child)
+                        .is_some_and(|s| !s.hook_session.is_empty() && s.hook_session != expected)
+                {
+                    return Ok(false);
+                }
             }
-            session.state = state.into();
-            let epoch = session.epoch;
-            if state == "active" {
-                return Ok(());
-            }
-            let subscriptions: Vec<_> = j
-                .subscriptions
-                .values()
-                .filter(|s| s.active && !s.await_session && s.child == child)
-                .cloned()
-                .collect();
-            for sub in subscriptions {
-                enqueue(j, &sub, epoch, state, cause, summary);
-            }
-            Ok(())
+            record_observation(j, child, state, cause, summary)?;
+            Ok(true)
         })
     }
     pub fn end_execution(&self, surface: u32, cause: &str) -> Result<()> {
-        if !self.snapshot()?.sessions.contains_key(&surface) {
-            return Ok(());
-        }
-        self.observe(
-            surface,
-            "exited",
-            cause,
-            "Agent execution ended; success is not inferred",
-        )?;
+        self.end_execution_session(surface, cause, None).map(|_| ())
+    }
+    pub fn end_execution_session(
+        &self,
+        surface: u32,
+        cause: &str,
+        expected: Option<&str>,
+    ) -> Result<bool> {
         self.change(|j| {
-            for sub in j
-                .subscriptions
-                .values_mut()
-                .filter(|s| s.active && s.child == surface && !s.await_session)
-            {
+            let identity = j
+                .sessions
+                .get(&surface)
+                .filter(|s| !s.hook_session.is_empty())
+                .or_else(|| j.ended_sessions.get(&surface));
+            if expected.is_some_and(|expected| {
+                identity.is_some_and(|current| current.hook_session != expected)
+            }) {
+                return Ok(false);
+            }
+            if !j.sessions.contains_key(&surface) {
+                return Ok(true);
+            }
+            record_observation(
+                j,
+                surface,
+                "exited",
+                cause,
+                "Agent execution ended; success is not inferred",
+            )?;
+            let current = observed_identity(j, surface);
+            for sub in j.subscriptions.values_mut().filter(|s| {
+                s.active && s.child == surface && !s.await_session && s.matches_child(&current)
+            }) {
                 sub.active = false;
                 sub.reason = "target_exited".into();
             }
             j.sessions.remove(&surface);
-            for b in j.bindings.values_mut().filter(|b| b.surface == surface) {
+            j.ended_sessions.insert(surface, current.clone());
+            for b in j.bindings.values_mut().filter(|b| {
+                b.surface == surface
+                    && b.hook_session == current.hook_session
+                    && b.phase != "superseded"
+            }) {
                 b.phase = "unbound".into();
                 b.diagnostic = "session_ended: awaiting verified resume".into();
             }
-            Ok(())
+            Ok(true)
         })
     }
     pub fn exited(&self, surface: u32, cause: &str) -> Result<()> {
-        self.observe(
-            surface,
-            "exited",
-            cause,
-            "Process ended; success is not inferred",
-        )?;
         self.change(|j| {
+            record_observation(
+                j,
+                surface,
+                "exited",
+                cause,
+                "Process ended; success is not inferred",
+            )?;
+            let current = observed_identity(j, surface);
             for sub in j
                 .subscriptions
                 .values_mut()
-                .filter(|s| s.active && s.child == surface)
+                .filter(|s| s.active && s.child == surface && s.matches_child(&current))
             {
                 sub.active = false;
                 sub.reason = "target_exited".into();
@@ -150,14 +175,19 @@ impl Completion {
             let ids: Vec<_> = j
                 .subscriptions
                 .values()
-                .filter(|s| s.parent == surface)
+                .filter(|s| s.parent == surface && s.parent_session == current.hook_session)
                 .map(|s| s.id)
                 .collect();
             for id in ids {
                 j.close_subscription(id, "parent_closed");
             }
             j.sessions.remove(&surface);
-            for b in j.bindings.values_mut().filter(|b| b.surface == surface) {
+            j.ended_sessions.remove(&surface);
+            for b in j.bindings.values_mut().filter(|b| {
+                b.surface == surface
+                    && b.hook_session == current.hook_session
+                    && b.phase != "superseded"
+            }) {
                 b.phase = "unbound".into();
                 b.diagnostic = "parent_closed".into();
             }
@@ -174,7 +204,7 @@ impl Completion {
                 .subscriptions
                 .get(&e.subscription)
                 .ok_or_else(|| anyhow::anyhow!("subscription_not_found"))?;
-            if sub.parent != parent || !sub.active {
+            if sub.parent != parent || !sub.accepts_pending() {
                 bail!("subscription_closed_or_not_owned");
             }
             if !matches!(e.phase.as_str(), "blocked" | "pending") {
@@ -190,6 +220,57 @@ impl Completion {
         })
     }
 }
+fn observed_identity(j: &Journal, surface: u32) -> Session {
+    let current = &j.sessions[&surface];
+    if current.hook_session.is_empty() {
+        j.ended_sessions.get(&surface).unwrap_or(current).clone()
+    } else {
+        current.clone()
+    }
+}
+
+fn record_observation(
+    j: &mut Journal,
+    child: u32,
+    state: &str,
+    cause: &str,
+    summary: &str,
+) -> Result<()> {
+    if !matches!(
+        state,
+        "active" | "idle" | "needs_input" | "stalled" | "exited"
+    ) {
+        bail!("invalid_completion_state");
+    }
+    let session = j.sessions.entry(child).or_insert(Session {
+        registration: "unobserved".into(),
+        kind: "unknown".into(),
+        hook_session: String::new(),
+        generation: 0,
+        state: "active".into(),
+        epoch: 1,
+    });
+    if state == "active" && session.state != "active" {
+        session.epoch += 1;
+    }
+    session.state = state.into();
+    let epoch = session.epoch;
+    let current = session.clone();
+    if state == "active" {
+        return Ok(());
+    }
+    let subscriptions: Vec<_> = j
+        .subscriptions
+        .values()
+        .filter(|s| s.active && !s.await_session && s.child == child && s.matches_child(&current))
+        .cloned()
+        .collect();
+    for sub in subscriptions {
+        enqueue(j, &sub, epoch, state, cause, summary);
+    }
+    Ok(())
+}
+
 fn enqueue(
     j: &mut Journal,
     sub: &Subscription,
@@ -215,7 +296,11 @@ fn enqueue(
     let binding = j
         .bindings
         .values()
-        .find(|b| b.surface == sub.parent && b.hook_session == sub.parent_session)
+        .find(|b| {
+            b.surface == sub.parent
+                && b.hook_session == sub.parent_session
+                && b.phase != "superseded"
+        })
         .map(|b| b.key.clone());
     let id = j.next();
     j.events.insert(
@@ -233,6 +318,8 @@ fn enqueue(
             }
             .into(),
             binding,
+            origin_binding: None,
+            delivery_context: serde_json::Value::Null,
             epoch,
             state: state.into(),
             cause: cause.into(),

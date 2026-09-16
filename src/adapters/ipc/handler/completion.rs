@@ -98,26 +98,22 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
             Ok(json!({"subscription":id}))
         }
         "end_session" => {
-            if let Some(reported) = params["hook_session"].as_str()
-                && service
-                    .snapshot()?
-                    .sessions
-                    .get(&surface)
-                    .is_some_and(|s| s.hook_session != reported)
-            {
-                return Ok(json!({"ignored_old_session":true}));
-            }
-            service.end_execution(surface, "session-end")?;
-            Ok(json!({"ended":true}))
+            let ended = service.end_execution_session(
+                surface,
+                "session-end",
+                params["hook_session"].as_str(),
+            )?;
+            Ok(json!({"ended":ended,"ignored_old_session":!ended}))
         }
         "observe" => {
-            service.observe(
+            let recorded = service.observe_session(
                 surface,
                 text(params, "state")?,
                 text(params, "cause")?,
                 params["summary"].as_str().unwrap_or(""),
+                params["hook_session"].as_str(),
             )?;
-            Ok(json!({"recorded":true}))
+            Ok(json!({"recorded":recorded,"ignored_old_session":!recorded}))
         }
         "route" => {
             let snapshot = service.snapshot()?;

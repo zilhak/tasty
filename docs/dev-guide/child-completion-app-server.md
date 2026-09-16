@@ -77,6 +77,7 @@ cursor 순환도 불완전 이력으로 남는다. notification과 이력 확인
 
 호스트 재시작은 옛 live surface 주소를 무효화하고 in_flight를 unknown으로 바꾼다.
 새 SessionStart와 저장된 endpoint/thread 바인딩을 재검증하여 surface를 다시 매핑한다.
+옛 번호를 다른 세션이 먼저 써도 저장된 논리 부모·child의 구독을 종료하거나 그 세션에 붙이지 않는다. 부모 식별자를 확보하지 못한 구독은 재시작 시 `restart_parent_identity_unresolved`로 종료하고 기록을 보존한다. 부모는 알지만 child 식별자가 없던 구독은 새 관측을 중단하되 기존 영속 이벤트는 원래 부모에 전달할 수 있다. 늦게 도착한 다른 세션의 hook은 상태·종료 전이와 같은 journal 잠금에서 거절한다.
 Codex reboot와 복원 명령도 검증된 remote endpoint/thread를 승계한다. hook 식별자에서
 다른 thread를 유추하거나 다른 daemon에 저장 이력을 복제 resume하지 않는다.
 
@@ -111,4 +112,4 @@ proxy 실행파일은 연결 필수 조건이 아니다.
 
 인증 환경변수는 실행 중 호스트의 환경에서 읽는다. 다른 셸에서 같은 이름의 값을 바꿔도
 이미 실행한 호스트의 환경은 바뀌지 않는다. 토큰 갱신 후에는 해당 환경을 가진 호스트에서
-다시 연결해야 한다. 다른 endpoint로 같은 부모 identity를 덮어쓰는 바인딩은 거절한다.
+다시 연결해야 한다. endpoint가 바뀌면 현재 TUI가 실제로 붙은 새 endpoint를 명시적으로 bind한다. 기존 thread.id/sessionId와 알려진 codexHome을 유지하고 새 daemon의 loaded 소유를 다시 검증한다. 이전 바인딩은 superseded로 보존하며 미완료 이벤트에는 origin_binding을 남긴다. accepted/unknown은 새 endpoint에서도 이력만 대조하고 재송신하지 않는다. 이 명령이 기존 TUI를 이동시키지는 않는다.

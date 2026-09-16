@@ -187,6 +187,7 @@ pub(crate) fn handle_notify_error<H: HostCall>(
         "stalled",
         "claude-error-stalled",
         &message,
+        None,
     )?;
 
     if tasty_plugin_agent_common::completion::legacy_log(host, caller_surface)

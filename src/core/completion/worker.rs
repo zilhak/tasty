@@ -151,7 +151,7 @@ fn deliver(
             return Ok(false);
         }
         let sub = &j.subscriptions[&e.subscription];
-        if !sub.active && sub.reason != "target_exited" {
+        if !sub.accepts_pending() {
             return Ok(false);
         }
         let Some(b) = j.bindings.get(&binding.key) else {
@@ -170,7 +170,9 @@ fn deliver(
         {
             return Ok(false);
         }
+        let context = serde_json::json!({"binding":b.key,"binding_generation":b.generation,"endpoint":b.endpoint,"daemon_pid":b.daemon_pid,"codex_home":b.codex_home,"connection_generation":b.connection_generation,"auth_reference":b.auth_env});
         let e = j.events.get_mut(&event.id).expect("checked above");
+        e.delivery_context = context;
         e.phase = "in_flight".into();
         e.attempts += 1;
         Ok(true)
@@ -207,7 +209,7 @@ fn deliver(
                 e.phase = if detail.starts_with("rpc_error:") {
                     if j.subscriptions
                         .get(&e.subscription)
-                        .is_some_and(|s| !s.active)
+                        .is_some_and(|s| !s.accepts_pending())
                     {
                         "cancelled"
                     } else {

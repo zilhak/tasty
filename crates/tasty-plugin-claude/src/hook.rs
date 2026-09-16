@@ -99,15 +99,28 @@ pub(crate) fn handle_claude_hook(
     {
         tasty_plugin_agent_common::completion::session(host, surface_id, "claude", session)?;
     }
+    if event == "session-end" {
+        let ended = host.call(
+            "terminal.completion",
+            json!({"action":"end_session","surface":surface_id,"hook_session":session}),
+        )?;
+        if ended["ignored_old_session"] == true {
+            return Ok(json!({"ok":true,"ignored_old_session":true,"host_call_failures":0}));
+        }
+    }
     for call in &calls {
         if let HostCall::SetState { state, .. } = call {
-            tasty_plugin_agent_common::completion::observe(
+            let observed = tasty_plugin_agent_common::completion::observe(
                 host,
                 surface_id,
                 state,
                 event,
                 message.unwrap_or(""),
+                session.as_deref(),
             )?;
+            if observed["ignored_old_session"] == true {
+                return Ok(json!({"ok":true,"ignored_old_session":true,"host_call_failures":0}));
+            }
         }
     }
 
@@ -139,7 +152,7 @@ pub(crate) fn handle_claude_hook(
     // 조용히 실패한 host 호출을 센다 — 이 수는 아래 응답에 **항상** 실린다.
     // "실패했을 때만 넣는" 형태는 같은 침묵을 한 칸 옮길 뿐이다(필드가 없는 것과 실패가
     // 0 인 것이 다시 구별되지 않는다).
-    let host_call_failures = deliver_all(host, &calls);
+    let host_call_failures = deliver_all(host, &calls, session.as_deref());
 
     if is_new_turn_event(event) {
         reset_dedupe_if_enabled(scanner, surface_id);
@@ -149,10 +162,6 @@ pub(crate) fn handle_claude_hook(
     // 발동하지만, 라운드 상태는 Claude Code 의 session_id 로 키잉되므로 세션 종료를
     // 아는 이 지점(전역 `session-end`)에서 함께 정리해야 orphan 파일이 남지 않는다.
     if event == "session-end" {
-        host.call(
-            "terminal.completion",
-            json!({"action":"end_session","surface":surface_id,"hook_session":session}),
-        )?;
         checklist::remove_state_for_session(data_dir, session.as_deref().unwrap_or(""));
         // 프로필 부착 기록은 여기서 **종료 표시**만 한다 — 즉시 삭제하지 않는 이유는
         // `profile_attach` 모듈 doc "수명" 절 참고(탭을 닫으면 이 훅이 정상 발화하는데,
@@ -594,12 +603,15 @@ pub(crate) fn apply_session_start_profile(
 /// `handlers.rs` 는 이미 그 이음매를 갖고 있었고(`H: HostCall` 로 mock 을 먹인다) 이
 /// 모듈만 구체 타입을 받고 있었다 — 그래서 "전파하지 않는다" 는 결정을 지키는 시험이
 /// 하나도 없었다. 이음매가 없으면 결정은 주석으로만 남고, 주석은 사람만 읽는다.
-fn deliver_all<H: HostCallSink>(host: &H, calls: &[HostCall]) -> usize {
-    calls.iter().filter(|call| !deliver(host, call)).count()
+fn deliver_all<H: HostCallSink>(host: &H, calls: &[HostCall], session: Option<&str>) -> usize {
+    calls
+        .iter()
+        .filter(|call| !deliver(host, call, session))
+        .count()
 }
 
-fn deliver<H: HostCallSink>(host: &H, call: &HostCall) -> bool {
-    let (method, params) = match call {
+fn deliver<H: HostCallSink>(host: &H, call: &HostCall, session: Option<&str>) -> bool {
+    let (method, mut params) = match call {
         HostCall::SetState { surface_id, state } => (
             "terminal.set_state",
             json!({ "surface": surface_id, "state": state }),
@@ -637,6 +649,11 @@ fn deliver<H: HostCallSink>(host: &H, call: &HostCall) -> bool {
             json!({ "surface_id": surface_id, "kind": kind }),
         ),
     };
+    if method == "terminal.set_state"
+        && let Some(session) = session
+    {
+        params["hook_session"] = json!(session);
+    }
     if let Err(e) = host.call(method, params) {
         tracing::warn!("claude hook host call '{method}' failed: {e}");
         return false;
@@ -763,7 +780,7 @@ mod tests {
 
         let start = apply_hook("session-start", 100, Some("sess-1"), None, &tr).unwrap();
         let end = apply_hook("session-end", 100, None, None, &tr).unwrap();
-        let failures = deliver_all(&host, &start) + deliver_all(&host, &end);
+        let failures = deliver_all(&host, &start, None) + deliver_all(&host, &end, None);
 
         assert_eq!(failures, 8, "쏜 호출: {:?}", host.seen.borrow());
         assert_eq!(host.seen.borrow().len(), 8, "센 수와 쏜 수가 같아야 한다");
@@ -778,7 +795,7 @@ mod tests {
 
         let start = apply_hook("session-start", 100, Some("sess-1"), None, &tr).unwrap();
         let end = apply_hook("session-end", 100, None, None, &tr).unwrap();
-        let failures = deliver_all(&host, &start) + deliver_all(&host, &end);
+        let failures = deliver_all(&host, &start, None) + deliver_all(&host, &end, None);
 
         assert_eq!(failures, 0);
         assert_eq!(host.seen.borrow().len(), 8, "실패가 0 이어도 쏜 수는 같다");
@@ -796,7 +813,7 @@ mod tests {
 
         let end = apply_hook("session-end", 100, None, None, &tr).unwrap();
         assert_eq!(
-            deliver_all(&host, &end),
+            deliver_all(&host, &end, None),
             2,
             "meta.unset 은 이 계획에 둘이다"
         );

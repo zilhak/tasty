@@ -907,11 +907,14 @@ pub(crate) fn handle_hook<H: HostCall>(
     // 두 판정은 같은 규칙의 양끝이다 —
     // [error-handling](../../../docs/dev-guide/error-handling.md)
     // "plugin 핸들러의 host 호출 — 전파와 최선노력".
-    host_call(
-        host,
-        "terminal.set_state",
-        json!({ "surface": surface_id, "state": new_state, "cause": event }),
-    )?;
+    let mut observed_state = json!({"surface":surface_id,"state":new_state,"cause":event});
+    if let Some(session) = params.get("session").and_then(Value::as_str) {
+        observed_state["hook_session"] = json!(session);
+    }
+    let observed = host_call(host, "terminal.set_state", observed_state)?;
+    if observed["ignored_old_session"] == true {
+        return Ok(json!({"host_call_failures":host_call_failures,"ignored_old_session":true}));
+    }
     // 상태 주입만으로는 UI 가 아무것도 모른다 — 턴 경계는 surface hook 으로,
     // 승인 대기는 그 위에 공용 attention 까지 함께 쏜다.
     for (event_key, value) in hook_side_effects(event) {

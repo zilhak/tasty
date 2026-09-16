@@ -991,6 +991,25 @@ pub(crate) fn handle_set_state(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if !matches!(new_state.as_str(), "idle" | "active" | "needs_input") {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("unknown state '{new_state}' (supported: idle, needs_input, active)"),
+        );
+    }
+    match engine.completion.observe_session(
+        surface_id,
+        &new_state,
+        params["cause"].as_str().unwrap_or("state_hook"),
+        "Child state reported; inspect child output for result",
+        params["hook_session"].as_str(),
+    ) {
+        Ok(true) => {}
+        Ok(false) => return JsonRpcResponse::success(id, json!({"ignored_old_session":true})),
+        Err(error) => {
+            return JsonRpcResponse::error(id, -32000, format!("completion state: {error}"));
+        }
+    }
     match new_state.as_str() {
         "idle" => engine.child_terminals.set_idle(surface_id, true),
         "active" => engine.child_terminals.set_idle(surface_id, false),
@@ -1001,14 +1020,6 @@ pub(crate) fn handle_set_state(
                 format!("unknown state '{other}' (supported: idle, needs_input, active)"),
             );
         }
-    }
-    if let Err(error) = engine.completion.observe(
-        surface_id,
-        &new_state,
-        params["cause"].as_str().unwrap_or("state_hook"),
-        "Child state reported; inspect child output for result",
-    ) {
-        return JsonRpcResponse::error(id, -32000, format!("completion state: {error}"));
     }
     engine.child_terminals.save();
     JsonRpcResponse::success(

@@ -32,10 +32,11 @@ pub fn observe<H: HostCall>(
     state: &str,
     cause: &str,
     summary: &str,
+    session: Option<&str>,
 ) -> Result<Value, PluginError> {
     host.call(
         "terminal.completion",
-        json!({"action":"observe","surface":surface,"state":state,"cause":cause,"summary":summary}),
+        json!({"action":"observe","surface":surface,"state":state,"cause":cause,"summary":summary,"hook_session":session}),
     )
 }
 /// Only a positively registered Claude parent uses the legacy log channel.

@@ -261,6 +261,184 @@ fn unknown_parent_preserves_event_without_guessing_a_channel() {
     assert_eq!(j.events.values().next().unwrap().phase, "unbound");
     assert!(j.bindings.is_empty());
 }
+#[test]
+fn reused_surface_numbers_do_not_end_or_adopt_persisted_logical_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reuse.db");
+    let service = Completion::open(&path).unwrap();
+    parent(&service);
+    service.session(2, "claude", "child").unwrap();
+    service
+        .bind(binding("ws://127.0.0.1:12345".into()))
+        .unwrap();
+    let sub = service.subscribe(1, 2, "claude", "spawn").unwrap();
+    service.observe(2, "idle", "stop", "old result").unwrap();
+    drop(service);
+    let service = Completion::open(&path).unwrap();
+    service.session(1, "claude", "unrelated-parent").unwrap();
+    service.session(2, "codex", "unrelated-child").unwrap();
+    assert!(service.snapshot().unwrap().subscriptions[&sub].active);
+    service
+        .observe(2, "idle", "stop", "unrelated result")
+        .unwrap();
+    assert_eq!(service.snapshot().unwrap().events.len(), 1);
+    service.exited(1, "unrelated_parent_closed").unwrap();
+    service.exited(2, "unrelated_child_closed").unwrap();
+    assert!(service.snapshot().unwrap().subscriptions[&sub].active);
+    service.session(10, "codex", "thread").unwrap();
+    service.session(20, "claude", "child").unwrap();
+    service
+        .observe(20, "idle", "stop", "resumed result")
+        .unwrap();
+    let j = service.snapshot().unwrap();
+    assert!(j.subscriptions[&sub].active);
+    assert_eq!(
+        (j.subscriptions[&sub].parent, j.subscriptions[&sub].child),
+        (10, 20)
+    );
+    assert_eq!(j.events.len(), 2);
+}
+#[test]
+fn physical_parent_close_after_session_end_closes_its_subscriptions() {
+    let service = Completion::memory().unwrap();
+    parent(&service);
+    service.session(2, "claude", "child").unwrap();
+    let sub = service.subscribe(1, 2, "claude", "tell").unwrap();
+    service.end_execution(1, "session-end").unwrap();
+    assert!(service.snapshot().unwrap().subscriptions[&sub].active);
+    service.exited(1, "surface_closed").unwrap();
+    let j = service.snapshot().unwrap();
+    assert!(!j.subscriptions[&sub].active);
+    assert_eq!(j.subscriptions[&sub].reason, "parent_closed");
+}
+#[test]
+fn late_hooks_cannot_complete_a_replacement_execution() {
+    let service = Completion::memory().unwrap();
+    parent(&service);
+    service.session(2, "claude", "old-child").unwrap();
+    service.subscribe(1, 2, "claude", "tell").unwrap();
+    service.end_execution(2, "session-end").unwrap();
+    let count = service.snapshot().unwrap().events.len();
+    assert!(
+        !service
+            .observe_session(2, "idle", "stop", "late", Some("old-child"))
+            .unwrap()
+    );
+    service.session(2, "codex", "new-child").unwrap();
+    assert!(
+        !service
+            .end_execution_session(2, "late-session-end", Some("old-child"))
+            .unwrap()
+    );
+    service.subscribe(1, 2, "codex", "tell").unwrap();
+    assert!(
+        !service
+            .observe_session(2, "idle", "stop", "late", Some("old-child"))
+            .unwrap()
+    );
+    assert_eq!(service.snapshot().unwrap().events.len(), count);
+    assert!(
+        service
+            .observe_session(2, "idle", "stop", "current", Some("new-child"))
+            .unwrap()
+    );
+    assert_eq!(service.snapshot().unwrap().events.len(), count + 1);
+}
+#[test]
+fn release_cancels_unsent_exit_after_target_execution_ended() {
+    let service = Completion::memory().unwrap();
+    parent(&service);
+    service.session(2, "claude", "child").unwrap();
+    service.subscribe(1, 2, "claude", "spawn").unwrap();
+    service.end_execution(2, "session-end").unwrap();
+    service.release(1, 2).unwrap();
+    assert!(
+        service
+            .snapshot()
+            .unwrap()
+            .events
+            .values()
+            .all(|e| e.phase == "cancelled")
+    );
+}
+#[test]
+fn crash_before_child_registration_preserves_already_recorded_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("early.db");
+    let service = Completion::open(&path).unwrap();
+    parent(&service);
+    service
+        .bind(binding("ws://127.0.0.1:12345".into()))
+        .unwrap();
+    let sub = service.subscribe(1, 2, "codex", "spawn").unwrap();
+    service
+        .observe(2, "idle", "stop", "observed before registration")
+        .unwrap();
+    drop(service);
+    let service = Completion::open(&path).unwrap();
+    service.session(2, "claude", "unrelated").unwrap();
+    service
+        .observe(2, "idle", "stop", "not the old execution")
+        .unwrap();
+    let j = service.snapshot().unwrap();
+    assert!(!j.subscriptions[&sub].active);
+    assert!(j.subscriptions[&sub].accepts_pending());
+    assert_eq!(j.events.len(), 1);
+    assert_eq!(j.events.values().next().unwrap().phase, "pending");
+    service.release(1, 2).unwrap();
+    assert_eq!(
+        service
+            .snapshot()
+            .unwrap()
+            .events
+            .values()
+            .next()
+            .unwrap()
+            .phase,
+        "cancelled"
+    );
+}
+#[test]
+fn explicit_endpoint_replacement_preserves_unknown_and_its_origin() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("endpoint.db");
+    let service = Completion::open(&path).unwrap();
+    parent(&service);
+    service.session(2, "claude", "child").unwrap();
+    let old = binding("ws://127.0.0.1:10001".into());
+    let old_key = old.key.clone();
+    service.bind(old).unwrap();
+    service.subscribe(1, 2, "claude", "tell").unwrap();
+    service.observe(2, "idle", "stop", "").unwrap();
+    service
+        .change(|j| {
+            j.bindings.get_mut(&old_key).unwrap().codex_home = "/original-home".into();
+            j.events.values_mut().next().unwrap().phase = "unknown".into();
+            Ok(())
+        })
+        .unwrap();
+    let new = binding("ws://127.0.0.1:10002".into());
+    let new_key = new.key.clone();
+    service.bind(new).unwrap();
+    let j = service.snapshot().unwrap();
+    let e = j.events.values().next().unwrap();
+    assert_eq!(e.phase, "unknown");
+    assert_eq!(e.origin_binding.as_deref(), Some(old_key.as_str()));
+    assert_eq!(e.binding.as_deref(), Some(new_key.as_str()));
+    assert_eq!(j.bindings[&new_key].codex_home, "/original-home");
+    service.end_execution(1, "session-end").unwrap();
+    assert_eq!(
+        service.snapshot().unwrap().bindings[&old_key].phase,
+        "superseded"
+    );
+    drop(service);
+    let service = Completion::open(&path).unwrap();
+    service.session(10, "codex", "thread").unwrap();
+    assert_eq!(
+        service.snapshot().unwrap().bindings[&old_key].phase,
+        "superseded"
+    );
+}
 #[cfg(unix)]
 mod wire {
     use super::*;

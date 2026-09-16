@@ -7,6 +7,8 @@ pub struct Journal {
     pub sequence: u64,
     pub instance: String,
     pub sessions: BTreeMap<u32, Session>,
+    #[serde(default)]
+    pub ended_sessions: BTreeMap<u32, Session>,
     pub bindings: BTreeMap<String, Binding>,
     pub subscriptions: BTreeMap<u64, Subscription>,
     pub events: BTreeMap<u64, Event>,
@@ -65,6 +67,10 @@ pub struct Event {
     pub id: u64,
     pub subscription: u64,
     pub binding: Option<String>,
+    #[serde(default)]
+    pub origin_binding: Option<String>,
+    #[serde(default)]
+    pub delivery_context: serde_json::Value,
     pub epoch: u64,
     pub state: String,
     pub cause: String,
@@ -75,6 +81,24 @@ pub struct Event {
     pub attempts: u32,
     pub retry_at: u64,
     pub summary: String,
+}
+impl Subscription {
+    pub fn accepts_pending(&self) -> bool {
+        self.active
+            || matches!(
+                self.reason.as_str(),
+                "target_exited" | "target_identity_unavailable"
+            )
+    }
+
+    pub fn matches_child(&self, session: &Session) -> bool {
+        self.child_generation
+            .is_none_or(|generation| generation == session.generation)
+            && self
+                .child_session
+                .as_deref()
+                .is_none_or(|id| id == session.hook_session)
+    }
 }
 impl Journal {
     pub fn next(&mut self) -> u64 {

@@ -39,7 +39,11 @@ impl Completion {
             journal.instance =
                 connection.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))?;
         }
-        for binding in journal.bindings.values_mut() {
+        for binding in journal
+            .bindings
+            .values_mut()
+            .filter(|b| b.phase != "superseded")
+        {
             binding.phase = "unbound".into();
             binding.diagnostic =
                 "host_restarted: session registration and endpoint verification required".into();
@@ -50,8 +54,26 @@ impl Completion {
                 event.diagnostic = "host_restarted_during_send".into();
             }
         }
+        // Never associate an unregistered execution with a reused numeric address.
+        let unresolved: Vec<_> = journal
+            .subscriptions
+            .values()
+            .filter(|s| s.active && (s.parent_session.is_empty() || s.child_session.is_none()))
+            .map(|s| s.id)
+            .collect();
+        for id in unresolved {
+            if journal.subscriptions[&id].parent_session.is_empty() {
+                journal.close_subscription(id, "restart_parent_identity_unresolved");
+            } else {
+                let sub = journal.subscriptions.get_mut(&id).expect("collected above");
+                sub.active = false;
+                sub.reason = "target_identity_unavailable".into();
+                // Previously persisted facts can still reach their known logical parent.
+            }
+        }
         // A restarted host cannot treat persisted surface numbers as live identities.
         journal.sessions.clear();
+        journal.ended_sessions.clear();
         let service = Arc::new(Self {
             inner: Mutex::new((connection, journal)),
         });
