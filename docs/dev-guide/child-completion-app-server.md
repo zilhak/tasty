@@ -23,7 +23,7 @@ CLI는 `tasty codex completion <action>`, plugin IPC는 `codex.completion`, host
 | action | 추가 입력 | 결과 |
 |---|---|---|
 | bind | endpoint, thread_id, session_id, hook_session, 선택 auth_env | 검증 대기 바인딩 |
-| status / diagnose | 선택 all | 세션·바인딩·구독·outbox 상태와 원인 |
+| status / diagnose | 선택 all; diagnose는 local_config_file | 세션·바인딩·구독·outbox 상태와 원인 |
 | retry | event | 확정 미송신 pending/blocked 이벤트 재시도 |
 | unsubscribe | subscription | 해당 부모의 구독 종료 |
 
@@ -89,7 +89,7 @@ Codex reboot와 복원 명령도 검증된 remote endpoint/thread를 승계한�
 서버의 설정을 로컬 설치 성공만으로 갱신했다고 간주하지 않는다. 설치와 현재 부모의
 SessionStart 관측, endpoint 바인딩, 서버 지원은 별도 상태다. status의 cli_version은
 로컬 CLI이며 server는 연결된 App Server가 반환한 값이다. 직접 WebSocket을 사용하므로
-proxy 실행파일은 연결 필수 조건이 아니다.
+proxy 실행파일은 연결 필수 조건이 아니다. `diagnose --local-config-file <절대 파일>`은 선택한 로컬 파일의 managed hook 존재와 trust metadata를 읽기만 한다. 생략 시 Tasty 호스트 환경의 Codex 설정을 읽는다. command hash의 실제 수락이나 remote daemon의 trust를 이 파일로 추정하지 않으며, 현재 세션의 hook 관측/명시 등록 출처는 별도로 표시한다.
 
 도메인 시험은 `src/core/completion/tests.rs`, plugin 어댑터는
 `crates/tasty-plugin-agent-common/src/completion.rs`, 호스트 진입점은

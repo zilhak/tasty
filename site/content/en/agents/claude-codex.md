@@ -1,4 +1,4 @@
-<!-- source-hash: 3166e193831d -->
+<!-- source-hash: 8a054bad9df4 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -89,6 +89,7 @@ interruptions, errors, and process exits are state notifications too; they do no
 ### When the parent is Codex
 
 Tool results go to the parent conversation running on the **same Codex 0.154.0 server**.
+When available, they include up to 4,096 characters of the child’s last reported reply.
 A plain `codex` TUI does not automatically join a separately started server. Connect the TUI to
 an existing supported endpoint with `codex --remote <address>`. Opening a copy of its saved
 conversation on another server does not establish this connection. This is separate from Tasty SSH workspaces.
@@ -246,3 +247,5 @@ Reinstalling the Codex integration also registers SessionEnd. When the current e
 Use `tasty codex completion status --all-parents` to inspect undelivered and cancelled records after the parent terminal has closed.
 
 A new SessionStart alone does not prove that a previously bound session uses the same server. After a manual resume or Tasty restart, verify the actual remote connection and bind again with `--register`. Tasty reboot rebinds after confirming the remote resume that it launched.
+
+`tasty codex completion diagnose --all-parents --local-config-file /absolute/codex-home/config.toml` reads local hook registration and trust metadata without changing settings. Those records do not attest that a remote server approved the hooks.

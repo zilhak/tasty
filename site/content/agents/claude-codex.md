@@ -89,6 +89,7 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 ### 부모가 Codex일 때
 
 Codex 0.154.0의 **같은 서버에서 실행 중인 부모 대화**에 도구 결과로 전달합니다.
+자식이 보고한 마지막 응답이 있으면 최대 4096자를 함께 전달합니다.
 일반 `codex` TUI가 별도로 켠 서버에 자동 연결되지는 않습니다. 지원되는 기존 서버에
 `codex --remote <주소>`로 TUI를 명시 연결하세요. 현재 대화를 다른 서버에 복제해서
 여는 것으로 연결을 대신하지 않습니다. 이 연결은 Tasty의 SSH 워크스페이스 연결과 별개입니다.
@@ -245,3 +246,5 @@ Codex 연동을 다시 설치하면 SessionEnd 훅도 등록됩니다. 현재 �
 부모 터미널을 닫은 뒤의 미전달·취소 기록은 `tasty codex completion status --all-parents`로 조회할 수 있습니다.
 
 기존 바인딩이 있는 세션의 새 SessionStart만으로 원래 서버에 다시 연결됐다고 판단하지 않습니다. 수동 resume나 Tasty 재시작 뒤에는 실제 원격 연결을 확인하고 `bind --register`로 다시 연결하세요. Tasty의 reboot 명령은 자신이 실행한 원격 resume의 복귀를 확인한 뒤 재바인딩합니다.
+
+`tasty codex completion diagnose --all-parents --local-config-file /absolute/codex-home/config.toml`은 설정을 바꾸지 않고 로컬 훅 등록과 trust 기록을 확인합니다. 이 기록만으로 원격 서버가 훅을 승인했다고 판단하지 않습니다.

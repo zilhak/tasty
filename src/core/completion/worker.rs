@@ -34,10 +34,10 @@ pub fn tick(service: &Completion) -> Result<()> {
         if event.is_none() && binding.phase == "verified" {
             continue;
         }
+        let cli_version = super::diagnostics::cli_version();
         match Client::connect(binding) {
             Ok((mut client, identity)) => {
                 let endpoint_identity = super::transport::endpoint_identity(&binding.endpoint)?;
-                let cli_version = super::diagnostics::cli_version();
                 let still_current = service.change(|j| {
                     let owner_live = j.sessions.get(&binding.surface).is_some_and(|s| {
                         s.kind == "codex" && s.hook_session == binding.hook_session
@@ -81,6 +81,7 @@ pub fn tick(service: &Completion) -> Result<()> {
                     }
                     if let Some(b) = j.bindings.get_mut(&binding.key) {
                         b.diagnostic = diagnostic.clone();
+                        b.cli_version = cli_version;
                         b.probe_attempts += 1;
                         b.probe_after = now() + 2_u64.pow(b.probe_attempts.min(6)).min(60);
                         if b.probe_attempts >= 8

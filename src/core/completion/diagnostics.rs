@@ -22,7 +22,18 @@ fn probe() -> String {
             Ok(Some(_)) => {
                 return child
                     .wait_with_output()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                    .map(|o| {
+                        if o.status.success() {
+                            let version = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+                            if version.is_empty() {
+                                "version_unreported".into()
+                            } else {
+                                version
+                            }
+                        } else {
+                            format!("version_probe_failed: {}", o.status)
+                        }
+                    })
                     .unwrap_or_else(|e| format!("version_read_failed: {e}"));
             }
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),

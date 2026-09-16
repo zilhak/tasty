@@ -81,7 +81,13 @@ impl Plugin for CodexPlugin {
                 } else {
                     "terminal.completion"
                 };
-                host.call(method, params).map_err(Into::into)
+                let local_hooks = (params["action"] == "diagnose")
+                    .then(|| install::diagnose(&params, &self.translator));
+                let mut result = host.call(method, params).map_err(IpcMethodError::from)?;
+                if let Some(local_hooks) = local_hooks {
+                    result["local_hooks"] = local_hooks;
+                }
+                Ok(result)
             }
             "codex.launch" => handlers::handle_launch(&host, &params, &self.translator),
             "codex.spawn" => handlers::handle_spawn(&host, &params, &self.translator),
