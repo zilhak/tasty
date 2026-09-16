@@ -63,11 +63,27 @@ impl Transport {
             80
         });
         use std::net::ToSocketAddrs;
-        let addr = (host, port)
-            .to_socket_addrs()?
-            .next()
-            .context("endpoint did not resolve")?;
-        let stream = TcpStream::connect_timeout(&addr, TIMEOUT)?;
+        let deadline = std::time::Instant::now() + TIMEOUT;
+        let mut connected = None;
+        let mut last_error = None;
+        for addr in (host, port).to_socket_addrs()? {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match TcpStream::connect_timeout(&addr, remaining) {
+                Ok(stream) => {
+                    connected = Some(stream);
+                    break;
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        let stream = connected.ok_or_else(|| {
+            last_error.map(anyhow::Error::from).unwrap_or_else(|| {
+                anyhow::anyhow!("endpoint did not resolve or connect within deadline")
+            })
+        })?;
         stream.set_read_timeout(Some(TIMEOUT))?;
         stream.set_write_timeout(Some(TIMEOUT))?;
         use tungstenite::client::IntoClientRequest;
@@ -117,7 +133,11 @@ impl Transport {
     }
 }
 fn receive<S: Read + Write>(socket: &mut WebSocket<S>) -> Result<Value> {
+    let deadline = std::time::Instant::now() + TIMEOUT;
     loop {
+        if std::time::Instant::now() >= deadline {
+            bail!("app_server_frame_timeout");
+        }
         match socket.read()? {
             Message::Text(text) if text.len() as u64 <= MAX_FRAME => {
                 return Ok(serde_json::from_str(&text)?);
@@ -128,8 +148,8 @@ fn receive<S: Read + Write>(socket: &mut WebSocket<S>) -> Result<Value> {
     }
 }
 
-/// Local socket replacement is observable. Remote process identity is not advertised;
-/// remote bindings are revalidated by endpoint, exact loaded thread, and session on every connection.
+/// Unix socket replacement is observable here. A TCP URL supplies no socket-file identity;
+/// the protocol layer separately verifies diagnostics PID, home, and exact loaded thread.
 pub fn endpoint_identity(endpoint: &str) -> Result<String> {
     #[cfg(unix)]
     if let Some(path) = endpoint.strip_prefix("unix://") {
@@ -137,5 +157,5 @@ pub fn endpoint_identity(endpoint: &str) -> Result<String> {
         let metadata = std::fs::metadata(path)?;
         return Ok(format!("unix:{}:{}", metadata.dev(), metadata.ino()));
     }
-    Ok("remote_process_generation_unavailable".into())
+    Ok("remote_socket_identity_unavailable".into())
 }

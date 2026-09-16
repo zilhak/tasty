@@ -68,7 +68,7 @@ meta를 사용할 때에는 전경 프로세스도 대조한다. 부모를 판�
 연결 실패는 최대 8회, 2초부터 최대 60초의 backoff로 재시도한다. 버전/식별 불일치·Unix
 소켓 교체는 재바인딩이 필요하다. 자동 탐색 상한으로 unbound가 된 바인딩도 원인을 해결한 뒤 같은 부모로 다시 bind하고 blocked 이벤트를 retry한다. 바인딩이 unbound인 동안 retry는 조용히 대기하지 않고 이 복구 순서를 오류로 안내한다. unknown/accepted는 자동 재전송하지 않는다. 설치본에서
 busy ACK 뒤 interrupt/crash가 queued output을 잃은 실측이 있어 ACK를 영속 완료로
-표시하지 않는다. 이미 수락된 결과를 release로 회수했다고도 표시하지 않는다.
+표시하지 않는다. server_response의 turn_id/turn_status/rpc_id는 받은 응답의 근거이며 영속 receipt나 중복 방지 키가 아니다. 이미 수락된 결과를 release로 회수했다고도 표시하지 않는다.
 
 복구는 실제 historyMode와 RPC 지원을 따른다. legacy full read 또는 paginated items의
 후속 cursor를 조회한다. summary/notLoaded·중간 오류·미지원은 미수락 증거가 아니다.

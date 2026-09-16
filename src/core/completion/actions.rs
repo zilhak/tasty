@@ -320,6 +320,7 @@ fn enqueue(
             binding,
             origin_binding: None,
             delivery_context: serde_json::Value::Null,
+            server_response: serde_json::Value::Null,
             epoch,
             state: state.into(),
             cause: cause.into(),

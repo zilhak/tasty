@@ -212,7 +212,8 @@ fn deliver(
             .get_mut(&event.id)
             .expect("journal events are retained");
         match result {
-            Ok(_) => {
+            Ok(reply) => {
+                e.server_response = serde_json::json!({"rpc_id":id,"turn_id":reply["turn"]["id"],"turn_status":reply["turn"]["status"],"durability_attested":false});
                 e.phase = "accepted".into();
                 e.diagnostic = "server returned turn; persistence/consumption not inferred".into();
             }

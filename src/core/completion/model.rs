@@ -71,6 +71,8 @@ pub struct Event {
     pub origin_binding: Option<String>,
     #[serde(default)]
     pub delivery_context: serde_json::Value,
+    #[serde(default)]
+    pub server_response: serde_json::Value,
     pub epoch: u64,
     pub state: String,
     pub cause: String,
