@@ -426,13 +426,11 @@ mod tests {
     const C: &str = "test_consumer";
 
     fn tempdir() -> PathBuf {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "tasty-settings-file-chooser-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::create_dir_all(dir.join("sub")).expect("mkdir");
         std::fs::write(dir.join("a.lua"), "x").expect("write");
