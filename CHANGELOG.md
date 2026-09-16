@@ -18,7 +18,7 @@
 
 ### Added
 
-- Codex 부모에게 Claude·Codex 자식의 상태를 App Server 도구 결과로 전달한다. 같은 서버의 실행 중 대화를 명시적으로 바인딩하고, 전달 상태를 조회·복구하거나 구독을 해제할 수 있다. 일반 TUI의 자동 연결이나 수락 불명 결과의 재송신은 하지 않는다. Claude 부모의 기존 로그/Monitor는 유지한다. Codex 훅 설치는 home 또는 정확한 설정 파일을 지정할 수 있다. SessionEnd가 현재 실행 구독을 정리하고, `tasty codex completion status --all`로 닫힌 부모의 미전달·취소 기록도 조회할 수 있다.
+- Codex 부모에게 Claude·Codex 자식의 상태를 App Server 도구 결과로 전달한다. 같은 서버의 실행 중 대화를 명시적으로 바인딩하고, 전달 상태를 조회·복구하거나 구독을 해제할 수 있다. 일반 TUI의 자동 연결이나 수락 불명 결과의 재송신은 하지 않는다. Claude 부모의 기존 로그/Monitor는 유지한다. Codex 훅 설치는 home 또는 정확한 설정 파일을 지정할 수 있다. SessionEnd가 현재 실행 구독을 정리하고, `tasty codex completion status --all-parents`로 닫힌 부모의 미전달·취소 기록도 조회할 수 있다.
 
 - 사용자 언어팩으로 플러그인의 도구 라벨과 내부 UI 문구를 함께 덮어쓸 수 있다. 내장 언어는 `lang/plugins/<plugin-id>/<code>.toml`, 새 언어팩은 `lang/<code>/plugins/<plugin-id>.toml`을 사용한다. 설치본 영어·선택 언어 위에 사용자 파일을 얹으며, 수정 후 재시작하면 적용된다. 설치 자산을 수정하지 않아 플러그인 업그레이드 후에도 보존된다.
 

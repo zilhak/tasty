@@ -242,4 +242,4 @@ tasty claude spawn --workspace w --profile continue-checklist
 
 Codex 연동을 다시 설치하면 SessionEnd 훅도 등록됩니다. 현재 실행 세션이 종료되면 해당 작업 구독을 끝내며, 이미 수락한 결과를 회수한 것으로 표시하지 않습니다.
 
-부모 터미널을 닫은 뒤의 미전달·취소 기록은 `tasty codex completion status --all`로 조회할 수 있습니다.
+부모 터미널을 닫은 뒤의 미전달·취소 기록은 `tasty codex completion status --all-parents`로 조회할 수 있습니다.

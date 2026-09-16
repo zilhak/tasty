@@ -269,7 +269,7 @@ options = [
 [contributes.cli.arg_groups.completion_args]
 positional = [{ name = "action", type = "string", required = true, help = "bind | status | diagnose | retry | unsubscribe" }]
 flags = [
-    { name = "all", type = "bool", flag = "--all", required = false, help = "Include the journal of closed parent surfaces in status/diagnose" },
+    { name = "all", type = "bool", flag = "--all-parents", required = false, help = "Include the journal of closed parent surfaces in status/diagnose" },
     { name = "register", type = "bool", flag = "--register", required = false, help = "Explicitly register this parent when a remote daemon cannot send SessionStart to this Tasty instance" },
     { name = "codex_home", type = "string", flag = "--codex-home", required = false, help = "Expected server Codex home; verified against initialize" },
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface (defaults to TASTY_SURFACE_ID)" },

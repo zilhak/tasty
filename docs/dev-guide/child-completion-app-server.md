@@ -28,8 +28,8 @@ CLI는 `tasty codex completion <action>`, plugin IPC는 `codex.completion`, host
 | unsubscribe | subscription | 해당 부모의 구독 종료 |
 
 CLI 플래그는 `--surface`, `--endpoint`, `--thread-id`, `--session-id`, `--hook-session`,
-`--auth-env`, `--codex-home`, `--register`, `--all`, `--event`, `--subscription`이다. `--surface` 생략 시 caller의
-`TASTY_SURFACE_ID`를 사용한다. `status --all`/`diagnose --all`은 닫힌 부모의 기록까지 host journal 전체를 조회하므로 옛 surface가 사라진 뒤에도 취소·수락불명 근거를 볼 수 있다. 내부 producer는 session/subscribe/observe/route 액션을
+`--auth-env`, `--codex-home`, `--register`, `--all-parents`, `--event`, `--subscription`이다. `--surface` 생략 시 caller의
+`TASTY_SURFACE_ID`를 사용한다. `status --all-parents`/`diagnose --all-parents`은 닫힌 부모의 기록까지 host journal 전체를 조회하므로 옛 surface가 사라진 뒤에도 취소·수락불명 근거를 볼 수 있다. 내부 producer는 session/subscribe/observe/route 액션을
 사용한다. host 진입점은 기존 SurfaceWrite 권한 게이트 뒤에 있다.
 
 hook session_id, App Server sessionId, thread.id, surface generation은 별도 보관한다.
