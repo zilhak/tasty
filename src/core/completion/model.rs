@@ -12,6 +12,15 @@ pub struct Journal {
     pub bindings: BTreeMap<String, Binding>,
     pub subscriptions: BTreeMap<u64, Subscription>,
     pub events: BTreeMap<u64, Event>,
+    #[serde(default)]
+    pub error_observers: BTreeMap<u64, ErrorObserver>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ErrorObserver {
+    pub subscription: u64,
+    pub generation: Option<u64>,
+    #[serde(default)]
+    pub notified_epoch: Option<u64>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -103,6 +112,17 @@ impl Subscription {
     }
 }
 impl Journal {
+    pub fn owns_subscription(&self, sub: &Subscription, parent: u32) -> bool {
+        sub.parent == parent
+            && self
+                .sessions
+                .get(&parent)
+                .or_else(|| self.ended_sessions.get(&parent))
+                .is_some_and(|current| {
+                    !sub.parent_session.is_empty() && current.hook_session == sub.parent_session
+                })
+    }
+
     pub fn next(&mut self) -> u64 {
         self.sequence += 1;
         self.sequence

@@ -7,7 +7,7 @@ impl Completion {
     }
     pub fn hook_session(&self, surface: u32, kind: &str, hook_session: &str) -> Result<bool> {
         self.change(|j| {
-            if kind == "codex" {
+                if kind == "codex" {
                 let current = j.sessions.get(&surface).map(|s| s.hook_session.clone());
                 let mut requires_binding = false;
                 for b in j.bindings.values_mut().filter(|b| b.phase != "superseded" && (b.hook_session == hook_session || (b.surface == surface && current.as_deref() == Some(b.hook_session.as_str())))) {
@@ -153,7 +153,23 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
         .get(&surface)
         .is_some_and(|s| s.kind == kind && s.hook_session == hook_session)
     {
-        return Ok(());
+        if !j
+            .subscriptions
+            .values()
+            .any(|s| s.active && s.child == surface && s.await_session)
+        {
+            return Ok(());
+        }
+        // A planned resume has reached SessionStart even if SessionEnd was lost.
+        // End the previous execution's watches; only waiting subscriptions attach below.
+        for sub in j
+            .subscriptions
+            .values_mut()
+            .filter(|s| s.active && s.child == surface && !s.await_session)
+        {
+            sub.active = false;
+            sub.reason = "target_exited".into();
+        }
     }
     let previous = j
         .sessions
@@ -199,6 +215,19 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
             sub.child_generation = Some(generation);
             sub.child_session = Some(hook_session.into());
             sub.await_session = false;
+        }
+    }
+    for observer in j
+        .error_observers
+        .values_mut()
+        .filter(|o| o.generation.is_none())
+    {
+        if let Some(sub) = j.subscriptions.get(&observer.subscription)
+            && sub.active
+            && sub.child == surface
+            && !sub.await_session
+        {
+            observer.generation = sub.child_generation;
         }
     }
     if kind == "codex" {

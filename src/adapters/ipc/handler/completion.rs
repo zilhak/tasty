@@ -110,6 +110,12 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
                 "session-end",
                 params["hook_session"].as_str(),
             )?;
+            if ended {
+                // Preserve the terminal registry's legacy idle cleanup without observing
+                // a second completion state after the journal's atomic exit transition.
+                engine.child_terminals.set_idle(surface, true);
+                engine.child_terminals.save();
+            }
             Ok(json!({"ended":ended,"ignored_old_session":!ended}))
         }
         "observe" => {
@@ -165,6 +171,18 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
                 register,
             )?;
             Ok(json!({"binding":key,"phase":"verifying"}))
+        }
+        "watch_error" => {
+            Ok(json!({"observer":service.watch_error(surface, number(params, "target")?)?}))
+        }
+        "observe_error" => {
+            let recorded = service.observe_error(
+                journal_id(params, "observer")?,
+                surface,
+                number(params, "target")?,
+                params["summary"].as_str().unwrap_or(""),
+            )?;
+            Ok(json!({"recorded":recorded,"ignored_old_session":!recorded}))
         }
         "resume_context" => {
             let j = service.snapshot()?;

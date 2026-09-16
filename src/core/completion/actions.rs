@@ -61,6 +61,13 @@ impl Completion {
                         && s.parent == parent
                         && s.child == child
                         && s.mode == "spawn"
+                        && j.owns_subscription(s, parent)
+                        && j.sessions
+                            .get(&child)
+                            .or_else(|| j.ended_sessions.get(&child))
+                            .map_or(s.child_session.is_none(), |current| {
+                                s.matches_child(current)
+                            })
                 })
                 .map(|s| s.id)
                 .collect();
@@ -72,7 +79,10 @@ impl Completion {
     }
     pub fn unsubscribe(&self, id: u64, parent: u32) -> Result<()> {
         self.change(|j| {
-            if j.subscriptions.get(&id).is_none_or(|s| s.parent != parent) {
+            if j.subscriptions
+                .get(&id)
+                .is_none_or(|s| !j.owns_subscription(s, parent))
+            {
                 bail!("subscription_not_owned");
             }
             j.close_subscription(id, "explicit_unsubscribe");
@@ -91,6 +101,10 @@ impl Completion {
         expected: Option<&str>,
     ) -> Result<bool> {
         self.change(|j| {
+            // Retired unversioned error callbacks cannot prove an execution identity.
+            if cause == "claude-error-stalled" && expected.is_none() {
+                return Ok(false);
+            }
             if let Some(expected) = expected {
                 if j.ended_sessions.contains_key(&child)
                     || j.sessions
@@ -229,7 +243,7 @@ fn observed_identity(j: &Journal, surface: u32) -> Session {
     }
 }
 
-fn record_observation(
+pub(super) fn record_observation(
     j: &mut Journal,
     child: u32,
     state: &str,

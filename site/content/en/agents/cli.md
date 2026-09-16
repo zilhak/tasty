@@ -211,7 +211,8 @@ tasty terminal broadcast "git pull\r" --role worker   # to every child with the 
 tasty terminal kill --child 1                   # kill a child by index
 ```
 
-`spawn` returns immediately, and when a child goes idle · waits for input · exits, a notification comes back to the parent surface — there is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
+`spawn` creates a terminal and returns immediately. Agent state delivery and parent setup follow [Claude & Codex integration](claude-codex.md). Starting an ordinary program does not guarantee delivery of agent results.
+There is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
 
 ## Headless PTY
 

@@ -26,7 +26,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [duplicated-sets](duplicated-sets.md) | 같은 집합이 여러 곳에 적힐 때 — 자리로 셀 수 있는 것, 합칠 곳과 남길 곳을 가르는 기준 |
 | [unsafe-checklist](unsafe-checklist.md) | `// SAFETY:` 작성 + 자가검토 5문 |
 | [color-policy](color-policy.md) | 색 생성 newtype + clippy 강제 |
-| [child-completion-app-server](child-completion-app-server.md) | Codex 부모의 바인딩·영속 outbox·unknown 복구와 release/tell 구독 수명 |
+| [child-completion-app-server](child-completion-app-server.md) | Codex 부모의 바인딩·영속 outbox·unknown 복구와 release/tell 구독 수명 · 논리 소유권·실행별 오류 관측·절대 I/O 시간 제한 |
 | [i18n](i18n.md) | `t()` / lang 파일, plugin 사용자 오버라이드와 부모 홈 경로 확정, 공용 폰트 검사, 하드코딩 허용 예외, 강제 테스트 |
 
 ## 빌드 / 릴리스

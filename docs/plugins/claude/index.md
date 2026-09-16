@@ -234,9 +234,10 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 배선(`handlers.rs`)은 완료 알림 3형제와 **분리된 수명**을 갖는다:
 
-- `register_notify_hooks`가 3형제(once)와 함께 `claude-error-stalled` 하나를 **상시 hook**(`once: false`)으로 등록한다. command 문자열이 `tasty claude notify-error --caller-surface … --target-surface …` 로 달라서, 형제 그룹의 `cleanup_sibling_hooks`(command 완전 일치) 정리 대상에 걸리지 않는다.
+- `register_notify_hooks`가 3형제(once)와 함께 `claude-error-stalled` 하나를 **상시 hook**(`once: false`)으로 등록한다. command 문자열이 `tasty claude notify-error --caller-surface … --target-surface … --observer …` 로 달라서, 형제 그룹의 `cleanup_sibling_hooks`(command 완전 일치) 정리 대상에 걸리지 않는다.
 - 상시라서 **재무장이 필요 없다** — 3형제의 fire→정리→재무장 사이클과 얽히지 않는다. 발사 빈도 상한은 발신 측(위 쿨다운)이 갖는다.
-- 등록은 멱등하다: spawn 후 tell, 그리고 형제 재무장까지 여러 번 호출되므로 같은 command의 기존 hook을 먼저 걷어내고 새로 단다.
+- 같은 observer의 재등록은 멱등하다. spawn/tell 구독의 observer는 각각 독립이며, 같은 부모의 동일 epoch는 host에서 한 번으로 합쳐 중복 로그를 막는다. 다른 부모의 유효 tell 수신은 별도로 유지한다.
+- `notify-error`는 구독과 child 실행 세대에 묶인 observer를 host에 전달해 현재 소유권을 확인한다. 종료·교체된 실행 또는 observer 없는 구형 callback은 상태와 로그를 변경하지 않는다.
 - `notify-error` 핸들러는 알림 조립 직전 `surface.screen_text`를 읽어 **원인을 가른다** — 에러 줄이 있으면 그 줄을 힌트로 덧붙이고, 없으면 에러 없는 정지용 문구를 쓴다(codex `notify-caller`와 같은 방식). 부모 Claude에는 완료 알림과 같은 `<parent_home>/notify/<caller_surface>.log` 한 줄로 나가고, 부모 Codex에는 host outbox의 상태 이벤트로 전달한다([child-completion-notify-log](../../dev-guide/external-interaction/child-completion-notify-log.md)).
 
 ## 인터페이스

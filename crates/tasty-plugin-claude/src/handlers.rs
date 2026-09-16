@@ -1589,7 +1589,9 @@ mod tests {
             params: Value,
         ) -> Result<Value, tasty_plugin_sdk::PluginError> {
             match method {
-                "terminal.completion" => Ok(json!({"legacy_log":true})),
+                "terminal.completion" => {
+                    Ok(json!({"legacy_log":true,"observer":1,"recorded":true}))
+                }
 
                 "hook.set" => {
                     let mut id = self.next_id.borrow_mut();
@@ -1810,7 +1812,7 @@ mod tests {
         assert!(
             host.commands_on(target)
                 .iter()
-                .any(|c| c == &notify_error_command(caller, target))
+                .any(|c| c == &notify_error_command(caller, target, 1))
         );
     }
 

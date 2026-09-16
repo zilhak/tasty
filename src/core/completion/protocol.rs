@@ -109,7 +109,7 @@ impl Client {
     pub fn response(&mut self, id: u64) -> Result<Value> {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
-            let value = self.transport.receive()?;
+            let value = self.transport.receive_until(deadline)?;
             if value.get("method").is_none() && value["id"].as_u64() == Some(id) {
                 if let Some(error) = value.get("error") {
                     bail!("rpc_error: {}", error);

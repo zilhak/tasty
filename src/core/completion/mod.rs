@@ -1,11 +1,17 @@
 //! Host-owned durable child-completion delivery. No terminal input fallback.
 mod actions;
+#[cfg(test)]
+mod callback_tests;
+mod callbacks;
+mod deadline;
 mod diagnostics;
 mod history;
 mod identity;
 mod model;
 mod observation;
 mod protocol;
+#[cfg(test)]
+mod review_tests;
 #[cfg(test)]
 mod tests;
 mod transport;
@@ -74,6 +80,7 @@ impl Completion {
         // A restarted host cannot treat persisted surface numbers as live identities.
         journal.sessions.clear();
         journal.ended_sessions.clear();
+        journal.error_observers.clear();
         let service = Arc::new(Self {
             inner: Mutex::new((connection, journal)),
         });

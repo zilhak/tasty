@@ -395,6 +395,19 @@ fn crash_before_child_registration_preserves_already_recorded_facts() {
             .next()
             .unwrap()
             .phase,
+        "pending"
+    );
+    service.session(1, "codex", "thread").unwrap();
+    service.unsubscribe(sub, 1).unwrap();
+    assert_eq!(
+        service
+            .snapshot()
+            .unwrap()
+            .events
+            .values()
+            .next()
+            .unwrap()
+            .phase,
         "cancelled"
     );
 }

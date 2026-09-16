@@ -281,6 +281,23 @@ pub(crate) fn matcher_group_has_marker(item: &toml::Value, marker: &str) -> bool
     })
 }
 
+/// Remove only our handlers, retaining a mixed group's matcher and user metadata.
+fn remove_managed_handlers(groups: &mut Vec<toml::Value>) {
+    groups.retain_mut(|group| {
+        let Some(handlers) = group.get_mut("hooks").and_then(toml::Value::as_array_mut) else {
+            return true;
+        };
+        let before = handlers.len();
+        handlers.retain(|handler| {
+            !handler
+                .get("command")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|command| command.contains(HOOK_MARKER))
+        });
+        handlers.len() == before || !handlers.is_empty()
+    });
+}
+
 /// `[hooks]` 의 각 event 배열에 tasty MatcherGroup 을 멱등하게 박는다. 기존
 /// non-tasty entry, 다른 키 (다른 hook event, [hooks] 외 섹션) 는 모두 보존.
 pub(crate) fn merge_install(mut value: toml::Value) -> toml::Value {
@@ -301,7 +318,7 @@ pub(crate) fn merge_install(mut value: toml::Value) -> toml::Value {
             continue;
         };
         // 기존 tasty marker entry 제거 후 새 entry push — 멱등.
-        arr.retain(|item| !matcher_group_has_marker(item, HOOK_MARKER));
+        remove_managed_handlers(arr);
         arr.push(new_matcher_group(kebab));
     }
     value
@@ -355,7 +372,7 @@ pub(crate) fn remove_install(mut value: toml::Value) -> toml::Value {
     let event_keys: Vec<String> = hooks_table.keys().cloned().collect();
     for key in event_keys {
         if let Some(arr) = hooks_table.get_mut(&key).and_then(|v| v.as_array_mut()) {
-            arr.retain(|item| !matcher_group_has_marker(item, HOOK_MARKER));
+            remove_managed_handlers(arr);
         }
     }
     // 빈 array 가 된 event 키 정리.

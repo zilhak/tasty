@@ -107,6 +107,9 @@ pub(crate) fn handle_claude_hook(
         if ended["ignored_old_session"] == true {
             return Ok(json!({"ok":true,"ignored_old_session":true,"host_call_failures":0}));
         }
+        // The atomic end transition already recorded exit. Keep legacy cleanup and
+        // notifications, but do not revive the ended execution through idle SetState.
+        calls.retain(|call| !matches!(call, HostCall::SetState { .. }));
     }
     for call in &calls {
         if let HostCall::SetState { state, .. } = call {

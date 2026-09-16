@@ -129,3 +129,6 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     })
 }
+
+#[cfg(test)]
+mod install_tests;

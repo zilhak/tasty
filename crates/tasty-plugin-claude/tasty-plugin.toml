@@ -169,6 +169,7 @@ flags = [
 flags = [
     { name = "caller_surface", type = "u32", flag = "--caller-surface", required = true, help = "Surface that issued the spawn/tell command and should receive the notification" },
     { name = "target_surface", type = "u32", flag = "--target-surface", required = true, help = "Child surface that stalled after an error" },
+    { name = "observer", type = "string", flag = "--observer", required = false, help = "Internal execution observation lease" },
 ]
 
 [contributes.cli.arg_groups.broadcast_args]

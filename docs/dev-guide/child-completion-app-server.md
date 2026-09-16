@@ -29,7 +29,7 @@ CLI는 `tasty codex completion <action>`, plugin IPC는 `codex.completion`, host
 
 CLI 플래그는 `--surface`, `--endpoint`, `--thread-id`, `--session-id`, `--hook-session`,
 `--auth-env`, `--codex-home`, `--register`, `--all-parents`, `--event`, `--subscription`이다. `--surface` 생략 시 caller의
-`TASTY_SURFACE_ID`를 사용한다. `status --all-parents`/`diagnose --all-parents`은 닫힌 부모의 기록까지 host journal 전체를 조회하므로 옛 surface가 사라진 뒤에도 취소·수락불명 근거를 볼 수 있다. 내부 producer는 session/subscribe/observe/route 액션을
+`TASTY_SURFACE_ID`를 사용한다. `status --all-parents`/`diagnose --all-parents`은 닫힌 부모의 기록까지 host journal 전체를 조회하므로 옛 surface가 사라진 뒤에도 취소·수락불명 근거를 볼 수 있다. 내부 producer는 session/subscribe/observe/route 및 실행 한정 오류 관측용 watch_error/observe_error 액션을
 사용한다. host 진입점은 기존 SurfaceWrite 권한 게이트 뒤에 있다.
 
 hook session_id, App Server sessionId, thread.id, surface generation은 별도 보관한다.
@@ -113,3 +113,15 @@ proxy 실행파일은 연결 필수 조건이 아니다. `diagnose --local-confi
 인증 환경변수는 실행 중 호스트의 환경에서 읽는다. 다른 셸에서 같은 이름의 값을 바꿔도
 이미 실행한 호스트의 환경은 바뀌지 않는다. 토큰 갱신 후에는 해당 환경을 가진 호스트에서
 다시 연결해야 한다. endpoint가 바뀌면 현재 TUI가 실제로 붙은 새 endpoint를 명시적으로 bind한다. 기존 thread.id/sessionId와 알려진 codexHome을 유지하고 새 daemon의 loaded 소유를 다시 검증한다. 이전 바인딩은 superseded로 보존하며 미완료 이벤트에는 origin_binding을 남긴다. accepted/unknown은 새 endpoint에서도 이력만 대조하고 재송신하지 않는다. 이 명령이 기존 TUI를 이동시키지는 않는다.
+
+## 실행 종료와 지연 관측
+
+release는 현재 논리 부모와 child 실행 세대가 일치하는 spawn 구독만 종료한다. unsubscribe는 현재 또는 막 종료된 논리 부모 식별자를 검증한다. 재시작 뒤 숫자 surface가 재사용돼도 옛 구독을 취소할 권한을 얻지 않는다. 원 관계의 target_exited 미송신 기록은 같은 소유자의 release로 취소할 수 있다.
+
+Claude 오류 callback은 `watch_error`가 발급한 observer를 command에 보존한다. observer는 구독과 첫 child 실행 세대에 묶이며, 기동 전 등록은 첫 SessionStart에서만 세대를 채운다. `observe_error`는 같은 journal 잠금에서 현재 부모·child·구독 수명을 검증한다. release/실행 교체/호스트 재시작 뒤 늦은 callback과 observer 없는 구형 callback은 새 이벤트나 Claude 로그를 만들지 않는다.
+
+child-profile의 await_session tell은 같은 UUID의 SessionStart가 돌아와도 다음 실행에 연결된다. 계획된 재개가 확인되면 SessionEnd 관측 유실과 무관하게 이전 실행 구독을 종료한다. 정상 Claude SessionEnd는 종료 전이를 한 번 기록한 후 metadata·복원 명령·legacy 알림을 정리하고, 중복 idle 관측으로 종료를 되돌리지 않는다. 다른 세션의 늦은 종료는 이 정리에도 진입하지 않는다.
+
+## 프레임 수신 시간 제한
+
+3초 I/O 예산은 WebSocket 메시지 바깥의 반복문뿐 아니라 소켓 Read/Write마다 남은 절대 시간으로 적용한다. TCP/TLS는 TLS 아래의 raw TCP stream을 감싸고 Unix도 같은 경계를 사용하므로, 유효한 continuation이나 부분 TLS 입력이 도착해도 예산을 연장하지 않는다. RPC 응답의 5초 마감은 다음 수신에 전달해 notification마다 새로 시작하지 않는다. 프레임·누적 메시지는 각각 8MiB로 제한한다. 한 endpoint의 미완성 응답이 시간 초과하면 단일 worker는 다음 부모를 처리한다.

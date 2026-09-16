@@ -1,17 +1,22 @@
 //! Bounded existing-endpoint transport. Never starts a Codex daemon.
+use super::deadline::{BudgetStream, Deadline};
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
 const TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_FRAME: u64 = 8 * 1024 * 1024;
-pub enum Transport {
+pub struct Transport {
+    socket: Socket,
+    deadline: Deadline,
+}
+enum Socket {
     #[cfg(unix)]
-    Unix(Box<WebSocket<std::os::unix::net::UnixStream>>),
-    Web(Box<WebSocket<MaybeTlsStream<TcpStream>>>),
+    Unix(Box<WebSocket<BudgetStream<std::os::unix::net::UnixStream>>>),
+    Web(Box<WebSocket<MaybeTlsStream<BudgetStream<TcpStream>>>>),
 }
 pub fn validate_endpoint(endpoint: &str) -> Result<()> {
     if let Some(path) = endpoint.strip_prefix("unix://") {
@@ -46,13 +51,20 @@ pub fn validate_endpoint(endpoint: &str) -> Result<()> {
 impl Transport {
     pub fn connect(endpoint: &str, auth_env: Option<&str>) -> Result<Self> {
         validate_endpoint(endpoint)?;
+        let budget = Deadline::new(Instant::now() + TIMEOUT);
         #[cfg(unix)]
         if let Some(path) = endpoint.strip_prefix("unix://") {
             let socket = std::os::unix::net::UnixStream::connect(path)?;
-            socket.set_read_timeout(Some(TIMEOUT))?;
-            socket.set_write_timeout(Some(TIMEOUT))?;
-            let (socket, _) = tungstenite::client("ws://localhost/", socket)?;
-            return Ok(Self::Unix(Box::new(socket)));
+            let socket = BudgetStream {
+                socket,
+                deadline: budget.clone(),
+            };
+            let (mut socket, _) = tungstenite::client("ws://localhost/", socket)?;
+            limit_frames(&mut socket);
+            return Ok(Self {
+                socket: Socket::Unix(Box::new(socket)),
+                deadline: budget,
+            });
         }
         // Resolve and connect with a deadline before websocket/TLS negotiation.
         let uri: tungstenite::http::Uri = endpoint.parse()?;
@@ -84,8 +96,11 @@ impl Transport {
                 anyhow::anyhow!("endpoint did not resolve or connect within deadline")
             })
         })?;
-        stream.set_read_timeout(Some(TIMEOUT))?;
-        stream.set_write_timeout(Some(TIMEOUT))?;
+        budget.reset(Instant::now() + TIMEOUT)?;
+        let stream = BudgetStream {
+            socket: stream,
+            deadline: budget.clone(),
+        };
         use tungstenite::client::IntoClientRequest;
         let mut request = endpoint.into_client_request()?;
         if let Some(name) = auth_env {
@@ -100,7 +115,7 @@ impl Transport {
                     .map_err(|_| anyhow::anyhow!("invalid_auth_token"))?,
             );
         }
-        let (socket, _) =
+        let (mut socket, _) =
             tungstenite::client_tls(request, stream).map_err(|error| match error {
                 tungstenite::HandshakeError::Failure(tungstenite::Error::Http(response)) => {
                     anyhow::anyhow!(
@@ -113,27 +128,39 @@ impl Transport {
                 }
                 _ => anyhow::anyhow!("websocket_handshake_failed"),
             })?;
-        Ok(Self::Web(Box::new(socket)))
+        limit_frames(&mut socket);
+        Ok(Self {
+            socket: Socket::Web(Box::new(socket)),
+            deadline: budget,
+        })
     }
     pub fn send(&mut self, value: &Value) -> Result<()> {
         let text = serde_json::to_string(value)?;
-        match self {
+        self.deadline.reset(Instant::now() + TIMEOUT)?;
+        match &mut self.socket {
             #[cfg(unix)]
-            Self::Unix(socket) => socket.send(Message::Text(text.into()))?,
-            Self::Web(socket) => socket.send(Message::Text(text.into()))?,
+            Socket::Unix(socket) => socket.send(Message::Text(text.into()))?,
+            Socket::Web(socket) => socket.send(Message::Text(text.into()))?,
         }
         Ok(())
     }
-    pub fn receive(&mut self) -> Result<Value> {
-        match self {
+    pub fn receive_until(&mut self, response_deadline: Instant) -> Result<Value> {
+        let deadline = response_deadline.min(Instant::now() + TIMEOUT);
+        self.deadline.reset(deadline)?;
+        match &mut self.socket {
             #[cfg(unix)]
-            Self::Unix(socket) => receive(socket),
-            Self::Web(socket) => receive(socket),
+            Socket::Unix(socket) => receive(socket, deadline),
+            Socket::Web(socket) => receive(socket, deadline),
         }
     }
 }
-fn receive<S: Read + Write>(socket: &mut WebSocket<S>) -> Result<Value> {
-    let deadline = std::time::Instant::now() + TIMEOUT;
+fn limit_frames<S: Read + Write>(socket: &mut WebSocket<S>) {
+    socket.set_config(|config| {
+        config.max_message_size = Some(MAX_FRAME as usize);
+        config.max_frame_size = Some(MAX_FRAME as usize);
+    });
+}
+fn receive<S: Read + Write>(socket: &mut WebSocket<S>, deadline: Instant) -> Result<Value> {
     loop {
         if std::time::Instant::now() >= deadline {
             bail!("app_server_frame_timeout");
