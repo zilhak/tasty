@@ -91,6 +91,8 @@ pub fn tick(service: &Completion) -> Result<()> {
                             || diagnostic.contains("endpoint_replaced")
                             || diagnostic.contains("daemon_replaced")
                             || diagnostic.contains("daemon_home_changed")
+                            || diagnostic.contains("daemon_home_unavailable")
+                            || diagnostic.contains("daemon_process_identity_unavailable")
                             || diagnostic.contains("codex_home_mismatch")
                             || diagnostic.contains("rpc_error:")
                             || diagnostic.contains("rejected_http_401")

@@ -37,7 +37,11 @@ impl Client {
             bail!("unsupported_server_version: {version}; verified protocol baseline is 0.154.0");
         }
         client.transport.send(&json!({"method":"initialized"}))?;
-        let home = hello["codexHome"].as_str().unwrap_or("").to_string();
+        let home = hello["codexHome"]
+            .as_str()
+            .filter(|home| !home.is_empty())
+            .context("daemon_home_unavailable")?
+            .to_string();
         if !binding.codex_home.is_empty() && binding.codex_home != home {
             bail!("daemon_home_changed: explicit rebind required");
         }
@@ -51,6 +55,7 @@ impl Client {
         let diagnostics = client.call("server/diagnostics", json!({}))?;
         let pid = diagnostics["process"]["id"]
             .as_u64()
+            .filter(|pid| *pid > 0)
             .context("daemon_process_identity_unavailable")?;
         if binding.daemon_pid.is_some_and(|previous| previous != pid) {
             bail!("daemon_replaced: rebind after verifying TUI ownership");
