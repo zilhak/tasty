@@ -67,8 +67,9 @@
 //!
 //! 성분이 **변수 뒤에 숨은** 경우도 본다: `let unique = format!("{}-{}",
 //! std::process::id(), ..nanos..)` 뒤에 `temp_dir().join(format!("x-{unique}"))`. 루트
-//! 통합 테스트의 지배적 관용구라, 위 성분으로 바인딩된 지역 변수를 [`uniquifier_bound_vars`]
-//! 로 모아 경로 짓는 창이 그 변수를 참조하면 유니크화로 인정한다(인라인 `{unique}` 는
+//! 통합 테스트의 지배적 관용구라, 위 성분으로 바인딩된 지역 변수를 [`bindings::Bindings`]
+//! 로 찾아 같은 함수·유효 블록의 선언 이후 참조에만 전파한다. 동명 shadowing은 이전
+//! 성분을 가리며 다른 함수의 성분을 빌리지 않는다(인라인 `{unique}` 는
 //! 문자열 안이라 raw 소스에서 단어 경계로 본다). 이 갈래가 없으면 루트 tests/ 를 편입한
 //! 순간 25 곳이 거짓 위반이 됐다(실측) — 범위를 넓히자 판정기 사각이 드러난 형태다.
 //!
@@ -103,6 +104,11 @@
 //!
 //! 마스킹은 양방향으로 쟀다(같은 한 줄을 세 형태로 심고 스캔을 돌렸다):
 //! 진짜 코드는 잡히고(rc=101, 그 파일을 지목), 문자열 리터럴 안과 주석 안은 안 잡힌다.
+
+mod bindings;
+
+#[cfg(test)]
+mod scope_tests;
 
 use std::path::Path;
 
@@ -451,8 +457,8 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
     assert_eq!(code.len(), comments.len(), "두 마스크의 줄 수가 다르다");
     assert_eq!(code.len(), raw.len(), "raw 줄 수가 다르다");
     // uniquifier 성분으로 바인딩된 지역 변수(`let unique = format!(.. process::id() .. nanos ..)`).
-    // 유니크화가 변수 뒤에 숨어 아래 창 밖(위)에 있을 때 이 변수 참조로 인정한다.
-    let uniq_vars = uniquifier_bound_vars(code);
+    // 창 밖의 변수 성분도 보되 함수·블록·선언 순서와 shadowing을 지킨다.
+    let bindings = bindings::Bindings::new(code, raw, comments);
     let mut out = FileClass::default();
     for idx in 0..code.len() {
         if !code[idx].contains("temp_dir()") {
@@ -472,12 +478,7 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
         let span = axes_span(code.len(), idx, &path_lines);
         let mut axes = Axes::default();
         for &j in &span {
-            axes = axes.union(axes_of(code[j]));
-            for (v, va) in &uniq_vars {
-                if references_word(raw[j], v) {
-                    axes = axes.union(*va);
-                }
-            }
+            axes = axes.union(bindings.axes_on_line(idx, j));
         }
         if axes.any() {
             out.uniquified.push(idx);
@@ -652,65 +653,6 @@ fn let_binding_name(code: &[&str], lo: usize, hi: usize) -> Option<String> {
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
     (!name.is_empty()).then_some(name)
-}
-
-/// 파일 안에서 **uniquifier 성분으로 바인딩된 지역 변수** 이름들.
-///
-/// 루트 통합 테스트의 지배적 관용구는 `let unique = format!("{}-{}",
-/// std::process::id(), ..nanos..)` 뒤에 `temp_dir().join(format!("x-{unique}"))` 다.
-/// 유니크화 성분이 변수 뒤에 숨어 [`UNIQ_WINDOW`] 밖(위)에 있으므로, 그 변수를
-/// 여기서 모아 경로 짓는 창의 참조로 인정한다. `let [mut] <name> ... = ...` 의 문을
-/// 다음 `;` 까지 훑어 [`UNIQ_TOKENS`] 가 있으면 그 `<name>` 을 담는다.
-fn uniquifier_bound_vars(code: &[&str]) -> Vec<(String, Axes)> {
-    let mut vars = Vec::new();
-    for i in 0..code.len() {
-        let Some(pos) = code[i].find("let ") else {
-            continue;
-        };
-        let rest = code[i][pos + 4..].trim_start();
-        let rest = rest.strip_prefix("mut ").unwrap_or(rest);
-        let name: String = rest
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if name.is_empty() {
-            continue;
-        }
-        // 바인딩 문(다음 `;` 까지)에 uniquifier 성분이 있나. **문 전체의 축을 합집합
-        // 한다** — 첫 성분 줄에서 멈추면 안 된다.
-        //
-        // ★ 여기 한때 "첫 성분 줄에서 판정한다 — 뒤에 붙는 축을 안 세는 방향이라
-        //   놓치는 쪽(거짓 초록)이 아니라 더 잡는 쪽으로 틀린다" 고 적혀 있었다.
-        //   **그 문장이 틀렸다.** 그 논거는 유니크화 **여부**(합집합, 축 하나면 족하다)
-        //   에서만 맞고, **등급**에서는 정확히 뒤집힌다 — [`Axes::clock_stands_alone`]
-        //   은 시계를 **봐야** 발화한다. 첫 줄이 `process::id()` 면 `clock` 이 false 로
-        //   남아 영영 안 걸린다.
-        //
-        //   실측 2026-09-08(이 저장소): 지배적 관용구가
-        //   `format!("{}-{}", process::id(), ..nanos..)` 라 pid 가 먼저 온다. 그래서
-        //   **이 모듈이 자기 doc 에 기록한 macOS 사고와 같은 형태(pid + 시계)가 열다섯
-        //   자리에 있었고 `weak_only` 는 0 이었다.** 대조: 그 `format!` 안 두 성분의
-        //   **순서만** 바꾸면 같은 자리가 `weak_only` 로 나온다. 판정이 소스 줄 순서에
-        //   달려 있었다는 뜻이고, 줄 순서는 그 코드의 안전성이 아니다.
-        //   그 대조는 `the_grade_does_not_depend_on_the_order_inside_the_binding` 이다.
-        let mut axes = Axes::default();
-        let mut bound = false;
-        let mut j = i;
-        while j < code.len() {
-            if UNIQ_TOKENS.iter().any(|t| code[j].contains(t)) {
-                bound = true;
-                axes = axes.union(axes_of(code[j]));
-            }
-            if code[j].contains(';') {
-                break;
-            }
-            j += 1;
-        }
-        if bound {
-            vars.push((name, axes));
-        }
-    }
-    vars
 }
 
 /// `line` 이 `word` 를 **단어 경계로** 포함하는가(부분 문자열 오인 방지 — `id` 가
