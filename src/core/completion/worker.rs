@@ -38,8 +38,13 @@ pub fn tick(service: &Completion) -> Result<()> {
             Ok((mut client, identity)) => {
                 let endpoint_identity = super::transport::endpoint_identity(&binding.endpoint)?;
                 let cli_version = super::diagnostics::cli_version();
-                service.change(|j| {
+                let still_current = service.change(|j| {
+                    let owner_live = j.sessions.get(&binding.surface).is_some_and(|s| {
+                        s.kind == "codex" && s.hook_session == binding.hook_session
+                    });
                     if let Some(b) = j.bindings.get_mut(&binding.key)
+                        && owner_live
+                        && matches!(b.phase.as_str(), "verifying" | "verified")
                         && b.generation == binding.generation
                         && b.surface == binding.surface
                         && b.hook_session == binding.hook_session
@@ -55,9 +60,13 @@ pub fn tick(service: &Completion) -> Result<()> {
                         b.probe_attempts = 0;
                         b.probe_after = 0;
                         b.cli_version = cli_version;
+                        return Ok(true);
                     }
-                    Ok(())
+                    Ok(false)
                 })?;
+                if !still_current {
+                    continue;
+                }
                 if let Some(event) = event {
                     deliver(service, &mut client, binding, event)?;
                 }

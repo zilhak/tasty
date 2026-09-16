@@ -439,6 +439,21 @@ fn explicit_endpoint_replacement_preserves_unknown_and_its_origin() {
         "superseded"
     );
 }
+#[test]
+fn repeated_parent_hook_cannot_claim_that_a_private_resume_uses_the_old_daemon() {
+    let service = Completion::memory().unwrap();
+    parent(&service);
+    let b = binding("ws://127.0.0.1:12345".into());
+    let key = b.key.clone();
+    service.bind(b).unwrap();
+    assert!(!service.hook_session(1, "codex", "thread").unwrap());
+    assert_eq!(service.snapshot().unwrap().bindings[&key].phase, "unbound");
+    assert!(!service.hook_session(1, "codex", "fork-thread").unwrap());
+    assert_eq!(
+        service.snapshot().unwrap().sessions[&1].hook_session,
+        "thread"
+    );
+}
 #[cfg(unix)]
 mod wire {
     use super::*;
@@ -452,6 +467,14 @@ mod wire {
     }
     impl Server {
         fn new(drop_ack: bool, loaded: bool, connections: usize) -> Self {
+            Self::with_status(drop_ack, loaded, connections, "idle")
+        }
+        fn with_status(
+            drop_ack: bool,
+            loaded: bool,
+            connections: usize,
+            status: &'static str,
+        ) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("server.sock");
             let listener = UnixListener::bind(&path).unwrap();
@@ -475,7 +498,7 @@ mod wire {
                         if method == "initialized" {
                             continue;
                         }
-                        let t = json!({"id":"thread","sessionId":"tree","historyMode":"paginated"});
+                        let t = json!({"id":"thread","sessionId":"tree","historyMode":"paginated","status":{"type":status}});
                         let result = match method {
                             "initialize" => {
                                 json!({"userAgent":"codex/0.154.0","codexHome":"/fixture"})
@@ -589,6 +612,22 @@ mod wire {
                 .filter(|v| v["method"] == "turn/start")
                 .count(),
             1
+        );
+    }
+    #[test]
+    fn a_thread_unloaded_between_list_and_read_is_never_resumed() {
+        let server = Server::with_status(false, true, 1, "notLoaded");
+        let service = Completion::memory().unwrap();
+        parent(&service);
+        service.bind(binding(server.endpoint.clone())).unwrap();
+        service.subscribe(1, 2, "codex", "spawn").unwrap();
+        service.observe(2, "idle", "stop", "").unwrap();
+        worker::tick(&service).unwrap();
+        assert!(
+            !server
+                .finish()
+                .iter()
+                .any(|v| v["method"] == "thread/resume" || v["method"] == "turn/start")
         );
     }
     #[test]

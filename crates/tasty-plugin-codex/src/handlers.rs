@@ -872,7 +872,11 @@ pub(crate) fn handle_hook<H: HostCall>(
     if event == "session-start"
         && let Some(session) = params.get("session").and_then(Value::as_str)
     {
-        tasty_plugin_agent_common::completion::session(host, surface_id, "codex", session)?;
+        let registration =
+            tasty_plugin_agent_common::completion::session(host, surface_id, "codex", session)?;
+        if registration["registration_required"] == true {
+            return Ok(json!({"host_call_failures":0,"registration_required":true}));
+        }
     }
 
     // 조용히 실패한 host 호출을 센다. 아래 `terminal.set_state` 는 전파하므로 이 수에

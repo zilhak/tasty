@@ -164,6 +164,7 @@ pub(crate) fn handle_reboot(
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
     let thread_policy_args = policy_args.clone();
+    let thread_binding = context.get("binding").filter(|v| !v.is_null()).cloned();
     // 안내문은 **스레드에 넘기기 전에** 조립한다 — `Translator` 를 워커로 옮기지 않으려고
     // 완성된 문자열만 보낸다. 내용이 실행 시점 상태에 의존하지 않아 시점 차이가 없다.
     let thread_notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
@@ -179,6 +180,7 @@ pub(crate) fn handle_reboot(
                 banner_c0,
                 &thread_notice,
                 &thread_policy_args,
+                thread_binding.as_ref(),
             );
             tasty_utils::poison::recover_mutex(
                 thread_inflight.lock(),
@@ -289,6 +291,7 @@ fn run_reboot_sequence(
     banner_c0: usize,
     notice: &str,
     policy_args: &str,
+    binding: Option<&Value>,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
 
@@ -305,6 +308,18 @@ fn run_reboot_sequence(
         return;
     }
     thread::sleep(TUI_READY_GRACE);
+    if let Some(binding) = binding {
+        // This invocation launched the captured remote endpoint and observed the new TUI banner.
+        let params = json!({"action":"bind","surface":surface_id,"register":true,"endpoint":binding["endpoint"],"thread_id":binding["thread_id"],"session_id":binding["session_id"],"hook_session":binding["hook_session"],"auth_env":binding["auth_env"],"codex_home":binding["codex_home"]});
+        if let Err(error) = host.call("terminal.completion_bind", params) {
+            tracing::warn!("codex reboot completion rebind failed: {error}");
+        } else if let Err(error) = host.call(
+            "surface.meta.set",
+            json!({"surface_id":surface_id,"key":"codex-session-id","value":session_id}),
+        ) {
+            tracing::warn!("codex reboot session metadata restore failed: {error}");
+        }
+    }
 
     if !deliver_notice(host, surface_id, notice) {
         tracing::warn!(

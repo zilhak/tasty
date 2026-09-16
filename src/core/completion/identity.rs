@@ -5,6 +5,22 @@ impl Completion {
     pub fn session(&self, surface: u32, kind: &str, hook_session: &str) -> Result<()> {
         self.change(|j| register_session(j, surface, kind, hook_session))
     }
+    pub fn hook_session(&self, surface: u32, kind: &str, hook_session: &str) -> Result<bool> {
+        self.change(|j| {
+            if kind == "codex" {
+                let current = j.sessions.get(&surface).map(|s| s.hook_session.clone());
+                let mut requires_binding = false;
+                for b in j.bindings.values_mut().filter(|b| b.phase != "superseded" && (b.hook_session == hook_session || (b.surface == surface && current.as_deref() == Some(b.hook_session.as_str())))) {
+                    b.phase = "unbound".into();
+                    b.diagnostic = "session_start_requires_binding: hook identity alone cannot prove the current TUI endpoint".into();
+                    requires_binding = true;
+                }
+                if requires_binding { return Ok(false); }
+            }
+            register_session(j, surface, kind, hook_session)?;
+            Ok(true)
+        })
+    }
     #[cfg(test)]
     pub fn bind(&self, binding: Binding) -> Result<()> {
         self.bind_register(binding, false)
@@ -200,7 +216,9 @@ fn register_session(j: &mut Journal, surface: u32, kind: &str, hook_session: &st
             let old = b.surface;
             b.surface = surface;
             b.generation = generation;
-            b.phase = "verifying".into();
+            b.phase = "unbound".into();
+            b.diagnostic =
+                "session_registered: explicitly bind the current remote TUI endpoint".into();
             b.probe_attempts = 0;
             b.probe_after = 0;
             // Revalidate the recorded endpoint/thread after a positively observed session start.

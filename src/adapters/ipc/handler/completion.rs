@@ -75,12 +75,12 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
     let service = &engine.completion;
     match action {
         "session" => {
-            service.session(
+            let registered = service.hook_session(
                 surface,
                 text(params, "kind")?,
                 text(params, "hook_session")?,
             )?;
-            Ok(json!({"registered":true}))
+            Ok(json!({"registered":registered,"registration_required":!registered}))
         }
         "subscribe" => {
             let target = number(params, "target")?;

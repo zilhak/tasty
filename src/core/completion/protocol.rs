@@ -131,6 +131,12 @@ impl Client {
 }
 
 fn verify_thread(thread: &Value, binding: &Binding) -> Result<()> {
+    let runtime = thread["status"]["type"]
+        .as_str()
+        .context("thread_runtime_status_missing")?;
+    if runtime == "notLoaded" {
+        bail!("thread_not_loaded_on_endpoint: refusing disk-history resume");
+    }
     // The supported 0.154.0 TUI root/fork hook reports the live thread id.
     // Keep the fields distinct and reject other mappings instead of guessing a session-tree member.
     if binding.hook_session != binding.thread_id {
