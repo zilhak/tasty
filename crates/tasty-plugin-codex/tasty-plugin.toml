@@ -158,6 +158,7 @@ positional = [
     { name = "event", type = "string", required = true, help = "Hook event name: stop, prompt-submit, session-start, permission-request, post-tool-use, interrupt, session-end" },
 ]
 flags = [
+    { name = "summary", type = "string", flag = "--summary", required = false, stdin_field = "last_assistant_message", help = "Last assistant message reported by the completion hook" },
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for" },
     { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook." },
 ]
@@ -278,8 +279,8 @@ flags = [
     { name = "thread_id", type = "string", flag = "--thread-id", required = false, help = "Exact parent thread.id" },
     { name = "session_id", type = "string", flag = "--session-id", required = false, help = "App Server thread.sessionId" },
     { name = "hook_session", type = "string", flag = "--hook-session", required = false, help = "SessionStart hook session_id" },
-    { name = "event", type = "u32", flag = "--event", required = false, help = "Definitely unsent event to retry" },
-    { name = "subscription", type = "u32", flag = "--subscription", required = false, help = "Owned subscription to end" },
+    { name = "event", type = "string", flag = "--event", required = false, help = "Definitely unsent event to retry" },
+    { name = "subscription", type = "string", flag = "--subscription", required = false, help = "Owned subscription to end" },
 ]
 
 [contributes.cli.arg_groups.install_args]

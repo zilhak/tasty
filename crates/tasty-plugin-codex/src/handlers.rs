@@ -915,6 +915,9 @@ pub(crate) fn handle_hook<H: HostCall>(
     if let Some(session) = params.get("session").and_then(Value::as_str) {
         observed_state["hook_session"] = json!(session);
     }
+    if let Some(summary) = params.get("summary").and_then(Value::as_str) {
+        observed_state["summary"] = json!(summary);
+    }
     let observed = host_call(host, "terminal.set_state", observed_state)?;
     if observed["ignored_old_session"] == true {
         return Ok(json!({"host_call_failures":host_call_failures,"ignored_old_session":true}));

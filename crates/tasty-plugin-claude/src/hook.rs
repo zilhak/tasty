@@ -115,7 +115,11 @@ pub(crate) fn handle_claude_hook(
                 surface_id,
                 state,
                 event,
-                message.unwrap_or(""),
+                params
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .or(message)
+                    .unwrap_or(""),
                 session.as_deref(),
             )?;
             if observed["ignored_old_session"] == true {

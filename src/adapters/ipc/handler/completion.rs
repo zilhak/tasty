@@ -27,6 +27,13 @@ fn number<T: TryFrom<u64>>(params: &Value, name: &str) -> Result<T> {
         .map_err(anyhow::Error::msg)?
         .with_context(|| format!("missing {name}"))
 }
+fn journal_id(params: &Value, name: &str) -> Result<u64> {
+    super::params::read_id_or_name(params, name)
+        .map_err(anyhow::Error::msg)?
+        .with_context(|| format!("missing {name}"))?
+        .parse()
+        .with_context(|| format!("invalid {name}: expected u64"))
+}
 fn text<'a>(params: &'a Value, name: &str) -> Result<&'a str> {
     params[name]
         .as_str()
@@ -189,13 +196,31 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
             )
         }
         "retry" => {
-            service.retry(number(params, "event")?, surface)?;
+            service.retry(journal_id(params, "event")?, surface)?;
             Ok(json!({"queued":true}))
         }
         "unsubscribe" => {
-            service.unsubscribe(number(params, "subscription")?, surface)?;
+            service.unsubscribe(journal_id(params, "subscription")?, surface)?;
             Ok(json!({"unsubscribed":true}))
         }
         _ => bail!("unsupported completion action"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn journal_ids_keep_the_same_u64_range_in_cli_and_ipc() {
+        assert_eq!(
+            journal_id(&json!({"event":u64::MAX}), "event").unwrap(),
+            u64::MAX
+        );
+        assert_eq!(
+            journal_id(&json!({"event":u64::MAX.to_string()}), "event").unwrap(),
+            u64::MAX
+        );
+        assert!(journal_id(&json!({"event":"18446744073709551616"}), "event").is_err());
+        assert!(journal_id(&json!({"event":-1}), "event").is_err());
     }
 }

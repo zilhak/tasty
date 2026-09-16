@@ -105,7 +105,7 @@ impl Client {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
             let value = self.transport.receive()?;
-            if value["id"].as_u64() == Some(id) {
+            if value.get("method").is_none() && value["id"].as_u64() == Some(id) {
                 if let Some(error) = value.get("error") {
                     bail!("rpc_error: {}", error);
                 }

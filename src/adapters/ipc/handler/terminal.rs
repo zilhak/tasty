@@ -1001,7 +1001,7 @@ pub(crate) fn handle_set_state(
         surface_id,
         &new_state,
         params["cause"].as_str().unwrap_or("state_hook"),
-        "Child state reported; inspect child output for result",
+        params["summary"].as_str().unwrap_or(""),
         params["hook_session"].as_str(),
     ) {
         Ok(true) => {}

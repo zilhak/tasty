@@ -1,7 +1,7 @@
 # Codex 부모의 child 완료 전달
 
 부모 종류로 채널을 고른다. Codex 부모는 App Server `turn/start.toolOutput`, Claude 부모는
-기존 completion-log/Monitor를 사용한다. child는 어느 CLI여도 된다. 결과 요약이 없으면 빈 summary와 child surface result_reference를 전달하며 성공 결과를 합성하지 않는다. 완료 이벤트에
+기존 completion-log/Monitor를 사용한다. child는 어느 CLI여도 된다. Stop의 last_assistant_message를 최대 4096자로 전달한다. 결과 요약이 없으면 빈 summary와 child surface result_reference를 전달하며 성공 결과를 합성하지 않는다. 완료 이벤트에
 `terminal.tell`, 키 입력, `turn/steer`, `codex queue`를 사용하지 않는다.
 
 ## 연결

@@ -71,7 +71,9 @@ const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
 /// "To continue this session, run codex resume <id>").
 const EXIT_MARKER: &str = "run codex resume";
 /// codex 기동 배너의 식별 조각 (v0.142 실측: "│ >_ OpenAI Codex (v0.142.2)").
-const BANNER_MARKER: &str = ">_ OpenAI Codex";
+const BANNER_MARKER: &str = "OpenAI Codex";
+// Codex 0.154 remote TUI detaches while its App Server task remains alive.
+const REMOTE_EXIT_MARKER: &str = "Disconnected from this task.";
 /// 화면 검증에 쓰는 안내문 선두 조각.
 const NOTICE_SNIPPET: &str = "tasty codex reboot";
 
@@ -140,7 +142,7 @@ pub(crate) fn handle_reboot(
             &surface_id.to_string(),
         )));
     };
-    let exit_c0 = count_occurrences(&screen, EXIT_MARKER);
+    let exit_c0 = exit_marker_count(&screen);
     let banner_c0 = count_occurrences(&screen, BANNER_MARKER);
 
     {
@@ -271,6 +273,10 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
     )
 }
 
+fn exit_marker_count(screen: &str) -> usize {
+    count_occurrences(screen, EXIT_MARKER) + count_occurrences(screen, REMOTE_EXIT_MARKER)
+}
+
 /// 겹치지 않는 부분 문자열 등장 횟수. 순수 함수 — 단위 테스트 대상.
 pub(crate) fn count_occurrences(hay: &str, needle: &str) -> usize {
     if needle.is_empty() {
@@ -347,7 +353,7 @@ fn kill_codex_via_ctrlc(host: &HostHandle, surface_id: u32, exit_c0: usize) -> b
     // 종료 확인: exit 마커가 요청 시점보다 늘어날 때까지. 실패 시 절대 진행 금지 —
     // 살아있는 codex TUI 입력창에 resume 명령이 타이핑되는 사고 방지.
     if !poll_screen(host, surface_id, EXIT_WAIT, |s| {
-        count_occurrences(s, EXIT_MARKER) > exit_c0
+        exit_marker_count(s) > exit_c0
     }) {
         tracing::warn!(
             "codex reboot s{surface_id}: exit marker did not appear after {CTRL_C_COUNT}x Ctrl+C — aborting (nothing sent)"
@@ -436,6 +442,28 @@ fn poll_screen(
             return false;
         }
         thread::sleep(SCREEN_POLL_INTERVAL);
+    }
+}
+
+#[cfg(test)]
+mod remote_markers {
+    use super::*;
+    #[test]
+    fn real_remote_detach_and_legacy_exit_are_both_counted() {
+        assert_eq!(
+            exit_marker_count(
+                "Disconnected from this task. Any running work continues.\nReconnect: codex --remote unix:///owned.sock resume thread"
+            ),
+            1
+        );
+        assert_eq!(
+            exit_marker_count("To continue this session, run codex resume thread"),
+            1
+        );
+        assert_eq!(
+            count_occurrences("OpenAI Codex\n>_ OpenAI Codex", BANNER_MARKER),
+            2
+        );
     }
 }
 

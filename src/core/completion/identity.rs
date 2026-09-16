@@ -55,6 +55,9 @@ impl Completion {
             }
             // Remapping is an explicit binding to the same endpoint/thread, never a surface guess.
             if let Some(previous) = j.bindings.get(&binding.key) {
+                if !previous.codex_home.is_empty() {
+                    binding.codex_home = previous.codex_home.clone();
+                }
                 if previous.hook_session != binding.hook_session {
                     bail!("binding_session_mismatch");
                 }
