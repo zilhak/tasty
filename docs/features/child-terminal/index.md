@@ -218,3 +218,11 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 - Given C 와 무관한 다른 surface 가 hard 점유 중 When `terminal.release{child=C}` Then 그 hard 점유는 영향받지 않음.
 - Given 실행 중인 child C When `terminal.state{surface=C}` Then `{"state":"active","surface_id":C}`.
 - Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `{"state":"exited","surface_id":C}` (`"active"`가 아님).
+
+## Codex 부모의 결과 구독
+
+부모 Codex의 spawn 결과 구독은 관계 세대를 따른다. release 후 새 상태 전달과 확정 미수락
+이벤트 재시도를 멈추지만 surface는 유지한다. 이미 accepted/unknown인 결과를 회수했다고
+표시하지 않는다. 명시 tell 구독은 별개이며 release만으로 닫히지 않는다. adopt 또는 같은
+surface의 새 실행은 새 세대다. 부모 Claude의 기존 Monitor 수명은 바꾸지 않는다.
+[완료 전달 계약](../../dev-guide/child-completion-app-server.md)을 참고한다.

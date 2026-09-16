@@ -37,6 +37,7 @@ mod meta;
 mod notification;
 // `pane`/`surface`/`workspace` 와 같은 이유로 열려 있다 — 창 소유 자원의 list 를
 // 호스트가 전 창 합산으로 답하기 때문(`app/dispatch/list_global.rs`).
+mod completion;
 pub(crate) mod output;
 pub(crate) mod pane;
 pub(crate) mod params;
@@ -627,6 +628,8 @@ fn route_engine_handler(
         "terminal.broadcast" => {
             terminal::handle_broadcast(core, state, engine, id, &request.params)
         }
+        "terminal.completion" => completion::handle(engine, id, &request.params, false),
+        "terminal.completion_bind" => completion::handle(engine, id, &request.params, true),
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
         "terminal.adopt" => terminal::handle_adopt(engine, id, &request.params),
         "terminal.release" => terminal::handle_release(engine, id, &request.params),

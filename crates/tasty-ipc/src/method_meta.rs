@@ -212,6 +212,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("terminal.broadcast", plugin(&[TerminalWrite])),
         // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
         ("terminal.set_state", plugin(&[SurfaceWrite])),
+        ("terminal.completion", plugin(&[SurfaceWrite])),
+        ("terminal.completion_bind", plugin(&[SurfaceWrite, Network])),
         // 임의의 기존 surface 를 명시적으로 child 로 등록(soft 점유) —
         // `docs/features/child-terminal/index.md`("adopt" 절). sibling IPC 핸들러를
         // 호출하지 않고 순수 in-process core 함수(register_child/occupy_soft)만

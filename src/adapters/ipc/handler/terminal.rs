@@ -664,6 +664,16 @@ pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) 
         Ok(c) => c,
         Err(e) => return e,
     };
+    if let Some(child) = engine
+        .child_terminals
+        .list_children(parent)
+        .iter()
+        .find(|c| c.index == child_index)
+    {
+        if let Err(error) = engine.completion.release(parent, child.child_surface_id) {
+            return JsonRpcResponse::error(id, -32000, format!("completion release: {error}"));
+        }
+    }
     let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
         return JsonRpcResponse::invalid_params(
             id,
@@ -796,6 +806,12 @@ pub(crate) fn handle_respawn(
             child_not_found_message(&engine.child_terminals, parent, child_index),
         );
     };
+    if let Err(error) = engine
+        .completion
+        .end_execution(entry.child_surface_id, "respawn")
+    {
+        return JsonRpcResponse::error(id, -32000, format!("completion respawn: {error}"));
+    }
     let new_cwd = optional_str(params, "cwd");
     let command = optional_str(params, "command");
 
@@ -985,6 +1001,14 @@ pub(crate) fn handle_set_state(
                 format!("unknown state '{other}' (supported: idle, needs_input, active)"),
             );
         }
+    }
+    if let Err(error) = engine.completion.observe(
+        surface_id,
+        &new_state,
+        params["cause"].as_str().unwrap_or("state_hook"),
+        "Child state reported; inspect child output for result",
+    ) {
+        return JsonRpcResponse::error(id, -32000, format!("completion state: {error}"));
     }
     engine.child_terminals.save();
     JsonRpcResponse::success(

@@ -1,4 +1,4 @@
-# child 완료 알림 — PTY tell 단일 의존의 함정과 completion-log 단일 채널화
+# child 완료 알림 — 부모별 도구 결과와 completion-log
 
 ## 증상
 
@@ -18,7 +18,7 @@ child(claude/codex)가 작업을 끝내 caller(conductor)에게 "완료" 를 알
 
 ## 처방 (현재 상태)
 
-완료 이벤트를 **파일에 한 줄씩 append** 한다. conductor 는 이 파일을 Claude Code 내장
+부모가 Claude Code일 때 완료 이벤트를 **파일에 한 줄씩 append** 한다. 그 부모는 이 파일을 Claude Code 내장
 **Monitor tool** 로 tail 하면 busy/idle 여부와 무관하게 다음 turn 에 완료를 전달받는다 —
 Monitor 가 뿜는 background-task notification 은 idle 세션도 깨우기 때문이다(상류 동작,
 아래 근거).
@@ -27,7 +27,7 @@ Monitor 가 뿜는 background-task notification 은 idle 세션도 깨우기 때
 completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 경로에서 `terminal.tell`
 주입은 제거**했다. caller 가 Claude Code CLI 세션이면 주입된 텍스트가 **사람이 직접
 타이핑해 제출한 발화와 구분되지 않는 형태**로 대화 트랜스크립트에 섞여 들어가는 부작용이
-있었기 때문이다. 이제 completion-log 가 완료 알림의 **유일한 채널**이다. (일반 메시지
+있었기 때문이다. 부모 Claude의 완료 수신은 completion-log가 담당한다. 부모 Codex는 [App Server 도구 결과](../child-completion-app-server.md)를 사용한다. (일반 메시지
 전달인 `tasty claude tell` / `tasty codex tell` 의 `terminal.tell` 은 완료 알림이 아니라
 메시지 전달 그 자체이므로 그대로 유지된다.)
 
@@ -74,9 +74,9 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
 - 구현: `crates/tasty-utils/src/notify.rs`(공유 append 헬퍼) + 두 plugin 의
   `handle_notify_done`(claude) / `handle_notify_caller`(codex).
 
-### conductor 운영 규약 — Monitor arm
+### 부모 Claude 운영 규약 — Monitor arm
 
-conductor 는 child 를 dispatch 한 뒤 **한 번** 자기 surface 의 완료 로그를 arm 한다:
+부모 Claude는 child 를 dispatch 한 뒤 **한 번** 자기 surface 의 완료 로그를 arm 한다:
 
 ```
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })

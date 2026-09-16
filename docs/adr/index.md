@@ -260,3 +260,4 @@
 | 0277 | [IPC 진입 검사와 허용 관측은 요청마다 한 번 수행한다 — ADR-0152의 중첩 게이트·Allow 위치 개정](0277-ipc-admission-and-observation-run-once.md) | Accepted | 2026-09-15 | ipc, rate-limit, telemetry, permissions, headless |
 | 0279 | [File dispatch retains its origin through completion](0279-file-dispatch-retains-origin-through-completion.md) | Accepted | 2026-09-15 | file-handler, focus, routing, lifecycle |
 | 0282 | [Namespace 호출은 owner와 필요한 활성 IPC hook extension만 시작한다](0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md) | Accepted | 2026-09-15 | ipc, plugins, lifecycle, headless |
+| 0288 | [Codex 부모에게 child 상태를 App Server 도구 결과로 전달한다 — ADR-0266의 Codex 부모 push 주체 개정](0288-codex-parent-tool-output-completion.md) | Accepted | 2026-09-16 | codex, app-server, completion, outbox, lifecycle, plugin |

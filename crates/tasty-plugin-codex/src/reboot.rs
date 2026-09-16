@@ -97,10 +97,30 @@ pub(crate) fn handle_reboot(
     // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
     // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
     // 전역 기본값 > codex 자체 기본값)로 해석한다.
-    let policy_args = resolve_policy_args(host, params, tr)?;
+    let mut policy_args = resolve_policy_args(host, params, tr)?;
 
     // 요청 시점 캡처.
-    let session_id = fetch_session_id(host, surface_id, tr)?;
+    let mut session_id = fetch_session_id(host, surface_id, tr)?;
+    let context = host.call(
+        "terminal.completion",
+        json!({"action":"resume_context","surface":surface_id}),
+    )?;
+    if let Some(binding) = context.get("binding").filter(|v| !v.is_null()) {
+        if let (Some(endpoint), Some(thread)) =
+            (binding["endpoint"].as_str(), binding["thread_id"].as_str())
+        {
+            // Endpoint was validated by the host. Keep its shell representation a single token.
+            let quoted = format!("'{}'", endpoint.replace('\'', "'\"'\"'"));
+            policy_args.push_str(&format!(" --remote {quoted}"));
+            if let Some(auth) = binding["auth_env"].as_str() {
+                policy_args.push_str(&format!(
+                    " --remote-auth-token-env '{}'",
+                    auth.replace('\'', "'\"'\"'")
+                ));
+            }
+            session_id = thread.to_string();
+        }
+    }
     if !is_safe_session_id(&session_id) {
         return Err(IpcMethodError::new(crate::handlers::t_args(
             tr,

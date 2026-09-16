@@ -83,27 +83,86 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 
 ## 4. 완료 알림 받기
 
-자식이 대기(idle) 또는 입력 필요(needs_input) 상태가 되거나 종료되면, `spawn`/`tell` 을 호출한 서피스의 **알림 로그 파일**에 한 줄이 추가됩니다.
+받는 방법은 **부모 에이전트**로 정합니다. 자식이 Claude인지 Codex인지는 관계없습니다.
+입력 요청·중단·오류·프로세스 종료도 상태 알림이므로, 알림을 작업 성공으로 단정하지 마세요.
 
+### 부모가 Codex일 때
+
+Codex 0.154.0의 **같은 서버에서 실행 중인 부모 대화**에 도구 결과로 전달합니다.
+일반 `codex` TUI가 별도로 켠 서버에 자동 연결되지는 않습니다. 지원되는 기존 서버에
+`codex --remote <주소>`로 TUI를 명시 연결하세요. 현재 대화를 다른 서버에 복제해서
+여는 것으로 연결을 대신하지 않습니다. 이 연결은 Tasty의 SSH 워크스페이스 연결과 별개입니다.
+
+훅 설정과 부모 연결은 별도 단계입니다. 다른 Codex home이나 profile을 쓰면 해당 위치를 지정하세요.
+두 위치 옵션은 함께 사용하지 않습니다. 기존의 다른 훅과 모델 설정은 보존합니다.
+
+```sh
+tasty codex install --codex-home /absolute/codex-home
+# profile 파일을 직접 선택하는 경우:
+tasty codex install --config-file /absolute/codex-home/work.config.toml
 ```
-$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log
+
+SessionStart 훅을 받은 뒤 상태를 확인하고 연결합니다. 아래 ID 자리는 부모의 실제 값으로
+바꾸세요. `hook_session`은 진단의 세션 식별값이고, `thread.id`와 `sessionId`는 부모 서버의
+응답값입니다. 값이 같은 경우에도 서로 다른 식별 항목으로 검증합니다.
+
+```sh
+tasty codex completion diagnose
+tasty codex completion bind --endpoint unix:///absolute/app-server.sock \
+  --thread-id 'THREAD_ID' --session-id 'SESSION_ID' --hook-session 'HOOK_SESSION_ID'
+tasty codex completion status
 ```
 
-- 두 환경변수는 Tasty 가 띄운 셸에 이미 들어 있습니다. 위 두 환경변수로 로그 파일 경로를 확인하세요.
-- 한 줄 예(한국어 설정): `surface 57 작업 완료 (호출 방식: spawn)`. 문구는 앱 언어를 따릅니다.
-- 자식 에이전트가 실행 중이면 상태가 바뀔 때마다 알림이 추가됩니다.
-- 파일이 256 KiB 를 넘으면 비우고 새로 씁니다.
-- Claude 자식이 멈춰 있으면 같은 파일에 "멈춤" 줄이 따로 옵니다 — 화면에 오류가 보이면 30초, 오류 없이 출력만 끊긴 경우(예: 훅이 오지 않은 승인 프롬프트 앞에서 대기) 2분 뒤입니다. 오류 줄이 있으면 그 줄이 힌트로 붙습니다. 긴 추론으로 화면이 2분간 멎은 경우도 같은 줄이 올 수 있습니다 — 그 자식이 이어서 완료 알림을 내면 멈춘 것이 아니었다는 뜻입니다.
+다른 surface에서 실행하면 `--surface <부모 ID>`를 지정합니다. 연결 검증은 비동기이며
+`verifying` 뒤 `verified`인지 확인하세요. 버전·실행 대화·서버 홈이 맞지 않으면 원인이
+출력되고 결과는 보존됩니다. `--codex-home`으로 기대하는 서버 home도 대조할 수 있습니다.
+서버를 자동 시작하거나 현재 TUI를 몰래 재시작하지 않습니다.
 
-Claude Code 세션이 부모일 때는 이 파일을 Monitor 도구로 한 번만 걸어 두면 이후 모든 자식의 완료가 알림으로 도착합니다.
+Unix는 절대 소켓 경로를 사용합니다. TCP는 `ws://127.0.0.1:<port>` 또는
+`ws://localhost:<port>`, TLS 연결은 `wss://<host>`를 지정합니다. Windows에서는 TCP/TLS를
+사용하세요. 인증이 필요하면 `--auth-env TOKEN_ENV_NAME`으로 환경변수 **이름**을 지정합니다.
+Tasty 프로세스에서 그 변수를 읽을 수 있어야 하며, TUI도 같은 인증 문맥으로 연결해야 합니다.
+토큰 값을 명령 인자나 결과 본문에 넣지 마세요. 버전 기준과 실제 연결 진단을 따르며,
+Linux의 Unix/TCP 검증을 다른 OS의 실행 검증으로 간주하지 않습니다.
 
-```
+대기 중인 부모는 새 턴으로 재개하고 일반 작업 중에는 결과가 현재 턴에 큐잉됩니다.
+리뷰 중 거부 등 특수 상태는 진단을 확인하세요. 완료 알림을 `tell`이나 키 입력, 사용자
+메시지로 대신 보내지 않습니다. 직접 작업 지시를 보내는 기존 `tell` 기능은 유지됩니다.
+
+원격 daemon의 훅이 현재 Tasty 인스턴스에 SessionStart를 보낼 수 없다면, 부모 surface와 실제 hook 식별값을 직접 확인하고 bind에 `--register`를 추가합니다. 진단에는 훅 관측이 아닌 명시 등록으로 표시됩니다. 이 경우 Tasty 재시작 후에도 다시 명시 등록·바인딩해야 하며, endpoint의 실행 대화 검증은 생략하지 않습니다.
+
+### 부모가 Claude Code일 때
+
+기존 로그/Monitor 방식을 사용합니다.
+
+```text
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
 ```
 
-Monitor 를 쓸 수 없는 환경에서는 파일을 직접 읽습니다 (`tail -f`). 전달이 수십 초 늦어질 수는 있어도 사라지지는 않습니다.
+로그 문구는 앱 언어를 따르고, 256 KiB 이상이면 비워집니다. Monitor 없이 직접 읽을 수는
+있지만 자동 재개나 영구 보관을 보장하지 않습니다. 이 로그는 Codex 연결의 대체 경로가 아닙니다.
 
-Codex 자식이 도구 실행 승인 프롬프트에서 멈추면 상태가 `needs_input` 이 되고 같은 파일에 줄이 하나 옵니다. 그 서피스의 탭과 워크스페이스에도 노란 표시가 뜹니다. 다만 **승인을 눌러도 그 도구가 끝나야** 상태가 실행 중으로 돌아옵니다 — Codex 가 "승인됨" 자체를 알리는 이벤트를 주지 않기 때문입니다. 승인 이외의 질문(일반 입력 요청)은 아직 감지 대상이 아닙니다. 자동화 중에는 애초에 멈추지 않도록 아래 승인 정책을 먼저 확인하세요.
+### 전달이 확인되지 않거나 구독을 끝낼 때
+
+`status`는 이벤트별 원인·다음 재시도 시각과 구독을 보여줍니다.
+
+| 상태 | 의미와 조치 |
+|---|---|
+| `pending` / `blocked` | 확정 미송신 또는 명시 거부. 원인을 고친 뒤 `tasty codex completion retry --event <ID>`로 재시도합니다. 자동 연결 재시도는 최대 8회입니다. |
+| `accepted` | 서버가 수락했으며 영속·처리 완료를 보장하지 않습니다. 반복 제출하지 마세요. |
+| `unknown` | 수락 여부가 불명입니다. 원본을 보존하고 같은 서버의 이력과 자동 대조합니다. 무조건 재송신하지 않습니다. |
+| `recorded` | 같은 도구 결과가 저장 이력에서 확인됐습니다. 모델이 처리했다는 별도 증거는 아닙니다. |
+| `unbound` | 검증된 연결이 없습니다. 바인딩과 SessionStart 관측을 확인하세요. |
+| `cancelled` | 미수락 상태에서 구독이 종료돼 재시도하지 않습니다. |
+
+불완전한 이력·알림 부재만으로 미수신을 확정하지 않습니다. 서버의 busy 큐는 중단이나
+재시작 때 결과를 잃을 수 있어 수락을 완료로 간주하지 않습니다. 호스트/서버 재시작 뒤에도
+같은 부모 대화로 재검증됐는지 확인하세요.
+
+Codex 부모의 spawn 관계를 release하면 새 결과와 확정 미수락 재시도가 중단되지만 자식
+터미널은 남습니다. 이미 수락했거나 수락 여부가 불명인 결과를 회수하는 동작은 아닙니다.
+명시 tell 구독은 관계와 별개이며 `tasty codex completion unsubscribe --subscription <ID>`로
+종료합니다. 같은 surface의 새 작업에 이전 구독을 옮기지 않습니다.
 
 ## 5. Codex 승인 정책
 

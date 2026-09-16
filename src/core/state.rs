@@ -679,6 +679,7 @@ pub struct CoreState {
     /// engine 내부 (SurfaceMetaStore, layout persistence, pty surface init 등)
     /// cascade 없이 직접 영속할 때 사용.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    pub(crate) completion: std::sync::Arc<crate::core::completion::Completion>,
 
     /// agent task runner 스레드 레지스트리의 Arc clone — Core 가 owner. 부팅이 1 회
     /// 주입한다(`set_agent_runner_registry`).
@@ -729,7 +730,7 @@ impl CoreState {
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> anyhow::Result<Self> {
-        Self::new_with_ids_and_settings(
+        let mut state = Self::new_with_ids_and_settings(
             cols,
             rows,
             waker,
@@ -737,7 +738,9 @@ impl CoreState {
             layout_slot,
             memory,
             Settings::load(),
-        )
+        )?;
+        state.completion = crate::core::completion::Completion::production()?;
+        Ok(state)
     }
 
     /// `new_with_ids` 의 설정 주입 변형 — 설정을 **어디서 얻을지** 를 호출자가 정한다.
@@ -924,6 +927,7 @@ impl CoreState {
             input_simulation_enabled: false,
             memory,
             agent_runner_registry: std::sync::OnceLock::new(),
+            completion: crate::core::completion::Completion::memory()?,
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게

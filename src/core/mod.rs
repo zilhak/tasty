@@ -21,6 +21,7 @@ pub(crate) mod bulk_transfer;
 pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
 pub(crate) mod command_index;
+pub(crate) mod completion;
 pub(crate) mod file;
 pub(crate) mod fs_list;
 pub(crate) mod hook_event_registry;

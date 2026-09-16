@@ -151,6 +151,8 @@ watchdog 이 ADR-0072 보다 **뒤인데도** `stale` 을 언급하지 않는다
 
 ## References
 
+- 부분 개정: [0288](0288-codex-parent-tool-output-completion.md) (Codex 부모의 push 주체 개정)
+
 - [ADR-0072](0072-child-state-hook-observation-fusion.md) — `stale` 의 정의와 판정
   우선순위. 이 ADR 은 그 결정을 잇고 뒤집지 않는다.
 - [ADR-0262](0262-codex-approval-wait-is-observed-via-permission-request.md) —

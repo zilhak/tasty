@@ -19,6 +19,7 @@ mod gate;
 mod handlers;
 mod hook;
 mod install;
+mod notifications;
 mod profile;
 mod profile_attach;
 mod profile_merge;

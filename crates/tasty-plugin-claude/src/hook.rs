@@ -94,6 +94,22 @@ pub(crate) fn handle_claude_hook(
     let now_ms = now_ms();
 
     let mut calls = apply_hook(event, surface_id, session.as_deref(), notification_type, tr)?;
+    if event == "session-start"
+        && let Some(session) = session.as_deref()
+    {
+        tasty_plugin_agent_common::completion::session(host, surface_id, "claude", session)?;
+    }
+    for call in &calls {
+        if let HostCall::SetState { state, .. } = call {
+            tasty_plugin_agent_common::completion::observe(
+                host,
+                surface_id,
+                state,
+                event,
+                message.unwrap_or("Child status reported; inspect child output for result"),
+            )?;
+        }
+    }
 
     // 부착된 프로필을 복원 명령에 싣는다 — surface meta 는 앱 재시작/닫은 탭 복원을
     // 넘지 못하므로(`profile_attach` 모듈 doc), 복원된 프로세스에 프로필을 다시
@@ -133,6 +149,10 @@ pub(crate) fn handle_claude_hook(
     // 발동하지만, 라운드 상태는 Claude Code 의 session_id 로 키잉되므로 세션 종료를
     // 아는 이 지점(전역 `session-end`)에서 함께 정리해야 orphan 파일이 남지 않는다.
     if event == "session-end" {
+        host.call(
+            "terminal.completion",
+            json!({"action":"end_session","surface":surface_id,"hook_session":session}),
+        )?;
         checklist::remove_state_for_session(data_dir, session.as_deref().unwrap_or(""));
         // 프로필 부착 기록은 여기서 **종료 표시**만 한다 — 즉시 삭제하지 않는 이유는
         // `profile_attach` 모듈 doc "수명" 절 참고(탭을 닫으면 이 훅이 정상 발화하는데,

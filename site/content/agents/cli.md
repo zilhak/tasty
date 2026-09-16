@@ -211,7 +211,7 @@ tasty terminal broadcast "git pull\r" --role worker   # 역할이 같은 자식 
 tasty terminal kill --child 1                   # 자식을 인덱스로 종료
 ```
 
-`spawn` 은 바로 반환되고, 자식이 유휴 · 입력 대기 · 종료 상태가 되면 부모 서피스로 알림이 옵니다 —
+`spawn`은 새 터미널을 만들고 즉시 반환합니다. 에이전트의 상태 전달과 부모의 수신 준비는 [Claude·Codex 연동](claude-codex.md)을 따릅니다. 일반 프로그램의 생성만으로 에이전트 결과 전달을 보장하지 않습니다.
 기다리는 명령을 따로 돌릴 필요가 없습니다. `--role` 로 역할을 지정하면 `broadcast` 로 묶어 보냅니다.
 
 ## 화면 없는 PTY

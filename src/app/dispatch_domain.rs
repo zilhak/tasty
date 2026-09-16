@@ -845,6 +845,14 @@ impl App {
                 (state, engine, None)
             }
         };
+        if let Err(error) = engine.completion.observe(
+            surface_id,
+            "exited",
+            "process-exit",
+            "Process exited; success is not inferred",
+        ) {
+            tracing::warn!("completion process exit persistence failed: {error}");
+        }
         let fired = engine
             .hook_manager
             .check_and_fire(surface_id, &[tasty_hooks::HookEvent::ProcessExit]);

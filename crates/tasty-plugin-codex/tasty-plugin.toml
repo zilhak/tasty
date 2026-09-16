@@ -1,11 +1,12 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.66"
+version = "0.1.67"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
     "surface.read",
+    "network",
     "surface.write",
     "terminal.spawn",
     "terminal.write",
@@ -42,6 +43,7 @@ name = "codex"
 description = "Codex CLI integration (launch, spawn, kill, tell, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
+    { name = "completion", ipc_method = "codex.completion", args = "completion_args", description = "Bind and inspect durable child tool results", description_i18n_key = "codex.cli.completion" },
     { name = "launch",        ipc_method = "codex.launch",        args = "launch_args",        description = "Launch a new workspace and start Codex in its terminal" },
     { name = "spawn",         ipc_method = "codex.spawn",         args = "spawn_args",         description = "Spawn a child Codex instance in a split surface. Returns immediately; a notification is sent to the parent surface every time the child becomes idle, and once more when it exits — not just the first transition." },
     { name = "children",      ipc_method = "codex.children",      args = "children_args",      description = "List children of the specified Codex parent" },
@@ -53,8 +55,8 @@ subcommands = [
     { name = "kill",          ipc_method = "codex.kill",          args = "kill_args",          description = "Kill a child Codex instance by child index" },
     { name = "respawn",       ipc_method = "codex.respawn",       args = "respawn_args",       description = "Respawn a child Codex instance" },
     { name = "reboot",        ipc_method = "codex.reboot",        args = "reboot_args",        description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off." },
-    { name = "install",       ipc_method = "codex.install",       args = "no_args",            description = "Install Tasty hook into Codex CLI configuration" },
-    { name = "uninstall",     ipc_method = "codex.uninstall",     args = "no_args",            description = "Uninstall Tasty hook from Codex CLI configuration" },
+    { name = "install",       ipc_method = "codex.install",       args = "install_args",            description = "Install Tasty hook into Codex CLI configuration" },
+    { name = "uninstall",     ipc_method = "codex.uninstall",     args = "install_args",            description = "Uninstall Tasty hook from Codex CLI configuration" },
     { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id) when invoked by Codex's hook system." },
 ]
 
@@ -263,3 +265,21 @@ options = [
     { value = "workspace-write",     label_key = "codex.settings.sandbox.workspace_write" },
     { value = "danger-full-access",  label_key = "codex.settings.sandbox.danger_full_access" },
 ]
+
+[contributes.cli.arg_groups.completion_args]
+positional = [{ name = "action", type = "string", required = true, help = "bind | status | diagnose | retry | unsubscribe" }]
+flags = [
+    { name = "register", type = "bool", flag = "--register", required = false, help = "Explicitly register this parent when a remote daemon cannot send SessionStart to this Tasty instance" },
+    { name = "codex_home", type = "string", flag = "--codex-home", required = false, help = "Expected server Codex home; verified against initialize" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface (defaults to TASTY_SURFACE_ID)" },
+    { name = "endpoint", type = "string", flag = "--endpoint", required = false, help = "Existing App Server unix://, loopback ws:// or wss:// endpoint" },
+    { name = "auth_env", type = "string", flag = "--auth-env", required = false, help = "Host environment variable containing websocket bearer token (reference only)" },
+    { name = "thread_id", type = "string", flag = "--thread-id", required = false, help = "Exact parent thread.id" },
+    { name = "session_id", type = "string", flag = "--session-id", required = false, help = "App Server thread.sessionId" },
+    { name = "hook_session", type = "string", flag = "--hook-session", required = false, help = "SessionStart hook session_id" },
+    { name = "event", type = "u32", flag = "--event", required = false, help = "Definitely unsent event to retry" },
+    { name = "subscription", type = "u32", flag = "--subscription", required = false, help = "Owned subscription to end" },
+]
+
+[contributes.cli.arg_groups.install_args]
+flags = [{ name = "config_file", type = "string", flag = "--config-file", required = false, path_kind = "file", help = "Exact profile/config file to update; mutually exclusive with --codex-home" }, { name = "codex_home", type = "string", flag = "--codex-home", required = false, path_kind = "directory", help = "Codex home whose hooks to install/remove; must match the intended daemon" }]

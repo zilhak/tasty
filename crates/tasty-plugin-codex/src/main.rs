@@ -26,6 +26,7 @@
 const POSIX_CODEX_COMMAND: &str = "command codex";
 
 mod handlers;
+mod install;
 mod reboot;
 
 use std::collections::HashSet;
@@ -74,6 +75,14 @@ impl Plugin for CodexPlugin {
             ..
         } = ctx;
         match method.as_str() {
+            "codex.completion" => {
+                let method = if params["action"] == "bind" {
+                    "terminal.completion_bind"
+                } else {
+                    "terminal.completion"
+                };
+                host.call(method, params).map_err(Into::into)
+            }
             "codex.launch" => handlers::handle_launch(&host, &params, &self.translator),
             "codex.spawn" => handlers::handle_spawn(&host, &params, &self.translator),
             "codex.children" => handlers::handle_children(&host, &params, &self.translator),
@@ -86,8 +95,8 @@ impl Plugin for CodexPlugin {
             "codex.broadcast" => handlers::handle_broadcast(&host, &params, &self.translator),
             "codex.kill" => handlers::handle_kill(&host, &params, &self.translator),
             "codex.respawn" => handlers::handle_respawn(&host, &params, &self.translator),
-            "codex.install" => handlers::handle_install(&self.translator),
-            "codex.uninstall" => handlers::handle_uninstall(&self.translator),
+            "codex.install" => install::handle_install(&params, &self.translator),
+            "codex.uninstall" => install::handle_uninstall(&params, &self.translator),
             "codex.hook" => handlers::handle_hook(&host, &params, &self.translator),
             "codex.reboot" => {
                 reboot::handle_reboot(&self.rebooting, &host, &params, &self.translator)

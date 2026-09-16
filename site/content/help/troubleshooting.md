@@ -132,3 +132,7 @@ tasty codex install     # ~/.codex/config.toml
 - 재현 절차
 - `~/.tasty/crash-reports/` 의 해당 `crash-*.log` / `hang-*.log`
 - 증상 직후의 `~/.tasty/debug.log` (다시 켜면 비워지므로 먼저 복사해 둡니다)
+
+### 부모 에이전트가 자식 결과를 받지 못합니다
+
+자식의 테두리·배지 상태와 부모 결과 수신은 별개입니다. 부모 Codex는 `tasty codex completion diagnose`와 `status`로 같은 서버·대화 바인딩을 확인하세요. `unknown`은 반복 송신하지 않고 원래 이력과 대조합니다. 부모 Claude는 기존 완료 로그와 Monitor 구독을 확인하세요. [연결·복구 안내](../agents/claude-codex.md)를 따르세요.

@@ -1,4 +1,4 @@
-<!-- source-hash: d5bba424a7b0 -->
+<!-- source-hash: 8bf151ae5d66 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -83,27 +83,87 @@ When there are too many children, a warning is attached to the spawn response. C
 
 ## 4. Receiving completion notifications
 
-When a child becomes idle (idle) or needs input (needs_input), or exits, one line is appended to the **notification log file** of the Surface that called `spawn`/`tell`.
+Delivery depends on the **parent agent**, for both Claude and Codex children. Input requests,
+interruptions, errors, and process exits are state notifications too; they do not establish task success.
 
+### When the parent is Codex
+
+Tool results go to the parent conversation running on the **same Codex 0.154.0 server**.
+A plain `codex` TUI does not automatically join a separately started server. Connect the TUI to
+an existing supported endpoint with `codex --remote <address>`. Opening a copy of its saved
+conversation on another server does not establish this connection. This is separate from Tasty SSH workspaces.
+
+Hook setup and parent binding are separate steps. Select the actual Codex home or profile when
+it differs from the default. Use one location option. Other hooks and model settings are preserved.
+
+```sh
+tasty codex install --codex-home /absolute/codex-home
+# To select a profile file directly:
+tasty codex install --config-file /absolute/codex-home/work.config.toml
 ```
-$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log
+
+After a SessionStart hook has arrived, inspect the state and bind. Replace the IDs below with
+actual parent values: diagnostics contains the hook session identity; the parent server returns
+`thread.id` and `sessionId`. Equal values are still verified as distinct fields.
+
+```sh
+tasty codex completion diagnose
+tasty codex completion bind --endpoint unix:///absolute/app-server.sock \
+  --thread-id 'THREAD_ID' --session-id 'SESSION_ID' --hook-session 'HOOK_SESSION_ID'
+tasty codex completion status
 ```
 
-- Both environment variables are already present in shells that Tasty opened. Use these variables to locate the log file.
-- Example line (English): `surface 57 task complete (via spawn)`. The wording follows the app language.
-- A notification is added whenever the state changes while the child agent is running.
-- When the file exceeds 256 KiB it is emptied and written afresh.
-- If a Claude child looks stalled, a separate "stalled" line arrives in the same file — after 30 seconds when an error is visible on screen, and after 2 minutes when output simply stops with no error (for example, waiting at an approval prompt whose hook never arrived). When there is an error line it is attached as a hint. A child whose screen merely sits still for 2 minutes of long reasoning can produce the same line — if it goes on to send a completion notice, it was not stuck.
+Use `--surface <parent ID>` from a different surface. Verification is asynchronous; check that
+`verifying` becomes `verified`. Version, live-conversation, and server-home mismatches retain the
+result and show a reason. Use `--codex-home` to check an expected server home as well.
+Tasty does not start a server or silently restart the current TUI.
 
-When a Claude Code session is the parent, hook this file with the Monitor tool once, and from then on the completion of every child arrives as a notification.
+Unix connections use an absolute socket path. For TCP use `ws://127.0.0.1:<port>` or
+`ws://localhost:<port>`; use `wss://<host>` for TLS. On Windows, use TCP/TLS. If authentication is
+required, pass the environment variable **name** with `--auth-env TOKEN_ENV_NAME`. The Tasty
+process must be able to read it, and the TUI must use the same authentication context. Never put
+the token itself in command arguments or result text. Follow version and connection diagnostics;
+Linux Unix/TCP verification is not evidence of execution on other operating systems.
 
-```
+An idle parent starts a turn; a regular active turn queues the output. Inspect diagnostics for
+special states, including review rejection. Completion events never fall back to `tell`, keystrokes,
+or user messages. Existing `tell` commands remain available for instructions you choose to send.
+
+If the remote daemon cannot deliver SessionStart to this Tasty instance, explicitly verify the parent surface and actual hook identity and add `--register` to bind. Diagnostics marks this as caller registration, not an observed hook. Repeat this registration and binding after a Tasty restart; live endpoint/thread verification is still required.
+
+### When the parent is Claude Code
+
+Use the existing log and Monitor workflow.
+
+```text
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
 ```
 
-In environments where Monitor is not available, read the file directly (`tail -f`). Delivery may be delayed by tens of seconds, but it is never lost.
+Log messages follow the app language. The file is truncated at 256 KiB. You can read it without
+Monitor, but file reading alone guarantees neither automatic resumption nor permanent retention.
+This log is not a substitute for a Codex parent connection.
 
-When a Codex child pauses at a tool-execution approval prompt, its state becomes `needs_input` and a line arrives in the same file. Its tab and workspace are highlighted in yellow too. Note that after you approve, the state returns to running only once that tool finishes — Codex gives no event for the approval itself. Questions other than approvals (general input requests) are not detected yet. During automation, check the approval policy below so it never pauses in the first place.
+### Unconfirmed delivery and ending subscriptions
+
+`status` shows each event's reason, next retry time, and subscription.
+
+| State | Meaning and action |
+|---|---|
+| `pending` / `blocked` | Definitely unsent or explicitly rejected. Fix the cause, then use `tasty codex completion retry --event <ID>`. Automatic connection retries stop after 8 attempts. |
+| `accepted` | Server acceptance does not guarantee persistence or processing. Do not repeatedly submit the result. |
+| `unknown` | Acceptance is uncertain. Preserve the original while it is reconciled with the same server's history; do not blindly resend. |
+| `recorded` | The same tool output was found in persisted history, without inferring model consumption. |
+| `unbound` | No verified connection. Check the binding and SessionStart observation. |
+| `cancelled` | The subscription ended while nonacceptance was known; retries stop. |
+
+Partial history or missing notifications do not prove nonreceipt. A busy queue can lose results
+on interruption or restart, so acceptance is not completion. After a host or server restart, verify
+that the binding still resolves to the same parent conversation.
+
+Releasing a Codex parent's spawn relationship stops new results and definitely-unsent retries,
+but leaves the child terminal open. It does not recall accepted or uncertain results. Explicit tell
+subscriptions have a separate lifetime; end one with
+`tasty codex completion unsubscribe --subscription <ID>`. Reusing a surface does not transfer an old subscription.
 
 ## 5. Codex approval policy
 

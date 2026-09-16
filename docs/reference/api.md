@@ -91,3 +91,10 @@ CLI 는 위 IPC 를 감싼다(`tasty list workspaces`, `tasty send text`, `tasty
 
 - [event-catalog](event-catalog.md) — IPC 와 별개 채널인 Event Bus
 - [identity](../identity.md) — 사용자/에이전트 행동 분리(이 표면의 설계 축)
+
+## 부모 Codex 완료 전달
+
+`terminal.completion`은 SurfaceWrite 권한의 host IPC다. endpoint를 설정하는 `terminal.completion_bind`는 SurfaceWrite와 Network를 함께 요구한다. plugin의 `codex.completion`과
+`tasty codex completion`이 같은 인터페이스를 제공한다. bind/status/diagnose/retry/unsubscribe의
+파라미터와 상태는 [완료 전달](../dev-guide/child-completion-app-server.md)에 정의한다.
+unknown은 retry로 재송신할 수 없다. endpoint의 thread 소유와 구독은 매 연결에서 검증한다.

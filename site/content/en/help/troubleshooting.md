@@ -1,4 +1,4 @@
-<!-- source-hash: 9b1b93db2cad -->
+<!-- source-hash: 59f2194514d5 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -131,3 +131,7 @@ Describe the problem in a [GitHub issue](https://github.com/zilhak/tasty/issues)
 - Steps to reproduce
 - The matching `crash-*.log` / `hang-*.log` from `~/.tasty/crash-reports/`
 - `~/.tasty/debug.log` from right after the symptom (it is cleared on the next start, so copy it first)
+
+### The parent agent does not receive a child result
+
+Child attention indicators and parent delivery are separate. For a Codex parent, use `tasty codex completion diagnose` and `status` to inspect the same-server conversation binding. Preserve `unknown` results for reconciliation instead of repeatedly sending them. For Claude parents, check the existing completion log and Monitor subscription. See [connection and recovery](../agents/claude-codex.md).

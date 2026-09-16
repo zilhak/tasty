@@ -239,6 +239,7 @@ const DELEGATED_PARAM: &str = "method";
 /// [`delegated_routers`] 고, 아래 `no_delegated_router_escapes_the_roster` 가 그
 /// 술어로 명부를 **다시 만들어** 대조한다.
 const DELEGATED_ROUTERS: &[(&str, &str)] = &[
+    ("src/core/request_target.rs", "request_resource_id"),
     (
         "src/adapters/ipc/handler.rs",
         "hard_occupied_structural_guard",
