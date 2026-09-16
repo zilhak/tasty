@@ -56,11 +56,10 @@ pub(crate) fn handle_install(params: &Value, tr: &Translator) -> Result<Value, I
     });
     if !trusted {
         resp["note"] = Value::String(
-            "Codex blocks newly-added hooks until trusted, but tasty starts every codex instance \
-with `--dangerously-bypass-hook-trust` (spawn/launch/reboot), so hooks fire regardless of this \
-status. Manual trust is only needed if you run `codex` yourself without that flag. To trust \
-manually: run `codex` in any terminal, type `/hooks` + Enter, then for each installed hook press \
-Enter → t → Esc → Down. Trust persists per-machine."
+            "Review newly added or changed hooks in Codex using /hooks. Tasty includes \
+--dangerously-bypass-hook-trust in launch commands, but Codex may still show hook review \
+on resume. This metadata is not runtime trust verification; installation does not approve \
+hooks or prove that a remote daemon loaded this configuration."
                 .into(),
         );
     }
@@ -112,6 +111,7 @@ pub(crate) fn handle_uninstall(params: &Value, tr: &Translator) -> Result<Value,
 // 붙인다). tasty 는 자기 hook 을 스스로 심으므로(hook source 를 스스로 vet함)
 // 이 플래그의 정당한 사용 대상이다. `codex_hooks_all_trusted*` 는 이제 wait
 // 경로가 아니라 `handle_install` 의 안내 문구(수동 승인 여부 표시)에만 쓰인다.
+// 0.154 remote resume에서는 플래그가 있어도 검토 화면이 나타날 수 있다.
 
 use std::path::{Path, PathBuf};
 
@@ -317,9 +317,8 @@ pub(crate) fn merge_install(mut value: toml::Value) -> toml::Value {
 /// 다르면 invalidate 한다. 본 체크는 키 존재 + sha256: prefix 만 보므로, stale entry
 /// 가 있고 codex 가 invalidate 한 케이스는 못 잡는다. 하지만 우리 install 은 멱등하고
 /// `hook_command()` 가 static 이라 실제 stale 케이스는 사용자가 config.toml 을 직접
-/// 편집한 경우 정도. `--dangerously-bypass-hook-trust`(기동 명령에 항상 포함)가
-/// 이 여부와 무관하게 hook 을 fire 시키므로, 이 함수는 이제 `handle_install` 의
-/// 안내 문구(수동 승인 상태 표시)에만 쓰인다 — 실제 hook 동작에는 영향 없음.
+/// 편집한 경우 정도. 이 함수는 설치 안내의 metadata 판정일 뿐이다.
+/// remote resume의 훅 검토 화면이나 daemon runtime 신뢰를 증명하지 않는다.
 pub(crate) fn codex_hooks_all_trusted_in(value: &toml::Value, source_path: &str) -> bool {
     let Some(state_table) = value
         .get("hooks")

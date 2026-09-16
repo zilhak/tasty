@@ -248,7 +248,8 @@ fn fetch_session_id(
 /// `check_for_update_on_startup=false` 로 업데이트 프롬프트를 끈다
 /// — 켜져 있으면 기동이 메뉴 다이얼로그에 가로채여 안내 프롬프트의 Enter 가
 /// "Update now" 를 확정해 버린다. `--dangerously-bypass-hook-trust` 로 재시작된
-/// codex 도 hook 이 항상 fire 되게 한다(`handlers::make_codex_command` 와 동일 이유).
+/// codex 에도 기존 실행 옵션을 전달한다. remote resume의 훅 검토를 없앤다고
+/// 보장하지 않으며, 복귀 배너가 없으면 안내 입력을 보내지 않는다.
 ///
 /// `policy_args` 는 `handlers::resolve_policy_args` 가 만든 `-a ...`/`-s ...`/
 /// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열) — resume 된

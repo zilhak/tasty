@@ -163,7 +163,8 @@ fn optional_str(params: &Value, key: &str) -> Option<String> {
 /// 갱신되지 않는다. claude plugin의 `start_claude_in_surface`와 동일한 패턴.
 ///
 /// `--dangerously-bypass-hook-trust` 는 사용자가 `/hooks` 로 수동 승인하기 전에도
-/// tasty 가 install 한 hook 이 항상 fire 되게 한다. tasty 는 자기 hook을 스스로
+/// tasty 가 install 한 hook 의 실행을 요청한다. remote resume에서는 검토 화면이
+/// 나타날 수 있으므로 발화를 보장하지 않는다. tasty 는 자기 hook을 스스로
 /// 심으므로(hook source 를 스스로 vet함) 이 플래그의 정당한 사용 대상이다 —
 /// 이게 없으면 codex 가 hook 을 fire 하지 않아 `codex-idle` 알림이 영원히 오지
 /// 않는다.

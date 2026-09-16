@@ -37,7 +37,7 @@
 
 ### Fixed
 
-- Codex remote reboot pauses completion delivery after the frontend detaches and waits for a confirmed resumed TUI. A hook review screen leaves the binding unbound without submitting a reboot notice.
+- Codex remote reboot pauses completion delivery after the frontend detaches and waits for a confirmed resumed TUI. A hook review screen leaves the binding unbound without submitting a reboot notice. Installation diagnostics no longer promise that the launch flag guarantees hook execution.
 
 - **링크 클릭 수식키의 `none` 선택지를 “좌클릭 열기 끄기”로 바로잡았다.** 좌클릭으로 링크를 연다고 잘못 안내하던 설정 라벨과 사용자 가이드를 실제 동작에 맞췄다. 링크 위 우클릭 메뉴는 계속 사용할 수 있으며, 수식키 없이도 링크 표시가 가능하지만 팝업·배너 등 기존 차단 조건은 적용된다. 클릭·hover 동작 자체는 바뀌지 않는다.
 
