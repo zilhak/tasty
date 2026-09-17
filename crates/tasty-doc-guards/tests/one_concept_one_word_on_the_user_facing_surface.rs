@@ -152,9 +152,10 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "파일 선택 창",
-        count: 1,
+        count: 2,
         evidence: "파일 선택 대화상자 — `View` 구현은 다섯(Main·Settings·Plugins·Preset·Quit)뿐이고 \
-                   여기 없다",
+                   여기 없다. 두 자리다: 여는 법을 적은 표 한 줄과, 그 목록이 긴 파일명을 \
+                   줄여 보인다고 적은 문단",
     },
     NotAWindow {
         path: "site/content/using/files.md",
