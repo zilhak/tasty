@@ -154,6 +154,9 @@ impl CloseTask {
                 })
             {
                 event.binding = Some(binding.key.clone());
+                // Only this newly captured, never-sent exit is being enqueued.
+                // A binding may have arrived while its close intent was pending.
+                event.phase = "pending".into();
             }
             j.events.insert(event.id, event);
         }

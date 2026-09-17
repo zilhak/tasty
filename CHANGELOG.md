@@ -36,6 +36,7 @@
 - **드롭다운 메뉴의 그림자가 나머지 떠 있는 표면과 같아진다.** 설정 창의 선택 드롭다운, MultiSelect/Select, 포트 스캐너·remote tool·DAG 크롬의 콤보박스는 지금까지 UI 프레임워크의 기본 그림자를 그렸다 — 테마마다 진하기가 갈려(다크에서 짙고 라이트에서 옅다) 같은 화면에 나란히 뜨는 배너·tooltip·autocomplete 와 단차가 달랐다. 이제 넷 다 같은 popover 단차를 쓴다.
 
 ### Fixed
+- Keep newly recovered child exit events sendable when the parent binding arrives during close persistence retries.
 
 - Closed child surfaces reject new completion subscriptions even when their registry entry has not yet been reconciled. Surface close persists execution-scoped cleanup work separately from the completion journal, exposes pending storage recovery, and retries it across restart without cancelling accepted or uncertain results or inferring closure from another window's live set.
 

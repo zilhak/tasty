@@ -135,3 +135,5 @@ spawn/tell 구독은 각 window가 발행한 live target 소유 목록을 확인
 저장 대기 중인 구독은 조회 시 inactive/close_persistence_pending으로 나타나고, 해당 실행의 새 관측·구독·미송신 재시도·sender claim은 보류된다. 기존 accepted/unknown/in-flight 상태는 취소나 자동 재송신으로 바꾸지 않는다. worker는2초부터60초 상한 backoff로 재처리한다. 저장이 회복되면 캡처한 원 구독에 종료를 반영하고 종료 이벤트를 한 번만 기록한다. 부모 close의 미송신 결과 취소와 child close의 기존 영속 사실 전달 정책은 유지한다.
 
 재시작 때 영속 종료 작업을 다시 읽고 주소가 재사용돼도 캡처한 구독 ID와 session/binding 세대만 처리한다. 다른 window의 live 목록에 없다는 이유로 종료를 합성하지 않는다. 종료 intent 저장 자체도 실패한 경우에는 durable=false로 명시하고 현재 process에서 송신을 막은 채 저장부터 재시도한다. 이 상태는 영속 완료가 아니며, 어떤 저장도 불가능한 상태에서 강제 종료된 기록까지 복원한다고 보장하지 않는다.
+
+종료 저장 대기 중 부모 binding이 등록되면 복구가 새로 만드는 미송신 종료 이벤트는 해당 binding과 pending phase를 함께 받는다. 기존 accepted/unknown 이벤트의 수락 상태는 바꾸지 않으며 실제 송신 전 소유 검증은 worker가 수행한다.

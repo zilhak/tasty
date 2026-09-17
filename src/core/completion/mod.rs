@@ -3,6 +3,8 @@ mod actions;
 #[cfg(test)]
 mod callback_tests;
 mod callbacks;
+#[cfg(test)]
+mod close_binding_tests;
 mod close_effects;
 mod close_recovery;
 #[cfg(test)]
