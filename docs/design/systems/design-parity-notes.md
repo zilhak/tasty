@@ -56,8 +56,10 @@ auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간�
   scale 만 적용돼 디자인과 1:1.
 - **근거**: remote_tool 2026-06-20. large(scale 2.4) → medium(scale 2.0) 전환 후 측정이
   디자인과 일치.
-- **추정**: popup 도 egui ctx zoom 으로 균일 처리하면 근본 해결이나, 현재 구조는 default_size
-  곱 방식 — 별도 과제.
+- **정리된 방향**: 본체는 egui `zoom_factor` 로 균일 처리하지 않는다(native ppp 갱신 전 zoom 이
+  박히는 사고 때문). 대신 내부 길이를 리터럴이 아니라 `ui_zoom` 을 곱하는 `Theme` 접근자로 뺀다 —
+  근거·가드·남은 사각(호출부 리터럴)은 [ADR-0135](../../adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md).
+  그 사각에 남은 리터럴은 여전히 이 증상을 내므로 위 처방(medium 에서 검증)은 유효하다.
 
 ## remote_tool — CSS line-height vs egui 텍스트 박스 높이 (헤더 8px 얕음)
 
@@ -228,13 +230,15 @@ JSON-RPC + `debug.host_popup.open` 으로 검증. primitive 는 본체 팝업에
 Foreground area 로 전환됨을 로깅으로 확인(기계적 증명) + 팝업 스크린샷 z-order 회귀 확인.
 상세 아키텍처: [`dev-guide/popup-implementation.md`](../../dev-guide/popup-implementation.md) "콘텐츠 레이어".
 
-## port_scanner — State 컬럼 긴 라벨(ESTABLISHED)이 140px 초과 (폰트 메트릭, 클립으로 가림)
+## port_scanner — State 컬럼 140px 에 가장 긴 라벨(ESTABLISHED)이 들어간다
 
-State 컬럼 `Column::exact(140)` + `.clip(true)` 미적용. tasty 폰트가 디자인보다 넓어
-가장 긴 상태값(`ESTABLISHED`)이 140 을 넘쳐 셀 밖으로 그려진다. 팝업 클립이 이를 경계
-에서 자르므로(위 항목) "ESTABL" 로 보인다. 디자인 스펙은 140 이나 디자인 mockup 상태값은
-LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 flex(addr/proc)에서
-양보해야 하며, 이는 폰트 메트릭 보정(디자인 변경 아님). 현재는 디자인 140 유지 + 클립.
+State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proportional 라벨)이고, 폭은
+`column_layout` 의 **최소폭** 140 이다(`compute_column_widths` 가 남는 폭을 flex 열에 나누고, 최소폭
+합이 넘치면 가로 스크롤 — 위 전환 항목). 가장 긴 상태값 `ESTABLISHED` 는 egui 기본 proportional
+폰트(Ubuntu-Light) advance 로 11px 에서 66.6px, 셀 전체 약 81px 이다. 1.2 배율(caption 13, 점 10)에서도
+약 95px 라 140 안에 들어간다. 재는 법: `epaint_default_fonts` 의 `Ubuntu-Light.ttf` 로 문자열 advance
+를 잰다(예: PIL `ImageFont.truetype(path, px).getlength("ESTABLISHED")`). 셀 폰트나 라벨 크기가
+바뀌면 다시 잰다.
 
 ## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → `Theme` 이 실어 나름
 

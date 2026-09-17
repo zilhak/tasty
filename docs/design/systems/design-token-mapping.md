@@ -83,7 +83,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | `--tasty-switch-overlay-border` | → `kbd-border` → `border-strong` | `Theme::surface1` | 키캡 외곽선 |
 | `--tasty-switch-overlay-shadow-depth` | → `kbd-shadow-depth` → `size-2` (2px) | `chip.rs` `KBD_BOTTOM_BORDER = 2.0` (위젯 상수) | 키캡 하단 3D edge. Theme 필드 아님 |
 | `--tasty-switch-overlay-active-bg` | → `accent-primary` → `color-blue` | `Theme::accent_primary()` | **현재 항목 = accent-filled 키캡 bg.** 기존 접근자 |
-| `--tasty-switch-overlay-active-fg` | → `text-on-accent` → `color-neutral-0` | `Theme::text_on_accent()` | accent fill 위 숫자. 기존 접근자 (⚠ text_on_accent 는 잠정 `crust` 매핑 — mocha OK, latte white 미반영. button-primary-fg/checkbox-check 등과 공유하는 선재 한계, switch-overlay 고유 이슈 아님) |
+| `--tasty-switch-overlay-active-fg` | → `text-on-accent` → `color-neutral-0` | `Theme::text_on_accent()` | accent fill 위 숫자. 기존 접근자 (`text_on_accent` 는 dark 테마면 `crust`, light 테마면 `#ffffff`(`TEXT_ON_ACCENT_LIGHT`) — button-primary-fg/checkbox-check 등과 공유) |
 | `--tasty-switch-overlay-fade` | → `motion-ui-fast` → `duration-90` (90ms) | (없음 — 모션 토큰 미보유) | 등장 90ms ease, release 0ms. egui immediate-mode 는 end-state 로 snap = readme 상 compliant. P2 draw 의 선택적 연출, Theme 필드 불필요 |
 
 > **결론(검증 완료)**: switch-number overlay 8 토큰 모두 **기존 Theme 접근자(`accent_primary()`/`text_on_accent()`/`surface0`/`subtext1`/`surface1`)·위젯 상수·`font_size_micro` 로 커버** → P0 에서 추가할 신규 Theme 필드 없음. P2(draw)는 비active 키캡=`kbd()` 재사용, active 키캡=`accent_primary()` fill + `text_on_accent()` 숫자로 그린다.

@@ -66,7 +66,7 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
 |---|---|---|
 | `RemoteAttach`(container) | `ra_card` (`header`+`body`+`footer`, 680×460 프레임) | `draw_remote_attach_popup` |
 | `RaAttachProfileRow` | `profile_row` (`remote-workspace-attach` spec 좌 pane) | `profile_row` |
-| `RaNewWsRow` | `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | ✗ 미배선 (아래) |
+| `RaNewWsRow` | `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | `new_ws_row` (`draw_ws_list` 첫 행) |
 | `RaRemoteWsRow` | `ws_row` (+ `dot_slot_status`) | `ws_row` |
 | `RaCenterState` | `center_state` (`remote-workspace-attach-states` spec) | `center_state` |
 | `RaInUseBadge` | `badge` | `badge` |
@@ -94,15 +94,16 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
   버린다(생성 중엔 아래 목록 dim + inert). 실패도 목록을 가리지 않는다 — 실패 후 다음 수가
   보통 기존 워크스페이스 선택이기 때문. 원격 메시지는 3줄 clamp + 전문은 tooltip.
 
-**본체 미배선**: 갤러리 specimen 이 gallery-first 로 먼저 들어갔고, 본체
-`draw_right_pane`/`draw_ws_list` 배선(+ 원격 `workspace.create` 왕복)은 후속 작업이다
-(ADR-0020, [gallery-first](../../dev-guide/gallery-first.md)).
+**본체 배선**: 본체 `draw_ws_list` 가 스크롤 목록의 첫 행으로 `new_ws_row` 를 그리고, 확정되면
+살아 있는 터널 포트로 원격 `workspace.create` 를 한 번 보내 받은 ws id 를 mirror 한다(왕복 상한은
+`src/adapters/ui/popup/remote_attach.rs` 의 상수). 갤러리 specimen 이 gallery-first 로 먼저
+들어간 순서다(ADR-0020, [gallery-first](../../dev-guide/gallery-first.md)).
 
 ## switch_overlay (Overlays)
 
-디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw 는 **P2 예정**
-(`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/{full,collapsed}.rs`). 갤러리 specimen
-은 P1 에서 본체보다 먼저 추가됨 (gallery-first, ADR-0020).
+디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw
+(`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/view.rs` full/collapsed). 갤러리 specimen
+이 본체보다 먼저 들어갔고(gallery-first, ADR-0020), 본체 배선은 아래 표대로 탭·사이드바 모두 구현돼 있다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
@@ -255,12 +256,14 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
 
-**`file_handler_picker` 는 이 표에서 본체와 canonical 이 어긋난 채 좌표만 잡힌 행이다.** canonical 을 전사한 쪽은
-갤러리 specimen 이고, 본체는 그 이전 자체 설계 형상 그대로다 — 폭 480px(canonical 420px), 좌우 2열(후보/최근,
-canonical 은 단일 목록), 행은 id 문자열 한 줄(canonical 은 `icon · name · origin`), 선택 표시는 배경
-오버레이만(canonical 은 2px accent 좌측 바), plugin 출처·기본 핸들러 표시와 footer 의 "Always open …" 체크는
-본체에 없다. 반대로 본체에만 있는 상태가 다섯이라(최근 목록 · 형식 표시줄 · 추천 없음 fallback · 핸들러 0개 빈 상태 · 긴 목록/긴 경로)
-canonical 이 그 시각을 아직 정하지 않았다. 구조 전사는 그 다섯의 시안이 확정된 뒤에 이 행의 세 좌표를 한 형상으로 모은다.
+**`file_handler_picker` 는 이 표에서 본체·갤러리가 canonical 에 못 미친 채 좌표만 잡힌 행이다.** 본체는 canonical
+이전의 자체 설계 형상 그대로다 — 폭 480px(canonical 420px), 공통 타이틀바 + 본문 "대상:" 으로 경로 두 번(canonical 은
+headless 헤더 한 번), 좌우 2열(후보/최근, canonical 은 Suggested → Recent 단일 목록), 행은 id 문자열 한 줄(canonical 은
+`icon · name · origin`), 형식은 본문 텍스트 한 줄(canonical 은 제목 줄 Tag), 선택 표시는 배경 오버레이만(canonical 은 2px
+accent 좌측 바), plugin 출처·기본 핸들러 Tag 가 없다. 갤러리 specimen 은 기본 상태 한 벌만 전사했다. canonical 은 최근 목록 ·
+추천 없음 fallback · 핸들러 0개 빈 상태 · 긴 목록 · headless 헤더까지 정해 두었고, 남은 미정은 둘이다 — footer 의
+"Always open …" 체크(canonical 스스로 open decision 으로 남김)와, 본체 handler 모델에 없는 행 icon·name 의 출처.
+구조 전사는 그 둘이 정해진 뒤에 이 행의 세 좌표를 한 형상으로 모은다.
 
 ## Overlays — plugins window
 

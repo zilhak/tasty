@@ -204,7 +204,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 원격 attach 채널 위 native bulk 파일 전송(ADR-0054)의 **수신측**은 저장 폴더와 폴더 최대 용량을 설정한다("원격이 경로를 소유"). 설정은 `Settings.remote_transfer` — `dir`(저장 폴더, 빈 값이면 기본 `~/.tasty/transfers/`) + `max_mb`(폴더 최대 용량, MiB, 기본 500).
 
 - **IPC/CLI (focus 독립, 전역 설정)**: `settings.get_remote_transfer` / `settings.set_remote_transfer {dir?, max_mb?}` (local-only) · `tasty settings {get-remote-transfer, set-remote-transfer --dir --max-mb}`.
-- **GUI 설정**: 디자인 시안 확정 후 별도 구현 예정(gallery-first) — 현재는 IPC/CLI 로만 조작.
+- **GUI 설정**: Settings › General › Remote transfer 서브탭(`src/view/settings/ui/tabs/remote_transfer.rs`) — 저장 폴더(Browse 포함)와 최대 용량(MiB). 디자인↔본체 매핑은 [design-gallery-mapping](../../design/systems/design-gallery-mapping.md) 의 Remote transfer 절.
 - **용량 사전 거부**: 전송 시작(`BulkBegin.total_size`) 시점에 `현재 폴더 사용량 + total_size` 가 상한을 넘으면 청크 수신 전에 거부하고 `BulkResult{ok:false, reason:"capacity exceeded"}` 를 회신한다(경계 `== max` 는 허용, `> max` 거부). 폴더 사용량은 1-depth 파일 크기 단순 합산.
 
 ## mirror 터미널 이미지 붙여넣기 → 원격 경로 삽입
