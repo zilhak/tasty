@@ -44,7 +44,7 @@
 | `terminal.spawn` | `terminal.spawn` · `terminal.respawn` · `pty.spawn` · `pty.attach_surface` · `surface.wake` · `surface.respawn_terminal` | — |
 | `terminal.write` | `surface.send` · `surface.send_key` · `surface.send_to` · `terminal.tell` · `terminal.broadcast` · `pty.write` · `pty.kill` 등 | — |
 | `terminal.read` | `surface.read_since_mark` · `surface.screen_text` · `surface.commands` · `output.observe_*` · `pty.read` · `pty.wait` 등 | — |
-| `network` | `webhook.register` **하나뿐** (아래 "network" 절) | — |
+| `network` | `webhook.register` · `terminal.completion_bind` (아래 "network" 절) | — |
 | `memory.read` | `memory.get/list/query/export` · `memory.exists/count/scopes/stats` · `memory.bb_*` 조회 · `memory.plan_*` 조회 · `memory.cache_get/cache_list` · `memory.goal_get` · `approval.summary.get` | — |
 | `memory.write` | `memory.put/delete/import` · `memory.bb_*` 변경 · `memory.plan_*` 변경 · `memory.cache_*` · `memory.goal_set/goal_clear` · `approval.summary.set` | — |
 | `memory.secret` | `memory.secret.*` 전부 | — |
@@ -111,13 +111,16 @@ approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는
 
 위 표는 `crates/tasty-doc-guards/tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 `crates/tasty-ipc/src/method_meta.rs` 에서 읽어 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다. 이 가드는 의존이 0 인 크레이트에 살아 **`doc-guards.yml` 이 경로 필터 없이 매 push 실행한다** — 이 표를 고치는 것이 곧 이 가드를 위반하는 유일한 방법이라, 문서만 바뀐 push 에서도 도는 것이 요점이다([ci-gates](ci-gates.md) · ADR-0138). 그 판독이 실제 표와 갈리지 않는지는 본체 패키지의 `tests/method_table_readings_agree.rs` 가 런타임 열거와 대조해 붙박는다. 다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
 
-### `network` — 여는 것 하나 + 정직한 선언
+### `network` — 여는 것 둘 + 정직한 선언
 
-`network` 가 여는 호스트 IPC 는 `webhook.register` 하나다. plugin 은 이 권한으로 인바운드 웹훅을 등록하되 인라인 `sequence` 는 쓸 수 없고 자기 소유(`<plugin_id>/…`) hook 핸들러 id 만 바인딩할 수 있다 — 임의 시퀀스 정의는 owner(Local) 전용 채널로 남는다.
+`network` 가 여는 호스트 IPC 는 둘이다.
+
+- `webhook.register` — plugin 은 이 권한으로 인바운드 웹훅을 등록하되 인라인 `sequence` 는 쓸 수 없고 자기 소유(`<plugin_id>/…`) hook 핸들러 id 만 바인딩할 수 있다 — 임의 시퀀스 정의는 owner(Local) 전용 채널로 남는다.
+- `terminal.completion_bind` — 자식 완료 알림을 원격 App Server endpoint 에 묶는다. 같은 계열의 `terminal.completion` 은 `surface.write` 만 요구하는데, bind 만 `network` 를 더 받는 이유는 그 인자가 **호스트가 접속할 주소**이기 때문이다(나머지 액션은 이미 묶인 자리의 상태·구독·복구만 만진다). 그래서 두 메서드가 갈려 있다 — 상세는 [child-completion-app-server](child-completion-app-server.md).
 
 그와 별개로 이 토큰은 **호스트가 강제할 수 없는 네트워크 사용을 사용자에게 알리는 선언**으로도 쓴다. 권한 게이트는 호스트 IPC 호출만 막으므로, plugin 프로세스가 자기 소켓을 여는 것은 어느 토큰으로도 통제되지 않는다. 그래도 매니페스트에 `network` 를 적으면 사용자가 **grant 시점에** 그 사실을 본다. 번들 plugin agent-stream 이 이 용법이다 — SSE 엔드포인트가 자기 프로세스에서 TCP 포트를 열고(`agent_stream.serve`), 노출 정책(loopback 기본 · 광역 bind 시 토큰 필수)은 호스트가 아니라 그 plugin 이 스스로 지키는 규약이다([ADR-0100](../adr/0100-agent-stream-sse-endpoint-exposure.md)). `fs.read` / `fs.write` 를 직접 파일 접근에 대해 정직하게 선언하는 것과 같은 관례다.
 
-즉 `network` 는 두 의미를 겸한다: **호스트가 강제하는 것**(`webhook.register` 호출 자격)과 **호스트가 강제하지 못해 선언으로만 남는 것**(plugin 프로세스의 소켓). 표의 가운데 열은 전자만 센다.
+즉 `network` 는 두 의미를 겸한다: **호스트가 강제하는 것**(`webhook.register` · `terminal.completion_bind` 호출 자격)과 **호스트가 강제하지 못해 선언으로만 남는 것**(plugin 프로세스의 소켓). 표의 가운데 열은 전자만 센다.
 
 ## Scope 의 출처 — 동적 이름공간
 
