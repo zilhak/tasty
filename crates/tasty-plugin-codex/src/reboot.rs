@@ -311,16 +311,10 @@ fn run_reboot_sequence(
         return;
     }
 
-    if let Some(binding) = binding {
-        // A remote frontend detach need not emit SessionEnd from the live daemon.
-        // Stop delivery until this invocation positively observes the resumed TUI.
-        if let Err(error) = host.call(
-            "terminal.completion",
-            json!({"action":"end_session","surface":surface_id,"hook_session":binding["hook_session"]}),
-        ) {
-            tracing::warn!("codex reboot completion detach failed: {error}");
-            return;
-        }
+    if let Some(binding) = binding
+        && !detach_completion(host, surface_id, binding)
+    {
+        return;
     }
 
     if !resume_and_wait(host, surface_id, session_id, policy_args, banner_c0) {
@@ -328,22 +322,42 @@ fn run_reboot_sequence(
     }
     thread::sleep(TUI_READY_GRACE);
     if let Some(binding) = binding {
-        // This invocation launched the captured remote endpoint and observed the new TUI banner.
-        let params = json!({"action":"bind","surface":surface_id,"register":true,"endpoint":binding["endpoint"],"thread_id":binding["thread_id"],"session_id":binding["session_id"],"hook_session":binding["hook_session"],"auth_env":binding["auth_env"],"codex_home":binding["codex_home"]});
-        if let Err(error) = host.call("terminal.completion_bind", params) {
-            tracing::warn!("codex reboot completion rebind failed: {error}");
-        } else if let Err(error) = host.call(
-            "surface.meta.set",
-            json!({"surface_id":surface_id,"key":"codex-session-id","value":session_id}),
-        ) {
-            tracing::warn!("codex reboot session metadata restore failed: {error}");
-        }
+        rebind_completion(host, surface_id, session_id, binding);
     }
 
     if !deliver_notice(host, surface_id, notice) {
         tracing::warn!(
             "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
         );
+    }
+}
+
+/// 재기동 전에 완료 전달을 멈춘다. 원격 frontend 의 detach 는 살아 있는 daemon 이
+/// SessionEnd 를 쏘지 않아도 일어나므로, 이 호출이 그 자리를 대신한다. 실패하면
+/// `false` — 옛 세션에 묶인 채로 resume 하면 그 뒤의 완료가 엉뚱한 곳으로 간다.
+fn detach_completion(host: &HostHandle, surface_id: u32, binding: &Value) -> bool {
+    if let Err(error) = host.call(
+        "terminal.completion",
+        json!({"action":"end_session","surface":surface_id,"hook_session":binding["hook_session"]}),
+    ) {
+        tracing::warn!("codex reboot completion detach failed: {error}");
+        return false;
+    }
+    true
+}
+
+/// 새 TUI 배너를 관측한 뒤에만 부른다 — 이 호출이 포착해 둔 원격 endpoint 를 되묶고,
+/// 그것이 성공한 경우에만 세션 meta 를 복원한다(묶이지 않은 세션 좌표는 복원해도
+/// 가리킬 곳이 없다).
+fn rebind_completion(host: &HostHandle, surface_id: u32, session_id: &str, binding: &Value) {
+    let params = json!({"action":"bind","surface":surface_id,"register":true,"endpoint":binding["endpoint"],"thread_id":binding["thread_id"],"session_id":binding["session_id"],"hook_session":binding["hook_session"],"auth_env":binding["auth_env"],"codex_home":binding["codex_home"]});
+    if let Err(error) = host.call("terminal.completion_bind", params) {
+        tracing::warn!("codex reboot completion rebind failed: {error}");
+    } else if let Err(error) = host.call(
+        "surface.meta.set",
+        json!({"surface_id":surface_id,"key":"codex-session-id","value":session_id}),
+    ) {
+        tracing::warn!("codex reboot session metadata restore failed: {error}");
     }
 }
 

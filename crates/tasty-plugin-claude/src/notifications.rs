@@ -76,6 +76,32 @@ pub(crate) fn notify_error_command(
     )
 }
 
+/// 에러 관측 lease 를 발급받는다. 실패 갈래 둘(호출 실패 · lease 없는 응답)은 각각
+/// 다른 사실을 말하므로 로그를 따로 남기고, 호출자에게는 "등록할 수 없다" 하나로
+/// 합쳐 `None` 을 준다.
+fn watch_error_observer<H: HostCall>(
+    host: &H,
+    caller_surface: u32,
+    target_surface: u32,
+) -> Option<u64> {
+    match host.call(
+        "terminal.completion",
+        json!({"action":"watch_error","surface":caller_surface,"target":target_surface}),
+    ) {
+        Ok(value) => match value["observer"].as_u64() {
+            Some(observer) => Some(observer),
+            None => {
+                tracing::warn!("error observation registration returned no lease");
+                None
+            }
+        },
+        Err(error) => {
+            tracing::warn!("error observation registration failed: {error}");
+            None
+        }
+    }
+}
+
 /// `claude-error-stalled` 를 구독하는 **상시**(once 아님) hook 을 등록한다.
 ///
 /// once 가 아닌 이유: 한 번 알리고 사라지면 그 뒤의 정지는 놓치는데, 재무장을 붙이면
@@ -91,21 +117,8 @@ pub(crate) fn register_error_notify_hook<H: HostCall>(
     caller_surface: u32,
     target_surface: u32,
 ) {
-    let observer = match host.call(
-        "terminal.completion",
-        json!({"action":"watch_error","surface":caller_surface,"target":target_surface}),
-    ) {
-        Ok(value) => match value["observer"].as_u64() {
-            Some(observer) => observer,
-            None => {
-                tracing::warn!("error observation registration returned no lease");
-                return;
-            }
-        },
-        Err(error) => {
-            tracing::warn!("error observation registration failed: {error}");
-            return;
-        }
+    let Some(observer) = watch_error_observer(host, caller_surface, target_surface) else {
+        return;
     };
     let command = notify_error_command(caller_surface, target_surface, observer);
     cleanup_sibling_hooks(host, target_surface, &command);

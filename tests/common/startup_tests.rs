@@ -39,6 +39,12 @@ fn fake_child() {
         std::io::stdout().write_all(b"\nPORT_PUBLISHED\n").unwrap();
         std::io::stdout().flush().unwrap();
     }
+    serve_requests(&listener, &mode);
+}
+
+/// 요청을 한 줄씩 받아 모드가 시키는 대로 응답한다. 첫 요청만 지연·오형식 갈래를
+/// 타므로 그 구분을 `first` 하나로 들고 간다.
+fn serve_requests(listener: &TcpListener, mode: &str) {
     let mut first = true;
     for incoming in listener.incoming() {
         let mut stream = incoming.unwrap();
@@ -48,7 +54,7 @@ fn fake_child() {
         let mut line = String::new();
         BufReader::new(&stream).read_line(&mut line).unwrap();
         let request: serde_json::Value = serde_json::from_str(&line).unwrap();
-        if first && matches!(mode.as_str(), "response_delay" | "response_failure") {
+        if first && matches!(mode, "response_delay" | "response_failure") {
             std::thread::sleep(Duration::from_millis(200));
         }
         for i in 0..400 {
@@ -60,22 +66,25 @@ fn fake_child() {
             continue;
         }
         let method = request["method"].as_str().unwrap();
-        let response = if method == "surface.screen_text" && mode == "shell_failure" {
-            serde_json::json!({"jsonrpc":"2.0", "id":1, "error":{"code":-1}})
-        } else {
-            let result = if method == "surface.list" {
-                serde_json::json!([{"id":1}])
-            } else {
-                serde_json::json!({"text":"prompt"})
-            };
-            serde_json::json!({"jsonrpc":"2.0", "id":1, "result":result})
-        };
-        writeln!(stream, "{response}").unwrap();
+        writeln!(stream, "{}", response_for(method, mode)).unwrap();
         first = false;
         if method == "system.shutdown" {
             break;
         }
     }
+}
+
+/// 한 요청에 대한 응답 본문. 셸 준비 실패만 error 로 답하고 나머지는 성공이다.
+fn response_for(method: &str, mode: &str) -> serde_json::Value {
+    if method == "surface.screen_text" && mode == "shell_failure" {
+        return serde_json::json!({"jsonrpc":"2.0", "id":1, "error":{"code":-1}});
+    }
+    let result = if method == "surface.list" {
+        serde_json::json!([{"id":1}])
+    } else {
+        serde_json::json!({"text":"prompt"})
+    };
+    serde_json::json!({"jsonrpc":"2.0", "id":1, "result":result})
 }
 
 #[test]
@@ -185,49 +194,60 @@ fn startup_stages_survive_noise_and_distinguish_failures() {
             "port_delay" | "port_delay_parent_late" | "response_delay"
         ) {
             assert!(output.status.success(), "{text}");
-            let line = text
-                .lines()
-                .find_map(|l| l.find("OBSERVED startup ").map(|i| &l[i..]))
-                .unwrap();
-            assert_eq!(field(line, "pending"), "none");
-            let values: Vec<f64> = [
-                "spawn_returned_ms",
-                "port_found_ms",
-                "first_ipc_response_ms",
-                "shell_ready_ms",
-            ]
-            .iter()
-            .map(|key| field(line, key).parse().unwrap())
-            .collect();
-            assert!(values.windows(2).all(|v| v[0] <= v[1]));
-            if mode == "response_delay" {
-                assert!(
-                    values[2] - values[1] >= 150.0,
-                    "injected response delay missing: {values:?}"
-                );
-            }
+            assert_milestones_are_ordered(&text, mode);
         } else {
             assert!(!output.status.success());
-            let pending = match mode {
-                "early_exit" => "port",
-                "response_failure" => "first_ipc_response",
-                _ => "shell_ready",
-            };
-            let line = text
-                .lines()
-                .rev()
-                .find_map(|l| l.find("startup failure: startup ").map(|i| &l[i..]))
-                .expect("retained failure snapshot");
-            assert_eq!(field(line, "pending"), pending);
-            assert_ne!(field(line, "spawn_returned_ms"), "pending");
-            assert!(
-                mode != "early_exit" || text.contains("noise-399"),
-                "stderr tail missing: {text}"
-            );
-            assert!(
-                !text.contains("noise-0\n"),
-                "expected early stderr to be evicted"
-            );
+            assert_failure_snapshot_is_retained(&text, mode);
         }
     }
+}
+
+/// 성공 갈래. 네 이정표가 단조 비감소여야 하고, 주입한 지연은 그 간격에 보여야 한다.
+fn assert_milestones_are_ordered(text: &str, mode: &str) {
+    let line = text
+        .lines()
+        .find_map(|l| l.find("OBSERVED startup ").map(|i| &l[i..]))
+        .unwrap();
+    assert_eq!(field(line, "pending"), "none");
+    let values: Vec<f64> = [
+        "spawn_returned_ms",
+        "port_found_ms",
+        "first_ipc_response_ms",
+        "shell_ready_ms",
+    ]
+    .iter()
+    .map(|key| field(line, key).parse().unwrap())
+    .collect();
+    assert!(values.windows(2).all(|v| v[0] <= v[1]));
+    if mode == "response_delay" {
+        assert!(
+            values[2] - values[1] >= 150.0,
+            "injected response delay missing: {values:?}"
+        );
+    }
+}
+
+/// 실패 갈래. 어느 단계에서 멈췄는지가 스냅샷에 남아야 하고, stderr 는 앞이 잘리고
+/// 뒤가 남아야 한다 — 그 둘이 같은 방향으로 틀리면 진단이 통째로 거짓이 된다.
+fn assert_failure_snapshot_is_retained(text: &str, mode: &str) {
+    let pending = match mode {
+        "early_exit" => "port",
+        "response_failure" => "first_ipc_response",
+        _ => "shell_ready",
+    };
+    let line = text
+        .lines()
+        .rev()
+        .find_map(|l| l.find("startup failure: startup ").map(|i| &l[i..]))
+        .expect("retained failure snapshot");
+    assert_eq!(field(line, "pending"), pending);
+    assert_ne!(field(line, "spawn_returned_ms"), "pending");
+    assert!(
+        mode != "early_exit" || text.contains("noise-399"),
+        "stderr tail missing: {text}"
+    );
+    assert!(
+        !text.contains("noise-0\n"),
+        "expected early stderr to be evicted"
+    );
 }

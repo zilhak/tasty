@@ -852,22 +852,7 @@ pub(crate) fn handle_hook<H: HostCall>(
     let surface_id = optional_target_surface(params, tr)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     if event == "session-end" {
-        let ended = host_call(
-            host,
-            "terminal.completion",
-            json!({"action":"end_session","surface":surface_id,"hook_session":params.get("session")}),
-        )?;
-        let mut failures = 0;
-        if ended["ignored_old_session"] != true {
-            if let Err(error) = host.call(
-                "surface.meta.unset",
-                json!({"surface_id":surface_id,"key":"codex-session-id"}),
-            ) {
-                tracing::warn!("codex session-end metadata cleanup: {error}");
-                failures += 1;
-            }
-        }
-        return Ok(json!({"host_call_failures":failures,"session_end":ended}));
+        return handle_session_end(host, surface_id, params);
     }
     let new_state = hook_event_to_state(event, tr)?;
     if event == "session-start"
@@ -892,18 +877,7 @@ pub(crate) fn handle_hook<H: HostCall>(
         && let Some(session) = params.get("session").and_then(|v| v.as_str())
         && !session.is_empty()
     {
-        for (key, value) in [
-            ("codex-session-id", session.to_string()),
-            ("restore.command", format!("codex resume {session}")),
-        ] {
-            if let Err(e) = host.call(
-                "surface.meta.set",
-                json!({ "surface_id": surface_id, "key": key, "value": value }),
-            ) {
-                tracing::warn!("codex hook meta.set '{key}' failed: {e}");
-                host_call_failures += 1;
-            }
-        }
+        host_call_failures += record_session_meta(host, surface_id, session);
     }
     // 이 호출만 전파한다 — 뒤에 지켜야 할 로컬 상태가 없기 때문이다(이어지는
     // `fire_hook` 은 그 자체가 최선노력이다). state 주입이 이 핸들러가 하는 일의
@@ -925,17 +899,70 @@ pub(crate) fn handle_hook<H: HostCall>(
     }
     // 상태 주입만으로는 UI 가 아무것도 모른다 — 턴 경계는 surface hook 으로,
     // 승인 대기는 그 위에 공용 attention 까지 함께 쏜다.
-    for (event_key, value) in hook_side_effects(event) {
-        if let Err(e) = host.call(event_key, value(surface_id)) {
-            tracing::warn!("codex hook '{event}' side-effect {event_key} failed: {e}");
-            host_call_failures += 1;
-        }
-    }
+    host_call_failures += apply_hook_side_effects(host, event, surface_id);
     // 응답이 빈 객체였다 — 그러면 최선노력 호출이 전부 실패한 훅과 전부 성공한 훅이
     // 바이트까지 같다. 전파하는 호출이 하나 있다고 해서 나머지의 침묵이 메워지지는
     // 않는다. 규칙과 근거는 docs/dev-guide/error-handling.md
     // "plugin 핸들러의 host 호출 — 전파와 최선노력".
     Ok(json!({ "host_call_failures": host_call_failures }))
+}
+
+/// `session-end` 갈래. 세션 종료를 완료 관측에 알리고, 그 응답이 **이번 세션**을 가리킬
+/// 때만 세션 meta 를 지운다 — 늦게 도착한 옛 세션의 훅이 살아 있는 세션의 meta 를
+/// 지우면 reboot 가 복원할 좌표를 잃는다.
+fn handle_session_end<H: HostCall>(
+    host: &H,
+    surface_id: u32,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let ended = host_call(
+        host,
+        "terminal.completion",
+        json!({"action":"end_session","surface":surface_id,"hook_session":params.get("session")}),
+    )?;
+    let mut failures = 0;
+    if ended["ignored_old_session"] != true
+        && let Err(error) = host.call(
+            "surface.meta.unset",
+            json!({"surface_id":surface_id,"key":"codex-session-id"}),
+        )
+    {
+        tracing::warn!("codex session-end metadata cleanup: {error}");
+        failures += 1;
+    }
+    Ok(json!({"host_call_failures":failures,"session_end":ended}))
+}
+
+/// reboot/복원용 세션 좌표를 meta 에 기록한다. 최선노력이라 실패를 전파하지 않고
+/// **센 수**로 돌려준다 — 그 수가 응답의 `host_call_failures` 에 합산된다.
+fn record_session_meta<H: HostCall>(host: &H, surface_id: u32, session: &str) -> usize {
+    let mut failures = 0;
+    for (key, value) in [
+        ("codex-session-id", session.to_string()),
+        ("restore.command", format!("codex resume {session}")),
+    ] {
+        if let Err(e) = host.call(
+            "surface.meta.set",
+            json!({ "surface_id": surface_id, "key": key, "value": value }),
+        ) {
+            tracing::warn!("codex hook meta.set '{key}' failed: {e}");
+            failures += 1;
+        }
+    }
+    failures
+}
+
+/// 턴 경계 hook · 승인 대기 attention 을 쏜다. [`record_session_meta`] 와 같은 규칙으로
+/// 최선노력이고, 실패 수만 돌려준다.
+fn apply_hook_side_effects<H: HostCall>(host: &H, event: &str, surface_id: u32) -> usize {
+    let mut failures = 0;
+    for (event_key, value) in hook_side_effects(event) {
+        if let Err(e) = host.call(event_key, value(surface_id)) {
+            tracing::warn!("codex hook '{event}' side-effect {event_key} failed: {e}");
+            failures += 1;
+        }
+    }
+    failures
 }
 
 /// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
