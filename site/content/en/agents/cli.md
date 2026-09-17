@@ -1,4 +1,4 @@
-<!-- source-hash: 5b3aa96e3e0c -->
+<!-- source-hash: a84cccd94391 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -213,6 +213,8 @@ tasty terminal kill --child 1                   # kill a child by index
 
 `spawn` creates a terminal and returns immediately. Agent state delivery and parent setup follow [Claude & Codex integration](claude-codex.md). Starting an ordinary program does not guarantee delivery of agent results.
 There is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
+
+If `terminal spawn` fails during setup, it sends no command and removes the terminal created by that call. Existing terminals remain open.
 
 ## Headless PTY
 

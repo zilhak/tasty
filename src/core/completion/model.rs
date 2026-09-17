@@ -8,7 +8,7 @@ pub struct Journal {
     // Only relationships established in this host lifetime can authorize an
     // unregistered parent. Never restore this address map from the journal.
     #[serde(skip)]
-    pub live_relations: BTreeMap<(u32, u32), u64>,
+    pub live_relations: BTreeMap<(u32, u32), LiveRelation>,
     pub instance: String,
     pub sessions: BTreeMap<u32, Session>,
     #[serde(default)]
@@ -18,6 +18,11 @@ pub struct Journal {
     pub events: BTreeMap<u64, Event>,
     #[serde(default)]
     pub error_observers: BTreeMap<u64, ErrorObserver>,
+}
+#[derive(Clone)]
+pub struct LiveRelation {
+    pub generation: u64,
+    pub restored: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ErrorObserver {

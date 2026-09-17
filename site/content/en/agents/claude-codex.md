@@ -1,4 +1,4 @@
-<!-- source-hash: 86cd1d5cd2ef -->
+<!-- source-hash: 624dd38dbe86 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -166,6 +166,7 @@ but leaves the child terminal open. It does not recall accepted or uncertain res
 subscriptions have a separate lifetime; end one with
 `tasty codex completion unsubscribe --subscription <ID>`. Reusing a surface does not transfer an old subscription.
 A delayed initial registration of the parent agent does not restart result delivery for a child relationship already released.
+Adding notification subscriptions after restoring the same conversation’s child relationship does not change release: it ends both the existing and new subscriptions for that relationship.
 
 ## 5. Codex approval policy
 

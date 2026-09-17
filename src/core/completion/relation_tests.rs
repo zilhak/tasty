@@ -71,3 +71,90 @@ fn new_unregistered_relation_cannot_cancel_a_restored_logical_subscription() {
     assert_eq!(j.events.len(), 1);
     assert_ne!(j.events.values().next().unwrap().phase, "cancelled");
 }
+
+#[test]
+fn restored_pair_new_watches_release_all_spawn_but_preserve_tell_and_acceptance() {
+    for legacy in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("restored.db");
+        let service = Completion::open(&path).unwrap();
+        service.session(1, "codex", "parent").unwrap();
+        service.session(2, "claude", "child").unwrap();
+        let mut ids = Vec::new();
+        for _ in 0..3 {
+            ids.push(service.subscribe(1, 2, "claude", "spawn").unwrap());
+        }
+        let tell = service.subscribe(1, 2, "claude", "tell").unwrap();
+        service.observe(2, "idle", "stop", "saved").unwrap();
+        service
+            .change(|j| {
+                for event in j.events.values_mut() {
+                    if event.subscription == ids[1] {
+                        event.phase = "accepted".into();
+                    }
+                    if event.subscription == ids[2] {
+                        event.phase = "unknown".into();
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+        drop(service);
+        if legacy {
+            let db = rusqlite::Connection::open(&path).unwrap();
+            let body: String = db
+                .query_row("SELECT body FROM completion_journal", [], |r| r.get(0))
+                .unwrap();
+            let mut value: serde_json::Value = serde_json::from_str(&body).unwrap();
+            for sub in value["subscriptions"].as_object_mut().unwrap().values_mut() {
+                sub.as_object_mut().unwrap().remove("relation_generation");
+            }
+            db.execute("UPDATE completion_journal SET body=?", [value.to_string()])
+                .unwrap();
+        }
+        let service = Completion::open(&path).unwrap();
+        service.session(1, "codex", "parent").unwrap();
+        service.session(2, "claude", "child").unwrap();
+        for _ in 0..2 {
+            ids.push(service.subscribe(1, 2, "claude", "spawn").unwrap());
+        }
+        let before = service.snapshot().unwrap().events.len();
+        service.release(1, 2).unwrap();
+        service.observe(2, "active", "prompt-submit", "").unwrap();
+        service.observe(2, "idle", "stop", "later").unwrap();
+        let j = service.snapshot().unwrap();
+        assert!(ids.iter().all(|id| !j.subscriptions[id].active));
+        assert!(j.subscriptions[&tell].active);
+        assert_eq!(j.events.len(), before + 1);
+        for (id, phase) in ids.iter().zip(["cancelled", "accepted", "unknown"]) {
+            assert_eq!(
+                j.events
+                    .values()
+                    .find(|e| e.subscription == *id)
+                    .unwrap()
+                    .phase,
+                phase
+            );
+        }
+    }
+}
+
+#[test]
+fn explicit_new_relation_never_imports_even_matching_restored_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fresh.db");
+    let service = Completion::open(&path).unwrap();
+    service.session(1, "codex", "parent").unwrap();
+    service.session(2, "claude", "child").unwrap();
+    let old = service.subscribe(1, 2, "claude", "spawn").unwrap();
+    drop(service);
+    let service = Completion::open(&path).unwrap();
+    service.session(1, "codex", "parent").unwrap();
+    service.session(2, "claude", "child").unwrap();
+    service.begin_relation(1, 2).unwrap();
+    let new = service.subscribe(1, 2, "claude", "spawn").unwrap();
+    service.release(1, 2).unwrap();
+    let j = service.snapshot().unwrap();
+    assert!(j.subscriptions[&old].active);
+    assert!(!j.subscriptions[&new].active);
+}

@@ -37,6 +37,9 @@
 
 ### Fixed
 
+- Releasing a positively identified restored child relationship now closes both its old and new completion watches, including legacy journals. New spawn/adopt relationships remain separate.
+- Child spawn commits its relationship before sending a command and rolls back only its own created surface on setup or synchronous send failure. Failed adoption preserves preexisting soft ownership.
+
 - Releasing a child before its parent SessionStart arrives now closes the current relationship generation. Delayed registration cannot revive it, while subscriptions belonging to an earlier host lifetime remain protected from reused surface addresses.
 
 - App Server I/O now enforces absolute deadlines below WebSocket and TLS reads. A peer dripping unfinished continuation frames cannot keep other parents waiting on the shared completion worker.

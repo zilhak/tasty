@@ -68,7 +68,7 @@ impl Completion {
                         && s.child == child
                         && s.mode == "spawn"
                         && match j.live_relations.get(&(parent, child)) {
-                            Some(generation) => s.relation_generation == Some(*generation),
+                            Some(relation) => s.relation_generation == Some(relation.generation),
                             // Restored relations require known logical owners. A new
                             // current relation above must never cancel an old generation.
                             None => {

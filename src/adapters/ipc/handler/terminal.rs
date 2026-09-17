@@ -13,6 +13,8 @@
 //! kill 시 `release_occupancy(child)` 로 해제 — 둘 다 in-process core 함수 호출이다
 //! (`occupancy.*` IPC method 는 만들지 않는다 — soft 점유의 경계는 core 함수다).
 
+mod spawn_transaction;
+
 use serde_json::{Value, json};
 
 use crate::core::child_terminal::ChildEntry;
@@ -413,39 +415,22 @@ pub(crate) fn handle_spawn(
         );
     };
 
-    // command 가 주어졌을 때만 붙여 제출한다(에이전트 특화 아님). 본문/제출 `\r` 을
-    // 분리해 길이 무관 결정적 제출(멀티라인은 bracketed paste) — tell 과 동형(ack
-    // 기반 재주입 포함, TELL_SUBMIT_ACK_TIMEOUT 참조). command 생략 시(plugin
-    // 2단계 spawn) 전송을 건너뛰고 등록·점유만 수행한다.
-    if let Some(command) = &command {
-        let body = build_tell_payload(command);
-        if let Err(e) = send_body_then_submit(engine, core, &id, new_surface_id, body) {
-            return e;
-        }
-    }
-
-    if let Err(error) = engine.completion.begin_relation(parent, new_surface_id) {
-        return JsonRpcResponse::error(id, -32000, format!("completion relation: {error}"));
-    }
-    engine.child_terminals.register_child(
+    if let Err(error) = spawn_transaction::finish(
+        core,
+        state,
+        engine,
+        &id,
         parent,
         ChildEntry {
             child_surface_id: new_surface_id,
             index,
             cwd,
-            role: role.clone(),
-            nickname: nickname.clone(),
+            role,
+            nickname,
         },
-    );
-    engine.child_terminals.save();
-
-    // soft 점유 등록(ADR-0040): 주체 = spawn 을 발동한 parent surface. 라벨은
-    // nickname > role. in-process 호출(occupancy.* IPC 아님).
-    let label = nickname.or(role);
-    if let Err(e) = engine.occupy_soft(new_surface_id, parent, label) {
-        tracing::warn!(
-            "terminal.spawn occupy_soft(child={new_surface_id}, parent={parent}) failed: {e:?}"
-        );
+        command.as_deref(),
+    ) {
+        return error;
     }
 
     JsonRpcResponse::success(
@@ -755,17 +740,21 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
     let nickname = optional_str(params, "nickname");
     let cwd = optional_str(params, "cwd");
     let label = nickname.clone().or_else(|| role.clone());
-    // occupy_soft 를 먼저 시도 — 실패하면(다른 parent 가 이미 soft 점유 중)
-    // registry 는 손대지 않고 바로 에러 반환.
-    if let Err(e) = engine.occupy_soft(target, parent, label) {
-        return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {e:?}"));
+    // Check the existing owner without changing its label or releasing its lock
+    // if the following relationship commit fails.
+    if let Some(occupancy) = engine.attach.occupancy_of(target)
+        && occupancy.parent != Some(parent)
+    {
+        return JsonRpcResponse::error(id, -32020, "occupy_soft failed: another owner");
     }
-
     if let Err(error) = engine.completion.begin_relation(parent, target) {
-        if let Err(cleanup) = engine.release_soft_occupancy(target, parent) {
-            tracing::warn!("adopt occupancy rollback failed: {cleanup:?}");
-        }
         return JsonRpcResponse::error(id, -32000, format!("completion relation: {error}"));
+    }
+    if let Err(error) = engine.occupy_soft(target, parent, label) {
+        if let Err(cleanup) = engine.completion.release(parent, target) {
+            tracing::warn!("adopt relation rollback failed: {cleanup}");
+        }
+        return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {error:?}"));
     }
     let index = engine.child_terminals.next_index_for(parent);
     engine.child_terminals.register_child(

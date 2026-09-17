@@ -13,7 +13,7 @@ impl Completion {
                         s.parent == parent
                             && s.child == child
                             && s.mode == "spawn"
-                            && s.relation_generation == Some(previous)
+                            && s.relation_generation == Some(previous.generation)
                     })
                     .map(|s| s.id)
                     .collect();
@@ -21,20 +21,64 @@ impl Completion {
                     j.close_subscription(id, "relation_replaced");
                 }
             }
-            j.current_relation(parent, child);
+            // A new spawn/adopt must not import subscriptions from any earlier relation.
+            let generation = j.next();
+            j.live_relations.insert(
+                (parent, child),
+                LiveRelation {
+                    generation,
+                    restored: false,
+                },
+            );
             Ok(())
         })
     }
 }
 impl Journal {
     pub fn current_relation(&mut self, parent: u32, child: u32) -> u64 {
-        if let Some(generation) = self.live_relations.get(&(parent, child)) {
-            return *generation;
+        let generation = match self.live_relations.get(&(parent, child)) {
+            Some(relation) if !relation.restored => return relation.generation,
+            Some(relation) => relation.generation,
+            None => self.next(),
+        };
+        // Only a restored, positively identified logical pair may share its old
+        // subscriptions with a new watch. begin_relation never takes this path.
+        let restored: Vec<_> = self
+            .subscriptions
+            .values()
+            .filter(|sub| {
+                sub.accepts_pending()
+                    && sub.mode == "spawn"
+                    && sub.parent == parent
+                    && sub.child == child
+                    && self.owns_subscription(sub, parent)
+                    && sub
+                        .child_session
+                        .as_deref()
+                        .is_some_and(|id| !id.is_empty())
+                    && self
+                        .sessions
+                        .get(&child)
+                        .or_else(|| self.ended_sessions.get(&child))
+                        .is_some_and(|session| {
+                            sub.child_kind == session.kind && sub.matches_child(session)
+                        })
+            })
+            .map(|sub| sub.id)
+            .collect();
+        for id in restored {
+            self.subscriptions
+                .get_mut(&id)
+                .expect("collected above")
+                .relation_generation = Some(generation);
         }
-        // The host validates registry membership before subscribe. This also
-        // establishes a lease for an existing relation without an agent session.
-        let generation = self.next();
-        self.live_relations.insert((parent, child), generation);
+        self.live_relations.insert(
+            (parent, child),
+            LiveRelation {
+                generation,
+                restored: true,
+            },
+        );
         generation
     }
 }

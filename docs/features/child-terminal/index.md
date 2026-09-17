@@ -228,3 +228,7 @@ surface의 새 실행은 새 세대다. 부모 Claude의 기존 Monitor 수명�
 [완료 전달 계약](../../dev-guide/child-completion-app-server.md)을 참고한다.
 
 완료 구독의 release는 현재 host에서 생성한 spawn/adopt 관계 세대에 적용된다. 부모 SessionStart가 아직 도착하지 않아도 해제된 세대는 뒤늦은 등록으로 살아나지 않는다. 재시작 후 같은 숫자 surface가 재사용된 새 관계는 이전 논리 부모의 영속 구독과 별개다.
+
+복원된 동일 논리 관계에 완료 watch를 추가한 경우에는 기존·신규 spawn 구독을 한 번의 release로 종료한다. 새 spawn/adopt와 구별하며 tell 구독과 accepted/unknown 결과는 기존 수명 규칙을 유지한다.
+
+spawn은 관계 저장·registry·soft 점유 준비 후 command를 전송한다. 준비나 동기 전송 단계에서 오류가 나면 이번 호출이 만든 surface만 표준 agent close 경로로 정리하고 자신의 registry/점유도 회수한다. adopt의 저장 실패는 기존 surface나 같은 부모가 이미 갖고 있던 soft 점유를 변경하지 않는다.
