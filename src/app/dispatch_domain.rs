@@ -845,39 +845,7 @@ impl App {
                 (state, engine, None)
             }
         };
-        if let Err(error) = engine.completion.observe(
-            surface_id,
-            "exited",
-            "process-exit",
-            "Process exited; success is not inferred",
-        ) {
-            tracing::warn!("completion process exit persistence failed: {error}");
-        }
-        let fired = engine
-            .hook_manager
-            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::ProcessExit]);
-        let injector = self.core.host_ipc_injector.get().cloned();
-        for f in fired {
-            crate::hook_handler::trigger::execute_binding(
-                &f.binding,
-                injector.as_ref(),
-                &f.event,
-                &f.received,
-                surface_id,
-            );
-            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                hook_id: f.hook_id,
-                event_kind: "process-exit".to_string(),
-                surface_id,
-                exit_code: None,
-            });
-        }
-        state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited { surface_id });
-        // close_surface_by_id_no_snapshot 내부 (Case 1~5) 에서 cleanup_targets 전체에 대한
-        // enqueue_surface_closed 가 발화된다 (R1 leak fix). 반환값(이미 닫힌 surface 여부)은
-        // cascade 흐름에 영향 없어 의도적 무시.
-        // intent-exempt: 처리 핸들러 본문의 cascade — Intent 는 흐름의 시작점에만 둔다
-        state.close_surface_by_id_no_snapshot(engine, surface_id, true);
+        super::process_exit::handle(&mut self.core, state, engine, surface_id);
         if let Some(base) = dirty_main {
             base.dirty = true;
         }

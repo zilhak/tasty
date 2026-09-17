@@ -137,3 +137,7 @@ spawn/tell 구독은 각 window가 발행한 live target 소유 목록을 확인
 재시작 때 영속 종료 작업을 다시 읽고 주소가 재사용돼도 캡처한 구독 ID와 session/binding 세대만 처리한다. 다른 window의 live 목록에 없다는 이유로 종료를 합성하지 않는다. 종료 intent 저장 자체도 실패한 경우에는 durable=false로 명시하고 현재 process에서 송신을 막은 채 저장부터 재시도한다. 이 상태는 영속 완료가 아니며, 어떤 저장도 불가능한 상태에서 강제 종료된 기록까지 복원한다고 보장하지 않는다.
 
 종료 저장 대기 중 부모 binding이 등록되면 복구가 새로 만드는 미송신 종료 이벤트는 해당 binding과 pending phase를 함께 받는다. 기존 accepted/unknown 이벤트의 수락 상태는 바꾸지 않으며 실제 송신 전 소유 검증은 worker가 수행한다.
+
+## 실제 PTY 종료
+
+GUI와 headless는 명시적인 TerminalProcessExited를 같은 host 종료 처리로 보낸다. SessionEnd hook이 없어도 실행 구독을 종료하고 process-exit 훅을 발화한 뒤 기존 no-snapshot close 경로로 surface·PTY·soft 점유를 정리한다. 종료 저장 실패는 영속 종료 큐로 재시도한다. 종료 원인만으로 성공을 추론하지 않으며, 다른 window의 로컬 부재는 이 경로를 실행하지 않는다. headless도 HookFired의 task waiter를 처리하고 view 전용 ProcessExited broadcast는 GUI에 남는다.

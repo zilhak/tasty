@@ -378,11 +378,7 @@ fn handle_terminal_output(
         factory.note_drained(id);
     }
     // Targeted wake 는 해당 surface 만, default wake 는 전체 drain.
-    // 반환 CoreEvent 중 소비하는 것은 `TerminalOutputMatch` 뿐이다 — 나머지
-    // (Notification/Bell/Title/Cwd/Exit)는 cascade 주체(view/plugin)가 없어
-    // 버린다. 직접 부수효과(observer/command_index/OSC52)는 process 함수
-    // 내부에서 이미 적용됐다. 하나만 소비하는 근거는
-    // `fire_output_match_hooks` 의 doc 참조.
+    // View-independent output hooks and explicit PTY exit lifecycle run in both hosts.
     let outcome = match id {
         Some(sid) => app.core.process_pty_output(engine, sid), // targeted: 해당 surface 만 drain
         None => {
@@ -394,7 +390,14 @@ fn handle_terminal_output(
             outcome
         }
     };
-    fire_output_match_hooks(app, engine, outcome.events);
+    for event in outcome.events {
+        if let crate::core::intent::CoreEvent::TerminalProcessExited { surface_id } = event {
+            crate::app::process_exit::handle(&mut app.core, state, engine, surface_id);
+        } else {
+            fire_output_match_hooks(app, engine, vec![event]);
+        }
+    }
+    crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
 }
 
 /// PTY drain 이 돌려준 `CoreEvent` 에서 `output-match` 훅만 골라 발화한다.
@@ -407,17 +410,10 @@ fn handle_terminal_output(
 /// CLI 로 노출된 에이전트 기능이므로 headless 에서도 동작해야 한다
 /// (`docs/identity.md` 원칙 2).
 ///
-/// **`PendingHostEvent::HookFired` enqueue 는 일부러 하지 않는다.** 그 큐의
-/// 배수 주체는 `app/dispatch/host_events.rs` 하나뿐이고 `src/app.rs` 가 그
-/// 모듈을 `#[cfg(feature = "gui")]` 로 걸어, headless 에는 빼 가는 쪽이 없다.
-///
-/// 주의 — **그 큐는 headless 에서 이미 자라고 있다.** 같은 파일의 idle-timeout
-/// 경로가 훅 발화마다 넣는데 빼 가는 쪽이 없다(`intent/headless.rs` 모듈 주석도
-/// 같은 사실을 적는다). 그러니 여기서 넣지 않는 것은 "증가를 막는" 것이 아니라
-/// **증가율을 올리지 않는** 것이다 — 이쪽은 매칭되는 라인마다 1 건이라 상시 구동
-/// 데몬의 가장 뜨거운 경로가 된다. 그러면서 관측 가능한 효과는 여전히 0 이다.
-/// headless 에 배수 주체가 생기면 그때 idle-timeout 배선과 함께 다시 본다 —
-/// 그 조건이 성립하면 이 생략은 결함이 되고, 저쪽 누수는 정상 경로가 된다.
+/// 이 output-match 함수는 기존처럼 직접 훅 실행만 수행한다. process-exit는
+/// 공용 종료 처리에서 HookFired를 enqueue하며, 위 PTY drain이 headless의
+/// host-event 소비자를 호출해 task waiter를 처리한다. view/plugin broadcast는
+/// headless 소비 범위에 포함하지 않는다.
 #[cfg(not(feature = "gui"))]
 fn fire_output_match_hooks(
     app: &crate::app::App,

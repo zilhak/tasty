@@ -234,3 +234,5 @@ surface의 새 실행은 새 세대다. 부모 Claude의 기존 Monitor 수명�
 spawn은 관계 저장·registry·soft 점유 준비 후 command를 전송한다. 준비나 동기 전송 단계에서 오류가 나면 이번 호출이 만든 surface만 표준 agent close 경로로 정리하고 자신의 registry/점유도 회수한다. adopt의 저장 실패는 기존 surface나 같은 부모가 이미 갖고 있던 soft 점유를 변경하지 않는다.
 
 닫힌 child는 stale registry에 남아 있어도 신규 spawn/tell 구독 대상으로 받지 않는다. surface close의 completion 저장이 실패하면 사용자 close는 유지하면서 원 구독의 종료 작업을 영속 큐로 복구한다. 조회의 close_persistence_pending과 pending_closes는 저장 대기를 뜻하며, 다른 window에 속한 child의 부재와 혼동하지 않는다.
+
+headless의 실제 PTY 종료도 GUI와 같은 host process-exit 경로를 사용한다. SessionEnd 없이 종료해도 실행 구독과 soft 점유를 정리하며, 저장 실패는 영속 종료 큐로 복구한다.

@@ -64,7 +64,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [api-conventions](api-conventions.md) | CLI/IPC 명명 + 안정성/버전 정책 |
 | [cli-structure](cli-structure.md) | CLI 크레이트 내부 세 갈래(commands/ · request/ · local/)와 `Dispatch` |
 | [debug-ipc](debug-ipc.md) | debug 전용 IPC + 격리 |
-| [headless-ipc-surface](headless-ipc-surface.md) | 헤드리스 IPC의 단일 진입 검사·관측과 메서드별 제공 범위 |
+| [headless-ipc-surface](headless-ipc-surface.md) | 헤드리스 IPC의 단일 진입 검사·관측·PTY 종료 수명과 메서드별 제공 범위 |
 | [cli-ipc-surface](cli-ipc-surface.md) | CLI 진입점 유무를 가르는 판별식과 그것을 실행으로 세는 법 |
 | [attach-behavior](attach-behavior.md) | attach(서버=loopback / 로컬-원격=클라이언트) |
 | [agent-runner](agent-runner.md) | task DAG executor + 동기화 primitive |

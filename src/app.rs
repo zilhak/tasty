@@ -37,6 +37,7 @@ pub(crate) mod modal;
 pub(crate) mod persistence;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
+pub(crate) mod process_exit;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
