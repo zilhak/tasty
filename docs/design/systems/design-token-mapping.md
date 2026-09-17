@@ -259,9 +259,10 @@ echo "$(grep -rn 'to_millis_f32()' --include='*.rs' src crates \
 디자인 `tokens/components.css` 의 `--tasty-drilldown-*`(8종) + `--tasty-listctrl-*`(17종)
 Tier-3 블록. 위젯
 `crates/tasty-ui-widgets/src/drilldown.rs`(`DrillDown`) + `listctrl.rs`(`ListCtrl`).
-디자인 DTCG export(`tokens/tasty.tokens.json`)에 아직 미반영인 신규 블록이라 로컬 DTCG
-재생성 대신 `theme.rs` 수기 접근자(autocomplete/modhint/md-table 전례)로 전사했다 —
-**신규 primitive/hex 없음**, 전부 기존 semantic/primitive 종착.
+vendor 한 DTCG export(`crates/tasty-design-tokens/dtcg/tasty.tokens.json`)에 들어 있어 아래 접근자
+24 개는 전부 생성물(`crates/tasty-type-appearance/src/generated_component.rs`)이다 — 수기 접근자가
+아니다. `font-weight` 하나만 대응 접근자가 없다(아래 표). **신규 primitive/hex 없음**, 전부 기존
+semantic/primitive 종착.
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
