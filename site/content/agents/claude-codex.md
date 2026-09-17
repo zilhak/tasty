@@ -2,7 +2,7 @@
 
 Claude Code와 Codex CLI를 연결해 여러 에이전트에게 일을 나눠 맡겨보세요. 한 에이전트가 다른 에이전트를 실행하고 결과를 받는 방식으로 구현, 테스트, 검토를 함께 진행할 수 있습니다.
 
-Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실행과 배치, 작업을 맡긴 에이전트와의 연결을 관리합니다. 아래 훅 설정을 마치면 작업 완료 알림을 받을 수 있습니다.
+Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실행과 배치, 작업을 맡긴 에이전트와의 연결을 관리합니다. 훅 설치와 함께 부모의 수신 설정도 마치세요. 부모가 Codex이면 같은 App Server(daemon)에서 실행 중인 부모 대화(thread)에 별도로 바인딩하고 `verified` 상태를 확인해야 합니다. 부모가 Claude Code이면 기존 완료 로그를 Monitor로 구독합니다. 자세한 절차는 [완료 알림 받기](#4-완료-알림-받기)를 따르세요.
 
 ## 1. 훅 설치 (처음 한 번)
 
@@ -19,11 +19,11 @@ tasty codex install     # ~/.codex/config.toml 의 [hooks] 에 Tasty 항목 추�
 - Tasty 밖에서 Claude Code를 실행하면 이 훅은 동작하지 않습니다.
 - 제거는 `tasty claude uninstall` / `tasty codex uninstall`.
 
-훅이 설치되면 다음이 자동으로 동작합니다.
+설치한 훅이 현재 세션에서 정상 실행되면 Tasty가 상태와 세션 정보를 받습니다.
 
 - 에이전트가 응답을 마치거나 질문을 던지면 그 서피스에 **주의 환기 테두리**가 켜지고 사이드바 워크스페이스에 배지가 붙습니다 (질문 대기는 노란색 우선).
 - 탭을 닫았다가 복원하거나 Tasty 를 재시작하면 같은 세션으로 다시 이어집니다 (`claude -r` / `codex resume`).
-- 자식 에이전트의 완료 알림(아래)이 부모에게 갑니다.
+- 자식의 상태·결과를 부모가 받으려면 [부모별 수신 설정](#4-완료-알림-받기)도 필요합니다. Codex는 같은 daemon의 부모 thread에 검증된 바인딩을, Claude Code는 기존 로그의 Monitor 구독을 사용합니다.
 
 ## 2. 실행하기
 
@@ -61,7 +61,7 @@ tasty codex spawn --workspace workers --cwd ~/proj --sandbox read-only \
 | `--prompt <텍스트>` | 띄운 직후 보낼 첫 지시 |
 | `--surface <ID>` | 부모 서피스 (기본: 자기 자신) |
 
-`spawn` 은 **즉시 반환**합니다. 기다리는 명령은 따로 없고, 자식이 대기 상태가 되면 완료 알림이 옵니다 (다음 절).
+`spawn` 은 **즉시 반환**합니다. 별도의 대기 명령은 없습니다. 자식의 훅과 [부모별 수신 설정](#4-완료-알림-받기)을 마치면 자식이 보고한 대기 상태를 부모에게 전달합니다. 대기는 작업 성공을 뜻하지 않습니다.
 
 부모는 자기 워크스페이스가 아닌 **다른 워크스페이스**에 자식을 두는 편이 안전합니다. 원격 mirror 워크스페이스에는 spawn 할 수 없습니다.
 
@@ -186,7 +186,7 @@ Codex 부모의 spawn 관계를 release하면 새 결과와 확정 미수락 재
 
 - `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` — Claude Code 에 그대로 전달됩니다.
 - **아무것도 안 주면 플래그가 붙지 않습니다.** 자식은 여러분이 쓰던 Claude Code 설정 그대로 뜹니다. Codex 와 달리 자동으로 "묻지 않음" 이 되지 않습니다 — Claude Code 에는 샌드박스 축이 따로 없어서, 안 묻게 만드는 순간 그것이 곧 제한 없는 실행이 되기 때문입니다.
-- 자동화 중에 자식이 승인 대기로 멈추는 것이 곤란하면 그 호출에만 원하는 모드를 명시하세요. 멈춘 자식은 부모에게 알림이 가므로 눈치채지 못한 채 방치되지는 않습니다.
+- 자동화 중에 자식이 승인 대기로 멈추는 것이 곤란하면 그 호출에만 원하는 모드를 명시하세요. 멈춘 자식의 상태도 [부모별 수신 설정](#4-완료-알림-받기)에 따라 전달됩니다.
 - 전역 기본값은 **설정** › **플러그인** › **Claude Code** 의 **자식 세션 기본 권한 모드** <!-- en: Default permission mode for child sessions -->. 기본값은 **물려받음**(플래그 미부착)이고, 호출별 플래그가 우선합니다.
 - `--profile` / `--profile-file` 로 붙이는 설정 JSON 이 `permissions.defaultMode` 를 정하고 있으면 `--permission-mode` 와 함께 쓸 수 없습니다 — 둘이 같은 것을 정하므로 하나만 고르라는 에러가 납니다.
 - `reboot` / `child-profile` 에서 지정한 모드는 **그 재시작에만** 적용됩니다. 탭 복원으로 다시 뜰 때는 따라가지 않습니다.
@@ -231,7 +231,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 
 ## 문제 해결
 
-- **완료 알림이 안 옵니다** — `tasty claude install` 을 다시 실행했는지 확인합니다. 훅 전달 실패는 `~/.tasty/hook-failures.log` 에 남습니다. 플러그인 로그는 `tasty plugin logs com.tasty.claude --follow`.
+- **완료 알림이 안 옵니다** — 자식 CLI의 훅 설치·실행과 [부모별 수신 설정](#4-완료-알림-받기)을 확인하세요. Codex 부모는 `tasty codex completion diagnose`와 `status`로 같은 daemon의 부모 thread에 `verified`인지 확인하고, Claude Code 부모는 Monitor가 완료 로그를 구독하는지 확인하세요. 훅 전달 실패는 `~/.tasty/hook-failures.log` 에 남습니다. 플러그인 로그는 `tasty plugin logs com.tasty.claude --follow`.
 - **`reboot` 가 "claude-session-id meta not set" 으로 실패합니다** — 세션 시작 훅이 세션 ID 를 못 남긴 것입니다. `tasty surface-meta set --key claude-session-id --value <세션ID>` 로 직접 넣습니다.
 - **자식이 spawn 되지 않고 "occupied" 오류** — 대상 워크스페이스가 원격에서 attach 중이거나 mirror 입니다. 다른 워크스페이스를 씁니다.
 - **macOS 에서 앱 아이콘으로 실행하면 알림이 안 옵니다** — Tasty 가 알림을 쓸 때 `tasty` 를 다시 호출하는데, Tasty 는 자기 실행 파일 경로를 자동으로 PATH 에 넣으므로 보통은 문제없습니다. 그래도 안 되면 `hook-failures.log` 를 봅니다.

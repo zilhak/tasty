@@ -1,9 +1,9 @@
-<!-- source-hash: 6a61e1001ed7 -->
+<!-- source-hash: 9cab9a722527 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
 
-Install Claude Code and Codex CLI separately. Tasty manages launching, placement, and the connection to the agent that delegated the work. Set up the hooks below to receive completion notifications.
+Install Claude Code and Codex CLI separately. Tasty manages launching, placement, and the connection to the agent that delegated the work. Set up both the hooks and the parent’s receiving channel. A Codex parent needs a separate, verified binding to its conversation (thread) running on the same App Server (daemon). A Claude Code parent uses Monitor to subscribe to the existing completion log. Follow [Receiving completion notifications](#4-receiving-completion-notifications).
 
 ## 1. Install the hooks (once)
 
@@ -19,11 +19,11 @@ tasty codex install     # add the Tasty entry to [hooks] in ~/.codex/config.toml
 - These hooks do not run when you use Claude Code outside Tasty.
 - To remove: `tasty claude uninstall` / `tasty codex uninstall`.
 
-Once the hooks are installed, the following works automatically.
+When the installed hooks run successfully in the current session, Tasty receives state and session information.
 
 - When an agent finishes a response or asks a question, an **attention border** lights up on that Surface and a badge appears on the Workspace in the sidebar (waiting for a question takes priority, in yellow).
 - When you close and restore a Tab, or restart Tasty, the same session resumes (`claude -r` / `codex resume`).
-- Completion notifications from child agents (below) reach the parent.
+- Receiving a child’s state and results also requires [parent setup](#4-receiving-completion-notifications). Codex uses a verified binding to the parent thread on the same daemon; Claude Code uses Monitor to subscribe to the existing log.
 
 ## 2. Launching
 
@@ -61,7 +61,7 @@ tasty codex spawn --workspace workers --cwd ~/proj --sandbox read-only \
 | `--prompt <text>` | First instruction sent right after launch |
 | `--surface <ID>` | Parent Surface (default: yourself) |
 
-`spawn` **returns immediately**. There is no separate wait command; a completion notification arrives when the child becomes idle (next section).
+`spawn` **returns immediately**. There is no separate wait command. With the child’s hooks and [parent setup](#4-receiving-completion-notifications) in place, the child’s reported idle state is delivered to the parent. Idle does not establish task success.
 
 It is safer for the parent to put children in a **different Workspace** than its own. You cannot spawn into a remote mirror Workspace.
 
@@ -187,7 +187,7 @@ In environments where nested sandboxes are not possible, such as containers, if 
 
 - `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` — passed straight through to Claude Code.
 - **If you pass nothing, no flag is added at all.** The child starts with the Claude Code settings you already use. Unlike Codex it does not quietly become "never ask" — Claude Code has no separate sandbox axis, so making it stop asking is the same as letting it run unrestricted.
-- If a child pausing for approval would break an unattended run, name the mode you want on that call. A paused child still notifies its parent, so it is not left unnoticed.
+- If a child pausing for approval would break an unattended run, name the mode you want on that call. A paused child’s state is also delivered through the configured [parent receiving channel](#4-receiving-completion-notifications).
 - The global default is **Default permission mode for child sessions** at **Settings** › **Plugin** › **Claude Code**. It defaults to **Inherit** (no flag), and per-call flags take precedence.
 - If the settings JSON behind `--profile` / `--profile-file` sets `permissions.defaultMode`, it cannot be combined with `--permission-mode` — the two decide the same thing, so you get an error asking you to pick one.
 - A mode given to `reboot` / `child-profile` applies **to that restart only**. It is not carried over when the tab is restored later.
@@ -232,7 +232,7 @@ tasty claude spawn --workspace w --profile continue-checklist
 
 ## Troubleshooting
 
-- **No completion notification arrives** — check that you have rerun `tasty claude install`. Hook delivery failures are recorded in `~/.tasty/hook-failures.log`. Plugin logs: `tasty plugin logs com.tasty.claude --follow`.
+- **No completion notification arrives** — check the child CLI’s hook installation and execution, then [parent setup](#4-receiving-completion-notifications). For a Codex parent, use `tasty codex completion diagnose` and `status` to check for a `verified` binding to its thread on the same daemon. For a Claude Code parent, check that Monitor subscribes to the completion log. Hook delivery failures are recorded in `~/.tasty/hook-failures.log`. Plugin logs: `tasty plugin logs com.tasty.claude --follow`.
 - **`reboot` fails with "claude-session-id meta not set"** — the session-start hook failed to record the session ID. Set it directly with `tasty surface-meta set --key claude-session-id --value <session ID>`.
 - **The child is not spawned and you get an "occupied" error** — the target Workspace is being attached from a remote, or is a mirror. Use another Workspace.
 - **No notifications when launched from the app icon on macOS** — Tasty calls `tasty` again when it writes notifications, but Tasty adds its own executable path to PATH automatically, so this is normally not a problem. If it still fails, look at `hook-failures.log`.
