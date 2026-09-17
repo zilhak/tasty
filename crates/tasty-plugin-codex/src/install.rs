@@ -397,6 +397,9 @@ mod path_tests {
         ] {
             assert!(selected_path(&params, &tr).is_err());
         }
+        // 이유: 경로 문자열로만 쓴다 — 이 자리는 아무것도 만들지도 지우지도 않고,
+        //       `selected_path` 는 디렉터리의 실재를 보지 않는 순수 함수다. 필요한 성질은
+        //       "절대 경로 하나" 뿐이라 동시에 도는 완주끼리 공유해도 서로를 안 건드린다.
         let dir = std::env::temp_dir();
         assert_eq!(
             selected_path(&json!({"codex_home":dir,"config_file":null}), &tr).unwrap(),
