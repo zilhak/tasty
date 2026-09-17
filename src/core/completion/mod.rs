@@ -7,6 +7,8 @@ mod deadline;
 mod diagnostics;
 mod history;
 mod identity;
+#[cfg(test)]
+mod late_identity_tests;
 mod model;
 mod observation;
 mod protocol;

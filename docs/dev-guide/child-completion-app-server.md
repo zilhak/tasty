@@ -116,7 +116,7 @@ proxy 실행파일은 연결 필수 조건이 아니다. `diagnose --local-confi
 
 ## 실행 종료와 지연 관측
 
-release는 현재 host의 spawn/adopt 관계 세대에 속한 spawn 구독을 종료한다. 관계 세대는 부모 SessionStart 등록과 독립적이므로 부모 훅이 지연돼도 실제 관계 해제는 확정된다. 구독에는 세대를 영속 기록하되 live 관계 주소 맵은 재시작 때 복원하지 않는다. 재시작한 관계에 새 live 세대가 없다면 알려진 논리 부모·child 실행을 대조하며, 새 spawn/adopt 관계 세대가 있으면 그것과 다른 옛 영속 구독은 취소하지 않는다. 복원된 기존 관계에 watch만 추가할 때는 현재 부모·child의 논리 세션과 실행 세대를 긍정 확인한 기존 spawn 구독들을 같은 live 관계로 묶는다. 필드가 없는 legacy 저널도 같은 identity 검사를 거친다. 복원 watch의 identity 확인이 늦어지면 후속 watch에서 다시 대조하지만, 명시적인 새 spawn/adopt는 옛 구독을 가져오지 않는다. unsubscribe는 현재 또는 막 종료된 논리 부모 식별자를 검증한다. 재시작 뒤 숫자 surface가 재사용돼도 옛 구독을 취소할 권한을 얻지 않는다. 원 관계의 target_exited 미송신 기록은 같은 소유자의 release로 취소할 수 있다.
+release는 현재 host의 spawn/adopt 관계 세대에 속한 spawn 구독을 종료한다. 관계 세대는 부모 SessionStart 등록과 독립적이므로 부모 훅이 지연돼도 실제 관계 해제는 확정된다. 구독에는 세대를 영속 기록하되 live 관계 주소 맵은 재시작 때 복원하지 않는다. 재시작한 관계에 새 live 세대가 없다면 알려진 논리 부모·child 실행을 대조하며, 새 spawn/adopt 관계 세대가 있으면 그것과 다른 옛 영속 구독은 취소하지 않는다. 복원된 기존 관계에 watch만 추가할 때는 현재 부모·child의 논리 세션과 실행 세대를 긍정 확인한 기존 spawn 구독들을 같은 live 관계로 묶는다. 필드가 없는 legacy 저널도 같은 identity 검사를 거친다. 복원 watch의 identity 확인이 늦어지면 release의 원자 journal 전이 안에서도 현재 논리 쌍을 다시 대조한다. 추가 watch 없이 기존·신규 구독을 함께 해제하며, 명시적인 새 spawn/adopt는 이 재대조에서 제외한다. unsubscribe는 현재 또는 막 종료된 논리 부모 식별자를 검증한다. 재시작 뒤 숫자 surface가 재사용돼도 옛 구독을 취소할 권한을 얻지 않는다. 원 관계의 target_exited 미송신 기록은 같은 소유자의 release로 취소할 수 있다.
 
 Claude 오류 callback은 `watch_error`가 발급한 observer를 command에 보존한다. observer는 구독과 첫 child 실행 세대에 묶이며, 기동 전 등록은 첫 SessionStart에서만 세대를 채운다. `observe_error`는 같은 journal 잠금에서 현재 부모·child·구독 수명을 검증한다. release/실행 교체/호스트 재시작 뒤 늦은 callback과 observer 없는 구형 callback은 새 이벤트나 Claude 로그를 만들지 않는다.
 

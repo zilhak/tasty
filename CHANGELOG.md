@@ -37,6 +37,8 @@
 
 ### Fixed
 
+- Releasing a restored child relationship now rechecks confirmed parent and child identities in the same journal transaction. Late registration no longer requires a second watch before old subscriptions can be released.
+
 - Releasing a positively identified restored child relationship now closes both its old and new completion watches, including legacy journals. New spawn/adopt relationships remain separate.
 - Child spawn commits its relationship before sending a command and rolls back only its own created surface on setup or synchronous send failure. Failed adoption preserves preexisting soft ownership.
 

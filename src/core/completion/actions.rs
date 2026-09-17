@@ -59,6 +59,15 @@ impl Completion {
     }
     pub fn release(&self, parent: u32, child: u32) -> Result<()> {
         self.change(|j| {
+            // Identity may arrive after the first restored watch. Reconcile in
+            // this same commit, without requiring another subscribe. Explicit
+            // spawn/adopt relationships must never import an earlier generation.
+            if j.live_relations
+                .get(&(parent, child))
+                .is_some_and(|relation| relation.restored)
+            {
+                j.current_relation(parent, child);
+            }
             let ids: Vec<_> = j
                 .subscriptions
                 .values()
