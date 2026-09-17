@@ -195,16 +195,19 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 108,
-        measured_on: "2026-09-14",
+        measured: 111,
+        measured_on: "2026-09-18",
         counted_on: super::CountedOn::Tree(
-            "8b306d558 + 이 커밋(lane `conductor/w-kbie`). 이 lane 이 \
-             `tasty-ui-widgets` 의 `select_placeholder` 를 더해 107 -> 108 이 됐다. \
-             **lane 트리에서 잰 값이라 \
-             구조적으로 낮을 수 있다** — 이전 회차에서 lane 셋이 각자 자기 것 하나만 \
-             보고 같은 값을 적었고, 그 차는 두 번 다 통합에서만 드러났다(12bc0f4b2 + \
-             회차 95 통합: base 102, 28 커밋 시점 104, 41 커밋 시점 105). 최종 값은 \
-             병합하는 쪽이 통합 트리에서 다시 잰다.",
+            "f53234985 — **통합 트리에서 잰 값이다.** 앞선 108 은 lane \
+             `conductor/w-kbie` 가 자기 트리에서 잰 것이었고 그 값 자체는 맞았다 \
+             (같은 값이 직전 push 지점에서도 108 이었다). 그 뒤 통합에서 lane 셋이 \
+             각자 통합 타깃을 하나씩 더해 111 이 됐다 — `tasty-i18n` 의 \
+             `font_validation` · `plugin_catalog`, `tasty-plugin-sdk` 의 \
+             `plugin_user_overrides`. **lane 트리에서 잰 값은 구조적으로 낮다** — \
+             한 lane 은 자기가 더한 하나만 보므로, 셋이 같은 base 에서 각자 +1 을 \
+             적으면 셋 다 같은 값을 쓰고 차는 통합에서만 드러난다(앞선 회차 실측: \
+             12bc0f4b2 + 회차 95 통합에서 base 102, 28 커밋 시점 104, 41 커밋 시점 \
+             105). 최종 값은 병합하는 쪽이 통합 트리에서 다시 잰다.",
         ),
         how: "`crates/<크레이트>/tests/<파일>.rs` — 네 마디짜리 경로만. 재는 법: `/` 로 \
               쪼갠 마디가 넷이고 둘째 마디가 `tests` 이며 `.rs` 로 끝나는 줄.",
