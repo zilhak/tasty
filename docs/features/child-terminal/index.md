@@ -232,3 +232,5 @@ surface의 새 실행은 새 세대다. 부모 Claude의 기존 Monitor 수명�
 복원된 동일 논리 관계에 완료 watch를 추가한 경우에는 기존·신규 spawn 구독을 한 번의 release로 종료한다. 부모 또는 child identity가 첫 watch 뒤에 확인돼도 release 자체가 재대조하므로 두 번째 watch가 필요하지 않다. 새 spawn/adopt와 구별하며 tell 구독과 accepted/unknown 결과는 기존 수명 규칙을 유지한다.
 
 spawn은 관계 저장·registry·soft 점유 준비 후 command를 전송한다. 준비나 동기 전송 단계에서 오류가 나면 이번 호출이 만든 surface만 표준 agent close 경로로 정리하고 자신의 registry/점유도 회수한다. adopt의 저장 실패는 기존 surface나 같은 부모가 이미 갖고 있던 soft 점유를 변경하지 않는다.
+
+닫힌 child는 stale registry에 남아 있어도 신규 spawn/tell 구독 대상으로 받지 않는다. surface close의 completion 저장이 실패하면 사용자 close는 유지하면서 원 구독의 종료 작업을 영속 큐로 복구한다. 조회의 close_persistence_pending과 pending_closes는 저장 대기를 뜻하며, 다른 window에 속한 child의 부재와 혼동하지 않는다.

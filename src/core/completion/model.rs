@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Journal {
     pub sequence: u64,
+    #[serde(skip)]
+    pub pending_closes: BTreeMap<String, super::close_effects::CloseTask>,
     // Only relationships established in this host lifetime can authorize an
     // unregistered parent. Never restore this address map from the journal.
     #[serde(skip)]

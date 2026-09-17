@@ -38,6 +38,9 @@ impl Completion {
         summary: &str,
     ) -> Result<bool> {
         self.change(|j| {
+            if j.close_blocks_surface(child) || j.close_blocks_surface(parent) {
+                return Ok(false);
+            }
             let observer_id = observer;
             let Some(observer) = j.error_observers.get(&observer) else {
                 return Ok(false);

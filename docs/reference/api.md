@@ -100,3 +100,5 @@ CLI 는 위 IPC 를 감싼다(`tasty list workspaces`, `tasty send text`, `tasty
 unknown은 retry로 재송신할 수 없다. endpoint의 thread 소유와 구독은 매 연결에서 검증한다.
 
 완료 producer의 `watch_error`는 `surface`(부모)·`target`으로 실행 관측 observer를 발급하고, `observe_error`는 같은 주소와 `observer`·`summary`를 받아 현재 논리 소유권/실행 세대를 검증한다. 두 액션은 기존 `terminal.completion` 권한 경계를 사용한다. 오래된 callback은 `recorded:false`로 반환한다.
+
+완료 status/diagnose 응답의 `pending_closes`는 종료 저장 대기 작업과 durability/error/attempts/retry_at을 노출한다. `surface.close`의 `completion_cleanup`은 실제 surface 삭제와 completion journal 반영의 완료 여부를 구별한다. 종료 대기 중인 원 구독의 새 송신은 보류되며 자동 복구한다.

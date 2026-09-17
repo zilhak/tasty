@@ -20,6 +20,9 @@ pub fn start(service: Weak<Completion>) -> Result<()> {
     Ok(())
 }
 pub fn tick(service: &Completion) -> Result<()> {
+    if let Err(error) = service.retry_pending_closes() {
+        tracing::warn!("completion lifecycle recovery: {error:#}");
+    }
     let snapshot = service.snapshot()?;
     for binding in snapshot
         .bindings
@@ -39,9 +42,10 @@ pub fn tick(service: &Completion) -> Result<()> {
             Ok((mut client, identity)) => {
                 let endpoint_identity = super::transport::endpoint_identity(&binding.endpoint)?;
                 let still_current = service.change(|j| {
-                    let owner_live = j.sessions.get(&binding.surface).is_some_and(|s| {
-                        s.kind == "codex" && s.hook_session == binding.hook_session
-                    });
+                    let owner_live = !j.close_blocks_surface(binding.surface)
+                        && j.sessions.get(&binding.surface).is_some_and(|s| {
+                            s.kind == "codex" && s.hook_session == binding.hook_session
+                        });
                     if let Some(b) = j.bindings.get_mut(&binding.key)
                         && owner_live
                         && matches!(b.phase.as_str(), "verifying" | "verified")
@@ -156,6 +160,7 @@ fn deliver(
         });
     }
     let claimed = service.change(|j| {
+        if j.close_blocks_subscription(event.subscription) { return Ok(false); }
         let Some(e) = j.events.get(&event.id) else {
             return Ok(false);
         };

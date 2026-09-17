@@ -680,6 +680,7 @@ pub struct CoreState {
     /// cascade 없이 직접 영속할 때 사용.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     pub(crate) completion: std::sync::Arc<crate::core::completion::Completion>,
+    pub(crate) completion_view: std::sync::Arc<()>,
 
     /// agent task runner 스레드 레지스트리의 Arc clone — Core 가 owner. 부팅이 1 회
     /// 주입한다(`set_agent_runner_registry`).
@@ -928,6 +929,7 @@ impl CoreState {
             memory,
             agent_runner_registry: std::sync::OnceLock::new(),
             completion: crate::core::completion::Completion::memory()?,
+            completion_view: std::sync::Arc::new(()),
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게

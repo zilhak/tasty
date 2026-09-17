@@ -19,6 +19,9 @@ impl Completion {
             bail!("invalid subscription");
         }
         self.change(|j| {
+            if j.close_blocks_surface(parent) || j.close_blocks_surface(child) {
+                bail!("close_persistence_pending");
+            }
             let relation_generation = if mode == "spawn" {
                 Some(j.current_relation(parent, child))
             } else {
@@ -124,6 +127,9 @@ impl Completion {
         expected: Option<&str>,
     ) -> Result<bool> {
         self.change(|j| {
+            if j.close_blocks_surface(child) {
+                return Ok(false);
+            }
             // Retired unversioned error callbacks cannot prove an execution identity.
             if cause == "claude-error-stalled" && expected.is_none() {
                 return Ok(false);
@@ -191,50 +197,11 @@ impl Completion {
             Ok(true)
         })
     }
-    pub fn exited(&self, surface: u32, cause: &str) -> Result<()> {
-        self.change(|j| {
-            j.live_relations
-                .retain(|(parent, child), _| *parent != surface && *child != surface);
-            record_observation(
-                j,
-                surface,
-                "exited",
-                cause,
-                "Process ended; success is not inferred",
-            )?;
-            let current = observed_identity(j, surface);
-            for sub in j
-                .subscriptions
-                .values_mut()
-                .filter(|s| s.active && s.child == surface && s.matches_child(&current))
-            {
-                sub.active = false;
-                sub.reason = "target_exited".into();
-            }
-            let ids: Vec<_> = j
-                .subscriptions
-                .values()
-                .filter(|s| s.parent == surface && s.parent_session == current.hook_session)
-                .map(|s| s.id)
-                .collect();
-            for id in ids {
-                j.close_subscription(id, "parent_closed");
-            }
-            j.sessions.remove(&surface);
-            j.ended_sessions.remove(&surface);
-            for b in j.bindings.values_mut().filter(|b| {
-                b.surface == surface
-                    && b.hook_session == current.hook_session
-                    && b.phase != "superseded"
-            }) {
-                b.phase = "unbound".into();
-                b.diagnostic = "parent_closed".into();
-            }
-            Ok(())
-        })
-    }
     pub fn retry(&self, id: u64, parent: u32) -> Result<()> {
         self.change(|j| {
+            if j.events.get(&id).is_some_and(|event| j.close_blocks_subscription(event.subscription)) {
+                bail!("close_persistence_pending");
+            }
             let e = j
                 .events
                 .get_mut(&id)
@@ -275,6 +242,9 @@ pub(super) fn record_observation(
     cause: &str,
     summary: &str,
 ) -> Result<()> {
+    if j.close_blocks_surface(child) {
+        return Ok(());
+    }
     if !matches!(
         state,
         "active" | "idle" | "needs_input" | "stalled" | "exited"
@@ -371,4 +341,43 @@ fn enqueue(
             summary: summary.chars().take(4096).collect(),
         },
     );
+}
+
+pub(super) fn close_transition(j: &mut Journal, surface: u32, cause: &str) -> Result<()> {
+    j.live_relations
+        .retain(|(parent, child), _| *parent != surface && *child != surface);
+    record_observation(
+        j,
+        surface,
+        "exited",
+        cause,
+        "Process ended; success is not inferred",
+    )?;
+    let current = observed_identity(j, surface);
+    for sub in j
+        .subscriptions
+        .values_mut()
+        .filter(|s| s.active && s.child == surface && s.matches_child(&current))
+    {
+        sub.active = false;
+        sub.reason = "target_exited".into();
+    }
+    let ids: Vec<_> = j
+        .subscriptions
+        .values()
+        .filter(|s| s.parent == surface && s.parent_session == current.hook_session)
+        .map(|s| s.id)
+        .collect();
+    for id in ids {
+        j.close_subscription(id, "parent_closed");
+    }
+    j.sessions.remove(&surface);
+    j.ended_sessions.remove(&surface);
+    for b in j.bindings.values_mut().filter(|b| {
+        b.surface == surface && b.hook_session == current.hook_session && b.phase != "superseded"
+    }) {
+        b.phase = "unbound".into();
+        b.diagnostic = "parent_closed".into();
+    }
+    Ok(())
 }

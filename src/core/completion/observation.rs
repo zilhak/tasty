@@ -3,6 +3,7 @@ use crate::core::CoreState;
 impl CoreState {
     pub(crate) fn reconcile_completions(&self) {
         let result = (|| -> anyhow::Result<()> {
+            self.publish_completion_ownership()?;
             let snapshot = self.completion.snapshot()?;
             let live = self.live_surface_ids();
             for binding in snapshot

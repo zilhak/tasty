@@ -3,6 +3,10 @@ mod actions;
 #[cfg(test)]
 mod callback_tests;
 mod callbacks;
+mod close_effects;
+mod close_recovery;
+#[cfg(test)]
+mod close_tests;
 mod deadline;
 mod diagnostics;
 mod history;
@@ -11,6 +15,7 @@ mod identity;
 mod late_identity_tests;
 mod model;
 mod observation;
+mod ownership;
 mod protocol;
 #[cfg(test)]
 mod relation_tests;
@@ -30,6 +35,8 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 pub struct Completion {
     inner: Mutex<(Connection, Journal)>,
+    live_owners:
+        Mutex<std::collections::BTreeMap<usize, (Weak<()>, std::collections::HashSet<u32>)>>,
 }
 impl Completion {
     pub fn memory() -> Result<Arc<Self>> {
@@ -37,6 +44,7 @@ impl Completion {
     }
     fn open_connection(connection: Connection) -> Result<Arc<Self>> {
         connection.execute_batch("PRAGMA locking_mode=EXCLUSIVE; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS completion_journal (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);")?;
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS completion_closures (id TEXT PRIMARY KEY, body TEXT NOT NULL);")?;
         let body: Option<String> = connection
             .query_row("SELECT body FROM completion_journal WHERE id=1", [], |r| {
                 r.get(0)
@@ -46,6 +54,15 @@ impl Completion {
             .map(|s| serde_json::from_str(&s))
             .transpose()?
             .unwrap_or_default();
+        {
+            let mut statement = connection.prepare("SELECT body FROM completion_closures")?;
+            for body in statement.query_map([], |row| row.get::<_, String>(0))? {
+                let mut task: close_effects::CloseTask = serde_json::from_str(&body?)?;
+                task.durable = true;
+                task.retry_at = 0;
+                journal.pending_closes.insert(task.id.clone(), task);
+            }
+        }
         if journal.instance.is_empty() {
             journal.instance =
                 connection.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))?;
@@ -88,6 +105,7 @@ impl Completion {
         journal.error_observers.clear();
         let service = Arc::new(Self {
             inner: Mutex::new((connection, journal)),
+            live_owners: Mutex::default(),
         });
         service.change(|_| Ok(()))?;
         Ok(service)
@@ -117,12 +135,15 @@ impl Completion {
         Ok(service)
     }
     pub fn snapshot(&self) -> Result<Journal> {
-        Ok(self
+        let guard = self
             .inner
             .lock()
-            .map_err(|_| anyhow::anyhow!("completion journal poisoned"))?
-            .1
-            .clone())
+            .map_err(|_| anyhow::anyhow!("completion journal poisoned"))?;
+        let mut snapshot = guard.1.clone();
+        for task in guard.1.pending_closes.values() {
+            task.project(&mut snapshot);
+        }
+        Ok(snapshot)
     }
     pub fn change<T>(&self, f: impl FnOnce(&mut Journal) -> Result<T>) -> Result<T> {
         let mut guard = self

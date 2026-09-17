@@ -41,11 +41,12 @@ fn text<'a>(params: &'a Value, name: &str) -> Result<&'a str> {
         .with_context(|| format!("missing {name}"))
 }
 fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
+    engine.publish_completion_ownership()?;
     let action = text(params, "action")?;
     if matches!(action, "status" | "diagnose") && params["all"] == true {
         let j = engine.completion.snapshot()?;
         return Ok(
-            json!({"sessions":j.sessions,"bindings":j.bindings.into_values().collect::<Vec<_>>(),"subscriptions":j.subscriptions.into_values().collect::<Vec<_>>(),"events":j.events.into_values().collect::<Vec<_>>(),"scope":"host journal including closed parents"}),
+            json!({"sessions":j.sessions,"bindings":j.bindings.into_values().collect::<Vec<_>>(),"subscriptions":j.subscriptions.into_values().collect::<Vec<_>>(),"events":j.events.into_values().collect::<Vec<_>>(),"pending_closes":j.pending_closes,"scope":"host journal including closed parents"}),
         );
     }
     let surface = number(params, "surface")?;
@@ -95,7 +96,7 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
             if mode == "spawn" && engine.child_terminals.parent_of_child(target) != Some(surface) {
                 bail!("child_relation_required");
             }
-            let id = service.subscribe_wait(
+            let id = service.subscribe_live(
                 surface,
                 target,
                 text(params, "kind")?,
@@ -210,7 +211,7 @@ fn execute(engine: &mut CoreState, params: &Value) -> Result<Value> {
                 .filter(|b| b.surface == surface)
                 .collect();
             Ok(
-                json!({"session":j.sessions.get(&surface),"bindings":bindings,"subscriptions":subscriptions,"events":events,"transport":"existing endpoint only; no PTY fallback","consumption":"not observable from acceptance alone","capabilities":{"experimentalApi":true,"optOutNotificationMethods":[],"reason":"server/diagnostics identity verification and history recovery","toolOutput":"support determined by each send response; binding alone does not prove support","history":"actual historyMode and page results are retained in event recovery","subscription":"thread/resume on each connection; disconnected gaps require history reconciliation"}}),
+                json!({"pending_closes":j.pending_closes,"session":j.sessions.get(&surface),"bindings":bindings,"subscriptions":subscriptions,"events":events,"transport":"existing endpoint only; no PTY fallback","consumption":"not observable from acceptance alone","capabilities":{"experimentalApi":true,"optOutNotificationMethods":[],"reason":"server/diagnostics identity verification and history recovery","toolOutput":"support determined by each send response; binding alone does not prove support","history":"actual historyMode and page results are retained in event recovery","subscription":"thread/resume on each connection; disconnected gaps require history reconciliation"}}),
             )
         }
         "retry" => {

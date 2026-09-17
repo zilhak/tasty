@@ -1440,7 +1440,7 @@ impl AppState {
         use std::time::Instant;
         sums.surfaces += 1;
         if let Err(error) = engine.completion.exited(surface_id, "surface_closed") {
-            tracing::warn!("completion close persistence failed: {error}");
+            tracing::warn!("completion close queued for recovery; persistence pending: {error}");
         }
 
         let t = Instant::now();

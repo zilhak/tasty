@@ -125,3 +125,13 @@ child-profile의 await_session tell은 같은 UUID의 SessionStart가 돌아와�
 ## 프레임 수신 시간 제한
 
 3초 I/O 예산은 WebSocket 메시지 바깥의 반복문뿐 아니라 소켓 Read/Write마다 남은 절대 시간으로 적용한다. TCP/TLS는 TLS 아래의 raw TCP stream을 감싸고 Unix도 같은 경계를 사용하므로, 유효한 continuation이나 부분 TLS 입력이 도착해도 예산을 연장하지 않는다. RPC 응답의 5초 마감은 다음 수신에 전달해 notification마다 새로 시작하지 않는다. 프레임·누적 메시지는 각각 8MiB로 제한한다. 한 endpoint의 미완성 응답이 시간 초과하면 단일 worker는 다음 부모를 처리한다.
+
+## Surface 종료 저장과 복구
+
+spawn/tell 구독은 각 window가 발행한 live target 소유 목록을 확인한 뒤 생성한다. stale child registry만으로 닫힌 대상에 새 구독을 만들지 않는다. 각 window는 자기 목록만 갱신하고 실제 close는 해당 ID를 공용 live 목록에서 제거한다. 다른 window의 child가 로컬 목록에 없다는 이유로 종료를 합성하거나 구독을 닫지 않는다.
+
+실제 close는 종료 당시의 논리 session, 구독 ID, binding 세대와 관계 세대를 캡처한 작업을 `completion_closures`에 먼저 저장한다. 주 journal 반영과 작업 삭제는 같은 SQLite transaction이다. journal 저장이 실패해도 사용자 surface close를 되돌리지 않으며, 작업은 `pending_closes`에 error/attempts/retry_at/durable과 함께 남는다. `surface.close` 응답의 `completion_cleanup`은 `complete`, `pending`, `status_unavailable`을 구별한다.
+
+저장 대기 중인 구독은 조회 시 inactive/close_persistence_pending으로 나타나고, 해당 실행의 새 관측·구독·미송신 재시도·sender claim은 보류된다. 기존 accepted/unknown/in-flight 상태는 취소나 자동 재송신으로 바꾸지 않는다. worker는2초부터60초 상한 backoff로 재처리한다. 저장이 회복되면 캡처한 원 구독에 종료를 반영하고 종료 이벤트를 한 번만 기록한다. 부모 close의 미송신 결과 취소와 child close의 기존 영속 사실 전달 정책은 유지한다.
+
+재시작 때 영속 종료 작업을 다시 읽고 주소가 재사용돼도 캡처한 구독 ID와 session/binding 세대만 처리한다. 다른 window의 live 목록에 없다는 이유로 종료를 합성하지 않는다. 종료 intent 저장 자체도 실패한 경우에는 durable=false로 명시하고 현재 process에서 송신을 막은 채 저장부터 재시도한다. 이 상태는 영속 완료가 아니며, 어떤 저장도 불가능한 상태에서 강제 종료된 기록까지 복원한다고 보장하지 않는다.

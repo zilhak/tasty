@@ -28,6 +28,9 @@ impl Completion {
     pub fn bind_register(&self, mut binding: Binding, register: bool) -> Result<()> {
         transport::validate_endpoint(&binding.endpoint)?;
         self.change(|j| {
+            if j.close_blocks_surface(binding.surface) {
+                bail!("close_persistence_pending");
+            }
             if register {
                 register_session(j, binding.surface, "codex", &binding.hook_session)?;
                 j.sessions

@@ -37,6 +37,8 @@
 
 ### Fixed
 
+- Closed child surfaces reject new completion subscriptions even when their registry entry has not yet been reconciled. Surface close persists execution-scoped cleanup work separately from the completion journal, exposes pending storage recovery, and retries it across restart without cancelling accepted or uncertain results or inferring closure from another window's live set.
+
 - Releasing a restored child relationship now rechecks confirmed parent and child identities in the same journal transaction. Late registration no longer requires a second watch before old subscriptions can be released.
 
 - Releasing a positively identified restored child relationship now closes both its old and new completion watches, including legacy journals. New spawn/adopt relationships remain separate.
