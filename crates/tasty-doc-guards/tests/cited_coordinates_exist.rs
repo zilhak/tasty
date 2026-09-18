@@ -104,6 +104,12 @@ const PRUNE_DIRS: &[&str] = &[
     "dist",
     ".worktree",
     ".git",
+    ".idea",
+    // 개발자별 도구 캐시 — `.idea` 와 같은 부류다. 커밋되지 않지만 레포 안에 놓이고,
+    // 도구가 제 판단 근거를 md 로 적어 두므로 이 가드의 그물에 걸린다. `git` 에 묻지
+    // 않는 것이 이 가드의 설계라(ADR-0096) 이름으로 쳐낸다.
+    ".serena",
+    ".playwright-mcp",
     "node_modules",
     "_site",
     // Astro 의 자체 캐시 — `astro dev` 를 한 번이라도 돌린 트리에만 있고 gitignored 다.
@@ -1109,6 +1115,10 @@ fn a_build_dir_under_another_name_is_still_pruned() {
 /// 들어올 때마다 낡는다. 형식 단위면 평범한 작업으로는 안 낡고, **새 형식이 들어올
 /// 때만** 빨개져 판단을 요구한다.
 const UNJUDGED_FORMS: &[(&str, &str)] = &[
+    (
+        "DS_Store",
+        "주석 문법이 없다 — Finder 가 폴더마다 남기는 바이너리 메타데이터다",
+    ),
     ("json", "주석 문법이 없다 — 데이터다"),
     ("txt", "주석 문법이 없다 — 데이터·픽스처다"),
     ("rtf", "주석 문법이 없다 — 서식 문서다"),

@@ -118,6 +118,11 @@ const PRUNE_DIRS: &[&str] = &[
     ".worktree",
     ".git",
     ".idea",
+    // 개발자별 도구 캐시 — `.idea` 와 같은 부류다. 커밋되지 않지만 레포 안에 놓이고,
+    // 도구가 제 판단 근거를 md 로 적어 두므로 이 가드의 그물에 걸린다. `git` 에 묻지
+    // 않는 것이 이 가드의 설계라(ADR-0096) 이름으로 쳐낸다.
+    ".serena",
+    ".playwright-mcp",
     "node_modules",
     "assets",
 ];
