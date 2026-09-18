@@ -320,7 +320,7 @@ cargo build --release -p my-plugin
 tasty plugin install ./          # 매니페스트 권한 자동 grant + spawn
 ```
 
-**워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 워크스페이스 빌드 시 호스트가 부팅에 자동 sync(`ensure_dev_bundle` → `install_builtins_if_needed`). 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
+**워크스페이스 내 번들 플러그인 개발**: `BUILTINS`(`crates/tasty-host-plugin/src/builtin.rs`) 등록 플러그인은 debug 빌드에서만 호스트가 부팅에 workspace→bundle 자동 sync(`ensure_dev_bundle`)한다. release/dist 는 `just build --release` 또는 해당 프로필의 `just build-plugins` 로 미리 스테이징해야 한다. bundle→설치 디렉터리 sync(`install_builtins_if_needed`)는 모든 프로필에서 유지된다. 단 루트 `cargo build` 는 본 바이너리만 빌드하므로 플러그인 변경은 `cargo build -p <crate>` 또는 `--workspace` 필요. **부팅 없이, 실행 중인 tasty 에 플러그인 변경만 반영하는 절차(호스트 재빌드·재시작 불필요)는 아래 §9.1.**
 
 디버깅: `tasty plugin logs <id> --follow` / `~/.tasty/plugins-logs/<id>.log` / `RUST_LOG=debug`.
 
@@ -335,14 +335,15 @@ tasty plugin install ./          # 매니페스트 권한 자동 grant + spawn
 # 개발 중이면 보통 target/release/tasty → 이하 예시도 --release.
 ```
 
-**1) 그 프로필로 플러그인만 빌드**
+**1) 그 프로필로 플러그인 빌드·스테이징**
 ```bash
-cargo build --release -p tasty-plugin-<name>      # 실행 중 tasty 와 같은 프로필
+PROFILE=release just build-plugin <name>       # 실행 중 tasty 와 같은 프로필
 ```
 
-**2) 재서명 (release/dist 호스트는 매니페스트 서명을 검증)** — 안 하면 다음 단계가 `untrusted: UnknownKey` 로 skip. debug 호스트는 서명 안 보므로 불필요.
+**2) 재서명 (release/dist 호스트는 매니페스트 서명을 검증)** — 안 하면 다음 단계가 `untrusted: UnknownKey` 로 skip. debug 호스트는 서명 안 보므로 불필요. 단일 `build-plugin` 은 서명을 복사하지 않으므로 서명 후 번들에도 명시적으로 배치한다. release/dist 의 `upgrade-builtins` 는 workspace 소스를 읽지 않는다.
 ```bash
 ./scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --manifest crates/tasty-plugin-<name>/tasty-plugin.toml
+cp crates/tasty-plugin-<name>/tasty-plugin.toml.sig target/release/builtin-plugins/<manifest-id>/tasty-plugin.toml.sig
 ```
 
 **3) 정지 → 재동기화 → 재기동 (순서 중요)**

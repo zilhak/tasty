@@ -231,8 +231,8 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 `target/debug/tasty-plugin-<name>` 의 mtime 이 그대로다. `cargo build --workspace` 나
 `cargo build -p tasty-plugin-<name>` 은 다시 만든다.
 
-여기에 스테이징이 겹친다. host 는 **부팅할 때** `copy_if_newer` 로
-`target/<profile>/builtin-plugins/` 를 갱신하고 거기서 `<TASTY_HOME>/plugins/` 로
+여기에 스테이징이 겹친다. host 는 **debug 빌드에서 부팅할 때만** `copy_if_newer` 로
+`target/debug/builtin-plugins/` 를 갱신한다. release/dist 는 빌드 단계에서 스테이징한다. 모든 프로필은 번들에서 `<TASTY_HOME>/plugins/` 로
 sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 그 스테이징 판정은 2026-09-07 부터
 **내용**이다 — 내용이 다르면 옮기고 같으면 안 옮기며 **시각이 같아도 내용을 본다.** 그래서
 "시각이 같아 조용히 건너뛴다" 는 갈래는 닫혔다.

@@ -3,7 +3,7 @@
 //! Tasty는 일부 plugin (예: explorer, codex)을 본 바이너리와 함께 배포한다. 이들은:
 //!
 //! 1. **번들 위치**에서 디스커버됨 — 배포 패키지(release/dist): 실행 파일 옆
-//!    `plugins/` 디렉터리, workspace 빌드(debug/release 무관): workspace 를 자동
+//!    `plugins/` 디렉터리, debug workspace 빌드: workspace 를 자동
 //!    탐색해 `target/<profile>/builtin-plugins/`를 채움 (`ensure_dev_bundle`).
 //! 2. **첫 실행 시** `~/.tasty/plugins/<id>/`에 복사됨 — 사용자가 손댈 수 있는
 //!    실제 설치 위치는 사용자 디렉터리 한 곳뿐. `plugins.toml`의
@@ -298,10 +298,9 @@ fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// - 둘째 (macOS 한정): `.app` 번들의 `Contents/Resources/plugins/`.
 /// - 셋째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사,
 ///   portable .tar.gz / .zip 설치).
-/// - 넷째: workspace 빌드일 때 자동 탐색 — `target/<profile>/builtin-plugins/`에
-///   각 builtin plugin의 매니페스트와 빌드된 바이너리를 mtime 비교 후 갱신.
-///   `cargo build [--release] --workspace` 후 실행하면 자동 반영됨. workspace 가
-///   없는 배포 패키지에서는 앞선 항목에서 이미 반환되어 여기 도달하지 않는다.
+/// - 넷째: 실행 파일 옆 `builtin-plugins/`. debug 에서만 workspace 원본을
+///   mtime 및 동률 시 내용 비교로 동기화한다. release/dist 는 빌드 단계가 스테이징한 번들을
+///   그대로 사용하며, 시작 시 workspace 원본을 복사하지 않는다.
 /// - 다섯째 (linux 한정): FHS 표준 경로 `/usr/lib/tasty/plugins/`,
 ///   `/usr/share/tasty/plugins/` — `.deb` / `.rpm` 패키지가 `/usr/bin/tasty` 옆이
 ///   아닌 FHS 친화 위치에 plugin 을 설치한다. exe-relative 보다 우선순위가
@@ -333,7 +332,10 @@ pub fn bundle_root() -> Option<PathBuf> {
 /// `current_exe()` 실패 (테스트 환경 등) 가 전체 None 으로 단락되지 않도록.
 fn bundle_root_exe_relative() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
+    bundle_root_from_exe_dir(exe.parent()?)
+}
+
+fn bundle_root_from_exe_dir(exe_dir: &Path) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         // .app 번들: `Contents/Resources/plugins/`. exe 옆(`Contents/MacOS/`)이
@@ -357,7 +359,11 @@ fn bundle_root_exe_relative() -> Option<PathBuf> {
     if next_to_exe.is_dir() {
         return Some(next_to_exe);
     }
-    if let Some(dev) = ensure_dev_bundle(exe_dir) {
+    // Release bundles pair signed manifests with build-time artifacts.
+    // Never replace individual files from a subsequently edited workspace.
+    if cfg!(debug_assertions)
+        && let Some(dev) = ensure_dev_bundle(exe_dir)
+    {
         return Some(dev);
     }
     let dev_bundle = exe_dir.join("builtin-plugins");
@@ -367,9 +373,9 @@ fn bundle_root_exe_relative() -> Option<PathBuf> {
     None
 }
 
-/// workspace 빌드(debug/release 무관)에서 workspace를 자동 탐색하여
+/// debug workspace 빌드에서 workspace를 자동 탐색하여
 /// `target/<profile>/builtin-plugins/`에 등록된 builtin plugin들의
-/// manifest+binary+lang을 동기화. mtime이 더 새것일 때만 복사하므로 매 부팅 비용은
+/// manifest+binary+lang을 동기화. mtime 및 동률 시 내용 비교로 복사하므로 매 부팅 비용은
 /// 작다. 한 plugin이라도 동기화에 성공했으면 Some(bundle_root). workspace를 못 찾으면
 /// (= 배포 패키지처럼 `crates/`가 없으면) `sync_builtin_dev`가 전부 false 를 반환하여
 /// None. 따라서 진짜 배포본에서는 자연히 no-op.
@@ -400,7 +406,7 @@ fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
 
 /// 한 builtin plugin을 dev bundle로 동기화. 바이너리 또는 매니페스트가
 /// workspace에 없으면 (예: codex만 빌드 안 됨, 또는 배포 패키지라 `crates/`가 아예
-/// 없음) false 반환. 이 가드가 release 빌드에서도 배포본을 안전하게 만든다.
+/// 없음) false 반환. release/dist 는 이 경로를 호출하지 않는다.
 fn sync_builtin_dev(
     workspace: &Path,
     exe_dir: &Path,
@@ -454,9 +460,8 @@ fn dev_sync_step<T>(op: impl FnOnce() -> std::io::Result<T>, msg: impl FnOnce() 
 }
 
 /// 매니페스트 서명 sidecar(.sig)가 있으면 함께 동기화한다. 없으면 (미서명 dev
-/// workspace) skip — debug 빌드는 trust gate 를 우회하므로 무방하지만,
-/// release/dist 산출물을 *직접 실행* 할 때는 sign-bundle.sh 로 생성된 .sig 가
-/// bundle 에 있어야 install 후 trust gate(임베드 dev-pubkey)를 통과한다.
+/// workspace) skip — debug 빌드는 trust gate 를 우회하므로 무방하다.
+/// release/dist 의 서명 스테이징은 빌드 단계가 담당한다.
 /// 복사 실패는 비치명 (debug 는 어차피 우회) 이므로 warn 만 남긴다.
 fn sync_builtin_dev_sig(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) {
     let src_sig = crate_dir.join("tasty-plugin.toml.sig");
@@ -1571,6 +1576,9 @@ fn fill(f: &mut std::fs::File, buf: &mut [u8]) -> std::io::Result<usize> {
     }
     Ok(filled)
 }
+
+#[cfg(test)]
+mod bundle_selection_tests;
 
 #[cfg(test)]
 mod tests {
