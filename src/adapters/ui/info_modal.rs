@@ -160,11 +160,24 @@ pub fn draw_info_modal(
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 
-    ui.label(
-        egui::RichText::new(&current.body)
-            .color(th.text_primary())
-            .size(th.font_size_body.value()),
-    );
+    // 본문은 **스크롤한다** — 버튼 행이 밀려나지 않게 `FOOTER_ROOM` 만큼을 먼저 뗀다.
+    // `info_modal_sizer` 의 높이는 글자 수 추정(60자/줄)이라 실제 줄바꿈과 어긋난다.
+    // 한글처럼 440px 폭에서 60자보다 훨씬 일찍 줄이 넘어가는 본문은 추정치를 넘겨
+    // 흘러넘쳤고, 그러면 아래에서 bottom-up 으로 쌓는 [확인]·[설정 열기] 가 프레임
+    // 밖으로 나가 **닫기(X) 말고는 아무것도 누를 수 없는 안내**가 된다. 추정 상수를
+    // 손보는 것은 언어마다 다시 틀리므로, 넘치면 스크롤되게 해 실패 자체를 없앤다.
+    let body_max_h = (ui.available_height() - FOOTER_ROOM.value()).max(0.0);
+    egui::ScrollArea::vertical()
+        .max_height(body_max_h)
+        .auto_shrink([false, true])
+        .drag_to_scroll(false)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(&current.body)
+                    .color(th.text_primary())
+                    .size(th.font_size_body.value()),
+            );
+        });
 
     let mut confirm =
         ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));

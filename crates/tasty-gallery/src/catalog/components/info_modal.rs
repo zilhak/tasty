@@ -7,7 +7,10 @@
 //! - **frame**: 폭 `DEFAULT_WIDTH` 440, 높이는 body 길이로 산출해 140..360 clamp.
 //!   제목은 큐 head 의 `title` 이 **타이틀바**에 실린다(`PopupDef.title_fn`).
 //! - **body**: 콘텐츠 영역 좌우 8 / 상하 4 inset(`ContentInset::INSET` 과 동일)
-//!   안에 `font_size_body` `text_primary` 산문 한 덩어리.
+//!   안에 `font_size_body` `text_primary` 산문 한 덩어리. **세로 스크롤한다** —
+//!   높이 산출이 글자 수 추정이라 실제 줄바꿈과 어긋나고, 어긋나도 프레임은
+//!   360 에서 잘리므로 긴 본문은 어차피 넘친다. 스크롤이 없으면 넘친 만큼이
+//!   아래 footer 를 프레임 밖으로 밀어낸다.
 //! - **footer**: `bottom_up(RIGHT)` 로 바닥에 붙이고 `spacing_xs` 여백 뒤
 //!   `right_to_left` — **[OK] 가 가장 오른쪽**, 추가 버튼이 그 왼쪽에 붙는다.
 //!   추가 버튼은 OS 설정 패널로 보내는 안내(macOS Full Disk Access)처럼
@@ -57,11 +60,20 @@ fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Optio
         // 뷰포트를 점유하는 centered 표면 → modal 그림자(ADR-0254).
         Some(theme.shadow_modal()),
         |ui| {
-            ui.label(
-                egui::RichText::new(body)
-                    .size(theme.font_size_body.value())
-                    .color(theme.text_primary().to_egui()),
-            );
+            // 본체와 같은 규칙 — 본문이 넘치면 스크롤하고 버튼 행은 자리를 지킨다.
+            let footer_h =
+                (theme.item_height_interactive + theme.spacing_lg + theme.spacing_xs).value();
+            egui::ScrollArea::vertical()
+                .max_height((ui.available_height() - footer_h).max(0.0))
+                .auto_shrink([false, true])
+                .drag_to_scroll(false)
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(body)
+                            .size(theme.font_size_body.value())
+                            .color(theme.text_primary().to_egui()),
+                    );
+                });
             ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
                 ui.add_space(theme.spacing_xs.value());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
