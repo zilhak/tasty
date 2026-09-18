@@ -14,13 +14,18 @@
 //!
 //! **표시되는 상태는 추정이다** — Full Disk Access 보유 여부를 묻는 공개 API 가 없어
 //! "그 권한으로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신한다. 그래서 이 값으로
-//! 어떤 기능도 막지 않고, 화면에도 단정하지 않는 문구로 표시한다.
+//! 어떤 기능도 막지 않고, 화면에도 단정하지 않는 문구로 표시한다. 그 경로가 아예 없어
+//! 판정할 근거가 없는 경우는 "허용 안 됨" 이 아니라 **확인 불가**로 따로 보여준다 —
+//! 없는 근거를 미승인으로 적으면 승인을 가진 사용자에게 거짓을 말하게 된다.
+//!
+//! **부팅 안내를 끄는 토글은 없다.** 안내는 승인이 없는 동안 부팅마다 뜨고, 끄는 방법은
+//! 권한을 주는 것이다 — 껐다는 기록을 두면 그 뒤 승인이 사라져도 영영 조용해진다
+//! (`crates/tasty-platform/src/macos_permissions.rs` 의 `should_show_fda_notice` 참고).
 
 use crate::i18n::t;
-use crate::settings::Settings;
 use tasty_ui_widgets::vspace;
 
-pub fn draw_macos_permissions_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+pub fn draw_macos_permissions_tab(ui: &mut egui::Ui) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
 
@@ -29,8 +34,8 @@ pub fn draw_macos_permissions_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             ui.label(t("settings.macos_permissions.full_disk_access_label"));
-            ui.label(status_text(
-                crate::macos_permissions::full_disk_access_likely(),
+            ui.label(fda_status_text(
+                crate::macos_permissions::full_disk_access_state(),
             ));
             ui.end_row();
 
@@ -63,19 +68,25 @@ pub fn draw_macos_permissions_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     {
         crate::macos_permissions::open_full_disk_access_settings();
     }
+}
 
-    vspace(ui, th.spacing_sm);
-    // 저장값은 "이미 안내했다" 라 화면 문구와 방향이 반대다 — 체크박스는 "띄운다"
-    // 쪽으로 두는 편이 읽기 쉬워서 여기서 뒤집는다.
-    let mut show_notice = !settings.general.macos_fda_notice_shown;
-    if ui
-        .checkbox(
-            &mut show_notice,
-            t("settings.macos_permissions.show_boot_notice"),
-        )
-        .changed()
-    {
-        settings.general.macos_fda_notice_shown = !show_notice;
+/// Full Disk Access 전용 — 3 상태라 `status_text` 의 bool 로는 못 적는다.
+fn fda_status_text(access: crate::macos_permissions::FullDiskAccess) -> egui::RichText {
+    use crate::macos_permissions::FullDiskAccess;
+    let th = crate::theme::theme();
+    match access {
+        FullDiskAccess::Granted => {
+            egui::RichText::new(t("settings.macos_permissions.status_granted"))
+                .color(th.accent_success().to_egui())
+        }
+        FullDiskAccess::Denied => {
+            egui::RichText::new(t("settings.macos_permissions.status_missing"))
+                .color(th.text_muted().to_egui())
+        }
+        FullDiskAccess::Unknown => {
+            egui::RichText::new(t("settings.macos_permissions.status_unknown"))
+                .color(th.text_muted().to_egui())
+        }
     }
 }
 

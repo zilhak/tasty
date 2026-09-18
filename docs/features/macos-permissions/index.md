@@ -92,13 +92,17 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 **추정 방법과 그 한계** — FDA 로만 읽히는 것으로 알려진 경로(`/Library/Application Support/com.apple.TCC/TCC.db`, 보조로 사용자 홈의 같은 경로)를 열어본다. 그 경로는 거부될 때 **프롬프트 없이 조용히** `EPERM` 을 내므로 안전하게 시도할 수 있다. 다만 이는 공개 API 가 아니라 우회 판정이며, macOS 가 그 경로의 보호 정책을 바꾸면 **오탐**이 난다. 그래서 이 값은 **안내를 띄울지 여부에만** 쓰고 어떤 기능도 이 값으로 막지 않는다.
 
-**안내 방식** — 부팅 시 FDA 가 없어 보이면 InfoModal 을 **평생 1 회** 띄우고, 띄운 사실을 `general.macos_fda_notice_shown` 에 즉시 기록한다. 모달에는 시스템 설정의 전체 디스크 접근 권한 패널을 여는 버튼(`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`, `open(1)` 로 실행)이 붙는다. 다시 보려면 설정 > 일반 > 권한의 토글을 켠다 — 오탐으로 안내가 떴을 때의 탈출구이자, 나중에 다시 보고 싶을 때의 경로다.
+**판정은 2 상태가 아니라 3 상태다** (`FullDiskAccess::{Granted, Denied, Unknown}`). 열리면 보유, **거부(`PermissionDenied`)면 미보유**, 그 외(경로 자체가 없는 등)는 **판정 불가**다. `NotFound` 를 미보유로 접으면 안 되는 이유는 안내가 부팅마다 뜨고 끄는 토글이 없기 때문이다 — macOS 가 그 파일을 옮기거나 없애는 순간 **승인을 가진 사용자 전원에게** 안내가 영구히 뜬다. 가정이 아니다: 보조 경로인 사용자 홈의 `Library/Application Support/com.apple.TCC/TCC.db` 는 이미 존재하지 않는 macOS 가 있다(실측 Darwin 27).
+
+**안내 방식** — 부팅 시 판정이 `Denied` 면 InfoModal 을 띄운다. 모달에는 시스템 설정의 전체 디스크 접근 권한 패널을 여는 버튼(`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`, `open(1)` 로 실행)이 붙는다.
+
+**"띄웠다" 를 기록하지 않는다.** 상태를 부팅마다 다시 재고, 그 판정만으로 띄울지 정한다 — 파일 pre-warm 이 "첫 실행" 플래그를 두지 않는 것과 같은 규율이다. 기록하면 그 뒤에 승인이 사라진 경우(ad-hoc 서명 빌드를 재빌드해 앱 identity 가 바뀌거나, 사용자가 목록에서 빼거나, `tccutil reset`) 원인도 모른 채 영영 조용해진다. 승인을 주면 다음 부팅부터 저절로 안 뜨므로, 안내를 끄는 방법은 권한을 주는 것 하나다. 끄는 토글은 두지 않는다 — 껐다는 기록이 곧 위의 어긋남을 되살린다.
 
 **안내 문구가 지켜야 할 것** — FDA 는 파일 접근 프롬프트만 없앤다. **Automation(다른 앱 제어) · 화면 기록 · 손쉬운 사용은 FDA 와 별개 TCC 서비스라 그대로 남는다.** 문구가 "모든 프롬프트가 사라진다" 로 읽히면 안 된다. 또 ad-hoc 서명 빌드는 재빌드마다 다른 앱으로 인식돼 FDA 가 초기화되므로, 직접 빌드하는 사용자에게 `Tasty Dev` 인증서 서명이 선행 조건임을 함께 알린다([build.md](../../dev-guide/build.md) 참조).
 
 ### 설정 탭 (일반 > 권한)
 
-macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기, 부팅 안내 재표시 토글을 담는다. 부팅 안내를 지나쳤거나 껐어도 여기서 현재 상태를 볼 수 있다.
+macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기를 담는다. 부팅 안내를 지나쳤어도 여기서 현재 상태를 볼 수 있다. FDA 행은 3 상태를 그대로 보여준다 — 허용됨 / 허용 안 됨 / **확인 불가**. 판정 근거가 없는 상태를 "허용 안 됨" 으로 적으면 승인을 가진 사용자에게 거짓을 말하게 된다.
 
 **손쉬운 사용 상태 행은 debug 빌드에만 있다.** release 에는 이 권한을 소비하는 코드가 없어 프롬프트도 띄우지 않으므로, 행을 남기면 켤 이유도 끌 이유도 없는 항목이 영구히 "미승인" 으로 보인다. debug 빌드에서는 주입 경로를 자기검증할 때 승인 상태를 확인할 자리가 필요해 그대로 둔다.
 
@@ -128,9 +132,12 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA �
 - Given 프롬프트를 모두 허용 When 터미널에서 `ls ~/Downloads; ls ~/Documents; ls ~/Desktop` Then 추가 프롬프트가 뜨지 않는다
 - Given 화면 기록 권한 미결정 When Tasty 실행 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
 - Given 화면 기록 권한을 거부한 뒤 재실행 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)
-- Given 이미 안내함(`macos_fda_notice_shown` = true) When 부팅 Then FDA 안내를 띄우지 않는다
-- Given 아직 안내 안 함 + FDA 가 있어 보임 When 부팅 Then FDA 안내를 띄우지 않는다
-- Given 아직 안내 안 함 + FDA 가 없어 보임 When 부팅 Then FDA 안내를 1 회 띄우고 표시 기록을 남긴다
+- Given FDA 프로브 경로가 열림 When 부팅 Then FDA 안내를 띄우지 않는다
+- Given FDA 프로브가 `PermissionDenied` 로 거부됨 When 부팅 Then FDA 안내를 띄운다 — 몇 번째 부팅인지는 보지 않는다
+- Given FDA 프로브 경로가 하나도 존재하지 않음(`NotFound`) When 부팅 Then 판정 불가로 보고 안내를 띄우지 않는다
+- Given 안내를 본 뒤 권한을 부여 When 재부팅 Then 안내가 뜨지 않는다
+- Given 안내를 본 뒤 권한을 주지 않음 When 재부팅 Then 안내가 다시 뜬다
+- Given ad-hoc 서명 빌드에 FDA 를 준 뒤 재빌드 When 부팅 Then 승인이 초기화돼 안내가 다시 뜬다
 - Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다
 - Given 손쉬운 사용 권한 미결정 When debug 빌드 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
 - Given 손쉬운 사용 권한 미결정 When release 빌드 실행 Then 손쉬운 사용 프롬프트가 뜨지 않는다(요청 자체가 없다)

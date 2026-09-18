@@ -348,55 +348,71 @@ fn fda_probe_paths(home: Option<&Path>) -> Vec<PathBuf> {
     paths
 }
 
-/// 부팅 안내를 띄울지 결정하는 **순수** 규칙 — 아직 안내한 적이 없고 FDA 가 없어
-/// 보일 때만 띄운다.
+/// FDA 판정 결과. **3 상태다** — 보유·미보유 외에 **판정 불가**를 따로 둔다.
 ///
-/// 추정이 틀릴 수 있으므로(아래 `full_disk_access_likely` 참고) 이 값은 **안내 표시
-/// 여부에만** 쓰고 기능 분기에는 쓰지 않는다. 오탐으로 안내가 떠도 평생 1 회이며,
-/// 설정에서 다시 켤 수 있다.
-#[cfg(any(target_os = "macos", test))]
-fn should_show_fda_notice(already_shown: bool, fda_likely: bool) -> bool {
-    !already_shown && !fda_likely
+/// 판정은 "FDA 로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신하는 우회다. 그
+/// 경로가 사라지면(macOS 가 위치나 보호 정책을 바꾸면) 거부가 아니라 `NotFound` 가
+/// 오는데, 그것을 미보유로 접으면 **승인을 가진 사용자 전원에게** 안내가 매 부팅
+/// 뜬다. 안내에는 "다시 보지 않기" 가 없으므로 그 오탐에는 탈출구가 없다 — 그래서
+/// 거부(`PermissionDenied`)만 미보유로 세고, 나머지는 모른다고 답한다.
+///
+/// 가정이 아니다 — 보조 경로(`~/Library/Application Support/com.apple.TCC/TCC.db`)는
+/// 이미 존재하지 않는 macOS 가 있다(실측 Darwin 27).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FullDiskAccess {
+    /// 프로브 경로가 열렸다 — 보유로 본다.
+    Granted,
+    /// 열린 경로가 없고 거부가 있었다 — 미보유로 본다.
+    Denied,
+    /// 열리지도 거부되지도 않았다(경로 없음 등) — 판정할 근거가 없다.
+    Unknown,
 }
 
-/// FDA 를 갖고 있는 것으로 **보이는가**. 확정 판정이 아니다 — 공개 API 가 없어
-/// "FDA 로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신하는 휴리스틱이며,
-/// macOS 가 그 경로의 보호 정책을 바꾸면 오탐이 날 수 있다.
+/// 경로별 프로브 결과에서 판정을 뽑는 **순수** 규칙. `None` 이 열림, `Some(kind)` 가
+/// 그 오류로 실패했다는 뜻이다.
+fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAccess {
+    if probes.iter().any(Option::is_none) {
+        FullDiskAccess::Granted
+    } else if probes.contains(&Some(std::io::ErrorKind::PermissionDenied)) {
+        FullDiskAccess::Denied
+    } else {
+        FullDiskAccess::Unknown
+    }
+}
+
+/// 부팅 안내를 띄울지 결정하는 **순수** 규칙 — FDA 가 **거부된 것으로 확인될 때만**
+/// 띄운다.
+///
+/// "한 번 띄웠다" 를 기록하지 않는다. 기록하면 그 뒤에 승인이 사라져도(ad-hoc 재빌드로
+/// 앱 identity 가 바뀌거나, 사용자가 회수하거나, `tccutil reset`) 영영 조용해진다 —
+/// 파일 pre-warm 이 "첫 실행" 플래그를 두지 않는 것과 같은 이유다(모듈 최상단 참고).
+/// 대신 매 부팅 상태를 다시 재고, 승인이 있으면 저절로 안 뜬다.
+fn should_show_fda_notice(access: FullDiskAccess) -> bool {
+    matches!(access, FullDiskAccess::Denied)
+}
+
+/// 프로브 경로를 실제로 열어 FDA 상태를 잰다. 거부될 때 **프롬프트 없이 조용히**
+/// 실패하는 경로만 쓰므로 부팅 경로에서 불러도 안전하다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub fn full_disk_access_likely() -> bool {
-    fda_probe_paths(home_dir().as_deref())
+pub fn full_disk_access_state() -> FullDiskAccess {
+    let probes: Vec<Option<std::io::ErrorKind>> = fda_probe_paths(home_dir().as_deref())
         .iter()
-        .any(|p| std::fs::File::open(p).is_ok())
+        .map(|p| std::fs::File::open(p).err().map(|e| e.kind()))
+        .collect();
+    decide_full_disk_access(&probes)
 }
 
 /// 부팅 시 FDA 안내를 띄워야 하는가.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub fn wants_full_disk_access_notice(settings: &tasty_settings::Settings) -> bool {
-    should_show_fda_notice(
-        settings.general.macos_fda_notice_shown,
-        full_disk_access_likely(),
-    )
+pub fn wants_full_disk_access_notice() -> bool {
+    should_show_fda_notice(full_disk_access_state())
 }
 
 /// 비-macOS / headless — FDA 개념이 없으므로 안내하지 않는다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub fn wants_full_disk_access_notice(_settings: &tasty_settings::Settings) -> bool {
+pub fn wants_full_disk_access_notice() -> bool {
     false
 }
-
-/// 안내를 띄웠음을 기록하고 즉시 영속화한다 — 다음 부팅부터는 뜨지 않는다.
-/// 저장 실패는 안내를 한 번 더 보게 될 뿐이라 치명적이지 않다(warn 로그).
-#[cfg(all(target_os = "macos", feature = "gui"))]
-pub fn mark_full_disk_access_notice_shown(settings: &mut tasty_settings::Settings) {
-    settings.general.macos_fda_notice_shown = true;
-    if let Err(err) = settings.save() {
-        tracing::warn!(%err, "full disk access 안내 표시 기록 저장 실패");
-    }
-}
-
-/// 비-macOS / headless — 기록할 것이 없다.
-#[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub fn mark_full_disk_access_notice_shown(_settings: &mut tasty_settings::Settings) {}
 
 /// 시스템 설정의 전체 디스크 접근 권한 패널을 연다. `open(1)` 로 띄운다 —
 /// `x-apple.systempreferences:` 는 브라우저가 아니라 OS 기본 핸들러가 처리한다.
@@ -516,13 +532,31 @@ mod tests {
     }
 
     #[test]
-    fn fda_notice_shows_only_when_unshown_and_access_missing() {
-        assert!(should_show_fda_notice(false, false));
-        // 이미 안내했으면 다시 띄우지 않는다.
-        assert!(!should_show_fda_notice(true, false));
-        // FDA 가 있어 보이면 안내할 이유가 없다.
-        assert!(!should_show_fda_notice(false, true));
-        assert!(!should_show_fda_notice(true, true));
+    fn fda_notice_shows_only_when_access_is_denied() {
+        use std::io::ErrorKind;
+
+        // 하나라도 열리면 보유다 — 앞쪽 경로가 없어도 뒤쪽이 열리면 보유.
+        assert_eq!(decide_full_disk_access(&[None]), FullDiskAccess::Granted);
+        assert_eq!(
+            decide_full_disk_access(&[Some(ErrorKind::NotFound), None]),
+            FullDiskAccess::Granted
+        );
+        // 거부가 있으면 미보유다.
+        assert_eq!(
+            decide_full_disk_access(&[Some(ErrorKind::PermissionDenied)]),
+            FullDiskAccess::Denied
+        );
+        // 경로가 전부 없으면 판정 불가다. 이 갈래를 `Denied` 로 접으면 승인을 가진
+        // 사용자에게도 안내가 매 부팅 뜬다 — 탈출구가 없으므로 접으면 안 된다.
+        assert_eq!(
+            decide_full_disk_access(&[Some(ErrorKind::NotFound), Some(ErrorKind::NotFound)]),
+            FullDiskAccess::Unknown
+        );
+
+        // 안내는 확인된 거부에만 뜬다.
+        assert!(should_show_fda_notice(FullDiskAccess::Denied));
+        assert!(!should_show_fda_notice(FullDiskAccess::Granted));
+        assert!(!should_show_fda_notice(FullDiskAccess::Unknown));
     }
 
     #[test]

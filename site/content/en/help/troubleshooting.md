@@ -1,4 +1,4 @@
-<!-- source-hash: 10f43ba1d3d8 -->
+<!-- source-hash: 95c2fd9d3d9b -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -53,7 +53,9 @@ The install procedure itself is in [Install](../getting-started/install.md).
 
 You can see the current state in the **Settings** > **General** > **Permissions** tab (only shown on macOS).
 
-- **A "Grant Tasty Full Disk Access" notice appeared** — it appears once, when Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. To see the notice again, turn on **Show the Full Disk Access notice at startup** under **Settings** > **General** > **Permissions**. The Full Disk Access state shown in the same tab is an estimate and can be wrong; no feature is blocked by this value.
+- **A "Grant Tasty Full Disk Access" notice appeared** — it appears at every start while Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away, and the notice stops appearing from the next start. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. There is no setting to turn the notice off: recording that you dismissed it would leave no way to tell you when the permission is reset later.
+- **The notice keeps coming back even though I granted it** — this happens when you build Tasty yourself. An ad-hoc signed build looks like a **different app** to macOS after every rebuild, so the permission is discarded. Create the "Tasty Dev" certificate once with `./scripts/macos-codesign-identity.sh --create` and install a build signed with it; the permission then survives rebuilds. Right after switching, remove the old Tasty entry from the list and add the new one.
+- **The Full Disk Access status shows "Unknown"** — macOS offers no API to ask whether an app has this permission, so the status is an estimate. When the file used for the estimate does not exist on your macOS version, there is nothing to judge from, so it reads Unknown and the startup notice is not shown. No feature is blocked by this value.
 - **"Tasty would like to access data from other apps" keeps appearing for every app folder** — paths like `~/Library/Application Support/<app>` are asked per app, so they cannot be asked up front. Granting Full Disk Access as above makes them go away.
 - **"wants to control another app" appears when you use `osascript`** — the Automation permission must be approved per target app, and Full Disk Access does not cover it. There is nothing Tasty can do in advance.
 

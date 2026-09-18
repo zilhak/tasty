@@ -1818,7 +1818,7 @@ fn draw_active_content(
             #[cfg(target_os = "macos")]
             GeneralSubTab::Display => draw_general_display_tab(ui, draft),
             #[cfg(target_os = "macos")]
-            GeneralSubTab::MacosPermissions => draw_macos_permissions_tab(ui, draft),
+            GeneralSubTab::MacosPermissions => draw_macos_permissions_tab(ui),
             #[cfg(not(target_os = "macos"))]
             GeneralSubTab::Display | GeneralSubTab::MacosPermissions => {
                 let th = crate::theme::theme();

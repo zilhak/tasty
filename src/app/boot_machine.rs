@@ -543,7 +543,7 @@ impl App {
         // 1 회만 수행.
         self.core.purge_stale_agent_state_on_boot(&core_state);
         self.core.inject_agent_runner_registry(&core_state);
-        Self::report_missing_full_disk_access(&mut state, &mut core_state.settings);
+        Self::report_missing_full_disk_access(&mut state);
         // 부팅 첫 창은 사용자가 앱을 띄운 결과다 — 옮겨 갈 이전 포커스도 없다.
         self.register_window(
             gpu,
@@ -649,20 +649,21 @@ impl App {
         }
     }
 
-    /// macOS 에서 Full Disk Access 가 없어 보이면 안내 모달을 1 회 심는다.
+    /// macOS 에서 Full Disk Access 가 **거부된 것으로 확인되면** 안내 모달을 심는다.
     ///
     /// 파일 pre-warm 이 못 덮는 "다른 앱의 데이터" 프롬프트는 FDA 로만 사라지는데,
     /// FDA 는 앱이 요청할 수 없어 사용자가 직접 켜야 한다 — 원인을 모르면 계속
-    /// 막히므로 발견성이 중요하다. 다만 성가시지 않도록 **평생 1 회**만 띄우고,
-    /// 띄운 사실을 즉시 설정에 기록한다. 다시 보려면 설정에서 켠다.
+    /// 막히므로 발견성이 중요하다.
     ///
-    /// FDA 판정은 휴리스틱이라 오탐이 날 수 있다. 그래서 이 결과는 안내 표시
-    /// 여부에만 쓰고 어떤 기능도 막지 않는다. macOS 외에서는 no-op.
-    fn report_missing_full_disk_access(
-        state: &mut crate::state::AppState,
-        settings: &mut crate::settings::Settings,
-    ) {
-        if !crate::macos_permissions::wants_full_disk_access_notice(settings) {
+    /// **"띄웠다" 를 기록하지 않는다.** 기록하면 그 뒤 승인이 사라져도(ad-hoc 재빌드로
+    /// 앱 identity 가 바뀌거나, 사용자가 회수하거나, `tccutil reset`) 영영 조용해진다.
+    /// 대신 부팅마다 상태를 다시 재고, 승인이 있으면 저절로 안 뜬다 — 안내를 끄는
+    /// 방법은 권한을 주는 것이다.
+    ///
+    /// FDA 판정은 휴리스틱이라, 판정 근거 자체가 없을 때(`Unknown`)는 띄우지 않는다.
+    /// 어떤 기능도 이 값으로 막지 않는다. macOS 외에서는 no-op.
+    fn report_missing_full_disk_access(state: &mut crate::state::AppState) {
+        if !crate::macos_permissions::wants_full_disk_access_notice() {
             return;
         }
         crate::adapters::ui::info_modal::show_info_modal(
@@ -674,7 +675,6 @@ impl App {
                 extra_buttons: full_disk_access_notice_buttons(),
             },
         );
-        crate::macos_permissions::mark_full_disk_access_notice_shown(settings);
     }
 
     /// IPC/stream 서버 시작 + 웹훅 리스너 init — `finish_boot` 의 첫 윈도우 등록
