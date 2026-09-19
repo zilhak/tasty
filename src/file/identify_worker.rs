@@ -50,6 +50,7 @@ impl IdentifyWorker {
         target: FileTarget,
         depth: DetectDepth,
         origin_surface_id: Option<u32>,
+        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
     ) -> IdentifyRequestId {
         let id = IdentifyRequestId(self.next_id.fetch_add(1, Ordering::Relaxed));
@@ -63,6 +64,7 @@ impl IdentifyWorker {
                 target: target_for_thread,
                 detector,
                 origin_surface_id,
+                dispatch_origin,
                 ignore_size_limit,
             };
             let _ = proxy.send_event(done); // event loop 종료 시에만 실패 — 무시.

@@ -154,6 +154,7 @@ impl MainView {
                     None,
                     all,
                     true,
+                    crate::file::dispatch::FileDispatchOrigin::User,
                     false,
                 );
             }

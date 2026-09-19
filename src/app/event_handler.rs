@@ -146,12 +146,14 @@ impl ApplicationHandler<AppEvent> for App {
                 target,
                 detector,
                 origin_surface_id,
+                dispatch_origin,
                 ignore_size_limit,
             } => self.handle_identify_done(
                 request_id,
                 target,
                 detector,
                 origin_surface_id,
+                dispatch_origin,
                 ignore_size_limit,
             ),
         }

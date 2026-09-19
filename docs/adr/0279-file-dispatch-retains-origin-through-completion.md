@@ -55,6 +55,7 @@ Ipc handler payloads remain path-only; this decision does not redefine plugin me
 
 ## References
 
+- 부분 개정: [0302](0302-a-user-file-open-selects-its-result-tab.md) (focus clause 개정)
 - [Focus policy](../design/policies/focus.md)
 - [File handler](../features/file-handler/index.md)
 - Current implementation: `request_resource_id`, `App::handle_identify_done`,

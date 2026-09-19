@@ -103,6 +103,10 @@ pub fn handle_dispatch(
             target,
             depth,
             origin_surface_id: req.origin_surface_id,
+            // 채널이 아니라 행위의 성질로 정한다 — 그런데 host 는 이 메서드의 호출자가
+            // 에이전트인지 plugin 을 거친 사용자 클릭인지 **구분할 수단이 없다**(요청에
+            // 그 값이 없다). 그래서 보수적인 쪽으로 고정한다: 포커스를 안 옮기는 쪽이다.
+            dispatch_origin: crate::file::dispatch::FileDispatchOrigin::Agent,
             ignore_size_limit: req.ignore_size_limit,
         }
         .from_agent_ipc(),

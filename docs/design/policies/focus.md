@@ -123,10 +123,15 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 `local_surface_id`를 해소한다. 큐 위치만으로 다른 창을 조회한다고 판단하지 않는다.
 parked 큐의 생명주기와 SSH 전송 성공은 이 대상 선택 판정과 별개다.
 `file_handler.dispatch`는 명시 origin으로 초기 요청과 비동기 완료를 같은 소유 engine에
-연결하고 picker 선택까지 유지한다. 명시 origin의 pane에 새 결과 탭을 추가할 때도
-기존 활성 탭·surface 선택을 유지한다(비터미널 kind 포함). origin이 사라지면 실행하지 않고, 다른 창의
+연결하고 picker 선택까지 유지한다. **에이전트** 요청이 명시 origin의 pane에 새 결과 탭을
+추가할 때는 기존 활성 탭·surface 선택을 유지한다(비터미널 kind 포함). origin이 사라지면 실행하지 않고, 다른 창의
 NewTab으로 폴백하지 않는다. origin 생략의 기존 사용자 경로는 유지한다
-([ADR-0279](../../adr/0279-file-dispatch-retains-origin-through-completion.md)). `recent.query`는 state.db에 귀속된 공유 캐시를 조회하므로 어느 창에서 호출해도
+([ADR-0279](../../adr/0279-file-dispatch-retains-origin-through-completion.md)).
+**이 선택 유지는 에이전트 경로에만 걸린다** — 사용자가 GUI 에서 직접 연 파일(explorer
+더블클릭 · 터미널 링크 클릭 · 드롭 · 파일 피커 확정 · 링크 우클릭 메뉴)은 그 결과 탭이
+**선택된다.** 라우팅은 양쪽이 같다(origin 의 pane 에 붙고, 다른 pane 이 포커스를 쥐고
+있어도 그리로 새지 않는다) — 갈리는 것은 선택뿐이다
+([ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md)). `recent.query`는 state.db에 귀속된 공유 캐시를 조회하므로 어느 창에서 호출해도
 같은 종류의 최근 목록을 최신순 최대 10개 반환한다. 창이 열린 뒤 다른 창에서 기록한
 파일도 반영되며, 조회는 목록 순서나 사용자 포커스를 바꾸지 않는다.
 
@@ -205,6 +210,7 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 - `active_workspace` 는 인덱스라 앞쪽 워크스페이스가 빠지면 통째로 밀린다. `workspace.close` 도 위 "삭제로 인한 인덱스 이동" 과 **같은 헬퍼**를 지난다 — 제거 직후 `AppState::fix_workspace_pointers_after_removal` 이 제거 위치를 기준으로 인덱스를 보정하므로, 손대지 않은 포인터가 계속 같은 워크스페이스를 가리킨다. 워크스페이스를 제거하는 새 경로를 추가하면 그 헬퍼를 반드시 함께 태운다.
 - **활성 워크스페이스 자신을 닫을 때만** 이웃으로 이동한다.
 - 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 축을 나타내는 값을 여럿 두면 그중 하나만 갈리는 사고가 난다.
+- 파일 열기도 같은 형태다 — `FileDispatchOrigin` **하나**가 사용자/에이전트를 가르고, 결과 탭을 선택하는지와 `None` 분기가 발화하는 intent 의 출처가 거기서 파생된다. **전송 채널이 아니라 행위의 성질로 정한다**: plugin 이 사용자의 클릭을 `file_handler.dispatch` 로 중계하는 경로가 있어(markdown 문서 안의 링크) "IPC 로 들어왔는가" 는 좌변이 아니다. 그 값이 `IntentOrigin` 과 별개인 이유는 파일 식별이 워커 스레드를 왕복하면서 발화 당시 intent 를 잃기 때문이다 ([ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md)).
 - `workspace.closed` host event 는 origin 과 무관하게 발화한다. 워크스페이스가 사라졌다는 사실 자체는 누가 닫았든 같기 때문이다. 워크스페이스를 제거하는 경로는 셋(GUI·IPC 닫기 · Core cascade · 인라인 cascade)이고, 발화는 각 경로가 아니라 그 셋이 공유하는 초크포인트 `AppState::after_workspace_removed`(`src/state.rs`)가 한다 — 경로마다 각자 쏘던 때 인라인 cascade 하나가 실제로 빠져 있었다. 워크스페이스를 제거하는 새 경로를 추가하면 그 초크포인트를 반드시 지나게 한다.
 
 ## 원격이 점유한 surface 는 닫기 요청이 죽이지 않는다

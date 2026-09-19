@@ -72,10 +72,18 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 
 `origin_surface_id` 를 지정한 요청은 처음부터 그 surface 소유 engine으로 라우팅된다.
 식별 완료와 picker 선택도 origin을 유지하며, OpenSurface 결과는 origin의 pane에
-기존 활성 탭과 그 탭의 포커스된 surface를 유지한 채 새 탭으로 추가된다.
-터미널·비터미널 kind에 같은 규칙을 적용하며 origin 자체가 비활성 탭에 있어도
-현재 선택을 origin으로 옮기지 않는다. 대기 중 다른 창으로 포커스를 옮겨도 대상은
+새 탭으로 추가된다. 대기 중 다른 창으로 포커스를 옮겨도 대상은
 바뀌지 않는다. 소유 engine이 parked 상태이면 그 상태에 적용한다.
+
+**결과 탭을 선택하는지는 라우팅과 다른 축이고, 출처가 정한다.** 에이전트 요청
+(`file_handler.dispatch`)은 기존 활성 탭과 그 탭의 포커스된 surface를 유지한 채 추가한다 —
+터미널·비터미널 kind에 같은 규칙을 적용하며 origin 자체가 비활성 탭에 있어도 현재 선택을
+origin으로 옮기지 않는다. 사용자가 GUI에서 직접 연 파일은 반대로 그 결과 탭이 **선택된다**
+(explorer 더블클릭 · 터미널 링크 클릭 · 드롭 · 파일 피커 확정 · 링크 우클릭 메뉴).
+라우팅은 양쪽이 같다. 이 값은 `origin_surface_id` 와 나란히 식별 왕복과 picker를 통과하며,
+요청 payload에는 없다 — host는 IPC 호출자가 에이전트인지 사용자의 클릭을 중계하는 plugin인지
+구분할 수단이 없어 IPC 경로를 에이전트로 고정한다.
+근거: [ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md).
 
 처음부터 없는 origin은 기존 `-32602`와 unowned-target 문구로 거절한다. 접수 후
 origin이 사라지면 경고 로그를 남기고 실행하지 않는다. 다른 창의 새 탭으로 폴백하지

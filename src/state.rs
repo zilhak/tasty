@@ -822,6 +822,9 @@ pub struct PickerHandlerSummary {
 pub struct FileHandlerPickerData {
     /// Explicit dispatch owner, retained through picker selection and cancellation.
     pub(crate) origin_surface_id: Option<u32>,
+    /// 원본 dispatch 의 출처. picker 왕복을 통과해 선택 후 `execute_handler_action`
+    /// 까지 전달된다 — 사용자가 고른 결과는 선택하고 에이전트 것은 선택하지 않는다.
+    pub(crate) dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
     /// 원본 dispatch target. picker 가 닫힌 뒤 host 가 handler 를 실행할 때
     /// 사용한다 — `target_display` 는 화면용이라 escape/축약이 들어갈 수 있다.
     pub(crate) target: crate::file::dispatch::DispatchTarget,

@@ -18,6 +18,38 @@ use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction, HandlerId};
 use crate::state::{AppState, FileHandlerPickerData, PickerHandlerSummary};
 
+/// 파일 열기를 **누가** 시작했는가. `origin_surface_id` 와 축이 다르다 — 저쪽은
+/// *어디로* 가는가(라우팅)이고 이쪽은 *누가* 요청했는가다.
+///
+/// 이 값이 따로 있는 이유는 [`crate::intent::IntentOrigin`] 이 **비동기 식별 왕복을
+/// 못 건너기** 때문이다. 파일 식별은 워커 스레드로 나갔다 `AppEvent::IdentifyDone` 으로
+/// 돌아오고, 그 이벤트가 나르는 것은 발화 당시 intent 가 아니라 명시된 필드들뿐이다.
+/// 그래서 `WorkspaceCloseOrigin` 과 같은 방식으로 **출처를 값으로 싣는다** — 사용자
+/// 경로와 에이전트 경로의 차이를 하나의 값으로 표현하고 갈리는 부수효과를 거기서
+/// 파생시킨다(`docs/design/policies/focus.md`).
+///
+/// **전송 채널이 아니라 행위의 성질로 정한다.** plugin 이 사용자의 클릭을 받아
+/// `file_handler.dispatch` 로 보내는 경우가 있으므로(markdown 문서 안의 링크), "IPC 로
+/// 들어왔는가" 는 이 값의 좌변이 아니다. 같은 기준을 `WorkspaceCloseOrigin` 이 이미
+/// 쓴다 — 사용자 입력을 재현하는 debug IPC 를 `User` 로 친다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileDispatchOrigin {
+    /// 사용자가 자기 손으로 열었다 — explorer 더블클릭 · 터미널 링크 클릭 · 파일 드롭 ·
+    /// 파일 피커 확정.
+    User,
+    /// 에이전트가 release IPC/CLI(`file_handler.dispatch`)로 열었다.
+    Agent,
+}
+
+impl FileDispatchOrigin {
+    /// 결과 탭을 선택하는가. 사용자가 방금 그 자리에서 한 행동의 결과는 사용자가
+    /// 보려고 연 것이므로 선택하고, 에이전트가 만든 것으로는 포커스를 옮기지 않는다
+    /// ([ADR-0302](../../docs/adr/0302-a-user-file-open-selects-its-result-tab.md)).
+    pub(crate) fn selects_result(self) -> bool {
+        matches!(self, Self::User)
+    }
+}
+
 /// 핸들러 dispatch 의 대상 — 파일 경로 또는 `http(s)` URL.
 ///
 /// 식별(`FileFormatRegistry::identify`)은 `File` 만 받는다. `Url` 은 detector 를 거치지
@@ -176,6 +208,7 @@ pub(crate) fn open_picker(
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
     candidates_are_fallback: bool,
+    dispatch_origin: FileDispatchOrigin,
     ignore_size_limit: bool,
 ) {
     let recent_entries: Vec<(HandlerId, i64)> = engine
@@ -198,6 +231,7 @@ pub(crate) fn open_picker(
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
         origin_surface_id: None,
+        dispatch_origin,
         target,
         target_display,
         detector,
@@ -250,6 +284,9 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileT
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
         origin_surface_id: None,
+        // 원격 placeholder 는 실행 경로가 없다(핸들러 후보도 recent 도 싣지 않는다).
+        // 어느 값이어도 선택 정책에 닿지 않으므로 보수적인 쪽을 둔다.
+        dispatch_origin: FileDispatchOrigin::Agent,
         target,
         target_display,
         detector: None,
@@ -302,6 +339,7 @@ pub fn execute_handler_action(
     handler: &FileHandler,
     target: &DispatchTarget,
     origin_surface_id: Option<u32>,
+    dispatch_origin: FileDispatchOrigin,
     ignore_size_limit: bool,
 ) -> bool {
     if let Some(sid) = origin_surface_id
@@ -331,7 +369,15 @@ pub fn execute_handler_action(
             let _ = ignore_size_limit;
 
             let params = open_surface_params(param_key, target);
-            return open_surface_tab(core, state, engine, surface_kind, params, origin_surface_id);
+            return open_surface_tab(
+                core,
+                state,
+                engine,
+                surface_kind,
+                params,
+                origin_surface_id,
+                dispatch_origin,
+            );
         }
         HandlerAction::Ipc { method, .. } => {
             return enqueue_handler_ipc(state, method, target);
@@ -375,6 +421,7 @@ pub(crate) fn open_surface_tab(
     surface_kind: &str,
     params: serde_json::Value,
     origin_surface_id: Option<u32>,
+    dispatch_origin: FileDispatchOrigin,
 ) -> bool {
     let origin_pane = match origin_surface_id
         .map(|sid| require_origin_pane(engine, sid))
@@ -403,13 +450,15 @@ pub(crate) fn open_surface_tab(
                 name: None,
                 surface_params: params.clone(),
             };
-            // Explicit-origin completion adds a result without selecting it. CreateTab
-            // appends synchronously, so the old index still names the same tab. Keep
-            // this policy here: user NewTab and other CreateTab callers choose focus
-            // independently, and non-terminal creation normally selects its new tab.
-            let active_tab = engine.find_pane_by_id(pane_id).map(|pane| pane.active_tab);
+            // 에이전트가 명시 origin 으로 연 결과는 **선택하지 않는다** — 비동기 완료가
+            // 사용자의 현재 탭을 갈아치우면 안 된다(ADR-0279). 사용자가 방금 그 pane 에서
+            // 직접 연 것은 그 반대다: 보려고 연 것이므로 선택한다(ADR-0302). `CreateTab`
+            // 은 뒤에 append 하며 동기라, 옛 index 가 여전히 같은 탭을 가리킨다.
+            let restore_tab = (!dispatch_origin.selects_result())
+                .then(|| engine.find_pane_by_id(pane_id).map(|pane| pane.active_tab))
+                .flatten();
             let result = core.apply(engine, intent);
-            if let Some(active_tab) = active_tab
+            if let Some(active_tab) = restore_tab
                 && let Some(pane) = engine.find_pane_by_id_mut(pane_id)
             {
                 pane.active_tab = active_tab;
@@ -427,13 +476,17 @@ pub(crate) fn open_surface_tab(
             }
         }
         None => {
-            state.dispatch_intent(
-                crate::intent::Intent::NewTab {
-                    kind: Some(surface_kind.to_string()),
-                    params,
-                }
-                .from_user_menu("file_dispatch"),
-            );
+            // 출처를 그대로 싣는다 — 이 분기는 `Intent::NewTab` 으로 위임되고, 그 핸들러가
+            // `origin.is_user()` 로 갈리는 부수효과를 갖는다. 에이전트 요청을 사용자 발화로
+            // 찍으면 그 분기가 전부 오분류된다.
+            let intent = crate::intent::Intent::NewTab {
+                kind: Some(surface_kind.to_string()),
+                params,
+            };
+            state.dispatch_intent(match dispatch_origin {
+                FileDispatchOrigin::User => intent.from_user_menu("file_dispatch"),
+                FileDispatchOrigin::Agent => intent.from_agent_ipc(),
+            });
         }
     }
     true
@@ -664,6 +717,7 @@ mod tests {
             None,
             Vec::new(),
             false,
+            FileDispatchOrigin::Agent,
             false,
         );
         assert!(

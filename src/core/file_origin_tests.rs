@@ -1,6 +1,8 @@
 use super::tests::build_test_core;
 use crate::core::intent::DomainIntent;
-use crate::file::dispatch::{DispatchTarget, execute_handler_action, open_surface_tab};
+use crate::file::dispatch::{
+    DispatchTarget, FileDispatchOrigin, execute_handler_action, open_surface_tab,
+};
 use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction, HandlerId, HandlerOwner};
 use crate::state::FileHandlerPickerResult;
@@ -38,6 +40,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         FileTarget::new("/unknown"),
         None,
         Some(sid),
+        FileDispatchOrigin::Agent,
         false,
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
@@ -64,6 +67,7 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
         picker.target,
         FileHandlerPickerResult::Selected(HandlerId::new("com.example.origin/open")),
         picker.origin_surface_id,
+        picker.dispatch_origin,
         picker.ignore_size_limit,
     );
     let added = engine.workspaces[0]
@@ -100,6 +104,7 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
             &handler(action),
             &DispatchTarget::File(FileTarget::new("/missing")),
             Some(u32::MAX),
+            FileDispatchOrigin::Agent,
             false
         ));
         assert!(state.pending_intents.is_empty());
@@ -111,7 +116,8 @@ fn a_dead_origin_cannot_execute_any_action_or_enqueue_a_new_tab() {
         &mut engine,
         "empty",
         serde_json::json!({}),
-        Some(u32::MAX)
+        Some(u32::MAX),
+        FileDispatchOrigin::Agent
     ));
     assert!(state.pending_intents.is_empty());
 }
@@ -127,7 +133,8 @@ fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() 
         &mut engine,
         "missing-kind",
         serde_json::json!({}),
-        Some(sid)
+        Some(sid),
+        FileDispatchOrigin::User
     ));
     assert!(state.pending_intents.is_empty());
     assert!(open_surface_tab(
@@ -136,7 +143,8 @@ fn no_origin_retains_the_user_new_tab_path_and_failed_creation_is_not_success() 
         &mut engine,
         "empty",
         serde_json::json!({}),
-        None
+        None,
+        FileDispatchOrigin::User
     ));
     assert_eq!(state.pending_intents.len(), 1);
 }
@@ -154,6 +162,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         target.clone(),
         None,
         Some(sid),
+        FileDispatchOrigin::Agent,
         true,
     );
     let picker = state.dialogs.file_handler_picker.take().unwrap();
@@ -166,6 +175,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         picker.target,
         FileHandlerPickerResult::Cancelled,
         picker.origin_surface_id,
+        picker.dispatch_origin,
         picker.ignore_size_limit,
     );
     assert!(state.pending_intents.is_empty());
@@ -198,6 +208,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         target.clone(),
         None,
         Some(sid),
+        FileDispatchOrigin::Agent,
         false,
     );
     assert!(state.dialogs.file_handler_picker.is_none());
@@ -213,6 +224,7 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         DispatchTarget::File(target),
         FileHandlerPickerResult::Selected(h.id),
         Some(sid),
+        FileDispatchOrigin::Agent,
         false,
     );
     assert!(state.pending_intents.is_empty());
@@ -220,8 +232,11 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert_eq!(engine.file_handler_recent.list().len(), recent_before);
 }
 
+/// ADR-0279 의 축 — **에이전트** 가 명시 origin 으로 연 결과는 선택하지 않는다. 비동기
+/// 완료가 사용자가 보고 있던 탭을 갈아치우면 안 되기 때문이다. 사용자 경로는 반대이고
+/// 그것은 [`a_user_origin_selects_its_result_tab`] 이 고정한다(ADR-0302).
 #[test]
-fn explicit_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
+fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let (mut core, _) = build_test_core();
     let (mut state, mut engine) = crate::state::tests::test_state();
     let origin = engine.workspaces[0].all_surface_ids()[0];
@@ -253,6 +268,7 @@ fn explicit_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
             kind,
             serde_json::json!({}),
             Some(origin),
+            FileDispatchOrigin::Agent,
         );
         assert_eq!(succeeded, kind != "missing-kind");
         let after = engine.find_pane_by_id(pane_id).unwrap();
@@ -261,4 +277,46 @@ fn explicit_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
         assert_eq!(state.focused_surface_id(&engine), focused_surface, "{kind}");
         assert!(state.pending_intents.is_empty());
     }
+}
+
+/// ADR-0302 — 사용자가 자기 손으로 연 결과는 **선택된다.** explorer 더블클릭이 이 경로이고,
+/// 같은 pane 에 붙는다는 라우팅 계약(ADR-0279)은 그대로다. 두 단정이 함께 있어야 한다 —
+/// 선택만 보면 후보 B(origin 을 버려 focused pane 으로 보내기)도 통과한다.
+#[test]
+fn a_user_origin_selects_its_result_tab() {
+    let (mut core, _) = build_test_core();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let origin = engine.workspaces[0].all_surface_ids()[0];
+    let pane_id = engine.find_pane_for_surface(origin).unwrap();
+    let before = engine.find_pane_by_id(pane_id).unwrap();
+    let selected_before = before.tabs[before.active_tab].id;
+    let count = before.tabs.len();
+
+    assert!(open_surface_tab(
+        &mut core,
+        &mut state,
+        &mut engine,
+        "empty",
+        serde_json::json!({}),
+        Some(origin),
+        FileDispatchOrigin::User,
+    ));
+
+    let after = engine.find_pane_by_id(pane_id).unwrap();
+    assert_eq!(
+        after.tabs.len(),
+        count + 1,
+        "origin 의 pane 에 하나 늘어야 한다"
+    );
+    assert_ne!(
+        after.tabs[after.active_tab].id, selected_before,
+        "사용자가 연 결과는 선택돼야 한다"
+    );
+    assert_eq!(
+        after.tabs[after.active_tab].id,
+        after.tabs[after.tabs.len() - 1].id,
+        "선택은 방금 append 된 탭이어야 한다"
+    );
+    // 라우팅은 안 바뀐다 — `Intent::NewTab` 으로 위임되지 않았다(그쪽은 focused pane 을 고른다).
+    assert!(state.pending_intents.is_empty());
 }

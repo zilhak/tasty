@@ -185,6 +185,9 @@ pub(crate) enum AppEvent {
         /// App routes completion to its owner, including parked engines, and
         /// retains it through picker selection. A vanished owner is not focus.
         origin_surface_id: Option<u32>,
+        /// `DispatchFile.dispatch_origin` 그대로 carry — 사용자 경로는 결과 탭을 선택하고
+        /// 에이전트 경로는 선택하지 않는다. `IntentOrigin` 은 이 왕복을 못 건넌다.
+        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         /// `DispatchFile.ignore_size_limit` 그대로 carry — 대용량 markdown 게이트를
         /// 건너뛴다(에이전트/IPC 강제 열기). 비동기 식별 왕복을 통과시키기 위함.
         ignore_size_limit: bool,

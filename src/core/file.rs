@@ -48,6 +48,7 @@ impl Core {
         target: FileTarget,
         detector: Option<DetectorId>,
         origin_surface_id: Option<u32>,
+        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
     ) {
         if let Some(sid) = origin_surface_id
@@ -73,6 +74,7 @@ impl Core {
                 detector,
                 fallback,
                 true,
+                dispatch_origin,
                 ignore_size_limit,
             );
             if let Some(picker) = state.dialogs.file_handler_picker.as_mut() {
@@ -90,6 +92,7 @@ impl Core {
             &first,
             &target,
             origin_surface_id,
+            dispatch_origin,
             ignore_size_limit,
         );
     }
@@ -107,6 +110,7 @@ impl Core {
         target: DispatchTarget,
         result: FileHandlerPickerResult,
         origin_surface_id: Option<u32>,
+        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
     ) {
         let Some(handler_id) = selected_handler_id(result) else {
@@ -132,6 +136,7 @@ impl Core {
             &handler,
             &target,
             origin_surface_id,
+            dispatch_origin,
             ignore_size_limit,
         ) {
             engine.record_file_handler_pick(&handler_id);
@@ -238,6 +243,7 @@ mod tests {
             FileTarget::new(PathBuf::from("/tmp/unmatched-target.unknown")),
             Some(unmatched),
             None,
+            crate::file::dispatch::FileDispatchOrigin::Agent,
             false,
         );
 
@@ -288,6 +294,7 @@ mod tests {
             DispatchTarget::http_url("https://example.com/page").expect("url"),
             FileHandlerPickerResult::Selected(handler_id),
             None,
+            crate::file::dispatch::FileDispatchOrigin::Agent,
             false,
         );
 

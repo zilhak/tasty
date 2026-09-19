@@ -1,4 +1,4 @@
-<!-- source-hash: fce370e1565f -->
+<!-- source-hash: 262ac624e91f -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -23,7 +23,9 @@ A Surface opened from a file is split · moved · closed · restored on restart 
 
 In the file chooser, long file names end with `…` so they do not overlap the size and modification date. This only changes the display; selecting or opening an entry still uses its full name.
 
-When an opening request specifies its source surface, switching windows while it is pending keeps the result in a new tab in that surface’s pane. The previously selected tab stays selected. Closing the source does not open the file in another window.
+A file you open yourself, by any of the ways above, opens in a new tab and **switches to it.** When an AI agent opens one for you, the tab is added and the tab you were on stays selected, so the screen you are working on does not change under you.
+
+When an opening request specifies its source surface, switching windows while it is pending keeps the result in a new tab in that surface’s pane. Opening a file from the Explorer while you are looking at another pane still puts it in the Explorer’s pane. Closing the source does not open the file in another window.
 
 ## Explorer
 

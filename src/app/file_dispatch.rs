@@ -13,6 +13,7 @@ impl App {
         target: FileTarget,
         detector: Option<DetectorId>,
         origin_surface_id: Option<u32>,
+        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
         ignore_size_limit: bool,
     ) {
         tracing::debug!(%request_id, target = %target.display(), ?detector,
@@ -35,6 +36,7 @@ impl App {
                 target,
                 detector,
                 origin_surface_id,
+                dispatch_origin,
                 ignore_size_limit,
             );
             main.mark_dirty();
@@ -52,6 +54,7 @@ impl App {
                     target,
                     detector,
                     origin_surface_id,
+                    dispatch_origin,
                     ignore_size_limit,
                 );
             } else {

@@ -36,6 +36,7 @@ impl App {
             };
             let target = data.target.clone();
             let origin_surface_id = data.origin_surface_id;
+            let dispatch_origin = data.dispatch_origin;
             let ignore_size_limit = data.ignore_size_limit;
             // 데이터 슬롯 즉시 해제 — 빠른 popup 재오픈 시에도 중복 처리 방지.
             main.state.dialogs.file_handler_picker = None;
@@ -52,6 +53,7 @@ impl App {
                     target,
                     result,
                     origin_surface_id,
+                    dispatch_origin,
                     ignore_size_limit,
                 );
             }

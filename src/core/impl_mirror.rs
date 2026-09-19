@@ -446,6 +446,7 @@ impl Core {
                 target,
                 depth,
                 origin_surface_id,
+                dispatch_origin,
                 ignore_size_limit,
             } => {
                 if let Some(sid) = origin_surface_id {
@@ -457,8 +458,13 @@ impl Core {
                     match engine.identify_worker.as_ref() {
                         Some(worker) => {
                             // request id not tracked.
-                            let _id =
-                                worker.spawn(target, depth, origin_surface_id, ignore_size_limit);
+                            let _id = worker.spawn(
+                                target,
+                                depth,
+                                origin_surface_id,
+                                dispatch_origin,
+                                ignore_size_limit,
+                            );
                         }
                         None => {
                             tracing::warn!(
@@ -471,7 +477,14 @@ impl Core {
                 #[cfg(not(feature = "gui"))]
                 {
                     // headless: no identify_worker.
-                    let _ = (engine, target, depth, origin_surface_id, ignore_size_limit);
+                    let _ = (
+                        engine,
+                        target,
+                        depth,
+                        origin_surface_id,
+                        dispatch_origin,
+                        ignore_size_limit,
+                    );
                     tracing::warn!("DispatchFile dropped in headless build");
                 }
                 Ok(vec![])
