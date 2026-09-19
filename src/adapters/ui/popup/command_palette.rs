@@ -18,7 +18,7 @@ use crate::theme;
 use crate::theme::Theme;
 use tasty_settings::KeybindingSettings;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{margin_all, margin_sym};
+use tasty_ui_widgets::{KbdKey, margin_all, margin_sym};
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -352,93 +352,22 @@ fn row_highlighted(query_empty: bool, row: usize, selected: usize) -> bool {
 
 /// Kbd 키캡 그룹을 우측 정렬로 그린다 (디자인 `components/core/Kbd.jsx`).
 ///
-/// 각 키는 개별 키캡 박스(`[Ctrl] [Shift] [N]`), 사이에 muted `+` 구분자. `right_x`
-/// 에서 좌측으로 정렬한다. 키캡 스펙: min-width/height 18, h-padding 5, radius-sm,
-/// surface-raised 배경, border-strong 1px + 하단 edge(물리 키캡 깊이감), mono caption +
-/// text-secondary. `+` 는 text-muted. egui `rect_stroke` 는 균일 두께라 하단만 별도
-/// 라인으로 근사한다 — `chip.rs` 의 `kbd_parts` 와 같은 방식이다.
+/// 그리는 일 자체는 공용 위젯이 한다 — `tasty_ui_widgets::kbd_parts_at` 이 상태바
+/// 키캡과 **같은 토큰·같은 폭 식**으로 그린다. 여기 남는 것은 키 문자열을 `KbdKey`
+/// 로 감싸는 것뿐이다.
 ///
-/// 하단 edge 두께는 디자인 `--tasty-kbd-shadow-depth` 이고 **`theme.kbd_shadow_depth()`
-/// 가 그 토큰이다.** 한동안 여기 고정 2px 상수가 있었고 그 주석은 "Theme 에 대응 토큰이
-/// 없다" 고 적었는데, 그건 쓸 당시엔 참이었고 지금은 아니다 — 토큰이 생겼으므로 읽는다.
-/// 상수로 두면 배율에서 갈린다(토큰은 `ui_zoom` 을 타고 상수는 안 탄다).
-///
-/// **나머지 치수는 아직 `kbd_parts` 와 값이 다르다** — 한 변 18 대 `kbd-size` 16,
-/// h-padding 5 대 `kbd-padding-x` 4, 키 사이 4 대 `kbd-gap` 3, 글자 caption 11 대
-/// `kbd-font-size` 10. 넷 다 여기서 크다. 같은 컴포넌트의 두 크기인지 드리프트인지는
-/// 디자인이 답할 물음이라, 값을 맞추지 않고 그대로 둔다.
+/// **한동안 이 자리에 자체 치수가 있었다** — 한 변 18 · h-padding 5 · 키 사이 4 ·
+/// 글자 caption(11) 로, `kbd-size`(16) · `kbd-padding-x`(4) · `kbd-gap`(3) ·
+/// `kbd-font-size`(10) 보다 넷 다 컸다. 같은 컴포넌트의 두 크기인지 드리프트인지는
+/// 디자인이 답할 물음이었고, 2026-09-17 회신이 **드리프트**로 판정하며 `Kbd` 로
+/// 수렴시켰다(신규 토큰 없음, 28px 행에서 높이·정렬 불변). 그래서 값을 맞춘 것이
+/// 아니라 값을 **들고 있기를 그만뒀다**.
 fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
     if keys.is_empty() {
         return;
     }
-    let cap_h = 18.0;
-    let min_w = 18.0;
-    let pad_x = 5.0;
-    let sep_gap = 4.0;
-    let radius = theme.corner_radius_sm.value();
-    let key_font = egui::FontId::monospace(theme.font_size_caption.value());
-    let key_color = theme.text_secondary().to_egui();
-    let sep_color = theme.text_muted().to_egui();
-
-    // 키 galley + 키캡 너비(좁은 키도 min_w 확보).
-    let galleys: Vec<_> = keys
-        .iter()
-        .map(|k| {
-            ui.painter()
-                .layout_no_wrap(k.clone(), key_font.clone(), key_color)
-        })
-        .collect();
-    let cap_widths: Vec<f32> = galleys
-        .iter()
-        .map(|g| (g.size().x + pad_x * 2.0).max(min_w))
-        .collect();
-    let sep_galley = ui
-        .painter()
-        .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
-    let sep_w = sep_galley.size().x + sep_gap * 2.0;
-
-    // 총 너비 → 좌측 시작점 (우측 정렬).
-    let total: f32 = cap_widths.iter().sum::<f32>() + sep_w * keys.len().saturating_sub(1) as f32;
-    let mut x = right_x - total;
-    let top = center_y - cap_h / 2.0;
-
-    for (idx, galley) in galleys.into_iter().enumerate() {
-        if idx > 0 {
-            let sep = ui
-                .painter()
-                .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
-            ui.painter().galley(
-                egui::pos2(x + sep_gap, center_y - sep.size().y / 2.0),
-                sep,
-                sep_color,
-            );
-            x += sep_w;
-        }
-        let cap_w = cap_widths[idx];
-        let box_rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(cap_w, cap_h));
-        let bw = theme.border_width.value();
-        let border = theme.border_strong().to_egui();
-        ui.painter()
-            .rect_filled(box_rect, radius, theme.surface_raised().to_egui());
-        ui.painter().rect_stroke(
-            box_rect,
-            radius,
-            egui::Stroke::new(bw, border),
-            egui::StrokeKind::Inside,
-        );
-        // 하단 2px edge (디자인 Kbd shadow-depth = size-2) — 균일 stroke 위에 덧그린다.
-        ui.painter().line_segment(
-            [
-                egui::pos2(box_rect.left() + radius, box_rect.bottom() - bw),
-                egui::pos2(box_rect.right() - radius, box_rect.bottom() - bw),
-            ],
-            egui::Stroke::new(theme.kbd_shadow_depth().value(), border),
-        );
-        let gx = box_rect.center().x - galley.size().x / 2.0;
-        let gy = center_y - galley.size().y / 2.0;
-        ui.painter().galley(egui::pos2(gx, gy), galley, key_color);
-        x += cap_w;
-    }
+    let parts: Vec<KbdKey<'_>> = keys.iter().map(|k| KbdKey::Text(k.as_str())).collect();
+    tasty_ui_widgets::kbd_parts_at(ui, theme, &parts, right_x, center_y);
 }
 
 /// 매칭 결과를 `(items, commands)` 쌍으로 변환.

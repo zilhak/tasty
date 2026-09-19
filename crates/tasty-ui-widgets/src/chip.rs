@@ -346,19 +346,16 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     kbd_parts(ui, theme, &owned);
 }
 
-/// [`kbd`] 가 차지할 폭 — **그리기 전에** 알아야 하는 자리(상태바의 축소 판정과
-/// spacer 산정)를 위해 [`kbd_parts`] 와 **같은 파일에서** 같은 토큰으로 센다.
-///
-/// `Ui` 가 아니라 `Context` 를 받는다 — 폭은 폰트 metric 만으로 정해지고, 그래야
-/// 바깥에서 같은 폭을 재검산하는 테스트가 `Ui` 를 짓지 않고도 이 함수를 부른다.
-///
-/// 두 함수가 떨어져 있으면 한쪽 패딩만 바뀌어도 컴파일은 통과하고 정렬만 조용히
-/// 어긋난다. 세는 것은 [`kbd_parts`] 가 실제로 할당하는 것 그대로다 — 키캡 k 개,
-/// 그 사이 `+` 라벨 k-1 개, 그리고 egui `horizontal` 이 항목 사이에 넣는 gap
-/// (항목 2k-1 개 → gap 2k-2 개).
-pub fn kbd_width(ctx: &egui::Context, theme: &Theme, keys: &str) -> LogicalPx {
+/// 키캡 한 칸의 폭 — 텍스트 폭에 좌우 패딩을 더하되 정사각 최소치를 지킨다.
+/// [`kbd_parts`]·[`kbd_parts_at`]·[`kbd_parts_width`] 가 **이 한 식**을 부른다.
+fn cap_width(text_w: f32, pad_x: f32, kbd_h: f32) -> f32 {
+    (text_w + 2.0 * pad_x).max(kbd_h)
+}
+
+/// 키캡 시퀀스가 실제로 할당하는 항목들의 폭 — 키캡 k 개와 그 사이 `+` 라벨 k-1 개를
+/// **그리는 순서 그대로** 2k-1 개. 항목 사이 gap 은 여기 안 들어간다(세는 쪽이 더한다).
+fn kbd_item_widths(ctx: &egui::Context, theme: &Theme, keys: &[KbdKey<'_>]) -> Vec<f32> {
     let micro = theme.kbd_font_size().value();
-    let gap = theme.kbd_gap().value();
     let pad_x = theme.kbd_padding_x().value();
     let kbd_h = theme.kbd_size().value();
     let measure = |text: &str| {
@@ -368,15 +365,38 @@ pub fn kbd_width(ctx: &egui::Context, theme: &Theme, keys: &str) -> LogicalPx {
                 .width()
         })
     };
-    let parts: Vec<&str> = keys.split('+').collect();
-    let caps: f32 = parts
-        .iter()
-        .map(|t| (measure(t) + 2.0 * pad_x).max(kbd_h))
-        .sum();
-    let separators = parts.len().saturating_sub(1);
-    let plus = measure("+") * separators as f32;
-    let items = 2 * parts.len() - 1;
-    LogicalPx(caps + plus + gap * items.saturating_sub(1) as f32)
+    let mut out = Vec::with_capacity(keys.len().saturating_mul(2).saturating_sub(1));
+    for (i, key) in keys.iter().enumerate() {
+        if i > 0 {
+            out.push(measure("+"));
+        }
+        out.push(match key {
+            KbdKey::Text(text) => cap_width(measure(text), pad_x, kbd_h),
+            KbdKey::Icon(_) => kbd_h,
+        });
+    }
+    out
+}
+
+/// [`kbd_parts`] 가 차지할 폭 — **그리기 전에** 알아야 하는 자리(상태바의 축소 판정과
+/// spacer 산정, 팔레트 행의 라벨 자리)를 위해 같은 파일에서 같은 토큰으로 센다.
+///
+/// `Ui` 가 아니라 `Context` 를 받는다 — 폭은 폰트 metric 만으로 정해지고, 그래야
+/// 바깥에서 같은 폭을 재검산하는 테스트가 `Ui` 를 짓지 않고도 이 함수를 부른다.
+///
+/// 세는 것과 그리는 것이 떨어져 있으면 한쪽 패딩만 바뀌어도 컴파일은 통과하고 정렬만
+/// 조용히 어긋난다 — 그래서 항목 폭은 [`kbd_item_widths`] 하나에서 나오고, 여기서는
+/// 그 사이 gap 만 더한다(항목 2k-1 개 → gap 2k-2 개).
+pub fn kbd_parts_width(ctx: &egui::Context, theme: &Theme, keys: &[KbdKey<'_>]) -> LogicalPx {
+    let items = kbd_item_widths(ctx, theme, keys);
+    let gaps = items.len().saturating_sub(1) as f32;
+    LogicalPx(items.iter().sum::<f32>() + theme.kbd_gap().value() * gaps)
+}
+
+/// [`kbd`] 가 차지할 폭 — `"+"` 로 분할한 뒤 [`kbd_parts_width`] 에 넘긴다.
+pub fn kbd_width(ctx: &egui::Context, theme: &Theme, keys: &str) -> LogicalPx {
+    let parts: Vec<KbdKey<'_>> = keys.split('+').map(KbdKey::Text).collect();
+    kbd_parts_width(ctx, theme, &parts)
 }
 
 /// [`kbd_parts`] 한 키캡의 콘텐츠 — 텍스트 또는 벡터 아이콘.
@@ -418,7 +438,7 @@ pub fn kbd_parts(ui: &mut egui::Ui, theme: &Theme, keys: &[KbdKey<'_>]) {
                         mono(micro),
                         egui::Color32::PLACEHOLDER,
                     );
-                    let w = (galley.rect.width() + 2.0 * pad_x).max(kbd_h);
+                    let w = cap_width(galley.rect.width(), pad_x, kbd_h);
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(w, kbd_h), egui::Sense::hover());
                     draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
@@ -438,6 +458,77 @@ pub fn kbd_parts(ui: &mut egui::Ui, theme: &Theme, keys: &[KbdKey<'_>]) {
             }
         }
     });
+}
+
+/// [`kbd_parts`] 와 **같은 토큰·같은 폭 식**으로 그리되, egui 레이아웃을 쓰지 않고
+/// 이미 할당된 행 안의 좌표에 직접 그린다 — `right_x` 에서 왼쪽으로 정렬하고 세로
+/// 중앙을 `center_y` 에 맞춘다. 행 rect 를 먼저 잡아 두고 그 안을 painter 로 채우는
+/// 호출자(command palette 의 명령 행)를 위한 것이다.
+///
+/// 좌표 판이 [`kbd_parts`] 와 **같은 파일**에 있는 이유는 [`kbd_parts_width`] 와 같다 —
+/// 떨어져 있으면 한쪽 패딩만 바뀌어도 컴파일은 통과하고 두 자리의 키캡이 조용히 갈린다.
+///
+/// 그린 폭을 돌려준다(호출자가 라벨 자리를 남길 때 쓴다).
+pub fn kbd_parts_at(
+    ui: &egui::Ui,
+    theme: &Theme,
+    keys: &[KbdKey<'_>],
+    right_x: f32,
+    center_y: f32,
+) -> LogicalPx {
+    let total = kbd_parts_width(ui.ctx(), theme, keys);
+    if keys.is_empty() {
+        return total;
+    }
+    let radius = theme.kbd_radius().value();
+    let bw = theme.border_width.value();
+    let border = theme.kbd_border().to_egui();
+    let fill = theme.kbd_bg().to_egui();
+    let fg = theme.kbd_fg().to_egui();
+    let plus = theme.text_muted().to_egui();
+    let micro = theme.kbd_font_size().value();
+    let icon_glyph = theme.icon_glyph_size_sm.value();
+    let gap = theme.kbd_gap().value();
+    let pad_x = theme.kbd_padding_x().value();
+    let kbd_h = theme.kbd_size().value();
+    let bottom_border = theme.kbd_shadow_depth().value();
+    let top = center_y - kbd_h * 0.5;
+    let mut x = right_x - total.value();
+    for (i, key) in keys.iter().enumerate() {
+        if i > 0 {
+            let g = ui
+                .painter()
+                .layout_no_wrap("+".to_owned(), mono(micro), plus);
+            let w = g.rect.width();
+            let pos = egui::pos2(x, center_y - g.rect.height() * 0.5);
+            ui.painter().galley(pos, g, plus);
+            x += w + gap;
+        }
+        match key {
+            KbdKey::Text(text) => {
+                let g = ui.painter().layout_no_wrap(
+                    (*text).to_owned(),
+                    mono(micro),
+                    egui::Color32::PLACEHOLDER,
+                );
+                let w = cap_width(g.rect.width(), pad_x, kbd_h);
+                let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(w, kbd_h));
+                draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                let pos = rect.center() - g.rect.size() * 0.5;
+                ui.painter().galley(pos, g, fg);
+                x += w + gap;
+            }
+            KbdKey::Icon(icon) => {
+                let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(kbd_h, kbd_h));
+                draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                let irect =
+                    egui::Rect::from_center_size(rect.center(), egui::vec2(icon_glyph, icon_glyph));
+                icon.image(icon_glyph, fg).paint_at(ui, irect);
+                x += kbd_h + gap;
+            }
+        }
+    }
+    total
 }
 
 /// 키캡 배경 + 보더(하단 2px 강조) — [`kbd`]/[`kbd_parts`] 공유. `kbd()`가 원래
