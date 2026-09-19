@@ -117,7 +117,7 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 
 ### scrim 의 범위
 
-scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
+scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](../../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
 `Surface` 범위면 그 칸 하나이고, 경계는 그 surface 의 **보더를 포함**하며 인접 surface ·
 사이드바 · pane 탭바 · 상태바는 **제외**한다. radius 는 범위 대상 자신의 radius 를 따른다 —
 오늘의 셸에서 surface radius 는 0 이라 직각이다. 알파는 한 벌이다(`--tasty-scrim-bg`) —
