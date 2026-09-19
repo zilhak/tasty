@@ -996,14 +996,59 @@ fn literal_translation_keys_exist_in_catalog() {
         probe_c - probe_b
     );
 
+    // 파일을 **한 번만** 읽어 (레포 상대 경로, 원문) 으로 들고 간다 — 아래 출하 판정과
+    // 키 스캔이 같은 사본을 본다. 두 번 읽으면 그 사이에 바뀐 파일에서 두 판정이 갈린다.
+    let sources: Vec<(PathBuf, String)> = files
+        .iter()
+        .filter_map(|file| {
+            let contents = std::fs::read_to_string(file).ok()?;
+            Some((PathBuf::from(rel_of(file)), contents))
+        })
+        .collect();
+
+    // **출하되지 않는 파일은 이 판정의 대상이 아니다.** 이 시험이 묻는 것은 "화면에 raw
+    // 키가 뜨는가" 이고, 안 나가는 파일의 리터럴은 화면에 닿지 않는다.
+    //
+    // 이 규칙은 새것이 아니다 — 이 파일이 이미 두 군데서 같은 말을 한다. 아래
+    // `TestRegion` 이 파일 **안**의 `#[cfg(test)]` 범위를 건너뛰고, [`is_source_target`]
+    // 이 "테스트 코드는 대상이 아니다 — 픽스처 키를 쓴다" 며 이름으로 코퍼스를 줄인다.
+    // 여기서 닫는 것은 **그 이름 판정이 성질을 못 따라간 자리**다: 표식(`#[cfg(test)]`)이
+    // 부모 파일의 `mod` 선언에 있으면 그 파일만 봐서는 안 보이고, 파일명이 글롭과 어긋나면
+    // (접두 `tests_` 대 접미 `_tests.rs`) 이름 쪽도 못 잡는다. 글롭을 하나 더 늘리는 것은
+    // 같은 종류의 결함을 한 번 더 심는 것이라, 선언으로 묻는다.
+    //
+    // 판정기를 새로 짓지 않는다. "이 파일은 출하되는가" 는 레포에 답이 하나 있고
+    // (`shipping_scope::test_only_files`), 사본을 두면 답이 갈린다 — 그 모듈 doc 이
+    // 답이 셋으로 갈렸던 이력을 적는다.
+    let not_shipped = tasty_doc_guards::shipping_scope::test_only_files(root(), &sources);
+
+    // 비영 + 반증 대조. 판정기가 죽어 **전부** 돌려주면 아래 스캔이 아무것도 안 보고
+    // 조용히 초록이 된다 — 그 방향은 실패로 안 드러나므로 여기서 못박는다.
+    assert!(
+        !not_shipped.is_empty(),
+        "출하 판정이 한 파일도 안 골랐다 — 판정기가 죽었으면 아래 스캔은 옛 모수 그대로다"
+    );
+    let shipping_probe = Path::new("src/view/settings/ui/tabs/general.rs");
+    assert!(
+        sources.iter().any(|(p, _)| p == shipping_probe),
+        "대조용 출하 파일 `{}` 이 순회에 안 들어왔다 — 대조가 공허하다",
+        shipping_probe.display()
+    );
+    assert!(
+        !not_shipped.contains(shipping_probe),
+        "출하되는 `{}` 을 안 나가는 것으로 판정했다 — 판정이 넓어졌으면 이 시험은 \
+         본체 키를 통째로 안 본다",
+        shipping_probe.display()
+    );
+
     let derivations_before = DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed);
     let mut problems = Vec::new();
     let mut pending_seen: BTreeSet<&str> = BTreeSet::new();
-    for file in &files {
-        let Ok(contents) = std::fs::read_to_string(file) else {
+    for (rel_path, contents) in &sources {
+        if not_shipped.contains(rel_path) {
             continue;
-        };
-        let rel = rel_of(file);
+        }
+        let rel = rel_path.display().to_string();
         let mut tests = TestRegion::default();
         let lines: Vec<&str> = contents.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
