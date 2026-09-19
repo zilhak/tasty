@@ -646,10 +646,11 @@ mod forbidden_lock_guard {
     /// 트리에 parking_lot·`tokio::sync`·`.lock().await` 가 0 이라(실측) `.lock()` 은 전부 std.
     ///
     /// ★ **"std 다" 가 "결과가 `LockResult` 다" 를 뜻하지는 않는다.** 이 트리에는 `lock`
-    /// 이라는 이름의 자체 헬퍼가 셋 있고(`src/store/recent_files.rs` ·
-    /// `src/webhook/registry.rs` · `src/webhook/abuse.rs`), 전부 `recover_mutex` 로 복구한
-    /// **guard 를 바로** 돌려준다 — `Result` 가 아니다. 셋 다 안쪽은 std 락이므로 위
-    /// 문장은 참이지만, verb 만 보고 뒤에 오는 체인을 `Result` 로 읽으면 틀린다.
+    /// 이라는 이름의 자체 헬퍼가 **넷** 있고(`src/store/recent_files.rs` ·
+    /// `crates/tasty-timer/src/waker.rs` · `src/webhook/registry.rs` ·
+    /// `src/webhook/abuse.rs`), 전부 `recover_mutex` 로 복구한 **guard 를 바로** 돌려준다 —
+    /// `Result` 가 아니다. 넷 다 안쪽은 std 락이므로 위 문장은 참이지만, verb 만 보고 뒤에
+    /// 오는 체인을 `Result` 로 읽으면 틀린다.
     /// 그 혼동이 실제로 main 을 빨갛게 만들었다 —
     /// [`silently_skipped_lock_lines`] 의 doc 참조.
     const LOCK_VERBS: &[&str] = &[
@@ -732,10 +733,19 @@ mod forbidden_lock_guard {
     /// ```
     ///
     /// 실제로 컴파일된다(2026-09-20 rustc 로 확인). 지금 트리에 이 조합이 없는 이유는
-    /// 값이지 설계가 아니다 — **점이 붙은** `lock()` 헬퍼가 하나뿐이고
-    /// (`src/store/recent_files.rs`) 그 `T` 가 `HashMap` 이라 `.as_ref()` 로 `Option` 이
-    /// 안 나온다. `src/webhook/registry.rs` 와 `src/webhook/abuse.rs` 의 `lock()` 은 자유
-    /// 함수라 호출이 `lock()` 으로 점이 없고, 그래서 verb 자체에 안 걸린다.
+    /// 값이지 설계가 아니다. `lock` 이라는 이름의 자체 헬퍼는 넷이고, 그중 **점이 붙는
+    /// 것**(`&self` 를 받아 `x.lock()` 으로 불리는 것)은 둘이다:
+    ///
+    /// ```text
+    /// src/store/recent_files.rs   fn lock(&self) -> MutexGuard<HashMap<..>>   점 있음
+    /// crates/tasty-timer/src/waker.rs  fn lock(&self) -> MutexGuard<State>    점 있음
+    /// src/webhook/registry.rs     fn lock() -> MutexGuard<WebhookState>       점 없음
+    /// src/webhook/abuse.rs        fn lock() -> MutexGuard<AbuseTracker>       점 없음
+    /// ```
+    ///
+    /// 점 없는 둘은 호출이 `lock()` 이라 verb(`.lock()`)에 애초에 안 걸린다. 점 있는 둘은
+    /// `T` 가 `HashMap` 과 구조체라 `.as_ref()` 로 `Option` 이 안 나온다. `T` 가
+    /// `Option`/`Result` 인 헬퍼가 새로 생기면 그때 여기서 오탐이 난다.
     ///
     /// 그 조합이 생기면 여기서 오탐이 난다. 그때 고칠 자리는 이 판정기가 아니라 **그
     /// 헬퍼의 이름**일 수 있다 — 락 verb 와 같은 이름이 판정기를 혼동시키는 것이 근본이다.
