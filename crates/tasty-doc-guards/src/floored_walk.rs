@@ -211,10 +211,15 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 114,
+        measured: 115,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "5ce79fada + 이 lane — **통합 트리에서 잰 값이다.** \
+            "742b0dbf7 + 이 lane — 그 트리의 추적 계수가 114 이고 이 lane 이 \
+             `tasty-doc-guards/tests/githooks_are_pinned.rs` 하나를 더해 115 다. \
+             **lane 트리에서 잰 값이라 구조적으로 낮다** — 같은 회차의 다른 lane 이 \
+             통합 타깃을 더했으면 통합 트리에서는 더 크고, 최종 값은 병합하는 쪽이 \
+             거기서 다시 잰다. 바로 앞 회차가 그 형태의 실물이다(아래). \
+             이전 회차: 5ce79fada + lane — **통합 트리에서 잰 값이다.** \
              두 lane 의 공통 base(`131f3d6eb`)의 추적 트리가 112 이고, 거기에 \
              **lane 둘이 각자 하나씩** 더해 \
              114 다 — main 에 먼저 착지한 `tasty-terminal/tests/erase_boundaries.rs` 와 \
