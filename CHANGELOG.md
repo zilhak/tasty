@@ -18,7 +18,7 @@
 
 ### Added
 
-- Codex 부모에게 Claude·Codex 자식의 상태를 App Server 도구 결과로 전달한다. 같은 서버의 실행 중 대화를 명시적으로 바인딩하고, 전달 상태를 조회·복구하거나 구독을 해제할 수 있다. 일반 TUI의 자동 연결이나 수락 불명 결과의 재송신은 하지 않는다. Claude 부모의 기존 로그/Monitor는 유지한다. Codex 훅 설치는 home 또는 정확한 설정 파일을 지정할 수 있고, diagnose는 로컬 훅·trust metadata를 설정 변경 없이 확인한다. Stop의 마지막 응답을 완료 요약에 담고, SessionEnd가 현재 실행 구독을 정리하며, `tasty codex completion status --all-parents`로 닫힌 부모의 미전달·취소 기록도 조회할 수 있다.
+- Codex 훅 설치에서 Codex home 또는 정확한 설정 파일을 지정할 수 있다. 둘은 함께 쓸 수 없고, 기존 설정을 읽을 수 없으면 덮어쓰지 않고 실패한다.
 
 - 사용자 언어팩으로 플러그인의 도구 라벨과 내부 UI 문구를 함께 덮어쓸 수 있다. 내장 언어는 `lang/plugins/<plugin-id>/<code>.toml`, 새 언어팩은 `lang/<code>/plugins/<plugin-id>.toml`을 사용한다. 설치본 영어·선택 언어 위에 사용자 파일을 얹으며, 수정 후 재시작하면 적용된다. 설치 자산을 수정하지 않아 플러그인 업그레이드 후에도 보존된다.
 
@@ -40,24 +40,9 @@
 
 - **하단에 입력창을 남기는 TUI 의 긴 줄이 대화 기록을 먹지 않는다.** Codex 처럼 `DECSTBM` 으로 화면 일부만 스크롤 영역으로 쓰는 프로그램에서, 영역 하단의 긴 줄이 오른쪽 끝에서 접히면 커서가 영역 **밖** 으로 내려가 입력창을 덮어썼고, 그 뒤로 위로 밀린 줄이 스크롤백에 쌓이지 않아 **그 시점 이후의 출력이 통째로 사라졌다** — 세션을 재개하면 대화가 긴 URL 중간에서 끊겨 보였다. 이제 자동 줄바꿈도 명시적 개행과 같은 영역 계약을 지킨다: 영역만 한 줄 위로 스크롤하고, 영역 밖 행은 건드리지 않으며, 밀려난 행은 순서대로 스크롤백에 남는다. 대체 화면에서도 같고, 대체 화면 출력이 기본 화면의 스크롤백을 오염시키지도 않는다. 화면 밖을 가리키는 스크롤 영역 요청(`CSI 3;100r` 처럼 하단이 화면보다 아래이거나 상단이 하단보다 큰 경우)은 xterm 과 같이 화면 안으로 잘라 받는다 — 지금까지는 그런 요청에서 명시적 개행과 자동 줄바꿈이 서로 다른 행을 밀었다. 자동 줄바꿈 끄기(DECAWM `?7l`)는 종전대로 미지원이다.
 - **마크다운 문서의 목차·내부 링크·각주를 누르면 그 자리로 이동한다.** 지금까지는 목차 항목을 눌러도 화면이 움직이지 않았다 — 문서에 들어 있던 `<base>` 때문에 `#제목` 링크가 이 문서 안의 위치가 아니라 문서가 있는 폴더 주소로 풀렸기 때문이다. 그 태그는 로컬 이미지를 문서 안에 싣게 된 뒤로 하는 일이 없어 없앴고, 문서 안 앵커의 이동은 이제 문서 자신이 처리한다. 같은 항목을 연달아 눌러도 매번 이동하고, 중복된 제목·한글 제목·본문의 `#제목` 링크·각주 번호와 되돌아가기 화살표가 모두 제 자리로 간다. 이동은 화면을 다시 불러오지 않으므로 로딩·오류 화면이 끼어들지 않는다. 다른 파일 링크·외부 링크·주소창 이동은 종전 그대로다.
-- Headless PTY exit now fires process-exit hooks and closes execution subscriptions through the shared host lifecycle, including durable recovery when journal writes fail.
-- Keep newly recovered child exit events sendable when the parent binding arrives during close persistence retries.
-
-- Closed child surfaces reject new completion subscriptions even when their registry entry has not yet been reconciled. Surface close persists execution-scoped cleanup work separately from the completion journal, exposes pending storage recovery, and retries it across restart without cancelling accepted or uncertain results or inferring closure from another window's live set.
-
-- Releasing a restored child relationship now rechecks confirmed parent and child identities in the same journal transaction. Late registration no longer requires a second watch before old subscriptions can be released.
-
-- Releasing a positively identified restored child relationship now closes both its old and new completion watches, including legacy journals. New spawn/adopt relationships remain separate.
+- Headless PTY exit now fires process-exit hooks through the shared host lifecycle.
 - Child spawn commits its relationship before sending a command and rolls back only its own created surface on setup or synchronous send failure. Failed adoption preserves preexisting soft ownership.
-
-- Releasing a child before its parent SessionStart arrives now closes the current relationship generation. Delayed registration cannot revive it, while subscriptions belonging to an earlier host lifetime remain protected from reused surface addresses.
-
-- App Server I/O now enforces absolute deadlines below WebSocket and TLS reads. A peer dripping unfinished continuation frames cannot keep other parents waiting on the shared completion worker.
-
-- Child completion cancellation now checks logical session ownership, and delayed Claude error callbacks carry execution-scoped observation leases. Planned same-session resumes recover waiting tell subscriptions even when SessionEnd was missed; normal Claude SessionEnd performs its metadata and notification cleanup.
-- Codex hook installation and removal preserve user handlers inside mixed matcher groups. The English CLI guide now describes the same parent setup requirements as the Korean guide, and the terminal IPC inventory includes both completion methods.
-
-- Codex remote reboot pauses completion delivery after the frontend detaches and waits for a confirmed resumed TUI. A hook review screen leaves the binding unbound without submitting a reboot notice. Installation diagnostics no longer promise that the launch flag guarantees hook execution.
+- Codex hook installation and removal preserve user handlers inside mixed matcher groups.
 
 - **링크 클릭 수식키의 `none` 선택지를 “좌클릭 열기 끄기”로 바로잡았다.** 좌클릭으로 링크를 연다고 잘못 안내하던 설정 라벨과 사용자 가이드를 실제 동작에 맞췄다. 링크 위 우클릭 메뉴는 계속 사용할 수 있으며, 수식키 없이도 링크 표시가 가능하지만 팝업·배너 등 기존 차단 조건은 적용된다. 클릭·hover 동작 자체는 바뀌지 않는다.
 
