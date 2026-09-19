@@ -87,6 +87,16 @@ Claude Design 프로젝트 **Tasty Design System** 에서 받아온 사본이다
     "see … todo" → "not yet built".
   - `gallery/components.jsx` — AutoComplete 노트의 "tracked as a separate implementation
     TODO" → "tracked as separate implementation work".
+- **출처 메타데이터(`<metadata>` 안의 C2PA 매니페스트)** — 원격에서 Claude 가 다시 저장한
+  파일에는 서명된 출처 매니페스트가 base64 로 실려 온다. 그것은 디자인 내용이 아니라 그
+  파일이 어떻게 만들어졌는지의 기록이고, 사이트는 렌더에 쓰지 않는다. 크기 차가 커서 그냥
+  둘 수 없다 — `icons/sun.svg` 의 경우 매니페스트가 붙은 원본이 **15.9 KB** 인데 `icons/`
+  **65 개 전부의 합이 17.3 KB** 다. 한 아이콘이 트리 전체만 해지고 그대로 공개 사이트로
+  나간다. 그래서 받아올 때 `<metadata>` 요소와 그것을 위한 `xmlns:c2pa` 속성만 벗기고
+  나머지는 그대로 옮긴다. **렌더되는 구조와 값은 건드리지 않는다.**
+  - 벗겼는지 확인: `grep -rl c2pa site/vendor/ --exclude=README.md` 가 아무것도 안
+    내놔야 한다. 이 README 를 빼는 이유는 시점 표시가 `git log -1 -- site/vendor` 에서
+    README 를 빼는 이유와 같다 — 절차를 적은 문서는 사본의 일부가 아니다.
 
 ## 통합 시 주의
 
