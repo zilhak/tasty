@@ -18,9 +18,10 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
 
-/// `color-mix(in srgb, accent-warning X%, transparent)` 근사 — 알파 감쇠.
+/// `color-mix(in srgb, accent-warning X%, transparent)` 근사 — 알파 감쇠. 채움은
+/// `tint-fill-alpha` 로 모였고, 테두리 계수는 디자인이 "채움만" 으로 한정한 부분
+/// 사용이라(2026-09-17 P4) 이 자리 고유 값으로 남는다.
 const BORDER_MIX: f32 = 0.4;
-const BG_MIX: f32 = 0.12;
 
 /// bordered warning callout — leading 경고 삼각 아이콘 + wrapping caption 본문.
 ///
@@ -33,7 +34,7 @@ pub fn warning_callout(
     paint_icon: IconPainter<'_>,
 ) -> egui::Response {
     let warning = theme.accent_warning().to_egui();
-    let bg = warning.gamma_multiply(BG_MIX);
+    let bg = warning.gamma_multiply(theme.tint_fill_alpha());
     let border = warning.gamma_multiply(BORDER_MIX);
     let glyph = theme.icon_glyph_size_sm.value();
     egui::Frame::new()

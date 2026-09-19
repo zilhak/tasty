@@ -63,11 +63,11 @@ pub fn tag(
     variant: TagVariant,
     dot: bool,
 ) -> egui::Response {
-    // 태그 테두리/채움은 accent 를 그대로 쓰지 않고 낮춘 톤이다. 대응 component
-    // 토큰이 없어 값을 여기 이름으로 둔다 — 어느 토큰으로 수렴할지는 디자인 판단.
+    // 태그 테두리/채움은 accent 를 그대로 쓰지 않고 낮춘 톤이다. remote 태그의
+    // 테두리는 `tint-border-alpha` 로 모였고(2026-09-17 P5, "테두리만" 부분 사용),
+    // 나머지 둘은 대응 토큰이 없어 값을 여기 이름으로 둔다.
     const TAG_BORDER_OPACITY: f32 = 0.4;
     const TAG_REMOTE_FILL_OPACITY: f32 = 0.16;
-    const TAG_REMOTE_BORDER_OPACITY: f32 = 0.45;
     let (fill, border, fg) = match variant {
         // Default(외곽선 chip)만 `tag-*` component 색 대응. 나머지 상태 변형(accent
         // 계열)은 대응 component 토큰이 없어 semantic 유지.
@@ -105,7 +105,7 @@ pub fn tag(
                 theme
                     .accent_remote()
                     .to_egui()
-                    .gamma_multiply(TAG_REMOTE_BORDER_OPACITY),
+                    .gamma_multiply(theme.tint_border_alpha()),
             ),
             theme.accent_remote().to_egui(),
         ),

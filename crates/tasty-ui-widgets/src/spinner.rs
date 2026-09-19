@@ -2,7 +2,7 @@
 //! (디자인 `components/feedback/Spinner`).
 //!
 //! 디자인 계약:
-//! - 기본 16px(디자인 `--tasty-size-16`), 얇은 회전 arc + 저대비 track.
+//! - 기본 16px(아이콘 가족 `--tasty-icon-size-md`), 얇은 회전 arc + 저대비 track.
 //! - track 은 `text-muted` 색 + opacity 0.22, arc 는 같은 색 opacity 1.
 //! - viewBox 24 기준 stroke 2 → 반경 `12 - stroke`. arc 는 상단에서 시작하는 90° 호.
 //! - 회전: 0.9s linear infinite (디자인 `tasty-spin`).
@@ -17,8 +17,6 @@
 
 use tasty_type_appearance::theme::Theme;
 
-/// 디자인 기본 크기 = `--tasty-size-16`.
-const DEFAULT_SIZE: f32 = 16.0;
 /// viewBox 24 기준 stroke 두께(디자인 `stroke=2`). 실제 그릴 때 size 비율로 환산.
 const VIEWBOX: f32 = 24.0;
 const STROKE_VB: f32 = 2.0;
@@ -29,7 +27,7 @@ const ARC_SWEEP: f32 = std::f32::consts::FRAC_PI_2;
 
 /// Spinner 빌더.
 pub struct Spinner {
-    size: f32,
+    size: Option<f32>,
     /// 설정을 무시하는 override. `None` 이면 `theme.reduced_motion` 을 따른다.
     reduced_motion: Option<bool>,
     /// 호출부 지정 색. `None` 이면 `theme.text_muted()`.
@@ -45,15 +43,15 @@ impl Default for Spinner {
 impl Spinner {
     pub fn new() -> Self {
         Self {
-            size: DEFAULT_SIZE,
+            size: None,
             reduced_motion: None,
             color: None,
         }
     }
 
-    /// 정사각 변 길이(px). 기본 16.
+    /// 정사각 변 길이(px). 미지정이면 아이콘 가족 `icon-size-md`(16).
     pub fn size(mut self, size: f32) -> Self {
-        self.size = size;
+        self.size = Some(size);
         self
     }
 
@@ -76,7 +74,10 @@ impl Spinner {
 
     /// 그리고 hover 응답을 반환한다.
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
-        let size = self.size;
+        // 스피너 지름은 폰트 스케일이 아니라 **아이콘 가족**이다(2026-09-17 결정 T7).
+        let size = self
+            .size
+            .unwrap_or_else(|| theme.icon_glyph_size_md.value());
         let color = self.color.unwrap_or_else(|| theme.text_muted().to_egui());
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
 

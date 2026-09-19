@@ -1,7 +1,10 @@
 //! `Spinner` primitive specimen — 디자인(4) `components/feedback/Spinner` 카드.
 //!
-//! 기본 spinner-size(16) 회전 arc + 저대비 track · 크기 램프 · accent 색 ·
+//! 기본 크기(16) 회전 arc + 저대비 track · 크기 램프 · accent 색 ·
 //! reduced-motion 3-dot fallback. 하단 `meta` 로 치수/토큰 노출.
+//!
+//! 기본값의 출처는 `icon-size-md` 다 — 위젯이 크기를 안 받으면 그 토큰을 읽는다
+//! (`component.spinner-size` 도 같은 16 이지만 위젯이 읽는 것은 그쪽이 아니다).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, Spinner};
@@ -9,7 +12,8 @@ use tasty_ui_widgets::{Button, ButtonVariant, Spinner};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    let base = theme.spinner_size.value();
+    // 위젯이 크기를 안 받았을 때 스스로 고르는 값과 같은 접근자를 읽는다.
+    let base = theme.icon_glyph_size_md.value();
     stage(ui, theme, StageVariant::Column, |ui| {
         cluster(ui, theme, "sizes — 12 · 16 · 20 · 24", |ui| {
             Spinner::new().size(12.0).show(ui, theme);
@@ -77,7 +81,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.text_muted()),
             ),
             TokenChip::new(
-                "spinner-size",
+                "icon-size-md",
                 "default 16",
                 egui::Color32::from(theme.accent_primary()),
             ),

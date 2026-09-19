@@ -19,19 +19,23 @@ use tasty_ui_widgets::num_keycap;
 use crate::catalog::icons::{CHEVRON_DOWN, CHEVRON_RIGHT, FILE, MockGlyph, TERMINAL};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-// 키캡 slot 의 디자인 고정 px = switch-overlay-size = kbd-size = size-16.
-// 본체 `num_keycap` 위젯이 같은 16px 를 할당하므로 slot 폭/오프셋 계산과 정합한다.
-const KEYCAP_SIZE: LogicalPx = LogicalPx(16.0);
+// 키캡 slot 폭은 본체 `num_keycap` 이 읽는 것과 같은 토큰
+// (`switch-overlay-size` → `kbd-size`)에서 온다 — 값을 베끼지 않는다.
+fn keycap_size(theme: &Theme) -> LogicalPx {
+    theme.switch_overlay_size()
+}
 /// 워크스페이스 이름과 설명 사이의 줄 간격. 행 높이와 설명 중심이 같은 간격을 쓴다.
 const WORKSPACE_TEXT_LINE_GAP: LogicalPx = LogicalPx(1.0);
 
-/// 공용 `num_keycap` 위젯을 16px slot 중앙(`center`)에 배치한다.
+/// 공용 `num_keycap` 위젯을 키캡 slot 중앙(`center`)에 배치한다.
 /// specimen 은 painter 로 절대 위치에 레이아웃하므로, 위젯을 키캡 rect 크기의 child UI
 /// 안에서 호출해 제자리에 그린다(본체와 동일 위젯 공유 — 재구현 금지).
 /// `active` = 현재 탭/워크스페이스 → accent_primary fill + text_on_accent 숫자.
 fn keycap_at(ui: &mut egui::Ui, theme: &Theme, center: egui::Pos2, digit: &str, active: bool) {
-    let rect =
-        egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE.value(), KEYCAP_SIZE.value()));
+    let rect = egui::Rect::from_center_size(
+        center,
+        egui::vec2(keycap_size(theme).value(), keycap_size(theme).value()),
+    );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     num_keycap(&mut child, theme, digit, active);
 }
@@ -77,7 +81,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 .size()
                 .x
             }));
-            pad + KEYCAP_SIZE + gap + lw + pad
+            pad + keycap_size(theme) + gap + lw + pad
         })
         .collect();
     // `LogicalPx` 에는 `Sum` 이 없다 — 더하기로 접는다(빈 목록은 `Default` = 0).
@@ -121,7 +125,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         }
         // leading 16px slot: held → 숫자 키캡, else 표면 아이콘.
         let slot_c = egui::pos2(
-            tab.min.x + (pad + KEYCAP_SIZE.scaled(0.5)).value(),
+            tab.min.x + (pad + keycap_size(theme).scaled(0.5)).value(),
             tab.center().y,
         );
         if held {
@@ -141,7 +145,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         }
         p.text(
             egui::pos2(
-                tab.min.x + (pad + KEYCAP_SIZE + gap).value(),
+                tab.min.x + (pad + keycap_size(theme) + gap).value(),
                 tab.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -249,7 +253,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     let pad = theme.spacing_sm; // 8
     let gap = theme.spacing_sm; // 8
     let bw = theme.border_width.value();
-    let lead = KEYCAP_SIZE; // 16px slot (dot/numcap 공통)
+    let lead = keycap_size(theme); // 16px slot (dot/numcap 공통)
     let text_x_off = pad + lead + gap; // 32 — divider margin-left 와 동일
 
     let head_h = theme.spacing_lg + theme.spacing_xs; // 10+4 ≈ 헤더 영역
@@ -540,7 +544,7 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     let pad = theme.spacing_sm; // 8 (행 padding)
     let gap = theme.spacing_sm; // 8
     let bw = theme.border_width.value();
-    let lead = KEYCAP_SIZE; // 16 status-dot slot
+    let lead = keycap_size(theme); // 16 status-dot slot
     let text_x_off = pad + lead + gap; // 32 — divider margin-left
 
     let chev = theme.spacing_md; // 12 chevron slot 폭
@@ -601,7 +605,10 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         );
         // 우측 정렬 키캡 (held + n 있을 때만).
         if held && let Some(d) = head.n {
-            let cap_c = egui::pos2(rect.max.x - (pad + KEYCAP_SIZE.scaled(0.5)).value(), hcy);
+            let cap_c = egui::pos2(
+                rect.max.x - (pad + keycap_size(theme).scaled(0.5)).value(),
+                hcy,
+            );
             keycap_at(ui, theme, cap_c, d, head.active);
         }
         y += head_h;

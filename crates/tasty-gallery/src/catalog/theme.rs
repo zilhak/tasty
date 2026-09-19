@@ -76,6 +76,7 @@ pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
                 "active / selected",
                 ec(theme.surface_active()),
             ),
+            TokenChip::new("border-frame", "frame line", ec(theme.border_frame())),
         ],
     );
     note(
@@ -168,6 +169,13 @@ pub fn text(ui: &mut egui::Ui, theme: &Theme) {
             "text-disabled",
             "Disabled — inert controls",
         );
+        text_row(
+            ui,
+            theme,
+            ec(theme.glyph_dim()),
+            "glyph-dim",
+            "Dim chrome glyph — receding, never disabled",
+        );
         // placeholder 는 Input 의 빈 상태로 시연.
         let mut buf = String::new();
         Input::new()
@@ -193,6 +201,7 @@ pub fn text(ui: &mut egui::Ui, theme: &Theme) {
                 "empty input",
                 ec(theme.text_placeholder()),
             ),
+            TokenChip::new("glyph-dim", "receding chrome", ec(theme.glyph_dim())),
         ],
     );
 }
@@ -299,6 +308,11 @@ pub fn accents(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("accent-warning", "warning", ec(theme.accent_warning())),
             TokenChip::new("accent-danger", "danger", ec(theme.accent_danger())),
             TokenChip::new("accent-agent", "agent", ec(theme.accent_agent())),
+            TokenChip::new(
+                "accent-decorative",
+                "decoration only",
+                ec(theme.accent_decorative()),
+            ),
         ],
     );
 }

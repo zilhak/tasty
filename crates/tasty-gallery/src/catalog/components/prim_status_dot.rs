@@ -48,6 +48,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "error",
                 egui::Color32::from(theme.accent_danger()),
             ),
+            TokenChip::new(
+                "status-dot-idle",
+                "idle",
+                egui::Color32::from(theme.status_dot_idle()),
+            ),
         ],
     );
 }
