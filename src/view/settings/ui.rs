@@ -734,16 +734,25 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                                     .auto_shrink([false, false])
                                     .drag_to_scroll(false)
                                     .show(ui, |ui| {
-                                        tasty_ui_widgets::tab_content_frame(ui, |ui| {
-                                            draw_active_content(
-                                                ui,
-                                                &mut draft,
-                                                ui_state,
-                                                captured_double_tap,
-                                                file_format,
-                                                file_handler,
-                                            );
-                                        });
+                                        // 콘텐츠 컬럼 상한은 **여기 한 곳**에만 건다 —
+                                        // full-bleed 가 아닌 L2 서브탭이 전부 이것을
+                                        // 물려받는다. full-bleed 갈래는 컬럼 자체를 자기
+                                        // 레이아웃으로 대체하므로 위 분기에서 이 자리를
+                                        // 안 지난다.
+                                        tasty_ui_widgets::settings_content_column(
+                                            ui,
+                                            th.settings_content_max_width(),
+                                            |ui| {
+                                                draw_active_content(
+                                                    ui,
+                                                    &mut draft,
+                                                    ui_state,
+                                                    captured_double_tap,
+                                                    file_format,
+                                                    file_handler,
+                                                );
+                                            },
+                                        );
                                     });
                             }
 

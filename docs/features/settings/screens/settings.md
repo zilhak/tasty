@@ -47,7 +47,8 @@
   필드가 없고, 이 화면에는 편집 가능한 텍스트 필드가 여러 탭에 있어 편집 중 Escape 가 "편집 취소"
   인지 "닫기" 인지가 아직 값으로 안 정해졌다. 메인 윈도우의 Escape 경로가 보는 `settings_open_requested`
   는 **열기 요청 래치**라 모달이 떠 있는 동안은 false 다 — 그 경로는 이 화면을 닫지 않는다.
-- **Keybindings › Preset · Import / Export**: 이 두 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋) · [가져오기 / 내보내기](../../keybindings/index.md#가져오기--내보내기).
+- **콘텐츠 컬럼 상한**: 스크롤하는 콘텐츠 컬럼은 `Theme::settings_content_max_width`(620)로 막힌다(`tasty_ui_widgets::settings_content_column`). 상한은 **그 컬럼 한 자리**에만 건다 — full-bleed 가 아닌 L2 서브탭이 전부 물려받으므로 블록이 저마다 폭을 들 필요가 없고, 블록마다 걸면 블록끼리 값이 갈린다. 창이 그보다 좁으면 남은 폭이 이긴다(상한이지 최소폭이 아니다). 본문 산문이 쓰는 `measure_md`(400)는 **다른 축**이다 — 읽는 줄 길이라 이 상한보다 좁고, 그대로 둔다.
+- **Keybindings › Preset · Import / Export**: 이 두 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 그래서 위 컬럼 상한도 안 받는다 — 컬럼 자체를 자기 레이아웃으로 대체한다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋) · [가져오기 / 내보내기](../../keybindings/index.md#가져오기--내보내기).
 - **Keybindings › Import / Export 의 충돌 확인**: 가져오기 Apply 가 새 충돌을 만들면 설정 창 자체 popup(`keybinding_import_conflict`)이 뜬다 — Cancel · Overwrite, 키보드 Enter/Y = Overwrite, Esc/N = Cancel, 타이틀바 ✕ = Cancel.
 
 ### 숫자 입력 한 모양

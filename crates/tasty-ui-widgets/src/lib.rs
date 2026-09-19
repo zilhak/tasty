@@ -95,7 +95,7 @@ pub use spacing::{hspace, margin_all, margin_sym, vspace};
 pub use spinner::Spinner;
 pub use status_bar::{StatusBarAction, StatusBarData, StatusBarDrawResult, draw_status_bar_view};
 pub use status_dot::{StatusKind, status_dot};
-pub use tab_content_frame::tab_content_frame;
+pub use tab_content_frame::{settings_content_column, tab_content_frame};
 pub use table::{Table, TableAlign, TableColumn, TableColumnWidth, TableOutput, TableSortDir};
 pub use toast::{
     CardColors as ToastCardColors, FADE_IN_MS as TOAST_FADE_IN_MS,

@@ -1713,6 +1713,19 @@ impl Theme {
         MOTION_HOLD_REVEAL_SHIFT_MS
     }
 
+    /// 설정 창 콘텐츠 컬럼의 상한 (620px). `--tasty-settings-content-max-width`.
+    ///
+    /// 스크롤하는 콘텐츠 컬럼 **한 곳**에 건다 — 그러면 full-bleed 가 아닌 L2 서브탭이
+    /// 전부 이것을 물려받고 블록이 저마다 폭을 들 필요가 없다. full-bleed 서브탭은
+    /// 컬럼 자체를 자기 레이아웃으로 대체하므로 예외다. 본문 산문은 이것과 **다른 축**인
+    /// `measure_md`(읽는 줄 길이, 이것보다 좁다)를 그대로 쓴다.
+    ///
+    /// 디자인 export 에 이 이름이 아직 없어 ADR-0135 대로 접근자로 든다.
+    #[inline]
+    pub fn settings_content_max_width(&self) -> LogicalPx {
+        LogicalPx((620.0 * self.ui_zoom).round())
+    }
+
     // ── 컴포넌트 토큰 (modifier-hint 오버레이) — `--tasty-modhint-*` ──
     // 4분류(Popup/Toast/Banner/Modal) 밖의 신규 요소: 키보드 포커스 없음 + 마우스
     // 인터랙티브 + 홀드 수명. 치수는 LogicalPx(DPI 자연대응), 색은 semantic 재사용.

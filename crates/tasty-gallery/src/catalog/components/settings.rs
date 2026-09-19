@@ -40,6 +40,10 @@ use crate::catalog::widgets::dialog as kit;
 const WIDTH: LogicalPx = LogicalPx(1100.0);
 const HEIGHT: LogicalPx = LogicalPx(700.0);
 const L2_WIDTH: LogicalPx = LogicalPx(200.0);
+/// 콘텐츠 컬럼 상한 — 디자인 `--tasty-settings-content-max-width`. 창이 아무리 넓어도
+/// 한 블록이 이보다 넓어지지 않는다. full-bleed 서브탭(자기 레이아웃을 들고 컬럼을
+/// 대체하는 것)만 예외이고, 본문 산문은 이것과 **다른 축**인 `measure-md` 를 그대로 쓴다.
+const CONTENT_MAX_W: LogicalPx = LogicalPx(620.0);
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
 
@@ -161,6 +165,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("active tab", "2px accent underline"),
             ("L2", "sidebar 200 · search filter · plugin dot"),
             ("content", "padding 16 · row label 150 · gap 16"),
+            (
+                "content column",
+                "capped at 620 — every non-full-bleed subtab inherits",
+            ),
             ("boolean", "switch() — Colors Default = checkbox()"),
             (
                 "language",
@@ -363,8 +371,11 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: Logica
             ui.set_min_height(mid_h.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
             // 아래 `theme_swatch` 가 f32 폭을 받는다 — 그 관문까지가 이번 회차 밖이라
-            // 여기서 한 번 벗긴다.
-            let inner = (content_w - theme.spacing_lg.scaled(2.0)).value();
+            // 여기서 한 번 벗긴다. 상한은 컬럼에 **한 번** 건다 — 블록마다 걸면 블록끼리
+            // 값이 갈린다.
+            let inner = (content_w - theme.spacing_lg.scaled(2.0))
+                .min(CONTENT_MAX_W)
+                .value();
             // 위 사이드바와 같은 이유 — content 의 섹션/행은 세로 적층.
             ui.vertical(|ui| {
                 // ── Theme preset (선택된 L2 = Theme) ──
