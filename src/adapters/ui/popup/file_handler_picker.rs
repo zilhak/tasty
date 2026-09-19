@@ -1043,9 +1043,44 @@ pub fn draw_file_handler_picker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tasty_ui_widgets::tokens::FH_TARGET_MONO_ADVANCE;
 
     fn test_theme() -> Theme {
         tasty_themes::mocha_fallback()
+    }
+
+    /// 헤더 경로 예산이 **본체가 실제로 설치하는 폰트 스택**에서 65 인지.
+    ///
+    /// 앱이 부팅에서 부르는 그 설치 함수(`GpuState::setup_egui_fonts`)를 그대로 얹는다 —
+    /// 시험이 자기 사본을 만들면 둘이 갈리는 순간 이 시험은 화면과 무관한 것을 잰다.
+    ///
+    /// 이 자리가 답하는 것은 **어느 측정을 골랐는가**다. 같은 스택에서 글리프 하나의
+    /// 폭으로 나누면 70 이 나오고 그 70 자는 라인 박스를 넘는다(그 넘침 자체는
+    /// `crates/tasty-gallery/tests/mono_metrics.rs` 가 px 로 잰다).
+    #[test]
+    fn the_budget_is_sixty_five_on_the_font_stack_the_app_installs() {
+        let th = test_theme();
+        let ctx = egui::Context::default();
+        crate::gfx::gpu::GpuState::setup_egui_fonts(&ctx);
+        // 반환하는 `FullOutput` 은 그리지 않는 pass 의 산출물이라 볼 것이 없다 —
+        // 필요한 것은 클로저 안에서 도는 단언뿐이다.
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let font = egui::FontId::monospace(th.font_size_caption.value());
+                let one = text_w(ui, "0", &font, egui::Color32::PLACEHOLDER);
+                let two = text_w(ui, "00", &font, egui::Color32::PLACEHOLDER);
+                assert_eq!(
+                    target_budget(ui, &th),
+                    tasty_ui_widgets::tokens::FH_TARGET_ELIDE_FALLBACK
+                );
+                assert_eq!(
+                    fh_model::target_budget_chars(LogicalPx(one)),
+                    70,
+                    "글리프 하나로 나누면 시안이 적은 70 이 나온다 — 고친 것이 이것이다"
+                );
+                assert_eq!(LogicalPx(two - one), FH_TARGET_MONO_ADVANCE);
+            });
+        });
     }
 
     fn entry(id: &str, name: Option<&str>, kind: &str, plugin: bool) -> FileHandlerPickerEntryView {

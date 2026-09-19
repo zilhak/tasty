@@ -11,7 +11,12 @@ impl GpuState {
     ///   as fallback for both `Proportional` and `Monospace` so 한글/한자/かな
     ///   render correctly in UI labels.
     /// - `Proportional` itself keeps egui's default UI fonts as the primary face.
-    pub(super) fn setup_egui_fonts(ctx: &egui::Context) {
+    ///
+    /// `pub(crate)` rather than `pub(super)` so a test can measure against the stack
+    /// the app actually installs. The file handler header budgets its path in mono
+    /// cells, and a test that set up its own copy of the fonts would stop measuring
+    /// this one the moment the two drifted.
+    pub(crate) fn setup_egui_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
 
         fonts.font_data.insert(

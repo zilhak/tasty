@@ -11,4 +11,5 @@
 //! 컴포넌트를 폭넓게 포괄한다 — cut 금지, gallery-first(ADR-0020).
 
 pub mod catalog;
+pub mod fonts;
 pub mod host_shell;

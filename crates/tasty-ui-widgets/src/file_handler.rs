@@ -146,6 +146,30 @@ mod tests {
         assert!(out.ends_with("-reviewed-by-finance.xlsx"));
     }
 
+    /// 결과는 어떤 입력에서도 예산을 **넘지 않는다** — `…/` 두 글자도 예산에서 낸다.
+    ///
+    /// 시안이 준 표본 셋은 이 경계를 안 밟는다. 셋 다 고른 조각마다 여유가 남아,
+    /// `+ 2` 를 `+ 1` 로 바꾸는 변이가 같은 조각을 뽑고 아무 시험도 안 죽었다(실측).
+    /// 그래서 경계를 직접 만든다: 조각을 하나 버린 꼬리가 예산보다 정확히 한 글자
+    /// 짧아, `…/` 를 붙이면 예산을 한 글자 넘기는 경로.
+    #[test]
+    fn the_ellipsis_prefix_is_paid_for_out_of_the_budget() {
+        let budget = FH_TARGET_ELIDE_FALLBACK;
+        let mid = "m".repeat(budget - 1 - "/file.rs".chars().count());
+        let path = format!("aaa/{mid}/file.rs");
+        assert!(path.chars().count() > budget);
+        // 조각 하나를 버린 꼬리는 예산에 들어가지만(`budget - 1`), 접두 두 글자까지
+        // 세면 안 들어간다 — 그러면 조각을 하나 **더** 버려야 한다.
+        assert_eq!(format!("{mid}/file.rs").chars().count(), budget - 1);
+        let out = elide_target_front(&path, budget);
+        assert!(
+            out.chars().count() <= budget,
+            "{} 자: {out}",
+            out.chars().count()
+        );
+        assert_eq!(out, "…/file.rs");
+    }
+
     #[test]
     fn the_budget_is_measured_when_a_glyph_width_is_available() {
         // 390 / 6.0 = 65. 좁은 글리프면 더 많이 들어간다 — 상수였다면 안 움직였을 값이다.
