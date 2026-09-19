@@ -2060,12 +2060,28 @@ fn html_unescape(s: &str) -> String {
 /// lives here instead.
 ///
 /// `html` keeps `height:100%` while `body` takes `min-height:100%`, and the asymmetry is load
-/// bearing in both directions. `body` must be allowed to grow to the length of the document,
-/// because it is the containing block of the `position:sticky` address bar and a sticky element
-/// cannot outlive its containing block — with both pinned to the viewport the bar scrolled away
-/// after one screen. `html` must keep a definite height, because a percentage `min-height`
-/// resolves against the parent's height and would collapse if that height were itself auto. The
-/// short-document background fill that the old rule provided survives either way.
+/// bearing in both directions. All three combinations were measured in WebKitGTK 4.1 on the
+/// document this function generates, at a viewport of 1000 by 800 against a document of 10070:
+///
+/// | `html` / `body` | bar `rect.top` at the end of the scroll | short document `body` box |
+/// |---|---|---|
+/// | `height` / `min-height` (this one) | 0 | 800, the viewport |
+/// | `min-height` / `min-height` | 0 | 232, the content |
+/// | `height` / `height` | -8510, off screen | 800 |
+///
+/// `body` must be allowed to grow to the length of the document, because it is the containing
+/// block of the `position:sticky` address bar and a sticky element cannot outlive its containing
+/// block; the third row is what pinning it costs. `html` must keep a definite height, because a
+/// percentage `min-height` resolves against the parent's height and collapses when that height is
+/// itself auto; the second row is what dropping it costs, and the body box stops covering the
+/// viewport.
+///
+/// What the body box height does **not** buy is the background fill. `html` carries no background
+/// of its own, so the body background propagates to the canvas and paints the whole viewport
+/// whatever the box measures. The short document renders the same pixels in all three rows,
+/// including the one whose box is 232: zero differing pixels out of 800000, measured against the
+/// first row. The old `html,body{height:100%}` rule reads as though it were there for that fill,
+/// and the fill is not what it was holding up — do not restore it on that reasoning.
 ///
 /// The address bar height is declared once as `--md-addr-bar-h` and read by three other places:
 /// the find bar floats just below the bar, and headings and footnotes reserve that much scroll
