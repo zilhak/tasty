@@ -318,10 +318,14 @@ pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
 #[derive(Clone)]
 struct HookSeed {
     id: String,
-    /// "host" / "plugin" / "user" (jsx `HOOK_ORIGIN` 키).
+    /// 출처 Tag 에 그대로 찍히는 글자 — `host` · `you` · **그 plugin 의 id**.
     origin: &'static str,
+    /// 이 행이 사용자 것인가. 휴지통이 붙는 유일한 조건이다.
+    user: bool,
     prio: i32,
     cmd: String,
+    /// `IpcSequence` 행인가. 그러면 2 행이 편집 Input 이 아니라 **mono 한 줄 요약**이다.
+    seq: bool,
     on: bool,
 }
 
@@ -337,29 +341,37 @@ fn seed_hooks() -> Vec<HookSeed> {
         HookSeed {
             id: "push.received".into(),
             origin: "host",
+            user: false,
             prio: 10,
             cmd: "tasty notify \"push → $TASTY_HOOK_REPO\"".into(),
+            seq: false,
             on: true,
         },
         HookSeed {
             id: "pr.opened".into(),
-            origin: "plugin",
+            origin: "git-helper",
+            user: false,
             prio: 20,
             cmd: "git-helper pr open --id $TASTY_HOOK_PR".into(),
+            seq: false,
             on: true,
         },
         HookSeed {
             id: "deploy.finished".into(),
-            origin: "user",
+            origin: "you",
+            user: true,
             prio: 30,
             cmd: "~/ops/on-deploy.sh $TASTY_HOOK_ENV".into(),
+            seq: false,
             on: false,
         },
         HookSeed {
             id: "alert.fired".into(),
             origin: "host",
+            user: false,
             prio: 40,
-            cmd: "tasty pane new --title Alert".into(),
+            cmd: "ipc: window.focus → layout.save → surface.close".into(),
+            seq: true,
             on: true,
         },
     ]
@@ -374,12 +386,14 @@ thread_local! {
     });
 }
 
-/// jsx `HOOK_ORIGIN` — plugin 은 agent variant, host/user 는 default Tag.
+/// plugin 출처만 mauve(`accent-agent`)다 — `host` 와 `you` 는 기본 Tag.
+///
+/// plugin 행은 "plugin" 이 아니라 **그 plugin 의 id** 를 달므로 이름으로 못 가른다.
 fn origin_variant(origin: &str) -> TagVariant {
-    if origin == "plugin" {
-        TagVariant::Agent
-    } else {
+    if origin == "host" || origin == "you" {
         TagVariant::Default
+    } else {
+        TagVariant::Agent
     }
 }
 
@@ -400,8 +414,13 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("row", "2줄 — id·Tag·prio·Switch·remove / Shell cmd Input"),
-            ("origin tag", "plugin=agent variant · host/user=default"),
+            ("row", "2줄 — id·Tag·prio·Switch·(휴지통|자물쇠) / action"),
+            ("origin tag", "host · you · plugin id(agent variant)"),
+            ("remove", "user 행만 — 그 외는 자물쇠 글리프 + tooltip"),
+            (
+                "IpcSequence",
+                "편집 Input 대신 mono 한 줄 요약(스텝을 → 로 이음)",
+            ),
             ("disabled", "row 전체 opacity-disabled"),
             ("add card", "surface-raised + border + radius · caps 헤드"),
             ("priority", "낮을수록 먼저 (레지스트리 규약)"),
@@ -414,6 +433,7 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
                 "plugin origin tag",
                 theme.accent_agent().to_egui(),
             ),
+            TokenChip::new("glyph-dim", "자물쇠 글리프", theme.glyph_dim().to_egui()),
             TokenChip::new("separator", "row divider", theme.separator.to_egui()),
             TokenChip::new(
                 "surface-raised",
@@ -504,9 +524,11 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                         let max_prio = st.hooks.iter().map(|h| h.prio).max().unwrap_or(0);
                         st.hooks.push(HookSeed {
                             id: st.draft_id.trim().to_string(),
-                            origin: "user",
+                            origin: "you",
+                            user: true,
                             prio: max_prio + 10,
                             cmd: st.draft_cmd.trim().to_string(),
+                            seq: false,
                             on: true,
                         });
                         st.adding = false;
@@ -532,6 +554,19 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
     if let Some(i) = remove {
         st.hooks.remove(i);
     }
+}
+
+/// 자물쇠 슬롯 — 휴지통 IconButton 과 같은 크기의 자리를 차지한다(행마다 우측 끝이
+/// 어긋나지 않게). 누를 수 있는 것이 아니라 읽는 표시다.
+fn lock_slot(ui: &mut egui::Ui, theme: &Theme) {
+    let side = ControlSize::Sm.height(theme);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    let glyph = ControlSize::Sm.icon_glyph(theme);
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    icons::LOCK
+        .image(icon_rect.width(), theme.glyph_dim().into())
+        .paint_at(ui, icon_rect);
+    resp.on_hover_text("Provided by host — can't be removed");
 }
 
 /// jsx `HookRow` — 2줄 컬럼 + 하단 separator + disabled 시 row opacity.
@@ -560,15 +595,22 @@ fn draw_hook_row(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if IconButton::new()
-                            .variant(IconButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .show(ui, theme, &|ui, rect, c| {
-                                icons::TRASH.image(rect.width(), c).paint_at(ui, rect);
-                            })
-                            .clicked()
-                        {
-                            *remove = Some(i);
+                        // 출처가 그 자리를 정한다 — user 행만 휴지통, 나머지는 자물쇠.
+                        // 레지스트리가 시작마다 host/plugin 기본값을 다시 심으므로
+                        // 거기 지우기를 두면 시스템이 되돌리는 것을 약속하는 셈이다.
+                        if st.hooks[i].user {
+                            if IconButton::new()
+                                .variant(IconButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .show(ui, theme, &|ui, rect, c| {
+                                    icons::TRASH.image(rect.width(), c).paint_at(ui, rect);
+                                })
+                                .clicked()
+                            {
+                                *remove = Some(i);
+                            }
+                        } else {
+                            lock_slot(ui, theme);
                         }
                         switch(ui, theme, &mut st.hooks[i].on, None, true);
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -597,21 +639,33 @@ fn draw_hook_row(
                 // line 2 — "Shell cmd:" 라벨(74) + mono Input (disabled 시 편집 불가).
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    let seq = st.hooks[i].seq;
                     ui.allocate_ui_with_layout(
                         egui::vec2(HOOK_CMD_LABEL_W.value(), theme.input_height().value()),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.label(
-                                egui::RichText::new("Shell cmd:")
+                                egui::RichText::new(if seq { "Action:" } else { "Shell cmd:" })
                                     .size(theme.font_size_caption.value())
                                     .color(theme.text_muted().to_egui()),
                             );
                         },
                     );
-                    Input::new()
-                        .mono(true)
-                        .enabled(on)
-                        .show(ui, theme, &mut st.hooks[i].cmd);
+                    if seq {
+                        // 여러 스텝을 설정 행 안에서 고칠 자리가 없다 — 한 줄 요약만
+                        // 둔다(스텝은 `→` 로 잇는다).
+                        ui.label(
+                            egui::RichText::new(st.hooks[i].cmd.clone())
+                                .monospace()
+                                .size(theme.font_size_term_sm.value())
+                                .color(theme.text_secondary().to_egui()),
+                        );
+                    } else {
+                        Input::new()
+                            .mono(true)
+                            .enabled(on)
+                            .show(ui, theme, &mut st.hooks[i].cmd);
+                    }
                 });
             });
     });

@@ -667,7 +667,7 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 | `body()` File Detectors 분기 | `view/settings/ui/file_handler_tab/detectors.rs` | `::draw_detectors` | name 13 `text-secondary` + desc 12 `text-muted` · Switch 우측 |
 | `body()` File Handlers 분기 | `view/settings/ui/file_handler_tab/handlers.rs` | `::draw_file_handlers` | name 13 + `Tag`(kind) + Switch(marginLeft auto) |
 | `HookHandlers` (intro+add card+list) | `view/settings/ui/file_handler_tab/hook_handlers.rs::draw_hook_handlers` | `::draw_hook_handlers` | intro 12 `text-muted`/`measure-md` · add card `surface-raised`+`border-default`+`radius`, 라벨폭 100 |
-| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(plugin=`agent` variant) · `prio N` mono `font-size-micro` · disabled 시 row `opacity-disabled` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input` |
+| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `opacity-disabled` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono 한 줄 요약) |
 
 **전사 노트**:
 - jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 egui letter-spacing 미지원 —
@@ -676,9 +676,19 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   `spacing_*`/`font_size_*`/`text_*`/`border_*` 등 범용 접근자이며 이 기능 전용으로
   추가된 Theme 필드가 없다. 화면 전용 고정값(라벨폭 74/100, priority step 10)은
   module const(token-policy §c).
-- 본체 Hook Handlers 는 레지스트리 정책 적용으로 jsx 와 두 곳이 다르다: 제거 버튼은
-  user-origin 행만(호스트/플러그인 base 는 finalize 가 되살림), IpcSequence 행은 인라인
-  편집 대신 mono 요약. intro copy 의 priority 방향은 엔진 규약(낮을수록 먼저)으로 기술.
+- **레지스트리 정책이 그 자리를 정한다 — 차이가 아니라 확정된 모양이다.** 제거 버튼은
+  user-origin 행만 달고(host/plugin base 는 finalize 가 되살린다), 나머지 행에는 같은
+  자리에 자물쇠 글리프가 온다(`glyph-dim` + "Provided by host — can't be removed").
+  **disabled 버튼이 아니다** — 보류된 것이 없으므로 그런 표시는 "지금은 안 되지만
+  언젠가" 라는 거짓을 말한다. 출처 Tag 는 **모든 행**이 달고 `host` · `you` ·
+  **그 plugin 의 id**(mauve `accent-agent`)를 찍는다. `IpcSequence` 행은 인라인 편집
+  대신 mono 한 줄 요약(스텝을 `→` 로 이음)이다. intro copy 의 priority 방향은 엔진
+  규약(낮을수록 먼저)으로 기술.
+- **`IpcSequence` 행의 `Edit` ghost 버튼은 아직 없다** — 디자인은 그 버튼이 시퀀스
+  편집기를 연다고 적지만, 이 레포에 그 편집기가 GUI 에도 CLI 에도 없다(`tasty
+  hook-handler` 는 list / reload / dispatch 뿐이고 시퀀스는 `~/.tasty/hook-handlers.toml`
+  손편집 + `reload` 로만 바뀐다). 아무 데도 안 여는 버튼은 그 자체가 거짓 표시라,
+  편집기의 범위가 정해질 때까지 두지 않는다. 갤러리 specimen 도 같다.
 
 ## Settings › General › Remote transfer
 

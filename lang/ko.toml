@@ -268,6 +268,7 @@ unregistered = "미설치"
 disabled = "비활성"
 
 [settings.file_handler.hook_handlers]
+not_removable = "host 가 제공하는 항목 — 제거할 수 없습니다"
 description = "인바운드 훅 서버가 일치하는 이벤트를 수신했을 때 실행되는 핸들러입니다. 코어 host 기본값, plugin 기여분, 사용자 user 매핑을 포함하며, priority 숫자가 작을수록 먼저 실행됩니다. 웹훅 리스너(bind / port / secret)는 별도로 설정합니다."
 add_button = "핸들러 추가"
 new_head = "새 훅 핸들러"

@@ -16,9 +16,19 @@
 //! 레지스트리 정책에 따른 행별 허용 조작:
 //! - enabled 토글: 전 출처 (user-origin `disabled` override 로 기록).
 //! - 셸 명령 인라인 편집: `ShellCommand` action 행만 (user-origin action override).
-//!   `IpcSequence` 행은 요약 표시만 (v1 은 인라인 편집 없음 — TOML 손편집).
-//! - 제거: user-origin 행만 (host/plugin 행은 base contribution 이 남아 있어
-//!   제거해도 finalize 가 되살린다 — 파일 핸들러 sub-tab 과 동일 정책).
+//!   `IpcSequence` 행은 **mono 한 줄 요약**만 둔다(스텝을 `→` 로 잇는다) — 여러 스텝을
+//!   설정 행 안에서 고칠 자리가 없다.
+//! - 제거: **user-origin 행만**. host/plugin 행에는 같은 자리에 자물쇠 글리프
+//!   (`glyph-dim` + tooltip)가 온다 — 레지스트리가 시작마다 그 기본값을 다시 심으므로
+//!   거기 지우기를 두면 시스템이 곧 되돌릴 일을 약속하는 셈이다. **disabled 버튼이
+//!   아니다**: 보류된 것이 없으므로 그런 표시는 "지금은 안 되지만 언젠가" 라는 거짓을
+//!   말한다.
+//!
+//! **`IpcSequence` 행의 `Edit` 진입점은 아직 없다.** 디자인은 시퀀스 편집기를 여는 ghost
+//! 버튼을 두지만 이 레포에는 그 편집기가 **어디에도 없다** — GUI 경로도, CLI 경로도
+//! 없고(`tasty hook-handler` 는 list / reload / dispatch 뿐이다) 시퀀스는
+//! `~/.tasty/hook-handlers.toml` 손편집 + `reload` 로만 바뀐다. 아무 데도 안 여는 버튼을
+//! 두면 그 자체가 거짓 표시라, 편집기 범위가 정해질 때까지 버튼을 두지 않는다.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -302,16 +312,23 @@ fn draw_hook_row(
                     ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // RTL: 먼저 추가 = 가장 우측. jsx 순서 Switch → remove(우측 끝).
-                        if matches!(h.owner, HookHandlerOwner::User)
-                            && IconButton::new()
+                        // **그 자리는 출처가 정한다** — user 행만 휴지통이고, host/plugin
+                        // 행에는 자물쇠 글리프가 온다. disabled 버튼이 아니다: 레지스트리가
+                        // 시작마다 기본값을 다시 심으므로 지울 수 있다는 암시 자체가 거짓이고,
+                        // disabled 버튼은 "지금은 안 되지만 언젠가" 를 뜻한다.
+                        if matches!(h.owner, HookHandlerOwner::User) {
+                            if IconButton::new()
                                 .variant(IconButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
                                 .show(ui, th, &|ui, rect, c| {
                                     icons::TRASH.image(rect.width(), c).paint_at(ui, rect);
                                 })
                                 .clicked()
-                        {
-                            *remove_toggle = Some(h.id.clone());
+                            {
+                                *remove_toggle = Some(h.id.clone());
+                            }
+                        } else {
+                            lock_slot(ui, th);
                         }
                         if pending_remove {
                             ui.label(
@@ -490,12 +507,27 @@ fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, re
     );
 }
 
-/// jsx `HOOK_ORIGIN` — plugin 은 `agent` variant, host/user 는 default Tag.
-fn origin_tag(owner: &HookHandlerOwner) -> (&'static str, TagVariant) {
+/// 자물쇠 슬롯 — 휴지통 IconButton 과 **같은 크기의 자리**를 차지한다. 행마다 우측
+/// 끝이 어긋나지 않게 하려는 것이고, 누를 수 있는 것이 아니라 읽는 표시다.
+fn lock_slot(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
+    let side = ControlSize::Sm.height(th);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    let glyph = ControlSize::Sm.icon_glyph(th);
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    icons::LOCK
+        .image(icon_rect.width(), th.glyph_dim().into())
+        .paint_at(ui, icon_rect);
+    resp.on_hover_text(t("settings.file_handler.hook_handlers.not_removable"));
+}
+
+/// 출처 Tag — **모든 행이 단다**. plugin 행은 "plugin" 이 아니라 **그 plugin 의 id** 를
+/// 달고(mauve `accent-agent`), 사용자 행은 "user" 가 아니라 **"you"** 다: 이 목록에서
+/// 묻는 것이 "누가 이걸 심었나" 라 1 인칭이 그 답을 그대로 읽는다.
+fn origin_tag(owner: &HookHandlerOwner) -> (&str, TagVariant) {
     match owner {
         HookHandlerOwner::Host => ("host", TagVariant::Default),
-        HookHandlerOwner::Plugin(_) => ("plugin", TagVariant::Agent),
-        HookHandlerOwner::User => ("user", TagVariant::Default),
+        HookHandlerOwner::Plugin(id) => (id.as_str(), TagVariant::Agent),
+        HookHandlerOwner::User => ("you", TagVariant::Default),
     }
 }
 

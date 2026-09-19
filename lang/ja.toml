@@ -268,6 +268,7 @@ unregistered = "未インストール"
 disabled = "無効"
 
 [settings.file_handler.hook_handlers]
+not_removable = "host が提供する項目 — 削除できません"
 description = "インバウンドフックサーバーが一致するイベントを受信したときに実行されるハンドラーです。コアの host 既定値、plugin の提供分、ユーザーの user マッピングを含み、priority の数値が小さいほど先に実行されます。Webhook リスナー（bind / port / secret）は別途設定します。"
 add_button = "ハンドラーを追加"
 new_head = "新しいフックハンドラー"

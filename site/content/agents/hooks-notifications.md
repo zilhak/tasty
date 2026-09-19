@@ -68,6 +68,8 @@ tasty hook-handler reload                                   # ~/.tasty/hook-hand
 
 사용자 핸들러는 **설정** <!-- en: Settings --> › **핸들러** <!-- en: Handlers --> › **훅 핸들러** <!-- en: Hook Handlers --> 탭에서 추가·편집합니다. 저장하면 `~/.tasty/hook-handlers.toml` 에 기록되며, 파일을 직접 써도 됩니다 (`tasty hook-handler reload` 로 반영).
 
+목록의 각 줄에는 그것을 심은 쪽이 표시됩니다 — Tasty 자신은 `host`, 플러그인은 그 플러그인 이름, 직접 만든 것은 `you` 입니다. 지울 수 있는 줄에만 휴지통이 붙고, 나머지 줄에는 자물쇠가 놓입니다 (Tasty 와 플러그인이 시작할 때마다 자기 핸들러를 다시 심기 때문입니다). 여러 내부 동작을 잇는 핸들러는 그 순서가 한 줄로 보이며, 바꾸려면 파일을 고치고 `tasty hook-handler reload` 하면 됩니다.
+
 ```toml
 [[handler]]
 id = "user/notify-fail"

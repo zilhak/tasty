@@ -268,6 +268,7 @@ unregistered = "not installed"
 disabled = "disabled"
 
 [settings.file_handler.hook_handlers]
+not_removable = "Provided by host — can't be removed"
 description = "Handlers fired when the inbound-hook server receives a matching event. Includes core host defaults, plugin contributions, and your own user mappings; lower priority numbers run first. The webhook listener (bind / port / secret) is configured separately."
 add_button = "Add handler"
 new_head = "New hook handler"

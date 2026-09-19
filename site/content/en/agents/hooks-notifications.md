@@ -1,4 +1,4 @@
-<!-- source-hash: 76483eda6215 -->
+<!-- source-hash: 0c48052cc731 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -68,6 +68,8 @@ tasty hook-handler reload                                   # re-read ~/.tasty/h
 ```
 
 User handlers are added and edited in the **Settings** › **Handlers** › **Hook Handlers** tab. Saving writes them to `~/.tasty/hook-handlers.toml`, and you can also write the file directly (apply with `tasty hook-handler reload`).
+
+Every row shows who planted it — `host` for Tasty itself, the plugin's own name for a plugin, and `you` for the ones you made. Only the rows you can delete carry a trash button; the rest carry a padlock, because Tasty and its plugins plant their handlers again on every start. A handler that chains several internal actions shows that chain on one line; to change it, edit the file and run `tasty hook-handler reload`.
 
 ```toml
 [[handler]]
