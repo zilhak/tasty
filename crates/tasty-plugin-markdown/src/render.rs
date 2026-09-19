@@ -3930,6 +3930,61 @@ mod tests {
         assert_eq!(percent_decode(&enc), raw);
     }
 
+    /// 주소창이 걸린 두 CSS 줄과 높이 선언을 **문자열로** 고정하는 시험 둘의 공통 하네스.
+    ///
+    /// ★ 이 둘이 막는 사고는 **누가 그 줄을 되돌리는 것**이지 엔진이 다르게 계산하는 것이
+    /// 아니다. 문자열이 맞다고 레이아웃이 맞다는 뜻이 아니고, 이 시험을 sticky 가 붙는다는
+    /// 증거로 읽으면 안 된다 — 생성된 바이트만 잰다. 그 바이트가 왜 그래야 하는지와 다른
+    /// 조합에서 엔진이 무엇을 내놓는지는 [`theme_css`] 의 doc 주석이 실측 표로 적는다
+    /// (사유를 여기 복제하지 않는다). 엔진 층을 재는 채널은 이 레포에 없다.
+    fn stylesheet_of_a_rendered_document() -> String {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let recent: Vec<String> = Vec::new();
+        render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/current.md",
+            source: "# Hello\n\nSome text.",
+            load_error: None,
+            base_dir: Some(Path::new("/a")),
+            recent: &recent,
+            remote: None,
+        })
+    }
+
+    #[test]
+    fn stylesheet_lets_body_grow_while_html_stays_definite() {
+        let css = stylesheet_of_a_rendered_document();
+        assert!(
+            css.contains("html{height:100%"),
+            "html 이 definite height 를 잃으면 body 의 백분율 min-height 가 기댈 곳을 잃는다"
+        );
+        assert!(
+            css.contains("body{min-height:100%"),
+            "body 가 뷰포트에 묶이면 sticky 주소창이 자기 containing block 을 넘어 못 살아남는다"
+        );
+        assert!(
+            !css.contains("html,body{height:100%"),
+            "옛 합친 규칙으로 되돌아갔다 \u{2014} 바가 첫 뷰포트 뒤로 스크롤돼 사라진다"
+        );
+    }
+
+    #[test]
+    fn bar_height_is_declared_once_and_read_by_four_rules() {
+        let css = stylesheet_of_a_rendered_document();
+        assert_eq!(
+            css.matches("--md-addr-bar-h:").count(),
+            1,
+            "주소창 높이 선언은 한 자리여야 한다"
+        );
+        assert_eq!(
+            css.matches("var(--md-addr-bar-h)").count(),
+            4,
+            "바 높이 \u{b7} find 바 top \u{b7} heading \u{b7} 각주 \u{2014} 넷이 그 이름을 읽어야 한다"
+        );
+    }
+
     #[test]
     fn render_document_embeds_theme_css_and_addr_bar() {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
