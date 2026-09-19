@@ -79,10 +79,27 @@ markdown / html surface 는 mesh 를 그리지 않고 native webview overlay 로
 | 페이지가 로드됐는가 | 호스트 로그 — `WebView surface <id>: load started` / `load finished`, 실패 시 백엔드별로 `WKWebView navigation failed` · `WKWebView provisional navigation failed`(macOS) / `WebView2 navigation failed`(Windows) / `WebKitGTK load-failed`(Linux), Linux 는 `WebKit web process terminated` 도. 로드 호출 자체가 실패하는 경우는 반환값이 있는 Windows 뿐이고 그때는 `WebView2 Navigate failed` / `WebView2 NavigateToString failed` — 이 둘은 surface id 를 안 싣는다 | debug / warn |
 | 로드가 안 끝나 안 보이는가 | 호스트 로그 — `WebView surface <id>: still hidden ... (nav_state=…)` — 드러나야 할 자리에 놓였는데 nav 가 `Done` 이 아닌 채로 이어질 때 surface 당 한 번 | warn |
 | 로드는 끝났는데 안 보이는가 | 호스트 로그 — Linux 에서 부모 창 밖에 그려지는 경우 `WebView surface <id>: GTK window realized without a GDK window` (navigation 은 정상 완료하므로 위 보류 줄은 안 남는다) | warn |
+| 위가 다 성공했는데 자리를 못 채우는가 (Linux) | **로그에 안 남는다 — 채널이 없다.** `xwininfo` 로 직접 잰다 (아래 "렌더 타깃 크기를 재는 법") | 없음 |
 
 보류 줄(`still hidden`)의 판정은 **redraw 안에서** 일어난다 — 매 프레임 "드러나야 할 자리에 있는데 nav 가 `Done` 이 아닌" surface 를 모아 시간을 재는 방식이다. 그래서 이 줄이 보장하는 범위는 **프레임이 도는 동안까지**다: 렌더 루프가 그 지점에 닿지 못하면(프레임이 아예 안 돌면) 자리가 비어 있어도 warn 은 침묵한다. 그때 비어 있음의 흔적은 이 표가 아니라 hang 진단(`hang-*.log`) 쪽에 남는다.
 
 성공 줄이 `debug` 라 **release 파일 로그(`warn` 이상)에는 실패·보류 줄만 남는다.** 단계별 성공까지 보려면 dev 빌드(`debug-dev.log`)나 `TASTY_LOG=debug` 로 stderr 를 받는다.
+
+#### 렌더 타깃 크기를 재는 법 (Linux)
+
+내용이 보이는데 **잘려 있거나 여백이 남으면** 담는 창과 그리는 창의 크기가 갈린 것이다.
+Linux 에서 담는 것은 host 창 안의 X11 자식창이고, 그리는 것은 그 안에 GTK/WebKit 이 만든
+GdkWindow 다. 둘은 별개 창이라 `xwininfo` 의 트리로 바로 비교된다 — 이 갈림은 어떤 로그
+줄로도 안 드러나므로 **재지 않으면 알 수 없다.**
+
+```bash
+xwininfo -id <host 창 xid> -tree   # 자식(X11) 아래 손자(GDK) 의 Width/Height 를 본다
+```
+
+host 창의 xid 는 `xdotool search --pid <tasty pid>` 로 찾는다(`IsViewable` 인 것). 두 줄의
+`WxH` 가 **같아야** 정상이다 — 다르면 `PlatformWebView::set_bounds` 가 렌더 타깃에 크기를
+전달하지 못한 것이다. 그 전달이 왜 별도 호출이어야 하는지는
+[ADR-0301](../adr/0301-three-webview-backends-propagate-size-by-different-means.md).
 
 ## 에러 루프 자동 감지 (dev 전용)
 

@@ -222,6 +222,43 @@ mod tests {
         );
     }
 
+    /// foreign bind 와 명시적 allocation 은 한 쌍이다 — ADR-0301.
+    ///
+    /// `connect_realize` 의 `set_window` 가 GTK 의 GdkWindow 를 우리 X11 자식창으로
+    /// 갈아끼운 상태에서는 GTK 가 그 창의 크기 변화를 **스스로 알아내지 못한다**(실측).
+    /// 그래서 `set_bounds` 가 allocation 을 직접 줘야 렌더 타깃이 따라온다. 반대로 bind 가
+    /// 없어지면 GTK 가 자기 창을 도로 쥐므로 그 호출은 불필요할 뿐 아니라 GTK 자신의
+    /// allocation 과 싸운다.
+    ///
+    /// 그래서 **한쪽만 사라지는 것**을 막는다. 양쪽이 함께 사라지는 것은 통과다 —
+    /// 그것이 bind 를 걷어낸 상태이고, 그 판단은 ADR-0159 를 다시 여는 일이다.
+    #[test]
+    fn adr_0301_foreign_bind_and_explicit_allocation_move_together() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_api/webview/linux.rs");
+        let text = std::fs::read_to_string(&path).expect("webview/linux.rs 를 읽지 못했다");
+        let code: Vec<String> = text.lines().map(mask_non_code).collect();
+        // 0 이 통과가 되지 않게 모수를 먼저 세운다.
+        assert!(
+            code.len() > 200,
+            "스캔한 줄이 {} 뿐이다 — 경로가 틀렸다",
+            code.len()
+        );
+        let has = |needle: &str| code.iter().any(|l| l.contains(needle));
+
+        let bind = has(".set_window(");
+        let alloc = has(".size_allocate(");
+        assert_eq!(
+            bind, alloc,
+            concat!(
+                "foreign bind(set_window)와 명시적 allocation(size_allocate)이 따로 움직였다 ",
+                "(bind={}, alloc={}) — 둘은 한 쌍이다. ",
+                "docs/adr/0301-three-webview-backends-propagate-size-by-different-means.md 를 읽어라"
+            ),
+            bind, alloc
+        );
+    }
+
     /// 패닉하는 바인딩(`foreign_new_for_display`)은 호출부가 없어야 한다.
     /// 이것이 진짜 불변식이다 — 위 테스트는 이 모듈만 지키지만, 이 검사는
     /// **레포 전체**가 그 바인딩을 다시 쓰지 못하게 한다.

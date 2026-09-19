@@ -561,6 +561,18 @@ impl PlatformWebView {
         }
 
         self.gtk_window.resize(w.max(1), h.max(1));
+
+        // 위 두 문장은 **담는 창**만 움직인다. 그리는 것은 GTK 의 allocation 이고,
+        // 이 gtk_window 의 GdkWindow 는 realize 때 우리가 만든 X11 자식창으로
+        // 갈아끼운 foreign window 라 GTK 가 그 크기 변화를 스스로 알아내지 못한다 —
+        // allocation 이 realize 시점 값에 얼어붙고 WebKit 이 그 값으로 계속 그린다.
+        // resize() 는 WM 에게 보내는 요청인데 이 자식창은 WM 이 관리하지 않는다.
+        // 그래서 allocation 을 직접 준다. 다른 수단은 측정으로 갈라냈다 —
+        // set_size_request · GdkWindow::resize · register_window + STRUCTURE_MASK 는
+        // 이 상태에서 allocation 을 바꾸지 못했다
+        // (docs/adr/0301-three-webview-backends-propagate-size-by-different-means.md).
+        self.gtk_window
+            .size_allocate(&gtk::Allocation::new(0, 0, w.max(1), h.max(1)));
     }
 
     pub fn set_visible(&self, visible: bool) {
