@@ -84,6 +84,53 @@ fn ownerless_and_foreign_owner_cannot_inherit_another_plugins_scope() {
     }
 }
 
+/// 보이는 동안 자식 셸이 쥐는 게이트.
+///
+/// 세 벌의 단언을 이름 붙여 뺀 것은 `clippy::cognitive_complexity` 가 이 시험 본문을
+/// 상한 밖으로 봤기 때문이다. 처방을 억제(`#[allow]`)가 아니라 분할로 고른 이유는 이
+/// 시험이 실제로 세 단계(보임 · 숨음 · 복귀)를 잇는 시나리오라, 단계마다 무엇을 재는지가
+/// 이름으로 남는 편이 본문을 읽는 데 낫기 때문이다. 단언 자체는 한 줄도 안 바뀌었다.
+fn assert_visible_gates(state: &AppState) {
+    assert!(state.popups.has_focused());
+    assert!(AppState::keyboard_overlay_open(state));
+    assert!(state.has_egui_overlay_open());
+}
+
+/// 숨은 동안 놓아야 하는 게이트 한 벌. focus **의도**는 남고(첫 줄 둘) 게이트는 전부 풀린다.
+fn assert_hidden_gates(state: &mut AppState) {
+    assert!(state.popups.is_open(FILE_PICKER_POPUP_ID));
+    assert!(state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().focused);
+    assert!(!state.popups.has_focused());
+    assert!(!state.popups.is_focused(FILE_PICKER_POPUP_ID));
+    assert!(state.popups.focused_dismissal_target().is_none());
+    assert!(!AppState::keyboard_overlay_open(state));
+    assert!(
+        !state.has_egui_overlay_open(),
+        "hidden child must not hide native WebViews"
+    );
+    assert!(!state.popup_hovered);
+    assert!(state.host_popup_hittest.is_empty());
+    assert!(state.popup_layers.is_empty());
+    assert!(state.popup_escape_owner.is_none());
+    assert!(state.popups.take_closed_queue().is_empty());
+}
+
+/// 숨은 동안에도 남아 있어야 하는 작업 — 선택·현재 폴더·대기 중인 요청 둘.
+fn assert_work_preserved(state: &AppState, dir: &str, request: u64) {
+    let data = state.dialogs.file_picker.as_ref().unwrap();
+    assert_eq!(data.selected, ["draft.md"]);
+    assert_eq!(data.current_dir, dir);
+    assert_eq!(data.requester.as_ref().unwrap().request_id, request);
+    assert!(matches!(
+        data.load,
+        crate::state::FpLoadState::Loading {
+            request_id: 123,
+            ..
+        }
+    ));
+    assert!(data.result.is_none());
+}
+
 #[test]
 fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate() {
     let (mut state, mut engine) = trigger(Some(7));
@@ -117,9 +164,7 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
         drop(ctx.run(raw, |ctx| draw_popup_layer(ctx, state, &mut engine, layout)));
     };
     draw(&mut state, &layout, vec![]);
-    assert!(state.popups.has_focused());
-    assert!(AppState::keyboard_overlay_open(&state));
-    assert!(state.has_egui_overlay_open());
+    assert_visible_gates(&state);
     let popup = state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap();
     assert_eq!(
         popup.size,
@@ -149,33 +194,8 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
             },
         ],
     );
-    assert!(state.popups.is_open(FILE_PICKER_POPUP_ID));
-    assert!(state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().focused);
-    assert!(!state.popups.has_focused());
-    assert!(!state.popups.is_focused(FILE_PICKER_POPUP_ID));
-    assert!(state.popups.focused_dismissal_target().is_none());
-    assert!(!AppState::keyboard_overlay_open(&state));
-    assert!(
-        !state.has_egui_overlay_open(),
-        "hidden child must not hide native WebViews"
-    );
-    assert!(!state.popup_hovered);
-    assert!(state.host_popup_hittest.is_empty());
-    assert!(state.popup_layers.is_empty());
-    assert!(state.popup_escape_owner.is_none());
-    assert!(state.popups.take_closed_queue().is_empty());
-    let data = state.dialogs.file_picker.as_ref().unwrap();
-    assert_eq!(data.selected, ["draft.md"]);
-    assert_eq!(data.current_dir, dir);
-    assert_eq!(data.requester.as_ref().unwrap().request_id, request);
-    assert!(matches!(
-        data.load,
-        crate::state::FpLoadState::Loading {
-            request_id: 123,
-            ..
-        }
-    ));
-    assert!(data.result.is_none());
+    assert_hidden_gates(&mut state);
+    assert_work_preserved(&state, &dir, request);
     layout.surface_rects.push((17, rect));
     layout.active_workspace = 0;
     draw(&mut state, &layout, vec![]);
