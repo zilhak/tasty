@@ -337,3 +337,60 @@ fn el1_at_a_parked_cursor_does_not_shift_the_alternate_screen() {
     );
     assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
 }
+
+// ── EL0 (`CSI 0K`) · ED0 (`CSI 0J`) — 걸친 커서에서 지우다 만다 (기록) ─────────
+//
+// 아래 둘은 **현재 동작을 값으로 못박는 기록 시험**이다. 위 표(문서의 "소거 명령과 걸친
+// 커서")가 이 둘을 "미해결" 이라는 이름으로 세는데, 그 이름만으로는 아무도 안 운다 —
+// 누가 고쳐도, 더 나쁘게 만들어도 초록이다. 그래서 `region_autowrap.rs` 가 쓴 관례를
+// 그대로 쓴다: **이름에 현재 상태를 적고**, 고쳐지면 시험이 깨져 이름을 뒤집게 한다.
+//
+// 기계적 원인은 하나다. termwiz 의 `clear_eol` · `clear_eos` 가 지울 범위를
+// `lines[ypos].fill_range(xpos..width)` 로 정하는데, 걸친 커서는 `xpos == cols` 라 그
+// 구간이 **빈 구간**이 된다. 고치는 길은 그 한 칸을 손으로 찍는 것뿐이고, 그러면 그
+// 칸만 pen 이 달라진다 — 그래서 소거가 어떤 pen 으로 지우는가를 먼저 정해야 닿는다.
+
+#[test]
+fn el0_at_a_parked_cursor_erases_nothing_known_gap() {
+    let mut t = at_column("ABCDEFGHIJ", COLS);
+    t.feed_bytes(b"\x1b[0K");
+    assert_eq!(
+        &t.screen_row(0, true),
+        "ABCDEFGHIJ",
+        "알려진 결함: 커서가 올라앉은 마지막 칸이 범위에 안 들어 한 칸도 안 지워진다 \
+         (규격대로면 \"ABCDEFGHI\")"
+    );
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태 자체는 보존된다");
+
+    // 대조군 — 걸치지 않은 마지막 열에서는 그 칸이 제대로 지워진다. 원인이 "EL0 이
+    // 아무것도 안 지운다" 가 아니라 **걸침** 임을 가르는 장치다.
+    let mut control = at_column("ABCDEFGHIJ", COLS - 1);
+    control.feed_bytes(b"\x1b[0K");
+    assert_eq!(&control.screen_row(0, true), "ABCDEFGHI");
+}
+
+#[test]
+fn ed0_at_a_parked_cursor_spares_the_cursor_row_known_gap() {
+    let mut t = term();
+    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ\x1b[1;1H");
+    t.feed_bytes(b"ABCDEFGHIJ");
+    assert_eq!(
+        t.cursor_position(),
+        (COLS, 0),
+        "준비 실패: 커서가 걸쳐야 한다"
+    );
+
+    t.feed_bytes(b"\x1b[0J");
+
+    assert_eq!(
+        &t.screen_row(0, true),
+        "ABCDEFGHIJ",
+        "알려진 결함: 커서 행은 한 칸도 안 지워진다 (규격대로면 \"ABCDEFGHI\")"
+    );
+    assert_eq!(
+        &t.screen_row(1, true),
+        "",
+        "아래 행은 정상적으로 지워진다 — 빠지는 것은 커서 행의 마지막 한 칸뿐이다"
+    );
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태 자체는 보존된다");
+}
