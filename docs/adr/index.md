@@ -267,3 +267,4 @@
 | 0291 | [Codex 부모의 App Server 완료 전달을 제거한다 — 완료 채널을 로그 하나로 되돌린다](0291-remove-the-codex-app-server-completion-channel.md) | Accepted | 2026-09-20 | codex, app-server, completion, outbox, removal, lifecycle, plugin |
 | 0294 | [사이트 vendor 사본에 절차·부분 판정기·화면 시점을 붙인다 (재-vendoring 자체는 이 결정 밖)](0294-the-site-vendor-copy-gets-a-channel-and-a-visible-date.md) | Accepted | 2026-09-20 | site, design-system, vendor, guards, staleness, design-change-workflow, adr-0138, adr-0020 |
 | 0295 | [셸 자산은 warning 이상에서 잔여 0 으로 판정한다 — 그 아래는 안 센다](0295-shell-assets-are-judged-at-warning-and-above.md) | Accepted | 2026-09-20 | shell, gates, ci, git-hooks, shellcheck, ratchet, adr-0183 |
+| 0296 | [도달 불가가 된 커밋 좌표는 지우지 않고 그 자리에 적는다](0296-an-unreachable-commit-coordinate-is-annotated-not-deleted.md) | Accepted | 2026-09-20 | documentation, guards, citations, git-history, floored-walk, adr-0105, adr-0139 |

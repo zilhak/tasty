@@ -34,7 +34,8 @@ use std::path::{Path, PathBuf};
 /// 지우지 않는다 — 지우면 그 값이 어디서 왔는지가 사라지고, 다음 사람은 낡았다는 것조차
 /// 못 본다. 산문에 같은 창의 해시가 나오면 전부 이 문단이 설명한다.
 /// 재는 법: `git merge-base --is-ancestor <해시> HEAD` 가 참이어야 [`CountedOn::Tree`] 의
-/// 계약이 선다.
+/// 계약이 선다. 실측·처방·판정기를 안 지은 이유는
+/// `docs/adr/0296-an-unreachable-commit-coordinate-is-annotated-not-deleted.md` 에 있다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CountedOn {
     /// `main` 에서 **도달 가능한** 커밋의 트리에서 쟀다. 짧은 해시로 시작하고 뒤에 서술이

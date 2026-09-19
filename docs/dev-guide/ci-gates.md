@@ -14,6 +14,10 @@
 > 때문**이다 — 실제로 그 일이 일어났다. 결정과 근거는
 > [ADR-0142](../adr/0142-channel-claims-are-written-against-the-working-tree.md).
 
+> **이 문서가 근거로 드는 커밋 좌표 중 2026-09-04~2026-09-08 창의 것은 지금 `main` 에서
+> 도달 불가다.** 그 창의 이력이 재작성으로 버려졌고, 값은 실측인데 좌표로는 못 간다.
+> 지우지 않는 이유와 재는 법은 [ADR-0296](../adr/0296-an-unreachable-commit-coordinate-is-annotated-not-deleted.md).
+
 ## 자동으로 도는 것
 
 | 검사 | 명령 | 채널 | 트리거 | 등급 |
