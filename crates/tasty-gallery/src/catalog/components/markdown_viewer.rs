@@ -66,7 +66,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(
             ui,
             theme,
-            "table of contents — collapsible, in-document (todo42)",
+            "table of contents — collapsible, in-document",
             |ui| {
                 toc_chrome(ui, theme);
             },
