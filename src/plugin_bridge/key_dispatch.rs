@@ -220,12 +220,21 @@ mod tests {
         fn uninstall_plugin(&self, _: &str) {}
     }
 
-    fn mgr() -> PluginManager {
-        PluginManager::with_registries(
+    /// 격리 홈과 매니저를 함께 돌려준다 — **순서가 계약이다.**
+    ///
+    /// `PluginManager::with_registries` 는 생성 중에 `tasty_home()/plugins-logs` 를
+    /// `create_dir_all` 한다. 그래서 override 를 **생성 전에** 세워야 하고, 이 모듈의
+    /// 시험들은 `CoreState` 를 만들지 않으므로 그쪽 가드의 보호를 받지 못한다.
+    /// 첫 원소를 버리면(`_`) 그 자리에서 drop 돼 override 가 즉시 풀리므로,
+    /// 호출부는 반드시 `let (_home, mut m) = mgr();` 처럼 **이름 있는 바인딩**으로 받는다.
+    fn mgr() -> (crate::test_support::IsolatedHome, PluginManager) {
+        let home = crate::test_support::IsolatedHome::new();
+        let m = PluginManager::with_registries(
             std::sync::Arc::new(tasty_terminal::waker_factory::NoopWakerFactory),
             std::sync::Arc::new(StubFormat),
             std::sync::Arc::new(StubHandler),
-        )
+        );
+        (home, m)
     }
 
     fn k_char(s: &str) -> Key {
@@ -284,7 +293,7 @@ mod tests {
 
     #[test]
     fn match_global_shortcut_finds_across_multiple_plugins() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -312,7 +321,7 @@ mod tests {
 
     #[test]
     fn match_global_shortcut_ignores_surface_scope_commands() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -328,7 +337,7 @@ mod tests {
 
     #[test]
     fn match_global_shortcut_no_match_returns_none() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -344,7 +353,7 @@ mod tests {
 
     #[test]
     fn match_global_shortcut_respects_user_override() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -372,7 +381,7 @@ mod tests {
 
     #[test]
     fn match_plugin_shortcut_matches_within_focused_plugin_only() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -404,7 +413,7 @@ mod tests {
 
     #[test]
     fn modifier_only_press_never_matches() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -425,7 +434,7 @@ mod tests {
 
     #[test]
     fn dispatch_plugin_command_with_no_surface_does_not_panic() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -440,7 +449,7 @@ mod tests {
 
     #[test]
     fn dispatch_plugin_command_with_surface_does_not_panic() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -454,7 +463,7 @@ mod tests {
 
     #[test]
     fn emit_command_invoked_unknown_command_defaults_scope_without_panic() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         // registry에 없는 command — scope는 CommandScope::default()(Global)로 폴백.
         emit_command_invoked(&mut m, "com.example.ghost", "ghost.cmd", None);
     }
@@ -466,7 +475,7 @@ mod tests {
     /// 상태에서는 발화하므로 정책은 상위집합이어야 한다.
     #[test]
     fn all_command_bindings_collects_manifest_defaults_and_overrides() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![
@@ -503,7 +512,7 @@ mod tests {
     /// webview 위에서 host 가 claim 해 페이지가 못 받는다(키 소실).
     #[test]
     fn all_command_bindings_skips_cleared_bindings() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -525,7 +534,7 @@ mod tests {
     /// claim 하면 그 키가 페이지에도 host 에도 안 가고 사라진다(conductor 판정 A).
     #[test]
     fn all_command_bindings_skips_disabled_plugins() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
             vec![cmd(
@@ -549,7 +558,7 @@ mod tests {
     /// 변경 모두 epoch 를 올려야 `sync_webviews` 가 스냅샷을 다시 만든다.
     #[test]
     fn shortcut_epochs_advance_on_every_binding_change() {
-        let mut m = mgr();
+        let (_home, mut m) = mgr();
         let r0 = m.command_registry.revision();
         m.command_registry.register_plugin(&manifest_with_commands(
             "com.example.a",
