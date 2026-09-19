@@ -169,7 +169,6 @@ flags = [
 flags = [
     { name = "caller_surface", type = "u32", flag = "--caller-surface", required = true, help = "Surface that issued the spawn/tell command and should receive the notification" },
     { name = "target_surface", type = "u32", flag = "--target-surface", required = true, help = "Child surface that stalled after an error" },
-    { name = "observer", type = "string", flag = "--observer", required = false, help = "Internal execution observation lease" },
 ]
 
 [contributes.cli.arg_groups.broadcast_args]
@@ -228,7 +227,6 @@ positional = [
     { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)" },
 ]
 flags = [
-    { name = "summary", type = "string", flag = "--summary", required = false, stdin_field = "last_assistant_message", help = "Last assistant message reported by the completion hook" },
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id' when Claude Code invokes the hook." },
     { name = "message", type = "string", flag = "--message", required = false, stdin_field = "message",    help = "Hook message text (used for notification token extraction). Auto-populated from stdin JSON 'message'." },

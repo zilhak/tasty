@@ -72,8 +72,6 @@ const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
 const EXIT_MARKER: &str = "run codex resume";
 /// codex 기동 배너의 식별 조각 (v0.142 실측: "│ >_ OpenAI Codex (v0.142.2)").
 const BANNER_MARKER: &str = "OpenAI Codex";
-// Codex 0.154 remote TUI detaches while its App Server task remains alive.
-const REMOTE_EXIT_MARKER: &str = "Disconnected from this task.";
 /// 화면 검증에 쓰는 안내문 선두 조각.
 const NOTICE_SNIPPET: &str = "tasty codex reboot";
 
@@ -98,31 +96,10 @@ pub(crate) fn handle_reboot(
     // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
     // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
     // 전역 기본값 > codex 자체 기본값)로 해석한다.
-    let mut policy_args = resolve_policy_args(host, params, tr)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
 
     // 요청 시점 캡처.
-    let mut session_id = fetch_session_id(host, surface_id, tr)?;
-    let context = host.call(
-        "terminal.completion",
-        json!({"action":"resume_context","surface":surface_id}),
-    )?;
-    if let Some(binding) = context.get("binding").filter(|v| !v.is_null()) {
-        if let (Some(endpoint), Some(thread)) =
-            (binding["endpoint"].as_str(), binding["thread_id"].as_str())
-        {
-            // Endpoint was validated by the host. Keep its shell representation a single token.
-            #[cfg(windows)]
-            let quoted = format!("\"{endpoint}\"");
-            #[cfg(not(windows))]
-            let quoted = format!("'{}'", endpoint.replace('\'', "'\"'\"'"));
-            policy_args.push_str(&format!(" --remote {quoted}"));
-            if let Some(auth) = binding["auth_env"].as_str() {
-                // Verified auth references contain only ASCII identifier characters.
-                policy_args.push_str(&format!(" --remote-auth-token-env {auth}"));
-            }
-            session_id = thread.to_string();
-        }
-    }
+    let session_id = fetch_session_id(host, surface_id, tr)?;
     if !is_safe_session_id(&session_id) {
         return Err(IpcMethodError::new(crate::handlers::t_args(
             tr,
@@ -166,7 +143,6 @@ pub(crate) fn handle_reboot(
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
     let thread_policy_args = policy_args.clone();
-    let thread_binding = context.get("binding").filter(|v| !v.is_null()).cloned();
     // 안내문은 **스레드에 넘기기 전에** 조립한다 — `Translator` 를 워커로 옮기지 않으려고
     // 완성된 문자열만 보낸다. 내용이 실행 시점 상태에 의존하지 않아 시점 차이가 없다.
     let thread_notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
@@ -182,7 +158,6 @@ pub(crate) fn handle_reboot(
                 banner_c0,
                 &thread_notice,
                 &thread_policy_args,
-                thread_binding.as_ref(),
             );
             tasty_utils::poison::recover_mutex(
                 thread_inflight.lock(),
@@ -275,7 +250,7 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
 }
 
 fn exit_marker_count(screen: &str) -> usize {
-    count_occurrences(screen, EXIT_MARKER) + count_occurrences(screen, REMOTE_EXIT_MARKER)
+    count_occurrences(screen, EXIT_MARKER)
 }
 
 /// 겹치지 않는 부분 문자열 등장 횟수. 순수 함수 — 단위 테스트 대상.
@@ -298,7 +273,6 @@ fn run_reboot_sequence(
     banner_c0: usize,
     notice: &str,
     policy_args: &str,
-    binding: Option<&Value>,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
 
@@ -311,53 +285,15 @@ fn run_reboot_sequence(
         return;
     }
 
-    if let Some(binding) = binding
-        && !detach_completion(host, surface_id, binding)
-    {
-        return;
-    }
-
     if !resume_and_wait(host, surface_id, session_id, policy_args, banner_c0) {
         return;
     }
     thread::sleep(TUI_READY_GRACE);
-    if let Some(binding) = binding {
-        rebind_completion(host, surface_id, session_id, binding);
-    }
 
     if !deliver_notice(host, surface_id, notice) {
         tracing::warn!(
             "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
         );
-    }
-}
-
-/// 재기동 전에 완료 전달을 멈춘다. 원격 frontend 의 detach 는 살아 있는 daemon 이
-/// SessionEnd 를 쏘지 않아도 일어나므로, 이 호출이 그 자리를 대신한다. 실패하면
-/// `false` — 옛 세션에 묶인 채로 resume 하면 그 뒤의 완료가 엉뚱한 곳으로 간다.
-fn detach_completion(host: &HostHandle, surface_id: u32, binding: &Value) -> bool {
-    if let Err(error) = host.call(
-        "terminal.completion",
-        json!({"action":"end_session","surface":surface_id,"hook_session":binding["hook_session"]}),
-    ) {
-        tracing::warn!("codex reboot completion detach failed: {error}");
-        return false;
-    }
-    true
-}
-
-/// 새 TUI 배너를 관측한 뒤에만 부른다 — 이 호출이 포착해 둔 원격 endpoint 를 되묶고,
-/// 그것이 성공한 경우에만 세션 meta 를 복원한다(묶이지 않은 세션 좌표는 복원해도
-/// 가리킬 곳이 없다).
-fn rebind_completion(host: &HostHandle, surface_id: u32, session_id: &str, binding: &Value) {
-    let params = json!({"action":"bind","surface":surface_id,"register":true,"endpoint":binding["endpoint"],"thread_id":binding["thread_id"],"session_id":binding["session_id"],"hook_session":binding["hook_session"],"auth_env":binding["auth_env"],"codex_home":binding["codex_home"]});
-    if let Err(error) = host.call("terminal.completion_bind", params) {
-        tracing::warn!("codex reboot completion rebind failed: {error}");
-    } else if let Err(error) = host.call(
-        "surface.meta.set",
-        json!({"surface_id":surface_id,"key":"codex-session-id","value":session_id}),
-    ) {
-        tracing::warn!("codex reboot session metadata restore failed: {error}");
     }
 }
 
@@ -473,28 +409,6 @@ fn poll_screen(
 }
 
 #[cfg(test)]
-mod remote_markers {
-    use super::*;
-    #[test]
-    fn real_remote_detach_and_legacy_exit_are_both_counted() {
-        assert_eq!(
-            exit_marker_count(
-                "Disconnected from this task. Any running work continues.\nReconnect: codex --remote unix:///owned.sock resume thread"
-            ),
-            1
-        );
-        assert_eq!(
-            exit_marker_count("To continue this session, run codex resume thread"),
-            1
-        );
-        assert_eq!(
-            count_occurrences("OpenAI Codex\n>_ OpenAI Codex", BANNER_MARKER),
-            2
-        );
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -585,6 +499,18 @@ mod tests {
         );
         assert_eq!(count_occurrences("anything", ""), 0);
         assert_eq!(count_occurrences("", "x"), 0);
+    }
+
+    /// `exit_marker_count` 자체를 재는 유일한 시험. 이 래퍼를 부르던 자리가 원격
+    /// detach 마커와 함께 사라져 본문을 아무 마커로 바꿔도 스위트가 전부 초록이 됐다
+    /// (변이로 확인). 아래 둘째 단언이 그 갈래를 죽인다.
+    #[test]
+    fn exit_marker_count_counts_only_the_quit_hint() {
+        assert_eq!(
+            exit_marker_count("To continue this session, run codex resume thread"),
+            1
+        );
+        assert_eq!(exit_marker_count("\u{2502} >_ OpenAI Codex (v0.142.2)"), 0);
     }
 
     #[test]

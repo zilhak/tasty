@@ -118,5 +118,3 @@ pub mod host_call;
 pub mod params;
 pub mod prompt_file;
 pub mod reboot;
-
-pub mod completion;

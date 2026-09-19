@@ -1,5 +1,4 @@
 [codex.cli]
-completion = "Bind and inspect durable child tool results"
 desc = "Manage Codex CLI child sessions"
 
 [codex]

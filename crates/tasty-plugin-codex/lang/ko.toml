@@ -1,5 +1,4 @@
 [codex.cli]
-completion = "자식 도구 결과 전달 연결과 상태 관리"
 desc = "Codex CLI 자식 세션 관리"
 
 [codex]

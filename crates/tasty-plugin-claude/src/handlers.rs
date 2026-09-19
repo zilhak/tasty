@@ -461,15 +461,6 @@ pub(crate) fn handle_tell(
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_message")))?;
-    if let Some(caller) = params.get("caller_surface").and_then(Value::as_u64) {
-        tasty_plugin_agent_common::completion::subscribe(
-            host,
-            caller as u32,
-            surface_id,
-            "claude",
-            "tell",
-        )?;
-    }
     let resp = host_call(
         host,
         "terminal.tell",
@@ -623,13 +614,6 @@ pub(crate) fn handle_respawn(
         })?;
 
     // 2) claude 특화 기동 명령 재전송.
-    tasty_plugin_agent_common::completion::subscribe(
-        host,
-        parent_surface_id,
-        child_surface_id,
-        "claude",
-        "spawn",
-    )?;
     start_claude_in_surface(
         host,
         child_surface_id,
@@ -680,7 +664,6 @@ pub(crate) fn handle_child_profile(
     let child_index = require_child_index(params, tr)?;
     let child_surface_id = resolve_child_surface_id(host, parent_surface_id, child_index, tr)?;
 
-    host.call("terminal.completion", json!({"action":"subscribe","surface":parent_surface_id,"target":child_surface_id,"kind":"claude","mode":"tell","await_session":true}))?;
     let resp = reboot_surface(inflight, host, child_surface_id, params, data_dir, tr)?;
 
     register_notify_hooks(host, parent_surface_id, child_surface_id, "child-profile");
@@ -860,14 +843,6 @@ pub(crate) fn handle_spawn(
                 tr.t_fmt("claude.spawn.missing_child_surface_id", &resp.to_string()),
             )
         })?;
-
-    tasty_plugin_agent_common::completion::subscribe(
-        host,
-        parent_surface_id,
-        child_surface_id,
-        "claude",
-        "spawn",
-    )?;
 
     // 2) claude 특화 기동 명령 전송(session token + surface_id inline env 필요).
     start_claude_in_surface(
@@ -1589,10 +1564,6 @@ mod tests {
             params: Value,
         ) -> Result<Value, tasty_plugin_sdk::PluginError> {
             match method {
-                "terminal.completion" => {
-                    Ok(json!({"legacy_log":true,"observer":1,"recorded":true}))
-                }
-
                 "hook.set" => {
                     let mut id = self.next_id.borrow_mut();
                     let hid = *id;

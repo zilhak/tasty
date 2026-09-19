@@ -409,11 +409,6 @@ pub(crate) fn handle_tell(
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
     // 개행/제출 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트
     // `terminal.tell` 이 동일하게 처리한다 → 본문 포맷을 재구현하지 않고 위임.
-    if let Ok(caller) = require_u32(params, "caller_surface", tr) {
-        tasty_plugin_agent_common::completion::subscribe(
-            host, caller, surface_id, "codex", "tell",
-        )?;
-    }
     let resp = host_call(
         host,
         "terminal.tell",
@@ -454,14 +449,6 @@ pub(crate) fn handle_spawn(
                 &resp.to_string(),
             ))
         })?;
-
-    tasty_plugin_agent_common::completion::subscribe(
-        host,
-        parent_surface,
-        child_sid,
-        "codex",
-        "spawn",
-    )?;
 
     // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
     let policy_args = resolve_policy_args(host, params, tr)?;
@@ -800,13 +787,6 @@ pub(crate) fn handle_respawn(
             ))
         })?;
 
-    tasty_plugin_agent_common::completion::subscribe(
-        host,
-        require_target_surface(params, tr)?,
-        child_sid,
-        "codex",
-        "spawn",
-    )?;
     // 2) codex 특화 기동 명령 재전송.
     let policy_args = resolve_policy_args(host, params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
@@ -848,18 +828,9 @@ pub(crate) fn handle_hook<H: HostCall>(
     let surface_id = optional_target_surface(params, tr)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     if event == "session-end" {
-        return handle_session_end(host, surface_id, params);
+        return handle_session_end(host, surface_id);
     }
     let new_state = hook_event_to_state(event, tr)?;
-    if event == "session-start"
-        && let Some(session) = params.get("session").and_then(Value::as_str)
-    {
-        let registration =
-            tasty_plugin_agent_common::completion::session(host, surface_id, "codex", session)?;
-        if registration["registration_required"] == true {
-            return Ok(json!({"host_call_failures":0,"registration_required":true}));
-        }
-    }
 
     // 조용히 실패한 host 호출을 센다. 아래 `terminal.set_state` 는 전파하므로 이 수에
     // 안 들어간다 — 세는 것은 **응답이 성공을 말하는 동안 실패할 수 있는 것**뿐이다.
@@ -882,17 +853,11 @@ pub(crate) fn handle_hook<H: HostCall>(
     // 두 판정은 같은 규칙의 양끝이다 —
     // [error-handling](../../../docs/dev-guide/error-handling.md)
     // "plugin 핸들러의 host 호출 — 전파와 최선노력".
-    let mut observed_state = json!({"surface":surface_id,"state":new_state,"cause":event});
-    if let Some(session) = params.get("session").and_then(Value::as_str) {
-        observed_state["hook_session"] = json!(session);
-    }
-    if let Some(summary) = params.get("summary").and_then(Value::as_str) {
-        observed_state["summary"] = json!(summary);
-    }
-    let observed = host_call(host, "terminal.set_state", observed_state)?;
-    if observed["ignored_old_session"] == true {
-        return Ok(json!({"host_call_failures":host_call_failures,"ignored_old_session":true}));
-    }
+    host_call(
+        host,
+        "terminal.set_state",
+        json!({"surface":surface_id,"state":new_state}),
+    )?;
     // 상태 주입만으로는 UI 가 아무것도 모른다 — 턴 경계는 surface hook 으로,
     // 승인 대기는 그 위에 공용 attention 까지 함께 쏜다.
     host_call_failures += apply_hook_side_effects(host, event, surface_id);
@@ -903,30 +868,19 @@ pub(crate) fn handle_hook<H: HostCall>(
     Ok(json!({ "host_call_failures": host_call_failures }))
 }
 
-/// `session-end` 갈래. 세션 종료를 완료 관측에 알리고, 그 응답이 **이번 세션**을 가리킬
-/// 때만 세션 meta 를 지운다 — 늦게 도착한 옛 세션의 훅이 살아 있는 세션의 meta 를
-/// 지우면 reboot 가 복원할 좌표를 잃는다.
-fn handle_session_end<H: HostCall>(
-    host: &H,
-    surface_id: u32,
-    params: &Value,
-) -> Result<Value, IpcMethodError> {
-    let ended = host_call(
-        host,
-        "terminal.completion",
-        json!({"action":"end_session","surface":surface_id,"hook_session":params.get("session")}),
-    )?;
+/// `session-end` 갈래. 세션 meta 를 지운다 — 상태 축은 건드리지 않는다(턴이 끝난 것이
+/// 아니라 세션이 끝난 것이라, `terminal.set_state` 로 idle 을 합성하면 거짓이 된다).
+/// meta 삭제는 최선노력이라 실패를 전파하지 않고 **센 수**로 돌려준다.
+fn handle_session_end<H: HostCall>(host: &H, surface_id: u32) -> Result<Value, IpcMethodError> {
     let mut failures = 0;
-    if ended["ignored_old_session"] != true
-        && let Err(error) = host.call(
-            "surface.meta.unset",
-            json!({"surface_id":surface_id,"key":"codex-session-id"}),
-        )
-    {
+    if let Err(error) = host.call(
+        "surface.meta.unset",
+        json!({"surface_id":surface_id,"key":"codex-session-id"}),
+    ) {
         tracing::warn!("codex session-end metadata cleanup: {error}");
         failures += 1;
     }
-    Ok(json!({"host_call_failures":failures,"session_end":ended}))
+    Ok(json!({"host_call_failures":failures}))
 }
 
 /// reboot/복원용 세션 좌표를 meta 에 기록한다. 최선노력이라 실패를 전파하지 않고
@@ -1215,9 +1169,8 @@ mod tests {
         )
         .unwrap();
         let calls = host.seen.borrow();
-        assert_eq!(calls[0].0, "terminal.completion");
-        assert_eq!(calls[0].1["hook_session"], "ending");
-        assert_eq!(calls[1].0, "surface.meta.unset");
+        assert_eq!(calls[0].0, "surface.meta.unset");
+        assert_eq!(calls[0].1["key"], "codex-session-id");
         assert!(
             !calls
                 .iter()
@@ -1547,7 +1500,7 @@ mod tests {
         assert!(
             seen.contains(&(
                 "terminal.set_state".to_string(),
-                json!({ "surface": 42, "state": "needs_input", "cause": "permission-request" })
+                json!({ "surface": 42, "state": "needs_input" })
             )),
             "{seen:?}"
         );
@@ -1584,7 +1537,7 @@ mod tests {
         assert!(
             seen.contains(&(
                 "terminal.set_state".to_string(),
-                json!({ "surface": 42, "state": "idle", "cause": "interrupt" })
+                json!({ "surface": 42, "state": "idle" })
             )),
             "{seen:?}"
         );
@@ -1614,7 +1567,7 @@ mod tests {
             *seen,
             vec![(
                 "terminal.set_state".to_string(),
-                json!({ "surface": 42, "state": "active", "cause": "post-tool-use" })
+                json!({ "surface": 42, "state": "active" })
             )],
             "{seen:?}"
         );
@@ -2210,8 +2163,6 @@ trusted_hash = "sha256:xyz"
             params: Value,
         ) -> Result<Value, tasty_plugin_sdk::PluginError> {
             match method {
-                "terminal.completion" => Ok(json!({"legacy_log":true})),
-
                 "hook.set" => {
                     let mut id = self.next_id.borrow_mut();
                     let hid = *id;

@@ -2,36 +2,6 @@
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
-/// Read-only local evidence; remote daemon trust is never inferred from this file.
-pub(crate) fn diagnose(params: &Value, tr: &Translator) -> Value {
-    let selected = params
-        .get("local_config_file")
-        .map(|p| json!({"config_file":p}))
-        .unwrap_or_else(|| json!({}));
-    let Ok(path) = selected_path(&selected, tr) else {
-        return json!({"status":"invalid_local_config_path","remote_attestation":false});
-    };
-    let Ok(config) = read_config(&path, tr) else {
-        return json!({"path":path.to_string_lossy(),"status":"local_config_read_or_parse_failed","remote_attestation":false});
-    };
-    let events: Vec<_> = HOOK_EVENTS
-        .iter()
-        .map(|(name, _, _)| {
-            let installed = config
-                .get("hooks")
-                .and_then(|v| v.get(*name))
-                .and_then(toml::Value::as_array)
-                .is_some_and(|groups| {
-                    groups
-                        .iter()
-                        .any(|g| matcher_group_has_marker(g, HOOK_MARKER))
-                });
-            json!({"event":name,"managed_hook_present":installed})
-        })
-        .collect();
-    json!({"path":path.to_string_lossy(),"exists":path.exists(),"status":"read_only","events":events,"trust_metadata_complete":codex_hooks_all_trusted_in(&config,&path.to_string_lossy()),"trust_evidence":"local metadata only; command hash acceptance and remote runtime trust are not inferred","remote_attestation":false})
-}
-
 pub(crate) fn handle_install(params: &Value, tr: &Translator) -> Result<Value, IpcMethodError> {
     let path = selected_path(params, tr)?;
     if let Some(parent) = path.parent() {
@@ -48,8 +18,6 @@ pub(crate) fn handle_install(params: &Value, tr: &Translator) -> Result<Value, I
     write_toml(&path, &merged, tr)?;
     let trusted = codex_hooks_all_trusted_in(&merged, &path.to_string_lossy());
     let mut resp = json!({
-        "completion_transport": "existing app-server endpoint binding required",
-        "completion_fallback": "none",
         "installed": true,
         "path": path.to_string_lossy(),
         "trust_status": if trusted { "trusted" } else { "needs_review" },
@@ -265,6 +233,9 @@ pub(crate) fn new_matcher_group(event_kebab: &str) -> toml::Value {
     toml::Value::Table(group)
 }
 
+/// 설치된 hook 그룹에 tasty 의 마커가 들어 있는가. `diagnose()` 가 사라진 뒤로
+/// 산출물에는 소비자가 없고 설치/제거 시험만 쓴다 — 그래서 시험 빌드에만 둔다.
+#[cfg(test)]
 pub(crate) fn matcher_group_has_marker(item: &toml::Value, marker: &str) -> bool {
     let Some(group) = item.as_table() else {
         return false;
