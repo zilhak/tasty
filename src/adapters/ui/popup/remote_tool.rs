@@ -159,6 +159,11 @@ struct UiState {
     /// `~/.ssh/config` + Include 를 통째로 읽는다. `UI_MEMORY_ID` 에 얹어 두면
     /// `clear_ui`(popup 닫힘)가 무효화까지 맡아 "열 때마다 1 회" 가 성립한다 —
     /// 필터(`FILTER_MEMORY_ID`)처럼 재오픈에도 살아남으면 안 되는 값이다.
+    ///
+    /// **재검토 조건** — 무효화 지점이 popup 닫힘 하나뿐인 것은 확정 시안의 섹션 헤더에
+    /// 새로고침 affordance 가 없기 때문이다. 디자인이 그 affordance 를 되돌리거나, popup
+    /// 을 연 채로 config 를 고치는 흐름이 실제로 불편하다는 보고가 오면 무효화 지점을 다시
+    /// 정한다(그때 후보는 파일 watch 와 명시적 새로고침 둘이다).
     local: Option<LocalSshCache>,
 }
 
