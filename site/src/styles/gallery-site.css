@@ -1,33 +1,45 @@
 /* What the gallery's own chrome does not have, because on this site it is not
-   the whole web: a way back out. */
+   the whole web: a way back out.
+
+   Lengths here come from the design system's SEMANTIC layer (--tasty-space-*,
+   --tasty-font-size-*) rather than the site's own --sp-* scale, because
+   GalleryPage.astro deliberately does not build on Base.astro and so never
+   loads global.css, where --sp-* is defined. Values with no semantic role stay
+   literal and say so — a bare number here means "none exists", not "not looked
+   at yet". */
 .g-brand a {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 9px; /* no token: the length axis has no 9 */
   text-decoration: none;
   color: inherit;
 }
 .g-back {
   font-family: var(--tasty-font-mono);
-  font-size: 11px;
+  font-size: var(--tasty-font-size-caption);
   color: var(--tasty-text-muted);
   text-decoration: none;
-  padding: 4px 8px;
+  padding: var(--tasty-space-xs) var(--tasty-space-sm);
   border-radius: var(--tasty-radius-sm);
   white-space: nowrap;
 }
 .g-back:hover { color: var(--tasty-text-secondary); background: var(--tasty-overlay-hover); }
 
+/* The breakpoints below stay literal for a reason that is not a preference: a
+   media feature cannot read a custom property — `@media (max-width: var(--x))`
+   does not parse — so no token form of these exists to move to. */
+
 /* Under 900px the gallery drops its brand and its rail, so the link back out
    is the only navigation left on the page — the breadcrumb yields the room. */
 @media (max-width: 900px) {
   .g-crumb { display: none; }
-  .g-top { gap: 10px; }
+  .g-top { gap: 10px; } /* no token: the length axis has no 10 */
 }
 
 /* On a phone the two toggles and the way out are all that is left up there,
    and they do not fit with their labels. The controls stay; the words go. */
 @media (max-width: 560px) {
   .g-top .g-seglabel { display: none; }
-  .g-top { padding: 0 10px; gap: 8px; }
+  /* 10px as above — no token on the length axis. */
+  .g-top { padding: 0 10px; gap: var(--tasty-space-sm); }
 }
