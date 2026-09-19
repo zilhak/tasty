@@ -1,23 +1,15 @@
 use winit::window::Window;
 
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+// ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
 //
-// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body 13 · max 14)에도, DTCG
-// primitive(10·11·12·13·14·16·17·20)에도 없는 값들이다. 토큰으로 스냅하면 픽셀이
-// 바뀌므로 조용히 반올림하지 않고 이름만 붙인다(스냅 여부는 디자인 판단 항목).
-// 토큰이 아니라 `ui_scale` 줌을 타지 않는 것도 현행 유지다. 그 대가와 재검토
-// 조건은 `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 에
-// 있다 — 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
+// 브랜드 타이틀 30 은 2026-09-17 결정으로 `font-size-brand-display` semantic 이
+// 생겨 `Theme` 필드(`font_size_brand_display`)로 옮겼고, 경고 본문 12.5 는 12 로
+// 스냅됐다. 남은 것은 semantic role 이 없는 primitive 12 하나다.
 
-/// 첫 실행 셸 설정 카드의 "Tasty" 브랜드 타이틀. 스케일 밖(30) — primitive 최댓값
-/// 20 보다도 크고, brand-wordmark semantic 은 17 이다.
-const SETUP_BRAND_TITLE_SIZE: LogicalPx = LogicalPx(30.0);
-/// "셸을 찾을 수 없음" 경고 본문. 스케일 밖(12.5).
-const SETUP_WARNING_SIZE: LogicalPx = LogicalPx(12.5);
-/// 입력 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
+/// 입력 라벨·경고 본문. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
 /// `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**. 호출 자리에서
 /// "토큰인가 미배정 primitive 인가" 가 이름만으로 갈리도록 하는 것이 규칙의 목적이다.
-const SETUP_INPUT_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
+const SETUP_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 use crate::i18n::t;
 use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
@@ -106,7 +98,7 @@ impl GpuState {
                     ui.vertical_centered(|ui| {
                         ui.label(
                             egui::RichText::new("Tasty")
-                                .size(SETUP_BRAND_TITLE_SIZE.value())
+                                .size(th.font_size_brand_display.value())
                                 .strong()
                                 .color(th.text_primary()),
                         );
@@ -135,7 +127,7 @@ impl GpuState {
                             ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(t("settings.terminal.shell_not_found"))
-                                        .size(SETUP_WARNING_SIZE.value())
+                                        .size(SETUP_PRIMITIVE_12.value())
                                         .color(amber),
                                 )
                                 .wrap(),
@@ -147,7 +139,7 @@ impl GpuState {
                     // ── Input ──────────────────────────────────────
                     ui.label(
                         egui::RichText::new(t("settings.terminal.shell_label"))
-                            .size(SETUP_INPUT_LABEL_PRIMITIVE_12.value())
+                            .size(SETUP_PRIMITIVE_12.value())
                             .color(text_dim),
                     );
                     vspace(ui, th.spacing_xs);
@@ -220,11 +212,11 @@ impl GpuState {
                                     th.bg_panel(),
                                 )
                             } else {
-                                // divergence: 비활성 보더에 surface2 — border-role 전용 토큰 부재, 값-동일 surface_active().
+                                // 비활성 보더 — surface2 값의 border role `border-frame`.
                                 // overlay0 dim 텍스트 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
                                 (
                                     accent_dis,
-                                    egui::Stroke::new(th.border_width.value(), th.surface_active()),
+                                    egui::Stroke::new(th.border_width.value(), th.border_frame()),
                                     th.text_placeholder(),
                                 )
                             };
