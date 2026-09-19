@@ -171,3 +171,59 @@ fn el1_counts_cells_not_graphemes_around_a_combining_mark() {
     assert_eq!(&t.screen_row(0, true), "   bc");
     assert_eq!(t.cursor_position(), (2, 0));
 }
+
+// ── ED1 (`CSI 1J`) — 화면 시작 ~ 커서 칸 ──────────────────────────────────────
+//
+// EL1 과 **같은 범위 계산**을 쓰는 형제다. 커서 위의 행들은 통째로 지우고 커서 행은
+// 0 열부터 커서 칸까지 지운다. 그래서 경계도 같은 두 자리에서 갈린다.
+
+#[test]
+fn ed1_at_column_zero_erases_the_cursor_cell_itself() {
+    let mut t = term();
+    t.feed_bytes(b"ABCDEFGHI\x1b[2;1HJKL\x1b[1;1H");
+    t.feed_bytes(b"\x1b[1J");
+    assert_eq!(&t.screen_row(0, true), " BCDEFGHI");
+    assert_eq!(&t.screen_row(1, true), "JKL", "커서 행 아래는 남는다");
+    assert_eq!(t.cursor_position(), (0, 0));
+}
+
+#[test]
+fn ed1_erases_every_row_above_the_cursor_and_up_to_it() {
+    let mut t = term();
+    t.feed_bytes(b"\x1b[1;1HAAAA\x1b[2;1HBBBB\x1b[3;1HCCCC\x1b[2;3H");
+    t.feed_bytes(b"\x1b[1J");
+    assert_eq!(&t.screen_row(0, true), "", "위 행은 통째로 지워진다");
+    assert_eq!(&t.screen_row(1, true), "   B", "커서 행은 커서 칸까지");
+    assert_eq!(&t.screen_row(2, true), "CCCC", "아래 행은 그대로");
+    assert_eq!(t.cursor_position(), (2, 1));
+}
+
+#[test]
+fn ed1_at_a_parked_cursor_erases_the_cursor_row_too() {
+    let mut t = term();
+    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ\x1b[1;1H");
+    t.feed_bytes(b"ABCDEFGHIJ");
+    assert_eq!(
+        t.cursor_position(),
+        (COLS, 0),
+        "준비 실패: 커서가 걸쳐야 한다"
+    );
+
+    t.feed_bytes(b"\x1b[1J");
+    assert_eq!(
+        &t.screen_row(0, true),
+        "",
+        "걸친 커서는 마지막 열에 올라앉은 것이므로 커서 행 전체가 범위다"
+    );
+    assert_eq!(
+        &t.screen_row(1, true),
+        "QRSTUVWXYZ",
+        "한 칸이 다음 행으로 넘어가지 않는다"
+    );
+    assert_eq!(t.scrollback_len(), 0);
+    assert_eq!(
+        t.cursor_position(),
+        (COLS, 0),
+        "걸친 상태가 보존된다 — 소거가 커서를 움직이지 않는다"
+    );
+}

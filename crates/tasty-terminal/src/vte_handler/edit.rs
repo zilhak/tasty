@@ -70,13 +70,8 @@ impl TerminalState {
                         x: Position::Absolute(0),
                         y: Position::Absolute(cy),
                     });
-                    if cx < cols {
-                        changes.push(Change::Text(" ".repeat(cx + 1)));
-                    }
-                    changes.push(Change::CursorPosition {
-                        x: Position::Absolute(cx),
-                        y: Position::Absolute(cy),
-                    });
+                    changes.push(Change::Text(" ".repeat(erase_span_to_cursor(cx, cols))));
+                    changes.extend(restore_cursor_column(cx, cy, cols));
                     changes
                 }
                 EraseInDisplay::EraseDisplay => {
