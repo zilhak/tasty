@@ -1985,7 +1985,7 @@ about = "파일 핸들러 — 사용자 설정(`~/.tasty/file-handlers.toml`) �
 about = "클립보드 — 로컬 클립보드를 조작"
 
 [cli.help._root.hook-handler]
-about = "훅 핸들러 — 공용 훅·웹훅 핸들러 레지스트리 (list / reload / dispatch)"
+about = "훅 핸들러 — 공용 훅·웹훅 핸들러 레지스트리 (list / get / upsert / remove / reload / dispatch)"
 
 [cli.help._root.completion-strategy]
 about = "완료 판정 전략 — task Custom 디스패치의 완료 판정기 레지스트리 (list)"

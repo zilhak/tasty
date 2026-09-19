@@ -62,13 +62,31 @@ tasty unset global-hook --hook <HOOK_ID>
 ```sh
 tasty hook-handler list                                     # 등록된 핸들러 (host / plugin / user)
 tasty set hook --surface 42 --event bell --handler user/my-handler
+tasty hook-handler get --id user/my-handler                 # 한 건을 자세히 (하는 일까지)
 tasty hook-handler dispatch --id user/my-handler            # 손으로 발화해 테스트
 tasty hook-handler reload                                   # ~/.tasty/hook-handlers.toml 다시 읽기
 ```
 
+핸들러를 **고치거나 새로 만드는** 것도 명령으로 됩니다. 적지 않은 항목은 그대로 두므로,
+이름을 유지한 채 하는 일만 바꿀 수 있습니다 (그 핸들러를 가리키는 훅들은 그대로 따라옵니다).
+
+```sh
+# 하는 일만 바꾸기 — 먼저 get 으로 지금 무엇을 하는지 보고, 그 모양 그대로 돌려줍니다
+tasty hook-handler upsert --id user/my-handler \
+  --calls '[{"method":"notification.create","params":{"message":"빌드 끝"}}]'
+
+# 잠시 꺼두기 / 다시 켜기
+tasty hook-handler upsert --id user/my-handler --disabled true
+
+# 내가 만든 항목 지우기
+tasty hook-handler remove --id user/my-handler
+```
+
+바꾼 내용은 바로 `~/.tasty/hook-handlers.toml` 에 저장됩니다. 다만 **이미 만들어 둔 웹훅 주소는 따라오지 않습니다** — 웹훅은 등록하던 순간의 동작을 그대로 들고 있어서, 새 동작을 쓰려면 그 웹훅을 다시 등록하세요.
+
 사용자 핸들러는 **설정** <!-- en: Settings --> › **핸들러** <!-- en: Handlers --> › **훅 핸들러** <!-- en: Hook Handlers --> 탭에서 추가·편집합니다. 저장하면 `~/.tasty/hook-handlers.toml` 에 기록되며, 파일을 직접 써도 됩니다 (`tasty hook-handler reload` 로 반영).
 
-목록의 각 줄에는 그것을 심은 쪽이 표시됩니다 — Tasty 자신은 `host`, 플러그인은 그 플러그인 이름, 직접 만든 것은 `you` 입니다. 지울 수 있는 줄에만 휴지통이 붙고, 나머지 줄에는 자물쇠가 놓입니다 (Tasty 와 플러그인이 시작할 때마다 자기 핸들러를 다시 심기 때문입니다). 여러 내부 동작을 잇는 핸들러는 그 순서가 한 줄로 보이며, 바꾸려면 파일을 고치고 `tasty hook-handler reload` 하면 됩니다.
+목록의 각 줄에는 그것을 심은 쪽이 표시됩니다 — Tasty 자신은 `host`, 플러그인은 그 플러그인 이름, 직접 만든 것은 `you` 입니다. 지울 수 있는 줄에만 휴지통이 붙고, 나머지 줄에는 자물쇠가 놓입니다 (Tasty 와 플러그인이 시작할 때마다 자기 핸들러를 다시 심기 때문입니다). 여러 내부 동작을 잇는 핸들러는 그 순서가 한 줄로 보이며, 탭 안에서는 고칠 수 없습니다 — 위의 `tasty hook-handler upsert` 로 바꾸거나, 파일을 고치고 `tasty hook-handler reload` 하면 됩니다.
 
 ```toml
 [[handler]]

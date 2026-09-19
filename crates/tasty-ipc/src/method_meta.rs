@@ -505,6 +505,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // plugin 이 HookHandler 권한으로 list/dispatch 를 호출하는 실배선은 후속(S11).
         // reload 는 user config 변경 후 재읽기라 애초에 plugin 무관(local 전용).
         ("hook_handler.list", local_only()),
+        ("hook_handler.get", local_only()),
+        // get/upsert/remove 도 같은 이유로 local 전용이되 근거가 하나 더 있다 —
+        // IpcSequence 는 **Local 권한으로 실행된다.** plugin 이 시퀀스를 고칠 수 있으면
+        // 자기 권한 집합을 넘어선 IPC escalation 이 되므로, `webhook.register` 가
+        // plugin 의 인라인 sequence 를 거부하는 것과 같은 자리에서 막는다.
+        ("hook_handler.upsert", local_only()),
+        ("hook_handler.remove", local_only()),
         ("hook_handler.reload", local_only()),
         ("hook_handler.dispatch", local_only()),
         // ── completion_strategy.* (완료 판정 전략 레지스트리 — local-only) ──

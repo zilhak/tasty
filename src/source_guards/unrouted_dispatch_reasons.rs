@@ -341,6 +341,21 @@ const ROSTER: &[(&str, Why, &str)] = &[
         NotWindowOwned,
         "`hook_handler::global()` — 프로세스 전역이다. hook **핸들러**가 전역이고 hook **인스턴스**만 창 소유라는 구분이 여기서 갈린다",
     ),
+    (
+        "hook_handler.get",
+        NotWindowOwned,
+        "상동 — 전역 등록부. `id` 는 핸들러 **이름**(문자열)이라 창을 가리키지 않는다",
+    ),
+    (
+        "hook_handler.upsert",
+        NotWindowOwned,
+        "상동 — 쓰기도 같은 전역 등록부에 닿고 영속 대상은 `~/.tasty/hook-handlers.toml` 파일 하나다. 어느 창으로 가도 같은 것을 고친다",
+    ),
+    (
+        "hook_handler.remove",
+        NotWindowOwned,
+        "상동 — `upsert` 의 짝. 창 소유 상태를 하나도 안 읽는다",
+    ),
     ("hook_handler.reload", NotWindowOwned, "상동 — 전역 등록부"),
     (
         "hook_handler.dispatch",

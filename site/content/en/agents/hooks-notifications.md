@@ -1,4 +1,4 @@
-<!-- source-hash: 0c48052cc731 -->
+<!-- source-hash: 1c561d524541 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -63,13 +63,32 @@ Instead of `--command`, you can attach a pre-registered **hook handler** by name
 ```sh
 tasty hook-handler list                                     # registered handlers (host / plugin / user)
 tasty set hook --surface 42 --event bell --handler user/my-handler
+tasty hook-handler get --id user/my-handler                 # one handler in full, including what it does
 tasty hook-handler dispatch --id user/my-handler            # fire by hand to test
 tasty hook-handler reload                                   # re-read ~/.tasty/hook-handlers.toml
 ```
 
+You can also **change or create** a handler from the command line. Anything you leave out
+stays as it was, so a handler can keep its name while what it does changes (every hook
+pointing at it follows along).
+
+```sh
+# change only what it does — read it with get first, then hand the same shape back
+tasty hook-handler upsert --id user/my-handler \
+  --calls '[{"method":"notification.create","params":{"message":"Build finished"}}]'
+
+# switch it off for a while, or back on
+tasty hook-handler upsert --id user/my-handler --disabled true
+
+# delete one you made
+tasty hook-handler remove --id user/my-handler
+```
+
+The change is saved to `~/.tasty/hook-handlers.toml` right away. One thing does not follow: **a webhook address you already created keeps doing what it did** — it holds on to the actions it was given at the time, so register it again to pick up the new ones.
+
 User handlers are added and edited in the **Settings** › **Handlers** › **Hook Handlers** tab. Saving writes them to `~/.tasty/hook-handlers.toml`, and you can also write the file directly (apply with `tasty hook-handler reload`).
 
-Every row shows who planted it — `host` for Tasty itself, the plugin's own name for a plugin, and `you` for the ones you made. Only the rows you can delete carry a trash button; the rest carry a padlock, because Tasty and its plugins plant their handlers again on every start. A handler that chains several internal actions shows that chain on one line; to change it, edit the file and run `tasty hook-handler reload`.
+Every row shows who planted it — `host` for Tasty itself, the plugin's own name for a plugin, and `you` for the ones you made. Only the rows you can delete carry a trash button; the rest carry a padlock, because Tasty and its plugins plant their handlers again on every start. A handler that chains several internal actions shows that chain on one line, and the tab cannot change it — use `tasty hook-handler upsert` above, or edit the file and run `tasty hook-handler reload`.
 
 ```toml
 [[handler]]

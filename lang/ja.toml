@@ -1987,7 +1987,7 @@ about = "ファイルハンドラ — ユーザー設定（`~/.tasty/file-handle
 about = "クリップボード — ローカルのクリップボードを操作する"
 
 [cli.help._root.hook-handler]
-about = "フックハンドラ — 共用のフック・Webhook ハンドラレジストリ（list / reload / dispatch）"
+about = "フックハンドラ — 共用のフック・Webhook ハンドラレジストリ（list / get / upsert / remove / reload / dispatch）"
 
 [cli.help._root.completion-strategy]
 about = "完了判定ストラテジ — task Custom ディスパッチの完了判定レジストリ（list）"

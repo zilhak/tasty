@@ -770,6 +770,9 @@ fn route_engine_handler(
         // 전역 싱글턴이라 list/reload 는 core/state/engine 미사용. dispatch 만
         // IpcSequence 실행에 host injector 가 필요해 core 를 받는다.
         "hook_handler.list" => hook_handler::handle_list(id),
+        "hook_handler.get" => hook_handler::handle_get(id, &request.params),
+        "hook_handler.upsert" => hook_handler::handle_upsert(id, &request.params),
+        "hook_handler.remove" => hook_handler::handle_remove(id, &request.params),
         "hook_handler.reload" => hook_handler::handle_reload(id),
         "hook_handler.dispatch" => hook_handler::handle_dispatch(core, id, &request.params),
         // completion_strategy: 완료 판정 전략 레지스트리 조회. 상태는

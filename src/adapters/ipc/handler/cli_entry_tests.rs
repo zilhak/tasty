@@ -22,7 +22,9 @@
 
 use serde_json::json;
 use tasty_cli::request::command_to_request;
-use tasty_cli::{CloseCommands, Commands, SendCommands, SessionCommands, SurfaceCommands};
+use tasty_cli::{
+    CloseCommands, Commands, HookHandlerCommands, SendCommands, SessionCommands, SurfaceCommands,
+};
 
 use crate::ipc::caller::CallerContext;
 
@@ -259,4 +261,74 @@ fn close_window_cli_entry_point_matches_what_the_app_handler_reads() {
         Some(3),
         "App 핸들러는 `id` 를 u64 로 읽는다"
     );
+}
+
+/// `tasty hook-handler get|upsert|remove` — 레지스트리를 **안 건드리는 갈래**로만
+/// 부른다. 그 셋은 프로세스 전역 싱글턴과 `~/.tasty/hook-handlers.toml` 을 건드리므로
+/// 성공 갈래를 테스트에서 부르면 실행한 사람의 실제 설정을 고친다.
+///
+/// 그래서 각 갈래가 **자기 키를 읽었을 때만 나올 수 있는 거절문**을 고정한다 —
+/// `assert_params_were_understood` 의 "Missing 아님" 만으로는 키 오타가 안 잡힌다.
+/// CLI 가 `action` 을 다른 이름으로 보냈다면 서버는 "nothing to patch" 라고 답하지
+/// `'action' must be …` 라고 답하지 않는다.
+#[test]
+fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
+    let absent = "user/definitely-not-registered-in-this-test";
+
+    let req = command_to_request(&Commands::HookHandler {
+        command: HookHandlerCommands::Get {
+            id: absent.to_string(),
+        },
+    });
+    assert_eq!(req.method, "hook_handler.get");
+    let resp = super::hook_handler::handle_get(json!(1), &req.params);
+    let msg = resp.error.expect("없는 id 는 거절된다").message;
+    assert!(msg.contains("not found"), "id 키가 안 읽혔다: {msg}");
+
+    // --source 를 잘못 적으면 그 키를 읽은 핸들러만 이 문장을 낸다.
+    let req = command_to_request(&Commands::HookHandler {
+        command: HookHandlerCommands::Upsert {
+            id: "user/x".into(),
+            source: Some("bogus".into()),
+            priority: None,
+            display_name_key: None,
+            disabled: None,
+            action: None,
+            calls: None,
+        },
+    });
+    assert_eq!(req.method, "hook_handler.upsert");
+    let resp = super::hook_handler::handle_upsert(json!(1), &req.params);
+    let msg = resp.error.expect("잘못된 source 는 거절된다").message;
+    assert!(msg.contains("'source'"), "source 키가 안 읽혔다: {msg}");
+
+    // --calls 는 action 자리로 들어간다. 스키마에 안 맞는 것을 보내 그 자리를 고정한다.
+    let req = command_to_request(&Commands::HookHandler {
+        command: HookHandlerCommands::Upsert {
+            id: "user/x".into(),
+            source: None,
+            priority: None,
+            display_name_key: None,
+            disabled: None,
+            action: None,
+            calls: Some(r#"[{"no_method_key":1}]"#.into()),
+        },
+    });
+    let resp = super::hook_handler::handle_upsert(json!(1), &req.params);
+    let msg = resp
+        .error
+        .expect("스키마에 안 맞는 calls 는 거절된다")
+        .message;
+    assert!(msg.contains("'action'"), "action 키가 안 읽혔다: {msg}");
+
+    let req = command_to_request(&Commands::HookHandler {
+        command: HookHandlerCommands::Remove {
+            id: absent.to_string(),
+        },
+    });
+    assert_eq!(req.method, "hook_handler.remove");
+    let resp = super::hook_handler::handle_remove(json!(1), &req.params);
+    let result = resp.result.expect("없는 id 제거는 오류가 아니다");
+    assert_eq!(result["id"], absent, "id 키가 안 읽혔다");
+    assert_eq!(result["existed"], false);
 }

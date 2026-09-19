@@ -24,8 +24,8 @@ const EXPECTED: &[(&str, usize)] = &[
     ("git_viewer", 1),
     ("global_hook", 3),
     ("hook", 3),
-    ("hook_handler", 3),
-    ("host", 1), // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
+    ("hook_handler", 6), // + hook_handler.{get,upsert,remove}
+    ("host", 1),         // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
     ("image", 8),
     ("markdown", 1),
     ("markdown_mirror", 1), // markdown_mirror.content_request — plugin 전용 host 메서드, CLI 진입점 없음

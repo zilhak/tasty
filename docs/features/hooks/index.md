@@ -90,7 +90,7 @@ surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
 - **값**: 문자열은 그대로, 그 외 JSON 은 compact 표현. NUL 문자는 제거(플랫폼 env 제약), 값당 4096 바이트 초과분은 절단(Windows env 블록 상한 보호).
 - **데이터/흐름 분리**: env 는 값 전달 전용 — 실행할 명령(command/args)은 레지스트리 owner 가 고정하므로 payload 가 실행 대상을 바꿀 수 없다.
 
-참조 대상 핸들러 레지스트리는 [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서도 조회·편집할 수 있다(user 매핑은 `~/.tasty/hook-handlers.toml` 영속).
+참조 대상 핸들러 레지스트리는 [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서도 조회·편집할 수 있다(user 매핑은 `~/.tasty/hook-handlers.toml` 영속). 시퀀스(`IpcSequence`) 본문은 그 서브탭에 편집 자리가 없고 아래 [핸들러 레지스트리 CLI](#핸들러-레지스트리-hook_handler)가 그 자리다.
 
 ##### 트리거 payload (이벤트별 key)
 
@@ -128,6 +128,25 @@ surface 무관 — `condition` 으로 트리거:
   - `hook.set`/`hook.list`/`hook.unset` — `tasty set hook --event bell --command "..." [--once]` 또는 핸들러 참조 `tasty set hook --event bell --handler <id>` (`--command`/`--handler` 택1)
   - `global_hook.set`/`list`/`unset` — `tasty set global-hook --condition interval:60 --command "..." [--label ...]`
   - 표 → [reference/api](../../reference/api.md#기타-호스트)
+
+### 핸들러 레지스트리 (`hook_handler.*`)
+
+전부 **`local_only`** — plugin 은 호출할 수 없다. `IpcSequence` 는 Local 권한으로 실행되므로, plugin 이 시퀀스를 읽거나 고칠 수 있으면 자기 권한 집합을 넘어선 IPC escalation 이 된다(웹훅이 plugin 의 인라인 시퀀스를 거부하는 것과 같은 자리).
+
+| IPC | CLI | 동작 |
+|-----|-----|------|
+| `hook_handler.list` | `tasty hook-handler list` | 전 출처(host/plugin/user, 비활성 포함) 요약 — action 은 kind 와 `steps` 수만 |
+| `hook_handler.get` | `tasty hook-handler get --id <id>` | 단건 상세 — **action 본문까지**. 병합된 유효 핸들러를 준다 |
+| `hook_handler.upsert` | `tasty hook-handler upsert --id <id> [--source ...] [--priority N] [--display-name-key K] [--disabled <bool>] (--action <json> \| --calls <json>)` | user 출처 핸들러를 **제자리 수정**하거나 신규 생성 |
+| `hook_handler.remove` | `tasty hook-handler remove --id <id>` | user 기여분만 제거(host/plugin 기본값 보존) |
+| `hook_handler.reload` | `tasty hook-handler reload` | user config 재로드(host/plugin 영향 없음) |
+| `hook_handler.dispatch` | `tasty hook-handler dispatch --id <id> [--body/--header/--query <json>]` | id 로 수동 발화(fire-and-forget) |
+
+- **`upsert` 는 patch 다** — 안 준 필드는 지우는 것이 아니라 그대로 둔다. id·우선순위·나머지가 유지되므로 그 id 를 참조하는 훅 바인딩(`HookBinding::Handler(id)`)은 계속 같은 것을 가리킨다. 지우고 다시 만드는 경로(`remove` 후 재등록)와 **관측 가능하게 다르다**: 후자는 사이에 들어온 트리거가 갈 곳이 없고, host/plugin 기본값이 잠시 드러나며, 안 적은 필드가 기본값으로 되돌아간다.
+- **최소 한 필드**는 있어야 한다. 아무 필드도 없는 upsert 는 아무것도 안 고친 채 성공으로 보고되므로 거부한다. 형식이 틀린 `action` 도 같은 이유로 조용히 무시하지 않는다.
+- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발화 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md) 의 모양이다.
+- **`remove` 는 user 기여분만** 지운다. host/plugin 이 같은 id 에 기본값을 심어 뒀으면 그것이 다시 드러나므로, 응답의 `still_present` 가 그 사실을 값으로 말한다.
+- 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 사라질 변경을 초록으로 덮지 않는다).
 
 ## 관련
 

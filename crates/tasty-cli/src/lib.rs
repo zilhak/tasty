@@ -1093,6 +1093,72 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn hook_handler_get_and_remove_map_id() {
+        let r = req(&["tasty", "hook-handler", "get", "--id", "user/x"]);
+        assert_eq!(r.method, "hook_handler.get");
+        assert_eq!(r.params["id"], "user/x");
+
+        let r = req(&["tasty", "hook-handler", "remove", "--id", "user/x"]);
+        assert_eq!(r.method, "hook_handler.remove");
+        assert_eq!(r.params["id"], "user/x");
+    }
+
+    #[test]
+    fn hook_handler_upsert_wraps_calls_shorthand() {
+        let r = req(&[
+            "tasty",
+            "hook-handler",
+            "upsert",
+            "--id",
+            "user/x",
+            "--calls",
+            r#"[{"method":"window.focus","params":{}}]"#,
+        ]);
+        assert_eq!(r.method, "hook_handler.upsert");
+        assert_eq!(r.params["action"]["kind"], "ipc_sequence");
+        assert_eq!(r.params["action"]["calls"][0]["method"], "window.focus");
+        // 안 준 필드는 null — 서버가 "패치 안 함" 으로 읽는다.
+        assert!(r.params["source"].is_null());
+        assert!(r.params["priority"].is_null());
+    }
+
+    #[test]
+    fn hook_handler_upsert_passes_action_through() {
+        let r = req(&[
+            "tasty",
+            "hook-handler",
+            "upsert",
+            "--id",
+            "user/x",
+            "--source",
+            "hook",
+            "--disabled",
+            "true",
+            "--action",
+            r#"{"kind":"shell_command","command":"echo hi"}"#,
+        ]);
+        assert_eq!(r.params["action"]["kind"], "shell_command");
+        assert_eq!(r.params["source"], "hook");
+        assert_eq!(r.params["disabled"], true);
+    }
+
+    #[test]
+    fn hook_handler_upsert_keeps_malformed_json_instead_of_dropping_it() {
+        // `.ok()` 로 떨어뜨리면 오타 하나가 "아무것도 안 고침" 이 되고 성공으로 나간다.
+        // 원문을 그대로 실어 보내면 서버 스키마가 그 자리에서 거부한다.
+        let r = req(&[
+            "tasty",
+            "hook-handler",
+            "upsert",
+            "--id",
+            "user/x",
+            "--calls",
+            "[{oops",
+        ]);
+        assert_eq!(r.params["action"]["calls"], "[{oops");
+    }
+
+    #[test]
     fn hook_handler_dispatch_without_context_omits_it() {
         let r = req(&["tasty", "hook-handler", "dispatch", "--id", "user/x"]);
         assert_eq!(r.method, "hook_handler.dispatch");

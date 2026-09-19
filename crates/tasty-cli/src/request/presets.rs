@@ -42,6 +42,38 @@ pub(super) fn hook_handler_command_to_method_params(
     use HookHandlerCommands as H;
     match command {
         H::List => ("hook_handler.list", serde_json::json!({})),
+        H::Get { id } => ("hook_handler.get", serde_json::json!({ "id": id })),
+        H::Upsert {
+            id,
+            source,
+            priority,
+            display_name_key,
+            disabled,
+            action,
+            calls,
+        } => {
+            // --calls 는 --action 의 IpcSequence 축약. 둘은 clap 이 배타로 막는다.
+            let action_value = match (action, calls) {
+                (Some(a), _) => Some(json_or_raw(a)),
+                (None, Some(c)) => Some(serde_json::json!({
+                    "kind": "ipc_sequence",
+                    "calls": json_or_raw(c),
+                })),
+                (None, None) => None,
+            };
+            (
+                "hook_handler.upsert",
+                serde_json::json!({
+                    "id": id,
+                    "source": source,
+                    "priority": priority,
+                    "display_name_i18n_key": display_name_key,
+                    "disabled": disabled,
+                    "action": action_value,
+                }),
+            )
+        }
+        H::Remove { id } => ("hook_handler.remove", serde_json::json!({ "id": id })),
         H::Reload => ("hook_handler.reload", serde_json::Value::Null),
         H::Dispatch {
             id,
@@ -65,6 +97,16 @@ pub(super) fn hook_handler_command_to_method_params(
             )
         }
     }
+}
+
+/// JSON 문자열을 파싱하되, **못 읽으면 조용히 버리지 않고 원문 문자열 그대로 넘긴다.**
+///
+/// `.ok()` 로 떨어뜨리면 그 자리가 "미지정" 이 되고, `--action` 오타 하나가 아무것도
+/// 안 고친 upsert 를 성공으로 만든다. 문자열로 넘기면 서버의 스키마 검증이 그 자리에서
+/// 거부하므로, 잘못 적은 것이 값으로 드러난다.
+fn json_or_raw(s: &str) -> serde_json::Value {
+    serde_json::from_str::<serde_json::Value>(s)
+        .unwrap_or_else(|_| serde_json::Value::String(s.to_string()))
 }
 
 /// Read --file (or "-" for stdin) and parse as JSON.

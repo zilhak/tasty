@@ -2017,7 +2017,7 @@ about = "File handler — reload the user configuration (`~/.tasty/file-handlers
 about = "Clipboard — operate on the local clipboard"
 
 [cli.help._root.hook-handler]
-about = "Hook handler — shared hook/webhook handler registry (list / reload / dispatch)"
+about = "Hook handler — shared hook/webhook handler registry (list / get / upsert / remove / reload / dispatch)"
 
 [cli.help._root.completion-strategy]
 about = "Completion strategy — task Custom-dispatch completion judge registry (list)"

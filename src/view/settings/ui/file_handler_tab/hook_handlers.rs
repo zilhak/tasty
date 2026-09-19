@@ -25,10 +25,10 @@
 //!   말한다.
 //!
 //! **`IpcSequence` 행의 `Edit` 진입점은 아직 없다.** 디자인은 시퀀스 편집기를 여는 ghost
-//! 버튼을 두지만 이 레포에는 그 편집기가 **어디에도 없다** — GUI 경로도, CLI 경로도
-//! 없고(`tasty hook-handler` 는 list / reload / dispatch 뿐이다) 시퀀스는
-//! `~/.tasty/hook-handlers.toml` 손편집 + `reload` 로만 바뀐다. 아무 데도 안 여는 버튼을
-//! 두면 그 자체가 거짓 표시라, 편집기 범위가 정해질 때까지 버튼을 두지 않는다.
+//! 버튼을 두지만 이 레포에는 **GUI 편집기가 없다**. 시퀀스를 고치는 경로 자체는 이제
+//! 있다 — `tasty hook-handler get` 으로 읽고 `upsert` 로 되돌려 보낸다
+//! (`docs/features/hooks/index.md` 의 "핸들러 레지스트리"). 아무 데도 안 여는 버튼을
+//! 두면 그 자체가 거짓 표시라, **열 GUI 편집기가 생긴 뒤에** 버튼을 둔다.
 
 use std::collections::{BTreeMap, BTreeSet};
 

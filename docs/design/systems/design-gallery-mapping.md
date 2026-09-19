@@ -736,10 +736,10 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   대신 mono 한 줄 요약(스텝을 `→` 로 이음)이다. intro copy 의 priority 방향은 엔진
   규약(낮을수록 먼저)으로 기술.
 - **`IpcSequence` 행의 `Edit` ghost 버튼은 아직 없다** — 디자인은 그 버튼이 시퀀스
-  편집기를 연다고 적지만, 이 레포에 그 편집기가 GUI 에도 CLI 에도 없다(`tasty
-  hook-handler` 는 list / reload / dispatch 뿐이고 시퀀스는 `~/.tasty/hook-handlers.toml`
-  손편집 + `reload` 로만 바뀐다). 아무 데도 안 여는 버튼은 그 자체가 거짓 표시라,
-  편집기의 범위가 정해질 때까지 두지 않는다. 갤러리 specimen 도 같다.
+  편집기를 연다고 적지만, 이 레포에 **GUI 편집기가 없다**. 시퀀스를 고치는 경로는
+  CLI 에 있다(`tasty hook-handler get` / `upsert`). 아무 데도 안 여는 버튼은 그 자체가
+  거짓 표시라, GUI 편집기의 범위가 정해질 때까지 두지 않는다 — 열 것이 생긴 뒤에
+  버튼을 둔다. 갤러리 specimen 도 같다.
 
 ## Settings › General › Remote transfer
 
