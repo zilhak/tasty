@@ -627,11 +627,13 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.gpu.stall", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
-    // window/egui 입력 주입(마우스·키) — 위 inject_* 와 같은 사용자 입력 재현 계열이라
-    // 같은 debug 격리(원칙 1·3). release 미노출.
+    // window/egui 입력 주입(마우스·키·문자) — 위 inject_* 와 같은 사용자 입력 재현
+    // 계열이라 같은 debug 격리(원칙 1·3). release 미노출. 문자는 키와 다른 이벤트라
+    // (`Event::Text`) 따로 있다 — 키 주입으로는 `TextEdit` 에 글자가 안 들어간다.
     ("debug.inject_window_mouse", local_only()),
     ("debug.inject_egui_mouse", local_only()),
     ("debug.inject_egui_key", local_only()),
+    ("debug.inject_egui_text", local_only()),
     // 임의 Lua 주입(ADR-0031) — release 에는 이 경로가 없다(원칙 1). local 전용.
     ("debug.lua.eval", local_only()),
     // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*

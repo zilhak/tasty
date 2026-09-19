@@ -612,6 +612,16 @@ pub enum InjectDebugCommands {
         #[arg(long, default_value_t = true)]
         pressed: bool,
     },
+    /// Inject typed characters into the egui layer, so a focused text field
+    /// (command palette query, settings filter) can be filled headlessly.
+    /// Key injection cannot do this: egui receives characters through a
+    /// separate text event. Enter, Tab and Backspace stay on `egui-key`.
+    EguiText {
+        /// Characters to type. Control characters are refused, since the real
+        /// input path never carries them and the text field drops them.
+        #[arg(long)]
+        text: String,
+    },
 }
 
 #[cfg(debug_assertions)]

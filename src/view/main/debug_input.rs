@@ -1,4 +1,4 @@
-//! debug 전용 window 레벨 포인터 주입 (입력 재현, release 미노출).
+//! debug 전용 입력 주입 — 포인터(winit·egui) · 키 · 문자 (입력 재현, release 미노출).
 //!
 //! 불가침 원칙 1·3: 사용자 입력 재현(키/마우스 주입)은 release 에 없고
 //! `#[cfg(debug_assertions)]` debug 격리로만 존재한다(`docs/dev-guide/debug-ipc.md`).
@@ -210,6 +210,52 @@ impl MainView {
         }]);
         true
     }
+
+    /// 텍스트 이벤트를 egui 입력 큐로 주입한다(`TextEdit` 에 쿼리를 넣어 목록이 줄어든
+    /// 상태를 재기 위한 채널). 실입력이 나를 수 없는 문자열이면 주입하지 않고 `false`.
+    ///
+    /// 문자열 전체를 **한 이벤트**로 넣는다 — winit 의 `text` 필드가 `char` 가 아니라
+    /// 문자열이라 죽은키 조합 같은 실입력도 여러 문자를 한 이벤트로 나른다. 문자마다
+    /// 나누면 자소 하나가 여러 이벤트로 쪼개져 실입력이 만들지 않는 순서가 된다.
+    /// 키를 누른 사실까지 필요하면(Enter·Tab·Backspace) 옆의
+    /// [`Self::debug_inject_egui_key`] 를 쓴다 — 문자 입력과 키 입력은 egui 에서도
+    /// 다른 이벤트다.
+    pub(crate) fn debug_inject_egui_text(&mut self, text: &str) -> bool {
+        if !text_reaches_egui_as_typed(text) {
+            return false;
+        }
+        self.base
+            .gpu
+            .debug_push_egui_events(vec![egui::Event::Text(text.to_string())]);
+        true
+    }
+}
+
+/// 실입력 경로가 `Event::Text` 로 나를 수 있고, 받는 쪽이 버리지 않는 문자열인가.
+///
+/// 두 끝을 모두 본다.
+///
+/// - **보내는 끝**: `egui-winit` 은 `is_printable_char`(ASCII 제어문자 · private use
+///   area 제외)를 통과한 문자열만 `Event::Text` 로 올린다. 그 밖의 문자열을 주입하면
+///   실입력이 만들 수 없는 이벤트를 재게 된다.
+/// - **받는 끝**: egui 의 `TextEdit` 은 빈 문자열과 `"\n"`·`"\r"` 를 **조용히
+///   버린다**. 거르지 않으면 주입은 `injected: true` 인데 화면은 안 바뀌고, 그 조합이
+///   정확히 이 채널이 메우려던 사각(주입 성공을 믿고 찍은 스크린샷이 빈 쿼리다)을
+///   다시 만든다.
+///
+/// 상류의 판정 함수는 비공개(`egui-winit` 내부)라 여기 옮겨 적는다. ASCII 제어문자를
+/// 거르므로 `"\n"`·`"\r"` 는 앞 조건에 이미 걸린다 — 받는 끝의 이유는 그와 별개로
+/// 성립하는 것이라 따로 적었다.
+fn text_reaches_egui_as_typed(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(is_printable_char)
+}
+
+/// `egui-winit` 의 동명 판정을 옮겨 적은 것.
+fn is_printable_char(chr: char) -> bool {
+    let is_in_private_use_area = ('\u{e000}'..='\u{f8ff}').contains(&chr)
+        || ('\u{f0000}'..='\u{ffffd}').contains(&chr)
+        || ('\u{100000}'..='\u{10fffd}').contains(&chr);
+    !is_in_private_use_area && !chr.is_ascii_control()
 }
 
 /// winit 마우스 버튼 → egui 포인터 버튼 (debug 주입용).
@@ -264,5 +310,35 @@ mod tests {
         assert_eq!(ScrollUnit::from_name("Line"), None);
         assert_eq!(ScrollUnit::from_name("lines"), None);
         assert_eq!(ScrollUnit::from_name(""), None);
+    }
+
+    /// 받는 쪽이 버리는 문자열을 주입하면 `injected: true` 를 보고도 화면이 안 바뀐다 —
+    /// 이 채널이 메우려던 사각(주입을 믿고 찍은 스크린샷이 빈 쿼리다)이 그대로 돌아온다.
+    #[test]
+    fn text_that_the_text_edit_drops_is_refused_instead_of_reported_as_injected() {
+        assert!(!text_reaches_egui_as_typed(""));
+        assert!(!text_reaches_egui_as_typed("\n"));
+        assert!(!text_reaches_egui_as_typed("\r"));
+    }
+
+    /// 실입력 경로(`egui-winit`)가 `Event::Text` 로 올리지 않는 문자는 주입도 안 한다.
+    /// 올리면 실입력이 만들 수 없는 이벤트를 재게 된다.
+    #[test]
+    fn characters_the_real_path_never_carries_are_refused() {
+        // 제어문자가 하나라도 섞이면 문자열 전체가 거절된다 — 실입력은 통과한 부분만
+        // 골라 올리는 것이 아니라 그 이벤트를 통째로 안 만든다.
+        assert!(!text_reaches_egui_as_typed("git\tstatus"));
+        assert!(!text_reaches_egui_as_typed("\u{1b}"));
+        // private use area — 폰트 아이콘 코드포인트가 여기 산다.
+        assert!(!text_reaches_egui_as_typed("\u{e000}"));
+    }
+
+    /// 사람이 실제로 치는 것은 통과해야 한다 — 거절이 넓으면 채널이 안 생긴 것과 같다.
+    #[test]
+    fn what_a_person_types_passes() {
+        assert!(text_reaches_egui_as_typed("theme"));
+        assert!(text_reaches_egui_as_typed("새 탭"));
+        assert!(text_reaches_egui_as_typed(" "));
+        assert!(text_reaches_egui_as_typed("--force"));
     }
 }

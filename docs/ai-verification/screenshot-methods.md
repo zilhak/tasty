@@ -265,11 +265,12 @@ ls -la target/debug/tasty-plugin-<name> \
 
 전용 디스플레이를 띄우고 `xdotool` 로 진짜 X11 입력을 넣으면, IPC 주입이 닿지 않는 구간
 (winit → egui → plugin 까지의 실제 라우팅)을 끝까지 지날 수 있다. 다만 이 환경에는
-데스크톱과 다른 함정이 넷 있고, 넷 다 **조용히** 실패한다 — 하나만 놓쳐도 "화면이 비었다"
-같은 **거짓 관측**이 나온다.
+데스크톱과 다른 함정이 다섯 있고, 다섯 다 **조용히** 실패한다 — 하나만 놓쳐도 "화면이
+비었다" 같은 **거짓 관측**이 나온다.
 
-(이 넷은 *관측*의 함정이다. 그 앞에 *측정 대상*의 함정이 하나 더 있다 — 위 "측정 전에 —
-대상 바이너리가 최신인지 확인한다". plugin 을 고쳤다면 그것부터 확인하고 이 넷으로 넘어간다.)
+(앞의 넷은 *관측*의 함정이고 다섯째는 *주입 경로*의 함정이다 — `xdotool` 이 성공을 보고하는데
+키가 안 들어간다. 그 앞에 *측정 대상*의 함정이 하나 더 있다 — 위 "측정 전에 — 대상 바이너리가
+최신인지 확인한다". plugin 을 고쳤다면 그것부터 확인하고 이 다섯으로 넘어간다.)
 
 **1. `xdotool` 은 `xvfb-run` 이 만든 Xauthority 없이는 붙지 못한다.** `DISPLAY` 만 넘기면
 `Authorization required, but no authorization protocol specified` 뒤에
@@ -323,6 +324,28 @@ activate 없이 절대 좌표로 `mousemove` 한 뒤 `click` 하면 그대로 �
 포인터를 한 번 움직인 뒤 찍는다. (입력을 굴리는 검증은 `click` 이 포인터 이벤트를 동반해 이
 조건을 우연히 만족한다 — 하지만 **우연에 기대지 않는다.** "입력 전" 기준 화면을 찍는 순간이
 정확히 이 함정에 걸리는 구간이다.)
+
+**5. 키보드는 `xdotool type` 으로 안 들어간다 — 텍스트는 IPC 로 주입한다.** 위 3 번의
+PointerRoot 모델이 구해 주는 것은 **포인터**뿐이다. 키보드 포커스는 여전히 없어서
+`XGetInputFocus` 가 `PointerRoot`(1)를 돌려주고, winit 은 포커스 없는 창에 키 이벤트를
+올리지 않는다. `xdotool type --window <id>` 로 창을 지목해도 같다 — 합성 이벤트가 그
+경로를 타지 못한다. **그리고 조용하다**: `xdotool` 은 그 경고를 stderr 로 흘리면서 `0` 으로
+끝나고, 직후 캡처는 치기 전 프레임과 **바이트까지 같다**(실측: 같은 `md5sum`). 종료 코드로
+판정하면 "쳤는데 필터가 안 먹는다" 로 오진한다.
+
+그래서 `TextEdit` 에 쿼리를 넣어 **목록이 줄어든 화면**을 찍으려면 egui 입력 큐로 직접
+주입한다:
+
+```bash
+tasty debug host-popup open --popup-id command_palette
+tasty debug inject egui-text --text split      # {"injected":true} 를 확인한다
+tasty screenshot --window "$WIN" --path /tmp/palette-filtered.png
+```
+
+`{"injected":false}` 면 그 문자열이 실입력 경로가 나를 수 없는 것이다(제어문자 · 빈
+문자열). Enter·↑↓·Esc 같은 **키**는 문자가 아니므로 `tasty debug inject egui-key --key Enter`
+쪽이다 — 둘은 egui 에서도 다른 이벤트라, 한쪽으로 다른 쪽을 대신할 수 없다.
+상세는 [debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다".
 
 그 밖에 이 조합에서 지키는 것:
 

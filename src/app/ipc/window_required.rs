@@ -113,6 +113,7 @@ impl App {
             || cmd.request.method == "debug.inject_window_mouse"
             || cmd.request.method == "debug.inject_egui_mouse"
             || cmd.request.method == "debug.inject_egui_key"
+            || cmd.request.method == "debug.inject_egui_text"
             || cmd.request.method == "debug.selection"
             || cmd.request.method == "debug.pending_menu"
             || cmd.request.method == "debug.focused_surface";
@@ -214,6 +215,23 @@ impl App {
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
             let ok = w.debug_inject_egui_pointer(fx, fy, surface_id, action);
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "injected": ok }),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        // 문자 입력은 키 입력과 다른 이벤트다 — egui 가 문자를 받는 경로는
+        // `Event::Text` 뿐이라 `inject_egui_key` 로는 `TextEdit` 에 쿼리가 안 들어간다.
+        // 옆 칸이지 새 축이 아니다.
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.inject_egui_text" {
+            let params = &cmd.request.params;
+            let Some(text) = params.get("text").and_then(|v| v.as_str()) else {
+                return reject_bad_params(cmd, "missing or non-string 'text'");
+            };
+            let ok = w.debug_inject_egui_text(text);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),

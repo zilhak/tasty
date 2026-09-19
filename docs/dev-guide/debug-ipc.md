@@ -50,6 +50,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_window_mouse` | `surface_id?`, `fx?`/`fy?`(기본 0.5, 창 정규화 좌표), `event_type?`, `button?`, `scroll_dx?`/`scroll_dy?`, `unit?`(기본 `line`) | winit 레벨 마우스 이벤트 주입 — 포커스된 창에 작용한다. 스크롤 단위는 아래 [휠 주입의 단위](#휠-주입의-단위-unit) |
 | `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point` | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다 |
 | `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`) | egui 레벨 키 이벤트 주입 |
+| `debug.inject_egui_text` | `text`(필수, 문자열) | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
@@ -108,13 +109,41 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 > 명제보다 커지기 때문이다. 메서드를 더하면 **여기도 같이 고쳐야 한다.** 판정 기준은
 > [duplicated-sets](duplicated-sets.md).
 
-† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 **게이트 없이 cfg 격리만 받는 입력 재현이 넷 있다** — `surface.ime_*` 와 `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key`. 넷 다 tasty 프로세스 **안**의 창 상태(IME 조합 / winit·egui 입력 큐)만 바꾸는 in-process 시뮬레이션이라, 인스턴스를 debug 로 띄운 사람 밖으로 효과가 나가지 않는다. 위 넷과 갈리는 기준이 PTY·OS 전역이냐 in-process 냐이므로 이쪽은 cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
+† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 **게이트 없이 cfg 격리만 받는 입력 재현이 다섯 있다** — `surface.ime_*` 와 `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` · `debug.inject_egui_text`. 다섯 다 tasty 프로세스 **안**의 창 상태(IME 조합 / winit·egui 입력 큐)만 바꾸는 in-process 시뮬레이션이라, 인스턴스를 debug 로 띄운 사람 밖으로 효과가 나가지 않는다. 위 넷과 갈리는 기준이 PTY·OS 전역이냐 in-process 냐이므로 이쪽은 cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
 
 ‡ **다른 플랫폼의 답은 `-32601` 이 아니다.** 위 둘은 등재(`DEBUG_METHODS`)와 CLI 서브커맨드에 플랫폼 조건이 없다 — 이 저장소에서 그 두 층은 플랫폼 균일하고(실측 2026-09-05: `crates/tasty-cli/src/` 와 `crates/tasty-ipc/src/method_meta.rs` 에 `target_os` 게이트 0 건) 차이는 dispatch 층에만 둔다. 그래서 macOS gui 가 아닌 조합에서는 상보 arm 이 **`-32015` 와 사유**로 답한다("이 플랫폼엔 `CGEventPost`/`TISSelectInputSource` 대응물이 없다"). `-32601`("그런 메서드 없음")로 답하면 이름이 틀렸다는 뜻이 되어 호출자가 오타를 의심하게 되는데, 이름은 맞고 표에도 있다 — 고칠 방향이 달라진다. 짝이 빠지지 않게 `src/source_guards/platform_gated_dispatch_complement.rs` 가 강제한다. 근거는 [ADR-0154](../adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md).
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
 `debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
+
+### 문자 주입은 키 주입과 다른 채널이다
+
+egui 가 **문자**를 받는 경로는 `Event::Text(String)` 하나뿐이고, `Event::Key` 는 그 문자를
+만들지 않는다. 그래서 `debug.inject_egui_key` 로는 `TextEdit` 에 글자가 한 자도 안 들어간다 —
+키 주입만 있던 동안 WM 없는 Xvfb 에서 **쿼리를 넣어 목록이 줄어든 화면**을 잴 방법이 없었고,
+`xdotool type` 은 그 환경에서 키보드 포커스가 없어(`XGetInputFocus` 가 `PointerRoot` 를
+돌려준다) 대신이 안 된다. `debug.inject_egui_text` 가 그 칸이다.
+
+- **문자열 전체가 한 이벤트로** 들어간다. winit 의 `text` 필드가 `char` 가 아니라 문자열이라
+  죽은키 조합 같은 실입력도 여러 문자를 한 이벤트로 나른다 — 문자마다 쪼개면 실입력이 만들지
+  않는 순서가 된다. 키를 하나씩 누른 사실이 필요하면 `debug.inject_egui_key` 를 그만큼 부른다.
+- **제어문자와 private use area 문자는 거절한다**(`injected: false`). 두 끝이 각각 거절할
+  이유를 갖는다 — 보내는 끝인 `egui-winit` 은 그런 문자열을 애초에 `Event::Text` 로 올리지
+  않고, 받는 끝인 `TextEdit` 은 빈 문자열과 `"\n"`·`"\r"` 를 **조용히 버린다.** 거르지 않으면
+  `injected: true` 를 받고도 화면이 안 바뀌어, 이 채널이 메우려던 사각(주입을 믿고 찍은
+  스크린샷이 빈 쿼리다)이 그대로 돌아온다. Enter·Tab·Backspace 는 `debug.inject_egui_key` 쪽이다.
+- 대상은 **지금 포커스를 가진 위젯**이다. 창을 ID 로 지목하지 않으므로 이 메서드는 다른 주입과
+  같이 focused window step(`src/app/ipc/window_required.rs`)에 산다.
+
+CLI 는 `tasty debug inject egui-text --text <s>` 다. command palette 를 열어 쿼리를 넣는
+전체 절차는 이렇다(`host-popup open` 이 사용자 단축키 경로를 대신한다):
+
+```bash
+tasty debug host-popup open --popup-id command_palette
+tasty debug inject egui-text --text split      # {"injected":true}
+tasty screenshot --window <id> --path /tmp/palette-filtered.png
+```
 
 ### 휠 주입의 단위 (`unit`)
 

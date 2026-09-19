@@ -491,6 +491,10 @@ pub(super) fn inject_debug_command_to_method_params(
             "debug.inject_egui_key",
             serde_json::json!({ "key": key, "pressed": pressed }),
         ),
+        InjectDebugCommands::EguiText { text } => (
+            "debug.inject_egui_text",
+            serde_json::json!({ "text": text }),
+        ),
     }
 }
 
