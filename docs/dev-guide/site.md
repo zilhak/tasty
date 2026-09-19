@@ -74,6 +74,19 @@ site/
 **생성물은 커밋하지 않는다.** 파생물이고 `npm run build` 가 `prebuild` 로 매번 다시 만든다.
 정본은 `site/vendor/` 하나다.
 
+### vendor 자신은 어디서 오는가
+
+위 변환은 `vendor → src` 한 방향만 말한다. 그 앞에 **`원격 → vendor`** 방향이 하나 더 있고,
+그쪽이 사람이 도는 단계다 — `site/vendor/` 는 원격 Claude Design 프로젝트의 사본이라,
+디자인 결정이 착지하면 누군가 그것을 받아와야 한다. 절차는
+[`site/vendor/README.md`](../../site/vendor/README.md) 의 "vendor 갱신 절차" 에 있고,
+정합 루프에서 이 단계가 차지하는 자리는
+[design-change-workflow](design-change-workflow.md#넷째-정합-대상--사이트-사본-필수) 에 있다.
+
+따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 토큰 층에
+한해서는 `crates/tasty-doc-guards/tests/site_vendor_tokens_track_the_app_export.rs` 가 그
+침묵을 깨지만, 토큰을 안 여는 결정은 그 판정기도 못 본다.
+
 ## 빌드
 
 ```bash

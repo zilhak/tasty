@@ -39,8 +39,8 @@
                         design-request/*.md)                                  │            │
                                                                               │ 시안 수령   │
                                                                               ▼            │
-                                            [4] 정합: Figma 회귀반영 → 갤러리 specimen → 본체 구현 ─┘
-                                                (구조 전사 + 토큰 정합)
+                              [4] 정합: Figma 회귀반영 → 갤러리 specimen → 본체 구현 → 사이트 사본 ─┘
+                                  (구조 전사 + 토큰 정합)                    (site/vendor 재-vendoring)
 ```
 
 | 단계 | 행위자 | 하는 일 | 산출물 |
@@ -48,7 +48,7 @@
 | 1 | **planner** | 무엇을·어떻게 보이게 할지 정의한 **디자인 요청문서** 작성 | 로컬 작업 폴더의 `design-request/MMDDhhmm-design-request-<slug>.md` |
 | 2 | **사용자** | 요청문서를 **Claude design 에 직접 제출** | (제출) |
 | 3 | **designer** (Claude design) | 색·간격·인터랙션 살아있는 **고충실 시안** 생성 | HTML/CSS 시안 (휘발성) |
-| 4 | **구현** (claude code) | Figma 회귀반영 → 갤러리 specimen → 본체 반영 | 코드 + Figma 갱신 |
+| 4 | **구현** (claude code) | Figma 회귀반영 → 갤러리 specimen → 본체 반영 → **사이트 사본 재-vendoring**(`site/vendor/`) | 코드 + Figma 갱신 + vendor 사본 |
 | → 재요청 | planner | 4 에서 부족·불일치가 드러나면 **추가 요청문서**로 다시 2 로 | 새/갱신 요청문서 |
 
 루프인 이유: 한 번에 끝나지 않는다. 시안이 열린 결정(아래 §6)을 확정하거나
@@ -87,6 +87,21 @@
 - **gallery-first 부품 재사용** — 보편 부품(버튼/입력/표/스크롤바/컨텍스트 메뉴/팝업)은 [공용 위젯](../design/policies/shared-widgets.md)·기존 카탈로그와 시각 일관. ([gallery-first](gallery-first.md))
 - **i18n 가변폭** — 모든 문자열은 [`t()`](i18n.md) 번역 키로 노출될 예정. 시안 텍스트는 영어 기준이되 독/일/한 가변 길이를 감안해 여유 폭.
 
+## 넷째 정합 대상 — 사이트 사본 (필수)
+
+레포에는 같은 원격 canonical 의 vendored 사본이 **둘** 있고, 디자인 결정은 **둘 다** 따라와야 한다.
+
+| 사본 | 무엇이 받는가 | 갱신 절차 | 안 따라오면 |
+|------|--------------|-----------|-------------|
+| 앱 — `crates/tasty-design-tokens/dtcg/tasty.tokens.json` | 토큰(DTCG) | [`crates/tasty-design-tokens/README.md`](../../crates/tasty-design-tokens/README.md) "vendor 갱신 절차" | `crates/tasty-design-tokens/tests/freshness.rs` 의 census 스냅샷이 빨개진다 |
+| 사이트 — `site/vendor/` | 킷 전부(토큰 · 컴포넌트 · UI kit · 갤러리 · 가이드라인) | [`site/vendor/README.md`](../../site/vendor/README.md) "vendor 갱신 절차" | **공개 사이트가 결정 이전 UI 를 현재형으로 전시한다** |
+
+뒤엣것이 조용한 이유는 사이트가 그 사본을 **정상적으로** 렌더하기 때문이다 — 빌드도 시험도 CI 도 전부 초록이고, 낡았다는 사실이 값으로 안 남는다. 실제로 제거하기로 결정된 컨트롤 한 줄이 그렇게 공개 페이지에 남았다.
+
+부분적인 자동 채널이 하나 있다. `crates/tasty-doc-guards/tests/site_vendor_tokens_track_the_app_export.rs` 가 두 사본의 **토큰 이름 집합**을 대조해, 앱이 받은 토큰을 사이트가 못 받으면 그 차이를 명부와 대조해 빨개진다. **그 판정기가 덮는 범위와 이 절차가 덮는 범위는 다르다** — 판정기는 토큰 층만 보고, 토큰을 하나도 안 여는 결정(문구 변경 · 구성 변경 · 컨트롤 삭제)은 두 사본의 이름 집합을 똑같이 남겨두므로 **여전히 안 잡힌다.** 그 층은 이 단계(사람이 도는 재-vendoring)만 닫는다. 판정기가 초록인 것을 "사이트 사본이 최신" 으로 읽지 마라.
+
+재-vendoring 은 원격 프로젝트 접근(DesignSync 세션)을 쓰므로, 그 권한이 없는 세션에서는 이 단계를 **미완으로 남기고 그 사실을 적는다** — 조용히 건너뛰지 않는다.
+
 ## 상태 라이프사이클
 
 요청문서 헤더 메타의 `상태:` 필드로 추적한다.
@@ -101,7 +116,7 @@ requested ──(사용자 제출·시안 수령)──▶ received ──(Figma
 |------|------|
 | `requested` | planner 가 요청문서를 작성·확정. 아직 시안 없음 (제출 대기). |
 | `received` | 사용자가 Claude design 시안을 받아옴. 정합 작업 대기/진행. |
-| `reconciled` | 시안을 Figma 회귀반영 + 갤러리 specimen + 본체에 반영 완료. 이 시점에 **요청문서를 삭제한다**(아래 [정합 완료 후 요청문서 삭제](#정합-완료-후-요청문서-삭제-필수)). |
+| `reconciled` | 시안을 Figma 회귀반영 + 갤러리 specimen + 본체 + **사이트 사본(`site/vendor/`)** 에 반영 완료 — 넷째 자리가 빠지면 코드가 따라와도 **공개 사이트는 결정 이전 UI 를 계속 전시한다**(아래 [넷째 정합 대상](#넷째-정합-대상--사이트-사본-필수)). 이 시점에 **요청문서를 삭제한다**(아래 [정합 완료 후 요청문서 삭제](#정합-완료-후-요청문서-삭제-필수)). |
 | `re-requested` | 정합 중 부족·불일치가 드러나 추가/갱신 요청문서로 루프 재진입. |
 
 ## 정합 완료 후 요청문서 삭제 (필수)
@@ -130,7 +145,7 @@ requested ──(사용자 제출·시안 수령)──▶ received ──(Figma
 | **planner** | claude code(todo-maker 겸) 또는 사용자 | 요청문서 작성 — 인벤토리·제약·열린 결정 정의. Figma 기획(와이어프레임/IA/플로우) 유지. |
 | **사용자** | 사람 | 요청문서를 **Claude design 에 직접 제출**하고 시안 결과를 받아온다. (이 제출은 사용자 행위 — 에이전트가 대행하지 않는다.) |
 | **designer** | Claude design (claude.ai Artifacts) | 고충실 HTML/CSS 시안 생성. 색·치수는 요청문서가 준 토큰 팔레트 안에서만. |
-| **구현** | claude code | 확정 시안을 [gallery-first](gallery-first.md) 순서로 — Figma 회귀반영 → 갤러리 specimen(구조 전사+토큰 정합) → 본체 반영. |
+| **구현** | claude code | 확정 시안을 [gallery-first](gallery-first.md) 순서로 — Figma 회귀반영 → 갤러리 specimen(구조 전사+토큰 정합) → 본체 반영 → 사이트 사본 재-vendoring. |
 
 > Claude design 산출물은 **휘발성**(세션 종료 시 사라짐)이다. 확정 시안은 스크린샷을 Figma Screens 페이지에
 > "확정 시안 아카이브"로 박거나 HTML 을 `docs/design/` 에 보존한다(ADR-0025).
