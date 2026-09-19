@@ -231,12 +231,12 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 117,
+        measured: 118,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "a6aa0b4b3 — 이 트리에서 다시 셌다. 두 lane 이 각각 통합 타깃을 하나씩 \
+            "c7887abcd — 이 트리에서 다시 셌다. 세 lane 이 각각 통합 타깃을 하나씩 \
              더했다: `tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs` \
-             와 `tasty-doc-guards/tests/drag_to_scroll_is_declared.rs`. 둘 다 자기 base 에서 \
+             와 `tasty-doc-guards/tests/drag_to_scroll_is_declared.rs`, 그리고 터미널 소거 lane 의 것. 셋 다 자기 base 에서 \
              116 이라 적었고 **그 값은 각자의 트리에서만 맞았다** — 같은 수가 서로 다른 두 \
              근거를 갖는 형태이고, 병합하는 쪽이 여기서 다시 잰 값이 이것이다. \
              이전 회차: 742b0dbf7 + lane — 그 트리의 추적 계수가 114 이고 그 lane 이 \
@@ -274,10 +274,10 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 453,
+        measured: 454,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "194c8653a — drag-to-scroll lane 이 ADR 하나를 더한 트리에서 다시 셌다. 앞선 값 452 는 `194c8653a` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 451 은 `353038a3e` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 450 은 `4e379d048` 에서 쟀고 그 트리에서는 \
+            "194c8653a — 터미널 소거 lane 이 ADR 하나를 더한 트리에서 다시 셌다. 앞선 값 453 은 `a6aa0b4b3` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 452 는 `194c8653a` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 451 은 `353038a3e` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 450 은 `4e379d048` 에서 쟀고 그 트리에서는 \
              맞았는데, 그 뒤 착지한 lane 이 문서를 더해 451 이 됐다. 그 앞의 449 는 `c15f504f4` 에서 쟀고 그 트리에서는 \
              맞았는데, 그 뒤 착지한 lane 이 ADR 하나를 더하면서 450 이 됐다. 그 lane 은 \
              자기 base 에서 이 항을 안 건드려 선언이 449 인 채 게이트를 전부 통과했다 — \
