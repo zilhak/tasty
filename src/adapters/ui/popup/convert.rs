@@ -296,8 +296,8 @@ pub fn draw_convert_view(
         // 그린다. 두 분기가 동일한 4-space 인덴트를 써서 라벨 텍스트 x정렬을 맞춘다.
         let label = format!("    {}    {}", item.label, shortcut_str);
         let text_color = if is_current {
-            // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
-            theme.text_placeholder()
+            // disabled 는 고유 잉크 — `text-disabled`(neutral-700).
+            theme.text_disabled()
         } else {
             theme.text_primary()
         };

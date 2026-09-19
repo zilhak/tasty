@@ -27,10 +27,6 @@ use tasty_ui_widgets::{margin_all, margin_sym};
 // 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
 // "스케일 밖 폰트 값".
 
-/// footer 의 kbd 힌트 줄. 스케일 밖(10.5) — `kbd_font_size()`(micro 10)와 0.5 차이라
-/// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const PALETTE_HINT_FONT_SIZE: LogicalPx = LogicalPx(10.5);
-
 /// footer 힌트 사이 가로 간격. 디자인 전사값 14 로 4px 그리드 밖이다
 /// (`spacing_md`=12 와 2px 차).
 const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
@@ -275,7 +271,9 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            let hint_font = egui::FontId::monospace(PALETTE_HINT_FONT_SIZE.value());
+            // footer kbd 힌트 — 스케일 밖 10.5 였던 자리. 2026-09-17 결정이 11 로
+            // 스냅했고 11 은 `font-size-caption` 이라 토큰을 그대로 읽는다.
+            let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = PALETTE_HINT_GAP_X.value();
                 for hint in [

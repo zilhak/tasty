@@ -28,9 +28,8 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[PhysicalRect], scale_
         egui::Order::Middle,
         egui::Id::new("pane_dividers"),
     ));
-    // divergence: pane divider 는 border 인데 surface2(=surface-active/selection 값) 로 그린다.
-    // surface2 값을 반환하는 border-role 접근자가 없어(§4-3) 값-보존 위해 surface_active() 사용.
-    let border_color = th.surface_active();
+    // pane divider 는 "틀의 선" — surface2 값의 border role `border-frame`.
+    let border_color = th.border_frame();
     for div in dividers {
         let rect = crate::adapters::ui::to_egui_rect(*div, scale_factor).round_ui();
         painter.rect_filled(rect, 0.0, border_color);

@@ -484,10 +484,12 @@ impl PopupManager {
                 );
             }
             painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
+            // popup 프레임 보더 — 전용 border role `border-frame`(neutral-500). 갤러리
+            // specimen(`catalog/popup_frame.rs`)이 읽는 것과 같은 접근자다.
             painter.rect_stroke(
                 popup_rect,
                 th.corner_radius.value(),
-                egui::Stroke::new(th.border_width.value(), th.border_strong()),
+                egui::Stroke::new(th.border_width.value(), th.border_frame()),
                 egui::StrokeKind::Outside,
             );
 
@@ -509,12 +511,14 @@ impl PopupManager {
                     },
                     th.bg_sidebar(),
                 );
+                // 타이틀바 하단선은 프레임 보더와 같은 chrome 이다 — 한 popup 안에서
+                // 두 색으로 갈리지 않도록 같은 role 을 읽는다.
                 painter.line_segment(
                     [
                         egui::pos2(title_rect.min.x, title_rect.max.y),
                         egui::pos2(title_rect.max.x, title_rect.max.y),
                     ],
-                    egui::Stroke::new(th.border_width.value(), th.border_strong()),
+                    egui::Stroke::new(th.border_width.value(), th.border_frame()),
                 );
 
                 // Title text — 우측 버튼군을 침범하지 않는 가용 폭 기준으로 elide.

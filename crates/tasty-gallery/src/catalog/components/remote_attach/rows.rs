@@ -184,8 +184,9 @@ pub(super) fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {
                 theme,
                 "in use",
                 theme.border_attached().to_egui(),
-                0.14,
-                0.45,
+                // 본체와 같은 tint 짝 토큰.
+                theme.tint_fill_alpha(),
+                theme.tint_border_alpha(),
                 false,
             );
         } else if w.busy {

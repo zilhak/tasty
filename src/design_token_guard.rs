@@ -954,7 +954,7 @@ const SCAN_ROOTS: &[&str] = &[
     fn the_axis_is_value_and_position_not_name() {
         let consts = vec![
             ("BODY_FONT_SIZE".to_string(), 13.0_f32),
-            ("PALETTE_HINT_FONT_SIZE".to_string(), 10.5),
+            ("OFF_SCALE_FONT_SIZE".to_string(), 10.5),
             ("SOMETHING_ELSE".to_string(), 13.0),
             ("LOADING_SPINNER_SIZE".to_string(), 14.0),
         ];
@@ -968,7 +968,7 @@ const SCAN_ROOTS: &[&str] = &[
         assert_eq!(check(&["    .size(BODY_FONT_SIZE),"]).len(), 1);
         assert_eq!(check(&["    .size(SOMETHING_ELSE),"]).len(), 1);
         // 값이 스케일 밖이다 → 이름에 FONT 가 있어도 잡지 않는다(ADR-0126 이 허용).
-        assert_eq!(check(&["    .size(PALETTE_HINT_FONT_SIZE),"]).len(), 0);
+        assert_eq!(check(&["    .size(OFF_SCALE_FONT_SIZE),"]).len(), 0);
         // 폰트 자리가 아니다(스피너 지름) → 값이 토큰과 같아도 축 밖이다.
         assert_eq!(
             check(&[

@@ -1175,8 +1175,8 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
         if let Some(s) = &counter {
             ui.label(
                 egui::RichText::new(s)
-                    // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
-                    .color(th.text_placeholder())
+                    // disabled 는 고유 잉크 — `text-disabled`(neutral-700).
+                    .color(th.text_disabled())
                     .size(th.font_size_caption.value()),
             );
         }
@@ -1609,10 +1609,6 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     out
 }
 
-/// 로딩 줄 스피너의 한 변. 값은 아이콘 스케일 md(16)와 같지만 아이콘 글리프가 아니라
-/// 스피너 지름이라 그 토큰을 쓰지 않고 이름을 따로 둔다.
-const LOADING_SPINNER_SIZE: LogicalPx = LogicalPx(16.0);
-
 /// 즐겨찾기 리스트 스크롤 cap(design "5행 × 22px = 110 ≤ 112 cap") — 5행이 꽉 채워도
 /// 스크롤 시작 전 여유 2px 를 남겨 스크롤 가능함을 암시한다.
 const FAVORITES_LIST_MAX_H: LogicalPx = LogicalPx(112.0);
@@ -1852,7 +1848,7 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         ui.horizontal(|ui| {
             ui.add(
                 egui::Spinner::new()
-                    .size(LOADING_SPINNER_SIZE.value())
+                    .size(th.icon_glyph_size_md.value())
                     .color(th.text_muted()),
             );
             ui.label(
@@ -1979,7 +1975,12 @@ fn draw_table(
     let fav_reserve = th.port_star_col_width() + LogicalPx(ui.spacing().item_spacing.x);
     let available =
         (LogicalPx(ui.available_width()) - scrollbar_reserve - fav_reserve).max(LogicalPx(0.0));
-    let widths = compute_column_widths(&visible, LogicalPx(ui.spacing().item_spacing.x), available);
+    let widths = compute_column_widths(
+        &visible,
+        LogicalPx(ui.spacing().item_spacing.x),
+        available,
+        th,
+    );
 
     let mut columns: Vec<TableColumn<SortKey>> = Vec::with_capacity(visible.len() + 1);
     // fav 컬럼 — 헤더 라벨 없음, 정렬 불가, 항상 표시(컬럼 chooser 대상 아님).
@@ -1990,7 +1991,7 @@ fn draw_table(
         sort_id: None,
     });
     columns.extend(visible.iter().zip(&widths).map(|(id, w)| {
-        let (_, _, align, sort_id) = column_layout(*id);
+        let (_, _, align, sort_id) = column_layout(*id, th);
         TableColumn {
             title: column_label(*id, props),
             width: TableColumnWidth::Exact(*w),
@@ -2109,14 +2110,15 @@ fn draw_table(
 /// 컬럼의 폭 모델 메타: (최소폭, flex 여부, 정렬, 정렬키). flex 컬럼은 가용폭이 남을 때
 /// 여유폭을 나눠 받는다(Address/Process). Port 만 우측 정렬.
 ///
-/// 최소폭이 리터럴인 이유: 이 일곱은 **이 표의 컬럼 폭**이고, 그 치수에 이름을 준
-/// 토큰이 없다(`component.port-*` 에 있는 것은 `star-col-width` ·
-/// `favorites-max-height` · `favorites-row-height` 셋뿐이다). 그중 둘(120 · 200)이
+/// Process 컬럼의 최소폭만 이름이 있다 — `component.port-process-col-min-width`(200).
+/// 나머지 여섯은 여전히 **이 표의 컬럼 폭**이고 그 치수에 이름을 준 토큰이 없다
+/// (`component.port-*` 에 있는 것은 `star-col-width` · `favorites-max-height` ·
+/// `favorites-row-height` · `process-col-min-width` 넷이다). 그중 하나(120)가
 /// `size-*` 스케일과 값이 겹쳐 `on_scale_length_literal` 에 잡히는데, 값이 같다는 것이
 /// 그 이름이 이 자리에 맞는다는 뜻은 아니다 — 여기 필요한 이름은 "Workspace 컬럼의
 /// 최소폭" 이고 그것을 만드는 것은 디자인 결정이다. 이름을 얻기 전까지는 리터럴로
 /// 남는다.
-fn column_layout(col: ColumnId) -> (LogicalPx, bool, TableAlign, Option<SortKey>) {
+fn column_layout(col: ColumnId, th: &Theme) -> (LogicalPx, bool, TableAlign, Option<SortKey>) {
     match col {
         ColumnId::Port => (
             LogicalPx(84.0),
@@ -2132,7 +2134,7 @@ fn column_layout(col: ColumnId) -> (LogicalPx, bool, TableAlign, Option<SortKey>
             Some(SortKey::Address),
         ),
         ColumnId::Process => (
-            LogicalPx(200.0),
+            th.port_process_col_min_width(),
             true,
             TableAlign::Left,
             Some(SortKey::Process),
@@ -2158,8 +2160,9 @@ fn compute_column_widths(
     visible: &[ColumnId],
     item_spacing_x: LogicalPx,
     available: LogicalPx,
+    th: &Theme,
 ) -> Vec<LogicalPx> {
-    let mins: Vec<LogicalPx> = visible.iter().map(|c| column_layout(*c).0).collect();
+    let mins: Vec<LogicalPx> = visible.iter().map(|c| column_layout(*c, th).0).collect();
     if visible.is_empty() {
         return mins;
     }
@@ -2172,7 +2175,7 @@ fn compute_column_widths(
         let flex: Vec<usize> = visible
             .iter()
             .enumerate()
-            .filter(|(_, c)| column_layout(**c).1)
+            .filter(|(_, c)| column_layout(**c, th).1)
             .map(|(i, _)| i)
             .collect();
         if !flex.is_empty() {
@@ -2792,9 +2795,14 @@ mod tests {
         // All seven columns, but a narrow body → min-width sum exceeds available,
         // so every column stays at its min (the table then scrolls horizontally).
         let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
-        let widths = compute_column_widths(&visible, LogicalPx(0.0), LogicalPx(100.0));
+        let th = test_theme();
+        let widths = compute_column_widths(&visible, LogicalPx(0.0), LogicalPx(100.0), &th);
         for (id, w) in visible.iter().zip(&widths) {
-            assert_eq!(*w, column_layout(*id).0, "{id:?} should keep its min width");
+            assert_eq!(
+                *w,
+                column_layout(*id, &th).0,
+                "{id:?} should keep its min width"
+            );
         }
         let sum = widths.iter().fold(LogicalPx(0.0), |acc, w| acc + *w);
         assert!(
@@ -2806,14 +2814,15 @@ mod tests {
     #[test]
     fn compute_widths_distributes_slack_to_flex_columns() {
         let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
+        let th = test_theme();
         let sum_min = visible
             .iter()
-            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c).0);
+            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c, &th).0);
         // Generous width → slack distributed to the two flex columns only.
         let available = sum_min + LogicalPx(200.0);
-        let widths = compute_column_widths(&visible, LogicalPx(0.0), available);
+        let widths = compute_column_widths(&visible, LogicalPx(0.0), available, &th);
         for (id, w) in visible.iter().zip(&widths) {
-            let (min, flex, ..) = column_layout(*id);
+            let (min, flex, ..) = column_layout(*id, &th);
             if flex {
                 assert!(*w > min, "flex {id:?} should grow past its min");
             } else {
@@ -2833,15 +2842,16 @@ mod tests {
         // Only fixed (non-flex) columns visible: slack goes to the last column so
         // the table still fills the available width (no trailing gap).
         let visible = vec![ColumnId::Port, ColumnId::Proto, ColumnId::State];
+        let th = test_theme();
         let sum_min = visible
             .iter()
-            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c).0);
+            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c, &th).0);
         let available = sum_min + LogicalPx(60.0);
-        let widths = compute_column_widths(&visible, LogicalPx(0.0), available);
-        assert_eq!(widths[0], column_layout(ColumnId::Port).0);
-        assert_eq!(widths[1], column_layout(ColumnId::Proto).0);
+        let widths = compute_column_widths(&visible, LogicalPx(0.0), available, &th);
+        assert_eq!(widths[0], column_layout(ColumnId::Port, &th).0);
+        assert_eq!(widths[1], column_layout(ColumnId::Proto, &th).0);
         assert!(
-            (widths[2] - (column_layout(ColumnId::State).0 + LogicalPx(60.0))).abs()
+            (widths[2] - (column_layout(ColumnId::State, &th).0 + LogicalPx(60.0))).abs()
                 < LogicalPx(0.5)
         );
     }

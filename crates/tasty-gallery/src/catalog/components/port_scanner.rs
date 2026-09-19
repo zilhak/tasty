@@ -192,9 +192,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
             // 상태(컬럼 표시/숨김 시각 케이스). leading fav 컬럼(28px, 헤더 라벨 없음)
             // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
-            // 컬럼 폭은 본체 `column_layout` 의 최소폭 미러다 — 그 치수에는 토큰이
-            // 없다(있는 것은 별 컬럼 폭뿐이라 그것만 토큰으로 받는다). 그중 200 이
-            // `size-*` 스케일과 값이 겹쳐 `on_scale_length_literal` 에 잡힌다.
+            // 컬럼 폭은 본체 `column_layout` 의 최소폭 미러다 — 이름이 있는 둘
+            // (별 컬럼 폭 · Process 최소폭)은 토큰으로 받고 나머지는 아직 토큰이 없다.
             kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
                 let cols = vec![
                     col(
@@ -219,7 +218,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     ),
                     col(
                         "Process",
-                        TableColumnWidth::Exact(LogicalPx(200.0)),
+                        // 본체의 최소폭과 같은 role — `port-process-col-min-width`.
+                        TableColumnWidth::Exact(theme.port_process_col_min_width()),
                         TableAlign::Left,
                     ),
                     col(
@@ -248,7 +248,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // footer (padding 8x14).
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
-                    kit::caption(ui, theme, "5 of 5 ports", false);
+                    // 본체 footer 카운터는 disabled 잉크다 — `text-disabled`.
+                    ui.label(
+                        egui::RichText::new("5 of 5 ports")
+                            .size(theme.font_size_caption.value())
+                            .color(theme.text_disabled().to_egui()),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         Button::new("Close")
                             .variant(ButtonVariant::Secondary)

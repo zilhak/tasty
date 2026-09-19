@@ -492,17 +492,15 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
-    // info 배지의 채움/테두리 짝. 대응 토큰 없음.
-    const BADGE_FILL_OPACITY: f32 = 0.14;
-    const BADGE_STROKE_OPACITY: f32 = 0.45;
+    // info 배지의 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
     ui.painter()
-        .rect_filled(rect, radius, info.gamma_multiply(BADGE_FILL_OPACITY));
+        .rect_filled(rect, radius, info.gamma_multiply(theme.tint_fill_alpha()));
     ui.painter().rect_stroke(
         rect,
         radius,
         egui::Stroke::new(
             theme.border_width.value(),
-            info.gamma_multiply(BADGE_STROKE_OPACITY),
+            info.gamma_multiply(theme.tint_border_alpha()),
         ),
         egui::StrokeKind::Inside,
     );

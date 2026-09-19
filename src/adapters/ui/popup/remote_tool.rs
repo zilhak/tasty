@@ -1208,9 +1208,9 @@ fn draw_profile_row(
                 selectable_label(
                     ui,
                     &title,
-                    // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
+                    // disabled 는 고유 잉크 — `text-disabled`(neutral-700).
                     if disabled {
-                        th.text_placeholder()
+                        th.text_disabled()
                     } else {
                         th.text_primary()
                     },

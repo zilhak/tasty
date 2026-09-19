@@ -511,20 +511,18 @@ fn host_badge(ui: &mut egui::Ui, th: &Theme, host: &str) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = th.corner_radius.value();
     let info_color: egui::Color32 = info.into();
-    // info 배지의 채움/테두리 짝. 대응 토큰 없음.
-    const INFO_BADGE_FILL_OPACITY: f32 = 0.14;
-    const INFO_BADGE_STROKE_OPACITY: f32 = 0.45;
+    // tinted 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
     ui.painter().rect_filled(
         rect,
         radius,
-        info_color.gamma_multiply(INFO_BADGE_FILL_OPACITY),
+        info_color.gamma_multiply(th.tint_fill_alpha()),
     );
     ui.painter().rect_stroke(
         rect,
         radius,
         egui::Stroke::new(
             th.border_width.value(),
-            info_color.gamma_multiply(INFO_BADGE_STROKE_OPACITY),
+            info_color.gamma_multiply(th.tint_border_alpha()),
         ),
         egui::StrokeKind::Inside,
     );

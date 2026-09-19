@@ -169,8 +169,8 @@ pub fn draw(
     let bg: egui::Color32 = theme.surface_raised().into();
     // 타이틀바 배경 채움 — 값-동일 surface_hover()(=surface1).
     let title_bg: egui::Color32 = theme.surface_hover().into();
-    // divergence: popup 보더에 surface2 — border-role 전용 토큰 부재, 값-동일 surface_active().
-    let border: egui::Color32 = theme.surface_active().into();
+    // popup 프레임 보더 — surface2 값의 border role `border-frame`.
+    let border: egui::Color32 = theme.border_frame().into();
     let text_color: egui::Color32 = theme.text_primary().into();
 
     // 배경보다 먼저 — 그림자는 셸 아래에 깔린다(본체 `popup/draw.rs` 와 같은 순서).

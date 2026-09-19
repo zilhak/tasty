@@ -1375,8 +1375,10 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
                 th,
                 t("remote_attach.in_use"),
                 th.border_attached().into(),
-                0.14,
-                0.45,
+                // tinted 채움/테두리 짝 — `file_picker` 의 info 배지와 같은 관용구라
+                // 같은 토큰(`tint-fill-alpha` / `tint-border-alpha`)에서 읽는다.
+                th.tint_fill_alpha(),
+                th.tint_border_alpha(),
                 false,
             );
         } else if w.busy_count > 0 {

@@ -469,11 +469,11 @@ fn warn_pill(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     let w = pad_x * 2.0 + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius_sm.value();
-    // 경고 배지의 채움/테두리 짝. 대응 토큰 없음.
-    const BADGE_FILL_OPACITY: f32 = 0.12;
+    // 채움은 `tint-fill-alpha`. 테두리 계수는 디자인이 "채움만" 으로 한정한
+    // 부분 사용이라(2026-09-17 P4) 이 자리 고유 값으로 남는다.
     const BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
-        .rect_filled(rect, radius, warn.gamma_multiply(BADGE_FILL_OPACITY));
+        .rect_filled(rect, radius, warn.gamma_multiply(theme.tint_fill_alpha()));
     ui.painter().rect_stroke(
         rect,
         radius,
