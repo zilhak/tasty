@@ -408,10 +408,19 @@ stroke_icon!(
     r#"<path d="M12 3a9 9 0 1 0 9 9c-2 0-3-1-3-3s1-3-1-5-3-1-4-1z"/>"#
 );
 // 빈 상태/설정 없음(design `sun`).
+//
+// 광선을 당긴 기하(2026-09-20 결정): 직선 광선은 3→5 / 19→21, 대각 광선은 중심에서
+// ±6.4 → ±5 다(옛 ±7 → ±5). 광학 보정을 **토큰이 아니라 자산에서** 한 것이다 — 크기
+// 토큰을 sun 에만 따로 주면 치수가 테마 상태가 되고, 오버슈트가 `sun` 이 그려지는 다른
+// 자리(테마 토글·설정)로 따라간다.
+//
+// 그래서 잉크 박스가 `theme` 링과 같은 2..22(24 의 83%)가 된다. 옛 기하는 광선이 2..22
+// 에서 시작해 cap 까지 1..23(92%)이었고, 그 9% 가 같은 12px 슬롯에서 sun 만 커 보이게
+// 했다. `sun_and_theme_share_an_ink_box` 가 두 글리프를 실제로 래스터해 그 등식을 잰다.
 stroke_icon!(
     SUN,
     "sun",
-    r#"<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>"#
+    r#"<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6l-1.4 1.4M7 17l-1.4 1.4"/>"#
 );
 // 숫자/탭 전환 digits(design `hash`).
 stroke_icon!(
@@ -441,3 +450,100 @@ stroke_icon!(
     "shift_key",
     r#"<path d="M12 3 4 11h4v10h8V11h4z"/>"#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use usvg::TreeParsing as _;
+
+    /// 래스터 배율. 24 좌표계의 0.1 을 한 픽셀로 잰다 — cap 이 더하는 1 을 놓치지 않고,
+    /// 안티에일리어싱 가장자리를 셈에서 가를 만큼은 촘촘하다.
+    const SCALE: u32 = 10;
+
+    /// 글리프를 실제로 **래스터해** 잉크의 경계 상자를 24 좌표계로 돌려준다.
+    ///
+    /// 경로 문자열을 읽어서는 이 값이 안 나온다 — `stroke-linecap="round"` 가 끝점 바깥으로
+    /// 굵기의 절반(=1)을 더 칠하고, 그 1 이 이 자산에서 문제가 됐던 바로 그 양이다.
+    /// 그래서 숫자를 눈으로 대조하지 않고 칠해진 픽셀을 센다.
+    fn ink_box(icon: Icon) -> (f32, f32, f32, f32) {
+        let side = 24 * SCALE;
+        let tree = usvg::Tree::from_str(icon.svg, &usvg::Options::default())
+            .unwrap_or_else(|e| panic!("{}: parse 실패: {e}", icon.uri));
+        let mut pixmap = tiny_skia::Pixmap::new(side, side).expect("pixmap");
+        resvg::Tree::from_usvg(&tree).render(
+            tiny_skia::Transform::from_scale(SCALE as f32, SCALE as f32),
+            &mut pixmap.as_mut(),
+        );
+
+        // 반투명 가장자리는 잉크로 안 센다 — AA 꼬리까지 세면 배율마다 상자가 달라진다.
+        let opaque = |x: u32, y: u32| pixmap.pixel(x, y).is_some_and(|p| p.alpha() >= u8::MAX / 2);
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (side, side, 0u32, 0u32);
+        let mut any = false;
+        for y in 0..side {
+            for x in 0..side {
+                if opaque(x, y) {
+                    any = true;
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+        assert!(any, "{}: 칠해진 픽셀이 없다 — 래스터가 죽었다", icon.uri);
+        let unit = SCALE as f32;
+        (
+            min_x as f32 / unit,
+            min_y as f32 / unit,
+            (max_x + 1) as f32 / unit,
+            (max_y + 1) as f32 / unit,
+        )
+    }
+
+    /// `sun` 의 잉크 박스가 `theme` 링과 같다 — 2026-09-20 결정의 검증값(24 의 83%).
+    ///
+    /// **`sun` 만 따로 재지 않는다.** 이 결정이 고친 것은 "sun 이 크다" 가 아니라 "같은
+    /// 12px 슬롯에서 두 글리프의 잉크가 다르다" 이므로, 좌변은 한 글리프의 수가 아니라
+    /// **두 글리프의 관계**다.
+    ///
+    /// **그 관계를 등식으로 쓰지 않는 이유를 측정으로 적어 둔다.** `theme` 전체의 잉크는
+    /// 위쪽으로 1.75 까지 간다 — 그것은 링이 아니라 **안쪽 초승달 노치**의 큐빅이 y=3 위로
+    /// 부풀기 때문이다. 합성 입력으로 갈라 쟀다: 열린 호만(`M12 3a9 9 0 1 0 9 9`) 2.00 ·
+    /// 같은 반지름의 온전한 원 2.00 · 노치 곡선만 1.80. 그래서 `sun == theme` 로 쓰면
+    /// 이 시험은 노치의 부풀기를 sun 의 결함으로 신고한다.
+    #[test]
+    fn sun_and_theme_share_an_ink_box() {
+        let sun = ink_box(SUN);
+        let theme = ink_box(THEME);
+
+        // 결정이 준 값 — 링과 같은 2..22, 24 의 83%.
+        assert_eq!(
+            sun,
+            (2.0, 2.0, 22.0, 22.0),
+            "sun 의 잉크 박스가 2..22 가 아니다: {sun:?}"
+        );
+        let fraction = (sun.2 - sun.0) / 24.0;
+        assert!(
+            (fraction - 0.8333).abs() < 0.005,
+            "잉크 박스가 뷰박스의 {fraction:.4} — 83% 가 아니다"
+        );
+
+        // 가로 축은 노치가 안 건드린다 — 거기서는 두 글리프가 **같아야** 한다.
+        assert_eq!(
+            (sun.0, sun.2),
+            (theme.0, theme.2),
+            "가로 잉크가 다르다: sun {sun:?} · theme {theme:?}"
+        );
+        // 세로는 노치가 위로 부푼 만큼만 `theme` 이 넓다. 그 폭이 커지면 둘 중 하나가
+        // 움직인 것이고, 어느 쪽이든 이 자산 짝을 다시 봐야 한다.
+        assert!(
+            sun.1 - theme.1 >= 0.0 && sun.1 - theme.1 <= 0.25,
+            "세로 잉크 차가 {:.2} — 노치 부풀기(0.25) 밖이다: sun {sun:?} · theme {theme:?}",
+            sun.1 - theme.1
+        );
+        assert_eq!(
+            sun.3, theme.3,
+            "아래쪽 잉크가 다르다: sun {sun:?} · theme {theme:?}"
+        );
+    }
+}

@@ -16,5 +16,13 @@ egui = { version = "0.31", default-features = false, optional = true }
 default = []
 egui = ["dep:egui"]
 
+# 잉크 박스를 **재는** 시험용. 자산의 광학 보정은 수치가 아니라 래스터로만 확인된다 —
+# 경로 문자열을 눈으로 읽어서는 cap 이 더하는 1px 이 안 보인다. 셋 다 host egui_extras
+# 의 svg feature 가 이미 Cargo.lock 에 들인 버전 그대로라 새 의존이 늘지 않는다.
+[dev-dependencies]
+resvg = "0.37"
+tiny-skia = "0.11"
+usvg = "0.37"
+
 [lints]
 workspace = true
