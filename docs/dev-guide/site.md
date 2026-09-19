@@ -87,7 +87,7 @@ site/
 따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 그 침묵을
 깨는 판정기가 둘 있고 둘 다 **레포 안의 두 사본만** 본다:
 `site_vendor_tokens_track_the_app_export.rs` 가 토큰 **이름 집합**을,
-`site_vendor_icons_match_the_app_transcription.rs` 가 아이콘 **기하**(와 채움)를 본다.
+`site_vendor_icons_match_the_app_transcription.rs` 가 아이콘 **기하**(와 채움), 그리고 그 기하가 담기는 **그릇**(`viewBox` · 선 굵기 · cap/join)을 본다.
 그 둘이 안 여는 결정 — 문구 변경 · 구성 변경 · 컨트롤 삭제 — 은 어느 쪽 좌변도 안 움직이므로
 **여전히 안 잡힌다.**
 

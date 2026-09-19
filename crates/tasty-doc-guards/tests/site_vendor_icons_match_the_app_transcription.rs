@@ -1,4 +1,4 @@
-//! 아이콘 **기하**의 사본 셋을 대조한다 — 사이트 사본 둘과 앱 전사본 하나.
+//! 아이콘 **기하**와 그 **그릇**의 사본 셋을 대조한다 — 사이트 사본 둘과 앱 전사본 하나.
 //!
 //! 토큰에 [`site_vendor_tokens_track_the_app_export`] 가 있는 것과 같은 자리이고, 같은
 //! 이유로 있다: 두 사본이 **둘 다 레포 안**이라 원격 접근 없이 판정된다.
@@ -47,9 +47,22 @@
 //! 래스터 판정기는 usvg·resvg·tiny-skia 를 끌어와 그 성질을 깬다. 값이 아니라 **채널의
 //! 존재 조건**이 판정 방식을 정한 자리다.
 //!
+//! ## 그릇도 본다 — 기하만 보면 65 짝이 다 같아도 화면이 다르다
+//!
+//! 여는 `<svg …>` 태그가 정하는 `viewBox` · `stroke-width` · `stroke-linecap` ·
+//! `stroke-linejoin` 은 글리프 **전부**에 한 번에 걸린다. 그 한 글자가 어긋나면 65 짝의
+//! inner 마크업이 한 글자도 안 다르면서 그려지는 그림은 전부 달라진다 — 기하 대조는
+//! **그것을 못 본다.** 실측으로 확인했다: `Icon.jsx` 의 `viewBox` 를 `0 0 25 24` 로
+//! 바꿔도 기하 대조 다섯은 전부 초록이었다.
+//!
+//! 색 축은 갈리는 것이 정상이라 사유와 함께 [`DIVERGENT_ENVELOPE`] 에 적는다(사이트는
+//! `currentColor` 상속, 앱은 `white` 고정 + egui tint). `xmlns` 는 문서 사본 둘만 갖는다
+//! ([`DOCUMENT_ONLY_ENVELOPE`]). 두 명부 다 **여유 0** 이다 — 갈림이 사라지면 그 항목을
+//! 지워야 하고, 분류 안 된 속성이 한 사본에만 생겨도 실패한다.
+//!
 //! ## 이 타깃이 안 보는 것
 //!
-//! 기하만 본다. 글리프가 **어디에 쓰이는지**(역할·그룹)는 안 본다. 그리고 두 사본이 나란히
+//! 기하와 그릇만 본다. 글리프가 **어디에 쓰이는지**(역할·그룹)는 안 본다. 그리고 두 사본이 나란히
 //! 낡는 것도 못 잡는다 — 원격이 앞서간 것은 원격을 받아와야 드러나고, 그것은 판정기가
 //! 아니라 `site/vendor/README.md` 의 "vendor 갱신 절차" 가 맡는다. 이 타깃의 초록은
 //! **"사이트 사본과 앱 전사본이 서로 맞다"** 일 뿐 "최신" 이 아니다.
@@ -206,11 +219,14 @@ fn normalize(body: &str) -> String {
     out.trim().to_string()
 }
 
-/// `site/vendor/icons/<name>.svg` → 이름 → inner 마크업.
+/// `site/vendor/icons/<name>.svg` → 이름 → 파일 **전문**.
+///
+/// 기하(inner 마크업)를 보는 [`vendor_files`] 와 envelope(여는 태그)를 보는
+/// [`vendor_svg_envelopes`] 가 같은 순회를 두 번 돌지 않게 여기서 한 번만 읽는다.
 ///
 /// 순회는 공용 [`walk_with_floor`] 를 쓴다 — 직접 `read_dir` 를 부르면 하한을 빠뜨릴 수
 /// 있고, 하한 없는 순회는 아무것도 못 모았을 때 조용히 빈 집합을 내놓는다.
-fn vendor_files() -> BTreeMap<String, String> {
+fn vendor_svg_sources() -> BTreeMap<String, String> {
     let root = repo_root();
     let walked = walk_with_floor(
         &root.join(VENDOR_ICON_DIR),
@@ -231,6 +247,15 @@ fn vendor_files() -> BTreeMap<String, String> {
             .to_string();
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("{} 를 못 읽었다: {e}", path.display()));
+        map.insert(name, text);
+    }
+    map
+}
+
+/// `site/vendor/icons/<name>.svg` → 이름 → inner 마크업.
+fn vendor_files() -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    for (name, text) in vendor_svg_sources() {
         let open_end = text
             .find('>')
             .unwrap_or_else(|| panic!("{name}.svg: `<svg …>` 를 못 찾았다"));
@@ -329,6 +354,385 @@ fn app_icons(src: &str) -> BTreeMap<String, (String, bool)> {
         }
     }
     map
+}
+
+/// 세 사본이 **같아야 하는** 여는 태그 속성 — (SVG 이름, JSX 이름).
+///
+/// 이름이 갈리는 이유는 JSX 가 DOM 프로퍼티 표기를 쓰기 때문이다(`stroke-width` ↔
+/// `strokeWidth`). 그 짝을 **도출하지 않고 명부로 적는다** — [`PAIRS`] 와 같은 이유다.
+///
+/// 이 네 축이 글리프의 **그릇**을 정한다. `viewBox` 가 어긋나면 모든 글리프가 잘리거나
+/// 어긋나 그려지고, `stroke-width` 가 어긋나면 전부 굵기가 달라진다. 즉 여기 한 글자가
+/// 65 짝의 기하 전부를 무효로 만드는데, 기하 대조는 inner 마크업만 보므로 **그것을 못 본다.**
+const SHARED_ENVELOPE: &[(&str, &str)] = &[
+    ("viewBox", "viewBox"),
+    ("stroke-width", "strokeWidth"),
+    ("stroke-linecap", "strokeLinecap"),
+    ("stroke-linejoin", "strokeLinejoin"),
+];
+
+/// 세 사본이 **달라도 되는** 축과 그 사유. **여유 0 의 양방향 명부다** — 여기 없는 축이
+/// 갈리면 실패하고, 여기 있는 축이 세 사본에서 같아지면 (통일된 것이므로) 지워야 한다.
+/// 두 **SVG 문서** 사본(`.svg` 파일 · 앱 매크로 접두)만 갖는 축과 그 사유.
+///
+/// JSX 는 문서가 아니라 인라인 엘리먼트라 이 축이 없는 것이 정상이다. 그래서 세 사본
+/// 등식에는 안 넣고, 두 문서 사본끼리만 같은지 본다. **여기도 여유 0 이다** — JSX 에
+/// 생기면 분류가 틀린 것이고, 두 문서 사본에서 갈리면 실패한다.
+const DOCUMENT_ONLY_ENVELOPE: &[(&str, &str)] = &[(
+    "xmlns",
+    "독립 문서에만 필요한 네임스페이스 선언이다. `.svg` 파일은 파일로 열리고 앱 접두는 \
+     `egui_extras` 로더와 `usvg` 가 문서로 읽는다. JSX 는 DOM 에 인라인되므로 브라우저가 \
+     부모에서 상속한다",
+)];
+
+const DIVERGENT_ENVELOPE: &[(&str, &str)] = &[
+    (
+        "stroke",
+        "선 색이다. 사이트 둘은 CSS 의 `currentColor` 를 상속받고, 앱은 `white` 로 고정해 \
+         egui 가 tint 로 색을 입힌다. 색은 이 타깃의 축이 아니다",
+    ),
+    (
+        "fill",
+        "채운 글리프의 색이다 — 같은 이유로 갈린다. 채움 **여부**는 색과 별개이고 \
+         `FILLED` 명부와 `FILL_GLYPHS` 가 이미 그 축을 잰다",
+    ),
+];
+
+/// 여는 `<svg …>` 태그에서 속성을 모은다.
+///
+/// 값이 따옴표면 그 문자열을, JSX 의 `name={…}` 이면 [`JSX_EXPR`] 를 넣는다. 의존 0 이라
+/// 파서를 못 쓰므로(ADR-0138) 손으로 훑는다 — 이 좌변은 속성 몇 개짜리 여는 태그 하나다.
+fn open_tag_attrs(tag: &str) -> BTreeMap<String, String> {
+    let b = tag.as_bytes();
+    let mut out = BTreeMap::new();
+    let mut i = 0usize;
+    while i < b.len() {
+        if !(b[i].is_ascii_alphabetic()) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'-' || b[i] == b':') {
+            i += 1;
+        }
+        let name = &tag[start..i];
+        let mut j = i;
+        while j < b.len() && b[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= b.len() || b[j] != b'=' {
+            continue;
+        }
+        j += 1;
+        while j < b.len() && b[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < b.len() && b[j] == b'"' {
+            let vs = j + 1;
+            let Some(len) = tag[vs..].find('"') else {
+                break;
+            };
+            out.insert(name.to_string(), tag[vs..vs + len].to_string());
+            i = vs + len + 1;
+        } else if j < b.len() && b[j] == b'{' {
+            let mut depth = 0usize;
+            let mut k = j;
+            while k < b.len() {
+                match b[k] {
+                    b'{' => depth += 1,
+                    b'}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                k += 1;
+            }
+            out.insert(name.to_string(), JSX_EXPR.to_string());
+            i = (k + 1).min(b.len());
+        }
+    }
+    out
+}
+
+/// JSX 에서 값이 식인 속성의 표지. 값 자체는 이 타깃의 축이 아니다.
+const JSX_EXPR: &str = "{식}";
+
+/// `<svg` 로 시작하는 여는 태그를 통째로 잘라낸다. `>` 까지이고, 따옴표 안의 `>` 는 센다.
+fn svg_open_tag(src: &str, what: &str) -> String {
+    let at = src
+        .find("<svg")
+        .unwrap_or_else(|| panic!("{what}: `<svg` 를 못 찾았다"));
+    let rest = &src[at..];
+    let b = rest.as_bytes();
+    let mut i = 0usize;
+    let mut in_quote = false;
+    while i < b.len() {
+        match b[i] {
+            b'"' => in_quote = !in_quote,
+            b'>' if !in_quote => return rest[..i].to_string(),
+            _ => {}
+        }
+        i += 1;
+    }
+    panic!("{what}: 여는 `<svg …>` 태그가 안 닫힌다");
+}
+
+/// 사이트 사본 하나 — `.svg` 파일 65 개의 여는 태그.
+fn vendor_svg_envelopes() -> BTreeMap<String, BTreeMap<String, String>> {
+    vendor_svg_sources()
+        .into_iter()
+        .map(|(name, text)| {
+            let tag = svg_open_tag(&text, &format!("{name}.svg"));
+            (name, open_tag_attrs(&tag))
+        })
+        .collect()
+}
+
+/// 사이트 사본 둘째 — `Icon.jsx` 의 컴포넌트가 실제로 그리는 `<svg …>`.
+///
+/// 사이트가 번들하는 것은 이쪽이다. `.svg` 파일만 고치면 화면이 안 바뀐다는 이 타깃의
+/// 전제가 envelope 에도 그대로 적용된다.
+fn registry_envelope(src: &str) -> BTreeMap<String, String> {
+    let at = src
+        .find("export function Icon(")
+        .expect("Icon.jsx: `export function Icon(` 을 못 찾았다");
+    open_tag_attrs(&svg_open_tag(&src[at..], "Icon.jsx 의 컴포넌트"))
+}
+
+/// 앱 전사본 — 두 매크로가 붙이는 접두 `<svg …>`. 키는 채움 여부다.
+fn app_envelopes(src: &str) -> BTreeMap<bool, BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    for (macro_def, filled) in [
+        ("macro_rules! stroke_icon", false),
+        ("macro_rules! fill_icon", true),
+    ] {
+        let at = src
+            .find(macro_def)
+            .unwrap_or_else(|| panic!("{APP_ICONS}: `{macro_def}` 을 못 찾았다"));
+        let tag = svg_open_tag(&src[at..], macro_def);
+        out.insert(filled, open_tag_attrs(&tag));
+    }
+    out
+}
+
+/// 파서가 살아 있는지 — 이것이 먼저 통과해야 아래 envelope 판정의 초록이 뜻을 갖는다.
+#[test]
+fn the_envelope_readers_see_all_three_copies() {
+    let files = vendor_svg_envelopes();
+    assert!(
+        files.len() >= PARSE_FLOOR,
+        "`.svg` 를 {} 개만 읽었다 (바닥 {PARSE_FLOOR})",
+        files.len()
+    );
+    let registry = registry_envelope(&read(VENDOR_REGISTRY));
+    let app = app_envelopes(&read(APP_ICONS));
+    assert_eq!(app.len(), 2, "앱 매크로 접두를 둘 다 못 읽었다: {app:?}");
+
+    // 비영 대조 — 세 사본 각각에서 **같은 축 하나**가 실제로 잡히는지 본다. 위 계수만으로는
+    // 파서가 엉뚱한 것을 세고 있어도 통과한다.
+    let (svg_axis, jsx_axis) = SHARED_ENVELOPE[0];
+    for (what, attrs) in [
+        (
+            format!("{VENDOR_ICON_DIR} 의 첫 파일"),
+            files.values().next().expect("파일 하나").clone(),
+        ),
+        (VENDOR_REGISTRY.to_string(), registry),
+    ] {
+        let axis = if what == VENDOR_REGISTRY {
+            jsx_axis
+        } else {
+            svg_axis
+        };
+        assert!(
+            attrs.contains_key(axis),
+            "{what} 의 여는 태그에서 `{axis}` 를 못 읽었다 — 파서가 죽었다면 아래 등식은 \
+             안 봐서 나온 초록이다: {attrs:?}"
+        );
+    }
+    for (filled, attrs) in &app {
+        assert!(
+            attrs.contains_key(svg_axis),
+            "앱 매크로(채움={filled})의 접두에서 `{svg_axis}` 를 못 읽었다: {attrs:?}"
+        );
+    }
+}
+
+/// 명부가 실재하는 축을 가리키는가 — 그리고 **죽은 항목이 없는가.**
+///
+/// `DIVERGENT_ENVELOPE` 에 실제로는 안 갈리는 축이 남으면 그 자리는 영구히 안 보이게 된다.
+#[test]
+fn the_divergence_roster_has_no_dead_weight() {
+    let files = vendor_svg_envelopes();
+    let app = app_envelopes(&read(APP_ICONS));
+    let mut seen = BTreeSet::new();
+    for (axis, why) in DIVERGENT_ENVELOPE {
+        assert!(seen.insert(*axis), "`{axis}` 가 명부에 두 번 있다");
+        assert!(!why.trim().is_empty(), "`{axis}` 에 사유가 없다");
+        let mut values: BTreeSet<Option<&str>> = BTreeSet::new();
+        for attrs in files.values().chain(app.values()) {
+            values.insert(attrs.get(*axis).map(String::as_str));
+        }
+        assert!(
+            values.len() > 1,
+            "`{axis}` 는 순수 SVG 사본들에서 값이 하나뿐이다({values:?}) — 갈리지 않으므로 \
+             이 명부가 아니라 `SHARED_ENVELOPE` 에 있어야 한다. 명부에 남겨 두면 그 축은 \
+             영구히 안 보인다"
+        );
+    }
+    for (svg_axis, _) in SHARED_ENVELOPE {
+        assert!(
+            !seen.contains(svg_axis),
+            "`{svg_axis}` 가 두 명부에 다 있다 — 같아야 하면서 달라도 된다는 뜻이 된다"
+        );
+    }
+
+    // 문서 전용 축 — 두 문서 사본에서 같고, JSX 에는 없어야 한다. 둘 중 하나라도 어긋나면
+    // 분류가 틀린 것이다.
+    let registry = registry_envelope(&read(VENDOR_REGISTRY));
+    for (axis, why) in DOCUMENT_ONLY_ENVELOPE {
+        assert!(!why.trim().is_empty(), "`{axis}` 에 사유가 없다");
+        assert!(
+            !seen.contains(axis),
+            "`{axis}` 가 갈려도 되는 축이면서 문서 전용 축이다 — 하나만 골라라"
+        );
+        let values: BTreeSet<Option<&str>> = files
+            .values()
+            .chain(app.values())
+            .map(|a| a.get(*axis).map(String::as_str))
+            .collect();
+        assert_eq!(
+            values.len(),
+            1,
+            "`{axis}` 가 두 문서 사본에서 갈린다: {values:?}"
+        );
+        assert!(
+            values.iter().all(Option::is_some),
+            "`{axis}` 가 일부 문서 사본에 없다 — 문서 전용 축이 아니다"
+        );
+        assert!(
+            !registry.contains_key(*axis),
+            "`{axis}` 가 {VENDOR_REGISTRY} 의 인라인 엘리먼트에도 생겼다 — 문서 전용이 \
+             아니게 됐으므로 `SHARED_ENVELOPE` 로 옮기고 JSX 이름을 짝지어라"
+        );
+    }
+}
+
+/// 순수 SVG 사본(`.svg` 파일 · 앱 매크로 접두)의 속성이 **전부 분류돼 있는가.**
+///
+/// 새 속성이 한 사본에만 생기면 여기서 걸린다 — 두 명부 중 어디로 갈지는 사람이 정한다.
+#[test]
+fn every_envelope_attribute_is_classified() {
+    let classified: BTreeSet<&str> = SHARED_ENVELOPE
+        .iter()
+        .map(|(svg, _)| *svg)
+        .chain(DOCUMENT_ONLY_ENVELOPE.iter().map(|(a, _)| *a))
+        .chain(DIVERGENT_ENVELOPE.iter().map(|(a, _)| *a))
+        .collect();
+
+    let mut unclassified: BTreeSet<String> = BTreeSet::new();
+    let mut missing: Vec<String> = Vec::new();
+    let files = vendor_svg_envelopes();
+    let app = app_envelopes(&read(APP_ICONS));
+
+    for (what, attrs) in files
+        .iter()
+        .map(|(n, a)| (format!("{VENDOR_ICON_DIR}/{n}.svg"), a))
+        .chain(
+            app.iter()
+                .map(|(f, a)| (format!("{APP_ICONS} 의 매크로(채움={f})"), a)),
+        )
+    {
+        for name in attrs.keys() {
+            if !classified.contains(name.as_str()) {
+                unclassified.insert(format!("{name} ({what})"));
+            }
+        }
+        for (svg_axis, _) in SHARED_ENVELOPE {
+            if !attrs.contains_key(*svg_axis) {
+                missing.push(format!("{svg_axis} 가 {what} 에 없다"));
+            }
+        }
+    }
+
+    assert!(
+        unclassified.is_empty(),
+        "여는 태그에 분류 안 된 속성이 있다: {unclassified:?}. 세 사본이 같아야 하면 \
+         `SHARED_ENVELOPE` 에, 갈려도 되면 사유와 함께 `DIVERGENT_ENVELOPE` 에 넣어라"
+    );
+    assert!(
+        missing.is_empty(),
+        "공유 축이 빠진 자리가 있다 — 빠진 축은 브라우저·usvg 기본값으로 떨어져 \
+         사본마다 다르게 그려진다: {missing:?}"
+    );
+}
+
+/// 세 사본의 그릇이 같은가. **이 타깃의 기하 대조가 안 보는 축이다.**
+#[test]
+fn the_three_copies_share_one_render_envelope() {
+    let files = vendor_svg_envelopes();
+    let registry = registry_envelope(&read(VENDOR_REGISTRY));
+    let app = app_envelopes(&read(APP_ICONS));
+
+    let mut problems: Vec<String> = Vec::new();
+    for (svg_axis, jsx_axis) in SHARED_ENVELOPE {
+        // 좌변 하나당 (자리 이름, 값) 전수를 모아 값으로 묶는다.
+        let mut by_value: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (name, attrs) in &files {
+            if let Some(v) = attrs.get(*svg_axis) {
+                by_value
+                    .entry(v.clone())
+                    .or_default()
+                    .push(format!("{name}.svg"));
+            }
+        }
+        for (filled, attrs) in &app {
+            if let Some(v) = attrs.get(*svg_axis) {
+                by_value
+                    .entry(v.clone())
+                    .or_default()
+                    .push(format!("앱 매크로(채움={filled})"));
+            }
+        }
+        if let Some(v) = registry.get(*jsx_axis) {
+            by_value
+                .entry(v.clone())
+                .or_default()
+                .push(VENDOR_REGISTRY.to_string());
+        } else {
+            problems.push(format!(
+                "`{jsx_axis}` 가 {VENDOR_REGISTRY} 의 여는 태그에 없다 — 사이트가 그리는 것은 \
+                 이쪽이라, 여기서 빠지면 `.svg` 가 맞아도 화면이 다르다"
+            ));
+        }
+
+        if by_value.len() > 1 {
+            let spread: Vec<String> = by_value
+                .iter()
+                .map(|(v, wheres)| {
+                    let head: Vec<&str> = wheres.iter().take(3).map(String::as_str).collect();
+                    let more = wheres.len().saturating_sub(head.len());
+                    if more > 0 {
+                        format!("{v:?} ← {} 외 {more} 자리", head.join(" · "))
+                    } else {
+                        format!("{v:?} ← {}", head.join(" · "))
+                    }
+                })
+                .collect();
+            problems.push(format!("[{svg_axis}] {}", spread.join(" / ")));
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "세 사본의 **그릇**이 갈린다. 여기 한 글자가 글리프 65 짝 전부를 다르게 그리는데, \
+         inner 마크업 대조는 그것을 못 본다. 어느 쪽이 맞는지는 이 타깃이 모른다 — 원격 킷이 \
+         정본이므로 `site/vendor/README.md` 의 갱신 절차로 사본을 맞추고, 앱이 뒤처졌으면 \
+         앱 전사본을 고친다:\n  {}",
+        problems.join("\n  ")
+    );
 }
 
 #[test]
