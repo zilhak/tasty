@@ -4,9 +4,15 @@
 # 아닌 것이 있으면 목록을 출력하고 exit 1. 기존 대형 파일은 .complexity-file-allowlist
 # 로 동결(grandfather)하고, 새로 임계를 넘는 것만 차단한다.
 #
-# **재는 것은 원본이 아니라 인라인 `#[cfg(test)]` 를 지운 사본이다.** 판정(무엇이
-# 출하되는가)은 strip-cfg-test 가 하고 계측(몇 줄인가)은 tokei 가 그대로 한다 —
-# 계측기를 둘로 늘리지 않는다. 근거: docs/adr/ 의 "출하 SLOC" ADR.
+# **재는 것은 원본이 아니라 출하 밖 줄을 지운 사본이다.** 판정(무엇이 출하되는가)은
+# strip-cfg-test 가 하고 계측(몇 줄인가)은 tokei 가 그대로 한다 — 계측기를 둘로 늘리지
+# 않는다. 근거: docs/adr/ 의 "출하 SLOC" ADR.
+#
+# 지우는 형태가 **둘**이다. 인라인 `#[cfg(test)]` 범위와, `#[cfg(test)] mod x;` 로만
+# 선언된 **파일 전체**(cargo 통합 타깃 포함)다. 뒤쪽이 빠져 있던 동안 이 게이트는 한 줄도
+# 안 나가는 파일을 출하 줄로 세었고, 그 값으로 임계를 판정했다 — 아무것도 안 깨지고
+# **값만 틀렸다**. 근거·모수:
+# docs/adr/0301-the-file-sloc-gate-erases-whole-test-only-files.md
 #
 # **이것은 신규 파일 필터가 아니라 성장 래칫이다.** 실측(2026-07-06 → 09-05): 새로 생긴
 # .rs 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던
@@ -38,6 +44,13 @@ THRESHOLD=1000
 # `tests/file_sloc_gate_fails_loudly.rs` 가 이 값을 늘려 둘이 따라가는지를 잰다.
 SCAN_DIRS=(src crates)
 
+# ── 출하 판정을 어떻게 부르는가 — 이것도 **한 값이다** ────────────────────
+# 자매 게이트(check-frozen-sum-ratchet.sh)의 합은 정의상 이 게이트가 판정하는 집합의
+# 부분집합(allowlist 항목)이다. 둘이 판정기를 **다른 플래그로** 부르면 같은 파일이 두
+# 게이트에서 서로 다른 줄 수를 갖는다 — 그 어긋남은 여유가 파일 하나 몫이라 조용하다.
+# 그래서 자매가 `SCAN_DIRS`·`THRESHOLD` 를 읽어 가듯 이 줄도 읽어 간다.
+SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes --blank-test-only-files)
+
 ALLOWLIST="$ROOT/.complexity-file-allowlist"
 
 # 경고 띠 — **판정이 아니다. rc 에 안 들어간다.**
@@ -65,6 +78,13 @@ done
 [ -n "$PY" ] || { echo "python 미설치: tokei JSON 파싱에 python3 필요"; exit 2; }
 
 # skip: 테스트 모듈/디렉토리 · 생성/전사 코드(*generated*, design-tokens/generated/).
+#
+# 앞 갈래(이름으로 고른 테스트 파일)는 이제 **판정과 겹친다** — 그 파일들은 판정기가
+# 통째로 공백화하므로 skip 이 없어도 code 0 으로 재어진다. 그래도 남겨 두는 것은 이
+# 갈래가 `*generated*` 와 한 case 에 있고, 이름을 없애는 것과 판정기를 하나로 모으는
+# 것이 다른 물음이기 때문이다. `src/source_guards/sloc_gate_skip_proxy.rs` 의 (가)가
+# 이 대리인을 판정에 양방향으로 못박는다 — 출하 파일을 `*_tests.rs` 로 개명하면 그것이
+# 운다. 뒤 갈래(생성물)는 판정기가 안 지우므로 여기서만 걸러진다.
 skip() {
     case "$1" in
         */tests/*|*/tests.rs|*_test.rs|*_tests.rs) return 0 ;;
@@ -88,8 +108,8 @@ skip() {
 #
 # 회귀는 tests/file_sloc_gate_fails_loudly.rs 가 스텁 tokei · 스텁 판정기로 이 경우들을
 # 고정한다(수를 여기 적지 않는다 — 시험이 늘면 그 수만 낡는다. 실제로 낡아 있었다).
-# 판정기: 인라인 `#[cfg(test)]` 를 빈 줄로 바꾼 사본을 만든다. 줄 번호가 보존되므로
-# tokei 의 보고를 원본 좌표로 그대로 읽는다.
+# 판정기: 출하 밖 줄(인라인 `#[cfg(test)]` 범위 · 테스트 전용 파일 전체)을 빈 줄로 바꾼
+# 사본을 만든다. 줄 번호가 보존되므로 tokei 의 보고를 원본 좌표로 그대로 읽는다.
 #
 # 바이너리를 여기서 `cargo build` 로 만들지 않는다 — 이 스크립트는 `cargo test` 안에서도
 # 불리고(tests/file_sloc_gate_fails_loudly.rs), 그때 중첩 cargo 는 빌드 디렉토리 잠금에서
@@ -114,7 +134,7 @@ if [ -z "$STRIP_BIN" ]; then
     # 형제들과 같은 형태로 찍는다: **무엇을 만지지 말라**(여기서는 allowlist — 이
     # 게이트에서 그 자리를 헐겁게 만드는 레버가 그것이다)와 **무엇을 지어라**.
     echo "[file-size] 판정 불가 — 출하 줄을 가릴 판정기가 없다(또는 낡았다)."
-    echo "  이 상태에서 재면 인라인 #[cfg(test)] 까지 출하 줄로 세어진다. 그 값으로 임계를"
+    echo "  이 상태에서 재면 테스트 코드까지 출하 줄로 세어진다. 그 값으로 임계를"
     echo "  판정하지 않는다 — 두 값의 차는 파일이 자란 폭이 아니라 **세는 사본이 바뀐 폭**이다."
     echo
     echo "  ★ .complexity-file-allowlist 에 경로를 추가하지 마라. 판정기를 지어라:"
@@ -146,7 +166,7 @@ trap 'rm -rf "$STRIPPED"' EXIT
 # 어긋나면 **판정 불가(2)** 다. 통과도 위반도 아닌 이유는 그 상태에서 위반이 있는지
 # 없는지를 모르기 때문이다 — 모자란 사본에서 나온 "임계 초과 0" 은 "큰 파일이 없다"
 # 와 "큰 파일을 안 봤다" 를 같은 줄로 만든다.
-STRIP_REPORTED="$("$STRIP_BIN" --neutralize-char-literal-quotes "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}")" || {
+STRIP_REPORTED="$("$STRIP_BIN" "${SHIPPING_JUDGE_FLAGS[@]}" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}")" || {
     echo "출하 줄 판정 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
 COPIED="$(find "$STRIPPED" -type f -name '*.rs' -print | wc -l | tr -d ' ')" || COPIED=""

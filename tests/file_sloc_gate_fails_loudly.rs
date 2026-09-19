@@ -401,7 +401,8 @@ fn scan_synth_root() -> tempfile::TempDir {
     dir
 }
 
-/// `n` 줄짜리 `.rs` 를 만든다. 스텁 tokei 가 줄 수를 그대로 code 로 읽는다.
+/// `n` 줄짜리 `.rs` 를 만든다. 스텁 tokei 는 **빈 줄이 아닌 줄**을 code 로 읽으므로
+/// (진짜 tokei 와 같은 갈래다 — 판정기가 지운 자리는 빈 줄로 남는다) 여기서는 n 이 곧 code 다.
 fn write_rs(root: &Path, rel: &str, n: usize) {
     let f = root.join(rel);
     fs::create_dir_all(f.parent().expect("부모")).expect("디렉토리");
@@ -426,7 +427,7 @@ fn stub_tokei_reading_disk() -> tempfile::TempDir {
          printf '{\"Rust\":{\"reports\":['\n\
          sep=\"\"\n\
          for f in $files; do\n\
-         n=$(wc -l < \"$f\" | tr -d ' ')\n\
+         n=$(grep -c '[^[:space:]]' \"$f\" || true)\n\
          printf '%s{\"name\":\"%s\",\"stats\":{\"code\":%s}}' \"$sep\" \"$f\" \"$n\"\n\
          sep=\",\"\n\
          done\n\
@@ -482,8 +483,11 @@ fn widen_scan_dirs(root: &Path) {
 }
 
 fn run_scan_gate(root: &Path) -> (i32, String) {
+    run_scan_gate_with(root, &stub_strip_copying())
+}
+
+fn run_scan_gate_with(root: &Path, strip: &tempfile::TempDir) -> (i32, String) {
     let tokei = stub_tokei_reading_disk();
-    let strip = stub_strip_copying();
     let path = std::env::var("PATH").unwrap_or_default();
     let out = Command::new("bash")
         .arg(root.join("scripts/check-file-size.sh"))
@@ -724,4 +728,109 @@ fn an_uncountable_copy_count_is_not_a_pass() {
         "사본 수를 못 셌는데 판정 불가가 아니다:\n{text}"
     );
     assert!(text.contains("사본 수를 셀 수 없다"), "{text}");
+}
+
+// ── 게이트가 판정기에게 **무엇을 지우라고 하는가** ───────────────────────
+//
+// 이 게이트의 값은 "출하 SLOC" 이라 불리고, 그렇게 부를 근거는 판정기가 출하 밖 줄을
+// 지운다는 것이다. 지우는 형태가 둘인데(인라인 `#[cfg(test)]` 범위 · 테스트 전용 파일
+// 전체) 한동안 게이트가 앞엣것만 요구했다. 그동안 **아무것도 안 깨졌다 — 값만 틀렸다.**
+// 한 줄도 안 나가는 파일이 임계를 향해 자라고, 임계를 넘으면 심사 목록에 올라갔다.
+//
+// 그 자리는 rc 로도 초록 문구로도 안 보인다. 그래서 여기서 **argv 로** 잰다: 판정기
+// 스텁이 플래그를 받았을 때만 지우게 해 두고, 게이트가 그것을 주는지를 종료 코드로
+// 묻는다. 게이트 본문에 그 철자가 있는지를 세는 확인은 변수를 선언만 해 놓고 호출부가
+// 옛 인자를 그대로 쓰는 상태(= 고치기 전의 모양)를 통과시킨다.
+
+/// `--blank-test-only-files` 를 받았을 때만 표식 파일을 공백화하는 스텁 판정기.
+///
+/// 진짜 판정기의 선언 파서를 흉내 내지 않는다 — 이 시험이 묻는 것은 **게이트가 그 판정을
+/// 요구하는가**이지 파서가 옳은가가 아니다(뒤쪽은 `tasty_doc_guards::shipping_scope` 의
+/// 단위 시험이 잰다). 그래서 무엇이 테스트 전용인지는 시험이 표식으로 정한다.
+fn stub_strip_honoring_blank_flag() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("스텁 디렉토리");
+    let bin = dir.path().join("strip-cfg-test");
+    fs::write(
+        &bin,
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
+         blank=0\n\
+         while [ \"${1#--}\" != \"$1\" ]; do\n\
+         [ \"$1\" = \"--blank-test-only-files\" ] && blank=1\n\
+         shift\n\
+         done\n\
+         out=$1; shift; src=$1; shift\n\
+         mkdir -p \"$out\" || exit 1\n\
+         for d in \"$@\"; do\n\
+         [ -d \"$src/$d\" ] || continue\n\
+         cp -r \"$src/$d\" \"$out/$d\" || exit 1\n\
+         done\n\
+         if [ \"$blank\" = 1 ]; then\n\
+         for f in $(grep -rl TEST_ONLY_SENTINEL \"$out\" 2>/dev/null); do\n\
+         awk '{ print \"\" }' \"$f\" > \"$f.blanked\" && mv \"$f.blanked\" \"$f\"\n\
+         done\n\
+         fi\n\
+         find \"$out\" -name '*.rs' -type f | wc -l | tr -d ' '\n",
+    )
+    .expect("스텁 판정기");
+    make_executable(&bin);
+    dir
+}
+
+/// 표식을 단 `n` 줄짜리 `.rs`. 줄 수는 `write_rs` 와 같게 센다.
+fn write_test_only_rs(root: &Path, rel: &str, n: usize) {
+    let f = root.join(rel);
+    fs::create_dir_all(f.parent().expect("부모")).expect("디렉토리");
+    let mut body = String::from("// TEST_ONLY_SENTINEL\n");
+    for i in 1..n {
+        body.push_str(&format!("fn f{i}() {{}}\n"));
+    }
+    fs::write(&f, body).expect("파일 쓰기");
+}
+
+/// 게이트 사본에서 전체-파일 지움 요구를 뺀다. 치환 실패는 그 자리에서 죽는다 —
+/// 좌변의 이름이나 형태가 바뀌었다는 뜻이고, 그러면 이 시험이 아무것도 안 잰다.
+fn drop_whole_file_erasure(root: &Path) {
+    let p = root.join("scripts/check-file-size.sh");
+    let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
+    let narrowed = text.replace(
+        "SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes --blank-test-only-files)",
+        "SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes)",
+    );
+    assert_ne!(
+        narrowed, text,
+        "게이트에 `SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes \
+         --blank-test-only-files)` 한 줄이 없다 — 좌변의 이름이나 형태가 바뀌었다. \
+         이 시험은 그 한 값을 좁혀 소비처를 재므로 멈춘다."
+    );
+    fs::write(&p, narrowed).expect("게이트 사본 쓰기");
+}
+
+/// 테스트 전용 파일은 임계를 넘어도 조용하고, 게이트가 지움을 안 요구하면 빨개진다.
+///
+/// 두 방향을 한 시험에 둔다 — 앞쪽만 재면 판정기를 죽인 것(아무것도 안 지우는 스텁)과
+/// 구별이 안 되고, 뒤쪽만 재면 지움이 실제로 값을 바꾸는지가 안 나온다.
+#[test]
+fn a_test_only_file_over_the_threshold_is_erased_not_measured() {
+    let d = scan_synth_root();
+    write_test_only_rs(d.path(), "src/zz_declared_test_only.rs", 1500);
+
+    let (code, text) = run_scan_gate_with(d.path(), &stub_strip_honoring_blank_flag());
+    assert_eq!(
+        code, 0,
+        "한 줄도 출하되지 않는 파일이 임계를 넘겼다고 게이트가 운다 — 그 값은 출하 \
+         SLOC 이 아니다:\n{text}"
+    );
+
+    drop_whole_file_erasure(d.path());
+    let (code, text) = run_scan_gate_with(d.path(), &stub_strip_honoring_blank_flag());
+    assert_eq!(
+        code, 1,
+        "게이트가 전체-파일 지움을 안 요구하는데도 조용하다 — 스텁이 플래그와 무관하게 \
+         지우고 있거나 이 시험이 아무것도 안 재고 있다:\n{text}"
+    );
+    assert!(
+        text.contains("src/zz_declared_test_only.rs"),
+        "위반의 좌표를 안 찍는다:\n{text}"
+    );
 }

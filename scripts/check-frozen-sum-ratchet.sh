@@ -18,6 +18,9 @@
 #      합 < 예산                 → 위반(1). 래칫을 조여라 — 남는 여유는 곧 안 보는 구간이다.
 #      그 사이                   → 통과(0).
 #
+# 좌변 셋(`THRESHOLD`·`SCAN_DIRS`·`SHIPPING_JUDGE_FLAGS`)을 전부 `check-file-size.sh`
+# 에서 읽어 온다 — 적지 않는다. 못 읽으면 판정 불가다.
+#
 # **여유는 임계 자신이다.** `check-file-size.sh` 의 `THRESHOLD` 를 읽어 쓴다 — 외우지
 # 않는다. 그래서 발화 사건이 "동결분이 **허용 파일 하나 분량**만큼 자랐다" 가 되고,
 # 여유가 임의의 수가 아니게 된다. 실측 발화율: 여유 0 이면 60 일에 218 회(하루 3.6 회,
@@ -72,6 +75,16 @@ SCAN_DIRS_RAW="${SCAN_DIRS_RAW%%$'\n'*}"
 read -r -a SCAN_DIRS <<<"$SCAN_DIRS_RAW"
 [ "${#SCAN_DIRS[@]}" -gt 0 ] || die "check-file-size.sh 의 SCAN_DIRS 가 비었다 — 훑을 트리가 없다."
 
+# 셋째 좌변: **판정기를 어떻게 부르는가.** 같은 이유로 읽어 온다. 이 합은 정의상 저
+# 게이트가 판정하는 집합의 부분집합이라, 판정기를 다른 플래그로 부르면 같은 파일이 두
+# 게이트에서 서로 다른 줄 수를 갖는다. 그 어긋남은 여유가 파일 하나 몫이라 조용하다 —
+# 목록에 테스트 전용 파일이 하나라도 오르면 이쪽만 그 파일을 출하 줄로 세게 된다.
+JUDGE_FLAGS_RAW="$(sed -n 's/^SHIPPING_JUDGE_FLAGS=(\(.*\))$/\1/p' "$SIZE_GATE")"
+JUDGE_FLAGS_RAW="${JUDGE_FLAGS_RAW%%$'\n'*}"
+[ -n "$JUDGE_FLAGS_RAW" ] || die "check-file-size.sh 에서 SHIPPING_JUDGE_FLAGS 를 못 읽었다 — 어떻게 판정할지 정할 수 없다."
+read -r -a JUDGE_FLAGS <<<"$JUDGE_FLAGS_RAW"
+[ "${#JUDGE_FLAGS[@]}" -gt 0 ] || die "check-file-size.sh 의 SHIPPING_JUDGE_FLAGS 가 비었다 — 판정 방식이 없다."
+
 BUDGET="$(sed -n 's/^#[[:space:]]*frozen-sum-budget:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$ALLOWLIST")"
 BUDGET="${BUDGET%%$'\n'*}"
 [ -n "$BUDGET" ] || die ".complexity-file-allowlist 에 '# frozen-sum-budget: <수>' 줄이 없다."
@@ -112,7 +125,7 @@ STRIP_BIN="$JUDGE_BIN"
 STRIPPED="$(mktemp -d)"
 trap 'rm -rf "$STRIPPED"' EXIT
 
-"$STRIP_BIN" --neutralize-char-literal-quotes "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}" >/dev/null \
+"$STRIP_BIN" "${JUDGE_FLAGS[@]}" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}" >/dev/null \
     || die "출하 줄 판정 실패."
 
 # ── 편향을 재는 사본: 같은 사본에서 doc 주석 줄만 뺀다 ────────────────────
