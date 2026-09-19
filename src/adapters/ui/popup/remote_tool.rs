@@ -28,8 +28,13 @@ use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::tokens::STRUCT_GAP_1;
+use tasty_ui_widgets::{
+    LocalSshAction, LocalSshHost, LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels,
+    TabStripData, TextWrap, draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
+    draw_protocol_filter_button, draw_tab_strip, ghost_button, hsep, primary_button,
+    secondary_button, selectable_label, selectable_text, warn_badge,
+};
 
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
 
@@ -48,12 +53,6 @@ const HEADER_GAP_X: LogicalPx = LogicalPx(9.0);
 const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 const UI_MEMORY_ID: &str = "remote_tool.ui";
-
-/// 프로토콜 필터 드롭다운의 최소 폭. 대응 `Theme` 토큰이 없는 이 팝업 고유 레이아웃
-/// 치수라 명명 구조 상수로 둔다(같은 파일의 `LABEL_COL_WIDTH` 선례).
-const FILTER_DROPDOWN_MIN_WIDTH: LogicalPx = LogicalPx(216.0);
-/// 프로토콜 필터 목록의 최대 높이 — 넘으면 스크롤. 위와 같은 성격의 구조 상수다.
-const FILTER_DROPDOWN_MAX_HEIGHT: LogicalPx = LogicalPx(168.0);
 
 /// 프로토콜 필터의 *적용된* hidden(=제외) 집합 저장 키. **`UI_MEMORY_ID` 와 분리** —
 /// `clear_ui` 가 popup 닫힘마다 `UI_MEMORY_ID` 만 지우므로 이 키는 보존되어 popup
@@ -461,51 +460,6 @@ pub fn draw_remote_tool_popup(
     }
 }
 
-/// 디자인 secondary 버튼 (Button.jsx `--secondary`): surface-raised(surface0) 채움.
-/// base(bg-panel) 패널 배경 위에서 한 단계 밝게 떠 보인다. (egui inactive 기본 버튼은
-/// fill=base 라 base 패널 위에서 묻히므로 fill 을 명시한다.)
-fn secondary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(
-            egui::RichText::new(label)
-                .color(th.text_primary())
-                .size(th.font_size_body.value()),
-        )
-        .fill(th.surface_raised())
-        .stroke(egui::Stroke::new(
-            th.border_width.value(),
-            th.border_strong(),
-        )),
-    )
-}
-
-/// Primary 버튼 — accent 채움 + on-accent 텍스트. 디자인 `Button variant="primary"`.
-/// 폼 footer 의 Save 액션에 사용.
-fn primary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(
-            egui::RichText::new(label)
-                .color(th.text_on_accent())
-                .size(th.font_size_body.value()),
-        )
-        .fill(th.accent_primary()),
-    )
-}
-
-/// Ghost 버튼 — 투명 배경 + secondary 텍스트(hover 시 overlay). 디자인
-/// `Button variant="ghost"`. 폼 footer 의 Cancel, generic 폼의 Add field 에 사용.
-fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(
-            egui::RichText::new(label)
-                .color(th.text_secondary())
-                .size(th.font_size_body.value()),
-        )
-        .fill(egui::Color32::TRANSPARENT)
-        .stroke(egui::Stroke::NONE),
-    )
-}
-
 /// 목록 스크롤 영역 — **스크롤바를 항상 숨기고** 스크롤 여지가 있는 쪽 가장자리에
 /// 배경색 페이드를 그린다.
 ///
@@ -592,19 +546,6 @@ fn paint_edge_fade(ui: &egui::Ui, th: &Theme, rect: egui::Rect, edge: FadeEdge) 
     ui.painter().add(egui::Shape::mesh(mesh));
 }
 
-/// 디자인 separator 선. egui `ui.separator()` 는 theme stroke 색이 배경과 가까워
-/// 사실상 비가시 → surface1 색 명시적 hline 으로 그린다.
-fn hsep(ui: &mut egui::Ui, th: &Theme) {
-    vspace(ui, STRUCT_GAP_2);
-    let r = ui.max_rect();
-    ui.painter().hline(
-        r.x_range(),
-        ui.cursor().top(),
-        egui::Stroke::new(th.border_width.value(), th.border_strong()),
-    );
-    vspace(ui, STRUCT_GAP_2);
-}
-
 fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
     let mut close = false;
     // 헤더 제목 라벨을 비선택으로 만들어 press 시 포인터를 가져가지 않게 한다
@@ -644,94 +585,42 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
 }
 
 fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::Rangef) {
-    // 언더라인 탭 (디자인 remote_tool.jsx TabBtn): 전체폭 bg-sidebar(mantle), height 35,
-    // padding L8 / TabBtn padding 0 13 / gap 2. 활성 = text-primary + 하단 2px accent,
-    // 비활성 = text-muted. 좌표를 직접 계산해 그린다(egui 자동 배치 우회).
-    let tab_h = 36.0; // 디자인 TabBtn 35 + borderBottom 1 = 탭바 컨테이너 36
-    let pad_l = 8.0; // 디자인 탭바 padding-left
-    let pad_x = 13.0; // 디자인 TabBtn padding 0 13
-    let gap = 2.0; // 디자인 탭바 gap
-    let font = egui::FontId::proportional(th.font_size_body.value());
-
-    let top = ui.cursor().top();
-    let bar = egui::Rect::from_min_size(
-        egui::pos2(x_range.min, top),
-        egui::vec2(x_range.span(), tab_h),
-    );
-    // bg-sidebar 전체폭 + 하단 borderBottom separator (mantle 위 → surface1 근사).
-    ui.painter().rect_filled(bar, 0.0, th.bg_sidebar());
-    ui.painter().hline(
-        x_range,
-        bar.max.y,
-        egui::Stroke::new(th.border_width.value(), th.border_strong()),
-    );
-
-    let mut x = x_range.min + pad_l;
-    for (tab, key) in [
-        (Tab::Profiles, "remote_tool.tab_profiles"),
-        (Tab::Attach, "remote_tool.tab_attach"),
-        (Tab::Passkeys, "remote_tool.tab_passkeys"),
-    ] {
-        let on = st.tab == tab;
-        let label = t(key);
-        let text_w = ui.fonts(|f| {
-            f.layout_no_wrap(label.to_string(), font.clone(), th.text_primary().into())
-                .size()
-                .x
-        });
-        let w = text_w + pad_x * 2.0;
-        let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(w, tab_h));
-        let resp = ui.interact(rect, ui.id().with((key, "rt_tab")), egui::Sense::click());
-        if resp.hovered() && !on {
-            ui.painter()
-                .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
-        }
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            label,
-            font.clone(),
-            if on {
-                th.text_primary().into()
-            } else {
-                th.text_muted().into()
-            },
-        );
-        // 활성 탭 하단 accent bar — separator 위에 그려 덮는다. 굵기는 다른 탭
-        // 지표(explorer/preset)와 같은 `tab_indicator_width`, 덮을 separator 두께는
-        // `border_width`. 둘 다 얇은 구조선이라 zoom 을 타지 않는다(값 불변).
-        if on {
-            ui.painter().hline(
-                rect.x_range(),
-                bar.max.y - th.border_width.value(),
-                egui::Stroke::new(th.tab_indicator_width.value(), th.accent_primary()),
-            );
-        }
-        if resp.clicked() && st.tab != tab {
-            st.tab = tab;
-            st.profile_view = Sub::List;
-            st.attach_view = Sub::List;
-            st.passkey_view = Sub::List;
-            st.perr = None;
-            st.aerr = None;
-            st.kerr = None;
-        }
-        x += w + gap;
-    }
-    // 탭바 영역만큼 커서 전진 → 다음 구역(콘텐츠)이 그 아래로.
-    ui.allocate_rect(bar, egui::Sense::hover());
-}
-
-// ── 경고 배지 ────────────────────────────────────────────────────────────
-fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) {
-    selectable_label(
+    // 시각은 공용 view(`tasty_ui_widgets::draw_tab_strip`)가 소유한다 — 갤러리가 같은
+    // 함수를 부른다. 여기 남는 것은 라벨 번역과 **탭 전환의 부수효과**다: 탭을 옮기면
+    // 세 하위 뷰를 목록으로 되돌리고 폼 에러를 지운다(뒤로 갔다 오면 낡은 에러가
+    // 남아 있는 것을 막는다).
+    let labels = [
+        t("remote_tool.tab_profiles"),
+        t("remote_tool.tab_attach"),
+        t("remote_tool.tab_passkeys"),
+    ];
+    let active = match st.tab {
+        Tab::Profiles => 0,
+        Tab::Attach => 1,
+        Tab::Passkeys => 2,
+    };
+    let clicked = draw_tab_strip(
         ui,
-        &format!("⚠ {text}"),
-        th.accent_warning(),
-        th.font_size_caption.value(),
-        false,
-    )
-    .on_hover_text(tooltip);
+        th,
+        &TabStripData {
+            labels: &labels,
+            active,
+            x_range,
+        },
+    );
+    if let Some(i) = clicked {
+        st.tab = match i {
+            0 => Tab::Profiles,
+            1 => Tab::Attach,
+            _ => Tab::Passkeys,
+        };
+        st.profile_view = Sub::List;
+        st.attach_view = Sub::List;
+        st.passkey_view = Sub::List;
+        st.perr = None;
+        st.aerr = None;
+        st.kerr = None;
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -895,166 +784,65 @@ fn draw_profile_list(
 /// **프로토콜 필터를 적용받지 않는다.** 필터는 프로필의 `kind` 집합으로 만들어지는데
 /// ssh config 항목에는 kind 라는 개념 자체가 없다. 필터로 프로필이 전부 가려진
 /// 상태에서도 이 섹션은 그대로 남는다.
+///
+/// 시각은 공용 view(`tasty_ui_widgets::draw_local_ssh_section`)가 소유한다. 이 wrapper
+/// 가 갖는 것은 i18n 과, 표시 문자열을 만드는 **판정** 둘이다 — 빈 상태의 원인 3 갈래
+/// (없음/못 읽음/정말 0 건)와 alias 별 "이미 가져옴" 대조.
 fn draw_local_ssh_section(
     ui: &mut egui::Ui,
     th: &Theme,
     local: &LocalSshCache,
     profiles: &RemoteProfiles,
 ) -> Option<LocalRowAction> {
-    let mut out = None;
-    hsep(ui, th);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        selectable_label(
-            ui,
-            t("remote_tool.local_ssh_heading"),
-            th.text_secondary(),
-            th.font_size_caption.value(),
-            false,
-        );
-        selectable_label(
-            ui,
-            &local.path,
-            th.text_muted(),
-            th.font_size_caption.value(),
-            true,
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 프로필 행의 재감지와 같은 글리프지만 하는 일이 다르다(원격 프로브가
-            // 아니라 로컬 파일 재로드) — 툴팁으로 가른다.
-            if ui
-                .add(
-                    egui::ImageButton::new(icons::REFRESH.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
-                .on_hover_text(t("remote_tool.local_ssh_refresh"))
-                .clicked()
-            {
-                out = Some(LocalRowAction::Reload);
-            }
-        });
-    });
-    ui.add_space(th.spacing_xs.value());
-    if local.hosts.is_empty() {
-        // 섹션을 통째로 숨기지 않는다 — 문구가 있어야 "가져올 게 없다" 와 "그런 기능이
-        // 없다" 가 구분된다.
-        selectable_text(
-            ui,
-            t(local_ssh_empty_key(local)),
-            th.text_muted(),
-            th.font_size_caption.value(),
-            false,
-            true,
-            TextWrap::None,
-        );
-        ui.add_space(th.spacing_xs.value());
-        return out;
+    let hints: Vec<String> = local.hosts.iter().map(local_target_hint).collect();
+    let captions: Vec<Option<String>> = local
+        .hosts
+        .iter()
+        .map(|h| {
+            imported_as(profiles, &h.alias)
+                .map(|name| t_fmt("remote_tool.local_ssh_imported", name))
+        })
+        .collect();
+    let rows: Vec<LocalSshHost<'_>> = local
+        .hosts
+        .iter()
+        .enumerate()
+        .map(|(i, h)| LocalSshHost {
+            alias: &h.alias,
+            hint: &hints[i],
+            imported_caption: captions[i].as_deref(),
+        })
+        .collect();
+    let action = ssh_section_view(
+        ui,
+        th,
+        &LocalSshSectionData {
+            heading: t("remote_tool.local_ssh_heading"),
+            path: &local.path,
+            refresh_tooltip: t("remote_tool.local_ssh_refresh"),
+            import_tooltip: t("remote_tool.local_ssh_import"),
+            empty_message: t(local_ssh_empty_key(local)),
+            hosts: &rows,
+        },
+    );
+    match action {
+        Some(LocalSshAction::Reload) => Some(LocalRowAction::Reload),
+        Some(LocalSshAction::Import(i)) => local
+            .hosts
+            .get(i)
+            .map(|h| LocalRowAction::Import(h.alias.clone())),
+        None => None,
     }
-    for h in &local.hosts {
-        if let Some(a) = draw_local_ssh_row(ui, th, h, imported_as(profiles, &h.alias)) {
-            out = Some(a);
-        }
-    }
-    out
-}
-
-/// alias 행 한 줄 — 이름 / hint caption / 우측 가져오기.
-fn draw_local_ssh_row(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    h: &SshConfigHost,
-    imported: Option<&str>,
-) -> Option<LocalRowAction> {
-    let mut out = None;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-            selectable_label(
-                ui,
-                &h.alias,
-                th.text_primary(),
-                th.font_size_body.value(),
-                false,
-            );
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                selectable_label(
-                    ui,
-                    &local_target_hint(h),
-                    th.text_muted(),
-                    th.font_size_caption.value(),
-                    true,
-                );
-                if let Some(name) = imported {
-                    selectable_label(
-                        ui,
-                        &t_fmt("remote_tool.local_ssh_imported", name),
-                        th.text_muted(),
-                        th.font_size_caption.value(),
-                        false,
-                    );
-                }
-            });
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            // 이미 가져온 alias 는 비활성 — 같은 호스트를 두 번 등록하는 사고를 막는다.
-            let btn = ui.add_enabled(
-                imported.is_none(),
-                egui::ImageButton::new(icons::DOWNLOAD.image(
-                    th.icon_glyph_size_row_action.value(),
-                    th.text_muted().into(),
-                ))
-                .frame(false),
-            );
-            if imported.is_none()
-                && btn
-                    .on_hover_text(t("remote_tool.local_ssh_import"))
-                    .clicked()
-            {
-                out = Some(LocalRowAction::Import(h.alias.clone()));
-            }
-        });
-    });
-    ui.add_space(th.spacing_xs.value());
-    out
-}
-
-/// 프로토콜 필터 버튼(funnel + 라벨). filtered 면 primary(accent), 아니면 secondary.
-fn filter_button(ui: &mut egui::Ui, th: &Theme, label: &str, filtered: bool) -> egui::Response {
-    let text_col: egui::Color32 = if filtered {
-        th.text_on_accent().into()
-    } else {
-        th.text_primary().into()
-    };
-    let fill: egui::Color32 = if filtered {
-        th.accent_primary().into()
-    } else {
-        th.surface_raised().into()
-    };
-    let stroke = if filtered {
-        egui::Stroke::NONE
-    } else {
-        egui::Stroke::new(th.border_width.value(), th.border_strong())
-    };
-    ui.add(
-        egui::Button::image_and_text(
-            icons::FUNNEL.image(th.icon_glyph_size_sm.value(), text_col),
-            egui::RichText::new(label)
-                .color(text_col)
-                .size(th.font_size_body.value()),
-        )
-        .fill(fill)
-        .stroke(stroke),
-    )
 }
 
 /// 프로토콜 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
 /// Apply-on-confirm: 패널 편집은 `st.filter_draft` 에만 쌓이고 Apply 눌러야 반영.
 /// Apply 시 `draft ∩ protocols` 로 보정한 새 hidden 집합을 반환(없으면 None).
+///
+/// 버튼과 드롭다운 **본문**의 시각은 공용 view 가 소유한다
+/// (`draw_protocol_filter_button` · `draw_protocol_filter_body`). 여기 남는 것은
+/// **띄우는 일**이다 — egui popup 열림 상태, 열릴 때 draft 시드, 적용 후 닫기,
+/// 그리고 드롭다운 rect 를 popup 매니저에 보고하는 것.
 fn draw_protocol_filter(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1076,7 +864,7 @@ fn draw_protocol_filter(
         t("remote_tool.filter").to_string()
     };
 
-    let btn = filter_button(ui, th, &label, filtered);
+    let btn = draw_protocol_filter_button(ui, th, &label, filtered);
     if btn.clicked() {
         // 열릴 때 draft 를 현재 적용 집합으로 시드.
         if !ui.memory(|m| m.is_popup_open(popup_id)) {
@@ -1085,6 +873,22 @@ fn draw_protocol_filter(
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
 
+    let items: Vec<ProtocolFilterItem<'_>> = protocols
+        .iter()
+        .map(|p| ProtocolFilterItem {
+            name: p,
+            unknown: is_unknown_kind(p),
+        })
+        .collect();
+    let labels = ProtocolFilterLabels {
+        title: t("remote_tool.filter_title"),
+        select_all: t("remote_tool.filter_select_all"),
+        deselect_all: t("remote_tool.filter_deselect_all"),
+        reset: t("remote_tool.filter_reset"),
+        apply: t("remote_tool.filter_apply"),
+        unknown: t("remote_tool.filter_unknown"),
+        unknown_hint: t("remote_tool.type_unknown_hint"),
+    };
     let mut applied: Option<HashSet<String>> = None;
     egui::popup::popup_above_or_below_widget(
         ui,
@@ -1093,69 +897,15 @@ fn draw_protocol_filter(
         egui::AboveOrBelow::Below,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
-            ui.set_min_width(FILTER_DROPDOWN_MIN_WIDTH.value());
-            selectable_label(
-                ui,
-                t("remote_tool.filter_title"),
-                th.text_muted(),
-                th.font_size_caption.value(),
-                true,
-            );
-            ui.add_space(th.spacing_xs.value());
-            egui::ScrollArea::vertical()
-                .max_height(FILTER_DROPDOWN_MAX_HEIGHT.value())
-                .show(ui, |ui| {
-                    for proto in protocols {
-                        ui.horizontal(|ui| {
-                            // draft 는 제외 집합 → checked = 미제외.
-                            let mut checked = !st.filter_draft.contains(proto);
-                            if tasty_ui_widgets::checkbox(ui, th, &mut checked, proto, true)
-                                .changed()
-                            {
-                                if checked {
-                                    st.filter_draft.remove(proto);
-                                } else {
-                                    st.filter_draft.insert(proto.clone());
-                                }
-                            }
-                            if is_unknown_kind(proto) {
-                                warn_badge(
-                                    ui,
-                                    th,
-                                    t("remote_tool.filter_unknown"),
-                                    t("remote_tool.type_unknown_hint"),
-                                );
-                            }
-                        });
-                    }
-                });
-            hsep(ui, th);
-            // 일괄 조작: 모두 선택(=빈 제외) / 모두 해제(=전체 제외).
-            ui.horizontal(|ui| {
-                if ghost_button(ui, th, t("remote_tool.filter_select_all")).clicked() {
-                    st.filter_draft.clear();
-                }
-                if ghost_button(ui, th, t("remote_tool.filter_deselect_all")).clicked() {
-                    st.filter_draft = protocols.iter().cloned().collect();
-                }
-            });
-            // 초기화(=전체 선택) / 적용.
-            ui.horizontal(|ui| {
-                if ghost_button(ui, th, t("remote_tool.filter_reset")).clicked() {
-                    st.filter_draft.clear();
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if primary_button(ui, th, t("remote_tool.filter_apply")).clicked() {
-                        applied = Some(
-                            st.filter_draft
-                                .iter()
-                                .filter(|p| protocols.iter().any(|x| x == *p))
-                                .cloned()
-                                .collect(),
-                        );
-                    }
-                });
-            });
+            if draw_protocol_filter_body(ui, th, &items, &labels, &mut st.filter_draft) {
+                applied = Some(
+                    st.filter_draft
+                        .iter()
+                        .filter(|p| protocols.iter().any(|x| x == *p))
+                        .cloned()
+                        .collect(),
+                );
+            }
         },
     );
     // 드롭다운이 popup_rect 밖으로 삐져나가도 그 위 클릭이 outside-click 으로
@@ -2825,93 +2575,6 @@ const HINT_INDENT: LogicalPx = LABEL_COL_WIDTH.plus(LogicalPx(12.0));
 // `TextEdit::interactive(false)` 는 편집뿐 아니라 선택 자체도 막아버려 쓸 수 없다 —
 // 대신 매 프레임 지역 변수로 clone 한 버퍼를 넘겨, 사용자가 타이핑해도 다음 프레임에
 // 원래 텍스트로 되돌아가는 방식(편집 결과를 버림)으로 read-only 를 흉내낸다.
-
-/// `selectable_text` 의 줄바꿈 모드.
-#[derive(Clone, Copy)]
-enum TextWrap {
-    /// 줄바꿈 없음, 콘텐츠 폭만큼만 차지(`egui::Label` 기본값과 동형).
-    None,
-    /// 가용 폭에서 여러 줄로 줄바꿈(`Label::wrap()` 과 동형).
-    Wrap,
-    /// 지정 폭에서 한 줄로 말줄임(`Label::truncate()` 과 동형) — `…` 로 elide.
-    ///
-    /// 폭이 `LogicalPx` 가 아닌 이유: 이 값은 곧장 egui `LayoutJob::wrap.max_width` 로
-    /// 들어간다. 타입을 붙이면 만드는 자리 하나에서 벗기던 것을 쓰는 자리 하나에서
-    /// 벗기게 될 뿐이라 총수가 그대로다.
-    Truncate(f32),
-}
-
-/// selectable 텍스트 렌더 — 위 모듈 주석 참고.
-fn selectable_text(
-    ui: &mut egui::Ui,
-    text: &str,
-    color: impl Into<egui::Color32>,
-    size: f32,
-    monospace: bool,
-    italic: bool,
-    wrap: TextWrap,
-) -> egui::Response {
-    let color = color.into();
-    let font_id = if monospace {
-        egui::FontId::monospace(size)
-    } else {
-        egui::FontId::proportional(size)
-    };
-    let mut buffer = text.to_string();
-    let mut layouter = move |ui: &egui::Ui, text: &str, wrap_width: f32| {
-        let mut job = egui::text::LayoutJob::default();
-        job.append(
-            text,
-            0.0,
-            egui::TextFormat {
-                font_id: font_id.clone(),
-                color,
-                italics: italic,
-                ..Default::default()
-            },
-        );
-        match wrap {
-            TextWrap::None => job.wrap.max_width = f32::INFINITY,
-            TextWrap::Wrap => {
-                job.wrap.max_width = wrap_width;
-                job.break_on_newline = true;
-            }
-            TextWrap::Truncate(w) => {
-                job.wrap.max_width = w;
-                job.wrap.max_rows = 1;
-                job.wrap.break_anywhere = true;
-            }
-        }
-        ui.fonts(|f| f.layout_job(job))
-    };
-    // Wrap 은 가용 폭까지 확장해야 실제로 줄바꿈된다. None/Truncate 는 콘텐츠(또는
-    // truncate 결과) 폭만큼만 차지해야 `Label` 과 동일하게 부모 레이아웃(가로 나열,
-    // 우측 정렬용 RTL 트릭 등)에 자연스럽게 맞물린다 — desired_width 를 고정폭으로
-    // 주면 짧은 텍스트도 그 폭을 다 차지해 정렬이 깨진다.
-    let desired_width = if matches!(wrap, TextWrap::Wrap) {
-        f32::INFINITY
-    } else {
-        0.0
-    };
-    ui.add(
-        egui::TextEdit::multiline(&mut buffer)
-            .frame(false)
-            .desired_rows(1)
-            .desired_width(desired_width)
-            .layouter(&mut layouter),
-    )
-}
-
-/// `selectable_text` 축약형 — 줄바꿈 없음·italic 아님(가장 흔한 경우).
-fn selectable_label(
-    ui: &mut egui::Ui,
-    text: &str,
-    color: impl Into<egui::Color32>,
-    size: f32,
-    monospace: bool,
-) -> egui::Response {
-    selectable_text(ui, text, color, size, monospace, false, TextWrap::None)
-}
 
 /// 폼 라벨 — 112px 고정폭 컬럼 + 우측 정렬(디자인 `rtLabel`). Grid 첫 컬럼과
 /// Type 행/passkey 행이 모두 같은 컬럼 폭으로 정렬되도록 폭을 강제한다.

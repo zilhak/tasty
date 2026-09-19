@@ -43,6 +43,7 @@ mod menu_item;
 mod multi_select;
 mod path_field;
 mod plugin_avatar;
+mod remote_tool;
 mod segmented;
 mod select;
 mod spacing;
@@ -81,6 +82,13 @@ pub use multi_select::{
 };
 pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
+pub use remote_tool::{
+    FILTER_DROPDOWN_MAX_HEIGHT, FILTER_DROPDOWN_MIN_WIDTH, LocalSshAction, LocalSshHost,
+    LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap,
+    draw_local_ssh_section, draw_protocol_filter_body, draw_protocol_filter_button, draw_tab_strip,
+    ghost_button, hsep, primary_button, secondary_button, selectable_label, selectable_text,
+    warn_badge,
+};
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};
 pub use spacing::{hspace, margin_all, margin_sym, vspace};
