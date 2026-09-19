@@ -233,7 +233,7 @@ stage_plugins() {
 }
 
 echo "==> Assembling archive..."
-rm -rf "$DIST_DIR/$PKG_DIR"
+rm -rf "${DIST_DIR:?}/${PKG_DIR:?}"
 mkdir -p "$DIST_DIR/$PKG_DIR"
 
 # 패키지 매니저 없는 배포(tar.gz) 는 `$auto`/apt 의존성 해석이 없다 — 링크타임 so 가
@@ -282,7 +282,7 @@ echo "==> Creating $ARCHIVE_NAME..."
 rm -f "$DIST_DIR/$ARCHIVE_NAME"
 tar -czf "$DIST_DIR/$ARCHIVE_NAME" -C "$DIST_DIR" "$PKG_DIR"
 
-rm -rf "$DIST_DIR/$PKG_DIR"
+rm -rf "${DIST_DIR:?}/${PKG_DIR:?}"
 
 DEB_FILE=""
 RPM_FILE=""
