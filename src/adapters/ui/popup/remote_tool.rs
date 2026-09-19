@@ -171,10 +171,16 @@ struct LocalSshCache {
     /// 파일 자체가 있는지. "설정이 없다" 와 "있는데 alias 가 0 건" 은 사용자가 할 일이
     /// 다르다.
     exists: bool,
-    /// 파일은 있는데 **열 수 없는** 경우(권한 등). `exists && hosts.is_empty()` 만
-    /// 보면 "정말 빈 설정" 과 구분되지 않는데, 사용자가 할 일은 정반대다(전자는
-    /// Host 를 적는 것, 후자는 권한을 고치는 것). 부정형으로 둔 것은 `Default` 가
-    /// "권한 문제 없음" 이 되게 하기 위해서다.
+    /// 파일은 있는데 **열 수 없는** 경우. `exists && hosts.is_empty()` 만 보면 "정말
+    /// 빈 설정" 과 구분되지 않는데, 사용자가 할 일은 정반대다(전자는 Host 를 적는 것,
+    /// 후자는 경로·권한을 고치는 것). 부정형으로 둔 것은 `Default` 가 "못 읽음 아님" 이
+    /// 되게 하기 위해서다.
+    ///
+    /// **권한만은 아니다.** 좌변은 `exists && !readable` 이고 `readable` 은
+    /// `File::open(p).is_ok() && p.is_file()` 이다(`tasty-remote-profiles` 의
+    /// `config_availability`) — `~/.ssh/config` 가 **디렉토리**면 open 은 성공하는데
+    /// `is_file` 이 false 라 이 갈래로 온다. 권한 거부는 그중 한 원인일 뿐이라 문구도
+    /// 원인을 단정하지 않고 열지 못했다는 관측만 말한다.
     unreadable: bool,
 }
 
