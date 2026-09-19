@@ -520,6 +520,11 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "20여개 variant — 개수",
     ),
     (
+        "src/adapters/ui/popup/command_palette.rs",
+        Kind::OtherMeaning,
+        "목록이 상한에 걸린 뒤 높이가 안 움직이는지 보는 시험의 항목 수 1000 — 줄 수가 아니다",
+    ),
+    (
         "docs/adr/0091-render-stall-watchdog-observation-only.md",
         Kind::OtherMeaning,
         "wgpu FRAME_TIMEOUT_MS = 1000",
