@@ -305,11 +305,15 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 후보/Recent 단일 목록 · 2px accent 좌측 바 · `icon · name · origin` 행 · plugin mauve · fallback 안내 띠 ·
 빈 상태 블록 · 264px 목록 상한 + 하단 페이드 · [취소]/[열기] footer. 갤러리는 canonical 의 10 Spec 을 그대로
 미러한다(`filehandler` · `-format` · `-recent` · `-fallback` · `-empty` · `-long` · `-headless` · `-footer` ·
-`-rows` · `-default`).
+`-rows` · `-default`). 거기에 2026-09-20 결정이 둘을 더한다 — `-when`(상대시간 어휘 6 단계와 예약된 열)과
+`-path-cut`(헤더 경로 앞자름 세 표본). 뒤쪽은 표본을 **본체와 같은 함수**에 넣어 그 자리에서 자른다.
 
-세 좌표가 **코드를 공유하지는 않는다** — 갤러리 표본은 정적 렌더이고 본체는 상호작용 view 다. 공유하는 것은
-`crates/tasty-ui-widgets/src/tokens.rs` 의 `FH_*` 전사 치수(420 · 14 · 10 · 6 · 5 · 264 · 20 · 32 · 34 · 0.8)
-뿐이고, 그 값들에는 대응 `Theme` 토큰이 없다. **근거는 "그리드 밖" 이 아니다** — 그중 넷(420 · 264 · 20 · 32)은
+세 좌표가 **그리는 코드를 공유하지는 않는다** — 갤러리 표본은 정적 렌더이고 본체는 상호작용 view 다. 공유하는
+것은 둘이다. 하나는 `crates/tasty-ui-widgets/src/tokens.rs` 의 `FH_*` 전사 치수
+(420 · 14 · 10 · 6 · 5 · 264 · 20 · 32 · 34 · 0.8)이고, 그 값들에는 대응 `Theme` 토큰이 없다. 다른 하나는
+`crates/tasty-ui-widgets/src/file_handler.rs` 의 **모델 규칙**(id 앞자름 · 헤더 경로 앞자름 · 문자 예산)이다 —
+순수 함수라 두 표면이 같은 것을 부를 수 있고, 예전에 id 앞자름이 양쪽에 복제돼 있던 자리를 그것이 대신한다.
+치수 하나는 `Theme` 에서 온다: 예약된 "언제" 열 폭 `component.fh-when-width`(56px). **근거는 "그리드 밖" 이 아니다** — 그중 넷(420 · 264 · 20 · 32)은
 4px 배수라 그리드 위에 있다. 근거는 축이다: 그리드 위에 있는 값도 그것이 재는 것(프레임 폭 · 목록 상한 · 페이드
 높이 · 블록 여백)에 대응하는 semantic 이 없고, 값이 우연히 겹치는 토큰을 부르면 없는 관계가 생긴다. 같은 판정을
 [`design-token-mapping.md`](design-token-mapping.md) 의 `## File handler picker` 절과
