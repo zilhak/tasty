@@ -526,10 +526,10 @@ suggest_target() {
 
 # 알려진 종류의 경로 모양. **분류와 미분류가 같은 목록을 봐야** 둘이 갈리지 않는다 —
 # 목록이 둘이면 하나만 움직이고, 움직이지 않은 쪽이 조용해진다.
-KNOWN_KIND_RE='^(tests/[^/]+\.rs|crates/[^/]+/tests/[^/]+\.rs|crates/[^/]+/Cargo\.toml|src/.*\.rs|crates/[^/]+/src/.*\.rs|docs/.*\.md|scripts/.*\.sh|\.githooks/[^/]+)$'
+KNOWN_KIND_RE='^(tests/[^/]+\.rs|crates/[^/]+/tests/[^/]+\.rs|crates/[^/]+/Cargo\.toml|src/.*\.rs|crates/[^/]+/src/.*\.rs|docs/.*\.md|scripts/.*\.sh|\.githooks/[^/]+|site/.*)$'
 
 check_new_file_judges() {
-    local added new_int_test new_crate new_src new_doc new_shell unknown
+    local added new_int_test new_crate new_src new_doc new_shell new_site unknown
     added=$(git diff --cached --name-only --diff-filter=A || true)
     if [ -z "$added" ]; then return; fi
 
@@ -538,9 +538,10 @@ check_new_file_judges() {
     new_src=$(echo "$added" | /usr/bin/grep -E '^(src/|crates/[^/]+/src/).*\.rs$' || true)
     new_doc=$(echo "$added" | /usr/bin/grep -E '^docs/.*\.md$' || true)
     new_shell=$(echo "$added" | /usr/bin/grep -E '^(scripts/.*\.sh|\.githooks/[^/]+)$' || true)
+    new_site=$(echo "$added" | /usr/bin/grep -E '^site/' || true)
     unknown=$(echo "$added" | /usr/bin/grep -vE "$KNOWN_KIND_RE" || true)
 
-    if [ -z "$new_int_test$new_crate$new_src$new_doc$new_shell$unknown" ]; then return; fi
+    if [ -z "$new_int_test$new_crate$new_src$new_doc$new_shell$new_site$unknown" ]; then return; fi
 
     yellow "▸ [W.2] 새 파일이 추가됐다. 그것을 처음 보는 타깃은 이 커밋을 만든 명령에"
     yellow "  안 들어갔을 수 있다 (-p <크레이트> 는 루트 패키지 타깃을 안 돌린다)."
@@ -590,6 +591,20 @@ check_new_file_judges() {
         suggest_target "crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs" \
             "cargo test --locked -p tasty-doc-guards --test no_early_exit_consumer_in_shell_pipes" \
             "셸은 루트의 통합 타깃이 본다 — 그 타깃은 확장자가 아니라 shebang 으로 고르므로 확장자 없는 훅도 대상이다"
+    fi
+    if [ -n "$new_site" ]; then
+        yellow "  새 사이트 파일:"
+        echo "$new_site" | sed 's/^/      /' >&2
+        # ★ 이 갈래는 **cargo 타깃을 안 댄다** — 대 줄 것이 없기 때문이다. `site/` 는
+        #   Rust 가 아니라 Astro 앱이고, `site/src/` 아래를 순회하는 가드는 레포에 하나도
+        #   없다(실측). 그래서 여기 적는 것은 "무엇이 이것을 처음 보는가" 의 사실대로
+        #   npm 쪽 명령이다. 이 갈래가 없던 동안 `site/` 의 새 파일은 "종류를 모르는
+        #   파일" 로 나갔는데, 종류는 알려져 있고 채널도 있다 — 없는 것은 **cargo 채널**뿐이다.
+        yellow "      (cd site && npm run build)"
+        yellow "        ↳ Astro 빌드가 임포트·문법을 여기서 처음 본다. 자동 채널은 pages.yml (main push · site/** 등)"
+        yellow "      (cd site && npm run check-links)"
+        yellow "        ↳ site/content/ 의 링크를 본다 — 컴포넌트·스타일은 그 대상이 아니다"
+        yellow "        ↳ ★ site/src/ 아래를 순회하는 러스트 가드는 없다 — 토큰·raw px 류는 아무도 안 본다"
     fi
     if [ -n "$unknown" ]; then
         yellow "  ▸ 이 훅이 **종류를 모르는** 새 파일:"
