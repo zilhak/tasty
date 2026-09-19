@@ -445,6 +445,24 @@ sticky 가 끝까지 붙으려면 containing block — 여기서는 `body` 상�
 macOS(WKWebView)/Windows(WebView2)는 이 머신에서 실행 불가 — **이 축은 실기 미검증이다.**
 엔진마다 sticky 의 containing block 해석이 같은지는 재지 않았고, 추정으로 채우지 않는다.
 
+**그 단언을 레포 안에서 다시 재는 것은 없다.** 위 값은 손으로 한 번 잰 것이고, 그 뒤로
+자동으로 도는 자리가 없다. 지키는 쪽은 `render.rs` 의 시험 둘이며 **생성된 CSS 바이트만** 본다 —
+`stylesheet_lets_body_grow_while_html_stays_definite` 가 `html{height:100%` 와 `body{min-height:100%`
+가 산출물에 있고 옛 합친 규칙으로 안 돌아갔는지를, `bar_height_is_declared_once_and_read_by_four_rules`
+가 `--md-addr-bar-h` 선언 하나와 읽기 넷을 고정한다. 그래서 **누가 그 줄을 되돌리는 것**은
+잡히지만 **엔진이 같은 바이트를 다르게 계산하는 것**은 안 잡힌다. 실측: `body` 를
+`height:100%` 로 되돌리고 헤드리스 조합 전량을 돌리면 그 둘 중 **앞쪽 하나만** 빨개지고, 레이아웃을
+보는 것은 한 건도 없다.
+
+**재는 법**(자동 채널이 없으니 값 자리에 남긴다): `render_document` 산출 HTML 을 파일로 떨궈
+오프스크린 WebKitGTK 뷰에 `file://` 로 올리고, **뷰포트보다 긴** 문서에서 문서 끝까지 스크롤한 뒤
+`#tasty-addr-bar` 의 `getBoundingClientRect().top` 을 읽는다. 재는 쪽이 갖춰야 할 조건 셋은
+실측으로 갈렸다 — 문서가 뷰포트보다 **길어야** 한다(짧은 문서에서는 두 조합이 똑같이 0 을 낸다),
+`getComputedStyle(bar).position` 은 **판정에 못 쓴다**(두 조합 다 `sticky` 다), 그리고 스크롤이
+실제로 일어났는지를 `scrollTop` 으로 함께 읽어야 한다(스크롤이 막히면 바가 안 움직여 `top` 이
+0 으로 나오는데 그것은 붙어 있다는 뜻이 아니다). 디스플레이가 있어야 한다 — GTK3 에는 헤드리스
+백엔드가 없어 `DISPLAY` 없이는 초기화 자체가 실패하므로 가상 디스플레이 안에서 돌린다.
+
 모든 heading 에 `scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm))` 을 줘, 앵커
 이동한 heading 이 바 아래 가려지지 않게 한다. 바가 상시 붙어 있으므로 그 여백은 상시 제 일을
 한다 — sticky 가 한 뷰포트에서만 붙던 동안에는 바가 없는 구간에서도 여백만 남았다(같은 실측에서
