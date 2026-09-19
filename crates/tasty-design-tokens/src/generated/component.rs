@@ -309,6 +309,38 @@ pub mod explorer {
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_196;
 }
 
+pub mod fp {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.fp-bar-hysteresis` → `{primitive.size-8}` = 8px
+    pub const BAR_HYSTERESIS: LogicalPx = crate::generated::primitive::SIZE_8;
+
+    /// `component.fp-crumb-current-min-width` → `{primitive.size-96}` = 96px
+    pub const CRUMB_CURRENT_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_96;
+
+    /// `component.fp-crumb-max-width` → `{primitive.size-180}` = 180px
+    pub const CRUMB_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
+
+    /// `component.fp-crumb-menu-max-width` → `{primitive.size-320}` = 320px
+    pub const CRUMB_MENU_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_320;
+
+    /// `component.fp-crumb-menu-min-width` → `{primitive.size-180}` = 180px
+    pub const CRUMB_MENU_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_180;
+
+    /// `component.fp-crumb-min-width` → `{primitive.size-64}` = 64px
+    pub const CRUMB_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_64;
+
+    /// `component.fp-popup-min-width` → `{primitive.size-320}` = 320px
+    pub const POPUP_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_320;
+}
+
+pub mod git {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.git-toolbar-height` → `{primitive.size-32}` = 32px
+    pub const TOOLBAR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;
+}
+
 pub mod help_hint {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -548,6 +580,9 @@ pub mod port {
     /// `component.port-favorites-row-height` → `{semantic.control-height-tree}` = 22px
     pub const FAVORITES_ROW_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT_TREE;
 
+    /// `component.port-process-col-min-width` → `{primitive.size-200}` = 200px
+    pub const PROCESS_COL_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;
+
     /// `component.port-star-col-width` → `{primitive.size-28}` = 28px
     pub const STAR_COL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_28;
 }
@@ -679,6 +714,16 @@ pub mod status_dot {
 
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_8;
+
+    /// `component.status-dot-size-compact` → `{primitive.size-6}` = 6px
+    pub const SIZE_COMPACT: LogicalPx = crate::generated::primitive::SIZE_6;
+}
+
+pub mod statusbar {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.statusbar-dot-size` → `{component.status-dot-size-compact}` = 6px
+    pub const DOT_SIZE: LogicalPx = super::status_dot::SIZE_COMPACT;
 }
 
 pub mod surface {
@@ -748,8 +793,8 @@ pub mod tab {
     /// `component.tab-close-size` → `{primitive.size-16}` = 16px
     pub const CLOSE_SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
 
-    /// `component.tab-dot-size` → `{component.status-dot-size}` = 8px
-    pub const DOT_SIZE: LogicalPx = super::status_dot::SIZE;
+    /// `component.tab-dot-size` → `{component.status-dot-size-compact}` = 6px
+    pub const DOT_SIZE: LogicalPx = super::status_dot::SIZE_COMPACT;
 
     /// `component.tab-gap` → `{semantic.space-sm}` = 8px
     pub const GAP: LogicalPx = crate::generated::semantic::SPACE_SM;

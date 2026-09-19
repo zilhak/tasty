@@ -56,6 +56,9 @@ pub(crate) const FONT_SIZE_17: LogicalPx = LogicalPx(17.0);
 /// `primitive.font-size-20` = 20px
 pub(crate) const FONT_SIZE_20: LogicalPx = LogicalPx(20.0);
 
+/// `primitive.font-size-30` = 30px
+pub(crate) const FONT_SIZE_30: LogicalPx = LogicalPx(30.0);
+
 /// `primitive.font-weight-400` = 400
 pub(crate) const FONT_WEIGHT_400: u16 = 400;
 
@@ -91,6 +94,12 @@ pub(crate) const OPACITY_DISABLED: f32 = 0.5;
 
 /// `primitive.opacity-recessed` = 0.4
 pub(crate) const OPACITY_RECESSED: f32 = 0.4;
+
+/// `primitive.opacity-tint-border` = 0.36
+pub(crate) const OPACITY_TINT_BORDER: f32 = 0.36;
+
+/// `primitive.opacity-tint-fill` = 0.12
+pub(crate) const OPACITY_TINT_FILL: f32 = 0.12;
 
 /// `primitive.radius-2` = 2px
 pub(crate) const RADIUS_2: LogicalPx = LogicalPx(2.0);
@@ -212,8 +221,14 @@ pub(crate) const SIZE_56: LogicalPx = LogicalPx(56.0);
 /// `primitive.size-560` = 560px
 pub(crate) const SIZE_560: LogicalPx = LogicalPx(560.0);
 
+/// `primitive.size-6` = 6px
+pub(crate) const SIZE_6: LogicalPx = LogicalPx(6.0);
+
 /// `primitive.size-600` = 600px
 pub(crate) const SIZE_600: LogicalPx = LogicalPx(600.0);
+
+/// `primitive.size-64` = 64px
+pub(crate) const SIZE_64: LogicalPx = LogicalPx(64.0);
 
 /// `primitive.size-8` = 8px
 pub(crate) const SIZE_8: LogicalPx = LogicalPx(8.0);
@@ -223,3 +238,6 @@ pub(crate) const SIZE_88: LogicalPx = LogicalPx(88.0);
 
 /// `primitive.size-90` = 90px
 pub(crate) const SIZE_90: LogicalPx = LogicalPx(90.0);
+
+/// `primitive.size-96` = 96px
+pub(crate) const SIZE_96: LogicalPx = LogicalPx(96.0);

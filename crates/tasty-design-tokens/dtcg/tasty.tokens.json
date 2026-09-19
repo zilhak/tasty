@@ -592,6 +592,30 @@
     "opacity-dimmed": {
       "$type": "number",
       "$value": "0.75"
+    },
+    "size-6": {
+      "$type": "dimension",
+      "$value": "6px"
+    },
+    "size-64": {
+      "$type": "dimension",
+      "$value": "64px"
+    },
+    "size-96": {
+      "$type": "dimension",
+      "$value": "96px"
+    },
+    "font-size-30": {
+      "$type": "dimension",
+      "$value": "30px"
+    },
+    "opacity-tint-fill": {
+      "$type": "number",
+      "$value": "0.12"
+    },
+    "opacity-tint-border": {
+      "$type": "number",
+      "$value": "0.36"
     }
   },
   "semantic": {
@@ -1168,6 +1192,30 @@
     "brand-melon-seed": {
       "$type": "color",
       "$value": "{primitive.color-melon-seed}"
+    },
+    "glyph-dim": {
+      "$type": "color",
+      "$value": "{primitive.color-neutral-600}"
+    },
+    "border-frame": {
+      "$type": "color",
+      "$value": "{primitive.color-neutral-500}"
+    },
+    "accent-decorative": {
+      "$type": "color",
+      "$value": "{primitive.color-peach}"
+    },
+    "tint-fill-alpha": {
+      "$type": "number",
+      "$value": "{primitive.opacity-tint-fill}"
+    },
+    "tint-border-alpha": {
+      "$type": "number",
+      "$value": "{primitive.opacity-tint-border}"
+    },
+    "font-size-brand-display": {
+      "$type": "dimension",
+      "$value": "{primitive.font-size-30}"
     }
   },
   "component": {
@@ -1794,7 +1842,7 @@
     },
     "tab-dot-size": {
       "$type": "dimension",
-      "$value": "{component.status-dot-size}"
+      "$value": "{component.status-dot-size-compact}"
     },
     "tab-icon-size": {
       "$type": "dimension",
@@ -3327,6 +3375,62 @@
     "dag-popup-height": {
       "$type": "dimension",
       "$value": "{primitive.size-460}"
+    },
+    "status-dot-size-compact": {
+      "$type": "dimension",
+      "$value": "{primitive.size-6}"
+    },
+    "statusbar-dot-size": {
+      "$type": "dimension",
+      "$value": "{component.status-dot-size-compact}"
+    },
+    "statusbar-glyph": {
+      "$type": "color",
+      "$value": "{semantic.glyph-dim}"
+    },
+    "statusbar-theme-glyph": {
+      "$type": "color",
+      "$value": "{semantic.glyph-dim}"
+    },
+    "git-toolbar-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-32}"
+    },
+    "port-process-col-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-200}"
+    },
+    "fp-crumb-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-180}"
+    },
+    "fp-crumb-menu-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-180}"
+    },
+    "fp-crumb-menu-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "fp-crumb-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-64}"
+    },
+    "fp-crumb-current-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-96}"
+    },
+    "fp-bar-hysteresis": {
+      "$type": "dimension",
+      "$value": "{primitive.size-8}"
+    },
+    "fp-popup-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "plugins-header-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-decorative}"
     }
   }
 }

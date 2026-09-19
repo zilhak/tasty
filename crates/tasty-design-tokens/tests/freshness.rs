@@ -34,31 +34,36 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 791 (115/137/539). 이전 751(115/137/499) 에서 component 40종이
-/// 늘었다: MultiSelect 블록 `multiselect-*` 30종과 plugin 아바타 블록
-/// `plugin-avatar-*` 10종이 export 재생성으로 들어왔다. 앞의 30종은 디자인 CSS 에만
-/// 있고 export 에 빠져 있던 것이고(그래서 CSS 539 ↔ JSON 499 로 갈려 있었다), 뒤의
-/// 10종은 그 뒤에 새로 생긴 블록이다. 제거·개명은 없다(이전 키 집합은 새 export 의
-/// 진부분집합). vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
+/// 토큰 census — 817 (121/143/553). 이전 791(115/137/539) 에서 26종이 늘었다:
+/// 2026-09-17 결정(색 role 공백 · 스케일 밖 폰트 · tint 계수 짝 · 이름 없는 치수)이
+/// primitive 6종(`size-6`/`size-64`/`size-96`/`font-size-30`/`opacity-tint-fill`/
+/// `opacity-tint-border`) · semantic 6종(`border-frame`/`glyph-dim`/
+/// `accent-decorative`/`tint-fill-alpha`/`tint-border-alpha`/`font-size-brand-display`) ·
+/// component 14종(`status-dot-size-compact`/`statusbar-*` 3종/`git-toolbar-height`/
+/// `port-process-col-min-width`/`plugins-header-glyph`/`fp-*` 7종)을 열었다.
+/// `fp-crumb-max-width`·`fp-crumb-menu-{min,max}-width` 3종은 새 role 이 아니라
+/// CSS 에만 있던 기존 토큰의 export parity 보정이다. 제거·개명은 없고
+/// `tab-dot-size` 의 alias 대상만 `status-dot-size` → `status-dot-size-compact`
+/// 로 바뀌었다. vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
     assert_eq!(
         set.tier_count(dtcg::Tier::Primitive),
-        115,
+        121,
         "primitive census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Semantic),
-        137,
+        143,
         "semantic census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Component),
-        539,
+        553,
         "component census drift"
     );
-    assert_eq!(set.len(), 791, "total census drift");
+    assert_eq!(set.len(), 817, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.

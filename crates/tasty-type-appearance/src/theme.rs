@@ -260,6 +260,17 @@ pub const DAG_MIX_45_ALPHA: u8 = 115;
 /// ([`DAG_MIX_45_ALPHA`] 와 같은 형태).
 pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 
+/// design `--tasty-tint-fill-alpha` → `--tasty-opacity-tint-fill`. "accent 로 옅게
+/// 채우고 같은 accent 로 테두리를 두르는" 관용구의 **채움** 계수. 2026-09-17 결정이
+/// 흩어져 있던 네 짝(0.14/0.45 · 0.12/0.35 · 0.11/0.36 · 0.12/—)을 이 한 짝으로
+/// 모았다. 알파가 아니라 계수라 `u8` 이 아닌 `f32` 다 — 소비처가
+/// `gamma_multiply()` / `mix_srgb()` 의 비율 자리에 그대로 넣는다.
+pub const TINT_FILL_ALPHA: f32 = 0.12;
+
+/// design `--tasty-tint-border-alpha` → `--tasty-opacity-tint-border`. 위 짝의
+/// **테두리** 계수([`TINT_FILL_ALPHA`]).
+pub const TINT_BORDER_ALPHA: f32 = 0.36;
+
 /// `color-mix(in srgb, <a> <ratio>, <b>)` 의 srgb 채널 보간.
 ///
 /// CSS 의 `color-mix` 는 두 색이 모두 불투명할 때 채널을 선형 보간한다. 디자인 토큰이
@@ -285,6 +296,10 @@ pub struct ThemeSizing {
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
+    /// 브랜딩 전용 디스플레이 크기 (30px, design `--tasty-font-size-brand-display`).
+    /// UI 14px 상한의 **두 번째이자 마지막 예외** — 첫 실행 셸 설정 카드의 "Tasty"
+    /// 브랜드 타이틀 하나만 쓴다(wordmark 17 이 첫 예외).
+    pub font_size_brand_display: LogicalPx,
     /// markdown surface heading 앵커 — egui_commonmark 이 `Heading`↔`Body` 사이를 보간하는
     /// 헤딩 사다리의 최상단(H1). 렌더 CONTENT 라 UI 14px 상한 예외 (20px). per-H2 픽셀 토큰
     /// (`prose-h2`)·본문 leading 배수(`line-height-prose`)는 라이브러리가 소유해 은퇴됨.
@@ -428,6 +443,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     font_size_body: LogicalPx(13.0),
     font_size_heading: LogicalPx(13.0), // semibold 로 구분, 크기는 같음
     font_size_max: LogicalPx(14.0),
+    font_size_brand_display: LogicalPx(30.0),
     font_size_prose_h1: LogicalPx(20.0),
     line_height_ui: 1.4,
     font_size_term_sm: LogicalPx(12.0),
@@ -914,6 +930,10 @@ pub struct Theme {
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
+    /// 브랜딩 전용 디스플레이 크기 (30px, design `--tasty-font-size-brand-display`).
+    /// UI 14px 상한의 **두 번째이자 마지막 예외** — 첫 실행 셸 설정 카드의 "Tasty"
+    /// 브랜드 타이틀 하나만 쓴다(wordmark 17 이 첫 예외).
+    pub font_size_brand_display: LogicalPx,
     /// markdown surface heading 앵커 — egui_commonmark 헤딩 사다리 최상단(H1). 렌더 CONTENT 라
     /// UI 14px 상한 예외 (20px). per-H2·본문 leading 은 라이브러리 소유로 은퇴됨.
     /// **zoom 제외 — 렌더 콘텐츠라 UI 배율 축 밖이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
@@ -1152,6 +1172,7 @@ impl Theme {
             font_size_body: zoomed(SIZING.font_size_body),
             font_size_heading: zoomed(SIZING.font_size_heading),
             font_size_max: zoomed(SIZING.font_size_max),
+            font_size_brand_display: zoomed(SIZING.font_size_brand_display),
             // prose / term 스케일 = surface CONTENT 폰트 (markdown/terminal). UI zoom
             // 영향 받지 않는다 — 터미널/마크다운 셀 폰트는 자체 설정 경로를 따른다.
             font_size_prose_h1: SIZING.font_size_prose_h1,
@@ -1417,6 +1438,20 @@ impl Theme {
     #[inline]
     pub fn overlay_active(&self) -> HexColor {
         self.active_overlay
+    }
+
+    /// tinted 채움/테두리 관용구의 채움 계수. design `--tasty-tint-fill-alpha`
+    /// ([`TINT_FILL_ALPHA`]). zoom 과 무관한 비율이라 배율을 타지 않는다.
+    #[inline]
+    pub fn tint_fill_alpha(&self) -> f32 {
+        TINT_FILL_ALPHA
+    }
+
+    /// 같은 관용구의 테두리 계수. design `--tasty-tint-border-alpha`
+    /// ([`TINT_BORDER_ALPHA`]).
+    #[inline]
+    pub fn tint_border_alpha(&self) -> f32 {
+        TINT_BORDER_ALPHA
     }
 
     /// 모달/팝업 뒤 무대를 덮는 scrim 색. design `--tasty-scrim-bg`(black 50%) — 테마

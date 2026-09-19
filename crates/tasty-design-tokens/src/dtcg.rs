@@ -561,6 +561,10 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.font-size-body", "font_size_body"),
     ("semantic.font-size-heading", "font_size_heading"),
     ("semantic.font-size-max", "font_size_max"),
+    (
+        "semantic.font-size-brand-display",
+        "font_size_brand_display",
+    ),
     ("semantic.font-size-prose-h1", "font_size_prose_h1"),
     // `semantic.font-size-prose-h2` 는 은퇴·제거됨 — egui_commonmark 이 헤딩을 보간해
     // per-H2 픽셀을 받지 못한다(vendor json 에서도 제거됨).
@@ -648,6 +652,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-attached", "border_attached()"),
     ("semantic.accent-attention", "accent_attention()"),
     ("semantic.accent-danger", "accent_danger()"),
+    ("semantic.accent-decorative", "accent_decorative()"),
     ("semantic.accent-info", "accent_info()"),
     ("semantic.accent-macos-close", "accent_macos_close()"),
     ("semantic.accent-macos-min", "accent_macos_min()"),
@@ -664,7 +669,9 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.bg-sidebar", "bg_sidebar()"),
     ("semantic.border-default", "border_default()"),
     ("semantic.border-focus", "border_focus()"),
+    ("semantic.border-frame", "border_frame()"),
     ("semantic.border-strong", "border_strong()"),
+    ("semantic.glyph-dim", "glyph_dim()"),
     ("semantic.overlay-active", "overlay_active()"),
     ("semantic.overlay-hover", "overlay_hover()"),
     ("semantic.separator", "separator"),
@@ -739,16 +746,28 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-danger", "accent_danger", "red"),
     ("semantic.accent-agent", "accent_agent", "mauve"),
     ("semantic.accent-attached", "border_attached", "lavender"),
+    // accent-decorative: 장식 accent role (Plugins 창 헤더 glyph). accent-attention
+    // (peach) 과 primitive 는 같지만 "주의 환기" 가 아니라 "장식" 이라 role 을 가른다.
+    ("semantic.accent-decorative", "accent_decorative", "peach"),
     // 상태 표시 (status-*)
     // status-idle: idle/inactive 인디케이터 톤. 값상 text-placeholder 와 같은
     // neutral-600 이지만 필드는 `overlay0` 로 종착한다 — `placeholder` 는 텍스트
     // 입력 전용 필드라 사용자가 독립적으로 덮어쓸 수 있고, 인디케이터 도트가 그
     // 오버라이드를 따라가는 것은 의도가 아니다.
     ("semantic.status-idle", "status_idle", "overlay0"),
+    // glyph-dim: 물러나야 하는 chrome glyph 톤. 값상 text-placeholder 와 같은
+    // neutral-600 이지만 status-idle 과 같은 이유로 `overlay0` 로 종착한다 —
+    // `placeholder` 는 텍스트 입력 전용 필드라 사용자 오버라이드를 chrome glyph 가
+    // 따라가는 것은 의도가 아니다. disabled 용이 아니다(그쪽은 text-disabled).
+    ("semantic.glyph-dim", "glyph_dim", "overlay0"),
     // 보더 (border-*)
     ("semantic.border-default", "border_default", "surface0"),
     ("semantic.border-strong", "border_strong", "surface1"),
     ("semantic.border-focus", "border_focus", "blue"),
+    // border-frame: surface2 값의 border role (pane divider · GPU 비활성 surface
+    // 보더 · popup 프레임 보더). surface-active 와 primitive 는 같지만 "선택된 표면"
+    // 이 아니라 "틀의 선" 이라 role 을 가른다.
+    ("semantic.border-frame", "border_frame", "surface2"),
 ];
 
 /// semantic 색 토큰 중 **생성하지 않고 theme.rs 에 수기로 남기는** 접근자 + 사유.

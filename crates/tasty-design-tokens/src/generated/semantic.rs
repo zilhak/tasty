@@ -49,6 +49,9 @@ pub const FOCUS_RING_WIDTH: LogicalPx = super::primitive::SIZE_2;
 /// `semantic.font-size-body` → `{primitive.font-size-13}` = 13px
 pub const FONT_SIZE_BODY: LogicalPx = super::primitive::FONT_SIZE_13;
 
+/// `semantic.font-size-brand-display` → `{primitive.font-size-30}` = 30px
+pub const FONT_SIZE_BRAND_DISPLAY: LogicalPx = super::primitive::FONT_SIZE_30;
+
 /// `semantic.font-size-brand-wordmark` → `{primitive.font-size-17}` = 17px
 pub const FONT_SIZE_BRAND_WORDMARK: LogicalPx = super::primitive::FONT_SIZE_17;
 
@@ -174,6 +177,12 @@ pub const STATUS_BAR_HEIGHT: LogicalPx = super::primitive::SIZE_24;
 
 /// `semantic.tab-width` → `{primitive.size-150}` = 150px
 pub const TAB_WIDTH: LogicalPx = super::primitive::SIZE_150;
+
+/// `semantic.tint-border-alpha` → `{primitive.opacity-tint-border}` = 0.36
+pub const TINT_BORDER_ALPHA: f32 = super::primitive::OPACITY_TINT_BORDER;
+
+/// `semantic.tint-fill-alpha` → `{primitive.opacity-tint-fill}` = 0.12
+pub const TINT_FILL_ALPHA: f32 = super::primitive::OPACITY_TINT_FILL;
 
 /// `semantic.titlebar-height` → `{primitive.size-36}` = 36px
 pub const TITLEBAR_HEIGHT: LogicalPx = super::primitive::SIZE_36;

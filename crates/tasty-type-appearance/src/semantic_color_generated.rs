@@ -141,9 +141,21 @@ impl crate::theme::Theme {
         self.lavender
     }
 
+    /// `semantic.accent-decorative` → `{primitive.color-peach}`
+    #[inline]
+    pub fn accent_decorative(&self) -> HexColor {
+        self.peach
+    }
+
     /// `semantic.status-idle` → `{primitive.color-neutral-600}`
     #[inline]
     pub fn status_idle(&self) -> HexColor {
+        self.overlay0
+    }
+
+    /// `semantic.glyph-dim` → `{primitive.color-neutral-600}`
+    #[inline]
+    pub fn glyph_dim(&self) -> HexColor {
         self.overlay0
     }
 
@@ -163,5 +175,11 @@ impl crate::theme::Theme {
     #[inline]
     pub fn border_focus(&self) -> HexColor {
         self.blue
+    }
+
+    /// `semantic.border-frame` → `{primitive.color-neutral-500}`
+    #[inline]
+    pub fn border_frame(&self) -> HexColor {
+        self.surface2
     }
 }

@@ -1069,6 +1069,54 @@ impl crate::theme::Theme {
         self.separator
     }
 
+    /// `component.fp-bar-hysteresis` → `{primitive.size-8}` = 8px
+    #[inline]
+    pub fn fp_bar_hysteresis(&self) -> LogicalPx {
+        LogicalPx((8.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-crumb-current-min-width` → `{primitive.size-96}` = 96px
+    #[inline]
+    pub fn fp_crumb_current_min_width(&self) -> LogicalPx {
+        LogicalPx((96.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-crumb-max-width` → `{primitive.size-180}` = 180px
+    #[inline]
+    pub fn fp_crumb_max_width(&self) -> LogicalPx {
+        LogicalPx((180.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-crumb-menu-max-width` → `{primitive.size-320}` = 320px
+    #[inline]
+    pub fn fp_crumb_menu_max_width(&self) -> LogicalPx {
+        LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-crumb-menu-min-width` → `{primitive.size-180}` = 180px
+    #[inline]
+    pub fn fp_crumb_menu_min_width(&self) -> LogicalPx {
+        LogicalPx((180.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-crumb-min-width` → `{primitive.size-64}` = 64px
+    #[inline]
+    pub fn fp_crumb_min_width(&self) -> LogicalPx {
+        LogicalPx((64.0 * self.ui_zoom).round())
+    }
+
+    /// `component.fp-popup-min-width` → `{primitive.size-320}` = 320px
+    #[inline]
+    pub fn fp_popup_min_width(&self) -> LogicalPx {
+        LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
+    /// `component.git-toolbar-height` → `{primitive.size-32}` = 32px
+    #[inline]
+    pub fn git_toolbar_height(&self) -> LogicalPx {
+        LogicalPx((32.0 * self.ui_zoom).round())
+    }
+
     /// `component.help-hint-color` → `{semantic.text-muted}`
     #[inline]
     pub fn help_hint_color(&self) -> HexColor {
@@ -1759,6 +1807,12 @@ impl crate::theme::Theme {
         LogicalPx((32.0 * self.ui_zoom).round())
     }
 
+    /// `component.plugins-header-glyph` → `{semantic.accent-decorative}`
+    #[inline]
+    pub fn plugins_header_glyph(&self) -> HexColor {
+        self.accent_decorative()
+    }
+
     /// `component.plugins-list-width` → `{primitive.size-288}` = 288px
     #[inline]
     pub fn plugins_list_width(&self) -> LogicalPx {
@@ -1787,6 +1841,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn port_favorites_row_height(&self) -> LogicalPx {
         self.item_height_tree
+    }
+
+    /// `component.port-process-col-min-width` → `{primitive.size-200}` = 200px
+    #[inline]
+    pub fn port_process_col_min_width(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
     }
 
     /// `component.port-star-col-width` → `{primitive.size-28}` = 28px
@@ -2101,6 +2161,12 @@ impl crate::theme::Theme {
         self.status_dot_size
     }
 
+    /// `component.status-dot-size-compact` → `{primitive.size-6}` = 6px
+    #[inline]
+    pub fn status_dot_size_compact(&self) -> LogicalPx {
+        LogicalPx((6.0 * self.ui_zoom).round())
+    }
+
     /// `component.status-dot-success` → `{semantic.accent-success}`
     #[inline]
     pub fn status_dot_success(&self) -> HexColor {
@@ -2111,6 +2177,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn status_dot_warning(&self) -> HexColor {
         self.accent_warning()
+    }
+
+    /// `component.statusbar-dot-size` → `{component.status-dot-size-compact}` = 6px
+    #[inline]
+    pub fn statusbar_dot_size(&self) -> LogicalPx {
+        self.status_dot_size_compact()
+    }
+
+    /// `component.statusbar-glyph` → `{semantic.glyph-dim}`
+    #[inline]
+    pub fn statusbar_glyph(&self) -> HexColor {
+        self.glyph_dim()
+    }
+
+    /// `component.statusbar-theme-glyph` → `{semantic.glyph-dim}`
+    #[inline]
+    pub fn statusbar_theme_glyph(&self) -> HexColor {
+        self.glyph_dim()
     }
 
     /// `component.surface-highlight-done-width` → `{semantic.focus-ring-width}` = 2px
@@ -2287,10 +2371,10 @@ impl crate::theme::Theme {
         LogicalPx((16.0 * self.ui_zoom).round())
     }
 
-    /// `component.tab-dot-size` → `{component.status-dot-size}` = 8px
+    /// `component.tab-dot-size` → `{component.status-dot-size-compact}` = 6px
     #[inline]
     pub fn tab_dot_size(&self) -> LogicalPx {
-        self.status_dot_size
+        self.status_dot_size_compact()
     }
 
     /// `component.tab-fg` → `{semantic.text-muted}`

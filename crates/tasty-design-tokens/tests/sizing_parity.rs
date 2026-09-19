@@ -35,6 +35,7 @@ fn sizing_value(field: &str) -> f32 {
         "font_size_body" => SIZING.font_size_body.0,
         "font_size_heading" => SIZING.font_size_heading.0,
         "font_size_max" => SIZING.font_size_max.0,
+        "font_size_brand_display" => SIZING.font_size_brand_display.0,
         "font_size_prose_h1" => SIZING.font_size_prose_h1.0,
         "font_size_term_sm" => SIZING.font_size_term_sm.0,
         "font_size_term" => SIZING.font_size_term.0,
@@ -102,5 +103,32 @@ fn sizing_matches_dim_tokens() {
             actual, expected,
             "SIZING.{field} ({actual}) != {path} ({expected})"
         );
+    }
+}
+
+/// tint 채움/테두리 계수 ↔ vendor json 정합 가드.
+///
+/// `TINT_FILL_ALPHA`/`TINT_BORDER_ALPHA` 는 치수가 아니라 비율이라 `SIZING` 에도
+/// `generated_component` 접근자에도 실리지 않는다 — `tasty-type-appearance` 는
+/// `tasty-design-tokens` 를 의존할 수 없어(type-layer 규율) 값이 손으로 적힌다.
+/// 그래서 여기서만 두 사본이 붙어 있는지 확인한다.
+#[test]
+fn tint_alphas_match_tokens() {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+    for (path, actual) in [
+        (
+            "semantic.tint-fill-alpha",
+            tasty_type_appearance::theme::TINT_FILL_ALPHA,
+        ),
+        (
+            "semantic.tint-border-alpha",
+            tasty_type_appearance::theme::TINT_BORDER_ALPHA,
+        ),
+    ] {
+        let terminal = set
+            .resolve(path, ThemeMode::Mocha)
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+        let expected = terminal_number(&terminal);
+        assert_eq!(actual, expected, "{path} drift (소스 {actual})");
     }
 }
