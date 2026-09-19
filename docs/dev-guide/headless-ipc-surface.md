@@ -425,4 +425,4 @@ combination` 이 온다(실측 2026-09-07, `--no-default-features` 빌드).
 
 ## PTY 실행 종료
 
-PTY drain은 output-match 훅과 함께 명시적인 process exit를 소비한다. GUI와 공유하는 host 처리에서 실행 구독 종료, process-exit 훅, no-snapshot surface close 및 soft 점유 정리를 수행한다. SessionEnd hook이 유실돼도 실제 PTY 종료가 수명 종료 근거가 된다. 저장 실패의 pending/retry 및 수락 상태 보존은 [완료 전달 계약](child-completion-app-server.md#surface-종료-저장과-복구)을 따른다. surface가 다른 window의 로컬 목록에 없다는 이유로 종료를 합성하지 않는다.
+PTY drain은 output-match 훅과 함께 명시적인 process exit를 소비한다. GUI와 공유하는 host 처리에서 실행 구독 종료, process-exit 훅, no-snapshot surface close 및 soft 점유 정리를 수행한다. SessionEnd hook이 유실돼도 실제 PTY 종료가 수명 종료 근거가 된다. surface가 다른 window의 로컬 목록에 없다는 이유로 종료를 합성하지 않는다.

@@ -219,20 +219,8 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 - Given 실행 중인 child C When `terminal.state{surface=C}` Then `{"state":"active","surface_id":C}`.
 - Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `{"state":"exited","surface_id":C}` (`"active"`가 아님).
 
-## Codex 부모의 결과 구독
+## spawn 준비와 실제 PTY 종료
 
-부모 Codex의 spawn 결과 구독은 관계 세대를 따른다. release 후 새 상태 전달과 확정 미수락
-이벤트 재시도를 멈추지만 surface는 유지한다. 이미 accepted/unknown인 결과를 회수했다고
-표시하지 않는다. 명시 tell 구독은 별개이며 release만으로 닫히지 않는다. adopt 또는 같은
-surface의 새 실행은 새 세대다. 부모 Claude의 기존 Monitor 수명은 바꾸지 않는다.
-[완료 전달 계약](../../dev-guide/child-completion-app-server.md)을 참고한다.
+spawn은 registry 등록·soft 점유 준비 후 command를 전송한다. 준비나 동기 전송 단계에서 오류가 나면 이번 호출이 만든 surface만 표준 agent close 경로로 정리하고 자신의 registry/점유도 회수한다. adopt의 실패는 기존 surface나 같은 부모가 이미 갖고 있던 soft 점유를 변경하지 않는다.
 
-완료 구독의 release는 현재 host에서 생성한 spawn/adopt 관계 세대에 적용된다. 부모 SessionStart가 아직 도착하지 않아도 해제된 세대는 뒤늦은 등록으로 살아나지 않는다. 재시작 후 같은 숫자 surface가 재사용된 새 관계는 이전 논리 부모의 영속 구독과 별개다.
-
-복원된 동일 논리 관계에 완료 watch를 추가한 경우에는 기존·신규 spawn 구독을 한 번의 release로 종료한다. 부모 또는 child identity가 첫 watch 뒤에 확인돼도 release 자체가 재대조하므로 두 번째 watch가 필요하지 않다. 새 spawn/adopt와 구별하며 tell 구독과 accepted/unknown 결과는 기존 수명 규칙을 유지한다.
-
-spawn은 관계 저장·registry·soft 점유 준비 후 command를 전송한다. 준비나 동기 전송 단계에서 오류가 나면 이번 호출이 만든 surface만 표준 agent close 경로로 정리하고 자신의 registry/점유도 회수한다. adopt의 저장 실패는 기존 surface나 같은 부모가 이미 갖고 있던 soft 점유를 변경하지 않는다.
-
-닫힌 child는 stale registry에 남아 있어도 신규 spawn/tell 구독 대상으로 받지 않는다. surface close의 completion 저장이 실패하면 사용자 close는 유지하면서 원 구독의 종료 작업을 영속 큐로 복구한다. 조회의 close_persistence_pending과 pending_closes는 저장 대기를 뜻하며, 다른 window에 속한 child의 부재와 혼동하지 않는다.
-
-headless의 실제 PTY 종료도 GUI와 같은 host process-exit 경로를 사용한다. SessionEnd 없이 종료해도 실행 구독과 soft 점유를 정리하며, 저장 실패는 영속 종료 큐로 복구한다.
+headless의 실제 PTY 종료도 GUI와 같은 host process-exit 경로를 사용한다. SessionEnd 없이 종료해도 process-exit 훅을 발화하고 soft 점유를 정리한다. headless도 HookFired의 task waiter를 처리하며 view 전용 ProcessExited broadcast는 GUI에 남는다. 종료 원인만으로 작업 성공을 추론하지 않는다.

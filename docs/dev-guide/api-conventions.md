@@ -297,9 +297,8 @@ deprecation 기간은 "한 minor 이상"이 원칙(보안·심각 버그는 즉�
 - [reference/api](../reference/api.md) — 전체 IPC/CLI 메서드 카탈로그
 - [plugin-development](plugin-development.md) · [plugin-ecosystem](plugin-ecosystem.md) · [release](release.md)
 
-### child 상태 전달의 부모별 채널
+### child 상태 전달의 채널
 
-notify 형제 hook의 surface 생존 판정·재무장은 부모 Claude의 로그 경로에 한정된다.
-Codex 부모는 host가 영속 구독과 App Server 결과를 관리하며 spawn 관계 해제와 tell 명시
-구독 수명을 구분한다. `auto_wait`의 작업 성공 판정과는 별개다.
-[완료 전달 계약](child-completion-app-server.md)을 따른다.
+완료 알림 채널은 `<parent_home>/notify/<caller_surface>.log` 하나이며, notify 형제 hook의
+surface 생존 판정·재무장이 그 경로를 채운다. `auto_wait`의 작업 성공 판정과는 별개다.
+[완료 알림 로그](external-interaction/child-completion-notify-log.md)를 따른다.

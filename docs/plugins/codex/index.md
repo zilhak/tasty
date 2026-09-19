@@ -12,12 +12,10 @@
 
 ## 부모의 완료 수신 채널
 
-부모 Codex는 검증된 App Server thread에 도구 결과를 받고, 부모 Claude는 기존 로그/Monitor를 사용한다.
-child CLI 종류로 채널을 선택하지 않는다. 설치·관측 상태와 부모 연결 상태는 별개다.
-Codex 부모의 spawn 구독은 release로 종료되고 tell은 명시 구독으로 남는다.
-idle/needs_input/interrupt/exit는 작업 성공이나 서버 전달 완료와 같은 뜻이 아니다.
-[App Server 바인딩·상태·복구](../../dev-guide/child-completion-app-server.md)를 따른다.
-이 문서의 형제 once-hook 정리·재무장은 부모 Claude의 기존 로그 경로에 적용된다.
+완료는 부모 종류와 무관하게 caller surface 의 `<parent_home>/notify/<caller_surface>.log`
+한 줄로 나간다. child CLI 종류로 채널을 선택하지 않는다. 훅 설치·관측 상태와 부모의 수신
+준비는 별개다. idle/needs_input/interrupt/exit는 작업 성공과 같은 뜻이 아니다.
+[완료 알림 로그](../../dev-guide/external-interaction/child-completion-notify-log.md)를 따른다.
 
 
 ## 목적
@@ -49,7 +47,7 @@ idle/needs_input/interrupt/exit는 작업 성공이나 서버 전달 완료와 �
   - `PermissionRequest` payload 에는 `tool_use_id` 가 없다(`PreToolUse`/`PostToolUse` 에는 있다). 그래서 대기와 해제를 tool 단위로 짝지을 수 없고, 한 surface 안에서 승인이 연달아 나면 해제는 tool 단위가 아니라 surface 단위로 뭉뚱그려진다. surface 사이에는 섞이지 않는다(`TASTY_SURFACE_ID` 가 대상을 고정한다).
   - 훅 stdout 은 어느 이벤트에서도 승인 결정을 바꾸지 않는다 — 래퍼가 `{}`(결정 없음)만 보내고, tasty 밖(`$TASTY_SURFACE_ID` 미설정)에서는 아무것도 출력하지 않는데 그 경우에도 승인 프롬프트가 정상 동작한다(실측).
   - 일반 질문 입력(`request_user_input` 등)은 이 훅의 coverage 가 아니다 — 지금 지원하는 것은 **도구 실행 승인**뿐이다.
-- **`spawn`/`tell` 은 동기 대기하지 않는다** — 호출 즉시 반환하고, 대상이 idle 이 될 때마다, 그리고 최종적으로 exited 가 되면 caller의 부모별 수신 채널로 알림을 보낸다. **부모 Claude의 로그 경로는** `codex-idle`(`stop`/`interrupt` hook 이 `surface.fire_hook` 으로 쏨) · `needs-input`(`permission-request` hook) · `process-exit`(host 내장) 세 이벤트에 once(1회성) hook 을 등록하고, 먼저 fire 되는 쪽이 `notify-caller` 를 실행해 알림을 보낸 뒤 형제 hook 을 정리한다(등록 순서 무관 — fire 시점에 `hook.list`(대상 surface 필터) 로 자기와 **동일 command** 를 가진 형제를 찾아 `hook.unset`. 상태를 공유하지 않아 같은 surface 에 spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다). 정리 후 `notify-caller` 는 `surface.locate` 로 target 이 아직 살아있는지(=이번 fire 가 process-exit 가 아니었는지) 확인해, 살아있으면 세 hook 을 다시 등록한다(자기재무장) — codex-idle 이 여러 번 반복돼도(예: 대기 후 재개) exit 할 때까지 계속 알림이 온다. `needs_input` 도 같은 경로로 알린다 — `needs-input`(`permission-request` hook 이 쏨)이 세 번째 형제로 함께 등록된다. **완료 알림에 샌드박스 초기화 실패 힌트가 자동으로 덧붙는다** — `notify-caller`가 알림을 조립하기 직전 대상 surface 의 최근 화면 출력(`surface.screen_text`, 최근 800줄)을 조회해 `RTM_NEWADDR`(아래 샌드박스 정책 플래그 항목의 실패 시그니처) 이 보이면 "sandbox 초기화 실패로 보임 — `--full-auto`로 재시도해보세요" 류 문구를 알림 본문에 추가한다(best-effort — 조회 실패나 미탐지 시 알림은 기존과 동일).
+- **`spawn`/`tell` 은 동기 대기하지 않는다** — 호출 즉시 반환하고, 대상이 idle 이 될 때마다, 그리고 최종적으로 exited 가 되면 caller의 완료 알림 로그로 알림을 보낸다. **그 경로는** `codex-idle`(`stop`/`interrupt` hook 이 `surface.fire_hook` 으로 쏨) · `needs-input`(`permission-request` hook) · `process-exit`(host 내장) 세 이벤트에 once(1회성) hook 을 등록하고, 먼저 fire 되는 쪽이 `notify-caller` 를 실행해 알림을 보낸 뒤 형제 hook 을 정리한다(등록 순서 무관 — fire 시점에 `hook.list`(대상 surface 필터) 로 자기와 **동일 command** 를 가진 형제를 찾아 `hook.unset`. 상태를 공유하지 않아 같은 surface 에 spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다). 정리 후 `notify-caller` 는 `surface.locate` 로 target 이 아직 살아있는지(=이번 fire 가 process-exit 가 아니었는지) 확인해, 살아있으면 세 hook 을 다시 등록한다(자기재무장) — codex-idle 이 여러 번 반복돼도(예: 대기 후 재개) exit 할 때까지 계속 알림이 온다. `needs_input` 도 같은 경로로 알린다 — `needs-input`(`permission-request` hook 이 쏨)이 세 번째 형제로 함께 등록된다. **완료 알림에 샌드박스 초기화 실패 힌트가 자동으로 덧붙는다** — `notify-caller`가 알림을 조립하기 직전 대상 surface 의 최근 화면 출력(`surface.screen_text`, 최근 800줄)을 조회해 `RTM_NEWADDR`(아래 샌드박스 정책 플래그 항목의 실패 시그니처) 이 보이면 "sandbox 초기화 실패로 보임 — `--full-auto`로 재시도해보세요" 류 문구를 알림 본문에 추가한다(best-effort — 조회 실패나 미탐지 시 알림은 기존과 동일).
 - **훅 응답은 조용히 실패한 host 호출 수를 싣는다** — `host_call_failures`(항상 있고 항상 수). 이 핸들러는 `terminal.set_state` 만 전파하고(그 실패는 오류 응답이라 이미 보인다) `surface.meta.set`·`surface.fire_hook` 은 최선노력이라 실패해도 응답이 `ok` 다 — 세는 것은 그 최선노력 쪽이다. 0 이 아니면 `<tasty_home>/hook-failures.log` 에도 남는다. 규약은 [error-handling](../../dev-guide/error-handling.md) "최선노력의 대가는 치르되 값으로 노출한다".
 - **훅 출력 계약** — `hook`의 IPC/직접 CLI 응답은 진단용 `host_call_failures`를 포함한다. 설치된 여섯 셸 래퍼는 CLI stdout을 버리고 Codex에는 빈 JSON 객체 `{}`만 반환한다 — `PermissionRequest` 에서 그 값은 "결정 없음"이라 승인 흐름을 바꾸지 않는다. 실패 기록(`hook-failures.log`)과 stderr는 유지한다. [Codex 훅 출력 규약](https://learn.chatgpt.com/docs/hooks)에 없는 내부 필드를 전달하지 않으며, 기존 설치에는 `tasty codex install`을 다시 실행해 래퍼를 갱신한다.
 - **모든 codex 기동 명령에 `--dangerously-bypass-hook-trust`** — `spawn`/`launch`/`reboot`이 이 옵션을 전달한다. 그러나 0.154.0 remote resume의 훅 검토 화면은 별도로 나타날 수 있다. `install`의 trust 표시는 선택한 파일의 metadata이며 실제 훅 발화나 원격 daemon 신뢰의 증명이 아니다. 검토가 필요한 훅은 사용자가 Codex에서 확인하며 Tasty가 대신 승인하지 않는다.
@@ -59,6 +57,14 @@ idle/needs_input/interrupt/exit는 작업 성공이나 서버 전달 완료와 �
 - **spawn child 개수 경고** — `spawn` 이 성공한 뒤 parent 의 현재 child 수를 재조회해, Settings › Plugin › Codex 의 "Spawn child warning threshold"(기본 6) 를 넘으면 응답에 `warning` 필드를 실어 돌려준다(soft 경고, spawn 자체는 막지 않음). 재사용 후보가 있으면 그 index 목록과 함께 새로 spawn 하는 대신 `respawn` 사용을 권하는데, 근거가 다른 두 목록으로 나뉜다: **`idle`** 은 자식이 hook 으로 완료를 직접 보고한 것이고, **확정 `stale`**(`confidence: confirmed` = 전경이 셸로 복귀)은 보고가 오지 않은 채 호스트 관측이 에이전트 프로세스 종료를 잡아낸 것이다(hook 유실 — [ADR-0072](../../adr/0072-child-state-hook-observation-fusion.md) 가 겨냥한 시나리오). 후자에 "이미 작업을 끝냈다" 는 문구를 쓰면 자식이 그렇게 보고한 적 없는데 보고한 것처럼 읽히므로 문구를 분리한다. 세 문구는 plugin 의 `lang/{en,ko,ja}.toml` 의 `codex.spawn_warning.{total,idle,stale}` 에 있고, 활성 언어(`general.language`)를 따라간다 — plugin process 는 호스트 i18n 카탈로그에 접근할 수 없으므로 SDK `Translator` 로 자기 `lang/` 를 직접 로드한다([i18n](../../dev-guide/i18n.md) "Plugin 네임스페이스").
 
   `confidence: heuristic` 인 `stale` 은 **세지 않는다** — SIGSTOP·긴 추론·무출력 명령과 관측상 구별되지 않아, 그것까지 respawn 후보로 부르면 일하는 자식을 재시작하라고 권하게 된다([api-conventions](../../dev-guide/api-conventions.md) 가 같은 이유로 `stale` 을 기본 terminal state 집합에서 뺀 것과 동일한 판단). 판정 축 자체는 [child-terminal](../../features/child-terminal/index.md) "판정 응답 필드" 참조.
+
+## 훅 설치 대상 선택
+
+`tasty codex install --codex-home <절대 디렉터리>` 는 그 Codex home 의 hook 을 설치한다.
+`--config-file <절대 파일>` 은 설정 파일을 직접 고르며 `--codex-home` 과 함께 쓸 수 없다.
+기존 설정을 읽거나 파싱할 수 없으면 덮어쓰지 않고 실패한다. 둘 다 생략하면 호스트 환경의
+`CODEX_HOME` 을, 그것도 없으면 `HOME`/`USERPROFILE` 아래 `.codex` 를 쓴다. 원격 서버의
+설정은 로컬 설치가 성공했다는 것만으로 갱신되지 않는다.
 
 ## 인터페이스
 
@@ -76,7 +82,7 @@ idle/needs_input/interrupt/exit는 작업 성공이나 서버 전달 완료와 �
 
 - Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 페인 분할로 생성되고 CLI 는 즉시 반환된다.
 - Given 자식 When `tasty codex tell <msg>` Then 줄바꿈 보존하며 메시지가 전송·제출되고 CLI 는 즉시 반환된다.
-- Given `spawn`/`tell` 로 등록된 완료 대기 When 대상이 idle · needs_input · exited 에 도달 Then 부모별 수신 채널에 상태를 전달하고 형제 hook 이 정리된다. exited 가 아니었다면 형제 hook 이 재등록돼 이후 상태 전환에도 계속 알림이 온다.
+- Given `spawn`/`tell` 로 등록된 완료 대기 When 대상이 idle · needs_input · exited 에 도달 Then caller 의 완료 알림 로그에 상태를 전달하고 형제 hook 이 정리된다. exited 가 아니었다면 형제 hook 이 재등록돼 이후 상태 전환에도 계속 알림이 온다.
 - Given 훅이 설치된 Codex When 도구 실행 승인 프롬프트가 뜬다 Then 그 surface 의 상태가 `needs_input` 으로 조회되고 비포커스 대상의 탭·워크스페이스에 기존 노란 표시가 난다.
 - Given 승인 대기 When 사용자가 승인하고 그 도구가 끝난다(`PostToolUse`) 또는 거절·Esc·Ctrl-C 로 중단한다(`Interrupt`) Then 상태가 각각 `active` · `idle` 로 돌아오고 `needs_input` 이 잔류하지 않는다.
 - Given 승인이 필요 없는 실행 When 도구가 오래 걸리거나 출력이 없다 Then `needs_input` 으로 오판하지 않는다.

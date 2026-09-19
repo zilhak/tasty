@@ -1,6 +1,6 @@
 # ADR-0288: Codex 부모에게 child 상태를 App Server 도구 결과로 전달한다 — ADR-0266의 Codex 부모 push 주체 개정
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0291](0291-remove-the-codex-app-server-completion-channel.md) — Codex App Server 완료 전달 경로가 제거되어 본 결정의 대상이 사라짐
 - **Date**: 2026-09-16
 - **Tags**: codex, app-server, completion, outbox, lifecycle, plugin
 
@@ -64,5 +64,4 @@ hook session_id, thread.sessionId, thread.id를 별도 필드로 보관한다. �
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
 
 - [App Server 공식 문서](https://learn.chatgpt.com/docs/app-server)
-- [동작·운영](../dev-guide/child-completion-app-server.md)
 - [Claude 부모 로그](../dev-guide/external-interaction/child-completion-notify-log.md)

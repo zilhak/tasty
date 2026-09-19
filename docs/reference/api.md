@@ -92,17 +92,6 @@ CLI 는 위 IPC 를 감싼다(`tasty list workspaces`, `tasty send text`, `tasty
 - [event-catalog](event-catalog.md) — IPC 와 별개 채널인 Event Bus
 - [identity](../identity.md) — 사용자/에이전트 행동 분리(이 표면의 설계 축)
 
-## 부모 Codex 완료 전달
-
-`terminal.completion`은 SurfaceWrite 권한의 host IPC다. endpoint를 설정하는 `terminal.completion_bind`는 SurfaceWrite와 Network를 함께 요구한다. plugin의 `codex.completion`과
-`tasty codex completion`이 같은 인터페이스를 제공한다. bind/status/diagnose/retry/unsubscribe의
-파라미터와 상태는 [완료 전달](../dev-guide/child-completion-app-server.md)에 정의한다.
-unknown은 retry로 재송신할 수 없다. endpoint의 thread 소유와 구독은 매 연결에서 검증한다.
-
-완료 producer의 `watch_error`는 `surface`(부모)·`target`으로 실행 관측 observer를 발급하고, `observe_error`는 같은 주소와 `observer`·`summary`를 받아 현재 논리 소유권/실행 세대를 검증한다. 두 액션은 기존 `terminal.completion` 권한 경계를 사용한다. 오래된 callback은 `recorded:false`로 반환한다.
-
-완료 status/diagnose 응답의 `pending_closes`는 종료 저장 대기 작업과 durability/error/attempts/retry_at을 노출한다. `surface.close`의 `completion_cleanup`은 실제 surface 삭제와 completion journal 반영의 완료 여부를 구별한다. 종료 대기 중인 원 구독의 새 송신은 보류되며 자동 복구한다.
-
 ## System and window observations
 
 `system.info` keeps `workspace_count` and the zero-based `active_workspace` as the
