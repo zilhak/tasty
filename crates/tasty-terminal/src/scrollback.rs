@@ -4,7 +4,7 @@ use termwiz::cell::CellAttributes;
 
 use crate::TerminalState;
 use crate::disk_scrollback;
-use termwiz::surface::Change;
+use termwiz::surface::{Change, Position};
 
 /// One scrollback line, stored column-compactly to avoid a heap allocation per
 /// cell.
@@ -604,8 +604,8 @@ impl TerminalState {
     /// Inspect a change and capture scrollback lines before it's applied.
     /// Only the explicit `ScrollRegionUp` path is handled here; the implicit
     /// scroll caused by auto-wrapping text is handled in
-    /// [`apply_text_capturing_scrolls`] because the evicted rows are produced
-    /// mid-apply and would not exist in a pre-apply snapshot.
+    /// [`TerminalState::apply_text_honoring_scroll_region`] because the evicted
+    /// rows are produced mid-apply and would not exist in a pre-apply snapshot.
     pub(crate) fn capture_before_scroll(&mut self, change: &Change) {
         if let Change::ScrollRegionUp {
             first_row: 0,
@@ -620,42 +620,114 @@ impl TerminalState {
             // scrollback. Clamp to the region so only genuinely evicted top rows
             // are captured (see ADR/verification: E2). The clamp lives here at the
             // callsite, not in `capture_top_lines`, because the auto-wrap path
-            // (`apply_text_capturing_scrolls`) calls `capture_top_lines(1)` and is
-            // region-agnostic.
+            // (`apply_text_honoring_scroll_region`) calls `capture_top_lines(1)`
+            // and is region-agnostic.
             let count = (*scroll_count).min(*region_size);
             let captured = self.capture_top_lines(count);
             self.push_scrolled_off(captured);
         }
     }
 
-    /// Apply a `Change::Text`, capturing every row that termwiz scrolls off the
-    /// top while rendering it.
+    /// Apply a `Change::Text` so that it honors the active DECSTBM scroll
+    /// region, capturing every row that scrolls off the top on the way.
     ///
-    /// termwiz `Surface::print_text` scrolls the grid *internally* (no
-    /// `ScrollRegionUp` Change) whenever auto-wrap or a newline runs past the
-    /// bottom row, discarding the evicted top line. Tasty owns the scrollback,
-    /// so we must observe each eviction. The evicted content is generated within
-    /// the same `add_change`, so a pre-apply snapshot is empty — instead we
-    /// split the text at the exact byte offsets where a scroll will occur, apply
-    /// each segment, and snapshot the (now-populated) top row right before the
-    /// scroll consumes it.
-    pub(crate) fn apply_text_capturing_scrolls(&mut self, text: String) {
-        let offsets = self.text_scroll_offsets(&text);
-        if offsets.is_empty() {
+    /// termwiz `Surface::print_text` knows nothing about scroll regions: it
+    /// advances the cursor one row per auto-wrap / newline and, once past the
+    /// **last screen row**, scrolls the *whole* grid internally (no
+    /// `ScrollRegionUp` Change) and discards the evicted top line. Two separate
+    /// problems follow from that, and this is the single place both are fixed:
+    ///
+    /// 1. **Scrollback.** Tasty owns the scrollback, so every eviction must be
+    ///    observed. The evicted content is generated within the same
+    ///    `add_change`, so a pre-apply snapshot is empty — instead the text is
+    ///    split at the exact byte offsets where a scroll will occur, each
+    ///    segment is applied, and the (now-populated) top row is snapshotted
+    ///    right before the scroll consumes it.
+    /// 2. **Region containment.** With a partial region the cursor reaching the
+    ///    region bottom must scroll *the region*, not walk below it. Left to
+    ///    termwiz, an auto-wrapped long line at the region bottom writes over
+    ///    the rows the application reserved outside the region (a TUI's input
+    ///    bar), and the rows pushed up out of the region are never handed to
+    ///    scrollback — the history simply disappears. So the region scroll is
+    ///    emitted explicitly here and the offending grapheme is withheld from
+    ///    termwiz until the cursor has been repositioned.
+    ///
+    /// Runs for both screens. On the alternate screen the region containment
+    /// still applies, but nothing is captured — alt-screen output must not
+    /// leak into the primary screen's history.
+    pub(crate) fn apply_text_honoring_scroll_region(&mut self, text: String) {
+        // Same bounds the explicit-newline path uses (`perform_index`), so an
+        // auto-wrap and an LF at the same row scroll the same rows.
+        let (region_top, region_size) = self.scroll_region_params();
+        let breaks = self.text_breaks(&text, region_top, region_size);
+        if breaks.is_empty() {
             self.surface_mut().add_change(Change::Text(text));
             return;
         }
+        // A non-empty break list means the grid has rows, so the region does too.
+        let region_bottom = region_top + region_size - 1;
+
         let mut prev = 0usize;
-        for off in offsets {
-            if off > prev {
+        for brk in breaks {
+            if brk.at > prev {
                 self.surface_mut()
-                    .add_change(Change::Text(text[prev..off].to_string()));
+                    .add_change(Change::Text(text[prev..brk.at].to_string()));
             }
-            // The top row is about to scroll off when the next segment's first
-            // grapheme is applied — snapshot it now.
-            let captured = self.capture_top_lines(1);
-            self.push_scrolled_off(captured);
-            prev = off;
+            match brk.kind {
+                BreakKind::SurfaceScroll => {
+                    // termwiz performs this scroll itself when the next segment
+                    // is applied — snapshot the row it is about to consume.
+                    //
+                    // The alternate screen is the common case for this branch, not
+                    // an exotic one: a full-screen TUI sets no DECSTBM, so every
+                    // alt-screen auto-wrap at the last row lands here. Capturing
+                    // would read the *alt* surface (`capture_top_lines` follows
+                    // `surface()`) into the single primary scrollback, and
+                    // `push_scrolled_off` would also shift the primary's
+                    // `saved_line_tails` and the user's `scroll_offset`.
+                    if !self.use_alternate {
+                        let captured = self.capture_top_lines(1);
+                        self.push_scrolled_off(captured);
+                    }
+                }
+                BreakKind::RegionScroll => {
+                    let scroll = Change::ScrollRegionUp {
+                        first_row: region_top,
+                        region_size,
+                        scroll_count: 1,
+                    };
+                    // Only a region anchored at row 0 evicts rows off the top of
+                    // the screen; `capture_before_scroll` enforces that, and an
+                    // inner region's pushed-out rows must not reach history.
+                    if !self.use_alternate {
+                        self.capture_before_scroll(&scroll);
+                    }
+                    self.surface_mut().add_change(scroll);
+                    if brk.reset_column {
+                        // termwiz's `scroll_region_up` leaves the cursor where it
+                        // was, i.e. still parked past the right edge; without this
+                        // the withheld grapheme would wrap a second time and land
+                        // below the region after all.
+                        self.surface_mut().add_change(Change::CursorPosition {
+                            x: Position::Absolute(0),
+                            y: Position::Absolute(region_bottom),
+                        });
+                    }
+                }
+                BreakKind::Clamp => {
+                    // Index outside the margins clamps at the last screen row and
+                    // never scrolls (VT100 DECSTBM). Nothing moves; only the
+                    // parked column is released so the withheld grapheme
+                    // overwrites this row instead of scrolling the screen.
+                    if brk.reset_column {
+                        self.surface_mut().add_change(Change::CursorPosition {
+                            x: Position::Absolute(0),
+                            y: Position::Relative(0),
+                        });
+                    }
+                }
+            }
+            prev = brk.at + brk.skip;
         }
         if prev < text.len() {
             self.surface_mut()
@@ -663,49 +735,81 @@ impl TerminalState {
         }
     }
 
-    /// Simulate termwiz `print_text` cursor advancement to find the byte offset
-    /// of every grapheme whose application scrolls the grid. Mirrors termwiz's
-    /// deferred-wrap logic exactly (same grapheme segmentation and column width)
-    /// so the offsets line up with the real scrolls.
-    fn text_scroll_offsets(&self, text: &str) -> Vec<usize> {
+    /// Simulate termwiz `print_text` cursor advancement to find every grapheme
+    /// whose application moves the cursor off its row, and classify what tasty
+    /// must do about it. Mirrors termwiz's deferred-wrap logic exactly (same
+    /// grapheme segmentation and column width) so the offsets line up with the
+    /// real prints.
+    fn text_breaks(&self, text: &str, region_top: usize, region_size: usize) -> Vec<TextBreak> {
         use finl_unicode::grapheme_clusters::Graphemes;
 
-        let mut offsets = Vec::new();
+        let mut breaks = Vec::new();
         let width = self.cols;
         let height = self.rows;
         if width == 0 || height == 0 {
-            return offsets;
+            return breaks;
         }
+        // `scroll_region_params` never reports an empty region on a non-empty
+        // grid — no region means the whole surface, and DECSTBM is normalized to
+        // at least one row when it is stored.
+        let region_bottom = region_top + region_size - 1;
+        let full_screen = region_top == 0 && region_bottom + 1 >= height;
+        // Classify the row move the cursor is about to make. `None` = termwiz's
+        // own plain "move down one row" is already correct.
+        let classify = |ypos: usize| -> Option<BreakKind> {
+            if !full_screen && ypos == region_bottom {
+                Some(BreakKind::RegionScroll)
+            } else if ypos + 1 >= height {
+                Some(if full_screen {
+                    BreakKind::SurfaceScroll
+                } else {
+                    BreakKind::Clamp
+                })
+            } else {
+                None
+            }
+        };
+
         let (mut xpos, mut ypos) = self.surface().cursor_position();
         let mut byte = 0usize;
         for g in Graphemes::new(text) {
-            let at_bottom = ypos + 1 >= height;
-            let scrolls = match g {
-                "\r" => false,
-                "\r\n" | "\n" => at_bottom,
-                _ => xpos >= width && at_bottom,
-            };
-            if scrolls {
-                offsets.push(byte);
-            }
-            // Advance state exactly as termwiz print_text does.
             match g {
                 "\r" => xpos = 0,
-                "\r\n" => {
-                    xpos = 0;
-                    if !at_bottom {
-                        ypos += 1;
+                "\n" | "\r\n" => {
+                    let reset_column = g == "\r\n";
+                    match classify(ypos) {
+                        // termwiz's `scroll_screen_up` is the right move here, so
+                        // the newline is left in the stream (`skip: 0`).
+                        Some(BreakKind::SurfaceScroll) => breaks.push(TextBreak {
+                            at: byte,
+                            skip: 0,
+                            reset_column,
+                            kind: BreakKind::SurfaceScroll,
+                        }),
+                        // termwiz would leave the region / scroll the whole grid,
+                        // so the newline is consumed here instead.
+                        Some(kind) => breaks.push(TextBreak {
+                            at: byte,
+                            skip: g.len(),
+                            reset_column,
+                            kind,
+                        }),
+                        None => ypos += 1,
                     }
-                }
-                "\n" => {
-                    if !at_bottom {
-                        ypos += 1;
+                    if reset_column {
+                        xpos = 0;
                     }
                 }
                 _ => {
                     if xpos >= width {
-                        if !at_bottom {
-                            ypos += 1;
+                        match classify(ypos) {
+                            Some(kind) => breaks.push(TextBreak {
+                                at: byte,
+                                skip: 0,
+                                reset_column: true,
+                                kind,
+                            }),
+                            None => ypos += 1,
                         }
                         xpos = 0;
                     }
@@ -714,6 +818,37 @@ impl TerminalState {
             }
             byte += g.len();
         }
-        offsets
+        breaks
     }
+}
+
+/// One point inside a `Change::Text` where the cursor leaves the row it is on
+/// and termwiz's unconditional behavior has to be corrected or observed.
+#[derive(Debug, Clone, Copy)]
+struct TextBreak {
+    /// Byte offset of the grapheme that triggers the move.
+    at: usize,
+    /// Bytes consumed by the break itself — the newline tasty performs on
+    /// termwiz's behalf. `0` for a deferred auto-wrap, whose grapheme is still
+    /// printed normally once the cursor has been repositioned.
+    skip: usize,
+    /// Whether the cursor returns to column 0 (auto-wrap and `\r\n`; a bare
+    /// `\n` keeps its column).
+    reset_column: bool,
+    kind: BreakKind,
+}
+
+/// What must happen at a [`TextBreak`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BreakKind {
+    /// Full-screen region with the cursor on the last row: termwiz's own
+    /// `scroll_screen_up` is exactly the region scroll, so only the row it is
+    /// about to evict needs snapshotting.
+    SurfaceScroll,
+    /// Cursor on a partial region's bottom row: termwiz would write below the
+    /// region, so the region scroll is emitted explicitly instead.
+    RegionScroll,
+    /// Cursor below the region on the last screen row: neither the region nor
+    /// the screen may scroll, so the move is dropped and the cursor stays.
+    Clamp,
 }

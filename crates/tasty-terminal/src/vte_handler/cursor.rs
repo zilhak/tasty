@@ -194,9 +194,25 @@ impl TerminalState {
                 }
             }
             Cursor::SetTopAndBottomMargins { top, bottom } => {
-                let top_val = top.as_zero_based() as usize;
-                let bottom_val = bottom.as_zero_based() as usize;
-                if top_val == 0 && bottom_val >= self.rows.saturating_sub(1) {
+                // The stored region is normalized into the grid here, at the one
+                // place it is written, so every reader agrees on its bounds.
+                // xterm does the same at parse time (`CASE_DECSTBM`: a bottom
+                // past `MaxRows(screen)` becomes `MaxRows(screen)`), and without
+                // it the readers diverge: `scroll_region_params` saturates the
+                // size while `region_bounds` hands back the raw row, so an
+                // out-of-range `CSI 3;100r` made an explicit LF and an auto-wrap
+                // scroll two different regions on the same screen.
+                //
+                // `rows` only changes in `resize`, which clears the region
+                // outright, so a normalized region cannot go stale.
+                let last_row = self.rows.saturating_sub(1);
+                let top_val = (top.as_zero_based() as usize).min(last_row);
+                // `clamp`'s lower bound keeps `top <= bottom` for an inverted
+                // request (`CSI 6;3r`), matching what `scroll_region_params`
+                // already resolved it to (a one-row region at the top margin)
+                // and keeping `bottom - top` free of underflow downstream.
+                let bottom_val = (bottom.as_zero_based() as usize).clamp(top_val, last_row);
+                if top_val == 0 && bottom_val >= last_row {
                     // Full screen -- clear scroll region
                     self.scroll_region = None;
                 } else {

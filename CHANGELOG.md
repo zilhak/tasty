@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- **하단에 입력창을 남기는 TUI 의 긴 줄이 대화 기록을 먹지 않는다.** Codex 처럼 `DECSTBM` 으로 화면 일부만 스크롤 영역으로 쓰는 프로그램에서, 영역 하단의 긴 줄이 오른쪽 끝에서 접히면 커서가 영역 **밖** 으로 내려가 입력창을 덮어썼고, 그 뒤로 위로 밀린 줄이 스크롤백에 쌓이지 않아 **그 시점 이후의 출력이 통째로 사라졌다** — 세션을 재개하면 대화가 긴 URL 중간에서 끊겨 보였다. 이제 자동 줄바꿈도 명시적 개행과 같은 영역 계약을 지킨다: 영역만 한 줄 위로 스크롤하고, 영역 밖 행은 건드리지 않으며, 밀려난 행은 순서대로 스크롤백에 남는다. 대체 화면에서도 같고, 대체 화면 출력이 기본 화면의 스크롤백을 오염시키지도 않는다. 화면 밖을 가리키는 스크롤 영역 요청(`CSI 3;100r` 처럼 하단이 화면보다 아래이거나 상단이 하단보다 큰 경우)은 xterm 과 같이 화면 안으로 잘라 받는다 — 지금까지는 그런 요청에서 명시적 개행과 자동 줄바꿈이 서로 다른 행을 밀었다. 자동 줄바꿈 끄기(DECAWM `?7l`)는 종전대로 미지원이다.
 - Headless PTY exit now fires process-exit hooks and closes execution subscriptions through the shared host lifecycle, including durable recovery when journal writes fail.
 - Keep newly recovered child exit events sendable when the parent binding arrives during close persistence retries.
 

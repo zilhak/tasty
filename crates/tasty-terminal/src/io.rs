@@ -129,15 +129,21 @@ impl TerminalState {
 
     pub(crate) fn apply_change(&mut self, change: Change) {
         self.mirror_pen(&change);
-        if self.use_alternate {
-            self.surface_mut().add_change(change);
+
+        // Text is the one Change termwiz resolves against the whole grid instead
+        // of the DECSTBM region, and it can scroll internally (auto-wrap past the
+        // bottom row) without emitting a ScrollRegionUp. That path confines the
+        // move to the region and captures the evictions itself. It runs on the
+        // alternate screen too — the region contract is the same there; only the
+        // capture is skipped, inside that path, so alt-screen output never lands
+        // in the primary screen's history.
+        if let Change::Text(text) = change {
+            self.apply_text_honoring_scroll_region(text);
             return;
         }
 
-        // Text can scroll the grid internally (auto-wrap past the bottom row)
-        // without emitting a ScrollRegionUp; that path captures evictions itself.
-        if let Change::Text(text) = change {
-            self.apply_text_capturing_scrolls(text);
+        if self.use_alternate {
+            self.surface_mut().add_change(change);
             return;
         }
 

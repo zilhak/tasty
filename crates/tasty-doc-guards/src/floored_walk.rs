@@ -195,10 +195,16 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 111,
-        measured_on: "2026-09-18",
+        measured: 112,
+        measured_on: "2026-09-19",
         counted_on: super::CountedOn::Tree(
-            "f53234985 — **통합 트리에서 잰 값이다.** 앞선 108 은 lane \
+            "1c6c5af8d + lane 작업 트리 — **lane 트리에서 잰 값이라 구조적으로 낮다.** \
+             그 base 의 추적 트리는 111 이고, 이 lane 이 \
+             `tasty-terminal/tests/region_autowrap.rs` 하나를 더해 112 다. 같은 \
+             회차의 다른 lane 이 통합 타깃을 더했으면 통합 트리에서는 더 크다 — \
+             아래 f53234985 이력이 그 형태를 기록한 것이고, 최종 값은 병합하는 \
+             쪽이 통합 트리에서 다시 잰다. 이전 회차: f53234985 — **통합 트리에서 \
+             잰 값이다.** 앞선 108 은 lane \
              `conductor/w-kbie` 가 자기 트리에서 잰 것이었고 그 값 자체는 맞았다 \
              (같은 값이 직전 push 지점에서도 108 이었다). 그 뒤 통합에서 lane 셋이 \
              각자 통합 타깃을 하나씩 더해 111 이 됐다 — `tasty-i18n` 의 \
