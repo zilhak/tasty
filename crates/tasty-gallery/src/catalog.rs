@@ -1412,9 +1412,11 @@ pub fn pages() -> Vec<Page> {
                     "Status bar",
                     vec![spec(
                         "statusbar",
-                        "Work-column status bar",
+                        "Workspace status bar",
                         Some(
-                            "24px bottom strip · left context cluster / right actions                              (calls the real `tasty_ui_widgets` view)",
+                            "24px read-only summary + one keyboard reminder · collapses grid → \
+                             shell → surface id → palette cap → branch text (calls the real \
+                             `tasty_ui_widgets` view)",
                         ),
                         components::status_bar::draw,
                     )],

@@ -718,7 +718,6 @@ new_window = "새 윈도우"
 new_window_desc = "새 Tasty 윈도우 열기"
 
 [status_bar]
-palette = "팔레트"
 palette_tooltip = "커맨드 팔레트 열기"
 theme_tooltip = "테마 전환"
 

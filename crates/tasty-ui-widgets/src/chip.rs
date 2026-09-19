@@ -5,6 +5,7 @@
 //! weight(bold/medium)는 별도 family 없이 재현 불가 → 크기·색만 충실히 따른다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// Tag variant (디자인 `core/Tag`).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -343,6 +344,39 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     let parts: Vec<&str> = keys.split('+').collect();
     let owned: Vec<KbdKey<'_>> = parts.into_iter().map(KbdKey::Text).collect();
     kbd_parts(ui, theme, &owned);
+}
+
+/// [`kbd`] 가 차지할 폭 — **그리기 전에** 알아야 하는 자리(상태바의 축소 판정과
+/// spacer 산정)를 위해 [`kbd_parts`] 와 **같은 파일에서** 같은 토큰으로 센다.
+///
+/// `Ui` 가 아니라 `Context` 를 받는다 — 폭은 폰트 metric 만으로 정해지고, 그래야
+/// 바깥에서 같은 폭을 재검산하는 테스트가 `Ui` 를 짓지 않고도 이 함수를 부른다.
+///
+/// 두 함수가 떨어져 있으면 한쪽 패딩만 바뀌어도 컴파일은 통과하고 정렬만 조용히
+/// 어긋난다. 세는 것은 [`kbd_parts`] 가 실제로 할당하는 것 그대로다 — 키캡 k 개,
+/// 그 사이 `+` 라벨 k-1 개, 그리고 egui `horizontal` 이 항목 사이에 넣는 gap
+/// (항목 2k-1 개 → gap 2k-2 개).
+pub fn kbd_width(ctx: &egui::Context, theme: &Theme, keys: &str) -> LogicalPx {
+    let micro = theme.kbd_font_size().value();
+    let gap = theme.kbd_gap().value();
+    let pad_x = theme.kbd_padding_x().value();
+    let kbd_h = theme.kbd_size().value();
+    let measure = |text: &str| {
+        ctx.fonts(|f| {
+            f.layout_no_wrap(text.to_owned(), mono(micro), egui::Color32::PLACEHOLDER)
+                .rect
+                .width()
+        })
+    };
+    let parts: Vec<&str> = keys.split('+').collect();
+    let caps: f32 = parts
+        .iter()
+        .map(|t| (measure(t) + 2.0 * pad_x).max(kbd_h))
+        .sum();
+    let separators = parts.len().saturating_sub(1);
+    let plus = measure("+") * separators as f32;
+    let items = 2 * parts.len() - 1;
+    LogicalPx(caps + plus + gap * items.saturating_sub(1) as f32)
 }
 
 /// [`kbd_parts`] 한 키캡의 콘텐츠 — 텍스트 또는 벡터 아이콘.

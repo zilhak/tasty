@@ -1,4 +1,4 @@
-<!-- source-hash: 0de74a9ec627 -->
+<!-- source-hash: bb8466b0b8b0 -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
@@ -75,11 +75,14 @@ The last remaining Tab cannot be closed.
 
 The single line at the bottom of the work area. The left side shows information about the currently focused Surface, the right side holds buttons.
 
-- **git branch** — The branch name when the shell's current directory is a git repository. Reflected with a delay of up to 1 second.
-- **Surface ID** — A number. This is the value you use to target this terminal with the `tasty` CLI ([tasty CLI](../agents/cli.md)).
-- **Shell · grid size** — The name of the foreground program and `columns×rows`.
-- **palette** chip — Click to open the command palette. The shortcut shown on the chip follows your settings.
+- **git branch** — A branch glyph and the branch name when the shell's current directory is a git repository. Reflected with a delay of up to 1 second. Outside a repository the item is **not there at all**. When you are on a specific commit (detached HEAD) you get `@` and a short commit id instead of a name.
+- **Surface ID** — Like `s3·p1`: the Surface number and the Pane holding it. The first number is what you use to target this terminal with the `tasty` CLI ([tasty CLI](../agents/cli.md)).
+- **Shell** — The name of the foreground program.
+- **Grid size** — `columns×rows`.
+- **Palette shortcut** — Drawn as keycaps. Click to open the command palette; the keys shown follow your settings. Clear the shortcut and the item goes away too.
 - **Theme icon** — Each click toggles between the light theme (latte) and the dark theme (mocha). The icon shows which one you are on — a sun for the light theme.
+
+**An item with no value disappears rather than leaving a gap.** As the window narrows, the grid size goes first, then the shell, the Surface ID, the palette shortcut and finally the branch name; the theme icon stays to the end.
 
 ## Shortcuts to know first
 

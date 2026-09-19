@@ -718,7 +718,6 @@ new_window = "新しいウィンドウ"
 new_window_desc = "新しい Tasty ウィンドウを開く"
 
 [status_bar]
-palette = "パレット"
 palette_tooltip = "コマンドパレットを開く"
 theme_tooltip = "テーマを切り替え"
 

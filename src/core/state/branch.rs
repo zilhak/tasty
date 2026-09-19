@@ -39,9 +39,10 @@ use super::CoreState;
 pub(crate) struct BranchCache {
     /// 이 값이 캐시된 대상 surface. 다른 surface 를 조회하면 `None` 을 돌려준다.
     surface_id: Option<u32>,
-    /// 브랜치명. `None` 은 "아직 못 구함"이 아니라 **"repo 가 아니거나 detached"**
-    /// 라는 확정 결과이며, 이 실패도 그대로 캐시된다 — 실패는 파일시스템 루트까지
-    /// 올라가는 최악 케이스라 캐시하지 않으면 개선 효과가 사라진다.
+    /// 브랜치 슬롯의 표시 문자열 — 브랜치명, 또는 detached 면 `@ <short sha>`.
+    /// `None` 은 "아직 못 구함"이 아니라 **"repo 가 아니다"** 라는 확정 결과이며,
+    /// 이 실패도 그대로 캐시된다 — 실패는 파일시스템 루트까지 올라가는 최악
+    /// 케이스라 캐시하지 않으면 개선 효과가 사라진다.
     branch: Option<String>,
 }
 
@@ -63,9 +64,9 @@ impl CoreState {
         changed
     }
 
-    /// 캐시된 git 브랜치명(마지막 `Tick::Busy` 가 조회한 값). StatusBar 가 매 프레임
-    /// `.git/HEAD` 를 다시 여는 대신 이걸 읽는다. 캐시 대상이 아닌 surface, repo 밖,
-    /// detached HEAD, 그리고 첫 tick 전(≤1초)에는 `None`.
+    /// 캐시된 브랜치 슬롯 표시값(마지막 `Tick::Busy` 가 조회한 값). StatusBar 가 매
+    /// 프레임 `.git/HEAD` 를 다시 여는 대신 이걸 읽는다. detached HEAD 면 `@ <short sha>`
+    /// 가 들어 있다. 캐시 대상이 아닌 surface, repo 밖, 그리고 첫 tick 전(≤1초)에는 `None`.
     pub fn status_bar_branch(&self, surface_id: u32) -> Option<&str> {
         if self.branch_cache.surface_id != Some(surface_id) {
             return None;
@@ -75,8 +76,8 @@ impl CoreState {
 }
 
 /// cwd 기준 git 브랜치명. `.git` 을 cwd 부터 상위로 올라가며 찾아 파싱한다
-/// (git 바이너리/libgit2 비의존, `std::fs` 만 — 크로스플랫폼). repo 가 아니거나
-/// detached HEAD 면 `None`.
+/// (git 바이너리/libgit2 비의존, `std::fs` 만 — 크로스플랫폼). repo 가 아니면 `None`,
+/// detached HEAD 면 `@ <short sha>`.
 ///
 /// `.git` 은 두 형태를 모두 지원한다:
 /// - **디렉토리**(일반 clone) → `<dir>/.git/HEAD`
@@ -117,14 +118,37 @@ fn resolve_gitdir_file(base: &Path, content: &str) -> Option<PathBuf> {
     })
 }
 
-/// `HEAD` 파일 한 줄을 브랜치명으로 파싱. `ref: refs/heads/<branch>` → `Some(branch)`,
-/// detached(SHA 직접 기록) → `None`. 후행 개행/공백은 브랜치명에 섞이지 않는다.
+/// `HEAD` 파일 한 줄을 **상태바가 그대로 그리는 표시 문자열**로 파싱.
+///
+/// - `ref: refs/heads/<branch>` → `Some(branch)`
+/// - detached(40자 SHA 직접 기록) → `Some("@ <short sha>")`
+/// - 그 밖(`refs/tags/...` 등) → `None`
+///
+/// detached 를 `None` 으로 접지 않는 이유: 상태바의 브랜치 자리는 **값이 없으면 항목이
+/// 통째로 사라지는** 자리라, detached 를 `None` 으로 주면 "repo 밖" 과 구별이 안 된다.
+/// 그래서 그 자리에 short sha 를 보인다 — 동작 명세는
+/// `docs/features/workspace-status-bar/index.md` 의 "표시 데이터".
+///
+/// `@ ` 표지를 붙이는 이유는 그것 없이 sha 만 놓으면 브랜치 글리프 옆의 `4f9c1ab` 가
+/// *그 이름의 브랜치*로 읽히기 때문이다. 후행 개행/공백은 값에 섞이지 않는다.
 fn parse_head(content: &str) -> Option<String> {
-    content
-        .trim()
-        .strip_prefix("ref: refs/heads/")
-        .map(|b| b.trim().to_owned())
+    let line = content.trim();
+    if let Some(branch) = line.strip_prefix("ref: refs/heads/") {
+        return Some(branch.trim().to_owned());
+    }
+    // ref 가 아니면 detached — HEAD 가 커밋 SHA 를 직접 담는다.
+    if line.starts_with("ref: ") {
+        return None;
+    }
+    let sha_len = DETACHED_SHORT_SHA_LEN;
+    if line.len() >= sha_len && line.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Some(format!("@ {}", &line[..sha_len]));
+    }
+    None
 }
+
+/// detached HEAD 표시에 쓰는 short sha 길이. git 의 기본 축약과 같은 7 이다.
+const DETACHED_SHORT_SHA_LEN: usize = 7;
 
 #[cfg(test)]
 mod tests {
@@ -147,10 +171,10 @@ mod tests {
             parse_head("ref: refs/heads/feature/a/b\n").as_deref(),
             Some("feature/a/b")
         );
-        // detached: 40자 SHA 직접 기록 → None.
+        // detached: 40자 SHA 직접 기록 → `@ <short sha>`(7자).
         assert_eq!(
-            parse_head("4af6ac9d4af6ac9d4af6ac9d4af6ac9d4af6ac9d\n"),
-            None
+            parse_head("4af6ac9d4af6ac9d4af6ac9d4af6ac9d4af6ac9d\n").as_deref(),
+            Some("@ 4af6ac9")
         );
         // refs/tags 등 브랜치가 아닌 ref → None.
         assert_eq!(parse_head("ref: refs/tags/v1.0\n"), None);

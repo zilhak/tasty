@@ -678,6 +678,14 @@ const DECLARED_DIFFERENT: &[(&str, &str, &str, &str)] = &[
         "본체 콘텐츠 컬럼은 이름 붙은 치수가 아니라 창 폭에서 매 프레임 남는 폭이다 — \
          갤러리만 기본 창 크기에서 한 번 계산한 값으로 specimen 을 bound 한다",
     ),
+    (
+        "crates/tasty-gallery/src/catalog/components/status_bar.rs",
+        "WIDE",
+        "(없음)",
+        "상태바 폭은 본체에서 이름 붙은 치수가 아니라 작업 컬럼이 그때그때 갖는 폭이다 — \
+         specimen 의 폭은 사본이 아니라 **축소 단계를 띄우는 입력**이고, 그 자리 doc 이 \
+         디자인 jsx 의 수를 왜 그대로 못 쓰는지 적는다",
+    ),
 ];
 
 /// 갤러리에서 **본체를 지목하는 doc 이 붙은** 길이 상수 선언을 모은다.
@@ -1014,6 +1022,10 @@ const CONFESSED: &[(&str, &str)] = &[
     (GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
     (GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
     (GALLERY_PLUGINS_ATTENTION, "ATTN_PRIMITIVE_12"),
+    (
+        "crates/tasty-gallery/src/catalog/components/status_bar.rs",
+        "WIDE",
+    ),
 ];
 
 /// 갤러리 상수의 초기화식이 **공용 항목을 가리키는 경로식**인가.

@@ -718,7 +718,6 @@ new_window = "New Window"
 new_window_desc = "Open a new Tasty window"
 
 [status_bar]
-palette = "palette"
 palette_tooltip = "Open command palette"
 theme_tooltip = "Toggle theme"
 

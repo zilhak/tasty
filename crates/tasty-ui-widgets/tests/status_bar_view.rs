@@ -1,40 +1,42 @@
 //! `draw_status_bar_view` 계약 회귀 테스트 (headless egui).
 //!
-//! 세 가지를 고정한다:
-//! ① 팔레트 칩 / 테마 토글 클릭이 각각 `OpenPalette` / `ToggleTheme` 를 보고한다.
+//! 네 가지를 고정한다:
+//! ① 팔레트 키캡 / 테마 글리프 클릭이 각각 `OpenPalette` / `ToggleTheme` 를 보고한다.
 //! ② 그 두 셀 위의 hover 가 `resize_priority_hovered` 를 세우고, 비클릭 좌측
 //!    클러스터에서는 세우지 않는다(윈도우 엣지 리사이즈 우선권 판정).
 //! ③ **부모 `Ui` 가 화면 원점이 아닌 임의 위치에 있어도** 셀 배치가 동일하다 —
 //!    view 가 절대 화면 좌표를 쓰면 갤러리 카드(임의 y) 안에서 좌표가 어긋난다.
 //!    이관 전 구현이 `rect.x_range()` / `rect.width()` 같은 절대 rect 를 직접 쓰던
 //!    자리의 회귀 테스트다.
+//! ④ **좁아지면 접힌다** — 바 폭을 줄이면 팔레트 키캡이 사라지고(4 단계), 그 뒤에도
+//!    테마 글리프는 남아 클릭을 받는다. 단계 선택 자체(어느 순서로 접는가)는 view 의
+//!    단위 테스트가 들고, 여기서는 **그 결과가 실제 히트박스로 나타나는지**만 본다.
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{StatusBarAction, StatusBarData, StatusBarDrawResult, draw_status_bar_view};
+use tasty_ui_widgets::{
+    StatusBarAction, StatusBarData, StatusBarDrawResult, draw_status_bar_view, kbd_width,
+};
 
 const BAR_W: f32 = 600.0;
-// view 의 디자인 inline 레이아웃 값(work.jsx `StatusBar`) — 셀 좌표를 테스트에서
-// 독립적으로 재계산해 배치 계약을 고정한다.
-const CELL_PAD_X: f32 = 10.0;
-const CELL_GAP: f32 = 6.0;
-const DOT_SIZE: f32 = 7.0;
+// view 의 디자인 inline 레이아웃 값(`gallery/layouts.jsx` statusbar: 컨테이너
+// `padding: "0 10px"` + `gap: 10`) — 셀 좌표를 테스트에서 독립적으로 재계산해
+// 배치 계약을 고정한다.
+const BAR_PAD_X: f32 = 10.0;
+const ITEM_GAP: f32 = 10.0;
 
-const PALETTE_LABEL: &str = "Ctrl+K palette";
-const THEME_ID: &str = "mocha";
-/// view 의 `capitalize(theme_id)` 결과.
-const THEME_LABEL: &str = "Mocha";
+const PALETTE_KEYS: &str = "Ctrl+K";
 
 fn data() -> StatusBarData {
     StatusBarData {
         branch: Some("main".into()),
         surface_id: Some(3),
+        pane_id: Some(1),
         shell: Some("zsh".into()),
         grid: Some((120, 32)),
-        theme_id: THEME_ID.into(),
         theme_is_light: false,
-        palette_label: PALETTE_LABEL.into(),
+        palette_keys: PALETTE_KEYS.into(),
         palette_tooltip: "Open the command palette".into(),
         theme_tooltip: "Toggle theme".into(),
     }
@@ -50,10 +52,11 @@ fn raw(events: Vec<Event>) -> RawInput {
 }
 
 /// 임의 위치의 부모 `Ui` — 본체는 `egui::Area`, 갤러리는 카드 안이라 둘 다 "주어진 Ui".
-fn frame(
+fn frame_w(
     ctx: &egui::Context,
     theme: &Theme,
     origin: Pos2,
+    width: f32,
     d: &StatusBarData,
     events: Vec<Event>,
 ) -> StatusBarDrawResult {
@@ -63,30 +66,38 @@ fn frame(
         egui::Area::new(egui::Id::new("host"))
             .fixed_pos(origin)
             .show(c, |ui| {
-                out = draw_status_bar_view(ui, theme, LogicalPx(BAR_W), d);
+                out = draw_status_bar_view(ui, theme, LogicalPx(width), d);
             });
     });
     out
 }
 
-fn text_w(ctx: &egui::Context, theme: &Theme, s: &str) -> f32 {
-    ctx.fonts(|f| {
-        f.layout_no_wrap(
-            s.to_owned(),
-            egui::FontId::monospace(theme.font_size_caption.value()),
-            egui::Color32::PLACEHOLDER,
-        )
-        .size()
-        .x
-    })
+fn frame(
+    ctx: &egui::Context,
+    theme: &Theme,
+    origin: Pos2,
+    d: &StatusBarData,
+    events: Vec<Event>,
+) -> StatusBarDrawResult {
+    frame_w(ctx, theme, origin, BAR_W, d, events)
 }
 
 /// 우측 클러스터 두 셀의 중심 x — 우측 끝에 flush 로 붙는다(spacer 가 밀어냄).
-fn right_cluster_centers(ctx: &egui::Context, theme: &Theme, origin: Pos2) -> (f32, f32) {
-    let theme_w = DOT_SIZE + CELL_GAP + text_w(ctx, theme, THEME_LABEL) + CELL_PAD_X * 2.0;
-    let palette_w = text_w(ctx, theme, PALETTE_LABEL) + CELL_PAD_X * 2.0;
-    let right = origin.x + BAR_W;
-    (right - theme_w - palette_w / 2.0, right - theme_w / 2.0)
+/// 바깥 여백 10 · 항목 사이 gap 10 · 테마 글리프 `icon_glyph_size_xs` · 팔레트는
+/// 키캡이라 폭을 `kbd_width` 가 준다(view 가 재는 것과 **같은 함수**다).
+fn right_cluster_centers(
+    ctx: &egui::Context,
+    theme: &Theme,
+    origin: Pos2,
+    width: f32,
+) -> (f32, f32) {
+    let theme_w = theme.icon_glyph_size_xs.value();
+    let palette_w = kbd_width(ctx, theme, PALETTE_KEYS).value();
+    let right = origin.x + width - BAR_PAD_X;
+    (
+        right - theme_w - ITEM_GAP - palette_w / 2.0,
+        right - theme_w / 2.0,
+    )
 }
 
 fn ptr_move(p: Pos2) -> Event {
@@ -103,11 +114,21 @@ fn ptr_btn(p: Pos2, pressed: bool) -> Event {
 }
 
 /// hover 이동 → press → release 3 프레임. `clicked()` 는 release 프레임에 뜬다.
-fn click_at(ctx: &egui::Context, theme: &Theme, origin: Pos2, p: Pos2) -> StatusBarDrawResult {
+fn click_at_w(
+    ctx: &egui::Context,
+    theme: &Theme,
+    origin: Pos2,
+    width: f32,
+    p: Pos2,
+) -> StatusBarDrawResult {
     let d = data();
-    frame(ctx, theme, origin, &d, vec![ptr_move(p)]);
-    frame(ctx, theme, origin, &d, vec![ptr_btn(p, true)]);
-    frame(ctx, theme, origin, &d, vec![ptr_btn(p, false)])
+    frame_w(ctx, theme, origin, width, &d, vec![ptr_move(p)]);
+    frame_w(ctx, theme, origin, width, &d, vec![ptr_btn(p, true)]);
+    frame_w(ctx, theme, origin, width, &d, vec![ptr_btn(p, false)])
+}
+
+fn click_at(ctx: &egui::Context, theme: &Theme, origin: Pos2, p: Pos2) -> StatusBarDrawResult {
+    click_at_w(ctx, theme, origin, BAR_W, p)
 }
 
 fn hover_at(ctx: &egui::Context, theme: &Theme, origin: Pos2, p: Pos2) -> StatusBarDrawResult {
@@ -128,7 +149,7 @@ fn palette_and_theme_cells_report_their_actions() {
     let theme = tasty_themes::mocha_fallback();
     let ctx = warmed_ctx(&theme);
     let origin = Pos2::ZERO;
-    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin);
+    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin, BAR_W);
     let y = origin.y + 12.0;
 
     let out = click_at(&ctx, &theme, origin, pos2(theme_x, y));
@@ -147,7 +168,7 @@ fn hover_over_clickable_cells_sets_resize_priority() {
     let theme = tasty_themes::mocha_fallback();
     let ctx = warmed_ctx(&theme);
     let origin = Pos2::ZERO;
-    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin);
+    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin, BAR_W);
     let y = origin.y + 12.0;
 
     assert!(hover_at(&ctx, &theme, origin, pos2(theme_x, y)).resize_priority_hovered);
@@ -164,7 +185,7 @@ fn layout_is_relative_to_the_parent_ui_not_the_screen_origin() {
     let theme = tasty_themes::mocha_fallback();
     let ctx = warmed_ctx(&theme);
     let origin = pos2(137.0, 211.0);
-    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin);
+    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin, BAR_W);
     let y = origin.y + 12.0;
 
     assert_eq!(
@@ -181,5 +202,32 @@ fn layout_is_relative_to_the_parent_ui_not_the_screen_origin() {
     assert!(
         !hover_at(&ctx, &theme, origin, pos2(5.0, 5.0)).resize_priority_hovered,
         "바가 옮겨갔는데 화면 원점에서 hover 가 잡히면 절대 좌표를 쓰고 있는 것이다"
+    );
+}
+
+/// 좁아지면 팔레트 키캡이 먼저 빠지고, 테마 글리프는 끝까지 남는다.
+#[test]
+fn the_palette_cap_drops_before_the_theme_glyph() {
+    let theme = tasty_themes::mocha_fallback();
+    let ctx = warmed_ctx(&theme);
+    let origin = Pos2::ZERO;
+    let y = origin.y + 12.0;
+
+    // 팔레트 키캡까지 접히는 폭 — 좌측은 브랜치 글리프만, 우측은 테마 글리프만 남는다.
+    let narrow = BAR_PAD_X * 2.0 + theme.icon_glyph_size_xs.value() * 2.0 + ITEM_GAP + 1.0;
+    let (palette_x, theme_x) = right_cluster_centers(&ctx, &theme, origin, narrow);
+
+    // 테마 글리프는 남아 있다 — 제자리(우측 끝)에서 클릭을 받는다.
+    assert_eq!(
+        click_at_w(&ctx, &theme, origin, narrow, pos2(theme_x, y)).actions,
+        vec![StatusBarAction::ToggleTheme],
+        "테마 글리프는 어느 단계에서도 빠지지 않는다"
+    );
+    // 팔레트 키캡이 있던 자리에는 이제 아무것도 없다.
+    assert!(
+        click_at_w(&ctx, &theme, origin, narrow, pos2(palette_x, y))
+            .actions
+            .is_empty(),
+        "키캡이 접혔는데 그 자리가 여전히 클릭을 먹는다"
     );
 }

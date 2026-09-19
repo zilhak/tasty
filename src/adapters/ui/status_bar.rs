@@ -1,6 +1,6 @@
 //! 작업영역(작업 컬럼) 하단 StatusBar 의 **본체 wrapper** — 디자인
-//! `ui_kits/terminal/work.jsx` 의 `StatusBar` 컴포넌트 대응. 위치·크기·구조(하단 24px
-//! 바, 좌/우 클러스터)는 확정이나 표시 항목은 잠정이다 — 상세
+//! `gallery/layouts.jsx` 의 **Workspace status bar** 섹션 대응. 위치·크기·구조(하단
+//! 24px 바, 좌/우 클러스터)와 **표시 항목·축소 순서**가 모두 확정이다 — 상세
 //! `docs/features/workspace-status-bar/index.md`.
 //!
 //! ## focus 의존성 (원칙 3)
@@ -84,7 +84,12 @@ pub fn draw_status_bar(
         .map(|term| (term.cols(), term.rows()));
     let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
     let branch = surface_id.and_then(|sid| engine.status_bar_branch(sid).map(str::to_owned));
-    let palette_binding = engine
+    // surface 를 담은 pane — 디자인의 `s3·p1` 표기에서 뒷마디다. 못 찾으면 앞마디만
+    // 나간다(자리를 비워 두지 않는다).
+    let pane_id = surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
+    // 팔레트 단축키는 **키캡으로** 그린다 — 라벨 단어를 붙이지 않는다. 바인딩이 없으면
+    // 빈 문자열이고, 그때는 값이 없는 항목이라 view 가 자리째 뺀다.
+    let palette_keys = engine
         .settings
         .keybindings
         .toggle_command_palette
@@ -92,24 +97,16 @@ pub fn draw_status_bar(
         .map(|b| tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general))
         .unwrap_or_default();
 
-    // i18n 은 본체 소유 — view crate 는 `tasty-i18n` 을 의존하지 않으므로 라벨/tooltip
-    // 을 여기서 완성해 주입한다. 팔레트 라벨은 그리기와 폭 계산이 같은 문자열을 써야
-    // 우측 클러스터 정렬이 맞으므로 한 번만 조립한다.
-    let palette_word = crate::i18n::t("status_bar.palette");
-    let palette_label = if palette_binding.is_empty() {
-        palette_word.to_owned()
-    } else {
-        format!("{palette_binding} {palette_word}")
-    };
-
+    // i18n 은 본체 소유 — view crate 는 `tasty-i18n` 을 의존하지 않으므로 tooltip 을
+    // 여기서 주입한다.
     let data = StatusBarData {
         branch,
         surface_id,
+        pane_id,
         shell,
         grid,
-        theme_id: engine.settings.appearance.theme.clone(),
         theme_is_light: th.is_light,
-        palette_label,
+        palette_keys,
         palette_tooltip: crate::i18n::t("status_bar.palette_tooltip").to_owned(),
         theme_tooltip: crate::i18n::t("status_bar.theme_tooltip").to_owned(),
     };
