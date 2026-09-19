@@ -1281,9 +1281,9 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "kbimportexport-remaining-values",
-                            "Open values — an export failure Tasty cannot name",
+                            "Open values — unknown failure reason, counts of one",
                             Some(
-                                "catch-all clause \"the write didn't finish.\" · OS text on its own muted mono line, ellipsised, full text in the tooltip",
+                                "catch-all clause \"the write didn't finish.\" · OS text on its own muted mono line, ellipsised, full text in the tooltip · singular header and line at one notice, with no fold link",
                             ),
                             components::kb_import_export::draw_remaining_values,
                         ),

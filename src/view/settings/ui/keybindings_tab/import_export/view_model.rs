@@ -20,6 +20,33 @@ use super::model::{
 };
 use super::{ImportExportState, Preview};
 
+/// 경고 블록의 한 줄 — 알림 하나가 문장 하나다.
+///
+/// 모르는 액션이 하나면 **단수형**이다. 그 갈래의 문구는 개수를 이미 품고 있어 이름만 받는다
+/// (영어만 굴절하지만 키는 세 언어에 다 있다 — 한 자리가 두 문구로 갈리지 않게).
+fn notice_line(notice: &BundleNotice) -> String {
+    match notice {
+        BundleNotice::NewerSchema { found, known } => t_fmt2(
+            "settings.keybindings.ie_notice_newer_schema",
+            &found.to_string(),
+            &known.to_string(),
+        ),
+        BundleNotice::UnknownActions(names) if names.len() == 1 => {
+            t_fmt(UNKNOWN_ACTIONS_ONE, &names.join(", "))
+        }
+        BundleNotice::UnknownActions(names) => t_fmt2(
+            UNKNOWN_ACTIONS_MANY,
+            &names.len().to_string(),
+            &names.join(", "),
+        ),
+    }
+}
+
+/// 모르는 액션이 하나뿐일 때의 줄 — 개수가 문구 안에 박혀 있어 이름 하나만 받는다.
+const UNKNOWN_ACTIONS_ONE: &str = "settings.keybindings.ie_notice_unknown_actions_one";
+/// 둘 이상일 때의 줄 — 개수와 이름 목록을 받는다.
+const UNKNOWN_ACTIONS_MANY: &str = "settings.keybindings.ie_notice_unknown_actions_many";
+
 pub(super) enum Sub {
     Plugin(String),
     Note(String),
@@ -255,22 +282,7 @@ pub(super) fn build_view_model(
         t_fmt2("settings.keybindings.ie_dropped", &count.to_string(), &list)
     });
 
-    let notices = preview
-        .notices
-        .iter()
-        .map(|n| match n {
-            BundleNotice::NewerSchema { found, known } => t_fmt2(
-                "settings.keybindings.ie_notice_newer_schema",
-                &found.to_string(),
-                &known.to_string(),
-            ),
-            BundleNotice::UnknownActions(names) => t_fmt2(
-                "settings.keybindings.ie_notice_unknown_actions",
-                &names.len().to_string(),
-                &names.join(", "),
-            ),
-        })
-        .collect();
+    let notices = preview.notices.iter().map(notice_line).collect();
     let conflicts = migration.iter().filter(|m| m.conflict.is_some()).count();
 
     ViewModel {
@@ -283,5 +295,29 @@ pub(super) fn build_view_model(
         dropped,
         notices,
         conflicts,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 모르는 액션이 하나면 줄도 단수형이다 — 개수를 세는 자리가 "1" 로 남으면 영어에서
+    /// "1 unknown actions" 가 된다.
+    ///
+    /// 재는 것은 **어느 키를 고르는가**다 — 문턱이 정확히 1 인지. 문구 자체와 세 언어의
+    /// 자리 수는 다른 자리가 본다(`tests/i18n_key_parity.rs` 의 `key_sets_match_english` ·
+    /// `placeholders_match_english`). 단위 테스트는 카탈로그 없이 돌아 `t_fmt` 가 키를 그대로
+    /// 돌려주므로, 아래 단정은 카탈로그가 있든 없든 같은 답을 낸다.
+    #[test]
+    fn only_exactly_one_unknown_action_takes_the_singular_line() {
+        let none = notice_line(&BundleNotice::UnknownActions(Vec::new()));
+        let one = notice_line(&BundleNotice::UnknownActions(vec!["tab.pin".into()]));
+        let two = notice_line(&BundleNotice::UnknownActions(vec![
+            "tab.pin".into(),
+            "pane.zoom_cycle".into(),
+        ]));
+        assert_ne!(one, two, "하나와 둘이 같은 문구를 쓴다");
+        assert_ne!(one, none, "빈 목록이 단수형으로 샜다");
     }
 }

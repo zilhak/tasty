@@ -233,10 +233,16 @@ pub(super) fn bundle_notices(
     expanded: bool,
 ) -> bool {
     let (shown, hidden) = super::bundle_notices::fold(lines.len(), expanded);
-    let count = t_fmt(
-        "settings.keybindings.ie_notices_count",
-        &lines.len().to_string(),
-    );
+    // 하나면 단수형. 영어만 굴절하지만 키는 세 언어에 다 있다 — 굴절이 없는 언어에서도
+    // 같은 갈래를 타야 개수 자리 하나가 두 문구로 갈리지 않는다.
+    let count = if lines.len() == 1 {
+        t("settings.keybindings.ie_notices_count_one").to_owned()
+    } else {
+        t_fmt(
+            "settings.keybindings.ie_notices_count_many",
+            &lines.len().to_string(),
+        )
+    };
     let more = t_fmt(
         "settings.keybindings.ie_notices_show_more",
         &hidden.to_string(),

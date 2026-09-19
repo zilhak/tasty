@@ -129,4 +129,12 @@ mod tests {
         assert_eq!(fold(5, false), (3, 2));
         assert_eq!(fold(5, true), (5, 0));
     }
+
+    /// 줄이 하나면 접을 것이 없다 — 액션 행의 "N 개 더 보기" 는 숨은 수가 0 일 때 서지
+    /// 않으므로, 이 값이 0 이라는 것이 곧 그 링크가 없다는 뜻이다.
+    #[test]
+    fn a_single_notice_has_nothing_to_fold() {
+        assert_eq!(fold(1, false), (1, 0));
+        assert_eq!(fold(1, true), (1, 0));
+    }
 }

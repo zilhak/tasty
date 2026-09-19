@@ -1,8 +1,8 @@
 //! Spec 5 — 첫 회차가 비워 둔 나머지(jsx gallery Spec "Open values — unknown failure reason,
 //! counts of one, and the 620 cap").
 //!
-//! 경계: Spec 4 와 같은 블록 레시피를 **다른 갈래**로 든다 — 사유를 모르는 내보내기 실패.
-//! 그리기는 `notices` 의 레시피를 그대로 부른다.
+//! 경계: Spec 4 와 같은 블록 레시피를 **다른 갈래**로 든다 — 사유를 모르는 내보내기 실패와
+//! 알림이 하나뿐인 경고 블록. 그리기는 `notices` 의 레시피를 그대로 부른다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::ButtonVariant;
@@ -10,7 +10,7 @@ use tasty_ui_widgets::ButtonVariant;
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-use super::notices::notice_block;
+use super::notices::{notice_block, notice_line};
 use super::paint::{caption, intro_secondary};
 use super::{IE_FILE, SPECIMEN_W};
 
@@ -19,6 +19,8 @@ use super::{IE_FILE, SPECIMEN_W};
 const UNKNOWN_CLAUSE: &str = "the write didn't finish.";
 /// OS 가 낸 문장 — 문장 안이 아니라 아래 제 줄에 싣는다. 한 줄, 말줄임, 전문은 tooltip.
 const OS_MESSAGE: &str = "os error 28: No space left on device";
+/// 알림이 하나뿐인 경고 블록의 그 한 줄 — 개수 자리도, 줄 자신도 단수형이다.
+const ONE_NOTICE: &str = "1 unknown action was skipped (tab.pin).";
 
 pub fn draw_remaining_values(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
@@ -27,6 +29,8 @@ pub fn draw_remaining_values(ui: &mut egui::Ui, theme: &Theme) {
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
             caption(ui, theme, "1 · export failure — cause unknown to Tasty");
             unknown_export_failure(ui, theme);
+            caption(ui, theme, "2 · one notice — singular header, no fold link");
+            one_notice(ui, theme);
         });
     });
 
@@ -99,6 +103,21 @@ fn unknown_export_failure(ui: &mut egui::Ui, theme: &Theme) {
             ("Try again", ButtonVariant::Secondary),
             ("Choose another location…", ButtonVariant::Ghost),
         ],
+    );
+}
+
+/// jsx `IeBundleNoticesG one` — 헤더 개수와 그 한 줄이 모두 단수형이고, 접을 것이 없으므로
+/// 액션 행이 비어 있다.
+fn one_notice(ui: &mut egui::Ui, theme: &Theme) {
+    notice_block(
+        ui,
+        theme,
+        theme.accent_warning().to_egui(),
+        icons::ALERT_TRIANGLE,
+        "Read with warnings",
+        Some("1 notice"),
+        |ui| notice_line(ui, theme, ONE_NOTICE),
+        &[],
     );
 }
 
