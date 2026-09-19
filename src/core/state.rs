@@ -696,6 +696,23 @@ pub struct CoreState {
     /// 이면 "러너 없음" 으로 읽힌다 — 조회 전용이라 그 낙하가 안전하다.
     pub(crate) agent_runner_registry:
         std::sync::OnceLock<std::sync::Arc<crate::core::agent::runner_thread::RunnerRegistry>>,
+
+    /// 이 engine 이 사는 동안 `tasty_home()` 을 전용 임시 디렉토리로 고정하는 가드 —
+    /// **테스트 전용.** 조립 지점 `new_with_ids_and_settings` 가 채우므로 테스트 픽스처를
+    /// 거치든 그 함수를 직접 부르든 같은 격리를 받는다(테스트 빌드에만 존재하는 필드라
+    /// 부팅 산출물에는 없다).
+    ///
+    /// **마지막 필드인 것이 계약이다.** drop 순서가 선언 순서라, 다른 필드가 전부 내려간
+    /// 뒤에 override 가 풀린다 — 어떤 필드의 `Drop` 이 홈을 읽더라도 아직 격리 안이다.
+    ///
+    /// 생성자가 잠깐 세웠다 내리는 것으로는 부족하다: 사용자 파일을 읽는 자리는 생성
+    /// 시점에 몰려 있지만 **쓰는 자리는 안 그렇다**(`child_terminals.save()` · 파일 핸들러
+    /// LRU · 셸 환경 조립). 계약·구멍은 [`crate::test_support::IsolatedHome`] 문서 참조.
+    /// 이름 앞의 `_` 는 **읽히지 않는 필드**라는 표시다 — 값을 보는 코드가 없고 `Drop`
+    /// 만이 일을 한다. 같은 파일의 [`crate::test_support::TastyHomeGuard`] 가 `_env` ·
+    /// `_lock` 으로 쓰는 것과 같은 관용이다(그렇게 쓰지 않으면 `-D dead-code` 가 막는다).
+    #[cfg(test)]
+    _isolated_home: Option<crate::test_support::IsolatedHome>,
 }
 
 impl CoreState {
@@ -808,6 +825,13 @@ impl CoreState {
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
         settings: Settings,
     ) -> anyhow::Result<Self> {
+        // ★ 아래 본문이 사용자 파일을 여섯 번 읽기 **전에** 세운다(explorer/port 즐겨찾기 ·
+        //   child 레지스트리 · file-handlers 둘 · 핸들러 LRU). 여기가 테스트 생성자와 부팅
+        //   경로가 합류하는 **유일한 조립 지점**이라, 픽스처를 쓰든 이 함수를 직접 부르든
+        //   한 자리가 전부를 덮는다 — 픽스처 쪽에만 달면 직접 부르는 자리가 안 덮인다.
+        //   테스트 빌드에만 있는 코드라 부팅 산출물의 동작은 바뀌지 않는다.
+        #[cfg(test)]
+        let isolated_home = Some(crate::test_support::IsolatedHome::new());
         let restore_layout = settings.general.restore_layout;
 
         // Create engine with empty workspaces first; we'll fill them below.
@@ -932,6 +956,8 @@ impl CoreState {
             input_simulation_enabled: false,
             memory,
             agent_runner_registry: std::sync::OnceLock::new(),
+            #[cfg(test)]
+            _isolated_home: isolated_home,
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게

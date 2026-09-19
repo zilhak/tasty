@@ -459,6 +459,12 @@ dhat-heap = ["dep:dhat"]
 
 [dev-dependencies]
 serde_json = "1"
+# `test-support` 를 켜는 유일한 이유는 `tasty_utils::path::push_home_override` 다 — 그 API 는
+# `#[cfg(any(test, feature = "test-support"))]` 로 게이트돼 있고, `tasty-utils` 는 이 크레이트의
+# **의존**이라 본 크레이트의 `cfg(test)` 로는 켜지지 않는다. dev-dependency 라 제품 빌드에는
+# 들어가지 않는다. 쓰는 곳은 `src/test_support.rs` 의 `IsolatedHome` 하나이고, 근거는
+# `docs/adr/0096-unit-tests-isolated-from-user-environment.md`.
+tasty-utils = { path = "crates/tasty-utils", features = ["test-support"] }
 # 스캔 가드가 공유하는 판정(레포 루트, 빌드 캐시 디렉토리 식별). 이 크레이트는 의존이
 # 0 이라(ADR-0138) 여기에 dev-dep 로 들여도 루트 테스트 빌드가 무거워지지 않는다.
 tasty-doc-guards = { path = "crates/tasty-doc-guards" }

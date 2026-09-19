@@ -57,6 +57,60 @@ impl TastyHomeGuard {
     }
 }
 
+/// 이 스레드의 `tasty_home()` 을 **이 가드 전용 임시 디렉토리**로 고정하는 RAII 가드.
+///
+/// [`TastyHomeGuard`] 와 목적은 같고 수단이 다르다. 그쪽은 `TASTY_HOME` env 를 갈아끼우므로
+/// 프로세스 전역이라 전용 락으로 직렬화해야 한다. 이쪽은
+/// [`tasty_utils::path::push_home_override`] 의 **스레드 로컬** 스택을 쓴다 — env 를 읽기도
+/// 전에 이기고, 락이 없어 병렬 실행을 막지 않는다(ADR-0155 의 처방 등급 ⓒ).
+///
+/// # 왜 `CoreState` 가 이것을 들고 있는가
+///
+/// 격리해야 하는 것이 **생성 시점의 읽기 여섯 자리로 끝나지 않기** 때문이다. `child-terminals.json`
+/// 은 생성 이후의 임의 시점에 `save()` 로 쓰이고, `file-handler-recent.json` 은 쓸 때마다 경로를
+/// 다시 해석하며, `zsh-integration/.zshenv` 는 셸 설정을 조립할 때 만들어진다. 그래서 override 는
+/// 생성자가 잠깐 세웠다 내리는 것이 아니라 **그 engine 이 사는 동안** 서 있어야 한다.
+///
+/// 디렉토리가 engine 마다 다른 것도 계약이다. 스레드마다 하나로 공유하면 같은 스레드에서
+/// 앞 시험이 남긴 레지스트리를 뒤 시험이 **읽는다** — 사용자 홈에서 일어나던 그 되먹임이
+/// 임시 디렉토리로 자리만 옮긴 꼴이고, `--test-threads=1` 에서는 스위트 전체가 한 디렉토리를
+/// 공유하게 된다.
+///
+/// # 구멍
+///
+/// 스레드 로컬이라 **자식 스레드에는 상속되지 않는다.** 프로덕션이 띄운 스레드 본문이
+/// `tasty_home()` 을 읽으면 이 override 를 못 보고 실제 홈으로 폴백한다. 그 구멍이 이 스위트에서
+/// 걸리는 자리가 0 이라는 것은 측정으로 받쳤다 — 빈 `TASTY_HOME` 으로 완주한 뒤 그 디렉토리가
+/// 비어 있는지 보는 것이 그 측정이고, 절차는 `docs/dev-guide/unit-test-isolation.md` 에 있다.
+pub(crate) struct IsolatedHome {
+    // drop 순서 = 선언 순서. override 를 먼저 내리고 그 다음에 디렉토리를 지운다 — 반대면
+    // 지워진 경로를 가리키는 override 가 잠깐 살아 있다.
+    _pop: PopHomeOverride,
+    _dir: tempfile::TempDir,
+}
+
+/// `Drop` 에서 override 를 내리기만 하는 자리표시자. [`IsolatedHome`] 의 필드 순서로
+/// "override 내림 → 디렉토리 삭제" 를 강제하려고 별도 타입으로 둔다.
+struct PopHomeOverride;
+
+impl Drop for PopHomeOverride {
+    fn drop(&mut self) {
+        tasty_utils::path::pop_home_override();
+    }
+}
+
+impl IsolatedHome {
+    /// 새 임시 디렉토리를 만들어 이 스레드의 `tasty_home()` 으로 세운다.
+    pub(crate) fn new() -> Self {
+        let dir = tempfile::tempdir().expect("tempdir");
+        tasty_utils::path::push_home_override(dir.path().to_path_buf());
+        Self {
+            _pop: PopHomeOverride,
+            _dir: dir,
+        }
+    }
+}
+
 /// 테스트용 절대경로 조립 — 절대경로 형태가 플랫폼마다 다르다(`/tmp/x` vs `C:\tmp\x`).
 ///
 /// explorer root 처럼 `Path::is_absolute()` 로 채택 여부를 판정하는 코드의 테스트에서
