@@ -281,6 +281,114 @@ fn upsert_user_handler_adds_user_origin() {
     assert_eq!(h.priority, 15);
 }
 
+/// 한 필드만 고치는 편집이 나머지를 안 지운다.
+///
+/// 이 자리는 실측으로 났다 — `source` 를 주고 만든 핸들러에 `action` 만 주는 편집을
+/// 하면 user 기여분이 통째로 갈리면서 `source` 가 사라졌고, `source` 없는 핸들러는
+/// `merge_contribution` 이 drop 하므로 **고친 핸들러가 조회에서 없어졌다.** 재시작해도
+/// 없었다(디스크의 TOML 에도 `source` 가 안 적혔다).
+#[test]
+fn upsert_user_handler_keeps_fields_the_patch_did_not_mention() {
+    let reg = HookHandlerRegistry::new();
+    reg.upsert_user_handler(UserHookHandlerUpsertDecl {
+        id: "user/keep".into(),
+        source: Some(HookSource::Webhook),
+        priority: Some(5),
+        display_name_i18n_key: Some("k".into()),
+        disabled: Some(false),
+        action: Some(UserHookHandlerActionDecl::IpcSequence {
+            calls: vec![IpcCall {
+                method: "notification.create".into(),
+                params: serde_json::json!({ "body": "one" }),
+            }],
+        }),
+    })
+    .expect("create ok");
+
+    // action 만 준다 — 나머지는 "지운다" 가 아니라 "그대로 둔다" 여야 한다.
+    reg.upsert_user_handler(UserHookHandlerUpsertDecl {
+        id: "user/keep".into(),
+        source: None,
+        priority: None,
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(UserHookHandlerActionDecl::IpcSequence {
+            calls: vec![
+                IpcCall {
+                    method: "notification.create".into(),
+                    params: serde_json::json!({ "body": "one" }),
+                },
+                IpcCall {
+                    method: "notification.create".into(),
+                    params: serde_json::json!({ "body": "two" }),
+                },
+            ],
+        }),
+    })
+    .expect("edit ok");
+
+    let h = reg
+        .get(&HookHandlerId::new("user/keep"))
+        .expect("편집한 핸들러가 조회에서 사라지면 안 된다");
+    assert_eq!(h.source, HookSource::Webhook, "안 준 source 가 지워졌다");
+    assert_eq!(h.priority, 5, "안 준 priority 가 지워졌다");
+    assert_eq!(h.display_name_i18n_key.as_deref(), Some("k"));
+    match &h.action {
+        HookHandlerAction::IpcSequence { calls } => {
+            assert_eq!(calls.len(), 2, "준 action 은 덮였어야")
+        }
+        other => panic!("expected ipc_sequence, got {other:?}"),
+    }
+
+    // 영속 텍스트에도 남아야 한다 — 재시작이 읽는 것이 이 문자열이다.
+    let toml = reg.export_user_config();
+    assert!(
+        toml.contains("webhook"),
+        "영속 텍스트에 source 가 없다:\n{toml}"
+    );
+    assert!(
+        toml.contains("priority"),
+        "영속 텍스트에 priority 가 없다:\n{toml}"
+    );
+}
+
+/// 셸 불변식은 **접고 난 결과**로 판정한다 — `source = hook` 으로 만든 셸 핸들러의
+/// 명령만 고치는 정상 편집이 거부되면 안 된다.
+#[test]
+fn upsert_user_handler_shell_edit_keeps_its_hook_source() {
+    let reg = HookHandlerRegistry::new();
+    reg.upsert_user_handler(UserHookHandlerUpsertDecl {
+        id: "user/shell".into(),
+        source: Some(HookSource::Hook),
+        priority: None,
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(UserHookHandlerActionDecl::ShellCommand {
+            command: "echo one".into(),
+            args: Vec::new(),
+        }),
+    })
+    .expect("create ok");
+
+    reg.upsert_user_handler(UserHookHandlerUpsertDecl {
+        id: "user/shell".into(),
+        source: None,
+        priority: None,
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(UserHookHandlerActionDecl::ShellCommand {
+            command: "echo two".into(),
+            args: Vec::new(),
+        }),
+    })
+    .expect("source 를 다시 안 적어도 hook 이 이어져야 한다");
+
+    let h = reg
+        .get(&HookHandlerId::new("user/shell"))
+        .expect("살아 있어야");
+    assert_eq!(h.source, HookSource::Hook);
+}
+
 #[test]
 fn upsert_user_handler_rejects_missing_owner_prefix() {
     let reg = HookHandlerRegistry::new();

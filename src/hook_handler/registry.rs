@@ -429,8 +429,15 @@ impl HookHandlerRegistry {
         inner.dirty = true;
     }
 
-    /// Settings UI 가 user-origin handler 를 추가/갱신 (patch). 기존 host/plugin 이
-    /// 있으면 그 위에 덮는다. id 는 `<owner>/<short>` 형식이어야 한다.
+    /// user-origin handler 를 추가/갱신 (patch). 기존 host/plugin 이 있으면 그 위에
+    /// 덮는다. id 는 `<owner>/<short>` 형식이어야 한다.
+    ///
+    /// **접는 대상은 둘이다.** 하나는 host/plugin 기본값(그 위에 user 기여분이 얹힌다),
+    /// 다른 하나는 **직전 user 기여분**이다 — 안 준 필드는 지우는 것이 아니라 그대로
+    /// 둔다. 뒤엣것이 없으면 한 필드만 고치는 편집이 나머지를 전부 지우고, `source` 가
+    /// 지워진 핸들러는 [`merge_contribution`] 이 "필수 필드 누락" 으로 **drop 하므로
+    /// 고친 핸들러가 통째로 사라진다**(실측으로 그렇게 났다: `source` 를 준 생성 뒤
+    /// `action` 만 준 편집을 하면 그 id 가 조회에서 없어졌고, 재시작 후에도 없었다).
     pub fn upsert_user_handler(
         &self,
         decl: UserHookHandlerUpsertDecl,
@@ -438,30 +445,38 @@ impl HookHandlerRegistry {
         if !decl.id.contains('/') {
             return Err(HookHandlerDeclError::InvalidShortName(decl.id.clone()));
         }
-        let action: Option<HookHandlerAction> = decl.action.map(Into::into);
-        // 셸 불변식: user 가 ShellCommand 를 non-hook source 로 upsert 하려 하면 거부.
-        if let Some(HookHandlerAction::ShellCommand { .. }) = &action {
-            if decl.source != Some(HookSource::Hook) {
-                return Err(HookHandlerDeclError::ShellMustBeHookSource {
-                    handler: decl.id.clone(),
-                });
-            }
-        }
+        let id = HookHandlerId(decl.id.clone());
         // poison 을 `InvalidShortName("lock poisoned")` 으로 보고하던 자리다 —
         // 사용자에게 id 형식이 틀렸다고 말하면서 진짜 원인은 남기지 않았다.
         let mut inner = self.lock_write();
-        push_contribution(
-            &mut inner,
-            HookHandlerId(decl.id),
-            HookHandlerContribution {
-                owner: HookHandlerOwner::User,
-                source: decl.source,
-                priority: decl.priority,
-                display_name_i18n_key: decl.display_name_i18n_key,
-                disabled_override: decl.disabled,
-                action,
-            },
-        );
+        let prev = inner
+            .contributions
+            .get(&id)
+            .and_then(|v| v.iter().find(|c| matches!(c.owner, HookHandlerOwner::User)));
+        let merged = HookHandlerContribution {
+            owner: HookHandlerOwner::User,
+            source: decl.source.or_else(|| prev.and_then(|c| c.source)),
+            priority: decl.priority.or_else(|| prev.and_then(|c| c.priority)),
+            display_name_i18n_key: decl
+                .display_name_i18n_key
+                .or_else(|| prev.and_then(|c| c.display_name_i18n_key.clone())),
+            disabled_override: decl
+                .disabled
+                .or_else(|| prev.and_then(|c| c.disabled_override)),
+            action: decl
+                .action
+                .map(Into::into)
+                .or_else(|| prev.and_then(|c| c.action.clone())),
+        };
+        // 셸 불변식: user 가 ShellCommand 를 non-hook source 로 두려 하면 거부.
+        // **접고 난 결과로** 판정한다 — 접기 전 인자만 보면 앞서 `source = hook` 으로
+        // 적어 둔 핸들러의 명령만 고치는 정상 편집이 거부된다.
+        if matches!(merged.action, Some(HookHandlerAction::ShellCommand { .. }))
+            && merged.source != Some(HookSource::Hook)
+        {
+            return Err(HookHandlerDeclError::ShellMustBeHookSource { handler: decl.id });
+        }
+        push_contribution(&mut inner, id, merged);
         inner.dirty = true;
         Ok(())
     }
@@ -737,8 +752,9 @@ fn same_owner(a: &HookHandlerOwner, b: &HookHandlerOwner) -> bool {
     }
 }
 
-/// Settings UI 가 `upsert_user_handler` 호출에 사용하는 입력. 모든 필드 optional
-/// (patch semantics).
+/// `upsert_user_handler` 의 입력(Settings UI · `hook_handler.upsert` IPC). 모든 필드
+/// optional 이고, `None` 은 "지운다" 가 아니라 **"그대로 둔다"** 이다 — 직전 user
+/// 기여분 위에 접힌다.
 #[derive(Debug, Clone)]
 pub struct UserHookHandlerUpsertDecl {
     pub id: String,
