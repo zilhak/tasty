@@ -1,7 +1,6 @@
 //! 레이아웃 성질을 **칠해진 결과**로 고정한다 — 버튼이 보이는가는 view 가 돌려주는 값이
 //! 아니라 화면에 칠해진 텍스트가 popup 콘텐츠 영역 안에 온전히 들어갔는가로만 정직하게 잴 수
 //! 있다(`remote_tool` 의 `painted_text` 와 같은 관찰점).
-use super::path_bar::{CrumbSlot, crumb_slots};
 use super::*;
 
 const CONFIRM: &str = "CONFIRM-LABEL";
@@ -216,37 +215,37 @@ fn short_breadcrumb_is_not_elided() {
     assert!(!shapes.iter().any(|(t, _, _)| t == "…"));
 }
 
+/// 접힌 조상은 빠짐없이 `…` 뒤에 있다 — 클릭할 수 있어야 하므로 사라지면 안 된다.
+///
+/// 그 명제는 배분 자체가 아니라 **칠해진 결과**로 잰다: 보이는 라벨과 메뉴가 여는 라벨의
+/// 합집합이 전체 경로다. 배분의 사다리는 `path_bar::alloc` 의 단위 테스트가 잰다.
 #[test]
-fn crumb_slots_cover_every_ancestor_exactly_once() {
-    for len in 0..12 {
-        for elide in [false, true] {
-            let mut seen = Vec::new();
-            for slot in crumb_slots(len, elide) {
-                match slot {
-                    CrumbSlot::Crumb(i) => seen.push(i),
-                    CrumbSlot::Hidden(r) => seen.extend(r),
-                }
-            }
-            assert_eq!(
-                seen,
-                (0..len).collect::<Vec<_>>(),
-                "len={len} elide={elide}"
-            );
-        }
-    }
-    assert_eq!(
-        crumb_slots(8, true),
-        vec![
-            CrumbSlot::Crumb(0),
-            CrumbSlot::Hidden(1..6),
-            CrumbSlot::Crumb(6),
-            CrumbSlot::Crumb(7),
-        ]
+fn every_ancestor_is_either_painted_or_behind_the_ellipsis() {
+    let crumbs = deep_crumbs(30, "segment");
+    let (_, shapes) = painted(
+        egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value()),
+        &crumbs,
+        FilePickerMode::Open { selection_text: "" },
     );
-    assert_eq!(
-        crumb_slots(3, true).len(),
-        3,
-        "접을 것이 없으면 접지 않는다"
+    let painted_labels: Vec<&str> = shapes.iter().map(|(t, _, _)| t.as_str()).collect();
+    assert!(painted_labels.contains(&"…"), "접혔는데 `…` 가 없다");
+    let hidden: Vec<&str> = crumbs
+        .iter()
+        .map(|c| c.label.as_str())
+        .filter(|l| !painted_labels.contains(l))
+        .collect();
+    assert!(
+        !hidden.is_empty(),
+        "30 성분이 640 폭에 다 들어갔다 — 이 케이스가 아무것도 안 잰다"
+    );
+    // 숨은 것은 전부 **가운데** 조상이다: root 와 현재 폴더는 접히지 않는 폭이다.
+    assert!(
+        !hidden.contains(&crumbs[0].label.as_str()),
+        "root 가 접혔다 — 이 폭은 사다리 바닥이 아니다"
+    );
+    assert!(
+        !hidden.contains(&crumbs[crumbs.len() - 1].label.as_str()),
+        "현재 폴더가 접혔다"
     );
 }
 
@@ -352,4 +351,47 @@ fn a_selected_folder_puts_its_line_in_the_footer_without_pushing_the_buttons_out
         !shapes.iter().any(|(t, _, _)| t.contains("is a folder")),
         "파일을 골랐는데 폴더 안내 줄이 섰다"
     );
+}
+
+/// 좁은 폭에서 현재 폴더는 **앞에서** 말줄임한다 — 꼬리가 형제 폴더를 가르므로 꼬리를
+/// 자르면 두 폴더가 같은 문자열이 된다. 그리고 보이는 `…` 없이 잘리지 않는다.
+#[test]
+fn the_current_folder_elides_at_the_front_and_never_clips_without_an_ellipsis() {
+    let long = "a".repeat(53);
+    let crumbs = vec![
+        CrumbView { label: "/".into() },
+        CrumbView {
+            label: long.clone(),
+        },
+        CrumbView {
+            label: format!("{long}-tail"),
+        },
+    ];
+    let (content, shapes) = painted(
+        egui::vec2(400.0, 360.0),
+        &crumbs,
+        FilePickerMode::Open { selection_text: "" },
+    );
+    let current = shapes
+        .iter()
+        .map(|(t, _, _)| t.as_str())
+        .find(|t| t.ends_with("-tail"))
+        .unwrap_or_else(|| {
+            panic!(
+                "현재 폴더의 꼬리가 사라졌다 — 칠해진 것: {:?}",
+                shapes.iter().map(|(t, _, _)| t).collect::<Vec<_>>()
+            )
+        });
+    assert_ne!(
+        current,
+        format!("{long}-tail"),
+        "이 폭에서 안 줄었다 — 이 케이스가 아무것도 안 잰다"
+    );
+    assert!(
+        current.starts_with('…'),
+        "현재 폴더가 앞 말줄임 표지 없이 잘렸다: {current:?}"
+    );
+    // 버튼은 여전히 온전하다 — path bar 는 footer 에서 폭을 사지 않는다.
+    assert_fully_visible(content, &shapes, CONFIRM, "narrow");
+    assert_fully_visible(content, &shapes, CANCEL, "narrow");
 }

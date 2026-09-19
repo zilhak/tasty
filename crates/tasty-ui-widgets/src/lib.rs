@@ -31,6 +31,7 @@ mod button;
 mod chip;
 mod chrome_slot;
 mod control;
+pub mod crumb_alloc;
 mod drilldown;
 mod help_hint;
 mod horizontal_tab_bar;
