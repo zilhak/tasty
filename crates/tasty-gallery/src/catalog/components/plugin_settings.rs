@@ -82,7 +82,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     // 미러). right_to_left 이라 suffix 가 가장 우측, 그 왼쪽에 필드.
                     // 확정(blur / ↵) 때만 25..=500 으로 끌어오고, 치는 동안은 그대로 둔다.
                     row(ui, theme, "Default zoom:", |ui| {
-                        ui.label(egui::RichText::new("%").color(theme.text_muted().to_egui()));
+                        ui.label(
+                            egui::RichText::new("%")
+                                .size(theme.font_size_term_sm.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
                         let pending = zoom_out_of_range(&st.zoom_buf);
                         let resp = Input::new()
                             .mono(true)

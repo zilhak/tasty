@@ -196,8 +196,11 @@ pub(super) fn number_field(
                 } else {
                     theme.text_disabled()
                 };
+                // 단위는 **12**(`font_size_term_sm`) 다 — 경고 줄의 11
+                // (`font_size_caption`)과 다른 자리다. 디자인 원본이 두 값을 한 행
+                // 안에서 갈라 적는다.
                 let mut text = egui::RichText::new(sfx)
-                    .size(theme.font_size_caption.value())
+                    .size(theme.font_size_term_sm.value())
                     .color(ink);
                 if spec.suffix_mono {
                     text = text.monospace();

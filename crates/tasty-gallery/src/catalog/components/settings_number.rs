@@ -65,7 +65,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("control", "Input — 새 컴포넌트 아님"),
             ("font", "mono · 자릿수 우측 정렬"),
             ("width", "field_width_xs (90)"),
-            ("suffix", "필드 밖 정적 텍스트, muted"),
+            (
+                "suffix",
+                "필드 밖 정적 텍스트, muted · 12(font_size_term_sm)",
+            ),
             ("clamp", "확정(blur / ↵) 때만 — 치는 중엔 안 건드린다"),
             ("out of range", "danger 테두리 + 범위 한 줄"),
         ],
@@ -107,9 +110,10 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
                     } else {
                         theme.text_disabled()
                     };
+                    // 단위 12(`font_size_term_sm`) — 아래 경고 줄의 11 과 다르다.
                     ui.label(
                         egui::RichText::new("%")
-                            .size(theme.font_size_caption.value())
+                            .size(theme.font_size_term_sm.value())
                             .color(muted),
                     );
                     Input::new()
