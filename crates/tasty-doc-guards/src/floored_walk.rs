@@ -234,12 +234,13 @@ pub mod populations {
         measured: 116,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "4eb7312bb + 이 lane — 그 트리의 추적 계수가 115 이고 이 lane 이 \
-             `tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs` \
-             하나를 더해 116 다. 앞선 값 115 도 같은 형태로 적혔고 그 사이 통합이 한 번 \
-             있었다 — 그 트리에서 다시 세도 115 라 그 값은 낡지 않았다. \
+            "MEASURED_TREE — 이 트리에서 다시 셌다. 두 lane 이 각각 통합 타깃을 하나씩 \
+             더했다: `tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs` \
+             와 `tasty-doc-guards/tests/drag_to_scroll_is_declared.rs`. 둘 다 자기 base 에서 \
+             116 이라 적었고 **그 값은 각자의 트리에서만 맞았다** — 같은 수가 서로 다른 두 \
+             근거를 갖는 형태이고, 병합하는 쪽이 여기서 다시 잰 값이 이것이다. \
              이전 회차: 742b0dbf7 + lane — 그 트리의 추적 계수가 114 이고 그 lane 이 \
-             `tasty-doc-guards/tests/githooks_are_pinned.rs` 하나를 더해 115 다. \
+             `tasty-doc-guards/tests/githooks_are_pinned.rs` 하나를 더해 115 였다. \
              **lane 트리에서 잰 값이라 구조적으로 낮다** — 같은 회차의 다른 lane 이 \
              통합 타깃을 더했으면 통합 트리에서는 더 크고, 최종 값은 병합하는 쪽이 \
              거기서 다시 잰다. 바로 앞 회차가 그 형태의 실물이다(아래). \

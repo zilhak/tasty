@@ -269,4 +269,5 @@
 | 0295 | [셸 자산은 warning 이상에서 잔여 0 으로 판정한다 — 그 아래는 안 센다](0295-shell-assets-are-judged-at-warning-and-above.md) | Accepted | 2026-09-20 | shell, gates, ci, git-hooks, shellcheck, ratchet, adr-0183 |
 | 0296 | [도달 불가가 된 커밋 좌표는 지우지 않고 그 자리에 적는다](0296-an-unreachable-commit-coordinate-is-annotated-not-deleted.md) | Accepted | 2026-09-20 | documentation, guards, citations, git-history, floored-walk, adr-0105, adr-0139 |
 | 0297 | [e2e 하네스는 디스플레이를 격리하지 않고 이름을 요구한다](0297-the-e2e-harness-names-a-display-instead-of-isolating-it.md) | Accepted | 2026-09-20 | testing, e2e, harness, isolation, linux, adr-0127, adr-0090 |
+| 0299 | [스크롤 영역은 드래그 패닝 여부를 선언한다](0299-scroll-areas-declare-whether-they-pan-on-drag.md) | Accepted | 2026-09-20 | ui, scroll, input, guard, egui |
 | 0300 | [scrim 은 popup 이 소속된 범위를 덮는다 — 늘 창 전체가 아니다](0300-the-scrim-covers-the-popups-scope-not-always-the-window.md) | Accepted | 2026-09-20 | popup, scope, scrim, plugin, design-tokens, gallery, adr-0273, adr-0254 |
