@@ -652,16 +652,6 @@ pub(crate) fn handle_release(engine: &mut CoreState, id: Value, params: &Value) 
         Ok(c) => c,
         Err(e) => return e,
     };
-    if let Some(child) = engine
-        .child_terminals
-        .list_children(parent)
-        .iter()
-        .find(|c| c.index == child_index)
-    {
-        if let Err(error) = engine.completion.release(parent, child.child_surface_id) {
-            return JsonRpcResponse::error(id, -32000, format!("completion release: {error}"));
-        }
-    }
     let Some(removed) = engine.child_terminals.remove_child(parent, child_index) else {
         return JsonRpcResponse::invalid_params(
             id,
@@ -747,13 +737,7 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
     {
         return JsonRpcResponse::error(id, -32020, "occupy_soft failed: another owner");
     }
-    if let Err(error) = engine.completion.begin_relation(parent, target) {
-        return JsonRpcResponse::error(id, -32000, format!("completion relation: {error}"));
-    }
     if let Err(error) = engine.occupy_soft(target, parent, label) {
-        if let Err(cleanup) = engine.completion.release(parent, target) {
-            tracing::warn!("adopt relation rollback failed: {cleanup}");
-        }
         return JsonRpcResponse::error(id, -32020, format!("occupy_soft failed: {error:?}"));
     }
     let index = engine.child_terminals.next_index_for(parent);
@@ -804,12 +788,6 @@ pub(crate) fn handle_respawn(
             child_not_found_message(&engine.child_terminals, parent, child_index),
         );
     };
-    if let Err(error) = engine
-        .completion
-        .end_execution(entry.child_surface_id, "respawn")
-    {
-        return JsonRpcResponse::error(id, -32000, format!("completion respawn: {error}"));
-    }
     let new_cwd = optional_str(params, "cwd");
     let command = optional_str(params, "command");
 
@@ -994,19 +972,6 @@ pub(crate) fn handle_set_state(
             id,
             format!("unknown state '{new_state}' (supported: idle, needs_input, active)"),
         );
-    }
-    match engine.completion.observe_session(
-        surface_id,
-        &new_state,
-        params["cause"].as_str().unwrap_or("state_hook"),
-        params["summary"].as_str().unwrap_or(""),
-        params["hook_session"].as_str(),
-    ) {
-        Ok(true) => {}
-        Ok(false) => return JsonRpcResponse::success(id, json!({"ignored_old_session":true})),
-        Err(error) => {
-            return JsonRpcResponse::error(id, -32000, format!("completion state: {error}"));
-        }
     }
     match new_state.as_str() {
         "idle" => engine.child_terminals.set_idle(surface_id, true),

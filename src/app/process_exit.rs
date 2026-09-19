@@ -4,9 +4,6 @@ use crate::state::AppState;
 
 pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreState, surface: u32) {
     // Only an explicit PTY exit reaches this path; local window absence is not an exit.
-    if let Err(error) = engine.completion.exited(surface, "process-exit") {
-        tracing::warn!("completion process exit queued for persistence recovery: {error}");
-    }
     let fired = engine
         .hook_manager
         .check_and_fire(surface, &[tasty_hooks::HookEvent::ProcessExit]);

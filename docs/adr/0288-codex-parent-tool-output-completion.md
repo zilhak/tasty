@@ -66,5 +66,3 @@ hook session_id, thread.sessionId, thread.id를 별도 필드로 보관한다. �
 - [App Server 공식 문서](https://learn.chatgpt.com/docs/app-server)
 - [동작·운영](../dev-guide/child-completion-app-server.md)
 - [Claude 부모 로그](../dev-guide/external-interaction/child-completion-notify-log.md)
-- 현재 구현: `src/core/completion/`의 `Completion`, `worker::tick`, `protocol::Client`.
-- 현재 구현: `src/adapters/ipc/handler/terminal.rs`의 `handle_release`, `src/adapters/ipc/handler/completion.rs`의 `handle`.

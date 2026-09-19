@@ -12,11 +12,6 @@ pub(super) fn finish(
     command: Option<&str>,
 ) -> Result<(), JsonRpcResponse> {
     let target = child.child_surface_id;
-    if let Err(error) = engine.completion.begin_relation(parent, target) {
-        let error =
-            JsonRpcResponse::error(id.clone(), -32000, format!("completion relation: {error}"));
-        return Err(rollback(core, state, engine, parent, &child, error));
-    }
     engine.child_terminals.register_child(parent, child.clone());
     engine.child_terminals.save();
     let label = child.nickname.clone().or_else(|| child.role.clone());

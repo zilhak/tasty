@@ -91,9 +91,8 @@ SessionStart 관측, endpoint 바인딩, 서버 지원은 별도 상태다. stat
 로컬 CLI이며 server는 연결된 App Server가 반환한 값이다. 직접 WebSocket을 사용하므로
 proxy 실행파일은 연결 필수 조건이 아니다. `diagnose --local-config-file <절대 파일>`은 선택한 로컬 파일의 managed hook 존재와 trust metadata를 읽기만 한다. 생략 시 Tasty 호스트 환경의 Codex 설정을 읽는다. command hash의 실제 수락이나 remote daemon의 trust를 이 파일로 추정하지 않으며, 현재 세션의 hook 관측/명시 등록 출처는 별도로 표시한다.
 
-도메인 시험은 `src/core/completion/tests.rs`, 호스트 진입점은
-`src/adapters/ipc/handler/completion.rs`다. plugin 쪽에는 대응 어댑터 모듈이 없다 —
-codex·claude 는 이 메서드를 호출하지 않는다. 격리 실행은
+이 기능의 구현은 레포에서 제거됐다 — 호스트 journal 모듈도, 그 IPC 진입점도,
+plugin 쪽 어댑터도 더 이상 없다. 이 문서의 서술은 제거 전의 동작 기록이다. 격리 실행은
 [self-verification](self-verification.md)을 따른다. Windows/macOS 실행 결과를 Linux
 시험으로 대신하지 않는다. 결정 근거는 [ADR-0288](../adr/0288-codex-parent-tool-output-completion.md).
 

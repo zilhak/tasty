@@ -59,10 +59,6 @@ fn close_surface_via_intent(
 
     // is_user_close=false — IPC 는 agent 경로. cleanup_targets 의 모든 surface 에 대한
     // lifecycle enqueue 는 cascade_surface_closed 가 처리 (R1 분석 참조).
-    let closed_surfaces: Vec<_> = cleanup_targets
-        .iter()
-        .map(|(surface, _)| *surface)
-        .collect();
     crate::app::dispatch_domain::cascade_surface_closed(
         core,
         state,
@@ -78,25 +74,7 @@ fn close_surface_via_intent(
         },
     );
 
-    let completion_cleanup = match engine.completion.snapshot() {
-        Ok(journal)
-            if journal
-                .pending_closes
-                .values()
-                .any(|task| closed_surfaces.contains(&task.surface)) =>
-        {
-            "pending"
-        }
-        Ok(_) => "complete",
-        Err(error) => {
-            tracing::warn!("close lifecycle status unavailable: {error}");
-            "status_unavailable"
-        }
-    };
-    JsonRpcResponse::success(
-        id,
-        json!({ "closed": true, "surface_id": surface_id, "completion_cleanup":completion_cleanup }),
-    )
+    JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
 }
 
 /// 원격 attach 가 **하드 점유** 중이면 거절 응답을 돌린다.

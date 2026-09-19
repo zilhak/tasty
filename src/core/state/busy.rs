@@ -70,28 +70,9 @@ impl CoreState {
         // stale 엔트리가 남지 않도록 매 tick 맵 전체를 교체한다.
         self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
         self.mouse_capture_banner_suppressed_surfaces = mouse_capture_banner_suppressed;
-        for (&sid, previous) in &self.foreground_names {
-            let was_agent = matches!(
-                previous.to_ascii_lowercase().as_str(),
-                "codex" | "codex.exe" | "claude" | "claude.exe"
-            );
-            if was_agent
-                && names.get(&sid).is_some_and(|name| {
-                    tasty_terminal::foreground_process::is_known_shell_name(name)
-                })
-            {
-                if let Err(error) = self
-                    .completion
-                    .end_execution(sid, "foreground_returned_to_shell")
-                {
-                    tracing::warn!("completion execution end: {error}");
-                }
-            }
-        }
         self.foreground_names = names;
         let changed = self.busy_surfaces != busy;
         self.busy_surfaces = busy;
-        self.reconcile_completions();
         changed
     }
 

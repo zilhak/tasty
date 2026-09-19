@@ -1439,10 +1439,6 @@ impl AppState {
     ) {
         use std::time::Instant;
         sums.surfaces += 1;
-        if let Err(error) = engine.completion.exited(surface_id, "surface_closed") {
-            tracing::warn!("completion close queued for recovery; persistence pending: {error}");
-        }
-
         let t = Instant::now();
         Self::delete_scrollback_persist(persist_id);
         sums.scrollback_delete += t.elapsed();

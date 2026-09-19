@@ -283,7 +283,6 @@ dhat = { version = "0.3", optional = true }
 
 # Error Handling
 anyhow = "1"
-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 
 # Font validation for language-pack [font] resolve (already in the tree via egui/epaint).
 
