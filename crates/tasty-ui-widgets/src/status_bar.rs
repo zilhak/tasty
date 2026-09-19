@@ -1,7 +1,7 @@
 //! 작업영역(작업 컬럼) 하단 StatusBar 의 **순수 시각** — 디자인
 //! `ui_kits/terminal/work.jsx` 의 `StatusBar` 컴포넌트 대응.
 //!
-//! ## 구성 (디자인 canonical — 2026-09-17 결정)
+//! ## 구성 (확정 — 명세는 `docs/features/workspace-status-bar/index.md`)
 //! 이 바는 **포커스 surface 의 읽기 전용 요약 + 키보드 리마인더 하나**다. 어느 항목도
 //! 목적지가 아니다(포커스를 옮기는 항목이 없다).
 //!
