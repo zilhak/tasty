@@ -295,10 +295,13 @@ pub const FH_ID_ELIDE_MAX: usize = 34;
 /// [`FH_ID_ELIDE_MAX`] 초과 시 남기는 뒤쪽 문자 수 — 앞에 붙는 `…` 한 글자를 뺀 값.
 pub const FH_ID_ELIDE_TAIL: usize = FH_ID_ELIDE_MAX - 1;
 
-/// 헤더 경로 한 줄이 실제로 쓸 수 있는 가로 폭. 프레임 폭에서 좌우 보더 1px 과 좌우
-/// 여백을 뺀 값이다 — 디자인이 `420 − 1×2 − 14×2 = 390` 으로 값을 줬고, 여기서는
-/// 그 산식을 토큰으로 다시 적어 세 항 중 하나가 움직이면 따라오게 한다.
-pub const FH_TARGET_LINE_BOX: LogicalPx = LogicalPx(FH_FRAME_WIDTH.0 - 2.0 - FH_EDGE_PAD_X.0 * 2.0);
+/// 헤더 경로 한 줄이 실제로 쓸 수 있는 가로 폭. 프레임 폭에서 좌우 보더와 좌우 여백을
+/// 뺀 값이다 — 디자인이 `420 − 1×2 − 14×2 = 390` 으로 값을 줬고, 여기서는 그 산식을
+/// 토큰으로 다시 적어 세 항 중 하나가 움직이면 따라오게 한다. 보더도 `SIZING` 에서
+/// 가져온다: `2.0` 을 박으면 보더가 굵어져도 이 폭이 안 따라오고, 그때 경로는 넘치는
+/// 것이 아니라 **조용히 한 글자 더 잘린다.**
+pub const FH_TARGET_LINE_BOX: LogicalPx =
+    LogicalPx(FH_FRAME_WIDTH.0 - SIZING.border_width.0 * 2.0 - FH_EDGE_PAD_X.0 * 2.0);
 
 /// 헤더 경로 앞자름의 **파생 상한** — 글리프 폭을 못 잴 때만 쓴다.
 ///

@@ -58,6 +58,10 @@ const GALLERY_SRC: &str = "crates/tasty-gallery/src";
 /// 가 생기면 그 자리에서 실패하고, 위젯이면 재수출로 내보내라고 요구한다.
 const PUB_MODULES: &[(&str, &str)] = &[
     ("brand", "브랜드 자산(로고 등) 모듈 — 그릴 위젯이 아니다"),
+    (
+        "file_handler",
+        "picker 의 모델 규칙(말줄임 · 문자 예산) — 순수 함수지 위젯이 아니다.          본체와 갤러리 specimen 이 같은 판정을 부르라고 여기 있다",
+    ),
     ("tokens", "레이아웃 상수 모듈 — 값이지 위젯이 아니다"),
 ];
 
