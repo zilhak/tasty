@@ -151,13 +151,20 @@ pub fn id_local_segment(id: &str) -> &str {
     }
 }
 
-/// 헤더 경로가 이번 프레임에 쓸 수 있는 **문자 예산** — mono 글리프 한 칸을 실제로 재서
-/// 구한다. 디자인이 정한 것은 개수가 아니라 측정이고, 못 잴 때만 파생 상한으로 떨어진다
-/// (`tasty_ui_widgets::file_handler::target_budget_chars`).
+/// 헤더 경로가 이번 프레임에 쓸 수 있는 **문자 예산** — mono 한 칸이 실제로 깔리는 폭을
+/// 재서 구한다. 디자인이 정한 것은 개수가 아니라 측정이고, 못 잴 때만 파생 상한으로
+/// 떨어진다 (`tasty_ui_widgets::file_handler::target_budget_chars`).
+///
+/// 재는 것은 **글자 하나의 폭이 아니라 한 글자 늘 때의 증분**이다. egui 는 레이아웃에서
+/// 글리프 advance 를 정수 픽셀로 반올림하므로 둘이 다르다 — D2Coding 11px 에서 `"0"`
+/// 한 글자는 5.5625px 인데 `"00"` 은 11.5625px 다(증분 6.0). 앞의 값으로 나누면 예산이
+/// 70 자로 나오고, 그 70 자는 깔리면 419.56px 라 390px 라인 박스를 넘겨 painter 가
+/// 잘라낸다. 모델이 "들어간다" 고 판정한 경로가 화면에서는 잘리는 상태라 눈에 안 띈다.
 fn target_budget(ui: &egui::Ui, th: &Theme) -> usize {
     let font = egui::FontId::monospace(th.font_size_caption.value());
-    let w = text_w(ui, "0", &font, egui::Color32::PLACEHOLDER);
-    fh_model::target_budget_chars(LogicalPx(w))
+    let one = text_w(ui, "0", &font, egui::Color32::PLACEHOLDER);
+    let two = text_w(ui, "00", &font, egui::Color32::PLACEHOLDER);
+    fh_model::target_budget_chars(LogicalPx(two - one))
 }
 
 /// Recent 행 "언제" 조각의 구간 — 확정 디자인의 어휘 6 단계.

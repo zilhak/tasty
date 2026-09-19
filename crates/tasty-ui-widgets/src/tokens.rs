@@ -303,13 +303,27 @@ pub const FH_ID_ELIDE_TAIL: usize = FH_ID_ELIDE_MAX - 1;
 pub const FH_TARGET_LINE_BOX: LogicalPx =
     LogicalPx(FH_FRAME_WIDTH.0 - SIZING.border_width.0 * 2.0 - FH_EDGE_PAD_X.0 * 2.0);
 
+/// 헤더 경로 mono 한 칸이 **깔릴 때** 차지하는 가로 폭.
+///
+/// 폰트가 말하는 공칭 advance 가 아니다. D2Coding 11px 의 공칭 advance 는 5.5556px
+/// (`egui::Fonts::glyph_width`)지만, egui 는 레이아웃에서 글리프 advance 를 정수
+/// 픽셀로 반올림하므로 실제로 깔리는 폭은 한 칸에 6px 다(ppp=1, 아무도
+/// `round_text_to_pixels` 를 끄지 않는다).
+///
+/// 이 구분이 값을 바꾼다 — 공칭 5.5556 으로 예산을 잡으면 70 자가 나오고, 그 70 자는
+/// 깔리면 419.56px 라 라인 박스(390px)를 29.56px 넘겨 painter 가 잘라낸다. 모델이
+/// "들어간다" 고 판정한 문자열이 화면에서는 잘리는, 가장 조용한 형태의 오류다. 그래서
+/// 재는 쪽(`crate::file_handler::target_budget_chars` 의 인자)도 단일 글리프 폭이
+/// 아니라 **한 글자 늘 때의 증분**을 넘긴다.
+pub const FH_TARGET_MONO_ADVANCE: LogicalPx = LogicalPx(6.0);
+
 /// 헤더 경로 앞자름의 **파생 상한** — 글리프 폭을 못 잴 때만 쓴다.
 ///
 /// 디자인이 정한 규칙은 개수가 아니라 측정이다(`crate::file_handler::target_budget_chars`).
-/// 이 수는 그 측정이 불가능할 때의 대체값이고, D2Coding 11px 의 5.5px/자로
-/// [`FH_TARGET_LINE_BOX`] 를 나눈 몫이다. **이전의 잠정값 48 은 폐기됐다** — 들어가는
-/// 경로를 잘랐다.
-pub const FH_TARGET_ELIDE_FALLBACK: usize = 70;
+/// 이 수는 그 측정이 불가능할 때의 대체값이고, [`FH_TARGET_LINE_BOX`] 를
+/// [`FH_TARGET_MONO_ADVANCE`] 로 나눈 몫이다. **이전의 잠정값 48 은 폐기됐다** —
+/// 들어가는 경로를 잘랐다.
+pub const FH_TARGET_ELIDE_FALLBACK: usize = 65;
 
 /// Recent 그룹 행 글리프의 흐리기. 디자인 `opacity: dim && !plugin ? 0.8 : 1` — plugin
 /// 행은 mauve 가 출처 표시라 흐리지 않는다.

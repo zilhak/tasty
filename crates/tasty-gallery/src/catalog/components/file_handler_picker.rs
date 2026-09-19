@@ -192,9 +192,9 @@ pub fn draw_when(ui: &mut egui::Ui, theme: &Theme) {
 pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for (label, raw) in [
-            "70 chars — fits, untouched",
-            "92 → 68 — whole segments dropped",
-            "one 72-char segment → 70",
+            "sample A — 70 chars, 5 over the budget",
+            "92 → 61 — whole segments dropped",
+            "one 72-char segment → 65",
         ]
         .into_iter()
         .zip(PATH_SAMPLES)
@@ -209,8 +209,9 @@ pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("line box", "420 − 1×2 border − 14×2 pad = 390px"),
-            ("budget", "measured: 390px ÷ one mono cell"),
-            ("fallback", "70 chars, only when it cannot measure"),
+            ("cell", "6px laid out — 5.5556px nominal, rounded up"),
+            ("budget", "measured: 390px ÷ one laid-out cell"),
+            ("fallback", "65 chars, only when it cannot measure"),
             ("first rule", "drop a whole leading segment, prefix …/"),
             (
                 "second rule",
@@ -224,12 +225,21 @@ pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
             theme.text_muted().to_egui(),
         )],
     );
+    spec::note(
+        ui,
+        theme,
+        "Sample A is drawn cut. It is 70 characters and the budget is 65, so it overflows by 5 \
+         characters — 30px at 6px a cell — and no longer shows the untouched case. The sample \
+         string is a design value and is left as it stands; a replacement of 65 characters or \
+         fewer is the design's to choose.",
+    );
     spec::do_(
         ui,
         theme,
-        "Do measure the line box against the font actually in use. The 70 is derived (390px at \
-         5.5px per D2Coding cell), not chosen — it is what a screen that cannot measure falls \
-         back to, so the two can never disagree by design.",
+        "Do measure the line box against the font as it is laid out, not as the font file \
+         declares it. D2Coding at 11px advances 5.5556px per glyph, but each advance is rounded \
+         to a whole pixel when the line is built, so a character costs 6px. 390 ÷ 6 = 65 is the \
+         derived cap a screen that cannot measure falls back to, so the two never disagree.",
     );
     spec::dont(
         ui,
@@ -504,20 +514,23 @@ mod tests {
 
     /// 경로 컷 Spec 의 cluster 라벨이 **참인지** 본다.
     ///
-    /// 라벨은 "70 chars — fits" · "92 → 68" · "one 72-char segment → 70" 이라고 말한다.
-    /// 그림은 그 말과 별개로 그려지므로, 말이 낡아도 아무것도 안 빨개진다 — 여기서
-    /// 표본의 길이와 함수의 출력 길이를 라벨과 맞물려 고정한다.
+    /// 라벨은 "sample A — 70 chars, 5 over the budget" · "92 → 61" ·
+    /// "one 72-char segment → 65" 라고 말한다. 그림은 그 말과 별개로 그려지므로, 말이
+    /// 낡아도 아무것도 안 빨개진다 — 여기서 표본의 길이와 함수의 출력 길이를 라벨과
+    /// 맞물려 고정한다.
     #[test]
     fn the_path_cut_labels_describe_what_the_specimen_draws() {
-        let [fits, segment, one_piece] = PATH_SAMPLES;
+        let [over, segment, one_piece] = PATH_SAMPLES;
 
-        assert_eq!(fits.chars().count(), 70);
-        assert_eq!(fh_model::elide_target_front(fits, PATH_BUDGET), fits);
+        // 표본 A 는 예산을 넘는다 — 라벨이 말하는 5 자가 그 차다.
+        assert_eq!(over.chars().count(), 70);
+        assert_eq!(over.chars().count() - PATH_BUDGET, 5);
+        assert_ne!(fh_model::elide_target_front(over, PATH_BUDGET), over);
 
         assert_eq!(segment.chars().count(), 92);
         let cut = fh_model::elide_target_front(segment, PATH_BUDGET);
-        assert_eq!(cut.chars().count(), 68);
-        assert!(cut.starts_with("…/crates/"), "{cut}");
+        assert_eq!(cut.chars().count(), 61);
+        assert!(cut.starts_with("…/tasty-gallery/"), "{cut}");
 
         assert_eq!(one_piece.chars().count(), 72);
         assert!(
@@ -525,7 +538,7 @@ mod tests {
             "한 조각이어야 문자 컷 갈래로 간다"
         );
         let cut = fh_model::elide_target_front(one_piece, PATH_BUDGET);
-        assert_eq!(cut.chars().count(), 70);
+        assert_eq!(cut.chars().count(), 65);
         assert!(cut.starts_with('…') && !cut.starts_with("…/"), "{cut}");
     }
 }

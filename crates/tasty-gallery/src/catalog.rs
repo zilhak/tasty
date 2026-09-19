@@ -1092,7 +1092,7 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "filehandler-path-cut",
                             "Header path — cut whole segments, measured not counted",
-                            Some("390px line box · …/ prefix · 70 only as a fallback"),
+                            Some("390px line box · …/ prefix · 65 only as a fallback"),
                             components::file_handler_picker::draw_path_cut,
                         ),
                         spec(
