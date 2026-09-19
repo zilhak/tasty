@@ -13,13 +13,17 @@
 //! (`StatusBarData` + `Theme` 만 받아 `StatusBarAction` 을 반환, 본체 비의존 —
 //! 갤러리 specimen 이 **같은 함수를 호출**한다), 이 모듈의 wrapper
 //! [`draw_status_bar`] 가 ① 부유 레이어(`egui::Area`) 생성 ② state/engine 에서
-//! 데이터 추출 ③ i18n 라벨 주입 ④ action 적용을 담당한다.
+//! 데이터 추출 ③ i18n 라벨과 **표시 표지** 주입 ④ action 적용을 담당한다.
+//!
+//! ③ 의 "표시 표지" 는 [`head_display`] 다 — core 는 HEAD 의 갈래를 값으로만 주고,
+//! detached 를 나타내는 `@ ` 는 여기서 붙는다.
 
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
 use tasty_ui_widgets::{StatusBarAction, StatusBarData, draw_status_bar_view};
 
+use crate::core::state::HeadState;
 use crate::state::AppState;
 use crate::theme;
 
@@ -83,7 +87,9 @@ pub fn draw_status_bar(
         .and_then(|sid| engine.terminals.get(sid))
         .map(|term| (term.cols(), term.rows()));
     let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
-    let branch = surface_id.and_then(|sid| engine.status_bar_branch(sid).map(str::to_owned));
+    let branch = surface_id
+        .and_then(|sid| engine.status_bar_branch(sid))
+        .map(head_display);
     // surface 를 담은 pane — 디자인의 `s3·p1` 표기에서 뒷마디다. 못 찾으면 앞마디만
     // 나간다(자리를 비워 두지 않는다).
     let pane_id = surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
@@ -149,5 +155,52 @@ pub fn draw_status_bar(
                 );
             }
         }
+    }
+}
+
+/// 브랜치 슬롯에 그릴 문자열 — [`HeadState`] 에 **표시 표지를 입히는 유일한 자리**.
+///
+/// detached 에 `@ ` 를 붙이는 이유는 그것 없이 sha 만 놓으면 브랜치 글리프 옆의
+/// `4f9c1ab` 가 *그 이름의 브랜치*로 읽히기 때문이다. 값 자체는 디자인 성분이 그대로
+/// 들고 있는 것이라 여기서 정하지 않는다 —
+/// `docs/features/workspace-status-bar/index.md` 의 "표시 데이터".
+///
+/// **이 표지가 core 가 아니라 여기 사는 이유.** 그것은 파싱 결과가 아니라 그리는 쪽의
+/// 어휘다. 같은 바의 `s3·p1`(surface·pane)과 `120×32`(grid)도 같은 성질이라 구조를
+/// 받아 기호를 조립하는데, 그 둘은 view crate 안에서 조립된다. 브랜치만 여기인 것은
+/// [`HeadState`] 가 core 타입이고 `tasty-ui-widgets` 는 core 를 의존하지 않기 때문이다
+/// — 갈래를 view 까지 내리려면 두 쪽이 함께 보는 크레이트가 필요하고, 그것은 이 한
+/// 타입이 치를 값이 아니다. 그래서 경계를 wrapper 에 둔다. wrapper 가 표시 재료를
+/// 주입하는 자리라는 것은 바로 위 i18n 툴팁 주입과 같다.
+///
+/// 이 문자열은 `t()` 대상이 아니다 — `@ ` 는 자연어가 아니라 고정 기호이고, 같은 바의
+/// `·` 와 `×` 도 리터럴이다.
+fn head_display(head: &HeadState) -> String {
+    match head {
+        HeadState::Branch(name) => name.clone(),
+        HeadState::Detached(short_sha) => format!("@ {short_sha}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HeadState, head_display};
+
+    #[test]
+    fn detached_gets_the_marker_and_a_branch_does_not() {
+        assert_eq!(head_display(&HeadState::Branch("main".into())), "main");
+        assert_eq!(
+            head_display(&HeadState::Detached("4af6ac9".into())),
+            "@ 4af6ac9"
+        );
+    }
+
+    /// 표지처럼 생긴 **이름**은 이름 그대로 나간다. 표지가 덧붙지 않는다.
+    #[test]
+    fn a_branch_that_looks_like_the_marker_is_not_decorated() {
+        assert_eq!(
+            head_display(&HeadState::Branch("@4af6ac9".into())),
+            "@4af6ac9"
+        );
     }
 }

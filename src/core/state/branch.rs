@@ -34,16 +34,36 @@ use std::path::{Path, PathBuf};
 
 use super::CoreState;
 
+/// `HEAD` 가 가리키는 것 — **파싱 결과의 구조**다. 그리는 쪽의 표지는 여기 없다.
+///
+/// 두 갈래를 **값으로** 가르는 것이 이 타입의 전부다. 예전에는 둘 다 `String` 이었고
+/// detached 를 가르는 유일한 표지가 값 안의 `@ ` 두 글자였다 — 그것은 파싱 결과가
+/// 아니라 상태바가 붙이는 어휘다. 그 형태에서는 받는 쪽이 **문자열을 뜯어야** 두
+/// 경우를 가를 수 있는데, `@` 로 시작하는 브랜치는 실제로 만들 수 있으므로
+/// **문자열만으로는 애초에 못 가른다.**
+///
+/// "repo 가 아니다" 는 이 타입의 갈래가 아니라 바깥 `Option` 의 `None` 이다. 그 구분을
+/// 접으면 안 된다 — 상태바의 브랜치 자리는 값이 없으면 **항목이 통째로 사라지는**
+/// 자리라, detached 를 `None` 으로 주면 "repo 밖" 과 구별이 안 된다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeadState {
+    /// `ref: refs/heads/<name>` — 이름 그대로.
+    Branch(String),
+    /// detached — short sha 만 담는다(표지 없음).
+    Detached(String),
+}
+
 /// focus surface 한 칸짜리 브랜치 캐시. 매 1Hz tick 통째로 교체된다.
 #[derive(Debug, Default)]
 pub(crate) struct BranchCache {
     /// 이 값이 캐시된 대상 surface. 다른 surface 를 조회하면 `None` 을 돌려준다.
     surface_id: Option<u32>,
-    /// 브랜치 슬롯의 표시 문자열 — 브랜치명, 또는 detached 면 `@ <short sha>`.
+    /// HEAD 가 가리키는 것. **표시 표지는 안 들어 있다** — 붙이는 쪽은 상태바
+    /// wrapper 다([`HeadState`] 문서).
     /// `None` 은 "아직 못 구함"이 아니라 **"repo 가 아니다"** 라는 확정 결과이며,
     /// 이 실패도 그대로 캐시된다 — 실패는 파일시스템 루트까지 올라가는 최악
     /// 케이스라 캐시하지 않으면 개선 효과가 사라진다.
-    branch: Option<String>,
+    branch: Option<HeadState>,
 }
 
 impl CoreState {
@@ -64,26 +84,28 @@ impl CoreState {
         changed
     }
 
-    /// 캐시된 브랜치 슬롯 표시값(마지막 `Tick::Busy` 가 조회한 값). StatusBar 가 매
-    /// 프레임 `.git/HEAD` 를 다시 여는 대신 이걸 읽는다. detached HEAD 면 `@ <short sha>`
-    /// 가 들어 있다. 캐시 대상이 아닌 surface, repo 밖, 그리고 첫 tick 전(≤1초)에는 `None`.
-    pub fn status_bar_branch(&self, surface_id: u32) -> Option<&str> {
+    /// 캐시된 HEAD 상태(마지막 `Tick::Busy` 가 조회한 값). StatusBar 가 매 프레임
+    /// `.git/HEAD` 를 다시 여는 대신 이걸 읽는다. 캐시 대상이 아닌 surface, repo 밖,
+    /// 그리고 첫 tick 전(≤1초)에는 `None`.
+    ///
+    /// 돌려주는 것은 **구조지 표시 문자열이 아니다** — detached 표지를 붙이는 것은
+    /// 그리는 쪽의 일이다([`HeadState`]).
+    pub fn status_bar_branch(&self, surface_id: u32) -> Option<&HeadState> {
         if self.branch_cache.surface_id != Some(surface_id) {
             return None;
         }
-        self.branch_cache.branch.as_deref()
+        self.branch_cache.branch.as_ref()
     }
 }
 
-/// cwd 기준 git 브랜치명. `.git` 을 cwd 부터 상위로 올라가며 찾아 파싱한다
-/// (git 바이너리/libgit2 비의존, `std::fs` 만 — 크로스플랫폼). repo 가 아니면 `None`,
-/// detached HEAD 면 `@ <short sha>`.
+/// cwd 기준 git HEAD 상태. `.git` 을 cwd 부터 상위로 올라가며 찾아 파싱한다
+/// (git 바이너리/libgit2 비의존, `std::fs` 만 — 크로스플랫폼). repo 가 아니면 `None`.
 ///
 /// `.git` 은 두 형태를 모두 지원한다:
 /// - **디렉토리**(일반 clone) → `<dir>/.git/HEAD`
 /// - **파일**(worktree / submodule) → 내용의 `gitdir: <경로>` 를 따라가 `<gitdir>/HEAD`.
 ///   이 프로젝트는 병렬 작업에 worktree 를 상시 쓰므로 드문 예외가 아니라 일상 경로다.
-fn git_branch(cwd: &Path) -> Option<String> {
+fn git_branch(cwd: &Path) -> Option<HeadState> {
     let mut dir = Some(cwd);
     while let Some(d) = dir {
         let dot_git = d.join(".git");
@@ -118,10 +140,10 @@ fn resolve_gitdir_file(base: &Path, content: &str) -> Option<PathBuf> {
     })
 }
 
-/// `HEAD` 파일 한 줄을 **상태바가 그대로 그리는 표시 문자열**로 파싱.
+/// `HEAD` 파일 한 줄을 [`HeadState`] 로 파싱. **표시 문자열을 만들지 않는다.**
 ///
-/// - `ref: refs/heads/<branch>` → `Some(branch)`
-/// - detached(40자 SHA 직접 기록) → `Some("@ <short sha>")`
+/// - `ref: refs/heads/<branch>` → `Some(HeadState::Branch(branch))`
+/// - detached(40자 SHA 직접 기록) → `Some(HeadState::Detached(<short sha>))`
 /// - 그 밖(`refs/tags/...` 등) → `None`
 ///
 /// detached 를 `None` 으로 접지 않는 이유: 상태바의 브랜치 자리는 **값이 없으면 항목이
@@ -129,12 +151,11 @@ fn resolve_gitdir_file(base: &Path, content: &str) -> Option<PathBuf> {
 /// 그래서 그 자리에 short sha 를 보인다 — 동작 명세는
 /// `docs/features/workspace-status-bar/index.md` 의 "표시 데이터".
 ///
-/// `@ ` 표지를 붙이는 이유는 그것 없이 sha 만 놓으면 브랜치 글리프 옆의 `4f9c1ab` 가
-/// *그 이름의 브랜치*로 읽히기 때문이다. 후행 개행/공백은 값에 섞이지 않는다.
-fn parse_head(content: &str) -> Option<String> {
+/// 후행 개행/공백은 값에 섞이지 않는다.
+fn parse_head(content: &str) -> Option<HeadState> {
     let line = content.trim();
     if let Some(branch) = line.strip_prefix("ref: refs/heads/") {
-        return Some(branch.trim().to_owned());
+        return Some(HeadState::Branch(branch.trim().to_owned()));
     }
     // ref 가 아니면 detached — HEAD 가 커밋 SHA 를 직접 담는다.
     if line.starts_with("ref: ") {
@@ -142,7 +163,7 @@ fn parse_head(content: &str) -> Option<String> {
     }
     let sha_len = DETACHED_SHORT_SHA_LEN;
     if line.len() >= sha_len && line.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Some(format!("@ {}", &line[..sha_len]));
+        return Some(HeadState::Detached(line[..sha_len].to_owned()));
     }
     None
 }
@@ -152,32 +173,51 @@ const DETACHED_SHORT_SHA_LEN: usize = 7;
 
 #[cfg(test)]
 mod tests {
-    use super::{git_branch, parse_head, resolve_gitdir_file};
+    use super::{HeadState, git_branch, parse_head, resolve_gitdir_file};
     use std::path::Path;
 
     #[test]
     fn head_parsing_extracts_branch_and_rejects_detached() {
         assert_eq!(
-            parse_head("ref: refs/heads/main\n").as_deref(),
-            Some("main")
+            parse_head("ref: refs/heads/main\n"),
+            Some(HeadState::Branch("main".into()))
         );
         // 후행 개행/공백이 있어도 브랜치명에 섞이지 않는다.
         assert_eq!(
-            parse_head("ref: refs/heads/main  \n\n").as_deref(),
-            Some("main")
+            parse_head("ref: refs/heads/main  \n\n"),
+            Some(HeadState::Branch("main".into()))
         );
         // 슬래시 포함 브랜치명이 온전히 나온다.
         assert_eq!(
-            parse_head("ref: refs/heads/feature/a/b\n").as_deref(),
-            Some("feature/a/b")
+            parse_head("ref: refs/heads/feature/a/b\n"),
+            Some(HeadState::Branch("feature/a/b".into()))
         );
-        // detached: 40자 SHA 직접 기록 → `@ <short sha>`(7자).
+        // detached: 40자 SHA 직접 기록 → short sha(7자) **만**. 표지는 안 붙는다.
         assert_eq!(
-            parse_head("4af6ac9d4af6ac9d4af6ac9d4af6ac9d4af6ac9d\n").as_deref(),
-            Some("@ 4af6ac9")
+            parse_head("4af6ac9d4af6ac9d4af6ac9d4af6ac9d4af6ac9d\n"),
+            Some(HeadState::Detached("4af6ac9".into()))
         );
         // refs/tags 등 브랜치가 아닌 ref → None.
         assert_eq!(parse_head("ref: refs/tags/v1.0\n"), None);
+    }
+
+    /// 이 모듈이 돌려주는 값에서 **문자열을 뜯지 않고** 두 갈래를 가를 수 있어야 한다.
+    ///
+    /// 표시 문자열로도 오늘은 안 겹친다 — 다만 그 이유가 표지에 **공백**이 들어 있는
+    /// 것뿐이고, git 은 ref 이름에 공백을 금지한다(실측 2026-09-20: `git check-ref-format
+    /// --branch` 가 `@ 4af6ac9` 는 거부, `@4af6ac9` 는 허용, 후자는 실제로 생성된다).
+    /// 즉 안 겹치는 것이 **표지의 생김새에 걸려 있고**, 그 값은 디자인이 정한다 — 공백이
+    /// 빠지면 그날로 겹친다. 그래서 갈래를 문자열이 아니라 타입으로 둔다.
+    #[test]
+    fn a_branch_that_looks_like_the_detached_marker_is_still_a_branch() {
+        assert_eq!(
+            parse_head("ref: refs/heads/@4af6ac9\n"),
+            Some(HeadState::Branch("@4af6ac9".into()))
+        );
+        assert_eq!(
+            parse_head("4af6ac9d4af6ac9d4af6ac9d4af6ac9d4af6ac9d\n"),
+            Some(HeadState::Detached("4af6ac9".into()))
+        );
     }
 
     #[test]
@@ -202,7 +242,7 @@ mod tests {
         std::fs::write(repo.join(".git").join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
         let deep = repo.join("a").join("b");
         std::fs::create_dir_all(&deep).expect("mkdir deep");
-        assert_eq!(git_branch(&deep).as_deref(), Some("main"));
+        assert_eq!(git_branch(&deep), Some(HeadState::Branch("main".into())));
     }
 
     /// worktree(`.git` 파일 + `gitdir:`): 수정 전에는 `.git/HEAD` 가 `ENOTDIR` 로 깨져
@@ -228,7 +268,10 @@ mod tests {
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display()))
             .expect(".git file");
 
-        assert_eq!(git_branch(&wt).as_deref(), Some("feature/worktree-support"));
+        assert_eq!(
+            git_branch(&wt),
+            Some(HeadState::Branch("feature/worktree-support".into()))
+        );
     }
 
     /// repo 밖(git 이 없는 격리 디렉토리) → `None`. 이 실패 결과도 캐시 대상이다.

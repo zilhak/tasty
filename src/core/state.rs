@@ -1654,6 +1654,11 @@ pub(crate) use surface_cwd::{RemoteCwd, SurfaceCwd};
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;
+// `branch` 모듈 자체가 gui 게이트라 같은 게이트를 단다. 내보내는 이유는 상태바
+// wrapper 가 이 갈래를 **값으로** 받아야 하기 때문이다 — 표시 표지를 붙이는 것은
+// 그리는 쪽의 일이라 core 가 문자열을 만들어 주지 않는다.
+#[cfg(feature = "gui")]
+pub(crate) use branch::HeadState;
 
 #[cfg(test)]
 mod id_generator_tests {
