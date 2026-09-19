@@ -27,8 +27,6 @@ const RAIL_W: f32 = 232.0;
 const SECTION_H: f32 = 28.0;
 /// context strip 높이(jsx `height: 30`).
 const CTX_H: f32 = 30.0;
-/// diff 툴바 높이(jsx `height: 32`).
-const DIFF_TOOLBAR_H: f32 = 32.0;
 /// Changes 행 높이(jsx `ChRow height: 26`).
 const CH_ROW_H: f32 = 26.0;
 /// Commits 행 높이(jsx `CmRow height: 28`).
@@ -626,9 +624,15 @@ fn draw_bottom(
 ) {
     // diff 표시 중이면 툴바(Back) 먼저 — Back 클릭 시 close_diff 후 아래에서 commits 로 전환.
     let showing_diff = state.selected_file.is_some() && state.diff_content.is_some();
-    let toolbar_h = if showing_diff { DIFF_TOOLBAR_H } else { 0.0 };
+    // diff 툴바 높이는 `git-toolbar-height`(32) — control-height(28) 가 아닌
+    // 컨테이너 role 이다.
+    let toolbar_h = if showing_diff {
+        theme.git_toolbar_height().value()
+    } else {
+        0.0
+    };
     if showing_diff {
-        let toolbar = Rect::from_min_size(area.min, vec2(area.width(), DIFF_TOOLBAR_H));
+        let toolbar = Rect::from_min_size(area.min, vec2(area.width(), toolbar_h));
         if diff_toolbar(ui, theme, tr, toolbar, state.diff_content.as_ref()) {
             state.close_diff();
         }

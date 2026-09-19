@@ -472,9 +472,9 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
         egui::StrokeKind::Inside,
     );
 
-    const IMAGE_BODY_ICON_SIZE: LogicalPx = LogicalPx(30.0);
+    // image body 글리프는 아이콘 가족 — CenterState 와 같은 28(2026-09-17 T6).
     let gap = theme.spacing_sm.value();
-    let icon_h = IMAGE_BODY_ICON_SIZE.value();
+    let icon_h = CENTER_ICON_SIZE;
     let meta_h = theme.font_size_caption.value();
     let sub_h = theme.font_size_caption.value();
     let block_h = icon_h + gap + meta_h + theme.spacing_xs.value() + sub_h;
@@ -485,7 +485,7 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
         egui::vec2(icon_h, icon_h),
     );
     icons::IMAGE
-        .image(IMAGE_BODY_ICON_SIZE.value(), theme.text_muted().to_egui())
+        .image(icon_h, theme.text_muted().to_egui())
         .paint_at(ui, icon_rect);
     y += icon_h + gap;
 

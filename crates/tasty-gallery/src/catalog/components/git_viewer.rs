@@ -585,7 +585,10 @@ fn cm_row(
 
 fn diff_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     // toolbar: Back(ghost) + 파일 path.
-    let toolbar = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), 32.0));
+    let toolbar = egui::Rect::from_min_size(
+        area.min,
+        egui::vec2(area.width(), theme.git_toolbar_height().value()),
+    );
     ui.painter()
         .rect_filled(toolbar, 0.0, theme.bg_sidebar().to_egui());
     hline(

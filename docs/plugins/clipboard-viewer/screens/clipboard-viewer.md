@@ -15,7 +15,7 @@
 
 - **header** — 클립보드 아이콘 + "Clipboard" 타이틀(14px/600) + `snapshot` 뱃지(default tag) + 우측 close IconButton.
 - **type-bar** — 좌측 [`type_switch`]: 가용 타입이 1개면 아이콘 + accent 뱃지(읽기전용), 2개 이상이면 가로 세그먼트 버튼 그룹(rail 없음). 5개 이상(`SEG_COMPACT_AT`)이면 비활성 세그먼트가 아이콘 전용으로 압축되고 hover 시 전체 타입명 툴팁이 뜬다. Other 세그먼트/뱃지의 hover 툴팁은 기본 라벨("Other") 대신 "{n} unrecognized formats"(발견된 포맷 개수)를 보여준다. 우측 슬롯은 HTML 타입일 때만 "Pretty print" `Checkbox`(`tasty_ui_widgets::checkbox`)로 스왑되고, 다른 타입은 빈 슬롯.
-- **body** — well(border+radius+bg-app) 안에 타입별 콘텐츠. Text 는 mono pre 스크롤(`well`). Files 는 아이콘+mono 경로 한 줄씩(긴 경로는 말줄임, `well` 스크롤). Image 는 **인라인 렌더링 없음**(design 결정) — well 을 상하좌우 중앙 정렬로 바꿔(`well_centered`) 아이콘(30px 고정) + 치수·용량 메타(mono caption) + "인라인 미리보기 없음" 안내(caption, italic, `text-disabled`)만 표시한다. HTML(렌더링 없이 원본 소스 또는 prettify 결과를 동일 스타일로 표시). Other(text/files/image/html 이 아닌 raw 포맷 전부를 `well` 스크롤 안에 포맷별 블록으로 나열, 블록마다 이름(mono caption, 굵게, `text-secondary`)+크기(mono caption, `text-muted`)를 같은 줄에, 그 아래 텍스트화된 미리보기(mono term-sm, `text-primary`)를 표시, 블록 사이 1px `separator`, 길면 `+N more lines` 절삭 — 목록 자체는 접지 않는다).
+- **body** — well(border+radius+bg-app) 안에 타입별 콘텐츠. Text 는 mono pre 스크롤(`well`). Files 는 아이콘+mono 경로 한 줄씩(긴 경로는 말줄임, `well` 스크롤). Image 는 **인라인 렌더링 없음**(design 결정) — well 을 상하좌우 중앙 정렬로 바꿔(`well_centered`) 아이콘(28px, CenterState 와 같은 값) + 치수·용량 메타(mono caption) + "인라인 미리보기 없음" 안내(caption, italic, `text-disabled`)만 표시한다. HTML(렌더링 없이 원본 소스 또는 prettify 결과를 동일 스타일로 표시). Other(text/files/image/html 이 아닌 raw 포맷 전부를 `well` 스크롤 안에 포맷별 블록으로 나열, 블록마다 이름(mono caption, 굵게, `text-secondary`)+크기(mono caption, `text-muted`)를 같은 줄에, 그 아래 텍스트화된 미리보기(mono term-sm, `text-primary`)를 표시, 블록 사이 1px `separator`, 길면 `+N more lines` 절삭 — 목록 자체는 접지 않는다).
 - **footer** — mime 텍스트(mono caption, 좌, HTML 타입은 `{mime} · {n} chars · {n} line(s)` 로 메타 결합, Other 타입은 mime 이 없어 "{n} unrecognized formats" 가 그 자리를 통째로 대체) + Close 버튼(secondary, 우). host 의 outside-click/Esc 와 기능 중복이지만 디자인이 명시적으로 요구.
 - (빈 상태) 아이콘 + 굵은 타이틀 + 옅은 부제 2줄.
 - (읽기 실패) 위와 동일 구조, danger 톤.
@@ -48,7 +48,7 @@ plugin 은 header~footer content 영역만 그린다(`cbFrame`/`Scrim` 은 desig
 | UI 요소 | 토큰 | 비고 |
 |---|---|---|
 | popup 프레임 | `bg-panel` | 480×360 고정(size_hint), plugin content 도 동일 fill |
-| header/type-bar/footer 좌우 인셋 | `spacing-md` | design `var(--tasty-size-14)` 근사(Theme 에 14px 전용 토큰 없음) |
+| header/type-bar/footer 좌우 인셋 | `space-md`(12) | 2026-09-17 결정(I1)이 시안의 14 를 12 로 내렸다 — 14 전용 semantic 은 열지 않는다 |
 | header 타이틀 | `font-size-max`(14) + `text-primary` | `.strong()` |
 | snapshot 뱃지 | `tag`(Default variant) | `tasty_ui_widgets::tag` |
 | type-bar 행 배경 | `bg-sidebar` | |
@@ -57,7 +57,7 @@ plugin 은 header~footer content 영역만 그린다(`cbFrame`/`Scrim` 은 desig
 | body well | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `ScrollArea`(text) 또는 중앙 정렬(image, `well_centered`) |
 | body 미리보기 텍스트 | `font-size-term-sm`(12) mono + `text-primary` | |
 | type-bar 우측 메타(image 등) | `font-size-caption`(11) mono + `text-muted` | design `cbMetaMono`, `meta_label` |
-| image body 아이콘 | 고정 30px(Theme 아이콘 토큰 16 상한 밖) + `text-muted` | `CENTER_ICON_SIZE`(28)와 동일 정책 |
+| image body 아이콘 | `CLIPBOARD_CENTER_ICON_SIZE`(28) + `text-muted` | 2026-09-17 결정(T6)이 30 → 28 로 모았다 — 폰트가 아니라 아이콘 가족 |
 | image body "미리보기 없음" 안내 | `font-size-caption`(11) italic + `text-disabled` | design `fontStyle: italic` |
 | footer mime 텍스트 | `font-size-caption`(11) mono + `text-muted` | HTML 타입은 `{mime} · {meta}` 로 결합, Other 는 meta 가 mime 을 통째로 대체 |
 | footer Close 버튼 | `tasty_ui_widgets::Button`(Secondary) | |

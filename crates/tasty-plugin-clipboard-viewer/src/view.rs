@@ -31,8 +31,8 @@ use crate::html_format::prettify;
 /// `SEG_COMPACT_AT`).
 const SEG_COMPACT_AT: usize = 5;
 
-/// 헤더/타입바/푸터 공통 좌우 인셋. design `var(--tasty-size-14)` 근사 — Theme 에
-/// 14px 전용 토큰이 없어 4px 그리드의 `spacing_md`(12)로 매핑한다.
+/// 헤더/타입바/푸터 공통 좌우 인셋 = `space-md`(12). 2026-09-17 결정(I1)이 시안의
+/// 14 를 12 로 내렸다 — 14 전용 semantic 은 열지 않고 4px 그리드가 이긴다.
 fn row_pad_x(theme: &Theme) -> f32 {
     theme.spacing_md.value()
 }
@@ -44,9 +44,6 @@ const ICON_DRAW_RATIO: f32 = 0.7;
 // CenterState 아이콘 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
 // specimen(`components/clipboard_viewer.rs`)이 같은 상수를 읽는다.
 use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
-
-/// image body 아이콘 크기(design 고정값 30 — `CENTER_ICON_SIZE` 와 동일 정책).
-const IMAGE_BODY_ICON_SIZE: f32 = 30.0;
 
 /// "기타" 버킷 한 블록의 미리보기 최대 줄 수 — 넘으면 `+N more lines`로 절삭(design은
 /// 구체적 상한을 구현에 위임). 목록 자체(포맷 개수)는 절대 접지 않는다(design
@@ -486,7 +483,7 @@ fn image_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, meta: &str) {
         icon_glyph(
             ui,
             baked_icons::IMAGE,
-            IMAGE_BODY_ICON_SIZE,
+            CENTER_ICON_SIZE,
             theme.text_muted().to_egui(),
         );
         ui.add_space(theme.spacing_sm.value());
