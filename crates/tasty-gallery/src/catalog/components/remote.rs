@@ -444,19 +444,23 @@ const FORM_WIDTH: LogicalPx = LogicalPx(460.0);
 pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for inline in [false, true] {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                kit::caption(
-                    ui,
-                    theme,
-                    if inline {
-                        "inline ssh info"
-                    } else {
-                        "reference an ssh profile"
-                    },
-                    false,
-                );
-                attach_form_card(ui, theme, inline);
+            // 두 변종은 **같은 폼**이라 안의 위젯 id 가 글자까지 같다. id 를 안 가르면 egui 가
+            // 둘째를 id 충돌로 보고 두 카드 위에 빨간 경고를 그린다(실측 — 캡처에 찍혔다).
+            ui.push_id(inline, |ui| {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                    kit::caption(
+                        ui,
+                        theme,
+                        if inline {
+                            "inline ssh info"
+                        } else {
+                            "reference an ssh profile"
+                        },
+                        false,
+                    );
+                    attach_form_card(ui, theme, inline);
+                });
             });
         }
     });
