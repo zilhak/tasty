@@ -295,6 +295,19 @@ pub const FH_ID_ELIDE_MAX: usize = 34;
 /// [`FH_ID_ELIDE_MAX`] 초과 시 남기는 뒤쪽 문자 수 — 앞에 붙는 `…` 한 글자를 뺀 값.
 pub const FH_ID_ELIDE_TAIL: usize = FH_ID_ELIDE_MAX - 1;
 
+/// 헤더 경로 한 줄이 실제로 쓸 수 있는 가로 폭. 프레임 폭에서 좌우 보더 1px 과 좌우
+/// 여백을 뺀 값이다 — 디자인이 `420 − 1×2 − 14×2 = 390` 으로 값을 줬고, 여기서는
+/// 그 산식을 토큰으로 다시 적어 세 항 중 하나가 움직이면 따라오게 한다.
+pub const FH_TARGET_LINE_BOX: LogicalPx = LogicalPx(FH_FRAME_WIDTH.0 - 2.0 - FH_EDGE_PAD_X.0 * 2.0);
+
+/// 헤더 경로 앞자름의 **파생 상한** — 글리프 폭을 못 잴 때만 쓴다.
+///
+/// 디자인이 정한 규칙은 개수가 아니라 측정이다(`crate::file_handler::target_budget_chars`).
+/// 이 수는 그 측정이 불가능할 때의 대체값이고, D2Coding 11px 의 5.5px/자로
+/// [`FH_TARGET_LINE_BOX`] 를 나눈 몫이다. **이전의 잠정값 48 은 폐기됐다** — 들어가는
+/// 경로를 잘랐다.
+pub const FH_TARGET_ELIDE_FALLBACK: usize = 70;
+
 /// Recent 그룹 행 글리프의 흐리기. 디자인 `opacity: dim && !plugin ? 0.8 : 1` — plugin
 /// 행은 mauve 가 출처 표시라 흐리지 않는다.
 pub const FH_RECENT_DIM_OPACITY: f32 = 0.8;

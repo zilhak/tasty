@@ -33,6 +33,7 @@ mod chrome_slot;
 mod control;
 pub mod crumb_alloc;
 mod drilldown;
+pub mod file_handler;
 mod help_hint;
 mod horizontal_tab_bar;
 mod icon_button;
