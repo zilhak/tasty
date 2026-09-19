@@ -290,6 +290,8 @@ pub fn paint(
         Orientation::TopDown,
         &mut sel,
         !narrow,
+        // 탭 surface 는 줌 클러스터를 캔버스 위에 띄운다 — back bar 가 없다.
+        true,
     );
 
     if let (Some(dr), Some(id)) = (detail_rect, sel.clone()) {

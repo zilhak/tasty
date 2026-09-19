@@ -232,7 +232,12 @@ pub fn draw_egui_panels(
                     dag_id: &mut dag.dag_id,
                     direction: &mut dag.direction,
                 };
-                crate::adapters::ui::surface::dag_graph::draw_dag_graph(ui, target, view);
+                crate::adapters::ui::surface::dag_graph::draw_dag_graph(
+                    ui,
+                    target,
+                    view,
+                    crate::adapters::ui::surface::dag_graph::DagChrome::Own,
+                );
             });
         } else if let Some(remote) = surface
             .as_any()

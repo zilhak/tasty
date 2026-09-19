@@ -838,7 +838,8 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 | LOD 힌트 칩 | `chrome::paint_lod_chip` | `dag/chrome.rs::paint_lod_chip` (캔버스 안) |
 | `DagEmpty` | `chrome::draw_empty` | `dag/chrome.rs::paint_empty` (`dag-states` spec) |
 | `DagDetail` / `DetailRow` / `LogBlock` | `detail::draw_detail` / `row` / `labeled_block` | `dag/detail.rs::draw_body` (`dag-detail` spec) |
-| `DagSurface` | `render::draw_dag_graph` (헤더는 `chrome::draw_header`) | `dag/surface.rs::paint` (`dag-surface` spec) |
+| `DagSurface` | `render::draw_dag_graph` + `DagChrome::Own` (헤더는 `chrome::draw_header`) | `dag/surface.rs::paint` (`dag-surface` spec) |
+| `DagWindow` 디테일 back bar actions | `chrome::draw_detail_backbar_actions` (줌 클러스터 + 러너 배지) | `dag/window.rs::detail_view` (`dag-window` spec) |
 | `dagRowItems` (DAG 목록 행) | `popup::dag_list::draw_row_trailing` | `dag/rows.rs::trailing` (`dag-rows` spec) |
 | `DagWindow` (워크스페이스 popup) | `popup::dag_list::draw_dag_list_popup` | `dag/window.rs::paint` (`dag-window` spec) |
 
@@ -868,15 +869,18 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
   방향이 바뀐다는 것만 말할 뿐 **지금** 어느 방향인지를 못 보여준다 — 방향 버튼은 눌러서
   바뀔 결과가 아니라 현재 상태를 읽는 쪽이 그래프와 대조하기 쉽다. 클러스터의 위치 ·
   크기 · 셀 구성(`− % + | fit dir`) · 토큰은 시안 그대로다.
-- **popup 디테일 뷰의 헤더**: 시안 `DagWindow` 의 디테일은 헤더 없이 캔버스 + 시트만 두고
-  러너 배지를 back bar 의 actions 슬롯에 놓는다. 본체는 그래프 화면 한 벌
-  (`render::draw_dag_graph`)을 통째로 재사용하므로 **헤더가 함께 온다** — 러너 배지 · DAG
-  선택 · 새로고침이 그 안에 있고(줌 클러스터는 캔버스 우하단), 중복을 피하려 actions 슬롯은
-  비운다. 렌더를 두 벌로 가르지 않는 쪽을 택한 결과다.
+- **popup 디테일 뷰의 크롬**(차이 아님 — 같은 함수의 두 갈래): 디테일에는 헤더가 없다.
+  `DrillDown` 의 **back bar 가 그 화면의 크롬**이고, 그 actions 슬롯이 줌 클러스터(읽는
+  순서로 줌 → 러너이므로 슬롯이 오른쪽부터 채워지는 것을 뒤집어 넣는다)와 러너 배지를
+  든다. 캔버스 우하단 줌 클러스터도, DAG 선택기도 디테일에서는 안 그린다 — 한 DAG 를 이미
+  고르고 들어온 화면이라 고를 것이 없고, 같은 조작을 한 화면에 두 번 두지 않는다.
 
-  갤러리 `dag-window` specimen 은 시안 구조(헤더 없음 · back bar 에 배지)를 그대로 전사하고
-  **그대로 둔다** — 러너 배지의 정합 기준 specimen 은 풀탭 서피스 쪽 `dag-surface`
-  (`dag/surface.rs::paint`) 이고, 그쪽이 본체 헤더(배지 · picker · 새로고침)와 1:1 로 맞는다.
-  `dag-window` 를 본체에 맞춰 고치면 시안 원본을 잃고, 본체를 `dag-window` 에 맞추면 렌더가
-  두 벌로 갈린다. 두 specimen 은 **같은 화면의 두 배치**를 보여주는 것이고, 본체는 그중
-  풀탭 배치 하나만 구현한다.
+  렌더는 여전히 한 벌이다(`render::draw_dag_graph`). 크롬을 누가 드는가만
+  [`DagChrome`](../../../src/adapters/ui/surface/dag_graph/render.rs) 로 갈라, 탭 surface 는
+  `Own`(헤더 + 캔버스 오버레이), popup 디테일은 `BackBar(이미 눌린 조작)` 을 받는다. back bar
+  는 본문보다 먼저 그려지므로 조작은 그 프레임 안에 답이 나와 있고, popup 쪽이 그 값을 본문
+  호출로 넘긴다.
+
+  그래서 두 specimen 은 **차이가 아니라 두 갈래**를 전시한다 — `dag-surface`
+  (`dag/surface.rs::paint`)가 `Own`, `dag-window`(`dag/window.rs::detail_view`)가 `BackBar`
+  이고, 둘 다 본체와 1:1 이다.

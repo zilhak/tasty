@@ -68,7 +68,7 @@ pub fn graph_bounds(layout: &GraphLayout, theme: &Theme) -> egui::Rect {
 }
 
 /// 시안의 `fit()` — 여백 16 을 빼고 맞춘 뒤 100% 로 자른다.
-fn fit(rect: egui::Rect, layout: &GraphLayout, theme: &Theme) -> Transform {
+pub fn fit(rect: egui::Rect, layout: &GraphLayout, theme: &Theme) -> Transform {
     let pad = theme.dag_canvas_padding().value();
     let b = graph_bounds(layout, theme);
     let (gw, gh) = (b.width(), b.height());
@@ -122,6 +122,9 @@ fn node_rect(
 }
 
 /// 캔버스 한 장. `selected` 는 호출자가 소유한 선택 상태다.
+// 이유: 본체 `canvas::draw_canvas` 의 전사 미러다. 인자를 묶으면 두 쪽의 서명이 갈라져
+// 1:1 대조가 끊긴다.
+#[allow(clippy::too_many_arguments)]
 pub fn paint(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -130,6 +133,9 @@ pub fn paint(
     dir: Orientation,
     selected: &mut Option<String>,
     minimap: bool,
+    // 캔버스 위에 줌 클러스터를 띄우는가. popup 디테일은 back bar 가 그것을 들어서
+    // `false` 다 — 한 화면에 클러스터를 둘 두지 않는다.
+    zoom_cluster: bool,
 ) {
     let layout = super::layout(graph, theme, dir);
     let t = fit(rect, &layout, theme);
@@ -229,7 +235,17 @@ pub fn paint(
     if let Some(cycle) = &graph.cycle {
         chrome::paint_cycle_banner(&mut layer, theme, rect, cycle);
     }
-    chrome::paint_canvas_chrome(&mut layer, theme, rect, graph, &layout, t, minimap, lod);
+    chrome::paint_canvas_chrome(
+        &mut layer,
+        theme,
+        rect,
+        graph,
+        &layout,
+        t,
+        minimap,
+        zoom_cluster,
+        lod,
+    );
 }
 
 /// 캔버스 하나를 `Tight` 무대 안에 높이 `height` 로 앉힌다.
@@ -248,7 +264,7 @@ pub fn stage(
         );
         let key = ui.id().with(("dag_sel", &graph.id));
         let mut sel: Option<String> = ui.data(|d| d.get_temp(key)).unwrap_or(None);
-        paint(ui, theme, rect, graph, dir, &mut sel, minimap);
+        paint(ui, theme, rect, graph, dir, &mut sel, minimap, true);
         ui.data_mut(|d| d.insert_temp(key, sel));
     });
 }

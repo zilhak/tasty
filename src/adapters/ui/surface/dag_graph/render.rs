@@ -7,12 +7,31 @@ use super::chrome::{self, ChromeAction, NARROW_DETAIL_SHEET};
 use super::detail::{DetailAction, DetailDock, dock_divider, draw_detail};
 use super::view::{DagGraphView, DagTarget, layout_config};
 
-/// 그래프 화면 한 벌 — 헤더 + 캔버스 + (선택 시) 상세.
+/// 이 화면의 **크롬을 누가 드는가**.
+///
+/// 탭 surface 는 자기 상단 띠와 캔버스 오버레이를 스스로 갖는다. workspace popup 의
+/// 디테일은 다르다 — 거기서는 `DrillDown` 의 **back bar 가 그 화면의 크롬**이고,
+/// 헤더를 한 벌 더 얹으면 한 노드를 보는 화면에 띠가 둘이 된다. 그래서 그 갈래는
+/// 헤더도 캔버스 줌 클러스터도 그리지 않고, back bar 에서 눌린 조작만 받아 적용한다.
+pub enum DagChrome {
+    /// 탭 surface — 헤더 띠 + 캔버스 위 줌 클러스터를 이 함수가 그린다.
+    Own,
+    /// popup 디테일 — back bar 가 크롬이다. 괄호 안은 **이미 눌린** 조작이다
+    /// (back bar 는 본문보다 먼저 그려지므로 이 시점에 답이 나와 있다).
+    BackBar(Option<ChromeAction>),
+}
+
+/// 그래프 화면 한 벌 — (헤더) + 캔버스 + (선택 시) 상세.
 ///
 /// 대상은 [`DagTarget`] 으로만 받는다. 탭 surface 든 workspace popup 이든 이
-/// 함수가 유일한 그리기 경로이고, 호출자는 대상 필드를 빌려주고 화면 폭을 정할
-/// 뿐이다 — 좁으면(<640) 상세가 자동으로 하단 시트로 내려간다.
-pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGraphView) {
+/// 함수가 유일한 그리기 경로이고, 호출자는 대상 필드를 빌려주고 화면 폭과
+/// [`DagChrome`] 을 정할 뿐이다 — 좁으면(<640) 상세가 자동으로 하단 시트로 내려간다.
+pub fn draw_dag_graph(
+    ui: &mut egui::Ui,
+    target: DagTarget<'_>,
+    view: &mut DagGraphView,
+    chrome_mode: DagChrome,
+) {
     let th = crate::theme::theme();
     let theme = &th;
     ui.set_min_size(ui.available_size());
@@ -28,7 +47,11 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
     let surface_width = ui.available_width();
     let now = now_ms();
 
-    let chrome_action = chrome::draw_header(ui, theme, &data, surface_width);
+    let own_chrome = matches!(chrome_mode, DagChrome::Own);
+    let chrome_action = match chrome_mode {
+        DagChrome::Own => chrome::draw_header(ui, theme, &data, surface_width),
+        DagChrome::BackBar(pending) => pending,
+    };
 
     if chrome::is_empty(data.current.as_ref()) {
         chrome::draw_empty(ui, theme, &data, target.dag_id.as_deref());
@@ -77,7 +100,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
         let canvas_h = (ui.available_height() - sheet_h).max(0.0);
         viewport = egui::vec2(ui.available_width(), canvas_h);
         ui.allocate_ui(viewport, |ui| {
-            canvas_action = canvas(ui, theme, view, &data, &layout, direction, now);
+            canvas_action = canvas(ui, theme, view, &data, &layout, direction, now, own_chrome);
         });
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), sheet_h),
@@ -97,7 +120,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
         viewport = egui::vec2(canvas_w, ui.available_height());
         ui.horizontal_top(|ui| {
             ui.allocate_ui(viewport, |ui| {
-                canvas_action = canvas(ui, theme, view, &data, &layout, direction, now);
+                canvas_action = canvas(ui, theme, view, &data, &layout, direction, now, own_chrome);
             });
             ui.allocate_ui_with_layout(
                 egui::vec2(panel_w, ui.available_height()),
@@ -112,7 +135,7 @@ pub fn draw_dag_graph(ui: &mut egui::Ui, target: DagTarget<'_>, view: &mut DagGr
             );
         });
     } else {
-        canvas_action = canvas(ui, theme, view, &data, &layout, direction, now);
+        canvas_action = canvas(ui, theme, view, &data, &layout, direction, now, own_chrome);
     }
 
     match detail_action {
@@ -139,9 +162,19 @@ fn canvas(
     layout: &tasty_dag_layout::GraphLayout,
     direction: tasty_model::DagDirection,
     now: u64,
+    own_zoom_cluster: bool,
 ) -> Option<ChromeAction> {
     let graph = data.current.as_ref()?;
-    super::canvas::draw_canvas(ui, theme, view, graph, layout, direction, now)
+    super::canvas::draw_canvas(
+        ui,
+        theme,
+        view,
+        graph,
+        layout,
+        direction,
+        now,
+        own_zoom_cluster,
+    )
 }
 
 fn apply_chrome(

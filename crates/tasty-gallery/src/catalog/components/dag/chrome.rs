@@ -269,6 +269,9 @@ pub fn paint_canvas_chrome(
     layout: &GraphLayout,
     t: Transform,
     minimap: bool,
+    // 줌 클러스터를 이 캔버스 위에 띄우는가. popup 디테일은 back bar 가 그것을 들어서
+    // `false` 이고, 그러면 미니맵이 캔버스 바닥까지 내려온다.
+    zoom_cluster: bool,
     lod: Lod,
 ) {
     let inset = theme.dag_chrome_inset().value();
@@ -282,18 +285,23 @@ pub fn paint_canvas_chrome(
         ),
         cluster,
     );
-    paint_zoom_cluster(ui, theme, cluster_rect, t.zoom, compact);
+    if zoom_cluster {
+        paint_zoom_cluster(ui, theme, cluster_rect, t.zoom, compact);
+    }
 
     if minimap && canvas.width() >= theme.dag_minimap_min_surface().value() {
         let size = egui::vec2(
             theme.dag_minimap_width().value(),
             theme.dag_minimap_height().value(),
         );
+        // 클러스터가 없으면 그 자리는 비어 있으므로 미니맵이 그만큼 내려온다.
+        let stack_bottom = if zoom_cluster {
+            cluster_rect.min.y
+        } else {
+            canvas.max.y - inset
+        };
         let rect = egui::Rect::from_min_size(
-            egui::pos2(
-                canvas.max.x - inset - size.x,
-                cluster_rect.min.y - gap - size.y,
-            ),
+            egui::pos2(canvas.max.x - inset - size.x, stack_bottom - gap - size.y),
             size,
         );
         paint_minimap(ui, theme, rect, graph, layout, t, canvas.size());

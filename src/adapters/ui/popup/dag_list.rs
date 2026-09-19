@@ -39,7 +39,9 @@ use tasty_ui_widgets::{
 
 use super::PopupAction;
 use crate::adapters::ui::surface::dag_graph::{
-    DagTarget, draw_dag_graph,
+    DagChrome, DagTarget,
+    chrome::{ChromeAction, draw_detail_backbar_actions},
+    draw_dag_graph,
     model::{DagStatus, format_clock},
     node::status_colors,
     view::{DagGraphView, POLL_INTERVAL},
@@ -286,10 +288,26 @@ pub fn draw_dag_list_popup(
 
     let mut close = false;
     let view = dag.view;
+    // back bar 는 본문보다 **먼저** 그려진다 — 디테일 크롬에서 눌린 조작은 본문이
+    // 그려지는 시점에 이미 답이 나와 있고, 그 답을 그래프에 넘기려면 한 칸이 필요하다.
+    // `DrillDownActions` 는 `Fn` 이라 이 칸은 내부 가변이어야 한다.
+    let backbar_action: std::cell::RefCell<Option<ChromeAction>> = std::cell::RefCell::new(None);
     // `DrillDown::show` 는 목록/디테일 클로저를 **둘 다** 받고 실제로는 하나만
     // 부른다. 둘 다 상태를 써야 하므로 컴파일 타임에는 겹치는 &mut 두 개가 되고,
     // 런타임에는 절대 겹치지 않는다 — 그 간극을 `RefCell` 로 메운다.
     let cell = std::cell::RefCell::new(dag);
+    // back bar 우측 actions 슬롯 — **compact 줌 클러스터 + 러너 배지**. 디테일에는
+    // 두 번째 헤더를 두지 않으므로(그래프 헤더를 안 그린다) 이 둘의 정위치가 여기다.
+    let actions = |ui: &mut egui::Ui, theme: &Theme| {
+        let dag = cell.borrow();
+        let Some(data) = dag.graph.data.clone() else {
+            return;
+        };
+        let direction = dag.direction;
+        if let Some(action) = draw_detail_backbar_actions(ui, theme, &data, &dag.graph, direction) {
+            *backbar_action.borrow_mut() = Some(action);
+        }
+    };
     let out = DrillDown::new("dag_list")
         .view(view)
         .title(&title)
@@ -298,10 +316,11 @@ pub fn draw_dag_list_popup(
             ui,
             theme,
             |ui, theme| close |= draw_list(ui, theme, &mut cell.borrow_mut(), &visible, total),
-            |ui, theme| draw_detail_graph(ui, theme, &mut cell.borrow_mut()),
-            // back bar 우측 actions 슬롯은 비운다 — 러너 배지·줌·방향 토글은
-            // 재사용하는 그래프 헤더가 이미 갖고 있어, 여기 또 두면 중복이다.
-            None,
+            |ui, theme| {
+                let pending = backbar_action.borrow_mut().take();
+                draw_detail_graph(ui, theme, &mut cell.borrow_mut(), pending);
+            },
+            Some(&actions),
         );
 
     if out.back_clicked {
@@ -571,7 +590,12 @@ fn draw_empty(ui: &mut egui::Ui, theme: &Theme, total: usize) {
 ///
 /// popup 폭(560)이 상세 도킹 임계값(640) 아래라 노드 상세는 자동으로 하단 시트가
 /// 된다 — 시안이 "popup 은 항상 하단 도킹" 으로 확정한 배치와 같은 결과다.
-fn draw_detail_graph(ui: &mut egui::Ui, theme: &Theme, dag: &mut DagListState) {
+fn draw_detail_graph(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    dag: &mut DagListState,
+    pending: Option<ChromeAction>,
+) {
     if dag.open_dag.is_none() {
         // back 직후 한 프레임 — 캔버스 바닥색만 칠하고 넘어간다.
         ui.painter()
@@ -582,7 +606,8 @@ fn draw_detail_graph(ui: &mut egui::Ui, theme: &Theme, dag: &mut DagListState) {
         dag_id: &mut dag.open_dag,
         direction: &mut dag.direction,
     };
-    draw_dag_graph(ui, target, &mut dag.graph);
+    // 크롬은 back bar 가 든다 — 헤더도 캔버스 줌 클러스터도 여기서는 안 그린다.
+    draw_dag_graph(ui, target, &mut dag.graph, DagChrome::BackBar(pending));
 }
 
 /// 닫힘 정리 — 어떤 경로로 닫히든 다음 open 은 **목록 뷰**에서 시작한다.

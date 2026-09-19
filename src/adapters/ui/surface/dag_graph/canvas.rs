@@ -44,6 +44,9 @@ impl Transform {
 /// 를 거쳐야 하고(`docs/design/policies/key-mapping.md`), 이 캔버스가 자체 조합을
 /// 박으면 그 조합이 이미 배정된 전역 액션과 조용히 겹친다. 방향 전환·fit·줌은
 /// 우하단 줌 클러스터의 버튼이 담당한다.
+// 이유: 인자 하나가 곧 캔버스가 받는 상태 하나다. 구조체로 묶으면 크롬 갈래
+// (`DagChrome`)가 정하는 값과 매 프레임 계산되는 값이 한 자루에 섞인다.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_canvas(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -52,6 +55,9 @@ pub fn draw_canvas(
     layout: &GraphLayout,
     direction: DagDirection,
     now_ms: u64,
+    // 캔버스 위에 줌 클러스터를 띄우는가. popup 디테일은 back bar 가 그것을 들기
+    // 때문에 `false` 이고, 그러면 그 자리는 pan·선택을 **비켜가지 않는다**.
+    own_zoom_cluster: bool,
 ) -> Option<ChromeAction> {
     let (rect, response) =
         ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -67,8 +73,17 @@ pub fn draw_canvas(
 
     // 줌 클러스터는 캔버스 위에 떠 있다 — 그 자리에서 시작한 클릭·드래그는 pan 도
     // 선택도 아니다. 히트테스트보다 먼저 자리를 알아야 하므로 rect 를 미리 잡는다.
-    let cluster = super::chrome::zoom_cluster_rect(theme, rect);
-    interact(ui, theme, &response, rect, cluster, view, graph, layout);
+    let cluster = own_zoom_cluster.then(|| super::chrome::zoom_cluster_rect(theme, rect));
+    interact(
+        ui,
+        theme,
+        &response,
+        rect,
+        cluster.unwrap_or(egui::Rect::NOTHING),
+        view,
+        graph,
+        layout,
+    );
 
     let tr = Transform {
         origin: rect.min + view.offset,
@@ -99,7 +114,7 @@ pub fn draw_canvas(
 
     let hovered = response
         .hover_pos()
-        .filter(|p| !cluster.contains(*p))
+        .filter(|p| !cluster.is_some_and(|c| c.contains(*p)))
         .and_then(|p| node_at(layout, &tr, theme, p));
 
     for (i, pos) in layout.nodes.iter().enumerate() {
@@ -136,7 +151,7 @@ pub fn draw_canvas(
     // repaint 콜백 단계에서 drop 되므로(`gfx/gpu.rs`) 여기서 걸어도 깨어나지 않는다.
     // **보이는 동안만** 예약되는 성질은 그대로다(`DagGraphViewStore::poll` 참조).
 
-    super::chrome::draw_canvas_chrome(ui, theme, rect, view, layout, direction, lod)
+    super::chrome::draw_canvas_chrome(ui, theme, rect, cluster, view, layout, direction, lod)
 }
 
 /// pan / zoom / 선택.

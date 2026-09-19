@@ -552,21 +552,51 @@ fn draw_zoom_cluster(
 }
 
 /// 캔버스 위 오버레이 전부 — 우하단 미니맵 + 그 아래 줌 클러스터, 좌하단 LOD 칩.
+// 이유: 갤러리 `dag/chrome.rs::paint_canvas_chrome` 이 이 서명을 1:1 로 전사한다.
+// 인자를 묶으면 두 쪽이 갈라져 그 대조가 끊긴다.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_canvas_chrome(
     ui: &mut egui::Ui,
     theme: &Theme,
     canvas: egui::Rect,
+    // 이 캔버스 위에 줌 클러스터를 띄울 자리. popup 디테일은 back bar 가 그것을
+    // 들기 때문에 `None` 이고, 그러면 미니맵이 캔버스 바닥까지 내려온다.
+    cluster: Option<egui::Rect>,
     view: &DagGraphView,
     layout: &GraphLayout,
     direction: DagDirection,
     lod: Lod,
 ) -> Option<ChromeAction> {
-    let cluster = zoom_cluster_rect(theme, canvas);
     let graph_size = egui::vec2(layout.width.value(), layout.height.value());
-    paint_minimap(ui, theme, canvas, cluster, view, layout, graph_size);
-    let action = draw_zoom_cluster(ui, theme, cluster, view, direction);
+    let stack_bottom = match cluster {
+        Some(c) => c.min.y,
+        None => canvas.max.y - theme.dag_chrome_inset().value(),
+    };
+    paint_minimap(ui, theme, canvas, stack_bottom, view, layout, graph_size);
+    let action = cluster.and_then(|c| draw_zoom_cluster(ui, theme, c, view, direction));
     paint_lod_chip(&ui.painter_at(canvas), theme, canvas, lod);
     action
+}
+
+/// popup 디테일의 back bar actions 슬롯 — **compact 줌 클러스터 + 러너 배지**.
+///
+/// 디테일에는 두 번째 헤더를 두지 않는다. back bar 가 그 화면의 크롬이고 여기
+/// 들어가는 것은 둘뿐이다 — 줌은 그것이 배율을 바꾸는 그래프 **옆에** 있어야 하고,
+/// 러너 배지는 지금 보고 있는 노드가 속한 실행을 설명한다. DAG selector 는 **안
+/// 넣는다**: back bar 제목이 이미 그 DAG 를 부르고, 노드 디테일이 열린 채로 DAG 를
+/// 바꾸는 것은 뜻이 없다. 새로고침도 안 넣는다 — popup 은 열려 있는 동안 0.5 초마다
+/// 스스로 다시 읽는다.
+pub fn draw_detail_backbar_actions(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    data: &DagData,
+    view: &DagGraphView,
+    direction: DagDirection,
+) -> Option<ChromeAction> {
+    // 이 줄은 **오른쪽부터** 채워진다. 읽는 순서는 줌 → 러너이므로 그 역순으로 넣는다.
+    runner_badge(ui, theme, &data.runner);
+    let (rect, _) = ui.allocate_exact_size(zoom_cluster_size(theme, true), egui::Sense::hover());
+    draw_zoom_cluster(ui, theme, rect, view, direction)
 }
 
 /// 사이클 배너. 사이클이면 그래프는 그리되 "이 그래프는 완주할 수 없다" 를 알린다.
@@ -649,7 +679,9 @@ fn paint_minimap(
     ui: &egui::Ui,
     theme: &Theme,
     canvas: egui::Rect,
-    cluster: egui::Rect,
+    // 미니맵 아래에 무엇이 있든 그 **윗변** — 줌 클러스터가 있으면 그 top, 없으면
+    // 캔버스 바닥에서 inset 만큼 올라온 선이다. 없는 덩어리 위에 띄울 수는 없다.
+    stack_bottom: f32,
     view: &DagGraphView,
     layout: &GraphLayout,
     graph_size: egui::Vec2,
@@ -669,7 +701,7 @@ fn paint_minimap(
     let map = egui::Rect::from_min_size(
         egui::pos2(
             canvas.max.x - size.x - theme.dag_chrome_inset().value(),
-            cluster.min.y - gap - size.y,
+            stack_bottom - gap - size.y,
         ),
         size,
     );

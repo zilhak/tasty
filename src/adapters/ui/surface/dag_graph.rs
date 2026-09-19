@@ -30,5 +30,5 @@ pub mod node;
 pub mod render;
 pub mod view;
 
-pub use render::draw_dag_graph;
+pub use render::{DagChrome, draw_dag_graph};
 pub use view::{DagGraphViewStore, DagPollRequest, DagTarget};

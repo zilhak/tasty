@@ -1,4 +1,4 @@
-<!-- source-hash: 82d2234a6c2f -->
+<!-- source-hash: 4561c2884ce4 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -19,7 +19,7 @@ tasty agent task-run --workspace-id 2 --action status
 tasty agent task-run --workspace-id 2 --action stop
 ```
 
-Restarting Tasty does not start the runner again automatically. The tasks themselves are still there, so `start` again and it picks up where it left off. When the runner is stopped, the header of the DAG window also shows the command that starts it again.
+Restarting Tasty does not start the runner again automatically. The tasks themselves are still there, so `start` again and it picks up where it left off. When the runner is stopped, the runner pill on the DAG screen says so, and hovering it shows the command that starts it again. In a DAG tab that command is also spelled out on the header line.
 
 ## Creating a task
 
@@ -74,7 +74,7 @@ The real value goes in that spot when the task is dispatched. Use it for values 
 
 There are two screens for seeing how the work flows. Both look at the same data.
 
-- **Task DAGs** window — `Ctrl+Shift+G`, or the sidebar **Tools** menu. It is for picking one from a list, taking a quick look, and closing it. It has search and a state filter.
+- **Task DAGs** window — `Ctrl+Shift+G`, or the sidebar **Tools** menu. It is for picking one from a list, taking a quick look, and closing it. It has search and a state filter. Pick one and the same area becomes the graph, with zoom in and out, fit to view, direction switching, and the runner pill sitting on the top line next to the back arrow.
 - **DAG tab** — a graph that takes up a whole Tab and stays open. Open it with `tasty new tab --pane <ID> --type dag_graph`, or press `Alt+'` on an existing Surface and switch it to **DAG**. It has zoom in and out, fit to view, and direction switching, and clicking a node shows the command, dependencies, elapsed time, exit code, and output.
 
 You can run several unrelated graphs in one Workspace. The list groups a chunk connected by dependencies into a single DAG. Attach `--metadata '{"dag":"name"}'` to a task and everything with the same name is grouped together regardless of whether it is connected.

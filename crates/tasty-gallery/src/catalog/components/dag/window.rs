@@ -16,7 +16,7 @@ use tasty_ui_widgets::{
 
 use super::detail::Dock;
 use super::rows::Entry;
-use super::{canvas, detail, rows};
+use super::{canvas, chrome, detail, rows, runner};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 시안 확정 크기 — `--tasty-dag-popup-width` / `-height`.
@@ -217,7 +217,13 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
         .show(&mut bu, theme);
 }
 
-/// 디테일 뷰 — back bar + 캔버스 + 하단 시트.
+/// 디테일 뷰 — back bar(+ actions) + 캔버스 + 하단 시트.
+///
+/// **두 번째 헤더는 없다.** back bar 가 이 화면의 크롬이고, 그 우측 actions 슬롯이
+/// compact 줌 클러스터와 러너 배지를 든다 — 줌은 그것이 배율을 바꾸는 그래프 옆에,
+/// 러너 배지는 지금 보는 노드가 속한 실행을 설명한다. **DAG selector 는 없다**:
+/// back bar 제목이 이미 그 DAG 를 부르고, 노드 디테일이 열린 채 DAG 를 바꾸는 것은
+/// 뜻이 없다.
 fn detail_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entry: &Entry, salt: &str) {
     let bar_h = backbar_height(theme);
     let bar = egui::Rect::from_min_size(body.min, egui::vec2(body.width(), bar_h));
@@ -260,8 +266,31 @@ fn detail_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entry: &Entry
     let sheet_rect =
         egui::Rect::from_min_max(egui::pos2(rest.min.x, rest.max.y - sheet_h), rest.max);
 
+    // back bar 우측 actions 슬롯 — compact 줌 클러스터 + 러너 배지. 줌 값은 캔버스가
+    // 쓰는 것과 **같은 fit** 에서 읽는다(두 곳에서 따로 계산하면 조용히 갈린다).
+    let layout = super::layout(&entry.graph, theme, Orientation::TopDown);
+    let zoom = canvas::fit(canvas_rect, &layout, theme).zoom;
+    let cluster = chrome::zoom_cluster_size(theme, true);
+    let badge_w = runner::badge_width(ui, theme, &entry.graph.runner);
+    let badge_h = theme.dag_runner_height().value();
+    let gap = theme.spacing_sm.value();
+    let badge_rect = egui::Rect::from_min_size(
+        egui::pos2(bar.max.x - pad - badge_w, bar.center().y - badge_h / 2.0),
+        egui::vec2(badge_w, badge_h),
+    );
+    let cluster_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            badge_rect.min.x - gap - cluster.x,
+            bar.center().y - cluster.y / 2.0,
+        ),
+        cluster,
+    );
+    chrome::paint_zoom_cluster(ui, theme, cluster_rect, zoom, true);
+    runner::paint_badge(ui, theme, badge_rect, &entry.graph.runner);
+
     let mut sel = Some("unit".to_owned());
     // 미니맵은 popup 에서 빠진다 — 560 은 `dag-minimap-min-surface` 아래다.
+    // 줌 클러스터도 캔버스 위에 안 띄운다 — 바로 위 back bar 가 들고 있다.
     canvas::paint(
         ui,
         theme,
@@ -269,6 +298,7 @@ fn detail_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entry: &Entry
         &entry.graph,
         Orientation::TopDown,
         &mut sel,
+        false,
         false,
     );
     if let Some(id) = sel {
