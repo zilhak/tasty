@@ -681,10 +681,16 @@ const DECLARED_DIFFERENT: &[(&str, &str, &str, &str)] = &[
     (
         "crates/tasty-gallery/src/catalog/components/status_bar.rs",
         "WIDE",
-        "(없음)",
-        "상태바 폭은 본체에서 이름 붙은 치수가 아니라 작업 컬럼이 그때그때 갖는 폭이다 — \
-         specimen 의 폭은 사본이 아니라 **축소 단계를 띄우는 입력**이고, 그 자리 doc 이 \
-         디자인 jsx 의 수를 왜 그대로 못 쓰는지 적는다",
+        // 반증 이름은 **실재할 수 있는 이름**이어야 한다. 아래 순회가 보는 곳은
+        // 루트 `src/` 이고, 상태바 폭이 거기서 이름을 갖는다면 그 자리는
+        // `src/adapters/ui/status_bar.rs` — 지금 `LogicalPx(rect.width())` 를
+        // 인자로 넘기는 바로 그 줄이다. 이름은 같은 루트의
+        // `explorer::SIDEBAR_W` 와 같은 꼴로 선다.
+        "BAR_W",
+        "상태바 폭은 본체에서 이름 붙은 치수가 아니라 작업 컬럼이 그때그때 갖는 폭이다 \
+         (`status_bar.rs` 가 `LogicalPx(rect.width())` 를 인자로 넘긴다) — specimen 의 \
+         폭은 사본이 아니라 **축소 단계를 띄우는 입력**이고, 그 자리 doc 이 디자인 jsx 의 \
+         수를 왜 그대로 못 쓰는지 적는다",
     ),
 ];
 
