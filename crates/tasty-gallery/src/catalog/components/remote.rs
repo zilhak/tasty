@@ -1,7 +1,7 @@
 //! Remote connections — 디자인 Overlays `remote` Spec.
 //!
 //! 520×460 모달. 헤더(remote icon + title + close) · 3 탭(Remote profiles /
-//! Attach / Passkeys, bg-sidebar) · Add profile 버튼행 · ProfileRow 리스트(name +
+//! Attach / Passkeys, bg-sidebar) · add-bar(Add profile + 프로토콜 필터) · ProfileRow 리스트(name +
 //! (label) + type Tag + target mono + passkey caption/detecting Spinner + 우측
 //! IconButton ×3). 디자인 미러: `gallery/overlays-shared.jsx` `RemoteFrame`
 //! (tab="profiles"|"attach") + `RemoteFormFrame`(variant attach-ref/attach-inline).
@@ -118,7 +118,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             tab_bar(ui, theme, 0);
 
-            // Add profile 버튼행.
+            // add-bar — 좌측 Add profile + 우측 정렬 프로토콜 필터 버튼.
+            //
+            // 필터 버튼이 여기 있는 이유는 본체 규칙이 그렇기 때문이다: `draw_profile_list`
+            // 는 `protocol_set(profiles).len() >= 2` 일 때만 이 버튼을 그린다. 위 `PROFILES`
+            // 는 ssh 셋과 smb 하나라 **프로토콜이 둘**이고, 그러면 본체 화면에는 이 버튼이
+            // 뜬다. 버튼 자신의 상태 두 가지는 `remote-filter` spec 이 따로 보이고, 여기서는
+            // **add-bar 안에서 어디에 어떻게 놓이는가**를 보인다 — 그 배치가 이 화면의 몫이다.
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 ui.horizontal(|ui| {
                     Button::new("Add profile")
@@ -127,6 +133,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
                         })
                         .show(ui, theme);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // 가린 것이 없는 상태 — 본체도 저장된 필터가 비면 이 모습이다.
+                        draw_protocol_filter_button(ui, theme, "Filter", false);
+                    });
                 });
             });
 
@@ -164,6 +174,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("frame", "520×460 · bg-panel"),
             ("tabs", "Remote profiles / Attach / Passkeys · bg-sidebar"),
+            (
+                "add-bar",
+                "Add profile (left) · protocol filter (right) once two protocols are stored",
+            ),
             ("row", "name · status Tag · target mono · passkey/detecting"),
             ("detecting", "Spinner 12"),
             ("actions", "IconButton sm ×3 (right)"),
