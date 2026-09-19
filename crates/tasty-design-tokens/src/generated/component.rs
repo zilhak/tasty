@@ -309,6 +309,13 @@ pub mod explorer {
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_196;
 }
 
+pub mod fh {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.fh-when-width` → `{primitive.size-56}` = 56px
+    pub const WHEN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_56;
+}
+
 pub mod fp {
     use tasty_type_geometry::length::LogicalPx;
 

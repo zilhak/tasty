@@ -1069,6 +1069,12 @@ impl crate::theme::Theme {
         self.separator
     }
 
+    /// `component.fh-when-width` → `{primitive.size-56}` = 56px
+    #[inline]
+    pub fn fh_when_width(&self) -> LogicalPx {
+        LogicalPx((56.0 * self.ui_zoom).round())
+    }
+
     /// `component.fp-bar-hysteresis` → `{primitive.size-8}` = 8px
     #[inline]
     pub fn fp_bar_hysteresis(&self) -> LogicalPx {

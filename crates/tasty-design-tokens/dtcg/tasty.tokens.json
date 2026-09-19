@@ -3432,6 +3432,10 @@
       "$type": "dimension",
       "$value": "{primitive.size-320}"
     },
+    "fh-when-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-56}"
+    },
     "plugins-header-glyph": {
       "$type": "color",
       "$value": "{semantic.accent-decorative}"
