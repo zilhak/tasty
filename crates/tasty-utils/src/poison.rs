@@ -644,6 +644,14 @@ mod forbidden_lock_guard {
     /// std 락 획득 verb. **빈 괄호**만 센다 — `io::Read::read(buf)`/`Write::write(buf)` 는
     /// 버퍼 인자를 받으므로, 빈 괄호 `.read()`/`.write()` 는 `RwLock` 이다(타입 판별점).
     /// 트리에 parking_lot·`tokio::sync`·`.lock().await` 가 0 이라(실측) `.lock()` 은 전부 std.
+    ///
+    /// ★ **"std 다" 가 "결과가 `LockResult` 다" 를 뜻하지는 않는다.** 이 트리에는 `lock`
+    /// 이라는 이름의 자체 헬퍼가 셋 있고(`src/store/recent_files.rs` ·
+    /// `src/webhook/registry.rs` · `src/webhook/abuse.rs`), 전부 `recover_mutex` 로 복구한
+    /// **guard 를 바로** 돌려준다 — `Result` 가 아니다. 셋 다 안쪽은 std 락이므로 위
+    /// 문장은 참이지만, verb 만 보고 뒤에 오는 체인을 `Result` 로 읽으면 틀린다.
+    /// 그 혼동이 실제로 main 을 빨갛게 만들었다 —
+    /// [`silently_skipped_lock_lines`] 의 doc 참조.
     const LOCK_VERBS: &[&str] = &[
         ".lock()",
         ".read()",
@@ -682,10 +690,129 @@ mod forbidden_lock_guard {
     /// 삼킴은 poison 을 버리고 임계구역을 건너뛰는데 아무것도 안 깨지는 **조용한** 결함이라
     /// 명부는 시끄러운 쪽이어야 한다: 삼킴은 복구/전파거나, 의도면 그 자리에 사유.
     ///
-    /// 삼킴 형태: 락 verb 직후 `.ok()` · 체인 끝 `.unwrap_or(_default)` · `if/while/&& let Ok(`
-    /// (else 없음). poison 을 다루는 형태 — 복구(`into_inner`·`recover_*`)·전파(`unwrap`·
-    /// `expect`·`?`·`map_err`)·`let Ok..else`·`match` — 는 삼킴이 아니다. `.ok()` 는 **락 verb
-    /// 바로 뒤**만 본다(`x.lock().unwrap().foo().ok()` 를 오탐하지 않게).
+    /// 삼킴 형태: 락 verb 직후 `.ok()` · **락 결과에 걸린** `.unwrap_or(_default)` ·
+    /// `if/while/&& let Ok(` (else 없음). poison 을 다루는 형태 — 복구(`into_inner`·
+    /// `recover_*`)·전파(`unwrap`·`expect`·`?`·`map_err`)·`let Ok..else`·`match` — 는 삼킴이
+    /// 아니다. `.ok()` 는 **락 verb 바로 뒤**만 본다(`x.lock().unwrap().foo().ok()` 를
+    /// 오탐하지 않게).
+    ///
+    /// # `.unwrap_or*` 가 **한 문 아무 데나**가 아니라 락 결과에 걸려야 하는 이유
+    ///
+    /// 한때 이 갈래는 문 안에 락 verb 와 `.unwrap_or` 가 **둘 다 있기만 하면** 잡았다.
+    /// 그 느슨함이 `src/store/recent_files.rs` 를 잡아 main 을 빨갛게 만들었다 — 거기서
+    /// `.unwrap_or_default()` 는 락 결과가 아니라 **guard 내용물의 `Option`** 에 걸리고,
+    /// poison 은 그 앞의 헬퍼가 이미 `recover_mutex` 로 복구한다.
+    ///
+    /// 처방을 `.ok()` 와 같은 "락 verb 바로 뒤" 로 맞추는 것은 **가드를 죽이는 수정**이다.
+    /// 컴파일러로 갈래별 도달 가능성을 쟀다(2026-09-20):
+    ///
+    /// ```text
+    /// m.lock().unwrap_or_default()                    컴파일 안 됨 — MutexGuard: Default 없음
+    /// a.lock().unwrap_or(b.lock().unwrap())           컴파일 됨 · 진짜 삼킴 (바로 뒤)
+    /// m.lock().map(|g| g.len()).unwrap_or_default()   컴파일 됨 · 진짜 삼킴 (바로 뒤 아님)
+    /// m.try_lock().map(..).unwrap_or_default()        컴파일 됨 · 진짜 삼킴 (바로 뒤 아님)
+    /// ```
+    ///
+    /// 즉 **바로 뒤 형태 중 하나는 애초에 쓸 수 없고**(`unwrap_or_default`), 진짜로 새는
+    /// 형태는 `.map(..)` 을 거쳐 온다. "바로 뒤" 로 좁혔으면 못 쓰는 갈래만 남기고 쓸 수
+    /// 있는 갈래를 통째로 놓쳤을 것이다.
+    ///
+    /// 그래서 가르는 축은 **거리가 아니라 타입**이다: 락 verb 와 `.unwrap_or*` 사이에
+    /// [`RESULT_PRESERVING_STEPS`] 만 있으면 그 `.unwrap_or*` 는 여전히 `LockResult` 에
+    /// 걸려 있고, 하나라도 다른 것이 끼면 값은 이미 락 결과가 아니다.
+    ///
+    /// # 이 좁힘이 **못 막는 것** (잔여 오탐, 지금 트리에는 없다)
+    ///
+    /// 판정기는 텍스트를 읽지 타입을 모른다. `MutexGuard<T>` 는 `T` 로 `Deref` 하므로
+    /// `T` 가 `Option`/`Result` 면 guard 에도 `.as_ref()`·`.map(` 이 **글자 그대로** 붙고,
+    /// 그때 이 판정기는 그것을 Result 보존 단계로 읽는다:
+    ///
+    /// ```text
+    /// self.lock().as_ref().unwrap_or(d).clone()   // lock() 은 guard 를 주는 헬퍼
+    /// ```
+    ///
+    /// 실제로 컴파일된다(2026-09-20 rustc 로 확인). 지금 트리에 이 조합이 없는 이유는
+    /// 값이지 설계가 아니다 — **점이 붙은** `lock()` 헬퍼가 하나뿐이고
+    /// (`src/store/recent_files.rs`) 그 `T` 가 `HashMap` 이라 `.as_ref()` 로 `Option` 이
+    /// 안 나온다. `src/webhook/registry.rs` 와 `src/webhook/abuse.rs` 의 `lock()` 은 자유
+    /// 함수라 호출이 `lock()` 으로 점이 없고, 그래서 verb 자체에 안 걸린다.
+    ///
+    /// 그 조합이 생기면 여기서 오탐이 난다. 그때 고칠 자리는 이 판정기가 아니라 **그
+    /// 헬퍼의 이름**일 수 있다 — 락 verb 와 같은 이름이 판정기를 혼동시키는 것이 근본이다.
+    /// `Result` 를 **그대로 이어 주는** 체인 단계. 락 verb 뒤에 이것만 오면 그 다음의
+    /// `.unwrap_or*` 는 아직 `LockResult` 에 걸린다 — 즉 삼키는 것이 poison 이다.
+    ///
+    /// 여기 없는 것(`.get(` · `.unwrap()` · `.len()` …)이 하나라도 끼면 값은 이미 락
+    /// 결과가 아니고, 그 `.unwrap_or*` 가 삼키는 것은 poison 이 아니다.
+    const RESULT_PRESERVING_STEPS: &[&str] = &[
+        ".map(",
+        ".map_err(",
+        ".and_then(",
+        ".or_else(",
+        ".inspect(",
+        ".inspect_err(",
+        ".as_ref()",
+        ".as_mut()",
+        ".cloned()",
+        ".copied()",
+    ];
+
+    /// `tight[open]` 이 `(` 일 때 짝이 되는 `)` **다음** 바이트 위치. 입력은 마스킹된
+    /// 텍스트라 문자열·문자 리터럴 안의 괄호는 이미 중화돼 있다.
+    fn after_balanced_paren(tight: &str, open: usize) -> Option<usize> {
+        let mut depth = 0i32;
+        for (i, c) in tight[open..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(open + i + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// 어떤 락 verb 에서 출발해 [`RESULT_PRESERVING_STEPS`] 만 거쳐 `.unwrap_or(` ·
+    /// `.unwrap_or_default()` 에 닿는가. 닿으면 그 `.unwrap_or*` 는 락 결과에 걸려 있다.
+    ///
+    /// **`.unwrap_or_else(` 는 여기 안 걸린다** — `.unwrap_or(` 로 시작하지 않기 때문이고,
+    /// 그것이 옳다: 이 트리에서 그 형태는 전부 `into_inner()` 복구다(축 1 이 따로 본다).
+    fn unwrap_or_rides_the_lock_result(tight: &str) -> bool {
+        for verb in LOCK_VERBS {
+            let mut search = 0usize;
+            while let Some(rel) = tight[search..].find(verb) {
+                let mut i = search + rel + verb.len();
+                loop {
+                    let rest = &tight[i..];
+                    if rest.starts_with(".unwrap_or(") || rest.starts_with(".unwrap_or_default()") {
+                        return true;
+                    }
+                    let Some(step) = RESULT_PRESERVING_STEPS
+                        .iter()
+                        .find(|s| rest.starts_with(**s))
+                    else {
+                        break;
+                    };
+                    i = if step.ends_with("()") {
+                        i + step.len()
+                    } else {
+                        // `.map(` 류 — 닫는 괄호까지 건너뛴다(중첩 클로저 포함).
+                        match after_balanced_paren(tight, i + step.len() - 1) {
+                            Some(next) => next,
+                            None => break,
+                        }
+                    };
+                }
+                search += rel + verb.len();
+            }
+        }
+        false
+    }
+
     fn silently_skipped_lock_lines(masked: &str) -> Vec<usize> {
         let lines: Vec<&str> = masked.lines().collect();
         let mut hits = Vec::new();
@@ -706,8 +833,7 @@ mod forbidden_lock_guard {
             let silent_ok = LOCK_VERBS
                 .iter()
                 .any(|v| tight.contains(&format!("{v}.ok()")));
-            let silent_unwrap_or =
-                tight.contains(".unwrap_or(") || tight.contains(".unwrap_or_default()");
+            let silent_unwrap_or = unwrap_or_rides_the_lock_result(&tight);
             let has_let_ok = stmt.contains("if let Ok(")
                 || stmt.contains("while let Ok(")
                 || tight.contains("&&let Ok(");
@@ -892,6 +1018,49 @@ mod forbidden_lock_guard {
             assert!(
                 silently_skipped_lock_lines(allowed).is_empty(),
                 "poison 을 다루는 형태다: {allowed}"
+            );
+        }
+    }
+
+    /// `.unwrap_or*` 갈래는 **거리가 아니라 타입**으로 가른다.
+    ///
+    /// 여섯 입력을 한 실행에 넣는다 — 앞 넷은 락 결과에 걸린 진짜 삼킴(잡아야 한다),
+    /// 뒤 둘은 값이 이미 락 결과가 아닌 자리(봐줘야 한다). **양쪽이 다 있어야** 이
+    /// 판정이 뜻을 갖는다: 양성만 재면 판정기가 전부 잡는 상태와 구분되지 않고, 음성만
+    /// 재면 판정기가 죽은 상태와 구분되지 않는다.
+    ///
+    /// 각 줄의 도달 가능성은 rustc 로 쟀다(2026-09-20) — 표는
+    /// [`silently_skipped_lock_lines`] 의 doc 에 있다. 특히 `m.lock().unwrap_or_default()`
+    /// 는 **컴파일되지 않으므로** 여기 양성으로 안 넣는다. 넣으면 못 쓰는 형태를 지키게
+    /// 된다.
+    #[test]
+    fn unwrap_or_is_judged_by_what_it_unwraps_not_by_distance() {
+        // 잡아야 한다 — `.unwrap_or*` 가 아직 `LockResult` 에 걸려 있다.
+        for swallow in [
+            // 락 verb 바로 뒤. guard 값을 다른 락에서 가져오는 형태라 실제로 컴파일된다.
+            "let g = a.lock().unwrap_or(b.lock().unwrap());",
+            // `.map(` 은 Result 를 보존한다 — 바로 뒤가 아니어도 삼키는 것은 poison 이다.
+            "let n = m.lock().map(|g| g.len()).unwrap_or_default();",
+            "let n = cfg.read().map(|g| g.len()).unwrap_or(0);",
+            "let n = m.try_lock().map(|g| g.len()).unwrap_or_default();",
+        ] {
+            assert!(
+                !silently_skipped_lock_lines(swallow).is_empty(),
+                "락 결과를 삼키는데 안 걸렸다: {swallow}"
+            );
+        }
+
+        // 봐줘야 한다 — `.unwrap_or*` 가 걸린 값이 이미 락 결과가 아니다.
+        for spared in [
+            // main 을 빨갛게 만들었던 자리의 모양. `lock()` 은 guard 를 돌려주는 헬퍼고
+            // `.unwrap_or_default()` 는 `HashMap::get(..).cloned()` 의 `Option` 에 걸린다.
+            "let v = self.lock().get(kind).cloned().unwrap_or_default();",
+            // 진짜 std 락이지만 poison 은 `unwrap()` 이 패닉으로 전파한다.
+            "let n = m.lock().unwrap().get(k).copied().unwrap_or_default();",
+        ] {
+            assert!(
+                silently_skipped_lock_lines(spared).is_empty(),
+                "락 결과가 아닌 값의 `.unwrap_or*` 인데 걸렸다: {spared}"
             );
         }
     }
