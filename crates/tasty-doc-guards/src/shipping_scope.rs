@@ -41,25 +41,56 @@ use crate::source_text::mask_non_code;
 /// 대조는 자기 스캔 루트만 본다. **판정은 같고 모수만 다르다.**
 pub fn test_only_files(root: &Path, sources: &[(PathBuf, String)]) -> BTreeSet<PathBuf> {
     let edges = declaration_edges(root, sources);
-    fn walk(
-        p: &PathBuf,
-        edges: &BTreeMap<PathBuf, (PathBuf, bool)>,
-        seen: &mut BTreeSet<PathBuf>,
-    ) -> bool {
-        if !seen.insert(p.clone()) {
-            return false;
-        }
-        match edges.get(p) {
-            None => false,
-            Some((_, true)) => true,
-            Some((parent, false)) => walk(parent, edges, seen),
-        }
-    }
+    let shipping = shipping_closure(sources, &edges);
     sources
         .iter()
         .map(|(p, _)| p.clone())
-        .filter(|p| is_cargo_test_target(root, p) || walk(p, &edges, &mut BTreeSet::new()))
+        .filter(|p| is_cargo_test_target(root, p) || !shipping.contains(p))
         .collect()
+}
+
+/// 출하되는 파일 집합 — **한 파일에 들어오는 선언이 여럿일 수 있다.**
+///
+/// 같은 파일이 두 곳에서 선언되면(`#[path]` 재사용, `mod.rs` 와 다른 부모) 그중 하나만
+/// test 게이트일 수 있다. 그때 그 파일은 **출하된다** — 게이트 없는 경로가 하나라도 있으면
+/// 산출물에 들어간다. 간선을 자식당 하나만 들고 있으면 나중에 읽은 선언이 앞엣것을
+/// 덮어쓰고, 덮어쓴 것이 게이트된 쪽이면 **출하되는 파일을 출하 밖으로 분류한다.**
+/// 그 오분류는 면제하는 방향이라 조용하다 — 그 파일은 SLOC 게이트에서 통째로 공백화되고
+/// plugin 버전 게이트에서는 내용 차이가 안 세어진다.
+///
+/// 그래서 "출하되는가" 를 **정방향 고정점**으로 푼다: 들어오는 선언이 없는 파일(크레이트
+/// 루트·순회 밖 부모)은 출하되고, 출하되는 부모에서 **게이트 없는** 선언으로 닿으면
+/// 출하된다. 순환은 고정점이 자연히 흡수한다(자라지 않으면 멈춘다).
+fn shipping_closure(
+    sources: &[(PathBuf, String)],
+    edges: &BTreeMap<PathBuf, Vec<(PathBuf, bool)>>,
+) -> BTreeSet<PathBuf> {
+    let all: BTreeSet<PathBuf> = sources
+        .iter()
+        .map(|(p, _)| p.clone())
+        .chain(edges.values().flatten().map(|(parent, _)| parent.clone()))
+        .collect();
+    let mut shipping: BTreeSet<PathBuf> =
+        all.into_iter().filter(|p| !edges.contains_key(p)).collect();
+    loop {
+        let mut grew = false;
+        for (child, parents) in edges {
+            if shipping.contains(child) {
+                continue;
+            }
+            if parents
+                .iter()
+                .any(|(parent, gated)| !gated && shipping.contains(parent))
+            {
+                shipping.insert(child.clone());
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    shipping
 }
 
 /// cargo 예약 통합테스트 타깃인가 — **패키지 루트(`Cargo.toml` 이 있는 디렉토리) 바로 아래의
@@ -83,7 +114,9 @@ pub fn is_cargo_test_target(root: &Path, rel: &Path) -> bool {
     false
 }
 
-/// `mod X;` 선언에서 모듈 파일로 가는 간선. 값은 `(부모 파일, cfg 가 test 를 함의하는가)`.
+/// `mod X;` 선언에서 모듈 파일로 가는 간선. 값은 `(부모 파일, cfg 가 test 를 함의하는가)`
+/// 의 **목록**이다 — 한 파일이 여러 곳에서 선언될 수 있고, 그 선언들의 게이트가 서로
+/// 다를 수 있다. 자식당 하나만 들면 나중 선언이 앞엣것을 덮어쓴다([`shipping_closure`]).
 ///
 /// **판정은 선언 지점에서 한다** — 파일 안을 grep 하면 문서주석과 문자열이 섞인다.
 /// 마스킹한 사본으로 줄을 읽되 `#[path = "..."]` 의 값은 문자열이라 마스킹에 지워지므로
@@ -91,8 +124,8 @@ pub fn is_cargo_test_target(root: &Path, rel: &Path) -> bool {
 fn declaration_edges(
     root: &Path,
     sources: &[(PathBuf, String)],
-) -> BTreeMap<PathBuf, (PathBuf, bool)> {
-    let mut edges = BTreeMap::new();
+) -> BTreeMap<PathBuf, Vec<(PathBuf, bool)>> {
+    let mut edges: BTreeMap<PathBuf, Vec<(PathBuf, bool)>> = BTreeMap::new();
     for (path, raw) in sources {
         let masked = mask_non_code(raw);
         let mlines: Vec<&str> = masked.lines().collect();
@@ -142,7 +175,7 @@ fn declaration_edges(
             };
             for cand in candidates {
                 if root.join(&cand).is_file() {
-                    edges.insert(cand, (path.clone(), gated));
+                    edges.entry(cand).or_default().push((path.clone(), gated));
                     break;
                 }
             }
@@ -197,6 +230,41 @@ mod tests {
         ];
         let found = test_only_files(&root, &sources);
         assert!(found.contains(&PathBuf::from("src/source_guards/sloc_gate_skip_proxy.rs")));
+    }
+
+    /// 한 파일이 **두 곳에서** 선언되고 한쪽만 test 게이트면 그 파일은 출하된다.
+    ///
+    /// 간선을 자식당 하나만 들던 동안 이 형태의 답은 **소스를 읽은 순서**가 정했다.
+    /// 게이트된 선언이 나중에 읽히면 출하되는 파일이 출하 밖으로 분류되고, 그 오분류는
+    /// 면제하는 방향이라 조용하다. 순서를 뒤집은 짝을 함께 둬서 답이 순서에 안 달렸음을
+    /// 잰다 — 한쪽만 두면 그 순서에서만 맞는 구현이 통과한다.
+    #[test]
+    fn a_file_declared_both_ways_ships() {
+        let root = crate::repo_root();
+        let child = (
+            PathBuf::from("src/source_guards/sloc_gate_skip_proxy.rs"),
+            String::new(),
+        );
+        let gated = (
+            PathBuf::from("src/source_guards/mod.rs"),
+            "#[cfg(test)]\nmod sloc_gate_skip_proxy;\n".to_string(),
+        );
+        // 부모 경로는 실재하지 않아도 된다 — `declaration_edges` 는 후보 **자식**의
+        // 실재만 확인하고 부모는 인자로 받은 것을 그대로 믿는다.
+        let plain = (
+            PathBuf::from("src/source_guards/mod2.rs"),
+            "#[path = \"sloc_gate_skip_proxy.rs\"]\nmod reused;\n".to_string(),
+        );
+        for sources in [
+            vec![child.clone(), gated.clone(), plain.clone()],
+            vec![child.clone(), plain.clone(), gated.clone()],
+        ] {
+            assert!(
+                test_only_files(&root, &sources).is_empty(),
+                "게이트 없는 선언이 하나라도 있으면 그 파일은 출하된다 — \
+                 간선을 자식당 하나만 들면 읽은 순서가 답을 정한다"
+            );
+        }
     }
 
     /// 게이트가 없으면 자식은 출하된다 — 위 테스트의 대조군.
