@@ -4,7 +4,8 @@
 //! `dtcg.rs` 가 SLOC 게이트(1000)를 넘겼기 때문이다. 가르는 선을 시간 축으로 잡은 것은
 //! 이쪽이 가장 최근에 붙었고 다른 두 축과 공유하는 상태가 없어서다.
 
-use super::{ThemeMode, Tier, Token, TokenSet, accessor_fn_name, alias_target};
+use super::accessor::accessor_fn_name;
+use super::{ThemeMode, Tier, Token, TokenSet, alias_target};
 
 /// duration component 접근자의 본문 형태.
 ///
