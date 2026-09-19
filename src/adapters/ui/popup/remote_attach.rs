@@ -793,6 +793,7 @@ fn draw_left_pane(
     list.set_clip_rect(list_rect);
     egui::ScrollArea::vertical()
         .id_salt("remote_attach.profiles")
+        .drag_to_scroll(false)
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             if profiles.is_empty() {
@@ -1047,6 +1048,7 @@ fn draw_ws_list(
     list.set_clip_rect(list_rect);
     egui::ScrollArea::vertical()
         .id_salt("remote_attach.workspaces")
+        .drag_to_scroll(false)
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             // "+ 새 워크스페이스" — 항상 첫 행.

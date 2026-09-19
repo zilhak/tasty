@@ -94,6 +94,7 @@ pub fn draw_tutorial_topics_popup(
             egui::ScrollArea::vertical()
                 .max_height(th.tutorial_topic_body_max_height().value())
                 .auto_shrink([false, true])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
                     for (i, topic) in all_topics().iter().enumerate() {

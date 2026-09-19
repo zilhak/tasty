@@ -73,6 +73,7 @@ pub fn draw_detail(
                 egui::vec2(theme.spacing_xs.value(), theme.spacing_xs.value());
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     if header(ui, theme, node) {
                         action = Some(DetailAction::Close);
@@ -273,6 +274,7 @@ fn labeled_block(
                 .max_height(max_h)
                 .auto_shrink([false, true])
                 .id_salt(label)
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     ui.add(
                         egui::Label::new(

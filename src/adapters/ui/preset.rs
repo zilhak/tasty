@@ -647,6 +647,7 @@ fn draw_preset_list(
 
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
+            .drag_to_scroll(false)
             .show(&mut lui, |ui| {
                 if rows.is_empty() {
                     ui.add_space(theme.spacing_sm.value());

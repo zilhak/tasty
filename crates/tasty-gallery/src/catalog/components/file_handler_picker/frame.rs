@@ -754,6 +754,7 @@ fn fh_list(ui: &mut egui::Ui, theme: &Theme, state: FrameState) {
             .id_salt("fh_long_list")
             .max_height(h)
             .auto_shrink([false, false])
+            .drag_to_scroll(false)
             .show(ui, draw);
     });
     let bottom = ui.cursor().top();

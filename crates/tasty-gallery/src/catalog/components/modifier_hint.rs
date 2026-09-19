@@ -282,6 +282,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     section_list(ui, theme, w, sections);
                 });

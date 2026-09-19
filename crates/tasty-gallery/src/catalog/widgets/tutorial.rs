@@ -517,6 +517,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                     egui::ScrollArea::vertical()
                         .max_height(TOPIC_LIST_SCROLL_MAX_H.value())
                         .auto_shrink([false, true])
+                        .drag_to_scroll(false)
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                             topic_row(

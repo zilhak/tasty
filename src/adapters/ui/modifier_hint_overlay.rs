@@ -626,6 +626,7 @@ fn draw_content(
     let pad = theme.modhint_pad().value();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show(&mut list_ui, |ui| {
             if wheel_y != 0.0 {
                 ui.scroll_with_delta(egui::vec2(0.0, wheel_y));

@@ -1503,6 +1503,7 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             let mut draft_changed = false;
             egui::ScrollArea::vertical()
                 .max_height(th.port_state_menu_max_height().value())
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     for st in present {
                         // shown 집합 → checked = 포함(remote_tool 의 !contains 와 반대).
@@ -1723,6 +1724,7 @@ fn draw_favorites_section(
                     .id_salt("port_scanner.favorites_scroll")
                     .max_height(FAVORITES_LIST_MAX_H.value())
                     .auto_shrink([false, true])
+                    .drag_to_scroll(false)
                     .show(ui, |ui| {
                         for fav in props.favorites {
                             if let Some(a) = draw_favorite_row(ui, props, fav, row_h) {

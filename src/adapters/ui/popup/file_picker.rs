@@ -273,6 +273,7 @@ fn draw_body(
                 .id_salt("file_picker_list")
                 .max_height(body_height.value())
                 .auto_shrink([false, true])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     for entry in props.entries {
                         if let Some(a) = entry_row(ui, props, entry)

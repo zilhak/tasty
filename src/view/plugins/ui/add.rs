@@ -100,6 +100,7 @@ fn draw_add_preview(
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(ui.available_height() - 60.0)
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(

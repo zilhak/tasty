@@ -442,6 +442,7 @@ fn draw_list(
         egui::ScrollArea::vertical()
             .id_salt("dag_list_rows")
             .auto_shrink([false, false])
+            .drag_to_scroll(false)
             .show(ui, |ui| {
                 if visible.is_empty() {
                     draw_empty(ui, theme, total);

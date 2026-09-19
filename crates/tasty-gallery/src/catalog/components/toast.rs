@@ -213,6 +213,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     egui::ScrollArea::vertical()
         .id_salt("toast_demo_scroll")
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             // Case 1 — Info
             ui.label(

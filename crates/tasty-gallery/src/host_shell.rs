@@ -399,6 +399,7 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     egui::ScrollArea::vertical()
         .id_salt("g_nav_scroll")
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             nav_heading(ui, "Catalog", f_heading, muted);
             for (i, (lbl, desc)) in pages.iter().enumerate() {
@@ -472,7 +473,8 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
 
     let mut main_scroll = egui::ScrollArea::vertical()
         .id_salt("g_main_scroll")
-        .auto_shrink([false, false]);
+        .auto_shrink([false, false])
+        .drag_to_scroll(false);
     if let Some(y) = state.shot_scroll {
         main_scroll = main_scroll.vertical_scroll_offset(y);
     }

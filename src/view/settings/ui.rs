@@ -1536,6 +1536,7 @@ fn draw_l2_sidebar(
     // 섹션 리스트 — 스크롤, padding space-sm.
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             egui::Frame::NONE
                 .inner_margin(egui::Margin::same(pad))

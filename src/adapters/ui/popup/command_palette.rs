@@ -273,6 +273,7 @@ pub fn draw_command_palette_view(
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     for (i, item) in props.items.iter().enumerate() {
                         let (rect, resp) = ui.allocate_exact_size(

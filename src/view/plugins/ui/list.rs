@@ -57,87 +57,90 @@ pub(super) fn draw_list_tab(
                 );
                 return;
             }
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for entry in &visible {
-                    let selected = ui_state.selected_id.as_ref() == Some(&entry.id);
-                    let name_text = if entry.builtin {
-                        format!("{}  •", entry.name)
-                    } else {
-                        entry.name.clone()
-                    };
-                    let mut sub = format!("v{}", entry.version);
-                    if !entry.enabled {
-                        sub.push_str(&format!("  ·  {}", t("plugins.disabled")));
-                    } else if entry.running {
-                        sub.push_str(&format!("  ·  {}", t("plugins.running")));
-                    }
+            egui::ScrollArea::vertical()
+                .drag_to_scroll(false)
+                .show(ui, |ui| {
+                    for entry in &visible {
+                        let selected = ui_state.selected_id.as_ref() == Some(&entry.id);
+                        let name_text = if entry.builtin {
+                            format!("{}  •", entry.name)
+                        } else {
+                            entry.name.clone()
+                        };
+                        let mut sub = format!("v{}", entry.version);
+                        if !entry.enabled {
+                            sub.push_str(&format!("  ·  {}", t("plugins.disabled")));
+                        } else if entry.running {
+                            sub.push_str(&format!("  ·  {}", t("plugins.running")));
+                        }
 
-                    // 이름 + 버전 부제를 한 클릭 영역으로 묶기 위해 직접 그린다.
-                    // SelectableLabel은 한 줄만 자연스럽게 표현하므로 painter로 selected/hover
-                    // 배경과 두 줄 텍스트를 그려 동일한 visual을 재현.
-                    //
-                    // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
-                    // 위아래에 32px 아바타가 앉는 flex 행이다.
-                    let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
-                    let (rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(ui.available_width(), row_h),
-                        egui::Sense::click(),
-                    );
-                    let visuals = ui.style().interact_selectable(&resp, selected);
-                    if selected || resp.hovered() {
-                        ui.painter().rect(
-                            rect,
-                            visuals.corner_radius,
-                            visuals.weak_bg_fill,
-                            visuals.bg_stroke,
-                            egui::StrokeKind::Inside,
+                        // 이름 + 버전 부제를 한 클릭 영역으로 묶기 위해 직접 그린다.
+                        // SelectableLabel은 한 줄만 자연스럽게 표현하므로 painter로 selected/hover
+                        // 배경과 두 줄 텍스트를 그려 동일한 visual을 재현.
+                        //
+                        // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
+                        // 위아래에 32px 아바타가 앉는 flex 행이다.
+                        let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), row_h),
+                            egui::Sense::click(),
                         );
-                    }
-                    let pad = egui::vec2(th.spacing_sm.value(), th.spacing_sm.value());
-                    let avatar = PluginAvatarSize::Row.side().value();
-                    paint_plugin_avatar(
-                        ui.painter(),
-                        &th,
-                        egui::pos2(rect.min.x + pad.x + avatar * 0.5, rect.center().y),
-                        &entry.name,
-                        PluginAvatarSize::Row,
-                    );
-                    // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: space-sm`.
-                    let name_pos = rect.min + pad + egui::vec2(avatar + th.spacing_sm.value(), 0.0);
-                    ui.painter().text(
-                        name_pos,
-                        egui::Align2::LEFT_TOP,
-                        &name_text,
-                        egui::FontId::proportional(th.font_size_body.value()),
-                        visuals.text_color(),
-                    );
-                    let sub_pos = name_pos + egui::vec2(0.0, 18.0);
-                    ui.painter().text(
-                        sub_pos,
-                        egui::Align2::LEFT_TOP,
-                        &sub,
-                        egui::FontId::proportional(th.font_size_micro.value()),
-                        egui::Color32::from(th.text_muted()),
-                    );
-                    // 디자인 StatusDot(danger): spawn 반복 실패로 자동 비활성화된
-                    // plugin 은 행 우측에 빨간 dot 을 그린다. 상세 경고 박스와
-                    // 동일하게 enable 상태인 error plugin 에만 표시한다 (사용자가
-                    // 끈 plugin 은 정상 종료이므로 error 아님).
-                    if entry.health_error && entry.enabled {
-                        let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
-                        tasty_ui_widgets::paint_badge_dot(
+                        let visuals = ui.style().interact_selectable(&resp, selected);
+                        if selected || resp.hovered() {
+                            ui.painter().rect(
+                                rect,
+                                visuals.corner_radius,
+                                visuals.weak_bg_fill,
+                                visuals.bg_stroke,
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        let pad = egui::vec2(th.spacing_sm.value(), th.spacing_sm.value());
+                        let avatar = PluginAvatarSize::Row.side().value();
+                        paint_plugin_avatar(
                             ui.painter(),
                             &th,
-                            dot_center,
-                            tasty_ui_widgets::BadgeVariant::Danger,
+                            egui::pos2(rect.min.x + pad.x + avatar * 0.5, rect.center().y),
+                            &entry.name,
+                            PluginAvatarSize::Row,
                         );
+                        // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: space-sm`.
+                        let name_pos =
+                            rect.min + pad + egui::vec2(avatar + th.spacing_sm.value(), 0.0);
+                        ui.painter().text(
+                            name_pos,
+                            egui::Align2::LEFT_TOP,
+                            &name_text,
+                            egui::FontId::proportional(th.font_size_body.value()),
+                            visuals.text_color(),
+                        );
+                        let sub_pos = name_pos + egui::vec2(0.0, 18.0);
+                        ui.painter().text(
+                            sub_pos,
+                            egui::Align2::LEFT_TOP,
+                            &sub,
+                            egui::FontId::proportional(th.font_size_micro.value()),
+                            egui::Color32::from(th.text_muted()),
+                        );
+                        // 디자인 StatusDot(danger): spawn 반복 실패로 자동 비활성화된
+                        // plugin 은 행 우측에 빨간 dot 을 그린다. 상세 경고 박스와
+                        // 동일하게 enable 상태인 error plugin 에만 표시한다 (사용자가
+                        // 끈 plugin 은 정상 종료이므로 error 아님).
+                        if entry.health_error && entry.enabled {
+                            let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
+                            tasty_ui_widgets::paint_badge_dot(
+                                ui.painter(),
+                                &th,
+                                dot_center,
+                                tasty_ui_widgets::BadgeVariant::Danger,
+                            );
+                        }
+                        if resp.clicked() {
+                            ui_state.selected_id = Some(entry.id.clone());
+                        }
+                        vspace(ui, STRUCT_GAP_2);
                     }
-                    if resp.clicked() {
-                        ui_state.selected_id = Some(entry.id.clone());
-                    }
-                    vspace(ui, STRUCT_GAP_2);
-                }
-            });
+                });
         });
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -153,178 +156,180 @@ pub(super) fn draw_list_tab(
         };
 
         vspace(ui, th.spacing_sm);
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
-            ui.horizontal_top(|ui| {
-                plugin_avatar(ui, &th, &entry.name, PluginAvatarSize::Detail);
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.heading(&entry.name);
-                        super::tag(ui, &th, &format!("v{}", entry.version));
-                        if entry.builtin {
-                            ui.label(
-                                egui::RichText::new(t("plugins.builtin_badge"))
-                                    .small()
-                                    .color(egui::Color32::from(th.accent_agent())),
-                            );
-                        }
+        egui::ScrollArea::vertical()
+            .drag_to_scroll(false)
+            .show(ui, |ui| {
+                // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+                ui.horizontal_top(|ui| {
+                    plugin_avatar(ui, &th, &entry.name, PluginAvatarSize::Detail);
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.heading(&entry.name);
+                            super::tag(ui, &th, &format!("v{}", entry.version));
+                            if entry.builtin {
+                                ui.label(
+                                    egui::RichText::new(t("plugins.builtin_badge"))
+                                        .small()
+                                        .color(egui::Color32::from(th.accent_agent())),
+                                );
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(&entry.id)
+                                .small()
+                                .color(egui::Color32::from(th.text_muted())),
+                        );
                     });
-                    ui.label(
-                        egui::RichText::new(&entry.id)
-                            .small()
-                            .color(egui::Color32::from(th.text_muted())),
-                    );
                 });
-            });
-            vspace(ui, th.spacing_sm);
-
-            if !entry.description.is_empty() {
-                ui.label(&entry.description);
                 vspace(ui, th.spacing_sm);
-            }
 
-            // 디자인 error 경고 박스: spawn 반복 실패로 자동 비활성화된 plugin 에
-            // 빨간 박스로 안내. config 상 enable 상태일 때만 (사용자가 끈 plugin 은
-            // 정상 종료이므로 error 가 아님).
-            if entry.health_error && entry.enabled {
-                let danger = egui::Color32::from(th.accent_danger());
-                // tinted 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
-                egui::Frame::new()
-                    .fill(danger.gamma_multiply(th.tint_fill_alpha()))
-                    .stroke(egui::Stroke::new(
-                        th.border_width.value(),
-                        danger.gamma_multiply(th.tint_border_alpha()),
-                    ))
-                    .corner_radius(th.corner_radius.value())
-                    .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
-                    });
-                vspace(ui, th.spacing_sm);
-            }
-
-            if !entry.authors.is_empty() {
-                ui.label(format!(
-                    "{}: {}",
-                    t("plugins.authors"),
-                    entry.authors.join(", ")
-                ));
-            }
-            if !entry.homepage.is_empty() {
-                ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
-            }
-
-            vspace(ui, th.spacing_md);
-            ui.separator();
-
-            vspace(ui, th.spacing_md);
-            ui.horizontal(|ui| {
-                ui.label(format!("{}:", t("plugins.status")));
-                let mut enabled = entry.enabled;
-                if ui.checkbox(&mut enabled, t("plugins.enabled")).changed() {
-                    actions.push(PluginsAction::SetEnabled {
-                        id: entry.id.clone(),
-                        enabled,
-                    });
+                if !entry.description.is_empty() {
+                    ui.label(&entry.description);
+                    vspace(ui, th.spacing_sm);
                 }
-                // lifecycle 창 → per-plugin config (Settings›Plugins) 연결 고리.
-                if ui.button(t("plugins.configure")).clicked() {
-                    actions.push(PluginsAction::OpenSettings);
+
+                // 디자인 error 경고 박스: spawn 반복 실패로 자동 비활성화된 plugin 에
+                // 빨간 박스로 안내. config 상 enable 상태일 때만 (사용자가 끈 plugin 은
+                // 정상 종료이므로 error 가 아님).
+                if entry.health_error && entry.enabled {
+                    let danger = egui::Color32::from(th.accent_danger());
+                    // tinted 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
+                    egui::Frame::new()
+                        .fill(danger.gamma_multiply(th.tint_fill_alpha()))
+                        .stroke(egui::Stroke::new(
+                            th.border_width.value(),
+                            danger.gamma_multiply(th.tint_border_alpha()),
+                        ))
+                        .corner_radius(th.corner_radius.value())
+                        .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
+                        });
+                    vspace(ui, th.spacing_sm);
                 }
-            });
 
-            vspace(ui, th.spacing_sm);
-            ui.label(format!("{}:", t("plugins.surface_kinds")));
-            if entry.surface_kinds.is_empty() {
-                ui.label(t("plugins.none"));
-            } else {
-                ui.label(entry.surface_kinds.join(", "));
-            }
+                if !entry.authors.is_empty() {
+                    ui.label(format!(
+                        "{}: {}",
+                        t("plugins.authors"),
+                        entry.authors.join(", ")
+                    ));
+                }
+                if !entry.homepage.is_empty() {
+                    ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
+                }
 
-            vspace(ui, th.spacing_md);
-            ui.separator();
-            vspace(ui, th.spacing_md);
-            ui.label(format!("{}:", t("plugins.permissions")));
-            if entry.manifest_permissions.is_empty() {
-                ui.label(t("plugins.none"));
-            } else {
-                ui.horizontal_wrapped(|ui| {
-                    for token in &entry.manifest_permissions {
-                        super::tag(ui, &th, token);
+                vspace(ui, th.spacing_md);
+                ui.separator();
+
+                vspace(ui, th.spacing_md);
+                ui.horizontal(|ui| {
+                    ui.label(format!("{}:", t("plugins.status")));
+                    let mut enabled = entry.enabled;
+                    if ui.checkbox(&mut enabled, t("plugins.enabled")).changed() {
+                        actions.push(PluginsAction::SetEnabled {
+                            id: entry.id.clone(),
+                            enabled,
+                        });
+                    }
+                    // lifecycle 창 → per-plugin config (Settings›Plugins) 연결 고리.
+                    if ui.button(t("plugins.configure")).clicked() {
+                        actions.push(PluginsAction::OpenSettings);
                     }
                 });
-            }
 
-            if !entry.commands.is_empty() {
+                vspace(ui, th.spacing_sm);
+                ui.label(format!("{}:", t("plugins.surface_kinds")));
+                if entry.surface_kinds.is_empty() {
+                    ui.label(t("plugins.none"));
+                } else {
+                    ui.label(entry.surface_kinds.join(", "));
+                }
+
                 vspace(ui, th.spacing_md);
                 ui.separator();
                 vspace(ui, th.spacing_md);
-                ui.label(format!("{}:", t("plugins.commands")));
-                for cmd in &entry.commands {
-                    ui.horizontal(|ui| {
-                        ui.label(t(&cmd.title_key));
-                        if let Some(kb) = &cmd.keybinding {
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    super::tag(ui, &th, kb);
-                                },
-                            );
+                ui.label(format!("{}:", t("plugins.permissions")));
+                if entry.manifest_permissions.is_empty() {
+                    ui.label(t("plugins.none"));
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        for token in &entry.manifest_permissions {
+                            super::tag(ui, &th, token);
                         }
                     });
                 }
-            }
 
-            vspace(ui, th.spacing_md);
-            ui.separator();
-            vspace(ui, th.spacing_md);
-            ui.label(format!("{}:", t("plugins.install_path")));
-            ui.horizontal(|ui| {
+                if !entry.commands.is_empty() {
+                    vspace(ui, th.spacing_md);
+                    ui.separator();
+                    vspace(ui, th.spacing_md);
+                    ui.label(format!("{}:", t("plugins.commands")));
+                    for cmd in &entry.commands {
+                        ui.horizontal(|ui| {
+                            ui.label(t(&cmd.title_key));
+                            if let Some(kb) = &cmd.keybinding {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        super::tag(ui, &th, kb);
+                                    },
+                                );
+                            }
+                        });
+                    }
+                }
+
+                vspace(ui, th.spacing_md);
+                ui.separator();
+                vspace(ui, th.spacing_md);
+                ui.label(format!("{}:", t("plugins.install_path")));
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(&entry.install_dir)
+                            .small()
+                            .color(egui::Color32::from(th.text_muted())),
+                    );
+                    if ui.small_button(t("plugins.open_folder")).clicked() {
+                        actions.push(PluginsAction::OpenInstallDir {
+                            path: entry.install_dir.clone(),
+                        });
+                    }
+                });
+
+                // 6→4 스냅 (그리드 정합 — 메타 라벨 tight 간격).
+                vspace(ui, th.spacing_xs);
                 ui.label(
-                    egui::RichText::new(&entry.install_dir)
+                    egui::RichText::new(format!("{}: {}", t("plugins.log_path"), entry.log_path))
                         .small()
                         .color(egui::Color32::from(th.text_muted())),
                 );
-                if ui.small_button(t("plugins.open_folder")).clicked() {
-                    actions.push(PluginsAction::OpenInstallDir {
-                        path: entry.install_dir.clone(),
+
+                vspace(ui, th.spacing_lg);
+                if ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id) {
+                    let warn_key = if entry.builtin {
+                        "plugins.uninstall_builtin_warning"
+                    } else {
+                        "plugins.uninstall_warning"
+                    };
+                    ui.label(
+                        egui::RichText::new(t(warn_key))
+                            .color(egui::Color32::from(th.accent_attention())),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button(t("plugins.uninstall_confirm")).clicked() {
+                            actions.push(PluginsAction::Uninstall {
+                                id: entry.id.clone(),
+                            });
+                            ui_state.confirm_uninstall_id = None;
+                        }
+                        if ui.button(t("button.cancel")).clicked() {
+                            ui_state.confirm_uninstall_id = None;
+                        }
                     });
+                } else if ui.button(t("plugins.uninstall")).clicked() {
+                    ui_state.confirm_uninstall_id = Some(entry.id.clone());
                 }
             });
-
-            // 6→4 스냅 (그리드 정합 — 메타 라벨 tight 간격).
-            vspace(ui, th.spacing_xs);
-            ui.label(
-                egui::RichText::new(format!("{}: {}", t("plugins.log_path"), entry.log_path))
-                    .small()
-                    .color(egui::Color32::from(th.text_muted())),
-            );
-
-            vspace(ui, th.spacing_lg);
-            if ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id) {
-                let warn_key = if entry.builtin {
-                    "plugins.uninstall_builtin_warning"
-                } else {
-                    "plugins.uninstall_warning"
-                };
-                ui.label(
-                    egui::RichText::new(t(warn_key))
-                        .color(egui::Color32::from(th.accent_attention())),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button(t("plugins.uninstall_confirm")).clicked() {
-                        actions.push(PluginsAction::Uninstall {
-                            id: entry.id.clone(),
-                        });
-                        ui_state.confirm_uninstall_id = None;
-                    }
-                    if ui.button(t("button.cancel")).clicked() {
-                        ui_state.confirm_uninstall_id = None;
-                    }
-                });
-            } else if ui.button(t("plugins.uninstall")).clicked() {
-                ui_state.confirm_uninstall_id = Some(entry.id.clone());
-            }
-        });
     });
 }

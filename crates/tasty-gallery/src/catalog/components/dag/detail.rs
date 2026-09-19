@@ -62,6 +62,7 @@ fn code_block(ui: &mut egui::Ui, theme: &Theme, id: (&str, &str), text: &str, ma
                     egui::ScrollArea::vertical()
                         .id_salt(id)
                         .max_height(h)
+                        .drag_to_scroll(false)
                         .show(ui, body);
                 }
                 None => body(ui),
@@ -329,6 +330,7 @@ pub fn draw_docked(
     child.set_clip_rect(rect);
     egui::ScrollArea::vertical()
         .id_salt(("dag_detail_scroll", id))
+        .drag_to_scroll(false)
         .show(&mut child, |ui| {
             ui.set_width(inner.width());
             jump = draw_body(ui, theme, graph, id);

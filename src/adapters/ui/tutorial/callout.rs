@@ -243,6 +243,7 @@ pub fn draw_callout(
                     egui::ScrollArea::vertical()
                         .id_salt("tutorial_body")
                         .max_height(body_height)
+                        .drag_to_scroll(false)
                         .show(ui, |ui| {
                             ui.label(
                                 egui::RichText::new(props.title)

@@ -500,6 +500,7 @@ fn scroll_list_with_fade<R>(
 ) -> R {
     let out = egui::ScrollArea::vertical()
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .drag_to_scroll(false)
         .show(ui, add_contents);
     let (up, down) = fade_edges(
         out.state.offset.y,
@@ -1195,6 +1196,7 @@ fn draw_profile_form(
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     egui::Frame::NONE
                         .inner_margin(egui::Margin {
@@ -1840,6 +1842,7 @@ fn draw_attach_form(
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     egui::Frame::NONE
                         .inner_margin(egui::Margin {
@@ -2362,6 +2365,7 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
         .show_inside(ui, |ui| {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     egui::Frame::NONE
                         .inner_margin(egui::Margin {

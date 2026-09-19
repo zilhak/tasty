@@ -96,66 +96,69 @@ pub(super) fn draw_attention_tab(
             if items.is_empty() {
                 return; // 빈 상태는 CentralPanel 에서 안내.
             }
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for entry in items {
-                    let selected = ui_state.attention_selected_id.as_ref() == Some(&entry.id);
-                    let color = sev_color(&th, entry.kind);
-                    // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
-                    // 위아래에 32px 아바타가 앉는 flex 행이다.
-                    let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
-                    let (rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(ui.available_width(), row_h),
-                        egui::Sense::click(),
-                    );
-                    let visuals = ui.style().interact_selectable(&resp, selected);
-                    if selected || resp.hovered() {
-                        ui.painter().rect(
-                            rect,
-                            visuals.corner_radius,
-                            visuals.weak_bg_fill,
-                            visuals.bg_stroke,
-                            egui::StrokeKind::Inside,
+            egui::ScrollArea::vertical()
+                .drag_to_scroll(false)
+                .show(ui, |ui| {
+                    for entry in items {
+                        let selected = ui_state.attention_selected_id.as_ref() == Some(&entry.id);
+                        let color = sev_color(&th, entry.kind);
+                        // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
+                        // 위아래에 32px 아바타가 앉는 flex 행이다.
+                        let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), row_h),
+                            egui::Sense::click(),
                         );
+                        let visuals = ui.style().interact_selectable(&resp, selected);
+                        if selected || resp.hovered() {
+                            ui.painter().rect(
+                                rect,
+                                visuals.corner_radius,
+                                visuals.weak_bg_fill,
+                                visuals.bg_stroke,
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        let pad = egui::vec2(th.spacing_sm.value(), th.spacing_sm.value());
+                        let avatar = PluginAvatarSize::Row.side().value();
+                        paint_plugin_avatar(
+                            ui.painter(),
+                            &th,
+                            egui::pos2(rect.min.x + pad.x + avatar * 0.5, rect.center().y),
+                            &entry.name,
+                            PluginAvatarSize::Row,
+                        );
+                        // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: space-sm`.
+                        let name_pos =
+                            rect.min + pad + egui::vec2(avatar + th.spacing_sm.value(), 0.0);
+                        ui.painter().text(
+                            name_pos,
+                            egui::Align2::LEFT_TOP,
+                            &entry.name,
+                            egui::FontId::proportional(th.font_size_body.value()),
+                            visuals.text_color(),
+                        );
+                        let (label_key, _) = reason_text(entry.kind);
+                        ui.painter().text(
+                            name_pos + egui::vec2(0.0, 18.0),
+                            egui::Align2::LEFT_TOP,
+                            t(label_key),
+                            egui::FontId::proportional(th.font_size_micro.value()),
+                            color,
+                        );
+                        // 우측 severity dot.
+                        let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
+                        ui.painter().circle_filled(
+                            dot_center,
+                            ATTN_STATUS_DOT_SIZE.value() * 0.5,
+                            color,
+                        );
+                        if resp.clicked() {
+                            ui_state.attention_selected_id = Some(entry.id.clone());
+                        }
+                        vspace(ui, STRUCT_GAP_2);
                     }
-                    let pad = egui::vec2(th.spacing_sm.value(), th.spacing_sm.value());
-                    let avatar = PluginAvatarSize::Row.side().value();
-                    paint_plugin_avatar(
-                        ui.painter(),
-                        &th,
-                        egui::pos2(rect.min.x + pad.x + avatar * 0.5, rect.center().y),
-                        &entry.name,
-                        PluginAvatarSize::Row,
-                    );
-                    // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: space-sm`.
-                    let name_pos = rect.min + pad + egui::vec2(avatar + th.spacing_sm.value(), 0.0);
-                    ui.painter().text(
-                        name_pos,
-                        egui::Align2::LEFT_TOP,
-                        &entry.name,
-                        egui::FontId::proportional(th.font_size_body.value()),
-                        visuals.text_color(),
-                    );
-                    let (label_key, _) = reason_text(entry.kind);
-                    ui.painter().text(
-                        name_pos + egui::vec2(0.0, 18.0),
-                        egui::Align2::LEFT_TOP,
-                        t(label_key),
-                        egui::FontId::proportional(th.font_size_micro.value()),
-                        color,
-                    );
-                    // 우측 severity dot.
-                    let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
-                    ui.painter().circle_filled(
-                        dot_center,
-                        ATTN_STATUS_DOT_SIZE.value() * 0.5,
-                        color,
-                    );
-                    if resp.clicked() {
-                        ui_state.attention_selected_id = Some(entry.id.clone());
-                    }
-                    vspace(ui, STRUCT_GAP_2);
-                }
-            });
+                });
         });
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -208,68 +211,70 @@ fn draw_detail(
     let (label_key, blurb_key) = reason_text(entry.kind);
 
     vspace(ui, th.spacing_sm);
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        // identity
-        // 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
-        ui.horizontal_top(|ui| {
-            plugin_avatar(ui, th, &entry.name, PluginAvatarSize::Detail);
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.heading(&entry.name);
-                    super::tag(ui, th, &format!("v{}", entry.version));
-                    if entry.builtin {
-                        super::tag(ui, th, t("plugins.builtin_badge"));
-                    }
-                });
-                ui.label(
-                    egui::RichText::new(&entry.id)
-                        .small()
-                        .color(egui::Color32::from(th.text_muted())),
-                );
-                if !entry.authors.is_empty() {
+    egui::ScrollArea::vertical()
+        .drag_to_scroll(false)
+        .show(ui, |ui| {
+            // identity
+            // 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+            ui.horizontal_top(|ui| {
+                plugin_avatar(ui, th, &entry.name, PluginAvatarSize::Detail);
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading(&entry.name);
+                        super::tag(ui, th, &format!("v{}", entry.version));
+                        if entry.builtin {
+                            super::tag(ui, th, t("plugins.builtin_badge"));
+                        }
+                    });
                     ui.label(
-                        egui::RichText::new(entry.authors.join(", "))
+                        egui::RichText::new(&entry.id)
                             .small()
                             .color(egui::Color32::from(th.text_muted())),
                     );
-                }
+                    if !entry.authors.is_empty() {
+                        ui.label(
+                            egui::RichText::new(entry.authors.join(", "))
+                                .small()
+                                .color(egui::Color32::from(th.text_muted())),
+                        );
+                    }
+                });
             });
+            vspace(ui, th.spacing_md);
+
+            // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
+            // (`tint-fill-alpha` / `tint-border-alpha`).
+            egui::Frame::new()
+                .fill(color.gamma_multiply(th.tint_fill_alpha()))
+                .stroke(egui::Stroke::new(
+                    th.border_width.value(),
+                    color.gamma_multiply(th.tint_border_alpha()),
+                ))
+                .corner_radius(th.corner_radius.value())
+                .inner_margin(margin_all(th.spacing_md))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(t(label_key))
+                            .strong()
+                            .size(th.font_size_body.value())
+                            .color(color),
+                    );
+                    vspace(ui, th.spacing_xs);
+                    ui.label(
+                        egui::RichText::new(t(blurb_key))
+                            .size(ATTN_PRIMITIVE_12.value())
+                            .color(egui::Color32::from(th.text_secondary())),
+                    );
+                });
+
+            vspace(ui, th.spacing_md);
+            draw_reason_detail(ui, th, entry);
+
+            vspace(ui, th.spacing_md);
+            ui.separator();
+            vspace(ui, th.spacing_sm);
+            draw_action_bar(ui, entry, color, actions);
         });
-        vspace(ui, th.spacing_md);
-
-        // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
-        // (`tint-fill-alpha` / `tint-border-alpha`).
-        egui::Frame::new()
-            .fill(color.gamma_multiply(th.tint_fill_alpha()))
-            .stroke(egui::Stroke::new(
-                th.border_width.value(),
-                color.gamma_multiply(th.tint_border_alpha()),
-            ))
-            .corner_radius(th.corner_radius.value())
-            .inner_margin(margin_all(th.spacing_md))
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(t(label_key))
-                        .strong()
-                        .size(th.font_size_body.value())
-                        .color(color),
-                );
-                vspace(ui, th.spacing_xs);
-                ui.label(
-                    egui::RichText::new(t(blurb_key))
-                        .size(ATTN_PRIMITIVE_12.value())
-                        .color(egui::Color32::from(th.text_secondary())),
-                );
-            });
-
-        vspace(ui, th.spacing_md);
-        draw_reason_detail(ui, th, entry);
-
-        vspace(ui, th.spacing_md);
-        ui.separator();
-        vspace(ui, th.spacing_sm);
-        draw_action_bar(ui, entry, color, actions);
-    });
 }
 
 /// 사유별 추가 정보 — 권한 diff / 서명 지문 / health 상세.
