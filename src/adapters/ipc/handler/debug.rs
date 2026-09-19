@@ -126,6 +126,7 @@ pub(super) fn handle_debug_host_popup_list(
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_host_popup_open(
     state: &mut AppState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -143,17 +144,39 @@ pub(super) fn handle_debug_host_popup_open(
         .get("workspace_scope")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let mode = if workspace_scope {
-        crate::intent::OpenPopupMode::WithScope(crate::adapters::ui::popup::PopupScope::Workspace(
-            state.active_workspace,
-        ))
-    } else {
-        crate::intent::OpenPopupMode::CenteredFocused
+    // `surface_scope` 는 같은 이유의 surface 판이다 — scrim 범위·경계 inset 은 범위가
+    // `Surface` 일 때만 발동하므로(ADR-0296), 기본값으로 열면 그 갈래를 볼 수 없다.
+    // 포커스 surface 가 없으면(빈 워크스페이스) 주입할 대상이 없어 창 범위로 남는다.
+    let surface_scope = params
+        .get("surface_scope")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let bound_surface = surface_scope
+        .then(|| state.focused_surface_id(engine))
+        .flatten();
+    let mode = match (workspace_scope, bound_surface) {
+        (_, Some(sid)) => crate::intent::OpenPopupMode::WithScope(
+            crate::adapters::ui::popup::PopupScope::Surface(sid),
+        ),
+        (true, None) => crate::intent::OpenPopupMode::WithScope(
+            crate::adapters::ui::popup::PopupScope::Workspace(state.active_workspace),
+        ),
+        (false, None) => crate::intent::OpenPopupMode::CenteredFocused,
     };
+    // 변환 popup 은 대상 surface 를 `dialogs` 에서 읽는다 — 범위만 주입하고 그것을
+    // 비워 두면 목록은 뜨지만 고른 값이 갈 곳이 없다.
+    if def.id == "convert_surface" {
+        state.dialogs.convert_popup = bound_surface;
+        state.dialogs.convert_popup_selected = None;
+    }
     state.dispatch_intent(crate::intent::UiIntent::OpenPopup { id: def.id, mode }.from_agent_ipc());
     JsonRpcResponse::success(
         id,
-        json!({ "opened": def.id, "workspace_scope": workspace_scope }),
+        json!({
+            "opened": def.id,
+            "workspace_scope": workspace_scope,
+            "surface_scope": bound_surface,
+        }),
     )
 }
 

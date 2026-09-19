@@ -178,9 +178,14 @@ pub(super) fn host_popup_debug_command_to_method_params(
         HostPopupDebugCommands::Open {
             popup_id,
             workspace_scope,
+            surface_scope,
         } => (
             "debug.host_popup.open",
-            serde_json::json!({ "popup_id": popup_id, "workspace_scope": workspace_scope }),
+            serde_json::json!({
+                "popup_id": popup_id,
+                "workspace_scope": workspace_scope,
+                "surface_scope": surface_scope,
+            }),
         ),
         HostPopupDebugCommands::Close { popup_id } => (
             "debug.host_popup.close",

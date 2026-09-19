@@ -296,6 +296,10 @@ pub enum HostPopupDebugCommands {
         /// scope visibility gate can be exercised (e.g. "dag_list").
         #[arg(long)]
         workspace_scope: bool,
+        /// Open it scoped to the focused surface instead of the window, so the
+        /// surface scrim and the surface boundary inset can be exercised.
+        #[arg(long)]
+        surface_scope: bool,
     },
     /// Close a host popup by id
     Close {
