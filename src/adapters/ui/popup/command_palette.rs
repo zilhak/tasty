@@ -31,33 +31,64 @@ use tasty_ui_widgets::{KbdKey, margin_all, margin_sym};
 /// (`spacing_md`=12 와 2px 차).
 const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 
+// ── 카드 치수 ───────────────────────────────────────────────────────────────
+//
+// 아래 셋은 **[`zoomed`] 를 거쳐서만 쓴다.** `Theme` 필드는 생성 시점에 배율을 한 번
+// 타지만 파일 안 const 는 그 경로 밖이라, 한 식에 섞으면 그릇만 고정되고 안의 글자가
+// 커진다(`adapters/ui.rs` 의 `zoomed_px` 주석, ADR-0126). 카드 높이는 이제 sizer 가
+// 매 프레임 이 식으로 다시 정하므로, 그 섞임이 곧 배율별 잘림이 된다.
+//
+// 행 높이는 여기 없다 — `Theme.item_height_interactive`(= `size-28`,
+// `semantic.control-height`) 가 그 치수의 이름이라 [`palette_row_height`] 가 그것을
+// 읽는다.
+
 /// 카드 폭 — 디자인 palette 프레임. 높이와 달리 콘텐츠에 안 따른다.
 const PALETTE_WIDTH: LogicalPx = LogicalPx(540.0);
-/// 명령 한 행의 높이 — 디자인 MenuItem control-height.
-const PALETTE_ROW_H: LogicalPx = LogicalPx(28.0);
 /// 목록 최대 높이 — 디자인 list `maxHeight`. 이보다 많으면 스크롤이다.
+///
+/// `size-320` 위의 값이라 `on_scale_length_literal` 바늘에 걸리는데 **옮길 이름이
+/// 없다** — 그 primitive 를 쓰는 토큰 넷은 전부 *폭*이고(`fp-crumb-menu-max-width` ·
+/// `fp-popup-min-width` · `multiselect-menu-max-width` · `toast-max-width`), 목록의
+/// 세로 상한을 말하는 토큰은 없다. 행 높이와 **같이** 배율을 타야 한 화면에 보이는 행
+/// 수가 배율마다 안 달라지므로, 토큰이 생기기 전까지 이름만 붙여 둔다.
 const PALETTE_LIST_MAX_H: LogicalPx = LogicalPx(320.0);
 /// 목록과 footer 사이 여백. 목록 Frame 의 아래쪽 inner margin 자리를 대신한다.
+///
+/// `size-6` 위지만 spacing semantic 에 6 이 없다(`spacing_xs`=4 · `spacing_sm`=8).
+/// 그 primitive 를 쓰는 유일한 토큰은 status-dot 의 compact 지름이라 이 간격의
+/// 이름이 아니다.
 const PALETTE_LIST_GAP_BOTTOM: LogicalPx = LogicalPx(6.0);
 /// footer 한 줄 높이에 더해지는 상하 패딩 + 보더 몫(디자인 padding 8 12 + borderTop).
 const PALETTE_FOOTER_CHROME: LogicalPx = LogicalPx(20.0);
 
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
+/// 파일 안 const 를 현재 UI 배율로 올린다 — `Theme` 필드와 **같은 편**에 놓는다.
+fn zoomed(theme: &Theme, px: LogicalPx) -> f32 {
+    crate::adapters::ui::zoomed_px(theme, px).value()
+}
+
+/// 명령 한 행의 높이. 디자인 MenuItem control-height 이고 그 치수에는 이름이 있다
+/// (`semantic.control-height` → `Theme.item_height_interactive`).
+fn palette_row_height(theme: &Theme) -> f32 {
+    theme.item_height_interactive.value()
+}
+
 /// footer 구역이 차지하는 높이. draw 가 footer 를 바닥에 고정할 때와 sizer 가 카드
 /// 높이를 셀 때가 **같은 값**을 봐야 목록이 footer 밑으로 밀리지 않는다.
 fn palette_footer_height(theme: &Theme) -> f32 {
-    theme.font_size_caption.value() + PALETTE_FOOTER_CHROME.value()
+    theme.font_size_caption.value() + zoomed(theme, PALETTE_FOOTER_CHROME)
 }
 
 /// 목록 구역이 차지하는 높이 — 표시 항목 수로 정해지고 상한에서 멈춘다.
 ///
 /// 항목 0 건은 목록 대신 "결과 없음" 한 줄이 그려지므로 행 하나 높이로 둔다.
-fn palette_list_height(item_count: usize) -> f32 {
+fn palette_list_height(theme: &Theme, item_count: usize) -> f32 {
+    let row = palette_row_height(theme);
     if item_count == 0 {
-        return PALETTE_ROW_H.value();
+        return row;
     }
-    (item_count as f32 * PALETTE_ROW_H.value()).min(PALETTE_LIST_MAX_H.value())
+    (item_count as f32 * row).min(zoomed(theme, PALETTE_LIST_MAX_H))
 }
 
 /// 목록을 뺀 나머지가 늘 차지하는 높이 — 검색 구역 + 목록 프레임 위 여백 +
@@ -66,13 +97,13 @@ fn palette_chrome_height(theme: &Theme) -> f32 {
     let search_h = 2.0 * theme.spacing_sm.value() + theme.input_height().value();
     search_h
         + theme.spacing_xs.value()
-        + PALETTE_LIST_GAP_BOTTOM.value()
+        + zoomed(theme, PALETTE_LIST_GAP_BOTTOM)
         + palette_footer_height(theme)
 }
 
 /// 콘텐츠 맞춤 카드 높이.
 fn palette_height(theme: &Theme, item_count: usize) -> f32 {
-    palette_chrome_height(theme) + palette_list_height(item_count)
+    palette_chrome_height(theme) + palette_list_height(theme, item_count)
 }
 
 /// View 입력 — 한 명령 행의 시각/의미 데이터.
@@ -235,10 +266,10 @@ pub fn draw_command_palette_view(
                 );
                 return;
             }
-            let row_height = PALETTE_ROW_H.value();
+            let row_height = palette_row_height(theme);
             let selected_idx = props.selected_index;
-            let list_h =
-                (footer_top - ui.cursor().top() - PALETTE_LIST_GAP_BOTTOM.value()).max(row_height);
+            let list_h = (footer_top - ui.cursor().top() - zoomed(theme, PALETTE_LIST_GAP_BOTTOM))
+                .max(row_height);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
@@ -441,10 +472,7 @@ pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState)
     let labels: Vec<String> = commands.iter().map(label_for).collect();
     let matched = command_palette::search(&state.command_palette.query, &commands, &labels).len();
     let th = theme::theme();
-    egui::vec2(
-        crate::adapters::ui::zoomed_px(&th, PALETTE_WIDTH).value(),
-        palette_height(&th, matched),
-    )
+    egui::vec2(zoomed(&th, PALETTE_WIDTH), palette_height(&th, matched))
 }
 
 /// PopupDef.draw_fn — `state.command_palette` 와 `engine.settings` 를 어댑팅하고
@@ -707,7 +735,7 @@ mod view_tests {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let rect = egui::Rect::from_min_size(
                     egui::pos2(0.0, 0.0),
-                    egui::vec2(PALETTE_WIDTH.value(), card_h),
+                    egui::vec2(zoomed(&theme, PALETTE_WIDTH), card_h),
                 );
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                 let mut props = CommandPaletteProps {
@@ -745,7 +773,7 @@ mod view_tests {
         let (texts, footer_line) = painted(make_items(1), palette_height(&th, 1));
         let gap = footer_line - label_y(&texts, "Item 0");
         assert!(
-            gap < PALETTE_ROW_H.value(),
+            gap < palette_row_height(&th),
             "footer should sit within a row of the last item, gap = {gap}"
         );
     }
@@ -779,7 +807,7 @@ mod view_tests {
     #[test]
     fn height_grows_with_the_item_count_and_stops_at_the_list_cap() {
         let th = mocha_fallback();
-        let row = PALETTE_ROW_H.value();
+        let row = palette_row_height(&th);
         assert_eq!(palette_height(&th, 2) - palette_height(&th, 1), row);
         // 320 / 28 = 11.4 → 11 행까지 자라고 12 행부터는 상한에서 멈춘다.
         assert_eq!(palette_height(&th, 12), palette_height(&th, 1000));

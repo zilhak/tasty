@@ -105,12 +105,16 @@ auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간�
   출처는 `PopupDef.sizer` 의 필드 doc 한 줄이었고(그 줄은 고쳤다), 새 경로는 필요 없었다.
 - **처방**: `command_palette_sizer` 하나. 매 프레임 현재 쿼리의 **매칭 개수**만 세어
   `palette_height(theme, n)` 을 돌려준다(라벨·아이콘·키캡까지 만드는 쪽은 다시 안 부른다).
-  draw 의 footer 고정과 sizer 가 같은 `palette_footer_height`/`PALETTE_ROW_H`/
+  draw 의 footer 고정과 sizer 가 같은 `palette_footer_height`/`palette_row_height`/
   `PALETTE_LIST_MAX_H` 를 본다 — 두 식이 갈리면 목록 마지막 행이 footer 밑으로 밀린다.
-- **위치·폭**: `sizer` 가 있는 popup 은 등록 시 `default_size` 에 ui zoom 이 **안** 곱해지므로
-  폭은 sizer 가 직접 곱한다(`zoomed_px`). 카드는 열 때 한 번 중앙 정렬되고(`request_center`)
-  그 뒤 높이가 줄어도 `pos` 는 그대로다 — 위쪽 가장자리가 고정돼 타이핑 중에 검색창이 움직이지
-  않는다.
+  행 높이는 상수가 아니라 `Theme.item_height_interactive`(= `semantic.control-height`) 다.
+- **배율**: `sizer` 가 있는 popup 은 등록 시 `default_size` 에 ui zoom 이 **안** 곱해진다 —
+  종전의 고정 크기는 등록이 곱해 주고 있었다. 그래서 높이 식 안의 `Theme` 값(이미 배율을 탄
+  것)과 파일 안 const(안 탄 것)를 섞으면 배율에서 그릇만 고정되고 글자가 커진다. 폭·목록
+  상한·여백 const 는 전부 `zoomed_px` 를 거쳐서만 쓰고, 행 높이는 토큰이라 이미 탄다 —
+  그래야 한 화면에 보이는 행 수가 배율마다 안 달라진다.
+- **위치**: 카드는 열 때 한 번 중앙 정렬되고(`request_center`) 그 뒤 높이가 줄어도 `pos` 는
+  그대로다 — 위쪽 가장자리가 고정돼 타이핑 중에 검색창이 움직이지 않는다.
 - **근거**: 2026-09-20 실측. 항목 하나짜리 카드를 종전 고정 높이(412)로 그리면 목록 아래가
   200px 넘게 비고, 콘텐츠 맞춤 높이로 그리면 footer 구분선이 그 행에서 한 행 높이 안쪽에 붙는다
   (`command_palette.rs` 의 `painted()` 테스트 — 식을 되읊는 대신 **그려진 구분선 y** 를 본다).
