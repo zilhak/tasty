@@ -298,6 +298,9 @@ ver_key() {
 ver_gt() {
     local ka kb; ka=$(ver_key "$1"); kb=$(ver_key "$2")
     [ -n "$ka" ] && [ -n "$kb" ] || return 1
+    # 이유: 단어 분리가 목적이다. ver_key 가 세 마디를 공백으로 이어 돌려주고
+    # 여기서 그것을 위치 인자 여섯으로 펼친다 — 따옴표를 치면 한 덩어리가 되어
+    # 아래 자리 비교($1..$6)가 통째로 무너진다.
     # shellcheck disable=SC2086
     set -- $ka $kb
     [ "$1" -gt "$4" ] && return 0
@@ -390,6 +393,9 @@ if [ "$MODE" = staged ]; then
 else
     AFTER_TREE="$AFTER"
 fi
+# 이유: 아래 둘 다 단어 분리가 목적이다. INVOLVED 는 줄바꿈으로 이은 크레이트
+# 이름 목록이고 materialize 는 그것을 가변 인자로 받는다 — 따옴표를 치면 이름
+# 전부가 한 인자가 되어 그런 이름의 크레이트를 찾다가 빈손으로 끝난다.
 # shellcheck disable=SC2086
 materialize before "$BEFORE_REV" $INVOLVED
 # shellcheck disable=SC2086

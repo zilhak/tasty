@@ -41,7 +41,6 @@ fi
 [ -n "$BIN" ] || { echo "[masked-tree] 판정기를 못 찾았다 — 사본 없이 재지 마라." >&2; exit 2; }
 
 OUT="$(mktemp -d)"
-# shellcheck disable=SC2086
 if ! "$BIN" $KEEP "$OUT" "$ROOT" "${SCAN_ROOTS[@]}" >&2; then
     rm -rf "$OUT"
     echo "[masked-tree] 사본을 못 만들었다 — 원문에서 재면 픽스처가 실물로 세어진다." >&2

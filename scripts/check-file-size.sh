@@ -68,7 +68,11 @@ done
 skip() {
     case "$1" in
         */tests/*|*/tests.rs|*_test.rs|*_tests.rs) return 0 ;;
-        *generated*|*/design-tokens/generated/*)   return 0 ;;
+        # 두 갈래는 **같은 갈래**다(둘 다 return 0) — 넓은 쪽이 좁은 쪽을 이미 덮는다.
+        # 좁은 쪽을 앞에 두는 것은 이 skip 이 겨냥한 대표 사례를 이름으로 남기기
+        # 위해서고, 순서를 이렇게 둬야 정적 검사기가 "뒤 갈래는 영영 안 걸린다" 로
+        # 읽지 않는다. 판정은 어느 순서든 같다.
+        */design-tokens/generated/*|*generated*)   return 0 ;;
         *) return 1 ;;
     esac
 }
