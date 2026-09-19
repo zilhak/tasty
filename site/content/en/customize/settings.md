@@ -1,4 +1,4 @@
-<!-- source-hash: d667f181ad09 -->
+<!-- source-hash: 5c88d5d18ef5 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -26,6 +26,7 @@ Press the same shortcut again to close the settings window.
 - The list on the left holds that tab's sections. Typing into **Filter sections…** above it filters the list. Switching tabs clears the filter text.
 - Changes are written to the file and applied on screen only when you press **Save**. **Cancel** discards them all. There is no close button in the header.
 - Only a **Language** change requires restarting Tasty after saving.
+- Numeric entries are **typed**, never dragged. Nothing pulls the value while you type; it settles into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field turns red with one line under it naming the range and the value that will actually be saved.
 
 ## Entries by tab
 

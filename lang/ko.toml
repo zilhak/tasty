@@ -157,9 +157,17 @@ reduced_motion_desc = "UI 페이드/슬라이드 애니메이션을 생략합니
 modifier_hint = "수정자 키 힌트 표시"
 modifier_hint_desc = "수정자 키(Ctrl / Alt / Shift — macOS 는 Cmd / Option 추가)를 누르고 있는 동안 사용 가능한 단축키를 떠 있는 패널로 보여줍니다. 잠깐 누르고 있으면 나타나고, 손을 떼는 즉시 사라집니다."
 
+[settings.number]
+range_between = "{} 이상 {} 이하입니다. {} 으로 확정됩니다."
+range_at_least = "{} 이상입니다. {} 으로 확정됩니다."
+range_at_most = "{} 이하입니다. {} 으로 확정됩니다."
+range_snapped = "가장 가까운 눈금으로 맞춰집니다. {} 으로 확정됩니다."
+unit_pt = "pt"
+unit_s = "s"
+
 [settings.overlay]
 toast_duration = "토스트 표시 시간"
-toast_duration_desc = "토스트가 자동으로 사라지기 전 화면에 머무는 시간입니다. 좌우로 드래그하거나 클릭해 값을 입력하세요."
+toast_duration_desc = "토스트가 자동으로 사라지기 전 화면에 머무는 시간입니다. 값을 입력하면 칸을 떠날 때 가장 가까운 0.5초로 맞춰집니다."
 
 [settings.remote_transfer]
 section = "수신 파일"

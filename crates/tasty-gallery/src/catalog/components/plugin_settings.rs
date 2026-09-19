@@ -9,9 +9,9 @@
 //! (`tasty_ui_widgets::{switch,select}`)로 **미러**한다 (갤러리 확립 패턴 — `prim_forms` /
 //! `settings` specimen 과 동일).
 //!
-//! number 행: 디자인·본체·specimen 모두 text `Input`(mono, width xs) + suffix 로 일치한다
-//! (본체 `draw_plugin_number` 가 `tasty_ui_widgets::Input` 를 쓰며, 과거의 `DragValue` 차이는
-//! 해소됨).
+//! number 행: 디자인·본체·specimen 모두 **설정 창의 숫자 한 모양**이다 — mono `Input`
+//! (width xs, 자릿수 우측 정렬) + 필드 밖 정적 suffix + **확정 때만 clamp**. 그 모양
+//! 자체(상태 셋)는 [`super::settings_number`] specimen 이 따로 전시한다.
 
 use std::cell::RefCell;
 
@@ -24,6 +24,10 @@ use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings detail 영역(HTML viewer 페이지) 프레임 폭 근사.
 const WIDTH: LogicalPx = LogicalPx(440.0);
+
+/// Default zoom 이 확정될 때 끌려오는 범위(본체 plugin 매니페스트의 min/max 재현).
+const ZOOM_MIN: f64 = 25.0;
+const ZOOM_MAX: f64 = 500.0;
 
 /// Color scheme 선택지 (디자인 `Follow theme` / `Light` / `Dark`).
 const SCHEME: &[&str] = &["Follow theme", "Light", "Dark"];
@@ -74,29 +78,30 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
-                    // Default zoom — Input(mono, width xs) + "%" suffix (본체
-                    // draw_plugin_number 미러: right_to_left 에서 suffix 가 가장 우측,
-                    // 그 왼쪽에 입력 필드. 유효 f64 → 25..=500 clamp, 빈/무효는 무시,
-                    // 비포커스 시 버퍼를 값으로 정규화).
+                    // Default zoom — 설정 창의 숫자 한 모양(본체 `number::number_field`
+                    // 미러). right_to_left 이라 suffix 가 가장 우측, 그 왼쪽에 필드.
+                    // 확정(blur / ↵) 때만 25..=500 으로 끌어오고, 치는 동안은 그대로 둔다.
                     row(ui, theme, "Default zoom:", |ui| {
                         ui.label(egui::RichText::new("%").color(theme.text_muted().to_egui()));
+                        let pending = zoom_out_of_range(&st.zoom_buf);
                         let resp = Input::new()
                             .mono(true)
+                            .align(egui::Align::RIGHT)
                             .width(theme.field_width_xs.value())
+                            .invalid(pending.is_some())
                             .show(ui, theme, &mut st.zoom_buf);
-                        if !resp.has_focus() {
-                            let synced = if st.zoom.fract() == 0.0 {
-                                format!("{:.0}", st.zoom)
-                            } else {
-                                format!("{}", st.zoom)
-                            };
+                        if resp.lost_focus() {
+                            if let Ok(parsed) = st.zoom_buf.trim().parse::<f64>()
+                                && parsed.is_finite()
+                            {
+                                st.zoom = parsed.clamp(ZOOM_MIN, ZOOM_MAX);
+                            }
+                            st.zoom_buf = format!("{:.0}", st.zoom);
+                        } else if !resp.has_focus() {
+                            let synced = format!("{:.0}", st.zoom);
                             if st.zoom_buf != synced {
                                 st.zoom_buf = synced;
                             }
-                        } else if resp.changed()
-                            && let Ok(parsed) = st.zoom_buf.trim().parse::<f64>()
-                        {
-                            st.zoom = parsed.clamp(25.0, 500.0);
                         }
                     });
                     // Color scheme — Select(width field_width_md).
@@ -182,4 +187,14 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(&mut 
         ui.label(egui::RichText::new(label).color(theme.text_primary().to_egui()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
     });
+}
+
+/// 지금 친 글자가 확정되면 값이 끌려가는가 — 그럴 때만 danger 테두리가 켜진다.
+fn zoom_out_of_range(buf: &str) -> Option<f64> {
+    let typed = buf.trim().parse::<f64>().ok()?;
+    if !typed.is_finite() {
+        return None;
+    }
+    let settled = typed.clamp(ZOOM_MIN, ZOOM_MAX);
+    (settled != typed).then_some(settled)
 }

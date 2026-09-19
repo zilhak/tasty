@@ -147,7 +147,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 - `font_override` — surface 폰트 override. host 가 `plugin_font_overrides.<storage_key>` 슬롯에 read/write (아래 generic 컨트롤과 **별개 전역 네임스페이스**).
 - `toggle` — on/off. `default`(bool). host 는 Switch 로 렌더, bool 저장.
 - `select` — 드롭다운. `options = [{ value, label_key }]` + `default`(반드시 options.value 중 하나). Select 로 렌더, 선택 value(문자열) 저장.
-- `number` — 수치. `default`(f64) · `min`/`max`(선택; 주어지면 min≤default≤max) · `suffix_key`(선택, 단위 i18n 키). DragValue 로 렌더, f64 저장.
+- `number` — 수치. `default`(f64) · `min`/`max`(선택; 주어지면 min≤default≤max) · `suffix_key`(선택, 단위 i18n 키). 설정 창의 [숫자 한 모양](../features/settings/screens/settings.md#숫자-입력-한-모양)으로 렌더(mono Input + 필드 밖 정적 suffix, **확정 때만** min/max 로 끌어온다), f64 저장.
 
 `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Text/Number)에 저장·영속된다 — `font_override` 의 전역 슬롯과 충돌하지 않는 plugin-scoped 네임스페이스. 예: [html](../plugins/html/index.md) 이 HTML viewer 설정(zoom/color scheme/allow remote content/sandbox scripts)을 이 방식으로 노출.
 

@@ -28,6 +28,8 @@ pub struct Input<'a> {
     addon: Option<&'a str>,
     /// 텍스트 색 override. `None` 이면 `input_fg`(text-primary).
     text_color: Option<egui::Color32>,
+    /// 글자 정렬. 기본은 좌측이고, 숫자 필드만 우측을 쓴다.
+    align: egui::Align,
 }
 
 impl Default for Input<'_> {
@@ -47,6 +49,7 @@ impl<'a> Input<'a> {
             icon: None,
             addon: None,
             text_color: None,
+            align: egui::Align::LEFT,
         }
     }
 
@@ -92,6 +95,13 @@ impl<'a> Input<'a> {
     /// 값은 반드시 `Theme` 토큰에서 파생한 색이어야 한다(raw hex 금지).
     pub fn text_color(mut self, color: egui::Color32) -> Self {
         self.text_color = Some(color);
+        self
+    }
+
+    /// 글자 정렬. 숫자 필드는 `Align::RIGHT` 를 쓴다 — 설정 열을 내려가며 자릿수가
+    /// 맞아야 두 값의 크기를 눈으로 견줄 수 있다. 그 외에는 기본(좌측)이다.
+    pub fn align(mut self, align: egui::Align) -> Self {
+        self.align = align;
         self
     }
 
@@ -164,6 +174,7 @@ impl<'a> Input<'a> {
                         .desired_width(te_w)
                         .hint_text(tasty_egui_theme::hint_text(theme, self.placeholder))
                         .font(font)
+                        .horizontal_align(self.align)
                         .text_color(
                             self.text_color
                                 .unwrap_or_else(|| theme.input_fg().to_egui()),

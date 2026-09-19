@@ -444,7 +444,7 @@ form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen cons
 |---|---|---|---|
 | `Row`(label 좌 + 컨트롤 우) | `plugin_setting_row` | `row` | `add_space spacing_sm` → horizontal: label(`th.text`) 좌, `right_to_left` 컨트롤 우 |
 | `Mono`("HTML viewer") | 페이지 헤더 | mono micro · text-muted | |
-| `Default zoom:` `Input`(mono)+`%` | `draw_plugin_number` | `DragValue` + suffix(text-muted) | **차이**: 디자인 text Input ↔ 본체/갤러리 egui `DragValue` (본체 일치 우선). min/max clamp |
+| `Default zoom:` `Input`(mono)+`%` | `draw_plugin_number` → `number::number_field` | `plugin_settings.rs` 의 number 행 | 셋 다 **숫자 한 모양**이다 — mono `Input`(width xs, 우측 정렬) + 필드 밖 정적 suffix + 확정 때만 clamp. 상태 셋은 `settings-number` specimen |
 | `Color scheme:` `Select` | `draw_plugin_select` | `select`(width `field_width_md`) | follow/light/dark |
 | `Allow remote content:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) off | |
 | `Sandbox scripts:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) on | |

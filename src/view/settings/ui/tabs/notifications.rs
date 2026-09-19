@@ -19,11 +19,16 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
 
             ui.label(t("settings.notifications.coalesce_interval_label"));
-            ui.add(
-                egui::DragValue::new(&mut settings.notification.coalesce_ms)
-                    .range(0..=5000)
-                    .speed(50),
-            );
+            let mut coalesce = settings.notification.coalesce_ms as f64;
+            if super::number::number_field(
+                ui,
+                &th,
+                "notification_coalesce_ms",
+                &super::number::NumberSpec::int(0.0, 5000.0),
+                &mut coalesce,
+            ) {
+                settings.notification.coalesce_ms = coalesce as u64;
+            }
             ui.end_row();
         });
 }

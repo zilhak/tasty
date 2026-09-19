@@ -63,46 +63,34 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     row_desc(ui, &th, t("settings.remote_transfer.dir_desc"));
     row_separator(ui, &th);
 
-    // ── 행 2: Maximum size — mono numeric Input + 필드 밖 정적 mono "MiB" suffix ──
-    // 디자인 text Input 을 tasty numeric 으로 재현: 프레임 간 편집 버퍼를 egui 메모리에
-    // 두고 유효 정수만 max_mb(u64)로 clamp 저장(draw_plugin_number 선례). "MiB" 는
-    // Toast 의 " s" 처럼 필드 밖 정적 단위 리터럴(i18n 예외 — 단위 기호).
-    let cur_mb = settings.remote_transfer.max_mb;
-    let buf_id = egui::Id::new("remote_transfer_max_mb_buf");
-    let mut buf = ui
-        .data_mut(|d| d.get_temp::<String>(buf_id))
-        .unwrap_or_else(|| cur_mb.to_string());
+    // ── 행 2: Maximum size — 설정 창의 숫자 한 모양([`super::number`]) + mono "MiB" ──
+    // 폭은 `field_width_xs`(90)이고, 단위는 필드 밖 정적 mono 리터럴이다(i18n 예외 —
+    // 단위 기호). 아래 끝이 1 MiB 이고 위 끝은 없다 — 폴더가 담을 수 있는 만큼이다.
+    let mut max_mb = settings.remote_transfer.max_mb as f64;
+    let mut committed = false;
     settings_row(ui, &th, t("settings.remote_transfer.max_capacity"), |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-            let resp = Input::new()
-                .mono(true)
-                .width(th.field_width_xs.value())
-                .show(ui, &th, &mut buf);
-            ui.label(
-                egui::RichText::new("MiB")
-                    .monospace()
-                    .size(th.font_size_caption.value())
-                    .color(th.text_muted()),
+            committed = super::number::number_field(
+                ui,
+                &th,
+                "remote_transfer_max_mb",
+                &super::number::NumberSpec {
+                    min: Some(1.0),
+                    max: None,
+                    step: None,
+                    decimals: 0,
+                    suffix: Some("MiB"),
+                    suffix_mono: true,
+                    enabled: true,
+                },
+                &mut max_mb,
             );
-            if !resp.has_focus() {
-                // 편집 중이 아니면 버퍼를 저장값으로 동기화(초기 표시 + 포커스 아웃 정규화).
-                let synced = cur_mb.to_string();
-                if buf != synced {
-                    buf = synced;
-                }
-            } else if resp.changed() {
-                // 유효 정수만 저장(최소 1 MiB). 빈/무효 입력은 마지막 유효값 유지.
-                if let Ok(parsed) = buf.trim().parse::<u64>() {
-                    let clamped = parsed.max(1);
-                    if clamped != cur_mb {
-                        settings.remote_transfer.max_mb = clamped;
-                    }
-                }
-            }
         });
     });
-    ui.data_mut(|d| d.insert_temp(buf_id, buf));
+    if committed {
+        settings.remote_transfer.max_mb = max_mb as u64;
+    }
     row_desc(ui, &th, t("settings.remote_transfer.max_capacity_desc"));
 }
 

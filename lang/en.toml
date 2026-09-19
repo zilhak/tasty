@@ -157,9 +157,17 @@ reduced_motion_desc = "Skip UI fade/slide animations. Toast fade-in/out is disab
 modifier_hint = "Show modifier key hints"
 modifier_hint_desc = "Show a floating panel of the available shortcuts while you hold a modifier key (Ctrl / Alt / Shift — macOS adds Cmd / Option). It appears after a brief hold and dismisses the moment you release."
 
+[settings.number]
+range_between = "Between {} and {}. Commits as {}."
+range_at_least = "At least {}. Commits as {}."
+range_at_most = "At most {}. Commits as {}."
+range_snapped = "Snaps to the nearest step. Commits as {}."
+unit_pt = "pt"
+unit_s = "s"
+
 [settings.overlay]
 toast_duration = "Toast duration"
-toast_duration_desc = "How long a toast stays on screen before it auto-dismisses. Drag left–right to adjust, or click to type a value."
+toast_duration_desc = "How long a toast stays on screen before it auto-dismisses. Type a value; it settles on the nearest half second when you leave the field."
 
 [settings.remote_transfer]
 section = "Received files"

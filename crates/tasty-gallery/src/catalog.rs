@@ -408,12 +408,22 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "plugin-settings",
                     "Plugin settings page",
-                    vec![spec(
-                        "plugin-settings",
-                        "Plugin-contributed settings rows",
-                        Some("label · control rows — toggle / select / number"),
-                        components::plugin_settings::draw,
-                    )],
+                    vec![
+                        spec(
+                            "plugin-settings",
+                            "Plugin-contributed settings rows",
+                            Some("label · control rows — toggle / select / number"),
+                            components::plugin_settings::draw,
+                        ),
+                        spec(
+                            "settings-number",
+                            "Numbers in settings — one shape",
+                            Some(
+                                "mono Input + static suffix, clamp on commit — default / out of range / disabled",
+                            ),
+                            components::settings_number::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "nav",

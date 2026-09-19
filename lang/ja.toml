@@ -157,9 +157,17 @@ reduced_motion_desc = "UI のフェード/スライドアニメーションを�
 modifier_hint = "修飾キーのヒントを表示"
 modifier_hint_desc = "修飾キー（Ctrl / Alt / Shift — macOS では Cmd / Option も）を押している間、利用可能なショートカットをフローティングパネルで表示します。少し押し続けると表示され、離した瞬間に消えます。"
 
+[settings.number]
+range_between = "{} 以上 {} 以下です。{} として確定します。"
+range_at_least = "{} 以上です。{} として確定します。"
+range_at_most = "{} 以下です。{} として確定します。"
+range_snapped = "最も近い目盛りに合わせます。{} として確定します。"
+unit_pt = "pt"
+unit_s = "s"
+
 [settings.overlay]
 toast_duration = "トースト表示時間"
-toast_duration_desc = "トーストが自動的に消えるまで画面に表示される時間です。左右にドラッグするか、クリックして値を入力します。"
+toast_duration_desc = "トーストが自動的に消えるまで画面に表示される時間です。値を入力すると、フィールドを離れたときに最も近い0.5秒に揃います。"
 
 [settings.remote_transfer]
 section = "受信ファイル"

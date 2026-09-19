@@ -59,11 +59,16 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
 
             ui.label(t("settings.terminal.scrollback_lines_label"));
-            ui.add(
-                egui::DragValue::new(&mut settings.general.scrollback_lines)
-                    .range(0..=100000)
-                    .speed(100),
-            );
+            let mut scrollback = settings.general.scrollback_lines as f64;
+            if super::number::number_field(
+                ui,
+                &th,
+                "terminal_scrollback_lines",
+                &super::number::NumberSpec::int(0.0, 100_000.0),
+                &mut scrollback,
+            ) {
+                settings.general.scrollback_lines = scrollback as usize;
+            }
             ui.end_row();
 
             ui.label(t("settings.terminal.confirm_close_label"));

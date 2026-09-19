@@ -122,6 +122,9 @@ const LANGS: &[&str] = &tasty_i18n::BUILTIN_CODES;
 /// ko/ja 값이 en 과 같아도 되는 키 — (키, 적용 언어, 이유). 이유가 없는 항목은 넣지
 /// 않는다. 형태로 자동 예외되는 값(기호만·약어·경로·명령·수식키 이름)은 등록이 필요 없다.
 const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
+    // 단위 기호 — 세 언어가 같은 기호를 쓴다(i18n.md "하드코딩 허용 예외" 의 단위 항목).
+    ("settings.number.unit_pt", &["ko", "ja"], "단위 기호"),
+    ("settings.number.unit_s", &["ko", "ja"], "단위 기호"),
     // 고유명사 · 제품명 — 번역하면 다른 것을 가리킨다(i18n.md "하드코딩 허용 예외" 와 같은 근거).
     ("app.name", &["ko", "ja"], "제품명"),
     ("settings.appearance.subtab.tasty", &["ko", "ja"], "제품명"),

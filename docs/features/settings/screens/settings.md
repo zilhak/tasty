@@ -28,7 +28,7 @@
 
 - **L1 탭바** (상단, 7탭, 이 순서): General / Terminal / Appearance / Keybindings / FileHandler(표시 라벨 **Handler**) / Misc / Plugins.
 - **L2 섹션 목록** (좌측): 현재 L1 의 하위 섹션 + **필터 검색**. (L1 전환 시 필터 클리어.) L1 별 L2:
-  - **General**: General / Notifications / Accessibility / Overlay(토스트 표시 시간 `Toast duration` DragValue, 1~10s)
+  - **General**: General / Notifications / Accessibility / Overlay(토스트 표시 시간 `Toast duration`, 1~10s · 0.5s 눈금) / Remote transfer
   - **Terminal**: General(터미널 동작 설정) / Mouse Capture(마우스 캡처 안내 배너 토글 + Shift 우회 Note + 캡처 비활성화 블랙리스트 + 배너만 억제하는 블랙리스트) / TUI(OSC 52 클립보드 읽기 허용 토글 + bordered warning callout) / Performance
   - **Appearance**: Theme / Colors(프리셋 색 개별 override picker) / General / Display(UI 스케일 전용) / Tasty(앱 크롬 색상) / Terminal / Explorer(내장 파일 관리자 폰트, T11 host builtin 승격) / (플러그인 기여 페이지 동적 — 예: HTML)
   - **Keybindings**: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Explorer / Scripts / Preset / Plugins / ─ / Import / Export — 마지막 항목 위에만 1px separator 가 붙고, 필터 검색 중에는 separator 를 숨긴다
@@ -49,6 +49,28 @@
   는 **열기 요청 래치**라 모달이 떠 있는 동안은 false 다 — 그 경로는 이 화면을 닫지 않는다.
 - **Keybindings › Preset · Import / Export**: 이 두 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋) · [가져오기 / 내보내기](../../keybindings/index.md#가져오기--내보내기).
 - **Keybindings › Import / Export 의 충돌 확인**: 가져오기 Apply 가 새 충돌을 만들면 설정 창 자체 popup(`keybinding_import_conflict`)이 뜬다 — Cancel · Overwrite, 키보드 Enter/Y = Overwrite, Esc/N = Cancel, 타이틀바 ✕ = Cancel.
+
+### 숫자 입력 한 모양
+
+설정 창과 plugin 기여 설정의 **모든** 숫자 칸이 같은 모양이다. drag 숫자도 stepper 도
+쓰지 않는다 — 앞엣것은 스크롤하는 pane 안에서 제스처가 스크롤과 부딪히고 자기 범위를
+넘겨 보기 전까지 그 범위가 안 보이며, 뒤엣것은 한 번 정하고 마는 칸에 히트 타깃을 둘 더
+만든다.
+
+- **mono `Input`** — 폭 `field_width_xs`(90), **자릿수 우측 정렬**(열을 내려가며 자리가
+  맞아야 두 값을 눈으로 견준다). 새 컴포넌트가 아니라 기존 `Input` 그대로다.
+- **단위는 필드 밖 정적 텍스트** — muted, 타이핑 대상이 아니다. 단위가 없는 칸은 그 자리가
+  비어 있다. 원격 전송의 `MiB` 만 mono 다.
+- **clamp 는 확정 때만** — blur 와 `↵` 뿐이고, **치는 동안에는 값을 안 건드린다**. 25~200
+  칸에 `150` 을 칠 때 첫 글자에서 값이 끌려가면 그 다음 글자를 못 친다.
+- **범위 밖은 막지 않고 말한다** — danger 테두리 + 그 아래 한 줄. 그 줄은 범위와 **확정될
+  값**을 함께 적는다(`Between 10 and 200. Commits as 200.`).
+- **숫자로 안 읽히는 중간 상태**(빈 칸 · `-` · `1e`)는 경고가 아니다. 확정 때 마지막 값이
+  그대로 남는다.
+
+구현은 `src/view/settings/ui/tabs/number.rs` 한 자리이고, 확정 판정(`commit`)은 그리기와
+무관한 순수 함수라 같은 파일의 단위 테스트가 든다. 갤러리 `settings-number` specimen 이
+상태 셋(default / out of range / disabled)을 전시한다.
 
 ## 상태별 시각
 

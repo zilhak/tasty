@@ -699,6 +699,21 @@ fn draw_appearance_explorer(
 
 /// surface kind id for the terminal — the `theme_overrides.surface_themes` /
 /// `theme_base.surface_themes` map key the background pickers bind to.
+/// 터미널 글꼴 크기 칸의 계약. 기본 글꼴 행과 surface override 행이 **같은 것**을 써야
+/// 하므로 한 자리에 둔다 — 한쪽만 고치면 같은 칸에서 두 범위가 갈린다.
+///
+/// 상수가 아니라 함수인 이유: 이 범위는 화면 길이가 아니라 **터미널 글꼴의 pt** 라
+/// `LogicalPx` 가 될 수 없고, 그렇다고 맨 `const f64` 로 두면 이름이 길이로 읽혀
+/// `length_constant_frontier` 가드에 걸린다(그 가드는 선언 한 줄만 본다).
+fn font_size_spec() -> super::number::NumberSpec<'static> {
+    super::number::NumberSpec::int(6.0, 72.0)
+}
+
+/// 줄 높이(배수) 칸의 계약. 위와 같은 이유로 한 자리이고 같은 이유로 함수다.
+fn line_height_spec() -> super::number::NumberSpec<'static> {
+    super::number::NumberSpec::int(0.8, 2.0).decimals(2)
+}
+
 const TERMINAL_SURFACE_ID: &str = "terminal";
 
 /// Which terminal surface background a picker row binds to (Focused/Unfocused).
@@ -1565,9 +1580,7 @@ fn draw_plugin_select(
     }
 }
 
-/// `Number` → 디자인 text `Input`(mono, width xs) + 선택적 suffix. min/max clamp.
-/// f64 read/write (정수면 정수 표기). immediate mode 라 편집 버퍼는 egui 메모리에
-/// `plugin_id`+`storage_key` id 로 프레임 간 보관한다.
+/// `Number` → 설정 창의 **숫자 한 모양**([`super::number`]). f64 read/write.
 #[allow(clippy::too_many_arguments)]
 fn draw_plugin_number(
     ui: &mut egui::Ui,
@@ -1585,62 +1598,38 @@ fn draw_plugin_number(
         _ => default,
     };
     let th = crate::theme::theme();
-    // 정수면 정수 표기.
-    let fmt = |n: f64| -> String {
-        if n.fract() == 0.0 {
-            format!("{n:.0}")
-        } else {
-            format!("{n}")
-        }
+    let suffix = suffix_key.map(t);
+    let spec = super::number::NumberSpec {
+        min,
+        max,
+        step: None,
+        // plugin 이 정수 범위를 선언했는지 알 길이 없으므로 현재 값의 모양을 따른다.
+        decimals: usize::from(cur.fract() != 0.0),
+        suffix,
+        suffix_mono: false,
+        enabled: true,
     };
-    // 프레임 간 유지되는 편집 버퍼.
-    let buf_id = egui::Id::new(("plugin_number_buf", plugin_id, storage_key));
-    let mut buf = ui
-        .data_mut(|d| d.get_temp::<String>(buf_id))
-        .unwrap_or_else(|| fmt(cur));
 
-    let mut resp = None;
+    let mut val = cur;
+    let mut committed = false;
     plugin_setting_row(ui, t(label_key), |ui| {
-        // right_to_left: 먼저 add 한 suffix 가 가장 우측, 그 왼쪽에 입력 필드.
-        if let Some(sk) = suffix_key {
-            ui.label(egui::RichText::new(t(sk)).color(th.text_muted()));
-        }
-        resp = Some(
-            tasty_ui_widgets::Input::new()
-                .mono(true)
-                .width(th.field_width_xs.value())
-                .show(ui, &th, &mut buf),
+        // right_to_left 안이라 칸 묶음이 통째로 오른쪽에 붙는다.
+        committed = super::number::number_field(
+            ui,
+            &th,
+            ("plugin_number", plugin_id, storage_key),
+            &spec,
+            &mut val,
         );
     });
-    let resp = resp.expect("input always drawn");
 
-    if !resp.has_focus() {
-        // 편집 중이 아니면 버퍼를 저장값으로 동기화(초기 표시 + 포커스 아웃 시 정규화).
-        let synced = fmt(cur);
-        if buf != synced {
-            buf = synced;
-        }
-    } else if resp.changed() {
-        // 편집 중 유효 f64 → clamp 후 저장(변경 시에만). 빈/무효 입력은 무시(마지막 유효값 유지).
-        if let Ok(parsed) = buf.trim().parse::<f64>() {
-            let mut clamped = parsed;
-            if let Some(lo) = min {
-                clamped = clamped.max(lo);
-            }
-            if let Some(hi) = max {
-                clamped = clamped.min(hi);
-            }
-            if clamped != cur {
-                settings.set_plugin_setting(
-                    plugin_id,
-                    storage_key,
-                    crate::settings::PluginSettingValue::Number(clamped),
-                );
-            }
-        }
+    if committed {
+        settings.set_plugin_setting(
+            plugin_id,
+            storage_key,
+            crate::settings::PluginSettingValue::Number(val),
+        );
     }
-
-    ui.data_mut(|d| d.insert_temp(buf_id, buf));
 }
 
 /// Searchable font family combo. `value` is the family name in the underlying
@@ -1724,6 +1713,7 @@ fn font_settings_grid(
     font_filter: &mut HashMap<String, String>,
     salt: &str,
 ) {
+    let th = crate::theme::theme();
     egui::Grid::new(format!("font_settings_grid_{}", salt))
         .num_columns(2)
         .spacing([12.0, 8.0])
@@ -1744,11 +1734,16 @@ fn font_settings_grid(
             ui.end_row();
 
             ui.label(t("settings.appearance.font_size_label"));
-            ui.add(
-                egui::DragValue::new(&mut font.font_size)
-                    .range(6.0..=72.0)
-                    .speed(0.5),
-            );
+            let mut size_value = font.font_size as f64;
+            if super::number::number_field(
+                ui,
+                &th,
+                ("appearance_font_size", salt),
+                &font_size_spec(),
+                &mut size_value,
+            ) {
+                font.font_size = size_value as f32;
+            }
             ui.end_row();
 
             label_with_tooltip(
@@ -1756,12 +1751,16 @@ fn font_settings_grid(
                 t("settings.appearance.line_height_label"),
                 t("settings.appearance.line_height_tooltip"),
             );
-            ui.add(
-                egui::DragValue::new(&mut font.line_height)
-                    .range(0.8..=2.0)
-                    .speed(0.05)
-                    .max_decimals(2),
-            );
+            let mut lh_value = font.line_height as f64;
+            if super::number::number_field(
+                ui,
+                &th,
+                ("appearance_line_height", salt),
+                &line_height_spec(),
+                &mut lh_value,
+            ) {
+                font.line_height = lh_value as f32;
+            }
             ui.end_row();
 
             label_with_tooltip(
@@ -1786,6 +1785,7 @@ fn font_override_grid(
     font_filter: &mut HashMap<String, String>,
     salt: &str,
 ) {
+    let th = crate::theme::theme();
     egui::Grid::new(format!("font_override_grid_{}", salt))
         .num_columns(3)
         .spacing([8.0, 8.0])
@@ -1838,16 +1838,16 @@ fn font_override_grid(
             // ── Font size ──
             ui.label(t("settings.appearance.font_size_label"));
             override_checkbox(ui, &mut ov.font_size, || default.font_size, salt);
-            let mut size_value = ov.font_size.unwrap_or(default.font_size);
-            ui.add_enabled_ui(ov.font_size.is_some(), |ui| {
-                ui.add(
-                    egui::DragValue::new(&mut size_value)
-                        .range(6.0..=72.0)
-                        .speed(0.5),
-                );
-            });
+            let mut size_value = ov.font_size.unwrap_or(default.font_size) as f64;
+            super::number::number_field(
+                ui,
+                &th,
+                ("appearance_override_font_size", salt),
+                &font_size_spec().enabled(ov.font_size.is_some()),
+                &mut size_value,
+            );
             if let Some(stored) = ov.font_size.as_mut() {
-                *stored = size_value;
+                *stored = size_value as f32;
             }
             ui.end_row();
 
@@ -1858,17 +1858,16 @@ fn font_override_grid(
                 t("settings.appearance.line_height_tooltip"),
             );
             override_checkbox(ui, &mut ov.line_height, || default.line_height, salt);
-            let mut lh_value = ov.line_height.unwrap_or(default.line_height);
-            ui.add_enabled_ui(ov.line_height.is_some(), |ui| {
-                ui.add(
-                    egui::DragValue::new(&mut lh_value)
-                        .range(0.8..=2.0)
-                        .speed(0.05)
-                        .max_decimals(2),
-                );
-            });
+            let mut lh_value = ov.line_height.unwrap_or(default.line_height) as f64;
+            super::number::number_field(
+                ui,
+                &th,
+                ("appearance_override_line_height", salt),
+                &line_height_spec().enabled(ov.line_height.is_some()),
+                &mut lh_value,
+            );
             if let Some(stored) = ov.line_height.as_mut() {
-                *stored = lh_value;
+                *stored = lh_value as f32;
             }
             ui.end_row();
 

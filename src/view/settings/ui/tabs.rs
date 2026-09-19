@@ -10,6 +10,7 @@ mod general_display;
 mod macos_permissions;
 mod misc;
 mod notifications;
+mod number;
 mod overlay;
 mod performance;
 mod plugin;
