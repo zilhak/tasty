@@ -25,22 +25,22 @@
 //! - **path 2 (X 버튼/외부 클릭)**: `close_on_outside_click=true` 인 팝업
 //!   (`convert_surface`/`rail_category`/`transfer_error`/`confirm_delete_category`)
 //!   은 팝업 바깥 좌표에 pointer press 이벤트를 주입한다. 나머지 non-headless +
-//!   `close_on_outside_click=false` 팝업(`rename`/`approval`/`file_handler_picker`/
-//!   `file_picker`)은 X 버튼(타이틀바 우측 닫기 아이콘)의 정확한 좌표에 press
+//!   `close_on_outside_click=false` 팝업(`rename`/`approval`/`file_picker`)은
+//!   X 버튼(타이틀바 우측 닫기 아이콘)의 정확한 좌표에 press
 //!   이벤트를 주입한다 — 좌표 계산은 `PopupState`의 **공개** 필드(`pos`/`size`)와
 //!   **공개** 함수(`title_bar_height()`)만으로 유도한다(popup.rs 의 private
 //!   `close_btn_rect()` 공식을 그대로 복제 — popup.rs 를 건드리지 않고 접근할 수
-//!   있는 유일한 방법). `transfer_progress` 는 headless(타이틀바 없음) 이면서
-//!   `close_on_outside_click=false` 라 draw() 내장 포인터 경로로는 **원천적으로
-//!   도달 불가능** — path 2 테스트가 없다(아래 각주 참고).
+//!   있는 유일한 방법). `transfer_progress` 와 `file_handler_picker` 는 headless
+//!   (타이틀바 없음) 이면서 `close_on_outside_click=false` 라 draw() 내장 포인터
+//!   경로로는 **원천적으로 도달 불가능** — path 2 테스트가 없다(아래 각주 참고).
 //!
 //! `open_at_focused(id, pos)` 로 팝업을 **고정 좌표**에 연다 — `open_centered_focused`
 //! 를 쓰면 `request_center` 가 `draw()` 내부에서 그 프레임에 소비되어(포인터
 //! hit-test 는 그보다 앞서 일어남) 첫 프레임의 위치가 불확실해진다. 고정 좌표를
 //! 쓰면 등록 직후(draw_popups 호출 전)부터 `pos`/`size` 가 확정적이다. 단
-//! `sizer: Some(..)` 가 있는 팝업(approval/file_handler_picker/file_picker 등)은
-//! `size` 가 `draw_popups` 최초 호출 시 sizer 로 재계산되므로, X 버튼 좌표 계산
-//! 전에 입력 없는 "priming" 프레임을 한 번 돌려 `size` 를 확정한 뒤 읽는다.
+//! `sizer: Some(..)` 가 있는 팝업(approval/file_picker 등)은 `size` 가 `draw_popups`
+//! 최초 호출 시 sizer 로 재계산되므로, X 버튼 좌표 계산 전에 입력 없는 "priming"
+//! 프레임을 한 번 돌려 `size` 를 확정한 뒤 읽는다.
 
 use super::tests::test_state;
 use crate::adapters::ui::draw_popups;
@@ -907,6 +907,10 @@ fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
 }
 
 // ────────────────────────── file_handler_picker ──────────────────────────
+// canonical 전사로 headless(타이틀바 없음)가 됐다 — 프레임이 자기 헤더를 그려 경로가
+// 한 번만 나온다. `transfer_progress` 와 같은 갈래라 X 버튼 좌표가 없고
+// `close_on_outside_click=false` 라 외부 클릭도 안 닫으므로, path 2 테스트는 없다
+// (파일 상단 doc 참고). 닫힘은 Esc · Cancel · ClosePopup intent 셋이다.
 
 fn mk_picker_data() -> FileHandlerPickerData {
     FileHandlerPickerData {
@@ -917,6 +921,7 @@ fn mk_picker_data() -> FileHandlerPickerData {
         candidates: vec![],
         candidates_are_fallback: false,
         recent: vec![],
+        default_handler: None,
         selected: None,
         result: None,
         ignore_size_limit: false,
@@ -930,26 +935,6 @@ fn file_handler_picker_escape_close_marks_cancelled() {
     state.popups.open_at_focused(PICKER_POPUP_ID, FIXED_POS);
 
     run_frame(key_input(egui::Key::Escape), &mut state, &mut engine);
-
-    assert!(!state.popups.is_open(PICKER_POPUP_ID));
-    assert!(matches!(
-        state.dialogs.file_handler_picker.as_ref().unwrap().result,
-        Some(FileHandlerPickerResult::Cancelled)
-    ));
-}
-
-#[test]
-fn file_handler_picker_x_button_close_marks_cancelled() {
-    let (mut state, mut engine) = test_state();
-    state.dialogs.file_handler_picker = Some(mk_picker_data());
-    state.popups.open_at_focused(PICKER_POPUP_ID, FIXED_POS);
-    let (pos, size) = primed_popup_geometry(PICKER_POPUP_ID, &mut state, &mut engine);
-
-    run_frame(
-        press_input(close_button_point(pos, size)),
-        &mut state,
-        &mut engine,
-    );
 
     assert!(!state.popups.is_open(PICKER_POPUP_ID));
     assert!(matches!(

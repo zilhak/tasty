@@ -15,7 +15,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | 디자인 토큰 | tasty Theme | mocha hex | 비고 |
 |---|---|---|---|
 | `bg-sidebar` | `mantle` | `#181825` | 사이드바·**탭 바** 등 한 단계 더 어두운 면 |
-| `bg-panel` | `base` | `#1e1e2e` | 패널형 팝업 본문 (remote_tool / port_scanner) |
+| `bg-panel` | `base` | `#1e1e2e` | 패널형 팝업 본문 (remote_tool / port_scanner / file_handler_picker / 전송 진행·실패). 목록이 아니라 **판정기**가 정본이다 — `popup::draw::popup_bg_fill` |
 | `surface-raised` | `surface0` | `#313244` | 카드·입력·메뉴·command_palette 본문, secondary 버튼 fill |
 | `border-default` | `surface0` | `#313244` | |
 | `border-strong` | `surface1` | `#45475a` | 팝업 외곽선·강한 구분 |
@@ -371,3 +371,50 @@ switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·
 메뉴 폭 규칙은 `min-width: 트리거` + 내용에 맞춰 max 까지 확장이고, CSS 와 같이 min 이
 max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행 라벨이 남는 폭을 넘으면
 `checkbox` 가 말줄임한다(디자인 `.tasty-check__label { flex:1; min-width:0; ellipsis }`).
+
+## File handler picker (overlays-dialogs §filehandler)
+
+디자인 canonical `gallery/overlays-shared.jsx` 의 `FileHandlerFrame` / `FhRow` / `FhGroup` /
+`FhHeader` / `FhFooter`. **신규 Theme 필드 0** — 색은 전부 기존 semantic 접근자다
+(`bg_panel` · `surface_raised` · `surface_active` · `border_strong` · `separator` ·
+`accent_primary` · `accent_agent` · `accent_attention` · `text_primary` · `text_secondary` ·
+`text_muted` · `text_disabled` · `text_on_accent`). 폰트는 `font_size_max`(제목 14) ·
+`font_size_body`(이름 13) · `font_size_caption`(경로·출처·id·그룹 라벨 11), 선택 바는
+`tab_indicator_width`(2), 행 반경은 `corner_radius_sm`(2).
+
+치수는 대부분 4px 그리드 스텝 밖이라 대응 semantic 이 없다 — **화면 전용 raw px
+(token-policy §c)** 로 `crates/tasty-ui-widgets/src/tokens.rs` 에 `FH_*` 이름을 붙여 두고
+본체 popup 과 갤러리 specimen 이 **같은 상수를 읽는다**(정의를 둘로 두면 갈린다).
+
+| 디자인 inline 값 | 상수 | 자리 |
+|---|---|---|
+| `width: 420` | `FH_FRAME_WIDTH` | 프레임 폭 |
+| `padding: "14px 14px 10px"` | `FH_EDGE_PAD_X` · `FH_HEADER_PAD_TOP` · `FH_HEADER_PAD_BOTTOM` | 헤더(좌우 14 · 위 14 · 아래 10). footer·fallback 띠·empty 블록의 좌우도 `FH_EDGE_PAD_X` |
+| `gap: 6` | `FH_GAP_SM` | 헤더의 제목행↔경로, 그룹 라벨↔count |
+| `padding: 6` | `FH_LIST_PAD` | 목록 영역 안쪽 |
+| `padding: "8px 10px"` | `spacing_sm` + `FH_ROW_PAD_X` | 행·그룹 헤딩·그룹 구분선의 좌우 |
+| `gap: 10` | `FH_ROW_GAP` | 글리프 ↔ 텍스트 블록 |
+| `gap: 5` | `FH_ID_LINE_GAP` | 둘째 줄 조각 사이 |
+| `maxHeight: 264` | `FH_LIST_MAX_HEIGHT` | long 상태 목록 상한 |
+| `height: 20`(fade) | `FH_LIST_FADE_HEIGHT` | 목록 하단 페이드 |
+| `padding: "32px 14px"` | `FH_EMPTY_PAD_Y` + `FH_EDGE_PAD_X` | empty 블록 |
+| `id.length > 34 … slice(-33)` | `FH_ID_ELIDE_MAX` · `FH_ID_ELIDE_TAIL` | 행 id 앞자름 |
+| `opacity: 0.8` | `FH_RECENT_DIM_OPACITY` | Recent 행 글리프(비-plugin만) |
+
+> **셸 채움은 `bg-panel` 이다 — 그것이 헤더의 Tag 를 보이게 한다.** popup 셸의 기본은
+> `surface-raised` 이고 host 는 헤더 + 리스트형만 `bg-panel` 로 가른다
+> (`popup::draw::popup_bg_fill`). 이 화면이 그 갈래인 이유는 형상만이 아니다 —
+> 형식을 못 알아봤을 때 헤더가 다는 Tag 가 default 변형이고 그 채움이 `tag-bg`
+> (= `surface-raised`) 라, 셸이 같은 값이면 그 칩이 배경에 녹는다(실측: Mocha 에서
+> 두 색이 `#313244` 로 동일했다). `popup_shell_fill_keeps_the_default_tag_visible`
+> 가 두 값이 갈린다는 것을 고정한다.
+
+> **전사되지 않은 디자인 속성 하나**: 그룹 라벨의 `letterSpacing: 0.06em`. egui 에 자간
+> 채널이 없다(`RichText` 에도 `TextFormat` 에도 없다) — 대문자 · 11px · 색까지만 전사한다.
+
+> **`FH_EDGE_PAD_X`(14) · `FH_HEADER_PAD_TOP`(14) · `FH_EMPTY_PAD_Y`(32)는 값이 스케일의
+> 어떤 토큰과 겹치지만 그 축이 아니다** — 14 는 `icon_glyph_size_sm`·`font_size_max` 와,
+> 32 는 정사각 요소의 한 변(`PLUGIN_AVATAR_ROW_SIZE`)과 같다. 겹치는 토큰을 부르면
+> "아이콘이 커지면 여백도 커진다" 는 없는 관계가 생긴다. spacing 스텝(4·8·12·16·24)에는
+> 둘 다 없다. `src/source_guards/on_scale_length_literal.rs` 의 래칫이 이 셋을 세고 있고,
+> 사유는 각 상수의 doc 주석에도 값 옆에 적혀 있다.

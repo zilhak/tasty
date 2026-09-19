@@ -158,14 +158,19 @@ pub fn all_defs() -> &'static [PopupDef] {
                 id: super::file_handler_picker::PICKER_POPUP_ID,
                 title_key: "file_handler.picker.title",
                 fullscreen_stage: None,
-                title_fn: Some(super::file_handler_picker::picker_title),
+                // headless — 프레임이 자기 헤더를 그린다. 공통 타이틀바와 짝지으면 같은
+                // 경로가 서로 다른 두 말줄임으로 한 다이얼로그 안에 두 번 나온다
+                // (디자인 §filehandler "One header, not two").
+                title_fn: None,
                 default_size: super::file_handler_picker::picker_default_size(),
                 sizer: Some(super::file_handler_picker::picker_sizer),
                 default_scope: PopupScope::Window,
+                // scrim 클릭으로는 안 닫힌다 — 닫힘은 Esc 와 Cancel 뿐이다.
                 close_on_outside_click: false,
-                headless: false,
+                headless: true,
                 sticky_focus: false,
-                drag_handle: DragHandle::TitleBar,
+                // 타이틀바가 없으므로 헤더 좌측 띠를 드래그 핸들로 선언한다.
+                drag_handle: DragHandle::Region(panel_header_drag_strip),
                 resizable: false,
                 min_size: None,
                 draw_fn: super::file_handler_picker::draw_file_handler_picker,

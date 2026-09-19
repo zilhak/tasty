@@ -128,7 +128,8 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 
 타이틀바 텍스트가 길면 우측 상단 버튼군과 겹칠 수 있다. 이 겹침 방지는 **`popup/draw.rs`의 타이틀 렌더링이 모든 popup 공통으로 전담**한다 — 버튼군 좌변(`title_buttons_left_x()`: 전체화면 버튼이 있으면 그 좌변, 없으면 `close_btn_rect` 좌변)을 제외한 실제 가용 폭(px)을 계산해 `egui::Fonts::layout_no_wrap`로 폭을 측정하고, 넘치면 `elide_for_width()`가 뒤를 `…`로 잘라 맞춘다(안전망으로 `painter.with_clip_rect`도 함께 적용).
 
-- **개별 popup 은 타이틀 문자열을 미리 축약하지 않는다.** `title_key`/`title_fn`은 원본 텍스트(전체 경로, 원본 문구 등)를 그대로 반환하면 된다 — 문자 수 기준 임의 축약(예: N자 초과 시 `.../parent/name`)을 타이틀 겹침 방지 목적으로 넣지 않는다. 폭 기준 elide 가 아닌 문자 수 기준 축약은 폰트/문자 폭이 다르면 여전히 겹치거나 불필요하게 짧아질 수 있다 (`file_handler_picker.rs`의 `shorten_target()`이 이 실수의 사례였다 — 현재는 헤더 본문 표시 전용으로 역할이 축소됨).
+- **개별 popup 은 타이틀 문자열을 미리 축약하지 않는다.** `title_key`/`title_fn`은 원본 텍스트(전체 경로, 원본 문구 등)를 그대로 반환하면 된다 — 문자 수 기준 임의 축약(예: N자 초과 시 `.../parent/name`)을 타이틀 겹침 방지 목적으로 넣지 않는다. 폭 기준 elide 가 아닌 문자 수 기준 축약은 폰트/문자 폭이 다르면 여전히 겹치거나 불필요하게 짧아질 수 있다.
+- **본문이 경로를 스스로 그리는 자리는 다르다 — 거기서는 앞에서 자른다.** 타이틀 겹침 방지가 아니라 **어느 쪽 끝이 정보인가**의 문제다. 경로와 reverse-DNS id 는 꼬리가 대상을 가르고 앞쪽이 반복되는 부분이라, 잘라야 하면 앞에서 자르고(`…/federation/screens.tsx`) 그 결과를 좌→우로 그린다. `direction: rtl` 류의 뒤집기는 런을 재배열해 정보가 있는 끝을 자른다. `file_handler_picker.rs` 의 `elide_target_front()`(헤더 경로) · `elide_id_front()`(행의 handler id)가 그 형태다.
 - **본문(body) 텍스트는 별개**: 타이틀 밖의 본문 라벨(예: "대상: /긴/경로")은 이 elide 로직의 대상이 아니다. 본문이 popup 폭을 넘지 않게 하려면 각 popup 이 자체적으로 축약하거나 `ui.available_width()` 기준 elide를 적용한다(`transfer.rs`의 `elide_mono()` 참고).
 - **새 동적 타이틀(`title_fn`) 추가 시**: 타이틀 길이를 걱정할 필요 없이 원본 문자열을 그대로 반환하면 된다. 다만 극단적으로 긴 문자열이 항상 몇 글자만 보이는 게 UX 상 문제라면(예: 뒷부분이 더 중요한 경로), `title_fn` 쪽에서 표시 우선순위를 조정한 축약 문자열을 넘기는 것은 여전히 가능하다 — 이때도 최종 겹침 방지는 `draw.rs`가 다시 한번 보장한다.
 

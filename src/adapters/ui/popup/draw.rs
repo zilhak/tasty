@@ -56,6 +56,27 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
     }
 }
 
+/// Popup 셸의 배경. 디자인 semantic 토큰 매핑: 대부분 popup 은 surface-raised
+/// (= surface0). 단 헤더 + 리스트형 "패널" popup 은 bg-panel(= base, 한 단계 더
+/// 어두움) — remote_tool / port_scanner 가 그 갈래다.
+///
+/// `file_handler_picker` 도 같은 갈래이고, 그 이유는 형태가 닮아서만이 아니다.
+/// 그 헤더의 format Tag 는 형식을 못 알아봤을 때 default 변형이고 그 채움이
+/// `tag-bg`(= surface-raised) 다. 셸을 surface-raised 로 두면 그 칩이 배경과 같은
+/// 색이 되어 **형식을 모른다는 사실이 화면에서 사라진다**(실측: 두 색이 픽셀 단위로
+/// 같았다). `popup_shell_fill_keeps_the_default_tag_visible` 가 그것을 값으로 고정한다.
+fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
+    match popup_id {
+        "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach" => {
+            th.bg_panel().into()
+        }
+        super::transfer::TRANSFER_PROGRESS_POPUP_ID
+        | super::transfer::TRANSFER_ERROR_POPUP_ID
+        | super::file_handler_picker::PICKER_POPUP_ID => th.bg_panel().into(),
+        _ => th.surface_raised().into(),
+    }
+}
+
 /// 포인터가 rect 의 어느 테두리 밴드에 있는지 판정. 어느 엣지에도 안 닿으면 None.
 ///
 /// `band` 가 `LogicalPx` 가 아닌 이유: 본문이 전부 egui `Rect`/`Pos2` 산술이라, 타입을
@@ -462,17 +483,7 @@ impl PopupManager {
                 scrim_painted = true;
             }
 
-            // Popup background. 디자인 semantic 토큰 매핑: 대부분 popup 은
-            // surface-raised(=surface0). 단 헤더+리스트형 "패널" popup 은 bg-panel
-            // (=base, 한 단계 더 어두움). remote_tool / port_scanner 가 후자.
-            let bg_fill: egui::Color32 = match popup_id {
-                "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach" => {
-                    th.bg_panel().into()
-                }
-                super::transfer::TRANSFER_PROGRESS_POPUP_ID
-                | super::transfer::TRANSFER_ERROR_POPUP_ID => th.bg_panel().into(),
-                _ => th.surface_raised().into(),
-            };
+            let bg_fill: egui::Color32 = popup_bg_fill(popup_id, &th);
             // 배경보다 먼저 — 그림자는 셸 **아래**에 깔린다. scrim 이 이미 그려졌다면
             // 그 위에 온다: scrim 은 바닥을 균일하게 어둡게 할 뿐 엣지를 안 그려서,
             // 어두운 테마에서 모달 실루엣을 세우는 것은 이 단차다(ADR-0254).
@@ -793,5 +804,21 @@ mod tests {
             assert_eq!(elide_for_width(ctx, "anything", font.clone(), 0.0), "");
             assert_eq!(elide_for_width(ctx, "anything", font, -5.0), "");
         });
+    }
+
+    /// 핸들러 선택기의 셸은 그 헤더가 이고 다니는 칩과 **같은 색이면 안 된다**.
+    /// format Tag 의 default 변형은 `tag-bg`(= surface-raised) 로 채워지므로,
+    /// 셸이 surface-raised 이면 "형식을 모른다" 는 칩이 배경에 녹는다.
+    #[test]
+    fn popup_shell_fill_keeps_the_default_tag_visible() {
+        let th = theme::theme();
+        let shell: egui::Color32 =
+            popup_bg_fill(super::super::file_handler_picker::PICKER_POPUP_ID, &th);
+        let tag: egui::Color32 = th.tag_bg().into();
+        assert_ne!(
+            shell, tag,
+            "핸들러 선택기 셸이 tag-bg 와 같은 색이면 format Tag 가 사라진다"
+        );
+        assert_eq!(shell, egui::Color32::from(th.bg_panel()));
     }
 }

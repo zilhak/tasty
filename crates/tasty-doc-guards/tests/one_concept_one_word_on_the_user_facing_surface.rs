@@ -159,9 +159,27 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     },
     NotAWindow {
         path: "site/content/using/files.md",
-        phrase: "Choose file handler --> 창이",
+        phrase: "Open file with… --> 창이",
         count: 1,
-        evidence: "핸들러 선택 대화상자 — 메인 윈도우 안에서 뜬다",
+        evidence: "핸들러 선택 대화상자 — host `PopupDef` id `file_handler_picker`",
+    },
+    NotAWindow {
+        path: "site/content/using/files.md",
+        phrase: "그 창은 파일 경로와",
+        count: 1,
+        evidence: "바로 위 문단이 연 그 핸들러 선택 popup 을 되받아 형상을 설명한다",
+    },
+    NotAWindow {
+        path: "site/content/using/files.md",
+        phrase: "같은 창이 다시 뜹니다",
+        count: 1,
+        evidence: "같은 핸들러 선택 popup 이 다음 번에도 뜬다는 말이다 — 1회성 선택의 결과",
+    },
+    NotAWindow {
+        path: "site/content/using/files.md",
+        phrase: "창은 `Esc` 나",
+        count: 1,
+        evidence: "같은 핸들러 선택 popup 의 닫는 법 — 그 popup 은 `close_on_outside_click=false` 다",
     },
     NotAWindow {
         path: "site/content/using/files.md",

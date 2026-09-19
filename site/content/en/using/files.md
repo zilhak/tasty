@@ -1,4 +1,4 @@
-<!-- source-hash: 9c91b06e1dae -->
+<!-- source-hash: dec8f9647481 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -15,7 +15,9 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 | `Alt+'` | Changes the current Surface to another kind ([Changing the kind](panes-tabs-splits.md#changing-the-kind)) |
 | CLI | `tasty new tab --pane 1 --type markdown --file README.md` and so on |
 
-The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` is HTML, and a folder is Explorer. If there are several candidates or none, the **Choose file handler** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
+The file extension decides which Surface opens it — `.md` is Markdown, image files are image, `.html` is HTML, and a folder is Explorer. When nothing settles which one opens it, the **Open file with…** window appears so you can choose, and your choice is kept under **Recent**. Extension mappings and handlers are changed in the **Settings** > **Handler** tab.
+
+That window shows the file path and the format it recognised at the top, and below it one row per handler you can pick — an icon, a name, and where it came from (**built-in** · **you** · **plugin**). Anything you used before is gathered under **Recent** with when you used it. One click selects, a double click opens straight away. The choice is used **once** — nothing is registered for the format, and the same window appears next time you open that file. To settle on a handler, use the **Settings** > **Handler** tab. Close the window with `Esc` or **Cancel**.
 
 A Surface opened from a file is split · moved · closed · restored on restart just like any other Surface. The Tab name becomes the file name.
 

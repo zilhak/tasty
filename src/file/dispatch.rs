@@ -178,17 +178,23 @@ pub(crate) fn open_picker(
     candidates_are_fallback: bool,
     ignore_size_limit: bool,
 ) {
-    let recent_ids: Vec<HandlerId> = engine
+    let recent_entries: Vec<(HandlerId, i64)> = engine
         .file_handler_recent
         .list()
         .iter()
-        .map(|e| e.handler_id.clone())
+        .map(|e| (e.handler_id.clone(), e.last_used_at))
         .collect();
-    let recent_handlers: Vec<FileHandler> = recent_ids
+    let recent_handlers: Vec<(FileHandler, i64)> = recent_entries
         .iter()
-        .filter_map(|id| engine.file_handler.get(id))
+        .filter_map(|(id, at)| engine.file_handler.get(id).map(|h| (h, *at)))
         .collect();
     let (recent, cand) = picker_lists(&target, &recent_handlers, &candidates);
+    // fallback 후보는 이 형식에 매칭된 것이 아니라 전체 핸들러라 기본이 없다. 매칭
+    // 후보일 때만 정렬 1순위가 "그냥 열었으면 실행됐을" 핸들러다(`Core::apply_identify_result`
+    // 가 같은 첫 항목을 자동 실행한다).
+    let default_handler = (!candidates_are_fallback)
+        .then(|| candidates.first().map(|h| h.id.clone()))
+        .flatten();
     let target_display = target.display();
     state.dialogs.file_handler_picker = Some(FileHandlerPickerData {
         origin_surface_id: None,
@@ -198,6 +204,7 @@ pub(crate) fn open_picker(
         candidates: cand,
         candidates_are_fallback,
         recent,
+        default_handler,
         selected: None,
         result: None,
         ignore_size_limit,
@@ -215,20 +222,20 @@ pub(crate) fn open_picker(
 /// 후보 쪽 중복 제거에도 쓰이지 않는다 — 걸러졌으면 어느 열에도 없다.
 fn picker_lists(
     target: &DispatchTarget,
-    recent_handlers: &[FileHandler],
+    recent_handlers: &[(FileHandler, i64)],
     candidates: &[FileHandler],
 ) -> (Vec<PickerHandlerSummary>, Vec<PickerHandlerSummary>) {
-    let recent_ids: Vec<&HandlerId> = recent_handlers.iter().map(|h| &h.id).collect();
+    let recent_ids: Vec<&HandlerId> = recent_handlers.iter().map(|(h, _)| &h.id).collect();
     let recent = recent_handlers
         .iter()
-        .filter(|h| handler_accepts_target(&h.action, target))
-        .map(handler_to_summary)
+        .filter(|(h, _)| handler_accepts_target(&h.action, target))
+        .map(|(h, at)| handler_to_summary(h, Some(*at)))
         .collect();
     let cand = candidates
         .iter()
         .filter(|h| handler_accepts_target(&h.action, target))
         .filter(|h| !recent_ids.contains(&&h.id))
-        .map(handler_to_summary)
+        .map(|h| handler_to_summary(h, None))
         .collect();
     (recent, cand)
 }
@@ -248,6 +255,7 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileT
         candidates: Vec::new(),
         candidates_are_fallback: false,
         recent: Vec::new(),
+        default_handler: None,
         selected: None,
         result: None,
         ignore_size_limit: false,
@@ -258,22 +266,22 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileT
         .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
 }
 
-fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
-    let display = h
-        .display_name_i18n_key
-        .as_deref()
-        .map(|k| {
-            let translated = crate::i18n::t(k);
-            if translated == k {
-                h.id.as_str().to_string()
-            } else {
-                translated.to_string()
-            }
-        })
-        .unwrap_or_else(|| h.id.as_str().to_string());
+fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandlerSummary {
+    // 키가 번역 테이블에 없으면 `t` 가 키를 그대로 돌려준다 — 그것은 표시명이 아니라
+    // 선언이 안 풀린 것이므로 `None` 으로 떨어뜨려 화면이 id 조각을 쓰게 한다.
+    let display_name = h.display_name_i18n_key.as_deref().and_then(|k| {
+        let translated = crate::i18n::t(k);
+        (translated != k).then(|| translated.to_string())
+    });
     PickerHandlerSummary {
         id: h.id.clone(),
-        display,
+        display_name,
+        owner: h.owner.clone(),
+        surface_kind: match &h.action {
+            HandlerAction::OpenSurface { surface_kind, .. } => Some(surface_kind.clone()),
+            HandlerAction::Ipc { .. } | HandlerAction::System => None,
+        },
+        last_used_at,
     }
 }
 
@@ -608,7 +616,12 @@ mod tests {
         let html = handler("host/html", open_surface("html", "url"));
         let plugin = handler("com.example.x/open", ipc());
         let system = handler("host/system", HandlerAction::System);
-        let recent = vec![md.clone(), plugin.clone(), html.clone()];
+        // recent 는 (핸들러, 마지막 사용 시각) 짝이다 — 시각은 행의 "언제" 조각이 된다.
+        let recent = vec![
+            (md.clone(), 1_700_000_000),
+            (plugin.clone(), 1_700_000_100),
+            (html.clone(), 1_700_000_200),
+        ];
         let candidates = vec![md, html, plugin, system];
 
         let (recent_rows, cand_rows) =

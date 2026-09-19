@@ -793,11 +793,22 @@ impl DialogState {
 }
 
 /// file_handler picker popup 의 한 행 — handler 요약.
+///
+/// 행의 글리프와 이름은 handler 모델에 **없다** — 둘 다 도출한다. 그래서 요약이 도출에
+/// 필요한 것만 들고 간다: 선언된 표시명(없으면 id 조각이 이름이 된다) · 출처 · action 이
+/// 여는 surface kind · Recent 의 마지막 사용 시각.
 #[derive(Debug, Clone)]
 pub struct PickerHandlerSummary {
     pub(crate) id: crate::file::handler::HandlerId,
-    /// 표시용 라벨. i18n key 가 있으면 번역된 값, 없으면 handler id.
-    pub(crate) display: String,
+    /// 선언된 표시명(i18n key 가 풀린 값). `None` 이면 화면이 id 의 마지막 `/` 뒤 조각을
+    /// mono 로 쓴다 — "선언된 이름이 없다" 가 눈에 보이게.
+    pub(crate) display_name: Option<String>,
+    /// 출처 — 둘째 줄 낱말(built-in / you / plugin)과 plugin mauve 판정.
+    pub(crate) owner: crate::file::handler::HandlerOwner,
+    /// `OpenSurface` 가 여는 surface kind. 행 글리프의 출처이고, `Ipc`/`System` 은 `None`.
+    pub(crate) surface_kind: Option<String>,
+    /// Recent 행의 마지막 사용 시각(unix epoch 초). 후보 행은 `None`.
+    pub(crate) last_used_at: Option<i64>,
 }
 
 /// file_handler picker popup 의 상태.
@@ -825,6 +836,9 @@ pub struct FileHandlerPickerData {
     pub(crate) candidates_are_fallback: bool,
     /// 우측 list 의 recent handler ids — 현재 등록된 것만, 저장 파일 순서.
     pub(crate) recent: Vec<PickerHandlerSummary>,
+    /// 이 형식에서 자동으로 실행됐을 handler — `default` Tag 가 붙는 행. fallback
+    /// 후보(이 형식에 매칭되는 핸들러가 없음)에는 기본이 없으므로 `None` 이다.
+    pub(crate) default_handler: Option<crate::file::handler::HandlerId>,
     /// 현재 선택된 handler. 더블클릭/[열기]로 dispatch.
     pub(crate) selected: Option<crate::file::handler::HandlerId>,
     /// dispatch 결과. host 본체 layer 가 frame 끝에서 소비.

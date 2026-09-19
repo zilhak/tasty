@@ -225,3 +225,76 @@ pub const PLUGIN_AVATAR_DETAIL_SIZE: LogicalPx = LogicalPx(46.0);
 /// 담지 못한다(40 − 패딩 12 = 28).
 pub const PLUGIN_LIST_ROW_HEIGHT: LogicalPx =
     LogicalPx(PLUGIN_AVATAR_ROW_SIZE.0 + SIZING.spacing_sm.0 * 2.0);
+
+// ── File handler picker — 디자인 전사 치수 (본체 popup · 갤러리 specimen 공용) ─────
+//
+// 디자인 canonical `gallery/overlays-shared.jsx` 의 `FileHandlerFrame` / `FhRow` /
+// `FhGroup` / `FhHeader` / `FhFooter` 가 inline raw px 로 들고 있는 값들이다. 대부분이
+// 4px 그리드 스텝 밖이라 `SIZING` 에 대응이 없다 — token-policy §c(화면 전용 raw px,
+// `docs/design/systems/design-token-mapping.md` 의 transfer 항목과 같은 갈래).
+//
+// 위 `CENTER_*` · `TOAST_*` 와 같은 이유로 **정의를 여기 하나로** 둔다: 본체와 갤러리가
+// 각자 module const 로 들면 값이 같아 보여도 언제든 갈리고, 갈린 뒤에는 어느 쪽이 정본인지
+// 알 방법이 없다.
+
+/// 프레임 고정 폭. 디자인 `width: 420`.
+pub const FH_FRAME_WIDTH: LogicalPx = LogicalPx(420.0);
+
+/// 헤더 · fallback 스트립 · footer · empty 블록의 좌우 안쪽 여백. 디자인 14 — 그리드 밖.
+///
+/// **값이 `icon_glyph_size_sm`(14) · `font_size_max`(14)와 겹치지만 그 축이 아니다** —
+/// 이것은 프레임 가장자리 여백이고 저 둘은 글리프 한 변과 폰트 크기다. 겹치는 토큰을
+/// 부르면 "아이콘이 커지면 여백도 커진다" 는 없는 관계가 생긴다. spacing 스텝
+/// (4·8·12·16)에는 14 가 없어 부를 이름이 실제로 없다.
+pub const FH_EDGE_PAD_X: LogicalPx = LogicalPx(14.0);
+
+/// 헤더 위 여백. 디자인 `padding: "14px 14px 10px"` 의 첫 값. 값이 스케일의 14 와
+/// 겹치는 사정은 [`FH_EDGE_PAD_X`] 와 같다 — 여백 축이라 그 토큰을 부르지 않는다.
+pub const FH_HEADER_PAD_TOP: LogicalPx = LogicalPx(14.0);
+
+/// 헤더 아래 여백. 같은 선언의 셋째 값 — 위아래가 다르다(10).
+pub const FH_HEADER_PAD_BOTTOM: LogicalPx = LogicalPx(10.0);
+
+/// 디자인 inline gap 6 — 그리드 밖. 두 자리가 같은 값을 쓴다: 헤더의 제목행↔경로 세로
+/// gap(`flexDirection: column, gap: 6`)과 그룹 라벨↔count 가로 gap.
+pub const FH_GAP_SM: LogicalPx = LogicalPx(6.0);
+
+/// 목록 영역의 안쪽 여백. 디자인 `listStyle = { padding: 6 }`.
+pub const FH_LIST_PAD: LogicalPx = LogicalPx(6.0);
+
+/// 행 · 그룹 헤딩 · 그룹 구분선의 좌우 안쪽 여백. 디자인 `padding: "8px 10px"` 의 둘째 값.
+pub const FH_ROW_PAD_X: LogicalPx = LogicalPx(10.0);
+
+/// 행 안의 글리프 ↔ 텍스트 블록 가로 gap. 디자인 `gap: 10`.
+pub const FH_ROW_GAP: LogicalPx = LogicalPx(10.0);
+
+/// 행 둘째 줄(origin · id · when) 조각 사이 gap. 디자인 `gap: 5` — 그리드 밖.
+pub const FH_ID_LINE_GAP: LogicalPx = LogicalPx(5.0);
+
+/// long 상태에서 목록 영역이 스크롤로 전환되는 높이 상한. 디자인 `maxHeight: 264`.
+///
+/// 디자인 Meta 는 이 값에 "(~8 rows)" 를 붙이지만 그것은 **파생값의 어림**이다 — 행 하나가
+/// 패딩 8+8 에 13px/11px 두 줄이라 264 에 8 행이 들어가지 않는다. 전사하는 것은 명시된
+/// 264 쪽이고, 몇 행이 보이는지는 폰트 metrics 가 정한다.
+pub const FH_LIST_MAX_HEIGHT: LogicalPx = LogicalPx(264.0);
+
+/// long 상태 목록 하단 페이드 띠의 높이. 디자인 `height: 20` — 그리드 밖.
+pub const FH_LIST_FADE_HEIGHT: LogicalPx = LogicalPx(20.0);
+
+/// empty 블록의 위아래 여백. 디자인 `padding: "32px 14px"` 의 첫 값.
+///
+/// **값이 `PLUGIN_AVATAR_ROW_SIZE`(32)·`sidebar_collapsed_slot_width`(32)와 겹치지만
+/// 그 축이 아니다** — 저 둘은 정사각 요소의 한 변이고 이것은 블록 여백이다. spacing
+/// 스텝의 최대는 `spacing_xl`(24)라 32 를 부를 이름이 없다.
+pub const FH_EMPTY_PAD_Y: LogicalPx = LogicalPx(32.0);
+
+/// 행 둘째 줄의 id 를 **앞에서** 자르기 시작하는 길이(문자). 디자인
+/// `h.id.length > 34 ? "…" + h.id.slice(-33) : h.id`.
+pub const FH_ID_ELIDE_MAX: usize = 34;
+
+/// [`FH_ID_ELIDE_MAX`] 초과 시 남기는 뒤쪽 문자 수 — 앞에 붙는 `…` 한 글자를 뺀 값.
+pub const FH_ID_ELIDE_TAIL: usize = FH_ID_ELIDE_MAX - 1;
+
+/// Recent 그룹 행 글리프의 흐리기. 디자인 `opacity: dim && !plugin ? 0.8 : 1` — plugin
+/// 행은 mauve 가 출처 표시라 흐리지 않는다.
+pub const FH_RECENT_DIM_OPACITY: f32 = 0.8;

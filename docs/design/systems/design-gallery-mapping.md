@@ -262,14 +262,24 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
 
-**`file_handler_picker` 는 이 표에서 본체·갤러리가 canonical 에 못 미친 채 좌표만 잡힌 행이다.** 본체는 canonical
-이전의 자체 설계 형상 그대로다 — 폭 480px(canonical 420px), 공통 타이틀바 + 본문 "대상:" 으로 경로 두 번(canonical 은
-headless 헤더 한 번), 좌우 2열(후보/최근, canonical 은 Suggested → Recent 단일 목록), 행은 id 문자열 한 줄(canonical 은
-`icon · name · origin`), 형식은 본문 텍스트 한 줄(canonical 은 제목 줄 Tag), 선택 표시는 배경 오버레이만(canonical 은 2px
-accent 좌측 바), plugin 출처·기본 핸들러 Tag 가 없다. 갤러리 specimen 은 기본 상태 한 벌만 전사했다. canonical 은 최근 목록 ·
-추천 없음 fallback · 핸들러 0개 빈 상태 · 긴 목록 · headless 헤더까지 정해 두었고, 남은 미정은 둘이다 — footer 의
-"Always open …" 체크(canonical 스스로 open decision 으로 남김)와, 본체 handler 모델에 없는 행 icon·name 의 출처.
-구조 전사는 그 둘이 정해진 뒤에 이 행의 세 좌표를 한 형상으로 모은다.
+**`file_handler_picker` 의 세 좌표는 한 형상이다.** 폭 420px · headless 헤더(경로 한 번) · 제목 줄 형식 Tag ·
+후보/Recent 단일 목록 · 2px accent 좌측 바 · `icon · name · origin` 행 · plugin mauve · fallback 안내 띠 ·
+빈 상태 블록 · 264px 목록 상한 + 하단 페이드 · [취소]/[열기] footer. 갤러리는 canonical 의 10 Spec 을 그대로
+미러한다(`filehandler` · `-format` · `-recent` · `-fallback` · `-empty` · `-long` · `-headless` · `-footer` ·
+`-rows` · `-default`).
+
+세 좌표가 **코드를 공유하지는 않는다** — 갤러리 표본은 정적 렌더이고 본체는 상호작용 view 다. 공유하는 것은
+`crates/tasty-ui-widgets/src/tokens.rs` 의 `FH_*` 전사 치수(420 · 14 · 10 · 6 · 5 · 264 · 20 · 32 · 34 · 0.8)
+뿐이고, 그 값들은 4px 그리드 밖이라 대응 `Theme` 토큰이 없다.
+
+canonical 이 열어 두었던 결정 셋은 닫혔다. footer 의 "Always open …" 체크는 **제거**(picker 는 순수 dispatcher —
+저장되는 바인딩은 보고 되돌릴 자리가 있어야 하고 그 자리는 설정 › 핸들러다), 행 icon 은 action 이 여는 surface
+kind 에서 도출(모르면 `file`), 행 name 은 id 의 마지막 `/` 뒤 조각(선언된 이름이 있으면 그것, 없으면 mono).
+
+갤러리가 canonical 과 **한 자리에서 갈린다**: 디자인의 "Footer — settled" Spec 은 기각된 두 읽기(체크박스 ·
+비활성 체크박스)를 결정 표본으로 함께 렌더하지만, 갤러리는 확정된 footer 하나만 싣는다 — 기각된 읽기를 그리면
+제거하기로 한 문구가 레포에 남는다. 디자인의 `letterSpacing: 0.06em`(그룹 라벨)도 egui 에 대응 채널이 없어
+대문자 · 11px · 색까지만 전사한다.
 
 ## Overlays — plugins window
 
@@ -325,7 +335,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 |---|---|---|
 | `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 106 개 `.rs` 중 96 개 |
 | `toast_card.rs` | `accent_color` / `draw_card` (`CardColors`) | toast(components/widgets) |
-| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | approval · convert · file_handler_picker · dialog · fullscreen_stage |
+| `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | info_modal · notification_panel · fullscreen_stage (`draw_title_buttons` 만) |
 
 ## Primitive 컴포넌트 레이어 (Components)
 

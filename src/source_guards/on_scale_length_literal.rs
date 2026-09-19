@@ -289,9 +289,22 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 한 변 자체는 도출되는 값이 아니라 디자인 입력이다. 이 항목이 이미 세고 있는
         // 넷(`STRUCT_GAP_1..4`)이 같은 이유로 여기 있다 — 처방이 "토큰으로 바꿔라" 가
         // 아니라 "이 치수에 semantic 이름을 줄 것인가" 이고, 그것은 디자인 결정이다.
+        //
         // 6 -> 7 은 위와 같다 — `size-*` 에 6 이 들어오면서 전부터 있던 자리 하나가
         // 바늘 안으로 들어왔다.
-        7,
+        //
+        // 7 -> 10 은 file handler picker 의 전사 치수 셋(14 · 14 · 32)이다. 같은
+        // 형태다 — 값이 스케일의 어떤 수와 겹치지만 **그 축이 아니다**: 14 둘은 프레임
+        // 가장자리 여백인데 값이 같은 토큰은 글리프 한 변(`icon_glyph_size_sm`)과 폰트
+        // 크기(`font_size_max`)이고, 32 는 블록 여백인데 값이 같은 것은 정사각 요소의
+        // 한 변이다(`PLUGIN_AVATAR_ROW_SIZE` · `sidebar_collapsed_slot_width`). 겹치는
+        // 토큰을 부르면 "아이콘이 커지면 여백도 커진다" 는 없는 관계가 생긴다. spacing
+        // 스텝에는 14 도 32 도 없어(4·8·12·16·24) 부를 이름이 실제로 없다. 사유는 각
+        // 상수의 doc 주석에도 값 옆에 적혀 있다.
+        //
+        // **두 증가는 서로 다른 자리에서 왔다** — 한쪽을 고르면 나머지가 안 보인다.
+        // 그래서 이 수는 병합 뒤 좌변을 다시 세서 정했다(6 + 1 + 3).
+        10,
         "공용 위젯",
     ),
     (
@@ -1038,7 +1051,11 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // The test-only census also includes the narrow-width file-picker viewport:
         // vec2(400, 360) contributes 400 (on size-*), while 360 is off that scale.
         // Both sites remain visible to this census; neither needs a new exemption.
-        (178, 220),
+        // 178 -> 176: the file handler picker's canonical transcription dropped its two
+        // shipped zeros. Its zero item_spacing now says egui::Vec2::ZERO, and the
+        // fallback-strip height folds to zero by scaling instead of by a LogicalPx(0.0)
+        // literal. Nothing became invisible — the sites are gone, not exempted.
+        (176, 220),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );

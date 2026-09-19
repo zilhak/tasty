@@ -1018,12 +1018,68 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "filehandler",
                     "File handler picker",
-                    vec![spec(
-                        "filehandler",
-                        "Pick who opens this file",
-                        Some("420px · built-in + plugin handlers, Always for type"),
-                        components::file_handler_picker::draw,
-                    )],
+                    vec![
+                        spec(
+                            "filehandler",
+                            "Open with… — pick a handler",
+                            Some("420px · built-in + plugin handlers, one list"),
+                            components::file_handler_picker::draw,
+                        ),
+                        spec(
+                            "filehandler-format",
+                            "Detected format — one Tag in the header",
+                            Some("accent Tag · “format unknown” when detection fails"),
+                            components::file_handler_picker::draw_format,
+                        ),
+                        spec(
+                            "filehandler-recent",
+                            "Recent — a second group in the same list",
+                            Some("Suggested → rule → Recent, one selection across both"),
+                            components::file_handler_picker::draw_recent,
+                        ),
+                        spec(
+                            "filehandler-fallback",
+                            "No suggestions — the whole catalog, one time only",
+                            Some("All handlers in the attention tone + one-time strip"),
+                            components::file_handler_picker::draw_fallback,
+                        ),
+                        spec(
+                            "filehandler-empty",
+                            "Empty — nothing to pick from",
+                            Some("centered block · exit to Settings › Handlers"),
+                            components::file_handler_picker::draw_empty,
+                        ),
+                        spec(
+                            "filehandler-long",
+                            "Long list — cap the height, show the cut",
+                            Some("264px scroll area + 20px fade, chrome never scrolls"),
+                            components::file_handler_picker::draw_long,
+                        ),
+                        spec(
+                            "filehandler-headless",
+                            "One header, not two",
+                            Some("headless frame · the rejected titlebar pairing"),
+                            components::file_handler_picker::draw_headless,
+                        ),
+                        spec(
+                            "filehandler-footer",
+                            "Footer — settled: Cancel / Open, nothing else",
+                            Some("pure dispatcher — one-time open, nothing stored"),
+                            components::file_handler_picker::draw_footer,
+                        ),
+                        spec(
+                            "filehandler-rows",
+                            "Rows — the icon and the name are derived, not stored",
+                            Some("kind → glyph · id segment → name · origin + full id"),
+                            components::file_handler_picker::draw_rows,
+                        ),
+                        spec(
+                            "filehandler-default",
+                            "Default Tag, and what the picker means now",
+                            Some("ambiguous / explicit only · interaction contract"),
+                            components::file_handler_picker::draw_default_tag,
+                        ),
+                    ],
                 ),
                 section(
                     "preset",

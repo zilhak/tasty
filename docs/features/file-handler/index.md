@@ -26,7 +26,9 @@ HandlerId: `host/<name>` · `<plugin_id>/<name>` · `user/<name>`. HandlerAction
 
 dispatch 대상(`DispatchTarget`)은 파일 경로(`File`) 또는 `http`/`https` URL(`Url`)이다. 형식 식별은 파일에만 돌고, URL 은 detector 없이 picker 로 직행한다 — 그래서 URL 에는 1순위 자동 실행이 없다. 식별·평가 계층은 경로 문자열에 URL(`<scheme>://`, scheme 두 글자 이상)이 담겨 들어와도 매칭하지도 읽지도 않는다.
 
-액션별로 URL 을 받는지는 한 판정이 정하고, picker 의 후보 열 · recent 열 · 최종 실행에 똑같이 걸린다(거절된 선택은 recent 에 기록하지 않는다).
+액션별로 URL 을 받는지는 한 판정이 정하고, picker 의 후보 목록 · Recent 목록 · 최종 실행에 똑같이 걸린다(거절된 선택은 recent 에 기록하지 않는다).
+
+URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — detector 를 안 거치므로 형식 Tag 가 "형식 알 수 없음" 이고, 경로 자리에 URL 원문이 파일 경로와 같은 규칙으로(길면 앞에서 잘려) 들어간다. 디자인 canonical 은 파일 경로만 다루므로 이 자리는 파일 규칙을 그대로 쓴 것이다.
 
 | 액션 | 파일 대상 | URL 대상 |
 |------|-----------|----------|
@@ -40,9 +42,17 @@ dispatch 대상(`DispatchTarget`)은 파일 경로(`File`) 또는 `http`/`https`
 
 ### Picker + Recent
 
-핸들러가 모호하거나 사용자가 선택하게 할 때 `file_handler_picker` popup(후보 + 최근 2열, [열기]/[취소]). Recent 는 `~/.tasty/file-handler-recent.json` LRU(cap 10, atomic write). picker 는 dispatch 하지 않고 결과만 남기고 호스트 layer 가 frame 끝에 실행 + 저장.
+사용자가 고르게 할 때 `file_handler_picker` popup 이 뜬다. Recent 는 `~/.tasty/file-handler-recent.json` LRU(cap 10, atomic write). picker 는 dispatch 하지 않고 결과만 남기고 호스트 layer 가 frame 끝에 실행 + 저장.
 
-**empty-state**: 이 detector 에 매칭되는 handler 가 0개면 `handlers_for(d)` 대신 `all_handlers()` 를 fallback 후보로 보여준다(recent 와 중복 제거, heading 을 "후보"가 아니라 "추천 없음 — 전체 핸들러" 로 구분 표시) — 선택해도 이 detector 에 영구 등록되지 않는 **1회성 dispatch**(user TOML 미변경, 다음에 같은 포맷을 열면 다시 이 화면). 시스템 전체 handler 가 진짜 0개일 때만 "등록된 핸들러가 없습니다." 메시지 + "설정에서 핸들러 등록" 버튼(Settings 를 `FileHandler` 탭으로 오픈)을 보여준다.
+**형상**: 420px headless 모달 — 프레임이 자기 헤더를 그려 **경로가 한 번만** 나온다(공통 타이틀바와 짝지으면 같은 경로가 서로 다른 두 말줄임으로 두 번 잘린다). 헤더는 제목 + 감지된 형식 Tag + mono 경로이고, 긴 경로는 **앞에서** 자른다(`…/federation/screens.tsx` — 파일명이 꼬리이고 그것이 파일을 식별한다). 본문은 후보 그룹과 `Recent` 그룹이 **한 목록** 안에 있고(2열이 아니다 — 420px 에서 한 컬럼은 `icon · name · origin` 을 못 담는다), 선택은 두 그룹을 가로질러 **하나**다. 목록이 264px 를 넘으면 그 영역만 스크롤하고 하단에 페이드가 잘림을 보인다 — 헤더와 footer 는 스크롤하지 않는다. footer 는 [취소]/[열기] 둘뿐이고, 선택이 없으면 [열기]가 비활성이다. 닫힘은 Esc 와 [취소]뿐 — scrim 클릭은 닫지 않는다.
+
+**행의 글리프와 이름은 저장되어 있지 않다 — 도출한다.** `FileHandler` 에는 icon 필드도 표시명 필드도 없다. 글리프는 action 이 여는 surface kind 에서 뽑고(markdown → markdown, editor → edit, pager → terminal, directory → folder, table → columns, binary → layers, log → listView), 모르는 kind 와 여는 surface 가 없는 액션(`Ipc`·`System`)은 `file` 로 떨어진다. 이름은 선언된 표시명(`display_name_i18n_key`)이고, 선언이 없으면 id 의 마지막 `/` 뒤 조각을 **mono** 로 쓴다 — 그 글꼴이 "선언된 이름이 없다" 는 표시다. 둘째 줄이 출처 낱말(built-in / you / plugin)과 전체 id(34자 넘으면 앞에서 자름)를 들어 **id 는 행마다 정확히 한 번** 나오고, Recent 행은 거기에 마지막 사용 시각이 붙는다. plugin 출처는 출처 낱말과 글리프만 mauve 로 물든다 — 이름은 아니다(plugin 의 핸들러도 하는 일로 불린다).
+
+**picker 는 순수 dispatcher 다.** 1회 열고 아무것도 저장하지 않는다 — 형식→핸들러 바인딩을 저장하는 체크박스는 없다. 저장되는 바인딩은 보고 되돌릴 자리가 있어야 하고 그 자리는 설정 › 핸들러다.
+
+**어떤 형식으로 뜨는가**: 매칭 핸들러가 있으면 picker 없이 1순위가 자동 실행되므로(`handlers_for` 정렬), 지금 picker 가 뜨는 경로는 둘 다 **추천 없음(fallback)** 이다 — 이 detector 에 매칭되는 handler 가 0개인 경우와, 터미널 링크 메뉴의 "연결 동작"(식별을 건너뛰고 강제로 연다). 그때 후보는 `handlers_for(d)` 가 아니라 `all_handlers()` 이고(recent 와 중복 제거), 네 신호가 그 약속의 차이를 나른다: 그룹 라벨이 attention 톤의 "전체 핸들러", caption 이 "이 형식에 맞는 핸들러가 없습니다.", 헤더 Tag 가 "형식 알 수 없음", 그리고 헤더 아래 띠가 **1회성**이고 다음에도 이 화면이 나온다고 적는다(user TOML 미변경). 기본 핸들러 Tag 는 이 상태에 붙지 않는다 — 매칭이 없으면 기본도 없다.
+
+**empty-state**: 시스템 전체 handler 가 진짜 0개일 때만 목록 자리가 중앙 블록으로 바뀐다 — 흐린 파일 글리프 + "등록된 핸들러가 없습니다." + 한 줄 안내 + "설정에서 핸들러 등록" 버튼(Settings 를 `FileHandler` 탭으로 오픈). 프레임 폭과 footer 는 그대로고 [열기]만 비활성이다 — 같은 다이얼로그의 한 상태이지 다른 화면이 아니다.
 
 ### 권한
 
