@@ -93,15 +93,27 @@ auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간�
 - **근거**: command_palette 2026-06-20. wide-surf1 행 [top, search_div, footer_div, bottom]
   → search divider 49.6(design 50), footer h 31.3(design 31). diff <1.
 
-## command_palette — height 가변(콘텐츠 맞춤) vs tasty 고정 popup
+## command_palette — 카드 높이는 콘텐츠를 따른다 (`PopupDef.sizer` 는 **매 프레임** 돈다)
 
-- **증상**: 디자인은 항목 수에 따라 카드 높이가 변하고 footer 가 list 바로 아래 붙는다. tasty
-  popup 은 default_size 고정이라 빈 공간/잘림이 생긴다.
-- **처방**: command_palette 는 실사용에서 거의 항상 항목이 많아 list 가 maxHeight(320) 꽉
-  차므로, default_size.height 를 "꽉 찬" 콘텐츠 높이(search 49 + list 332 + footer 31 ≈ 412)로
-  두고 footer 를 바닥 고정. 항목이 적을 때만(검색 좁힘) 약간 다르다(허용).
-- **추정**: 완전 일치는 popup 높이를 매 프레임 콘텐츠로 재계산하는 기능이 필요 — 별도 과제.
-- **근거**: command_palette 2026-06-20. default_size 360→412 + 구역별 패딩으로 디자인 비율 일치.
+- **증상(해결됨)**: 디자인은 항목 수에 따라 카드 높이가 변하고 footer 가 list 바로 아래 붙는다.
+  한동안 이 popup 은 `default_size` 고정이라 검색으로 항목이 줄면 목록 아래가 비어 있었다.
+- **왜 오래 남았나 — 틀린 전제**: 여기 "완전 일치는 popup 높이를 매 프레임 콘텐츠로 재계산하는
+  **기능이 필요**" 하다고 적혀 있었고, 그 근거는 `PopupDef.sizer` 가 open 시점 1 회만 불린다는
+  것이었다. 그 전제가 거짓이다 — `popup::frame::draw_popup_layer` 의 첫 루프가 **매 프레임**
+  모든 def 의 `sizer` 를 부르고, 사용자가 직접 리사이즈하지 않은(`size_user_overridden` 아닌)
+  popup 의 `size` 에 그대로 넣는다. `tools_menu`·`rail_category` 가 이미 그렇게 쓰고 있었다.
+  출처는 `PopupDef.sizer` 의 필드 doc 한 줄이었고(그 줄은 고쳤다), 새 경로는 필요 없었다.
+- **처방**: `command_palette_sizer` 하나. 매 프레임 현재 쿼리의 **매칭 개수**만 세어
+  `palette_height(theme, n)` 을 돌려준다(라벨·아이콘·키캡까지 만드는 쪽은 다시 안 부른다).
+  draw 의 footer 고정과 sizer 가 같은 `palette_footer_height`/`PALETTE_ROW_H`/
+  `PALETTE_LIST_MAX_H` 를 본다 — 두 식이 갈리면 목록 마지막 행이 footer 밑으로 밀린다.
+- **위치·폭**: `sizer` 가 있는 popup 은 등록 시 `default_size` 에 ui zoom 이 **안** 곱해지므로
+  폭은 sizer 가 직접 곱한다(`zoomed_px`). 카드는 열 때 한 번 중앙 정렬되고(`request_center`)
+  그 뒤 높이가 줄어도 `pos` 는 그대로다 — 위쪽 가장자리가 고정돼 타이핑 중에 검색창이 움직이지
+  않는다.
+- **근거**: 2026-09-20 실측. 항목 하나짜리 카드를 종전 고정 높이(412)로 그리면 목록 아래가
+  200px 넘게 비고, 콘텐츠 맞춤 높이로 그리면 footer 구분선이 그 행에서 한 행 높이 안쪽에 붙는다
+  (`command_palette.rs` 의 `painted()` 테스트 — 식을 되읊는 대신 **그려진 구분선 y** 를 본다).
 
 ## port_scanner — 테이블 컬럼 floor 가 footer 잘림의 근본 원인 (디자인 Table 구조 미준수)
 

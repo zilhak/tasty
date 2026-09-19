@@ -107,7 +107,12 @@ pub struct PopupDef {
     pub title_fn: Option<fn(&AppState, &crate::core::CoreState) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
-    /// 선택적 동적 크기 계산. popup open 시점에 1회 호출되어 `PopupState.size`에 반영.
+    /// 선택적 동적 크기 계산. **매 프레임** 호출되어 `PopupState.size` 에 반영된다
+    /// (`popup::frame::draw_popup_layer` 첫 루프) — 사용자가 직접 리사이즈한 popup
+    /// (`size_user_overridden`)만 예외다. 한동안 이 줄이 "open 시점 1회" 라고 적고
+    /// 있었고, 그 서술 때문에 "검색 중 변하는 높이에는 못 쓴다" 는 판단이 한 번 내려진
+    /// 적이 있다 — `tools_menu`·`rail_category`·`command_palette` 가 매 프레임 재계산에
+    /// 이 필드를 쓰고 있었다.
     pub sizer: Option<fn(&AppState, &crate::core::CoreState) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,

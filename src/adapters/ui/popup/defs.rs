@@ -220,10 +220,11 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "command_palette.heading",
                 fullscreen_stage: None,
                 title_fn: None,
-                // 디자인 콘텐츠 높이 ≈ search(49) + list(maxH320 + pad12=332) + footer(31)
-                // = 412. design-parity: list 가 320 꽉 차는 실사용 기준 높이.
+                // sizer 가 매 프레임 매칭 수로 높이를 다시 정한다 — 이 값은 sizer 가
+                // 불리기 전 한 프레임의 폴백일 뿐이라 시안 원치수를 그대로 둔다
+                // (search 49 + list maxH320 + pad12 + footer 31 = 412).
                 default_size: egui::vec2(540.0, 412.0),
-                sizer: None,
+                sizer: Some(super::command_palette::command_palette_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
                 headless: true,

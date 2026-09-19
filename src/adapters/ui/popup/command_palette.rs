@@ -31,7 +31,49 @@ use tasty_ui_widgets::{margin_all, margin_sym};
 /// (`spacing_md`=12 와 2px 차).
 const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 
+/// 카드 폭 — 디자인 palette 프레임. 높이와 달리 콘텐츠에 안 따른다.
+const PALETTE_WIDTH: LogicalPx = LogicalPx(540.0);
+/// 명령 한 행의 높이 — 디자인 MenuItem control-height.
+const PALETTE_ROW_H: LogicalPx = LogicalPx(28.0);
+/// 목록 최대 높이 — 디자인 list `maxHeight`. 이보다 많으면 스크롤이다.
+const PALETTE_LIST_MAX_H: LogicalPx = LogicalPx(320.0);
+/// 목록과 footer 사이 여백. 목록 Frame 의 아래쪽 inner margin 자리를 대신한다.
+const PALETTE_LIST_GAP_BOTTOM: LogicalPx = LogicalPx(6.0);
+/// footer 한 줄 높이에 더해지는 상하 패딩 + 보더 몫(디자인 padding 8 12 + borderTop).
+const PALETTE_FOOTER_CHROME: LogicalPx = LogicalPx(20.0);
+
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
+
+/// footer 구역이 차지하는 높이. draw 가 footer 를 바닥에 고정할 때와 sizer 가 카드
+/// 높이를 셀 때가 **같은 값**을 봐야 목록이 footer 밑으로 밀리지 않는다.
+fn palette_footer_height(theme: &Theme) -> f32 {
+    theme.font_size_caption.value() + PALETTE_FOOTER_CHROME.value()
+}
+
+/// 목록 구역이 차지하는 높이 — 표시 항목 수로 정해지고 상한에서 멈춘다.
+///
+/// 항목 0 건은 목록 대신 "결과 없음" 한 줄이 그려지므로 행 하나 높이로 둔다.
+fn palette_list_height(item_count: usize) -> f32 {
+    if item_count == 0 {
+        return PALETTE_ROW_H.value();
+    }
+    (item_count as f32 * PALETTE_ROW_H.value()).min(PALETTE_LIST_MAX_H.value())
+}
+
+/// 목록을 뺀 나머지가 늘 차지하는 높이 — 검색 구역 + 목록 프레임 위 여백 +
+/// 목록과 footer 사이 여백 + footer.
+fn palette_chrome_height(theme: &Theme) -> f32 {
+    let search_h = 2.0 * theme.spacing_sm.value() + theme.input_height().value();
+    search_h
+        + theme.spacing_xs.value()
+        + PALETTE_LIST_GAP_BOTTOM.value()
+        + palette_footer_height(theme)
+}
+
+/// 콘텐츠 맞춤 카드 높이.
+fn palette_height(theme: &Theme, item_count: usize) -> f32 {
+    palette_chrome_height(theme) + palette_list_height(item_count)
+}
 
 /// View 입력 — 한 명령 행의 시각/의미 데이터.
 #[derive(Debug, Clone)]
@@ -173,7 +215,9 @@ pub fn draw_command_palette_view(
         .hline(full.x_range(), search_ir.response.rect.bottom(), sep);
 
     // footer 높이 예약 (디자인 footer ≈ hint row + pad8*2 + border1 = 31).
-    let footer_h = theme.font_size_caption.value() + 20.0;
+    // sizer 가 카드 높이를 셀 때와 같은 함수를 본다 — 두 식이 갈리면 목록 마지막 행이
+    // footer 밑으로 밀린다.
+    let footer_h = palette_footer_height(theme);
     let footer_top = full.bottom() - footer_h;
 
     // ── 리스트 구역 (디자인 padding 6 → space-sm/space-xs(8,4) snap, MenuItem height 28) ──
@@ -191,9 +235,10 @@ pub fn draw_command_palette_view(
                 );
                 return;
             }
-            let row_height = 28.0; // 디자인 MenuItem control-height
+            let row_height = PALETTE_ROW_H.value();
             let selected_idx = props.selected_index;
-            let list_h = (footer_top - ui.cursor().top() - 6.0).max(row_height);
+            let list_h =
+                (footer_top - ui.cursor().top() - PALETTE_LIST_GAP_BOTTOM.value()).max(row_height);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
@@ -256,7 +301,7 @@ pub fn draw_command_palette_view(
                 });
         });
 
-    // ── footer (디자인 padding 8 12, gap 14, mono 10.5, borderTop) — 바닥 고정 ──
+    // ── footer (디자인 padding 8 12, gap 14, mono caption, borderTop) — 바닥 고정 ──
     let cur = ui.cursor().top();
     if cur < footer_top {
         ui.add_space(footer_top - cur);
@@ -444,6 +489,33 @@ pub fn on_close_command_palette_popup(
     _engine: &mut crate::core::CoreState,
 ) {
     state.command_palette.reset();
+}
+
+/// PopupDef.sizer — 매 프레임 현재 쿼리의 매칭 수로 카드 높이를 다시 정한다.
+///
+/// 디자인은 항목 수에 따라 카드 높이가 변하고 footer 가 목록 바로 아래 붙는다. 그
+/// 동안 이 popup 은 "꽉 찬" 높이로 고정돼 있었고, 근거는 `sizer` 가 **open 시점 1 회만**
+/// 불린다는 것이었다 — 그 전제가 틀렸다. `popup::frame::draw_popup_layer` 는 매 프레임
+/// 모든 def 의 `sizer` 를 부르고 `size_user_overridden` 이 아닌 popup 의 `size` 에
+/// 그대로 넣는다(`tools_menu`·`rail_category` 가 이미 그렇게 쓴다). 그래서 필요한 것은
+/// 새 경로가 아니라 이 함수 하나였다.
+///
+/// 세는 것은 **개수뿐**이다 — 라벨·아이콘·키캡까지 만드는 `items_from_state` 를 다시
+/// 부르지 않는다. 같은 프레임의 draw 가 같은 쿼리로 같은 검색을 하므로 두 수는 어긋날
+/// 수 없다.
+///
+/// 폭은 콘텐츠를 안 따른다. `sizer` 가 있는 popup 은 등록 시 `default_size` 에 ui zoom
+/// 이 곱해지지 않으므로(`PopupManager::register`) 여기서 직접 곱한다 — 안 그러면 배율을
+/// 올릴 때 카드만 안 커진다.
+pub fn command_palette_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+    let commands = command_palette::all_commands(&state.palette_plugin_commands);
+    let labels: Vec<String> = commands.iter().map(label_for).collect();
+    let matched = command_palette::search(&state.command_palette.query, &commands, &labels).len();
+    let th = theme::theme();
+    egui::vec2(
+        crate::adapters::ui::zoomed_px(&th, PALETTE_WIDTH).value(),
+        palette_height(&th, matched),
+    )
 }
 
 /// PopupDef.draw_fn — `state.command_palette` 와 `engine.settings` 를 어댑팅하고
@@ -678,6 +750,125 @@ mod view_tests {
         action
     }
 
+    /// 카드 높이를 지정해 view 를 1 프레임 돌리고 **그려진 것**을 돌려준다 —
+    /// `(텍스트, 중심 y)` 목록과 **가장 아래 구분선**의 y.
+    ///
+    /// 아래 구분선은 footer 의 borderTop 이다. 목록이 어디서 끝나고 footer 가 어디서
+    /// 시작하는지를 좌표로 묻는 관측점이라, 높이 식을 그대로 되읊는 대신 이것을 본다.
+    fn painted(items: Vec<CommandItemView>, card_h: f32) -> (Vec<(String, f32)>, f32) {
+        fn walk(shape: &egui::epaint::Shape, texts: &mut Vec<(String, f32)>, last_line: &mut f32) {
+            match shape {
+                egui::epaint::Shape::Text(t) => texts.push((
+                    t.galley.text().to_owned(),
+                    t.pos.y + t.galley.rect.height() * 0.5,
+                )),
+                egui::epaint::Shape::LineSegment { points, .. } => {
+                    *last_line = last_line.max(points[0].y)
+                }
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| walk(s, texts, last_line)),
+                _ => {}
+            }
+        }
+
+        let ctx = egui::Context::default();
+        let theme = mocha_fallback();
+        let mut buf = String::new();
+        let mut items_opt = Some(items);
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(PALETTE_WIDTH.value(), card_h),
+                );
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                let mut props = CommandPaletteProps {
+                    placeholder: "Search…".to_string(),
+                    no_results_text: "No matches".to_string(),
+                    items: items_opt.take().unwrap_or_default(),
+                    selected_index: 0,
+                    query_buffer: &mut buf,
+                    hint_navigate: "navigate".to_string(),
+                    hint_run: "run".to_string(),
+                    hint_close: "close".to_string(),
+                };
+                draw_command_palette_view(&mut child, &theme, &mut props);
+            });
+        });
+        let mut texts = Vec::new();
+        let mut last_line = f32::MIN;
+        for cs in &out.shapes {
+            walk(&cs.shape, &mut texts, &mut last_line);
+        }
+        (texts, last_line)
+    }
+
+    fn label_y(texts: &[(String, f32)], label: &str) -> f32 {
+        texts
+            .iter()
+            .find(|(t, _)| t == label)
+            .unwrap_or_else(|| panic!("{label} was not painted; painted = {texts:?}"))
+            .1
+    }
+
+    #[test]
+    fn sized_height_puts_the_footer_right_under_the_last_row() {
+        let th = mocha_fallback();
+        let (texts, footer_line) = painted(make_items(1), palette_height(&th, 1));
+        let gap = footer_line - label_y(&texts, "Item 0");
+        assert!(
+            gap < PALETTE_ROW_H.value(),
+            "footer should sit within a row of the last item, gap = {gap}"
+        );
+    }
+
+    #[test]
+    fn the_old_fixed_height_left_the_gap_this_sizing_removes() {
+        // 음성 대조 — 같은 항목 하나를 종전 고정 높이(412)로 그리면 목록 아래가 비었다.
+        // 그 빈 자리가 이 작업이 없앤 것이고, 위 테스트의 좁은 gap 이 그것과 대비된다.
+        let (texts, footer_line) = painted(make_items(1), 412.0);
+        let gap = footer_line - label_y(&texts, "Item 0");
+        assert!(
+            gap > 200.0,
+            "fixed height should leave a big gap, got {gap}"
+        );
+    }
+
+    #[test]
+    fn every_item_is_painted_above_the_footer_at_the_sized_height() {
+        let th = mocha_fallback();
+        let n = 5;
+        let (texts, footer_line) = painted(make_items(n), palette_height(&th, n));
+        for i in 0..n {
+            let y = label_y(&texts, &format!("Item {i}"));
+            assert!(
+                y < footer_line,
+                "Item {i} at {y} is not above {footer_line}"
+            );
+        }
+    }
+
+    #[test]
+    fn height_grows_with_the_item_count_and_stops_at_the_list_cap() {
+        let th = mocha_fallback();
+        let row = PALETTE_ROW_H.value();
+        assert_eq!(palette_height(&th, 2) - palette_height(&th, 1), row);
+        // 320 / 28 = 11.4 → 11 행까지 자라고 12 행부터는 상한에서 멈춘다.
+        assert_eq!(palette_height(&th, 12), palette_height(&th, 1000));
+        assert!(palette_height(&th, 11) < palette_height(&th, 12));
+    }
+
+    #[test]
+    fn no_results_reserves_one_row_not_a_full_list() {
+        let th = mocha_fallback();
+        assert_eq!(palette_height(&th, 0), palette_height(&th, 1));
+        let (texts, footer_line) = painted(Vec::new(), palette_height(&th, 0));
+        let y = label_y(&texts, "No matches");
+        assert!(
+            y < footer_line,
+            "empty-state line at {y} is under {footer_line}"
+        );
+    }
+
     #[test]
     fn escape_key_returns_close() {
         let action = run_view(make_items(3), 0, Some(egui::Key::Escape));
@@ -734,5 +925,58 @@ mod view_tests {
         assert!(row_highlighted(false, 0, 0));
         assert!(row_highlighted(false, 3, 3));
         assert!(!row_highlighted(false, 1, 0));
+    }
+}
+
+#[cfg(test)]
+mod sizer_wiring_tests {
+    use super::*;
+    use crate::adapters::ui::draw_popups;
+    use crate::model::{PhysicalPx, PhysicalRect};
+    use crate::state::tests::test_state;
+
+    fn run_one_frame(state: &mut AppState, engine: &mut crate::core::CoreState) {
+        let ctx = egui::Context::default();
+        let term = PhysicalRect {
+            x: PhysicalPx(0.0),
+            y: PhysicalPx(0.0),
+            width: PhysicalPx(1920.0),
+            height: PhysicalPx(1080.0),
+        };
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            draw_popups(ctx, state, engine, &[], term, 1.0);
+        }));
+    }
+
+    fn card_height_after_a_frame(query: &str) -> f32 {
+        let (mut state, mut engine) = test_state();
+        state
+            .popups
+            .open_at_focused(COMMAND_PALETTE_POPUP_ID, egui::pos2(100.0, 100.0));
+        state.command_palette.query = query.to_string();
+        run_one_frame(&mut state, &mut engine);
+        state
+            .popups
+            .get_mut(COMMAND_PALETTE_POPUP_ID)
+            .expect("palette registered")
+            .size
+            .y
+    }
+
+    /// `defs.rs` 에 함수를 꽂아 두는 것은 배선이 아니다 — 한 프레임 돌려 보고 그 결과가
+    /// **이 popup 의 size** 에 들어갔는지 묻는다.
+    #[test]
+    fn a_frame_sizes_the_card_from_the_match_count() {
+        let th = theme::theme();
+        // 어떤 명령과도 안 맞는 쿼리 → 목록 대신 "결과 없음" 한 줄.
+        let empty = card_height_after_a_frame("zzzz-no-such-command-zzzz");
+        assert_eq!(empty, palette_height(&th, 0));
+        // 빈 쿼리 → 전 명령이 매칭돼 목록이 상한에 닿는다.
+        let full = card_height_after_a_frame("");
+        assert_eq!(full, palette_height(&th, 1000));
+        assert!(
+            full > empty,
+            "full list should be taller than the empty state"
+        );
     }
 }
