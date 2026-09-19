@@ -84,7 +84,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 
 ### (c) 미등록 레이어 함정
 
-`egui::Area` 로 등록되지 **않은** 레이어(`ctx.layer_painter(layer_id)` 로 얻은 raw painter — `Areas::order` 에 전혀 없음)는 `GraphicLayers::drain()` 이 같은 tier 안에서 **등록된 레이어를 전부 그린 다음** 그린다 — 즉 등록 여부와 무관하게, 미등록 레이어는 그 tier 안에서 **항상 최상단**에 고정된다. 원래 배너(`banner.rs`, 커밋 `f51e8caa`)와 이번에 고친 Modifier-hint(`modifier_hint_overlay.rs`)가 각각 이 함정에 걸려 있었다 — 둘 다 `egui::Ui::new(...).layer_id(layer_id)` 로 bare `Ui` 를 직접 만들어 그렸을 뿐 `egui::Area::new(...).show()` 를 거치지 않았다. 두 경우 모두 **호출 순서를 바꿔도 고쳐지지 않는다** — 미등록인 한 항상 위다.
+`egui::Area` 로 등록되지 **않은** 레이어(`ctx.layer_painter(layer_id)` 로 얻은 raw painter — `Areas::order` 에 전혀 없음)는 `GraphicLayers::drain()` 이 같은 tier 안에서 **등록된 레이어를 전부 그린 다음** 그린다 — 즉 등록 여부와 무관하게, 미등록 레이어는 그 tier 안에서 **항상 최상단**에 고정된다. 원래 배너(`banner.rs`, 커밋 `03c583efd`)와 이번에 고친 Modifier-hint(`modifier_hint_overlay.rs`)가 각각 이 함정에 걸려 있었다 — 둘 다 `egui::Ui::new(...).layer_id(layer_id)` 로 bare `Ui` 를 직접 만들어 그렸을 뿐 `egui::Area::new(...).show()` 를 거치지 않았다. 두 경우 모두 **호출 순서를 바꿔도 고쳐지지 않는다** — 미등록인 한 항상 위다.
 
 ### (d) tasty 의 중앙 집중식 강제 — `enforce_foreground_z_order`
 
@@ -110,7 +110,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 | 2 (예외) | `plugin_bridge/popup_render.rs` egui-mesh popup 셸 | Foreground | 기본 미등록(raw `layer_painter`), host popup 과 z-order 경합 시 `set_sublayer` 로 조건부 등록 | **해소됨** — 의도적 예외를 유지하되 host popup 과의 z_seq 경합 시 조건부로 깨진다(아래 "`plugin_bridge/popup_render.rs`" 절 갱신 참고) |
 | 2b | Modifier-hint 오버레이 | Foreground | 미등록 → **등록함** | **해소됨** — `modifier_hint_overlay.rs` 를 `egui::Area` 로 등록하도록 수정 |
 | 4 | egui 위젯(사이드바·탭바·상태바) | 혼재(SidePanel=Background 미등록 / tab_bar·status_bar=Foreground 등록) | — | tab_bar/status_bar 는 이상 없음(기존부터 정상). SidePanel 은 Background tier 라 이번 범위 밖(아래 "Background tier" 절) |
-| 5 | Banner | Foreground | 등록됨(`f51e8caa`, 이번 작업 이전 완료) | `enforce_foreground_z_order` 로 상태바/탭바보다 아래 고정 — **해소됨** |
+| 5 | Banner | Foreground | 등록됨(`03c583efd`, 이번 작업 이전 완료) | `enforce_foreground_z_order` 로 상태바/탭바보다 아래 고정 — **해소됨** |
 | 6 | Divider | Middle | 미등록, raw painter | 범위 밖(다른 tier) — 조사 결과 표의 "6번"은 렌더 레이어 경쟁이 아니라 `mouse.rs` 의 좌표 기반 입력 우선순위로 확인, 변경 불필요 |
 | 7 | Terminal/Surface | 터미널=Order 밖 / 비터미널=Background | 비터미널만 등록 | 범위 밖(다른 tier) |
 
