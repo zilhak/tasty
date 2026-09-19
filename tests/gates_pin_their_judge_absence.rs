@@ -34,12 +34,19 @@ use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 /// 하나도 못 모으면 **위반 0 으로 초록**이 된다 — 지키려던 것이 깨진 그 순간에도.
 const SCRIPT_FLOOR: Floor = Floor {
     min: 16,
-    measured: 24,
-    measured_on: "2026-09-07",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
+    measured: 27,
+    measured_on: "2026-09-20",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
+        "eea00637f + 이 커밋 — `scripts/` 아래 `.sh` 를 재귀로 세면 그 트리에서 26 이고 \
+         이 커밋이 하나를 더해 27 이다. 앞선 24 는 **안 잰 값**이었다(`NEVER_COUNTED`): \
+         그 값이 언제 어느 트리의 수였는지가 선언에도 커밋문에도 안 남아 있었고, 그 사이 \
+         좌변이 최소 둘 자라는 동안 여유가 커서 아무것도 안 울었다.",
+    ),
     why_this_gap: "게이트·러너 스크립트는 회차마다 하나씩 늘고 가끔 하나가 접힌다 — 한 번에 \
-                   크게 움직이는 모수가 아니다. 여유 8 은 그 폭을 견디되, 순회가 `scripts/lib` \
-                   만 보거나 아예 안 내려간 상태는 잡는다",
+                   크게 움직이는 모수가 아니다. 여유 11 은 그 폭을 견디되, 순회가 `scripts/lib` \
+                   만 보거나 아예 안 내려간 상태는 잡는다. 이 여유는 아무도 고른 적이 없다 — \
+                   하한을 정할 때는 8 이었고 좌변이 자란 만큼 벌어졌다. 폭을 다시 고르는 것은 \
+                   판단이라 여기서 안 한다",
 };
 
 /// 소비자로 세지 않는 파일: `resolve_judge` **정의**가 사는 곳.

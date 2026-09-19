@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Tasty pre-push hook — 검사 6종 (B.4~B.9).
+# Tasty pre-push hook — 검사 7종 (B.4~B.10).
 #
-# B.9 만 초 단위이고 나머지 다섯은 컴파일이라 분 단위다. 그래서 B.9 가 맨 앞이다.
+# B.9 와 B.10 만 초 단위이고 나머지 다섯은 컴파일이라 분 단위다. 그래서 그 둘이 맨 앞이다.
 #
 # 설치: `git config core.hooksPath .githooks` 1회 실행.
 # bypass: `git push --no-verify` (긴급 시).
 #
 # 검사 목록:
 #   B.9  plugin version 이 **발행된 값과 짝이 맞는가** (초 단위 — 그래서 맨 앞이다)
+#   B.10 공용 모수 선언이 **밀려는 트리**와 맞는가 (초 단위)
 #   B.4  cargo clippy --workspace --all-targets -- -D clippy::correctness
 #   B.5  cargo check --workspace --all-targets
 #   B.6  cargo check --no-default-features (headless 빌드)
@@ -156,6 +157,72 @@ EOF
 }
 
 check_published_plugin_version
+
+# ────────────────────────────────────────────────────────────
+# B.10  공용 모수 선언이 **밀려는 트리**와 맞는가
+#
+# ★ B.9 와 같은 자리에 있는 이유는 같은 것이 모자라서다 — 술어가 아니라 **모수**다.
+#   `populations::*` 의 `measured` 는 lane 안에서 아무리 정확히 재도 병합된 트리에서
+#   거짓이 될 수 있다: 두 lane 이 각자 파일을 하나씩 더하면 둘 다 자기 base 기준으로
+#   같은 +1 값을 적고, 값이 같아 git 이 충돌을 안 낸다. 실측으로 재현했다 — lane 둘의
+#   트리에서 각각 통과하고 병합한 트리에서만 위반이 나온다.
+#   그 병합된 트리가 처음 실재하는 자리가 push 이고, git 이 그 tip 을 stdin 으로 준다.
+#
+# ☆ 판정은 scripts/check-population-freshness.sh 가 한다 — 여기서 술어를 다시 구현하지
+#   않는다. 이 자리가 하는 일은 **모수를 정하는 것**뿐이다(B.9 와 같은 분업).
+# ────────────────────────────────────────────────────────────
+check_published_populations() {
+    local considered=0 judged=0 rc
+    local local_ref local_sha remote_ref remote_sha
+
+    if [ "$PUSH_INVOKED_BY_GIT" -eq 0 ]; then
+        yellow "▸ [B.10] 공용 모수 판정 — 건너뜀: git 이 준 ref 목록이 없다"
+        yellow "  직접 재려면: bash scripts/check-population-freshness.sh --rev HEAD"
+        return 0
+    fi
+
+    yellow "▸ [B.10] 공용 모수 선언이 밀려는 트리와 맞는가"
+
+    while read -r local_ref local_sha remote_ref remote_sha; do
+        [ -n "${local_ref:-}" ] || continue
+        considered=$((considered + 1))
+
+        # 삭제 push — 밀리는 트리가 없다.
+        if [ "$local_sha" = "$GIT_NULL_SHA" ]; then
+            yellow "  · $remote_ref — 삭제 push. 밀리는 트리가 없어 판정 대상이 아니다."
+            continue
+        fi
+
+        judged=$((judged + 1))
+        rc=0
+        bash scripts/check-population-freshness.sh --rev "$local_sha" || rc=$?
+        case "$rc" in
+            0) ;;
+            1)
+                red "  ✘ $remote_ref — 공용 모수 선언이 밀려는 트리와 안 맞는다."
+                red "    ★ 이 판정의 모수는 **밀려는 tip ${local_sha}** 이다. 네 lane 의 트리가"
+                red "      아니라 병합된 결과다 — 그래서 lane 안의 검사는 다 통과했는데 여기서 걸린다."
+                red "    흔한 원인: 다른 lane 이 같은 모수에 파일을 하나 더했다."
+                red "      두 lane 이 각자 base 에서 **같은 값**을 적으므로 git 은 충돌을 안 낸다."
+                FAIL=1
+                ;;
+            *)
+                red "  ✘ $remote_ref — 게이트가 판정을 거부했다(rc=$rc)."
+                red "    이 계열에서 rc=2 는 **판정 불가**다. 통과로 읽지 않는다 — 위 사유를 읽어라."
+                FAIL=1
+                ;;
+        esac
+    done <<EOF
+$PUSH_REFS
+EOF
+
+    echo "[B.10] ref $considered · 판정 $judged · 건너뜀 $((considered - judged))"
+    if [ "$considered" -ge 1 ] && [ "$judged" -eq 0 ]; then
+        yellow "  (판정한 ref 가 0 이다 — 위 건너뜀 사유를 읽어라. 통과가 아니다.)"
+    fi
+}
+
+check_published_populations
 
 # ────────────────────────────────────────────────────────────
 # B.5  cargo check

@@ -52,15 +52,22 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | ID | 검사 |
 |----|------|
 | B.9 | plugin 의 **발행 판정** — 밀려는 ref 마다 `scripts/check-plugin-version-bump.sh --range <원격 tip> <로컬 tip>`. **pre-commit 의 P.1 과 같은 스크립트를 다른 모수로** 부른다: P.1 은 "내 커밋이 버전을 올렸나"(staged vs merge-base), B.9 는 **"발행된 값과 지금 내용이 짝이 맞나"**(원격 tip vs 로컬 tip). 그 모수는 git 이 훅의 stdin 으로 직접 준다 — push 순간이 곧 발행 순간이라 여기가 그것을 손으로 안 구해도 되는 유일한 자리다. 분할 착지(두 lane 이 서로 다른 base 에서 **같은 값**으로 올려 같은 버전 아래 두 산출물이 남는 것)를 여기서 잡는다 ([ADR-0192](../adr/0192-a-repo-wide-ratchet-is-judged-at-the-merge-tree-not-per-lane.md) · [ADR-0137](../adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md)) |
+| B.10 | 공용 모수의 **트리 판정** — 밀려는 ref 마다 `scripts/check-population-freshness.sh --rev <로컬 tip>`. `crates/tasty-doc-guards/src/floored_walk.rs` 의 `populations::*` 네 선언이 **그 tip 의 트리**와 같은지 본다. B.9 와 같은 이유로 여기 있다 — 모자란 것이 술어가 아니라 **모수**다: 두 lane 이 각자 파일을 하나씩 더하면 둘 다 자기 base 기준으로 **같은 +1 값**을 적고, 값이 같아 git 이 충돌을 안 내며, 두 lane 의 트리에서는 각각 참이고 **병합된 트리에서만** 거짓이 된다. 그 병합된 트리가 처음 실재하는 자리가 push 다 ([ADR-0192](../adr/0192-a-repo-wide-ratchet-is-judged-at-the-merge-tree-not-per-lane.md)) |
 | B.5 | `cargo check --workspace --all-targets` |
 | B.6 | `cargo check --no-default-features` (headless 빌드 — `gui` feature 없이 컴파일) |
 | B.4 | `cargo clippy --workspace --all-targets -- -D clippy::correctness` |
 | B.7 | `cargo test -p tasty-doc-guards` — 문서·매니페스트·인덱스 정합. `adr_index_parity`·`readme_badge_parity`·`ci_channel_claims_match_workflows` 등은 pre-commit 이 안 보므로 여기가 **로컬 조기 채널**이다(자동 채널은 `doc-guards.yml`) |
 | B.8 | `cargo check --workspace --release --locked` (B.5 와 `debug_assertions` 이 반대 — 소비자가 debug 쪽에만 있는 항목의 `dead_code`) |
 
-B.9 가 표에서 먼저인 것은 훅 안에서의 실행 순서이기도 하다 — 나머지 다섯은 컴파일이라 분 단위인데
-B.9 는 초 단위다. 발행 판정으로 빨개질 커밋을 컴파일 다섯 번 뒤에 알려 주는 것은 같은 답을 훨씬
-비싸게 주는 것이다.
+B.9 와 B.10 이 표에서 먼저인 것은 훅 안에서의 실행 순서이기도 하다 — 나머지 다섯은 컴파일이라 분
+단위인데 그 둘은 초 단위다. 발행 판정으로 빨개질 커밋을 컴파일 다섯 번 뒤에 알려 주는 것은 같은 답을
+훨씬 비싸게 주는 것이다.
+
+**B.10 은 lane 안에서도 부를 수 있지만 거기서는 답이 다르다.** `--rev HEAD` 로 언제든 돌아가고,
+lane 이 자기가 움직인 모수를 갱신했는지는 그것으로 확인된다. 그러나 그 답은 **lane 의 트리**에 대한
+것이라 분할 착지를 못 본다. 실측 2026-09-20: 같은 base 에서 lane 둘이 `docs/` 에 문서를 하나씩 더하고
+둘 다 선언을 451 로 적으면, 두 lane 의 트리에서 각각 `통과` 가 나오고 병합한 트리에서만 `위반`(선언
+451 · 트리 452)이 나온다. 그래서 lane 의 초록을 착지 통과로 읽지 않는다 — P.1 과 B.9 의 관계와 같다.
 
 **B.9 는 모수를 못 정하면 통과시키지 않는다.** 원격 tip 이 로컬에 없는 객체면(얕은 clone · fetch
 안 함) 견줄 대상이 없으므로 실패하고 `git fetch` 를 찍는다. **견줄 발행 값이 원래부터 없는** 두

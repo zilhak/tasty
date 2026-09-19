@@ -62,12 +62,17 @@ use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 /// 다르기 때문이다 — "래칫을 조여라" 가 아니라 "순회가 죽었다" 라고 말해야 한다.
 const SCRIPT_FLOOR: Floor = Floor {
     min: 16,
-    measured: 24,
-    measured_on: "2026-09-08",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
+    measured: 27,
+    measured_on: "2026-09-20",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
+        "eea00637f + 이 커밋 — `scripts/` 아래 `.sh` 를 재귀로 세면 그 트리에서 26 이고 \
+         이 커밋이 하나를 더해 27 이다. 앞선 24 는 **안 잰 값**이었다(`NEVER_COUNTED`). \
+         같은 좌변을 `gates_pin_their_judge_absence` 도 잰다 — 두 선언이 같은 값을 든다.",
+    ),
     why_this_gap: "게이트·러너·빌드 스크립트는 회차마다 하나씩 늘고 가끔 하나가 접힌다. \
-                   여유 8 은 그 폭을 견디되, 순회가 `scripts/lib`·`scripts/bench` 만 보거나 \
-                   아예 안 내려간 상태는 잡는다",
+                   여유 11 은 그 폭을 견디되, 순회가 `scripts/lib`·`scripts/bench` 만 보거나 \
+                   아예 안 내려간 상태는 잡는다. 이 여유는 아무도 고른 적이 없다 — 하한을 \
+                   정할 때는 8 이었고 좌변이 자란 만큼 벌어졌다",
 };
 
 /// 루트 `tests/` 한 겹의 순회 하한 — 증거 리터럴을 여기서 모은다.
