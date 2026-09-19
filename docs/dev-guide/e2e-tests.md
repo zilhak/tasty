@@ -238,6 +238,7 @@ winit 이 `neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set` 로 �
 port file 이 안 써진다(§5 의 `NO_DISPLAY_MARKERS` 가 그 시그니처다). 디스플레이는
 격리할 누수가 아니라 **필요한 입력**이다. 그래서 하네스는 격리 대신 **이름**을 요구한다
 ([ADR-0297](../adr/0297-the-e2e-harness-names-a-display-instead-of-isolating-it.md)).
+([ADR-0296](../adr/0296-the-e2e-harness-names-a-display-instead-of-isolating-it.md)).
 
 ```
 Xvfb :77 -screen 0 1920x1080x24 -nolisten tcp -ac &
