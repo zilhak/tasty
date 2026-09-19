@@ -2053,9 +2053,20 @@ fn html_unescape(s: &str) -> String {
 /// `scroll-margin-top` is set on two selector groups, not one: headings **and**
 /// `.footnote-reference`/`.footnote-definition`. Both are destinations of the in-page anchor
 /// scroll ([`nav_script`]), so both need the same offset — without it a footnote jumped to from
-/// its reference lands flush against the top edge, under the address bar whenever that bar is on
-/// screen. The stylesheet itself carries no comments: everything the generated document ships is
-/// bytes on every render, so the reasoning lives here instead.
+/// its reference lands flush against the top edge, under the address bar. The bar is on screen at
+/// every scroll position, so that offset is always doing work; it was not always so, and the
+/// stylesheet records why in the rule right below `:root`. The stylesheet itself carries no
+/// comments: everything the generated document ships is bytes on every render, so the reasoning
+/// lives here instead.
+///
+/// `html` keeps `height:100%` while `body` takes `min-height:100%`, and the asymmetry is load
+/// bearing in both directions. `body` must be allowed to grow to the length of the document,
+/// because it is the containing block of the `position:sticky` address bar and a sticky element
+/// cannot outlive its containing block — with both pinned to the viewport the bar scrolled away
+/// after one screen. `html` must keep a definite height, because a percentage `min-height`
+/// resolves against the parent's height and would collapse if that height were itself auto. The
+/// short-document background fill that the old rule provided survives either way.
+
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
@@ -2079,8 +2090,8 @@ fn theme_css(theme: &Theme) -> String {
 --md-font-body:{body}px;
 --md-h1:{h1}px;--md-h2:{h2}px;--md-h3:{h3}px;--md-h4:{h4}px;--md-h5:{h5}px;--md-h6:{h6}px;
 }}
-html,body{{height:100%;margin:0;padding:0;}}
-body{{background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
+html{{height:100%;margin:0;padding:0;}}
+body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
 #tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:40px;padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
 #tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}

@@ -423,12 +423,21 @@ host 신호 채널이라 `decide-policy` 까지 가야 한다. 문서에 `<base 
 CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_script`(트러스트 스크립트, 사용자
 콘텐츠 아님)의 최소 JS 가 `#tasty-toc-toggle` 클릭 시 `#tasty-toc` 에 `tasty-toc-collapsed` 클래스를
 토글하는 것으로 구현되며, 목록은 `max-height:280px;overflow-y:auto` 로 heading 이 많은 문서에서도
-패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 는 40px `position:sticky` 이고 **문서 상단
-한 뷰포트 구간에서만 실제로 붙어 있다** — `html,body{height:100%}` 때문에 sticky 의 containing
-block 이 뷰포트 높이로 고정돼, 그 밖으로 스크롤하면 바가 함께 밀려 올라간다(실측 2026-09-19,
-뷰포트 높이 813: `scrollY` 773 까지 `rect.top` 0, 800 부터 음수). 그래서 모든 heading 에
-`scroll-margin-top:calc(40px + var(--md-space-sm))` 을 줘, 바가 붙어 있는 구간에서 앵커 이동한
-heading 이 그 아래 가려지지 않게 한다(바가 없는 구간에서는 상단 여백이 그만큼 남을 뿐이다).
+패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 는 `position:sticky` 이고 **문서 어느 위치에서도 상단에 붙어 있다.**
+sticky 가 끝까지 붙으려면 containing block — 여기서는 `body` 상자 — 이 문서 길이만큼 자라야 하므로
+`html` 만 `height:100%` 을 갖고 `body` 는 `min-height:100%` 을 갖는다. 둘을 함께 `height:100%` 로
+두면 `body` 상자가 뷰포트 높이에 고정돼 바가 한 뷰포트 뒤부터 밀려 올라간다(그 상태의 실측
+2026-09-20, 뷰포트 813 · 문서 높이 10399: `body` 높이가 813 에 묶이고 스크롤 끝에서
+`rect.top` −8813). 같은 문서를 같은 엔진에서 고친 뒤 재면 `body` 높이가 10399 로 문서를 따라가고
+스크롤 끝에서 `rect.top` 0 이다 — 짧은 문서에서 배경이 뷰포트를 채우는 성질(`body` 높이 813)은
+`min-height` 가 그대로 유지한다. `html` 쪽이 `height` 로 남는 것도 이유가 있다: 백분율
+`min-height` 는 부모의 높이에 대해 풀리므로 부모가 auto 면 무너진다.
+
+모든 heading 에 `scroll-margin-top:calc(40px + var(--md-space-sm))` 을 줘, 앵커
+이동한 heading 이 바 아래 가려지지 않게 한다. 바가 상시 붙어 있으므로 그 여백은 상시 제 일을
+한다 — sticky 가 한 뷰포트에서만 붙던 동안에는 바가 없는 구간에서도 여백만 남았다(같은 실측에서
+문서 중간 heading 으로 앵커 이동했을 때 heading 은 48 에 놓이는데 바의 `rect.top` 은 −4577,
+즉 화면에 없는 바를 피해 자리를 비우고 있었다. 고친 뒤 같은 이동에서 바의 `rect.top` 은 0 이다).
 같은 값이 `.footnote-reference`/`.footnote-definition` 에도 걸린다 — 각주도 앵커 이동의
 목적지다. heading 이 하나도 없는 문서는 TOC 영역 자체가 렌더되지 않는다(빈 nav 로 깨지지
 않게 — `render_document` 이 heading 목록이 비면 호출을 아예 건너뜀).
