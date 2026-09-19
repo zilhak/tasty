@@ -16,6 +16,11 @@ pub(crate) mod preset_apply;
 pub(crate) mod rail_category;
 pub(crate) mod remote_attach;
 pub(crate) mod remote_tool;
+/// scrim 이 어느 rect 에 칠해지는지를 프레임을 돌려 재는 시험 — `draw` 의 순수 판정기
+/// 시험이 못 보는 "판정이 painter 까지 이어졌는가" 를 든다.
+#[cfg(test)]
+#[path = "popup/scrim_scope_tests.rs"]
+mod scrim_scope_tests;
 pub(crate) mod script_confirm;
 pub(crate) mod transfer;
 

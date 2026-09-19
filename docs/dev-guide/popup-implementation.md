@@ -96,8 +96,13 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 | `title_key` | `&'static str` | i18n 키 → 타이틀바 |
 | `title_fn` | `Option<fn(&AppState, &CoreState) -> String>` | 동적 제목. 설정 시 `title_key` 대신 매 프레임 호출. 길이 걱정 없이 원본 문자열 반환 — 폭 초과 시 elide 는 `draw.rs`가 공통 처리(아래 "타이틀 길이 처리" 참고) |
 | `default_size` | `egui::Vec2` | 기본 크기 (unzoomed baseline) |
+<<<<<<< HEAD
 | `sizer` | `Option<fn(&AppState, &CoreState) -> Vec2>` | 동적 크기. **매 프레임 호출된다** — 아래 "sizer 는 매 프레임 돈다" 참조. **`ui_scale_factor()` 곱 금지** — sizing 토큰에 host UI zoom 이 이미 baked. 추가 곱은 이중 곱셈으로 medium/large 에서 layout 붕괴. **사용자가 직접 리사이즈한 팝업(`resizable`)에서는 리사이즈 이후 sizer 가 크기를 덮어쓰지 않는다**(`size_user_overridden` 가드 — popup close 시 리셋되어 다음 open 에 복원) |
 | `default_scope` | `PopupScope` | 가시성/경계 범위 |
+=======
+| `sizer` | `Option<fn(&AppState, &CoreState) -> Vec2>` | 동적 크기. **`ui_scale_factor()` 곱 금지** — sizing 토큰에 host UI zoom 이 이미 baked. 추가 곱은 이중 곱셈으로 medium/large 에서 layout 붕괴. **사용자가 직접 리사이즈한 팝업(`resizable`)에서는 리사이즈 이후 sizer 가 크기를 덮어쓰지 않는다**(`size_user_overridden` 가드 — popup close 시 리셋되어 다음 open 에 복원) |
+| `default_scope` | `PopupScope` | 가시성/경계 범위. `Surface` 범위면 경계가 그 칸 **안쪽 8pt** 이고 scrim 도 그 칸만 덮는다(아래 "scrim 의 범위") |
+>>>>>>> 4c0890893 (feat(popup): dim the popup's own surface instead of the whole window)
 | `close_on_outside_click` | `bool` | 바깥 클릭 시 닫힘 |
 | `headless` | `bool` | 타이틀바 없이 콘텐츠만 |
 | `sticky_focus` | `bool` | 바깥 클릭해도 키보드 포커스 유지 |
@@ -108,6 +113,7 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 | `draw_fn` | `fn(&mut Ui, &mut AppState, &mut CoreState) -> PopupAction` | 매 프레임 렌더 |
 | `on_close` | `Option<fn(&egui::Context, &mut AppState, &mut CoreState)>` | 닫힘 뒷정리 훅. `PopupManager::close()`(6개 close 경로 전부가 거치는 유일한 지점)를 통해 어떤 경로로 닫히든 정확히 한 번 발화(아래 "닫힘 정리" 참고) |
 
+<<<<<<< HEAD
 ### sizer 는 매 프레임 돈다 (열 때 한 번이 아니다)
 
 `popup::frame::draw_popup_layer` 의 첫 루프가 등록된 모든 def 의 `sizer` 를 **프레임마다**
@@ -131,6 +137,31 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 (`draw_popups`)을 돌리고 `state.popups.get(id).size` 를 읽는 테스트를 둔다. sizer 가 돌려준
 값을 그대로 비교하면 항등식이 되므로, 변이는 **sizer 쪽 반환값**을 흔들어 그 테스트가 죽는지로
 확인한다(`command_palette.rs::sizer_wiring_tests`).
+=======
+### scrim 의 범위
+
+scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범위면 그 칸 하나, 그 밖은
+창 전체([ADR-0300](../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
+규칙 본문은 [design/systems/popup.md](../design/systems/popup.md) §scrim 의 범위. 새 팝업을
+만들 때 손댈 자리는 둘이다.
+
+- **scrim 을 깔 것인가** — `PopupManager::popup_has_scrim` 의 id 명부에 더한다. 범위로
+  판정하지 않는다: `search_bar` 처럼 `Surface` 범위를 쓰면서도 anchored + scrim-less 인
+  갈래가 있고([ADR-0254](../adr/0254-floating-surface-shadow-scope-rule.md)), 범위로
+  판정하면 그 갈래가 조용히 뒤집힌다. anchored 명부(`ANCHORED_POPUPS`)와 이 명부가
+  어긋나면 `no_anchored_popup_takes_a_scrim` 이 잡는다.
+- **부모-자식이면 자식은 안 깐다** — 같은 범위에 팝업이 여럿이어도 scrim 은 한 번이다.
+  `PopupManager::pick_scrim_layers` 가 host·plugin 두 경로에서 같은 판정을 한다. 자식
+  팝업을 scrim 명부에 넣지 마라.
+
+경계를 지키는 것은 layer clip(`ctx.layer_painter(..).with_clip_rect(scope_rect)`)이고, **그
+clip 은 매니저가 그리는 것만 덮는다** — scrim · 배경 · 프레임 · 그림자. 콘텐츠는 자기 `Area`
+안에서 그려지고, 그 `Ui` 의 clip 은 egui 의 패널 컨테이너가 자기 rect 로 덮어쓴다
+(`TopBottomPanel::show_inside` · `CentralPanel::show_inside` 가 `set_clip_rect(outer_rect)` 를
+부른다 — 부모 clip 과 교집합하지 않는다). 그래서 자기 자연폭보다 훨씬 좁은 칸에 묶이는 팝업을
+새로 만들면 콘텐츠가 칸 밖으로 샐 수 있다. 재는 법은 픽셀 비교다 — 그 팝업을 좁은 칸에 띄우고
+칸 바깥을 팝업 없는 같은 화면과 견줘 차이가 0 인지 본다.
+>>>>>>> 4c0890893 (feat(popup): dim the popup's own surface instead of the whole window)
 
 ### 이동 / 리사이즈
 

@@ -1116,9 +1116,12 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // view 하네스가 카드 rect 를 `pos2(0.0, 0.0)` 에서 띄우고, sizer 배선 테스트가
         // 창 rect 를 `PhysicalPx(0.0)` 둘로 시작한다. 넷 다 0 이라 출하 쪽 `zeros` 는
         // 안 움직인다. 치수 선택이 아니라 좌표 원점이다.
-        // 177 -> ?: scrim scope specimen 이 surface radius 를 결정표가
-        // 주는 값으로 적고, 오늘 그 값이 0 이다. 출하되는 `LogicalPx(0.0)` 이 여기서는
-        // 명시된 디자인 사실이지 크기 토큰이 아니다.
+        // 177 -> 178: scrim scope specimen 이 surface radius 를 결정표가 주는 값으로 적고,
+        // 오늘 그 값이 0 이다. 출하되는 `LogicalPx(0.0)` 이 여기서는 명시된 디자인 사실이지
+        // 크기 토큰이 아니다. lane 이 그 상수를 0 에서 옮겨 재니 출하 쪽이 하나 줄었다.
+        // 225 -> 239: scrim scope 시험들이 egui 좌표로 셸을 배치하고 그 픽스처 수 열넷이
+        // size-* 위에 있다. 열셋은 순수 판정 시험의 2-surface 셸이고(그 블록을 지워 재니
+        // 시험 쪽이 돌아왔다), 열넷째는 칠하는 scrim 픽스처의 400 point surface 폭이다.
         (0, 0),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"

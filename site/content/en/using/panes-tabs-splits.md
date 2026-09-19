@@ -1,4 +1,4 @@
-<!-- source-hash: cf91db823db9 -->
+<!-- source-hash: 01598792a432 -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -83,6 +83,7 @@ Press `Alt+'` and the **Surface Type** popup appears. It changes the current Sur
 - Changing to Explorer opens the terminal's current directory as the root.
 - Markdown · HTML ask for a file path · URL.
 - The previous content is lost. Going terminal → Explorer → terminal starts a new shell session.
+- While the popup is open only **that one Surface** dims. Whatever is running in the pane beside it, the sidebar and the status bar all stay readable.
 
 **Convert to Markdown** · **Convert to Explorer** are shortcuts that change the kind directly without the popup; they are empty by default.
 

@@ -454,14 +454,36 @@ impl PopupManager {
         }
 
         // --- Render all open popups ---
-        let mut scrim_painted = false;
+        // scrim 자리는 z 순회 **전에** 정한다. 어느 자리가 이기는지는 자기보다 위에
+        // 뜬 popup 까지 봐야 알 수 있어(창 scrim 이 surface scrim 을 걷어낸다) 훑으면서
+        // 즉석에서 정할 수 없다.
+        let scrim_candidates: Vec<(usize, egui::Rect)> = open_indices
+            .iter()
+            .filter(|&&i| !closed.contains(&self.popups[i].id))
+            .filter(|&&i| Self::popup_has_scrim(self.popups[i].id))
+            .map(|&i| {
+                (
+                    i,
+                    Self::scope_rect(&self.popups[i].scope, draw_ctx).unwrap_or(screen_rect),
+                )
+            })
+            .collect();
+        let scrim_rects: Vec<egui::Rect> = scrim_candidates.iter().map(|(_, r)| *r).collect();
+        let scrims: Vec<(usize, egui::Rect)> = Self::pick_scrim_layers(&scrim_rects)
+            .into_iter()
+            .zip(scrim_candidates)
+            .filter_map(|(paints, entry)| paints.then_some(entry))
+            .collect();
+
         for (z_idx, &popup_idx) in open_indices.iter().enumerate() {
             let popup = &mut self.popups[popup_idx];
             if closed.contains(&popup.id) {
                 continue;
             }
 
-            let clamp_rect = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
+            let scope_clip = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
+            let clamp_rect =
+                Self::scope_bounds(&popup.scope, draw_ctx, screen_rect, th.spacing_sm.value());
             popup.clamp_to_screen(clamp_rect);
 
             let popup_id = popup.id;
@@ -475,27 +497,21 @@ impl PopupManager {
             );
             layers.push(layer_id);
 
-            let painter = ctx.layer_painter(layer_id);
+            // 이 popup 의 layer 는 자기 범위로 클립된다. 셸은 inset 덕에 이미 안쪽에
+            // 있지만 그림자는 셸 밖으로 번진다 — 칸 경계에 붙은 popup 의 modal 그림자가
+            // 이웃 칸 위로 10 여 픽셀 흘러, 어둡게 한 자리가 그 칸뿐이라는 말이 깨진다
+            // (실측: 인접 칸 좌측 12px 띠가 약 10% 어두워졌다). 그림자 값은 그대로다
+            // (ADR-0254) — 닿는 자리만 범위 안으로 막는다.
+            let painter = ctx.layer_painter(layer_id).with_clip_rect(scope_clip);
 
-            // Scrim: headless 모달 popup(remote_tool/remote_attach/command_palette/
-            // port_scanner — popup.rs:303-306 과 동일 id 세트) 뒤 화면 전체를 반투명
-            // 검정으로 딤 처리한다(디자인 <Scrim>, plugin_bridge/popup_render.rs:134
-            // 패턴 재사용). 여러 개가 동시에 열려 있어도 z-order 최하단 1개(가장 먼저
-            // 순회되는 대상)에서만 그려 중첩 딤을 막는다 — 그 popup 자신의 layer 에
-            // 배경보다 먼저 그리므로 별도 layer 없이 자연스럽게 그 popup 아래에 깔린다.
-            if !scrim_painted
-                && matches!(
-                    popup_id,
-                    "remote_tool"
-                        | "remote_attach"
-                        | "command_palette"
-                        | "port_scanner"
-                        | super::transfer::TRANSFER_PROGRESS_POPUP_ID
-                        | super::transfer::TRANSFER_ERROR_POPUP_ID
-                )
-            {
-                painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
-                scrim_painted = true;
+            // Scrim — [`Self::popup_has_scrim`] 이 고른 popup 뒤를 반투명 검정으로 딤
+            // 처리한다(디자인 <Scrim>). 덮는 자리는 **그 popup 이 묶인 scope 의 rect** 다:
+            // 창 범위면 화면 전체, surface 범위면 그 surface 한 칸(보더 포함, 인접 칸·
+            // 사이드바·탭바·상태바 제외). 어느 자리에 깔지는 위 `scrims` 가 이미 골랐다.
+            // 그 popup 자신의 layer 에 배경보다 먼저 그리므로 별도 layer 없이 그 popup
+            // 아래에 깔린다. radius 0 은 오늘의 셸에서 surface 와 창이 함께 쓰는 값이다.
+            if let Some((_, scrim_rect)) = scrims.iter().find(|(i, _)| *i == popup_idx) {
+                painter.rect_filled(*scrim_rect, 0.0, th.scrim().to_egui());
             }
 
             let bg_fill: egui::Color32 = popup_bg_fill(popup_id, &th);
@@ -771,6 +787,84 @@ impl PopupManager {
                 .map(|(_, r)| *r),
         }
     }
+
+    /// popup 이 들어갈 자리 — [`Self::scope_rect`] 에서 **surface 범위만** `inset` 만큼
+    /// 안쪽으로 들인다. surface 에 묶인 popup 이 제 surface 의 보더에 딱 붙으면 셸의
+    /// 일부처럼 보여 어느 칸에 묶였는지가 안 읽힌다.
+    ///
+    /// 창·워크스페이스 범위는 경계가 화면이라 들일 여백이 없고(그 둘은 `scope_rect` 가
+    /// `None` 을 준다), pane·tab 범위는 이 규칙이 다루는 자리가 아니라 그대로 둔다.
+    /// 칸이 inset 두 배보다 좁으면 들이는 폭을 절반으로 깎는다 — 뒤집힌 경계를 만들지
+    /// 않으려는 것이다.
+    pub(crate) fn scope_bounds(
+        scope: &PopupScope,
+        ctx: Option<&LayoutContext>,
+        screen_rect: egui::Rect,
+        inset: f32,
+    ) -> egui::Rect {
+        // 바인딩이 없으면(레이아웃 컨텍스트가 없거나 그 칸이 이 프레임에 없음) 화면이
+        // 경계다 — 들일 자리가 없으므로 inset 도 없다.
+        let Some(rect) = Self::scope_rect(scope, ctx) else {
+            return screen_rect;
+        };
+        if !matches!(scope, PopupScope::Surface(_)) {
+            return rect;
+        }
+        let inset = inset
+            .min(rect.width() / 2.0)
+            .min(rect.height() / 2.0)
+            .max(0.0);
+        rect.shrink(inset)
+    }
+
+    /// scrim 을 어느 자리에 깔지 고른다. 입력은 **z 오름차순**으로 늘어선, scrim 을
+    /// 요구하는 popup 들의 scope rect. 출력은 같은 길이의 "여기서 깐다" 표시다.
+    ///
+    /// 규칙이 둘이고 둘 다 같은 이유에서 나온다 — scrim 은 알파 한 벌이라 **두 번 깔면
+    /// 그 자리만 두 배로 어두워진다.**
+    /// - **scope 당 한 번**: 같은 scope 에 popup 이 여럿 떠도(부모 popup 과 그것이 연
+    ///   자식 picker) scrim 은 한 번만 깔린다.
+    /// - **넓은 쪽이 이긴다**: 창 전체 scrim 이 있으면 그 안에 surface scrim 을 또 깔지
+    ///   않는다. 순서에 무관하게 같은 답이 나오도록, 뒤에 온 넓은 rect 는 자기가 덮는
+    ///   좁은 선택을 걷어낸다.
+    pub(crate) fn pick_scrim_layers(rects: &[egui::Rect]) -> Vec<bool> {
+        let mut paints = vec![false; rects.len()];
+        let mut chosen: Vec<usize> = Vec::new();
+        for (i, rect) in rects.iter().enumerate() {
+            if chosen.iter().any(|&c| rects[c].contains_rect(*rect)) {
+                continue;
+            }
+            chosen.retain(|&c| {
+                let covered = rect.contains_rect(rects[c]);
+                if covered {
+                    paints[c] = false;
+                }
+                !covered
+            });
+            chosen.push(i);
+            paints[i] = true;
+        }
+        paints
+    }
+
+    /// 이 popup 이 뒤에 scrim 을 까는가.
+    ///
+    /// **범위가 아니라 id 로 정한다.** surface 범위를 쓰면서도 scrim 을 안 까는 표면이
+    /// 있다 — `search_bar` 는 트리거 옆에 붙는 anchored + scrim-less 갈래이고, 그 구분은
+    /// `docs/adr/0254-floating-surface-shadow-scope-rule.md` 가 정한다. 범위로 판정하면
+    /// 그 한 줄이 조용히 뒤집힌다.
+    pub(crate) fn popup_has_scrim(id: PopupId) -> bool {
+        matches!(
+            id,
+            "remote_tool"
+                | "remote_attach"
+                | "command_palette"
+                | "port_scanner"
+                | "convert_surface"
+                | super::transfer::TRANSFER_PROGRESS_POPUP_ID
+                | super::transfer::TRANSFER_ERROR_POPUP_ID
+        )
+    }
 }
 
 #[cfg(test)]
@@ -835,5 +929,175 @@ mod tests {
             "핸들러 선택기 셸이 tag-bg 와 같은 색이면 format Tag 가 사라진다"
         );
         assert_eq!(shell, egui::Color32::from(th.bg_panel()));
+    }
+
+    // ── scrim scope ──────────────────────────────────────────────────────
+    // 한 셸에 surface 둘이 좌우로 붙어 있고, 왼쪽이 popup 의 소속 칸이다. 두 rect 는
+    // 경계선을 나눠 갖지 않는다 — 왼쪽의 오른쪽 변이 오른쪽의 왼쪽 변이다.
+    const SURFACE_A: u32 = 11;
+    const SURFACE_B: u32 = 22;
+
+    fn screen() -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1000.0, 800.0))
+    }
+
+    fn surface_a() -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(32.0, 60.0), egui::pos2(500.0, 776.0))
+    }
+
+    fn surface_b() -> egui::Rect {
+        egui::Rect::from_min_max(egui::pos2(500.0, 60.0), egui::pos2(1000.0, 776.0))
+    }
+
+    fn two_surface_layout() -> LayoutContext {
+        LayoutContext {
+            active_workspace: 0,
+            pane_rects: vec![(
+                1,
+                egui::Rect::from_min_max(egui::pos2(32.0, 60.0), egui::pos2(1000.0, 776.0)),
+            )],
+            surface_rects: vec![(SURFACE_A, surface_a()), (SURFACE_B, surface_b())],
+            active_tabs: vec![(1, 0)],
+        }
+    }
+
+    /// surface 범위의 scrim 자리는 **그 칸의 rect 그대로**다. 보더는 칸 안쪽에 그려지므로
+    /// 이 rect 가 보더를 포함하고, 인접 칸은 변 하나만 공유할 뿐 안쪽이 안 겹친다.
+    #[test]
+    fn surface_scope_covers_its_own_surface_and_not_the_neighbour() {
+        let layout = two_surface_layout();
+        let rect = PopupManager::scope_rect(&PopupScope::Surface(SURFACE_A), Some(&layout))
+            .expect("surface A 는 이 레이아웃에 있다");
+        assert_eq!(rect, surface_a());
+        // 인접 칸의 안쪽 점은 이 scrim 밖이다.
+        assert!(!rect.contains(surface_b().center()));
+        // 사이드바(x<32)·탭바(y<60)·상태바(y>776)도 밖이다.
+        assert!(!rect.contains(egui::pos2(16.0, 400.0)));
+        assert!(!rect.contains(egui::pos2(300.0, 40.0)));
+        assert!(!rect.contains(egui::pos2(300.0, 790.0)));
+    }
+
+    /// 창 범위는 종전대로 화면 전체다 — `scope_rect` 가 `None` 을 주고 호출부가 화면으로
+    /// 되돌린다.
+    #[test]
+    fn window_scope_still_falls_back_to_the_whole_screen() {
+        let layout = two_surface_layout();
+        assert_eq!(
+            PopupManager::scope_rect(&PopupScope::Window, Some(&layout)),
+            None
+        );
+        assert_eq!(
+            PopupManager::scope_bounds(&PopupScope::Window, Some(&layout), screen(), 8.0),
+            screen()
+        );
+    }
+
+    /// target 바인딩이 없는 호환 경로(레이아웃 컨텍스트 자체가 없는 프레임)도 화면 전체다.
+    #[test]
+    fn a_surface_scope_without_layout_context_falls_back_to_the_whole_screen() {
+        assert_eq!(
+            PopupManager::scope_rect(&PopupScope::Surface(SURFACE_A), None),
+            None
+        );
+        assert_eq!(
+            PopupManager::scope_bounds(&PopupScope::Surface(SURFACE_A), None, screen(), 8.0),
+            screen()
+        );
+    }
+
+    /// surface 범위 popup 은 칸에서 8pt 안쪽에 놓인다. 창 범위는 들이지 않는다.
+    #[test]
+    fn surface_bounds_inset_the_popup_and_window_bounds_do_not() {
+        let layout = two_surface_layout();
+        let bounds = PopupManager::scope_bounds(
+            &PopupScope::Surface(SURFACE_A),
+            Some(&layout),
+            screen(),
+            8.0,
+        );
+        assert_eq!(bounds, surface_a().shrink(8.0));
+        assert_eq!(
+            PopupManager::scope_bounds(&PopupScope::Window, Some(&layout), screen(), 8.0),
+            screen()
+        );
+    }
+
+    /// 칸이 inset 두 배보다 좁으면 경계가 뒤집히지 않고 폭이 0 으로 수렴한다.
+    #[test]
+    fn surface_bounds_never_invert_on_a_tiny_surface() {
+        let tiny = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(6.0, 400.0));
+        let layout = LayoutContext {
+            active_workspace: 0,
+            pane_rects: vec![],
+            surface_rects: vec![(SURFACE_A, tiny)],
+            active_tabs: vec![],
+        };
+        let bounds = PopupManager::scope_bounds(
+            &PopupScope::Surface(SURFACE_A),
+            Some(&layout),
+            screen(),
+            8.0,
+        );
+        assert!(bounds.width() >= 0.0 && bounds.height() >= 0.0);
+        assert!(tiny.contains_rect(bounds));
+    }
+
+    /// 부모 popup 과 그것이 연 자식이 같은 scope 를 쓰면 scrim 은 **한 번만** 깔린다.
+    #[test]
+    fn a_parent_and_its_child_in_one_scope_paint_a_single_scrim() {
+        let rects = [surface_a(), surface_a()];
+        let paints = PopupManager::pick_scrim_layers(&rects);
+        assert_eq!(
+            paints.iter().filter(|p| **p).count(),
+            1,
+            "같은 scope 에 두 번 깔면 같은 알파가 곱해져 그 칸만 두 배로 어두워진다"
+        );
+        assert!(paints[0], "아래 깔린 쪽이 그린다");
+    }
+
+    /// 창 전체 scrim 이 있으면 그 안의 surface scrim 은 안 깐다 — 순서가 어느 쪽이든.
+    #[test]
+    fn a_window_scrim_absorbs_a_surface_scrim_inside_it() {
+        let surface_first = PopupManager::pick_scrim_layers(&[surface_a(), screen()]);
+        assert_eq!(surface_first, vec![false, true]);
+        let window_first = PopupManager::pick_scrim_layers(&[screen(), surface_a()]);
+        assert_eq!(window_first, vec![true, false]);
+    }
+
+    /// 서로 다른 칸에 하나씩 뜨면 각자 자기 칸을 덮는다 — 한쪽이 다른 쪽을 안 삼킨다.
+    #[test]
+    fn two_separate_surfaces_each_keep_their_own_scrim() {
+        let paints = PopupManager::pick_scrim_layers(&[surface_a(), surface_b()]);
+        assert_eq!(paints, vec![true, true]);
+    }
+
+    /// scrim 여부는 범위가 아니라 id 로 정한다 — `search_bar` 는 surface 범위를 쓰지만
+    /// anchored + scrim-less 갈래다(ADR-0254).
+    #[test]
+    fn the_anchored_search_bar_takes_no_scrim_although_it_is_surface_scoped() {
+        assert!(!PopupManager::popup_has_scrim("search_bar"));
+        assert!(PopupManager::popup_has_scrim("convert_surface"));
+        assert!(PopupManager::popup_has_scrim("command_palette"));
+        assert!(
+            !PopupManager::popup_has_scrim(super::super::file_picker::FILE_PICKER_POPUP_ID),
+            "자식 picker 는 부모의 scrim 위에 얹힌다 — 자기 것을 덧그리지 않는다"
+        );
+    }
+
+    /// ADR-0254 가 **anchored + scrim-less** 라고 부르는 갈래는 이름 그대로여야 한다.
+    ///
+    /// 그 ADR 은 그림자 명부만 들고 scrim 명부는 안 든다("scrim 유무는 갈래를 가르는
+    /// 술어가 아니다"). 그래서 두 명부가 어긋나도 그 문장 자체는 안 깨지고, 깨지는 것은
+    /// 그 갈래의 **이름**이다 — popover 그림자를 받는 표면이 scrim 을 깔면 그것은 더
+    /// 이상 scrim-less 가 아니다. 여기서 두 명부를 맞물려 그 어긋남에 채널을 준다.
+    #[test]
+    fn no_anchored_popup_takes_a_scrim() {
+        for id in ANCHORED_POPUPS {
+            assert!(
+                !PopupManager::popup_has_scrim(id),
+                "`{id}` 는 anchored + scrim-less 갈래인데 scrim 명부에 있다 — 둘 중 \
+                 하나가 틀렸다(ADR-0254)"
+            );
+        }
     }
 }

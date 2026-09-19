@@ -166,9 +166,12 @@ fn hidden_child_keeps_selection_and_request_without_paint_hit_or_keyboard_gate()
     draw(&mut state, &layout, vec![]);
     assert_visible_gates(&state);
     let popup = state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap();
+    // 물려받은 경계는 칸 rect 자체가 아니라 그 안쪽 8pt 다 — surface 범위 popup 은 제
+    // 칸의 보더에 붙지 않는다(`PopupManager::scope_bounds`).
+    let inset = crate::theme::theme().spacing_sm.value();
     assert_eq!(
         popup.size,
-        rect.size(),
+        rect.shrink(inset).size(),
         "existing clamp follows inherited surface bounds"
     );
     assert!(rect.contains_rect(egui::Rect::from_min_size(popup.pos, popup.size)));

@@ -89,13 +89,13 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 
 팝업은 소속 범위(`PopupScope`)를 가지며 가시성·경계가 결정된다. enum: `Window` / `Workspace(usize)` / `Pane(u32)` / `Tab(u32, usize)` / `Surface(u32)`.
 
-| 스코프 | 가시성 | 경계 clamp |
-|--------|--------|-----------|
-| Window | 항상(워크스페이스 전환 무관) | 윈도우 |
-| Workspace | 해당 워크스페이스 활성 시 | 워크스페이스 영역 |
-| Pane | 해당 pane 보일 때 | pane |
-| Tab | 해당 탭이 활성 탭일 때 | 탭 소속 pane |
-| Surface | 해당 surface 보일 때 | surface |
+| 스코프 | 가시성 | 경계 clamp | scrim 이 덮는 rect |
+|--------|--------|-----------|--------------------|
+| Window | 항상(워크스페이스 전환 무관) | 윈도우 | 윈도우 |
+| Workspace | 해당 워크스페이스 활성 시 | 워크스페이스 영역 | 윈도우 |
+| Pane | 해당 pane 보일 때 | pane | pane |
+| Tab | 해당 탭이 활성 탭일 때 | 탭 소속 pane | 탭 소속 pane |
+| Surface | 해당 surface 보일 때 | surface **안쪽 8pt** | surface |
 
 `PopupManager::draw()` 가 `LayoutContext` 를 받아 스코프별 가시성 필터 + clamp rect 를 결정한다.
 
@@ -115,6 +115,27 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 `Workspace` 스코프 팝업은 워크스페이스를 옮기면 **그리지 않는다** — 상태는 그대로 남아 있어
 돌아오면 보던 화면이 그대로 복원된다. 그 상태의 수명은 스코프가 아니라 `on_close` 가 정한다.
 
+### scrim 의 범위
+
+scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
+`Surface` 범위면 그 칸 하나이고, 경계는 그 surface 의 **보더를 포함**하며 인접 surface ·
+사이드바 · pane 탭바 · 상태바는 **제외**한다. radius 는 범위 대상 자신의 radius 를 따른다 —
+오늘의 셸에서 surface radius 는 0 이라 직각이다. 알파는 한 벌이다(`--tasty-scrim-bg`) —
+범위가 둘이라고 값을 나누지 않는다. 바인딩이 없으면(창·워크스페이스 범위, 그리고 선언이
+`surface` 여도 대상이 없는 호환 경로) 창 전체다.
+
+**scrim 은 범위당 한 번 깔린다.** 같은 범위에 팝업이 여럿 떠도(부모 팝업과 그것이 연 자식
+파일 피커) 한 번이고, 창 scrim 이 있으면 그 안의 surface scrim 은 안 깐다 — 넓은 쪽이
+이긴다. 알파가 한 벌이라 두 번 칠하면 그 자리만 두 배로 어두워지기 때문이다.
+
+**어느 팝업이 scrim 을 까는가는 범위가 아니라 id 로 정한다.** `search_bar` 는 `Surface`
+범위를 쓰지만 anchored + scrim-less 갈래이므로 scrim 이 없다([ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md)).
+현재 scrim 을 까는 host 팝업: `remote_tool` · `remote_attach` · `command_palette` ·
+`port_scanner` · `convert_surface` · 전송 진행/오류. plugin 팝업은 예외 없이 깐다.
+
+어둡게 하는 것과 입력을 막는 것은 다른 일이다 — scrim 은 dim 만 하고, Esc 와 바깥 클릭의
+순서는 위 §수명 계약이 정한다.
+
 ### plugin popup 의 스코프
 
 plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 **종류**만 선언한다 —
@@ -131,7 +152,8 @@ plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 *
 `surface` 범위 popup 은 앵커의 가운데 기준도 그 surface 영역이다. 범위가 안 보이는 frame 에는
 셸·콘텐츠 합성·히트테스트 rect·Esc·바깥 클릭·키 게이트 어디에도 들어가지 않는다 — 보이지
 않는 rect 가 클릭을 삼키지 않는다. 인스턴스는 살아 있어 범위가 다시 보이면 그대로 복원된다.
-scrim 은 범위와 무관하게 창 전체에 깔린다.
+scrim 도 그 범위를 덮는다(위 §scrim 의 범위). 셸이 범위보다 크면 범위 크기로 줄어든다 —
+plugin 콘텐츠는 GPU 합성으로 올라가 egui 레이어 클립이 그것까지 잘라 주지 않기 때문이다.
 
 현재 `scope = "surface"` 선언: markdown `file-open`.
 

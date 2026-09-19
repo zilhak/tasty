@@ -158,6 +158,8 @@ pub fn draw_plugin_popups(
 
     let mut any_hovered = false;
 
+    let (scrim_rects, scrim_paints) = scrim_plan(&placed, layout, screen_rect);
+
     // ── egui-mesh popups (A2) ──
     let ppp = ctx.pixels_per_point().max(f32::EPSILON);
     // 현재 resolved Theme 스냅샷을 1회 만든다(popup 무관). plugin 이 host 와 동일 Theme 으로
@@ -170,9 +172,10 @@ pub fn draw_plugin_popups(
             ui_zoom: _engine.settings.appearance.ui_scale_factor(),
         }
     };
-    for (snap, rect) in &placed {
+    for (idx, (snap, rect)) in placed.iter().enumerate() {
         let snap = snap;
         let rect = *rect;
+        let scope_rect = scrim_rects[idx];
         // 포인터 좌표의 소유권 — 규칙 7("겹친 영역의 마우스 이벤트는 최상단 팝업만
         // 받는다", `docs/design/systems/popup.md`)을 3-상태로 판정한다.
         let ownership = pointer_pos.map(|p| point_ownership(rect, snap.z_seq, &occluders, p));
@@ -195,9 +198,17 @@ pub fn draw_plugin_popups(
             Id::new("plugin_mesh_popup").with(snap.instance_id),
         );
         state.plugin_popup_layers.push(layer_id);
-        let painter = ctx.layer_painter(layer_id);
+        // 이 popup 의 layer 는 자기 scope 로 클립된다. 셸이 칸보다 크면(좁은 surface)
+        // 배치 clamp 는 좌상단만 붙잡아 우하단이 이웃 칸으로 넘쳐 나간다 — 어둡게 한
+        // 자리 밖에 셸이 걸치면 "이 popup 은 이 칸의 것" 이라는 말이 깨진다.
+        let painter = ctx.layer_painter(layer_id).with_clip_rect(scope_rect);
         let th = crate::theme::theme();
-        painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
+        // scrim 은 이 popup 이 묶인 scope 의 rect 를 덮는다 — 창 범위면 화면 전체,
+        // surface 범위면 그 칸 하나(보더 포함, 인접 칸 제외). 같은 scope 에 popup 이
+        // 여럿이면 위에서 고른 하나만 깐다.
+        if scrim_paints[idx] {
+            painter.rect_filled(scope_rect, 0.0, th.scrim().to_egui());
+        }
         // plugin popup 은 예외 없이 scrim 을 깔고 뷰포트를 점유한다 = SCOPE RULE 의
         // modal 갈래(ADR-0254). scrim 은 바닥을 어둡게 할 뿐 엣지를 안 그려서, 이 단차가
         // 없으면 어두운 테마에서 셸 실루엣이 어두워진 바닥에 묻힌다. 배경보다 먼저 —
@@ -612,9 +623,30 @@ fn paint_shell_background_excluding_content(
     );
 }
 
+/// 이 frame 에 깔 scrim 자리 — `(인스턴스별 scope rect, 그 자리에서 깐다)`.
+///
+/// scrim 은 **scope 당 한 번**이다. 인스턴스마다 깔면 같은 알파가 곱해져 popup 이 둘
+/// 열린 순간 바닥만 두 배로 어두워진다. 어느 자리가 이기는지는 host popup 과 **같은**
+/// 판정기([`PopupManager::pick_scrim_layers`])가 정한다 — 두 경로가 같은 물음에 답을
+/// 둘로 만들지 않으려는 것이다. 덮는 자리는 그 popup 이 묶인 scope 의 rect 이고,
+/// 바인딩이 없으면(창 범위 · 이 frame 에 없는 칸) 화면이다.
+fn scrim_plan(
+    placed: &[(MeshSnap, Rect)],
+    layout: Option<&LayoutContext>,
+    screen_rect: Rect,
+) -> (Vec<Rect>, Vec<bool>) {
+    let rects: Vec<Rect> = placed
+        .iter()
+        .map(|(snap, _)| PopupManager::scope_rect(&snap.scope, layout).unwrap_or(screen_rect))
+        .collect();
+    let paints = PopupManager::pick_scrim_layers(&rects);
+    (rects, paints)
+}
+
 /// 인스턴스의 셸 rect. 범위가 이 frame 에 안 보이면 `None`.
 ///
-/// 가시성과 경계는 host popup 과 같은 함수로 판정한다. 경계가 없는 범위(`Window`)는 화면이다.
+/// 가시성과 경계는 host popup 과 같은 함수로 판정한다. 경계가 없는 범위(`Window`)는 화면이고,
+/// surface 범위는 그 칸에서 8px 안쪽이다 — host popup 과 같은 [`PopupManager::scope_bounds`].
 fn place_popup(
     anchor: PopupAnchor,
     scope: &PopupScope,
@@ -626,7 +658,17 @@ fn place_popup(
     if !PopupManager::is_scope_visible(scope, layout) {
         return None;
     }
-    let bounds = PopupManager::scope_rect(scope, layout).unwrap_or(screen_rect);
+    let bounds = PopupManager::scope_bounds(
+        scope,
+        layout,
+        screen_rect,
+        crate::theme::theme().spacing_sm.value(),
+    );
+    // 경계보다 큰 셸은 경계로 줄인다 — host popup 의 `clamp_to_screen` 과 같다. 위치만
+    // 붙잡고 크기를 그대로 두면 좁은 칸에서 셸이 이웃 칸으로 넘쳐 나가고, 콘텐츠는
+    // egui layer 가 아니라 GPU 합성으로 올라가 layer 클립이 그것까지 잘라 주지 않는다.
+    // 여기서 줄이면 plugin 에 forward 되는 콘텐츠 크기도 같은 값으로 따라온다.
+    let size = Vec2::new(size.x.min(bounds.width()), size.y.min(bounds.height()));
     let pos = clamp_to_bounds(anchor_pos(anchor, size, bounds, pointer_pos), size, bounds);
     Some(Rect::from_min_size(pos, size))
 }
@@ -744,9 +786,48 @@ mod tests {
     }
 
     /// 위치 clamp 의 경계는 화면이 아니라 surface 다 — 포인터가 surface 밖 왼쪽 위에 있어도
-    /// popup 좌상단은 surface 안에 머문다.
+    /// surface 범위 plugin popup 의 scrim 자리는 **그 칸**이다 — 화면이 아니다.
+    /// 창 범위는 종전대로 화면이고, 같은 칸에 둘이 떠도 한 번만 깔린다.
     #[test]
-    fn a_surface_scoped_popup_is_clamped_to_its_surface() {
+    fn the_scrim_of_a_surface_scoped_plugin_popup_covers_its_surface_once() {
+        let layout = layout_with_surface_7(true);
+        let bound = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::ScreenCenter);
+        let placed = place_visible(
+            mesh_snapshots([(1, &bound), (2, &bound)].into_iter()),
+            Some(&layout),
+            SCREEN,
+            None,
+        );
+        assert_eq!(placed.len(), 2, "인스턴스 둘이 배치돼야 중복 제거가 재진다");
+        let (rects, paints) = scrim_plan(&placed, Some(&layout), SCREEN);
+        assert_eq!(rects, vec![SURFACE_7, SURFACE_7]);
+        assert_eq!(paints, vec![true, false], "같은 칸에 두 번 깔지 않는다");
+    }
+
+    /// 창 범위와 바인딩 없는 surface 선언은 화면 전체를 덮는다 — 종전 그대로.
+    #[test]
+    fn the_scrim_of_a_window_scoped_plugin_popup_stays_the_whole_screen() {
+        let hidden = layout_with_surface_7(false);
+        for inst in [
+            instance(PopupScopeDecl::Window, Some(7), PopupAnchor::ScreenCenter),
+            instance(PopupScopeDecl::Surface, None, PopupAnchor::ScreenCenter),
+        ] {
+            let placed = place_visible(
+                mesh_snapshots(std::iter::once((1, &inst))),
+                Some(&hidden),
+                SCREEN,
+                None,
+            );
+            let (rects, paints) = scrim_plan(&placed, Some(&hidden), SCREEN);
+            assert_eq!(rects, vec![SCREEN]);
+            assert_eq!(paints, vec![true]);
+        }
+    }
+
+    /// popup 좌상단은 surface **안쪽 8pt** 에 머문다 — 칸 보더에 딱 붙지 않는다.
+    #[test]
+    fn a_surface_scoped_popup_is_clamped_inside_its_surface_inset() {
+        let inset = crate::theme::theme().spacing_sm.value();
         let inst = instance(PopupScopeDecl::Surface, Some(7), PopupAnchor::Cursor);
         let rect = placed_rect(
             &inst,
@@ -754,7 +835,8 @@ mod tests {
             Some(Pos2::new(10.0, 10.0)),
         )
         .expect("surface 가 보이면 그려져야 한다");
-        assert_eq!(rect.min, SURFACE_7.min);
+        assert_eq!(rect.min, SURFACE_7.shrink(inset).min);
+        assert!(SURFACE_7.contains_rect(rect));
     }
 
     /// 선언이 없거나(`window`) 대상이 바인딩되지 않은 surface 선언은 이전 동작 그대로다 —
