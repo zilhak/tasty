@@ -1059,7 +1059,12 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // shipped zeros. Its zero item_spacing now says egui::Vec2::ZERO, and the
         // fallback-strip height folds to zero by scaling instead of by a LogicalPx(0.0)
         // literal. Nothing became invisible — the sites are gone, not exempted.
-        (176, 220),
+        // 220 -> 221: the file picker's scope census opens a second narrow viewport,
+        // vec2(400, 360), to place a surface-scoped parent. Its 400 is on size-*, its
+        // 360 is not, so the test-only side grows by one while the shipped side does
+        // not move. Measured by shifting that literal off the scale: the pair returned
+        // to 220 and came back to 221 when it was put back.
+        (176, 221),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );
