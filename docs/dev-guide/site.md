@@ -87,6 +87,13 @@ site/
 한해서는 `crates/tasty-doc-guards/tests/site_vendor_tokens_track_the_app_export.rs` 가 그
 침묵을 깨지만, 토큰을 안 여는 결정은 그 판정기도 못 본다.
 
+그래서 갤러리 페이지가 **사본의 시점을 화면에 적는다.** 변환기가 빌드 시각에
+`git log -1 -- site/vendor`(README 제외 — 그것은 절차지 스냅샷이 아니다) 로 날짜를 읽어
+`src/gallery/vendor-stamp.js` 를 만들고, `GalleryShell` 이 페이지 머리에 그린다.
+**그 날짜를 손으로 적지 않는다** — 손으로 적으면 그것이 또 하나의 낡을 사본이 되고,
+하필 사본이 낡는 그 순간에 "최신" 이라고 말한다. git 이 없으면(소스 tarball · shallow
+clone) 추측하지 않고 줄 자체를 안 그린다.
+
 ## 빌드
 
 ```bash

@@ -31,3 +31,14 @@
   .g-top .g-seglabel { display: none; }
   .g-top { padding: 0 10px; gap: 8px; }
 }
+
+/* How old the specimens are. Quiet by default — it is provenance, not a
+   warning — and it reads from the vendor copy's own commit date, so it cannot
+   claim a freshness the files do not have. */
+.g-vendorstamp {
+  font-family: var(--tasty-font-mono);
+  font-size: 11px;
+  color: var(--tasty-text-muted);
+  margin-top: 8px;
+}
+.g-vendorstamp time { color: var(--tasty-text-secondary); }
