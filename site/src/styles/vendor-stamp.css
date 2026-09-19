@@ -1,0 +1,14 @@
+/* How old the vendored copy is. Quiet by default — it is provenance, not a
+   warning — and it reads from that copy's own commit date, so it cannot claim
+   a freshness the files do not have.
+
+   This rule sits in a file of its own because the gallery and the design
+   section load different stylesheets, and a rule copied into both would drift
+   the way the sentence it styles would. */
+.vendor-stamp {
+  font-family: var(--tasty-font-mono);
+  font-size: var(--tasty-font-size-11);
+  color: var(--tasty-text-muted);
+  margin-top: var(--tasty-size-8);
+}
+.vendor-stamp time { color: var(--tasty-text-secondary); }

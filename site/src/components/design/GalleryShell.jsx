@@ -1,7 +1,7 @@
 import React from "react";
 import { GALLERY_INTROS } from "../../lib/design";
 import { SpecsToggle, ThemeToggle, readSpecs, applySpecs } from "../../gallery/shell.jsx";
-import { VENDOR_STAMP } from "../../gallery/vendor-stamp.js";
+import { VendorStamp } from "./VendorStamp.jsx";
 
 /**
  * The gallery's chrome, as this site publishes it.
@@ -13,14 +13,6 @@ import { VENDOR_STAMP } from "../../gallery/vendor-stamp.js";
  * styles. What changes is the navigation, which points at this site's routes,
  * and the theme, which is the site's rather than the gallery's own.
  */
-
-/* The date under the intro is read from git at build time by
-   `scripts/vendor-to-esm.mjs`, never written here. `site/vendor/` is a copy of
-   a remote design system, and it follows a decision only when somebody
-   re-vendors it — so a reader deserves to know how old the specimens are. A
-   date typed into this file would be a second copy of that fact and would go
-   stale at exactly the moment it matters. The stamp is absent, not guessed,
-   when git cannot answer. */
 
 /* The gallery's toggle drove a key of its own. Here the page theme is the
    site's, so the same control writes the key the rest of the site reads and
@@ -111,13 +103,7 @@ export function GalleryShell({ groups, active, head, brandHref, backLabel, child
           <header className="g-pagehead">
             <h1>{head.title}</h1>
             <p>{GALLERY_INTROS[active] ?? head.intro}</p>
-            {VENDOR_STAMP && (
-              <p className="g-vendorstamp">
-                Snapshot of the design system as vendored on{" "}
-                <time dateTime={VENDOR_STAMP.date}>{VENDOR_STAMP.date}</time>. A decision taken
-                after that date is not on this page yet.
-              </p>
-            )}
+            <VendorStamp lang="en" />
             {head.howto && (
               <div className="g-howto">
                 <div><div className="k">When to use it</div><div className="v">Read the usage notes to choose a component for your task.</div></div>
