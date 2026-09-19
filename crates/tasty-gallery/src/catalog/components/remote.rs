@@ -14,7 +14,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, LocalSshHost, LocalSshSectionData,
-    Spinner, TagVariant, draw_local_ssh_section, select, tag,
+    ProtocolFilterItem, ProtocolFilterLabels, Spinner, TabStripData, TagVariant,
+    draw_local_ssh_section, draw_protocol_filter_body, draw_protocol_filter_button, draw_tab_strip,
+    select, tag,
 };
 
 use crate::catalog::icons;
@@ -186,53 +188,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 공통 3-탭 바 (bg-sidebar) — `active` = 0 Profiles / 1 Attach / 2 Passkeys.
+/// 공통 3-탭 바 — 본체 popup 과 **같은 view 함수**(`tasty_ui_widgets::draw_tab_strip`)를
+/// 부른다. 라벨과 활성 인덱스만 specimen 이 정한다. `active` = 0 Profiles / 1 Attach /
+/// 2 Passkeys.
+///
+/// `x_range` 는 카드 전체폭이다 — 바 배경(`bg-sidebar`)과 하단 separator 가 카드 좌우
+/// 끝까지 닿아야 하고, 탭 자체는 그 범위의 왼쪽에서 시작한다.
 fn tab_bar(ui: &mut egui::Ui, theme: &Theme, active: usize) {
-    egui::Frame::new()
-        .fill(theme.bg_sidebar().to_egui())
-        .inner_margin(egui::Margin::symmetric(theme.spacing_md.value() as i8, 0))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                for (i, label) in ["Remote profiles", "Attach", "Passkeys"].iter().enumerate() {
-                    tab_btn(ui, theme, label, i == active);
-                }
-            });
-        });
-    kit::hsep(ui, theme);
-}
-
-fn tab_btn(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
-    let h = theme.titlebar_height.value();
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(theme.font_size_body.value()),
-        egui::Color32::PLACEHOLDER,
+    draw_tab_strip(
+        ui,
+        theme,
+        &TabStripData {
+            labels: &["Remote profiles", "Attach", "Passkeys"],
+            active,
+            x_range: ui.max_rect().x_range(),
+        },
     );
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(galley.rect.width(), h), egui::Sense::hover());
-    let fg = if active {
-        theme.text_primary()
-    } else {
-        theme.text_muted()
-    };
-    ui.painter().galley(
-        egui::pos2(rect.left(), rect.center().y - galley.rect.height() * 0.5),
-        galley,
-        fg.to_egui(),
-    );
-    if active {
-        let bar = egui::Rect::from_min_size(
-            egui::pos2(
-                rect.left(),
-                rect.bottom() - theme.tab_indicator_width.value(),
-            ),
-            egui::vec2(rect.width(), theme.tab_indicator_width.value()),
-        );
-        ui.painter()
-            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -796,4 +767,143 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
             });
         });
     });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 프로토콜 필터 — add-bar 버튼 + 드롭다운 (디자인 `RemoteFrame` 의 filter 블록)
+// ════════════════════════════════════════════════════════════════════════
+
+/// 필터 목록의 프로토콜 — 디자인 seed 와 같은 넷이고 마지막 하나가 미지 kind 다.
+const FILTER_PROTOCOLS: &[(&str, bool)] = &[
+    ("ssh", false),
+    ("smb", false),
+    ("http", false),
+    ("snb", true),
+];
+
+/// 프로토콜 필터 — 본체와 **같은 view 함수** 둘(`draw_protocol_filter_button` ·
+/// `draw_protocol_filter_body`)을 부른다.
+///
+/// 본체는 이 둘 사이에 egui popup(`FILTER_POPUP_ID` memory + `popup_above_or_below_
+/// widget`)을 끼워 열림을 관리하지만, specimen 은 **열린 상태를 그대로 세워 보인다** —
+/// 갤러리가 보이려는 것은 열림 상태 전이가 아니라 두 표면의 생김새다.
+pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        // 닫힘 — 아무것도 가리지 않은 상태. `surface-raised` + `border-strong`.
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            kit::caption(ui, theme, "closed · nothing hidden", false);
+            draw_protocol_filter_button(ui, theme, "Filter", false);
+        });
+        // 닫힘(적용됨) — 하나라도 가려져 있으면 accent 채움 + 개수.
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            kit::caption(ui, theme, "closed · 1 of 4 hidden", false);
+            draw_protocol_filter_button(ui, theme, "Filter · 3/4", true);
+        });
+    });
+    // 열린 드롭다운은 **따로 세운다** — 닫힘 버튼들과 한 wrap 행에 넣으면 그 행의 높이가
+    // 가장 큰 항목에서 정해지기 전에 내부 ScrollArea 가 남은 높이를 읽어 목록이 잘린다.
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        // 열림 — 드롭다운 본문. draft 는 **제외 집합**이라 `smb` 하나가 들어 있다.
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            kit::caption(ui, theme, "open · draft = hidden set", false);
+            let mut draft: std::collections::HashSet<String> =
+                std::iter::once("smb".to_string()).collect();
+            let items: Vec<ProtocolFilterItem<'_>> = FILTER_PROTOCOLS
+                .iter()
+                .map(|(name, unknown)| ProtocolFilterItem {
+                    name,
+                    unknown: *unknown,
+                })
+                .collect();
+            // 폭은 공용 view 가 자기 안에서 거는 최소폭을 **그 자리에서** 읽는다 —
+            // specimen 이 자기 수를 이름으로 들고 있으면 본체가 바뀔 때 조용히 갈린다.
+            kit::frame_card_popover(
+                ui,
+                theme,
+                tasty_ui_widgets::FILTER_DROPDOWN_MIN_WIDTH,
+                kit::raised_fill(theme),
+                |ui| {
+                    kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                        // 공용 view 의 목록은 **남은 높이**가 상한보다 작으면 그만큼
+                        // 잘린다. 본체에서는 popup Area 가 높이를 넉넉히 주지만
+                        // specimen 의 카드는 높이가 내용으로 정해져 남은 높이가 0 에
+                        // 가깝다 — 상한만큼 먼저 잡아 본체와 같은 목록이 나오게 한다.
+                        ui.set_min_height(tasty_ui_widgets::FILTER_DROPDOWN_MAX_HEIGHT.value());
+                        draw_protocol_filter_body(
+                            ui,
+                            theme,
+                            &items,
+                            &ProtocolFilterLabels {
+                                title: "Filter by protocol",
+                                select_all: "Select all",
+                                deselect_all: "Deselect all",
+                                reset: "Reset",
+                                apply: "Apply",
+                                unknown: "unknown",
+                                unknown_hint: "tasty has no dedicated form for this protocol.",
+                            },
+                            &mut draft,
+                        );
+                    });
+                },
+            );
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "button",
+                "funnel + label · raised when idle, accent when filtering",
+            ),
+            (
+                "label",
+                "Filter · <selected>/<total> once something is hidden",
+            ),
+            (
+                "dropdown",
+                "216 min-width · title · checkbox list · bulk row · Reset/Apply",
+            ),
+            (
+                "unknown",
+                "warn badge on a kind tasty has no dedicated form for",
+            ),
+            ("commit", "apply-on-confirm — the draft is the hidden set"),
+        ],
+        &[
+            TokenChip::new(
+                "accent-primary",
+                "button fill while filtering",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "idle button · dropdown",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "border-strong",
+                "idle button · dropdown border",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "unknown badge",
+                theme.accent_warning().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "The button only appears when the stored profiles carry two or more protocols — \
+         one protocol has nothing to filter. Checking a box does not hide a row: the draft \
+         is committed on Apply, which is what makes a multi-box change one decision.",
+    );
 }

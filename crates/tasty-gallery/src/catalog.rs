@@ -852,6 +852,12 @@ pub fn pages() -> Vec<Page> {
                             components::remote::draw,
                         ),
                         spec(
+                            "remote-filter",
+                            "Protocol filter — button & dropdown",
+                            Some("add-bar funnel · checkbox list · apply-on-confirm"),
+                            components::remote::draw_filter,
+                        ),
+                        spec(
                             "remote-attach",
                             "Attach tab — tasty-attach targets",
                             Some("middle tab · ref/inline targets · remote tasty + port discovery"),

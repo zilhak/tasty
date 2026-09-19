@@ -1088,7 +1088,11 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 360 is not, so the test-only side grows by one while the shipped side does
         // not move. Measured by shifting that literal off the scale: the pair returned
         // to 220 and came back to 221 when it was put back.
-        (176, 221),
+        // 176 -> 175: 갤러리의 remote 탭 스트립 미러(`tab_btn`)가 지워지고 그 자리가 공용
+        // view 호출로 바뀌면서, 그 미러가 들고 있던 `rect_filled(bar, 0.0, ..)` 의 0 이
+        // 함께 없어졌다. 공용 view 에도 같은 모양의 0 이 있지만 그것은 전부터 세고 있던
+        // 자리다 — 사본이 하나 줄어든 것이지 안 보게 된 것이 아니다.
+        (175, 221),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );

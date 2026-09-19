@@ -17,12 +17,12 @@
 
 | 디자인 jsx 컴포넌트 | tasty 함수 | 갤러리 항목 |
 |---|---|---|
-| `RemoteTool`(container) | `draw_remote_tool_popup` | ✗ 미등록 (사유 아래) |
-| `TabBtn`(내부, 3탭) | `draw_tab_bar` | `components/remote.rs` `tab_bar` (specimen 미러) |
+| `RemoteTool`(container) | `draw_remote_tool_popup` | `components/remote.rs` `remote` spec (프레임 + 3탭 + add-bar + 목록). 셸은 specimen 미러, **안의 탭 스트립과 로컬 ssh 섹션은 공용 view 호출** |
+| `TabBtn`(내부, 3탭) | `draw_tab_bar` (wrapper) → `tasty_ui_widgets::draw_tab_strip` | `components/remote.rs` `tab_bar` 이 **같은 공용 view 를 호출**한다 |
 | `WarnBadge` | `warn_badge` | `components/remote.rs` `warn_pill` (specimen 미러 — 아이콘 없는 pill, gallery jsx 형) |
 | `ListShell` | `draw_profile_list` / `draw_attach_list` / `draw_passkey_list` (add-bar+scroll 합침) | — |
-| `ProtocolFilter`(add-bar 버튼) | `filter_button` (`draw_profile_list` 내, funnel+라벨) | ✗ 미등록 (remote_tool 예외 동일) |
-| `ProtocolFilter`(드롭다운/팝오버) | `draw_protocol_filter` (체크박스 + Apply-on-confirm) | ✗ 미등록 (remote_tool 예외 동일) |
+| `ProtocolFilter`(add-bar 버튼) | `tasty_ui_widgets::draw_protocol_filter_button` | `components/remote.rs` `remote-filter` spec — 닫힘 2 상태(가린 것 없음 / 1 개 가림) |
+| `ProtocolFilter`(드롭다운/팝오버) | `tasty_ui_widgets::draw_protocol_filter_body` (본체 wrapper `draw_protocol_filter` 가 memory·배치·닫기를 소유) | `components/remote.rs` `remote-filter` spec — 열림 1 상태 |
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
 | `ProfileForm` | `draw_profile_form` | — |
 | `LocalSshSection` | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다 |
@@ -58,16 +58,24 @@ overlays/remote_tool.jsx` 가 소비)이 다른 모양을 정했다: 카드가 �
 그려진다. `letterSpacing: 0.06em` 은 egui 가 자간을 노출하지 않아 넣을 수 없다. 가로 `4px`
 들여쓰기는 `space-xs` 로 그대로 넣었다(그리드 안이고 "한 tier 아래" 를 말하는 성분이다).
 
-**갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
-CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::
-load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Theme)` 뿐이라
-직접 호출 불가. view-only props 분리(model-view-split) 가 선행돼야 등록 가능. → **후속 과제.**
-그 전까지 검증은 본체 `debug.host_popup.open remote_tool` + `ui.screenshot` 로 한다.
+**컨테이너와 필터는 model-view split 뒤에 등록됐다.** `draw_remote_tool_popup` 자체는 여전히
+`(ui, &mut AppState, &mut CoreState)` 라 갤러리 `Spec.draw`(`(ui, &Theme)`)가 부를 수 없다 —
+그래서 등록된 것은 **그 popup 이 부르는 view 들**이다. 상태·파일 IO(`RemoteProfiles::load()` /
+`Passkeys::load()`)·egui memory(`FILTER_MEMORY_ID` · `FILTER_POPUP_ID`)·배치는 본체 wrapper 가
+그대로 들고, 그 안의 그리기만 `crates/tasty-ui-widgets/src/remote_tool.rs` 로 내려가 props 를
+받는다. 갤러리가 같은 함수를 부르므로 두 사본이 갈릴 자리가 없다(변이로 확인한다 — 공용 view 를
+한 줄 고치면 specimen 이 따라 바뀐다).
 
-프로토콜 필터(`filter_button` / `draw_protocol_filter`)도 같은 예외에 포함된다 — `draw_profile_list`
-하위에서 `egui::Context` memory(`read_filter`/`write_filter`, `FILTER_MEMORY_ID`)와 popup
-상태(`FILTER_POPUP_ID`)에 의존하므로 `(ui, &Theme)` 시그니처로 분리 불가. 컨테이너가 등록 가능해질
-때 함께 등록한다. 검증 경로 동일(`debug.host_popup.open remote_tool` + `ui.screenshot`).
+필터 specimen 은 **열림 상태를 그대로 세워 보인다.** 본체는 `popup_above_or_below_widget` 로
+버튼 아래에 띄우지만 specimen 이 보이려는 것은 열림 전이가 아니라 두 표면의 생김새다. 그 대신
+specimen 은 목록 높이를 먼저 잡아 둔다 — 공용 view 의 `ScrollArea` 는 **남은 높이**가 상한보다
+작으면 그만큼 자르는데, 본체는 popup Area 가 높이를 넉넉히 주는 반면 카드 안에서는 남은 높이가
+0 에 가깝다. 그렇게 하지 않으면 같은 함수가 specimen 에서만 마지막 행을 자른다(실측).
+
+**드롭다운 폭은 디자인과 다르다 — 216 vs 236.** 확정 시안(`RemoteFrame` 의 filter 블록)은
+`width: 236` 이고 본체 `FILTER_DROPDOWN_MIN_WIDTH` 는 216 이다. 216 은 이 결정들보다 앞서
+정해진 값이고 2026-09-17 결정(R1·R2·R3)이 다루지 않았다 — 어느 쪽으로 맞출지는 디자인이 정한다.
+그동안 갤러리는 본체 상수를 **그 자리에서 읽어** 두 쪽이 갈리지 않게만 한다.
 
 ## remote_attach — RA02 "Add remote workspace" (Overlays)
 
