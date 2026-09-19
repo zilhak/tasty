@@ -29,7 +29,7 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 ### 우측 액션 (clickable)
 
 - **팔레트 칩** (`<단축키> palette`) → 명령 팔레트 토글. 단축키 문자열은 `KeybindingSettings`(`toggle_command_palette`) 연동.
-- **테마 토글** (점 + 테마명) → latte ↔ mocha 전환(그 외 테마에서 누르면 latte). 점 색은 light=yellow / dark=mauve.
+- **테마 토글** (글리프 + 테마명) → latte ↔ mocha 전환(그 외 테마에서 누르면 latte). 현재 테마 종류는 색이 아니라 글리프가 든다 — light 는 해 모양, dark 는 테마 글리프이고 색은 두 쪽 다 물러난 chrome 잉크(`statusbar-theme-glyph`)다.
 
 ## 인터페이스
 
@@ -47,14 +47,14 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 - Given focus surface 가 git repo 안 터미널 Then 브랜치 점+이름 / surfaceId / 셸·cols×rows 가 표시된다.
 - Given repo 아님 Then 브랜치 클러스터가 숨는다.
 - Given 팔레트 칩 클릭 Then 명령 팔레트가 토글된다.
-- Given 테마 토글 클릭 Then latte ↔ mocha 가 전환되고 점 색이 바뀐다.
+- Given 테마 토글 클릭 Then latte ↔ mocha 가 전환되고 글리프가 해 ↔ 테마로 바뀐다.
 - Given 팔레트 단축키 설정 변경 Then 칩의 단축키 표시가 따라간다.
 
 > GUI 위젯이라 시각은 스크린샷. 표시 값은 `tasty list surfaces` 등 도메인 조회와 대조, 액션 결과(팔레트/테마)는 해당 기능으로 확인.
 
 ## 구현
 
-- view(공용 crate): `crates/tasty-ui-widgets/src/status_bar.rs` `draw_status_bar_view(ui, &Theme, width, &StatusBarData) -> StatusBarDrawResult`. 셀 프리미티브 4종(text / dot+text / button / dot+button)은 이 모듈 private. 계약 테스트 `crates/tasty-ui-widgets/tests/status_bar_view.rs`.
+- view(공용 crate): `crates/tasty-ui-widgets/src/status_bar.rs` `draw_status_bar_view(ui, &Theme, width, &StatusBarData) -> StatusBarDrawResult`. 셀 프리미티브 4종(text / dot+text / button / glyph+button)은 이 모듈 private. 계약 테스트 `crates/tasty-ui-widgets/tests/status_bar_view.rs`.
 - wrapper(본체): `src/adapters/ui/status_bar.rs` `draw_status_bar`(Area 생성 + focus surface read → 데이터 추출 + i18n 라벨 주입, 액션 적용: 팔레트 intent / 테마 settings), `STATUS_BAR_AREA_ID`/`status_bar_layer_id`(z-order 배선의 단일 진실원), `status_bar_bottom_inset`(= `status_bar_height` 토큰).
 - 브랜치 캐시: `src/core/state/branch.rs`(`git_branch` 상위 탐색 + worktree `gitdir:` 추적, `refresh_status_bar_branch`/`status_bar_branch`). 갱신 배선은 `src/app/busy.rs` 의 1Hz `poll_busy_states`(focus surface 만, 변화 시 `mark_dirty`).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/status_bar.rs`(Layouts → Status bar) — 위 view 를 그대로 호출.

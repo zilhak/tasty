@@ -93,7 +93,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("height", "status-bar-height (24)"),
             ("cell padding", "0 10px · gap 6"),
-            ("dot", "7×7"),
+            ("branch dot", "statusbar-dot-size (6)"),
+            ("theme glyph", "sun / theme · icon-size-xs (12)"),
             ("border-top", "border-width separator"),
             ("font", "mono font-size-caption"),
         ],
@@ -115,9 +116,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.text_muted()),
             ),
             TokenChip::new(
-                "accent-agent",
-                "dark theme dot",
-                egui::Color32::from(theme.accent_agent()),
+                "statusbar-theme-glyph",
+                "theme glyph",
+                egui::Color32::from(theme.statusbar_theme_glyph()),
             ),
         ],
     );

@@ -1,4 +1,4 @@
-<!-- source-hash: 7d6a53485a98 -->
+<!-- source-hash: 0de74a9ec627 -->
 # A first look
 
 Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
@@ -79,7 +79,7 @@ The single line at the bottom of the work area. The left side shows information 
 - **Surface ID** — A number. This is the value you use to target this terminal with the `tasty` CLI ([tasty CLI](../agents/cli.md)).
 - **Shell · grid size** — The name of the foreground program and `columns×rows`.
 - **palette** chip — Click to open the command palette. The shortcut shown on the chip follows your settings.
-- **Theme dot** — Each click toggles between the light theme (latte) and the dark theme (mocha).
+- **Theme icon** — Each click toggles between the light theme (latte) and the dark theme (mocha). The icon shows which one you are on — a sun for the light theme.
 
 ## Shortcuts to know first
 

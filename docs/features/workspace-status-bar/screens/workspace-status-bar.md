@@ -20,16 +20,16 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **좌측 클러스터**(표시 전용): 브랜치 점(`accent_success`)+이름 · surfaceId · `<셸> · <cols>×<rows>`.
+- **좌측 클러스터**(표시 전용): 브랜치 점(`accent_success`, 지름 `statusbar-dot-size` 6)+이름 · surfaceId · `<셸> · <cols>×<rows>`.
   - `<셸>` 셀은 정확히는 해당 surface 의 **foreground 프로세스명**이다(셸 idle 시엔 셸 이름). Windows 에선 *가장 얕은 non-shell 자손*(사용자가 띄운 바깥쪽 앱, 예: `node`)을 표시한다 — 안쪽 단명 helper 가 아니라. 매 프레임 OS 조회가 아니라 1Hz busy-poll 캐시(`CoreState::foreground_name`)에서 읽으므로 표시는 최대 1초 지연될 수 있다. 판정·플랫폼별 메커니즘은 [busy-indicator](../../../design/policies/busy-indicator.md).
-- **우측 클러스터**(clickable): 팔레트 칩(`<단축키> palette`) · 테마 토글(점 + 테마명).
+- **우측 클러스터**(clickable): 팔레트 칩(`<단축키> palette`) · 테마 토글(글리프 + 테마명).
 - **상단 1px separator** + `bg_app` 배경.
 
 ## 상태별 시각
 
 - **repo / 비-repo** — 브랜치 클러스터 표시/숨김.
 - **terminal / 비-terminal** — 셸·그리드는 terminal 한정.
-- **테마 light / dark** — 토글 점 색(yellow / mauve).
+- **테마 light / dark** — 토글 글리프(해 / 테마). 색은 두 쪽이 같다.
 - **hover** — 우측 칩·토글 텍스트 색 전환.
 
 ## 시각 소스
