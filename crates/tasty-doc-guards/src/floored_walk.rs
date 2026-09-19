@@ -195,16 +195,18 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 113,
+        measured: 114,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "131f3d6eb + lane 작업 트리 — **lane 트리에서 잰 값이라 구조적으로 낮다.** \
-             그 base 의 추적 트리는 112 이고, 이 lane 이 \
-             `tasty-terminal/tests/erase_boundaries.rs` 하나를 더해 113 다. 이 값은 \
-             base 를 fec33cd10 에서 131f3d6eb 으로 rebase 한 뒤 다시 잰 것이다 — \
-             그 사이 main 에 들어온 9 커밋은 통합 타깃을 하나도 더하지 않았고 \
-             양쪽 추적 트리가 똑같이 112 다. 이전 \
-             회차: 1c6c5af8d + lane 작업 트리 112 — 그 base 의 추적 트리는 111 이고 \
+            "5ce79fada + 이 lane — **통합 트리에서 잰 값이다.** \
+             두 lane 의 공통 base(`131f3d6eb`)의 추적 트리가 112 이고, 거기에 \
+             **lane 둘이 각자 하나씩** 더해 \
+             114 다 — main 에 먼저 착지한 `tasty-terminal/tests/erase_boundaries.rs` 와 \
+             이 lane 의 `tasty-doc-guards/tests/\
+             site_vendor_tokens_track_the_app_export.rs`. **그 둘이 같은 base 에서 각자 \
+             113 을 적었다** — 더한 파일이 다른데 값이 같아, 둘 중 하나만 보면 어느 쪽도 \
+             틀리지 않았고 차는 이 트리에서만 드러났다. 이 회차가 그 형태의 실물이다. \
+             이전 회차: 1c6c5af8d + lane 작업 트리 112 — 그 base 의 추적 트리는 111 이고 \
              그 lane 이 `tasty-terminal/tests/region_autowrap.rs` 하나를 더했다. 같은 \
              회차의 다른 lane 이 통합 타깃을 더했으면 통합 트리에서는 더 크다 — \
              아래 f53234985 이력이 그 형태를 기록한 것이고, 최종 값은 병합하는 \
