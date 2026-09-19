@@ -21,6 +21,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tasty-dag-layout = { path = "../tasty-dag-layout" }
 tasty-design-tokens = { path = "../tasty-design-tokens" }
 tasty-egui-theme = { path = "../tasty-egui-theme" }
+# 번들 D2Coding — 갤러리의 Monospace 를 본체와 같은 서체로 맞추기 위해서만 쓴다.
+# 자간이 다르면 mono 로 재는 모든 specimen(경로 컷 · id 말줄임)이 본체와 다른 값을 보인다.
+tasty-font = { path = "../tasty-font" }
 tasty-icons = { path = "../tasty-icons", features = ["egui"] }
 # quick-switch specimen 라벨을 기본 keybinding 에서 파생시키기 위해서만 쓴다
 # (설정 파일은 읽지 않고 `*Settings::default()` 만 사용).

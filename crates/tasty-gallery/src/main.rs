@@ -16,6 +16,52 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes, WindowId};
 
+/// 갤러리의 egui 폰트 스택 — 본체(`src/gfx/gpu/fonts.rs::setup_egui_fonts`)와 같은
+/// 순서로 번들 D2Coding 을 `Monospace` 맨 앞에 놓고, 시스템 CJK 를 두 family 의
+/// 폴백으로 붙인다.
+///
+/// 서체를 맞추는 것이 갤러리의 일이다 — mono 자간이 다르면 문자 폭으로 재는 specimen
+/// (파일 핸들러 헤더 경로 컷 · 행 id 말줄임)이 본체와 **다른 자리에서** 잘린 그림을
+/// 보이고, 그 그림으로 정합을 판정하면 틀린다. egui 기본 mono 는 11px 에서 6.71875px/자,
+/// D2Coding 은 5.5px/자다.
+///
+/// 언어팩 폰트는 붙이지 않는다 — 갤러리는 설정을 읽지 않는다.
+fn install_gallery_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "d2coding".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            tasty_font::D2CODING_REGULAR_TTF,
+        )),
+    );
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "d2coding".to_owned());
+
+    if let Some(cjk) = tasty_egui_theme::load_system_cjk_font() {
+        fonts.font_data.insert(
+            "system_cjk".to_owned(),
+            Arc::new(egui::FontData::from_owned(cjk)),
+        );
+        for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(fam)
+                .or_default()
+                .push("system_cjk".to_owned());
+        }
+    } else {
+        tracing::warn!(
+            "no system CJK font found; Korean/Japanese/Chinese labels will render as \u{25a1}"
+        );
+    }
+
+    ctx.set_fonts(fonts);
+}
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -255,7 +301,7 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
     egui_ctx.options_mut(|opts| {
         opts.zoom_with_keyboard = false;
     });
-    tasty_egui_theme::install_cjk_fallback(&egui_ctx);
+    install_gallery_fonts(&egui_ctx);
     // SVG icon (chevron) loaders.
     egui_extras::install_image_loaders(&egui_ctx);
 

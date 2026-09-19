@@ -539,7 +539,21 @@ fn fh_header(ui: &mut egui::Ui, theme: &Theme, state: FrameState, path: &str) {
             });
             // 긴 경로는 렌더 전에 **앞에서** 잘린다(파일명이 꼬리이고 그것이 식별한다).
             // 모델에서 잘라 LTR 로 그린다 — `direction: rtl` 은 런을 재배열해 반대쪽을 자른다.
-            kit::caption(ui, theme, path, true);
+            // 본체와 같이 한 줄 말줄임으로 그린다(`ui.label` 이 아니다) — 줄바꿈하면
+            // 잘못 계산된 문자 예산이 두 줄로 조용히 숨어 정합이 안 보인다.
+            let path_font = egui::FontId::monospace(theme.font_size_caption.value());
+            let path_h = ui.fonts(|f| f.row_height(&path_font));
+            let path_w = ui.available_width();
+            let (path_rect, _) =
+                ui.allocate_exact_size(egui::vec2(path_w, path_h), egui::Sense::hover());
+            paint_truncated(
+                ui,
+                path_rect.left_top(),
+                path,
+                path_font,
+                theme.text_muted().to_egui(),
+                path_w,
+            );
         },
     );
     kit::hsep(ui, theme);

@@ -5900,6 +5900,7 @@ dependencies = [
  "tasty-dag-layout",
  "tasty-design-tokens",
  "tasty-egui-theme",
+ "tasty-font",
  "tasty-icons",
  "tasty-settings",
  "tasty-themes",
