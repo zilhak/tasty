@@ -18,6 +18,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 |----|------|------|
 | A.1 | top-level 선언 영역에서 `mod` 가 `use` 뒤에 나오는지 | 선언 순서 |
 | A.2 | `cargo fmt --check` | rustfmt 강제 |
+| A.3 | 셸 자산 정적 검사 (`shellcheck`, warning 이상) | `scripts/check-shell-assets.sh` 를 훅과 CI 가 **같은 것으로** 부른다 — 모수만 다르다(훅은 staged 자산, CI 는 추적되는 자산 전부). 검사기가 없으면 통과가 아니라 **판정 불가로 멈춘다**(`scripts/dev-setup.sh` 가 받아 둔다). 문턱의 근거는 [ADR-0295](../adr/0295-shell-assets-are-judged-at-warning-and-above.md) |
 | C.6 | 주석 없는 `let _ =` | 왜 무시하는지 흔적 강제 (전수판은 `crates/tasty-doc-guards/tests/let_underscore_documented.rs` — 아래 참고) |
 | C.8 | UI 색상 하드코딩 | **비활성** — `clippy.toml` 의 `disallowed-methods` 가 같은 검사를 `#[allow]` 인식·path resolution 까지 포함해 대신한다(grep 판은 의도된 외부 입력 자리의 `#[allow]` 도 잡아 오탐이 많았다). 훅에는 즉시 통과하는 자리만 남아 있고 **실행 수에는 들어간다** — 통과 줄의 `검사 N/N` 이 이 자리를 센다. 실제 색 검사는 pre-push 의 `B.4` 가 한다 |
 | C.9 | `egui::Window::` 직접 사용 | PopupManager 강제 ([popup-implementation](popup-implementation.md)) |
