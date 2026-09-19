@@ -263,21 +263,41 @@ fn el2_does_not_move_the_cursor() {
 }
 
 #[test]
-fn el2_at_a_parked_cursor_lands_on_the_last_column() {
-    let mut t = at_column("ABCDEFGHIJ", COLS);
+fn el2_at_a_parked_cursor_keeps_the_pending_wrap() {
+    // 걸친 자리(`cx == COLS`)는 `Position::Absolute` 로 못 가리키므로, 거기로 돌아가는
+    // 길은 마지막 열에 한 칸을 찍는 것뿐이다. 그 칸의 pen 이 나머지와 달라지는 것이
+    // 한때 이 갈래를 막았는데, 소거 pen 이 하나로 정해진 뒤로는 그 칸도 같은 pen 이라
+    // 막을 이유가 없다(`erase_pen.rs` 가 그 동일성을 따로 잰다).
+    let mut t = term();
+    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ\x1b[1;1H");
+    t.feed_bytes(b"ABCDEFGHIJ");
+    assert_eq!(
+        t.cursor_position(),
+        (COLS, 0),
+        "준비 실패: 커서가 걸쳐야 한다"
+    );
+
     t.feed_bytes(b"\x1b[2K");
     assert_eq!(&t.screen_row(0, true), "");
-    // 걸친 자리(`cx == COLS`)는 `Position::Absolute` 로 못 가리키고, 다시 걸치게 할
-    // 글자를 찍으면 그 칸만 pen 이 달라진다. 그래서 EL2 는 마지막 열까지만 되돌리고
-    // 대기 중이던 줄바꿈은 풀린다 — 0 열로 끌려가던 것보다 가깝지만 완전하지는 않다.
-    assert_eq!(t.cursor_position(), (COLS - 1, 0));
-    t.feed_bytes(b"Z");
-    assert_eq!(&t.screen_row(0, true), "         Z");
     assert_eq!(
         &t.screen_row(1, true),
-        "",
-        "대기 중이던 줄바꿈은 풀렸으므로 다음 행으로 넘어가지 않는다"
+        "QRSTUVWXYZ",
+        "소거가 한 칸도 다음 행으로 넘기지 않았다"
     );
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
+}
+
+#[test]
+fn el2_at_a_parked_cursor_keeps_the_pending_wrap_for_the_next_glyph() {
+    let mut t = at_column("ABCDEFGHIJ", COLS);
+    t.feed_bytes(b"\x1b[2K");
+    t.feed_bytes(b"Z");
+    assert_eq!(
+        (t.screen_row(0, true), t.screen_row(1, true)),
+        (String::new(), "Z".to_string()),
+        "대기 중이던 줄바꿈이 다음 글자에서 일어난다 — 마지막 칸을 덮어쓰지 않는다"
+    );
+    assert_eq!(t.cursor_position(), (1, 1));
 }
 
 #[test]
@@ -300,14 +320,17 @@ fn ed2_does_not_move_the_cursor() {
 }
 
 #[test]
-fn ed2_at_a_parked_cursor_lands_on_the_last_column() {
+fn ed2_at_a_parked_cursor_keeps_the_pending_wrap() {
     let mut t = at_column("ABCDEFGHIJ", COLS);
     t.feed_bytes(b"\x1b[2J");
     assert_eq!(&t.screen_row(0, true), "");
-    assert_eq!(t.cursor_position(), (COLS - 1, 0));
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
     t.feed_bytes(b"Z");
-    assert_eq!(&t.screen_row(0, true), "         Z");
-    assert_eq!(&t.screen_row(1, true), "");
+    assert_eq!(
+        (t.screen_row(0, true), t.screen_row(1, true)),
+        (String::new(), "Z".to_string()),
+        "대기 중이던 줄바꿈이 다음 글자에서 일어난다"
+    );
 }
 
 // ── 대체 화면 ────────────────────────────────────────────────────────────────
@@ -338,41 +361,74 @@ fn el1_at_a_parked_cursor_does_not_shift_the_alternate_screen() {
     assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
 }
 
-// ── EL0 (`CSI 0K`) · ED0 (`CSI 0J`) — 걸친 커서에서 지우다 만다 (기록) ─────────
+// ── EL0 (`CSI 0K`) · ED0 (`CSI 0J`) — 걸친 커서가 올라앉은 칸 ────────────────
 //
-// 아래 둘은 **현재 동작을 값으로 못박는 기록 시험**이다. 위 표(문서의 "소거 명령과 걸친
-// 커서")가 이 둘을 "미해결" 이라는 이름으로 세는데, 그 이름만으로는 아무도 안 운다 —
-// 누가 고쳐도, 더 나쁘게 만들어도 초록이다. 그래서 `region_autowrap.rs` 가 쓴 관례를
-// 그대로 쓴다: **이름에 현재 상태를 적고**, 고쳐지면 시험이 깨져 이름을 뒤집게 한다.
+// 이 둘의 범위는 **커서 칸부터** 행/화면 끝까지다. 걸친 커서가 올라앉은 칸은 마지막
+// 열이므로 지울 것이 정확히 한 칸 남는다 — 오래 한 칸도 안 지워졌다.
 //
-// 기계적 원인은 하나다. termwiz 의 `clear_eol` · `clear_eos` 가 지울 범위를
+// 기계적 원인은 하나였다. termwiz 의 `clear_eol` · `clear_eos` 가 지울 범위를
 // `lines[ypos].fill_range(xpos..width)` 로 정하는데, 걸친 커서는 `xpos == cols` 라 그
-// 구간이 **빈 구간**이 된다. 고치는 길은 그 한 칸을 손으로 찍는 것뿐이고, 그러면 그
-// 칸만 pen 이 달라진다 — 그래서 소거가 어떤 pen 으로 지우는가를 먼저 정해야 닿는다.
+// 구간이 **빈 구간**이 된다. 그래서 그 한 칸은 손으로 찍는 수밖에 없고, 찍는 칸의
+// pen 이 나머지와 같아야 하므로 소거 pen 을 먼저 정해야 닿았다(`erase_pen.rs`).
+//
+// **독립 구현과 갈리는 자리다.** tmux 3.4 는 같은 `cx == cols` 인코딩을 쓰고 같은
+// 이유로 이 한 칸을 안 지운다(직접 측정). 규격 문언과 이 구현이 이미 EL1 · ED1 에서
+// 지키는 "걸친 커서는 마지막 열로 친다" 를 따라 지우는 쪽으로 정했다 —
+// `docs/features/terminal/index.md` 의 표가 그 갈림을 센다.
 
 #[test]
-fn el0_at_a_parked_cursor_erases_nothing_known_gap() {
-    let mut t = at_column("ABCDEFGHIJ", COLS);
+fn el0_at_a_parked_cursor_erases_the_cell_it_sits_on() {
+    // 다음 행에 표식을 깔아 둔다 — 마지막 칸을 찍는 과정에서 한 칸이 넘어가면 그
+    // 표식의 첫 글자가 지워지므로 **넘어간 칸을 직접 본다**(빈 행은 공백 한 칸을
+    // 받아도 `screen_row` 의 우측 트림 때문에 여전히 빈 문자열이다).
+    let mut t = term();
+    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ\x1b[1;1H");
+    t.feed_bytes(b"ABCDEFGHIJ");
+    assert_eq!(
+        t.cursor_position(),
+        (COLS, 0),
+        "준비 실패: 커서가 걸쳐야 한다"
+    );
+
     t.feed_bytes(b"\x1b[0K");
+
     assert_eq!(
         &t.screen_row(0, true),
-        "ABCDEFGHIJ",
-        "알려진 결함: 커서가 올라앉은 마지막 칸이 범위에 안 들어 한 칸도 안 지워진다 \
-         (규격대로면 \"ABCDEFGHI\")"
+        "ABCDEFGHI",
+        "커서가 올라앉은 마지막 칸 하나가 지워진다"
     );
-    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태 자체는 보존된다");
+    assert_eq!(
+        &t.screen_row(1, true),
+        "QRSTUVWXYZ",
+        "한 칸도 다음 행으로 넘어가지 않는다"
+    );
+    assert_eq!(t.scrollback_len(), 0, "소거가 화면을 스크롤하지 않는다");
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
 
-    // 대조군 — 걸치지 않은 마지막 열에서는 그 칸이 제대로 지워진다. 원인이 "EL0 이
-    // 아무것도 안 지운다" 가 아니라 **걸침** 임을 가르는 장치다.
+    // 대조군 — 걸치지 않은 마지막 열에서도 그 칸이 지워진다. 걸침 갈래가 다른 경로를
+    // 타지만 **결과는 같아야** 한다는 것을 가르는 장치다.
     let mut control = at_column("ABCDEFGHIJ", COLS - 1);
     control.feed_bytes(b"\x1b[0K");
     assert_eq!(&control.screen_row(0, true), "ABCDEFGHI");
 }
 
 #[test]
-fn ed0_at_a_parked_cursor_spares_the_cursor_row_known_gap() {
+fn el0_at_a_parked_cursor_keeps_the_pending_wrap() {
+    let mut t = at_column("ABCDEFGHIJ", COLS);
+    t.feed_bytes(b"\x1b[0K");
+    t.feed_bytes(b"Z");
+    assert_eq!(
+        (t.screen_row(0, true), t.screen_row(1, true)),
+        ("ABCDEFGHI".to_string(), "Z".to_string()),
+        "대기 중이던 줄바꿈이 다음 글자에서 일어난다 — 마지막 칸을 덮어쓰지 않는다"
+    );
+    assert_eq!(t.cursor_position(), (1, 1));
+}
+
+#[test]
+fn ed0_at_a_parked_cursor_erases_that_cell_and_every_row_below() {
     let mut t = term();
-    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ\x1b[1;1H");
+    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ\x1b[3;1HLLLLL\x1b[1;1H");
     t.feed_bytes(b"ABCDEFGHIJ");
     assert_eq!(
         t.cursor_position(),
@@ -384,13 +440,30 @@ fn ed0_at_a_parked_cursor_spares_the_cursor_row_known_gap() {
 
     assert_eq!(
         &t.screen_row(0, true),
-        "ABCDEFGHIJ",
-        "알려진 결함: 커서 행은 한 칸도 안 지워진다 (규격대로면 \"ABCDEFGHI\")"
+        "ABCDEFGHI",
+        "커서 행에서는 커서가 올라앉은 마지막 칸만 지워진다"
     );
+    assert_eq!(&t.screen_row(1, true), "", "아래 행은 통째로 지워진다");
+    assert_eq!(&t.screen_row(2, true), "", "아래 행 전부다");
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
+}
+
+#[test]
+fn ed0_above_the_cursor_row_is_left_alone() {
+    // 커서 행 아래만 지운다 — 위 행이 함께 지워지면 ED0 이 ED2 가 된다. 걸침 갈래가
+    // 커서 행에 한 칸을 **찍는** 형태라, 그 찍기가 엉뚱한 행에 가지 않는지도 함께 본다.
+    let mut t = term();
+    t.feed_bytes(b"\x1b[1;1HAAAA\x1b[3;1HQRSTUVWXYZ\x1b[2;1HBBBBBBBBBB");
     assert_eq!(
-        &t.screen_row(1, true),
-        "",
-        "아래 행은 정상적으로 지워진다 — 빠지는 것은 커서 행의 마지막 한 칸뿐이다"
+        t.cursor_position(),
+        (COLS, 1),
+        "준비 실패: 커서가 걸쳐야 한다"
     );
-    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태 자체는 보존된다");
+
+    t.feed_bytes(b"\x1b[0J");
+
+    assert_eq!(&t.screen_row(0, true), "AAAA", "위 행은 안 건드린다");
+    assert_eq!(&t.screen_row(1, true), "BBBBBBBBB", "커서 칸 하나만");
+    assert_eq!(&t.screen_row(2, true), "", "아래 행은 지워진다");
+    assert_eq!(t.cursor_position(), (COLS, 1));
 }

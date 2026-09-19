@@ -29,24 +29,34 @@
 //! 커서가 스스로 다시 걸치게 하고, `Absolute(cx)` 복원을 내보내지 않는다. 복원을
 //! 내보내면 걸친 상태가 풀려 다음 글자가 줄바꿈 없이 마지막 칸을 덮어쓴다.
 //!
-//! 반대로 termwiz 의 지우기 primitive 로 지우는 갈래(EL2 · ED2)는 소거가 끝난 뒤
-//! 커서가 제자리에 없어 복원을 **내보내야** 한다. **그 까닭은 둘이 서로 다르다.**
-//! ED2 는 primitive 자신이 옮긴다 — `Surface::clear_screen` 이 채우기를 마치고
-//! `xpos = 0; ypos = 0` 을 한다. EL2 는 그렇지 않다 — `Surface::clear_eol` 은
-//! `lines[ypos].fill_range(xpos..width)` 만 하고 커서를 **안 건드린다**. EL2 에서
-//! 커서가 0 열로 가는 것은 **이 파일의 코드**가 옮긴 것이다: 그 primitive 가 커서
-//! 열부터 지우므로 행 전체를 지우려면 먼저 0 열로 가야 한다. (같은 `xpos` 의존이
-//! EL0 · ED0 의 범위 결함도 만든다 — 걸친 커서에서는 `xpos == cols` 라 그 범위가
-//! 빈 구간이 된다.)
+//! termwiz 의 지우기 primitive 로 지우는 갈래(EL0 · EL2 · ED0 · ED2)는 그 자리를
+//! 두 번 무는다. **범위** 쪽 — `Surface::clear_eol` 은 `lines[ypos].fill_range(xpos..width)`
+//! 라, 걸친 커서(`xpos == cols`)에서 그 구간이 **빈 구간**이 되어 EL0 · ED0 이 커서
+//! 행에서 한 칸도 안 지운다. **커서** 쪽 — 소거가 끝난 뒤 커서가 제자리에 없어
+//! 복원이 필요한데, **그 까닭은 둘이 서로 다르다**: ED2 는 primitive 자신이 옮긴다
+//! (`Surface::clear_screen` 이 채우기를 마치고 `xpos = 0; ypos = 0` 을 한다).
+//! EL2 는 그렇지 않다 — `clear_eol` 은 커서를 **안 건드리고**, 0 열로 가는 것은
+//! **이 파일의 코드**다(그 primitive 가 커서 열부터 지우므로 행 전체를 지우려면
+//! 먼저 0 열로 가야 한다).
 //!
-//! 이 두 갈래는 다시 걸치게 할 글자를 찍을 수 없어(찍으면 그 칸만 pen 이 달라진다)
-//! 걸친 커서가 마지막 열로 내려앉고 대기 중이던 줄바꿈은 풀린다 — 0 열 · 홈으로
-//! 끌려가는 것보다는 가깝지만 완전한 보존은 아니다.
+//! 두 물음의 답이 같다 — **마지막 열에 한 칸을 찍는다.** 그러면 그 칸이 소거되고
+//! 커서가 스스로 다시 걸친다. 한때 이 길을 막은 것은 그 한 칸의 pen 이 나머지와
+//! 달라진다는 것이었는데, 소거 pen 이 하나로 정해진 뒤로는 그 칸도 같은 pen 이다
+//! ([`park_on_erased_last_cell`] · `docs/adr/0292-erase-fills-with-the-current-background.md`).
+//! 그래서 걸친 상태는 **여섯 갈래 모두에서** 보존된다.
 //!
-//! 이 계약이 닿지 않는 갈래는 `docs/features/terminal/index.md` 의 "소거 명령과
-//! 걸친 커서" 표가 이름으로 센다.
+//! ## 소거가 남기는 pen
+//!
+//! 지운 칸은 **기본 속성 + 소거 시점의 배경색**을 갖고, 소거가 끝난 뒤 **pen 은 소거
+//! 전 그대로**다. 두 값은 따로 어긋날 수 있다 — termwiz 의 `clear_*` 는 칸을 채우면서
+//! 자기 `attributes` 까지 리셋하고 `Change::Text` 는 현재 pen 으로 찍으므로, 같은
+//! "소거" 를 두 수단으로 구현한 갈래들이 서로 다른 부수효과를 냈다. 그 갈림을 닫는 것이
+//! [`TerminalState::erase_attrs`] · [`TerminalState::erase_color`] ·
+//! [`TerminalState::restore_pen`] 셋이고, 여섯 갈래가 전부 그것을 쓴다.
+//!
+//! 갈래별 계약은 `docs/features/terminal/index.md` 의 "소거 명령과 걸친 커서" 표가 센다.
 
-use termwiz::cell::unicode_column_width;
+use termwiz::cell::{CellAttributes, unicode_column_width};
 use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{Edit, EraseInDisplay, EraseInLine};
 use termwiz::surface::{Change, Position};
@@ -73,12 +83,78 @@ fn restore_cursor_column(cx: usize, cy: usize, cols: usize) -> Option<Change> {
     })
 }
 
+/// 걸친 커서가 올라앉은 칸(마지막 열)을 소거 상태로 만들고, 커서가 **스스로 다시
+/// 걸치게** 하는 `Change` 들.
+///
+/// 걸친 자리는 `Position::Absolute` 로 못 가리키므로(`cols - 1` 로 잘린다) 그 자리에
+/// 닿는 길은 마지막 열까지 글자를 찍는 것 하나뿐이다. 한 칸을 찍으면 `xpos` 가
+/// 클램프 없이 `cols` 로 전진해 걸친 상태가 복원된다.
+///
+/// 찍는 칸의 pen 을 [`TerminalState::erase_attrs`] 로 명시하는 것이 이 헬퍼의 요점이다 —
+/// 그 한 칸만 배경이 달라지면 같은 소거 안에서 칸마다 배경이 갈린다. 되돌리는 것은
+/// 호출자가 끝에 붙이는 [`TerminalState::restore_pen`] 이다.
+fn park_on_erased_last_cell(pen: CellAttributes, cy: usize, cols: usize) -> Vec<Change> {
+    vec![
+        Change::CursorPosition {
+            x: Position::Absolute(cols.saturating_sub(1)),
+            y: Position::Absolute(cy),
+        },
+        Change::AllAttributes(pen),
+        Change::Text(" ".to_string()),
+    ]
+}
+
 impl TerminalState {
+    /// 소거가 칸에 남기는 pen — **기본 속성 + 소거 시점의 배경색**(back color erase).
+    ///
+    /// 배경색 하나만 옮긴다. 밑줄·역상 등 나머지 속성은 지워진 칸에 안 남는다 —
+    /// 그것이 `bce` 가 뜻하는 동작이고, 독립 구현(tmux 3.4)에서 실측으로 확인했다:
+    /// `CSI 4;41m` 을 켜고 `CSI 1K` 를 먹이면 지워진 칸은 빨강 배경만 갖고 밑줄이
+    /// 없다. 근거·대안은 `docs/adr/0292-erase-fills-with-the-current-background.md`.
+    fn erase_attrs(&self) -> CellAttributes {
+        CellAttributes::default()
+            .set_background(self.current_pen.background())
+            .clone()
+    }
+
+    /// 소거가 칸을 채울 배경색 — termwiz 지우기 primitive 의 인자.
+    ///
+    /// primitive 는 `CellAttributes::default().set_background(color)` 로 칸을 채우므로
+    /// 이 한 값이 [`Self::erase_attrs`] 와 같은 결과를 낸다.
+    fn erase_color(&self) -> ColorAttribute {
+        self.current_pen.background()
+    }
+
+    /// 소거가 끝난 뒤 pen 을 소거 전으로 되돌리는 `Change`.
+    ///
+    /// **소거 명령은 렌더링 속성을 바꾸지 않는다.** 그런데 termwiz `Surface` 의
+    /// `clear_*` 는 자기 `attributes` 를 리셋하고 `Change::Text` 는 현재 pen 으로 찍으므로,
+    /// 이 복원이 없으면 "소거 직후에 찍는 글자" 의 속성이 소거 방식에 따라 갈린다.
+    /// 그 축은 지운 칸의 배경과 **따로** 어긋날 수 있어 시험이 둘을 따로 잰다.
+    fn restore_pen(&self) -> Change {
+        Change::AllAttributes(self.current_pen.clone())
+    }
+
     pub(crate) fn map_edit(&mut self, edit: Edit) -> Vec<Change> {
+        // 소거 pen 은 **소거 시작 시점**의 것이다. 아래 갈래들이 내는 `Clear*` 는
+        // 적용될 때 `mirror_pen` 을 통해 `current_pen` 을 바꾸므로, 한 번 읽어 둔다.
+        let erase_color = self.erase_color();
+        let erase_attrs = self.erase_attrs();
+        let restore_pen = self.restore_pen();
         match edit {
             Edit::EraseInDisplay(mode) => match mode {
                 EraseInDisplay::EraseToEndOfDisplay => {
-                    vec![Change::ClearToEndOfScreen(ColorAttribute::Default)]
+                    let (cx, cy) = self.surface().cursor_position();
+                    let (cols, _rows) = self.surface().dimensions();
+                    // primitive 는 커서 행을 `xpos..width` 로 자르므로 걸친 커서
+                    // (`xpos == cols`)에서는 커서 행이 빈 구간이 된다 — 아래 행들은
+                    // 이 한 줄이 지우고, 커서가 올라앉은 마지막 칸만 따로 찍는다.
+                    let mut changes = vec![Change::ClearToEndOfScreen(erase_color)];
+                    if cx >= cols {
+                        changes.extend(park_on_erased_last_cell(erase_attrs, cy, cols));
+                    }
+                    changes.push(restore_pen);
+                    changes
                 }
                 EraseInDisplay::EraseToStartOfDisplay => {
                     let (cx, cy) = self.surface().cursor_position();
@@ -89,28 +165,38 @@ impl TerminalState {
                             x: Position::Absolute(0),
                             y: Position::Absolute(row),
                         });
-                        changes.push(Change::ClearToEndOfLine(ColorAttribute::Default));
+                        changes.push(Change::ClearToEndOfLine(erase_color));
                     }
                     changes.push(Change::CursorPosition {
                         x: Position::Absolute(0),
                         y: Position::Absolute(cy),
                     });
+                    // 위 행들을 지운 `Clear*` 가 pen 을 건드렸다 — 커서 행을 찍기 전에
+                    // 소거 pen 을 다시 세운다. 이것이 없으면 같은 명령이 **커서 행
+                    // 번호에 따라** 다른 배경으로 지운다(위에 행이 있으면 non-BCE).
+                    changes.push(Change::AllAttributes(erase_attrs));
                     changes.push(Change::Text(" ".repeat(erase_span_to_cursor(cx, cols))));
                     changes.extend(restore_cursor_column(cx, cy, cols));
+                    changes.push(restore_pen);
                     changes
                 }
                 EraseInDisplay::EraseDisplay => {
                     let (cx, cy) = self.surface().cursor_position();
-                    vec![
-                        Change::ClearScreen(ColorAttribute::Default),
-                        // `ClearScreen` 은 커서를 홈으로 보낸다 — ED 는 커서를 움직이지
-                        // 않으므로 되돌린다. `clear` 류가 보내는 `ESC [ H ESC [ 2J` 는
-                        // 먼저 홈으로 가므로 이 복원에 영향을 받지 않는다.
-                        Change::CursorPosition {
+                    let (cols, _rows) = self.surface().dimensions();
+                    let mut changes = vec![Change::ClearScreen(erase_color)];
+                    // `ClearScreen` 은 커서를 홈으로 보낸다 — ED 는 커서를 움직이지
+                    // 않으므로 되돌린다. `clear` 류가 보내는 `ESC [ H ESC [ 2J` 는
+                    // 먼저 홈으로 가므로 이 복원에 영향을 받지 않는다.
+                    if cx < cols {
+                        changes.push(Change::CursorPosition {
                             x: Position::Absolute(cx),
                             y: Position::Absolute(cy),
-                        },
-                    ]
+                        });
+                    } else {
+                        changes.extend(park_on_erased_last_cell(erase_attrs, cy, cols));
+                    }
+                    changes.push(restore_pen);
+                    changes
                 }
                 EraseInDisplay::EraseScrollback => {
                     // ED3: erase scrollback history only — the visible screen is
@@ -122,34 +208,55 @@ impl TerminalState {
             },
             Edit::EraseInLine(mode) => match mode {
                 EraseInLine::EraseToEndOfLine => {
-                    vec![Change::ClearToEndOfLine(ColorAttribute::Default)]
+                    let (cx, cy) = self.surface().cursor_position();
+                    let (cols, _rows) = self.surface().dimensions();
+                    // 걸친 커서에서 primitive 의 범위는 빈 구간이다(위 ED0 참조) —
+                    // 지울 것은 커서가 올라앉은 마지막 칸 하나뿐이라 그것만 찍는다.
+                    let mut changes = if cx >= cols {
+                        park_on_erased_last_cell(erase_attrs, cy, cols)
+                    } else {
+                        vec![Change::ClearToEndOfLine(erase_color)]
+                    };
+                    changes.push(restore_pen);
+                    changes
                 }
                 EraseInLine::EraseToStartOfLine => {
                     let (cx, cy) = self.surface().cursor_position();
                     let (cols, _rows) = self.surface().dimensions();
-                    let mut changes = vec![Change::CursorPosition {
-                        x: Position::Absolute(0),
-                        y: Position::Absolute(cy),
-                    }];
-                    changes.push(Change::Text(" ".repeat(erase_span_to_cursor(cx, cols))));
-                    changes.extend(restore_cursor_column(cx, cy, cols));
-                    changes
-                }
-                EraseInLine::EraseLine => {
-                    let (cx, cy) = self.surface().cursor_position();
-                    vec![
+                    let mut changes = vec![
                         Change::CursorPosition {
                             x: Position::Absolute(0),
                             y: Position::Absolute(cy),
                         },
-                        Change::ClearToEndOfLine(ColorAttribute::Default),
-                        // 0 열로 옮긴 것은 지우기 위한 것이므로 되돌린다 — ED/EL 은
-                        // 커서를 움직이지 않는다.
+                        Change::AllAttributes(erase_attrs),
+                        Change::Text(" ".repeat(erase_span_to_cursor(cx, cols))),
+                    ];
+                    changes.extend(restore_cursor_column(cx, cy, cols));
+                    changes.push(restore_pen);
+                    changes
+                }
+                EraseInLine::EraseLine => {
+                    let (cx, cy) = self.surface().cursor_position();
+                    let (cols, _rows) = self.surface().dimensions();
+                    let mut changes = vec![
                         Change::CursorPosition {
-                            x: Position::Absolute(cx),
+                            x: Position::Absolute(0),
                             y: Position::Absolute(cy),
                         },
-                    ]
+                        Change::ClearToEndOfLine(erase_color),
+                    ];
+                    // 0 열로 옮긴 것은 지우기 위한 것이므로 되돌린다 — ED/EL 은
+                    // 커서를 움직이지 않는다.
+                    if cx < cols {
+                        changes.push(Change::CursorPosition {
+                            x: Position::Absolute(cx),
+                            y: Position::Absolute(cy),
+                        });
+                    } else {
+                        changes.extend(park_on_erased_last_cell(erase_attrs, cy, cols));
+                    }
+                    changes.push(restore_pen);
+                    changes
                 }
             },
             Edit::ScrollUp(n) => {
