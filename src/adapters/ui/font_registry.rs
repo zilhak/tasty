@@ -77,6 +77,26 @@ pub fn build_font_definitions(
 ) -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
 
+    // 번들 D2Coding 을 `Monospace` 맨 앞에 — 부팅이 설치한 그 자리다
+    // (`crate::gfx::gpu::GpuState::setup_egui_fonts`). 이 함수가 만드는 것은 그것을
+    // **덮어쓰는** `set_fonts` 의 인자라, 여기서 다시 안 넣으면 첫 프레임부터 UI 의
+    // mono 가 egui 기본 서체로 돌아간다. 조용한 이유는 글자가 멀쩡히 나오기 때문이고,
+    // 값으로 드러나는 자리는 mono 칸으로 재는 곳이다 — 파일 핸들러 헤더 경로 예산이
+    // 한 칸 6px 대신 7px 로 잡혀 들어가는 경로를 잘랐다.
+    // 두 자리가 같은 mono 를 준다는 것은 `the_two_font_stacks_agree_on_the_mono_cell`
+    // 이 잰다.
+    fonts.font_data.insert(
+        "d2coding".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::font::D2CODING_REGULAR_TTF,
+        )),
+    );
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "d2coding".to_owned());
+
     // CJK fallback shared across all families.
     let cjk_data = load_system_cjk_font_data();
     if let Some(bytes) = &cjk_data {
@@ -219,4 +239,70 @@ fn load_system_cjk_font_data() -> Option<Vec<u8>> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 헤더 경로 줄이 쓰는 글자 크기 — `Theme` 에서 읽는다(리터럴 금지).
+    fn caption_px() -> f32 {
+        tasty_themes::mocha_fallback().font_size_caption.value()
+    }
+
+    /// caption mono 한 칸이 **깔릴 때** 차지하는 폭. 단일 글리프 폭이 아니다 —
+    /// egui 가 advance 를 정수 픽셀로 반올림하므로 둘이 다르다.
+    fn mono_advance(fonts: egui::FontDefinitions) -> f32 {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(fonts);
+        // 폰트 상태는 첫 pass 에서 채워진다. 빈 pass 의 산출물은 볼 것이 없다.
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let font = egui::FontId::monospace(caption_px());
+        let w = |s: &str| {
+            ctx.fonts(|f| {
+                f.layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::WHITE)
+                    .rect
+                    .width()
+            })
+        };
+        w("00") - w("0")
+    }
+
+    /// 부팅이 설치하는 스택과 이 모듈이 **덮어쓰는** 스택이 같은 mono 를 준다.
+    ///
+    /// 두 자리가 따로 만들어지고 뒤쪽이 앞쪽을 `set_fonts` 로 지운다. 그래서 뒤쪽이
+    /// 번들 mono 를 빠뜨리면 부팅 직후 한 프레임만 D2Coding 이고 그 뒤로는 egui 기본
+    /// 서체가 된다 — 글자는 멀쩡히 나오므로 눈으로는 안 잡힌다. 실제로 그 상태였고,
+    /// 파일 핸들러 헤더가 한 칸 7px 로 재서 들어가는 경로를 잘랐다.
+    #[test]
+    fn the_two_font_stacks_agree_on_the_mono_cell() {
+        let boot = egui::Context::default();
+        crate::gfx::gpu::GpuState::setup_egui_fonts(&boot);
+        // 부팅 스택을 같은 방법으로 재려면 그 `FontDefinitions` 가 필요한데
+        // `setup_egui_fonts` 는 ctx 에 직접 얹는다. 그래서 여기서는 ctx 를 직접 잰다.
+        let _ = boot.run(egui::RawInput::default(), |_| {});
+        let font = egui::FontId::monospace(caption_px());
+        let w = |s: &str| {
+            boot.fonts(|f| {
+                f.layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::WHITE)
+                    .rect
+                    .width()
+            })
+        };
+        let boot_advance = w("00") - w("0");
+
+        let runtime_advance =
+            mono_advance(build_font_definitions(&AppearanceSettings::default(), None));
+
+        assert_eq!(
+            runtime_advance, boot_advance,
+            "부팅 스택과 런타임 스택의 mono 한 칸이 다르다 — 뒤쪽이 앞쪽을 덮어쓰므로 \
+             화면에 남는 것은 런타임 쪽이다"
+        );
+        // 값도 박는다 — 둘이 함께 기본 서체로 돌아가면 위 단정만으로는 안 죽는다.
+        assert_eq!(
+            tasty_type_geometry::length::LogicalPx(runtime_advance),
+            tasty_ui_widgets::tokens::FH_TARGET_MONO_ADVANCE
+        );
+    }
 }

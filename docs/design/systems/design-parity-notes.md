@@ -177,6 +177,23 @@ auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간�
   말줄임(seed 의 ws "serv…").
 - **근거**: port_scanner 2026-06-20.
 
+## egui UI 의 mono 한 칸은 6px 다 — 공칭 advance 가 아니라 **깔리는** advance
+
+- **증상**: 문자 수로 폭을 잡는 자리(파일 핸들러 헤더 경로)가 "들어간다" 고 판정한
+  문자열이 화면에서는 painter 에 잘렸다.
+- **원인 둘**. 하나는 측정 대상이다 — D2Coding 11px 의 공칭 advance 는 5.5556px
+  (`egui::Fonts::glyph_width`)지만 egui 는 레이아웃에서 글리프 advance 를 정수 픽셀로
+  반올림하므로 실제로 깔리는 폭은 **6px** 다. 글자 하나의 galley 폭(5.5625)으로 나누면
+  예산이 8% 넉넉하게 나온다. 다른 하나는 폰트 자체였다 — 부팅이 얹은 D2Coding 을
+  `font_registry::build_font_definitions` 가 첫 프레임에 `set_fonts` 로 덮어쓰면서
+  Monospace 가 egui 기본 서체(한 칸 7px)로 돌아가 있었다. 글자가 멀쩡히 나오므로
+  눈으로는 안 잡힌다.
+- **처방**: 재는 쪽은 **한 글자 늘 때의 증분**을 잰다(`"00"` 폭 − `"0"` 폭). 얹는 쪽은
+  두 자리(`GpuState::setup_egui_fonts` · `build_font_definitions`) 모두에 번들 mono 를
+  맨 앞에 넣고, 두 스택이 같은 한 칸을 준다는 것을 시험으로 묶는다.
+- **값**: 한 칸 6px · 헤더 라인 박스 390px · 파생 상한 65 자. 공칭으로 나누면 70 이
+  나오고 그 70 자는 깔리면 419.56px 라 라인 박스를 29.56px 넘긴다.
+
 ## port_scanner — 테이블 행 구분선이 divider 자동 측정을 교란
 
 - **증상**: wide-surf1 라인 랜드마크로 구역 divider 를 찾으면 테이블 행마다의 borderBottom
