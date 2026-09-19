@@ -805,12 +805,15 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
     // 열린 드롭다운은 **따로 세운다** — 닫힘 버튼들과 한 wrap 행에 넣으면 그 행의 높이가
     // 가장 큰 항목에서 정해지기 전에 내부 ScrollArea 가 남은 높이를 읽어 목록이 잘린다.
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 열림 — 드롭다운 본문. draft 는 **제외 집합**이라 `smb` 하나가 들어 있다.
+        // 열림 — 드롭다운 본문. draft 는 **제외 집합**이라 `snb` 하나가 들어 있다.
+        // 시안과 같은 멤버를 끈다 — 시안은 해제된 행과 `unknown` 배지가 **같은 행**에
+        // 겹쳐 있고, 그 겹침이 이 화면에서 볼 것 중 하나다(다른 행을 끄면 두 상태가
+        // 흩어져 specimen 이 시안과 다른 상태를 보인다).
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             kit::caption(ui, theme, "open · draft = hidden set", false);
             let mut draft: std::collections::HashSet<String> =
-                std::iter::once("smb".to_string()).collect();
+                std::iter::once("snb".to_string()).collect();
             let items: Vec<ProtocolFilterItem<'_>> = FILTER_PROTOCOLS
                 .iter()
                 .map(|(name, unknown)| ProtocolFilterItem {
