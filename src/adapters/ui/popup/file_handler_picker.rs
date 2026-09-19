@@ -19,10 +19,11 @@
 //! 둘째 줄이 출처 낱말 + 전체 id(앞자름)를 들어, id 는 행마다 정확히 한 번 나온다.
 
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::file_handler as fh_model;
 use tasty_ui_widgets::tokens::{
     FH_EDGE_PAD_X, FH_EMPTY_PAD_Y, FH_FRAME_WIDTH, FH_GAP_SM, FH_HEADER_PAD_BOTTOM,
-    FH_HEADER_PAD_TOP, FH_ID_ELIDE_MAX, FH_ID_ELIDE_TAIL, FH_ID_LINE_GAP, FH_LIST_FADE_HEIGHT,
-    FH_LIST_MAX_HEIGHT, FH_LIST_PAD, FH_RECENT_DIM_OPACITY, FH_ROW_GAP, FH_ROW_PAD_X, STRUCT_GAP_2,
+    FH_HEADER_PAD_TOP, FH_ID_LINE_GAP, FH_LIST_FADE_HEIGHT, FH_LIST_MAX_HEIGHT, FH_LIST_PAD,
+    FH_RECENT_DIM_OPACITY, FH_ROW_GAP, FH_ROW_PAD_X, STRUCT_GAP_2,
 };
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_width};
 
@@ -88,7 +89,8 @@ struct GroupHead<'a> {
 
 pub struct FileHandlerPickerProps<'a> {
     pub theme: &'a Theme,
-    /// 헤더 mono 경로 — 이미 **앞에서** 잘린 값이다([`elide_target_front`]).
+    /// 헤더 mono 경로 — 이미 **앞에서** 잘린 값이다
+    /// (`tasty_ui_widgets::file_handler::elide_target_front`).
     pub target_display: &'a str,
     /// 감지된 형식. `None` 이면 "format unknown" Tag.
     pub detector_label: Option<&'a str>,
@@ -149,45 +151,28 @@ pub fn id_local_segment(id: &str) -> &str {
     }
 }
 
-/// id 를 **앞에서** 자른다 — reverse-DNS id 의 꼬리가 핸들러를 가르고 벤더 접두는
-/// 반복된다. 모델에서 잘라 LTR 로 그린다(헤더 경로와 같은 규칙).
-pub fn elide_id_front(id: &str) -> String {
-    let n = id.chars().count();
-    if n <= FH_ID_ELIDE_MAX {
-        return id.to_string();
-    }
-    let tail: String = id.chars().skip(n - FH_ID_ELIDE_TAIL).collect();
-    format!("…{tail}")
+/// 헤더 경로가 이번 프레임에 쓸 수 있는 **문자 예산** — mono 글리프 한 칸을 실제로 재서
+/// 구한다. 디자인이 정한 것은 개수가 아니라 측정이고, 못 잴 때만 파생 상한으로 떨어진다
+/// (`tasty_ui_widgets::file_handler::target_budget_chars`).
+fn target_budget(ui: &egui::Ui, th: &Theme) -> usize {
+    let font = egui::FontId::monospace(th.font_size_caption.value());
+    let w = text_w(ui, "0", &font, egui::Color32::PLACEHOLDER);
+    fh_model::target_budget_chars(LogicalPx(w))
 }
 
-/// 헤더 경로의 앞자름 — 파일명이 꼬리이고 그것이 파일을 식별한다. 경로 구분자가 있으면
-/// 온전한 조각 경계에서 자르고(`…/a/b.tsx`), 없으면 문자 수로 자른다.
-pub fn elide_target_front(s: &str) -> String {
-    const MAX: usize = 48;
-    if s.chars().count() <= MAX {
-        return s.to_string();
-    }
-    let parts: Vec<&str> = s.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
-    for keep in (1..parts.len()).rev() {
-        let tail = parts[parts.len() - keep..].join("/");
-        if tail.chars().count() + 2 <= MAX {
-            return format!("…/{tail}");
-        }
-    }
-    elide_front(s, MAX)
-}
-
-fn elide_front(s: &str, max: usize) -> String {
-    let n = s.chars().count();
-    if n <= max {
-        return s.to_string();
-    }
-    let tail: String = s.chars().skip(n - (max - 1)).collect();
-    format!("…{tail}")
-}
-
-/// Recent 행 "언제" 조각의 구간. 디자인이 값으로 준 것은 `2h ago` 와 `yesterday` 둘이고,
-/// 나머지 구간(분 · 일)은 같은 꼴로 이은 것이다 — 도출이 아니라 이 구현의 선택이다.
+/// Recent 행 "언제" 조각의 구간 — 확정 디자인의 어휘 6 단계.
+///
+/// | 경과 | 표시 |
+/// |---|---|
+/// | < 60 s | `just now` |
+/// | < 60 min | `{n}m ago` |
+/// | < 24 h | `{n}h ago` |
+/// | 24–48 h | `yesterday` |
+/// | 2–7 d | `{n}d ago` (7 일에서 천장) |
+/// | ≥ 7 d | `YYYY-MM-DD` |
+///
+/// `n` 은 정수 내림이다. **`{n}w ago` · `{n}mo ago` 는 만들지 않는다** — 일주일이 넘으면
+/// 수가 핸들러를 고르는 데 도움이 안 되고, 절대 날짜는 10 자로 유계이며 번역이 필요 없다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhenBucket {
     JustNow,
@@ -195,11 +180,14 @@ pub enum WhenBucket {
     Hours(i64),
     Yesterday,
     Days(i64),
+    /// 일주일 이상 — 절대 날짜로 떨어진다.
+    Date,
 }
 
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
+const WEEK: i64 = 7 * DAY;
 
 /// 경과 초를 구간으로. 미래 시각(시계 되감김 등)은 `JustNow` 로 접는다.
 pub fn when_bucket(now_secs: i64, used_at: i64) -> WhenBucket {
@@ -212,8 +200,10 @@ pub fn when_bucket(now_secs: i64, used_at: i64) -> WhenBucket {
         WhenBucket::Hours(d / HOUR)
     } else if d < 2 * DAY {
         WhenBucket::Yesterday
-    } else {
+    } else if d < WEEK {
         WhenBucket::Days(d / DAY)
+    } else {
+        WhenBucket::Date
     }
 }
 
@@ -225,7 +215,26 @@ pub fn relative_when(now_secs: i64, used_at: i64) -> String {
         WhenBucket::Hours(n) => t_fmt("file_handler.picker.when_hours", &n.to_string()),
         WhenBucket::Yesterday => t("file_handler.picker.when_yesterday").to_string(),
         WhenBucket::Days(n) => t_fmt("file_handler.picker.when_days", &n.to_string()),
+        WhenBucket::Date => local_date(used_at),
     }
+}
+
+/// `≥ 7 d` 의 절대 날짜 — **번역 키가 없다.**
+///
+/// i18n 규칙("모든 UI 문자열은 `t()` 키")의 의식적인 예외다. 사유는 값의 성질이다:
+/// `YYYY-MM-DD` 는 숫자와 하이픈뿐이라 **로케일 중립**이고, ko/ja 에 옮길 자연어가
+/// 없으며, 복수형 규칙도 없다. 키를 만들면 세 파일이 같은 포맷 문자열을 세 번 들고
+/// 그중 하나가 갈릴 자리만 생긴다. 열 폭을 이 어휘로 예약한 것도 같은 이유다 —
+/// 10 자로 유계인 것이 이 갈래를 고른 근거의 절반이다.
+///
+/// 변환이 실패하면(표현 못 할 timestamp) 빈 칸이다. 열이 예약돼 있어 레이아웃은 안
+/// 움직이고, 틀린 날짜를 보여주는 것보다 아무것도 안 보여주는 쪽이 낫다.
+fn local_date(unix_secs: i64) -> String {
+    chrono::DateTime::from_timestamp(unix_secs, 0).map_or_else(String::new, |t| {
+        t.with_timezone(&chrono::Local)
+            .format("%Y-%m-%d")
+            .to_string()
+    })
 }
 
 // ── PopupDef sizer ─────────────────────────────────────────────────────────
@@ -402,7 +411,7 @@ fn header_band(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) {
         child.available_width(),
     );
 
-    // 경로는 렌더 전에 앞에서 잘렸다(`elide_target_front`) — `direction: rtl` 은 런을
+    // 경로는 렌더 전에 앞에서 잘렸다(`fh_model::elide_target_front`) — `direction: rtl` 은 런을
     // 재배열해 정보가 있는 꼬리를 자른다.
     paint_truncated(
         ui,
@@ -605,15 +614,19 @@ fn handler_row(
     ) + FH_ID_LINE_GAP.value();
     x += paint_truncated(ui, egui::pos2(x, y), "·", meta_font.clone(), sep, avail)
         + FH_ID_LINE_GAP.value();
-    let when_w = e.when.as_deref().map_or(0.0, |w| {
-        text_w(ui, "·", &meta_font, sep)
-            + text_w(ui, w, &meta_font, muted)
-            + FH_ID_LINE_GAP.value() * 2.0
-    });
+    // 언제 열은 **최대 어휘로 예약한다** — 실제 문자열 폭으로 재면 한 행이 버킷 경계를
+    // 넘을 때마다 옆의 id 가 reflow 된다. 예약해 두면 `just now` ↔ `2026-09-13` 이
+    // 오가도 id 폭이 안 움직인다. 좁힐 때 양보하는 쪽도 id 다(이미 앞에서 34 자로
+    // 말줄임한다) — 부분적으로 잘린 시각은 **다른 시각으로 읽히기** 때문이다.
+    let when_w = if e.when.is_some() {
+        text_w(ui, "·", &meta_font, sep) + th.fh_when_width().value() + FH_ID_LINE_GAP.value() * 2.0
+    } else {
+        0.0
+    };
     x += paint_truncated(
         ui,
         egui::pos2(x, y),
-        &elide_id_front(&e.id),
+        &fh_model::elide_id_front(&e.id),
         id_font,
         muted,
         (left + avail - x - when_w).max(0.0),
@@ -621,7 +634,14 @@ fn handler_row(
     if let Some(when) = e.when.as_deref() {
         x += paint_truncated(ui, egui::pos2(x, y), "·", meta_font.clone(), sep, when_w)
             + FH_ID_LINE_GAP.value();
-        paint_truncated(ui, egui::pos2(x, y), when, meta_font, muted, when_w);
+        paint_truncated(
+            ui,
+            egui::pos2(x, y),
+            when,
+            meta_font,
+            muted,
+            th.fh_when_width().value(),
+        );
     }
 
     if let Some(label) = default_tag {
@@ -933,7 +953,8 @@ pub fn draw_file_handler_picker(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let target_display = elide_target_front(&picker.target_display);
+    let target_display =
+        fh_model::elide_target_front(&picker.target_display, target_budget(ui, &th));
     let detector_str = picker.detector.as_ref().map(|d| d.as_str().to_string());
     let candidates: Vec<FileHandlerPickerEntryView> =
         picker.candidates.iter().map(|s| to_entry(s, now)).collect();
@@ -1172,31 +1193,6 @@ mod tests {
     }
 
     #[test]
-    fn the_id_is_elided_at_the_front_so_the_tail_survives() {
-        let short = "com.tasty.text/editor";
-        assert_eq!(elide_id_front(short), short);
-        let long = "net.example.enterprise.documents.attachments/inline-preview-handler";
-        let out = elide_id_front(long);
-        assert!(out.starts_with('…'), "{out}");
-        assert!(out.ends_with("handler"), "{out}");
-        assert_eq!(out.chars().count(), FH_ID_ELIDE_MAX);
-    }
-
-    #[test]
-    fn the_header_path_is_cut_at_the_front_on_a_segment_boundary() {
-        let short = "docs/architecture.md";
-        assert_eq!(elide_target_front(short), short);
-        let long = "/home/someone/work/very/deep/project/src/federation/screens.tsx";
-        let out = elide_target_front(long);
-        assert!(out.starts_with("…/"), "{out}");
-        assert!(out.ends_with("screens.tsx"), "{out}");
-        // 구분자가 없는 긴 대상(URL 조각 등)도 잘린다 — 조각 경계가 없으면 문자 수로.
-        let flat = "a".repeat(120);
-        let out = elide_target_front(&flat);
-        assert!(out.starts_with('…'), "{out}");
-    }
-
-    #[test]
     fn an_unknown_surface_kind_falls_back_to_the_file_glyph() {
         assert_eq!(kind_glyph(Some("markdown")).uri, icons::MARKDOWN.uri);
         assert_eq!(kind_glyph(Some("pager")).uri, icons::TERMINAL.uri);
@@ -1205,28 +1201,87 @@ mod tests {
         assert_eq!(kind_glyph(None).uri, icons::FILE.uri);
     }
 
+    /// 지금 시각 하나를 고정해 경과만 움직인다.
+    const NOW: i64 = 1_700_000_000;
+    fn at(elapsed: i64) -> WhenBucket {
+        when_bucket(NOW, NOW - elapsed)
+    }
+
     #[test]
     fn the_relative_time_buckets_split_where_the_design_named_them() {
-        assert_eq!(when_bucket(1_000_000, 1_000_000), WhenBucket::JustNow);
+        assert_eq!(at(0), WhenBucket::JustNow);
         // 시계가 뒤로 간 기록도 미래로 읽지 않는다.
-        assert_eq!(when_bucket(1_000_000, 1_000_500), WhenBucket::JustNow);
-        assert_eq!(
-            when_bucket(1_000_000, 1_000_000 - 90),
-            WhenBucket::Minutes(1)
-        );
+        assert_eq!(when_bucket(NOW, NOW + 500), WhenBucket::JustNow);
         // 디자인이 값으로 준 두 자리.
-        assert_eq!(
-            when_bucket(1_000_000, 1_000_000 - 2 * HOUR),
-            WhenBucket::Hours(2)
+        assert_eq!(at(2 * HOUR), WhenBucket::Hours(2));
+        assert_eq!(at(DAY + HOUR), WhenBucket::Yesterday);
+    }
+
+    /// 여섯 경계를 **양쪽에서** 집는다. 한쪽만 재면 구간을 넓히는 변이가 살아남는다.
+    #[test]
+    fn every_boundary_is_pinned_from_both_sides() {
+        assert_eq!(at(59), WhenBucket::JustNow);
+        assert_eq!(at(MINUTE), WhenBucket::Minutes(1));
+
+        assert_eq!(at(59 * MINUTE), WhenBucket::Minutes(59));
+        assert_eq!(at(HOUR), WhenBucket::Hours(1));
+
+        assert_eq!(at(23 * HOUR), WhenBucket::Hours(23));
+        assert_eq!(at(DAY), WhenBucket::Yesterday);
+
+        assert_eq!(at(47 * HOUR), WhenBucket::Yesterday);
+        assert_eq!(at(2 * DAY), WhenBucket::Days(2));
+
+        assert_eq!(at(6 * DAY), WhenBucket::Days(6));
+        assert_eq!(at(WEEK), WhenBucket::Date);
+    }
+
+    /// `n` 은 정수 **내림**이다 — 1분 59초는 아직 `1m` 이다.
+    #[test]
+    fn the_count_floors_rather_than_rounds() {
+        assert_eq!(at(MINUTE + 59), WhenBucket::Minutes(1));
+        assert_eq!(at(2 * MINUTE - 1), WhenBucket::Minutes(1));
+        assert_eq!(at(HOUR + 59 * MINUTE), WhenBucket::Hours(1));
+        assert_eq!(at(2 * DAY + 23 * HOUR), WhenBucket::Days(2));
+    }
+
+    /// `{n}w ago` 를 만들지 않는다는 결정이 코드에 남아 있는지 — 7 일 이상은 **전부**
+    /// 날짜 한 갈래다. 한 달이든 삼 년이든 어휘가 안 늘어난다.
+    #[test]
+    fn nothing_beyond_a_week_grows_a_new_word() {
+        for elapsed in [WEEK, 30 * DAY, 365 * DAY, 3 * 365 * DAY] {
+            assert_eq!(at(elapsed), WhenBucket::Date, "elapsed={elapsed}");
+        }
+    }
+
+    /// `≥ 7 d` 의 표시는 lang 키를 안 거치고 `YYYY-MM-DD` 열 자다.
+    ///
+    /// 로컬 시간대에 의존하므로 문자열을 통째로 못 박지 않는다(테스트가 도는 기계마다
+    /// 다르다). 대신 **형태**와 **UTC 날짜와의 거리**로 집는다 — 어느 시간대든 UTC
+    /// 날짜에서 하루 이상 벌어질 수 없으므로, 필드 순서를 바꾸는 변이는 이 창을 벗어난다.
+    #[test]
+    fn the_week_old_row_shows_a_bare_ten_character_date() {
+        let used_at = NOW - 30 * DAY;
+        let out = relative_when(NOW, used_at);
+        assert_eq!(out.chars().count(), 10, "{out}");
+        assert!(
+            out.chars().enumerate().all(|(i, c)| if i == 4 || i == 7 {
+                c == '-'
+            } else {
+                c.is_ascii_digit()
+            }),
+            "{out}"
         );
-        assert_eq!(
-            when_bucket(1_000_000, 1_000_000 - DAY - HOUR),
-            WhenBucket::Yesterday
-        );
-        assert_eq!(
-            when_bucket(1_000_000, 1_000_000 - 3 * DAY),
-            WhenBucket::Days(3)
-        );
+        let utc = chrono::DateTime::from_timestamp(used_at, 0).expect("representable");
+        let near: Vec<String> = [-1i64, 0, 1]
+            .iter()
+            .map(|d| {
+                (utc + chrono::Duration::days(*d))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            })
+            .collect();
+        assert!(near.contains(&out), "{out} not near {near:?}");
     }
 
     // ── sizer ──────────────────────────────────────────────────────────────
