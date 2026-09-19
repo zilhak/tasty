@@ -448,9 +448,10 @@ Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 �
 | 색 스와치(16, radius 2) | — | `theme_swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
 | footer Cancel/Save | `draw_settings_footer` | `footer` | ghost/primary, gap 8 |
 
-form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen const, 디자인
-`tokens/semantic.css` 미러). content 는 Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다
-(전 7탭 전수 구현 아님 — skeleton).
+form-control 폭: `field-width-{xs,color,md,range,lg}` = 90/110/160/180/200 (디자인
+`tokens/semantic.css` 미러). 다섯 중 **`range`(180)만 `Theme` 필드로 안 이어져 있다** —
+`dtcg.rs` 가 xs/color/md/lg 넷만 잇는다(집합을 셀 때 그 넷으로 세지 마라). content 는
+Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다 (전 7탭 전수 구현 아님 — skeleton).
 
 ### Components 재분류
 
@@ -745,7 +746,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
   `settings_row_min_height`(32). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
   가 제공(형제 탭 관례 — 재패딩 안 함).
 - **size Input 폭은 90 으로 닫혔다(2026-09-17 결정).** 88 은 field-width 토큰 세트
-  (90/110/160/200) 밖의 specimen 값이었고, 결정이 **90(`field_width_xs`) 을 승인하고 88 을
+  (90/110/160/180/200) 밖의 specimen 값이었고, 결정이 **90(`field_width_xs`) 을 승인하고 88 을
   폐기**했다. 본체도 갤러리도 그대로다(둘 다 `field_width_xs`) — 바뀐 것은 이 매핑의 판정이다:
   "토큰으로 근사한 2px 차" 가 아니라 **확정 값 그대로**다. 단, **시안 파일은 아직 88 이다**
   (`gallery/overlays-shared.jsx` 의 `style={{ width: 88 }}`, 2026-09-20 재독 실측) — 결정이

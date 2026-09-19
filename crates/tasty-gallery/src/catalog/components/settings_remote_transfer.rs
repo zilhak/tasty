@@ -26,7 +26,7 @@ const WIDTH: LogicalPx = LogicalPx(560.0);
 /// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
 const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
 /// size row Input 폭 — 2026-09-17 결정이 `field_width_xs`(90)를 **승인하고 88 을
-/// 폐기**했다. 88 은 field-width 토큰 세트(90/110/160/200) 밖의 specimen 값이었다.
+/// 폐기**했다. 88 은 field-width 토큰 세트(90/110/160/180/200) 밖의 specimen 값이었다.
 /// 근사가 아니라 확정 값이다(host 도 같은 토큰을 읽는다). 시안 파일은 아직 88 을
 /// 들고 있으니 그것만 보고 되돌리지 마라.
 fn size_input_width(theme: &Theme) -> f32 {
