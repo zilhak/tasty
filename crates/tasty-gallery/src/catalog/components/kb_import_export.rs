@@ -81,14 +81,6 @@ const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
 const CONFLICT_SUMMARY_FROM: usize = 2;
 /// 경고 블록이 접기 전에 보이는 줄 수.
 const NOTICE_FOLD_AT: usize = 3;
-/// 마이그레이션 카드 채움 — jsx `color-mix(tone 11%)`.
-const MIGRATE_CARD_FILL: f32 = 0.11;
-/// 마이그레이션 카드 테두리 — jsx `color-mix(tone 36%)`.
-const MIGRATE_CARD_BORDER: f32 = 0.36;
-/// 알림 블록(파싱 실패 · 내보내기 실패 · 번들 경고) 채움 — jsx `IeBlockG` `color-mix(tone 12%)`.
-const NOTICE_BLOCK_FILL: f32 = 0.12;
-/// 알림 블록 테두리 — jsx `IeBlockG` `color-mix(tone 35%)`.
-const NOTICE_BLOCK_BORDER: f32 = 0.35;
 
 // ── 데모 데이터 (jsx `IE_GROUPS` · `IE_MIGRATE` · `IE_DISCARDED` 미러) ─────────────
 

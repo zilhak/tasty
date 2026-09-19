@@ -12,10 +12,7 @@ use crate::adapters::ui::icons;
 use crate::i18n::{t, t_fmt, t_fmt2};
 
 use super::paint::glyph_at;
-use super::{
-    ExportFailReason, ExportFailure, Failure, GROUP_CHEVRON_GAP, NOTICE_BLOCK_BORDER,
-    NOTICE_BLOCK_FILL,
-};
+use super::{ExportFailReason, ExportFailure, Failure, GROUP_CHEVRON_GAP};
 
 /// 버린 plugin override 안내 — 정보(경고 아님): 잘못된 것도 할 일도 없다.
 pub(super) fn dropped_notice(ui: &mut egui::Ui, th: &Theme, text: &str) {
@@ -58,10 +55,10 @@ pub(super) fn notice_block(
 ) -> Option<usize> {
     let mut clicked = None;
     egui::Frame::new()
-        .fill(tone.gamma_multiply(NOTICE_BLOCK_FILL))
+        .fill(tone.gamma_multiply(th.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             th.border_width.value(),
-            tone.gamma_multiply(NOTICE_BLOCK_BORDER),
+            tone.gamma_multiply(th.tint_border_alpha()),
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_md))

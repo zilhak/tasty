@@ -19,8 +19,7 @@ use super::model::{MigrationRow, MigrationValue};
 use super::paint::{fixed_label, glyph_at};
 use super::view_model::{MigrationView, ViewModel};
 use super::{
-    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL,
-    MIGRATE_FROM_W, RECORD_SLOT_MIN_W, RECORDING_FIELD,
+    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, MIGRATE_FROM_W, RECORD_SLOT_MIN_W, RECORDING_FIELD,
 };
 
 /// jsx `IeMigrateCard` — 톤 틴트 카드(헤더 · 설명 · 행들).
@@ -41,10 +40,10 @@ pub(super) fn migrate_card(
         th.accent_warning().to_egui()
     };
     egui::Frame::new()
-        .fill(tone.gamma_multiply(MIGRATE_CARD_FILL))
+        .fill(tone.gamma_multiply(th.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             th.border_width.value(),
-            tone.gamma_multiply(MIGRATE_CARD_BORDER),
+            tone.gamma_multiply(th.tint_border_alpha()),
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_md))

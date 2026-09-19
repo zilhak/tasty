@@ -14,9 +14,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use super::notices::notices;
 use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
 use super::{
-    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_CARD_BORDER, MIGRATE_CARD_FILL,
-    MIGRATE_FROM_W, MIGRATE_LABEL_W, MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState,
-    RECORD_SLOT_MIN_W, SPECIMEN_W, STATE, State, Widget, detail_frame,
+    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_FROM_W, MIGRATE_LABEL_W,
+    MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState, RECORD_SLOT_MIN_W, SPECIMEN_W, STATE,
+    State, Widget, detail_frame,
 };
 
 // ── Spec 3: Option 마이그레이션 — 미완료 · 완료 · 충돌 · unbound · 불필요 · 실패 ─────────
@@ -218,10 +218,10 @@ pub(super) fn card(
     };
     let conflicts = rows.iter().filter(|r| r.conflict.is_some()).count();
     egui::Frame::new()
-        .fill(tone.gamma_multiply(MIGRATE_CARD_FILL))
+        .fill(tone.gamma_multiply(theme.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            tone.gamma_multiply(MIGRATE_CARD_BORDER),
+            tone.gamma_multiply(theme.tint_border_alpha()),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_md))

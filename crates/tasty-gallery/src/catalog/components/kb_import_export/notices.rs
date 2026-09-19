@@ -12,7 +12,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 use crate::catalog::icons::{self, MockGlyph};
 
 use super::paint::{glyph_at, intro, intro_secondary};
-use super::{GROUP_CHEVRON_GAP, IE_DISCARDED, IE_FILE, NOTICE_BLOCK_BORDER, NOTICE_BLOCK_FILL};
+use super::{GROUP_CHEVRON_GAP, IE_DISCARDED, IE_FILE};
 
 /// jsx `IeNotices` — 버린 plugin override 안내(정보, 경고 아님) · 마이그레이션 불필요 안내문 ·
 /// 파싱 실패 인라인 블록.
@@ -65,10 +65,10 @@ pub(super) fn notice_block(
 ) -> Option<usize> {
     let mut clicked = None;
     egui::Frame::new()
-        .fill(tone.gamma_multiply(NOTICE_BLOCK_FILL))
+        .fill(tone.gamma_multiply(theme.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            tone.gamma_multiply(NOTICE_BLOCK_BORDER),
+            tone.gamma_multiply(theme.tint_border_alpha()),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_md))

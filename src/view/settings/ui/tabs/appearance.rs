@@ -411,10 +411,10 @@ fn display_scale_card(
         ui.painter().rect_stroke(
             rect,
             radius,
-            // 비활성 카드 보더(값-동일: surface2). border-role 접근자 부재 → surface_active() 로 값 보존
+            // 비활성 카드 보더 — surface2 값의 border role `border-frame`(픽셀 불변).
             egui::Stroke::new(
                 th.border_width.value(),
-                egui::Color32::from(th.surface_active()),
+                egui::Color32::from(th.border_frame()),
             ),
             egui::StrokeKind::Inside,
         );

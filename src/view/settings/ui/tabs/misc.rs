@@ -628,12 +628,11 @@ fn draw_changed_badge(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Them
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
-    // 경고 배지의 채움/테두리 짝. 대응 토큰 없음 — 같은 idiom 이 네 곳에 서로
-    // 다른 값으로 있고, 어느 값으로 모을지는 디자인 판단이다.
-    const WARN_BADGE_FILL_OPACITY: f32 = 0.12;
+    // 채움은 `tint-fill-alpha`. 테두리 계수는 디자인이 "채움만" 으로 한정한
+    // 부분 사용이라(2026-09-17 P4) 이 자리 고유 값으로 남는다.
     const WARN_BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
-        .rect_filled(rect, radius, warn.gamma_multiply(WARN_BADGE_FILL_OPACITY));
+        .rect_filled(rect, radius, warn.gamma_multiply(th.tint_fill_alpha()));
     ui.painter().rect_stroke(
         rect,
         radius,
