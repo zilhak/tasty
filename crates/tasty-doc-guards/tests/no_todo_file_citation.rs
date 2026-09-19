@@ -971,8 +971,12 @@ fn p1_catches_numbered_todo_citation_only() {
     assert_eq!(find_p1("TODO. 40"), None);
     assert_eq!(find_p1("TODO #40"), None);
     assert_eq!(find_p1("TODO_40"), None);
+}
 
-    // 대소문자로 회피되지 않는다 — 모듈 머리말의 규율이 이 패턴에도 걸린다.
+/// 대소문자 축 — 모듈 머리말의 "구분자 개수·대소문자로 회피되지 않아야 한다" 가 이
+/// 패턴에도 걸린다. 넓힌 쪽이 할 일 표시와 식별자를 안 삼키는지 함께 고정한다.
+#[test]
+fn p1_is_not_evaded_by_case() {
     assert_eq!(
         find_p1(fx!("see todo", " 40")),
         Some(fx!("todo", " 40").into())
@@ -989,8 +993,12 @@ fn p1_catches_numbered_todo_citation_only() {
     assert_eq!(find_p1("// todo(권한모델): 도입 후 대체"), None);
     assert_eq!(find_p1("let todos = todo_marker_end(line, 4);"), None);
     assert_eq!(find_p1("todo_40"), None);
+}
 
-    // `/` 구분자 — 경로 표기로 쓴 번호 인용.
+/// `/` 구분자 축 — 티켓 번호는 경로 표기로도 인용된다. 낱말 사이의 `/` 와 가르는 것은
+/// **뒤따르는 숫자**이고, 그 음성 둘은 레포에 실재하는 형태다.
+#[test]
+fn p1_takes_the_slash_as_a_separator() {
     assert_eq!(
         find_p1(fx!("(todo", "/52 R2)")),
         Some(fx!("todo", "/52").into())
