@@ -211,6 +211,15 @@ find "$H" -mindepth 1                                # (가) 출력이 비어야
   기준선으로 삼고 있다. 완주로는 이 갈림이 안 보인다.
 - **(다) 동시성 불변** — 서로 다른 작업 트리에서 **동시에** 돌린 두 완주의 failed 수가
   서로, 그리고 단독과 같다. 실행 순서 고정(`-- --test-threads=1`)은 같은 축의 약한 형태다.
+  ★ **이 좌변은 공유 상태가 없어도 갈린다** — failed 수만 세면 **러너 굶김을 오염으로 읽는다.**
+  실측 2026-09-20(20 CPU · 부하 55): 두 완주를 `--test-threads=8` 로 겹치자 한쪽만 2 건
+  빨갰는데 **공유 홈 잔여물은 0** 이었고, 같은 기계에서 `--test-threads=3` 으로 낮추니 양쪽이
+  단독과 같은 `0 failed` 가 됐다. 빨간 2 건은 시간 단정이었고, 그 시험 자신의 대조군
+  ([`ControlProbe`](../adr/0181-a-latency-assertion-must-carry-a-control-that-load-moves-and-code-does-not.md))
+  이 "대조군도 기준선의 6.6 배로 부풀었다 — 러너가 굶은 것이라 코드에 대한 증거가 아니다" 를
+  실패문에 찍어 축을 갈라 줬다. 그러니 이 관측은 **(가) 와 짝으로만 읽는다**: 잔여물이 0 인데
+  failed 수가 갈리면 그것은 격리가 아니라 기계다. 대조군이 없는 단정이 갈렸으면 스레드 수를
+  낮춰 한 번 더 재고 나서 판정한다.
 
 ```bash
 TASTY_HOME=$(mktemp -d) cargo test --workspace --locked -- --test-threads=1
@@ -218,6 +227,13 @@ TASTY_HOME=$(mktemp -d) cargo test --workspace --locked -- --test-threads=1
 
 **격리가 정말 배선됐는지는 변이로 확인한다** — 주입을 한 줄 빼고 그 시험이 다시 실제 홈을
 읽는지 본다. 안 죽으면 배선이 안 된 것이다(절차는 [self-verification](self-verification.md)).
+
+실측 2026-09-20: `IsolatedHome` 의 override 를 세우고 내리는 두 줄을 빼고 빈 홈으로 본
+바이너리 스위트를 완주하자 그 홈에 `child-terminals.json` · `file-handler-recent.json` ·
+`plugins-logs/` · `zsh-integration/.zshenv` 가 나타났다(잔여물 0 → 5 자리). **그런데 완주는
+그대로 초록이었다** (`ok. 2616 passed; 0 failed`). 이 절 맨 앞의 "결과가 같은가로는 안 본다" 가
+그 값이다 — 격리가 통째로 풀려도 초록은 안 움직이므로, 변이를 죽이는 좌변은 통과 수가 아니라
+**(가) 의 잔여물 목록**이어야 한다.
 
 ## 6. feature 별 테스트 게이팅
 
