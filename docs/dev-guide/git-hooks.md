@@ -23,7 +23,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | C.11 | `println!`/`eprintln!` | `tracing::*` 강제 (예외: CLI 출력 — `crates/tasty-cli/*`, `src/boot/cli_routing.rs`) |
 | C.12 | `dbg!` | release leak 방지 |
 | M.1 | 2-parent merge 커밋 (branch 가 갈라지는 merge) | 갈래 커밋 차단. `pre-merge-commit` 은 **clean non-ff merge 만** 잡는다 — 충돌 merge 는 git 이 커밋을 만들지 않고 멈춘 뒤 resolve → `git commit` 으로 마무리되므로 이 훅을 탄다 |
-| P.1 | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 | `scripts/check-plugin-version-bump.sh` 를 훅과 CI 가 **같은 것으로** 부른다 — 둘이 갈리지 않게. 비교 기준은 `HEAD` 가 아니라 **`main` 과의 merge-base** 라 `--amend`·rebase 에 안 흔들린다 ([ADR-0137](../adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md)) |
+| P.1 | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 | `scripts/check-plugin-version-bump.sh` 를 훅과 CI 가 **같은 것으로** 부른다 — 둘이 갈리지 않게. 비교 기준은 `HEAD` 가 아니라 **`main` 과의 merge-base** 라 `--amend`·rebase 에 안 흔들린다 ([ADR-0137](../adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md)). 이 모수는 **발행을 묻지 않는다** — 그 물음은 pre-push `B.9` 가 원격 tip 을 모수로 답한다 |
 | T.1 | 커밋되지 않는 로컬 티켓·문서를 가리키는 인용 (P1~P7) | `cargo test -q -p tasty-doc-guards --test no_todo_file_citation` 을 그대로 부른다. **이 검사만 staged diff 가 아니라 레포 전체 작업 트리를 본다** — 가드의 좌변이 순회라 그렇다. 내가 안 건드린 파일이 범인일 수 있는 대신, staged 밖에 남은 죽은 인용도 같이 막힌다. pre-push `B.7` 과 겹치는 것은 의도다(커밋 대 push). 규칙 전문은 [ADR-0105](../adr/0105-no-nongit-path-refs-in-tracked-sources.md) |
 | W.1 | 사용자 표면 선언 파일(`crates/tasty-ipc/src/method_meta.rs` · `crates/tasty-cli/src/commands/` · `crates/tasty-plugin-*/tasty-plugin.toml`)이 staged 인데 `CHANGELOG.md` 는 아님 | CHANGELOG 누락 상기 — **경고만, 커밋은 통과** |
 | W.2 | 새로 추가된 파일을 **처음 보는 타깃** 안내 | 판정자가 다른 패키지에 있어 놓치는 일을 줄인다 — `cargo test -p <크레이트>` 는 루트 패키지의 통합 타깃을 안 돌리고 그 반대도 마찬가지다. "이 파일을 무엇이 판정하는가" 의 정확한 매핑은 순회 범위를 소스에서 읽어야 해 근사밖에 안 되므로, **새것의 종류**(경로 모양)로만 안내한다 — **경고만, 커밋은 통과** |
@@ -49,11 +49,23 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 
 | ID | 검사 |
 |----|------|
+| B.9 | plugin 의 **발행 판정** — 밀려는 ref 마다 `scripts/check-plugin-version-bump.sh --range <원격 tip> <로컬 tip>`. **pre-commit 의 P.1 과 같은 스크립트를 다른 모수로** 부른다: P.1 은 "내 커밋이 버전을 올렸나"(staged vs merge-base), B.9 는 **"발행된 값과 지금 내용이 짝이 맞나"**(원격 tip vs 로컬 tip). 그 모수는 git 이 훅의 stdin 으로 직접 준다 — push 순간이 곧 발행 순간이라 여기가 그것을 손으로 안 구해도 되는 유일한 자리다. 분할 착지(두 lane 이 서로 다른 base 에서 **같은 값**으로 올려 같은 버전 아래 두 산출물이 남는 것)를 여기서 잡는다 ([ADR-0192](../adr/0192-a-repo-wide-ratchet-is-judged-at-the-merge-tree-not-per-lane.md) · [ADR-0137](../adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md)) |
 | B.5 | `cargo check --workspace --all-targets` |
 | B.6 | `cargo check --no-default-features` (headless 빌드 — `gui` feature 없이 컴파일) |
 | B.4 | `cargo clippy --workspace --all-targets -- -D clippy::correctness` |
 | B.7 | `cargo test -p tasty-doc-guards` — 문서·매니페스트·인덱스 정합. `adr_index_parity`·`readme_badge_parity`·`ci_channel_claims_match_workflows` 등은 pre-commit 이 안 보므로 여기가 **로컬 조기 채널**이다(자동 채널은 `doc-guards.yml`) |
 | B.8 | `cargo check --workspace --release --locked` (B.5 와 `debug_assertions` 이 반대 — 소비자가 debug 쪽에만 있는 항목의 `dead_code`) |
+
+B.9 가 표에서 먼저인 것은 훅 안에서의 실행 순서이기도 하다 — 나머지 다섯은 컴파일이라 분 단위인데
+B.9 는 초 단위다. 발행 판정으로 빨개질 커밋을 컴파일 다섯 번 뒤에 알려 주는 것은 같은 답을 훨씬
+비싸게 주는 것이다.
+
+**B.9 는 모수를 못 정하면 통과시키지 않는다.** 원격 tip 이 로컬에 없는 객체면(얕은 clone · fetch
+안 함) 견줄 대상이 없으므로 실패하고 `git fetch` 를 찍는다. **견줄 발행 값이 원래부터 없는** 두
+경우 — 원격에 그 ref 가 없는 최초 생성 push, 그리고 삭제 push — 만 사유를 찍고 건너뛴다. 훅을 git
+이 아니라 사람이 직접 부르면 ref 목록 자체가 없으므로 건너뛰되, 손으로 재는 명령을 찍는다. 매
+실행이 **본 ref 수 · 판정한 수 · 건너뛴 수**를 찍는 것은 빈 모수를 훑은 초록과 실제로 판정한
+초록이 같은 줄로 보이지 않게 하려는 것이다([ADR-0183](../adr/0183-a-green-check-is-not-evidence-without-a-control.md)).
 
 clippy 의 `style`/`pedantic` 은 warning 으로만(error 승격 안 함 — false positive 노이즈 방지).
 

@@ -30,7 +30,7 @@
 | Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
-| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
+| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. **그 발행 모수는 push 전에도 한 번 재어진다** — pre-push `B.9` 가 git 이 stdin 으로 준 원격 tip 을 모수로 같은 스크립트를 부른다(아래 "로컬 훅이 앞당겨 주는 것"). 훅을 안 깐 체크아웃에서는 이 채널이 없고, 그때는 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동. ★ 이 잡은 **두 물음**에 답하고 트리거가 물음마다 다르다. ㉠ **우리 변경이 만드는 것**(새 의존의 license·ban, 새로 직접 의존이 된 크레이트의 advisory, 쓰이지 않게 된 ignore 항목)은 그 변경이 들어오는 push 에서 잡아야 하므로 `Cargo.lock`·`deny.toml` 로 좁힌 **main push** 가 본다 — **커밋 단위다.** ㉡ **바깥 세계가 만드는 것**(코드는 그대로인데 새 RUSTSEC 권고가 뜬 경우)은 push 로는 영영 안 잡히므로 주간 `schedule` 이 본다 — **주 단위다.** **주 단위여도 되는 이유**는 그 축의 입력이 우리 커밋이 아니라 바깥 세계라 우리 회차와 무관하게 바뀌기 때문이고, daily 는 러너 부하 대비 이득이 적다. ⇒ **㉠ 을 주 단위로 읽으면 안 된다**: 새 의존을 들이는 커밋은 그 push 에서 즉시 판정되고, 노출 창은 일주일이 아니다. (이 갈래 서술은 오래도록 워크플로 파일 머리에만 있었다 — 옮긴 것이 아니라 표에도 둔다. 표만 읽으면 "매주 월요일"이 먼저 눈에 들어와 ㉠ 까지 주 단위로 읽힌다.) | [실측] |
 | 사이트 빌드 | `npm ci && npm run build` (`site/`) | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
 
@@ -131,8 +131,16 @@ cargo build -p tasty-doc-guards --bin mask-source
 빨개질 수 있다.** 실측으로 그 형태가 났다(한 크레이트 변경이 세 번들 plugin 의 워크스페이스
 의존 폐포 안이라 산출물이 달라진 경우 —
 [ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)).
-누구의 잘못도 아니다. **그 판정은 병합하는 쪽이 `--range <직전 push> HEAD` 로 한다.**
+누구의 잘못도 아니다. **그 판정은 발행 모수로 한다** — `--range <직전 push> HEAD`.
 등급을 올려도 이 어긋남은 안 사라진다 — 등급의 축이 아니라 **모수의 축**이기 때문이다.
+
+★ **그 모수를 사람이 손으로 구하는 자리가 하나 줄었다(2026-09-20).** push 순간이 곧 발행
+순간이고, git 은 pre-push 훅에 `<local ref> <local sha> <remote ref> <remote sha>` 를 stdin 으로
+건넨다 — 그 `<remote sha>` 가 바로 "직전 push 지점" 이다. 그래서 `.githooks/pre-push` 의 `B.9` 가
+밀려는 ref 마다 같은 스크립트를 그 모수로 부른다. 통합 회차의 수동 재측정이 없어진 것이 아니라,
+**훅을 깐 기계에서는 그것이 push 전에 자동으로 한 번 일어난다.** 훅은 옵트인이고 `--no-verify` 로
+우회되므로 이 채널은 [배선]이 아니라 **"그 기계에 있으면 도는 것"** 이다 — 통합 회차의 규율은
+그대로 남는다.
 
 **판정(2026-09-06): 두 모수를 다 둔다.** 한쪽을 없애면 각각 이렇게 깨진다 —
 `--staged` 를 없애면 **push 전에 답할 수 있는 채널이 사라지고**(발행 판정은 push 지점을
@@ -2886,6 +2894,7 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 | pre-commit | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 (P.1) | ✅ `plugin-version-check.yml` — **같은 스크립트를 부른다**. 훅은 index 를 `main` 과의 merge-base 와 비교하고(amend·rebase 에 안 흔들리게), CI 는 밀어넣은 범위의 두 끝점을 비교한다 |
 | pre-commit | 주석 없는 `let _ =` (C.6) | 부분 — 전수판 `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 가 훅의 상위집합이고, 그 전수판이 `check-headless` 에서 자동 실행된다(기본 조합 잡은 `--lib --bins` 라 못 본다). **자동 잡의 clippy 는 `let_underscore_must_use`(warn)로 그 자리를 표면화하지만 이 규칙을 집행하지는 않는다** — 주석을 못 읽어 사유가 달린 정상 코드까지 세는 명부이고, `-D warnings` 가 없어 빌드도 막지 않는다([error-handling](error-handling.md)) |
 | pre-commit | 커밋되지 않는 티켓을 가리키는 인용 P1~P7 (T.1) | ✅ `doc-guards.yml` — **같은 타깃을 부른다**(`cargo test -p tasty-doc-guards --test no_todo_file_citation`). pre-push `B.7` 도 그 타깃을 포함한다 — 셋이 겹치는 것은 의도다: 커밋 · push · main/PR 은 서로 다른 자리고, 자동 채널 둘은 **push 된 커밋만** 본다. ★ 이 검사만 staged diff 가 아니라 **레포 전체 작업 트리**를 본다(가드의 좌변이 순회다) — 내가 안 건드린 파일이 범인일 수 있는 대신, staged 밖에 남은 죽은 인용도 같이 막힌다. 실측 2.0 s |
+| pre-push | plugin 의 **발행 판정** — `--range <원격 tip> <로컬 tip>` (B.9) | ✅ `plugin-version-check.yml` — **같은 스크립트를 같은 물음으로** 부른다. 모수도 같은 축이다: CI 는 `github.event.before`, 훅은 git 이 stdin 으로 준 원격 tip. 차이는 **시점** 하나다 — CI 는 push 된 뒤에 답하고 훅은 push 되기 전에 답한다. pre-commit `P.1` 과는 같은 스크립트지만 **다른 물음**이다(그쪽은 "내 커밋이 올렸나"). 모수를 못 정하면 통과가 아니라 실패다 |
 | pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다 |
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
