@@ -18,7 +18,7 @@
 //! 3. 기능 동작 설명이면 — `docs/`(dev-guide / features / plugins) 문서를 참조
 //!
 //! **탐지 패턴 7 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
-//! - P1 번호 인용 — 대문자 `TODO` + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자.
+//! - P1 번호 인용 — `todo`(대소문자 무시) + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자.
 //!   **어순 양방향**: 한국어 문장에서는 번호가 앞에 온다(`<숫자>번 TODO`). 뒤 어순만
 //!   보던 시절 그 형태가 소스에 두 건 살아 있었다 — 같은 죽은 좌표인데 어순 하나로
 //!   가드를 통과했다. **괄호 묶음도 잡는다**(`TODO(<숫자>)` · `TODO[<숫자>]` ·
@@ -47,8 +47,9 @@
 //!
 //! **매칭은 구분자 개수·대소문자로 회피되지 않아야 한다.** 구분자를 한 개만 소비하는
 //! 매처는 공백 두 개만 넣어도 통과하고, 원문 그대로 비교하는 매처는 대문자 표기로
-//! 통과한다. 그래서 P2~P6 은 구분자를 런으로 소비하고 소문자로 비교한다. P1 만
-//! 예외적으로 공백 런과 **짝 맞는 괄호 묶음**까지만 넓힌다 — 임의 문장부호
+//! 통과한다. 그래서 **P1~P6 은 전부** 구분자를 런으로 소비하고 소문자로 비교한다.
+//! **예외는 대소문자 축이 아니라 구분자 축에만 있다** — P1 은 공백 런과 **짝 맞는
+//! 괄호 묶음**까지만 넓힌다. 임의 문장부호
 //! (`:` · `#` · `.`)를 구분자로 허용하면 "TODO. 40" 같은 평범한 문장이 걸린다.
 //! 괄호는 그 논거의 반례가 아니다: 여는 괄호 뒤 숫자에 **닫는 괄호가 짝으로 따라올
 //! 것**을 함께 요구하므로 문장이 아니라 번호를 감싼 묶음만 걸린다
@@ -301,15 +302,27 @@ fn bracketed_number_end(line: &str, i: usize) -> Option<usize> {
     (bytes.get(end) == Some(&close)).then_some(end + 1)
 }
 
-/// P1 — 번호와 대문자 `TODO` 가 붙어 있는 형태를 **양쪽 어순 모두** 잡는다.
-/// 뒤 어순은 `TODO` + 공백 런 + (선택적 하이픈 + 숫자 | 괄호로 감싼 숫자),
-/// 앞 어순은 숫자 + `번` + 공백 런 + `TODO`(한국어 문장의 자연스러운 순서).
+/// P1 — 번호와 `TODO` 가 붙어 있는 형태를 **양쪽 어순 모두** 잡는다.
+/// 뒤 어순은 `todo` + 공백 런 + (선택적 하이픈 + 숫자 | 괄호로 감싼 숫자),
+/// 앞 어순은 숫자 + `번` + 공백 런 + `todo`(한국어 문장의 자연스러운 순서).
 /// 번호 없는 평범한 `TODO:` 주석은 대상이 아니다(금지 대상은 *파일 번호 인용*
 /// 이지 할 일 표시가 아니다).
+///
+/// **대소문자를 가리지 않는다** — 모듈 머리말의 "구분자 개수·대소문자로 회피되지
+/// 않아야 한다" 가 이 패턴에도 걸린다. 넓히는 쪽이 오탐을 늘리지 않는 이유는 이
+/// 패턴이 **숫자가 바로 붙을 것**을 요구하기 때문이다: 영단어·식별자로서의 `todo`
+/// 는 뒤에 숫자가 아니라 글자나 `_` 가 온다(`todos` · `todo_marker_end`). 실측
+/// 2026-09-20 — 추적 파일에 소문자 `todo` 가 **123** 자리 있었고 그중 숫자가
+/// 뒤따르는 것은 **8** 자리였다. 그 8 은 전부 죽은 좌표(3)이거나 이 파일 자신의
+/// 픽스처(5)였고 **산문·식별자 오탐은 0** 이었다. 오탐 위험이 사는 축은 대소문자가
+/// 아니라 **구분자**이고, 그쪽은 모듈 머리말이 이미 좁혀 두었다.
 fn find_p1(line: &str) -> Option<String> {
-    let bytes = line.as_bytes();
+    // `to_ascii_lowercase` 는 바이트 길이를 보존하므로 인덱스가 `line` 과 같다 —
+    // 반환하는 인용문은 **원문 슬라이스**로 돌려준다(보고에 원문이 보여야 한다).
+    let lower = line.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
     let mut from = 0;
-    while let Some(pos) = line[from..].find("TODO") {
+    while let Some(pos) = lower[from..].find("todo") {
         let start = from + pos;
         let after_space = skip_run(bytes, start + 4, b" \t");
         let mut i = after_space;
@@ -567,8 +580,13 @@ fn todo_marker_end(line: &str, after_todo: usize) -> Option<usize> {
 
 /// P7 — 번호가 붙지 않은 산문 `TODO`. 할 일 표시([`todo_marker_end`])만 통과한다.
 ///
-/// 소문자 `todo` 는 보지 않는다 — 식별자·URL·영단어로 흔하고, 티켓을 가리키는 산문은
-/// 관례상 대문자로 쓴다. P1 이 대문자만 보는 것과 같은 선이다.
+/// **소문자 `todo` 는 보지 않는다 — P1 과 달리 여기는 숫자를 요구하지 않는다.**
+/// 그 차이가 이 축을 가른다: P1 은 `todo` 뒤에 숫자가 붙을 것을 요구해 영단어·식별자
+/// 와 저절로 갈리지만, 이 패턴은 `todo` 라는 낱말 하나가 곧 판정 대상이라 소문자로
+/// 넓히면 `todos` 를 뺀 모든 식별자·URL·영단어가 그대로 들어온다. 티켓을 가리키는
+/// 산문은 관례상 대문자로 쓰므로 그 선에서 멈춘다. 실측 2026-09-20 — 추적 파일의
+/// 소문자 `todo` 123 자리 중 숫자가 뒤따르는 것은 8 자리뿐이라, 이 패턴을 같이
+/// 넓히면 나머지 **115** 자리가 그대로 위반으로 들어온다.
 fn find_p7(line: &str) -> Option<String> {
     let mut from = 0;
     while let Some(pos) = line[from..].find("TODO") {
@@ -941,7 +959,24 @@ fn p1_catches_numbered_todo_citation_only() {
     assert_eq!(find_p1("TODO. 40"), None);
     assert_eq!(find_p1("TODO #40"), None);
     assert_eq!(find_p1("TODO_40"), None);
-    assert_eq!(find_p1("see todo 40"), None);
+
+    // 대소문자로 회피되지 않는다 — 모듈 머리말의 규율이 이 패턴에도 걸린다.
+    assert_eq!(
+        find_p1(fx!("see todo", " 40")),
+        Some(fx!("todo", " 40").into())
+    );
+    assert_eq!(find_p1(fx!("ToDo", "-7")), Some(fx!("ToDo", "-7").into()));
+    assert_eq!(find_p1(fx!("(todo", "18)")), Some(fx!("todo", "18").into()));
+    // 인용문은 **원문 표기**로 돌려준다 — 보고에서 그 자리를 찾을 수 있어야 한다.
+    assert_eq!(
+        find_p1(fx!("see Todo", " 40")).as_deref(),
+        Some(fx!("Todo", " 40"))
+    );
+    // 넓힌 쪽이 할 일 표시를 삼키지 않는다 — 숫자를 요구하는 것이 그 방벽이다.
+    assert_eq!(find_p1("// todo: refactor this later"), None);
+    assert_eq!(find_p1("// todo(권한모델): 도입 후 대체"), None);
+    assert_eq!(find_p1("let todos = todo_marker_end(line, 4);"), None);
+    assert_eq!(find_p1("todo_40"), None);
 }
 
 #[test]
@@ -1046,7 +1081,7 @@ fn p5_catches_anchor_slug_number() {
     assert!(find_p5(fx!("[링크](x.md#a-todo", "--12)")).is_some());
     // `todo-conductor` 는 뒤가 숫자가 아니라 앵커 번호가 아니다.
     assert_eq!(find_p5("[링크](x.md#todo-conductor-notes)"), None);
-    assert_eq!(find_p5("[링크](x.md#todo12)"), None);
+    assert_eq!(find_p5(fx!("[링크](x.md#todo", "12)")), None);
     assert_eq!(find_p5("# 평범한 마크다운 제목"), None);
 }
 

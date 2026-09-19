@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn picker_falls_back_to_all_handlers_when_no_detector_match() {
         let (mut core, mut engine) = build_test_core();
-        let unmatched = DetectorId::new("todo40-no-such-detector");
+        let unmatched = DetectorId::new("no-such-detector");
         assert!(engine.file_handler.handlers_for(&unmatched).is_empty());
         assert!(
             !engine.file_handler.all_handlers().is_empty(),
@@ -235,7 +235,7 @@ mod tests {
         core.apply_identify_result(
             &mut state,
             &mut engine,
-            FileTarget::new(PathBuf::from("/tmp/todo40-test-target.unknown")),
+            FileTarget::new(PathBuf::from("/tmp/unmatched-target.unknown")),
             Some(unmatched),
             None,
             false,
