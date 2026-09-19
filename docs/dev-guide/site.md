@@ -81,7 +81,8 @@ site/
 디자인 결정이 착지하면 누군가 그것을 받아와야 한다. 절차는
 [`site/vendor/README.md`](../../site/vendor/README.md) 의 "vendor 갱신 절차" 에 있고,
 정합 루프에서 이 단계가 차지하는 자리는
-[design-change-workflow](design-change-workflow.md#넷째-정합-대상--사이트-사본-필수) 에 있다.
+[design-change-workflow](design-change-workflow.md#넷째-정합-대상--사이트-사본-필수) 에 있다. 결정 근거는
+[ADR-0294](../adr/0294-the-site-vendor-copy-gets-a-channel-and-a-visible-date.md).
 
 따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 토큰 층에
 한해서는 `crates/tasty-doc-guards/tests/site_vendor_tokens_track_the_app_export.rs` 가 그
@@ -89,7 +90,7 @@ site/
 
 그래서 갤러리 페이지가 **사본의 시점을 화면에 적는다.** 변환기가 빌드 시각에
 `git log -1 -- site/vendor`(README 제외 — 그것은 절차지 스냅샷이 아니다) 로 날짜를 읽어
-`src/gallery/vendor-stamp.js` 를 만들고, `GalleryShell` 이 페이지 머리에 그린다.
+생성 트리에 스탬프 모듈 하나를 만들고, `GalleryShell` 이 페이지 머리에 그린다.
 **그 날짜를 손으로 적지 않는다** — 손으로 적으면 그것이 또 하나의 낡을 사본이 되고,
 하필 사본이 낡는 그 순간에 "최신" 이라고 말한다. git 이 없으면(소스 tarball · shallow
 clone) 추측하지 않고 줄 자체를 안 그린다.
