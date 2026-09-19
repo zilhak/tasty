@@ -8,7 +8,7 @@
     "prebuild": "node scripts/vendor-to-esm.mjs",
     "build": "astro build",
     "preview": "astro preview",
-    "sync-vendor": "node scripts/vendor-to-esm.mjs",
+    "vendor-to-esm": "node scripts/vendor-to-esm.mjs",
     "stamp": "node --experimental-strip-types scripts/stamp.mjs",
     "check-links": "node scripts/check-links.mjs"
   },

@@ -96,6 +96,7 @@ npm install          # 최초 1 회
 npm run build        # prebuild(vendor 변환) 후 astro build -> site/dist/
 npm run dev          # 개발 서버
 npm run preview      # 빌드 결과 확인
+npm run vendor-to-esm  # prebuild 없이 변환만 다시 돌린다
 
 # 번역 파일에 원본 해시 스탬프 (아래 "번역 모델")
 npm run stamp content/en/index.md
@@ -103,6 +104,9 @@ npm run stamp content/en/index.md
 
 `npm run build` 는 `prebuild` 로 [`site/scripts/vendor-to-esm.mjs`](../../site/scripts/vendor-to-esm.mjs)
 를 먼저 돌린다 — `site/vendor/` 를 ES module 과 토큰 CSS 로 바꾸고 로고를 `public/` 에 놓는다.
+`npm run vendor-to-esm` 은 같은 변환을 단독으로 돌리는 별칭이다. **재-vendoring 이 아니다** —
+`site/vendor/` 를 갱신하지 않고 그것을 읽어 생성 트리만 다시 만든다(원격에서 받아오는 쪽은
+위 "vendor 자신은 어디서 오는가").
 
 ## URL 구조
 
