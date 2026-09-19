@@ -201,6 +201,8 @@ fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
         // 끄면 판정 사각형이 보이는 영역과 같아진다.
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
+            // 데모의 목적은 휠 스크롤이 도는지 보이는 것이라 드래그 패닝은 그 목적 밖이다.
+            .drag_to_scroll(false)
             .show(ui, |ui| {
                 for i in 1..=80 {
                     ui.label(format!("scrollable line {i}"));

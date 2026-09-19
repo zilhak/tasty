@@ -226,6 +226,10 @@ impl<'a, K> Table<'a, K> {
             let mut builder = TableBuilder::new(ui)
                 .striped(striped)
                 .resizable(false)
+                // 드래그 패닝 끄기 — TableBuilder 는 자기 안에서 ScrollArea 를 만들고
+                // 그 기본값이 true 다. 데스크톱 마우스에서 드래그는 행 선택·텍스트
+                // 선택의 의도라, 내용이 포인터를 따라 미끄러지면 그 의도와 충돌한다.
+                .drag_to_scroll(false)
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
             if selectable {
                 builder = builder.sense(egui::Sense::click());
@@ -295,6 +299,9 @@ impl<'a, K> Table<'a, K> {
                 // 헤더/본문이 함께 수평 이동한다(헤더는 세로로는 TableBuilder 가 고정).
                 egui::ScrollArea::horizontal()
                     .auto_shrink([false, true])
+                    // 가로축도 끈다 — 안쪽 TableBuilder 가 이미 꺼져 있어, 여기만 켜 두면 같은 표가
+                    // 세로로는 안 끌리고 가로로는 끌리는 갈린 동작이 된다.
+                    .drag_to_scroll(false)
                     .show(ui, |ui| {
                         ui.set_min_width(total_w.value());
                         let band = total_w.max(LogicalPx(ui.available_width()));

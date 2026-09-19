@@ -350,6 +350,7 @@ pub fn autocomplete_dropdown(
                     .id_salt(("tasty_autocomplete_list", id_salt))
                     .max_height(max_height)
                     .auto_shrink([true, true])
+                    .drag_to_scroll(false)
                     .show(ui, |ui| {
                         for (i, entry) in entries.iter().enumerate() {
                             if candidate_row(

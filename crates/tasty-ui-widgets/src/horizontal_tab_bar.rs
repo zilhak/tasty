@@ -36,6 +36,9 @@ pub fn horizontal_tab_bar_with_arrows<T: Copy + PartialEq>(
         .auto_shrink([false, true])
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .max_width(ui.available_width())
+        // 가로축도 끈다 — 탭 띠의 주 동작은 탭 클릭이고, 누른 채 움직이면 클릭 의도가
+        // 패닝으로 새어 탭이 안 눌린다.
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 for (tab, label) in tabs {

@@ -629,6 +629,7 @@ pub fn draw_protocol_filter_body(
     ui.add_space(th.spacing_xs.value());
     egui::ScrollArea::vertical()
         .max_height(FILTER_DROPDOWN_MAX_HEIGHT.value())
+        .drag_to_scroll(false)
         .show(ui, |ui| {
             for item in items {
                 ui.horizontal(|ui| {

@@ -521,6 +521,7 @@ pub fn multi_select(
                 .id_salt(("tasty_multi_select_list", id_salt))
                 .max_height(theme.multiselect_menu_max_height().value())
                 .auto_shrink([true, true])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     for (i, opt) in options.iter().enumerate() {
                         let Some(flag) = selected.get_mut(i) else {

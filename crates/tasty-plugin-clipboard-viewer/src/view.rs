@@ -713,6 +713,7 @@ fn well(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .id_salt("clip_body")
+            .drag_to_scroll(false)
             .show(ui, add);
     });
 }

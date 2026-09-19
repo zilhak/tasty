@@ -310,6 +310,7 @@ fn draw_rail(
     egui::ScrollArea::vertical()
         .id_salt("gv_rail")
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show_rows(
             &mut pane,
             wt_row_h(theme),
@@ -513,6 +514,7 @@ fn draw_changes(
     egui::ScrollArea::vertical()
         .id_salt("gv_changes")
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show_rows(
             &mut pane,
             CH_ROW_H,
@@ -666,6 +668,7 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
     egui::ScrollArea::vertical()
         .id_salt("gv_commits")
         .auto_shrink([false, false])
+        .drag_to_scroll(false)
         .show_rows(&mut pane, CM_ROW_H, log.len(), |ui, row_range| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             for idx in row_range {

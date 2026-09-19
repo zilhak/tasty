@@ -136,6 +136,7 @@ impl<'a> DrillDown<'a> {
                     .id_salt(("tasty_drilldown_detail", self.id_salt))
                     .auto_shrink([false, false])
                     .max_height(body_height(LogicalPx(height), bar_h).value())
+                    .drag_to_scroll(false)
                     .show(ui, |ui| detail(ui, theme));
             } else {
                 // 리스트 뷰 — 영역 전체 스크롤.
@@ -143,6 +144,7 @@ impl<'a> DrillDown<'a> {
                     .id_salt(("tasty_drilldown_list", self.id_salt))
                     .auto_shrink([false, false])
                     .max_height(height)
+                    .drag_to_scroll(false)
                     .show(ui, |ui| list(ui, theme));
             }
         });

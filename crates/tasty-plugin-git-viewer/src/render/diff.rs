@@ -96,6 +96,7 @@ pub(super) fn draw_diff(
 
     egui::ScrollArea::both()
         .id_salt("gv_diff")
+        .drag_to_scroll(false)
         .auto_shrink([false, false])
         .show_rows(&mut pane, diff_row_h(theme), total_rows, |ui, row_range| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
