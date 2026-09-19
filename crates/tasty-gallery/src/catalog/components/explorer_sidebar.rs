@@ -233,6 +233,7 @@ fn two_region_inner(
             egui::ScrollArea::vertical()
                 .id_salt("files")
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     for (i, (label, depth, active)) in tree.iter().enumerate() {
                         ui.push_id(i, |ui| {
@@ -272,6 +273,7 @@ fn two_region_inner(
             egui::ScrollArea::vertical()
                 .id_salt("favorites")
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     if favs.is_empty() {
                         favorites_empty(ui, theme);

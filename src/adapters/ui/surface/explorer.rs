@@ -625,6 +625,7 @@ fn sidebar(
             egui::ScrollArea::vertical()
                 .id_salt("explorer_sidebar_files")
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     tree_node(ui, theme, view, &root, 0, &current, action, mirror_ws_id);
                 });
@@ -651,6 +652,7 @@ fn sidebar(
             egui::ScrollArea::vertical()
                 .id_salt("explorer_sidebar_favorites")
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| {
                     if favorites.is_empty() {
                         favorites_empty(ui, theme);
@@ -928,6 +930,7 @@ fn content(
             egui::ScrollArea::vertical()
                 .id_salt(format!("explorer_content_{id_suffix}"))
                 .auto_shrink([false, false])
+                .drag_to_scroll(false)
                 .show(ui, |ui| match mode {
                     ExplorerViewMode::Grid => {
                         grid_view(ui, theme, view, font, cut_pending, &root, action)
