@@ -11,6 +11,8 @@ import { stringsFor } from "../lib/strings";
 import { url } from "../lib/site";
 import type { Lang } from "../lib/guide";
 import "../styles/design.css";
+import "../styles/vendor-stamp.css";
+import { VendorStamp } from "../components/design/VendorStamp.jsx";
 
 interface Props {
   lang: Lang;
@@ -72,6 +74,10 @@ const s = stringsFor(lang);
         <p class="design-head__kicker">Tasty Design System</p>
         <h1>{title}</h1>
         <p class="design-head__intro" set:html={intro} />
+        {/* Both pages in this section draw from `site/vendor/` — the token
+            document renders one guideline file and the foundations page
+            renders the rest — so both say how old that copy is. */}
+        <VendorStamp lang={lang} />
       </header>
       <slot />
     </main>
