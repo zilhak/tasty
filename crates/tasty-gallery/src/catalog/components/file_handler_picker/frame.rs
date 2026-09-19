@@ -6,8 +6,8 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::file_handler as fh_model;
 use tasty_ui_widgets::tokens::{
     FH_EDGE_PAD_X, FH_EMPTY_PAD_Y, FH_FRAME_WIDTH, FH_GAP_SM, FH_HEADER_PAD_BOTTOM,
-    FH_HEADER_PAD_TOP, FH_ID_ELIDE_MAX, FH_ID_LINE_GAP, FH_LIST_FADE_HEIGHT, FH_LIST_MAX_HEIGHT,
-    FH_LIST_PAD, FH_RECENT_DIM_OPACITY, FH_ROW_GAP, FH_ROW_PAD_X, STRUCT_GAP_2,
+    FH_HEADER_PAD_TOP, FH_ID_LINE_GAP, FH_LIST_FADE_HEIGHT, FH_LIST_MAX_HEIGHT, FH_LIST_PAD,
+    FH_RECENT_DIM_OPACITY, FH_ROW_GAP, FH_ROW_PAD_X, STRUCT_GAP_2,
 };
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_width};
 
@@ -853,7 +853,10 @@ mod tests {
         let out = fh_model::elide_id_front(long);
         assert!(out.starts_with('…'), "front-elided: {out}");
         assert!(out.ends_with("handler"), "the tail survives: {out}");
-        assert_eq!(out.chars().count(), FH_ID_ELIDE_MAX);
+        assert_eq!(
+            out.chars().count(),
+            tasty_ui_widgets::tokens::FH_ID_ELIDE_MAX
+        );
     }
 
     #[test]
