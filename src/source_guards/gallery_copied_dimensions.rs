@@ -80,6 +80,16 @@ enum Side {
 /// (무엇인가, 본체 쪽, 갤러리 쪽).
 const COPIED: &[(&str, Side, Side)] = &[
     (
+        "Plugins 세그먼트 탭 라벨 폰트(primitive 12 — semantic role 없음)",
+        Side::Lit("src/view/plugins/ui.rs", "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
+        Side::Lit(GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
+    ),
+    (
+        "Plugins Attention 본문 폰트(primitive 12 — semantic role 없음)",
+        Side::Lit("src/view/plugins/ui/attention.rs", "ATTN_PRIMITIVE_12"),
+        Side::Lit(GALLERY_PLUGINS_ATTENTION, "ATTN_PRIMITIVE_12"),
+    ),
+    (
         "모달 폭",
         Side::Lit("src/adapters/ui/info_modal.rs", "DEFAULT_WIDTH"),
         Side::Lit(GALLERY_INFO_MODAL, "WIDTH"),
@@ -399,6 +409,10 @@ const GALLERY_KB_IMPORT_EXPORT: &str =
 const GALLERY_PRESET_EDITOR: &str = "crates/tasty-gallery/src/catalog/components/preset_editor.rs";
 const GALLERY_INFO_MODAL: &str = "crates/tasty-gallery/src/catalog/components/info_modal.rs";
 const GALLERY_POPUP_FRAME: &str = "crates/tasty-gallery/src/catalog/popup_frame.rs";
+const GALLERY_PLUGINS_WINDOW: &str =
+    "crates/tasty-gallery/src/catalog/components/plugins_window.rs";
+const GALLERY_PLUGINS_ATTENTION: &str =
+    "crates/tasty-gallery/src/catalog/components/plugins_window/attention.rs";
 
 /// `const NAME: LogicalPx = LogicalPx(<수>);` 의 (줄번호, 수). 순수 함수 — 합성 입력을
 /// 그대로 먹인다.
@@ -575,10 +589,15 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 두 치수에 semantic 별칭 토큰을 열어(`kb-ie-slot-height` → `control-height-tab`,
     // `kb-ie-notice-inset` → `space-md`, 14 는 12 로 스냅) 양쪽이 Theme 을 읽는다.
     // 파일 피커 행 높이·크기 열·수정일 열을 본체에 전사해 세 쌍이 더해졌다.
+    // 53 -> 55: Plugins 창 두 자리(세그먼트 탭 라벨 · Attention 본문)가 쌍이 됐다. 본체가
+    // off-scale 12.5 를 버리고 primitive 12 를 이름 붙여 읽게 됐는데 specimen 은 13 으로
+    // 근사하고 있어 **픽셀이 갈려 있었다.** 12 에는 semantic role 이 없어 양쪽이 같은
+    // primitive 를 각자 이름 붙여 부르는 것 말고는 맞출 방법이 없고, 그 형태가 곧 사본이라
+    // 여기 등재한다 — 역할이 생기면 둘 다 그 접근자로 가고 이 수는 내려간다.
     assert_eq!(
         COPIED.len(),
-        53,
-        "사본 명부가 {} 쌍이다(기록 53). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        55,
+        "사본 명부가 {} 쌍이다(기록 55). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );
@@ -993,6 +1012,8 @@ const CONFESSED: &[(&str, &str)] = &[
     ),
     (GALLERY_KB_IMPORT_EXPORT, "SPECIMEN_W"),
     (GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
+    (GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
+    (GALLERY_PLUGINS_ATTENTION, "ATTN_PRIMITIVE_12"),
 ];
 
 /// 갤러리 상수의 초기화식이 **공용 항목을 가리키는 경로식**인가.

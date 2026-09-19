@@ -20,22 +20,15 @@ use tasty_type_geometry::length::LogicalPx;
 /// 토큰이 아니므로 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
 const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
 
-// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+// ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
 //
-// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에도,
-// DTCG primitive(10·11·12·13·14·16·17·20)에도 없는 값들이다. 토큰으로 스냅하면
-// 픽셀이 실제로 바뀌므로 조용히 반올림하지 않고 이름만 붙인다.
-//
-// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
-// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. 규칙 전문은
-// `docs/design/systems/theme.md` "스케일 밖 폰트 값".
+// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에
+// 없는 값은 primitive 임을 이름에 남긴다. 2026-09-17 결정이 이 파일의 `.5` 세 값을
+// 12 / 10 / 10 으로 스냅했고, 남은 12 만 semantic role 이 없다.
 
-/// segment 탭 라벨. 스케일 밖(12.5).
-const SEGMENT_TAB_LABEL_SIZE: LogicalPx = LogicalPx(12.5);
-/// segment 탭의 danger 배지 숫자. 스케일 밖(9.5).
-const SEGMENT_BADGE_SIZE: LogicalPx = LogicalPx(9.5);
-/// segment 탭의 mono 카운트. 스케일 밖(10.5).
-const SEGMENT_COUNT_SIZE: LogicalPx = LogicalPx(10.5);
+/// segment 탭 라벨. DTCG primitive `font-size-12` 를 직접 쓰는 자리 — 12px 는
+/// primitive 에는 있지만 **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다.
+const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// 상세 패널에 표시할 plugin command 한 줄.
 #[derive(Debug, Clone)]
@@ -256,11 +249,10 @@ pub fn draw_plugins_panel(
                 // spacing_md(12)로 snap.
                 hspace(ui, th.spacing_md);
                 // 디자인 헤더: plug 아이콘 + 타이틀.
-                // divergence: 헤더 accent 인데 peach 리터럴 → accent-attention(=peach) role 로
-                // 값 보존 전사. "notice/주의환기"가 아니라 헤더 강조라 role 은 살짝 어긋남.
+                // 헤더 장식 accent — `plugins-header-glyph` → `accent-decorative`(peach).
                 ui.add(icons::PLUG.image(
                     PLUG_HEADER_GLYPH.value(),
-                    egui::Color32::from(th.accent_attention()),
+                    egui::Color32::from(th.plugins_header_glyph()),
                 ));
                 hspace(ui, th.spacing_xs);
                 ui.label(
@@ -399,7 +391,7 @@ fn segment_tab(
     };
     let label_galley = ui.painter().layout_no_wrap(
         label.to_string(),
-        egui::FontId::proportional(SEGMENT_TAB_LABEL_SIZE.value()),
+        egui::FontId::proportional(SEGMENT_TAB_LABEL_PRIMITIVE_12.value()),
         label_color,
     );
 
@@ -408,7 +400,7 @@ fn segment_tab(
     let badge_galley = if badge {
         Some(ui.painter().layout_no_wrap(
             count.unwrap().to_string(),
-            egui::FontId::proportional(SEGMENT_BADGE_SIZE.value()),
+            egui::FontId::proportional(th.badge_font_size().value()),
             egui::Color32::from(th.text_on_accent()),
         ))
     } else {
@@ -418,7 +410,7 @@ fn segment_tab(
         count.map(|c| {
             ui.painter().layout_no_wrap(
                 c.to_string(),
-                egui::FontId::monospace(SEGMENT_COUNT_SIZE.value()),
+                egui::FontId::monospace(th.font_size_micro.value()),
                 count_color,
             )
         })

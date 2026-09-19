@@ -205,16 +205,14 @@ fn muted(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 /// health error 경고 박스 — enabled + error 인 행에만. 사용자가 끈 plugin 은
 /// 정상 종료라 error 가 아니다(본체 주석과 같은 조건).
 ///
-/// 배경 12% · 보더 35% 는 본체 `gamma_multiply` 값 그대로다.
+/// 채움/테두리는 본체와 같은 `tint-fill-alpha` / `tint-border-alpha` 짝이다.
 fn health_box(ui: &mut egui::Ui, theme: &Theme) {
-    const FILL: f32 = 0.12;
-    const STROKE: f32 = 0.35;
     let danger = theme.accent_danger().to_egui();
     egui::Frame::new()
-        .fill(danger.gamma_multiply(FILL))
+        .fill(danger.gamma_multiply(theme.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            danger.gamma_multiply(STROKE),
+            danger.gamma_multiply(theme.tint_border_alpha()),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(margin_sym(theme.spacing_md, theme.spacing_sm))

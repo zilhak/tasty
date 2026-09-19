@@ -22,19 +22,28 @@
 //! `item_height_interactive + spacing_lg + spacing_xs`, 아이콘 17 →
 //! `icon_glyph_size_md`, 타이틀 14 → `font_size_max`, 구분선 20 →
 //! `spacing_lg + spacing_xs`, 닫기 28 → `item_height_interactive`, 필터 200 →
-//! `field_width_lg`, 세그먼트 12.5/9.5/10.5 → `font_size_body`/`font_size_micro`,
-//! 이름 13 → `font_size_body`, 부제 10 → `font_size_micro`. 행 높이는 이관 대상이
-//! 아니다 — 아바타에서 도출된다(위 "좌측 목록").
+//! `field_width_lg`, 이름 13 → `font_size_body`, 부제 10 → `font_size_micro`.
+//! 행 높이는 이관 대상이 아니다 — 아바타에서 도출된다(위 "좌측 목록").
+//!
+//! 세그먼트 탭의 셋(12.5/9.5/10.5)은 한때 가장 가까운 토큰으로 근사했으나 2026-09-17
+//! 결정이 본체를 12 / `badge-font-size`(10) / `font-size-micro`(10) 로 스냅했다 —
+//! 근사가 없어졌으므로 specimen 도 같은 값을 같은 이름으로 읽는다.
 
 mod add;
 mod attention;
 mod installed;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 
 use crate::catalog::icons::{CLOSE, PLUG};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+/// 세그먼트 탭 라벨 — 본체 `ui.rs` 의 `SEGMENT_TAB_LABEL_PRIMITIVE_12` 와 같은 자리다.
+/// DTCG primitive `font-size-12` 를 직접 쓴다(12px 은 primitive 에는 있지만 semantic
+/// role 이 배정돼 있지 않아 `Theme` 필드가 없다).
+const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// 세그먼트 탭 셋 — 본체 `PluginsUiState.tab`. 세 탭은 서로 다른 본문을 그린다.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -103,14 +112,14 @@ fn segment_tab(
     } else {
         theme.text_muted().to_egui()
     };
-    let label_font = egui::FontId::proportional(theme.font_size_body.value());
+    let label_font = egui::FontId::proportional(SEGMENT_TAB_LABEL_PRIMITIVE_12.value());
     let label_galley = p.layout_no_wrap(label.to_string(), label_font, label_color);
 
     let badge = danger && count.is_some_and(|c| c > 0);
     let badge_galley = badge.then(|| {
         p.layout_no_wrap(
             count.unwrap_or(0).to_string(),
-            egui::FontId::proportional(theme.font_size_micro.value()),
+            egui::FontId::proportional(theme.badge_font_size().value()),
             theme.text_on_accent().to_egui(),
         )
     });
@@ -206,9 +215,10 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     let cy = rect.center().y;
     let mut x = rect.min.x + theme.spacing_md.value();
 
-    // plug 아이콘 (헤더 강조 — 본체 divergence 주석대로 accent-attention role).
+    // plug 아이콘 — 본체가 읽는 역할 그대로. 값은 accent-attention 과 같은 peach 지만
+    // 이름이 다르다(장식 글리프이지 주의 환기가 아니다).
     let icon = theme.icon_glyph_size_md.value();
-    PLUG.image(icon, theme.accent_attention().to_egui())
+    PLUG.image(icon, theme.plugins_header_glyph().to_egui())
         .paint_at(
             ui,
             egui::Rect::from_center_size(egui::pos2(x + icon * 0.5, cy), egui::vec2(icon, icon)),
@@ -471,9 +481,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "accent-attention",
+                "accent-decorative",
                 "header plug",
-                theme.accent_attention().to_egui(),
+                theme.plugins_header_glyph().to_egui(),
             ),
             TokenChip::new(
                 "accent-danger",

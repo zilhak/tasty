@@ -23,16 +23,6 @@ use tasty_type_geometry::length::LogicalPx;
 // `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 에 있다 —
 // 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
 
-/// 알림 비어있음 상태의 제목. 스케일 밖(13.5).
-const ATTN_EMPTY_TITLE_SIZE: LogicalPx = LogicalPx(13.5);
-/// 사유 카드 본문. 스케일 밖(12.5).
-const ATTN_REASON_BLURB_SIZE: LogicalPx = LogicalPx(12.5);
-/// 서명 지문 라벨/값. 스케일 밖(11.5).
-const ATTN_FINGERPRINT_SIZE: LogicalPx = LogicalPx(11.5);
-/// 항목 행의 사유 라벨. 스케일 밖(10.5) — `font_size_micro`(10)와 0.5 차이라
-/// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const ATTN_REASON_LABEL_SIZE: LogicalPx = LogicalPx(10.5);
-
 /// DTCG primitive `font-size-12` 를 직접 쓰는 자리. 12px 는 primitive 에는 있지만
 /// **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다 — 어느 semantic 에
 /// 묶을지가 판단 항목이라 primitive 값을 그대로 이름 붙여 둔다.
@@ -150,7 +140,7 @@ pub(super) fn draw_attention_tab(
                         name_pos + egui::vec2(0.0, 18.0),
                         egui::Align2::LEFT_TOP,
                         t(label_key),
-                        egui::FontId::proportional(ATTN_REASON_LABEL_SIZE.value()),
+                        egui::FontId::proportional(th.font_size_micro.value()),
                         color,
                     );
                     // 우측 severity dot.
@@ -195,7 +185,7 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
     ui.vertical_centered(|ui| {
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_title"))
-                .size(ATTN_EMPTY_TITLE_SIZE.value())
+                .size(th.font_size_heading.value())
                 .color(egui::Color32::from(th.text_secondary())),
         );
         // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
@@ -247,15 +237,13 @@ fn draw_detail(
         });
         vspace(ui, th.spacing_md);
 
-        // 사유 배너 (severity 색 프레임).
-        // 사유 배너의 채움/테두리 짝. 대응 토큰 없음.
-        const REASON_BANNER_FILL_OPACITY: f32 = 0.11;
-        const REASON_BANNER_STROKE_OPACITY: f32 = 0.36;
+        // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
+        // (`tint-fill-alpha` / `tint-border-alpha`).
         egui::Frame::new()
-            .fill(color.gamma_multiply(REASON_BANNER_FILL_OPACITY))
+            .fill(color.gamma_multiply(th.tint_fill_alpha()))
             .stroke(egui::Stroke::new(
                 th.border_width.value(),
-                color.gamma_multiply(REASON_BANNER_STROKE_OPACITY),
+                color.gamma_multiply(th.tint_border_alpha()),
             ))
             .corner_radius(th.corner_radius.value())
             .inner_margin(margin_all(th.spacing_md))
@@ -269,7 +257,7 @@ fn draw_detail(
                 vspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t(blurb_key))
-                        .size(ATTN_REASON_BLURB_SIZE.value())
+                        .size(ATTN_PRIMITIVE_12.value())
                         .color(egui::Color32::from(th.text_secondary())),
                 );
             });
@@ -349,13 +337,13 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(t("plugins.attn_fingerprint"))
-                            .size(ATTN_FINGERPRINT_SIZE.value())
+                            .size(th.font_size_caption.value())
                             .color(egui::Color32::from(th.text_secondary())),
                     );
                     ui.label(
                         egui::RichText::new(fp)
                             .monospace()
-                            .size(ATTN_FINGERPRINT_SIZE.value())
+                            .size(th.font_size_caption.value())
                             .color(egui::Color32::from(th.text_muted())),
                     );
                 });

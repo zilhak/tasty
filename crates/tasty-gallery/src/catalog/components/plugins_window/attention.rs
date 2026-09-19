@@ -10,21 +10,24 @@
 //! 가 한 줄로 함께 전시한다 — 본체는 한 번에 하나만 그리므로 그 편차는
 //! 갤러리 쪽 전시 장치다.
 //!
-//! **본체와 의도적으로 다른 것**: 본체의 사유 라벨·지문·본문은 스케일 밖 폰트
-//! 값(10.5 · 11.5 · 12.5)을 쓴다(ADR-0126). 갤러리는 토큰만 쓰므로 가장 가까운
-//! semantic 토큰으로 그린다 — 값이 아니라 **구조**가 전사 대상이다.
+//! 본체의 사유 라벨·지문·본문은 한때 스케일 밖 폰트 값(10.5 · 11.5 · 12.5)을
+//! 썼고 갤러리는 가장 가까운 semantic 토큰으로 근사했다. 그 근사는 이제 없다 —
+//! 본체가 `font_size_micro`(10) · `font_size_caption`(11) · 12 로 스냅돼
+//! 두 쪽이 같은 값을 읽는다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     Button, ButtonVariant, PluginAvatarSize, TagVariant, margin_all, paint_plugin_avatar,
     plugin_avatar, tag,
 };
 
-/// 사유 배너의 채움·보더는 severity 색에서 도출한다 — 본체
-/// `attention.rs::draw_detail` 의 `gamma_multiply` 두 값과 같은 비율.
-const BANNER_FILL: f32 = 0.11;
-const BANNER_STROKE: f32 = 0.36;
+/// 본체 `attention.rs` 의 `ATTN_PRIMITIVE_12` 와 같은 자리 — DTCG primitive
+/// `font-size-12` 를 직접 쓴다. 12px 는 primitive 에는 있지만 semantic role 이
+/// 배정돼 있지 않아 `Theme` 필드가 없다. 값을 본체에서 베끼는 것이 아니라 같은
+/// primitive 를 같은 이유로 부르는 것이다.
+const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Kind {
@@ -193,10 +196,12 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 fn banner(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     let color = sev_color(theme, kind);
     egui::Frame::new()
-        .fill(color.gamma_multiply(BANNER_FILL))
+        // 채움·보더는 severity 색에서 도출한다 — 본체 `draw_detail` 과 같은 tint 짝
+        // 토큰을 읽으므로 비율이 갈릴 자리가 없다.
+        .fill(color.gamma_multiply(theme.tint_fill_alpha()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            color.gamma_multiply(BANNER_STROKE),
+            color.gamma_multiply(theme.tint_border_alpha()),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(margin_all(theme.spacing_md))
@@ -209,7 +214,7 @@ fn banner(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
             );
             ui.label(
                 egui::RichText::new(kind.blurb())
-                    .size(theme.font_size_caption.value())
+                    .size(ATTN_PRIMITIVE_12.value())
                     .color(theme.text_secondary().to_egui()),
             );
         });
@@ -246,7 +251,7 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
                     ui.label(
                         egui::RichText::new(token)
                             .monospace()
-                            .size(theme.font_size_caption.value()),
+                            .size(ATTN_PRIMITIVE_12.value()),
                     );
                     ui.label(
                         egui::RichText::new(note)
@@ -286,7 +291,7 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
                     ui.label(
                         egui::RichText::new("exited with status 101 (panicked at doc.rs:88)")
                             .monospace()
-                            .size(theme.font_size_caption.value())
+                            .size(ATTN_PRIMITIVE_12.value())
                             .color(theme.accent_danger().to_egui()),
                     );
                 });
@@ -306,7 +311,7 @@ fn action_bar(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
             .circle_filled(rect.center(), theme.status_dot_size.value() * 0.5, color);
         ui.label(
             egui::RichText::new(kind.status())
-                .size(theme.font_size_caption.value())
+                .size(ATTN_PRIMITIVE_12.value())
                 .color(color),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -385,7 +390,7 @@ pub(super) fn empty_detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Re
             egui::RichText::new(
                 "Rejected or failing plugins show up here with the reason and what to do next.",
             )
-            .size(theme.font_size_caption.value())
+            .size(ATTN_PRIMITIVE_12.value())
             .color(theme.text_muted().to_egui()),
         );
     });

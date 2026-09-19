@@ -188,14 +188,12 @@ pub(super) fn draw_list_tab(
             // 정상 종료이므로 error 가 아님).
             if entry.health_error && entry.enabled {
                 let danger = egui::Color32::from(th.accent_danger());
-                // error 박스의 채움/테두리 짝. 대응 토큰 없음.
-                const ERROR_BOX_FILL_OPACITY: f32 = 0.12;
-                const ERROR_BOX_STROKE_OPACITY: f32 = 0.35;
+                // tinted 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
                 egui::Frame::new()
-                    .fill(danger.gamma_multiply(ERROR_BOX_FILL_OPACITY))
+                    .fill(danger.gamma_multiply(th.tint_fill_alpha()))
                     .stroke(egui::Stroke::new(
                         th.border_width.value(),
-                        danger.gamma_multiply(ERROR_BOX_STROKE_OPACITY),
+                        danger.gamma_multiply(th.tint_border_alpha()),
                     ))
                     .corner_radius(th.corner_radius.value())
                     .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
