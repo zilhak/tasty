@@ -198,9 +198,12 @@ pub mod populations {
         measured: 113,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "fec33cd10 + lane 작업 트리 — **lane 트리에서 잰 값이라 구조적으로 낮다.** \
+            "131f3d6eb + lane 작업 트리 — **lane 트리에서 잰 값이라 구조적으로 낮다.** \
              그 base 의 추적 트리는 112 이고, 이 lane 이 \
-             `tasty-terminal/tests/erase_boundaries.rs` 하나를 더해 113 다. 이전 \
+             `tasty-terminal/tests/erase_boundaries.rs` 하나를 더해 113 다. 이 값은 \
+             base 를 fec33cd10 에서 131f3d6eb 으로 rebase 한 뒤 다시 잰 것이다 — \
+             그 사이 main 에 들어온 9 커밋은 통합 타깃을 하나도 더하지 않았고 \
+             양쪽 추적 트리가 똑같이 112 다. 이전 \
              회차: 1c6c5af8d + lane 작업 트리 112 — 그 base 의 추적 트리는 111 이고 \
              그 lane 이 `tasty-terminal/tests/region_autowrap.rs` 하나를 더했다. 같은 \
              회차의 다른 lane 이 통합 타깃을 더했으면 통합 트리에서는 더 크다 — \
