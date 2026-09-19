@@ -214,9 +214,14 @@ pub fn load_system_cjk_font() -> Option<Vec<u8>> {
 /// egui Context 에 시스템 CJK 폰트를 `Proportional` / `Monospace` family 양쪽의
 /// fallback 으로 등록한다. 시스템 폰트를 못 찾으면 `tracing::warn!` 후 noop.
 ///
-/// 본체 (`src/gfx/gpu/fonts.rs`) 는 번들 D2Coding 우선순위와 결합된 자체
-/// `setup_egui_fonts` 를 가지므로 이 함수를 직접 호출하지 않고
-/// [`load_system_cjk_font`] 만 재사용한다. 갤러리처럼 추가 폰트가 없는 경우용.
+/// **번들 mono 를 안 얹는다** — Monospace 의 첫 자리는 egui 기본 서체로 남는다.
+/// 그래서 mono 폭으로 무엇을 재는 자리에는 쓸 수 없다. 본체
+/// (`src/gfx/gpu/fonts.rs::setup_egui_fonts`)와 갤러리
+/// (`tasty_gallery::fonts::install`)는 각자 D2Coding 을 맨 앞에 놓고
+/// [`load_system_cjk_font`] 만 재사용한다.
+///
+/// 남는 쓰임은 **proportional 만 재는 자리**다(두 스택의 Proportional 은 같다).
+/// 실제 호출부도 그것 하나 — 설정 키바인딩 라벨 열 폭 시험.
 pub fn install_cjk_fallback(ctx: &egui::Context) {
     let Some(bytes) = load_system_cjk_font() else {
         tracing::warn!("no system CJK font found; Korean/Japanese/Chinese labels will render as □");
