@@ -26,7 +26,7 @@
 
 1. 사이드바의 도구 버튼 → **도구** <!-- en: Tools --> 메뉴 → **원격 접속…** <!-- en: Remote connections… -->.
 2. **원격 접속 프로필** <!-- en: Remote profiles --> 탭 → **+ 프로필 추가** <!-- en: + Add profile -->. 이름·호스트·사용자·포트·셸을 적고 저장합니다. 셸을 `auto` 로 두면 저장 시 SSH 로 한 번 접속해 셸을 감지합니다.
-   - `~/.ssh/config` 에 이미 있는 호스트는 탭 아래 **로컬 SSH config** <!-- en: Local SSH config --> 섹션에서 **tasty 프로필로 가져오기** <!-- en: Import as tasty profile --> 로 바로 만듭니다. 별칭만 저장되므로 ssh config 를 고쳐도 그대로 따라갑니다.
+   - `~/.ssh/config` 에 이미 있는 호스트는 프로필 목록 아래 **ssh config 에서** <!-- en: From ssh config --> 섹션에서 호스트 오른쪽의 **프로필 추가** <!-- en: Add profile --> 로 바로 만듭니다. 별칭만 저장되므로 ssh config 를 고쳐도 그대로 따라갑니다. 이미 만들어 둔 호스트에는 버튼 대신 **등록됨** <!-- en: in profiles --> 표시가 붙습니다. 이 목록은 팝업을 열 때 한 번 읽으므로, ssh config 를 고친 뒤에는 팝업을 다시 열면 됩니다.
    - 키 파일은 **Passkey** 탭에 먼저 등록하고 프로필의 Passkey 드롭다운에서 고릅니다. 비밀 값은 `~/.tasty/passkeys.toml` 에 경로로만 참조됩니다.
 3. **Attach** 탭 → **+ Attach 추가** <!-- en: + Add attach -->. 이름을 적고 **연결** <!-- en: Connection --> 에서 **SSH 프로필** (위에서 만든 것 참조) 또는 **직접 입력(인라인)** 을 고릅니다.
    - **원격 TASTY** <!-- en: Remote tasty --> 그룹: **실행 파일** (원격 tasty 경로, 기본 `tasty`) · **포트 모드** · **포트 파일**. 원격 PATH 에 tasty 가 없으면 실행 파일에 전체 경로를 적거나 포트 모드를 `file-unix` 로 둡니다.

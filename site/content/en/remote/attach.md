@@ -1,4 +1,4 @@
-<!-- source-hash: 8ffb9c4bf2e0 -->
+<!-- source-hash: 0adcbdfbf07a -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -27,7 +27,7 @@ Trying to attach directly with an `ssh` profile is refused. Always create one `t
 
 1. The tools button in the sidebar → **Tools** menu → **Remote connections…**.
 2. **Remote profiles** tab → **+ Add profile**. Enter the name · host · user · port · shell and save. If you leave the shell as `auto`, saving connects once over SSH to detect the shell.
-   - Hosts already in `~/.ssh/config` can be created directly from the **Local SSH config** section below the tab with **Import as tasty profile**. Only the alias is stored, so changes to the ssh config are followed as they are.
+   - Hosts already in `~/.ssh/config` can be created directly from the **From ssh config** section below the profile list with **Add profile** on the right of the host. Only the alias is stored, so changes to the ssh config are followed as they are. A host you already created shows **in profiles** instead of the button. The list is read once when the popup opens, so after editing the ssh config, reopen the popup.
    - Register key files in the **Passkey** tab first, then pick them from the profile's Passkey dropdown. Secret values are referenced only by path in `~/.tasty/passkeys.toml`.
 3. **Attach** tab → **+ Add attach**. Enter a name and, under **Connection**, choose **SSH profile** (referencing the one created above) or **Direct (inline)**.
    - **Remote tasty** group: **Executable** (the remote tasty path, default `tasty`) · **Port mode** · **Port file**. If tasty is not on the remote PATH, enter the full path in Executable or set the port mode to `file-unix`.
