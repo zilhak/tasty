@@ -80,9 +80,11 @@ const ROOT_TESTS_FLOOR: Floor = Floor {
     measured_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.counted_on,
     why_this_gap: "루트 통합 테스트 타깃은 대개 하나씩 늘지만 접힐 때는 한 \
-                   번에 여럿 빠진다 — 실측(`8bdbf1bdb` 직전 1215 커밋): 감소 10 회, 폭은 -1 이 \
-                   여섯 · -2 가 하나 · -4 가 둘 · -6 이 하나. 여유 18 은 관측된 최대 감소 6 의 \
-                   세 배다. 이 시험은 거부문을 자기 말로 갈라 보므로, 타깃이 절반만 보이면 갈릴 \
+                   번에 여럿 빠진다 — 도달 가능한 창에서 다시 실측(`fdca139c0`..`91ca7d37d`, \
+                   558 커밋, 직선): 감소 3 회, 폭은 -1 이 둘 · **-16 이 하나**. ★ 여유 19 는 \
+                   그 최대 감소 하나를 겨우 넘는 폭이다. 앞선 판은 `8bdbf1bdb` 직전 1215 \
+                   커밋에서 감소 10 회 · 최대 -6 으로 재고 여유를 그 세 배로 잡았는데, 그 \
+                   좌표는 지금 main 에서 도달 불가다. 이 시험은 거부문을 자기 말로 갈라 보므로, 타깃이 절반만 보이면 갈릴 \
                    것이 없어 초록으로 끝난다 — 하한이 그 부분 사망을 잡는 유일한 자리다",
 };
 

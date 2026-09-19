@@ -58,8 +58,13 @@ const ROOT_TESTS_FLOOR: Floor = Floor {
     measured: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::ROOT_TEST_TARGETS.counted_on,
-    why_this_gap: "루트 통합 테스트 타깃의 감소를 실측했다(`8bdbf1bdb` 직전 \
-                   1215 커밋): 10 회, 최대 -6. 여유 18 은 그 세 배다. 앞선 판에서 여유의 크기를 \
+    why_this_gap: "루트 통합 테스트 타깃의 감소를 도달 가능한 창에서 다시 실측했다 \
+                   (`fdca139c0`..`91ca7d37d`, 558 커밋, 직선): 3 회, 폭은 -1 이 둘 · **-16 이 \
+                   하나**다. ★ 여유 19 는 그 최대 감소 **하나를 겨우 넘는다** — 두 번 겹치면 \
+                   하한이 짖고, 그때 처방은 하한을 내리는 것이 아니라 다시 재는 것이다. \
+                   앞선 판은 `8bdbf1bdb` 직전 1215 커밋에서 10 회 · 최대 -6 으로 재고 여유를 \
+                   그 세 배로 잡았는데, 그 좌표는 지금 main 에서 도달 불가이고 도달 가능한 \
+                   창의 최대 감소는 그 2.7 배다. 앞선 판에서 여유의 크기를 \
                    숫자로 안 적기로 했던 것을 여기서 뒤집는다 — 그때 걱정한 낡음(옛 문장이 '여유 \
                    15' 였고 그때 이미 16 이었다)은 그 숫자를 실측에서 뺀 차로 적었기 때문에 \
                    생겼다. 진폭에서 뽑은 수는 실측이 움직여도 안 낡고 대신 관측 창과 함께 낡는다 \
