@@ -135,6 +135,4 @@ tasty codex install     # ~/.codex/config.toml
 
 ### 부모 에이전트가 자식 결과를 받지 못합니다
 
-자식의 테두리·배지 상태와 부모 결과 수신은 별개입니다. 부모 Codex는 `tasty codex completion diagnose`와 `status`로 같은 서버·대화 바인딩을 확인하세요. `unknown`은 반복 송신하지 않고 원래 이력과 대조합니다. 부모 Claude는 기존 완료 로그와 Monitor 구독을 확인하세요. [연결·복구 안내](../agents/claude-codex.md)를 따르세요.
-
-Codex 재시작이 `Hooks need review` 화면에서 멈추면 Codex에서 훅을 직접 검토하세요. 재개 옵션이 있어도 이 화면이 나타날 수 있습니다. Tasty는 신뢰를 대신 승인하지 않으며, 재개 화면을 확인하지 못하면 완료 전달을 보류합니다. 검토 후 실제 원격 세션으로 돌아온 뒤 기존 연결 정보로 `tasty codex completion bind --register`를 실행하세요.
+자식의 테두리·배지 상태와 부모 결과 수신은 별개입니다. 부모가 Claude Code이면 완료 로그와 Monitor 구독을 확인하세요. [연결·복구 안내](../agents/claude-codex.md)를 따르세요.

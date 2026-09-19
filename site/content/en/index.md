@@ -1,4 +1,4 @@
-<!-- source-hash: 27d239ca072e -->
+<!-- source-hash: cea56397222e -->
 # Tasty guide
 
 Tasty is a GPU-accelerated terminal where you and your AI agents work together. On Windows, macOS, and Linux, you can organize projects into workspaces and open several terminals side by side. Agents use the `tasty` CLI to create terminals, run commands, and read the results.
@@ -29,7 +29,7 @@ Start with installation and a first look if you are new to Tasty. If you already
 
 - [Driving the terminal with the tasty CLI](agents/cli.md) — Basic `list` / `send` / `read` / `mark` / `notify` patterns.
 - [Bring a background task into a tab](agents/background-tasks.md) — inspect output and exit state, then move a running hidden PTY into a tab.
-- [Working with Claude · Codex](agents/claude-codex.md) — Installing hooks, spawn and tell, Codex parent binding, and Claude Monitor setup.
+- [Working with Claude · Codex](agents/claude-codex.md) — Installing hooks, spawn and tell, and Claude Monitor setup.
 - [Task workflows](agents/tasks.md) — Tying work together by dependency, running it in order, and watching the graph.
 - [Hooks · notifications · webhooks](agents/hooks-notifications.md) — Surface hooks, global hooks, notifications, external HTTP triggers.
 
