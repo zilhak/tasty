@@ -18,7 +18,8 @@
 //! 3. 기능 동작 설명이면 — `docs/`(dev-guide / features / plugins) 문서를 참조
 //!
 //! **탐지 패턴 7 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
-//! - P1 번호 인용 — `todo`(대소문자 무시) + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자.
+//! - P1 번호 인용 — `todo`(대소문자 무시) + 구분자 런(공백·탭·`/`, 0 개 이상) +
+//!   선택적 하이픈 + 숫자.
 //!   **어순 양방향**: 한국어 문장에서는 번호가 앞에 온다(`<숫자>번 TODO`). 뒤 어순만
 //!   보던 시절 그 형태가 소스에 두 건 살아 있었다 — 같은 죽은 좌표인데 어순 하나로
 //!   가드를 통과했다. **괄호 묶음도 잡는다**(`TODO(<숫자>)` · `TODO[<숫자>]` ·
@@ -48,13 +49,14 @@
 //! **매칭은 구분자 개수·대소문자로 회피되지 않아야 한다.** 구분자를 한 개만 소비하는
 //! 매처는 공백 두 개만 넣어도 통과하고, 원문 그대로 비교하는 매처는 대문자 표기로
 //! 통과한다. 그래서 **P1~P6 은 전부** 구분자를 런으로 소비하고 소문자로 비교한다.
-//! **예외는 대소문자 축이 아니라 구분자 축에만 있다** — P1 은 공백 런과 **짝 맞는
+//! **예외는 대소문자 축이 아니라 구분자 축에만 있다** — P1 은 공백 런, `/`, **짝 맞는
 //! 괄호 묶음**까지만 넓힌다. 임의 문장부호
 //! (`:` · `#` · `.`)를 구분자로 허용하면 "TODO. 40" 같은 평범한 문장이 걸린다.
-//! 괄호는 그 논거의 반례가 아니다: 여는 괄호 뒤 숫자에 **닫는 괄호가 짝으로 따라올
-//! 것**을 함께 요구하므로 문장이 아니라 번호를 감싼 묶음만 걸린다
-//! ([`bracketed_number_end`]). 티켓 인용은 공백·하이픈·괄호로 쓰이지 벌거벗은
-//! 문장부호로 쓰이지 않는다.
+//! 괄호와 `/` 는 그 논거의 반례가 아니다: 괄호는 여는 괄호 뒤 숫자에 **닫는 괄호가
+//! 짝으로 따라올 것**을 함께 요구하므로 문장이 아니라 번호를 감싼 묶음만 걸리고
+//! ([`bracketed_number_end`]), `/` 는 문장 부호가 아니라 **경로 구분자**라 낱말과
+//! 숫자 사이에서 문장을 만들지 않는다. 티켓 인용은 공백·하이픈·`/`·괄호로 쓰이지
+//! 벌거벗은 문장부호로 쓰이지 않는다.
 //!
 //! **스캔 대상 정의 — denylist 전수 순회.** ADR-0105 의 규칙 범위가 "git 이 추적하는
 //! 모든 파일" 이므로, 확장자·디렉토리 화이트리스트로 "볼 파일" 을 열거하지 않는다.
@@ -303,7 +305,7 @@ fn bracketed_number_end(line: &str, i: usize) -> Option<usize> {
 }
 
 /// P1 — 번호와 `TODO` 가 붙어 있는 형태를 **양쪽 어순 모두** 잡는다.
-/// 뒤 어순은 `todo` + 공백 런 + (선택적 하이픈 + 숫자 | 괄호로 감싼 숫자),
+/// 뒤 어순은 `todo` + 구분자 런(공백·탭·`/`) + (선택적 하이픈 + 숫자 | 괄호로 감싼 숫자),
 /// 앞 어순은 숫자 + `번` + 공백 런 + `todo`(한국어 문장의 자연스러운 순서).
 /// 번호 없는 평범한 `TODO:` 주석은 대상이 아니다(금지 대상은 *파일 번호 인용*
 /// 이지 할 일 표시가 아니다).
@@ -316,6 +318,13 @@ fn bracketed_number_end(line: &str, i: usize) -> Option<usize> {
 /// 뒤따르는 것은 **8** 자리였다. 그 8 은 전부 죽은 좌표(3)이거나 이 파일 자신의
 /// 픽스처(5)였고 **산문·식별자 오탐은 0** 이었다. 오탐 위험이 사는 축은 대소문자가
 /// 아니라 **구분자**이고, 그쪽은 모듈 머리말이 이미 좁혀 두었다.
+///
+/// **`/` 는 구분자로 받는다.** 티켓 번호는 경로 표기로도 인용되고(`todo/<숫자>`), 임의
+/// 문장부호를 뺀 근거("`TODO. 40` 같은 평범한 문장이 걸린다")가 `/` 에는 서지 않는다 —
+/// 낱말과 숫자 사이의 `/` 는 문장 부호가 아니라 경로 구분자다. 실측 2026-09-20 —
+/// 추적 파일에서 `todo/` 형태는 7 자리였고, 그중 산문은 둘(`TODO/changelog` ·
+/// 콜아웃 종류 `note/todo/abstract`)인데 **둘 다 뒤에 숫자가 없어** 이 패턴에 걸리지
+/// 않는다. 숫자를 요구하는 것이 여기서도 방벽이다.
 fn find_p1(line: &str) -> Option<String> {
     // `to_ascii_lowercase` 는 바이트 길이를 보존하므로 인덱스가 `line` 과 같다 —
     // 반환하는 인용문은 **원문 슬라이스**로 돌려준다(보고에 원문이 보여야 한다).
@@ -324,7 +333,7 @@ fn find_p1(line: &str) -> Option<String> {
     let mut from = 0;
     while let Some(pos) = lower[from..].find("todo") {
         let start = from + pos;
-        let after_space = skip_run(bytes, start + 4, b" \t");
+        let after_space = skip_run(bytes, start + 4, b" \t/");
         let mut i = after_space;
         if i < bytes.len() && bytes[i] == b'-' {
             i += 1;
@@ -977,6 +986,20 @@ fn p1_catches_numbered_todo_citation_only() {
     assert_eq!(find_p1("// todo(권한모델): 도입 후 대체"), None);
     assert_eq!(find_p1("let todos = todo_marker_end(line, 4);"), None);
     assert_eq!(find_p1("todo_40"), None);
+
+    // `/` 구분자 — 경로 표기로 쓴 번호 인용.
+    assert_eq!(
+        find_p1(fx!("(todo", "/52 R2)")),
+        Some(fx!("todo", "/52").into())
+    );
+    assert_eq!(find_p1(fx!("TODO", "/7")), Some(fx!("TODO", "/7").into()));
+    assert_eq!(
+        find_p1(fx!("x/todo", "//3.md")),
+        Some(fx!("todo", "//3").into())
+    );
+    // `/` 뒤에 숫자가 없으면 낱말 사이의 `/` 다 — 산문도 콜아웃 종류도 통과한다.
+    assert_eq!(find_p1("TODO/changelog 어느 쪽 인용이든"), None);
+    assert_eq!(find_p1("note/todo/abstract/quote"), None);
 }
 
 #[test]
@@ -1040,16 +1063,16 @@ fn p2_catches_conductor_ticket_numbers() {
 #[test]
 fn p3_catches_workspace_subdir_paths() {
     assert_eq!(
-        find_p3(fx!("claude", "-workspace/todo/3.md")),
+        find_p3(fx!("claude", "-workspace/todo", "/3.md")),
         Some(fx!("claude", "-workspace/todo").into())
     );
     // 대소문자·슬래시 개수로 회피되지 않는다.
     assert_eq!(
-        find_p3(fx!("claude", "-workspace/Todo/3.md")),
+        find_p3(fx!("claude", "-workspace/Todo", "/3.md")),
         Some(fx!("claude", "-workspace/todo").into())
     );
     assert_eq!(
-        find_p3(fx!("claude", "-workspace//todo/3.md")),
+        find_p3(fx!("claude", "-workspace//todo", "/3.md")),
         Some(fx!("claude", "-workspace/todo").into())
     );
     // 금지 하위가 아니면 P3 는 잡지 않는다(폴더 언급 자체는 P6 소관).
@@ -1474,7 +1497,7 @@ fn prunes_build_outputs_and_local_dirs_but_not_assets() {
 fn allowlist_exempts_only_the_named_pattern_not_the_whole_file() {
     // `CLAUDE.md` 는 P1·P4 만 면제다. 같은 파일에 P3(경로 인용)을 심으면 잡혀야 한다 —
     // 이 단언이 깨지는 형태가 곧 "파일 통째 면제" 로의 회귀다.
-    let planted = fx!("claude", "-workspace/todo/3.md");
+    let planted = fx!("claude", "-workspace/todo", "/3.md");
     let found = violations_in_line("CLAUDE.md", planted);
     assert!(
         found.iter().any(|v| v.starts_with("P3")),

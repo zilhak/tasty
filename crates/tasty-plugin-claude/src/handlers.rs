@@ -1606,7 +1606,9 @@ mod tests {
         }
     }
 
-    // ── `--child <index>` → child surface id 해석 (todo/52 R2) ──
+    // ── `--child <index>` → child surface id 해석 — 호스트가 주는 원본 `surface_id`
+    // 로만 풀고, 없는 index 는 실재하는 index 목록과 함께 거절한다
+    // (docs/plugins/claude/index.md 의 `child-profile` 절) ──
 
     #[test]
     fn child_index_resolves_to_the_hosts_surface_id() {
