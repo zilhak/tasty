@@ -38,12 +38,18 @@ Claude Design 프로젝트 **Tasty Design System** 에서 받아온 사본이다
 3. **로컬 변형 2 곳을 다시 적용한다.** 아래 "원본과 다르게 둔 자리" 의 두 파일은 덮어쓰면
    변형이 날아간다. 덮은 뒤 반드시 다시 적용하고, `cargo test -p tasty-doc-guards --test
    no_todo_file_citation` 으로 확인한다 — 이 검사가 그 변형이 존재하는 이유다.
-4. **토큰 대조를 돌린다.** `cargo test -p tasty-doc-guards --test
-   site_vendor_tokens_track_the_app_export`. 앱 사본과 이 사본의 토큰 이름 집합 차이를
-   명부와 대조한다. 재-vendoring 으로 따라온 만큼 그 명부에서 지워야 하고, 다 따라왔으면
-   명부가 빈다.
-   - **이 검사가 초록이라고 "사본이 최신" 이 되는 것은 아니다.** 토큰을 하나도 안 여는
-     결정 — 문구 변경 · 구성 변경 · 컨트롤 삭제 — 은 두 사본의 토큰 이름 집합을 똑같이
+4. **두 대조를 돌린다.** `cargo test -p tasty-doc-guards --test
+   site_vendor_tokens_track_the_app_export --test
+   site_vendor_icons_match_the_app_transcription`.
+   - 앞엣것은 앱 사본과 이 사본의 **토큰 이름 집합** 차이를 명부와 대조한다. 재-vendoring
+     으로 따라온 만큼 그 명부에서 지워야 하고, 다 따라왔으면 명부가 빈다.
+   - 뒤엣것은 **아이콘 기하**를 본다 — 이 사본 안의 두 자리(`icons/*.svg` 와
+     `components/core/Icon.jsx` 의 `ICON_PATHS`)끼리, 그리고 앱 전사본
+     (`crates/tasty-icons/src/lib.rs`)과. 짝은 이름에서 도출하지 않고 명부로 적는다
+     (이 킷의 `list` 는 앱의 `log` 이고 `listView` 가 앱의 `list` 다). 글리프가 늘거나
+     줄면 그 명부를 함께 옮긴다.
+   - **이 검사들이 초록이라고 "사본이 최신" 이 되는 것은 아니다.** 토큰도 아이콘 기하도
+     안 건드리는 결정 — 문구 변경 · 구성 변경 · 컨트롤 삭제 — 은 양쪽 좌변을 똑같이
      남겨두므로 안 잡힌다. 그 층을 닫는 것은 1~3 단계뿐이다.
 5. **사이트를 빌드해 확인한다.** `cd site && npm run build`. 변환기
    (`scripts/vendor-to-esm.mjs`)가 새 파일을 모르는 형태면 여기서 걸린다.
@@ -70,6 +76,12 @@ Claude Design 프로젝트 **Tasty Design System** 에서 받아온 사본이다
   있어 빠져도 렌더가 깨지지 않는다. 브랜드 통일이 필요해지면 woff2 서브셋으로 되돌린다.
 - **`_ds_bundle.js`** — 브라우저 직접 실행용 전역 번들. 사이트는 `components/` 를 직접
   번들하므로 필요 없다.
+- **`icons.json`** — `icons/*.svg` 에서 생성된 machine-readable 매니페스트(이름 · 그룹 ·
+  역할 · `paths` · `fill`). 기하의 **셋째 사본**이라 들이면 맞춰야 할 자리가 하나 늘어나는데,
+  사이트는 그것을 소비하지 않는다(`components/core/Icon.jsx` 의 `ICON_PATHS` 를 번들한다).
+  앱 쪽 `crates/tasty-icons` 가 이 매니페스트를 보고 **손으로 전사**한 것이지만, 그 대조는
+  사본을 하나 더 두지 않고 `ICON_PATHS` 를 좌변으로 삼아
+  `crates/tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs` 가 한다.
 - **프리뷰 `index.html`** — 위 번들에 의존하는 킷 자체 미리보기. 원본에만 둔다.
   `ui_kits/terminal/overlays/*.html` · `titlebar/*.html` 의 컴포넌트별 단독 미리보기와
   킷 `README.md` 도 같은 이유로 가져오지 않는다 — 사이트는 `.jsx` 만 변환해 쓴다.

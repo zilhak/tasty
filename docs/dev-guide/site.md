@@ -84,9 +84,12 @@ site/
 [design-change-workflow](design-change-workflow.md#넷째-정합-대상--사이트-사본-필수) 에 있다. 결정 근거는
 [ADR-0294](../adr/0294-the-site-vendor-copy-gets-a-channel-and-a-visible-date.md).
 
-따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 토큰 층에
-한해서는 `crates/tasty-doc-guards/tests/site_vendor_tokens_track_the_app_export.rs` 가 그
-침묵을 깨지만, 토큰을 안 여는 결정은 그 판정기도 못 본다.
+따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 그 침묵을
+깨는 판정기가 둘 있고 둘 다 **레포 안의 두 사본만** 본다:
+`site_vendor_tokens_track_the_app_export.rs` 가 토큰 **이름 집합**을,
+`site_vendor_icons_match_the_app_transcription.rs` 가 아이콘 **기하**(와 채움)를 본다.
+그 둘이 안 여는 결정 — 문구 변경 · 구성 변경 · 컨트롤 삭제 — 은 어느 쪽 좌변도 안 움직이므로
+**여전히 안 잡힌다.**
 
 그래서 **그 사본에서 그리는 페이지가 사본의 시점을 화면에 적는다** — 갤러리 라우트와
 디자인 섹션(`/design/` · `/design/tokens/`) 양쪽이다. 뒤엣것도 같은 사본에서 온다:

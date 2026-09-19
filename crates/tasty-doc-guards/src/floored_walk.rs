@@ -231,10 +231,14 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 115,
+        measured: 116,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "742b0dbf7 + 이 lane — 그 트리의 추적 계수가 114 이고 이 lane 이 \
+            "4eb7312bb + 이 lane — 그 트리의 추적 계수가 115 이고 이 lane 이 \
+             `tasty-doc-guards/tests/site_vendor_icons_match_the_app_transcription.rs` \
+             하나를 더해 116 다. 앞선 값 115 도 같은 형태로 적혔고 그 사이 통합이 한 번 \
+             있었다 — 그 트리에서 다시 세도 115 라 그 값은 낡지 않았다. \
+             이전 회차: 742b0dbf7 + lane — 그 트리의 추적 계수가 114 이고 그 lane 이 \
              `tasty-doc-guards/tests/githooks_are_pinned.rs` 하나를 더해 115 다. \
              **lane 트리에서 잰 값이라 구조적으로 낮다** — 같은 회차의 다른 lane 이 \
              통합 타깃을 더했으면 통합 트리에서는 더 크고, 최종 값은 병합하는 쪽이 \
