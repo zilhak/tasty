@@ -281,6 +281,11 @@ impl TastyInstance {
         // 이 스위트가 번들 plugin 을 안 부르면 빈 번들로 띄운다 — 격리 홈으로 가는
         // 1 GB 복사가 통째로 사라진다. 명부와 근거는 `spawn_diag` 에 있다.
         spawn_diag::apply_bundle_opt_in(&mut command);
+        // 자식이 어느 디스플레이에 창을 띄우는가. 이 줄이 없으면 부모의 값을 그대로
+        // 물려받아 **실행자가 보고 있는 화면**이 시험의 디스플레이가 된다 — 그 상태는
+        // 조용해서, 격리의 다른 축(HOME · TASTY_HOME · 포트 파일)이 다 맞아도 이 축만
+        // 아무도 값으로 못 가른다. 정책과 실측은 `spawn_diag::DISPLAY_ENV`.
+        spawn_diag::apply_display_policy(&mut command);
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
         // 자식을 대신 죽여준다. 아래 Drop 은 부모가 살아서 unwind 될 때만 자식을
         // 정리하므로, 부모가 그 전에 죽으면 Drop 이 실행되지 않아 자식이 고아로

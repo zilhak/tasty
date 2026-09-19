@@ -1595,6 +1595,84 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
         opened.succeeded();
         opened.entering("시험용 하네스"); // 안 죽어야 한다
     }
+
+    // ───── 자식이 어느 디스플레이에 뜨는가 ─────
+
+    /// 디스플레이를 안 쓰는 조합에서는 아무것도 정하지 않는다.
+    ///
+    /// 이 갈래가 없으면 헤드리스 완주가 쓰지도 않는 값을 요구받고 멈춘다 — 규칙이
+    /// 실재하지 않는 위반에 처방을 내는 형태다.
+    #[test]
+    fn a_daemon_without_a_window_is_asked_for_no_display() {
+        assert_eq!(
+            display_policy(false, None),
+            DisplayPolicy::NotRequired,
+            "창을 안 만드는 조합에 디스플레이를 요구했다"
+        );
+        // 선언이 있어도 요구가 없으면 정하지 않는다 — 요구 여부가 먼저다.
+        assert_eq!(
+            display_policy(false, Some(":77")),
+            DisplayPolicy::NotRequired
+        );
+    }
+
+    /// 자기 화면을 쓰겠다는 선언은 오늘 동작을 그대로 남긴다.
+    #[test]
+    fn declaring_the_inherit_keeps_todays_behavior() {
+        assert_eq!(
+            display_policy(true, Some(DISPLAY_INHERIT)),
+            DisplayPolicy::Inherit
+        );
+    }
+
+    /// 지정한 값은 그대로 자식에게 간다.
+    #[test]
+    fn a_named_display_is_handed_to_the_child_verbatim() {
+        assert_eq!(
+            display_policy(true, Some(":77")),
+            DisplayPolicy::Pin(":77".to_string())
+        );
+        // 셸이 흘린 공백은 값이 아니다.
+        assert_eq!(
+            display_policy(true, Some(" :77 ")),
+            DisplayPolicy::Pin(":77".to_string())
+        );
+    }
+
+    /// 빈 값은 미지정과 **같다** — 통과가 아니다.
+    ///
+    /// 빈 `DISPLAY` 를 자식에게 넘기면 winit 이 디스플레이 부재와 같은 자리에서 죽어
+    /// "안 줬다" 와 "없다" 가 한 문구로 합쳐진다. 두 세계의 처방이 다르므로 여기서 가른다.
+    #[test]
+    fn an_empty_declaration_is_not_a_declaration() {
+        assert_eq!(display_policy(true, None), DisplayPolicy::Unspecified);
+        assert_eq!(display_policy(true, Some("")), DisplayPolicy::Unspecified);
+        assert_eq!(
+            display_policy(true, Some("   ")),
+            DisplayPolicy::Unspecified
+        );
+    }
+
+    /// 멈추는 문구가 **두 길을 다 찍는다.**
+    ///
+    /// 한 길만 찍으면 그것이 유일한 처방으로 읽힌다 — 전용 디스플레이만 찍으면 창을
+    /// 눈으로 봐야 하는 작업이 막히고, 선언만 찍으면 모두가 선언해서 결함이 그대로 남는다.
+    #[test]
+    fn the_refusal_prints_both_ways_out() {
+        let msg = unspecified_display_message();
+        assert!(
+            msg.contains("Xvfb"),
+            "전용 디스플레이를 만드는 길이 없다: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("{DISPLAY_ENV}={DISPLAY_INHERIT}")),
+            "자기 화면을 선언하는 길이 없다: {msg}"
+        );
+        assert!(
+            msg.contains("docs/dev-guide/e2e-tests.md"),
+            "절차 문서를 안 가리킨다: {msg}"
+        );
+    }
 }
 
 /// 번들 plugin 을 **실제로 호출하는** 테스트 바이너리.
@@ -1739,5 +1817,127 @@ pub fn apply_bundle_opt_in(command: &mut std::process::Command) {
     let empty = std::env::temp_dir().join("tasty-test-empty-plugin-bundle");
     if std::fs::create_dir_all(&empty).is_ok() && empty.is_dir() {
         command.env("TASTY_BUILTIN_PLUGINS_DIR", &empty);
+    }
+}
+
+// ───── 자식이 어느 디스플레이에 뜨는가 ─────
+
+/// 자식 인스턴스가 쓸 디스플레이를 **명시**하는 환경변수.
+///
+/// gui 조합의 데몬은 창을 반드시 만들고([`instance_bin`] 의 doc), winit 은 그 창을
+/// 어디에 띄울지 `DISPLAY`/`WAYLAND_DISPLAY` 로 고른다. 하네스가 그 둘을 정하지
+/// 않으면 `Command` 가 부모의 값을 그대로 물려주므로 **실행자가 보고 있는 화면이
+/// 그대로 시험의 디스플레이가 된다.** 그 상태는 조용하다 — 시험은 통과하고, 창만
+/// 사람 화면에 뜬다.
+///
+/// 실측 2026-09-20(이 개발 박스, 전용 Xvfb `:77` 위에서 `shared_instance_harness`):
+/// 자식 `/proc/<pid>/environ` 의 `DISPLAY` 가 부모가 준 `:77` 이었고, 그 디스플레이에
+/// `1280x720` 짜리 `Tasty (Debug)` 창이 떴다. 부모가 사람이 보는 화면이면 창은 거기 뜬다.
+///
+/// **그렇다고 상속을 끊을 수는 없다.** 같은 날 같은 바이너리를 `DISPLAY`·`WAYLAND_DISPLAY`
+/// 없이 띄우니 winit 이 `neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set`
+/// 로 즉사하고 port file 이 안 써졌다([`NO_DISPLAY_MARKERS`] 가 그 시그니처다). gui
+/// 조합에서 디스플레이는 격리해야 할 누수가 아니라 **필요한 입력**이고, 지우면 이
+/// 하네스를 쓰는 스위트가 전부 부팅에 실패한다.
+///
+/// 그래서 남는 물음은 하나다 — **누가 그 입력을 정하는가.** 이 변수가 그 답을 값으로
+/// 남긴다. 값이 없으면 시험을 세운다: 조용히 남의 화면을 쓰는 것보다 시끄럽게 멈추는
+/// 쪽이 낫다.
+pub const DISPLAY_ENV: &str = "TASTY_E2E_DISPLAY";
+
+/// [`DISPLAY_ENV`] 의 "내가 보고 있는 화면을 그대로 쓰겠다" 선언.
+///
+/// 오늘의 동작을 그대로 남기는 값이다 — 없애지 않는 이유는 창을 눈으로 보면서
+/// 고치는 작업이 실재하기 때문이다. 다만 그때는 그것이 **선택**이었음이 값으로 남는다.
+pub const DISPLAY_INHERIT: &str = "inherit";
+
+/// 자식에게 줄 디스플레이의 결정.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisplayPolicy {
+    /// 이 조합은 디스플레이를 안 쓴다 — 아무것도 정하지 않는다.
+    NotRequired,
+    /// 실행자가 자기 화면을 쓰겠다고 선언했다 — 오늘 동작(상속) 그대로.
+    Inherit,
+    /// 지정된 디스플레이를 자식에게 준다.
+    Pin(String),
+    /// 요구되는데 지정이 없다 — 세운다.
+    Unspecified,
+}
+
+/// [`DisplayPolicy`] 의 판정만 떼어낸 순수 함수.
+///
+/// 환경변수를 건드리지 않고 네 갈래를 다 시험할 수 있어야 한다(테스트는 병렬로 돌고
+/// `set_var` 는 프로세스 전역이다) — [`resolve_instance_bin`] 과 같은 이유다.
+///
+/// 빈 문자열은 **미지정과 같게** 다룬다. 셸에서 `TASTY_E2E_DISPLAY=` 로 비우는 것이
+/// "안 준다" 로 읽히는 것이 자연스럽고, 빈 `DISPLAY` 를 자식에게 주면 winit 이
+/// 디스플레이 부재와 같은 자리에서 죽어 원인이 한 겹 가려진다.
+fn display_policy(required: bool, declared: Option<&str>) -> DisplayPolicy {
+    if !required {
+        return DisplayPolicy::NotRequired;
+    }
+    match declared.map(str::trim) {
+        None | Some("") => DisplayPolicy::Unspecified,
+        Some(v) if v == DISPLAY_INHERIT => DisplayPolicy::Inherit,
+        Some(v) => DisplayPolicy::Pin(v.to_string()),
+    }
+}
+
+/// 이 완주가 **창을 만드는 데몬**을 띄우는가.
+///
+/// 세 조건의 곱이다.
+///
+/// * `target_os = "linux"` — 디스플레이를 환경변수로 고르는 플랫폼이라야 물음이 선다.
+///   macOS 는 창을 항상 사용자 세션에 띄우고 Windows 도 같다. 그쪽에서 이 변수를
+///   요구하면 줄 수 있는 답이 없다.
+/// * `feature = "gui"` — 헤드리스 데몬은 창도 GPU 도 안 만든다. 그 조합에서 자식이
+///   `DISPLAY` 를 물려받아도 아무 데도 안 쓴다.
+/// * override 가 안 먹히는 스위트 — [`INSTANCE_BIN_ENV`] 의 용도는 미리 지어 둔
+///   **헤드리스** 바이너리를 가리키는 것이다([`instance_bin`] 의 doc). 그 경로로 뜬
+///   데몬에는 창이 없으므로 디스플레이를 요구할 것이 없다.
+///
+/// **마지막 조건은 선언된 사각이다.** override 가 gui 바이너리를 가리키면 창이 뜨는데
+/// 이 판정은 안 요구한다. 경로만 보고 그 바이너리의 조합을 알 방법이 없어서다 — 그
+/// 경우는 오늘 동작(조용한 상속)으로 남는다.
+fn display_required() -> bool {
+    if !cfg!(all(target_os = "linux", feature = "gui")) {
+        return false;
+    }
+    effective_override(daemon_kind(), std::env::var_os(INSTANCE_BIN_ENV)).is_none()
+}
+
+/// [`DisplayPolicy::Unspecified`] 의 문구. 처방을 그대로 찍는다 — 이 자리에서 멈춘
+/// 사람이 다시 검색하지 않아도 되게.
+fn unspecified_display_message() -> String {
+    format!(
+        "{DISPLAY_ENV} 가 없다.\n\
+         이 조합(gui)의 데몬은 창을 만들고, 어디에 띄울지는 물려받은 DISPLAY 가 정한다 — \
+         즉 지금 이대로 돌리면 **네가 보고 있는 화면에** 시험의 창이 뜨고, 그 화면의 \
+         컴포지터가 시험의 타이밍에 섞인다. 둘 다 조용하다(시험은 통과한다).\n\
+         전용 디스플레이 위에서 돌려라:\n\
+         \x20 Xvfb :77 -screen 0 1920x1080x24 -nolisten tcp -ac &\n\
+         \x20 {DISPLAY_ENV}=:77 cargo test ...\n\
+         자기 화면에 띄우는 것이 의도면 그렇게 선언해라: {DISPLAY_ENV}={DISPLAY_INHERIT}\n\
+         창이 필요 없으면 헤드리스 데몬으로 돌려라 — docs/dev-guide/e2e-tests.md"
+    )
+}
+
+/// 자식이 쓸 디스플레이를 정해 `command` 에 얹는다. 두 하네스가 spawn 직전에 부른다.
+///
+/// [`DisplayPolicy::Pin`] 은 `WAYLAND_DISPLAY` 를 함께 지운다 — 두 축이 같이 있으면
+/// winit 이 어느 쪽을 고르는지가 백엔드 선택 규칙에 달리고, 그러면 지정한 디스플레이가
+/// 실제로 쓰였는지를 값으로 말할 수 없다.
+pub fn apply_display_policy(command: &mut std::process::Command) {
+    match display_policy(
+        display_required(),
+        std::env::var(DISPLAY_ENV).ok().as_deref(),
+    ) {
+        DisplayPolicy::NotRequired | DisplayPolicy::Inherit => {}
+        DisplayPolicy::Pin(display) => {
+            command
+                .env("DISPLAY", display)
+                .env_remove("WAYLAND_DISPLAY");
+        }
+        DisplayPolicy::Unspecified => panic!("{}", unspecified_display_message()),
     }
 }

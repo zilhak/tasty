@@ -475,9 +475,13 @@ jobs:
         continue-on-error: true
         run: |
           command -v xvfb-run || { echo "xvfb-run 이 이 러너에 없다 — 이 스텝은 아직 못 돈다"; exit 1; }
+          # gui 조합의 하네스는 자식이 쓸 디스플레이의 **이름**을 요구한다(ADR-0297) —
+          # 물려받은 값을 조용히 쓰지 않는다. 여기서는 xvfb-run 이 방금 만든 그 디스플레이를
+          # 그대로 넘긴다. 셸을 한 겹 두는 것은 $DISPLAY 가 xvfb-run 안에서만 정해지기
+          # 때문이고, 바깥에서 전개되면 빈 값이 간다.
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
-            cargo test --workspace --locked --no-fail-fast \
-              --test e2e_tests -- multi_window_owner_routing --exact
+            sh -c 'TASTY_E2E_DISPLAY="$DISPLAY" cargo test --workspace --locked --no-fail-fast \
+              --test e2e_tests -- multi_window_owner_routing --exact'
 
       # `continue-on-error` 로 두는 이유: 이 줄은 진단이지 게이트가 아니다. 여기서
       # 실패해 잡을 빨갛게 만들면 그 빨강이 컴파일·테스트의 빨강을 가린다.

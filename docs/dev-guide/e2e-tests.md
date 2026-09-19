@@ -16,7 +16,7 @@
 
 | 조합 | 하네스가 띄우는 것 | 성질 |
 |---|---|---|
-| 기본 (`gui`) | GUI 바이너리 | 창 + wgpu 디바이스를 반드시 만든다. IPC 는 GPU 부팅이 끝난 뒤에야 시작되므로, GPU 를 못 잡으면 **port file 이 아예 안 써진다** |
+| 기본 (`gui`) | GUI 바이너리 | 창 + wgpu 디바이스를 반드시 만든다. IPC 는 GPU 부팅이 끝난 뒤에야 시작되므로, GPU 를 못 잡으면 **port file 이 아예 안 써진다**. 그 창이 **어디에** 뜨는지는 `TASTY_E2E_DISPLAY` 가 정한다 — §3 |
 | `--no-default-features` | headless 데몬 | 창도 GPU 도 없다. 실측(2026-09-04, `DISPLAY`·`WAYLAND_DISPLAY` 둘 다 없는 상태): port file 까지 **54 ms** |
 
 즉 IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 검증 내용이 아니라 **빌드 조합**에 있다. 방향 결정과 대안은 [ADR-0127](../adr/0127-e2e-harness-binary-selection.md).
@@ -220,7 +220,46 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 | `SHELL` | 제거 | host login shell 누수 차단(`detect_bash` 의 `$SHELL` 경로) |
 | `OH_MY_ZSH` / `ZSH` | 제거 | oh-my-zsh customization 누수 차단 |
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
+| `DISPLAY` / `WAYLAND_DISPLAY` | **격리하지 않는다 — 이름을 요구한다.** linux 의 gui 조합에서 `TASTY_E2E_DISPLAY` 를 읽어 자식 `DISPLAY` 로 명시 전달하고(그때 `WAYLAND_DISPLAY` 는 제거), 값이 없으면 spawn 을 세운다. 아래 "어느 디스플레이에 뜨는가" | gui 데몬은 창을 만들고 그 창이 어디 뜨는지는 이 값이 정한다. 지우면 winit 이 즉사해 부팅 자체가 없다 — 다른 축과 성질이 다르다 |
 | `TASTY_LOG` | 본체 기본 필터와 **같은 모양** (`warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off`, 웹훅 하네스는 뒤에 `,tasty::webhook::listener=info`). 정의 자리는 `tests/spawn_diag` 의 `LOG_ENV`/`LOG_FILTER` 하나다 | child stderr 폭주에 의한 OS pipe backpressure 회피 + host 의 `TASTY_LOG` 누수 차단. 본체가 읽는 변수는 `TASTY_LOG` 다 — `RUST_LOG` 는 무시된다([crash-diagnostics](crash-diagnostics.md)). **`warn` 한 단어만 주면 안 된다** — 지정하는 순간 본체 기본 필터가 통째로 대체돼 `wgpu_hal=error` 등 억제가 풀리고 로그가 오히려 늘어난다(실측: 미지정 7줄 · `warn` 12줄 · 이 값 7줄) |
+
+### 어느 디스플레이에 뜨는가
+
+**gui 조합의 데몬은 창을 만든다**(§0-1). 그 창이 어디에 뜨는지는 `DISPLAY` 가 정하는데,
+하네스가 그것을 정하지 않으면 `Command` 가 부모의 값을 물려주므로 **실행자가 보고 있는
+화면이 그대로 시험의 디스플레이가 된다.** 그 상태는 조용하다 — 시험은 통과하고 창만
+사람 화면에 뜬다. 실측 2026-09-20: 전용 Xvfb `:77` 위에서 돌린 자식의
+`/proc/<pid>/environ` 이 `DISPLAY=:77` 이었고 그 디스플레이에 `1280x720` 짜리
+`Tasty (Debug)` 창이 떴다. 격리 `HOME` 은 이것을 막지 못한다 — X 서버가 로컬 사용자를
+인증하면 `~/.Xauthority` 없이도 붙는다.
+
+**그렇다고 지울 수는 없다.** 같은 바이너리를 `DISPLAY`·`WAYLAND_DISPLAY` 없이 띄우면
+winit 이 `neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set` 로 즉사하고
+port file 이 안 써진다(§5 의 `NO_DISPLAY_MARKERS` 가 그 시그니처다). 디스플레이는
+격리할 누수가 아니라 **필요한 입력**이다. 그래서 하네스는 격리 대신 **이름**을 요구한다
+([ADR-0297](../adr/0297-the-e2e-harness-names-a-display-instead-of-isolating-it.md)).
+
+```
+Xvfb :77 -screen 0 1920x1080x24 -nolisten tcp -ac &
+TASTY_E2E_DISPLAY=:77 cargo test --test e2e_tests
+```
+
+| `TASTY_E2E_DISPLAY` | 하네스가 하는 일 |
+|---|---|
+| 디스플레이 이름(`:77` 등) | 자식 `DISPLAY` 로 명시 전달 + `WAYLAND_DISPLAY` 제거 |
+| `inherit` | 부모 값을 그대로 물려준다(변경 전 동작) — 창을 눈으로 보며 고칠 때 |
+| 없음 / 빈 값 | spawn 을 세운다. 실패 문구가 위 두 길을 다 찍는다 |
+
+요구가 서는 조건은 셋의 곱이다 — linux · `gui` feature · `TASTY_E2E_BIN` override 가 안
+먹히는 스위트. 그래서 **헤드리스 조합은 이 변수를 요구받지 않는다**(`check-headless` 가
+그대로 돈다). macOS/Windows 도 요구하지 않는다 — 거기서는 창이 언제나 사용자 세션에
+뜨고, 줄 수 있는 다른 답이 없다.
+
+**선언된 사각**: override 가 *gui* 바이너리를 가리키면 창이 뜨는데 요구가 안 선다. 경로만
+보고 그 바이너리의 조합을 알 방법이 없어서다.
+
+Xvfb 를 직접 띄웠으면 **저장한 PID 로 회수한다** — `xvfb-run` 의 `$!` 는 래퍼라 안의
+프로세스가 고아로 남는다([screenshot-methods](../ai-verification/screenshot-methods.md)).
 
 ### 번들 plugin 은 opt-in 이다
 

@@ -268,3 +268,4 @@
 | 0294 | [사이트 vendor 사본에 절차·부분 판정기·화면 시점을 붙인다 (재-vendoring 자체는 이 결정 밖)](0294-the-site-vendor-copy-gets-a-channel-and-a-visible-date.md) | Accepted | 2026-09-20 | site, design-system, vendor, guards, staleness, design-change-workflow, adr-0138, adr-0020 |
 | 0295 | [셸 자산은 warning 이상에서 잔여 0 으로 판정한다 — 그 아래는 안 센다](0295-shell-assets-are-judged-at-warning-and-above.md) | Accepted | 2026-09-20 | shell, gates, ci, git-hooks, shellcheck, ratchet, adr-0183 |
 | 0296 | [도달 불가가 된 커밋 좌표는 지우지 않고 그 자리에 적는다](0296-an-unreachable-commit-coordinate-is-annotated-not-deleted.md) | Accepted | 2026-09-20 | documentation, guards, citations, git-history, floored-walk, adr-0105, adr-0139 |
+| 0297 | [e2e 하네스는 디스플레이를 격리하지 않고 이름을 요구한다](0297-the-e2e-harness-names-a-display-instead-of-isolating-it.md) | Accepted | 2026-09-20 | testing, e2e, harness, isolation, linux, adr-0127, adr-0090 |
