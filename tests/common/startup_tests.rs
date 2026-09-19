@@ -181,6 +181,14 @@ fn startup_stages_survive_noise_and_distinguish_failures() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "startup_tests::scenario_driver", "--nocapture"])
             .env(MODE, mode)
+            // 이 시나리오들은 진짜 tasty 를 한 번도 안 띄운다 — 자식도 손자도 이 시험
+            // 바이너리 자신이다. 그래서 인스턴스 바이너리를 가리키는 환경변수는 여기서
+            // 쓸 일이 없는데, 물려받으면 실패 갈래가 그것을 **읽는다**: `call()` 의 IPC
+            // 오류 문구가 `bundle_staging_note()` 를 부르고 그것이 그 경로를 검증한다.
+            // 바깥 하네스가 "부팅이 막힌" 조건을 만들려고 없는 경로를 심어 두면, 이
+            // 시나리오의 의도된 실패 문구가 그 검증의 패닉으로 바뀌고 그 문장이 부모
+            // 로그에 섞여 바깥 시험의 계수를 늘린다. 조건을 물려받지 않는다.
+            .env_remove(common::spawn_diag::INSTANCE_BIN_ENV)
             .output()
             .unwrap();
         let text = format!(
