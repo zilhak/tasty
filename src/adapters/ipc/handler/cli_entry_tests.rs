@@ -300,7 +300,14 @@ fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
     assert_eq!(req.method, "hook_handler.upsert");
     let resp = super::hook_handler::handle_upsert(json!(1), &req.params);
     let msg = resp.error.expect("잘못된 source 는 거절된다").message;
-    assert!(msg.contains("'source'"), "source 키가 안 읽혔다: {msg}");
+    // **거절문의 낱말로 판정하되, 그 낱말이 다른 거절문에 없어야 한다.** 키가 안 닿으면
+    // 서버는 "nothing to patch — give at least one of 'source', …" 로 답하는데 그 문장에도
+    // `'source'` 가 들어 있다. 그 낱말로 재면 단언이 공허해진다 — 실제로 그랬다(키를
+    // `actions` 로 바꾼 변이가 살아남았다). `hook|webhook|any` 는 이 갈래에만 있다.
+    assert!(
+        msg.contains("hook|webhook|any"),
+        "source 키가 안 읽혔다: {msg}"
+    );
 
     // --calls 는 action 자리로 들어간다. 스키마에 안 맞는 것을 보내 그 자리를 고정한다.
     let req = command_to_request(&Commands::HookHandler {
@@ -319,7 +326,8 @@ fn hook_handler_edit_cli_entry_points_reach_their_handlers() {
         .error
         .expect("스키마에 안 맞는 calls 는 거절된다")
         .message;
-    assert!(msg.contains("'action'"), "action 키가 안 읽혔다: {msg}");
+    // 위와 같은 이유로 `'action'` 이 아니라 이 갈래에만 있는 스키마 힌트로 잰다.
+    assert!(msg.contains("ipc_sequence"), "action 키가 안 읽혔다: {msg}");
 
     let req = command_to_request(&Commands::HookHandler {
         command: HookHandlerCommands::Remove {
