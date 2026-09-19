@@ -453,8 +453,12 @@ fn fallback_strip(ui: &mut egui::Ui, props: &FileHandlerPickerProps<'_>) {
 
 /// 그룹 헤딩 — 라벨(uppercase) + mono 개수 + 한 줄 caption.
 ///
-/// 디자인의 `letterSpacing: 0.06em` 은 egui 에 대응 채널이 없다(`RichText`·`TextFormat`
-/// 어디에도 자간이 없다). 대문자 · 11px · 색만 전사한다.
+/// 자간은 전사하지 않는다 — **채널이 없어서가 아니라 값이 없어서**다. egui 에는
+/// `RichText::extra_letter_spacing` 과 `TextFormat::extra_letter_spacing` 이 있고,
+/// `tasty_ui_widgets::remote_tool::selectable_label_tracked` 가 그 축을 이미 쓴다(비율을
+/// 들고 그릴 때 폰트 크기를 곱한다). 그런데 이 화면의 canonical 인 `FileHandlerFrame` 은
+/// 평평한 핸들러 목록이라 **그룹 헤딩 자체가 없고** `letterSpacing` 선언도 한 줄도 없다 —
+/// 그룹은 본체가 더한 것이다. 값은 디자인이 정한다. 지금은 대문자 · 11px · 색만 전사한다.
 fn group_head(ui: &mut egui::Ui, th: &Theme, head: &GroupHead<'_>) {
     egui::Frame::new()
         .inner_margin(egui::Margin {

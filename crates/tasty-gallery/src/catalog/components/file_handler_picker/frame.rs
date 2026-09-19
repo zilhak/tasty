@@ -443,8 +443,10 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
 
 /// 그룹 헤딩 — 라벨(uppercase) + mono count + 한 줄 caption.
 ///
-/// 디자인의 `letterSpacing: 0.06em` 은 egui 에 대응 채널이 없다(`RichText` 에 자간이
-/// 없고 `TextFormat` 에도 없다). 대문자 · 11px · 색만 전사한다.
+/// 자간은 전사하지 않는다 — 채널이 없어서가 아니라 값이 없어서다(egui 에는
+/// `RichText::extra_letter_spacing` 이 있다). canonical `FileHandlerFrame` 은 평평한
+/// 목록이라 그룹 헤딩도 `letterSpacing` 도 없다. 본체 `group_head` 와 같은 판정이다.
+/// 대문자 · 11px · 색만 전사한다.
 fn fh_group(
     ui: &mut egui::Ui,
     theme: &Theme,

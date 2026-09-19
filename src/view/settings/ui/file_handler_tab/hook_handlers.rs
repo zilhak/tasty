@@ -263,7 +263,10 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
 }
 
 /// jsx `headStyle` — mono 10 uppercase, letter-spacing caps, text-muted.
-/// (egui 는 letter-spacing 미지원 — 기존 전사 관례대로 mono micro uppercase 로 전사.)
+/// (자간을 안 거는 이유는 egui 가 아니라 토큰 쪽이다 — `RichText::extra_letter_spacing`
+/// 은 있다. `letter-spacing-caps` 가 `0.04em` 이라 `tasty-design-tokens` 의 DTCG 생성기가
+/// em 단위 dimension 을 `LogicalPx` 로 못 담아 스킵한다(`dtcg.rs` 의 `Skip::EmUnit`).
+/// 상수가 생기기 전까지 기존 전사 관례대로 mono micro uppercase 로 전사.)
 fn mono_caps_head(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())

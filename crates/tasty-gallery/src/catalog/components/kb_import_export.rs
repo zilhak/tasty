@@ -19,9 +19,10 @@
 //!   그룹명(mono micro caps) · `N changed · M total`. 열 헤더를 반복하지 않는다.
 //! - **표 선택 열** — 32px 선두 열. 행 단위 적용.
 //!
-//! 전사 노트 — egui 한계로 관례를 따른 자리: `letter-spacing-caps` 는 미지원이라 mono
-//! micro uppercase 로, `fontWeight: 600` 은 색 강조로 둔다(`preset.rs` · `hook_handlers.rs`
-//! 관례). `color-mix(in srgb, tone X%, transparent)` 는 `gamma_multiply` 알파 감쇠로 근사한다
+//! 전사 노트 — 관례를 따른 자리: `letter-spacing-caps` 는 mono micro uppercase 로,
+//! `fontWeight: 600` 은 색 강조로 둔다(`preset.rs` · `hook_handlers.rs` 관례). 앞쪽은 egui
+//! 한계가 아니다 — `RichText::extra_letter_spacing` 이 있고, 막힌 것은 `0.04em` 이 em 이라
+//! DTCG 생성기가 스킵해 Rust 상수가 없다는 쪽이다(`dtcg.rs` 의 `Skip::EmUnit`). `color-mix(in srgb, tone X%, transparent)` 는 `gamma_multiply` 알파 감쇠로 근사한다
 //! (`warning_callout` 전례). 폰트 10/11/12/13 은 `font_size_micro`/`caption`/`term_sm`/`body`.
 
 //!
