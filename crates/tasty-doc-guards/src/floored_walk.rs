@@ -193,7 +193,7 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 645,
+        measured: 646,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
             "353038a3e — SLOC lane 의 파일 분할이 `src/` 에 둘을 더한 트리에서 다시 셌다. \
@@ -273,10 +273,10 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 451,
+        measured: 452,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "353038a3e — 여기서 다시 셌다. 앞선 값 450 은 `4e379d048` 에서 쟀고 그 트리에서는 \
+            "194c8653a — popup scrim lane 이 ADR 하나를 더한 트리에서 다시 셌다. 앞선 값 451 은 `353038a3e` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 450 은 `4e379d048` 에서 쟀고 그 트리에서는 \
              맞았는데, 그 뒤 착지한 lane 이 문서를 더해 451 이 됐다. 그 앞의 449 는 `c15f504f4` 에서 쟀고 그 트리에서는 \
              맞았는데, 그 뒤 착지한 lane 이 ADR 하나를 더하면서 450 이 됐다. 그 lane 은 \
              자기 base 에서 이 항을 안 건드려 선언이 449 인 채 게이트를 전부 통과했다 — \
