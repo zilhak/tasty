@@ -263,14 +263,15 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         }
         let dot_r = theme.status_dot_size.value() * 0.5;
         let dc = egui::pos2(row.min.x + theme.spacing_md.value() + dot_r, row.center().y);
-        // dot 은 실행상태 전용(running=success / idle=muted). mirror 는 별도 축.
+        // dot 은 실행상태 전용(running=accent-success / idle=status-dot-idle —
+        // 공용 `StatusDot` 위젯의 Idle 과 같은 role 이다). mirror 는 별도 축.
         p.circle_filled(
             dc,
             dot_r,
             egui::Color32::from(if *active {
                 theme.accent_success()
             } else {
-                theme.text_muted()
+                theme.status_dot_idle()
             }),
         );
         let name_x = dc.x + dot_r + theme.spacing_sm.value();
@@ -381,10 +382,12 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
             *glyph,
             area.center(),
             theme.icon_glyph_size_md.value(),
+            // 쉬고 있는 rail 글리프는 물러나는 chrome 이다 — 본체 `paint_icon_button`
+            // 과 같은 `glyph-dim`. 첫 슬롯은 눌린 상태 전시라 축이 다르다.
             egui::Color32::from(if i == 0 {
                 theme.text_primary()
             } else {
-                theme.text_muted()
+                theme.glyph_dim()
             }),
         );
         y += slot + theme.spacing_sm.value();
@@ -425,7 +428,7 @@ fn paint_ws_row(
         egui::Color32::from(if active {
             theme.accent_success()
         } else {
-            theme.text_muted()
+            theme.status_dot_idle()
         }),
     );
     let name_x = dc.x + dot_r + theme.spacing_sm.value();
@@ -678,8 +681,9 @@ fn attention_rail_demo(ui: &mut egui::Ui, theme: &Theme) {
         theme.corner_radius.value(),
         egui::Color32::from(theme.bg_sidebar()),
     );
-    let dot_r = 3.0;
-    let dot_pad = 4.0;
+    // 접힌 rail 은 24px 크롬 계열 — 점 가족 규칙상 compact 6(본체와 같은 접근자).
+    let dot_r = theme.status_dot_size_compact().value() * 0.5;
+    let dot_pad = theme.spacing_xs.value();
     for (i, (letter, dot_color)) in [
         ('N', theme.accent_warning()),
         ('C', theme.accent_primary()),

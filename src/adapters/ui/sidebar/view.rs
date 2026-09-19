@@ -11,14 +11,6 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
-/// attached(다른 client 점유) 표시 outline 굵기. 디자인 CollapsedSidebar 의 CSS
-/// `outline: 1.5px` 를 그대로 옮긴 값이다. `border_width`(1)·`focus_ring_width`(2) 어느
-/// 쪽도 아니고, `icon_stroke_width`(1.5) 는 popup 타이틀바의 전사 글리프 전용이라
-/// (theme.md "painter 전사 글리프") 재사용하지 않는다. 컴포넌트 토큰
-/// `status-dot-attached-ring-width` 는 2px 로 정의돼 있어 이 값과 어긋나며, 맞추려면
-/// ring 반경 계산(offset·stroke 절반)을 함께 다시 잡아야 해 디자인 확인이 선행한다.
-const ATTACHED_OUTLINE_WIDTH: LogicalPx = LogicalPx(1.5);
-
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
 // **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
@@ -26,22 +18,9 @@ const ATTACHED_OUTLINE_WIDTH: LogicalPx = LogicalPx(1.5);
 // 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
 // "스케일 밖 폰트 값".
 
-/// alert 배지 안의 숫자. 스케일 밖(9.5) — `badge_font_size()`(micro 10)와 0.5 차이라
-/// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const ALERT_BADGE_FONT_SIZE: LogicalPx = LogicalPx(9.5);
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
 const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
-
-/// 접힌 사이드바 rail 의 상태 점 지름. 스케일 밖(6) — 점 치수 토큰은
-/// `status-dot-size`(8) 하나뿐이라 그리로 보내면 배율 1 에서 픽셀이 바뀐다
-/// (`docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다).
-/// 같은 파일의 확장 사이드바 점(`badge_dot_size`, 8)과 값이 다른 것은 rail 이 52px 폭이라
-/// 같은 크기를 못 쓰기 때문이다.
-///
-/// **같은 6 을 `src/adapters/ui/tab_bar/tab.rs` 의 busy 점도 쓴다** — 무관한 두 화면이
-/// 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
-const RAIL_STATUS_DOT_SIZE: LogicalPx = LogicalPx(6.0);
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
@@ -253,7 +232,7 @@ fn paint_alert_badge(
     let h = 15.0;
     let galley = ui.painter().layout_no_wrap(
         count.to_string(),
-        egui::FontId::proportional(ALERT_BADGE_FONT_SIZE.value()),
+        egui::FontId::proportional(th.badge_font_size().value()),
         egui::Color32::from(th.text_on_accent()),
     );
     let pad = 4.0;
@@ -764,9 +743,8 @@ pub fn draw_collapsed_sidebar_view(
                 let color: egui::Color32 = if resp.hovered() {
                     th.text_secondary().into()
                 } else {
-                    // divergence: dim chevron. overlay0(=placeholder 값) 을 dim 텍스트로 씀.
-                    // 값-보존 위해 text_placeholder() 사용 (§4-8, placeholder vs disabled role 미확정).
-                    th.text_placeholder().into()
+                    // 물러나는 chrome glyph — `glyph-dim`(disabled 아님).
+                    th.glyph_dim().into()
                 };
                 let sz = th.icon_glyph_size_md.value();
                 icons::CHEVRONS_RIGHT.image(sz, color).paint_at(
@@ -1287,8 +1265,8 @@ fn paint_icon_button(
     let color: egui::Color32 = if resp.hovered() || pressed {
         th.text_secondary().into()
     } else {
-        // divergence: dim 아이콘. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
-        th.text_placeholder().into()
+        // 물러나는 chrome glyph — `glyph-dim`.
+        th.glyph_dim().into()
     };
     let icon_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(icon_size, icon_size));
@@ -1414,7 +1392,8 @@ fn draw_collapsed_avatar(
     // 우상단 dot — notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring,
     // mirror 는 우하단 corner chip(아래) 로 분리 — dot 은 실행상태 전용
     // (디자인 2026-07-02 workspace-mirror-indicator: sky "remote" fill 제거).
-    let dot_radius = RAIL_STATUS_DOT_SIZE.value() * 0.5;
+    // 접힌 rail 은 24px 크롬 계열 — 점 가족 규칙상 compact 6.
+    let dot_radius = th.status_dot_size_compact().value() * 0.5;
     let dot_pad = 4.0;
     let dot_center = egui::pos2(
         rect.max.x - dot_pad - dot_radius,
@@ -1438,13 +1417,16 @@ fn draw_collapsed_avatar(
         ui.painter()
             .circle_filled(dot_center, dot_radius, th.accent_success());
     }
-    // attached(다른 client 점유) → 아바타 둘레 lavender ring (디자인 2026-06-15
-    // CollapsedSidebar: outline 1.5px lavender). red(error) 재사용 분리.
+    // attached(다른 client 점유) → 아바타 둘레 lavender ring. 굵기는
+    // `status-dot-attached-ring-width`(2). red(error) 재사용 분리.
     if ws.attached {
         ui.painter().rect_stroke(
             rect,
             4.0,
-            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
+            egui::Stroke::new(
+                th.status_dot_attached_ring_width().value(),
+                th.border_attached(),
+            ),
             egui::StrokeKind::Inside,
         );
     }
@@ -1548,23 +1530,25 @@ fn draw_workspace_card(
                 let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
-                    // divergence: idle status dot. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
-                    th.text_placeholder().into()
+                    // idle 상태 점 — StatusDot Idle 과 같은 role(`status-dot-idle`).
+                    th.status_dot_idle().into()
                 };
                 // 지름은 `badge-dot-size` 에서 온다 — 여기 4 를 박으면 같은 슬롯에
                 // 겹쳐 그려지는 키캡만 `ui_zoom` 을 타서 배율에서 둘이 갈린다.
                 // `tasty_ui_widgets::paint_badge_dot` 을 부르지 못하는 이유는 색뿐이다:
-                // idle 색 `text_placeholder` 에 대응하는 `BadgeVariant` 가 없다.
+                // idle 색 `status_dot_idle` 에 대응하는 `BadgeVariant` 가 없다.
                 let dot_r = th.badge_dot_size().value() * 0.5;
                 ui.painter()
                     .circle_filled(dot_rect.center(), dot_r, dot_color);
-                // attached → dot 을 감싸는 lavender ring. 디자인 CSS outline 1.5px +
-                // outline-offset 1.5px: dot 반지름 + offset(1.5) + stroke 절반(0.75).
+                // attached → dot 을 감싸는 lavender ring. offset 은 **점 바깥 edge →
+                // ring 안쪽 edge** 로 재므로 반지름은 dot 반지름 + offset + 굵기 절반.
+                // 총 bbox = dot + 2×(offset + 굵기) 로 24px 바 안에 남는다.
                 if ws.attached {
+                    let ring_w = th.status_dot_attached_ring_width().value();
                     ui.painter().circle_stroke(
                         dot_rect.center(),
-                        dot_r + 1.5 + ATTACHED_OUTLINE_WIDTH.value() * 0.5,
-                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
+                        dot_r + th.status_dot_attached_ring_offset().value() + ring_w * 0.5,
+                        egui::Stroke::new(ring_w, th.border_attached()),
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {
