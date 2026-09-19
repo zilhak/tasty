@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Tasty pre-push hook — 무거운 검사 5종 (B.4~B.8).
+# Tasty pre-push hook — 검사 6종 (B.4~B.9).
+#
+# B.9 만 초 단위이고 나머지 다섯은 컴파일이라 분 단위다. 그래서 B.9 가 맨 앞이다.
 #
 # 설치: `git config core.hooksPath .githooks` 1회 실행.
 # bypass: `git push --no-verify` (긴급 시).
 #
 # 검사 목록:
+#   B.9  plugin version 이 **발행된 값과 짝이 맞는가** (초 단위 — 그래서 맨 앞이다)
 #   B.4  cargo clippy --workspace --all-targets -- -D clippy::correctness
 #   B.5  cargo check --workspace --all-targets
 #   B.6  cargo check --no-default-features (headless 빌드)
@@ -30,6 +33,129 @@ green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 
 FAIL=0
+
+# ────────────────────────────────────────────────────────────
+# B.9  plugin version 이 **발행된 값과 짝이 맞는가**
+#
+# ★ 이 훅이 이 판정의 **유일하게 올바른 자리**인 이유: git 이 pre-push 의 stdin 으로
+#   `<local ref> <local sha> <remote ref> <remote sha>` 를 준다 — 그 넷째 값이 바로
+#   **직전 push 지점**이고, 이 게이트가 필요로 하는 모수가 그것이다. 다른 자리에는
+#   그 값이 없다:
+#     · pre-commit 은 `--staged --base $(git merge-base main HEAD)` 로 부른다. 그 base 는
+#       **lane 의 갈린 지점**이라 amend·rebase 에 안 흔들리는데, 같은 이유로 "남이 이 값을
+#       이미 썼다" 에도 안 흔들린다. 그 검사가 답하는 물음은 "내 커밋이 올렸나" 다.
+#     · CI(plugin-version-check.yml)는 올바른 모수(github.event.before)를 쓰지만 **push 뒤**다.
+#       그때 빨개지면 그 값은 이미 공유 이력에 얹혀 있다.
+#   결정은 이미 내려져 있다 — ADR-0192 가 같은 구조를 다루며 "발행 버전 문자열" 을 이름으로
+#   지목하고 "여유 0 인 래칫은 그 실행이 push 전에 끝나 있어야 한다" 고 적는다. 래칫 축은
+#   그 구현(scripts/gate-delta.sh)을 받았고 이 축만 못 받았다. 여기가 그 누락을 닫는 자리다.
+#
+# ★ 맨 앞에 두는 것은 의도다. 이 검사는 컴파일이 없어 초 단위인데 아래 넷은 분 단위다.
+#   뒤에 두면 한 줄 고치면 되는 것을 알기까지 몇 분을 기다린다.
+#
+# ★ 판정은 scripts/check-plugin-version-bump.sh 가 한다 — 여기서 술어를 다시 구현하지
+#   않는다. 이 자리가 하는 일은 **모수를 정하는 것**뿐이다.
+#
+# ☆ scripts/gate-delta.sh 를 재사용하지 않는 이유는 실측이다(둘 다 독립적으로 막는다):
+#     · 그 도구는 게이트를 **인자 없이** 부르는데 이 게이트는 `--staged`/`--range` 중 하나를
+#       요구한다 → rc=2(판정 불가).
+#     · 그 도구의 값 파서는 `… : <수>건 (상한 <수>)` 한 형식만 읽는데 이 게이트는
+#       `판정 대상 <수> 건 (변경된 crates 파일 <수> 개 중)` 을 찍는다 → 빈 값.
+#   구조적으로도 옮길 것이 없다. gate-delta 는 **절대값만 찍는** 래칫에 두 지점 비교를
+#   합성해 주는 도구인데, 이 게이트는 이미 `--range` 로 두 지점을 직접 견준다. 합성할
+#   것이 없고 모자란 것은 **부르는 자리**뿐이다.
+# ────────────────────────────────────────────────────────────
+GIT_NULL_SHA=0000000000000000000000000000000000000000
+PUSH_REMOTE="${1:-}"
+
+# stdin 은 한 번 읽으면 사라진다. 소비 지점을 여기 하나로 고정한다 — 아래 cargo 스텝은
+# stdin 을 안 쓰지만, 나중에 쓰는 것이 생겨도 이 값은 이미 변수에 있다.
+#
+# **git 이 부른 것이 아니면 읽지 않는다.** 손으로 실행하면 `cat` 이 터미널에서 멈춘다.
+# git 은 remote 이름과 URL 을 인자로 주므로 그 유무가 판별식이다.
+PUSH_REFS=""
+PUSH_INVOKED_BY_GIT=0
+if [ "$#" -ge 1 ] && [ ! -t 0 ]; then
+    PUSH_INVOKED_BY_GIT=1
+    PUSH_REFS="$(cat)"
+fi
+
+check_published_plugin_version() {
+    local considered=0 judged=0 rc
+    local local_ref local_sha remote_ref remote_sha
+
+    if [ "$PUSH_INVOKED_BY_GIT" -eq 0 ]; then
+        # **조용히 통과시키지 않는다.** 모수를 못 정했다는 사실을 값으로 남긴다.
+        yellow "▸ [B.9] plugin version 발행 판정 — 건너뜀: git 이 준 ref 목록이 없다"
+        yellow "  (이 훅을 손으로 실행했다. git 이 부르면 stdin 으로 ref 가 들어온다.)"
+        yellow "  직접 재려면: bash scripts/check-plugin-version-bump.sh --range <원격 tip> HEAD"
+        return 0
+    fi
+
+    yellow "▸ [B.9] plugin version 이 발행된 값과 짝이 맞는가"
+
+    while read -r local_ref local_sha remote_ref remote_sha; do
+        [ -n "${local_ref:-}" ] || continue
+        considered=$((considered + 1))
+
+        # 삭제 push — 발행되는 내용이 없다.
+        if [ "$local_sha" = "$GIT_NULL_SHA" ]; then
+            yellow "  · $remote_ref — 삭제 push. 발행되는 내용이 없어 판정 대상이 아니다."
+            continue
+        fi
+
+        # 원격에 대응 ref 가 없다(최초 생성) — 견줄 **발행된 값** 자체가 없다.
+        # plugin-version-check.yml 이 같은 경우를 같은 방식으로 다룬다(찍고 통과).
+        if [ "$remote_sha" = "$GIT_NULL_SHA" ]; then
+            yellow "  · $remote_ref — 원격에 이 ref 가 없다(최초 생성). 견줄 발행 값이 없다."
+            continue
+        fi
+
+        # 원격 tip 이 로컬 객체 DB 에 없다 — fetch 가 낡았거나 얕은 clone 이다.
+        # **모수를 못 정한다. 조용히 넘기지 않고 실패시킨다.**
+        if ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+            red "  ✘ $remote_ref — 원격 tip ${remote_sha} 이 로컬에 없다. 모수를 정할 수 없다."
+            red "    고쳐라: git fetch ${PUSH_REMOTE:-origin}"
+            red "    (얕은 clone 이면 git fetch --unshallow)"
+            FAIL=1
+            continue
+        fi
+
+        judged=$((judged + 1))
+        rc=0
+        bash scripts/check-plugin-version-bump.sh --range "$remote_sha" "$local_sha" || rc=$?
+        case "$rc" in
+            0) ;;
+            1)
+                red "  ✘ $remote_ref — 발행된 값과 지금 내용이 안 맞는다."
+                red "    ★ 이 판정의 모수는 **원격 tip ${remote_sha}** 이다. 네 lane 의 갈린"
+                red "      지점이 아니다 — 그래서 pre-commit 은 통과했는데 여기서 걸린다."
+                red "    흔한 원인: 다른 lane 이 **같은 값으로** 이미 올려 먼저 push 했다."
+                red "      git 은 같은 줄에 같은 값이라 충돌을 안 낸다(rebase 도 조용하다)."
+                red "    고쳐라: 위 게이트가 이름을 댄 plugin 의 Cargo.toml 과 tasty-plugin.toml 을"
+                red "      **한 번 더** 같은 값으로 patch +1 하고, cargo metadata 를 한 번 돌려"
+                red "      Cargo.lock 을 갱신한 뒤 그 커밋을 포함해 다시 push 하라."
+                FAIL=1
+                ;;
+            *)
+                red "  ✘ $remote_ref — 게이트가 판정을 거부했다(rc=$rc)."
+                red "    이 계열에서 rc=2 는 **판정 불가**다. 통과로 읽지 않는다 — 위 사유를 읽어라."
+                FAIL=1
+                ;;
+        esac
+    done <<EOF
+$PUSH_REFS
+EOF
+
+    # ★ **무엇을 봤는지 값으로 남긴다.** 안 찍으면 "하나도 안 봤다" 와 "다 통과했다" 가
+    #   같은 줄이 된다 — 빈 모수는 언제나 초록이기 때문이다(ADR-0183).
+    echo "[B.9] ref $considered · 판정 $judged · 건너뜀 $((considered - judged))"
+    if [ "$considered" -ge 1 ] && [ "$judged" -eq 0 ]; then
+        yellow "  (판정한 ref 가 0 이다 — 위 건너뜀 사유를 읽어라. 통과가 아니다.)"
+    fi
+}
+
+check_published_plugin_version
 
 # ────────────────────────────────────────────────────────────
 # B.5  cargo check
