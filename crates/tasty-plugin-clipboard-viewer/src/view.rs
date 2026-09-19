@@ -390,9 +390,12 @@ fn type_switch(
 }
 
 /// 세그먼트가 라벨을 보여줄지 — compact 압축 모드는 active 세그먼트만 라벨 유지.
-/// 순수 함수라 렌더 없이 단위 테스트 가능(`SEG_COMPACT_AT` 문턱값 회귀 방지) — 현재
-/// `ClipboardType`이 2종(Text/Files)뿐이라 `SEG_COMPACT_AT`(5) 이상의 compact 분기를
-/// 실 데이터로 직접 재현할 수 없으므로, 이 로직 자체의 정확성은 테스트로 담보한다.
+/// 순수 함수라 렌더 없이 단위 테스트 가능(`SEG_COMPACT_AT` 문턱값 회귀 방지).
+///
+/// compact 분기는 **실 데이터로 재현된다.** `ClipboardType` 은 다섯이고
+/// (Text/Files/Image/Html/Other) `read_available()` 이 다섯 리더의 결과를 이어 붙이므로
+/// 다섯이 동시에 살아 있으면 `types.len() >= SEG_COMPACT_AT` 가 성립한다 — 브라우저에서
+/// 복사하면 text·html·image 가 한 번에 올라오는 것이 흔한 출발점이다.
 fn seg_shows_label(compact: bool, active: bool) -> bool {
     !compact || active
 }

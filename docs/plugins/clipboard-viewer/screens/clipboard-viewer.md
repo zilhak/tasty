@@ -120,8 +120,8 @@ body(아이콘+경로 행)/footer 4행(files) + image 상태(아이콘+메타+�
 CenterState 를 토큰으로 전사(본체/plugin crate 비의존, 픽셀 동일성 비목표). HTML pretty 상태의
 인덴트 결과와 other 상태의 포맷 블록 샘플은 각각 `html_format::prettify()` /
 `clipboard::OtherFormatEntry` 와 동일 규칙으로 수기 정리한 샘플이다(갤러리는 plugin crate 를
-의존할 수 없다). `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 실 데이터가 5종(Text/Files/Image/
-Html/Other)뿐이라 동시에 전부 co-occur 하는 시나리오가 흔치 않아 아직 specimen 에 없다. 3자 매핑:
+의존할 수 없다). 압축 세그먼트(타입 5종이 동시에 살아 있어 비활성 세그먼트가 아이콘 전용으로 줄어든 상태)도
+specimen 에 있다. 3자 매핑:
 [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#clipboard-viewer-plugins).
 
 ## 시각 소스

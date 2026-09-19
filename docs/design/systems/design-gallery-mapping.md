@@ -538,10 +538,15 @@ master-detail 레이아웃은 폐기됐다 — header→type-bar→body→footer
 | footer(mime+Close) | `font-size-caption` mono + `Button` Secondary mock | `footer_row`(text) / `footer_row_files` / `image_footer_row`(image, `image/rgba8`) / `footer_row_html`(`{mime} · {meta}`) / `other_footer_row`(`{n} unrecognized formats` 가 mime 을 대체) |
 | CenterState(empty/read-failed/already-open) | 아이콘(28px) + `font-size-body` 굵은 타이틀 + `font-size-term-sm` 옅은 부제 | `center_popup` |
 
-화면 전용 고정값 480×360 은 module const(token-policy §c). 9 상태(data-text/data-files/image/
-html-raw/html-pretty/other/empty/read-failed/already-open) 를 `StageVariant::Wrap` 으로 나란히
-노출. `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 실 데이터가 5종(Text/Files/Image/Html/Other)뿐
-이라 동시에 전부 co-occur 하는 시나리오가 흔치 않아 아직 specimen 에 없다.
+화면 전용 고정값 480×360 은 module const(token-policy §c). 10 상태(data-text/data-files/
+compact/image/html-raw/html-pretty/other/empty/read-failed/already-open) 를
+`StageVariant::Wrap` 으로 나란히 노출.
+
+**압축 세그먼트는 문턱이 곧 타입 수라서 재현된다.** `SEG_COMPACT_AT` 은 5 이고 `ClipboardType`
+도 다섯(Text/Files/Image/Html/Other)이며 `read_available()` 이 다섯 리더의 결과를 이어 붙이므로,
+다섯이 동시에 살아 있으면 그대로 compact 다 — 브라우저 복사가 text·html·image 를 한 번에 올리는
+흔한 출발점이다. 한때 이 자리와 plugin·갤러리 소스 셋, 그리고 plugin 화면 문서가 "재현되지
+않는다" 고 적고 있었고 그것은 사실이 아니었다. `compact` specimen 이 그 상태를 보인다.
 
 ## git-viewer (Plugins)
 
