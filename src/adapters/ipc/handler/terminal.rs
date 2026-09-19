@@ -1160,9 +1160,6 @@ mod tests {
 
     #[test]
     fn adopt_registers_existing_surface_without_new_tab() {
-        // child_terminals.save() 는 실제 `~/.tasty/child-terminals.json` 에 쓰므로,
-        // 병렬 실행되는 다른 테스트와 같은 surface id 를 재사용하면 파일 경합으로
-        // 서로 오염될 수 있다 — 이 모듈의 다른 테스트가 안 쓰는 값을 쓴다.
         let mut e = engine();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let target = 6101u32; // 이미 존재하는(=spawn 아닌) surface
@@ -1251,9 +1248,6 @@ mod tests {
 
     #[test]
     fn release_clears_registry_and_occupancy_but_keeps_surface() {
-        // child_terminals.save() 는 실제 `~/.tasty/child-terminals.json` 에 쓰므로,
-        // 다른 테스트(병렬 실행)와 같은 surface id 를 재사용하면 파일 경합으로
-        // 서로 오염될 수 있다 — 이 모듈의 다른 테스트가 안 쓰는 값을 쓴다.
         let mut e = engine();
         let parent = e.workspaces[0].all_surface_ids()[0];
         let c = 5701u32;
