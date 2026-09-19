@@ -30,11 +30,30 @@
 //!    equivalent of the former `egui::Visuals` mapping, but without the two library
 //!    limitations that motivated this rewrite (`egui_commonmark` couldn't set a per-level
 //!    heading ladder or override body line-height; real CSS does both trivially).
-//! 4. Relative image `src`/link resolution against the markdown file's directory is handled by
-//!    a `<base href="file://<base_dir>/">` tag rather than per-`src` rewriting — simpler than
-//!    the old `image_uri_prefix` prefixing and, unlike it, resolves absolute local paths
-//!    correctly too (`<base>` only affects genuinely relative references).
-//! 5. A fenced ` ```mermaid ` block survives the pipeline above as plain
+//! 4. The document carries **no `<base href>` tag**, and nothing this pipeline emits needs one:
+//!    every local `<img src>` is replaced by an inlined `data:` URI (or dropped) by
+//!    [`inline_local_images`] (ADR-0249), and every *markdown* link destination that isn't
+//!    anchor-only is already rewritten to a `#tasty-nav:` fragment (point 1). A relative URL can
+//!    still reach the output one way — raw HTML the author wrote themselves (`<a href="x.md">`)
+//!    passes through pulldown-cmark as `Event::Html` and survives `sanitize_html` (ammonia's
+//!    default `url_relative` is pass-through), so [`rewrite_link_event`] never sees it. Without a
+//!    base that href no longer resolves to a file — `a.href` stays the raw relative text
+//!    (measured 2026-09-19 against an opaque base). What an engine does with a *click* on it is
+//!    not measured, in any of the three backends. What is measured is the other direction: with
+//!    a base it resolved to a real file and replaced the rendered document.
+//!    What the base tag actually decided, though, was the *fragment-only* `href` (`#slug`), and
+//!    there it was purely destructive: per the HTML spec an in-page anchor is resolved against
+//!    the base URL too, so `<base href="file:///dir/">` turns `#slug` into `file:///dir/#slug` —
+//!    a different document, so clicking a TOC entry navigates away instead of scrolling
+//!    (measured 2026-09-19, Linux/WebKitGTK 2.50: with the base tag a TOC click left `scrollY`
+//!    at 0; without it the same click reached the heading). ADR-0289 records the removal.
+//! 5. In-page anchors (the TOC, `[text](#slug)` body links, footnote reference/backlinks) are
+//!    additionally scrolled **by the trusted script itself** ([`nav_script`]), which cancels the
+//!    click's default navigation and calls `scrollIntoView` on the target id. This is what makes
+//!    repeated clicks on the *same* entry work (a re-assigned identical hash is a no-op for the
+//!    engine) and keeps the three webview backends on one code path instead of on three
+//!    different native fragment-navigation behaviors.
+//! 6. A fenced ` ```mermaid ` block survives the pipeline above as plain
 //!    `<code class="language-mermaid">` — [`rewrite_code_block_event`]/[`sanitize_fence_lang`]
 //!    normalize the fence language into that exact class shape, and `sanitize_html`'s allowlist
 //!    lets `class` through on `code`. [`mermaid_script`] (trusted, plugin-authored — appended
@@ -159,10 +178,6 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         remote,
     } = input;
 
-    let base_tag = base_dir
-        .map(|dir| format!(r#"<base href="{}">"#, attr_escape(&file_dir_uri(dir))))
-        .unwrap_or_default();
-
     let (body_html, headings) = if remote.is_some_and(|r| r.disconnected) {
         (
             format!(
@@ -264,8 +279,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
     };
 
     format!(
-        r#"<!doctype html><html><head><meta charset="utf-8">{base_tag}<style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}{math}</body></html>"#,
-        base_tag = base_tag,
+        r#"<!doctype html><html><head><meta charset="utf-8"><style>{css}</style></head><body>{addr_bar}{find_bar}{toc_html}<div id="tasty-md-body">{body_html}</div><script>{script}</script><script>{find_script}</script>{highlight}{mermaid}{copy_buttons}{image_errors}{math}</body></html>"#,
         css = theme_css(theme),
         addr_bar = addr_bar_html(tr, file_path, recent, remote),
         find_bar = find_bar_html(tr),
@@ -281,27 +295,12 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
     )
 }
 
-/// `file://<dir>/` URI for a `<base href>` tag — every relative `href`/`src` in the document
-/// resolves against it. Absolute local paths (`/abs/img.png`) and already-schemed remote URLs
-/// are untouched by a `<base>` tag (only genuinely relative references are affected), so unlike
-/// the former `image_uri_prefix` this needs no separate absolute-path special case.
-fn file_dir_uri(dir: &Path) -> String {
-    let normalized = dir.to_string_lossy().replace('\\', "/");
-    let with_slash = if normalized.ends_with('/') {
-        normalized
-    } else {
-        format!("{normalized}/")
-    };
-    let path_part = with_slash.strip_prefix('/').unwrap_or(&with_slash);
-    format!("file:///{}", percent_encode_path(path_part))
-}
-
 /// Parse the URL host WebKitGTK reports via `webview.navigation_attempt` (Stage A) — everything
 /// up to and including the last occurrence of [`NAV_FRAGMENT_MARKER`] is the document's own
-/// location (irrelevant — may be `about:blank` or, when a `<base href>` is set, that base URI);
-/// only the payload after the marker matters. Returns `None` if the URL carries no internal-nav
-/// fragment at all (host chrome shouldn't normally forward anything else, but a defensive `None`
-/// keeps this robust against unrelated navigation attempts).
+/// location (irrelevant — the document is handed to the engine as raw HTML, so it is normally
+/// `about:blank`); only the payload after the marker matters. Returns `None` if the URL carries
+/// no internal-nav fragment at all (host chrome shouldn't normally forward anything else, but a
+/// defensive `None` keeps this robust against unrelated navigation attempts).
 pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     let idx = url.rfind(NAV_FRAGMENT_MARKER)?;
     let payload = &url[idx + NAV_FRAGMENT_MARKER.len()..];
@@ -552,8 +551,10 @@ fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
 /// internal nav-fragment scheme first (module doc — never a plain `href` to a local/external
 /// target). An image alone in its own paragraph gets promoted to a captioned `<figure>`
 /// ([`figurize_solo_image_paragraphs`]) — every other image (mixed into running text, wrapped in
-/// a link, alt-less) passes through untouched, same as before that pass existed. The `<base
-/// href>` tag resolves relative `src`. Headings get a GitHub-compatible `id` via the
+/// a link, alt-less) passes through untouched, same as before that pass existed. A relative
+/// `src` is not resolved here at all — [`inline_local_images`] later reads the file and replaces
+/// the attribute with a `data:` URI (ADR-0249), which is why the document needs no `<base href>`
+/// (module doc point 4). Headings get a GitHub-compatible `id` via the
 /// [`collect_headings`]/[`assign_heading_ids`] two-pass pipeline (module doc "heading ids + TOC"
 /// section) — this recomputes the heading list itself (a cheap, HTML-free text-only walk) rather
 /// than taking it as a parameter, so this function's signature — and every existing call
@@ -1112,7 +1113,12 @@ fn rewrite_link_event(event: Event<'_>) -> Event<'_> {
 }
 
 /// Rewrite a raw markdown link destination into `#tasty-nav:link:<enc>`, unless it's an
-/// anchor-only/empty destination (native same-page scroll is fine — no interception needed).
+/// anchor-only/empty destination — those stay verbatim so they keep pointing at a real element
+/// id in *this* document. Their click is not handled by the host at all: [`nav_script`]'s
+/// delegated anchor listener cancels it and scrolls the target into view (module doc point 5).
+/// Leaving them alone is not the same as "the engine handles them" — a `<base href>` used to
+/// resolve them onto a different URL entirely, which is why this document no longer carries one
+/// (module doc point 4).
 fn rewrite_link_dest(dest: &str) -> String {
     let trimmed = dest.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -2043,6 +2049,13 @@ fn html_unescape(s: &str) -> String {
 /// equivalent of the former `apply_theme` (`egui::Visuals` mapping) — see module doc for why
 /// this rewrite finally allows a real per-level heading ladder and a tuned body line-height,
 /// both library limitations of the retired `egui_commonmark` renderer.
+///
+/// `scroll-margin-top` is set on two selector groups, not one: headings **and**
+/// `.footnote-reference`/`.footnote-definition`. Both are destinations of the in-page anchor
+/// scroll ([`nav_script`]), so both need the same offset — without it a footnote jumped to from
+/// its reference lands flush against the top edge, under the address bar whenever that bar is on
+/// screen. The stylesheet itself carries no comments: everything the generated document ships is
+/// bytes on every render, so the reasoning lives here instead.
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
@@ -2085,6 +2098,7 @@ mark.tasty-find-hit{{background:{find_match_bg};color:inherit;border-radius:2px;
 mark.tasty-find-hit.tasty-find-current{{background:{find_current_bg};color:{find_current_fg};}}
 #tasty-md-body{{padding:var(--md-space-sm) var(--md-space-md);}}
 h1,h2,h3,h4,h5,h6{{color:var(--md-strong);font-weight:600;margin:1em 0 0.5em;scroll-margin-top:calc(40px + var(--md-space-sm));}}
+.footnote-reference,.footnote-definition{{scroll-margin-top:calc(40px + var(--md-space-sm));}}
 h1{{font-size:var(--md-h1);}}h2{{font-size:var(--md-h2);}}h3{{font-size:var(--md-h3);}}
 h4{{font-size:var(--md-h4);}}h5{{font-size:var(--md-h5);}}h6{{font-size:var(--md-h6);}}
 #tasty-toc{{margin:var(--md-space-sm) var(--md-space-md) 0;padding:var(--md-space-sm) var(--md-space-md);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);}}
@@ -2338,12 +2352,30 @@ fn addr_bar_html(
 }
 
 /// Trusted, plugin-authored script (never sanitized — it never touches user markdown content).
-/// Two responsibilities:
+/// Three responsibilities:
 /// 1. Builds the `#tasty-nav:addr:<enc>` fragment from the address bar's current input value on
 ///    Enter/Go-click; module doc explains why a fragment assignment (rather than a real
 ///    navigation) is the only safe way to signal the host. The attach mirror refresh button
 ///    (`#tasty-refresh`, [`addr_bar_html`]) signals the same way with `#tasty-nav:refresh:<nonce>`.
-/// 2. Best-effort scroll-position preservation across `webview.set_url` reloads (idle-watch
+/// 2. **In-page anchor scrolling.** One delegated `click` listener owns every fragment-only
+///    `href` in the document — TOC entries ([`toc_nav_html`]), `[text](#slug)` body links that
+///    [`rewrite_link_dest`] deliberately leaves alone, and the footnote reference/backlink pairs
+///    [`rewrite_footnote_event`] emits. It cancels the default navigation and scrolls the target
+///    id into view itself. Three reasons this is done in script rather than left to the engine:
+///    the document is loaded as raw HTML with no real URL, so "navigate to `#slug`" is a
+///    navigation the host would have to classify and the surface could flash its loading chrome
+///    for; re-clicking the *same* entry assigns an identical hash, which is a no-op for every
+///    engine (the task requires repeated clicks to keep working); and the three backends
+///    (WebKitGTK/WKWebView/WebView2) then need not agree on fragment-navigation behavior for a
+///    document whose base URL they each pick differently. An `href` that starts with the
+///    [`NAV_FRAGMENT_MARKER`] is explicitly *not* intercepted — that is the host-signal channel
+///    (module doc point 1) and must still reach `decide-policy`.
+///    Lookup is `getElementById` on the raw fragment text first, then on its percent-decoded
+///    form: heading ids are raw (a Korean heading's `id`/`href` both carry the Korean text
+///    verbatim), while footnote ids are percent-encoded on both sides by
+///    [`percent_encode_fragment`] — one of the two spellings matches in either case, and trying
+///    both costs a single extra DOM lookup only when the first misses.
+/// 3. Best-effort scroll-position preservation across `webview.set_url` reloads (idle-watch
 ///    auto-reload and `markdown.reload` both replace the whole document via `load_html` — there
 ///    is no in-place DOM patch, so the native WebView's own scroll position is always reset to
 ///    0 on reload without this). Keyed by `file_path` (baked in at generation time) so switching
@@ -2375,6 +2407,22 @@ var collapsed=toc.classList.toggle('tasty-toc-collapsed');
 tocToggle.setAttribute('aria-expanded',collapsed?'false':'true');
 }});
 }}
+document.addEventListener('click',function(e){{
+var t=e.target;
+if(!t||!t.closest)return;
+var a=t.closest('a[href]');
+if(!a)return;
+var href=a.getAttribute('href')||'';
+if(href.charAt(0)!=='#')return;
+if(href.indexOf('#'+{marker_json})===0)return;
+e.preventDefault();
+var id=href.slice(1);
+if(!id){{window.scrollTo(0,0);return;}}
+var el=document.getElementById(id);
+if(!el){{try{{el=document.getElementById(decodeURIComponent(id));}}catch(err){{}}}}
+if(!el)return;
+el.scrollIntoView({{block:'start'}});
+}});
 var scrollKey='tasty-md-scroll:'+{file_path_json};
 try{{
 var saved=sessionStorage.getItem(scrollKey);
@@ -2388,6 +2436,8 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
 }},150);
 }});
 }})();"#,
+        marker_json = serde_json::to_string(NAV_FRAGMENT_MARKER)
+            .unwrap_or_else(|_| format!("\"{NAV_FRAGMENT_MARKER}\"")),
         file_path_json = serde_json::to_string(file_path).unwrap_or_else(|_| "\"\"".to_string()),
     )
 }
@@ -2812,8 +2862,8 @@ pre.appendChild(btn);
 /// already ran).
 ///
 /// Reads `img.getAttribute('src')` (the literal markdown-authored value), not the `img.src`
-/// property (which `<base href>`, see [`file_dir_uri`], has already normalized into an absolute
-/// `file://` URI) — this is what keeps the placeholder's path human-readable.
+/// property (which the engine resolves into an absolute URL against the document's own
+/// location) — this is what keeps the placeholder's path human-readable.
 ///
 /// A remote image blocked by the host's remote-content policy fails to load for a real reason
 /// (the request never resolves successfully) — the browser's `error` event fires for it exactly
@@ -2983,8 +3033,8 @@ fn katex_js_source() -> &'static str {
 /// Data URIs, not relative `file://` paths: see `assets/NOTICE.md`'s "Font offline delivery"
 /// note — there is no on-disk plugin-assets directory a relative URL inside the rendered document
 /// could resolve against at runtime (everything is `include_str!`/`include_bytes!`-baked into the
-/// binary), and the document's one `<base href>` already belongs to the user's own markdown file
-/// directory.
+/// binary), and the document carries no `<base href>` for one to resolve against either (module
+/// doc point 4).
 fn katex_css_with_embedded_fonts() -> &'static str {
     static EMBEDDED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     EMBEDDED.get_or_init(|| {
@@ -3100,21 +3150,6 @@ fn percent_encode_fragment(s: &str) -> String {
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
-/// Percent-encode a `file://` path's characters (keeps `/` unescaped, unlike
-/// [`percent_encode_fragment`] — this builds a path, not an opaque fragment payload).
-fn percent_encode_path(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
                 out.push(b as char);
             }
             _ => out.push_str(&format!("%{b:02X}")),
@@ -3280,18 +3315,6 @@ mod tests {
     fn parse_nav_fragment_none_for_unrelated_url() {
         assert_eq!(parse_nav_fragment("about:blank"), None);
         assert_eq!(parse_nav_fragment("https://example.com/#section"), None);
-    }
-
-    #[test]
-    fn file_dir_uri_adds_trailing_slash_and_scheme() {
-        let dir = if cfg!(windows) {
-            PathBuf::from(r"C:\docs\md")
-        } else {
-            PathBuf::from("/docs/md")
-        };
-        let got = file_dir_uri(&dir);
-        assert!(got.starts_with("file:///"));
-        assert!(got.ends_with('/'));
     }
 
     #[test]
@@ -3892,7 +3915,6 @@ mod tests {
         assert!(html.contains("tasty-addr-bar"));
         assert!(html.contains("tasty-addr-input"));
         assert!(html.contains("/a/one.md"));
-        assert!(html.contains("<base href="));
         assert!(html.contains("Hello"));
         assert!(!html.contains("<script>alert"));
     }
@@ -4529,9 +4551,9 @@ mod tests {
 
     #[test]
     fn image_error_script_reads_src_attribute_not_property() {
-        // `img.src` (property) is already normalized to an absolute `file://` URI by `<base
-        // href>` — `getAttribute('src')` preserves the original markdown-authored path, which is
-        // what the placeholder should show.
+        // `img.src` (property) is whatever the engine resolved against the document's own
+        // location — `getAttribute('src')` preserves the original markdown-authored path, which
+        // is what the placeholder should show.
         let script = image_error_script(&Translator::default());
         assert!(script.contains("img.getAttribute('src')"));
         assert!(!script.contains("img.src"));
@@ -5158,6 +5180,101 @@ Outro\n";
         // toggle button + collapsed-state hook present (collapsibility, task requirement).
         assert!(html.contains(r#"id="tasty-toc-toggle""#), "got: {html}");
         assert!(html.contains("tasty-toc-collapsed"), "got: {html}");
+    }
+
+    /// 목차·본문 앵커가 **이 문서 안의 id** 를 가리키려면 `<base href>` 가 없어야 한다 —
+    /// HTML 규칙상 fragment-only `href` 도 base URL 에 상대적으로 풀리므로, base 가 있으면
+    /// `#target` 이 `file:///<dir>/#target`(다른 문서)이 된다. base_dir 이 **있는** 문서로
+    /// 건다: base_dir 이 없으면 옛 코드에서도 base 태그가 안 나와 이 시험이 공허해진다.
+    #[test]
+    fn document_with_a_base_dir_still_carries_no_base_tag() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# Intro\n\nSome text.\n",
+            load_error: None,
+            base_dir: Some(Path::new("/a")),
+            recent: &[],
+            remote: None,
+        });
+        assert!(!html.contains("<base"), "got: {html}");
+        // 문서가 실제로 그려졌다는 것을 먼저 못박는다 — 빈 출력이면 위 부정은 공허하다.
+        assert!(html.contains(r#"<h1 id="intro">Intro</h1>"#), "got: {html}");
+    }
+
+    /// 중복 제목·한글 제목·본문 내부 링크가 전부 **실재하는 id** 를 가리킨다. 목차 항목의
+    /// raw href 와 heading id 를 값으로 대조한다(문자열 포함이 아니라 짝 맞춤).
+    #[test]
+    fn toc_hrefs_and_internal_links_match_real_ids_for_duplicate_and_korean_headings() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# Start\n\n[내부 이동](#target)\n\n## Target\n\na\n\n## Target\n\nb\n\n## 한글 제목\n\nc\n",
+            load_error: None,
+            base_dir: Some(Path::new("/a")),
+            recent: &[],
+            remote: None,
+        });
+        for (href, id_tag) in [
+            (r##"href="#start""##, r#"<h1 id="start">"#),
+            (r##"href="#target""##, r#"<h2 id="target">"#),
+            (r##"href="#target-1""##, r#"<h2 id="target-1">"#),
+            (r##"href="#한글-제목""##, r#"<h2 id="한글-제목">"#),
+        ] {
+            assert!(html.contains(href), "missing {href} in: {html}");
+            assert!(html.contains(id_tag), "missing {id_tag} in: {html}");
+        }
+        // 본문의 사용자 작성 내부 링크는 nav fragment 로 감싸이지 않고 그대로 남는다.
+        assert!(
+            !html.contains(&format!("{NAV_FRAGMENT_MARKER}link:%23target")),
+            "internal anchor must not be routed through the host signal channel: {html}"
+        );
+    }
+
+    /// 각주 참조/복귀 링크의 href 와 그 목적지 id 가 같은 철자로 짝을 이룬다 —
+    /// [`nav_script`] 의 `getElementById` 가 그 철자를 그대로 쓴다.
+    #[test]
+    fn footnote_anchor_hrefs_pair_with_real_ids() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let tr = Translator::default();
+        let html = render_document(DocumentInput {
+            theme: &theme,
+            tr: &tr,
+            file_path: "/a/doc.md",
+            source: "# Start\n\nbody[^n]\n\n[^n]: note\n",
+            load_error: None,
+            base_dir: Some(Path::new("/a")),
+            recent: &[],
+            remote: None,
+        });
+        assert!(html.contains(r##"href="#fndef-n""##), "got: {html}");
+        assert!(html.contains(r#"id="fndef-n""#), "got: {html}");
+        assert!(html.contains(r##"href="#fnref-n""##), "got: {html}");
+        assert!(html.contains(r#"id="fnref-n""#), "got: {html}");
+    }
+
+    /// 신뢰 스크립트가 fragment-only 앵커를 직접 스크롤하되 host 신호 채널
+    /// (`#tasty-nav:`)은 건드리지 않는다.
+    #[test]
+    fn nav_script_scrolls_anchors_and_leaves_the_host_signal_channel_alone() {
+        let js = nav_script("/a/doc.md");
+        assert!(js.contains("scrollIntoView"), "got: {js}");
+        assert!(js.contains("preventDefault"), "got: {js}");
+        assert!(
+            js.contains("getElementById(decodeURIComponent(id))"),
+            "got: {js}"
+        );
+        // 마커는 Rust 상수에서 와야 한다 — 손으로 두 번 적으면 한쪽만 바뀐다.
+        assert!(
+            js.contains(&format!("'#'+\"{NAV_FRAGMENT_MARKER}\"")),
+            "guard must be built from NAV_FRAGMENT_MARKER: {js}"
+        );
     }
 
     #[test]

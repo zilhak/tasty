@@ -60,8 +60,9 @@ class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 
   그리고 렌더된 문서 자체)은 host WebView에 넘기는 단일 HTML 문자열 안에 완전히
   self-contained되어 있다 — 런타임에 상대 폰트 URL이 참조할 수 있는 "plugin assets 디렉토리"가
   디스크에 따로 존재하지 않는다(`include_str!`/`include_bytes!`가 바이너리에 굽고, 아무것도
-  디스크에 다시 써지지 않는다). 문서의 유일한 `<base href>`는 이미 사용자의 마크다운 파일
-  디렉토리 몫이라 재지정하면 사용자 상대경로 이미지/링크가 깨진다. 그래서
+  디스크에 다시 써지지 않는다). 문서에는 `<base href>`가 아예 없어서(문서 안 앵커가 다른
+  URL로 풀리기 때문 — [ADR-0289](../../../adr/0289-the-markdown-document-carries-no-base-href.md))
+  상대 폰트 URL을 풀어 줄 기준 자체가 없다. 그래서
   `render.rs::katex_css_with_embedded_fonts`가 `katex.min.css`의 각 `@font-face`
   `src:`(원래 `woff2`/`woff`/`ttf` 3-format 상대경로 리스트)를 vendored `woff2` bytes를
   base64 인코딩한 단일 `data:font/woff2;base64,...` 엔트리로 치환한다(문자열 치환 — regex
@@ -410,15 +411,26 @@ pulldown-cmark 의 HTML writer 는 `Tag::Heading::id` 가 있으면 옵션과 �
 
 heading 이 하나 이상 있으면 문서 최상단(주소창 바로 아래, 본문 위)에 접을 수 있는 `<nav id="tasty-toc">`
 목차가 삽입된다(`render.rs::toc_nav_html`) — sticky 사이드 패널이 아니라 인라인 삽입이다(레이아웃
-CSS/스크롤 동기화 복잡도를 늘리지 않기 위한 설계 결정). 각 항목은 `<a href="#슬러그">` 로, 클릭은
-`rewrite_link_dest` 의 기존 anchor-only 예외 경로(`#` 로 시작하는 dest 는 rewrite 없이 그대로 통과)를
-그대로 태운다 — `#tasty-nav:` 라우팅을 새로 만들지 않는다. 레벨별 들여쓰기는 `.tasty-toc-l1`..`l6`
+CSS/스크롤 동기화 복잡도를 늘리지 않기 위한 설계 결정). 각 항목은 `<a href="#슬러그">` 로,
+`rewrite_link_dest` 의 anchor-only 예외 경로(`#` 로 시작하는 dest 는 rewrite 없이 그대로 통과)를
+그대로 태운다 — `#tasty-nav:` 라우팅을 새로 만들지 않는다. **클릭 자체는 엔진이 아니라 `nav_script` 가 처리한다**
+— 위임된 `click` 리스너 하나가 fragment-only `href`(목차 항목 · 본문의 `[텍스트](#슬러그)` · 각주
+참조/복귀)를 잡아 기본 navigation 을 취소하고 목적지 id 를 `scrollIntoView` 한다. 그래서 같은 항목을
+연달아 눌러도 매번 이동하고(같은 hash 재대입은 엔진에게 무동작이다), 세 백엔드가 fragment navigation
+을 어떻게 다루든 결과가 같다. `#tasty-nav:` 로 시작하는 href 는 이 리스너가 건드리지 않는다 — 그쪽은
+host 신호 채널이라 `decide-policy` 까지 가야 한다. 문서에 `<base href>` 가 없는 것도 같은 이유다
+([ADR-0289](../../../adr/0289-the-markdown-document-carries-no-base-href.md)). 레벨별 들여쓰기는 `.tasty-toc-l1`..`l6`
 CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_script`(트러스트 스크립트, 사용자
 콘텐츠 아님)의 최소 JS 가 `#tasty-toc-toggle` 클릭 시 `#tasty-toc` 에 `tasty-toc-collapsed` 클래스를
 토글하는 것으로 구현되며, 목록은 `max-height:280px;overflow-y:auto` 로 heading 이 많은 문서에서도
-패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 가 40px sticky 이므로, 모든 heading 에
-`scroll-margin-top:calc(40px + var(--md-space-sm))` 을 줘 TOC 클릭 이동 시 heading 이 그 바 아래
-가려지지 않게 한다. heading 이 하나도 없는 문서는 TOC 영역 자체가 렌더되지 않는다(빈 nav 로 깨지지
+패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 는 40px `position:sticky` 이고 **문서 상단
+한 뷰포트 구간에서만 실제로 붙어 있다** — `html,body{height:100%}` 때문에 sticky 의 containing
+block 이 뷰포트 높이로 고정돼, 그 밖으로 스크롤하면 바가 함께 밀려 올라간다(실측 2026-09-19,
+뷰포트 높이 813: `scrollY` 773 까지 `rect.top` 0, 800 부터 음수). 그래서 모든 heading 에
+`scroll-margin-top:calc(40px + var(--md-space-sm))` 을 줘, 바가 붙어 있는 구간에서 앵커 이동한
+heading 이 그 아래 가려지지 않게 한다(바가 없는 구간에서는 상단 여백이 그만큼 남을 뿐이다).
+같은 값이 `.footnote-reference`/`.footnote-definition` 에도 걸린다 — 각주도 앵커 이동의
+목적지다. heading 이 하나도 없는 문서는 TOC 영역 자체가 렌더되지 않는다(빈 nav 로 깨지지
 않게 — `render_document` 이 heading 목록이 비면 호출을 아예 건너뜀).
 
 ## 이미지 캡션
@@ -462,8 +474,7 @@ image_error_script`). 문서에 `<img` 가 하나도 없으면(대다수 비-이
   각 `<img>`에 대해 `img.complete && img.naturalWidth === 0`(로드는 끝났는데 실제 픽셀이 없음 =
   실패, `![alt]()`처럼 `src` 가 아예 빈 경우도 이 조건으로 자연히 잡힌다)도 함께 검사한다.
 - **표시 경로**: `img.getAttribute('src')`(마크다운에 적힌 원본 상대경로)를 그대로 쓴다.
-  `img.src`(프로퍼티)는 `<base href>`(위 "Mermaid 다이어그램" 절 이전, `render.rs::file_dir_uri`)가
-  이미 절대 `file://` URI로 정규화해버린 값이라 사람이 읽기 나쁘다.
+  `img.src`(프로퍼티)는 엔진이 문서 자신의 주소 기준으로 절대화해버린 값이라 사람이 읽기 나쁘다.
 - **접근성**: 플레이스홀더는 `role="img"`이고, 원본 `alt`가 있으면 그대로 `aria-label`로
   보존한다(없으면 실패 안내 라벨 자체를 aria-label로 폴백).
 - **원격 이미지 차단 정책과의 관계**: host의 `allow_remote_content` 정책으로 원격 이미지 요청이

@@ -1,4 +1,4 @@
-<!-- source-hash: 8be0368e2758 -->
+<!-- source-hash: 9c91b06e1dae -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -66,11 +66,11 @@ The last chosen view mode is remembered and applied to new Explorers too. The Ex
 Renders `.md` files. When the file changes, it redraws automatically within 1 second.
 
 - Tables · checkboxes · footnotes · code highlighting · `mermaid` diagrams · `$…$` math · `> [!NOTE]` callouts (including Obsidian-style `[!tip]-` folding) · frontmatter at the top hidden.
-- If there are headings, a collapsible **Table of contents** is attached above the body.
+- If there are headings, a collapsible **Table of contents** is attached above the body. Clicking an entry moves down to that heading within the document you are already reading — and clicking the same entry again moves there again.
 - Hover a code block for the **Copy code** button.
 - `Ctrl+F` (macOS `Cmd+F`) while the document has focus — **Find in document**.
 - Type another file path in the address bar at the top to move to it. Recently opened files appear as autocompletion. Files opened in other windows of the same Tasty instance are included, with up to 10 entries in most recently opened order.
-- Links in the document — other Markdown · files open in a new Tab in the same Pane, and `http(s)://` goes to the browser. Relative paths are relative to the folder the document is in.
+- Links in the document — other Markdown · files open in a new Tab in the same Pane, and `http(s)://` goes to the browser. Relative paths are relative to the folder the document is in. Links that point inside the same document, such as `#heading`, and footnote numbers and their back arrows only move to that spot.
 - Files over 1MB are asked about once with **Open large file?**.
 
 **New Markdown...** or `Alt+'` > **Markdown** opens the **Open Markdown File** window. Type a path or choose one with **Browse…**. Browse starts in the current folder of the terminal you are looking at. The window appears centered over that surface, and it hides while you switch to another workspace or tab and comes back as you left it when you return.

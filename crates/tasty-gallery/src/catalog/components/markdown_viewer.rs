@@ -26,8 +26,8 @@
 //! `<input>`+`<button>`(`render.rs::addr_bar_html`/`nav_script`)이라 host egui 컴포넌트가
 //! 아니게 됐다. 이 specimen 은 그 HTML chrome 의 정적 근사만 그린다(라이브 PathField 소비 아님).
 //!
-//! **인라인 이미지** (`![alt](path)`) — 이제 `<base href="file:///…">` 로 상대경로를 앵커한
-//! 평범한 `<img>` 태그다(`render.rs::file_dir_uri`). 이 specimen 은 파일 I/O 없이 placeholder
+//! **인라인 이미지** (`![alt](path)`) — 렌더러가 파일 바이트를 `data:` URI 로 문서 안에 싣는다
+//! (`render.rs::inline_local_images`). 이 specimen 은 파일 I/O 없이 placeholder
 //! rect 로 근사한다 — 아래 `image_block`.
 
 use tasty_type_appearance::theme::Theme;
@@ -521,9 +521,9 @@ fn task_row(ui: &mut egui::Ui, theme: &Theme, mut done: bool, text: &str) {
 }
 
 /// 인라인 이미지 — webview 가 실제로 그리는 raster 를 손으로 근사한다(갤러리는 파일
-/// I/O 도, live webview 도 갖지 않는다). 실제 로드 경로: 문서 `<head>` 의
-/// `<base href="file:///…/">`(`render.rs::file_dir_uri`)가 상대경로 dest 를 앵커하고,
-/// 나머지는 평범한 `<img src>` 로 브라우저 엔진이 직접 로드한다(host 관여 없음). alt 텍스트는
+/// I/O 도, live webview 도 갖지 않는다). 실제 로드 경로: 렌더러가 sanitize 뒤에 로컬
+/// `<img src>` 를 파일로 풀어 `data:` URI 로 바꿔 문서 안에 싣는다
+/// (`render.rs::inline_local_images`) — 엔진은 문서 밖 파일을 읽지 않는다. alt 텍스트는
 /// 표준 `<img alt>` 로 스크린리더/로드실패 fallback 에 쓰이지만, 정적 specimen 에서는 항상
 /// 보이는 캡션으로 대신 노출한다.
 fn image_block(ui: &mut egui::Ui, theme: &Theme, alt: &str) {

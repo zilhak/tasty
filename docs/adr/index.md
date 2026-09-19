@@ -261,3 +261,4 @@
 | 0279 | [File dispatch retains its origin through completion](0279-file-dispatch-retains-origin-through-completion.md) | Accepted | 2026-09-15 | file-handler, focus, routing, lifecycle |
 | 0282 | [Namespace 호출은 owner와 필요한 활성 IPC hook extension만 시작한다](0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md) | Accepted | 2026-09-15 | ipc, plugins, lifecycle, headless |
 | 0288 | [Codex 부모에게 child 상태를 App Server 도구 결과로 전달한다 — ADR-0266의 Codex 부모 push 주체 개정](0288-codex-parent-tool-output-completion.md) | Accepted | 2026-09-16 | codex, app-server, completion, outbox, lifecycle, plugin |
+| 0289 | [markdown 문서는 `<base href>` 를 싣지 않는다 — 그것이 문서 안 앵커를 문서 밖으로 보낸다](0289-the-markdown-document-carries-no-base-href.md) | Accepted | 2026-09-19 | markdown, plugin, webview, navigation, anchors, toc, footnotes, cross-platform, adr-0249, adr-0065 |
