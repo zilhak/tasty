@@ -270,7 +270,11 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 
 세 좌표가 **코드를 공유하지는 않는다** — 갤러리 표본은 정적 렌더이고 본체는 상호작용 view 다. 공유하는 것은
 `crates/tasty-ui-widgets/src/tokens.rs` 의 `FH_*` 전사 치수(420 · 14 · 10 · 6 · 5 · 264 · 20 · 32 · 34 · 0.8)
-뿐이고, 그 값들은 4px 그리드 밖이라 대응 `Theme` 토큰이 없다.
+뿐이고, 그 값들에는 대응 `Theme` 토큰이 없다. **근거는 "그리드 밖" 이 아니다** — 그중 넷(420 · 264 · 20 · 32)은
+4px 배수라 그리드 위에 있다. 근거는 축이다: 그리드 위에 있는 값도 그것이 재는 것(프레임 폭 · 목록 상한 · 페이드
+높이 · 블록 여백)에 대응하는 semantic 이 없고, 값이 우연히 겹치는 토큰을 부르면 없는 관계가 생긴다. 같은 판정을
+[`design-token-mapping.md`](design-token-mapping.md) 의 `## File handler picker` 절과
+`src/source_guards/on_scale_length_literal.rs` 의 `AREAS` 주석이 적는다.
 
 canonical 이 열어 두었던 결정 셋은 닫혔다. footer 의 "Always open …" 체크는 **제거**(picker 는 순수 dispatcher —
 저장되는 바인딩은 보고 되돌릴 자리가 있어야 하고 그 자리는 설정 › 핸들러다), 행 icon 은 action 이 여는 surface

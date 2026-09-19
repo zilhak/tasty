@@ -14,7 +14,8 @@
 //!
 //! 행의 글리프와 이름은 handler 모델에 **없다**(`FileHandler { id, detector, priority,
 //! owner, action, disabled }`). 둘 다 도출한다 — 글리프는 action 이 여는 surface kind 에서
-//! ([`kind_glyph`]), 이름은 id 의 마지막 `/` 뒤 조각에서([`PickerHandlerSummary::display`]).
+//! ([`kind_glyph`]), 이름은 선언된 표시명이거나 id 의 마지막 `/` 뒤 조각에서
+//! ([`id_local_segment`]).
 //! 둘째 줄이 출처 낱말 + 전체 id(앞자름)를 들어, id 는 행마다 정확히 한 번 나온다.
 
 use tasty_type_geometry::length::LogicalPx;
@@ -36,9 +37,16 @@ pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 // ── 프레임 고정 치수 ────────────────────────────────────────────────────────
 //
 // 폭·패딩·상한은 전부 `tasty_ui_widgets::tokens` 의 `FH_*`(갤러리 specimen 과 단일 출처).
-// 아래 넷은 **sizer 전용 공칭 높이**다 — sizer 는 `egui::Ui` 없이 불리므로 폰트 metrics 를
-// 못 읽는다. 실제 그리기는 galley 높이를 쓰고, 여기 값은 팝업 창 크기를 잡는 근사다.
-// 근사가 모자라면 목록이 스크롤로 흡수한다(`FH_LIST_MAX_HEIGHT`).
+//
+// 아래 넷은 **줄높이 추정치**다 — 레이아웃을 정하는 시점엔 galley 가 아직 없어 폰트
+// metrics 를 못 읽는다(sizer 는 `egui::Ui` 없이 불린다). 그래서 디자인 값이 아니고
+// 공용 `tokens.rs` 에 올리지 않는다.
+//
+// **다만 "sizer 전용" 은 아니다 — 넷 다 화면에 나오는 치수를 정한다.** 헤더·footer 는
+// 이 값들로 밴드 rect 를 할당하고(`header_h` · `footer_h` → `allocate_exact_size`),
+// 제목은 `FH_HEADER_PAD_TOP + TITLE_LINE_H` 를 그리기 좌표로 직접 쓰며, 목록 높이는
+// `picker_size_for` 를 거쳐 팝업 창 자체의 크기가 된다. 추정이 모자란 만큼은 목록이
+// 스크롤로 흡수한다(`FH_LIST_MAX_HEIGHT`).
 
 /// 제목 행의 공칭 높이(제목 14 line ≈ 20, Tag 16 보다 크다).
 const TITLE_LINE_H: LogicalPx = LogicalPx(20.0);
@@ -514,11 +522,15 @@ fn handler_row(
     if sel {
         ui.painter()
             .rect_filled(rect, th.corner_radius_sm.value(), th.surface_active());
+        // 목록 행의 선택 막대다 — 탭 인디케이터가 아니라 `listctrl` 계열 역할을
+        // 부른다. 두 토큰은 값이 같지만(2) 가리키는 것이 다르고, 같은 역할의 자리
+        // (`tasty_ui_widgets::listctrl`)가 이미 이쪽을 쓴다.
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+            egui::vec2(th.listctrl_selected_bar_width().value(), rect.height()),
         );
-        ui.painter().rect_filled(bar, 0.0, th.accent_primary());
+        ui.painter()
+            .rect_filled(bar, 0.0, th.listctrl_selected_bar());
     } else if resp.hovered() {
         ui.painter().rect_filled(
             rect,

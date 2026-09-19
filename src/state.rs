@@ -827,14 +827,15 @@ pub struct FileHandlerPickerData {
     pub(crate) target_display: String,
     /// 탐지된 detector — 없을 수도 있음 ($unknown 등 unmatched).
     pub(crate) detector: Option<crate::file::format::DetectorId>,
-    /// 좌측 list 의 후보들 — handler id 사전순.
+    /// 목록의 첫 그룹(`Suggested` / fallback 이면 전체 핸들러) — handler id 사전순.
     pub(crate) candidates: Vec<PickerHandlerSummary>,
     /// `candidates` 가 detector 매칭 결과가 아니라 `FileHandlerRegistry::all_handlers()`
     /// fallback(이 포맷엔 매칭 핸들러가 없어 전체 핸들러를 대신 보여주는 경우)이면
-    /// true. draw wrapper 가 "후보" 대신 "추천 없음 — 전체 핸들러" 류 heading 을
-    /// 고르는 데 사용 — 1회성 dispatch 후보일 뿐 이 detector 에 영구 연결되지 않음.
+    /// true. draw wrapper 가 그 그룹의 heading 을 `suggested_heading` 대신
+    /// `fallback_heading` + caption 으로 바꾸고 attention 톤을 켜는 데 사용 —
+    /// 1회성 dispatch 후보일 뿐 이 detector 에 영구 연결되지 않음.
     pub(crate) candidates_are_fallback: bool,
-    /// 우측 list 의 recent handler ids — 현재 등록된 것만, 저장 파일 순서.
+    /// 같은 목록의 둘째 그룹(`Recent`) — 현재 등록된 것만, 저장 파일 순서.
     pub(crate) recent: Vec<PickerHandlerSummary>,
     /// 이 형식에서 자동으로 실행됐을 handler — `default` Tag 가 붙는 행. fallback
     /// 후보(이 형식에 매칭되는 핸들러가 없음)에는 기본이 없으므로 `None` 이다.

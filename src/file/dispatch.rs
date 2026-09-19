@@ -165,7 +165,7 @@ fn hex_val(b: u8) -> Option<u8> {
 ///
 /// `candidates_are_fallback` 이 true 면 `candidates` 는 detector 매칭이 아니라
 /// `FileHandlerRegistry::all_handlers()` fallback 목록 — `recent` 와 겹치는 항목은
-/// 좌측 후보 열에서 제외한다(중복 표시 방지).
+/// 첫 그룹에서 제외한다(같은 목록 안의 두 그룹이므로 중복 표시가 된다).
 ///
 /// 대상이 받지 못하는 핸들러([`handler_accepts_target`])는 후보에서도 recent 에서도
 /// 뺀다 — recent 는 `candidates` 와 무관하게 저장 파일에서 읽히므로 따로 거른다.
@@ -217,9 +217,10 @@ pub(crate) fn open_picker(
     let _ = state; // headless: picker popup unavailable.
 }
 
-/// picker 의 두 목록(recent, 후보)을 만든다. 둘 다 대상이 받지 못하는 핸들러를 빼고,
-/// 후보는 recent 와 겹치는 항목을 뺀다(중복 표시 방지). recent 에서 걸러진 핸들러는
-/// 후보 쪽 중복 제거에도 쓰이지 않는다 — 걸러졌으면 어느 열에도 없다.
+/// picker 의 두 그룹(recent, 후보)을 만든다 — **한 목록 안의 두 묶음**이다. 둘 다
+/// 대상이 받지 못하는 핸들러를 빼고, 후보는 recent 와 겹치는 항목을 뺀다(같은 목록에
+/// 두 번 나온다). recent 에서 걸러진 핸들러는 후보 쪽 중복 제거에도 쓰이지 않는다 —
+/// 걸러졌으면 어느 그룹에도 없다.
 fn picker_lists(
     target: &DispatchTarget,
     recent_handlers: &[(FileHandler, i64)],
@@ -609,7 +610,7 @@ mod tests {
     }
 
     /// recent 는 candidates 와 무관하게 저장 파일에서 읽힌다 — URL 을 못 받는 핸들러가
-    /// recent 에 있어도 picker 의 어느 열에도 실리지 않아야 한다.
+    /// recent 에 있어도 picker 의 어느 그룹에도 실리지 않아야 한다.
     #[test]
     fn picker_lists_drop_handlers_that_cannot_take_a_url_from_recent_and_candidates() {
         let md = handler("host/md", open_surface("markdown", "file"));
@@ -641,7 +642,7 @@ mod tests {
         assert_eq!(ids(&cand_rows), vec!["host/system"]);
     }
 
-    /// 원격 경로 picker 는 recent 가 차 있어도 어느 열에도 핸들러를 싣지 않는다 — 실으면
+    /// 원격 경로 picker 는 recent 가 차 있어도 어느 그룹에도 핸들러를 싣지 않는다 — 실으면
     /// 사용자가 recent 를 골라 로컬 핸들러가 원격 호스트 경로로 실행된다. 갓 만든 프로필은
     /// recent 가 비어 있어 이 결함이 안 드러나므로 recent 를 먼저 채운다.
     #[test]

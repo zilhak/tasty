@@ -50,9 +50,19 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 
 **picker 는 순수 dispatcher 다.** 1회 열고 아무것도 저장하지 않는다 — 형식→핸들러 바인딩을 저장하는 체크박스는 없다. 저장되는 바인딩은 보고 되돌릴 자리가 있어야 하고 그 자리는 설정 › 핸들러다.
 
-**어떤 형식으로 뜨는가**: 매칭 핸들러가 있으면 picker 없이 1순위가 자동 실행되므로(`handlers_for` 정렬), 지금 picker 가 뜨는 경로는 둘 다 **추천 없음(fallback)** 이다 — 이 detector 에 매칭되는 handler 가 0개인 경우와, 터미널 링크 메뉴의 "연결 동작"(식별을 건너뛰고 강제로 연다). 그때 후보는 `handlers_for(d)` 가 아니라 `all_handlers()` 이고(recent 와 중복 제거), 네 신호가 그 약속의 차이를 나른다: 그룹 라벨이 attention 톤의 "전체 핸들러", caption 이 "이 형식에 맞는 핸들러가 없습니다.", 헤더 Tag 가 "형식 알 수 없음", 그리고 헤더 아래 띠가 **1회성**이고 다음에도 이 화면이 나온다고 적는다(user TOML 미변경). 기본 핸들러 Tag 는 이 상태에 붙지 않는다 — 매칭이 없으면 기본도 없다.
+**어떤 형식으로 뜨는가**: 매칭 핸들러가 있으면 picker 없이 1순위가 자동 실행되므로(`handlers_for` 정렬), picker 가 뜨는 경로는 **셋**이고 그중 둘만 fallback 이다.
 
-**empty-state**: 시스템 전체 handler 가 진짜 0개일 때만 목록 자리가 중앙 블록으로 바뀐다 — 흐린 파일 글리프 + "등록된 핸들러가 없습니다." + 한 줄 안내 + "설정에서 핸들러 등록" 버튼(Settings 를 `FileHandler` 탭으로 오픈). 프레임 폭과 footer 는 그대로고 [열기]만 비활성이다 — 같은 다이얼로그의 한 상태이지 다른 화면이 아니다.
+| 경로 | 후보 | fallback 인가 |
+|---|---|---|
+| 이 detector 에 매칭되는 handler 가 0개 (`Core::apply_identify_result`) | `all_handlers()` | 예 |
+| 터미널 링크 메뉴의 "연결 동작" — 식별을 건너뛰고 강제로 연다 | `all_handlers()` | 예 |
+| 원격(mirror) surface 의 경로 링크 (`open_remote_placeholder_picker`) | **없음** — 후보도 recent 도 안 싣는다 | 아니오 |
+
+셋째는 화면 경로가 원격 호스트 경로라 로컬 핸들러로 열 수 없어서 목록을 **일부러 비운다**. 그래서 `candidates_are_fallback` 이 `false` 이고 fallback 신호(attention 톤 · 1회성 띠)가 안 뜬다.
+
+앞의 둘에서는 후보가 `handlers_for(d)` 가 아니라 `all_handlers()` 이고(recent 와 중복 제거), 네 신호가 그 약속의 차이를 나른다: 그룹 라벨이 attention 톤의 "전체 핸들러", caption 이 "이 형식에 맞는 핸들러가 없습니다.", 헤더 Tag 가 "형식 알 수 없음", 그리고 헤더 아래 띠가 **1회성**이고 다음에도 이 화면이 나온다고 적는다(user TOML 미변경). 기본 핸들러 Tag 는 이 상태에 붙지 않는다 — 매칭이 없으면 기본도 없다.
+
+**empty-state**: 갈림은 **이 popup 이 실을 행이 0개인가**이지 시스템에 핸들러가 몇 개인가가 아니다 — 후보와 recent 가 **둘 다 비면** 목록 자리가 중앙 블록으로 바뀐다. 그래서 실제로 이 상태에 닿는 것은 위 표의 **셋째 경로**(원격 placeholder)다. 앞의 둘은 `all_handlers()` 를 싣는데 host 기본 핸들러가 `default-file-handlers.toml` 에 박혀 있어 plugin 을 전부 꺼도 0 이 되지 않는다. 블록은 흐린 파일 글리프 + "등록된 핸들러가 없습니다." + 한 줄 안내 + "설정에서 핸들러 등록" 버튼(Settings 를 `FileHandler` 탭으로 오픈)이고, 프레임 폭과 footer 는 그대로고 [열기]만 비활성이다 — 같은 다이얼로그의 한 상태이지 다른 화면이 아니다.
 
 ### 권한
 

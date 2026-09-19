@@ -314,12 +314,13 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
             theme.corner_radius_sm.value(),
             theme.surface_active().to_egui(),
         );
+        // 본체와 같은 역할 토큰 — 목록 행 선택 막대는 `listctrl` 계열이다.
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
+            egui::vec2(theme.listctrl_selected_bar_width().value(), rect.height()),
         );
         ui.painter()
-            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+            .rect_filled(bar, 0.0, theme.listctrl_selected_bar().to_egui());
     }
 
     // 글리프 — plugin 은 mauve, Recent 의 비-plugin 행만 흐린다.

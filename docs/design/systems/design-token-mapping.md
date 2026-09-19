@@ -379,8 +379,14 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 (`bg_panel` · `surface_raised` · `surface_active` · `border_strong` · `separator` ·
 `accent_primary` · `accent_agent` · `accent_attention` · `text_primary` · `text_secondary` ·
 `text_muted` · `text_disabled` · `text_on_accent`). 폰트는 `font_size_max`(제목 14) ·
-`font_size_body`(이름 13) · `font_size_caption`(경로·출처·id·그룹 라벨 11), 선택 바는
-`tab_indicator_width`(2), 행 반경은 `corner_radius_sm`(2).
+`font_size_body`(이름 13) · `font_size_caption`(경로·출처·id·그룹 라벨 11), 행 반경은
+`corner_radius_sm`(2).
+
+선택 행의 2px 좌측 바는 **`listctrl_selected_bar_width` · `listctrl_selected_bar`** 다 —
+`tab_indicator_width` 가 아니다. 두 토큰은 값이 같지만(2) 가리키는 역할이 다르고, 이 자리는
+목록 행이라 `listctrl` 계열이다. 같은 역할의 다른 자리(`tasty_ui_widgets::listctrl` · 갤러리
+`prim_listctrl` · `git_viewer` · `remote_attach/rows`)가 이미 이쪽을 쓴다. **값이 같다고 그
+축이 아니다** 는 이 문서의 논지가 여기에도 걸린다.
 
 치수는 대부분 4px 그리드 스텝 밖이라 대응 semantic 이 없다 — **화면 전용 raw px
 (token-policy §c)** 로 `crates/tasty-ui-widgets/src/tokens.rs` 에 `FH_*` 이름을 붙여 두고
