@@ -424,6 +424,7 @@ CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_
 콘텐츠 아님)의 최소 JS 가 `#tasty-toc-toggle` 클릭 시 `#tasty-toc` 에 `tasty-toc-collapsed` 클래스를
 토글하는 것으로 구현되며, 목록은 `max-height:280px;overflow-y:auto` 로 heading 이 많은 문서에서도
 패널이 무한정 길어지지 않는다. `#tasty-addr-bar` 는 `position:sticky` 이고 **문서 어느 위치에서도 상단에 붙어 있다.**
+그 바의 높이는 `--md-addr-bar-h` 한 자리에만 적혀 있고 아래 세 소비처가 그 이름을 읽는다.
 sticky 가 끝까지 붙으려면 containing block — 여기서는 `body` 상자 — 이 문서 길이만큼 자라야 하므로
 `html` 만 `height:100%` 을 갖고 `body` 는 `min-height:100%` 을 갖는다. 둘을 함께 `height:100%` 로
 두면 `body` 상자가 뷰포트 높이에 고정돼 바가 한 뷰포트 뒤부터 밀려 올라간다(그 상태의 실측
@@ -433,7 +434,7 @@ sticky 가 끝까지 붙으려면 containing block — 여기서는 `body` 상�
 `min-height` 가 그대로 유지한다. `html` 쪽이 `height` 로 남는 것도 이유가 있다: 백분율
 `min-height` 는 부모의 높이에 대해 풀리므로 부모가 auto 면 무너진다.
 
-모든 heading 에 `scroll-margin-top:calc(40px + var(--md-space-sm))` 을 줘, 앵커
+모든 heading 에 `scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm))` 을 줘, 앵커
 이동한 heading 이 바 아래 가려지지 않게 한다. 바가 상시 붙어 있으므로 그 여백은 상시 제 일을
 한다 — sticky 가 한 뷰포트에서만 붙던 동안에는 바가 없는 구간에서도 여백만 남았다(같은 실측에서
 문서 중간 heading 으로 앵커 이동했을 때 heading 은 48 에 놓이는데 바의 `rect.top` 은 −4577,
@@ -562,7 +563,7 @@ Theme 토큰 매핑이다.
 | UI 요소 | CSS custom property | 토큰 / 비례 | 비고 |
 |---|---|---|---|
 | 문서 배경/전경 | `--md-bg` / `--md-fg` | `bg-app`(=crust) · `text-secondary` | webview 렌더 경로엔 focus 신호가 없어 `bg-app` 이 문서의 유일한 배경(`surfaces.markdown.focused_bg` 설정값은 이 경로에서 쓰지 않음) |
-| 주소창 바 | `#tasty-addr-bar` | `bg-sidebar` · 40px sticky top | `<input list>`+native `<datalist>`(최근목록)+Go `<button>` — 전부 문서 HTML |
+| 주소창 바 | `#tasty-addr-bar` · `--md-addr-bar-h` | `bg-sidebar` · `--md-addr-bar-h` sticky top | `<input list>`+native `<datalist>`(최근목록)+Go `<button>` — 전부 문서 HTML |
 | 새로고침 버튼(attach mirror 문서) | `#tasty-refresh` | 평소 `surface-raised` 배경 · `text-secondary` / `data-stale="true"` 이면 `accent-primary` 배경·보더 · `text-on-accent` | mirror 문서에서만 주소창 우측 끝에 Go 대신 붙는다. 주소창 입력은 `readonly` 이고 글자색이 `text-muted` |
 | 강조 텍스트 | `--md-strong` | `text-primary` | heading, `<strong>` |
 | 링크 | `--md-link` | `accent-primary` | nav-fragment 로 rewrite 된 `href` |
@@ -578,7 +579,7 @@ Theme 토큰 매핑이다.
 | 콜아웃(GFM 5종+Obsidian 확장 10종) | inline hex(kind 별 accent) | note/todo/abstract/quote=`accent-primary` · tip/success=`accent-success` · important/bug/example=`accent-agent` · warning=`accent-warning` · caution/failure/danger=`accent-danger` · info=`accent-info` · question=`accent-attention` | 전용 콜아웃 토큰 없음 — 기존 7개 semantic accent 재사용, 15종이 나눠 쓰므로 일부 중복(위 "콜아웃" 절) |
 | TOC 패널 배경 | `--md-code-bg` | `surface-raised` | `#tasty-toc` — 코드 블록 배경과 동일 토큰 재사용(전용 토큰 없음) |
 | TOC 들여쓰기 | `--md-space-sm` × (레벨-1) | `spacing-sm` | `.tasty-toc-l1`..`l6` |
-| heading scroll 여유 | `scroll-margin-top` | 고정 `40px`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |
+| heading scroll 여유 | `scroll-margin-top` | `--md-addr-bar-h`(주소창 높이) + `--md-space-sm` | TOC 클릭 이동 시 heading 이 sticky 주소창에 가리지 않게 |
 | 코드 syntax 토큰 | inline hex(scope 별) | keyword=`mauve` · title/function=`blue` · string=`green` · number/literal=`peach` · tag/attr=`teal` · variable=`lavender` · built_in=`red` · comment=`text-muted` | 전용 highlight 토큰 없음 — `render.rs::hljs_css`, `.hljs-*` class(위 "코드블록 syntax highlighting" 절) |
 | 이미지 캡션 | `figure`/`figcaption` | `--md-space-sm`/`--md-space-xs`(여백) · `--md-font-body` · `text-muted`(캡션 색) | 전용 캡션 토큰 없음 — `.tasty-state-detail` 과 동일하게 `text-muted` 재사용(위 "이미지 캡션" 절) |
 | 코드블록 복사 버튼 | `--md-bg`/`--md-fg`/`--md-border`/`--md-radius` | 기본은 `#tasty-addr-go` 와 동일 톤 | `.tasty-copy-btn` — hover/focus 시에만 `opacity:1` |

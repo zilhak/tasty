@@ -73,7 +73,11 @@ fragment navigation 에 맡기지 않고 **신뢰 스크립트가 직접 수행�
   버튼)가 이미 필수라 JS 는 항상 켜져 있고([`docs/plugins/markdown/index.md`](../plugins/markdown/index.md)
   의 "JS 는 기본 허용"), 스크립트가 없으면 이동만 안 될 뿐 문서는 그대로다.
 - **운영 비용 / 유지 부담**: 리스너 하나(16 줄)와 CSS `scroll-margin-top` 한 줄. 각주 목적지에도
-  제목이 이미 쓰던 것과 같은 값을 줘, 주소창(40px)이 화면에 있을 때 그 아래로 붙지 않게 한다.
+  제목이 이미 쓰던 것과 같은 값을 줘, 주소창 아래로 붙지 않게 한다. 그 값은 여기서 다시 적지
+  않는다 — 주소창 높이는 `--md-addr-bar-h` 한 자리에 살고 `scroll-margin-top` 이 그것을 읽는다
+  ([markdown 화면](../plugins/markdown/screens/markdown.md)). 이 ADR 이 쓰였을 때는 주소창이
+  문서 상단 한 뷰포트에서만 붙어 있어 "화면에 있을 때" 라는 단서가 필요했는데, 지금은 바가 상시
+  붙어 있어 그 단서도 없어졌다.
 
 ## Alternatives Considered
 
@@ -111,8 +115,11 @@ fragment navigation 에 맡기지 않고 **신뢰 스크립트가 직접 수행�
   긴 문서를 markdown surface 로 열고 화면 밖 제목의 목차 항목을 클릭해, 그 제목이 보이는지와
   문서가 그대로인지를 OS 캡처로 본다. 이 ADR 의 실측은 Linux/WebKitGTK 에서만 이뤄졌다.
 - 엔진이 `scrollIntoView` 의 `scroll-margin` 을 무시해 대상이 뷰포트 맨 위에 붙는다. 재는 법:
-  클릭 후 대상의 `getBoundingClientRect().top` 이 주소창 높이(40px)보다 큰지 본다(실측
-  2026-09-19, WebKitGTK: 48).
+  클릭 후 대상의 `getBoundingClientRect().top` 이 **주소창의 실측 높이보다 큰지** 본다 — 그
+  높이를 이 자리에 값으로 적지 않는 이유는, 적으면 `--md-addr-bar-h` 가 바뀌었을 때 이 트리거가
+  조용히 낡은 기준으로 재기 때문이다. 같은 자리에서 `#tasty-addr-bar` 의
+  `getBoundingClientRect().height` 를 함께 읽어 그것과 견준다(실측 2026-09-20, WebKitGTK: 대상
+  48 · 바 높이 40).
 - 저자가 쓴 raw HTML 상대 `href`(`<a href="x.md">`)를 **클릭했을 때** 세 엔진이 무엇을 하는가 —
   위 Context 가 "풀리지 않는다" 까지만 재고 그 뒤는 안 쟀다. 재는 법: 그 링크를 담은 문서를
   markdown surface 로 열어 클릭하고, 문서가 그대로인지 OS 캡처로 본다. host 의 `decide-policy`

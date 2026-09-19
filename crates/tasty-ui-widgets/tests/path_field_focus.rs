@@ -40,7 +40,13 @@ impl AddrState {
     }
 }
 
-/// markdown 주소창 draw 미러 — 상단 40px 바 안의 PathField.
+/// 상단 바 안에 놓인 `PathField` 의 draw — 이 시험의 하네스다.
+///
+/// 이 모양은 markdown 주소창에서 왔지만 **지금 그 주소창의 미러가 아니다.** markdown 주소창은
+/// 문서 HTML 이라 더 이상 이 위젯을 안 쓰고(`docs/plugins/markdown/index.md`), 그 바의 높이는
+/// 문서 CSS 의 `--md-addr-bar-h` 가 정한다. 여기 40 은 그 값을 따라가지 않는 **이 시험만의
+/// 좌표**이고, 아래 `FX`/`FY` 가 그것에서 나온다 — 그쪽을 바꾸면 클릭이 필드 밖으로 나간다.
+/// 재는 것은 바의 크기가 아니라 focus 루프가 끊기는지다.
 fn draw(ctx: &egui::Context, theme: &Theme, addr: &mut AddrState) {
     let bar_frame = egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
@@ -101,7 +107,7 @@ fn ptr_btn(x: f32, y: f32, pressed: bool) -> Event {
     }
 }
 
-// 필드 위치: 상단 바 40px 안, x=200 은 필드 내부.
+// 필드 위치: 위 draw 가 쓰는 바 높이 40 안, x=200 은 필드 내부. FY 는 그 절반(바 중앙)이다.
 const FX: f32 = 200.0;
 const FY: f32 = 20.0;
 

@@ -2066,7 +2066,13 @@ fn html_unescape(s: &str) -> String {
 /// after one screen. `html` must keep a definite height, because a percentage `min-height`
 /// resolves against the parent's height and would collapse if that height were itself auto. The
 /// short-document background fill that the old rule provided survives either way.
-
+///
+/// The address bar height is declared once as `--md-addr-bar-h` and read by three other places:
+/// the find bar floats just below the bar, and headings and footnotes reserve that much scroll
+/// margin so an anchor jump does not land underneath it. Those are one fact, and before it had a
+/// name it had been copied into four places and was still spreading. `#tasty-find-count` keeps a
+/// literal `min-width:40px` on purpose — it is the width of a match counter like `3/12`, and its
+/// agreement with the bar height is a coincidence, not a relation.
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
@@ -2087,18 +2093,19 @@ fn theme_css(theme: &Theme) -> String {
 --md-space-xs:{space_xs}px;
 --md-space-sm:{space_sm}px;
 --md-space-md:{space_md}px;
+--md-addr-bar-h:40px;
 --md-font-body:{body}px;
 --md-h1:{h1}px;--md-h2:{h2}px;--md-h3:{h3}px;--md-h4:{h4}px;--md-h5:{h5}px;--md-h6:{h6}px;
 }}
 html{{height:100%;margin:0;padding:0;}}
 body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
-#tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:40px;padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
+#tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:var(--md-addr-bar-h);padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
 #tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
 #tasty-addr-input[readonly]{{color:{muted};}}
 #tasty-refresh{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
 #tasty-refresh[data-stale="true"]{{background:{accent};border-color:{accent};color:{on_accent};}}
-#tasty-find-bar{{position:fixed;top:calc(40px + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
+#tasty-find-bar{{position:fixed;top:calc(var(--md-addr-bar-h) + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
 #tasty-find-bar[hidden]{{display:none;}}
 #tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-find-count{{min-width:40px;text-align:center;font-size:calc(var(--md-font-body) * 0.85);color:{muted};}}
@@ -2108,8 +2115,8 @@ body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-
 mark.tasty-find-hit{{background:{find_match_bg};color:inherit;border-radius:2px;}}
 mark.tasty-find-hit.tasty-find-current{{background:{find_current_bg};color:{find_current_fg};}}
 #tasty-md-body{{padding:var(--md-space-sm) var(--md-space-md);}}
-h1,h2,h3,h4,h5,h6{{color:var(--md-strong);font-weight:600;margin:1em 0 0.5em;scroll-margin-top:calc(40px + var(--md-space-sm));}}
-.footnote-reference,.footnote-definition{{scroll-margin-top:calc(40px + var(--md-space-sm));}}
+h1,h2,h3,h4,h5,h6{{color:var(--md-strong);font-weight:600;margin:1em 0 0.5em;scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm));}}
+.footnote-reference,.footnote-definition{{scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm));}}
 h1{{font-size:var(--md-h1);}}h2{{font-size:var(--md-h2);}}h3{{font-size:var(--md-h3);}}
 h4{{font-size:var(--md-h4);}}h5{{font-size:var(--md-h5);}}h6{{font-size:var(--md-h6);}}
 #tasty-toc{{margin:var(--md-space-sm) var(--md-space-md) 0;padding:var(--md-space-sm) var(--md-space-md);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);}}
