@@ -729,7 +729,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 | `Mono`("Received files") | `mono` 헤딩(micro uppercase muted) | `mono_head` |
 | `Row`(Save folder, grid 150px + control) | `settings_row` + right_to_left(Browse→Input) | `xfer_row` |
 | `Input block mono` + `Button secondary sm folder`(Browse…) | `Input::mono` + `Button::Secondary/Sm/FOLDER` + `rfd::FileDialog::pick_folder` | 동(rfd 없이 시각만) |
-| `Row`(Maximum size) + `Input mono width88` + 정적 `MiB` | `settings_row` + `Input::mono.width(field_width_xs)` + mono muted "MiB" 라벨 (정수 버퍼 파싱, `draw_plugin_number` 선례) | `xfer_row` + 동 |
+| `Row`(Maximum size) + `Input mono width90` + 정적 `MiB` | `settings_row` + `Input::mono.width(field_width_xs)` + mono muted "MiB" 라벨 (정수 버퍼 파싱, `draw_plugin_number` 선례) | `xfer_row` + 동 |
 | `Note`(행별 muted 설명) | `row_desc`(caption muted) | `row_desc` |
 | 행 사이 `borderTop separator` | `row_separator`(`th.separator` hline) | `separator_line` |
 
@@ -737,8 +737,12 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 - 라벨 컬럼 150px(`gridTemplateColumns: "150px 1fr"`)·행 gap 12(space-md)·행 높이
   `settings_row_min_height`(32). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
   가 제공(형제 탭 관례 — 재패딩 안 함).
-- **size Input 폭**: 디자인 `width: 88` 은 field-width 토큰 세트(90/110/160/200) 밖 specimen
-  값 → mono narrow numeric 토큰 `field_width_xs`(90)로 매핑(host·gallery 동일, 2px 차).
+- **size Input 폭은 90 으로 닫혔다(2026-09-17 결정).** 88 은 field-width 토큰 세트
+  (90/110/160/200) 밖의 specimen 값이었고, 결정이 **90(`field_width_xs`) 을 승인하고 88 을
+  폐기**했다. 본체도 갤러리도 그대로다(둘 다 `field_width_xs`) — 바뀐 것은 이 매핑의 판정이다:
+  "토큰으로 근사한 2px 차" 가 아니라 **확정 값 그대로**다. 단, **시안 파일은 아직 88 이다**
+  (`gallery/overlays-shared.jsx` 의 `style={{ width: 88 }}`, 2026-09-20 재독 실측) — 결정이
+  파일에 반영되기 전이라, 그 파일만 보고 되돌리지 마라.
 - **"MiB" 는 필드 밖 정적 mono suffix**(Toast 의 " s" 와 동형, addon/Tag 아님). i18n 단위
   기호 예외로 리터럴.
 - **신규 Theme 필드 0** — 전부 기존 접근자(`settings_row_min_height`/`field_width_xs`/

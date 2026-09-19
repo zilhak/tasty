@@ -7,7 +7,7 @@
 //!
 //! 콘텐츠 컬럼 = mono uppercase 섹션 헤딩("Received files") + 150px 라벨 grid 2행
 //! (Save folder = mono path Input + Browse… secondary/folder / Maximum size =
-//! numeric mono Input 88 + 정적 mono "MiB" suffix), 각 행 아래 muted 설명 + 행
+//! numeric mono Input 90 + 정적 mono "MiB" suffix), 각 행 아래 muted 설명 + 행
 //! 사이 separator. 갤러리는 본체 미의존이라 host `draw_remote_transfer_tab`(Settings
 //! 저장소 의존)을 직접 못 부르고 같은 위젯·토큰으로 미러한다(settings_handler 전례).
 
@@ -25,10 +25,10 @@ use crate::catalog::widgets::dialog as kit;
 const WIDTH: LogicalPx = LogicalPx(560.0);
 /// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
 const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
-/// jsx size row Input `style={{ width: 88 }}` — field-width-xs(90) 로 근사.
-///
-/// 디자인 88 은 field-width 토큰 세트(90/110/160/200) 밖 specimen 값이라, mono
-/// narrow numeric 토큰 `field_width_xs`(90) 로 매핑한다(host 도 동일 — 2px 차).
+/// size row Input 폭 — 2026-09-17 결정이 `field_width_xs`(90)를 **승인하고 88 을
+/// 폐기**했다. 88 은 field-width 토큰 세트(90/110/160/200) 밖의 specimen 값이었다.
+/// 근사가 아니라 확정 값이다(host 도 같은 토큰을 읽는다). 시안 파일은 아직 88 을
+/// 들고 있으니 그것만 보고 되돌리지 마라.
 fn size_input_width(theme: &Theme) -> f32 {
     theme.field_width_xs.value()
 }
@@ -120,7 +120,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("row grid", "150px label · control · gap 12"),
             ("row height", "settings-row-min-height"),
             ("folder row", "mono Input + Browse… (secondary · folder)"),
-            ("size row", "numeric Input 88 + static mono “MiB”"),
+            (
+                "size row",
+                "numeric Input 90 (field-width-xs) + static mono “MiB”",
+            ),
         ],
         &[
             TokenChip::new(
