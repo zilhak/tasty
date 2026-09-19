@@ -238,6 +238,11 @@ impl ChooserSession {
             .any(|e| e.name == name && !e.is_dir && self.visible(e))
     }
 
+    /// 그 이름이 지금 나열된 **폴더** 행인가. 폴더는 필터와 무관하게 늘 보인다.
+    fn is_dir_entry(&self, name: &str) -> bool {
+        self.entries.iter().any(|e| e.name == name && e.is_dir)
+    }
+
     fn is_save(&self) -> bool {
         matches!(self.mode, FileChooserMode::Save { .. })
     }
@@ -253,17 +258,14 @@ impl ChooserSession {
         match action {
             FilePickerAction::None => None,
             FilePickerAction::Cancel => Some(FileChooserOutcome::Cancelled),
+            // 단일 클릭은 **고르기**다 — 파일이든 폴더든, 두 모드 모두(디자인 제스처 표).
+            // 저장 모드에서 이름 칸을 채우는 것은 파일 행뿐이다: 폴더는 저장 대상이 아니라
+            // 확정이 읽는 값이 될 수 없다. 고른 것이 폴더라는 사실은 footer 안내 줄이 말한다.
             FilePickerAction::Select(name) => {
-                if self.is_save() {
-                    // 저장 모드에서 행을 고르는 것은 확정이 아니라 이름 칸을 채우는 것이다.
-                    // 폴더 행은 이름이 될 수 없으므로 선택도 이름도 바꾸지 않는다(진입은 더블클릭).
-                    if self.is_file_entry(&name) {
-                        self.save_name = name.clone();
-                        self.selected = vec![name];
-                    }
-                } else {
-                    self.selected = vec![name];
+                if self.is_save() && self.is_file_entry(&name) {
+                    self.save_name = name.clone();
                 }
+                self.selected = vec![name];
                 None
             }
             FilePickerAction::EditName(name) => {
@@ -301,12 +303,19 @@ impl ChooserSession {
             // 저장 모드의 확정 대상은 이름 칸 하나다.
             FilePickerAction::Confirm if self.is_save() => self.confirm_save(),
             FilePickerAction::Confirm => {
-                // view 의 활성 조건을 우회해도 디렉토리를 파일로 확정하지 않는다.
                 let [name] = self.selected.as_slice() else {
                     return None;
                 };
-                self.is_file_entry(name)
-                    .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(name)))
+                let name = name.clone();
+                // 고른 것이 폴더면 확정은 **그 폴더로 들어간다** — 더블클릭 말고 키보드로
+                // 내려가는 길이 이것이다(디자인 제스처 표).
+                if self.is_dir_entry(&name) {
+                    self.navigate(self.current_dir.join(&name));
+                    return None;
+                }
+                // view 의 활성 조건을 우회해도 디렉토리를 파일로 확정하지 않는다.
+                self.is_file_entry(&name)
+                    .then(|| FileChooserOutcome::Confirmed(self.current_dir.join(&name)))
             }
             // 저장 모드의 파일 행 더블클릭은 고르기와 같다 — 덮어쓰기 경고를 보지 않고 기존
             // 파일을 확정하는 길을 만들지 않는다.
@@ -406,6 +415,8 @@ fn draw_view(
         cancel_label: t("button.cancel"),
         confirm_label,
         overwrite_warning: t("filepicker.save.overwrite_warning"),
+        folder_not_save_target: t("filepicker.folder_not_save_target"),
+        folder_open_enters: t("filepicker.folder_open_enters"),
         hidden_folders_one: t("filepicker.hidden_folders_one"),
         hidden_folders_many: t("filepicker.hidden_folders_many"),
         empty_label: t("filepicker.empty"),
@@ -464,6 +475,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// 걸러진 파일은 확정 대상이 아니고, 디렉토리는 **파일로** 확정되지 않는다.
+    /// 폴더를 고른 뒤의 확정은 결과가 아니라 이동이다 — 그 갈래는 아래 제스처 표가 잰다.
     #[test]
     fn directories_and_filtered_out_files_are_not_confirmable() {
         let dir = tempdir();
@@ -475,8 +488,81 @@ mod tests {
             s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
             None
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 디자인 제스처 표 전 갈래 — 저장/열기 두 모드 × 파일/폴더 두 종류.
+    ///
+    /// | | 단일 클릭 | 더블클릭 |
+    /// |---|---|---|
+    /// | 폴더 | 고른다(두 모드) | 들어간다(두 모드) |
+    /// | 파일 | 고른다(저장은 이름 칸도 채운다) | 열기는 확정 · 저장은 고르기까지 |
+    ///
+    /// 그리고 **확정**: 열기 모드에서 폴더를 고른 채 확정하면 들어간다(키보드로 내려가는 길).
+    #[test]
+    fn the_gesture_table_holds_in_both_modes() {
+        let dir = tempdir();
+
+        // ── 열기 모드 ────────────────────────────────────────────────
+        let mut ch = SettingsFileChooser::default();
+        ch.begin_at(C, FileChooserMode::Open, Vec::new(), dir.clone());
+        let s = session(&mut ch);
         s.apply(FilePickerAction::Select("sub".into()));
-        assert_eq!(s.apply(FilePickerAction::Confirm), None);
+        assert_eq!(
+            s.selected,
+            vec!["sub".to_string()],
+            "폴더 단일 클릭이 안 골랐다"
+        );
+        assert_eq!(
+            s.apply(FilePickerAction::Confirm),
+            None,
+            "폴더를 고른 확정이 결과를 냈다"
+        );
+        assert_eq!(
+            s.current_dir,
+            dir.join("sub"),
+            "폴더를 고른 확정이 안 들어갔다"
+        );
+        s.apply(FilePickerAction::NavigateUp);
+        s.apply(FilePickerAction::Select("b.txt".into()));
+        assert_eq!(
+            s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
+            Some(FileChooserOutcome::Confirmed(dir.join("b.txt"))),
+            "열기 모드 파일 더블클릭이 확정이 아니다"
+        );
+
+        // ── 저장 모드 ────────────────────────────────────────────────
+        let mut ch = save_session(&dir);
+        let s = session(&mut ch);
+        s.apply(FilePickerAction::Select("sub".into()));
+        assert_eq!(
+            s.selected,
+            vec!["sub".to_string()],
+            "저장 모드에서 폴더 단일 클릭이 안 골랐다"
+        );
+        assert_eq!(s.save_name, "keys.toml", "폴더가 이름 칸을 건드렸다");
+        assert_eq!(
+            s.apply(FilePickerAction::ConfirmEntry("sub".into())),
+            None,
+            "저장 모드 폴더 더블클릭이 결과를 냈다"
+        );
+        s.apply(FilePickerAction::NavigateInto("sub".into()));
+        assert_eq!(
+            s.current_dir,
+            dir.join("sub"),
+            "폴더 더블클릭이 안 들어갔다"
+        );
+        s.apply(FilePickerAction::NavigateUp);
+        assert_eq!(
+            s.apply(FilePickerAction::ConfirmEntry("b.txt".into())),
+            None,
+            "저장 모드 파일 더블클릭이 확정까지 갔다"
+        );
+        assert_eq!(
+            s.save_name, "b.txt",
+            "저장 모드 파일 더블클릭이 이름을 안 채웠다"
+        );
+
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -546,10 +632,11 @@ mod tests {
         // 기존 파일을 고르면 그 이름이 입력으로 간다.
         s.apply(FilePickerAction::Select("b.txt".into()));
         assert_eq!(s.save_name, "b.txt");
-        // 디렉토리를 고르는 것은 입력도 선택도 바꾸지 않는다.
+        // 디렉토리를 고르면 선택은 옮겨 가지만 **입력은 그대로**다 — 폴더는 저장 대상이
+        // 될 수 없으므로 확정이 읽는 값을 바꾸지 못한다.
         s.apply(FilePickerAction::Select("sub".into()));
         assert_eq!(s.save_name, "b.txt");
-        assert_eq!(s.selected, vec!["b.txt".to_string()]);
+        assert_eq!(s.selected, vec!["sub".to_string()]);
         std::fs::remove_dir_all(&dir).ok();
     }
 

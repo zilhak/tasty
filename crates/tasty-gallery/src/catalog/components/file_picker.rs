@@ -18,6 +18,7 @@
 //! `draw` = 개요(로컬/원격 loaded 나란히). `draw_states` = loading·empty·
 //! permission-denied·connection-lost·multi-select 5상태. 키보드 focus-ring 은
 //! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
+//! `draw_gesture_table` = 폴더를 고른 두 모드(저장: 대상이 아니다 · 열기: 들어간다).
 //! `draw_save_mode` = 저장 모드 4상태(새 이름 · 기존 파일 선택 → 덮어쓰기 · 선택 후 이름 수정 ·
 //! 깊은 경로의 가운데 생략). 저장 모드의 확정 수단은 footer 의 primary 버튼 **하나**이고,
 //! 목록 행 선택은 확정이 아니라 이름 칸을 채운다.
@@ -56,6 +57,8 @@ const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라�
 /// 대응 Theme 토큰이 없는 구조 폭이다.
 const CRUMB_MAX_W: LogicalPx = LogicalPx(180.0);
 const FOOTER_CHIP_W: LogicalPx = LogicalPx(92.0); // "All files ▾" 타입필터 칩
+/// 폴더 선택 갈래에서 고른 행 — 디자인 seed(`overlays-shared.jsx` `folderSel`).
+const FOLDER_SEL: &str = "configs";
 
 /// 원격 host 배지 칩의 높이(디자인 size-22). 4px 그리드 밖이고 대응 Theme 토큰이
 /// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
@@ -186,6 +189,9 @@ struct Variant {
     mode: Mode,
     /// 깊은 경로 — breadcrumb 가운데 생략.
     deep: bool,
+    /// 고른 행이 **폴더**다 — 디자인 `FilePickerFrame folderSel`. 두 모드에서 뜻이 다르다:
+    /// 저장은 "이것은 저장 대상이 아니다", 열기는 "확정하면 들어간다".
+    folder_sel: bool,
 }
 
 impl Variant {
@@ -196,6 +202,7 @@ impl Variant {
             multi,
             mode: Mode::Open,
             deep: false,
+            folder_sel: false,
         }
     }
 
@@ -206,7 +213,14 @@ impl Variant {
             multi: false,
             mode: Mode::Save(save),
             deep,
+            folder_sel: false,
         }
+    }
+
+    /// 목록에서 고른 것이 폴더인 갈래 — 두 모드 모두 단일 클릭이 선택이므로 둘 다 성립한다.
+    const fn folder_selected(mut self) -> Self {
+        self.folder_sel = true;
+        self
     }
 
     fn overwrite(self) -> bool {
@@ -394,6 +408,93 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
          since the current folder and its parent are what orient you; the … lists the hidden \
          ancestors on click. Footer label, filter chip and both buttons are flex:none; only the \
          name input shrinks. No horizontal scroll, and Cancel / Open / Save can never be clipped.",
+    );
+}
+
+pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(
+            ui,
+            theme,
+            "save — folder selected · not a save target",
+            |ui| {
+                card(
+                    ui,
+                    theme,
+                    Variant::save(SaveState::New, false).folder_selected(),
+                );
+            },
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "open — folder selected · Open enters it",
+            |ui| {
+                card(
+                    ui,
+                    theme,
+                    Variant::open(FpState::Loaded, false, false).folder_selected(),
+                );
+            },
+        );
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "single click",
+                "selects the row — file or folder, both modes",
+            ),
+            ("double click folder", "descends — both modes"),
+            ("double click file", "open: confirms · save: selects only"),
+            (
+                "folder + Save",
+                "never a target — muted footer line, button unchanged",
+            ),
+            ("folder + Open", "enters it — the keyboard route to descend"),
+            ("name field", "open: empty while a folder is selected"),
+            (
+                "tone",
+                "the folder line has none — it is a fact, not a warning",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "text-muted",
+                "folder-target line",
+                theme.text_muted().to_egui(),
+            ),
+            TokenChip::new(
+                "text-secondary",
+                "the button named in the open line",
+                theme.text_secondary().to_egui(),
+            ),
+            TokenChip::new(
+                "overlay-active",
+                "selected row bed",
+                theme.overlay_active().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Save and open are the same view, so every branch of the gesture table had to hold in \
+         both. Single click selects and double click descends, for both kinds in both modes. A \
+         folder is never a save target: the footer button still reads the name field only, so a \
+         selected folder cannot change what gets written — and the muted line says so where the \
+         reading happens, rather than disabling something and leaving the cause off-screen.",
+    );
+
+    spec::dont(
+        ui,
+        theme,
+        "Don't confirm on a file's double-click in save mode. The double-click writes the name, \
+         and that name is what raises the overwrite warning — confirming in the same gesture \
+         would write over a file before its warning could be read.",
     );
 }
 
@@ -715,12 +816,16 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             col.set_clip_rect(rect.intersect(ui.clip_rect()));
             col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             for f in FILES {
-                let (selected, focus) = match v.mode {
-                    Mode::Save(save) => (save.selected() == Some(f.name), false),
-                    Mode::Open => (
-                        !multi && f.name == "README.md",
-                        !multi && f.name == "pipeline.yaml",
-                    ),
+                let (selected, focus) = if v.folder_sel {
+                    (f.name == FOLDER_SEL, false)
+                } else {
+                    match v.mode {
+                        Mode::Save(save) => (save.selected() == Some(f.name), false),
+                        Mode::Open => (
+                            !multi && f.name == "README.md",
+                            !multi && f.name == "pipeline.yaml",
+                        ),
+                    }
                 };
                 let checked = multi && MULTI_PICKED.contains(&f.name);
                 row(&mut col, theme, f, multi, checked, selected, focus);

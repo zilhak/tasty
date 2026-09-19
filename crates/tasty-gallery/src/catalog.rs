@@ -951,6 +951,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::file_picker::draw_save_mode,
                         ),
+                        spec(
+                            "filepicker-gesture-table",
+                            "The gesture table — a folder selected in either mode",
+                            Some(
+                                "single click selects · double click descends · a folder is never a save target · Open enters it",
+                            ),
+                            components::file_picker::draw_gesture_table,
+                        ),
                     ],
                 ),
                 section(

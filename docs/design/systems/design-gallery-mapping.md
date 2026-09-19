@@ -805,6 +805,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | footer(name field+type filter+Cancel/Open) | `footer` + `type_filter_chip` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
 | footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning`. footer 가 커지면 본문이 준다 |
 | `FilePickerFrame mode/save/deep` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
+| `FilePickerFrame folderSel` prop | `Variant::folder_selected` · `footer::folder_line`(Spec `filepicker-gesture-table`) | 고른 것이 폴더인 상태 — 저장은 "저장 대상이 아니다", 열기는 "확정하면 들어간다". 톤 없는 muted caption + `folder` 글리프, 열기 문구는 확정 버튼 이름을 부른다. 본체는 `file_picker::selected_folder` · `footer::folder_line` |
 | `FpCrumbs elide` | `crumbs`(`DEEP_CRUMBS`) | root + `…` + 마지막 두 성분, 성분 `CRUMB_MAX_W`(180) 말줄임, path bar 는 refresh 가 먼저 자리 잡고 crumbs 는 남은 폭으로 clip |
 | `overlays-windows.jsx` "Save mode — one confirm, in the footer" | `draw_save_mode` | 4 프레임(new · picked · edited · deep) + Meta + Note |
 

@@ -4,7 +4,9 @@
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, Input};
 
-use super::{CRUMB_GLYPH, FilePickerAction, FilePickerMode, FilePickerProps, FpViewState};
+use super::{
+    CRUMB_GLYPH, FilePickerAction, FilePickerMode, FilePickerProps, FpViewState, selected_folder,
+};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
@@ -18,17 +20,23 @@ fn warning_line_height(ui: &egui::Ui, th: &Theme) -> LogicalPx {
     LogicalPx(row).max(CRUMB_GLYPH)
 }
 
-/// footer 높이 — 위 구분선 아래 간격 · 이름 행 · (경고 줄) · 버튼 행.
+/// footer 높이 — 위 구분선 아래 간격 · 이름 행 · (폴더 안내 줄) · (경고 줄) · 버튼 행.
+///
+/// 두 줄은 배타적이지 않다. 저장 모드에서 이름 칸이 기존 파일을 가리키는 채로 폴더 행을
+/// 고르면 둘이 함께 선다 — 둘이 말하는 것이 다르기 때문이다(무엇을 덮어쓰는가 · 고른 것이
+/// 대상이 아니다).
 pub(super) fn footer_height(ui: &egui::Ui, props: &FilePickerProps<'_>) -> LogicalPx {
     let th = props.theme;
     let mut h = th.spacing_sm + th.input_height() + th.spacing_sm + th.button_height();
-    if matches!(
-        props.mode,
-        FilePickerMode::Save {
-            overwrite: true,
-            ..
-        }
-    ) {
+    let extra = usize::from(selected_folder(props).is_some())
+        + usize::from(matches!(
+            props.mode,
+            FilePickerMode::Save {
+                overwrite: true,
+                ..
+            }
+        ));
+    for _ in 0..extra {
         h = h + warning_line_height(ui, th) + th.spacing_sm;
     }
     h
@@ -99,6 +107,16 @@ pub(super) fn draw_footer(
         }
     }
 
+    // 폴더 안내 줄 — 고른 것이 폴더 하나일 때.
+    if let Some(folder) = selected_folder(props) {
+        ui.add_space(th.spacing_sm.value());
+        let (line, _) = ui.allocate_exact_size(
+            egui::vec2(w, warning_line_height(ui, th).value()),
+            egui::Sense::hover(),
+        );
+        folder_line(ui, th, line, props, folder);
+    }
+
     // 덮어쓰기 경고 줄.
     if let FilePickerMode::Save {
         name,
@@ -128,18 +146,20 @@ pub(super) fn draw_footer(
     );
     buttons.spacing_mut().item_spacing.x = th.spacing_sm.value();
     let can_confirm = match props.mode {
-        // 디렉토리는 [열기] 로 확정할 수 없다 — 더블클릭으로 진입해야 한다.
-        // 단일 선택만이 아니라 selected 전원이 파일이어야 활성화(멀티 선택 확장 대비).
+        // 폴더 하나를 골랐으면 [열기] 는 **그 폴더로 들어간다** — 그것이 키보드로 내려가는
+        // 길이다(디자인 제스처 표). 그 밖에는 selected 전원이 파일이어야 활성화한다
+        // (단일 선택만이 아니라 멀티 선택 확장 대비).
         FilePickerMode::Open { .. } => {
             matches!(props.state, FpViewState::Loaded)
                 && !props.selected.is_empty()
-                && props.selected.iter().all(|name| {
-                    props
-                        .entries
-                        .iter()
-                        .find(|e| &e.name == name)
-                        .is_some_and(|e| !e.is_dir)
-                })
+                && (selected_folder(props).is_some()
+                    || props.selected.iter().all(|name| {
+                        props
+                            .entries
+                            .iter()
+                            .find(|e| &e.name == name)
+                            .is_some_and(|e| !e.is_dir)
+                    }))
         }
         FilePickerMode::Save { can_confirm, .. } => can_confirm,
     };
@@ -191,6 +211,99 @@ fn read_only_field(ui: &mut egui::Ui, th: &Theme, width: f32, text: &str, placeh
             egui::FontId::proportional(th.input_font_size().value()),
             color.into(),
         );
+}
+
+/// 폴더를 고른 상태의 안내 줄 — `folder` 글리프 + 문구. caption · `text-muted`.
+///
+/// 톤이 없는 이유: 잘못된 것이 없다. 저장 모드에서는 고른 폴더가 쓰이는 대상이 못 된다는
+/// 사실을, 열기 모드에서는 확정하면 들어간다는 사실을 말한다. 열기 문구가 부르는 버튼
+/// 이름은 `confirm_label` 에서 온다 — 문구와 버튼이 갈리지 않게.
+fn folder_line(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    line: egui::Rect,
+    props: &FilePickerProps<'_>,
+    folder: &str,
+) {
+    let muted: egui::Color32 = th.text_muted().into();
+    let size = th.font_size_caption.value();
+    let glyph = CRUMB_GLYPH.value();
+    let icon_rect = egui::Rect::from_min_size(
+        egui::pos2(line.left(), line.center().y - glyph * 0.5),
+        egui::vec2(glyph, glyph),
+    );
+    icons::FOLDER.image(glyph, muted).paint_at(ui, icon_rect);
+    let text_left = icon_rect.right() + th.spacing_xs.value();
+
+    let prose = egui::TextFormat::simple(egui::FontId::proportional(size), muted);
+    let mono = egui::TextFormat::simple(egui::FontId::monospace(size), muted);
+    let mut job = egui::text::LayoutJob::default();
+    match props.mode {
+        FilePickerMode::Save { .. } => {
+            let (before, after) = props
+                .folder_not_save_target
+                .split_once("{name}")
+                .unwrap_or((props.folder_not_save_target, ""));
+            job.append(before, 0.0, prose.clone());
+            job.append(folder, 0.0, mono);
+            job.append(after, 0.0, prose);
+        }
+        FilePickerMode::Open { .. } => {
+            // 강조는 굵기가 아니라 색으로 준다 — egui 는 semibold 를 못 고른다.
+            let emphasis = egui::TextFormat::simple(
+                egui::FontId::proportional(size),
+                th.text_secondary().into(),
+            );
+            for (part, kind) in split_named(props.folder_open_enters) {
+                match kind {
+                    Slot::Prose => job.append(part, 0.0, prose.clone()),
+                    Slot::Name => job.append(folder, 0.0, mono.clone()),
+                    Slot::Confirm => job.append(props.confirm_label, 0.0, emphasis.clone()),
+                }
+            }
+        }
+    }
+    job.wrap = egui::text::TextWrapping::truncate_at_width((line.right() - text_left).max(0.0));
+    let galley = ui.fonts(|f| f.layout_job(job));
+    ui.painter().galley(
+        egui::pos2(text_left, line.center().y - galley.size().y * 0.5),
+        galley,
+        muted,
+    );
+}
+
+/// `folder_open_enters` 문구의 조각 종류.
+enum Slot {
+    Prose,
+    Name,
+    Confirm,
+}
+
+/// 문구를 `{name}` · `{confirm}` 자리에서 가른다. 두 자리가 어느 순서로 와도 되도록 앞에서
+/// 훑는다 — 세 언어의 어순이 같지 않다.
+fn split_named(template: &str) -> Vec<(&str, Slot)> {
+    let mut out = Vec::new();
+    let mut rest = template;
+    while !rest.is_empty() {
+        let name = rest.find("{name}");
+        let confirm = rest.find("{confirm}");
+        let (at, len, slot) = match (name, confirm) {
+            (Some(n), Some(c)) if n < c => (n, "{name}".len(), Slot::Name),
+            (Some(_), Some(c)) => (c, "{confirm}".len(), Slot::Confirm),
+            (Some(n), None) => (n, "{name}".len(), Slot::Name),
+            (None, Some(c)) => (c, "{confirm}".len(), Slot::Confirm),
+            (None, None) => {
+                out.push((rest, Slot::Prose));
+                break;
+            }
+        };
+        if at > 0 {
+            out.push((&rest[..at], Slot::Prose));
+        }
+        out.push(("", slot));
+        rest = &rest[at + len..];
+    }
+    out
 }
 
 /// 덮어쓰기 경고 줄 — `alertTriangle` + 문구(이름만 mono). caption · `accent-warning`.

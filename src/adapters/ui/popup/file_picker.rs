@@ -137,6 +137,13 @@ pub struct FilePickerProps<'a> {
     pub confirm_label: &'a str,
     /// 덮어쓰기 경고 줄. `{name}` 자리에 이름이 mono 로 들어간다.
     pub overwrite_warning: &'a str,
+    /// 저장 모드에서 폴더 행을 고른 상태의 안내 줄. `{name}` 자리에 폴더 이름이 mono 로
+    /// 들어간다. 경고가 아니라 사실이라 톤이 없다 — 확정 버튼은 이름 칸만 읽으므로 고른
+    /// 폴더가 쓰이는 대상을 바꾸지 못한다는 것을, **읽는 자리에서** 말한다.
+    pub folder_not_save_target: &'a str,
+    /// 열기 모드에서 폴더 행을 고른 상태의 안내 줄. `{name}` 은 폴더 이름(mono),
+    /// `{confirm}` 은 확정 버튼 이름이다 — 그 버튼이 곧 키보드로 들어가는 길이다.
+    pub folder_open_enters: &'a str,
     /// `…` 크럼의 hover 설명. `{}` 자리에 숨긴 폴더 수.
     /// `…` 툴팁 — 숨긴 조상이 **하나일 때**. 영어만 단수형이 갈리고 ko·ja 는 굴절이
     /// 없어 같은 문장의 1 판이다(디자인 2026-09-14 "counts of one get singular forms").
@@ -151,6 +158,23 @@ pub struct FilePickerProps<'a> {
     pub error_perm_retry: &'a str,
     pub error_conn_title: &'a str,
     pub error_conn_reconnect: &'a str,
+}
+
+/// 고른 것이 **폴더 하나**인가 — 그렇다면 그 이름.
+///
+/// 두 모드에서 뜻이 갈리지만(저장은 "대상이 아니다", 열기는 "들어간다") 판정은 하나다.
+/// 그래서 footer 안내 줄과 확정 버튼의 활성 판정이 같은 함수를 읽는다 — 둘이 갈리면 안내
+/// 줄이 뜬 채 버튼이 아무것도 안 하는 상태가 생긴다.
+pub(super) fn selected_folder<'a>(props: &'a FilePickerProps<'a>) -> Option<&'a str> {
+    let [name] = props.selected else {
+        return None;
+    };
+    props
+        .entries
+        .iter()
+        .find(|e| &e.name == name)
+        .filter(|e| e.is_dir)
+        .map(|e| e.name.as_str())
 }
 
 /// View 가 발생시킨 사용자 의도. Wrapper 가 mutation 으로 변환.
@@ -633,7 +657,20 @@ pub fn draw_file_picker(
         FpLoadState::ErrorConn(r) => FpViewState::ErrorConn(r.clone()),
     };
 
-    let selection_text = data.selected.join(", ");
+    // 고른 것이 폴더면 이름 칸은 비어 있다 — 확정 버튼이 읽는 값은 파일 이름이고, 폴더는
+    // 그 값이 될 수 없다(폴더를 고른 상태에서 확정은 "들어간다" 로 간다).
+    let selection_text = data
+        .selected
+        .iter()
+        .filter(|name| {
+            data.entries
+                .iter()
+                .find(|e| &&e.name == name)
+                .is_some_and(|e| !e.is_dir)
+        })
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
     let title_label = t("filepicker.title");
     let name_field_label = t("filepicker.name_field_label");
     let cancel_label = t("button.cancel");
@@ -663,6 +700,8 @@ pub fn draw_file_picker(
         cancel_label,
         confirm_label: t("filepicker.open_button"),
         overwrite_warning: t("filepicker.save.overwrite_warning"),
+        folder_not_save_target: t("filepicker.folder_not_save_target"),
+        folder_open_enters: t("filepicker.folder_open_enters"),
         hidden_folders_one: t("filepicker.hidden_folders_one"),
         hidden_folders_many: t("filepicker.hidden_folders_many"),
         empty_label,
@@ -732,6 +771,24 @@ fn apply_action(
             PopupAction::None
         }
         FilePickerAction::Confirm => {
+            // 폴더 하나를 골랐으면 확정은 **그 폴더로 들어간다** — 더블클릭 말고 키보드로
+            // 내려가는 길이 이것이다(디자인 제스처 표).
+            let folder = state.dialogs.file_picker.as_ref().and_then(|d| {
+                let [name] = d.selected.as_slice() else {
+                    return None;
+                };
+                d.entries
+                    .iter()
+                    .find(|e| &e.name == name)
+                    .filter(|e| e.is_dir)
+                    .map(|e| e.name.clone())
+            });
+            if let Some(name) = folder {
+                navigate(state, engine, |dir, is_remote| {
+                    join_dir(is_remote, dir, &name)
+                });
+                return PopupAction::None;
+            }
             if let Some(d) = state.dialogs.file_picker.as_mut() {
                 let is_remote = d.mirror_ws_id.is_some();
                 // 방어적 재확인 — view 의 `can_open` 게이트를 우회해도(예: 향후 다른

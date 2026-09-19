@@ -47,10 +47,20 @@ fn painted_entries(
     mode: FilePickerMode<'_>,
     entries: &[FilePickerEntryView],
 ) -> (egui::Rect, Vec<(String, egui::Rect, egui::Rect)>) {
+    painted_selection(size, crumbs, mode, entries, "file-1.toml")
+}
+
+fn painted_selection(
+    size: egui::Vec2,
+    crumbs: &[CrumbView],
+    mode: FilePickerMode<'_>,
+    entries: &[FilePickerEntryView],
+    selection: &str,
+) -> (egui::Rect, Vec<(String, egui::Rect, egui::Rect)>) {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     let content = content_rect(size);
-    let selected = vec!["file-1.toml".to_string()];
+    let selected = vec![selection.to_string()];
     let props = FilePickerProps {
         theme: &th,
         remote_host: None,
@@ -68,6 +78,8 @@ fn painted_entries(
         overwrite_warning: "{name} already exists in this folder. Saving replaces it.",
         hidden_folders_one: "1 hidden",
         hidden_folders_many: "{} hidden",
+        folder_not_save_target: "not a save target: {name}",
+        folder_open_enters: "{name} is a folder — {confirm} enters it.",
         empty_label: "",
         loading_label: "",
         loading_body_local: "",
@@ -276,4 +288,68 @@ fn filenames_stay_inside_the_name_column_at_default_width() {
 #[test]
 fn filenames_stay_inside_the_name_column_at_narrow_width() {
     assert_filenames_stay_inside_the_name_column(egui::vec2(400.0, 360.0));
+}
+
+/// 고른 것이 폴더면 footer 에 안내 줄이 선다 — 두 모드가 서로 다른 것을 말하고, 열기 쪽은
+/// **확정 버튼 이름**을 부른다(문구와 버튼이 갈리지 않게). 어느 쪽이든 버튼은 안 잘린다.
+#[test]
+fn a_selected_folder_puts_its_line_in_the_footer_without_pushing_the_buttons_out() {
+    let entries = entries();
+    let folder = entries
+        .iter()
+        .find(|e| e.is_dir)
+        .expect("픽스처에 폴더가 있다")
+        .name
+        .clone();
+    let size = egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value());
+    let crumbs = deep_crumbs(3, "seg");
+
+    let (content, shapes) = painted_selection(
+        size,
+        &crumbs,
+        FilePickerMode::Save {
+            name: "keys.toml",
+            overwrite: false,
+            can_confirm: true,
+        },
+        &entries,
+        &folder,
+    );
+    let line = format!("not a save target: {folder}");
+    assert_fully_visible(content, &shapes, &line, "save + folder");
+    assert_fully_visible(content, &shapes, CONFIRM, "save + folder");
+    assert_fully_visible(content, &shapes, CANCEL, "save + folder");
+
+    let (content, shapes) = painted_selection(
+        size,
+        &crumbs,
+        FilePickerMode::Open { selection_text: "" },
+        &entries,
+        &folder,
+    );
+    let line = format!("{folder} is a folder — {CONFIRM} enters it.");
+    assert_fully_visible(content, &shapes, &line, "open + folder");
+    assert_fully_visible(content, &shapes, CONFIRM, "open + folder");
+
+    // 파일을 고르면 그 줄이 없다 — 있는 것만이 아니라 **없는 것**도 재야 항상 뜨는 줄을
+    // 통과시키지 않는다.
+    let file = entries
+        .iter()
+        .find(|e| !e.is_dir)
+        .expect("픽스처에 파일이 있다")
+        .name
+        .clone();
+    let (_, shapes) = painted_selection(
+        size,
+        &crumbs,
+        FilePickerMode::Open {
+            selection_text: &file,
+        },
+        &entries,
+        &file,
+    );
+    assert!(
+        !shapes.iter().any(|(t, _, _)| t.contains("is a folder")),
+        "파일을 골랐는데 폴더 안내 줄이 섰다"
+    );
 }
