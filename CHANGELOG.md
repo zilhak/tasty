@@ -18,6 +18,8 @@
 
 ### Added
 
+- **debug 빌드에 문자 입력 주입이 생겼다.** `tasty debug inject egui-text --text <s>`(IPC `debug.inject_egui_text`)가 포커스된 입력란 — command palette 쿼리 등 — 에 글자를 넣는다. 옆의 `inject egui-key` 로는 이것이 안 됐다: egui 가 문자를 받는 경로는 키 이벤트가 아니라 별도의 텍스트 이벤트다. 그래서 창 관리자 없는 화면에서 쿼리를 넣어 목록이 줄어든 상태를 확인할 방법이 없었다. 실입력이 나를 수 없는 문자열(제어문자 · 빈 문자열)은 넣지 않고 `injected: false` 로 답한다 — 넣어도 입력란이 조용히 버려 "주입됐다" 와 화면이 어긋나기 때문이다. Enter·Tab·Backspace 는 그대로 `inject egui-key` 쪽이다. `tasty debug` 트리라 **debug 빌드에만 있다**(원칙 1).
+
 - Codex 훅 설치에서 Codex home 또는 정확한 설정 파일을 지정할 수 있다. 둘은 함께 쓸 수 없고, 기존 설정을 읽을 수 없으면 덮어쓰지 않고 실패한다.
 
 - 사용자 언어팩으로 플러그인의 도구 라벨과 내부 UI 문구를 함께 덮어쓸 수 있다. 내장 언어는 `lang/plugins/<plugin-id>/<code>.toml`, 새 언어팩은 `lang/<code>/plugins/<plugin-id>.toml`을 사용한다. 설치본 영어·선택 언어 위에 사용자 파일을 얹으며, 수정 후 재시작하면 적용된다. 설치 자산을 수정하지 않아 플러그인 업그레이드 후에도 보존된다.
