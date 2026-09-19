@@ -142,3 +142,98 @@ fn surface_foregrounds_track_palette_in_shipped_themes() {
         }
     }
 }
+
+/// WCAG 상대 명도. 이 파일 안에만 있는 이유는 레포에 대비 계산기가 **한 자리도
+/// 없었기 때문**이다(2026-09-20 확인) — 쓰는 자리가 아래 시험 하나뿐이라 크레이트
+/// API 로 올리지 않았다. 둘째 호출처가 생기면 그때 올린다. 계수는 WCAG 2.x 정의
+/// 그대로이고 sRGB 역감마 문턱 0.03928 도 그 정의값이다.
+fn relative_luminance(c: HexColor) -> f64 {
+    let channel = |v: u8| {
+        let x = f64::from(v) / 255.0;
+        if x <= 0.03928 {
+            x / 12.92
+        } else {
+            ((x + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+}
+
+fn contrast_ratio(a: HexColor, b: HexColor) -> f64 {
+    let (la, lb) = (relative_luminance(a), relative_luminance(b));
+    let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+/// 틀의 선(`border-frame`)은 패널 위에서 `border-strong` 보다 **대비가 높다** —
+/// 그리고 그 방향을 **명도로는 고를 수 없다.**
+///
+/// 이것이 이 시험의 전부다. 2026-09-20 정정은 popup 프레임 · titlebar 아래 선 ·
+/// pane divider · GPU 비활성 보더 넷을 한 role 로 묶으면서, 그 role 이 어느 단계에
+/// 앉을지를 **명도가 아니라 대비로** 골랐다. 실측이 그 이유를 보여준다:
+///
+/// - mocha — frame(neutral-500) 이 strong(neutral-400) 보다 **밝다** (L 0.107 vs 0.065)
+/// - latte — frame 이 strong 보다 **어둡다** (L 0.435 vs 0.528)
+///
+/// 명도 부등호가 테마마다 뒤집히므로 "한 단계 올린다" 를 명도로 적으면 한 테마에서
+/// 반드시 틀린다. 대비는 두 테마에서 같은 방향이라 그 문장이 성립한다. 그래서 아래는
+/// 명도 부등호가 **반대임까지** 고정한다 — 그것이 뒤집히는 날 "대비로 고른다" 는
+/// 근거 자체가 사라지고, 그때는 role 배치를 다시 판단해야 한다.
+///
+/// 두 role 이 **값이 다르다**는 것도 함께 고정한다. [ADR-0290](../../../docs/adr/0290-settled-role-gaps-close-the-divergence-and-off-scale-sets.md)
+/// 은 새 role 넷이 기존 role 과 값이 겹쳐 "값이 같은 두 role 을 갈라 읽는 가드는
+/// 원리적으로 세울 수 없다" 고 적었다. 그 문장은 `border-frame` ↔ `surface-active`
+/// 짝에 대해 여전히 참이지만, `border-frame` ↔ `border-strong` 짝에 대해서는 이 정정
+/// 이후 **거짓**이다 — 값이 갈렸으므로 가드를 세울 수 있고, 이것이 그 가드다.
+#[test]
+fn the_frame_line_outranks_the_strong_border_by_contrast_not_lightness() {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+    let hex = |path: &str, mode| {
+        let raw = set
+            .resolve(path, mode)
+            .unwrap_or_else(|e| panic!("{path} ({mode:?}): {e:?}"));
+        HexColor::from_hex(&raw).unwrap_or_else(|| panic!("{path}: hex 가 아님: {raw}"))
+    };
+
+    // (모드, 이름, 전 대비, 후 대비) — 결정이 준 검증값.
+    for (mode, name, want_before, want_after) in [
+        (ThemeMode::Mocha, "mocha", 1.80_f64, 2.46_f64),
+        (ThemeMode::Latte, "latte", 1.61, 1.91),
+    ] {
+        let panel = hex("semantic.bg-panel", mode);
+        let strong = hex("semantic.border-strong", mode);
+        let frame = hex("semantic.border-frame", mode);
+
+        assert_ne!(
+            frame, strong,
+            "{name}: border-frame 과 border-strong 이 같은 값이 됐다 — 이 가드가 셀 것이 없어진다"
+        );
+
+        let before = contrast_ratio(strong, panel);
+        let after = contrast_ratio(frame, panel);
+        assert!(
+            (before - want_before).abs() < 0.005,
+            "{name}: 전 대비가 {before:.4} — 결정값 {want_before} 이 아니다"
+        );
+        assert!(
+            (after - want_after).abs() < 0.005,
+            "{name}: 후 대비가 {after:.4} — 결정값 {want_after} 이 아니다"
+        );
+        assert!(
+            after > before,
+            "{name}: 틀의 선이 패널에서 더 물러섰다 ({before:.4} → {after:.4})"
+        );
+    }
+
+    // 명도 부등호는 두 테마에서 **반대**여야 한다 — 위 doc 주석의 근거.
+    let lighter_in_mocha = relative_luminance(hex("semantic.border-frame", ThemeMode::Mocha))
+        > relative_luminance(hex("semantic.border-strong", ThemeMode::Mocha));
+    let lighter_in_latte = relative_luminance(hex("semantic.border-frame", ThemeMode::Latte))
+        > relative_luminance(hex("semantic.border-strong", ThemeMode::Latte));
+    assert!(
+        lighter_in_mocha && !lighter_in_latte,
+        "명도 부등호가 두 테마에서 같은 방향이 됐다 (mocha frame 이 더 밝다={lighter_in_mocha} · \
+         latte frame 이 더 밝다={lighter_in_latte}) — 단계를 명도로 고를 수 있게 됐다는 뜻이고, \
+         그러면 role 배치 근거를 다시 판단해야 한다"
+    );
+}

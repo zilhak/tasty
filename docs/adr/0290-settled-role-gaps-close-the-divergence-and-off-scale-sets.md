@@ -28,7 +28,12 @@ tinted 채움/테두리 계수 5 짝(P1~P5) · 인셋 1 건(I1) · 이름 없는
 
 - **잉크**: disabled 는 고유 잉크다 — 모든 disabled 라벨·글리프가 `text-disabled`(neutral-700)를
   읽는다. `glyph-dim`(neutral-600)은 *물러나야 하는 chrome* 전용이고 disabled 용이 아니다.
-  `border-frame`(neutral-500)은 틀의 선이고 `surface-active` 와 값만 같다.
+  `border-frame`(neutral-500)은 틀의 선이고 `surface-active` 와 값만 같다. **그 선은
+  넷이다** — popup 프레임 · titlebar 아래 선 · pane divider · GPU 비활성 보더. popup
+  **내부** 구분선은 이 role 이 아니라 `border-strong`(neutral-400)에 남는다: 틀과 칸막이는
+  같은 회색 계열이지만 다른 역할이고, 둘을 한 role 로 묶으면 틀만 올리는 것이 불가능해진다.
+  단계는 **명도가 아니라 대비로** 골랐다 — latte 에서는 neutral-500 이 neutral-400 보다
+  어둡기 때문에 "한 단계 올린다" 를 명도로 적으면 두 테마 중 하나에서 반드시 틀린다.
   `accent-decorative`(peach)는 장식이고 `accent-attention` 과 값만 같다.
 - **폰트**: 읽는 글은 위로, 숫자 micro 라벨은 아래로 스냅한다. 브랜드 30 은 스냅하지 않고
   이름을 얻었다(`font-size-brand-display`) — UI 14px 상한의 브랜딩 예외는 워드마크 17 과
@@ -50,11 +55,23 @@ tinted 채움/테두리 계수 5 짝(P1~P5) · 인셋 1 건(I1) · 이름 없는
   테마 표시는 색 점을 버리고 `sun`/`theme` 글리프를 `statusbar-theme-glyph` 로 그린다.
   네 갈래로 흩어져 있던 tint 계수가 한 짝으로 모였다. 점 지름이 "같은
   수로 수렴하는 이름 없는 역할" 이 아니라 이름 있는 세 role 이 됐다.
-- **잃은 것**: C3/C4/C6 · `.5` 폰트 · D1/D3/D4/D5 는 **픽셀이 바뀐다.** 값-보존 리팩터가
-  아니므로 화면별로 시각 확인이 필요하다.
+- **잃은 것**: C1 · C3/C4/C6 · `.5` 폰트 · D1/D3/D4/D5 는 **픽셀이 바뀐다.** 값-보존
+  리팩터가 아니므로 화면별로 시각 확인이 필요하다.
+- **C1 이 이 열거에 늦게 들어왔다.** 처음에는 픽셀이 안 바뀌는 쪽으로 적혀 있었고, 그것이
+  틀렸다. 네 자리 중 **둘만** 값이 그대로다 — pane divider 와 GPU 비활성 보더는 이미
+  `surface-active`(neutral-500)를 읽고 있어 role 이름만 바뀌었다. 나머지 둘, popup 프레임과
+  titlebar 아래 선은 `border-strong`(neutral-400)에서 올라와 **실제로 한 단계 밝아진다**
+  (latte 에서는 어두워진다 — 위 Decision 의 대비 기준). 패널 위 대비로 재면 1.80 → 2.46
+  (mocha) · 1.61 → 1.91 (latte) 이고, 그 값은
+  `crates/tasty-design-tokens/tests/color_drift.rs` 의
+  `the_frame_line_outranks_the_strong_border_by_contrast_not_lightness` 가 고정한다.
 - **운영 비용 / 유지 부담**: 새 role 넷(`border-frame` · `glyph-dim` · `accent-decorative` ·
   tint 짝)은 값이 기존 role 과 겹치므로, "값이 같으니 아무거나" 로 되돌아가는 것을 막는
   것은 문서와 리뷰다 — 값이 같은 두 role 을 갈라 읽는 가드는 원리적으로 세울 수 없다.
+  **그 한계는 짝마다 따로 판정한다.** `border-frame` ↔ `surface-active` 는 값이 같아
+  여전히 그렇지만, `border-frame` ↔ `border-strong` 은 값이 갈려 있어 가드를 세울 수 있고
+  세웠다(바로 위 시험). 즉 "가드 불가" 는 이 결정 전체의 성질이 아니라 값이 겹치는 짝의
+  성질이다.
 
 ## Alternatives Considered
 

@@ -25,7 +25,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | `text-muted` | `subtext0` | `#a6adc8` | |
 | `text-disabled` | `overlay1` | `#7f849c` | **disabled 전용 잉크.** 모든 disabled 라벨·글리프가 이 role 을 읽는다 |
 | `glyph-dim` | `overlay0` | `#6c7086` | 물러나야 하는 chrome glyph(사이드바 dim chevron·dim 아이콘·상태바 글리프). `text-placeholder` 와 값만 같고 role 이 다르다 — **disabled 용이 아니다** |
-| `border-frame` | `surface2` | `#585b70` | 틀의 선(pane divider · 비활성 surface 보더 · popup 프레임 보더). `surface-active` 와 값만 같다 |
+| `border-frame` | `surface2` | `#585b70` | 틀의 선 **넷**(popup 프레임 · titlebar 아래 선 · pane divider · GPU 비활성 보더). popup **내부** 구분선은 `border-strong` 에 남는다. `surface-active` 와 값만 같다 |
 | `accent-decorative` | `peach` | `#fab387` | 헤더 장식 accent(Plugins 창 헤더 glyph). `accent-attention`(주의 환기)과 값만 같다 |
 | `accent-primary` | `accent_primary()` | `#89b4fa` | primary 버튼·포커스·활성 탭 언더라인 |
 | `accent-danger` | `accent_danger()` | — | |
