@@ -1812,7 +1812,7 @@ mod tests {
         assert!(
             host.commands_on(target)
                 .iter()
-                .any(|c| c == &notify_error_command(caller, target, 1))
+                .any(|c| c == &notify_error_command(caller, target))
         );
     }
 

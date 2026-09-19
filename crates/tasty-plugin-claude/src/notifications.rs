@@ -46,10 +46,6 @@ pub(crate) fn register_notify_hooks<H: HostCall>(
     target_surface: u32,
     command_name: &str,
 ) {
-    if !tasty_plugin_agent_common::completion::legacy_log(host, caller_surface) {
-        register_error_notify_hook(host, caller_surface, target_surface);
-        return;
-    }
     let command = notify_done_command(caller_surface, target_surface, command_name);
     // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
     // 등록 루프만 공유하고 목록은 각자 갖는다.
@@ -66,40 +62,10 @@ pub(crate) fn register_notify_hooks<H: HostCall>(
 /// 에러 정지 알림 hook 의 command 문자열. 완료 알림([`notify_done_command`])과 **다른**
 /// 문자열이라 `cleanup_sibling_hooks` 의 정리 대상(command 완전 일치)에 걸리지 않는다 —
 /// 형제 그룹이 fire·정리·재무장을 반복해도 이 hook 은 건드려지지 않는다.
-pub(crate) fn notify_error_command(
-    caller_surface: u32,
-    target_surface: u32,
-    observer: u64,
-) -> String {
+pub(crate) fn notify_error_command(caller_surface: u32, target_surface: u32) -> String {
     format!(
-        "tasty claude notify-error --caller-surface {caller_surface} --target-surface {target_surface} --observer {observer}"
+        "tasty claude notify-error --caller-surface {caller_surface} --target-surface {target_surface}"
     )
-}
-
-/// 에러 관측 lease 를 발급받는다. 실패 갈래 둘(호출 실패 · lease 없는 응답)은 각각
-/// 다른 사실을 말하므로 로그를 따로 남기고, 호출자에게는 "등록할 수 없다" 하나로
-/// 합쳐 `None` 을 준다.
-fn watch_error_observer<H: HostCall>(
-    host: &H,
-    caller_surface: u32,
-    target_surface: u32,
-) -> Option<u64> {
-    match host.call(
-        "terminal.completion",
-        json!({"action":"watch_error","surface":caller_surface,"target":target_surface}),
-    ) {
-        Ok(value) => match value["observer"].as_u64() {
-            Some(observer) => Some(observer),
-            None => {
-                tracing::warn!("error observation registration returned no lease");
-                None
-            }
-        },
-        Err(error) => {
-            tracing::warn!("error observation registration failed: {error}");
-            None
-        }
-    }
 }
 
 /// `claude-error-stalled` 를 구독하는 **상시**(once 아님) hook 을 등록한다.
@@ -109,18 +75,14 @@ fn watch_error_observer<H: HostCall>(
 /// 필요 없고, 발사 빈도 상한은 발신 측(`error_scan.rs` 의 쿨다운·에피소드 1회)이
 /// 이미 갖고 있다.
 ///
-/// 같은 observer의 재등록은 멱등하다. 다른 spawn/tell 구독은 독립 observer를
-/// 가지며, host가 같은 논리 부모의 동일 epoch 알림을 한 번으로 합친다.
-/// 종료된 observer는 이미 executor에 넘어간 command까지 상태 변경을 거절한다.
+/// 재등록은 멱등하다 — command 문자열이 (caller, target) 만으로 정해지므로 같은 짝의
+/// 재등록은 `cleanup_sibling_hooks` 가 옛것을 걷어내고 같은 자리에 다시 건다.
 pub(crate) fn register_error_notify_hook<H: HostCall>(
     host: &H,
     caller_surface: u32,
     target_surface: u32,
 ) {
-    let Some(observer) = watch_error_observer(host, caller_surface, target_surface) else {
-        return;
-    };
-    let command = notify_error_command(caller_surface, target_surface, observer);
+    let command = notify_error_command(caller_surface, target_surface);
     cleanup_sibling_hooks(host, target_surface, &command);
     // best-effort — spawn/tell은 유지하되 관측 등록 실패를 기록한다.
     if let Err(error) = host.call(
@@ -137,7 +99,7 @@ pub(crate) fn register_error_notify_hook<H: HostCall>(
 }
 
 /// `tasty claude notify-done` — 형제 once-hook 중 하나가 fire 되어 실행되는
-/// 커맨드. Claude 부모의 로그에 완료 상태를 append한 뒤, target_surface 에 남아있는
+/// 커맨드. caller_surface 의 완료 로그에 완료 상태를 append한 뒤, target_surface 에 남아있는
 /// (아직 fire 되지 않은) 나머지 형제 hook 들을 command 문자열 일치로 찾아 정리한다.
 pub(crate) fn handle_notify_done<H: HostCall>(
     host: &H,
@@ -161,12 +123,9 @@ pub(crate) fn handle_notify_done<H: HostCall>(
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_command")))?;
 
-    // 1) 부모 종류에 맞는 수신 채널을 사용한다.
+    // 1) 부모가 Monitor 로 tail 하는 완료 로그에 append 한다 — 부모 종류를 묻지 않는다.
     let message = notify_done_message(tr, command_name, target_surface);
-    // Claude 부모는 기존 Monitor 로그, Codex 부모는 host outbox를 사용한다.
-    if tasty_plugin_agent_common::completion::legacy_log(host, caller_surface)
-        && let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message)
-    {
+    if let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message) {
         tracing::warn!("claude notify-done completion-log append failed: {e}");
     }
 
@@ -213,19 +172,8 @@ pub(crate) fn handle_notify_error<H: HostCall>(
             IpcMethodError::invalid_params(tr.t("claude.params.missing_target_surface"))
         })? as u32;
 
-    // A previously queued command without a lease cannot identify its execution.
-    let Some(observer) = params.get("observer").filter(|v| !v.is_null()) else {
-        return Ok(json!({"ignored_old_session":true}));
-    };
     let message = notify_error_message(tr, host, target_surface);
-    let observed = host.call("terminal.completion", json!({"action":"observe_error","surface":caller_surface,"target":target_surface,"observer":observer,"summary":message}))?;
-    if observed["recorded"] != true {
-        return Ok(json!({"ignored_old_session":true}));
-    }
-
-    if tasty_plugin_agent_common::completion::legacy_log(host, caller_surface)
-        && let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message)
-    {
+    if let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message) {
         tracing::warn!("claude notify-error completion-log append failed: {e}");
     }
     Ok(json!({}))

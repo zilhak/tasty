@@ -582,9 +582,6 @@ fn register_notify_hooks<H: HostCall>(
     target_surface: u32,
     kind: &str,
 ) {
-    if !tasty_plugin_agent_common::completion::legacy_log(host, caller_surface) {
-        return;
-    }
     let cmd = notify_caller_command(caller_surface, target_surface, kind);
     // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
     // 세 이벤트 모두 거기 선언돼 있어야 host 가 등록을 받아준다. `needs-input` 은
@@ -618,11 +615,10 @@ pub(crate) fn handle_notify_caller<H: HostCall>(
     let screen_text = fetch_screen_text_for_hint(host, target);
     let message = append_sandbox_hint_if_detected(tr, message, screen_text.as_deref());
 
-    // Claude 부모의 기존 Monitor 수신용 로그에 append한다. Codex 부모는 host outbox를 쓴다.
+    // 부모 종류를 묻지 않고 부모의 완료 로그에 append한다 — 부모가 Monitor 로 tail 하는
+    // `notify/<caller>.log` 가 완료 알림의 유일한 경로다.
     // 로그 실패는 기록하고 형제 hook 정리를 계속한다.
-    if tasty_plugin_agent_common::completion::legacy_log(host, caller)
-        && let Err(e) = tasty_utils::notify::append_notify_line(caller, &message)
-    {
+    if let Err(e) = tasty_utils::notify::append_notify_line(caller, &message) {
         tracing::warn!("codex notify-caller completion-log append failed: {e}");
     }
 
