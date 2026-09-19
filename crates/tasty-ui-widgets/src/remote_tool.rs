@@ -25,6 +25,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::tokens::{STRUCT_GAP_1, STRUCT_GAP_2};
 use crate::vspace;
+use crate::{TagVariant, tag};
 
 /// 프로토콜 필터 드롭다운의 최소 폭 — 체크박스 라벨 + unknown 배지가 한 줄에 들어가는
 /// 폭. 디자인 `ProtocolFilter` 패널 236 에서 좌우 패딩을 뺀 값이다.
@@ -288,162 +289,206 @@ pub fn draw_tab_strip(ui: &mut egui::Ui, th: &Theme, data: &TabStripData<'_>) ->
 }
 
 // ── 로컬 ssh config 섹션 ─────────────────────────────────────────────────
+//
+// 2026-09-17 디자인 결정(R2)이 이 섹션의 형상을 확정했다 — 원본은
+// `gallery/overlays-shared.jsx` 의 `LocalSshSection`.
+//
+// **프로필 목록과 같은 스크롤 안에 두되, 한 tier 아래로 내린다.** 같은 물음("어느
+// 기계냐")이라 탭을 나누면 숨고, 그렇다고 같은 층에 두면 저장된 프로필로 오인된다.
+// 그 tier 차이를 네 가지가 만든다:
+//   · 카드가 아니라 **섹션 헤더**(11px 대문자 라벨 + mono 경로 + 개수)
+//   · 프로필 행의 3 줄이 아니라 **2 줄**(alias, 그리고 mono `user@host:port`)
+//   · **행마다 있던 아이콘 버튼이 없다** — 우측 정렬 ghost "Add profile" 하나뿐이고
+//     그것은 이미 있던 가져오기 동작이다(새 동작이 아니다)
+//   · 이미 가져온 호스트는 muted Tag 만 달고 액션이 없다
+// 비어 있음/못 읽음은 muted 한 줄씩이다 — **설정이 없는 것은 오류가 아니라서**
+// warning 톤을 쓰지 않는다. tasty 는 이 파일을 읽기만 하고 쓰지 않는다.
+
+/// 섹션 상단 여백 — canonical `marginTop: 10`. 그 값의 semantic 이 없다(spacing
+/// 스텝은 4·8·12·16·24). 겨루는 component 토큰이 없어 이 출처가 곧 근거다 —
+/// [`crate::status_bar`] 의 `CELL_PAD_X` 와 같은 사정이다.
+const SSH_SECTION_MARGIN_TOP: LogicalPx = LogicalPx(10.0);
+/// 헤더 라벨·경로·개수 사이 gap, 그리고 헤더/행의 세로 여백 — canonical `gap: 6` ·
+/// `padding: "2px 4px 6px"` · `padding: "6px 4px"` 의 6. `size-6` 에 값은 있지만
+/// 그것을 쓰는 component 토큰은 점의 지름(`status-dot-size-compact`) 하나뿐이라
+/// 부르면 없는 관계가 생긴다.
+const SSH_GAP: LogicalPx = LogicalPx(6.0);
 
 /// 로컬 `~/.ssh/config` 행 하나 — tasty 레코드가 아니라 사용자 파일의 항목이다.
 pub struct LocalSshHost<'a> {
     /// `Host` 별칭.
     pub alias: &'a str,
-    /// 표시용 요약(`HostName[:Port]`). 표시 전용 — 가져오기에는 alias 만 쓴다.
-    pub hint: &'a str,
-    /// 이미 프로필로 가져왔으면 그 사실을 알리는 **번역된 캡션**. `None` 이면 미가져옴.
-    pub imported_caption: Option<&'a str>,
+    /// 표시용 요약(`user@host:port`). 표시 전용 — 가져오기에는 alias 만 쓴다.
+    pub target: &'a str,
+    /// 이미 프로필로 가져왔는가. 그러면 액션 대신 Tag 가 붙는다.
+    pub in_profiles: bool,
 }
 
 /// 섹션 한 프레임 분의 입력. 문자열은 전부 호출자가 번역해 넘긴다.
 pub struct LocalSshSectionData<'a> {
-    /// 섹션 제목.
+    /// 섹션 제목. 그리기 직전에 대문자로 바꾼다(canonical `textTransform: uppercase`).
     pub heading: &'a str,
     /// 표시용 config 경로(`~/.ssh/config`).
     pub path: &'a str,
-    /// 재로드 아이콘 tooltip.
-    pub refresh_tooltip: &'a str,
-    /// 가져오기 아이콘 tooltip.
-    pub import_tooltip: &'a str,
+    /// 이미 가져온 호스트에 붙는 Tag 라벨.
+    pub in_profiles_tag: &'a str,
+    /// 미가져온 호스트의 ghost 액션 라벨.
+    pub add_label: &'a str,
     /// 호스트가 0 건일 때의 한 줄 — 원인(없음/못 읽음/정말 0 건)은 호출자가 가른다.
     pub empty_message: &'a str,
     pub hosts: &'a [LocalSshHost<'a>],
 }
 
-/// 섹션이 돌려주는 사용자 액션.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LocalSshAction {
-    /// 재로드 아이콘 클릭.
-    Reload,
-    /// `hosts[i]` 의 가져오기 클릭.
-    Import(usize),
+/// canonical 의 `padding: … 4px` — 이 섹션의 본문만 프로필 행보다 한 칸 안쪽으로
+/// 들여쓴다. "프로필 목록 아래 한 tier" 라는 관계를 들여쓰기로 말하는 자리이고,
+/// 상단 rule 과 행 사이 separator 는 CSS border 라 padding 밖이므로 들여쓰지 않는다.
+fn ssh_inset<R>(ui: &mut egui::Ui, th: &Theme, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(th.spacing_xs.value() as i8, 0))
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            add(ui)
+        })
+        .inner
 }
 
-/// 로컬 ssh config 섹션 — 프로필 목록 **아래**에 구분선으로 갈라 붙는다.
+/// 로컬 ssh config 섹션 — 프로필 목록 **아래**에 한 tier 내려 붙는다.
+/// 가져오기를 누른 호스트의 인덱스를 돌려준다.
 pub fn draw_local_ssh_section(
     ui: &mut egui::Ui,
     th: &Theme,
     data: &LocalSshSectionData<'_>,
-) -> Option<LocalSshAction> {
-    let mut out = None;
-    hsep(ui, th);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        selectable_label(
-            ui,
-            data.heading,
-            th.text_secondary(),
-            th.font_size_caption.value(),
-            false,
-        );
-        selectable_label(
-            ui,
-            data.path,
-            th.text_muted(),
-            th.font_size_caption.value(),
-            true,
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // 프로필 행의 재감지와 같은 글리프지만 하는 일이 다르다(원격 프로브가
-            // 아니라 로컬 파일 재로드) — 툴팁으로 가른다.
-            if ui
-                .add(
-                    egui::ImageButton::new(tasty_icons::REFRESH.image(
-                        th.icon_glyph_size_row_action.value(),
-                        th.text_muted().into(),
-                    ))
-                    .frame(false),
-                )
-                .on_hover_text(data.refresh_tooltip)
-                .clicked()
-            {
-                out = Some(LocalSshAction::Reload);
+) -> Option<usize> {
+    let mut clicked = None;
+    // 상단 rule — 프로필 목록과 가르는 선. 행 사이 `separator` 보다 한 단계 뚜렷한
+    // `border-frame` 이라 "같은 목록의 다음 행" 이 아니라 "다른 구역" 으로 읽힌다.
+    vspace(ui, SSH_SECTION_MARGIN_TOP);
+    ui.painter().hline(
+        ui.max_rect().x_range(),
+        ui.cursor().top(),
+        egui::Stroke::new(th.border_width.value(), th.border_frame()),
+    );
+    vspace(ui, th.spacing_sm);
+
+    // 헤더 — 라벨 · 경로 · (호스트가 있으면) 개수.
+    ssh_inset(ui, th, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = SSH_GAP.value();
+            selectable_label(
+                ui,
+                &data.heading.to_uppercase(),
+                th.text_secondary(),
+                th.font_size_caption.value(),
+                false,
+            );
+            selectable_label(
+                ui,
+                data.path,
+                th.text_muted(),
+                th.font_size_caption.value(),
+                true,
+            );
+            if !data.hosts.is_empty() {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    selectable_label(
+                        ui,
+                        &data.hosts.len().to_string(),
+                        th.text_muted(),
+                        th.font_size_caption.value(),
+                        true,
+                    );
+                });
             }
         });
     });
-    ui.add_space(th.spacing_xs.value());
+    vspace(ui, SSH_GAP);
+
     if data.hosts.is_empty() {
         // 섹션을 통째로 숨기지 않는다 — 문구가 있어야 "가져올 게 없다" 와 "그런 기능이
-        // 없다" 가 구분된다.
-        selectable_text(
-            ui,
-            data.empty_message,
-            th.text_muted(),
-            th.font_size_caption.value(),
-            false,
-            true,
-            TextWrap::None,
-        );
-        ui.add_space(th.spacing_xs.value());
-        return out;
+        // 없다" 가 구분된다. 없는 설정은 오류가 아니므로 warning 톤이 아니다.
+        ssh_inset(ui, th, |ui| {
+            selectable_text(
+                ui,
+                data.empty_message,
+                th.text_muted(),
+                th.font_size_term_sm.value(),
+                false,
+                false,
+                TextWrap::Wrap,
+            );
+        });
+        vspace(ui, SSH_GAP);
+        return None;
     }
     for (i, h) in data.hosts.iter().enumerate() {
-        if draw_local_ssh_row(ui, th, h, data.import_tooltip) {
-            out = Some(LocalSshAction::Import(i));
+        if draw_local_ssh_row(ui, th, h, data) {
+            clicked = Some(i);
         }
     }
-    out
+    clicked
 }
 
-/// alias 행 한 줄 — 이름 / hint caption / 우측 가져오기. 가져오기를 눌렀으면 `true`.
+/// alias 행 한 줄 — 2 줄 본문 + 우측 Tag 또는 ghost 액션. 액션을 눌렀으면 `true`.
 fn draw_local_ssh_row(
     ui: &mut egui::Ui,
     th: &Theme,
     h: &LocalSshHost<'_>,
-    import_tooltip: &str,
+    data: &LocalSshSectionData<'_>,
 ) -> bool {
     let mut clicked = false;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-            selectable_label(
-                ui,
-                h.alias,
-                th.text_primary(),
-                th.font_size_body.value(),
-                false,
-            );
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                selectable_label(
-                    ui,
-                    h.hint,
-                    th.text_muted(),
-                    th.font_size_caption.value(),
-                    true,
-                );
-                if let Some(caption) = h.imported_caption {
-                    selectable_label(
+    vspace(ui, SSH_GAP);
+    ssh_inset(ui, th, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+            // 우측 슬롯을 먼저 잡아 남는 폭을 본문이 쓴다 — 긴 alias 가 슬롯을 밀어내지
+            // 않게 한다(canonical 의 `flex: 1; min-width: 0`).
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if h.in_profiles {
+                    // 이미 가져온 호스트는 액션이 없다 — 같은 호스트를 두 번 등록하는
+                    // 사고를 비활성 버튼이 아니라 **상태 표시**로 막는다.
+                    tag(ui, th, data.in_profiles_tag, TagVariant::Default, false);
+                } else if crate::Button::new(data.add_label)
+                    .variant(crate::ButtonVariant::Ghost)
+                    .size(crate::ControlSize::Sm)
+                    .leading_icon(&|ui, rect, c| {
+                        tasty_icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                    })
+                    .show(ui, th)
+                    .clicked()
+                {
+                    clicked = true;
+                }
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
+                    let w = ui.available_width();
+                    selectable_text(
                         ui,
-                        caption,
+                        h.alias,
+                        th.text_secondary(),
+                        th.font_size_body.value(),
+                        false,
+                        false,
+                        TextWrap::Truncate(w),
+                    );
+                    selectable_text(
+                        ui,
+                        h.target,
                         th.text_muted(),
                         th.font_size_caption.value(),
+                        true,
                         false,
+                        TextWrap::Truncate(w),
                     );
-                }
+                });
             });
         });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            // 이미 가져온 alias 는 비활성 — 같은 호스트를 두 번 등록하는 사고를 막는다.
-            let btn = ui.add_enabled(
-                h.imported_caption.is_none(),
-                egui::ImageButton::new(tasty_icons::DOWNLOAD.image(
-                    th.icon_glyph_size_row_action.value(),
-                    th.text_muted().into(),
-                ))
-                .frame(false),
-            );
-            if h.imported_caption.is_none() && btn.on_hover_text(import_tooltip).clicked() {
-                clicked = true;
-            }
-        });
     });
-    ui.add_space(th.spacing_xs.value());
+    vspace(ui, SSH_GAP);
+    ui.painter().hline(
+        ui.max_rect().x_range(),
+        ui.cursor().top(),
+        egui::Stroke::new(th.border_width.value(), th.separator),
+    );
     clicked
 }
 

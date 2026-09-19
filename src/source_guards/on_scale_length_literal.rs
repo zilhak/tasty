@@ -320,7 +320,19 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 커밋에서 48 -> 47 로 함께 움직인다. 새 리터럴이 아니라 자리가 바뀐 것이라
         // 처방도 다르다 — 사유는 옮기기 전과 같다(드롭다운 최소폭·스크롤 상한에
         // 대응하는 semantic 이 없다).
-        13,
+        //
+        // 13 -> 14 는 로컬 ssh config 섹션의 `SSH_GAP`(6) 하나다 — 이사가 아니라 **새로
+        // 생긴 자리**다(전에는 그 섹션이 Theme 의 `spacing_xs`/`spacing_sm` 만 썼고,
+        // 확정 시안이 `gap: 6` · `padding: "2px 4px 6px"` · `padding: "6px 4px"` 로 6 을
+        // 세 자리에서 쓴다). 위 file handler picker 의 6 둘과 **같은 사유로 못 없앤다** —
+        // `size-6` 에 값은 있지만 그것을 쓰는 component 토큰은 점의 지름
+        // (`status-dot-size-compact`) 하나뿐이고, spacing 스텝(4·8·12·16·24)에 6 이 없다.
+        // 같은 섹션의 `SSH_SECTION_MARGIN_TOP`(10)은 이 수에 안 들어간다 — 10 은 스케일에
+        // 없어 바늘 밖이다. **이 가드에는 그 몫을 세는 칸이 없다**(옆의
+        // [`the_blind_spots_are_still_the_size_they_say`] 는 0 · 테스트 전용 · 하한 ·
+        // 정규화 좌표를 세고, off-scale 값은 안 센다). 변이로 확인했다 — 같은 상수를
+        // 12 로 바꾸면 이 수가 15 로 움직이고, 10 으로 두면 아무 칸도 안 움직인다.
+        14,
         "공용 위젯",
     ),
     (

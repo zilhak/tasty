@@ -25,7 +25,7 @@
 | `ProtocolFilter`(드롭다운/팝오버) | `draw_protocol_filter` (체크박스 + Apply-on-confirm) | ✗ 미등록 (remote_tool 예외 동일) |
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
 | `ProfileForm` | `draw_profile_form` | — |
-| (디자인 원본 없음 — 로컬 SSH config 섹션) | `draw_local_ssh_section` / `draw_local_ssh_row` | `components/remote.rs` `local_ssh_header` / `local_ssh_row` (`remote` spec) |
+| `LocalSshSection` | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다 |
 | `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |
@@ -44,9 +44,19 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 잉크다. `surface-active` 는 **행 선택 채움**이라 어느 쪽도 아니다. 본체(`tasty_ui_widgets::
 segmented`)와 갤러리(`components/remote.rs` `seg_chip`)가 지금 둘 다 이 규칙을 따른다.
 
-로컬 SSH config 섹션은 `remote_tool.jsx` 에 대응 컴포넌트가 없다 — 확정 목업이 이 레포에서
-정해진 기존 목록의 확장이라, 기존 행 구조(`ProfileRow` 3행 레이아웃의 축약형) + `hsep` +
-`Theme` 토큰만 조합해 만든다. 갤러리 specimen 은 본체와 같은 모양을 전사한다.
+**로컬 SSH config 섹션은 2026-09-17 결정(R2)으로 디자인 원본을 얻었다** — 한때 이 자리에
+"디자인 원본 없음" 이라 적혀 있었고 본체가 `ProfileRow` 3행 레이아웃의 축약형으로 근사하고
+있었는데, 확정 시안(`gallery/overlays-shared.jsx` `LocalSshSection`, `ui_kits/terminal/
+overlays/remote_tool.jsx` 가 소비)이 다른 모양을 정했다: 카드가 아니라 **섹션 헤더**(11px
+대문자 라벨 + mono 경로 + 우측 개수), 3줄이 아니라 **2줄 행**(alias / `user@host:port` mono),
+**행 아이콘 버튼 없음** — ghost `Add profile` 하나이고 이미 등록된 호스트는 `in profiles` Tag,
+빈 상태·읽기 실패는 `text-muted` 한 줄(경고 톤 아님). 본체와 갤러리가 지금 같은 함수
+(`tasty_ui_widgets::draw_local_ssh_section`)를 부르므로 두 사본이 갈릴 자리가 없다.
+
+전사에서 **의도적으로 뺀 것 둘**이 있다. canonical 의 `padding` 세로 성분 중 `2px`
+(헤더 위·빈 줄 위)는 4px 그리드 밖이고 대응 토큰이 없어 넣지 않았다 — 그만큼(2px) 더 붙어
+그려진다. `letterSpacing: 0.06em` 은 egui 가 자간을 노출하지 않아 넣을 수 없다. 가로 `4px`
+들여쓰기는 `space-xs` 로 그대로 넣었다(그리드 안이고 "한 tier 아래" 를 말하는 성분이다).
 
 **갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
 CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::

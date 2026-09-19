@@ -23,15 +23,15 @@ use tasty_remote_profiles::{
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
-use crate::i18n::{t, t_fmt};
+use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{
-    LocalSshAction, LocalSshHost, LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels,
-    TabStripData, TextWrap, draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
+    LocalSshHost, LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels, TabStripData,
+    TextWrap, draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
     draw_protocol_filter_button, draw_tab_strip, ghost_button, hsep, primary_button,
     secondary_button, selectable_label, selectable_text, warn_badge,
 };
@@ -189,8 +189,9 @@ fn local_ssh_empty_key(local: &LocalSshCache) -> &'static str {
     }
 }
 
-/// ssh config 를 한 번 읽어 캐시를 만든다. 호출 지점은 "캐시가 비었을 때" 와
-/// "새로고침 아이콘" 둘뿐이다.
+/// ssh config 를 한 번 읽어 캐시를 만든다. 호출 지점은 "캐시가 비었을 때" 하나다 —
+/// 확정 시안의 섹션 헤더에 새로고침 아이콘이 없어서, 파일이 바뀐 뒤 다시 읽는 길은
+/// popup 을 다시 여는 것이다.
 fn load_local_ssh() -> LocalSshCache {
     local_ssh_cache_at(user_config_path())
 }
@@ -218,18 +219,33 @@ fn local_ssh_cache_at(path: Option<std::path::PathBuf>) -> LocalSshCache {
     }
 }
 
-/// 로컬 섹션 행에 붙는 요약 — 그 Host 블록에 **직접 적힌** `HostName[:Port]`.
+/// 로컬 섹션 행 둘째 줄 — 그 Host 블록에 **직접 적힌** `[User@]HostName[:Port]`.
+///
+/// 확정 시안의 둘째 줄이 `user@host:port` 다. 같은 화면 위쪽 프로필 행의 요약과 같은
+/// 모양이라, 두 목록이 같은 축(어디로 붙는가)을 같은 형태로 말한다. 세 성분은 **적혀
+/// 있는 것만** 넣는다 — 없는 값을 ssh 기본값(`22` 등)으로 채우면 파일에 없는 것을
+/// 파일이 말한 것처럼 보이게 한다.
 ///
 /// `Host *` 의 전역 설정이나 `Match` 블록이 실제 접속 시 이 값을 덮어쓸 수 있어
 /// 정확하지 않다. **표시 전용**이며 가져오기에는 alias 만 쓴다.
 fn local_target_hint(h: &SshConfigHost) -> String {
-    match (&h.hostname, h.port) {
-        (Some(host), Some(port)) => format!("{host}:{port}"),
-        (Some(host), None) => host.clone(),
-        // HostName 이 없으면 ssh 가 alias 를 호스트 이름으로 쓴다 — 포트만 보여준다.
-        (None, Some(port)) => format!("{}:{port}", h.alias),
-        (None, None) => "—".into(),
+    // HostName 이 없으면 ssh 가 alias 를 호스트 이름으로 쓴다.
+    let host = match (&h.hostname, &h.user, h.port) {
+        (None, None, None) => return "—".into(),
+        (Some(name), ..) => name.as_str(),
+        (None, ..) => h.alias.as_str(),
+    };
+    let mut out = String::new();
+    if let Some(u) = &h.user {
+        out.push_str(u);
+        out.push('@');
     }
+    out.push_str(host);
+    if let Some(port) = h.port {
+        out.push(':');
+        out.push_str(&port.to_string());
+    }
+    out
 }
 
 /// 가져오기 클릭 시 여는 폼의 프리필. **alias 만 `host` 에 넣고 user/port 는 비운다** —
@@ -256,14 +272,6 @@ fn profile_empty_key(has_non_attach: bool, any_visible: bool) -> Option<&'static
         (true, false) => Some("remote_tool.profile_filter_empty"),
         (true, true) => None,
     }
-}
-
-/// 로컬 섹션에서 나오는 액션.
-enum LocalRowAction {
-    /// 이 alias 를 프로필 폼 프리필로 연다.
-    Import(String),
-    /// ssh config 를 다시 읽는다(파일이 바뀌었을 때).
-    Reload,
 }
 
 fn read_ui(ctx: &egui::Context) -> UiState {
@@ -709,7 +717,9 @@ fn draw_profile_list(
     // 클로저 밖까지 살아 있을 필요가 없다.
     let local = st.local.get_or_insert_with(load_local_ssh);
     let mut action: Option<(usize, ProfileRowAction)> = None;
-    let mut local_action: Option<LocalRowAction> = None;
+    // 로컬 섹션의 액션은 "이 alias 를 프로필 폼 프리필로 연다" 하나뿐이다 — 확정 시안의
+    // 섹션 헤더에 새로고침 아이콘이 없어서, 다시 읽기는 popup 을 다시 여는 것으로 한다.
+    let mut local_import: Option<String> = None;
     // 두 섹션이 한 스크롤을 공유한다 — 로컬 섹션이 프로필 목록 **아래**에 이어지는
     // 목업 배치라, 스크롤을 나누면 프로필이 길 때 로컬 섹션에 닿을 수 없다.
     scroll_list_with_fade(ui, th, |ui| {
@@ -740,20 +750,13 @@ fn draw_profile_list(
                 }
             }
         }
-        local_action = draw_local_ssh_section(ui, th, local, profiles);
+        local_import = draw_local_ssh_section(ui, th, local, profiles);
     });
-    match local_action {
-        Some(LocalRowAction::Reload) => {
-            st.local = Some(load_local_ssh());
-            return;
-        }
-        Some(LocalRowAction::Import(alias)) => {
-            st.pform = import_prefill(&alias);
-            st.perr = None;
-            st.profile_view = Sub::Form;
-            return;
-        }
-        None => {}
+    if let Some(alias) = local_import {
+        st.pform = import_prefill(&alias);
+        st.perr = None;
+        st.profile_view = Sub::Form;
+        return;
     }
     if let Some((i, a)) = action {
         let p = &profiles.profiles[i];
@@ -775,7 +778,7 @@ fn draw_profile_list(
     }
 }
 
-/// 로컬 ssh config 섹션 — tasty 프로필 목록 **아래**에 구분선으로 갈라 붙인다.
+/// 로컬 ssh config 섹션 — tasty 프로필 목록 **아래**에 한 tier 내려 붙인다.
 ///
 /// 여기 나열되는 것은 tasty 가 소유한 레코드가 아니라 사용자의 `~/.ssh/config` 다.
 /// 그래서 **읽기 전용**이고 행 액션은 가져오기 하나뿐이다 — 편집/삭제는 사용자 자산을
@@ -793,46 +796,31 @@ fn draw_local_ssh_section(
     th: &Theme,
     local: &LocalSshCache,
     profiles: &RemoteProfiles,
-) -> Option<LocalRowAction> {
-    let hints: Vec<String> = local.hosts.iter().map(local_target_hint).collect();
-    let captions: Vec<Option<String>> = local
-        .hosts
-        .iter()
-        .map(|h| {
-            imported_as(profiles, &h.alias)
-                .map(|name| t_fmt("remote_tool.local_ssh_imported", name))
-        })
-        .collect();
+) -> Option<String> {
+    let targets: Vec<String> = local.hosts.iter().map(local_target_hint).collect();
     let rows: Vec<LocalSshHost<'_>> = local
         .hosts
         .iter()
         .enumerate()
         .map(|(i, h)| LocalSshHost {
             alias: &h.alias,
-            hint: &hints[i],
-            imported_caption: captions[i].as_deref(),
+            target: &targets[i],
+            in_profiles: imported_as(profiles, &h.alias).is_some(),
         })
         .collect();
-    let action = ssh_section_view(
+    ssh_section_view(
         ui,
         th,
         &LocalSshSectionData {
             heading: t("remote_tool.local_ssh_heading"),
             path: &local.path,
-            refresh_tooltip: t("remote_tool.local_ssh_refresh"),
-            import_tooltip: t("remote_tool.local_ssh_import"),
+            in_profiles_tag: t("remote_tool.local_ssh_in_profiles"),
+            add_label: t("remote_tool.local_ssh_add"),
             empty_message: t(local_ssh_empty_key(local)),
             hosts: &rows,
         },
-    );
-    match action {
-        Some(LocalSshAction::Reload) => Some(LocalRowAction::Reload),
-        Some(LocalSshAction::Import(i)) => local
-            .hosts
-            .get(i)
-            .map(|h| LocalRowAction::Import(h.alias.clone())),
-        None => None,
-    }
+    )
+    .and_then(|i| local.hosts.get(i).map(|h| h.alias.clone()))
 }
 
 /// 프로토콜 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
@@ -2976,17 +2964,29 @@ mod tests {
 
     #[test]
     fn local_target_hint_falls_back_to_alias_and_dash() {
+        // 세 성분은 적혀 있는 것만 들어간다 — 없는 값을 ssh 기본값으로 채우지 않는다.
+        let hint = |hostname: Option<&str>, user: Option<&str>, port: Option<u16>| {
+            local_target_hint(&SshConfigHost {
+                alias: "gx10".into(),
+                source: std::path::PathBuf::from("/home/u/.ssh/config"),
+                hostname: hostname.map(str::to_string),
+                user: user.map(str::to_string),
+                port,
+            })
+        };
         assert_eq!(
-            local_target_hint(&host("gx10", Some("10.0.0.5"), Some(2200))),
-            "10.0.0.5:2200"
+            hint(Some("10.0.0.5"), Some("maya"), Some(2200)),
+            "maya@10.0.0.5:2200"
         );
-        assert_eq!(
-            local_target_hint(&host("gx10", Some("10.0.0.5"), None)),
-            "10.0.0.5"
-        );
+        assert_eq!(hint(Some("10.0.0.5"), None, Some(2200)), "10.0.0.5:2200");
+        assert_eq!(hint(Some("10.0.0.5"), Some("maya"), None), "maya@10.0.0.5");
+        assert_eq!(hint(Some("10.0.0.5"), None, None), "10.0.0.5");
         // HostName 이 없으면 ssh 가 alias 를 호스트로 쓴다.
-        assert_eq!(local_target_hint(&host("gx10", None, Some(22))), "gx10:22");
-        assert_eq!(local_target_hint(&host("gx10", None, None)), "—");
+        assert_eq!(hint(None, Some("maya"), Some(22)), "maya@gx10:22");
+        assert_eq!(hint(None, None, Some(22)), "gx10:22");
+        assert_eq!(hint(None, Some("maya"), None), "maya@gx10");
+        // 셋 다 없으면 보여줄 것이 없다 — alias 는 이미 윗줄에 있다.
+        assert_eq!(hint(None, None, None), "—");
     }
 
     #[test]
@@ -3036,10 +3036,12 @@ mod tests {
             texts.iter().any(|s| s.contains("gx10")),
             "프로필 0 건에서 early return 해 로컬 섹션이 사라졌다: {texts:?}"
         );
+        // 헤더는 대문자로 그려진다(canonical `textTransform: uppercase`) — 번역 값
+        // 자체를 대문자로 두지 않는 것은 ko/ja 가 대소문자가 없는 문자를 섞기 때문이다.
         assert!(
             texts
                 .iter()
-                .any(|s| s == t("remote_tool.local_ssh_heading")),
+                .any(|s| *s == t("remote_tool.local_ssh_heading").to_uppercase()),
             "섹션 헤더가 없다: {texts:?}"
         );
     }
