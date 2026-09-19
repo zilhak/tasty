@@ -28,9 +28,7 @@ fn fake_child() {
         assert_eq!(release, [b'!']);
     }
     if mode == "early_exit" {
-        for i in 0..400 {
-            tracing::info!("noise-{i}");
-        }
+        emit_noise(0);
         std::process::exit(23);
     }
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -42,10 +40,25 @@ fn fake_child() {
     serve_requests(&listener, &mode);
 }
 
+/// 링이 앞을 버리는지 보려고 한 번에 400 줄을 쏟는다. **라벨에 버스트 번호가 붙는
+/// 이유가 판정에 있다** — shell 준비를 기다리는 쪽은 폴링이라 요청이 여러 번 오고,
+/// 요청마다 이 루프가 한 번씩 돈다. 번호가 없으면 매 버스트가 같은 라벨을 쓰고,
+/// 그러면 "맨 앞이 잘렸다" 를 재려는 좌변(`noise-0` 이 꼬리에 없다)이 **다음 버스트의
+/// 첫 줄**에도 걸린다. 마지막 버스트는 자식이 도중에 죽어 잘리므로 꼬리 30 줄이
+/// 경계를 걸치는 일이 실제로 일어난다 — 실측 2026-09-20: 부하를 안 준 단독 실행
+/// 20 회 중 2 회가 그 형태로 깨졌고, 라벨에 번호를 붙인 뒤 같은 20 회가 전부 통과했다.
+/// 번호를 붙이면 그 좌변이 버스트 0 의 첫 줄만 가리켜 주장과 같아진다.
+fn emit_noise(burst: usize) {
+    for i in 0..400 {
+        tracing::info!("noise-{burst}-{i}");
+    }
+}
+
 /// 요청을 한 줄씩 받아 모드가 시키는 대로 응답한다. 첫 요청만 지연·오형식 갈래를
 /// 타므로 그 구분을 `first` 하나로 들고 간다.
 fn serve_requests(listener: &TcpListener, mode: &str) {
     let mut first = true;
+    let mut burst = 0;
     for incoming in listener.incoming() {
         let mut stream = incoming.unwrap();
         stream
@@ -57,9 +70,8 @@ fn serve_requests(listener: &TcpListener, mode: &str) {
         if first && matches!(mode, "response_delay" | "response_failure") {
             std::thread::sleep(Duration::from_millis(200));
         }
-        for i in 0..400 {
-            tracing::info!("noise-{i}");
-        }
+        emit_noise(burst);
+        burst += 1;
         if first && mode == "response_failure" {
             writeln!(stream, "invalid-json").unwrap();
             first = false;
@@ -251,11 +263,11 @@ fn assert_failure_snapshot_is_retained(text: &str, mode: &str) {
     assert_eq!(field(line, "pending"), pending);
     assert_ne!(field(line, "spawn_returned_ms"), "pending");
     assert!(
-        mode != "early_exit" || text.contains("noise-399"),
+        mode != "early_exit" || text.contains("noise-0-399"),
         "stderr tail missing: {text}"
     );
     assert!(
-        !text.contains("noise-0\n"),
+        !text.contains("noise-0-0\n"),
         "expected early stderr to be evicted"
     );
 }
