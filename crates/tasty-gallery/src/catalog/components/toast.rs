@@ -120,8 +120,8 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
                 egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
 
             let bg = th.surface_raised().gamma_multiply(alpha);
-            // divergence: toast 보더 코드=surface1 이지만 toast_border()=surface0 → 값-보존 border_strong().
-            let border = th.border_strong().gamma_multiply(alpha);
+            // toast 보더 — canonical `toast-border`.
+            let border = th.toast_border().gamma_multiply(alpha);
             let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
 
             toast_card::draw_card(

@@ -155,8 +155,8 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
                 egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
 
             let bg = th.surface_raised().gamma_multiply(alpha);
-            // divergence: toast_border()=surface0, 코드값(surface1) 보존
-            let border = th.border_strong().gamma_multiply(alpha);
+            // toast 보더 — canonical `toast-border`.
+            let border = th.toast_border().gamma_multiply(alpha);
             let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
 
             painter.rect_filled(rect, th.corner_radius.value(), bg);
