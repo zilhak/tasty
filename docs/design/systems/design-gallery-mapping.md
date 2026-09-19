@@ -666,7 +666,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 
 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
 창 자체 toast) + `gallery/overlays-windows.jsx` Section `kbimportexport` ↔ 갤러리
-`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 4 종 — 하위 모듈은 본체와 같은 이름 `entry` · `diff_table` · `migrate` · `notices` · `paint`, 갤러리만 첫 시안이 비워 둔 값 여섯을 모은 `open_values`). 갤러리는
+`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 5 종 — 하위 모듈은 본체와 같은 이름 `entry` · `diff_table` · `migrate` · `notices` · `paint`, 갤러리만 첫 시안이 비워 둔 값 여섯을 모은 `open_values` 와 그 회차가 남긴 나머지를 드는 `remaining_values`). 갤러리는
 본체 미의존이라 같은 위젯·토큰으로 미러한다. 본체는 `src/view/settings/ui/keybindings_tab/import_export.rs`
 와 그 하위 모듈(`import_export/` 의 `entry.rs` · `diff_table.rs` · `migrate.rs` · `notices.rs` · `paint.rs`, 계산은 `labels.rs` · `view_model.rs` · `model.rs` · `bundle_notices.rs`.
 `action_row` · `diff_table` · `group_header` · `action_cell` · `migrate_card` · `migrate_row` ·
@@ -686,6 +686,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 | `IeNotices` | `notices` · `dropped_notice` · `parse_failure` | 버린 plugin = helpCircle muted 정보 줄(경고 아님) · 마이그레이션 불필요 = 안내문 한 문장 · 파싱 실패 = 알림 블록(danger) + "Choose another file" |
 | `IeBlockG` | `notice_block` | **알림 블록 레시피 하나** — tone 12% 채움 · 35% 테두리 · 헤더(glyph 16 · 제목 13 tone · 우측 mono caption 개수) · 본문 12 text-secondary · 액션 행(gap space-sm). 파싱 실패 · 내보내기 실패(danger) · 번들 경고(warning)가 모두 이것이다 |
 | `IeExportFailG` · `IeBundleNoticesG` · `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG` | `open_values`(Spec 4) · `export_failure_row` · `bundle_notices` · `notice_line` | 내보내기 실패 = Export 행 안 danger 블록(Try again secondary · Choose another location… ghost, 행 버튼 비활성) · 번들 경고 = warning 블록 하나(`{n} notices`, `·` 글머리 줄, 3 줄 뒤 `Show {n} more`) · 줄 번호 없는 파싱 실패 · 충돌 개수 카드 · placeholder/선택된 modifier Select. 본체는 `notices::{export_failure, bundle_notices}` · `bundle_notices.rs`(순서·접기) |
+| `IeExportFailG reason="other"` | `remaining_values`(Spec 5) · `unknown_export_failure` · `os_reason_line` | 사유를 모르는 내보내기 실패 — 가운데 구절은 고정 집합의 catch-all("the write didn't finish.") 이고 OS 가 낸 문장은 **문장 안에 안 들어간다**: 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip). 본체는 `notices::{export_failure, os_reason_line}` · `import_export::ExportFailReason` |
 
 **전사 노트**:
 - `letter-spacing-caps` 는 mono `font-size-micro` uppercase, `fontWeight: 600` 은 색 강조로

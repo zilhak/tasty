@@ -117,6 +117,24 @@ fn failure_body(ui: &mut egui::Ui, th: &Theme, text: &str) {
     });
 }
 
+/// OS 가 낸 문장 한 줄 — 본문 아래 `space-xs`, mono caption, muted, **한 줄** 말줄임.
+///
+/// 문장 안에 끼우지 않는 이유: 그 문장은 세 언어의 문법을 깨고, 사용자가 손댈 수 있는 두
+/// 가지(어느 경로인가 · 아무것도 안 썼다)를 묻는다. 전문은 tooltip 으로만 본다.
+fn os_reason_line(ui: &mut egui::Ui, th: &Theme, message: &str) {
+    ui.add_space(th.spacing_xs.value());
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(message)
+                .size(th.font_size_caption.value())
+                .family(egui::FontFamily::Monospace)
+                .color(th.text_muted()),
+        )
+        .truncate(),
+    )
+    .on_hover_text(message);
+}
+
 /// 파싱 실패 — 보던 대상에 대한 사실이라 toast/popup 이 아니라 detail 영역 안에 인라인.
 /// "다른 파일 고르기" 가 눌리면 true.
 ///
@@ -163,13 +181,16 @@ pub(super) fn export_failure(
 ) -> Option<ExportFailureAction> {
     let reason = match &failure.reason {
         ExportFailReason::ReadOnly => t("settings.keybindings.ie_export_failure_read_only"),
-        ExportFailReason::Other(message) => message.as_str(),
+        ExportFailReason::PermissionDenied => t("settings.keybindings.ie_export_failure_denied"),
+        ExportFailReason::DiskFull => t("settings.keybindings.ie_export_failure_disk_full"),
+        ExportFailReason::Unknown(_) => t("settings.keybindings.ie_export_failure_unknown"),
     };
     let body = t_fmt2(
         "settings.keybindings.ie_export_failure_body",
         &failure.path.display().to_string(),
         reason,
     );
+    let os_message = failure.reason.os_message();
     notice_block(
         ui,
         th,
@@ -177,7 +198,12 @@ pub(super) fn export_failure(
         icons::ALERT_CIRCLE,
         t("settings.keybindings.ie_export_failure_title"),
         None,
-        |ui| failure_body(ui, th, &body),
+        |ui| {
+            failure_body(ui, th, &body);
+            if let Some(message) = os_message {
+                os_reason_line(ui, th, message);
+            }
+        },
         &[
             NoticeAction {
                 label: t("settings.keybindings.ie_export_retry"),

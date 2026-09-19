@@ -164,20 +164,23 @@ fn classify_io(err: io::Error, path: &Path) -> DbInitError {
         io::ErrorKind::PermissionDenied => DbInitError::PermissionDenied(path.to_path_buf()),
         // io::ErrorKind::StorageFull은 nightly. raw OS 코드로 우회 가능하지만
         // 실용성이 낮으므로 메시지에 의존한다.
-        _ if err.raw_os_error() == Some(libc_enospc()) => DbInitError::DiskFull,
+        _ if err.raw_os_error() == Some(disk_full_os_error()) => DbInitError::DiskFull,
         _ => DbInitError::Other(format!("{path:?}: {err}", path = path.display())),
     }
 }
 
+/// "볼륨이 찼다" 를 OS 가 내는 raw 코드. `io::ErrorKind::StorageFull` 이 nightly 인 동안
+/// 이것이 그 판정의 유일한 자리다 — 값을 두 벌 두지 않으려고 db 밖에서도 이것을 부른다
+/// (`keybindings_tab::import_export::ExportFailReason::of_io`).
 #[cfg(unix)]
 #[cfg(any(feature = "gui", test))]
-fn libc_enospc() -> i32 {
+pub(crate) fn disk_full_os_error() -> i32 {
     28 // ENOSPC
 }
 
 #[cfg(windows)]
 #[cfg(any(feature = "gui", test))]
-fn libc_enospc() -> i32 {
+pub(crate) fn disk_full_os_error() -> i32 {
     112 // ERROR_DISK_FULL
 }
 

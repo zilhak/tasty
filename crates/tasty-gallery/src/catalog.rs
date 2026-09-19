@@ -1279,6 +1279,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::kb_import_export::draw_open_values,
                         ),
+                        spec(
+                            "kbimportexport-remaining-values",
+                            "Open values — an export failure Tasty cannot name",
+                            Some(
+                                "catch-all clause \"the write didn't finish.\" · OS text on its own muted mono line, ellipsised, full text in the tooltip",
+                            ),
+                            components::kb_import_export::draw_remaining_values,
+                        ),
                     ],
                 ),
                 section(

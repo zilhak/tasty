@@ -136,21 +136,42 @@ struct ExportFailure {
     reason: ExportFailReason,
 }
 
-/// 내보내기 실패의 이유 — 블록 본문 가운데 구절.
+/// 내보내기 실패의 이유 — 블록 본문 **가운데 구절**을 고른다. 앞뒤 문장(경로 · "Nothing was
+/// written.")은 갈래와 무관하게 같다.
+///
+/// 갈래가 고정 집합인 이유: 가운데 구절은 세 언어에서 같은 문장으로 읽혀야 하므로 OS 가 낸
+/// 문장이 그 자리에 올 수 없다. 알아볼 수 있는 셋만 이름을 갖고 나머지는 catch-all 하나로
+/// 접힌다 — 그 갈래에서만 OS 문장이 **본문 아래 제 줄**로 따라간다.
 enum ExportFailReason {
-    /// 권한 · 읽기 전용 파일시스템 — 디자인 문구가 있는 갈래.
+    /// 파일시스템이 읽기 전용이다.
     ReadOnly,
-    /// 그 밖의 실패 — 디자인 문구가 없어 OS 가 낸 문장을 그대로 싣는다.
-    Other(String),
+    /// 쓸 권한이 없다.
+    PermissionDenied,
+    /// 볼륨이 찼다.
+    DiskFull,
+    /// 알아볼 수 없는 실패 — 구절은 고정이고, 담은 문장은 아래 줄로 나간다.
+    Unknown(String),
 }
 
 impl ExportFailReason {
     fn of_io(e: &std::io::Error) -> Self {
         match e.kind() {
-            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem => {
-                ExportFailReason::ReadOnly
+            std::io::ErrorKind::ReadOnlyFilesystem => ExportFailReason::ReadOnly,
+            std::io::ErrorKind::PermissionDenied => ExportFailReason::PermissionDenied,
+            // `ErrorKind::StorageFull` 은 아직 nightly 다. `crate::db::classify_io` 와 같은
+            // 우회로 raw OS 코드를 본다 — 상수는 그쪽 하나만 둔다.
+            _ if e.raw_os_error() == Some(crate::db::disk_full_os_error()) => {
+                ExportFailReason::DiskFull
             }
-            _ => ExportFailReason::Other(e.to_string()),
+            _ => ExportFailReason::Unknown(e.to_string()),
+        }
+    }
+
+    /// 본문 아래 제 줄에 실을 OS 문장 — catch-all 갈래에만 있다.
+    fn os_message(&self) -> Option<&str> {
+        match self {
+            ExportFailReason::Unknown(message) => Some(message.as_str()),
+            _ => None,
         }
     }
 }
@@ -224,7 +245,7 @@ impl ImportExportState {
         let written = encode(keybindings, &overrides)
             .map_err(|e| {
                 tracing::error!("keybinding export: encode failed: {e}");
-                ExportFailReason::Other(e.to_string())
+                ExportFailReason::Unknown(e.to_string())
             })
             .and_then(|text| {
                 std::fs::write(path, text).map_err(|e| {
@@ -691,8 +712,10 @@ mod tests {
         );
     }
 
-    /// 쓰지 못하면 toast 가 아니라 실패 블록이 선다 — 읽기 전용이면 디자인 문구 갈래다. 같은
-    /// 경로가 다시 쓰일 수 있게 되면 성공이 블록을 걷는다(재시도가 닫는 경로).
+    /// 쓰지 못하면 toast 가 아니라 실패 블록이 선다. 디렉토리에서 쓰기 비트를 떼면 OS 는
+    /// `EACCES` 를 낸다 — 파일시스템이 읽기 전용인 것과 **다른 갈래**이고, 디자인이 그 둘에
+    /// 서로 다른 구절을 준다. 같은 경로가 다시 쓰일 수 있게 되면 성공이 블록을 걷는다
+    /// (재시도가 닫는 경로).
     #[cfg(unix)]
     #[test]
     fn a_failed_export_raises_the_inline_block_and_a_later_success_clears_it() {
@@ -711,7 +734,11 @@ mod tests {
         assert!(state.toast.is_none(), "실패인데 toast 가 섰다");
         let failure = state.export_failure.as_ref().expect("실패 블록이 없다");
         assert_eq!(failure.path, path);
-        assert!(matches!(failure.reason, ExportFailReason::ReadOnly));
+        assert!(matches!(failure.reason, ExportFailReason::PermissionDenied));
+        assert!(
+            failure.reason.os_message().is_none(),
+            "알아본 갈래인데 OS 문장 줄이 딸려 나온다"
+        );
 
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
             .expect("쓰기 가능으로");
@@ -721,5 +748,35 @@ mod tests {
             "성공했는데 실패 블록이 남았다"
         );
         assert!(state.take_toast().is_some(), "성공 toast 가 없다");
+    }
+
+    /// 가운데 구절은 **고정 집합**이다 — 알아본 셋은 저마다 갈래를 갖고 OS 문장을 달지
+    /// 않으며, 나머지 하나만 catch-all 로 접히면서 그 문장을 아래 줄로 들고 간다.
+    #[test]
+    fn each_recognised_cause_takes_its_own_clause_and_only_the_catch_all_carries_the_os_text() {
+        use std::io::{Error, ErrorKind};
+
+        let read_only = ExportFailReason::of_io(&Error::from(ErrorKind::ReadOnlyFilesystem));
+        assert!(matches!(read_only, ExportFailReason::ReadOnly));
+        assert!(read_only.os_message().is_none());
+
+        let denied = ExportFailReason::of_io(&Error::from(ErrorKind::PermissionDenied));
+        assert!(matches!(denied, ExportFailReason::PermissionDenied));
+        assert!(denied.os_message().is_none());
+
+        let full =
+            ExportFailReason::of_io(&Error::from_raw_os_error(crate::db::disk_full_os_error()));
+        assert!(
+            matches!(full, ExportFailReason::DiskFull),
+            "볼륨이 찬 것을 알아보지 못했다 — `ErrorKind::StorageFull` 이 nightly 라 raw 코드로 본다"
+        );
+        assert!(full.os_message().is_none());
+
+        let unknown = ExportFailReason::of_io(&Error::from(ErrorKind::InvalidData));
+        assert!(matches!(unknown, ExportFailReason::Unknown(_)));
+        assert!(
+            unknown.os_message().is_some(),
+            "알아보지 못한 갈래인데 OS 문장이 사라졌다 — 그러면 사용자가 볼 단서가 없다"
+        );
     }
 }

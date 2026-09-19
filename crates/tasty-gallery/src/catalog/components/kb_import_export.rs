@@ -28,7 +28,7 @@
 //!
 //! 모듈 경계는 본체 `keybindings_tab/import_export/` 와 **같은 이름**으로 가른다 — 화면 단위 그리기는
 //! `entry`(Spec 1) · `diff_table`(Spec 2) · `migrate`(Spec 3) · `notices` · `open_values`(Spec 4 —
-//! 첫 시안이 비워 둔 값 여섯), 공용 칠하기 헬퍼는
+//! 첫 시안이 비워 둔 값 여섯) · `remaining_values`(Spec 5 — 그 회차가 남긴 나머지), 공용 칠하기 헬퍼는
 //! `paint`. 이 파일은 데모 데이터 · 상호작용 상태 · 두 Spec 이 함께 쓰는 `detail_frame` 과 치수
 //! 상수를 든다(치수 상수는 본체 짝과의 값 일치 가드가 이 경로에서 읽는다).
 
@@ -38,6 +38,7 @@ mod migrate;
 mod notices;
 mod open_values;
 mod paint;
+mod remaining_values;
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -50,6 +51,7 @@ pub use diff_table::draw_preview;
 pub use entry::draw_entry;
 pub use migrate::draw_migration;
 pub use open_values::draw_open_values;
+pub use remaining_values::draw_remaining_values;
 
 /// specimen 폭 — 본체 설정 창 콘텐츠 컬럼(1100 창 − L2 200 − 좌우 패딩 16×2). jsx gallery 의
 /// `maxWidth: 620` 에서는 ui kit 의 288 · 120 라벨 열이 들어가지 않아 본체 폭으로 둔다.
