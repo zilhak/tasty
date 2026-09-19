@@ -25,7 +25,7 @@ VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색�
 
 ### 탐색 / 실행
 
-`↑/↓` 이동, `Enter` 실행, `Esc` 닫기, 클릭으로도 실행. 행 우측에 첫 번째 바인딩을 회색으로 표시(plugin 명령은 override 해석에 `PluginManager` 접근이 필요해 — 팔레트 draw 함수는 접근 불가 — 키캡을 표시하지 않는다). 아이콘은 호스트 6개 명령만 전용, 나머지(동적 호스트 명령 + plugin 명령)는 `COMMAND` fallback.
+`↑/↓` 이동, `Enter` 실행, `Esc` 닫기, 클릭으로도 실행. 행 우측에 첫 번째 바인딩을 키캡으로 표시(plugin 명령은 override 해석에 `PluginManager` 접근이 필요해 — 팔레트 draw 함수는 접근 불가 — 키캡을 표시하지 않는다). 아이콘은 호스트 6개 명령만 전용, 나머지(동적 호스트 명령 + plugin 명령)는 `COMMAND` fallback.
 
 ### 실행 경로
 
