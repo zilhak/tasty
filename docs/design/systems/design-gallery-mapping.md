@@ -290,9 +290,16 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
+| `overlays/command_palette.jsx` (480px) | `src/adapters/ui/popup/command_palette.rs::draw_command_palette_view` | `command_palette` (Overlays "Command palette") |
 | `gallery/overlays-dialogs.jsx` §`filehandler` (420px · 프레임은 `gallery/overlays-shared.jsx` `FileHandlerFrame`) | `src/adapters/ui/popup/file_handler_picker.rs::draw_file_handler_picker_view` | `file_handler_picker` (Overlays "File handler picker", `components/file_handler_picker.rs::draw`) |
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
+
+**`command_palette` 의 단축키만은 복제가 아니다.** 프레임·행·footer 는 위 표대로 mock 복제지만,
+행 우측의 키캡은 본체와 갤러리가 **같은 함수**(`tasty_ui_widgets::kbd_parts_at`)를 부른다 —
+본체는 `draw_keycaps` 를 거쳐, 갤러리는 `menu_item_kbd` 를 거쳐 닿는다. 그래서 키캡 치수·색은
+수동 동기화 대상이 아니다. 단축키를 **나뉜 토큰**(`["Ctrl", "T"]`)으로 넘기는 것도 양쪽이 같다 —
+`ctrl++` 같은 조합에서 `+` 가 구분자인지 키인지 갈리지 않게 문자열을 쪼개지 않는다.
 
 **`file_handler_picker` 의 세 좌표는 한 형상이다.** 폭 420px · headless 헤더(경로 한 번) · 제목 줄 형식 Tag ·
 후보/Recent 단일 목록 · 2px accent 좌측 바 · `icon · name · origin` 행 · plugin mauve · fallback 안내 띠 ·

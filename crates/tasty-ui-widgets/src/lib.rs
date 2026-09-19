@@ -75,7 +75,7 @@ pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
 pub use input::Input;
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
-pub use menu_item::{MenuItemVariant, menu_item, menu_separator};
+pub use menu_item::{MenuItemVariant, menu_item, menu_item_kbd, menu_separator};
 pub use multi_select::{
     MultiSelectAllToggle, MultiSelectLabels, multi_select, multi_select_popup_id,
     multi_select_summary, popup_chrome_width,

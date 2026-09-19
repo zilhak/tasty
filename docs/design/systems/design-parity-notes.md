@@ -429,26 +429,27 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 
 ---
 
-## command_palette — 키캡은 본체 custom draw, 갤러리는 menu_item kit-widget (미러 비대칭)
+## command_palette — 키캡은 본체·갤러리가 **같은 `Kbd` 함수**를 부른다
 
-- **증상**: 명령 팔레트 단축키를 디자인 Kbd(키별 keycap)로 정렬하는 작업에서, 본체와 갤러리
-  미러의 구현 아키텍처가 다르다.
-- **사실(검증, 2026-06-25)**:
-  - 본체 `src/adapters/ui/popup/command_palette.rs` 는 `draw_keycaps()` 로 **좌표 painting** 해
-    키별 keycap + muted `+` 구분자를 그린다(우측 정렬). casing 은 `KeybindingSettings::
-    format_display_parts()`(`crates/tasty-settings/src/keybindings/crud.rs`, `ctrl++` 모호성 안전 토큰화) 결과를 `shortcut_keys:
-    Vec<String>` 로 받는다. 빈 쿼리 무강조는 `row_highlighted(query_empty,…)`. 색은
-    surface_raised/border_strong/text_secondary, radius 는 `corner_radius_sm`. 모두 단위 테스트 있음.
-  - 갤러리 `crates/tasty-gallery/src/catalog/components/command_palette.rs` 는 공유
-    `tasty_ui_widgets::menu_item` 위젯에 **단일 문자열 shortcut**(`"⌘T"`)을 넘기는 kit-widget
-    표현(WIDTH=480)이다 — 본체의 custom draw_keycaps 를 줄단위 복제하지 않는다.
-- **처방/한계**: 본체 키캡에 디자인 Kbd 의 하단 2px edge(`--tasty-kbd-shadow-depth`=size-2)를
-  `line_segment` 로 덧그려 깊이감을 맞춘다(chip.rs `kbd()` 와 동일 근사). 갤러리 미러에 키별
-  keycap 을 넣으려면 **공유 `menu_item` 위젯**이 keycap 벡터를 지원하도록 바꿔야 해(모든
-  menu_item 사용처 영향) 단일 컴포넌트 작업 범위를 넘는다 — 별도 결정 필요.
-- **근거**: design (3) `components/core/Kbd.jsx`(키별 `<kbd>`, `border-bottom-width: kbd-shadow-depth`),
-  `command_palette.jsx:50`(`active = n===0 && q!==""`). 디자인 Kbd 토큰 치수는 size-16/micro(10)
-  인데 본체 draw_keycaps 는 18/caption(11) 로 그려 미세 치수 차가 남아 있다(재조정은 별도 판단).
+- **증상(해결됨)**: 본체는 좌표 painting 으로 키별 키캡을 그리고, 갤러리 미러는 공유
+  `menu_item` 에 단일 문자열(`"⌘T"`)을 넘겨 한 덩이 mono 텍스트로 그렸다 — specimen 이 보여야
+  할 컴포넌트가 화면에 없었다. 게다가 본체 키캡은 한 변 18 · h-padding 5 · 키 사이 4 · 글자
+  caption(11) 로 `kbd-size`(16) · `kbd-padding-x`(4) · `kbd-gap`(3) · `kbd-font-size`(10) 보다
+  넷 다 컸다.
+- **왜 오래 남았나 — 틀린 전제**: "갤러리에 키별 키캡을 넣으려면 공유 `menu_item` 이 키 벡터를
+  지원해야 하고 그러면 **모든 사용처에 영향**이 간다" 고 적혀 있었다. 인자 타입을 바꿀 필요가
+  애초에 없었다 — 디자인에서 그 자리는 한 종류가 아니다(메뉴는 mono micro 텍스트, 팔레트는
+  `Kbd`). 표현을 둘로 갈라 문을 따로 두면(`menu_item` / `menu_item_kbd`) 텍스트 쪽 호출자는
+  그대로다.
+- **처방**: 그리는 일은 `tasty-ui-widgets` 의 `kbd_parts_at` 하나가 한다 — `kbd_parts` 의 좌표
+  판이고 같은 토큰·같은 폭 식(`kbd_item_widths`)을 쓴다. 본체 `draw_keycaps` 는 키 문자열을
+  `KbdKey` 로 감싸 넘기기만 하고, 갤러리는 `menu_item_kbd` 로 같은 함수에 닿는다.
+- **치수**: 2026-09-17 디자인 회신이 위 네 값 차이를 **변종이 아니라 드리프트**로 판정하고
+  `Kbd` 로 수렴시켰다(신규 토큰 없음, 28px 행에서 높이·정렬 불변). 그래서 본체가 값을 맞춘 것이
+  아니라 값을 **들고 있기를 그만뒀다**.
+- **근거**: 2026-09-20 변이. `kbd_parts_at` 의 `+` 구분자 글자만 바꿔 갤러리를 다시 빌드·캡처하면
+  팔레트 specimen 에서 **1,953 px** 이 달라지고 그 bbox 가 단축키 있는 세 행의 구분자 열과
+  겹친다 — 갤러리가 이 함수를 부른다는 뜻이다.
 
 ---
 
