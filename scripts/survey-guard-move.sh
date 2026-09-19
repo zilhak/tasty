@@ -165,7 +165,7 @@ while IFS= read -r hf; do
                 }
             }
         }' "$hf" || true)"
-    [ -n "$NEAR" ] && OTHERS="$OTHERS[$hf]
+    [ -n "$NEAR" ] && OTHERS="${OTHERS}[$hf]
 $NEAR
 "
 done <<< "$(grep -rln -- "$BASENAME" "${EXCL[@]}" . 2>/dev/null || true)"
