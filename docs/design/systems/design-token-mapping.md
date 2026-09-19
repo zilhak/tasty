@@ -23,7 +23,10 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | `text-primary` | `text` | `#cdd6f4` | |
 | `text-secondary` | `subtext1` | `#bac2de` | |
 | `text-muted` | `subtext0` | `#a6adc8` | |
-| `text-disabled` | `overlay1` | `#7f849c` | |
+| `text-disabled` | `overlay1` | `#7f849c` | **disabled 전용 잉크.** 모든 disabled 라벨·글리프가 이 role 을 읽는다 |
+| `glyph-dim` | `overlay0` | `#6c7086` | 물러나야 하는 chrome glyph(사이드바 dim chevron·dim 아이콘·상태바 글리프). `text-placeholder` 와 값만 같고 role 이 다르다 — **disabled 용이 아니다** |
+| `border-frame` | `surface2` | `#585b70` | 틀의 선(pane divider · 비활성 surface 보더 · popup 프레임 보더). `surface-active` 와 값만 같다 |
+| `accent-decorative` | `peach` | `#fab387` | 헤더 장식 accent(Plugins 창 헤더 glyph). `accent-attention`(주의 환기)과 값만 같다 |
 | `accent-primary` | `accent_primary()` | `#89b4fa` | primary 버튼·포커스·활성 탭 언더라인 |
 | `accent-danger` | `accent_danger()` | — | |
 | `os-macos-close` | `accent_macos_close()` | `#ec6a5e` | macOS 신호등 close (테마 불변 OS 리터럴, const `OS_MACOS_CLOSE`) |
@@ -35,6 +38,8 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | 디자인 토큰 | tasty Theme | 값 | 비고 |
 |---|---|---|---|
 | `opacity-disabled` | `opacity_disabled()` | `0.5` | disabled 컨트롤 공통 디밍. const `OPACITY_DISABLED`. 모든 위젯이 disabled 시 이 값으로 `gamma_multiply` |
+| `tint-fill-alpha` | `tint_fill_alpha()` | `0.12` | accent 로 옅게 깐 채움. const `TINT_FILL_ALPHA` |
+| `tint-border-alpha` | `tint_border_alpha()` | `0.36` | 같은 accent 의 테두리. const `TINT_BORDER_ALPHA`. **짝으로 쓰는 것이 기본**이고 승인된 부분 사용 둘(채움만: warning callout·misc/remote/script 배지 · 테두리만: chip remote 태그) |
 
 ## 치수 (px → LogicalPx)
 
@@ -49,7 +54,12 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 사다리의 h1 앵커(`render.rs::heading_sizes_px` 가 h1↔`font-size-body`(h6) 사이를 CSS 로 5단계 선형보간, UI cap 면제). `prose-h2`·`line-height-prose` 는 [ADR-0065](../../adr/0065-markdown-webview-render-channel.md) 이전 egui_commonmark 시절 라이브러리 제약으로 은퇴한 토큰이며, webview 전환(CSS) 이후로도 부활하지 않았다 — 헤딩 사다리는 이제 `--md-h1`..`--md-h6` CSS custom property 로 직접 표현되므로 별도 semantic 토큰이 필요 없다. 정본은 여전히 tokens/·vendor json·생성 const 모두에서 제거된 상태 |
 | font-size term-sm / term / term-lg | 12 / 14 / 16 | `font_size_term_sm` / `font_size_term` / `font_size_term_lg` — 터미널 스케일 |
 | icon-size xs | 12 | `icon_glyph_size_xs` |
-| icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프 |
+| icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프, **spinner 지름**(폰트가 아니라 아이콘 가족) |
+| font-size brand-display | 30 | `font_size_brand_display` — 첫 실행 셸 설정 카드 브랜드 타이틀. UI 14px 상한의 브랜딩 예외 둘 중 하나 |
+| status-dot-size-compact | 6 | `status_dot_size_compact()` — 24px 크롬 안의 점(pane 탭 strip·상태바·접힌 rail). `tab_dot_size()`·`statusbar_dot_size()` 가 이 값의 별칭 |
+| statusbar-theme-glyph / statusbar-glyph | → `glyph-dim` | 상태바 우측 테마 토글의 `sun`/`theme` 글리프가 앞의 것을 읽는다(색 점은 2026-09-17 결정으로 없어졌다). 뒤의 것은 **아직 부르는 자리가 없다** — 결정표가 테마 표시 한 자리만 글리프로 옮겼고, 상태바의 다른 글리프 자리는 정해지지 않았다 |
+| git-toolbar-height | 32 | `git_toolbar_height()` — git viewer diff 툴바. **`control-height`(28) 아님**(컨테이너 role) |
+| port-process-col-min-width | 200 | `port_process_col_min_width()` — port scanner Process 컬럼 **최소폭** |
 | radius / radius-sm | 4 / 2 | `corner_radius` |
 | border-width | 1 (항상) | `border_width` |
 

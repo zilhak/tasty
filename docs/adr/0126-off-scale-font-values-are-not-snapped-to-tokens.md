@@ -374,7 +374,7 @@ UI scale 사본은 "안 불러서 **갈라졌다**" 다. 그 사본은 주석에
   **경계 위반**이다: 값이 UI 폰트 토큰과 같은 명명 const 가 폰트 자리에 오면
   `src/design_token_guard.rs` 의 `no_named_const_copies_a_ui_font_token` 이 잡는다
   (판별 축은 이름이 아니라 **값 + 위치**다 — `SOMETHING_ELSE = 13.0` 도 잡히고
-  `PALETTE_HINT_FONT_SIZE = 10.5` 는 안 잡힌다).
+  `OFF_SCALE_FONT_SIZE = 10.5` 는 안 잡힌다 — 그 이름은 가드 시험의 fixture 다).
   기계가 **못** 가르는 것은 그 다음 질문이다: 스케일 밖 값 하나하나가 *어느* 토큰으로
   수렴해야 하는지, 애초에 수렴해야 하는지는 디자인 판단이라 소스에 신호가 없다.
   그 절반은 사람이 지키는 규약이고, 이 ADR 이 그 규약의 본문이다.
@@ -467,6 +467,9 @@ UI scale 사본은 "안 불러서 **갈라졌다**" 다. 그 사본은 주석에
   "SIZING 에 대응이 없는 값". 스케일 밖 명명 const 가 사는 위치와 그 부류에 붙는 규칙
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색은 semantic role 접근자로만
   읽는다. 같은 축(값이 아니라 토큰을 경유한다)의 색 쪽 결정
+- [ADR-0290](0290-settled-role-gaps-close-the-divergence-and-off-scale-sets.md) — 이 ADR 이
+  "디자인 판단으로 넘긴다" 고 적은 자리들이 2026-09-17 결정으로 닫힌 기록(스냅하지 않는
+  규칙 자체는 그대로 유효하다)
 - `crates/tasty-doc-guards/tests/design_token_adherence.rs` — 폰트/선굵기/간격 리터럴 재유입 가드와 그 한계 목록
 - `src/design_token_guard.rs` — 토큰 값을 복사한 명명 const 를 폰트 자리에서 막는 가드.
   관례(`tests/*.rs`)를 깨고 본체 crate 의 `#[cfg(test)]` 모듈에 둔 이유가 그 모듈 doc 에

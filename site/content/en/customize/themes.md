@@ -1,4 +1,4 @@
-<!-- source-hash: 1a456b0f51b7 -->
+<!-- source-hash: 72a55bbf7811 -->
 # Themes
 
 Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
@@ -14,7 +14,7 @@ Both files are managed by Tasty, so **do not edit them directly** — they are r
 
 ## Switching themes
 
-The fastest way is the **theme dot** at the far right of the status bar. Each click toggles between Latte and Mocha. Pressing it while another theme is in use goes to Latte.
+The fastest way is the **theme icon** at the far right of the status bar. Each click toggles between Latte and Mocha. Pressing it while another theme is in use goes to Latte.
 
 To pick from the list:
 
@@ -156,4 +156,4 @@ To make a variant that changes Mocha only slightly, copy `mocha.toml`, save it u
 ## Keep exploring
 
 - [Settings](settings.md) — Font · UI scale · opacity in the Appearance tab.
-- [A first look](../getting-started/first-look.md) — Where the theme dot is in the status bar.
+- [A first look](../getting-started/first-look.md) — Where the theme icon is in the status bar.

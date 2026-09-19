@@ -88,30 +88,28 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 ★ **"안 불리는 접근자" 를 세는 것으로는 이 위험을 못 잰다.** 접근자가 안 불려도 같은 값이
 base 필드 이름으로 이미 불리고 있을 수 있고(예: `titlebar-caption-width` ↔ `caption_width`),
 반대로 **base 이름으로 불리고 있어도 그 컴포넌트 자리는 다른 값을 그리고 있을 수 있다.**
-아래 표의 `tab-dot-size` 와 `toast-gap` 이 정확히 뒤쪽이다 — 둘 다 "불리는" 쪽에 있는데
-자리는 어긋난다. **호출 여부와 값 일치는 독립이다.**
+**호출 여부와 값 일치는 독립이다.**
 
-값이 어긋나는 것으로 **확인된** 자리는 다섯이다.
+값이 어긋나는 것으로 **확인된** 자리는 **한 줄도 안 남았다** — 2026-09-17 디자인 결정
+(D1~D7)이 다섯을 모두 닫았다.
 
-| 토큰 | 토큰 값 | 지금 그리는 값 | 자리 |
-|---|---|---|---|
-| `component.tab-dot-size` | 8 | **6** | `src/adapters/ui/tab_bar/tab.rs` (`TAB_BUSY_DOT_SIZE`) |
-| `component.status-dot-size` (+ `badge-`/`tag-`/`tab-` 별칭) | 8 | **7** | `crates/tasty-ui-widgets/src/status_bar.rs` (`DOT_SIZE`) |
-| `component.status-dot-attached-ring-width` | 2 | **1.5** | `src/adapters/ui/sidebar/view.rs` (`ATTACHED_OUTLINE_WIDTH`) |
-| `component.status-dot-attached-ring-offset` | 2 | **1.5** | 같은 자리 (ring 반경 계산) |
-| `component.toast-gap` | 8 | **6** | `crates/tasty-ui-widgets/src/tokens.rs` (`TOAST_GAP`) |
+닫힌 다섯은 이렇게 갈렸다 — `tab-dot-size` 는 토큰이 `status-dot-size-compact`(6)를
+가리키도록 바뀌어 자리가 맞았고(D2), `toast-gap`(D1) · `status-dot-attached-ring-width`(D4) ·
+`-offset`(D5) · 상태바 점(D3, 7→`statusbar-dot-size` 6)은 **자리가 토큰 값으로 옮겨 갔다**
+(6→8 · 1.5→2 · 1.5→2 · 7→6, 전부 의도된 시각 변화).
 
-**다섯 줄 모두 그 자리의 상수 doc 이 같은 사실을 적고 있다.** 그리드 스케일에 없는 것과
-컴포넌트 토큰이 없는 것은 다른 물음이라, 각 doc 은 두 가지를 갈라 적는다 — 값이 스케일
-밖이라는 것과, 겨냥하는 토큰이 실재하되 값이 어긋난다는 것. 어느 쪽이 맞는지는 디자인이
-정하고, 그때까지 상수는 값을 지키고 이름만 남긴다(ADR-0126).
+**이 표가 비었다는 것이 "어긋난 자리가 없다" 는 뜻은 아니다** — 확인된 자리가 없다는
+뜻이다. 아래 "미측정" 문단이 그 차이를 든다. 새로 확인되면 그 자리의 상수 doc 이 같은
+사실을 적어야 한다: 값이 그리드 스케일 밖이라는 것과, 겨냥하는 토큰이 실재하되 값이
+어긋난다는 것은 다른 물음이라 갈라 적는다. 어느 쪽이 맞는지는 디자인이 정하고, 그때까지
+상수는 값을 지키고 이름만 남긴다(ADR-0126).
 
 나머지는 **미측정**이다 — 0 이 아니라 안 잰 것이다. 이름이 같은 const 를 기계로 대조해
 봤지만 `GAP` · `POPUP_WIDTH` · `MIN_HEIGHT` 같은 흔한 이름이 무관한 토큰에 무더기로 걸려
 (예: `component.transfer-popup-width` ↔ 파일 피커의 `POPUP_WIDTH`) 그 수는 위험의 크기가
 아니라 이름 충돌의 크기였다. **이 축의 판정은 이름이 아니라 정의를 열어야 선다.**
 
-**다섯 다 소스에 기록돼 있다 — 각 상수의 doc 주석에.** 그런데 전환을 하는 쪽은 상수
+**남은 줄은 소스에 기록돼 있다 — 그 상수의 doc 주석에.** 그런데 전환을 하는 쪽은 상수
 주석이 아니라 이 문서를 읽는다. 그래서 여기 옮겨 적는다. 반대 방향도 성립한다 — 이 표에
 줄을 더할 때 그 상수의 doc 도 같이 적어야 두 자리가 갈리지 않는다.
 
