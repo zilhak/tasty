@@ -67,6 +67,15 @@ B.9 는 초 단위다. 발행 판정으로 빨개질 커밋을 컴파일 다섯 
 실행이 **본 ref 수 · 판정한 수 · 건너뛴 수**를 찍는 것은 빈 모수를 훑은 초록과 실제로 판정한
 초록이 같은 줄로 보이지 않게 하려는 것이다([ADR-0183](../adr/0183-a-green-check-is-not-evidence-without-a-control.md)).
 
+**B.9 에는 P.1 의 사전 필터가 없고, 그 차이가 사각을 하나 닫는다.** pre-commit 의 P.1 은 staged
+목록이 `crates/tasty-plugin-<이름>/` 에 걸릴 때만 게이트를 부른다. 그런데 판정 대상은 그 디렉토리가
+아니라 **워크스페이스 내부 의존 폐포**다([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md))
+— 폐포 안이면서 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트만 고친 커밋은 **P.1 이 아예 안
+뜬다.** 실측 2026-09-20: `crates/tasty-utils/src/id.rs` 에 출하되는 한 줄을 더해 staged 한 상태에서
+P.1 의 사전 필터에 걸리는 파일은 0 이었고 pre-commit 은 plugin 버전 줄을 한 줄도 안 찍었다. 같은
+커밋을 push 하니 B.9 가 번들 plugin **9 개 전부**를 위반으로 냈다. B.9 는 밀려는 ref 마다 조건 없이
+게이트를 부르므로 그 사각이 없다 — 대신 판정이 커밋이 아니라 push 시점에 온다.
+
 clippy 의 `style`/`pedantic` 은 warning 으로만(error 승격 안 함 — false positive 노이즈 방지).
 
 훅은 `set -e -o pipefail` 로 연다. 스텝들이 `cargo … 2>&1 | tail -N` 형태라 `pipefail` 이 없으면 종료코드가 `tail` 의 것이 되고 — `tail` 은 거의 항상 0 이다 — **cargo 가 죽어도 훅이 통과한다**. 새 스텝을 더할 때 파이프로 끝내려면 이 옵션이 살아 있는지 먼저 확인한다.
