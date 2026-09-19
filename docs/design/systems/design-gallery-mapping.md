@@ -314,8 +314,9 @@ kind 에서 도출(모르면 `file`), 행 name 은 id 의 마지막 `/` 뒤 조�
 
 갤러리가 canonical 과 **한 자리에서 갈린다**: 디자인의 "Footer — settled" Spec 은 기각된 두 읽기(체크박스 ·
 비활성 체크박스)를 결정 표본으로 함께 렌더하지만, 갤러리는 확정된 footer 하나만 싣는다 — 기각된 읽기를 그리면
-제거하기로 한 문구가 레포에 남는다. 디자인의 `letterSpacing: 0.06em`(그룹 라벨)도 egui 에 대응 채널이 없어
-대문자 · 11px · 색까지만 전사한다.
+제거하기로 한 문구가 레포에 남는다. 그룹 라벨의 자간도 전사하지 않는다 — egui 에는 채널이 있고
+(`RichText::extra_letter_spacing`), canonical `FileHandlerFrame` 쪽에 값이 없다. 대문자 · 11px ·
+색까지만 전사한다.
 
 ## Overlays — plugins window
 
@@ -680,8 +681,11 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 | `IeExportFailG` · `IeBundleNoticesG` · `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG` | `open_values`(Spec 4) · `export_failure_row` · `bundle_notices` · `notice_line` | 내보내기 실패 = Export 행 안 danger 블록(Try again secondary · Choose another location… ghost, 행 버튼 비활성) · 번들 경고 = warning 블록 하나(`{n} notices`, `·` 글머리 줄, 3 줄 뒤 `Show {n} more`) · 줄 번호 없는 파싱 실패 · 충돌 개수 카드 · placeholder/선택된 modifier Select. 본체는 `notices::{export_failure, bundle_notices}` · `bundle_notices.rs`(순서·접기) |
 
 **전사 노트**:
-- `letter-spacing-caps` 는 egui 미지원이라 mono `font-size-micro` uppercase, `fontWeight: 600` 은
-  색 강조로 둔다(Preset · Hook Handlers 관례). `color-mix(tone X%, transparent)` 는 명명 const
+- `letter-spacing-caps` 는 mono `font-size-micro` uppercase, `fontWeight: 600` 은 색 강조로
+  둔다(Preset · Hook Handlers 관례). 앞쪽은 egui 한계가 아니다 —
+  `RichText::extra_letter_spacing` 이 있고, 막힌 것은 `0.04em` 이 em 이라 DTCG 생성기가
+  `LogicalPx` 로 못 담아 스킵하는 쪽이다(`crates/tasty-design-tokens/src/dtcg.rs` 의
+  `Skip::EmUnit`). `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
 - 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 스냅하지 않고 명명 const 로 둔다([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)).
 - 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 은 디자인이 컴포넌트 토큰(`kb-ie-select-column-width` ·
@@ -708,8 +712,10 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 | `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `opacity-disabled` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono 한 줄 요약) |
 
 **전사 노트**:
-- jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 egui letter-spacing 미지원 —
-  기존 관례(mono `font-size-micro` uppercase `text-muted`)로 전사.
+- jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 기존 관례(mono
+  `font-size-micro` uppercase `text-muted`)로 전사. egui 가 자간을 못 거는 것이 아니라
+  (`RichText::extra_letter_spacing`), `letter-spacing-caps` = `0.04em` 이 em 이라 Rust
+  상수로 생성되지 않는다(위 `Skip::EmUnit` 항목과 같은 이유).
 - **신규 토큰 0** — `hook_handlers.rs`/`settings_handler.rs`가 쓰는 토큰은 전부 기존
   `spacing_*`/`font_size_*`/`text_*`/`border_*` 등 범용 접근자이며 이 기능 전용으로
   추가된 Theme 필드가 없다. 화면 전용 고정값(라벨폭 74/100, priority step 10)은

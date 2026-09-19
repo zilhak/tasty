@@ -280,13 +280,20 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   port_scanner.rs`. (우측 기준 레이아웃을 ui 폭 확장과 무관하게 고정하는 건 위 port_scanner
   footer 항목 참고.)
 
-## 타이포그래피 — letter-spacing / line-height / font-weight 세분화 미지원
+## 타이포그래피 — font-weight 세분화 미지원 (letter-spacing · line-height 는 지원된다)
 
 - **증상**: 디자인 토큰엔 letter-spacing(ui 0 / caps 0.04em)·line-height(tight 1.0 / term 1.2
-  / ui 1.4 / prose 1.6)·세분 font-weight 가 있으나 egui `Label` 은 이를 직접 제어하지 못한다.
-- **처방**: 재현 불가 — typography specimen 에 토큰 값만 기록해 둔다(weight 는 크기+색으로만
-  근사, 위 "공용 위젯 레이어 — 폰트 weight" 항목과 동일 한계).
-- **근거**: `crates/tasty-gallery/src/catalog/typography.rs`.
+  / ui 1.4 / prose 1.6)·세분 font-weight 가 있다. 셋 중 **막힌 것은 weight 하나**다 — egui 는
+  별도 bold family 없이 굵기를 재현하지 못한다(위 "공용 위젯 레이어 — 폰트 weight" 항목).
+- **앞의 둘은 채널이 있다**: `RichText::extra_letter_spacing` / `RichText::line_height` 와
+  `TextFormat` 의 같은 이름 필드. 둘 다 px 를 받으므로 em·배수 토큰은 폰트 크기를 곱해
+  넘긴다 — `tasty_ui_widgets::remote_tool::selectable_label_tracked` 가 그 형태다. 전사가
+  안 된 자리가 남아 있다면 채널이 없어서가 아니라 값이 Rust 상수로 안 와 있어서다: em 단위
+  dimension 은 DTCG 생성기가 `LogicalPx` 로 못 담아 스킵한다
+  (`crates/tasty-design-tokens/src/dtcg.rs` 의 `Skip::EmUnit`).
+- **처방**: weight 는 크기+색으로 근사한다. 나머지 둘은 값이 오면 그대로 건다.
+- **근거**: `crates/tasty-gallery/src/catalog/typography.rs` — specimen 은 지금 weight 축만
+  기록하고 letter-spacing·line-height 토큰 값은 아직 싣지 않는다.
 
 ## settings_window — 디자인 flex Row 의 gap 은 모든 자식 사이에 적용된다
 

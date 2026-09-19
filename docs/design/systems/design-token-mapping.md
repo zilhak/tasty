@@ -416,8 +416,11 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 > 두 색이 `#313244` 로 동일했다). `popup_shell_fill_keeps_the_default_tag_visible`
 > 가 두 값이 갈린다는 것을 고정한다.
 
-> **전사되지 않은 디자인 속성 하나**: 그룹 라벨의 `letterSpacing: 0.06em`. egui 에 자간
-> 채널이 없다(`RichText` 에도 `TextFormat` 에도 없다) — 대문자 · 11px · 색까지만 전사한다.
+> **전사되지 않은 디자인 속성 하나**: 그룹 라벨의 자간. egui 에는 채널이 **있다**
+> (`RichText::extra_letter_spacing` · `TextFormat::extra_letter_spacing`) — 안 건 이유는
+> 값 쪽이다. 이 화면의 canonical `FileHandlerFrame` 은 평평한 핸들러 목록이라 그룹 헤딩도
+> `letterSpacing` 선언도 없다(그룹은 본체가 더한 것이다). 값이 시안에 들어오기 전까지
+> 대문자 · 11px · 색까지만 전사한다.
 
 > **`FH_EDGE_PAD_X`(14) · `FH_HEADER_PAD_TOP`(14) · `FH_EMPTY_PAD_Y`(32)는 값이 스케일의
 > 어떤 토큰과 겹치지만 그 축이 아니다** — 14 는 `icon_glyph_size_sm`·`font_size_max` 와,
