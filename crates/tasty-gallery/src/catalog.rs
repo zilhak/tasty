@@ -736,6 +736,28 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "scrim-scope",
+                    "Scrim scope — window vs surface",
+                    vec![
+                        spec(
+                            "scrim-scope",
+                            "The scrim covers the popup's scope, not always the window",
+                            Some(
+                                "Surface-bound popups dim only their own surface — border in, neighbours out",
+                            ),
+                            components::scrim_scope::draw_scope,
+                        ),
+                        spec(
+                            "scrim-scope-child",
+                            "Parent and child share one scrim",
+                            Some(
+                                "A child picker inherits the scope — the scrim is painted once, never stacked",
+                            ),
+                            components::scrim_scope::draw_child,
+                        ),
+                    ],
+                ),
+                section(
                     "fullscreen-stage",
                     "Fullscreen stage — the window-wide surface",
                     vec![

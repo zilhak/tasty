@@ -67,6 +67,7 @@ pub mod quit_modal;
 pub mod remote;
 pub mod remote_attach;
 pub mod rename_popup;
+pub mod scrim_scope;
 pub mod script_confirm;
 pub mod script_manager;
 pub mod search_bar;
