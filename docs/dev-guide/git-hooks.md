@@ -19,6 +19,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | A.1 | top-level 선언 영역에서 `mod` 가 `use` 뒤에 나오는지 | 선언 순서 |
 | A.2 | `cargo fmt --check` | rustfmt 강제 |
 | C.6 | 주석 없는 `let _ =` | 왜 무시하는지 흔적 강제 (전수판은 `crates/tasty-doc-guards/tests/let_underscore_documented.rs` — 아래 참고) |
+| C.8 | UI 색상 하드코딩 | **비활성** — `clippy.toml` 의 `disallowed-methods` 가 같은 검사를 `#[allow]` 인식·path resolution 까지 포함해 대신한다(grep 판은 의도된 외부 입력 자리의 `#[allow]` 도 잡아 오탐이 많았다). 훅에는 즉시 통과하는 자리만 남아 있고 **실행 수에는 들어간다** — 통과 줄의 `검사 N/N` 이 이 자리를 센다. 실제 색 검사는 pre-push 의 `B.4` 가 한다 |
 | C.9 | `egui::Window::` 직접 사용 | PopupManager 강제 ([popup-implementation](popup-implementation.md)) |
 | C.11 | `println!`/`eprintln!` | `tracing::*` 강제 (예외: CLI 출력 — `crates/tasty-cli/*`, `src/boot/cli_routing.rs`) |
 | C.12 | `dbg!` | release leak 방지 |
@@ -115,5 +116,11 @@ rebase 충돌 해결 시 충돌 마커만 지우지 말고, 각 충돌이 어떤
 - **내용** — 빈 파일은 "있다" 로 세어지지만 아무 검사도 안 하면서 초록을 낸다. 그래서 줄 수 하한과 bash shebang 을 함께 본다.
 
 디렉토리가 통째로 없으면 순회가 빈손으로 돌아와 "셋 다 사라졌다" 와 "못 읽었다" 가 같은 실패문이 된다. 그 둘을 가르는 줄이 명부 대조보다 먼저 선다.
+
+같은 파일이 **스텝 명부**도 본다. 각 훅의 구역 배너(박스 괘선 바로 아래 줄)에서 검사 ID 를 읽어, 이 파일의 명부와 위 두 표를 셋이 같은지 묻는다. 그래서 스텝 하나를 지우면 셋이 어긋나 빨개지고, 표에서 행을 지워도 같은 방향으로 빨개진다. 산문에 나오는 같은 ID 는 괘선이 없어 안 걸린다.
+
+`pre-commit` 은 한 가지를 더 본다 — 검사 함수의 수와 `CHECKS` 실행 목록의 길이가 같은지다. 훅 자신도 실행할 때 그 둘을 견주지만, 훅을 안 설치했거나 `--no-verify` 로 넘긴 커밋에서는 그 비교가 아예 없다. 그리고 그 훅의 명부는 검사 함수 수보다 작을 수 없다 — 명부와 표를 **같이** 비우면 두 대조가 짝이 맞아 조용히 통과하므로, 그 방향을 이 줄이 막는다.
+
+`M.1` 이 `pre-commit` 아래에 있는 것은 편집 실수가 아니다. 충돌한 merge 는 `pre-merge-commit` 을 안 타고 `git commit` 으로 마무리되므로, 그 갈래를 막는 코드가 `pre-commit` 에 있다. `pre-merge-commit` 자신은 검사가 하나뿐이라 안에서 가리킬 ID 가 없고, 명부에 빈 줄로 남겨 "아직 안 적었다" 와 "적을 것이 없다" 를 가른다.
 
 자동 채널은 `doc-guards.yml` 이고, 커밋 전에 직접 돌리는 명령은 `cargo test --locked -p tasty-doc-guards --test githooks_are_pinned` 다.

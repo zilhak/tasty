@@ -126,3 +126,175 @@ fn each_hook_is_a_bash_script_with_content() {
         );
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// 스텝 명부 — 훅이 선언한 검사 ID 와 문서의 표가 짝이 맞는가
+//
+// 파일 존재(위)를 먼저 고정한 뒤에야 이것이 뜻을 가진다. 순서가 반대면 파일이
+// 통째로 사라질 때 명부 가드가 **좌변을 파일과 함께 잃는다** — 빈 훅에서 스텝을
+// 0 개 읽고, 문서 표도 같이 지워졌다면 0 == 0 으로 통과한다.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 각 훅이 선언하는 검사 ID. 실측 2026-09-20, 트리 `742b0dbf7`.
+///
+/// **`pre-merge-commit` 은 ID 를 하나도 안 단다.** 그 훅은 검사가 하나뿐이고 그것이
+/// 파일 전체라, 안에서 갈래를 가리킬 ID 가 필요 없다. 그 훅이 막는 것에 붙은 ID(`M.1`)는
+/// **`pre-commit` 이 구현한다** — 충돌한 merge 는 `pre-merge-commit` 을 안 타고
+/// `git commit` 으로 마무리되기 때문이다. 그래서 `M.1` 은 아래에서 `pre-commit` 아래에 있다.
+/// 빈 명부를 남겨 두는 것은 "아직 안 적었다" 와 "적을 것이 없다" 를 가르기 위해서다.
+const HOOK_STEPS: &[(&str, &[&str])] = &[
+    (
+        "pre-commit",
+        &[
+            "A.1", "A.2", "C.6", "C.8", "C.9", "C.11", "C.12", "M.1", "P.1", "T.1", "W.1", "W.2",
+        ],
+    ),
+    ("pre-merge-commit", &[]),
+    ("pre-push", &["B.4", "B.5", "B.6", "B.7", "B.8", "B.9"]),
+];
+
+/// 훅 스텝을 **문서와 같은 좌표계로** 적는 문서. 표의 첫 칸이 ID 다.
+const HOOK_DOC: &str = "docs/dev-guide/git-hooks.md";
+
+/// 훅 안에서 스텝 ID 를 읽는다 — **구역 배너만** 센다.
+///
+/// 배너는 박스 괘선 바로 아래 줄이다. 이 표지가 필요한 이유는 같은 ID 가 산문에도
+/// 나오기 때문이다(`# B.9 만 초 단위이고 …` 는 실행 순서를 설명하는 문장이지 구역이
+/// 아니다). 괘선을 요구하면 둘이 갈린다. 머리말 요약(`#   A.1 …`)은 들여쓰기가 달라
+/// 애초에 안 걸린다.
+fn banner_ids(text: &str) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    let mut prev = "";
+    for line in text.lines() {
+        let is_rule = prev.starts_with("# ─") && prev.trim_end().ends_with('─');
+        if is_rule && let Some(id) = banner_id_of(line) {
+            ids.insert(id);
+        }
+        prev = line;
+    }
+    ids
+}
+
+/// `# A.1  제목` 에서 `A.1` 을 꺼낸다. 형태가 아니면 `None`.
+fn banner_id_of(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("# ")?;
+    let id: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '.')
+        .collect();
+    let (family, number) = id.split_once('.')?;
+    let ok = family.len() == 1
+        && !number.is_empty()
+        && number.chars().all(|c| c.is_ascii_digit())
+        && rest[id.len()..].starts_with(|c: char| c.is_whitespace());
+    ok.then_some(id)
+}
+
+#[test]
+fn the_banners_in_each_hook_match_the_roster() {
+    for (name, declared) in HOOK_STEPS {
+        let path = repo_root().join(".githooks").join(name);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("훅 `{name}` 을 못 읽었다: {e}"));
+
+        let found = banner_ids(&text);
+        let want: BTreeSet<String> = declared.iter().map(|s| s.to_string()).collect();
+
+        assert_eq!(
+            found,
+            want,
+            "\n훅 `{name}` 의 구역 배너와 이 파일의 명부가 어긋난다.\n\
+             훅에만 있는 것: {:?}\n명부에만 있는 것: {:?}\n\
+             스텝을 지웠으면 명부와 `{HOOK_DOC}` 의 표를 같은 커밋에서 고쳐라. \
+             스텝을 더했으면 셋 다에 적어라 — 어느 하나만 고치면 나머지가 그 사실을 \
+             모르는 채 남는다.",
+            found.difference(&want).collect::<Vec<_>>(),
+            want.difference(&found).collect::<Vec<_>>(),
+        );
+    }
+}
+
+#[test]
+fn the_hook_doc_tables_list_exactly_the_declared_steps() {
+    let path = repo_root().join(HOOK_DOC);
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("`{HOOK_DOC}` 을 못 읽었다: {e}"));
+
+    // 표의 첫 칸이 ID 인 행만 센다. 절이 둘(pre-commit · pre-push)로 나뉘어 있고
+    // `M.1` 은 pre-commit 절에 적혀 있으므로, 절 단위가 아니라 **합집합**으로 묻는다 —
+    // 어느 절에 적을지는 문서의 편집 판단이고, 이 가드가 물을 것은 "적혔는가" 다.
+    let documented: BTreeSet<String> = text
+        .lines()
+        .filter_map(|line| {
+            let cell = line.strip_prefix("| ")?.split('|').next()?.trim();
+            banner_id_of(&format!("# {cell} "))
+        })
+        .collect();
+
+    let declared: BTreeSet<String> = HOOK_STEPS
+        .iter()
+        .flat_map(|(_, ids)| ids.iter().map(|s| s.to_string()))
+        .collect();
+
+    assert_eq!(
+        documented,
+        declared,
+        "\n`{HOOK_DOC}` 의 표와 훅 스텝 명부가 어긋난다.\n\
+         문서에만 있는 것: {:?}\n훅에만 있는 것: {:?}\n\
+         뒤엣것은 **문서가 말하지 않는 검사**다 — 훅을 안 설치한 사람이 무엇을 \
+         놓치는지 그 표로 읽으므로, 빠진 줄만큼 그 답이 틀린다.",
+        documented.difference(&declared).collect::<Vec<_>>(),
+        declared.difference(&documented).collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn the_pre_commit_run_list_and_its_definitions_still_agree() {
+    let text = std::fs::read_to_string(repo_root().join(".githooks/pre-commit"))
+        .unwrap_or_else(|e| panic!("pre-commit 을 못 읽었다: {e}"));
+
+    let defined = text
+        .lines()
+        .filter(|l| l.starts_with("check_") && l.ends_with("() {"))
+        .count();
+
+    let listed = text
+        .lines()
+        .skip_while(|l| !l.starts_with("CHECKS=("))
+        .skip(1)
+        .take_while(|l| !l.starts_with(')'))
+        .filter(|l| l.trim().starts_with("check_"))
+        .count();
+
+    // 훅 자신도 실행 시점에 이 둘을 견준다. 여기서 한 번 더 묻는 이유는 **그 비교가
+    // 훅이 돌 때만 일어나기 때문**이다 — 훅을 안 설치했거나 `--no-verify` 로 넘긴
+    // 사람의 커밋에서는 그 비교가 아예 없다. 이쪽은 자동 채널이 본다.
+    assert!(
+        defined > 0 && listed > 0,
+        "pre-commit 에서 검사 정의 {defined} 개 · 실행 목록 {listed} 개를 읽었다 — \
+         0 이면 파싱이 형태를 놓친 것이지 검사가 없는 것이 아니다. \
+         `CHECKS=(` 블록이나 `check_*() {{` 형태가 바뀌었는지 봐라."
+    );
+    assert_eq!(
+        defined, listed,
+        "pre-commit 의 검사 정의 {defined} 개와 실행 목록 {listed} 개가 어긋난다. \
+         정의만 있으면 그 검사는 **조용히 안 돈다**."
+    );
+
+    // 명부가 통째로 비는 방향을 여기서 막는다. 위 두 대조는 **양쪽이 같이 비면**
+    // 0 == 0 으로 통과한다 — 명부를 지우고 문서 표를 지우면 그 상태가 된다. 그래서
+    // 명부의 크기를 구현에 묶는다: pre-commit 의 검사 함수 하나하나는 ID 를 가지므로
+    // 그 훅의 명부는 함수 수보다 작을 수 없다(`M.1` 처럼 함수가 아닌 자리가 있어
+    // 같지는 않다).
+    let declared_here = HOOK_STEPS
+        .iter()
+        .find(|(name, _)| *name == "pre-commit")
+        .map(|(_, ids)| ids.len())
+        .unwrap_or(0);
+    assert!(
+        declared_here >= defined,
+        "pre-commit 이 검사 {defined} 개를 돌리는데 이 파일의 명부에는 {declared_here} 개뿐이다. \
+         명부를 비우면 위의 두 대조가 '문서도 비었다' 와 짝이 맞아 조용히 통과한다 — \
+         이 줄이 그 방향을 막는다."
+    );
+}
