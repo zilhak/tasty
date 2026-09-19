@@ -163,6 +163,13 @@ clip 은 매니저가 그리는 것만 덮는다** — scrim · 배경 · 프레
 칸 바깥을 팝업 없는 같은 화면과 견줘 차이가 0 인지 본다.
 >>>>>>> 4c0890893 (feat(popup): dim the popup's own surface instead of the whole window)
 
+매니저가 그리는 쪽은 `nothing_a_surface_scoped_popup_paints_lands_outside_its_surface`
+(`src/adapters/ui/popup/scrim_scope_tests.rs`)가 든다 — 프레임이 낸 도형마다 실제로 칠해지는
+자리(clip ∩ 도형 경계)를 구해 칸 안인지 본다. **scrim 색 사각형만 세는 시험으로는 이것이 안
+잡힌다**: clip 을 지우는 변이에서 그쪽 다섯 시험은 전부 살아남았고, 이 시험만 죽는다. 그리고
+그 시험의 픽스처는 좁은 칸이어야 한다 — 넉넉한 칸에서는 그림자가 경계에 닿지 않아 clip 이
+없어도 아무것도 안 샌다.
+
 ### 이동 / 리사이즈
 
 - **이동**: `drag_handle` 으로 선언한 영역을 클릭+드래그 → 스코프 경계 안에서 위치 이동. 타이틀바 팝업은 `DragHandle::TitleBar`(기본). 타이틀바 없는 팝업은 `DragHandle::Region(fn)` 으로 pos/size 로부터 핸들 띠를 직접 계산해 선언한다.
