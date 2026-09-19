@@ -128,7 +128,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("addr bar", "40px · bg-sidebar · in-document HTML chrome"),
+            (
+                "addr bar",
+                // The height is not restated here. It lives once, as `--md-addr-bar-h` in the
+                // markdown renderer's stylesheet, and three other rules read it from there; a
+                // number copied into this table would keep displaying the old one after that
+                // declaration moved.
+                "--md-addr-bar-h sticky top · bg-sidebar · in-document HTML chrome",
+            ),
             (
                 "addr field",
                 "in-document <input>+<button> · nav-fragment scheme",
