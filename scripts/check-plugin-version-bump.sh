@@ -476,8 +476,9 @@ $(printf '%s\n' "$CHANGED" | sed -n "s|^\($d/.*\)$|\1|p")"
             printf '             (나) 여기서 한 번 더 올리고 **최종 값은 병합하는 쪽이 정한다**고 보고한다.\n' >&2
             printf '           발행 기준으로 다시 재는 명령: %s --range <직전 push> HEAD\n' \
                 "scripts/check-plugin-version-bump.sh" >&2
-            printf '           ★ 두 모수는 둘 다 필요하다 — 이 검사는 push 전에 답할 수 있는\n' >&2
-            printf '             유일한 채널이고, 발행 판정은 push 지점을 아는 쪽만 할 수 있다.\n' >&2
+            printf '           ★ 두 모수는 둘 다 필요하다 — 이 검사는 **커밋 전에** 답할 수\n' >&2
+            printf '             있는 유일한 채널이고, 발행 판정은 push 지점을 아는 쪽이 한다\n' >&2
+            printf '             (pre-push 훅의 B.9 가 원격 tip 을 모수로 같은 판정을 한 번 더 한다).\n' >&2
         fi
         VIOLATIONS=$((VIOLATIONS + 1))
     fi
