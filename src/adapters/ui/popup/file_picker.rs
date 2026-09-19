@@ -138,7 +138,11 @@ pub struct FilePickerProps<'a> {
     /// 덮어쓰기 경고 줄. `{name}` 자리에 이름이 mono 로 들어간다.
     pub overwrite_warning: &'a str,
     /// `…` 크럼의 hover 설명. `{}` 자리에 숨긴 폴더 수.
-    pub hidden_folders_label: &'a str,
+    /// `…` 툴팁 — 숨긴 조상이 **하나일 때**. 영어만 단수형이 갈리고 ko·ja 는 굴절이
+    /// 없어 같은 문장의 1 판이다(디자인 2026-09-14 "counts of one get singular forms").
+    pub hidden_folders_one: &'a str,
+    /// `…` 툴팁 — 숨긴 조상이 둘 이상일 때. `{}` 가 수로 치환된다.
+    pub hidden_folders_many: &'a str,
     pub empty_label: &'a str,
     pub loading_label: &'a str,
     pub loading_body_local: &'a str,
@@ -659,7 +663,8 @@ pub fn draw_file_picker(
         cancel_label,
         confirm_label: t("filepicker.open_button"),
         overwrite_warning: t("filepicker.save.overwrite_warning"),
-        hidden_folders_label: t("filepicker.hidden_folders"),
+        hidden_folders_one: t("filepicker.hidden_folders_one"),
+        hidden_folders_many: t("filepicker.hidden_folders_many"),
         empty_label,
         loading_label,
         loading_body_local,

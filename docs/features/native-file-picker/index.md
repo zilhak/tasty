@@ -105,7 +105,9 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 - **가운데 생략**: 전체 breadcrumb 이 그 폭에 안 들어가면 root + `…` + 마지막 두 성분(현재 폴더와 그
   부모)만 보인다(`crumb_slots`). 들어가면 접지 않는다. 성분 하나는 180px 에서 말줄임한다.
 - **`…` 메뉴**: `…` 를 누르면 숨긴 조상들이 메뉴로 나열되고, 고르면 그 폴더로 이동한다. hover 하면
-  숨긴 폴더 수를 보여 준다(`filepicker.hidden_folders`).
+  **누르면 무엇이 되는지**를 말한다 — `Show 3 hidden folders`(`filepicker.hidden_folders_many`),
+  하나면 단수형(`filepicker.hidden_folders_one`). 상태 서술("N folders hidden")이 아닌 이유는
+  그 툴팁이 클릭 대상 위에 뜨기 때문이다. 단수형은 영어만 갈린다 — ko·ja 는 굴절이 없다.
 - **생략은 렌더 규칙이다**: view 가 받는 `FilePickerProps.crumbs` 는 항상 root 부터 현재 폴더까지
   전체이고, 접는 판단은 그리는 순간에만 한다 — `…` 메뉴가 숨긴 조상을 열 수 있는 이유다.
 - **footer 행**: 이름 행은 라벨(고정폭, 줄지 않음) + 이름 칸(남은 폭), 버튼 행은 오른쪽 끝에서 확정 ·

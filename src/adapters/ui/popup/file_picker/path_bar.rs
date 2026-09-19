@@ -177,11 +177,15 @@ fn hidden_crumbs(
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let resp = resp.on_hover_text(
+    // 툴팁은 **클릭하면 무엇이 되는지**를 말한다("Show 3 hidden folders") — 상태 서술이
+    // 아니다(디자인 2026-09-14 §6 이 직전 판 "N folders hidden" 을 그 이유로 물렸다).
+    let resp = resp.on_hover_text(if range.len() == 1 {
+        props.hidden_folders_one.to_owned()
+    } else {
         props
-            .hidden_folders_label
-            .replace("{}", &range.len().to_string()),
-    );
+            .hidden_folders_many
+            .replace("{}", &range.len().to_string())
+    });
     let popup_id = ui.make_persistent_id("file_picker_hidden_crumbs");
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
