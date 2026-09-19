@@ -53,10 +53,17 @@ overlays/remote_tool.jsx` 가 소비)이 다른 모양을 정했다: 카드가 �
 빈 상태·읽기 실패는 `text-muted` 한 줄(경고 톤 아님). 본체와 갤러리가 지금 같은 함수
 (`tasty_ui_widgets::draw_local_ssh_section`)를 부르므로 두 사본이 갈릴 자리가 없다.
 
-전사에서 **의도적으로 뺀 것 둘**이 있다. canonical 의 `padding` 세로 성분 중 `2px`
-(헤더 위·빈 줄 위)는 4px 그리드 밖이고 대응 토큰이 없어 넣지 않았다 — 그만큼(2px) 더 붙어
-그려진다. `letterSpacing: 0.06em` 은 egui 가 자간을 노출하지 않아 넣을 수 없다. 가로 `4px`
+전사에서 **뺀 것은 하나**다. canonical 의 `padding` 세로 성분 중 `2px`(헤더 위·빈 줄 위)는
+4px 그리드 밖이고 대응 토큰이 없어 넣지 않았다 — 그만큼(2px) 더 붙어 그려진다. 가로 `4px`
 들여쓰기는 `space-xs` 로 그대로 넣었다(그리드 안이고 "한 tier 아래" 를 말하는 성분이다).
+
+`letterSpacing: 0.06em` 은 **넣었다.** egui 에 채널이 있다 — `TextFormat::extra_letter_spacing`
+이고, 이 레포는 사이드바 섹션 헤딩에서 이미 같은 축을 쓴다(`0.07em` = 10px 에서 0.7px).
+공용 view 는 `SECTION_HEADING_TRACKING_EM`(0.06)을 폰트 크기에 곱해 넘긴다(caption 11px 에서
+0.66px). **1px 밑이라 사라지지 않는다** — 값을 0 으로 두고 같은 캡처를 다시 찍어 헤딩 띠만
+비교하면 **1201 px 이 달라지고**, 단어 경계가 붙은 `FROMSSHCONFIG` 가 `FROM SSH CONFIG` 로
+갈린다. (한때 이 자리에 "egui 가 자간을 노출하지 않아 넣을 수 없다" 고 적혀 있었고 그것은
+거짓이었다.)
 
 **컨테이너와 필터는 model-view split 뒤에 등록됐다.** `draw_remote_tool_popup` 자체는 여전히
 `(ui, &mut AppState, &mut CoreState)` 라 갤러리 `Spec.draw`(`(ui, &Theme)`)가 부를 수 없다 —

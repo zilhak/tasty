@@ -65,6 +65,22 @@ pub fn selectable_text(
     italic: bool,
     wrap: TextWrap,
 ) -> egui::Response {
+    selectable_text_tracked(ui, text, color, size, monospace, italic, wrap, 0.0)
+}
+
+/// [`selectable_text`] 에 **자간**(글자 사이 추가 간격, px)을 더한 것. 레이아웃 경로는
+/// 하나뿐이고 `tracking = 0.0` 이 위의 기본이다 — 사본을 만들지 않으려고 이 쪽에 몰았다.
+#[allow(clippy::too_many_arguments)] // reason: 한 줄 텍스트의 표현 축이 그만큼이다
+pub fn selectable_text_tracked(
+    ui: &mut egui::Ui,
+    text: &str,
+    color: impl Into<egui::Color32>,
+    size: f32,
+    monospace: bool,
+    italic: bool,
+    wrap: TextWrap,
+    tracking: f32,
+) -> egui::Response {
     let color = color.into();
     let font_id = if monospace {
         egui::FontId::monospace(size)
@@ -81,6 +97,7 @@ pub fn selectable_text(
                 font_id: font_id.clone(),
                 color,
                 italics: italic,
+                extra_letter_spacing: tracking,
                 ..Default::default()
             },
         );
@@ -125,6 +142,27 @@ pub fn selectable_label(
     monospace: bool,
 ) -> egui::Response {
     selectable_text(ui, text, color, size, monospace, false, TextWrap::None)
+}
+
+/// [`selectable_label`] 에 자간을 더한 것 — 대문자 섹션 헤딩용.
+pub fn selectable_label_tracked(
+    ui: &mut egui::Ui,
+    text: &str,
+    color: impl Into<egui::Color32>,
+    size: f32,
+    monospace: bool,
+    tracking: f32,
+) -> egui::Response {
+    selectable_text_tracked(
+        ui,
+        text,
+        color,
+        size,
+        monospace,
+        false,
+        TextWrap::None,
+        tracking,
+    )
 }
 
 // ── 구역 구분선 · 버튼 ───────────────────────────────────────────────────
@@ -314,6 +352,11 @@ const SSH_SECTION_MARGIN_TOP: LogicalPx = LogicalPx(10.0);
 /// 부르면 없는 관계가 생긴다.
 const SSH_GAP: LogicalPx = LogicalPx(6.0);
 
+/// 대문자 섹션 헤딩의 자간 — canonical `letterSpacing: "0.06em"`. em 이라 폰트 크기에
+/// 비례하므로 px 상수가 아니라 비율로 들고, 그릴 때 폰트 크기를 곱한다(caption 11px 에서
+/// 0.66px). 사이드바 섹션 헤딩이 같은 부류에 같은 축을 쓴다(`0.07em` = 10px 에서 0.7px).
+const SECTION_HEADING_TRACKING_EM: f32 = 0.06;
+
 /// 로컬 `~/.ssh/config` 행 하나 — tasty 레코드가 아니라 사용자 파일의 항목이다.
 pub struct LocalSshHost<'a> {
     /// `Host` 별칭.
@@ -374,12 +417,13 @@ pub fn draw_local_ssh_section(
     ssh_inset(ui, th, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = SSH_GAP.value();
-            selectable_label(
+            selectable_label_tracked(
                 ui,
                 &data.heading.to_uppercase(),
                 th.text_secondary(),
                 th.font_size_caption.value(),
                 false,
+                th.font_size_caption.value() * SECTION_HEADING_TRACKING_EM,
             );
             selectable_label(
                 ui,
