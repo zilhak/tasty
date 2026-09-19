@@ -300,3 +300,31 @@ fn ed2_at_a_parked_cursor_lands_on_the_last_column() {
     assert_eq!(&t.screen_row(0, true), "         Z");
     assert_eq!(&t.screen_row(1, true), "");
 }
+
+// ── 대체 화면 ────────────────────────────────────────────────────────────────
+
+/// 대체 화면에서는 `scrollback_len()` 이 "줄바꿈이 안 났다" 를 증명하지 못한다 —
+/// `scrollback.rs` 의 두 스크롤 갈래가 대체 화면일 때 **capture 만** 건너뛰고 스크롤
+/// 자체는 그대로 일으키기 때문이다. 그래서 이 시험은 스크롤백 길이가 아니라 **화면 행
+/// 내용과 커서 자리**로 잰다(EL1 을 쓰는 TUI 는 대부분 대체 화면에 있다).
+#[test]
+fn el1_at_a_parked_cursor_does_not_shift_the_alternate_screen() {
+    let mut t = term();
+    t.feed_bytes(b"\x1b[?1049h");
+    t.feed_bytes(b"ABCDEFGHIJ");
+    t.feed_bytes(b"\x1b[2;1HQRSTUVWXYZ");
+    t.feed_bytes(b"\x1b[1;1HABCDEFGHIJ");
+    assert_eq!(
+        t.cursor_position(),
+        (COLS, 0),
+        "준비 실패: 대체 화면에서도 {COLS} 칸을 찍으면 커서가 걸친다"
+    );
+    t.feed_bytes(b"\x1b[1K");
+    assert_eq!(&t.screen_row(0, true), "", "커서 행은 전부 지워진다");
+    assert_eq!(
+        &t.screen_row(1, true),
+        "QRSTUVWXYZ",
+        "화면이 한 줄도 밀리지 않았다"
+    );
+    assert_eq!(t.cursor_position(), (COLS, 0), "걸친 상태가 보존된다");
+}
