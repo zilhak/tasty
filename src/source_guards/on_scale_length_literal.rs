@@ -118,7 +118,9 @@ const EGUI_LENGTH_HEADS: &[&str] = &[
 const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-design-tokens/src/generated/",
-        44,
+        // 44 -> 47 은 2026-09-17 export 가 더한 `SIZE_6` · `SIZE_64` · `SIZE_96` 셋이다 —
+        // 선언 자신이라 처방이 없고, 스케일이 자라면 이 수도 그만큼 자란다.
+        47,
         "스케일 자신 — 이 파일이 곧 size-* 의 정본이다",
     ),
     (
@@ -201,7 +203,15 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 고쳐진 것이 아니라 **애초에 이 축의 값이 아니었다** — 퇴화 방지 하한이라
         // [`is_the_degenerate_floor`] 가 걷어냈다. 그 몫의 크기는
         // [`the_blind_spots_are_still_the_size_they_say`] 가 센다.
-        42,
+        // 42 -> 51 은 2026-09-17 토큰 export 가 `size-*` 스케일에 6 · 64 · 96 을 더하면서
+        // **바늘 밖에 있던 리터럴이 안으로 들어온 것**이다. 그 자리들은 전에도 그대로
+        // 있었고 값이 스케일에 없어 안 보였을 뿐이다 — 위반이 새로 생긴 것이 아니라
+        // 바늘이 넓어졌다. 위 `src/adapters/ui/popup/` 과 아래 `src/` 항목이 겪은 것과
+        // 같은 방향이다. 실측으로 갈랐다 — HEAD 트리에 이 회차의 생성 파일 넷만
+        // 얹으면(primitive · theme · generated_component · semantic_color_generated)
+        // 이 수가 53 이 되고, 회차의 소스 수정이 그중 둘을 `Theme` 접근자로 없애 51 이
+        // 된다. 나머지는 이 회차의 범위 밖 파일이라 손대지 않았다.
+        51,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (
@@ -223,7 +233,11 @@ const AREAS: &[(&str, usize, &str)] = &[
         // `spacing_md`)이 이미 있어 그것을 읽는다(14 는 12 로 스냅). 남은 둘(32 · 120)은
         // 원시 스케일을 바로 가리키는 컴포넌트 토큰이라 vendor 한 DTCG export 에 그 이름이
         // 들어오면 없어진다 — 디자인이 기대한 끝값은 27 이다.
-        29,
+        // 29 -> 33 중 셋은 위 `src/adapters/ui/` 와 같은 원인이다 — `size-*` 에 6 · 64 · 96
+        // 이 들어오면서 전부터 있던 자리가 보이게 됐다. 남은 하나는 이 회차가 만든 것이다:
+        // `plugins/ui.rs` 의 세그먼트 탭 라벨이 off-scale 12.5 를 버리고 12 를 이름 붙여
+        // 받는다(ADR-0126 의 off-scale 집합이 닫힌 결과라 되돌릴 값이 아니다).
+        33,
         "설정 화면의 폼 레이아웃",
     ),
     (
@@ -232,7 +246,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // tab_bar_h).max(PhysicalPx(1.0))` 계열(`state/` 넷 · `core/impl_pty.rs` ·
         // `gfx/gpu.rs` · `app/window_lifecycle.rs`)이다. 같은 식이 여섯 자리에 복제돼
         // 있는 것은 별개 물음이고, 이 축의 물음은 아니다.
-        9,
+        // 9 -> 10 은 아래 사유 그대로다 — 2026-09-17 export 가 `size-*` 에 6 · 64 · 96 을
+        // 더했고, 전부터 있던 자리 하나가 그 바늘 안으로 들어왔다.
+        10,
         "그 밖의 본체(gfx·state·app) — GPU/상태 쪽이라 자리마다 사정이 다르다. \
          이 수가 마지막으로 오른 것은 위반이 늘어서가 아니라 `LogicalSize::new(400, 200)` \
          처럼 **세지 않는 형태**로 숨어 있던 값이 이름을 얻어 보이게 됐기 때문이다 — \
@@ -248,7 +264,14 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 성분 maxWidth 이고, 대응 `Theme` 토큰이 없으며 디자인 회신도 새 토큰을 두지 않았다.
         // switch_overlay의 이름/설명 gap 두 사용처가 한 명명 상수를 공유한다.
         // 나머지 역할 명명은 계상 자리를 선언으로 옮기므로 총수는 그대로다.
-        88,
+        // 88 -> 95 도 `size-*` 가 6 · 64 · 96 을 얻어 바늘이 넓어진 몫이다. 생성 파일만
+        // 얹은 실측에서는 98 이고, 이 회차가 셋을 `Theme` 접근자로 없애 95 가 된다.
+        // 95 -> 97 은 본체↔specimen 정합으로 **새로 생긴 둘**이다 — Plugins 창의
+        // `ATTN_PRIMITIVE_12` 와 `SEGMENT_TAB_LABEL_PRIMITIVE_12`. 본체가 off-scale
+        // 12.5 를 버리고 primitive 12 를 이름 붙여 읽게 됐는데 specimen 이 13 으로
+        // 근사하고 있어 픽셀이 갈려 있었다. 값을 맞추는 방법이 같은 primitive 를 같은
+        // 이유로 부르는 것뿐이라(12 에는 semantic role 이 없다) 이 수가 오른다.
+        97,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
          한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
          갈래는 `the_gallery_share_splits_into_four_kinds` 가 든다",
@@ -266,7 +289,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 한 변 자체는 도출되는 값이 아니라 디자인 입력이다. 이 항목이 이미 세고 있는
         // 넷(`STRUCT_GAP_1..4`)이 같은 이유로 여기 있다 — 처방이 "토큰으로 바꿔라" 가
         // 아니라 "이 치수에 semantic 이름을 줄 것인가" 이고, 그것은 디자인 결정이다.
-        6,
+        // 6 -> 7 은 위와 같다 — `size-*` 에 6 이 들어오면서 전부터 있던 자리 하나가
+        // 바늘 안으로 들어왔다.
+        7,
         "공용 위젯",
     ),
     (
@@ -278,7 +303,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         //  · 정규화 좌표 4 (`tasty-plugin-image` 의 UV `pos2(1.0, 1.0)` — 명부에 등록)
         //  · 첨자 1 (`tasty-plugin-sdk` 의 `vec2(p[0] * s, p[1] * s)` — `p[1]` 의 1 이
         //    `vec2(` 인자로 계상됐다. `head_span_of` 가 `[` 를 세게 되면서 닫혔다)
-        14,
+        // 14 -> 15 도 같은 원인이다 — 2026-09-17 export 가 더한 `size-*` 한 값에
+        // 전부터 있던 자리 하나가 겹쳤다.
+        15,
         "나머지 크레이트(dag-layout·model·plugin 뷰어·settings·geometry)",
     ),
 ];
@@ -845,7 +872,12 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         // 27 -> 25 는 그중 둘(`RECORD_SLOT_H` · `CARD_PAD_X`)이 지워지고 Theme 을 읽게 된 것이다.
         // 거기서 +1 은 `file_picker.rs` 의 `CRUMB_MAX_W`(180, jsx `FpCrumbs` maxWidth 인용)다.
         // 역할이 확정된 인라인 9자리를 명명 상수 8개로 옮겼다(같은 line gap은 공유).
-        (26, 60, 1, 6),
+        // 60 -> 66 · 6 -> 7 은 2026-09-17 export 가 `size-*` 에 6 · 64 · 96 을 더해 바늘이
+        // 넓어진 몫이다 — 갈래가 옮겨간 것이 아니라 전부터 있던 자리가 보이게 됐다.
+        // 앞 둘(디자인 인용)이 그대로인 것이 그 증거다: 새로 보인 자리에는 인용이 없다.
+        // 66 -> 68 은 위 둘(specimen 의 `*_PRIMITIVE_12`)이다 — 이름 붙은 치수이되
+        // 디자인 인용이 아니라 본체 전사라 앞 갈래가 아니라 둘째로 센다.
+        (26, 68, 1, 7),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
@@ -916,7 +948,14 @@ fn the_gallery_share_splits_into_four_kinds() {
         // 이 갈래의 doc 참조).
         // 1 -> 2 는 `file_picker.rs` 의 `CRUMB_MAX_W`(180)다 — 같은 값의 `Theme` 이름이 없다.
         // nudge·줄 간격·스크롤 상한·무대·정렬선의 역할 명명으로 인라인 후보 9개가 이동했다.
-        (roster, 2, 2, ratcheted - 2 - 2),
+        // 2 -> 3 · 2 -> 0 은 2026-09-17 export 가 `Theme` 이름 집합을 넓힌 결과다 —
+        // 이름이 없던 둘(180 · 28)이 이름을 얻어 `nameless` 가 비었고, 그중 하나만
+        // 선언 줄이 아니라 `named_value` 로 갔다. 자리가 고쳐진 것이 아니라 **처방이
+        // 생긴 것**이다 — 값이 같다고 그 이름이 이 자리에 맞는다는 뜻은 아니라는
+        // 이 갈래의 doc 이 그대로 적용된다.
+        // 위 둘은 그 줄이 스스로 치수를 이름 짓는 갈래라 넷째가 그만큼 는다
+        // (`ratcheted` 가 함께 올라 식은 그대로다).
+        (roster, 3, 0, ratcheted - 3),
         "갤러리 몫의 갈래가 바뀌었다 — 전시(래칫 밖) · 같은 값의 이름이 있다 · 이름이 \
          없다 · 그 줄이 스스로 치수를 이름 짓는다"
     );
