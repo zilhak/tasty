@@ -36,7 +36,9 @@ const SCAN_FLOOR: Floor = Floor {
     min: 1000,
     measured: 1339,
     measured_on: "2026-09-08",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree("b134d28e3"),
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
+        "b134d28e3 — 이 좌표는 이력 재작성(1998055b1) 이전이라 지금 main 에서 도달 불가다. 값은 실측이고 좌표만 죽었다",
+    ),
     why_this_gap: "이 모수는 저장소 전체의 `.rs` 파일 수다 — 점으로 시작하는 디렉토리와 \
                    `CACHEDIR.TAG` 가 있는 디렉토리 아래는 빼고 센 값이고, 그 술어를 안 \
                    적으면 다음 사람이 다른 수를 얻는다. 2026-09-08 에 `b134d28e3` 에서 \

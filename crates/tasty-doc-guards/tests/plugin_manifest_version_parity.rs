@@ -191,7 +191,9 @@ const CRATES_FLOOR: Floor = Floor {
     min: 450,
     measured: 576,
     measured_on: "2026-09-08",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree("b134d28e3"),
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
+        "b134d28e3 — 이 좌표는 이력 재작성(1998055b1) 이전이라 지금 main 에서 도달 불가다. 값은 실측이고 좌표만 죽었다",
+    ),
     why_this_gap: "이 모수는 `crates/<크레이트>/src/` 아래 `.rs` 파일 수다(`/src/` 를 안 \
                    지나는 것은 안 센다 — 그 술어를 안 적으면 다음 사람이 `crates/` 아래 \
                    `.rs` 전부를 세고 다른 수를 얻는다). 2026-09-08 에 `b134d28e3` 에서 \

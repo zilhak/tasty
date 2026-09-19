@@ -122,7 +122,9 @@ const MARKER_FLOOR: Floor = Floor {
     min: 339,
     measured: 369,
     measured_on: "2026-09-08",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree("b134d28e3"),
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree(
+        "b134d28e3 — 이 좌표는 이력 재작성(1998055b1) 이전이라 지금 main 에서 도달 불가다. 값은 실측이고 좌표만 죽었다",
+    ),
     why_this_gap: "★ 이 좌변은 **커밋에서 재현되지 않는다.** 다른 하한들과 \
                    달리 여기서 세는 것은 순회가 훑은 디렉토리 수이고, 그 안에는 추적되지 않는 \
                    디렉토리가 들어간다 — 빌드 산출물 뿌리, 로컬 도구가 만든 폴더. 실측 \

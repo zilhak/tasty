@@ -31,7 +31,10 @@ const SOURCE_FLOOR: Floor = Floor {
     min: 1232,
     measured: 1343,
     measured_on: "2026-09-08",
-    counted_on: CountedOn::Tree("12bc0f4b2 + 이 커밋"),
+    counted_on: CountedOn::Tree(
+        "12bc0f4b2 + 이 커밋 — 이 좌표는 이력 재작성(1998055b1) 이전이라 지금 main 에서 \
+         도달 불가다. 값은 실측이고 좌표만 죽었다",
+    ),
     why_this_gap: "이 모수는 레포 전체 `.rs` 다. 감소 진폭은 **안 쟀다** — 그래서 곱수를 안 \
                    건다: 안 잰 수를 곱하면 그 곱이 실측으로 읽힌다. 여유는 사건 하나분이다 \
                    — 크레이트 하나가 통째로 접힐 때 빠지는 `.rs` 의 최대가 지금 트리에서 \
