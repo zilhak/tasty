@@ -1084,6 +1084,18 @@ pub fn pages() -> Vec<Page> {
                             components::file_handler_picker::draw_recent,
                         ),
                         spec(
+                            "filehandler-when",
+                            "Relative time — six words and then a date",
+                            Some("just now → {n}d ago → YYYY-MM-DD · column reserved"),
+                            components::file_handler_picker::draw_when,
+                        ),
+                        spec(
+                            "filehandler-path-cut",
+                            "Header path — cut whole segments, measured not counted",
+                            Some("390px line box · …/ prefix · 70 only as a fallback"),
+                            components::file_handler_picker::draw_path_cut,
+                        ),
+                        spec(
                             "filehandler-fallback",
                             "No suggestions — the whole catalog, one time only",
                             Some("All handlers in the attention tone + one-time strip"),

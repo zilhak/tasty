@@ -24,7 +24,8 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
-use frame::{FrameState, fh_footer, frame};
+use frame::{FrameState, fh_footer, frame, header_card};
+use tasty_ui_widgets::file_handler as fh_model;
 use tasty_ui_widgets::tokens::FH_FRAME_WIDTH;
 
 // ── Spec 본문 (catalog.rs 가 Spec 하나당 하나씩 부른다) ────────────────────────
@@ -144,6 +145,116 @@ pub fn draw_recent(ui: &mut egui::Ui, theme: &Theme) {
          line, and the eye has to compare across a gutter to pick one thing.",
     );
 }
+
+/// Spec 3b — "Relative time — six words and then a date".
+pub fn draw_when(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        frame(ui, theme, FrameState::Recent, true);
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("< 60 s", "just now"),
+            ("< 60 min", "{n}m ago"),
+            ("< 24 h", "{n}h ago"),
+            ("24–48 h", "yesterday"),
+            ("2–7 d", "{n}d ago — ceiling at 7"),
+            ("≥ 7 d", "YYYY-MM-DD — no phrase key"),
+            ("n", "integer floor, never rounded up"),
+            ("column", "reserved at fh-when-width (56px)"),
+            ("recompute", "every frame — midnight flips it live"),
+        ],
+        &[TokenChip::new(
+            "text-muted",
+            "the whole slot",
+            theme.text_muted().to_egui(),
+        )],
+    );
+    spec::note(
+        ui,
+        theme,
+        "The date is deliberately not a translated phrase. Past a week the number stops helping \
+         you choose a handler, and a bare YYYY-MM-DD is bounded at ten characters, reads the same \
+         in every locale, and has no plural rule to get wrong. That bound is what the column \
+         reserves — which is why the id beside it never reflows when a row crosses a boundary.",
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't add {n}w ago or {n}mo ago, and don't shrink or drop the time to make room. A \
+         partially cut timestamp reads as a different timestamp; the id is the piece that gives \
+         way, and it already elides from the front.",
+    );
+}
+
+/// Spec 3c — "Header path — cut whole segments, measured not counted".
+pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        for (label, raw) in [
+            "70 chars — fits, untouched",
+            "92 → 68 — whole segments dropped",
+            "one 72-char segment → 70",
+        ]
+        .into_iter()
+        .zip(PATH_SAMPLES)
+        {
+            spec::cluster(ui, theme, label, |ui| {
+                header_card(ui, theme, &fh_model::elide_target_front(raw, PATH_BUDGET));
+            });
+        }
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("line box", "420 − 1×2 border − 14×2 pad = 390px"),
+            ("budget", "measured: 390px ÷ one mono cell"),
+            ("fallback", "70 chars, only when it cannot measure"),
+            ("first rule", "drop a whole leading segment, prefix …/"),
+            (
+                "second rule",
+                "characters — only if one segment is too long",
+            ),
+            ("direction", "front, because the filename is the tail"),
+        ],
+        &[TokenChip::new(
+            "text-muted",
+            "mono path line",
+            theme.text_muted().to_egui(),
+        )],
+    );
+    spec::do_(
+        ui,
+        theme,
+        "Do measure the line box against the font actually in use. The 70 is derived (390px at \
+         5.5px per D2Coding cell), not chosen — it is what a screen that cannot measure falls \
+         back to, so the two can never disagree by design.",
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't cut inside a directory name to save two characters. A half-written segment reads \
+         as a directory that does not exist, which is worse than one fewer level of context.",
+    );
+}
+
+/// 경로 컷 Spec 의 세 표본 — **자르기 전** 값이다.
+///
+/// specimen 은 잘린 결과를 적어 두지 않고 본체와 **같은 함수**에 넣어 그 자리에서
+/// 자른다. 결과를 적어 두면 규칙이 바뀌어도 그림은 안 바뀌어서, 이 Spec 이 규칙을
+/// 보여주는 것이 아니라 규칙이 한때 그랬다는 기록이 된다.
+const PATH_SAMPLES: [&str; 3] = [
+    "work/tasty/crates/tasty-gallery/src/catalog/components/file_handler.rs",
+    "/home/maya/src/tasty-main/crates/tasty-gallery/src/catalog/components/file_handler_picker.rs",
+    "quarterly-revenue-reconciliation-draft-final-v3-reviewed-by-finance.xlsx",
+];
+
+/// specimen 의 예산 — 갤러리는 실제 헤더 폰트를 재지 않고 **파생 상한**을 쓴다.
+///
+/// Spec 이 보이려는 것은 "못 잴 때 어디로 떨어지는가" 를 포함한 규칙 전체이고, 그
+/// 갈래의 값이 이것이다. 측정 갈래는 본체가 매 프레임 돈다.
+const PATH_BUDGET: usize = tasty_ui_widgets::tokens::FH_TARGET_ELIDE_FALLBACK;
 
 /// Spec 4 — "No suggestions — the whole catalog, one time only".
 pub fn draw_fallback(ui: &mut egui::Ui, theme: &Theme) {
@@ -385,4 +496,36 @@ pub fn draw_default_tag(ui: &mut egui::Ui, theme: &Theme) {
         "Keep the Tag. It answers “what happens if I just press Enter” — the question the \
          picker exists to ask.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 경로 컷 Spec 의 cluster 라벨이 **참인지** 본다.
+    ///
+    /// 라벨은 "70 chars — fits" · "92 → 68" · "one 72-char segment → 70" 이라고 말한다.
+    /// 그림은 그 말과 별개로 그려지므로, 말이 낡아도 아무것도 안 빨개진다 — 여기서
+    /// 표본의 길이와 함수의 출력 길이를 라벨과 맞물려 고정한다.
+    #[test]
+    fn the_path_cut_labels_describe_what_the_specimen_draws() {
+        let [fits, segment, one_piece] = PATH_SAMPLES;
+
+        assert_eq!(fits.chars().count(), 70);
+        assert_eq!(fh_model::elide_target_front(fits, PATH_BUDGET), fits);
+
+        assert_eq!(segment.chars().count(), 92);
+        let cut = fh_model::elide_target_front(segment, PATH_BUDGET);
+        assert_eq!(cut.chars().count(), 68);
+        assert!(cut.starts_with("…/crates/"), "{cut}");
+
+        assert_eq!(one_piece.chars().count(), 72);
+        assert!(
+            !one_piece.contains('/'),
+            "한 조각이어야 문자 컷 갈래로 간다"
+        );
+        let cut = fh_model::elide_target_front(one_piece, PATH_BUDGET);
+        assert_eq!(cut.chars().count(), 70);
+        assert!(cut.starts_with('…') && !cut.starts_with("…/"), "{cut}");
+    }
 }

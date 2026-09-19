@@ -3,10 +3,11 @@
 //! [`frame`]. 어느 Spec 을 그릴지는 상위 모듈이 정한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::file_handler as fh_model;
 use tasty_ui_widgets::tokens::{
     FH_EDGE_PAD_X, FH_EMPTY_PAD_Y, FH_FRAME_WIDTH, FH_GAP_SM, FH_HEADER_PAD_BOTTOM,
-    FH_HEADER_PAD_TOP, FH_ID_ELIDE_MAX, FH_ID_ELIDE_TAIL, FH_ID_LINE_GAP, FH_LIST_FADE_HEIGHT,
-    FH_LIST_MAX_HEIGHT, FH_LIST_PAD, FH_RECENT_DIM_OPACITY, FH_ROW_GAP, FH_ROW_PAD_X, STRUCT_GAP_2,
+    FH_HEADER_PAD_TOP, FH_ID_ELIDE_MAX, FH_ID_LINE_GAP, FH_LIST_FADE_HEIGHT, FH_LIST_MAX_HEIGHT,
+    FH_LIST_PAD, FH_RECENT_DIM_OPACITY, FH_ROW_GAP, FH_ROW_PAD_X, STRUCT_GAP_2,
 };
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_width};
 
@@ -120,19 +121,6 @@ fn row_name(r: &Row) -> &'static str {
     }
 }
 
-/// id 는 **앞에서** 자른다 — reverse-DNS id 의 꼬리가 핸들러를 가르고 벤더 접두는 반복된다.
-/// 모델에서 잘라 LTR 로 그린다(헤더 경로와 같은 규칙).
-fn elide_id_front(id: &str) -> String {
-    if id.chars().count() <= FH_ID_ELIDE_MAX {
-        return id.to_string();
-    }
-    let tail: String = id
-        .chars()
-        .skip(id.chars().count() - FH_ID_ELIDE_TAIL)
-        .collect();
-    format!("…{tail}")
-}
-
 // ── 상태별 행 목록 — 디자인 `FH_ROWS` / `FH_LONG` ────────────────────────────
 
 const SUGGESTED: &[Row] = &[
@@ -160,7 +148,32 @@ const SUGGESTED: &[Row] = &[
     row("dev.git-helper.diff/viewer", Owner::Plugin, "markdown"),
 ];
 
+/// 어휘 6 단계가 한 화면에 보이도록 **버킷당 한 행**을 둔다 — 이 목록의 일은 핸들러
+/// 구성을 보이는 것이 아니라 "언제" 열이 가질 수 있는 모든 모양을 한눈에 세우는 것이다.
+/// 가장 넓은 어휘(절대 날짜 10 자)가 맨 아래에 있어 열 예약폭이 눈으로 확인된다.
+///
+/// 핸들러는 전부 이 specimen 의 다른 목록에 이미 있는 것들이다 — 디자인이 값으로 준
+/// 두 쌍(`2h ago` ↔ Text editor · `yesterday` ↔ hex viewer)은 그대로 두고 나머지
+/// 넷만 기존 재고에서 붙였다.
 const RECENT: &[Row] = &[
+    Row {
+        when: Some("just now"),
+        ..named(
+            "com.tasty.markdown/preview",
+            Owner::Host,
+            "markdown",
+            "Markdown preview",
+        )
+    },
+    Row {
+        when: Some("12m ago"),
+        ..named(
+            "com.tasty.pager/less",
+            Owner::Host,
+            "pager",
+            "Terminal (less)",
+        )
+    },
     Row {
         when: Some("2h ago"),
         ..named(
@@ -173,6 +186,14 @@ const RECENT: &[Row] = &[
     Row {
         when: Some("yesterday"),
         ..row("io.binview.hex/viewer", Owner::Plugin, "binary")
+    },
+    Row {
+        when: Some("4d ago"),
+        ..named("com.tasty.log/viewer", Owner::Host, "log", "Log viewer")
+    },
+    Row {
+        when: Some("2026-09-13"),
+        ..row("dev.git-helper.diff/viewer", Owner::Plugin, "markdown")
     },
 ];
 
@@ -388,22 +409,20 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
         sep_color,
         text_w,
     ) + FH_ID_LINE_GAP.value();
-    let when_w = r.when.map_or(0.0, |w| {
+    // 언제 열은 **최대 어휘로 예약한다**(`component.fh-when-width`) — 실제 문자열 폭으로
+    // 재면 버킷이 바뀔 때마다 옆의 id 가 reflow 된다. 위 여섯 행이 서로 다른 어휘를
+    // 들고도 id 끝이 한 줄에 서는 것이 그 예약의 눈으로 보는 증거다.
+    let when_w = if r.when.is_some() {
         let dot = ui.fonts(|f| f.layout_no_wrap("·".into(), meta_font.clone(), sep_color));
-        let label = ui.fonts(|f| {
-            f.layout_no_wrap(
-                w.to_owned(),
-                meta_font.clone(),
-                theme.text_muted().to_egui(),
-            )
-        });
-        dot.rect.width() + label.rect.width() + FH_ID_LINE_GAP.value() * 2.0
-    });
+        dot.rect.width() + theme.fh_when_width().value() + FH_ID_LINE_GAP.value() * 2.0
+    } else {
+        0.0
+    };
     let id_avail = (text_left + text_w - x - when_w).max(0.0);
     x += paint_truncated(
         ui,
         egui::pos2(x, y),
-        &elide_id_front(r.id),
+        &fh_model::elide_id_front(r.id),
         id_font,
         theme.text_muted().to_egui(),
         id_avail,
@@ -423,7 +442,7 @@ fn fh_row(ui: &mut egui::Ui, theme: &Theme, r: &Row, sel: bool, dim: bool) {
             when,
             meta_font,
             theme.text_muted().to_egui(),
-            when_w,
+            theme.fh_when_width().value(),
         );
     }
 
@@ -496,7 +515,7 @@ fn fh_group(
 }
 
 /// 프레임 자기 헤더 — 제목 + 형식 Tag, 그 아래 mono 경로.
-fn fh_header(ui: &mut egui::Ui, theme: &Theme, state: FrameState) {
+fn fh_header(ui: &mut egui::Ui, theme: &Theme, state: FrameState, path: &str) {
     kit::region(
         ui,
         egui::Margin {
@@ -520,7 +539,7 @@ fn fh_header(ui: &mut egui::Ui, theme: &Theme, state: FrameState) {
             });
             // 긴 경로는 렌더 전에 **앞에서** 잘린다(파일명이 꼬리이고 그것이 식별한다).
             // 모델에서 잘라 LTR 로 그린다 — `direction: rtl` 은 런을 재배열해 반대쪽을 자른다.
-            kit::caption(ui, theme, state.path(), true);
+            kit::caption(ui, theme, path, true);
         },
     );
     kit::hsep(ui, theme);
@@ -676,11 +695,25 @@ fn fh_group_rule(ui: &mut egui::Ui, theme: &Theme) {
 
 /// 상태 하나를 프레임 하나로 — 디자인 `FileHandlerFrame`.
 pub(super) fn frame(ui: &mut egui::Ui, theme: &Theme, state: FrameState, headless: bool) {
+    frame_with_path(ui, theme, state, headless, state.path());
+}
+
+/// 헤더 경로를 밖에서 정하는 갈래 — 디자인 `FileHandlerFrame` 의 `path` prop.
+///
+/// 경로 컷 규칙을 보이는 Spec 은 같은 프레임에 **다른 경로**를 넣어야 하므로, 상태가
+/// 경로를 정하는 기본값([`FrameState::path`])과 분리한다.
+pub(super) fn frame_with_path(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    state: FrameState,
+    headless: bool,
+    path: &str,
+) {
     kit::frame_card(ui, theme, FH_FRAME_WIDTH, kit::panel_fill(theme), |ui| {
         if !headless {
             fh_titlebar(ui, theme);
         }
-        fh_header(ui, theme, state);
+        fh_header(ui, theme, state, path);
         if state == FrameState::Fallback {
             fh_fallback_strip(ui, theme);
         }
@@ -690,6 +723,15 @@ pub(super) fn frame(ui: &mut egui::Ui, theme: &Theme, state: FrameState, headles
             fh_list(ui, theme, state);
         }
         fh_footer(ui, theme, state != FrameState::Empty);
+    });
+}
+
+/// 헤더만 있는 specimen — 디자인 `FhHeader` 하나를 프레임 폭 그대로 세운다.
+///
+/// 경로 컷은 헤더 한 줄의 규칙이라, 목록·footer 까지 딸려 오면 비교할 것이 가려진다.
+pub(super) fn header_card(ui: &mut egui::Ui, theme: &Theme, path: &str) {
+    kit::frame_card(ui, theme, FH_FRAME_WIDTH, kit::panel_fill(theme), |ui| {
+        fh_header(ui, theme, FrameState::Default, path);
     });
 }
 
@@ -800,12 +842,15 @@ mod tests {
         );
     }
 
+    /// specimen 이 **본체와 같은 함수**를 부르는지. 값을 다시 재는 것이 아니라
+    /// (그쪽은 `tasty_ui_widgets::file_handler` 의 시험이 본다) 이 파일이 자기 사본을
+    /// 다시 만들지 않았는지를 본다 — 예전에는 여기 복제본이 있었다.
     #[test]
     fn the_id_is_elided_at_the_front_past_the_limit() {
         let short = "com.tasty.text/editor";
-        assert_eq!(elide_id_front(short), short);
+        assert_eq!(fh_model::elide_id_front(short), short);
         let long = "net.example.enterprise.documents.attachments/inline-preview-handler";
-        let out = elide_id_front(long);
+        let out = fh_model::elide_id_front(long);
         assert!(out.starts_with('…'), "front-elided: {out}");
         assert!(out.ends_with("handler"), "the tail survives: {out}");
         assert_eq!(out.chars().count(), FH_ID_ELIDE_MAX);
