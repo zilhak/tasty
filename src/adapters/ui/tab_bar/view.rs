@@ -115,17 +115,19 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                // divergence: disabled 화살표는 surface1 값(text-role 접근자 부재).
-                                // 값-보존 위해 border_strong() 사용(§B3).
+                                // disabled 화살표 — `text-disabled`(neutral-700).
                                 let arrow_color = if can_left {
                                     th.text_muted()
                                 } else {
-                                    th.border_strong()
+                                    th.text_disabled()
                                 };
                                 if resp.hovered() && can_left {
-                                    // divergence: hover 채움이 surface0(=surface-raised) 불투명값.
-                                    // hover-overlay 로 바꾸면 픽셀 변함 → 값-보존 surface_raised().
-                                    ui.painter().rect_filled(r, 0.0, th.surface_raised());
+                                    // hover 채움 — canonical `overlay-hover`.
+                                    ui.painter().rect_filled(
+                                        r,
+                                        0.0,
+                                        th.overlay_hover().to_egui_premultiplied(),
+                                    );
                                 }
                                 ui.painter().text(
                                     r.center(),
@@ -203,9 +205,13 @@ pub fn draw_pane_tab_bars_view(
                                     egui::pos2(x, clip_rect.min.y),
                                     egui::vec2(separator_w, bar_h),
                                 );
-                                // divergence: 탭 구분선. 코드=surface1, 디자인 tab_separator()=
-                                // 반투명(값 다름) → 채택 금지. 값-보존 border_strong() (§B3).
-                                painter.rect_filled(sep, 0.0, th.border_strong());
+                                // 탭 구분선 — canonical `tab-separator`. premultiplied
+                                // 저장이라 `to_egui_premultiplied()` 로 벗긴다.
+                                painter.rect_filled(
+                                    sep,
+                                    0.0,
+                                    th.tab_separator().to_egui_premultiplied(),
+                                );
                                 x += separator_w;
                             }
 
@@ -223,9 +229,12 @@ pub fn draw_pane_tab_bars_view(
                                         egui::Sense::click(),
                                     );
                                     if resp.hovered() {
-                                        // divergence: hover 채움이 surface0(=surface-raised) 불투명값.
-                                        // 값-보존 surface_raised() (hover-overlay 로 바꾸면 픽셀 변함).
-                                        painter.rect_filled(plus_rect, 0.0, th.surface_raised());
+                                        // hover 채움 — canonical `overlay-hover`.
+                                        painter.rect_filled(
+                                            plus_rect,
+                                            0.0,
+                                            th.overlay_hover().to_egui_premultiplied(),
+                                        );
                                     }
                                     painter.text(
                                         plus_rect.center(),
@@ -268,16 +277,19 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                // divergence: disabled 화살표는 surface1 값(text-role 접근자 부재).
-                                // 값-보존 위해 border_strong() 사용(§B3).
+                                // disabled 화살표 — `text-disabled`(neutral-700).
                                 let arrow_color = if can_right {
                                     th.text_muted()
                                 } else {
-                                    th.border_strong()
+                                    th.text_disabled()
                                 };
                                 if resp.hovered() && can_right {
-                                    // divergence: hover 채움이 surface0(=surface-raised) 불투명값 → 값-보존.
-                                    ui.painter().rect_filled(r, 0.0, th.surface_raised());
+                                    // hover 채움 — canonical `overlay-hover`.
+                                    ui.painter().rect_filled(
+                                        r,
+                                        0.0,
+                                        th.overlay_hover().to_egui_premultiplied(),
+                                    );
                                 }
                                 ui.painter().text(
                                     r.center(),
@@ -306,8 +318,12 @@ pub fn draw_pane_tab_bars_view(
                                     th.text_muted()
                                 };
                                 if resp.hovered() {
-                                    // divergence: hover 채움이 surface0(=surface-raised) 불투명값 → 값-보존.
-                                    ui.painter().rect_filled(r, 0.0, th.surface_raised());
+                                    // hover 채움 — canonical `overlay-hover`.
+                                    ui.painter().rect_filled(
+                                        r,
+                                        0.0,
+                                        th.overlay_hover().to_egui_premultiplied(),
+                                    );
                                 }
                                 let icon_rect = egui::Rect::from_center_size(
                                     r.center(),

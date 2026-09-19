@@ -64,7 +64,9 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
                 rect.y_range(),
                 egui::Stroke::new(
                     theme.border_width.value(),
-                    egui::Color32::from(theme.separator),
+                    // `separator` 는 premultiplied 저장이라 `to_egui_premultiplied()` 로
+                    // 벗긴다 — 본체(`src/adapters/ui/tab_bar/`)와 같은 경로다.
+                    theme.tab_separator().to_egui_premultiplied(),
                 ),
             );
         }
@@ -163,7 +165,9 @@ fn attention_strip(ui: &mut egui::Ui, theme: &Theme) {
                 rect.y_range(),
                 egui::Stroke::new(
                     theme.border_width.value(),
-                    egui::Color32::from(theme.separator),
+                    // `separator` 는 premultiplied 저장이라 `to_egui_premultiplied()` 로
+                    // 벗긴다 — 본체(`src/adapters/ui/tab_bar/`)와 같은 경로다.
+                    theme.tab_separator().to_egui_premultiplied(),
                 ),
             );
         }
@@ -219,7 +223,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "needs-input title",
                 theme.accent_warning().into(),
             ),
-            TokenChip::new("separator", "tab divider", theme.separator.into()),
+            TokenChip::new(
+                "tab-separator",
+                "tab divider",
+                theme.tab_separator().to_egui_premultiplied(),
+            ),
         ],
     );
 

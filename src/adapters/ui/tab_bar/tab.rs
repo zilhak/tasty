@@ -15,20 +15,8 @@ use tasty_type_geometry::length::LogicalPx;
 /// 지금 두 값이 짝(2 ↔ 4)인 것은 **우연이다** — 밑줄 두께가 바뀌어도 이 점은 안 바뀐다.
 const TAB_ACTIVE_DOT_SIZE: LogicalPx = LogicalPx(4.0);
 
-/// 탭의 busy 표시 점 지름. 스케일 밖(6) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이라
-/// 그리로 보내면 배율 1 에서 픽셀이 바뀐다(ADR-0126 대로 이름만 붙인다).
-///
-/// **이 자리에는 겨냥하는 토큰 이름이 이미 있다** — `component.tab-dot-size` 인데 값이
-/// `{component.status-dot-size}` = 8 이라 부르면 6 → 8 이 된다. 그래서 부르지 않았다.
-/// 그 토큰이 디자인이 정한 8 인지, 다른 세 dot 이름을 만들 때 대칭으로 딸려 나온 8 인지가
-/// 갈려야 이 자리가 토큰으로 갈지 값을 지킬지 정해진다.
-///
-/// **같은 6 을 `src/adapters/ui/sidebar/view.rs` 의 rail 상태 점도 쓴다** — 무관한 두
-/// 화면이 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
-const TAB_BUSY_DOT_SIZE: LogicalPx = LogicalPx(6.0);
-
 /// busy 점과 탭 라벨 사이 여백. 종전에는 `let dot_pad: f32 = 6.0;` 인라인 리터럴이었다 —
-/// 이름이 없으면 이 값이 점 지름(6)과 **같은 값이라는 사실**도, 그것이 우연이라는 사실도
+/// 이름이 없으면 이 값이 점 지름(`tab-dot-size`, 6)과 **같은 값이라는 사실**도, 그것이 우연이라는 사실도
 /// 소스에서 안 읽힌다. 선언이 아니라 `let` 이라 선언 축 가드에도 안 걸렸다.
 const TAB_BUSY_DOT_PAD: LogicalPx = LogicalPx(6.0);
 
@@ -70,17 +58,19 @@ pub(super) fn draw_tab(
     // `Theme` 에서 와서 이미 타므로, 점만 고정이면 1.2 에서 점이 상대적으로 쪼그라든다
     // (ADR-0126 "그릇과 내용은 같은 편이어야 한다"). 값 자체를 토큰으로 스냅하는 것은
     // 별개 물음이고 그쪽은 같은 ADR 이 스냅하지 말라고 정해 두었다.
-    let dot_radius = zoomed_px(th, TAB_BUSY_DOT_SIZE).scaled(0.5);
+    // busy 점 지름은 `tab-dot-size` — 24px 탭 strip 안이라 compact 6 이다.
+    let dot_radius = th.tab_dot_size().scaled(0.5);
     // 라벨이 점에 내주는 폭 = 지름 + 여백. 논리 길이로 더하고 여기서 한 번만 벗긴다.
-    let dot_reserve = (zoomed_px(th, TAB_BUSY_DOT_SIZE) + zoomed_px(th, TAB_BUSY_DOT_PAD)).value();
+    let dot_reserve = (th.tab_dot_size() + zoomed_px(th, TAB_BUSY_DOT_PAD)).value();
     if i > 0 {
         let sep = egui::Rect::from_min_size(
             egui::pos2(x, clip_rect.min.y),
             egui::vec2(separator_w, bar_h),
         );
-        // divergence: 탭 구분선. 코드=surface1, 디자인 tab_separator()=
-        // 반투명(값 다름) → 채택 금지. 값-보존 border_strong() (§B3).
-        painter.rect_filled(sep, 0.0, th.border_strong());
+        // 탭 구분선 — canonical `tab-separator`. `separator` 는 premultiplied
+        // 바이트로 저장되므로 `to_egui_premultiplied()` 로 벗긴다 — `to_egui()` 는
+        // 한 번 더 곱해 8% 선을 2/255 로 만들어 사실상 안 보이게 한다.
+        painter.rect_filled(sep, 0.0, th.tab_separator().to_egui_premultiplied());
         x += separator_w;
     }
 
