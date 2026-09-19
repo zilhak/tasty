@@ -172,6 +172,14 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     },
     NotAWindow {
         path: "site/content/using/files.md",
+        phrase: "창을 열어 둔 채 자정을",
+        count: 1,
+        evidence: "같은 핸들러 선택 popup — 열어 둔 채 날짜가 바뀌면 Recent 의 상대 시각이 \
+                   따라 바뀐다는 말이다. 그 popup 은 매 프레임 다시 계산한다 \
+                   (`when_bucket` 를 여는 시점에 얼리지 않는다)",
+    },
+    NotAWindow {
+        path: "site/content/using/files.md",
         phrase: "같은 창이 다시 뜹니다",
         count: 1,
         evidence: "같은 핸들러 선택 popup 이 다음 번에도 뜬다는 말이다 — 1회성 선택의 결과",
