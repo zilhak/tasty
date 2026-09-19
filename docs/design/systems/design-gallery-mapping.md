@@ -34,12 +34,15 @@
 | `PasskeySelect` | `passkey_dropdown_row` | — |
 
 Attach 갤러리 specimen 은 디자인 **gallery 미러**(`gallery/overlays-shared.jsx` `RemoteFrame
-tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전사한 것으로, 본체
-함수 호출이 아니다(컨테이너 미등록 사유와 동일 — 본체는 상태/IO 의존). 디자인 미러가 세그먼트
-active 를 `surface-active` 로 그리는 반면 본체(ui_kits jsx)는 `accent-primary` 세그먼트를
-쓴다 — 갤러리 미러가 참조하는 `gallery/overlays-shared.jsx`와 본체가 따르는 `ui_kits` jsx,
-두 디자인 소스 자체가 서로 다른 세그먼트 색을 쓰고 있어 생긴 차이다. 갤러리는 각자의 디자인
-소스를 그대로 전사하므로 이 차이를 임의로 통일하지 않는다.
+tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전사한 것이다.
+
+**세그먼트 색은 2026-09-17 결정(R1)으로 닫혔다.** 한때 갤러리 미러가 active 를
+`surface-active` 로, 본체가 `accent-primary` 로 그려 갈려 있었는데, 그것은 두 디자인 소스가
+서로 달랐기 때문이고 **디자인 쪽이 미러를 틀린 것으로 판정해 고쳤다.** 확정 규칙은 두 컴포넌트를
+가른다 — **밑줄은 view 를 바꾸고(탭 스트립), 채움은 값을 바꾼다(세그먼트).** 그래서 탭 스트립은
+2px `accent-primary` 밑줄 + weight 600 이고 세그먼트는 `accent-primary` 채움 + `text-on-accent`
+잉크다. `surface-active` 는 **행 선택 채움**이라 어느 쪽도 아니다. 본체(`tasty_ui_widgets::
+segmented`)와 갤러리(`components/remote.rs` `seg_chip`)가 지금 둘 다 이 규칙을 따른다.
 
 로컬 SSH config 섹션은 `remote_tool.jsx` 에 대응 컴포넌트가 없다 — 확정 목업이 이 레포에서
 정해진 기존 목록의 확장이라, 기존 행 구조(`ProfileRow` 3행 레이아웃의 축약형) + `hsep` +

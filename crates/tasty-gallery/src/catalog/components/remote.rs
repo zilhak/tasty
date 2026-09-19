@@ -532,14 +532,14 @@ pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "surface-active",
-                "selected segment",
-                theme.surface_active().to_egui(),
+                "accent-primary",
+                "active segment / active tab / Save",
+                theme.accent_primary().to_egui(),
             ),
             TokenChip::new(
-                "accent-primary",
-                "active tab / Save",
-                theme.accent_primary().to_egui(),
+                "text-on-accent",
+                "active segment ink",
+                theme.text_on_accent().to_egui(),
             ),
             TokenChip::new("text-muted", "labels / hints", theme.text_muted().to_egui()),
         ],
@@ -724,7 +724,12 @@ fn form_row(ui: &mut egui::Ui, theme: &Theme, label: &str, add: impl FnOnce(&mut
 }
 
 /// Connection 세그먼트 chip — gallery 미러 `seg()` 전사: 개별 chip(gap 6),
-/// active = surface-active fill + border-strong, inactive = surface-raised.
+/// active = accent-primary fill + on-accent 잉크 + border-strong,
+/// inactive = surface-raised + border-default + text-secondary.
+///
+/// 2026-09-17 디자인 결정(R1)이 **세그먼트와 탭 스트립을 갈랐다**: 밑줄은 view 를
+/// 바꾸고 채움은 값을 바꾼다. 세그먼트는 값이므로 accent 채움이다. `surface-active`
+/// 는 행 선택 채움이라 어느 쪽도 아니다 — 그 전까지 이 미러가 그것을 쓰고 있었다.
 fn seg_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     let h = theme.item_height_interactive.value();
     let font = egui::FontId::proportional(theme.font_size_body.value());
@@ -735,9 +740,9 @@ fn seg_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let (fill, border, fg) = if active {
         (
-            theme.surface_active(),
+            theme.accent_primary(),
             theme.border_strong(),
-            theme.text_primary(),
+            theme.text_on_accent(),
         )
     } else {
         (
