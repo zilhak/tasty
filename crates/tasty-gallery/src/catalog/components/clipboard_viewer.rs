@@ -115,7 +115,13 @@ thread_local! {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+    // 세로 적층이다. `Wrap` 은 `spec::cluster` 를 줄바꿈하지 못한다 — cluster 가 `ui.vertical`
+    // 이라 남은 폭을 자기 최대폭으로 받아 **넘치는 일이 없고**, 그래서 `horizontal_wrapped`
+    // 가 줄을 안 바꾼다. 안의 카드는 480 고정폭이라 그대로 흘러 나가고, 본문 스크롤은 세로
+    // 전용이라 넘친 만큼은 도달할 수 없다. 이 절은 480 팝업이 열이라 그 형태가 그대로 나서
+    // 앞의 둘 말고는 안 보였다(실측). 같은 모양의 다른 절들(git-viewer · image · markdown)이
+    // 이미 `Column` 을 쓴다.
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
         spec::cluster(
             ui,
             theme,
