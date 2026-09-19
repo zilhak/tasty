@@ -271,7 +271,7 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            // footer kbd 힌트 — 스케일 밖 10.5 였던 자리. 2026-09-17 결정이 11 로
+            // footer kbd 힌트 — 스케일 밖 10.5 였던 자리. ADR-0290 이 11 로
             // 스냅했고 11 은 `font-size-caption` 이라 토큰을 그대로 읽는다.
             let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
             ui.horizontal(|ui| {

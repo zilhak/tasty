@@ -25,8 +25,8 @@ pub enum StatusKind {
 impl StatusKind {
     fn color(self, theme: &Theme) -> egui::Color32 {
         match self {
-            // 다섯 상태 전부 `status-dot-*` component 색 대응. Idle 은 2026-09-17
-            // 결정(C6)으로 text-muted 에서 canonical `status-dot-idle` 로 옮겼다 —
+            // 다섯 상태 전부 `status-dot-*` component 색 대응. Idle 은 ADR-0290 으로
+            // text-muted 에서 canonical `status-dot-idle` 로 옮겼다 —
             // 의도된 시각 변화다(subtext0 → status-idle).
             StatusKind::Running => theme.status_dot_success().to_egui(),
             StatusKind::Idle => theme.status_dot_idle().to_egui(),

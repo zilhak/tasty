@@ -2,7 +2,7 @@ use winit::window::Window;
 
 // ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
 //
-// 브랜드 타이틀 30 은 2026-09-17 결정으로 `font-size-brand-display` semantic 이
+// 브랜드 타이틀 30 은 ADR-0290 으로 `font-size-brand-display` semantic 이
 // 생겨 `Theme` 필드(`font_size_brand_display`)로 옮겼고, 경고 본문 12.5 는 12 로
 // 스냅됐다. 남은 것은 semantic role 이 없는 primitive 12 하나다.
 

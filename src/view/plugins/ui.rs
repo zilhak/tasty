@@ -23,7 +23,7 @@ const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
 // ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
 //
 // `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에
-// 없는 값은 primitive 임을 이름에 남긴다. 2026-09-17 결정이 이 파일의 `.5` 세 값을
+// 없는 값은 primitive 임을 이름에 남긴다. ADR-0290 이 이 파일의 `.5` 세 값을
 // 12 / 10 / 10 으로 스냅했고, 남은 12 만 semantic role 이 없다.
 
 /// segment 탭 라벨. DTCG primitive `font-size-12` 를 직접 쓰는 자리 — 12px 는

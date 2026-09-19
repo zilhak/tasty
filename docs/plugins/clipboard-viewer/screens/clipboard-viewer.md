@@ -48,7 +48,7 @@ plugin 은 header~footer content 영역만 그린다(`cbFrame`/`Scrim` 은 desig
 | UI 요소 | 토큰 | 비고 |
 |---|---|---|
 | popup 프레임 | `bg-panel` | 480×360 고정(size_hint), plugin content 도 동일 fill |
-| header/type-bar/footer 좌우 인셋 | `space-md`(12) | 2026-09-17 결정(I1)이 시안의 14 를 12 로 내렸다 — 14 전용 semantic 은 열지 않는다 |
+| header/type-bar/footer 좌우 인셋 | `space-md`(12) | ADR-0290 이 시안의 14 를 12 로 내렸다 — 14 전용 semantic 은 열지 않는다 |
 | header 타이틀 | `font-size-max`(14) + `text-primary` | `.strong()` |
 | snapshot 뱃지 | `tag`(Default variant) | `tasty_ui_widgets::tag` |
 | type-bar 행 배경 | `bg-sidebar` | |
@@ -57,7 +57,7 @@ plugin 은 header~footer content 영역만 그린다(`cbFrame`/`Scrim` 은 desig
 | body well | `bg-app` fill + `separator`+`border-width` + `corner-radius` | `ScrollArea`(text) 또는 중앙 정렬(image, `well_centered`) |
 | body 미리보기 텍스트 | `font-size-term-sm`(12) mono + `text-primary` | |
 | type-bar 우측 메타(image 등) | `font-size-caption`(11) mono + `text-muted` | design `cbMetaMono`, `meta_label` |
-| image body 아이콘 | `CLIPBOARD_CENTER_ICON_SIZE`(28) + `text-muted` | 2026-09-17 결정(T6)이 30 → 28 로 모았다 — 폰트가 아니라 아이콘 가족 |
+| image body 아이콘 | `CLIPBOARD_CENTER_ICON_SIZE`(28) + `text-muted` | ADR-0290 이 30 → 28 로 모았다 — 폰트가 아니라 아이콘 가족 |
 | image body "미리보기 없음" 안내 | `font-size-caption`(11) italic + `text-disabled` | design `fontStyle: italic` |
 | footer mime 텍스트 | `font-size-caption`(11) mono + `text-muted` | HTML 타입은 `{mime} · {meta}` 로 결합, Other 는 meta 가 mime 을 통째로 대체 |
 | footer Close 버튼 | `tasty_ui_widgets::Button`(Secondary) | |

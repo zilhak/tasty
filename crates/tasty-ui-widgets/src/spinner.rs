@@ -74,7 +74,7 @@ impl Spinner {
 
     /// 그리고 hover 응답을 반환한다.
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
-        // 스피너 지름은 폰트 스케일이 아니라 **아이콘 가족**이다(2026-09-17 결정 T7).
+        // 스피너 지름은 폰트 스케일이 아니라 **아이콘 가족**이다(ADR-0290).
         let size = self
             .size
             .unwrap_or_else(|| theme.icon_glyph_size_md.value());

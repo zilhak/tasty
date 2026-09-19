@@ -629,7 +629,7 @@ fn draw_changed_badge(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Them
         ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
     // 채움은 `tint-fill-alpha`. 테두리 계수는 디자인이 "채움만" 으로 한정한
-    // 부분 사용이라(2026-09-17 P4) 이 자리 고유 값으로 남는다.
+    // 부분 사용이라(ADR-0290) 이 자리 고유 값으로 남는다.
     const WARN_BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
         .rect_filled(rect, radius, warn.gamma_multiply(th.tint_fill_alpha()));

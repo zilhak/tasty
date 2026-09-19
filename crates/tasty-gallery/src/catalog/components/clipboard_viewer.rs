@@ -569,7 +569,8 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
         egui::StrokeKind::Inside,
     );
 
-    // image body 글리프는 아이콘 가족 — CenterState 와 같은 28(2026-09-17 T6).
+    // image body 글리프는 아이콘 가족 — CenterState 와 같은 28(ADR-0290 · 인벤토리는
+    // docs/plugins/clipboard-viewer/screens/clipboard-viewer.md).
     let gap = theme.spacing_sm.value();
     let icon_h = CENTER_ICON_SIZE;
     let meta_h = theme.font_size_caption.value();

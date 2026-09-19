@@ -92,7 +92,7 @@ pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
 
 /// 토스트 사이 세로 간격. = `component.toast-gap` → `{semantic.space-sm}` = 8.
-/// 2026-09-17 결정이 그리드 밖 6 을 8 로 올렸다(의도된 시각 변화).
+/// ADR-0290 이 그리드 밖 6 을 8 로 올렸다(의도된 시각 변화).
 pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
 
 /// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.

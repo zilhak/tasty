@@ -35,7 +35,7 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
 ];
 
 /// 토큰 census — 817 (121/143/553). 이전 791(115/137/539) 에서 26종이 늘었다:
-/// 2026-09-17 결정(색 role 공백 · 스케일 밖 폰트 · tint 계수 짝 · 이름 없는 치수)이
+/// ADR-0290 의 결정(색 role 공백 · 스케일 밖 폰트 · tint 계수 짝 · 이름 없는 치수)이
 /// primitive 6종(`size-6`/`size-64`/`size-96`/`font-size-30`/`opacity-tint-fill`/
 /// `opacity-tint-border`) · semantic 6종(`border-frame`/`glyph-dim`/
 /// `accent-decorative`/`tint-fill-alpha`/`tint-border-alpha`/`font-size-brand-display`) ·

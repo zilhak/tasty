@@ -65,7 +65,7 @@ pub fn tag(
     dot: bool,
 ) -> egui::Response {
     // 태그 테두리/채움은 accent 를 그대로 쓰지 않고 낮춘 톤이다. remote 태그의
-    // 테두리는 `tint-border-alpha` 로 모였고(2026-09-17 P5, "테두리만" 부분 사용),
+    // 테두리는 `tint-border-alpha` 로 모였고(ADR-0290 이 승인한 "테두리만" 부분 사용),
     // 나머지 둘은 대응 토큰이 없어 값을 여기 이름으로 둔다.
     const TAG_BORDER_OPACITY: f32 = 0.4;
     const TAG_REMOTE_FILL_OPACITY: f32 = 0.16;

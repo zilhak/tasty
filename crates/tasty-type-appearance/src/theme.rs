@@ -261,7 +261,7 @@ pub const DAG_MIX_45_ALPHA: u8 = 115;
 pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 
 /// design `--tasty-tint-fill-alpha` → `--tasty-opacity-tint-fill`. "accent 로 옅게
-/// 채우고 같은 accent 로 테두리를 두르는" 관용구의 **채움** 계수. 2026-09-17 결정이
+/// 채우고 같은 accent 로 테두리를 두르는" 관용구의 **채움** 계수. ADR-0290 이
 /// 흩어져 있던 네 짝(0.14/0.45 · 0.12/0.35 · 0.11/0.36 · 0.12/—)을 이 한 짝으로
 /// 모았다. 알파가 아니라 계수라 `u8` 이 아닌 `f32` 다 — 소비처가
 /// `gamma_multiply()` / `mix_srgb()` 의 비율 자리에 그대로 넣는다.
