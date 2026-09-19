@@ -193,10 +193,11 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 643,
+        measured: 645,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "91ca7d37d — 여기서 다시 셌다. 앞선 값 606 은 `12bc0f4b2` 에서 쟀고, 그 트리에서 \
+            "353038a3e — SLOC lane 의 파일 분할이 `src/` 에 둘을 더한 트리에서 다시 셌다. \
+             앞선 값 643 은 `91ca7d37d` 에서 쟀고 그 트리에서는 맞았다. 그 앞의 606 은 `12bc0f4b2` 에서 쟀고, 그 트리에서 \
              다시 세면 지금도 606 이다. 즉 **낡은 값**이지 안 잰 값이 아니었고, 그래서 이 \
              모수를 쓰는 자리의 여유 근거는 갱신 대상이 아니다(수만 따라간다). ★ 그 옛 \
              좌표는 지금 **main 에서 도달 불가**다 — 이 레포의 이력이 `1998055b1` 뒤로 다시 \
@@ -268,10 +269,11 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 450,
+        measured: 451,
         measured_on: "2026-09-20",
         counted_on: super::CountedOn::Tree(
-            "4e379d048 — 여기서 다시 셌다. 앞선 값 449 는 `c15f504f4` 에서 쟀고 그 트리에서는 \
+            "353038a3e — 여기서 다시 셌다. 앞선 값 450 은 `4e379d048` 에서 쟀고 그 트리에서는 \
+             맞았는데, 그 뒤 착지한 lane 이 문서를 더해 451 이 됐다. 그 앞의 449 는 `c15f504f4` 에서 쟀고 그 트리에서는 \
              맞았는데, 그 뒤 착지한 lane 이 ADR 하나를 더하면서 450 이 됐다. 그 lane 은 \
              자기 base 에서 이 항을 안 건드려 선언이 449 인 채 게이트를 전부 통과했다 — \
              **같은 형태가 연속 두 번** 났고, 두 번 다 원인은 `docs/adr/` 에 문서 하나가 \
