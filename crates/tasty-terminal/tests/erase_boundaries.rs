@@ -227,3 +227,76 @@ fn ed1_at_a_parked_cursor_erases_the_cursor_row_too() {
         "걸친 상태가 보존된다 — 소거가 커서를 움직이지 않는다"
     );
 }
+
+// ── EL2 (`CSI 2K`) · ED2 (`CSI 2J`) — 범위는 커서와 무관, 커서는 제자리 ──────────
+//
+// 이 둘은 지울 범위가 커서 위치에 안 달렸으므로 "커서 칸을 포함하는가" 는 물을 것이
+// 없다. 대신 **소거가 커서를 움직이지 않는가** 하나만 남는다. 둘 다 termwiz 의 지우기
+// primitive 로 지우는데 그 primitive 가 커서를 0 열/홈으로 끌고 가므로, 구현이 원래
+// 자리로 되돌려야 계약이 지켜진다.
+
+#[test]
+fn el2_does_not_move_the_cursor() {
+    let mut t = at_column("ABCDEFGHI", 4);
+    t.feed_bytes(b"\x1b[2K");
+    assert_eq!(&t.screen_row(0, true), "", "EL2 는 행 전체를 지운다");
+    assert_eq!(
+        t.cursor_position(),
+        (4, 0),
+        "EL2 는 커서를 0 열로 옮기지 않는다"
+    );
+    t.feed_bytes(b"Z");
+    assert_eq!(
+        &t.screen_row(0, true),
+        "    Z",
+        "다음 글자는 커서가 있던 열에 놓인다"
+    );
+}
+
+#[test]
+fn el2_at_a_parked_cursor_lands_on_the_last_column() {
+    let mut t = at_column("ABCDEFGHIJ", COLS);
+    t.feed_bytes(b"\x1b[2K");
+    assert_eq!(&t.screen_row(0, true), "");
+    // 걸친 자리(`cx == COLS`)는 `Position::Absolute` 로 못 가리키고, 다시 걸치게 할
+    // 글자를 찍으면 그 칸만 pen 이 달라진다. 그래서 EL2 는 마지막 열까지만 되돌리고
+    // 대기 중이던 줄바꿈은 풀린다 — 0 열로 끌려가던 것보다 가깝지만 완전하지는 않다.
+    assert_eq!(t.cursor_position(), (COLS - 1, 0));
+    t.feed_bytes(b"Z");
+    assert_eq!(&t.screen_row(0, true), "         Z");
+    assert_eq!(
+        &t.screen_row(1, true),
+        "",
+        "대기 중이던 줄바꿈은 풀렸으므로 다음 행으로 넘어가지 않는다"
+    );
+}
+
+#[test]
+fn ed2_does_not_move_the_cursor() {
+    let mut t = term();
+    t.feed_bytes(b"line1\r\nline2\r\nline3");
+    t.feed_bytes(b"\x1b[2;5H");
+    assert_eq!(t.cursor_position(), (4, 1), "준비 실패: 커서 자리");
+    t.feed_bytes(b"\x1b[2J");
+    assert_eq!(&t.screen_row(0, true), "");
+    assert_eq!(&t.screen_row(1, true), "");
+    assert_eq!(&t.screen_row(2, true), "");
+    assert_eq!(
+        t.cursor_position(),
+        (4, 1),
+        "ED2 는 커서를 홈으로 옮기지 않는다"
+    );
+    t.feed_bytes(b"Z");
+    assert_eq!(&t.screen_row(1, true), "    Z");
+}
+
+#[test]
+fn ed2_at_a_parked_cursor_lands_on_the_last_column() {
+    let mut t = at_column("ABCDEFGHIJ", COLS);
+    t.feed_bytes(b"\x1b[2J");
+    assert_eq!(&t.screen_row(0, true), "");
+    assert_eq!(t.cursor_position(), (COLS - 1, 0));
+    t.feed_bytes(b"Z");
+    assert_eq!(&t.screen_row(0, true), "         Z");
+    assert_eq!(&t.screen_row(1, true), "");
+}

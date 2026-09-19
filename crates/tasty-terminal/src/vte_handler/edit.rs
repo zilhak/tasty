@@ -14,9 +14,15 @@
 //! 되돌릴 때 주의할 것이 하나 있다. **`Position::Absolute(cols)` 는 `cols - 1` 로
 //! 잘린다** — 커서를 옮기는 어떤 `Change` 로도 걸친 자리에 도달할 수 없고(CUP·CUF
 //! 도 같다), 그 자리에 닿는 길은 **마지막 열까지 글자를 찍는 것** 하나뿐이다.
-//! 그래서 걸친 커서를 보존해야 하는 갈래는 소거를 마지막 열에서 끝내 커서가 스스로
-//! 다시 걸치게 하고, `Absolute(cx)` 복원을 내보내지 않는다. 복원을 내보내면 걸친
-//! 상태가 풀려 다음 글자가 줄바꿈 없이 마지막 칸을 덮어쓴다.
+//! 그래서 소거 범위를 손으로 찍는 갈래(EL1 · ED1)는 소거를 마지막 열에서 끝내
+//! 커서가 스스로 다시 걸치게 하고, `Absolute(cx)` 복원을 내보내지 않는다. 복원을
+//! 내보내면 걸친 상태가 풀려 다음 글자가 줄바꿈 없이 마지막 칸을 덮어쓴다.
+//!
+//! 반대로 termwiz 의 지우기 primitive 로 지우는 갈래(EL2 · ED2)는 그 primitive 가
+//! 커서를 0 열/홈으로 보내므로 복원을 **내보내야** 한다. 이쪽은 다시 걸치게 할
+//! 글자를 찍을 수 없어(찍으면 그 칸만 pen 이 달라진다) 걸친 커서가 마지막 열로
+//! 내려앉고 대기 중이던 줄바꿈은 풀린다 — 0 열로 끌려가는 것보다는 가깝지만
+//! 완전한 보존은 아니다.
 //!
 //! 이 계약이 닿지 않는 갈래는 `docs/features/terminal/index.md` 의 "소거 명령과
 //! 걸친 커서" 표가 이름으로 센다.
@@ -75,7 +81,17 @@ impl TerminalState {
                     changes
                 }
                 EraseInDisplay::EraseDisplay => {
-                    vec![Change::ClearScreen(ColorAttribute::Default)]
+                    let (cx, cy) = self.surface().cursor_position();
+                    vec![
+                        Change::ClearScreen(ColorAttribute::Default),
+                        // `ClearScreen` 은 커서를 홈으로 보낸다 — ED 는 커서를 움직이지
+                        // 않으므로 되돌린다. `clear` 류가 보내는 `ESC [ H ESC [ 2J` 는
+                        // 먼저 홈으로 가므로 이 복원에 영향을 받지 않는다.
+                        Change::CursorPosition {
+                            x: Position::Absolute(cx),
+                            y: Position::Absolute(cy),
+                        },
+                    ]
                 }
                 EraseInDisplay::EraseScrollback => {
                     // ED3: erase scrollback history only — the visible screen is
@@ -101,13 +117,19 @@ impl TerminalState {
                     changes
                 }
                 EraseInLine::EraseLine => {
-                    let (_cx, cy) = self.surface().cursor_position();
+                    let (cx, cy) = self.surface().cursor_position();
                     vec![
                         Change::CursorPosition {
                             x: Position::Absolute(0),
                             y: Position::Absolute(cy),
                         },
                         Change::ClearToEndOfLine(ColorAttribute::Default),
+                        // 0 열로 옮긴 것은 지우기 위한 것이므로 되돌린다 — ED/EL 은
+                        // 커서를 움직이지 않는다.
+                        Change::CursorPosition {
+                            x: Position::Absolute(cx),
+                            y: Position::Absolute(cy),
+                        },
                     ]
                 }
             },
