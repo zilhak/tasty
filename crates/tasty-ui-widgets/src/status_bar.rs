@@ -57,7 +57,9 @@ const MAX_DROP_LEVEL: u8 = 5;
 /// view 입력 — 한 프레임 분의 StatusBar 표시 데이터.
 #[derive(Clone, Debug, Default)]
 pub struct StatusBarData {
-    /// 브랜치 슬롯의 표시 문자열 — 브랜치명, 또는 detached HEAD 면 short sha.
+    /// 브랜치 슬롯의 표시 문자열 — 브랜치명, 또는 detached HEAD 면 `@ <short sha>`.
+    /// **표지는 호출자가 이미 붙여서 넘긴다**(본체는 상태바 wrapper, 갤러리는 specimen
+    /// 리터럴). 이 view 는 받은 문자열을 그대로 그린다.
     /// repo 가 아니면 `None` → **항목 자체가 없다**(dash 를 그리지 않는다).
     pub branch: Option<String>,
     /// focus surface id(숫자). "Copy Terminal ID" 가 복사하는 값과 동일.
