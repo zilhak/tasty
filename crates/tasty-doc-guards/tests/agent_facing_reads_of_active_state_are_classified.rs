@@ -46,6 +46,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use tasty_doc_guards::cfg_predicate::blank_gated_lines;
+use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
 /// 전역 활성/포커스 포인터의 이름.
@@ -254,17 +255,33 @@ fn count_needles(text: &str) -> usize {
 }
 
 /// (스캔한 파일 수, 파일별 출하 출현 수).
+///
+/// 출하 판정이 **두 켜**다. [`shipped_code`] 는 파일 **안**의 `#[cfg(test)]` 구간을 지우고,
+/// [`test_only_files`] 는 `#[cfg(test)] mod x;` 로만 선언돼 **파일 통째로** 안 나가는 것을
+/// 뺀다. 줄 켜만 두면 그런 파일은 자기 안에 `test` 라는 낱말이 없어 **출하 코드로 읽힌다** —
+/// 위 모수 표가 마지막 단계로 적어 둔 바로 그 "없는 결함" 이 파일 단위로 다시 생긴다.
+/// 두 켜 다 이미 있는 판정기라 여기서 새로 세지 않는다.
+///
+/// 이 켜를 더할 때 실측한 것(2026-09-20): 스캔 루트에서 파일 단위로 빠지는 것은 5 개이고
+/// 그중 넷은 바늘이 **0 개**라 명부에도 없었다. 즉 이 켜가 가린 것은 없다 — 옮겨진 것은
+/// 새로 들어온 `file_picker_scope_tests.rs` 의 4 개뿐이고, 그 넷은 테스트가 scope 를 숨히려
+/// 워크스페이스를 **바꾸는** fixture 와 `active_tabs` 가 바늘 `active_tab` 의 부분문자열로
+/// 걸린 것이다.
 fn measure() -> (usize, BTreeMap<String, usize>) {
     let root = repo_root();
     let sources = rust_sources(&root, SCAN_ROOTS);
     let scanned = sources.len();
+    let test_only = test_only_files(&root, &sources);
     let mut found = BTreeMap::new();
-    for (rel, text) in sources {
+    for (rel, text) in &sources {
+        if test_only.contains(rel) {
+            continue;
+        }
         let rel = rel.to_string_lossy().into_owned();
         if !is_agent_facing(&rel) {
             continue;
         }
-        let n = count_needles(&shipped_code(&text));
+        let n = count_needles(&shipped_code(text));
         if n > 0 {
             found.insert(rel, n);
         }
