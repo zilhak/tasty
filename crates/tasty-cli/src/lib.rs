@@ -286,7 +286,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: ClipboardCommands,
     },
-    /// Hook handler — shared hook/webhook handler registry (list / reload / dispatch).
+    /// Hook handler — shared hook/webhook handler registry (list / get / upsert / remove / reload / dispatch).
     HookHandler {
         #[command(subcommand)]
         command: HookHandlerCommands,
