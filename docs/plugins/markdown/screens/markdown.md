@@ -434,6 +434,17 @@ sticky 가 끝까지 붙으려면 containing block — 여기서는 `body` 상�
 `min-height` 가 그대로 유지한다. `html` 쪽이 `height` 로 남는 것도 이유가 있다: 백분율
 `min-height` 는 부모의 높이에 대해 풀리므로 부모가 auto 면 무너진다.
 
+**실기 검증(이 저장소 개발 머신, Linux/WebKitGTK, libwebkit2gtk-4.1 2.50.4)**: `render_document`
+가 실제로 만든 문서를 `WebKit2.WebView` 에 `file://` 로 올려 세 조합을 각각 다시 쟀다 — 뷰포트
+800, 긴 문서 `scrollHeight` 15135. 지금 규칙(`html` 이 `height` · `body` 가 `min-height`)에서는
+문서 끝(`scrollY` 14335)에서 바의 `rect.top` 이 **0** 이고 `body` 상자가 15134.6 으로 문서를
+따라간다. `body` 를 `height:100%` 로 되돌리면 같은 자리에서 `body` 상자가 **800** 에 묶이고 바의
+`rect.top` 이 **−13575** — 화면 밖이다. `html` 만 `min-height` 로 바꾸면 긴 문서의 바는 여전히 0
+이지만 짧은 문서의 `body` 상자가 800 에서 **392.6** 으로 무너진다. 두 선언이 서로 다른 것을
+지탱한다는 뜻이고, 그래서 한쪽만 보고 둘을 같은 값으로 맞추면 안 된다.
+macOS(WKWebView)/Windows(WebView2)는 이 머신에서 실행 불가 — **이 축은 실기 미검증이다.**
+엔진마다 sticky 의 containing block 해석이 같은지는 재지 않았고, 추정으로 채우지 않는다.
+
 모든 heading 에 `scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm))` 을 줘, 앵커
 이동한 heading 이 바 아래 가려지지 않게 한다. 바가 상시 붙어 있으므로 그 여백은 상시 제 일을
 한다 — sticky 가 한 뷰포트에서만 붙던 동안에는 바가 없는 구간에서도 여백만 남았다(같은 실측에서
