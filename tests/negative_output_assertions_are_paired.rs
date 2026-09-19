@@ -80,10 +80,17 @@ const CRATE_TESTS_FLOOR: Floor = Floor {
     measured: tasty_doc_guards::floored_walk::populations::CRATE_TEST_TARGETS.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::CRATE_TEST_TARGETS.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::CRATE_TEST_TARGETS.counted_on,
-    why_this_gap: "크레이트 52 개 중 13 이 통합 테스트를 갖는다. 같은 창(1215 \
+    why_this_gap: "크레이트 52 개 중 15 가 통합 테스트를 갖는다(2026-09-20 재측정 — \
+                   앞선 판의 13 은 낡은 값이었다). 같은 창(1215 \
                    커밋)에서 이 모수의 감소는 0 회다 — 진폭이 없어 여유를 거기서 못 뽑는다. \
-                   사건의 크기에 건다: 이 가드가 사는 크레이트를 뺀 최대 크레이트가 7 타깃이고 \
-                   여유 21 은 그 세 배다. 이 자리가 루트보다 여유가 큰 것은 '크레이트가 통째로 \
+                   사건의 크기에 건다: 이 가드가 사는 크레이트를 뺀 최대 크레이트가 8 타깃이다 \
+                   (`tasty-ui-widgets` · `tasty-terminal`, 2026-09-20 재측정 — 앞선 판은 7 이었다). \
+                   ★ 여유 35 는 그 4.4 배인데, 그 배수는 **아무도 고른 적이 없다** — 하한 80 을 \
+                   정할 때의 여유는 21(사건 크기 7 의 세 배)이었고, 그 뒤 좌변이 파생이라 \
+                   혼자 자라는 동안 이 문장만 21 에 남아 있었다. 즉 **항을 파생으로 바꾸면 \
+                   수는 따라오고 그 수를 고른 근거는 안 따라온다.** 지금 폭을 다시 고르려면 \
+                   하한을 움직여야 하고 그것은 판단이라 여기서 안 한다. 이 자리가 루트보다 \
+                   여유가 큰 것은 '크레이트가 통째로 \
                    접히면 한꺼번에 빠져서' 가 아니라 그 사건이 아직 관측되지 않아 곱수를 진폭이 \
                    아니라 사건 크기에 걸었기 때문이다",
 };
