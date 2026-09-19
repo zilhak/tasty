@@ -127,7 +127,9 @@ pub fn draw_status_bar_view(
     } else {
         tasty_icons::THEME
     };
-    let glyph_size = th.icon_glyph_size_xs;
+    // 바의 인라인 글리프(branch · shell · grid · theme)는 **한 자리**에서 크기를 받는다 —
+    // 색 role(`statusbar-glyph`)만 있고 크기 role 이 없어 semantic 을 직접 읽던 자리다.
+    let glyph_size = th.statusbar_glyph_size();
     let bg: egui::Color32 = th.bg_app().into();
     let bar_h = th.status_bar_height;
 

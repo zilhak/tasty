@@ -83,7 +83,7 @@ fn frame(
 }
 
 /// 우측 클러스터 두 셀의 중심 x — 우측 끝에 flush 로 붙는다(spacer 가 밀어냄).
-/// 바깥 여백 10 · 항목 사이 gap 10 · 테마 글리프 `icon_glyph_size_xs` · 팔레트는
+/// 바깥 여백 10 · 항목 사이 gap 10 · 테마 글리프 `statusbar-glyph-size` · 팔레트는
 /// 키캡이라 폭을 `kbd_width` 가 준다(view 가 재는 것과 **같은 함수**다).
 fn right_cluster_centers(
     ctx: &egui::Context,
@@ -91,7 +91,7 @@ fn right_cluster_centers(
     origin: Pos2,
     width: f32,
 ) -> (f32, f32) {
-    let theme_w = theme.icon_glyph_size_xs.value();
+    let theme_w = theme.statusbar_glyph_size().value();
     let palette_w = kbd_width(ctx, theme, PALETTE_KEYS).value();
     let right = origin.x + width - BAR_PAD_X;
     (

@@ -161,7 +161,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("never drops", "theme glyph"),
             ("no value", "항목이 자리째 없다 — dash 를 그리지 않는다"),
-            ("glyphs", "git-branch / sun / theme · icon-size-xs (12)"),
+            (
+                "glyphs",
+                "git-branch / sun / theme · statusbar-glyph-size → icon-size-xs (12)",
+            ),
             ("border-top", "border-width separator"),
         ],
         &[

@@ -34,7 +34,10 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 817 (121/143/553). 이전 791(115/137/539) 에서 26종이 늘었다:
+/// 토큰 census — 818 (121/143/554). 앞 회차 817 에서 component 1종
+/// (`statusbar-glyph-size`)이 늘었다 — 상태바 인라인 글리프에 **색 role 은 있었고
+/// 크기 role 이 없던** 자리를 닫은 결정이다(`icon-size-xs` 경유).
+/// 그 앞 회차: 817 (121/143/553). 이전 791(115/137/539) 에서 26종이 늘었다:
 /// ADR-0290 의 결정(색 role 공백 · 스케일 밖 폰트 · tint 계수 짝 · 이름 없는 치수)이
 /// primitive 6종(`size-6`/`size-64`/`size-96`/`font-size-30`/`opacity-tint-fill`/
 /// `opacity-tint-border`) · semantic 6종(`border-frame`/`glyph-dim`/
@@ -60,10 +63,10 @@ fn token_census_matches_design_export() {
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Component),
-        553,
+        554,
         "component census drift"
     );
-    assert_eq!(set.len(), 817, "total census drift");
+    assert_eq!(set.len(), 818, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.

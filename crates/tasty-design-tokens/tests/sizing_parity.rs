@@ -132,3 +132,48 @@ fn tint_alphas_match_tokens() {
         assert_eq!(actual, expected, "{path} drift (소스 {actual})");
     }
 }
+
+/// 상태바 인라인 글리프의 **크기 role** 이 component → semantic → primitive 로 선다
+/// (2026-09-20 결정 G1). 바에는 글리프 **색** role 이 있었고 **크기** role 이 없어
+/// 위젯이 semantic 을 직접 읽고 있었다.
+///
+/// **한 칸씩 단정한다.** 종착값(12)만 보면 사슬 한 칸이 끊겨 component 가 primitive 를
+/// 직접 가리키게 돼도 값이 같아 안 보인다 — 이 결정이 요구한 것은 값이 아니라 **사슬**이다.
+#[test]
+fn the_statusbar_glyph_size_chain_stands_on_three_tiers() {
+    let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
+
+    let component = set
+        .get("component.statusbar-glyph-size")
+        .expect("component.statusbar-glyph-size 가 없다");
+    assert_eq!(component.ty, "dimension", "크기 role 인데 $type 이 다르다");
+    assert_eq!(
+        dtcg::alias_target(&component.value),
+        Some("semantic.icon-size-xs"),
+        "component 가 semantic 을 안 거친다 — tier-skip 이면 사슬이 둘로 준다"
+    );
+
+    let semantic = set
+        .get("semantic.icon-size-xs")
+        .expect("semantic.icon-size-xs 가 없다");
+    assert_eq!(
+        dtcg::alias_target(&semantic.value),
+        Some("primitive.size-12"),
+        "semantic 이 primitive 를 안 거친다"
+    );
+
+    let primitive = set
+        .get("primitive.size-12")
+        .expect("primitive.size-12 가 없다");
+    assert_eq!(primitive.value, "12px", "사슬의 종착값이 12px 가 아니다");
+
+    // 모드 분기가 없다 — 치수가 테마 상태가 되면 안 된다(결정문의 명시 제약).
+    for mode in [ThemeMode::Mocha, ThemeMode::Latte] {
+        assert_eq!(
+            set.resolve("component.statusbar-glyph-size", mode)
+                .unwrap_or_else(|e| panic!("{mode:?}: {e}")),
+            "12px",
+            "{mode:?} 에서 글리프 크기가 다르다 — 치수는 테마에 의존하지 않는다"
+        );
+    }
+}

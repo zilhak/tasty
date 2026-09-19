@@ -2191,6 +2191,12 @@ impl crate::theme::Theme {
         self.glyph_dim()
     }
 
+    /// `component.statusbar-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    #[inline]
+    pub fn statusbar_glyph_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
+    }
+
     /// `component.statusbar-theme-glyph` → `{semantic.glyph-dim}`
     #[inline]
     pub fn statusbar_theme_glyph(&self) -> HexColor {

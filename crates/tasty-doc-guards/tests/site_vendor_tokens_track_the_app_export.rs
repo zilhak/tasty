@@ -101,6 +101,7 @@ const LAGGING: &[(&str, &str)] = &[
     ("component", "status-dot-size-compact"),
     ("component", "statusbar-dot-size"),
     ("component", "statusbar-glyph"),
+    ("component", "statusbar-glyph-size"),
     ("component", "statusbar-theme-glyph"),
 ];
 

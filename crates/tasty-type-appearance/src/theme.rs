@@ -2415,6 +2415,44 @@ mod tests {
         assert_eq!(t.icon_glyph_size_row_action.value(), 15.0);
     }
 
+    /// 상태바 인라인 글리프의 **크기 role**(2026-09-20 결정 G1). 배율은 바의 다른 글자와
+    /// 같이 타고 — `round(12 × s)` = 10 / 12 / 14 — **바 높이 24 는 배율 밖**이라 이
+    /// 결정으로 안 바뀐다.
+    ///
+    /// 두 테마를 나란히 잰다. *치수가 어느 테마가 켜졌는지에 의존하면 안 된다* 는 것이
+    /// 결정의 명시 제약이라, `is_light` 분기를 실수로 들이면 여기서 죽는다 — 값 하나만
+    /// 보는 시험은 그 실수를 못 본다.
+    #[test]
+    fn statusbar_glyph_size_scales_with_the_bar_and_never_with_the_theme() {
+        for (zoom, want) in [(0.85_f32, 10.0_f32), (1.0, 12.0), (1.2, 14.0)] {
+            let dark = Theme::with_colors_and_zoom(dummy_colors(), false, zoom);
+            let light = Theme::with_colors_and_zoom(dummy_colors(), true, zoom);
+            assert_eq!(
+                dark.statusbar_glyph_size().value(),
+                want,
+                "zoom {zoom}: round(12 × s) 가 아니다"
+            );
+            assert_eq!(
+                dark.statusbar_glyph_size(),
+                light.statusbar_glyph_size(),
+                "zoom {zoom}: 글리프 크기가 테마에 따라 갈렸다"
+            );
+            // 크기 role 은 `icon-size-xs` 를 거쳐 온다 — 위젯이 직접 읽던 그 값이다.
+            assert_eq!(
+                dark.statusbar_glyph_size(),
+                dark.icon_glyph_size_xs,
+                "zoom {zoom}: 크기 role 이 semantic 사슬을 벗어났다"
+            );
+            for (name, t) in [("dark", &dark), ("light", &light)] {
+                assert_eq!(
+                    t.status_bar_height.value(),
+                    24.0,
+                    "zoom {zoom} ({name}): 바 높이는 배율 밖이다"
+                );
+            }
+        }
+    }
+
     /// 이 lane 이 리터럴에서 옮겨 온 컴포넌트 치수 아홉이 **`ui_scale` 을 탄다**는 것을
     /// 고정한다. 위 `component_accessors_invariant_at_zoom_one` 은 zoom 1 값만 보므로,
     /// 접근자를 다시 상수로 되돌리는 변경을 못 잡는다 — 그게 이 축의 원래 결함이었다.

@@ -57,7 +57,8 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프, **spinner 지름**(폰트가 아니라 아이콘 가족) |
 | font-size brand-display | 30 | `font_size_brand_display` — 첫 실행 셸 설정 카드 브랜드 타이틀. UI 14px 상한의 브랜딩 예외 둘 중 하나 |
 | status-dot-size-compact | 6 | `status_dot_size_compact()` — 24px 크롬 안의 점(pane 탭 strip·상태바·접힌 rail). `tab_dot_size()`·`statusbar_dot_size()` 가 이 값의 별칭 |
-| statusbar-theme-glyph / statusbar-glyph | → `glyph-dim` | 상태바 우측 테마 토글의 `sun`/`theme` 글리프가 앞의 것을 읽는다(색 점은 2026-09-17 결정으로 없어졌다). 뒤의 것은 **아직 부르는 자리가 없다** — 결정표가 테마 표시 한 자리만 글리프로 옮겼고, 상태바의 다른 글리프 자리는 정해지지 않았다 |
+| statusbar-theme-glyph / statusbar-glyph | → `glyph-dim` | 상태바 글리프의 **색** role 둘. 앞의 것은 우측 테마 토글의 `sun`/`theme` 글리프가(색 점은 2026-09-17 결정으로 없어졌다), 뒤의 것은 좌측 브랜치 글리프가 읽는다 |
+| statusbar-glyph-size | → `icon-size-xs` (12) | 상태바 인라인 글리프의 **크기** role(2026-09-20 결정). 바에는 글리프 색 role 만 있고 크기 role 이 없어 위젯이 `icon-size-xs` 를 직접 읽고 있었다 — 그 한 자리를 이 role 로 바꿨고, 바의 글리프는 전부 거기서 크기를 받는다. 배율은 바의 다른 글자와 같이 탄다(`round(12 × s)` = 10 / 12 / 14). **바 높이 24 는 배율 밖**이고 이 role 과 무관하다. 테마 분기 없음 — 치수는 어느 테마가 켜졌는지에 의존하지 않는다 |
 | git-toolbar-height | 32 | `git_toolbar_height()` — git viewer diff 툴바. **`control-height`(28) 아님**(컨테이너 role) |
 | port-process-col-min-width | 200 | `port_process_col_min_width()` — port scanner Process 컬럼 **최소폭** |
 | radius / radius-sm | 4 / 2 | `corner_radius` |

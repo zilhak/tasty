@@ -724,6 +724,9 @@ pub mod statusbar {
 
     /// `component.statusbar-dot-size` → `{component.status-dot-size-compact}` = 6px
     pub const DOT_SIZE: LogicalPx = super::status_dot::SIZE_COMPACT;
+
+    /// `component.statusbar-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    pub const GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
 }
 
 pub mod surface {

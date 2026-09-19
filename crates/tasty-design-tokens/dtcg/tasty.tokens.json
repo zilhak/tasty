@@ -3388,6 +3388,10 @@
       "$type": "color",
       "$value": "{semantic.glyph-dim}"
     },
+    "statusbar-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}"
+    },
     "statusbar-theme-glyph": {
       "$type": "color",
       "$value": "{semantic.glyph-dim}"
