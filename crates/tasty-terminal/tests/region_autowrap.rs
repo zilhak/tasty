@@ -690,15 +690,16 @@ fn a_top_margin_past_the_last_row_is_normalized_not_a_panic() {
     );
 }
 
-/// EL1(`CSI 1K`)이 오른쪽 끝에 걸친 커서에서 한 칸을 더 지워 **가짜 줄바꿈**을
-/// 일으키는 자리가 있다(`vte_handler/edit.rs` 의 `EraseToStartOfLine` 은 `cx + 1`
-/// 칸을 찍는데, 커서가 `(cols, row)` 로 걸쳐 있으면 `cols + 1` 칸이 된다). 이
-/// 파일의 수정 **이전부터** 있던 것이고 전체 화면에서도 같은 증상이지만, 부분
-/// 영역에서는 그 가짜 줄바꿈이 영역 스크롤 한 번 + 빈 이력 한 줄로 나타난다.
-/// 별도 작업으로 분리했고 여기서는 현황을 값으로 못박아, 고칠 때 이 테스트가
-/// 바뀌는 자리를 가리키게 한다.
+/// 부분 영역 안에서 EL1(`CSI 1K`)이 걸친 커서를 만나도 **영역을 스크롤하지 않는다.**
+///
+/// 소거는 커서를 움직이지 않는 연산이고 지우는 범위는 커서 칸까지다. 걸친 커서
+/// (`cursor_position()` 의 열이 `cols`)는 마지막 열에 올라앉은 것이므로 행 전체
+/// (`cols` 칸)가 범위이지 그보다 한 칸 많지 않다 — 한 칸이 더 찍히면 그것이 다음
+/// 행으로 넘어가 **소거 명령이 줄바꿈을 일으킨다.** 부분 영역에서는 그 줄바꿈이
+/// 영역 스크롤 한 번 + 빈 이력 한 줄로 드러나므로, 이 파일이 그 자리를 잰다.
+/// 경계 네 자리와 전체 화면 케이스는 `erase_boundaries.rs` 가 따로 잰다.
 #[test]
-fn el1_at_a_parked_cursor_still_wraps_once_known_gap() {
+fn el1_at_a_parked_cursor_does_not_scroll_the_region() {
     let mut parked = new_term(10, 6);
     parked.feed_bytes(b"\x1b[2J\x1b[H\x1b[1;4r\x1b[4;1H");
     parked.feed_bytes(b"ABCDEFGHIJ"); // 딱 10열 — 커서가 오른쪽 끝에 걸친다
@@ -706,12 +707,18 @@ fn el1_at_a_parked_cursor_still_wraps_once_known_gap() {
     parked.feed_bytes(b"\x1b[1K");
     assert_eq!(
         parked.scrollback_len(),
-        1,
-        "알려진 결함: 걸친 커서에서 EL1 이 한 칸 더 지워 영역 스크롤을 부른다"
+        0,
+        "EL1 은 소거 연산이다 — 영역을 스크롤하지도 이력을 쌓지도 않는다"
+    );
+    assert_eq!(&parked.screen_row(3, true), "", "커서 행이 비워진다");
+    assert_eq!(
+        parked.cursor_position(),
+        (10, 3),
+        "걸친 상태가 보존된다 — 소거가 커서를 움직이지 않는다"
     );
 
-    // 걸치지 않았으면(9자) 아무 일도 없다 — 원인이 영역이 아니라 `cx + 1` 임을
-    // 가르는 대조군이다.
+    // 걸치지 않았으면(9자) 그 전부터 아무 일도 없었다 — 원인이 영역이 아니라 소거
+    // 범위였음을 가르는 대조군이다.
     let mut inside = new_term(10, 6);
     inside.feed_bytes(b"\x1b[2J\x1b[H\x1b[1;4r\x1b[4;1H");
     inside.feed_bytes(b"ABCDEFGHI");

@@ -1,4 +1,25 @@
 //! VTE handler: edit 도메인.
+//!
+//! ## 소거 명령과 "걸친 커서"
+//!
+//! ED/EL 은 **커서를 움직이지 않는 소거 연산**이고, 지우는 범위는 커서가 올라앉은
+//! 칸을 **포함**한다. 그 둘이 이 모듈의 모든 갈래가 지켜야 하는 계약이다.
+//!
+//! 자동 줄바꿈이 대기 중인 상태("행 끝에 걸친 커서")를 이 구현은 `cursor_position()`
+//! 의 열이 화면 폭과 **같은 값**(`cx == cols`)인 것으로 나타낸다. 그 칸은 그리드에
+//! 없다 — 커서가 실제로 올라앉은 칸은 마지막 열(`cols - 1`)이고, 줄바꿈은 다음
+//! 글자를 찍을 때로 미뤄져 있다. 그래서 소거 범위를 셀 때 걸친 커서는 **마지막
+//! 열로 친다**: EL1 은 행 전체(`cols` 칸)를, EL0 은 마지막 한 칸을 지운다.
+//!
+//! 되돌릴 때 주의할 것이 하나 있다. **`Position::Absolute(cols)` 는 `cols - 1` 로
+//! 잘린다** — 커서를 옮기는 어떤 `Change` 로도 걸친 자리에 도달할 수 없고(CUP·CUF
+//! 도 같다), 그 자리에 닿는 길은 **마지막 열까지 글자를 찍는 것** 하나뿐이다.
+//! 그래서 걸친 커서를 보존해야 하는 갈래는 소거를 마지막 열에서 끝내 커서가 스스로
+//! 다시 걸치게 하고, `Absolute(cx)` 복원을 내보내지 않는다. 복원을 내보내면 걸친
+//! 상태가 풀려 다음 글자가 줄바꿈 없이 마지막 칸을 덮어쓴다.
+//!
+//! 이 계약이 닿지 않는 갈래는 `docs/features/terminal/index.md` 의 "소거 명령과
+//! 걸친 커서" 표가 이름으로 센다.
 
 use termwiz::cell::unicode_column_width;
 use termwiz::color::ColorAttribute;
@@ -6,6 +27,26 @@ use termwiz::escape::csi::{Edit, EraseInDisplay, EraseInLine};
 use termwiz::surface::{Change, Position};
 
 use crate::TerminalState;
+
+/// 0 열부터 커서 칸까지(커서 포함) 지워야 할 칸 수.
+///
+/// 걸친 커서(`cx == cols`)는 마지막 열에 올라앉은 것으로 치므로 행 전체(`cols`)이고,
+/// 0 열 커서는 **한 칸**이다(0 칸이 아니다 — 커서 칸이 범위에 포함된다).
+fn erase_span_to_cursor(cx: usize, cols: usize) -> usize {
+    (cx + 1).min(cols)
+}
+
+/// 소거를 마친 뒤 커서를 원래 열로 되돌리는 `Change` — 걸쳐 있었으면 **비어 있다**.
+///
+/// 걸친 자리(`cx == cols`)는 `Position::Absolute` 로 못 가리킨다(`cols - 1` 로 잘린다).
+/// 그 대신 [`erase_span_to_cursor`] 가 마지막 열까지 찍어 커서가 스스로 다시 걸치므로,
+/// 그 경우에 복원을 내보내면 오히려 걸친 상태를 푼다.
+fn restore_cursor_column(cx: usize, cy: usize, cols: usize) -> Option<Change> {
+    (cx < cols).then_some(Change::CursorPosition {
+        x: Position::Absolute(cx),
+        y: Position::Absolute(cy),
+    })
+}
 
 impl TerminalState {
     pub(crate) fn map_edit(&mut self, edit: Edit) -> Vec<Change> {
@@ -55,18 +96,13 @@ impl TerminalState {
                 }
                 EraseInLine::EraseToStartOfLine => {
                     let (cx, cy) = self.surface().cursor_position();
-                    let mut changes = Vec::new();
-                    changes.push(Change::CursorPosition {
+                    let (cols, _rows) = self.surface().dimensions();
+                    let mut changes = vec![Change::CursorPosition {
                         x: Position::Absolute(0),
                         y: Position::Absolute(cy),
-                    });
-                    if cx > 0 {
-                        changes.push(Change::Text(" ".repeat(cx + 1)));
-                    }
-                    changes.push(Change::CursorPosition {
-                        x: Position::Absolute(cx),
-                        y: Position::Absolute(cy),
-                    });
+                    }];
+                    changes.push(Change::Text(" ".repeat(erase_span_to_cursor(cx, cols))));
+                    changes.extend(restore_cursor_column(cx, cy, cols));
                     changes
                 }
                 EraseInLine::EraseLine => {
