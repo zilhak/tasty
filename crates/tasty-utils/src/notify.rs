@@ -84,23 +84,67 @@ pub fn append_notify_line(caller_surface: u32, line: &str) -> io::Result<()> {
 }
 
 /// 실제 append/truncate 로직 — 경로·cap 을 명시로 받아 env 조작 없이 테스트 가능.
+///
+/// # 이 파일에는 writer 가 여럿이다
+///
+/// 한 caller 밑에 claude child 와 codex child 가 함께 뜨면 **서로 다른 두 프로세스**가
+/// 같은 `<caller_surface>.log` 에 쓴다. 그래서 이 함수의 불변식은 "한 줄은 통째로
+/// 남거나 통째로 없다" 이고, 그것을 두 가지로 지킨다.
+///
+/// - **핸들은 항상 append 다.** 쓰기 핸들에 `truncate` 를 섞지 않는다. 섞으면 그
+///   핸들은 offset 0 부터 쓰므로 다른 writer 가 방금 append 한 줄의 앞부분을 덮어
+///   **양쪽 모두 아닌 잔해**를 남긴다.
+/// - **한 줄은 한 번의 `write` 로 보낸다.** `writeln!` 은 포맷 조각마다 write 를
+///   나눠 보낼 수 있고, 그 사이에 다른 프로세스의 append 가 끼면 두 줄이 섞인다.
+///   `O_APPEND` 가 보장하는 것은 **한 번의 write** 가 끝에 통째로 붙는 것뿐이다.
+///
+/// 비우는 일은 쓰기와 **분리한다.** 판정과 실행 사이에 다른 writer 가 이미 비웠을 수
+/// 있어 같은 핸들로 한 번 더 재고 비운다. 그래도 남는 창이 있다 — 비우기 직전에
+/// append 된 줄은 사라진다. 그 줄은 파일이 이미 cap 을 넘은 뒤에 쓰인 것이라
+/// **애초에 이 truncate 가 버릴 구간**이고, 손실의 범위가 "cap 을 넘은 시점 이전" 으로
+/// 정의된다는 뜻이다. 사라지는 것은 줄 단위이고 줄 중간이 잘리지는 않는다.
 fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    // 기존 파일이 cap 이상이면 새로 시작(truncate). `tail -F` 는 파일 축소를 감지해
-    // 재오픈하므로 arm 된 Monitor 가 truncate 후 append 된 라인을 계속 받는다.
-    let truncate = std::fs::metadata(path)
+    // 기존 파일이 cap 이상이면 새로 시작. `tail -F` 는 파일 축소를 감지해 재오픈하므로
+    // arm 된 Monitor 가 그 뒤 append 된 라인을 계속 받는다.
+    if std::fs::metadata(path)
         .map(|m| m.len() >= cap)
-        .unwrap_or(false);
+        .unwrap_or(false)
+    {
+        truncate_over_cap(path, cap);
+    }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
-        .write(true)
-        .append(!truncate)
-        .truncate(truncate)
+        .append(true)
         .open(path)?;
-    writeln!(file, "{line}")?;
-    Ok(())
+    let mut record = String::with_capacity(line.len() + 1);
+    record.push_str(line);
+    record.push('\n');
+    file.write_all(record.as_bytes())
+}
+
+/// cap 을 넘은 파일을 비운다 — **쓰기 핸들과 분리된 자리**다.
+///
+/// 연 핸들로 크기를 **다시 재는** 이유: 바깥의 `metadata()` 판정과 여기 사이에 다른
+/// writer 가 이미 비웠을 수 있다. 그때 또 비우면 그 writer 가 새로 쓴 줄들을 지운다.
+fn truncate_over_cap(path: &Path, cap: u64) {
+    let opened = std::fs::OpenOptions::new().write(true).open(path);
+    // 못 열면 여기서 보고하지 않는다 — 곧바로 이어지는 append 가 같은 원인으로
+    // 실패해 호출자에게 `io::Error` 로 올라간다. 두 번 시끄럽게 할 이유가 없다.
+    let Ok(file) = opened else {
+        return;
+    };
+    let still_over = file.metadata().map(|m| m.len() >= cap).unwrap_or(false);
+    if !still_over {
+        return;
+    }
+    if let Err(e) = file.set_len(0) {
+        // best-effort — 못 비워도 append 는 그대로 진행한다(파일이 cap 을 넘어 자랄
+        // 뿐 알림은 계속 간다). 조용히 넘기면 그 성장을 아무도 설명하지 못한다.
+        tracing::warn!("notify log truncate failed for {}: {e}", path.display());
+    }
 }
 
 #[cfg(test)]
@@ -172,6 +216,66 @@ mod tests {
         append_line_to(&path, "second", 1024).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         assert_eq!(content, "first\nsecond\n");
+    }
+
+    // 이 파일에는 writer 가 여럿이라, cap 경계에서 겹쳐도 **한 줄이 통째로 남거나
+    // 통째로 없어야** 한다. 그 불변식을 여기서 잰다.
+    //
+    // 한계: 여기 재는 것은 같은 프로세스의 두 스레드다. 실제 상황은 claude child 와
+    // codex child 가 **서로 다른 프로세스**로 붙는 것이고, 프로세스 둘로 재면 같은
+    // 결함이 훨씬 크게 드러난다. 두 프로세스를 띄우는 하네스는 이 크레이트 안에
+    // 둘 자리가 없어(새 타깃이 필요하다) 스레드 판을 둔다 — 그래도 고치기 전
+    // 코드에서는 이 판도 깨진다.
+    //
+    // 두 writer 의 줄 길이를 다르게 두는 것이 핵심이다. 길이가 같으면 덮어쓰기가
+    // 같은 폭을 채워 흔적이 안 남는다.
+    #[test]
+    fn concurrent_writers_never_leave_a_partial_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("race.log");
+        // cap 은 이 시험이 **truncate 갈래를 지나지 않을 만큼** 높게 둔다. 낮추면 뒤의
+        // truncate 가 앞에서 생긴 잔해를 지워 시험이 간헐적으로 통과한다 — 고치기 전
+        // 코드에 대고 재 보면 cap 512 에서는 3/3 통과, 64 KiB 에서는 1/3 통과였고
+        // 여기 값에서만 3/3 실패였다. 그래서 이 시험이 재는 것은 **한 줄이 한 번의
+        // write 로 나가는가** 하나이고, truncate 갈래의 경합은 이것으로 안 재진다.
+        const CAP: u64 = 1 << 30;
+        const ROUNDS: usize = 2_000;
+        // writer 를 둘만 두면 겹치는 창이 좁다. 실제 상황(claude child + codex child)
+        // 보다 많이 띄워 창을 넓힌다.
+        const WRITERS_PER_SHAPE: usize = 4;
+        let long = "X".repeat(60);
+        std::thread::scope(|scope| {
+            for _ in 0..WRITERS_PER_SHAPE {
+                scope.spawn(|| {
+                    for i in 0..ROUNDS {
+                        append_line_to(&path, &format!("A-{i:06}"), CAP)
+                            .expect("append_line_to failed");
+                    }
+                });
+                scope.spawn(|| {
+                    for i in 0..ROUNDS {
+                        append_line_to(&path, &format!("B-{i:06}-{long}"), CAP)
+                            .expect("append_line_to failed");
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(&path).unwrap();
+        let malformed: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                let a = l.len() == 8 && l.starts_with("A-");
+                let b = l.len() == 69 && l.starts_with("B-");
+                !(a || b)
+            })
+            .collect();
+        assert!(
+            malformed.is_empty(),
+            "둘 중 누구의 줄도 아닌 잔해가 {} 줄 남았다 — 덮어썼거나 한 줄이 여러 번의 \
+             write 로 쪼개져 끼어들었다는 뜻이다. 처음 셋: {:?}",
+            malformed.len(),
+            &malformed[..malformed.len().min(3)]
+        );
     }
 
     #[test]
