@@ -822,6 +822,12 @@ prefix = "{prefix}"
     fn unexpired_namespace_invoke_is_left_alone() {
         // 같은 자리에서 deadline 만 미래로 옮긴다 — sweep 이 시각을 실제로 보는지를
         // 이 짝이 가른다(둘 다 통과해야 deadline 비교가 살아 있다는 뜻이다).
+        //
+        // 이 갈래는 하나를 더 지킨다: `NAMESPACE_CALL_TIMEOUT` 이 0 으로 무너지는
+        // 것. 그 값은 두 상수의 `as_secs()` 합에서 오는데 `as_secs()` 는 버림이라,
+        // 둘 다 1 초 미만이 되면 상한이 0 이 되고 모든 namespace 호출이 다음 pump
+        // 에서 즉시 만료된다. 그러면 여기 deadline 이 곧 `now` 라 이 시험이 빨개진다
+        // (변이 실측: 두 상수를 900ms · 500ms 로 내리면 이 시험이 죽는다).
         let (still_pending, resp) =
             sweep_one_namespace_invoke(Instant::now() + NAMESPACE_CALL_TIMEOUT);
         assert!(still_pending, "아직 만료 전인데 pending 이 사라졌다");
