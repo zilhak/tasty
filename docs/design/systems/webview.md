@@ -17,6 +17,8 @@ native webview 는 winit 창 **안**에 얹히는 별개의 OS 자식 창/뷰다
 없거나 시그니처가 다르면 그 OS 의 컴파일이 깨진다. 그 컴파일은 `crossplatform-check` 의
 `check-macos` · `check-windows` · `check-headless` 세 잡이 main push · PR 마다 본다.
 
+trait 을 두지 않기로 한 근거·대안·재검토 조건은 [ADR-0320](../../adr/0320-the-webview-backends-are-held-together-by-shared-call-sites-not-a-trait.md) 에 있다.
+
 **뜻 수준의 일치는 강제되지 않는다.** "`set_visible(false)` 가 무엇을 하는가" 가 백엔드마다
 갈라져도 셋 다 컴파일된다. 아래 표의 "백엔드 차이" 열이 지금 알려진 갈라짐 전부이고, 그
 열이 맞는지는 사람이 읽어서 판정한다 — 재는 법은 각 백엔드의 해당 메서드 본문을 셋 다 열어
