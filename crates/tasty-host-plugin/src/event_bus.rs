@@ -141,15 +141,21 @@ impl EventBus {
     /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
     fn lock_recovering(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|poisoned| {
-            if !self.poison_reported.swap(true, Ordering::Relaxed) {
-                tracing::error!(
-                    "event bus mutex poisoned — a thread panicked while holding it. Recovering \
-                     (subscription and permission maps keep their invariants); later occurrences \
-                     are not logged."
-                );
-            }
+            self.report_poison();
             poisoned.into_inner()
         })
+    }
+
+    /// 같은 poison 을 두 자리에서 복구하므로 보고도 한 자리에 둔다 — 첫 번째만
+    /// 찍는다(이후는 같은 사실의 반복이라 로그를 덮는다).
+    fn report_poison(&self) {
+        if !self.poison_reported.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                "event bus mutex poisoned — a thread panicked while holding it. Recovering \
+                 (subscription and permission maps keep their invariants); later occurrences \
+                 are not logged."
+            );
+        }
     }
 
     pub fn new() -> Self {
@@ -422,7 +428,10 @@ impl EventBus {
             let (guard, _timeout) = self
                 .published
                 .wait_timeout(inner, remaining)
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                .unwrap_or_else(|poisoned| {
+                    self.report_poison();
+                    poisoned.into_inner()
+                });
             inner = guard;
         }
     }
