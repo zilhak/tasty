@@ -35,7 +35,7 @@ Agent 가 권한 부족으로 거부되면 호스트가 (같은 (agent, permissi
 
 elevation 자체는 이 로그에 의존하지 않는다 — 승인 이력은 `tasty.approval.*` 로 별도 영속되고, elevation 발행 트리거도 deny 경로다.
 
-보존: 관측 로그 3종 공통 정책(`adapters::ipc::log_retention`)을 따른다 — 50시간 + 5만 건 상한이며 부팅과 런타임 양쪽에서 집행된다.
+보존: 관측 로그 3종 공통 정책(`store::log_retention`)을 따른다 — 50시간 + 5만 건 상한이며 부팅과 런타임 양쪽에서 집행된다.
 
 ## 인터페이스
 

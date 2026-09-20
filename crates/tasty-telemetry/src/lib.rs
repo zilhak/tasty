@@ -21,7 +21,7 @@
 //! ## 비-책임 (호스트가 처리)
 //!
 //! - **영속 IO**: 호스트가 `Core.with_memory` 로 read/write
-//! - **보존 정책**: 호스트 `adapters::ipc::log_retention` 이 event/anomaly 상한 집행
+//! - **보존 정책**: 호스트 `store::log_retention` 이 event/anomaly 상한 집행
 //! - **dispatcher 통합 / cap 평가 캐시**: 호스트 `src/ipc/handler` 측
 //! - **agent 식별**: 호스트가 [`AgentId::from_caller`] 등으로 도출
 //!

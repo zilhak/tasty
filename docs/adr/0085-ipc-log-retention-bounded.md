@@ -44,7 +44,7 @@ raw 를 지우면 그만큼 **조회 가능 기간이 그대로 사라진다.**
 ## Decision
 
 **관측 로그는 무한 보존 대상이 아니다.** 세 로그의 보존 정책을 한 테이블
-(`adapters::ipc::log_retention`)에 모으고, 부팅 경로와 런타임 경로가 같은
+(`store::log_retention`)에 모으고, 부팅 경로와 런타임 경로가 같은
 상수·같은 구현을 부르게 한다(런타임 집행 시점은 아래 보강 절 참고). 각 로그는 개수 상한과 시간 상한을 함께 걸되, 유입
 속도가 시간 상한을 무의미하게 만드는 로그는 개수 상한만 건다.
 
@@ -145,4 +145,4 @@ raw 를 지우면 그만큼 **조회 가능 기간이 그대로 사라진다.**
 - [features/telemetry](../features/telemetry/index.md) — raw event 가 유일한 SoT 라는 조회 모델
 - [reference/api](../reference/api.md) — `plugin.audit_*` 의 의미 변화
 - [dev-guide/timer-hub](../dev-guide/timer-hub.md) — 주기 집행 드라이버(`Tick::LogPrune`)의 실행 기반
-- `src/adapters/ipc/log_retention.rs` — 정책 테이블 · `src/adapters/ipc/audit.rs` — allow 게이트
+- `src/store/log_retention.rs` — 정책 테이블 · `src/adapters/ipc/audit.rs` — allow 게이트

@@ -74,12 +74,12 @@ fn truncate_wal(store: &mut tasty_memory::MemoryStore) {
 /// audit/telemetry 는 append-only 로그라 `memory` 테이블을 무한 채운다(per-IPC audit
 /// 가 수십만 행 누적). put 은 이제 O(1)(전체 스캔 제거)이라 성능 목적은 아니며, 무한
 /// 누적으로 인한 디스크 증가와 1GB regular quota 도달을 막는 retention 이다. 정책은
-/// `adapters::ipc::log_retention` 이 소유하고 런타임 append 경로와 공유한다 — 부팅
+/// `store::log_retention` 이 소유하고 런타임 append 경로와 공유한다 — 부팅
 /// 경로만 있으면 재시작 전까지 무제한으로 자란다(그게 원래 상태였다). 조용히(이벤트
 /// 없이) 삭제 후 단편화가 크면 1회 VACUUM 으로 회수하며, 최초 1회만 대량(수십만 행)
 /// 삭제로 ~2s 소요될 수 있고 이후 부팅은 초과분만 정리한다.
 fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
-    // 상한 값은 `adapters::ipc::log_retention` 이 단독으로 소유한다 — 런타임 집행
+    // 상한 값은 `store::log_retention` 이 단독으로 소유한다 — 런타임 집행
     // 경로가 같은 테이블을 읽는다. 여기에 숫자를 다시 적으면 두 경로가 갈린다.
     let mut store = crate::poison::recover_mutex(
         arc.lock(),
@@ -91,7 +91,7 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
     let mut pruned = 0u64;
-    for policy in &crate::adapters::ipc::log_retention::ALL {
+    for policy in &crate::store::log_retention::ALL {
         pruned += policy.enforce(&mut *store, now_ms);
     }
     vacuum_if_needed(&mut store, pruned);
@@ -357,7 +357,7 @@ fn run_due_timers(
             crate::app::timers::Tick::LogPrune => {
                 let now_ms = u64::try_from(app.core.now_unix_millis()).unwrap_or(0);
                 app.core.with_memory(|mem| {
-                    crate::adapters::ipc::log_retention::maybe_prune(mem, now_ms);
+                    crate::store::log_retention::maybe_prune(mem, now_ms);
                 });
             }
         }

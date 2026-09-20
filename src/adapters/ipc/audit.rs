@@ -13,7 +13,7 @@
 //! 별도 영속되고, elevation 발행 트리거도 deny 경로(`app::ipc::caller_gate`)라
 //! 그대로 기록된다.
 //!
-//! 보존 정책은 [`log_retention`](crate::adapters::ipc::log_retention) 이 소유한다 —
+//! 보존 정책은 [`log_retention`](crate::store::log_retention) 이 소유한다 —
 //! audit 만의 값이 아니라 관측 로그 3종이 공유하는 정책이고, 과거 이 모듈이 자체
 //! 상수를 들고 있다가 부팅 경로와 720배 어긋났던 곳이다. 집행 지점 2개:
 //! 1. load 시 lazy evict — query 가 호출될 때 만료 record 를 함께 삭제.
@@ -33,7 +33,7 @@ pub const AUDIT_KEY_PREFIX: &str = "tasty.audit.";
 /// 조회 경로가 쓰는 보존 기간 — 정리 경로와 **같은 값**이어야 하므로 정책 테이블
 /// (`log_retention::AUDIT`)에서 가져온다. 두 경로가 각자 숫자를 들고 있다가 어긋난
 /// 것이 이 서브시스템의 retention 이 무력했던 원인이다.
-pub const DEFAULT_RETENTION_MS: u64 = crate::adapters::ipc::log_retention::LOG_TTL_MS;
+pub const DEFAULT_RETENTION_MS: u64 = crate::store::log_retention::LOG_TTL_MS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -559,7 +559,7 @@ mod tests {
             }
         }
         // ttl 5000ms, now 10000 → cutoff 5000: 1_000 만 만료.
-        let policy = crate::adapters::ipc::log_retention::LogRetention {
+        let policy = crate::store::log_retention::LogRetention {
             prefix: AUDIT_KEY_PREFIX,
             keep: 1_000, // 개수로는 안 걸리게 — 시간 축만 본다
             ttl_ms: Some(5_000),

@@ -20,7 +20,7 @@ dispatcher 미들웨어가 에이전트의 IPC 호출마다 `ipc_calls` 이벤�
    (`src/adapters/ipc/handler.rs`)가 `telemetry::check_cap_block` 의 판정으로 plugin caller 의
    호출을 실제로 거부한다(`-32007 cap_blocked`). 그 cap 이 발화하는 근거가 `ipc_calls`
    누적이다. `AnomalyDetector` 도 같은 스트림을 먹는다.
-3. **보존 상한이 이미 있다.** `src/adapters/ipc/log_retention.rs` 의 `TELEMETRY_EVENT`
+3. **보존 상한이 이미 있다.** `src/store/log_retention.rs` 의 `TELEMETRY_EVENT`
    (`keep: 20_000`, ttl 없음) · `TELEMETRY_ANOMALY`(`keep: 5_000`, ttl `LOG_TTL_MS`).
 4. **`telemetry` 권한 토큰은 방어선이 아니다.** `crates/tasty-ipc/src/method_meta.rs` 가
    `telemetry.*` 12 개를 그 토큰 하나로 열지만, 저장소인 `~/.tasty/memory.db` 는 **평문
@@ -87,4 +87,4 @@ dispatcher 미들웨어가 에이전트의 IPC 호출마다 `ipc_calls` 이벤�
 - [docs/dev-guide/plugin-permissions.md](../dev-guide/plugin-permissions.md) — `telemetry` 토큰이 여는 것
 - 코드 근거 (**결정이 실현된 현재 위치**): `src/adapters/ipc/handler.rs` 의 `check_cap_gate` ·
   `src/adapters/ipc/handler/telemetry.rs` 의 `check_cap_block` · `record_ipc_call` ·
-  `src/adapters/ipc/log_retention.rs` 의 `TELEMETRY_EVENT` · `TELEMETRY_ANOMALY`
+  `src/store/log_retention.rs` 의 `TELEMETRY_EVENT` · `TELEMETRY_ANOMALY`

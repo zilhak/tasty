@@ -56,7 +56,7 @@ impl App {
         let now_ms = self.core.now_unix_millis();
         let now_ms = u64::try_from(now_ms).unwrap_or(0);
         self.core.with_memory(|mem| {
-            crate::adapters::ipc::log_retention::maybe_prune(mem, now_ms);
+            crate::store::log_retention::maybe_prune(mem, now_ms);
         });
     }
 }

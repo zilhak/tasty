@@ -1,6 +1,6 @@
 //! `telemetry.anomaly.*` — anomaly 영속/조회/발동.
 //!
-//! 보존은 관측 로그 3종 공통 정책(`adapters::ipc::log_retention`)을 따른다. 과거
+//! 보존은 관측 로그 3종 공통 정책(`store::log_retention`)을 따른다. 과거
 //! 이 로그만 TTL 도 부팅 정리 목록도 없어 **재시작해도 영원히 남는** 유일한 유입원
 //! 이었다(18시간 실행 21,102건). 근거는
 //! [ADR-0085](../../../../../docs/adr/0085-ipc-log-retention-bounded.md).
@@ -20,20 +20,18 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// `expires_at` 은 만료된 행을 조회에서 빼줄 뿐, 디스크에서 지우지는 않는다
 /// (`purge_expired` 는 `memory.gc` IPC 에서만 돌고 자동 호출자가 없다). 즉 TTL 만
 /// 걸면 "조회에는 안 보이는데 파일은 계속 커지는" 상태가 되어, 이 로그가 원래 앓던
-/// 문제가 그대로 남는다. 물리 삭제는 [`log_retention`](crate::adapters::ipc::log_retention)
+/// 문제가 그대로 남는다. 물리 삭제는 [`log_retention`](crate::store::log_retention)
 /// 의 상한이 부팅·런타임 양쪽에서 수행한다.
 pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Result<(), String> {
     let key = anomaly_key(anomaly.detected_at, &anomaly.id);
     let value = MemoryValue::Json(serde_json::to_value(anomaly).map_err(|e| e.to_string())?);
     let opts = PutOpts {
-        expires_at: Some(
-            (anomaly.detected_at + crate::adapters::ipc::log_retention::LOG_TTL_MS) as i64,
-        ),
+        expires_at: Some((anomaly.detected_at + crate::store::log_retention::LOG_TTL_MS) as i64),
         cas: None,
     };
     core.with_memory(|s| {
         // 다른 두 로그와 같은 게이트 — anomaly 만 유입되는 인스턴스에서도 정리가 돈다.
-        crate::adapters::ipc::log_retention::maybe_prune(s, anomaly.detected_at);
+        crate::store::log_retention::maybe_prune(s, anomaly.detected_at);
         s.put(
             tasty_memory::HOST_OWNER,
             &Scope::Global,
