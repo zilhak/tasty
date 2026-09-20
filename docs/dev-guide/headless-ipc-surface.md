@@ -10,11 +10,12 @@
 
 gui 는 5-step 라우터(`src/app/ipc.rs`)를 쓴다. 헤드리스 pump(`src/boot/headless_dispatch.rs`)
 는 caller 해석 → **권한 경계** → engine handler 직결로 간소화하되, **`App` 층 상태를 읽어야만
-답할 수 있는 것**만 그 앞에서 가로챈다. 현재 가로채는 것은 셋이다.
+답할 수 있는 것**만 그 앞에서 가로챈다. 현재 가로채는 것은 넷이다.
 
 - `timer.list` — `App` 의 TimerHub 를 읽는다.
 - 읽기 전용 `plugin.*` 조회 — `App.plugin_manager` 를 읽는다.
 - `plugin.request_permission` — `state`·`engine` 만 읽는다(아래 "권한 경계").
+- `events.fetch` — `App.plugin_manager` 가 소유한 사건 버스의 링을 읽는다.
 
 ### 권한 경계는 가로채기보다 **앞**이다
 
@@ -198,7 +199,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 **빈칸을 못 만들게 하는 것**이 그 가드의 목적이고, 초록은 "두 조합이 같다" 가 아니라
 "차이가 전부 사유와 함께 적혀 있다" 는 뜻이다.
 
-### 답한다 (6)
+### 답한다 (7)
 
 창이 없어도 답이 정의되는 것들이다. 본체는 두 조합이 **같은 함수**를 쓴다
 (`src/core/app_surface.rs`) — `system.shutdown` 만 끊는 방식이 조합마다 달라 예외다.
@@ -210,6 +211,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 | `remote.workspaces` | 인자만 읽는다. App 상태를 하나도 안 본다 |
 | `agent.task_await` | 이 engine 의 `task_waker_hub` + `agent_seq` |
 | `approval.await` | 이 engine 의 `approval_store` |
+| `events.fetch` | `App.plugin_manager` 의 사건 버스 링. `wait_ms` 대기는 워커로 나가 dispatch 루프를 안 막는다 |
 | `system.shutdown` | 데몬을 멈춘다(debug 전용). 응답을 먼저 보내고 run loop 를 끊는다 |
 
 ### 없는 것이 정답 (11)

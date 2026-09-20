@@ -1521,6 +1521,10 @@ cap_reset_target_required = "エラー: telemetry cap reset には --id また�
 metadata_not_json = "エラー: --metadata は有効な JSON である必要があります: {}"
 content_file_read_failed = "エラー: --content ファイル '{}' を読み込めませんでした: {}"
 
+[cli.events]
+epoch_changed = "tasty が再起動しました: イベントフィードは新しい世代のため、先頭から再開します"
+skipped = "{} 件が読み取られる前にリングから押し出されました"
+
 [cli.preset]
 stdin_read_failed = "stdin の読み込みに失敗しました: {}"
 file_read_failed = "ファイルの読み込みに失敗しました: {}"

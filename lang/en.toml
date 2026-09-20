@@ -1547,6 +1547,10 @@ cap_reset_target_required = "Error: telemetry cap reset requires --id or --agent
 metadata_not_json = "Error: --metadata must be valid JSON: {}"
 content_file_read_failed = "Error: failed to read --content file '{}': {}"
 
+[cli.events]
+epoch_changed = "tasty restarted: the event feed is a new generation, resuming from its start"
+skipped = "{} events left the ring before they could be read"
+
 [cli.preset]
 stdin_read_failed = "stdin read failed: {}"
 file_read_failed = "file read failed: {}"

@@ -1,4 +1,4 @@
-<!-- source-hash: 4561c2884ce4 -->
+<!-- source-hash: 3534c729d1db -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -110,6 +110,28 @@ tasty agent task-purge --workspace-id 2 --states succeeded
 - `task-await` waits up to 10 minutes by default and comes back with a timeout if the task has not finished by then. With `--timeout-ms 0` it waits indefinitely.
 - `task-set-result` is for reporting that something the runner did not run is done — a check a person does by hand, for example.
 - `task-delete` is refused while another task references it, and tells you the ID of the referencing side. A running task has to be cancelled first.
+
+## Receiving finished work as events
+
+Instead of asking again and again whether a task is done, you can have it come to you.
+
+```sh
+tasty events follow --filter 'agent.*'
+```
+
+One event per line as JSON, so a shell loop can read it directly.
+
+```sh
+tasty events follow --filter 'agent.*' | while read -r line; do
+  echo "event: $line"
+done
+```
+
+- **The reader holds the position, not Tasty.** Pass the `next_offset` that comes back as the next `--offset` and you carry on from where you stopped. For a single read rather than a loop, use `tasty events fetch --offset <number>`.
+- Events live in memory only, and only the most recent ones are kept. If you were away long enough for the ones in between to fall out, you are **not** quietly given the oldest ones instead — you are told how many were missed. That notice is kept out of the event stream, so the `while read` above is not disturbed.
+- Restarting Tasty clears the events and starts positions over. If the `epoch` that comes with an answer differs from the one your position came from, that position belongs to a previous generation.
+- What comes out today is **a task finishing** and **a barrier closing**. Why something failed is not carried in the event — use `tasty agent task-get` for that.
+- A slow reader queues nothing on the Tasty side.
 
 ## Concurrency limits and signals
 

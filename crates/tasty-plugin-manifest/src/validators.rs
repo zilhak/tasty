@@ -71,6 +71,7 @@ pub const RESERVED_IPC_PREFIXES: &[&str] = &[
     "clipboard",
     "completion_strategy",
     "debug",
+    "events",
     "file_handler",
     "file_picker",
     "fs",

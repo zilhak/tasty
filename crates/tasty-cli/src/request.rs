@@ -27,9 +27,9 @@ use telemetry::telemetry_command_to_method_params;
 use terminal::{pty_command_to_method_params, terminal_command_to_method_params};
 
 use super::{
-    CloseCommands, Commands, ListCommands, MoveCommands, NewCommands, ReadCommands, RemoteCommands,
-    SendCommands, SessionCommands, SetCommands, SurfaceAttentionCommands, SurfaceCommands,
-    SurfaceMetaCommands, ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
+    CloseCommands, Commands, EventsCommands, ListCommands, MoveCommands, NewCommands, ReadCommands,
+    RemoteCommands, SendCommands, SessionCommands, SetCommands, SurfaceAttentionCommands,
+    SurfaceCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -307,6 +307,29 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Settings { command } => settings_command_to_method_params(command),
         Commands::Output { command } => output_command_to_method_params(command),
         Commands::Approval { command } => approval_command_to_method_params(command),
+        Commands::Events { command } => match command {
+            EventsCommands::Fetch {
+                offset,
+                max,
+                filter,
+                wait_ms,
+            } => {
+                let mut p = serde_json::Map::new();
+                p.insert("offset".into(), serde_json::json!(offset));
+                if let Some(m) = max {
+                    p.insert("max".into(), serde_json::json!(m));
+                }
+                if let Some(f) = filter {
+                    p.insert("filter".into(), serde_json::json!(f));
+                }
+                if let Some(w) = wait_ms {
+                    p.insert("wait_ms".into(), serde_json::json!(w));
+                }
+                ("events.fetch", serde_json::Value::Object(p))
+            }
+            // `follow` 는 루프라 요청 하나로 안 접힌다 — `dispatch.rs` 가 가져간다.
+            EventsCommands::Follow { .. } => ("events.fetch", serde_json::json!({})),
+        },
         Commands::Telemetry { command } => telemetry_command_to_method_params(command),
         Commands::Agent { command } => agent_command_to_method_params(command),
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),

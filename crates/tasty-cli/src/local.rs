@@ -365,6 +365,27 @@ impl ClientCommand for PluginAuditFollow<'_> {
     }
 }
 
+/// events follow is a long-poll loop over events.fetch IPC. The cursor lives
+/// here, not on the host, so a restart of this process resumes from whatever
+/// offset it was given.
+pub struct EventsFollow<'a> {
+    pub offset: u64,
+    pub filter: &'a Option<String>,
+    pub batch: u64,
+    pub wait_ms: u64,
+}
+impl ClientCommand for EventsFollow<'_> {
+    fn run(self: Box<Self>, ctx: &ClientCtx<'_>) -> Result<()> {
+        crate::events::run_follow(
+            self.offset,
+            self.filter.as_deref(),
+            self.batch,
+            self.wait_ms,
+            ctx.port_file,
+        )
+    }
+}
+
 /// debug stream-echo uses a raw framed streaming channel, not the JSON-RPC
 /// request-response path (debug builds only).
 #[cfg(debug_assertions)]

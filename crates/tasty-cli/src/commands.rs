@@ -5,6 +5,7 @@ pub mod approval;
 pub mod clipboard;
 pub mod completion_strategy;
 pub mod debug;
+pub mod events;
 pub mod file_handler;
 pub mod hook_handler;
 pub mod list_set;
@@ -39,6 +40,7 @@ pub use debug::{
     ModalDebugCommands, ModifierHintDebugCommands, PluginBannerDebugCommands, PopupDebugCommands,
     SettingsDebugCommands, ToolDebugCommands,
 };
+pub use events::EventsCommands;
 pub use file_handler::FileHandlerCommands;
 pub use hook_handler::HookHandlerCommands;
 pub use list_set::{ListCommands, SetCommands};

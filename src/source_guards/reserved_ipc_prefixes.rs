@@ -7,7 +7,7 @@
 //! **표에 없는 `<prefix>.*` 가 plugin 으로 forward 된다.** 실패가 그 자리에서 안 나고
 //! 나중에 이름이 겹칠 때 나므로, 목록을 눈으로 유지하는 것으로는 못 막는다.
 //!
-//! 지금은 호스트 prefix 45 개 중 **번들 plugin 이 점유한 둘을 뺀 전부**가 예약돼 있다.
+//! 지금은 호스트 prefix 46 개 중 **번들 plugin 이 점유한 둘을 뺀 전부**가 예약돼 있다.
 //! 그 결정과 감수한 비용은
 //! [ADR-0140](../../docs/adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md).
 //!

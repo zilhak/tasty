@@ -82,6 +82,10 @@ impl App {
             self.ipc_dispatch_approval_await(cmd);
             return IpcStep::Handled;
         }
+        if cmd.request.method == "events.fetch" {
+            self.ipc_dispatch_events_fetch(cmd);
+            return IpcStep::Handled;
+        }
         if cmd.request.method == "agent.task_await" {
             self.ipc_dispatch_task_await(cmd);
             return IpcStep::Handled;
@@ -791,6 +795,37 @@ impl App {
             IpcStep::Handled
         }
     }
+    /// `events.fetch`: `wait_ms` 가 있으면 블로킹이라 **워커로 내보낸다** — 프레임
+    /// 루프에서 기다리면 그만큼 창이 멈춘다(`agent.task_await` 와 같은 이유).
+    /// 버스는 `Clone` 이고 안이 `Arc` 라 사본이 같은 링을 본다.
+    fn ipc_dispatch_events_fetch(&mut self, cmd: &IpcCommand) {
+        let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let Some(mgr) = self.plugin_manager.as_ref() else {
+            send_response(&cmd.response_tx, crate::ipc::handler::events::no_bus(id));
+            return;
+        };
+        let bus = mgr.event_bus.clone();
+        let args = match crate::ipc::handler::events::FetchParams::parse(&cmd.request.params, &id) {
+            Ok(a) => a,
+            Err(resp) => {
+                send_response(&cmd.response_tx, resp);
+                return;
+            }
+        };
+        if args.wait.is_zero() {
+            send_response(
+                &cmd.response_tx,
+                crate::ipc::handler::events::fetch(&bus, &args, id),
+            );
+            return;
+        }
+        let response_tx = cmd.response_tx.clone();
+        std::thread::spawn(move || {
+            let resp = crate::ipc::handler::events::fetch(&bus, &args, id);
+            send_response(&response_tx, resp);
+        });
+    }
+
     /// `agent.task_await`: 블로킹. **어느 engine 의 허브인지 고르는 것만** 여기 있다 —
     /// 창 → parked → (헤드리스 전용) 단일 engine 순으로 훑는다. 고른 뒤의 대기는 두
     /// 조합이 공유한다(`crate::core::app_surface::spawn_task_await`).

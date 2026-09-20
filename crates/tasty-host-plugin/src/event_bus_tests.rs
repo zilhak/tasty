@@ -354,3 +354,62 @@ fn the_trace_lookup_and_the_fetch_read_the_same_ring() {
     assert_eq!(got.events.len(), 1);
     assert_eq!(got.events[0].1.meta.trace_id, "same");
 }
+
+#[test]
+fn a_blocking_fetch_returns_at_once_when_there_is_already_something() {
+    let bus = EventBus::new();
+    bus.publish_from_host(env("agent.task_finished", EventOrigin::Host));
+    let start = std::time::Instant::now();
+    let got = bus.fetch_blocking(0, 10, None, std::time::Duration::from_secs(5));
+    assert_eq!(got.events.len(), 1);
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(1),
+        "줄 것이 있는데 기다렸다: {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn a_blocking_fetch_gives_up_and_answers_with_the_position() {
+    let bus = EventBus::new();
+    let got = bus.fetch_blocking(0, 10, None, std::time::Duration::from_millis(50));
+    assert!(got.events.is_empty());
+    assert_eq!(got.next_offset, 0, "빈 답이어도 이어 붙을 위치는 온다");
+}
+
+/// 기다리던 쪽이 **발화로 깨어난다.** 짧은 잠을 반복하는 구조였다면 응답 지연의
+/// 바닥이 그 잠 길이가 되고, 이 시험은 그 바닥을 넘는 값으로 통과한다.
+#[test]
+fn a_publish_wakes_the_one_that_was_waiting() {
+    use std::sync::Arc;
+    let bus = Arc::new(EventBus::new());
+    let waiting = Arc::clone(&bus);
+    let handle = std::thread::spawn(move || {
+        waiting.fetch_blocking(0, 10, None, std::time::Duration::from_secs(5))
+    });
+    // 대기 등록이 보이도록 잠깐 양보한다.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    bus.publish_from_host(env("agent.barrier_closed", EventOrigin::Host));
+    let got = handle.join().expect("대기 스레드가 패닉하면 안 된다");
+    assert_eq!(got.events.len(), 1);
+    assert_eq!(got.events[0].1.key, "agent.barrier_closed");
+}
+
+/// 필터에 안 맞는 발화로 깨어나면 **답을 만들지 않고 남은 시간을 마저 기다린다.**
+/// 깨어난 횟수가 답의 크기를 바꾸면 시끄러운 버스에서 빈 답이 쏟아진다.
+#[test]
+fn waking_on_something_the_filter_rejects_keeps_waiting() {
+    use std::sync::Arc;
+    let bus = Arc::new(EventBus::new());
+    let waiting = Arc::clone(&bus);
+    let handle = std::thread::spawn(move || {
+        waiting.fetch_blocking(0, 10, Some("agent.*"), std::time::Duration::from_secs(5))
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    bus.publish_from_host(env("tab.created", EventOrigin::Host));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    bus.publish_from_host(env("agent.task_finished", EventOrigin::Host));
+    let got = handle.join().expect("대기 스레드가 패닉하면 안 된다");
+    assert_eq!(got.events.len(), 1, "필터 밖 사건으로 답이 났다");
+    assert_eq!(got.events[0].1.key, "agent.task_finished");
+}

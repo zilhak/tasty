@@ -16,7 +16,7 @@
 use anyhow::Result;
 
 use crate::Commands;
-use crate::commands::{PluginCommands, RemoteCommands, ToolCommands};
+use crate::commands::{EventsCommands, PluginCommands, RemoteCommands, ToolCommands};
 
 /// 클라이언트 주도 실행이 진입점에서 받는 문맥.
 ///
@@ -235,6 +235,22 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
             decision,
             batch: *batch,
             interval_ms: *interval_ms,
+        }),
+        // `fetch` 는 한 번의 호출이라 평범한 요청 경로로 간다. `follow` 만 루프라
+        // 여기 있다 — 같은 IPC 메서드를 위치를 이어 가며 되부른다.
+        Commands::Events {
+            command:
+                EventsCommands::Follow {
+                    offset,
+                    filter,
+                    batch,
+                    wait_ms,
+                },
+        } => Box::new(crate::local::EventsFollow {
+            offset: *offset,
+            filter,
+            batch: *batch,
+            wait_ms: *wait_ms,
         }),
 
         // ── debug 빌드 전용 ────────────────────────────────────────────────

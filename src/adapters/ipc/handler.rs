@@ -63,6 +63,7 @@ pub mod agent;
 pub mod approval;
 pub(crate) mod attach;
 pub mod audit;
+pub mod events;
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub mod ime;
 pub mod plugin;

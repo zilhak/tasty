@@ -21,7 +21,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use tasty_plugin_protocol::{
     EventDispatchParams, EventEnvelope, EventOrigin, MAX_HOP, METHOD_EVENT_DISPATCH, PluginRequest,
@@ -107,6 +107,9 @@ pub struct EventBus {
     /// 쓴다 — 필요한 성질은 순서가 아니라 재시작마다 달라지는 것이고, 나노초
     /// 해상도면 같은 프로세스가 두 번 서도 값이 겹치지 않는다.
     epoch: u64,
+    /// 발화가 있을 때마다 깨운다. long-poll 이 이것을 기다린다 — 없으면 대기하는
+    /// 쪽이 짧은 잠을 반복해야 하고, 그러면 응답 지연의 바닥이 그 잠 길이가 된다.
+    published: Arc<Condvar>,
     /// poison 을 이미 보고했는가. poison 은 sticky 라 fan-out 마다 같은 로그가
     /// 나오는 것을 막는다.
     poison_reported: Arc<AtomicBool>,
@@ -158,6 +161,7 @@ impl EventBus {
                 ring: VecDeque::with_capacity(EVENT_RING_CAPACITY),
                 next_offset: 0,
             })),
+            published: Arc::new(Condvar::new()),
             poison_reported: Arc::new(AtomicBool::new(false)),
             epoch: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -312,6 +316,9 @@ impl EventBus {
             offset,
             envelope: envelope.clone(),
         });
+        // 기다리는 long-poll 을 깨운다. 락은 아래 fan-out 이 끝나고 풀리므로 깨어난
+        // 쪽은 그때 이어 받는다.
+        self.published.notify_all();
         // plugin 구독자.
         let mut dispatches: Vec<PluginDispatch> = Vec::new();
         for sub in &inner.plugin_subs {
@@ -382,6 +389,51 @@ impl EventBus {
     /// 만들지 않는다.
     pub fn fetch(&self, offset: u64, max: usize, filter: Option<&str>) -> EventFetch {
         let inner = self.lock_recovering();
+        Self::fetch_locked(&inner, self.epoch, offset, max, filter)
+    }
+
+    /// [`Self::fetch`] 와 같되, 줄 것이 없으면 최대 `wait` 동안 기다린다.
+    ///
+    /// **이 함수는 부르는 스레드를 막는다.** 호출자는 워커 스레드에서 불러야 한다 —
+    /// 프레임 루프에서 부르면 창이 그만큼 멈춘다(`agent.task_await` 가 같은 이유로
+    /// 워커로 나간다).
+    ///
+    /// 기다리는 것은 **새 발화**이지 필터에 맞는 발화가 아니다. 맞지 않는 사건이
+    /// 오면 한 번 더 보고 그래도 없으면 남은 시간만큼 다시 기다린다 — 그래서 시끄러운
+    /// 버스에서도 깨어난 횟수가 답의 크기를 안 바꾼다.
+    pub fn fetch_blocking(
+        &self,
+        offset: u64,
+        max: usize,
+        filter: Option<&str>,
+        wait: std::time::Duration,
+    ) -> EventFetch {
+        let deadline = std::time::Instant::now() + wait;
+        let mut inner = self.lock_recovering();
+        loop {
+            let got = Self::fetch_locked(&inner, self.epoch, offset, max, filter);
+            if !got.events.is_empty() || got.truncated {
+                return got;
+            }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return got;
+            }
+            let (guard, _timeout) = self
+                .published
+                .wait_timeout(inner, remaining)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            inner = guard;
+        }
+    }
+
+    fn fetch_locked(
+        inner: &Inner,
+        epoch: u64,
+        offset: u64,
+        max: usize,
+        filter: Option<&str>,
+    ) -> EventFetch {
         let base = inner
             .ring
             .front()
@@ -416,7 +468,7 @@ impl EventBus {
         EventFetch {
             events,
             next_offset,
-            epoch: self.epoch,
+            epoch,
             truncated,
             skipped,
         }

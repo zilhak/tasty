@@ -16,6 +16,7 @@ pub mod commands;
 pub mod cwd_resolve;
 pub mod dispatch;
 pub mod dynamic;
+pub mod events;
 pub mod format;
 pub mod help;
 pub mod help_i18n;
@@ -257,6 +258,17 @@ pub enum Commands {
     Approval {
         #[command(subcommand)]
         command: ApprovalCommands,
+    },
+    /// Read the host event feed by position (fetch, follow)
+    ///
+    /// The feed lives in memory only: a restart clears it and starts positions
+    /// over, so every answer carries an `epoch` that says which generation a
+    /// position belongs to. A position that has scrolled out of the ring is not
+    /// quietly replaced by the oldest one — the answer says how many were
+    /// skipped.
+    Events {
+        #[command(subcommand)]
+        command: EventsCommands,
     },
     /// Agent telemetry (record metrics, summary, timeseries, top-N)
     ///

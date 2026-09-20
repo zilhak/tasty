@@ -458,6 +458,18 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("telemetry.cap.reset", plugin(Idempotent, &[Telemetry])),
         ("telemetry.anomaly.list", plugin(Read, &[Telemetry])),
         ("telemetry.session_summary", plugin(Read, &[Telemetry])),
+        // ── events (사건 피드 조회) ──────────────────────────────────
+        //
+        // 읽으면서 서버 쪽 커서가 전진하지 **않는다** — 커서는 소비자가 들고 매번
+        // 가져온다. 그래서 같은 인자로 두 번 불러도 같은 답이 오고, 두 번째 전달이
+        // 남기는 관측 가능한 차이가 없다(ADR-0306 의 축). 이 점이
+        // `surface.read_since_scan_mark` 와 갈리는 자리다 — 그쪽은 읽으면서 서버
+        // 커서를 밀어 같은 구간을 다시 못 읽는다.
+        //
+        // `local_only` 인 이유는 권한이 아니라 **모양**이다. plugin 은 버스 구독으로
+        // 이미 push 를 받고, `wait_ms` 대기는 plugin SDK 의 단일 워커를 막는다
+        // (`agent.task_await`·`approval.await` 가 같은 이유로 local 전용이다).
+        ("events.fetch", local_only(Read)),
         // ── agent (협업 primitive) ────────────────────────────────────
         ("agent.task_create", plugin(Mutate, &[AgentManage])),
         ("agent.task_list", plugin(Read, &[AgentManage])),

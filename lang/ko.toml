@@ -1519,6 +1519,10 @@ cap_reset_target_required = "오류: telemetry cap reset 에는 --id 또는 --ag
 metadata_not_json = "오류: --metadata 는 올바른 JSON 이어야 합니다: {}"
 content_file_read_failed = "오류: --content 파일 '{}' 을(를) 읽지 못했습니다: {}"
 
+[cli.events]
+epoch_changed = "tasty 가 재시작되었습니다: 사건 피드가 새 세대라 처음부터 다시 잇습니다"
+skipped = "{} 건이 읽히기 전에 링에서 밀려났습니다"
+
 [cli.preset]
 stdin_read_failed = "stdin 읽기 실패: {}"
 file_read_failed = "파일 읽기 실패: {}"

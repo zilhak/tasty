@@ -279,6 +279,46 @@ fn intercept_app_layer(
         return Some(Intercepted::Answered);
     }
 
+    // 2-events) 사건 피드 조회. 버스는 `PluginManager` 가 소유하므로 여기서도
+    //     **메타데이터 층까지만** 세운다 — 조회가 plugin 프로세스를 띄우면 관측이
+    //     자기 대상을 바꾼다(ADR-0136). release 에도 있어야 하는 표면이라 아래
+    //     debug 층이 아니라 이 자리다.
+    if cmd.request.method == "events.fetch" {
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+        let args =
+            match crate::ipc::handler::events::FetchParams::parse(&cmd.request.params, &rpc_id) {
+                Ok(a) => a,
+                Err(resp) => {
+                    send_response(&cmd.response_tx, resp);
+                    return Some(Intercepted::Answered);
+                }
+            };
+        let Some(mgr) = app.plugin_manager.as_ref() else {
+            send_response(
+                &cmd.response_tx,
+                crate::ipc::handler::events::no_bus(rpc_id),
+            );
+            return Some(Intercepted::Answered);
+        };
+        let bus = mgr.event_bus.clone();
+        if args.wait.is_zero() {
+            send_response(
+                &cmd.response_tx,
+                crate::ipc::handler::events::fetch(&bus, &args, rpc_id),
+            );
+            return Some(Intercepted::Answered);
+        }
+        // 기다리는 동안 데몬의 dispatch 루프를 막으면 그 사이 다른 호출이 전부
+        // 밀린다 — `agent.task_await` 가 같은 이유로 워커로 나간다.
+        let response_tx = cmd.response_tx.clone();
+        std::thread::spawn(move || {
+            let resp = crate::ipc::handler::events::fetch(&bus, &args, rpc_id);
+            send_response(&response_tx, resp);
+        });
+        return Some(Intercepted::Answered);
+    }
+
     #[cfg(debug_assertions)]
     if let Some(hit) = intercept_debug_app_layer(app, engine, cmd) {
         return Some(hit);
