@@ -29,15 +29,21 @@ impl Hub {
     ///
     /// 반환: host→plugin sync dispatch 에 사용할 `HostIpcInjector` (서버 시작
     /// 실패 시 `None`). 호출자가 `Core::set_host_ipc_injector` 로 등록한다.
+    ///
+    /// `connections` 는 `Core` 가 들고 있는 연결 자리 게이지의 핸들이다. Hub 는
+    /// `Core` 를 못 보므로 호출자가 건네준다 — 안 건네면 `system.pressure` 의
+    /// `connections` 덩어리가 영영 0 으로 남는다.
     pub(crate) fn start_ipc(
         &mut self,
         ipc_waker: IpcWaker,
         stream_ctx: StreamContext,
+        connections: std::sync::Arc<tasty_telemetry::ConnectionStats>,
     ) -> Option<HostIpcInjector> {
         match TcpIpcServer::start_with_port_file(
             self.port_file.take(),
             Some(ipc_waker.clone()),
             stream_ctx,
+            connections,
         ) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());

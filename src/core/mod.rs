@@ -267,6 +267,18 @@ pub(crate) struct Core {
     /// 올리는 게이지가 된다 — 그때 읽으면 관측 0 이고, 평균은 `None` 이라
     /// "안 쟀다" 로 보인다.
     db_latency: Arc<tasty_memory::DbLatencyStats>,
+
+    /// 동시 IPC 연결 자리 게이지.
+    ///
+    /// 위 셋과 **재는 축이 다르다** — 저것들은 시간이고 이것은 자원 점유다. `Arc` 인
+    /// 이유는 `plugin_wait` 과 같다: 올리는 자리가 여기가 아니라 accept 스레드
+    /// (`TcpIpcServer`)이고, 그 스레드는 `Core` 를 못 본다. 방향이 `db_latency` 와
+    /// 반대인 것에 유의한다 — 스토어는 `Core` 보다 먼저 태어나 자기 게이지를 넘겨
+    /// 주지만, IPC 서버는 `Core` 가 선 **뒤에** 뜨므로 여기서 낳아 건넨다.
+    ///
+    /// 서버가 안 뜬 조립(mock port 만 주입한 테스트용 `Core`)에서는 아무도 안 올린다 —
+    /// 그때 `accepted` 가 0 이라 "연결을 받은 적이 없다" 로 읽힌다.
+    connections: Arc<tasty_telemetry::ConnectionStats>,
 }
 
 impl Core {
@@ -292,6 +304,12 @@ impl Core {
     /// `&Arc` 를 돌려준다.
     pub(crate) fn db_latency(&self) -> &Arc<tasty_memory::DbLatencyStats> {
         &self.db_latency
+    }
+
+    /// IPC 연결 자리 게이지. IPC 서버에 **핸들을 넘기려고** 존재하므로 `plugin_wait`
+    /// 과 같이 `&Arc` 를 돌려준다.
+    pub(crate) fn connections(&self) -> &Arc<tasty_telemetry::ConnectionStats> {
+        &self.connections
     }
 
     /// `Clock` port 경유 현재 Unix ms — 관측 로그(audit/telemetry)의 시각 축이

@@ -75,7 +75,8 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 [ADR-0305](../../adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md),
 노출 표면은 [ADR-0333](../../adr/0333-the-pressure-gauge-is-read-by-one-local-only-method-and-split-by-population.md)).
 재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간 · plugin 왕복 · DB 지연의 count·sum·max 이고,
-평균은 파생이라 메서드로 낸다. 분위수는 답하지 못한다.
+평균은 파생이라 메서드로 낸다. 분위수는 답하지 못한다. 여기에 **시간이 아닌 축**이 하나
+더 있다 — 동시 IPC 연결 자리다.
 
 `system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
@@ -85,6 +86,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `handler_after_gate` | 게이트 통과 뒤 (`handle_checked_request`) | 실제로 **실행된 것만** |
 | `plugin_round_trip` | plugin 응답 매칭부 (`PluginManager::handle_plugin_response`) | 응답이 **매칭된 요청만** — 취소·만료된 것은 끝점이 없다 |
 | `db` | `MemoryStore` 의 `tx.commit()` 뒤 · `checkpoint_truncate` | **성공한** commit 과 시도된 checkpoint — 거부된 쓰기는 롤백이라 안 센다 |
+| `connections` | accept 루프의 자리 획득·반납 (`TcpIpcServer`) | 이 포트에 붙은 **TCP 연결 전부** — 요청을 하나도 안 보내는 attach·mesh 스트림도 센다 |
 
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
@@ -101,6 +103,20 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 읽는 중이면 못 끝내고 돌아오므로 그 횟수를 `checkpoints_busy` 로 따로 센다 — 시간만 봐서는
 느린 것과 경합한 것이 안 갈린다. 스토어를 못 여는 조립(단위 시험)에서는 아무도 안 올려
 `commits` 가 0 으로 남는다.
+
+다섯째는 **시간이 아니라 자리**다(`ConnectionStats`). 앞의 넷이 전부 "얼마나 걸렸나" 인
+반면 이것은 "자리가 남았나" 이고, 그 구분이 없으면 자원 포화가 밖에서 안 보인다 — 요청이
+하나도 안 느려도 동시 연결 상한(`MAX_CONCURRENT_CONNECTIONS`, 256)이 차면 새 client 는
+**붙지도 못한다.** 그 거절은 요청이 되기 전에 일어나므로 앞의 네 덩어리 어디에도 안 남고
+`ipc_calls` 에도 안 남는다(JSON-RPC 요청이 아니라 TCP 연결이다). 값은 다섯이다 —
+`live`(지금 붙어 있는 수, **이 응답에서 유일하게 내려가는 값**) · `live_max`(관측된 최댓값) ·
+`limit`(서버가 집행하는 상한) · `accepted`(자리를 받아 간 누계) ·
+`refused_saturated`(상한에 걸려 거절된 누계). `limit` 이 같이 나가야 `live` 가 상한에 얼마나
+가까운지가 한 응답 안에서 읽힌다. 거절 로그는 포화로 들어가는 순간만 `warn` 이고 그 뒤로는
+`debug` 로 접히지만, **접히는 것은 로그뿐이고 `refused_saturated` 는 전부 센다.** 게이지는
+`Core` 가 낳아 부팅이 IPC 서버에 핸들을 건넨다 — `db` 와 방향이 반대인 이유는 서버가 `Core`
+보다 **뒤에** 뜨기 때문이다. 서버가 안 뜬 조립(단위 시험)에서는 `accepted` 가 0 으로 남아
+"연결을 받은 적이 없다" 로 읽힌다.
 
 두 수의 차는 "거부된 수" 가 아니다 — 게이트를 통과하고도 `handle_checked_request` 를 안
 지나는 갈래가 있다(gui 의 app 층 메서드는 그 자리에서 답하고 돌아간다). 그래서 응답은

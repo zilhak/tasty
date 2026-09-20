@@ -149,6 +149,9 @@ impl CoreBuilder {
             pressure: tasty_telemetry::PressureStats::default(),
             plugin_wait: std::sync::Arc::new(tasty_telemetry::PluginWaitStats::default()),
             db_latency: self.db_latency.unwrap_or_default(),
+            // 주입 대상이 아니다 — IPC 서버가 `Core` 뒤에 뜨므로 여기서 낳고
+            // 부팅이 그 핸들을 서버에 건넨다(`Hub::start_ipc`).
+            connections: std::sync::Arc::new(tasty_telemetry::ConnectionStats::default()),
         })
     }
 }

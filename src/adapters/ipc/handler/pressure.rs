@@ -7,8 +7,8 @@
 //!
 //! ## 덩어리는 **모수마다 하나**다
 //!
-//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 넷이고, 아래에 그 넷이 한 절씩
-//! 있다. **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
+//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 다섯이고, 아래에 그 다섯이 한
+//! 절씩 있다. **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
 //! 어느 수가 무엇을 센 것인지 갈린다.
 //!
 //! ★ 이 수를 세는 문장은 이 파일에만 두고 절 제목에는 서수를 쓰지 않는다. 한때
@@ -45,11 +45,29 @@
 //! 다른 커넥션이 읽는 중이면 못 끝내고 돌아오므로 `busy` 를 따로 센다 — 시간만
 //! 봐서는 느린 것과 경합한 것이 안 갈린다.
 //!
+//! ## `connections` — **시간이 아니라 자리**다
+//!
+//! 앞의 넷은 전부 "얼마나 걸렸나" 이고 이것만 "자리가 남았나" 다. 요청이 하나도 안
+//! 느려도 연결 자리가 차면 새 client 는 **붙지도 못한다** — 그 거절은 요청이 되기
+//! 전에 일어나므로 앞의 네 덩어리 어디에도 안 남고 `ipc_calls` 에도 안 남는다
+//! (JSON-RPC 요청이 아니라 TCP 연결이다). 그래서 이 덩어리가 없으면 "느리다" 와
+//! "자리가 없다" 가 밖에서 같은 관측(응답 없음)으로 보인다.
+//!
+//! 그 덩어리의 모수도 앞과 다르다: 세는 것은 **이 포트에 붙은 TCP 연결 전부**이고,
+//! 그 안에는 요청을 하나도 안 보내는 연결 — attach·mesh 스트림처럼 오래 붙어 있는
+//! 것 — 도 들어간다. 자리를 먹는 것이 요청이 아니라 연결이라 그것이 맞는 모수다.
+//!
+//! `live` 만 **누계가 아니다.** 나머지 셋(`live_max` · `accepted` ·
+//! `refused_saturated`)과 `limit` 은 이 응답의 다른 모든 수처럼 안 내려간다.
+//! `limit` 은 게이지가 아니라 서버가 집행하는 상수라 게이지 밖에서 온다
+//! ([`crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS`]) —
+//! 그것이 같이 나가야 `live` 가 얼마나 상한에 가까운지가 한 응답 안에서 읽힌다.
+//!
 //! ## 아직 안 재는 값의 자리는 미리 비워 두지 않는다
 //!
-//! 연결 수 게이지가 뒤따를 예정이지만 빈 덩어리를 미리 넣지 않는다. 값이 0 인
-//! 덩어리는 "연결이 없었다" 로 읽히고, 그것은 이 파일이 평균을 `null` 로 두는 것과
-//! 정확히 같은 함정이다. 재는 자리가 생길 때 덩어리도 같이 생긴다.
+//! 위 `connections` 덩어리는 재는 자리가 생겼을 때 함께 생겼다. 빈 덩어리를 미리
+//! 넣지 않는 규칙은 그대로다 — 값이 0 인 덩어리는 "관측된 0" 으로 읽히고, 그것은 이
+//! 파일이 평균을 `null` 로 두는 것과 정확히 같은 함정이다.
 //!
 //! ## 두 수의 차이를 여기서 빼지 않는 이유
 //!
@@ -82,6 +100,7 @@ pub(super) fn handle_system_pressure(
             &core.pressure().snapshot(),
             &core.plugin_wait().snapshot(),
             &core.db_latency().snapshot(),
+            &core.connections().snapshot(),
         ),
     )
 }
@@ -94,6 +113,7 @@ pub(super) fn snapshot_json(
     s: &tasty_telemetry::PressureSnapshot,
     p: &tasty_telemetry::PluginWaitSnapshot,
     d: &tasty_memory::DbLatencySnapshot,
+    c: &tasty_telemetry::ConnectionSnapshot,
 ) -> serde_json::Value {
     json!({
         "queue_before_gate": {
@@ -128,6 +148,13 @@ pub(super) fn snapshot_json(
             "checkpoint_us_max": d.checkpoint_us_max,
             "checkpoint_us_mean": d.checkpoint_us_mean(),
         },
+        "connections": {
+            "live": c.live,
+            "live_max": c.live_max,
+            "limit": crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS,
+            "accepted": c.accepted,
+            "refused_saturated": c.refused_saturated,
+        },
     })
 }
 
@@ -136,7 +163,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tasty_memory::DbLatencyStats;
-    use tasty_telemetry::{PluginWaitStats, PressureStats};
+    use tasty_telemetry::{ConnectionStats, PluginWaitStats, PressureStats};
 
     /// 게이트 앞/뒤 두 모수가 **서로 다른 자리로** 나간다.
     ///
@@ -155,6 +182,7 @@ mod tests {
             &p.snapshot(),
             &PluginWaitStats::default().snapshot(),
             &DbLatencyStats::default().snapshot(),
+            &ConnectionStats::default().snapshot(),
         );
         let q = &v["queue_before_gate"];
         let h = &v["handler_after_gate"];
@@ -195,6 +223,7 @@ mod tests {
             &PressureStats::default().snapshot(),
             &PluginWaitStats::default().snapshot(),
             &d.snapshot(),
+            &ConnectionStats::default().snapshot(),
         );
         let db = &v["db"];
         assert_eq!(db["commits"], 2);
@@ -249,8 +278,80 @@ mod tests {
         assert!(
             result.get("queue_before_gate").is_some()
                 && result.get("handler_after_gate").is_some()
-                && result.get("db").is_some(),
+                && result.get("db").is_some()
+                && result.get("connections").is_some(),
             "덩어리들이 응답에 있어야 한다: {result}"
+        );
+    }
+
+    /// ★ 연결 덩어리가 **`Core` 가 들고 있는 그 게이지**를 읽는다.
+    ///
+    /// 위 `snapshot_json` 시험들은 인자로 준 스냅샷만 보므로, 핸들러가 `Core` 대신
+    /// 새 기본값을 만들어 읽어도 살아남는다. 이것이 그 자리를 잰다 — `Core` 의
+    /// 게이지에 자리를 열어 두고 라우터를 지나, 응답의 `live` 가 그 값을 말하는지
+    /// 본다. 핸들러가 다른 게이지를 읽으면 0 이 와서 죽는다.
+    #[test]
+    fn the_connection_block_reads_the_gauge_the_core_hands_to_the_server() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        // 서버가 하는 일을 그대로 한다 — `Core` 가 건네는 핸들에 자리를 연다.
+        let gauge = core.connections().clone();
+        assert!(gauge.try_open(4).is_some());
+        assert!(gauge.try_open(4).is_some());
+        gauge.close();
+
+        let req = tasty_ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "system.pressure".into(),
+            params: json!({}),
+            session_token: None,
+        };
+        let resp = super::super::handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &crate::ipc::caller::CallerContext::Local,
+        );
+        let c = resp.result.expect("result")["connections"].clone();
+        assert_eq!(c["live"], 1, "핸들러가 Core 의 게이지를 읽어야 한다");
+        assert_eq!(c["live_max"], 2);
+        assert_eq!(c["accepted"], 2);
+        assert_eq!(
+            c["limit"],
+            crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS,
+            "상한은 서버가 집행하는 그 상수여야 한다"
+        );
+    }
+
+    /// 자원 축이 시간 축과 **섞이지 않는다.** 연결이 꽉 차 거절이 나도 handler 는
+    /// 한 번도 안 돌 수 있다 — 그 둘이 한 덩어리에 있으면 "느리다" 와 "자리가
+    /// 없다" 가 같은 수로 보인다.
+    #[test]
+    fn a_saturated_port_is_not_a_slow_handler() {
+        let c = ConnectionStats::default();
+        assert!(c.try_open(1).is_some());
+        assert!(c.try_open(1).is_none());
+
+        let v = snapshot_json(
+            &PressureStats::default().snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &DbLatencyStats::default().snapshot(),
+            &c.snapshot(),
+        );
+        assert_eq!(v["connections"]["live"], 1);
+        assert_eq!(v["connections"]["refused_saturated"], 1);
+        assert_eq!(
+            v["handler_after_gate"]["calls"], 0,
+            "거절된 연결은 요청이 된 적이 없다"
+        );
+        assert!(
+            v["handler_after_gate"].get("refused_saturated").is_none()
+                && v["connections"].get("calls").is_none(),
+            "자원 모수가 시간 덩어리에 섞이면 안 된다"
         );
     }
 
@@ -276,6 +377,7 @@ mod tests {
             &PressureStats::default().snapshot(),
             &PluginWaitStats::default().snapshot(),
             &DbLatencyStats::default().snapshot(),
+            &ConnectionStats::default().snapshot(),
         );
         assert!(v["queue_before_gate"]["wait_us_mean"].is_null());
         assert!(v["queue_before_gate"]["depth_mean"].is_null());

@@ -737,7 +737,8 @@ impl App {
             inbound_tx: self.stream_inbound_tx.clone(),
             waker: stream_waker,
         };
-        if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx) {
+        let connections = self.core.connections().clone();
+        if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx, connections) {
             // 웹훅 리스너 init — (A)config 로드 + (B)IPC 처리 가능 동시 만족 최초
             // 지점. finish_boot 는 첫 윈도우 1회만 호출되므로 중복 bind 가드
             // 불필요(리스너 내부 가드도 있음). injector 는 Clone(Arc).
