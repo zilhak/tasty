@@ -491,8 +491,10 @@ mod tests {
     /// (b) 폴링 한 번 한 번이 블로킹하지 않으며 (c) 워치독이 메뉴를 확실히
     /// 걷어간다는 것을 실제 GTK 백엔드로 확인한다.
     ///
-    /// 실행: `cargo test -p tasty --lib -- --ignored --test-threads=1
-    /// native_menu::linux` (X11 디스플레이 필요 — 잠깐 실제 메뉴가 떴다 사라진다).
+    /// 실행: `cargo test -p tasty-platform --lib --features gui -- --ignored
+    /// --test-threads=1 native_menu::linux` (X11 디스플레이 필요 — 잠깐 실제 메뉴가
+    /// 떴다 사라진다). **패키지와 feature 를 둘 다 줘야 한다** — 이 모듈은 크레이트의
+    /// 기본 feature 에 없어서, `--features gui` 를 빼면 필터에 0 건이 걸려 초록이 난다.
     /// 물리 마우스 없이 재현 가능한 유일한 grab-실패 경로다.
     #[test]
     #[ignore]

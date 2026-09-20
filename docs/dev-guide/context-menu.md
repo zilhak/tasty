@@ -123,8 +123,12 @@ press 만 삼키면 부족하다: winit 이벤트는 egui 에 **먼저** 먹여�
 `crates/tasty-platform/src/native_menu/linux.rs` 의 `#[ignore]` 테스트(`forced_grab_failure_resolves_via_watchdog_without_blocking`)가 이 둘을 써서 "즉시 반환 · 폴링 비블로킹 · 워치독 해소"를 실제 GTK 백엔드로 검증한다. 실행에는 X11 디스플레이가 필요하다:
 
 ```
-cargo test -p tasty --lib -- --ignored --test-threads=1 native_menu::linux
+cargo test -p tasty-platform --lib --features gui -- --ignored --test-threads=1 native_menu::linux
 ```
+
+패키지와 `--features gui` 를 둘 다 줘야 한다. 이 모듈은 `tasty-platform` 의 기본
+feature 에 없으므로, 둘 중 하나라도 빠지면 이름 필터에 **0 건이 걸려 초록**이 난다 —
+`--ignored` 와 이름 필터를 함께 쓰는 조합이라 0 건이 정상처럼 보인다.
 
 ## 새 메뉴 체크리스트
 
