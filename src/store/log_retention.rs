@@ -30,6 +30,16 @@
 //!   debug 인스턴스가 부팅 1 분에 `debug-dev.log` 2.9 MB). 같은 파일의 `crash-reports/`
 //!   디렉토리도 같은 루트이고 역시 상한이 없다. **"무한 성장 방어" 라는 이 모듈의 주제에
 //!   가장 가까운 자리인데 정책이 없는 쪽**이라, 지도에서 빼면 다음 사람이 못 찾는다.
+//! - **plugin 프로세스 로그**(`<tasty_home>/plugins-logs/<plugin id>.log`) — plugin 의
+//!   stdout·stderr **전량**이 그대로 들어간다(`process.rs` 의 `PluginProcess::spawn` 이
+//!   `File::create` 한 핸들을 `Stdio::from` 으로 넘긴다. 디렉토리는
+//!   `manager/lifecycle.rs` 가 `tasty_home().join("plugins-logs")` 로 만든다).
+//!   **상한도 로테이션도 파일 수 상한도 없다** — 회수는 **다음 spawn 의 `File::create`
+//!   truncate 하나**뿐이라, 다시 안 뜨는 plugin 의 로그는 영구히 남는다(실측 2026-09-21:
+//!   `~/.tasty-debug/plugins-logs` 에 번들 plugin 이 아닌 시험 fixture id
+//!   `com.example.autoreload_test.log` 가 남아 있다). 위 `debug.log` 와 같은 성질이고,
+//!   **완료 알림 로그가 비우면서 내는 `warn` 줄이 닿는 곳이 바로 여기다**(ADR-0344 의
+//!   재검토 조건이 이 경로를 재는 법으로 지목한다).
 //!
 //! 즉 임계값이 같은 둘도 **버리는 방식이 다르고**, 아예 임계값이 없는 것도 있다. 여기에
 //! 새 로그를 더할 때 매체를 먼저 보고, 파일이면 이 표가 아니라 그 구현 옆에 정책을 적되
