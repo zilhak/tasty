@@ -3,7 +3,7 @@
 //! - Windows: `AttachConsole` 로 부모 콘솔에 붙어 stdout 보임 (release only).
 //! - 전 플랫폼: `crash_report::init` 으로 패닉 → 로그 파일 핸들러 등록 + stderr tracing.
 //! - host 경로 한정: `enable_host_file_log` 로 공유 로그 파일 개방 (CLI 는 열지 않는다).
-//! - macOS: `macos_delegate::store_proxy` 로 NSApplicationDelegate 에 event loop proxy 보관.
+//! - macOS: `macos_delegate::store_actions` 로 NSApplicationDelegate 가 일으킬 동작 주입.
 
 #[cfg(feature = "gui")]
 use winit::event_loop::EventLoopProxy;
@@ -41,11 +41,28 @@ pub(crate) fn enable_host_file_log() {
     crate::crash_report::enable_host_file_log();
 }
 
-/// macOS NSApplicationDelegate 가 dock click 등에서 본 app 으로 이벤트를 보낼 수 있도록
-/// event loop proxy 를 보관. macOS 외에서는 no-op. gui 빌드 전용.
+/// macOS NSApplicationDelegate 가 dock click 등에서 일으킬 동작을 주입한다. macOS
+/// 외에서는 no-op. gui 빌드 전용.
+///
+/// delegate 모듈은 AppKit 만 부르고 그 클릭이 App 에서 무엇이 되는지는 모른다 — 그
+/// 대응을 정하는 것이 여기다. proxy 를 소유한 자리가 부팅 쪽이라 자리도 여기가 맞다.
 #[cfg(feature = "gui")]
 #[allow(unused_variables)]
 pub(crate) fn install_macos_delegate(proxy: &EventLoopProxy<AppEvent>) {
     #[cfg(target_os = "macos")]
-    crate::macos_delegate::store_proxy(proxy.clone());
+    {
+        let new_window_proxy = proxy.clone();
+        let quit_proxy = proxy.clone();
+        crate::macos_delegate::store_actions(crate::macos_delegate::DelegateActions {
+            new_window: Box::new(move || {
+                crate::shortcuts::send_app_event(
+                    &new_window_proxy,
+                    AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User, None),
+                );
+            }),
+            quit: Box::new(move || {
+                crate::shortcuts::send_app_event(&quit_proxy, AppEvent::QuitRequested);
+            }),
+        });
+    }
 }

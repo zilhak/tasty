@@ -3,6 +3,10 @@
 //! Instead of replacing winit's NSApplicationDelegate (which breaks winit),
 //! we inject methods directly into winit's existing delegate class at runtime.
 //! This is called after winit has set up its delegate (in `resumed()`).
+//!
+//! **AppKit 을 부르는 것이 이 자리의 일이고, dock 클릭이 App 에서 무엇이 되는지는
+//! 여기서 안 정한다.** 두 동작은 [`DelegateActions`] 로 바깥에서 주입된다 — Windows
+//! 절전 후크(`power_windows`)가 resume 신호를 다루는 방식과 같은 모양이다.
 
 use std::sync::OnceLock;
 
@@ -11,20 +15,27 @@ use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
 use objc2::{AnyThread, msg_send, sel};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
 use objc2_foundation::{MainThreadMarker, NSString};
-use winit::event_loop::EventLoopProxy;
 
-use crate::AppEvent;
 use crate::i18n::{t, t_fmt};
 
-/// Global proxy stored so ObjC callbacks can access it.
-static PROXY: OnceLock<EventLoopProxy<AppEvent>> = OnceLock::new();
+/// dock / 앱 메뉴가 일으키는 두 동작. **이 모듈은 그것이 App 에서 무엇이 되는지
+/// 모른다** — 무엇을 할지는 [`store_actions`] 를 부르는 쪽이 정한다.
+///
+/// ObjC 콜백이 임의 스레드 판정 없이 읽을 수 있도록 `Send + Sync` 를 요구한다
+/// (`OnceLock` 을 `static` 으로 두려면 내용이 `Sync` 여야 한다).
+pub struct DelegateActions {
+    /// dock reopen · dock 메뉴 · `tastyNewWindow:` 가 부른다.
+    pub new_window: Box<dyn Fn() + Send + Sync + 'static>,
+    /// `tastyQuit:` 가 부른다.
+    pub quit: Box<dyn Fn() + Send + Sync + 'static>,
+}
+
+/// ObjC 콜백이 접근할 수 있도록 보관한 동작들.
+static ACTIONS: OnceLock<DelegateActions> = OnceLock::new();
 
 fn send_create_window() {
-    if let Some(proxy) = PROXY.get() {
-        crate::shortcuts::send_app_event(
-            proxy,
-            AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User, None),
-        );
+    if let Some(actions) = ACTIONS.get() {
+        (actions.new_window)();
     }
 }
 
@@ -85,14 +96,14 @@ unsafe extern "C-unwind" fn new_window_action(
 /// `tastyQuit:` action handler — winit 자동 `terminate:` 대신 tasty 라이프사이클로 라우팅.
 unsafe extern "C-unwind" fn quit_action(_this: *mut AnyObject, _sel: Sel, _sender: *mut AnyObject) {
     tracing::info!("menu: quit requested");
-    if let Some(proxy) = PROXY.get() {
-        crate::shortcuts::send_app_event(proxy, AppEvent::QuitRequested);
+    if let Some(actions) = ACTIONS.get() {
+        (actions.quit)();
     }
 }
 
-/// Store the proxy. Called once at startup (before run_app).
-pub fn store_proxy(proxy: EventLoopProxy<AppEvent>) {
-    PROXY.set(proxy).ok();
+/// Store the actions. Called once at startup (before run_app).
+pub fn store_actions(actions: DelegateActions) {
+    ACTIONS.set(actions).ok();
 }
 
 /// Inject delegate methods into winit's existing delegate class.
@@ -455,7 +466,8 @@ fn set_dock_icon(app: &NSApplication) {
     use objc2_app_kit::NSImage;
     use objc2_foundation::NSData;
 
-    let png_bytes = crate::app_icon::ICON_PNG_256;
+    // 형제 플랫폼 모듈 — 루트 별칭이 아니라 자기 경로로 부른다(`system_tray` 와 같다).
+    let png_bytes = crate::platform::app_icon::ICON_PNG_256;
     let data = NSData::with_bytes(png_bytes);
     let image = NSImage::initWithData(NSImage::alloc(), &data);
     if let Some(image) = image {
