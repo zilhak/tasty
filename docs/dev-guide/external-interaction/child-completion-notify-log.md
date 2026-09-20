@@ -62,7 +62,8 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   접수/완료됐다"로 오독되기 쉬웠다 — 실제 의미는 "그 child 가 맡은 작업이 끝났다"인데
   conductor 가 이를 spawn 접수 확인 정도로 여기고 실제 완료 알림을 계속 무시하는 사고로
   이어졌다(2026-07-17). 이제 "작업 완료"를 앞세우고 호출 방식은 괄호로 분리한다
-  (`notify_done_message`/`notify_caller_message`, `crates/tasty-plugin-{claude,codex}/src/handlers.rs`).
+  (`crates/tasty-plugin-claude/src/notifications.rs` 의 `notify_done_message` ·
+  `crates/tasty-plugin-codex/src/handlers.rs` 의 `notify_caller_message`).
 - **완료 외의 라인**: claude plugin 은 자식이 **에러 후 멈춘** 경우에도 같은 로그에 한 줄을
   append 한다(`tasty claude notify-error`, `claude-error-stalled` hook). 완료 신호 없이
   매달린 자식을 부모가 무한정 기다리지 않게 하는 push 경로다 — 판정 기준(무출력 지속 +
@@ -93,8 +94,11 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   이 삭제는 **포트 파일을 쓰기 전에, 기다려서** 한다. 포트 파일이 인스턴스의 존재를 알리는
   유일한 통로이므로, 그 전에 삭제를 끝내 두면 새 인스턴스의 첫 append 가 삭제와 겹칠 수
   없다(`TcpIpcServer::clear_notify_then_publish_port`). 겹치면 방금 쓰인 줄이 지워진다.
-- 구현: `crates/tasty-utils/src/notify.rs`(공유 append 헬퍼) + 두 plugin 의
-  `handle_notify_done`(claude) / `handle_notify_caller`(codex).
+- 구현: `crates/tasty-utils/src/notify.rs`(공유 append 헬퍼) + 이 파일에 쓰는 **세 자리** —
+  `crates/tasty-plugin-claude/src/notifications.rs` 의 `handle_notify_done`(완료) ·
+  `handle_notify_error`(위 "완료 외의 라인"), `crates/tasty-plugin-codex/src/handlers.rs` 의
+  `handle_notify_caller`. **claude 쪽은 `handlers.rs` 가 아니라 `notifications.rs` 다.**
+  위 불변식은 이 세 자리 전부에 걸린다 — 여기에 쓰기를 더하면 그 자리도 한 번의 write 여야 한다.
 
 ### 부모 Claude 운영 규약 — Monitor arm
 
@@ -124,7 +128,8 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
 ## 근거
 
 - **tasty 측(append)**: 소스 확인 — `crates/tasty-utils/src/notify.rs`,
-  `crates/tasty-plugin-{claude,codex}/src/handlers.rs`. 단위 테스트로 경로/포맷/비우기와
+  `crates/tasty-plugin-claude/src/notifications.rs`,
+  `crates/tasty-plugin-codex/src/handlers.rs`. 단위 테스트로 경로/포맷/비우기와
   **동시 writer 가 줄을 쪼개지 않는지**(`concurrent_writers_never_leave_a_partial_line`)
   검증. 그 시험은 스레드로 재므로 **비우기 갈래의 경합은 안 잰다** — 그 갈래를 재려면
   프로세스를 둘 이상 띄워야 한다(재는 법은 ADR-0330 의 재검토 조건 절).
@@ -137,7 +142,9 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
 
 ## 패키징된 macOS `.app` 의 PATH 제약 — hook 셸 커맨드가 자기 자신을 재호출할 때
 
-완료 알림 hook(`register_notify_hooks`, `crates/tasty-plugin-{claude,codex}/src/handlers.rs`)이
+완료 알림 hook(`register_notify_hooks` — claude 는
+`crates/tasty-plugin-claude/src/notifications.rs`, codex 는
+`crates/tasty-plugin-codex/src/handlers.rs`)이
 등록하는 `command` 는 `tasty claude notify-done ...` / `tasty codex notify-caller ...` 형태로,
 **`tasty` 자기 자신을 PATH 로 재호출**한다. 이 셸 커맨드는 `src/hook_handler/trigger.rs::spawn_shell`
 이 `sh -c`(windows `cmd /C`)로 실행하며 **부모(host 앱) 프로세스의 환경을 상속**한다.

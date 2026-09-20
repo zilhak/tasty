@@ -93,7 +93,11 @@ cap 을 넘은 뒤에 쓰인 것이라 **애초에 이 비우기가 버릴 구�
 
 - 구현(현재 위치): `crates/tasty-utils/src/notify.rs` 의 `append_line_to` ·
   `truncate_over_cap`.
-- 호출자: `crates/tasty-plugin-claude/src/handlers.rs` 의 `handle_notify_done`,
+- 호출자(**셋**): `crates/tasty-plugin-claude/src/notifications.rs` 의
+  `handle_notify_done`(완료) · `handle_notify_error`(에러 후 정지),
   `crates/tasty-plugin-codex/src/handlers.rs` 의 `handle_notify_caller`.
+  **claude 쪽은 `handlers.rs` 가 아니라 `notifications.rs` 다** — 두 plugin 의 파일
+  이름이 다르므로 중괄호로 묶어 한 경로처럼 쓰면 claude 쪽이 실재하지 않는 자리를
+  가리킨다. 위 Decision 의 불변식("한 줄은 한 번의 write")은 이 **세 자리 전부**에 건다.
 - 사용자 경로와 크기 관리: [dev-guide/external-interaction/child-completion-notify-log.md](../dev-guide/external-interaction/child-completion-notify-log.md)
 - 같은 모양의 물음(보존 밖 요청에 건너뛴 수를 함께 준다): [ADR-0322](0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md)
