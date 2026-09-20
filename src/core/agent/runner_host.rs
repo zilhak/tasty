@@ -59,8 +59,8 @@ pub fn run_result_key(task_id: &str) -> String {
     format!("{RUN_RESULT_KEY_PREFIX}{task_id}")
 }
 
-use crate::adapters::ipc::handler::agent::task::run_custom_shell;
 use crate::core::agent::task_output_ref;
+use tasty_agent::run_custom_shell;
 use tasty_ipc::host_call::HostIpcInjector;
 
 /// Host→plugin dispatch timeout — 자식 프로세스 생성/디스크 I/O 까지 포함할 수 있는

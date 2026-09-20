@@ -9,7 +9,7 @@ use crate::state::AppState;
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
-    TaskGraph, TaskId, TaskResult, TaskState, extract_paths, reduce_with_custom,
+    TaskGraph, TaskId, TaskResult, TaskState, extract_paths, reduce_with_custom, run_custom_shell,
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -1126,48 +1126,6 @@ pub fn handle_task_purge(
             }),
         ),
     }
-}
-
-// ============================================================
-// agent.rate_limit_*
-// ============================================================
-
-pub(crate) fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/C", command]);
-        c
-    };
-    #[cfg(not(windows))]
-    let mut cmd = {
-        let mut c = Command::new("sh");
-        c.args(["-c", command]);
-        c
-    };
-
-    tasty_utils::process::hide_console(&mut cmd);
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let Some(mut sin) = child.stdin.take() {
-        sin.write_all(stdin_json.as_bytes())?;
-    }
-    let out = child.wait_with_output()?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(std::io::Error::other(format!(
-            "exit_code={}, stderr={}",
-            out.status.code().unwrap_or(-1),
-            stderr.trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(test)]

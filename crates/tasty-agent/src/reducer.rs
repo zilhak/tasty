@@ -186,6 +186,48 @@ where
     }
 }
 
+/// `reduce_with_custom` 에 넘기는 기본 `runner` — `Custom { command }` 를 OS 셸로
+/// 실행하고 stdout 을 돌려준다. stdin 으로 입력 JSON 을 그대로 흘려보낸다.
+///
+/// 호출자가 직접 프로세스를 띄우고 싶으면 `reduce_with_custom` 에 자기 함수를
+/// 넘기면 된다 — 이 함수는 그 자리의 기본값이지 유일한 선택지가 아니다.
+pub fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", command]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+
+    tasty_utils::process::hide_console(&mut cmd);
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(mut sin) = child.stdin.take() {
+        sin.write_all(stdin_json.as_bytes())?;
+    }
+    let out = child.wait_with_output()?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        return Err(std::io::Error::other(format!(
+            "exit_code={}, stderr={}",
+            out.status.code().unwrap_or(-1),
+            stderr.trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
