@@ -8,8 +8,8 @@ use tasty_ipc::{
 };
 
 use crate::adapters::ipc::audit::{AuditCallerKind, AuditDecision, AuditRecord, AuditStore};
-use crate::adapters::ipc::caller::SessionToken;
 use crate::core::Core;
+use tasty_ipc::caller::SessionToken;
 
 impl IpcHostFacade for Core {
     fn session_resolve(&self, token: &str, now_ms: u64) -> SessionResolution {

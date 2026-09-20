@@ -23,8 +23,8 @@ use crate::adapters::production::stream_hub::{PushResult, StreamHub};
 use crate::core::Core;
 use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
-use crate::ipc::stream::{StreamControl, StreamFrame, StreamTag, StructuralOp, encode_mux};
 use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
+use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, StructuralOp, encode_mux};
 
 impl CoreState {
     /// stream client 의 attach 요청 처리(`stream.open` 의 `target`). 성공 시 그 client
@@ -459,7 +459,7 @@ impl CoreState {
     }
 
     /// client-driven mirror geometry(ADR-0045): mirror client 가 보낸
-    /// [`StreamControl::ClientResize`](crate::ipc::stream::StreamControl) 를 지정
+    /// [`StreamControl::ClientResize`](tasty_ipc::stream::StreamControl) 를 지정
     /// remote surface 의 **실제 PTY** 에 적용한다. `feed_attached_workspace_input`
     /// 과 동형으로 holder 를 검증해(그 workspace 를 점유한 client 만) 타 workspace 의
     /// grid 를 구동하지 못하게 막는다.
@@ -699,7 +699,7 @@ impl CoreState {
 #[derive(Debug)]
 pub(crate) struct ForwardedDelta {
     /// client 에 push 할 `StreamControl::StructuralDelta`(원격 ws 전체 트리+surfaces).
-    pub delta: crate::ipc::stream::StreamControl,
+    pub delta: tasty_ipc::stream::StreamControl,
     /// 이 op 로 **새로 생긴** 터미널 surface 들. 호출자가 delta push **직후**
     /// [`CoreState::tap_surface_for_stream`] 로 tap 을 건다(스냅샷이 client 매핑 생성
     /// 뒤에 도착하도록 delta 다음 순서를 보장).
@@ -994,7 +994,7 @@ pub(crate) fn execute_forwarded_structural_op(
                         // 문구 대신 전용 안내를 쓰도록 sentinel 로 회신한다.
                         tasty_ipc::protocol::JsonRpcResponse::invalid_params(
                             rid.clone(),
-                            crate::ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.to_string(),
+                            tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.to_string(),
                         )
                     }
                 }
@@ -1116,7 +1116,7 @@ pub(crate) fn execute_forwarded_structural_op(
         engine.attach.add_workspace_member(ws_id, *sid, true);
     }
     let (tree, surfaces) = engine.build_workspace_tree_surfaces(idx_after, &class);
-    let delta = crate::ipc::stream::StreamControl::StructuralDelta {
+    let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
         workspace_id: ws_id,
         tree,
         surfaces,
@@ -1439,7 +1439,7 @@ fn list_dir_for_request(
 }
 
 /// `list_dir_result` 프레임 하나의 entries 배열에 허용하는 직렬화 바이트 예산.
-/// attach 채널의 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)보다
+/// attach 채널의 프레임 하드 상한(`tasty_ipc::stream::MAX_FRAME_LEN`, 1MiB)보다
 /// 충분히 작게 잡아 `event`/`request_id`/`dir` 등 envelope 오버헤드 + serde_json
 /// 이스케이프 팽창분을 흡수한다. 이 상한 없이 대형 디렉토리(수천 개 엔트리)를 그대로
 /// 실으면 `write_frame` 이 `MAX_FRAME_LEN` 초과로 에러를 반환하고, 그 attach 세션의
@@ -1910,7 +1910,7 @@ fn markdown_content_for_request(
 
 /// `markdown_content_result` 프레임 하나의 `source` 에 허용하는 **직렬화** 바이트 예산.
 /// [`LIST_DIR_ENTRIES_BYTE_BUDGET`]·[`GIT_QUERY_BYTE_BUDGET`] 과 **같은 근거이자 같은
-/// 재는 대상** — attach 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)보다
+/// 재는 대상** — attach 프레임 하드 상한(`tasty_ipc::stream::MAX_FRAME_LEN`, 1MiB)보다
 /// 충분히 작게 잡아 envelope 오버헤드 + serde_json 이스케이프 팽창분을 흡수한다. 없으면
 /// 큰 문서 하나가 `write_frame` 을 상한 초과로 실패시키고 그 세션의 write thread 가
 /// 통째로 죽어 mirror 연결 자체가 끊긴다.
@@ -2067,9 +2067,9 @@ mod markdown_changed_tests {
     use super::notify_markdown_changed;
     use crate::adapters::production::stream_hub::StreamHub;
     use crate::core::attach::OccupancyRegistry;
-    use crate::ipc::stream::StreamTag;
+    use tasty_ipc::stream::StreamTag;
 
-    fn changed_surface_id(frame: &crate::ipc::stream::StreamFrame) -> Option<u64> {
+    fn changed_surface_id(frame: &tasty_ipc::stream::StreamFrame) -> Option<u64> {
         assert_eq!(frame.tag, StreamTag::Control);
         let v: serde_json::Value = serde_json::from_slice(&frame.payload).ok()?;
         (v.get("event")?.as_str()? == "markdown_changed").then_some(())?;
@@ -2496,8 +2496,8 @@ mod forward_exec_tests {
     //! **실제로** split/new-tab 을 수행한다(로컬 PTY = 원격의 정당한 PTY). 원격에 없는
     //! kind 는 `Err(reason)` 으로 실패 회신된다.
     use super::execute_forwarded_structural_op;
-    use crate::ipc::stream::{SplitAxis, StructuralOp};
     use crate::state::AppState;
+    use tasty_ipc::stream::{SplitAxis, StructuralOp};
     use tasty_terminal::Terminal;
 
     fn make_core_state() -> (
@@ -2551,7 +2551,7 @@ mod forward_exec_tests {
 
     /// 성공한 op 의 delta 에서 surfaces 배열의 remote_id 집합을 뽑는다(테스트 헬퍼).
     fn delta_surface_ids(fd: &super::ForwardedDelta) -> std::collections::HashSet<u32> {
-        let crate::ipc::stream::StreamControl::StructuralDelta { surfaces, .. } = &fd.delta else {
+        let tasty_ipc::stream::StreamControl::StructuralDelta { surfaces, .. } = &fd.delta else {
             panic!("expected StructuralDelta");
         };
         surfaces
@@ -2831,7 +2831,7 @@ mod forward_exec_tests {
             },
         )
         .expect_err("빈 스택은 Err(reason) 이어야 한다");
-        assert_eq!(err, crate::ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY);
+        assert_eq!(err, tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY);
     }
 
     /// forward 된 복원은 이 기계 앞에 앉은 사용자의 활성 워크스페이스·focused pane 을
@@ -3155,8 +3155,8 @@ mod forward_exec_tests {
     // fixture 로 함께 확인한다.
 
     use crate::adapters::ipc::handler::handle_with_caller;
-    use crate::ipc::caller::CallerContext;
-    use crate::ipc::protocol::JsonRpcRequest;
+    use tasty_ipc::caller::CallerContext;
+    use tasty_ipc::protocol::JsonRpcRequest;
 
     fn ipc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
         JsonRpcRequest {
@@ -3338,8 +3338,8 @@ mod forward_exec_tests {
     #[test]
     fn forward_close_last_surface_force_detaches_holder() {
         use crate::adapters::production::stream_hub::StreamHub;
-        use crate::ipc::stream::StreamTag;
         use std::time::Duration;
+        use tasty_ipc::stream::StreamTag;
 
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine); // 단일 surface, 형제 없음

@@ -50,13 +50,13 @@ impl std::error::Error for MirrorStructuralBlocked {}
 ///   옮긴다. new-tab/split 등 close 가 아닌 op 은 항상 빈 벡터.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingStructuralForward {
-    pub(crate) op: crate::ipc::stream::StructuralOp,
+    pub(crate) op: tasty_ipc::stream::StructuralOp,
     pub(crate) user_triggered: bool,
     pub(crate) close_focus_candidates: Vec<u32>,
 }
 
 impl PendingStructuralForward {
-    fn agent(op: crate::ipc::stream::StructuralOp) -> Self {
+    fn agent(op: tasty_ipc::stream::StructuralOp) -> Self {
         Self {
             op,
             user_triggered: false,
@@ -85,7 +85,7 @@ pub(crate) fn mark_last_forward_user_triggered(
     }
 }
 
-/// mirror 구조 `DomainIntent` → 원격 forward 할 [`StructuralOp`](crate::ipc::stream::StructuralOp).
+/// mirror 구조 `DomainIntent` → 원격 forward 할 [`StructuralOp`](tasty_ipc::stream::StructuralOp).
 /// anchor 는 **로컬** mirror surface id(App drain 이 세션 매핑으로 원격 id 로 치환).
 /// pane/tab 대상 op 는 그 pane/tab 의 대표 surface(활성 탭의 focused surface)를 anchor 로
 /// 삼아 원격이 자기 트리에서 pane/tab 을 resolve 하게 한다. `MoveSurface` 는 source/target
@@ -96,9 +96,9 @@ pub(crate) fn mark_last_forward_user_triggered(
 fn build_mirror_forward_op(
     engine: &crate::core::CoreState,
     intent: &DomainIntent,
-) -> Option<crate::ipc::stream::StructuralOp> {
+) -> Option<tasty_ipc::stream::StructuralOp> {
     use crate::core::intent::DomainIntent as D;
-    use crate::ipc::stream::{SplitAxis, StructuralOp};
+    use tasty_ipc::stream::{SplitAxis, StructuralOp};
 
     fn axis(d: &crate::model::SplitDirection) -> SplitAxis {
         match d {
@@ -1117,7 +1117,7 @@ mod mirror_structural_guard_tests {
     /// op 의 anchor 는 아직 **로컬** surface id(App drain 이 원격으로 치환), forwarded=true.
     #[test]
     fn mirror_split_enqueues_forward_with_local_anchor() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
@@ -1156,7 +1156,7 @@ mod mirror_structural_guard_tests {
     /// SplitPane/NewTab 는 pane 의 대표 surface(활성 탭 focused)를 anchor 로 큐잉한다.
     #[test]
     fn mirror_split_pane_anchors_on_pane_surface() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
@@ -1184,7 +1184,7 @@ mod mirror_structural_guard_tests {
     /// 호출 전에 돌려주므로 자동으로 막힌다(ADR-0264 결정 2). 그 사실을 고정한다.
     #[test]
     fn mirror_restore_enqueues_forward_and_leaves_the_local_stack_alone() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, pane) = seed(&mut engine);
         engine.push_closed_item(crate::model::ClosedItem::Surface {
@@ -1241,7 +1241,7 @@ mod mirror_structural_guard_tests {
     /// (surface_kind/params 전달), forwarded=true(로컬 차단 유지, 원격에 위임).
     #[test]
     fn mirror_convert_enqueues_forward_with_local_anchor() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
@@ -1286,7 +1286,7 @@ mod mirror_structural_guard_tests {
     /// 실린다 — mirror 경로에서 cwd 가 유실되면 explorer root 가 상대경로가 된다.
     #[test]
     fn mirror_convert_forwards_cwd() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
@@ -1320,7 +1320,7 @@ mod mirror_structural_guard_tests {
     /// 원격 PTY 가 홈이 아니라 source cwd 에서 뜨도록 cwd 를 실어보낸다.
     #[test]
     fn mirror_convert_to_terminal_forwards_cwd() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         engine.workspaces[0].mirror = true;
@@ -1349,7 +1349,7 @@ mod mirror_structural_guard_tests {
     /// forward 된다(결정됨 — cross-workspace 는 로컬 전용 id 유출 위험이라 계속 차단).
     #[test]
     fn mirror_move_surface_enqueues_forward_when_same_workspace() {
-        use crate::ipc::stream::StructuralOp;
+        use tasty_ipc::stream::StructuralOp;
         let (mut core, mut engine) = build_test_core();
         let (a, _pane) = seed(&mut engine);
         // mirror=true 로 세팅하기 전(=로컬 실행 허용될 때) 실제 split 으로 같은

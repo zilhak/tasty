@@ -25,8 +25,8 @@
 use std::collections::HashMap;
 
 use crate::adapters::production::stream_hub::StreamHub;
-use crate::ipc::stream::{StreamFrame, StreamTag};
 use crate::model::{SurfaceId, WorkspaceId};
+use tasty_ipc::stream::{StreamFrame, StreamTag};
 
 /// attach 의 client 식별자. 단계 1 `StreamClientId` 와 값·의미가 동일(둘 다 u32).
 pub type AttachClientId = u32;
@@ -903,7 +903,7 @@ mod tests {
 
     #[test]
     fn force_detach_pushes_to_notifier() {
-        use crate::ipc::stream::StreamTag;
+        use tasty_ipc::stream::StreamTag;
         let hub = StreamHub::new();
         let holder = hub.alloc_id();
         let rx = hub.register(holder);

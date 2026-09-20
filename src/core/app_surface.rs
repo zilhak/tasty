@@ -20,8 +20,8 @@ use std::sync::mpsc::SyncSender;
 
 use serde_json::Value;
 
-use crate::ipc::protocol::JsonRpcResponse;
-use crate::ipc::server::send_response;
+use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_ipc::server::send_response;
 
 /// `clipboard.set_text` — 쓰는 대상이 `Core` 의 클립보드 포트 하나다.
 ///

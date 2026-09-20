@@ -37,7 +37,7 @@ pub(crate) struct MeshMirrorContext {
     /// (불필요한 plugin CPU 낭비 방지).
     pub(crate) dirty: bool,
     /// 다음 forward 시 `SurfaceSetContextParams.need_full_textures` 를 세워야 하는가
-    /// (신규 구독 또는 명시적 [`crate::ipc::stream::StreamControl::MeshFullResendRequest`]).
+    /// (신규 구독 또는 명시적 [`tasty_ipc::stream::StreamControl::MeshFullResendRequest`]).
     pub(crate) need_full_textures: bool,
     /// 이 surface 에 대해 마지막으로 forward 한 `EguiMeshFrame::generation` — 같은
     /// generation 을 중복 forward 하지 않기 위한 dedup 키. `None` = 아직 forward 없음.
@@ -46,7 +46,7 @@ pub(crate) struct MeshMirrorContext {
     /// `frame_seq`(plugin 렌더 코어의 시퀀스)와는 별개 — 이건 순수 attach 전송 계층의
     /// 재조립 키다.
     next_frame_id: u64,
-    /// [`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)로 누적된, 아직
+    /// [`StreamControl::MeshInput`](tasty_ipc::stream::StreamControl)로 누적된, 아직
     /// plugin 에 forward 하지 않은 입력 이벤트(`docs/dev-guide/attach-behavior.md`
     /// "MeshInput 누적" 절). forward 루프가 dirty 를 소비할 때
     /// [`Self::take_pending_events`]로 함께 가져간다.
@@ -174,7 +174,7 @@ impl MeshMirrorRegistry {
         Some(id)
     }
 
-    /// client→server [`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)를
+    /// client→server [`StreamControl::MeshInput`](tasty_ipc::stream::StreamControl)를
     /// 반영(`docs/dev-guide/attach-behavior.md` "MeshInput 누적" 절) — 이벤트를
     /// 누적하고 modifiers 를 최신화, `dirty` 를 세워 geometry
     /// 무변이어도(입력만으로) forward 루프가 재전송하게 한다. 구독돼 있지 않으면

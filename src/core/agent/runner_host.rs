@@ -1871,8 +1871,8 @@ mod tests {
         responses: Vec<serde_json::Value>,
     ) -> std::thread::JoinHandle<()> {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
         let (tx, rx) = mpsc::channel::<IpcCommand>();
@@ -2014,8 +2014,8 @@ mod tests {
     #[test]
     fn polled_dispatch_recovers_after_injector_ready() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
@@ -2096,10 +2096,10 @@ mod tests {
     #[test]
     fn custom_with_poll_maps_params_and_polls_to_done() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::collections::HashMap;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpec, PollSpecRef};
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
@@ -2212,9 +2212,9 @@ mod tests {
     #[test]
     fn custom_without_poll_is_immediate() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::OnFailure;
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
@@ -2271,9 +2271,9 @@ mod tests {
     #[test]
     fn custom_with_named_poll_strategy_resolves_and_polls() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
@@ -2362,9 +2362,9 @@ mod tests {
             HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
         };
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
@@ -2493,9 +2493,9 @@ mod tests {
             HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
         };
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
@@ -2578,9 +2578,9 @@ mod tests {
     #[test]
     fn custom_with_unknown_named_poll_strategy_fails_dispatch() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
@@ -2634,9 +2634,9 @@ mod tests {
     #[test]
     fn custom_without_poll_uses_default_for_method_strategy() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::OnFailure;
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
 
@@ -3262,9 +3262,9 @@ mod tests {
     #[test]
     fn dispatch_substitutes_lease_placeholder_in_custom_params() {
         use crate::ipc::host_call::HostIpcInjector;
-        use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
         use tasty_agent::OnFailure;
+        use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();

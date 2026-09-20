@@ -16,7 +16,7 @@
 
 use serde_json::Value;
 
-use crate::ipc::protocol::JsonRpcResponse;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// `debug.lua.eval` — App 소유 Lua 워커에 스크립트를 던진다(fire-and-forget).
 ///
