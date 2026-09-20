@@ -2,9 +2,9 @@ use tasty_terminal::ScrollbackLine;
 use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::cell::CellAttributes;
 
-use crate::font::GlyphKey;
-use crate::selection::{NormalizedSelection, SelectionPoint};
-use crate::terminal_link::LinkHighlight;
+use tasty_font::GlyphKey;
+use tasty_selection::{NormalizedSelection, SelectionPoint};
+use tasty_terminal_link::LinkHighlight;
 
 use super::CellRenderer;
 use super::types::{BgInstance, GlyphInstance};
@@ -36,7 +36,7 @@ impl CellRenderer {
 
         // Selection: override bg color
         if let Some((sel, sel_bg)) = selection
-            && crate::selection::is_selected(col_idx, absolute_row, sel)
+            && tasty_selection::is_selected(col_idx, absolute_row, sel)
         {
             bg_color = *sel_bg;
         }

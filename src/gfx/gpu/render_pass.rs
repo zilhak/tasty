@@ -52,11 +52,11 @@ impl GpuState {
         regions: &[(u32, PhysicalRect, Vec<crate::model::SurfaceRegion<'_>>)],
         engine: &crate::core::CoreState,
         focused_surface_id: Option<u32>,
-        selection: Option<&crate::selection::TextSelection>,
-        vi_cursor: Option<(u32, crate::selection::SelectionPoint)>,
+        selection: Option<&tasty_selection::TextSelection>,
+        vi_cursor: Option<(u32, tasty_selection::SelectionPoint)>,
         _settings: &crate::settings::AppearanceSettings,
         preedit: Option<&super::ImePreeditState>,
-        link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
+        link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
         search: Option<&crate::search_state::SearchState>,
     ) {
         self.terminal_cursor_restore_pending = false;

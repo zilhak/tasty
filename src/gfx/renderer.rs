@@ -1,3 +1,25 @@
+//! 셀 렌더러 — 터미널 격자를 GPU 인스턴스 버퍼로 쌓는 자리.
+//!
+//! **입력은 전부 인자로 온다.** 선택·vi 커서·링크 하이라이트·검색 강조·preedit 는
+//! 호출부가 만들어 넘기고, 이 모듈은 앱 상태를 조회하지 않는다.
+//!
+//! 그 입력 타입을 **어느 이름으로 부르는가**도 계약의 일부다. 선택은
+//! [`tasty_selection`], 링크는 [`tasty_terminal_link`], 폭 표는 [`tasty_cell_width`],
+//! 글리프 아틀라스는 [`tasty_font`], 사각형은 [`tasty_model`] — 전부 워크스페이스
+//! 크레이트를 직접 부른다. 본체의 `state::selection` · `adapters::ui::terminal_link`
+//! 재수출을 거치지 않는 이유는, 거치면 렌더러가 앱 상태·UI 어댑터를 보는 모양이
+//! **표기에 남기** 때문이다(타입은 이미 크레이트에 있는데도). 근거·재검토 조건은
+//! `docs/adr/0342-the-cell-renderer-names-the-crates-not-the-host-re-exports.md`.
+//!
+//! 그래서 이 모듈이 부르는 본체 경로는 **`crate::cell_palette` 하나**다. 그것이
+//! 남은 것은 실수가 아니라 요구다 — 셀 색 해석은 `gui` 게이트 밖에 있어야 하고
+//! (헤드리스 `debug.glyph_color` 가 같은 함수로 답한다), 그 공유를 깨지 않으려면
+//! 렌더러와 헤드리스 핸들러가 같은 자리를 봐야 한다. 재는 법:
+//!
+//! ```bash
+//! grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/   # cell_palette 두 줄만
+//! ```
+
 mod line_render;
 mod pipeline;
 mod shaders;
@@ -10,10 +32,10 @@ use tasty_cell_width::unicode_width;
 use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::surface::Surface;
 
-use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
-use crate::model::PhysicalRect;
-use crate::selection::{NormalizedSelection, SelectionPoint};
-use crate::terminal_link::LinkHighlight;
+use tasty_font::{FontConfig, GlyphAtlas, GlyphKey};
+use tasty_model::PhysicalRect;
+use tasty_selection::{NormalizedSelection, SelectionPoint};
+use tasty_terminal_link::LinkHighlight;
 
 /// Search match highlights to pass into the renderer.
 pub struct SearchHighlights<'a> {
@@ -365,7 +387,7 @@ impl CellRenderer {
 
                 let abs_row = row_offset + row_idx;
                 if let Some((sel, sel_bg)) = selection
-                    && crate::selection::is_selected(col_idx, abs_row, sel)
+                    && tasty_selection::is_selected(col_idx, abs_row, sel)
                 {
                     bg_color = *sel_bg;
                 }

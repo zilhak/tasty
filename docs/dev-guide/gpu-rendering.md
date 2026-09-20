@@ -63,6 +63,37 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 
 > **왜 이 구조인가**: 예전엔 공유 버퍼를 offset 0 부터 덮어써서 *터미널마다 encoder+submit 을 분리* 해야 했다. 지금은 인스턴스를 누적하고 per-instance offset 을 baking 하므로, 버퍼 write 1회 + render pass 1개로 끝난다 — submit 폭증 없이 N 개 surface 를 그린다.
 
+## 렌더러가 보는 것 — 입력은 인자로 오고, 이름은 크레이트다
+
+셀 렌더러(`src/gfx/renderer.rs` + `src/gfx/renderer/`)는 앱 상태를 조회하지 않는다.
+선택·vi 커서·링크 하이라이트·검색 강조·preedit·ANSI 팔레트는 전부 호출부
+(`src/gfx/gpu/render_pass.rs`)가 만들어 인자로 넘긴다.
+
+그 입력 타입을 **어느 이름으로 부르는가**도 계약의 일부다. 렌더러는 워크스페이스
+크레이트를 직접 부른다 — 선택은 `tasty_selection`, 링크는 `tasty_terminal_link`,
+폭 표는 `tasty_cell_width`, 글리프 아틀라스는 `tasty_font`, 사각형은 `tasty_model`.
+본체에도 같은 것을 가리키는 재수출이 있지만(`crate::selection` =
+`state::selection`, `crate::terminal_link` = `adapters::ui::terminal_link`) 렌더러는
+그것을 쓰지 않는다. 거치면 타입이 이미 크레이트에 있는데도 **렌더러가 앱 상태와 UI
+어댑터를 보는 모양이 표기에 남기** 때문이다. 근거·대안·재검토 조건은
+[ADR-0342](../adr/0342-the-cell-renderer-names-the-crates-not-the-host-re-exports.md).
+
+그래서 렌더러가 부르는 본체 경로는 **`crate::cell_palette` 하나**다. 그것은 남겨 둔
+것이다 — 셀 색 해석은 `gui` 게이트 밖에 있어야 하고(헤드리스 `debug.glyph_color`
+핸들러가 같은 함수로 답한다), 함수를 복제하지 않으려면 둘이 같은 자리를 봐야 한다.
+
+재는 법 — 이 사실에 자동 채널은 없다. 새 `use crate::…` 한 줄은 컴파일되고 어떤
+시험도 안 깬다.
+
+```bash
+grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/   # cell_palette 두 줄만 나와야 한다
+```
+
+`src/gfx/gpu*` 는 이 규칙의 대상이 아니다 — 그쪽은 `AppState`·`CoreState`·
+`PluginManager` 를 받는 호스트 접착층이고, 본체 의존이 거짓이 아니라 사실이다. 다만
+렌더 입력 타입 둘(`tasty_selection::*` · `tasty_terminal_link::LinkHighlight`)은
+호출 양쪽에서 뜻이 하나로 남도록 그쪽 시그니처도 같은 이름을 쓴다.
+
 ## Surface configure 치수 clamp
 
 `GpuState`(`src/gfx/gpu.rs`)는 `surface.configure` 에 넘기는 width/height 를 winit 경계에서 `device.limits().max_texture_dimension_2d`(어댑터별 실제 한계, 런타임 조회 — 하드코딩 금지)로 **clamp** 하고, 실제로 clamp 가 걸리면 `warn!` 을 남긴다. 상한을 넘는 치수가 오면 wgpu 가 panic 하기 때문이다(예: 외부 `SetWindowPos` 가 winit `Resized` 로 `1100×65535` 유입). 하한은 `1`(configure 는 0 불가), 0 은 최소화 신호로 `resize` early-return 이 configure 를 스킵한다. `resize` 와 `new`(startup) 모두 공통 `clamp_surface_dims(w,h,max)` 헬퍼를 쓴다.

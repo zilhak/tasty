@@ -1,7 +1,7 @@
 use super::CellRenderer;
 use super::shaders::{BG_SHADER, GLYPH_SHADER};
 use super::types::{BgInstance, GlyphInstance, Uniforms};
-use crate::font::{FontConfig, GlyphAtlas};
+use tasty_font::{FontConfig, GlyphAtlas};
 
 impl CellRenderer {
     pub fn new(

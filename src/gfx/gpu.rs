@@ -408,9 +408,9 @@ impl GpuState {
         engine: &mut crate::core::CoreState,
         window: &Window,
         preedit: Option<&ImePreeditState>,
-        selection: Option<&crate::selection::TextSelection>,
-        vi_cursor: Option<(u32, crate::selection::SelectionPoint)>,
-        link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
+        selection: Option<&tasty_selection::TextSelection>,
+        vi_cursor: Option<(u32, tasty_selection::SelectionPoint)>,
+        link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
         plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> Result<(), wgpu::SurfaceError> {
         let render_start = std::time::Instant::now();
@@ -727,7 +727,7 @@ impl GpuState {
         state: &AppState,
         engine: &crate::core::CoreState,
         terminal_rect: PhysicalRect,
-        link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
+        link_hover: Option<(u32, &tasty_terminal_link::LinkHighlight)>,
     ) -> Option<egui::CursorIcon> {
         let mut icon = None;
         if state.pending_resize_cursor.is_none()
