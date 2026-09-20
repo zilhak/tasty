@@ -275,6 +275,15 @@ struct StreamSink {
     tx: SyncSender<StreamFrame>,
     /// Consecutive dropped-frame count (reset on a successful send).
     lag: u32,
+    /// 이 연결이 [`StreamControl::Loss`](crate::ipc::stream::StreamControl) 를 받겠다고
+    /// 선언했는가. 선언은 client 가 보내는
+    /// [`ClientLossNotify`](crate::ipc::stream::StreamControl::ClientLossNotify) 프레임
+    /// 하나뿐이고, 선언하지 않은 연결은 종전과 **완전히 같게** 동작한다(조용한 drop).
+    loss_notify: bool,
+    /// 이 연결에 대해 **마지막 통지 이후** 버린 프레임 수. 통지를 실제로 태운 순간에만
+    /// 0 으로 돌아간다 — 선언하지 않은 연결에서도 센다(나중에 선언해도 그때까지의 공백을
+    /// 한 번에 말할 수 있어야 한다).
+    pending_loss: u64,
 }
 
 /// Outcome of a [`StreamHub::push`] attempt.
@@ -377,9 +386,34 @@ impl StreamHub {
     /// write thread drains to the socket.
     pub fn register(&self, id: StreamClientId) -> Receiver<StreamFrame> {
         let (tx, rx) = mpsc::sync_channel(SINK_CAP);
-        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
-            .insert(id, StreamSink { tx, lag: 0 });
+        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
+            id,
+            StreamSink {
+                tx,
+                lag: 0,
+                loss_notify: false,
+                pending_loss: 0,
+            },
+        );
         rx
+    }
+
+    /// 이 연결이 손실 통지를 받겠다고 선언했음을 기록한다
+    /// ([`StreamControl::ClientLossNotify`](crate::ipc::stream::StreamControl::ClientLossNotify)).
+    ///
+    /// 선언을 handshake 가 아니라 프레임으로 받는 이유는 판을 게이트로 쓸 수 없기
+    /// 때문이다 — 서버는 `StreamOpenParams::proto` 를 **동등 비교**하므로 판을 올리면
+    /// 기능이 좁아지는 것이 아니라 구 peer 의 attach 가 거절된다. 같은 모양을
+    /// `MeshContext` 구독이 이미 쓴다("구독 요청 자체가 capability 협상").
+    ///
+    /// 멱등. 이미 끊긴 연결에 대해서는 아무것도 하지 않는다.
+    pub fn enable_loss_notify(&self, id: StreamClientId) {
+        if let Some(sink) =
+            crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+                .get_mut(&id)
+        {
+            sink.loss_notify = true;
+        }
     }
 
     /// Drop a client's sink (its write thread then exits when the sender drops).
@@ -415,6 +449,13 @@ impl StreamHub {
         let Some(sink) = sinks.get_mut(&id) else {
             return PushResult::Unknown;
         };
+        // 손실은 **큐가 찼을 때** 난다. 그래서 통지를 그 순간에 같은 큐로 보내면 통지도
+        // 함께 사라진다 — 손실을 알리는 프레임이 손실의 첫 희생자가 된다. 대신 빚으로
+        // 적어 두고(`pending_loss`), 큐에 자리가 생긴 **다음 push 의 맨 앞**에서 갚는다.
+        // 그 자리가 곧 스트림에서 공백이 난 지점이라, 소비자는 순번 없이도 통지 앞뒤로
+        // 연속/불연속을 가를 수 있다. 자리가 아직 없으면 빚은 그대로 남고 다음 기회에
+        // 다시 시도한다 — 통지는 **태워진 순간에만** 지워진다.
+        Self::repay_pending_loss(sink);
         match sink.tx.try_send(frame) {
             Ok(()) => {
                 sink.lag = 0;
@@ -424,6 +465,7 @@ impl StreamHub {
                 // 이 프레임은 어느 갈래로 가든 사라진다 — 끊는 갈래도 이것을 못 보낸다.
                 // 그래서 세는 자리가 분기 **앞**이다.
                 self.loss.frames.fetch_add(1, Ordering::Relaxed);
+                sink.pending_loss += 1;
                 sink.lag += 1;
                 if sink.lag >= LAG_LIMIT {
                     sinks.remove(&id); // sender dropped → write thread exits
@@ -437,6 +479,39 @@ impl StreamHub {
                 sinks.remove(&id);
                 PushResult::Unknown
             }
+        }
+    }
+
+    /// 밀린 손실 통지를 갚는다 — [`push`](Self::push) 가 본 프레임을 태우기 **직전**에
+    /// 한 번 부른다.
+    ///
+    /// 갚을 자리가 없으면(선언 안 함 · 빚 없음 · 큐가 아직 참) 아무것도 안 하고 빚을
+    /// 그대로 둔다. 통지가 자리를 차지해 바로 뒤의 본 프레임이 떨어질 수 있는데, 그것이
+    /// 의도다: 그 한 장은 다음 통지의 수에 합산되고, 반대로 통지를 뒤로 미루면 소비자가
+    /// **이미 불연속인 데이터를 연속으로 그린 뒤에** 통지를 받는다.
+    ///
+    /// `lag` 은 건드리지 않는다. 그 수는 "소비자가 따라오고 있는가" 를 재고
+    /// [`LAG_LIMIT`] 강제분리의 좌변인데, 서버가 스스로 넣은 통지의 성공을 소비자의
+    /// 진척으로 세면 느린 소비자가 그 한도를 영원히 피할 수 있다.
+    fn repay_pending_loss(sink: &mut StreamSink) {
+        if !sink.loss_notify || sink.pending_loss == 0 {
+            return;
+        }
+        let notice = crate::ipc::stream::StreamControl::Loss {
+            frames: sink.pending_loss,
+        };
+        let Ok(payload) = serde_json::to_vec(&notice) else {
+            return; // 빚을 유지한다 — 다음 기회에 다시 만든다.
+        };
+        if sink
+            .tx
+            .try_send(StreamFrame::new(
+                crate::ipc::stream::StreamTag::Control,
+                payload,
+            ))
+            .is_ok()
+        {
+            sink.pending_loss = 0;
         }
     }
 
@@ -584,6 +659,13 @@ impl StreamHub {
                                     input,
                                 }) => {
                                     out.mesh_input_events.push((client_id, surface_id, input));
+                                }
+                                // 손실 통지 선언. 메인 루프를 거치지 않고 여기서 바로
+                                // 허브 상태에 적는다 — 엔진을 한 줄도 안 보는 연결 단위
+                                // 사실이고, 선언과 그 다음 `push` 사이에 메인 루프 tick 을
+                                // 끼우면 그 사이의 공백을 놓친다.
+                                Ok(crate::ipc::stream::StreamControl::ClientLossNotify {}) => {
+                                    self.enable_loss_notify(client_id);
                                 }
                                 Ok(_) => {}
                                 Err(_) => {
@@ -756,6 +838,208 @@ mod tests {
         let loss = hub.loss();
         assert_eq!(loss.frames_dropped, refused, "끊은 갈래의 한 장을 안 셌다");
         assert_eq!(loss.clients_lagged_out, 1);
+    }
+
+    /// 손실 통지를 선언하지 **않은** 연결은 종전과 완전히 같다 — 큐에 들어오는 것이
+    /// 프레임 하나도 안 늘어난다. 이 시험이 지키는 것은 "기존 peer 무영향" 이다.
+    #[test]
+    fn a_client_that_never_declares_sees_no_extra_frame() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        for _ in 0..3 {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"gap")),
+                PushResult::Dropped
+            );
+        }
+        rx.recv().expect("한 장 비운다");
+        rx.recv().expect("두 장 비운다");
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"post")),
+            PushResult::Sent
+        );
+
+        let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            drained.iter().all(|f| f.tag == StreamTag::Data),
+            "선언하지 않았는데 Control 프레임이 섞였다"
+        );
+        assert_eq!(drained.len(), SINK_CAP - 1, "큐 길이가 달라졌다");
+    }
+
+    /// 통지의 값은 **수만이 아니라 자리**다. 공백이 난 지점, 즉 공백을 넘어 살아남은
+    /// 첫 프레임 **바로 앞**에 들어가야 소비자가 순번 없이 앞뒤를 가를 수 있다.
+    #[test]
+    fn the_notice_lands_between_the_last_survivor_and_the_first_frame_after_the_gap() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        hub.enable_loss_notify(id);
+
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        for _ in 0..3 {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"gap")),
+                PushResult::Dropped
+            );
+        }
+        // 소비자가 두 칸을 비운다 — 한 칸은 통지가, 한 칸은 본 프레임이 쓴다.
+        rx.recv().expect("한 장 비운다");
+        rx.recv().expect("두 장 비운다");
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"post")),
+            PushResult::Sent
+        );
+
+        let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let notice_at = drained
+            .iter()
+            .position(|f| f.tag == StreamTag::Control)
+            .expect("통지가 큐에 없다");
+        assert_eq!(
+            notice_at,
+            drained.len() - 2,
+            "통지가 공백 지점이 아니라 다른 자리에 있다"
+        );
+        assert_eq!(drained[notice_at + 1].payload, b"post".to_vec());
+        assert!(
+            drained[..notice_at].iter().all(|f| f.payload == b"pre"),
+            "통지 앞에 공백 뒤 프레임이 섞였다"
+        );
+        let parsed: crate::ipc::stream::StreamControl =
+            serde_json::from_slice(&drained[notice_at].payload).expect("통지 파싱");
+        assert_eq!(
+            parsed,
+            crate::ipc::stream::StreamControl::Loss { frames: 3 },
+            "잃은 수가 안 맞는다"
+        );
+    }
+
+    /// 통지 자체가 막히는 갈래 — 큐가 아직 차 있으면 통지는 **안 태워지고 빚으로 남는다.**
+    /// 그 사이에 더 잃으면 빚이 커지고, 결국 한 번에 갚는다. 빚을 태우기도 전에 지우면
+    /// 그 공백은 영영 안 알려진다.
+    #[test]
+    fn a_notice_that_cannot_be_sent_is_kept_as_debt_and_paid_in_full_later() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        hub.enable_loss_notify(id);
+
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        // 자리가 없는 동안의 두 번 — 통지도 본 프레임도 못 들어간다.
+        for _ in 0..2 {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"gap")),
+                PushResult::Dropped
+            );
+        }
+        // 한 칸만 비우면 그 칸은 통지가 쓴다(본 프레임은 또 떨어진다).
+        rx.recv().expect("한 장 비운다");
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"gap")),
+            PushResult::Dropped
+        );
+
+        rx.recv().expect("소비자가 계속 읽는다");
+        let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let notice = drained
+            .iter()
+            .find(|f| f.tag == StreamTag::Control)
+            .expect("통지가 결국에도 안 왔다");
+        let parsed: crate::ipc::stream::StreamControl =
+            serde_json::from_slice(&notice.payload).expect("통지 파싱");
+        assert_eq!(
+            parsed,
+            crate::ipc::stream::StreamControl::Loss { frames: 2 },
+            "통지가 태워지기 전에 빚이 지워졌다"
+        );
+    }
+
+    /// 통지를 태운 것은 **소비자의 진척이 아니다.** `lag` 을 같이 0 으로 돌리면 느린
+    /// 소비자가 [`LAG_LIMIT`] 강제분리를 영원히 피한다. 좌변: 한 칸이 비어 통지가
+    /// 들어간 바로 그 push 에서 연속 drop 수가 한도에 닿아야 한다.
+    #[test]
+    fn sending_the_notice_does_not_count_as_the_consumer_keeping_up() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        hub.enable_loss_notify(id);
+
+        for _ in 0..SINK_CAP {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        for _ in 0..(LAG_LIMIT - 1) {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"x")),
+                PushResult::Dropped
+            );
+        }
+        rx.recv().expect("한 칸 비운다 — 통지가 그 칸을 쓴다");
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"x")),
+            PushResult::Disconnected,
+            "통지 성공이 lag 을 되돌렸다 — 느린 소비자가 한도를 피한다"
+        );
+    }
+
+    /// 선언은 메인 루프를 거치지 않고 `pump_inbound` 가 바로 허브에 적는다.
+    #[test]
+    fn pump_inbound_records_the_loss_notify_declaration() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        let (tx, inbound_rx) = mpsc::channel();
+        let payload =
+            serde_json::to_vec(&crate::ipc::stream::StreamControl::ClientLossNotify {}).unwrap();
+        tx.send(StreamInbound::Frame {
+            client_id: id,
+            frame: frame(StreamTag::Control, &payload),
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert!(
+            out.input_frames.is_empty() && out.structural_ops.is_empty(),
+            "선언이 다른 갈래로 샜다"
+        );
+
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"gap")),
+            PushResult::Dropped
+        );
+        rx.recv().expect("한 장 비운다");
+        rx.recv().expect("두 장 비운다");
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"post")),
+            PushResult::Sent
+        );
+        let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            drained.iter().any(|f| f.tag == StreamTag::Control),
+            "pump 로 들어온 선언이 안 기록됐다"
+        );
     }
 
     /// 허브는 accept 스레드마다 클론된다. 카운터가 `Arc` 밖에 있으면 클론마다 다른 수를
