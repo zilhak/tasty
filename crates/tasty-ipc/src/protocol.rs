@@ -23,6 +23,15 @@ pub const ERR_REQUEST_LINE_TOO_LONG: i32 = -32060;
 /// `-32000`(서버 사정)도 "안 됐다" 로 읽힌다.
 pub const ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN: i32 = -32061;
 
+/// 서버가 동시 연결 상한에 닿아 이 연결을 받지 않았다. **요청이 실행되지 않았다** —
+/// 줄을 읽기도 전에 끝났으므로 `-32061` 과 달리 결과가 불명이지 않다. 그래서 그대로
+/// 다시 걸어도 되고, 그것이 호출자가 할 일이다(자리가 나면 붙는다).
+///
+/// 이 답은 **최선 노력**이다. 거절이 일어나는 자리가 accept 스레드라 거기서 막히는
+/// 쓰기를 할 수 없고(그 스레드가 멈추면 자리가 나도 아무도 못 붙는다), 그래서 서버는
+/// 한 번만 시도하고 안 되면 그냥 닫는다. client 는 이 줄 대신 EOF 를 볼 수 있다.
+pub const ERR_CONNECTION_LIMIT_REACHED: i32 = -32062;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,

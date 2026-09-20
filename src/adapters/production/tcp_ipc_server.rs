@@ -212,12 +212,9 @@ impl TcpIpcServer {
                 }
                 match listener.accept() {
                     Ok((stream, _)) => {
-                        // 상한 초과면 소켓을 그대로 닫는다. 거절을 **응답으로** 알리는
-                        // 것은 wire 가 걸리는 별개 결정이라 여기서는 하지 않는다 —
-                        // 연결이 즉시 닫히는 것이 이 회차의 거절 신호다.
                         let Some(slot) = ConnectionSlot::try_acquire(&live_connections, &saturated)
                         else {
-                            drop(stream);
+                            Self::refuse_saturated_connection(stream);
                             continue;
                         };
                         let cmd_tx = accept_tx.clone();
@@ -813,6 +810,46 @@ impl TcpIpcServer {
         true
     }
 
+    /// 연결 상한 거절을 **응답으로** 알린다. 쓰고 나면 소켓이 닫힌다.
+    ///
+    /// ★ **이 쓰기는 막히면 안 된다.** 거절이 일어나는 자리가 accept 스레드라, 거기서
+    /// 막히는 쓰기를 하면 **그 스레드가 멈추고 자리가 나도 아무도 못 붙는다** — 상한이
+    /// 지키려던 것을 상한의 통지가 깨는 모양이다. 쓰기용 스레드를 띄우는 것도 답이 아니다:
+    /// 그것이 바로 이 상한이 아끼려는 자원이고, 거절은 재시도 루프에서 몰려 온다.
+    ///
+    /// 그래서 **non-blocking 으로 한 번만 시도하고 결과와 무관하게 닫는다.** 거절 줄은
+    /// 200 바이트 안쪽이고 갓 열린 소켓의 송신 버퍼는 그보다 훨씬 크므로 보통은 한 번에
+    /// 나간다. 안 나가면 client 가 보는 것은 예전과 같은 EOF 다 — **더 나빠지지 않는다.**
+    /// 그 최선 노력 성질은 `ERR_CONNECTION_LIMIT_REACHED` 의 doc 에도 적혀 있다.
+    ///
+    /// 로그가 `debug` 인 이유: 거절은 상대가 재시도 루프를 돌면 몰려 오고, 포화로
+    /// **들어가는 순간**의 `warn` 은 [`ConnectionSlot::try_acquire`] 이 이미 낸다.
+    fn refuse_saturated_connection(stream: std::net::TcpStream) {
+        if let Err(e) = stream.set_nonblocking(true) {
+            tracing::debug!("IPC saturation refusal could not go non-blocking: {e}");
+            return;
+        }
+        let resp = JsonRpcResponse::error(
+            serde_json::Value::Null,
+            crate::ipc::protocol::ERR_CONNECTION_LIMIT_REACHED,
+            format!(
+                "the server already holds {MAX_CONCURRENT_CONNECTIONS} concurrent connections \
+                 and did not read this one — nothing ran, so retry it as is"
+            ),
+        );
+        let line = format!("{}\n", serde_json::to_string(&resp).unwrap());
+        let mut w = stream;
+        // 한 번만 쓴다. `write_all` 은 부분 전송에서 다시 시도하므로 여기서는 안 쓴다.
+        match w.write(line.as_bytes()) {
+            Ok(n) if n == line.len() => {}
+            Ok(n) => tracing::debug!(
+                "IPC saturation refusal only partly sent ({n}/{})",
+                line.len()
+            ),
+            Err(e) => tracing::debug!("IPC saturation refusal not sent: {e}"),
+        }
+    }
+
     /// 줄 상한 초과를 **응답으로** 알린다. 쓰고 나면 호출자가 연결을 끝낸다.
     ///
     /// 예전에는 이 자리가 무응답 종료였다(ADR-0304). client 는 닫힌 소켓만 보았고, 자기
@@ -1049,6 +1086,45 @@ mod admission_tests {
             "상한에서 개행으로 끝나는 줄은 초과가 아니다"
         );
         assert_eq!(line.len(), MAX_REQUEST_LINE_BYTES);
+    }
+
+    // 연결 상한 거절도 **EOF 가 아니라 JSON 한 줄**로 온다.
+    //
+    // 재는 자리가 accept 루프가 아니라 거절 함수인 것은 한계다 — 루프까지 재려면 실
+    // 인스턴스에 상한+1 개를 붙여야 하고 그 시험은 스레드를 수백 개 띄운다. 여기서
+    // 재는 것은 "거절이 어떤 바이트로 나가는가" 이고, 그 함수를 루프가 부르는지는
+    // 소스로 확인한다.
+    #[test]
+    fn a_refused_connection_is_told_why_before_it_closes() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let client = std::net::TcpStream::connect(addr).expect("connect");
+        let (server_side, _) = listener.accept().expect("accept");
+
+        TcpIpcServer::refuse_saturated_connection(server_side);
+
+        let mut got = String::new();
+        BufReader::new(client)
+            .read_line(&mut got)
+            .expect("거절 응답을 읽어야 한다");
+        assert!(
+            !got.is_empty(),
+            "연결이 그냥 닫혔다 — 거절이 응답으로 안 왔다"
+        );
+        let resp: JsonRpcResponse =
+            serde_json::from_str(got.trim()).expect("JSON 한 줄이어야 한다");
+        let err = resp.error.expect("에러 응답이어야 한다");
+        assert_eq!(
+            err.code,
+            crate::ipc::protocol::ERR_CONNECTION_LIMIT_REACHED,
+            "연결 상한 거절이 전송 계층 코드로 안 왔다"
+        );
+        assert!(
+            err.message
+                .contains(&MAX_CONCURRENT_CONNECTIONS.to_string()),
+            "거절 문구가 상한 값을 안 싣는다: {}",
+            err.message
+        );
     }
 
     // 응답이 안 오면 **호출자가 실은 상한**에서 끝나고, 그 답은 실패가 아니라
