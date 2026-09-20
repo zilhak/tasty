@@ -16,20 +16,34 @@
 
 ```
 $ find <플랫폼 폴더> -name '*.rs' | wc -l                       → 16
-$ grep -rn 'crate::' <플랫폼 폴더>                              → 26 줄 / 9 파일
-$ grep -rn 'crate::app\|AppEvent\|AppState' <플랫폼 폴더>       → 0
+$ grep -rn 'crate::' <플랫폼 폴더>                              → 25 줄 / 8 파일
+$ grep -rn 'crate::app\|AppEvent\|AppState' <플랫폼 폴더>       → 2 (둘 다 주석)
+$ 같은 좌변에 ADR-0331 의 주석 필터를 붙이면                     → 0
 ```
 
-`crate::` 26 줄이 무엇을 보는지 전수로 갈라 보면 **본체 모듈은 하나도 없다.**
+**뒤 두 줄이 왜 둘인지가 이 자리의 요점이다.** 이 폴더에는 규칙 자신을 설명하는 주석이
+그 낱말을 담고 있어, 원문을 그냥 훑으면 규칙을 적은 줄이 참조로 잡힌다 — ADR-0331 이
+그 함정을 문장으로 못박고 좌변에 필터(`grep -vE ':[[:space:]]*//'`)를 박아 둔 이유다.
+잡히는 둘은 `power_windows.rs:10` 과 `window_chrome.rs:67` 이고 **둘 다 주석**이라
+코드 참조는 0 이다. 결론(본체 App 을 안 본다)은 필터판이 지탱하고, 원문판의 2 는
+**그 결론의 반례가 아니라 좌변이 무엇을 세는지의 값**이다.
+
+`crate::` 25 줄이 무엇을 보는지 전수로 갈라 보면 **본체 모듈은 하나도 없다.**
 
 | 보는 것 | 실체 | 줄 |
 |---|---|---|
 | `crate::i18n` | `tasty-i18n` 의 재수출(`src/i18n.rs` 는 `pub use tasty_i18n::…` 다) | 3 |
 | `crate::settings` | `tasty-settings`(`lib.rs` 의 `pub use`) | 8 |
-| `crate::paths` · `crate::poison` | `tasty-utils`(`lib.rs` 의 `pub use`) | 5 |
-| `crate::test_support` | `tasty-test-support`(dev-dependency) | 4 |
-| 형제 플랫폼 모듈 | 같은 폴더 안 | 5 |
+| `crate::paths` · `crate::poison` | `tasty-utils`(`lib.rs` 의 `pub use`) | 4 |
+| `crate::test_support` | `tasty-test-support`(dev-dependency) | 3 |
+| 형제 플랫폼 모듈 | 같은 폴더 안 | 6 |
 | `crate::shortcuts` | 산문 안의 intra-doc 링크 한 줄 (ADR-0331 §3 이 "크레이트가 갈릴 때 함께 푼다" 로 미뤄 둔 자리) | 1 |
+
+> 위 25/8 과 분해 세 행(4 · 3 · 6)은 **고쳐 적은 값**이다. 이관 커밋의 본문은 같은
+> 좌변을 26 줄 / 9 파일로 적었고 그것이 틀렸다 — 커밋 메시지는 고칠 수 없으므로 이
+> 문단이 정본이다. 결론(본체 모듈이 0)은 재측정으로도 그대로 선다: 틀린 것은 수뿐이고,
+> 어느 분해 행도 "본체 모듈" 칸으로 넘어가지 않는다.
+
 
 즉 **본체에 남을 이유가 있는 파일이 0 이다.** 폴더가 본체 크레이트 안에 있다는 사실만으로
 `crate::` 한 줄이면 App 상태에 닿을 수 있고, 계약을 지키는지는 사람이 매번 다시 읽어야
@@ -73,8 +87,14 @@ $ grep -rn 'crate::app\|AppEvent\|AppState' <플랫폼 폴더>       → 0
 - **잃은 것**: lockstep 자리가 넷 늘었다(아키텍처 문서의 개요 수·절 제목 수, README 둘의
   배지와 본문, 루트 `CLAUDE.md` 의 복제 문장). 판정기 둘이 그 넷을 본다 —
   `architecture_crate_list_complete` 와 `readme_badge_parity`.
-  그리고 `macos_permissions` 의 항목 열여덟이 `pub(crate)` 에서 `pub` 이 됐다. 크레이트
-  밖에서 부르려면 그래야 하고, 그만큼 공개 표면이 넓어졌다.
+  그리고 `macos_permissions` 의 항목 **열다섯**이 `pub(crate)` 에서 `pub` 이 됐다.
+  크레이트 밖이 이름으로 요구하는 자리가 그만큼이다 — 설정 탭 · 부팅 · 키 주입 판정
+  셋이 부르고, cfg 짝까지 세어 열다섯이다. 처음에는 열여덟을 열었는데 **셋은 크레이트
+  밖에 소비자가 없었다**(`FsProbe` · `RealFs` · `prewarm_targets`). 그 셋을 부르는 유일한
+  자리는 화면 캡처이고 그것은 크레이트 **안**이라(`screen_capture.rs` 가
+  `crate::macos_permissions::…` 로 부른다) `pub` 을 요구하지 않는다. 좁혀도 컴파일이
+  서는 것을 확인하고 `pub(crate)` 로 되돌렸다 — 재는 법은 `git grep -n '\bFsProbe\b'
+  -- src crates | grep -v crates/tasty-platform` 이고 0 이어야 한다.
 - **운영 비용 / 유지 부담**: 플랫폼 코드가 본체 타입을 쓰려면 이제 **그 타입을 leaf 로
   내리거나 콜백으로 받아야** 한다. ADR-0331 이 콜백을 규칙으로 정했으므로 그 비용은 새로
   생긴 것이 아니라 강제된 것이다. 그리고 새 OS 의존을 더할 때 만질 매니페스트가 둘이다.
@@ -122,7 +142,8 @@ $ grep -rn 'crate::app\|AppEvent\|AppState' <플랫폼 폴더>       → 0
 - **`pub` 으로 넓어진 표면이 실제로 오용되는가.** `macos_permissions` 의 항목이 크레이트
   밖에서 의도 밖으로 불리면 경계를 좁힐 근거가 된다. 재는 법: `git grep -n
   'macos_permissions::' -- src crates | grep -v crates/tasty-platform` 로 호출부를 세고,
-  이 결정 시점의 자리(설정 탭 · 부팅 · 캡처 · 키 주입 판정)와 견준다.
+  이 결정 시점의 자리(설정 탭 · 부팅 · 키 주입 판정 **셋**)와 견준다. 화면 캡처는 이
+  목록에 없다 — 크레이트 안에서 부르므로 이 좌변에 안 잡힌다.
 
 ## References
 
