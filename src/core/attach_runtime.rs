@@ -731,8 +731,10 @@ pub(crate) struct ForwardedDelta {
 ///   [`StreamControl::StructuralDelta`] 를 만들어 반환한다(핸들러 응답 파싱이 아니라
 ///   트리 diff 라 close cascade·move 도 균일 커버). 워크스페이스가 통째로 사라진 극단
 ///   케이스는 `Ok(None)`.
-/// - 실패: JSON-RPC 에러(예: 원격 미등록 plugin kind → "unknown surface kind")면
-///   `Err(reason)`.
+/// - 실패: `Err(reason)` — 사유 문자열 하나다. 재사용 핸들러를 타는 op 는 그 핸들러의
+///   JSON-RPC 에러 메시지(예: 원격 미등록 plugin kind → "unknown surface kind")를
+///   [`handler_result`] 가 여기로 되돌리고, 핸들러를 안 타는 op(convert / restore /
+///   move-surface)는 wire 타입을 거치지 않고 바로 이 사유를 만든다.
 ///
 /// 호출자(메인루프)가 [`StreamControl::StructuralResult`] 로 회신한 **뒤** delta 를 push
 /// 하고, 그 다음 added_terminals 를 tap 한다(순서: result → delta → snapshot).
@@ -768,7 +770,7 @@ pub(crate) fn execute_forwarded_structural_op(
     // 참조).
     let mut converted_surface: Option<SurfaceId> = None;
 
-    let resp = match op {
+    let outcome: Result<(), String> = match op {
         StructuralOp::SplitSurface {
             surface_id,
             direction,
@@ -791,7 +793,7 @@ pub(crate) fn execute_forwarded_structural_op(
             engine.attach.set_auto_tap_suppressed(true);
             let resp = pane::handle_split(core, state, engine, rid, &p);
             engine.attach.set_auto_tap_suppressed(false);
-            resp
+            handler_result(resp)
         }
         StructuralOp::SplitPane {
             anchor_surface_id,
@@ -812,7 +814,7 @@ pub(crate) fn execute_forwarded_structural_op(
             engine.attach.set_auto_tap_suppressed(true);
             let resp = pane::handle_split(core, state, engine, rid, &p);
             engine.attach.set_auto_tap_suppressed(false);
-            resp
+            handler_result(resp)
         }
         StructuralOp::NewTab {
             anchor_surface_id,
@@ -826,13 +828,19 @@ pub(crate) fn execute_forwarded_structural_op(
             engine.attach.set_auto_tap_suppressed(true);
             let resp = tab::handle_tab_create(core, state, engine, rid, &p);
             engine.attach.set_auto_tap_suppressed(false);
-            resp
+            handler_result(resp)
         }
         StructuralOp::CloseSurface { surface_id } => {
             // holder 자신이 보낸 close 라 하드 점유 검사를 지나지 않는 진입점을 쓴다
             // (`surface::close::close_surface_for_attach_holder` 의 doc 참조) — 면제를
             // params 플래그로 두면 아무 에이전트나 같은 키를 실어 우회한다.
-            surface::close_surface_for_attach_holder(core, state, engine, rid, *surface_id)
+            handler_result(surface::close_surface_for_attach_holder(
+                core,
+                state,
+                engine,
+                rid,
+                *surface_id,
+            ))
         }
         StructuralOp::CloseTab { anchor_surface_id } => {
             let tab_id = engine
@@ -857,7 +865,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 engine.push_closed_item(item);
             }
             let p = json!({ "tab_id": tab_id });
-            tab::handle_tab_close(core, state, engine, rid, &p)
+            handler_result(tab::handle_tab_close(core, state, engine, rid, &p))
         }
         StructuralOp::ClosePane { anchor_surface_id } => {
             let pane_id = engine
@@ -869,7 +877,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 engine.push_closed_item(item);
             }
             let p = json!({ "pane_id": pane_id });
-            pane::handle_pane_close(core, state, engine, rid, &p)
+            handler_result(pane::handle_pane_close(core, state, engine, rid, &p))
         }
         StructuralOp::MoveTab {
             anchor_surface_id,
@@ -880,7 +888,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 .find_pane_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
             let p = json!({ "pane_id": pane_id, "from_index": from_index, "to_index": to_index });
-            tab::handle_tab_move(core, state, engine, rid, &p)
+            handler_result(tab::handle_tab_move(core, state, engine, rid, &p))
         }
         StructuralOp::ConvertSurface {
             surface_id,
@@ -934,20 +942,12 @@ pub(crate) fn execute_forwarded_structural_op(
                     );
                     if replaced {
                         converted_surface = Some(*surface_id);
-                        tasty_ipc::protocol::JsonRpcResponse::success(
-                            rid.clone(),
-                            json!({ "ok": true, "surface_id": surface_id }),
-                        )
+                        Ok(())
                     } else {
-                        tasty_ipc::protocol::JsonRpcResponse::invalid_params(
-                            rid.clone(),
-                            format!("surface {surface_id} not found"),
-                        )
+                        Err(format!("surface {surface_id} not found"))
                     }
                 }
-                Err(e) => {
-                    tasty_ipc::protocol::JsonRpcResponse::internal_error(rid.clone(), e.to_string())
-                }
+                Err(e) => Err(e.to_string()),
             }
         }
         StructuralOp::RestoreClosedItem { anchor_surface_id } => {
@@ -985,22 +985,14 @@ pub(crate) fn execute_forwarded_structural_op(
                         // `docs/design/policies/focus.md` 가 금지하는 형태다. client 쪽
                         // focus 는 `PendingOpFocus::NewResource` 가 delta 적용 시점에
                         // client-only 로 보정하므로 서버 상태를 만질 이유가 없다.
-                        tasty_ipc::protocol::JsonRpcResponse::success(
-                            rid.clone(),
-                            json!({ "ok": true, "pane_id": pane_id }),
-                        )
+                        Ok(())
                     } else {
                         // "복원할 것 없음" 은 실패가 아니다 — client 가 일반 forward 실패
-                        // 문구 대신 전용 안내를 쓰도록 sentinel 로 회신한다.
-                        tasty_ipc::protocol::JsonRpcResponse::invalid_params(
-                            rid.clone(),
-                            tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.to_string(),
-                        )
+                        // 문구 대신 전용 안내를 쓰도록 sentinel 을 그대로 실패 사유로 쓴다.
+                        Err(tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY.to_string())
                     }
                 }
-                Err(e) => {
-                    tasty_ipc::protocol::JsonRpcResponse::internal_error(rid.clone(), e.to_string())
-                }
+                Err(e) => Err(e.to_string()),
             }
         }
         StructuralOp::MoveSurface {
@@ -1019,58 +1011,39 @@ pub(crate) fn execute_forwarded_structural_op(
             };
             match core.apply(engine, intent) {
                 Ok(events) => {
-                    let Some(crate::core::intent::CoreEvent::MoveSurfaceApplied {
-                        moved,
-                        b_cleanup,
-                        cascade_level,
-                        closed_tab_ids,
-                        closed_pane_ids,
-                        workspace_purged,
-                        workspaces_now_empty,
-                    }) = events.into_iter().next()
-                    else {
+                    let ev = events.into_iter().next();
+                    if !matches!(
+                        ev,
+                        Some(crate::core::intent::CoreEvent::MoveSurfaceApplied { .. })
+                    ) {
                         return Err("Core::apply returned no MoveSurfaceApplied event".to_string());
-                    };
-                    if moved {
-                        // B(target) 의 PTY kill + tab/pane/workspace cascade. IPC 는 agent
-                        // 경로라 is_user_close=false(`close_surface_via_intent` 와 동일 근거).
-                        crate::app::dispatch_domain::cascade_surface_closed(
-                            core,
-                            state,
-                            engine,
-                            crate::app::dispatch_domain::SurfaceCloseCascade {
-                                cascade_level,
-                                cleanup_targets: b_cleanup.into_iter().collect(),
-                                closed_tab_ids,
-                                closed_pane_ids,
-                                workspace_purged,
-                                workspaces_now_empty,
-                                is_user_close: false,
-                            },
-                        );
-                        tasty_ipc::protocol::JsonRpcResponse::success(
-                            rid.clone(),
-                            json!({ "ok": true }),
+                    }
+                    // B(target) 의 PTY kill + tab/pane/workspace cascade. 필드 매핑은
+                    // `SurfaceCloseCascade::from_move_surface_applied` 한 자리가 소유하고,
+                    // 로컬 dispatcher 도 같은 것을 쓴다. IPC 는 agent 경로라
+                    // is_user_close=false(`close_surface_via_intent` 와 동일 근거).
+                    match ev.and_then(|ev| {
+                        crate::app::dispatch_domain::SurfaceCloseCascade::from_move_surface_applied(
+                            ev, false,
                         )
-                    } else {
-                        tasty_ipc::protocol::JsonRpcResponse::invalid_params(
-                            rid.clone(),
-                            format!(
-                                "move failed: source={source_surface_id} target={target_surface_id}"
-                            ),
-                        )
+                    }) {
+                        Some(c) => {
+                            crate::app::dispatch_domain::cascade_surface_closed(
+                                core, state, engine, c,
+                            );
+                            Ok(())
+                        }
+                        None => Err(format!(
+                            "move failed: source={source_surface_id} target={target_surface_id}"
+                        )),
                     }
                 }
-                Err(e) => {
-                    tasty_ipc::protocol::JsonRpcResponse::internal_error(rid.clone(), e.to_string())
-                }
+                Err(e) => Err(e.to_string()),
             }
         }
     };
 
-    if let Some(err) = resp.error {
-        return Err(err.message);
-    }
+    outcome?;
 
     // 성공 — 실행 후 트리 스냅샷으로 delta 구성. anchor 를 못 찾았거나(방어) ws 가 통째로
     // 사라졌으면(극단) delta 없음.
@@ -1126,6 +1099,21 @@ pub(crate) fn execute_forwarded_structural_op(
         added_terminals,
         converted_surface,
     }))
+}
+
+/// 재사용 IPC 핸들러의 응답을 forward 실행의 도메인 결과로 되돌린다.
+///
+/// forward 경로는 JSON-RPC 회신을 **아무 데도 보내지 않는다** — 호출자가 회신하는 것은
+/// `StreamControl::StructuralResult` 이고, 그 실패 사유는 문자열 하나다. 그래서 wire
+/// 타입은 재사용 핸들러가 그 모양으로만 답하기 때문에 생기는 것이고, 이 함수가 그
+/// **한 자리**에서 도메인 결과로 되돌린다. 핸들러를 안 거치는 op(convert / restore /
+/// move-surface)는 애초에 wire 타입을 만들지 않는다 — 과거엔 그 셋도 응답을 조립한 뒤
+/// 곧바로 `resp.error` 로 되풀었고, 그래서 이 모듈이 wire 타입을 아홉 자리에서 만졌다.
+fn handler_result(resp: tasty_ipc::protocol::JsonRpcResponse) -> Result<(), String> {
+    match resp.error {
+        Some(err) => Err(err.message),
+        None => Ok(()),
+    }
 }
 
 /// forward 된 op 의 kind params(있으면)에 재사용 핸들러가 기대하는 제어 키
