@@ -109,6 +109,7 @@ fn probe_system_info(port: u16) -> Result<serde_json::Value> {
 
     let request = JsonRpcRequest {
         response_timeout_ms: None,
+        idempotency_key: None,
         jsonrpc: "2.0".to_string(),
         method: "system.info".to_string(),
         params: serde_json::json!({}),

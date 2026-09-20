@@ -39,6 +39,7 @@ impl HostIpcInjector {
         let (resp_tx, resp_rx) = mpsc::sync_channel::<JsonRpcResponse>(1);
         let req = JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
             id: Some(Value::from(1u64)),

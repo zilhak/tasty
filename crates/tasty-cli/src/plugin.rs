@@ -71,6 +71,7 @@ pub fn run_audit_follow(
         }
         let req = tasty_ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".to_string(),
             method: "plugin.audit_follow".to_string(),
             params: Value::Object(params),

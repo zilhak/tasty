@@ -76,6 +76,7 @@ mod tests {
     fn request(method: &str) -> JsonRpcRequest {
         JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".into(),
             id: Some(json!(1)),
             method: method.into(),

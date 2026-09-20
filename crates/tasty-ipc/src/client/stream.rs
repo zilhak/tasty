@@ -96,6 +96,7 @@ impl StreamConnection {
         }
         let req = JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".to_string(),
             method: stream::STREAM_OPEN_METHOD.to_string(),
             params,

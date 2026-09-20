@@ -323,6 +323,7 @@ fn run_dynamic_client_with_auto_wait(
     let wait_params = build_wait_params(&aw, &first_value);
     let wait_req = tasty_ipc::protocol::JsonRpcRequest {
         response_timeout_ms: None,
+        idempotency_key: None,
         jsonrpc: "2.0".into(),
         method: aw.method.clone(),
         params: serde_json::Value::Object(wait_params),

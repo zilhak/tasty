@@ -20,6 +20,7 @@ mod file_handler;
 mod file_picker;
 mod git_viewer;
 mod hook_handler;
+mod idempotency;
 // `list_global` 이 두 hook 목록을 합산하므로 크레이트 안에서 보여야 한다.
 pub(crate) mod hooks;
 // `output`/`pane`/`surface` 와 같은 이유로 열려 있다 — `image.list` 도 전 창 합산
@@ -170,6 +171,28 @@ fn route_checked_request(
     let (_, routed) = canonicalize_and_route(request);
     let request = routed.as_ref();
 
+    // 멱등 키는 **정규화 뒤**에 본다 — 옛 이름과 새 이름이 같은 요청이므로 키도 같은
+    // 것을 가리켜야 한다. 그리고 라우팅 **전**이라, 키가 재시도를 가리키면 handler 가
+    // 아예 안 돈다(그것이 두 번째 효과를 막는 유일한 지점이다).
+    let pending = match idempotency::begin(core.now_instant(), request, &id) {
+        Ok(pending) => pending,
+        Err(answer) => return answer,
+    };
+    let response = dispatch_routed(core, state, engine, caller, request, id);
+    idempotency::finish(core.now_instant(), pending, &response);
+    response
+}
+
+/// 정규화된 요청을 실제 handler 로 보낸다. 조기 return 이 여럿이라 보존소 기록을 이
+/// 함수 **바깥**에 두어야 모든 갈래의 답이 같은 자리에서 기록된다.
+fn dispatch_routed(
+    core: &mut crate::core::Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    caller: &CallerContext,
+    request: &JsonRpcRequest,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
     if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {
         return resp;
     }
@@ -198,6 +221,9 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
     } else {
         Cow::Owned(JsonRpcRequest {
             response_timeout_ms: None,
+            // 옛 이름으로 온 것도 **같은 요청**이다 — 키를 여기서 떨어뜨리면 alias 로
+            // 부른 호출자만 멱등 계약 밖으로 조용히 빠진다.
+            idempotency_key: request.idempotency_key.clone(),
             jsonrpc: request.jsonrpc.clone(),
             method: canonical.to_string(),
             params: request.params.clone(),
@@ -1401,6 +1427,10 @@ fn handle_system_info(
 ) -> JsonRpcResponse {
     let mut info = system_info_fields(state, engine);
     info["capabilities"] = tasty_ipc::capability::capabilities_json();
+    // capability 목록은 "이 계약을 아는가" 만 답한다. 멱등 키는 그 위에 **얼마나**
+    // 가 있고(보존 시간·항목 수·답 크기) 그 값을 모르면 호출자가 자기 재시도 간격이
+    // 보장 안에 있는지 판단할 수 없다.
+    info["idempotency"] = idempotency::declaration();
     JsonRpcResponse::success(id, info)
 }
 
@@ -1708,6 +1738,17 @@ mod system_info_tests {
         // 기존 키는 그대로다 — 이것은 추가이지 교체가 아니다.
         assert_eq!(result["scope"], "engine");
         assert!(result["version"].is_string());
+    }
+
+    /// capability 목록은 "이 서버가 멱등 키를 읽는가" 까지만 답한다. 호출자가 자기
+    /// 재시도 간격이 보장 안에 있는지 판단하려면 **값**이 필요하고, 그 값이 여기 실린다.
+    #[test]
+    fn system_info_declares_the_bounds_of_the_idempotency_guarantee() {
+        let (state, engine) = crate::state::tests::test_state();
+        let resp = handle_system_info(&state, &engine, serde_json::json!(1));
+        let result = resp.result.expect("성공 응답이어야 한다");
+        assert_eq!(result["idempotency"], super::idempotency::declaration());
+        assert_eq!(result["idempotency"]["survives_restart"], false);
     }
 
     /// capability 는 **서버**의 성질이지 창의 성질이 아니다. `window.list` 가 창마다

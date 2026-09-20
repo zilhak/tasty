@@ -1181,6 +1181,7 @@ mod admission_tests {
             id: Some(serde_json::json!(7)),
             session_token: None,
             response_timeout_ms: Some(50),
+            idempotency_key: None,
         };
 
         // 기다림을 별도 스레드에 두고 **완료 자체에 상한을 건다.** 상한이 안 걸리는
@@ -1240,6 +1241,7 @@ mod admission_tests {
             id: Some(serde_json::json!(1)),
             session_token: None,
             response_timeout_ms: None,
+            idempotency_key: None,
         };
 
         let (done_tx, done_rx) = mpsc::channel();

@@ -84,6 +84,7 @@ mod tests {
         let cmd = IpcCommand::new(
             JsonRpcRequest {
                 response_timeout_ms: None,
+                idempotency_key: None,
                 jsonrpc: "2.0".to_string(),
                 method: "test.method".to_string(),
                 id: Some(Value::from(1u64)),

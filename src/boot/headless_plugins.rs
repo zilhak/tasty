@@ -474,6 +474,7 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         };
         let request = crate::ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::Value::from(call.call_id)),
             method: call.method.clone(),

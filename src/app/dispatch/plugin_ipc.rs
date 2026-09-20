@@ -234,6 +234,7 @@ impl App {
     fn plugin_call_request(call: &PendingPluginCall) -> ipc::protocol::JsonRpcRequest {
         ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::Value::from(call.call_id)),
             method: call.method.clone(),

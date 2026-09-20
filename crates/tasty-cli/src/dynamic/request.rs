@@ -165,6 +165,7 @@ pub fn matches_to_request(
     Ok((
         JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".into(),
             method: sub_decl.ipc_method.clone(),
             params: Value::Object(params),

@@ -40,6 +40,29 @@ pub const ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN: i32 = -32061;
 /// 이 거절의 값이다.
 pub const ERR_CONNECTION_LIMIT_REACHED: i32 = -32062;
 
+/// 같은 멱등 키([`JsonRpcRequest::idempotency_key`])로 **다른 요청**이 왔다.
+///
+/// 키는 호출자가 "이것은 아까 그 요청이다" 를 말하는 수단이므로, 같은 키에 다른
+/// 메서드·다른 params 가 붙었다면 둘 중 하나는 호출자의 착오다. 어느 쪽인지는 여기서
+/// 알 수 없고, **아무것도 실행하지 않는 것**만이 두 뜻 모두에서 안전하다 — 실행하면
+/// 키가 가리키던 앞선 결과를 덮거나 두 번째 효과를 남긴다.
+///
+/// 이 코드가 오면 호출자가 고칠 것은 인자가 아니라 **키의 재사용**이다. 그래서
+/// `-32602`(invalid params)와 갈라 둔다.
+pub const ERR_IDEMPOTENCY_KEY_CONFLICT: i32 = -32063;
+
+/// 그 멱등 키의 요청은 **실행됐지만 그 답을 더는 갖고 있지 않다**.
+///
+/// 보존소는 항목마다 크기 상한이 있고(그 값은 호스트가 정해 `system.info` 의
+/// `idempotency` 로 선언한다), 그 상한을 넘는 답은 보관하지 않는다. 그때 키만
+/// 남기고 답을 버리는 이유는 **재전송이 두 번째 효과를 남기는 것을 막기 위해서**다 —
+/// 항목까지 지우면 다음 요청이 처음 보는 키가 되어 그대로 다시 실행된다.
+///
+/// 그래서 이 답은 실패도 미실행도 아니다. [`ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN`] 과
+/// 같은 계열의 **결과 불명**이되 사실이 하나 더 있다 — 실행된 것은 **확실하다**.
+/// 호출자가 할 일은 재전송이 아니라 조회다.
+pub const ERR_IDEMPOTENT_RESULT_DISCARDED: i32 = -32064;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -70,9 +93,30 @@ pub struct JsonRpcRequest {
     /// 본다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_timeout_ms: Option<u64>,
+    /// 이 요청이 **아까 그 요청과 같은 것**임을 호출자가 선언하는 이름.
+    ///
+    /// 응답만 유실된 요청을 다시 보낼 때, 이 키가 없으면 받는 쪽은 그것이 새 요청인지
+    /// 재시도인지 구별할 수단이 없다 — `id` 는 응답 대응용이라 연결마다 다시 매겨지고,
+    /// params 가 같다는 것도 "같은 일을 두 번 하려는 것" 과 구별되지 않는다. 그래서
+    /// 구별을 만드는 것은 **호출자뿐**이고 이 필드가 그 자리다.
+    ///
+    /// 키가 뜻을 갖는 것은 [`crate::method_meta::MethodEffect::Mutate`] 로 분류된
+    /// 메서드뿐이다. 나머지 둘은 정의상 재전달이 안전하므로(읽기는 흔적을 안 남기고,
+    /// 멱등은 같은 끝 상태로 수렴한다) 보존소에 넣을 이유가 없다 — 넣으면 조회가
+    /// 낡은 답을 받는다. 키를 실어도 거절하지 않고 **아무 일도 안 한다**.
+    ///
+    /// 보장의 범위는 호스트가 `system.info` 의 `idempotency` 로 선언한다(보존 시간 ·
+    /// 항목 수 · 재시작 생존 여부). 그 범위를 벗어난 키는 처음 보는 키와 구별되지
+    /// 않으므로 **다시 실행된다** — 그 경계를 값으로 내놓는 것이 선언의 목적이다.
+    ///
+    /// 구 서버는 이 키를 **조용히 무시한다**(이 구조체에 `deny_unknown_fields` 가 없다).
+    /// 그래서 보내기만 해서는 계약이 걸렸는지 알 수 없고, client 는 **부수효과가 나기
+    /// 전에** `system.info` 의 capability 목록으로 물어야 한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,9 +124,24 @@ pub struct JsonRpcResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
     pub id: serde_json::Value,
+    /// 이 답은 **지금 실행해서 나온 것이 아니라 보관돼 있던 것**이다.
+    ///
+    /// [`JsonRpcRequest::idempotency_key`] 를 실은 재시도가 받는 표지다. 이것이 없으면
+    /// 호출자는 같은 답을 두 번 받고도 그것이 **중복 실행의 결과**인지 **앞선 실행의
+    /// 재조회**인지 구별할 수 없다 — 두 경우의 부수효과가 정반대인데 바이트는 같다.
+    ///
+    /// 거짓일 때는 wire 에 안 나간다. 그래서 이 필드는 **추가**이고, 모르는 키를
+    /// 무시하는 구 client 와 이 키가 없는 구 서버 양쪽에서 종전 그대로 읽힌다.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub idempotent_replay: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// `skip_serializing_if` 전용 — 거짓이면 키 자체를 빼서 종전 바이트를 유지한다.
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
@@ -97,6 +156,7 @@ impl JsonRpcResponse {
             result: Some(result),
             error: None,
             id,
+            idempotent_replay: false,
         }
     }
 
@@ -110,6 +170,7 @@ impl JsonRpcResponse {
                 data: None,
             }),
             id,
+            idempotent_replay: false,
         }
     }
 
@@ -191,6 +252,21 @@ impl JsonRpcResponse {
                 data: Some(data),
             }),
             id,
+            idempotent_replay: false,
+        }
+    }
+
+    /// 보관돼 있던 답을 **이번 요청의 `id` 로** 다시 낸다.
+    ///
+    /// `id` 를 갈아 끼우는 것이 이 함수의 전부가 아니다 — 갈아 끼우지 **않으면** 답이
+    /// 앞선 요청의 `id` 를 달고 나가고, 그러면 한 연결에서 여러 요청을 띄워 둔 client 가
+    /// 이 답을 자기 어느 요청에도 못 붙인다(JSON-RPC 의 대응은 `id` 하나로만 선다).
+    /// 그래서 보존소는 응답을 통째로 들고 있되 `id` 만은 **답할 때** 정한다.
+    pub fn replayed_for(&self, id: serde_json::Value) -> Self {
+        Self {
+            id,
+            idempotent_replay: true,
+            ..self.clone()
         }
     }
 }
@@ -208,6 +284,7 @@ mod tests {
             id: Some(serde_json::json!(1)),
             session_token: None,
             response_timeout_ms: None,
+            idempotency_key: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let parsed: JsonRpcRequest = serde_json::from_str(&json).unwrap();
@@ -226,6 +303,7 @@ mod tests {
             id: Some(serde_json::json!(1)),
             session_token: None,
             response_timeout_ms: None,
+            idempotency_key: None,
         };
         let json_none = serde_json::to_string(&req_none).unwrap();
         assert!(!json_none.contains("session_token"));
@@ -239,6 +317,7 @@ mod tests {
             id: Some(serde_json::json!(1)),
             session_token: Some(token.clone()),
             response_timeout_ms: None,
+            idempotency_key: None,
         };
         let json_some = serde_json::to_string(&req_some).unwrap();
         assert!(json_some.contains("session_token"));

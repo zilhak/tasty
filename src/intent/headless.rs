@@ -297,6 +297,7 @@ mod tests {
     fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
         JsonRpcRequest {
             response_timeout_ms: None,
+            idempotency_key: None,
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
             params,
