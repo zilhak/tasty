@@ -18,9 +18,13 @@ struct ToastCardProps {
 /// 본체 `ToastManager::draw` 의 카드 1장 그리기와 동등한 시각.
 fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps, alpha: f32) {
     let bg = egui::Color32::from(theme.surface_raised()).gamma_multiply(alpha);
-    let border = egui::Color32::from(theme.border_default()).gamma_multiply(alpha);
+    // `component.toast-border` — 본체가 쓰는 토큰이다. 여기는 `border-default` 를 쓰고
+    // 있었고 그 둘은 값이 다르다(strong=surface1 / default=surface0).
+    let border = egui::Color32::from(theme.toast_border()).gamma_multiply(alpha);
     let accent = toast_card::accent_color(props.kind, theme).gamma_multiply(alpha);
-    let text_color = egui::Color32::from(theme.text_primary()).gamma_multiply(alpha);
+    // 본문 글자는 페이드하지 않는다 — 본체가 layout 색에 alpha 를 안 곱하므로 카드
+    // chrome 만 흐려지고 글자는 그대로다. 글자도 흐려야 하는지는 디자인이 정할 값이다.
+    let text_color = egui::Color32::from(theme.text_primary());
 
     let max_width = theme.toast_max_width.value();
     let font = egui::FontId::proportional(theme.font_size_body.value());
