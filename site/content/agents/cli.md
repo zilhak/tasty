@@ -283,7 +283,7 @@ tasty telemetry timeseries --metric tokens --window 1h
 에이전트가 가끔 쓰는 것들입니다. 전체 목록은 `tasty <명령> --help` 로 봅니다.
 
 ```sh
-tasty list pressure                    # 요청이 큐에서 얼마나 기다렸고 처리에 얼마나 걸렸나
+tasty list pressure                    # 요청에 답하는 동안 시간이 어디서 갔나
 tasty list theme                       # 지금 적용된 테마 스냅샷(색·글자 크기·UI 배율)
 tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
 tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경

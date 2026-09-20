@@ -30,13 +30,20 @@ pub enum ListCommands {
     Info,
     /// Show GPU resource counts (wgpu report + per-window renderer stats)
     GpuStats,
-    /// Show request pressure since this instance started: how long commands
-    /// waited in the queue before the gate, and how long handlers ran after it.
+    /// Show request pressure since this instance started: where the time went
+    /// while answering requests.
     ///
-    /// The two blocks have different populations on purpose. The queue block is
-    /// measured before the permission gate, so it also counts requests that were
-    /// later rejected; the handler block is measured after it, so it counts only
-    /// requests that ran. Do not subtract one from the other.
+    /// The answer is one block per population, and the populations differ on
+    /// purpose. `queue_before_gate` is measured before the permission gate, so
+    /// it also counts requests that were later rejected. `handler_after_gate`
+    /// is measured after it, so it counts only requests that ran.
+    /// `plugin_round_trip` is how long this instance waited for a plugin to
+    /// answer, counting only the requests that were answered at all. `db` is
+    /// how long writes took to settle on disk, counting only commits that
+    /// succeeded. Do not subtract one block from another: a request can pass
+    /// the gate and still be answered before the handler block sees it.
+    ///
+    /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications
     Notifications,

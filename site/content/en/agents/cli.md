@@ -1,4 +1,4 @@
-<!-- source-hash: 46e3a099ddd5 -->
+<!-- source-hash: 615c9ae75deb -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -272,7 +272,7 @@ tasty telemetry timeseries --metric tokens --window 1h
 Things an agent reaches for occasionally. `tasty <command> --help` lists them all.
 
 ```sh
-tasty list pressure                    # how long requests waited in the queue and how long handlers ran
+tasty list pressure                    # where the time went while answering requests
 tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
 tasty list recent --kind markdown      # files recently opened as that kind
 tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
