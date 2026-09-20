@@ -3,15 +3,15 @@
 - **Status**: Implemented
 - **주체**: AI Agent
 - **ADR**: 없음
-- **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러
+- **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서)
 - **화면**: 없음
 - **메서드/파서**: [reference/api](../../reference/api.md#surface-상호작용) · [reference/output-parsers](../../reference/output-parsers.md)
 
 ## 목적
 
-터미널 출력을 **의미 단위**로 분해해 에이전트가 다루기 쉬운 JSON 으로 제공한다. 모두 `terminal.read` 권한.
+터미널 출력을 **의미 단위**로 분해해 에이전트가 다루기 쉬운 JSON 으로 제공한다. 같은 `terminal.read` 권한 아래 **분해하지 않는** 진입점이 하나 더 있다 — 주기적으로 훑는 소비자를 위한 raw 커서다(아래 표의 넷째 행).
 
-## 내부 동작 — 세 진입점
+## 내부 동작 — 네 진입점
 
 | 진입점 | 패턴 | 용도 |
 |--------|------|------|
@@ -20,7 +20,7 @@
 | `output.observe_start` | 스트리밍 | PTY 라인마다 파서 → sink fan-out |
 | `surface.read_since_scan_mark` | 주기 폴링 | 전진하는 전용 커서로 **새로 온 것만** 읽는다 (파서를 안 거친 raw) |
 
-세 경로 모두 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유.
+**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 넷째는 그 모수 밖이다 — 파서를 거치지 않고 raw 텍스트를 주므로 분해는 부르는 쪽이 한다(아래 "마크는 둘이다").
 
 ### parse_since_mark
 
