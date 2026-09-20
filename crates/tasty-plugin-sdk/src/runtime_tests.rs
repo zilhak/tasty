@@ -458,3 +458,63 @@ fn popup_closed_dispatch_invokes_callback() {
         tasty_plugin_protocol::PopupCloseReason::OutsideClick
     );
 }
+
+/// host 가 포화로 버린 요청 수를 받아 두는 plugin.
+struct DropRecorder {
+    seen: Arc<Mutex<Vec<u64>>>,
+}
+
+impl Plugin for DropRecorder {
+    fn id(&self) -> &str {
+        "test.drops"
+    }
+    fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+        SurfaceResult::default()
+    }
+    fn on_host_dropped_requests(&mut self, dropped: u64) {
+        self.seen.lock().unwrap().push(dropped);
+    }
+}
+
+/// host 가 버린 수는 **dispatch 직전에 한 번만** plugin 에게 전달돼야 한다.
+///
+/// reader 스레드는 그 수를 `HostHandle` 에 쌓아 두기만 한다 — `&mut plugin` 을 쥔
+/// 스레드가 worker 하나뿐이라 꺼내는 자리도 거기다. 꺼낸 뒤 0 이 되지 않으면 같은
+/// 수가 요청마다 다시 보고되어, plugin 이 보는 값이 실제로 버려진 수가 아니게 된다.
+#[test]
+fn worker_loop_reports_host_drops_once_before_dispatch() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let plugin = DropRecorder { seen: seen.clone() };
+    let host = dummy_host();
+    host.record_dropped_by_host(3);
+
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accept = std::thread::spawn(move || listener.accept().map(|(s, _)| s));
+    let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    // 응답을 쓸 상대를 살려 둔다 — 끊긴 소켓이면 dispatch 의 write 가 먼저 죽는다.
+    let _peer = accept.join().unwrap().expect("accept");
+    let writer = Arc::new(Mutex::new(stream));
+
+    let (tx, rx) = mpsc::channel::<WorkerItem>();
+    for id in 1..=2 {
+        tx.send(WorkerItem::Host(PluginRequest::new(
+            "test.unknown",
+            json!({}),
+            id,
+        )))
+        .unwrap();
+    }
+    drop(tx);
+
+    let join = std::thread::spawn(move || {
+        worker_loop(plugin, rx, writer, host);
+    });
+    join.join().unwrap();
+
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![3],
+        "버린 수는 첫 dispatch 직전에 한 번만 보고돼야 한다"
+    );
+}
