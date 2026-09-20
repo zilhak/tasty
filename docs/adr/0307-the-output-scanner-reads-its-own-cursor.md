@@ -71,6 +71,24 @@
   [ADR-0266](0266-derived-stale-must-reach-the-push-channel.md) 결정 5 다. 사본으로 두는
   것을 그 주석이 명시하고 갈릴 때의 증상까지 적어 두었으므로 같은 형태를 따른다.
 
+### 결정 당시 안 적은 두 가지 (2026-09-20 리뷰에서 채움)
+
+- **`plugin_only` 로 등재하지 않은 것은 선택이 아니다.** 이 표에서 `plugin_only` 는 "부를 수
+  있는 주체" 표식이 아니라 **"외부 dispatch arm 이 없다 — plugin host-call 진입부가 직접
+  인터셉트한다"** 는 구조 주장이고, `src/source_guards/plugin_only_dispatch_parity.rs` 가 그
+  표식과 진입부(`src/app/dispatch/plugin_ipc.rs` · `src/boot/headless_plugins.rs`)의 인터셉트
+  집합을 **양방향으로** 대조한다. 이 메서드는 그 진입부가 아니라 일반 라우터 팔
+  (`src/adapters/ipc/handler.rs`)이 처리하므로, `plugin_only` 로 적으면 표가 거짓이 되고 그
+  가드가 그 자리에서 실패한다 — **변이로 확인했다**: 등재를 `plugin_only(&[TerminalRead])` 로
+  바꾸면 그 시험이 `표는 plugin_only 라는데 plugin 진입부에 인터셉트가 없다` 로 죽는다. 그래서 위 CLI 항목이 말하는 것은 "표식으로 막는다" 가 아니라
+  **"CLI 잎을 안 만든다"** 이고, 로컬 IPC 클라이언트는 여전히 이 이름을 부를 수 있다. 그것이
+  아래 "잃은 것" 의 "소비자가 둘이 되면" 과 같은 사실이고, 이 결정의 e2e 왕복 검증이 성립하는
+  이유이기도 하다.
+- **첫 호출은 여전히 그 시점까지 쌓인 것을 통째로 나른다.** `scan_mark` 의 초기값이 0 이라
+  아래 "얻은 것" 의 "폴링 1 회의 전송량" 은 **둘째 호출부터**의 값이다. surface 당 한 번이고
+  스캐너가 켜지는 자리가 launch/spawn/respawn 이라 그 시점 버퍼는 실사용에서 거의 비어
+  있지만, 이미 출력이 쌓인 surface 에 스캐너를 나중에 켜면 그 한 번은 상한까지 나를 수 있다.
+
 ## Consequences
 
 - **얻은 것**: 에이전트의 `set_mark` 이 스캐너의 관측 창을 못 민다 — 간섭 방향이 닫혔다.
