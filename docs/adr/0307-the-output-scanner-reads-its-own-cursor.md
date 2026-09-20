@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-20
-- **Tags**: terminal, output-buffer, ipc, plugin, claude, cursor, polling, adr-0085, adr-0266
+- **Tags**: terminal, output-buffer, ipc, plugin, claude, cursor, polling, adr-0085, adr-0266, adr-0306
 
 ## Context
 
@@ -89,6 +89,33 @@
   스캐너가 켜지는 자리가 launch/spawn/respawn 이라 그 시점 버퍼는 실사용에서 거의 비어
   있지만, 이미 출력이 쌓인 surface 에 스캐너를 나중에 켜면 그 한 번은 상한까지 나를 수 있다.
 
+### 재전달 분류: `Mutate` (2026-09-20, ADR-0306 이 표에 그 칸을 만든 뒤)
+
+[ADR-0306](0306-a-method-declares-what-a-second-delivery-leaves-behind.md) 이 `MethodMeta` 에
+`effect` 를 더해 모든 등재가 **"이 요청이 두 번 전달되면 관측 가능한 차이가 남는가"** 를
+선언하게 했다. 이 메서드의 값은 **`Mutate`** 다.
+
+**같은 자리의 `surface.read_since_mark` 는 `Read` 인데 왜 다른가.** 두 메서드는 같은 버퍼를
+같은 권한(`TerminalRead`)으로 읽고 이름도 둘 다 read 계열이다. 갈리는 것은 **커서를 움직이는가**
+하나다. `read_since_mark` 은 `&self` 로 읽어 아무 흔적도 안 남기므로 두 번째 전달이 같은
+구간을 그대로 다시 준다 — `Read`. 이 메서드는 읽은 구간을 **소비한다**: 응답을 못 받은 호출자가
+다시 보내면 그 사이 새로 온 두 번째 구간이 오고, **첫 응답이 나른 바이트는 어디에서도 다시
+안 나온다.** 되돌릴 수단이 없다(커서를 뒤로 미는 API 가 없고, 있어도 그것은 다른 결정이다).
+
+`Idempotent` 가 아닌 이유를 값으로 적는다. `Idempotent` 는 "두 번째 전달이 **같은 끝 상태로
+수렴**한다" 다. 버퍼에 새 출력이 없는 순간만 보면 커서 위치는 두 번 다 끝이라 수렴처럼 보인다 —
+그런데 그 관측은 **두 전달 사이에 상태가 안 바뀐 경우**만 본 것이고, ADR-0306 이 `set_mark` 에
+대해 적은 재는 법이 정확히 그것을 금지한다("두 전달 사이에 상태를 바꾸고 그래도 끝 상태가
+같은지 본다"). 출력이 한 바이트라도 도착하면 두 번째 전달은 그것을 먹고 사라지게 하므로 끝
+상태가 다르다. 그래서 `Mutate` 다.
+
+선례가 표 안에 이미 있다 — `message.read` 는 `peek` 기본값이 `false` 라 읽으면 소비하고
+`Mutate` 로 등재돼 있다. ADR-0306 의 Context 가 그것을 "이름으로 추론하면 틀리는 반례" 로
+들었고, 이 메서드는 같은 반례의 더 날카로운 형태다: **반례와 정례가 커서 하나만 다른 짝으로
+표에 나란히 있다.** 그 짝을
+`crates/tasty-ipc/src/method_meta_tests.rs` 의 `the_effect_axis_is_redelivery_not_the_verb` 에
+두 줄로 박았다 — 변이로 확인했다(값을 `Read` 로 바꾸면 그 시험이 죽는다).
+
 ## Consequences
 
 - **얻은 것**: 에이전트의 `set_mark` 이 스캐너의 관측 창을 못 민다 — 간섭 방향이 닫혔다.
@@ -155,5 +182,9 @@
   (`ErrorScanner::scan_one_at`)
 - 폴링 비용이 값으로 찍힌 자리: [ADR-0085](0085-ipc-log-retention-bounded.md)
 - 크레이트 경계를 사이에 둔 상수 사본의 선례와 그 값의 근거: `crates/tasty-plugin-claude/src/error_scan.rs` (`STALL_QUIET_NO_ERROR`) · [ADR-0266](0266-derived-stale-must-reach-the-push-channel.md) 결정 5
+- 재전달 분류의 축과 그 칸을 만든 결정: [ADR-0306](0306-a-method-declares-what-a-second-delivery-leaves-behind.md)
+- 이 메서드의 분류를 박은 시험: `crates/tasty-ipc/src/method_meta_tests.rs` 의
+  `the_effect_axis_is_redelivery_not_the_verb`(`surface.read_since_mark` 바로 아래 줄) ·
+  `the_output_scan_cursor_is_callable_with_the_permission_its_only_caller_holds`
 - 메서드 추가·명명 규칙: [api-conventions](../dev-guide/api-conventions.md)
 - 출력 읽기 기능 문서: [terminal-output](../features/terminal-output/index.md)
