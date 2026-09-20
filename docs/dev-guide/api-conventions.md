@@ -276,6 +276,26 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
 
 이 표는 출발선이다. 새 분류가 필요하면 PR 에 명시하고 표에 추가한다.
 
+### 호환 협상 — 무엇을 할 줄 아는지 묻는 자리
+
+버전 단계는 **무엇이 깨지는가**를 정하고, capability 는 **지금 이 서버가 무엇을 할 줄
+아는가**를 답한다. 둘은 다른 물음이다 — 패키지 버전은 기능 목록이 아니다(같은 버전의 두
+빌드가 feature 조합에 따라 다른 것을 한다).
+
+- 선언 자리는 `system.info` 응답의 `capabilities` 키이고, 모양은 `{name, version}` 배열이다.
+  목록은 `crates/tasty-ipc` 의 `capability::CAPABILITIES` 하나다.
+- **이름을 더하는 것은 추가**(위 표의 minor)다. 구 client 는 모르는 키·모르는 이름을 무시한다.
+- **착지한 것만 적는다.** 선언이 "곧 할 것" 을 담으면 그 목록으로 분기한 client 가 깨진다.
+- 판은 가능하면 **근거에서 유도한다** — `ipc.stream` 의 판은 리터럴이 아니라 서버가
+  handshake 에서 비교하는 `stream::STREAM_PROTO` 다.
+- 뜻이 바뀌면 배열에서 빼지 말고 그 이름의 `version` 을 올린다.
+
+메서드 **이름**이 구 서버에 있는지는 별도 물음이고 표가 답한다 —
+`method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /
+`AfterFrozenBaseline`)으로 답하고, 미등재 이름에는 `None` 을 준다. 그 값은 손으로 적지
+않는다(동결 파일이 유일한 모수다). 근거는
+[ADR-0312](../adr/0312-the-server-declares-what-it-can-negotiate-not-what-version-it-is.md).
+
 ### Deprecation 절차
 
 1. 옛 표면 유지 + 새 표면 추가.

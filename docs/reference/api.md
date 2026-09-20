@@ -101,6 +101,14 @@ selected engine's legacy fields. `scope="engine"`, `workspace_ids`,
 is process-wide. Existing resource target keys such as `workspace_id` select an
 engine without changing focus; omitted targets keep the existing routing fallback.
 
+`capabilities` lists what this server can negotiate, as `{name, version}` entries.
+It answers a different question than `version` does: the package version is not a
+feature list, because two builds of the same version differ by feature combination.
+A client that does not know the key ignores it. The list is attached to the
+`system.info` reply only — `window.list` does not repeat it, since capabilities
+describe the server rather than a window. Rationale:
+[ADR-0312](../adr/0312-the-server-declares-what-it-can-negotiate-not-what-version-it-is.md).
+
 `window.list` includes the same observation fields beside each live main window's
 `id`, `focused`, and `title`. Parked engines have no OS window ID and remain outside
 that list. `workspace.list` is the existing global workspace inventory, including

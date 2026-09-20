@@ -1,4 +1,4 @@
-<!-- source-hash: 7a277ca26c0e -->
+<!-- source-hash: 9812ca0835fa -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -284,6 +284,8 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 `file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error.
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
+
+`list info` also answers what this Tasty can do, under `capabilities`. Each entry pairs a name with a version, and it tells you what the version string alone cannot — the same version can do different things depending on how it was built. Ignore any name you do not recognise.
 
 ## Frequently used commands
 
