@@ -35,9 +35,12 @@ fn write_exec(path: &Path, body: &str) {
 
 /// 자매 게이트(`check-file-size.sh`) 스텁을 쓴다.
 ///
-/// 이 게이트는 자기 값을 두 개 **외우지 않고 저기서 읽는다** — 여유는 `THRESHOLD`,
-/// 좌변은 `SCAN_DIRS`. 그래서 스텁이 무엇을 담는지가 곧 시험이 재는 조건이다.
+/// 이 게이트는 자기 값을 세 개 **외우지 않고 저기서 읽는다** — 여유는 `THRESHOLD`,
+/// 좌변은 `SCAN_DIRS`, 판정기를 부르는 법은 `SHIPPING_JUDGE_FLAGS`. 그래서 스텁이
+/// 무엇을 담는지가 곧 시험이 재는 조건이다.
 /// `scan_dirs` 가 `None` 이면 그 줄을 아예 빼서 **읽기 실패 갈래**를 만든다.
+/// 판정 플래그 줄은 늘 담는다 — 그 줄이 없는 갈래는 이 시험의 대상이 아니고,
+/// 빼면 모든 판이 그 한 갈래로 빨려 들어가 나머지를 하나도 못 잰다.
 fn write_sibling(root: &Path, threshold: Option<i64>, scan_dirs: Option<&str>) {
     let mut body = String::from("#!/usr/bin/env bash\n");
     if let Some(t) = threshold {
@@ -46,6 +49,9 @@ fn write_sibling(root: &Path, threshold: Option<i64>, scan_dirs: Option<&str>) {
     if let Some(d) = scan_dirs {
         body.push_str(&format!("SCAN_DIRS=({d})\n"));
     }
+    body.push_str(
+        "SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes --blank-test-only-files)\n",
+    );
     fs::write(root.join("scripts/check-file-size.sh"), body).expect("자매 게이트 스텁");
 }
 
