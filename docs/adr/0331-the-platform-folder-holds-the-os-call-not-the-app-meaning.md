@@ -92,6 +92,12 @@
   — 이 결정 전 **10**, 지금 **0** 이다(원문을 그냥 훑으면 각각 11 과 1 이라 0 이 안 나온다).
 - `crates/tasty-platform/src/power_windows.rs` 가 `crate::` 를 다시 참조한다. 지금 0 이고, 0 이라는 것이
   이 결정이 도달한 지점이다.
+  **★ 이 바늘의 뜻이 [ADR-0343](0343-the-os-boundary-is-a-crate.md) 이후 좁아졌다.** 폴더가
+  크레이트가 되면서 `crate::` 는 이제 본체가 아니라 **그 크레이트 자신**을 가리킨다 —
+  형제 플랫폼 모듈을 `crate::app_icon` 으로 부르는 것은 이 결정이 **요구하는** 형태이고
+  위반이 아니다. 그래서 이 조건이 묻는 것은 이제 `crate::` 의 유무가 아니라 **크레이트가
+  본체 타입에 닿는가**이고, 그 좌변은 매니페스트다(ADR-0343 의 첫 트리거). 이 줄은 그
+  크레이트 안에서는 `crate::` 로 본체에 닿을 길이 없어졌다는 기록으로 남긴다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
@@ -109,6 +115,8 @@
 - `docs/dev-guide/build.md` — 워크스페이스 구조와 크레이트 분리 가이드
 - `docs/adr/0017-windows-suspend-resume-pty-recovery.md` — 이 결정이 형태를 바꾼 절전 후크
 - `docs/adr/0091-render-stall-watchdog-observation-only.md` — 같은 폴더의 다른 파일을 고정한 결정
+- [ADR-0343](0343-the-os-boundary-is-a-crate.md) — 이 ADR 의 Alternative A 를 실행해 폴더를
+  `tasty-platform` 크레이트로 뺀 후속 결정. 이 ADR 의 결정 자체는 그대로 유효하다.
 - 코드 근거(결정이 실현된 현재 위치): `crates/tasty-platform/src/power_windows.rs` 의 `OnResume` ·
   `crates/tasty-platform/src/macos_delegate.rs` 의 `DelegateActions` · `src/boot/os.rs` 의
   `install_macos_delegate` · `src/app/debug_info.rs`
