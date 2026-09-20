@@ -197,6 +197,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
         Cow::Borrowed(request)
     } else {
         Cow::Owned(JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: request.jsonrpc.clone(),
             method: canonical.to_string(),
             params: request.params.clone(),

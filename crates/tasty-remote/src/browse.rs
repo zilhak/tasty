@@ -153,6 +153,7 @@ pub fn probe_method(
     stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
 
     let request = JsonRpcRequest {
+        response_timeout_ms: None,
         jsonrpc: "2.0".to_string(),
         method: method.to_string(),
         params,

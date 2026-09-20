@@ -46,6 +46,7 @@ fn 응답_없는_eof_는_스핀하지_않고_에러로_끝난다() {
         let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
         let mut conn = IpcConnection::new(stream).expect("conn");
         let request = JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".to_string(),
             method: "system.info".to_string(),
             params: serde_json::Value::Null,

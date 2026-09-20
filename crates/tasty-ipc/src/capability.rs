@@ -47,6 +47,14 @@ pub const CAPABILITIES: &[Capability] = &[
         name: "ipc.method-since",
         version: 1,
     },
+    // 봉투가 응답 대기 상한을 실을 수 있다. 근거: `crate::protocol::JsonRpcRequest` 의
+    // `response_timeout_ms` 와 그것을 읽는 서버의 대기 자리. 이 이름이 없는 서버는 그
+    // 필드를 조용히 버리므로(봉투에 `deny_unknown_fields` 가 없다) client 는 **보내기
+    // 전에** 이 이름으로 물어야 상한이 실제로 걸리는지 안다.
+    Capability {
+        name: "ipc.response-timeout",
+        version: 1,
+    },
     // 스트리밍 채널의 프레임 프로토콜. 판을 **리터럴로 안 적는다** — 서버가 handshake 에서
     // 동등 비교하는 그 상수를 그대로 싣는다. 둘로 적으면 갈린다.
     Capability {

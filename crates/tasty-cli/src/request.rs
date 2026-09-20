@@ -363,6 +363,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     };
 
     JsonRpcRequest {
+        response_timeout_ms: None,
         jsonrpc: "2.0".to_string(),
         method: method.to_string(),
         params,

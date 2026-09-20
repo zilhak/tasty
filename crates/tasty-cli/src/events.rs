@@ -51,6 +51,7 @@ pub fn run_follow(
             params.insert("filter".into(), json!(f));
         }
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".to_string(),
             method: "events.fetch".to_string(),
             params: Value::Object(params),

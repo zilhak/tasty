@@ -70,6 +70,7 @@ pub fn run_audit_follow(
             params.insert("after_seq".into(), json!(s));
         }
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".to_string(),
             method: "plugin.audit_follow".to_string(),
             params: Value::Object(params),

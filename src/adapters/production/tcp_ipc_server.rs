@@ -851,6 +851,15 @@ impl TcpIpcServer {
 
     /// 요청을 메인 스레드로 보내고 응답을 기다려 클라이언트로 회신한다. 반환값은
     /// 연결 유지 여부.
+    ///
+    /// **기다리는 주체는 이 연결 스레드다.** 굳은 핸들러가 GUI 를 멈추지는 않지만
+    /// [`ConnectionSlot`] 하나를 그동안 쥔다. 응답 통로(`response_tx`)가 **버려지면**
+    /// 기다림은 즉시 끝나므로(`Err(Disconnected)`) 영구히 남는 경우는 하나뿐이다 —
+    /// 그 통로를 **든 채 끝나지 않는** 실행이다. 그것이 정당한 경우(`approval.await` 는
+    /// 사람의 결재를 기다린다)와 굳은 경우가 여기서는 구분되지 않는다.
+    ///
+    /// 그래서 상한을 **요청이 싣고 온다**([`JsonRpcRequest::response_timeout_ms`]).
+    /// 없거나 0 이면 상한이 없다 — 이 필드 이전의 동작 그대로다.
     fn dispatch_and_await(
         request: JsonRpcRequest,
         cmd_tx: &mpsc::Sender<IpcCommand>,
@@ -859,6 +868,14 @@ impl TcpIpcServer {
         peer: Option<std::net::SocketAddr>,
     ) -> bool {
         let (resp_tx, resp_rx) = mpsc::sync_channel(1);
+
+        // 만료 응답이 요청의 `id` 를 되돌려줘야 호출자가 어느 요청인지 안다. `request`
+        // 는 곧 명령으로 옮겨지므로 여기서 복사해 둔다.
+        let rpc_id = request.id.clone().unwrap_or(serde_json::Value::Null);
+        let wait_bound = request
+            .response_timeout_ms
+            .filter(|ms| *ms > 0)
+            .map(Duration::from_millis);
 
         let cmd = IpcCommand::new(request, resp_tx);
 
@@ -874,16 +891,60 @@ impl TcpIpcServer {
         }
 
         // Wait for response from main thread
-        match resp_rx.recv() {
+        let Some(bound) = wait_bound else {
+            return match resp_rx.recv() {
+                Ok(response) => Self::write_dispatch_response(writer, &response, peer),
+                Err(e) => {
+                    tracing::warn!(
+                        "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
+                        e
+                    );
+                    false
+                }
+            };
+        };
+        match resp_rx.recv_timeout(bound) {
             Ok(response) => Self::write_dispatch_response(writer, &response, peer),
-            Err(e) => {
-                tracing::warn!(
-                    "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
-                    e
-                );
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                Self::answer_wait_expired(writer, rpc_id, bound, peer)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                tracing::warn!("IPC resp_rx.recv failed (response_tx dropped without sending)");
                 false
             }
         }
+    }
+
+    /// 호출자가 실은 대기 상한이 만료됐다. **연결은 유지한다.**
+    ///
+    /// 이 답이 "실패" 가 아니라 **결과 불명**인 이유: 호스트는 응답 통로를 놓았을 뿐이고
+    /// 그 요청은 메인 스레드에서 계속 실행될 수 있다. 나중에 완료되면 `send_response` 가
+    /// 수신자 없음으로 조용히 실패한다 — 그래서 이 소켓에 뒤늦은 응답이 끼어들 일은
+    /// 없고, 연결을 닫을 이유도 없다.
+    ///
+    /// 호출자가 다음에 할 일이 그 구분에 달렸다. 부수효과가 남는 메서드를 그냥 재전송하면
+    /// **두 번째 효과**가 남으므로, 재전송 전에 상태를 먼저 읽어야 한다.
+    fn answer_wait_expired(
+        writer: &mut std::net::TcpStream,
+        rpc_id: serde_json::Value,
+        bound: Duration,
+        peer: Option<std::net::SocketAddr>,
+    ) -> bool {
+        tracing::warn!(
+            "IPC response wait of {:?} expired for {:?} — the request may still be running",
+            bound,
+            peer
+        );
+        let resp = JsonRpcResponse::error(
+            rpc_id,
+            crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN,
+            format!(
+                "the caller's response timeout of {} ms expired before the host answered; \
+                 whether the request ran is unknown — read the state before resending it",
+                bound.as_millis()
+            ),
+        );
+        Self::write_dispatch_response(writer, &resp, peer)
     }
 
     /// 메인 스레드가 만든 응답을 직렬화해 클라이언트로 회신. 반환값은 연결 유지 여부.
@@ -988,6 +1049,107 @@ mod admission_tests {
             "상한에서 개행으로 끝나는 줄은 초과가 아니다"
         );
         assert_eq!(line.len(), MAX_REQUEST_LINE_BYTES);
+    }
+
+    // 응답이 안 오면 **호출자가 실은 상한**에서 끝나고, 그 답은 실패가 아니라
+    // "결과 불명" 이다.
+    //
+    // 아무도 명령을 집지 않게 두는 것이 이 시험의 장치다 — `cmd_rx` 를 살려 두면
+    // 보낸 `IpcCommand` 가 큐에 그대로 남아 `response_tx` 가 **살아 있고**, 그래서
+    // 기다림이 `Disconnected` 로 일찍 끝나지 않는다. 그 갈래가 바로 이 상한이 없으면
+    // 영원히 안 끝나는 자리다.
+    #[test]
+    fn a_wait_past_the_callers_bound_answers_unknown_outcome() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let client = std::net::TcpStream::connect(addr).expect("connect");
+        let (mut server_side, _) = listener.accept().expect("accept");
+
+        let (cmd_tx, _cmd_rx) = mpsc::channel();
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "workspace.list".to_string(),
+            params: serde_json::Value::Null,
+            id: Some(serde_json::json!(7)),
+            session_token: None,
+            response_timeout_ms: Some(50),
+        };
+
+        // 기다림을 별도 스레드에 두고 **완료 자체에 상한을 건다.** 상한이 안 걸리는
+        // 회귀에서 이 시험이 멈춰 서면 안 된다 — 그때 CI 는 실패가 아니라 hang 을 본다.
+        let (done_tx, done_rx) = mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            let kept =
+                TcpIpcServer::dispatch_and_await(request, &cmd_tx, &None, &mut server_side, None);
+            // 받는 쪽이 이미 실패해 사라졌을 수 있다 — 그때는 시험이 다른 실패문으로
+            // 끝나므로 이 전송의 실패에 대해 할 일이 없다.
+            let _ = done_tx.send(kept);
+            // 소켓은 여기서 닫힌다 — client 의 읽기가 EOF 로 끝나게 한다.
+        });
+        let kept = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("호출자가 실은 상한이 안 걸렸다 — 기다림이 안 끝났다");
+        assert!(kept, "만료는 연결을 끊는 사건이 아니다");
+        waiter.join().expect("waiter");
+
+        let mut got = String::new();
+        BufReader::new(client)
+            .read_line(&mut got)
+            .expect("만료 응답을 읽어야 한다");
+        let resp: JsonRpcResponse =
+            serde_json::from_str(got.trim()).expect("JSON 한 줄이어야 한다");
+        assert_eq!(resp.id, serde_json::json!(7), "요청의 id 를 안 돌려줬다");
+        let err = resp.error.expect("에러 응답이어야 한다");
+        assert_eq!(
+            err.code,
+            crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN,
+            "만료가 '결과 불명' 코드로 안 왔다"
+        );
+        assert!(
+            err.message.contains("unknown"),
+            "문구가 결과 불명을 말하지 않는다: {}",
+            err.message
+        );
+    }
+
+    // 상한을 안 실으면 **기다린다.** 그것이 이 필드 이전의 동작이고, 기본값이 상한이
+    // 되면 사람의 결재를 기다리는 호출이 잘린다.
+    //
+    // "영원히" 는 시험으로 못 재므로 좌변을 좁힌다 — 짧은 시간 안에 **끝나지 않는 것**만
+    // 본다. 위 시험이 같은 장치에서 50 ms 만에 끝나므로, 그 차이가 상한의 유무를 가른다.
+    #[test]
+    fn a_request_without_a_bound_is_still_waited_on() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let _client = std::net::TcpStream::connect(addr).expect("connect");
+        let (mut server_side, _) = listener.accept().expect("accept");
+
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "workspace.list".to_string(),
+            params: serde_json::Value::Null,
+            id: Some(serde_json::json!(1)),
+            session_token: None,
+            response_timeout_ms: None,
+        };
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            let kept =
+                TcpIpcServer::dispatch_and_await(request, &cmd_tx, &None, &mut server_side, None);
+            // 받는 쪽이 이미 실패해 사라졌을 수 있다 — 그때는 시험이 다른 실패문으로
+            // 끝나므로 이 전송의 실패에 대해 할 일이 없다.
+            let _ = done_tx.send(kept);
+        });
+
+        if let Ok(kept) = done_rx.recv_timeout(Duration::from_millis(300)) {
+            panic!("상한을 안 실었는데 기다림이 끝났다 (반환값 {kept}) — 기본값이 상한이 됐다");
+        }
+
+        // 명령을 집어 응답 통로를 버리면 기다림이 풀린다. 스레드를 매달아 두지 않는다.
+        drop(cmd_rx);
+        waiter.join().expect("waiter");
     }
 
     // 상한을 넘긴 줄은 **EOF 가 아니라 JSON 한 줄**로 거절된다.

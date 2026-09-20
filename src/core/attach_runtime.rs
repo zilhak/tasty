@@ -3160,6 +3160,7 @@ mod forward_exec_tests {
 
     fn ipc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
         JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
             params,

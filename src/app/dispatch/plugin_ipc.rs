@@ -233,6 +233,7 @@ impl App {
     /// plugin 호출을 JSON-RPC 요청으로 옮긴다. pre-gate 와 기본 갈래가 공유한다.
     fn plugin_call_request(call: &PendingPluginCall) -> ipc::protocol::JsonRpcRequest {
         ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".to_string(),
             id: Some(serde_json::Value::from(call.call_id)),
             method: call.method.clone(),

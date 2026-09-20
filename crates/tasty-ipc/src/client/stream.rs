@@ -95,6 +95,7 @@ impl StreamConnection {
             params["bulk_workspace"] = serde_json::json!(w);
         }
         let req = JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".to_string(),
             method: stream::STREAM_OPEN_METHOD.to_string(),
             params,

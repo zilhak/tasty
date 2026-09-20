@@ -83,6 +83,7 @@ mod tests {
         let (resp_tx, _resp_rx) = mpsc::sync_channel(1);
         let cmd = IpcCommand::new(
             JsonRpcRequest {
+                response_timeout_ms: None,
                 jsonrpc: "2.0".to_string(),
                 method: "test.method".to_string(),
                 id: Some(Value::from(1u64)),

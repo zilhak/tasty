@@ -322,6 +322,7 @@ fn run_dynamic_client_with_auto_wait(
     // ── 3) wait params 구성 + 4) wait IPC chain. polling sense 그대로 재사용.
     let wait_params = build_wait_params(&aw, &first_value);
     let wait_req = tasty_ipc::protocol::JsonRpcRequest {
+        response_timeout_ms: None,
         jsonrpc: "2.0".into(),
         method: aw.method.clone(),
         params: serde_json::Value::Object(wait_params),

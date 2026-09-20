@@ -13,6 +13,16 @@ use serde::{Deserialize, Serialize};
 /// 요청으로 쪼개져 들어가 상한이 다시 없는 것이 된다. 상한 값은 응답 문구에 실린다.
 pub const ERR_REQUEST_LINE_TOO_LONG: i32 = -32060;
 
+/// 요청이 실은 응답 대기 상한이 만료됐다. **그 요청이 실행됐는지 안 됐는지는 이 답으로 알 수
+/// 없다** — 호스트는 응답 통로를 놓았을 뿐이고 요청 자체는 메인 스레드에서 계속 실행될 수
+/// 있다. 그래서 이 코드는 실패가 아니라 **결과 불명**을 뜻한다.
+///
+/// 이 구분이 코드 하나를 따로 쓸 만한 이유: 호출자가 다음에 할 일이 그 값에 달렸다.
+/// 부수효과가 남는 메서드(`MethodEffect::Mutate`)를 그냥 재전송하면 **두 번째 효과**가
+/// 남는다. 기존 코드 중에 이 사실을 뜻하는 것이 없었다 — `-32603`(내부 오류)도
+/// `-32000`(서버 사정)도 "안 됐다" 로 읽힌다.
+pub const ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN: i32 = -32061;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -27,6 +37,22 @@ pub struct JsonRpcRequest {
     /// Local 로 fallback 하지 않는다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_token: Option<String>,
+    /// 이 요청의 응답을 호출자가 기다릴 최대 시간(밀리초). 서버는 그 시간이 지나면
+    /// 응답 통로를 놓고 [`ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN`] 으로 답한다.
+    ///
+    /// **없으면 상한이 없다.** 그것이 이 필드 이전의 동작이고, 기본값이 상한이 되면
+    /// 사람의 결재를 기다리는 호출(`approval.await`)이 잘린다 — 사람에게는 상한을 둘 수
+    /// 없다. `Some(0)` 도 같은 뜻으로 읽는다(무한). 레포의 기존 관례가 그렇다:
+    /// `approval.await` 와 `agent.task_await` 의 `timeout_ms` 파라미터가 0 을 무한으로
+    /// 읽는다. **이 필드는 그 관례를 봉투 수준으로 올린 것**이고, 그래서 메서드마다
+    /// 다시 정하지 않아도 모든 메서드에 같은 뜻으로 붙는다.
+    ///
+    /// 구 서버는 이 키를 **조용히 무시한다** — 이 구조체에 `deny_unknown_fields` 가 없다.
+    /// 그래서 새 client 가 보내도 깨지지 않고, 대신 상한이 안 걸린다. 서버가 이것을
+    /// 읽는지 확인하려면 `system.info` 의 capability 목록에서 `ipc.request-deadline` 을
+    /// 본다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -164,6 +190,7 @@ mod tests {
             params: serde_json::json!({}),
             id: Some(serde_json::json!(1)),
             session_token: None,
+            response_timeout_ms: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let parsed: JsonRpcRequest = serde_json::from_str(&json).unwrap();
@@ -181,6 +208,7 @@ mod tests {
             params: serde_json::json!({}),
             id: Some(serde_json::json!(1)),
             session_token: None,
+            response_timeout_ms: None,
         };
         let json_none = serde_json::to_string(&req_none).unwrap();
         assert!(!json_none.contains("session_token"));
@@ -193,6 +221,7 @@ mod tests {
             params: serde_json::json!({}),
             id: Some(serde_json::json!(1)),
             session_token: Some(token.clone()),
+            response_timeout_ms: None,
         };
         let json_some = serde_json::to_string(&req_some).unwrap();
         assert!(json_some.contains("session_token"));
