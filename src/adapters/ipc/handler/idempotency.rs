@@ -684,6 +684,48 @@ mod tests {
         }
     }
 
+    /// 표지의 **부재**는 "계약 밖" 을 뜻하지 않는다 — 계약이 걸려서 **실행을 막은** 답
+    /// (`-32063`)도 에러로 만들어져 표지가 `false` 다. [`JsonRpcRequest::idempotency_key`]
+    /// 의 서술이 그 구별에 기대므로 값으로 고정한다.
+    ///
+    /// 통제군이 같은 시험 안에 있다: 같은 키·같은 요청의 재생은 표지가 `true` 다. 그래야
+    /// `false` 가 "계약이 안 걸렸다" 인지 "이 갈래의 성질" 인지 갈린다.
+    #[test]
+    fn a_blocked_retry_carries_no_replay_marker_though_the_contract_did_engage() {
+        fn req(name: &str) -> JsonRpcRequest {
+            JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                method: "workspace.create".into(),
+                params: json!({ "name": name }),
+                id: Some(json!(1)),
+                session_token: None,
+                response_timeout_ms: None,
+                // 보존소는 프로세스 전역이라 다른 시험과 안 겹치는 키를 쓴다.
+                idempotency_key: Some("a-blocked-retry-probe".into()),
+            }
+        }
+        let now = Instant::now();
+        let first = req("probe-a");
+        let pending =
+            begin(now, &CallerContext::Local, &first, &json!(1)).expect("처음 보는 키는 실행이다");
+        finish(now, pending, &resp(1, "ok"));
+
+        let replay =
+            begin(now, &CallerContext::Local, &first, &json!(2)).expect_err("재생은 답을 낸다");
+        assert!(replay.idempotent_replay, "재생에는 표지가 붙어야 한다");
+
+        let conflict = begin(now, &CallerContext::Local, &req("probe-b"), &json!(3))
+            .expect_err("같은 키·다른 요청은 거절이다");
+        assert_eq!(
+            conflict.error.as_ref().expect("에러").code,
+            ERR_IDEMPOTENCY_KEY_CONFLICT
+        );
+        assert!(
+            !conflict.idempotent_replay,
+            "이 시험이 고정하는 것은 이 부재다 — 여기에 표지가 붙으면 문서의 단서가 불필요해진다"
+        );
+    }
+
     /// 라우터가 실제로 보존소를 **지나는가.** 위 시험들은 보존소만 재고, 그 자리가
     /// 배선돼 있다는 것은 재지 않는다 — 진짜 handler 를 두 번 불러 **부수효과의 수**로
     /// 잰다.
