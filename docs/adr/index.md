@@ -293,3 +293,4 @@
 | 0324 | [링크는 검출과 여는 것을 부수효과로 가른다](0324-link-detection-and-link-opening-split-by-side-effect.md) | Accepted | 2026-09-20 | architecture, crates, layering, terminal-link, headless, feature-gate, side-effect, adr-0319 |
 | 0325 | [루트 패키지를 lib 와 bin 으로 가른다 — 경계를 만드는 것이 아니라 잴 좌변을 만드는 것이다](0325-the-root-package-splits-into-a-lib-and-a-bin.md) | Accepted | 2026-09-20 | architecture, cargo, targets, testing, public-api, headless |
 | 0326 | [egui 는 링크하는 크레이트가 켜는 것이지 기본값으로 따라오는 것이 아니다](0326-egui-is-opt-in-for-the-crates-that-link-it.md) | Accepted | 2026-09-20 | build, cargo, features, headless, type-appearance, dependency-graph |
+| 0330 | [완료 알림 한 줄은 한 번의 write 다](0330-one-completion-line-is-one-write.md) | Accepted | 2026-09-20 | notify, concurrency, plugin, logging |

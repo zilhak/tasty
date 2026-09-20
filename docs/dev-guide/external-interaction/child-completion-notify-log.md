@@ -68,10 +68,22 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   매달린 자식을 부모가 무한정 기다리지 않게 하는 push 경로다 — 판정 기준(무출력 지속 +
   호스트가 여전히 `active`)과 노이즈 상한은
   [plugins/claude](../../plugins/claude/index.md) 의 "정지 알림" 절.
-- **크기 관리**: append 전 파일이 256 KiB 이상이면 truncate 후 새로 쓴다(무한 성장 방어).
-  `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 truncate 후 라인을 계속
-  받는다. **truncate 는 파일 전체를 버린다** — 뒤처진 reader 의 미독분은 함께 사라지고,
+- **writer 는 여럿이다**: 한 caller surface 밑에 claude child 와 codex child 가 함께 뜨면
+  **서로 다른 두 프로세스**가 같은 파일에 append 한다. 그래서 append 헬퍼의 불변식은
+  **"한 줄은 통째로 남거나 통째로 없다"** 다 — 줄이 잘리거나 두 줄이 섞이는 상태는 없다.
+  그것을 두 가지로 지킨다: 쓰기 핸들은 **언제나 append** 이고(비우기를 섞지 않는다),
+  한 줄은 **한 번의 `write`** 로 나간다(`O_APPEND` 가 보장하는 것은 한 번의 write 가 끝에
+  통째로 붙는 것뿐이다). 근거·측정·재검토 조건은
+  [ADR-0330](../../adr/0330-one-completion-line-is-one-write.md).
+- **크기 관리**: append 전 파일이 256 KiB 이상이면 비우고 새로 쓴다(무한 성장 방어).
+  `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 비운 뒤의 라인을 계속
+  받는다. **비우기는 파일 전체를 버린다** — 뒤처진 reader 의 미독분은 함께 사라지고,
   사라졌다는 사실은 어디에도 남지 않는다.
+
+  비우기는 쓰기와 **분리된 단계**이고, 별도 핸들에서 크기를 다시 재고 그때도 cap 을 넘을
+  때만 실행한다. 그래도 남는 창이 있다 — 비우기 직전에 append 된 줄은 사라진다. **손실의
+  범위는 정의돼 있다**: 그 줄은 파일이 이미 cap 을 넘은 뒤에 쓰인 것이라 애초에 이 비우기가
+  버릴 구간이고, 사라지는 단위는 **줄**이다(줄 중간이 잘리지 않는다).
 - **호스트 부팅 시 전량 삭제**: 호스트는 자기 데이터 루트의 주인이 되는 순간 `notify/`
   디렉토리를 **통째로 지운다.** surface_id 는 재시작마다 새로 발급되므로 이전 프로세스가
   남긴 파일은 모두 죽은 surface 의 것이고 읽을 reader 가 없다. 그래서 **호스트를 재시작하면
@@ -112,7 +124,10 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
 ## 근거
 
 - **tasty 측(append)**: 소스 확인 — `crates/tasty-utils/src/notify.rs`,
-  `crates/tasty-plugin-{claude,codex}/src/handlers.rs`. 단위 테스트로 경로/포맷/truncate 검증.
+  `crates/tasty-plugin-{claude,codex}/src/handlers.rs`. 단위 테스트로 경로/포맷/비우기와
+  **동시 writer 가 줄을 쪼개지 않는지**(`concurrent_writers_never_leave_a_partial_line`)
+  검증. 그 시험은 스레드로 재므로 **비우기 갈래의 경합은 안 잰다** — 그 갈래를 재려면
+  프로세스를 둘 이상 띄워야 한다(재는 법은 ADR-0330 의 재검토 조건 절).
 - **Claude Code 측(Monitor 가 idle 세션을 깨움 / 채널이 idle 을 못 깨움)**: 상류
   `anthropics/claude-code` 이슈로 확인. background-task notification 이 idle 세션을 (오히려
   과하게) 깨운다: `#76331`. 반대로 MCP Channels(`notifications/claude/channel`) 는 idle
