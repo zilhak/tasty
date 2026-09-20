@@ -829,14 +829,17 @@ mod tests {
 
     #[test]
     fn selection_path_trims_repeatedly_across_multiple_slash_boundaries() {
-        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"));
-        // "src/adapters/ui" 까지는 실재, 그 뒤 세그먼트가 통째로 가짜.
-        let result = longest_existing_selection_path(
-            "src/adapters/ui/totally_bogus_file_xyz",
-            Some(cwd),
-            false,
-        );
-        assert_eq!(result, Some(cwd.join("src/adapters/ui")));
+        // 자매 시험과 같은 이유로 픽스처를 임시 디렉토리에 직접 만든다 — 한때 이 시험은
+        // `CARGO_MANIFEST_DIR` 아래의 실제 소스 배치를 실재 접두사로 썼고, 그래서 그
+        // 배치가 바뀌는 순간(파일이 다른 크레이트로 옮겨가는 것 포함) 트리밍 동작과
+        // 무관하게 깨졌다(`docs/dev-guide/unit-test-isolation.md`).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(tmp.path().join("a/b/c")).expect("fixture dirs");
+        let cwd = tmp.path();
+        // "a/b/c" 까지는 실재, 그 뒤 두 세그먼트가 가짜 — 경계를 **두 번** 거슬러야 한다.
+        // 옛 픽스처는 가짜 세그먼트가 하나여서 이름과 달리 한 번만 잘랐다.
+        let result = longest_existing_selection_path("a/b/c/bogus_one/bogus_two", Some(cwd), false);
+        assert_eq!(result, Some(cwd.join("a/b/c")));
     }
 
     #[test]
