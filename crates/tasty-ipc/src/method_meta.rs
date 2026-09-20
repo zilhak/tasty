@@ -16,6 +16,11 @@ use crate::ipc_namespace::IpcNamespaceRegistry;
 // `PREFIX_RULES` 한 줄을 100 칸 안에 두려고 이름을 짧게 든다. 그 정의는
 // `ipc_release_table_excludes_input_reproduction` 이 **줄 단위로** 읽으므로, 줄이
 // 접히면 규칙이 사라진 것과 구별이 안 돼 빨개진다.
+//
+// cfg 가 붙은 이유: 이 이름을 쓰는 자리가 debug 쪽 `PREFIX_RULES` 하나뿐이라,
+// release 에서는 아무 데도 안 쓰여 `unused_import` 가 뜬다. 그 조합을 보는 잡이
+// `check-release` 이고 debug 빌드에서는 조용하다.
+#[cfg(debug_assertions)]
 use self::MethodEffect::Idempotent;
 
 /// 이 메서드를 **두 번 전달하면 관측 가능한 차이가 남는가**.
