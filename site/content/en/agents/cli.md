@@ -1,4 +1,4 @@
-<!-- source-hash: 9812ca0835fa -->
+<!-- source-hash: cb1d8174cb10 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -272,6 +272,7 @@ tasty telemetry timeseries --metric tokens --window 1h
 Things an agent reaches for occasionally. `tasty <command> --help` lists them all.
 
 ```sh
+tasty list pressure                    # how long requests waited in the queue and how long handlers ran
 tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
 tasty list recent --kind markdown      # files recently opened as that kind
 tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
@@ -284,6 +285,8 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 `file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error.
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
+
+Use `list pressure` when responses feel slow and you need to tell why. The answer comes in two blocks that **count different things**: `queue_before_gate` is how long commands waited in the queue, so it also counts requests that were rejected afterwards, while `handler_after_gate` counts only the ones that actually ran. A large wait means the instance is backed up; a large handler time means the command itself is heavy. Do not subtract one from the other to get a rejection count — it does not work that way. The numbers are totals since this instance started, and an average with nothing behind it comes back as `null`.
 
 `list info` also answers what this Tasty can do, under `capabilities`. Each entry pairs a name with a version, and it tells you what the version string alone cannot — the same version can do different things depending on how it was built. Ignore any name you do not recognise.
 

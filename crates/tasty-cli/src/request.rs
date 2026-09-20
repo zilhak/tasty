@@ -476,6 +476,7 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
         ListCommands::Tabs { pane } => ("tab.list", serde_json::json!({ "pane_id": pane })),
         ListCommands::Info => ("system.info", serde_json::json!({})),
         ListCommands::GpuStats => ("system.gpu_stats", serde_json::json!({})),
+        ListCommands::Pressure => ("system.pressure", serde_json::json!({})),
         ListCommands::Notifications => ("notification.list", serde_json::json!({})),
         ListCommands::Timers => ("timer.list", serde_json::json!({})),
         // list 는 포커스 독립 — 무필터면 전 워크스페이스를 순회한다. 여기서

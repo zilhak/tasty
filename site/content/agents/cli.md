@@ -283,6 +283,7 @@ tasty telemetry timeseries --metric tokens --window 1h
 에이전트가 가끔 쓰는 것들입니다. 전체 목록은 `tasty <명령> --help` 로 봅니다.
 
 ```sh
+tasty list pressure                    # 요청이 큐에서 얼마나 기다렸고 처리에 얼마나 걸렸나
 tasty list theme                       # 지금 적용된 테마 스냅샷(색·글자 크기·UI 배율)
 tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
 tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경
@@ -295,6 +296,8 @@ tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 �
 `file-handler dispatch` 는 파일 경로만 받습니다. `https://…` 같은 웹 주소를 넘기면 오류를 반환합니다.
 
 `list info`의 워크스페이스 수와 활성 위치는 조회한 윈도우의 값이며, 함께 반환된 워크스페이스 ID로 소속을 확인할 수 있습니다. 전체 워크스페이스는 `list workspaces`, 각 윈도우의 상태는 `list windows`로 확인하세요.
+
+`list pressure`는 응답이 느릴 때 원인을 고르는 데 씁니다. 답이 두 덩어리로 나뉘어 있고 **세는 대상이 서로 다릅니다** — `queue_before_gate`는 명령이 큐에서 기다린 시간이라 나중에 거절될 요청까지 세고, `handler_after_gate`는 실제로 처리된 것만 셉니다. 기다린 시간이 크면 밀린 것이고, 처리 시간이 크면 명령 자체가 무거운 것입니다. 두 숫자를 빼서 "거절된 수"로 읽지 마세요 — 그렇게 안 됩니다. 값은 이 인스턴스가 켜진 뒤의 누계이고, 잰 적이 없는 평균은 `null`로 옵니다.
 
 `list info`는 이 Tasty가 무엇을 할 줄 아는지도 `capabilities`로 함께 답합니다. 이름과 버전이 짝으로 오며, 버전 문자열만으로는 알 수 없는 것을 여기서 확인합니다 — 같은 버전이라도 빌드 구성에 따라 할 수 있는 일이 다릅니다. 모르는 이름은 그냥 무시하면 됩니다.
 

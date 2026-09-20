@@ -30,6 +30,14 @@ pub enum ListCommands {
     Info,
     /// Show GPU resource counts (wgpu report + per-window renderer stats)
     GpuStats,
+    /// Show request pressure since this instance started: how long commands
+    /// waited in the queue before the gate, and how long handlers ran after it.
+    ///
+    /// The two blocks have different populations on purpose. The queue block is
+    /// measured before the permission gate, so it also counts requests that were
+    /// later rejected; the handler block is measured after it, so it counts only
+    /// requests that ran. Do not subtract one from the other.
+    Pressure,
     /// List notifications
     Notifications,
     /// List registered timers and what is currently waking this instance

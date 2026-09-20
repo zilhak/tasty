@@ -68,9 +68,34 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 결정론적 순수 집계(LLM 없음): tokens(ipc_calls 제외 metric sum) / ipc_calls(method 별 top-N) / approvals 분포 / anomalies. `workspace_id` 미지정 시 전 워크스페이스 합산(포커스 독립).
 
+### 요청 압력 게이지 (프로세스 축)
+
+위 `ipc_calls` 와 **다른 축**이다. caller 로 나누지 않고, 저장소를 거치지 않으며, 프로세스
+수명 동안 자라지 않는 고정 크기 원자값이다(근거·대안은
+[ADR-0305](../../adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md)).
+재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간의 count·sum·max 이고, 평균은 파생이라
+메서드로 낸다. 분위수는 답하지 못한다.
+
+`system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **게이트를 기준으로 두 덩어리**다.
+
+| 덩어리 | 재는 자리 | 모수 |
+|---|---|---|
+| `queue_before_gate` | 명령이 큐에서 나온 직후 (`App::process_ipc` · `pump_ipc`) | 큐에 앉았던 **전부** — 뒤에 거부될 요청도 센다 |
+| `handler_after_gate` | 게이트 통과 뒤 (`handle_checked_request`) | 실제로 **실행된 것만** |
+
+두 수의 차는 "거부된 수" 가 아니다 — 게이트를 통과하고도 `handle_checked_request` 를 안
+지나는 갈래가 있다(gui 의 app 층 메서드는 그 자리에서 답하고 돌아간다). 그래서 응답은
+두 모수를 나란히 두고 뺄셈을 하지 않는다.
+
+관측이 없는 평균은 `null` 이다 — 0 이면 "기다림이 없었다" 와 "잰 적이 없다" 가 같은 값이 된다.
+
+창이 없다는 한계는 그대로다: 프로세스 수명 누계라 "지금 밀리는 중" 과 "부팅 직후 한 번
+밀렸다" 가 같은 max 로 보인다.
+
 ## 인터페이스
 
 - **AI Agent / CLI**: `telemetry.record(_batch)`(`telemetry` 권한) · `summary/timeseries/top` · `cap.{set,list,remove,status,reset}` · `anomaly.list` · `session_summary`. [reference/api](../../reference/api.md#텔레메트리-telemetry).
+- **로컬 운영자 / CLI**: `system.pressure` (local-only) · `tasty list pressure` — 위 "요청 압력 게이지" 절.
 - **Claude Code 통합**: `tasty claude install` hook 이 `session-start`→`stop` 의 `wall_time_ms`, notification 의 `input_tokens`(`tokens: N` 패턴)를 `tasty.com.tasty.claude` agent 로 자동 적재. [claude plugin](../../plugins/claude/index.md).
 
 ## 관련

@@ -49,7 +49,7 @@ const EXPECTED: &[(&str, usize)] = &[
     // "안정성 정책" 의 보안 예외).
     // + `surface.read_since_scan_mark` — 출력 스캐너 전용 커서 (ADR-0307).
     ("surface", 33),
-    ("system", 2),
+    ("system", 3), // + system.pressure
     ("tab", 4),
     ("telemetry", 12),
     ("terminal", 11),

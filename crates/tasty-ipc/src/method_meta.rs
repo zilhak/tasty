@@ -123,6 +123,14 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // GPU 리소스 카운트 read-only 스냅샷 (메모리 누수 soak 검증). 순수 조회지만
         // 내부 렌더러 구조를 노출하는 진단 표면이라 local_only — plugin 미노출.
         ("system.gpu_stats", local_only(Read)),
+        // 프로세스 압력 게이지(큐 대기·깊이·handler 실행 시간)의 누계 조회.
+        //
+        // `local_only` 인 이유는 `system.gpu_stats` 와 같다 — 순수 조회지만 **호스트
+        // 내부의 스케줄링 상태**를 노출하는 진단 표면이다. 그리고 여기 값은
+        // ADR-0305 대로 caller 로 나누지 않는 프로세스 게이지라, plugin 에게 주면
+        // 자기 몫이 아닌 다른 caller 의 부하까지 읽는 것이 된다. plugin 이 자기
+        // 사용량을 보는 축은 `telemetry.*`(caller 별)이고 그쪽은 그대로 열려 있다.
+        ("system.pressure", local_only(Read)),
         // ── plugin 보조 채널 ──────────────────────────────────────────
         // egui-mesh 프레임용 공유 메모리 생성. main 채널 + 보조 채널(fd/HANDLE 송신)을
         // 함께 다뤄야 해서 라우터가 아니라 plugin 진입부가 가로채 처리하지만, **등재는
