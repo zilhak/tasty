@@ -27,6 +27,13 @@ use crate::terminal_link::LinkHighlight;                       // = adapters::ui
 어댑터를 보는 것으로 읽힌다** — 그리고 그 두 재수출 중 하나가 사라지면 렌더러가 깨진다.
 의존 방향을 재는 사람도 도구도 표기를 본다.
 
+링크 쪽은 표기만의 문제도 아니었다. `crate::terminal_link` 는 `src/lib.rs` 에서
+`#[cfg(feature = "gui")]` 뒤에 있다(실체인 `adapters::ui` 가 그 게이트다 — 링크를 **여는**
+쪽이 `webbrowser` 를 들기 때문이고, [ADR-0324](0324-link-detection-and-link-opening-split-by-side-effect.md)
+가 그래서 검출과 열기를 갈랐다). 즉 렌더러는 **게이트 없는 타입을 게이트 뒤의 이름으로**
+부르고 있었다. 렌더러 자신이 `gui` 뒤라 컴파일은 통과했지만, 그 이름으로는 헤드리스
+소비자가 같은 타입을 부를 수 없다.
+
 같은 형태가 폭 표(`tasty-cell-width`)·글리프 아틀라스(`tasty-font`)·사각형
 (`tasty-model`)에도 있었다. 셋 다 본체 모듈 파일 한 줄짜리 재수출을 거치고 있었다.
 
