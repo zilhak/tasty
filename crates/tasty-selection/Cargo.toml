@@ -1,0 +1,15 @@
+[package]
+name = "tasty-selection"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Terminal text selection for Tasty — grid points, selection modes, pixel-to-grid mapping, hit testing, and selected-text extraction. Domain-only: no host, GUI, or IPC coupling."
+
+[dependencies]
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+tasty-terminal = { path = "../tasty-terminal" }
+tasty-cell-width = { path = "../tasty-cell-width" }
+termwiz = "0.22"
+
+[lints]
+workspace = true

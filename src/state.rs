@@ -35,7 +35,9 @@ mod workspace;
 pub mod command_palette;
 pub mod preset_apply;
 pub mod search;
-pub mod selection;
+/// 텍스트 선택 — 실체는 `tasty-selection` 크레이트에 있다(렌더러가 앱 상태 모듈을
+/// 거꾸로 보지 않도록 타입 소속만 내렸다). 기존 `state::selection::…` 호출부는 그대로다.
+pub use tasty_selection as selection;
 
 pub use events::{FocusedSurfaceType, PendingHostEvent, PendingSurfaceClosed, SurfaceMessage};
 pub use workspace::WorkspaceCloseOrigin;

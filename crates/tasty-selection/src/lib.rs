@@ -1,4 +1,10 @@
-use crate::model::PhysicalRect;
+//! 터미널 텍스트 선택 — 격자 좌표 · 선택 모드 · 픽셀→격자 사상 · 적중 판정 ·
+//! 선택 텍스트 추출.
+//!
+//! 렌더러와 view 가 같은 타입을 쓴다. 그 타입이 앱 상태 모듈에 살면 렌더러가 상태를
+//! 거꾸로 보게 되므로 소속만 여기로 내렸다 — 호스트·GUI·IPC 결합은 0 이다.
+
+use tasty_type_geometry::rect::PhysicalRect;
 
 /// A point in the terminal grid using absolute row coordinates.
 /// absolute_row 0 = oldest scrollback line, scrollback_len = first screen row.
@@ -161,10 +167,7 @@ pub fn extract_selected_text(
                     let mut col_idx: usize = 0;
                     for (cell_text, _) in &cells {
                         let ch = cell_text.chars().next().unwrap_or(' ');
-                        #[cfg(feature = "gui")]
                         let width = tasty_cell_width::unicode_width(ch);
-                        #[cfg(not(feature = "gui"))]
-                        let width = if ch.is_ascii() { 1 } else { 2 };
                         if col_idx >= c0 && col_idx <= c1 {
                             row_text.push_str(cell_text);
                         }
@@ -263,10 +266,7 @@ fn extract_scrollback_line(
     let mut col_idx: usize = 0;
     for (cell_text, _attrs) in &line {
         let ch = cell_text.chars().next().unwrap_or(' ');
-        #[cfg(feature = "gui")]
         let width = tasty_cell_width::unicode_width(ch);
-        #[cfg(not(feature = "gui"))]
-        let width = if ch.is_ascii() { 1 } else { 2 }; // headless fallback (no cosmic-text).
         let selected = match sel.mode {
             SelectionMode::Line => true,
             _ => is_col_in_range(col_idx, abs_row, sel),

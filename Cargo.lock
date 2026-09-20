@@ -5713,6 +5713,7 @@ dependencies = [
  "tasty-reaper",
  "tasty-remote",
  "tasty-remote-profiles",
+ "tasty-selection",
  "tasty-settings",
  "tasty-shm",
  "tasty-ssh",
@@ -6349,6 +6350,16 @@ dependencies = [
  "tempfile",
  "toml 0.8.2",
  "tracing",
+]
+
+[[package]]
+name = "tasty-selection"
+version = "0.1.0"
+dependencies = [
+ "tasty-cell-width",
+ "tasty-terminal",
+ "tasty-type-geometry",
+ "termwiz",
 ]
 
 [[package]]
