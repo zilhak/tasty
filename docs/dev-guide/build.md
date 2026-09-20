@@ -74,6 +74,11 @@ cargo tree --no-default-features --edges normal -i egui
 cargo tree --no-default-features --edges normal -i wgpu
 ```
 
+**②의 신호는 출력이 아니라 종료 코드다.** 그 이름이 그래프에 없으면 빈 출력이 아니라
+`error: package ID specification ... did not match any packages` 로 **죽는다**(rc≠0).
+그래서 "안 들어왔다" 와 "명령이 고장났다" 가 같은 모양으로 보인다 — 스크립트에 넣을 때
+그 둘을 갈라라.
+
 **이 사실을 보는 시험은 하나도 없다 — 채널이 없다.** 누가 `optional = true` 를 되돌리거나
 `default-features` 를 다시 켜면 아무 신호도 안 난다. 위 두 줄이 그것을 재는 유일한 방법이다.
 

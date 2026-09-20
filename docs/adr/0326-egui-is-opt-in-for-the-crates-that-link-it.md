@@ -87,8 +87,11 @@
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
 - 헤드리스 그래프에 egui 가 **다시 들어온다.** 재는 법:
-  `cargo tree --no-default-features --edges normal -i egui` — 비어 있으면 안 들어온 것이고,
-  나오면 그 역경로가 누가 끌고 오는지를 그대로 찍는다. 크기는
+  `cargo tree --no-default-features --edges normal -i egui` — **안 들어왔으면 빈 출력이
+  아니라 `did not match any packages` 로 죽는다**(실측 2026-09-20, rc=101). 즉 신호는
+  출력이 아니라 종료 코드다: rc≠0 이면 그래프에 그 이름이 없는 것이고, rc=0 이면 그
+  역경로가 누가 끌고 오는지를 그대로 찍는다. 스크립트에 넣을 때 그 둘을 "명령이
+  고장났다" 와 섞지 마라. 크기는
   `cargo tree --no-default-features --edges normal --prefix none | awk '{print $1}' | sort -u | wc -l`.
   이 두 줄을 [`../dev-guide/build.md`](../dev-guide/build.md) 의 headless 절에 값 자리로
   남겼다.
