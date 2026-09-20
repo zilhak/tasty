@@ -396,7 +396,7 @@ fn handle_terminal_output(
         if let crate::core::intent::CoreEvent::TerminalProcessExited { surface_id } = event {
             crate::app::process_exit::handle(&mut app.core, state, engine, surface_id);
         } else {
-            fire_output_match_hooks(app, engine, vec![event]);
+            fire_terminal_hooks(app, state, engine, vec![event]);
         }
     }
     crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
