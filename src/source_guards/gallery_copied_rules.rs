@@ -16,14 +16,18 @@
 //!
 //! # 왜 중복 제거가 처방이 아닌가
 //!
-//! 갤러리는 정본 `ToastKind` 를 import 할 수 없다 — 그 크레이트가 termwiz/터미널 모델을
-//! 끌고 오고, 그 사실을 `toast_card.rs` 가 자기 doc 에 적어 둔다. 그래서 매핑이 두 벌인 것은
-//! 게으름이 아니라 **구조적**이고, 없앨 수 없다. 없앨 수 없는 사본에 필요한 것은 통일이
-//! 아니라 **갈라졌을 때 조용하지 않은 것**이다.
+//! 갤러리가 정본 `ToastKind` 를 import 하지 않는다 — `toast_card.rs` 가 그 이유로 "정본
+//! 크레이트가 termwiz/터미널 모델을 끌고 온다" 를 적어 둔다. 그 서술이 가리키는 크레이트는
+//! `tasty-model` 이고, 거기서는 지금 재수출 한 줄만 한다. 그래서 이 사본이 정말 구조적인지는
+//! **다시 재야 하는 값**이다 — 아래 실패문이 적은 대로, 갤러리가 정본을 직접 부르게 되어
+//! 매핑이 한 벌이 되면 이 명부에서 빼는 것이 이행이다. 그전까지는 사본이 갈라졌을 때
+//! 조용하지 않게 하는 것이 여기 할 일이다.
 //!
 //! # 무엇을 비교하는가 — 받는 쪽 이름은 안 본다
 //!
-//! 본체는 `th.accent_primary()`, 갤러리는 `theme.accent_primary()` 다. 수신자 이름은 그 자리의
+//! 본체 쪽 정본은 `crates/tasty-ui-widgets/src/toast.rs` 의 `accent_color` 다 — 본체와
+//! 갤러리가 함께 쓰는 위젯 크레이트로 옮겨 갔다. 거기서는 `th.accent_primary()`, 갤러리는
+//! `theme.accent_primary()` 다. 수신자 이름은 그 자리의
 //! 지역 변수명이라 **갈라져도 결함이 아니다.** 비교하는 것은 (갈래, 부르는 이름) 짝이다.
 //!
 //! # 이 가드가 못 보는 것
@@ -40,7 +44,7 @@ use tasty_doc_guards::source_text::mask_non_code;
 /// (무엇인가, 본체 파일, 본체 함수, 갤러리 파일, 갤러리 함수).
 const COPIED_RULES: &[(&str, &str, &str, &str, &str)] = &[(
     "토스트 kind → accent 색",
-    "src/adapters/ui/toast.rs",
+    "crates/tasty-ui-widgets/src/toast.rs",
     "accent_color",
     "crates/tasty-gallery/src/catalog/toast_card.rs",
     "accent_color",

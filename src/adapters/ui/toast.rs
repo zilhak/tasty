@@ -9,15 +9,17 @@
 //!
 //! ## Split: wrapper / view
 //!
-//! [`ToastManager`] 가 *상태 관리* (push / coalesce / 만료 정리 / fade alpha 계산 /
-//! scope rect lookup) 를 담당하고, 순수 시각 [`draw_toast_view`] 가 미리 계산된
-//! [`ToastEntryView`] (alpha 포함) 와 scope rect 만 받아 그린다. AppState/CoreState
-//! 의존 없는 시각이라 gallery (`tasty-gallery`) 에서 mock props 로 검증 가능.
+//! [`ToastManager`] 가 *상태 관리* (push / coalesce / 만료 정리 / scope rect lookup /
+//! 캡 집행) 를 담당하고, **그리기 본문은 이 파일에 없다** — `tasty_ui_widgets::toast`
+//! 가 소유하고 갤러리 specimen 이 같은 함수를 부른다. 여기 남은 [`draw_toast_view`] 는
+//! 토스트가 떠야 할 레이어(`Order::Tooltip`)를 고르는 **얇은 래퍼**다.
+//!
+//! 형상을 두 벌 두지 않는 이유: 값이 같아 보여도 정의가 둘이면 갈리고, 갈린 뒤엔 어느
+//! 쪽이 정본인지 알 수 없다. 예전에는 갤러리가 이 파일의 그리기를 손으로 되풀이했다.
 
 use std::time::{Duration, Instant};
 
 use crate::theme;
-use crate::theme::Theme;
 
 use super::layout_context::LayoutContext;
 
@@ -38,9 +40,6 @@ const DEFAULT_LIFETIME: Duration = Duration::from_millis(2000);
 /// 같은 스코프·같은 메시지가 이 시간 내에 다시 발사되면 새 토스트를 만들지 않고
 /// 기존 토스트의 수명만 갱신한다.
 const COALESCE_WINDOW: Duration = Duration::from_millis(500);
-/// 등장/소멸 페이드 시간.
-const FADE_IN_MS: f32 = 80.0;
-const FADE_OUT_MS: f32 = 160.0;
 /// 스코프당 최대 동시 표시 개수.
 const MAX_PER_SCOPE: usize = 5;
 /// 토스트 본문 최대 문자 수(유니코드 char 기준, 바이트 아님). 초과 시 앞
@@ -51,156 +50,27 @@ const MAX_PER_SCOPE: usize = 5;
 /// (`tasty-i18n` 의 `fit_fragment`/`t_fmt_fit`)과 캡을 **집행하는** 여기가 서로 다른
 /// 상수를 들면, 한쪽만 바뀐 순간 "맞췄는데 잘리는" 상태가 조용히 생긴다.
 const MAX_MESSAGE_CHARS: usize = crate::i18n::TOAST_MAX_CHARS;
-// 카드 구조 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리 specimen 이
-// 같은 상수를 읽는다. 여기서 다시 정의하면 값이 갈릴 수 있는 구조가 되살아난다.
-use tasty_ui_widgets::tokens::{
-    TOAST_ACCENT_BAR_WIDTH as ACCENT_BAR_WIDTH, TOAST_GAP,
-    TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
-    TOAST_PADDING_X as PADDING_X, TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
-};
+// 시각(카드 chrome · 스택 배치 · 페이드 곡선)은 위젯 크레이트가 소유한다. 여기서
+// 다시 정의하면 갤러리와 갈릴 수 있는 구조가 되살아난다.
+use tasty_ui_widgets::{TOAST_FADE_OUT_MS as FADE_OUT_MS, toast_fade_alpha};
+pub use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastViewProps};
 
-/// View 입력 — 그릴 준비가 끝난 토스트 1 개의 시각 데이터.
+/// 토스트 스택을 화면 최상단 레이어에 그린다.
 ///
-/// `alpha` 는 매니저가 lifetime/fade 로부터 미리 계산. view 는 시간 의존이 없다.
-#[derive(Clone, Debug)]
-pub struct ToastEntryView {
-    pub kind: ToastKind,
-    pub message: String,
-    /// [0.0, 1.0] — 0 이면 view 가 스킵.
-    pub alpha: f32,
-}
-
-/// View 입력 — 한 scope 의 토스트 그룹.
+/// 그리기 본문은 `tasty_ui_widgets::draw_toast_scopes` 에 있고 이 함수가 고르는
+/// 것은 **어디에 그리는가** 하나다 — 토스트는 다른 UI 위에 떠야 하므로
+/// `LayerId(Order::Tooltip, …)` 의 layer painter 를 넘긴다. 갤러리 specimen 은 같은
+/// 함수에 무대 frame 의 painter 를 넘겨 같은 픽셀을 그린다.
 ///
-/// `entries` 는 *발사 순서* (id 오름차순) 로 정렬돼 있어야 한다 — view 는 그대로
-/// 우측 하단부터 위로 쌓는다.
-#[derive(Clone, Debug)]
-pub struct ToastScopeView {
-    pub scope_rect: egui::Rect,
-    pub entries: Vec<ToastEntryView>,
-}
-
-/// View 입력 — 전체 scope 의 그룹 리스트 + theme.
-pub struct ToastViewProps<'a> {
-    pub theme: &'a Theme,
-    pub scopes: &'a [ToastScopeView],
-}
-
-/// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
-///
-/// `ctx` 를 받는 이유는 토스트가 다른 UI 위에 떠야 하므로
-/// `LayerId(Order::Tooltip, ...)` 의 layer painter 를 사용하기 때문.
 /// 반환값 없음 — 토스트는 사용자 입력을 받지 않으며 (auto-dismiss) action 도 없다.
 pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
     if props.scopes.is_empty() {
         return;
     }
 
-    let th = props.theme;
     let layer_id = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("toast_layer"));
     let painter = ctx.layer_painter(layer_id);
-
-    for scope in props.scopes {
-        let scope_rect = scope.scope_rect;
-        // 스코프 경계로 클립 — 폭/세로 클램프 후에도 1px 단위로 새는 것을 막는
-        // 안전망. 토스트는 자기 스코프 영역 안에 머물러야 한다(이웃 pane/탭바를
-        // 덮지 않음).
-        let painter = painter.with_clip_rect(scope_rect);
-        let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
-
-        // 새것부터 그리며 위로 올라간다 (id 오름차순으로 받았으므로 reverse).
-        for entry in scope.entries.iter().rev() {
-            let alpha = entry.alpha;
-            if alpha <= 0.0 {
-                continue;
-            }
-
-            let body_text = entry.message.as_str();
-            // 좁은 surface 에서 토스트가 좌측 경계를 넘지 않도록 max_width 를 surface
-            // 안쪽 폭(width - 2*margin)으로 클램프한다. 정상 폭 surface 에서는
-            // 0.8*width < width-2*margin (width>120) 이라 0.8 폭이 그대로 — 시각
-            // 무변경이고, 좁은 surface 에서만 클램프가 발동한다.
-            let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8)
-                .max(TOAST_MIN_MAX_WIDTH)
-                .min(inner_limit);
-            let font = egui::FontId::proportional(th.font_size_body.value());
-            // wrap_width 음수 방지(클램프로 max_width 가 작아질 때).
-            let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
-
-            let galley = ctx.fonts(|f| {
-                f.layout(
-                    body_text.to_string(),
-                    font.clone(),
-                    th.text_primary().into(),
-                    wrap_width,
-                )
-            });
-
-            let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
-            let toast_h = galley.size().y + PADDING_Y * 2.0;
-
-            let max_x = scope_rect.max.x - SCOPE_MARGIN;
-            let bottom_y = cursor_y;
-            let top_y = bottom_y - toast_h;
-            // 스택이 scope 상단을 넘으면 더 오래된(위쪽) 토스트는 그리지 않는다.
-            // 새것부터 그리므로(reverse) break 가 곧 "넘치는 옛것 생략". 단일
-            // 토스트가 scope 보다 높은 극단은 위의 clip 이 처리한다.
-            if top_y < scope_rect.min.y {
-                break;
-            }
-            let left_x = max_x - toast_w;
-
-            let rect =
-                egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
-
-            let bg = th.surface_raised().gamma_multiply(alpha);
-            // toast 보더 — canonical `toast-border`.
-            let border = th.toast_border().gamma_multiply(alpha);
-            let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
-
-            painter.rect_filled(rect, th.corner_radius.value(), bg);
-            painter.rect_stroke(
-                rect,
-                th.corner_radius.value(),
-                egui::Stroke::new(th.border_width.value(), border),
-                egui::StrokeKind::Inside,
-            );
-
-            let bar_rect = egui::Rect::from_min_max(
-                rect.min,
-                egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
-            );
-            let bar_radius = egui::CornerRadius {
-                nw: th.corner_radius.value() as u8,
-                sw: th.corner_radius.value() as u8,
-                ne: 0,
-                se: 0,
-            };
-            painter.rect_filled(bar_rect, bar_radius, accent);
-
-            let text_pos = egui::pos2(
-                rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
-                rect.min.y + PADDING_Y,
-            );
-            painter.galley(
-                text_pos,
-                galley,
-                th.text_primary().gamma_multiply(alpha).into(),
-            );
-
-            cursor_y = top_y - TOAST_GAP;
-        }
-    }
-}
-
-fn accent_color(kind: ToastKind, th: &Theme) -> egui::Color32 {
-    match kind {
-        ToastKind::Info => th.accent_primary().into(),
-        ToastKind::Success => th.accent_success().into(),
-        ToastKind::Warning => th.accent_warning().into(),
-        ToastKind::Error => th.accent_danger().into(),
-    }
+    tasty_ui_widgets::draw_toast_scopes(&painter, props);
 }
 
 pub struct ToastManager {
@@ -373,22 +243,12 @@ impl ToastManager {
 }
 
 /// 페이드 인/아웃 알파 계산. pub — 테스트 + wrapper 가 view 입력 변환 시 호출.
+///
+/// 곡선 자체는 `tasty_ui_widgets::toast::fade_alpha` 가 소유한다(갤러리가 같은 곡선을
+/// 쓴다). 여기는 `ToastState` 에서 그 함수가 읽는 두 값을 꺼내는 어댑터다 —
+/// `ToastState` 가 `ToastScope`(도메인 모델)를 품어 위젯 크레이트로 못 넘어간다.
 pub fn compute_alpha(t: &ToastState, now: Instant, reduced_motion: bool) -> f32 {
-    let age_ms = now.duration_since(t.spawned_at).as_secs_f32() * 1000.0;
-    let life_ms = t.lifetime.as_secs_f32() * 1000.0;
-
-    if reduced_motion {
-        return if age_ms < life_ms { 1.0 } else { 0.0 };
-    }
-
-    if age_ms < FADE_IN_MS {
-        (age_ms / FADE_IN_MS).clamp(0.0, 1.0)
-    } else if age_ms < life_ms {
-        1.0
-    } else {
-        let fade_out = (age_ms - life_ms) / FADE_OUT_MS;
-        (1.0 - fade_out).clamp(0.0, 1.0)
-    }
+    toast_fade_alpha(now.duration_since(t.spawned_at), t.lifetime, reduced_motion)
 }
 
 /// 본문이 `MAX_MESSAGE_CHARS`(유니코드 char) 를 초과하면 앞부분만 남기고 줄바꿈
@@ -420,6 +280,7 @@ impl Default for ToastManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::Theme;
 
     fn test_theme() -> Theme {
         tasty_themes::mocha_fallback()
