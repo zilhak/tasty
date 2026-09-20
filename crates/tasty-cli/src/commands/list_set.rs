@@ -49,15 +49,17 @@ pub enum ListCommands {
     /// down, `limit` is the ceiling the server enforces and travels with the
     /// values so the two can be read together, and `refused_saturated` counts
     /// connections turned away at that ceiling — before they became requests,
-    /// so they appear in none of the four time blocks.
+    /// so they appear in none of the four blocks above.
     ///
-    /// The three time blocks each carry a `*_hist` with the distribution of
+    /// Three of those four — `queue_before_gate`, `handler_after_gate` and
+    /// `plugin_round_trip` — also carry a `*_hist` with the distribution of
     /// the same observations, because an average and a maximum cannot tell
     /// "everything is slightly slow" from "most are fast and a few are not".
     /// `bounds_us` and `counts` travel together; `counts` is one entry longer
     /// and is not cumulative, so the entries sum to the observation count and
     /// the last one means only that the top bound was passed. Quantiles are
-    /// not computed here. `db` and `connections` have no distribution.
+    /// not computed here. `db` is a duration too but has no distribution, and
+    /// `connections` has none because it is not a duration at all.
     ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
