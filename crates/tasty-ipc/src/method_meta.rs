@@ -226,6 +226,21 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
             plugin(Idempotent, &[Notification]),
         ),
         ("surface.read_since_mark", plugin(Read, &[TerminalRead])),
+        // 출력 스캐너 전용 커서 — 읽으면 커서가 전진한다. 같은 출력을 읽으므로
+        // read_since_mark 과 같은 권한 버킷이고, CLI 진입점은 없다(파괴적 읽기라
+        // 사용자가 한 줄로 스캐너의 바이트를 가로챌 수 있게 열지 않는다 —
+        // ADR-0307).
+        //
+        // effect 가 위 read_since_mark(`Read`)와 갈리는 이유: 이 읽기는 커서를
+        // 전진시켜 **읽은 구간을 소비한다.** 재전달은 그때까지 새로 온 두 번째
+        // 구간을 먹고, 첫 응답이 나른 바이트는 어디에서도 다시 못 읽는다. 응답을
+        // 못 받은 호출자가 다시 보내면 안 되는 형태라 `message.read`(peek 기본값
+        // false)와 같은 `Mutate` 다 — ADR-0306 의 축이 "읽기인가" 가 아니라
+        // "두 번 전달하면 관측 가능한 차이가 남는가" 인 것이 여기서 갈린다.
+        (
+            "surface.read_since_scan_mark",
+            plugin(Mutate, &[TerminalRead]),
+        ),
         ("surface.mouse_tracking", plugin(Read, &[TerminalRead])),
         ("surface.parse_since_mark", plugin(Read, &[TerminalRead])),
         ("surface.commands", plugin(Read, &[TerminalRead])),

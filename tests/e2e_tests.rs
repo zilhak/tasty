@@ -247,6 +247,91 @@ fn terminal_echo_and_mark_read() {
     assert!(output.contains("test_marker"));
 }
 
+/// 출력 스캐너 커서(`surface.read_since_scan_mark`)가 에이전트의 mark 와 **다른**
+/// 커서인지, 그리고 읽을 때 전진하는지를 실제 IPC 왕복으로 잰다.
+///
+/// 인파일 단위시험(`crates/tasty-terminal/src/output_buffer.rs`)이 같은 두 성질을 버퍼
+/// 수준에서 재지만, 그것만으로는 **라우터 팔과 권한 표 등재가 살아 있는지** 알 수 없다 —
+/// 이름이 등재되지 않았거나 팔이 없으면 요청은 `-32601` 로 돌아오고 버퍼는 그 사실을
+/// 모른다. 여기서는 그 왕복을 지난다(ADR-0307).
+#[test]
+fn terminal_scan_cursor_is_separate_from_the_agent_mark() {
+    let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-scan-cursor");
+
+    // 등재·라우팅 대조군 — 이름이 표에 없거나 팔이 없으면 여기서 죽는다. 아래 단정들은
+    // "빈 문자열" 로도 초록이 될 수 있는 형태가 있으므로 이 줄이 먼저 서야 한다.
+    let first = tasty.call(
+        "surface.read_since_scan_mark",
+        json!({"surface_id": sid, "strip_ansi": true}),
+    );
+    assert!(
+        first.get("text").and_then(|v| v.as_str()).is_some(),
+        "surface.read_since_scan_mark 가 text 를 안 줬다 — 등재나 라우터 팔이 없다: {first:?}"
+    );
+    assert_eq!(first["surface_id"].as_u64(), Some(sid));
+
+    let scan = |strip_ansi: bool| -> String {
+        tasty.call(
+            "surface.read_since_scan_mark",
+            json!({"surface_id": sid, "strip_ansi": strip_ansi}),
+        )["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+    // 커서가 전진하므로 한 번에 다 오지 않을 수 있다 — 본 만큼 이어 붙여 판정한다.
+    let wait_scan = |needle: &str| -> String {
+        let start = std::time::Instant::now();
+        let mut seen = String::new();
+        loop {
+            seen.push_str(&scan(true));
+            if seen.contains(needle) {
+                return seen;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "scan 커서에서 '{needle}' 를 못 봤다. 본 것:\n{seen}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    let echo = |marker: &str| {
+        let cmd = if cfg!(windows) {
+            format!("echo {marker}\r\n")
+        } else {
+            format!("echo {marker}\n")
+        };
+        tasty.send_text(sid, &cmd);
+    };
+
+    // 1. 커서가 전진한다 — 같은 구간이 두 번 오지 않는다.
+    echo("scan_marker_one");
+    wait_scan("scan_marker_one");
+    assert!(
+        !scan(true).contains("scan_marker_one"),
+        "커서가 전진하지 않았다 — 같은 구간이 다시 왔다"
+    );
+
+    // 2. 에이전트의 set_mark 이 scan 커서를 밀지 않는다. mark 를 세운 **뒤** 출력을
+    //    내고, 그 출력이 scan 쪽에도 그대로 와야 한다.
+    tasty.set_mark(sid);
+    echo("scan_marker_two");
+    let seen = wait_scan("scan_marker_two");
+    assert!(
+        seen.contains("scan_marker_two"),
+        "set_mark 뒤의 출력이 scan 커서에 안 왔다: {seen}"
+    );
+
+    // 3. 반대 방향 — scan 읽기가 에이전트의 mark 를 안 움직였다. 위 2 에서 세운 mark
+    //    기준으로 읽으면 그 뒤의 출력이 여전히 보여야 한다(읽기는 비파괴적이다).
+    let since_mark = tasty.wait_for_output(sid, "scan_marker_two", Duration::from_secs(10));
+    assert!(
+        since_mark.contains("scan_marker_two"),
+        "scan 읽기가 에이전트의 mark 를 밀었다 — mark 이후 구간에서 출력이 사라졌다: \
+         {since_mark}"
+    );
+}
+
 #[test]
 fn terminal_send_key_and_send_to() {
     let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-terminal-keys");

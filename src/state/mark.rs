@@ -21,4 +21,24 @@ impl AppState {
             String::new()
         }
     }
+
+    /// Read what the output scanner has not seen yet on a specific surface and
+    /// advance its cursor past it. Serves `surface.read_since_scan_mark`.
+    ///
+    /// Unlike [`Self::read_since_mark`] there is no focused-surface fallback:
+    /// the caller is a scanner polling a surface it named, and a cursor that
+    /// silently follows the focus would hand it another surface's output
+    /// (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
+    pub fn take_since_output_scan_mark(
+        &mut self,
+        engine: &mut CoreState,
+        surface_id: u32,
+        strip_ansi: bool,
+    ) -> String {
+        engine
+            .terminals
+            .get_mut(surface_id)
+            .map(|t| t.take_since_output_scan_mark(strip_ansi))
+            .unwrap_or_default()
+    }
 }

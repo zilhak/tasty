@@ -20,7 +20,9 @@ pub(crate) use completion::handle_completion;
 pub(crate) use cwd::handle_set_cwd;
 pub(crate) use kinds::handle_surface_kinds;
 pub(crate) use list::handle_surface_list;
-pub(crate) use mark::{handle_parse_since_mark, handle_read_since_mark, handle_set_mark};
+pub(crate) use mark::{
+    handle_parse_since_mark, handle_read_since_mark, handle_read_since_scan_mark, handle_set_mark,
+};
 pub(crate) use query::{
     handle_cursor_position, handle_foreground_process, handle_mouse_tracking, handle_screen_text,
     handle_surface_locate, handle_surface_respawn_terminal,
