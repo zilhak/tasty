@@ -42,11 +42,17 @@ GUI 부팅 하나뿐이고(`init` 과 `default_db_path` 가 `cfg(feature = "gui"
   소비자가 그것을 오류로 승격시킬 근거가 사라진다. 모듈 머리말이 초대장이 아니라
   경계 서술이 된다.
 - **잃은 것**: 접근자 이름이 길어졌다. 그리고 `memory.db` 쪽은 여전히 `with_memory` 라
-  "state" 에 대응하는 접두어가 한쪽에만 붙는다 — 218 자리를 옮기는 것은 이 결정의 값에
-  비해 비싸다고 봤다.
-- **운영 비용 / 유지 부담**: 이름을 인용하는 문서가 셋이다(`docs/dev-guide/build.md` 두
-  줄, `docs/design/systems/storage.md` 한 줄). 이름을 다시 바꾸면 그 셋이 함께 움직여야
-  한다. 그 정합을 보는 자동 채널은 없다.
+  "state" 에 대응하는 접두어가 한쪽에만 붙는다 — **접근자 형태만 세도 201 자리**
+  (`grep -rn 'with_memory(|' src/ crates/`)라, 옮기는 것은 이 결정의 값에 비해 비싸다고
+  봤다. `with_memory(` 로 넓게 세면 218 이지만 그 좌변은 세터(`CoreBuilder::with_memory`)·
+  시험 헬퍼·상류 `sysinfo` 의 동명 메서드를 함께 세므로 이 문장이 말하려는 수가 아니다.
+- **운영 비용 / 유지 부담**: 이름을 다시 바꾸면 **문서 두 개의 네 줄**이 함께 움직여야
+  한다 — `docs/dev-guide/build.md` 두 줄, `docs/design/systems/storage.md` 두 줄. 재는
+  법: `grep -rn 'with_state_db' docs/ --include='*.md' | grep -v '^docs/adr/'` → **4**.
+  **ADR 은 그 모수에서 뺀다** — 이 문서 자신의 세 줄을 포함해, ADR 의 코드 인용은 결정
+  시점의 기록이라 나중 결정이 옮긴 이름을 따라가지 않는다(`docs/adr/template.md` 의 "좌표
+  예외"). 이름이 또 바뀌면 그것은 이 결정을 대체하는 새 ADR 이고, 이 문서는 그때의 기록
+  으로 남는다. 어느 쪽이든 그 정합을 보는 자동 채널은 없다.
 
 ## Alternatives Considered
 
