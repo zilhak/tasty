@@ -45,14 +45,20 @@ impl App {
         let Some(ipc) = self.hub.ipc_server.as_ref() else {
             return false;
         };
-        while let Ok(cmd) = ipc.try_recv() {
-            pending.push(cmd);
+        // 회차 예산 — 큐가 회차의 길이를 정하지 못하게 한다. 남은 것은 넣는 쪽이
+        // 명령마다 부른 waker 가 다시 들여보낸다(`DRAIN_BUDGET_PER_ROUND` 참조).
+        for _ in 0..crate::ipc::server::DRAIN_BUDGET_PER_ROUND {
+            match ipc.try_recv() {
+                Ok(cmd) => pending.push(cmd),
+                Err(_) => break,
+            }
         }
         if pending.is_empty() {
             return false;
         }
-        // 이 프레임이 집어 든 명령 수가 곧 관측된 큐 깊이다 — 비어 있을 때는 위에서
-        // 빠지므로 여기 세는 것은 "명령이 있었던 프레임" 뿐이다.
+        // 이 프레임이 집어 든 명령 수 — 비어 있을 때는 위에서 빠지므로 여기 세는
+        // 것은 "명령이 있었던 프레임" 뿐이다. 예산에 붙은 값이 나오면 그 회차는
+        // 큐를 다 비우지 못한 것이다.
         self.core.pressure().record_drain(pending.len());
 
         let mut processed = false;
