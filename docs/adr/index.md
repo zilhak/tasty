@@ -293,7 +293,6 @@
 | 0324 | [링크는 검출과 여는 것을 부수효과로 가른다](0324-link-detection-and-link-opening-split-by-side-effect.md) | Accepted | 2026-09-20 | architecture, crates, layering, terminal-link, headless, feature-gate, side-effect, adr-0319 |
 | 0325 | [루트 패키지를 lib 와 bin 으로 가른다 — 경계를 만드는 것이 아니라 잴 좌변을 만드는 것이다](0325-the-root-package-splits-into-a-lib-and-a-bin.md) | Accepted | 2026-09-20 | architecture, cargo, targets, testing, public-api, headless |
 | 0326 | [egui 는 링크하는 크레이트가 켜는 것이지 기본값으로 따라오는 것이 아니다](0326-egui-is-opt-in-for-the-crates-that-link-it.md) | Accepted | 2026-09-20 | build, cargo, features, headless, type-appearance, dependency-graph |
-| 0327 | [전송 계층은 침묵 대신 답하고, 그 답의 쓰기에는 시간 상한이 있다](0327-the-transport-answers-instead-of-going-silent-and-its-writes-are-bounded.md) | Accepted | 2026-09-20 | ipc, transport, resource-bounds, reliability |
 | 0327 | [전송 계층은 침묵 대신 답하고, 그 답의 쓰기에는 시간 상한이 있다 — ADR-0304 의 무응답 종료 조항 개정](0327-the-transport-answers-instead-of-going-silent-and-its-writes-are-bounded.md) | Accepted | 2026-09-20 | ipc, transport, resource-bounds, reliability |
 | 0328 | [응답 대기의 상한은 호출자가 싣고, 만료는 "실행 여부 불명" 이다](0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md) | Accepted | 2026-09-20 | ipc, transport, timeout, wire, idempotency, reliability |
 | 0329 | [갤러리 미러는 대조하기 전에 없앨 수 있는지 먼저 본다](0329-a-mirror-is-removed-before-it-is-compared.md) | Accepted | 2026-09-20 | gallery, widgets, duplication, guards, toast, type-appearance, compiler-enforced |
