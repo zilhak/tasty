@@ -31,7 +31,7 @@ trait 을 두지 않기로 한 근거·대안·재검토 조건은 [ADR-0320](..
 | `new` | 부모 창 handle · `WebViewBounds` · `scale_factor` · `surface_id` · `Rc<WebViewKeyBridge>` | `Result<Self, WebViewCreateError>` | Linux 만 `HasDisplayHandle` 을 추가로 요구한다(X11 display 포인터). macOS 는 실패 셋을 전부 `Permanent` 로 분류한다 |
 | `set_bounds` | `WebViewBounds` · `scale_factor` | — | macOS 는 Cocoa 가 논리 좌표를 그대로 받아 물리 변환을 쓰지 않는다 |
 | `set_visible` | `bool` | — | |
-| `release_keyboard_focus` | — | — | |
+| `release_keyboard_focus` | — | — | 회수는 조건부다 — 아래 "포커스" |
 | `load_url` | `&str` | — | |
 | `load_html` | `&str` | — | |
 | `nav_state` | — | `NavState` | |
@@ -114,6 +114,35 @@ native 백엔드의 `Rc<Cell<NavState>>` 에 그대로 들어간다.
 판정은 bridge 에서만 한다. 판정은 동기, 실행은 다음 프레임이다. 전체 규칙은 그 모듈의 머리
 주석과 [ADR-0102](../../adr/0102-webview-key-forwarding.md) 에 있다.
 
+## 포커스 — 회수는 **조건부**다
+
+`release_keyboard_focus` 는 host 가 egui overlay 를 열어 webview 를 가릴 때 부른다.
+숨기는 것과 키보드 포커스를 놓는 것은 세 OS 모두에서 **별개**라, 회수하지 않으면 방금 연
+popup 이 키를 못 받는다.
+
+**무조건 회수하지 않는다.** 세 백엔드가 같은 두 단계를 각자의 OS API 로 구현한다.
+
+1. **지금 포커스가 이 webview(또는 그 하위 창) 안에 있는가**를 먼저 묻는다. 아니면 아무것도
+   안 하고 돌아온다.
+2. 있으면 **부모 winit 창으로** 되돌린다. 다른 곳으로 옮기지 않는다.
+
+| 백엔드 | 1 을 묻는 법 | 2 를 하는 법 |
+|--------|--------------|--------------|
+| Linux | `XGetInputFocus` — `None`(0)·`PointerRoot`(1) 은 특정 창이 아니라 회수 대상이 없다 | `XSetInputFocus(parent, RevertToParent)` + `XFlush` |
+| macOS | `view_holds_first_responder(webview)` | `window.makeFirstResponder(contentView)` — 실패는 `warn` |
+| Windows | `GetFocus()` 가 이 `HWND` 이거나 `IsChild` | `SetFocus(parent_hwnd)` — 실패는 창이 사라지는 중이라는 뜻이라 로그도 안 남긴다 |
+
+1 단계가 **정책이지 최적화가 아니다.** 빼면 IPC 로 popup 하나를 여는 것만으로 다른 앱이
+쥐고 있던 OS 키보드 포커스를 tasty 가 빼앗는다 — 에이전트 행동이 사용자 상태에 닿는 것이라
+[불가침 원칙 1](../../identity.md) 위반이다. 창 자체가 활성인지는 호출부(`sync_webviews`)가
+`base.focused` 로 한 번 더 건다. 즉 그물이 둘이고, 이 표의 1 단계가 안쪽 그물이다.
+
+**같은 규칙이 세 벌로 적혀 있다.** 공유할 수 있는 것이 규칙 문장뿐이고 코드가 아니어서다
+(AppKit first responder · X11 input focus · Win32 focus 는 서로 다른 API 다). 그래서 셋이
+조용히 갈라질 수 있고, 그것을 잡아 주는 자동 채널은 없다 — 이 절이 그 세 벌의 정본이다.
+재는 법: 세 백엔드의 `release_keyboard_focus` 와 그 짝인 포커스 조회 함수를 함께 열어
+위 표의 두 단계가 다 있는지 본다.
+
 ## 도메인 라이브러리로는 아무것도 새지 않는다
 
 `crates/` 의 어떤 크레이트도 webview 백엔드 의존(`wry` · `webkit2gtk` · `webview2-com`)을
@@ -127,6 +156,21 @@ git grep -nE 'webkit2gtk|WKWebView|ICoreWebView2|wry::' -- crates/
 
 두 번째 명령은 산문 언급까지 잡으므로 결과를 눈으로 갈라 읽는다 — 타입 사용이 하나라도
 있으면 계약이 깨진 것이다. 이 불변식을 지키는 자동 채널은 없다.
+
+**egui 와 OS 창 타입은 따로 재야 한다** — 위 두 명령은 webview 백엔드만 본다. 2026-09-20
+재측정:
+
+```bash
+grep -lE '^egui' crates/*/Cargo.toml                          # 13
+grep -lE '^(winit|raw-window-handle)' crates/*/Cargo.toml     # 2
+```
+
+egui 열셋은 전부 UI 크레이트이거나 그 뒤가 feature 다(본체는 `gui` feature 에서만 켠다).
+winit 둘은 `tasty-gallery`(GUI 바이너리)와 `tasty-key-match` 다. 뒤엣것은 **winit 키
+이벤트를 바인딩 문자열과 맞추는 것이 그 크레이트의 일**이라 의존이 우연이 아니고, 소비자가
+전부 `gui` 뒤에 있어 본체가 optional 로 잡는다 — 헤드리스 그래프에 윈도잉 스택이 안 들어온다.
+그래서 이 셋 중 **도메인 라이브러리에 해당하는 크레이트는 하나도 없다.** 그 판정은 사람이
+한다. 세는 명령만 자동이고, "이 크레이트가 도메인 라이브러리인가" 를 답하는 채널은 없다.
 
 ## 이 문서가 못 말하는 것
 

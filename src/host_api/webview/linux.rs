@@ -591,6 +591,9 @@ impl PlatformWebView {
     /// OS 키보드 포커스를 tasty 가 뺏는다 — 에이전트 행동이 사용자 포커스에 닿는
     /// 것이라 불가침 원칙 1 위반이다(`docs/identity.md`). 창 자체가 활성인지는
     /// 호출부(`sync_webviews`)가 `base.focused` 로 한 번 더 건다.
+    ///
+    /// 같은 규칙이 macOS·Windows 백엔드에도 각자의 OS API 로 한 벌씩 있다. 세 벌의
+    /// 정본은 `docs/design/systems/webview.md` 의 "포커스" 절이다.
     pub fn release_keyboard_focus(&self) {
         self.assert_origin_thread();
         if !self.x11_focus_is_inside() {

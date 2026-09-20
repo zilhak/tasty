@@ -379,6 +379,8 @@ impl PlatformWebView {
     /// Linux/macOS 백엔드와 같은 규칙이다. 포그라운드 잠금이 알아서 막아주리라 기대하지
     /// 않고 명시적으로 건다: 그렇지 않으면 IPC 로 popup 을 여는 것만으로 tasty 가
     /// 사용자 포커스에 손대는 셈이 된다(불가침 원칙 1, `docs/identity.md`).
+    ///
+    /// 세 벌의 정본은 `docs/design/systems/webview.md` 의 "포커스" 절이다.
     pub fn release_keyboard_focus(&self) {
         if !self.focus_is_inside() {
             return;

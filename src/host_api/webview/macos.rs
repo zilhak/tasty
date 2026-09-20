@@ -451,7 +451,9 @@ impl PlatformWebView {
     ///
     /// **부를 상대가 없다.** 세 백엔드가 같은 규칙을 각자의 OS API(AppKit first
     /// responder · GTK · Win32)로 구현하며, 공유할 수 있는 것은 규칙 문장뿐이고
-    /// 코드가 아니다. 이 문장은 갚을 빚이 아니라 그 규칙의 기록이다.
+    /// 코드가 아니다. 세 벌이 조용히 갈라지는 것을 잡는 채널은 없으므로 규칙의
+    /// 정본은 `docs/design/systems/webview.md` 의 "포커스" 절에 둔다 — 여기를 고치면
+    /// 거기도 고친다.
     pub fn release_keyboard_focus(&self) {
         let Some(window) = self.webview.window() else {
             return;
