@@ -237,7 +237,7 @@ fi
 # B.8  cargo check --workspace --release — B.5 와 상보적이다.
 #      두 조합은 `debug_assertions` 이 반대라 서로가 못 보는 것을 본다:
 #      소비자가 debug 쪽에만 있는 항목은 release 에서만 `dead_code` 가 물고,
-#      이 크레이트에서 그 lint 는 error 라 컴파일이 죽는다. 실측 회차 88 이
+#      이 크레이트에서 그 lint 는 error 라 컴파일이 죽는다. 실측으로 한 번
 #      그렇게 났다(`ModalKind::as_str` — 고친 커밋 c3e78aaa8).
 #
 #      조합이 `--bin tasty` 가 아니라 `--workspace --release` 인 이유: 전자는
