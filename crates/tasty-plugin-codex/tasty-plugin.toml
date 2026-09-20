@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.82"
+version = "0.1.83"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -265,4 +265,4 @@ options = [
 ]
 
 [contributes.cli.arg_groups.install_args]
-flags = [{ name = "config_file", type = "string", flag = "--config-file", required = false, path_kind = "file", help = "Exact profile/config file to update; mutually exclusive with --codex-home" }, { name = "codex_home", type = "string", flag = "--codex-home", required = false, path_kind = "directory", help = "Codex home whose hooks to install/remove; must match the intended daemon" }]
+flags = [{ name = "config_file", type = "string", flag = "--config-file", required = false, path_kind = "file", help = "Exact profile/config file to update; mutually exclusive with --codex-home", help_i18n_key = "codex.cli.arg.install_args.config_file.help" }, { name = "codex_home", type = "string", flag = "--codex-home", required = false, path_kind = "directory", help = "Codex home whose hooks to install/remove; must match the intended daemon", help_i18n_key = "codex.cli.arg.install_args.codex_home.help" }]

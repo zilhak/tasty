@@ -245,8 +245,14 @@ help = "再開セッションのサンドボックスモード（read-only|works
 [codex.cli.arg.reboot_args.full_auto]
 help = "承認とサンドボックスを両方省略（--dangerously-bypass-approvals-and-sandbox）。--approval/--sandboxと併用不可"
 
+[codex.cli.arg.install_args.config_file]
+help = "更新するプロファイル／設定ファイルを直接指定する。--codex-home とは併用できない"
+
+[codex.cli.arg.install_args.codex_home]
+help = "フックを設置／削除する Codex home。対象のデーモンと一致している必要がある"
+
 [codex.cli.arg.hook_args.event]
-help = "フックイベント名：stop、prompt-submit、session-start、permission-request、post-tool-use、interrupt"
+help = "フックイベント名：stop、prompt-submit、session-start、permission-request、post-tool-use、interrupt、session-end"
 
 [codex.cli.arg.hook_args.surface]
 help = "フック対象サーフェスID"

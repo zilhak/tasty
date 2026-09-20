@@ -245,8 +245,14 @@ help = "Sandbox mode for the resumed session (read-only|workspace-write|danger-f
 [codex.cli.arg.reboot_args.full_auto]
 help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox"
 
+[codex.cli.arg.install_args.config_file]
+help = "Exact profile/config file to update; mutually exclusive with --codex-home"
+
+[codex.cli.arg.install_args.codex_home]
+help = "Codex home whose hooks to install/remove; must match the intended daemon"
+
 [codex.cli.arg.hook_args.event]
-help = "Hook event name: stop, prompt-submit, session-start, permission-request, post-tool-use, interrupt"
+help = "Hook event name: stop, prompt-submit, session-start, permission-request, post-tool-use, interrupt, session-end"
 
 [codex.cli.arg.hook_args.surface]
 help = "Surface ID the hook is firing for"
