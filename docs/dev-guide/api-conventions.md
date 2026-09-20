@@ -234,9 +234,13 @@ plugin 의 메서드는 "그런 메서드 없다"(거짓)가 아니라 "있는�
   키는 호출자가 고르는 임의의 문자열이라, 주체를 빼면 서로 모르는 두 호출자가 같은 문자열을
   골랐을 때 한쪽이 다른 쪽의 답을 받는다. 연결 단위로는 가르지 않는다 — 재시도는 응답을
   놓친 뒤 **다른 연결**로 오므로 그렇게 가르면 키가 한 번도 안 맞는다.
-- **뜻이 있는 것은 `Mutate` 로 분류된 메서드뿐이다.** 읽기는 흔적을 안 남기고 멱등은 같은
-  끝 상태로 수렴하므로 보존할 이유가 없다 — 보존하면 오히려 조회가 낡은 답을 받는다.
+- **뜻이 있을 수 있는 것은 `Mutate` 로 분류된 메서드뿐이다.** 읽기는 흔적을 안 남기고 멱등은
+  같은 끝 상태로 수렴하므로 보존할 이유가 없다 — 보존하면 오히려 조회가 낡은 답을 받는다.
   분류는 `method_meta::MethodEffect` 하나가 답한다(목록을 따로 두지 않는다).
+- ★ **그러나 `Mutate` 는 상한이지 보장이 아니다 — 아래 "무엇이 아직 안 걸리나" 를 읽어라.**
+- 봉투 검사(키 길이 1..=256)는 **메서드와 무관하다.** 길이 밖 키는 `Read` 든 `Mutate` 든
+  `-32602` 다. 메서드마다 다르게 검사하면 같은 봉투가 어디로 가느냐에 따라 유효하기도
+  무효하기도 해서 봉투 수준 계약이라는 말이 성립하지 않는다.
 - **처음 보는 키**면 실행하고 그 답을 키로 보관한다. **같은 키·같은 요청**이면 실행하지
   않고 보관된 답을 낸다. 그 답에는 `idempotent_replay: true` 가 붙는다 — 이것이 없으면
   호출자는 같은 답을 두 번 받고도 중복 실행과 재조회를 구별할 수 없다.
@@ -259,10 +263,41 @@ plugin 의 메서드는 "그런 메서드 없다"(거짓)가 아니라 "있는�
 호스트가 재시작하면 전부 사라진다(`survives_restart: false`). crash 이후의 영속은 약속하지
 않는다.
 
+#### 무엇이 아직 안 걸리나 — 배선은 engine 라우터 한 자리다
+
+보존소는 `handle_checked_request` 를 **지나는** 요청만 본다. 호스트의 IPC 에는 그 앞에 층이
+둘 더 있고, 둘 다 `Mutate` 를 포함한다. **그 층에서 끝나는 요청은 키를 실어도 그냥 실행되고,
+재시도는 두 번째 효과를 남긴다.**
+
+- **App 층** — `App` 이 직접 끝내는 메서드. 실측 2026-09-21 기준 여섯이다:
+  `window.create` · `view.create` · `ui.screenshot` · `remote.attach` · `plugin.install` ·
+  `plugin.request_permission`. (`local_only(Mutate)` 여섯 중 `hook_handler.dispatch` 하나만
+  engine 라우터로 간다.)
+- **plugin namespace forward** — plugin 이 점유한 prefix 아래의 **모든 이름.** 표의 fallback 이
+  그것을 전부 `Mutate` 로 주는데, 그 호출은 engine 라우터에 닿기 전에 plugin 으로 나간다.
+
+헤드리스 경로도 같은 순서다(App 층 가로채기 → namespace forward → engine 라우터).
+
+그래서 지금의 실제 좌변은 "`Mutate`" 가 아니라 **"`Mutate` 이면서 engine 라우터로 가는 것"**
+이다. 세는 명령:
+
+```bash
+# App 층이 직접 끝내는 이름 (그 목록의 소유자는 src/app/ipc/app_methods.rs 다)
+grep -ohE '"[a-z_]+\.[a-z_.]+"' src/app/ipc/app_methods.rs src/app/ipc/app_methods/*.rs \
+  | tr -d '"' | sort -u
+# 그 이름들의 effect 는 crates/tasty-ipc/src/method_meta.rs 의 METHOD_TABLE 에서 읽는다
+```
+
+**호출자가 요청마다 이 차이를 아는 값은 응답의 `idempotent_replay` 하나뿐이다** — 재시도에
+그것이 안 붙었으면 계약이 그 메서드에 안 걸린 것이다. 메서드 단위 선언은 그 자리들이 배선된
+뒤에 붙일 값이고, 배선 전에 선언하면 "착지한 것만 적는다" 를 어긴다.
+
 **보내기 전에 상대가 그 계약을 아는지 묻는다.** 봉투에 `deny_unknown_fields` 가 없어 구 서버는
 이 키를 조용히 버리고 요청을 그대로 실행한다 — 그때 호출자는 계약이 걸린 줄 알고 재시도하므로
 두 번째 효과가 남는다. 그래서 기능 목록의 `ipc.idempotency-key` 를 확인하는 것이 필수이고,
 `IpcConnection::send_idempotent` 가 그 확인을 **먼저** 하고 없으면 요청을 아예 안 내보낸다.
+그 이름이 답하는 것은 **"서버가 이 필드를 읽는가" 까지다** — "이 메서드가 걸리는가" 는 위
+"무엇이 아직 안 걸리나" 의 물음이고, 지금 그 값은 응답에도 선언에도 없다.
 그 거절은 호스트가 답한 실패와 다른 타입(`UnsupportedCapability`)으로 오는데, 그 차이가
 "아무것도 일어나지 않았다" 를 뜻한다. 결정 근거는
 [ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md).

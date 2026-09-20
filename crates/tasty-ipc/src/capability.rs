@@ -55,12 +55,18 @@ pub const CAPABILITIES: &[Capability] = &[
         name: "ipc.response-timeout",
         version: 1,
     },
-    // 봉투가 멱등 키를 실을 수 있고, 호스트가 그 키로 재시도를 **재조회**로 답한다.
+    // 봉투가 멱등 키를 실을 수 있다 — 이 서버가 그 필드를 **읽는다**는 선언이다.
     // 근거: `crate::protocol::JsonRpcRequest::idempotency_key` 와 그것을 읽는 호스트의
     // 보존소. `ipc.response-timeout` 과 같은 이유로 이름이 필요하다 — 이 이름이 없는
     // 서버는 키를 조용히 버리므로, 보내는 것만으로는 계약이 걸렸는지 알 수 없다.
     // 그리고 이 계약은 **부수효과가 남는 메서드**에 쓰이므로 확인이 늦으면 늦은 만큼
     // 두 번째 효과가 이미 남는다.
+    //
+    // ★ 이 이름은 **메서드 단위 보장을 뜻하지 않는다.** 호스트의 보존소는 engine
+    // 라우터 한 자리에 있고, 그 앞에서 끝나는 메서드(App 층 · plugin namespace
+    // forward)는 키를 실어도 그냥 실행된다. 그 차이를 말하는 이름은 아직 없다 —
+    // 만들려면 그 자리들이 먼저 배선돼야 하고, 배선 전에 선언하면 "착지한 것만
+    // 적는다" 를 어긴다.
     Capability {
         name: "ipc.idempotency-key",
         version: 1,
