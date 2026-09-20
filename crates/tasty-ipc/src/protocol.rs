@@ -58,7 +58,7 @@ pub struct JsonRpcRequest {
     ///
     /// 구 서버는 이 키를 **조용히 무시한다** — 이 구조체에 `deny_unknown_fields` 가 없다.
     /// 그래서 새 client 가 보내도 깨지지 않고, 대신 상한이 안 걸린다. 서버가 이것을
-    /// 읽는지 확인하려면 `system.info` 의 capability 목록에서 `ipc.request-deadline` 을
+    /// 읽는지 확인하려면 `system.info` 의 capability 목록에서 `ipc.response-timeout` 을
     /// 본다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_timeout_ms: Option<u64>,
