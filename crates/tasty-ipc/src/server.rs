@@ -22,7 +22,12 @@ pub struct IpcCommand {
     /// `Clock` port 가 아니라 `Instant::now()` 인 이유: 명령을 만드는 두 자리(소켓 accept
     /// 스레드와 plugin host-call 주입부)는 둘 다 `Core` 를 들고 있지 않다. 여기서 재는
     /// 것은 도메인 시각이 아니라 큐 체류 시간이라 monotonic 원천이면 충분하다.
-    pub enqueued_at: Instant,
+    ///
+    /// 비공개인 것이 [`IpcCommand::new`] 강제의 **전부**다 — 이 필드가 `pub` 이면 다른
+    /// 크레이트가 구조체 리터럴로 임의 시각을 찍어도 컴파일되고, 그 경로는 생성자 호출자
+    /// 수를 세는 어떤 판정에도 안 잡힌다. 크레이트 밖에서 이 값을 직접 읽는 자리는 없고
+    /// 필요한 것은 [`IpcCommand::queue_wait`] 뿐이라 비공개로 두는 데 드는 비용이 없다.
+    enqueued_at: Instant,
 }
 
 impl IpcCommand {
@@ -30,6 +35,8 @@ impl IpcCommand {
     ///
     /// 구조체 리터럴 대신 이 생성자를 쓰는 이유는 새 주입 경로가 시각을 **빠뜨릴 수
     /// 없게** 하려는 것이다 — 빠뜨리면 그 경로의 대기 시간만 조용히 0 이 된다.
+    /// 그 강제는 이 doc 이 아니라 `enqueued_at` 의 비공개성이 한다: 크레이트 밖에서는
+    /// 리터럴로 이 타입을 만들 수 없으므로 주입 경로는 여기를 지날 수밖에 없다.
     pub fn new(request: JsonRpcRequest, response_tx: mpsc::SyncSender<JsonRpcResponse>) -> Self {
         Self {
             request,
