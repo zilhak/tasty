@@ -5,7 +5,7 @@
 //! 위치 (`crate::ipc::server`) 에 잔존 — wire 형식과 강결합이라 trait 옆이 아니라
 //! wire 모듈에 두는 게 자연스럽다 (verify 자율 결정).
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -20,6 +20,35 @@ use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::ipc::server::{IpcCommand, IpcWaker};
 use crate::ipc::stream::{self, StreamAck, StreamFrame, StreamTag};
 use crate::ports::ipc_server::IpcServerPort;
+
+/// 한 요청 줄이 읽어 들일 수 있는 최대 바이트.
+///
+/// `read_line` 은 개행을 만날 때까지 `String` 을 키운다. 상한이 없으면 **개행을 끝내
+/// 보내지 않는 peer 하나가** 호스트 메모리를 끝까지 먹는다. 스트림 업그레이드 경로에는
+/// 대응하는 상한이 이미 둘 있다 — 프레임 길이 접두사를 자르는 [`stream::MAX_FRAME_LEN`]
+/// 과 [`TcpIpcServer::arm_stream_read_timeout`] 의 read timeout. 일반 RPC 경로에만
+/// 없었고, 이 상수가 그 비대칭을 없앤다.
+///
+/// 값의 근거: 호스트가 받아들이는 가장 큰 요청 payload 는 `memory.set` 의 값이고 그
+/// 상한은 `tasty_memory::MemoryConfig::entry_max_bytes`(기본 1 MiB)다. 그 값이 한 줄에
+/// 실릴 때의 팽창률은 두 갈래다 — `value_b64` 는 base64 라 4/3 배, `value` 문자열은 JSON
+/// escape 가 최악에 바이트당 `\u00XX` 6 자라 6 배. 그래서 **정상** 요청의 상한은 6 MiB +
+/// 봉투이고 8 MiB 는 그 위의 여유다. 이 수를 줄이려면 `entry_max_bytes` 를 먼저 줄여야
+/// 한다 — 지금 통과하는 요청을 거절하게 된다.
+const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
+
+/// 한 줄 읽기의 결과. `read_line` 의 `Ok(n)` 하나로 뭉뚱그려지던 것을 갈래로 나눈다 —
+/// 특히 **상한 초과**는 정상적으로 읽은 줄과 구분돼야 한다.
+enum LineRead {
+    /// 개행까지 한 줄을 읽었다.
+    Line,
+    /// peer 가 연결을 닫았다.
+    Eof,
+    /// 개행 없이 [`MAX_REQUEST_LINE_BYTES`] 를 채웠다 — 연결을 닫는다.
+    TooLong,
+    /// 소켓 오류 또는 비-UTF-8.
+    Failed,
+}
 
 /// 스트리밍 핸드셰이크 params 에서 추출한 attach 대상(surface/workspace 중 하나).
 struct StreamHandshake {
@@ -211,6 +240,45 @@ impl TcpIpcServer {
         true
     }
 
+    /// `reader` 에서 한 줄을 [`MAX_REQUEST_LINE_BYTES`] 안에서 읽는다.
+    ///
+    /// 상한 초과를 **거절 응답 없이 연결 종료**로 처리하는 이유는 둘이다. 하나는 이
+    /// 상한이 wire 를 바꾸지 않는다는 것이고, 다른 하나가 더 중요하다 — 초과한 줄의
+    /// **나머지가 소켓에 그대로 남아 있다.** 잘린 JSON 에 parse error 를 돌려주고 계속
+    /// 읽는 기존 갈래(`send_parse_error` 는 연결을 유지한다)를 그대로 쓰면 한 줄이 여러
+    /// 요청으로 쪼개져 들어가고, 상한은 다시 없는 것이 된다.
+    ///
+    /// `R` 로 일반화한 이유는 시험 때문이다 — 상한 판정 자체는 소켓과 무관한데,
+    /// `BufReader<TcpStream>` 으로 못 박으면 그 판정을 재려고 실제 연결을 띄워야 한다.
+    fn read_line_capped<R: BufRead>(
+        reader: &mut R,
+        line: &mut String,
+        peer: Option<std::net::SocketAddr>,
+    ) -> LineRead {
+        match reader
+            .by_ref()
+            .take(MAX_REQUEST_LINE_BYTES as u64)
+            .read_line(line)
+        {
+            Ok(0) => LineRead::Eof,
+            // 상한을 정확히 채웠는데 개행이 없다 = 줄이 상한보다 길다. 상한이 개행에서
+            // 딱 끝난 경우는 정상이므로 길이만으로 판정하지 않는다.
+            Ok(n) if n == MAX_REQUEST_LINE_BYTES && !line.ends_with('\n') => {
+                tracing::warn!(
+                    "IPC request line from {:?} exceeded {} bytes — closing the connection",
+                    peer,
+                    MAX_REQUEST_LINE_BYTES
+                );
+                LineRead::TooLong
+            }
+            Ok(_) => LineRead::Line,
+            Err(e) => {
+                tracing::warn!("IPC read error from {:?}: {}", peer, e);
+                LineRead::Failed
+            }
+        }
+    }
+
     /// 스트리밍 업그레이드 판별을 위해 첫 줄을 수동으로 읽는다 — `BufReader` 가
     /// 그 뒤에 이미 버퍼링된 바이트(업그레이드 시 핸드셰이크 뒤에 오는 바이너리
     /// 프레임의 시작)를 보존하게 하기 위함. EOF/에러는 이미 로그 후 `None`.
@@ -219,16 +287,14 @@ impl TcpIpcServer {
         peer: Option<std::net::SocketAddr>,
     ) -> Option<String> {
         let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) => {
+        match Self::read_line_capped(reader, &mut line, peer) {
+            LineRead::Line => Some(line),
+            LineRead::Eof => {
                 tracing::debug!("IPC client disconnected (eof) {:?}", peer);
                 None
             }
-            Ok(_) => Some(line),
-            Err(e) => {
-                tracing::warn!("IPC read error from {:?}: {}", peer, e);
-                None
-            }
+            // 둘 다 이미 warn 을 남겼다 — 호출자는 연결을 종료한다.
+            LineRead::TooLong | LineRead::Failed => None,
         }
     }
 
@@ -247,13 +313,10 @@ impl TcpIpcServer {
         }
         loop {
             line.clear();
-            match reader.read_line(line) {
-                Ok(0) => break, // EOF
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("IPC read error from {:?}: {}", peer, e);
-                    break;
-                }
+            match Self::read_line_capped(reader, line, peer) {
+                LineRead::Line => {}
+                // EOF·상한 초과·오류 모두 이 연결의 끝이다(뒤의 둘은 이미 warn 을 남겼다).
+                LineRead::Eof | LineRead::TooLong | LineRead::Failed => break,
             }
             if !Self::process_request_line(line, cmd_tx, waker, writer, peer) {
                 break;
@@ -651,6 +714,71 @@ impl IpcServerPort for TcpIpcServer {
 
     fn command_sender(&self) -> mpsc::Sender<IpcCommand> {
         self.command_tx.clone()
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+
+    fn read(input: &[u8]) -> (LineRead, String) {
+        let mut reader = BufReader::new(input);
+        let mut line = String::new();
+        let outcome = TcpIpcServer::read_line_capped(&mut reader, &mut line, None);
+        (outcome, line)
+    }
+
+    // 평범한 한 줄은 개행까지 그대로 읽힌다. 뒤에 다른 줄이 있어도 한 줄에서 멈춘다.
+    #[test]
+    fn a_normal_line_is_read_whole() {
+        let (outcome, line) = read(b"{\"method\":\"system.info\"}\nnext\n");
+        assert!(matches!(outcome, LineRead::Line));
+        assert_eq!(line, "{\"method\":\"system.info\"}\n");
+    }
+
+    // 빈 입력은 상한 초과가 아니라 EOF 다.
+    #[test]
+    fn eof_is_told_apart_from_a_refusal() {
+        let (outcome, line) = read(b"");
+        assert!(matches!(outcome, LineRead::Eof));
+        assert!(line.is_empty());
+    }
+
+    // 개행 없이 상한을 넘기면 거절한다 — 이것이 없으면 peer 하나가 호스트 메모리를
+    // 끝까지 먹는다.
+    #[test]
+    fn a_line_longer_than_the_cap_is_refused() {
+        let input = vec![b'a'; MAX_REQUEST_LINE_BYTES + 1];
+        let (outcome, _) = read(&input);
+        assert!(matches!(outcome, LineRead::TooLong));
+    }
+
+    // 경계: 개행이 상한의 **마지막 바이트**에 딱 오는 줄은 정상이다. 길이만으로
+    // 판정하면(`n == 상한` 이면 무조건 거절) 이 줄이 거절된다.
+    #[test]
+    fn a_line_that_ends_exactly_at_the_cap_is_not_refused() {
+        let mut input = vec![b'a'; MAX_REQUEST_LINE_BYTES - 1];
+        input.push(b'\n');
+        assert_eq!(input.len(), MAX_REQUEST_LINE_BYTES);
+        let (outcome, line) = read(&input);
+        assert!(
+            matches!(outcome, LineRead::Line),
+            "상한에서 개행으로 끝나는 줄은 초과가 아니다"
+        );
+        assert_eq!(line.len(), MAX_REQUEST_LINE_BYTES);
+    }
+
+    // 상한이 어디서 나왔는지를 값으로 고정한다. 호스트가 받아들이는 가장 큰 요청
+    // payload 는 저장소 항목 하나이고, 그것이 한 줄에 실릴 때의 최악 팽창은 JSON
+    // escape 의 6 배다. 상한을 그 아래로 내리면 **지금 통과하는 memory.set 이 거절된다.**
+    #[test]
+    fn the_cap_clears_the_largest_payload_the_store_accepts() {
+        let worst_case_on_the_wire = tasty_memory::MAX_VALUE_BYTES * 6;
+        assert!(
+            MAX_REQUEST_LINE_BYTES >= worst_case_on_the_wire,
+            "상한 {MAX_REQUEST_LINE_BYTES} 가 저장소 상한의 escape 최악치 \
+             {worst_case_on_the_wire} 보다 작다 — 정상 요청을 거절하게 된다"
+        );
     }
 }
 
