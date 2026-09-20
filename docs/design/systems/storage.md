@@ -86,10 +86,16 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   구분되게 하기 위해서다 — 둘이 같은 파일에 함께 나오는 자리가 없어 오독이 조용하다.
 - **여는 쪽은 GUI 부팅 하나다.** `init()`·`default_db_path()` 는 `cfg(feature = "gui")` 라
   헤드리스 빌드에는 이 DB 를 여는 코드가 컴파일되지 않는다. 그래서 헤드리스 데몬의 홈에는
-  `memory.db` 만 생기고 `state.db` 는 파일도 로그도 남지 않으며, `with_state_db` 의 `None`
-  은 **"아직 열리지 않았다" 한 가지 뜻만** 갖는다(락 poison 은 복구되어 `Some` 이고, GUI 의
-  열기 실패는 앱 종료로 이어진다). 최근 파일 조회는 그 `None` 을 오류가 아니라 빈 목록으로
-  답한다. 근거는 [저장소 소유권](../../adr/0335-the-state-database-is-opened-by-gui-boot-alone.md).
+  `memory.db` 만 생기고 `state.db` 는 파일도 로그도 남지 않는다.
+- **`with_state_db` 의 `None` 은 "열려 있지 않다" 이고, 출처가 둘인데 이 값으로는 안
+  갈린다.** 락 poison 은 복구되어 `Some` 이라 여기 오지 않는다. 남는 둘은 ① 헤드리스라 여는
+  코드가 없다 ② GUI 가 열다 실패했다 — **②를 "앱이 끝나니까 안 보인다" 로 배제할 수 없다.**
+  안내 모달의 `on_close` 가 `Exit(1)` 이라 종료는 사용자 확인 시점이고, 모달이 뜨기 전에
+  `AppState::new` 의 최근 파일 로드가 이미 그 구간을 지난다. 최근 파일 조회는 두 경우 모두
+  오류가 아니라 빈 목록으로 답한다.
+- 그래서 **`None` 을 원인 판정에 쓰지 않는다.** "저장소가 없는 빌드니까 안내하지 않는다"
+  류의 분기는 DB 가 깨진 사용자에게서 안내를 빼앗는다. 구분에 필요한 `DbInitError` 는 부팅이
+  모달로 바꾼 뒤 버린다. 근거는 [저장소 소유권](../../adr/0335-the-state-database-is-opened-by-gui-boot-alone.md).
 - PRAGMA: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `journal_size_limit`.
   네 pragma 는 `memory.db` 와 **같은 함수**(`tasty_memory::pragma::apply_connection_pragmas`)가
   건다 — 자유도 없는 사본이라 두 곳에 두지 않는다.
