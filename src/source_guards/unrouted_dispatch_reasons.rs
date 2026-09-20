@@ -623,6 +623,11 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "engine별 패널 저장소를 전 창/parked에서 모으고 공유 생성 ID 역순으로 전체 50개만 반환한다. UI 패널과 읽음 상태의 소유권은 각 engine에 남는다",
     ),
     (
+        "system.pressure",
+        NotWindowOwned,
+        "프로세스 게이지다 — 값은 `Core` 의 원자값과 plugin manager 가 올리는 왕복 누계이고 창이 하나도 없는 headless 에서도 같은 자리가 센다. 어느 창으로 가도 같은 답이라 라우팅할 대상이 없다",
+    ),
+    (
         "system.info",
         ScopedObservation,
         "version은 전역이고 기존 count/index는 조회 engine 값이다. scope=engine, workspace_ids, active_workspace_id, layout_slot으로 귀속을 명시한다. 기존 ID 라우팅으로 비포커스 engine을 조회할 수 있고 전역 목록은 workspace.list가 소유한다",
