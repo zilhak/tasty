@@ -184,6 +184,25 @@ fn file_picker_trigger_requires_fs_read() {
     assert!(m.required.contains(&Permission::FsRead));
 }
 
+/// 출력 스캐너의 전용 커서는 그 스캐너가 **이미 들고 있는** 권한으로 닿아야 한다.
+///
+/// 스캐너는 claude plugin 안에서 800 ms 주기로 돈다. 이 메서드가 새 토큰을 요구하면,
+/// 매니페스트를 함께 고치지 않은 설치본에서 스캔이 `permission_denied` 로 **조용히**
+/// 멎는다 — 에러 감지가 통째로 사라지는데 아무 신호도 없다. 그래서 같은 출력을 읽는
+/// `surface.read_since_mark` 과 같은 버킷(`terminal.read`)인지 여기서 못 박는다
+/// (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
+#[test]
+fn the_output_scan_cursor_is_callable_with_the_permission_its_only_caller_holds() {
+    let m = method_meta("surface.read_since_scan_mark").expect("registered");
+    assert!(m.plugin_callable, "plugin 이 못 부르면 스캐너가 멎는다");
+    assert!(!m.plugin_only, "외부 dispatch arm 이 있는 메서드다");
+    assert_eq!(
+        m.required,
+        &[Permission::TerminalRead],
+        "형제 `surface.read_since_mark` 와 같은 버킷이어야 한다 — 같은 출력을 읽는다"
+    );
+}
+
 /// occupancy-05: codex/claude plugin 이 자식 관리를 호스트 `terminal.*` 로 위임할 수
 /// 있어야 한다. 모든 terminal.* 메서드가 plugin_callable 이고, 요구 권한이 두
 /// plugin 이 매니페스트에 이미 선언한 권한 집합(surface.read/write, terminal.spawn/
