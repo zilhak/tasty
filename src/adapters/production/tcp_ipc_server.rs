@@ -96,6 +96,23 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// 실측을 적어 두었다).
 pub(crate) const DRAIN_BUDGET_PER_ROUND: usize = MAX_CONCURRENT_CONNECTIONS;
 
+/// 한 응답 줄을 소켓에 밀어 넣는 데 허용되는 최대 시간.
+///
+/// 이 값이 없으면 `write_json_line` 의 `writeln!` + `flush` 가 **무한정 블록한다.**
+/// 응답을 안 읽는 peer 가 소켓 송신 버퍼를 채우면 그 연결 스레드가 거기서 멈추고,
+/// 멈춘 스레드는 [`ConnectionSlot`] 을 계속 쥔다(자리는 `Drop` 에서만 돌아온다). 그런
+/// peer 가 [`MAX_CONCURRENT_CONNECTIONS`] 만큼이면 정상 client 가 못 붙는다 — 즉 수신
+/// 쪽 상한이 센 자리가 **쓰기 쪽에 상한이 없어서** 영구 점유된다.
+///
+/// **값을 고르지 않고 [`stream::HEARTBEAT_TIMEOUT`] 에서 파생한다.** 그 상수가 이미
+/// 답하는 물음이 같다 — "이 loopback 소켓의 상대가 얼마나 진척을 안 내면 죽은 것으로
+/// 보는가". 같은 소켓의 attach 쪽은 그 값을 read timeout 으로 걸고
+/// ([`TcpIpcServer::arm_stream_read_timeout`]), 그 소켓의 **client 측은 같은 값을 자기
+/// write timeout 으로 건다**(`src/app/attach_client.rs`). 그래서 여기서 새 수를 고르면
+/// 같은 물음에 답이 둘이 된다. 둘이 갈라져야 할 이유가 생기면 그 이유를 여기 적고
+/// 그때 가른다.
+const RESPONSE_WRITE_TIMEOUT: Duration = stream::HEARTBEAT_TIMEOUT;
+
 /// 살아 있는 연결 하나의 자리. 스레드가 어떻게 끝나든(정상·조기 return·패닉) `Drop`
 /// 이 자리를 돌려준다 — 회수를 `handle_connection` 의 제어흐름에 맡기지 않는다.
 struct ConnectionSlot {
@@ -322,6 +339,7 @@ impl TcpIpcServer {
             return;
         }
 
+        Self::arm_response_write_timeout(&writer);
         Self::run_request_response_loop(&mut reader, &mut writer, &mut line, &cmd_tx, &waker, peer);
 
         tracing::debug!("IPC client disconnected from {:?}", peer);
@@ -370,6 +388,24 @@ impl TcpIpcServer {
             tracing::warn!("Failed to set TCP_NODELAY on IPC stream: {}", e);
         }
         true
+    }
+
+    /// request-response 연결의 쓰기에 [`RESPONSE_WRITE_TIMEOUT`] 을 건다.
+    ///
+    /// **`configure_socket` 이 아니라 여기서 거는 이유**: 옵션은 소켓 단위라
+    /// `try_clone` 한 reader/writer 가 함께 받는데, 같은 소켓이 스트림 업그레이드로
+    /// 갈 수도 있다. 업그레이드된 연결의 쓰기는 프레임을 나르는 **전용 write 스레드**가
+    /// 하고(`spawn_stream_write_thread`), 그 스레드는 쓰기 오류 하나에 루프를 끊는다 —
+    /// 거기에 시간 상한을 얹으면 출력이 몰린 attach 가 타임아웃 한 번에 끊기고, 프레임이
+    /// 반만 나간 뒤 끊기면 길이 접두사 기준이 어긋나 그 뒤가 전부 오정렬된다. 업그레이드
+    /// 경로의 쓰기 상한은 별개 결정이므로 여기서 앞당기지 않는다.
+    ///
+    /// 거는 데 실패하면 **연결을 끊지 않는다** — 그 경우 쓰기가 상한 없이 도는 이전
+    /// 동작으로 돌아갈 뿐이고, 그것 때문에 지금 되는 연결을 못 쓰게 만들 이유는 없다.
+    fn arm_response_write_timeout(writer: &std::net::TcpStream) {
+        if let Err(e) = writer.set_write_timeout(Some(RESPONSE_WRITE_TIMEOUT)) {
+            tracing::warn!("Failed to set IPC response write timeout: {e}");
+        }
     }
 
     /// `reader` 에서 한 줄을 [`MAX_REQUEST_LINE_BYTES`] 안에서 읽는다.
@@ -719,8 +755,7 @@ impl TcpIpcServer {
         let request: JsonRpcRequest = match serde_json::from_str(trimmed) {
             Ok(r) => r,
             Err(e) => {
-                Self::send_parse_error(writer, e);
-                return true;
+                return Self::send_parse_error(writer, e);
             }
         };
 
@@ -738,9 +773,18 @@ impl TcpIpcServer {
         (write_result, flush_result)
     }
 
-    /// JSON 파싱 실패 시 JSON-RPC parse error(-32700) 응답을 회신한다. 클라이언트
-    /// 로 향한 응답이라 실패해도 연결은 끊지 않는다(trace 로그만).
-    fn send_parse_error(writer: &mut std::net::TcpStream, e: serde_json::Error) {
+    /// JSON 파싱 실패 시 JSON-RPC parse error(-32700) 응답을 회신한다. 반환값은
+    /// **연결 유지 여부**다.
+    ///
+    /// 예전에는 이 응답의 쓰기가 실패해도 연결을 유지했다(`trace` 한 줄). 그 판단은
+    /// 쓰기가 무한정 블록하던 시절에 맞았다 — 그때 실패는 소켓이 이미 깨졌다는 뜻이라
+    /// 계속 읽어도 곧 EOF 였다. [`RESPONSE_WRITE_TIMEOUT`] 이 걸린 뒤로는 **살아 있는
+    /// 소켓에 한 줄이 반만 나간 상태**가 같은 갈래로 떨어진다. 그 뒤로 계속 읽으면
+    /// client 는 잘린 JSON 뒤에 다음 응답이 이어 붙은 것을 본다. 그래서 지금은 닫는다.
+    ///
+    /// 로그가 `trace` 가 아니라 `warn` 인 이유도 같다 — 타임아웃이 **발화했다**는 것을
+    /// 말하는 자리가 여기뿐이고, 기본 필터는 `trace` 를 버린다.
+    fn send_parse_error(writer: &mut std::net::TcpStream, e: serde_json::Error) -> bool {
         let err_resp = JsonRpcResponse::error(
             serde_json::Value::Null,
             -32700,
@@ -749,11 +793,14 @@ impl TcpIpcServer {
         let json = serde_json::to_string(&err_resp).unwrap();
         let (write_result, flush_result) = Self::write_json_line(writer, &json);
         if let Err(e) = write_result {
-            tracing::trace!("IPC parse-error response write failed: {e}");
+            tracing::warn!("IPC parse-error response write failed: {e}");
+            return false;
         }
         if let Err(e) = flush_result {
-            tracing::trace!("IPC parse-error response flush failed: {e}");
+            tracing::warn!("IPC parse-error response flush failed: {e}");
+            return false;
         }
+        true
     }
 
     /// 요청을 메인 스레드로 보내고 응답을 기다려 클라이언트로 회신한다. 반환값은
@@ -895,6 +942,35 @@ mod admission_tests {
             "상한에서 개행으로 끝나는 줄은 초과가 아니다"
         );
         assert_eq!(line.len(), MAX_REQUEST_LINE_BYTES);
+    }
+
+    // 쓰기 상한이 **소켓에 실제로 걸린다.** 이 시험이 재는 것은 거기까지다 —
+    // 타임아웃이 발화하는 것은 상대가 안 읽어 송신 버퍼가 차야 하는데, 그 버퍼 크기는
+    // 커널이 자동 조정하므로 재현이 느리고 불안정하다. 그래서 "값이 걸렸다" 는 여기서
+    // 재고 "발화한다" 는 안 잰다.
+    //
+    // 좌변을 상수와 비교하지 않고 **소켓에게 되물어** 확인한다. 값이 안 걸리는 실패와
+    // 플랫폼이 값을 반올림하는 실패가 둘 다 여기서 드러난다.
+    #[test]
+    fn the_response_write_timeout_is_actually_on_the_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let _client = std::net::TcpStream::connect(addr).expect("connect");
+        let (server_side, _) = listener.accept().expect("accept");
+
+        assert_eq!(
+            server_side.write_timeout().expect("read back"),
+            None,
+            "새 소켓에는 상한이 없어야 한다 — 이 시험의 전제"
+        );
+
+        TcpIpcServer::arm_response_write_timeout(&server_side);
+
+        assert_eq!(
+            server_side.write_timeout().expect("read back"),
+            Some(RESPONSE_WRITE_TIMEOUT),
+            "쓰기 상한이 소켓에 안 걸렸다"
+        );
     }
 
     fn slots() -> (Arc<AtomicUsize>, AtomicBool) {
