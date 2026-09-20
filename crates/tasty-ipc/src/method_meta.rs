@@ -1009,6 +1009,12 @@ fn frozen_baseline_names() -> &'static std::collections::HashSet<&'static str> {
 /// 두면 표에 더하면서 이쪽을 빠뜨리는 것이 기본 동작이 된다([ADR-0306] 이 같은 이유로
 /// `effect` 를 별도 테이블로 두지 않았다).
 ///
+/// **답이 빌드 조합에 따라 갈리는 이름이 있다.** `DEBUG_METHODS` 는 debug 빌드에만 있으므로
+/// `debug.` 로 시작하는 이름은 debug 에서 `AfterFrozenBaseline`, release 에서 `None` 이다.
+/// 등록 여부를 먼저 보는 `is_registered_name` 의 성질을 그대로 물려받은 것이고, 동결
+/// baseline 에 그 접두사가 하나도 없어 **분류 자체는 안 흔들린다.** 다만 이 답을 내보내는
+/// capability 선언은 조합과 무관하므로, client 가 이 값으로 분기하면 그때 갈린다.
+///
 /// [ADR-0306]: ../../../docs/adr/0306-a-method-declares-what-a-second-delivery-leaves-behind.md
 pub fn method_since(method: &str) -> Option<MethodSince> {
     if !is_registered_name(method) {

@@ -63,6 +63,11 @@ capability 가 *응답의 모양*을 묻는다면 이쪽은 *그 이름이 있�
   근거로 범위를 잡은 사람이 하나를 빠뜨린다([ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
   세는 법은 남긴다 — `METHOD_TABLE` 의 이름 중 동결 파일에 없는 것이고,
   `method_meta::method_since` 가 `AfterFrozenBaseline` 로 답하는 이름이 그것이다.
+- **잃은 것 / 한계**: **`debug.` 이름의 "언제부터" 는 빌드 조합에 따라 갈린다.** debug 전용
+  표가 release 에서 비므로 그 이름들은 debug 에서 `AfterFrozenBaseline`, release 에서
+  `None` 이다. 동결 baseline 에 그 접두사가 0 개라 분류는 안 흔들리지만,
+  `ipc.method-since` 는 조합과 **무관하게** 선언되므로 client 가 이 답으로 분기하기
+  시작하면 그때 갈린다. 그때의 처방은 이 항목의 판을 올리는 것이다.
 - **운영 비용**: 응답 모양을 바꾸는 작업마다 사람이 "이름을 줄 것인가" 를 한 번 판단한다.
 
 ## Alternatives Considered
