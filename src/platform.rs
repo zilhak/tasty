@@ -3,8 +3,6 @@
 #[cfg(feature = "gui")]
 pub mod app_icon;
 pub mod crash_report;
-#[cfg(all(debug_assertions, feature = "gui"))]
-pub mod debug_info;
 #[cfg(all(windows, feature = "gui"))]
 pub mod jump_list;
 #[cfg(all(target_os = "macos", feature = "gui"))]

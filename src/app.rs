@@ -13,6 +13,8 @@ pub(crate) mod auto_attach;
 pub(crate) mod boot_machine;
 #[cfg(feature = "gui")]
 pub(crate) mod busy;
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(crate) mod debug_info;
 #[cfg(feature = "gui")]
 pub(crate) mod dispatch;
 #[cfg(feature = "gui")]

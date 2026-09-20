@@ -99,6 +99,8 @@ pub(crate) use adapters::ui::surface::webview_chrome as webview_chrome_ui;
 pub(crate) use adapters::ui::terminal_link;
 #[cfg(feature = "gui")]
 pub(crate) use app::App;
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(crate) use app::debug_info;
 pub(crate) use app::event::AppEvent;
 #[cfg(feature = "gui")]
 pub(crate) use boot::waker as waker_factory_winit;
@@ -119,8 +121,6 @@ pub(crate) use host_api::webview;
 #[cfg(feature = "gui")]
 pub(crate) use platform::app_icon;
 pub(crate) use platform::crash_report;
-#[cfg(all(debug_assertions, feature = "gui"))]
-pub(crate) use platform::debug_info;
 #[cfg(all(windows, feature = "gui"))]
 pub(crate) use platform::jump_list;
 #[cfg(all(target_os = "macos", feature = "gui"))]
