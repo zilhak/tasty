@@ -16,8 +16,8 @@ use tasty_plugin_manifest::Permission;
 use tasty_plugin_protocol::SharedBufferId;
 
 use super::{
-    HEALTHCHECK_TIMEOUT, PendingPluginCall, PendingRequestKind, PluginManager, PluginTick,
-    RemoteSurfaceEntry,
+    HEALTHCHECK_TIMEOUT, NAMESPACE_EXPIRY_RESTART_LIMIT, PendingPluginCall, PendingRequestKind,
+    PluginManager, PluginTick, RemoteSurfaceEntry,
 };
 
 /// 한 tick 의 plugin→호스트 이벤트 수집 결과.
@@ -99,6 +99,15 @@ fn classify_hello_drift(
         });
     }
     drifts
+}
+
+/// 재시작 판정 한 건. 이유가 둘(ping 무응답 · namespace 만료 누적)이고 로그 문구와
+/// 이벤트 문구가 원래 서로 달라, 둘을 같이 들고 다닌다.
+struct RestartCause {
+    plugin_id: String,
+    error_kind: &'static str,
+    warn: String,
+    message: String,
 }
 
 impl PluginManager {
@@ -592,35 +601,63 @@ impl PluginManager {
     }
 
     /// 헬스체크 — `HEALTHCHECK_TIMEOUT` 무응답 plugin 을 재시작.
-    fn restart_unresponsive_plugins(&mut self) {
-        let unresponsive: Vec<String> = self
+    pub(super) fn restart_unresponsive_plugins(&mut self) {
+        let mut unresponsive: Vec<RestartCause> = self
             .processes
             .iter()
             .filter_map(|(id, p)| {
                 if p.since_last_pong() > HEALTHCHECK_TIMEOUT {
-                    Some(id.clone())
+                    Some(RestartCause {
+                        plugin_id: id.clone(),
+                        error_kind: "unresponsive",
+                        warn: format!(
+                            "plugin '{}' unresponsive for {}s — restarting",
+                            id,
+                            HEALTHCHECK_TIMEOUT.as_secs()
+                        ),
+                        message: format!(
+                            "plugin '{}' did not respond to ping for {}s — restarting",
+                            id,
+                            HEALTHCHECK_TIMEOUT.as_secs()
+                        ),
+                    })
                 } else {
                     None
                 }
             })
             .collect();
-        for id in unresponsive {
-            tracing::warn!(
-                "plugin '{}' unresponsive for {}s — restarting",
-                id,
-                HEALTHCHECK_TIMEOUT.as_secs()
-            );
+        // ping 에는 답하면서 namespace 호출만 연달아 삼키는 plugin. 위 판정은 그것을
+        // 원리적으로 못 본다 — 프로세스가 건강하기 때문이다.
+        for (id, n) in &self.namespace_expiries {
+            if *n >= NAMESPACE_EXPIRY_RESTART_LIMIT
+                && self.processes.contains_key(id)
+                && !unresponsive.iter().any(|c| &c.plugin_id == id)
+            {
+                let text =
+                    format!("plugin '{id}' let {n} namespace calls expire in a row — restarting");
+                unresponsive.push(RestartCause {
+                    plugin_id: id.clone(),
+                    error_kind: "namespace_unresponsive",
+                    warn: text.clone(),
+                    message: text,
+                });
+            }
+        }
+        for RestartCause {
+            plugin_id: id,
+            error_kind,
+            warn,
+            message,
+        } in unresponsive
+        {
+            tracing::warn!("{warn}");
             {
                 use tasty_plugin_protocol::EventScope;
                 use tasty_plugin_protocol::events::payloads::PluginError;
                 let payload = PluginError {
                     plugin_id: id.clone(),
-                    error_kind: "unresponsive".to_string(),
-                    message: format!(
-                        "plugin '{}' did not respond to ping for {}s — restarting",
-                        id,
-                        HEALTHCHECK_TIMEOUT.as_secs()
-                    ),
+                    error_kind: error_kind.to_string(),
+                    message,
                 };
                 self.emit_host_event("plugin.error", &payload, EventScope::System);
             }

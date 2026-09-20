@@ -66,6 +66,23 @@ pub(super) const NAMESPACE_CALL_TIMEOUT: Duration =
 #[cfg(debug_assertions)]
 pub(super) const DEBUG_HOOK_INVOKE_TIMEOUT: Duration =
     Duration::from_millis(tasty_plugin_manifest::HOOK_TIMEOUT_MS_MAX as u64);
+/// 한 plugin 의 namespace 호출이 **연달아** 만료될 수 있는 횟수의 상한. 여기 닿으면
+/// 그 plugin 을 healthcheck 무응답과 같은 경로로 재시작한다.
+///
+/// 만료 한 건은 caller 에 대한 답이지 plugin 에 대한 판정이 아니다 — 한 번은 느렸을
+/// 수 있다. 그러나 그 plugin 의 namespace 응답이 **하나도** 안 오는 채로 만료만 쌓이면
+/// 호출마다 [`NAMESPACE_CALL_TIMEOUT`] 을 태우고 남는 것은 경고 로그뿐이고, 그 상태는
+/// 스스로 끝나지 않는다 — 프로세스는 ping 에 답하므로 healthcheck 가 원리적으로 못 본다.
+///
+/// **처방이 hook 의 backoff 와 다른 이유**: hook 은 선택적이라 우회가 곧 정상 동작이고,
+/// 그래서 실패가 쌓이면 잠시 안 부르는 것이 답이다([`HOOK_FAIL_BACKOFF`]). namespace
+/// 호출에는 우회할 대상이 없다 — 같은 처방을 이식하면 "시도조차 않고 즉시 실패" 가 되어
+/// 회복한 plugin 이 backoff 동안 **도달 불가**가 된다. 재시작은 그 반대다: 그 자리에서
+/// pending 을 전부 거두고(`cancel_pending_namespace_calls`) plugin 을 다시 띄우므로,
+/// 다음 호출은 기다림 없이 건강한 프로세스에 닿는다.
+///
+/// 값 3 은 [`HOOK_FAIL_LIMIT`] 와 같다 — 연속을 우연과 가르는 최소 수. 파생이 아니다.
+pub(super) const NAMESPACE_EXPIRY_RESTART_LIMIT: u32 = 3;
 pub(super) const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
 /// plugin 하나에 주는 graceful 종료 기회. 초과하면 force kill 한다. 종료 전체
@@ -438,6 +455,10 @@ pub struct PluginManager {
     extensions: super::extension_registry::ExtensionRegistry,
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
+    /// plugin 별 **연속** namespace 만료 수. 그 plugin 의 namespace 응답이 하나라도
+    /// 도착하면 지운다 — 답하고 있는 plugin 은 아무리 느려도 여기 안 쌓인다. plugin 이
+    /// 치워질 때(`cancel_pending_namespace_calls`)도 지운다.
+    pub(super) namespace_expiries: HashMap<String, u32>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
     /// 호스트가 발화하는 envelope의 `meta.trace_id` 카운터.
@@ -887,6 +908,104 @@ prefix = "{prefix}"
             .create_shared_buffer_for("com.example.x", 1, 4096)
             .unwrap_err();
         assert!(err.contains("handle channel not available"), "got: {err}");
+    }
+
+    /// 만료 한 건을 심고 sweep 을 돌린다. `plugin_id` 와 `times` 로 같은 plugin 에
+    /// 연속 만료를 만든다.
+    fn expire_namespace_calls(mgr: &mut PluginManager, plugin_id: &str, times: u32) {
+        for i in 0..times {
+            let (tx, _rx) = mpsc::sync_channel(1);
+            let id = 100 + i as u64;
+            mgr.pending_requests.insert(
+                id,
+                PendingRequest::now(PendingRequestKind::NamespaceInvoke {
+                    plugin_id: plugin_id.into(),
+                    response_tx: tx,
+                    original_id: serde_json::json!(id),
+                    deadline: Instant::now() - Duration::from_secs(1),
+                }),
+            );
+            mgr.sweep_expired_requests(Instant::now());
+        }
+    }
+
+    /// 연속 만료가 쌓이면 그 plugin 이 재시작 대상이 된다. healthcheck 는 이것을
+    /// 원리적으로 못 본다 — stub 은 방금 pong 한 것으로 시작하므로, 여기서 프로세스가
+    /// 치워졌다면 판정한 것은 만료 계수뿐이다.
+    #[test]
+    fn a_plugin_that_only_expires_namespace_calls_is_restarted() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.silent".into(), stub_process());
+
+        expire_namespace_calls(
+            &mut mgr,
+            "com.example.silent",
+            NAMESPACE_EXPIRY_RESTART_LIMIT - 1,
+        );
+        mgr.restart_unresponsive_plugins();
+        assert!(
+            mgr.processes.contains_key("com.example.silent"),
+            "상한 전인데 거둬졌다"
+        );
+
+        expire_namespace_calls(&mut mgr, "com.example.silent", 1);
+        mgr.restart_unresponsive_plugins();
+        assert!(
+            !mgr.processes.contains_key("com.example.silent"),
+            "연속 만료가 상한에 닿았는데 재시작이 안 걸렸다"
+        );
+    }
+
+    /// namespace 응답이 하나라도 오면 계수가 0 으로 돌아간다 — 답하고 있는 plugin 은
+    /// 아무리 느려도 이 판정에 안 걸린다.
+    #[test]
+    fn a_namespace_answer_clears_the_expiry_streak() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.slow".into(), stub_process());
+
+        expire_namespace_calls(
+            &mut mgr,
+            "com.example.slow",
+            NAMESPACE_EXPIRY_RESTART_LIMIT - 1,
+        );
+        assert_eq!(
+            mgr.namespace_expiries.get("com.example.slow"),
+            Some(&(NAMESPACE_EXPIRY_RESTART_LIMIT - 1))
+        );
+
+        // 늦게나마 하나가 답했다.
+        let (tx, _rx) = mpsc::sync_channel(1);
+        mgr.pending_requests.insert(
+            7,
+            PendingRequest::now(PendingRequestKind::NamespaceInvoke {
+                plugin_id: "com.example.slow".into(),
+                response_tx: tx,
+                original_id: serde_json::json!(7),
+                deadline: Instant::now() + NAMESPACE_CALL_TIMEOUT,
+            }),
+        );
+        mgr.handle_plugin_response(
+            "com.example.slow",
+            crate::protocol::PluginResponse {
+                id: 7,
+                result: Some(serde_json::json!({})),
+                error: None,
+                error_code: None,
+            },
+        );
+        assert!(
+            !mgr.namespace_expiries.contains_key("com.example.slow"),
+            "응답이 왔는데 연속 만료 계수가 남았다"
+        );
+
+        expire_namespace_calls(&mut mgr, "com.example.slow", 1);
+        mgr.restart_unresponsive_plugins();
+        assert!(
+            mgr.processes.contains_key("com.example.slow"),
+            "계수가 리셋됐는데 재시작이 걸렸다"
+        );
     }
 
     /// 호스트가 **스스로 내는** 오류 코드도 plugin 경계를 넘는가. 이 자리가

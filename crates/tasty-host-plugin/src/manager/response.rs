@@ -82,6 +82,18 @@ impl PluginManager {
             Some(p) => p.kind,
             None => return,
         };
+        // namespace 응답이 하나라도 오면 그 plugin 의 연속 만료 계수를 지운다 —
+        // 답하고 있는 plugin 은 느려도 재시작 판정에 안 걸린다. pong 은 여기 안
+        // 들어온다(그것은 `Other` 다): ping 에만 답하는 plugin 을 가리려는 것이
+        // 계수의 목적이므로, pong 이 계수를 지우면 계수가 영영 안 찬다.
+        if matches!(
+            kind,
+            PendingRequestKind::NamespaceInvoke { .. }
+                | PendingRequestKind::PluginToPluginNamespace { .. }
+                | PendingRequestKind::NamespaceInvokeWithPostHook { .. }
+        ) {
+            self.namespace_expiries.remove(plugin_id);
+        }
         match kind {
             PendingRequestKind::SurfaceCreate { surface_id }
             | PendingRequestKind::SurfaceRestore { surface_id }
@@ -564,6 +576,7 @@ impl PluginManager {
                     &response_tx,
                     JsonRpcResponse::error(original_id, -32004, &msg),
                 );
+                self.record_namespace_expiry(&plugin_id);
             }
             PendingRequestKind::PluginToPluginNamespace {
                 plugin_id,
@@ -576,6 +589,7 @@ impl PluginManager {
                 // 바로 위 local 갈래와 같은 `-32004`. 만료는 caller 종류와 무관한
                 // 같은 사건이다.
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
+                self.record_namespace_expiry(&plugin_id);
             }
             PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,
@@ -588,6 +602,7 @@ impl PluginManager {
                 let msg = namespace_timeout_message(&target_plugin_id);
                 tracing::warn!("{msg}");
                 self.send_final_error(final_caller, -32004, msg);
+                self.record_namespace_expiry(&target_plugin_id);
             }
             // debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어 회신이 목적이다.
             // 진행시킬 원본 흐름이 없으므로 namespace 만료와 같은 모양으로 끝낸다.
@@ -608,6 +623,25 @@ impl PluginManager {
                 );
             }
             _ => {}
+        }
+    }
+
+    /// namespace 만료 한 건을 그 target plugin 의 연속 계수에 더한다.
+    ///
+    /// 여기서 바로 재시작하지 않는다 — 이 함수는 sweep 루프 한가운데서 불리고,
+    /// 재시작은 `pending_requests` 를 다시 훑어 거둔다. 판정은 다음 ping tick 의
+    /// `restart_unresponsive_plugins` 가 healthcheck 와 같은 자리에서 한다.
+    fn record_namespace_expiry(&mut self, plugin_id: &str) {
+        let n = self
+            .namespace_expiries
+            .entry(plugin_id.to_string())
+            .or_insert(0);
+        *n = n.saturating_add(1);
+        if *n >= super::NAMESPACE_EXPIRY_RESTART_LIMIT {
+            tracing::error!(
+                "plugin '{plugin_id}' let {n} namespace calls expire in a row without answering \
+                 any of them — it will be restarted"
+            );
         }
     }
 

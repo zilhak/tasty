@@ -57,8 +57,33 @@ caller 는 `response_tx`, plugin caller 는 `ipc.result`, post-hook 이 걸린 �
 그 ADR 이 센 "버리는 자리 일곱" 에 이것이 없었던 이유(호스트가 *되받은* 코드가 아니라
 *스스로 내는* 코드라 축이 한 칸 다르다)도 거기 적혀 있다.
 
-sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadline 을 든 변종 7 개를
+sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadline 을 든 변종을
 모두 본다(`sweep_expired_requests`).
+
+### 2026-09-20 보강 — 반복되는 만료는 caller 가 아니라 plugin 에 대한 판정이다
+
+위 결정은 만료 **한 건**을 다룬다. 그 결정만으로 끝나지 않는 상태가 하나 남았다:
+같은 plugin 이 같은 호출을 **계속** 삼키면 호출마다 `NAMESPACE_CALL_TIMEOUT` 을 태우고
+남는 것은 경고 로그뿐이고, 그 상태는 스스로 끝나지 않는다. 프로세스가 ping 에 답하므로
+healthcheck 가 원리적으로 못 보는 것이 애초에 이 ADR 의 전제였다.
+
+**그래서 연속 만료를 plugin 단위로 세고, `NAMESPACE_EXPIRY_RESTART_LIMIT`(3) 에 닿으면
+그 plugin 을 healthcheck 무응답과 같은 경로로 재시작한다.** 계수는 그 plugin 의 namespace
+응답이 하나라도 도착하면 지운다 — 답하고 있는 plugin 은 아무리 느려도 여기 안 쌓인다.
+pong 은 계수를 지우지 않는다: 계수가 가리려는 것이 바로 "ping 에만 답하는 plugin" 이라,
+pong 이 지우면 계수가 영영 안 찬다.
+
+**hook 의 backoff 를 이식하지 않는다.** hook 은 선택적이라 우회가 곧 정상 동작이고,
+그래서 연속 실패에 "잠시 안 부른다"(`HOOK_FAIL_BACKOFF`)가 답이 된다. namespace 호출에는
+우회할 대상이 없다 — 같은 처방을 옮기면 "시도조차 않고 즉시 실패" 가 되어 **회복한
+plugin 이 backoff 창 동안 도달 불가**가 된다. 재시작은 그 반대 방향이다: 그 자리에서
+pending 을 전부 거두고(`cancel_pending_namespace_calls`, 이 ADR 의 회신 경로 그대로)
+plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프로세스에 닿는다.
+
+판정 시점은 만료 시점이 아니라 **다음 ping tick** 이다. 만료는 sweep 루프 한가운데서
+일어나는데 재시작은 같은 `pending_requests` 를 다시 훑어 거두므로, 계수만 올리고 판정은
+`restart_unresponsive_plugins` 가 healthcheck 와 같은 자리에서 한다. 그래서 재시작까지의
+추가 지연 상한은 `PING_INTERVAL`(15 s) 이다.
 
 ## Consequences
 
@@ -72,6 +97,11 @@ sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadlin
   결과를 따로 알리는 모양으로 바꿔야 하며, 이 상수를 올리는 것은 처방이 아니다.
 - **운영 비용 / 유지 부담**: 상수 하나와 sweep 의 match 팔 3 개. sweep 자체는 이미
   매 pump 마다 돌고 있었다.
+- **2026-09-20 보강이 더한 것**: plugin 당 `u32` 하나(`namespace_expiries`)와 재시작
+  판정의 두 번째 사유. **동작 변경**이다 — 종전에는 namespace 호출만 삼키는 plugin 이
+  무한히 그 상태로 남았고, 이제는 연속 3 회 만에 재시작된다. 재시작은 그 plugin 의
+  surface·popup·banner·mesh 프레임을 그 경로가 원래 정리하는 대로 정리하므로, 그
+  plugin 의 화면 상태가 사라졌다 다시 생긴다.
 
 ## Alternatives Considered
 
@@ -86,6 +116,12 @@ sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadlin
 - **C: 만료에 새 오류 코드를 준다** — 진단에는 유리하지만 caller 계약이 둘로 갈린다.
   "plugin 이 네 호출을 끝내지 못했다" 는 local caller 에게 이미 `-32004` 로 나가고
   있었고, 사유는 메시지가 나른다.
+- **E (2026-09-20 보강): 반복 만료에 hook 처럼 backoff 를 건다** — 기각. 위 보강 절의
+  이유 그대로다. hook 의 우회는 정상 동작이지만 namespace 호출의 우회는 도달 불가다.
+- **F (2026-09-20 보강): 세기만 하고 로그만 올린다** — 기각. 그러면 이 ADR 이 막으려던
+  것("caller 가 영영 기다린다")은 한 건마다 막히지만, **호스트 쪽 비용**(매 호출 150 s 의
+  pending 과 그만큼의 caller 대기)은 그대로 무한히 반복된다. 관측만으로는 그 반복이
+  끝나지 않는다.
 - **D: 값을 매니페스트 선언으로 받는다** — plugin 이 자기 호출의 상한을 스스로 정하게
   되어 이 deadline 이 막으려는 바로 그 경우(안 답하는 plugin)를 plugin 이 무력화할 수
   있다. 선언을 받으려면 protocol 이 바뀌고 번들 plugin 전부가 따라 움직인다.
@@ -102,6 +138,10 @@ sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadlin
 - healthcheck 회수 경로(`cancel_pending_namespace_calls`)가 사라지거나 namespace
   pending 을 더 이상 거두지 않게 됐을 때. 그러면 "앞지르지 않는다" 는 유도의 전제가 없어지고
   값은 회수 상한이 아니라 정상 호출 길이에서 나와야 한다.
+- `restart_unresponsive_plugins` 가 `namespace_expiries` 를 더 이상 안 볼 때. 2026-09-20
+  보강의 처방이 그 한 자리에 있으므로, 그것이 빠지면 반복 만료가 다시 로그뿐이 된다.
+  (이 좌변에 붙은 판정기는 지금 없다 — 위 보강을 재는 것은
+  `tasty-host-plugin` 의 `a_plugin_that_only_expires_namespace_calls_is_restarted` 다.)
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 

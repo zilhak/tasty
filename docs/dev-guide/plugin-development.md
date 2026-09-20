@@ -293,6 +293,13 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   값은 위 회수 상한의 두 배로 **유도**한다 — 짧으면 재시작 경로가 이미 처리하는 경우를
   앞지른다. extension hook 만료는 이것과 달리 fail-open 이다(원래 흐름을 그대로 진행).
   근거는 [ADR-0311](../adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md).
+- **반복 만료 → 재시작**: 만료 한 건은 caller 에 대한 답이지 plugin 에 대한 판정이 아니다.
+  그러나 그 plugin 의 namespace 응답이 하나도 없는 채로 만료가 `NAMESPACE_EXPIRY_RESTART_LIMIT`
+  (3)회 연달아 쌓이면, 다음 ping tick 에서 healthcheck 무응답과 **같은 경로로** 재시작한다
+  (`plugin.error` 이벤트의 `error_kind` 는 `namespace_unresponsive`). 계수는 그 plugin 의
+  namespace 응답이 하나라도 오면 0 으로 돌아가므로 느린 plugin 은 걸리지 않는다. hook 처럼
+  backoff 를 걸지 않는 이유는 ADR-0311 의 2026-09-20 보강에 있다 — 우회할 대상이 없는
+  호출에 backoff 를 걸면 회복한 plugin 이 그 창 동안 도달 불가가 된다.
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
 
 ### 프로세스 수명 결박 (3 OS — 크래시·강제종료 포함)
