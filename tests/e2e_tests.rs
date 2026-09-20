@@ -254,6 +254,9 @@ fn terminal_echo_and_mark_read() {
 /// 수준에서 재지만, 그것만으로는 **라우터 팔과 권한 표 등재가 살아 있는지** 알 수 없다 —
 /// 이름이 등재되지 않았거나 팔이 없으면 요청은 `-32601` 로 돌아오고 버퍼는 그 사실을
 /// 모른다. 여기서는 그 왕복을 지난다(ADR-0307).
+///
+/// 세 단계가 다 **순서에 의존한다.** 어느 단계든 출력과 커서 조작의 순서를 뒤집으면 잃을
+/// 것이 없어져, 재려던 회귀에서도 통과한다. 각 단계의 ★ 주석이 그 순서를 적는다.
 #[test]
 fn terminal_scan_cursor_is_separate_from_the_agent_mark() {
     let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-scan-cursor");
@@ -312,21 +315,32 @@ fn terminal_scan_cursor_is_separate_from_the_agent_mark() {
         "커서가 전진하지 않았다 — 같은 구간이 다시 왔다"
     );
 
-    // 2. 에이전트의 set_mark 이 scan 커서를 밀지 않는다. mark 를 세운 **뒤** 출력을
-    //    내고, 그 출력이 scan 쪽에도 그대로 와야 한다.
-    tasty.set_mark(sid);
+    // 2. 에이전트의 set_mark 이 scan 커서를 밀지 않는다.
+    //
+    // ★ **순서가 판정을 만든다.** 출력을 먼저 내고 그 다음에 mark 를 세운다. 거꾸로 하면
+    // `set_mark` 이 scan 커서를 버퍼 끝으로 밀어도 그 사이에 잃을 출력이 없어서, 그
+    // 회귀에서도 이 단계가 통과한다 — 이 자리가 실제로 그 모양이었고 변이로 드러났다.
     echo("scan_marker_two");
+    // 버퍼에 닿은 것은 **mark 를 안 움직이는 읽기**로 확인한다. scan 으로 확인하면 그
+    // 읽기가 커서를 전진시켜 아래 판정이 재는 것이 없어진다.
+    tasty.wait_for_output(sid, "scan_marker_two", Duration::from_secs(10));
+    tasty.set_mark(sid);
     let seen = wait_scan("scan_marker_two");
     assert!(
         seen.contains("scan_marker_two"),
-        "set_mark 뒤의 출력이 scan 커서에 안 왔다: {seen}"
+        "set_mark 이 scan 커서를 밀었다 — 그 앞에 이미 와 있던 출력이 사라졌다: {seen}"
     );
 
-    // 3. 반대 방향 — scan 읽기가 에이전트의 mark 를 안 움직였다. 위 2 에서 세운 mark
-    //    기준으로 읽으면 그 뒤의 출력이 여전히 보여야 한다(읽기는 비파괴적이다).
-    let since_mark = tasty.wait_for_output(sid, "scan_marker_two", Duration::from_secs(10));
+    // 3. 반대 방향 — scan 읽기가 에이전트의 mark 를 안 움직인다.
+    //
+    // ★ 여기서도 순서가 판정을 만든다. 위 2 의 mark 뒤에 출력을 내고, 그것을 **scan 이
+    // 먼저 먹은 뒤** mark 기준으로 읽는다. scan 읽기가 `read_mark` 까지 밀면 그 구간이
+    // mark 쪽에서 사라진다.
+    echo("scan_marker_three");
+    wait_scan("scan_marker_three");
+    let since_mark = tasty.read_since_mark(sid);
     assert!(
-        since_mark.contains("scan_marker_two"),
+        since_mark.contains("scan_marker_three"),
         "scan 읽기가 에이전트의 mark 를 밀었다 — mark 이후 구간에서 출력이 사라졌다: \
          {since_mark}"
     );
