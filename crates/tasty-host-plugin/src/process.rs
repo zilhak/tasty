@@ -410,7 +410,7 @@ impl PluginProcess {
             params: serde_json::json!({}),
             id: next_id,
         }) {
-            tracing::trace!("plugin ping send dropped: {e}");
+            tracing::warn!("plugin '{}' ping send failed: {e}", self.plugin_id);
         }
     }
 
@@ -437,7 +437,7 @@ impl PluginProcess {
             params: serde_json::json!({}),
             id: u64::MAX,
         }) {
-            tracing::trace!("plugin shutdown send dropped: {e}");
+            tracing::warn!("plugin '{}' shutdown send failed: {e}", self.plugin_id);
         }
         PendingShutdown {
             plugin_id: std::mem::take(&mut self.plugin_id),

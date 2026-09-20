@@ -27,8 +27,18 @@ impl PluginManager {
             params,
             id,
         };
-        if proc.try_send_request(req).is_ok() {
-            self.pending_requests.insert(id, kind);
+        // 실패를 조용히 삼키면 popup 이 안 열리는 사유가 어디에도 안 남는다. 무제한
+        // 채널일 때는 여기서 실패한다는 것이 곧 "plugin 이 죽었다" 였지만, 유한해진
+        // 뒤로는 **일시적 포화**도 같은 갈래로 떨어진다 — 둘을 가르는 문장이
+        // `RequestSendError` 의 `Display` 에 있고, 그것이 로그에 닿아야 ADR-0315 의
+        // 재검토 조건("정상 사용이 용량에 닿는가")을 잴 수 있다.
+        match proc.try_send_request(req) {
+            Ok(()) => {
+                self.pending_requests.insert(id, kind);
+            }
+            Err(e) => {
+                tracing::warn!("plugin '{plugin_id}' {method} send failed: {e}");
+            }
         }
     }
 
