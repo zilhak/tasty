@@ -142,7 +142,7 @@ build-plugins:
         debug)   profile_flag="" ;;
         *)       profile_flag="--profile $profile" ;;
     esac
-    profile_dir="target/$profile"
+    profile_dir="${CARGO_TARGET_DIR:-target}/$profile"
     bundle_root="$profile_dir/builtin-plugins"
 
     case "$(uname -s)" in
@@ -232,7 +232,7 @@ build-plugin name:
         debug)   profile_flag="" ;;
         *)       profile_flag="--profile $profile" ;;
     esac
-    profile_dir="target/$profile"
+    profile_dir="${CARGO_TARGET_DIR:-target}/$profile"
     bundle_root="$profile_dir/builtin-plugins"
 
     case "$(uname -s)" in
@@ -368,7 +368,7 @@ link-plugins:
         debug)   profile_flag="" ;;
         *)       profile_flag="--profile $profile" ;;
     esac
-    profile_dir="target/$profile"
+    profile_dir="${CARGO_TARGET_DIR:-target}/$profile"
     bundle_root="$profile_dir/builtin-plugins"
 
     case "$(uname -s)" in
