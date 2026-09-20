@@ -27,6 +27,20 @@
 대상 자체가 없으므로, 항목을 `pub` 으로 올려도 닿지 않는다. 가시성 문제가 아니라
 링크 대상의 부재다.
 
+### 2026-09-20 정정 — 이 근거의 앞쪽 절반이 사라졌다
+
+[ADR-0325](0325-the-root-package-splits-into-a-lib-and-a-bin.md) 가 루트에 `[lib]` 를
+세웠고, 그래서 아래 재검토 조건 셋째가 **실제로 발동했다**(채널:
+`crates/tasty-doc-guards/tests/layering_guard_premises_still_hold.rs`). 조건이 지시한 순서대로
+다시 봤고, **결론은 바뀌지 않았다 — 막는 것이 바뀌었을 뿐이다.**
+
+`tests/` 가 이제 `tasty::` 를 링크할 수는 있다. 그러나 이 면제 항목이 쓰는 픽스처가
+`crate::state::tests::test_state` 와 `crate::adapters::test::*` 이고, 그 둘은 부모에서
+`#[cfg(test)]` 로만 선언돼 **lib 산출물에 애초에 들어가지 않는다.** 통합 테스트가 링크하는
+rlib 에 그 심볼이 없으므로, 가시성을 `pub` 으로 올려도 닿지 않는다. 그래서 결정(아래
+`TEST_ONLY_FILES`)은 그대로 두고, 근거를 "링크 대상의 부재" 에서 **"픽스처가 출하 범위
+밖"** 으로 고쳐 적는다. 재검토 조건 셋째도 같은 좌변으로 옮겼다.
+
 ## Decision
 
 계층 가드에 **세 번째 목록** `TEST_ONLY_FILES` 를 둔다 — `(경로, 사유)` 쌍이며,
@@ -73,6 +87,11 @@
   열어도 `tests/` 에서는 `tasty::` 경로 자체가 존재하지 않는다(레포의 어떤 통합
   테스트도 `use tasty::` 를 쓰지 않는 이유다). lib 타깃을 신설하는 것은 이 가드의
   범위를 훨씬 넘는 구조 변경이라 별개 결정이다.
+  - **2026-09-20**: 그 별개 결정이 났다([ADR-0325](0325-the-root-package-splits-into-a-lib-and-a-bin.md)).
+    `tasty::` 경로는 이제 존재한다. 그래도 B 는 여전히 불가능하다 — 이 항목이 쓰는
+    픽스처가 `#[cfg(test)]` 전용이라 lib 산출물 밖이고, 통합 테스트가 링크하는 rlib 에
+    그 심볼이 없다. B 를 열려면 픽스처를 `#[cfg(test)]` 밖으로 꺼내거나 별도 크레이트로
+    빼야 하고, 그 둘은 이 ADR 이 아니라 그때의 결정이다.
 - **C: 가드에서 `FORBIDDEN` 매칭을 `#[cfg(test)]` 블록 밖으로 한정한다** — 파일 단위
   목록 없이 자동으로 판정하는 형태. 그러려면 가드가 Rust 를 파싱해 attribute 의
   적용 범위를 알아야 한다. 텍스트 스캔으로 흉내 내면 조용한 미스캔(거짓 통과)이
@@ -91,13 +110,19 @@
   자체가 대부분 불필요해진다.
 - 본체가 CLI 파서를 더 이상 소유하지 않게 된다(진입점 분리) — `ALLOWED_PATHS` 를
   포함해 가드 전체의 전제가 바뀐다.
-- `tasty` 에 `[lib]` 타깃이 생긴다 — 대안 B 가 실현 가능해지므로 면제 항목을
-  `tests/` 로 옮길 수 있는지 다시 본다.
+- 면제 항목이 쓰는 픽스처(`src/state/tests.rs` · `src/adapters/test/`)가 `#[cfg(test)]`
+  전용이 아니게 된다 — 그러면 lib 산출물에 들어가 대안 B 가 실현 가능해지므로 면제 항목을
+  `tests/` 로 옮길 수 있는지 다시 본다. (원래 이 조건은 "`[lib]` 타깃이 생긴다" 였다.
+  2026-09-20 에 실제로 발동했고, 위 Context 의 정정 절대로 좌변을 옮겼다.)
 - `TEST_ONLY_FILES` 항목이 늘어 목록만으로 판정이 어려워진다 — 대안 C(범위 기반
   자동 판정)를 다시 검토한다.
 
 ## References
 
 - `crates/tasty-doc-guards/tests/layering.rs` — 가드 본체(세 목록과 두 방향 검사).
+- `crates/tasty-doc-guards/tests/layering_guard_premises_still_hold.rs` — 위 재검토 조건
+  둘에 발화 자리를 주는 채널. 결정이 실현된 현재 위치다.
+- [ADR-0325](0325-the-root-package-splits-into-a-lib-and-a-bin.md) — 셋째 조건을 발동시킨
+  결정. 위 Context 의 2026-09-20 정정 절이 그 결과다.
 - `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` — `(경로, 사유)` 쌍 면제 목록의 선례.
 - [ADR-0105](0105-no-nongit-path-refs-in-tracked-sources.md) — 추적 소스의 참조 규칙.

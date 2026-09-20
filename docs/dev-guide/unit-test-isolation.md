@@ -102,7 +102,7 @@ assert!(path.starts_with(home.path().join("screenshots")));
 그래서 배제가 필요한 단위는 레포가 아니라 바이너리 하나이고, **그 안에서는 각자 하나뿐**
 이다. 셋이 한 바이너리에 같이 들어갈 수 없다는 것은 값으로 확인된다:
 
-- `src/main.rs` 의 `mod test_support;` — 루트 크레이트에는 라이브러리 타깃이 없다
+- `src/lib.rs` 의 `mod test_support;` — 루트 크레이트의 라이브러리 타깃이 그것을 단다
   (`[lib]` 도 `src/` 아래 라이브러리 루트 파일도 없다). **바이너리뿐이라 아무 크레이트도
   이것을 링크할 수 없다.**
 - `crates/tasty-host-plugin/src/lib.rs` 의 `mod test_support;` — 선언에 **`#[cfg(test)]` 가
@@ -439,7 +439,7 @@ cargo test --workspace --lib --bins --no-default-features --locked -- --list | g
 ### 몇 번 띄우는지는 이렇게 센다
 
 ```bash
-cargo test --bin tasty --no-run                       # 테스트 바이너리 경로를 찍는다
+cargo test -p tasty --lib --no-run                    # 테스트 바이너리 경로를 찍는다
 strace -f -e trace=socketpair -o /tmp/sp.txt <그 경로>
 grep -c 'socketpair(AF_UNIX' /tmp/sp.txt
 ```

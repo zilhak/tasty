@@ -491,7 +491,7 @@ mod tests {
     /// (b) 폴링 한 번 한 번이 블로킹하지 않으며 (c) 워치독이 메뉴를 확실히
     /// 걷어간다는 것을 실제 GTK 백엔드로 확인한다.
     ///
-    /// 실행: `cargo test --bin tasty -- --ignored --test-threads=1
+    /// 실행: `cargo test -p tasty --lib -- --ignored --test-threads=1
     /// native_menu::linux` (X11 디스플레이 필요 — 잠깐 실제 메뉴가 떴다 사라진다).
     /// 물리 마우스 없이 재현 가능한 유일한 grab-실패 경로다.
     #[test]

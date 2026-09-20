@@ -226,6 +226,18 @@ fontconfig = "*"
 [package.metadata.generate-rpm.recommends]
 vulkan-loader = "*"
 
+# 루트 패키지는 lib + bin 두 타깃이다. `src/lib.rs` 가 모듈 트리와 재수출을 들고,
+# `src/main.rs` 는 `tasty::boot::run()` 만 부른다. lib 를 세운 것은 경계를 만든 것이
+# 아니다 — 모듈 대부분이 여전히 `pub(crate)` 라 밖에서 못 쓴다. 생긴 것은 좌변이다:
+# 이제 "무엇이 밖으로 나가는가" 를 잴 수 있다. 재는 법: cargo doc -p tasty --no-deps
+[lib]
+name = "tasty"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tasty"
+path = "src/main.rs"
+
 [dependencies]
 # Workspace crates
 tasty-font = { path = "crates/tasty-font" }

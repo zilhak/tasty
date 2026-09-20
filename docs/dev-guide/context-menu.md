@@ -123,7 +123,7 @@ press 만 삼키면 부족하다: winit 이벤트는 egui 에 **먼저** 먹여�
 `src/platform/native_menu/linux.rs` 의 `#[ignore]` 테스트(`forced_grab_failure_resolves_via_watchdog_without_blocking`)가 이 둘을 써서 "즉시 반환 · 폴링 비블로킹 · 워치독 해소"를 실제 GTK 백엔드로 검증한다. 실행에는 X11 디스플레이가 필요하다:
 
 ```
-cargo test --bin tasty -- --ignored --test-threads=1 native_menu::linux
+cargo test -p tasty --lib -- --ignored --test-threads=1 native_menu::linux
 ```
 
 ## 새 메뉴 체크리스트

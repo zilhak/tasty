@@ -98,7 +98,9 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
     truncate_wal(&mut store);
 }
 
-pub(crate) fn run() -> anyhow::Result<()> {
+/// 프로세스 진입점. `src/main.rs` 가 부르는 유일한 lib 항목이라 `pub` 이다 —
+/// 그 밖의 모듈은 여전히 `pub(crate)` 다.
+pub fn run() -> anyhow::Result<()> {
     os::attach_windows_console_if_needed();
     os::init_crash_report();
 

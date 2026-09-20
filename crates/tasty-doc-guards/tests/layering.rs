@@ -83,9 +83,10 @@ const BASELINE_FILES: &[&str] = &[];
 const TEST_ONLY_FILES: &[(&str, &str)] = &[
     (
         "src/adapters/ipc/handler/cli_entry_tests.rs",
-        "CLI 가 조립한 params 를 프로덕션 핸들러가 실제로 읽는지 검증한다. tasty 는 lib \
-         타깃이 없는 바이너리 크레이트라 tests/ 통합 테스트에서 핸들러·AppState 픽스처에 \
-         아예 닿을 수 없다(가시성이 아니라 링크 대상이 없다).",
+        "CLI 가 조립한 params 를 프로덕션 핸들러가 실제로 읽는지 검증한다. tests/ 통합 \
+         테스트는 그 핸들러·AppState 픽스처에 닿을 수 없다 — 루트에 lib 타깃이 생긴 \
+         뒤에도(ADR-0325) 픽스처 자신(src/state/tests.rs · src/adapters/test/)이 \
+         #[cfg(test)] 로만 선언돼 lib 산출물 밖이다. 가시성 문제가 아니다.",
     ),
     (
         "src/adapters/ipc/handler/cli_entry_debug_tests.rs",
@@ -212,8 +213,8 @@ const MIN_DEPTH: usize = 5;
 /// 앵커만 사라진다.
 ///
 /// 이 파일을 고른 것은 이름이 좋아서가 아니라 **구조적으로 불멸**이기 때문이다 — 루트
-/// `Cargo.toml` 에 `[[bin]]` 선언이 없으므로 cargo 의 기본 규칙에서 이것이 바이너리
-/// 진입점이고, 없으면 크레이트가 빌드되지 않는다.
+/// `Cargo.toml` 의 `[[bin]]` 이 이 경로를 바이너리 진입점으로 지명하고 있어, 없으면
+/// 패키지가 빌드되지 않는다.
 const WALK_ANCHOR: &str = "src/main.rs";
 
 /// 순회가 충분히 깊이 내려갔는지 판정한다. 하한과 같은 이유로 최소 깊이를 인자로 받는다.

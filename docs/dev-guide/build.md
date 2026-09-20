@@ -16,6 +16,12 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수�
 
 본 바이너리는 `pub use tasty_core as ...` 식으로 재수출해 `crate::model::X` / `crate::theme::theme()` 같은 경로가 그대로 동작한다.
 
+**루트 패키지는 `lib` 와 `bin` 두 타깃이다.** `src/lib.rs` 가 모듈 트리와 위 재수출을 들고, `src/main.rs` 는 `tasty::boot::run()` 만 부른다.
+
+- **루트 패키지의 단위시험은 전부 lib 타깃에 산다.** `cargo test -p tasty --bin tasty` 로 좁히면 **0 건이 돌고 초록이 난다** — 0 건은 통과가 아니라 미측정이다. 좁히려면 `cargo test -p tasty --lib` 다. (`--lib --bins` 를 함께 주는 조합은 예전과 같은 것을 담는다.)
+- **가른 것이 경계는 아니다.** 모듈은 여전히 전부 비공개이거나 `pub(crate)` 고, 밖으로 나가는 것은 `boot::run` 과 기존 재수출뿐이다. 생긴 것은 **공개 표면을 잴 좌변**이다 — 재는 법: `cargo doc -p tasty --no-deps`.
+- 오늘 이 크레이트의 doctest 는 **0 건**이다(`cargo test -p tasty --doc`). `src/` 의 코드펜스는 비공개 항목의 주석 안에 있어 rustdoc 이 수집하지 않는다. `doctest = false` 를 걸지 않은 이유가 이것이고, 이 수가 움직이면 그때 자리를 정한다.
+
 ### type-\* layer 의존 규약 (필수)
 
 `tasty-type-*` 는 **primitive/schema 레이어**다.

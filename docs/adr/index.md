@@ -284,3 +284,4 @@
 | 0315 | [plugin 채널의 두 방향은 포화에 다르게 답한다 — 호스트→plugin 은 거절, plugin→호스트 는 대기](0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md) | Accepted | 2026-09-20 | plugin, host-plugin, resource-bounds, backpressure, reliability, adr-0304, adr-0311 |
 | 0316 | [DB 는 요청한 pragma 가 아니라 **적용된** pragma 를 보고한다](0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md) | Accepted | 2026-09-20 | sqlite, storage, memory, pragma, observability, wal |
 | 0317 | [고지 세트는 생성하지 않고 저장소의 세 파일을 산출물마다 스테이징한다](0317-the-notice-set-is-staged-not-generated.md) | Accepted | 2026-09-20 | release, packaging, licensing, third-party, linux, appimage, deb, rpm, ci |
+| 0325 | [루트 패키지를 lib 와 bin 으로 가른다 — 경계를 만드는 것이 아니라 잴 좌변을 만드는 것이다](0325-the-root-package-splits-into-a-lib-and-a-bin.md) | Accepted | 2026-09-20 | architecture, cargo, targets, testing, public-api, headless |

@@ -100,7 +100,7 @@ telemetry 행을 한 건도 읽지 않으므로 `record_ipc_call` 을 거부까�
   **채널이 없다.** 그 두 줄은 `App::process_ipc` 안에 있고 그 함수를 부르려면 창과 GPU 를
   든 `App` 이 필요해 단위 시험이 닿지 않는다(그래서 이 레포에 `App` 하네스가 없다).
   재는 법: `src/app/ipc.rs` 의 `record_drain` 과 `record_queue_wait` 두 줄을 지우고
-  `cargo test --bin tasty --no-fail-fast` 를 돌린다 — **아무것도 안 죽으면** 채널이 없는
+  `cargo test -p tasty --lib --no-fail-fast` 를 돌린다 — **아무것도 안 죽으면** 채널이 없는
   것이고, 그것이 지금 상태다(실측 2026-09-20). 같은 방법으로 두 줄을
   `gates_before_routing` **뒤로** 옮겨도 안 죽는다. 그 이동이 바로 이 결정을 조용히
   거짓으로 만드는 변경이다.

@@ -491,7 +491,7 @@ gh api "/repos/<owner>/<repo>/actions/runs/<run-id>/jobs?per_page=100" \
 않는** 경우다. 앞의 둘은 로그에 흔적이 남지만(줄이 없거나 빨갛다) 이것은 **초록으로
 보인다.**
 
-실물 하나. pre-push B.6 은 `--no-default-features` 조합을 컴파일하는데, `src/main.rs:11`
+실물 하나. pre-push B.6 은 `--no-default-features` 조합을 컴파일하는데, `src/lib.rs:23`
 이 `#![cfg_attr(not(feature = "gui"), allow(dead_code))]` 다 — **그 조합에서는 `dead_code`
 lint 가 꺼져 있다.** 그래서 그 스텝이 초록인 것은 "죽은 코드가 없다" 가 아니라 **"그것을
 안 물었다"** 이다. `--release` 조합에서 `dead_code` 는 error 라서 컴파일이 죽는데, 그
@@ -1512,14 +1512,14 @@ done | wc -l
 위 표는 자동 채널을 적는다. 커밋 전에 사람이 돌릴 조합은 그것과 다르다 — **새 파일을
 판정하는 가드가 그 파일의 패키지에 없을 수 있기 때문이다.**
 
-`src/source_guards/` 의 가드들은 좌변이 **레포 전체**인데 자기는 루트 패키지 **바이너리
+`src/source_guards/` 의 가드들은 좌변이 **레포 전체**인데 자기는 루트 패키지 **라이브러리
 안**에 산다. `cargo test -p <크레이트>` 는 그 타깃에 닿지 않고, `scripts/` 의 셸 게이트도
 그 물음을 안 묻는다. 그래서 `crates/*/tests/` 에 새 파일을 만들고 그 크레이트만 돌리면,
 **판정자는 있었고 자동 채널도 있었는데 커밋하는 사람만 못 본 상태**가 된다.
 
 - `crates/*/tests/`·`crates/*/src/` 에 새 파일 → `cargo test -p <그 크레이트> --locked`
-  **그리고** `cargo test -p tasty --bin tasty --locked`
-- 루트 `tests/`·`src/` 에 새 파일 → `cargo test -p tasty --bin tasty --locked`
+  **그리고** `cargo test -p tasty --lib --locked`
+- 루트 `tests/`·`src/` 에 새 파일 → `cargo test -p tasty --lib --locked`
   **그리고** `cargo test -p tasty-doc-guards --locked`(레포 전체를 훑는 문서·소스 가드가
   거기 산다)
 
@@ -1644,7 +1644,7 @@ gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
 gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -A 4 'fd budget'
 
 # 우리 쪽 최고 fd — 테스트 바이너리를 직접 띄우고 /proc 를 표본한다
-cargo test --bin tasty --no-run          # 바이너리 경로를 찍는다
+cargo test -p tasty --lib --no-run       # 바이너리 경로를 찍는다
 # 그 경로를 백그라운드로 띄우고, 도는 동안 `ls /proc/<pid>/fd | wc -l` 의 최댓값을 잡는다
 ```
 
@@ -1714,7 +1714,7 @@ cargo test --workspace --no-default-features --locked -- --list 2>&1 | ... > /tm
 sort -u -o /tmp/D.txt /tmp/D.txt; sort -u -o /tmp/H.txt /tmp/H.txt
 comm -23 /tmp/D.txt /tmp/H.txt | grep '^tasty|' | cut -f2 > /tmp/gui.txt   # gui 게이트된 본체 유닛
 
-cargo test --target x86_64-pc-windows-gnu --bin tasty --no-run --locked   # mingw 링커 필요
+cargo test --target x86_64-pc-windows-gnu -p tasty --lib --no-run --locked   # mingw 링커 필요
 win=$(ls -t target/x86_64-pc-windows-gnu/debug/deps/tasty-*.exe | head -1)
 while read n; do grep -qaF "$n" "$win" || echo "빈 칸: $n"; done < /tmp/gui.txt
 ```
@@ -1857,7 +1857,7 @@ lib 유닛 테스트에서 그 서술을 지우면 사실보다 약하다. 어�
 해당 lint 를 **끈다** — 그 조합에서만 도는 자동 잡(`check-headless`)이 그 lint 를
 영영 못 본다. deny 로 승격된 lint 라도 마찬가지다: `allow` 가 deny 를 이긴다.
 
-**crate-level 하나가 조합 전체의 채널을 지운다(실측).** `src/main.rs` 최상단의
+**crate-level 하나가 조합 전체의 채널을 지운다(실측).** `src/lib.rs` 최상단의
 `#![cfg_attr(not(feature = "gui"), allow(dead_code))]` 를 임시로 걷고 headless
 `cargo check` 를 돌리면 그동안 숨어 있던 dead code 가 다수 error 로 터진다(`enum
 Strategy` · `const PAPLAY_SOUND`/`APLAY_SOUND` · `static STRATEGY` 등). 즉 그
@@ -1866,7 +1866,7 @@ attribute 는 no-op 가 아니라 **headless 의 dead_code 채널을 crate 전�
 ② 형(잡은 돌지만 술어가 못 봐서 초록이 오도)의 전형이다.
 
 **같은 allow 가 중첩되면 자식 제거는 채널을 복원하지 못한다.** inner attribute 는
-자손 모듈로 전파되므로, `main.rs`(crate) → `adapters/ipc.rs`(모듈) → `adapters/ipc/
+자손 모듈로 전파되므로, `lib.rs`(crate) → `adapters/ipc.rs`(모듈) → `adapters/ipc/
 handler.rs`(자식) 처럼 같은 조건부 allow 가 겹쳐 있으면 자식 하나를 떼도 상위가 여전히
 그 트리를 덮는다. 자식 allow 제거는 "채널을 되살린 것" 처럼 보이지만 실제로는 중복
 제거(no-op)일 뿐이다 — 채널을 되살리려면 **가장 바깥의 allow** 를 걷어야 한다. 그래서
@@ -2591,7 +2591,7 @@ I/O 가 있나" 였고, 그 회귀는 함수 본문이 아니라 **호출 문맥
 가드들은 게이트를 본다.
 
 검증의 단위는 **(패키지 × 타깃 × 필터)** 다. `-p <크레이트>` 는 루트 패키지의 통합 타깃을
-안 돌리고, `--bin tasty` 는 `tests/*.rs` 를 **아예 안 짓는다**. 이름 필터를 걸었으면 타깃이
+안 돌리고, `--lib`·`--bin tasty` 는 `tests/*.rs` 를 **아예 안 짓는다**. 이름 필터를 걸었으면 타깃이
 맞아도 안 돈 것이다. 그래서 "돌렸다" 가 아니라 **"어느 패키지의 어느 타깃을 필터 없이
 돌렸다"** 로 적는다.
 

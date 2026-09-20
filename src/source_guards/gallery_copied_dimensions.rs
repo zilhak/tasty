@@ -44,7 +44,7 @@
 //!
 //! libtest 는 통과한 테스트의 출력을 삼키고, 이 레포의 어느 회차 스텝도
 //! `--show-output`·`--nocapture` 를 안 쓴다. 그러니 아래 `println!` 은 **초록 회차 어디에도
-//! 안 나온다** — 손으로 `cargo test --bin tasty <이 모듈> -- --nocapture` 로 볼 때만 보인다.
+//! 안 나온다** — 손으로 `cargo test -p tasty --lib <이 모듈> -- --nocapture` 로 볼 때만 보인다.
 //! 그것을 알고 둔다: 자동으로 지키는 것은 **단정**이고, 표는 사람이 눈으로 확인할 때 쓰는
 //! 도구다. 표가 채널을 가진 것처럼 쓰지 마라.
 //! # 이 가드는 지금 결정을 내리지 않는다
@@ -744,7 +744,7 @@ fn sites_that_claim_a_host_counterpart(src: &str) -> Vec<(usize, String)> {
 /// 보인다 — 실측(2026-09-06): 다른 lane 이 갤러리 상수를 리터럴로 바꾸는 변이를 쏘고
 /// 이 시험만 필터로 돌려 "1 passed" 를 받았다. 그 변이는 옆 시험이 이미 죽이고 있었다.
 /// 모듈 이름으로 돌리면 셋이 함께 돈다:
-/// `cargo test --bin tasty gallery_copied_dimensions`.
+/// `cargo test -p tasty --lib gallery_copied_dimensions`.
 ///
 /// # 이 판별자가 못 보는 것
 ///
