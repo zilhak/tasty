@@ -38,7 +38,7 @@ const VOLUMES_ROOT: &str = "/Volumes";
 /// 목록 결정에 필요한 파일시스템 조회. 실제 IO 없이 결정 로직만 검증할 수 있도록
 /// 추상화한다 — TCC 가 없는 CI 에서 `read_dir` 을 돌리면 헤드리스 러너가 프롬프트를
 /// 기다리며 멈출 수 있고, 그 환경 의존성을 테스트에 들이지 않기 위함이다.
-pub trait FsProbe {
+pub(crate) trait FsProbe {
     /// 디렉터리로 존재하는가. 없는 폴더는 읽어봐야 프롬프트가 안 뜨므로 건너뛴다.
     fn is_dir(&self, path: &Path) -> bool;
 
@@ -49,7 +49,7 @@ pub trait FsProbe {
 
 /// 실제 파일시스템. pre-warm 실행부와 같은 조건으로만 컴파일한다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub struct RealFs;
+pub(crate) struct RealFs;
 
 #[cfg(all(target_os = "macos", feature = "gui"))]
 impl FsProbe for RealFs {
@@ -77,7 +77,7 @@ impl FsProbe for RealFs {
 /// 나열해 항목당 한 번씩만 건드린다.
 ///
 /// 존재하지 않는 경로는 빠진다. `home` 이 `None` 이면 홈 항목 전체가 빠진다.
-pub fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
+pub(crate) fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
     let mut targets = Vec::new();
 
     if let Some(home) = home {
