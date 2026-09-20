@@ -174,7 +174,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("preset.save", plugin(Idempotent, &[SurfaceWrite])),
         ("preset.delete", plugin(Idempotent, &[SurfaceWrite])),
         ("preset.rename", plugin(Idempotent, &[SurfaceWrite])),
-        ("preset.capture", plugin(Idempotent, &[SurfaceWrite])),
+        ("preset.capture", plugin(Mutate, &[SurfaceWrite])),
         ("preset.apply", plugin(Idempotent, &[SurfaceWrite])),
         // ── surface (구조 조작) ───────────────────────────────────────
         ("surface.list", plugin(Read, &[SurfaceRead])),
@@ -306,7 +306,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 측 caller 게이트). 나머지 조회/해제/설정은 local_only(CLI/로컬 client).
         // register/unregister/sweep 는 웹훅 lifecycle 의미가 create/remove/clear
         // 보다 명확 — api-conventions "verb 화이트리스트" 정당화. sweep = 만료 정리.
-        ("webhook.register", plugin(Idempotent, &[Network])),
+        ("webhook.register", plugin(Mutate, &[Network])),
         ("webhook.list", local_only(Read)),
         ("webhook.info", local_only(Read)),
         ("webhook.unregister", local_only(Idempotent)),

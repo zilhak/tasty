@@ -733,6 +733,12 @@ fn the_effect_axis_is_redelivery_not_the_verb() {
     assert_eq!(eff("output.observe_start"), Mutate);
     // 닫힌 것은 닫힌 채로 있다.
     assert_eq!(eff("tab.close"), Idempotent);
+    // 이름이 `register` 인데 부를 때마다 새 opaque id 와 새 공개 URL 이 난다.
+    assert_eq!(eff("webhook.register"), Mutate);
+    // 이름을 안 주면 서버가 unique_name 을 지어 슬롯이 하나 더 생긴다 — 주는
+    // 경로만 보고 멱등이라고 읽으면 안 된다. 한 이름에 두 성질이 있으면
+    // 조심스러운 쪽이 그 이름의 값이다.
+    assert_eq!(eff("preset.capture"), Mutate);
 }
 
 /// plugin namespace 로 넘어가는 이름은 호스트가 뜻을 모른다 — 그때 고르는 값은
