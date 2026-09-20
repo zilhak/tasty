@@ -5,7 +5,7 @@
 //! - 매 메인 루프 tick에서 `pump()` 호출 → plugin 알림 처리 + 헬스체크 + 재시작
 //! - 종료 시 `shutdown_all()`
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -456,9 +456,19 @@ pub struct PluginManager {
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
     /// plugin 별 **연속** namespace 만료 수. 그 plugin 의 namespace 응답이 하나라도
-    /// 도착하면 지운다 — 답하고 있는 plugin 은 아무리 느려도 여기 안 쌓인다. plugin 이
-    /// 치워질 때(`cancel_pending_namespace_calls`)도 지운다.
+    /// 도착하면 지운다 — **만료 뒤에 도착한 늦은 응답도 포함한다**(아래
+    /// `expired_namespace_calls`). 답하고 있는 plugin 은 아무리 느려도 여기 안 쌓인다.
+    /// plugin 이 치워질 때(`cancel_pending_namespace_calls`)도 지운다.
     pub(super) namespace_expiries: HashMap<String, u32>,
+    /// plugin 별로 **만료로 거둬진 namespace 호출의 request id**. 그 id 의 응답이
+    /// 뒤늦게 도착하면 `namespace_expiries` 를 지우는 근거가 된다 — pending 은 이미
+    /// 없으므로 그때는 이 목록만이 "이 응답이 namespace 호출의 것이었나" 를 안다.
+    ///
+    /// 이것 없이 "id 가 안 맞는 응답" 전체로 계수를 지우면 **늦은 hook 응답**까지
+    /// 지우게 되어, namespace 호출만 삼키면서 hook 에만 답하는 plugin 이 판정을
+    /// 빠져나간다. 길이는 `NAMESPACE_EXPIRY_RESTART_LIMIT` 로 잘라 무한히 안 자란다
+    /// (거기 닿으면 재시작이 일어나고 그 경로가 둘 다 비운다).
+    pub(super) expired_namespace_calls: HashMap<String, VecDeque<u64>>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
     /// 호스트가 발화하는 envelope의 `meta.trace_id` 카운터.
@@ -1005,6 +1015,107 @@ prefix = "{prefix}"
         assert!(
             mgr.processes.contains_key("com.example.slow"),
             "계수가 리셋됐는데 재시작이 걸렸다"
+        );
+    }
+
+    /// **만료 뒤에 도착한** namespace 응답도 계수를 지운다.
+    ///
+    /// 그 응답이 올 때 pending 은 이미 sweep 이 거둬 없다. 그 자리에서 계수를 안 지우면
+    /// `NAMESPACE_CALL_TIMEOUT` 을 조금씩 넘겨 **매번 실제로 답하는** plugin 이 세 번마다
+    /// 재시작된다 — 재시작은 느린 것을 빠르게 만들지 못하므로 그 반복은 그 plugin 의
+    /// 화면만 주기적으로 없앤다.
+    #[test]
+    fn a_late_namespace_answer_also_clears_the_expiry_streak() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.slow".into(), stub_process());
+
+        expire_namespace_calls(&mut mgr, "com.example.slow", NAMESPACE_EXPIRY_RESTART_LIMIT);
+        assert_eq!(
+            mgr.namespace_expiries.get("com.example.slow"),
+            Some(&NAMESPACE_EXPIRY_RESTART_LIMIT)
+        );
+        assert!(
+            !mgr.pending_requests.contains_key(&100),
+            "sweep 이 거두지 않았으면 이 시험은 늦은 응답을 재는 것이 아니다"
+        );
+
+        mgr.handle_plugin_response(
+            "com.example.slow",
+            crate::protocol::PluginResponse {
+                id: 100,
+                result: Some(serde_json::json!({})),
+                error: None,
+                error_code: None,
+            },
+        );
+        assert!(
+            !mgr.namespace_expiries.contains_key("com.example.slow"),
+            "늦은 namespace 응답이 계수를 안 지웠다"
+        );
+
+        mgr.restart_unresponsive_plugins();
+        assert!(
+            mgr.processes.contains_key("com.example.slow"),
+            "답한 plugin 이 재시작됐다"
+        );
+    }
+
+    /// 계수를 지우는 것은 **namespace 응답뿐**이다 — 두 갈래를 한 자리에서 가른다.
+    ///
+    /// (1) pending 이 있는 다른 종류의 응답, (2) pending 이 없는데 namespace 만료로
+    /// 기억된 id 도 아닌 응답(늦은 hook 응답·잡음). 둘 다 계수를 못 지워야 한다.
+    /// 이것이 없으면 namespace 호출만 삼키면서 다른 것에만 답하는 plugin 이 판정을
+    /// 빠져나간다.
+    #[test]
+    fn only_a_namespace_answer_clears_the_expiry_streak() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.silent".into(), stub_process());
+        expire_namespace_calls(
+            &mut mgr,
+            "com.example.silent",
+            NAMESPACE_EXPIRY_RESTART_LIMIT,
+        );
+
+        // (1) pending 이 있는 non-namespace 응답.
+        mgr.pending_requests
+            .insert(500, PendingRequest::now(PendingRequestKind::Other));
+        mgr.handle_plugin_response(
+            "com.example.silent",
+            crate::protocol::PluginResponse {
+                id: 500,
+                result: Some(serde_json::json!({})),
+                error: None,
+                error_code: None,
+            },
+        );
+        assert_eq!(
+            mgr.namespace_expiries.get("com.example.silent"),
+            Some(&NAMESPACE_EXPIRY_RESTART_LIMIT),
+            "namespace 가 아닌 응답이 계수를 지웠다"
+        );
+
+        // (2) 기억된 적 없는 id 의 늦은 응답.
+        mgr.handle_plugin_response(
+            "com.example.silent",
+            crate::protocol::PluginResponse {
+                id: 9999,
+                result: Some(serde_json::json!({})),
+                error: None,
+                error_code: None,
+            },
+        );
+        assert_eq!(
+            mgr.namespace_expiries.get("com.example.silent"),
+            Some(&NAMESPACE_EXPIRY_RESTART_LIMIT),
+            "namespace 만료로 기억된 적 없는 id 가 계수를 지웠다"
+        );
+
+        mgr.restart_unresponsive_plugins();
+        assert!(
+            !mgr.processes.contains_key("com.example.silent"),
+            "계수가 상한인데 재시작이 안 걸렸다"
         );
     }
 

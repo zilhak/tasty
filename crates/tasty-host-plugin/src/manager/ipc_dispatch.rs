@@ -541,6 +541,7 @@ impl PluginManager {
     pub(super) fn cancel_pending_namespace_calls(&mut self, plugin_id: &str, reason: &str) {
         // 이 plugin 은 치워지는 중이다 — 연속 만료 계수는 다음 기동에 넘기지 않는다.
         self.namespace_expiries.remove(plugin_id);
+        self.expired_namespace_calls.remove(plugin_id);
         let to_cancel: Vec<u64> = self
             .pending_requests
             .iter()

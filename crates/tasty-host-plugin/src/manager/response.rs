@@ -80,12 +80,21 @@ impl PluginManager {
         }
         let kind = match pending {
             Some(p) => p.kind,
-            None => return,
+            None => {
+                // id 가 안 맞는 응답 — 이미 만료·취소돼 거둬진 것이다. 그중
+                // **namespace 호출이었던 것**만 계수를 지운다: 늦어도 답한 것은
+                // 답한 것이다.
+                self.clear_streak_if_late_namespace_answer(plugin_id, resp.id);
+                return;
+            }
         };
         // namespace 응답이 하나라도 오면 그 plugin 의 연속 만료 계수를 지운다 —
-        // 답하고 있는 plugin 은 느려도 재시작 판정에 안 걸린다. pong 은 여기 안
-        // 들어온다(그것은 `Other` 다): ping 에만 답하는 plugin 을 가리려는 것이
-        // 계수의 목적이므로, pong 이 계수를 지우면 계수가 영영 안 찬다.
+        // 답하고 있는 plugin 은 느려도 재시작 판정에 안 걸린다. pong 은 애초에
+        // pending 을 안 만들어(`PluginProcess::ping`) 위 `None` 갈래로 빠지고, 거기서도
+        // namespace 로 기억된 id 가 아니라 안 지운다: ping 에만 답하는 plugin 을
+        // 가리려는 것이 계수의 목적이므로, pong 이 계수를 지우면 계수가 영영 안 찬다.
+        // 이 `matches!` 가 실제로 거르는 것은 `SurfaceCreate`·`PopupOpen`·`Other`
+        // 같은 다른 pending 종류다.
         if matches!(
             kind,
             PendingRequestKind::NamespaceInvoke { .. }
@@ -479,7 +488,7 @@ impl PluginManager {
         let expired = self.collect_expired_request_ids(now);
         for id in expired {
             if let Some(p) = self.pending_requests.remove(&id) {
-                self.expire_pending_request(p.kind);
+                self.expire_pending_request(id, p.kind);
             }
         }
     }
@@ -514,7 +523,7 @@ impl PluginManager {
     /// namespace 호출은 기다리던 응답이 곧 목적이라 진행시킬 것이 없다 — plugin 이
     /// 사라졌을 때(`cancel_pending_namespace_calls`)와 같은 모양으로 caller 에
     /// `-32004` 를 회신한다.
-    fn expire_pending_request(&mut self, kind: PendingRequestKind) {
+    fn expire_pending_request(&mut self, id: u64, kind: PendingRequestKind) {
         match kind {
             PendingRequestKind::ExtensionPreIpcHook {
                 target_plugin_id,
@@ -564,7 +573,7 @@ impl PluginManager {
                 event_key,
                 deadline: _,
             } => self.fail_open_post_event_hook(extension_plugin_id, event_key),
-            other => self.expire_pending_answer(other),
+            other => self.expire_pending_answer(id, other),
         }
     }
 
@@ -573,7 +582,7 @@ impl PluginManager {
     /// caller 종류(local `response_tx` · plugin `ipc.result` · post-hook 이 걸린
     /// `send_final_error`)만 다르고 싣는 코드는 셋 다 `-32004` 로 같다
     /// (`docs/adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md`).
-    fn expire_pending_answer(&mut self, kind: PendingRequestKind) {
+    fn expire_pending_answer(&mut self, id: u64, kind: PendingRequestKind) {
         match kind {
             PendingRequestKind::NamespaceInvoke {
                 plugin_id,
@@ -581,7 +590,7 @@ impl PluginManager {
                 original_id,
                 deadline: _,
             } => {
-                let msg = self.note_namespace_expiry(&plugin_id);
+                let msg = self.note_namespace_expiry(&plugin_id, id);
                 send_response(
                     &response_tx,
                     JsonRpcResponse::error(original_id, -32004, &msg),
@@ -593,7 +602,7 @@ impl PluginManager {
                 call_id,
                 deadline: _,
             } => {
-                let msg = self.note_namespace_expiry(&plugin_id);
+                let msg = self.note_namespace_expiry(&plugin_id, id);
                 // 바로 위 local 갈래와 같은 `-32004`. 만료는 caller 종류와 무관한
                 // 같은 사건이다.
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
@@ -606,7 +615,7 @@ impl PluginManager {
                 final_caller,
                 deadline: _,
             } => {
-                let msg = self.note_namespace_expiry(&target_plugin_id);
+                let msg = self.note_namespace_expiry(&target_plugin_id, id);
                 self.send_final_error(final_caller, -32004, msg);
             }
             // debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어 회신이 목적이다.
@@ -634,11 +643,44 @@ impl PluginManager {
     /// namespace 만료 한 건을 기록한다 — 경고를 남기고 연속 계수에 더한 뒤,
     /// caller 에 실을 문구를 돌려준다. 세 caller 갈래가 같은 문구·같은 계수를
     /// 쓰므로 그 셋을 여기 한 자리로 모은다.
-    fn note_namespace_expiry(&mut self, plugin_id: &str) -> String {
+    fn note_namespace_expiry(&mut self, plugin_id: &str, req_id: u64) -> String {
         let msg = namespace_timeout_message(plugin_id);
         tracing::warn!("{msg}");
         self.record_namespace_expiry(plugin_id);
+        self.remember_expired_namespace_call(plugin_id, req_id);
         msg
+    }
+
+    /// 거둬진 namespace 호출의 id 를 그 plugin 앞으로 적어 둔다. 뒤늦게 그 id 의
+    /// 응답이 오면 [`Self::clear_streak_if_late_namespace_answer`] 가 계수를 지운다.
+    /// 길이는 계수 상한만큼만 들고 오래된 것부터 버린다 — 상한에 닿으면 재시작이
+    /// 일어나고 그 경로가 이 목록도 비우므로, 이 자름이 판정을 무르게 하지 않는다.
+    fn remember_expired_namespace_call(&mut self, plugin_id: &str, req_id: u64) {
+        let ids = self
+            .expired_namespace_calls
+            .entry(plugin_id.to_string())
+            .or_default();
+        ids.push_back(req_id);
+        while ids.len() > super::NAMESPACE_EXPIRY_RESTART_LIMIT as usize {
+            ids.pop_front();
+        }
+    }
+
+    /// 만료로 이미 거둬진 namespace 호출의 **늦은 응답**이면 그 plugin 의 연속 계수를
+    /// 지운다.
+    ///
+    /// 늦어도 답한 것은 답한 것이다. 이것이 없으면 `NAMESPACE_CALL_TIMEOUT` 을 조금씩
+    /// 넘겨 답하는 plugin 이 — 매번 실제로 응답을 보내는데도 — 세 번마다 재시작된다.
+    /// 재시작은 느린 것을 빠르게 만들지 못하므로 그 반복은 그 plugin 의 surface·popup
+    /// 만 주기적으로 없앨 뿐이다. 계수가 가리려는 것은 **아무것도 안 답하는** plugin 이다.
+    fn clear_streak_if_late_namespace_answer(&mut self, plugin_id: &str, resp_id: u64) {
+        let Some(ids) = self.expired_namespace_calls.get_mut(plugin_id) else {
+            return;
+        };
+        if let Some(pos) = ids.iter().position(|id| *id == resp_id) {
+            ids.remove(pos);
+            self.namespace_expiries.remove(plugin_id);
+        }
     }
 
     /// namespace 만료 한 건을 그 target plugin 의 연속 계수에 더한다.

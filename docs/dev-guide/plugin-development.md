@@ -297,7 +297,10 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   그러나 그 plugin 의 namespace 응답이 하나도 없는 채로 만료가 `NAMESPACE_EXPIRY_RESTART_LIMIT`
   (3)회 연달아 쌓이면, 다음 ping tick 에서 healthcheck 무응답과 **같은 경로로** 재시작한다
   (`plugin.error` 이벤트의 `error_kind` 는 `namespace_unresponsive`). 계수는 그 plugin 의
-  namespace 응답이 하나라도 오면 0 으로 돌아가므로 느린 plugin 은 걸리지 않는다. hook 처럼
+  namespace 응답이 하나라도 오면 0 으로 돌아간다 — **만료 뒤에 늦게 도착한 응답도 센다**.
+  그래서 느린 plugin 은 걸리지 않는다: caller 는 150 초에 오류를 받지만 그 뒤 도착한 답이
+  계수를 지운다. 걸리는 것은 **아무 답도 안 보내는** plugin 뿐이다. 늦은 hook 응답은 계수를
+  못 지운다(호스트가 만료된 namespace 호출의 id 만 기억한다). hook 처럼
   backoff 를 걸지 않는 이유는 ADR-0311 의 2026-09-20 보강에 있다 — 우회할 대상이 없는
   호출에 backoff 를 걸면 회복한 plugin 이 그 창 동안 도달 불가가 된다.
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.

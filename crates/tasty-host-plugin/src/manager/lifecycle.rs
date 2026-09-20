@@ -187,6 +187,7 @@ impl PluginManager {
             extensions: crate::extension_registry::ExtensionRegistry::new(),
             hook_failures: HashMap::new(),
             namespace_expiries: HashMap::new(),
+            expired_namespace_calls: HashMap::new(),
             event_bus: crate::event_bus::EventBus::new(),
             event_trace_seq: AtomicU64::new(1),
             popup_instances: HashMap::new(),

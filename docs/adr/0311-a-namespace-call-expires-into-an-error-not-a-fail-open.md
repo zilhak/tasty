@@ -69,9 +69,26 @@ healthcheck 가 원리적으로 못 보는 것이 애초에 이 ADR 의 전제�
 
 **그래서 연속 만료를 plugin 단위로 세고, `NAMESPACE_EXPIRY_RESTART_LIMIT`(3) 에 닿으면
 그 plugin 을 healthcheck 무응답과 같은 경로로 재시작한다.** 계수는 그 plugin 의 namespace
-응답이 하나라도 도착하면 지운다 — 답하고 있는 plugin 은 아무리 느려도 여기 안 쌓인다.
+응답이 하나라도 도착하면 지운다 — **만료 뒤에 도착한 늦은 응답도 포함한다.** 답하고 있는
+plugin 은 아무리 느려도 여기 안 쌓인다.
+
+**늦은 응답을 세는 것이 이 결정의 일부다.** 만료된 호출의 응답이 올 때 pending 은 이미
+sweep 이 거둬 없다. 그러니 그 자리에서 계수를 안 지우면, `NAMESPACE_CALL_TIMEOUT` 을
+조금씩 넘겨 답하는 plugin 이 — **매 호출마다 실제로 응답을 보내는데도** — 세 번마다
+재시작된다. 재시작은 느린 것을 빠르게 만들지 못하므로 그 반복은 그 plugin 의 surface ·
+popup · banner 를 주기적으로 없앨 뿐이다. 계수가 가리려는 것은 **아무것도 안 답하는**
+plugin 이고, 늦어도 답한 것은 답한 것이다. 반대 방향(만료 전 응답만 센다)을 고르면 위
+"느린 plugin 은 안 걸린다" 는 성질을 포기해야 한다.
+
+**그런데 "id 가 안 맞는 응답" 전체로 지우면 안 된다.** 그 갈래에는 늦은 hook 응답과 잡음도
+들어오고, 그러면 namespace 호출만 삼키면서 hook 에만 답하는 plugin 이 판정을 빠져나간다.
+그래서 만료로 거둔 namespace 호출의 request id 를 plugin 당 계수 상한만큼만 기억하고
+(`expired_namespace_calls`), 늦은 응답의 id 가 거기 있을 때만 지운다. 상한에 닿으면
+재시작이 일어나고 그 경로가 두 자료를 함께 비우므로, 이 자름이 판정을 무르게 하지 않는다.
+
 pong 은 계수를 지우지 않는다: 계수가 가리려는 것이 바로 "ping 에만 답하는 plugin" 이라,
-pong 이 지우면 계수가 영영 안 찬다.
+pong 이 지우면 계수가 영영 안 찬다. pong 은 애초에 pending 을 안 만들고, 위 id 목록에도
+없으므로 두 갈래 어디서도 계수에 닿지 않는다.
 
 **hook 의 backoff 를 이식하지 않는다.** hook 은 선택적이라 우회가 곧 정상 동작이고,
 그래서 연속 실패에 "잠시 안 부른다"(`HOOK_FAIL_BACKOFF`)가 답이 된다. namespace 호출에는
@@ -97,8 +114,8 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
   결과를 따로 알리는 모양으로 바꿔야 하며, 이 상수를 올리는 것은 처방이 아니다.
 - **운영 비용 / 유지 부담**: 상수 하나와 sweep 의 match 팔 3 개. sweep 자체는 이미
   매 pump 마다 돌고 있었다.
-- **2026-09-20 보강이 더한 것**: plugin 당 `u32` 하나(`namespace_expiries`)와 재시작
-  판정의 두 번째 사유. **동작 변경**이다 — 종전에는 namespace 호출만 삼키는 plugin 이
+- **2026-09-20 보강이 더한 것**: plugin 당 `u32` 하나(`namespace_expiries`)와 최근 만료
+  id 를 상한만큼 담는 큐 하나(`expired_namespace_calls`), 그리고 재시작 판정의 두 번째 사유. **동작 변경**이다 — 종전에는 namespace 호출만 삼키는 plugin 이
   무한히 그 상태로 남았고, 이제는 연속 3 회 만에 재시작된다. 재시작은 그 plugin 의
   surface·popup·banner·mesh 프레임을 그 경로가 원래 정리하는 대로 정리하므로, 그
   plugin 의 화면 상태가 사라졌다 다시 생긴다.
@@ -121,6 +138,11 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
   있다. 선언을 받으려면 protocol 이 바뀌고 번들 plugin 전부가 따라 움직인다.
 - **E (2026-09-20 보강): 반복 만료에 hook 처럼 backoff 를 건다** — 기각. 위 보강 절의
   이유 그대로다. hook 의 우회는 정상 동작이지만 namespace 호출의 우회는 도달 불가다.
+- **G (2026-09-20 보강): 만료 전에 도착한 응답만 계수를 지운다** — 기각. 구현이 가장 작지만
+  (`None` 갈래를 그냥 `return` 한다) `NAMESPACE_CALL_TIMEOUT` 을 조금씩 넘겨 **답하는**
+  plugin 이 세 번마다 재시작되고, 재시작이 그 느림을 못 고치므로 그 상태가 주기적으로
+  반복된다. 그러면 "느린 plugin 은 안 걸린다" 를 문서에서 **지워야** 하는데, 그 문장이야말로
+  이 계수가 healthcheck 와 구별되는 이유다.
 - **F (2026-09-20 보강): 세기만 하고 로그만 올린다** — 기각. 그러면 이 ADR 이 막으려던
   것("caller 가 영영 기다린다")은 한 건마다 막히지만, **호스트 쪽 비용**(매 호출 150 s 의
   pending 과 그만큼의 caller 대기)은 그대로 무한히 반복된다. 관측만으로는 그 반복이
@@ -138,6 +160,10 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
 - healthcheck 회수 경로(`cancel_pending_namespace_calls`)가 사라지거나 namespace
   pending 을 더 이상 거두지 않게 됐을 때. 그러면 "앞지르지 않는다" 는 유도의 전제가 없어지고
   값은 회수 상한이 아니라 정상 호출 길이에서 나와야 한다.
+- `handle_plugin_response` 의 `None` 갈래가 `expired_namespace_calls` 를 더 이상 안 볼 때.
+  그러면 늦은 응답이 계수를 못 지워 위 대안 G 의 상태로 되돌아간다. (좌변에 붙은 판정기는
+  `tasty-host-plugin` 의 `a_late_namespace_answer_also_clears_the_expiry_streak` ·
+  `only_a_namespace_answer_clears_the_expiry_streak` 둘이다.)
 - `restart_unresponsive_plugins` 가 `namespace_expiries` 를 더 이상 안 볼 때. 2026-09-20
   보강의 처방이 그 한 자리에 있으므로, 그것이 빠지면 반복 만료가 다시 로그뿐이 된다.
   (이 좌변에 붙은 판정기는 지금 없다 — 위 보강을 재는 것은
