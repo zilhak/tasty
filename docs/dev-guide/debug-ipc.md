@@ -77,7 +77,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.event_bus.list_subscribers` | `key` | 해당 키 구독 plugin 목록 |
 | `debug.event_bus.publish` | `key, payload, scope` | 임의 키로 host envelope 발화 |
 | `debug.event_bus.trace` | `trace_id` | 같은 trace_id envelope 들을 발화 순서로 |
-| `debug.extension.invoke_hook` | `extension_id, kind, phase, mode, target, payload` | 매니페스트 매칭 우회로 extension hook 직접 호출 (fail-open/backoff 우회) |
+| `debug.extension.invoke_hook` | `extension_id, kind, phase, mode, target, payload` | 매니페스트 매칭 우회로 extension hook 직접 호출 (fail-open/backoff 우회). 응답 상한은 매니페스트 hook 의 `timeout_ms` 상한(`HOOK_TIMEOUT_MS_MAX`, 1 s)과 같고, 넘기면 `-32004` 로 회신한다 — 선언이 없는 경로라 값이 어디선가 와야 하는데, 같은 extension 이 정상 경로에서 받는 상한과 같게 두는 것이 유일한 파생이다 |
 | `debug.fullscreen.list` | `{}` | 등록된 전체화면 무대 정의 전체 — `{"stages":[{id,title_key}]}`. 제목은 i18n **키** 그대로라 로케일에 무관하게 단정 가능 |
 | `debug.fullscreen.open` | `stage_id`, `window_id?` | 무대를 창에 강제로 올린다(popup 타이틀바 전체화면 버튼 우회, 시각 검증용). 창당 하나 계약 그대로 — 다른 무대가 올라와 있으면 **교체**(닫힘 훅 발화), 같은 id 면 no-op. 정의 테이블에 없는 `stage_id` 는 창을 고르기 전에 `-32602` 로 **거부**(조용한 no-op 아님). 응답: `window_id`·`stage_id`·`previous_stage_id`·`replaced` |
 | `debug.fullscreen.close` | `window_id?` | 그 창의 활성 무대를 내린다. 응답 `closed` 는 실제로 내린 무대가 있었는지(없었으면 `false`), `stage_id` 는 내려간 무대 id |

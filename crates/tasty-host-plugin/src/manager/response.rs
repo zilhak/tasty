@@ -205,6 +205,7 @@ impl PluginManager {
             PendingRequestKind::DebugExtensionInvokeHook {
                 response_tx,
                 original_id,
+                deadline: _,
             } => {
                 send_namespace_result(
                     &response_tx,
@@ -297,6 +298,7 @@ impl PluginManager {
                     PendingRequest::now(PendingRequestKind::DebugExtensionInvokeHook {
                         response_tx,
                         original_id,
+                        deadline: Instant::now() + super::DEBUG_HOOK_INVOKE_TIMEOUT,
                     }),
                 );
             }
@@ -486,6 +488,10 @@ impl PluginManager {
                 | PendingRequestKind::NamespaceInvokeWithPostHook { deadline, .. } => {
                     if now >= *deadline { Some(*id) } else { None }
                 }
+                #[cfg(debug_assertions)]
+                PendingRequestKind::DebugExtensionInvokeHook { deadline, .. } => {
+                    if now >= *deadline { Some(*id) } else { None }
+                }
                 _ => None,
             })
             .collect()
@@ -580,6 +586,24 @@ impl PluginManager {
                 let msg = namespace_timeout_message(&target_plugin_id);
                 tracing::warn!("{msg}");
                 self.send_final_error(final_caller, -32004, msg);
+            }
+            // debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어 회신이 목적이다.
+            // 진행시킬 원본 흐름이 없으므로 namespace 만료와 같은 모양으로 끝낸다.
+            #[cfg(debug_assertions)]
+            PendingRequestKind::DebugExtensionInvokeHook {
+                response_tx,
+                original_id,
+                deadline: _,
+            } => {
+                let msg = format!(
+                    "extension did not answer the debug hook invoke within {}ms",
+                    super::DEBUG_HOOK_INVOKE_TIMEOUT.as_millis()
+                );
+                tracing::warn!("{msg}");
+                send_response(
+                    &response_tx,
+                    JsonRpcResponse::error(original_id, -32004, &msg),
+                );
             }
             _ => {}
         }

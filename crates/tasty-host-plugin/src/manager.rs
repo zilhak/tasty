@@ -55,6 +55,17 @@ pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
 /// 뿐이게 한다.
 pub(super) const NAMESPACE_CALL_TIMEOUT: Duration =
     Duration::from_secs(2 * (HEALTHCHECK_TIMEOUT.as_secs() + PING_INTERVAL.as_secs()));
+/// debug 한정 `debug.extension.invoke_hook` 한 건의 응답 상한.
+///
+/// 값을 새로 고르지 않고 매니페스트 검증의 상한에서 가져온다 —
+/// [`HOOK_TIMEOUT_MS_MAX`](tasty_plugin_manifest::HOOK_TIMEOUT_MS_MAX) 는 선언된
+/// hook 의 `timeout_ms` 가 넘을 수 없는 값이므로, 그보다 더 기다리는 것은 **실제
+/// hook 이 할 수 없는 일을 기다리는 것**이다. 이 경로에는 매니페스트 선언이
+/// 없어(호출자가 ext_id·phase·payload 를 직접 준다) 값을 어디선가 정해야 하는데,
+/// 같은 extension 이 정상 경로에서 받는 상한과 같게 두는 것이 유일하게 파생인 값이다.
+#[cfg(debug_assertions)]
+pub(super) const DEBUG_HOOK_INVOKE_TIMEOUT: Duration =
+    Duration::from_millis(tasty_plugin_manifest::HOOK_TIMEOUT_MS_MAX as u64);
 pub(super) const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
 /// plugin 하나에 주는 graceful 종료 기회. 초과하면 force kill 한다. 종료 전체
@@ -213,6 +224,12 @@ pub(super) enum PendingRequestKind {
     DebugExtensionInvokeHook {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         original_id: serde_json::Value,
+        /// hook 응답이 도착해야 하는 시각. 지나면 caller 에 오류로 회신하고 버린다.
+        /// 이 변종만 `response_tx` 를 들고 deadline 이 없었고, 그러면 extension 이
+        /// 삼킨 호출 하나가 local CLI 를 영영 세운다 — 선언된 hook 과 달리
+        /// 매니페스트가 정해 주는 `timeout_ms` 가 없어 값이 안 붙어 있었던 것이지
+        /// 기다려야 할 이유가 있었던 것이 아니다.
+        deadline: Instant,
     },
     /// extension의 pre-event hook을 dispatch한 뒤 응답 대기. 응답이 오면
     /// (transform이면 envelope.payload 교체, filter면 fan-out 차단)
@@ -923,6 +940,45 @@ prefix = "{prefix}"
         assert_eq!(err.code, -32004);
         assert!(
             err.message.contains("com.example.silent") && err.message.contains("did not answer"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    /// debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어, deadline 이 없으면
+    /// extension 이 한 번 삼키는 것만으로 local CLI 가 영영 선다. 상한 직전과
+    /// 직후를 같은 자리에서 재서 그 상한이 실제로 걸려 있는지를 가른다.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn an_expired_debug_hook_invoke_answers_its_caller() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let (tx, rx) = mpsc::sync_channel(1);
+        let deadline = Instant::now() + DEBUG_HOOK_INVOKE_TIMEOUT;
+        mgr.pending_requests.insert(
+            11,
+            PendingRequest::now(PendingRequestKind::DebugExtensionInvokeHook {
+                response_tx: tx,
+                original_id: serde_json::json!("dbg"),
+                deadline,
+            }),
+        );
+        mgr.sweep_expired_requests(deadline - Duration::from_millis(1));
+        assert!(
+            mgr.pending_requests.contains_key(&11),
+            "상한 전인데 거둬졌다"
+        );
+        assert!(rx.try_recv().is_err(), "상한 전에 회신이 갔다");
+
+        mgr.sweep_expired_requests(deadline);
+        assert!(
+            !mgr.pending_requests.contains_key(&11),
+            "만료가 안 거둬졌다"
+        );
+        let resp = rx.try_recv().expect("만료 시 caller 에 회신이 가야 한다");
+        let err = resp.error.expect("결과가 아니라 오류여야 한다");
+        assert_eq!(err.code, -32004);
+        assert!(
+            err.message.contains("debug hook invoke"),
             "got: {}",
             err.message
         );
