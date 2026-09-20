@@ -126,6 +126,12 @@ assets = [
     ["assets/icons/icon_128.png", "usr/share/icons/hicolor/128x128/apps/tasty.png", "644"],
     ["assets/icons/icon_256.png", "usr/share/icons/hicolor/256x256/apps/tasty.png", "644"],
     ["assets/icons/icon_512.png", "usr/share/icons/hicolor/512x512/apps/tasty.png", "644"],
+    # Notice set — see THIRD_PARTY_LICENSES.md. Debian keeps package documentation
+    # under /usr/share/doc/<pkg>/; `LICENSES/` keeps its subdirectory so the links
+    # inside the notice document still resolve in the installed tree.
+    ["LICENSE", "usr/share/doc/tasty/", "644"],
+    ["THIRD_PARTY_LICENSES.md", "usr/share/doc/tasty/", "644"],
+    ["LICENSES/D2Coding-OFL.txt", "usr/share/doc/tasty/LICENSES/", "644"],
     # Builtin plugins — installed under FHS path; `bundle_root()` picks this up
     # as the linux fallback (crates/tasty-host-plugin/src/builtin.rs).
     # Per-plugin layout: <id>/{tasty-plugin-<crate>, tasty-plugin.toml, lang/}.
@@ -175,6 +181,12 @@ assets = [
     { source = "assets/icons/icon_128.png", dest = "/usr/share/icons/hicolor/128x128/apps/tasty.png", mode = "644" },
     { source = "assets/icons/icon_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/tasty.png", mode = "644" },
     { source = "assets/icons/icon_512.png", dest = "/usr/share/icons/hicolor/512x512/apps/tasty.png", mode = "644" },
+    # Notice set — see [package.metadata.deb] for what the set is. RPM keeps
+    # licence text under /usr/share/licenses/<pkg>/, so the layout differs from
+    # the deb one on purpose.
+    { source = "LICENSE", dest = "/usr/share/licenses/tasty/LICENSE", mode = "644" },
+    { source = "THIRD_PARTY_LICENSES.md", dest = "/usr/share/licenses/tasty/THIRD_PARTY_LICENSES.md", mode = "644" },
+    { source = "LICENSES/D2Coding-OFL.txt", dest = "/usr/share/licenses/tasty/D2Coding-OFL.txt", mode = "644" },
     # Builtin plugins — see [package.metadata.deb] for layout/sync notes.
     { source = "target/release/tasty-plugin-claude",             dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin-claude",                       mode = "755" },
     { source = "crates/tasty-plugin-claude/tasty-plugin.toml",   dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin.toml",                         mode = "644" },

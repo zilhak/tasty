@@ -1,4 +1,4 @@
-<!-- source-hash: 5718a75faff0 -->
+<!-- source-hash: bcf4aba0ca6b -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -44,6 +44,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 - GPU acceleration (Vulkan) is used when `libvulkan1` / `vulkan-loader` is present. Without it, Tasty still installs and runs, using software rendering.
 - `.AppImage` bundles all libraries. You register it in the app menu yourself (use `appimaged`, or put a `.desktop` file in `~/.local/share/applications/`).
 - `.tar.gz` requires you to set up PATH and the menu entry yourself. If a required system library is missing, `tasty` tells you what is missing and exits.
+- The licence notices (the MIT text, the bundled font's OFL text, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory. They are also downloadable from the release page.
 - The build baseline is Ubuntu 24.04 (glibc 2.39), so on older distributions (Ubuntu 20.04, Debian 11, etc.) it may fail to start with a `GLIBC_2.39 not found` error. No separate build is provided for older distributions.
 
 ## macOS

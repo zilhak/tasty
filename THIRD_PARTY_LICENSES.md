@@ -35,7 +35,10 @@ OFL 1.1은 폰트의 사용·변경·재배포(상용 포함)를 허용하지만
 |---|---|
 | GitHub 릴리스 | 세 파일이 릴리스 에셋으로 그대로 올라갑니다 |
 | Windows `.msi` | MIT 본문을 설치 동의 화면과 설치 디렉토리에 `License.rtf` 로 넣습니다. **제3자 고지(OFL)는 아직 안 들어갑니다.** |
-| Linux `tar.gz` · `.deb` · `.rpm` · `.AppImage` | **아직 안 들어갑니다.** |
+| Linux `tar.gz` | 압축을 풀면 나오는 디렉토리 최상단 |
+| Linux `.deb` | `/usr/share/doc/tasty/` (Debian 관례. `LICENSES/` 하위 경로를 그대로 유지합니다) |
+| Linux `.rpm` | `/usr/share/licenses/tasty/` (RPM 관례라 deb 과 배치가 다릅니다) |
+| Linux `.AppImage` | `usr/share/licenses/tasty/` |
 | Windows `.zip` · macOS `.dmg` | **아직 안 들어갑니다.** |
 
 산출물 자체에 동봉되는 것이 OFL 1.1 이 요구하는 형태입니다 — 릴리스 에셋으로 따로

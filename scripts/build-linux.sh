@@ -232,6 +232,18 @@ stage_plugins() {
     done
 }
 
+# Stage the notice set (LICENSE + third-party notice + the bundled font's OFL
+# text) into a distribution tree. The set is static — see THIRD_PARTY_LICENSES.md
+# — so there is nothing to generate here. `LICENSES/` keeps its subdirectory so
+# that the relative links inside THIRD_PARTY_LICENSES.md still resolve.
+stage_notice() {
+    local dest="$1"
+    mkdir -p "$dest/LICENSES"
+    cp LICENSE "$dest/LICENSE"
+    cp THIRD_PARTY_LICENSES.md "$dest/THIRD_PARTY_LICENSES.md"
+    cp LICENSES/D2Coding-OFL.txt "$dest/LICENSES/D2Coding-OFL.txt"
+}
+
 echo "==> Assembling archive..."
 rm -rf "${DIST_DIR:?}/${PKG_DIR:?}"
 mkdir -p "$DIST_DIR/$PKG_DIR"
@@ -277,6 +289,7 @@ WRAPPER_EOF
 chmod +x "$DIST_DIR/$PKG_DIR/tasty"
 
 stage_plugins "$DIST_DIR/$PKG_DIR/plugins"
+stage_notice "$DIST_DIR/$PKG_DIR"
 
 echo "==> Creating $ARCHIVE_NAME..."
 rm -f "$DIST_DIR/$ARCHIVE_NAME"
@@ -332,6 +345,7 @@ if [[ "$PROFILE" != "debug" ]]; then
     # linuxdeploy doesn't clean AppDir — pre-stage plugins next to where it will
     # place tasty (AppDir/usr/bin/), so current_exe() sees `<exe_dir>/plugins/`.
     stage_plugins "$APPDIR/usr/bin/plugins"
+    stage_notice "$APPDIR/usr/share/licenses/tasty"
     VERSION="$VERSION" OUTPUT="$APPIMAGE_NAME" linuxdeploy \
         --appdir "$APPDIR" \
         --executable "target/$PROFILE/tasty" \
@@ -360,6 +374,12 @@ grep -q "$PKG_DIR/tasty" <<<"$TAR_LISTING" || {
     echo "Error: tasty not in $ARCHIVE_NAME" >&2
     exit 1
 }
+for notice in LICENSE THIRD_PARTY_LICENSES.md LICENSES/D2Coding-OFL.txt; do
+    grep -q "$PKG_DIR/$notice" <<<"$TAR_LISTING" || {
+        echo "Error: $notice not in $ARCHIVE_NAME" >&2
+        exit 1
+    }
+done
 VERIFY_TMP=$(mktemp -d)
 tar -xzf "$DIST_DIR/$ARCHIVE_NAME" -C "$VERIFY_TMP"
 "$VERIFY_TMP/$PKG_DIR/tasty" --version >/dev/null || {
@@ -373,10 +393,20 @@ if [[ -n "$DEB_FILE" ]]; then
         echo "Error: dpkg-deb -I failed on $DEB_FILE" >&2
         exit 1
     }
+    DEB_LISTING=$(dpkg-deb -c "$DEB_FILE")
+    grep -q "usr/share/doc/tasty/LICENSES/D2Coding-OFL.txt" <<<"$DEB_LISTING" || {
+        echo "Error: third-party notice not in $DEB_FILE" >&2
+        exit 1
+    }
 fi
 if [[ -n "$RPM_FILE" ]] && command -v rpm &>/dev/null; then
     rpm -qpi "$RPM_FILE" >/dev/null 2>&1 || {
         echo "Error: rpm -qpi failed on $RPM_FILE" >&2
+        exit 1
+    }
+    RPM_LISTING=$(rpm -qpl "$RPM_FILE" 2>/dev/null)
+    grep -q "/usr/share/licenses/tasty/D2Coding-OFL.txt" <<<"$RPM_LISTING" || {
+        echo "Error: third-party notice not in $RPM_FILE" >&2
         exit 1
     }
 fi
@@ -389,6 +419,14 @@ if [[ -n "$APPIMAGE_FILE" ]]; then
     appimage_type=$(file "$APPIMAGE_FILE")
     grep -q "ELF" <<<"$appimage_type" || {
         echo "Error: AppImage is not an ELF binary: $APPIMAGE_FILE" >&2
+        exit 1
+    }
+    # The AppImage itself is a squashfs image; listing it would need an extract
+    # run. What is checked instead is the AppDir linuxdeploy packed, which is
+    # still on disk and is the same tree.
+    [[ -f "$APPDIR/usr/share/licenses/tasty/THIRD_PARTY_LICENSES.md" \
+       && -f "$APPDIR/usr/share/licenses/tasty/LICENSES/D2Coding-OFL.txt" ]] || {
+        echo "Error: third-party notice missing from $APPDIR" >&2
         exit 1
     }
 fi

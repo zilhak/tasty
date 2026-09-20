@@ -43,6 +43,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 - GPU 가속(Vulkan)은 `libvulkan1` / `vulkan-loader` 가 있을 때 씁니다. 없어도 설치·실행은 되고 소프트웨어 렌더링으로 동작합니다.
 - `.AppImage` 는 라이브러리를 모두 포함합니다. 앱 메뉴 등록은 직접 합니다(`appimaged` 사용 또는 `.desktop` 파일을 `~/.local/share/applications/` 에 두기).
 - `.tar.gz` 는 PATH 등록과 메뉴 등록을 직접 해야 합니다. 필요한 시스템 라이브러리가 없으면 `tasty` 실행 시 무엇이 빠졌는지 안내하고 종료합니다.
+- 라이선스 고지(MIT 본문 · 번들 폰트의 OFL 본문 · 제3자 고지 문서)는 산출물 안에 함께 들어 있습니다. `.deb` 은 `/usr/share/doc/tasty/`, `.rpm` 과 `.AppImage` 는 `usr/share/licenses/tasty/`, `.tar.gz` 는 압축을 푼 디렉토리 최상단입니다. 릴리스 페이지에서 따로 내려받을 수도 있습니다.
 - 빌드 기준이 Ubuntu 24.04(glibc 2.39)라서 그보다 오래된 배포판(Ubuntu 20.04, Debian 11 등)에서는 `GLIBC_2.39 not found` 오류로 실행되지 않을 수 있습니다. 구배포판용 빌드는 따로 제공하지 않습니다.
 
 ## macOS
