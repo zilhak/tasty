@@ -29,7 +29,7 @@ pub use auth::{AuthLocation, WebhookAuth, auth_summary};
 pub use lifetime::{Lifetime, Limit, Persistence};
 pub use registry::{WebhookEntry, info, list, register, sweep, unregister};
 
-use crate::adapters::ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::HostIpcInjector;
 
 /// bind 주소 — `0.0.0.0`(모든 인터페이스, 공유기 포워딩 수신). OS 무관.
 const BIND_ADDR: &str = "0.0.0.0";

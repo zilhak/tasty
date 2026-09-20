@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
-use crate::ipc::server::{IpcCommand, IpcWaker};
+use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::server::{IpcCommand, IpcWaker};
 
 /// Host→plugin 동기 IPC 디스패처. `Clone` — Arc 기반이라 thread 간 자유 공유.
 #[derive(Clone)]

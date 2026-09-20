@@ -225,7 +225,7 @@ pub(crate) struct Core {
 
     /// Host→plugin sync IPC dispatcher. Hub 가 IPC 서버를 띄운 직후 등록.
     /// runner thread 가 `claude.spawn` 등을 동기 호출할 때 사용.
-    pub(crate) host_ipc_injector: Arc<OnceLock<crate::ipc::host_call::HostIpcInjector>>,
+    pub(crate) host_ipc_injector: Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>>,
 
     /// Agent task runner registry — workspace 별 runner thread 의 시작/중단/상태.
     /// `agent.task_run` IPC + 통합 테스트가 사용.
@@ -449,7 +449,7 @@ impl Core {
     }
 
     /// Hub 가 IPC 서버를 시작한 직후 1회 호출. 두 번째 호출 부터는 무시.
-    pub(crate) fn set_host_ipc_injector(&self, injector: crate::ipc::host_call::HostIpcInjector) {
+    pub(crate) fn set_host_ipc_injector(&self, injector: tasty_ipc::host_call::HostIpcInjector) {
         if self.host_ipc_injector.set(injector).is_err() {
             tracing::warn!("host_ipc_injector already initialized");
         }
@@ -460,7 +460,7 @@ impl Core {
     /// 의 제출 `\r` ack 대기 스레드(`adapters::ipc::handler::terminal`)가 소비.
     pub(crate) fn host_ipc_injector_arc(
         &self,
-    ) -> Arc<OnceLock<crate::ipc::host_call::HostIpcInjector>> {
+    ) -> Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>> {
         self.host_ipc_injector.clone()
     }
 

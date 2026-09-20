@@ -61,7 +61,7 @@ pub fn run_result_key(task_id: &str) -> String {
 
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
 use crate::core::agent::task_output_ref;
-use crate::ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::HostIpcInjector;
 
 /// Host→plugin dispatch timeout — 자식 프로세스 생성/디스크 I/O 까지 포함할 수 있는
 /// dispatch 와 1tick 만인 poll 양쪽에 같은 값으로 통일.
@@ -1870,8 +1870,8 @@ mod tests {
         ctx: &RunnerContext,
         responses: Vec<serde_json::Value>,
     ) -> std::thread::JoinHandle<()> {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
@@ -2013,8 +2013,8 @@ mod tests {
     /// 테스트 worker thread 가 poll method 에 terminal 상태 응답 — Done 으로 종결.
     #[test]
     fn polled_dispatch_recovers_after_injector_ready() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
@@ -2057,8 +2057,8 @@ mod tests {
     /// K.A.2: injector 외 사유 Err 는 grace 우회 — 즉시 Failed.
     #[test]
     fn polled_dispatch_non_injector_error_fails_immediately() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
@@ -2095,10 +2095,10 @@ mod tests {
     /// terminal 상태 도달까지 폴링. (fake.start → {"job":"J1"}, fake.poll → running→done)
     #[test]
     fn custom_with_poll_maps_params_and_polls_to_done() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::collections::HashMap;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpec, PollSpecRef};
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
@@ -2211,9 +2211,9 @@ mod tests {
     /// 회귀: Custom{poll:None} → dispatch 응답으로 즉시 CustomImmediate.
     #[test]
     fn custom_without_poll_is_immediate() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::OnFailure;
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
@@ -2270,9 +2270,9 @@ mod tests {
     /// `PollSpec` 대로 폴링한다(인라인과 동등하게 동작).
     #[test]
     fn custom_with_named_poll_strategy_resolves_and_polls() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
@@ -2361,9 +2361,9 @@ mod tests {
         use crate::hook_handler::types::{
             HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
         };
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
@@ -2492,9 +2492,9 @@ mod tests {
         use crate::hook_handler::types::{
             HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
         };
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
@@ -2577,9 +2577,9 @@ mod tests {
     /// 전에 먼저 `ipc_method` 를 호출하므로 그 응답까지는 정상적으로 흘려보낸다.
     #[test]
     fn custom_with_unknown_named_poll_strategy_fails_dispatch() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::{OnFailure, PollSpecRef};
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 
@@ -2633,9 +2633,9 @@ mod tests {
     /// poll 전략이 있으면 그 사양을 대신 사용한다(즉시-성공 하위호환보다 우선).
     #[test]
     fn custom_without_poll_uses_default_for_method_strategy() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::OnFailure;
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
         use tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort;
@@ -3261,9 +3261,9 @@ mod tests {
     /// 전에 치환돼야 한다(예: `claude.spawn` 의 `cwd` 파라미터 시나리오).
     #[test]
     fn dispatch_substitutes_lease_placeholder_in_custom_params() {
-        use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_agent::OnFailure;
+        use tasty_ipc::host_call::HostIpcInjector;
         use tasty_ipc::protocol::JsonRpcResponse;
         use tasty_ipc::server::IpcCommand;
 

@@ -6,9 +6,9 @@
 
 use crate::adapters::production::stream_hub::StreamContext;
 use crate::adapters::production::tcp_ipc_server::TcpIpcServer;
-use crate::ipc::host_call::HostIpcInjector;
 use crate::ipc::server::IpcWaker;
 use crate::ports::ipc_server::IpcServerPort;
+use tasty_ipc::host_call::HostIpcInjector;
 
 pub(crate) struct Hub {
     pub ipc_server: Option<Box<dyn IpcServerPort>>,

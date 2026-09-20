@@ -21,7 +21,7 @@ use super::env::{HookShellEnv, build_env};
 use super::exec::{SubstitutionContext, execute_sequence};
 use super::registry::global;
 use super::types::{HookHandlerAction, HookHandlerId, IpcCall, TriggerSource, validate_binding};
-use crate::adapters::ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::HostIpcInjector;
 
 /// 발사된 훅의 바인딩을 실행한다 (fire-and-forget).
 ///

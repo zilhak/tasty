@@ -18,7 +18,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::types::IpcCall;
-use crate::adapters::ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::HostIpcInjector;
 
 /// IpcSequence 한 스텝의 응답 대기 상한. 메인루프 tick + 핸들러 처리 시간 포함.
 const STEP_TIMEOUT: Duration = Duration::from_secs(10);

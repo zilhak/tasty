@@ -10,8 +10,8 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use super::auth::WebhookAuth;
 use super::lifetime::{Lifetime, now_unix};
-use crate::adapters::ipc::host_call::HostIpcInjector;
 use crate::hook_handler::{HookHandlerId, IpcCall};
+use tasty_ipc::host_call::HostIpcInjector;
 
 /// 등록된 웹훅 엔트리.
 #[derive(Debug, Clone)]
