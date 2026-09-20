@@ -217,9 +217,10 @@ pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
 mod tests {
     use super::*;
 
-    /// `state.db` 는 `memory.db` 와 **다른 `prepare`** 를 쓴다(각 crate 가 같은
-    /// pragma 를 따로 박아 둔 형태). 그래서 한쪽만 고치면 다른 쪽 WAL 은 여전히
-    /// 무한히 자란다 — 두 경로가 같은 상한을 쓰는지 여기서 고정한다.
+    /// `state.db` 는 `memory.db` 와 **별개의 `prepare`** 를 쓰지만 연결 pragma 는 한
+    /// 함수(`tasty_memory::pragma::apply_connection_pragmas`)에서 온다 — 사본이 없으니
+    /// 두 DB 의 상한이 서로 갈릴 수는 없다. 갈릴 수 있는 것은 **이 경로가 그 함수를
+    /// 계속 부르는가** 이고, `prepare` 에서 그 호출을 빼면 죽는 시험이 여기다.
     #[test]
     fn journal_size_limit_matches_the_memory_store() {
         let tmp = tempfile::tempdir().unwrap();
