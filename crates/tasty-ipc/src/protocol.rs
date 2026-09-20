@@ -30,6 +30,14 @@ pub const ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN: i32 = -32061;
 /// 이 답은 **최선 노력**이다. 거절이 일어나는 자리가 accept 스레드라 거기서 막히는
 /// 쓰기를 할 수 없고(그 스레드가 멈추면 자리가 나도 아무도 못 붙는다), 그래서 서버는
 /// 한 번만 시도하고 안 되면 그냥 닫는다. client 는 이 줄 대신 EOF 를 볼 수 있다.
+///
+/// ★ **이 줄을 오류 한 줄로 읽는 인구는 request-response client 뿐이다.** 거절은 accept
+/// 직후, 즉 스트림 업그레이드 판별 **전**에 일어나므로 attach 같은 스트림 client 도 같은
+/// 바이트를 받는데, 그쪽의 첫 읽기는 줄이 아니라 프레임이다 — 첫 바이트 `{`(123)가
+/// [`crate::stream::StreamTag`] 에 없어 `unknown stream tag` 로 끝난다. 그쪽에서 이 코드는
+/// EOF 를 **대체하지 못하고** 다른 실패로 바꿀 뿐이다. 프레임으로 싸서 보내려면 accept
+/// 스레드가 상대의 종류를 알아야 하는데 그건 줄을 읽어야 알 수 있고, 줄을 읽지 않는 것이
+/// 이 거절의 값이다.
 pub const ERR_CONNECTION_LIMIT_REACHED: i32 = -32062;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

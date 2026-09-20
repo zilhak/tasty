@@ -831,6 +831,13 @@ impl TcpIpcServer {
     /// 나간다. 안 나가면 client 가 보는 것은 예전과 같은 EOF 다 — **더 나빠지지 않는다.**
     /// 그 최선 노력 성질은 `ERR_CONNECTION_LIMIT_REACHED` 의 doc 에도 적혀 있다.
     ///
+    /// ★ **그 개선은 request-response 인구의 것이다.** 이 자리는 업그레이드 판별 전이라
+    /// 스트림 client 도 같은 바이트를 받는데, 그쪽의 첫 읽기는 프레임이라 사유 대신
+    /// `unknown stream tag` 를 본다. 즉 "못 나가면 EOF" 뿐 아니라 **나갔는데 못 읽는**
+    /// 갈래가 있고, 거기서 이 줄은 EOF 를 대체하지 못한다. 그래도 여기서 줄을 안 읽는
+    /// 것이 이 거절의 값이라 바꾸지 않는다 — 근거는 `ERR_CONNECTION_LIMIT_REACHED` 의
+    /// doc 과 ADR-0327.
+    ///
     /// 로그가 `debug` 인 이유: 거절은 상대가 재시도 루프를 돌면 몰려 오고, 포화로
     /// **들어가는 순간**의 `warn` 은 [`ConnectionSlot::try_acquire`] 이 이미 낸다.
     fn refuse_saturated_connection(stream: std::net::TcpStream) {
