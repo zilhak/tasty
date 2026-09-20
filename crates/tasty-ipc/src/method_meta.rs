@@ -971,6 +971,56 @@ pub fn is_registered_name(method: &str) -> bool {
         || DEBUG_METHODS.iter().any(|(name, _)| *name == method)
 }
 
+/// 0.7.0 시점에 동결된 메서드 이름 목록. `METHOD_TABLE` 의 스냅샷이고 major bump
+/// 전까지 안 바뀐다 — 갱신 절차는 파일 머리 주석과 `docs/dev-guide/release.md`.
+const FROZEN_BASELINE_0_7: &str = include_str!("../fixtures/method_baseline_0_7.txt");
+
+/// 이 이름이 **0.7.0 표면에 이미 있었는가.**
+///
+/// 두 값뿐인 이유는 답할 수 있는 것이 그것뿐이기 때문이다. 동결 파일은 0.7.0 시점의
+/// 이름 집합 하나이고, 그 뒤에 더해진 이름들이 **각각 언제** 들어왔는지는 어디에도 안
+/// 적혀 있다. 그 값을 지금 손으로 채우면 커밋 로그에서 추정한 수가 표의 값이 되고,
+/// 그것은 재현되지 않는다. 그래서 더 잘게 나누지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodSince {
+    /// 0.7.0 동결 baseline 에 있던 이름. 그 버전 이상이면 어느 서버에나 있다.
+    FrozenBaseline,
+    /// 0.7.0 이후에 더해진 이름. 구 서버에는 없을 수 있다.
+    AfterFrozenBaseline,
+}
+
+/// 동결 목록을 이름 집합으로 한 번만 푼다.
+fn frozen_baseline_names() -> &'static std::collections::HashSet<&'static str> {
+    static NAMES: OnceLock<std::collections::HashSet<&'static str>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        FROZEN_BASELINE_0_7
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect()
+    })
+}
+
+/// 등재된 이름이 언제부터 있었는가. **미등록 이름은 `None`** — "없다" 와 "예전부터
+/// 있었다" 를 같은 값으로 답하지 않는다.
+///
+/// 값은 손으로 안 적는다. `METHOD_TABLE` 옆의 동결 파일이 유일한 모수이고, 이 함수는
+/// 그것을 읽을 뿐이다 — 표에 이름을 더하면 이 답이 **자동으로** 따라온다. 둘째 사본을
+/// 두면 표에 더하면서 이쪽을 빠뜨리는 것이 기본 동작이 된다([ADR-0306] 이 같은 이유로
+/// `effect` 를 별도 테이블로 두지 않았다).
+///
+/// [ADR-0306]: ../../../docs/adr/0306-a-method-declares-what-a-second-delivery-leaves-behind.md
+pub fn method_since(method: &str) -> Option<MethodSince> {
+    if !is_registered_name(method) {
+        return None;
+    }
+    if frozen_baseline_names().contains(method) {
+        Some(MethodSince::FrozenBaseline)
+    } else {
+        Some(MethodSince::AfterFrozenBaseline)
+    }
+}
+
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
 pub fn method_meta(method: &str) -> Option<MethodMeta> {
     for (name, meta) in METHOD_TABLE {

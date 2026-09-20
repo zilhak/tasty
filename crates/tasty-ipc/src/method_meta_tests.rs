@@ -793,3 +793,43 @@ fn a_forwarded_namespace_name_is_assumed_unsafe_to_redeliver() {
     assert_eq!(meta.effect, MethodEffect::Mutate);
     ns_unregister("zzzeffectns");
 }
+
+/// "언제부터 있었나" 는 **등재 여부와 다른 물음**이다. 미등록 이름에 "예전부터
+/// 있었다" 를 답하면 client 가 없는 메서드를 부를 수 있다고 읽는다.
+#[test]
+fn an_unregistered_name_has_no_since_answer_at_all() {
+    use crate::method_meta::method_since;
+    assert_eq!(method_since("zzz.not.a.method"), None);
+}
+
+/// 두 값이 **실제로 갈린다.** 한쪽만 나오면 동결 파일을 못 읽었거나 표를 못 읽은
+/// 것이고, 그 상태에서도 위 시험은 통과한다.
+#[test]
+fn the_frozen_split_puts_names_on_both_sides() {
+    use crate::method_meta::{METHOD_TABLE, MethodSince, method_since};
+    let mut frozen = 0;
+    let mut after = 0;
+    for (name, _) in METHOD_TABLE {
+        match method_since(name) {
+            Some(MethodSince::FrozenBaseline) => frozen += 1,
+            Some(MethodSince::AfterFrozenBaseline) => after += 1,
+            None => panic!("등재된 이름인데 답이 없다: {name}"),
+        }
+    }
+    assert!(frozen > 0 && after > 0, "frozen {frozen} after {after}");
+}
+
+/// 값의 출처가 **동결 파일**이라는 것을 이름 둘로 못박는다. 손으로 적은 칸이었다면
+/// 파일을 고쳐도 이 둘이 안 움직인다.
+#[test]
+fn the_since_answer_comes_from_the_frozen_file_not_from_a_second_list() {
+    use crate::method_meta::{MethodSince, method_since};
+    assert_eq!(
+        method_since("agent.barrier_create"),
+        Some(MethodSince::FrozenBaseline)
+    );
+    assert_eq!(
+        method_since("attach.acquire"),
+        Some(MethodSince::AfterFrozenBaseline)
+    );
+}
