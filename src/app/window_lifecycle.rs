@@ -626,7 +626,15 @@ impl App {
         // broadcast 는 시스템 전역이라 어느 윈도우든 받으므로, 창마다 설치해 두면
         // ≥1 개 창이 살아있는 한 동작한다 (resume 헬스 패스는 idempotent).
         #[cfg(windows)]
-        crate::platform::power_windows::install_resume_hook(&window, self.view.proxy.clone());
+        {
+            let proxy = self.view.proxy.clone();
+            crate::platform::power_windows::install_resume_hook(
+                &window,
+                Box::new(move || {
+                    crate::shortcuts::send_app_event(&proxy, crate::AppEvent::SystemResumed);
+                }),
+            );
+        }
 
         // state.db 초기화. 실패하면 InfoModal로 안내 후 종료(Exit 1).
         // create_app_state 이전에 호출해야 plugin/recent_files 등이 정상 동작.
