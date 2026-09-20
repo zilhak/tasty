@@ -260,6 +260,7 @@
 | 0277 | [IPC 진입 검사와 허용 관측은 요청마다 한 번 수행한다 — ADR-0152의 중첩 게이트·Allow 위치 개정](0277-ipc-admission-and-observation-run-once.md) | Accepted | 2026-09-15 | ipc, rate-limit, telemetry, permissions, headless |
 | 0278 | [자식 파일 피커는 부모의 유효 범위를 상속하고 숨김 동안 작업을 보존한다](0278-child-file-picker-inherits-parent-scope-and-preserves-hidden-work.md) | Accepted | 2026-09-15 | popup, file-picker, scope, ownership, input |
 | 0279 | [File dispatch retains its origin through completion](0279-file-dispatch-retains-origin-through-completion.md) | Accepted | 2026-09-15 | file-handler, focus, routing, lifecycle |
+| 0280 | [CLI 도움말은 표시 문구를 번역하고 프로토콜 값은 유지한다](0280-cli-help-localizes-presentation-not-protocol.md) | Accepted | 2026-09-15 | cli, i18n, plugin, compatibility |
 | 0281 | [웹훅 body 상한의 선행 가정 오류와 미충족 연결 정리를 기록한다](0281-webhook-parser-cap-and-connection-drain.md) | Proposed | 2026-09-15 | webhook, body-limit, tiny-http, connection-drain, resource-bound, adr-0200 |
 | 0282 | [Namespace 호출은 owner와 필요한 활성 IPC hook extension만 시작한다](0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md) | Accepted | 2026-09-15 | ipc, plugins, lifecycle, headless |
 | 0284 | [Self-attach 거절은 RTT가 아니라 connector 진입 사건으로 판정한다](0284-self-attach-is-judged-by-connector-entry.md) | Accepted | 2026-09-15 | testing, attach, flake, diagnostics, connector, adr-0181 |
