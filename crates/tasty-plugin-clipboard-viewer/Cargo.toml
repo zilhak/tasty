@@ -20,7 +20,7 @@ tasty-egui-theme = { path = "../tasty-egui-theme" }
 # host 가 set_context 로 보낸 ThemeWire 를 `Theme::with_colors_and_zoom` 으로 재구성.
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Theme 토큰 / egui-compat(to_egui). 이 프로세스는 egui 를 링크한다.
-tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 # 디자인 토큰 정합 Button 위젯(primary/secondary) 재사용 — host UiNode::Button 과 동형.
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 # 클립보드를 plugin process 내에서 직접 read (호스트 IPC 미경유).

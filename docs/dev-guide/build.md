@@ -59,6 +59,30 @@ cargo check --workspace --no-default-features   # headless 컴파일 검증
 cargo build --workspace --no-default-features   # headless 빌드
 ```
 
+#### "컴파일된다" 와 "그래프에 안 들어온다" 는 다른 좌변이다
+
+`--no-default-features` 가 **컴파일되는 것**과 GUI 스택이 **의존 그래프에서 빠지는 것**은
+따로 움직인다. 비-optional path 의존 하나가 남아 있으면 컴파일은 그대로 통과하면서 egui·wgpu
+가 전부 링크된다. 그래서 그 둘을 각각 잰다.
+
+```bash
+# ① 그래프 크기 — name 만 센다(같은 크레이트의 여러 버전을 한 번만 세려면 이 형태다)
+cargo tree --no-default-features --edges normal --prefix none | awk '{print $1}' | sort -u | wc -l
+
+# ② 특정 스택이 들어왔는지 — 들어왔으면 누가 끌고 오는지까지 한 줄로 나온다
+cargo tree --no-default-features --edges normal -i egui
+cargo tree --no-default-features --edges normal -i wgpu
+```
+
+**이 사실을 보는 시험은 하나도 없다 — 채널이 없다.** 누가 `optional = true` 를 되돌리거나
+`default-features` 를 다시 켜면 아무 신호도 안 난다. 위 두 줄이 그것을 재는 유일한 방법이다.
+
+현재 상태(실측 2026-09-20): 헤드리스 그래프는 **330** 노드이고 `egui` 계열(`egui`·`ecolor`·
+`emath`·`epaint`·`egui_extras`)은 **없다.** 반면 `wgpu`·`naga`·`glow`·`ash`·`cosmic-text`·
+`fontdb`·`swash`·`skrifa` 는 **아직 있다** — 들어오는 문이 `tasty-font` 하나이고, 그 크레이트는
+헤드리스 코드가 실제로 쓰면서 `wgpu`·`cosmic-text` 를 비-optional 로 든다. 빼려면 그 크레이트를
+설정/해석 타입과 GPU 아틀라스로 갈라야 한다(별개 작업).
+
 gui 전용 심볼(`AppState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 없이 쓰면 gui 빌드는 통과하지만 headless 빌드만 깨진다. 이 회귀는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡(`cargo check --workspace --no-default-features --locked`)이 `main` push 마다 자동 검출한다(문서만 바뀐 push 는 제외).
 
 #### 공용 모듈 안의 GUI 전용 정의

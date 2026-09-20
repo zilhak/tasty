@@ -27,7 +27,7 @@ tasty-icons = { path = "../tasty-icons", features = ["egui"] }
 tasty-settings = { path = "../tasty-settings" }
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 tasty-themes = { path = "../tasty-themes" }
-tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 
 # 정본 `ToastKind` 와 갤러리 미러가 갈리지 않는지 대조하는 테스트 전용 의존.

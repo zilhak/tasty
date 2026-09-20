@@ -10,7 +10,7 @@ egui = "0.31"
 egui_extras = "0.31"
 tasty-icons = { path = "../tasty-icons", features = ["egui"] }
 tasty-egui-theme = { path = "../tasty-egui-theme" }
-tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 
 [dev-dependencies]

@@ -21,7 +21,7 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Theme parity — host `theme.query` IPC 로 받은 ThemeWire(색 집합+is_light+zoom)를
 # `Theme::with_colors_and_zoom` 으로 재구성해 CSS 커스텀 프로퍼티로 주입한다. egui-compat
 # (to_egui) 를 켠다 — 확인 팝업들이 여전히 egui 로 그려지므로.
-tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 # typed 간격 헬퍼(vspace/margin_all) + 확인 팝업의 Button — egui-mesh 팝업 전용.
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 # Markdown → HTML 변환 본체. push_html 로 문서를 만들고, 링크 destination 은 이벤트

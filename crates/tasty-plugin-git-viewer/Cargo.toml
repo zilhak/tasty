@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-git-viewer"
-version = "0.1.58"
+version = "0.1.59"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only git status/log/diff viewer popup"
@@ -26,7 +26,7 @@ tasty-git-core = { path = "../tasty-git-core" }
 git2 = { version = "0.20", default-features = false }
 # Theme parity — set_context 의 ThemeWire 를 `Theme::with_colors_and_zoom` 으로 재구성해
 # 디자인 토큰대로 그린다. 공용 위젯(Tag/Button)은 tasty-ui-widgets 로 직접 호출한다.
-tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 serde_json = "1"
 # 원격(mirror) git 조회 응답 wire DTO 역직렬화 전용 — tasty-git-core 도 동일 이유로

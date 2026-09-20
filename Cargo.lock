@@ -6073,7 +6073,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-agent-stream"
-version = "0.1.32"
+version = "0.1.33"
 dependencies = [
  "anyhow",
  "directories",
@@ -6089,7 +6089,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.99"
+version = "0.1.100"
 dependencies = [
  "anyhow",
  "directories",
@@ -6130,7 +6130,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.73"
+version = "0.1.74"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6144,7 +6144,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.58"
+version = "0.1.59"
 dependencies = [
  "anyhow",
  "egui",
@@ -6165,7 +6165,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6240,7 +6240,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.27"
+version = "0.1.28"
 dependencies = [
  "anyhow",
  "egui",

@@ -6,10 +6,12 @@ license = "MIT"
 description = "Appearance schema/primitives for Tasty — HexColor/GpuRgba/GpuRgb color primitives, ThemeColors/PartialColors/SurfaceColors/ThemeSizing/Theme schema. Type-layer crate — may depend only on other `tasty-type-*` crates; must not depend on any tasty-* crate outside the type-* group; must not introduce cycles among type-* crates."
 
 [features]
-# Default: include thin egui Color32 conversion helpers on HexColor.
-# Disable in plugin/headless processes that don't link egui:
-#   tasty-type-appearance = { path = "...", default-features = false }
-default = ["egui-compat"]
+# egui 를 링크하는 소비자만 켠다 — `default` 가 비어 있는 것이 이 크레이트의 요지다.
+# 예전에는 `default = ["egui-compat"]` 이었고, 그래서 이 크레이트를 의존하는 것만으로
+# egui 가 그래프에 들어왔다(헤드리스 포함). 끄는 기구는 있었지만(`default-features =
+# false`) 실제로 끈 소비자가 소수라 효과가 없었다 — 그래서 기본값을 뒤집었다.
+#   tasty-type-appearance = { path = "...", features = ["egui-compat"] }
+default = []
 egui-compat = ["dep:egui"]
 
 [dependencies]

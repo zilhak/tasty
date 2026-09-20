@@ -267,9 +267,13 @@ tasty-settings = { path = "crates/tasty-settings" }
 # 무조건 의존으로 두면 headless 빌드가 윈도잉 스택을 통째로 링크한다.
 tasty-key-match = { path = "crates/tasty-key-match", optional = true }
 tasty-themes = { path = "crates/tasty-themes" }
-tasty-egui-theme = { path = "crates/tasty-egui-theme" }
-tasty-icons = { path = "crates/tasty-icons", features = ["egui"] }
-tasty-ui-widgets = { path = "crates/tasty-ui-widgets" }
+# 크레이트 자체가 egui 전용이라 optional 이다 — 소비자가 전부 `gui` 뒤에 있어서
+# 무조건 의존으로 두면 headless 빌드가 egui/wgpu 스택을 통째로 링크한다
+# (tasty-key-match 와 같은 형태).
+tasty-egui-theme = { path = "crates/tasty-egui-theme", optional = true }
+# `egui` feature 는 `gui` 가 켠다 — 여기 두면 headless 도 egui 를 든다.
+tasty-icons = { path = "crates/tasty-icons" }
+tasty-ui-widgets = { path = "crates/tasty-ui-widgets", optional = true }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
 tasty-type-geometry = { path = "crates/tasty-type-geometry" }
 tasty-cell-width = { path = "crates/tasty-cell-width" }
@@ -462,6 +466,12 @@ gui = [
     # 바인딩 매칭의 egui 갈래(`any_binding_pressed_egui`). headless 는 안 켠다.
     # 이 줄이 optional 인 tasty-key-match 자체도 함께 켠다.
     "tasty-key-match/egui-input",
+    # egui 전용 크레이트 둘 — optional 이라 이 줄이 없으면 그래프에 안 들어온다.
+    "dep:tasty-egui-theme",
+    "dep:tasty-ui-widgets",
+    # 아이콘의 egui 렌더 갈래와 색 변환 shim. 둘 다 headless 는 안 켠다.
+    "tasty-icons/egui",
+    "tasty-type-appearance/egui-compat",
     "dep:cosmic-text",
     "dep:bytemuck",
     "dep:webbrowser",
