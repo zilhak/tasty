@@ -7,7 +7,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -48,6 +48,55 @@ enum LineRead {
     TooLong,
     /// 소켓 오류 또는 비-UTF-8.
     Failed,
+}
+
+/// 동시에 살아 있을 수 있는 IPC 연결 수의 상한.
+///
+/// accept 루프는 연결마다 스레드를 하나 낸다. 상한이 없으면 연결을 여는 것만으로
+/// 스레드와 스택이 무한히 늘어난다 — 각 연결이 요청을 하나도 안 보내도 그렇다.
+///
+/// 값의 근거는 **정상 인구의 상한**이다: 번들 plugin 은 아홉이고 각자 host-call 연결을
+/// 들며, attach/mesh/bulk 스트림은 워크스페이스당 몇 개 단위이고, CLI 호출은 요청 하나마다
+/// 열고 닫는 단명 연결이다. 그 합은 수십 규모라 256 은 그 위의 자리수 여유다.
+/// **실행 인스턴스에서 세어 보정한 값은 아니다** — 정상 사용이 이 수에 닿으면 그것이
+/// 보정 신호다(닿는 순간 `warn` 이 한 줄 남는다).
+const MAX_CONCURRENT_CONNECTIONS: usize = 256;
+
+/// 살아 있는 연결 하나의 자리. 스레드가 어떻게 끝나든(정상·조기 return·패닉) `Drop`
+/// 이 자리를 돌려준다 — 회수를 `handle_connection` 의 제어흐름에 맡기지 않는다.
+struct ConnectionSlot {
+    live: Arc<AtomicUsize>,
+}
+
+impl ConnectionSlot {
+    /// 상한 안이면 자리를 잡고 `Some`, 아니면 되돌리고 `None`.
+    ///
+    /// `saturated` 는 **로그 폭주를 막기 위한 것**이다. 거절은 상대가 이미 상한만큼
+    /// 연결을 쥐고 있을 때만 나는데, 그 상대가 재시도 루프를 돌면 거절마다 warn 한 줄이
+    /// 나가 로그 파일을 채운다. 그래서 포화로 **들어가는 순간**만 warn 이고 그 뒤로는
+    /// debug 다. 자리가 하나라도 반납되면 다시 warn 할 수 있게 풀린다.
+    fn try_acquire(live: &Arc<AtomicUsize>, saturated: &AtomicBool) -> Option<Self> {
+        let prev = live.fetch_add(1, Ordering::Relaxed);
+        if prev >= MAX_CONCURRENT_CONNECTIONS {
+            live.fetch_sub(1, Ordering::Relaxed);
+            if saturated.swap(true, Ordering::Relaxed) {
+                tracing::debug!("IPC connection refused (still at {MAX_CONCURRENT_CONNECTIONS})");
+            } else {
+                tracing::warn!(
+                    "IPC connection refused — {MAX_CONCURRENT_CONNECTIONS} concurrent connections already live"
+                );
+            }
+            return None;
+        }
+        saturated.store(false, Ordering::Relaxed);
+        Some(Self { live: live.clone() })
+    }
+}
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 /// 스트리밍 핸드셰이크 params 에서 추출한 attach 대상(surface/workspace 중 하나).
@@ -105,6 +154,10 @@ impl TcpIpcServer {
         // Accept connections in a background thread with non-blocking + shutdown check
         let shutdown_clone = shutdown.clone();
         let accept_tx = cmd_tx.clone();
+        // 살아 있는 연결 수 + 포화 로그 게이트. accept 스레드만 읽고 쓰지만 자리 반납은
+        // 각 연결 스레드의 `Drop` 이 하므로 공유 소유가 필요하다.
+        let live_connections = Arc::new(AtomicUsize::new(0));
+        let saturated = Arc::new(AtomicBool::new(false));
         listener.set_nonblocking(true)?;
         thread::spawn(move || {
             loop {
@@ -113,11 +166,19 @@ impl TcpIpcServer {
                 }
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        // 상한 초과면 소켓을 그대로 닫는다. 거절을 **응답으로** 알리는
+                        // 것은 wire 가 걸리는 별개 결정이라 여기서는 하지 않는다 —
+                        // 연결이 즉시 닫히는 것이 이 회차의 거절 신호다.
+                        let Some(slot) = ConnectionSlot::try_acquire(&live_connections, &saturated)
+                        else {
+                            drop(stream);
+                            continue;
+                        };
                         let cmd_tx = accept_tx.clone();
                         let waker = waker.clone();
                         let stream_ctx = stream_ctx.clone();
                         thread::spawn(move || {
-                            Self::handle_connection(stream, cmd_tx, waker, stream_ctx);
+                            Self::handle_connection(stream, cmd_tx, waker, stream_ctx, slot);
                         });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -163,11 +224,15 @@ impl TcpIpcServer {
         }
     }
 
+    ///
+    /// `_slot` 은 살아 있는 연결 수의 자리다 — 인자로 받아 이 함수의 수명에 묶는다.
+    /// 반납을 본문의 제어흐름(조기 return 이 넷)에 맡기지 않으려는 것이다.
     fn handle_connection(
         stream: std::net::TcpStream,
         cmd_tx: mpsc::Sender<IpcCommand>,
         waker: Option<IpcWaker>,
         stream_ctx: StreamContext,
+        _slot: ConnectionSlot,
     ) {
         let Some((mut reader, mut writer, peer)) = Self::prepare_stream(stream) else {
             return;
@@ -766,6 +831,65 @@ mod admission_tests {
             "상한에서 개행으로 끝나는 줄은 초과가 아니다"
         );
         assert_eq!(line.len(), MAX_REQUEST_LINE_BYTES);
+    }
+
+    fn slots() -> (Arc<AtomicUsize>, AtomicBool) {
+        (Arc::new(AtomicUsize::new(0)), AtomicBool::new(false))
+    }
+
+    // 자리는 잡히고, 스레드가 어떻게 끝나든 Drop 이 돌려준다.
+    #[test]
+    fn a_slot_is_returned_when_it_drops() {
+        let (live, sat) = slots();
+        {
+            let _held = ConnectionSlot::try_acquire(&live, &sat).expect("첫 자리는 잡힌다");
+            assert_eq!(live.load(Ordering::Relaxed), 1);
+        }
+        assert_eq!(
+            live.load(Ordering::Relaxed),
+            0,
+            "Drop 이 자리를 반납해야 한다"
+        );
+    }
+
+    // 상한을 넘는 요청은 거절되고, **거절이 계수를 밀어 올리지 않는다.**
+    // try_acquire 는 먼저 fetch_add 하고 초과면 되돌리는데, 그 되돌림이 빠지면
+    // 계수가 영구히 상한 위로 떠서 자리가 다시는 안 열린다.
+    #[test]
+    fn a_refusal_does_not_leak_the_count() {
+        let (live, sat) = slots();
+        let held: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS)
+            .map(|_| ConnectionSlot::try_acquire(&live, &sat).expect("상한까지는 잡힌다"))
+            .collect();
+        assert_eq!(live.load(Ordering::Relaxed), MAX_CONCURRENT_CONNECTIONS);
+
+        assert!(
+            ConnectionSlot::try_acquire(&live, &sat).is_none(),
+            "상한을 넘는 연결은 거절된다"
+        );
+        assert_eq!(
+            live.load(Ordering::Relaxed),
+            MAX_CONCURRENT_CONNECTIONS,
+            "거절은 계수를 그대로 두어야 한다"
+        );
+        drop(held);
+        assert_eq!(live.load(Ordering::Relaxed), 0);
+    }
+
+    // 자리가 하나 반납되면 다음 연결이 들어온다 — 상한이 영구 차단이 아니다.
+    #[test]
+    fn a_returned_slot_lets_the_next_one_in() {
+        let (live, sat) = slots();
+        let mut held: Vec<_> = (0..MAX_CONCURRENT_CONNECTIONS)
+            .map(|_| ConnectionSlot::try_acquire(&live, &sat).expect("상한까지는 잡힌다"))
+            .collect();
+        assert!(ConnectionSlot::try_acquire(&live, &sat).is_none());
+
+        held.pop();
+        assert!(
+            ConnectionSlot::try_acquire(&live, &sat).is_some(),
+            "반납된 자리로 다음 연결이 들어와야 한다"
+        );
     }
 
     // 상한이 어디서 나왔는지를 값으로 고정한다. 호스트가 받아들이는 가장 큰 요청
