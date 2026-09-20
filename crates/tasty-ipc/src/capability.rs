@@ -53,6 +53,15 @@ pub const CAPABILITIES: &[Capability] = &[
         name: "ipc.stream",
         version: crate::stream::STREAM_PROTO,
     },
+    // 스트림이 프레임을 버렸을 때 그 사실을 client 에 알릴 수 있다
+    // (`crate::stream::StreamControl::Loss`). **`ipc.stream` 의 판으로는 이것을 못
+    // 말한다** — 그 판은 서버가 handshake 에서 **동등 비교**하는 수라, 올리면 기능이
+    // 좁아지는 것이 아니라 구 peer 의 연결이 거절된다. 그래서 더해지는 스트림 기능은
+    // 판이 아니라 **이름**으로 선언한다. 항목 추가는 구 client 에 영향이 없다(위 문단).
+    Capability {
+        name: "ipc.stream.loss-notify",
+        version: 1,
+    },
 ];
 
 /// `system.info` 가 싣는 모양. `[{ "name": …, "version": … }, …]`.

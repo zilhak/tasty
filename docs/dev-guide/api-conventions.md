@@ -289,6 +289,12 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
 - 판은 가능하면 **근거에서 유도한다** — `ipc.stream` 의 판은 리터럴이 아니라 서버가
   handshake 에서 비교하는 `stream::STREAM_PROTO` 다.
 - 뜻이 바뀌면 배열에서 빼지 말고 그 이름의 `version` 을 올린다.
+- ★ **스트림에 기능을 더할 때 `ipc.stream` 의 판을 올리지 마라 — 새 이름을 더해라.**
+  바로 위 줄이 말하듯 그 판은 `STREAM_PROTO` 이고, 서버는 그것을 handshake 에서 **동등
+  비교**해 다르면 연결을 거절한다(`validate_stream_proto`). 그래서 그 수를 올리는 것은
+  기능을 좁히는 것이 아니라 **구 peer 의 attach 를 통째로 막는 것**이다. 판은 프레임의
+  *기존* 뜻이 바뀔 때만 움직이고, 더해지는 기능은 `ipc.stream.<기능>` 처럼 이름으로
+  선언한다. 그 이름을 본 client 만 그 기능을 쓰고, 못 본 client 는 종전 동작을 받는다.
 
 메서드 **이름**이 구 서버에 있는지는 별도 물음이고 표가 답한다 —
 `method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /

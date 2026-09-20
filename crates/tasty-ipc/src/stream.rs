@@ -20,6 +20,15 @@ use serde::{Deserialize, Serialize};
 pub const STREAM_OPEN_METHOD: &str = "stream.open";
 
 /// Current streaming protocol version.
+///
+/// The server compares this for **equality** against the client's declared
+/// `StreamOpenParams::proto` and refuses the connection when they differ
+/// (`validate_stream_proto`). So this number is a hard compatibility gate, not a
+/// feature level: raising it does not narrow what a peer is told, it stops the
+/// peer from attaching at all. Additive stream features are therefore declared
+/// separately — see [`crate::capability::CAPABILITIES`] for the server side and
+/// [`StreamControl::ClientLossNotify`] for the client side — and this constant
+/// moves only when a frame's *existing* meaning changes.
 pub const STREAM_PROTO: u32 = 1;
 
 /// Frame header length: 1-byte tag + 4-byte big-endian payload length.
@@ -190,6 +199,15 @@ pub struct StreamAck {
 /// on the variants they know; a payload that does not match any variant (an
 /// older handshake shape or a newer event) fails to deserialize and is ignored,
 /// keeping the protocol forward/backward compatible.
+///
+/// **That silence is only safe while a missed variant costs nothing.** It holds for
+/// every variant here but one: each is either idempotent state the next tick
+/// re-pushes, or a reply correlated by id, or a request the sender can repeat. A
+/// variant whose absence changes how the *already delivered* data must be read
+/// cannot be added under this rule, because ignoring it is not "missing an event",
+/// it is "believing a lie". [`StreamControl::Loss`] is that case, and it is gated by
+/// an explicit client declaration ([`StreamControl::ClientLossNotify`]) instead —
+/// a client that never declares never receives it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum StreamControl {
@@ -491,6 +509,63 @@ pub enum StreamControl {
     ///
     /// Direction: **server→client**.
     MeshError { surface_id: u32, reason: String },
+    /// Frames for this client were **dropped** before they reached the socket —
+    /// the server's per-client push sink filled up and the pushes in between were
+    /// discarded. Everything the client receives *after* this frame is
+    /// discontinuous with everything it received *before* it.
+    ///
+    /// This is the one control event whose absence changes the meaning of the data
+    /// already delivered. Every other variant is either idempotent state that
+    /// self-heals on the next tick or a reply the client correlates by id, so a
+    /// client that does not understand it loses nothing. A client that does not
+    /// understand *this* one keeps rendering a broken byte stream as if it were
+    /// continuous. That is why it is **not** sent unless the client asked for it —
+    /// see [`StreamControl::ClientLossNotify`].
+    ///
+    /// Position is the payload. The frame is emitted at the point in the stream
+    /// where the gap happened (immediately before the first frame that survives
+    /// the gap), so the consumer can split "before" from "after" without any
+    /// sequence numbering. It carries no surface id: the sink is per *connection*,
+    /// and a workspace attach muxes every mirrored surface through it, so the gap
+    /// belongs to the connection and not to one surface.
+    ///
+    /// What to do about the gap is **not** decided here — the recovery contract
+    /// differs per data kind (PTY byte delta vs. state snapshot vs. mesh vs. bulk)
+    /// and is follow-up work. This frame only says that a gap happened and how big
+    /// it was.
+    ///
+    /// Direction: **server→client**.
+    Loss {
+        /// Frames dropped for this connection since the previous `Loss` frame (or
+        /// since the connection opened, if this is the first). Counts frames, not
+        /// bytes — the sink is a frame queue and the bytes behind a dropped frame
+        /// are gone before anyone counts them.
+        frames: u64,
+    },
+    /// The client declares that it understands [`StreamControl::Loss`] and wants to
+    /// be told about gaps. Until this arrives the server drops frames exactly as it
+    /// always has, silently — so a client built before `Loss` existed sees no change
+    /// at all.
+    ///
+    /// The declaration is a frame rather than a handshake field on purpose.
+    /// `StreamOpenParams::proto` is compared for **equality** by the server
+    /// (`validate_stream_proto`), so raising [`STREAM_PROTO`] does not gate a
+    /// feature — it refuses the connection outright. Feature negotiation therefore
+    /// goes where this codebase already puts it: an explicit request frame, the same
+    /// shape [`StreamControl::MeshContext`] uses ("the subscribe request itself
+    /// doubles as capability negotiation — no separate handshake").
+    ///
+    /// The other direction is answered by the RPC capability table: a server that
+    /// supports this declares `ipc.stream.loss-notify` in `system.info`
+    /// ([`crate::capability::CAPABILITIES`]). A client that sends this frame to a
+    /// server that does not have it gets the old behaviour — the frame is an unknown
+    /// variant there and is ignored, which is exactly right.
+    ///
+    /// Idempotent: sending it twice is the same as sending it once, and there is no
+    /// way to turn it back off (nothing needs to).
+    ///
+    /// Direction: **client→server**. No reply.
+    ClientLossNotify {},
 }
 
 /// The concrete structural operation carried by [`StreamControl::StructuralOp`].
@@ -1480,5 +1555,43 @@ mod tests {
             serde_json::from_str(r#"{"proto":1,"target_workspace":3}"#).unwrap();
         assert_eq!(old.bulk_workspace, None);
         assert_eq!(old.target_workspace, Some(3));
+    }
+
+    #[test]
+    fn stream_control_loss_roundtrip() {
+        let msg = StreamControl::Loss { frames: 1734 };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"loss""#), "{s}");
+        assert!(s.contains(r#""frames":1734"#), "{s}");
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn client_loss_notify_roundtrip() {
+        let msg = StreamControl::ClientLossNotify {};
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"client_loss_notify""#), "{s}");
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    /// 이 enum 의 전방 호환 규약 — 모르는 `event` 는 **파싱 실패**다. `Loss` 를 선언
+    /// 없이 보내면 안 되는 이유가 이것이다: `Loss` 를 모르는 빌드에게 그 프레임은 이
+    /// `Err` 와 같은 모양이고, 소비자는 `Err` 를 무시하므로 **"손실 없음" 과 구별되지
+    /// 않는다.** 좌변은 `is_err()` 하나다 — 구 빌드를 여기서 실행할 수는 없으므로 그
+    /// 빌드가 겪는 것을 같은 경로(모르는 event)로 재현한다.
+    #[test]
+    fn an_unknown_event_fails_to_parse_so_a_missed_loss_reads_as_no_loss() {
+        let from_a_newer_build = r#"{"event":"a_variant_that_does_not_exist_here","frames":9}"#;
+        assert!(serde_json::from_str::<StreamControl>(from_a_newer_build).is_err());
+    }
+
+    /// handshake 판은 **동등 비교**라 기능 게이트로 못 쓴다. 이 시험은 그 사실 자체가
+    /// 아니라 *판이 안 움직였다*는 것을 고정한다 — `Loss` 를 더하면서 판을 올리면
+    /// 구 peer 의 attach 가 통째로 거절된다.
+    #[test]
+    fn adding_a_control_variant_does_not_move_the_handshake_version() {
+        assert_eq!(STREAM_PROTO, 1);
     }
 }
