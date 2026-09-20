@@ -349,6 +349,145 @@ fn terminal_scan_cursor_is_separate_from_the_agent_mark() {
     );
 }
 
+/// 소비자가 든 위치로 읽는 형태(`surface.read_since_mark` 의 `cursor`/`stream`)를
+/// 실제 IPC 왕복으로 잰다.
+///
+/// 인파일 단위시험(`crates/tasty-terminal/src/output_buffer.rs`)이 버퍼 수준의 성질을
+/// 재고 핸들러 단위시험이 인자 규칙을 재지만, **응답의 칸들이 실제로 wire 에 실리는지**
+/// 와 **두 소비자가 IPC 경계를 건너서도 서로를 안 미는지** 는 그 둘 어디에도 없다.
+/// 여기서 그 왕복을 지난다(ADR-0341).
+#[test]
+fn terminal_output_reads_from_a_consumer_held_position() {
+    let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-output-cursor");
+
+    let read = |params: serde_json::Value| -> serde_json::Value {
+        let mut p = json!({"surface_id": sid, "strip_ansi": true});
+        for (k, v) in params.as_object().expect("object") {
+            p[k.as_str()] = v.clone();
+        }
+        tasty.call("surface.read_since_mark", p)
+    };
+    let echo = |marker: &str| {
+        let cmd = if cfg!(windows) {
+            format!("echo {marker}\r\n")
+        } else {
+            format!("echo {marker}\n")
+        };
+        tasty.send_text(sid, &cmd);
+    };
+
+    // 1. 위치를 안 주는 첫 읽기가 이어 읽을 좌표를 전부 준다. 칸 하나라도 안 실리면
+    //    여기서 죽는다 — 아래 단계들은 빈 값으로도 초록이 될 수 있는 형태가 있다.
+    let first = read(json!({}));
+    let stream = first["stream"]
+        .as_str()
+        .unwrap_or_else(|| panic!("응답에 stream 칸이 없다: {first:?}"))
+        .to_string();
+    for key in [
+        "cursor",
+        "next_cursor",
+        "raw_bytes",
+        "retention_start",
+        "retention_end",
+        "skipped",
+    ] {
+        assert!(
+            first[key].as_u64().is_some(),
+            "응답에 {key} 칸이 없다: {first:?}"
+        );
+    }
+    assert_eq!(first["skipped"].as_u64(), Some(0));
+
+    // 2. 두 소비자가 각자 위치를 들고 번갈아 읽어도 서로를 안 민다.
+    let mut a = first["next_cursor"].as_u64().expect("next_cursor");
+    let b = a;
+    echo("cursor_marker_one");
+    tasty.wait_for_output(sid, "cursor_marker_one", Duration::from_secs(10));
+
+    let a_read = read(json!({"cursor": a, "stream": stream}));
+    assert!(
+        a_read["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cursor_marker_one"),
+        "A 가 자기 위치 이후를 못 받았다: {a_read:?}"
+    );
+    a = a_read["next_cursor"].as_u64().expect("next_cursor");
+
+    // B 는 A 와 같은 자리에서 아직 안 읽었다. A 의 읽기가 B 의 자리를 소비했으면
+    // 여기서 빈다.
+    let b_read = read(json!({"cursor": b, "stream": stream}));
+    assert!(
+        b_read["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cursor_marker_one"),
+        "A 의 읽기가 B 의 위치를 움직였다: {b_read:?}"
+    );
+
+    // 그리고 A 는 이미 본 것을 다시 안 받는다 — B 가 읽었다고 A 가 밀리지도 않는다.
+    let a_again = read(json!({"cursor": a, "stream": stream}));
+    assert!(
+        !a_again["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cursor_marker_one"),
+        "B 의 읽기가 A 의 위치를 되돌렸다: {a_again:?}"
+    );
+
+    // 3. `set_mark` 은 소비자가 든 위치를 안 건드린다.
+    echo("cursor_marker_two");
+    tasty.wait_for_output(sid, "cursor_marker_two", Duration::from_secs(10));
+    tasty.set_mark(sid);
+    let after_mark = read(json!({"cursor": a, "stream": stream}));
+    assert!(
+        after_mark["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cursor_marker_two"),
+        "set_mark 이 소비자의 위치를 밀었다 — 그 앞에 이미 와 있던 출력이 사라졌다: \
+         {after_mark:?}"
+    );
+
+    // 4. 거절 셋이 **사유를 값으로** 돌려준다. 문구가 아니라 `error.data.reason` 으로
+    //    갈려야 호출자의 다음 동작이 문구에 안 묶인다.
+    let refusal = |params: serde_json::Value| -> String {
+        let mut p = json!({"surface_id": sid});
+        for (k, v) in params.as_object().expect("object") {
+            p[k.as_str()] = v.clone();
+        }
+        let resp = tasty.call_raw("surface.read_since_mark", p);
+        resp["error"]["data"]["reason"]
+            .as_str()
+            .unwrap_or_else(|| panic!("거절에 사유 칸이 없다: {resp:?}"))
+            .to_string()
+    };
+    assert_eq!(
+        refusal(json!({"cursor": 0})),
+        "cursor_without_stream",
+        "표지 없는 위치를 받아들이면 재사용된 surface id 위에서 남의 출력을 잇는다"
+    );
+    assert_eq!(
+        refusal(json!({"cursor": 0, "stream": "not-this-stream"})),
+        "stream_mismatch"
+    );
+    let end = read(json!({}))["retention_end"].as_u64().expect("end");
+    assert_eq!(
+        refusal(json!({"cursor": end + 1_000_000, "stream": stream})),
+        "cursor_ahead_of_stream"
+    );
+
+    // 5. `max_bytes` 는 **원문** 바이트를 자르고, 진행은 `text` 길이가 아니라
+    //    `next_cursor` 가 정한다.
+    let capped = read(json!({"cursor": a, "stream": stream, "max_bytes": 4}));
+    assert!(capped["raw_bytes"].as_u64().is_some_and(|n| n <= 4));
+    assert_eq!(
+        capped["next_cursor"].as_u64(),
+        Some(a + capped["raw_bytes"].as_u64().expect("raw_bytes")),
+        "next_cursor 는 원문 바이트로 전진한다"
+    );
+}
+
 #[test]
 fn terminal_send_key_and_send_to() {
     let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-terminal-keys");
