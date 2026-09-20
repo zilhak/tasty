@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-Tasty 자체 코드는 `LICENSE` 파일에 명시된 MIT 라이선스를 따릅니다.
+Tasty 자체 코드는 [`LICENSE`](LICENSE) 파일에 명시된 MIT 라이선스를 따릅니다.
 다만 Tasty는 별도 라이선스를 가진 다음 third-party 자산을 번들합니다.
 
 ## 폰트

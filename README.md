@@ -66,4 +66,4 @@ A hexagonal architecture (model + ports + adapters + view + host_api separation)
 
 ## License
 
-MIT — [`LICENSES/`](LICENSES/). Third-party dependency license bundle: [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+MIT — [`LICENSE`](LICENSE). Third-party dependency license bundle: [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
