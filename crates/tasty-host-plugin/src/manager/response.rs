@@ -564,19 +564,28 @@ impl PluginManager {
                 event_key,
                 deadline: _,
             } => self.fail_open_post_event_hook(extension_plugin_id, event_key),
+            other => self.expire_pending_answer(other),
+        }
+    }
+
+    /// 회신이 목적인 pending 의 만료 — 진행시킬 원본 흐름이 없어 fail-open 이 없다.
+    ///
+    /// caller 종류(local `response_tx` · plugin `ipc.result` · post-hook 이 걸린
+    /// `send_final_error`)만 다르고 싣는 코드는 셋 다 `-32004` 로 같다
+    /// (`docs/adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md`).
+    fn expire_pending_answer(&mut self, kind: PendingRequestKind) {
+        match kind {
             PendingRequestKind::NamespaceInvoke {
                 plugin_id,
                 response_tx,
                 original_id,
                 deadline: _,
             } => {
-                let msg = namespace_timeout_message(&plugin_id);
-                tracing::warn!("{msg}");
+                let msg = self.note_namespace_expiry(&plugin_id);
                 send_response(
                     &response_tx,
                     JsonRpcResponse::error(original_id, -32004, &msg),
                 );
-                self.record_namespace_expiry(&plugin_id);
             }
             PendingRequestKind::PluginToPluginNamespace {
                 plugin_id,
@@ -584,12 +593,10 @@ impl PluginManager {
                 call_id,
                 deadline: _,
             } => {
-                let msg = namespace_timeout_message(&plugin_id);
-                tracing::warn!("{msg}");
+                let msg = self.note_namespace_expiry(&plugin_id);
                 // 바로 위 local 갈래와 같은 `-32004`. 만료는 caller 종류와 무관한
                 // 같은 사건이다.
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
-                self.record_namespace_expiry(&plugin_id);
             }
             PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,
@@ -599,10 +606,8 @@ impl PluginManager {
                 final_caller,
                 deadline: _,
             } => {
-                let msg = namespace_timeout_message(&target_plugin_id);
-                tracing::warn!("{msg}");
+                let msg = self.note_namespace_expiry(&target_plugin_id);
                 self.send_final_error(final_caller, -32004, msg);
-                self.record_namespace_expiry(&target_plugin_id);
             }
             // debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어 회신이 목적이다.
             // 진행시킬 원본 흐름이 없으므로 namespace 만료와 같은 모양으로 끝낸다.
@@ -624,6 +629,16 @@ impl PluginManager {
             }
             _ => {}
         }
+    }
+
+    /// namespace 만료 한 건을 기록한다 — 경고를 남기고 연속 계수에 더한 뒤,
+    /// caller 에 실을 문구를 돌려준다. 세 caller 갈래가 같은 문구·같은 계수를
+    /// 쓰므로 그 셋을 여기 한 자리로 모은다.
+    fn note_namespace_expiry(&mut self, plugin_id: &str) -> String {
+        let msg = namespace_timeout_message(plugin_id);
+        tracing::warn!("{msg}");
+        self.record_namespace_expiry(plugin_id);
+        msg
     }
 
     /// namespace 만료 한 건을 그 target plugin 의 연속 계수에 더한다.
