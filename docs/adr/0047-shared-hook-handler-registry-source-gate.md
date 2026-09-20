@@ -8,7 +8,7 @@
 
 tasty 에는 이미 **내부 이벤트 트리거**(`tasty-hooks`: surface/global hook — 프로세스 종료·출력 매칭·bell 등)가 있고, 여기에 **외부 HTTP 트리거**(웹훅, [ADR-0046](0046-webhook-owner-trust-one-way-ack.md))가 추가됐다. 두 트리거는 출처만 다를 뿐 "이벤트가 발생하면 무언가를 실행한다" 는 동일 구조다.
 
-문제는 **실행 대상(핸들러)을 어떻게 표현·저장·게이트하느냐** 였다. 기존 훅은 핸들러 개념 없이 셸 명령을 훅마다 인라인(`SurfaceHook.command: String`)으로 저장했다. 이걸 그대로 웹훅에 쓰면 (1) 외부 HTTP 가 셸을 직접 구동하는 RCE 표면이 생기고, (2) 두 트리거가 핸들러를 공유·재사용할 방법이 없다. 한편 tasty 에는 이미 **파일 핸들러 레지스트리**(`src/file/handler/`)가 host default(embedded) + plugin contribute + user config 를 patch semantics 로 병합하고, actor 별 action 스키마로 권한을 타입 강제하는 성숙한 정본 템플릿이 있었다.
+문제는 **실행 대상(핸들러)을 어떻게 표현·저장·게이트하느냐** 였다. 기존 훅은 핸들러 개념 없이 셸 명령을 훅마다 인라인(`SurfaceHook.command: String`)으로 저장했다. 이걸 그대로 웹훅에 쓰면 (1) 외부 HTTP 가 셸을 직접 구동하는 RCE 표면이 생기고, (2) 두 트리거가 핸들러를 공유·재사용할 방법이 없다. 한편 tasty 에는 이미 **파일 핸들러 레지스트리**(`crates/tasty-file-handler/src/`)가 host default(embedded) + plugin contribute + user config 를 patch semantics 로 병합하고, actor 별 action 스키마로 권한을 타입 강제하는 성숙한 정본 템플릿이 있었다.
 
 또한 트리거 방향을 어떻게 명명할지 문제였다 — "inbound/outbound" 는 네트워크 방향(내부↔외부)과 대칭이 안 맞았다(webhook 은 인바운드가 맞지만 hook 은 내부 트리거 + 로컬 동작이라 "아웃바운드" 가 아니다).
 
@@ -47,4 +47,4 @@ tasty 에는 이미 **내부 이벤트 트리거**(`tasty-hooks`: surface/global
 
 - [`features/webhook/index.md`](../features/webhook/index.md) · [`features/hooks/index.md`](../features/hooks/index.md) · [`features/file-handler/index.md`](../features/file-handler/index.md)(정본 템플릿)
 - [ADR-0046](0046-webhook-owner-trust-one-way-ack.md) — owner 신뢰 모델 + 불변식(셸 웹훅 거부의 보안 근거)
-- 코드: `src/hook_handler/{types,config,registry,exec}.rs`, `src/hook_handler/defaults/default-hook-handlers.toml`; 정본 템플릿 `src/file/handler/{registry,types,config}.rs`
+- 코드: `src/hook_handler/{types,config,registry,exec}.rs`, `src/hook_handler/defaults/default-hook-handlers.toml`; 정본 템플릿 `crates/tasty-file-handler/src/{registry,types,config}.rs`

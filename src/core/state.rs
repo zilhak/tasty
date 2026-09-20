@@ -926,9 +926,7 @@ impl CoreState {
             },
             file_handler: {
                 let reg = crate::file::handler::FileHandlerRegistry::new();
-                reg.install_host_defaults(include_str!(
-                    "../file/handler/defaults/default-file-handlers.toml"
-                ));
+                reg.install_host_defaults(crate::file::handler::HOST_DEFAULTS_TOML);
                 if let Some(path) = file_handler_user_config_path() {
                     reg.install_user_config(&path);
                 }

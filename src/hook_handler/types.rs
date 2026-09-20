@@ -1,6 +1,6 @@
 //! 공유 훅 핸들러 레지스트리의 도메인 타입 (webhook/hook 트리거가 공유).
 //!
-//! 파일 핸들러(`src/file/handler/types.rs`) 구조를 미러링하되, 트리거 출처를
+//! 파일 핸들러(`crates/tasty-file-handler/src/types.rs`) 구조를 미러링하되, 트리거 출처를
 //! 게이트하는 `HookSource` 를 추가한다. MVP 는 `IpcSequence` / `ShellCommand`
 //! 두 action 만 정의한다.
 //!

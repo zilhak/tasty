@@ -1,6 +1,6 @@
 //! 공유 훅 핸들러 레지스트리 (webhook/hook 트리거 공유).
 //!
-//! 파일 핸들러(`src/file/handler/`)를 정본 템플릿으로 미러링한다. S1b 로 3출처 병합
+//! 파일 핸들러(`crates/tasty-file-handler/src/`)를 정본 템플릿으로 미러링한다. S1b 로 3출처 병합
 //! (host embedded TOML + plugin manifest + user config) + patch semantics + user
 //! config 영속화(`~/.tasty/hook-handlers.toml`)까지 정식화됐다. `source` 바인딩
 //! 게이트와 IpcSequence 실행 코어는 S1a 부터.

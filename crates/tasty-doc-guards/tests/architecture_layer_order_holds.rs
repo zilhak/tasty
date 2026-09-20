@@ -46,6 +46,14 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
          docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
     ),
     (
+        "tasty-file-handler",
+        "tasty-plugin-protocol",
+        "plugin 이 handler 레지스트리를 조회하는 port trait 이 wire 크레이트에 살고, 고아 \
+         규칙상 그 impl 은 타입을 소유한 쪽에만 둘 수 있다 — 자매 크레이트 \
+         `tasty-file-format` 과 같은 형태이고 같은 결정(ADR-0308)의 적용이다. \
+         docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
+    ),
+    (
         "tasty-remote",
         "tasty-ipc",
         "원격 client 능력이 IPC 호출이고 합칠 후보 둘이 각각 더 나쁜 의존을 들인다 (ADR-0089). \

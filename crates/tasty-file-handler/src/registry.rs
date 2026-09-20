@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 use serde::Deserialize;
 use tracing::warn;
 
-use crate::file::format::{DetectorId, DetectorInfo};
+use tasty_file_format::{DetectorId, DetectorInfo};
 
 use super::config::{
     HandlerDecl, HandlerDeclError, HostHandlerActionDecl, PluginHandlerActionDecl,
@@ -70,7 +70,7 @@ impl FileHandlerRegistry {
     /// 패닉이 나도 불변식은 성립하므로 복구가 맞다
     /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
     fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
-        crate::poison::recover_read(
+        tasty_utils::poison::recover_read(
             self.inner.read(),
             "file handler registry",
             &self.poison_reported,
@@ -79,7 +79,7 @@ impl FileHandlerRegistry {
 
     /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
     fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
-        crate::poison::recover_write(
+        tasty_utils::poison::recover_write(
             self.inner.write(),
             "file handler registry",
             &self.poison_reported,
@@ -88,7 +88,7 @@ impl FileHandlerRegistry {
 
     /// `DetectorInfo` 주입. 부팅 시 1회만. 중복 호출은 warn + 무시.
     pub fn attach_detector_info(&self, info: Arc<dyn DetectorInfo>) {
-        let mut slot = crate::poison::recover_write(
+        let mut slot = tasty_utils::poison::recover_write(
             self.detector_info.write(),
             "file handler detector_info",
             &self.poison_reported,
@@ -102,7 +102,7 @@ impl FileHandlerRegistry {
 
     /// 주입된 `DetectorInfo` 의 clone. `attach_detector_info` 호출 전이면 `None`.
     pub fn detector_info(&self) -> Option<Arc<dyn DetectorInfo>> {
-        crate::poison::recover_read(
+        tasty_utils::poison::recover_read(
             self.detector_info.read(),
             "file handler detector_info",
             &self.poison_reported,

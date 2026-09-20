@@ -1,5 +1,5 @@
 //! Hook handler TOML/manifest schema. Actor 별 action variant 차이를 schema 에서
-//! 강제한다 (파일 핸들러 `src/file/handler/config.rs` 미러).
+//! 강제한다 (파일 핸들러 `crates/tasty-file-handler/src/config.rs` 미러).
 //!
 //! - `HostHookHandlerActionDecl`: `IpcSequence` / `ShellCommand`
 //! - `PluginHookHandlerActionDecl`: `IpcSequence` (**ShellCommand 없음** — manifest reject)

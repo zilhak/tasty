@@ -1,6 +1,6 @@
 //! 공유 훅 핸들러 레지스트리 — **S1b: 파일 핸들러 풀미러(정식화)**.
 //!
-//! 파일 핸들러(`src/file/handler/registry.rs`)를 정본 템플릿으로 3출처 병합을 갖춘다:
+//! 파일 핸들러(`crates/tasty-file-handler/src/registry.rs`)를 정본 템플릿으로 3출처 병합을 갖춘다:
 //! host embedded TOML + plugin manifest + user config(`~/.tasty/hook-handlers.toml`).
 //! 같은 handler id 가 여러 출처에 등장하면 **patch semantics**(Host → Plugin → User
 //! 순서로 `Some` 필드만 덮어씀), 정렬은 priority↑ → owner tie-break(user>plugin>host)
