@@ -42,6 +42,19 @@ pub fn next_popup_z_seq() -> u64 {
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
+/// namespace 호출 하나가 응답 없이 pending 에 남을 수 있는 상한.
+///
+/// hook 의 deadline 은 매니페스트가 선언한 `timeout_ms` 에서 오지만(상한 1 초)
+/// namespace 호출에는 그런 선언이 없어 값을 여기서 정한다. 이 값은
+/// `HEALTHCHECK_TIMEOUT + PING_INTERVAL` 을 **넘겨야** 한다 — 프로세스가 죽거나
+/// 굳은 plugin 은 이미 그 상한 안에 healthcheck 가 거두고
+/// (`restart_unresponsive_plugins` → `cancel_pending_namespace_calls`) 그 경로가
+/// `-32004` 를 돌려주기 때문이다. 더 짧게 잡으면 이미 처리되는 그 경우를 앞질러
+/// 회신 시점을 바꾼다. 그래서 그 상한의 두 배로 두고, 여기 걸리는 것은 healthcheck
+/// 가 볼 수 없는 경우 — ping 에는 답하면서 이 호출 하나만 영영 안 돌려주는 plugin —
+/// 뿐이게 한다.
+pub(super) const NAMESPACE_CALL_TIMEOUT: Duration =
+    Duration::from_secs(2 * (HEALTHCHECK_TIMEOUT.as_secs() + PING_INTERVAL.as_secs()));
 pub(super) const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
 /// plugin 하나에 주는 graceful 종료 기회. 초과하면 force kill 한다. 종료 전체
@@ -119,6 +132,8 @@ pub(super) enum PendingRequestKind {
         plugin_id: String,
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         original_id: serde_json::Value,
+        /// target 응답이 도착해야 하는 시각. 지나면 caller 에 오류로 회신하고 버린다.
+        deadline: Instant,
     },
     /// 다른 plugin이 보낸 IpcCall이 namespace 메서드인 경우. target plugin이 응답을
     /// 주면 caller plugin에 `ipc.result`로 회신한다.
@@ -129,6 +144,8 @@ pub(super) enum PendingRequestKind {
         caller_plugin_id: String,
         /// caller plugin이 ipc.call 시점에 발급한 call_id.
         call_id: u64,
+        /// target 응답이 도착해야 하는 시각. 지나면 caller 에 오류로 회신하고 버린다.
+        deadline: Instant,
     },
     /// extension의 pre-IPC hook을 dispatch한 뒤 응답 대기. extension이 응답을 주면
     /// (transform이면 payload 교체, filter면 차단 결정) 그 결과로 target plugin에
@@ -164,6 +181,9 @@ pub(super) enum PendingRequestKind {
         extension_plugin_id: String,
         post_hook_decl: IpcHookDecl,
         final_caller: FinalCaller,
+        /// target 응답이 도착해야 하는 시각. post-hook 자신의 deadline 이 아니다 —
+        /// 그것은 post-hook 을 실제로 보내는 시점에 `timeout_ms` 로 따로 잡는다.
+        deadline: Instant,
     },
     /// debug 빌드 한정 — `debug.extension.invoke_hook`이 보낸 hook 응답을 그대로
     /// caller(local CLI)에 회신.
@@ -762,6 +782,50 @@ prefix = "{prefix}"
             .create_shared_buffer_for("com.example.x", 1, 4096)
             .unwrap_err();
         assert!(err.contains("handle channel not available"), "got: {err}");
+    }
+
+    /// pending 하나를 심고 sweep 을 돌린 결과를 (남았는가, 회신된 응답) 으로 돌려준다.
+    /// deadline 만 다르게 주어 만료/미만료 두 갈래를 같은 자리에서 잰다.
+    fn sweep_one_namespace_invoke(deadline: Instant) -> (bool, Option<JsonRpcResponse>) {
+        let mut mgr = PluginManager::new(empty_waker());
+        let (tx, rx) = mpsc::sync_channel(1);
+        mgr.pending_requests.insert(
+            7,
+            PendingRequestKind::NamespaceInvoke {
+                plugin_id: "com.example.silent".into(),
+                response_tx: tx,
+                original_id: serde_json::json!(42),
+                deadline,
+            },
+        );
+        mgr.sweep_expired_requests();
+        (mgr.pending_requests.contains_key(&7), rx.try_recv().ok())
+    }
+
+    #[test]
+    fn expired_namespace_invoke_answers_its_caller_and_leaves_pending() {
+        let (still_pending, resp) =
+            sweep_one_namespace_invoke(Instant::now() - Duration::from_secs(1));
+        assert!(!still_pending, "만료된 pending 이 남았다");
+        let resp = resp.expect("만료 시 caller 에 회신이 가야 한다");
+        assert_eq!(resp.id, serde_json::json!(42));
+        let err = resp.error.expect("결과가 아니라 오류여야 한다");
+        assert_eq!(err.code, -32004);
+        assert!(
+            err.message.contains("com.example.silent") && err.message.contains("did not answer"),
+            "got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn unexpired_namespace_invoke_is_left_alone() {
+        // 같은 자리에서 deadline 만 미래로 옮긴다 — sweep 이 시각을 실제로 보는지를
+        // 이 짝이 가른다(둘 다 통과해야 deadline 비교가 살아 있다는 뜻이다).
+        let (still_pending, resp) =
+            sweep_one_namespace_invoke(Instant::now() + NAMESPACE_CALL_TIMEOUT);
+        assert!(still_pending, "아직 만료 전인데 pending 이 사라졌다");
+        assert!(resp.is_none(), "만료 전에 caller 에 회신이 갔다");
     }
 }
 

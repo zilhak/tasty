@@ -14,8 +14,8 @@ use tasty_ipc::server::send_response;
 use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission};
 
 use super::{
-    FinalCaller, HOOK_FAIL_BACKOFF, HOOK_FAIL_LIMIT, PendingPluginCall, PendingRequestKind,
-    PluginManager,
+    FinalCaller, HOOK_FAIL_BACKOFF, HOOK_FAIL_LIMIT, NAMESPACE_CALL_TIMEOUT, PendingPluginCall,
+    PendingRequestKind, PluginManager,
 };
 
 impl PluginManager {
@@ -298,6 +298,7 @@ impl PluginManager {
                     return;
                 }
             };
+        let deadline = Instant::now() + NAMESPACE_CALL_TIMEOUT;
         let kind = match (final_caller, post_hook) {
             (
                 FinalCaller::Local {
@@ -309,6 +310,7 @@ impl PluginManager {
                 plugin_id: target_plugin_id,
                 response_tx,
                 original_id,
+                deadline,
             },
             (
                 FinalCaller::Plugin {
@@ -320,6 +322,7 @@ impl PluginManager {
                 plugin_id: target_plugin_id,
                 caller_plugin_id,
                 call_id,
+                deadline,
             },
             (fc, Some((ext_id, decl))) => PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,
@@ -327,6 +330,7 @@ impl PluginManager {
                 extension_plugin_id: ext_id,
                 post_hook_decl: decl,
                 final_caller: fc,
+                deadline,
             },
         };
         self.pending_requests.insert(req_id, kind);

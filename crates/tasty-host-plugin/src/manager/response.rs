@@ -1,5 +1,6 @@
 //! Plugin → host 응답 처리. `pump` 에서 매 tick 호출되는 `drain_plugin_responses`
-//! 와 그 dispatch 로 호출되는 pre/post hook 응답 처리, `sweep_expired_hooks` 까지 포함.
+//! 와 그 dispatch 로 호출되는 pre/post hook 응답 처리, `sweep_expired_requests` 까지
+//! 포함.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
@@ -11,8 +12,18 @@ use tasty_ipc::server::send_response;
 use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl};
 
 use super::{
-    FinalCaller, HookOutcome, PendingRequestKind, PluginManager, TargetOutcome, parse_hook_result,
+    FinalCaller, HookOutcome, NAMESPACE_CALL_TIMEOUT, PendingRequestKind, PluginManager,
+    TargetOutcome, parse_hook_result,
 };
+
+/// 만료된 namespace 호출이 caller 에게 돌려주는 사유. 세 변종이 같은 문장을 쓴다 —
+/// caller 입장에서는 같은 일(기다리던 plugin 응답이 끝내 안 왔다)이다.
+fn namespace_timeout_message(plugin_id: &str) -> String {
+    format!(
+        "plugin '{plugin_id}' did not answer within {}s",
+        NAMESPACE_CALL_TIMEOUT.as_secs()
+    )
+}
 
 // surface handle 슬롯 락의 poison 보고 플래그(각 첫 1 회만). 둘 다 값 슬롯(String ·
 // Option<Value>)이라 락을 든 채 죽어도 불변식이 성하다 — 복구가 맞다. 조용히 삼키면
@@ -65,6 +76,7 @@ impl PluginManager {
                 plugin_id: _,
                 response_tx,
                 original_id,
+                deadline: _,
             } => {
                 send_namespace_result(
                     &response_tx,
@@ -78,6 +90,7 @@ impl PluginManager {
                 plugin_id: _,
                 caller_plugin_id,
                 call_id,
+                deadline: _,
             } => {
                 // plugin caller에는 ipc.result로 회신. 코드도 함께 간다 — 같은 함수의
                 // namespace 갈래(위)가 이미 `resp.error_code` 를 쓰고 있었고, 이쪽만
@@ -117,6 +130,7 @@ impl PluginManager {
                 extension_plugin_id,
                 post_hook_decl,
                 final_caller,
+                deadline: _,
             } => {
                 self.handle_target_response_with_post_hook(
                     extension_plugin_id,
@@ -417,27 +431,33 @@ impl PluginManager {
         }
     }
 
-    /// 타임아웃된 pre/post hook pending을 sweep해서 fail-open 처리.
-    pub(super) fn sweep_expired_hooks(&mut self) {
+    /// deadline 을 넘긴 pending 요청을 sweep 한다. hook 은 fail-open(원래 흐름을
+    /// 그대로 진행)으로, namespace 호출은 caller 에 오류 회신으로 끝난다 — 후자는
+    /// "진행" 할 원본 흐름이 없다(target 응답 자체가 목적이었다).
+    pub(super) fn sweep_expired_requests(&mut self) {
         let now = Instant::now();
-        let expired = self.collect_expired_hook_ids(now);
+        let expired = self.collect_expired_request_ids(now);
         for id in expired {
             if let Some(kind) = self.pending_requests.remove(&id) {
-                self.fail_open_expired_hook(kind);
+                self.expire_pending_request(kind);
             }
         }
     }
 
-    /// 현재 pending 중인 4종 hook(pre/post × ipc/event) 요청 가운데 `now` 시점
-    /// deadline 을 넘긴 request id 목록.
-    fn collect_expired_hook_ids(&self, now: Instant) -> Vec<u64> {
+    /// 현재 pending 중인 요청 가운데 `now` 시점 deadline 을 넘긴 request id 목록.
+    /// deadline 을 든 변종만 본다 — 4 종 hook(pre/post × ipc/event) 과 3 종
+    /// namespace 호출.
+    fn collect_expired_request_ids(&self, now: Instant) -> Vec<u64> {
         self.pending_requests
             .iter()
             .filter_map(|(id, kind)| match kind {
                 PendingRequestKind::ExtensionPreIpcHook { deadline, .. }
                 | PendingRequestKind::ExtensionPostIpcHook { deadline, .. }
                 | PendingRequestKind::ExtensionPreEventHook { deadline, .. }
-                | PendingRequestKind::ExtensionPostEventHook { deadline, .. } => {
+                | PendingRequestKind::ExtensionPostEventHook { deadline, .. }
+                | PendingRequestKind::NamespaceInvoke { deadline, .. }
+                | PendingRequestKind::PluginToPluginNamespace { deadline, .. }
+                | PendingRequestKind::NamespaceInvokeWithPostHook { deadline, .. } => {
                     if now >= *deadline { Some(*id) } else { None }
                 }
                 _ => None,
@@ -445,9 +465,12 @@ impl PluginManager {
             .collect()
     }
 
-    /// 타임아웃된 hook 요청 한 건을 fail-open 처리 — target/publisher 는 원본
-    /// payload 로 그대로 진행시키고, 해당 extension 은 실패로 기록한다.
-    fn fail_open_expired_hook(&mut self, kind: PendingRequestKind) {
+    /// 타임아웃된 요청 한 건을 종결한다. hook 은 fail-open — target/publisher 는
+    /// 원본 payload 로 그대로 진행시키고 해당 extension 은 실패로 기록한다.
+    /// namespace 호출은 기다리던 응답이 곧 목적이라 진행시킬 것이 없다 — plugin 이
+    /// 사라졌을 때(`cancel_pending_namespace_calls`)와 같은 모양으로 caller 에
+    /// `-32004` 를 회신한다.
+    fn expire_pending_request(&mut self, kind: PendingRequestKind) {
         match kind {
             PendingRequestKind::ExtensionPreIpcHook {
                 target_plugin_id,
@@ -497,6 +520,41 @@ impl PluginManager {
                 event_key,
                 deadline: _,
             } => self.fail_open_post_event_hook(extension_plugin_id, event_key),
+            PendingRequestKind::NamespaceInvoke {
+                plugin_id,
+                response_tx,
+                original_id,
+                deadline: _,
+            } => {
+                let msg = namespace_timeout_message(&plugin_id);
+                tracing::warn!("{msg}");
+                send_response(
+                    &response_tx,
+                    JsonRpcResponse::error(original_id, -32004, &msg),
+                );
+            }
+            PendingRequestKind::PluginToPluginNamespace {
+                plugin_id,
+                caller_plugin_id,
+                call_id,
+                deadline: _,
+            } => {
+                let msg = namespace_timeout_message(&plugin_id);
+                tracing::warn!("{msg}");
+                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), None);
+            }
+            PendingRequestKind::NamespaceInvokeWithPostHook {
+                target_plugin_id,
+                method: _,
+                extension_plugin_id: _,
+                post_hook_decl: _,
+                final_caller,
+                deadline: _,
+            } => {
+                let msg = namespace_timeout_message(&target_plugin_id);
+                tracing::warn!("{msg}");
+                self.send_final_error(final_caller, -32004, msg);
+            }
             _ => {}
         }
     }

@@ -123,8 +123,9 @@ impl PluginManager {
         // 4. plugin → 호스트 응답 처리 (display_name/snapshot 동기화).
         self.drain_plugin_responses();
 
-        // 4a. 타임아웃된 extension hook을 fail-open 처리.
-        self.sweep_expired_hooks();
+        // 4a. deadline 을 넘긴 pending 요청 정리 — hook 은 fail-open, namespace
+        // 호출은 caller 에 오류 회신.
+        self.sweep_expired_requests();
 
         // 5. 시간축 — due 한 주기 작업만 실행한다(위 이벤트 drain 은 프레임축).
         for key in self.timers.drain_due(now) {
