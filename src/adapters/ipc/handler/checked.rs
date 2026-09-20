@@ -153,6 +153,42 @@ mod tests {
         assert_eq!(observations(&mut core, &mut state, &mut engine), 1);
     }
 
+    // 압력 계측의 경계. 큐 대기는 게이트 **앞**에서 재고(거부된 요청도 큐에 앉아
+    // 있었으므로 그 시간은 실재한다) handler 실행 시간은 게이트 **뒤**에서 잰다.
+    // 둘을 같은 자리에서 재면 거부가 실행 비용으로 보이고, 느린 응답의 원인을
+    // 적체와 handler 중 어느 쪽으로도 고를 수 없게 된다.
+    #[test]
+    fn only_a_request_that_passed_the_gate_is_timed_as_a_handler() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let req = request("surface.kinds");
+        budget(&core);
+
+        let denied =
+            super::super::handle_with_caller(&mut core, &mut state, &mut engine, &req, &agent(&[]));
+        assert!(denied.error.is_some(), "권한 없는 호출은 거부된다");
+        assert_eq!(
+            core.pressure().snapshot().handler_calls,
+            0,
+            "거부는 handler 를 돌리지 않았으므로 실행 시간에 세지 않는다"
+        );
+
+        let allowed = super::super::handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &agent(&[Permission::SurfaceRead]),
+        );
+        assert!(allowed.error.is_none());
+        assert_eq!(
+            core.pressure().snapshot().handler_calls,
+            1,
+            "통과한 요청 하나가 한 번 세져야 한다"
+        );
+    }
+
     #[test]
     fn local_remains_exempt_from_consumption_and_allow_observation() {
         let _home = crate::test_support::TastyHomeGuard::new();

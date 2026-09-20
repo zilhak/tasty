@@ -134,7 +134,29 @@ pub fn handle_with_caller(
 }
 
 /// 공통 게이트를 통과한 동일 요청을 실행한다. 예산과 허용 관측을 다시 소비하지 않는다.
+///
+/// 실행에 걸린 시간을 여기서 잰다. 이 함수가 그 자리인 이유는 GUI 라우팅·headless
+/// pump·plugin host-call·intent cascade 가 **전부 여기로 모이기** 때문이다 — 게이트
+/// 안(`check_request`)에서 재면 handler 가 아직 돌지 않았고, 호출부마다 재면 자리가
+/// 여덟 곳으로 흩어진다.
 pub(crate) fn handle_checked_request(
+    core: &mut crate::core::Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    checked: &CheckedRequest<'_>,
+) -> JsonRpcResponse {
+    let started = core.now_instant();
+    let response = route_checked_request(core, state, engine, checked);
+    // 시작·끝 둘 다 `Clock` port 를 지난다 — 한쪽만 port 면 주입한 시계로 잰 값이
+    // 실제 벽시계와 섞인다.
+    let elapsed = core.now_instant().duration_since(started);
+    core.pressure().record_handler(elapsed);
+    response
+}
+
+/// [`handle_checked_request`] 의 라우팅 본체. 조기 return 이 여럿이라 계측을 이 함수
+/// **바깥**에 두어야 모든 갈래가 같은 자리에서 끝난다.
+fn route_checked_request(
     core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut CoreState,
