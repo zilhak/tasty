@@ -5719,6 +5719,7 @@ dependencies = [
  "tasty-ssh",
  "tasty-telemetry",
  "tasty-terminal",
+ "tasty-terminal-link",
  "tasty-test-support",
  "tasty-themes",
  "tasty-timer",
@@ -6426,6 +6427,18 @@ dependencies = [
  "tracing",
  "unicode-width 0.2.2",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "tasty-terminal-link"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "tasty-cell-width",
+ "tasty-terminal",
+ "tasty-type-appearance",
+ "tempfile",
+ "termwiz",
 ]
 
 [[package]]

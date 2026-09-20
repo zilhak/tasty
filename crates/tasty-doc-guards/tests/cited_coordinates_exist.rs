@@ -389,7 +389,10 @@ const ALLOWLIST: &[(&str, &str)] = &[
     ("crates/tasty-output/src/parsers/errors.rs", "src/foo.c"),
     ("crates/tasty-output/src/parsers/errors.rs", "src/foo.ts"),
     // ① 예시 — 터미널 링크 검출 설명이 드는 가상의 크레이트.
-    ("src/adapters/ui/terminal_link.rs", "crates/x/Cargo.toml"),
+    (
+        "crates/tasty-terminal-link/src/lib.rs",
+        "crates/x/Cargo.toml",
+    ),
     // ③ ADR 본문의 **결정 시점 좌표.** ADR 템플릿의 "좌표 예외" 는 Context·Decision 의
     //    코드 인용을 결정 시점 기준으로 규정하고 **낡았다는 이유로 고치는 것을 금지한다**
     //    — 그 부재가 결정이 실행됐다는 증거라서다. 그러니 이 부류는 형태를 고쳐 닫을 수

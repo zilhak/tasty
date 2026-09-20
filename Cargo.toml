@@ -260,6 +260,7 @@ tasty-model = { path = "crates/tasty-model" }
 tasty-file-format = { path = "crates/tasty-file-format" }
 tasty-file-handler = { path = "crates/tasty-file-handler" }
 tasty-selection = { path = "crates/tasty-selection" }
+tasty-terminal-link = { path = "crates/tasty-terminal-link" }
 tasty-remote = { path = "crates/tasty-remote" }
 tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-ssh = { path = "crates/tasty-ssh" }
