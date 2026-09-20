@@ -18,12 +18,21 @@
 | `surface.parse_since_mark` | 일회성 batch | 마크 이후 출력을 한 번에 분해 |
 | `surface.commands` (+`last_command`,`command_at`) | 일회성 batch | OSC 133 인덱싱된 **명령 단위** 메타데이터 |
 | `output.observe_start` | 스트리밍 | PTY 라인마다 파서 → sink fan-out |
+| `surface.read_since_scan_mark` | 주기 폴링 | 전진하는 전용 커서로 **새로 온 것만** 읽는다 (파서를 안 거친 raw) |
 
 세 경로 모두 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유.
 
 ### parse_since_mark
 
 `set mark` → 명령 실행 → `parse-since-mark --parsers path,url,compile_error,test_result`. `--parsers` 생략 시 기본 4종(`path,url,prompt_boundary,exit_code`). 고급 6종은 명시 opt-in. 전체 block 을 받아 멀티라인 파서(`compile_error`/`stack_trace`)도 정확히 분해.
+
+### 마크는 둘이다
+
+`parse_since_mark` 가 읽는 마크는 `surface.set_mark` 이 세우고 `surface.read_since_mark` 도 함께 읽는 **하나의** 마크다 — surface 당 하나이지 소비자당 하나가 아니다. 에이전트 셋이 같은 surface 를 보면 셋이 같은 창을 본다.
+
+출력을 **주기적으로 훑는** 소비자는 그 마크를 쓰지 않는다. `surface.read_since_scan_mark` 가 별도 커서를 읽고, 그 커서는 읽을 때마다 전진해 지난 호출 이후에 온 것만 준다. 두 커서는 서로를 밀지 않는다 — `set mark` 이 스캔 커서를 안 움직이고, 스캔 읽기가 마크를 안 움직인다. 그 커서는 소비자가 하나라는 전제 위에 있어 CLI 동사가 없다([ADR-0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md)).
+
+**마크가 잘려 나가면 다음 읽기는 버퍼 처음부터 돌아가고, 응답은 그 사실을 말하지 않는다.** 출력 버퍼는 1 MiB 를 넘으면 앞에서 버리는데, 마크가 그 구간에 있었으면 무효가 된다. 스캔 커서 쪽은 무효화 대신 보존 구간 앞끝으로 당겨진다.
 
 ### 명령 인덱싱 (OSC 133)
 

@@ -198,7 +198,7 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 ### PTY 에러 스캔 (`claude-error`) 범위
 
-`error_scan.rs`는 800ms 주기 폴링으로 추적 대상 surface 마다 `surface.read_since_mark`(strip-ansi)를 읽어 알려진 네트워크/API 에러 패턴(`API Error` / `Output blocked by content filtering policy` / `overloaded_error` / `rate_limit_error` / `Internal Server Error` / `network error` / `Bad Request`)을 매칭하고, 매치 시 그 surface 에 `claude-error` 를 fire 한다. 같은 텍스트가 연속 폴링에서 다시 잡히면 발화하지 않으며(dedupe), 새 턴 시작 신호(`prompt-submit`/`session-start`/`active`)에 dedupe 가 풀린다.
+`error_scan.rs`는 800ms 주기 폴링으로 추적 대상 surface 마다 `surface.read_since_scan_mark`(strip-ansi)를 읽어 알려진 네트워크/API 에러 패턴(`API Error` / `Output blocked by content filtering policy` / `overloaded_error` / `rate_limit_error` / `Internal Server Error` / `network error` / `Bad Request`)을 매칭하고, 매치 시 그 surface 에 `claude-error` 를 fire 한다. 같은 텍스트가 연속 폴링에서 다시 잡히면 발화하지 않으며(dedupe), 새 턴 시작 신호(`prompt-submit`/`session-start`/`active`)에 dedupe 가 풀린다.
 
 추적 대상은 **`claude launch` 로 만든 top-level surface 와 `claude spawn`/`claude respawn` 으로 만든 자식 surface 전부**다. 사람이 화면을 보고 있지 않은 자식이야말로 감지가 가장 필요한 대상이므로 자식을 제외하지 않는다.
 
@@ -211,7 +211,9 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 자식을 관계로 판정하는 이유는 [`terminal.release`](../../features/child-terminal/index.md)가 surface 를 닫지 않고 관계·soft 점유만 해제하기 때문이다 — surface 존재만 봤다면 release 후에도 영원히 폴링되며, 더 이상 자식이 아닌 사용자 터미널에 `claude-error` 를 계속 발화한다. 호스트가 관계 조회 전 `reconcile_child_terminals()` 를 돌리므로 이 한 번의 조회가 kill/close 실패로 surface 가 살아남은 케이스까지 함께 걷어낸다. `claude kill` 은 성공 응답의 `killed_surface_id` 로 즉시 `disable` 해 최대 800ms 의 잔여 발화 창까지 없앤다. 조회 자체가 실패(IPC 오류)하면 "죽었다"로 단정하지 않고 추적을 유지한다 — 재활성화 경로가 없어 오탐 정리가 오탐 유지보다 위험하다.
 
-**mark 는 공유 자원이라 감지 사각이 있다.** 스캐너의 `surface.read_since_mark` 는 mark 를 전진시키지 않으므로(`Terminal::read_since_mark` 가 `&self`) 에이전트의 `tasty read since-mark` 결과를 소비하지 않지만, 반대로 에이전트가 `tasty set mark` 로 mark 를 앞으로 옮기면 스캐너가 보는 창도 함께 옮겨간다. 그 이전에 지나간 에러는 스캐너 시야에서 사라진다. 이 결합은 수용한다 — mark 를 스캐너 전용으로 따로 두면 mark 자원이 이중화돼 에이전트의 `set mark` 의미가 흐려진다.
+**스캐너는 에이전트와 다른 커서를 쓴다.** `surface.read_since_scan_mark` 는 에이전트의 mark(`tasty set mark` · `tasty read since-mark` · `parse-since-mark` 가 쓰는 것)와 **별개 커서**를 읽고, 읽을 때마다 읽은 자리 끝으로 전진한다. 그래서 ① 에이전트가 `tasty set mark` 를 걸어도 스캐너의 관측 창이 안 움직이고 ② 폴링 1 회가 나르는 것은 지난 800ms 에 새로 온 바이트뿐이다(한때는 아무도 mark 를 안 세운 surface 에서 폴링마다 버퍼 전체가 실렸다). 반대 방향도 닫혀 있다 — 스캐너의 읽기는 에이전트의 mark 를 안 움직인다.
+
+커서가 전진하므로 한 호출이 주는 것은 화면 전체가 아니라 **델타**다. 패턴 매칭이 볼 창은 plugin 이 누적해 두고, 그 상한은 호스트 출력 버퍼의 상한과 같은 값을 따로 적은 사본이다. **이 커서의 소비자는 하나라는 전제 위에 있다** — 둘이 같은 이름을 부르면 서로의 바이트를 먹고 그 손실은 조용하다. 그래서 CLI 동사가 없다. 근거·대안·재검토 조건은 [ADR-0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md).
 
 ### 정지 알림 (`claude-error-stalled` → 부모 completion-log)
 
