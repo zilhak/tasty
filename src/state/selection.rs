@@ -162,7 +162,7 @@ pub fn extract_selected_text(
                     for (cell_text, _) in &cells {
                         let ch = cell_text.chars().next().unwrap_or(' ');
                         #[cfg(feature = "gui")]
-                        let width = crate::renderer::unicode_width(ch);
+                        let width = tasty_cell_width::unicode_width(ch);
                         #[cfg(not(feature = "gui"))]
                         let width = if ch.is_ascii() { 1 } else { 2 };
                         if col_idx >= c0 && col_idx <= c1 {
@@ -264,7 +264,7 @@ fn extract_scrollback_line(
     for (cell_text, _attrs) in &line {
         let ch = cell_text.chars().next().unwrap_or(' ');
         #[cfg(feature = "gui")]
-        let width = crate::renderer::unicode_width(ch);
+        let width = tasty_cell_width::unicode_width(ch);
         #[cfg(not(feature = "gui"))]
         let width = if ch.is_ascii() { 1 } else { 2 }; // headless fallback (no cosmic-text).
         let selected = match sel.mode {

@@ -245,6 +245,7 @@ tasty-icons = { path = "crates/tasty-icons", features = ["egui"] }
 tasty-ui-widgets = { path = "crates/tasty-ui-widgets" }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
 tasty-type-geometry = { path = "crates/tasty-type-geometry" }
+tasty-cell-width = { path = "crates/tasty-cell-width" }
 tasty-utils = { path = "crates/tasty-utils" }
 tasty-i18n = { path = "crates/tasty-i18n" }
 tasty-shm = { path = "crates/tasty-shm" }

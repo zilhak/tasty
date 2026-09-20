@@ -5684,6 +5684,7 @@ dependencies = [
  "sysinfo",
  "tasty-agent",
  "tasty-approval",
+ "tasty-cell-width",
  "tasty-cli",
  "tasty-dag-layout",
  "tasty-design-tokens",
@@ -5771,6 +5772,10 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
 ]
+
+[[package]]
+name = "tasty-cell-width"
+version = "0.1.0"
 
 [[package]]
 name = "tasty-cli"

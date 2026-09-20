@@ -31,7 +31,7 @@ fn last_occupied_col(line: &termwiz::surface::line::Line) -> usize {
         let text = c.str();
         if !text.is_empty() && text != " " {
             let ch = text.chars().next().unwrap_or(' ');
-            let end = c.cell_index() + crate::renderer::unicode_width(ch);
+            let end = c.cell_index() + tasty_cell_width::unicode_width(ch);
             if end > last {
                 last = end;
             }

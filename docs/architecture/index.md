@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 54 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
+tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 55 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
 
 ## 기술 스택
 
@@ -32,12 +32,12 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 > 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. 전환기 컨테이너로 남아 있던 `engine` 모듈도 사라졌고, 그 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)은 `src/core/` 아래로 옮겨졌다.
 
-## 워크스페이스 크레이트 (54)
+## 워크스페이스 크레이트 (55)
 
 의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. **그 순서를 `crates/tasty-doc-guards/tests/architecture_layer_order_holds.rs` 가 매니페스트 의존과 대조한다** — 절 소속은 각 절 **첫 문단의 열거**에서 읽고(항목마다 `` `이름` `` 으로 시작), 순서를 거스르는 간선은 문서 본문이 이유를 적은 것만 허용한다. 지금 그런 예외는 `tasty-remote` → `tasty-ipc` 하나다(아래 도메인-IO 절). **순서를 거스르는 간선을 보면 그 간선보다 절 순서를 먼저 의심해라** — 실측에서 그런 넷은 전부 정상 의존이었고 절 넷이 잘못된 자리에 있었다. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다([ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 push 전에 직접 돌려라.
 
 ### type-\* / primitive (leaf)
-`tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf) · `tasty-ansi`(ANSI escape 제거 — CSI/OSC 정규식 하나. `tasty-terminal`(IPC `--strip-ansi`)과 `tasty-output`(파서의 plain text 매칭)이 공유한다. 두 크레이트가 서로를 흡수하면 상대가 몰라도 되는 의존(serde / termwiz)을 들이므로 크기가 아니라 의존 방향으로 분리했다, → regex 만, ADR-0089) · `tasty-timer`(중앙 타이머 허브 — 메인 루프의 주기 작업을 키로 등록하고 매 프레임 `drain_due` 로 소비, 고정 주기 ticker 스레드 대신 다음 데드라인까지만 자는 waker 스레드 1개, 의존 0) · `tasty-shm`(공유 메모리 + FD/HANDLE 전달 primitive — POSIX shm + SCM_RIGHTS / Windows DuplicateHandle. 호스트와 plugin 이 대용량 데이터를 주고받는 **선(wire)** 이라 `tasty-plugin-protocol` 과 같은 역할이고, tasty 도메인 개념을 담지 않는다. 워크스페이스 내부 의존 0, 의존 0)
+`tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf) · `tasty-cell-width`(문자 하나가 터미널 셀을 몇 칸 차지하는가 — 렌더러·선택 모델·링크 스캐너가 같은 답을 써야 하고, 그 답이 GPU 렌더러 안에 있으면 도메인이 렌더러를 거꾸로 본다. 코드포인트 구간표, 의존 0) · `tasty-ansi`(ANSI escape 제거 — CSI/OSC 정규식 하나. `tasty-terminal`(IPC `--strip-ansi`)과 `tasty-output`(파서의 plain text 매칭)이 공유한다. 두 크레이트가 서로를 흡수하면 상대가 몰라도 되는 의존(serde / termwiz)을 들이므로 크기가 아니라 의존 방향으로 분리했다, → regex 만, ADR-0089) · `tasty-timer`(중앙 타이머 허브 — 메인 루프의 주기 작업을 키로 등록하고 매 프레임 `drain_due` 로 소비, 고정 주기 ticker 스레드 대신 다음 데드라인까지만 자는 waker 스레드 1개, 의존 0) · `tasty-shm`(공유 메모리 + FD/HANDLE 전달 primitive — POSIX shm + SCM_RIGHTS / Windows DuplicateHandle. 호스트와 plugin 이 대용량 데이터를 주고받는 **선(wire)** 이라 `tasty-plugin-protocol` 과 같은 역할이고, tasty 도메인 개념을 담지 않는다. 워크스페이스 내부 의존 0, 의존 0)
 
 이 절 안에서만 의존 가능("type-\*" 는 절 이름이고 규칙의 단위는 **절 소속**이다 — `tasty-utils`·`tasty-ansi`·`tasty-timer`·`tasty-design-tokens` 처럼 이름이 `tasty-type-` 으로 시작하지 않는 것도 이 절이다). 도메인/IO crate 의존 금지(그룹 내 순환도 금지). — [typed-length](../concepts/typed-length.md)
 

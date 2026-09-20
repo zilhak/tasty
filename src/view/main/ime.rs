@@ -284,7 +284,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
         w.ime_advance_base = terminal.cursor_position();
     }
     for ch in text.chars() {
-        w.ime_cursor_advance += crate::renderer::unicode_width(ch);
+        w.ime_cursor_advance += tasty_cell_width::unicode_width(ch);
     }
     w.ime_preedit = None;
     let sid = w.state.focused_surface_id(engine);
@@ -363,7 +363,7 @@ fn on_commit(w: &mut MainView, text: String) {
         w.ime_advance_base = reference_cursor(terminal);
     }
     for ch in text.chars() {
-        w.ime_cursor_advance += crate::renderer::unicode_width(ch);
+        w.ime_cursor_advance += tasty_cell_width::unicode_width(ch);
     }
     w.ime_preedit = None;
 

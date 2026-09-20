@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use termwiz::cell::CellAttributes;
 
-use crate::renderer::unicode_width;
+use tasty_cell_width::unicode_width;
 
 /// 링크가 걸쳐 있는 화면상 한 행의 컬럼 범위.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

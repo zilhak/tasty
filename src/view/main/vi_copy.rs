@@ -226,7 +226,7 @@ fn row_chars(terminal: &tasty_terminal::Terminal, abs_row: usize) -> Vec<(usize,
                 let ch = text.chars().next().unwrap_or(' ');
                 out.push((col, ch));
                 #[cfg(feature = "gui")]
-                let w = crate::renderer::unicode_width(ch);
+                let w = tasty_cell_width::unicode_width(ch);
                 #[cfg(not(feature = "gui"))]
                 let w = if ch.is_ascii() { 1 } else { 2 };
                 col += w.max(1);

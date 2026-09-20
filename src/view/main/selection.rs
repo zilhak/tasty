@@ -135,7 +135,7 @@ impl MainView {
                         let mut c = 0;
                         for (text, _) in line.cells() {
                             let ch = text.chars().next().unwrap_or(' ');
-                            let w = crate::renderer::unicode_width(ch);
+                            let w = tasty_cell_width::unicode_width(ch);
                             result.push((text.to_string(), c));
                             c += w;
                         }
@@ -186,7 +186,7 @@ impl MainView {
         let start_col = row_text[start].1;
         let end_text = &row_text[end].0;
         let end_ch = end_text.chars().next().unwrap_or(' ');
-        let end_col = row_text[end].1 + crate::renderer::unicode_width(end_ch) - 1;
+        let end_col = row_text[end].1 + tasty_cell_width::unicode_width(end_ch) - 1;
         (start_col, end_col)
     }
 
