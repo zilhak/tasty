@@ -61,20 +61,7 @@ pub(crate) fn handle_read_since_mark(
     };
 
     match state.read_output(engine, surface_id, &req) {
-        Some(Ok(read)) => JsonRpcResponse::success(
-            id,
-            json!({
-                "text": read.text,
-                "surface_id": surface_id,
-                "stream": read.stream,
-                "cursor": read.cursor,
-                "next_cursor": read.next_cursor,
-                "raw_bytes": read.raw_bytes,
-                "retention_start": read.retention_start,
-                "retention_end": read.retention_end,
-                "skipped": read.skipped,
-            }),
-        ),
+        Some(Ok(read)) => answered(id, surface_id, read),
         Some(Err(tasty_terminal::OutputReadError::StreamMismatch { expected, actual })) => refused(
             id,
             -32602,
@@ -114,6 +101,33 @@ pub(crate) fn handle_read_since_mark(
         ),
         None => JsonRpcResponse::success(id, json!({ "text": "", "surface_id": surface_id })),
     }
+}
+
+/// 읽기 하나를 wire 모양으로 싼다.
+///
+/// **`next_cursor` 와 `raw_bytes` 는 버퍼가 준 값을 그대로 싣는다.** 여기서 `text` 로부터
+/// 다시 계산하면 안 된다 — 손실 디코딩이 U+FFFD 를 넣고 `strip_ansi` 가 바이트를 빼므로
+/// 그 길이는 읽은 원문 구간의 길이가 아니고, 호출자가 그것으로 전진하면 스트림과
+/// 어긋난다. 이 함수를 따로 둔 이유가 그 자리를 시험이 잡을 수 있게 하는 것이다.
+fn answered(
+    id: serde_json::Value,
+    surface_id: u32,
+    read: tasty_terminal::OutputRead,
+) -> JsonRpcResponse {
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "text": read.text,
+            "surface_id": surface_id,
+            "stream": read.stream,
+            "cursor": read.cursor,
+            "next_cursor": read.next_cursor,
+            "raw_bytes": read.raw_bytes,
+            "retention_start": read.retention_start,
+            "retention_end": read.retention_end,
+            "skipped": read.skipped,
+        }),
+    )
 }
 
 /// `surface.read_since_mark` 의 인자. 파싱을 한 자리에 모아 두 dispatch 경로
@@ -353,5 +367,36 @@ mod tests {
             ok(json!({ "max_bytes": 999_999_999u64 })).req.max_bytes,
             999_999_999
         );
+    }
+
+    #[test]
+    fn the_wire_carries_the_buffer_s_raw_advance_and_not_the_length_of_the_text() {
+        // 손실 디코딩과 strip_ansi 가 지나간 뒤의 text 는 읽은 원문 구간과 길이가
+        // 다르다. 응답이 그 길이로 전진을 말하면 호출자가 스트림과 어긋난다.
+        let read = tasty_terminal::OutputRead {
+            text: "red".to_string(),
+            raw_bytes: 12,
+            cursor: 100,
+            next_cursor: 112,
+            retention_start: 0,
+            retention_end: 112,
+            skipped: 7,
+            stream: "s1".to_string(),
+        };
+        let resp = super::answered(json!(1), 3, read);
+        let r = resp.result.expect("성공 응답");
+        assert_eq!(r["text"].as_str(), Some("red"));
+        assert_eq!(r["raw_bytes"].as_u64(), Some(12));
+        assert_eq!(
+            r["next_cursor"].as_u64(),
+            Some(112),
+            "text 는 3 바이트인데 구간은 12 바이트다 — 전진은 구간 쪽이다"
+        );
+        assert_eq!(r["cursor"].as_u64(), Some(100));
+        assert_eq!(r["skipped"].as_u64(), Some(7));
+        assert_eq!(r["retention_start"].as_u64(), Some(0));
+        assert_eq!(r["retention_end"].as_u64(), Some(112));
+        assert_eq!(r["stream"].as_str(), Some("s1"));
+        assert_eq!(r["surface_id"].as_u64(), Some(3));
     }
 }

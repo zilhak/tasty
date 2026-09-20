@@ -477,8 +477,13 @@ fn terminal_output_reads_from_a_consumer_held_position() {
         "cursor_ahead_of_stream"
     );
 
-    // 5. `max_bytes` 는 **원문** 바이트를 자르고, 진행은 `text` 길이가 아니라
-    //    `next_cursor` 가 정한다.
+    // 5. `max_bytes` 가 **원문** 바이트를 자르고 `next_cursor` 가 그만큼만 전진한다.
+    //
+    //    ★ 이 단계는 "전진이 `text` 길이가 아니라 원문 길이를 센다" 를 **못 잰다.**
+    //    셸이 낸 출력이 ASCII 면 둘이 같은 수라, `next_cursor` 를 `text` 길이로
+    //    바꿔치기해도 여기서 안 죽는다(변이로 확인했다). 그 성질을 가르는 자리는
+    //    `output_buffer.rs` 의 인파일 시험과 `handler/surface/mark.rs::answered` 의
+    //    시험이고, 둘 다 길이가 갈리는 입력을 손으로 만든다.
     let capped = read(json!({"cursor": a, "stream": stream, "max_bytes": 4}));
     assert!(capped["raw_bytes"].as_u64().is_some_and(|n| n <= 4));
     assert_eq!(
