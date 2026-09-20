@@ -164,10 +164,10 @@ impl OutputReadParams {
             return Err(Box::new(refused(
                 id.clone(),
                 -32602,
-                "'cursor' was given without 'stream'. A surface id is reused when a \\
-                 surface closes and another opens, and surface.respawn_terminal \\
-                 replaces the terminal under an id that does not change, so without \\
-                 the token a stale position would be applied to another stream's \\
+                "'cursor' was given without 'stream'. A surface id is reused when a \
+                 surface closes and another opens, and surface.respawn_terminal \
+                 replaces the terminal under an id that does not change, so without \
+                 the token a stale position would be applied to another stream's \
                  output in silence. Read once without 'cursor' to get both",
                 "cursor_without_stream",
                 serde_json::Value::Null,

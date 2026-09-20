@@ -37,9 +37,18 @@ fn mint_stream_id() -> String {
 
 /// Where a read starts.
 pub enum OutputCursor {
-    /// The agent's server-held mark (`surface.set_mark`). With no mark ever
-    /// set, or with a mark that has fallen out of retention, the read starts at
-    /// the oldest retained byte — and then `skipped` is not zero.
+    /// The agent's server-held mark (`surface.set_mark`).
+    ///
+    /// A mark that trimming has passed still holds its position, so the read
+    /// starts at the oldest retained byte and `skipped` says how much was lost
+    /// in between.
+    ///
+    /// **With no mark ever set, `skipped` is zero even when trimming has
+    /// dropped output.** There is no position to measure a gap from: the read
+    /// asks from the oldest retained byte and starts there. So a zero here
+    /// means "nothing was lost since the mark", not "nothing was lost". A
+    /// consumer that needs the second answer holds its own position
+    /// ([`OutputCursor::At`]).
     Mark,
     /// An absolute position the consumer holds. The server keeps no state for
     /// it, so two consumers reading this way never move each other.
