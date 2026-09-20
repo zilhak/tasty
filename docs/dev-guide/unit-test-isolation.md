@@ -90,7 +90,7 @@ assert!(path.starts_with(home.path().join("screenshots")));
 
 | 락 | 선언 자리 | 그 락이 사는 테스트 바이너리 |
 |---|---|---|
-| `TASTY_HOME_ENV_LOCK` | `src/test_support.rs` | 루트 `tasty` 바이너리 |
+| `TASTY_HOME_ENV_LOCK` | `crates/tasty-test-support/src/lib.rs` | `tasty-test-support` (루트 `tasty` 의 dev-dependency) |
 | `HOME_ENV_LOCK` | `crates/tasty-host-plugin/src/test_support.rs` | `tasty-host-plugin` |
 | `SERIAL` | `crates/tasty-settings/src/general.rs` | `tasty-settings` |
 

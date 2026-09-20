@@ -1,6 +1,6 @@
 //! **본체에서 `TASTY_HOME` 을 바꾸는 문은 하나다.**
 //!
-//! `src/test_support.rs` 의 [`TastyHomeGuard`] 는 락 획득 · 이전 값 보관 · 임시 디렉토리
+//! `crates/tasty-test-support/src/lib.rs` 의 [`TastyHomeGuard`] 는 락 획득 · 이전 값 보관 · 임시 디렉토리
 //! 생성 · `Drop` 에서의 복원을 **한 벌로** 묶는다. 그 문서가 왜 수동 `set_var`/`remove_var`
 //! 쌍으로 대신하면 안 되는지도 적는다 — 단언이 패닉하면 복원 줄에 도달하지 못하고,
 //! `remove_var` 로 끝내면 원래 값이 있던 환경에서 그 값을 잃는다. 어느 쪽이든 같은
@@ -39,7 +39,7 @@
 //! `pub(crate)` 였고, 그때는 소스 스캔 하나가 그 일을 대신하고 있었다. 가시성을 좁혀
 //! **그 시험을 지웠다** — 텍스트로 재는 것보다 못 쓰게 만드는 것이 싸고 확실하다.
 //!
-//! 지울 수 있었던 근거: 그 락을 `src/test_support.rs` 밖에서 부르는 자리가 **0** 이라
+//! 지울 수 있었던 근거: 그 락을 `crates/tasty-test-support/src/lib.rs` 밖에서 부르는 자리가 **0** 이라
 //! 한 낱말 변경이었다. 지운 뒤 검수로 그 우회 프로브를 다시 쏘았고, 이번엔 시험이 아니라
 //! **컴파일**이 거부한다.
 //!
@@ -52,7 +52,7 @@
 use tasty_doc_guards::source_text::mask_non_code;
 
 /// 이 문 하나만이 `TASTY_HOME` 을 바꾼다.
-const DOOR: &str = "src/test_support.rs";
+const DOOR: &str = "crates/tasty-test-support/src/lib.rs";
 
 /// 프로세스 전역 env 를 바꾸는 호출. 여는 괄호까지 넣어 동명 식별자에 안 걸리게 한다.
 const MUTATION: &[&str] = &["env::set_var(", "env::remove_var("];
@@ -81,7 +81,10 @@ fn scan() -> (Vec<Hit>, usize) {
     let mut hits = Vec::new();
     let mut files = 0usize;
     for (rel_path, raw) in super::rust_sources() {
-        if !rel_path.starts_with("src/") {
+        // 본체 `src/` 와 그 문 하나. 문이 크레이트로 올라갔어도 물음은 같다 —
+        // 범위를 함께 옮기지 않으면 문 안에서 무엇을 하든 안 보이게 된다.
+        let rel_str = rel_path.to_string_lossy();
+        if !rel_str.starts_with("src/") && rel_str != DOOR {
             continue;
         }
         let rel = rel_path.to_string_lossy().to_string();

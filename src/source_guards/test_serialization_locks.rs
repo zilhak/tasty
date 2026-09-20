@@ -141,7 +141,7 @@ const SERIALIZED: &[Serialized] = &[
 /// 빠진 것이 아니라 술어가 다르다는 뜻이다(모듈 문서 "무엇을 재고 무엇을 안 재는가").
 const OTHER_LOCKS: &[(&str, &str, &str)] = &[
     (
-        "src/test_support.rs",
+        "crates/tasty-test-support/src/lib.rs",
         "TASTY_HOME_ENV_LOCK",
         "`TASTY_HOME` 환경변수. 획득·복원을 `TastyHomeGuard` 가 함께 맡는다",
     ),

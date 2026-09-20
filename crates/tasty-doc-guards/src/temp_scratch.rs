@@ -20,7 +20,7 @@
 //!
 //! 실측 2026-09-08: 이 저장소에서 임시 경로에 `impl Drop` 을 **각자 적은 파일이 11 개**다
 //! (`floored_walk.rs` · `tests/common/mod.rs` · `tests/gui_common/mod.rs` ·
-//! `tests/webhook_common/mod.rs` · `src/test_support.rs` 등). 전부 같은 세 줄이다. 사본이
+//! `tests/webhook_common/mod.rs` · `crates/tasty-test-support/src/lib.rs` 등). 전부 같은 세 줄이다. 사본이
 //! 여럿인 것 자체가 결함은 아니지만, **그 행동을 안 적은 자리가 그 사본들 사이에서 안
 //! 보인다** — 세는 좌변이 없기 때문이다. 여기 한 타입을 두면 "이 타입을 안 쓴 임시 경로"
 //! 라는 셀 수 있는 좌변이 생긴다.

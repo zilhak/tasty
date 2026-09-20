@@ -5715,6 +5715,7 @@ dependencies = [
  "tasty-ssh",
  "tasty-telemetry",
  "tasty-terminal",
+ "tasty-test-support",
  "tasty-themes",
  "tasty-timer",
  "tasty-type-appearance",
@@ -6382,6 +6383,14 @@ dependencies = [
  "tracing",
  "unicode-width 0.2.2",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "tasty-test-support"
+version = "0.1.0"
+dependencies = [
+ "tasty-utils",
+ "tempfile",
 ]
 
 [[package]]

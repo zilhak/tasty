@@ -2,7 +2,7 @@
 //!
 //! # 왜 필요한가
 //!
-//! `src/test_support.rs` 의 `TastyHomeGuard` 는 RAII 다 — 생성이 `TASTY_HOME_ENV_LOCK` 을
+//! `crates/tasty-test-support/src/lib.rs` 의 `TastyHomeGuard` 는 RAII 다 — 생성이 `TASTY_HOME_ENV_LOCK` 을
 //! 잡고 이전 값을 기억하며, `Drop` 이 그 값을 되돌린 뒤에 락을 푼다. 그래서 그 타입을
 //! 거치는 한 획득과 복원이 갈라질 수 없다.
 //!
@@ -76,7 +76,7 @@ use std::path::{Path, PathBuf};
 use tasty_doc_guards::source_text::mask_non_code;
 
 /// 두 키를 만져도 되는 **유일한** 자리(레포 상대 경로).
-const OWNER: &str = "src/test_support.rs";
+const OWNER: &str = "crates/tasty-test-support/src/lib.rs";
 
 /// 스캔 하한 — ADR-0133 의 두 용도 중 **연기 검사**다("경로가 틀렸거나 읽기에 실패했다"
 /// 를 잡는 용도). 모수 고정으로 쓰지 않는다.

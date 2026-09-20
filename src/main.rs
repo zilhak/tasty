@@ -42,8 +42,6 @@ mod ports;
 mod source_guards;
 mod state;
 mod store;
-#[cfg(test)]
-mod test_support;
 #[cfg(feature = "gui")]
 mod view;
 mod waker;
@@ -54,6 +52,12 @@ use anyhow::Result;
 /// 락 poison 복구 헬퍼 — 실체는 `tasty-utils` 에 있다(소비 크레이트가 셋이라 leaf 로
 /// 올렸다). 본체 코드가 `crate::poison::…` 로 계속 부르도록 이름만 잇는다.
 pub(crate) use tasty_utils::poison;
+
+/// 테스트 전용 가드 — 실체는 `tasty-test-support` 크레이트에 있다(출하되지 않으므로
+/// dev-dependency 로만 들어간다). 시험 코드가 `crate::test_support::…` 로 계속
+/// 부르도록 이름만 잇는다.
+#[cfg(test)]
+pub(crate) use tasty_test_support as test_support;
 
 pub use tasty_font as font;
 pub use tasty_settings as settings;
