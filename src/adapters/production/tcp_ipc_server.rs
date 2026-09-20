@@ -460,7 +460,12 @@ impl TcpIpcServer {
 
     /// 스트리밍 업그레이드 판별을 위해 첫 줄을 수동으로 읽는다 — `BufReader` 가
     /// 그 뒤에 이미 버퍼링된 바이트(업그레이드 시 핸드셰이크 뒤에 오는 바이너리
-    /// 프레임의 시작)를 보존하게 하기 위함. EOF/에러는 이미 로그 후 `None`.
+    /// 프레임의 시작)를 보존하게 하기 위함.
+    ///
+    /// 반환은 [`LineRead`] 네 갈래다. EOF 와 소켓 오류는 로그가 이미 나갔으므로 호출자는
+    /// 그냥 끝내면 되지만, [`LineRead::TooLong`] 은 **끝내기 전에 답할 일**이 남아 있다
+    /// ([`Self::refuse_oversized_line`]). 그 갈래를 `Failed` 와 한 덩어리로 다루면 첫 줄
+    /// 초과가 다시 무응답 종료로 돌아간다.
     fn read_first_line(
         reader: &mut BufReader<std::net::TcpStream>,
         line: &mut String,
