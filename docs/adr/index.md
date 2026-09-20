@@ -280,6 +280,7 @@
 | 0308 | [형식 레지스트리의 port impl 은 타입을 소유한 크레이트에 남고, 그 의존이 layer 예외다](0308-the-format-registry-port-impl-stays-with-the-type.md) | Accepted | 2026-09-20 | architecture, crates, layering, plugin-protocol, orphan-rule, file-format, guards, adr-0089 |
 | 0311 | [namespace 호출의 만료는 fail-open 이 아니라 caller 에 대한 오류다](0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md) | Accepted | 2026-09-20 | plugin, ipc, timeout, host-plugin, error-handling, adr-0078 |
 | 0312 | [서버는 자기 버전이 아니라 협상 가능한 것을 선언한다](0312-the-server-declares-what-it-can-negotiate-not-what-version-it-is.md) | Accepted | 2026-09-20 | ipc, capability, compatibility, method-table, system-info, adr-0306 |
+| 0313 | [dispatch 회차 예산은 동시 연결 상한과 같은 수이고, 이월은 별도 배선 없이 성립한다](0313-the-dispatch-round-budget-is-the-connection-bound.md) | Accepted | 2026-09-20 | ipc, dispatch, backpressure, headless |
 | 0315 | [plugin 채널의 두 방향은 포화에 다르게 답한다 — 호스트→plugin 은 거절, plugin→호스트 는 대기](0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md) | Accepted | 2026-09-20 | plugin, host-plugin, resource-bounds, backpressure, reliability, adr-0304, adr-0311 |
 | 0316 | [DB 는 요청한 pragma 가 아니라 **적용된** pragma 를 보고한다](0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md) | Accepted | 2026-09-20 | sqlite, storage, memory, pragma, observability, wal |
 | 0317 | [고지 세트는 생성하지 않고 저장소의 세 파일을 산출물마다 스테이징한다](0317-the-notice-set-is-staged-not-generated.md) | Accepted | 2026-09-20 | release, packaging, licensing, third-party, linux, appimage, deb, rpm, ci |

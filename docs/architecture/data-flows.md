@@ -58,6 +58,13 @@ tasty-cli (또는 외부 프로그램)
 
 플러그인 namespace 메서드(`claude.*` 등)는 `plugin_bridge/` 를 거쳐 plugin 프로세스로 위임된다. attach 스트리밍은 별도 `StreamReady` 경로(stream_hub).
 
+**한 회차가 집어 드는 명령 수에는 상한이 있다.** gui 의 `process_ipc` 와 headless 의
+`pump_ipc` 가 같은 값(`DRAIN_BUDGET_PER_ROUND`)까지만 큐에서 꺼내고, 남은 것은 다음 회차가
+집는다 — 명령을 넣는 쪽이 명령마다 waker 를 한 번 부르므로 그 wake 가 이미 큐에 남아 있다.
+값은 고르지 않고 동시 연결 상한에서 파생한다: [ADR-0313](../adr/0313-the-dispatch-round-budget-is-the-connection-bound.md).
+종료 중의 drain 은 이 정책을 따르지 않는다 — 남은 요청을 거절하며 비워야 한다
+([shutdown-sequence](shutdown-sequence.md)).
+
 ---
 
 ## 4. 알림 발생 → 저장 → 표시
