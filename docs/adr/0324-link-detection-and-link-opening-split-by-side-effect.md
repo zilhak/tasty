@@ -81,6 +81,19 @@
   --prefix none`). 지금은 `regex` · `termwiz` 와 tasty 크레이트 셋(`tasty-cell-width` ·
   `tasty-terminal` · `tasty-type-appearance`)뿐이다. 컴파일이 통과하는
   것은 이 물음에 답하지 않는다.
+- 크레이트에 GUI 가 들어왔는가. **직계 의존 목록을 읽는 것으로는 이 물음에 답하지 못한다**
+  — 직계 의존이 자기 **기본 feature** 로 GUI 를 끌어오면 이름이 목록에 안 보인다. 좌변은
+  직계가 아니라 **폐포**다. 재는 법:
+
+  ```bash
+  cargo tree -p tasty-terminal-link --edges normal --prefix none | sort -u \
+    | grep -icE '^(egui|winit|wgpu|eframe|glow|epaint|ecolor|emath|tasty-ui-|tasty-egui|tasty-font|tasty-icons)'
+  ```
+
+  실측 2026-09-20: 이 크레이트 **0** · 자매 `tasty-file-handler` **0** ·
+  `tasty-selection` **0**, 같은 술어를 본 바이너리 폐포에 걸면 **28** — 술어가 0 만 내는
+  것은 증거가 아니므로 판별력을 그 대조로 보인다. 값이 0 인 것은 `tasty-type-appearance`
+  를 `default-features = false` 로 받기 때문이다(그 플래그를 빼면 같은 명령이 **5**).
 
 ## References
 

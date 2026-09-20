@@ -8,10 +8,12 @@ description = "Link detection in terminal text for Tasty — URL and path scanni
 [dependencies]
 tasty-cell-width = { path = "../tasty-cell-width" }
 tasty-terminal = { path = "../tasty-terminal" }
-tasty-type-appearance = { path = "../tasty-type-appearance" }
+# 여기서 쓰는 것은 `GpuRgba` 와 `dangerously_force_from_array` 둘뿐이고 둘 다
+# `egui-compat` cfg 밖이다. default 로 받으면 egui·epaint·ecolor·emath 가 이 크레이트의
+# 의존 폐포에 들어와 위 description 의 "GUI 결합 0" 이 거짓이 된다.
+tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
 regex = "1"
 termwiz = "0.22"
-
 
 [dev-dependencies]
 tempfile = "3"
