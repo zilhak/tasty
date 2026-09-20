@@ -454,8 +454,14 @@ impl PluginManager {
     /// deadline 을 넘긴 pending 요청을 sweep 한다. hook 은 fail-open(원래 흐름을
     /// 그대로 진행)으로, namespace 호출은 caller 에 오류 회신으로 끝난다 — 후자는
     /// "진행" 할 원본 흐름이 없다(target 응답 자체가 목적이었다).
-    pub(super) fn sweep_expired_requests(&mut self) {
-        let now = Instant::now();
+    ///
+    /// `now` 는 [`PluginManager::pump`] 가 받은 프레임 기준시각이다. 여기서
+    /// `Instant::now()` 를 직접 읽으면 호출자가 넘긴 시각과 이 함수가 보는 시각이
+    /// 갈리고, 그 순간 **시험이 시간을 주입할 자리가 없어진다** — deadline 을
+    /// 과거/미래로 두는 것 말고는 만료를 만들 방법이 없고, 그 방식으로는 "만료가
+    /// 한 번 일어난 뒤 같은 pending 이 다시 안 만료된다" 같은 시간 축의 성질을
+    /// 못 잰다. pump 가 자기 타이머 판정에 쓰는 시각과 같은 값을 쓰는 것이기도 하다.
+    pub(super) fn sweep_expired_requests(&mut self, now: Instant) {
         let expired = self.collect_expired_request_ids(now);
         for id in expired {
             if let Some(p) = self.pending_requests.remove(&id) {

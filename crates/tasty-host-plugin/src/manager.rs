@@ -872,9 +872,15 @@ prefix = "{prefix}"
         assert!(err.contains("handle channel not available"), "got: {err}");
     }
 
-    /// pending 하나를 심고 sweep 을 돌린 결과를 (남았는가, 회신된 응답) 으로 돌려준다.
-    /// deadline 만 다르게 주어 만료/미만료 두 갈래를 같은 자리에서 잰다.
-    fn sweep_one_namespace_invoke(deadline: Instant) -> (bool, Option<JsonRpcResponse>) {
+    /// pending 하나를 심고 `now` 시점으로 sweep 을 돌린 결과를 (남았는가, 회신된
+    /// 응답) 으로 돌려준다. deadline 만 다르게 주어 만료/미만료 두 갈래를 같은
+    /// 자리에서 잰다. **두 시각을 둘 다 인자로 받는 것이 요점이다** — sweep 이
+    /// 자기 안에서 `Instant::now()` 를 읽으면 `now` 를 아무 값으로 줘도 판정이
+    /// 안 바뀌므로, 이 짝이 시간 주입이 실제로 배선돼 있는지를 가른다.
+    fn sweep_one_namespace_invoke(
+        now: Instant,
+        deadline: Instant,
+    ) -> (bool, Option<JsonRpcResponse>) {
         let mut mgr = PluginManager::new(empty_waker());
         let (tx, rx) = mpsc::sync_channel(1);
         mgr.pending_requests.insert(
@@ -886,14 +892,30 @@ prefix = "{prefix}"
                 deadline,
             }),
         );
-        mgr.sweep_expired_requests();
+        mgr.sweep_expired_requests(now);
         (mgr.pending_requests.contains_key(&7), rx.try_recv().ok())
+    }
+
+    /// 주입한 시각이 실제로 판정에 쓰이는가 — deadline 을 고정해 두고 `now` 만
+    /// 양쪽으로 옮긴다. sweep 이 `Instant::now()` 를 직접 읽으면 두 호출이 같은
+    /// 답을 내므로 이 시험이 죽는다.
+    #[test]
+    fn the_injected_now_is_what_decides_expiry() {
+        let deadline = Instant::now() + Duration::from_secs(3600);
+        let (before, resp_before) =
+            sweep_one_namespace_invoke(deadline - Duration::from_secs(1), deadline);
+        assert!(before, "deadline 이전 시각인데 만료됐다");
+        assert!(resp_before.is_none());
+        let (after, resp_after) =
+            sweep_one_namespace_invoke(deadline + Duration::from_secs(1), deadline);
+        assert!(!after, "deadline 이후 시각인데 pending 이 남았다");
+        assert!(resp_after.is_some(), "만료 시 caller 에 회신이 가야 한다");
     }
 
     #[test]
     fn expired_namespace_invoke_answers_its_caller_and_leaves_pending() {
         let (still_pending, resp) =
-            sweep_one_namespace_invoke(Instant::now() - Duration::from_secs(1));
+            sweep_one_namespace_invoke(Instant::now(), Instant::now() - Duration::from_secs(1));
         assert!(!still_pending, "만료된 pending 이 남았다");
         let resp = resp.expect("만료 시 caller 에 회신이 가야 한다");
         assert_eq!(resp.id, serde_json::json!(42));
@@ -917,7 +939,7 @@ prefix = "{prefix}"
         // 에서 즉시 만료된다. 그러면 여기 deadline 이 곧 `now` 라 이 시험이 빨개진다
         // (변이 실측: 두 상수를 900ms · 500ms 로 내리면 이 시험이 죽는다).
         let (still_pending, resp) =
-            sweep_one_namespace_invoke(Instant::now() + NAMESPACE_CALL_TIMEOUT);
+            sweep_one_namespace_invoke(Instant::now(), Instant::now() + NAMESPACE_CALL_TIMEOUT);
         assert!(still_pending, "아직 만료 전인데 pending 이 사라졌다");
         assert!(resp.is_none(), "만료 전에 caller 에 회신이 갔다");
     }
