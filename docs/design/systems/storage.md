@@ -137,7 +137,7 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 
 ## 테스트
 
-- 스키마 로직: `:memory:` Connection 으로 단위 테스트(`src/db/migrations.rs` 의 `tests` — fresh init / no-op / mismatch).
+- 스키마 로직: `:memory:` Connection 으로 단위 테스트(`src/db/migrations.rs` 의 `tests` — fresh init / 재호출이 버전을 안 바꿈 / additive ensure 가 기존 DB 에 닿음 / mismatch 두 갈래).
 - 에러 분류: `classify_sql` 단위 테스트(busy / corrupt / notadb), `user_message_i18n` key 안정성 테스트.
 
 ## 관련
