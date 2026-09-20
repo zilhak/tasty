@@ -193,10 +193,14 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 607,
+        measured: 610,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "afcb71f32 — 네 번째 리팩토링 물결 여덟 lane 이 착지한 트리에서 다시 셌다. \
+            "5120fcda1 — 앞 회차 lane 착지(층 1·2)를 담은 트리에서 다시 셌다. 607 → 610, 신규 \
+             파일 3 개(`src/app/attach_client/dispatch.rs` · 그 아래 `debug_completion.rs` · \
+             `src/webhook/listener_body_tests.rs`)이고 삭제는 0 이다. 앞선 값 607 은 아래 \
+             좌표에서 쟀고 그 트리에서는 맞았다. 그 앞의 이력은 \
+             이어서 적는다 — afcb71f32 — 네 번째 리팩토링 물결 여덟 lane 이 착지한 트리에서 다시 셌다. \
              **두 번째 감소다**(623 → 607, −16). 내역이 한 갈래로 깨끗하다: `src/platform/` \
              의 `.rs` 17 개가 통째로 `crates/tasty-platform/` 으로 갔고(순수 삭제 0), \
              더해진 것은 `src/adapters/ipc/handler/idempotency.rs` 하나다. 17 − 1 = 16 이 \
@@ -290,10 +294,14 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 493,
+        measured: 499,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "afcb71f32 — 네 번째 물결 여덟 lane 이 착지한 트리에서 다시 셌다. 485 에서 8 이 \
+            "5120fcda1 — 같은 트리에서 다시 셌다. 493 → 499, 삭제 0 이라 단조 증가가 이어졌다. \
+             내역이 이 모수의 함정을 그대로 보여 준다: 여섯 중 **다섯이 착지한 lane 이 들고 \
+             온 ADR** 이고(0281 · 0284 · 0301 · 0302 · 0346) 하나만 이 회차가 새로 쓴 것이다. \
+             앞선 값 493 은 아래 좌표에서 쟀고 그 트리에서는 맞았다. 그 앞의 이력은 \
+             이어서 적는다 — afcb71f32 — 네 번째 물결 여덟 lane 이 착지한 트리에서 다시 셌다. 485 에서 8 이 \
              늘었고 **여덟 전부가 `docs/adr/` 이다**(0337~0344, lane 하나에 하나씩). \
              삭제는 0 이라 단조 증가가 또 이어졌다. 그리고 아래 ★ 가 예고한 형태가 \
              **여덟 번째로** 그대로 났다 — lane 마다 ADR 을 하나씩 더하면서 아무도 자기 \
