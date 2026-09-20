@@ -305,10 +305,12 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 501,
+        measured: 500,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "65bcd1988 — 위 두 문서가 이 트리에 들었다(`docs/adr/0280-cli-help-localizes-presentation-not-protocol.md` \
+            "0f37f8565 — 마지막 lane 묶음이 착지한 트리에서 다시 셌다. 501 -> 500 이고 \
+             **줄었다** — 마지막 묶음이 ADR 하나를 들여왔고, 같은 결정의 중복 사본 \
+             둘을 함께 지웠다(그 셋은 본문이 같았다). 이전 회차: 65bcd1988 — 위 두 문서가 이 트리에 들었다(`docs/adr/0280-cli-help-localizes-presentation-not-protocol.md` \
              와 `docs/dev-guide/paired-agent-handlers.md`). 499 -> 501 이고 삭제는 0 이다. \
              이전 회차: 5120fcda1 — 같은 트리에서 다시 셌다. 493 → 499, 삭제 0 이라 단조 증가가 이어졌다. \
              내역이 이 모수의 함정을 그대로 보여 준다: 여섯 중 **다섯이 착지한 lane 이 들고 \
