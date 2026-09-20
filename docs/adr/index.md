@@ -316,4 +316,3 @@
 | 0343 | [OS 경계는 폴더가 아니라 크레이트다 — 본체는 별칭으로 부른다](0343-the-os-boundary-is-a-crate.md) | Accepted | 2026-09-20 | architecture, platform, crate-split, layering, features, headless, cross-platform, adr-0331 |
 | 0344 | [완료 알림 로그는 호스트 세대 하나를 들고, 버린 양을 말한다](0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md) | Accepted | 2026-09-20 | notify, retention, logging, plugin, instance-identity, adr-0330 |
 | 0345 | [파일 SLOC 게이트는 파일 전체가 시험인 것도 지운다 — 출하 줄이라는 이름의 근거가 그것이다](0345-the-file-sloc-gate-erases-whole-test-only-files.md) | Accepted | 2026-09-21 | complexity, quality-gate, file-size, tokei, shipping-scope, measurement, complexity-gate, adr-0166, adr-0168 |
-| 0346 | [e2e 하네스는 디스플레이를 격리하지 않고 이름을 요구한다](0346-the-e2e-harness-names-a-display-instead-of-isolating-it.md) | Accepted | 2026-09-20 | testing, e2e, harness, isolation, linux, adr-0127, adr-0090 |
