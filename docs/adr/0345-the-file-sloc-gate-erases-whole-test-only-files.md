@@ -85,7 +85,7 @@ SLOC 게이트는 그 파일을 통째로 비우고, plugin 버전 게이트는 
 ## References
 
 - [ADR-0168](0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md) —
-  임계 1000 의 유도와 동결의 한 방향 잠금.
+  파일 SLOC 임계의 유도와 동결의 한 방향 잠금.
 - [ADR-0166](0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md) —
   같은 판정기를 쓰는 두 번째 소비자. 위 "두 번째 결함" 이 그쪽에도 닿는다.
 - 코드 근거(현재 위치) — `scripts/check-file-size.sh` · `scripts/check-frozen-sum-ratchet.sh` ·

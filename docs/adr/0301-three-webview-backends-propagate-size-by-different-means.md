@@ -102,7 +102,7 @@ allocation 은 계산의 결과가 아니라 우리가 넘기는 값이다.
 
 - `set_bounds` 의 `size_allocate` 호출과 `connect_realize` 의 `set_window` 호출 중 **한쪽만**
   사라지는 것. 둘은 한 쌍이며, bind 가 없으면 이 호출은 GTK 와 싸우고 bind 가 있으면 이
-  호출 없이는 크기가 안 간다. `src/platform/x11_gdk_window.rs` 의
+  호출 없이는 크기가 안 간다. `crates/tasty-platform/src/x11_gdk_window.rs` 의
   `adr_0301_foreign_bind_and_explicit_allocation_move_together` 가 양방향으로 고정한다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
@@ -120,6 +120,6 @@ allocation 은 계산의 결과가 아니라 우리가 넘기는 값이다.
 
 - 구현 위치(결정이 실현된 현재 위치): `PlatformWebView::set_bounds` — `src/host_api/webview/linux.rs`
 - 비교 대상(같은 계약의 다른 backend): `src/host_api/webview/macos.rs` · `src/host_api/webview/windows.rs`
-- 판정기: `adr_0301_foreign_bind_and_explicit_allocation_move_together` — `src/platform/x11_gdk_window.rs`
+- 판정기: `adr_0301_foreign_bind_and_explicit_allocation_move_together` — `crates/tasty-platform/src/x11_gdk_window.rs`
 - 전제가 되는 구성: [ADR-0159](0159-a-null-gdk-window-is-a-value-not-a-crash.md)
 - 재는 절차: [`dev-guide/crash-diagnostics.md`](../dev-guide/crash-diagnostics.md)
