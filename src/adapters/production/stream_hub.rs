@@ -11,7 +11,7 @@
 //! See `docs/dev-guide/attach-behavior.md` ("SSH 터널", "IPC 표면").
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
@@ -290,6 +290,28 @@ pub enum PushResult {
     Disconnected,
 }
 
+/// 이 허브가 **지금까지 잃은 것**. [`StreamSink::lag`] 과 다른 물음에 답한다 —
+/// `lag` 은 성공 한 번에 0 으로 돌아가는 *연속* drop 수라, 단발 손실이 섞여 있어도
+/// 끝에서 보면 0 이다. 여기 두 수는 **안 내려간다.**
+///
+/// 두 칸을 나눠 둔 이유는 손실의 성질이 다르기 때문이다. `frames` 는 연결이 **살아
+/// 있는데** 사라진 프레임이라 소비자가 알 길이 없고, `lagged_out` 은 연결이 끊겨
+/// 소비자가 이미 아는 손실이다. 한 수로 합치면 "조용한 손실이 있었나" 를 못 묻는다.
+#[derive(Debug, Default)]
+struct StreamLoss {
+    frames: AtomicU64,
+    lagged_out: AtomicU64,
+}
+
+/// [`StreamHub::loss`] 가 돌려주는 한 시점의 값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StreamLossSnapshot {
+    /// 연결이 살아 있는데 sink 가 차서 버린 프레임 수 — **조용한 손실**.
+    pub frames_dropped: u64,
+    /// lag 한도를 넘겨 끊은 연결 수. 그 마지막 프레임도 `frames_dropped` 에 든다.
+    pub clients_lagged_out: u64,
+}
+
 /// Context handed to each accepted connection so it can register a stream sink,
 /// forward inbound frames, and wake the main loop. Cloneable + `Send`.
 #[derive(Clone)]
@@ -312,6 +334,9 @@ pub struct StreamHub {
     /// [`register_bulk`](Self::register_bulk)로 등록, [`unregister`](Self::unregister)
     /// 로 정리.
     bulk_bindings: Arc<Mutex<HashMap<StreamClientId, u32>>>,
+    /// 누적 손실. 클론이 공유한다 — 허브는 accept 스레드마다 클론되므로 `Arc` 밖에
+    /// 두면 스레드마다 다른 수를 센다.
+    loss: Arc<StreamLoss>,
 }
 
 impl Default for StreamHub {
@@ -339,6 +364,7 @@ impl StreamHub {
             sinks: Arc::new(Mutex::new(HashMap::new())),
             next_id: Arc::new(AtomicU32::new(1)),
             bulk_bindings: Arc::new(Mutex::new(HashMap::new())),
+            loss: Arc::new(StreamLoss::default()),
         }
     }
 
@@ -395,9 +421,13 @@ impl StreamHub {
                 PushResult::Sent
             }
             Err(TrySendError::Full(_)) => {
+                // 이 프레임은 어느 갈래로 가든 사라진다 — 끊는 갈래도 이것을 못 보낸다.
+                // 그래서 세는 자리가 분기 **앞**이다.
+                self.loss.frames.fetch_add(1, Ordering::Relaxed);
                 sink.lag += 1;
                 if sink.lag >= LAG_LIMIT {
                     sinks.remove(&id); // sender dropped → write thread exits
+                    self.loss.lagged_out.fetch_add(1, Ordering::Relaxed);
                     PushResult::Disconnected
                 } else {
                     PushResult::Dropped
@@ -407,6 +437,19 @@ impl StreamHub {
                 sinks.remove(&id);
                 PushResult::Unknown
             }
+        }
+    }
+
+    /// 지금까지의 누적 손실. 호출자가 `push` 의 반환을 안 봐도 손실이 값으로 남는
+    /// 유일한 자리다 — 제품 코드 33 자리 중 31 이 `let _ =` 로 버리고, 결과를 보는
+    /// 둘도 `Dropped` 를 따로 다루지 않는다.
+    // 이유: 이 값을 읽는 제품 호출처는 아직 없다. 손실을 재는 자리를 먼저 두고
+    // 노출 경로(진단 응답)는 그것이 정해질 때 붙인다.
+    #[allow(dead_code)]
+    pub fn loss(&self) -> StreamLossSnapshot {
+        StreamLossSnapshot {
+            frames_dropped: self.loss.frames.load(Ordering::Relaxed),
+            clients_lagged_out: self.loss.lagged_out.load(Ordering::Relaxed),
         }
     }
 
@@ -645,6 +688,91 @@ mod tests {
         }
         assert!(saw_disconnect);
         assert_eq!(hub.client_count(), 0);
+    }
+
+    /// 누적 손실은 **안 내려간다** — `StreamSink::lag` 이 성공 한 번에 0 이 되는 것과
+    /// 다른 물음에 답한다. 단발 drop 뒤에 성공이 오면 `lag` 으로는 아무 일도 없던 것처럼
+    /// 보이고, 그것이 이 카운터가 있는 이유다.
+    #[test]
+    fn a_single_drop_survives_the_success_that_follows_it() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        assert_eq!(
+            hub.loss(),
+            StreamLossSnapshot::default(),
+            "시작이 0 이 아니다"
+        );
+
+        // sink 를 채운다 — 여기까지는 손실이 없다.
+        for _ in 0..SINK_CAP {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        assert_eq!(hub.loss().frames_dropped, 0, "성공만 했는데 손실을 셌다");
+
+        // 한 장 잃는다.
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"lost")),
+            PushResult::Dropped
+        );
+        assert_eq!(hub.loss().frames_dropped, 1);
+        assert_eq!(hub.loss().clients_lagged_out, 0, "끊지도 않았는데 셌다");
+
+        // 소비자가 한 칸을 비우면 다음 push 는 성공하고 `lag` 은 0 으로 돌아간다.
+        rx.recv().expect("한 장은 이미 큐에 있다");
+        assert_eq!(hub.push(id, frame(StreamTag::Data, b"y")), PushResult::Sent);
+
+        // 그래도 잃은 한 장은 남아 있다 — 이것이 `lag` 과 갈리는 자리다.
+        assert_eq!(
+            hub.loss().frames_dropped,
+            1,
+            "성공이 누적 손실을 지웠다 — lag 을 그대로 노출한 것과 같다"
+        );
+    }
+
+    /// 끊는 갈래도 그 프레임을 못 보낸다. 그래서 `frames_dropped` 는 끊김 직전의
+    /// 마지막 한 장까지 세고, 끊긴 연결 수는 **따로** 센다 — 한 수로 합치면
+    /// "조용한 손실이 있었나" 를 못 묻는다.
+    #[test]
+    fn the_frame_that_triggers_the_disconnect_is_counted_as_lost_too() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let _rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        let mut refused = 0;
+        loop {
+            match hub.push(id, frame(StreamTag::Data, b"x")) {
+                PushResult::Dropped => refused += 1,
+                PushResult::Disconnected => {
+                    refused += 1;
+                    break;
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        let loss = hub.loss();
+        assert_eq!(loss.frames_dropped, refused, "끊은 갈래의 한 장을 안 셌다");
+        assert_eq!(loss.clients_lagged_out, 1);
+    }
+
+    /// 허브는 accept 스레드마다 클론된다. 카운터가 `Arc` 밖에 있으면 클론마다 다른 수를
+    /// 세고, 어느 수도 전체 손실이 아니게 된다.
+    #[test]
+    fn a_clone_of_the_hub_counts_into_the_same_total() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let _rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        let other = hub.clone();
+        assert_eq!(
+            other.push(id, frame(StreamTag::Data, b"lost")),
+            PushResult::Dropped
+        );
+        assert_eq!(hub.loss().frames_dropped, 1, "클론이 자기 수를 따로 셌다");
     }
 
     #[test]

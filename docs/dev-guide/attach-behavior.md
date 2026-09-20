@@ -62,6 +62,24 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
 
 **SSH 터널은 이 지연을 흡수해 주지 않는다.** 터널 너머든 아니든 tasty 소켓의 양 끝은 항상 loopback이고, 위 지연은 그 loopback 구간에서 발생한다. 그리고 mirror 를 다시 mirror 하는 다단 구성(A → B → C)에서는 홉마다 입력·출력 양방향으로 얹히므로 지연이 홉 수에 비례해 누적된다.
 
+## 밀어내기 실패와 누적 손실
+
+`StreamHub::push` 는 막히지 않는다 — client 의 sink 가 차 있으면 그 프레임을 **버리고**
+돌아온다(`PushResult::Dropped`). 연속으로 버린 수가 한도를 넘으면 그 연결을 끊는다
+(`PushResult::Disconnected`). 끊는 갈래도 그 프레임을 못 보내므로, 그 한 장 역시 손실이다.
+
+- **`StreamSink::lag` 은 연속 drop 수다 — 성공 한 번에 0 으로 돌아간다.** 그래서 단발 손실이
+  섞여 있어도 나중에 보면 0 이고, "조용히 한 장 잃었나" 를 그 값으로는 못 묻는다.
+- **`StreamHub::loss()` 는 누적이고 안 내려간다.** 두 칸이며 물음이 다르다:
+  `frames_dropped` 는 연결이 **살아 있는데** 사라진 프레임 수(소비자가 알 길이 없는 손실),
+  `clients_lagged_out` 은 한도를 넘겨 끊은 연결 수(소비자가 이미 아는 손실)다. 한 수로
+  합치면 앞의 물음이 사라진다.
+- **지금 이 값을 읽는 제품 경로는 없다.** 호출자 쪽에서도 손실이 안 보인다 — `push` 를 부르는
+  제품 코드 33 자리 중 31 이 결과를 `let _ =` 로 버리고, 결과를 보는 둘
+  (`core/attach_runtime.rs` 의 markdown 변경 신호 · `plugin_bridge/mesh_forward.rs`)도
+  `Dropped` 를 `Unknown`/`Disconnected` 와 함께 묶어 다룬다. 즉 이 카운터는 **손실이
+  있었는지를 값으로 남기는 자리**이고, 그것을 밖으로 내보내는 경로는 아직 없다.
+
 ## 갱신 cadence 분리
 
 - **서버측 readonly 뷰**(피점유 — 대상 부하 절약): **3초 polling**(`Tick::AttachView`, `src/app/attach_poll.rs`)으로 self-snapshot 적용.
