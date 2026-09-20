@@ -51,6 +51,13 @@ impl IpcConnection {
     /// 있기 때문이다(`tasty agent task-await --timeout-ms 0`, 사용자 응답을 기다리는
     /// approval 등). 한 값으로 자르면 그 호출들이 정상 동작 중에 끊긴다. 응답 없는
     /// 상대를 감지하는 몫은 [`IpcConnection::send`] 의 EOF 판정이 진다.
+    ///
+    /// 기다림에 상한을 두려는 호출자는 **소켓이 아니라 요청 봉투에 싣는다**
+    /// ([`crate::protocol::JsonRpcRequest::response_timeout_ms`]). 서버가 그 시간에 응답
+    /// 통로를 놓고 `-32061`(결과 불명)로 답하므로, 봉투마다 정해지는 그 상한은
+    /// 무한 대기하는 호출을 같이 자르지 않는다 — 소켓 한 값으로는 그 구분이 안 된다는
+    /// 것이 위 문단의 이유였다. **이 client 는 그 필드를 안 싣는다**(전부 `None`). 그래서 여기서는
+    /// EOF 판정이 여전히 유일한 감지 수단이다.
     pub fn new(stream: TcpStream) -> Result<Self> {
         // Nagle 해제 — 요청 한 줄을 보내고 응답을 기다리는 순수 request-response 라
         // 지연시켜 합칠 뒷 데이터가 애초에 없다. Nagle 이 켜져 있으면 요청 줄이 두
