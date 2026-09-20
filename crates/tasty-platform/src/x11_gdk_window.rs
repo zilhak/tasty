@@ -234,8 +234,13 @@ mod tests {
     /// 그것이 bind 를 걷어낸 상태이고, 그 판단은 ADR-0159 를 다시 여는 일이다.
     #[test]
     fn adr_0301_foreign_bind_and_explicit_allocation_move_together() {
-        let path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_api/webview/linux.rs");
+        // 이 시험은 `crates/tasty-platform` 에 살지만 대상은 루트 패키지의 파일이다 —
+        // 크레이트 디렉터리에서 두 층 위가 레포 루트다.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("crates/<크레이트> 아래에 있어야 한다")
+            .join("src/host_api/webview/linux.rs");
         let text = std::fs::read_to_string(&path).expect("webview/linux.rs 를 읽지 못했다");
         let code: Vec<String> = text.lines().map(mask_non_code).collect();
         // 0 이 통과가 되지 않게 모수를 먼저 세운다.

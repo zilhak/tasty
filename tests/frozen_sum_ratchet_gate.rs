@@ -42,6 +42,34 @@ fn write_exec(path: &Path, body: &str) {
 /// 판정 플래그 줄은 늘 담는다 — 그 줄이 없는 갈래는 이 시험의 대상이 아니고,
 /// 빼면 모든 판이 그 한 갈래로 빨려 들어가 나머지를 하나도 못 잰다.
 fn write_sibling(root: &Path, threshold: Option<i64>, scan_dirs: Option<&str>) {
+    write_sibling_with_judge_flags(
+        root,
+        threshold,
+        scan_dirs,
+        "--neutralize-char-literal-quotes --blank-test-only-files",
+    );
+}
+
+/// 판정 플래그 줄을 **고르는** 판. 빈 문자열이면 `SHIPPING_JUDGE_FLAGS=()` 가 된다 —
+/// 줄은 읽히는데 부를 방법이 없는 갈래다.
+fn write_sibling_with_judge_flags(
+    root: &Path,
+    threshold: Option<i64>,
+    scan_dirs: Option<&str>,
+    judge_flags: &str,
+) {
+    let mut body = sibling_head(threshold, scan_dirs);
+    body.push_str(&format!("SHIPPING_JUDGE_FLAGS=({judge_flags})\n"));
+    fs::write(root.join("scripts/check-file-size.sh"), body).expect("자매 게이트 스텁");
+}
+
+/// 판정 플래그 줄을 **아예 빼는** 판 — 읽기 실패 갈래다.
+fn write_sibling_without_judge_flags(root: &Path, threshold: Option<i64>, scan_dirs: Option<&str>) {
+    let body = sibling_head(threshold, scan_dirs);
+    fs::write(root.join("scripts/check-file-size.sh"), body).expect("자매 게이트 스텁");
+}
+
+fn sibling_head(threshold: Option<i64>, scan_dirs: Option<&str>) -> String {
     let mut body = String::from("#!/usr/bin/env bash\n");
     if let Some(t) = threshold {
         body.push_str(&format!("THRESHOLD={t}\n"));
@@ -49,10 +77,7 @@ fn write_sibling(root: &Path, threshold: Option<i64>, scan_dirs: Option<&str>) {
     if let Some(d) = scan_dirs {
         body.push_str(&format!("SCAN_DIRS=({d})\n"));
     }
-    body.push_str(
-        "SHIPPING_JUDGE_FLAGS=(--neutralize-char-literal-quotes --blank-test-only-files)\n",
-    );
-    fs::write(root.join("scripts/check-file-size.sh"), body).expect("자매 게이트 스텁");
+    body
 }
 
 /// 임시 루트를 짓는다. `budget_line` 이 없으면 예산 줄을 빼고 쓴다.
@@ -584,6 +609,39 @@ fn a_sibling_whose_scan_dirs_are_blank_is_undecidable() {
     assert_eq!(code, 2, "훑을 트리가 없는데 값을 냈다:\n{text}");
     assert!(
         text.contains("SCAN_DIRS 가 비었다"),
+        "다른 호출 지점이 낸 2 다 — 이 시험은 자기 자리를 안 재고 있다:\n{text}"
+    );
+}
+
+/// 자매에 판정 플래그 줄이 **아예 없으면** 판정 불가(2)다.
+///
+/// 이 게이트는 판정기를 어떻게 부를지도 자매에게서 읽는다. 그 줄이 없으면 같은 파일이
+/// 두 게이트에서 서로 다른 줄 수를 갖게 되므로, 기본값을 지어내지 않고 멈춘다.
+#[test]
+fn a_sibling_without_judge_flags_is_undecidable() {
+    let d = root_with(Some(BUDGET), &[P]);
+    write_sibling_without_judge_flags(d.path(), Some(SLACK), Some("src crates"));
+    let (code, text) = run_bare(d.path(), None, Some(&reports(P, BUDGET)), STRIP_OK);
+    assert_eq!(code, 2, "부를 방법이 없는데 값을 냈다:\n{text}");
+    assert!(
+        text.contains("SHIPPING_JUDGE_FLAGS 를 못 읽었다"),
+        "다른 호출 지점이 낸 2 다 — 이 시험은 자기 자리를 안 재고 있다:\n{text}"
+    );
+}
+
+/// 판정 플래그가 **공백뿐**이면 판정 불가(2)다.
+///
+/// 앞 갈래와 다른 자리다: 저쪽은 줄이 없어 못 읽은 것이고, 이쪽은 읽혔는데 부를 방법이
+/// 없는 것이다. 종료 코드가 같으므로 문구로만 갈린다. `SHIPPING_JUDGE_FLAGS=()` 로는
+/// 이 자리에 못 닿는다 — 그때는 읽은 문자열이 비어 앞 호출 지점이 답한다.
+#[test]
+fn a_sibling_whose_judge_flags_are_empty_is_undecidable() {
+    let d = root_with(Some(BUDGET), &[P]);
+    write_sibling_with_judge_flags(d.path(), Some(SLACK), Some("src crates"), "   ");
+    let (code, text) = run_bare(d.path(), None, Some(&reports(P, BUDGET)), STRIP_OK);
+    assert_eq!(code, 2, "판정 방식이 없는데 값을 냈다:\n{text}");
+    assert!(
+        text.contains("SHIPPING_JUDGE_FLAGS 가 비었다"),
         "다른 호출 지점이 낸 2 다 — 이 시험은 자기 자리를 안 재고 있다:\n{text}"
     );
 }
