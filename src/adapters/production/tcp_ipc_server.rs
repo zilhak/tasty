@@ -861,6 +861,14 @@ impl TcpIpcServer {
             tracing::debug!("IPC saturation refusal could not go non-blocking: {e}");
             return;
         }
+        let line = Self::saturation_refusal_line();
+        let mut w = stream;
+        // 한 번만 쓴다. `write_all` 은 부분 전송에서 다시 시도하므로 여기서는 안 쓴다.
+        Self::log_saturation_refusal_write(w.write(line.as_bytes()), line.len());
+    }
+
+    /// 포화 거절 한 줄을 짓는다. 짓는 일과 보내는 일을 갈라 둔다.
+    fn saturation_refusal_line() -> String {
         let resp = JsonRpcResponse::error(
             serde_json::Value::Null,
             crate::ipc::protocol::ERR_CONNECTION_LIMIT_REACHED,
@@ -869,15 +877,14 @@ impl TcpIpcServer {
                  and did not read this one — nothing ran, so retry it as is"
             ),
         );
-        let line = format!("{}\n", serde_json::to_string(&resp).unwrap());
-        let mut w = stream;
-        // 한 번만 쓴다. `write_all` 은 부분 전송에서 다시 시도하므로 여기서는 안 쓴다.
-        match w.write(line.as_bytes()) {
-            Ok(n) if n == line.len() => {}
-            Ok(n) => tracing::debug!(
-                "IPC saturation refusal only partly sent ({n}/{})",
-                line.len()
-            ),
+        format!("{}\n", serde_json::to_string(&resp).unwrap())
+    }
+
+    /// 한 번의 쓰기 결과를 남긴다. 이 연결은 어차피 끝나므로 되돌릴 일은 없다.
+    fn log_saturation_refusal_write(result: std::io::Result<usize>, len: usize) {
+        match result {
+            Ok(n) if n == len => {}
+            Ok(n) => tracing::debug!("IPC saturation refusal only partly sent ({n}/{len})"),
             Err(e) => tracing::debug!("IPC saturation refusal not sent: {e}"),
         }
     }
@@ -959,7 +966,20 @@ impl TcpIpcServer {
             waker();
         }
 
-        // Wait for response from main thread
+        Self::await_dispatch_response(&resp_rx, wait_bound, rpc_id, writer, peer)
+    }
+
+    /// 메인 스레드의 응답을 기다려 소켓에 쓴다. 상한이 없으면 무기한 기다린다.
+    ///
+    /// 보내는 일과 기다리는 일을 한 함수에 두면 갈래가 겹쳐 읽기 어렵다 — 여기는
+    /// **기다리는 쪽만** 본다. 상한 만료는 실패가 아니라 결과 불명이라 연결을 유지한다.
+    fn await_dispatch_response(
+        resp_rx: &mpsc::Receiver<JsonRpcResponse>,
+        wait_bound: Option<Duration>,
+        rpc_id: serde_json::Value,
+        writer: &mut std::net::TcpStream,
+        peer: Option<std::net::SocketAddr>,
+    ) -> bool {
         let Some(bound) = wait_bound else {
             return match resp_rx.recv() {
                 Ok(response) => Self::write_dispatch_response(writer, &response, peer),

@@ -1549,20 +1549,7 @@ fn attach_handshake(
     log_prefix: &str,
 ) -> anyhow::Result<(StreamConnection, u32, TcpStream, String, Vec<Value>, Value)> {
     let sock = TcpStream::connect(("127.0.0.1", port))?;
-    // 조용한 네트워크 단절 감지용 read timeout(핸드셰이크 ack/디스크립터 대기에도
-    // 적용됨 — 이 함수 내 이후 `conn.recv()` 호출들이 그 대상). heartbeat 스레드
-    // 가 이 주기 이내에 Ping 을 보내 idle 세션에서도 서버측 read timeout 을 갱신한다.
-    if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
-        tracing::warn!("{log_prefix}: failed to set read timeout: {e}");
-    }
-    // write 방향 백스톱: forwarder/heartbeat 프레임 write 가 백프레셔로
-    // 무기한 막히지 않도록 write timeout 을 건다. 만료(WouldBlock)는 write 스레드
-    // 에서 세션 disconnect 로 승격된다. read timeout 은 silent disconnect 감지
-    // 계약이라 건드리지 않는다. (try_clone_writer 로 뜬 write half 는 같은 소켓
-    // fd 를 공유하므로 이 timeout 을 그대로 물려받는다.)
-    if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
-        tracing::warn!("{log_prefix}: failed to set write timeout: {e}");
-    }
+    arm_attach_timeouts(&sock, log_prefix);
     let (mut conn, client_id) =
         StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
     let first = conn.recv()?;
@@ -1570,6 +1557,45 @@ fn attach_handshake(
         anyhow::bail!("expected attach Control frame, got {:?}", first.tag);
     }
     let ctrl: Value = serde_json::from_slice(&first.payload)?;
+    let (name, surfaces, tree) = parse_attach_descriptor(&ctrl)?;
+    // 손실 통지를 받겠다고 선언한다. 서버는 선언한 연결에만
+    // `StreamControl::Loss` 를 보내므로(선언이 없으면 종전대로 조용히 버린다),
+    // 이 한 줄이 없으면 mirror 는 끊긴 데이터를 연속으로 계속 그린다.
+    // 이 선언을 모르는 구 서버에게는 모르는 변종이라 무시된다 — 그쪽에서는
+    // 종전 동작이 그대로다. 서버가 이 기능을 아는지 미리 확정해야 하는 소비자는
+    // `system.info` 의 `capabilities` 에서 `ipc.stream.loss-notify` 를 본다.
+    let declare = serde_json::to_vec(&StreamControl::ClientLossNotify {}).unwrap_or_default();
+    if let Err(e) = conn.send(StreamTag::Control, &declare) {
+        tracing::warn!(
+            "{log_prefix}: 손실 통지 선언 전송 실패 — 이 세션은 공백을 통지받지 못한다: {e}"
+        );
+    }
+    let write_half = conn.try_clone_writer()?;
+    Ok((conn, client_id, write_half, name, surfaces, tree))
+}
+
+/// 핸드셰이크 소켓에 read/write 상한을 건다.
+///
+/// read 상한은 조용한 네트워크 단절 감지용이고 핸드셰이크의 ack·디스크립터 대기에도
+/// 적용된다 — heartbeat 스레드가 이 주기 안에 Ping 을 보내 idle 세션에서도 서버 쪽
+/// read timeout 을 갱신한다. write 상한은 백프레셔로 프레임 쓰기가 무기한 막히지
+/// 않게 하는 백스톱이고, 만료(WouldBlock)는 write 스레드에서 세션 disconnect 로
+/// 승격된다. `try_clone_writer` 로 뜬 write half 는 같은 fd 를 공유하므로 이 상한을
+/// 그대로 물려받는다.
+fn arm_attach_timeouts(sock: &TcpStream, log_prefix: &str) {
+    if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+        tracing::warn!("{log_prefix}: failed to set read timeout: {e}");
+    }
+    if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
+        tracing::warn!("{log_prefix}: failed to set write timeout: {e}");
+    }
+}
+
+/// attach 제어 프레임에서 워크스페이스 디스크립터를 꺼낸다.
+///
+/// 거절(`attach_error`)과 모르는 이벤트는 여기서 에러가 된다 — 연결을 여는 일과
+/// 답을 읽는 일이 한 함수에 섞이면 갈래가 겹친다.
+fn parse_attach_descriptor(ctrl: &Value) -> anyhow::Result<(String, Vec<Value>, Value)> {
     match ctrl.get("event").and_then(|v| v.as_str()) {
         Some("attached_workspace") => {}
         Some("attach_error") => {
@@ -1592,20 +1618,7 @@ fn attach_handshake(
         .cloned()
         .unwrap_or_default();
     let tree = ctrl.get("tree").cloned().unwrap_or(Value::Null);
-    // 손실 통지를 받겠다고 선언한다. 서버는 선언한 연결에만
-    // `StreamControl::Loss` 를 보내므로(선언이 없으면 종전대로 조용히 버린다),
-    // 이 한 줄이 없으면 mirror 는 끊긴 데이터를 연속으로 계속 그린다.
-    // 이 선언을 모르는 구 서버에게는 모르는 변종이라 무시된다 — 그쪽에서는
-    // 종전 동작이 그대로다. 서버가 이 기능을 아는지 미리 확정해야 하는 소비자는
-    // `system.info` 의 `capabilities` 에서 `ipc.stream.loss-notify` 를 본다.
-    let declare = serde_json::to_vec(&StreamControl::ClientLossNotify {}).unwrap_or_default();
-    if let Err(e) = conn.send(StreamTag::Control, &declare) {
-        tracing::warn!(
-            "{log_prefix}: 손실 통지 선언 전송 실패 — 이 세션은 공백을 통지받지 못한다: {e}"
-        );
-    }
-    let write_half = conn.try_clone_writer()?;
-    Ok((conn, client_id, write_half, name, surfaces, tree))
+    Ok((name, surfaces, tree))
 }
 
 /// 한 engine 에서 mirror 워크스페이스의 흔적을 통째로 걷어낸다 — mirror 터미널,
@@ -1869,6 +1882,70 @@ fn spawn_attach_write_thread(
 /// StructuralDelta/Mesh 이벤트를 `MirrorEvent` 로 변환, Detach/force_detached/
 /// recv 실패는 세션 disconnect 로 승격. `start_gui_attach`/`reconnect_session`
 /// 이 공유(스레드 본문이 두 곳에서 100% 동일) — `log_suffix` 로 로그 문구 차이만
+
+/// mid-session Control 프레임 하나를 mirror 이벤트로 옮긴다.
+///
+/// 알 수 없는 event(구/신 스키마)는 파싱 실패 → `None` 이라 전방 호환이다.
+/// 읽기 루프에서 떼어 둔다 — 루프는 프레임 종류를 고르고, 이 함수는 한 종류를 푼다.
+fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
+    match serde_json::from_slice::<StreamControl>(payload) {
+        Ok(StreamControl::Resize {
+            surface_id,
+            cols,
+            rows,
+        }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
+        Ok(StreamControl::Activity { surface_id, busy }) => {
+            Some(MirrorEvent::Activity(surface_id, busy))
+        }
+        Ok(StreamControl::Attention { surface_id, kind }) => {
+            Some(MirrorEvent::Attention(surface_id, kind))
+        }
+        Ok(StreamControl::Cwd { surface_id, cwd }) => Some(MirrorEvent::Cwd(surface_id, cwd)),
+        // 서버가 이 연결로 보내려던 프레임을 버렸다 — 이 지점
+        // 앞뒤의 데이터는 연속이 아니다. 이 lane 은 그 사실을
+        // 값으로 남기는 데까지만 간다: 종류별 복구 계약(PTY
+        // byte delta · 상태 snapshot · mesh · bulk 가 각각
+        // 다르다)은 후속 작업이 정한다. 그때까지 mirror 는
+        // 종전처럼 계속 그리되, 무엇이 언제 사라졌는지는
+        // 로그에 남는다.
+        Ok(StreamControl::Loss { frames }) => {
+            tracing::warn!(
+                "attach mirror: 서버가 이 연결의 프레임 {frames} 장을 버렸다 — 이 지점 이후의 화면은 이전과 연속이 아니다"
+            );
+            None
+        }
+        // 2단계: forward 실패 회신 → 실패 toast.
+        Ok(StreamControl::StructuralResult {
+            ok: false, reason, ..
+        }) => Some(MirrorEvent::StructuralFailed(reason.unwrap_or_default())),
+        // 성공 회신 — UX 로는 무음이지만(구조 반영은
+        // 뒤따르는 StructuralDelta), client-only focus 보정
+        // op 를 correlate 하려면 op_id 가 필요하다.
+        Ok(StreamControl::StructuralResult {
+            ok: true, op_id, ..
+        }) => Some(MirrorEvent::StructuralSucceeded(op_id)),
+        // 3단계: 원격 구조 변경 역반영 → mirror 트리 재구성.
+        Ok(StreamControl::StructuralDelta {
+            workspace_id,
+            tree,
+            surfaces,
+        }) => Some(MirrorEvent::StructuralDelta {
+            workspace_id,
+            tree,
+            surfaces,
+        }),
+        // StreamControl 이 인식 못 하는 payload —
+        // capture_result 또는 list_dir_result
+        // 커스텀 이벤트인지 확인(별도 enum, StreamControl
+        // 비수정 — parse_capture_result/parse_list_dir_result 참조).
+        Ok(_) | Err(_) => parse_capture_result(payload)
+            .or_else(|| parse_list_dir_result(payload))
+            .or_else(|| parse_git_query_result(payload))
+            .or_else(|| parse_markdown_content_result(payload))
+            .or_else(|| parse_markdown_changed(payload)),
+    }
+}
+
 /// 흡수(write 스레드와 동일 패턴: "" vs "(재연결)").
 fn spawn_attach_reader_thread(
     mut conn: StreamConnection,
@@ -1904,66 +1981,7 @@ fn spawn_attach_reader_thread(
                         }
                         // mid-session Control: 원격 resize 통지 / forward 회신.
                         // 알 수 없는 event(구/신 스키마)는 파싱 실패 → 무시(전방 호환).
-                        let mirror_ev = match serde_json::from_slice::<StreamControl>(
-                            &frame.payload,
-                        ) {
-                            Ok(StreamControl::Resize {
-                                surface_id,
-                                cols,
-                                rows,
-                            }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
-                            Ok(StreamControl::Activity { surface_id, busy }) => {
-                                Some(MirrorEvent::Activity(surface_id, busy))
-                            }
-                            Ok(StreamControl::Attention { surface_id, kind }) => {
-                                Some(MirrorEvent::Attention(surface_id, kind))
-                            }
-                            Ok(StreamControl::Cwd { surface_id, cwd }) => {
-                                Some(MirrorEvent::Cwd(surface_id, cwd))
-                            }
-                            // 서버가 이 연결로 보내려던 프레임을 버렸다 — 이 지점
-                            // 앞뒤의 데이터는 연속이 아니다. 이 lane 은 그 사실을
-                            // 값으로 남기는 데까지만 간다: 종류별 복구 계약(PTY
-                            // byte delta · 상태 snapshot · mesh · bulk 가 각각
-                            // 다르다)은 후속 작업이 정한다. 그때까지 mirror 는
-                            // 종전처럼 계속 그리되, 무엇이 언제 사라졌는지는
-                            // 로그에 남는다.
-                            Ok(StreamControl::Loss { frames }) => {
-                                tracing::warn!(
-                                    "attach mirror: 서버가 이 연결의 프레임 {frames} 장을 버렸다 — 이 지점 이후의 화면은 이전과 연속이 아니다"
-                                );
-                                None
-                            }
-                            // 2단계: forward 실패 회신 → 실패 toast.
-                            Ok(StreamControl::StructuralResult {
-                                ok: false, reason, ..
-                            }) => Some(MirrorEvent::StructuralFailed(reason.unwrap_or_default())),
-                            // 성공 회신 — UX 로는 무음이지만(구조 반영은
-                            // 뒤따르는 StructuralDelta), client-only focus 보정
-                            // op 를 correlate 하려면 op_id 가 필요하다.
-                            Ok(StreamControl::StructuralResult {
-                                ok: true, op_id, ..
-                            }) => Some(MirrorEvent::StructuralSucceeded(op_id)),
-                            // 3단계: 원격 구조 변경 역반영 → mirror 트리 재구성.
-                            Ok(StreamControl::StructuralDelta {
-                                workspace_id,
-                                tree,
-                                surfaces,
-                            }) => Some(MirrorEvent::StructuralDelta {
-                                workspace_id,
-                                tree,
-                                surfaces,
-                            }),
-                            // StreamControl 이 인식 못 하는 payload —
-                            // capture_result 또는 list_dir_result
-                            // 커스텀 이벤트인지 확인(별도 enum, StreamControl
-                            // 비수정 — parse_capture_result/parse_list_dir_result 참조).
-                            Ok(_) | Err(_) => parse_capture_result(&frame.payload)
-                                .or_else(|| parse_list_dir_result(&frame.payload))
-                                .or_else(|| parse_git_query_result(&frame.payload))
-                                .or_else(|| parse_markdown_content_result(&frame.payload))
-                                .or_else(|| parse_markdown_changed(&frame.payload)),
-                        };
+                        let mirror_ev = mirror_event_from_control(&frame.payload);
                         if let Some(ev) = mirror_ev
                             && output.push(ev)
                         {
