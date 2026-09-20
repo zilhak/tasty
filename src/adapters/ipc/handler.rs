@@ -1740,6 +1740,27 @@ mod system_info_tests {
         assert!(result["version"].is_string());
     }
 
+    /// client 가 **보내기 전에** 묻는 그 이름이 실제로 선언돼 있는가. 이름이 빠지면
+    /// 새 client 는 모든 서버를 구 서버로 보고 변경 명령을 통째로 거절한다 — 그 실패는
+    /// 조용하지 않지만, 이름과 그것을 요구하는 자리가 **다른 크레이트**에 있어 컴파일러가
+    /// 짝을 안 봐 준다.
+    #[test]
+    fn system_info_declares_the_capability_name_the_client_asks_for() {
+        let (state, engine) = crate::state::tests::test_state();
+        let resp = handle_system_info(&state, &engine, serde_json::json!(1));
+        let result = resp.result.expect("성공 응답이어야 한다");
+        let names: Vec<&str> = result["capabilities"]
+            .as_array()
+            .expect("배열")
+            .iter()
+            .filter_map(|c| c["name"].as_str())
+            .collect();
+        assert!(
+            names.contains(&tasty_ipc::client::IDEMPOTENCY_CAPABILITY),
+            "client 가 요구하는 이름이 선언에 없다: {names:?}"
+        );
+    }
+
     /// capability 목록은 "이 서버가 멱등 키를 읽는가" 까지만 답한다. 호출자가 자기
     /// 재시도 간격이 보장 안에 있는지 판단하려면 **값**이 필요하고, 그 값이 여기 실린다.
     #[test]

@@ -7,6 +7,7 @@
 //! - [`IpcConnection`] — BufReader 를 유지하는 JSON-RPC request-response 연결
 //! - [`StreamConnection`] — attach/bulk 스트림 연결
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
@@ -36,6 +37,63 @@ impl std::fmt::Display for JsonRpcCallError {
 
 impl std::error::Error for JsonRpcCallError {}
 
+/// 상대가 그 계약을 선언하지 않았다 — **요청은 아직 안 나갔다.**
+///
+/// 이 타입이 [`JsonRpcCallError`] 와 갈라져 있는 이유가 그 한 줄이다. 저쪽은 호스트가
+/// 답한 실패라 "무엇이 일어났는지" 가 이미 정해졌고, 이쪽은 **아무것도 일어나지
+/// 않았음**을 뜻한다. 부수효과가 남는 메서드에서는 그 차이가 재시도 판단을 통째로
+/// 가른다 — 이 오류를 받은 호출자는 그대로 다시 걸 수 있다(다만 같은 서버라면 또 같은
+/// 답이다).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedCapability {
+    pub name: String,
+    pub required: u32,
+    /// 서버가 그 이름을 **다른 판으로** 선언했으면 그 값. 아예 없으면 `None`.
+    pub found: Option<u32>,
+}
+
+impl std::fmt::Display for UnsupportedCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.found {
+            Some(v) => write!(
+                f,
+                "the tasty instance declares '{}' at version {v}, but version {} is required; \
+                 nothing was sent",
+                self.name, self.required
+            ),
+            None => write!(
+                f,
+                "the tasty instance does not declare '{}' (required version {}); nothing was sent",
+                self.name, self.required
+            ),
+        }
+    }
+}
+
+impl std::error::Error for UnsupportedCapability {}
+
+/// `system.info` 응답에서 capability 이름 → 판 을 뽑는다.
+///
+/// 키가 아예 없는 구 서버는 **빈 map** 이다. 그것이 "아무것도 선언하지 않았다" 의 옳은
+/// 표현이고, 그래서 이 함수의 실패 갈래는 없다 — 모양이 어긋난 항목은 조용히 빠진다.
+/// 어긋난 항목을 오류로 올리면 서버가 나중에 더한 모양 하나가 **기존에 되던 조회까지**
+/// 깨뜨린다(이 목록의 요점이 추가는 안전하다는 것이었다).
+pub fn parse_capabilities(info: &serde_json::Value) -> BTreeMap<String, u32> {
+    let mut out = BTreeMap::new();
+    let Some(items) = info.get("capabilities").and_then(|v| v.as_array()) else {
+        return out;
+    };
+    for item in items {
+        if let (Some(name), Some(version)) = (
+            item.get("name").and_then(|v| v.as_str()),
+            item.get("version").and_then(|v| v.as_u64()),
+        ) {
+            out.insert(name.to_string(), version as u32);
+        }
+    }
+    out
+}
+
 pub mod stream;
 
 pub use stream::StreamConnection;
@@ -44,6 +102,9 @@ pub use stream::StreamConnection;
 pub struct IpcConnection {
     writer: TcpStream,
     reader: BufReader<TcpStream>,
+    /// 한 번 물어 둔 서버의 선언. 연결 수명 동안 안 바뀐다 — 그 값을 정하는 것은
+    /// 상대 프로세스의 빌드이고, 연결이 살아 있는 한 그 프로세스도 그대로다.
+    capabilities: Option<BTreeMap<String, u32>>,
 }
 
 impl IpcConnection {
@@ -69,7 +130,11 @@ impl IpcConnection {
         }
         let writer = stream.try_clone()?;
         let reader = BufReader::new(stream);
-        Ok(Self { writer, reader })
+        Ok(Self {
+            writer,
+            reader,
+            capabilities: None,
+        })
     }
 
     /// Send a JSON-RPC request and read the response.
@@ -113,5 +178,143 @@ impl IpcConnection {
 
             return Ok(response.result.unwrap_or(serde_json::Value::Null));
         }
+    }
+
+    /// 서버가 선언한 기능 목록. 연결마다 **한 번만** 묻는다.
+    ///
+    /// `session_token` 은 부를 요청의 것을 그대로 쓴다 — 토큰이 있는 호출자가 토큰 없이
+    /// 물으면 그 조회는 `Local` 로 판정돼, 실제로 요청을 보낼 주체와 **다른 주체의**
+    /// 답을 보게 된다.
+    pub fn capabilities(&mut self, session_token: Option<&str>) -> Result<&BTreeMap<String, u32>> {
+        if self.capabilities.is_none() {
+            let probe = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "system.info".to_string(),
+                params: serde_json::Value::Null,
+                id: Some(serde_json::Value::from(0)),
+                session_token: session_token.map(str::to_string),
+                response_timeout_ms: None,
+                idempotency_key: None,
+            };
+            let info = self.send(&probe)?;
+            self.capabilities = Some(parse_capabilities(&info));
+        }
+        Ok(self.capabilities.as_ref().expect("직전 분기가 채웠다"))
+    }
+
+    /// 그 계약을 상대가 아는지 **부수효과가 나기 전에** 판정한다.
+    ///
+    /// 판이 요구값 **이상**이면 통과다. 기능 목록의 판은 올라가는 방향으로만 움직이고
+    /// 뜻이 좁아질 때만 올라가므로(그 규약은 [`crate::capability`] 에 있다), 더 높은
+    /// 판은 "이 이름을 더 잘 안다" 는 뜻이다.
+    pub fn require_capability(
+        &mut self,
+        name: &str,
+        min_version: u32,
+        session_token: Option<&str>,
+    ) -> Result<()> {
+        let found = self.capabilities(session_token)?.get(name).copied();
+        match found {
+            Some(v) if v >= min_version => Ok(()),
+            other => Err(UnsupportedCapability {
+                name: name.to_string(),
+                required: min_version,
+                found: other,
+            }
+            .into()),
+        }
+    }
+
+    /// 멱등 키를 실어 보낸다 — 단, **보내기 전에** 상대가 그 계약을 아는지 묻는다.
+    ///
+    /// 그냥 필드만 실으면 구 서버는 키를 조용히 버리고 요청을 그대로 실행한다. 그때
+    /// 호출자는 계약이 걸린 줄 알고 재시도하므로 **두 번째 효과**가 남는다 — 키를 실은
+    /// 목적과 정확히 반대다. 그래서 이 함수의 값은 키를 싣는 것이 아니라 **못 싣는
+    /// 상대에게 안 보내는 것**이다.
+    ///
+    /// 확인 자체는 `system.info` 라 부수효과가 없고 연결마다 한 번이다.
+    pub fn send_idempotent(
+        &mut self,
+        request: &JsonRpcRequest,
+        key: &str,
+    ) -> Result<serde_json::Value> {
+        self.require_capability(
+            IDEMPOTENCY_CAPABILITY,
+            IDEMPOTENCY_CAPABILITY_VERSION,
+            request.session_token.as_deref(),
+        )?;
+        let keyed = JsonRpcRequest {
+            idempotency_key: Some(key.to_string()),
+            ..request.clone()
+        };
+        self.send(&keyed)
+    }
+}
+
+/// [`crate::protocol::JsonRpcRequest::idempotency_key`] 를 서버가 읽는다는 선언의 이름.
+pub const IDEMPOTENCY_CAPABILITY: &str = "ipc.idempotency-key";
+/// 이 client 가 요구하는 최소 판.
+pub const IDEMPOTENCY_CAPABILITY_VERSION: u32 = 1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// capability 키가 아예 없는 **구 서버**는 빈 선언이다. "모른다" 를 "안다" 로 읽으면
+    /// 그 서버에 키를 실어 보내게 되고, 그것이 이 축의 결함이다.
+    #[test]
+    fn an_old_server_without_the_key_declares_nothing() {
+        let info = serde_json::json!({ "version": "0.6.0", "scope": "engine" });
+        assert!(parse_capabilities(&info).is_empty());
+    }
+
+    /// 모양이 어긋난 항목은 조용히 빠지고 나머지는 산다 — 한 항목이 전체 조회를
+    /// 깨뜨리면 "추가는 안전하다" 가 거짓이 된다.
+    #[test]
+    fn a_malformed_entry_does_not_take_the_others_down() {
+        let info = serde_json::json!({
+            "capabilities": [
+                { "name": "ipc.capabilities", "version": 1 },
+                { "name": "no.version" },
+                { "version": 2 },
+                "not an object",
+                { "name": "ipc.idempotency-key", "version": 3 },
+            ]
+        });
+        let caps = parse_capabilities(&info);
+        assert_eq!(caps.get("ipc.capabilities"), Some(&1));
+        assert_eq!(caps.get("ipc.idempotency-key"), Some(&3));
+        assert_eq!(caps.len(), 2);
+    }
+
+    /// 더 높은 판은 통과, 낮은 판과 부재는 거절 — 그리고 **부재와 낮은 판이 다른
+    /// 값으로 보고된다**(호출자가 서버를 올릴지 요구를 내릴지 가른다).
+    #[test]
+    fn a_higher_version_satisfies_and_the_two_failures_are_told_apart() {
+        let caps: BTreeMap<String, u32> = [("ipc.idempotency-key".to_string(), 2u32)]
+            .into_iter()
+            .collect();
+        assert!(
+            caps.get("ipc.idempotency-key")
+                .copied()
+                .is_some_and(|v| v >= 1)
+        );
+
+        let missing = UnsupportedCapability {
+            name: "x".into(),
+            required: 1,
+            found: None,
+        };
+        let older = UnsupportedCapability {
+            name: "x".into(),
+            required: 2,
+            found: Some(1),
+        };
+        assert_ne!(missing, older);
+        assert!(missing.to_string().contains("does not declare"));
+        assert!(older.to_string().contains("version 1"));
+        // 어느 쪽이든 "아직 안 보냈다" 를 말한다 — 재시도 판단이 거기 달렸다.
+        assert!(missing.to_string().contains("nothing was sent"));
+        assert!(older.to_string().contains("nothing was sent"));
     }
 }

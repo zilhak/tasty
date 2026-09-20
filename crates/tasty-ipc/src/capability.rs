@@ -55,6 +55,16 @@ pub const CAPABILITIES: &[Capability] = &[
         name: "ipc.response-timeout",
         version: 1,
     },
+    // 봉투가 멱등 키를 실을 수 있고, 호스트가 그 키로 재시도를 **재조회**로 답한다.
+    // 근거: `crate::protocol::JsonRpcRequest::idempotency_key` 와 그것을 읽는 호스트의
+    // 보존소. `ipc.response-timeout` 과 같은 이유로 이름이 필요하다 — 이 이름이 없는
+    // 서버는 키를 조용히 버리므로, 보내는 것만으로는 계약이 걸렸는지 알 수 없다.
+    // 그리고 이 계약은 **부수효과가 남는 메서드**에 쓰이므로 확인이 늦으면 늦은 만큼
+    // 두 번째 효과가 이미 남는다.
+    Capability {
+        name: "ipc.idempotency-key",
+        version: 1,
+    },
     // 스트리밍 채널의 프레임 프로토콜. 판을 **리터럴로 안 적는다** — 서버가 handshake 에서
     // 동등 비교하는 그 상수를 그대로 싣는다. 둘로 적으면 갈린다.
     Capability {

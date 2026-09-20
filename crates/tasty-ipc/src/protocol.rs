@@ -111,7 +111,8 @@ pub struct JsonRpcRequest {
     ///
     /// 구 서버는 이 키를 **조용히 무시한다**(이 구조체에 `deny_unknown_fields` 가 없다).
     /// 그래서 보내기만 해서는 계약이 걸렸는지 알 수 없고, client 는 **부수효과가 나기
-    /// 전에** `system.info` 의 capability 목록으로 물어야 한다.
+    /// 전에** `system.info` 의 capability 목록에서 `ipc.idempotency-key` 를 봐야 한다
+    /// ([`crate::client::IpcConnection::send_idempotent`] 가 그것을 한다).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
 }
