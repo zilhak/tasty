@@ -247,6 +247,14 @@ pub(crate) struct Core {
     /// 공통으로 손에 쥐는 것이 `Core` 뿐이기 때문이다. 크기가 고정이라
     /// (원자값 여덟 개) 프로세스 수명 동안 들고 있어도 자라지 않는다.
     pressure: tasty_telemetry::PressureStats,
+
+    /// host→plugin 왕복 대기 게이지.
+    ///
+    /// `pressure` 와 달리 `Arc` 인 이유는 **올리는 자리가 다른 크레이트**이기
+    /// 때문이다 — `tasty-host-plugin` 의 응답 매칭부가 유일한 기록자이고 그 크레이트는
+    /// `Core` 를 못 본다. 그래서 값은 여기(프로세스 하나)에 두고 핸들만 건넨다.
+    /// 창마다 매니저를 다시 만들어도 같은 핸들을 넘기므로 축이 프로세스로 유지된다.
+    plugin_wait: Arc<tasty_telemetry::PluginWaitStats>,
 }
 
 impl Core {
@@ -260,6 +268,12 @@ impl Core {
     /// 관측이 요청 처리의 가변 빌림과 다투지 않는다.
     pub(crate) fn pressure(&self) -> &tasty_telemetry::PressureStats {
         &self.pressure
+    }
+
+    /// host→plugin 왕복 대기 게이지. plugin manager 에 **핸들을 넘기려고** 존재하므로
+    /// `&Arc` 를 돌려준다 — 읽기만 하는 자리는 `.snapshot()` 을 부른다.
+    pub(crate) fn plugin_wait(&self) -> &Arc<tasty_telemetry::PluginWaitStats> {
+        &self.plugin_wait
     }
 
     /// `Clock` port 경유 현재 Unix ms — 관측 로그(audit/telemetry)의 시각 축이

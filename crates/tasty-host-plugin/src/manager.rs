@@ -107,6 +107,28 @@ pub(super) enum FinalCaller {
     },
 }
 
+/// 응답을 기다리는 host→plugin request 하나 — **무엇을 기다리는지와 언제 보냈는지**.
+///
+/// `sent_at` 이 여기 붙는 이유는 이 맵이 요청의 수명을 이미 소유하기 때문이다. 별도
+/// 맵에 시각을 두면 응답 없이 사라지는 요청(취소 · deadline 만료 · plugin 종료)마다
+/// 두 맵을 같이 지워야 하고, 한 자리만 빠뜨려도 그 맵이 프로세스 수명 동안 자란다.
+pub(super) struct PendingRequest {
+    pub(super) kind: PendingRequestKind,
+    /// 보낸 시각. 응답이 매칭될 때 왕복 대기 시간으로 접힌다.
+    pub(super) sent_at: Instant,
+}
+
+impl PendingRequest {
+    /// 지금 보냈다. `Instant::now()` 를 쓰는 것은 이 크레이트의 기존 관례다 —
+    /// `Clock` port 는 본 바이너리의 `Core` 에 있고 여기서는 안 보인다.
+    pub(super) fn now(kind: PendingRequestKind) -> Self {
+        Self {
+            kind,
+            sent_at: Instant::now(),
+        }
+    }
+}
+
 /// pending host→plugin request의 종류. 응답 수신 시 어떤 후처리를 할지 식별.
 pub(super) enum PendingRequestKind {
     SurfaceCreate {
@@ -344,7 +366,15 @@ pub struct PluginManager {
     /// surface_id → RemoteSurface handle. 라이프사이클 동안 유지.
     pub(super) surfaces: HashMap<u32, RemoteSurfaceEntry>,
     /// host → plugin 요청 ID → 종류. 응답 수신 시 후처리 dispatch용.
-    pub(super) pending_requests: HashMap<u64, PendingRequestKind>,
+    pub(super) pending_requests: HashMap<u64, PendingRequest>,
+    /// host→plugin 왕복 대기 게이지. 호스트가 주입한다 — 이 크레이트는 그것을
+    /// 소유하지 않고 올리기만 한다.
+    ///
+    /// `Option` 인 이유는 주입이 없는 구성이 실재하기 때문이다(이 크레이트의 단위
+    /// 시험, 그리고 본 바이너리의 plugin_bridge 시험이 stub registry 로 매니저를
+    /// 세운다). 그때 `None` 이면 **아무것도 안 센다** — 0 을 쌓지 않으므로 읽는 쪽이
+    /// "안 쟀다" 와 "기다림이 없었다" 를 그대로 가른다.
+    plugin_wait: Option<Arc<tasty_telemetry::PluginWaitStats>>,
     /// 각 plugin에 grant된 권한. 매니페스트 + plugins.toml의 granted를 교집합한 결과.
     /// `Arc`로 공유하여 CallerContext가 동시 호출 시 안전.
     plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,
@@ -762,6 +792,64 @@ prefix = "{prefix}"
         );
     }
 
+    // 왕복 대기의 기록 자리. 이 게이지가 없던 때에는 "응답이 느리다" 가 호스트
+    // 적체인지 plugin 안의 시간인지 **가릴 값이 없었다.**
+    #[test]
+    fn a_matched_response_records_how_long_the_host_waited() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let stats = Arc::new(tasty_telemetry::PluginWaitStats::default());
+        mgr.set_plugin_wait(stats.clone());
+        mgr.pending_requests.insert(
+            9,
+            PendingRequest {
+                kind: PendingRequestKind::Other,
+                // 실제로 기다린 것이 아니라 **보낸 시각을 뒤로 밀어** 잰다 — 시험이
+                // 자기 벽시계를 쓰면 부하에 따라 값이 흔들린다.
+                sent_at: Instant::now() - Duration::from_millis(50),
+            },
+        );
+
+        mgr.handle_plugin_response(
+            "com.example.x",
+            crate::protocol::PluginResponse {
+                id: 9,
+                result: Some(serde_json::json!({})),
+                error: None,
+                error_code: None,
+            },
+        );
+
+        let s = stats.snapshot();
+        assert_eq!(s.matched, 1, "매칭된 응답 하나가 한 번 세져야 한다");
+        assert!(
+            s.us_max >= 50_000,
+            "보낸 뒤 흐른 시간이 접혀야 한다: {}",
+            s.us_max
+        );
+    }
+
+    // 끝점이 없는 관측은 안 센다. 이미 만료·취소돼 pending 에 없는 id 의 응답이
+    // 그 경우다 — 시작 시각을 모르므로 여기서 0 을 쌓으면 평균이 아래로 끌린다.
+    #[test]
+    fn an_unmatched_response_is_not_counted_as_a_wait() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let stats = Arc::new(tasty_telemetry::PluginWaitStats::default());
+        mgr.set_plugin_wait(stats.clone());
+
+        mgr.handle_plugin_response(
+            "com.example.x",
+            crate::protocol::PluginResponse {
+                id: 4242,
+                result: Some(serde_json::json!({})),
+                error: None,
+                error_code: None,
+            },
+        );
+
+        assert_eq!(stats.snapshot().matched, 0);
+        assert_eq!(stats.snapshot().us_mean(), None, "안 쟀으면 None 이다");
+    }
+
     #[test]
     fn find_active_event_hooks_returns_none_when_no_extension() {
         let mgr = PluginManager::new(empty_waker());
@@ -791,12 +879,12 @@ prefix = "{prefix}"
         let (tx, rx) = mpsc::sync_channel(1);
         mgr.pending_requests.insert(
             7,
-            PendingRequestKind::NamespaceInvoke {
+            PendingRequest::now(PendingRequestKind::NamespaceInvoke {
                 plugin_id: "com.example.silent".into(),
                 response_tx: tx,
                 original_id: serde_json::json!(42),
                 deadline,
-            },
+            }),
         );
         mgr.sweep_expired_requests();
         (mgr.pending_requests.contains_key(&7), rx.try_recv().ok())

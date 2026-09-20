@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::protocol::{self, PluginRequest};
 
-use super::{PendingRequestKind, PluginManager, PopupInstance};
+use super::{PendingRequest, PendingRequestKind, PluginManager, PopupInstance};
 
 impl PluginManager {
     pub(super) fn send_surface_request(
@@ -34,7 +34,7 @@ impl PluginManager {
         // 재검토 조건("정상 사용이 용량에 닿는가")을 잴 수 있다.
         match proc.try_send_request(req) {
             Ok(()) => {
-                self.pending_requests.insert(id, kind);
+                self.pending_requests.insert(id, PendingRequest::now(kind));
             }
             Err(e) => {
                 tracing::warn!("plugin '{plugin_id}' {method} send failed: {e}");

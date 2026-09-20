@@ -172,6 +172,7 @@ impl PluginManager {
             host_cmd_rx,
             surfaces: HashMap::new(),
             pending_requests: HashMap::new(),
+            plugin_wait: None,
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),
             command_registry: crate::command_registry::PluginCommandRegistry::new(),
@@ -736,7 +737,7 @@ impl PluginManager {
     pub fn has_pending_surface_restores(&self) -> bool {
         self.pending_requests
             .values()
-            .any(|k| matches!(k, super::PendingRequestKind::SurfaceRestore { .. }))
+            .any(|p| matches!(p.kind, super::PendingRequestKind::SurfaceRestore { .. }))
     }
 
     /// graceful swap 전용 — `config.disabled.ids` 를 건드리지 않고 process 만

@@ -15,7 +15,7 @@ use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission};
 
 use super::{
     FinalCaller, HOOK_FAIL_BACKOFF, HOOK_FAIL_LIMIT, NAMESPACE_CALL_TIMEOUT, PendingPluginCall,
-    PendingRequestKind, PluginManager,
+    PendingRequest, PendingRequestKind, PluginManager,
 };
 
 impl PluginManager {
@@ -175,7 +175,7 @@ impl PluginManager {
                         Ok(req_id) => {
                             self.pending_requests.insert(
                                 req_id,
-                                PendingRequestKind::ExtensionPreIpcHook {
+                                PendingRequest::now(PendingRequestKind::ExtensionPreIpcHook {
                                     target_plugin_id,
                                     extension_plugin_id: ext_id,
                                     method,
@@ -184,7 +184,7 @@ impl PluginManager {
                                     final_caller,
                                     post_hook: post,
                                     deadline,
-                                },
+                                }),
                             );
                         }
                         Err(msg) => {
@@ -333,7 +333,8 @@ impl PluginManager {
                 deadline,
             },
         };
-        self.pending_requests.insert(req_id, kind);
+        self.pending_requests
+            .insert(req_id, PendingRequest::now(kind));
     }
 
     /// 활성 extension이 있고 method에 매칭되는 pre/post IPC hook을 검색.
@@ -533,7 +534,7 @@ impl PluginManager {
         let to_cancel: Vec<u64> = self
             .pending_requests
             .iter()
-            .filter_map(|(id, kind)| match kind {
+            .filter_map(|(id, p)| match &p.kind {
                 PendingRequestKind::NamespaceInvoke { plugin_id: pid, .. }
                 | PendingRequestKind::PluginToPluginNamespace { plugin_id: pid, .. }
                 | PendingRequestKind::NamespaceInvokeWithPostHook {
@@ -563,7 +564,7 @@ impl PluginManager {
             .collect();
         for id in to_cancel {
             let msg = format!("plugin '{plugin_id}' unavailable: {reason}");
-            match self.pending_requests.remove(&id) {
+            match self.pending_requests.remove(&id).map(|p| p.kind) {
                 Some(PendingRequestKind::NamespaceInvoke {
                     response_tx,
                     original_id,

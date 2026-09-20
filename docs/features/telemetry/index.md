@@ -82,6 +82,14 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 |---|---|---|
 | `queue_before_gate` | 명령이 큐에서 나온 직후 (`App::process_ipc` · `pump_ipc`) | 큐에 앉았던 **전부** — 뒤에 거부될 요청도 센다 |
 | `handler_after_gate` | 게이트 통과 뒤 (`handle_checked_request`) | 실제로 **실행된 것만** |
+| `plugin_round_trip` | plugin 응답 매칭부 (`PluginManager::handle_plugin_response`) | 응답이 **매칭된 요청만** — 취소·만료된 것은 끝점이 없다 |
+
+셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
+시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
+handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 것이다. 게이지 하나를
+프로세스가 소유하고 plugin manager 에 **핸들만** 넘긴다 — 창마다 매니저를 다시 만들어도
+같은 핸들을 받으므로 축이 프로세스로 유지된다. 주입이 없는 구성(단위 시험)에서는
+아무것도 세지 않아 `matched` 가 0 으로 남는다.
 
 두 수의 차는 "거부된 수" 가 아니다 — 게이트를 통과하고도 `handle_checked_request` 를 안
 지나는 갈래가 있다(gui 의 app 층 메서드는 그 자리에서 답하고 돌아간다). 그래서 응답은

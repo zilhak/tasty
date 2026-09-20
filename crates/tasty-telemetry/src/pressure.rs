@@ -128,6 +128,63 @@ impl PressureSnapshot {
     }
 }
 
+/// host→plugin 요청 하나가 **응답을 기다린 시간**의 누계.
+///
+/// [`PressureStats`] 와 **다른 축**이다. 그쪽 셋은 호스트가 자기 큐와 자기 handler 에서
+/// 보낸 시간이고, 이 값은 호스트가 **남의 프로세스를 기다린** 시간이다. 느린 응답의
+/// 원인을 고를 때 이 구분이 답을 가른다 — 큐도 handler 도 빠른데 응답이 느리면 그
+/// 요청은 plugin 안에 있었던 것이다.
+///
+/// 별도 타입인 이유는 재는 주체가 다르기 때문이다. `PressureStats` 는 본 바이너리의
+/// `Core` 가 들고 관측 자리 셋이 쓰는데, 이 값을 올리는 자리는 `tasty-host-plugin` 의
+/// 응답 매칭부 하나뿐이고 그 크레이트는 `Core` 를 못 본다. 한 타입에 다 넣으면 어느
+/// 인스턴스가 어느 필드를 채우는지가 타입으로 안 보인다.
+///
+/// `PressureStats` 와 같은 성질을 공유한다: 프로세스 수명 누계 · 고정 크기 · `Relaxed` ·
+/// 스냅샷이 원자적이지 않음 · 1 마이크로초 미만은 0 으로 접히되 횟수는 오름.
+#[derive(Debug, Default)]
+pub struct PluginWaitStats {
+    /// 응답이 **매칭된** 요청 수. 응답이 영영 안 온 요청은 여기 안 센다.
+    matched: AtomicU64,
+    /// 그 왕복 대기 시간 합(마이크로초).
+    us_sum: AtomicU64,
+    /// 그 최댓값(마이크로초).
+    us_max: AtomicU64,
+}
+
+impl PluginWaitStats {
+    /// 요청 하나의 응답이 도착했다 — 보낸 뒤 흐른 시간을 접는다.
+    pub fn record(&self, waited: Duration) {
+        let us = as_micros(waited);
+        self.matched.fetch_add(1, Ordering::Relaxed);
+        self.us_sum.fetch_add(us, Ordering::Relaxed);
+        self.us_max.fetch_max(us, Ordering::Relaxed);
+    }
+
+    pub fn snapshot(&self) -> PluginWaitSnapshot {
+        PluginWaitSnapshot {
+            matched: self.matched.load(Ordering::Relaxed),
+            us_sum: self.us_sum.load(Ordering::Relaxed),
+            us_max: self.us_max.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// [`PluginWaitStats`] 의 한 시점 읽기.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct PluginWaitSnapshot {
+    pub matched: u64,
+    pub us_sum: u64,
+    pub us_max: u64,
+}
+
+impl PluginWaitSnapshot {
+    /// 왕복 하나의 평균(마이크로초). 관측이 없으면 `None` — 위와 같은 이유다.
+    pub fn us_mean(&self) -> Option<u64> {
+        (self.matched > 0).then(|| self.us_sum / self.matched)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +237,36 @@ mod tests {
         assert_eq!(s.handler_calls, 1);
         assert_eq!(s.handler_us_sum, 0);
         assert_eq!(s.handler_us_mean(), Some(0), "0 이지 None 이 아니다");
+    }
+
+    #[test]
+    fn an_untouched_plugin_wait_says_it_has_no_observation() {
+        let s = PluginWaitStats::default().snapshot();
+        assert_eq!(s.matched, 0);
+        assert_eq!(s.us_mean(), None);
+    }
+
+    #[test]
+    fn plugin_wait_keeps_the_largest_round_trip() {
+        let p = PluginWaitStats::default();
+        p.record(Duration::from_millis(3));
+        p.record(Duration::from_millis(21));
+        p.record(Duration::from_millis(6));
+        let s = p.snapshot();
+        assert_eq!(s.matched, 3);
+        assert_eq!(s.us_sum, 30_000);
+        assert_eq!(s.us_max, 21_000, "최댓값은 내려가지 않는다");
+        assert_eq!(s.us_mean(), Some(10_000));
+    }
+
+    // host 큐/handler 축과 **섞이지 않는다** — 둘은 서로 다른 집계다.
+    #[test]
+    fn a_plugin_round_trip_is_not_host_handler_time() {
+        let host = PressureStats::default();
+        let plugin = PluginWaitStats::default();
+        host.record_handler(Duration::from_millis(2));
+        plugin.record(Duration::from_millis(900));
+        assert_eq!(host.snapshot().handler_us_max, 2_000);
+        assert_eq!(plugin.snapshot().us_max, 900_000);
     }
 }

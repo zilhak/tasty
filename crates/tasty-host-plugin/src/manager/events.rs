@@ -9,7 +9,7 @@ use serde_json::json;
 use crate::protocol;
 use tasty_plugin_manifest::EventHookDecl;
 
-use super::{PendingRequestKind, PluginManager};
+use super::{PendingRequest, PendingRequestKind, PluginManager};
 
 impl PluginManager {
     pub fn publish_host_event(&mut self, envelope: tasty_plugin_protocol::EventEnvelope) {
@@ -199,14 +199,14 @@ impl PluginManager {
             Ok(req_id) => {
                 self.pending_requests.insert(
                     req_id,
-                    PendingRequestKind::ExtensionPreEventHook {
+                    PendingRequest::now(PendingRequestKind::ExtensionPreEventHook {
                         publisher_plugin_id: publisher_plugin_id.to_string(),
                         extension_plugin_id: ext_id,
                         envelope,
                         pre_hook_mode: pre.mode,
                         post_hook: post,
                         deadline,
-                    },
+                    }),
                 );
             }
             Err(msg) => {
@@ -243,11 +243,11 @@ impl PluginManager {
                 Ok(req_id) => {
                     self.pending_requests.insert(
                         req_id,
-                        PendingRequestKind::ExtensionPostEventHook {
+                        PendingRequest::now(PendingRequestKind::ExtensionPostEventHook {
                             extension_plugin_id: ext_id,
                             event_key,
                             deadline,
-                        },
+                        }),
                     );
                 }
                 Err(msg) => {

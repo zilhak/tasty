@@ -11,9 +11,11 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_ipc::server::send_response;
 use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl};
 
+use std::sync::Arc;
+
 use super::{
-    FinalCaller, HookOutcome, NAMESPACE_CALL_TIMEOUT, PendingRequestKind, PluginManager,
-    TargetOutcome, parse_hook_result,
+    FinalCaller, HookOutcome, NAMESPACE_CALL_TIMEOUT, PendingRequest, PendingRequestKind,
+    PluginManager, TargetOutcome, parse_hook_result,
 };
 
 /// 만료된 namespace 호출이 caller 에게 돌려주는 사유. 세 변종이 같은 문장을 쓴다 —
@@ -50,16 +52,34 @@ impl PluginManager {
         }
     }
 
+    /// 왕복 대기 게이지를 주입한다. 호스트가 `Core` 쪽 압력 게이지와 **같은 축으로**
+    /// 읽을 수 있도록 같은 프로세스의 한 인스턴스를 공유한다.
+    pub fn set_plugin_wait(&mut self, stats: Arc<tasty_telemetry::PluginWaitStats>) {
+        self.plugin_wait = Some(stats);
+    }
+
+    /// 응답 하나가 매칭됐다 — 보낸 뒤 흐른 시간을 게이지에 접는다.
+    fn record_plugin_wait(&self, waited: std::time::Duration) {
+        if let Some(stats) = &self.plugin_wait {
+            stats.record(waited);
+        }
+    }
+
     pub(super) fn handle_plugin_response(&mut self, plugin_id: &str, resp: PluginResponse) {
-        let kind = self.pending_requests.remove(&resp.id);
+        let pending = self.pending_requests.remove(&resp.id);
+        // 왕복 대기 — 여기가 모든 plugin 응답이 지나는 한 자리다. 매칭되지 않은
+        // 응답(이미 만료·취소된 id)은 재지 않는다: 잰 값의 끝점이 없다.
+        if let Some(p) = &pending {
+            self.record_plugin_wait(p.sent_at.elapsed());
+        }
         if let Some(err) = &resp.error {
             tracing::warn!(
                 "plugin '{plugin_id}' response error (id={}): {err}",
                 resp.id
             );
         }
-        let kind = match kind {
-            Some(k) => k,
+        let kind = match pending {
+            Some(p) => p.kind,
             None => return,
         };
         match kind {
@@ -274,10 +294,10 @@ impl PluginManager {
             Ok(req_id) => {
                 self.pending_requests.insert(
                     req_id,
-                    PendingRequestKind::DebugExtensionInvokeHook {
+                    PendingRequest::now(PendingRequestKind::DebugExtensionInvokeHook {
                         response_tx,
                         original_id,
-                    },
+                    }),
                 );
             }
             Err(msg) => {
@@ -414,14 +434,14 @@ impl PluginManager {
             Ok(req_id) => {
                 self.pending_requests.insert(
                     req_id,
-                    PendingRequestKind::ExtensionPostIpcHook {
+                    PendingRequest::now(PendingRequestKind::ExtensionPostIpcHook {
                         extension_plugin_id,
                         method,
                         post_hook_mode: post_hook_decl.mode,
                         target_outcome,
                         final_caller,
                         deadline,
-                    },
+                    }),
                 );
             }
             Err(msg) => {
@@ -438,8 +458,8 @@ impl PluginManager {
         let now = Instant::now();
         let expired = self.collect_expired_request_ids(now);
         for id in expired {
-            if let Some(kind) = self.pending_requests.remove(&id) {
-                self.expire_pending_request(kind);
+            if let Some(p) = self.pending_requests.remove(&id) {
+                self.expire_pending_request(p.kind);
             }
         }
     }
@@ -450,7 +470,7 @@ impl PluginManager {
     fn collect_expired_request_ids(&self, now: Instant) -> Vec<u64> {
         self.pending_requests
             .iter()
-            .filter_map(|(id, kind)| match kind {
+            .filter_map(|(id, p)| match &p.kind {
                 PendingRequestKind::ExtensionPreIpcHook { deadline, .. }
                 | PendingRequestKind::ExtensionPostIpcHook { deadline, .. }
                 | PendingRequestKind::ExtensionPreEventHook { deadline, .. }

@@ -89,6 +89,9 @@ pub(super) fn build_engine_and_plugins(
     proxy: winit::event_loop::EventLoopProxy<crate::AppEvent>,
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
+    // 프로세스 게이지 핸들. `Core` 를 통째로 넘기지 않는 것이 이 본문이 App-free 인
+    // 이유이고, `Arc` 하나는 그 성질을 안 깬다.
+    plugin_wait: std::sync::Arc<tasty_telemetry::PluginWaitStats>,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
 ) -> anyhow::Result<(crate::core::CoreState, plugin::PluginManager)> {
     let engine = build_core_state_first_boot(
@@ -101,7 +104,7 @@ pub(super) fn build_engine_and_plugins(
         #[cfg(debug_assertions)]
         input_simulation_enabled,
     )?;
-    let mgr = build_plugin_manager(factory, &engine);
+    let mgr = build_plugin_manager(factory, &engine, plugin_wait);
     Ok((engine, mgr))
 }
 
@@ -149,12 +152,16 @@ fn build_core_state_first_boot(
 fn build_plugin_manager(
     factory: crate::waker::SharedWakerFactory,
     engine: &crate::core::CoreState,
+    plugin_wait: std::sync::Arc<tasty_telemetry::PluginWaitStats>,
 ) -> plugin::PluginManager {
     let mut mgr = plugin::PluginManager::with_registries(
         factory,
         engine.file_format.clone(),
         engine.file_handler.clone(),
     );
+    // 이 자리를 빠뜨리면 매니저가 아무것도 안 세고, `system.pressure` 의 왕복 덩어리가
+    // `matched: 0` 으로 남는다 — 그 0 은 "plugin 을 안 기다렸다" 처럼 읽힌다.
+    mgr.set_plugin_wait(plugin_wait);
     mgr.set_surface_registry(engine.surface_registry.clone());
     mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
     // 공유 훅 핸들러 레지스트리(전역 싱글턴) port 주입 — plugin enable/disable
@@ -372,7 +379,8 @@ impl App {
         }
 
         if self.plugin_manager.is_none() {
-            let mgr = build_plugin_manager(factory, self.core_state());
+            let plugin_wait = self.core.plugin_wait().clone();
+            let mgr = build_plugin_manager(factory, self.core_state(), plugin_wait);
             self.plugin_manager = Some(mgr);
         }
         Ok(())

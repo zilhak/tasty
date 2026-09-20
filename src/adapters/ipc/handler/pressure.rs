@@ -14,6 +14,16 @@
 //! 무엇인지 고를 수 없다. 그래서 덩어리 이름 자체에 게이트 기준을 넣는다 —
 //! 응답을 그대로 덤프해도 두 모수가 갈린다.
 //!
+//! ## 세 번째 덩어리는 **남을 기다린** 시간이다
+//!
+//! 위 둘은 호스트가 자기 큐와 자기 handler 에서 보낸 시간이다. `plugin_round_trip` 은
+//! 호스트가 **plugin 프로세스의 답을 기다린** 시간이고, 그래서 셋이 같은 응답에 있어야
+//! 운영자가 원인을 고를 수 있다 — 큐도 handler 도 빠른데 응답이 느리면 그 시간은
+//! plugin 안에 있었던 것이다.
+//!
+//! 그 덩어리의 모수는 위 둘과 또 다르다: **응답이 실제로 매칭된 요청만** 센다. 끝내
+//! 답이 안 온 요청(취소 · deadline 만료 · plugin 종료)은 끝점이 없어 못 잰다.
+//!
 //! ## 두 수의 차이를 여기서 빼지 않는 이유
 //!
 //! `commands - calls` 는 "거부된 수" 가 **아니다.** 게이트를 통과하고도
@@ -39,14 +49,20 @@ pub(super) fn handle_system_pressure(
     core: &crate::core::Core,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, snapshot_json(&core.pressure().snapshot()))
+    JsonRpcResponse::success(
+        id,
+        snapshot_json(&core.pressure().snapshot(), &core.plugin_wait().snapshot()),
+    )
 }
 
 /// 스냅샷 하나를 응답 본문으로 옮긴다.
 ///
 /// 핸들러에서 갈라 둔 이유는 시험이 **아는 값**을 넣고 자리마다 대조할 수 있게 하려는
 /// 것이다. `Core` 를 세우면 그 안의 누계가 0 이 아니라 시험이 자기 입력을 못 고른다.
-pub(super) fn snapshot_json(s: &tasty_telemetry::PressureSnapshot) -> serde_json::Value {
+pub(super) fn snapshot_json(
+    s: &tasty_telemetry::PressureSnapshot,
+    p: &tasty_telemetry::PluginWaitSnapshot,
+) -> serde_json::Value {
     json!({
         "queue_before_gate": {
             "drains": s.queue_drains,
@@ -63,6 +79,12 @@ pub(super) fn snapshot_json(s: &tasty_telemetry::PressureSnapshot) -> serde_json
             "us_max": s.handler_us_max,
             "us_mean": s.handler_us_mean(),
         },
+        "plugin_round_trip": {
+            "matched": p.matched,
+            "us_sum": p.us_sum,
+            "us_max": p.us_max,
+            "us_mean": p.us_mean(),
+        },
     })
 }
 
@@ -70,7 +92,7 @@ pub(super) fn snapshot_json(s: &tasty_telemetry::PressureSnapshot) -> serde_json
 mod tests {
     use super::*;
     use std::time::Duration;
-    use tasty_telemetry::PressureStats;
+    use tasty_telemetry::{PluginWaitStats, PressureStats};
 
     /// 게이트 앞/뒤 두 모수가 **서로 다른 자리로** 나간다.
     ///
@@ -85,7 +107,7 @@ mod tests {
         p.record_queue_wait(Duration::from_micros(130));
         p.record_handler(Duration::from_micros(11));
 
-        let v = snapshot_json(&p.snapshot());
+        let v = snapshot_json(&p.snapshot(), &PluginWaitStats::default().snapshot());
         let q = &v["queue_before_gate"];
         let h = &v["handler_after_gate"];
 
@@ -167,7 +189,10 @@ mod tests {
     /// 관측이 없으면 평균은 `null` 이다 — 0 이 아니다.
     #[test]
     fn an_unobserved_average_is_null_not_zero() {
-        let v = snapshot_json(&PressureStats::default().snapshot());
+        let v = snapshot_json(
+            &PressureStats::default().snapshot(),
+            &PluginWaitStats::default().snapshot(),
+        );
         assert!(v["queue_before_gate"]["wait_us_mean"].is_null());
         assert!(v["queue_before_gate"]["depth_mean"].is_null());
         assert!(v["handler_after_gate"]["us_mean"].is_null());

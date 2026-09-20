@@ -306,7 +306,7 @@ pub mod pressure;
 pub use aggregate::*;
 pub use anomaly::*;
 pub use cap::*;
-pub use pressure::{PressureSnapshot, PressureStats};
+pub use pressure::{PluginWaitSnapshot, PluginWaitStats, PressureSnapshot, PressureStats};
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]
