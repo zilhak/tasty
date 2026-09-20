@@ -364,13 +364,19 @@ mod tests {
     ///
     /// 세 분포를 서로 다른 칸에 떨어지는 값으로 채워, 한 분포가 다른 덩어리로 새면
     /// 대조가 깨지게 한다.
+    ///
+    /// 칸을 가리킬 때는 서수("몇 번째")를 쓰지 않고 **`counts` 의 첨자**로 적는다 —
+    /// 0-기점이고, 이 시험이 단언하는 것과 같은 표기라 기점이 흔들릴 자리가 없다.
     #[test]
     fn each_distribution_ships_inside_its_own_block_with_its_bounds() {
         let p = PressureStats::default();
-        p.record_queue_wait(Duration::from_micros(40_000)); // 31_623 초과 → 8 번 칸
-        p.record_handler(Duration::from_micros(5)); // 10 이하 → 0 번 칸
+        // 31_623 초과 100_000 이하 → counts[8]
+        p.record_queue_wait(Duration::from_micros(40_000));
+        // 10 이하 → counts[0]
+        p.record_handler(Duration::from_micros(5));
         let w = PluginWaitStats::default();
-        w.record(Duration::from_micros(2_000_000)); // 마지막 상한 초과 → 넘침 칸
+        // 마지막 상한(1_000_000) 초과 → 넘침 칸 counts[LATENCY_BUCKET_COUNT - 1]
+        w.record(Duration::from_micros(2_000_000));
 
         let v = snapshot_json(
             &p.snapshot(),
@@ -407,8 +413,9 @@ mod tests {
         };
         let (q, h, pl) = (counts(qh), counts(hh), counts(ph));
         assert_eq!(q.iter().sum::<u64>(), 1);
-        assert_eq!(h[0], 1, "5 µs 는 맨 앞 칸");
-        assert_eq!(q[0], 0, "큐 대기 40 ms 가 맨 앞 칸에 오면 안 된다");
+        assert_eq!(h[0], 1, "5 µs 는 counts[0]");
+        assert_eq!(q[0], 0, "큐 대기 40 ms 가 counts[0] 에 오면 안 된다");
+        assert_eq!(q[8], 1, "40 ms 는 상한 100_000 인 counts[8] 이다");
         assert_eq!(
             pl[tasty_telemetry::LATENCY_BUCKET_COUNT - 1],
             1,

@@ -306,10 +306,19 @@ pub mod pressure;
 pub use aggregate::*;
 pub use anomaly::*;
 pub use cap::*;
+// 크레이트 루트로 올리는 것은 **밖에서 실제로 부르는 이름**뿐이다. 빠진 둘은 일부러다.
+//
+// - `LatencyHistogram` 은 `PressureStats`·`PluginWaitStats` 의 **비공개 필드 타입**이라
+//   밖에서 세울 일이 없다.
+// - `LATENCY_BUCKET_BOUNDS_US` 를 루트에 두면 소비자가 경계를 상수로 직접 끌어다 쓰게 되고,
+//   그 순간 "경계는 값과 같은 자리에서 나간다"(ADR-0340)가 무너진다. 경계를 얻는 길은
+//   [`HistogramSnapshot::bounds_us`] 하나여야 한다.
+//
+// 둘 다 `pressure` 모듈이 `pub` 이라 `tasty_telemetry::pressure::…` 로 여전히 닿는다 —
+// 없앤 것이 아니라 기본 경로에서 뺀 것이다.
 pub use pressure::{
-    ConnectionSnapshot, ConnectionStats, HistogramSnapshot, LATENCY_BUCKET_BOUNDS_US,
-    LATENCY_BUCKET_COUNT, LatencyHistogram, PluginWaitSnapshot, PluginWaitStats, PressureSnapshot,
-    PressureStats,
+    ConnectionSnapshot, ConnectionStats, HistogramSnapshot, LATENCY_BUCKET_COUNT,
+    PluginWaitSnapshot, PluginWaitStats, PressureSnapshot, PressureStats,
 };
 
 #[cfg(test)]

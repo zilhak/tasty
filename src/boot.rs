@@ -613,7 +613,8 @@ fn dispatch_headless_event(
 /// 1. `mpsc::channel::<AppEvent>` 생성 + `HeadlessWaker` 로 IPC/PTY waker 발급
 /// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
 /// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
-/// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
+/// 4. `hub.start_ipc(ipc_waker, stream_ctx, connections)` — accept 스레드 분리
+///    (+ 스트림 승격 경로). 셋째 인자는 `Core` 가 들고 있는 연결 자리 게이지의 핸들이다
 /// 5. 데드라인 인지 수신 loop — 중앙 타이머 허브의 `next_deadline()` 까지만
 ///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
 ///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
