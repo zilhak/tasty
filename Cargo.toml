@@ -475,6 +475,9 @@ gui = [
     # 아이콘의 egui 렌더 갈래와 색 변환 shim. 둘 다 headless 는 안 켠다.
     "tasty-icons/egui",
     "tasty-type-appearance/egui-compat",
+    # GPU 글리프 아틀라스. 이 줄이 없으면 tasty-font 가 wgpu 를 안 들고, 그것이
+    # 헤드리스 그래프에서 wgpu 스택이 빠지는 유일한 이유다.
+    "tasty-font/gpu",
     "dep:cosmic-text",
     "dep:bytemuck",
     "dep:webbrowser",

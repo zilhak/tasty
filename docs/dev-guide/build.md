@@ -79,14 +79,23 @@ cargo tree --no-default-features --edges normal -i wgpu
 그래서 "안 들어왔다" 와 "명령이 고장났다" 가 같은 모양으로 보인다 — 스크립트에 넣을 때
 그 둘을 갈라라.
 
-**이 사실을 보는 시험은 하나도 없다 — 채널이 없다.** 누가 `optional = true` 를 되돌리거나
-`default-features` 를 다시 켜면 아무 신호도 안 난다. 위 두 줄이 그것을 재는 유일한 방법이다.
+**그래프 자체를 보는 시험은 없다 — 그 좌변에는 채널이 없다.** 위 두 줄이 그것을 재는 유일한
+방법이다. 있는 것은 **크레이트 하나의 선언**을 보는 시험 하나뿐이다
+(`crates/tasty-font/src/lib.rs` 의 `wgpu_stays_an_optional_dependency_of_this_crate` —
+`wgpu` 가 비-optional 로 돌아가거나 `gpu` feature 가 사라지거나 `default` 가 안 비면 죽는다,
+변이로 확인). **그것이 그래프를 보는 것은 아니다** — 다른 크레이트가 wgpu 를 새로 들이면
+그 시험은 초록인 채로 스택이 돌아온다.
 
-현재 상태(실측 2026-09-20): 헤드리스 그래프는 **330** 노드이고 `egui` 계열(`egui`·`ecolor`·
-`emath`·`epaint`·`egui_extras`)은 **없다.** 반면 `wgpu`·`naga`·`glow`·`ash`·`cosmic-text`·
-`fontdb`·`swash`·`skrifa` 는 **아직 있다** — 들어오는 문이 `tasty-font` 하나이고, 그 크레이트는
-헤드리스 코드가 실제로 쓰면서 `wgpu`·`cosmic-text` 를 비-optional 로 든다. 빼려면 그 크레이트를
-설정/해석 타입과 GPU 아틀라스로 갈라야 한다(별개 작업).
+현재 상태(실측 2026-09-20, 위 ① 규약 = 이름만 유일): 헤드리스 그래프는 **306** 노드다.
+없는 것: `egui` 계열(`egui`·`ecolor`·`emath`·`epaint`·`egui_extras`) · `winit` ·
+**`wgpu` 계열(`wgpu`·`wgpu-core`·`wgpu-hal`·`wgpu-types`·`naga`·`glow`·`ash`)**.
+`wgpu` 가 빠진 것은 `tasty-font` 이 그것을 `gpu` feature 뒤 optional 로 들고 루트의 `gui` 만
+켜기 때문이다([ADR-0336](../adr/0336-the-font-crate-splits-at-the-device-boundary.md)).
+
+**아직 있는 것: `cosmic-text`·`fontdb`·`swash`·`skrifa`·`read-fonts`·`ttf-parser`.**
+이것은 미완이 아니라 결정이다 — `FontConfig` 의 필드 셋이 cosmic-text 타입이고 헤드리스
+코드(`src/boot/locale_font.rs` 의 `family_path`)가 그 타입을 실제로 쓴다. 빼려면 폰트 DB 를
+여는 수단 자체를 바꿔야 하고 그것은 **동작 변경**이다.
 
 gui 전용 심볼(`AppState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 없이 쓰면 gui 빌드는 통과하지만 headless 빌드만 깨진다. 이 회귀는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡(`cargo check --workspace --no-default-features --locked`)이 `main` push 마다 자동 검출한다(문서만 바뀐 push 는 제외).
 

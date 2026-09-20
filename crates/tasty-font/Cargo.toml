@@ -9,14 +9,25 @@ description = "Font atlas, glyph rasterization, and font registry for Tasty"
 # Cosmic-text for font shaping/rasterization
 cosmic-text = "0.18"
 
-# wgpu for GPU font atlas texture
-wgpu = "24"
+# wgpu for GPU font atlas texture. Optional: only the `atlas` module links it,
+# and a headless consumer that just needs FontConfig must not pull the wgpu
+# stack into its dependency graph. See the gpu feature below.
+wgpu = { version = "24", optional = true }
 
 # Logging
 tracing = "0.1"
 
 # Fast non-cryptographic hash for hot-path glyph cache fallback
 rustc-hash = "2"
+
+[features]
+# Empty on purpose. A default that is on means a new consumer never has to ask,
+# and the whole point of this split is that asking is what keeps wgpu out of the
+# headless graph. Consumers that draw glyphs turn it on by name. See ADR-0336.
+default = []
+# The GPU glyph atlas (src/atlas.rs). Everything else in this crate is
+# device-free and compiles without it.
+gpu = ["dep:wgpu"]
 
 [lints]
 workspace = true
