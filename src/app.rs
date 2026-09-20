@@ -1,6 +1,8 @@
 //! `App` — winit `ApplicationHandler` 의 본체. 다중 View + 모달 + 플러그인 매니저 +
 //! parked AppState 보관. 메서드는 도메인별 서브모듈로 분산되어 있다.
 
+/// 조합 공용 — 헤드리스 데몬 루프도 이 드레인을 쓴다.
+pub(crate) mod agent_events;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_client;
 #[cfg(feature = "gui")]

@@ -675,6 +675,28 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 최종 방어선이다 — `docs/adr/0111-headless-drains-the-intent-queue.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
         crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine);
+        // agent 사건 큐도 같은 자리에서 비운다. 이것이 없으면 `events.fetch` 는
+        // 이 조합에서도 정상 응답하는데 링이 영영 비어 있다 — 오류가 아니라
+        // **조용한 빈 답**이라 소비자가 구분하지 못한다. 꺼내고 내보내는 규칙은
+        // gui 의 `about_to_wait` 드레인과 **같은 함수**를 쓴다
+        // (`crate::app::agent_events`) — 두 벌로 두면 한쪽만 고쳐진다.
+        //
+        // 자리는 대기 **직전**이다. `events.fetch` 요청이 도착해 루프를 깨우면 다음
+        // 바퀴가 그때까지의 사건을 발행하고 대기 중인 조회가 조건 변수로 깨어난다.
+        // 사건이 그 뒤에 생기고 다른 입력이 하나도 없으면, 이 조합에는 큐가 루프를
+        // 깨우는 경로가 없으므로 발행은 그 조회의 `wait_ms` 가 만료돼 소비자가 다시
+        // 물을 때까지 밀린다 — 폴링 한 주기의 지연이고 사건은 안 사라진다(위치가
+        // 그대로 남는다).
+        {
+            let mut agent_events = Vec::new();
+            let mut dropped = 0u64;
+            crate::app::agent_events::take_from(
+                &engine.agent_event_queue,
+                &mut agent_events,
+                &mut dropped,
+            );
+            crate::app::agent_events::emit(app.plugin_manager.as_mut(), agent_events, dropped);
+        }
         // plugin manager 는 자기 허브를 따로 소유한다 — 대기 계산은 min 으로 합성.
         let deadline = crate::app::timers::min_deadline(
             app.timers.next_deadline(),

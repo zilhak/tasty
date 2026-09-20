@@ -211,7 +211,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 | `remote.workspaces` | 인자만 읽는다. App 상태를 하나도 안 본다 |
 | `agent.task_await` | 이 engine 의 `task_waker_hub` + `agent_seq` |
 | `approval.await` | 이 engine 의 `approval_store` |
-| `events.fetch` | `App.plugin_manager` 의 사건 버스 링. `wait_ms` 대기는 워커로 나가 dispatch 루프를 안 막는다 |
+| `events.fetch` | `App.plugin_manager` 의 사건 버스 링. `wait_ms` 대기는 워커로 나가 dispatch 루프를 안 막는다. **읽는 쪽만 있으면 답이 빈다** — `agent` 사건 큐를 버스로 옮기는 드레인이 데몬 루프(`run_headless`)의 맨 위에도 있어야 하고, 두 조합이 같은 함수를 쓴다(`app::agent_events`) |
 | `system.shutdown` | 데몬을 멈춘다(debug 전용). 응답을 먼저 보내고 run loop 를 끊는다 |
 
 ### 없는 것이 정답 (11)
