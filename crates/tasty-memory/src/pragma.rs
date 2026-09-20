@@ -41,27 +41,35 @@ const IN_MEMORY_JOURNAL_MODE: &str = "memory";
 /// `synchronous` · `foreign_keys` 는 거절되는 갈래가 없어 반환값이 그대로 답이다.
 pub fn apply_connection_pragmas(conn: &Connection, path: &Path) {
     // 네 pragma 의 순서는 이 함수가 생기기 전 두 사본이 쓰던 것 그대로다.
-    if let Err(e) = conn.pragma_update(None, "journal_mode", JOURNAL_MODE) {
-        tracing::warn!(
-            "{}: failed to set journal_mode={JOURNAL_MODE}: {e}",
-            path.display()
-        );
+    set_pragma(conn, path, "journal_mode", JOURNAL_MODE);
+    set_pragma(conn, path, "synchronous", "NORMAL");
+    set_pragma(conn, path, "foreign_keys", "ON");
+    set_wal_size_limit(conn, path);
+    // 위 네 줄이 전부 Ok 여도 journal_mode 는 안 섰을 수 있다 — 이 함수의 doc 참조.
+    confirm_journal_mode(conn, path);
+}
+
+/// 값 하나를 세우고, 실패하면 그 자리를 이름으로 말한다.
+fn set_pragma(conn: &Connection, path: &Path, name: &str, value: &str) {
+    if let Err(e) = conn.pragma_update(None, name, value) {
+        tracing::warn!("{}: failed to set {name}={value}: {e}", path.display());
     }
-    for (name, value) in [("synchronous", "NORMAL"), ("foreign_keys", "ON")] {
-        if let Err(e) = conn.pragma_update(None, name, value) {
-            tracing::warn!("{}: failed to set {name}={value}: {e}", path.display());
-        }
-    }
-    // 이 pragma 가 빠지면 증상이 "조금 느려짐" 이 아니라 WAL 고착
-    // (`WAL_SIZE_LIMIT_BYTES` doc)이라, 조용히 없는 것과 조용히 실패한 것을
-    // 구별할 수 없으면 같은 조사를 처음부터 다시 하게 된다.
+}
+
+/// WAL 크기 상한. 이 pragma 가 빠지면 증상이 "조금 느려짐" 이 아니라 WAL 고착
+/// (`WAL_SIZE_LIMIT_BYTES` doc)이라, 조용히 없는 것과 조용히 실패한 것을 구별할 수
+/// 없으면 같은 조사를 처음부터 다시 하게 된다.
+fn set_wal_size_limit(conn: &Connection, path: &Path) {
     if let Err(e) = conn.pragma_update(None, "journal_size_limit", WAL_SIZE_LIMIT_BYTES) {
         tracing::warn!(
             "{}: failed to set journal_size_limit; the WAL file can grow without bound: {e}",
             path.display()
         );
     }
-    // 위 네 줄이 전부 Ok 여도 journal_mode 는 안 섰을 수 있다 — 아래 doc 참조.
+}
+
+/// 되읽어서 요청과 대조한다. 요청이 조용히 거절되는 갈래는 이것만 잡는다.
+fn confirm_journal_mode(conn: &Connection, path: &Path) {
     match effective_journal_mode(conn) {
         Ok(mode) if journal_mode_is_expected(&mode) => {}
         Ok(mode) => tracing::warn!(
