@@ -107,9 +107,23 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   맨 앞**(`StreamHub::repay_pending_loss`)에서 한 칸이 비면 그때 통지를 먼저 넣는다. 그래서
   통지는 **마지막 생존 프레임과 공백 이후 첫 프레임 사이**에 정확히 앉는다 — 위치가 곧
   "여기서 끊겼다" 는 뜻이다. 넣기에 실패하면 빚을 **안 지운다**(다음 기회에 전액 갚는다).
+  - **★ 그래서 통지의 지연에는 상한이 없다.** 갚는 자리가 `push` 하나뿐인데 server→client push 는
+    전부 **변화 구동**이다 — 1 Hz tick 에 올라타는 셋(`Activity`·`Attention`·`Cwd`)이 diff 만 밀고
+    (그 성질을 `busy_activity_forwards_only_on_change` 가 고정한다) 나머지는 PTY 출력 tap · 구조
+    회신 · mesh 처럼 사건이 있을 때만 민다. **무조건 도는 주기 push 가 없다.** 그래서 폭주 직후
+    그 surface 가 조용해지면 빚은 무기한 남고, mirror 는 이미 공백이 난 화면을 경고 없이 그린
+    채로 있는다.
 - **통지 성공은 소비자가 따라잡은 것으로 안 센다.** `repay_pending_loss` 는 `StreamSink::lag`
   을 건드리지 않는다 — 서버가 스스로 넣은 프레임이 `LAG_LIMIT` 강제분리 시계를 되돌리면,
   영원히 안 읽는 소비자가 영원히 안 끊긴다.
+  - **★ 그 이면 — 선언한 연결은 회복 문턱이 한 칸에서 두 칸으로 올라간다.** 통지가 본 프레임보다
+    먼저 빈 칸을 가져가는데 `lag` 은 본 프레임이 들어가야 0 이 되므로, 소비자가 **push 한 번당
+    정확히 한 칸씩** 비우는 구간에서는 빚이 있는 선언 연결이 본 프레임을 한 장도 못 넣고
+    `LAG_LIMIT` 에서 끊긴다. 같은 속도의 안 선언한 연결은 매번 `Sent` 라 안 끊긴다. 실측
+    (`StreamHub` 단위, 264 회 상한, `(마지막 PushResult, Sent 수)`): 한 칸이면 미선언
+    `(Sent, 264)` · 선언 `(Disconnected, 0)`, 두 칸이면 둘 다 `(Sent, 264)`. 차이가 나는 구간은
+    **정확히 1:1 소비**뿐이다. 근거와 기각한 대안(`lag` 되돌리기)은
+    [ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
 
 **왜 `ipc.stream` 의 판을 안 올리는가.** `STREAM_PROTO` 는 서버가 핸드셰이크에서 **동등
 비교**하는 수다(`validate_stream_proto`). 올리면 기능이 좁아지는 것이 아니라 구 peer 의 연결이
