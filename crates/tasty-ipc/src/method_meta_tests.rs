@@ -674,3 +674,77 @@ fn the_unrouted_third_branch_asks_the_exact_table_not_the_prefix_fallback() {
 
     ns_unregister("zzztestns");
 }
+
+// ── 재전달 분류 (`MethodEffect`) ──────────────────────────────────────
+
+/// 표의 모든 이름이 분류를 갖는다 — 이 시험이 아니라 **타입**이 그것을 강제한다.
+///
+/// 여기서 재는 것은 그 다음 명제다: 세 갈래가 **전부 쓰인다.** 한 갈래가 비면 그 값은
+/// 계약이 아니라 장식이고, 소비자가 그것으로 갈래를 만들 수 없다. 하한을 둔 이유는
+/// 상한을 두면 메서드를 더할 때마다 이 수를 부양해야 하기 때문이다.
+#[test]
+fn every_branch_of_the_effect_classification_is_used() {
+    use crate::method_meta::{DEBUG_METHODS, MethodEffect};
+    let mut read = 0;
+    let mut idem = 0;
+    let mut mutate = 0;
+    for (_, meta) in METHOD_TABLE.iter().chain(DEBUG_METHODS.iter()) {
+        match meta.effect {
+            MethodEffect::Read => read += 1,
+            MethodEffect::Idempotent => idem += 1,
+            MethodEffect::Mutate => mutate += 1,
+        }
+    }
+    assert!(read > 0 && idem > 0 && mutate > 0, "{read} {idem} {mutate}");
+    assert!(
+        METHOD_TABLE.len() + DEBUG_METHODS.len() == read + idem + mutate,
+        "센 것이 표보다 적다 — 갈래가 늘었는데 이 시험이 안 따라갔다"
+    );
+}
+
+/// 분류의 축은 "읽기인가" 가 **아니라** "두 번 전달하면 차이가 남는가" 다.
+///
+/// 그 차이가 드러나는 자리를 앵커로 박는다 — 이름만 보고 다시 칠하면 여기서 빨개진다.
+/// 각 줄이 재는 명제가 다르다:
+#[test]
+fn the_effect_axis_is_redelivery_not_the_verb() {
+    use crate::method_meta::MethodEffect::*;
+    let eff = |m: &str| {
+        method_meta(m)
+            .unwrap_or_else(|| panic!("표에 없다: {m}"))
+            .effect
+    };
+
+    // 이름이 조회인데 파일을 남긴다.
+    assert_eq!(eff("ui.screenshot"), Mutate);
+    // 이름이 읽기인데 소비한다(`peek` 기본 false).
+    assert_eq!(eff("message.read"), Mutate);
+    // 이름이 읽기이고 실제로 커서를 안 옮긴다.
+    assert_eq!(eff("surface.read_since_mark"), Read);
+    // 이름이 `set` 인데 값이 "지금" 이라 재전달이 위치를 옮긴다.
+    assert_eq!(eff("surface.set_mark"), Mutate);
+    // 값을 호출자가 주는 `set` 은 수렴한다.
+    assert_eq!(eff("surface.meta.set"), Idempotent);
+    // 이름이 `acquire` 인데 같은 holder 면 멱등이라고 구현이 이미 적어 뒀다.
+    assert_eq!(eff("agent.lease_acquire"), Idempotent);
+    // 이름이 `create` 인데 id 를 호출자가 안 줘서 두 번이면 둘이 생긴다.
+    assert_eq!(eff("workspace.create"), Mutate);
+    // 이름이 `start` 인데 observer_id 가 새로 난다.
+    assert_eq!(eff("output.observe_start"), Mutate);
+    // 닫힌 것은 닫힌 채로 있다.
+    assert_eq!(eff("tab.close"), Idempotent);
+}
+
+/// plugin namespace 로 넘어가는 이름은 호스트가 뜻을 모른다 — 그때 고르는 값은
+/// **조심스러운 쪽**이어야 한다. `Read` 로 새면 소비자가 재전달해도 된다고 읽는다.
+#[test]
+fn a_forwarded_namespace_name_is_assumed_unsafe_to_redeliver() {
+    use crate::method_meta::MethodEffect;
+    let _g = test_lock();
+    ns_clear();
+    ns_register("zzzeffectns");
+    let meta = method_meta("zzzeffectns.anything").expect("prefix 등록이 안 먹었다");
+    assert!(meta.namespace_forward);
+    assert_eq!(meta.effect, MethodEffect::Mutate);
+    ns_unregister("zzzeffectns");
+}

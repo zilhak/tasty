@@ -14,6 +14,30 @@ use tasty_plugin_manifest::Permission;
 
 use crate::ipc_namespace::IpcNamespaceRegistry;
 
+/// 이 메서드를 **두 번 전달하면 관측 가능한 차이가 남는가**.
+///
+/// 축이 "읽기인가" 가 아니라 **재전달**인 이유는 이 값을 쓰는 쪽이 그것만 묻기 때문이다 —
+/// 응답을 못 받은 호출자가 다시 보내도 되는지. 그래서 파일을 쓰는 조회
+/// (`ui.screenshot`)는 이름이 읽기 계열이어도 [`MethodEffect::Mutate`] 다. 두 번째 호출이
+/// 두 번째 파일을 남긴다.
+///
+/// 판정 불가를 뜻하는 값은 없다 — 생성자가 이 값을 **요구**하므로 새 메서드는 분류 없이는
+/// 표에 못 들어간다. 별도 목록으로 뒀다면 그 목록과 표가 갈릴 수 있었다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodEffect {
+    /// 호스트 상태를 안 바꾼다. 두 번째 전달은 아무 흔적도 안 남긴다.
+    ///
+    /// 바깥을 조회하는 것(원격 probe 등)도 호스트 상태를 안 바꾸면 여기다.
+    Read,
+    /// 상태를 바꾸지만 두 번째 전달이 **같은 끝 상태로 수렴**한다. 값을 호출자가 주는
+    /// 쓰기(`*.set` · 이름을 지정한 삭제)와, 이미 멱등 계약을 문서로 든 것
+    /// (`agent.lease_acquire` 의 같은 holder 재획득)이 여기다.
+    Idempotent,
+    /// 두 번째 전달이 **두 번째 효과**를 남긴다. 새 id 를 내는 생성, 누적되는 기록,
+    /// 밖으로 나가는 전송, 그리고 시점이 값이 되는 것(`surface.set_mark`)이 여기다.
+    Mutate,
+}
+
 /// 한 IPC 메서드에 대한 권한 메타.
 #[derive(Debug, Clone, Copy)]
 pub struct MethodMeta {
@@ -39,14 +63,17 @@ pub struct MethodMeta {
     /// agent 토큰이 설치된 plugin 의 namespace 전체를 부를 수 있었다
     /// ([ADR-0271](../../../docs/adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md)).
     pub namespace_forward: bool,
+    /// 이 메서드를 두 번 전달했을 때 무엇이 남는가. [`MethodEffect`] 참조.
+    pub effect: MethodEffect,
 }
 
-const fn plugin(required: &'static [Permission]) -> MethodMeta {
+const fn plugin(effect: MethodEffect, required: &'static [Permission]) -> MethodMeta {
     MethodMeta {
         plugin_callable: true,
         plugin_only: false,
         required,
         namespace_forward: false,
+        effect,
     }
 }
 
@@ -54,21 +81,23 @@ const fn plugin(required: &'static [Permission]) -> MethodMeta {
 ///
 /// `local_only()` 의 거울이다. 표에 등재하는 이유도 같다: 거부가 **정책인지 누락인지**
 /// 구분되게 하려고. 다른 것은 그 거부를 누가 받느냐뿐이다.
-const fn plugin_only(required: &'static [Permission]) -> MethodMeta {
+const fn plugin_only(effect: MethodEffect, required: &'static [Permission]) -> MethodMeta {
     MethodMeta {
         plugin_callable: true,
         plugin_only: true,
         required,
         namespace_forward: false,
+        effect,
     }
 }
 
-const fn local_only() -> MethodMeta {
+const fn local_only(effect: MethodEffect) -> MethodMeta {
     MethodMeta {
         plugin_callable: false,
         plugin_only: false,
         required: &[],
         namespace_forward: false,
+        effect,
     }
 }
 
@@ -77,13 +106,14 @@ const fn local_only() -> MethodMeta {
 ///
 /// prefix-기반 fallback(`surface.ime_*` 등)은 [`PREFIX_RULES`] 참조.
 pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
+    use MethodEffect::*;
     use Permission::*;
     &[
         // ── 호스트 system ─────────────────────────────────────────────
-        ("system.info", plugin(&[])),
+        ("system.info", plugin(Read, &[])),
         // GPU 리소스 카운트 read-only 스냅샷 (메모리 누수 soak 검증). 순수 조회지만
         // 내부 렌더러 구조를 노출하는 진단 표면이라 local_only — plugin 미노출.
-        ("system.gpu_stats", local_only()),
+        ("system.gpu_stats", local_only(Read)),
         // ── plugin 보조 채널 ──────────────────────────────────────────
         // egui-mesh 프레임용 공유 메모리 생성. main 채널 + 보조 채널(fd/HANDLE 송신)을
         // 함께 다뤄야 해서 라우터가 아니라 plugin 진입부가 가로채 처리하지만, **등재는
@@ -94,103 +124,115 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 요구할지(그리고 개수·총량 상한을 함께 둘지)는 매니페스트 호환성이 걸린
         // 별도 결정이고, ADR-0152 의 "이 ADR 이 안 정한 것" 에 열린 질문으로 있다.
         // 그때까지는 현재 동작 그대로 등재해 최소한 cap·rate·audit 는 걸리게 한다.
-        ("host.shared_buffer.create", plugin_only(&[])),
+        ("host.shared_buffer.create", plugin_only(Mutate, &[])),
         // ── 타이머 관측 ───────────────────────────────────────────────
         // 등록된 주기 작업의 read-only 스냅샷("지금 무엇이 이 인스턴스를 깨우는가").
         // local_only — plugin 이 호스트 내부 스케줄을 알아야 할 이유가 없고, 조회
         // 전용이라 등록/취소 경로 자체가 없다. 진단·회귀검증 목적이므로 새 권한
         // 토큰을 신설해 기존 plugin 재승인을 유발할 값어치도 없다.
-        ("timer.list", local_only()),
+        ("timer.list", local_only(Read)),
         // ── workspace (read/write) ────────────────────────────────────
-        ("workspace.list", plugin(&[SurfaceRead])),
-        ("workspace.create", plugin(&[SurfaceWrite])),
-        ("workspace.update", plugin(&[SurfaceWrite])),
-        ("workspace.move", plugin(&[SurfaceWrite])),
+        ("workspace.list", plugin(Read, &[SurfaceRead])),
+        ("workspace.create", plugin(Mutate, &[SurfaceWrite])),
+        ("workspace.update", plugin(Idempotent, &[SurfaceWrite])),
+        ("workspace.move", plugin(Idempotent, &[SurfaceWrite])),
         // workspace.create 와 대칭 — 만들 수 있는 주체는 닫을 수도 있어야 한다(원칙 2).
         // 새 권한 토큰을 만들지 않는 이유: pane.close / tab.close 도 같은 SurfaceWrite
         // 이고, 닫기만 따로 승인받게 하면 기존 plugin 이 전부 재승인 대상이 된다.
-        ("workspace.close", plugin(&[SurfaceWrite])),
+        ("workspace.close", plugin(Idempotent, &[SurfaceWrite])),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
-        ("workspace_category.list", plugin(&[SurfaceRead])),
-        ("workspace_category.create", plugin(&[SurfaceWrite])),
-        ("workspace_category.rename", plugin(&[SurfaceWrite])),
-        ("workspace_category.delete", plugin(&[SurfaceWrite])),
-        ("workspace_category.move", plugin(&[SurfaceWrite])),
+        ("workspace_category.list", plugin(Read, &[SurfaceRead])),
+        ("workspace_category.create", plugin(Mutate, &[SurfaceWrite])),
+        (
+            "workspace_category.rename",
+            plugin(Idempotent, &[SurfaceWrite]),
+        ),
+        (
+            "workspace_category.delete",
+            plugin(Idempotent, &[SurfaceWrite]),
+        ),
+        (
+            "workspace_category.move",
+            plugin(Idempotent, &[SurfaceWrite]),
+        ),
         // ── pane / split ──────────────────────────────────────────────
-        ("pane.list", plugin(&[SurfaceRead])),
-        ("pane.close", plugin(&[SurfaceWrite])),
-        ("split", plugin(&[SurfaceWrite])),
+        ("pane.list", plugin(Read, &[SurfaceRead])),
+        ("pane.close", plugin(Idempotent, &[SurfaceWrite])),
+        ("split", plugin(Mutate, &[SurfaceWrite])),
         // ── tab ───────────────────────────────────────────────────────
-        ("tab.list", plugin(&[SurfaceRead])),
-        ("tab.create", plugin(&[SurfaceWrite])),
-        ("tab.close", plugin(&[SurfaceWrite])),
-        ("tab.move", plugin(&[SurfaceWrite])),
+        ("tab.list", plugin(Read, &[SurfaceRead])),
+        ("tab.create", plugin(Mutate, &[SurfaceWrite])),
+        ("tab.close", plugin(Idempotent, &[SurfaceWrite])),
+        ("tab.move", plugin(Idempotent, &[SurfaceWrite])),
         // ── preset (layout preset CRUD + apply) ───────────────────────
-        ("preset.list", plugin(&[SurfaceRead])),
-        ("preset.get", plugin(&[SurfaceRead])),
-        ("preset.save", plugin(&[SurfaceWrite])),
-        ("preset.delete", plugin(&[SurfaceWrite])),
-        ("preset.rename", plugin(&[SurfaceWrite])),
-        ("preset.capture", plugin(&[SurfaceWrite])),
-        ("preset.apply", plugin(&[SurfaceWrite])),
+        ("preset.list", plugin(Read, &[SurfaceRead])),
+        ("preset.get", plugin(Read, &[SurfaceRead])),
+        ("preset.save", plugin(Idempotent, &[SurfaceWrite])),
+        ("preset.delete", plugin(Idempotent, &[SurfaceWrite])),
+        ("preset.rename", plugin(Idempotent, &[SurfaceWrite])),
+        ("preset.capture", plugin(Idempotent, &[SurfaceWrite])),
+        ("preset.apply", plugin(Idempotent, &[SurfaceWrite])),
         // ── surface (구조 조작) ───────────────────────────────────────
-        ("surface.list", plugin(&[SurfaceRead])),
+        ("surface.list", plugin(Read, &[SurfaceRead])),
         // 등록된 surface kind 조회. 만드는 것이 유일한 확인이던 자리를 읽기 전용으로
         // 대체한다 — plugin 도 자기 kind 가 실제로 등록됐는지 물을 수 있어야 해서
         // `local_only` 가 아니다. 노출값은 kind 이름·i18n 키·렌더 경로·출처뿐이라
         // `SurfaceRead` 보다 넓은 권한을 요구하지 않는다.
-        ("surface.kinds", plugin(&[SurfaceRead])),
-        ("surface.close", plugin(&[SurfaceWrite])),
-        ("surface.close_self", plugin(&[SurfaceWrite])),
+        ("surface.kinds", plugin(Read, &[SurfaceRead])),
+        ("surface.close", plugin(Idempotent, &[SurfaceWrite])),
+        ("surface.close_self", plugin(Idempotent, &[SurfaceWrite])),
         // tree/meta는 read 권한
-        ("tree", plugin(&[SurfaceRead])),
+        ("tree", plugin(Read, &[SurfaceRead])),
         // webview — plugin 이 webview-enabled surface 의 URL 설정. SurfaceWrite 권한.
-        ("webview.set_url", plugin(&[SurfaceWrite])),
+        ("webview.set_url", plugin(Idempotent, &[SurfaceWrite])),
         // theme.query — 현재 resolved 전역 Theme 스냅샷 조회. webview-kind surface(예:
         // markdown)는 `set_context` 를 받지 않아 Theme 이 자동 push 되지 않으므로, 문서를
         // (재)생성할 때마다 이 read-only 조회로 대신한다(ADR-0065). surface 별 데이터가
         // 아닌 전역 정보라 별도 권한 없이 노출(`system.info` 와 같은 근거).
-        ("theme.query", plugin(&[])),
+        ("theme.query", plugin(Read, &[])),
         // surface.set_cwd — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
         // 예: explorer 가 root 변경 시 carry 후보 cwd 갱신.
-        ("surface.set_cwd", plugin(&[SurfaceWrite])),
-        ("surface.meta.get", plugin(&[SurfaceRead])),
-        ("surface.meta.list", plugin(&[SurfaceRead])),
-        ("surface.meta.set", plugin(&[SurfaceWrite])),
-        ("surface.meta.unset", plugin(&[SurfaceWrite])),
+        ("surface.set_cwd", plugin(Idempotent, &[SurfaceWrite])),
+        ("surface.meta.get", plugin(Read, &[SurfaceRead])),
+        ("surface.meta.list", plugin(Read, &[SurfaceRead])),
+        ("surface.meta.set", plugin(Idempotent, &[SurfaceWrite])),
+        ("surface.meta.unset", plugin(Idempotent, &[SurfaceWrite])),
         // ── terminal I/O ──────────────────────────────────────────────
-        ("surface.send", plugin(&[TerminalWrite])),
-        ("surface.send_key", plugin(&[TerminalWrite])),
-        ("surface.send_combo", plugin(&[TerminalWrite])),
-        ("surface.send_to", plugin(&[TerminalWrite])),
-        ("surface.send_wait_idle", plugin(&[TerminalWrite])),
-        ("surface.wake", plugin(&[TerminalSpawn])),
-        ("surface.set_mark", plugin(&[TerminalRead])),
+        ("surface.send", plugin(Mutate, &[TerminalWrite])),
+        ("surface.send_key", plugin(Mutate, &[TerminalWrite])),
+        ("surface.send_combo", plugin(Mutate, &[TerminalWrite])),
+        ("surface.send_to", plugin(Mutate, &[TerminalWrite])),
+        ("surface.send_wait_idle", plugin(Mutate, &[TerminalWrite])),
+        ("surface.wake", plugin(Mutate, &[TerminalSpawn])),
+        ("surface.set_mark", plugin(Mutate, &[TerminalRead])),
         // completion 은 read 가 아니라 attention(주의 환기) 발동 — PushNotification
         // 계열이므로 notification.* 와 동일한 Notification 권한.
-        ("surface.completion", plugin(&[Notification])),
+        ("surface.completion", plugin(Mutate, &[Notification])),
         // attention 조회/해제 — completion 의 역방향(해제)과 그 관측 표면.
         // raise 와 같은 상태를 읽고 되돌리는 것이라 같은 `Notification` 버킷에 둔다:
         // 발동 권한만 주고 해제 권한을 빼면 자기가 켠 신호를 못 끄는 비대칭이 된다.
-        ("surface.attention.get", plugin(&[Notification])),
-        ("surface.attention.clear", plugin(&[Notification])),
-        ("surface.read_since_mark", plugin(&[TerminalRead])),
-        ("surface.mouse_tracking", plugin(&[TerminalRead])),
-        ("surface.parse_since_mark", plugin(&[TerminalRead])),
-        ("surface.commands", plugin(&[TerminalRead])),
-        ("surface.last_command", plugin(&[TerminalRead])),
-        ("surface.command_at", plugin(&[TerminalRead])),
+        ("surface.attention.get", plugin(Read, &[Notification])),
+        (
+            "surface.attention.clear",
+            plugin(Idempotent, &[Notification]),
+        ),
+        ("surface.read_since_mark", plugin(Read, &[TerminalRead])),
+        ("surface.mouse_tracking", plugin(Read, &[TerminalRead])),
+        ("surface.parse_since_mark", plugin(Read, &[TerminalRead])),
+        ("surface.commands", plugin(Read, &[TerminalRead])),
+        ("surface.last_command", plugin(Read, &[TerminalRead])),
+        ("surface.command_at", plugin(Read, &[TerminalRead])),
         // ── output observer ─────────────────────────────────────────
-        ("output.observe_start", plugin(&[TerminalRead])),
-        ("output.observe_stop", plugin(&[TerminalRead])),
-        ("output.observe_list", plugin(&[TerminalRead])),
-        ("output.observe_info", plugin(&[TerminalRead])),
-        ("surface.screen_text", plugin(&[TerminalRead])),
-        ("surface.cursor_position", plugin(&[TerminalRead])),
-        ("surface.foreground_process", plugin(&[TerminalRead])),
-        ("surface.locate", plugin(&[SurfaceRead])),
-        ("surface.respawn_terminal", plugin(&[TerminalSpawn])),
-        ("surface.is_typing", plugin(&[TerminalRead])),
+        ("output.observe_start", plugin(Mutate, &[TerminalRead])),
+        ("output.observe_stop", plugin(Idempotent, &[TerminalRead])),
+        ("output.observe_list", plugin(Read, &[TerminalRead])),
+        ("output.observe_info", plugin(Read, &[TerminalRead])),
+        ("surface.screen_text", plugin(Read, &[TerminalRead])),
+        ("surface.cursor_position", plugin(Read, &[TerminalRead])),
+        ("surface.foreground_process", plugin(Read, &[TerminalRead])),
+        ("surface.locate", plugin(Read, &[SurfaceRead])),
+        ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn])),
+        ("surface.is_typing", plugin(Read, &[TerminalRead])),
         // ── child-terminal 관리 (ADR-0040 / occupancy-04) ─────────────
         // 호스트가 내재화한 자식 터미널 registry. codex/claude plugin 이
         // 자체 registry 를 걷어내고 이 method 들로 위임한다. 권한은 각 method 가
@@ -199,30 +241,33 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // SurfaceWrite)의 요구를 합집합으로 반영한다.
         (
             "terminal.spawn",
-            plugin(&[SurfaceWrite, TerminalWrite, TerminalSpawn]),
+            plugin(Mutate, &[SurfaceWrite, TerminalWrite, TerminalSpawn]),
         ),
-        ("terminal.tell", plugin(&[TerminalWrite])),
-        ("terminal.children", plugin(&[SurfaceRead])),
-        ("terminal.parent", plugin(&[SurfaceRead])),
+        ("terminal.tell", plugin(Mutate, &[TerminalWrite])),
+        ("terminal.children", plugin(Read, &[SurfaceRead])),
+        ("terminal.parent", plugin(Read, &[SurfaceRead])),
         // 자식 단건 상태 조회. children/parent 와 동일하게 순수 조회라
         // SurfaceRead 단독.
-        ("terminal.state", plugin(&[SurfaceRead])),
-        ("terminal.kill", plugin(&[SurfaceWrite])),
-        ("terminal.respawn", plugin(&[TerminalWrite, TerminalSpawn])),
-        ("terminal.broadcast", plugin(&[TerminalWrite])),
+        ("terminal.state", plugin(Read, &[SurfaceRead])),
+        ("terminal.kill", plugin(Idempotent, &[SurfaceWrite])),
+        (
+            "terminal.respawn",
+            plugin(Mutate, &[TerminalWrite, TerminalSpawn]),
+        ),
+        ("terminal.broadcast", plugin(Mutate, &[TerminalWrite])),
         // hook 이 idle/needs_input 신호를 호스트 registry 에 주입. 자식 상태 write.
-        ("terminal.set_state", plugin(&[SurfaceWrite])),
+        ("terminal.set_state", plugin(Idempotent, &[SurfaceWrite])),
         // 임의의 기존 surface 를 명시적으로 child 로 등록(soft 점유) —
         // `docs/features/child-terminal/index.md`("adopt" 절). sibling IPC 핸들러를
         // 호출하지 않고 순수 in-process core 함수(register_child/occupy_soft)만
         // 쓰므로 "child 관계 write" 성격의 SurfaceWrite 단독으로 충분
         // (terminal.kill/terminal.set_state 와 동일 컨벤션).
-        ("terminal.adopt", plugin(&[SurfaceWrite])),
+        ("terminal.adopt", plugin(Idempotent, &[SurfaceWrite])),
         // child 관계·soft 점유만 해제하고 surface 는 닫지 않음 —
         // `docs/features/child-terminal/index.md`("release" 절). adopt 와 대칭으로
         // 순수 in-process core 함수(remove_child/release_soft_occupancy)만 쓰므로
         // SurfaceWrite 단독.
-        ("terminal.release", plugin(&[SurfaceWrite])),
+        ("terminal.release", plugin(Idempotent, &[SurfaceWrite])),
         // ── headless PTY primitive (docs/adr/0050-headless-pty-primitive.md /
         // pty_registry) ────────────────────────────────────────────────
         // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
@@ -230,194 +275,233 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 사용한다(위 ADR Decision 참고). spawn 은 Surface 를 안 만들어 SurfaceWrite
         // 불필요, wait 는 라이브 트리 대신 PtyEntry exit cell 로 판정해 SurfaceRead
         // 불필요, kill 은 Surface 를 닫지 않고 프로세스만 종료해 SurfaceWrite 불필요.
-        ("pty.spawn", plugin(&[TerminalSpawn])),
-        ("pty.write", plugin(&[TerminalWrite])),
-        ("pty.read", plugin(&[TerminalRead])),
-        ("pty.wait", plugin(&[TerminalRead])),
-        ("pty.kill", plugin(&[TerminalWrite])),
-        ("pty.list", plugin(&[TerminalRead])),
+        ("pty.spawn", plugin(Mutate, &[TerminalSpawn])),
+        ("pty.write", plugin(Mutate, &[TerminalWrite])),
+        ("pty.read", plugin(Read, &[TerminalRead])),
+        ("pty.wait", plugin(Read, &[TerminalRead])),
+        ("pty.kill", plugin(Idempotent, &[TerminalWrite])),
+        ("pty.list", plugin(Read, &[TerminalRead])),
         // 승격 경로: headless PTY 를 실제 Surface 로 만든다 — spawn/write/... 와
         // 달리 Surface 트리를 새로 만들므로 terminal.spawn 과 동일하게 SurfaceWrite 를
         // 더한다(TerminalSpawn 은 새 터미널 surface 생성 권한).
-        ("pty.attach_surface", plugin(&[SurfaceWrite, TerminalSpawn])),
-        ("surface.fire_hook", plugin(&[SurfaceWrite])),
+        (
+            "pty.attach_surface",
+            plugin(Mutate, &[SurfaceWrite, TerminalSpawn]),
+        ),
+        ("surface.fire_hook", plugin(Mutate, &[SurfaceWrite])),
         // ── hooks ─────────────────────────────────────────────────────
-        ("hook.set", plugin(&[SurfaceWrite])),
-        ("hook.list", plugin(&[SurfaceRead])),
-        ("hook.unset", plugin(&[SurfaceWrite])),
-        ("global_hook.set", plugin(&[SurfaceWrite])),
-        ("global_hook.list", plugin(&[SurfaceRead])),
-        ("global_hook.unset", plugin(&[SurfaceWrite])),
+        ("hook.set", plugin(Idempotent, &[SurfaceWrite])),
+        ("hook.list", plugin(Read, &[SurfaceRead])),
+        ("hook.unset", plugin(Idempotent, &[SurfaceWrite])),
+        ("global_hook.set", plugin(Idempotent, &[SurfaceWrite])),
+        ("global_hook.list", plugin(Read, &[SurfaceRead])),
+        ("global_hook.unset", plugin(Idempotent, &[SurfaceWrite])),
         // ── webhook (인바운드 웹훅 리스너 — lifetime 6종/영속화 포함) ──────
         // register 만 plugin 호출 가능(Network 권한, S11). plugin 은 인라인
         // sequence 를 못 쓰고 자기 소유 hook 핸들러 id 만 바인딩할 수 있다(핸들러
         // 측 caller 게이트). 나머지 조회/해제/설정은 local_only(CLI/로컬 client).
         // register/unregister/sweep 는 웹훅 lifecycle 의미가 create/remove/clear
         // 보다 명확 — api-conventions "verb 화이트리스트" 정당화. sweep = 만료 정리.
-        ("webhook.register", plugin(&[Network])),
-        ("webhook.list", local_only()),
-        ("webhook.info", local_only()),
-        ("webhook.unregister", local_only()),
-        ("webhook.sweep", local_only()),
-        ("webhook.config", local_only()),
+        ("webhook.register", plugin(Idempotent, &[Network])),
+        ("webhook.list", local_only(Read)),
+        ("webhook.info", local_only(Read)),
+        ("webhook.unregister", local_only(Idempotent)),
+        ("webhook.sweep", local_only(Idempotent)),
+        ("webhook.config", local_only(Idempotent)),
         // ── message (surface 간 메시지 큐) ─────────────────────────────
-        ("message.send", plugin(&[SurfaceWrite])),
-        ("message.read", plugin(&[SurfaceRead])),
-        ("message.count", plugin(&[SurfaceRead])),
-        ("message.clear", plugin(&[SurfaceWrite])),
+        ("message.send", plugin(Mutate, &[SurfaceWrite])),
+        ("message.read", plugin(Mutate, &[SurfaceRead])),
+        ("message.count", plugin(Read, &[SurfaceRead])),
+        ("message.clear", plugin(Idempotent, &[SurfaceWrite])),
         // ── image surface ─────────────────────────────────────────────
         // com.tasty.image plugin이 namespace를 점유하지만, 호스트 어댑터는
         // plugin 비활성 상태에서도 동작한다. plugin은 ipc.invoke:image 권한으로
         // 위 메서드들을 호출한다.
-        ("image.open", plugin(&[SurfaceWrite, FsRead])),
-        ("image.save", plugin(&[FsWrite])),
-        ("image.export_png", plugin(&[FsWrite])),
-        ("image.next", plugin(&[SurfaceWrite])),
-        ("image.prev", plugin(&[SurfaceWrite])),
-        ("image.paste", plugin(&[SurfaceWrite, ClipboardRead])),
-        ("image.reload", plugin(&[SurfaceWrite, FsRead])),
-        ("image.list", plugin(&[SurfaceRead])),
+        ("image.open", plugin(Mutate, &[SurfaceWrite, FsRead])),
+        ("image.save", plugin(Idempotent, &[FsWrite])),
+        ("image.export_png", plugin(Mutate, &[FsWrite])),
+        ("image.next", plugin(Mutate, &[SurfaceWrite])),
+        ("image.prev", plugin(Mutate, &[SurfaceWrite])),
+        (
+            "image.paste",
+            plugin(Mutate, &[SurfaceWrite, ClipboardRead]),
+        ),
+        ("image.reload", plugin(Idempotent, &[SurfaceWrite, FsRead])),
+        ("image.list", plugin(Read, &[SurfaceRead])),
         // ── clipboard ──────────────────────────────────────────────────
-        ("clipboard.set_text", plugin(&[ClipboardWrite])),
+        ("clipboard.set_text", plugin(Idempotent, &[ClipboardWrite])),
         // ── memory: regular (공유 네임스페이스, owner enforcement) ────
-        ("memory.put", plugin(&[MemoryWrite])),
-        ("memory.get", plugin(&[MemoryRead])),
-        ("memory.delete", plugin(&[MemoryWrite])),
-        ("memory.list", plugin(&[MemoryRead])),
-        ("memory.exists", plugin(&[MemoryRead])),
-        ("memory.count", plugin(&[MemoryRead])),
-        ("memory.scopes", plugin(&[MemoryRead])),
-        ("memory.stats", plugin(&[MemoryRead])),
-        ("memory.query", plugin(&[MemoryRead])),
-        ("memory.export", plugin(&[MemoryRead])),
-        ("memory.import", plugin(&[MemoryWrite])),
+        ("memory.put", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.get", plugin(Read, &[MemoryRead])),
+        ("memory.delete", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.list", plugin(Read, &[MemoryRead])),
+        ("memory.exists", plugin(Read, &[MemoryRead])),
+        ("memory.count", plugin(Read, &[MemoryRead])),
+        ("memory.scopes", plugin(Read, &[MemoryRead])),
+        ("memory.stats", plugin(Read, &[MemoryRead])),
+        ("memory.query", plugin(Read, &[MemoryRead])),
+        ("memory.export", plugin(Mutate, &[MemoryRead])),
+        ("memory.import", plugin(Mutate, &[MemoryWrite])),
         // ── memory: secret (plugin 별 사전 분할) ──────────────────────
-        ("memory.secret.put", plugin(&[MemorySecret])),
-        ("memory.secret.get", plugin(&[MemorySecret])),
-        ("memory.secret.delete", plugin(&[MemorySecret])),
-        ("memory.secret.list", plugin(&[MemorySecret])),
-        ("memory.secret.exists", plugin(&[MemorySecret])),
-        ("memory.secret.count", plugin(&[MemorySecret])),
-        ("memory.secret.scopes", plugin(&[MemorySecret])),
-        ("memory.secret.stats", plugin(&[MemorySecret])),
+        ("memory.secret.put", plugin(Idempotent, &[MemorySecret])),
+        ("memory.secret.get", plugin(Read, &[MemorySecret])),
+        ("memory.secret.delete", plugin(Idempotent, &[MemorySecret])),
+        ("memory.secret.list", plugin(Read, &[MemorySecret])),
+        ("memory.secret.exists", plugin(Read, &[MemorySecret])),
+        ("memory.secret.count", plugin(Read, &[MemorySecret])),
+        ("memory.secret.scopes", plugin(Read, &[MemorySecret])),
+        ("memory.secret.stats", plugin(Read, &[MemorySecret])),
         // ── memory: 유지 보수 (host 전용) ─────────────────────────────
-        ("memory.gc", local_only()),
+        ("memory.gc", local_only(Idempotent)),
         // ── memory: blackboard (workspace-scoped) ─────────────────────
-        ("memory.bb_create", plugin(&[MemoryWrite])),
-        ("memory.bb_put", plugin(&[MemoryWrite])),
-        ("memory.bb_get", plugin(&[MemoryRead])),
-        ("memory.bb_get_all", plugin(&[MemoryRead])),
-        ("memory.bb_get_meta", plugin(&[MemoryRead])),
-        ("memory.bb_delete_field", plugin(&[MemoryWrite])),
-        ("memory.bb_delete", plugin(&[MemoryWrite])),
-        ("memory.bb_list", plugin(&[MemoryRead])),
-        ("memory.bb_exists", plugin(&[MemoryRead])),
+        ("memory.bb_create", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.bb_put", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.bb_get", plugin(Read, &[MemoryRead])),
+        ("memory.bb_get_all", plugin(Read, &[MemoryRead])),
+        ("memory.bb_get_meta", plugin(Read, &[MemoryRead])),
+        ("memory.bb_delete_field", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.bb_delete", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.bb_list", plugin(Read, &[MemoryRead])),
+        ("memory.bb_exists", plugin(Read, &[MemoryRead])),
         // ── memory: bb snapshot ────────────────────────────────────────
-        ("memory.bb_snapshot", plugin(&[MemoryWrite])),
-        ("memory.bb_snapshot_get", plugin(&[MemoryRead])),
-        ("memory.bb_snapshot_list", plugin(&[MemoryRead])),
-        ("memory.bb_snapshot_delete", plugin(&[MemoryWrite])),
-        ("memory.bb_snapshot_restore", plugin(&[MemoryWrite])),
+        ("memory.bb_snapshot", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.bb_snapshot_get", plugin(Read, &[MemoryRead])),
+        ("memory.bb_snapshot_list", plugin(Read, &[MemoryRead])),
+        (
+            "memory.bb_snapshot_delete",
+            plugin(Idempotent, &[MemoryWrite]),
+        ),
+        (
+            "memory.bb_snapshot_restore",
+            plugin(Idempotent, &[MemoryWrite]),
+        ),
         // ── memory: plan (workspace-scoped) ───────────────────────────
-        ("memory.plan_create", plugin(&[MemoryWrite])),
-        ("memory.plan_get", plugin(&[MemoryRead])),
-        ("memory.plan_list", plugin(&[MemoryRead])),
-        ("memory.plan_delete", plugin(&[MemoryWrite])),
-        ("memory.plan_add_step", plugin(&[MemoryWrite])),
-        ("memory.plan_remove_step", plugin(&[MemoryWrite])),
-        ("memory.plan_update_step", plugin(&[MemoryWrite])),
+        ("memory.plan_create", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.plan_get", plugin(Read, &[MemoryRead])),
+        ("memory.plan_list", plugin(Read, &[MemoryRead])),
+        ("memory.plan_delete", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.plan_add_step", plugin(Mutate, &[MemoryWrite])),
+        (
+            "memory.plan_remove_step",
+            plugin(Idempotent, &[MemoryWrite]),
+        ),
+        (
+            "memory.plan_update_step",
+            plugin(Idempotent, &[MemoryWrite]),
+        ),
         // ── memory: cache (TTL 캐시) ───────────────────────────────────
-        ("memory.cache_put", plugin(&[MemoryWrite])),
-        ("memory.cache_get", plugin(&[MemoryRead])),
-        ("memory.cache_invalidate", plugin(&[MemoryWrite])),
-        ("memory.cache_clear", plugin(&[MemoryWrite])),
-        ("memory.cache_list", plugin(&[MemoryRead])),
+        ("memory.cache_put", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.cache_get", plugin(Read, &[MemoryRead])),
+        (
+            "memory.cache_invalidate",
+            plugin(Idempotent, &[MemoryWrite]),
+        ),
+        ("memory.cache_clear", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.cache_list", plugin(Read, &[MemoryRead])),
         // ── memory: goal (surface-scoped 단일 목표 문장) ──────────────
-        ("memory.goal_set", plugin(&[MemoryWrite])),
-        ("memory.goal_get", plugin(&[MemoryRead])),
-        ("memory.goal_clear", plugin(&[MemoryWrite])),
+        ("memory.goal_set", plugin(Idempotent, &[MemoryWrite])),
+        ("memory.goal_get", plugin(Read, &[MemoryRead])),
+        ("memory.goal_clear", plugin(Idempotent, &[MemoryWrite])),
         // ── approval (휴먼 핸드오프) ──────────────────────────────────
-        ("approval.request", plugin(&[Approval])),
-        ("approval.respond", plugin(&[Approval])),
+        ("approval.request", plugin(Mutate, &[Approval])),
+        ("approval.respond", plugin(Idempotent, &[Approval])),
         // await 는 blocking + timeout 이라 main thread 가 막히면 안 됨.
         // process_ipc 에서 worker thread 로 분리 처리되며, plugin 호출은 미지원.
-        ("approval.await", local_only()),
-        ("approval.cancel", plugin(&[Approval])),
-        ("approval.list", plugin(&[Approval])),
-        ("approval.get", plugin(&[Approval])),
-        ("approval.history", plugin(&[Approval])),
+        ("approval.await", local_only(Read)),
+        ("approval.cancel", plugin(Idempotent, &[Approval])),
+        ("approval.list", plugin(Read, &[Approval])),
+        ("approval.get", plugin(Read, &[Approval])),
+        ("approval.history", plugin(Read, &[Approval])),
         // 세션 요약 — workspace 별 markdown 텍스트. memory.* 와 분리된 표면.
-        ("approval.summary.set", plugin(&[Approval, MemoryWrite])),
-        ("approval.summary.get", plugin(&[Approval, MemoryRead])),
+        (
+            "approval.summary.set",
+            plugin(Idempotent, &[Approval, MemoryWrite]),
+        ),
+        (
+            "approval.summary.get",
+            plugin(Read, &[Approval, MemoryRead]),
+        ),
         // ── telemetry (관측 / 비용) ───────────────────────────────────
-        ("telemetry.record", plugin(&[Telemetry])),
-        ("telemetry.record_batch", plugin(&[Telemetry])),
-        ("telemetry.summary", plugin(&[Telemetry])),
-        ("telemetry.timeseries", plugin(&[Telemetry])),
-        ("telemetry.top", plugin(&[Telemetry])),
-        ("telemetry.cap.set", plugin(&[Telemetry])),
-        ("telemetry.cap.list", plugin(&[Telemetry])),
-        ("telemetry.cap.remove", plugin(&[Telemetry])),
-        ("telemetry.cap.status", plugin(&[Telemetry])),
-        ("telemetry.cap.reset", plugin(&[Telemetry])),
-        ("telemetry.anomaly.list", plugin(&[Telemetry])),
-        ("telemetry.session_summary", plugin(&[Telemetry])),
+        ("telemetry.record", plugin(Mutate, &[Telemetry])),
+        ("telemetry.record_batch", plugin(Mutate, &[Telemetry])),
+        ("telemetry.summary", plugin(Read, &[Telemetry])),
+        ("telemetry.timeseries", plugin(Read, &[Telemetry])),
+        ("telemetry.top", plugin(Read, &[Telemetry])),
+        ("telemetry.cap.set", plugin(Idempotent, &[Telemetry])),
+        ("telemetry.cap.list", plugin(Read, &[Telemetry])),
+        ("telemetry.cap.remove", plugin(Idempotent, &[Telemetry])),
+        ("telemetry.cap.status", plugin(Read, &[Telemetry])),
+        ("telemetry.cap.reset", plugin(Idempotent, &[Telemetry])),
+        ("telemetry.anomaly.list", plugin(Read, &[Telemetry])),
+        ("telemetry.session_summary", plugin(Read, &[Telemetry])),
         // ── agent (협업 primitive) ────────────────────────────────────
-        ("agent.task_create", plugin(&[AgentManage])),
-        ("agent.task_list", plugin(&[AgentManage])),
-        ("agent.task_get", plugin(&[AgentManage])),
+        ("agent.task_create", plugin(Mutate, &[AgentManage])),
+        ("agent.task_list", plugin(Read, &[AgentManage])),
+        ("agent.task_get", plugin(Read, &[AgentManage])),
         // approval.await(:265)와 대칭 — 진짜 blocking(worker thread 위임) 이라 plugin
         // 이 호출하면 단일 워커 스레드가 막혀 다른 host→plugin 요청을 못 받는다.
         // plugin 은 완료 판정 전략 선언(러너가 대신 기다림) 또는 task_get 폴링으로
         // 우회한다 — docs/dev-guide/agent-runner.md "완료 판정 전략 레지스트리".
-        ("agent.task_await", local_only()),
-        ("agent.task_cancel", plugin(&[AgentManage])),
-        ("agent.task_retry", plugin(&[AgentManage])),
-        ("agent.task_graph", plugin(&[AgentManage])),
+        ("agent.task_await", local_only(Read)),
+        ("agent.task_cancel", plugin(Idempotent, &[AgentManage])),
+        ("agent.task_retry", plugin(Mutate, &[AgentManage])),
+        ("agent.task_graph", plugin(Read, &[AgentManage])),
         // DAG 그룹 조회 — task_graph 와 같은 읽기 표면이라 같은 권한.
-        ("agent.dag_list", plugin(&[AgentManage])),
-        ("agent.dag_get", plugin(&[AgentManage])),
+        ("agent.dag_list", plugin(Read, &[AgentManage])),
+        ("agent.dag_get", plugin(Read, &[AgentManage])),
         // 외부 task(Custom kind) 의 완료 신호 — 러너가 그 생명주기를 단독으로
         // 소유한다. plugin 이 같은 task 를 별도로 전이시키면 쓰기 주체가 둘이 되어
         // 러너의 완료 판정과 경합하고, 결과가 어느 쪽 것인지 추적할 수 없게 된다.
         // plugin 은 완료 판정 전략 선언(러너가 그 전략으로 판정)으로 우회한다 —
         // docs/dev-guide/agent-runner.md "완료 판정 전략 레지스트리".
-        ("agent.task_set_result", local_only()),
+        ("agent.task_set_result", local_only(Idempotent)),
         // 자동 시작이 없으므로(재시작 정화는 부팅 경로 전용) plugin 이 자기
         // workspace 의 runner 를 스스로 되살릴 수단이 필요하다 — start/stop 은
         // idempotent, status 는 순수 조회.
-        ("agent.task_run", plugin(&[AgentManage])),
+        ("agent.task_run", plugin(Mutate, &[AgentManage])),
         // 참조 검사(cascade/force) + 상태 제약(Running 거부)을 지키는
         // 단건/일괄 삭제.
-        ("agent.task_delete", plugin(&[AgentManage])),
-        ("agent.task_purge", plugin(&[AgentManage])),
-        ("agent.barrier_create", plugin(&[AgentManage])),
-        ("agent.barrier_signal", plugin(&[AgentManage])),
-        ("agent.barrier_await", plugin(&[AgentManage])),
-        ("agent.barrier_state", plugin(&[AgentManage])),
-        ("agent.semaphore_create", plugin(&[AgentManage])),
-        ("agent.semaphore_set_permits", plugin(&[AgentManage])),
-        ("agent.semaphore_acquire", plugin(&[AgentManage])),
-        ("agent.semaphore_release", plugin(&[AgentManage])),
-        ("agent.barrier_list", plugin(&[AgentManage])),
-        ("agent.barrier_delete", plugin(&[AgentManage])),
-        ("agent.semaphore_list", plugin(&[AgentManage])),
-        ("agent.semaphore_delete", plugin(&[AgentManage])),
-        ("agent.lease_acquire", plugin(&[AgentManage])),
-        ("agent.lease_release", plugin(&[AgentManage])),
-        ("agent.lease_list", plugin(&[AgentManage])),
-        ("agent.task_reduce", plugin(&[AgentManage])),
-        ("agent.rate_limit_set", plugin(&[AgentManage])),
-        ("agent.rate_limit_list", plugin(&[AgentManage])),
-        ("agent.rate_limit_remove", plugin(&[AgentManage])),
-        ("agent.rate_limit_status", plugin(&[AgentManage])),
+        ("agent.task_delete", plugin(Idempotent, &[AgentManage])),
+        ("agent.task_purge", plugin(Idempotent, &[AgentManage])),
+        ("agent.barrier_create", plugin(Idempotent, &[AgentManage])),
+        ("agent.barrier_signal", plugin(Mutate, &[AgentManage])),
+        ("agent.barrier_await", plugin(Read, &[AgentManage])),
+        ("agent.barrier_state", plugin(Read, &[AgentManage])),
+        ("agent.semaphore_create", plugin(Idempotent, &[AgentManage])),
+        (
+            "agent.semaphore_set_permits",
+            plugin(Idempotent, &[AgentManage]),
+        ),
+        (
+            "agent.semaphore_acquire",
+            plugin(Idempotent, &[AgentManage]),
+        ),
+        (
+            "agent.semaphore_release",
+            plugin(Idempotent, &[AgentManage]),
+        ),
+        ("agent.barrier_list", plugin(Read, &[AgentManage])),
+        ("agent.barrier_delete", plugin(Idempotent, &[AgentManage])),
+        ("agent.semaphore_list", plugin(Read, &[AgentManage])),
+        ("agent.semaphore_delete", plugin(Idempotent, &[AgentManage])),
+        ("agent.lease_acquire", plugin(Idempotent, &[AgentManage])),
+        ("agent.lease_release", plugin(Idempotent, &[AgentManage])),
+        ("agent.lease_list", plugin(Read, &[AgentManage])),
+        ("agent.task_reduce", plugin(Mutate, &[AgentManage])),
+        ("agent.rate_limit_set", plugin(Idempotent, &[AgentManage])),
+        ("agent.rate_limit_list", plugin(Read, &[AgentManage])),
+        (
+            "agent.rate_limit_remove",
+            plugin(Idempotent, &[AgentManage]),
+        ),
+        ("agent.rate_limit_status", plugin(Read, &[AgentManage])),
         // ── session.* (자식 agent 신원 토큰) ──────────────────────────
         // issue/revoke 는 plugin 도 호출 가능 (claude plugin 등이 자식에게
         // 토큰을 발급해야 하므로). list 는 host 전용 — 감사/디버깅 목적이라
         // plugin 노출 불필요.
-        ("session.issue", plugin(&[AgentManage])),
-        ("session.revoke", plugin(&[AgentManage])),
-        ("session.list", local_only()),
+        ("session.issue", plugin(Mutate, &[AgentManage])),
+        ("session.revoke", plugin(Idempotent, &[AgentManage])),
+        ("session.list", local_only(Read)),
         // ── attach.* (배타 attach 점유 제어 — attach/detach 단계 3·4) ──────
         // surface 단위 배타 점유 lock 제어. acquire/release 는 주로 stream 핸드셰이크
         // (stream.open{target})로 일어나 method_meta 게이트를 거치지 않는다.
@@ -427,26 +511,26 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 위임한다. 자체 권한 레이어를 두지 않으므로 추가 Permission 을 요구하지
         // 않는다(`plugin(&[])`). Local(별도 인스턴스 client)·인증된 agent 모두
         // 소켓에 도달했다면 attach 제어를 호출할 수 있다.
-        ("attach.acquire", plugin(&[])),
-        ("attach.release", plugin(&[])),
-        ("attach.force_detach", plugin(&[])),
-        ("attach.force_detach_workspace", plugin(&[])),
-        ("attach.into_gui", plugin(&[])),
-        ("attach.list", plugin(&[])),
+        ("attach.acquire", plugin(Idempotent, &[])),
+        ("attach.release", plugin(Idempotent, &[])),
+        ("attach.force_detach", plugin(Idempotent, &[])),
+        ("attach.force_detach_workspace", plugin(Idempotent, &[])),
+        ("attach.into_gui", plugin(Mutate, &[])),
+        ("attach.list", plugin(Read, &[])),
         // ── remote.profile.* (원격 접속 프로필 CRUD) ─────────────────────
         // 프로필은 비밀 없는 장비 인벤토리(passkey 를 이름으로 참조만). attach.* 와 동일하게
         // 연결 경계(소켓 도달)에 신뢰를 위임 — 추가 Permission 불요.
         // (구 tool.ssh.* / ssh.profile.* 는 alias.rs 로 한시 호환.)
-        ("remote.profile.list", plugin(&[])),
-        ("remote.profile.get", plugin(&[])),
-        ("remote.profile.add", plugin(&[])),
-        ("remote.profile.detect", plugin(&[])),
-        ("remote.profile.remove", plugin(&[])),
+        ("remote.profile.list", plugin(Read, &[])),
+        ("remote.profile.get", plugin(Read, &[])),
+        ("remote.profile.add", plugin(Idempotent, &[])),
+        ("remote.profile.detect", plugin(Read, &[])),
+        ("remote.profile.remove", plugin(Idempotent, &[])),
         // 로컬 ssh config 열거/가져오기. 읽는 파일이 `~/.ssh/config` 로 넓어지지만
         // 노출하는 것은 alias 이름과 표시용 hint 뿐이고(키·비밀 없음), 같은 OS 유저의
         // FS read 는 신뢰모델 범위 밖이라 프로필 CRUD 와 같은 메타를 쓴다.
-        ("remote.profile.list_local", plugin(&[])),
-        ("remote.profile.import", plugin(&[])),
+        ("remote.profile.list_local", plugin(Read, &[])),
+        ("remote.profile.import", plugin(Mutate, &[])),
         // ── remote.workspaces (원격 ws 브라우징) ──────────────────────────
         // profile CRUD 와 같은 `tasty_remote` 코어를 공유하는 release 경로다
         // (`app/ipc/app_methods.rs`, 원칙 2: 에이전트가 CLI 없이 소켓으로도 수행 가능).
@@ -457,7 +541,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 팔만 있으면 표와 무관하게 이미 도달 가능했다 — 이쪽은 재등재. 반면 plugin/agent
         // 세션 토큰 호출자는 표에 없으면 UnknownMethod 로 거부됐고, 이 항목이 그들에게
         // 처음 연다 — 이쪽은 **release 표면 확장**이다.
-        ("remote.workspaces", plugin(&[])),
+        ("remote.workspaces", plugin(Read, &[])),
         // remote.attach 는 조회가 아니라 로컬에 mirror 워크스페이스를 만드는 구조 op 라
         // 사용자 상태(불가침 원칙 1)에 닿는다. SSH 신뢰경계는 원격 셸 접근만 주고 그
         // 사용자의 로컬 tasty 창에 워크스페이스를 만들 권한은 주지 않으므로, 다른
@@ -465,67 +549,70 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
         // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
         // 트리거는 ADR-0121(docs/adr/0121-attach-trust-boundary-covers-remote-queries-not-local-structural-ops.md).
-        ("remote.attach", local_only()),
+        ("remote.attach", local_only(Mutate)),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
         // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).
-        ("remote.passkey.list", plugin(&[])),
-        ("remote.passkey.get", plugin(&[])),
-        ("remote.passkey.add", plugin(&[])),
-        ("remote.passkey.remove", plugin(&[])),
+        ("remote.passkey.list", plugin(Read, &[])),
+        ("remote.passkey.get", plugin(Read, &[])),
+        ("remote.passkey.add", plugin(Idempotent, &[])),
+        ("remote.passkey.remove", plugin(Idempotent, &[])),
         // ── notification ──────────────────────────────────────────────
-        ("notification.list", plugin(&[Notification])),
-        ("notification.create", plugin(&[Notification])),
+        ("notification.list", plugin(Read, &[Notification])),
+        ("notification.create", plugin(Mutate, &[Notification])),
         // ── settings (plugin 이 자기 plugin_settings 값을 read-back) ──────
         // [[contributes.settings_pages]] 를 선언하려면 이미 UiSettingsPage 권한이
         // 필요하므로(위 permission variant 재사용), 그 값을 다시 읽는 IPC 도
         // 동일 권한으로 게이트한다. caller_plugin_id 는 요청 파라미터가 아니라
         // CallerContext 에서 강제 도출 — 다른 plugin 값 조회 불가.
-        ("settings.get_plugin_setting", plugin(&[UiSettingsPage])),
+        (
+            "settings.get_plugin_setting",
+            plugin(Read, &[UiSettingsPage]),
+        ),
         // ── settings.remote_transfer (원격 전송 저장 정책 get/set) ──────
         // general settings 전역 read/write 라 plugin 권한 모델에 대응 variant 가
         // 없다 — memory.gc / system.gpu_stats 처럼 local_only 로 두어 plugin 에는
         // 노출하지 않고 로컬 IPC(CLI·에이전트)만 조작한다. focus 독립(전역 설정,
         // 대상 ID 불요). set 은 핸들러가 UpdateSettings intent 로 태워 collapse/save
         // 파이프라인을 재사용한다.
-        ("settings.get_remote_transfer", local_only()),
-        ("settings.set_remote_transfer", local_only()),
+        ("settings.get_remote_transfer", local_only(Read)),
+        ("settings.set_remote_transfer", local_only(Idempotent)),
         // ── file_handler.* (host config 관리 — local-only) ───────────
         // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
         // 도 reload 영향 밖이라) local 전용.
-        ("file_handler.reload", local_only()),
+        ("file_handler.reload", local_only(Idempotent)),
         // 임의 경로를 file_handler dispatch 흐름에 진입시킨다. 임의 path 를
         // 읽고 (handler 가 OpenSurface 면 surface 의 param 으로, System 이면 OS
         // opener 가 읽음) 처리하므로 FsRead 권한 요구. explorer plugin 더블클릭
         // 같은 사용처가 주된 caller.
-        ("file_handler.dispatch", plugin(&[FsRead])),
+        ("file_handler.dispatch", plugin(Mutate, &[FsRead])),
         // ── hook_handler.* (공유 훅 핸들러 레지스트리 — local-only) ───────
         // 웹훅/훅이 공유하는 핸들러 레지스트리 조회(list)/user config 재로드(reload)/
         // id 로 수동 발화(dispatch). webhook.* 와 동일하게 지금은 전부 local_only —
         // plugin 이 HookHandler 권한으로 list/dispatch 를 호출하는 실배선은 후속(S11).
         // reload 는 user config 변경 후 재읽기라 애초에 plugin 무관(local 전용).
-        ("hook_handler.list", local_only()),
-        ("hook_handler.get", local_only()),
+        ("hook_handler.list", local_only(Read)),
+        ("hook_handler.get", local_only(Read)),
         // get/upsert/remove 도 같은 이유로 local 전용이되 근거가 하나 더 있다 —
         // IpcSequence 는 **Local 권한으로 실행된다.** plugin 이 시퀀스를 고칠 수 있으면
         // 자기 권한 집합을 넘어선 IPC escalation 이 되므로, `webhook.register` 가
         // plugin 의 인라인 sequence 를 거부하는 것과 같은 자리에서 막는다.
-        ("hook_handler.upsert", local_only()),
-        ("hook_handler.remove", local_only()),
-        ("hook_handler.reload", local_only()),
-        ("hook_handler.dispatch", local_only()),
+        ("hook_handler.upsert", local_only(Idempotent)),
+        ("hook_handler.remove", local_only(Idempotent)),
+        ("hook_handler.reload", local_only(Idempotent)),
+        ("hook_handler.dispatch", local_only(Mutate)),
         // ── completion_strategy.* (완료 판정 전략 레지스트리 — local-only) ──
         // hook_handler.list 미러 — 등록된 전략(비활성 포함) 조회만.
         // reload/dispatch 대응물 없음: "발화" 개념이 없고(판정 함수일 뿐),
         // user config 재로드는 아직 노출하지 않는다(Settings UI CRUD 표면 없음).
-        ("completion_strategy.list", local_only()),
+        ("completion_strategy.list", local_only(Read)),
         // markdown surface 제자리 이동 — 주어진 surface 를 새 파일의 markdown
         // 으로 교체한다. 임의 path 를 읽으므로 FsRead. markdown 주소창 플러그인이 caller.
-        ("markdown.navigate", plugin(&[FsRead])),
+        ("markdown.navigate", plugin(Mutate, &[FsRead])),
         // generic per-kind 최근목록 조회 — 주소창 드롭다운 데이터 공급원(plugin 이
         // kind 를 채워 호출). 임의 파일 read 가 아니라 이미 열었던 목록 반환뿐이라 더
         // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
-        ("recent.query", plugin(&[SurfaceRead])),
+        ("recent.query", plugin(Read, &[SurfaceRead])),
         // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
         // ── git_viewer.* (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md
         // — 원격 attach mirror git 조회 트리거) ─
@@ -534,75 +621,75 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 조회는 attach Control 채널 왕복 후 `event.dispatch` unicast 로 plugin 에
         // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
         // 없음). 임의 원격 경로 read 라 FsRead(파일을 고르는 read 관심사, `file_picker.trigger` 와 동일 근거).
-        ("git_viewer.query", plugin(&[FsRead])),
+        ("git_viewer.query", plugin(Read, &[FsRead])),
         // ── markdown_mirror.* (docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md
         // — 원격 attach mirror markdown 원문 조회 트리거) ─
         // markdown plugin 이 mirror 문서의 원격 원문을 요청한다. host 는 즉시 request_id 만
         // 회신하고(비동기 accept), 원문은 attach Control 채널 왕복 후 `event.dispatch`
         // unicast 로 plugin 에 push 된다. 원격 파일 read 라 FsRead(`git_viewer.query` 와
         // 동일 근거).
-        ("markdown_mirror.content_request", plugin(&[FsRead])),
+        ("markdown_mirror.content_request", plugin(Mutate, &[FsRead])),
         // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
         // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(ADR-0053)을
         // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
         // ADR-0058), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast
         // `"file_picker.result"` 로 plugin 에 push 된다. 파일을 고르는 read 관심사라
         // FsRead(`git_viewer.query` 와 동일 근거).
-        ("file_picker.trigger", plugin(&[FsRead])),
+        ("file_picker.trigger", plugin(Mutate, &[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
         // 다른 plugin의 인스턴스 close 요청은 만들어진 응답에서 거부.
-        ("popup.close", plugin_only(&[UiPopup])),
+        ("popup.close", plugin_only(Idempotent, &[UiPopup])),
         // ── banner (plugin → host, A3) ────────────────────────────────
         // 자기 contribute banner 를 자기 surface 에 띄운다(D1 소유권 검증은 App).
-        ("banner.open", plugin_only(&[UiBanner])),
+        ("banner.open", plugin_only(Idempotent, &[UiBanner])),
         // 자기 배너 인스턴스를 명시적으로 닫는다.
-        ("banner.close", plugin_only(&[UiBanner])),
+        ("banner.close", plugin_only(Idempotent, &[UiBanner])),
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
-        ("plugin.list", local_only()),
-        ("plugin.show", local_only()),
-        ("plugin.extension.list", local_only()),
-        ("plugin.install", local_only()),
-        ("plugin.remove", local_only()),
-        ("plugin.enable", local_only()),
-        ("plugin.disable", local_only()),
+        ("plugin.list", local_only(Read)),
+        ("plugin.show", local_only(Read)),
+        ("plugin.extension.list", local_only(Read)),
+        ("plugin.install", local_only(Mutate)),
+        ("plugin.remove", local_only(Idempotent)),
+        ("plugin.enable", local_only(Idempotent)),
+        ("plugin.disable", local_only(Idempotent)),
         // 번들 plugin 을 실행 중 인스턴스에 재sync — install/remove/enable/disable
         // 과 같은 lifecycle 계열이라 같은 근거로 닫는다. 호출자는 개발 중 재빌드를
         // 반영하는 사람이나 dist 업그레이드 경로이지 plugin 자신이 아니고, plugin
         // 이 자기(또는 남의) 번들 바이너리를 교체할 수 있으면 lifecycle 소유가
         // 뒤집힌다 — docs/dev-guide/plugin-development.md §9.1.
-        ("plugin.upgrade_builtins", local_only()),
-        ("plugin.permissions", local_only()),
-        ("plugin.grant", local_only()),
-        ("plugin.revoke", local_only()),
+        ("plugin.upgrade_builtins", local_only(Idempotent)),
+        ("plugin.permissions", local_only(Read)),
+        ("plugin.grant", local_only(Idempotent)),
+        ("plugin.revoke", local_only(Idempotent)),
         // agent 임시 grant. grant/revoke 는 user/operator 만, list 는
         // readonly 라 plugin/agent 도 self-introspection 가능.
-        ("plugin.grant_agent_permission", local_only()),
-        ("plugin.revoke_agent_permission", local_only()),
-        ("plugin.list_agent_permissions", plugin(&[])),
+        ("plugin.grant_agent_permission", local_only(Idempotent)),
+        ("plugin.revoke_agent_permission", local_only(Idempotent)),
+        ("plugin.list_agent_permissions", plugin(Read, &[])),
         // agent 가 자기 권한 부족을 미리 알고 elevation 을 명시
         // 발행할 entry point. approval.request 와 동일한 의미이므로 Approval
         // 권한이 필요.
-        ("plugin.request_permission", plugin(&[Approval])),
+        ("plugin.request_permission", plugin(Mutate, &[Approval])),
         // audit log 조회/집계/삭제. 운영자 전용.
-        ("plugin.audit_query", local_only()),
-        ("plugin.audit_summary", local_only()),
-        ("plugin.audit_follow", local_only()),
-        ("plugin.audit_clear", local_only()),
-        ("window.create", local_only()),
-        ("window.close", local_only()),
-        ("window.list", local_only()),
+        ("plugin.audit_query", local_only(Read)),
+        ("plugin.audit_summary", local_only(Read)),
+        ("plugin.audit_follow", local_only(Read)),
+        ("plugin.audit_clear", local_only(Idempotent)),
+        ("window.create", local_only(Mutate)),
+        ("window.close", local_only(Idempotent)),
+        ("window.list", local_only(Read)),
         // ui.screenshot — 정식 focus-독립 캡처. 대상 window/surface 를 ID 로 지정하며
         // focused 창에 의존하지 않는다(원칙 3). 임의 경로 파일 쓰기 표면이라 local_only
         // (plugin 미노출) — CLI/로컬 client 만 호출.
-        ("ui.screenshot", local_only()),
+        ("ui.screenshot", local_only(Mutate)),
         // E.C.e (D1=b) — Tasty 내부 어휘 통일에 따른 view.* alias. 동작은 window.* 와 동등.
         // wire format 호환을 위해 양쪽 메서드 명 모두 살림. payload 의 `window_id`
         // 필드는 외부 wire format 이라 변경 X.
-        ("view.create", local_only()),
-        ("view.close", local_only()),
-        ("view.list", local_only()),
+        ("view.create", local_only(Mutate)),
+        ("view.close", local_only(Idempotent)),
+        ("view.list", local_only(Read)),
         // window.focus / view.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
         // CLAUDE.md: 포커스 전환은 사용자 단축키/마우스 입력 영역.
         // script.reload (init.lua 재로드) 는 ADR-0031 에서 제거됨 — 스크립트는
@@ -623,77 +710,119 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
 /// (`ui.screenshot` 은 focus-독립 리팩토링으로 [`METHOD_TABLE`] 로 승격됨.)
 #[cfg(debug_assertions)]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
-    ("system.shutdown", local_only()),
-    ("ui.state", local_only()),
-    ("debug.info", local_only()),
-    ("debug.cell_info", local_only()),
-    ("debug.screen_attrs", local_only()),
-    ("debug.glyph_color", local_only()),
-    ("debug.feed_bytes", local_only()),
+    ("system.shutdown", local_only(MethodEffect::Idempotent)),
+    ("ui.state", local_only(MethodEffect::Read)),
+    ("debug.info", local_only(MethodEffect::Read)),
+    ("debug.cell_info", local_only(MethodEffect::Read)),
+    ("debug.screen_attrs", local_only(MethodEffect::Read)),
+    ("debug.glyph_color", local_only(MethodEffect::Read)),
+    ("debug.feed_bytes", local_only(MethodEffect::Mutate)),
     // GPU 결함 주입 — 이벤트 루프를 실제로 멎게 만드는 파괴적 표면이라 plugin 미노출.
-    ("debug.gpu.stall", local_only()),
-    ("debug.inject_mouse", local_only()),
-    ("debug.inject_key", local_only()),
+    ("debug.gpu.stall", local_only(MethodEffect::Mutate)),
+    ("debug.inject_mouse", local_only(MethodEffect::Mutate)),
+    ("debug.inject_key", local_only(MethodEffect::Mutate)),
     // window/egui 입력 주입(마우스·키·문자) — 위 inject_* 와 같은 사용자 입력 재현
     // 계열이라 같은 debug 격리(원칙 1·3). release 미노출. 문자는 키와 다른 이벤트라
     // (`Event::Text`) 따로 있다 — 키 주입으로는 `TextEdit` 에 글자가 안 들어간다.
-    ("debug.inject_window_mouse", local_only()),
-    ("debug.inject_egui_mouse", local_only()),
-    ("debug.inject_egui_key", local_only()),
-    ("debug.inject_egui_text", local_only()),
+    (
+        "debug.inject_window_mouse",
+        local_only(MethodEffect::Mutate),
+    ),
+    ("debug.inject_egui_mouse", local_only(MethodEffect::Mutate)),
+    ("debug.inject_egui_key", local_only(MethodEffect::Mutate)),
+    ("debug.inject_egui_text", local_only(MethodEffect::Mutate)),
     // 임의 Lua 주입(ADR-0031) — release 에는 이 경로가 없다(원칙 1). local 전용.
-    ("debug.lua.eval", local_only()),
+    ("debug.lua.eval", local_only(MethodEffect::Mutate)),
     // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*
     // 와 같은 계열이라 같은 debug 격리.
-    ("debug.close_workspace", local_only()),
-    ("debug.switch_workspace", local_only()),
-    ("debug.switch_tab", local_only()),
+    (
+        "debug.close_workspace",
+        local_only(MethodEffect::Idempotent),
+    ),
+    (
+        "debug.switch_workspace",
+        local_only(MethodEffect::Idempotent),
+    ),
+    ("debug.switch_tab", local_only(MethodEffect::Idempotent)),
     // 마우스 라우팅 회귀 안전망용 read-only dump — 관찰 전용(사용자 상태 불변). release 미노출.
-    ("debug.selection", local_only()),
-    ("debug.pending_menu", local_only()),
-    ("debug.focused_surface", local_only()),
-    ("debug.tool.list", local_only()),
-    ("debug.tool.invoke", local_only()),
-    ("debug.popup.list", local_only()),
-    ("debug.popup.open", local_only()),
-    ("debug.popup.close", local_only()),
-    ("debug.host_popup.list", local_only()),
-    ("debug.host_popup.open", local_only()),
-    ("debug.host_popup.close", local_only()),
+    ("debug.selection", local_only(MethodEffect::Read)),
+    ("debug.pending_menu", local_only(MethodEffect::Read)),
+    ("debug.focused_surface", local_only(MethodEffect::Read)),
+    ("debug.tool.list", local_only(MethodEffect::Read)),
+    ("debug.tool.invoke", local_only(MethodEffect::Mutate)),
+    ("debug.popup.list", local_only(MethodEffect::Read)),
+    ("debug.popup.open", local_only(MethodEffect::Idempotent)),
+    ("debug.popup.close", local_only(MethodEffect::Idempotent)),
+    ("debug.host_popup.list", local_only(MethodEffect::Read)),
+    (
+        "debug.host_popup.open",
+        local_only(MethodEffect::Idempotent),
+    ),
+    (
+        "debug.host_popup.close",
+        local_only(MethodEffect::Idempotent),
+    ),
     // modifier-hint 오버레이 홀드 주입/상태 덤프 — 사용자 modifier 홀드 재현. release 미노출.
-    ("debug.modifier_hint.hold", local_only()),
-    ("debug.modifier_hint.state", local_only()),
+    (
+        "debug.modifier_hint.hold",
+        local_only(MethodEffect::Idempotent),
+    ),
+    ("debug.modifier_hint.state", local_only(MethodEffect::Read)),
     // 설정 모달 강제 open — 사용자 조작 재현. release 미노출. 시각 검증 자동화용.
-    ("debug.settings.open", local_only()),
+    ("debug.settings.open", local_only(MethodEffect::Idempotent)),
     // 런타임 설정 patch 적용 — 사용자 "설정 저장" 재현. release 미노출.
-    ("debug.settings.apply", local_only()),
+    ("debug.settings.apply", local_only(MethodEffect::Idempotent)),
     // 활성 모달에 창 닫기 **요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현.
     // release `window.close` 가 main view 만 대상으로 두고 모달을 뺀 것과 같은 선이다.
     // WM 없는 Xvfb 에는 `WM_DELETE_WINDOW` 를 보낼 손이 없어(실측: `xdotool windowclose`
     // 는 `XDestroyWindow` 를 불러 winit 이 패닉하고, `wmctrl -i -c` 는 WM 이 없으면
     // 아무도 처리하지 않는다) 자동 검증에는 이 경로가 유일하다.
-    ("debug.modal.close_request", local_only()),
+    (
+        "debug.modal.close_request",
+        local_only(MethodEffect::Idempotent),
+    ),
     // 배너 직접 발화/조회/닫기/카운트다운 — 사용자 조작 재현. release 미노출.
-    ("debug.banner.list", local_only()),
-    ("debug.banner.show", local_only()),
-    ("debug.banner.close", local_only()),
-    ("debug.banner.set_countdown", local_only()),
-    ("debug.plugin_banner.open", local_only()),
-    ("debug.plugin_banner.close", local_only()),
-    ("debug.event_bus.list_subscribers", local_only()),
-    ("debug.event_bus.publish", local_only()),
-    ("debug.event_bus.trace", local_only()),
-    ("debug.extension.invoke_hook", local_only()),
+    ("debug.banner.list", local_only(MethodEffect::Read)),
+    ("debug.banner.show", local_only(MethodEffect::Mutate)),
+    ("debug.banner.close", local_only(MethodEffect::Idempotent)),
+    (
+        "debug.banner.set_countdown",
+        local_only(MethodEffect::Idempotent),
+    ),
+    (
+        "debug.plugin_banner.open",
+        local_only(MethodEffect::Idempotent),
+    ),
+    (
+        "debug.plugin_banner.close",
+        local_only(MethodEffect::Idempotent),
+    ),
+    (
+        "debug.event_bus.list_subscribers",
+        local_only(MethodEffect::Read),
+    ),
+    ("debug.event_bus.publish", local_only(MethodEffect::Mutate)),
+    ("debug.event_bus.trace", local_only(MethodEffect::Read)),
+    (
+        "debug.extension.invoke_hook",
+        local_only(MethodEffect::Mutate),
+    ),
     // 전체화면 무대 강제 진입/종료/조회 — 사용자 조작(popup 타이틀바 전체화면 버튼)
     // 재현. release 미노출. 자기검증(무대 렌더 스크린샷)의 진입점.
-    ("debug.fullscreen.list", local_only()),
-    ("debug.fullscreen.open", local_only()),
-    ("debug.fullscreen.close", local_only()),
-    ("debug.fullscreen.state", local_only()),
+    ("debug.fullscreen.list", local_only(MethodEffect::Read)),
+    (
+        "debug.fullscreen.open",
+        local_only(MethodEffect::Idempotent),
+    ),
+    (
+        "debug.fullscreen.close",
+        local_only(MethodEffect::Idempotent),
+    ),
+    ("debug.fullscreen.state", local_only(MethodEffect::Read)),
     // 사용자 입력 재현 — 포커스 전환은 단축키/마우스 영역.
     // view.focus 는 window.focus 의 alias (E.C.e, D1=b). debug 빌드 only.
-    ("window.focus", local_only()),
-    ("view.focus", local_only()),
+    ("window.focus", local_only(MethodEffect::Idempotent)),
+    ("view.focus", local_only(MethodEffect::Idempotent)),
     // ── OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현 ──────────
     // `surface.raw_key` 는 CGEventPost 로 **OS 이벤트 스트림에** 키를 주입한다.
     // 대상 surface 를 받을 수단이 없고(그 순간 OS 포커스를 가진 무엇이든 받는다),
@@ -702,8 +831,11 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     // release 표면에 두지 않는다. 에이전트가 자기 작업으로 터미널에 키를 넣는
     // 경로는 대상 ID 를 받는 `surface.send_key`(release) 다.
     // 런타임 `--enable-input-simulation` 게이트가 추가로 걸린다(inject_* 와 동일).
-    ("surface.switch_input_source", local_only()),
-    ("surface.raw_key", local_only()),
+    (
+        "surface.switch_input_source",
+        local_only(MethodEffect::Idempotent),
+    ),
+    ("surface.raw_key", local_only(MethodEffect::Mutate)),
     // `surface.ime_*` 도 같은 계열(창 IME 조합 상태 강제 세팅 — 사용자 입력기
     // 조합 재현)이지만 개별 등재가 아니라 prefix 로 해소되므로 아래
     // [`PREFIX_RULES`] 쪽에 같은 cfg 격리를 걸어 뒀다.
@@ -722,7 +854,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 /// fallback 단계에서 해소된다. 정적 `PREFIX_RULES` 는 host 자체 메서드의
 /// prefix-fallback 전용.
 #[cfg(debug_assertions)]
-pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())];
+pub const PREFIX_RULES: &[(&str, MethodMeta)] =
+    &[("surface.ime_", local_only(MethodEffect::Idempotent))];
 #[cfg(not(debug_assertions))]
 pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 
@@ -846,6 +979,10 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
             plugin_only: false,
             required: &[],
             namespace_forward: true,
+            // 이 이름을 구현하는 것은 plugin 이고 호스트는 그 뜻을 모른다. 그래서
+            // 재전달이 안전한지도 모르고, 모를 때 고를 값은 **가장 조심스러운 쪽**이다 —
+            // `Read` 로 두면 소비자가 마음대로 다시 보내도 된다고 읽는다.
+            effect: MethodEffect::Mutate,
         });
     }
     None

@@ -273,3 +273,4 @@
 | 0298 | [훅 핸들러 시퀀스는 CLI 에서 제자리로 고친다 — 지우고 다시 만들지 않는다](0298-a-hook-handler-sequence-is-edited-in-place-from-the-cli.md) | Accepted | 2026-09-20 | hook-handler, cli, ipc, registry, ipc-sequence, local-only, settings, adr-0046, adr-0047 |
 | 0299 | [스크롤 영역은 드래그 패닝 여부를 선언한다](0299-scroll-areas-declare-whether-they-pan-on-drag.md) | Accepted | 2026-09-20 | ui, scroll, input, guard, egui |
 | 0300 | [scrim 은 popup 이 소속된 범위를 덮는다 — 늘 창 전체가 아니다](0300-the-scrim-covers-the-popups-scope-not-always-the-window.md) | Accepted | 2026-09-20 | popup, scope, scrim, plugin, design-tokens, gallery, adr-0273, adr-0254 |
+| 0306 | [메서드는 "두 번 전달되면 무엇이 남는가" 를 표에 선언한다](0306-a-method-declares-what-a-second-delivery-leaves-behind.md) | Accepted | 2026-09-20 | ipc, method-table, retry, contract |
