@@ -12,7 +12,7 @@
 # 선언된 **파일 전체**(cargo 통합 타깃 포함)다. 뒤쪽이 빠져 있던 동안 이 게이트는 한 줄도
 # 안 나가는 파일을 출하 줄로 세었고, 그 값으로 임계를 판정했다 — 아무것도 안 깨지고
 # **값만 틀렸다**. 근거·모수:
-# docs/adr/0301-the-file-sloc-gate-erases-whole-test-only-files.md
+# docs/adr/0345-the-file-sloc-gate-erases-whole-test-only-files.md
 #
 # **이것은 신규 파일 필터가 아니라 성장 래칫이다.** 실측(2026-07-06 → 09-05): 새로 생긴
 # .rs 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던

@@ -274,7 +274,7 @@
 | 0298 | [훅 핸들러 시퀀스는 CLI 에서 제자리로 고친다 — 지우고 다시 만들지 않는다](0298-a-hook-handler-sequence-is-edited-in-place-from-the-cli.md) | Accepted | 2026-09-20 | hook-handler, cli, ipc, registry, ipc-sequence, local-only, settings, adr-0046, adr-0047 |
 | 0299 | [스크롤 영역은 드래그 패닝 여부를 선언한다](0299-scroll-areas-declare-whether-they-pan-on-drag.md) | Accepted | 2026-09-20 | ui, scroll, input, guard, egui |
 | 0300 | [scrim 은 popup 이 소속된 범위를 덮는다 — 늘 창 전체가 아니다](0300-the-scrim-covers-the-popups-scope-not-always-the-window.md) | Accepted | 2026-09-20 | popup, scope, scrim, plugin, design-tokens, gallery, adr-0273, adr-0254 |
-| 0301 | [파일 SLOC 게이트는 파일 전체가 시험인 것도 지운다 — 출하 줄이라는 이름의 근거가 그것이다](0301-the-file-sloc-gate-erases-whole-test-only-files.md) | Accepted | 2026-09-21 | complexity, quality-gate, file-size, tokei, shipping-scope, measurement, complexity-gate, adr-0166, adr-0168 |
+| 0301 | [세 webview backend 는 크기를 서로 다른 수단으로 전파한다 — Linux 는 allocation 을 직접 준다](0301-three-webview-backends-propagate-size-by-different-means.md) | Accepted | 2026-09-20 | linux, x11, gtk, webkitgtk, webview, layout, cross-platform, adr-0159 |
 | 0302 | [A user file open selects its result tab — amends the focus clause of ADR-0279](0302-a-user-file-open-selects-its-result-tab.md) | Accepted | 2026-09-20 | file-handler, focus, explorer, user-action, adr-0279 |
 | 0304 | [IPC 수신에 상한을 둘 둔다 — 요청 한 줄의 바이트와 동시 연결 수](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md) | Accepted | 2026-09-20 | ipc, resource-bounds, transport, reliability |
 | 0305 | [요청 압력은 프로세스 게이지다 — caller 별 관측과 다른 축이다](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md) | Accepted | 2026-09-20 | ipc, telemetry, diagnostics, observability |
@@ -313,3 +313,5 @@
 | 0342 | [셀 렌더러는 크레이트를 직접 부르고, 본체 재수출을 거치지 않는다](0342-the-cell-renderer-names-the-crates-not-the-host-re-exports.md) | Accepted | 2026-09-20 | architecture, layering, renderer, selection, terminal-link, naming, headless, adr-0319, adr-0324 |
 | 0343 | [OS 경계는 폴더가 아니라 크레이트다 — 본체는 별칭으로 부른다](0343-the-os-boundary-is-a-crate.md) | Accepted | 2026-09-20 | architecture, platform, crate-split, layering, features, headless, cross-platform, adr-0331 |
 | 0344 | [완료 알림 로그는 호스트 세대 하나를 들고, 버린 양을 말한다](0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md) | Accepted | 2026-09-20 | notify, retention, logging, plugin, instance-identity, adr-0330 |
+| 0345 | [파일 SLOC 게이트는 파일 전체가 시험인 것도 지운다 — 출하 줄이라는 이름의 근거가 그것이다](0345-the-file-sloc-gate-erases-whole-test-only-files.md) | Accepted | 2026-09-21 | complexity, quality-gate, file-size, tokei, shipping-scope, measurement, complexity-gate, adr-0166, adr-0168 |
+| 0346 | [e2e 하네스는 디스플레이를 격리하지 않고 이름을 요구한다](0346-the-e2e-harness-names-a-display-instead-of-isolating-it.md) | Accepted | 2026-09-20 | testing, e2e, harness, isolation, linux, adr-0127, adr-0090 |
