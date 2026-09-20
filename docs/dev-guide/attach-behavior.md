@@ -82,10 +82,46 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   순서 있는 열에서 가운데 한 장이 빠진 채 나머지가 간다. 나머지 하나
   (`core/attach_runtime.rs` 의 markdown 변경 신호)는 `Sent` 외 전부를 한 덩어리로 debug
   로그한다. 즉 이 카운터는 **손실이 있었는지를 값으로 남기는 자리**이고, 그것을 밖으로
-  내보내는 경로는 아직 없다.
+  내보내는 경로는 아직 없다 — **그 자리와 아래 "client 에게 공백을 알린다" 는 물음이
+  다르다.** 이 카운터는 *서버 전체*의 누적이고, 아래 통지는 *그 연결 하나*가 이번에 몇 장을
+  잃었는가다. 통지가 붙어도 이 값을 읽는 제품 경로는 여전히 없다.
 - **그 37 은 `#[cfg(test)]` 밖만 센 값이다.** 세는 법은 수신자에 숫자 접미사가 붙는 것
   (`hub2` · `hub3`)까지 포함해야 한다 — 그것을 빼면 넷이 빠지고, 하필 그 넷이 결과를
   **보는** 자리라 위 "여섯" 이 "둘" 로 줄어든다.
+
+### client 에게 공백을 알린다 (`Loss` / `client_loss_notify`)
+
+버린 것을 client 가 **모르는 채로** 계속 그리면, 그 화면은 이전과 연속이 아닌데도 연속인
+것처럼 보인다. 그래서 버린 수를 그 연결에 되돌려 준다 — 단, **선언한 client 에게만**.
+
+- **선언은 client→server 한 번**: `StreamControl::ClientLossNotify{}`. GUI mirror client 는
+  `attached_workspace` 핸드셰이크 직후 `src/app/attach_client.rs` 에서 보낸다.
+  `StreamHub::pump_inbound` 이 이것을 `StreamHub::enable_loss_notify` 로 분류해 그 client 의
+  sink 에 표시한다. **선언하지 않은 peer 의 바이트 열은 한 바이트도 안 바뀐다** — 옛 client 는
+  `Loss` 를 역직렬화 못 해 조용히 무시할 텐데, 그 무시가 곧 "손실이 없었다" 로 읽히기
+  때문이다(아래 "왜 판을 안 올리는가").
+- **통지는 server→client `StreamControl::Loss{frames}`**: 직전 `Loss` 이후(첫 통지면 연결을 연
+  이후) 이 연결에서 버린 프레임 수.
+- **통지 자체가 막힐 수 있다 — 그래서 빚으로 든다.** 버리는 순간은 정의상 sink 가 찬
+  순간이라 통지도 못 넣는다. `StreamSink::pending_loss` 에 수를 쌓아 두고, **다음 `push` 의
+  맨 앞**(`StreamHub::repay_pending_loss`)에서 한 칸이 비면 그때 통지를 먼저 넣는다. 그래서
+  통지는 **마지막 생존 프레임과 공백 이후 첫 프레임 사이**에 정확히 앉는다 — 위치가 곧
+  "여기서 끊겼다" 는 뜻이다. 넣기에 실패하면 빚을 **안 지운다**(다음 기회에 전액 갚는다).
+- **통지 성공은 소비자가 따라잡은 것으로 안 센다.** `repay_pending_loss` 는 `StreamSink::lag`
+  을 건드리지 않는다 — 서버가 스스로 넣은 프레임이 `LAG_LIMIT` 강제분리 시계를 되돌리면,
+  영원히 안 읽는 소비자가 영원히 안 끊긴다.
+
+**왜 `ipc.stream` 의 판을 안 올리는가.** `STREAM_PROTO` 는 서버가 핸드셰이크에서 **동등
+비교**하는 수다(`validate_stream_proto`). 올리면 기능이 좁아지는 것이 아니라 구 peer 의 연결이
+**거절**된다. 그래서 더해지는 스트림 기능은 판이 아니라 **이름**으로 선언한다 —
+`capability::CAPABILITIES` 의 `ipc.stream.loss-notify`(`system.info` 로 노출) 가 서버 쪽,
+위 `client_loss_notify` 프레임이 client 쪽이다. 결정은
+[ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
+
+**남는 것**: 통지는 "몇 장 잃었다" 까지만 말하고 **무엇을 어떻게 복구하라** 는 말하지 않는다.
+프레임 종류마다 복구 수단이 다르고(터미널 출력은 재요청할 곳이 없고, mesh 는
+`MeshFullResendRequest` 가 있고, 1Hz diff push 는 다음 tick 이 고친다) 그 계약은 이 절 밖이다.
+client 측 소비도 지금은 `tracing::warn!` 한 줄이다.
 
 ## 갱신 cadence 분리
 
@@ -101,7 +137,7 @@ mirror grid 는 **client 가 구동(client-driven)** 한다(ADR-0045) — mirror
 - **로컬 grid 는 echo 로만 갱신 (desync 방지)**: client 는 목표 크기를 로컬 mirror grid 에 **낙관적으로 먼저 적용하지 않는다**. 원격 reflow 전 잘못된 grid 에 바이트가 재생되는 desync 를 막기 위해, mirror grid 는 아래 `Resize` echo 가 도착할 때만 바뀐다.
 - **원격→client 확정 echo**: 원격 터미널 grid 가 실제로 바뀌면(`TerminalState::resize_grid` 이 `true`) 서버의 resize tap(`Terminal::add_resize_tap`)이 새 `(cols, rows)` 를 fan-out 하고, attach forwarder 스레드가 `Control` 프레임에 `StreamControl::Resize{surface_id, cols, rows}` 를 실어 client 에 push 한다. workspace 모드는 `surface_id` 에 remote surface_id 를 실어 client 가 remote→local 매핑으로 해당 mirror 만 리사이즈한다. **이 echo 경로는 client-driven 전환 전과 무변경 재사용** — client 요청이 원격을 구동하면 결과가 이 경로로 되돌아온다.
 - **순서 보존**: client reader 는 Data(출력)와 Resize 를 **한 버퍼에 도착 순서대로**(`MirrorEvent`) 쌓고, 메인 스레드가 순서대로 적용한다 — resize 앞뒤 출력이 올바른 그리드에서 재생되도록.
-- **`StreamControl` 확장성**: `event` 태그 기반 enum. mid-session 이벤트는 새 `StreamTag` 없이 variant 로 추가한다 — 현재 `Resize`(server→client, 확정 echo), `Activity`(server→client, busy/idle 활동 상태), `Cwd`(server→client, surface cwd — 아래 "surface cwd 전파" 절), `ClientResize`(client→server, geometry 구동 요청), `ClientAttentionClear`(client→server, 주의 환기 해제 edge), `StructuralOp`(client→server, 구조 변경 forward), `StructuralResult`(server→client, forward 회신), `StructuralDelta`(server→client, 구조 역반영), `MeshContext`(client→server, mesh 구독+geometry/theme/focus — 아래 "mesh mirror 채널" 절), `MeshInput`(client→server, 누적 입력), `MeshFullResendRequest`(client→server, 텍스처 delta 체인 복구 요청), `MeshError`(server→client, mesh 단발 실패 통지). 알 수 없는 event 는 역직렬화 실패로 무시(전방/후방 호환) — 구버전 서버는 `ClientResize` 를 무시해 기존 remote-authoritative 로 graceful degrade 한다. 단발 핸드셰이크 디스크립터(`attached`/`attached_workspace`/`attach_error`)와 `force_detached` 는 여전히 ad-hoc JSON 으로 위치 기반 파싱.
+- **`StreamControl` 확장성**: `event` 태그 기반 enum. mid-session 이벤트는 새 `StreamTag` 없이 variant 로 추가한다 — 현재 `Resize`(server→client, 확정 echo), `Activity`(server→client, busy/idle 활동 상태), `Cwd`(server→client, surface cwd — 아래 "surface cwd 전파" 절), `ClientResize`(client→server, geometry 구동 요청), `ClientAttentionClear`(client→server, 주의 환기 해제 edge), `StructuralOp`(client→server, 구조 변경 forward), `StructuralResult`(server→client, forward 회신), `StructuralDelta`(server→client, 구조 역반영), `MeshContext`(client→server, mesh 구독+geometry/theme/focus — 아래 "mesh mirror 채널" 절), `MeshInput`(client→server, 누적 입력), `MeshFullResendRequest`(client→server, 텍스처 delta 체인 복구 요청), `MeshError`(server→client, mesh 단발 실패 통지), `Loss`(server→client, 이 연결에서 버린 프레임 수 — 위 "client 에게 공백을 알린다"), `ClientLossNotify`(client→server, 그 통지를 받겠다는 선언). 알 수 없는 event 는 역직렬화 실패로 무시(전방/후방 호환 — **다만 그 무시가 공짜일 때만 안전하다**: `Loss` 는 못 읽으면 "손실 없음" 으로 읽히므로 위 선언으로 게이트한다) — 구버전 서버는 `ClientResize` 를 무시해 기존 remote-authoritative 로 graceful degrade 한다. 단발 핸드셰이크 디스크립터(`attached`/`attached_workspace`/`attach_error`)와 `force_detached` 는 여전히 ad-hoc JSON 으로 위치 기반 파싱.
 
 ## 활동(busy) 상태 전파
 

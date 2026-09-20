@@ -295,6 +295,7 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
   기능을 좁히는 것이 아니라 **구 peer 의 attach 를 통째로 막는 것**이다. 판은 프레임의
   *기존* 뜻이 바뀔 때만 움직이고, 더해지는 기능은 `ipc.stream.<기능>` 처럼 이름으로
   선언한다. 그 이름을 본 client 만 그 기능을 쓰고, 못 본 client 는 종전 동작을 받는다.
+  본보기와 결정 근거는 [ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
 
 메서드 **이름**이 구 서버에 있는지는 별도 물음이고 표가 답한다 —
 `method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /

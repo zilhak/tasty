@@ -112,6 +112,9 @@ capability 가 *응답의 모양*을 묻는다면 이쪽은 *그 이름이 있�
   재전달 축을 더한 결정. 값을 **칸**으로 둘지 **파생**으로 둘지의 갈림이 여기서 대비된다.
 - [release](../dev-guide/release.md) — 0.7.x 동안 "추가만 가능, 제거 금지" 와 동결 파일
   갱신 절차.
+- [ADR-0334](0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md) —
+  Context 가 후속으로 이름지어 둔 "손실 Control 프레임" 을 소진한 결정. 이름으로 선언하는
+  형태(`ipc.stream.loss-notify`)가 거기서 처음 쓰였다.
 - 코드 근거(결정이 실현된 현재 위치): `tasty-ipc` 의 `capability::CAPABILITIES` ·
   `capability::capabilities_json` · `method_meta::MethodSince` ·
   `method_meta::method_since`, 그리고 `handler::handle_system_info`.
