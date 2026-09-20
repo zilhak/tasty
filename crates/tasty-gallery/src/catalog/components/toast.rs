@@ -4,8 +4,8 @@
 //! mock props 로 재현. ToastManager 의 *상태 관리* (push / coalesce / lifetime /
 //! fade) 는 그대로 유지된다 — 갤러리는 미리 계산된 alpha 만 주입.
 //!
-//! 갤러리가 본체 binary 에 의존할 수 없어 ToastKind / Entry / Scope 구조를 로컬
-//! 미러. props 분리 패턴(`docs/dev-guide/gallery-first.md`).
+//! 그리기는 본체와 **같은 함수**(`tasty_ui_widgets::draw_toast_scopes`)를 부른다 —
+//! 미러가 아니다. props 분리 패턴(`docs/dev-guide/gallery-first.md`).
 //!
 //! 대표 상태 (6 가지):
 //! 1. Single Info (정상)
@@ -22,14 +22,10 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::vspace;
 
-use tasty_ui_widgets::tokens::{
-    STRUCT_GAP_2, TOAST_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
-    TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
-};
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastViewProps, draw_toast_scopes};
 
-use crate::catalog::toast_card::{
-    self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind, accent_color,
-};
+use crate::catalog::toast_card::ToastKind;
 
 // ── specimen 무대 치수 ────────────────────────────────────────────────────────
 //
@@ -49,98 +45,6 @@ const SPECIMEN_H_STACK: LogicalPx = LogicalPx(280.0);
 /// 데모 프레임 좌상단 "scope (frame)" 라벨의 세로 인셋. 4px 그리드 밖(6px)이라
 /// spacing 토큰에 대응이 없다 — 프레임 border 와 캡 높이 사이를 눈으로 맞춘 값이다.
 const SCOPE_LABEL_INSET_Y: LogicalPx = LogicalPx(6.0);
-
-#[derive(Clone, Debug)]
-struct ToastEntryView {
-    kind: ToastKind,
-    message: String,
-    alpha: f32,
-}
-
-#[derive(Clone, Debug)]
-struct ToastScopeView {
-    /// 데모용 — 카드를 그릴 영역 (frame 의 local rect).
-    scope_rect: egui::Rect,
-    /// id 오름차순 (= 발사 순서). view 가 reverse 해서 위로 쌓는다.
-    entries: Vec<ToastEntryView>,
-}
-
-struct ToastViewProps<'a> {
-    theme: &'a Theme,
-    scopes: &'a [ToastScopeView],
-}
-
-/// 본체 `draw_toast_view` 의 카드 스택 시각 미러. Tooltip 레이어 대신 painter_at
-/// 으로 frame 내부에 직접 그린다.
-fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
-    let th = props.theme;
-    for scope in props.scopes {
-        let scope_rect = scope.scope_rect;
-        let painter = ui.painter_at(scope_rect);
-        let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
-
-        for entry in scope.entries.iter().rev() {
-            let alpha = entry.alpha;
-            if alpha <= 0.0 {
-                continue;
-            }
-
-            // 본체 toast.rs 와 동일: 좁은 surface 에서 좌측 누출 방지 클램프
-            // (정상 폭에서는 0.8 폭 그대로 = 시각 무변경) + wrap_width 음수 가드.
-            let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8)
-                .max(TOAST_MIN_MAX_WIDTH)
-                .min(inner_limit);
-            let font = egui::FontId::proportional(th.font_size_body.value());
-            let text_color = th.text_primary().gamma_multiply(alpha);
-            let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
-
-            let galley = ui.ctx().fonts(|f| {
-                f.layout(
-                    entry.message.clone(),
-                    font.clone(),
-                    text_color.into(),
-                    wrap_width,
-                )
-            });
-
-            let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
-            let toast_h = galley.size().y + PADDING_Y * 2.0;
-
-            let max_x = scope_rect.max.x - SCOPE_MARGIN;
-            let bottom_y = cursor_y;
-            let top_y = bottom_y - toast_h;
-            // 본체 toast.rs 와 동일: scope 상단 초과 시 옛 토스트 생략(클립 보완).
-            if top_y < scope_rect.min.y {
-                break;
-            }
-            let left_x = max_x - toast_w;
-
-            let rect =
-                egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
-
-            let bg = th.surface_raised().gamma_multiply(alpha);
-            // toast 보더 — canonical `toast-border`.
-            let border = th.toast_border().gamma_multiply(alpha);
-            let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
-
-            toast_card::draw_card(
-                &painter,
-                th,
-                rect,
-                toast_card::CardColors {
-                    bg: bg.into(),
-                    border: border.into(),
-                    accent,
-                    text: text_color.into(),
-                },
-                galley,
-            );
-
-            cursor_y = top_y - TOAST_GAP;
-        }
-    }
-}
 
 /// 카드 그룹을 보여주기 위해 surface1 보더의 영역을 할당하고 그 안에 toast view 호출.
 fn frame_case(
@@ -190,7 +94,9 @@ fn frame_case(
         theme,
         scopes: &scopes,
     };
-    draw_toast_view_mock(ui, &props);
+    // 본체가 부르는 바로 그 함수다. 본체는 Tooltip 레이어 painter 를, 여기는 무대
+    // frame 의 painter 를 넘긴다 — 그리는 본문은 하나다.
+    draw_toast_scopes(&painter, &props);
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {

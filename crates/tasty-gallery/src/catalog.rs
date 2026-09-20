@@ -494,7 +494,7 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "toast-view",
                             "Toast view",
-                            Some("draw_toast_view mirror — scope stack, body wrap, alpha fade"),
+                            Some("draw_toast_scopes — scope stack, body wrap, alpha fade"),
                             components::toast::draw,
                         ),
                         spec(

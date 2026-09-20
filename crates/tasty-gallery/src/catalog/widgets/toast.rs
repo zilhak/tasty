@@ -1,10 +1,9 @@
 //! Toast 데모 — 디자인(4) `components/feedback/Toast` + `Toast stack` 두 카드.
 //!
-//! 본체 `src/adapters/ui/toast.rs::ToastManager::draw` 의 *카드 시각* 만 재현
-//! (coalesce / fade / lifetime 등 시간 의존 상태는 본 데모 범위 밖). 색·치수는
-//! 모두 `Theme` 토큰. `ToastKind` 는 본체 정본(`crates/tasty-model`)과 **kind-for-kind
-//! 동일**한 분류를 `toast_card` 모듈에 로컬 정의한다 — 정본 크레이트가 터미널 모델까지
-//! 끌고 오기 때문이고, 종류를 갤러리가 임의로 늘리지는 않는다.
+//! 카드 **한 장**만 보여주는 데모라 스택 함수를 안 부르고 카드 chrome 함수
+//! (`toast_card::draw_card` = `tasty_ui_widgets::draw_toast_card`)를 직접 부른다.
+//! coalesce / fade / lifetime 등 시간 의존 상태는 본 데모 범위 밖이다. 색·치수는 모두
+//! `Theme` 토큰이고 `ToastKind` 는 **정본 그대로**다 — 미러가 아니다.
 
 use tasty_type_appearance::theme::Theme;
 
