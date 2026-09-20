@@ -117,6 +117,7 @@ read timeout. 즉 이 결정은 없던 방어를 새로 발명하는 것이 아�
 - 관련 dev-guide: [attach-behavior](../dev-guide/attach-behavior.md) — 스트림 경로가 이미
   들고 있던 두 상한(프레임 길이·read timeout)의 맥락.
 - 관련 ADR: [ADR-0004](0004-ipc-transport-tcp.md) — 이 소켓이 TCP loopback 인 이유.
+- 부분 개정: [0327](0327-the-transport-answers-instead-of-going-silent-and-its-writes-are-bounded.md) (무응답 종료 조항 개정)
 - **코드 근거 (결정이 실현된 현재 위치)**: `TcpIpcServer::read_line_capped` ·
   `TcpIpcServer::MAX_REQUEST_LINE_BYTES` · `ConnectionSlot` ·
   `MAX_CONCURRENT_CONNECTIONS` (`src/adapters/production/tcp_ipc_server.rs`).

@@ -55,7 +55,7 @@ enum LineRead {
     Line,
     /// peer 가 연결을 닫았다.
     Eof,
-    /// 개행 없이 [`MAX_REQUEST_LINE_BYTES`] 를 채웠다 — 연결을 닫는다.
+    /// 개행 없이 [`MAX_REQUEST_LINE_BYTES`] 를 채웠다 — 거절을 응답으로 알리고 닫는다.
     TooLong,
     /// 소켓 오류 또는 비-UTF-8.
     Failed,
@@ -325,9 +325,19 @@ impl TcpIpcServer {
         // Read the first line manually so the BufReader retains any bytes
         // buffered after it. On a streaming-channel upgrade those buffered bytes
         // are the start of the binary frames following the handshake line.
-        let Some(mut line) = Self::read_first_line(&mut reader, peer) else {
-            return;
-        };
+        let mut line = String::new();
+        match Self::read_first_line(&mut reader, &mut line, peer) {
+            LineRead::Line => {}
+            // 첫 줄이 상한을 넘었다 — 이 연결은 업그레이드 판별에 닿지 못한다.
+            // 핸드셰이크 줄은 상한 근처에 갈 일이 없으므로 여기서 RPC 쪽 거절로
+            // 답하는 것이 맞다.
+            LineRead::TooLong => {
+                Self::refuse_oversized_line(&mut writer, peer);
+                return;
+            }
+            // 둘 다 이미 로그를 남겼다 — 쓸 상대가 없거나(EOF) 소켓이 깨졌다.
+            LineRead::Eof | LineRead::Failed => return,
+        }
 
         // Streaming upgrade: first line is `{"method":"stream.open",...}`. The
         // connection leaves the request-response model and becomes a framed
@@ -452,18 +462,14 @@ impl TcpIpcServer {
     /// 프레임의 시작)를 보존하게 하기 위함. EOF/에러는 이미 로그 후 `None`.
     fn read_first_line(
         reader: &mut BufReader<std::net::TcpStream>,
+        line: &mut String,
         peer: Option<std::net::SocketAddr>,
-    ) -> Option<String> {
-        let mut line = String::new();
-        match Self::read_line_capped(reader, &mut line, peer) {
-            LineRead::Line => Some(line),
-            LineRead::Eof => {
-                tracing::debug!("IPC client disconnected (eof) {:?}", peer);
-                None
-            }
-            // 둘 다 이미 warn 을 남겼다 — 호출자는 연결을 종료한다.
-            LineRead::TooLong | LineRead::Failed => None,
+    ) -> LineRead {
+        let outcome = Self::read_line_capped(reader, line, peer);
+        if matches!(outcome, LineRead::Eof) {
+            tracing::debug!("IPC client disconnected (eof) {:?}", peer);
         }
+        outcome
     }
 
     /// 일반 request-response 연결: 이미 읽은 첫 줄을 처리한 뒤, 연결이 닫히거나
@@ -483,8 +489,12 @@ impl TcpIpcServer {
             line.clear();
             match Self::read_line_capped(reader, line, peer) {
                 LineRead::Line => {}
-                // EOF·상한 초과·오류 모두 이 연결의 끝이다(뒤의 둘은 이미 warn 을 남겼다).
-                LineRead::Eof | LineRead::TooLong | LineRead::Failed => break,
+                // 상한 초과는 **답하고** 끝낸다. 나머지 둘은 답할 상대가 없다.
+                LineRead::TooLong => {
+                    Self::refuse_oversized_line(writer, peer);
+                    break;
+                }
+                LineRead::Eof | LineRead::Failed => break,
             }
             if !Self::process_request_line(line, cmd_tx, waker, writer, peer) {
                 break;
@@ -803,6 +813,42 @@ impl TcpIpcServer {
         true
     }
 
+    /// 줄 상한 초과를 **응답으로** 알린다. 쓰고 나면 호출자가 연결을 끝낸다.
+    ///
+    /// 예전에는 이 자리가 무응답 종료였다(ADR-0304). client 는 닫힌 소켓만 보았고, 자기
+    /// 줄이 길어서인지 네트워크가 끊겨서인지 고를 수 없었다 — 두 사건의 처방이 정반대다
+    /// (앞은 요청을 줄이거나 나눠 보내고, 뒤는 그대로 다시 건다). 이제 코드로 답한다.
+    ///
+    /// **연결은 그대로 끝난다.** 넘긴 줄의 나머지가 소켓에 남아 있어서, 계속 읽으면 한
+    /// 줄이 여러 요청으로 쪼개져 들어가고 상한이 다시 없는 것이 된다.
+    ///
+    /// `id` 가 `Null` 인 이유: 줄이 잘려 있어 요청의 `id` 를 신뢰할 수 없다. parse error
+    /// 응답과 같은 처리다.
+    ///
+    /// 쓰기 상한을 여기서 다시 거는 이유: 이 자리는 첫 줄 경로에서도 불리는데 그때는
+    /// 아직 스트림 업그레이드 판별 전이라 [`Self::arm_response_write_timeout`] 이 안
+    /// 걸려 있다. 상한 없는 쓰기로 거절을 알리면 거절이 곧 새로운 무한 블록이 된다.
+    fn refuse_oversized_line(writer: &mut std::net::TcpStream, peer: Option<std::net::SocketAddr>) {
+        Self::arm_response_write_timeout(writer);
+        let resp = JsonRpcResponse::error(
+            serde_json::Value::Null,
+            crate::ipc::protocol::ERR_REQUEST_LINE_TOO_LONG,
+            format!(
+                "request line exceeded {MAX_REQUEST_LINE_BYTES} bytes — the connection is closed"
+            ),
+        );
+        let json = serde_json::to_string(&resp).unwrap();
+        let (write_result, flush_result) = Self::write_json_line(writer, &json);
+        // 이 연결은 어차피 끝난다. 쓰기가 실패했다는 사실만 남긴다 — 상한 초과 자체는
+        // `read_line_capped` 이 이미 warn 으로 적었다.
+        if let Err(e) = write_result {
+            tracing::debug!("IPC oversize refusal write failed for {peer:?}: {e}");
+        }
+        if let Err(e) = flush_result {
+            tracing::debug!("IPC oversize refusal flush failed for {peer:?}: {e}");
+        }
+    }
+
     /// 요청을 메인 스레드로 보내고 응답을 기다려 클라이언트로 회신한다. 반환값은
     /// 연결 유지 여부.
     fn dispatch_and_await(
@@ -942,6 +988,74 @@ mod admission_tests {
             "상한에서 개행으로 끝나는 줄은 초과가 아니다"
         );
         assert_eq!(line.len(), MAX_REQUEST_LINE_BYTES);
+    }
+
+    // 상한을 넘긴 줄은 **EOF 가 아니라 JSON 한 줄**로 거절된다.
+    //
+    // 재는 자리가 헬퍼가 아니라 `run_request_response_loop` 인 것이 이 시험의 값이다 —
+    // 그 루프가 예전에 `break` 로 끝나던 갈래가 바로 여기다. 소켓을 실제로 쓰므로
+    // "client 가 무엇을 받는가" 가 좌변이 된다.
+    //
+    // 첫 줄로 빈 줄을 넘기는 이유: `process_request_line` 은 빈 줄에서 dispatch 없이
+    // `true` 를 돌려주므로, 메인 루프 없이도 루프가 다음 줄을 읽는 자리까지 간다.
+    #[test]
+    fn an_oversized_line_is_refused_with_a_code_not_a_bare_close() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let client = std::net::TcpStream::connect(addr).expect("connect");
+        let (server_side, _) = listener.accept().expect("accept");
+
+        // 개행 없이 상한을 넘겨 보낸다. 8 MiB 는 소켓 버퍼에 안 들어가므로 별도
+        // 스레드가 쓰고, 서버가 상한에서 읽기를 멈추면 그 쓰기는 미완으로 남는다 —
+        // join 하지 않고 두며 시험 끝에 소켓이 닫히면 풀린다.
+        let mut client_w = client.try_clone().expect("clone");
+        std::thread::spawn(move || {
+            let blob = vec![b'x'; MAX_REQUEST_LINE_BYTES + 16];
+            // 실패가 정상 종료다 — 서버가 상한에서 읽기를 멈추면 남은 바이트는 갈 곳이
+            // 없고, 시험이 끝나며 소켓이 닫히면 이 쓰기가 오류로 풀린다. 그 오류에
+            // 대해 할 일이 없다.
+            let _ = client_w.write_all(&blob);
+        });
+
+        let mut reader = BufReader::new(server_side.try_clone().expect("clone"));
+        let mut writer = server_side;
+        let (cmd_tx, _cmd_rx) = mpsc::channel();
+        let mut first = String::new();
+        TcpIpcServer::run_request_response_loop(
+            &mut reader,
+            &mut writer,
+            &mut first,
+            &cmd_tx,
+            &None,
+            None,
+        );
+
+        // 서버 쪽을 먼저 닫는다. 거절이 안 쓰였다면 client 의 읽기가 **막히지 않고**
+        // EOF(0 바이트)로 끝나야 한다 — 그래야 회귀가 hang 이 아니라 실패로 드러난다.
+        drop(reader);
+        drop(writer);
+
+        let mut got = String::new();
+        BufReader::new(client)
+            .read_line(&mut got)
+            .expect("거절 응답을 읽어야 한다");
+        assert!(
+            !got.is_empty(),
+            "연결이 그냥 닫혔다 — 거절이 응답으로 안 왔다"
+        );
+        let resp: JsonRpcResponse =
+            serde_json::from_str(got.trim()).expect("JSON 한 줄이어야 한다");
+        let err = resp.error.expect("에러 응답이어야 한다");
+        assert_eq!(
+            err.code,
+            crate::ipc::protocol::ERR_REQUEST_LINE_TOO_LONG,
+            "줄 상한 거절이 전송 계층 코드로 안 왔다"
+        );
+        assert!(
+            err.message.contains(&MAX_REQUEST_LINE_BYTES.to_string()),
+            "거절 문구가 상한 값을 안 싣는다: {}",
+            err.message
+        );
     }
 
     // 쓰기 상한이 **소켓에 실제로 걸린다.** 이 시험이 재는 것은 거기까지다 —

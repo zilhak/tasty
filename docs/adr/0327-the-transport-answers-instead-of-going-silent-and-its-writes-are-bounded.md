@@ -1,4 +1,4 @@
-# ADR-0327: 전송 계층은 침묵 대신 답하고, 그 답의 쓰기에는 시간 상한이 있다
+# ADR-0327: 전송 계층은 침묵 대신 답하고, 그 답의 쓰기에는 시간 상한이 있다 — ADR-0304 의 무응답 종료 조항 개정
 
 - **Status**: Accepted
 - **Date**: 2026-09-20
@@ -47,16 +47,42 @@ client 는 잘린 JSON 뒤에 다음 응답이 이어 붙은 것을 본다. 그�
 같은 이유로 그 자리의 로그를 `trace` 에서 `warn` 으로 올린다. 타임아웃이 **발화했다**는
 것을 말하는 자리가 거기뿐인데 기본 필터는 `trace` 를 버린다.
 
-**거절을 응답으로 알리는 형태는 같은 회차의 뒤 조각에서 확정한다.** ADR-0304 는 수신
-상한 초과를 "닫고 응답하지 않는다" 로 정하면서 그 이유를 "응답으로 알리는 것은 wire 가
-걸리는 별개 결정" 이라고 적었다. 이 상한이 그 결정의 **선행**이다 — 거절을 응답으로
-알리려면 그 응답을 쓰는 자리가 시간에 갇혀 있어야 하고, 특히 연결 상한 거절은 accept
-스레드에서 일어나므로 상한 없는 쓰기를 거기 두면 accept 루프 전체가 멈출 수 있다.
+### ADR-0304 의 무응답 종료 조항을 개정한다 (줄 상한)
+
+ADR-0304 는 수신 상한 초과를 "닫고 응답하지 않는다" 로 정하면서 그 이유를 "응답으로
+알리는 것은 wire 가 걸리는 별개 결정" 이라고 적었다. 위 쓰기 상한이 그 결정의
+**선행**이다 — 거절을 응답으로 알리려면 그 응답을 쓰는 자리가 시간에 갇혀 있어야 한다.
+
+**줄 상한 초과는 이제 `ERR_REQUEST_LINE_TOO_LONG`(-32060) 한 줄로 답한 뒤 닫는다.**
+바뀌는 것은 "답하는가" 하나이고 **닫는 것은 그대로다** — 넘긴 줄의 나머지가 소켓에 남아
+있어서, 계속 읽으면 한 줄이 여러 요청으로 쪼개져 들어가고 상한이 다시 없는 것이 된다
+(ADR-0304 가 그 이유를 이미 적었고 그 판단은 유효하다).
+
+응답의 `id` 는 `Null` 이다. 줄이 잘려 있어 요청의 `id` 를 신뢰할 수 없고, 그것은 parse
+error 응답이 이미 하던 처리다.
+
+**개정하지 않는 것**(ADR-0304 에서 그대로 유효한 것): 두 상한의 **존재와 값**
+(`MAX_REQUEST_LINE_BYTES` 8 MiB 와 그 `entry_max_bytes` 파생, `MAX_CONCURRENT_CONNECTIONS`
+256 과 그 정상 인구 근거), 자리를 `ConnectionSlot` 의 `Drop` 으로 돌려주는 형태, 포화
+로그를 들어가는 순간만 `warn` 으로 내는 게이트, 그리고 **초과 시 연결을 닫는다**는 것.
+개정되는 것은 "닫기 전에 답하지 않는다" 한 조항뿐이다.
+
+**연결 상한 쪽 거절은 이 회차의 뒤 조각에서 같은 형태로 확정한다.** 그 자리는 accept
+스레드라 쓰기가 accept 루프 전체를 멈출 수 있어 다루는 법이 다르다.
+
+**새 코드는 전송 계층 구역에 둔다** — `-32060..-32069`. 도메인 코드
+(`-32000..-32059`)와 갈리는 이유는 호출자가 다음에 할 일이 다르기 때문이다: 도메인 코드는
+요청이 handler 까지 갔다는 뜻이라 인자·주체·상태를 보게 하고, 이 구역은 **handler 에
+닿지도 못했다**는 뜻이라 요청의 모양이나 서버의 수용 여력을 보게 한다.
 
 ## Consequences
 
 - **얻은 것**: 연결 스레드가 **쓰기에서 영구히 멈출 수 없다.** ADR-0304 의 연결 상한이
   세는 자리가 회수되지 않는 경로 하나가 닫혔다.
+- **얻은 것**: 줄 상한 초과가 더 이상 **조용하지 않다.** client 는 닫힌 소켓 대신 코드
+  한 줄을 받는다 — 자기 줄이 길어서인지 네트워크가 끊겨서인지 고를 수 있고, 두 사건의
+  처방이 정반대라 그 구분이 값이다(앞은 요청을 나눠 보내고 뒤는 그대로 다시 건다).
+  ADR-0304 가 "잃은 것" 으로 적어 둔 항목 하나가 닫혔다.
 - **얻은 것**: parse error 응답의 쓰기 실패가 이제 **연결을 끝낸다.** 잘린 줄 뒤에 다음
   응답이 이어 붙는 상태가 원천적으로 안 생긴다.
 - **잃은 것**: 상한을 초과하는 **느린 정상 peer 를 끊는다.** 이 소켓은 127.0.0.1 loopback
@@ -88,6 +114,12 @@ client 는 잘린 JSON 뒤에 다음 응답이 이어 붙은 것을 본다. 그�
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
+- 줄 상한 초과가 **EOF 가 아니라 JSON 한 줄**로 답해지는가는
+  `admission_tests::an_oversized_line_is_refused_with_a_code_not_a_bare_close` 가 잡는다.
+  그 시험은 실제 소켓 쌍 위에서 `run_request_response_loop` 을 돌리므로 좌변이 "client 가
+  무엇을 받는가" 다. 거절 쓰기를 빼면 그 자리가 EOF 로 끝나 시험이 **즉시** 실패한다
+  (시험이 서버 쪽을 먼저 닫아 회귀가 hang 이 아니라 실패로 나오게 해 뒀다 — 실측:
+  그 처리 전에는 같은 변이가 시험을 멈춰 세웠다).
 - `RESPONSE_WRITE_TIMEOUT` 이 소켓에 실제로 걸리는가는
   `admission_tests::the_response_write_timeout_is_actually_on_the_socket` 이 잡는다.
   값이 안 걸리는 실패와 플랫폼이 값을 반올림하는 실패가 둘 다 그 시험에서 드러난다 —
@@ -105,11 +137,14 @@ client 는 잘린 JSON 뒤에 다음 응답이 이어 붙은 것을 본다. 그�
 
 ## References
 
-- 관련 ADR: [ADR-0304](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md)
-  — 수신 쪽 두 상한. 이 결정이 그 상한을 무력화하던 쓰기 경로를 닫는다.
+- 개정 대상: [ADR-0304](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md)
+  (초과 시 무응답 종료 조항). 그 ADR 의 본체 — 두 상한의 존재·값·파생·자리 반납 형태 —
+  는 그대로 유효하다. 이 결정은 그 상한을 무력화하던 쓰기 경로도 함께 닫는다.
+- 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
 - 관련 ADR: [ADR-0004](0004-ipc-transport-tcp.md) — 이 소켓이 TCP loopback 인 이유.
 - 관련 dev-guide: [attach-behavior](../dev-guide/attach-behavior.md) — 스트림 경로가 이
   상한의 대상이 아닌 이유(프레임 쓰기와 전용 write 스레드).
 - **코드 근거 (결정이 실현된 현재 위치)**: `RESPONSE_WRITE_TIMEOUT` ·
-  `TcpIpcServer::arm_response_write_timeout` · `TcpIpcServer::send_parse_error`
-  (`src/adapters/production/tcp_ipc_server.rs`).
+  `TcpIpcServer::arm_response_write_timeout` · `TcpIpcServer::send_parse_error` ·
+  `TcpIpcServer::refuse_oversized_line` (`src/adapters/production/tcp_ipc_server.rs`) ·
+  `ERR_REQUEST_LINE_TOO_LONG` (`crates/tasty-ipc/src/protocol.rs`).
