@@ -97,7 +97,16 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
 - **선언은 client→server 한 번**: `StreamControl::ClientLossNotify{}`. GUI mirror client 는
   `attached_workspace` 핸드셰이크 직후 `src/app/attach_client.rs` 에서 보낸다.
   `StreamHub::pump_inbound` 이 이것을 `StreamHub::enable_loss_notify` 로 분류해 그 client 의
-  sink 에 표시한다. **선언하지 않은 peer 의 바이트 열은 한 바이트도 안 바뀐다** — 옛 client 는
+  sink 에 표시한다.
+  - **★ 지금 선언하는 것은 그 한 자리뿐이다.** 스트림을 여는 다른 소비자 넷은 선언하지 않고,
+    그래서 **종전 동작 그대로** 조용히 손실을 겪는다 — `tasty attach <surface>` 와
+    `tasty attach --workspace`(`crates/tasty-cli/src/local/attach.rs` 의 `open_attach` ·
+    `open_attach_workspace` 직후), debug 스트림(`crates/tasty-cli/src/local/debug.rs` 의
+    `StreamConnection::open`), 그리고 GUI 자신의 bulk 전송 연결(`attach_client.rs` 의
+    `open_bulk`). 앞의 셋은 원격 출력을 그대로 재생하는 **실제 소비자**라 통지가 의미 있는
+    자리이고, 안 붙인 것은 판단이 아니라 **범위**다. bulk 는 파일 전송 전용이라 공백의 뜻이
+    다르다(그쪽은 `BulkResult` 가 결과를 말한다). 좌변: `grep -rn 'ClientLossNotify'` 의
+    송신 자리가 하나인가. **선언하지 않은 peer 의 바이트 열은 한 바이트도 안 바뀐다** — 옛 client 는
   `Loss` 를 역직렬화 못 해 조용히 무시할 텐데, 그 무시가 곧 "손실이 없었다" 로 읽히기
   때문이다(아래 "왜 판을 안 올리는가").
 - **통지는 server→client `StreamControl::Loss{frames}`**: 직전 `Loss` 이후(첫 통지면 연결을 연
