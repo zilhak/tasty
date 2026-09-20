@@ -1101,10 +1101,9 @@ mod tests {
     // 그 둘 사이의 값으로 고정한다.
     #[test]
     fn the_request_queue_holds_exactly_its_capacity() {
-        assert!(
-            REQUEST_QUEUE_CAPACITY > 0,
-            "rendezvous 면 첫 건부터 거절된다"
-        );
+        // 컴파일 시점에 본다 — 런타임 `assert!` 은 상수 비교라 clippy 가 잡고,
+        // 잡히는 쪽이 맞다: 0 이면 rendezvous 라 아래 루프가 한 건도 못 넣는다.
+        const { assert!(REQUEST_QUEUE_CAPACITY > 0) };
         let (tx, _rx) = mpsc::sync_channel::<PluginRequest>(REQUEST_QUEUE_CAPACITY);
         for i in 0..REQUEST_QUEUE_CAPACITY {
             try_send_request(&tx, a_request(i as u64))
