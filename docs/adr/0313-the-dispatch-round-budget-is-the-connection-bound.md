@@ -39,7 +39,8 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
 ## Consequences
 
 - **얻은 것**: 회차의 최악 길이가 값으로 적힌다. 그 값이 다른 상한에서 파생되므로 두 수가
-  따로 낡지 않는다. gui 와 headless 가 같은 상수를 쓰므로 두 경로가 갈리지 않는다.
+  따로 낡지 않는다. gui 와 headless 가 같은 상수를 쓰므로 **예산 자체는** 두 경로에서
+  갈리지 않는다 — 다만 이월의 **안전망**은 갈린다(아래 트리거).
 - **잃은 것**: 예산에 닿는 순간 그 회차는 큐를 다 못 비운다. 그 사실은 응답이 아니라
   **다음 회차**로 나타나므로, 클라이언트에게는 지연으로만 보인다(wire 는 안 바뀐다).
 - **운영 비용 / 유지 부담**: `MAX_CONCURRENT_CONNECTIONS` 를 움직이면 예산이 같이 움직인다 —
@@ -76,15 +77,29 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
   `HostIpcInjector::dispatch` 말고 하나 더 생긴다 — "명령마다 wake 한 번" 이 이월의 유일한
   근거이므로, 그 불변식을 안 지키는 생산자가 들어오면 이월이 조용히 깨진다. 지금 이 조건을
   재는 가드는 없다.
+  **깨졌을 때의 양상이 두 경로에서 다르다.** gui 에는 두 번째 경로가 있다 —
+  `App::about_to_wait` 가 매 iteration 조건 없이 `process_ipc` 를 부르므로, IPC wake 가
+  하나도 안 와도 다른 활동(타이머 · 터미널 출력 · 창 이벤트)이 루프를 깨우면 그 회차가 큐를
+  다시 집는다. headless 에는 그 경로가 없다 — `dispatch_headless_event` 의
+  `AppEvent::IpcReady` 갈래 하나만 `headless_dispatch::pump_ipc` 를 부르고,
+  `run_headless` 의 `Wait::Deadline` 갈래는 타이머만 돌리고 `continue` 한다. 그래서 같은
+  사고가 gui 에서는 **한 프레임 지연**, headless 에서는 **멈춤**이다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
 - 정상 사용이 예산에 실제로 닿는다. 재는 법: `record_drain` 이 기록한 회차 크기의 분포를
   보고 예산과 같은 값이 나오는지 본다 — 닿았다면 그 회차는 큐를 다 못 비운 것이다.
-- 예산이 지연으로 체감된다. 재는 법: 예산을 낮춰 `tests/e2e_tests.rs` 를 돌리고 벽시계를
-  견준다. 실측 2026-09-20: 예산 1 에서 같은 타깃이 7.07 s → 28.12 s 였고, 그때 실패한 한
-  건은 명령 유실이 아니라 느려진 dispatch 아래에서 plugin 기동이 못 따라온 것이었다
-  (단독 재실행 3.34 s 통과).
+- 예산이 지연으로 체감된다. 재는 법: 예산을 낮춰 `tests/e2e_tests.rs` 를 돌리고 **`test
+  result:` 줄**을 본다. **벽시계로 재지 않는다** — `tests/common/mod.rs` 의
+  `TastyInstance::call` 이 읽기 타임아웃 10 s 로 최대 세 번 재시도하므로, 한 호출이 한 번
+  막히는 것만으로 타깃 전체의 벽시계가 10 s 단위로 계단처럼 뛴다. 그 계단은 지연의 크기가
+  아니라 하네스 상수다.
+  실측 2026-09-20(같은 트리, 각 3 회): 예산 1 에서도 이 타깃은 `ok. 60 passed; 0 failed`
+  이고 벽시계만 6.6 s → 16 s 로 움직였는데, 그 차이가 계단이라는 것이 세 갈래로 갈렸다 —
+  `concurrent_requests_are_all_answered` 를 빼면 6.5 s, 그 시험만 돌리면 1.0 s, 그리고
+  **예산은 1 로 둔 채** 위 읽기 타임아웃만 2 s 로 낮추면 6.6 s 다. 즉 이 타깃은 지연의
+  **유무도 크기도** 못 잰다. 지연이 있으려면 예산에 먼저 닿아야 하므로, 순서는 위
+  `record_drain` 항이 먼저다 — 닿은 회차가 없으면 지연도 없다.
 
 ## References
 
@@ -94,4 +109,8 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
 - 코드 근거(결정이 실현된 현재 위치): `src/adapters/production/tcp_ipc_server.rs` 의
   `DRAIN_BUDGET_PER_ROUND` · `MAX_CONCURRENT_CONNECTIONS`, `src/app/ipc.rs` 의
   `App::process_ipc`, `src/boot/headless_dispatch.rs` 의 `pump_ipc`
-- 이월을 재는 시험: `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered`
+- 이월을 **관측하는 센서**: `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered`.
+  재는 것이 아니다 — 착지 예산(`MAX_CONCURRENT_CONNECTIONS`)에서는 동시 연결 16 이 예산에
+  안 닿고, 예산을 1 로 낮춰도 이월이 실제로 동작하므로 통과한다. 이월이 깨졌는지를 가르는
+  가드는 위 트리거대로 **없다.** 이 시험의 값은 착지 상태에서 큐 깊이를 1 보다 크게 만드는
+  유일한 시나리오를 타깃 안에 둔 것이다.
