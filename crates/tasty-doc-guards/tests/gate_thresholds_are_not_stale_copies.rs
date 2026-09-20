@@ -545,11 +545,6 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "SQLite wal_autocheckpoint 1000 페이지",
     ),
     (
-        "src/db.rs",
-        Kind::OtherMeaning,
-        "SQLite wal_autocheckpoint 1000 페이지",
-    ),
-    (
         "crates/tasty-memory/src/lib.rs",
         Kind::OtherMeaning,
         "SQLite wal_autocheckpoint 1000 페이지",
