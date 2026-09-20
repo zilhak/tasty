@@ -60,26 +60,5 @@ pub fn send_response(tx: &mpsc::SyncSender<JsonRpcResponse>, response: JsonRpcRe
     }
 }
 
-/// 한 회차에 큐에서 집어 드는 IPC 명령 수의 상한.
-///
-/// 이 상한이 없으면 dispatch 회차의 길이를 큐가 정한다 — 두 drain 자리
-/// (`src/app/ipc.rs` 의 `process_ipc`, `src/boot/headless_dispatch.rs` 의
-/// `pump_ipc`) 가 둘 다 "빌 때까지 모아서 전부 처리" 라, 보내는 쪽이 계속 밀어
-/// 넣으면 같은 회차가 끝나지 않고 타이머·터미널 출력·창 이벤트가 그만큼 밀린다.
-///
-/// **남은 것이 다음 회차에 반드시 다시 불린다** — 넣는 쪽이 명령 하나마다 waker
-/// 를 정확히 한 번 부르기 때문이다(`tcp_ipc_server::dispatch_and_await` 와
-/// `host_call::HostIpcInjector::dispatch` 둘 다 `send` 직후 `waker()`). 그래서
-/// N 개를 넣으면 wake 도 N 개가 큐에 들어가고, 한 회차가 B(<N) 개만 집어 들면
-/// 남은 N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 이월 재개에 별도
-/// 배선이 필요 없는 이유다.
-///
-/// 값의 근거: 두 생산자 모두 **응답을 받을 때까지 블록한다**. 그래서 큐에 동시에
-/// 들어가 있는 명령 수는 그 순간 살아 있는 연결(+호스트 주입) 수를 넘지 않는다.
-/// 256 은 그 수의 현실적 상한보다 훨씬 위라 정상 동작에서는 닿지 않고, 닿았다면
-/// 그 자체가 관측 대상이다 — 집어 든 수는 이미 `record_drain` 이 기록하므로
-/// 회차 길이가 이 값에 붙어 있는 것이 메트릭에 그대로 보인다.
-pub const DRAIN_BUDGET_PER_ROUND: usize = 256;
-
 /// Callback to wake the main event loop when an IPC command arrives.
 pub type IpcWaker = Arc<dyn Fn() + Send + Sync>;

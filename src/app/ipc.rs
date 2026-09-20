@@ -47,7 +47,7 @@ impl App {
         };
         // 회차 예산 — 큐가 회차의 길이를 정하지 못하게 한다. 남은 것은 넣는 쪽이
         // 명령마다 부른 waker 가 다시 들여보낸다(`DRAIN_BUDGET_PER_ROUND` 참조).
-        for _ in 0..crate::ipc::server::DRAIN_BUDGET_PER_ROUND {
+        for _ in 0..crate::adapters::production::tcp_ipc_server::DRAIN_BUDGET_PER_ROUND {
             match ipc.try_recv() {
                 Ok(cmd) => pending.push(cmd),
                 Err(_) => break,

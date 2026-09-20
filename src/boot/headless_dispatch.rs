@@ -52,7 +52,7 @@ pub(crate) fn pump_ipc(
     if let Some(ipc) = app.hub.ipc_server.as_ref() {
         // 회차 예산 — gui 쪽 `process_ipc` 와 같은 값을 쓴다. 남은 것은 넣는 쪽이
         // 명령마다 부른 waker 가 다시 들여보낸다(`DRAIN_BUDGET_PER_ROUND` 참조).
-        for _ in 0..crate::ipc::server::DRAIN_BUDGET_PER_ROUND {
+        for _ in 0..crate::adapters::production::tcp_ipc_server::DRAIN_BUDGET_PER_ROUND {
             match ipc.try_recv() {
                 Ok(cmd) => pending.push(cmd),
                 Err(_) => break,

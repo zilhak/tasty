@@ -73,6 +73,29 @@ enum LineRead {
 /// 보정 신호다(닿는 순간 `warn` 이 한 줄 남는다).
 const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 
+/// 한 dispatch 회차가 큐에서 집어 드는 IPC 명령 수의 상한.
+///
+/// 이 상한이 없으면 회차의 길이를 큐가 정한다 — 두 drain 자리(`src/app/ipc.rs` 의
+/// `process_ipc`, `src/boot/headless_dispatch.rs` 의 `pump_ipc`)가 둘 다 "빌 때까지
+/// 모아서 전부 처리" 라, 보내는 쪽이 계속 밀어 넣으면 같은 회차가 끝나지 않고
+/// 타이머·터미널 출력·창 이벤트가 그만큼 밀린다.
+///
+/// **값을 고르지 않고 [`MAX_CONCURRENT_CONNECTIONS`] 에서 파생한다.** 요청을 넣는
+/// 쪽은 둘 다 **응답을 받을 때까지 블록한다**(`dispatch_and_await` 와
+/// `tasty_ipc::host_call::HostIpcInjector::dispatch`). 그래서 살아 있는 연결 하나가
+/// 큐에 동시에 올려 둘 수 있는 명령은 최대 하나이고, 연결 수는 저 상한이 자른다 —
+/// 즉 이 값이 그 상한과 같으면 **TCP 쪽만으로는 회차가 잘릴 수 없다.** 잘릴 수 있는
+/// 것은 호스트 자신이 주입한 몫뿐이고, 그것은 정상적으로 회수된다(아래).
+///
+/// **남은 것은 다음 회차가 집는다 — 별도 배선이 없다.** 두 생산자 모두 `send` 직후
+/// waker 를 **정확히 한 번** 부르므로 N 개를 넣으면 wake 도 N 개가 큐에 들어간다.
+/// 한 회차가 B(<N) 개만 집어 들면 남은 N-B 개의 wake 가 그대로 남아 루프를 다시
+/// 들여보낸다. 이 성질은 `tests/e2e_tests.rs` 의
+/// `concurrent_requests_are_all_answered` 가 잰다 — 다만 그 시험이 여는 연결은
+/// 이 상한보다 적으므로, 실제로 재려면 이 값을 낮춰서 돌려야 한다(그 시험의 주석에
+/// 실측을 적어 두었다).
+pub(crate) const DRAIN_BUDGET_PER_ROUND: usize = MAX_CONCURRENT_CONNECTIONS;
+
 /// 살아 있는 연결 하나의 자리. 스레드가 어떻게 끝나든(정상·조기 return·패닉) `Drop`
 /// 이 자리를 돌려준다 — 회수를 `handle_connection` 의 제어흐름에 맡기지 않는다.
 struct ConnectionSlot {
