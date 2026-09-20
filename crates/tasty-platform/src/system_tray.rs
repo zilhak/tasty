@@ -93,9 +93,11 @@ fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::erro
         gtk::init().map_err(|e| format!("GTK init failed: {e}"))?;
     }
 
-    // 형제 플랫폼 모듈이다. lib.rs 가 이 모듈에 루트 별칭을 걸어 두었고 그 별칭으로
-    // 부르면 이름이 App 모듈과 앞부분을 공유해 훑는 쪽에서 App 결합으로 읽힌다 —
-    // 여기서 부르는 것은 임베드된 PNG 를 디코드하는 것뿐이고 App 상태는 안 지나간다.
+    // 형제 플랫폼 모듈이다. 본체의 `src/lib.rs` 가 이 모듈에 루트 별칭을 걸어 두었고
+    // (이 크레이트의 `lib.rs` 가 아니다 — 크레이트가 갈린 뒤로 그 이름이 두 파일을
+    // 가리킨다) 그 별칭으로 부르면 이름이 App 모듈과 앞부분을 공유해 훑는 쪽에서 App
+    // 결합으로 읽힌다 — 여기서 부르는 것은 임베드된 PNG 를 디코드하는 것뿐이고 App
+    // 상태는 안 지나간다.
     let icon =
         crate::app_icon::tray_icon().ok_or("failed to decode tray icon from embedded PNG")?;
 
