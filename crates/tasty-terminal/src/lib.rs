@@ -44,6 +44,9 @@ pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;
 pub use io::WriteAck;
 pub use mouse_report::encode_mouse_report;
+pub use output_buffer::{
+    OUTPUT_RETENTION_MAX_BYTES, OutputCursor, OutputRead, OutputReadError, OutputReadRequest,
+};
 pub use port::TerminalProcess;
 pub use scrollback::ScrollbackLine;
 

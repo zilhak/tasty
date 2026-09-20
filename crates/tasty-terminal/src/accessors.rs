@@ -57,6 +57,13 @@ impl TerminalState {
         self.output.read_since_mark(strip_ansi)
     }
 
+    pub(crate) fn read_output(
+        &self,
+        req: &crate::OutputReadRequest,
+    ) -> Result<crate::OutputRead, crate::OutputReadError> {
+        self.output.read(req)
+    }
+
     pub(crate) fn set_cached_cwd(&mut self, cwd: std::path::PathBuf) {
         self.cached_cwd = Some(cwd);
     }
@@ -324,6 +331,17 @@ impl Terminal {
     /// Read output since the last mark. If no mark was set, reads from the beginning.
     pub fn read_since_mark(&self, strip_ansi: bool) -> String {
         self.lock_state().read_since_mark(strip_ansi)
+    }
+
+    /// Answer a read from a position, saying where the retained window is, what
+    /// fell out of it and where to continue. Serves the cursor form of
+    /// `surface.read_since_mark`; the contract is on
+    /// [`crate::OutputRead`].
+    pub fn read_output(
+        &self,
+        req: &crate::OutputReadRequest,
+    ) -> Result<crate::OutputRead, crate::OutputReadError> {
+        self.lock_state().read_output(req)
     }
 }
 
