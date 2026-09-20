@@ -6,7 +6,25 @@
 //! 경로가 "5만 건" 이라는 **720배 차이 나는 두 값**을 따로 들고 있었고, 그래서
 //! 어느 쪽도 실효가 없었다(런타임은 30일 미만이라 0건 삭제, 부팅은 재시작 전까지
 //! 미집행). 정책과 집행을 이 모듈 한 곳에 모아 그 재발을 막는다. 근거는
-//! [ADR-0085](../../../../docs/adr/0085-ipc-log-retention-bounded.md).
+//! [ADR-0085](../../docs/adr/0085-ipc-log-retention-bounded.md).
+//!
+//! ## 이 표의 범위는 `memory.db` 다 — 파일 로그는 각자의 자리에 있다
+//!
+//! "단일 소스" 는 **`memory.db` 에 쌓이는 관측 로그**에 대한 말이다. 같은 데이터 루트
+//! 아래에 파일로 쌓이는 append-only 로그가 둘 더 있고, 둘 다 여기 못 들어온다 —
+//! [`LogRetention`] 이 키 prefix 와 `MemoryStorage` 를 좌변으로 쓰는데 그 둘은 파일이라
+//! prefix 도 행 수도 없다. 그래서 정책이 각자의 구현 옆에 산다.
+//!
+//! - **완료 알림 로그**(`<parent_home>/notify/<surface>.log`) — 바이트 상한 하나이고,
+//!   도달하면 그 파일을 **전량** 버린다. 시간 상한도 파일 수 상한도 없고, 회수는 호스트
+//!   부팅의 디렉토리 삭제뿐이다. 보존 범위·유실·인스턴스 정체성의 정본은
+//!   `crates/tasty-utils/src/notify.rs` 의 모듈 문서와
+//!   [ADR-0344](../../docs/adr/0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md).
+//! - **hook 전달 실패 로그**(`<tasty_home>/hook-failures.log`) — 같은 바이트 값에서
+//!   `.log.1` 로 **1 단 로테이션**한다(보존 상한은 그 2 배). `crates/tasty-cli/src/hook_failure.rs`.
+//!
+//! 즉 파일 로그 둘은 임계값이 같고 **버리는 방식이 다르다.** 여기에 새 로그를 더할 때
+//! 매체를 먼저 보고, 파일이면 이 표가 아니라 그 구현 옆에 정책을 적는다.
 //!
 //! ## 두 축을 함께 건다
 //!

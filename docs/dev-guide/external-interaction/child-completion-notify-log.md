@@ -78,27 +78,55 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   [ADR-0330](../../adr/0330-one-completion-line-is-one-write.md).
 - **크기 관리**: append 전 파일이 256 KiB 이상이면 비우고 새로 쓴다(무한 성장 방어).
   `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 비운 뒤의 라인을 계속
-  받는다. **비우기는 파일 전체를 버린다** — 뒤처진 reader 의 미독분은 함께 사라지고,
-  사라졌다는 사실은 어디에도 남지 않는다.
+  받는다. **비우기는 파일 전체를 버린다** — "마지막 256 KiB 를 남긴다" 가 아니라 "256 KiB
+  에서 0 으로 되돌린다" 이므로 실제 보존량은 0 과 256 KiB 사이를 톱니로 오간다. 뒤처진
+  reader 의 미독분도 그 안에 있다.
+
+  **버린 양은 기록된다.** 비울 때마다 `tracing::warn!` 로 경로와 **버린 바이트 수**를
+  남긴다(plugin 이 writer 이므로 그 plugin 의 로그 파일로 간다). 이 파일 **자신에는
+  안 쓴다** — 읽는 쪽 계약이 "한 줄 = 완료 통지" 라 메타 줄을 끼우면 그것이 완료로 읽힌다
+  ([ADR-0330](../../adr/0330-one-completion-line-is-one-write.md) 이 그 대안을 기각한
+  자리). 비우고 나면 파일이 0 바이트라 그 수는 **그 순간에만** 알 수 있다.
 
   비우기는 쓰기와 **분리된 단계**이고, 별도 핸들에서 크기를 다시 재고 그때도 cap 을 넘을
   때만 실행한다. 그래도 남는 창이 있다 — 비우기 직전에 append 된 줄은 사라진다. **손실의
   범위는 정의돼 있다**: 그 줄은 파일이 이미 cap 을 넘은 뒤에 쓰인 것이라 애초에 이 비우기가
   버릴 구간이고, 사라지는 단위는 **줄**이다(줄 중간이 잘리지 않는다).
 - **호스트 부팅 시 전량 삭제**: 호스트는 자기 데이터 루트의 주인이 되는 순간 `notify/`
-  디렉토리를 **통째로 지운다.** surface_id 는 재시작마다 새로 발급되므로 이전 프로세스가
-  남긴 파일은 모두 죽은 surface 의 것이고 읽을 reader 가 없다. 그래서 **호스트를 재시작하면
-  이전 인스턴스의 완료 로그는 남지 않는다** — 재시작을 사이에 두고 과거 줄을 되읽을 방법은
-  없다. 디렉토리는 다음 append 의 `create_dir_all` 이 다시 만든다.
+  디렉토리를 **통째로 지운다.** surface_id 는 재시작마다 **1 부터 다시** 발급되므로
+  (`IdGenerator::next_surface`) 이전 실행이 남긴 파일과 이번 실행의 파일은 **이름이
+  겹친다** — 겹침을 막는 것은 파일 안의 표식이 아니라 이 삭제 하나다. 그래서 **호스트를
+  재시작하면 이전 인스턴스의 완료 로그는 남지 않는다** — 재시작을 사이에 두고 과거 줄을
+  되읽을 방법은 없다. 디렉토리는 다음 append 의 `create_dir_all` 이 다시 만든다.
 
   이 삭제는 **포트 파일을 쓰기 전에, 기다려서** 한다. 포트 파일이 인스턴스의 존재를 알리는
   유일한 통로이므로, 그 전에 삭제를 끝내 두면 새 인스턴스의 첫 append 가 삭제와 겹칠 수
   없다(`TcpIpcServer::clear_notify_then_publish_port`). 겹치면 방금 쓰인 줄이 지워진다.
+
 - 구현: `crates/tasty-utils/src/notify.rs`(공유 append 헬퍼) + 이 파일에 쓰는 **세 자리** —
   `crates/tasty-plugin-claude/src/notifications.rs` 의 `handle_notify_done`(완료) ·
   `handle_notify_error`(위 "완료 외의 라인"), `crates/tasty-plugin-codex/src/handlers.rs` 의
   `handle_notify_caller`. **claude 쪽은 `handlers.rs` 가 아니라 `notifications.rs` 다.**
   위 불변식은 이 세 자리 전부에 걸린다 — 여기에 쓰기를 더하면 그 자리도 한 번의 write 여야 한다.
+
+### 보존 범위·유실·인스턴스 정체성 — 한 자리
+
+정본은 [ADR-0344](../../adr/0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md)
+와 `crates/tasty-utils/src/notify.rs` 의 모듈 문서다. 요지는 셋이다.
+
+- **정체성은 경로다.** 한 완료 로그의 정체성은 **(데이터 루트, caller surface id)** 이고,
+  그 외에 인스턴스를 가리키는 표식은 줄에도 파일에도 없다. 데이터 루트가 다르면 같은
+  surface 번호라도 다른 로그다.
+- **보존 범위는 호스트 세대 하나.** 위 부팅 삭제가 그 경계를 만든다. 이 보장은 **"한
+  데이터 루트에 호스트 하나"** 를 전제한다 — 전제이지 지켜지는 성질이 아니다.
+- **크기 축은 바이트 하나.** 시간 상한도 **파일 수 상한도 없다.** 닫힌 surface 의 파일은
+  그 세대가 끝날 때까지 남고, 회수는 다음 부팅의 디렉토리 삭제뿐이다.
+
+★ **`--port-file` 은 이 디렉토리를 격리하지 않는다.** 그 플래그는 포트 파일만 옮기고 청소
+대상은 `tasty_home()/notify` 로 남으므로, 같은 홈으로 두 번째 인스턴스를 띄우면 **먼저 뜬
+인스턴스의 살아 있는 완료 로그가 지워진다**(실측 2026-09-20: 격리 홈에 호스트 A 를 띄우고
+`notify/9.log` 를 남긴 뒤 같은 홈에 `--port-file` 만 다른 호스트 B 를 띄웠더니 A 가 살아
+있는 채로 A 의 `notify/` 가 사라졌다). 격리는 **`TASTY_HOME` 으로** 한다.
 
 ### 부모 Claude 운영 규약 — Monitor arm
 
@@ -133,6 +161,13 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
   **동시 writer 가 줄을 쪼개지 않는지**(`concurrent_writers_never_leave_a_partial_line`)
   검증. 그 시험은 스레드로 재므로 **비우기 갈래의 경합은 안 잰다** — 그 갈래를 재려면
   프로세스를 둘 이상 띄워야 한다(재는 법은 ADR-0330 의 재검토 조건 절).
+  보존 범위 쪽은 같은 `mod tests` 의 셋이 잰다 —
+  `hitting_the_cap_discards_the_whole_file_not_just_the_excess`(cap 이 전량 폐기인가) ·
+  `truncate_reports_how_many_bytes_it_threw_away`(버린 양이 값으로 나오는가) ·
+  `truncate_reports_nothing_when_another_writer_already_emptied_it`(안 버렸으면 손실을
+  보고하지 않는가). **`tracing` 출력 자체에는 채널이 없다** — `tasty-utils` 는 구독자를
+  갖지 않는 leaf crate 라, 그 줄이 실제로 나가는지는 호스트를 띄워 plugin 로그에서
+  확인한다(ADR-0344 의 재검토 조건 절).
 - **Claude Code 측(Monitor 가 idle 세션을 깨움 / 채널이 idle 을 못 깨움)**: 상류
   `anthropics/claude-code` 이슈로 확인. background-task notification 이 idle 세션을 (오히려
   과하게) 깨운다: `#76331`. 반대로 MCP Channels(`notifications/claude/channel`) 는 idle

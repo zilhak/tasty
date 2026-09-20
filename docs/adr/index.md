@@ -309,3 +309,4 @@
 | 0341 | [터미널 출력 읽기는 소비자가 든 위치로 답하고, 못 준 것을 말한다](0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md) | Accepted | 2026-09-21 | terminal, output, cursor, retention, ipc, method-effect, identity, adr-0307, adr-0322, adr-0323 |
 | 0342 | [셀 렌더러는 크레이트를 직접 부르고, 본체 재수출을 거치지 않는다](0342-the-cell-renderer-names-the-crates-not-the-host-re-exports.md) | Accepted | 2026-09-20 | architecture, layering, renderer, selection, terminal-link, naming, headless, adr-0319, adr-0324 |
 | 0343 | [OS 경계는 폴더가 아니라 크레이트다 — 본체는 별칭으로 부른다](0343-the-os-boundary-is-a-crate.md) | Accepted | 2026-09-20 | architecture, platform, crate-split, layering, features, headless, cross-platform, adr-0331 |
+| 0344 | [완료 알림 로그는 호스트 세대 하나를 들고, 버린 양을 말한다](0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md) | Accepted | 2026-09-20 | notify, retention, logging, plugin, instance-identity, adr-0330 |
