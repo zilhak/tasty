@@ -89,7 +89,11 @@
   담고 있어(`power_windows.rs` 머리말), 원문을 그냥 훑으면 규칙을 적은 줄이 위반으로
   잡힌다. 재는 법:
   `grep -rnE '(^|[^A-Za-z0-9_])AppEvent' crates/tasty-platform/src/ | grep -vE ':[[:space:]]*//'`
-  — 이 결정 전 **10**, 지금 **0** 이다(원문을 그냥 훑으면 각각 11 과 1 이라 0 이 안 나온다).
+  — 이 결정 전 **10**, 지금 **0** 이다(원문을 그냥 훑으면 각각 11 과 **2** 라 0 이 안
+  나온다). 뒤쪽이 1 이 아니라 2 인 것은 [ADR-0343](0343-the-os-boundary-is-a-crate.md)
+  이 좌변을 폴더에서 크레이트로 옮기면서 모수에 파일이 하나 들어왔기 때문이다 —
+  새 `lib.rs` 머리말이 "여기에는 `AppEvent` 도 `AppState` 도 없다" 고 적는다. 즉 늘어난
+  1 은 규칙을 어긴 줄이 아니라 **규칙을 적은 줄**이고, 필터판이 0 인 것이 그 증거다.
 - `crates/tasty-platform/src/power_windows.rs` 가 `crate::` 를 다시 참조한다. 지금 0 이고, 0 이라는 것이
   이 결정이 도달한 지점이다.
   **★ 이 바늘의 뜻이 [ADR-0343](0343-the-os-boundary-is-a-crate.md) 이후 좁아졌다.** 폴더가
