@@ -628,10 +628,20 @@ check_new_file_judges() {
 # 어느 쪽에도 흔들리지 않고, 목적(반영 시점에 올라 있는가)과도 일치한다.
 # main 이 없거나(단독 clone) merge-base 를 못 구하면 HEAD 로 떨어진다.
 # ────────────────────────────────────────────────────────────
+#
+# **선필터는 `^crates/` 다 — plugin 디렉토리가 아니다.** 판정 대상은 plugin 디렉토리가
+# 아니라 워크스페이스 내부 의존 폐포이므로(ADR-0166), 이름이 `tasty-plugin-` 으로
+# 시작하지 않는 크레이트(`tasty-utils`·`tasty-shm` 등)만 담은 커밋도 9 개 전부의 bump 를
+# 요구할 수 있다. 좁은 필터는 그런 커밋에서 스크립트를 **부르지도 않아** 초록이 된다 —
+# 실측으로 그 형태가 났다(`crates/tasty-utils/src/notify.rs` 한 파일만 담은 커밋에서
+# 선필터 0 건, 같은 내용에 스크립트를 직접 돌리면 위반 9 / 대상 9). 같은 스크립트를 부르는
+# 다른 두 자리(pre-push B.9 · plugin-version-check.yml)는 이미 넓고, 로컬 훅만 좁게
+# 남아 있었다.
+# ────────────────────────────────────────────────────────────
 check_plugin_version_bump() {
     local staged_plugin base rc
     staged_plugin=$(git diff --cached --name-only --diff-filter=ACMRD \
-        | /usr/bin/grep -E '^crates/tasty-plugin-[^/]+/' || true)
+        | /usr/bin/grep -E '^crates/' || true)
     if [ -z "$staged_plugin" ]; then return; fi
 
     base=$(git merge-base main HEAD 2>/dev/null || true)
