@@ -1561,7 +1561,8 @@ cargo check -p tasty-doc-guards --all-targets --target x86_64-pc-windows-msvc
 공용 정규화나 손 정규화를 거치거나 성분 하나짜리 이름이고, 나머지 평탄화는 진단 문자열이라
 구분자가 **찍히는 글자만** 바꾼다. 세는 술어는
 [`repo_relative_paths`](../../src/source_guards/repo_relative_paths.rs) 가 들고 있고, 그
-가드는 bin 이라 Windows 의 `--bins` 로도 돈다. 줄 축은 `str::lines()` 가 후행 `\r` 를
+가드는 **lib 유닛**이라 Windows 잡의 `--lib` 가 담는다(그 잡은 `--lib --bins` 를 함께 주므로
+결과적으로 돈다 — `--bins` 만으로는 안 담긴다). 줄 축은 `str::lines()` 가 후행 `\r` 를
 떼므로 그 함수를 쓰는 자리는 CRLF 에 안 흔들린다 — `split('\n')` 을 쓰는 자리만 따로 본다.
 
 ### macOS 유닛 테스트의 비용은 이 잡의 시간이 아니다

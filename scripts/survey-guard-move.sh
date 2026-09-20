@@ -258,7 +258,7 @@ echo "      셋 다 아닐 때만 면제가 정당하다. 그때도 파일 통�
 # ── 이동 뒤 무엇을 돌릴 것인가 ────────────────────────────────────────
 section "이동 뒤 돌릴 것 — 출발지와 목적지 **양쪽**을 돌려라"
 echo "    cargo test -p tasty-doc-guards --no-fail-fast"
-echo "    cargo test -p tasty --bins --no-fail-fast"
+echo "    cargo test -p tasty --lib --no-fail-fast"
 echo "    bash scripts/check-allow-reason.sh"
 echo "    bash scripts/check-shared-walk-ratchet.sh"
 echo
@@ -267,6 +267,8 @@ echo "      이동은 두 패키지를 건드리므로 한쪽만 돌리면 절�
 echo "    ※ rc 는 파이프 끝 단계의 것이다. 판정은 'test result' 줄로 해라."
 echo "    ※ 옮긴 타깃을 옛 패키지 이름으로 부르면 그 타깃은 **안 돈다**. 없는 이름을 주면"
 echo "      시끄럽게 죽지만, --test 를 아예 안 붙이면 조용히 빠진다 — 뒤엣것이 위험하다."
+echo "    ※ 루트 패키지를 --bins 로 좁히지 마라. 그 단위시험은 전부 lib 타깃에 살아서"
+echo "      --bins 는 0 건을 ok 로 찍는다(실측). 좁히려면 --lib 다."
 
 section "이 도구가 못 재는 축 — (가′) 이동 **뒤에** 생긴 인용"
 echo "    이 도구는 이동 전에 돈다. 그러니 다른 사람이 이동 **뒤에** 쓴 문단이 옛 경로를"

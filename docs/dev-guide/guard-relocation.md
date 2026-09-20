@@ -146,7 +146,7 @@ bash scripts/survey-guard-move.sh <옮길-파일> <목적지-경로>
 
 ```bash
 cargo test --locked -p tasty-doc-guards --no-fail-fast
-cargo test --locked -p tasty --bins --no-fail-fast
+cargo test --locked -p tasty --lib --no-fail-fast
 ```
 
 `-p <크레이트>` 는 **루트 패키지의 통합 타깃을 안 돌리고, 그 반대도 마찬가지다.** 이동은
@@ -158,6 +158,7 @@ cargo test --locked -p tasty --bins --no-fail-fast
 |---|---|
 | 옛 패키지에 **이름을 주고** 부른다 (`-p tasty --test <옮긴 이름>`) | 그런 타깃이 없어 **시끄럽게 죽는다** |
 | `--test` 를 **안 붙이고** 패키지만 돌린다 | 그 타깃이 **조용히 빠진다** |
+| 루트 패키지를 `--bins` 로 좁힌다 (`-p tasty --bins`) | 루트의 단위시험은 전부 lib 타깃에 살아서 **`test result: ok. 0 passed` 가 찍힌다**. 좁히려면 `--lib` 다 |
 
 위험한 것은 뒤엣것이다. 실패하지 않고, 로그에 그 타깃의 `test result:` 줄이 **아예 없을
 뿐**이다. 없는 줄은 초록으로 읽히기 쉽다 — 그래서 판정은 rc 가 아니라 **`test result:`
