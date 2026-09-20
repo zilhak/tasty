@@ -231,10 +231,12 @@ pub mod populations {
 
     /// 루트 패키지의 통합 테스트 타깃 — `tests/` 바로 아래 한 겹.
     pub const ROOT_TEST_TARGETS: Population = Population {
-        measured: 40,
-        measured_on: "2026-09-20",
+        measured: 41,
+        measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "91ca7d37d — 여기서 다시 셌다. 앞선 값 39 는 `12bc0f4b2` 에서 쟀고 그 트리에서 \
+            "65bcd1988 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 40 -> 41 이고 \
+             더해진 것은 `tests/cli_help_locales.rs` 하나, 삭제는 0 이다. \
+             이전 회차: 91ca7d37d — 여기서 다시 셌다. 앞선 값 39 는 `12bc0f4b2` 에서 쟀고 그 트리에서 \
              다시 세도 39 라 **낡은 값**이었다. 그 사이 늘어난 파일은 정확히 하나 \
              (`tests/attach_markdown_content_loopback.rs`). ★ 옛 좌표는 지금 **main 에서 \
              도달 불가**다(이력이 `1998055b1` 뒤로 다시 쓰였다) — 자세한 사정은 \
@@ -297,10 +299,12 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 499,
+        measured: 501,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "5120fcda1 — 같은 트리에서 다시 셌다. 493 → 499, 삭제 0 이라 단조 증가가 이어졌다. \
+            "65bcd1988 — 위 두 문서가 이 트리에 들었다(`docs/adr/0280-cli-help-localizes-presentation-not-protocol.md` \
+             와 `docs/dev-guide/paired-agent-handlers.md`). 499 -> 501 이고 삭제는 0 이다. \
+             이전 회차: 5120fcda1 — 같은 트리에서 다시 셌다. 493 → 499, 삭제 0 이라 단조 증가가 이어졌다. \
              내역이 이 모수의 함정을 그대로 보여 준다: 여섯 중 **다섯이 착지한 lane 이 들고 \
              온 ADR** 이고(0281 · 0284 · 0301 · 0302 · 0346) 하나만 이 회차가 새로 쓴 것이다. \
              앞선 값 493 은 아래 좌표에서 쟀고 그 트리에서는 맞았다. 그 앞의 이력은 \
