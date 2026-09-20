@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (마우스 + 수식키 — CLI/IPC 비노출)
 - **ADR**: [URL 대상은 picker·실행 계층에만](../../adr/0272-url-targets-enter-the-handler-picker-not-identify.md) (원칙은 [identity](../../identity.md) §1)
-- **코드**: `src/adapters/ui/terminal_link.rs` · 클릭 `src/view/main/mouse.rs` · `LinkModifier`(settings) · 링크 우클릭 메뉴 `src/view/main/link_menu.rs` · 드래그선택 우클릭 메뉴 `src/view/main/redraw.rs`(`handle_terminal_surface_native_menu`)
+- **코드**: 검출·하이라이트 타입 `crates/tasty-terminal-link/` · 링크 열기 `src/adapters/ui/terminal_link.rs`(`open_uri` — OS 부수효과라 `gui` 뒤에 남는다) · 클릭 `src/view/main/mouse.rs` · `LinkModifier`(settings) · 링크 우클릭 메뉴 `src/view/main/link_menu.rs` · 드래그선택 우클릭 메뉴 `src/view/main/redraw.rs`(`handle_terminal_surface_native_menu`)
 - **화면**: 링크 hover 하이라이트 (GPU)
 
 ## 목적
