@@ -33,41 +33,16 @@ pub(crate) struct SurfaceCloseCascade {
 }
 
 impl SurfaceCloseCascade {
-    /// gui `SurfaceCloseCascade::from_surface_closed` 의 headless 등가 — 매핑 규칙은
-    /// 한 자리에 하나뿐이어야 하므로 시그니처·의미를 그대로 맞춘다.
-    pub(crate) fn from_surface_closed(
-        event: crate::core::intent::CoreEvent,
-        is_user_close: bool,
-    ) -> Option<Self> {
-        let crate::core::intent::CoreEvent::SurfaceClosed {
-            surface_id: _,
-            closed,
-            cascade_level,
-            cleanup_targets,
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_purged,
-            workspaces_now_empty,
-        } = event
-        else {
-            return None;
-        };
-        if !closed {
-            return None;
-        }
-        Some(Self {
-            cascade_level,
-            cleanup_targets,
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_purged,
-            workspaces_now_empty,
-            is_user_close,
-        })
-    }
-
-    /// gui `SurfaceCloseCascade::from_move_surface_applied` 의 headless 등가 —
-    /// 매핑 규칙은 같은 자리에 하나뿐이어야 하므로 시그니처·의미를 그대로 맞춘다.
+    /// gui `SurfaceCloseCascade::from_move_surface_applied` 의 headless 쌍둥이.
+    ///
+    /// `core::attach_runtime::execute_forwarded_structural_op` 은 두 조합 모두에서
+    /// 컴파일되고 `crate::app::dispatch_domain::` 경로로 이것을 부른다(모듈 별칭은
+    /// `src/app.rs` 가 `cfg` 로 가른다). 그래서 이 함수는 gui 쪽과 **같은 매핑을 두 번**
+    /// 적은 것이고, 자리가 하나가 아니다.
+    ///
+    /// ★ **기본 빌드는 이 파일을 안 본다**(`cfg(not(feature = "gui"))`). `MoveSurfaceApplied`
+    /// 에 필드를 더하면 gui 조합은 초록인 채 여기만 `E0027` 로 깨진다 — `--no-default-features`
+    /// 로 따로 재야 보인다. 그 짝을 재는 채널은 이 저장소에 없다.
     pub(crate) fn from_move_surface_applied(
         event: crate::core::intent::CoreEvent,
         is_user_close: bool,
