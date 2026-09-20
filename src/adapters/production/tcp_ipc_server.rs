@@ -137,16 +137,11 @@ impl TcpIpcServer {
 
         let custom_port_file = port_file_override.map(std::path::PathBuf::from);
 
-        // Write port file so CLI clients can find us
-        port_file::write_port_file_to(port, custom_port_file.as_deref())?;
-
-        // 이 인스턴스가 자기 데이터 루트의 주인이 된 순간, 과거 완료 알림 로그
-        // (`notify/`)를 통째로 청소한다. surface_id 는 재시작마다 새로 발급되므로
-        // 이전 프로세스가 남긴 로그 파일들은 이 인스턴스에선 모두 죽은 surface 의
-        // 것 — 읽을 reader 가 없다. 부팅 latency 에 영향을 주지 않도록 결과를
-        // 기다리지 않는 fire-and-forget 으로 던진다(다음 append 시 create_dir_all
-        // 이 알아서 재생성한다).
-        Self::spawn_notify_dir_cleanup();
+        Self::clear_notify_then_publish_port(
+            tasty_utils::path::tasty_home().map(|home| home.join("notify")),
+            port,
+            custom_port_file.as_deref(),
+        )?;
 
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -201,14 +196,33 @@ impl TcpIpcServer {
         })
     }
 
-    /// 자기 데이터 루트 밑 `notify/` 디렉토리를 별도 스레드에서 통째로 삭제한다
-    /// (fire-and-forget — join 하지 않아 부팅 흐름을 막지 않는다). 홈 미확인 시
-    /// 아무것도 하지 않는다.
-    fn spawn_notify_dir_cleanup() {
-        let Some(dir) = tasty_utils::path::tasty_home().map(|home| home.join("notify")) else {
-            return;
-        };
-        thread::spawn(move || Self::clear_notify_dir(&dir));
+    /// 과거 완료 알림 로그를 치운 **뒤에** 포트 파일을 쓴다. 순서가 계약이다.
+    ///
+    /// 청소하는 이유: surface_id 는 재시작마다 새로 발급되므로 이전 프로세스가 남긴
+    /// `notify/<surface>.log` 는 이 인스턴스에선 모두 죽은 surface 의 것이고 읽을
+    /// reader 가 없다.
+    ///
+    /// **순서가 왜 계약인가**: 예전에는 부팅 지연을 피하려고 청소를 join 하지 않는
+    /// 스레드로 던지고 포트 파일을 먼저 썼다. 그러면 청소가 도는 도중에 첫 완료 알림이
+    /// append 될 수 있고, `remove_dir_all` 이 **방금 쓰인 줄을 지운다.** 포트 파일은 이
+    /// 인스턴스의 존재를 알리는 유일한 통로다 — 그것을 쓰기 전에 청소를 끝내 두면 어떤
+    /// writer 도 청소와 겹칠 수 없다. 세대 디렉토리를 도입해
+    /// `<parent_home>/notify/<caller_surface>.log` 경로 규약을 바꾸지 않고도 경합이 닫힌다.
+    ///
+    /// 치르는 값은 부팅 경로에 `remove_dir_all` 한 번이다. 지우는 것은 완료 알림 줄
+    /// 몇 개가 든 작은 파일들뿐이라 그 비용이 위 경합과 바꿀 만하다고 봤다.
+    ///
+    /// `notify_dir` 가 `None`(홈 미확인)이면 청소는 건너뛰고 포트 파일만 쓴다. 인자로
+    /// 받는 이유는 시험이 실제 홈을 건드리지 않고 순서를 재게 하려는 것이다.
+    fn clear_notify_then_publish_port(
+        notify_dir: Option<std::path::PathBuf>,
+        port: u16,
+        custom_port_file: Option<&std::path::Path>,
+    ) -> Result<()> {
+        if let Some(dir) = notify_dir {
+            Self::clear_notify_dir(&dir);
+        }
+        port_file::write_port_file_to(port, custom_port_file)
     }
 
     /// `notify/` 디렉토리를 통째로 삭제한다. 디렉토리가 애초에 없으면(NotFound)
@@ -936,22 +950,44 @@ mod notify_cleanup_tests {
         assert!(!notify.exists());
     }
 
-    // fire-and-forget spawn 경로도 스레드를 join 해 실제로 비워지는지 확인.
+    // 청소가 **포트 파일보다 먼저** 끝난다. 포트 파일이 이 인스턴스의 존재를 알리는
+    // 유일한 통로이므로, 그것이 나타난 시점에 notify/ 가 이미 치워져 있으면 어떤
+    // writer 도 청소와 겹칠 수 없다.
+    //
+    // 파일을 여럿 심는 이유: 청소를 다시 join 하지 않는 스레드로 던지면 지울 것이
+    // 많을수록 이 단언이 확실히 깨진다. 한 개만 심으면 분리 스레드가 이겨서 통과할
+    // 수 있고, 그러면 이 시험이 순서를 재지 않는다.
     #[test]
-    fn spawned_thread_clears_dir() {
+    fn the_notify_dir_is_cleared_before_the_port_file_is_published() {
         let tmp = tempfile::tempdir().unwrap();
         let notify = tmp.path().join("notify");
         std::fs::create_dir_all(&notify).unwrap();
-        std::fs::write(notify.join("7.log"), b"x\n").unwrap();
+        for i in 0..512 {
+            std::fs::write(notify.join(format!("{i}.log")), b"surface done\n").unwrap();
+        }
+        let port_file = tmp.path().join("tasty.port");
 
-        // spawn_notify_dir_cleanup 은 tasty_home() 에 의존하므로 여기선 직접
-        // 스레드를 띄워 프로덕션과 동일한 fire-and-forget 경로(spawn→clear)를
-        // 재현하고, 테스트에서만 join 으로 완료를 기다린다.
-        let dir = notify.clone();
-        let handle = thread::spawn(move || TcpIpcServer::clear_notify_dir(&dir));
-        handle.join().unwrap();
+        TcpIpcServer::clear_notify_then_publish_port(Some(notify.clone()), 4242, Some(&port_file))
+            .expect("port file write");
 
-        assert!(!notify.exists());
+        assert!(port_file.exists(), "포트 파일이 쓰여야 한다");
+        assert!(
+            !notify.exists(),
+            "포트 파일이 보이는 시점에 notify/ 는 이미 치워져 있어야 한다"
+        );
+    }
+
+    // 홈을 못 찾으면 청소할 대상이 없다 — 그래도 포트 파일은 써야 한다. 청소 실패가
+    // 서버 기동을 막으면 안 된다.
+    #[test]
+    fn an_unresolved_home_skips_the_cleanup_and_still_publishes_the_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let port_file = tmp.path().join("tasty.port");
+
+        TcpIpcServer::clear_notify_then_publish_port(None, 4243, Some(&port_file))
+            .expect("port file write");
+
+        assert!(port_file.exists());
     }
 }
 

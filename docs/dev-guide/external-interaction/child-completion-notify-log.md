@@ -70,7 +70,17 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   [plugins/claude](../../plugins/claude/index.md) 의 "정지 알림" 절.
 - **크기 관리**: append 전 파일이 256 KiB 이상이면 truncate 후 새로 쓴다(무한 성장 방어).
   `tail -F` 는 파일 축소를 감지해 재오픈하므로 arm 된 Monitor 는 truncate 후 라인을 계속
-  받는다.
+  받는다. **truncate 는 파일 전체를 버린다** — 뒤처진 reader 의 미독분은 함께 사라지고,
+  사라졌다는 사실은 어디에도 남지 않는다.
+- **호스트 부팅 시 전량 삭제**: 호스트는 자기 데이터 루트의 주인이 되는 순간 `notify/`
+  디렉토리를 **통째로 지운다.** surface_id 는 재시작마다 새로 발급되므로 이전 프로세스가
+  남긴 파일은 모두 죽은 surface 의 것이고 읽을 reader 가 없다. 그래서 **호스트를 재시작하면
+  이전 인스턴스의 완료 로그는 남지 않는다** — 재시작을 사이에 두고 과거 줄을 되읽을 방법은
+  없다. 디렉토리는 다음 append 의 `create_dir_all` 이 다시 만든다.
+
+  이 삭제는 **포트 파일을 쓰기 전에, 기다려서** 한다. 포트 파일이 인스턴스의 존재를 알리는
+  유일한 통로이므로, 그 전에 삭제를 끝내 두면 새 인스턴스의 첫 append 가 삭제와 겹칠 수
+  없다(`TcpIpcServer::clear_notify_then_publish_port`). 겹치면 방금 쓰인 줄이 지워진다.
 - 구현: `crates/tasty-utils/src/notify.rs`(공유 append 헬퍼) + 두 plugin 의
   `handle_notify_done`(claude) / `handle_notify_caller`(codex).
 
