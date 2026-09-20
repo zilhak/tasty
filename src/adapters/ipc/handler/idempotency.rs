@@ -44,6 +44,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use tasty_ipc::caller::CallerContext;
 use tasty_ipc::method_meta::{MethodEffect, method_meta};
 use tasty_ipc::protocol::{
     ERR_IDEMPOTENCY_KEY_CONFLICT, ERR_IDEMPOTENT_RESULT_DISCARDED, JsonRpcRequest, JsonRpcResponse,
@@ -86,6 +87,8 @@ enum Stored {
 
 #[derive(Debug)]
 struct Entry {
+    /// 키를 고른 주체. [`caller_scope`] 참조.
+    scope: String,
     key: String,
     /// `(메서드, params)` 의 다이제스트. 같은 키에 다른 요청이 붙는 것을 잡는다.
     ///
@@ -133,13 +136,18 @@ impl Store {
     pub(crate) fn decide(
         &mut self,
         now: Instant,
+        scope: &str,
         key: &str,
         method: &str,
         params: &serde_json::Value,
     ) -> Decision {
         self.purge_expired(now);
         let digest = digest(method, params);
-        match self.entries.iter().find(|e| e.key == key) {
+        match self
+            .entries
+            .iter()
+            .find(|e| e.scope == scope && e.key == key)
+        {
             None => Decision::Execute(digest),
             Some(e) if e.digest != digest => Decision::Conflict,
             Some(e) => match &e.outcome {
@@ -156,13 +164,14 @@ impl Store {
     pub(crate) fn record(
         &mut self,
         now: Instant,
+        scope: &str,
         key: &str,
         digest: u64,
         response: &JsonRpcResponse,
     ) {
         // 같은 키의 옛 항목은 남기지 않는다 — 앞의 것이 남아 있으면 `decide` 가
         // 둘 중 어느 것을 볼지가 삽입 순서에 달린다.
-        self.remove(key);
+        self.remove(scope, key);
         let size = serde_json::to_string(response)
             .map(|s| s.len())
             .unwrap_or(0);
@@ -172,6 +181,7 @@ impl Store {
             (Stored::Response(Box::new(response.clone())), size)
         };
         self.entries.push_back(Entry {
+            scope: scope.to_string(),
             key: key.to_string(),
             digest,
             stored_at: now,
@@ -182,8 +192,12 @@ impl Store {
         self.enforce_bounds();
     }
 
-    fn remove(&mut self, key: &str) {
-        if let Some(i) = self.entries.iter().position(|e| e.key == key) {
+    fn remove(&mut self, scope: &str, key: &str) {
+        if let Some(i) = self
+            .entries
+            .iter()
+            .position(|e| e.scope == scope && e.key == key)
+        {
             if let Some(e) = self.entries.remove(i) {
                 self.total_bytes -= e.bytes;
             }
@@ -243,6 +257,26 @@ fn digest(method: &str, params: &serde_json::Value) -> u64 {
     h.finish()
 }
 
+/// 키를 고른 **주체**. 보존소의 자리는 `(주체, 키)` 로 정해진다.
+///
+/// 키는 호출자가 고르는 임의의 문자열이라, 주체를 빼면 서로 모르는 두 호출자가 같은
+/// 문자열을 골랐을 때 한쪽이 **다른 쪽의 답**을 받는다. 그 자리는 조용하다 — 답이
+/// 성공이고 모양도 맞다.
+///
+/// 연결 단위로 가르지 않는 이유는 이 계약의 목적 자체다. 재시도는 응답을 놓친 뒤에
+/// 오므로 **다른 연결**로 온다 — 연결로 가르면 키가 한 번도 안 맞는다.
+///
+/// `Local` 이 하나로 묶이는 것은 그것이 한 주체이기 때문이다(사용자). CLI 를 두 번
+/// 부른 것과 네트워크로 붙은 것이 같은 주체라는 판정은 이 레포가 이미 하고 있다 —
+/// `Local` 은 권한 검사를 통째로 건너뛴다.
+fn caller_scope(caller: &CallerContext) -> String {
+    match caller {
+        CallerContext::Local => "local".to_string(),
+        CallerContext::Plugin { plugin_id, .. } => format!("plugin:{plugin_id}"),
+        CallerContext::Agent { agent_id, .. } => format!("agent:{agent_id}"),
+    }
+}
+
 static STORE: Mutex<Store> = Mutex::new(Store::new());
 static POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 const WHAT: &str = "the IPC idempotency store";
@@ -254,6 +288,7 @@ fn store() -> MutexGuard<'static, Store> {
 /// 실행을 기다리는 키. [`begin`] 이 주고 [`finish`] 가 받는다.
 #[derive(Debug)]
 pub(crate) struct Pending {
+    scope: String,
     key: String,
     digest: u64,
 }
@@ -264,6 +299,7 @@ pub(crate) struct Pending {
 /// 생기기 전과 한 글자도 다르지 않다.
 pub(crate) fn begin(
     now: Instant,
+    caller: &CallerContext,
     request: &JsonRpcRequest,
     id: &serde_json::Value,
 ) -> Result<Option<Pending>, JsonRpcResponse> {
@@ -283,8 +319,10 @@ pub(crate) fn begin(
     if method_meta(&request.method).map(|m| m.effect) != Some(MethodEffect::Mutate) {
         return Ok(None);
     }
-    match store().decide(now, key, &request.method, &request.params) {
+    let scope = caller_scope(caller);
+    match store().decide(now, &scope, key, &request.method, &request.params) {
         Decision::Execute(digest) => Ok(Some(Pending {
+            scope,
             key: key.to_string(),
             digest,
         })),
@@ -311,7 +349,7 @@ pub(crate) fn begin(
 /// 실행이 끝났다. [`begin`] 이 키를 줬을 때만 기록한다.
 pub(crate) fn finish(now: Instant, pending: Option<Pending>, response: &JsonRpcResponse) {
     if let Some(p) = pending {
-        store().record(now, &p.key, p.digest, response);
+        store().record(now, &p.scope, &p.key, p.digest, response);
     }
 }
 
@@ -343,13 +381,14 @@ mod tests {
     fn the_same_key_and_request_is_executed_once_and_then_replayed() {
         let mut s = Store::new();
         let t0 = Instant::now();
-        let Decision::Execute(d) = s.decide(t0, "k", "workspace.create", &json!({"name": "a"}))
+        let Decision::Execute(d) =
+            s.decide(t0, "local", "k", "workspace.create", &json!({"name": "a"}))
         else {
             panic!("처음 보는 키는 실행이어야 한다");
         };
-        s.record(t0, "k", d, &resp(1, "first"));
+        s.record(t0, "local", "k", d, &resp(1, "first"));
 
-        match s.decide(t0, "k", "workspace.create", &json!({"name": "a"})) {
+        match s.decide(t0, "local", "k", "workspace.create", &json!({"name": "a"})) {
             Decision::Replay(r) => assert_eq!(r.result.as_ref().unwrap()["body"], "first"),
             other => panic!("재조회여야 한다: {other:?}"),
         }
@@ -377,23 +416,72 @@ mod tests {
     fn the_same_key_with_a_different_request_is_a_conflict() {
         let mut s = Store::new();
         let t0 = Instant::now();
-        let Decision::Execute(d) = s.decide(t0, "k", "workspace.create", &json!({"name": "a"}))
+        let Decision::Execute(d) =
+            s.decide(t0, "local", "k", "workspace.create", &json!({"name": "a"}))
         else {
             panic!("실행이어야 한다");
         };
-        s.record(t0, "k", d, &resp(1, "first"));
+        s.record(t0, "local", "k", d, &resp(1, "first"));
 
         assert!(matches!(
-            s.decide(t0, "k", "workspace.create", &json!({"name": "b"})),
+            s.decide(t0, "local", "k", "workspace.create", &json!({"name": "b"})),
             Decision::Conflict
         ));
         assert!(
             matches!(
-                s.decide(t0, "k", "tab.create", &json!({"name": "a"})),
+                s.decide(t0, "local", "k", "tab.create", &json!({"name": "a"})),
                 Decision::Conflict
             ),
             "메서드가 다른 것도 다른 요청이다"
         );
+    }
+
+    /// 키는 **주체마다 따로 산다.** 서로 모르는 두 호출자가 같은 문자열을 골랐을 때
+    /// 한쪽이 다른 쪽의 답을 받으면, 그 자리는 성공 응답이라 아무 신호도 안 난다.
+    #[test]
+    fn two_callers_that_picked_the_same_string_do_not_share_an_answer() {
+        let mut s = Store::new();
+        let t0 = Instant::now();
+        let params = json!({ "name": "same" });
+        let Decision::Execute(d) = s.decide(t0, "agent:a", "k", "workspace.create", &params) else {
+            panic!("실행이어야 한다");
+        };
+        s.record(t0, "agent:a", "k", d, &resp(1, "answer-for-a"));
+
+        assert!(
+            matches!(
+                s.decide(t0, "agent:b", "k", "workspace.create", &params),
+                Decision::Execute(_)
+            ),
+            "다른 주체가 같은 키로 남의 답을 받았다"
+        );
+        // 같은 주체는 그대로 재조회다 — 위 단정이 scope 를 통째로 무력화한 것이 아니다.
+        assert!(matches!(
+            s.decide(t0, "agent:a", "k", "workspace.create", &params),
+            Decision::Replay(_)
+        ));
+    }
+
+    /// 주체 문자열이 세 변종을 **갈라** 낸다. 하나로 접히면 위 시험이 통과하면서도
+    /// plugin 과 agent 가 한 칸을 나눠 쓰게 된다.
+    #[test]
+    fn the_three_caller_kinds_get_three_scopes() {
+        use std::collections::HashSet;
+        use std::sync::Arc;
+        let scopes: HashSet<String> = [
+            caller_scope(&CallerContext::Local),
+            caller_scope(&CallerContext::Plugin {
+                plugin_id: "p".into(),
+                permissions: Arc::new(Default::default()),
+            }),
+            caller_scope(&CallerContext::Agent {
+                agent_id: "p".into(),
+                permissions: Arc::new(Default::default()),
+            }),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(scopes.len(), 3, "주체가 접혔다: {scopes:?}");
     }
 
     /// 다이제스트는 **JSON 오브젝트의 키 순서에 안 흔들린다.** 흔들리면 같은 요청의
@@ -411,13 +499,15 @@ mod tests {
     fn an_expired_key_is_indistinguishable_from_a_fresh_one() {
         let mut s = Store::new();
         let t0 = Instant::now();
-        let Decision::Execute(d) = s.decide(t0, "k", "workspace.create", &json!({})) else {
+        let Decision::Execute(d) = s.decide(t0, "local", "k", "workspace.create", &json!({}))
+        else {
             panic!("실행이어야 한다");
         };
-        s.record(t0, "k", d, &resp(1, "first"));
+        s.record(t0, "local", "k", d, &resp(1, "first"));
         assert!(matches!(
             s.decide(
                 t0 + RETENTION - Duration::from_millis(1),
+                "local",
                 "k",
                 "workspace.create",
                 &json!({})
@@ -425,7 +515,7 @@ mod tests {
             Decision::Replay(_)
         ));
         assert!(matches!(
-            s.decide(t0 + RETENTION, "k", "workspace.create", &json!({})),
+            s.decide(t0 + RETENTION, "local", "k", "workspace.create", &json!({})),
             Decision::Execute(_)
         ));
     }
@@ -437,16 +527,17 @@ mod tests {
         let t0 = Instant::now();
         for i in 0..=CAPACITY {
             let key = format!("k{i}");
-            let Decision::Execute(d) = s.decide(t0, &key, "workspace.create", &json!({ "i": i }))
+            let Decision::Execute(d) =
+                s.decide(t0, "local", &key, "workspace.create", &json!({ "i": i }))
             else {
                 panic!("실행이어야 한다");
             };
-            s.record(t0, &key, d, &resp(1, "x"));
+            s.record(t0, "local", &key, d, &resp(1, "x"));
         }
         assert_eq!(s.len(), CAPACITY);
         assert!(
             matches!(
-                s.decide(t0, "k0", "workspace.create", &json!({"i": 0})),
+                s.decide(t0, "local", "k0", "workspace.create", &json!({"i": 0})),
                 Decision::Execute(_)
             ),
             "밀려난 키는 처음 보는 키와 구별되지 않는다"
@@ -454,6 +545,7 @@ mod tests {
         assert!(matches!(
             s.decide(
                 t0,
+                "local",
                 &format!("k{CAPACITY}"),
                 "workspace.create",
                 &json!({"i": CAPACITY})
@@ -468,14 +560,15 @@ mod tests {
     fn an_oversized_response_keeps_the_key_and_drops_the_answer() {
         let mut s = Store::new();
         let t0 = Instant::now();
-        let Decision::Execute(d) = s.decide(t0, "k", "surface.read_since_scan_mark", &json!({}))
+        let Decision::Execute(d) =
+            s.decide(t0, "local", "k", "surface.read_since_scan_mark", &json!({}))
         else {
             panic!("실행이어야 한다");
         };
         let big = JsonRpcResponse::success(json!(1), json!("x".repeat(MAX_STORED_RESPONSE_BYTES)));
-        s.record(t0, "k", d, &big);
+        s.record(t0, "local", "k", d, &big);
         assert!(matches!(
-            s.decide(t0, "k", "surface.read_since_scan_mark", &json!({})),
+            s.decide(t0, "local", "k", "surface.read_since_scan_mark", &json!({})),
             Decision::Discarded
         ));
     }
@@ -493,12 +586,14 @@ mod tests {
         );
         for i in 0..n {
             let key = format!("k{i}");
-            let Decision::Execute(d) = s.decide(t0, &key, "workspace.create", &json!({ "i": i }))
+            let Decision::Execute(d) =
+                s.decide(t0, "local", &key, "workspace.create", &json!({ "i": i }))
             else {
                 panic!("실행이어야 한다");
             };
             s.record(
                 t0,
+                "local",
                 &key,
                 d,
                 &JsonRpcResponse::success(json!(1), json!(payload)),
@@ -520,7 +615,11 @@ mod tests {
             response_timeout_ms: None,
             idempotency_key: None,
         };
-        assert!(begin(Instant::now(), &req, &json!(1)).unwrap().is_none());
+        assert!(
+            begin(Instant::now(), &CallerContext::Local, &req, &json!(1))
+                .unwrap()
+                .is_none()
+        );
     }
 
     /// 읽기·멱등 메서드는 키를 실어도 보존소에 안 들어간다 — 들어가면 조회가 낡은
@@ -538,7 +637,9 @@ mod tests {
                 idempotency_key: Some("shared-key".into()),
             };
             assert!(
-                begin(Instant::now(), &req, &json!(1)).unwrap().is_none(),
+                begin(Instant::now(), &CallerContext::Local, &req, &json!(1))
+                    .unwrap()
+                    .is_none(),
                 "{method} 가 보존소에 들어갔다"
             );
         }
@@ -557,8 +658,8 @@ mod tests {
                 response_timeout_ms: None,
                 idempotency_key: Some(key.clone()),
             };
-            let err =
-                begin(Instant::now(), &req, &json!(1)).expect_err("길이 밖 키는 거절이어야 한다");
+            let err = begin(Instant::now(), &CallerContext::Local, &req, &json!(1))
+                .expect_err("길이 밖 키는 거절이어야 한다");
             assert_eq!(err.error.expect("에러").code, -32602);
         }
     }

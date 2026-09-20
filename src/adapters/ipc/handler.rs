@@ -174,7 +174,7 @@ fn route_checked_request(
     // 멱등 키는 **정규화 뒤**에 본다 — 옛 이름과 새 이름이 같은 요청이므로 키도 같은
     // 것을 가리켜야 한다. 그리고 라우팅 **전**이라, 키가 재시도를 가리키면 handler 가
     // 아예 안 돈다(그것이 두 번째 효과를 막는 유일한 지점이다).
-    let pending = match idempotency::begin(core.now_instant(), request, &id) {
+    let pending = match idempotency::begin(core.now_instant(), caller, request, &id) {
         Ok(pending) => pending,
         Err(answer) => return answer,
     };
