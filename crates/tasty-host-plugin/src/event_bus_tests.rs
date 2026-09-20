@@ -229,3 +229,128 @@ fn a_poisoned_bus_keeps_serving_subscriptions_and_fan_out() {
         "poison 이후에도 정리가 된다"
     );
 }
+
+// ── offset 링 ────────────────────────────────────────────────────────────────
+
+#[test]
+fn a_consumer_that_was_not_listening_still_reads_what_it_missed() {
+    let bus = EventBus::new();
+    // 구독자가 하나도 없는 상태로 발화한다.
+    bus.publish_from_host(env("agent.task_finished", EventOrigin::Host));
+    bus.publish_from_host(env("agent.barrier_closed", EventOrigin::Host));
+    let got = bus.fetch(0, 10, None);
+    assert_eq!(got.events.len(), 2, "구독자가 없던 동안의 사건이 없다");
+    assert_eq!(got.events[0].0, 0);
+    assert_eq!(got.events[1].0, 1);
+    assert_eq!(got.next_offset, 2);
+    assert!(!got.truncated);
+    assert_eq!(got.skipped, 0);
+}
+
+#[test]
+fn positions_never_repeat_and_never_go_backwards() {
+    let bus = EventBus::new();
+    for _ in 0..(crate::event_bus::EVENT_RING_CAPACITY + 5) {
+        bus.publish_from_host(env("system.startup_complete", EventOrigin::Host));
+    }
+    let got = bus.fetch(0, 4, None);
+    // 앞의 5 개는 밀려났다. 위치는 그 자리를 **되쓰지 않는다**.
+    assert!(got.truncated, "보존 밖 요청인데 truncated 가 아니다");
+    assert_eq!(got.skipped, 5);
+    assert_eq!(got.events[0].0, 5, "밀려난 자리의 위치가 재사용됐다");
+}
+
+/// 보존 밖 요청에 **조용히 처음부터 주지 않는다.** 건너뛴 수를 함께 준다 —
+/// 그것이 없으면 소비자는 자기가 받은 첫 사건이 진짜 첫 사건인 줄 안다.
+#[test]
+fn asking_for_a_position_that_scrolled_away_says_how_many_were_skipped() {
+    let bus = EventBus::new();
+    for _ in 0..(crate::event_bus::EVENT_RING_CAPACITY + 7) {
+        bus.publish_from_host(env("system.startup_complete", EventOrigin::Host));
+    }
+    let got = bus.fetch(2, 3, None);
+    assert!(got.truncated);
+    assert_eq!(got.skipped, 5, "2 부터 요청했고 보존은 7 부터다");
+    assert_eq!(got.events[0].0, 7);
+}
+
+#[test]
+fn a_position_inside_the_ring_is_not_reported_as_truncated() {
+    let bus = EventBus::new();
+    bus.publish_from_host(env("tab.created", EventOrigin::Host));
+    bus.publish_from_host(env("tab.closed", EventOrigin::Host));
+    let got = bus.fetch(1, 10, None);
+    assert!(!got.truncated);
+    assert_eq!(got.skipped, 0);
+    assert_eq!(got.events.len(), 1);
+    assert_eq!(got.events[0].1.key, "tab.closed");
+}
+
+#[test]
+fn the_filter_is_the_same_grammar_the_subscriptions_use() {
+    let bus = EventBus::new();
+    bus.publish_from_host(env("agent.task_finished", EventOrigin::Host));
+    bus.publish_from_host(env("tab.created", EventOrigin::Host));
+    bus.publish_from_host(env("agent.barrier_closed", EventOrigin::Host));
+
+    let wild = bus.fetch(0, 10, Some("agent.*"));
+    assert_eq!(wild.events.len(), 2);
+    assert_eq!(wild.next_offset, 3, "필터가 거른 칸까지 다 본 것이다");
+
+    let exact = bus.fetch(0, 10, Some("tab.created"));
+    assert_eq!(exact.events.len(), 1);
+    assert_eq!(exact.events[0].0, 1);
+
+    let none = bus.fetch(0, 10, Some("nothing.here"));
+    assert!(none.events.is_empty());
+    assert_eq!(none.next_offset, 3, "빈 답이어도 위치는 전진한다");
+}
+
+/// `max` 에 걸려 멈췄으면 다음 위치는 **마지막으로 준 것의 다음**이다. 링의 끝으로
+/// 밀면 그 사이 사건을 소비자가 영원히 못 본다.
+#[test]
+fn stopping_at_max_resumes_right_after_what_it_gave() {
+    let bus = EventBus::new();
+    for _ in 0..5 {
+        bus.publish_from_host(env("tab.created", EventOrigin::Host));
+    }
+    let first = bus.fetch(0, 2, None);
+    assert_eq!(first.events.len(), 2);
+    assert_eq!(first.next_offset, 2);
+    let second = bus.fetch(first.next_offset, 2, None);
+    assert_eq!(second.events[0].0, 2);
+}
+
+#[test]
+fn an_empty_bus_answers_with_a_position_and_no_events() {
+    let bus = EventBus::new();
+    let got = bus.fetch(0, 10, None);
+    assert!(got.events.is_empty());
+    assert_eq!(got.next_offset, 0);
+    assert!(!got.truncated);
+}
+
+/// 재시작하면 위치가 0 부터 다시 매겨진다. 소비자가 그것을 **알 수 있어야** 한다 —
+/// 세대 표지가 없으면 옛 위치가 새 세대의 다른 사건을 가리킨다.
+#[test]
+fn two_buses_do_not_share_a_generation_marker() {
+    let a = EventBus::new();
+    let b = EventBus::new();
+    assert_ne!(a.epoch(), b.epoch(), "세대 표지가 같으면 구별이 안 된다");
+    assert_eq!(a.fetch(0, 1, None).epoch, a.epoch());
+}
+
+/// debug 의 trace 조회와 소비자의 `fetch` 가 **한 링**을 본다. 둘로 두면 debug 에서
+/// 보이는 것과 release 가 내주는 것이 갈린다.
+#[cfg(debug_assertions)]
+#[test]
+fn the_trace_lookup_and_the_fetch_read_the_same_ring() {
+    let bus = EventBus::new();
+    let mut e = env("agent.task_finished", EventOrigin::Host);
+    e.meta.trace_id = "same".into();
+    bus.publish_from_host(e);
+    assert_eq!(bus.debug_trace("same").len(), 1);
+    let got = bus.fetch(0, 10, None);
+    assert_eq!(got.events.len(), 1);
+    assert_eq!(got.events[0].1.meta.trace_id, "same");
+}

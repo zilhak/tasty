@@ -288,6 +288,7 @@
 | 0319 | [선택 모델은 낡은 gui 게이트를 크레이트 feature 로 옮기지 않고 버린다](0319-the-selection-model-drops-the-stale-gui-gate-instead-of-carrying-it.md) | Accepted | 2026-09-20 | architecture, crates, layering, selection, cell-width, headless, feature-gate, adr-0308 |
 | 0320 | [webview 백엔드 셋은 trait 이 아니라 공유 호출부가 묶는다](0320-the-webview-backends-are-held-together-by-shared-call-sites-not-a-trait.md) | Accepted | 2026-09-20 | architecture, webview, host-api, cross-platform, trait, cfg, contract |
 | 0321 | [agent 사건은 이미 있는 깔때기에서만 발화한다](0321-agent-domain-events-publish-only-at-the-funnel-that-already-exists.md) | Accepted | 2026-09-20 | events, event-bus, agent, task, barrier, plugin-protocol, catalog |
+| 0322 | [사건 링은 위치를 들고, 못 준 것을 말한다](0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md) | Accepted | 2026-09-20 | events, event-bus, ring-buffer, offsets, retention, cursor, adr-0321 |
 | 0324 | [링크는 검출과 여는 것을 부수효과로 가른다](0324-link-detection-and-link-opening-split-by-side-effect.md) | Accepted | 2026-09-20 | architecture, crates, layering, terminal-link, headless, feature-gate, side-effect, adr-0319 |
 | 0325 | [루트 패키지를 lib 와 bin 으로 가른다 — 경계를 만드는 것이 아니라 잴 좌변을 만드는 것이다](0325-the-root-package-splits-into-a-lib-and-a-bin.md) | Accepted | 2026-09-20 | architecture, cargo, targets, testing, public-api, headless |
 | 0326 | [egui 는 링크하는 크레이트가 켜는 것이지 기본값으로 따라오는 것이 아니다](0326-egui-is-opt-in-for-the-crates-that-link-it.md) | Accepted | 2026-09-20 | build, cargo, features, headless, type-appearance, dependency-graph |

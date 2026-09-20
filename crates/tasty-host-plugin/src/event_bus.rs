@@ -6,6 +6,8 @@
 //! - 호스트 본문은 `publish()`로 직접 발화, plugin은 [`PluginEvent::EventPublish`] 경로로 위임
 //! - hop count(`MAX_HOP=16`) 초과 envelope는 폐기하고 경고 로그
 //! - 호스트 listener와 plugin listener를 통합된 [`Subscriber`] 인터페이스로 다룬다
+//! - 지나간 envelope 를 [`EVENT_RING_CAPACITY`] 개까지 들고 있다 — 구독자가 없던
+//!   동안의 사건을 나중에 붙은 소비자가 위치로 읽을 수 있게
 //!
 //! 패턴 매칭은 매니페스트 검증과 같은 형식을 사용한다:
 //! - `surface.created` — 정확 일치
@@ -17,9 +19,7 @@
 //! - plugin의 `event_publish` 패턴과 발화 envelope key가 매칭되어야 publish 허용
 //! - 호스트 publish는 권한 검사 없이 항상 통과 (origin = Host)
 
-use std::collections::HashMap;
-#[cfg(debug_assertions)]
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -54,18 +54,59 @@ struct Inner {
     plugin_subscribe_perms: HashMap<String, Vec<String>>,
     /// 매니페스트의 `event_publish` 패턴 (plugin_id → 패턴 목록).
     plugin_publish_perms: HashMap<String, Vec<String>>,
-    /// debug 빌드 한정 — 최근 발화된 envelope 링버퍼. `debug.event_bus.trace`
-    /// CLI가 trace_id로 조회.
-    #[cfg(debug_assertions)]
-    trace_ring: VecDeque<EventEnvelope>,
+    /// 최근 발화된 envelope 를 위치와 함께 들고 있는 링. **debug 와 release 가 같은
+    /// 자료구조를 쓴다** — 예전에는 이 자리가 `#[cfg(debug_assertions)]` 라 release
+    /// 에서 버스가 지나간 것을 아무것도 안 들고 있었고, 그래서 두 빌드의 동작이
+    /// 갈렸다. `debug.event_bus.trace` 도 이 링을 읽는다.
+    ring: VecDeque<RingSlot>,
+    /// 다음 발화가 받을 위치. 링에서 밀려나도 **되돌아가지 않는다** — 그래서 소비자가
+    /// 든 위치가 보존 밖인지 아직 안 온 것인지가 값으로 갈린다.
+    next_offset: u64,
 }
 
-#[cfg(debug_assertions)]
-const TRACE_RING_CAPACITY: usize = 256;
+/// 링에 보존하는 사건 수.
+///
+/// **값의 단위는 개수다.** 바이트로 두는 길도 있었지만 payload 는 메모리에서
+/// `serde_json::Value` 라 바이트를 재려면 발화마다 다시 직렬화하거나 직렬화본을
+///따로 들고 있어야 한다 — 둘 다 발화 경로에 비용을 얹는다. 그리고 소비자가 말하는
+/// 단위(`max`)도 개수라, 개수로 두면 두 축이 같은 단위를 쓴다.
+///
+/// **이 값은 여기 한 곳에만 있다.** 예전에 `audit` 이 보존 기간을 자기 상수로 들고
+/// 있다가 부팅 경로와 **720 배** 어긋난 적이 있다(`src/adapters/ipc/audit.rs` 머리말).
+/// 링을 읽는 모든 경로는 이 상수를 본다.
+pub const EVENT_RING_CAPACITY: usize = 1024;
+
+/// 링 한 칸 — envelope 과 그것이 받은 위치.
+#[derive(Debug, Clone)]
+struct RingSlot {
+    offset: u64,
+    envelope: EventEnvelope,
+}
+
+/// 한 번의 [`EventBus::fetch`] 가 돌려주는 것.
+#[derive(Debug, Clone)]
+pub struct EventFetch {
+    /// 요청한 위치부터의 envelope 들. 각 항목에 그 위치가 붙어 있다.
+    pub events: Vec<(u64, EventEnvelope)>,
+    /// 다음에 이어 붙을 위치. 빈 답이어도 이 값은 온다.
+    pub next_offset: u64,
+    /// 이 호스트 세대의 표지. 재시작하면 위치가 0 부터 다시 매겨지므로, 소비자가
+    /// 옛 위치를 들고 와도 **이 값이 다르면 그것이 옛 세대임을 안다.**
+    pub epoch: u64,
+    /// 요청한 위치가 보존 밖이었나. `true` 면 [`Self::skipped`] 가 몇 개를 건너뛰었는지
+    /// 말한다 — **조용히 처음부터 주지 않는다.**
+    pub truncated: bool,
+    /// 보존 밖이라 못 준 사건 수.
+    pub skipped: u64,
+}
 
 #[derive(Clone)]
 pub struct EventBus {
     inner: Arc<Mutex<Inner>>,
+    /// 이 버스가 선 순간을 나노초로 찍은 값. 소비자가 위치의 **세대**를 가리는 데
+    /// 쓴다 — 필요한 성질은 순서가 아니라 재시작마다 달라지는 것이고, 나노초
+    /// 해상도면 같은 프로세스가 두 번 서도 값이 겹치지 않는다.
+    epoch: u64,
     /// poison 을 이미 보고했는가. poison 은 sticky 라 fan-out 마다 같은 로그가
     /// 나오는 것을 막는다.
     poison_reported: Arc<AtomicBool>,
@@ -114,11 +155,20 @@ impl EventBus {
                 plugin_subs: Vec::new(),
                 plugin_subscribe_perms: HashMap::new(),
                 plugin_publish_perms: HashMap::new(),
-                #[cfg(debug_assertions)]
-                trace_ring: VecDeque::with_capacity(TRACE_RING_CAPACITY),
+                ring: VecDeque::with_capacity(EVENT_RING_CAPACITY),
+                next_offset: 0,
             })),
             poison_reported: Arc::new(AtomicBool::new(false)),
+            epoch: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0),
         }
+    }
+
+    /// 이 호스트 세대의 표지. [`EventFetch::epoch`] 와 같은 값이다.
+    pub fn epoch(&self) -> u64 {
+        self.epoch
     }
 
     /// plugin이 호스트에 등록될 때 매니페스트의 권한을 적재한다. 비활성화/언인스톨 시 `clear_plugin`으로 정리.
@@ -250,17 +300,18 @@ impl EventBus {
         envelope: EventEnvelope,
         publisher_plugin_id: Option<&str>,
     ) -> Vec<PluginDispatch> {
-        // 이유: 아래 `inner` 를 변형하는 곳이 debug 전용 trace 기록뿐이라 release 에선 `mut` 가 남는다.
-        #[cfg_attr(not(debug_assertions), allow(unused_mut))]
         let mut inner = self.lock_recovering();
-        // debug 빌드: trace 링버퍼에 envelope 기록.
-        #[cfg(debug_assertions)]
-        {
-            if inner.trace_ring.len() == TRACE_RING_CAPACITY {
-                inner.trace_ring.pop_front();
-            }
-            inner.trace_ring.push_back(envelope.clone());
+        // 링에 위치와 함께 적는다. 앞을 `drain` 하지 않고 `VecDeque` 의 `pop_front` 를
+        // 쓴다 — `Vec` 앞을 잘라내면 append 마다 뒤 전체를 memmove 한다.
+        if inner.ring.len() == EVENT_RING_CAPACITY {
+            inner.ring.pop_front();
         }
+        let offset = inner.next_offset;
+        inner.next_offset = offset.saturating_add(1);
+        inner.ring.push_back(RingSlot {
+            offset,
+            envelope: envelope.clone(),
+        });
         // plugin 구독자.
         let mut dispatches: Vec<PluginDispatch> = Vec::new();
         for sub in &inner.plugin_subs {
@@ -304,16 +355,71 @@ impl EventBus {
             .collect()
     }
 
-    /// debug 한정 — 링버퍼에서 `trace_id`가 일치하는 envelope들을 발화 순서로 반환.
+    /// debug 한정 — 링에서 `trace_id`가 일치하는 envelope들을 발화 순서로 반환.
+    /// **release 의 소비자가 읽는 것과 같은 링이다** — 둘로 두면 debug 에서 보이는
+    /// 것과 release 가 내주는 것이 갈린다.
     #[cfg(debug_assertions)]
     pub fn debug_trace(&self, trace_id: &str) -> Vec<EventEnvelope> {
         let inner = self.lock_recovering();
         inner
-            .trace_ring
+            .ring
             .iter()
-            .filter(|e| e.meta.trace_id == trace_id)
-            .cloned()
+            .filter(|s| s.envelope.meta.trace_id == trace_id)
+            .map(|s| s.envelope.clone())
             .collect()
+    }
+
+    /// `offset` 부터 최대 `max` 개를, `filter` 가 있으면 그것에 맞는 것만 돌려준다.
+    ///
+    /// **서버는 소비자별 상태를 들지 않는다** — 커서는 소비자가 들고 매번 가져온다.
+    /// 그래서 같은 인자로 두 번 불러도 같은 답이 오고, 느린 소비자가 호스트 쪽에
+    /// 아무것도 쌓지 않는다.
+    ///
+    /// 요청한 위치가 링에서 이미 밀려났으면 **조용히 처음부터 주지 않는다.**
+    /// `truncated` 를 세우고 `skipped` 에 몇 개를 건너뛰었는지 싣는다.
+    ///
+    /// `filter` 는 구독 패턴과 **같은 문법**이다 — 정확 키 또는 `<ns>.*`. 새 문법을
+    /// 만들지 않는다.
+    pub fn fetch(&self, offset: u64, max: usize, filter: Option<&str>) -> EventFetch {
+        let inner = self.lock_recovering();
+        let base = inner
+            .ring
+            .front()
+            .map(|s| s.offset)
+            .unwrap_or(inner.next_offset);
+        let (start, truncated, skipped) = if offset < base {
+            (base, true, base - offset)
+        } else {
+            (offset, false, 0)
+        };
+        let events: Vec<(u64, EventEnvelope)> = inner
+            .ring
+            .iter()
+            .filter(|s| s.offset >= start)
+            .filter(|s| filter.is_none_or(|p| pattern_matches(p, &s.envelope.key)))
+            .take(max)
+            .map(|s| (s.offset, s.envelope.clone()))
+            .collect();
+        // 다음 위치는 **어디까지 봤는가**로 정한다. `max` 에 걸려 멈췄으면 마지막으로
+        // 준 것의 다음이고, 링을 끝까지 훑었으면 필터가 거른 칸까지 다 본 것이므로
+        // 링의 끝이다. 뒤쪽을 마지막 일치 자리로 되돌리면 필터에 안 맞는 구간을
+        // 소비자가 매번 다시 묻는다.
+        let exhausted = events.len() < max;
+        let next_offset = if exhausted {
+            inner.next_offset.max(start)
+        } else {
+            events
+                .last()
+                .map(|(o, _)| o.saturating_add(1))
+                .unwrap_or(start)
+        };
+        EventFetch {
+            events,
+            next_offset,
+            epoch: self.epoch,
+            truncated,
+            skipped,
+        }
     }
 
     /// 테스트 전용 — 락을 든 채 패닉하는 스레드를 띄워 버스를 poison 시킨다.
