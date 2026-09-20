@@ -24,6 +24,43 @@ Tasty 의 모든 API 는 **사용자 행동**(키보드/마우스/OS 네이티�
 - **Hexagonal 아키텍처** — model + ports + adapters + view + host_api 분리, 60-crate workspace.
 - **AI 에이전트 first-class** — IPC 와 CLI 의 모든 동작 표면이 focus-independent ID 기반. 사용자 행동과 에이전트 행동이 완전히 분리됨 (debug 격리).
 
+## 주요 시스템
+
+터미널 위에 세 가지 시스템을 올렸다. 셋 다 GUI 와 CLI 양쪽에서 쓸 수 있다.
+
+### task DAG 기반 에이전트 오케스트레이션
+
+에이전트가 다른 에이전트에게 일을 맡기면 Tasty 가 순서대로 실행한다.
+
+- 작업은 의존 관계 그래프와 상태 기계로 관리한다. 의존하는 작업이 모두 끝나야 다음 작업이 시작되고, 순환 의존은 작업을 만들 때 거부한다.
+- 작업이 실패하면 뒤따르는 작업을 건너뛰거나, 그대로 진행시키거나, 대체 작업으로 넘길 수 있다.
+- 끝난 작업의 출력을 뒤 작업의 입력으로 넘길 수 있다. reduce 작업은 여러 결과를 하나로 합친다(첫 성공, 전체 수집, JSON 병합, 텍스트 이어붙이기, 사용자 명령).
+- semaphore 는 동시에 도는 에이전트 수를 제한하고, lease 는 자원을 사용 중으로 표시하고, barrier 는 여러 에이전트가 모일 때까지 기다리고, rate limit 은 호출 빈도를 제한한다.
+- 자식으로 띄운 Claude 나 Codex 도 그래프의 노드가 된다. 자식이 idle 이 되거나 입력을 요청하면 노드가 완료되고, 자식이 종료되면 실패로 처리되어 위의 실패 정책이 그대로 적용된다.
+- 진행 상황은 탭에서 실시간 그래프로 보고(`tasty new tab --type dag_graph`), CLI 에서는 JSON 이나 Graphviz dot 으로 받는다.
+
+자세한 내용: [`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md)
+
+### 별도 프로세스로 실행되는 플러그인
+
+- 플러그인은 각각 별도의 OS 프로세스로 실행되고 로컬 TCP 위의 JSON 메시지로 호스트와 통신한다. 호스트는 플러그인마다 응답을 확인하고, 응답이 끊긴 플러그인은 플러그인 창의 "확인 필요" 에 표시한다.
+- 플러그인 프로세스의 수명은 OS 수준에서 호스트에 묶여 있다(Windows 는 Job Object, Linux 는 부모 종료 시그널, macOS 는 SDK 의 watchdog). Tasty 가 비정상 종료해도 플러그인 프로세스가 남지 않는다.
+- 플러그인은 CLI 서브커맨드, IPC 네임스페이스, 자체 서피스 종류(플러그인이 직접 렌더하거나 웹뷰로 표시), 팝업과 도구 메뉴 항목, 파일 핸들러, 설정 페이지, 훅 이벤트, DAG 작업의 완료 판정 규칙을 추가할 수 있다.
+- 파일 읽기와 쓰기, 프로세스 실행, 네트워크, 클립보드, 터미널 읽기와 쓰기 같은 권한은 매니페스트에 선언하고 설치할 때 부여한다. 매니페스트는 ed25519 로 서명하며, 서명 키를 모르거나 권한이 바뀐 플러그인은 다시 신뢰 확인을 받아야 한다.
+- 기본으로 들어 있는 Markdown, Image, HTML, Git, Clipboard 뷰어와 Claude Code, Codex 연동은 모두 외부 플러그인과 같은 SDK 로 만든 플러그인이다.
+
+자세한 내용: [`docs/features/plugin-system/index.md`](docs/features/plugin-system/index.md), [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md)
+
+### 원격 attach
+
+- 다른 컴퓨터에서 이미 실행 중인 Tasty 에 연결해, 그쪽 워크스페이스에서 하던 작업을 내 창에서 이어 간다. 서피스 하나 또는 워크스페이스 전체를 attach 할 수 있다. attach 한 대상은 내 쪽에 mirror 로 나타나고 입력은 원격 PTY 로 전달된다.
+- attach 된 서피스는 한 번에 한 클라이언트만 점유한다. 두 번째 attach 는 거부되면서 현재 점유자를 알려 주고, 점유 중에는 원격 컴퓨터 쪽의 키보드와 에이전트 입력이 차단된다.
+- 연결이 닫히거나 heartbeat 가 끊기면(5초마다 전송, 20초 동안 없으면 끊긴 것으로 판단) 점유가 풀린다. 원격 컴퓨터 앞의 사용자는 언제든 강제로 detach 할 수 있다.
+- 네트워크 프로토콜, 인증, 암호화를 따로 만들지 않았다. 서버는 loopback 에서만 listen 하고, 클라이언트는 시스템 `ssh` 로 연 터널을 통해 접속한다.
+- 로컬 워크스페이스를 원격 프로필과 원격 워크스페이스에 연결해 두면, 그 워크스페이스를 활성화할 때 자동으로 attach 된다.
+
+자세한 내용: [`docs/features/remote-attach/index.md`](docs/features/remote-attach/index.md), [`docs/features/remote-profiles/index.md`](docs/features/remote-profiles/index.md)
+
 ## 설치
 
 자세한 절차: [`docs/installation.md`](docs/installation.md).

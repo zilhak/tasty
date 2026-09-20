@@ -24,6 +24,43 @@ Every Tasty API strictly separates **user actions** (keyboard/mouse/native OS in
 - **Hexagonal architecture** — model + ports + adapters + view + host_api separation, 60-crate workspace.
 - **AI agents as first-class citizens** — every IPC/CLI surface is focus-independent and ID-based. User actions and agent actions are fully separated (debug isolation).
 
+## Main Systems
+
+Three systems are built on top of the terminal. All three work from both the GUI and the CLI.
+
+### Agent orchestration with a task DAG
+
+Agents hand work to other agents, and Tasty runs it in order.
+
+- Tasks form a dependency graph driven by a state machine. A task starts once everything it depends on has finished, and a dependency cycle is rejected when the task is created.
+- When a task fails, its downstream tasks can be skipped, allowed to continue, or replaced by a fallback task.
+- A finished task's output can be passed into a later task as input. A reduce task merges several results into one: first success, all, JSON merge, text concatenation, or a custom command.
+- Semaphores limit how many agents run at once, leases mark a resource as taken, barriers wait until several agents have arrived, and rate limits throttle calls.
+- A spawned Claude or Codex child can be a node in the graph. The node completes when the child goes idle or asks for input, and counts as failed if the child exits, so the failure policy above applies to it.
+- Progress shows as a live graph in a tab (`tasty new tab --type dag_graph`) and as JSON or Graphviz dot from the CLI.
+
+Details: [`docs/features/agent-collaboration/index.md`](docs/features/agent-collaboration/index.md)
+
+### Plugins in their own processes
+
+- Every plugin runs as a separate OS process and talks to the host over local TCP with JSON messages. The host checks that each plugin still responds, and one that stops responding is listed under "needs attention" in the plugin window.
+- Plugin processes are tied to the host's lifetime at the OS level (a Job Object on Windows, a parent-death signal on Linux, a watchdog in the SDK on macOS). No plugin process is left running after Tasty exits, even after a crash.
+- A plugin can add CLI subcommands, IPC namespaces, its own surface types (rendered by the plugin itself or shown in a web view), popups and tool menu entries, file handlers, settings pages, hook events, and completion rules for DAG tasks.
+- Permissions such as file read and write, process spawn, network, clipboard, and terminal read and write are declared in the manifest and granted at install time. Manifests are signed with ed25519, and a plugin with an unknown key or changed permissions has to be trusted again.
+- The Markdown, Image, HTML, Git, and Clipboard viewers and the Claude Code and Codex integrations that ship with Tasty are plugins built on the same SDK as third-party ones.
+
+Details: [`docs/features/plugin-system/index.md`](docs/features/plugin-system/index.md), [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md)
+
+### Remote attach
+
+- Connect to a Tasty instance already running on another machine and keep working in its workspaces from your own window. A single surface or a whole workspace can be attached. It appears locally as a mirror, and your input goes to the remote PTY.
+- One client holds an attached surface at a time. A second attach is refused and told who the holder is, and input from the remote machine's own keyboard and agents is blocked while the hold lasts.
+- The hold is released when the connection closes or when heartbeats stop (sent every 5 seconds, declared dead after 20). The user at the remote machine can force a detach at any time.
+- Tasty adds no network protocol, authentication, or encryption of its own. The server listens on loopback only, and the client reaches it through a tunnel opened with the system `ssh`.
+- A local workspace can be mapped to a remote profile and workspace, and then it attaches automatically when it is activated.
+
+Details: [`docs/features/remote-attach/index.md`](docs/features/remote-attach/index.md), [`docs/features/remote-profiles/index.md`](docs/features/remote-profiles/index.md)
+
 ## Installation
 
 Full instructions: [`docs/installation.md`](docs/installation.md).
