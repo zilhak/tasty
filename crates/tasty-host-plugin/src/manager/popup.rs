@@ -22,11 +22,7 @@ impl PluginManager {
             None => return,
         };
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let req = PluginRequest {
-            method: method.to_string(),
-            params,
-            id,
-        };
+        let req = PluginRequest::new(method, params, id);
         // 실패를 조용히 삼키면 popup 이 안 열리는 사유가 어디에도 안 남는다. 무제한
         // 채널일 때는 여기서 실패한다는 것이 곧 "plugin 이 죽었다" 였지만, 유한해진
         // 뒤로는 **일시적 포화**도 같은 갈래로 떨어진다 — 둘을 가르는 문장이

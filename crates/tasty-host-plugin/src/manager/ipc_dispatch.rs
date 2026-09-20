@@ -37,17 +37,17 @@ impl PluginManager {
         error: Option<String>,
         error_code: Option<i32>,
     ) {
-        let req = PluginRequest {
-            method: protocol::METHOD_IPC_RESULT.to_string(),
-            params: serde_json::to_value(IpcCallResult {
+        let req = PluginRequest::new(
+            protocol::METHOD_IPC_RESULT,
+            serde_json::to_value(IpcCallResult {
                 call_id,
                 result,
                 error,
                 error_code,
             })
             .unwrap_or(serde_json::Value::Null),
-            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
-        };
+            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        );
         if let Some(proc) = self.processes.get(plugin_id)
             && let Err(e) = proc.try_send_request(req)
         {
@@ -391,17 +391,17 @@ impl PluginManager {
             tasty_plugin_protocol::ExtensionHookPhase::Post => "post",
         };
         let req_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let req = PluginRequest {
-            method: tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK.to_string(),
-            params: serde_json::json!({
+        let req = PluginRequest::new(
+            tasty_plugin_protocol::METHOD_EXTENSION_INVOKE_HOOK,
+            serde_json::json!({
                 "kind": kind_str,
                 "phase": phase_str,
                 "mode": mode_str,
                 "target": target,
                 "payload": payload,
             }),
-            id: req_id,
-        };
+            req_id,
+        );
         proc.try_send_request(req)
             .map_err(|e| format!("extension '{extension_plugin_id}' send failed: {e}"))?;
         Ok(req_id)
@@ -521,15 +521,15 @@ impl PluginManager {
             .get(plugin_id)
             .ok_or_else(|| format!("plugin '{plugin_id}' is not running"))?;
         let req_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let req = PluginRequest {
-            method: tasty_plugin_protocol::ipc_method::METHOD_IPC_INVOKE.to_string(),
-            params: json!({
+        let req = PluginRequest::new(
+            tasty_plugin_protocol::ipc_method::METHOD_IPC_INVOKE,
+            json!({
                 "method": method,
                 "params": params,
                 "caller_plugin_id": caller_plugin_id,
             }),
-            id: req_id,
-        };
+            req_id,
+        );
         proc.try_send_request(req)
             .map_err(|e| format!("plugin '{plugin_id}' send failed: {e}"))?;
         Ok(req_id)

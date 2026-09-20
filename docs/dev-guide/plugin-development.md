@@ -302,6 +302,31 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   호출에 backoff 를 걸면 회복한 plugin 이 그 창 동안 도달 불가가 된다.
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
 
+### 큐 포화 통지 (호스트가 버린 요청을 plugin 이 안다)
+
+호스트 → plugin 요청 큐는 유한하고, 차면 **기다리지 않고 거절**한다 — 그 방향에서
+기다리면 호스트 프레임이 통째로 선다([ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)).
+거절된 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 모른다.
+
+그래서 버린 수를 **다음으로 실제 큐에 들어가는 요청**에 얹는다 —
+`PluginRequest.dropped_requests`. 별도 통지 메시지를 만들면 그 통지도 같은(찬) 큐를
+써야 해서 자기모순이고, 자리가 났다는 것은 plugin 이 하나라도 소비했다는 뜻이므로
+살아서 밀리는 plugin 은 반드시 이 값을 본다. 근거는
+[ADR-0339](../adr/0339-the-host-tells-a-plugin-what-saturation-dropped.md).
+
+SDK 가 셋으로 노출한다.
+
+- **`warn` 로그** — 값이 0 이 아닌 줄을 받으면 SDK 가 자동으로 남긴다
+  (`host dropped N request(s) to this plugin before this one`). plugin 이 아무것도 안
+  해도 로그에는 남는다.
+- **`Plugin::on_host_dropped_requests(dropped)`** — worker 스레드에서 dispatch 직전
+  1 회. 기본 구현 no-op 이라 기존 plugin 은 안 움직인다.
+- **`HostHandle::dropped_by_host()`** — 누적값. `HostHandle` 은 `Clone` 이고 값을
+  공유하므로 자체 background 스레드에서도 읽는다.
+
+**무엇이 버려졌는지는 알 수 없다** — 호스트도 안 들고 있다. 그래서 처방은 재요청이
+아니라 **자기 작업량을 줄이는 것**이다(polling 간격, 렌더 빈도, 사용자 통지).
+
 ### 프로세스 수명 결박 (3 OS — 크래시·강제종료 포함)
 
 위 "종료" 경로는 `PluginProcess::shutdown` / `Drop` 의 `child.kill()` 에 의존하므로 **정상 종료만** 커버한다. 하드 크래시·`taskkill /f`·디버거 강제종료 등 Drop 이 돌지 않는 경로에서는 플러그인이 고아로 잔존할 수 있다. 이를 OS 커널 레벨에서 막기 위해, 호스트가 어떤 식으로 죽든 플러그인이 함께 종료되도록 결박한다 (`crate::reaper::PluginReaper`, spawn 시 `prepare`/`adopt` 배선). OS 별 메커니즘이 비대칭이라 단일 추상화 뒤에 숨긴다:

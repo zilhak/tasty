@@ -561,3 +561,41 @@ fn ipc_call_result_error_code_is_optional_in_both_directions() {
     let back: IpcCallResult = serde_json::from_str(&s).unwrap();
     assert_eq!(back.error_code, Some(-32602));
 }
+
+/// `PluginRequest` 의 새 `dropped_requests` 는 **구버전과 양방향 호환**이다.
+///
+/// 같은 바이너리에서 "구 plugin 이 이 필드를 몰라도 돈다" 를 재는 방법은 직렬화
+/// 수준밖에 없다 — 번들 plugin 은 항상 호스트와 같은 커밋에서 빌드되므로 트리에
+/// 구 SDK 가 존재하지 않는다. `error_code` 선례와 같은 모양으로 재는 이유다.
+#[test]
+fn plugin_request_dropped_requests_is_optional_in_both_directions() {
+    // 구버전 호스트가 보낸 줄 — 키가 아예 없다.
+    let old: PluginRequest = serde_json::from_str(r#"{"method":"ping","params":{},"id":7}"#)
+        .expect("구버전 모양을 읽어야 한다");
+    assert_eq!(old.dropped_requests, 0);
+    assert_eq!(old.method, "ping");
+
+    // 버린 것이 없으면 와이어에 키가 안 실린다 — 구버전 plugin 이 낯선 키를 안 본다.
+    // (모든 host→plugin 줄에 실리면 set_context 처럼 프레임마다 나가는 요청에
+    // 빈 키가 얹힌다.)
+    let none = PluginRequest::new("ping", serde_json::json!({}), 7);
+    let s = serde_json::to_string(&none).unwrap();
+    assert!(!s.contains("dropped_requests"), "{s}");
+
+    // 있으면 실리고 되읽힌다.
+    let mut some = PluginRequest::new("ipc.invoke", serde_json::json!({}), 8);
+    some.dropped_requests = 12;
+    let s = serde_json::to_string(&some).unwrap();
+    assert!(s.contains("\"dropped_requests\":12"), "{s}");
+    let back: PluginRequest = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.dropped_requests, 12);
+}
+
+/// 생성자는 드롭 수를 0 으로 둔다 — 그 값을 정하는 것은 본문이 아니라 송신 지점이다.
+#[test]
+fn a_freshly_built_request_carries_no_drop_count() {
+    let req = PluginRequest::new("surface.create", serde_json::json!({"surface_id": 1}), 3);
+    assert_eq!(req.dropped_requests, 0);
+    assert_eq!(req.id, 3);
+    assert_eq!(req.method, "surface.create");
+}

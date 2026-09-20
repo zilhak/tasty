@@ -272,11 +272,11 @@ impl PluginManager {
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
-        let req = crate::protocol::PluginRequest {
-            method: protocol::METHOD_SURFACE_SET_CONTEXT.to_string(),
-            params: json!(params),
-            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
-        };
+        let req = crate::protocol::PluginRequest::new(
+            protocol::METHOD_SURFACE_SET_CONTEXT,
+            json!(params),
+            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        );
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' surface.set_context send failed: {e}");
         }
@@ -295,11 +295,11 @@ impl PluginManager {
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
-        let req = crate::protocol::PluginRequest {
-            method: protocol::METHOD_WEBVIEW_NAVIGATION_ATTEMPT.to_string(),
-            params: json!(params),
-            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
-        };
+        let req = crate::protocol::PluginRequest::new(
+            protocol::METHOD_WEBVIEW_NAVIGATION_ATTEMPT,
+            json!(params),
+            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        );
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' webview.navigation_attempt send failed: {e}");
         }
@@ -328,16 +328,16 @@ impl PluginManager {
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
-        let req = crate::protocol::PluginRequest {
-            method: protocol::METHOD_SURFACE_CREATE.to_string(),
-            params: json!({
+        let req = crate::protocol::PluginRequest::new(
+            protocol::METHOD_SURFACE_CREATE,
+            json!({
                 "surface_id": surface_id,
                 "kind": kind,
                 "cwd": null,
                 "params": { "file": file, "display_name": display_name },
             }),
-            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
-        };
+            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        );
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' surface.create (egui-mesh) send failed: {e}");
         }
@@ -359,11 +359,11 @@ impl PluginManager {
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
-        let req = crate::protocol::PluginRequest {
-            method: protocol::METHOD_POPUP_SET_CONTEXT.to_string(),
-            params: json!(params),
-            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
-        };
+        let req = crate::protocol::PluginRequest::new(
+            protocol::METHOD_POPUP_SET_CONTEXT,
+            json!(params),
+            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        );
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' popup.set_context send failed: {e}");
         }
@@ -384,11 +384,11 @@ impl PluginManager {
         let Some(proc) = self.processes.get(plugin_id) else {
             return;
         };
-        let req = crate::protocol::PluginRequest {
-            method: protocol::METHOD_BANNER_SET_CONTEXT.to_string(),
-            params: json!(params),
-            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
-        };
+        let req = crate::protocol::PluginRequest::new(
+            protocol::METHOD_BANNER_SET_CONTEXT,
+            json!(params),
+            self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        );
         if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' banner.set_context send failed: {e}");
         }

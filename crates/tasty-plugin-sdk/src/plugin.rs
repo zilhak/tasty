@@ -450,6 +450,20 @@ pub trait Plugin: Send + 'static {
     /// `event_subscribe`/`event_publish` 패턴이 비어 있으면 호스트가 등록을 거부하므로
     /// 핸들은 받아도 의미 없는 호출만 가능하다.
     fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {}
+
+    /// 호스트가 이 plugin 에게 보내려던 요청 `dropped` 건을 **버렸다**.
+    ///
+    /// 호스트 → plugin 큐는 유한하고 포화 시 대기가 아니라 거절이다(그 방향에서
+    /// 기다리면 호스트 프레임이 선다). 그래서 밀리는 plugin 은 자기에게 오던 요청이
+    /// 소리 없이 사라지는 것을 원리적으로 알 수 없었다. 이 콜백이 그것을 알린다 —
+    /// 호출은 **드롭 뒤 처음 도착한 요청을 처리하기 직전** 한 번이고, 그때까지 쌓인
+    /// 수를 합쳐서 넘긴다.
+    ///
+    /// 무엇이 버려졌는지는 알 수 없다(호스트도 안 들고 있다). 그러므로 재요청이 아니라
+    /// **자기 작업량을 줄이는 것**이 처방이다 — polling 간격을 늘리거나 렌더 빈도를
+    /// 낮추거나, 사용자에게 알린다. 누적값은 [`HostHandle::dropped_by_host`] 로 아무
+    /// 스레드에서나 읽을 수 있다. 기본 구현은 no-op — SDK 가 이미 warn 로그를 남긴다.
+    fn on_host_dropped_requests(&mut self, _dropped: u64) {}
 }
 
 /// `event.dispatch` 콜백 컨텍스트.

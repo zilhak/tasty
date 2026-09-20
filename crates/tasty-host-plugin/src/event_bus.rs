@@ -348,11 +348,11 @@ impl EventBus {
             sub_id: dispatch.sub_id,
             envelope: dispatch.envelope.clone(),
         };
-        PluginRequest {
-            id: 0, // 호출 측이 채워 넣는다.
-            method: METHOD_EVENT_DISPATCH.to_string(),
-            params: serde_json::to_value(&params).unwrap_or(serde_json::Value::Null),
-        }
+        PluginRequest::new(
+            METHOD_EVENT_DISPATCH,
+            serde_json::to_value(&params).unwrap_or(serde_json::Value::Null),
+            0, // id 는 호출 측이 채워 넣는다.
+        )
     }
 
     /// debug 한정 — 주어진 key에 매칭되는 plugin 구독을 모아 반환.

@@ -73,6 +73,13 @@ pub struct HostHandle {
     /// 큐를 만든 직후에만 채워지므로, 그 전에 만들어진 `HostHandle`(예: `spawn_handle_reader`
     /// 내부)에는 없다 — `run()`이 `with_self_invoke`로 마지막에 부착한다.
     self_invoke_tx: Option<mpsc::Sender<crate::runtime::WorkerItem>>,
+    /// 호스트가 이 plugin 에게 보내려다 큐 포화로 버린 요청의 **누적** 수.
+    /// [`PluginRequest::dropped_requests`](tasty_plugin_protocol::PluginRequest::dropped_requests)
+    /// 가 실어 온 값을 SDK 가 여기 더한다. `Arc` 라 clone 한 핸들끼리 같은 값을 본다 —
+    /// 자체 background thread 에서 부하를 줄일지 판단할 때 읽는다.
+    dropped_by_host: Arc<AtomicU64>,
+    /// 위 누적분 중 아직 plugin 콜백에 안 넘긴 몫. worker 가 dispatch 직전에 비운다.
+    dropped_unreported: Arc<AtomicU64>,
 }
 
 impl HostHandle {
@@ -85,7 +92,34 @@ impl HostHandle {
             handle_writer: None,
             shared_buffer_fd_pending: Arc::new(Mutex::new(HashMap::new())),
             self_invoke_tx: None,
+            dropped_by_host: Arc::new(AtomicU64::new(0)),
+            dropped_unreported: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// 호스트가 이 plugin 에게 보내려다 **버린** 요청의 누적 수.
+    ///
+    /// 호스트 → plugin 큐는 유한하고 포화 시 거절이라(ADR-0315), 밀리는 plugin 은
+    /// 자기에게 오던 요청이 사라지는 것을 원리적으로 알 수 없었다. 이 값이 0 이 아니면
+    /// **이 plugin 이 소비를 못 따라가고 있다** — 자체 작업량을 줄이거나(polling 간격,
+    /// 렌더 빈도) 사용자에게 알릴 판단 근거다. 단조 증가하고 절대 줄지 않는다.
+    pub fn dropped_by_host(&self) -> u64 {
+        self.dropped_by_host.load(Ordering::Relaxed)
+    }
+
+    /// 호스트 요청이 싣고 온 드롭 수를 누적한다. 0 이면 아무것도 안 한다.
+    pub(crate) fn record_dropped_by_host(&self, dropped: u64) {
+        if dropped == 0 {
+            return;
+        }
+        self.dropped_by_host.fetch_add(dropped, Ordering::Relaxed);
+        self.dropped_unreported
+            .fetch_add(dropped, Ordering::Relaxed);
+    }
+
+    /// 아직 plugin 콜백에 안 넘긴 몫을 가져오고 0 으로 만든다.
+    pub(crate) fn take_unreported_drops(&self) -> u64 {
+        self.dropped_unreported.swap(0, Ordering::Relaxed)
     }
 
     /// 보조 핸들 채널을 등록한다. runtime이 [`HandleClient::connect`] 성공 시 호출.

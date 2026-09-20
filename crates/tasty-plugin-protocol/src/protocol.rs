@@ -408,6 +408,45 @@ pub struct PluginRequest {
     pub method: String,
     pub params: serde_json::Value,
     pub id: u64,
+    /// 이 요청 **직전까지** 호스트가 같은 plugin 에게 보내려다 큐 포화로 **버린**
+    /// 요청 수. 0 이면 버린 것이 없고, 그때는 와이어에 키 자체가 안 실린다.
+    ///
+    /// 호스트 → plugin 큐는 유한하고 포화 시 대기가 아니라 거절이다(그 방향에서
+    /// 기다리면 호스트 프레임이 선다 — ADR-0315). 그래서 plugin 은 자기에게 오던
+    /// 요청이 소리 없이 사라지는 것을 원리적으로 알 수 없었다. 이 필드가 그것을
+    /// 알린다.
+    ///
+    /// **별도 통지 메시지가 아닌 이유**: 포화를 알리는 메시지도 같은 큐를 써야 하고,
+    /// 그 큐가 찼기 때문에 통지가 생긴 것이라 자기모순이다. 대신 **다음으로 실제
+    /// 큐에 들어가는 요청**에 얹는다 — 큐에 자리가 났다는 것은 plugin 이 하나라도
+    /// 소비했다는 뜻이므로, 살아서 밀리는 plugin 은 반드시 이 값을 본다. 전혀
+    /// 소비하지 않는 plugin 은 ping 도 못 받아 healthcheck 가 거둔다.
+    ///
+    /// 구버전 호스트가 보낸 줄에는 이 키가 없고 `0` 으로 읽힌다.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub dropped_requests: u64,
+}
+
+/// `#[serde(skip_serializing_if)]` 용 — 0 은 "버린 것이 없다" 라서 와이어에 안 싣는다.
+fn is_zero_u64(v: &u64) -> bool {
+    *v == 0
+}
+
+impl PluginRequest {
+    /// 호스트 본문이 요청을 만드는 유일한 입구.
+    ///
+    /// [`PluginRequest::dropped_requests`] 는 **송신 지점**이 채운다(호스트의
+    /// `PluginProcess::try_send_request`). 본문이 그 값을 알 방법이 없고 알 필요도
+    /// 없으므로, 리터럴로 짓는 대신 이 생성자로 짓는다 — 필드가 하나 더 늘어도
+    /// 호출부가 안 움직이고, 새 호출부가 그 필드의 존재를 몰라도 틀리지 않는다.
+    pub fn new(method: impl Into<String>, params: serde_json::Value, id: u64) -> Self {
+        Self {
+            method: method.into(),
+            params,
+            id,
+            dropped_requests: 0,
+        }
+    }
 }
 
 /// plugin → 호스트 응답.

@@ -137,6 +137,17 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
                         continue;
                     }
                 };
+                // 호스트가 포화로 버린 수는 **모든** 요청이 실어 올 수 있다 —
+                // worker 로 안 가는 `ipc.result`·`shutdown` 도 포함이다. 그래서
+                // 분기보다 먼저 기록한다.
+                if req.dropped_requests > 0 {
+                    tracing::warn!(
+                        "host dropped {} request(s) to this plugin before this one — \
+                         this plugin is not draining its queue fast enough",
+                        req.dropped_requests
+                    );
+                    host.record_dropped_by_host(req.dropped_requests);
+                }
                 if req.method == METHOD_IPC_RESULT {
                     handle_ipc_result_request(&req, &pending, &writer);
                     continue;
@@ -425,6 +436,12 @@ fn worker_loop<P: Plugin>(
     for item in req_rx.iter() {
         match item {
             WorkerItem::Host(req) => {
+                // 드롭 통지는 dispatch 직전에 한 번 — reader 스레드에서 바로 부르면
+                // `&mut plugin` 을 두 스레드가 잡는다.
+                let dropped = host.take_unreported_drops();
+                if dropped > 0 {
+                    plugin.on_host_dropped_requests(dropped);
+                }
                 let result = dispatch(&mut plugin, &req.method, &req.params, &host);
                 let resp = build_response(req.id, result);
                 if let Err(e) = send_response(&writer, &resp) {

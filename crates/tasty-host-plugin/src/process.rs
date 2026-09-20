@@ -13,7 +13,7 @@ use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -133,6 +133,11 @@ pub struct PluginProcess {
     /// 블로킹 송신을 되살릴 수 있고, 그 자리는 컴파일러가 안 잡는다. 송신은
     /// [`PluginProcess::try_send_request`] 하나로만 들어간다.
     req_tx: mpsc::SyncSender<PluginRequest>,
+    /// 포화로 **버린** 요청 수 가운데 아직 plugin 에게 안 알린 몫. 다음으로 큐에
+    /// 실제로 들어가는 요청이 이 값을 싣고 그만큼 뺀다
+    /// ([`PluginRequest::dropped_requests`]). 송신은 호스트 main thread 한 곳에서만
+    /// 일어나지만(pump), 이 필드는 `&self` 메서드에서 갱신되므로 원자값이다.
+    dropped_requests: AtomicU64,
     pub resp_rx: mpsc::Receiver<PluginResponse>,
     pub event_rx: mpsc::Receiver<PluginEvent>,
     last_pong: Arc<Mutex<Instant>>,
@@ -150,7 +155,15 @@ impl PluginProcess {
     /// 재는 자리. [`PluginProcess::stub_for_test`] 는 rx 를 즉시 버려서 모든 송신이
     /// `Disconnected` 로 떨어지므로, 보낸 내용을 단정할 수 없다.
     pub(crate) fn stub_with_request_rx(plugin_id: &str) -> (Self, mpsc::Receiver<PluginRequest>) {
-        let (req_tx, req_rx) = mpsc::sync_channel(REQUEST_QUEUE_CAPACITY);
+        Self::stub_with_request_rx_capacity(plugin_id, REQUEST_QUEUE_CAPACITY)
+    }
+
+    /// 위와 같되 큐 용량을 고른다 — 포화를 재려면 1024 건을 쓸 수 없다.
+    pub(crate) fn stub_with_request_rx_capacity(
+        plugin_id: &str,
+        capacity: usize,
+    ) -> (Self, mpsc::Receiver<PluginRequest>) {
+        let (req_tx, req_rx) = mpsc::sync_channel(capacity);
         let mut proc = Self::stub_for_test(plugin_id);
         proc.req_tx = req_tx;
         (proc, req_rx)
@@ -166,6 +179,7 @@ impl PluginProcess {
             plugin_id: plugin_id.into(),
             child: None,
             req_tx,
+            dropped_requests: AtomicU64::new(0),
             resp_rx,
             event_rx,
             last_pong: Arc::new(Mutex::new(Instant::now())),
@@ -263,6 +277,7 @@ impl PluginProcess {
             plugin_id: package.manifest.id.clone(),
             child: Some(child),
             req_tx,
+            dropped_requests: AtomicU64::new(0),
             resp_rx,
             event_rx,
             last_pong,
@@ -410,16 +425,41 @@ impl PluginProcess {
 
     /// 호스트 → plugin 요청을 큐에 넣는다. **블록하지 않는다** — 근거는
     /// [`try_send_request`] 의 doc.
-    pub fn try_send_request(&self, req: PluginRequest) -> Result<(), RequestSendError> {
-        try_send_request(&self.req_tx, req)
+    ///
+    /// 포화로 버린 수를 **여기서** 싣는다. 별도 통지를 만들면 그 통지도 같은(찬) 큐를
+    /// 써야 해서 자기모순이므로, 다음으로 실제 들어가는 요청에 얹는다
+    /// ([`PluginRequest::dropped_requests`]). 실린 만큼만 빼므로, load 와 send 사이에
+    /// 늘어난 몫은 그 다음 요청이 싣는다 — 누락도 중복도 없다.
+    pub fn try_send_request(&self, mut req: PluginRequest) -> Result<(), RequestSendError> {
+        let carried = self.dropped_requests.load(Ordering::Relaxed);
+        req.dropped_requests = carried;
+        match try_send_request(&self.req_tx, req) {
+            Ok(()) => {
+                if carried > 0 {
+                    // 송신은 호스트 main thread 한 곳뿐이라(pump) 이 뺄셈이 되감기지
+                    // 않는다 — 실린 값 말고는 아무도 안 뺀다.
+                    self.dropped_requests.fetch_sub(carried, Ordering::Relaxed);
+                }
+                Ok(())
+            }
+            Err(RequestSendError::Full) => {
+                self.dropped_requests.fetch_add(1, Ordering::Relaxed);
+                Err(RequestSendError::Full)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// 아직 plugin 에게 안 알린 누적 드롭 수. 시험과 진단용.
+    #[cfg(test)]
+    pub(crate) fn unreported_drops(&self) -> u64 {
+        self.dropped_requests.load(Ordering::Relaxed)
     }
 
     pub fn ping(&self, next_id: u64) {
-        if let Err(e) = self.try_send_request(PluginRequest {
-            method: "ping".into(),
-            params: serde_json::json!({}),
-            id: next_id,
-        }) {
+        if let Err(e) =
+            self.try_send_request(PluginRequest::new("ping", serde_json::json!({}), next_id))
+        {
             tracing::warn!("plugin '{}' ping send failed: {e}", self.plugin_id);
         }
     }
@@ -442,11 +482,11 @@ impl PluginProcess {
     /// 뿌린 뒤 대기 구간만 겹칠 수 있다 — 총 소요가 Σ(개별 대기) 가 아니라
     /// max(개별 대기) 로 수렴한다.
     pub fn begin_shutdown(mut self, deadline: Instant) -> PendingShutdown {
-        if let Err(e) = self.try_send_request(PluginRequest {
-            method: "shutdown".into(),
-            params: serde_json::json!({}),
-            id: u64::MAX,
-        }) {
+        if let Err(e) = self.try_send_request(PluginRequest::new(
+            "shutdown",
+            serde_json::json!({}),
+            u64::MAX,
+        )) {
             tracing::warn!("plugin '{}' shutdown send failed: {e}", self.plugin_id);
         }
         PendingShutdown {
@@ -1049,11 +1089,35 @@ mod tests {
     use super::*;
 
     fn a_request(id: u64) -> PluginRequest {
-        PluginRequest {
-            method: "noop".into(),
-            params: serde_json::json!({}),
-            id,
+        PluginRequest::new("noop", serde_json::json!({}), id)
+    }
+
+    /// 포화로 버린 수는 **다음으로 실제 큐에 들어가는 요청**이 싣는다.
+    ///
+    /// 별도 통지 메시지를 만들 수 없다는 것이 요점이다 — 그 통지도 같은 큐를 써야
+    /// 하는데 그 큐가 찼기 때문에 통지가 생긴 것이다. 그래서 plugin 이 하나라도
+    /// 소비해 자리가 난 순간, 그때까지 버린 수가 합쳐져 실린다.
+    #[test]
+    fn the_next_delivered_request_carries_what_saturation_dropped() {
+        let (proc, rx) = PluginProcess::stub_with_request_rx_capacity("com.example.slow", 1);
+        proc.try_send_request(a_request(1))
+            .expect("첫 건은 자리에 들어간다");
+        for id in 2..=4 {
+            assert_eq!(
+                proc.try_send_request(a_request(id)),
+                Err(RequestSendError::Full)
+            );
         }
+        assert_eq!(proc.unreported_drops(), 3);
+
+        let first = rx.try_recv().expect("첫 건은 큐에 있다");
+        assert_eq!(first.dropped_requests, 0, "포화 전에 들어간 요청은 0 이다");
+
+        proc.try_send_request(a_request(5))
+            .expect("소비했으니 자리가 났다");
+        let next = rx.try_recv().expect("다음 건이 들어갔다");
+        assert_eq!(next.dropped_requests, 3, "버린 수가 다음 요청에 안 실렸다");
+        assert_eq!(proc.unreported_drops(), 0, "실은 만큼 빠져야 한다");
     }
 
     /// 자리가 없는 큐에 한 건을 넣어 보고 **그 판정을 다른 스레드에서 받아 온다.**
