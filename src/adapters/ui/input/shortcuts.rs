@@ -10,11 +10,9 @@ mod tests;
 mod zoom;
 
 pub(crate) use tasty_key_match::{
-    any_binding_pressed_egui, binding_has_modifier, bindings_equivalent, matches_any_binding,
-    physical_key_to_logical,
+    any_binding_pressed_egui, matches_any_binding, physical_key_to_logical,
 };
 use winit::event_loop::EventLoopProxy;
-use winit::keyboard::{Key, KeyCode, PhysicalKey};
 
 /// Best-effort `EventLoopProxy::send_event` dispatch.
 ///
