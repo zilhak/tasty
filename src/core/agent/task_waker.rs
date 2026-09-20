@@ -1,8 +1,19 @@
-//! Task await waker hub — `agent.task_await` 의 진짜 blocking 지원.
+//! Task 종결 전이의 단일 깔때기.
+//!
+//! 이 hub 가 답하는 사실은 하나다 — *이 task 가 종결 상태에 들어갔다.* 그 사실을
+//! 받는 쪽이 **둘**이다:
+//!
+//! 1. `agent.task_await` 로 블로킹 중인 호출자 (원래 용도)
+//! 2. agent 사건 피드 (`event_feed::AgentEventQueue`)
+//!
+//! **둘을 한 자리에 둔 것이 이 모듈의 요지다.** 종결 전이는 세 경로에서 일어나고
+//! (`Core::task_set_state`/`task_cancel` wrapper · runner_thread 의 set_state 클로저 ·
+//! hook wait timeout), 발화점을 따로 심으면 그 셋과 어긋날 수 있다. 여기서 같이
+//! 내보내면 **피드의 덮는 범위가 곧 `task_await` 의 덮는 범위**가 되고, 그 불변식은
+//! 이미 유지되고 있다(어긋나면 `task_await` 가 먼저 멈춘다 — 훨씬 시끄러운 실패다).
 //!
 //! 패턴: `tasty-approval` 의 `await_response` (sync_channel + waiters HashMap +
-//! `recv_timeout`) 를 그대로 차용. fire 측은 `Core::task_set_state` wrapper +
-//! runner_thread 의 set_state 클로저에서 호출 (R-5 회피).
+//! `recv_timeout`) 를 그대로 차용.
 //!
 //! - `await_terminal`: current state 가 이미 종결이면 즉시 반환. 아니면 channel
 //!   등록 후 `recv_timeout`.
@@ -38,11 +49,28 @@ static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
 #[derive(Default)]
 pub struct TaskWakerHub {
     waiters: Mutex<HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>>,
+    /// 종결 사실을 함께 적을 피드. 부팅 경로가 `CoreState` 의 것과 같은 큐를 꽂아
+    /// 준다. 안 꽂으면 자기 것을 들고 아무도 안 꺼내 가는데, 그 조합은 시험과
+    /// 러너 하네스뿐이다(`with_feed` 를 안 부르는 생성자).
+    feed: std::sync::Arc<crate::core::agent::event_feed::AgentEventQueue>,
 }
 
 impl TaskWakerHub {
+    /// 피드 없이 만든다 — 종결 사실이 자기 큐에 쌓이고 아무도 안 꺼내 간다.
+    /// 부팅 경로는 [`Self::with_feed`] 를 쓴다. 남은 호출자는 시험과 러너 하네스뿐이다.
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 종결 사실을 밖에서 꺼내 갈 수 있게 피드를 공유해 만든다.
+    pub fn with_feed(
+        feed: std::sync::Arc<crate::core::agent::event_feed::AgentEventQueue>,
+    ) -> Self {
+        Self {
+            waiters: Mutex::new(HashMap::new()),
+            feed,
+        }
     }
 
     /// Poison 된 waiter 맵을 복구한다.
@@ -105,7 +133,17 @@ impl TaskWakerHub {
     }
 
     /// `(workspace_id, task_id)` 의 모든 waiter 에 snapshot 전달 + map 에서 제거.
+    /// 같은 사실을 사건 피드에도 적는다 — **대기자가 없어도 적는다.** 피드의 소비자는
+    /// 그 task 를 기다리던 쪽이 아니라 나중에 붙는 쪽이다.
     pub fn fire(&self, workspace_id: u32, task_id: &TaskId, snapshot: TerminalSnapshot) {
+        if snapshot.state.is_terminal() {
+            self.feed
+                .push(crate::core::agent::event_feed::AgentEvent::TaskFinished {
+                    workspace_id,
+                    task_id: task_id.clone(),
+                    state: snapshot.state.name(),
+                });
+        }
         let mut g = self.lock_recovering();
         let Some(senders) = g.remove(&(workspace_id, task_id.clone())) else {
             return;
@@ -194,6 +232,39 @@ mod tests {
         let hub = TaskWakerHub::new();
         hub.fire(1, &"t-none".to_string(), snap(TaskState::Succeeded));
         // assertion: no panic
+    }
+
+    /// 대기자가 **없어도** 피드에는 적힌다. 피드의 소비자는 그 task 를 기다리던 쪽이
+    /// 아니라 나중에 붙는 쪽이라, 대기자 유무로 갈리면 그 소비자는 자기가 무엇을
+    /// 못 받았는지 알 수 없다.
+    #[test]
+    fn a_terminal_task_reaches_the_feed_even_with_nobody_waiting() {
+        use crate::core::agent::event_feed::{AgentEvent, AgentEventQueue};
+        let feed = Arc::new(AgentEventQueue::new());
+        let hub = TaskWakerHub::with_feed(Arc::clone(&feed));
+        hub.fire(7, &"t-9".to_string(), snap(TaskState::Cancelled));
+        let (events, dropped) = feed.take_pending();
+        assert_eq!(dropped, 0);
+        assert_eq!(
+            events,
+            vec![AgentEvent::TaskFinished {
+                workspace_id: 7,
+                task_id: "t-9".to_string(),
+                state: "cancelled",
+            }]
+        );
+    }
+
+    /// 비종결 상태로 hub 를 때려도 피드에는 안 적힌다. 이 키가 약속한 것은 **종결**
+    /// 이고, 한 번이라도 비종결이 섞이면 소비자가 종결로 읽는다.
+    #[test]
+    fn a_nonterminal_snapshot_leaves_the_feed_alone() {
+        use crate::core::agent::event_feed::AgentEventQueue;
+        let feed = Arc::new(AgentEventQueue::new());
+        let hub = TaskWakerHub::with_feed(Arc::clone(&feed));
+        hub.fire(7, &"t-9".to_string(), snap(TaskState::Running));
+        let (events, _) = feed.take_pending();
+        assert!(events.is_empty(), "비종결이 실렸다: {events:?}");
     }
 }
 

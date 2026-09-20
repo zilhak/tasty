@@ -28,7 +28,8 @@
 
 ```
 system, surface, tab, pane, workspace, window, command, ime, split,
-notification, hook, tool, plugin, extension, process, clipboard, theme, language, memory
+notification, hook, tool, plugin, extension, process, clipboard, theme, language, memory,
+agent
 ```
 
 이 외는 plugin 자유 — 관례상 자기 `id`(`com.tasty.claude.*`)를 네임스페이스로.
@@ -107,6 +108,21 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 ### Memory (scope=system, Stable)
 `memory.changed`: regular entry 의 put/delete/expire/cleanup 직후 — `scope, key, kind∈{created,updated,deleted,expired}, version?`. **secret 영역은 발화 안 함**(owner/key 노출 방지). 1 변경 = 1 envelope. 구독 권한 `memory.read`.
 
+### Agent (scope=system, Experimental)
+
+협업 primitive 의 **종결 사실**만 싣는다. 대상 workspace 는 `meta.scope` 가 아니라 payload 의 `workspace_id` 로 온다 — envelope 의 scope 축은 `system`/`surface` 둘뿐이고 `workspace.*` 계열이 이미 같은 방식이다.
+
+| 키 | 시점 | payload | 등급 |
+|----|------|---------|------|
+| `agent.task_finished` | task 가 종결 상태에 들어간 직후 | `workspace_id, task_id, state` | Experimental |
+| `agent.barrier_closed` | barrier 가 요구 수를 채워 닫힌 직후 | `workspace_id, name, count_required` | Experimental |
+
+- `state` 는 `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나다. **비종결 전이(`waiting`/`ready`/`running`)는 발화하지 않는다** — 종결에는 모든 진입 경로가 지나는 단일 깔때기가 있고(`agent.task_await` 가 그것으로 깨어난다) 비종결에는 없다.
+- **실패 사유·task 결과·명령 출력을 안 싣는다.** 그 문자열은 task 가 돌린 명령의 출력을 담을 수 있고 피드는 구독 권한만 있으면 받는다. 필요하면 `task_id` 로 `agent.task_get` 을 부른다.
+- **`agent.barrier_closed` 에 시간 초과는 안 온다.** barrier 의 `timed_out` 은 전이가 일어나는 순간이 없고 읽는 쪽이 시계를 견줄 때 도장이 찍힌다.
+- **lease 만료는 사건이 아니다.** 같은 이유다 — 만료는 읽을 때 평가되는 술어이고, 그것을 사건으로 내면 발화 시점이 "누가 언제 조회했나" 에 달린다.
+- 등급이 Experimental 이라 구독 plugin 의 매니페스트에 `experimental_events = true` 가 필요하다.
+
 ### IME / Theme / Language / Notification / Hook / System
 | 키 | scope | 등급 | payload |
 |----|-------|------|---------|
@@ -137,6 +153,8 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 ## 후속 변경 정책
 
 Stable 키/필수 필드 제거 → major bump. 옵션 필드 추가·새 이벤트 추가·Experimental→Stable 승격 → minor 이하(plugin 호환 유지). 새 예약 네임스페이스 추가는 충돌 가능 → major/마이그레이션 안내.
+
+`agent` 는 그 규칙의 예외로 minor 에 들어갔다. 판정은 "이름이 충돌하는가" 로 했고, 충돌할 수 있는 자리 둘을 실측해 **0 건**이었다 — 번들 plugin 아홉의 매니페스트 어디에도 `agent.*` 발화 선언이 없고, 그 이름은 IPC 메서드 prefix 예약 목록(`RESERVED_IPC_PREFIXES`)에는 **처음부터 있었다**. 즉 사건 쪽 목록에만 빠져 있던 것이라, 더하는 것이 새 자리를 뺏는 것이 아니라 두 목록을 맞추는 일이다. 근거는 [ADR-0321](../adr/0321-agent-domain-events-publish-only-at-the-funnel-that-already-exists.md).
 
 ## 관련
 

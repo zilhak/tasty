@@ -1172,6 +1172,44 @@ fn event_publish_rejects_reserved_namespace() {
 }
 
 #[test]
+fn the_agent_namespace_is_the_hosts_to_publish_in() {
+    // `RESERVED_IPC_PREFIXES` 는 `agent` 를 처음부터 들고 있었는데 사건 쪽 목록에만
+    // 빠져 있었다. 호스트가 그 이름으로 발화하기 시작한 이상 plugin 이 같은 이름을
+    // 자기 것으로 선언하면 두 발화자가 한 키를 다툰다.
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.evil"
+        name = "Evil"
+        version = "0.1"
+        api_version = "1"
+        event_publish = ["agent.task_finished"]
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("reserved namespace"), "got: {err}");
+}
+
+#[test]
+fn subscribing_to_agent_events_stays_open_to_plugins() {
+    // 예약은 **발화** 제약이다. 구독까지 막으면 이 사건을 만든 이유가 사라진다.
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.watcher"
+        name = "Watcher"
+        version = "0.1"
+        api_version = "1"
+        event_subscribe = ["agent.*"]
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    let m = parse(s).expect("should parse");
+    assert_eq!(m.event_subscribe, vec!["agent.*".to_string()]);
+}
+
+#[test]
 fn event_publish_accepts_plugin_namespace() {
     let s = r#"
         manifest_version = 1

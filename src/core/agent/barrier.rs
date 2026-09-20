@@ -1,10 +1,11 @@
 //! Barrier store wrapper. handler 의 `core.with_memory + BarrierStore::new`
 //! 조립을 본 모듈로 흡수.
 
-use tasty_agent::{AgentError, Barrier, BarrierStore};
+use tasty_agent::{AgentError, Barrier, BarrierState, BarrierStore};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
+use crate::core::CoreState;
 
 impl Core {
     /// Barrier 생성.
@@ -23,16 +24,34 @@ impl Core {
     }
 
     /// Barrier 신호 1회 누적.
+    ///
+    /// 이 호출이 요구 수를 채우면 barrier 가 닫히고, 그 사실이 사건 피드에 적힌다.
+    /// **닫힘은 여기서만 일어난다** — `BarrierStore::signal` 이 `Closed` 를 쓰는
+    /// 유일한 자리이고 그 함수의 호출자도 이것 하나다. 시간 초과는 전이가 일어나는
+    /// 순간이 없어(읽는 쪽이 시계를 견줄 때 도장이 찍힌다) 사건이 안 된다.
     pub(crate) fn barrier_signal(
         &self,
+        engine: &CoreState,
         workspace_id: u32,
         name: &str,
         now_ms: u64,
     ) -> Result<Barrier, AgentError> {
-        self.with_memory(|mem| {
+        let result = self.with_memory(|mem| {
             let mut store = BarrierStore::new(mem, HOST_OWNER);
             store.signal(workspace_id, name, now_ms)
-        })
+        });
+        if let Ok(b) = &result
+            && b.state == BarrierState::Closed
+        {
+            engine.agent_event_queue.push(
+                crate::core::agent::event_feed::AgentEvent::BarrierClosed {
+                    workspace_id,
+                    name: b.name.clone(),
+                    count_required: b.count_required,
+                },
+            );
+        }
+        result
     }
 
     /// Barrier 현 상태 조회 (timeout 도장 적용 포함이므로 mut store).

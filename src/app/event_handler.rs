@@ -499,6 +499,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_host_events();
         // tasty-memory regular 변경 → memory.changed host event.
         self.dispatch_pending_memory_changes();
+        // agent 협업 primitive 의 종결 사실 → agent.* host event.
+        self.dispatch_pending_agent_events();
         // 도구 메뉴 클릭으로 enqueue된 이벤트 publish.
         self.dispatch_pending_tool_events();
         // Command palette에서 plugin 전역 command 실행으로 enqueue된 큐 drain.

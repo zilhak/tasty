@@ -449,6 +449,43 @@ pub enum MemoryChangeKind {
     Expired,
 }
 
+// ── Agent ────────────────────────────────────────────────────────────────────
+
+/// `agent.task_finished` 페이로드. scope=System.
+///
+/// **종결 전이만 싣는다.** `waiting`/`ready`/`running` 으로 들어가는 전이는 발화
+/// 대상이 아니다 — 종결에는 모든 진입 경로가 지나는 단일 깔때기가 이미 있고
+/// (`agent.task_await` 가 그것으로 깨어난다) 비종결에는 그런 자리가 없다. 둘을 같은
+/// 키에 담으면 비종결 쪽이 조용히 빠진 피드가 되고, 소비자는 그 사실을 알 수 없다.
+///
+/// **실패 사유와 결과를 안 싣는다.** 그 문자열은 task 가 돌린 명령의 출력을 그대로
+/// 담을 수 있고, 피드는 구독 권한만 있으면 누구나 받는다. 필요한 소비자는 `task_id`
+/// 로 `agent.task_get` 을 부른다 — 그쪽에는 호출자 권한이 걸린다. 나중에 실어야
+/// 하면 **옵션 필드 추가**라 기존 소비자를 안 깨뜨린다(반대 방향은 major 다).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentTaskFinished {
+    /// 그 task 가 사는 workspace. **`meta.scope` 는 `system` 이다** — envelope 의
+    /// scope 축은 `system`/`surface` 둘뿐이고, workspace 를 가리키는 기존 사건
+    /// (`workspace.created` 등)이 모두 이 방식으로 낸다.
+    pub workspace_id: u32,
+    pub task_id: String,
+    /// `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나.
+    pub state: String,
+}
+
+/// `agent.barrier_closed` 페이로드. scope=System.
+///
+/// barrier 가 요구 수를 채워 닫힌 순간. **시간 초과(`timed_out`)는 여기 안 실린다** —
+/// 그쪽은 전이가 일어나는 순간이 없고 읽는 쪽이 시계를 견줄 때 도장이 찍힌다.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentBarrierClosed {
+    pub workspace_id: u32,
+    /// barrier 이름. 만든 쪽이 정하는 식별자다.
+    pub name: String,
+    /// 닫힐 때 요구된 신호 수.
+    pub count_required: u32,
+}
+
 // ── System ───────────────────────────────────────────────────────────────────
 
 /// `system.startup_complete` 페이로드. scope=System.
@@ -520,5 +557,36 @@ mod tests {
         };
         let s = serde_json::to_string(&p).unwrap();
         assert!(!s.contains("exit_code"));
+    }
+
+    /// 이 페이로드가 **안 싣기로 한 것**을 고정한다. 실패 사유·결과를 나중에 누가
+    /// 편하다고 끼워 넣으면 피드가 명령 출력을 나르게 되고, 그것은 되돌릴 때
+    /// major 가 된다(뺀 필드는 기존 소비자를 깨뜨린다).
+    #[test]
+    fn a_finished_task_carries_its_verdict_but_not_what_it_printed() {
+        let p = AgentTaskFinished {
+            workspace_id: 3,
+            task_id: "t-1716800000123-7".into(),
+            state: "failed".into(),
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        assert!(s.contains("\"state\":\"failed\""), "{s}");
+        assert!(!s.contains("error"), "실패 사유가 실렸다: {s}");
+        assert!(!s.contains("result"), "결과가 실렸다: {s}");
+        assert!(!s.contains("output"), "출력이 실렸다: {s}");
+    }
+
+    #[test]
+    fn a_closed_barrier_names_itself_and_the_count_it_needed() {
+        let p = AgentBarrierClosed {
+            workspace_id: 1,
+            name: "wave-1".into(),
+            count_required: 4,
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(back["name"], "wave-1");
+        assert_eq!(back["count_required"], 4);
+        assert_eq!(back["workspace_id"], 1);
     }
 }

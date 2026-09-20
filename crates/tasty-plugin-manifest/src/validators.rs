@@ -277,7 +277,11 @@ pub(super) fn is_reserved_hook_event_key(s: &str) -> bool {
 pub(super) fn is_reserved_event_namespace(ns: &str) -> bool {
     matches!(
         ns,
-        "surface"
+        // 협업 primitive 의 도메인. `RESERVED_IPC_PREFIXES` 에는 처음부터 있었고
+        // 사건 쪽에만 빠져 있었다 — 그래서 plugin 이 `agent.*` 를 자기 것으로
+        // 선언할 수 있었고, 호스트가 그 이름으로 발화를 시작하면 그 선언과 부딪힌다.
+        "agent"
+            | "surface"
             | "tab"
             | "pane"
             | "split"

@@ -88,6 +88,18 @@ claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. �
 
 전략 레지스트리·dispatch 배선 상세는 [dev-guide/agent-runner](../../dev-guide/agent-runner.md#hostexecutor-매핑).
 
+### 사건으로 받기 — 폴링하지 않고
+
+종결 사실은 Event Bus 로도 나간다. plugin 이 `agent.task_finished` · `agent.barrier_closed` 를 구독하면 `task_get` 을 되풀이해 묻지 않아도 된다. 두 키의 payload·등급·구독 조건은 [reference/event-catalog](../../reference/event-catalog.md#agent-scopesystem-experimental) 이 정본이고, 무엇을 싣고 무엇을 안 싣는지의 근거는 [ADR-0321](../../adr/0321-agent-domain-events-publish-only-at-the-funnel-that-already-exists.md) 이다.
+
+경계 셋만 여기 적는다.
+
+- **종결만 나간다.** `waiting`/`ready`/`running` 으로 들어가는 전이는 발화 대상이 아니다 — 종결에는 모든 진입 경로가 지나는 단일 깔때기(`task_await` 를 깨우는 그 자리)가 있고 비종결에는 없다.
+- **lease 만료는 사건이 아니다.** 만료는 전이가 아니라 조회 시점에 평가되는 술어라 "언제 일어났다" 가 없다.
+- **왜 실패했는지는 payload 에 없다.** 그 자리는 `task_id` 로 `task_get` 을 부른다 — 구독 권한과 호출 권한이 다른 것이 그 이유다.
+
+발화는 `task_await` 의 blocking 동작과 간섭하지 않는다. 같은 호출이 대기자에게 보내고 피드에 적을 뿐이고, **대기자가 없어도 피드에는 적힌다.**
+
 ## 인터페이스
 
 - **AI Agent / CLI**: `tasty agent {task-create,task-list,...,dag-list,dag-get,barrier-*,semaphore-*,lease-*,task-reduce,rate-limit-*}`. `--command`/`--metadata` 는 인라인 JSON 또는 `@path`. 전체 표 → [reference/api](../../reference/api.md#에이전트-협업-agent).

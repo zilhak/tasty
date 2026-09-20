@@ -50,7 +50,7 @@ pub fn handle_barrier_create(
 pub fn handle_barrier_signal(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -63,7 +63,7 @@ pub fn handle_barrier_signal(
         Ok(n) => n,
         Err(e) => return e,
     };
-    match core.barrier_signal(workspace_id, &name, now_ms()) {
+    match core.barrier_signal(engine, workspace_id, &name, now_ms()) {
         Ok(b) => serialize(id, b),
         Err(e) => agent_err_to_response(id, e),
     }

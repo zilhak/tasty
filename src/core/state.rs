@@ -271,9 +271,14 @@ pub struct CoreState {
     /// Agent task ID 시퀀스 — 같은 ms 안에서 task_id 충돌 방지용 단조 증가 카운터.
     pub(crate) agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
 
-    /// `agent.task_await` blocking 용 waker hub. set_state 가 종결 전이 시 fire,
-    /// task_await 가 등록 후 recv_timeout.
+    /// task 종결 전이의 단일 깔때기. `agent.task_await` 가 그것으로 깨어나고, 같은
+    /// 자리가 아래 사건 피드에도 그 사실을 적는다.
     pub(crate) task_waker_hub: std::sync::Arc<crate::core::agent::task_waker::TaskWakerHub>,
+
+    /// agent 도메인 사건이 프레임 루프로 건너가는 자리. 발화점은 러너 스레드에도
+    /// 있는데 Event Bus 는 메인 스레드에서 fan-out 되므로 손바꿈이 필요하다
+    /// (`src/app/dispatch/agent_events.rs` 가 꺼내 간다).
+    pub(crate) agent_event_queue: std::sync::Arc<crate::core::agent::event_feed::AgentEventQueue>,
 
     // ── Messaging / Typing detection ──
     pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
@@ -837,6 +842,10 @@ impl CoreState {
         // Create engine with empty workspaces first; we'll fill them below.
         // 두 registry 가 같은 카운터를 들어야 하므로 먼저 확정한다.
         let next_ids = shared_ids.unwrap_or_default();
+        // waker hub 와 `CoreState` 가 **같은** 큐를 들어야 한다. 둘로 만들면 종결
+        // 사실이 적히는 곳과 꺼내 가는 곳이 갈려 피드가 영원히 빈다.
+        let agent_event_queue =
+            std::sync::Arc::new(crate::core::agent::event_feed::AgentEventQueue::new());
         let mut engine = Self {
             workspaces: Vec::new(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
@@ -857,7 +866,12 @@ impl CoreState {
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
             agent_seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            task_waker_hub: std::sync::Arc::new(crate::core::agent::task_waker::TaskWakerHub::new()),
+            task_waker_hub: std::sync::Arc::new(
+                crate::core::agent::task_waker::TaskWakerHub::with_feed(std::sync::Arc::clone(
+                    &agent_event_queue,
+                )),
+            ),
+            agent_event_queue,
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
