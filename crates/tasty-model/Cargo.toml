@@ -8,6 +8,7 @@ description = "Tasty workspace / pane / tab / surface domain model."
 
 [dependencies]
 tasty-type-geometry = { path = "../tasty-type-geometry" }
+tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-utils         = { path = "../tasty-utils" }
 tasty-terminal      = { path = "../tasty-terminal" }
 termwiz    = "0.22"

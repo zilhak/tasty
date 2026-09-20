@@ -6042,6 +6042,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-terminal",
+ "tasty-type-appearance",
  "tasty-type-geometry",
  "tasty-utils",
  "termwiz",
@@ -6071,7 +6072,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-agent-stream"
-version = "0.1.31"
+version = "0.1.32"
 dependencies = [
  "anyhow",
  "directories",
@@ -6104,7 +6105,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.52"
+version = "0.1.53"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6128,7 +6129,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.72"
+version = "0.1.73"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6142,7 +6143,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.57"
+version = "0.1.58"
 dependencies = [
  "anyhow",
  "egui",
@@ -6163,7 +6164,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.25"
+version = "0.1.26"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6175,7 +6176,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.35"
+version = "0.1.36"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6212,7 +6213,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.108"
+version = "0.1.109"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -6238,7 +6239,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "anyhow",
  "egui",
