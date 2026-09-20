@@ -43,6 +43,22 @@ pub enum ListCommands {
     /// succeeded. Do not subtract one block from another: a request can pass
     /// the gate and still be answered before the handler block sees it.
     ///
+    /// `connections` is the fifth block and it is not time, it is seats: every
+    /// TCP connection attached to this port, including attach and mesh streams
+    /// that never send a request. `live` is the only value here that goes
+    /// down, `limit` is the ceiling the server enforces and travels with the
+    /// values so the two can be read together, and `refused_saturated` counts
+    /// connections turned away at that ceiling — before they became requests,
+    /// so they appear in none of the four time blocks.
+    ///
+    /// The three time blocks each carry a `*_hist` with the distribution of
+    /// the same observations, because an average and a maximum cannot tell
+    /// "everything is slightly slow" from "most are fast and a few are not".
+    /// `bounds_us` and `counts` travel together; `counts` is one entry longer
+    /// and is not cumulative, so the entries sum to the observation count and
+    /// the last one means only that the top bound was passed. Quantiles are
+    /// not computed here. `db` and `connections` have no distribution.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications
