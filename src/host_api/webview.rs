@@ -1,8 +1,15 @@
 //! Cross-platform WebView wrapper.
 //!
 //! Provides a minimal native webview that can be embedded as a child view
-//! inside a winit/wgpu window. Lifecycle/geometry surface is 6 operations:
-//! create, set_bounds, set_visible, load_url, load_html, drop.
+//! inside a winit/wgpu window.
+//!
+//! 표면은 **열둘 + `Drop`** 이다 — lifecycle/geometry(`new` · `set_bounds` ·
+//! `set_visible` · `load_url` · `load_html` · `Drop`) 에 키보드(`release_keyboard_focus`) ·
+//! 탐색(`nav_state` · `take_pending_navigations`) · 페이지 설정(`set_zoom` ·
+//! `set_javascript_enabled` · `set_color_scheme` · `set_remote_content_allowed`) 이
+//! 붙는다. 셋을 잇는 trait 은 없다 — 세 백엔드가 같은 이름을 노출하고 `cfg` 가 하나를
+//! 고르며, 이름 수준의 일치만 세 OS 컴파일이 강제한다. 표면 전량·백엔드 차이·스레드
+//! 친화성·수명 계약은 `docs/design/systems/webview.md` 가 한 자리에 적는다.
 //!
 //! 거기에 **키보드 계약**이 하나 더 붙는다([`keys`]). native webview 는 winit 창과
 //! 별개의 OS 자식 창/뷰라 자기가 키보드 포커스를 잡으면 host 단축키가 통째로
