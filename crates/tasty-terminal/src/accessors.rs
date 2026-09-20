@@ -49,12 +49,8 @@ impl TerminalState {
         self.output.set_mark();
     }
 
-    pub(crate) fn output_since_scan_mark(&self, strip_ansi: bool) -> String {
-        self.output.output_since_scan_mark(strip_ansi)
-    }
-
-    pub(crate) fn set_output_scan_mark(&mut self) {
-        self.output.set_scan_mark();
+    pub(crate) fn take_since_output_scan_mark(&mut self, strip_ansi: bool) -> String {
+        self.output.take_since_scan_mark(strip_ansi)
     }
 
     pub(crate) fn read_since_mark(&self, strip_ansi: bool) -> String {
@@ -318,14 +314,11 @@ impl Terminal {
         self.lock_state().set_mark();
     }
 
-    /// Return raw bytes accumulated since the last `set_output_scan_mark()` call.
-    pub fn output_since_scan_mark(&self, strip_ansi: bool) -> String {
-        self.lock_state().output_since_scan_mark(strip_ansi)
-    }
-
-    /// Advance the scan mark to the current end of the output buffer.
-    pub fn set_output_scan_mark(&mut self) {
-        self.lock_state().set_output_scan_mark();
+    /// Return the output accumulated since the previous scan-cursor read and
+    /// advance that cursor past it. Serves `surface.read_since_scan_mark`; see
+    /// `OutputBuffer::take_since_scan_mark` for why the two steps are one call.
+    pub fn take_since_output_scan_mark(&mut self, strip_ansi: bool) -> String {
+        self.lock_state().take_since_output_scan_mark(strip_ansi)
     }
 
     /// Read output since the last mark. If no mark was set, reads from the beginning.

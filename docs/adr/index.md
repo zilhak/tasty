@@ -274,3 +274,4 @@
 | 0299 | [스크롤 영역은 드래그 패닝 여부를 선언한다](0299-scroll-areas-declare-whether-they-pan-on-drag.md) | Accepted | 2026-09-20 | ui, scroll, input, guard, egui |
 | 0300 | [scrim 은 popup 이 소속된 범위를 덮는다 — 늘 창 전체가 아니다](0300-the-scrim-covers-the-popups-scope-not-always-the-window.md) | Accepted | 2026-09-20 | popup, scope, scrim, plugin, design-tokens, gallery, adr-0273, adr-0254 |
 | 0306 | [메서드는 "두 번 전달되면 무엇이 남는가" 를 표에 선언한다](0306-a-method-declares-what-a-second-delivery-leaves-behind.md) | Accepted | 2026-09-20 | ipc, method-table, retry, contract |
+| 0307 | [출력 스캐너는 자기 커서로 읽는다 — 에이전트의 mark 를 공유하지 않는다](0307-the-output-scanner-reads-its-own-cursor.md) | Accepted | 2026-09-20 | terminal, output-buffer, ipc, plugin, claude, cursor, polling, adr-0085, adr-0266 |
