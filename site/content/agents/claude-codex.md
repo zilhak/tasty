@@ -103,8 +103,9 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
 ```
 
-로그 문구는 앱 언어를 따르고, 256 KiB 이상이면 비워집니다. Monitor 없이 직접 읽을 수는
-있지만 자동 재개나 영구 보관을 보장하지 않습니다.
+로그 문구는 앱 언어를 따르고, 256 KiB 이상이면 비워집니다. **tasty 를 다시 시작하면 이전
+실행이 남긴 완료 로그는 지워집니다** — 재시작을 사이에 두고 과거 줄을 되읽을 수는 없습니다.
+Monitor 없이 직접 읽을 수는 있지만 자동 재개나 영구 보관을 보장하지 않습니다.
 
 ## 5. Codex 승인 정책
 

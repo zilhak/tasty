@@ -1,4 +1,4 @@
-<!-- source-hash: 9209297a9d85 -->
+<!-- source-hash: ea17c2a8d608 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -103,8 +103,10 @@ When the parent is Claude Code, subscribe to the completion log with Monitor.
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", persistent: true })
 ```
 
-Log messages follow the app language. The file is truncated at 256 KiB. You can read it without
-Monitor, but file reading alone guarantees neither automatic resumption nor permanent retention.
+Log messages follow the app language. The file is truncated at 256 KiB. **Restarting tasty clears
+the completion log the previous run left behind** - lines written before a restart cannot be read
+back afterwards. You can read the file without Monitor, but file reading alone guarantees neither
+automatic resumption nor permanent retention.
 
 ## 5. Codex approval policy
 
