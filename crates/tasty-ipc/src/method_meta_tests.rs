@@ -740,6 +740,11 @@ fn the_effect_axis_is_redelivery_not_the_verb() {
     assert_eq!(eff("message.read"), Mutate);
     // 이름이 읽기이고 실제로 커서를 안 옮긴다.
     assert_eq!(eff("surface.read_since_mark"), Read);
+    // ★ 위와 **커서만 다른 짝**이다. 이름도 read 이고 같은 출력을 읽는데, 이쪽은
+    // 읽은 구간을 소비한다 — 재전달이 두 번째 구간을 먹고 첫 응답의 바이트는
+    // 어디에서도 다시 안 나온다. 두 줄이 붙어 있는 것이 이 축의 뜻이다: 갈래를
+    // 정하는 것은 동사가 아니라 두 번째 전달이 남기는 것이다.
+    assert_eq!(eff("surface.read_since_scan_mark"), Mutate);
     // 이름이 `set` 인데 값이 "지금" 이라 재전달이 위치를 옮긴다.
     assert_eq!(eff("surface.set_mark"), Mutate);
     // 값을 호출자가 주는 `set` 은 수렴한다.
