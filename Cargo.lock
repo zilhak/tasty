@@ -6083,6 +6083,7 @@ name = "tasty-platform"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "directories",
  "gdkx11",
  "gtk",
  "objc2 0.6.4",

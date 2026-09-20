@@ -61,6 +61,15 @@ $ grep -rn 'crate::app\|AppEvent\|AppState' <플랫폼 폴더>       → 0
   것을 컴파일러가 잰다 — 본체 타입을 부르면 `unresolved import` 다.
   본체 `src/` 의 `.rs` 가 **623 → 606**(−17: 모듈 16 + 모듈 선언 파일 하나)이고,
   크레이트 수가 **59 → 60** 이다. 새 크레이트의 `.rs` 는 **17** 개다.
+- **얻은 것 ②: 이 머신에 없던 크로스 타깃 채널 둘이 이 크레이트에는 생겼다.** 본체는
+  `x86_64-pc-windows-msvc` 도 `aarch64-apple-darwin` 도 이 호스트에서 검사가 안 된다 —
+  `libsqlite3-sys` · `mlua-sys` 의 build script 가 그 타깃용 C 툴체인을 요구하고 여기엔
+  mingw 밖에 없다. **새 크레이트는 그 둘을 안 들어서 `-p tasty-platform` 으로는 셋 다
+  통과한다**(gnu · msvc · arm64 macOS, 전부 `--features gui`). ADR-0331 이 "타입은
+  미측정" 으로 남긴 `macos_delegate.rs` 의 `DelegateActions` 가 이 경로로 처음 타입
+  검사를 받았다. 그리고 그 첫 실행이 결함 하나를 잡았다 — `macos_permissions` 의 홈
+  디렉터리 해석이 `directories` 를 부르는데, 본체 안에 있던 동안은 본체의 의존을 빌려
+  쓰고 있었다. 크레이트가 갈리자 macOS 갈래에서만 `E0433` 이 났다.
 - **잃은 것**: lockstep 자리가 넷 늘었다(아키텍처 문서의 개요 수·절 제목 수, README 둘의
   배지와 본문, 루트 `CLAUDE.md` 의 복제 문장). 판정기 둘이 그 넷을 본다 —
   `architecture_crate_list_complete` 와 `readme_badge_parity`.
@@ -103,12 +112,13 @@ $ grep -rn 'crate::app\|AppEvent\|AppState' <플랫폼 폴더>       → 0
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
-- **macOS·Windows 에서 이 크레이트가 실제로 컴파일되는가.** 이 결정을 내린 트리에는 macOS
-  타깃을 컴파일하는 채널이 없다(clang 부재). 특히 macOS 전용 의존의 **feature 목록**은
-  본체 매니페스트에서 베낀 값이라, 이 크레이트가 단독으로 그 목록만으로 서는지는
-  미측정이다. 재는 법: clang 이 있는 머신에서
-  `cargo check -p tasty-platform --features gui --target aarch64-apple-darwin`,
-  그리고 `cargo check -p tasty-platform --features gui --target x86_64-pc-windows-msvc`.
+- **macOS·Windows 에서 이 크레이트가 실제로 링크되고 동작하는가.** **타입은 측정됐다** —
+  위 Consequences 의 크로스 체크 셋이 전부 rc=0 이고, macOS 전용 의존의 feature 목록도
+  그 경로로 확인됐다. 안 재진 것은 그 다음이다: 크로스 `check` 는 링크를 안 하고,
+  NSMenu 항목을 눌렀을 때 콜백이 실제로 불리는지는 어느 타깃 검사도 답하지 않는다.
+  재는 법: 실제 macOS 에서 dock reopen 과 메뉴 Quit 을 눌러 창 생성·종료가 일어나는지,
+  Windows 에서 절전 복귀가 PTY 를 되살리는지 본다. 타입 쪽 회귀를 다시 잴 때는
+  `cargo check -p tasty-platform --features gui --target <타깃>` 세 줄을 그대로 돌린다.
 - **`pub` 으로 넓어진 표면이 실제로 오용되는가.** `macos_permissions` 의 항목이 크레이트
   밖에서 의도 밖으로 불리면 경계를 좁힐 근거가 된다. 재는 법: `git grep -n
   'macos_permissions::' -- src crates | grep -v crates/tasty-platform` 로 호출부를 세고,

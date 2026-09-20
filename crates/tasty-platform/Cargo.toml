@@ -24,6 +24,9 @@ png = { version = "0.18", optional = true }
 tray-icon = { version = "0.22", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Full Disk Access 추정이 홈 디렉터리를 읽는다 — 본체의 `DirectoriesHome` 과 같은 해석을
+# 써야 두 답이 갈리지 않는다. macOS + gui 갈래에서만 부른다.
+directories = { version = "6", optional = true }
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
@@ -54,6 +57,7 @@ tasty-test-support = { path = "../tasty-test-support" }
 default = []
 gui = [
     "dep:winit",
+    "dep:directories",
     "dep:png",
     "dep:tray-icon",
     "dep:objc2",
