@@ -75,10 +75,17 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   `clients_lagged_out` 은 한도를 넘겨 끊은 연결 수(소비자가 이미 아는 손실)다. 한 수로
   합치면 앞의 물음이 사라진다.
 - **지금 이 값을 읽는 제품 경로는 없다.** 호출자 쪽에서도 손실이 안 보인다 — `push` 를 부르는
-  제품 코드 33 자리 중 31 이 결과를 `let _ =` 로 버리고, 결과를 보는 둘
-  (`core/attach_runtime.rs` 의 markdown 변경 신호 · `plugin_bridge/mesh_forward.rs`)도
-  `Dropped` 를 `Unknown`/`Disconnected` 와 함께 묶어 다룬다. 즉 이 카운터는 **손실이
-  있었는지를 값으로 남기는 자리**이고, 그것을 밖으로 내보내는 경로는 아직 없다.
+  제품 코드 **37** 자리 중 31 이 결과를 `let _ =` 로 버리고, 결과를 보는 **여섯**도
+  `Dropped` 를 `Unknown`/`Disconnected` 와 함께 묶어 다룬다. 그 여섯 중 다섯
+  (`core/attach_runtime.rs` 의 출력 tap 루프 넷 · `plugin_bridge/mesh_forward.rs`)은
+  `Unknown`/`Disconnected` 에만 `break` 하고 `Dropped` 면 **남은 chunk 를 계속 보낸다** —
+  순서 있는 열에서 가운데 한 장이 빠진 채 나머지가 간다. 나머지 하나
+  (`core/attach_runtime.rs` 의 markdown 변경 신호)는 `Sent` 외 전부를 한 덩어리로 debug
+  로그한다. 즉 이 카운터는 **손실이 있었는지를 값으로 남기는 자리**이고, 그것을 밖으로
+  내보내는 경로는 아직 없다.
+- **그 37 은 `#[cfg(test)]` 밖만 센 값이다.** 세는 법은 수신자에 숫자 접미사가 붙는 것
+  (`hub2` · `hub3`)까지 포함해야 한다 — 그것을 빼면 넷이 빠지고, 하필 그 넷이 결과를
+  **보는** 자리라 위 "여섯" 이 "둘" 로 줄어든다.
 
 ## 갱신 cadence 분리
 
