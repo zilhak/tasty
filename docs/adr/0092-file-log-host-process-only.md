@@ -48,7 +48,7 @@ panic hook 설치와 stderr tracing 초기화는 **위치를 옮기지 않는다
 
 ## References
 
-- `src/platform/crash_report.rs` — `init()` / `init_tracing()` / `enable_host_file_log()`
+- `crates/tasty-platform/src/crash_report.rs` — `init()` / `init_tracing()` / `enable_host_file_log()`
 - `src/boot.rs`, `src/boot/os.rs` — host 확정 후 파일 개방 호출 지점
 - [dev-guide/crash-diagnostics.md](../dev-guide/crash-diagnostics.md) — 진단 파일 위치·필터 표
 - [ADR-0091](0091-render-stall-watchdog-observation-only.md) — hang 리포트를 별도 파일로 남긴 결정. 그 근거 중 "공유 로그는 CLI 실행에 지워진다" 는 본 ADR 로 해소되지만, "사용자가 실제로 들여다보는 곳" 이라는 근거가 남아 별도 파일 결정 자체는 유효하다.

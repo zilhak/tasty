@@ -70,7 +70,7 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
         "tasty list 구조 출력의 고정 토큰 — 기계 파싱 대상 (i18n.md 예외, t() 미사용이 컨벤션)",
     ),
     (
-        "src/platform/crash_report.rs",
+        "crates/tasty-platform/src/crash_report.rs",
         "panic hook — 번역 테이블이 없을 수 있고 crash 문구는 리포트 대조용으로 고정",
     ),
     (

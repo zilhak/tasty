@@ -266,6 +266,10 @@ tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-ssh = { path = "crates/tasty-ssh" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
+# OS 경계 — crash/hang 리포트 · 네이티브 메뉴 · 트레이 · jump list · CSD 크롬 ·
+# 화면 캡처 · macOS 권한 · stall 워치독. `gui` 뒤의 윈도잉/GTK/AppKit 의존은 이
+# 크레이트의 같은 이름 feature 가 든다(아래 [features].gui 가 켠다).
+tasty-platform = { path = "crates/tasty-platform" }
 # winit 을 필수로 드는 크레이트라 optional 이다 — 소비자가 전부 `gui` 뒤에 있어서
 # 무조건 의존으로 두면 headless 빌드가 윈도잉 스택을 통째로 링크한다.
 tasty-key-match = { path = "crates/tasty-key-match", optional = true }
@@ -458,6 +462,9 @@ winresource = "0.1"
 default = ["gui"]
 gui = [
     "dep:winit",
+    # OS 경계 크레이트의 윈도잉/GTK/AppKit/트레이 갈래. 이 줄이 없으면
+    # `tasty-platform` 은 crash_report 만 컴파일한다.
+    "tasty-platform/gui",
     "dep:wgpu",
     "dep:egui",
     "dep:egui-wgpu",

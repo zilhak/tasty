@@ -83,4 +83,4 @@ carve-out 을 뚫어야 하던 O(n) 부채가 종결된다. macOS 는 데코 있
 - [features/window-chrome](../features/window-chrome/index.md) — CSD 타이틀바 현재 동작
 - [`design/systems/theme.md`](../design/systems/theme.md) — CSD 타이틀바 토큰
 - [`design/policies/key-mapping.md`](../design/policies/key-mapping.md) · [`design/policies/focus.md`](../design/policies/focus.md)
-- 구현: `src/platform/window_chrome.rs`, `src/adapters/ui/titlebar/`
+- 구현: `crates/tasty-platform/src/window_chrome.rs`, `src/adapters/ui/titlebar/`

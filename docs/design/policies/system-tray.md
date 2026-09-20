@@ -55,8 +55,8 @@ tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에�
 
 ## 코드 위치
 
-- `src/platform/system_tray.rs` — `create_tray_icon()`(미가용 시 `None`), `poll_menu_event()`, `pump_gtk_events()`(Linux), `TrayMenuIds`. `cfg(all(any(windows, macos, linux), feature = "gui"))`.
+- `crates/tasty-platform/src/system_tray.rs` — `create_tray_icon()`(미가용 시 `None`), `poll_menu_event()`, `pump_gtk_events()`(Linux), `TrayMenuIds`. `cfg(all(any(windows, macos, linux), feature = "gui"))`.
 - `src/app/event_handler.rs` — 생성(1회 가드)·백그라운드 진입(OS별)·복귀·메뉴 폴링·GTK 펌프 배선.
 - `src/app/event.rs` — `TrayShowWindow` 이벤트.
-- `src/platform/app_icon.rs` — 트레이 아이콘.
+- `crates/tasty-platform/src/app_icon.rs` — 트레이 아이콘.
 </content>

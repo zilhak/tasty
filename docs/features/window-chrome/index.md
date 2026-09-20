@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (GUI 전용 — 윈도우 조작)
 - **ADR**: 없음 (CSD 데코 전략은 attach decision 과 무관, 원칙 4 크로스플랫폼)
-- **코드**: `src/platform/window_chrome.rs` (CSD 속성·`resize_direction_at`), `src/adapters/ui/titlebar/` (`mod.rs`/`view.rs`/`caption.rs`), `src/adapters/ui/sidebar/` (`view.rs`/`full.rs`/`collapsed.rs`, 리사이즈 위젯 우선권 적재), `src/view/main/mouse.rs` (통합 리사이즈 hit-test)
+- **코드**: `crates/tasty-platform/src/window_chrome.rs` (CSD 속성·`resize_direction_at`), `src/adapters/ui/titlebar/` (`mod.rs`/`view.rs`/`caption.rs`), `src/adapters/ui/sidebar/` (`view.rs`/`full.rs`/`collapsed.rs`, 리사이즈 위젯 우선권 적재), `src/view/main/mouse.rs` (통합 리사이즈 hit-test)
 - **화면**: [screens/window-chrome.md](screens/window-chrome.md)
 
 ## 목적
@@ -70,7 +70,7 @@
 
 ## 구현
 
-- CSD 속성: `src/platform/window_chrome.rs` (`apply_csd_attributes`, `resize_direction_at`, `RESIZE_EDGE_MARGIN`).
+- CSD 속성: `crates/tasty-platform/src/window_chrome.rs` (`apply_csd_attributes`, `resize_direction_at`, `RESIZE_EDGE_MARGIN`).
 - 타이틀바: `src/adapters/ui/titlebar/mod.rs`(wrapper `draw_titlebar`/`top_inset`/`os_controls`/`resize_cursor`), `view.rs`(순수 view + `TitlebarAction`/`WindowButton`/`ControlSide`), `caption.rs`(Windows 캡션).
 - 가장자리 리사이즈: `src/view/main/mouse.rs`(`handle_mouse_input`/`handle_cursor_moved` hit-test), `AppState.pending_resize_cursor`/`resize_edge_widget_hovered`(`src/state.rs`), 커서 적용 `src/gfx/gpu/egui_bridge.rs`, 커서 우선순위 게이트 `src/gfx/gpu.rs`(`pending_resize_cursor.is_none()`).
 - 리사이즈 위젯 우선권 적재: `src/adapters/ui/titlebar/view.rs`(`TitlebarDrawResult::resize_priority_hovered`)·`caption.rs`(`CaptionDrawResult::hovered`, Windows)·`crates/tasty-ui-widgets/src/status_bar.rs`(`StatusBarDrawResult::resize_priority_hovered`, 본체 wrapper `src/adapters/ui/status_bar.rs` 가 적재)·`src/adapters/ui/sidebar/view.rs`(`SidebarFullDrawResult`/`SidebarCollapsedDrawResult::resize_priority_hovered`) → `titlebar::draw_titlebar`/`status_bar::draw_status_bar`/`sidebar::full::draw_full_sidebar`/`sidebar::collapsed::draw_collapsed_sidebar` 가 `AppState.resize_edge_widget_hovered` 에 적재(타이틀바만 리셋, 나머지는 OR).

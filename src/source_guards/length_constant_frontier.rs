@@ -67,8 +67,11 @@
 //!
 //! # 무엇을 스캔하고, 무엇을 안 세는가
 //!
-//! [`SCANNED`] 에 적힌 단위만 센다 — 지금은 `src` 와 갤러리(`crates/tasty-gallery`)
-//! 둘이다. 갤러리는 전환을 끝내 잔여가 0 이고, 그래서 전선 없이 통째로 들어왔다.
+//! [`SCANNED`] 에 적힌 단위만 센다 — 지금은 `src` 와 갤러리(`crates/tasty-gallery`),
+//! 그리고 OS 경계(`crates/tasty-platform`) 셋이다. 갤러리는 전환을 끝내 잔여가 0 이고,
+//! 그래서 전선 없이 통째로 들어왔다. OS 경계는 본체 안의 폴더이던 시절부터 `src`
+//! 접두사로 세어지던 곳이라 **새로 들어온 단위가 아니라 같은 모수가 경로만 옮긴 것**이다
+//! — 아래 전선 줄의 `window_chrome.rs` 가 그 증거다.
 //!
 //! **나머지 크레이트는 "0" 이 아니라 "안 잼" 이다.** 그것들도 같은 전환 대상이지만
 //! 아직 진행 중이라 건수가 커밋마다 움직인다. 움직이는 수를 여기 래칫으로 박으면 이
@@ -82,7 +85,7 @@ use super::test_gate::blank_test_modules;
 use super::{mask_non_code, rust_sources};
 
 /// 이 가드가 세는 단위(레포 상대 경로 접두사). 여기 없는 것은 0 이 아니라 미측정이다.
-const SCANNED: &[&str] = &["src/", "crates/tasty-gallery/"];
+const SCANNED: &[&str] = &["src/", "crates/tasty-gallery/", "crates/tasty-platform/"];
 
 /// 아직 전환하지 않은 영역과 그 시점의 건수. 건수는 상한이라 전선은 줄어들 수만 있다.
 ///
@@ -90,7 +93,7 @@ const SCANNED: &[&str] = &["src/", "crates/tasty-gallery/"];
 /// 안 움직인다. 파일 하나가 통째로 그 경계인 자리는 파일 경로를 그대로 적는다.
 const FRONTIERS: &[(&str, usize, &str)] = &[
     (
-        "src/platform/window_chrome.rs",
+        "crates/tasty-platform/src/window_chrome.rs",
         1,
         "winit 이 창 좌표를 f64 로 주고 이 판정이 그 좌표와 직접 비교된다 — 경계가 f64 다",
     ),

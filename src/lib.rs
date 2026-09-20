@@ -47,7 +47,6 @@ mod hub;
 mod i18n;
 mod intent;
 mod model;
-mod platform;
 mod plugin_bridge;
 mod ports;
 #[cfg(test)]
@@ -70,6 +69,9 @@ pub(crate) use tasty_utils::poison;
 pub(crate) use tasty_test_support as test_support;
 
 pub use tasty_font as font;
+/// OS 경계 — 실체는 `tasty-platform` 크레이트에 있다. 본체 코드가
+/// `crate::platform::…` 로 계속 부르도록 이름만 잇는다(다른 leaf 재수출과 같은 형태).
+pub(crate) use tasty_platform as platform;
 pub use tasty_settings as settings;
 #[cfg(feature = "gui")]
 use tasty_terminal as terminal;

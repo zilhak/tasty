@@ -99,7 +99,7 @@ grab 실패의 GDK/X11 이벤트 스트림 레벨 근본원인 규명은 이번 
 
 - [`docs/dev-guide/context-menu.md`](../dev-guide/context-menu.md) — 2단계 패턴, continuation
   형태 호출 예제, Linux 백엔드 동작
-- `src/platform/native_menu.rs`, `src/platform/native_menu/linux.rs` — `MenuOutcome` /
+- `crates/tasty-platform/src/native_menu.rs`, `crates/tasty-platform/src/native_menu/linux.rs` — `MenuOutcome` /
   `MenuHandle` / `GtkMenuHandle`
 - `src/view/main/redraw.rs` — `open_native_menu` / `poll_pending_native_menu`
 - 과거 커밋 `f54b5202`, `a177f6dc`, `e56d3a37` — 동일 함수의 이전 수정(무한 행 방지 워치독

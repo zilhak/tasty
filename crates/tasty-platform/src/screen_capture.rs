@@ -89,7 +89,7 @@ pub fn capture_interactive() -> Result<PathBuf, CaptureError> {
 /// 않고 단위테스트로 검증하기 위함(도구 실행은 환경 의존적이고, 디스플레이가 없는
 /// 헤드리스 환경에서 일부 도구는 인터랙티브 선택을 무한 대기해 테스트를 멈춘다).
 fn next_screenshot_path() -> anyhow::Result<PathBuf> {
-    let dir = crate::paths::tasty_home()
+    let dir = tasty_utils::path::tasty_home()
         .ok_or_else(|| anyhow::anyhow!("no tasty home directory (TASTY_HOME/HOME unresolved)"))?
         .join("screenshots");
     std::fs::create_dir_all(&dir)?;
@@ -233,7 +233,7 @@ mod tests {
         // `capture_interactive`/`capture_to_path` 는 실제 OS 캡처 도구를 실행하므로
         // (headless 환경에 설치돼 있으면 디스플레이 없이 인터랙티브 선택을 무한
         // 대기할 수 있음), 단위테스트에서는 절대 실행하지 않는다.
-        let home = crate::test_support::TastyHomeGuard::new();
+        let home = tasty_test_support::TastyHomeGuard::new();
         let path = next_screenshot_path().expect("dir creation must succeed");
         assert!(path.starts_with(home.path().join("screenshots")));
         assert!(home.path().join("screenshots").is_dir());

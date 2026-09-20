@@ -228,7 +228,7 @@ pub fn warn_if_menu_anchor_scale_premise_broken(winit_scale: f64) {
     let key = (winit_scale.to_bits(), gdk_scale);
     {
         // 경고 경로가 락 오염으로 침묵하면 안 된다 — 중복 억제는 부가 기능이다.
-        let mut warned = crate::poison::recover_mutex(
+        let mut warned = tasty_utils::poison::recover_mutex(
             WARNED_ANCHOR_SCALES.lock(),
             WARNED_ANCHOR_SCALES_WHAT,
             &WARNED_ANCHOR_SCALES_POISONED,
@@ -284,14 +284,14 @@ pub fn show_context_menu(
     // 이 창은 winit 이 오래 전에 만든 것이라 webview 쪽과 달리 생성 경합은 없다.
     // 그래도 NULL 은 올 수 있고(종료 중 창이 이미 파괴된 경우), 그때 우클릭 하나로
     // 프로세스가 죽으면 안 된다 — 이 함수의 다른 실패 분기와 같이 메뉴를 안 띄운다.
-    let rect_window =
-        match crate::platform::x11_gdk_window::foreign_gdk_window(&x11_gdk_display, x11_window) {
-            Ok(w) => w,
-            Err(e) => {
-                tracing::warn!("native context menu: {e}");
-                return MenuOutcome::Ready(None);
-            }
-        };
+    let rect_window = match crate::x11_gdk_window::foreign_gdk_window(&x11_gdk_display, x11_window)
+    {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!("native context menu: {e}");
+            return MenuOutcome::Ready(None);
+        }
+    };
 
     let menu = gtk::Menu::new();
     let selected: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
@@ -500,9 +500,9 @@ mod tests {
         // 가드가 원값 복원까지 맡는다 — 아래 단언 중 하나가 패닉해도 env 오염이
         // 남지 않는다. 동시 경합은 `#[ignore]` + `--test-threads=1` 실행 조건이 막는다.
         let _force_fail =
-            crate::test_support::EnvVarGuard::set("TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL", "1");
+            tasty_test_support::EnvVarGuard::set("TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL", "1");
         let _timeout =
-            crate::test_support::EnvVarGuard::set("TASTY_DEBUG_NATIVE_MENU_TIMEOUT_MS", "250");
+            tasty_test_support::EnvVarGuard::set("TASTY_DEBUG_NATIVE_MENU_TIMEOUT_MS", "250");
         assert!(ensure_gtk(), "이 테스트는 X11 디스플레이가 있어야 한다");
 
         let win = gtk::Window::new(gtk::WindowType::Toplevel);

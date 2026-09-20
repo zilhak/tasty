@@ -16,7 +16,7 @@ use objc2::{AnyThread, msg_send, sel};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
 use objc2_foundation::{MainThreadMarker, NSString};
 
-use crate::i18n::{t, t_fmt};
+use tasty_i18n::{t, t_fmt};
 
 /// dock / 앱 메뉴가 일으키는 두 동작. **이 모듈은 그것이 App 에서 무엇이 되는지
 /// 모른다** — 무엇을 할지는 [`store_actions`] 를 부르는 쪽이 정한다.
@@ -180,7 +180,7 @@ pub fn inject_delegate_methods() {
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
     // tasty 특화 액션의 key equivalent 는 KeybindingSettings 에서 가져온다 (부팅 시 1회).
-    let settings = crate::settings::Settings::load();
+    let settings = tasty_settings::Settings::load();
     setup_main_menu(&app, mtm, delegate_ptr, &settings.keybindings);
 
     // Set Dock icon from embedded PNG (works even without .app bundle)
@@ -189,7 +189,7 @@ pub fn inject_delegate_methods() {
     tracing::info!("macOS delegate methods injected into winit's delegate");
 }
 
-/// Settings 변경으로 [`crate::settings::KeybindingSettings`] 가 갱신됐을 때
+/// Settings 변경으로 [`tasty_settings::KeybindingSettings`] 가 갱신됐을 때
 /// NSMenu 의 key equivalent 표시를 새 binding 으로 갱신한다.
 ///
 /// 호출 시점: `cascade_settings_updated` 직후 (Settings 모달 닫힘 시 등 single
@@ -202,7 +202,7 @@ pub fn inject_delegate_methods() {
 /// 는 매번 `sharedApplication` + `app.delegate()` 로 재획득 — 별도 static 보관
 /// 불필요. delegate ptr 의 수명은 app 수명 동안 유효하며 setTarget 으로 새 NSMenuItem
 /// 의 target 으로 다시 설정된다.
-pub fn rebuild_main_menu(keybindings: &crate::settings::KeybindingSettings) {
+pub fn rebuild_main_menu(keybindings: &tasty_settings::KeybindingSettings) {
     let Some(mtm) = MainThreadMarker::new() else {
         tracing::warn!("rebuild_main_menu: not on main thread, skipping");
         return;
@@ -235,7 +235,9 @@ pub fn rebuild_main_menu(keybindings: &crate::settings::KeybindingSettings) {
 /// 일어나지 않는다.
 ///
 /// Edit 메뉴는 의도적으로 노출하지 않는다 — Cut/Copy/Paste/Select All 단축키는 winit
-/// `KeyboardInput` → [`crate::shortcuts`] 흐름이 처리하므로 NSMenu 표시가 불필요하다.
+/// `KeyboardInput` → 호스트의 단축키 디스패치(`src/adapters/ui/input/shortcuts/`)
+/// 흐름이 처리하므로 NSMenu 표시가 불필요하다. 이 크레이트는 그 흐름을 안 본다 —
+/// 크레이트 경계 밖이라 intra-doc 링크가 아니라 경로로 적는다.
 ///
 /// tasty 특화 액션 (Quit / New Window) 의 key equivalent + modifier mask 는
 /// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다. 부팅 시 1 회 +
@@ -251,7 +253,7 @@ fn setup_main_menu(
     app: &NSApplication,
     mtm: MainThreadMarker,
     delegate: *mut AnyObject,
-    keybindings: &crate::settings::KeybindingSettings,
+    keybindings: &tasty_settings::KeybindingSettings,
 ) {
     use objc2_app_kit::NSEventModifierFlags;
     use objc2_foundation::NSProcessInfo;
@@ -467,7 +469,7 @@ fn set_dock_icon(app: &NSApplication) {
     use objc2_foundation::NSData;
 
     // 형제 플랫폼 모듈 — 루트 별칭이 아니라 자기 경로로 부른다(`system_tray` 와 같다).
-    let png_bytes = crate::platform::app_icon::ICON_PNG_256;
+    let png_bytes = crate::app_icon::ICON_PNG_256;
     let data = NSData::with_bytes(png_bytes);
     let image = NSImage::initWithData(NSImage::alloc(), &data);
     if let Some(image) = image {

@@ -38,7 +38,7 @@ const VOLUMES_ROOT: &str = "/Volumes";
 /// 목록 결정에 필요한 파일시스템 조회. 실제 IO 없이 결정 로직만 검증할 수 있도록
 /// 추상화한다 — TCC 가 없는 CI 에서 `read_dir` 을 돌리면 헤드리스 러너가 프롬프트를
 /// 기다리며 멈출 수 있고, 그 환경 의존성을 테스트에 들이지 않기 위함이다.
-pub(crate) trait FsProbe {
+pub trait FsProbe {
     /// 디렉터리로 존재하는가. 없는 폴더는 읽어봐야 프롬프트가 안 뜨므로 건너뛴다.
     fn is_dir(&self, path: &Path) -> bool;
 
@@ -49,7 +49,7 @@ pub(crate) trait FsProbe {
 
 /// 실제 파일시스템. pre-warm 실행부와 같은 조건으로만 컴파일한다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) struct RealFs;
+pub struct RealFs;
 
 #[cfg(all(target_os = "macos", feature = "gui"))]
 impl FsProbe for RealFs {
@@ -77,7 +77,7 @@ impl FsProbe for RealFs {
 /// 나열해 항목당 한 번씩만 건드린다.
 ///
 /// 존재하지 않는 경로는 빠진다. `home` 이 `None` 이면 홈 항목 전체가 빠진다.
-pub(crate) fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
+pub fn prewarm_targets(home: Option<&Path>, fs: &dyn FsProbe) -> Vec<PathBuf> {
     let mut targets = Vec::new();
 
     if let Some(home) = home {
@@ -127,7 +127,7 @@ unsafe extern "C" {
 /// **캡처 직전에 부른다** — 부팅 시점 값을 캐시해두면 그 사이 사용자가 시스템 설정에서
 /// 권한을 바꾼 경우를 잘못 판정한다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) fn screen_recording_authorized() -> bool {
+pub fn screen_recording_authorized() -> bool {
     // SAFETY: 인자도 반환 포인터도 없는 CoreGraphics C 함수 호출 — 포인터 수명/해제
     // 책임이 발생하지 않고, panic 을 가로지르는 상태도 남기지 않는다. 내부적으로
     // TCC 데몬에 현재 앱의 승인 상태를 묻기만 하며 AppKit 을 건드리지 않아
@@ -138,7 +138,7 @@ pub(crate) fn screen_recording_authorized() -> bool {
 /// 비-macOS / headless — 화면 기록 권한이라는 개념이 없으므로 "승인됨"으로 답한다.
 /// 그래야 캡처 경로가 다른 플랫폼에서 기존과 똑같이 동작한다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub(crate) fn screen_recording_authorized() -> bool {
+pub fn screen_recording_authorized() -> bool {
     true
 }
 
@@ -225,7 +225,7 @@ unsafe extern "C" {
 /// (`surface.raw_key`), pre-warm 요청, 설정 권한 탭의 상태 행. release 에는 이
 /// 권한을 소비하는 코드가 없으므로 상태를 물을 이유도 없다.
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
-pub(crate) fn accessibility_trusted() -> bool {
+pub fn accessibility_trusted() -> bool {
     // SAFETY: 인자도 반환 포인터도 없는 ApplicationServices C 함수 호출 — 포인터
     // 수명/해제 책임이 생기지 않는다. 현재 프로세스의 TCC 승인 상태를 묻기만 하고
     // 프롬프트를 띄우지 않으므로 블록하지 않으며, AppKit 을 건드리지 않아 main
@@ -237,7 +237,7 @@ pub(crate) fn accessibility_trusted() -> bool {
 /// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다. macOS 구현과 같은
 /// 이유로 debug 한정이다.
 #[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
-pub(crate) fn accessibility_trusted() -> bool {
+pub fn accessibility_trusted() -> bool {
     true
 }
 
@@ -250,7 +250,7 @@ pub(crate) fn accessibility_trusted() -> bool {
 /// cfg 로 내린다. 순수 규칙 테스트는 release 테스트에서도 돌아야 하므로 `test` 를 포함한다.
 #[cfg(any(debug_assertions, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RawKeyDecision {
+pub enum RawKeyDecision {
     /// 승인됨 — 그대로 주입한다.
     Inject,
     /// 미승인 — 주입하지 않고 권한 부재를 에러로 돌려준다.
@@ -259,7 +259,7 @@ pub(crate) enum RawKeyDecision {
 
 /// 위 판정의 **순수** 규칙. FFI 호출과 분리해 두면 macOS 밖에서도 검증된다.
 #[cfg(any(debug_assertions, test))]
-pub(crate) fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
+pub fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
     if accessibility_trusted {
         RawKeyDecision::Inject
     } else {
@@ -322,7 +322,7 @@ fn prewarm_accessibility() {
 
 /// 시스템 설정의 전체 디스크 접근 권한 패널 딥링크.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) const FULL_DISK_ACCESS_SETTINGS_URL: &str =
+pub const FULL_DISK_ACCESS_SETTINGS_URL: &str =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
 
 /// FDA 보유를 **추정**하는 데 읽어보는 경로들. 앞쪽부터 시도해 하나라도 열리면
@@ -357,7 +357,7 @@ fn should_show_fda_notice(already_shown: bool, fda_likely: bool) -> bool {
 /// "FDA 로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신하는 휴리스틱이며,
 /// macOS 가 그 경로의 보호 정책을 바꾸면 오탐이 날 수 있다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) fn full_disk_access_likely() -> bool {
+pub fn full_disk_access_likely() -> bool {
     fda_probe_paths(home_dir().as_deref())
         .iter()
         .any(|p| std::fs::File::open(p).is_ok())
@@ -365,7 +365,7 @@ pub(crate) fn full_disk_access_likely() -> bool {
 
 /// 부팅 시 FDA 안내를 띄워야 하는가.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) fn wants_full_disk_access_notice(settings: &crate::settings::Settings) -> bool {
+pub fn wants_full_disk_access_notice(settings: &tasty_settings::Settings) -> bool {
     should_show_fda_notice(
         settings.general.macos_fda_notice_shown,
         full_disk_access_likely(),
@@ -374,14 +374,14 @@ pub(crate) fn wants_full_disk_access_notice(settings: &crate::settings::Settings
 
 /// 비-macOS / headless — FDA 개념이 없으므로 안내하지 않는다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub(crate) fn wants_full_disk_access_notice(_settings: &crate::settings::Settings) -> bool {
+pub fn wants_full_disk_access_notice(_settings: &tasty_settings::Settings) -> bool {
     false
 }
 
 /// 안내를 띄웠음을 기록하고 즉시 영속화한다 — 다음 부팅부터는 뜨지 않는다.
 /// 저장 실패는 안내를 한 번 더 보게 될 뿐이라 치명적이지 않다(warn 로그).
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) fn mark_full_disk_access_notice_shown(settings: &mut crate::settings::Settings) {
+pub fn mark_full_disk_access_notice_shown(settings: &mut tasty_settings::Settings) {
     settings.general.macos_fda_notice_shown = true;
     if let Err(err) = settings.save() {
         tracing::warn!(%err, "full disk access 안내 표시 기록 저장 실패");
@@ -390,13 +390,13 @@ pub(crate) fn mark_full_disk_access_notice_shown(settings: &mut crate::settings:
 
 /// 비-macOS / headless — 기록할 것이 없다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub(crate) fn mark_full_disk_access_notice_shown(_settings: &mut crate::settings::Settings) {}
+pub fn mark_full_disk_access_notice_shown(_settings: &mut tasty_settings::Settings) {}
 
 /// 시스템 설정의 전체 디스크 접근 권한 패널을 연다. `open(1)` 로 띄운다 —
 /// `x-apple.systempreferences:` 는 브라우저가 아니라 OS 기본 핸들러가 처리한다.
 /// 프로세스를 기다리지 않는다(렌더 경로에서 호출될 수 있다).
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) fn open_full_disk_access_settings() {
+pub fn open_full_disk_access_settings() {
     if let Err(err) = std::process::Command::new("open")
         .arg(FULL_DISK_ACCESS_SETTINGS_URL)
         .spawn()
@@ -425,7 +425,7 @@ fn home_dir() -> Option<PathBuf> {
 /// 빌드에서만** 돈다 — release 에는 그 권한을 소비하는 코드가 없다
 /// (`prewarm_accessibility` 참고).
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub(crate) fn spawn_prewarm() {
+pub fn spawn_prewarm() {
     std::thread::spawn(|| {
         let targets = prewarm_targets(home_dir().as_deref(), &RealFs);
         tracing::debug!(count = targets.len(), "prewarm: 파일 TCC 대상 결정");
@@ -449,7 +449,7 @@ pub(crate) fn spawn_prewarm() {
 /// 비-macOS / headless 는 no-op — 호출부에 `#[cfg]` 를 흩뿌리지 않기 위한 짝.
 /// headless 에는 프롬프트를 띄울 GUI 주체가 없으므로 macOS 여도 돌지 않는다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub(crate) fn spawn_prewarm() {}
+pub fn spawn_prewarm() {}
 
 #[cfg(test)]
 mod tests {

@@ -104,7 +104,7 @@ tasty debug fullscreen state --window-id <ID>
 ## 네이티브 메뉴 앵커는 winit 배율 == GDK 배율을 전제한다
 
 `WINIT_X11_SCALE_FACTOR` 는 **winit 만** 움직인다. Linux 네이티브 컨텍스트 메뉴는
-GTK3 가 띄우고(`src/platform/native_menu/linux.rs`), GDK 는 배율을 `GDK_SCALE` 에서
+GTK3 가 띄우고(`crates/tasty-platform/src/native_menu/linux.rs`), GDK 는 배율을 `GDK_SCALE` 에서
 따로 읽는다. 앵커 좌표는 winit(=egui) 논리 좌표로 넘어가는데 GTK 는 같은 수를
 GDK 논리 좌표로 읽으므로, **두 배율이 같을 때만** 메뉴가 클릭 지점에 뜬다.
 

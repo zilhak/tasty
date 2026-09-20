@@ -302,3 +302,4 @@
 | 0334 | [버린 스트림 프레임은 그것을 받겠다고 말한 client 에게만 알린다](0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md) | Accepted | 2026-09-20 | attach, stream, ipc, capability, backpressure, forward-compat, adr-0312 |
 | 0335 | [`state.db` 는 GUI 부팅만 열고, 접근자의 `None` 은 뜻이 하나다](0335-the-state-database-is-opened-by-gui-boot-alone.md) | Accepted | 2026-09-20 | storage, headless, ownership, naming |
 | 0336 | [`tasty-font` 은 device 경계에서 갈린다 — wgpu 는 `gpu` feature 뒤로](0336-the-font-crate-splits-at-the-device-boundary.md) | Accepted | 2026-09-20 | build, cargo, features, headless, font, dependency-graph, wgpu, adr-0326 |
+| 0343 | [OS 경계는 폴더가 아니라 크레이트다 — 본체는 별칭으로 부른다](0343-the-os-boundary-is-a-crate.md) | Accepted | 2026-09-20 | architecture, platform, crate-split, layering, features, headless, cross-platform, adr-0331 |

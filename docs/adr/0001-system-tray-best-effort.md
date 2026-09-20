@@ -10,7 +10,7 @@ tasty 는 크로스 플랫폼 터미널이다. **GUI 가 붙은 환경에서 마
 
 | OS | 상태 영역 | 등록 수단 |
 |----|-----------|-----------|
-| Windows | 알림 영역(notification area / system tray) | `Shell_NotifyIcon` (이미 구현 — `src/platform/system_tray.rs`, Show/New/Quit 메뉴) |
+| Windows | 알림 영역(notification area / system tray) | `Shell_NotifyIcon` (이미 구현 — `crates/tasty-platform/src/system_tray.rs`, Show/New/Quit 메뉴) |
 | macOS | 메뉴 바(menu bar) 우측의 상태 항목(menu bar extras) | `NSStatusItem` (`NSStatusBar`) |
 | Linux | 시스템 트레이/알림 영역 | StatusNotifierItem(SNI) / AppIndicator |
 
@@ -48,7 +48,7 @@ Linux 는 데스크톱 환경(DE)별로 트레이 가용성이 갈린다 — KDE
 
 ## References
 
-- 코드: `src/platform/system_tray.rs` (Windows/macOS/Linux 단일 경로, `tray-icon` 0.22), 배선 `src/app/event_handler.rs`(생성·백그라운드·폴링), `src/app/event.rs`(`TrayShowWindow`)
+- 코드: `crates/tasty-platform/src/system_tray.rs` (Windows/macOS/Linux 단일 경로, `tray-icon` 0.22), 배선 `src/app/event_handler.rs`(생성·백그라운드·폴링), `src/app/event.rs`(`TrayShowWindow`)
 - [`design/policies/system-tray`](../design/policies/system-tray.md) — OS 별 best-effort 동작·DE 매트릭스·폴백 동선 (운영 상세)
 - 관련: ADR-0003 (CSD) — 같은 "OS 별 네이티브 표면을 어디까지 직접 다루나" 사고의 연장
 </content>

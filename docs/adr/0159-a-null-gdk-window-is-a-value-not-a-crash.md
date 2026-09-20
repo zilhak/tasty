@@ -38,7 +38,7 @@ panic: gdk-0.18.2/src/auto/window.rs:20  assertion failed: !ptr.is_null()
 
 **NULL 은 값으로 받고, 연결이 둘이면 왕복한다.**
 
-1. XID → `GdkWindow` 변환은 `src/platform/x11_gdk_window.rs` 의 `foreign_gdk_window` 한
+1. XID → `GdkWindow` 변환은 `crates/tasty-platform/src/x11_gdk_window.rs` 의 `foreign_gdk_window` 한
    곳으로 모은다. 이 함수는 `gdkx11::ffi` 의 원 함수를 직접 불러 NULL 을 검사하고 `Err`
    를 돌려준다. **`X11Window::foreign_new_for_display`(패닉하는 바인딩)는 레포에서 쓰지
    않는다.**
@@ -144,9 +144,9 @@ panic: gdk-0.18.2/src/auto/window.rs:20  assertion failed: !ptr.is_null()
 
 ## References
 
-- `src/platform/x11_gdk_window.rs` — 결정 1 의 구현과 세 가드
+- `crates/tasty-platform/src/x11_gdk_window.rs` — 결정 1 의 구현과 세 가드
 - `src/host_api/webview/linux.rs` — 결정 2·3 의 자리
-- `src/platform/native_menu/linux.rs` — 같은 바인딩을 쓰던 두 번째 자리
+- `crates/tasty-platform/src/native_menu/linux.rs` — 같은 바인딩을 쓰던 두 번째 자리
 - [`docs/dev-guide/unsafe-checklist.md`](../dev-guide/unsafe-checklist.md) — 자가검토 6·7 문항
   (NULL 이 정상 반환값인가 · 연결이 하나인가)
 - [ADR-0117](0117-window-and-modal-creation-failure-policy.md) — 창 생성 실패 정책

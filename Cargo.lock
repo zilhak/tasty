@@ -5705,6 +5705,7 @@ dependencies = [
  "tasty-memory",
  "tasty-model",
  "tasty-output",
+ "tasty-platform",
  "tasty-plugin-claude",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
@@ -6075,6 +6076,28 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-ansi",
+]
+
+[[package]]
+name = "tasty-platform"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gdkx11",
+ "gtk",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "png 0.18.1",
+ "tasty-i18n",
+ "tasty-settings",
+ "tasty-test-support",
+ "tasty-utils",
+ "tracing",
+ "tracing-subscriber",
+ "tray-icon",
+ "windows 0.61.3",
+ "winit",
 ]
 
 [[package]]

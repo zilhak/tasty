@@ -160,6 +160,9 @@ fn every_menu_key_equivalent_is_empty_or_from_settings() {
     let root = repo_root();
     let mut files = Vec::new();
     rs_files(&root.join("src"), &mut files);
+    // NSMenu 등록 자리는 `tasty-platform` 크레이트에 있다 — `src/` 에서 멈추면
+    // 모수가 0 이 되고 아래 하한이 그것을 측정 실패로 잡는다.
+    rs_files(&root.join("crates/tasty-platform/src"), &mut files);
 
     let mut seen = 0usize;
     let mut violations = Vec::new();
@@ -239,6 +242,9 @@ fn the_registration_sites_live_in_one_place() {
     let root = repo_root();
     let mut files = Vec::new();
     rs_files(&root.join("src"), &mut files);
+    // NSMenu 등록 자리는 `tasty-platform` 크레이트에 있다 — `src/` 에서 멈추면
+    // 모수가 0 이 되고 아래 하한이 그것을 측정 실패로 잡는다.
+    rs_files(&root.join("crates/tasty-platform/src"), &mut files);
     let mut owners = BTreeSet::new();
     for file in &files {
         let Ok(text) = std::fs::read_to_string(file) else {

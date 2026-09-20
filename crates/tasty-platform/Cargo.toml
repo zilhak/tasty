@@ -1,0 +1,67 @@
+[package]
+name = "tasty-platform"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "OS-native surface of tasty — crash/hang reports, native context menu, tray, jump list, window chrome, screen capture, macOS permissions"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+# 워크스페이스 크레이트 — 이 셋이 이 크레이트가 아는 tasty 의 전부다. App/View 는 안
+# 본다(docs/adr/0331-...): OS 신호가 App 에서 무엇이 되는지는 부르는 쪽이 정한다.
+tasty-i18n = { path = "../tasty-i18n" }
+tasty-settings = { path = "../tasty-settings" }
+tasty-utils = { path = "../tasty-utils" }
+
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 아래는 전부 `gui` feature 뒤다 — headless 빌드는 crash_report 만 쓰고 윈도잉 스택을
+# 링크하지 않는다(본체의 optional 관행과 같은 형태).
+winit = { version = "0.30", optional = true }
+png = { version = "0.18", optional = true }
+tray-icon = { version = "0.22", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", optional = true }
+gdkx11 = { version = "0.18", optional = true }
+
+[dev-dependencies]
+# 프로세스 전역 env 와 `TASTY_HOME` 을 시험 동안만 갈아끼우는 RAII 가드. 출하되지
+# 않으므로 dev 전용이다(본체가 `crate::test_support` 로 부르던 것과 같은 크레이트).
+tasty-test-support = { path = "../tasty-test-support" }
+
+[features]
+default = []
+gui = [
+    "dep:winit",
+    "dep:png",
+    "dep:tray-icon",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-app-kit",
+    "dep:gtk",
+    "dep:gdkx11",
+]
+
+[lints]
+workspace = true

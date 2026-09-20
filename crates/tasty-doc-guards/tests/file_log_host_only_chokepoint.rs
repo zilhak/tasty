@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 /// 파일을 실제로 여는 함수의 정의 위치. 이 파일에서도 **정의 함수 본문 안** 만 허용한다
 /// — 파일 통째로 봐주면 `init()`(= 모든 프로세스가 탄다) 에서 부르는 것을 못 잡는다.
-const IMPL_FILE: &str = "src/platform/crash_report.rs";
+const IMPL_FILE: &str = "crates/tasty-platform/src/crash_report.rs";
 /// 얇은 boot 래퍼. 여기도 위임 래퍼 함수 본문 안만 허용한다 — 파일 통째로 스킵하면
 /// 모든 프로세스가 타는 `init_crash_report()` 안에 호출 한 줄을 넣는 것만으로
 /// ADR-0092 이전 버그가 부활하는데 가드가 초록으로 남는다.
@@ -97,9 +97,12 @@ fn log_file_is_opened_from_the_host_path_only() {
     let root = repo_root();
     let mut files = Vec::new();
     collect_rs_files(&root.join("src"), &mut files);
+    // 정의 파일이 본체를 떠나 `tasty-platform` 크레이트로 갔다 — 순회가 `src/` 에서
+    // 멈추면 `IMPL_FILE` 자체를 못 읽고, 이 가드의 "위반 0" 이 "안 봤다" 가 된다.
+    collect_rs_files(&root.join("crates/tasty-platform/src"), &mut files);
     assert!(
         !files.is_empty(),
-        "src/ 아래 .rs 파일을 하나도 못 찾았다 — 가드가 헛돈다"
+        "src/ 와 crates/tasty-platform/src/ 아래 .rs 파일을 하나도 못 찾았다 — 가드가 헛돈다"
     );
 
     let mut offenders: Vec<String> = Vec::new();

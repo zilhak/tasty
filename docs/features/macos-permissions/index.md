@@ -3,7 +3,7 @@
 - **Status**: Partial — 파일 계열 + 화면 기록 pre-warm(+ debug 빌드 한정 손쉬운 사용 pre-warm), Full Disk Access 추정·안내 구현
 - **주체**: 로컬 사용자 (AI Agent 가 간접 수혜 — 작업 도중 프롬프트로 멈추지 않는다)
 - **ADR**: 없음
-- **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
+- **코드**: `crates/tasty-platform/src/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `crates/tasty-platform/src/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
 - **화면**: 프롬프트는 OS 가 그린다. tasty 쪽 UI 는 부팅 안내 InfoModal + [설정 창](../settings/screens/settings.md) 일반 > 권한 탭
 
 ## 목적

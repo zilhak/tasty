@@ -6,7 +6,7 @@
 
 ## Context
 
-`src/platform/` 은 "플랫폼 특정 모듈" 이라는 이름만 있고 **무엇이 그 안에 있어야 하는지를
+`crates/tasty-platform/src/` 은 "플랫폼 특정 모듈" 이라는 이름만 있고 **무엇이 그 안에 있어야 하는지를
 정한 문장이 없었다.** 그래서 두 종류가 한 폴더에 섞였다 — OS API 를 부르는 코드와, 그
 결과가 App 에서 무슨 사건인지 정하는 코드다.
 
@@ -30,7 +30,7 @@
 
 ## Decision
 
-**`src/platform/` 에는 OS 를 부르는 코드가 있고, 그 신호가 App 에서 무엇이 되는지는 그
+**`crates/tasty-platform/src/` 에는 OS 를 부르는 코드가 있고, 그 신호가 App 에서 무엇이 되는지는 그
 폴더 밖에서 정한다.** 플랫폼 모듈이 App 에 알릴 것이 있으면 **호출부가 맡긴 콜백**을
 부르고, 그 콜백이 무엇을 하는지는 모른다.
 
@@ -83,14 +83,14 @@
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- `src/platform/` 의 어떤 파일이 `AppEvent` 를 다시 이름으로 부른다. 이 결정이 없앤 것이
+- `crates/tasty-platform/src/` 의 어떤 파일이 `AppEvent` 를 다시 이름으로 부른다. 이 결정이 없앤 것이
   정확히 그것이라, 다시 나타나면 규칙이 안 지켜졌거나 규칙이 틀린 것이다.
   **좌변은 주석을 뺀 코드 줄이다.** 이 폴더에는 규칙 자체를 설명하는 주석이 그 낱말을
   담고 있어(`power_windows.rs` 머리말), 원문을 그냥 훑으면 규칙을 적은 줄이 위반으로
   잡힌다. 재는 법:
-  `grep -rnE '(^|[^A-Za-z0-9_])AppEvent' src/platform/ | grep -vE ':[[:space:]]*//'`
+  `grep -rnE '(^|[^A-Za-z0-9_])AppEvent' crates/tasty-platform/src/ | grep -vE ':[[:space:]]*//'`
   — 이 결정 전 **10**, 지금 **0** 이다(원문을 그냥 훑으면 각각 11 과 1 이라 0 이 안 나온다).
-- `src/platform/power_windows.rs` 가 `crate::` 를 다시 참조한다. 지금 0 이고, 0 이라는 것이
+- `crates/tasty-platform/src/power_windows.rs` 가 `crate::` 를 다시 참조한다. 지금 0 이고, 0 이라는 것이
   이 결정이 도달한 지점이다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
@@ -109,6 +109,6 @@
 - `docs/dev-guide/build.md` — 워크스페이스 구조와 크레이트 분리 가이드
 - `docs/adr/0017-windows-suspend-resume-pty-recovery.md` — 이 결정이 형태를 바꾼 절전 후크
 - `docs/adr/0091-render-stall-watchdog-observation-only.md` — 같은 폴더의 다른 파일을 고정한 결정
-- 코드 근거(결정이 실현된 현재 위치): `src/platform/power_windows.rs` 의 `OnResume` ·
-  `src/platform/macos_delegate.rs` 의 `DelegateActions` · `src/boot/os.rs` 의
+- 코드 근거(결정이 실현된 현재 위치): `crates/tasty-platform/src/power_windows.rs` 의 `OnResume` ·
+  `crates/tasty-platform/src/macos_delegate.rs` 의 `DelegateActions` · `src/boot/os.rs` 의
   `install_macos_delegate` · `src/app/debug_info.rs`

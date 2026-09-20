@@ -1697,7 +1697,7 @@ cargo test -p tasty --lib --no-run       # 바이너리 경로를 찍는다
 `.steps[]` 의 `conclusion` 을 보면 된다.
 
 빈 칸은 테스트만이 아니라 **컴파일**도 비어 있다. 그 칸에만 있는 코드가 실재한다 —
-`src/platform/native_menu/linux.rs` 는 `#[cfg(feature = "gui")]` 아래 Linux 전용이면서
+`crates/tasty-platform/src/native_menu/linux.rs` 는 `#[cfg(feature = "gui")]` 아래 Linux 전용이면서
 `#[cfg(debug_assertions)]` 함수를 갖는다.
 
 **수를 여기 적지 않는다**([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md))

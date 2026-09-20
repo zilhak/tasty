@@ -97,7 +97,7 @@ tasty 가 통제할 수 있는 것은 "그런 일이 벌어졌을 때 무엇이 
 
 ## References
 
-- 구현: `src/platform/stall_watchdog.rs`, `src/platform/crash_report.rs`(`write_hang_report`), `src/app/event_handler.rs`(콜백 가드), `src/gfx/gpu.rs`(렌더 단계 표시).
+- 구현: `crates/tasty-platform/src/stall_watchdog.rs`, `crates/tasty-platform/src/crash_report.rs`(`write_hang_report`), `src/app/event_handler.rs`(콜백 가드), `src/gfx/gpu.rs`(렌더 단계 표시).
 - 관련 문서: [`dev-guide/gpu-rendering.md`](../dev-guide/gpu-rendering.md)(렌더가 이벤트 스레드에서 도는 구조), [`dev-guide/debug-ipc.md`](../dev-guide/debug-ipc.md)(`debug.gpu.stall`), [`dev-guide/error-handling.md`](../dev-guide/error-handling.md).
 - 관련 ADR: [ADR-0077](0077-shutdown-loading-screen.md)(종료 화면도 렌더를 요구한다).
 - 관련 ADR: [ADR-0092](0092-file-log-host-process-only.md) — 공유 로그 파일을 host 프로세스로 한정한 결정. **본 ADR 본문의 "공유 로그는 프로세스 시작마다 truncate 되므로 행 상태에서 `tasty` CLI 가 한 번이라도 실행되면 지워진다" 는 서술(Decision·Consequences)은 0092 이후 더 이상 성립하지 않는다** — CLI 실행은 공유 로그를 건드리지 않고, truncate 는 host 가 뜰 때만 일어난다. `hang-*.log` 를 별도 파일로 남기는 결정 자체는 나머지 근거("사용자가 실제로 들여다보는 곳이 `crash-reports/` 다")로 그대로 유효하다. 현행 서술은 [`dev-guide/crash-diagnostics.md`](../dev-guide/crash-diagnostics.md) 를 본다.

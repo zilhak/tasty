@@ -23,7 +23,7 @@
 use std::time::Duration;
 
 /// 제품이 로그 필터로 읽는 환경변수. **`RUST_LOG` 이 아니다** —
-/// `src/platform/crash_report.rs` 의 `EnvFilter::try_from_env("TASTY_LOG")` 다.
+/// `crates/tasty-platform/src/crash_report.rs` 의 `EnvFilter::try_from_env("TASTY_LOG")` 다.
 /// 한 번 `RUST_LOG` 로 잘못 넣어 두 하네스가 몇 달 동안 필터 없이 돌았으므로,
 /// 이름은 상수로 고정하고 `tests/harness_log_env.rs` 가 제품 소스와 대조한다.
 pub const LOG_ENV: &str = "TASTY_LOG";

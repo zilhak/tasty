@@ -1,6 +1,6 @@
 # 크래시 & 에러 진단
 
-tasty 가 죽거나 멈췄을 때 무엇이 어디에 기록되는지, 빌드 모드(release / dev)에 따라 어떤 추가 정보를 어디서 얻는지를 정리한다. 메커니즘은 `src/platform/crash_report.rs`, 부팅 1단계(`boot.rs` → `os::init_crash_report` → `crash_report::init`)에서 설치된다(공유 로그 **파일**만 host 확정 후 `os::enable_host_file_log` 에서 열린다 — 아래 "파일 로그를 쓰는 프로세스는 host 뿐이다").
+tasty 가 죽거나 멈췄을 때 무엇이 어디에 기록되는지, 빌드 모드(release / dev)에 따라 어떤 추가 정보를 어디서 얻는지를 정리한다. 메커니즘은 `crates/tasty-platform/src/crash_report.rs`, 부팅 1단계(`boot.rs` → `os::init_crash_report` → `crash_report::init`)에서 설치된다(공유 로그 **파일**만 host 확정 후 `os::enable_host_file_log` 에서 열린다 — 아래 "파일 로그를 쓰는 프로세스는 host 뿐이다").
 
 ## panic 발생 시 (모든 빌드)
 

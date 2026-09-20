@@ -24,7 +24,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::{Interface, PCWSTR, w};
 
-use crate::i18n::t;
+use tasty_i18n::t;
 
 /// PKEY_Title: {F29F85E0-4FF9-1068-AB91-08002B27B3D9}, 2
 const PKEY_TITLE: PROPERTYKEY = PROPERTYKEY {

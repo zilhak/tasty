@@ -85,7 +85,7 @@ const SERIALIZED: &[Serialized] = &[
               중에 끼어들면 단언이 깨진다",
     },
     Serialized {
-        file: "src/platform/stall_watchdog.rs",
+        file: "crates/tasty-platform/src/stall_watchdog.rs",
         lock: "GLOBALS",
         acquire: &["GLOBALS"],
         guarded: &["SEQ", "PAUSED"],

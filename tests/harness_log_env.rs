@@ -30,7 +30,7 @@ fn read(rel: &str) -> String {
 /// 정규식 없이 고정 토큰으로 자른다 — 이 테스트가 잡으려는 것은 "제품이 바뀌었는데
 /// 하네스가 안 따라갔다" 이지 `crash_report.rs` 의 서식이 아니다.
 fn product_log_env_and_filter() -> (String, String) {
-    let src = read("src/platform/crash_report.rs");
+    let src = read("crates/tasty-platform/src/crash_report.rs");
     let env = extract_between(&src, "EnvFilter::try_from_env(\"", "\")")
         .expect("crash_report.rs 에서 try_from_env(\"…\") 를 찾지 못했다 — 이 테스트를 갱신하라");
     let filter = extract_between(&src, "EnvFilter::new(\"", "\")")

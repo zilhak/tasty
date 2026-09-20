@@ -117,7 +117,7 @@ lib 타깃이 생긴 순간 **처음으로 표면이 된다.** 두 수를 같은
   [`../dev-guide/context-menu.md`](../dev-guide/context-menu.md),
   [`../design/systems/theme.md`](../design/systems/theme.md),
   [`0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md`](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md),
-  `src/platform/native_menu/linux.rs`, `src/source_guards/gallery_copied_dimensions.rs`,
+  `crates/tasty-platform/src/native_menu/linux.rs`, `src/source_guards/gallery_copied_dimensions.rs`,
   `src/source_guards/gallery_specimen_parity.rs`.
 - **과거 실측이 든 모수 이름은 그대로 뒀다** — 그 수를 낸 조합의 이름이라 갈아끼우면
   측정과 모수가 갈린다([ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).

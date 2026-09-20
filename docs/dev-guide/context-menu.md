@@ -65,7 +65,7 @@ PendingNativeMenu::MyMenu { data, x, y } => {
 `mark_dirty()` 는 `open_native_menu` / 폴링 완료 경로가 대신 호출하므로 continuation 안에서
 따로 부르지 않아도 된다.
 
-## 네이티브 메뉴 API (`src/platform/native_menu/`)
+## 네이티브 메뉴 API (`crates/tasty-platform/src/native_menu/`)
 
 | 함수 | 설명 |
 |------|------|
@@ -120,7 +120,7 @@ press 만 삼키면 부족하다: winit 이벤트는 egui 에 **먼저** 먹여�
 | `TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL` | grab 을 시도하지 않아 "grab 실패" 상태를 강제 |
 | `TASTY_DEBUG_NATIVE_MENU_TIMEOUT_MS` | 30초 워치독을 짧은 값으로 override |
 
-`src/platform/native_menu/linux.rs` 의 `#[ignore]` 테스트(`forced_grab_failure_resolves_via_watchdog_without_blocking`)가 이 둘을 써서 "즉시 반환 · 폴링 비블로킹 · 워치독 해소"를 실제 GTK 백엔드로 검증한다. 실행에는 X11 디스플레이가 필요하다:
+`crates/tasty-platform/src/native_menu/linux.rs` 의 `#[ignore]` 테스트(`forced_grab_failure_resolves_via_watchdog_without_blocking`)가 이 둘을 써서 "즉시 반환 · 폴링 비블로킹 · 워치독 해소"를 실제 GTK 백엔드로 검증한다. 실행에는 X11 디스플레이가 필요하다:
 
 ```
 cargo test -p tasty --lib -- --ignored --test-threads=1 native_menu::linux

@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 use tracing_subscriber::EnvFilter;
 
-use crate::paths::tasty_home;
+use tasty_utils::path::tasty_home;
 
 /// Return the crash report directory: `~/.tasty/crash-reports/`
 fn crash_report_dir() -> Option<PathBuf> {
@@ -387,8 +387,11 @@ pub mod error_loop {
         /// Record an error occurrence. Panics (triggering crash report) if the
         /// same error repeats more than `THRESHOLD` times within `WINDOW_SECS`.
         pub fn record(&self, msg: &str) {
-            let mut inner =
-                crate::poison::recover_mutex(self.inner.lock(), DETECTOR_WHAT, &DETECTOR_POISONED);
+            let mut inner = tasty_utils::poison::recover_mutex(
+                self.inner.lock(),
+                DETECTOR_WHAT,
+                &DETECTOR_POISONED,
+            );
 
             let now = Instant::now();
             let elapsed = now.duration_since(inner.window_start).as_secs();

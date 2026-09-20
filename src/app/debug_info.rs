@@ -1,8 +1,8 @@
 //! Developer-local debug info collector.
 //!
 //! OS 를 한 번도 부르지 않는다 — 읽는 것은 `AppState` · `CoreState` · `GpuState` 뿐이고
-//! 그것을 IPC 응답용 JSON 으로 바꾼다. 그래서 자리가 `src/platform/` 이 아니라 여기다:
-//! 플랫폼 모듈에 남는 것은 OS 를 부르는 코드이고, 그 결과를 App 상태로 바꾸는 코드는
+//! 그것을 IPC 응답용 JSON 으로 바꾼다. 그래서 자리가 `crates/tasty-platform/src/` 이 아니라 여기다:
+//! 플랫폼 크레이트에 남는 것은 OS 를 부르는 코드이고, 그 결과를 App 상태로 바꾸는 코드는
 //! App 쪽에 산다.
 //!
 //! This file is meant to be freely modified by each developer for their own

@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 
 /// 플랫폼 소스가 조회하는 키 전체. 소스의 `t("…")` / `t_fmt("…", …)` 리터럴과 동기.
 const REQUIRED_KEYS: &[&str] = &[
-    // src/platform/macos_delegate.rs
+    // crates/tasty-platform/src/macos_delegate.rs
     "menu.macos.about",
     "menu.macos.hide",
     "menu.macos.hide_others",
@@ -24,12 +24,12 @@ const REQUIRED_KEYS: &[&str] = &[
     "menu.macos.minimize",
     "menu.macos.zoom",
     "menu.macos.close_window",
-    // src/platform/system_tray.rs
+    // crates/tasty-platform/src/system_tray.rs
     "tray.show_window",
     "tray.new_window",
     "tray.quit",
     "tray.tooltip",
-    // src/platform/jump_list.rs
+    // crates/tasty-platform/src/jump_list.rs
     "jump_list.new_window",
     "jump_list.new_window_desc",
 ];
@@ -127,7 +127,7 @@ use std::path::{Path, PathBuf};
 
 /// 이 가드가 읽는 소스 트리. 개별 파일이 아니라 디렉터리다 — 나중에 생기는 파일이
 /// 기본 제외가 되지 않게(ADR-0133 ①).
-const PLATFORM_DIR: &str = "src/platform";
+const PLATFORM_DIR: &str = "crates/tasty-platform/src";
 
 /// 스캔이 걷어 온 `.rs` 파일 수의 하한. **연기 검사 용도**다(ADR-0133 ③) — 경로가 틀리면
 /// 예외가 아니라 조용한 0 이 되고, 0 인 모수는 언제나 초록이기 때문이다.
@@ -136,8 +136,13 @@ const PLATFORM_DIR: &str = "src/platform";
 /// 이 하한이 따로 필요한 경우는 하나뿐이다 — **목록과 걷기가 동시에 비는 것.** 그때는 양쪽
 /// 다 빈 집합이라 동등이 성립해 버린다.
 ///
-/// 값의 근거: 2026-09-05 실측 `src/platform/**/*.rs` **16 개**. 성장 추적이 아니라 걷기가
-/// 깨진 것을 잡는 값이라 여유를 크게 둔다.
+/// 값의 근거: 2026-09-20 실측 `crates/tasty-platform/src/**/*.rs` **17 개**. 성장 추적이 아니라
+/// 걷기가 깨진 것을 잡는 값이라 여유를 크게 둔다.
+///
+/// ★ 이 모수는 같은 회차에 **경로가 옮겨졌다** — 옛 좌변은 본체 안의 플랫폼 폴더였고
+/// 2026-09-05 에 16 · 2026-09-06 에 17 이었다. 폴더가 `tasty-platform` 크레이트가 되면서
+/// 그 폴더의 모듈 선언 파일이 크레이트의 `lib.rs` 가 되어 디렉토리 **안으로** 들어왔고,
+/// 파일이 하나도 안 늘었는데 이 수가 16 에서 17 이 됐다. 옛 값과 견줄 때 그 +1 을 빼라.
 const MIN_PLATFORM_FILES: usize = 10;
 
 fn repo_root() -> PathBuf {
@@ -238,11 +243,12 @@ fn the_required_key_list_matches_what_the_platform_sources_ask_for() {
     let (file_count, calls) = scan_platform_calls();
     assert!(
         file_count >= MIN_PLATFORM_FILES,
-        "{PLATFORM_DIR} 에서 .rs 를 {file_count} 개만 걷었다 — 2026-09-05 실측 16 개. \
+        "{PLATFORM_DIR} 에서 .rs 를 {file_count} 개만 걷었다 — 2026-09-20 실측 17 개. \
          걷기가 깨졌다면 아래 대조는 양쪽이 비어 성립해 버린다\n\
-           (2026-09-05 실측 16 · 2026-09-06 실측 17).\n\
+           (옛 좌변은 본체 안의 플랫폼 폴더: 2026-09-05 실측 16 · 2026-09-06 실측 17. \
+            크레이트가 되며 모듈 선언 파일이 디렉토리 안으로 들어와 +1 이다).\n\
            ★ 판별 — 이 모수는 한 디렉토리라 밖에서 세는 값이 정확히 같아야 한다:\n\
-               git ls-files 'src/platform/*.rs' | wc -l\n\
+               git ls-files 'crates/tasty-platform/src/*.rs' | wc -l\n\
            **여기서는 두 수가 같지 않으면 그 자체가 답이다** — 가지치기도 확장자 분기도 없어서 차이가 \
            날 이유가 없다. 두 수가 같은데 둘 다 하한 아래면 플랫폼 코드가 정말 줄어든 것이고, git 쪽만 \
            크면 걷기가 도중에 멈춘 것이다.\n\
