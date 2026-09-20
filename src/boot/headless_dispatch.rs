@@ -55,7 +55,14 @@ pub(crate) fn pump_ipc(
         }
     }
 
+    // GUI 쪽 `process_ipc` 와 같은 자리에서 같은 값을 센다 — 두 경로의 집계 범위가
+    // 어긋나면 headless 에서만 보이는 적체를 못 읽는다.
+    if !pending.is_empty() {
+        app.core.pressure().record_drain(pending.len());
+    }
+
     for cmd in pending {
+        app.core.pressure().record_queue_wait(cmd.queue_wait());
         // 1) caller 해석 (Local / Agent / 세션 토큰 검증). 실패 시 에러를 그대로 회신.
         let caller = match resolve_caller_from_envelope(&app.core, &cmd.request) {
             Ok(c) => c,

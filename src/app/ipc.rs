@@ -51,10 +51,16 @@ impl App {
         if pending.is_empty() {
             return false;
         }
+        // 이 프레임이 집어 든 명령 수가 곧 관측된 큐 깊이다 — 비어 있을 때는 위에서
+        // 빠지므로 여기 세는 것은 "명령이 있었던 프레임" 뿐이다.
+        self.core.pressure().record_drain(pending.len());
 
         let mut processed = false;
         let mut tool_registry_dirty = false;
         for cmd in pending {
+            // 큐 체류 시간. handler 실행 시간과 **따로** 잰다 — 합쳐 두면 느린 응답을
+            // 보고도 적체인지 handler 비용인지 고를 수 없다.
+            self.core.pressure().record_queue_wait(cmd.queue_wait());
             let caller = match self.ipc_resolve_caller(&cmd) {
                 Some(c) => c,
                 None => {

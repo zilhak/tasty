@@ -133,6 +133,9 @@ impl CoreBuilder {
             host_ipc_injector: Arc::new(OnceLock::new()),
             runner_registry: Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new()),
             hook_task_waits: Arc::new(crate::core::agent::hook_wait::HookTaskWaits::new()),
+            // 주입 대상이 아니다 — 외부 자원이 아니라 이 프로세스의 누계라서
+            // production/test 가 다른 구현을 받을 이유가 없다.
+            pressure: tasty_telemetry::PressureStats::default(),
         })
     }
 }

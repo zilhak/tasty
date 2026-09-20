@@ -301,10 +301,12 @@ impl TelemetrySeq {
 mod aggregate;
 mod anomaly;
 mod cap;
+pub mod pressure;
 
 pub use aggregate::*;
 pub use anomaly::*;
 pub use cap::*;
+pub use pressure::{PressureSnapshot, PressureStats};
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

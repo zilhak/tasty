@@ -44,10 +44,7 @@ impl HostIpcInjector {
             params,
             session_token: None,
         };
-        let cmd = IpcCommand {
-            request: req,
-            response_tx: resp_tx,
-        };
+        let cmd = IpcCommand::new(req, resp_tx);
         self.sender
             .send(cmd)
             .map_err(|e| format!("inject IpcCommand: {e}"))?;

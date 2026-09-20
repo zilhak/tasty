@@ -234,6 +234,13 @@ pub(crate) struct Core {
     /// hook_id → 대기 중인 agent task 매핑. `HookFired` 소비부가 매 발화마다
     /// 조회한다 — [`crate::core::agent::hook_wait`] 참조.
     pub(crate) hook_task_waits: Arc<crate::core::agent::hook_wait::HookTaskWaits>,
+
+    /// 요청 압력 집계 — 큐 대기 · 큐 깊이 · handler 실행 시간.
+    ///
+    /// 여기 두는 이유는 관측 지점 셋(GUI drain · headless drain · handler 실행)이
+    /// 공통으로 손에 쥐는 것이 `Core` 뿐이기 때문이다. 크기가 고정이라
+    /// (원자값 여덟 개) 프로세스 수명 동안 들고 있어도 자라지 않는다.
+    pressure: tasty_telemetry::PressureStats,
 }
 
 impl Core {
@@ -241,6 +248,12 @@ impl Core {
     /// 1곳 확보(`pty.spawn`, `handler/pty.rs`).
     pub(crate) fn now_instant(&self) -> std::time::Instant {
         self.clock.now_instant()
+    }
+
+    /// 요청 압력 집계. 기록은 `&self` 로 충분하다 — 안이 전부 원자값이라
+    /// 관측이 요청 처리의 가변 빌림과 다투지 않는다.
+    pub(crate) fn pressure(&self) -> &tasty_telemetry::PressureStats {
+        &self.pressure
     }
 
     /// `Clock` port 경유 현재 Unix ms — 관측 로그(audit/telemetry)의 시각 축이

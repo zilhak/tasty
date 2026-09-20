@@ -81,16 +81,16 @@ mod tests {
         let m = MockIpcServer::new();
         let tx = m.tx_clone();
         let (resp_tx, _resp_rx) = mpsc::sync_channel(1);
-        let cmd = IpcCommand {
-            request: JsonRpcRequest {
+        let cmd = IpcCommand::new(
+            JsonRpcRequest {
                 jsonrpc: "2.0".to_string(),
                 method: "test.method".to_string(),
                 id: Some(Value::from(1u64)),
                 params: Value::Null,
                 session_token: None,
             },
-            response_tx: resp_tx,
-        };
+            resp_tx,
+        );
         tx.send(cmd).expect("send to mock");
         let got = <MockIpcServer as IpcServerPort>::try_recv(&m).expect("recv");
         assert_eq!(got.request.method, "test.method");

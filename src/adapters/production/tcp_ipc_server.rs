@@ -700,10 +700,7 @@ impl TcpIpcServer {
     ) -> bool {
         let (resp_tx, resp_rx) = mpsc::sync_channel(1);
 
-        let cmd = IpcCommand {
-            request,
-            response_tx: resp_tx,
-        };
+        let cmd = IpcCommand::new(request, resp_tx);
 
         // Send command to main thread
         if cmd_tx.send(cmd).is_err() {
