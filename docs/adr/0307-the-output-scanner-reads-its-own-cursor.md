@@ -21,7 +21,7 @@
 
 1. **아무도 mark 를 안 세운 surface 에서는 폴링마다 버퍼 전체를 다시 받는다.**
    `read_since_mark` 은 mark 가 없으면 `unwrap_or(0)` 으로 버퍼 처음부터 읽고, 그 버퍼의
-   상한은 `OUTPUT_BUFFER_MAX`(1 MiB) 다. 즉 최대 1 MiB 를 800 ms 마다 String 화 + ANSI
+   상한은 `OUTPUT_RETENTION_MAX_BYTES`(1 MiB) 다. 즉 최대 1 MiB 를 800 ms 마다 String 화 + ANSI
    strip + JSON 직렬화해 보낸다.
 2. **에이전트가 `set_mark` 을 걸면 스캐너의 관측 창이 조용히 점프한다.** 간섭 방향은
    한쪽이다 — 읽기는 `&self` 라 mark 를 안 움직이고, **`set_mark` 하는 쪽이 안 하는 쪽을
@@ -171,7 +171,7 @@
 - **커서가 다시 죽는 것** — `take_since_scan_mark` 의 호출자가 0 이 되는 것. 이 ADR 이
   고친 상태로 되돌아간 것이고, pub 항목이라 컴파일러가 말해 주지 않는다. 재는 법: 같은
   grep 을 `take_since_scan_mark` 로 돌려 호출자가 정의 자신과 인파일 시험뿐인지 본다.
-- **호스트와 plugin 의 창 상한이 갈리는 것.** 재는 법: `OUTPUT_BUFFER_MAX` 와 plugin 쪽
+- **호스트와 plugin 의 창 상한이 갈리는 것.** 재는 법: `OUTPUT_RETENTION_MAX_BYTES` 와 plugin 쪽
   창 상한 상수를 함께 읽어 값이 같은지 본다.
 
 ## References

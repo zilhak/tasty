@@ -33,7 +33,7 @@
 
 출력을 **주기적으로 훑는** 소비자는 그 마크를 쓰지 않는다. `surface.read_since_scan_mark` 가 별도 커서를 읽고, 그 커서는 읽을 때마다 전진해 지난 호출 이후에 온 것만 준다. 두 커서는 서로를 밀지 않는다 — `set mark` 이 스캔 커서를 안 움직이고, 스캔 읽기가 마크를 안 움직인다. 그 커서는 소비자가 하나라는 전제 위에 있어 CLI 동사가 없다([ADR-0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md)).
 
-셋째는 **소비자가 드는 위치**다. `surface.read_since_mark` 에 `cursor`(절대 바이트 위치)와 `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, 서버는 그 소비자를 위해 아무것도 안 든다 — 그래서 소비자가 몇이든 서로를 안 민다. 같은 규율을 사건 피드가 먼저 쓴다([ADR-0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)).
+셋째는 **소비자가 드는 위치**다. `surface.read_since_mark` 에 `cursor`(절대 바이트 위치)와 `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, 서버는 그 소비자를 위해 아무것도 안 든다 — 그래서 소비자가 몇이든 서로를 안 민다. 같은 규율을 사건 피드가 먼저 쓰고([ADR-0323](../../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md)), 터미널 원문으로 가져온 것이 [ADR-0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md) 이다.
 
 ### 보존 밖으로 밀려난 것은 값으로 나온다
 
