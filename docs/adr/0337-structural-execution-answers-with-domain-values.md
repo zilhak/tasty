@@ -46,8 +46,10 @@ gui 와 headless 가 갈리는 지점은 **lifecycle 통지 한 줄**이고(head
 그 차이는 이제 두 함수의 본문 차이로만 존재한다 — 여섯 사본에 흩어져 있지 않다.
 계측(C5) 발화 여부는 인자 하나로 드러낸다.
 
-**3. `MoveSurfaceApplied` → close cascade 매핑은 `SurfaceCloseCascade::from_move_surface_applied`
-한 자리가 소유한다.** 두 발행 경로가 그것을 부른다.
+**3. `MoveSurfaceApplied` → close cascade 매핑은 한 이름
+(`SurfaceCloseCascade::from_move_surface_applied`)이 소유한다.** 두 발행 경로(로컬
+dispatcher · 원격 forward 실행)가 그것을 부른다. 다만 **이름이 하나인 것이 자리가 하나라는 뜻은 아니다** — 빌드 형태마다 사본이
+하나씩 있고, 기본 빌드는 그중 하나만 본다. 아래 Consequences 의 해당 항이 그 모수를 센다.
 
 **핸들러 재사용 자체는 이 결정의 범위 밖이다.** forward 실행이 여섯 IPC 핸들러를 부르는
 것은 그대로 둔다 — 그 배선을 도메인 실행으로 바꾸려면 핸들러가 소유한 검증(nickname
@@ -59,9 +61,9 @@ gui 와 headless 가 갈리는 지점은 **lifecycle 통지 한 줄**이고(head
 
 - **얻은 것**: 아무 데도 안 보내지는 wire 응답 조립이 9 자리에서 0 이 됐다(남은 한 자리는
   `handler_result` 의 인자 타입 — 핸들러가 그 모양으로 답하기 때문이다). 자원 회수 루프가
-  6 벌에서 2 벌(gui·headless 각 1)로 줄었고, cascade 삼형제 중 어느 것이 계측을 모으고
-  어느 것이 안 모으는지가 **인자 하나**로 보인다. `MoveSurfaceApplied` 에 필드를 더할 때
-  고칠 자리가 둘에서 하나가 됐다.
+  6 벌에서 2 벌로 줄었다 — 그리고 이것은 **두 조합 각각에서** 준 것이다(gui 가 보는 자리
+  3 → 1 · headless 가 보는 자리 3 → 1). cascade 삼형제 중 어느 것이 계측을 모으고 어느
+  것이 안 모으는지는 **인자 하나**로 보인다.
 - **잃은 것**: `reclaim_closed_surfaces` 에 `trace: Option<&'static str>` 인자가 생겼다 —
   호출부 셋 중 하나만 `Some` 이다. 계측을 켤지를 호출자가 정한다는 사실이 시그니처에
   드러나는 대신, 인자 하나가 늘었다.
@@ -69,6 +71,19 @@ gui 와 headless 가 갈리는 지점은 **lifecycle 통지 한 줄**이고(head
   본문이 다르다. 한쪽에 단계를 더하면 다른 쪽에도 더할지를 판단해야 한다 — 그 판단 기준
   (통지에 소비자가 있는가)은 두 함수의 doc 에 적혀 있다. 이 저장소에는 그 짝을 재는 채널이
   없다(`dispatch_domain_stubs.rs` 는 `cfg(not(feature = "gui"))` 라 기본 빌드가 아예 안 본다).
+- **★ `MoveSurfaceApplied` 매핑은 자리가 안 줄었고, 기본 빌드가 보는 자리는 오히려 하나
+  줄었다 — 그것이 위험이다.** 모수를 밝혀 센다. 일곱 필드를 손으로 나열하는 자리는 이 결정
+  전후로 **둘 그대로**다(전: `app::dispatch_domain` 의 arm · `core::attach_runtime` 의 arm /
+  후: 두 `SurfaceCloseCascade::from_move_surface_applied` — gui 와 headless). 바뀐 것은
+  **어느 조합이 그것을 보는가**다. 전에는 `core::attach_runtime` 이 두 조합 모두에서
+  컴파일돼 **gui 조합이 두 자리를 다 봤다**. 지금은 gui 가 하나(`app::dispatch_domain`),
+  headless 가 하나(`app::dispatch_domain_stubs`)다. 그래서 variant 에 필드를 더하면
+  `cargo check --workspace` 는 gui 쪽만 지적하고 headless 쪽은 **한 마디도 안 한다** — 그
+  상태로 착지하면 `--no-default-features` 빌드가 `E0027` 로 깨진다. 결정 3 은 *한 이름이
+  매핑을 소유한다* 까지만 성립하고, *자리가 하나다* 로 읽으면 안 된다. 두 생성자의 doc 에
+  이 사실을 박아 두었고, 재는 법은 조합 둘을 다 돌리는 것뿐이다. 자리를 실제로 하나로
+  만들려면 `SurfaceCloseCascade` 를 `cfg` 밖 공용 모듈로 올려야 하는데, 그것은 모듈 선언
+  (`src/app.rs`)을 바꾸는 별도 작업이다.
 
 ## Alternatives Considered
 

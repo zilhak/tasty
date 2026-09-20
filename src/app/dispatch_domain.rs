@@ -89,6 +89,12 @@ impl SurfaceCloseCascade {
     ///
     /// `None` = 이 이벤트가 `MoveSurfaceApplied` 가 아니거나 `moved=false` — 어느 쪽이든
     /// cascade 할 것이 없다. 둘을 갈라야 하는 호출자는 부르기 전에 variant 를 확인한다.
+    ///
+    /// ★ **이 자리는 둘이다.** headless 빌드는 `dispatch_domain_stubs` 의 같은 이름 함수를
+    /// 쓰고, 그 파일은 `cfg(not(feature = "gui"))` 라 **기본 빌드가 아예 안 본다.** variant 에
+    /// 필드를 더하면 `cargo check --workspace`(gui)는 여기만 지적하고 저쪽은 한 마디도 안
+    /// 한다 — 저쪽은 `--no-default-features` 로 따로 재야 `E0027` 이 뜬다. 그 짝을 재는
+    /// 채널은 이 저장소에 없다.
     pub(crate) fn from_move_surface_applied(
         event: crate::core::intent::CoreEvent,
         is_user_close: bool,
