@@ -74,7 +74,14 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 - **메인 프로세스 단독 접근.** 자식 CLI 프로세스는 DB 를 직접 열지 않고 IPC 로 메인에 위임한다.
 - 전역 싱글톤. `db::init()` 선행 호출 후 `db::with_db(|db| { ... })` 로 접근(미초기화면 `None`).
 - PRAGMA: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `journal_size_limit`.
-  - `journal_size_limit` 은 WAL 파일 크기 상한이다. **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이며, `memory.db` 와 **같은 상수를 공유**한다 — 두 DB 는 각자의 `prepare` 를 쓰므로(`src/db.rs` vs `crates/tasty-memory/`) 한쪽만 고치면 다른 쪽이 그대로 자란다.
+  네 pragma 는 `memory.db` 와 **같은 함수**(`tasty_memory::pragma::apply_connection_pragmas`)가
+  건다 — 자유도 없는 사본이라 두 곳에 두지 않는다.
+  - **요청한 값과 실제 적용된 값은 다른 축이다.** `journal_mode` 는 요청이 거절돼도 성공을
+    반환하므로(실측: in-memory DB 에 WAL 을 요청하면 `Ok` 이고 값은 `memory`), 위 목록은
+    *요청* 이고 실제 모드는 되읽어야 안다. 그 함수가 매 연결마다 되읽어 대조하고, 어긋나면
+    `tracing::warn!` 을 남긴다. `state.db` 는 항상 파일 DB 라 정상값이 `wal` 하나다.
+    근거는 [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md).
+  - `journal_size_limit` 은 WAL 파일 크기 상한이다. **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이고, 두 DB 가 그 상수를 쓰는 **같은 함수**를 부른다. 한때는 `src/db.rs` 와 `crates/tasty-memory/` 가 같은 네 줄을 각자 박아 두어 한쪽만 고치면 다른 쪽이 그대로 자랐다 — 그래서 사본을 없앴다.
 - 쓰기는 `Connection::transaction()` 패턴. 실패 시 `tracing::warn!`/`error!` 기록 후 진행.
 
 ### 초기화 실패 = 인메모리 폴백 없음

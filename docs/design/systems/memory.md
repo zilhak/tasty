@@ -104,7 +104,12 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
 
 - **상한**: `prepare()` 가 `journal_size_limit` 을 `WAL_SIZE_LIMIT_BYTES`(= `wal_autocheckpoint` 임계와 정확히 같은 1000 페이지 × 4096B)로 건다. 상한을 넘긴 WAL 은 다음 되감기에서 잘려 나간다. 이 pragma 가 없으면 큰 트랜잭션이나 VACUUM 으로 한 번 부푼 WAL 이 프로세스 수명 내내 고착되고, `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 **커밋마다 그 크기만큼 WAL-index 를 훑는다**(실측: 169MB WAL 이 메인 스레드 CPU 를 상시 점유).
 - **회수**: 상한은 앞으로 커지는 것만 막으므로, 이미 커진 WAL 은 `MemoryStore::checkpoint_truncate()` 로 되감기를 한 번 강제해야 줄어든다. 부팅 위생 정리(`src/boot.rs::maintain_memory_at_boot`)가 이것을 **VACUUM 뒤에** 1 회 수행한다 — VACUUM 은 DB 를 통째로 다시 쓰므로 그 자체로 WAL 을 크게 부풀린다.
-- 같은 상한이 `state.db` 에도 적용된다 — 두 DB 는 각자의 `prepare` 를 쓰므로 상수만 공유한다([storage](storage.md)).
+- 같은 상한이 `state.db` 에도 적용된다 — 두 DB 가 **같은 함수**(`tasty_memory::pragma::apply_connection_pragmas`)를 부른다([storage](storage.md)).
+- **위 문단의 WAL 은 파일 DB 일 때의 이야기다.** `MemoryStore::open_in_memory` 로 연 DB 는
+  파일이 없어 SQLite 가 WAL 을 못 쓰고, 요청은 조용히 거절돼 `journal_mode` 가 `memory` 로
+  남는다(반환값은 성공이다). 그 모드에는 `-wal`·`-shm` 도, 여기 적은 위생 문제도 없다.
+  그래서 그 값은 실패가 아니라 정상 결과로 규정하고 경고하지 않는다 —
+  [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md).
 
 ## 보안·신뢰 모델
 
