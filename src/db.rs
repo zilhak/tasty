@@ -48,26 +48,11 @@ impl Db {
     }
 
     fn prepare(mut conn: Connection, path: &Path) -> Result<Self, DbInitError> {
-        // WAL: 동시 read/write 부담 완화. synchronous=NORMAL: WAL과 궁합 좋음.
-        // foreign_keys: PK 제약 정확성.
-        conn.pragma_update(None, "journal_mode", "WAL").ok();
-        conn.pragma_update(None, "synchronous", "NORMAL").ok();
-        conn.pragma_update(None, "foreign_keys", "ON").ok();
-        // WAL 크기 상한. state.db 는 memory.db 와 **별개의 prepare** 를 쓰므로
-        // (같은 세 pragma 를 각자 박아 둔 형태) 한쪽만 고치면 다른 쪽은 그대로
-        // 무한히 자란다. 값의 근거는 `tasty_memory::WAL_SIZE_LIMIT_BYTES` doc 참조 —
-        // 두 DB 가 같은 SQLite 기본값(page_size 4096 · wal_autocheckpoint 1000)을
-        // 쓰므로 상한도 같은 값을 공유한다.
-        if let Err(e) = conn.pragma_update(
-            None,
-            "journal_size_limit",
-            tasty_memory::WAL_SIZE_LIMIT_BYTES,
-        ) {
-            tracing::warn!(
-                "{}: failed to set journal_size_limit; the WAL file can grow without bound: {e}",
-                path.display()
-            );
-        }
+        // state.db 는 memory.db 와 **별개의 prepare** 를 쓰지만 연결 pragma 는 같아야
+        // 한다. 사본을 두면 한쪽만 고쳐지므로 두 DB 가 같은 함수를 부른다 —
+        // WAL·synchronous·foreign_keys 와 WAL 크기 상한, 그리고 그 결과를 어떻게
+        // 관측하는지까지 그 함수의 doc 에 있다.
+        tasty_memory::pragma::apply_connection_pragmas(&conn, path);
 
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
             DbSchemaError::SchemaMismatch { expected, found } => {

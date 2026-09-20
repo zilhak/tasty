@@ -44,6 +44,7 @@
 mod migrations;
 mod port;
 mod port_impl;
+pub mod pragma;
 mod scope;
 
 pub mod blackboard;
@@ -324,18 +325,7 @@ impl MemoryStore {
         path: &Path,
         config: MemoryConfig,
     ) -> std::result::Result<Self, MemoryInitError> {
-        conn.pragma_update(None, "journal_mode", "WAL").ok();
-        conn.pragma_update(None, "synchronous", "NORMAL").ok();
-        conn.pragma_update(None, "foreign_keys", "ON").ok();
-        // 기존 세 줄과 달리 실패를 삼키지 않는다 — 이 pragma 가 빠지면 증상이
-        // "조금 느려짐" 이 아니라 WAL 고착(아래 상수 doc)이라, 조용히 없는 것과
-        // 조용히 실패한 것을 구별할 수 없으면 같은 조사를 처음부터 다시 하게 된다.
-        if let Err(e) = conn.pragma_update(None, "journal_size_limit", WAL_SIZE_LIMIT_BYTES) {
-            tracing::warn!(
-                "{}: failed to set journal_size_limit; the WAL file can grow without bound: {e}",
-                path.display()
-            );
-        }
+        crate::pragma::apply_connection_pragmas(&conn, path);
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
             DbSchemaError::SchemaMismatch { expected, found } => {
                 MemoryInitError::SchemaMismatch { expected, found }
