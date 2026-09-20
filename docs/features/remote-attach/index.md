@@ -46,7 +46,7 @@ workspace mirror 의 **탭 제목**은 스냅샷 pane JSON 의 tab `name`(원격
 - 원격 grid 가 실제로 바뀌면 서버가 기존 **`Control` 프레임(`StreamControl::Resize`, server→client)** 으로 확정 cols/rows 를 통지하고, client 가 그 echo 로만 mirror 를 리사이즈한다. → 로컬을 낙관적으로 먼저 바꾸지 않아(원격 reflow 전 잘못된 grid 재생 방지) desync 가 없다.
 - 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다. mirror 가 pane 크기로 reflow 되므로 pane 을 채운다(과거의 80×24 좌상단 소영역 + 배경 레터박스는 사라진다). 초기 attach 순간(원격 기본 80×24 → 첫 forward reflow)에는 약 1 RTT 의 짧은 깜빡임이 있을 수 있다.
 
-`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다. 같은 이유로 구버전 client 는 `Attention` 프레임을 파싱하지 못해 조용히 무시하고, 구버전 서버는 그 프레임을 애초에 보내지 않는다 — 어느 쪽도 세션을 깨지 않고 attention 표시만 빠진다.
+`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다. 같은 이유로 구버전 client 는 `Attention` 프레임을 파싱하지 못해 조용히 무시하고, 구버전 서버는 그 프레임을 애초에 보내지 않는다 — 어느 쪽도 세션을 깨지 않고 attention 표시만 빠진다. **다만 그 무시가 공짜일 때만 안전하다** — 놓쳐도 잃을 것이 없는 이벤트에만 성립하는 성질이고, 아래 `Loss` 가 그 예외라 무시가 곧 "손실 없음" 으로 읽히지 않도록 **client 의 명시 선언으로 게이트**한다.
 
 Control 채널을 흐르는 server→client 상태 push 는 현재 네 종류다 — `Resize`(확정 grid), `Activity`(busy/idle), `Attention`(주의 환기), `Cwd`(surface 의 현재 폴더). 넷 다 델타가 아니라 **멱등 상태**이고, 서버가 매번 자기 live 상태에서 재-diff 하므로 **프레임이 유실돼도** 다음 tick 에 자동 수렴한다(client ack 없음). 수렴이 보장되는 축은 이 wire 유실 하나뿐이다 — client 가 자기 로컬 상태를 직접 바꾸면 서버 값은 그대로라 재-push 가 없다. 그래서 attention 은 미러가 자기 값을 바꾸는 두 축을 각각 다르게 다룬다: **발동**은 미러에서 아예 일어나지 않게 막고, **해제**는 `ClientAttentionClear`(client→server) 로 소유 인스턴스에 되돌린다. 상세는 [attach-behavior "주의 환기(attention) 전파"](../../dev-guide/attach-behavior.md#주의-환기attention-전파).
 
@@ -65,6 +65,16 @@ client→server 요청 채널은 `ClientResize`(geometry 구동), `ClientAttenti
 **주의 환기(attention)도 같은 방향의 별도 채널이다** — 원격이 자기 surface 의 attention(작업 완료 / 응답 필요)을 같은 1Hz tick 에 `StreamControl::Attention{surface_id, kind}` 로 forward 하고 client 가 자기 `AttentionStore` 에 반영한다. attention 의 진실 원천은 **surface 를 소유한 인스턴스**다: producer(완료 IPC/CLI, Claude 플러그인 훅, OSC 133 명령 완료, toast)가 전부 PTY 가 있는 쪽에서 돌고, 특히 `needs_input` 은 서버 훅에서만 나와 미러가 스스로 만들 수 없다. 반영된 값은 로컬 attention 과 **같은 store** 에 들어가므로 미러 워크스페이스에서도 사이드바 개수 배지·surface 테두리·탭 제목 색이 그대로 동작한다. 미러는 자기 판단으로 attention 을 만들지 않는다 — 미러 터미널도 서버 바이트를 파싱해 OSC 133 D·Bell 등을 발화하지만 `raise_attention` 이 mirror surface 를 걸러내므로, 이 push 가 미러 attention 의 **유일한 소스**다(알림 패널 아이템·토스트는 억제 대상이 아니라 그대로 뜬다). 반대로 **해제는 미러에서 서버로 되돌아간다** — 미러 사용자가 그 surface 를 확인(실-포커스 또는 미러 로컬 알림 읽음)해 레코드가 실제로 지워지면 `StreamControl::ClientAttentionClear` 1 회가 서버로 가고 서버 레코드도 제거된다. 미러 사용자의 행동은 서버의 해제 경로를 발동시킬 수 없어, 이 전달이 없으면 서버 배지에 해제 주체가 아예 없다. 메커니즘 상세는 [dev-guide/attach-behavior "주의 환기(attention) 전파"](../../dev-guide/attach-behavior.md#주의-환기attention-전파), 기능 문서는 [features/surface-highlight](../surface-highlight/index.md#원격-attach-mirror-로의-전파-serverclient).
 
 **surface 의 현재 폴더(cwd)도 같은 방향의 채널이다** — 원격이 점유 surface 의 cwd 를 같은 1Hz tick 에 `StreamControl::Cwd{surface_id, cwd}` 로 보낸다. mirror 터미널은 로컬 셸이 없어 원격 셸이 OSC 7 을 쏠 때만 cwd 를 알 수 있었는데, 원격은 셸 프로세스를 직접 조회할 수 있어 어떤 셸이든 값이 온다. 그 값은 **원격 경로**로 표시되어 로컬 파일시스템 연산(새 로컬 워크스페이스의 시작 폴더, 로컬 git 브랜치 조회, preset 저장)에는 쓰이지 않고, 원격에서 실행되거나 원격을 조회하는 소비자(예: mirror 에서 연 파일 피커의 시작 폴더)만 쓴다. 규칙과 근거는 [surface-cwd invariant §3-2](../../architecture/invariants/surface-cwd.md) · [ADR-0267](../../adr/0267-mirror-surface-cwd-is-pushed-by-the-server.md), 메커니즘은 [dev-guide/attach-behavior "surface cwd 전파"](../../dev-guide/attach-behavior.md#surface-cwd-전파).
+
+**서버가 프레임을 버렸다는 통지(`Loss`)는 위 넷과 성질이 반대다** — 위 넷은 멱등 상태라 유실돼도
+다음 tick 에 수렴하지만, PTY 출력처럼 수렴하지 않는 것이 유실되면 mirror 는 끊긴 데이터를 연속으로
+계속 그린다. 그래서 서버는 그 연결에서 버린 프레임 수를 `StreamControl::Loss{frames}` 로 되돌려
+준다. **받겠다고 선언한 연결에만** 간다(`ClientLossNotify`, 지금은 GUI mirror 가 유일한 선언자) —
+선언 안 한 peer 의 바이트 열은 무변경이고, 이 통지를 못 읽는 client 에게 "무시" 는 "손실 없음" 과
+구별되지 않기 때문이다. mirror 측 소비는 현재 경고 로그 한 줄이고 화면은 종전처럼 계속 그린다 —
+종류별 복구 계약은 아직 없다. 메커니즘·선언자 전수·비용은
+[dev-guide/attach-behavior "client 에게 공백을 알린다"](../../dev-guide/attach-behavior.md#client-에게-공백을-알린다-loss--client_loss_notify),
+근거는 [ADR-0334](../../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
 
 ### mirror 워크스페이스 내 구조 변경
 
