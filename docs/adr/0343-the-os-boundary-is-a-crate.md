@@ -89,12 +89,20 @@ $ 같은 좌변에 ADR-0331 의 주석 필터를 붙이면                     �
   `architecture_crate_list_complete` 와 `readme_badge_parity`.
   그리고 `macos_permissions` 의 항목 **열다섯**이 `pub(crate)` 에서 `pub` 이 됐다.
   크레이트 밖이 이름으로 요구하는 자리가 그만큼이다 — 설정 탭 · 부팅 · 키 주입 판정
-  셋이 부르고, cfg 짝까지 세어 열다섯이다. 처음에는 열여덟을 열었는데 **셋은 크레이트
-  밖에 소비자가 없었다**(`FsProbe` · `RealFs` · `prewarm_targets`). 그 셋을 부르는 유일한
-  자리는 화면 캡처이고 그것은 크레이트 **안**이라(`screen_capture.rs` 가
-  `crate::macos_permissions::…` 로 부른다) `pub` 을 요구하지 않는다. 좁혀도 컴파일이
-  서는 것을 확인하고 `pub(crate)` 로 되돌렸다 — 재는 법은 `git grep -n '\bFsProbe\b'
-  -- src crates | grep -v crates/tasty-platform` 이고 0 이어야 한다.
+  셋이 부르고, cfg 짝까지 세어 열다섯이다. 재는 법:
+  `grep -cE '^\s*pub (fn|struct|trait|enum|const)' crates/tasty-platform/src/macos_permissions.rs`.
+
+  **처음에는 열여덟을 열었다.** 나머지 셋(`FsProbe` · `RealFs` · `prewarm_targets`)은
+  크레이트 밖에 소비자가 없었다 — 그 셋을 부르는 유일한 자리는 화면 캡처이고 그것은
+  크레이트 **안**이다(`screen_capture.rs` 가 `crate::macos_permissions::…` 로 부른다).
+  그래서 먼저 `pub(crate)` 로 되돌렸고, 다시 재니 **크레이트 안의 다른 모듈도 그 셋을
+  안 쓴다**(`macos_permissions.rs` 를 뺀 `crates/tasty-platform/src/` 에서 0 줄). 그래서
+  지금은 셋 다 **모듈 private** 이다 — 이 폴더가 본체 안에 있던 시절의 `pub(crate)` 보다
+  좁다. `RealFs` 는 macOS 갈래에만 사는 타입이라 Linux 체크만으로는 "안 쓰인다" 가 안 서고,
+  `--target aarch64-apple-darwin` 까지 rc=0 인 것으로 선다.
+
+  **이 좁힘은 위 열다섯을 안 움직인다** — 그 좌변이 세는 것은 `pub` 이고 셋은 이미 그
+  밖이었다. `pub` 18 → 15 는 첫 좁힘이 만든 값이고, 두 번째 좁힘은 `pub(crate)` 3 → 0 이다.
 - **운영 비용 / 유지 부담**: 플랫폼 코드가 본체 타입을 쓰려면 이제 **그 타입을 leaf 로
   내리거나 콜백으로 받아야** 한다. ADR-0331 이 콜백을 규칙으로 정했으므로 그 비용은 새로
   생긴 것이 아니라 강제된 것이다. 그리고 새 OS 의존을 더할 때 만질 매니페스트가 둘이다.
@@ -144,6 +152,10 @@ $ 같은 좌변에 ADR-0331 의 주석 필터를 붙이면                     �
   'macos_permissions::' -- src crates | grep -v crates/tasty-platform` 로 호출부를 세고,
   이 결정 시점의 자리(설정 탭 · 부팅 · 키 주입 판정 **셋**)와 견준다. 화면 캡처는 이
   목록에 없다 — 크레이트 안에서 부르므로 이 좌변에 안 잡힌다.
+  **반대 방향도 이 바늘의 일이다**: 공개 항목이 줄어들 수도 있다. `pub` 항목 수는 지금
+  **15**(`grep -cE '^\s*pub (fn|struct|trait|enum|const)' <그 파일>`)이고, 테스트 이음새
+  셋은 그 밖에서 모듈 private 이다. 그 셋이 다시 `pub`/`pub(crate)` 이 되면 그때는
+  크레이트 밖이나 형제 모듈이 요구했다는 뜻이므로, 요구한 자리를 함께 적어야 한다.
 
 ## References
 
