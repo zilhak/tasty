@@ -9,14 +9,20 @@
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use crate::plugin::event_bus::EventBus;
+use crate::plugin::event_bus::{EVENT_RING_CAPACITY, EventBus};
 
-/// 한 번에 돌려주는 사건 수의 기본값·상한.
-///
-/// 상한이 필요한 이유는 응답 하나가 링 전체를 실어 나르는 것을 막기 위해서다.
-/// 소비자는 `next_offset` 으로 이어 받으면 되므로 상한이 답을 잃게 하지 않는다.
+/// 한 번에 돌려주는 사건 수의 기본값.
 const DEFAULT_MAX: usize = 256;
-const MAX_MAX: usize = 1024;
+
+/// 한 번에 돌려주는 사건 수의 상한 — **링 용량에서 파생한다.**
+///
+/// 링에 들어 있을 수 있는 최대가 곧 한 답의 최대이므로, 그보다 큰 `max` 는 답을
+/// 하나도 더 늘리지 못한다. 값을 여기 따로 박으면 링을 키우는 날 이 상한만 남아
+/// 조용히 어긋난다 — `audit` 이 보존 기간을 자기 상수로 들고 있다가 부팅 경로와
+/// 720 배 어긋난 것이 같은 형태였다.
+///
+/// 상한이 답을 잃게 하지는 않는다. 소비자는 `next_offset` 으로 이어 받는다.
+const MAX_MAX: usize = EVENT_RING_CAPACITY;
 
 /// `wait_ms` 의 상한. 이 값보다 긴 대기를 주면 여기서 잘린다 — 무한 대기는 응답을
 /// 기다리는 쪽의 타임아웃과 어긋나면 조용히 끊긴 연결이 된다.
