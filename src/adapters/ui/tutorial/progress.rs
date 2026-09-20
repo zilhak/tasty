@@ -14,7 +14,7 @@ impl TutorialRuntime {
                 return;
             }
         }
-        let result = crate::db::with_db(|db| {
+        let result = crate::db::with_state_db(|db| {
             all_topics()
                 .iter()
                 .map(|t| crate::store::tutorial_progress::load(&db.conn, t.id, t.revision))
@@ -49,7 +49,7 @@ impl TutorialRuntime {
     pub fn save_progress(&mut self, topic: usize) {
         let definition = &all_topics()[topic];
         let progress = &self.progress[topic];
-        let result = crate::db::with_db(|db| {
+        let result = crate::db::with_state_db(|db| {
             crate::store::tutorial_progress::save(
                 &mut db.conn,
                 definition.id,

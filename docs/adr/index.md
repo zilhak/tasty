@@ -295,4 +295,5 @@
 | 0326 | [egui 는 링크하는 크레이트가 켜는 것이지 기본값으로 따라오는 것이 아니다](0326-egui-is-opt-in-for-the-crates-that-link-it.md) | Accepted | 2026-09-20 | build, cargo, features, headless, type-appearance, dependency-graph |
 | 0330 | [완료 알림 한 줄은 한 번의 write 다](0330-one-completion-line-is-one-write.md) | Accepted | 2026-09-20 | notify, concurrency, plugin, logging |
 | 0331 | [platform 은 OS 호출을 들고, 그 신호가 App 에서 무엇이 되는지는 안 정한다](0331-the-platform-folder-holds-the-os-call-not-the-app-meaning.md) | Accepted | 2026-09-20 | architecture, platform, layering, app-event, callback, windows, macos, cross-platform |
+| 0335 | [`state.db` 는 GUI 부팅만 열고, 접근자의 `None` 은 뜻이 하나다](0335-the-state-database-is-opened-by-gui-boot-alone.md) | Accepted | 2026-09-20 | storage, headless, ownership, naming |
 | 0336 | [`tasty-font` 은 device 경계에서 갈린다 — wgpu 는 `gpu` feature 뒤로](0336-the-font-crate-splits-at-the-device-boundary.md) | Accepted | 2026-09-20 | build, cargo, features, headless, font, dependency-graph, wgpu, adr-0326 |

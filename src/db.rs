@@ -7,9 +7,28 @@
 //! 사용자 설정(config.toml)이나 쉘 스크립트(bashrc)는 이 저장소에
 //! 들어가지 않는다 — 텍스트 편집/버전관리 대상은 그대로 파일 유지.
 //!
+//! ## 누가 이 저장소를 여는가
+//!
+//! **여는 쪽은 GUI 부팅 하나다.** [`init`] 과 [`default_db_path`] 는
+//! `cfg(feature = "gui")` 이고, 부르는 자리는 `src/app/` 의 부팅 경로 둘뿐이다.
+//! 헤드리스 빌드에는 이 DB 를 여는 코드가 **컴파일되지도 않는다** — 실측하면 헤드리스
+//! 데몬의 홈에는 `memory.db` 만 생기고 `state.db` 는 파일도 로그도 남지 않는다.
+//!
+//! 그래서 [`with_state_db`] 가 돌려주는 `None` 은 **뜻이 하나다: 아직 열리지 않았다.**
+//! 다른 두 후보는 여기 오지 않는다 — 락이 깨진 경우는 그 함수가 복구해 `Some` 으로
+//! 돌려주고, GUI 에서 열기에 실패한 경우는 부팅이 사용자에게 안내한 뒤 앱을 끝내므로
+//! 살아 있는 창에서는 관측되지 않는다. 소비자는 그 `None` 을 오류가 아니라 **"이
+//! 빌드에는 영속 저장이 없다"** 로 읽고 기본값으로 떨어지면 된다.
+//!
+//! ## `memory.db` 와 섞지 마라
+//!
+//! 에이전트 메모리(`crates/tasty-memory/`)는 **헤드리스에서도 열린다.** 접근자 이름도
+//! 다르다 — 저쪽은 `with_memory`, 이쪽은 [`with_state_db`]. 두 저장소가 공유하는 것은
+//! 연결 pragma 를 거는 함수 하나뿐이고(`tasty_memory::pragma::apply_connection_pragmas`),
+//! 수명·소유자·스키마 정책은 전부 별개다.
+//!
 //! 접근 규칙:
 //! - 메인 프로세스 단독 접근. 자식 CLI 프로세스는 IPC로 메인에 위임한다.
-//! - 전역 `static` 싱글톤을 통해 어떤 코드라도 `with_db(|db| ...)`로 접근 가능.
 //! - `init()`이 먼저 호출되어야 함. 실패하면 `DbInitError`로 반환되며,
 //!   호출자는 사용자에게 안내한 뒤 종료해야 한다 — 인메모리 폴백 없음.
 
@@ -195,18 +214,22 @@ pub fn init() -> Result<(), DbInitError> {
     Ok(())
 }
 
-/// 싱글톤 접근. `init()`이 호출되지 않았으면 None.
+/// `state.db` 싱글톤 접근. 열려 있지 않으면 `None`.
 ///
-/// Recent-file queries also use this path in headless builds. Keep the connection
-/// type and accessor shared even though only GUI boot initializes this database;
-/// an uninitialized database continues to return None to its existing callers.
+/// **이름이 `with_db` 가 아닌 이유**: 이 크레이트에는 SQLite 접근자가 둘이고
+/// (`with_memory` 가 `memory.db` 쪽), 호출부만 봐서는 어느 저장소인지 구분이 안 됐다.
+/// 둘이 같은 파일에 함께 나오는 자리가 없어 오독이 조용하다.
+///
+/// 헤드리스 빌드의 최근 파일 조회도 이 경로를 지난다. 연결 타입과 접근자는 두 빌드가
+/// 공유하되 여는 것은 GUI 부팅뿐이므로, 헤드리스에서는 항상 `None` 이다 — 모듈 머리말의
+/// "누가 이 저장소를 여는가" 를 봐라.
 ///
 /// poison 은 복구한다. 미완 트랜잭션은 unwind 때 rusqlite 의 RAII guard 가 rollback
 /// 하므로 연결은 불변식을 유지하고, 여기서 패닉하면 메인 스레드를 포함한 아무 데서나
 /// 호출되는 접근자라 창 전체가 죽는다. 조용히 `None` 을 돌려주면 호출자가 **"DB 가
 /// 아직 없다" 와 "락이 깨졌다" 를 구분할 수 없어**, 설정·최근 항목 저장이 원인 없이
 /// 사라진다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
-pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
+pub fn with_state_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
     let mutex = DB.get()?;
     let mut guard: MutexGuard<'_, Db> =
         crate::poison::recover_mutex(mutex.lock(), DB_WHAT, &DB_POISONED);

@@ -86,7 +86,7 @@ impl RecentFiles {
     /// 대소문자/verbatim 차로 갈라진 행)을 정규화 키 기준으로 접어(최신 opened_at 만
     /// 남기고 나머지 행 DELETE) 로드한다.
     pub fn load() -> Self {
-        crate::db::with_db(Self::for_db).unwrap_or_default()
+        crate::db::with_state_db(Self::for_db).unwrap_or_default()
     }
 
     pub(crate) fn for_db(db: &mut crate::db::Db) -> Self {
@@ -142,7 +142,7 @@ impl RecentFiles {
         list.insert(0, path.clone());
         list.truncate(MAX_ENTRIES);
         let ts = now_secs();
-        if crate::db::with_db(|db| {
+        if crate::db::with_state_db(|db| {
             ensure_recent_files_table(&db.conn);
             // 같은 정규화 키의 기존 행(다른 raw 표기)을 제거한 뒤 upsert — DB 에도
             // dedup 을 반영해 중복 행이 물리적으로 남지 않게 한다.
@@ -277,7 +277,7 @@ fn upsert_recent(conn: &rusqlite::Connection, kind: &str, path: &str, ts: i64) {
 
 /// `kind` 안에서 오래된 엔트리를 잘라 최신 MAX_ENTRIES개만 남긴다.
 fn prune_kind(kind: &str) {
-    if crate::db::with_db(|db| {
+    if crate::db::with_state_db(|db| {
         if let Err(e) = db.conn.execute(
             "DELETE FROM recent_files WHERE kind = ?1 AND path NOT IN (
                 SELECT path FROM recent_files WHERE kind = ?1 ORDER BY opened_at DESC LIMIT ?2

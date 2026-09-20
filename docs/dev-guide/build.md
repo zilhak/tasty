@@ -108,8 +108,8 @@ GUI에서만 호출되는 정의는 `cfg(feature = "gui")`로 제외한다. 순�
 
 | 정의 | 빌드 경계 | 공용으로 남는 부분 |
 |---|---|---|
-| `db::init`, `default_db_path` | GUI 부팅만 호출 | `Db`, `with_db`는 headless 최근 파일 조회에서도 사용 |
-| `Db::open`·스키마·초기화 오류 분류 | GUI 또는 단위 테스트 | headless의 미초기화 `with_db`는 기존대로 `None` 반환 |
+| `db::init`, `default_db_path` | GUI 부팅만 호출 | `Db`, `with_state_db`는 headless 최근 파일 조회에서도 사용 |
+| `Db::open`·스키마·초기화 오류 분류 | GUI 또는 단위 테스트 | headless의 미초기화 `with_state_db`는 기존대로 `None` 반환 |
 | `crash_report::write_hang_report` | winit watchdog을 가진 GUI | panic 리포터 설치와 host 파일 로그는 GUI/headless/CLI 역할별 공용 부팅에서 사용 |
 | `crash_report::error_loop`, `record_error` | GUI; detector는 debug, release는 no-op | headless panic/파일 로깅 경로를 함께 제거하지 않음 |
 
