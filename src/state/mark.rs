@@ -41,4 +41,23 @@ impl AppState {
             .map(|t| t.take_since_output_scan_mark(strip_ansi))
             .unwrap_or_default()
     }
+
+    /// Answer a read of a specific surface's raw output from a position the
+    /// caller holds. `None` means that surface has no terminal.
+    ///
+    /// There is no focused-surface fallback, for the same reason
+    /// [`Self::take_since_output_scan_mark`] has none: the caller named a
+    /// surface and a read that silently followed the focus would hand it
+    /// another surface's output.
+    pub fn read_output(
+        &mut self,
+        engine: &mut CoreState,
+        surface_id: u32,
+        req: &tasty_terminal::OutputReadRequest,
+    ) -> Option<Result<tasty_terminal::OutputRead, tasty_terminal::OutputReadError>> {
+        engine
+            .terminals
+            .get_mut(surface_id)
+            .map(|t| t.read_output(req))
+    }
 }
