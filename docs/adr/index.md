@@ -277,4 +277,5 @@
 | 0305 | [요청 압력은 프로세스 게이지다 — caller 별 관측과 다른 축이다](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md) | Accepted | 2026-09-20 | ipc, telemetry, diagnostics, observability |
 | 0306 | [메서드는 "두 번 전달되면 무엇이 남는가" 를 표에 선언한다](0306-a-method-declares-what-a-second-delivery-leaves-behind.md) | Accepted | 2026-09-20 | ipc, method-table, retry, contract |
 | 0307 | [출력 스캐너는 자기 커서로 읽는다 — 에이전트의 mark 를 공유하지 않는다](0307-the-output-scanner-reads-its-own-cursor.md) | Accepted | 2026-09-20 | terminal, output-buffer, ipc, plugin, claude, cursor, polling, adr-0085, adr-0266, adr-0306 |
+| 0308 | [형식 레지스트리의 port impl 은 타입을 소유한 크레이트에 남고, 그 의존이 layer 예외다](0308-the-format-registry-port-impl-stays-with-the-type.md) | Accepted | 2026-09-20 | architecture, crates, layering, plugin-protocol, orphan-rule, file-format, guards, adr-0089 |
 | 0311 | [namespace 호출의 만료는 fail-open 이 아니라 caller 에 대한 오류다](0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md) | Accepted | 2026-09-20 | plugin, ipc, timeout, host-plugin, error-handling, adr-0078 |

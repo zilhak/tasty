@@ -42,7 +42,7 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
         "tasty-file-format",
         "tasty-plugin-protocol",
         "plugin 이 형식 레지스트리를 조회하는 port trait 이 wire 크레이트에 살고, Rust 고아 \
-         규칙상 그 impl 은 타입을 소유한 쪽에만 둘 수 있다. \
+         규칙상 그 impl 은 타입을 소유한 쪽에만 둘 수 있다 (ADR-0308). \
          docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
     ),
     (
