@@ -280,6 +280,13 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   ([timer-hub](timer-hub.md#계층을-넘는-허브-합성)). 프로세스가 실제로 죽은 경우는 이 경로가
   아니라 event 채널 Disconnected 로 즉시 잡히므로 이 상한의 영향을 받지 않는다.
 - **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지).
+- **namespace 호출 만료**: 위 재시작 경로는 프로세스가 굳은 경우만 본다 — ping 에는 답하면서
+  특정 호출만 안 돌려주는 plugin 은 healthcheck 에 안 걸린다. 그래서 plugin namespace 로
+  forward 한 pending 호출에는 별도로 `NAMESPACE_CALL_TIMEOUT` 데드라인이 붙고, 넘기면
+  caller 에 `-32004` 로 회신하고 pending 에서 지운다(`sweep_expired_requests`, 매 pump).
+  값은 위 회수 상한의 두 배로 **유도**한다 — 짧으면 재시작 경로가 이미 처리하는 경우를
+  앞지른다. extension hook 만료는 이것과 달리 fail-open 이다(원래 흐름을 그대로 진행).
+  근거는 [ADR-0311](../adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md).
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
 
 ### 프로세스 수명 결박 (3 OS — 크래시·강제종료 포함)

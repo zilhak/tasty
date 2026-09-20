@@ -1,0 +1,111 @@
+# ADR-0311: namespace 호출의 만료는 fail-open 이 아니라 caller 에 대한 오류다
+
+- **Status**: Accepted
+- **Date**: 2026-09-20
+- **Tags**: plugin, ipc, timeout, host-plugin, error-handling, adr-0078
+
+## Context
+
+호스트가 plugin 에 보낸 요청은 `PendingRequestKind` 로 보관되다 응답이 오면
+소진된다. 그 변종 가운데 `deadline` 을 든 것은 extension hook 4 종뿐이었고,
+plugin namespace 로 forward 한 호출 3 종 — local caller 용(`NamespaceInvoke`),
+plugin→plugin 용(`PluginToPluginNamespace`), post-hook 이 걸린
+것(`NamespaceInvokeWithPostHook`) — 은 deadline 이 없었다.
+
+그래서 그 셋은 **target 이 답하거나 target 이 치워질 때만** 끝났다. 치우는 경로는
+이미 있다 — healthcheck 가 `HEALTHCHECK_TIMEOUT`(60s) 무응답 plugin 을 재시작하고
+그 길에 `cancel_pending_namespace_calls` 가 caller 에 `-32004` 를 돌려준다. 판정을
+ping tick 에서 하므로 상한은 `HEALTHCHECK_TIMEOUT + PING_INTERVAL` = 75s 다.
+
+남는 것은 그 경로가 **원리적으로 볼 수 없는** 경우다: ping 에는 제때 답하면서
+이 호출 하나만 끝내 안 돌려주는 plugin. 프로세스는 건강하므로 재시작이 안 걸리고,
+pending 항목은 영영 남으며, caller 는 — `IpcConnection` 이 읽기 타임아웃을 걸지
+않으므로([ADR-0078](0078-shutdown-rejects-pending-ipc.md)) — 영영 기다린다.
+
+hook 의 deadline 은 그대로 복제할 수 없다. hook 은 매니페스트가 `timeout_ms` 를
+선언하고 그 값은 `HOOK_TIMEOUT_MS_MAX` 로 1 초에서 잘린다. namespace 호출에는 그런
+선언이 없다 — 실제 작업을 하는 호출이라 1 초 상한이 맞지도 않는다.
+
+## Decision
+
+**namespace 호출 3 종에 `deadline` 을 붙이고, 만료를 fail-open 이 아니라 caller 에
+대한 오류로 끝낸다.**
+
+값은 새로 고르지 않고 **기존 회수 상한에서 유도한다** —
+`NAMESPACE_CALL_TIMEOUT = 2 × (HEALTHCHECK_TIMEOUT + PING_INTERVAL)`. 유도의 요지는
+"길이" 가 아니라 **순서**다: 이 deadline 이 회수 상한보다 짧으면 healthcheck 가 이미
+처리하는 경우를 앞질러 회신 시점을 바꾼다. 두 배로 두면 여기에 걸리는 것은
+healthcheck 가 볼 수 없는 경우뿐이다.
+
+만료 처리는 hook 과 갈린다. hook 만료는 fail-open 이다 — hook 이 없었던 것으로 치고
+원래 흐름(target invoke / event fan-out)을 그대로 진행시킬 수 있기 때문이다.
+namespace 호출에는 진행시킬 원래 흐름이 없다. 기다리던 target 응답 자체가 목적이었고,
+그것이 안 온 것이 사건이다. 그래서 **plugin 이 사라졌을 때와 같은 모양**으로
+끝낸다 — `cancel_pending_namespace_calls` 가 쓰는 세 회신 경로(local 은
+`response_tx`, plugin caller 는 `ipc.result`, post-hook 이 걸린 것은
+`send_final_error`)와 같은 코드 `-32004` 를 그대로 쓴다. caller 입장에서 두 경우는
+같은 일이다 — 기다리던 plugin 응답이 끝내 오지 않았다.
+
+sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadline 을 든 변종 7 개를
+모두 본다(`sweep_expired_requests`).
+
+## Consequences
+
+- **얻은 것**: 건강한 plugin 이 한 호출만 삼켜도 caller 가 끝난다. pending 항목이
+  무기한 쌓이는 갈래가 닫힌다. [ADR-0078](0078-shutdown-rejects-pending-ipc.md) 이
+  종료 경로에 세운 계약 — "무응답은 hang 과 구분되지 않으므로 답한다" — 이 plugin
+  forward 경로에도 선다.
+- **잃은 것**: 응답에 `NAMESPACE_CALL_TIMEOUT` 이상 걸리는 namespace 호출은 이제
+  실패한다. 그런 호출은 지금 없다 — 번들 plugin 에서 긴 작업은 전부 백그라운드
+  스레드로 내보내고 핸들러는 즉시 답한다. 만약 생긴다면 그 호출은 즉시 답하고
+  결과를 따로 알리는 모양으로 바꿔야 하며, 이 상수를 올리는 것은 처방이 아니다.
+- **운영 비용 / 유지 부담**: 상수 하나와 sweep 의 match 팔 3 개. sweep 자체는 이미
+  매 pump 마다 돌고 있었다.
+
+## Alternatives Considered
+
+- **A: caller 쪽(`IpcConnection`)에 읽기 타임아웃을 건다** — 그쪽에는 의도적으로
+  무한히 기다리는 호출(`agent task-await --timeout-ms 0`, 사용자 응답 대기 approval)이
+  있어 한 값으로 자르면 정상 동작을 끊는다. [ADR-0078](0078-shutdown-rejects-pending-ipc.md)
+  이 이미 그 이유로 기각했다. 여기서 막는 것은 호스트가 **답할 책임이 있는데 안 답하는**
+  좁은 경우다.
+- **B: 만료도 hook 처럼 fail-open 한다** — 진행시킬 원래 흐름이 없다. 조용히 pending
+  에서만 지우면 caller 는 여전히 영영 기다리고, 늦게 온 응답이 갈 곳도 사라져 오히려
+  나빠진다.
+- **C: 만료에 새 오류 코드를 준다** — 진단에는 유리하지만 caller 계약이 둘로 갈린다.
+  "plugin 이 네 호출을 끝내지 못했다" 는 이미 `-32004` 로 나가고 있었고, 사유는 메시지가
+  나른다.
+- **D: 값을 매니페스트 선언으로 받는다** — plugin 이 자기 호출의 상한을 스스로 정하게
+  되어 이 deadline 이 막으려는 바로 그 경우(안 답하는 plugin)를 plugin 이 무력화할 수
+  있다. 선언을 받으려면 protocol 이 바뀌고 번들 plugin 전부가 따라 움직인다.
+
+## Reconsideration Triggers
+
+다음 중 하나가 충족되면 본 ADR 을 재검토한다.
+
+**채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
+
+- `NAMESPACE_CALL_TIMEOUT` 이 `HEALTHCHECK_TIMEOUT` · `PING_INTERVAL` 에서 유도되지
+  않는 형태로 바뀌었을 때. 유도가 이 결정의 내용이므로, 리터럴로 바뀌면 근거가 사라진다.
+  (이 좌변에 붙은 판정기는 지금 없다.)
+- healthcheck 회수 경로(`cancel_pending_namespace_calls`)가 사라지거나 namespace
+  pending 을 더 이상 거두지 않게 됐을 때. 그러면 "앞지르지 않는다" 는 유도의 전제가 없어지고
+  값은 회수 상한이 아니라 정상 호출 길이에서 나와야 한다.
+
+**원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
+
+- 정상인데 `NAMESPACE_CALL_TIMEOUT` 을 넘기는 namespace 호출이 나타났을 때.
+  재는 법: `~/.tasty/debug.log` 에서 `did not answer within` 경고를 찾고, 그 호출이
+  실제로 응답을 만들어내고 있었는지(= 느린 것인가, 삼킨 것인가) target plugin 쪽
+  로그와 대조한다.
+
+## References
+
+- [ADR-0078](0078-shutdown-rejects-pending-ipc.md) — 무응답 대신 즉시 거절. caller 에
+  읽기 타임아웃을 걸지 않기로 한 근거가 거기 있다.
+- [plugin-development](../dev-guide/plugin-development.md) "생명주기" — healthcheck
+  상수와 75s 회수 상한.
+- 코드 근거(결정이 실현된 현재 위치): `tasty-host-plugin` 의
+  `manager::NAMESPACE_CALL_TIMEOUT` · `manager::PendingRequestKind` ·
+  `PluginManager::dispatch_target_invoke` · `PluginManager::sweep_expired_requests` ·
+  `PluginManager::expire_pending_request`.
