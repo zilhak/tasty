@@ -46,18 +46,16 @@ caller 는 `response_tx`, plugin caller 는 `ipc.result`, post-hook 이 걸린 �
 `send_final_error`. caller 입장에서 두 경우는 같은 일이다 — 기다리던 plugin 응답이
 끝내 오지 않았다.
 
-**그 셋이 싣는 것이 같지 않다는 사실을 여기 적어 둔다.** `-32004` 라는 코드가 실제로
-호출자에게 닿는 것은 **local/CLI caller 하나**뿐이다. plugin caller 로 가는 둘은
-메시지만 싣고 코드를 버린다 — `send_ipc_result` 의 `error_code` 인자에 `None` 이
-가고, SDK 가 그것을 `PluginError::HostCall { code: None }` → `-32000`(server error)
-으로 떨군다. 그래서 plugin A 가 plugin B 의 메서드를 부르고 B 가 삼킨 경우, A 가 보는
-코드는 `-32004` 가 아니라 `-32000` 이다. **이 비대칭은 이 결정이 만든 것이 아니라
-`send_final_error` 가 원래 가진 것**이고(코드를 인자로 받아 plugin 갈래에서 버린다),
-그래서 기존 취소 경로도 똑같이 그렇다. 여기서 그것을 고치지 않은 이유는 둘이다:
-고치면 기존 취소 경로의 동작이 같이 바뀌고, 두 plugin-caller 경로 중 하나만 고치면
-post-hook 유무에 따라 같은 사건이 다른 코드를 내는 **새로운** 갈림이 생긴다. 축 자체는
-[ADR-0171](0171-a-host-error-code-survives-the-plugin-boundary.md) 이 이미 다룬 것과
-같다 — 다만 그 ADR 이 센 "버리는 자리 일곱" 에 `send_final_error` 는 들어 있지 않다.
+**그 셋이 같은 코드를 싣는다.** `-32004` 는 local/CLI caller 에게도 plugin caller
+에게도 그대로 간다. 이 문단은 원래 그 반대를 적고 있었다 — plugin caller 로 가는 둘이
+메시지만 싣고 코드를 버려서, plugin A 가 plugin B 의 메서드를 부르고 B 가 삼키면 A 가
+보는 코드는 `-32004` 가 아니라 SDK 기본값 `-32000` 이었다. 그 비대칭은 이 결정이 만든
+것이 아니라 `send_final_error` 가 원래 가진 것이었고, 그래서 이 ADR 은 그것을 고치지
+않은 채 사실로만 적고 아래 재검토 조건에 "없어지면 이 문단을 지워라" 를 달아 두었다.
+2026-09-20 에 그 조건이 충족됐다 — 네 자리가 한 번에 코드를 싣게 됐고, 근거는
+[ADR-0171](0171-a-host-error-code-survives-the-plugin-boundary.md) 의 2026-09-20 보강이다.
+그 ADR 이 센 "버리는 자리 일곱" 에 이것이 없었던 이유(호스트가 *되받은* 코드가 아니라
+*스스로 내는* 코드라 축이 한 칸 다르다)도 거기 적혀 있다.
 
 sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadline 을 든 변종 7 개를
 모두 본다(`sweep_expired_requests`).
@@ -104,8 +102,6 @@ sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadlin
 - healthcheck 회수 경로(`cancel_pending_namespace_calls`)가 사라지거나 namespace
   pending 을 더 이상 거두지 않게 됐을 때. 그러면 "앞지르지 않는다" 는 유도의 전제가 없어지고
   값은 회수 상한이 아니라 정상 호출 길이에서 나와야 한다.
-- `send_final_error` 가 plugin 갈래에서도 `code` 를 싣게 됐을 때. 위 Decision 이
-  적어 둔 비대칭이 없어지므로 그 문단을 지워야 한다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 

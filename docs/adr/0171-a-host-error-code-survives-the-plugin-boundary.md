@@ -70,6 +70,28 @@ server error(`-32000`)를 쓴다.
 닿는다는 결정, `src/source_guards/bundled_plugin_namespace_coverage.rs` 가 그 정합을 양방향으로
 보는 것, 서드파티 plugin 이 그 가드의 대상이 아니라는 것 — 넷 다 그대로 유효하다.
 
+### 2026-09-20 보강 — 호스트가 *스스로 내는* 코드도 같은 축이다
+
+위 "버리는 자리 일곱" 은 전부 호스트가 **되받은** 코드(`resp.error_code`)를 흘리는
+자리였다. 호스트가 plugin 을 기다리다 **스스로 내는** 코드는 그 셈에 없었고, 그 자리는
+네 개였다 — `send_final_error` 의 plugin 갈래(호출자 넷이 `-32001` · `-32003` ·
+취소 `-32004` · 만료 `-32004` 를 준다) · `forward_namespace_call_from_plugin` 의 검증
+실패 갈래(`validate_namespace_call` 이 코드를 손에 쥐여 주는데 `_code` 로 버렸다) ·
+`cancel_pending_namespace_calls` 의 plugin caller 갈래 ·
+`expire_pending_request` 의 plugin caller 갈래. 뒤 둘은 **바로 옆 local caller 갈래가
+`-32004` 를 싣는데** 같은 사건의 plugin 쪽만 `None` 이었다.
+
+그래서 같은 사건이 **누가 물었는가**에 따라 다른 코드로 나갔다 — CLI 가 물으면
+`-32004`("plugin 이 네 호출을 끝내지 못했다"), 다른 plugin 이 물으면 `-32000`("서버
+사정"). 이 ADR 의 Context 가 든 결함 — 코드가 *대상의 잘못*이 아니라 *plugin 의 기동
+상태*를 보고했다 — 와 같은 모양이고, 축도 같다. 그래서 새 결정이 아니라 **이 결정이
+안 센 네 자리를 같은 규칙 아래로 넣는 것**이다. 네 자리 모두 손에 든 코드를 그대로
+싣는다.
+
+[ADR-0311](0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md) 이 그
+비대칭을 사실로 적고 "없어지면 그 문단을 지워라" 를 재검토 조건으로 달아 두었으므로,
+그 문단과 조건을 같은 커밋에서 갈아끼웠다.
+
 ## Consequences
 
 - **얻은 것**: 호출자가 호스트의 판단을 그대로 듣는다. 같은 잘못된 대상이 plugin 기동 상태와
@@ -83,6 +105,10 @@ server error(`-32000`)를 쓴다.
 - **와이어 호환**: 필드는 `#[serde(default, skip_serializing_if)]` 라 양방향이다. 구버전 SDK
   로 빌드된 plugin 은 낯선 키를 안 보고, 구버전 호스트가 보낸 모양은 `None` 으로 읽힌다.
   두 방향을 `crates/tasty-plugin-protocol/src/protocol_tests.rs` 가 못 박는다.
+- **2026-09-20 보강이 바꾼 동작**: plugin caller 가 받던 `-32000` 이 이제 호스트가 낸
+  실제 코드가 된다. `PluginError::HostCall { code }` 로 분기하는 소비처는 SDK 의
+  `From<PluginError> for IpcMethodError` 하나고, 값으로 분기하는 자리는 이 저장소에
+  없다(이 ADR 의 위 항이 센 것과 같은 좌변). 표시 문구는 여전히 안 바뀐다.
 - **운영 비용**: `send_ipc_result` 에 인자가 하나 늘었다. 코드가 없는 내부 실패 경로는
   `None` 을 준다 — 그 자리는 종전과 같은 `-32000` 이다.
 

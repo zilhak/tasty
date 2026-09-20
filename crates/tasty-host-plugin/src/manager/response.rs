@@ -573,7 +573,9 @@ impl PluginManager {
             } => {
                 let msg = namespace_timeout_message(&plugin_id);
                 tracing::warn!("{msg}");
-                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), None);
+                // 바로 위 local 갈래와 같은 `-32004`. 만료는 caller 종류와 무관한
+                // 같은 사건이다.
+                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
             }
             PendingRequestKind::NamespaceInvokeWithPostHook {
                 target_plugin_id,

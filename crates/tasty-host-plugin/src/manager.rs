@@ -889,6 +889,37 @@ prefix = "{prefix}"
         assert!(err.contains("handle channel not available"), "got: {err}");
     }
 
+    /// 호스트가 **스스로 내는** 오류 코드도 plugin 경계를 넘는가. 이 자리가
+    /// `None` 을 주면 plugin caller 는 SDK 기본값 `-32000` 을 보고, 같은 사건이
+    /// CLI caller 에게는 `-32004` 로 간다 — 코드가 사건이 아니라 누가 물었는지를
+    /// 보고하게 된다.
+    #[test]
+    fn a_host_originated_error_code_reaches_a_plugin_caller() {
+        let mut mgr = PluginManager::new(empty_waker());
+        let (proc, rx) = PluginProcess::stub_with_request_rx("com.example.caller");
+        mgr.processes.insert("com.example.caller".into(), proc);
+        mgr.send_final_error(
+            FinalCaller::Plugin {
+                caller_plugin_id: "com.example.caller".into(),
+                call_id: 9,
+            },
+            -32004,
+            "target did not answer".into(),
+        );
+        let req = rx
+            .try_recv()
+            .expect("caller plugin 에 ipc.result 가 가야 한다");
+        assert_eq!(req.method, crate::protocol::METHOD_IPC_RESULT);
+        let parsed: crate::protocol::IpcCallResult =
+            serde_json::from_value(req.params).expect("ipc.result params");
+        assert_eq!(parsed.call_id, 9);
+        assert_eq!(
+            parsed.error_code,
+            Some(-32004),
+            "호스트가 낸 코드가 plugin 갈래에서 버려졌다"
+        );
+    }
+
     /// pending 하나를 심고 `now` 시점으로 sweep 을 돌린 결과를 (남았는가, 회신된
     /// 응답) 으로 돌려준다. deadline 만 다르게 주어 만료/미만료 두 갈래를 같은
     /// 자리에서 잰다. **두 시각을 둘 다 인자로 받는 것이 요점이다** — sweep 이

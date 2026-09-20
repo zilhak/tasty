@@ -146,6 +146,16 @@ pub struct PluginProcess {
 
 #[cfg(test)]
 impl PluginProcess {
+    /// 송신 큐의 수신단을 살려 둔 stub — 호스트가 plugin 에 **무엇을 보냈는지**를
+    /// 재는 자리. [`PluginProcess::stub_for_test`] 는 rx 를 즉시 버려서 모든 송신이
+    /// `Disconnected` 로 떨어지므로, 보낸 내용을 단정할 수 없다.
+    pub(crate) fn stub_with_request_rx(plugin_id: &str) -> (Self, mpsc::Receiver<PluginRequest>) {
+        let (req_tx, req_rx) = mpsc::sync_channel(REQUEST_QUEUE_CAPACITY);
+        let mut proc = Self::stub_for_test(plugin_id);
+        proc.req_tx = req_tx;
+        (proc, req_rx)
+    }
+
     /// 단위 테스트 전용 stub. child/last_pong 등 외부에서 접근 불가능한 필드를
     /// 합리적인 기본값으로 채운다. 송수신 채널은 dangling이라 실제로 사용하면 안 된다.
     pub(crate) fn stub_for_test(plugin_id: &str) -> Self {

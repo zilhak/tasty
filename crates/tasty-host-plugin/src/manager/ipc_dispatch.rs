@@ -99,8 +99,8 @@ impl PluginManager {
     ) {
         let plugin_id = match self.validate_namespace_call(method, Some(caller_plugin_id)) {
             Ok(id) => id,
-            Err((_code, msg)) => {
-                self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg), None);
+            Err((code, msg)) => {
+                self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg), Some(code));
                 return;
             }
         };
@@ -408,6 +408,14 @@ impl PluginManager {
     }
 
     /// final_caller로 에러 응답 송신.
+    ///
+    /// **두 갈래가 같은 `code` 를 싣는다.** 한동안 plugin 갈래만 코드를 버렸는데,
+    /// 그러면 같은 사건(예: target 이 안 돌려줬다 `-32004`)이 caller 가 CLI 냐 다른
+    /// plugin 이냐에 따라 `-32004` 와 `-32000` 으로 갈렸다 — 코드가 사건이 아니라
+    /// **누가 물었는가**를 보고했다. `docs/adr/0171-a-host-error-code-survives-the-plugin-boundary.md`
+    /// 이 정한 축(호스트가 준 코드는 plugin 경계를 넘어 살아남는다)과 같고, 그 ADR
+    /// 이 센 일곱 자리는 호스트가 *되받은* 코드였다. 여기 것은 호스트가 *스스로 내는*
+    /// 코드다.
     pub(super) fn send_final_error(
         &mut self,
         final_caller: FinalCaller,
@@ -428,7 +436,7 @@ impl PluginManager {
                 caller_plugin_id,
                 call_id,
             } => {
-                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message), None);
+                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message), Some(code));
             }
         }
     }
@@ -580,7 +588,9 @@ impl PluginManager {
                     call_id,
                     ..
                 }) => {
-                    self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), None);
+                    // 바로 위 local 갈래와 같은 `-32004` 를 싣는다. 이 짝이 갈리면
+                    // 같은 취소 사건이 caller 종류에 따라 다른 코드로 나간다.
+                    self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
                 }
                 Some(PendingRequestKind::ExtensionPreIpcHook { final_caller, .. })
                 | Some(PendingRequestKind::ExtensionPostIpcHook { final_caller, .. })
