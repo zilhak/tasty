@@ -13,6 +13,10 @@ use std::sync::{Arc, OnceLock, RwLock};
 use tasty_plugin_manifest::Permission;
 
 use crate::ipc_namespace::IpcNamespaceRegistry;
+// `PREFIX_RULES` 한 줄을 100 칸 안에 두려고 이름을 짧게 든다. 그 정의는
+// `ipc_release_table_excludes_input_reproduction` 이 **줄 단위로** 읽으므로, 줄이
+// 접히면 규칙이 사라진 것과 구별이 안 돼 빨개진다.
+use self::MethodEffect::Idempotent;
 
 /// 이 메서드를 **두 번 전달하면 관측 가능한 차이가 남는가**.
 ///
@@ -854,8 +858,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 /// fallback 단계에서 해소된다. 정적 `PREFIX_RULES` 는 host 자체 메서드의
 /// prefix-fallback 전용.
 #[cfg(debug_assertions)]
-pub const PREFIX_RULES: &[(&str, MethodMeta)] =
-    &[("surface.ime_", local_only(MethodEffect::Idempotent))];
+pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only(Idempotent))];
 #[cfg(not(debug_assertions))]
 pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 
