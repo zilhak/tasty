@@ -333,9 +333,12 @@ fn terminal_scan_cursor_is_separate_from_the_agent_mark() {
 
     // 3. 반대 방향 — scan 읽기가 에이전트의 mark 를 안 움직인다.
     //
-    // ★ 여기서도 순서가 판정을 만든다. 위 2 의 mark 뒤에 출력을 내고, 그것을 **scan 이
-    // 먼저 먹은 뒤** mark 기준으로 읽는다. scan 읽기가 `read_mark` 까지 밀면 그 구간이
-    // mark 쪽에서 사라진다.
+    // 위 2 의 mark 뒤에 출력을 내고, 그것을 **scan 이 먼저 먹은 뒤** mark 기준으로 읽는다.
+    // scan 읽기가 `read_mark` 까지 밀면 그 구간이 mark 쪽에서 사라진다.
+    //
+    // 2 와 달리 이 단계는 순서를 바꿔도 그 회귀에서 죽는다 — 실측으로 확인했다. 다만 옛
+    // 순서에서는 대기 헬퍼의 timeout 으로 죽어서 실패문이 이 성질을 안 말했다. 지금은 이
+    // 단계 자신의 단정에서 죽는다.
     echo("scan_marker_three");
     wait_scan("scan_marker_three");
     let since_mark = tasty.read_since_mark(sid);
