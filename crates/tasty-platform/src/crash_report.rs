@@ -373,6 +373,15 @@ pub mod error_loop {
         inner: Mutex<Inner>,
     }
 
+    /// `new` 와 같다. 이 타입이 **크레이트 밖으로 나가면서** clippy 의
+    /// `new_without_default` 가 켜졌다 — 본체 안에 있던 동안은 crate 내부 타입이라
+    /// 그 lint 의 대상이 아니었다. 인자 없는 `new` 를 그대로 두려면 이 impl 이 짝이다.
+    impl Default for ErrorLoopDetector {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl ErrorLoopDetector {
         pub fn new() -> Self {
             Self {
