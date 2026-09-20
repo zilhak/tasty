@@ -137,6 +137,58 @@ append 하게 해서 **실행 횟수**를 세야 갈린다. 저장소 밖 임시
 관측된다(리소스 컴파일이 그 OS 에서만 돈다). 위 표는 재실행 여부까지만 재고 산출물 차이는 재지
 않는다.
 
+### 나머지 빌드 스크립트
+
+워크스페이스의 빌드 스크립트는 루트까지 합쳐 일곱이다. 각자 선언하는 것:
+
+| 스크립트 | 선언 | 한 번 돌 때 나가는 줄 수 |
+|---|---|---|
+| `build.rs` | 아이콘 · `Cargo.toml` | 2 |
+| `crates/tasty-host-plugin/build.rs` | `keys` 디렉토리 · `PROFILE` env | 2 |
+| `crates/tasty-i18n/build.rs` | `lang/*.toml` 을 하나씩 | 디스크의 `lang/*.toml` 수만큼 |
+| `crates/tasty-doc-guards/build.rs` | `src` 디렉토리 통째 | 1 |
+| `crates/tasty-plugin-{clipboard-viewer,image,markdown}/build.rs` | `build.rs` 자기 자신만 | 각 1 |
+
+`crates/tasty-cli/src/dynamic/build.rs` 는 **빌드 스크립트가 아니다** — 그 크레이트의 평범한
+`mod build` 이고, 어느 `Cargo.toml` 에도 `build = ` 지정이 없다(빌드 스크립트는 패키지 루트의
+`build.rs` 만 자동 인식된다).
+
+`tasty-i18n` 은 루프에서 파일마다 한 줄씩 내보내므로 **소스의 `println!` 수(1)와 실제로 나가는
+줄 수가 다르다.** 두 값을 섞어 세지 마라.
+
+### plugin 세 개가 자기 자신만 거는 이유
+
+세 plugin 의 빌드 스크립트는 `tasty-icons` 의 `Icon.svg` 문자열을 읽어 `OUT_DIR` 에 점배열을
+베이크한다([ADR-0036](../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md)).
+그런데 거는 것은 `build.rs` 자기 자신뿐이다. **형태만 보면 입력을 빠뜨린 것 같지만 아니다** —
+아이콘은 파일이 아니라 `crates/tasty-icons/src/lib.rs` 안의 문자열 리터럴이고, 그것이 바뀌면
+`tasty-icons` 가 다시 컴파일되며, `tasty-icons` 는 세 스크립트의 **build-dependency** 라 그
+재컴파일이 스크립트 재컴파일을, 스크립트 재컴파일이 재실행을 끌고 온다. 즉 입력 선언이 아니라
+**의존 그래프**가 트리거를 공급한다.
+
+그 사슬은 관측된 것이다. `FOLDER` 아이콘의 `d` 속성 한 글자를 바꾸고 세 패키지를 다시 빌드하면
+`CARGO_LOG=cargo::core::compiler::fingerprint=info` 가 사슬을 그대로 찍는다.
+
+```
+tasty-icons  lib   dirty: FsStatusOutdated
+  → …/markdown  build-script-build  Build           dirty: FsStatusOutdated(StaleDepFingerprint …)
+    → …/markdown  build-script-build  RunCustomBuild  dirty: FsStatusOutdated(StaleDepFingerprint …)
+```
+
+그리고 셋 다 다시 돌았다(`target/<profile>/build/<pkg>-<hash>/invoked.timestamp` 가 갱신된다).
+`markdown` 만 생성 결과가 달라지는데, `FOLDER` 를 베이크하는 것이 그 하나이기 때문이다 —
+**나머지 둘은 자기가 안 쓰는 아이콘이 바뀌어도 다시 돈다.** 트리거는 크레이트 단위라
+필요보다 거칠고, 대신 놓치지 않는다.
+
+반대 방향도 쟀다. plugin 자신의 `src/` 를 고치고 같은 빌드를 돌리면 크레이트는 다시
+컴파일되지만 **빌드 스크립트는 다시 돌지 않는다**(`invoked.timestamp` 불변). 선언이 하나라도
+있으면 "패키지 안 아무 파일" 기본값이 꺼지기 때문이고, 그것이 여기서 노린 바다.
+
+**A/B 로 잴 때 `-p` 목록을 바꾸지 마라.** cargo 의 feature 통일은 선택된 패키지 집합에 따라
+달라지고, 달라지면 `-C metadata` 해시가 달라져 `build/<pkg>-<hash>/` 가 **새로 생긴다.** 그
+새 디렉토리는 방금 실행된 것처럼 보여서, 재실행이 없는데 있는 것으로 읽힌다. 앞뒤 빌드의
+패키지 선택을 고정해라.
+
 ## Plugin 빌드 / 스테이징
 
 번들 plugin(`crates/tasty-plugin-*` 중 `tasty-plugin.toml` 보유)은 부팅 시 `install_builtins_if_needed` 가 `~/.tasty/plugins/<id>/` 로 자동 sync 한다. `bundle_root()` fallback 이 `<exe_dir>/builtin-plugins/`(= `target/<profile>/builtin-plugins/`)라, **그 경로에 스테이징만 해두면** 부팅 시 user dir 까지 흐른다. **debug 빌드만** `ensure_dev_bundle` 이 매 부팅 mtime(동률이면 내용) 비교로 workspace→bundle 을 sync 한다. 플러그인까지 빌드한 `cargo build --workspace` 후 실행하면 반영된다. **release/dist 는 소스가 옆에 있어도 workspace→bundle 자동 동기화를 하지 않는다.** `just build --release` 또는 해당 프로필의 `just build-plugins` 로 서명과 함께 스테이징한 번들을 사용한다. 빌드 후 소스 매니페스트를 수정해도 다음 실행이 서명된 번들을 덮어쓰지 않는다. `cargo build --release --workspace` 만으로는 번들 스테이징이 되지 않는다.
