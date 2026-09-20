@@ -126,5 +126,5 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - crate `tasty-portscan` — `scan_all()` / `scan_for_pids(pids)` / `collect_descendant_pids(pid)`, OS 백엔드 분기(Linux `/proc/net/tcp`, macOS `lsof`, Windows `GetExtendedTcpTable`), 캐시 `cache.rs`.
 - popup: `src/adapters/ui/popup/port_scanner.rs` — `draw_port_scanner_popup`(state 결선) + `draw_port_scanner_view`(pure view).
 - 비동기 상태: `AppState.port_scan: PortScanState`(메인 테이블, Tasty/System scope) + `AppState.port_favorites_scan: PortScanState`(즐겨찾기 전용, 항상 system-wide `scan_all()`, 즐겨찾기 1개 이상일 때만 kick). 둘 다 `kick_off_scan`/`poll_state` 를 공유하는 동일한 `PortScanState` 슬롯이다. 필터 상태: `egui::Memory`.
-- 즐겨찾기 영속: `src/adapters/ui/popup/port_scanner_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`), `CoreState.port_favorites` 가 부팅 시 로드해 들고 다닌다. 별 토글은 `PortScannerAction::ToggleFavorite` → wrapper 가 `contains`/`add`/`remove` + `save()`.
+- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`), `CoreState.port_favorites` 가 부팅 시 로드해 들고 다닌다. 별 토글은 `PortScannerAction::ToggleFavorite` → wrapper 가 `contains`/`add`/`remove` + `save()`.
 - gallery 데모: `crates/tasty-gallery/src/catalog/components/port_scanner.rs`.

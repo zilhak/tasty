@@ -24,8 +24,8 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
-use crate::adapters::ui::popup::port_scanner_favorites::PortFavorites;
 use crate::core::CoreState;
+use crate::core::port_favorites::PortFavorites;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;
 use crate::state::AppState;
@@ -2971,11 +2971,8 @@ mod tests {
         assert_eq!(format_host_port("::", 8080), "[::]:8080");
     }
 
-    fn favorite(
-        addr: &str,
-        port: u16,
-    ) -> crate::adapters::ui::popup::port_scanner_favorites::PortFavorite {
-        crate::adapters::ui::popup::port_scanner_favorites::PortFavorite {
+    fn favorite(addr: &str, port: u16) -> crate::core::port_favorites::PortFavorite {
+        crate::core::port_favorites::PortFavorite {
             label: format!("{addr}:{port}"),
             addr: addr.parse().unwrap(),
             port,

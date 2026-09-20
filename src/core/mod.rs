@@ -29,6 +29,9 @@ pub(crate) mod ipc_facade;
 pub(crate) mod layout_persistence;
 pub(crate) mod mesh_mirror;
 pub(crate) mod output_observer;
+/// 소비자가 전부 gui 어댑터라 `CoreState` 의 필드와 같은 조건으로 컴파일된다.
+#[cfg(feature = "gui")]
+pub(crate) mod port_favorites;
 pub(crate) mod pty_registry;
 pub(crate) mod restore_rebuild;
 pub(crate) mod session;

@@ -426,7 +426,7 @@ pub struct CoreState {
     /// (소비자가 전부 gui 어댑터라 headless 빌드에선 필드째 제외.)
     /// 포트 스캐너 팝업(`port_scanner.rs`)의 별 토글 + 상단 즐겨찾기 섹션이 소비한다.
     #[cfg(feature = "gui")]
-    pub(crate) port_favorites: crate::adapters::ui::popup::port_scanner_favorites::PortFavorites,
+    pub(crate) port_favorites: crate::core::port_favorites::PortFavorites,
 
     /// Terminal/PTY 데이터 owner (Surface 트리와 분리). Terminal 인스턴스와
     /// 디스크 scrollback 영속 키(`scrollback_persist_ids`)를 store 가 단독
@@ -882,8 +882,7 @@ impl CoreState {
             #[cfg(feature = "gui")]
             explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
             #[cfg(feature = "gui")]
-            port_favorites: crate::adapters::ui::popup::port_scanner_favorites::PortFavorites::load(
-            ),
+            port_favorites: crate::core::port_favorites::PortFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
