@@ -75,11 +75,19 @@ impl OutputBuffer {
     /// they leave a window in which appended output is passed over by the
     /// advance and therefore reported to nobody.
     ///
-    /// The returned slice starts wherever the previous read stopped, so an
-    /// escape sequence straddling two reads is split. With `strip_ansi` the
-    /// leftover half of such a sequence survives into the text; a caller that
-    /// matches on screen content should tolerate that, and one that needs whole
-    /// sequences should ask for the raw bytes.
+    /// The returned slice starts wherever the previous read stopped, which is a
+    /// byte offset and not a boundary of anything. Two kinds of thing get split
+    /// there, and a caller that matches on the text has to tolerate both:
+    ///
+    /// - An escape sequence straddling two reads. With `strip_ansi` the leftover
+    ///   half survives into the text; a caller that needs whole sequences should
+    ///   ask for the raw bytes instead.
+    /// - A multi byte character straddling two reads. Each half is lossy decoded
+    ///   on its own, so both come out as U+FFFD and the character is gone from
+    ///   the text on either side. `read_since_mark` has the same property at its
+    ///   own start offset, so this is not particular to the scan cursor; what is
+    ///   particular is that an advancing cursor creates a new such offset on
+    ///   every read.
     pub fn take_since_scan_mark(&mut self, strip_ansi: bool) -> String {
         let start = self.scan_mark.min(self.buffer.len());
         let text = String::from_utf8_lossy(&self.buffer[start..]).to_string();
