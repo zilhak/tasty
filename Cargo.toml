@@ -239,7 +239,9 @@ tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-ssh = { path = "crates/tasty-ssh" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
-tasty-key-match = { path = "crates/tasty-key-match" }
+# winit 을 필수로 드는 크레이트라 optional 이다 — 소비자가 전부 `gui` 뒤에 있어서
+# 무조건 의존으로 두면 headless 빌드가 윈도잉 스택을 통째로 링크한다.
+tasty-key-match = { path = "crates/tasty-key-match", optional = true }
 tasty-themes = { path = "crates/tasty-themes" }
 tasty-egui-theme = { path = "crates/tasty-egui-theme" }
 tasty-icons = { path = "crates/tasty-icons", features = ["egui"] }
@@ -434,6 +436,7 @@ gui = [
     # 비-gui(CLI/headless) 빌드는 egui 의존 없이 유지(protocol lib.rs 불변식).
     "tasty-plugin-protocol/egui-mesh",
     # 바인딩 매칭의 egui 갈래(`any_binding_pressed_egui`). headless 는 안 켠다.
+    # 이 줄이 optional 인 tasty-key-match 자체도 함께 켠다.
     "tasty-key-match/egui-input",
     "dep:cosmic-text",
     "dep:bytemuck",
