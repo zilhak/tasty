@@ -40,8 +40,9 @@ use crate::ports::ipc_server::IpcServerPort;
 /// ★ 이 파생은 기본값에서만 성립한다. 사용자가 `entry_max_mb` 를 올리면 저장소는 그
 /// 크기를 정상으로 받아들이는데 이 상한은 안 따라 올라간다 — escape 최악 갈래에서
 /// `entry_max_mb = 2`, base64 갈래에서 `entry_max_mb = 7` 부터 합법적인 `memory.set` 한
-/// 줄이 여기 걸려 **응답 없이 연결이 닫힌다.** 두 수를 잇는 배선은 없다(그 배선은 동작
-/// 변경이라 별건이다). 갈라졌는지 재는 법은 아래
+/// 줄이 여기 걸려 `ERR_REQUEST_LINE_TOO_LONG` 한 줄을 받고 **연결이 닫힌다** — 사유는
+/// 이제 말하지만 그 요청이 못 들어간다는 것은 그대로다. 두 수를 잇는 배선은 없다(그
+/// 배선은 동작 변경이라 별건이다). 갈라졌는지 재는 법은 아래
 /// `admission_tests::the_cap_clears_the_largest_payload_the_store_accepts` 가
 /// `MemorySettings::default()` 를 좌변으로 읽는 것이다 — 기본값이 올라가면 그 시험이
 /// 죽는다. 사용자가 config 로 올린 값은 컴파일 시점에 안 보이므로 **어떤 시험도 못
@@ -417,11 +418,14 @@ impl TcpIpcServer {
 
     /// `reader` 에서 한 줄을 [`MAX_REQUEST_LINE_BYTES`] 안에서 읽는다.
     ///
-    /// 상한 초과를 **거절 응답 없이 연결 종료**로 처리하는 이유는 둘이다. 하나는 이
-    /// 상한이 wire 를 바꾸지 않는다는 것이고, 다른 하나가 더 중요하다 — 초과한 줄의
-    /// **나머지가 소켓에 그대로 남아 있다.** 잘린 JSON 에 parse error 를 돌려주고 계속
-    /// 읽는 기존 갈래(`send_parse_error` 는 연결을 유지한다)를 그대로 쓰면 한 줄이 여러
-    /// 요청으로 쪼개져 들어가고, 상한은 다시 없는 것이 된다.
+    /// 상한 초과는 [`LineRead::TooLong`] 으로 갈라 돌려줄 뿐 **답하지도 닫지도 않는다** —
+    /// 둘 다 호출자의 몫이다([`Self::refuse_oversized_line`] 이
+    /// `ERR_REQUEST_LINE_TOO_LONG` 한 줄로 답하고, 그 뒤 호출자가 연결을 끝낸다).
+    ///
+    /// **답한 뒤에도 닫는 이유**가 이 함수의 판정에 딸려 있다 — 초과한 줄의 **나머지가
+    /// 소켓에 그대로 남아 있다.** 잘린 JSON 에 parse error 를 돌려주고 계속 읽는
+    /// 갈래(`send_parse_error` 는 쓰기가 성공하면 연결을 유지한다)를 그대로 쓰면 한 줄이
+    /// 여러 요청으로 쪼개져 들어가고, 상한은 다시 없는 것이 된다.
     ///
     /// `R` 로 일반화한 이유는 시험 때문이다 — 상한 판정 자체는 소켓과 무관한데,
     /// `BufReader<TcpStream>` 으로 못 박으면 그 판정을 재려고 실제 연결을 띄워야 한다.
@@ -440,7 +444,7 @@ impl TcpIpcServer {
             // 딱 끝난 경우는 정상이므로 길이만으로 판정하지 않는다.
             Ok(n) if n == MAX_REQUEST_LINE_BYTES && !line.ends_with('\n') => {
                 tracing::warn!(
-                    "IPC request line from {:?} exceeded {} bytes — closing the connection",
+                    "IPC request line from {:?} exceeded {} bytes — refusing the line and closing the connection",
                     peer,
                     MAX_REQUEST_LINE_BYTES
                 );
