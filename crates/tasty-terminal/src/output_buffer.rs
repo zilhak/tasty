@@ -298,6 +298,7 @@ fn cut_before_split_char(bytes: &[u8], max: usize) -> usize {
 mod tests {
     use super::{
         OUTPUT_RETENTION_MAX_BYTES, OutputBuffer, OutputCursor, OutputReadError, OutputReadRequest,
+        mint_stream_id,
     };
 
     /// Push `n` bytes of filler whose content is irrelevant to the assertion.
@@ -633,5 +634,20 @@ mod tests {
             "a position that once named a retained byte never names a different \
              one later"
         );
+    }
+
+    #[test]
+    fn the_stream_token_does_not_rest_on_the_clock_alone() {
+        // 두 터미널이 같은 나노초에 서면 시계만으로는 같은 표지가 나오고, 그러면
+        // 재사용된 surface id 위에서 옛 위치가 조용히 통과한다. 그 갈래는 시험이
+        // 재현할 수 없으므로 **표지의 모양**을 잰다 — 시계 뒤에 매번 달라지는
+        // 마디가 붙어 있는가.
+        //
+        // 반대쪽 마디(시계)는 호스트 재시작을 건너서도 달라지기 위한 것이고,
+        // 그쪽은 한 프로세스 안에서 잴 수 없다.
+        let tail = |id: String| id.split_once('-').map(|(_, t)| t.to_string());
+        let a = tail(mint_stream_id()).expect("표지에 시계 뒤 마디가 있다");
+        let b = tail(mint_stream_id()).expect("표지에 시계 뒤 마디가 있다");
+        assert_ne!(a, b, "같은 나노초에 서면 두 표지가 같아진다");
     }
 }
