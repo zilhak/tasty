@@ -92,20 +92,31 @@ attribute 만 남는다. `boot::run` 만 `pub` 으로 올린다.
 
 - 이 결정이 실현된 현재 위치: 루트 `Cargo.toml` 의 `[lib]`·`[[bin]]`, `src/lib.rs`,
   `src/main.rs`, `src/boot.rs` 의 `run`.
-- 같은 커밋에서 갈아끼운 조합 인용(`--bin tasty` → `--lib`): `.githooks/pre-commit` 의
-  `suggest_target`, [`../dev-guide/ci-gates.md`](../dev-guide/ci-gates.md),
+- **쓸어야 할 인용의 좌변은 하나가 아니라 둘이다 — `--bin tasty` 와 `--bins`.** 루트
+  패키지를 어느 쪽으로 좁혀도 단위시험이 0 건 돌고 `ok` 로 끝나므로, 한 형태만 세면 다른
+  형태가 그대로 남는다. 세는 명령은 둘이다(`target/`·`.git/` 제외):
+  `grep -rn -- '--bin tasty' .` 와 `grep -rn -- '--bins' . | grep -v -- '--lib'`.
+  뒤엣것이 `--lib` 를 거르는 이유는 `--lib --bins` 를 **함께** 준 자리는 참이기 때문이다.
+- 갈아끼운 조합 인용(`--bin tasty`/`--bins` → `--lib`): `.githooks/pre-commit` 의
+  `suggest_target`, `scripts/survey-guard-move.sh`,
+  [`../dev-guide/ci-gates.md`](../dev-guide/ci-gates.md),
   [`../dev-guide/self-verification.md`](../dev-guide/self-verification.md),
   [`../dev-guide/unit-test-isolation.md`](../dev-guide/unit-test-isolation.md),
+  [`../dev-guide/guard-relocation.md`](../dev-guide/guard-relocation.md),
   [`../dev-guide/context-menu.md`](../dev-guide/context-menu.md),
   [`../design/systems/theme.md`](../design/systems/theme.md),
   [`0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md`](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md),
   `src/platform/native_menu/linux.rs`, `src/source_guards/gallery_copied_dimensions.rs`,
   `src/source_guards/gallery_specimen_parity.rs`.
-- **날짜가 붙은 실측 안의 `--bin tasty` 는 그대로 뒀다** — 그 수를 낸 조합의 이름이라
-  갈아끼우면 측정과 모수가 갈린다([ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
-  해당 자리: `docs/dev-guide/ci-gates.md` 의 2026-09-06 실측, `docs/dev-guide/guard-population.md`
-  의 2026-09-08 실측 둘, `src/state/tests.rs`, `src/app/window_access.rs`,
-  `src/source_guards/modifier_hint_paint_order.rs`.
+- **과거 실측이 든 모수 이름은 그대로 뒀다** — 그 수를 낸 조합의 이름이라 갈아끼우면
+  측정과 모수가 갈린다([ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+  기준은 "날짜가 붙었는가" 가 아니라 **"그 자리가 과거 실측인가"** 다 — 대부분 날짜를 달고
+  있지만 하나는 안 달고 있고, 날짜의 유무가 계보를 바꾸지는 않는다.
+  해당 자리: `docs/dev-guide/ci-gates.md` 의 2026-09-06 실측,
+  `docs/dev-guide/guard-population.md` 의 2026-09-08 실측 둘, `src/state/tests.rs`(2026-09-06),
+  `src/app/window_access.rs`(2026-09-08), `src/source_guards/headless_app_layer_coverage.rs`
+  의 2026-09-10 실측 넷(`--bins` 축), 그리고 **날짜가 없는**
+  `src/source_guards/modifier_hint_paint_order.rs` 의 변이 실측.
 - 빌드 가이드의 해당 절: [`../dev-guide/build.md`](../dev-guide/build.md) "워크스페이스 구조".
 - **이 결정이 발동시킨 재검토 조건**: [ADR-0123](0123-layering-guard-excludes-cfg-test-modules.md)
   의 셋째 조건("`tasty` 에 `[lib]` 타깃이 생긴다")이 실제로 발화했다(채널:
