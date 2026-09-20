@@ -75,8 +75,15 @@ impl 을 **타입을 소유한 `tasty-file-format` 에 둔다.** 그 크레이�
 
 ## References
 
-- `docs/architecture/index.md` 의 도메인-IO 절 — 예외 둘을 본문에 적는 자리. (결정이 실현된 현재 위치)
+- `docs/architecture/index.md` 의 도메인-IO 절 — 예외를 이름과 이유로 적는 자리. 지금 거기
+  적힌 수는 **셋**이다. **이 ADR 본문(Decision·Consequences)의 "둘" 은 결정 시점의 수이고
+  갱신하지 않는다**(템플릿의 좌표 예외) — 값이 둘에서 셋이 됐다는 것은 위 재검토 조건이
+  발화했다는 뜻이고, 소진한 자리는 아래 ADR-0318 이다. (결정이 실현된 현재 위치)
 - `crates/tasty-doc-guards/tests/architecture_layer_order_holds.rs` 의 `EXCEPTIONS` — 가드가 읽는 자리. (결정이 실현된 현재 위치)
 - `crates/tasty-file-format/src/registry.rs` 의 `impl FileFormatRegistryPort for FileFormatRegistry` — 예외의 전부. (결정이 실현된 현재 위치)
 - [ADR-0089](0089-crate-split-follows-dependency-direction.md) — 같은 절의 형제 예외 `tasty-remote` → `tasty-ipc`.
+- [ADR-0318](0318-bundled-handler-defaults-become-a-crate-constant.md) — 같은 뿌리(고아 규칙)의
+  셋째 예외 `tasty-file-handler` → `tasty-plugin-protocol` 을 더하면서 **위 재검토 조건을
+  소진한 자리**. 절 경계를 다시 그리지 않기로 한 근거와, 문턱을 셋에서 넷으로 옮기는 결정이
+  거기 있다.
 - [ADR-0194](0194-code-citations-name-symbols-not-line-numbers.md) — 코드 인용은 심볼 이름으로.
