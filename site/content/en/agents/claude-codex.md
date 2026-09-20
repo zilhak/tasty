@@ -1,4 +1,4 @@
-<!-- source-hash: 6dc56c6a6bcc -->
+<!-- source-hash: cd9e4d63469f -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -105,8 +105,7 @@ Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.lo
 
 Log messages follow the app language. The file is truncated at 256 KiB. When a claude child and a
 codex child write to the same log, **a line is either there whole or not there at all** - two lines
-never interleave and a line is never cut in the middle. Truncation drops only lines written after
-the file passed 256 KiB, and it drops whole lines. **Restarting tasty clears
+never interleave and a line is never cut in the middle. **Restarting tasty clears
 the completion log the previous run left behind** - lines written before a restart cannot be read
 back afterwards. You can read the file without Monitor, but file reading alone guarantees neither
 automatic resumption nor permanent retention.
@@ -114,9 +113,10 @@ automatic resumption nor permanent retention.
 What the log keeps is **the tasty instance you are running right now**, and the size limit is
 **bytes only**. There is no time limit and no limit on the number of files - the completion log of
 a tab you closed stays where it is until the next restart. At 256 KiB the file is **emptied whole
-rather than trimmed back to the last 256 KiB**, so anything you had not read yet goes with it. How
-much was thrown away is written to the log at that moment, so you can trace afterwards why a
-notification never arrived.
+rather than trimmed back to the last 256 KiB**, so anything you had not read yet goes with it.
+What disappears here is whole lines too - a line is never cut in the middle. How much was thrown
+away is written to the log at that moment, so you can trace afterwards why a notification never
+arrived.
 
 **Do not run two copies of tasty against the same data folder.** The one that starts later wipes
 the completion-log folder as it boots, which takes the live log the earlier one was writing to.
