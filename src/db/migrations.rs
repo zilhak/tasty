@@ -121,6 +121,36 @@ mod tests {
         assert_eq!(ver, SCHEMA_VERSION);
     }
 
+    /// 이미 `SCHEMA_VERSION` 인 DB 에도 `tutorial_progress` 가 보장된다.
+    ///
+    /// **왜 이것을 따로 고정하나.** fresh-start 정책은 마이그레이션 체인이 없다는 뜻이고,
+    /// 그래서 v1 이 나간 뒤에 생긴 테이블은 `current == SCHEMA_VERSION` 갈래의 additive
+    /// ensure 로만 기존 DB 에 닿는다. 그 갈래는 버전을 안 올리므로 스키마 변경을 여기에
+    /// 얹어도 버전 값으로는 아무 신호가 안 난다 — 실측하면 그 줄을 지워도 나머지 시험이
+    /// 전부 초록이었다. 없으면 기존 사용자의 튜토리얼 진행이 런타임 warn 으로만 깨진다.
+    #[test]
+    fn an_existing_database_still_gets_the_tutorial_table() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        // v1 이 나갈 때의 DB — 본 스키마만 있고 뒤에 생긴 테이블은 없다.
+        conn.execute_batch(SCHEMA_SQL).unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
+
+        ensure_schema(&mut conn).unwrap();
+
+        let found: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tutorial_progress'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            found, 1,
+            "additive ensure did not reach an existing database"
+        );
+    }
+
     #[test]
     fn schema_mismatch_returns_specific_error() {
         let mut conn = Connection::open_in_memory().unwrap();

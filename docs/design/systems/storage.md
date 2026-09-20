@@ -28,8 +28,17 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
 
 - `SCHEMA_VERSION` 상수 하나. `ensure_schema()` 가 `PRAGMA user_version` 을 보고 분기:
   - `0`(새 DB) → `SCHEMA_SQL` 1회 적용 + `user_version` 을 `SCHEMA_VERSION` 으로 박음.
-  - `== SCHEMA_VERSION` → no-op.
+  - `== SCHEMA_VERSION` → **additive ensure**. `CREATE TABLE IF NOT EXISTS` 만 다시 돌린다.
   - 그 외 → `SchemaMismatch{expected, found}` 에러 → 호출자가 사용자에게 안내 후 종료.
+
+**additive ensure 가 이 정책의 유일한 예외 통로다.** v1 이 나간 뒤에 생긴 테이블
+(`tutorial_progress` — [ADR-0260](../../adr/0260-tutorial-progress-belongs-to-user-state.md))은
+버전을 올리지 않고 그 갈래로 기존 DB 에 닿는다. 그래서 **거기에 얹는 스키마 변경은 버전
+값으로 아무 신호를 내지 않는다** — 실측하면 그 줄을 지워도 나머지 시험이 전부 초록이었다.
+지금은 `an_existing_database_still_gets_the_tutorial_table` 이 그 갈래를 고정한다. 새
+테이블을 이 통로로 더하면 그 시험을 함께 넓혀라. **`CREATE TABLE IF NOT EXISTS` 가 아닌
+것**(컬럼 변경·데이터 이동)을 여기 넣는 것은 마이그레이션이고, 그것이 필요하면
+`SCHEMA_VERSION` 을 올려 fresh-start 를 정면으로 다시 논의해야 한다.
 
 ### v1 테이블
 
