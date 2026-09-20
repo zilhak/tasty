@@ -86,7 +86,7 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 시험도 안 깬다.
 
 ```bash
-grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v ':[0-9]\+: *//'
+grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]\+:[[:space:]]*//'
 # 두 줄 — 둘 다 cell_palette 다
 ```
 
@@ -99,8 +99,20 @@ grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v ':[0-9]\+: */
 좁힌 좌변은 그 형태를 못 본다. 실측(base `63a777ecc`, 좌변은 위 명령 그대로 —
 `renderer.rs` + `renderer/` 아래 **다섯 파일** 전수): `use crate::` 는 10 줄, 위 두
 단계는 12 줄이고 **차이가 정확히 그 두 자리**다. 반대로 위 두 단계는 블록 주석·문자열
-리터럴 안의 `crate::` 를 그대로 세는데, 그건 더 많이 잡는 방향이라 조용한 통과를
-만들지 않는다.
+리터럴 안의 `crate::` 를 그대로 세는데, 그건 더 많이 잡는 방향이라 눈으로 한 번 갈라
+읽으면 된다.
+
+**이 재는 법이 못 보는 것** — "조용한 통과가 없다" 고는 말할 수 없다. 두 갈래다.
+
+- **닫은 것**: `grep -v` 의 패턴을 줄머리에 고정했다(`^[^:]*:[0-9]\+:` 뒤에서만 `//` 를
+  본다). 고정 전에는 그 패턴이 줄 어디에서든 맞아, 진짜 코드 줄이라도 후행 주석에
+  `파일:줄:` 인용이 들어 있으면 통째로 버려졌다. 탐침
+  `pub const _P: bool = crate::state::FLAG; // see <파일>:99: // gui gate` 가
+  고정 전 필터 뒤 **0**, 고정 뒤 **남는다**. 덤으로 탭으로 들여쓴 줄 주석도 이제 버려진다
+  (옛 패턴의 ` *//` 는 탭을 안 먹었다).
+- **못 닫는 것**: `crate::` 라는 **글자가 없는** 본체 의존은 어떤 텍스트 술어로도 안 보인다.
+  탐침 둘 다 필터 뒤 목록에 안 나온다 — `use super::super::super::state::AppState;` 와
+  `use crate as c;` + `c::state::AppState`. 이건 grep 의 한계라 리뷰가 봐야 한다.
 
 **이 두 수를 다시 잴 때 좌변을 줄이지 마라.** `renderer.rs` 와 `line_render.rs` 둘만
 꺼내 세면 `renderer/pipeline.rs` 의 `use crate::font::…` 한 줄이 빠져 10·12 가 9·11 로

@@ -17,7 +17,7 @@
 //! 렌더러와 헤드리스 핸들러가 같은 자리를 봐야 한다. 재는 법:
 //!
 //! ```bash
-//! grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v ':[0-9]\+: *//'
+//! grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v '^[^:]*:[0-9]\+:[[:space:]]*//'
 //! # 두 줄 — 둘 다 cell_palette 다
 //! ```
 //!
@@ -28,7 +28,17 @@
 //! 박힌 `crate::selection::is_selected(...)` 였고, 좁힌 좌변은 그것을 못 본다
 //! (base `63a777ecc` 의 좌변 **다섯 파일** 전수에서 `use crate::` 는 10, 위 두 단계는
 //! 12 를 낸다. 차가 정확히 그 두 자리다). 블록 주석·문자열 리터럴 안의 `crate::` 는
-//! 그대로 세는데, 그건 더 많이 잡는 쪽이라 조용한 통과를 안 만든다.
+//! 그대로 세는데, 그건 더 많이 잡는 쪽이라 눈으로 한 번 갈라 읽으면 된다.
+//!
+//! **필터가 못 보는 것도 적어 둔다 — "조용한 통과가 없다" 고 말할 수 없다.**
+//! 패턴을 줄머리에 고정한 것은(`^[^:]*:[0-9]\+:` 뒤에서만 `//` 를 본다) 한 형태를
+//! 닫기 위해서다 — 고정 전에는 진짜 코드 줄이라도 후행 주석에 `파일:줄:` 인용이
+//! 들어 있으면 통째로 버려졌다(탐침 `pub const _P: bool = crate::state::FLAG;
+//! // see <파일>:99: // gui gate` 가 필터 뒤 0 이었다. 고정 뒤엔 남는다).
+//! 그래도 **`crate::` 라는 글자가 없는 본체 의존은 어떤 형태로도 안 보인다** —
+//! 탐침 둘로 쟀다: `use super::super::super::state::AppState;` 와
+//! `use crate as c;` + `c::state::AppState`, 둘 다 필터 뒤 목록에 안 나온다.
+//! 그 형태는 grep 으로 못 막으니 리뷰가 봐야 한다.
 //!
 //! ★ 저 좌변은 `renderer.rs` + `renderer/` **아래 전부**다 — 두 파일이 아니다.
 //! `renderer/pipeline.rs` 에도 `use crate::` 가 한 줄 있고(`shaders.rs`·`types.rs` 는
