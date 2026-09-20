@@ -233,6 +233,7 @@ tasty-plugin-claude = { path = "crates/tasty-plugin-claude" }
 tasty-ipc = { path = "crates/tasty-ipc" }
 tasty-cli = { path = "crates/tasty-cli" }
 tasty-model = { path = "crates/tasty-model" }
+tasty-file-format = { path = "crates/tasty-file-format" }
 tasty-remote = { path = "crates/tasty-remote" }
 tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-ssh = { path = "crates/tasty-ssh" }

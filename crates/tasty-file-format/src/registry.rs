@@ -105,7 +105,7 @@ impl FileFormatRegistry {
     /// 자료구조 조작만 하므로 패닉이 나도 불변식은 성립한다 — 복구가 맞다
     /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
     pub(super) fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
-        crate::poison::recover_read(
+        tasty_utils::poison::recover_read(
             self.inner.read(),
             "file format registry",
             &self.poison_reported,
@@ -114,7 +114,7 @@ impl FileFormatRegistry {
 
     /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
     pub(super) fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
-        crate::poison::recover_write(
+        tasty_utils::poison::recover_write(
             self.inner.write(),
             "file format registry",
             &self.poison_reported,

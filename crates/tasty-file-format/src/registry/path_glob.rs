@@ -15,7 +15,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 /// → `GlobSet` 내 인덱스. 동일 패턴 문자열은 여러 detector 가 공유해도 한 번만
 /// 컴파일한다.
 #[derive(Default)]
-pub(in crate::file::format) struct PathGlobCache {
+pub(crate) struct PathGlobCache {
     set: Option<GlobSet>,
     index_of: HashMap<String, usize>,
 }
@@ -28,7 +28,7 @@ impl PathGlobCache {
     /// (`config::validate_detector_decl`)에 이미 검증됐다 — 따라서 여기서의 컴파일
     /// 실패는 정상 경로에서 발생하지 않아야 한다. 그래도 방어적으로, 실패한
     /// 패턴은 warn 만 남기고 항상 비매칭으로 취급한다(전체 rebuild 를 막지 않음).
-    pub(in crate::file::format) fn rebuild<'a>(patterns: impl Iterator<Item = &'a str>) -> Self {
+    pub(crate) fn rebuild<'a>(patterns: impl Iterator<Item = &'a str>) -> Self {
         let mut builder = GlobSetBuilder::new();
         let mut index_of = HashMap::new();
         for pattern in patterns {
@@ -61,7 +61,7 @@ impl PathGlobCache {
 
     /// `name`(파일명 — 슬래시 없는 단일 컴포넌트)에 매칭되는 패턴들의 인덱스 집합을
     /// 1회 계산한다. 호출자는 파일 하나당 이걸 한 번만 호출해 재사용해야 한다.
-    pub(in crate::file::format) fn matched_indices(&self, name: &str) -> HashSet<usize> {
+    pub(crate) fn matched_indices(&self, name: &str) -> HashSet<usize> {
         match &self.set {
             Some(set) => set.matches(name).into_iter().collect(),
             None => HashSet::new(),
@@ -70,11 +70,7 @@ impl PathGlobCache {
 
     /// 특정 패턴 문자열이 (이미 계산된) 매칭 인덱스 집합에 포함되는지 — rule 평가
     /// 시점의 O(1) membership 조회.
-    pub(in crate::file::format) fn pattern_matched(
-        &self,
-        pattern: &str,
-        matched: &HashSet<usize>,
-    ) -> bool {
+    pub(crate) fn pattern_matched(&self, pattern: &str, matched: &HashSet<usize>) -> bool {
         self.index_of
             .get(pattern)
             .is_some_and(|idx| matched.contains(idx))

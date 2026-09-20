@@ -155,7 +155,7 @@ fn build_target_table(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file::format::evaluator::DeepCtx;
+    use crate::evaluator::DeepCtx;
     use std::path::PathBuf;
     use tempfile::TempDir;
 

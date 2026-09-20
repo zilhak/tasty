@@ -1,0 +1,27 @@
+[package]
+name = "tasty-file-format"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "File format identification for Tasty — detector registry, rule evaluation, and the Lua/structure evaluators. Domain-only: no host, GUI, or IPC coupling."
+
+[dependencies]
+tasty-utils = { path = "../tasty-utils" }
+# plugin 이 형식 레지스트리를 조회하는 port trait 이 wire 정의 크레이트에 산다.
+# 고아 규칙상 그 impl 은 타입을 소유한 이 크레이트에만 둘 수 있다.
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+globset = "0.4"
+tempfile = "3"
+infer = { version = "0.16", default-features = false }
+jsonschema = { version = "0.30", default-features = false }
+mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

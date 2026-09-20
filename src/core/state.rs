@@ -919,9 +919,7 @@ impl CoreState {
             ),
             file_format: {
                 let reg = crate::file::format::FileFormatRegistry::new();
-                reg.install_host_defaults(include_str!(
-                    "../file/format/defaults/default-file-format.toml"
-                ));
+                reg.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
                 if let Some(path) = file_handler_user_config_path() {
                     reg.install_user_config(&path);
                 }

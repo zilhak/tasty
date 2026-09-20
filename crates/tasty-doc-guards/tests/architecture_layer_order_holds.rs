@@ -37,12 +37,21 @@ use tasty_doc_guards::crate_layers::{internal_deps, inversions, sections};
 const DOC: &str = "docs/architecture/index.md";
 
 /// 문서가 본문에 이유와 함께 적은 예외 — `(소비자, 의존, 근거)`.
-const EXCEPTIONS: &[(&str, &str, &str)] = &[(
-    "tasty-remote",
-    "tasty-ipc",
-    "원격 client 능력이 IPC 호출이고 합칠 후보 둘이 각각 더 나쁜 의존을 들인다 (ADR-0089). \
+const EXCEPTIONS: &[(&str, &str, &str)] = &[
+    (
+        "tasty-file-format",
+        "tasty-plugin-protocol",
+        "plugin 이 형식 레지스트리를 조회하는 port trait 이 wire 크레이트에 살고, Rust 고아 \
+         규칙상 그 impl 은 타입을 소유한 쪽에만 둘 수 있다. \
+         docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
+    ),
+    (
+        "tasty-remote",
+        "tasty-ipc",
+        "원격 client 능력이 IPC 호출이고 합칠 후보 둘이 각각 더 나쁜 의존을 들인다 (ADR-0089). \
      docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
-)];
+    ),
+];
 
 fn crate_names(root: &std::path::Path) -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(root.join("crates"))

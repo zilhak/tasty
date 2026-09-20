@@ -5689,6 +5689,7 @@ dependencies = [
  "tasty-design-tokens",
  "tasty-doc-guards",
  "tasty-egui-theme",
+ "tasty-file-format",
  "tasty-font",
  "tasty-git-core",
  "tasty-hooks",
@@ -5830,6 +5831,23 @@ dependencies = [
  "tasty-i18n",
  "tasty-type-appearance",
  "tasty-type-geometry",
+ "tracing",
+]
+
+[[package]]
+name = "tasty-file-format"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "infer",
+ "jsonschema",
+ "mlua",
+ "serde",
+ "serde_json",
+ "tasty-plugin-protocol",
+ "tasty-utils",
+ "tempfile",
+ "toml 0.8.2",
  "tracing",
 ]
 

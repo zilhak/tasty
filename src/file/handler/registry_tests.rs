@@ -251,7 +251,7 @@ fn make_user_toml(toml_text: &str) -> tempfile::TempDir {
 #[test]
 fn user_pdf_detector_and_handler_round_trip() {
     let formats = FileFormatRegistry::new();
-    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    formats.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
 
     let handlers = FileHandlerRegistry::new();
     load_host(&handlers);
@@ -409,7 +409,7 @@ fn export_empty_when_no_user_contributions() {
 #[test]
 fn directory_target_does_not_match_file_detectors() {
     let formats = FileFormatRegistry::new();
-    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    formats.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
     let handlers = FileHandlerRegistry::new();
     load_host(&handlers);
 
@@ -444,7 +444,7 @@ fn install_markdown_plugin_detector(formats: &crate::file::format::FileFormatReg
 fn attach_detector_info_stores_arc_and_returns_clone() {
     use crate::file::format::FileFormatRegistry;
     let formats = std::sync::Arc::new(FileFormatRegistry::new());
-    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    formats.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
     install_markdown_plugin_detector(&formats);
 
     let handlers = FileHandlerRegistry::new();
@@ -490,7 +490,7 @@ fn markdown_handler_json() -> Vec<serde_json::Value> {
 fn boot_registration_via_manifest_json_enables_dispatch() {
     use tasty_plugin_protocol::host_port::{FileFormatRegistryPort, FileHandlerRegistryPort};
     let formats = FileFormatRegistry::new();
-    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    formats.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
     let handlers = FileHandlerRegistry::new();
     load_host(&handlers);
 
@@ -565,7 +565,7 @@ fn attach_detector_info_second_call_is_ignored() {
     use crate::file::format::FileFormatRegistry;
     let formats_a = std::sync::Arc::new(FileFormatRegistry::new());
     let formats_b = std::sync::Arc::new(FileFormatRegistry::new());
-    formats_a.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    formats_a.install_host_defaults(crate::file::format::HOST_DEFAULTS_TOML);
     install_markdown_plugin_detector(&formats_a);
     // formats_b 는 host default + plugin detector 안 깐 빈 registry.
 

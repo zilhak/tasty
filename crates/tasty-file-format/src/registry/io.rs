@@ -11,11 +11,11 @@ use super::helpers::{
     rule_kind_eq, rule_kind_to_toml,
 };
 use super::{DetectorContribution, ExtensionPriorityEntry, FileFormatRegistry};
-use crate::file::format::config::{
+use crate::config::{
     DetectorDecl, DetectorRuleDecl, ExtensionPriorityDecl, validate_detector_decl,
 };
-use crate::file::format::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
-use crate::file::format::types::{
+use crate::evaluator::{DeepCtx, evaluate_cheap, evaluate_deep};
+use crate::types::{
     DetectDepth, DetectorId, DetectorRule, DetectorRuleKind, FileFormatDetector, FileTarget,
     RuleOrigin,
 };

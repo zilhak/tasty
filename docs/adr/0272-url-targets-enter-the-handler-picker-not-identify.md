@@ -97,7 +97,7 @@ detector 없이 핸들러 목록으로 직행한다. 각 액션이 URL 을 받�
 ## References
 
 - 코드 근거(결정이 실현된 현재 위치): `src/file/dispatch.rs` 의 `DispatchTarget` · `handler_accepts_target` ·
-  `picker_lists` · `execute_handler_action`, `src/file/format/types.rs` 의 `looks_like_url`,
+  `picker_lists` · `execute_handler_action`, `crates/tasty-file-format/src/types.rs` 의 `looks_like_url`,
   `src/adapters/ipc/handler/file_handler.rs` 의 `handle_dispatch`
 - [file-handler 기능 문서](../features/file-handler/index.md) · [terminal-link 기능 문서](../features/terminal-link/index.md)
 - [ADR-0047](0047-shared-hook-handler-registry-source-gate.md) — registry 미러링 선례(별도 detector 축의 비용 근거)

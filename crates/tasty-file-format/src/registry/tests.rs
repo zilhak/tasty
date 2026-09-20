@@ -12,7 +12,7 @@ fn target(p: &str) -> FileTarget {
 /// markdown surface 가 별도 plugin 으로 분리됐기에, 기존 테스트가 가정하던
 /// markdown detector 동작을 plugin install 로 흉내낸다.
 fn install_host_with_markdown(reg: &FileFormatRegistry) {
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    reg.install_host_defaults(crate::HOST_DEFAULTS_TOML);
     let decls = vec![DetectorDecl {
         id: "markdown".into(),
         display_name_i18n_key: Some("file_handler.format.markdown".into()),
