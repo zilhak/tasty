@@ -75,8 +75,9 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 [ADR-0305](../../adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md),
 노출 표면은 [ADR-0333](../../adr/0333-the-pressure-gauge-is-read-by-one-local-only-method-and-split-by-population.md)).
 재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간 · plugin 왕복 · DB 지연의 count·sum·max 이고,
-평균은 파생이라 메서드로 낸다. 분위수는 답하지 못한다. 여기에 **시간이 아닌 축**이 하나
-더 있다 — 동시 IPC 연결 자리다.
+평균은 파생이라 메서드로 낸다. 시간 축 셋(`db` 제외)에는 **고정 경계 분포**가 하나씩 더
+붙는다([ADR-0340](../../adr/0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md)).
+여기에 **시간이 아닌 축**이 하나 더 있다 — 동시 IPC 연결 자리다.
 
 `system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
@@ -118,6 +119,28 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 보다 **뒤에** 뜨기 때문이다. 서버가 안 뜬 조립(단위 시험)에서는 `accepted` 가 0 으로 남아
 "연결을 받은 적이 없다" 로 읽힌다.
 
+#### 분포 — 평균·최대가 못 답하는 것
+
+`queue_before_gate.wait_us_hist` · `handler_after_gate.us_hist` ·
+`plugin_round_trip.us_hist` 가 같은 관측의 **분포**를 든다. 평균과 최대만으로는 "전부
+조금씩 느린가, 대부분 빠른데 꼬리가 몇 건인가" 가 안 갈린다 — 넷 중 한 건이 1 s 이고 셋이
+0 인 분포와 넷이 전부 250 ms 인 분포는 count·sum·평균이 **전부 같다.** 처방은 반대다
+(뒤는 용량, 앞은 그 한 건의 원인).
+
+경계는 10 µs 부터 1 s 까지 반-십진(√10 ≈ 3.16 배) **열한 칸 + 넘침 한 칸**이고
+`LATENCY_BUCKET_BOUNDS_US` 가 정본이다. 파생되지 않은 고른 값이며, 근거는 ADR-0333 의
+실측(큐 대기 max 25.4 ms · handler max 0.48 ms)과 plugin 왕복이 초 단위까지 간다는 것이다.
+응답은 덩어리마다 `bounds_us` 와 `counts` 를 **함께** 싣는다 — 값과 경계가 떨어지면
+소비자가 경계를 복제하고 그 복제본이 갈린다. `counts` 는 `bounds_us` 보다 한 칸 길고
+**누적이 아니다**: 칸끼리 겹치지 않아 합이 관측 수이고(Prometheus 의 `le` 누적 버킷과
+다르다), 마지막 칸은 상한이 없어 "그 상한을 넘었다" 까지만 말한다 — 얼마나 넘었는지는
+같은 덩어리의 `us_max` 가 답한다. **분위수는 호스트가 계산하지 않는다**: 버킷 해상도
+안에서만 답할 수 있는 값이라 한 수로 내놓으면 없는 정밀도를 말하게 된다.
+
+`db` 에는 분포가 없다 — 그 게이지는 `tasty-memory` 에 살고 histogram 타입은
+`tasty-telemetry` 에 있어 의존 방향이 반대다. `connections` 에도 없다 — 시간이 아니라
+자리라 분포를 잴 축이 아니다.
+
 두 수의 차는 "거부된 수" 가 아니다 — 게이트를 통과하고도 `handle_checked_request` 를 안
 지나는 갈래가 있다(gui 의 app 층 메서드는 그 자리에서 답하고 돌아간다). 그래서 응답은
 두 모수를 나란히 두고 뺄셈을 하지 않는다.
@@ -125,7 +148,8 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 관측이 없는 평균은 `null` 이다 — 0 이면 "기다림이 없었다" 와 "잰 적이 없다" 가 같은 값이 된다.
 
 창이 없다는 한계는 그대로다: 프로세스 수명 누계라 "지금 밀리는 중" 과 "부팅 직후 한 번
-밀렸다" 가 같은 max 로 보인다.
+밀렸다" 가 같은 max 로 보인다. 분포는 그 한계를 **반만** 푼다 — 부팅 직후의 한 건은 꼬리
+칸의 `1` 로 남아 그것이 소수임은 보이지만, 그 한 건이 언제였는지는 여전히 안 보인다.
 
 ## 인터페이스
 

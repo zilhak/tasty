@@ -129,3 +129,4 @@ telemetry 행을 한 건도 읽지 않으므로 `record_ipc_call` 을 거부까�
   관측 자리 셋 — `App::process_ipc` (`src/app/ipc.rs`) · `pump_ipc`
   (`src/boot/headless_dispatch.rs`) · `handle_checked_request`
   (`src/adapters/ipc/handler.rs`).
+- 부분 개정: [0340](0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md) (분위수 유보 조항 개정 — 고정 경계 histogram 이 들어왔다)

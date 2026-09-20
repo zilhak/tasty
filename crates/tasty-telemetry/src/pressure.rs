@@ -13,9 +13,89 @@
 //! **시간 축과 자원 축이 따로 있다**: 앞의 셋은 *얼마나 걸렸나* 를 재고
 //! [`ConnectionStats`] 는 *자리가 남았나* 를 잰다. 요청이 하나도 안 느려도 연결 자리가
 //! 차면 새 client 는 못 붙으므로, 시간만 재는 게이지로는 그 포화가 안 보인다.
+//!
+//! **시간 축은 평균·최대 옆에 분포를 함께 든다**([`LatencyHistogram`]). 평균과 최대만
+//! 있으면 답하지 못하는 물음이 있다 — "전부 조금씩 느린가, 대부분 빠른데 꼬리가 몇 건
+//! 있는가". 두 상태는 같은 평균과 같은 최대를 낼 수 있고, 처방이 반대다(앞은 용량,
+//! 뒤는 그 몇 건의 원인). 버킷은 고정 경계라 관측 수와 무관하게 크기가 안 자란다 —
+//! 그것이 분위수를 정확히 주는 대신 버킷 해상도로 접는 대가다.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+/// 지연 버킷의 상한(마이크로초, `le` — 상한과 같은 값은 그 버킷에 든다).
+///
+/// **이 경계는 파생되지 않는다** — 고른 값이다. 고른 근거는 두 가지다. ① 실측:
+/// ADR-0333 이 격리 인스턴스에서 잰 값이 큐 대기 max 25.4 ms · handler max 0.48 ms
+/// 였고, plugin 왕복은 초 단위까지 간다. ② 해상도: 반-십진(√10 ≈ 3.16 배) 간격이라
+/// 10 µs 부터 1 s 까지 열한 칸으로 덮는다. 이 간격은 "밀렸다" 와 "안 밀렸다" 를 가르기에
+/// 충분하고, 그보다 촘촘하게 하면 게이지가 갖고 있지도 않은 정밀도를 말하게 된다.
+///
+/// 상한을 넘은 관측은 [`LATENCY_BUCKET_BOUNDS_US`] 밖의 마지막 칸으로 간다. 그 칸에는
+/// 상한이 없으므로 **"1 초를 넘었다" 까지만 말하고 얼마나 넘었는지는 max 가 답한다** —
+/// histogram 과 max 를 함께 두는 이유가 그것이다.
+pub const LATENCY_BUCKET_BOUNDS_US: [u64; 11] = [
+    10, 32, 100, 316, 1_000, 3_162, 10_000, 31_623, 100_000, 316_228, 1_000_000,
+];
+
+/// 버킷 수 = 유한 상한 수 + 넘침 한 칸.
+pub const LATENCY_BUCKET_COUNT: usize = LATENCY_BUCKET_BOUNDS_US.len() + 1;
+
+/// 관측이 어느 버킷에 드는지. 상한이 열한 개뿐이라 선형 탐색이 이분 탐색에 안 진다.
+fn bucket_of(us: u64) -> usize {
+    LATENCY_BUCKET_BOUNDS_US
+        .iter()
+        .position(|&bound| us <= bound)
+        .unwrap_or(LATENCY_BUCKET_BOUNDS_US.len())
+}
+
+/// 고정 경계 지연 histogram. 관측 수와 무관하게 원자값 [`LATENCY_BUCKET_COUNT`] 개다.
+///
+/// 이 크레이트의 다른 게이지와 같은 성질을 공유한다: 프로세스 수명 누계 · 고정 크기 ·
+/// `Relaxed` · 스냅샷이 원자적이지 않음. 스냅샷이 원자적이지 않다는 것은 여기서 한 가지
+/// 형태로 드러난다 — **칸들의 합이 같은 순간의 `count` 와 안 맞을 수 있다.** 읽는 도중
+/// 다른 스레드가 올린 것이 뒤쪽 칸에만 반영되기 때문이다. 진단값이라 허용한다.
+#[derive(Debug, Default)]
+pub struct LatencyHistogram {
+    counts: [AtomicU64; LATENCY_BUCKET_COUNT],
+}
+
+impl LatencyHistogram {
+    /// 관측 하나를 접는다. 1 마이크로초 미만은 `as_micros` 가 0 으로 접으므로 첫 칸에
+    /// 든다 — 그 칸이 "10 µs 이하" 라 옳다.
+    pub fn record_us(&self, us: u64) {
+        self.counts[bucket_of(us)].fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn snapshot(&self) -> HistogramSnapshot {
+        let mut counts = [0u64; LATENCY_BUCKET_COUNT];
+        for (dst, src) in counts.iter_mut().zip(self.counts.iter()) {
+            *dst = src.load(Ordering::Relaxed);
+        }
+        HistogramSnapshot { counts }
+    }
+}
+
+/// [`LatencyHistogram`] 의 한 시점 읽기.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct HistogramSnapshot {
+    /// 버킷마다의 관측 수. **누적이 아니다** — 칸끼리 겹치지 않고 합이 전체 관측 수다
+    /// (Prometheus 의 `le` 누적 버킷과 다르다). 마지막 칸은 마지막 상한을 넘은 것들이다.
+    pub counts: [u64; LATENCY_BUCKET_COUNT],
+}
+
+impl HistogramSnapshot {
+    /// 칸에 붙는 상한. 값과 경계를 **같은 자리에서** 내보내려고 여기 둔다 — 소비자가
+    /// 경계를 자기 쪽에 복제하면 그 복제본이 갈린다.
+    pub fn bounds_us() -> &'static [u64; LATENCY_BUCKET_BOUNDS_US.len()] {
+        &LATENCY_BUCKET_BOUNDS_US
+    }
+
+    /// 접힌 관측 수의 합.
+    pub fn total(&self) -> u64 {
+        self.counts.iter().sum()
+    }
+}
 
 /// 프로세스 수명 동안 누적되는 고정 크기 압력 집계.
 ///
@@ -42,6 +122,11 @@ pub struct PressureStats {
     handler_us_sum: AtomicU64,
     /// handler 실행 시간 최댓값(마이크로초).
     handler_us_max: AtomicU64,
+    /// 큐 대기 시간의 분포. sum·max 가 못 답하는 "꼬리인가 전체인가" 를 답한다.
+    queue_wait_hist: LatencyHistogram,
+    /// handler 실행 시간의 분포. 위와 같은 이유로 따로 든다 — 두 모수를 한 histogram
+    /// 에 접으면 게이트 앞뒤가 다시 섞인다.
+    handler_hist: LatencyHistogram,
 }
 
 /// 마이크로초로 접는다. 나노초를 그대로 더하면 `u64` 가 약 584 년에 넘치는데, 그보다
@@ -69,6 +154,7 @@ impl PressureStats {
         let us = as_micros(waited);
         self.queue_wait_us_sum.fetch_add(us, Ordering::Relaxed);
         self.queue_wait_us_max.fetch_max(us, Ordering::Relaxed);
+        self.queue_wait_hist.record_us(us);
     }
 
     /// handler 하나가 실행에 쓴 시간. 큐 대기는 포함하지 않는다 — 그것이 이 둘을
@@ -78,6 +164,7 @@ impl PressureStats {
         self.handler_calls.fetch_add(1, Ordering::Relaxed);
         self.handler_us_sum.fetch_add(us, Ordering::Relaxed);
         self.handler_us_max.fetch_max(us, Ordering::Relaxed);
+        self.handler_hist.record_us(us);
     }
 
     /// 지금까지의 누계를 한 덩어리로 읽는다. 위 struct 주석대로 **원자적 스냅샷이
@@ -92,6 +179,8 @@ impl PressureStats {
             handler_calls: self.handler_calls.load(Ordering::Relaxed),
             handler_us_sum: self.handler_us_sum.load(Ordering::Relaxed),
             handler_us_max: self.handler_us_max.load(Ordering::Relaxed),
+            queue_wait_hist: self.queue_wait_hist.snapshot(),
+            handler_hist: self.handler_hist.snapshot(),
         }
     }
 }
@@ -108,6 +197,8 @@ pub struct PressureSnapshot {
     pub handler_calls: u64,
     pub handler_us_sum: u64,
     pub handler_us_max: u64,
+    pub queue_wait_hist: HistogramSnapshot,
+    pub handler_hist: HistogramSnapshot,
 }
 
 impl PressureSnapshot {
@@ -151,6 +242,9 @@ pub struct PluginWaitStats {
     us_sum: AtomicU64,
     /// 그 최댓값(마이크로초).
     us_max: AtomicU64,
+    /// 왕복 시간의 분포. plugin 이 대체로 빠른데 몇 건만 초 단위인지, 전부 느린지를
+    /// 가른다 — 앞은 그 몇 건의 일이고 뒤는 plugin 자체의 일이다.
+    hist: LatencyHistogram,
 }
 
 impl PluginWaitStats {
@@ -160,6 +254,7 @@ impl PluginWaitStats {
         self.matched.fetch_add(1, Ordering::Relaxed);
         self.us_sum.fetch_add(us, Ordering::Relaxed);
         self.us_max.fetch_max(us, Ordering::Relaxed);
+        self.hist.record_us(us);
     }
 
     pub fn snapshot(&self) -> PluginWaitSnapshot {
@@ -167,6 +262,7 @@ impl PluginWaitStats {
             matched: self.matched.load(Ordering::Relaxed),
             us_sum: self.us_sum.load(Ordering::Relaxed),
             us_max: self.us_max.load(Ordering::Relaxed),
+            hist: self.hist.snapshot(),
         }
     }
 }
@@ -177,6 +273,7 @@ pub struct PluginWaitSnapshot {
     pub matched: u64,
     pub us_sum: u64,
     pub us_max: u64,
+    pub hist: HistogramSnapshot,
 }
 
 impl PluginWaitSnapshot {
@@ -402,5 +499,108 @@ mod tests {
             "요청은 하나도 안 들어왔다"
         );
         assert_eq!(conn.snapshot().refused_saturated, 1, "그래도 자리는 찼다");
+    }
+
+    // 버킷 경계는 `le` 다 — 상한과 **같은** 값은 그 칸에 든다. 이 경계가 배타적으로
+    // 바뀌면 같은 관측이 한 칸 뒤로 밀리므로 여기서 죽는다.
+    #[test]
+    fn an_observation_equal_to_a_bound_lands_in_that_bucket() {
+        let h = LatencyHistogram::default();
+        h.record_us(10);
+        h.record_us(11);
+        let c = h.snapshot().counts;
+        assert_eq!(c[0], 1, "10 µs 는 상한이 10 인 첫 칸이다");
+        assert_eq!(c[1], 1, "11 µs 는 다음 칸이다");
+    }
+
+    // 마지막 상한을 넘은 것은 **넘침 칸**으로 가고, 그 칸에는 상한이 없다.
+    #[test]
+    fn everything_past_the_last_bound_lands_in_the_overflow_bucket() {
+        let h = LatencyHistogram::default();
+        h.record_us(LATENCY_BUCKET_BOUNDS_US[LATENCY_BUCKET_BOUNDS_US.len() - 1] + 1);
+        h.record_us(u64::MAX);
+        let s = h.snapshot();
+        assert_eq!(s.counts[LATENCY_BUCKET_COUNT - 1], 2);
+        assert_eq!(s.total(), 2);
+        assert_eq!(
+            HistogramSnapshot::bounds_us().len(),
+            LATENCY_BUCKET_COUNT - 1,
+            "상한 수보다 칸이 하나 많다 — 그 하나가 넘침이다"
+        );
+    }
+
+    // 칸은 **누적이 아니다** — 겹치지 않고 합이 관측 수다. 누적(Prometheus `le`)으로
+    // 바뀌면 합이 관측 수의 배가 되어 여기서 죽는다.
+    #[test]
+    fn the_buckets_do_not_overlap() {
+        let h = LatencyHistogram::default();
+        for us in [1, 50, 5_000, 500_000] {
+            h.record_us(us);
+        }
+        let s = h.snapshot();
+        assert_eq!(s.total(), 4, "합이 관측 수여야 한다");
+        assert_eq!(s.counts.iter().filter(|&&n| n == 1).count(), 4);
+    }
+
+    // 평균과 최대가 같아도 분포는 다르다 — 그것이 histogram 을 더한 이유다.
+    // 여기서 둘은 sum·max·count 가 전부 같고 칸만 다르다.
+    #[test]
+    fn two_runs_with_the_same_mean_have_different_shapes() {
+        // 꼬리형: 한 건이 1 s, 나머지 셋이 0 — "대부분 빠른데 몇 건이 튄다".
+        let tail = PressureStats::default();
+        for us in [1_000_000, 0, 0, 0] {
+            tail.record_handler(Duration::from_micros(us));
+        }
+        // 고른형: 넷이 전부 250 ms — "전부 조금씩 느리다".
+        let spread = PressureStats::default();
+        for _ in 0..4 {
+            spread.record_handler(Duration::from_micros(250_000));
+        }
+
+        let t = tail.snapshot();
+        let p = spread.snapshot();
+        assert_eq!(t.handler_us_sum, p.handler_us_sum, "합이 같다");
+        assert_eq!(t.handler_calls, p.handler_calls, "건수가 같다");
+        assert_eq!(t.handler_us_mean(), p.handler_us_mean(), "평균이 같다");
+        assert_ne!(
+            t.handler_hist, p.handler_hist,
+            "평균이 같아도 분포는 달라야 한다 — 그것이 이 값의 존재 이유다"
+        );
+        assert_eq!(t.handler_hist.counts[0], 3, "꼬리형은 셋이 맨 앞 칸이다");
+        assert_eq!(p.handler_hist.counts[0], 0, "고른형은 맨 앞 칸이 비어 있다");
+    }
+
+    // 큐 대기와 handler 시간의 분포가 **섞이지 않는다.** 한 histogram 을 공유하면
+    // 게이트 앞뒤가 다시 한 수로 합쳐진다.
+    #[test]
+    fn the_two_time_moduli_keep_separate_distributions() {
+        let p = PressureStats::default();
+        p.record_queue_wait(Duration::from_millis(40));
+        p.record_handler(Duration::from_micros(2));
+        let s = p.snapshot();
+        assert_eq!(s.queue_wait_hist.total(), 1);
+        assert_eq!(s.handler_hist.total(), 1);
+        assert_eq!(s.handler_hist.counts[0], 1, "2 µs 는 맨 앞 칸");
+        assert_eq!(
+            s.queue_wait_hist.counts[0], 0,
+            "40 ms 가 앞 칸에 오면 안 된다"
+        );
+        assert_ne!(s.queue_wait_hist, s.handler_hist);
+    }
+
+    // plugin 왕복도 자기 분포를 든다 — 호스트 축과 별개다.
+    #[test]
+    fn a_plugin_round_trip_has_its_own_distribution() {
+        let host = PressureStats::default();
+        let plugin = PluginWaitStats::default();
+        host.record_handler(Duration::from_millis(2));
+        plugin.record(Duration::from_millis(900));
+        assert_eq!(plugin.snapshot().hist.total(), 1);
+        assert_eq!(
+            host.snapshot().handler_hist.total(),
+            1,
+            "호스트 칸에 plugin 왕복이 섞이면 안 된다"
+        );
+        assert_ne!(plugin.snapshot().hist, host.snapshot().handler_hist);
     }
 }

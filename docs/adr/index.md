@@ -303,5 +303,6 @@
 | 0335 | [`state.db` 는 GUI 부팅만 열고, 접근자의 `None` 은 뜻이 하나다](0335-the-state-database-is-opened-by-gui-boot-alone.md) | Accepted | 2026-09-20 | storage, headless, ownership, naming |
 | 0336 | [`tasty-font` 은 device 경계에서 갈린다 — wgpu 는 `gpu` feature 뒤로](0336-the-font-crate-splits-at-the-device-boundary.md) | Accepted | 2026-09-20 | build, cargo, features, headless, font, dependency-graph, wgpu, adr-0326 |
 | 0337 | [구조 op 실행은 도메인 값으로 답하고, 자원 회수는 cascade 한 자리가 소유한다](0337-structural-execution-answers-with-domain-values.md) | Accepted | 2026-09-20 | architecture, boundary, close, attach, cascade, resource-reclamation, hexagonal |
+| 0340 | [압력 응답은 자리를 따로 세고 시간에는 고정 경계 분포를 단다 — ADR-0305 의 histogram 유보 조항 개정](0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md) | Accepted | 2026-09-20 | telemetry, ipc, pressure, histogram, saturation, connections, observability, adr-0305, adr-0333 |
 | 0342 | [셀 렌더러는 크레이트를 직접 부르고, 본체 재수출을 거치지 않는다](0342-the-cell-renderer-names-the-crates-not-the-host-re-exports.md) | Accepted | 2026-09-20 | architecture, layering, renderer, selection, terminal-link, naming, headless, adr-0319, adr-0324 |
 | 0343 | [OS 경계는 폴더가 아니라 크레이트다 — 본체는 별칭으로 부른다](0343-the-os-boundary-is-a-crate.md) | Accepted | 2026-09-20 | architecture, platform, crate-split, layering, features, headless, cross-platform, adr-0331 |

@@ -120,6 +120,9 @@
   사건 피드가 `local_only(Read)` 로 간 결정. 같은 결론이지만 근거가 다르다(위 Context 2).
 - [telemetry](../features/telemetry/index.md) — "요청 압력 게이지 (프로세스 축)" 절이
   현재 운영 상태를 기술한다.
+- [ADR-0340](0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md) —
+  위 재검토 조건의 첫 항목("연결 수 게이지가 들어올 때 이 스키마가 맞는가")에 답한 결정.
+  `connections` 덩어리를 더하고 시간 덩어리 셋에 분포를 달았다.
 - [reference/api](../reference/api.md) — `system.pressure` 의 표면.
 - 코드 근거(결정이 실현된 **현재** 위치): `src/adapters/ipc/handler/pressure.rs` ·
   `crates/tasty-telemetry/src/pressure.rs` · `crates/tasty-memory/src/latency.rs` ·

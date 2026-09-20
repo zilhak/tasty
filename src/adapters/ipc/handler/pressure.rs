@@ -77,6 +77,27 @@
 //! 내보내면 실재하지 않는 양을 재는 것이 되므로, 두 모수를 **나란히** 두고 뺄셈은
 //! 하지 않는다.
 //!
+//! ## `*_hist` — 평균·최대가 못 답하는 것
+//!
+//! 시간을 재는 세 덩어리에는 분포가 하나씩 더 있다(`queue_before_gate.wait_us_hist` ·
+//! `handler_after_gate.us_hist` · `plugin_round_trip.us_hist`). 평균과 최대만 있으면
+//! **"전부 조금씩 느린가, 대부분 빠른데 꼬리가 몇 건인가"** 가 안 갈린다 — 두 상태는
+//! 같은 평균과 같은 최대를 낼 수 있고 처방이 반대다(앞은 용량, 뒤는 그 몇 건의 원인).
+//!
+//! 각 분포는 `bounds_us` 와 `counts` 로 나간다. **`bounds_us` 를 세 번 되풀이하는 것은
+//! 의도다** — 위 "덩어리 이름 자체에 경계를 넣는다" 와 같은 이유로, 응답을 그대로
+//! 덤프해도 어느 칸이 무엇을 센 것인지 한 자리에서 읽혀야 한다. 값과 경계를 떼어 놓으면
+//! 소비자가 경계를 자기 쪽에 복제하고 그 복제본이 갈린다.
+//!
+//! **`counts` 는 `bounds_us` 보다 한 칸 길고 누적이 아니다.** 칸끼리 겹치지 않으므로
+//! 합이 관측 수이고(Prometheus 의 `le` 누적 버킷과 다르다), 마지막 칸은 마지막 상한을
+//! 넘은 것들이라 상한이 없다 — 그 칸이 차면 "그 상한을 넘었다" 까지만 알 수 있고 얼마나
+//! 넘었는지는 같은 덩어리의 `us_max` 가 답한다.
+//!
+//! `db` 와 `connections` 에는 분포가 없다. 앞은 게이지가 다른 크레이트(`tasty-memory`)에
+//! 살아 이 histogram 타입을 못 보고(의존이 그 방향이다), 뒤는 시간이 아니라 자리라
+//! 분포를 잴 축이 아니다.
+//!
 //! ## 평균이 `null` 일 수 있는 이유
 //!
 //! 관측이 없으면 `None` 이다. 0 을 돌려주면 "기다림이 없었다" 와 "잰 적이 없다" 가
@@ -124,18 +145,21 @@ pub(super) fn snapshot_json(
             "wait_us_sum": s.queue_wait_us_sum,
             "wait_us_max": s.queue_wait_us_max,
             "wait_us_mean": s.queue_wait_us_mean(),
+            "wait_us_hist": hist_json(&s.queue_wait_hist),
         },
         "handler_after_gate": {
             "calls": s.handler_calls,
             "us_sum": s.handler_us_sum,
             "us_max": s.handler_us_max,
             "us_mean": s.handler_us_mean(),
+            "us_hist": hist_json(&s.handler_hist),
         },
         "plugin_round_trip": {
             "matched": p.matched,
             "us_sum": p.us_sum,
             "us_max": p.us_max,
             "us_mean": p.us_mean(),
+            "us_hist": hist_json(&p.hist),
         },
         "db": {
             "commits": d.commits,
@@ -155,6 +179,15 @@ pub(super) fn snapshot_json(
             "accepted": c.accepted,
             "refused_saturated": c.refused_saturated,
         },
+    })
+}
+
+/// 분포 하나를 경계와 **함께** 내보낸다. 되풀이되는 `bounds_us` 가 낭비로 보일 수
+/// 있지만, 그것을 응답 어딘가 한 곳으로 빼면 칸의 뜻이 그 한 곳에만 있게 된다.
+fn hist_json(h: &tasty_telemetry::HistogramSnapshot) -> serde_json::Value {
+    json!({
+        "bounds_us": tasty_telemetry::HistogramSnapshot::bounds_us(),
+        "counts": h.counts,
     })
 }
 
@@ -324,6 +357,66 @@ mod tests {
             c["limit"],
             crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS,
             "상한은 서버가 집행하는 그 상수여야 한다"
+        );
+    }
+
+    /// 분포가 **자기 덩어리 안에** 들어가고, 경계가 값과 같은 자리에 나간다.
+    ///
+    /// 세 분포를 서로 다른 칸에 떨어지는 값으로 채워, 한 분포가 다른 덩어리로 새면
+    /// 대조가 깨지게 한다.
+    #[test]
+    fn each_distribution_ships_inside_its_own_block_with_its_bounds() {
+        let p = PressureStats::default();
+        p.record_queue_wait(Duration::from_micros(40_000)); // 31_623 초과 → 8 번 칸
+        p.record_handler(Duration::from_micros(5)); // 10 이하 → 0 번 칸
+        let w = PluginWaitStats::default();
+        w.record(Duration::from_micros(2_000_000)); // 마지막 상한 초과 → 넘침 칸
+
+        let v = snapshot_json(
+            &p.snapshot(),
+            &w.snapshot(),
+            &DbLatencyStats::default().snapshot(),
+            &ConnectionStats::default().snapshot(),
+        );
+        let qh = &v["queue_before_gate"]["wait_us_hist"];
+        let hh = &v["handler_after_gate"]["us_hist"];
+        let ph = &v["plugin_round_trip"]["us_hist"];
+
+        let bounds = qh["bounds_us"].as_array().expect("경계 배열");
+        assert_eq!(
+            bounds.len(),
+            tasty_telemetry::LATENCY_BUCKET_COUNT - 1,
+            "칸이 상한보다 하나 많다 — 그 하나가 넘침이다"
+        );
+        assert_eq!(
+            hh["bounds_us"], qh["bounds_us"],
+            "경계는 덩어리마다 같은 값이어야 한다"
+        );
+        assert_eq!(
+            ph["bounds_us"], qh["bounds_us"],
+            "경계는 덩어리마다 같은 값이어야 한다"
+        );
+
+        let counts = |x: &serde_json::Value| -> Vec<u64> {
+            x["counts"]
+                .as_array()
+                .expect("칸 배열")
+                .iter()
+                .map(|n| n.as_u64().expect("u64"))
+                .collect()
+        };
+        let (q, h, pl) = (counts(qh), counts(hh), counts(ph));
+        assert_eq!(q.iter().sum::<u64>(), 1);
+        assert_eq!(h[0], 1, "5 µs 는 맨 앞 칸");
+        assert_eq!(q[0], 0, "큐 대기 40 ms 가 맨 앞 칸에 오면 안 된다");
+        assert_eq!(
+            pl[tasty_telemetry::LATENCY_BUCKET_COUNT - 1],
+            1,
+            "2 s 는 넘침 칸이다"
+        );
+        assert!(
+            v["db"].get("us_hist").is_none() && v["connections"].get("us_hist").is_none(),
+            "분포가 없는 덩어리에 빈 분포를 넣지 않는다"
         );
     }
 

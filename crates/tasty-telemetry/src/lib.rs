@@ -307,7 +307,8 @@ pub use aggregate::*;
 pub use anomaly::*;
 pub use cap::*;
 pub use pressure::{
-    ConnectionSnapshot, ConnectionStats, PluginWaitSnapshot, PluginWaitStats, PressureSnapshot,
+    ConnectionSnapshot, ConnectionStats, HistogramSnapshot, LATENCY_BUCKET_BOUNDS_US,
+    LATENCY_BUCKET_COUNT, LatencyHistogram, PluginWaitSnapshot, PluginWaitStats, PressureSnapshot,
     PressureStats,
 };
 
