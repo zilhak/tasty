@@ -39,10 +39,17 @@
 돌리지 않았으므로 실행 비용이 아니다.
 
 **이것은 ADR-0277 을 개정하지 않는다.** 그 결정이 "한 번" 으로 묶은 것은 caller 별
-`ipc_calls` 이벤트와 Allow audit 이고, 그 둘은 cap·rate-limit 의 입력이라 거부까지 세면
-예산이 두 번 깎인다. 여기 게이지는 caller 별도 아니고 영속도 아니며 어떤 예산의 입력도
-아니다. 그래서 `ipc_calls` 를 거부까지 넓히는 대신 **다른 축을 하나 세우는 것**으로 같은
-질문에 답한다.
+`ipc_calls` 이벤트와 Allow audit 이고, 그 둘은 **cap 평가와 anomaly 검출의 입력**이라
+(`record_ipc_call` → `evaluate_caps_after_record` · `detect_anomalies_after_ipc`) 거부까지
+세면 거부가 그 두 판정을 밀어 올린다. 여기 게이지는 caller 별도 아니고 영속도 아니며 그
+두 판정의 입력도 아니다. 그래서 `ipc_calls` 를 거부까지 넓히는 대신 **다른 축을 하나
+세우는 것**으로 같은 질문에 답한다.
+
+rate-limit 은 **여기 섞지 않는다.** 토큰 소비는 게이트가 따로 하고
+(`handler.rs` 의 `core.rate_limit_try_consume(agent, "ipc_calls", 1, …)`), 거기 쓰인
+`"ipc_calls"` 는 token bucket 을 고르는 **버킷 이름 문자열**이다. `RateLimitStore` 는
+telemetry 행을 한 건도 읽지 않으므로 `record_ipc_call` 을 거부까지 넓혀도 예산은 1 토큰도
+안 깎인다. 두 축을 하나로 읽으면 실재하지 않는 결합을 근거로 삼게 된다.
 
 ## Consequences
 
@@ -61,8 +68,10 @@
 ## Alternatives Considered
 
 - **`ipc_calls` 를 거부까지 넓히고 ADR-0277 을 개정한다** — 이 회차 규칙상 열려 있던 길이다.
-  안 고른 이유는 그 카운터가 **cap 과 rate-limit 의 입력**이라는 것이다. 거부를 거기 실으면
-  거부된 요청이 예산을 깎고, 거부가 다시 거부를 부른다. 관측을 고치려다 집행을 바꾸게 된다.
+  안 고른 이유는 그 카운터가 **cap 평가와 anomaly 검출의 입력**이라는 것이다. 거부를 거기
+  실으면 거부된 요청이 cap 을 밀어 올려 cap 이 다시 거부를 부르고, anomaly 의 호출 burst
+  판정도 거부로 부풀어 오른다. 관측을 고치려다 집행을 바꾸게 된다. (rate-limit 은 이
+  논증에 안 들어간다 — 위 Decision 의 마지막 문단.)
 - **`TelemetryEvent` 로 지연을 기록한다** — 호출당 한 행. ADR-0085 가 이미 이 형태를 껐다.
 - **histogram 버킷을 지금 정한다** — 경계를 분포 없이 고르면 그 경계가 곧 분포를 말하는
   것처럼 읽힌다. count·sum·max 는 덜 말하지만 틀린 말은 안 한다.
