@@ -102,9 +102,11 @@ assert!(path.starts_with(home.path().join("screenshots")));
 그래서 배제가 필요한 단위는 레포가 아니라 바이너리 하나이고, **그 안에서는 각자 하나뿐**
 이다. 셋이 한 바이너리에 같이 들어갈 수 없다는 것은 값으로 확인된다:
 
-- `src/lib.rs` 의 `mod test_support;` — 루트 크레이트의 라이브러리 타깃이 그것을 단다
-  (`[lib]` 도 `src/` 아래 라이브러리 루트 파일도 없다). **바이너리뿐이라 아무 크레이트도
-  이것을 링크할 수 없다.**
+- `src/lib.rs` 의 `pub(crate) use tasty_test_support as test_support;` — 선언에
+  **`#[cfg(test)]` 가 붙어 있다.** 루트에 `lib` 타깃이 생긴 뒤에도([ADR-0325](../adr/0325-the-root-package-splits-into-a-lib-and-a-bin.md))
+  그 cfg 는 이 크레이트를 *의존으로* 컴파일할 때 세워지지 않으므로 **다른 크레이트가 이
+  이름을 링크할 수 없다.** 게다가 이 패키지를 의존으로 드는 워크스페이스 크레이트는
+  **하나도 없다**(`cargo metadata` 로 셌다).
 - `crates/tasty-host-plugin/src/lib.rs` 의 `mod test_support;` — 선언에 **`#[cfg(test)]` 가
   붙어 있다.** 그 cfg 는 이 크레이트를 *의존으로* 컴파일할 때 세워지지 않으므로 **다른
   크레이트가 이 모듈을 링크할 수 없다.**
