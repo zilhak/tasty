@@ -2,16 +2,16 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: 없음
-- **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서)
+- **ADR**: [0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md) · [0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)
+- **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서) · `surface.read_since_mark`(마크 또는 소비자가 든 위치로 읽는 raw 진입점)
 - **화면**: 없음
 - **메서드/파서**: [reference/api](../../reference/api.md#surface-상호작용) · [reference/output-parsers](../../reference/output-parsers.md)
 
 ## 목적
 
-터미널 출력을 **의미 단위**로 분해해 에이전트가 다루기 쉬운 JSON 으로 제공한다. 같은 `terminal.read` 권한 아래 **분해하지 않는** 진입점이 하나 더 있다 — 주기적으로 훑는 소비자를 위한 raw 커서다(아래 표의 넷째 행).
+터미널 출력을 **의미 단위**로 분해해 에이전트가 다루기 쉬운 JSON 으로 제공한다. 같은 `terminal.read` 권한 아래 **분해하지 않는** 진입점이 둘 더 있다 — 주기적으로 훑는 소비자를 위한 raw 커서와, 소비자가 자기 위치를 들고 읽는 raw 진입점이다(아래 표의 넷째·다섯째 행).
 
-## 내부 동작 — 네 진입점
+## 내부 동작 — 다섯 진입점
 
 | 진입점 | 패턴 | 용도 |
 |--------|------|------|
@@ -19,20 +19,29 @@
 | `surface.commands` (+`last_command`,`command_at`) | 일회성 batch | OSC 133 인덱싱된 **명령 단위** 메타데이터 |
 | `output.observe_start` | 스트리밍 | PTY 라인마다 파서 → sink fan-out |
 | `surface.read_since_scan_mark` | 주기 폴링 | 전진하는 전용 커서로 **새로 온 것만** 읽는다 (파서를 안 거친 raw) |
+| `surface.read_since_mark` (`cursor`+`stream`) | 소비자별 이어 읽기 | 호출자가 든 위치부터 읽는다 — 서버는 그 소비자 상태를 안 든다 (파서를 안 거친 raw) |
 
-**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 넷째는 그 모수 밖이다 — 파서를 거치지 않고 raw 텍스트를 주므로 분해는 부르는 쪽이 한다(아래 "마크는 둘이다").
+**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 뒤의 둘은 그 모수 밖이다 — 파서를 거치지 않고 raw 텍스트를 주므로 분해는 부르는 쪽이 한다(아래 "읽는 자리를 말하는 법은 셋이다").
 
 ### parse_since_mark
 
 `set mark` → 명령 실행 → `parse-since-mark --parsers path,url,compile_error,test_result`. `--parsers` 생략 시 기본 4종(`path,url,prompt_boundary,exit_code`). 고급 6종은 명시 opt-in. 전체 block 을 받아 멀티라인 파서(`compile_error`/`stack_trace`)도 정확히 분해.
 
-### 마크는 둘이다
+### 읽는 자리를 말하는 법은 셋이다
 
-`parse_since_mark` 가 읽는 마크는 `surface.set_mark` 이 세우고 `surface.read_since_mark` 도 함께 읽는 **하나의** 마크다 — surface 당 하나이지 소비자당 하나가 아니다. 에이전트 셋이 같은 surface 를 보면 셋이 같은 창을 본다.
+`parse_since_mark` 가 읽는 마크는 `surface.set_mark` 이 세우고 `surface.read_since_mark` 도 함께 읽는 **하나의** 마크다 — surface 당 하나이지 소비자당 하나가 아니다. 에이전트 셋이 그 마크를 쓰면 셋이 같은 창을 보고, `set mark` 하는 쪽이 안 하는 쪽을 민다.
 
 출력을 **주기적으로 훑는** 소비자는 그 마크를 쓰지 않는다. `surface.read_since_scan_mark` 가 별도 커서를 읽고, 그 커서는 읽을 때마다 전진해 지난 호출 이후에 온 것만 준다. 두 커서는 서로를 밀지 않는다 — `set mark` 이 스캔 커서를 안 움직이고, 스캔 읽기가 마크를 안 움직인다. 그 커서는 소비자가 하나라는 전제 위에 있어 CLI 동사가 없다([ADR-0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md)).
 
-**마크가 잘려 나가면 다음 읽기는 버퍼 처음부터 돌아가고, 응답은 그 사실을 말하지 않는다.** 출력 버퍼는 1 MiB 를 넘으면 앞에서 버리는데, 마크가 그 구간에 있었으면 무효가 된다. 스캔 커서 쪽은 무효화 대신 보존 구간 앞끝으로 당겨진다.
+셋째는 **소비자가 드는 위치**다. `surface.read_since_mark` 에 `cursor`(절대 바이트 위치)와 `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, 서버는 그 소비자를 위해 아무것도 안 든다 — 그래서 소비자가 몇이든 서로를 안 민다. 같은 규율을 사건 피드가 먼저 쓴다([ADR-0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)).
+
+### 보존 밖으로 밀려난 것은 값으로 나온다
+
+출력 버퍼는 1 MiB 를 넘으면 앞에서 버린다. 위치는 절대값이라 버리는 것은 보존 구간의 앞끝(`retention_start`)뿐이고 마크·커서는 제자리에 있다. 그래서 **밀려난 자리에서 읽으면 응답의 `skipped` 가 잃은 바이트 수를 말한다** — 마크 형태도 같다. 한때는 마크가 그 구간에 들면 무효가 되고 다음 읽기가 조용히 버퍼 처음부터 돌아갔다.
+
+응답에는 `retention_start`·`retention_end`·`cursor`·`next_cursor`·`raw_bytes`·`stream` 도 함께 실린다. **이어 읽기는 `next_cursor` 로 한다** — `text` 의 길이는 읽은 원문 구간의 길이가 아니다(손실 디코딩이 U+FFFD 를 넣고 `strip_ansi` 가 바이트를 뺀다).
+
+표지가 안 맞는 위치(재사용된 surface id·respawn 된 터미널)·스트림 끝을 넘은 위치·터미널이 없는 surface 는 빈 답이 아니라 **거절**이고, 사유가 `error.data.reason` 으로 갈린다.
 
 ### 명령 인덱싱 (OSC 133)
 
