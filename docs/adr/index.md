@@ -273,5 +273,7 @@
 | 0298 | [훅 핸들러 시퀀스는 CLI 에서 제자리로 고친다 — 지우고 다시 만들지 않는다](0298-a-hook-handler-sequence-is-edited-in-place-from-the-cli.md) | Accepted | 2026-09-20 | hook-handler, cli, ipc, registry, ipc-sequence, local-only, settings, adr-0046, adr-0047 |
 | 0299 | [스크롤 영역은 드래그 패닝 여부를 선언한다](0299-scroll-areas-declare-whether-they-pan-on-drag.md) | Accepted | 2026-09-20 | ui, scroll, input, guard, egui |
 | 0300 | [scrim 은 popup 이 소속된 범위를 덮는다 — 늘 창 전체가 아니다](0300-the-scrim-covers-the-popups-scope-not-always-the-window.md) | Accepted | 2026-09-20 | popup, scope, scrim, plugin, design-tokens, gallery, adr-0273, adr-0254 |
+| 0304 | [IPC 수신에 상한을 둘 둔다 — 요청 한 줄의 바이트와 동시 연결 수](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md) | Accepted | 2026-09-20 | ipc, resource-bounds, transport, reliability |
+| 0305 | [요청 압력은 프로세스 게이지다 — caller 별 관측과 다른 축이다](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md) | Accepted | 2026-09-20 | ipc, telemetry, diagnostics, observability |
 | 0306 | [메서드는 "두 번 전달되면 무엇이 남는가" 를 표에 선언한다](0306-a-method-declares-what-a-second-delivery-leaves-behind.md) | Accepted | 2026-09-20 | ipc, method-table, retry, contract |
 | 0307 | [출력 스캐너는 자기 커서로 읽는다 — 에이전트의 mark 를 공유하지 않는다](0307-the-output-scanner-reads-its-own-cursor.md) | Accepted | 2026-09-20 | terminal, output-buffer, ipc, plugin, claude, cursor, polling, adr-0085, adr-0266, adr-0306 |
