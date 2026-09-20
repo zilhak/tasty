@@ -224,6 +224,7 @@ mod tests {
         let mut core = super::super::cli_entry_tests::test_core();
         let (mut state, mut engine) = crate::state::tests::test_state();
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
             jsonrpc: "2.0".into(),
             id: Some(json!(1)),
             method: "system.pressure".into(),
