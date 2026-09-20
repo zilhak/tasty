@@ -63,6 +63,8 @@ fn main() {
     std::fs::write(&out_path, generated)
         .unwrap_or_else(|e| panic!("failed to write {}: {e}", out_path.display()));
     // 아이콘 소스 rerun 은 build-dep(tasty-icons) 재컴파일이 자동 트리거한다.
+    // 그 사슬을 실제로 잰 기록은 docs/dev-guide/build.md 의
+    // "plugin 세 개가 자기 자신만 거는 이유" — 선언이 빠진 것으로 보고 고치기 전에 읽어라.
     println!("cargo:rerun-if-changed=build.rs");
 }
 
