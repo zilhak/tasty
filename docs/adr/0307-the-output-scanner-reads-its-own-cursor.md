@@ -55,8 +55,8 @@
   같은 권한 버킷이다(같은 출력을 읽는다).
 - **에이전트용 세 메서드(`surface.set_mark` · `surface.read_since_mark` ·
   `surface.parse_since_mark`)의 이름·파라미터·응답 모양을 바꾸지 않는다.** 그 셋은 0.7
-  동결 baseline 에 등재돼 있고(`tests/fixtures/method_baseline_0_7.txt`), 0.7.x 동안
-  추가만 가능하다. 이 결정은 **추가**다.
+  동결 baseline 에 등재돼 있고(`crates/tasty-ipc/fixtures/method_baseline_0_7.txt`),
+  0.7.x 동안 추가만 가능하다. 이 결정은 **추가**다.
 - **CLI 동사를 붙이지 않는다.** 이 커서의 읽기는 파괴적이다 — 부르는 쪽이 바이트를
   가져가고 커서가 전진한다. CLI 동사를 열면 사용자가 `tasty` 한 줄로 스캐너의 바이트를
   가로채 에러 감시에 구멍을 낼 수 있고, 그 구멍은 조용하다. 표에는 등재하므로 거부가
