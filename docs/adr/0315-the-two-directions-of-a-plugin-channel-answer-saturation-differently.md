@@ -96,7 +96,18 @@ deadline 으로만 회수되고([ADR-0311](0311-a-namespace-call-expires-into-an
   `a_full_queue_is_refused_instead_of_awaited` 가 **멈추지 않고 실패한다**(판정을 다른
   스레드에서 timeout 으로 받는다 — 멈춘 시험은 실패보다 나쁘다).
 - 포화와 소멸이 한 값으로 뭉개지면 `saturation_is_told_apart_from_a_dead_writer` 가 잡는다.
-- 용량 상수가 안 쓰이거나 0 이 되면 `the_request_queue_holds_exactly_its_capacity` 가 잡는다.
+- 용량 상수 셋 중 하나라도 **안 쓰이면 컴파일이 실패한다** — 워크스페이스가 `dead_code`
+  를 `deny` 로 두므로(루트 `Cargo.toml`) 프로덕션 자리에서 상수를 빼고 리터럴을 쓰면
+  `constant ... is never used` 로 죽는다. 세 상수 전부에 걸린다.
+- **0 이 되는 쪽은 `REQUEST_QUEUE_CAPACITY` 하나만 잡힌다** —
+  `the_request_queue_holds_exactly_its_capacity` 의 `const { assert!(… > 0) }` 가 컴파일
+  시점에 막는다. 나머지 둘(`RESPONSE_QUEUE_CAPACITY` · `EVENT_QUEUE_CAPACITY`)에는
+  **그 채널이 없다** — 둘을 0 으로 바꿔도 이 크레이트의 시험 266 건이 전부 통과한다(실측).
+  그쪽을 재는 두 시험(`responses_past_the_capacity_…` · `events_past_the_capacity_…`)이
+  상수가 아니라 리터럴 `sync_channel(1)` 을 쓰는 것은 일부러다: 그 시험이 재는 것은 값이
+  아니라 **버리는가 기다리는가**이고, 버퍼가 작을수록 가득 찬 순간을 확실히 만난다(용량의
+  여러 배를 흘리는 것과 같은 근거). 상수를 읽게 바꾸면 그 확실성이 줄고, 그래도 증명되는
+  것은 *시험이* 상수를 읽는다는 것뿐이라 프로덕션의 0 은 여전히 안 잡힌다.
 - plugin→호스트 가 버리는 쪽으로 바뀌면 `responses_past_the_capacity_are_delayed_not_dropped`
   와 `events_past_the_capacity_are_delayed_not_dropped` 가 잡는다. 두 시험은 생산 함수
   (`handle_incoming_response` · `handle_incoming_event`)를 직접 부르고, 용량의 여러 배를
