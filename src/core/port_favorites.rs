@@ -4,7 +4,7 @@
 //! 무관하게 계속 지켜보고 싶은 주소+포트를 기억하는 용도라 surface 와 무관한 전역
 //! 상태로 `~/.tasty/port-favorites.toml` 한 곳에 보관하고, 부팅 시 `CoreState` 가
 //! `load()` 로 읽어 메모리에 들고 다닌다. 추가/삭제 mutator 는 즉시 `save()` 로
-//! 디스크에 반영한다(세션 휘발 아님) — [`crate::explorer_ui::favorites::ExplorerFavorites`]
+//! 디스크에 반영한다(세션 휘발 아님) — [`crate::core::explorer_favorites::ExplorerFavorites`]
 //! 와 동일 패턴.
 //!
 //! 식별 키는 `(addr, port)` 정확히 일치 — PID 는 프로세스 재시작마다 바뀌므로

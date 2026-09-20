@@ -9,7 +9,6 @@
 //! 호출자(`egui_panels`)가 렌더 루프 종료 후 적용한다(markdown/empty 의 deferred
 //! action 패턴과 동일 — 렌더 중 `engine`/`state` 가변 차용 충돌 회피).
 
-pub mod favorites;
 pub mod ops;
 pub mod view;
 
@@ -25,6 +24,9 @@ use tasty_ui_widgets::{
 };
 
 use crate::adapters::ui::icons::{self, Icon};
+// 즐겨찾기 저장소는 `CoreState` 가 소유하는 영속 타입이라 도메인 쪽에 산다.
+// 이 파일은 그 항목 타입을 그릴 때만 쓰므로 옛 모듈 이름으로 별칭만 든다.
+use crate::core::explorer_favorites as favorites;
 use crate::i18n::{t, t_fmt};
 use crate::settings::EffectiveFont;
 use crate::theme;

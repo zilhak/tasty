@@ -417,7 +417,7 @@ pub struct CoreState {
     /// 직접 조작으로만 변경되므로 release 경로에서 직접 갱신(도메인 snapshot 비대상).
     /// (소비자가 전부 gui 어댑터라 headless 빌드에선 필드째 제외.)
     #[cfg(feature = "gui")]
-    pub(crate) explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites,
+    pub(crate) explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites,
 
     /// 포트 스캐너 즐겨찾기. 전역(surface 무관)·영속 — 부팅 시
     /// `PortFavorites::load()` 로 `~/.tasty/port-favorites.toml` 에서 읽고, 추가/제거
@@ -880,7 +880,7 @@ impl CoreState {
             pending_move_surface: None,
             explorer_clipboard: None,
             #[cfg(feature = "gui")]
-            explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
+            explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
             #[cfg(feature = "gui")]
             port_favorites: crate::core::port_favorites::PortFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
