@@ -1,27 +1,33 @@
 //! 바인딩 **매칭** — `"ctrl+shift+n"` 같은 문자열을 winit/egui 의 `(key, mods)` 와 대조한다.
 //!
+//! 이 판정은 단축키 디스패치만의 것이 아니다 — webview 자식 창이 올린 키를 호스트가
+//! 가로챌지 정하는 자리(`host_api::webview::keys`)도 같은 규칙을 쓴다. 규칙이 `gui`
+//! feature 뒤의 UI 모듈 안에 있으면 그쪽이 UI 에 묶인다. 규칙만 잎으로 내린다.
+//!
 //! 문자열을 축과 키 토큰으로 쪼개는 **파싱**은 그 문자열을 소유한 크레이트에 있다
 //! (`tasty_settings::keybindings::parse`) — 단축키 이식 번들의 `option` 판정이 같은
 //! 규칙을 써야 하는데 이 모듈은 `gui` feature 뒤라 그쪽에서 안 보이기 때문이다
 //! (`docs/adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md`).
 //! 여기 남은 것은 파싱 결과를 실제 키 이벤트와 맞추는 플랫폼 규칙이다.
 
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
-pub(crate) use tasty_settings::keybindings::parse::bindings_equivalent;
-pub(super) use tasty_settings::keybindings::parse::parse_binding;
+pub use tasty_settings::keybindings::parse::bindings_equivalent;
+pub use tasty_settings::keybindings::parse::parse_binding;
 
-pub(crate) fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
+pub fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
     bindings.iter().any(|b| matches_binding(b, key, mods))
 }
 
+#[cfg(feature = "egui-input")]
 /// egui 입력(`InputState`) 기준으로 바인딩 목록 중 하나라도 이번 프레임에 눌렸는지
 /// 판정한다. winit 단축키 경로가 닿지 않는 egui 위젯(검색 바 등) 안에서
 /// `KeybindingSettings` 바인딩을 그대로 매칭하기 위한 진입점.
-pub(crate) fn any_binding_pressed_egui(bindings: &[String], input: &egui::InputState) -> bool {
+pub fn any_binding_pressed_egui(bindings: &[String], input: &egui::InputState) -> bool {
     bindings.iter().any(|b| binding_pressed_egui(b, input))
 }
 
+#[cfg(feature = "egui-input")]
 /// 단일 바인딩 문자열이 egui 입력에서 이번 프레임에 눌렸는지 판정.
 fn binding_pressed_egui(binding: &str, input: &egui::InputState) -> bool {
     let Some(parsed) = parse_binding(binding) else {
@@ -48,6 +54,7 @@ fn binding_pressed_egui(binding: &str, input: &egui::InputState) -> bool {
 
 /// 바인딩 키 토큰(소문자)을 egui `Key` 로 변환. named/function 토큰은 명시 매핑하고,
 /// 글자·숫자·기호는 egui `Key::from_name` 에 위임한다 (대문자 폴백 포함).
+#[cfg(feature = "egui-input")]
 fn token_to_egui_key(token: &str) -> Option<egui::Key> {
     use egui::Key;
     Some(match token {
@@ -78,7 +85,7 @@ fn token_to_egui_key(token: &str) -> Option<egui::Key> {
 /// webview 키 포워딩 정책(`host_api/webview/keys.rs`)이 "페이지에 남길 키" 와
 /// "host 가 가져갈 키" 를 가르는 기준으로 쓴다 — 파싱 규칙을 그쪽에 복제하지
 /// 않도록 여기서 한 번만 판정한다.
-pub(crate) fn binding_has_modifier(binding: &str) -> bool {
+pub fn binding_has_modifier(binding: &str) -> bool {
     match parse_binding(binding) {
         Some(p) => p.ctrl || p.alt || p.option,
         None => false,
@@ -87,7 +94,7 @@ pub(crate) fn binding_has_modifier(binding: &str) -> bool {
 
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
 /// the given key + modifiers. Returns false for empty bindings.
-pub(super) fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
+pub fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
     let Some(parsed) = parse_binding(binding) else {
         return false;
     };
@@ -215,4 +222,66 @@ fn named_key_to_string(key: &NamedKey) -> Option<&'static str> {
         NamedKey::Escape => "escape",
         _ => return None,
     })
+}
+
+/// Convert a physical key code to a Key::Character for shortcut matching.
+/// On macOS, when IME is composing (e.g. Korean), logical_key may contain
+/// the composed character (e.g. "ㅇ" instead of "d"). This function extracts
+/// the intended key from the physical key code.
+pub fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
+    let code = match physical {
+        PhysicalKey::Code(c) => c,
+        _ => return None,
+    };
+    let ch: &str = match code {
+        KeyCode::KeyA => "a",
+        KeyCode::KeyB => "b",
+        KeyCode::KeyC => "c",
+        KeyCode::KeyD => "d",
+        KeyCode::KeyE => "e",
+        KeyCode::KeyF => "f",
+        KeyCode::KeyG => "g",
+        KeyCode::KeyH => "h",
+        KeyCode::KeyI => "i",
+        KeyCode::KeyJ => "j",
+        KeyCode::KeyK => "k",
+        KeyCode::KeyL => "l",
+        KeyCode::KeyM => "m",
+        KeyCode::KeyN => "n",
+        KeyCode::KeyO => "o",
+        KeyCode::KeyP => "p",
+        KeyCode::KeyQ => "q",
+        KeyCode::KeyR => "r",
+        KeyCode::KeyS => "s",
+        KeyCode::KeyT => "t",
+        KeyCode::KeyU => "u",
+        KeyCode::KeyV => "v",
+        KeyCode::KeyW => "w",
+        KeyCode::KeyX => "x",
+        KeyCode::KeyY => "y",
+        KeyCode::KeyZ => "z",
+        KeyCode::Digit0 => "0",
+        KeyCode::Digit1 => "1",
+        KeyCode::Digit2 => "2",
+        KeyCode::Digit3 => "3",
+        KeyCode::Digit4 => "4",
+        KeyCode::Digit5 => "5",
+        KeyCode::Digit6 => "6",
+        KeyCode::Digit7 => "7",
+        KeyCode::Digit8 => "8",
+        KeyCode::Digit9 => "9",
+        KeyCode::Minus => "-",
+        KeyCode::Equal => "=",
+        KeyCode::BracketLeft => "[",
+        KeyCode::BracketRight => "]",
+        KeyCode::Semicolon => ";",
+        KeyCode::Quote => "'",
+        KeyCode::Backquote => "`",
+        KeyCode::Backslash => "\\",
+        KeyCode::Comma => ",",
+        KeyCode::Period => ".",
+        KeyCode::Slash => "/",
+        _ => return None,
+    };
+    Some(Key::Character(ch.into()))
 }

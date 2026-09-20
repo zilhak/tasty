@@ -2,8 +2,8 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
-use super::binding::matches_any_binding;
 use crate::view::main::MainView;
+use tasty_key_match::matches_any_binding;
 
 /// 줌 세 동작. **판별과 실행을 가르는 것이 이 타입의 존재 이유다** — 단발 키 경로는
 /// 키로 이것을 정하고, 명령 팔레트는 `action_id` 로 정한다. 실행부는 하나다.

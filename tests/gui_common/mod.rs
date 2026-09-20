@@ -747,7 +747,7 @@ impl GuiTestInstance {
     /// `Key::Unicode` 는 keysym 을 **레벨 0 에서만** 찾고(못 찾으면 미사용 keycode 에
     /// 새로 바인딩한다) Shift 를 합성하지 않는다. 그래서 `press_alt(Unicode('W'))` 는
     /// Shift 없는 'W' 이벤트가 되고, 수정자를 정확히 비교하는 매처
-    /// (`src/adapters/ui/input/shortcuts/binding.rs`)에서 `alt+shift+w` 가 아니라
+    /// (`crates/tasty-key-match/src/lib.rs`)에서 `alt+shift+w` 가 아니라
     /// **`alt+w` 에 닿는다.** 이 헬퍼는 그 통로를 구조로 막는다: 대소문자는 수정자가 아니다.
     pub fn press_alt_shift(&mut self, key: Key) {
         self.focus();

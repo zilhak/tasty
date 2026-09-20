@@ -2,7 +2,7 @@
 //! 사용자가 고른 대체 값을 그 목록대로 적용한다.
 //!
 //! `option` 토큰이 든 바인딩은 **비-macOS 에서 절대 매칭되지 않는다**
-//! (`src/adapters/ui/input/shortcuts/binding.rs` 의 매칭 규칙: 비-macOS 는
+//! (`crates/tasty-key-match/src/lib.rs` 의 매칭 규칙: 비-macOS 는
 //! `option_matches = !parsed.option`). 화면에는 그대로 보이는데 눌러도 아무 일이
 //! 없으므로, macOS 에서 만든 구성을 그대로 가져오면 **조용히 죽은 바인딩**이 남는다.
 //! 이식이 깨지는 토큰은 이 하나뿐이다 — 나머지 토큰은 저장이 이미 OS 독립이다

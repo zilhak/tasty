@@ -20,7 +20,7 @@ pub struct ParsedBinding<'a> {
     pub shift: bool,
     pub alt: bool,
     /// macOS 전용: Option 키. Windows/Linux 에서는 이 값이 true 인 바인딩이 절대
-    /// 매칭되지 않는다(`src/adapters/ui/input/shortcuts/binding.rs` 의 매칭 규칙).
+    /// 매칭되지 않는다(`crates/tasty-key-match/src/lib.rs` 의 매칭 규칙).
     pub option: bool,
     /// 키 토큰 (문자 `"+"`, `"-"`, `"a"` 또는 네임 `"plus"`, `"f1"`, `"tab"` 등).
     /// 공백/모디파이어 키워드는 거부되어 여기 오지 않는다.

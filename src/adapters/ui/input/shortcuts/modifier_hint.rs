@@ -47,7 +47,7 @@ use tasty_settings::KeybindingSettings;
 use crate::plugin::command_registry::{EffectiveBinding, PluginCommandEntry, effective_binding};
 use crate::plugin::registry_state::ShortcutOverride;
 
-use super::binding::parse_binding;
+use tasty_key_match::parse_binding;
 
 // 조합 타입과 열거는 `KeybindingSettings` 가 저장하는 축 modifier 값의 해석 규칙이라
 // 그 값을 소유한 크레이트에 있다(`docs/adr/0256-the-binding-parser-lives-with-the-setting-it-parses.md`).

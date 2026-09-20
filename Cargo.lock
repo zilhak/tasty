@@ -5698,6 +5698,7 @@ dependencies = [
  "tasty-i18n",
  "tasty-icons",
  "tasty-ipc",
+ "tasty-key-match",
  "tasty-latency-control",
  "tasty-lua",
  "tasty-memory",
@@ -5993,6 +5994,15 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "tasty-key-match"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "tasty-settings",
+ "winit",
 ]
 
 [[package]]

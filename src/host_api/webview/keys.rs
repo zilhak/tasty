@@ -43,7 +43,7 @@
 //! Win32 VK)는 러시아어 같은 비라틴 레이아웃에서 키캡과 다르다. winit 키 경로가 쓰는
 //! 규칙(`view/main/keyboard.rs::shortcut_lookup_key`)과 **똑같이**, ctrl/super/alt 중
 //! 하나라도 눌려 있으면 물리 키의 US 배열 기준 문자를 우선한다
-//! ([`crate::shortcuts::physical_key_to_logical`]). 백엔드는 자기 native scancode 를
+//! ([`tasty_key_match::physical_key_to_logical`]). 백엔드는 자기 native scancode 를
 //! winit [`PhysicalKey`] 로 변환해 넘기고, 변환할 수 없으면
 //! [`PhysicalKey::Unidentified`] 를 넘겨 폴백 없이 레이아웃 문자를 그대로 쓴다.
 //!
@@ -86,7 +86,7 @@ pub struct WebViewKeyEvent {
 /// 물리로 덮으면 페이지 텍스트 입력이 깨진다.
 fn shortcut_lookup_key(key: Key, physical: &PhysicalKey, mods: ModifiersState) -> Key {
     if mods.control_key() || mods.super_key() || mods.alt_key() {
-        crate::shortcuts::physical_key_to_logical(physical).unwrap_or(key)
+        tasty_key_match::physical_key_to_logical(physical).unwrap_or(key)
     } else {
         key
     }
@@ -109,7 +109,7 @@ impl HostShortcutPolicy {
     pub fn from_sources(kb: &KeybindingSettings, plugin_combos: Vec<String>) -> Self {
         let mut combos: Vec<String> = Vec::new();
         let mut push = |combo: &str| {
-            if crate::shortcuts::binding_has_modifier(combo) && !combos.iter().any(|c| c == combo) {
+            if tasty_key_match::binding_has_modifier(combo) && !combos.iter().any(|c| c == combo) {
                 combos.push(combo.to_string());
             }
         };
@@ -184,7 +184,7 @@ impl HostShortcutPolicy {
             // 매칭(`matches_binding`)과 같은 파싱 경로를 재사용한다.
             if reserved
                 .iter()
-                .any(|r| crate::shortcuts::bindings_equivalent(r, combo))
+                .any(|r| tasty_key_match::bindings_equivalent(r, combo))
             {
                 continue;
             }
@@ -198,7 +198,7 @@ impl HostShortcutPolicy {
     /// `matches_binding` 을 쓴다(플랫폼별 modifier 매핑 규칙도 그대로 따른다 —
     /// macOS 의 `alt`→Command / `option`→Option 포함).
     pub fn claims(&self, key: &Key, mods: ModifiersState) -> bool {
-        crate::shortcuts::matches_any_binding(&self.combos, key, mods)
+        tasty_key_match::matches_any_binding(&self.combos, key, mods)
     }
 }
 
@@ -462,7 +462,7 @@ mod tests {
         let reserved: Vec<String> = PAGE_RESERVED_FIELDS
             .iter()
             .flat_map(|f| kb.get_bindings(f).unwrap_or(&[]))
-            .filter(|b| crate::shortcuts::binding_has_modifier(b))
+            .filter(|b| tasty_key_match::binding_has_modifier(b))
             .cloned()
             .collect();
         assert!(!reserved.is_empty(), "sanity: 예약 콤보가 있어야 한다");
@@ -488,7 +488,7 @@ mod tests {
                 !policy
                     .combos
                     .iter()
-                    .any(|c| crate::shortcuts::bindings_equivalent(c, v)),
+                    .any(|c| tasty_key_match::bindings_equivalent(c, v)),
                 "page-reserved combo {v} (표기 변형 포함) must stay with the page: {:?}",
                 policy.combos
             );

@@ -74,7 +74,7 @@
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- `src/adapters/ui/input/shortcuts/binding.rs` 또는 `modifier_hint.rs` 에 `tasty_settings`
+- `crates/tasty-key-match/src/lib.rs` 또는 `modifier_hint.rs` 에 `tasty_settings`
   재수출을 거치지 않는 자체 `parse_binding`/`Combo` 정의가 다시 생긴다 — 파서가 둘로
   갈렸다는 뜻이고, 그때는 어느 쪽이 정본인지를 다시 정해야 한다.
 
@@ -90,5 +90,5 @@
 - `docs/design/policies/key-mapping.md` — 토큰 ↔ 실제 키 표, 저장↔표시 분리
 - `docs/features/keybindings/index.md` — 필드 3부류와 quick-switch 축 modifier
 - 코드 근거(결정이 실현된 현재 위치): `tasty_settings::keybindings::parse` 의
-  `parse_binding`·`Combo`, 그것을 재수출하는 `src/adapters/ui/input/shortcuts/binding.rs` ·
+  `parse_binding`·`Combo`, 그것을 재수출하는 `crates/tasty-key-match/src/lib.rs` ·
   `modifier_hint.rs`

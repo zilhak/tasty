@@ -21,10 +21,10 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
-use super::binding::matches_binding;
 use crate::adapters::ui::switch_overlay::{SwitchTarget, switch_target_for};
 use crate::settings::KeybindingSettings;
 use crate::view::main::MainView;
+use tasty_key_match::matches_binding;
 
 /// 개별 지정 슬롯(완전 콤보) 배열을 순회해 `key`/`mods` 와 일치하는 첫 슬롯의 인덱스를
 /// 반환한다. `matches_any_binding` 은 불리언만 반환하므로, 어느 슬롯이 맞았는지 알아야

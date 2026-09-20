@@ -2,9 +2,9 @@
 
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey, SmolStr};
 
-use super::binding::{matches_binding, parse_binding};
 use super::physical_key_to_logical;
 use crate::view::main::MainView;
+use tasty_key_match::{matches_binding, parse_binding};
 
 /// 바인딩 문자열의 `alt` 토큰이 실제로 요구하는 winit modifier.
 ///
@@ -867,7 +867,7 @@ fn default_new_workspace_key_mods() -> (Key, ModifiersState) {
     let kb = crate::settings::KeybindingSettings::default();
     kb.new_workspace
         .first()
-        .and_then(|b| super::binding::parse_binding(b))
+        .and_then(|b| tasty_key_match::parse_binding(b))
         .map(|p| {
             let mut mods = ModifiersState::empty();
             if p.ctrl {

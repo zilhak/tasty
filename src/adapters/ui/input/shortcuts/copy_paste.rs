@@ -2,10 +2,10 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
-use super::binding::matches_any_binding;
 use crate::view::main::MainView;
 use crate::view::main::selection::should_copy_via_focused_selection;
 use crate::view::ui::View as _;
+use tasty_key_match::matches_any_binding;
 
 /// explorer 서피스의 파일 액션. 줌과 같은 이유로 판별과 실행을 가른다 —
 /// 단발 키는 키로, 명령 팔레트는 `action_id` 로 이 값을 정하고 실행부는 하나다.

@@ -1,0 +1,18 @@
+[package]
+name = "tasty-key-match"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Matching a keybinding string against a real key event. The rule is shared by shortcut dispatch and by the webview key bridge, so it does not live behind the gui feature."
+
+[dependencies]
+tasty-settings = { path = "../tasty-settings" }
+winit = "0.30"
+# egui 판정(`any_binding_pressed_egui`)만 이 뒤에 있다 — headless 소비자는 안 켠다.
+egui = { version = "0.31", optional = true }
+
+[features]
+egui-input = ["dep:egui"]
+
+[lints]
+workspace = true
