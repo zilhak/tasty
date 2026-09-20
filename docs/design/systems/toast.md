@@ -56,12 +56,36 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 
 > **길이를 모르는 조각(경로·실패 사유)을 실을 때는 `push` 전에 미리 줄인다** — `tasty_i18n::t_fmt_fit` / `fit_fragment` 가 번역된 틀은 그대로 두고 **조각의 가운데만** 생략해 캡 안에 맞춘다. 호스트의 기본 잘림은 **꼬리를 버리므로**, 경로면 어느 파일인지가, 실패 사유면 OS 에러가, 문장이면 "어떻게 하라" 는 지시가 사라진다. 소비자: 언어팩 폴백 경고(`LoadReport::user_warning`), 설정의 bashrc 저장 실패(`toast.bashrc_save_failed`).
 
-## 구조 (`src/adapters/ui/toast.rs`)
+## 구조 — 그리기와 상태가 다른 크레이트에 있다
 
-- `ToastKind` — Info / Success / Warning / Error.
-- `ToastScope` — 위 enum.
+**그리기**는 `crates/tasty-ui-widgets/src/toast.rs` 가 소유한다. 본체와 갤러리 specimen 이
+같은 함수를 부르므로 카드 모양이 두 벌이 될 수 없다.
+
+- `ToastEntryView` / `ToastScopeView` / `ToastViewProps` — 그릴 준비가 끝난 입력. 시간도
+  상태도 안 들어 있고 `alpha` 는 이미 계산돼 있다.
+- `draw_toast_scopes(painter, props)` — 스택 배치 + 카드 chrome. `Context` 가 아니라
+  `Painter` 를 받는 이유는 **떠오르는 자리가 부르는 쪽마다 다르기 때문**이다: 본체는
+  `Order::Tooltip` 레이어 painter 를, 갤러리는 무대 frame 의 painter 를 넘긴다.
+- `draw_toast_card` / `ToastCardColors` — 스택 없이 카드 한 장만 그려야 하는 자리용.
+- `toast_accent_color(kind, theme)` — kind → 좌측 바 색.
+- `toast_fade_alpha(age, lifetime, reduced_motion)` — 페이드 곡선. `Duration` 둘만 받아
+  어떤 상태 타입도 안 본다.
+
+**상태**는 `src/adapters/ui/toast.rs` 에 남는다 — host 를 봐야 하는 것들이다.
+
+- `ToastKind` — Info / Success / Warning / Error. 정본은
+  `crates/tasty-type-appearance/src/toast_kind.rs` 이고 여기는 재수출이다.
+- `ToastScope` — 위 enum. 정본은 `crates/tasty-model/src/toast_kind.rs`.
 - `ToastState` — id, message, kind, scope, spawned_at, lifetime.
 - `ToastManager` — `push(message, kind, scope)` / `push_info(...)` / `draw(ctx, LayoutContext)`(만료 제거 + 렌더). `AppState::toasts` 로 통합, draw 는 popup draw 직후(= 위 레이어)에서.
+- `compute_alpha` — `ToastState` 에서 곡선이 읽는 두 값을 꺼내는 어댑터. `ToastState` 가
+  `ToastScope`(→ `tasty-model` → termwiz)를 품어 위젯 크레이트로 넘어가지 못한다.
+- `truncate_message` — 캡 집행. `push` 진입부라 그리기 경로가 아니다.
+
+> **본문 글자는 페이드하지 않는다.** `Fonts::layout` 에 색을 명시하면 그 색이 galley 에
+> 박히고 `Painter::galley` 의 fallback 은 `Color32::PLACEHOLDER` 구간에만 쓰이므로,
+> 지금 페이드하는 것은 카드 배경·보더·accent 바뿐이다. 갤러리 specimen 이 한때 글자까지
+> 흐리게 그려 본체와 갈려 있었고 지금은 본체에 맞췄다.
 
 모든 토스트 문자열은 `t("toast.*")` 키 — `lang/{en,ko,ja}.toml` 세 파일 동시 추가([i18n](../../dev-guide/i18n.md)).
 

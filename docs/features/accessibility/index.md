@@ -3,7 +3,7 @@
 - **Status**: Implemented (Phase 1 — 수동 토글)
 - **주체**: 로컬 사용자
 - **ADR**: [ADR-0174](../../adr/0174-theme-carries-reduced-motion.md)(모션 감소를 `Theme` 이 실어 나른다)
-- **코드**: `AccessibilitySettings` · `ModifierHintSettings` · `Settings::theme_runtime()`(`tasty-settings`), `ThemeRuntime`(`tasty-themes`), `Theme.reduced_motion`(`tasty-type-appearance`), 토스트 알파 분기(`src/adapters/ui/toast.rs`), 스피너(`crates/tasty-ui-widgets/src/spinner.rs`), switch 오버레이 페이드(`src/adapters/ui/switch_overlay.rs`), 모달 흔들기(`src/app/modal/shake.rs`), modifier-hint 콘텐츠 모델(`src/adapters/ui/input/shortcuts/modifier_hint.rs`) · 오버레이 본체(`src/adapters/ui/modifier_hint_overlay.rs`)
+- **코드**: `AccessibilitySettings` · `ModifierHintSettings` · `Settings::theme_runtime()`(`tasty-settings`), `ThemeRuntime`(`tasty-themes`), `Theme.reduced_motion`(`tasty-type-appearance`), 토스트 알파 분기(`crates/tasty-ui-widgets/src/toast.rs` 의 `fade_alpha`), 스피너(`crates/tasty-ui-widgets/src/spinner.rs`), switch 오버레이 페이드(`src/adapters/ui/switch_overlay.rs`), 모달 흔들기(`src/app/modal/shake.rs`), modifier-hint 콘텐츠 모델(`src/adapters/ui/input/shortcuts/modifier_hint.rs`) · 오버레이 본체(`src/adapters/ui/modifier_hint_overlay.rs`)
 - **화면**: [설정 창](../settings/screens/settings.md) Accessibility 탭
 
 ## 목적

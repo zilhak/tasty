@@ -378,7 +378,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | 헬퍼 | 제공 | 쓰는 곳 |
 |---|---|---|
 | `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 106 개 `.rs` 중 96 개 |
-| `toast_card.rs` | `accent_color` / `draw_card` (`CardColors`) | toast(components/widgets) |
+| `toast_card.rs` | `tasty-ui-widgets` 의 `toast_accent_color` / `draw_toast_card`(`ToastCardColors`) 재수출 — 정의는 여기 없다 | toast(components/widgets) |
 | `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | info_modal · notification_panel · fullscreen_stage (`draw_title_buttons` 만) |
 
 ## Primitive 컴포넌트 레이어 (Components)
@@ -411,7 +411,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `navigation/DrillDown` | `DrillDown` / `DrillDownView` / `DrillDownOutput` (controlled list⇄detail content-swap, back bar ←(ghost IconButton sm)+제목+actions 슬롯, 본문 내부 스크롤, 0ms 즉시 전환 — opt-in animate 는 장식이라 미전사) | `prim_drilldown` | — |
 | `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택) | Overlays `Port Scanner popup` | ✓ port_scanner |
 | `data/ListCtrl` | `ListCtrl` / `ListCtrlItem` / `ListCtrlOutput` (label+description+leading icon+trailing 슬롯+drill-in chevron, divided 헤어라인, selected surface-active+2px accent 좌측 바, disabled, empty_label) | `prim_listctrl` | — |
-| `feedback/Toast` | `src/adapters/ui/toast.rs` | Components `Toast (card visual)` | — |
+| `feedback/Toast` | `crates/tasty-ui-widgets/src/toast.rs`(그리기) + `src/adapters/ui/toast.rs`(상태·레이어) | Components `Toast (card visual)` | — |
 
 **primitive 케이스 커버리지**: 디자인 jsx 의 변형까지 specimen 에 포함 — Button
 `leadingIcon`/`trailingIcon`(prim_button), Input `block`(width 미지정 시 가용폭 채움),
