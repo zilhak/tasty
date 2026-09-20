@@ -27,7 +27,7 @@ impl PluginManager {
             params,
             id,
         };
-        if proc.req_tx.send(req).is_ok() {
+        if proc.try_send_request(req).is_ok() {
             self.pending_requests.insert(id, kind);
         }
     }

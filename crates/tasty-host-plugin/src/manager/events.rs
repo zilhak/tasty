@@ -277,7 +277,7 @@ impl PluginManager {
             params: json!(params),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
-        if let Err(e) = proc.req_tx.send(req) {
+        if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' surface.set_context send failed: {e}");
         }
     }
@@ -300,7 +300,7 @@ impl PluginManager {
             params: json!(params),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
-        if let Err(e) = proc.req_tx.send(req) {
+        if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' webview.navigation_attempt send failed: {e}");
         }
     }
@@ -338,7 +338,7 @@ impl PluginManager {
             }),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
-        if let Err(e) = proc.req_tx.send(req) {
+        if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' surface.create (egui-mesh) send failed: {e}");
         }
     }
@@ -364,7 +364,7 @@ impl PluginManager {
             params: json!(params),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
-        if let Err(e) = proc.req_tx.send(req) {
+        if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' popup.set_context send failed: {e}");
         }
     }
@@ -389,7 +389,7 @@ impl PluginManager {
             params: json!(params),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
-        if let Err(e) = proc.req_tx.send(req) {
+        if let Err(e) = proc.try_send_request(req) {
             tracing::warn!("plugin '{plugin_id}' banner.set_context send failed: {e}");
         }
     }
@@ -402,7 +402,7 @@ impl PluginManager {
             let mut req = crate::event_bus::EventBus::build_dispatch_request(&d);
             req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
             if let Some(proc) = self.processes.get(&d.plugin_id)
-                && let Err(e) = proc.req_tx.send(req)
+                && let Err(e) = proc.try_send_request(req)
             {
                 tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e);
             }

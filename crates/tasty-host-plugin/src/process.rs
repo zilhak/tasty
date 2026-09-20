@@ -65,10 +65,74 @@ enum HandleStreamState {
     Unavailable,
 }
 
+/// 호스트↔plugin 세 채널의 용량.
+///
+/// 셋 다 무제한 `mpsc::channel` 이었다. 무제한 큐는 소비자가 멈추면 생산자의 속도만큼
+/// 메모리를 먹고, 그 자리가 셋이라 한 plugin 이 멈추면 세 방향으로 자란다. 여기서
+/// 고치는 것은 **유한하게 만드는 것**이고 조이는 것이 아니다.
+///
+/// 이 수들은 **파생이 아니다.** 프로토콜에 한 프레임당 메시지 수의 상한이 없고
+/// (`pending_requests` 도 `HashMap` 이라 상한이 없다) 관측된 분포도 없다. 고른 근거는
+/// 두 가지뿐이다 — (1) 호스트 pump 는 매 프레임 세 큐를 **끝까지** 비우므로 한 프레임
+/// 분량의 버스트를 여러 번 담을 수 있으면 정상 사용은 절대 상한에 안 닿는다,
+/// (2) 셋의 곱이 작다: 채널 3 × 1024 × 번들 plugin 9 = 27,648 개의 메시지 슬롯이고
+/// 메시지 하나가 수 KB 라도 수십 MB 다. 상한에 닿는지 재는 법은 ADR-0315 에 있다.
+pub(crate) const REQUEST_QUEUE_CAPACITY: usize = 1024;
+/// plugin → 호스트 응답 큐 용량. 근거는 [`REQUEST_QUEUE_CAPACITY`] 와 같다.
+pub(crate) const RESPONSE_QUEUE_CAPACITY: usize = 1024;
+/// plugin → 호스트 이벤트 큐 용량. 근거는 [`REQUEST_QUEUE_CAPACITY`] 와 같다.
+pub(crate) const EVENT_QUEUE_CAPACITY: usize = 1024;
+
+/// 호스트 → plugin 요청을 큐에 못 넣은 이유.
+///
+/// 무제한 채널일 때는 실패 이유가 하나뿐이었다(수신단 소멸). 유한해지면서 **포화**가
+/// 생겼고, 둘은 성질이 다르다 — 소멸은 영구이고 포화는 일시적이다. 호출부가 로그에서
+/// 둘을 가를 수 있어야 "plugin 이 죽었다" 와 "plugin 이 밀리고 있다" 를 구분한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestSendError {
+    /// 큐가 찼다 — writer 스레드가 소켓에 못 밀어 넣고 있다. 요청은 버려진다.
+    Full,
+    /// writer 스레드가 끝났다 — 프로세스 종료 또는 소켓 끊김.
+    Disconnected,
+}
+
+impl std::fmt::Display for RequestSendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Full => write!(
+                f,
+                "request queue full ({REQUEST_QUEUE_CAPACITY}) — plugin is not draining"
+            ),
+            Self::Disconnected => write!(f, "writer thread gone"),
+        }
+    }
+}
+
+/// 요청 한 건을 큐에 넣되 **절대 블록하지 않는다.**
+///
+/// 블록하지 않는 것이 정책의 핵심이다. 이 함수를 부르는 12 자리는 거의 전부 호스트
+/// main thread 의 pump 안이고(`PluginManager::pump` → `apply_collected_events` ·
+/// `drain_host_cmds`), 거기서 블록하면 큐가 찼다는 이유로 **프레임이 통째로 멈춘다.**
+/// 그래서 포화는 대기가 아니라 거절로 처리하고, 거절은 호출부가 이미 들고 있던
+/// "보내기 실패" 갈래로 흘려보낸다.
+pub(crate) fn try_send_request(
+    tx: &mpsc::SyncSender<PluginRequest>,
+    req: PluginRequest,
+) -> Result<(), RequestSendError> {
+    match tx.try_send(req) {
+        Ok(()) => Ok(()),
+        Err(mpsc::TrySendError::Full(_)) => Err(RequestSendError::Full),
+        Err(mpsc::TrySendError::Disconnected(_)) => Err(RequestSendError::Disconnected),
+    }
+}
+
 pub struct PluginProcess {
     pub plugin_id: String,
     child: Option<Child>,
-    pub req_tx: mpsc::Sender<PluginRequest>,
+    /// 비공개인 것이 정책 강제의 전부다 — `pub` 이면 형제 모듈이 `.send()` 로
+    /// 블로킹 송신을 되살릴 수 있고, 그 자리는 컴파일러가 안 잡는다. 송신은
+    /// [`PluginProcess::try_send_request`] 하나로만 들어간다.
+    req_tx: mpsc::SyncSender<PluginRequest>,
     pub resp_rx: mpsc::Receiver<PluginResponse>,
     pub event_rx: mpsc::Receiver<PluginEvent>,
     last_pong: Arc<Mutex<Instant>>,
@@ -85,9 +149,9 @@ impl PluginProcess {
     /// 단위 테스트 전용 stub. child/last_pong 등 외부에서 접근 불가능한 필드를
     /// 합리적인 기본값으로 채운다. 송수신 채널은 dangling이라 실제로 사용하면 안 된다.
     pub(crate) fn stub_for_test(plugin_id: &str) -> Self {
-        let (req_tx, _req_rx) = mpsc::channel();
-        let (_resp_tx, resp_rx) = mpsc::channel();
-        let (_event_tx, event_rx) = mpsc::channel();
+        let (req_tx, _req_rx) = mpsc::sync_channel(REQUEST_QUEUE_CAPACITY);
+        let (_resp_tx, resp_rx) = mpsc::sync_channel(RESPONSE_QUEUE_CAPACITY);
+        let (_event_tx, event_rx) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
         Self {
             plugin_id: plugin_id.into(),
             child: None,
@@ -166,9 +230,9 @@ impl PluginProcess {
         // 비로소 try_recv로 가져온다. plugin이 영영 connect 안 해도 startup 지연 0.
 
         let last_pong = Arc::new(Mutex::new(Instant::now()));
-        let (req_tx, req_rx) = mpsc::channel::<PluginRequest>();
-        let (resp_tx, resp_rx) = mpsc::channel::<PluginResponse>();
-        let (event_tx, event_rx) = mpsc::channel::<PluginEvent>();
+        let (req_tx, req_rx) = mpsc::sync_channel::<PluginRequest>(REQUEST_QUEUE_CAPACITY);
+        let (resp_tx, resp_rx) = mpsc::sync_channel::<PluginResponse>(RESPONSE_QUEUE_CAPACITY);
+        let (event_tx, event_rx) = mpsc::sync_channel::<PluginEvent>(EVENT_QUEUE_CAPACITY);
 
         let writer = stream.try_clone()?;
         spawn_tx_thread(&package.manifest.id, writer, req_rx)?;
@@ -334,13 +398,19 @@ impl PluginProcess {
         self.child.as_ref().map(|c| c.id())
     }
 
+    /// 호스트 → plugin 요청을 큐에 넣는다. **블록하지 않는다** — 근거는
+    /// [`try_send_request`] 의 doc.
+    pub fn try_send_request(&self, req: PluginRequest) -> Result<(), RequestSendError> {
+        try_send_request(&self.req_tx, req)
+    }
+
     pub fn ping(&self, next_id: u64) {
-        if let Err(e) = self.req_tx.send(PluginRequest {
+        if let Err(e) = self.try_send_request(PluginRequest {
             method: "ping".into(),
             params: serde_json::json!({}),
             id: next_id,
         }) {
-            tracing::trace!("plugin ping send dropped (writer exited): {e}");
+            tracing::trace!("plugin ping send dropped: {e}");
         }
     }
 
@@ -362,12 +432,12 @@ impl PluginProcess {
     /// 뿌린 뒤 대기 구간만 겹칠 수 있다 — 총 소요가 Σ(개별 대기) 가 아니라
     /// max(개별 대기) 로 수렴한다.
     pub fn begin_shutdown(mut self, deadline: Instant) -> PendingShutdown {
-        if let Err(e) = self.req_tx.send(PluginRequest {
+        if let Err(e) = self.try_send_request(PluginRequest {
             method: "shutdown".into(),
             params: serde_json::json!({}),
             id: u64::MAX,
         }) {
-            tracing::trace!("plugin shutdown send dropped (writer exited): {e}");
+            tracing::trace!("plugin shutdown send dropped: {e}");
         }
         PendingShutdown {
             plugin_id: std::mem::take(&mut self.plugin_id),
@@ -748,8 +818,8 @@ fn spawn_rx_thread(
     stream: std::net::TcpStream,
     waker: tasty_terminal::waker_factory::SharedWakerFactory,
     last_pong: Arc<Mutex<Instant>>,
-    resp_tx: mpsc::Sender<PluginResponse>,
-    event_tx: mpsc::Sender<PluginEvent>,
+    resp_tx: mpsc::SyncSender<PluginResponse>,
+    event_tx: mpsc::SyncSender<PluginEvent>,
 ) -> io::Result<()> {
     let plugin_id_rx = plugin_id.to_string();
     std::thread::Builder::new()
@@ -774,8 +844,8 @@ fn spawn_rx_thread(
 
 fn handle_incoming_line(
     line: &str,
-    resp_tx: &mpsc::Sender<PluginResponse>,
-    event_tx: &mpsc::Sender<PluginEvent>,
+    resp_tx: &mpsc::SyncSender<PluginResponse>,
+    event_tx: &mpsc::SyncSender<PluginEvent>,
     last_pong: &Arc<Mutex<Instant>>,
     plugin_id: &str,
 ) {
@@ -797,7 +867,7 @@ fn handle_incoming_line(
 
 fn handle_incoming_response(
     v: serde_json::Value,
-    resp_tx: &mpsc::Sender<PluginResponse>,
+    resp_tx: &mpsc::SyncSender<PluginResponse>,
     last_pong: &Arc<Mutex<Instant>>,
     plugin_id: &str,
 ) {
@@ -820,7 +890,7 @@ fn handle_incoming_response(
 
 fn handle_incoming_event(
     ev_value: serde_json::Value,
-    event_tx: &mpsc::Sender<PluginEvent>,
+    event_tx: &mpsc::SyncSender<PluginEvent>,
     plugin_id: &str,
 ) {
     match serde_json::from_value::<PluginEvent>(ev_value) {
@@ -967,6 +1037,157 @@ fn generate_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn a_request(id: u64) -> PluginRequest {
+        PluginRequest {
+            method: "noop".into(),
+            params: serde_json::json!({}),
+            id,
+        }
+    }
+
+    /// 자리가 없는 큐에 한 건을 넣어 보고 **그 판정을 다른 스레드에서 받아 온다.**
+    ///
+    /// 포화 송신을 본 스레드에서 직접 부르면 안 된다. 정책이 블로킹 `send` 로
+    /// 되돌아갔을 때 그 호출은 영영 안 돌아오고, 그러면 시험이 **빨개지는 대신
+    /// 멈춘다** — 멈춘 시험은 실패보다 나쁘다(스위트 전체가 서고 원인도 안 보인다).
+    /// 판정을 timeout 으로 받으면 같은 회귀가 실패 한 줄로 나온다.
+    fn verdict_off_thread(
+        tx: &mpsc::SyncSender<PluginRequest>,
+        id: u64,
+    ) -> Result<(), RequestSendError> {
+        let tx = tx.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            // 의도적 무시: 본 스레드가 timeout 으로 이미 포기했으면 수신단이 사라져
+            // 이 send 가 실패하는데, 그 경우는 아래 `expect` 가 이미 시험을 빨갛게
+            // 만든 뒤다 — 여기서 또 보고할 것이 없다.
+            let _ = done_tx.send(try_send_request(&tx, a_request(id)));
+        });
+        done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("포화 송신이 안 돌아왔다 — 정책이 기다리고 있다(블로킹)")
+    }
+
+    // 큐가 차면 **기다리지 않고 거절한다.** 이 시험의 요점은 반환값만이 아니라
+    // **돌아온다는 것** 자체다 — 이 정책을 부르는 12 자리는 거의 전부 호스트 main
+    // thread 의 pump 안이고(`PluginManager::pump` → `apply_collected_events` ·
+    // `drain_host_cmds`), 거기서 기다리면 큐가 찼다는 이유로 프레임이 통째로 멈춘다.
+    #[test]
+    fn a_full_queue_is_refused_instead_of_awaited() {
+        let (tx, _rx) = mpsc::sync_channel::<PluginRequest>(1);
+        try_send_request(&tx, a_request(1)).expect("첫 건은 자리에 들어간다");
+        assert_eq!(verdict_off_thread(&tx, 2), Err(RequestSendError::Full));
+    }
+
+    // 포화와 소멸은 **다른 사건**이다. 무제한 채널일 때는 실패 이유가 소멸 하나뿐이라
+    // 호출부가 가를 필요가 없었는데, 유한해지면서 일시적 실패가 생겼다. 둘이 같은
+    // 값으로 뭉개지면 로그에서 "밀리는 중" 과 "죽었다" 를 못 가른다.
+    #[test]
+    fn saturation_is_told_apart_from_a_dead_writer() {
+        let (tx, rx) = mpsc::sync_channel::<PluginRequest>(1);
+        try_send_request(&tx, a_request(1)).unwrap();
+        assert_eq!(verdict_off_thread(&tx, 2), Err(RequestSendError::Full));
+
+        drop(rx);
+        assert_eq!(
+            try_send_request(&tx, a_request(3)),
+            Err(RequestSendError::Disconnected)
+        );
+    }
+
+    // 용량이 실제로 걸려 있다. `sync_channel(0)` 은 rendezvous 라 첫 건부터 거절되고,
+    // 무제한으로 되돌리면 이 자리가 컴파일부터 안 된다 — 상수가 **쓰인다**는 것을
+    // 그 둘 사이의 값으로 고정한다.
+    #[test]
+    fn the_request_queue_holds_exactly_its_capacity() {
+        assert!(
+            REQUEST_QUEUE_CAPACITY > 0,
+            "rendezvous 면 첫 건부터 거절된다"
+        );
+        let (tx, _rx) = mpsc::sync_channel::<PluginRequest>(REQUEST_QUEUE_CAPACITY);
+        for i in 0..REQUEST_QUEUE_CAPACITY {
+            try_send_request(&tx, a_request(i as u64))
+                .unwrap_or_else(|e| panic!("{i} 번째가 용량 안인데 거절됐다: {e}"));
+        }
+        assert_eq!(
+            verdict_off_thread(&tx, u64::MAX),
+            Err(RequestSendError::Full),
+            "용량을 넘겨도 계속 받는다 — 상한이 안 걸렸다"
+        );
+    }
+
+    // plugin → 호스트 방향은 **거절이 아니라 대기**다. 응답을 버리면 그 요청이 영영
+    // 답을 못 받고(호스트는 deadline 으로만 회수한다 — ADR-0311), 이벤트를 버리면
+    // 등록·수명 전이가 조용히 빠진다. 여기 sender 는 reader 스레드 하나뿐이라 블록해도
+    // 호스트 프레임이 안 멈추고, 멈추는 것은 소켓 읽기 — 그것이 plugin 에 거는
+    // backpressure 다.
+    //
+    // 재는 자리는 생산 경로 그 자체(`handle_incoming_response`)다. 로컬 채널로
+    // `sync_channel` 의 성질을 재면 std 를 재는 것이지 이 코드를 재는 것이 아니다.
+    //
+    // ★ 모수를 크게 잡는 이유: 용량 1 짜리 큐에 **한 건만** 흘려 보내면 보내는 쪽과
+    // 받는 쪽의 순서가 안 정해져서, 버리는 구현(`try_send`)이어도 수신자가 먼저
+    // 비워 둔 순간에 걸리면 통과한다 — 실제로 그 형태로 짰다가 변이가 **살아남았다.**
+    // 한 건이 아니라 용량의 여러 배를 연속으로 흘리면 버리는 구현은 가득 찬 순간을
+    // 반드시 만난다. 이 시험의 방향은 안전하다: 블로킹 구현은 절대 안 잃으므로
+    // **거짓 빨강이 없고**, 부하가 어떻든 한쪽으로만 틀릴 수 있다.
+    const OVERFLOW_ROUNDS: u64 = 1000;
+
+    #[test]
+    fn responses_past_the_capacity_are_delayed_not_dropped() {
+        let (tx, rx) = mpsc::sync_channel::<PluginResponse>(1);
+        let last_pong = Arc::new(Mutex::new(Instant::now()));
+        let writer = std::thread::spawn(move || {
+            for id in 0..OVERFLOW_ROUNDS {
+                handle_incoming_response(
+                    serde_json::json!({ "id": id, "result": {} }),
+                    &tx,
+                    &last_pong,
+                    "com.example.x",
+                );
+            }
+        });
+
+        for expected in 0..OVERFLOW_ROUNDS {
+            let got = rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap_or_else(|e| panic!("{expected} 번째 응답이 안 왔다({e}) — 버려졌다"));
+            assert_eq!(got.id, expected, "응답이 빠져 순번이 밀렸다");
+        }
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn events_past_the_capacity_are_delayed_not_dropped() {
+        let (tx, rx) = mpsc::sync_channel::<PluginEvent>(1);
+        let writer = std::thread::spawn(move || {
+            for id in 0..OVERFLOW_ROUNDS {
+                handle_incoming_event(
+                    serde_json::json!({ "kind": "surface_invalidated", "surface_id": id }),
+                    &tx,
+                    "com.example.x",
+                );
+            }
+        });
+
+        for expected in 0..OVERFLOW_ROUNDS {
+            let ev = rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap_or_else(|e| panic!("{expected} 번째 이벤트가 안 왔다({e}) — 버려졌다"));
+            match ev {
+                PluginEvent::SurfaceInvalidated { surface_id } => {
+                    assert_eq!(
+                        u64::from(surface_id),
+                        expected,
+                        "이벤트가 빠져 순번이 밀렸다"
+                    );
+                }
+                other => panic!("예상 밖 이벤트: {other:?}"),
+            }
+        }
+        writer.join().unwrap();
+    }
 
     /// 종료 계측의 `reason` 값은 **맨 소문자 토큰**이고 서로 구별된다.
     ///

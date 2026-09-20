@@ -49,7 +49,7 @@ impl PluginManager {
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
         if let Some(proc) = self.processes.get(plugin_id)
-            && let Err(e) = proc.req_tx.send(req)
+            && let Err(e) = proc.try_send_request(req)
         {
             tracing::warn!("plugin {plugin_id}: failed to send ipc.result: {e}");
         }
@@ -401,8 +401,7 @@ impl PluginManager {
             }),
             id: req_id,
         };
-        proc.req_tx
-            .send(req)
+        proc.try_send_request(req)
             .map_err(|e| format!("extension '{extension_plugin_id}' send failed: {e}"))?;
         Ok(req_id)
     }
@@ -522,8 +521,7 @@ impl PluginManager {
             }),
             id: req_id,
         };
-        proc.req_tx
-            .send(req)
+        proc.try_send_request(req)
             .map_err(|e| format!("plugin '{plugin_id}' send failed: {e}"))?;
         Ok(req_id)
     }
