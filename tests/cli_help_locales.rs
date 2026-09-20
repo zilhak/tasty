@@ -1,4 +1,7 @@
 //! Run the shipped CLI entry point, including clap exits, without a live instance.
+#[path = "spawn_diag/mod.rs"]
+mod spawn_diag;
+
 use std::{
     io::{BufRead, BufReader, Write},
     net::TcpListener,
@@ -7,7 +10,8 @@ use std::{
 };
 
 fn cli(home: &Path, args: &[&str]) -> Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tasty"));
+    let mut cmd = Command::new(spawn_diag::instance_bin());
+    spawn_diag::apply_bundle_opt_in(&mut cmd);
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("TASTY_") {
             cmd.env_remove(key);
