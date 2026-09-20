@@ -62,6 +62,12 @@ const PUB_MODULES: &[(&str, &str)] = &[
         "file_handler",
         "picker 의 모델 규칙(말줄임 · 문자 예산) — 순수 함수지 위젯이 아니다.          본체와 갤러리 specimen 이 같은 판정을 부르라고 여기 있다",
     ),
+    (
+        "crumb_alloc",
+        "breadcrumb 의 폭 배분 계획기 — 잰 값으로 무엇을 접을지 정하는 순수 함수지 \
+         위젯이 아니다. 본체 path bar 와 갤러리 specimen 이 같은 계획을 부르라고 \
+         여기 있다(`file_handler` 와 같은 갈래다)",
+    ),
     ("tokens", "레이아웃 상수 모듈 — 값이지 위젯이 아니다"),
 ];
 

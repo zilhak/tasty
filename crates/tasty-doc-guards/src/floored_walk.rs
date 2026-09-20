@@ -193,10 +193,12 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 610,
+        measured: 611,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "5120fcda1 — 앞 회차 lane 착지(층 1·2)를 담은 트리에서 다시 셌다. 607 → 610, 신규 \
+            "62f7a86d8 — 같은 트리에서 다시 셌다. 610 -> 611 이고 더해진 것은 \
+             `src/file/picker_caps.rs` 하나(component 층 토큰을 뷰 밖에서 읽는 자리), \
+             삭제는 0 이다. 이전 회차: 5120fcda1 — 앞 회차 lane 착지(층 1·2)를 담은 트리에서 다시 셌다. 607 → 610, 신규 \
              파일 3 개(`src/app/attach_client/dispatch.rs` · 그 아래 `debug_completion.rs` · \
              `src/webhook/listener_body_tests.rs`)이고 삭제는 0 이다. 앞선 값 607 은 아래 \
              좌표에서 쟀고 그 트리에서는 맞았다. 그 앞의 이력은 \
@@ -231,10 +233,12 @@ pub mod populations {
 
     /// 루트 패키지의 통합 테스트 타깃 — `tests/` 바로 아래 한 겹.
     pub const ROOT_TEST_TARGETS: Population = Population {
-        measured: 41,
+        measured: 42,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "65bcd1988 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 40 -> 41 이고 \
+            "62f7a86d8 — 같은 트리에서 다시 셌다. 41 -> 42 이고 더해진 것은 \
+             `tests/file_handler_when_fits_column.rs` 하나, 삭제는 0 이다. \
+             이전 회차: 65bcd1988 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 40 -> 41 이고 \
              더해진 것은 `tests/cli_help_locales.rs` 하나, 삭제는 0 이다. \
              이전 회차: 91ca7d37d — 여기서 다시 셌다. 앞선 값 39 는 `12bc0f4b2` 에서 쟀고 그 트리에서 \
              다시 세도 39 라 **낡은 값**이었다. 그 사이 늘어난 파일은 정확히 하나 \
@@ -249,10 +253,12 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 121,
+        measured: 122,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "4d307aeb3 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 119 -> 121 이고 \
+            "62f7a86d8 — 파일 핸들러 lane 이 착지한 트리에서 다시 셌다. 121 -> 122 이고 더해진 것은 \
+             `tasty-gallery/tests/mono_metrics.rs` 하나, 삭제는 0 이다. \
+             이전 회차: 4d307aeb3 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 119 -> 121 이고 \
              더해진 둘은 `tasty-cli/tests/localized_help.rs` 와 \
              `tasty-cli/tests/plugin_help_catalog.rs` 다. 삭제는 0 이다. \
              이전 회차: dbf5481a4 + lane — site vendor lane 이 \

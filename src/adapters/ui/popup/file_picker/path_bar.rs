@@ -1,7 +1,6 @@
 //! 파일 피커 path bar — breadcrumb 과 상위·새로고침 버튼. 넘치는 경로를 흡수하는 자리다
 //! (`docs/features/native-file-picker/index.md` "긴 경로 — 넘침은 path bar 가 흡수한다").
 
-use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{IconButton, IconButtonVariant, MenuItemVariant, menu_item};
 
@@ -10,26 +9,6 @@ use tasty_ui_widgets::crumb_alloc::{Caps, CrumbSlot, Measure, Role, plan};
 use super::{CRUMB_GLYPH, FilePickerAction, FilePickerProps};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
-
-/// 디자인 토큰을 이 프레임의 배율로 잰다.
-///
-/// 생성 상수는 배율 1 의 값이다 — `Theme` 은 `tasty-design-tokens` 에 의존하지 않아
-/// 이것들을 접근자로 들 수 없고, 본체는 배율을 토큰에만 걸므로(ADR-0135) 여기서 한 번
-/// 곱한다. 값 자체는 export 가 정한다.
-fn scaled(v: LogicalPx, th: &Theme) -> f32 {
-    (v.value() * th.ui_zoom).round()
-}
-
-/// 이 프레임의 치수 — 전부 `component.fp-*` 토큰이다.
-fn caps(th: &Theme) -> Caps {
-    use tasty_design_tokens::generated::component::fp;
-    Caps {
-        crumb_max: scaled(fp::CRUMB_MAX_WIDTH, th),
-        ancestor_min: scaled(fp::CRUMB_MIN_WIDTH, th),
-        current_min: scaled(fp::CRUMB_CURRENT_MIN_WIDTH, th),
-        hysteresis: scaled(fp::BAR_HYSTERESIS, th),
-    }
-}
 
 /// path bar — 오른쪽 버튼(flex:none)이 먼저 자리 잡고, breadcrumb 이 남은 폭(flex:1;
 /// min-width:0; overflow:hidden) 안에서만 그린다.
@@ -160,21 +139,12 @@ fn elide_front(ui: &egui::Ui, label: &str, font: &egui::FontId, width: f32) -> S
     best
 }
 
-/// `…` 메뉴 폭의 밴드 — `component.fp-crumb-menu-{min,max}-width`.
-fn menu_band(th: &Theme) -> (f32, f32) {
-    use tasty_design_tokens::generated::component::fp;
-    (
-        scaled(fp::CRUMB_MENU_MIN_WIDTH, th),
-        scaled(fp::CRUMB_MENU_MAX_WIDTH, th),
-    )
-}
-
 /// 가장 긴 라벨 폭으로 정하는 메뉴 폭. 밴드 안에서 **내용이 정한다**.
 ///
 /// 라벨만으로 재면 안 된다 — 행은 폴더 글리프 + gap + 라벨 + 좌우 패딩이라, 그 몫을
 /// 빼놓으면 긴 이름이 천장에 닿기 전에 잘린다.
 fn menu_width(widest_label: f32, th: &Theme) -> f32 {
-    let (floor, ceiling) = menu_band(th);
+    let (floor, ceiling) = crate::file::picker_caps::menu_band(th.ui_zoom);
     let row = widest_label
         + th.menu_item_padding_x().value() * 2.0
         + th.icon_glyph_size_md.value()
@@ -191,7 +161,7 @@ mod menu_width_tests {
     #[test]
     fn the_menu_width_is_measured_inside_the_band_and_counts_the_whole_row() {
         let th = crate::theme::theme();
-        let (floor, ceiling) = menu_band(&th);
+        let (floor, ceiling) = crate::file::picker_caps::menu_band(th.ui_zoom);
         assert!(floor < ceiling, "밴드가 뒤집혔다: {floor} .. {ceiling}");
 
         assert_eq!(menu_width(0.0, &th), floor, "짧은 경로가 바닥을 안 받았다");
@@ -242,7 +212,7 @@ fn draw_crumbs(ui: &mut egui::Ui, props: &FilePickerProps<'_>, action: &mut File
         ellipsis: natural_width(ui, th, "…", false),
         separator: CRUMB_GLYPH.value() + gap * 2.0,
         available: ui.available_width(),
-        caps: caps(th),
+        caps: crate::file::picker_caps::caps(th.ui_zoom),
     };
     let memory_id = step_memory_id(ui);
     let previous = ui.memory(|m| m.data.get_temp::<usize>(memory_id));
@@ -333,7 +303,7 @@ fn hidden_crumbs(
                         .x
                 })
                 .fold(0.0_f32, f32::max);
-            let band = menu_band(th);
+            let band = crate::file::picker_caps::menu_band(th.ui_zoom);
             ui.set_min_width(menu_width(widest, th));
             ui.set_max_width(band.1);
             let folder = th.accent_primary().to_egui();
