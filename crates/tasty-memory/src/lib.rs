@@ -64,8 +64,13 @@ use serde::{Deserialize, Serialize};
 pub use migrations::{DbSchemaError, SCHEMA_VERSION};
 pub use scope::{Scope, validate_key};
 
-/// 단일 값 최대 크기 fallback (1 MiB). config 미주입 시 사용. 실제 cap 은
-/// `MemoryConfig::entry_max_bytes` 가 결정한다.
+/// 단일 값 최대 크기의 참고값 (1 MiB).
+///
+/// **집행 경로에 없다.** 실제 cap 은 `MemoryConfig::entry_max_bytes` 이고, 그 값은 호스트
+/// 부팅이 `[memory] entry_max_mb` 설정을 환산해 넣는다. `MemoryConfig::default()` 조차 이
+/// 상수를 안 읽고 자기 리터럴을 쓴다 — 그래서 여기를 고쳐도 아무 cap 도 안 움직인다.
+/// 실효 상한을 판정하려는 코드는 이것 말고 `MemoryConfig::entry_max_bytes` 나 그 설정
+/// 기본값을 좌변으로 삼아야 한다.
 pub const MAX_VALUE_BYTES: usize = 1024 * 1024;
 
 /// Local caller (CLI / 사용자 / 호스트 내부) 의 owner sentinel. plugin id 의

@@ -30,11 +30,22 @@ use crate::ports::ipc_server::IpcServerPort;
 /// 없었고, 이 상수가 그 비대칭을 없앤다.
 ///
 /// 값의 근거: 호스트가 받아들이는 가장 큰 요청 payload 는 `memory.set` 의 값이고 그
-/// 상한은 `tasty_memory::MemoryConfig::entry_max_bytes`(기본 1 MiB)다. 그 값이 한 줄에
-/// 실릴 때의 팽창률은 두 갈래다 — `value_b64` 는 base64 라 4/3 배, `value` 문자열은 JSON
-/// escape 가 최악에 바이트당 `\u00XX` 6 자라 6 배. 그래서 **정상** 요청의 상한은 6 MiB +
-/// 봉투이고 8 MiB 는 그 위의 여유다. 이 수를 줄이려면 `entry_max_bytes` 를 먼저 줄여야
-/// 한다 — 지금 통과하는 요청을 거절하게 된다.
+/// 상한은 `MemoryConfig::entry_max_bytes` 다. **그 값은 상수가 아니라 설정값이다** —
+/// `~/.tasty/config.toml` 의 `[memory] entry_max_mb`(`MemorySettings::default()` 는 1)가
+/// 부팅 때 바이트로 환산돼 들어간다. 그 값이 한 줄에 실릴 때의 팽창률은 두 갈래다 —
+/// `value_b64` 는 base64 라 4/3 배, `value` 문자열은 JSON escape 가 최악에 바이트당
+/// `\u00XX` 6 자라 6 배. 그래서 **기본 설정에서** 정상 요청의 상한은 6 MiB + 봉투이고
+/// 8 MiB 는 그 위의 여유다.
+///
+/// ★ 이 파생은 기본값에서만 성립한다. 사용자가 `entry_max_mb` 를 올리면 저장소는 그
+/// 크기를 정상으로 받아들이는데 이 상한은 안 따라 올라간다 — escape 최악 갈래에서
+/// `entry_max_mb = 2`, base64 갈래에서 `entry_max_mb = 7` 부터 합법적인 `memory.set` 한
+/// 줄이 여기 걸려 **응답 없이 연결이 닫힌다.** 두 수를 잇는 배선은 없다(그 배선은 동작
+/// 변경이라 별건이다). 갈라졌는지 재는 법은 아래
+/// `admission_tests::the_cap_clears_the_largest_payload_the_store_accepts` 가
+/// `MemorySettings::default()` 를 좌변으로 읽는 것이다 — 기본값이 올라가면 그 시험이
+/// 죽는다. 사용자가 config 로 올린 값은 컴파일 시점에 안 보이므로 **어떤 시험도 못
+/// 잡는다.**
 const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024 * 1024;
 
 /// 한 줄 읽기의 결과. `read_line` 의 `Ok(n)` 하나로 뭉뚱그려지던 것을 갈래로 나눈다 —
@@ -925,13 +936,22 @@ mod admission_tests {
     // 상한이 어디서 나왔는지를 값으로 고정한다. 호스트가 받아들이는 가장 큰 요청
     // payload 는 저장소 항목 하나이고, 그것이 한 줄에 실릴 때의 최악 팽창은 JSON
     // escape 의 6 배다. 상한을 그 아래로 내리면 **지금 통과하는 memory.set 이 거절된다.**
+    //
+    // 좌변이 `MemorySettings::default().entry_max_mb` 인 것이 이 시험의 요점이다.
+    // 집행되는 cap 은 부팅이 그 설정값을 환산해 `MemoryConfig::entry_max_bytes` 에
+    // 넣은 값이고(`src/boot.rs`), `tasty_memory::MAX_VALUE_BYTES` 는 그 경로에 **없다** —
+    // 아무도 fallback 으로 안 읽는 상수라 그것을 재면 저장소 cap 을 64 배 올려도 이
+    // 시험이 초록으로 남는다. 즉 재는 대상이 달랐다.
     #[test]
     fn the_cap_clears_the_largest_payload_the_store_accepts() {
-        let worst_case_on_the_wire = tasty_memory::MAX_VALUE_BYTES * 6;
+        let entry_max_bytes = tasty_settings::MemorySettings::default()
+            .entry_max_mb
+            .saturating_mul(1024 * 1024) as usize;
+        let worst_case_on_the_wire = entry_max_bytes * 6;
         assert!(
             MAX_REQUEST_LINE_BYTES >= worst_case_on_the_wire,
-            "상한 {MAX_REQUEST_LINE_BYTES} 가 저장소 상한의 escape 최악치 \
-             {worst_case_on_the_wire} 보다 작다 — 정상 요청을 거절하게 된다"
+            "상한 {MAX_REQUEST_LINE_BYTES} 가 저장소 기본 cap {entry_max_bytes} 의 escape \
+             최악치 {worst_case_on_the_wire} 보다 작다 — 정상 요청을 거절하게 된다"
         );
     }
 }
