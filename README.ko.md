@@ -66,4 +66,4 @@ Hexagonal 아키텍처(model + ports + adapters + view + host_api 분리)의 56-
 
 ## 라이선스
 
-MIT — [`LICENSE`](LICENSE). Third-party 의존성 라이선스 모음: [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+MIT — [`LICENSE`](LICENSE). 번들하는 제3자 자산과 그 고지: [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
