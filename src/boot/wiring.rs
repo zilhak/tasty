@@ -66,7 +66,7 @@ fn build_production_core_inner(
     let home: Arc<dyn crate::ports::home::HomeDirectory> = Arc::new(DirectoriesHome);
 
     // Memory: boot 에서 받은 Arc 를 dyn coerce. 실패 시 in-memory fallback.
-    let memory: Arc<Mutex<dyn MemoryStorage>> = match memory_arc {
+    let store: Arc<Mutex<tasty_memory::MemoryStore>> = match memory_arc {
         Some(arc) => arc,
         None => {
             let store = tasty_memory::MemoryStore::open_in_memory()
@@ -74,6 +74,10 @@ fn build_production_core_inner(
             Arc::new(Mutex::new(store))
         }
     };
+    // dyn 으로 접기 **전에** 게이지를 꺼낸다 — trait 에는 이 핸들을 낼 방법이 없고,
+    // 여기가 구상 타입을 손에 쥐는 유일한 자리다.
+    let db_latency = db_latency_of(&store);
+    let memory: Arc<Mutex<dyn MemoryStorage>> = store;
 
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
     let preset_store: Arc<Mutex<PresetStore>> = Arc::new(Mutex::new(PresetStore::load_default()));
@@ -87,11 +91,28 @@ fn build_production_core_inner(
         .with_home(home)
         .with_sound_player(sound_player)
         .with_memory(memory)
+        .with_db_latency(db_latency)
         .with_themes(themes)
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)
         .build()
 }
+
+/// 스토어가 자기 안에서 재는 DB 지연 게이지를 꺼낸다.
+///
+/// 뮤텍스를 한 번 잡지만 그 자리는 부팅이고, 이후 진단 읽기는 이 핸들만 쓰므로
+/// 다시 안 잡는다 — 적체를 재려고 적체하는 자물쇠를 잡으면 진단이 같이 막힌다.
+/// 부팅 시점이라 poison 은 사실상 불가능하지만(아직 아무도 이 스토어를 안 잡았다)
+/// 복구는 공용 헬퍼로 한다 — 조용히 넘기면 "게이지를 못 꺼냈다" 가 로그에 안 남는다.
+fn db_latency_of(
+    store: &Arc<Mutex<tasty_memory::MemoryStore>>,
+) -> Arc<tasty_memory::DbLatencyStats> {
+    crate::poison::recover_mutex(store.lock(), MEMORY_WHAT, &MEMORY_POISONED).db_latency()
+}
+
+/// 위 복구의 공용 보고 좌표(첫-1 회).
+static MEMORY_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const MEMORY_WHAT: &str = "memory store (db latency handle)";
 
 /// Headless 빌드용 no-op ClipboardSystem. clipboard 호출은 IPC 표면에서
 /// `MethodNotFound` 로 차단되므로 실제 호출은 도달하지 않는다.
@@ -105,5 +126,40 @@ impl crate::ports::clipboard::ClipboardSystem for NullClipboard {
     }
     fn write_text(&self, _text: &str) -> anyhow::Result<()> {
         anyhow::bail!("clipboard unavailable in headless build")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tasty_memory::{MemoryValue, PutOpts, Scope};
+
+    /// 게이지를 꺼내는 자리가 **스토어가 올리는 그 게이지**를 주는지. 새 기본값을
+    /// 돌려줘도 타입은 맞으므로, 짝이 맞는지는 실제 쓰기를 한 건 일으켜 봐야 갈린다.
+    #[test]
+    fn the_extracted_gauge_is_the_one_the_store_raises() {
+        let store = Arc::new(Mutex::new(
+            tasty_memory::MemoryStore::open_in_memory().unwrap(),
+        ));
+        let gauge = db_latency_of(&store);
+        assert_eq!(gauge.snapshot().commits, 0);
+
+        store
+            .lock()
+            .unwrap()
+            .put(
+                "com.tasty.test",
+                &Scope::Surface(1),
+                "k",
+                &MemoryValue::Text("v".into()),
+                &PutOpts::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            gauge.snapshot().commits,
+            1,
+            "꺼낸 게이지가 스토어의 것이 아니다"
+        );
     }
 }

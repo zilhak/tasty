@@ -1,4 +1,4 @@
-<!-- source-hash: d73a2c80db40 -->
+<!-- source-hash: 46e3a099ddd5 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -286,7 +286,7 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
 
-Use `list pressure` when responses feel slow and you need to tell why. The answer comes in three blocks that **count different things**: `queue_before_gate` is how long commands waited in the queue, so it also counts requests that were rejected afterwards, `handler_after_gate` counts only the ones that actually ran, and `plugin_round_trip` is how long Tasty waited for a plugin to answer (counting only the requests that were answered). A large wait means the instance is backed up, a large handler time means the command itself is heavy, and a large round trip means the time was spent inside the plugin. Do not subtract one from the other to get a rejection count — it does not work that way. The numbers are totals since this instance started, and an average with nothing behind it comes back as `null`.
+Use `list pressure` when responses feel slow and you need to tell why. The answer comes in four blocks that **count different things**: `queue_before_gate` is how long commands waited in the queue, so it also counts requests that were rejected afterwards, `handler_after_gate` counts only the ones that actually ran, `plugin_round_trip` is how long Tasty waited for a plugin to answer (counting only the requests that were answered), and `db` is how long it took for what was written to settle on disk. A large wait means the instance is backed up, a large handler time means the command itself is heavy, a large round trip means the time was spent inside the plugin, and a large db time means the disk is slow. Do not subtract one from the other to get a rejection count — it does not work that way. The numbers are totals since this instance started, and an average with nothing behind it comes back as `null`.
 
 `list info` also answers what this Tasty can do, under `capabilities`. Each entry pairs a name with a version, and it tells you what the version string alone cannot — the same version can do different things depending on how it was built. Ignore any name you do not recognise.
 

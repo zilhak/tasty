@@ -41,6 +41,7 @@
 // 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
+mod latency;
 mod migrations;
 mod port;
 mod port_impl;
@@ -53,6 +54,7 @@ pub mod goal;
 pub mod plan;
 pub mod testing;
 
+pub use latency::{DbLatencySnapshot, DbLatencyStats};
 pub use port::MemoryStorage;
 
 use std::path::{Path, PathBuf};
@@ -287,6 +289,9 @@ pub struct MemoryStore {
     /// open 시 1회 계산하고, 모든 regular 변이 경로(put/delete/purge_*)에서
     /// 증분 유지한다 (purge 는 드물어 재계산으로 정합 자동 교정).
     regular_used_bytes: i64,
+    /// commit·checkpoint 지연 누계. 스토어가 열릴 때 함께 태어나고 `Arc` 로 밖에
+    /// 나간다 — 호스트가 이 값을 읽을 때 스토어 뮤텍스를 안 잡게 하기 위해서다.
+    db_latency: std::sync::Arc<DbLatencyStats>,
 }
 
 impl MemoryStore {
@@ -338,7 +343,14 @@ impl MemoryStore {
             config,
             pending_changes: Vec::new(),
             regular_used_bytes,
+            db_latency: std::sync::Arc::new(DbLatencyStats::default()),
         })
+    }
+
+    /// commit·checkpoint 지연 누계 핸들. 호스트가 이것을 복제해 들고 있으면
+    /// 진단 응답이 스토어 뮤텍스를 안 잡고 값을 읽는다.
+    pub fn db_latency(&self) -> std::sync::Arc<DbLatencyStats> {
+        self.db_latency.clone()
     }
 
     /// Regular 테이블의 value 바이트 총합을 전체 스캔으로 계산. open 시 1회,
@@ -472,7 +484,9 @@ impl MemoryStore {
             }
         };
 
+        let commit_started = std::time::Instant::now();
         tx.commit()?;
+        self.db_latency.record_commit(commit_started.elapsed());
         // commit 성공 후에만 카운터 반영 — 위 에러/거부 경로는 모두 commit 이전에
         // return 하므로 카운터는 항상 실제 테이블과 정합.
         self.regular_used_bytes = projected;
@@ -589,7 +603,9 @@ impl MemoryStore {
             "DELETE FROM memory WHERE scope=?1 AND key=?2",
             params![&scope_token, key],
         )?;
+        let commit_started = std::time::Instant::now();
         tx.commit()?;
+        self.db_latency.record_commit(commit_started.elapsed());
         // 위 에러 경로는 commit 이전에 return → 여기 도달 시 실제 삭제됨.
         self.regular_used_bytes = (self.regular_used_bytes - deleted_size).max(0);
         self.pending_changes.push(MemoryChange {
@@ -965,7 +981,9 @@ impl MemoryStore {
             }
         };
 
+        let commit_started = std::time::Instant::now();
         tx.commit()?;
+        self.db_latency.record_commit(commit_started.elapsed());
         Ok(new_version)
     }
 
@@ -1059,7 +1077,9 @@ impl MemoryStore {
             "DELETE FROM memory_secret WHERE owner=?1 AND scope=?2 AND key=?3",
             params![owner, &scope_token, key],
         )?;
+        let commit_started = std::time::Instant::now();
         tx.commit()?;
+        self.db_latency.record_commit(commit_started.elapsed());
         Ok(())
     }
 
@@ -1364,9 +1384,12 @@ impl MemoryStore {
     /// 로그 수준을 정할 수 있게 에러가 아닌 bool 로 돌려준다.
     pub fn checkpoint_truncate(&mut self) -> Result<bool> {
         // (busy, log_pages, checkpointed_pages) 한 행을 돌려준다.
+        let started = std::time::Instant::now();
         let busy: i64 = self
             .conn
             .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        self.db_latency
+            .record_checkpoint(started.elapsed(), busy == 0);
         Ok(busy == 0)
     }
 

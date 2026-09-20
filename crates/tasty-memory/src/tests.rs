@@ -1407,3 +1407,66 @@ fn checkpoint_truncate_reclaims_the_wal_without_losing_rows() {
     assert!(s.get(&scope, "k0").unwrap().is_some());
     assert!(s.get(&scope, "k299").unwrap().is_some());
 }
+
+// ---- DB 지연 계측 ----
+
+/// commit 누계가 **성공한 쓰기 수**를 센다. 거부된 쓰기는 트랜잭션을 열고도
+/// commit 없이 돌아가므로 세면 안 된다 — 그러면 평균이 "쓰기 한 건이 걸리는
+/// 시간" 을 더는 뜻하지 않는다.
+#[test]
+fn only_a_write_that_committed_is_counted_as_a_commit() {
+    let mut s = store();
+    let gauge = s.db_latency();
+    let scope = Scope::Surface(1);
+    assert_eq!(gauge.snapshot().commits, 0, "열기만 해서는 commit 이 없다");
+
+    s.put(PLUGIN_A, &scope, "a", &text("hello"), &PutOpts::default())
+        .unwrap();
+    assert_eq!(gauge.snapshot().commits, 1);
+
+    // 없는 키에 cas 를 걸면 트랜잭션은 열리지만 commit 전에 돌아간다.
+    let rejected = s.put(
+        PLUGIN_A,
+        &scope,
+        "b",
+        &text("nope"),
+        &PutOpts {
+            cas: Some(7),
+            ..Default::default()
+        },
+    );
+    assert!(rejected.is_err(), "cas 충돌이 거부되지 않았다");
+    assert_eq!(
+        gauge.snapshot().commits,
+        1,
+        "거부된 쓰기가 commit 으로 셌다"
+    );
+
+    s.delete(PLUGIN_A, &scope, "a", None).unwrap();
+    assert_eq!(gauge.snapshot().commits, 2);
+}
+
+/// checkpoint 는 commit 과 **다른 모수**다. 한 값에 섞이면 운영자가 "쓰기가
+/// 느리다" 와 "WAL 되감기가 느리다" 를 못 가른다.
+#[test]
+fn a_checkpoint_lands_in_its_own_population() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut s, _path) = disk_store(tmp.path());
+    let gauge = s.db_latency();
+    let scope = Scope::Surface(1);
+    append_rows(&mut s, &scope, 0, 4, 1024);
+
+    let before = gauge.snapshot();
+    assert_eq!(before.checkpoints, 0);
+    assert!(before.commits >= 4, "쓰기가 commit 으로 안 셌다");
+
+    assert!(s.checkpoint_truncate().unwrap(), "체크포인트가 busy 였다");
+
+    let after = gauge.snapshot();
+    assert_eq!(after.checkpoints, 1);
+    assert_eq!(after.checkpoints_busy, 0, "끝까지 갔는데 busy 로 셌다");
+    assert_eq!(
+        after.commits, before.commits,
+        "checkpoint 가 commit 으로 셌다"
+    );
+}

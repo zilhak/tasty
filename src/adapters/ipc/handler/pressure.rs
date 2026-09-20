@@ -24,6 +24,23 @@
 //! 그 덩어리의 모수는 위 둘과 또 다르다: **응답이 실제로 매칭된 요청만** 센다. 끝내
 //! 답이 안 온 요청(취소 · deadline 만료 · plugin 종료)은 끝점이 없어 못 잰다.
 //!
+//! ## 네 번째 덩어리는 **디스크가 받아준** 시간이다
+//!
+//! `db` 는 `MemoryStore` 가 트랜잭션 commit 과 WAL checkpoint 에 쓴 시간이다. 앞의
+//! 셋과 겹치지 않는 축이다 — commit 은 handler 시간 **안에** 들어 있으므로, 그 둘을
+//! 나란히 두면 "handler 가 느리다" 와 "handler 안의 쓰기가 느리다" 가 갈린다.
+//!
+//! 그 덩어리 안이 다시 둘이다. `commits` 는 **성공한** 쓰기만 세고(거부는 롤백이라
+//! 디스크에 남긴 것이 없다), `checkpoints` 는 부팅 때의 WAL 되감기다. 되감기는
+//! 다른 커넥션이 읽는 중이면 못 끝내고 돌아오므로 `busy` 를 따로 센다 — 시간만
+//! 봐서는 느린 것과 경합한 것이 안 갈린다.
+//!
+//! ## 다섯 번째 자리를 미리 비워 두지 않는다
+//!
+//! 연결 수 게이지가 뒤따를 예정이지만 빈 덩어리를 미리 넣지 않는다. 값이 0 인
+//! 덩어리는 "연결이 없었다" 로 읽히고, 그것은 이 파일이 평균을 `null` 로 두는 것과
+//! 정확히 같은 함정이다. 재는 자리가 생길 때 덩어리도 같이 생긴다.
+//!
 //! ## 두 수의 차이를 여기서 빼지 않는 이유
 //!
 //! `commands - calls` 는 "거부된 수" 가 **아니다.** 게이트를 통과하고도
@@ -51,7 +68,11 @@ pub(super) fn handle_system_pressure(
 ) -> JsonRpcResponse {
     JsonRpcResponse::success(
         id,
-        snapshot_json(&core.pressure().snapshot(), &core.plugin_wait().snapshot()),
+        snapshot_json(
+            &core.pressure().snapshot(),
+            &core.plugin_wait().snapshot(),
+            &core.db_latency().snapshot(),
+        ),
     )
 }
 
@@ -62,6 +83,7 @@ pub(super) fn handle_system_pressure(
 pub(super) fn snapshot_json(
     s: &tasty_telemetry::PressureSnapshot,
     p: &tasty_telemetry::PluginWaitSnapshot,
+    d: &tasty_memory::DbLatencySnapshot,
 ) -> serde_json::Value {
     json!({
         "queue_before_gate": {
@@ -85,6 +107,17 @@ pub(super) fn snapshot_json(
             "us_max": p.us_max,
             "us_mean": p.us_mean(),
         },
+        "db": {
+            "commits": d.commits,
+            "commit_us_sum": d.commit_us_sum,
+            "commit_us_max": d.commit_us_max,
+            "commit_us_mean": d.commit_us_mean(),
+            "checkpoints": d.checkpoints,
+            "checkpoints_busy": d.checkpoints_busy,
+            "checkpoint_us_sum": d.checkpoint_us_sum,
+            "checkpoint_us_max": d.checkpoint_us_max,
+            "checkpoint_us_mean": d.checkpoint_us_mean(),
+        },
     })
 }
 
@@ -92,6 +125,7 @@ pub(super) fn snapshot_json(
 mod tests {
     use super::*;
     use std::time::Duration;
+    use tasty_memory::DbLatencyStats;
     use tasty_telemetry::{PluginWaitStats, PressureStats};
 
     /// 게이트 앞/뒤 두 모수가 **서로 다른 자리로** 나간다.
@@ -107,7 +141,11 @@ mod tests {
         p.record_queue_wait(Duration::from_micros(130));
         p.record_handler(Duration::from_micros(11));
 
-        let v = snapshot_json(&p.snapshot(), &PluginWaitStats::default().snapshot());
+        let v = snapshot_json(
+            &p.snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &DbLatencyStats::default().snapshot(),
+        );
         let q = &v["queue_before_gate"];
         let h = &v["handler_after_gate"];
 
@@ -130,6 +168,38 @@ mod tests {
         assert!(
             h.get("wait_us_max").is_none() && q.get("us_max").is_none(),
             "두 모수가 같은 덩어리에 섞이면 안 된다"
+        );
+    }
+
+    /// DB 지연은 **자기 덩어리**로 나가고 commit 과 checkpoint 가 섞이지 않는다.
+    ///
+    /// 두 모수를 다른 값으로 넣어, 한쪽이 다른 쪽 자리로 새면 대조가 깨지게 한다.
+    #[test]
+    fn the_db_populations_do_not_mix() {
+        let d = DbLatencyStats::default();
+        d.record_commit(Duration::from_micros(40));
+        d.record_commit(Duration::from_micros(60));
+        d.record_checkpoint(Duration::from_micros(900), false);
+
+        let v = snapshot_json(
+            &PressureStats::default().snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &d.snapshot(),
+        );
+        let db = &v["db"];
+        assert_eq!(db["commits"], 2);
+        assert_eq!(db["commit_us_sum"], 100);
+        assert_eq!(db["commit_us_mean"], 50);
+        assert_eq!(db["checkpoints"], 1);
+        assert_eq!(db["checkpoint_us_max"], 900);
+        assert_eq!(db["checkpoints_busy"], 1, "끝까지 못 간 되감기를 따로 센다");
+        assert_eq!(
+            db["commit_us_max"], 60,
+            "checkpoint 시간이 commit 최댓값으로 새면 안 된다"
+        );
+        assert!(
+            v["handler_after_gate"].get("commits").is_none(),
+            "DB 모수가 handler 덩어리에 섞이면 안 된다"
         );
     }
 
@@ -166,8 +236,10 @@ mod tests {
         );
         let result = resp.result.expect("result");
         assert!(
-            result.get("queue_before_gate").is_some() && result.get("handler_after_gate").is_some(),
-            "두 덩어리가 응답에 있어야 한다: {result}"
+            result.get("queue_before_gate").is_some()
+                && result.get("handler_after_gate").is_some()
+                && result.get("db").is_some(),
+            "덩어리들이 응답에 있어야 한다: {result}"
         );
     }
 
@@ -192,10 +264,13 @@ mod tests {
         let v = snapshot_json(
             &PressureStats::default().snapshot(),
             &PluginWaitStats::default().snapshot(),
+            &DbLatencyStats::default().snapshot(),
         );
         assert!(v["queue_before_gate"]["wait_us_mean"].is_null());
         assert!(v["queue_before_gate"]["depth_mean"].is_null());
         assert!(v["handler_after_gate"]["us_mean"].is_null());
+        assert!(v["db"]["commit_us_mean"].is_null());
+        assert!(v["db"]["checkpoint_us_mean"].is_null());
         assert_eq!(
             v["queue_before_gate"]["wait_us_sum"], 0,
             "합은 0 이 맞다 — null 인 것은 평균뿐이다"

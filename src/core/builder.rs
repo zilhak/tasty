@@ -33,6 +33,10 @@ pub(crate) struct CoreBuilder {
     themes: Option<Arc<dyn ThemeStorage>>,
     preset_store: Option<Arc<Mutex<PresetStore>>>,
     settings_storage: Option<Arc<dyn SettingsStorage>>,
+    /// port 가 아니다 — 주입 대상 10 port 와 달리 이것이 없어도 `build` 가 성공한다.
+    /// 스토어가 열릴 때 그 안에서 태어난 핸들이라, 스토어를 못 여는 조립에서는
+    /// 짝이 없는 것이 정상이다.
+    db_latency: Option<Arc<tasty_memory::DbLatencyStats>>,
 }
 
 impl CoreBuilder {
@@ -48,6 +52,7 @@ impl CoreBuilder {
             themes: None,
             preset_store: None,
             settings_storage: None,
+            db_latency: None,
         }
     }
 
@@ -88,6 +93,12 @@ impl CoreBuilder {
     }
     pub(crate) fn with_preset_store(mut self, preset_store: Arc<Mutex<PresetStore>>) -> Self {
         self.preset_store = Some(preset_store);
+        self
+    }
+    /// 스토어가 자기 안에서 재는 DB 지연 게이지를 `Core` 에 붙인다. 안 부르면
+    /// `Core` 는 아무도 안 올리는 게이지를 들고, 진단은 관측 0 으로 답한다.
+    pub(crate) fn with_db_latency(mut self, stats: Arc<tasty_memory::DbLatencyStats>) -> Self {
+        self.db_latency = Some(stats);
         self
     }
     pub(crate) fn with_settings_storage(mut self, settings: Arc<dyn SettingsStorage>) -> Self {
@@ -137,6 +148,7 @@ impl CoreBuilder {
             // production/test 가 다른 구현을 받을 이유가 없다.
             pressure: tasty_telemetry::PressureStats::default(),
             plugin_wait: std::sync::Arc::new(tasty_telemetry::PluginWaitStats::default()),
+            db_latency: self.db_latency.unwrap_or_default(),
         })
     }
 }

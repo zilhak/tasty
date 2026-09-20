@@ -255,6 +255,18 @@ pub(crate) struct Core {
     /// `Core` 를 못 본다. 그래서 값은 여기(프로세스 하나)에 두고 핸들만 건넨다.
     /// 창마다 매니저를 다시 만들어도 같은 핸들을 넘기므로 축이 프로세스로 유지된다.
     plugin_wait: Arc<tasty_telemetry::PluginWaitStats>,
+
+    /// DB commit·checkpoint 지연 게이지.
+    ///
+    /// `plugin_wait` 과 같은 이유로 `Arc` 이고, 한 가지가 더 있다. 기록자는
+    /// `MemoryStore` 자신이고 그 스토어는 **뮤텍스 뒤에** 있다 — 값을 스토어에서
+    /// 읽으면 진단이 자기가 재려는 자물쇠를 잡는다. 그래서 스토어가 열릴 때 만든
+    /// 핸들을 여기 복제해 두고, 읽기는 뮤텍스를 안 거친다.
+    ///
+    /// 스토어가 없는 조립(mock port 만 주입한 테스트용 `Core`)에서는 아무도 안
+    /// 올리는 게이지가 된다 — 그때 읽으면 관측 0 이고, 평균은 `None` 이라
+    /// "안 쟀다" 로 보인다.
+    db_latency: Arc<tasty_memory::DbLatencyStats>,
 }
 
 impl Core {
@@ -274,6 +286,12 @@ impl Core {
     /// `&Arc` 를 돌려준다 — 읽기만 하는 자리는 `.snapshot()` 을 부른다.
     pub(crate) fn plugin_wait(&self) -> &Arc<tasty_telemetry::PluginWaitStats> {
         &self.plugin_wait
+    }
+
+    /// DB 지연 게이지. 읽기 전용 소비처(진단 응답)만 있으므로 스냅샷을 부르라고
+    /// `&Arc` 를 돌려준다.
+    pub(crate) fn db_latency(&self) -> &Arc<tasty_memory::DbLatencyStats> {
+        &self.db_latency
     }
 
     /// `Clock` port 경유 현재 Unix ms — 관측 로그(audit/telemetry)의 시각 축이

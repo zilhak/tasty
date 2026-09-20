@@ -73,16 +73,17 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 위 `ipc_calls` 와 **다른 축**이다. caller 로 나누지 않고, 저장소를 거치지 않으며, 프로세스
 수명 동안 자라지 않는 고정 크기 원자값이다(근거·대안은
 [ADR-0305](../../adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md)).
-재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간의 count·sum·max 이고, 평균은 파생이라
-메서드로 낸다. 분위수는 답하지 못한다.
+재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간 · plugin 왕복 · DB 지연의 count·sum·max 이고,
+평균은 파생이라 메서드로 낸다. 분위수는 답하지 못한다.
 
-`system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **게이트를 기준으로 두 덩어리**다.
+`system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
 | 덩어리 | 재는 자리 | 모수 |
 |---|---|---|
 | `queue_before_gate` | 명령이 큐에서 나온 직후 (`App::process_ipc` · `pump_ipc`) | 큐에 앉았던 **전부** — 뒤에 거부될 요청도 센다 |
 | `handler_after_gate` | 게이트 통과 뒤 (`handle_checked_request`) | 실제로 **실행된 것만** |
 | `plugin_round_trip` | plugin 응답 매칭부 (`PluginManager::handle_plugin_response`) | 응답이 **매칭된 요청만** — 취소·만료된 것은 끝점이 없다 |
+| `db` | `MemoryStore` 의 `tx.commit()` 뒤 · `checkpoint_truncate` | **성공한** commit 과 시도된 checkpoint — 거부된 쓰기는 롤백이라 안 센다 |
 
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
@@ -90,6 +91,15 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 프로세스가 소유하고 plugin manager 에 **핸들만** 넘긴다 — 창마다 매니저를 다시 만들어도
 같은 핸들을 받으므로 축이 프로세스로 유지된다. 주입이 없는 구성(단위 시험)에서는
 아무것도 세지 않아 `matched` 가 0 으로 남는다.
+
+넷째는 **디스크가 받아준** 시간이다(`DbLatencyStats`). commit 은 handler 실행 시간 *안에*
+들어 있으므로, 그 둘을 나란히 두면 "handler 가 느리다" 와 "handler 안의 쓰기가 느리다" 가
+갈린다. 게이지는 `MemoryStore` 가 열릴 때 그 안에서 태어나고 부팅 wiring 이 핸들을 `Core`
+에 복제해 둔다 — 진단이 값을 읽을 때 **메모리 뮤텍스를 안 잡는다**(적체를 재려고 적체하는
+자물쇠를 잡으면 진단이 같이 막힌다). checkpoint 는 부팅 때의 WAL 되감기이고, 다른 커넥션이
+읽는 중이면 못 끝내고 돌아오므로 그 횟수를 `checkpoints_busy` 로 따로 센다 — 시간만 봐서는
+느린 것과 경합한 것이 안 갈린다. 스토어를 못 여는 조립(단위 시험)에서는 아무도 안 올려
+`commits` 가 0 으로 남는다.
 
 두 수의 차는 "거부된 수" 가 아니다 — 게이트를 통과하고도 `handle_checked_request` 를 안
 지나는 갈래가 있다(gui 의 app 층 메서드는 그 자리에서 답하고 돌아간다). 그래서 응답은
