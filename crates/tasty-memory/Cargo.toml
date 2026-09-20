@@ -15,6 +15,9 @@ tasty-utils = { path = "../tasty-utils" }
 
 [dev-dependencies]
 tempfile = "3"
+# 경고가 실제로 나가는지 재기 위한 로그 캡처. 같은 쓰임의 선례가
+# `crates/tasty-timer` 에 있고 같은 버전·feature 를 쓴다.
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [lints]
 workspace = true

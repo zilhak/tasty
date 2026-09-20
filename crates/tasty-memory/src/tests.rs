@@ -1239,6 +1239,111 @@ fn journal_size_limit_is_applied_to_disk_databases() {
     assert_eq!(pages * page_size, WAL_SIZE_LIMIT_BYTES);
 }
 
+/// 실패·불일치가 **조용하지 않은가**. `tracing` 출력을 그대로 받아 본다.
+///
+/// 이 헬퍼가 없으면 "경고를 낸다" 가 소스를 읽어야만 보이는 주장으로 남는다.
+/// 같은 쓰임의 선례가 `crates/tasty-timer/src/waker_poison_tests.rs` 에 있다.
+fn captured_log(body: impl FnOnce()) -> String {
+    use std::io::Write;
+
+    #[derive(Clone)]
+    struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .expect("capture lock")
+                .extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let capture = Capture(std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
+    let writer = capture.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    tracing::subscriber::with_default(subscriber, body);
+    let bytes = capture.0.lock().expect("capture lock").clone();
+    String::from_utf8(bytes).expect("UTF-8 log")
+}
+
+/// 읽기 전용 DB 에서 pragma 가 안 서는 것이 **관측된다**.
+///
+/// 이 갈래가 옛 코드에서 정확히 조용했다 — 세 pragma 를 `.ok()` 로 버렸으므로
+/// journal_mode 가 요청과 다른 채로 아무 흔적도 안 남았다. 읽기 전용 열기는 실제로
+/// 일어나는 조건이다(파일 권한 · 읽기 전용 마운트).
+#[test]
+fn a_read_only_database_says_that_the_requested_pragmas_did_not_take() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("readonly.db");
+    // 먼저 평범하게 만든다 — 이 시점의 journal_mode 는 SQLite 기본값(delete)이다.
+    rusqlite::Connection::open(&path).unwrap();
+
+    let conn =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let log = captured_log(|| crate::pragma::apply_connection_pragmas(&conn, &path));
+
+    assert!(
+        log.contains("journal_mode is delete, not the requested WAL"),
+        "요청과 다른 journal_mode 가 조용히 지나갔다:\n{log}"
+    );
+    assert!(log.contains("WARN"), "경고 수준이 아니다:\n{log}");
+}
+
+/// 정상 경로는 **조용하다** — 위 시험이 잡는 것이 경고 그 자체임을 못 박는다.
+#[test]
+fn a_healthy_database_logs_nothing_while_setting_its_pragmas() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("healthy.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let log = captured_log(|| crate::pragma::apply_connection_pragmas(&conn, &path));
+    assert!(log.is_empty(), "정상 열기에서 경고가 났다:\n{log}");
+}
+
+/// in-memory DB 의 `memory` 는 실패가 아니라 그 모드의 정상 결과다 — 경고가 없어야
+/// 한다. 이것이 없으면 위 경고가 매 테스트·매 부팅마다 울려 무의미해진다.
+#[test]
+fn an_in_memory_database_does_not_warn_about_its_own_journal_mode() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let log = captured_log(|| {
+        crate::pragma::apply_connection_pragmas(&conn, std::path::Path::new(":memory:"))
+    });
+    assert!(log.is_empty(), "in-memory 정상 결과에 경고가 났다:\n{log}");
+}
+
+/// 요청한 `journal_mode` 와 **실제 적용값**은 다른 축이다.
+///
+/// `pragma_update` 는 두 모드 모두 `Ok(())` 를 내므로 반환값만 보면 둘이 구별되지
+/// 않는다. 파일 DB 는 요청대로 `wal` 이 되고, in-memory DB 는 SQLite 가 WAL 을 못
+/// 쓰므로 조용히 `memory` 로 남는다. 이 시험이 그 둘을 각각 못 박는다 — 여기가
+/// 무너지면 "소스에 WAL 이라고 적혀 있다" 를 runtime 보장으로 쓴 것이 된다.
+#[test]
+fn the_effective_journal_mode_differs_between_a_file_and_an_in_memory_database() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (disk, _path) = disk_store(tmp.path());
+    assert_eq!(
+        crate::pragma::effective_journal_mode(&disk.conn).unwrap(),
+        "wal",
+        "파일 DB 가 요청한 WAL 로 안 섰다"
+    );
+
+    let mem = store();
+    assert_eq!(
+        crate::pragma::effective_journal_mode(&mem.conn).unwrap(),
+        "memory",
+        "in-memory DB 의 journal_mode 가 바뀌었다 — 이 모드의 허용 결과를 다시 정해야 한다"
+    );
+}
+
 /// 이 항목의 본체 — 한 번 부푼 WAL 이 **다시 줄어드는가**.
 ///
 /// "꾸준한 append 로는 안 자란다" 를 단정하면 공허한 테스트가 된다(실측: pragma 를
