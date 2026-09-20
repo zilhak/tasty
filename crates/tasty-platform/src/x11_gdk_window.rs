@@ -58,6 +58,26 @@ fn wrap_foreign_window(
 mod tests {
     use super::*;
 
+    /// 레포 뿌리. 이 크레이트의 `CARGO_MANIFEST_DIR` 은 `crates/tasty-platform` 이라
+    /// 곧 뿌리가 아니다 — 아래 두 검사는 이 크레이트 **밖**을 읽으므로 두 칸 올라간다.
+    /// 표지를 함께 확인하는 이유는 경로가 틀어졌을 때 그것이 **빈 모수의 초록**으로
+    /// 안 보이게 하려는 것이다(모수 하한은 각 검사가 따로 또 센다).
+    fn repo_root() -> std::path::PathBuf {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .unwrap_or_else(|| panic!("CARGO_MANIFEST_DIR 에서 두 칸 올라갈 수 없다"))
+            .to_path_buf();
+        for marker in ["Cargo.toml", "docs/adr/index.md", "src/lib.rs"] {
+            assert!(
+                root.join(marker).exists(),
+                "레포 루트로 잡은 {} 에 표지 {marker} 가 없다 — 경로가 틀어졌다",
+                root.display()
+            );
+        }
+        root
+    }
+
     /// 한 줄에서 **코드가 아닌 부분**(줄 주석·문자열 리터럴)을 지운다.
     ///
     /// 문자열 리터럴을 지우는 이유는 검출을 깎기 위해서가 아니라 — 리터럴 안의 이름은
@@ -166,8 +186,7 @@ mod tests {
     /// 아니라 결정을 다시 여는 것이 맞다 — 왜 하나가 됐는지가 새 전제이기 때문이다.
     #[test]
     fn adr_0159_two_connection_premise_still_holds() {
-        let path =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_api/webview/linux.rs");
+        let path = repo_root().join("src/host_api/webview/linux.rs");
         let text = std::fs::read_to_string(&path).expect("webview/linux.rs 를 읽지 못했다");
         let code: Vec<String> = text.lines().map(mask_non_code).collect();
         // 0 이 통과가 되지 않게 모수를 먼저 세운다.
@@ -208,7 +227,7 @@ mod tests {
     /// **레포 전체**가 그 바인딩을 다시 쓰지 못하게 한다.
     #[test]
     fn panicking_binding_has_no_call_site() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let root = repo_root();
         let mut scanned = 0usize;
         let mut offenders = Vec::new();
         let mut stack = vec![root.join("src"), root.join("crates")];
