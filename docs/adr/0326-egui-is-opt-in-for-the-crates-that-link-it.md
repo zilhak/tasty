@@ -23,8 +23,12 @@
 - 루트의 `tasty-egui-theme`·`tasty-ui-widgets` — 크레이트 자체가 egui 전용인데 비-optional.
 
 그리고 이 셋을 **헤드리스에서 컴파일되는 `src/` 파일이 하나도 안 쓴다**(실측 2026-09-20:
-컴파일되는 262 개 중 `tasty-ui-widgets` 0 · `tasty-egui-theme` 0 · `tasty-icons` 0). 즉
-코드가 막고 있던 것이 아니라 매니페스트 다섯 줄이 막고 있었다.
+컴파일되는 263 개 중 `tasty-ui-widgets` 0 · `tasty-egui-theme` 0 · `tasty-icons` 0).
+그 263 의 모수는 `cargo build -p tasty --no-default-features` 뒤 `target/debug/libtasty.d`
+가 드는 `src/*.rs` 다 — 정의는 [ADR-0325](0325-the-root-package-splits-into-a-lib-and-a-bin.md)
+에 있다. 참고로 게이트 뒤를 포함한 `src/` 전체에서는 그 셋을 참조하는 파일이 **84** 개라,
+"헤드리스에서는 0" 은 84 대 0 으로 갈린 사실이다. 즉 코드가 막고 있던 것이 아니라
+매니페스트 다섯 줄이 막고 있었다.
 
 ## Decision
 

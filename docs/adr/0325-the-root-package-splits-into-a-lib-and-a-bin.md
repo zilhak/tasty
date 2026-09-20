@@ -18,10 +18,12 @@
 - **"무엇이 밖으로 나가는가" 라는 좌변 자체가 없다.** 바이너리 전용 패키지에서는 `pub`
   이 아무 데도 안 나가므로, 공개 표면을 좁히는 작업도 넓히는 작업도 잴 대상이 없다.
 
-실측(2026-09-20): 헤드리스 조합에서 컴파일되는 `src/` 파일은 262 개이고, 그중 GUI 크레이트를
-코드에서 참조하는 것은 `tasty-type-appearance` 4 · `tasty-font` 2 뿐이다
-(`tasty-ui-widgets` 0 · `tasty-egui-theme` 0 · `tasty-icons` 0). 즉 이 갈림을 막고 있던 것은
-코드가 아니었다.
+실측(2026-09-20). **모수를 이름으로 적는다** — `cargo build -p tasty --no-default-features`
+뒤 `target/debug/libtasty.d` 가 드는 `src/*.rs` 의 중복 제거 수다(루트 `src/lib.rs` 를
+포함하고, bin 쪽 `target/debug/tasty.d` 는 거기에 `src/main.rs` 하나가 더 붙어 264 다).
+그 값은 **263** 이고, 그중 GUI 크레이트를 코드에서 참조하는 것은 `tasty-type-appearance` 4 ·
+`tasty-font` 2 뿐이다 (`tasty-ui-widgets` 0 · `tasty-egui-theme` 0 · `tasty-icons` 0).
+즉 이 갈림을 막고 있던 것은 코드가 아니었다.
 
 ## Decision
 
@@ -34,6 +36,15 @@ attribute 만 남는다. `boot::run` 만 `pub` 으로 올린다.
 나가는 것은 `boot::run` 과 이전부터 있던 재수출뿐이다. 생기는 것은 **좌변**이다 — 이제
 "무엇이 공개되어 있는가" 를 `cargo doc -p tasty --no-deps` 로 그릴 수 있고, 무엇을 공개할지는
 소비자가 실제로 생길 때 그 자리에서 정한다.
+
+★ **그 좌변을 처음 재면 1 이 아니다.** `pub(crate)` → `pub` 으로 **승급한 항목**은
+`boot::run` 하나지만, **실제로 나가는 것**은 그것 하나가 아니다. 바이너리 전용이던 시절의
+`pub use tasty_font as font;` 류 재수출 넷은 글자 그대로 `pub` 이었는데 아무 데도 안 나갔고,
+lib 타깃이 생긴 순간 **처음으로 표면이 된다.** 두 수를 같은 칸에 적지 마라 — "승급 1" 과
+"표면 5" 는 다른 물음의 답이다. 실측(2026-09-20): `cargo doc -p tasty --no-deps` 의 루트
+페이지는 모듈 둘(`boot` · `paths`)과 함수 열을 들고, 크레이트 통째 재수출 셋
+(`font` · `settings` · `theme`)은 `--no-deps` 라 페이지가 안 생겨 그 목록에 안 뜬다 —
+**그래서 그 명령의 출력을 표면 전부로 읽으면 적게 센다.**
 
 **기존 시험은 한 줄도 바꾸지 않는다.** 루트 `tests/*.rs` 가 `use tasty::…` 를 *할 수 있게*
 되지만, 바이너리를 띄워 재던 것과 라이브러리로 재는 것은 **다른 좌변**이라 이 결정이 그
