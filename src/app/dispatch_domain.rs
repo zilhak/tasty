@@ -38,6 +38,88 @@ pub(crate) struct SurfaceCloseCascade {
     pub(crate) is_user_close: bool,
 }
 
+impl SurfaceCloseCascade {
+    /// [`CoreEvent::SurfaceClosed`](crate::core::intent::CoreEvent::SurfaceClosed)
+    /// → close cascade 입력. `None` = 이 이벤트가 `SurfaceClosed` 가 아니거나
+    /// `closed=false`(대상을 못 찾았거나 닫을 수 없었다) — 어느 쪽이든 회수할 자원이 없다.
+    ///
+    /// `surface_id` 는 싣지 않는다 — 닫힌 surface 는 `cleanup_targets` 에 이미 들어 있고,
+    /// cascade 는 그 목록만 본다.
+    pub(crate) fn from_surface_closed(
+        event: crate::core::intent::CoreEvent,
+        is_user_close: bool,
+    ) -> Option<Self> {
+        let crate::core::intent::CoreEvent::SurfaceClosed {
+            surface_id: _,
+            closed,
+            cascade_level,
+            cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+        } = event
+        else {
+            return None;
+        };
+        if !closed {
+            return None;
+        }
+        Some(Self {
+            cascade_level,
+            cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+            is_user_close,
+        })
+    }
+
+    /// [`CoreEvent::MoveSurfaceApplied`](crate::core::intent::CoreEvent::MoveSurfaceApplied)
+    /// → close cascade 입력. 이동은 의미상 "B 닫힘 + A 옛자리 구조 cascade" 라 close 와
+    /// 같은 cascade 를 탄다: `cleanup_targets` 는 닫히는 B 하나(PTY kill +
+    /// `surface.closed`), 나머지 구조 필드는 A 의 옛 tab/pane/workspace 닫힘 정보다.
+    /// A 의 surface 는 살아서 이동하므로 절대 cleanup 대상에 넣지 않는다.
+    ///
+    /// **한 자리에 두는 이유**: 이 매핑을 부르는 곳이 둘이다 — 로컬 dispatcher
+    /// (`App::handle_core_event`)와 원격 forward 실행
+    /// (`core::attach_runtime::execute_forwarded_structural_op`). 필드가 일곱이라
+    /// 양쪽에 풀어 쓰면 variant 에 필드를 하나 더할 때 한쪽만 고쳐진 상태가 기본값이 된다.
+    ///
+    /// `None` = 이 이벤트가 `MoveSurfaceApplied` 가 아니거나 `moved=false` — 어느 쪽이든
+    /// cascade 할 것이 없다. 둘을 갈라야 하는 호출자는 부르기 전에 variant 를 확인한다.
+    pub(crate) fn from_move_surface_applied(
+        event: crate::core::intent::CoreEvent,
+        is_user_close: bool,
+    ) -> Option<Self> {
+        let crate::core::intent::CoreEvent::MoveSurfaceApplied {
+            moved,
+            b_cleanup,
+            cascade_level,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+        } = event
+        else {
+            return None;
+        };
+        if !moved {
+            return None;
+        }
+        Some(Self {
+            cascade_level,
+            cleanup_targets: b_cleanup.into_iter().collect(),
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+            is_user_close,
+        })
+    }
+}
+
 /// `CoreEvent::PaneSplit` 의 cascade 페이로드.
 pub(crate) struct PaneSplitCascade {
     pub(crate) workspace_index: usize,
@@ -270,30 +352,10 @@ impl App {
                     );
                 }
             }
-            CoreEvent::SurfaceClosed {
-                surface_id: _,
-                closed,
-                cascade_level,
-                cleanup_targets,
-                closed_tab_ids,
-                closed_pane_ids,
-                workspace_purged,
-                workspaces_now_empty,
-            } => {
-                if closed {
-                    let is_user_close = origin.is_user();
-                    self.dispatch_surface_closed_cascade(
-                        source,
-                        SurfaceCloseCascade {
-                            cascade_level,
-                            cleanup_targets,
-                            closed_tab_ids,
-                            closed_pane_ids,
-                            workspace_purged,
-                            workspaces_now_empty,
-                            is_user_close,
-                        },
-                    );
+            ev @ CoreEvent::SurfaceClosed { .. } => {
+                // 필드 매핑은 `SurfaceCloseCascade::from_surface_closed` 한 자리가 소유한다.
+                if let Some(c) = SurfaceCloseCascade::from_surface_closed(ev, origin.is_user()) {
+                    self.dispatch_surface_closed_cascade(source, c);
                 }
             }
             CoreEvent::SurfaceConverted {
@@ -316,36 +378,13 @@ impl App {
                     }
                 }
             }
-            CoreEvent::MoveSurfaceApplied {
-                moved,
-                b_cleanup,
-                cascade_level,
-                closed_tab_ids,
-                closed_pane_ids,
-                workspace_purged,
-                workspaces_now_empty,
-            } => {
-                // 이동(replace) 완료. 의미상 "B 닫힘 + A 옛자리 구조 cascade" 라
-                // `SurfaceClosed` cascade 를 그대로 재사용한다: cleanup_targets 는
-                // 닫히는 B 하나 (PTY kill + surface.closed), 나머지 구조 필드는 A 의
-                // 옛 tab/pane/workspace 닫힘 정보. A 의 surface 는 절대 cleanup 대상에
-                // 넣지 않는다(살아서 이동). 슬롯 비움은 Core::apply 가 이미 처리.
-                if moved {
-                    let is_user_close = origin.is_user();
-                    let cleanup_targets: Vec<(u32, Option<String>)> =
-                        b_cleanup.into_iter().collect();
-                    self.dispatch_surface_closed_cascade(
-                        source,
-                        SurfaceCloseCascade {
-                            cascade_level,
-                            cleanup_targets,
-                            closed_tab_ids,
-                            closed_pane_ids,
-                            workspace_purged,
-                            workspaces_now_empty,
-                            is_user_close,
-                        },
-                    );
+            ev @ CoreEvent::MoveSurfaceApplied { .. } => {
+                // 이동(replace) 완료. 매핑은 `SurfaceCloseCascade::from_move_surface_applied`
+                // 한 자리가 소유한다(그 doc 참조). 슬롯 비움은 Core::apply 가 이미 처리.
+                if let Some(c) =
+                    SurfaceCloseCascade::from_move_surface_applied(ev, origin.is_user())
+                {
+                    self.dispatch_surface_closed_cascade(source, c);
                 }
             }
             CoreEvent::SurfaceSent { .. } => {
@@ -1672,9 +1711,15 @@ pub(crate) fn cascade_surface_closed(
     engine: &mut crate::core::CoreState,
     c: SurfaceCloseCascade,
 ) {
-    // C5 — 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
+    // C5 — 1. 각 cleanup_target 의 자원 회수 + lifecycle 통지
     let surfaces = c.cleanup_targets.len();
-    cleanup_closed_surfaces(state, engine, c.cleanup_targets, c.is_user_close);
+    reclaim_closed_surfaces(
+        state,
+        engine,
+        c.cleanup_targets,
+        c.is_user_close,
+        Some("cascade"),
+    );
 
     // 2. cascade_level 별 host event (`tab.closed` / `pane.closed`) enqueue +
     //    baseline 동기화. `surface.closed` 자체는 별 큐
@@ -1713,16 +1758,32 @@ pub(crate) fn cascade_surface_closed(
     }
 }
 
-/// `cascade_surface_closed` 1 단계: cleanup_targets 의 sibling 들이 plugin
-/// lifecycle 큐에 빠짐없이 들어가야 ClaudeState child registry leak 이 발생하지
-/// 않음 (R1 분석 참조). `Core::apply_close_surface` 가 이미 layout mutate 후
-/// cleanup_targets 를 채우므로 surface_kind 가 None 일 수 있음 — payload 변환에서
-/// 빈 문자열로 폴백한다.
-fn cleanup_closed_surfaces(
+/// 닫힌 surface 들의 **자원 회수 + lifecycle 통지** — close cascade 셋
+/// (`cascade_surface_closed` · `cascade_pane_closed_full` · `cascade_tab_closed_full`)이
+/// 공유하는 한 자리다.
+///
+/// 셋이 각자 같은 루프를 들고 있었고, 그 사본들은 이미 갈라져 있었다 — surface 경로만
+/// `cleanup_surface_traced` 로 C5 계측을 모았고 tab/pane 경로는 안 모았다. 루프가
+/// 하나면 그 차이는 **인자 하나**(`trace`)로 드러나고, 새 단계를 더할 때 두 사본을
+/// 찾아다니지 않는다.
+///
+/// `kind` 는 `cleanup_surface` **전에** 잡는다 — cleanup 직후엔 layout 에서 surface 가
+/// 사라져 조회가 안 된다. cleanup_targets 의 sibling 이 lifecycle 큐에 빠짐없이 들어가야
+/// plugin 쪽 per-surface 상태(예: 자식 registry)가 남지 않는다.
+///
+/// `trace`: `Some(path)` 면 C5(+C5a~C5d) 계측을 그 `path` 로 발화한다. `None` 이면
+/// 누적만 하고 버린다 — 계측 발화 자체가 close 구간에 들어가므로 계측 대상 경로만 켠다.
+///
+/// 사용자(비-cascade) close 경로에는 같은 모양의 `AppState::cleanup_targets` 가 따로
+/// 있다. 둘이 갈리는 지점은 `kind` 를 누가 구하느냐 하나다 — 저쪽은 호출자가 미리
+/// resolve 한 값을 받고(트리에서 제거하기 **전**에 구할 수 있는 경로라 그 편이 정확하다),
+/// 여기는 `Core::apply` 가 이미 트리를 건드린 뒤라 여기서 구한다.
+fn reclaim_closed_surfaces(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
+    trace: Option<&'static str>,
 ) {
     let t_loop = std::time::Instant::now();
     let mut sums = crate::close_trace::CleanupSums::default();
@@ -1731,7 +1792,9 @@ fn cleanup_closed_surfaces(
         state.cleanup_surface_traced(engine, sid, pid, &mut sums);
         state.enqueue_surface_closed(sid, kind, is_user_close);
     }
-    sums.log(t_loop.elapsed(), "cascade");
+    if let Some(path) = trace {
+        sums.log(t_loop.elapsed(), path);
+    }
 }
 
 /// `cascade_surface_closed` 2 단계 (tab): 닫힌 tab 마다 `tab.closed` host event
@@ -1875,9 +1938,8 @@ pub(crate) fn cascade_pane_closed(state: &mut crate::state::AppState, pane_id: u
     state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id });
 }
 
-/// `CoreEvent::PaneClosed` 의 full cascade — cleanup_targets 별 surface 자원
-/// 정리 + `surface.closed` lifecycle enqueue + `pane.closed` host event enqueue.
-/// `cascade_surface_closed` 와 동일하게 surface 별 kind 캡쳐는 cleanup 호출 전.
+/// `CoreEvent::PaneClosed` 의 full cascade — [`reclaim_closed_surfaces`] 로 자원 회수 +
+/// `surface.closed` lifecycle enqueue, 그 뒤 `pane.closed` host event enqueue.
 /// dispatcher (`App::dispatch_pane_closed_cascade`) 와 IPC handler 양쪽이 공유.
 pub(crate) fn cascade_pane_closed_full(
     state: &mut crate::state::AppState,
@@ -1886,11 +1948,7 @@ pub(crate) fn cascade_pane_closed_full(
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
 ) {
-    for (sid, pid) in cleanup_targets {
-        let kind = state.surface_kind(engine, sid);
-        state.cleanup_surface(engine, sid, pid);
-        state.enqueue_surface_closed(sid, kind, is_user_close);
-    }
+    reclaim_closed_surfaces(state, engine, cleanup_targets, is_user_close, None);
     cascade_pane_closed(state, pane_id);
 }
 
@@ -2005,9 +2063,9 @@ pub(crate) fn cascade_tab_closed(
     state.lifecycle_baseline_remove_tab(tab_id);
 }
 
-/// `CoreEvent::TabClosed` 의 full cascade — cleanup_targets 별 surface 자원
-/// 정리 + `surface.closed` lifecycle enqueue + `tab.closed` host event enqueue
-/// + baseline 동기화. dispatcher 와 IPC handler 양쪽이 공유.
+/// `CoreEvent::TabClosed` 의 full cascade — [`reclaim_closed_surfaces`] 로 자원 회수 +
+/// `surface.closed` lifecycle enqueue, 그 뒤 `tab.closed` host event enqueue +
+/// baseline 동기화. dispatcher 와 IPC handler 양쪽이 공유.
 pub(crate) fn cascade_tab_closed_full(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
@@ -2016,11 +2074,7 @@ pub(crate) fn cascade_tab_closed_full(
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
 ) {
-    for (sid, pid) in cleanup_targets {
-        let kind = state.surface_kind(engine, sid);
-        state.cleanup_surface(engine, sid, pid);
-        state.enqueue_surface_closed(sid, kind, is_user_close);
-    }
+    reclaim_closed_surfaces(state, engine, cleanup_targets, is_user_close, None);
     cascade_tab_closed(state, tab_id, pane_id);
 }
 

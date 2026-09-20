@@ -32,6 +32,89 @@ pub(crate) struct SurfaceCloseCascade {
     pub(crate) is_user_close: bool,
 }
 
+impl SurfaceCloseCascade {
+    /// gui `SurfaceCloseCascade::from_surface_closed` 의 headless 등가 — 매핑 규칙은
+    /// 한 자리에 하나뿐이어야 하므로 시그니처·의미를 그대로 맞춘다.
+    pub(crate) fn from_surface_closed(
+        event: crate::core::intent::CoreEvent,
+        is_user_close: bool,
+    ) -> Option<Self> {
+        let crate::core::intent::CoreEvent::SurfaceClosed {
+            surface_id: _,
+            closed,
+            cascade_level,
+            cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+        } = event
+        else {
+            return None;
+        };
+        if !closed {
+            return None;
+        }
+        Some(Self {
+            cascade_level,
+            cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+            is_user_close,
+        })
+    }
+
+    /// gui `SurfaceCloseCascade::from_move_surface_applied` 의 headless 등가 —
+    /// 매핑 규칙은 같은 자리에 하나뿐이어야 하므로 시그니처·의미를 그대로 맞춘다.
+    pub(crate) fn from_move_surface_applied(
+        event: crate::core::intent::CoreEvent,
+        is_user_close: bool,
+    ) -> Option<Self> {
+        let crate::core::intent::CoreEvent::MoveSurfaceApplied {
+            moved,
+            b_cleanup,
+            cascade_level,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+        } = event
+        else {
+            return None;
+        };
+        if !moved {
+            return None;
+        }
+        Some(Self {
+            cascade_level,
+            cleanup_targets: b_cleanup.into_iter().collect(),
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_purged,
+            workspaces_now_empty,
+            is_user_close,
+        })
+    }
+}
+
+/// 닫힌 surface 들의 자원 회수 — headless close cascade 셋이 공유하는 한 자리다.
+///
+/// gui 의 `reclaim_closed_surfaces` 와 갈리는 지점은 **lifecycle 통지 한 줄**이다.
+/// headless 에는 `pending_lifecycle_events` 를 비우는 주체(plugin manager / view)가
+/// 없어 enqueue 하면 큐가 무한 적재된다. 그 차이를 세 사본에 흩어 두면 어느 것이
+/// 의도된 생략이고 어느 것이 누락인지 구분할 수 없다.
+fn reclaim_closed_surfaces(
+    state: &mut AppState,
+    engine: &mut CoreState,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+) {
+    for (sid, pid) in cleanup_targets {
+        state.cleanup_surface(engine, sid, pid);
+    }
+}
+
 /// gui 의 `PaneSplitCascade` 와 동등.
 pub(crate) struct PaneSplitCascade {
     pub(crate) workspace_index: usize,
@@ -78,9 +161,7 @@ pub(crate) fn cascade_surface_closed(
     // 생략 — 통지를 enqueue 하면 pending 큐가 무한 적재된다.
     // c.closed_tab_ids / c.closed_pane_ids / c.is_user_close: lifecycle 통지용 필드 —
     // drain 주체가 없어 미사용.
-    for (sid, pid) in c.cleanup_targets {
-        state.cleanup_surface(engine, sid, pid);
-    }
+    reclaim_closed_surfaces(state, engine, c.cleanup_targets);
     // 활성 포인터 보정은 **gui cascade 와 같은 헬퍼로** 한다. 범위 초과 clamp 만으로는
     // 앞쪽 workspace 가 빠졌을 때 인덱스가 유효한 채 다른 workspace 를 가리킨다.
     //
@@ -111,9 +192,7 @@ pub(crate) fn cascade_pane_closed_full(
     is_user_close: bool,
 ) {
     let _ = (pane_id, is_user_close); // headless: lifecycle 통지용 인자 미사용 — 값 drop(Result 아님).
-    for (sid, pid) in cleanup_targets {
-        state.cleanup_surface(engine, sid, pid);
-    }
+    reclaim_closed_surfaces(state, engine, cleanup_targets);
 }
 
 /// gui `cascade_tab_created` 의 headless 등가. host event / baseline 통지는
@@ -138,9 +217,7 @@ pub(crate) fn cascade_tab_closed_full(
     is_user_close: bool,
 ) {
     let _ = (tab_id, pane_id, is_user_close); // headless: lifecycle 통지용 인자 미사용 — 값 drop(Result 아님).
-    for (sid, pid) in cleanup_targets {
-        state.cleanup_surface(engine, sid, pid);
-    }
+    reclaim_closed_surfaces(state, engine, cleanup_targets);
 }
 
 pub(crate) fn cascade_surface_split(
