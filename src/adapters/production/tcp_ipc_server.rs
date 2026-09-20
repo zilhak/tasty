@@ -219,10 +219,29 @@ impl TcpIpcServer {
         port: u16,
         custom_port_file: Option<&std::path::Path>,
     ) -> Result<()> {
+        Self::clear_notify_then_publish(notify_dir, || {
+            port_file::write_port_file_to(port, custom_port_file)
+        })
+    }
+
+    /// 청소를 끝낸 **뒤** 발행 단계를 부른다.
+    ///
+    /// 발행을 클로저로 받는 이유는 순서가 이 함수의 계약 **전부**이기 때문이다.
+    /// 반환 뒤의 상태만 보면 두 단계가 어느 순서로 일어났든 똑같다(포트 파일 있음 ·
+    /// `notify/` 없음) — 그래서 순서는 **발행 시점에 서 있는 관측자만** 잴 수 있다.
+    /// 시험은 그 자리에서 `notify/` 의 부재를 단언하므로, 두 줄을 뒤집는 변경이
+    /// 여기서 죽는다.
+    fn clear_notify_then_publish<F>(
+        notify_dir: Option<std::path::PathBuf>,
+        publish: F,
+    ) -> Result<()>
+    where
+        F: FnOnce() -> Result<()>,
+    {
         if let Some(dir) = notify_dir {
             Self::clear_notify_dir(&dir);
         }
-        port_file::write_port_file_to(port, custom_port_file)
+        publish()
     }
 
     /// `notify/` 디렉토리를 통째로 삭제한다. 디렉토리가 애초에 없으면(NotFound)
@@ -974,6 +993,32 @@ mod notify_cleanup_tests {
         assert!(
             !notify.exists(),
             "포트 파일이 보이는 시점에 notify/ 는 이미 치워져 있어야 한다"
+        );
+    }
+
+    // 위 시험은 **반환 뒤**의 두 사실만 본다 — 그것만으로는 순서가 안 재진다(두 단계를
+    // 뒤집어도 반환 시점에는 똑같이 참이다). 순서는 발행 **시점**에 서서만 잴 수 있으므로,
+    // 발행 클로저 안에서 `notify/` 의 부재를 관측해 값으로 남긴다.
+    #[test]
+    fn the_cleanup_has_already_finished_when_the_publish_step_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notify = tmp.path().join("notify");
+        std::fs::create_dir_all(&notify).unwrap();
+        for i in 0..512 {
+            std::fs::write(notify.join(format!("{i}.log")), b"surface done\n").unwrap();
+        }
+
+        let mut notify_seen_at_publish = None;
+        TcpIpcServer::clear_notify_then_publish(Some(notify.clone()), || {
+            notify_seen_at_publish = Some(notify.exists());
+            Ok(())
+        })
+        .expect("publish");
+
+        assert_eq!(
+            notify_seen_at_publish,
+            Some(false),
+            "발행 단계가 도는 시점에 notify/ 가 아직 남아 있었다 — 청소가 뒤로 밀렸다"
         );
     }
 
