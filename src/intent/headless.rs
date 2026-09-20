@@ -191,8 +191,16 @@ fn handle_core_event(engine: &mut CoreState, event: CoreEvent) {
             engine.refresh_tab_display_name(surface_id);
             engine.mark_layout_dirty();
         }
-        // 나머지는 headless 의 발화점이 만들지 않는 이벤트다(구조 변경 IPC 핸들러는
-        // 큐를 거치지 않고 `Core::apply` + `dispatch_domain_stubs` 로 직접 적용한다).
+        // 나머지는 headless 의 발화점이 만들지 않는 이벤트다. close 계열
+        // (`SurfaceClosed` / `PaneClosed` / `TabClosed`)이 여기 없는 것은 생략이 아니라
+        // **발화점이 없는 것**이다 — `DomainIntent::Close*` 를 만드는 자리는 IPC 핸들러
+        // 셋(`handler/surface/close.rs` · `handler/pane.rs` · `handler/tab.rs`)뿐이고,
+        // 셋 다 큐를 거치지 않고 `Core::apply` 를 직접 부른 뒤 `dispatch_domain_stubs` 의
+        // cascade 로 자원을 회수한다. 그러니 이 분기에 close 를 넣으면 회수가 두 번 돈다.
+        // **큐를 거치는 close 발화점이 생기면 그때 여기에 회수를 배선해야 한다** — 안 하면
+        // 닫힌 surface 의 PTY·memory scope 가 조용히 남는다(패닉도 로그도 없다).
+        // gui/headless 가 의도적으로 갈리는 지점의 표는
+        // `docs/architecture/close-sequence.md` "자원 회수의 소유".
         // 큐 유계성은 이 분기에서도 유지되므로 debug 로그만 남긴다.
         other => tracing::debug!(
             event = ?std::mem::discriminant(&other),
