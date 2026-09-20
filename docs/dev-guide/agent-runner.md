@@ -1,6 +1,6 @@
 # Agent task runner
 
-workspace 단위 thread 1개가 `Ready` task 를 자동 dispatch 하고 `Running` task 완료를 polling 으로 감지해 state 머신을 진행시키는 *task DAG executor*. 상태 머신·영속은 [`tasty-agent`](../../crates/tasty-agent/) 가, 실제 *실행* 만 host 가 위임받는다. IPC/CLI 표면 명세는 [reference/api](../reference/api.md)("agent" namespace).
+workspace 단위 thread 1개가 `Ready` task 를 자동 dispatch 하고 `Running` task 완료를 polling 으로 감지해 state 머신을 진행시키는 *task DAG executor*. 상태 머신·영속과 custom reducer 의 기본 셸 runner(`run_custom_shell`)는 [`tasty-agent`](../../crates/tasty-agent/) 가, task *실행* 은 host 가 위임받는다. IPC/CLI 표면 명세는 [reference/api](../reference/api.md)("agent" namespace).
 
 ## 구성
 

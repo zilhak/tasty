@@ -5,9 +5,11 @@
 //! - (후속) Barrier / Semaphore / Lease / Reducer / Rate Limit.
 //!
 //! 영속은 `tasty-memory` 위에 얹는다 (scope = workspace, key prefix =
-//! `tasty.agent.task.<id>`). 본 크레이트는 GUI/IPC와 독립적이며 순수 상태
-//! 머신 + 영속 헬퍼만 담당한다. IPC dispatcher와 실제 실행 엔진(run, custom IPC —
-//! 옵션 폴링 포함)은 호스트가 본 크레이트의 API를 호출해 조율한다.
+//! `tasty.agent.task.<id>`). 본 크레이트는 GUI/IPC와 독립적이며 상태 머신 + 영속
+//! 헬퍼 + `reduce_with_custom` 의 기본 runner(`run_custom_shell` — 이 크레이트가
+//! 프로세스를 띄우는 유일한 자리이고, 호출자가 자기 함수로 갈아끼울 수 있는
+//! 기본값이다)를 담당한다. IPC dispatcher와 task 실행 엔진(run, 옵션 폴링)은
+//! 호스트가 본 크레이트의 API를 호출해 조율한다.
 #![allow(clippy::result_large_err)]
 
 pub mod barrier;
