@@ -283,7 +283,10 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
 - **namespace 호출 만료**: 위 재시작 경로는 프로세스가 굳은 경우만 본다 — ping 에는 답하면서
   특정 호출만 안 돌려주는 plugin 은 healthcheck 에 안 걸린다. 그래서 plugin namespace 로
   forward 한 pending 호출에는 별도로 `NAMESPACE_CALL_TIMEOUT` 데드라인이 붙고, 넘기면
-  caller 에 `-32004` 로 회신하고 pending 에서 지운다(`sweep_expired_requests`, 매 pump).
+  caller 에 오류로 회신하고 pending 에서 지운다(`sweep_expired_requests`, 매 pump).
+  회신 경로는 plugin 이 사라졌을 때의 취소 경로와 같고, 코드도 그쪽과 같이 비대칭이다 —
+  local/CLI caller 는 `-32004` 를 받지만 plugin caller 는 메시지만 받고 코드는 SDK
+  기본값(`-32000`)이 된다(`send_final_error` 가 plugin 갈래에서 `code` 를 버린다).
   값은 위 회수 상한의 두 배로 **유도**한다 — 짧으면 재시작 경로가 이미 처리하는 경우를
   앞지른다. extension hook 만료는 이것과 달리 fail-open 이다(원래 흐름을 그대로 진행).
   근거는 [ADR-0311](../adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md).

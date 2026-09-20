@@ -41,10 +41,23 @@ healthcheck 가 볼 수 없는 경우뿐이다.
 원래 흐름(target invoke / event fan-out)을 그대로 진행시킬 수 있기 때문이다.
 namespace 호출에는 진행시킬 원래 흐름이 없다. 기다리던 target 응답 자체가 목적이었고,
 그것이 안 온 것이 사건이다. 그래서 **plugin 이 사라졌을 때와 같은 모양**으로
-끝낸다 — `cancel_pending_namespace_calls` 가 쓰는 세 회신 경로(local 은
-`response_tx`, plugin caller 는 `ipc.result`, post-hook 이 걸린 것은
-`send_final_error`)와 같은 코드 `-32004` 를 그대로 쓴다. caller 입장에서 두 경우는
-같은 일이다 — 기다리던 plugin 응답이 끝내 오지 않았다.
+끝낸다 — `cancel_pending_namespace_calls` 가 쓰는 세 회신 경로를 그대로 쓴다: local
+caller 는 `response_tx`, plugin caller 는 `ipc.result`, post-hook 이 걸린 것은
+`send_final_error`. caller 입장에서 두 경우는 같은 일이다 — 기다리던 plugin 응답이
+끝내 오지 않았다.
+
+**그 셋이 싣는 것이 같지 않다는 사실을 여기 적어 둔다.** `-32004` 라는 코드가 실제로
+호출자에게 닿는 것은 **local/CLI caller 하나**뿐이다. plugin caller 로 가는 둘은
+메시지만 싣고 코드를 버린다 — `send_ipc_result` 의 `error_code` 인자에 `None` 이
+가고, SDK 가 그것을 `PluginError::HostCall { code: None }` → `-32000`(server error)
+으로 떨군다. 그래서 plugin A 가 plugin B 의 메서드를 부르고 B 가 삼킨 경우, A 가 보는
+코드는 `-32004` 가 아니라 `-32000` 이다. **이 비대칭은 이 결정이 만든 것이 아니라
+`send_final_error` 가 원래 가진 것**이고(코드를 인자로 받아 plugin 갈래에서 버린다),
+그래서 기존 취소 경로도 똑같이 그렇다. 여기서 그것을 고치지 않은 이유는 둘이다:
+고치면 기존 취소 경로의 동작이 같이 바뀌고, 두 plugin-caller 경로 중 하나만 고치면
+post-hook 유무에 따라 같은 사건이 다른 코드를 내는 **새로운** 갈림이 생긴다. 축 자체는
+[ADR-0171](0171-a-host-error-code-survives-the-plugin-boundary.md) 이 이미 다룬 것과
+같다 — 다만 그 ADR 이 센 "버리는 자리 일곱" 에 `send_final_error` 는 들어 있지 않다.
 
 sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadline 을 든 변종 7 개를
 모두 본다(`sweep_expired_requests`).
@@ -73,8 +86,8 @@ sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadlin
   에서만 지우면 caller 는 여전히 영영 기다리고, 늦게 온 응답이 갈 곳도 사라져 오히려
   나빠진다.
 - **C: 만료에 새 오류 코드를 준다** — 진단에는 유리하지만 caller 계약이 둘로 갈린다.
-  "plugin 이 네 호출을 끝내지 못했다" 는 이미 `-32004` 로 나가고 있었고, 사유는 메시지가
-  나른다.
+  "plugin 이 네 호출을 끝내지 못했다" 는 local caller 에게 이미 `-32004` 로 나가고
+  있었고, 사유는 메시지가 나른다.
 - **D: 값을 매니페스트 선언으로 받는다** — plugin 이 자기 호출의 상한을 스스로 정하게
   되어 이 deadline 이 막으려는 바로 그 경우(안 답하는 plugin)를 plugin 이 무력화할 수
   있다. 선언을 받으려면 protocol 이 바뀌고 번들 plugin 전부가 따라 움직인다.
@@ -91,6 +104,8 @@ sweep 은 하나로 둔다. 같은 `pending_requests` 를 한 번 훑어 deadlin
 - healthcheck 회수 경로(`cancel_pending_namespace_calls`)가 사라지거나 namespace
   pending 을 더 이상 거두지 않게 됐을 때. 그러면 "앞지르지 않는다" 는 유도의 전제가 없어지고
   값은 회수 상한이 아니라 정상 호출 길이에서 나와야 한다.
+- `send_final_error` 가 plugin 갈래에서도 `code` 를 싣게 됐을 때. 위 Decision 이
+  적어 둔 비대칭이 없어지므로 그 문단을 지워야 한다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
