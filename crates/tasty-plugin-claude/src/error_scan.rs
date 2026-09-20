@@ -3,9 +3,17 @@
 //! 호스트에 있던 카탈로그 정규식을 그대로 옮겨 왔고, cutover 로 호스트 쪽은
 //! 제거됐다 — 지금은 본 모듈이 단일 출처다.
 //! 호스트는 main loop tick마다 in-memory terminal buffer를 직접 스캔했지만,
-//! plugin은 호스트 메모리에 접근할 수 없으므로 IPC `surface.read_since_mark`로
-//! 텍스트를 받아 매칭한다. 매치 시 `surface.fire_hook`으로 `claude-error`를
+//! plugin은 호스트 메모리에 접근할 수 없으므로 IPC `surface.read_since_scan_mark`
+//! 로 텍스트를 받아 매칭한다. 매치 시 `surface.fire_hook`으로 `claude-error`를
 //! 발사한다.
+//!
+//! 그 메서드는 **에이전트의 mark 와 다른 커서**를 쓰고 읽을 때마다 전진하므로, 한
+//! 호출이 주는 것은 화면 전체가 아니라 **지난 호출 이후 새로 온 것**이다. 그래서
+//! 매칭에 필요한 창은 여기서 누적해 둔다([`ErrorScanner::window`]). 한때 이 스캐너는
+//! `surface.read_since_mark` 를 불렀는데, 그것은 에이전트가 `surface.set_mark` 으로
+//! 움직이는 커서라 ① 아무도 mark 를 안 세운 surface 에서는 폴링마다 버퍼 전체(최대
+//! 1 MiB)를 다시 받았고 ② 에이전트가 mark 를 세우면 관측 창이 조용히 점프했다
+//! (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
 //!
 //! 호출자는 plugin의 background thread에서 [`ErrorScanner::scan_one`]을 일정
 //! 간격으로 호출. 짧은 polling 간격(800ms 권장)으로 호스트 메모리 스캔과의
@@ -36,6 +44,20 @@ use tasty_plugin_agent_common::host_call::HostCall;
 /// 호스트에 있던 `CLAUDE_ERROR_PATTERN` 을 직접 옮긴 것. cutover 로 호스트
 /// 측은 제거됐고 이 상수가 단일 출처다.
 const CLAUDE_ERROR_PATTERN: &str = r"(?i)(\bAPI Error\b|Output blocked by content filtering policy|\boverloaded_error\b|\brate_limit_error\b|\bInternal Server Error\b|\bnetwork error\b|\bBad Request\b)";
+
+/// 매칭 창의 상한. 호스트 출력 버퍼의 상한(`OutputBuffer::OUTPUT_BUFFER_MAX`)과 **같은
+/// 값을 따로 적은 사본**이다 — plugin 은 호스트 크레이트를 링크하지 않는다. 같은 형태의
+/// 사본이 이미 하나 있다([`STALL_QUIET_NO_ERROR`]).
+///
+/// 값을 맞춰 두는 이유는 이 창이 호스트가 주던 것과 같은 길이를 보게 하기 위해서다.
+/// 짧으면 에러 문자열을 호스트보다 일찍 잃고, 길면 호스트가 이미 버린 것을 계속 들고
+/// 있으면서 메모리만 쓴다. 갈렸을 때의 증상과 재는 법은
+/// `docs/adr/0307-the-output-scanner-reads-its-own-cursor.md` 의 재검토 조건.
+const SCAN_WINDOW_MAX: usize = 1_048_576;
+
+/// dedupe 스니펫 길이 — 창의 앞에서 이만큼을 잘라 "같은 에러를 이미 발사했나" 의 키로
+/// 쓴다.
+const DEDUPE_SNIPPET_CHARS: usize = 200;
 
 static CLAUDE_ERROR_REGEX: OnceLock<Regex> = OnceLock::new();
 
@@ -149,6 +171,10 @@ pub struct ErrorScanner {
     last_fired: HashMap<u32, String>,
     /// 에러 이후의 출력 흐름 추적 — "재시도 중" 과 "멈춤" 을 가른다.
     watch: HashMap<u32, OutputWatch>,
+    /// surface 별 매칭 창. 호스트가 주는 것은 지난 호출 이후의 **델타**라, 패턴 매칭과
+    /// 출력 지문이 볼 화면 분량은 여기서 누적한다. 상한은 [`SCAN_WINDOW_MAX`] 이고 넘치면
+    /// 앞에서 버린다 — 호스트 버퍼의 trim 과 같은 방향이다.
+    window: HashMap<u32, String>,
     /// surface 별 마지막 정지 알림 시각 (쿨다운 상한).
     last_stall_notify: HashMap<u32, Instant>,
 }
@@ -168,12 +194,26 @@ struct OutputWatch {
 }
 
 fn output_fingerprint(text: &str) -> u64 {
-    // dedupe 스니펫(앞 200자)과 달리 **전체 텍스트**를 해싱해야 한다 — 뒤에 새
-    // 출력이 붙어도 앞 200자는 그대로라, 스니펫으로는 "출력이 흐르는 중" 을 볼 수
+    // dedupe 스니펫(앞 DEDUPE_SNIPPET_CHARS 자)과 달리 **창 전체**를 해싱해야 한다 —
+    // 뒤에 새 출력이 붙어도 앞쪽은 그대로라, 스니펫으로는 "출력이 흐르는 중" 을 볼 수
     // 없다(재시도를 정지로 오판).
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut h);
     h.finish()
+}
+
+/// 창을 [`SCAN_WINDOW_MAX`] 이하로 앞에서 잘라낸다. 호스트 버퍼의 trim 과 같은 방향이다.
+///
+/// 자르는 자리는 char 경계여야 한다 — 바이트로 자르면 UTF-8 중간을 갈라 패닉한다.
+fn trim_window(window: &mut String) {
+    if window.len() <= SCAN_WINDOW_MAX {
+        return;
+    }
+    let want = window.len() - SCAN_WINDOW_MAX;
+    let cut = (want..=window.len())
+        .find(|i| window.is_char_boundary(*i))
+        .unwrap_or(window.len());
+    window.drain(..cut);
 }
 
 /// 정적이 얼마나 이어져야 정지로 보는가 — 화면에 에러가 있는지로 갈린다.
@@ -244,6 +284,8 @@ impl ErrorScanner {
         self.last_fired.remove(&surface_id);
         self.watch.remove(&surface_id);
         self.last_stall_notify.remove(&surface_id);
+        // 창은 surface 당 최대 SCAN_WINDOW_MAX 라 여기서 안 버리면 그대로 샌다.
+        self.window.remove(&surface_id);
     }
 
     pub fn is_enabled(&self, surface_id: u32) -> bool {
@@ -264,6 +306,8 @@ impl ErrorScanner {
     pub fn reset_dedupe(&mut self, surface_id: u32) {
         self.last_fired.remove(&surface_id);
         self.watch.remove(&surface_id);
+        // 매칭 창은 **비우지 않는다.** 호스트 쪽 버퍼도 새 턴에서 비워지지 않으므로,
+        // 비우면 이 스캐너만 화면보다 짧게 보게 된다.
     }
 
     /// enabled set의 snapshot. polling thread가 lock을 짧게 잡고 빠져나오도록.
@@ -285,7 +329,7 @@ impl ErrorScanner {
     }
 
     /// 한 surface에 대해 1회 스캔 + 매치 시 hook 발사. 호스트 IPC 두 번 호출
-    /// (`read_since_mark` → `fire_hook`). 매치 안 하면 fire_hook 안 호출.
+    /// (`read_since_scan_mark` → `fire_hook`). 매치 안 하면 fire_hook 안 호출.
     ///
     /// 매치 상태가 이어지는 동안에는 무출력 지속시간을 함께 재서, 정지로 판정되면
     /// [`STALLED_EVENT`] 를 추가로 발사한다([`Self::maybe_notify_stall`]).
@@ -307,25 +351,31 @@ impl ErrorScanner {
     ) -> Option<String> {
         let resp = host
             .call(
-                "surface.read_since_mark",
+                "surface.read_since_scan_mark",
                 json!({
                     "surface_id": surface_id,
                     "strip_ansi": true,
                 }),
             )
             .ok()?;
-        let text = resp.get("text").and_then(|v| v.as_str()).unwrap_or("");
-        let has_error = detect_claude_error(text);
+        // 이 커서는 읽으면 전진하므로 응답은 **지난 호출 이후의 델타**다. 매칭과 지문이
+        // 볼 화면 분량은 누적한 창 쪽이다.
+        let delta = resp.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        let window = self.window.entry(surface_id).or_default();
+        window.push_str(delta);
+        trim_window(window);
+        let has_error = detect_claude_error(window);
+        let fingerprint = output_fingerprint(window);
+        let snippet: String = window.chars().take(DEDUPE_SNIPPET_CHARS).collect();
         // 출력 흐름 추적은 에러 매치 여부와 무관하게 매 tick 갱신한다 — 에러가 뜨기
         // 전부터 흐름을 보고 있어야 "에러 직후부터의 정적" 을 잴 수 있다.
-        self.track_output(surface_id, text, now, has_error);
+        self.track_output(surface_id, fingerprint, now, has_error);
 
         let mut fired = None;
         if has_error {
-            // 같은 텍스트가 연속 polling에서 다시 잡히면 무시 (dedupe). prompt가
-            // 새로 그려지지 않는 한 mark는 그대로 유지되므로 같은 chunk가 반복
-            // 노출될 수 있다.
-            let snippet: String = text.chars().take(200).collect();
+            // 같은 텍스트가 연속 polling에서 다시 잡히면 무시 (dedupe). 창은 델타가
+            // 붙어 자라기만 하므로 앞쪽 스니펫은 새 출력이 창 상한을 밀어낼 때까지
+            // 그대로다 — 그래서 같은 에러가 반복 노출돼도 한 번만 발사된다.
             let already_fired = self.last_fired.get(&surface_id) == Some(&snippet);
             if !already_fired {
                 let fire_result = host.call(
@@ -361,11 +411,13 @@ impl ErrorScanner {
         fired
     }
 
-    /// 이번 tick 의 텍스트로 출력 흐름 관측치를 갱신한다. 지문이 바뀌면 정적 구간을
+    /// 이번 tick 의 창 지문으로 출력 흐름 관측치를 갱신한다. 지문이 바뀌면 정적 구간을
     /// 처음부터 다시 재고, 이미 보낸 정지 알림도 해제한다(출력이 재개됐으므로 다음
     /// 정적 구간은 새 사건이다).
-    fn track_output(&mut self, surface_id: u32, text: &str, now: Instant, has_error: bool) {
-        let fingerprint = output_fingerprint(text);
+    ///
+    /// 지문을 **밖에서 받는다** — 호출자가 같은 창으로 패턴 매칭과 스니펫도 뽑으므로,
+    /// 여기서 다시 해싱하면 같은 창을 두 번 훑는다.
+    fn track_output(&mut self, surface_id: u32, fingerprint: u64, now: Instant, has_error: bool) {
         match self.watch.get_mut(&surface_id) {
             Some(w) if w.fingerprint == fingerprint => {}
             Some(w) => {
@@ -708,8 +760,14 @@ mod tests {
 
     // ── 정지 판정 + 발사 배선 (`scan_one_at`) ──
 
-    /// `read_since_mark` 텍스트와 `terminal.state` 를 바꿔 끼우고 `fire_hook` 을
+    /// `read_since_scan_mark` 델타와 `terminal.state` 를 바꿔 끼우고 `fire_hook` 을
     /// 기록하는 스텁.
+    ///
+    /// **한 번 준 것은 다시 주지 않는다** — 호스트의 scan 커서가 읽을 때 전진하는 것을
+    /// 그대로 흉내 낸다. [`ScanHost::set_text`] 로 새로 실어 준 것만 다음 한 번의 호출에
+    /// 실리고, 그 뒤로는 빈 문자열이다(= 새 출력이 없다). 커서가 전진하지 않던 시절의
+    /// 스텁은 같은 화면을 매 호출 다시 줬고, 그 모양으로는 "출력이 멈췄다" 와 "같은
+    /// 것이 계속 온다" 가 구분되지 않는다.
     struct ScanHost {
         text: std::cell::RefCell<String>,
         state: std::cell::RefCell<&'static str>,
@@ -742,7 +800,10 @@ mod tests {
             params: serde_json::Value,
         ) -> Result<serde_json::Value, tasty_plugin_sdk::PluginError> {
             match method {
-                "surface.read_since_mark" => Ok(json!({ "text": *self.text.borrow() })),
+                "surface.read_since_scan_mark" => {
+                    let delta = std::mem::take(&mut *self.text.borrow_mut());
+                    Ok(json!({ "text": delta }))
+                }
                 "terminal.state" => Ok(json!({ "state": *self.state.borrow() })),
                 "surface.fire_hook" => {
                     let event = params["event"].as_str().unwrap_or_default().to_string();
@@ -908,7 +969,52 @@ mod tests {
         assert_eq!(host.stalled_count(), 2);
     }
 
-    /// surface **둘**을 켠다. 하나만 켜면 `disable(1)` 이 네 맵을 통째로 비워도 이
+    /// 창 누적이 없으면 못 잡는 갈래 — 에러 문자열이 두 폴링에 걸쳐 나뉘어 온다.
+    ///
+    /// 커서가 읽을 때 전진하므로 델타 하나에는 패턴이 통째로 안 들어 있다. 창을 누적해야
+    /// 이어 붙은 텍스트에서 매치된다. 이 창이 [`ErrorScanner::window`] 가 존재하는 이유다.
+    #[test]
+    fn an_error_split_across_two_polls_is_still_detected() {
+        let host = ScanHost::new("\u{23bf} API Er", "active");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        assert!(
+            host.events().is_empty(),
+            "반쪽으로는 아직 매치가 아니다: {:?}",
+            host.events()
+        );
+
+        host.set_text("ror: Connection error\n");
+        s.scan_one_at(&host, 1, t0 + Duration::from_millis(800));
+        assert_eq!(
+            host.events(),
+            vec!["claude-error".to_string()],
+            "두 델타를 이어 붙이면 매치여야 한다"
+        );
+    }
+
+    /// 창 상한과 자르는 자리. 바이트로 자르면 UTF-8 중간을 갈라 패닉한다.
+    #[test]
+    fn the_window_is_capped_and_cut_on_a_char_boundary() {
+        // 세 바이트짜리 문자로만 채워 상한을 조금 넘긴다 — 잘라야 할 바이트 수가
+        // char 경계에 안 떨어지는 배치다.
+        let mut w = "\u{ac00}".repeat(SCAN_WINDOW_MAX / 3 + 10);
+        assert!(w.len() > SCAN_WINDOW_MAX, "모수가 상한을 안 넘었다");
+        trim_window(&mut w);
+        assert!(w.len() <= SCAN_WINDOW_MAX, "상한을 안 지켰다: {}", w.len());
+        assert!(
+            w.starts_with('\u{ac00}'),
+            "char 경계가 아닌 자리에서 잘렸다"
+        );
+        assert!(
+            w.len() + 3 > SCAN_WINDOW_MAX,
+            "필요 이상으로 잘랐다: {}",
+            w.len()
+        );
+    }
+
+    /// surface **둘**을 켠다. 하나만 켜면 `disable(1)` 이 다섯 맵을 통째로 비워도 이
     /// 시험은 초록이라, "1 을 껐다" 와 "전부 껐다" 가 안 갈린다.
     #[test]
     fn disable_clears_stall_state() {
@@ -922,8 +1028,11 @@ mod tests {
         s.disable(1);
         assert!(!s.watch.contains_key(&1));
         assert!(!s.last_stall_notify.contains_key(&1));
+        // 매칭 창은 surface 당 최대 SCAN_WINDOW_MAX 라, 안 버리면 그대로 샌다.
+        assert!(!s.window.contains_key(&1));
         // 끄라고 하지 않은 surface 의 감시는 그대로다.
         assert!(s.watch.contains_key(&2));
+        assert!(s.window.contains_key(&2));
         assert!(s.is_enabled(2));
     }
 

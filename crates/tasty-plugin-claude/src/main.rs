@@ -44,7 +44,7 @@ const PLUGIN_ID: &str = "com.tasty.claude";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// PTY 에러 폴링 간격. 호스트 메모리 스캔(O(1))과의 정확도 차이를 좁히기 위해
-/// 짧게. 추적 대상 N개에 대해 주기당 최대 2N IPC(생존 대조 + read_since_mark;
+/// 짧게. 추적 대상 N개에 대해 주기당 최대 2N IPC(생존 대조 + read_since_scan_mark;
 /// 매치될 때만 fire_hook 이 추가된다)지만, N 이 10 이하인 일상 시나리오에서는
 /// 무시 가능한 부하 (25 calls/sec @ 10 children).
 const ERROR_SCAN_INTERVAL: Duration = Duration::from_millis(800);
