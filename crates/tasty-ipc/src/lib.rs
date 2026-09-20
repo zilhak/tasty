@@ -9,6 +9,7 @@
 
 pub mod alias;
 pub mod caller;
+pub mod capability;
 pub mod client;
 pub mod host_call;
 pub mod host_port;

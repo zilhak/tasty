@@ -1380,12 +1380,22 @@ pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -
     JsonRpcResponse::internal_error(id, e.to_string())
 }
 
+/// `system.info` — engine 서술 + **이 서버가 협상할 수 있는 것의 목록**.
+///
+/// capability 는 `system_info_fields` 가 아니라 **여기**서 붙인다. 그 함수는
+/// `window.list` 가 창마다 재사용하는데, capability 는 창의 성질이 아니라 서버의
+/// 성질이라 창 수만큼 같은 배열이 실릴 이유가 없다.
+///
+/// 구 client 에 미치는 영향은 없다 — 모르는 키는 무시된다. 그래서 이것은 표면 **추가**
+/// 이고 동결 baseline 가드와 부딪히지 않는다(그 가드가 보는 것은 메서드 이름 집합이다).
 fn handle_system_info(
     state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, system_info_fields(state, engine))
+    let mut info = system_info_fields(state, engine);
+    info["capabilities"] = tasty_ipc::capability::capabilities_json();
+    JsonRpcResponse::success(id, info)
 }
 
 /// Version is process-wide; the legacy count/index describe this engine. Include
@@ -1647,7 +1657,7 @@ mod require_surface_id_tests {
 
 #[cfg(test)]
 mod system_info_tests {
-    use super::system_info_fields;
+    use super::{handle_system_info, system_info_fields};
 
     #[test]
     fn system_info_identifies_the_engine_and_the_active_workspace_by_id() {
@@ -1672,5 +1682,38 @@ mod system_info_tests {
         assert_eq!(info["active_workspace"], state.active_workspace);
         assert!(info["active_workspace_id"].is_null());
         assert_eq!(info["workspace_ids"], serde_json::json!([]));
+    }
+
+    /// `system.info` 는 이 서버가 협상할 수 있는 것을 함께 답한다. 패키지 버전만으로는
+    /// 그것을 못 묻는다 — 같은 버전의 두 빌드가 feature 조합에 따라 다른 것을 한다.
+    #[test]
+    fn system_info_declares_what_this_server_can_negotiate() {
+        let (state, engine) = crate::state::tests::test_state();
+        let resp = handle_system_info(&state, &engine, serde_json::json!(1));
+        let result = resp.result.expect("성공 응답이어야 한다");
+        let caps = result["capabilities"]
+            .as_array()
+            .expect("capabilities 가 배열로 실려야 한다");
+        assert!(!caps.is_empty());
+        for c in caps {
+            assert!(c["name"].is_string(), "{c}");
+            assert!(c["version"].is_u64(), "{c}");
+        }
+        // 기존 키는 그대로다 — 이것은 추가이지 교체가 아니다.
+        assert_eq!(result["scope"], "engine");
+        assert!(result["version"].is_string());
+    }
+
+    /// capability 는 **서버**의 성질이지 창의 성질이 아니다. `window.list` 가 창마다
+    /// 재사용하는 공용 필드에 실리면 창 수만큼 같은 배열이 반복된다 — 그 자리가
+    /// 갈라져 있다는 것을 여기서 잰다(두 함수가 한 몸이 되면 이 단정이 죽는다).
+    #[test]
+    fn the_per_window_fields_do_not_repeat_the_server_capabilities() {
+        let (state, engine) = crate::state::tests::test_state();
+        let shared = system_info_fields(&state, &engine);
+        assert!(
+            shared.get("capabilities").is_none(),
+            "창마다 재사용되는 필드에 capability 가 실렸다: {shared}"
+        );
     }
 }
