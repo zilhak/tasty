@@ -1800,3 +1800,43 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
         );
     }
 }
+
+/// 한 회차가 큐를 다 못 비워도 요청이 삼켜지지 않는다.
+///
+/// `tcp_ipc_server::DRAIN_BUDGET_PER_ROUND`(= `MAX_CONCURRENT_CONNECTIONS`) 가 한 회차에 집어 드는 명령 수를
+/// 막는다. 남은 것이 다음 회차에 다시 불리는 근거는 **넣는 쪽이 명령마다 waker 를
+/// 정확히 한 번 부르는 것**이라, 그 성질이 깨지면 예산을 넘긴 요청이 응답 없이
+/// 남는다. 클라이언트가 응답을 기다리며 블록하므로 그 사고는 **행이 아니라 멈춤**
+/// 으로 나타난다.
+///
+/// ★ **이 시험은 지금 예산값(256)에서는 예산에 안 닿는다** — 동시 연결 16 개는
+/// 그 아래다. 이것은 센서고, 재는 방법은 예산을 낮춰 돌리는 것이다. 실측:
+/// 예산을 1 로 바꾸면 이 파일 전체가 여전히 통과하고(그때 이 시험만이 큐에 둘
+/// 이상을 담는다), 0 으로 바꾸면 이 시험이 제일 먼저 멈춘다.
+#[test]
+fn concurrent_requests_are_all_answered() {
+    let _lane = lane();
+    let tasty = common::shared();
+    const CLIENTS: usize = 16;
+
+    // 연결마다 스레드 하나 — `call` 이 자기 TcpStream 을 열고 응답까지 블록하므로
+    // 이 순간 큐에 최대 CLIENTS 개의 명령이 동시에 들어간다. 한 요청씩 순서대로
+    // 보내면 큐 깊이가 늘 1 이라 회차 예산을 건드릴 수 없다.
+    let rows: Vec<serde_json::Value> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..CLIENTS)
+            .map(|_| s.spawn(|| tasty.call("workspace.list", json!({}))))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("동시 요청 스레드가 패닉했다"))
+            .collect()
+    });
+
+    assert_eq!(rows.len(), CLIENTS, "응답 수가 요청 수와 다르다");
+    for (i, row) in rows.iter().enumerate() {
+        assert!(
+            row.as_array().is_some_and(|a| !a.is_empty()),
+            "{i} 번째 동시 요청의 workspace.list 가 비었다: {row:?}"
+        );
+    }
+}
