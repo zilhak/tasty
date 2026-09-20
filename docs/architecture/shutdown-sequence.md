@@ -87,6 +87,11 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
 - **요청 순서 계약** — shutdown 요청은 `dispatch_pending_surface_lifecycle()` 이
   같은 `req_tx` 에 이미 넣어 둔 `surface.closed` 뒤에 놓인다. plugin 이 cleanup
   대상 surface 를 모르는 채 종료되면 안 되므로 S3 → S4 순서는 고정이다.
+- **요청이 큐에 못 들어갈 수 있다** — 그 큐는 유한하고, 호스트→plugin 방향의 포화는
+  대기가 아니라 **거절**이다([ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)).
+  writer 스레드가 소켓에서 막혀 큐가 차 있으면 shutdown 요청이 거절되고, 그 plugin 은
+  graceful 기회 없이 deadline 뒤 kill 로 회수된다. S4a 의 사유는 그때 `killed` 로
+  남으므로 사후 판별은 그 값으로 한다.
 - **타임아웃 의미론** — 겹치는 것은 대기 구간뿐이고, plugin 하나가 받는 graceful
   기회는 여전히 2s 다. S4a 는 개별 소요와 `graceful|killed` 사유를 그대로 남긴다.
 - **잔존 프로세스 없음** — `poll_shutdown_all()` 이 `true` 를 반환한 시점에 모든
