@@ -159,6 +159,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Upload license and third-party notice
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          gh release upload --clobber "v${VERSION}" LICENSE
+          gh release upload --clobber "v${VERSION}" THIRD_PARTY_LICENSES.md
+          gh release upload --clobber "v${VERSION}" LICENSES/D2Coding-OFL.txt
+
       - name: Upload agent-guide docs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
