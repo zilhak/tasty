@@ -696,10 +696,10 @@ fn every_branch_of_the_effect_classification_is_used() {
         }
     }
     assert!(read > 0 && idem > 0 && mutate > 0, "{read} {idem} {mutate}");
-    assert!(
-        METHOD_TABLE.len() + DEBUG_METHODS.len() == read + idem + mutate,
-        "센 것이 표보다 적다 — 갈래가 늘었는데 이 시험이 안 따라갔다"
-    );
+    // 합이 표 길이와 같은지는 **안 묻는다.** 위 `match` 가 망라적이라 그 등식은 항상
+    // 참이고, 물으면 아무것도 안 재면서 "갈래가 늘었는데 안 따라왔다" 를 재는 것처럼
+    // 읽힌다. 갈래가 늘면 그 `match` 가 **컴파일**에서 막는다 — 그것이 그 사실의
+    // 채널이고, 이 시험이 대신할 수 있는 자리가 아니다.
 }
 
 /// 분류의 축은 "읽기인가" 가 **아니라** "두 번 전달하면 차이가 남는가" 다.
