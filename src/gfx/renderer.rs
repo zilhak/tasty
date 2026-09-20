@@ -17,8 +17,18 @@
 //! 렌더러와 헤드리스 핸들러가 같은 자리를 봐야 한다. 재는 법:
 //!
 //! ```bash
-//! grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/   # cell_palette 두 줄만
+//! grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v ':[0-9]\+: *//'
+//! # 두 줄 — 둘 다 cell_palette 다
 //! ```
+//!
+//! **뒤의 `grep -v` 를 빼지 마라.** 좌변이 `.rs` 원문이라 앞 명령은 이 머리 주석의
+//! 산문까지 센다 — 그러면 잡음 둘이 상시로 섞여 회귀 한 줄과 안 갈린다. 뒤엣것이
+//! 내용이 `//` 로 시작하는 줄을 버린다. 좌변을 `use crate::` 로 좁히는 쪽이 더
+//! 간단해 보이지만 **그건 틀린다** — 이 모듈이 방금 지운 형태가 `use` 없이 본문에
+//! 박힌 `crate::selection::is_selected(...)` 였고, 좁힌 좌변은 그것을 못 본다
+//! (base `63a777ecc` 에서 `use crate::` 는 9, 위 두 단계는 11 을 낸다. 차가 정확히
+//! 그 두 자리다). 블록 주석·문자열 리터럴 안의 `crate::` 는 그대로 세는데, 그건
+//! 더 많이 잡는 쪽이라 조용한 통과를 안 만든다.
 
 mod line_render;
 mod pipeline;

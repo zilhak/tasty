@@ -86,8 +86,20 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 시험도 안 깬다.
 
 ```bash
-grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/   # cell_palette 두 줄만 나와야 한다
+grep -rn 'crate::' src/gfx/renderer.rs src/gfx/renderer/ | grep -v ':[0-9]\+: *//'
+# 두 줄 — 둘 다 cell_palette 다
 ```
+
+**두 단계인 이유가 있다.** 좌변이 `.rs` 원문이므로 앞 명령만 쓰면 **이 규칙을 적은
+`renderer.rs` 머리 주석의 산문까지 센다** — 상시 잡음 둘이 섞이면 나중의 회귀 한 줄과
+안 갈린다. 뒤의 `grep -v` 가 내용이 `//` 로 시작하는 줄을 버린다.
+
+좌변을 `use crate::` 로 좁히는 쪽이 간단해 보이지만 **그건 틀린다.** 이 경계가 실제로
+지운 형태 중 둘이 `use` 없이 본문에 박힌 `crate::selection::is_selected(...)` 였다 —
+좁힌 좌변은 그 형태를 못 본다. 실측(base `63a777ecc` 의 렌더러 두 파일): `use crate::`
+는 9 줄, 위 두 단계는 11 줄이고 **차이가 정확히 그 두 자리**다. 반대로 위 두 단계는
+블록 주석·문자열 리터럴 안의 `crate::` 를 그대로 세는데, 그건 더 많이 잡는 방향이라
+조용한 통과를 만들지 않는다.
 
 `src/gfx/gpu*` 는 이 규칙의 대상이 아니다 — 그쪽은 `AppState`·`CoreState`·
 `PluginManager` 를 받는 호스트 접착층이고, 본체 의존이 거짓이 아니라 사실이다. 다만
