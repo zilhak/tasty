@@ -92,6 +92,16 @@ server error(`-32000`)를 쓴다.
 비대칭을 사실로 적고 "없어지면 그 문단을 지워라" 를 재검토 조건으로 달아 두었으므로,
 그 문단과 조건을 같은 커밋에서 갈아끼웠다.
 
+**그 넷을 고치면 다섯째 갈래가 따라온다 — 그쪽은 호스트가 *되받은* 코드다.**
+`send_final_error` 는 `finalize_target_outcome` 에서도 불리고, 거기로 오는 `code` 는
+`handle_target_response_with_post_hook` 의 `resp.error_code.unwrap_or(-32000)` —
+**target plugin 이 낸 코드**다. 그래서 plugin A 가 plugin B 의 메서드를 부르고 그
+메서드에 extension 의 post-IPC hook 이 걸려 있으면, B 가 낸 `-32602` 가 종전에는
+`-32000` 으로 뭉개졌다가 이제 그대로 A 에게 간다. 이 자리는 위 "버리는 자리 일곱" 에도
+빠져 있었다 — 같은 한 줄이 두 축을 한 번에 고친 셈이고, 그래서 **동작 변경의 모수는
+"호스트가 내는 네 값" 이 아니라 "그 네 값 + target plugin 이 내는 임의의 JSON-RPC 코드"**
+다. 이 ADR 의 축("호출자가 대상의 판단을 그대로 듣는다")에는 둘 다 맞다.
+
 ## Consequences
 
 - **얻은 것**: 호출자가 호스트의 판단을 그대로 듣는다. 같은 잘못된 대상이 plugin 기동 상태와
@@ -105,12 +115,18 @@ server error(`-32000`)를 쓴다.
 - **와이어 호환**: 필드는 `#[serde(default, skip_serializing_if)]` 라 양방향이다. 구버전 SDK
   로 빌드된 plugin 은 낯선 키를 안 보고, 구버전 호스트가 보낸 모양은 `None` 으로 읽힌다.
   두 방향을 `crates/tasty-plugin-protocol/src/protocol_tests.rs` 가 못 박는다.
-- **2026-09-20 보강이 바꾼 동작**: plugin caller 가 받던 `-32000` 이 이제 호스트가 낸
-  실제 코드가 된다. `PluginError::HostCall { code }` 로 분기하는 소비처는 SDK 의
+- **2026-09-20 보강이 바꾼 동작**: plugin caller 가 받던 `-32000` 이 이제 실제 코드가
+  된다. 그 값은 **둘 중 하나**다 — 호스트가 스스로 낸 넷(`-32001`·`-32002`·`-32003`·
+  `-32004`), 또는 post-IPC hook 이 걸린 경로에서 **target plugin 이 낸 임의의 JSON-RPC
+  코드**(`finalize_target_outcome` 갈래). 즉 모수는 닫힌 네 값이 아니다.
+  `PluginError::HostCall { code }` 로 분기하는 소비처는 SDK 의
   `From<PluginError> for IpcMethodError` 하나고, 값으로 분기하는 자리는 이 저장소에
   없다(이 ADR 의 위 항이 센 것과 같은 좌변). 표시 문구는 여전히 안 바뀐다.
-- **운영 비용**: `send_ipc_result` 에 인자가 하나 늘었다. 코드가 없는 내부 실패 경로는
-  `None` 을 준다 — 그 자리는 종전과 같은 `-32000` 이다.
+- **운영 비용**: `send_ipc_result` 에 인자가 하나 늘었다. **2026-09-20 보강 뒤로 그
+  인자에 `None` 을 주는 실패 경로는 없다** — 호스트 내부 실패 다섯 자리가 전부 코드를
+  싣고, `None` 이 남은 곳은 성공 경로 하나뿐이다(코드를 실을 것이 없다). 새 실패 경로를
+  더하는 사람은 `None` 이 아니라 그 자리의 코드를 준다: `None` 은 SDK 기본값 `-32000`
+  으로 떨어져 이 ADR 과 ADR-0311 이 막은 비대칭을 그 자리에 다시 만든다.
 
 ## Alternatives Considered
 

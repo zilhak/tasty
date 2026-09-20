@@ -14,6 +14,8 @@
 ## [Unreleased]
 
 ### Added
+- `PluginRequest` 에 `dropped_requests: u64` (optional + default 0 — additive, api_version 유지) — 호스트 → plugin 요청 큐가 가득 차면 호스트는 그 요청을 **기다리지 않고 버린다**([ADR-0315](../../docs/adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)). 버려진 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 몰랐다. 이제 그 뒤로 **실제 큐에 들어가는 다음 요청**에 그 사이 버린 수가 실린다. 0 이면 직렬화에서 빠지므로 구버전 plugin 이 보는 바이트는 종전과 같고, 낯선 키는 `#[serde(default)]` 로 무시된다. SDK 노출은 `Plugin::on_host_dropped_requests`(기본 no-op) · `HostHandle::dropped_by_host()` · 자동 `warn` 로그. 근거는 [ADR-0339](../../docs/adr/0339-the-host-tells-a-plugin-what-saturation-dropped.md).
+- `IpcCallResult` 에 `error_code: Option<i32>` (optional + default — additive, api_version 유지) — 호스트가 plugin caller 에게 돌려주는 `ipc.result` 가 JSON-RPC 코드를 함께 싣는다. 종전에는 메시지만 가서, 다른 plugin 을 부른 plugin 은 실패 사유를 문자열로 뒤져야 했다. 구버전 호스트가 보낸 모양은 `None` 으로 읽힌다. 근거는 [ADR-0171](../../docs/adr/0171-a-host-error-code-survives-the-plugin-boundary.md).
 - `PluginEvent::BannerInvalidated { instance_id }` — 위 `PopupInvalidated` 의 egui-mesh banner 대응. banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가 `viewport_output` 으로 다음 pass 를 요청할 수 있는데(hover fade·스크롤 스무딩·스피너) 그 요청을 host 로 올리는 자리가 없었다 — SDK 가 값을 계산해 놓고 버렸다. `#[serde(other)]` fallback(`PluginEvent::Unknown`) 대상이라 구버전 host 는 안전하게 무시한다. (additive, api_version 유지)
 
 ## [0.10.2] - 2026-08-29
