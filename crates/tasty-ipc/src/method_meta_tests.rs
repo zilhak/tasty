@@ -741,6 +741,21 @@ fn the_effect_axis_is_redelivery_not_the_verb() {
     assert_eq!(eff("preset.capture"), Mutate);
 }
 
+/// debug 표에도 같은 축이 선다 — 이름이 "누른 상태로 맞춰라" 인데 재전달이 수렴하지
+/// 않는 자리가 있다.
+#[cfg(debug_assertions)]
+#[test]
+fn a_debug_method_is_judged_on_the_same_axis_as_the_rest() {
+    use crate::method_meta::MethodEffect::*;
+    // `update_hold` 는 조합이 같으면 `hold_since` 를 **보존**하고, 그 뒤
+    // `debug_backdate` 가 그 값에서 다시 뺀다 — 같은 `elapsed_ms` 를 두 번 보내면
+    // 타이머가 두 번 뒤로 간다.
+    assert_eq!(
+        method_meta("debug.modifier_hint.hold").map(|m| m.effect),
+        Some(Mutate)
+    );
+}
+
 /// plugin namespace 로 넘어가는 이름은 호스트가 뜻을 모른다 — 그때 고르는 값은
 /// **조심스러운 쪽**이어야 한다. `Read` 로 새면 소비자가 재전달해도 된다고 읽는다.
 #[test]

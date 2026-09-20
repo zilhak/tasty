@@ -772,10 +772,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         local_only(MethodEffect::Idempotent),
     ),
     // modifier-hint 오버레이 홀드 주입/상태 덤프 — 사용자 modifier 홀드 재현. release 미노출.
-    (
-        "debug.modifier_hint.hold",
-        local_only(MethodEffect::Idempotent),
-    ),
+    ("debug.modifier_hint.hold", local_only(MethodEffect::Mutate)),
     ("debug.modifier_hint.state", local_only(MethodEffect::Read)),
     // 설정 모달 강제 open — 사용자 조작 재현. release 미노출. 시각 검증 자동화용.
     ("debug.settings.open", local_only(MethodEffect::Idempotent)),
