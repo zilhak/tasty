@@ -110,5 +110,5 @@ regular memory 는 **설계상 공유 네임스페이스**다 — `tasty_memory`
   결정을 **IPC 메서드 prefix** 에 내린 것. 그쪽은 예약 목록을 파생하지 않고 가드로 고정했고
   (집행 지점이 매니페스트 검증이라 목록이 필요했다), 이쪽은 집행 지점이 핸들러라 접두 하나로
   줄일 수 있었다 — 두 결정이 갈린 이유가 집행 지점이다
-- `src/adapters/ipc/handler/memory.rs` (`HOST_KEY_NAMESPACE`) · `src/adapters/ipc/audit.rs`
+- `src/adapters/ipc/handler/memory.rs` (`HOST_KEY_NAMESPACE`) · `src/store/audit.rs`
   (`AUDIT_KEY_PREFIX`) · `crates/tasty-memory/src/lib.rs` (owner 모델)

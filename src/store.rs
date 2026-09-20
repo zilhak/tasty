@@ -4,6 +4,7 @@
 //! 가 주력이라 headless 빌드에선 미사용으로 잡힌다.
 //! library API surface — *headless 한정* dead_code 침묵.
 
+pub mod audit;
 pub mod log_retention;
 pub mod notification;
 pub mod recent_files;

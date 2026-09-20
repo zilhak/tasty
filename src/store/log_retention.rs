@@ -69,7 +69,7 @@ pub const LOG_TTL_MS: u64 = 50 * 60 * 60 * 1_000;
 
 /// IPC audit — deny 만 기록되므로 평시 유입이 거의 없다. 상한은 폭주 방어용 안전망.
 pub const AUDIT: LogRetention = LogRetention {
-    prefix: crate::adapters::ipc::audit::AUDIT_KEY_PREFIX,
+    prefix: crate::store::audit::AUDIT_KEY_PREFIX,
     keep: 50_000,
     ttl_ms: Some(LOG_TTL_MS),
 };
@@ -178,7 +178,7 @@ mod tests {
     fn every_ipc_log_prefix_has_a_policy() {
         let covered: Vec<&str> = ALL.iter().map(|p| p.prefix).collect();
         for expected in [
-            crate::adapters::ipc::audit::AUDIT_KEY_PREFIX,
+            crate::store::audit::AUDIT_KEY_PREFIX,
             tasty_telemetry::EVENT_KEY_PREFIX,
             tasty_telemetry::ANOMALY_KEY_PREFIX,
         ] {

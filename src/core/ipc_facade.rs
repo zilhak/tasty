@@ -7,8 +7,8 @@ use tasty_ipc::{
     AuditCallerMarker, AuditDecision as ProtoDecision, IpcHostFacade, SessionResolution,
 };
 
-use crate::adapters::ipc::audit::{AuditCallerKind, AuditDecision, AuditRecord, AuditStore};
 use crate::core::Core;
+use crate::store::audit::{AuditCallerKind, AuditDecision, AuditRecord, AuditStore};
 use tasty_ipc::caller::SessionToken;
 
 impl IpcHostFacade for Core {
@@ -71,7 +71,7 @@ impl IpcHostFacade for Core {
             crate::store::log_retention::maybe_prune(mem, ts_ms);
             let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
             store.append(&record)?;
-            Ok::<(), crate::adapters::ipc::audit::AuditError>(())
+            Ok::<(), crate::store::audit::AuditError>(())
         });
         if let Err(e) = result {
             tracing::warn!("audit: append failed: {e}");

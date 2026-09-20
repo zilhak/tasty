@@ -6,7 +6,7 @@
 use super::params::{self, p_try};
 use serde_json::{Value, json};
 
-use crate::ipc::audit::{
+use crate::store::audit::{
     AuditCallerKind, AuditDecision, AuditError, AuditQuery, AuditRecord, AuditStore,
     DEFAULT_RETENTION_MS,
 };
