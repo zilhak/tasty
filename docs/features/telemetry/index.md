@@ -72,7 +72,8 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 위 `ipc_calls` 와 **다른 축**이다. caller 로 나누지 않고, 저장소를 거치지 않으며, 프로세스
 수명 동안 자라지 않는 고정 크기 원자값이다(근거·대안은
-[ADR-0305](../../adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md)).
+[ADR-0305](../../adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md),
+노출 표면은 [ADR-0333](../../adr/0333-the-pressure-gauge-is-read-by-one-local-only-method-and-split-by-population.md)).
 재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간 · plugin 왕복 · DB 지연의 count·sum·max 이고,
 평균은 파생이라 메서드로 낸다. 분위수는 답하지 못한다.
 

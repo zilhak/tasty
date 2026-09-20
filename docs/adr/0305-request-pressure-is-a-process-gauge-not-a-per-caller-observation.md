@@ -117,6 +117,7 @@ telemetry 행을 한 건도 읽지 않으므로 `record_ipc_call` 을 거부까�
 
 ## References
 
+- 후속: [ADR-0333](0333-the-pressure-gauge-is-read-by-one-local-only-method-and-split-by-population.md) — 이 결정이 "잃은 것" 으로 적은 노출 경로를 연다(본 결정의 본체는 그대로 유효하다).
 - 관련 ADR: [ADR-0277](0277-ipc-admission-and-observation-run-once.md) — caller 별 관측의
   횟수 계약. 본 ADR 은 그것을 개정하지 않고 **다른 축**임을 밝힌다.
 - 관련 ADR: [ADR-0085](0085-ipc-log-retention-bounded.md) — 호출당 영속 기록이 폭주한 선례.
