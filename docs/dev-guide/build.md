@@ -93,6 +93,50 @@ plugin 빌드 후 `sign-bundle.sh --all-builtins` 로 전체 매니페스트를 
 dev 워크플로에 openssl 의존 미부과). dist 스크립트(`build-*.{sh,ps1}`)도 같은 규칙을
 쓴다 — 상세는 [plugin-packaging](plugin-packaging.md).
 
+## 빌드 스크립트 (`build.rs`)
+
+루트 크레이트의 `build.rs` 가 하는 일은 하나다 — **Windows 실행 파일에 아이콘을 넣는 것.**
+본문은 통째로 `#[cfg(windows)]` 안에 있고, `winresource` 는 `[target.'cfg(windows)'.build-dependencies]`
+에만 선언돼 있어 **Linux · macOS 빌드는 그 크레이트를 받지도 않고 스크립트 본문이 빈 `main`** 이다.
+
+### 입력 선언이 곧 계약이다
+
+스크립트는 자기 입력을 `cargo:rerun-if-changed` 로 선언한다. **하나라도 선언하면 cargo 는
+"패키지 안의 아무 파일이나 바뀌면 다시 돈다" 는 기본값을 버리고 선언한 것만 본다.** 그래서
+목록에서 빠진 입력은 바뀌어도 재실행을 일으키지 못한다. 지금 선언된 입력은 둘이다.
+
+| 입력 | 누가 읽나 |
+|---|---|
+| `assets/icons/icon.ico` | 스크립트 자신(`set_icon`) |
+| `Cargo.toml` | `winresource` — `WindowsResource::new()` 가 `parse_cargo_toml` 을 부른다 |
+
+**`Cargo.toml` 이 입력인 것은 `[package.metadata.winresource]` 섹션 때문이 아니다.** 그 섹션은
+지금 없다. 그래도 같은 함수가 exe VERSIONINFO 의 기본값(패키지 이름·버전)을 그 파일에서 읽으므로
+파일 자체가 입력이다. `parse_cargo_toml` 은 `toml` feature 로 켜지는데 그것이 그 크레이트의 기본
+feature 이고 이 저장소는 `default-features` 를 끄지 않는다(`Cargo.lock` 의 `winresource` 항목에
+`toml` 이 의존으로 들어 있는 것이 그 증거다).
+
+### 재실행 동작을 재는 법
+
+**`cargo:warning` 출력 유무를 좌변으로 쓰지 마라** — cargo 는 스크립트가 fresh 여서 안 돌았을
+때도 캐시된 warning 을 다시 찍기 때문에 양쪽이 똑같아 보인다. 스크립트가 파일에 한 줄씩
+append 하게 해서 **실행 횟수**를 세야 갈린다. 저장소 밖 임시 디렉토리에 최소 크레이트 둘(선언
+있음 / 없음)을 만들어 재면 이렇게 나온다.
+
+| | 최초 | 무관한 `src` 편집 후 | `Cargo.toml` 편집 후 | 아이콘 편집 후 |
+|---|---|---|---|---|
+| 선언 없음 | 1 | 2 | 3 | 4 |
+| 선언 있음 | 1 | **1** | 2 | 3 |
+
+즉 선언이 있으면 무관한 편집에는 안 돌고 선언한 입력 둘에는 각각 돈다. `build.rs` 자신의 변경은
+선언과 무관하게 언제나 재실행을 일으킨다.
+
+### 이 문서가 못 말하는 것
+
+아이콘이나 `Cargo.toml` 이 바뀌었을 때 **Windows 산출물이 실제로 달라지는지**는 Windows 에서만
+관측된다(리소스 컴파일이 그 OS 에서만 돈다). 위 표는 재실행 여부까지만 재고 산출물 차이는 재지
+않는다.
+
 ## Plugin 빌드 / 스테이징
 
 번들 plugin(`crates/tasty-plugin-*` 중 `tasty-plugin.toml` 보유)은 부팅 시 `install_builtins_if_needed` 가 `~/.tasty/plugins/<id>/` 로 자동 sync 한다. `bundle_root()` fallback 이 `<exe_dir>/builtin-plugins/`(= `target/<profile>/builtin-plugins/`)라, **그 경로에 스테이징만 해두면** 부팅 시 user dir 까지 흐른다. **debug 빌드만** `ensure_dev_bundle` 이 매 부팅 mtime(동률이면 내용) 비교로 workspace→bundle 을 sync 한다. 플러그인까지 빌드한 `cargo build --workspace` 후 실행하면 반영된다. **release/dist 는 소스가 옆에 있어도 workspace→bundle 자동 동기화를 하지 않는다.** `just build --release` 또는 해당 프로필의 `just build-plugins` 로 서명과 함께 스테이징한 번들을 사용한다. 빌드 후 소스 매니페스트를 수정해도 다음 실행이 서명된 번들을 덮어쓰지 않는다. `cargo build --release --workspace` 만으로는 번들 스테이징이 되지 않는다.
