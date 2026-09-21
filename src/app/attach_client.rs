@@ -3972,7 +3972,18 @@ fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConne
     if let Err(e) = sock.set_write_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
         tracing::warn!("bulk upload: failed to set write timeout: {e}");
     }
-    let (conn, _client_id) = StreamConnection::open_bulk(sock, STREAM_PROTO, remote_ws)?;
+    let (mut conn, _client_id) = StreamConnection::open_bulk(sock, STREAM_PROTO, remote_ws)?;
+    // (ADR-0400) 결과 채널의 손실을 통지받겠다고 선언한다. 이 연결로 서버가 미는 것은
+    // `BulkResult` 하나뿐이라, 그것이 버려지면 선언 없이는 결과를 read timeout 까지
+    // 기다리다 원인 모를 실패로 끝난다. 구 서버는 모르는 변종으로 무시한다.
+    match serde_json::to_vec(&StreamControl::ClientLossNotify {}) {
+        Ok(declare) => {
+            if let Err(e) = conn.send(StreamTag::Control, &declare) {
+                tracing::warn!("bulk upload: loss-notify declaration was not sent: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("bulk upload: loss-notify declaration did not serialize: {e}"),
+    }
     Ok(conn)
 }
 
@@ -4045,6 +4056,19 @@ fn await_bulk_result(conn: &mut StreamConnection, transfer_id: u64) -> anyhow::R
                                 reason.unwrap_or_else(|| "unknown".to_string())
                             ))
                         };
+                    }
+                    // (ADR-0400) 이 연결의 프레임이 버려졌다 — 기다리는 결과가 그중 하나였을
+                    // 수 있다. 결과를 모르는 전송은 성공으로도 실패로도 확정하지 않고
+                    // **중단**으로 끝낸다. 재시도는 자동으로 하지 않는다 — 서버가 이미
+                    // 저장했을 수 있다. 오류는 거부 접두(`BULK_REJECT_PREFIX`)를 달지 않아
+                    // 사용자에게 재시도가 열린다.
+                    Ok(StreamControl::Loss { frames }) => {
+                        if let Err(e) = conn.detach() {
+                            tracing::debug!("bulk upload: detach after a loss notice failed: {e}");
+                        }
+                        anyhow::bail!(
+                            "bulk upload aborted: the remote dropped {frames} frame(s) of this transfer's result channel, so whether the file was saved is unknown"
+                        );
                     }
                     // 다른 transfer 의 result 나 미지 Control(전방 호환) — 무시하고 계속.
                     _ => {}
@@ -5305,6 +5329,53 @@ mod tests {
             sess.state,
             SessionState::Connected,
             "재attach 는 EOF 를 본 뒤에 건다 — 통지만으로 상태를 바꾸지 않는다"
+        );
+    }
+
+    /// (ADR-0400) bulk 연결은 손실 통지를 선언하고, 결과를 기다리는 중 `Loss` 를 받으면
+    /// 결과를 모르는 채로 기다리지 않고 **중단**으로 끝낸다. 거부 접두를 달지 않아
+    /// 사용자에게 재시도가 열린다.
+    #[test]
+    fn a_bulk_transfer_declares_loss_notify_and_aborts_on_a_loss_notice() {
+        use std::io::{BufRead, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let server = std::thread::spawn(move || {
+            let (sock, _) = listener.accept().expect("accept");
+            let mut writer = sock.try_clone().expect("clone");
+            let mut reader = BufReader::new(sock);
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("stream.open line");
+            let ack = serde_json::to_vec(&tasty_ipc::stream::StreamAck {
+                ok: true,
+                client_id: Some(5),
+                proto: STREAM_PROTO,
+                error: None,
+            })
+            .expect("ack");
+            stream::write_frame(&mut writer, StreamTag::Control, &ack).expect("write ack");
+            let declared = stream::read_frame(&mut reader).expect("declaration");
+            let loss = serde_json::to_vec(&StreamControl::Loss { frames: 1 }).expect("loss");
+            stream::write_frame(&mut writer, StreamTag::Control, &loss).expect("write loss");
+            declared
+        });
+
+        let mut conn = open_bulk_connection(port, 3).expect("bulk connection");
+        let err = await_bulk_result(&mut conn, 11).expect_err("결과를 모르면 성공이 아니다");
+        let declared = server.join().expect("server");
+        assert_eq!(declared.tag, StreamTag::Control);
+        assert!(
+            matches!(
+                serde_json::from_slice::<StreamControl>(&declared.payload),
+                Ok(StreamControl::ClientLossNotify {})
+            ),
+            "bulk 연결이 손실 통지를 선언해야 한다"
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("aborted"), "중단으로 보고해야 한다: {msg}");
+        assert!(
+            !msg.starts_with(BULK_REJECT_PREFIX),
+            "원격 거부로 보이면 재시도가 막힌다: {msg}"
         );
     }
 

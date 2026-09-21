@@ -196,6 +196,11 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
     snapshot 이 화면을 다시 그리고, 전환하는 동안 들어온 stdin 은 원격에 안 간다(재연결 때의
     전환 창과 같다). 서버가 `HEARTBEAT_TIMEOUT` 안에 소켓을 안 닫으면 기다림을 포기하고 붙는다.
   - `--send` 입력은 첫 attach 에서만 보낸다 — 되풀이하면 원격에서 명령이 두 번 돈다.
+- **bulk 연결**(`open_bulk_connection`): 핸드셰이크 직후 선언하고, `await_bulk_result` 가
+  결과를 기다리는 중 `Loss` 를 받으면 `Detach` 후 **중단** 오류로 끝낸다 — 이 연결로 서버가
+  미는 것은 `BulkResult` 하나라, 그것이 버려졌을 수 있다. 자동 재시도는 없다(서버가 이미
+  저장했을 수 있다). 오류에 거부 접두(`BULK_REJECT_PREFIX`)를 달지 않으므로 이미지 붙여넣기
+  업로드의 오류 행에는 재시도가 열린다.
 - **mirror 출력의 stream 표지가 바뀐다.** mirror 터미널도 받은 바이트를 자기 출력 버퍼에
   쌓고, 에이전트는 그것을 위치 커서로 읽는다([ADR-0341](../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)).
   `Desynced` 를 받을 때와 재연결로 snapshot 을 다시 받을 때 `Terminal::renew_output_stream` 이
