@@ -55,6 +55,9 @@ fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &
     apply_file_requests(app, engine, outcome);
     apply_bulk_events(app, engine, outcome);
     apply_disconnects(engine, outcome);
+    // forward 가 아닌 원인으로 바뀐 점유 워크스페이스의 구조를 holder 에게 — gui 의
+    // `apply_stream_outcome` 끝과 같은 자리(ADR-0481).
+    engine.push_structure_changes();
 }
 
 /// attach 결선 — surface 단위(단계 4)와 workspace 단위(단계 6).

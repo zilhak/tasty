@@ -1675,12 +1675,17 @@ impl App {
 
         // 작업 J: attach/detach 직후 즉시 서버 readonly display mirror 를 채워(또는
         // 해제분 정리) 첫 3초 tick 전 blank 를 없앤다. 점유 mirror 있는 window 만 dirty.
+        // 같은 순회에서 forward 가 아닌 원인의 구조 변경을 holder 에게 보낸다(ADR-0481).
         for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut()
-                && main.core_state.refresh_readonly_views()
-            {
-                w.mark_dirty();
+            if let Some(main) = w.as_main_mut() {
+                main.core_state.push_structure_changes();
+                if main.core_state.refresh_readonly_views() {
+                    w.mark_dirty();
+                }
             }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.push_structure_changes();
         }
     }
 

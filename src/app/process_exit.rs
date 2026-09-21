@@ -32,4 +32,7 @@ pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreSta
     // runs standard lifecycle cleanup and preserves the no-snapshot contract.
     // intent-exempt: explicit PTY exit cascade, not a new user or agent command
     state.close_surface_by_id_no_snapshot(engine, surface, true);
+    // A closed member of an attached workspace leaves its holder's mirror stale; the
+    // close above only marked it. Send the post-close tree now (ADR-0481).
+    engine.push_structure_changes();
 }

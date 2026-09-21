@@ -141,6 +141,14 @@ pub struct OccupancyRegistry {
     /// 중복 echo)이 된다. 로컬 생성 경로(예: `tasty claude spawn`)는 이 플래그가 항상
     /// `false`라 기존대로 즉시 tap 된다.
     suppress_auto_tap: bool,
+    /// **forward 가 아닌 원인으로** 구조가 바뀐 점유 워크스페이스(ADR-0481). holder 는
+    /// 구조를 `StructuralDelta` 로만 알 수 있는데, forward 실행은 자기 delta 를 직접
+    /// 보내고 다른 원인(PTY 종료로 닫힌 surface, 로컬 경로로 편입된 멤버)은 보낼 자리가
+    /// 없었다 — mirror 가 서버에서 이미 사라진 탭을 계속 보였다. 여기 쌓고
+    /// [`CoreState::push_structure_changes`](crate::core::CoreState::push_structure_changes)
+    /// 가 비운다. 한 워크스페이스는 한 번만 담긴다(delta 는 전체 트리라 여러 변경이
+    /// 한 번으로 합쳐진다).
+    structure_changed: std::collections::BTreeSet<WorkspaceId>,
 }
 
 impl OccupancyRegistry {
@@ -432,9 +440,38 @@ impl OccupancyRegistry {
     /// 반환: 실제로 지운 것이 있었는지.
     pub fn forget_closed_surface(&mut self, surface_id: SurfaceId) -> bool {
         let had_lock = self.surface_locks.remove(&surface_id).is_some();
-        let had_member = self.surface_to_workspace.remove(&surface_id).is_some();
+        let member_of = self.surface_to_workspace.remove(&surface_id);
+        let had_member = member_of.is_some();
+        // 점유 워크스페이스의 멤버가 사라졌다 — holder 의 mirror 트리가 낡았다. forward 가
+        // 닫은 것이면 forward 실행이 자기 delta 를 보내며 이 표시를 지운다.
+        if let Some(ws) = member_of
+            && self.workspace_locks.contains_key(&ws)
+        {
+            self.structure_changed.insert(ws);
+        }
         let had_soft = self.clear_soft(surface_id);
         had_lock || had_member || had_soft
+    }
+
+    /// 점유 워크스페이스의 구조가 forward 가 아닌 원인으로 바뀌었다고 표시한다.
+    /// 점유되지 않은 워크스페이스면 알릴 holder 가 없으므로 무시한다.
+    pub(crate) fn mark_structure_changed(&mut self, workspace_id: WorkspaceId) {
+        if self.workspace_locks.contains_key(&workspace_id) {
+            self.structure_changed.insert(workspace_id);
+        }
+    }
+
+    /// 표시를 지운다 — 그 워크스페이스의 전체 트리를 방금 holder 에게 보낸 쪽(forward
+    /// 실행)이 부른다.
+    pub(crate) fn clear_structure_changed(&mut self, workspace_id: WorkspaceId) {
+        self.structure_changed.remove(&workspace_id);
+    }
+
+    /// 쌓인 표시를 전부 꺼내 비운다(오름차순).
+    pub(crate) fn take_structure_changed(&mut self) -> Vec<WorkspaceId> {
+        std::mem::take(&mut self.structure_changed)
+            .into_iter()
+            .collect()
     }
 
     /// 현재 점유 목록 스냅샷(`attach.list` 용).

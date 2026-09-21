@@ -1,4 +1,4 @@
-<!-- source-hash: a2ad84ceb5a7 -->
+<!-- source-hash: b91696357a42 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -126,6 +126,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 - **Reopening a closed item** (`Ctrl+Shift+T` by default) inside a mirror brings back a Tab that was closed on the remote — that Tab is a remote terminal, so your input goes to the remote too. Its earlier scrollback is fully visible only in the remote window (a mirror starts from the visible screen).
   - A Tab that an agent closed from the CLI inside a mirror is not brought back — not even by reopening from the remote window. Reopening only covers what a person closed by hand.
   - A reopen only brings back what was closed **in that remote Workspace**. If the remote has nothing to reopen you just get an informational toast and nothing happens — a Tab you closed on your own side is never created inside the mirror instead. Go back to your own Workspace and press the same key to reopen yours.
+- A Tab that closes on the remote because its shell ended (`exit`) disappears from the mirror right away too.
 - The remote terminal's completion · input-needed indicators (border · badge) also arrive in the mirror as they are.
 - If part of what the remote was sending is lost, a "Part of the remote screen was lost" toast appears and the mirror re-attaches on its own to fetch the screen again (a mirror attached without a profile does the same). After it re-attaches, the same screen may appear once more in the scrollback. If this happens during a clipboard image upload, the upload ends as failed and you can try again — it is not resent automatically, because the remote may already have saved it.
 - Pasting a clipboard image uploads it to the remote and inputs the **remote path**. Text paste works as usual.

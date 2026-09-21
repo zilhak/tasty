@@ -418,13 +418,18 @@ impl CoreState {
         {
             return;
         }
-        if !is_terminal {
-            return;
-        }
         // forward-op 실행 중(`execute_forwarded_structural_op`)이면 호출측이
         // `StructuralDelta` 전송 후 정확한 순서로 직접 tap 한다 — 여기서 또 tap 하면
         // 이중 tap(문자 중복 echo)이 된다.
         if self.attach.is_auto_tap_suppressed() {
+            return;
+        }
+        // 로컬 경로로 생긴 멤버다 — holder 의 mirror 에는 아직 그 자리가 없다. tap 보다
+        // **먼저** 구조를 보내야 client 가 매핑을 만든 뒤 스냅샷을 받는다(forward 경로의
+        // "delta → tap" 순서와 같다, ADR-0481).
+        self.attach.mark_structure_changed(workspace_id);
+        self.push_structure_changes();
+        if !is_terminal {
             return;
         }
         let Some(holder) = self.attach.workspace_holder(workspace_id) else {
@@ -434,6 +439,49 @@ impl CoreState {
             return;
         };
         self.tap_surface_for_stream(surface_id, holder, &hub);
+    }
+
+    /// 점유 워크스페이스의 구조가 **forward 가 아닌 원인**으로 바뀌었으면 그 holder 에게
+    /// 기존 역반영 메시지(`StreamControl::StructuralDelta`, 실행 후 전체 트리)를 보낸다
+    /// (ADR-0481). 표시는 `OccupancyRegistry` 가 쌓는다 — 멤버 surface 가 닫혀 잊힐 때와
+    /// 로컬 경로로 멤버가 편입될 때. forward 실행은 자기 delta 를 직접 보내고 표시를 지우므로
+    /// 여기서 두 번 나가지 않는다.
+    ///
+    /// 워크스페이스가 통째로 사라졌으면(마지막 surface 의 PTY 가 끝나 cascade 가 워크스페이스를
+    /// purge) 보낼 트리가 없다 — forward 경로의 같은 상황과 똑같이 `force_detach_workspace` 로
+    /// holder 를 끊고 lock 을 정리한다.
+    ///
+    /// 부르는 자리: PTY 종료 처리 끝(`app::process_exit::handle`) · 로컬 멤버 편입
+    /// (`tap_new_workspace_member`) · 두 빌드의 `StreamReady` 처리 끝(그 밖의 원인이 남긴
+    /// 표시를 다음 스트림 활동에서 비운다).
+    pub(crate) fn push_structure_changes(&mut self) {
+        for ws_id in self.attach.take_structure_changed() {
+            let Some(holder) = self.attach.workspace_holder(ws_id) else {
+                continue;
+            };
+            let Some(idx) = self.find_workspace_index_for_id(ws_id) else {
+                self.attach.force_detach_workspace(ws_id);
+                continue;
+            };
+            let Some(hub) = self.attach.notifier() else {
+                continue;
+            };
+            let class = self.workspaces[idx].classify_attach_surfaces();
+            let (tree, surfaces) = self.build_workspace_tree_surfaces(idx, &class);
+            let delta = tasty_ipc::stream::StreamControl::StructuralDelta {
+                workspace_id: ws_id,
+                tree,
+                surfaces,
+            };
+            let frame = StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&delta).unwrap_or_default(),
+            );
+            // best-effort — 끊긴 holder 는 다음 배치의 끊김 정리가 lock 을 푼다.
+            if let PushResult::Unknown | PushResult::Disconnected = hub.push(holder, frame) {
+                tracing::debug!("structure change: holder {holder} of workspace {ws_id} is gone");
+            }
+        }
     }
 
     /// workspace mode client 의 입력(surface-prefixed)을 지정 remote surface 의 PTY 로.
@@ -1083,6 +1131,13 @@ pub(crate) fn execute_forwarded_structural_op(
     };
 
     outcome?;
+
+    // 이 op 가 anchor 워크스페이스에 낸 구조 변경은 아래 delta(또는 강제 detach)가 전부
+    // 싣는다 — 실행 중 닫힌 멤버가 남긴 "forward 아닌 변경" 표시를 지워 같은 트리가 두 번
+    // 나가지 않게 한다(ADR-0481).
+    if let Some(ws_id) = ws_id {
+        engine.attach.clear_structure_changed(ws_id);
+    }
 
     // 성공 — 실행 후 트리 스냅샷으로 delta 구성. anchor 를 못 찾았거나(방어) ws 가 통째로
     // 사라졌으면(극단) delta 없음.
@@ -3224,6 +3279,152 @@ mod forward_exec_tests {
             1,
             "호출측 tap 이후엔 정확히 1개만 등록돼야 한다 — 2개면 이중 tap 회귀"
         );
+    }
+
+    /// 점유된 워크스페이스에 `a` 와 forward split 으로 만든 `b` 를 두고, holder(7)의
+    /// 실제 `StreamHub` 수신단을 돌려준다. 이 시점까지 holder 에게 나간 프레임은 없다.
+    fn attached_pair(
+        core: &mut crate::core::Core,
+        state: &mut AppState,
+        engine: &mut crate::core::CoreState,
+    ) -> (u32, u32, u32, tasty_ipc::stream_hub::SinkReceiver) {
+        let a = seed(engine);
+        let b = execute_forwarded_structural_op(
+            core,
+            state,
+            engine,
+            &StructuralOp::SplitSurface {
+                surface_id: a,
+                direction: SplitAxis::Horizontal,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+            ForwardOrigin::User,
+        )
+        .expect("split ok")
+        .expect("split delta")
+        .added_terminals[0];
+        let ws_id = engine.workspaces[0].id;
+        engine
+            .attach
+            .acquire_workspace(ws_id, &[a, b], &[a, b], 7)
+            .expect("workspace 점유 획득");
+        let hub = tasty_ipc::stream_hub::StreamHub::new();
+        let rx = hub.register(7);
+        engine.attach.set_notifier(hub);
+        (a, b, ws_id, rx)
+    }
+
+    /// holder 가 받은 Control 프레임을 전부 꺼낸다(다른 태그는 버린다).
+    fn drain_control(rx: &tasty_ipc::stream_hub::SinkReceiver) -> Vec<serde_json::Value> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|f| f.tag == tasty_ipc::stream::StreamTag::Control)
+            .map(|f| serde_json::from_slice(&f.payload).expect("control json"))
+            .collect()
+    }
+
+    fn surface_ids_of(delta: &serde_json::Value) -> Vec<u64> {
+        delta["surfaces"]
+            .as_array()
+            .expect("surfaces")
+            .iter()
+            .filter_map(|s| s["remote_id"].as_u64())
+            .collect()
+    }
+
+    /// 서버에서 PTY 가 끝나 닫힌 멤버는 forward 가 아닌 원인의 구조 변경이다 — holder 가
+    /// 닫힌 뒤의 트리를 `StructuralDelta` 로 정확히 한 번 받는다(ADR-0481). 이 경로가 없던
+    /// 동안 mirror 는 서버에서 이미 사라진 탭을 다음 forward 까지 계속 보였다.
+    #[test]
+    fn a_pty_exit_in_an_attached_workspace_reaches_the_holder_as_a_delta() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (a, b, ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
+        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b);
+        let msgs = drain_control(&rx);
+        assert_eq!(msgs.len(), 1, "delta 는 정확히 한 번: {msgs:?}");
+        assert_eq!(msgs[0]["event"], "structural_delta");
+        assert_eq!(msgs[0]["workspace_id"], ws_id);
+        assert_eq!(
+            surface_ids_of(&msgs[0]),
+            vec![u64::from(a)],
+            "닫힌 b 가 빠진 트리"
+        );
+        assert_eq!(
+            engine.attach.workspace_holder(ws_id),
+            Some(7),
+            "점유는 그대로"
+        );
+    }
+
+    /// forward 된 close 는 자기 delta 를 호출측이 보낸다 — 그 실행 중 닫힌 멤버가 남긴
+    /// 표시가 남아 있으면 같은 트리가 한 번 더 나간다. 실행이 표시를 지우는지 본다.
+    #[test]
+    fn a_forwarded_close_leaves_no_structure_change_behind() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (_a, b, _ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &StructuralOp::CloseSurface { surface_id: b },
+            ForwardOrigin::User,
+        )
+        .expect("close ok")
+        .expect("close delta");
+        engine.push_structure_changes();
+        assert!(
+            drain_control(&rx).is_empty(),
+            "forward close 의 트리는 호출측이 보내는 delta 하나뿐이어야 한다"
+        );
+    }
+
+    /// 점유 워크스페이스의 마지막 멤버가 끝나면 워크스페이스가 통째로 사라진다 — 보낼 트리가
+    /// 없으므로 forward 경로의 같은 상황처럼 holder 를 강제 detach 하고 lock 을 정리한다.
+    #[test]
+    fn the_last_member_exiting_force_detaches_the_holder() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (a, b, ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
+        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, b);
+        drain_control(&rx);
+        crate::app::process_exit::handle(&mut core, &mut state, &mut engine, a);
+        assert!(
+            engine.find_workspace_index_for_id(ws_id).is_none(),
+            "시험 전제: 워크스페이스가 purge 됐다"
+        );
+        let msgs = drain_control(&rx);
+        assert_eq!(msgs.len(), 1, "{msgs:?}");
+        assert_eq!(msgs[0]["event"], "force_detached");
+        assert_eq!(
+            engine.attach.workspace_holder(ws_id),
+            None,
+            "stale lock 없음"
+        );
+    }
+
+    /// 로컬 경로로 점유 워크스페이스에 생긴 멤버는 delta 가 tap(스냅샷)보다 **먼저** 나가야
+    /// client 가 매핑을 만든 뒤 스냅샷을 받는다 — forward 경로의 "delta → tap" 과 같은 순서.
+    #[test]
+    fn a_local_member_reaches_the_holder_as_a_delta_before_its_snapshot() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (a, _b, _ws_id, rx) = attached_pair(&mut core, &mut state, &mut engine);
+        let pane_id = engine.find_pane_for_surface(a).expect("pane");
+        crate::core::structural_exec::create_tab(
+            &mut core,
+            &mut state,
+            &mut engine,
+            pane_id,
+            &serde_json::json!({ "pane_id": pane_id }),
+        )
+        .expect("local create_tab");
+        let first = rx.try_recv().expect("holder 에게 무언가 나가야 한다");
+        assert_eq!(
+            first.tag,
+            tasty_ipc::stream::StreamTag::Control,
+            "첫 프레임은 delta"
+        );
+        let delta: serde_json::Value = serde_json::from_slice(&first.payload).unwrap();
+        assert_eq!(delta["event"], "structural_delta");
+        assert_eq!(surface_ids_of(&delta).len(), 3, "a · b · 새 탭");
     }
 
     /// forward 된 NewTab 도 실제 실행(pane 은 anchor surface 로 resolve). Ok + delta + 터미널 +1.
