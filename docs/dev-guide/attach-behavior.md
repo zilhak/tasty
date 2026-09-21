@@ -188,6 +188,19 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   낡음 toast 를 띄운다. 이 함수는 `AttachClientData` wake 와 `Tick::AttachView`(3 초 backstop)
   둘 다에서 돌므로, 복원 뒤 원격이 조용해도 늦어도 한 주기 안에 시작한다. 미루는 동안 옛
   연결이 따로 끊기면 `resync_released()` 가 거짓이라 손실과 무관한 끊김 갈래를 탄다.
+  - **이 재개 배선에는 시험 채널이 없다.** 단위 시험은 `resume_resync_in_window` 와
+    `disconnect_disposition` 을 직접 부른다 — 그 함수가 `apply_attach_client_output` 의 창 갈래에
+    이어져 있는지는 아무 시험도 안 본다. 그 호출을 `if false { … }` 로 무력화해도
+    `cargo test -p tasty --lib` 가 초록이다(실측 2026-09-21: 2543 passed). 창 갈래를 시험하려면
+    `App`(winit `EventLoopProxy` 필요)과 창 있는 `MainView` 를 조립해야 해서 붙이지 않았다. 배선이
+    빠지면 parked 손실은 창이 돌아와도 재attach 되지 않는다 — mirror 는 남지만 공백은 안 메워진다.
+    **재는 법**: 격리 `TASTY_HOME` 인스턴스 둘(A 서버, B GUI)을 띄우고 B 에서
+    `tasty remote attach --into-gui --target-port <A 포트> --workspace <N>` 으로 수동 mirror 를 연다.
+    B 의 마지막 창을 닫아 engine 을 parked 로 보낸 뒤, B 를 `SIGSTOP` 하고 A 의 그 터미널에 출력을
+    흘려 `tasty list pressure` 의 `stream_push.frames_dropped` 가 64 미만으로 오르면 `SIGCONT` 한다.
+    B 로그에 "재attach 를 창이 돌아올 때까지 미룬다" 가 찍혀야 한다. `tasty new window` 로 창을
+    되살리면 3 초 안에 "미뤄 둔 재attach 를 시작한다" 가 찍히고 A 로그에 새 client id 의 attach 가
+    나야 한다. 위 변이를 넣은 빌드에서는 두 번째 줄이 끝내 안 나온다.
 - **재연결은 mesh 를 처음부터 다시 구독한다.** 서버의 mesh 구독은 client id 에 묶여 옛 연결과
   함께 사라진다. `reconnect_session` 이 그 세션의 mesh surface 마다 캐시된 frame
   (`attach_mesh_frames`)과 구독 dedup 상태(`MainView::attach_mesh_input`)를 지워, 다음 렌더가

@@ -70,6 +70,10 @@ mirror 연결 하나가 PTY Data(surface 접두 mux) · 상태 Control(`Resize`�
      창에 붙으면 `apply_attach_client_output`(3 초 주기 backstop 포함)이 그 창에서 옛 연결을
      놓고 낡음 toast 를 띄운다. 미루는 동안 옛 연결은 계속 출력을 실어 오고, 그 사이 연결이
      따로 끊기면 손실과 무관한 끊김 갈래를 탄다(이 결정 이전과 같다).
+     **알려진 한계**: 창에서 시작한 재attach 가 옛 연결의 EOF 를 보기 전(서버가 소켓을 닫는 데 걸리는
+     시간, 보통 ms)에 사용자가 마지막 창을 닫거나 최소화하면, 그 EOF 는 재attach 차례로 판정되지만
+     `reconnect_session` 이 창을 못 찾아 실패하고, anchor 없는 세션은 정리된다. 소스 추적으로 찾은 창이고
+     실행으로 재현하지 않았다.
    - **CLI surface / workspace dump**: 재attach 후 처음부터 다시 수집한다. 한 번의 실행에서
      재attach 는 최대 3 회이고, 넘으면 수집을 이어가 결과를 출력하되 stderr 로 공백이 있다고
      알린다. `--send` 입력은 첫 attach 에서만 보낸다(재attach 가 입력을 되풀이하지 않는다).
