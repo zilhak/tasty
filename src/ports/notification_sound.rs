@@ -7,6 +7,13 @@
 pub trait NotificationSoundPlayer: Send + Sync {
     /// 시스템 기본 알림음을 1 회 재생. 사운드 재생 실패는 notification 발화
     /// 자체를 막아서는 안 되므로, 구현체는 에러를 자체 로그 후 무시한다.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "주입되는 port 의 호출 계약이다. headless wiring 은 NoopPlayer 를 넣으므로                       직접 호출자가 없지만, 계약을 지우면 주입 지점의 타입이 무너진다"
+        )
+    )]
     fn play(&self);
 }
 
