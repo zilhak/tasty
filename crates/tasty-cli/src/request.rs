@@ -538,7 +538,7 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
             stream,
             max_bytes,
         } => {
-            use tasty_ipc::output_cursor::{METHOD, PARAM_CURSOR, PARAM_MAX_BYTES, PARAM_STREAM};
+            use tasty_ipc::output_cursor::{PARAM_CURSOR, PARAM_MAX_BYTES, PARAM_STREAM};
             let mut params = serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "strip_ansi": strip_ansi,
@@ -554,7 +554,10 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
             if let Some(m) = max_bytes {
                 params[PARAM_MAX_BYTES] = serde_json::json!(m);
             }
-            (METHOD, params)
+            // 메서드 이름은 리터럴로 둔다 — `tests/cli_method_table_parity.rs` 가 CLI 소스의
+            // 리터럴로 CLI 진입점을 센다. `output_cursor::METHOD` 와 같은 값인지는
+            // `contract` 의 시험(위치 인자를 실은 요청이 계약을 요구하는가)이 잡는다.
+            ("surface.read_since_mark", params)
         }
         ReadCommands::ParseSinceMark { surface, parsers } => {
             let mut params = serde_json::json!({
