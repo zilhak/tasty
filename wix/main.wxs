@@ -95,6 +95,36 @@
                             KeyPath='yes'/>
                     </Component>
 
+                    <!--
+                      Notice set (THIRD_PARTY_LICENSES.md "notice set" section):
+                      LICENSE, the inventory, and every file under LICENSES\.
+                      License.rtf above is the consent-screen copy of Tasty's own
+                      MIT text; these carry the bundled third-party licences.
+                      WiX has no directory glob here, so each licence text is
+                      named - build-windows.ps1 fails the MSI build when a file
+                      in LICENSES\ has no matching Source below.
+                    -->
+                    <Component Id='NoticeLicense' Guid='*'>
+                        <File Id='NoticeLicenseFile' Name='LICENSE' DiskId='1' Source='LICENSE' KeyPath='yes'/>
+                    </Component>
+                    <Component Id='NoticeInventory' Guid='*'>
+                        <File Id='NoticeInventoryFile' Name='THIRD_PARTY_LICENSES.md' DiskId='1' Source='THIRD_PARTY_LICENSES.md' KeyPath='yes'/>
+                    </Component>
+                    <Directory Id='NoticeLicensesDir' Name='LICENSES'>
+                        <Component Id='NoticeD2Coding' Guid='*'>
+                            <File Id='NoticeD2CodingFile' Name='D2Coding-OFL.txt' DiskId='1' Source='LICENSES\D2Coding-OFL.txt' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='NoticeKaTeX' Guid='*'>
+                            <File Id='NoticeKaTeXFile' Name='KaTeX-MIT.txt' DiskId='1' Source='LICENSES\KaTeX-MIT.txt' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='NoticeHighlightjs' Guid='*'>
+                            <File Id='NoticeHighlightjsFile' Name='highlightjs-BSD-3-Clause.txt' DiskId='1' Source='LICENSES\highlightjs-BSD-3-Clause.txt' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='NoticeMermaid' Guid='*'>
+                            <File Id='NoticeMermaidFile' Name='mermaid-MIT.txt' DiskId='1' Source='LICENSES\mermaid-MIT.txt' KeyPath='yes'/>
+                        </Component>
+                    </Directory>
+
                     <Directory Id='Bin' Name='bin'>
                         <Component Id='Path' Guid='92FAADF2-F0AE-4955-8EDB-24566C2FDC56' KeyPath='yes'>
                             <Environment
@@ -321,6 +351,13 @@
               the license sidecar file from the installer.
             -->
             <ComponentRef Id='License'/>
+            <!-- Notice set - keep aligned with the NoticeLicensesDir tree above. -->
+            <ComponentRef Id='NoticeLicense'/>
+            <ComponentRef Id='NoticeInventory'/>
+            <ComponentRef Id='NoticeD2Coding'/>
+            <ComponentRef Id='NoticeKaTeX'/>
+            <ComponentRef Id='NoticeHighlightjs'/>
+            <ComponentRef Id='NoticeMermaid'/>
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='ApplicationShortcut'/>
 

@@ -91,13 +91,13 @@ MIT 는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 | 산출물 | 고지 세트의 자리 |
 |---|---|
 | GitHub 릴리스 | `LICENSE` · `THIRD_PARTY_LICENSES.md` · `LICENSES/D2Coding-OFL.txt` 세 파일을 릴리스 에셋으로 올리도록 해 두었습니다. **나머지 본문은 아직 안 올라가고, 그 설정으로 발행된 릴리스도 아직 없습니다.** |
-| Windows `.msi` | MIT 본문을 설치 동의 화면과 설치 디렉토리에 `License.rtf` 로 넣습니다. **제3자 고지는 아직 안 들어갑니다.** |
+| Windows `.msi` | 설치 디렉토리(`<설치 폴더>\tasty\`) 최상단, `LICENSES\` 하위 경로 유지. MIT 본문은 설치 동의 화면용 `License.rtf` 로도 한 번 더 들어갑니다. **설치 파일 정의와 빌드 스크립트의 확인을 넣었지만, 그렇게 만든 `.msi` 를 열어 본 적은 아직 없습니다** — Windows 빌더에서만 만들 수 있습니다. |
 | Linux `tar.gz` | 압축을 풀면 나오는 디렉토리 최상단 |
 | Linux `.deb` | `/usr/share/doc/tasty/` (Debian 관례. `LICENSES/` 하위 경로를 그대로 유지합니다) |
 | Linux `.rpm` | `/usr/share/licenses/tasty/` (RPM 관례라 deb 과 배치가 다릅니다 — `LICENSES/` 의 본문도 하위 디렉토리 없이 이 자리에 바로 놓입니다) |
 | Linux `.AppImage` | `usr/share/licenses/tasty/` |
 | macOS `.dmg` | `Tasty.app/Contents/Resources/` (`LICENSES/` 하위 경로를 그대로 유지합니다). **스크립트에 스테이징과 확인을 넣었지만, 그렇게 만든 `.dmg` 를 열어 본 적은 아직 없습니다** — macOS 빌더에서만 만들 수 있습니다. |
-| Windows `.zip` | **아직 안 들어갑니다.** |
+| Windows `.zip` | 압축을 풀면 나오는 최상단(`tasty.exe` 옆). **`.msi` 와 같이 배선만 됐고 열어 본 적은 아직 없습니다.** |
 
 산출물 자체에 동봉되는 것이 OFL 1.1 · MIT · BSD-3-Clause 가 요구하는 형태입니다 — 릴리스
 에셋으로 따로 내려받을 수 있는 것은 그 요구를 대신하지 못합니다.

@@ -209,6 +209,48 @@ function Stage-Plugins {
     }
 }
 
+# The notice set — LICENSE, THIRD_PARTY_LICENSES.md and every file directly
+# under LICENSES\ — as repo-relative paths. THIRD_PARTY_LICENSES.md's "notice
+# set" section is the definition; scripts/lib/notice-set.sh reads the directory
+# the same way for the Linux and macOS artifacts. The set is read from the
+# directory, not listed here, so a new licence text needs no edit to this file.
+function Get-NoticeSetFiles {
+    $files = @("LICENSE", "THIRD_PARTY_LICENSES.md")
+    $texts = @(Get-ChildItem -Path "LICENSES" -File | Sort-Object Name)
+    if ($texts.Count -eq 0) {
+        Write-Error "LICENSES\ holds no licence text"
+        exit 1
+    }
+    foreach ($t in $texts) { $files += (Join-Path "LICENSES" $t.Name) }
+    return $files
+}
+
+# Copy the notice set into a distribution tree. LICENSES\ keeps its
+# subdirectory so the relative links inside THIRD_PARTY_LICENSES.md resolve.
+function Stage-Notice([string]$Dest) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dest "LICENSES") | Out-Null
+    foreach ($f in Get-NoticeSetFiles) {
+        Copy-Item $f -Destination (Join-Path $Dest $f)
+    }
+}
+
+# Compare a staged or extracted tree with the repo copy, byte for byte.
+function Test-NoticeTree([string]$Root, [string]$Label) {
+    foreach ($f in Get-NoticeSetFiles) {
+        $staged = Join-Path $Root $f
+        if (-not (Test-Path $staged)) {
+            Write-Error "$f missing from $Label"
+            exit 1
+        }
+        $want = (Get-FileHash $f -Algorithm SHA256).Hash
+        $got = (Get-FileHash $staged -Algorithm SHA256).Hash
+        if ($want -ne $got) {
+            Write-Error "$f in $Label differs from the repo copy"
+            exit 1
+        }
+    }
+}
+
 Write-Host "==> Assembling archive..."
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
@@ -227,6 +269,9 @@ Get-ChildItem -Path $BuildDir -Filter "*.dll" | ForEach-Object {
 }
 
 Stage-Plugins (Join-Path $StageDir "plugins")
+# Notice set at the archive's top level, next to tasty.exe — the same place the
+# Linux tar.gz puts it.
+Stage-Notice $StageDir
 
 Write-Host "==> Creating $ArchiveName..."
 $ArchivePath = Join-Path $DistDir $ArchiveName
@@ -324,6 +369,18 @@ if (-not $SkipMsi) {
             }
         }
 
+        # wix\main.wxs has to name each notice file (WiX has no directory glob
+        # here), so the set read from LICENSES\ is checked against it before the
+        # MSI is built — a licence text added to the directory but not to the
+        # installer fails here instead of shipping an MSI without it.
+        $WxsContent = Get-Content (Join-Path "wix" "main.wxs") -Raw
+        foreach ($f in Get-NoticeSetFiles) {
+            if (-not $WxsContent.Contains("Source='$f'")) {
+                Write-Error "wix\main.wxs has no File with Source='$f' (notice set, see THIRD_PARTY_LICENSES.md)"
+                exit 1
+            }
+        }
+
         if ($cargoWix) {
             $WixArgs = @(
                 "wix",
@@ -355,6 +412,7 @@ if (-not (Test-Path $VerifyExe)) {
 }
 & $VerifyExe --version | Out-Null
 $VersionExit = $LASTEXITCODE
+Test-NoticeTree $VerifyDir $ArchiveName
 Remove-Item -Recurse -Force $VerifyDir -ErrorAction SilentlyContinue
 if ($VersionExit -ne 0) {
     Write-Error "tasty.exe --version failed with exit code $VersionExit"
@@ -367,6 +425,26 @@ if (-not $SkipMsi -and $BuildProfile -ne "debug") {
         Write-Error "MSI missing: $MsiPath"
         exit 1
     }
+    # Notice set: an administrative install (msiexec /a) unpacks the MSI's file
+    # table into a folder without installing anything or needing elevation. The
+    # install tree is found by the inventory file rather than a hard-coded
+    # directory name, then compared with the repo copy.
+    $MsiExtract = Join-Path $env:TEMP "tasty-msi-$([guid]::NewGuid())"
+    $msiProc = Start-Process -FilePath "msiexec.exe" -Wait -PassThru `
+        -ArgumentList @("/a", "`"$((Resolve-Path $MsiPath).Path)`"", "/qn", "TARGETDIR=`"$MsiExtract`"")
+    if ($msiProc.ExitCode -ne 0) {
+        Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
+        Write-Error "msiexec /a failed with exit code $($msiProc.ExitCode)"
+        exit 1
+    }
+    $inventory = @(Get-ChildItem -Path $MsiExtract -Recurse -File -Filter "THIRD_PARTY_LICENSES.md")
+    if ($inventory.Count -ne 1) {
+        Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
+        Write-Error "expected one THIRD_PARTY_LICENSES.md in the MSI, found $($inventory.Count)"
+        exit 1
+    }
+    Test-NoticeTree $inventory[0].DirectoryName (Split-Path -Leaf $MsiPath)
+    Remove-Item -Recurse -Force $MsiExtract -ErrorAction SilentlyContinue
 }
 
 $ShaSumsPath = Join-Path $DistDir "SHA256SUMS-windows.txt"
