@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 use tasty_memory::{ListOpts, PutOpts};
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -16,7 +15,6 @@ use super::{
 
 pub fn handle_secret_put(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -48,7 +46,6 @@ pub fn handle_secret_put(
 
 pub fn handle_secret_get(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -72,7 +69,6 @@ pub fn handle_secret_get(
 
 pub fn handle_secret_delete(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -96,7 +92,6 @@ pub fn handle_secret_delete(
 
 pub fn handle_secret_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -128,7 +123,6 @@ pub fn handle_secret_list(
 
 pub fn handle_secret_exists(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -151,7 +145,6 @@ pub fn handle_secret_exists(
 
 pub fn handle_secret_count(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -171,7 +164,6 @@ pub fn handle_secret_count(
 
 pub fn handle_secret_scopes(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -186,7 +178,6 @@ pub fn handle_secret_scopes(
 
 pub fn handle_secret_stats(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,

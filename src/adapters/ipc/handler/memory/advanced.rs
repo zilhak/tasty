@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryEntry, MemoryValue};
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -19,7 +18,6 @@ use super::{
 /// 사용자에게 보이는 동작은 변하지 않고, 디스크 정리 + quota 회복만 일어난다.
 pub fn handle_gc(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -40,7 +38,6 @@ pub fn handle_gc(
 /// 그리고 list 와 동일한 `prefix`/`since`/`until`/`limit`/`offset`.
 pub fn handle_query(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -84,7 +81,6 @@ pub fn handle_query(
 /// Secret 은 export 하지 않는다. 응답: `{ entries: [...], count: N }`.
 pub fn handle_export(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -109,7 +105,6 @@ pub fn handle_export(
 /// 응답: `{ applied: N, skipped: M }`.
 pub fn handle_import(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,

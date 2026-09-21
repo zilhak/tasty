@@ -62,7 +62,6 @@ use tasty_memory::{
 };
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -428,7 +427,6 @@ pub(super) fn written(core: &Core, id: Value, mut body: Value) -> JsonRpcRespons
 
 pub fn handle_put(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -463,7 +461,6 @@ pub fn handle_put(
 
 pub fn handle_get(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -489,7 +486,6 @@ pub fn handle_get(
 
 pub fn handle_delete(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -516,7 +512,6 @@ pub fn handle_delete(
 
 pub fn handle_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -548,7 +543,6 @@ pub fn handle_list(
 
 pub fn handle_exists(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -573,7 +567,6 @@ pub fn handle_exists(
 
 pub fn handle_count(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -615,7 +608,6 @@ pub fn handle_count(
 
 pub fn handle_scopes(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -629,7 +621,6 @@ pub fn handle_scopes(
 
 pub fn handle_stats(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

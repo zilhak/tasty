@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 use tasty_memory::plan as plan_mod;
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -28,7 +27,6 @@ fn parse_plan_step_state(s: &str, id: &Value) -> Result<plan_mod::PlanStepState,
 
 pub fn handle_plan_create(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -73,7 +71,6 @@ pub fn handle_plan_create(
 
 pub fn handle_plan_get(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -99,7 +96,6 @@ pub fn handle_plan_get(
 
 pub fn handle_plan_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -117,7 +113,6 @@ pub fn handle_plan_list(
 
 pub fn handle_plan_delete(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -140,7 +135,6 @@ pub fn handle_plan_delete(
 
 pub fn handle_plan_add_step(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -175,7 +169,6 @@ pub fn handle_plan_add_step(
 
 pub fn handle_plan_remove_step(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -205,7 +198,6 @@ pub fn handle_plan_remove_step(
 
 pub fn handle_plan_update_step(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,

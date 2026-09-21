@@ -7,7 +7,6 @@ use serde_json::{Value, json};
 use tasty_memory::goal as goal_mod;
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -15,7 +14,6 @@ use super::{entry_to_json, map_error, require_str, require_surface_id};
 
 pub fn handle_goal_set(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -38,7 +36,6 @@ pub fn handle_goal_set(
 
 pub fn handle_goal_get(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -57,7 +54,6 @@ pub fn handle_goal_get(
 
 pub fn handle_goal_clear(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,

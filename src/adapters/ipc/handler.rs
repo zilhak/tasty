@@ -878,132 +878,102 @@ fn route_engine_handler(
         #[cfg(feature = "gui")]
         "image.list" => image::handle_list(state, engine, id),
         // memory: regular (공유 네임스페이스 + owner enforcement)
-        "memory.put" => memory::handle_put(core, state, engine, caller, id, &request.params),
-        "memory.get" => memory::handle_get(core, state, engine, caller, id, &request.params),
-        "memory.delete" => memory::handle_delete(core, state, engine, caller, id, &request.params),
-        "memory.list" => memory::handle_list(core, state, engine, caller, id, &request.params),
-        "memory.exists" => memory::handle_exists(core, state, engine, caller, id, &request.params),
-        "memory.count" => memory::handle_count(core, state, engine, caller, id, &request.params),
-        "memory.scopes" => memory::handle_scopes(core, state, engine, caller, id, &request.params),
-        "memory.stats" => memory::handle_stats(core, state, engine, caller, id, &request.params),
-        "memory.query" => memory::handle_query(core, state, engine, caller, id, &request.params),
-        "memory.export" => memory::handle_export(core, state, engine, caller, id, &request.params),
-        "memory.import" => memory::handle_import(core, state, engine, caller, id, &request.params),
+        "memory.put" => memory::handle_put(core, engine, caller, id, &request.params),
+        "memory.get" => memory::handle_get(core, engine, caller, id, &request.params),
+        "memory.delete" => memory::handle_delete(core, engine, caller, id, &request.params),
+        "memory.list" => memory::handle_list(core, engine, caller, id, &request.params),
+        "memory.exists" => memory::handle_exists(core, engine, caller, id, &request.params),
+        "memory.count" => memory::handle_count(core, engine, caller, id, &request.params),
+        "memory.scopes" => memory::handle_scopes(core, engine, caller, id, &request.params),
+        "memory.stats" => memory::handle_stats(core, engine, caller, id, &request.params),
+        "memory.query" => memory::handle_query(core, engine, caller, id, &request.params),
+        "memory.export" => memory::handle_export(core, engine, caller, id, &request.params),
+        "memory.import" => memory::handle_import(core, engine, caller, id, &request.params),
         // memory: secret (plugin 별 사전 분할)
-        "memory.secret.put" => {
-            memory::handle_secret_put(core, state, engine, caller, id, &request.params)
-        }
-        "memory.secret.get" => {
-            memory::handle_secret_get(core, state, engine, caller, id, &request.params)
-        }
+        "memory.secret.put" => memory::handle_secret_put(core, engine, caller, id, &request.params),
+        "memory.secret.get" => memory::handle_secret_get(core, engine, caller, id, &request.params),
         "memory.secret.delete" => {
-            memory::handle_secret_delete(core, state, engine, caller, id, &request.params)
+            memory::handle_secret_delete(core, engine, caller, id, &request.params)
         }
         "memory.secret.list" => {
-            memory::handle_secret_list(core, state, engine, caller, id, &request.params)
+            memory::handle_secret_list(core, engine, caller, id, &request.params)
         }
         "memory.secret.exists" => {
-            memory::handle_secret_exists(core, state, engine, caller, id, &request.params)
+            memory::handle_secret_exists(core, engine, caller, id, &request.params)
         }
         "memory.secret.count" => {
-            memory::handle_secret_count(core, state, engine, caller, id, &request.params)
+            memory::handle_secret_count(core, engine, caller, id, &request.params)
         }
         "memory.secret.scopes" => {
-            memory::handle_secret_scopes(core, state, engine, caller, id, &request.params)
+            memory::handle_secret_scopes(core, engine, caller, id, &request.params)
         }
         "memory.secret.stats" => {
-            memory::handle_secret_stats(core, state, engine, caller, id, &request.params)
+            memory::handle_secret_stats(core, engine, caller, id, &request.params)
         }
         // memory: 유지 보수 (host 전용)
-        "memory.gc" => memory::handle_gc(core, state, engine, caller, id, &request.params),
+        "memory.gc" => memory::handle_gc(core, engine, caller, id, &request.params),
         // memory: blackboard (workspace-scoped 키-값 컬렉션)
-        "memory.bb_create" => {
-            memory::handle_bb_create(core, state, engine, caller, id, &request.params)
-        }
-        "memory.bb_put" => memory::handle_bb_put(core, state, engine, caller, id, &request.params),
-        "memory.bb_get" => memory::handle_bb_get(core, state, engine, caller, id, &request.params),
-        "memory.bb_get_all" => {
-            memory::handle_bb_get_all(core, state, engine, caller, id, &request.params)
-        }
+        "memory.bb_create" => memory::handle_bb_create(core, engine, caller, id, &request.params),
+        "memory.bb_put" => memory::handle_bb_put(core, engine, caller, id, &request.params),
+        "memory.bb_get" => memory::handle_bb_get(core, engine, caller, id, &request.params),
+        "memory.bb_get_all" => memory::handle_bb_get_all(core, engine, caller, id, &request.params),
         "memory.bb_get_meta" => {
-            memory::handle_bb_get_meta(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_get_meta(core, engine, caller, id, &request.params)
         }
         "memory.bb_delete_field" => {
-            memory::handle_bb_delete_field(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_delete_field(core, engine, caller, id, &request.params)
         }
-        "memory.bb_delete" => {
-            memory::handle_bb_delete(core, state, engine, caller, id, &request.params)
-        }
-        "memory.bb_list" => {
-            memory::handle_bb_list(core, state, engine, caller, id, &request.params)
-        }
-        "memory.bb_exists" => {
-            memory::handle_bb_exists(core, state, engine, caller, id, &request.params)
-        }
+        "memory.bb_delete" => memory::handle_bb_delete(core, engine, caller, id, &request.params),
+        "memory.bb_list" => memory::handle_bb_list(core, engine, caller, id, &request.params),
+        "memory.bb_exists" => memory::handle_bb_exists(core, engine, caller, id, &request.params),
         // memory: bb snapshot
         "memory.bb_snapshot" => {
-            memory::handle_bb_snapshot(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot(core, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_get" => {
-            memory::handle_bb_snapshot_get(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_get(core, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_list" => {
-            memory::handle_bb_snapshot_list(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_list(core, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_delete" => {
-            memory::handle_bb_snapshot_delete(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_delete(core, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_restore" => {
-            memory::handle_bb_snapshot_restore(core, state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_restore(core, engine, caller, id, &request.params)
         }
         // memory: plan (workspace-scoped 선언적 work breakdown)
         "memory.plan_create" => {
-            memory::handle_plan_create(core, state, engine, caller, id, &request.params)
+            memory::handle_plan_create(core, engine, caller, id, &request.params)
         }
-        "memory.plan_get" => {
-            memory::handle_plan_get(core, state, engine, caller, id, &request.params)
-        }
-        "memory.plan_list" => {
-            memory::handle_plan_list(core, state, engine, caller, id, &request.params)
-        }
+        "memory.plan_get" => memory::handle_plan_get(core, engine, caller, id, &request.params),
+        "memory.plan_list" => memory::handle_plan_list(core, engine, caller, id, &request.params),
         "memory.plan_delete" => {
-            memory::handle_plan_delete(core, state, engine, caller, id, &request.params)
+            memory::handle_plan_delete(core, engine, caller, id, &request.params)
         }
         "memory.plan_add_step" => {
-            memory::handle_plan_add_step(core, state, engine, caller, id, &request.params)
+            memory::handle_plan_add_step(core, engine, caller, id, &request.params)
         }
         "memory.plan_remove_step" => {
-            memory::handle_plan_remove_step(core, state, engine, caller, id, &request.params)
+            memory::handle_plan_remove_step(core, engine, caller, id, &request.params)
         }
         "memory.plan_update_step" => {
-            memory::handle_plan_update_step(core, state, engine, caller, id, &request.params)
+            memory::handle_plan_update_step(core, engine, caller, id, &request.params)
         }
         // memory: cache (workspace-scoped TTL 캐시)
-        "memory.cache_put" => {
-            memory::handle_cache_put(core, state, engine, caller, id, &request.params)
-        }
-        "memory.cache_get" => {
-            memory::handle_cache_get(core, state, engine, caller, id, &request.params)
-        }
+        "memory.cache_put" => memory::handle_cache_put(core, engine, caller, id, &request.params),
+        "memory.cache_get" => memory::handle_cache_get(core, engine, caller, id, &request.params),
         "memory.cache_invalidate" => {
-            memory::handle_cache_invalidate(core, state, engine, caller, id, &request.params)
+            memory::handle_cache_invalidate(core, engine, caller, id, &request.params)
         }
         "memory.cache_clear" => {
-            memory::handle_cache_clear(core, state, engine, caller, id, &request.params)
+            memory::handle_cache_clear(core, engine, caller, id, &request.params)
         }
-        "memory.cache_list" => {
-            memory::handle_cache_list(core, state, engine, caller, id, &request.params)
-        }
+        "memory.cache_list" => memory::handle_cache_list(core, engine, caller, id, &request.params),
         // memory: goal (surface-scoped 단일 목표 문장)
-        "memory.goal_set" => {
-            memory::handle_goal_set(core, state, engine, caller, id, &request.params)
-        }
-        "memory.goal_get" => {
-            memory::handle_goal_get(core, state, engine, caller, id, &request.params)
-        }
-        "memory.goal_clear" => {
-            memory::handle_goal_clear(core, state, engine, caller, id, &request.params)
-        }
+        "memory.goal_set" => memory::handle_goal_set(core, engine, caller, id, &request.params),
+        "memory.goal_get" => memory::handle_goal_get(core, engine, caller, id, &request.params),
+        "memory.goal_clear" => memory::handle_goal_clear(core, engine, caller, id, &request.params),
         // settings (plugin 이 자기 plugin_settings 값을 read-back)
         "settings.get_plugin_setting" => {
             settings::handle_get_plugin_setting(engine, caller, id, &request.params)
