@@ -11,10 +11,8 @@
 //! live grid 스냅샷을 feed 한다. render_pass 가 is_hard_occupied surface 를 이 mirror 로
 //! 렌더한다(plan §2.3). live Terminal 은 PTY 소유 + 입력 라우팅 전용으로 유지.
 //!
-//! headless 빌드는 렌더가 없어 호출자가 없다(gui 한정 — render_pass/attach_poll).
-//! 같은 정책의 `attach.rs` 와 동형으로 *headless 한정* dead_code 를 침묵한다.
-// 이유: display-only mirror 를 만드는 것이 렌더 경로뿐이라 렌더가 없는 headless 엔 호출자가 없다(위).
-#![cfg_attr(not(feature = "gui"), allow(dead_code))]
+//! headless 빌드는 렌더가 없어 호출자가 없다(render_pass/attach_poll) — 모듈 선언이
+//! `cfg(feature = "gui")` 다.
 
 use tasty_terminal::Terminal;
 

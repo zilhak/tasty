@@ -22,6 +22,8 @@ pub(crate) mod attach;
 /// attach client 가 받은 mesh 프레임 보관소. 채우는 쪽도 읽는 쪽도 GUI 다.
 #[cfg(feature = "gui")]
 pub(crate) mod attach_mesh_frames;
+/// 서버측 readonly display mirror. 만드는 쪽(attach 폴링)도 읽는 쪽(렌더)도 GUI 다.
+#[cfg(feature = "gui")]
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
 pub(crate) mod builder;
