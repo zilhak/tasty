@@ -187,10 +187,6 @@ fn handle_core_event(engine: &mut CoreState, event: CoreEvent) {
                 engine.mark_layout_dirty();
             }
         }
-        CoreEvent::SurfaceCwdChanged { surface_id } => {
-            engine.refresh_tab_display_name(surface_id);
-            engine.mark_layout_dirty();
-        }
         // 나머지는 headless 의 발화점이 만들지 않는 이벤트다. close 계열
         // (`SurfaceClosed` / `PaneClosed` / `TabClosed`)이 여기 없는 것은 생략이 아니라
         // **발화점이 없는 것**이다 — `DomainIntent::Close*` 를 만드는 자리는 IPC 핸들러

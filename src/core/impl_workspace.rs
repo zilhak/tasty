@@ -333,7 +333,7 @@ impl Core {
     /// `restored_active_workspace` 도 take 해 CoreEvent payload 로 caller 에게 넘김.
     /// caller (window_lifecycle.rs::create_app_state) 가 결과 받아
     /// `state.switch_workspace` 수행.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub(super) fn apply_apply_pending_layout_restore(
         engine: &mut crate::core::CoreState,
     ) -> CoreEvent {

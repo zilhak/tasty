@@ -1354,6 +1354,7 @@ impl CoreState {
 
 impl CoreState {
     /// Refresh the cached display name of the tab containing a given surface ID.
+    #[cfg(feature = "gui")]
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
         let workspaces = &mut self.workspaces;
         let terminals = &self.terminals;

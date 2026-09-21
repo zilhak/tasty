@@ -475,12 +475,15 @@ pub(crate) enum CoreEvent {
         source: String,
     },
     /// 특정 알림 읽음 처리 요청.
+    #[cfg(feature = "gui")]
     NotificationReadRequested { id: u64 },
     /// 모든 알림 읽음 처리 요청.
+    #[cfg(feature = "gui")]
     AllNotificationsReadRequested,
 
     // ─── Surface lifecycle ───
     /// Surface 의 cwd 변경 알림. cascade 가 tab display name / layout dirty 갱신.
+    #[cfg(feature = "gui")]
     SurfaceCwdChanged { surface_id: u32 },
 
     // ─── Terminal control ───
@@ -564,6 +567,7 @@ pub(crate) enum CoreEvent {
 
     /// `DomainIntent::UpdateTabName` 적용 결과. cascade 가 mark_dirty 만.
     /// `osc_title` 은 레이아웃 영속 대상 아님 — mark_layout_dirty 호출 안 함.
+    #[cfg(any(feature = "gui", test))]
     TabNameUpdated {
         /// `apply_update_tab_name` 의 explicit_name 보존 분기 여부 — production
         /// cascade 는 mark_dirty 만 하고 참조하지 않는다. 테스트 전용 관측 계약
@@ -575,11 +579,13 @@ pub(crate) enum CoreEvent {
     // ─── Layout persistence ───
     /// `SaveLayoutNow` 결과 알림 — 저장/skip(설정 off 또는 dirty 아님 + force=false)
     /// 여부와 무관하게 cascade 없음.
+    #[cfg(any(feature = "gui", test))]
     LayoutSaved,
 
     /// `ApplyPendingLayoutRestore` 결과. `restored=true` 면 caller 가
     /// `active_workspace` 로 `state.switch_workspace` 수행. `restored=false` 면
     /// pending 없거나 schema 미스매치. cascade 없음 — caller 가 events 직접 검사.
+    #[cfg(feature = "gui")]
     LayoutRestored {
         restored: bool,
         active_workspace: Option<usize>,
@@ -588,6 +594,7 @@ pub(crate) enum CoreEvent {
     // ─── Plugin lifecycle ───
     /// Plugin process 가 spawn 되어 hello 까지 완료. cascade 가
     /// PendingHostEvent::PluginLoaded enqueue + plugin event_bus broadcast.
+    #[cfg(feature = "gui")]
     PluginLoaded { plugin_id: String, version: String },
 
     /// Plugin 활성화 상태 변경 (enable/disable). PluginManager.config 변경
@@ -618,6 +625,7 @@ pub(crate) enum CoreEvent {
     /// Plugin 의 surface_kind 가 registry 에 등록됨. hello 처리 시 매 kind 마다
     /// 발화. cascade 가 PendingHostEvent 로 라우팅 (외부 가시성). `rendering` 은
     /// "remote" / "host" / "webview" 중 하나.
+    #[cfg(feature = "gui")]
     PluginSurfaceKindRegistered {
         plugin_id: String,
         kind: String,
@@ -626,6 +634,7 @@ pub(crate) enum CoreEvent {
 
     /// Plugin install / remove / grant / revoke 완료. 정적 상태 변경 (config /
     /// packages / permissions). cascade 가 host event 라우팅.
+    #[cfg(feature = "gui")]
     PluginRegistryChanged {
         plugin_id: String,
         change: PluginRegistryChange,
@@ -634,6 +643,7 @@ pub(crate) enum CoreEvent {
     /// Plugin manifest 의 `[[contributes.window]]` 항목이 hello 시점에 등록됨.
     /// 1.0 에서는 *stub 통지* — 실 spawn handler 는 별도 영역. cascade 가 host
     /// event (`plugin.window_declared`) 만 발화.
+    #[cfg(feature = "gui")]
     PluginWindowDeclared {
         plugin_id: String,
         window_id: String,
@@ -642,6 +652,7 @@ pub(crate) enum CoreEvent {
 
 /// `CoreEvent::PluginRegistryChanged` 의 변경 종류.
 #[derive(Debug, Clone)]
+#[cfg(feature = "gui")]
 pub(crate) enum PluginRegistryChange {
     Installed { version: String },
     Removed,
