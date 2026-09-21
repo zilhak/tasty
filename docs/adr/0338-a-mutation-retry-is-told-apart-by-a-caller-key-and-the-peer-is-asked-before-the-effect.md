@@ -50,6 +50,9 @@
   라우터 앞(`src/adapters/ipc/handler/checked.rs` 의 `check_request` — GUI·헤드리스가 App
   층보다 먼저 지나는 공통 게이트)으로 옮기는 것이고, 그 자리는 이 결정을 실행한 작업의
   배타 소유 밖이라 아래 ★ 의 배선과 같은 후속 조각이다.
+  - **후속 확정 ([ADR-0420](0420-the-idempotency-key-envelope-is-judged-at-the-admission-gate.md))**:
+    검사는 `check_request` 로 옮겨졌다. 위 "지금 실재한다" 는 이 결정 시점의 서술이고, 지금은 같은
+    봉투가 목적지와 무관하게 같은 판정을 받는다.
 - ★ **그 분류는 상한이고, 배선이 그것을 더 좁힌다.** 보존소는 호스트의 **engine 라우터**
   (`handle_checked_request`) 한 자리에 있다. 그 앞에서 끝나는 층이 둘이고 둘 다 `Mutate` 를
   포함하므로, 그 층의 메서드는 키를 실어도 그냥 실행된다 — App 층이 직접 끝내는 여섯

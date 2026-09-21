@@ -38,6 +38,11 @@ pub(crate) fn check_request<'a>(
         return Err(response);
     }
     super::record_telemetry_and_audit(core, state, engine, caller, canonical, &request.params, ws);
+    // 봉투 검사는 **모든 층의 앞**이다 — App 층·namespace forward·engine 라우터 중 어디로
+    // 가든 같은 봉투는 같은 판정을 받는다. 게이트 **뒤**인 것은 옛 자리(engine 라우터의
+    // 보존소 입구)가 게이트 뒤였기 때문이다: 권한 없는 호출자는 여전히 `-32001` 을 먼저
+    // 받고, 허용 관측도 예전처럼 한 번 남는다(ADR-0420).
+    super::idempotency::check_envelope(request, &id)?;
     Ok(CheckedRequest { request, caller })
 }
 
@@ -48,10 +53,12 @@ pub(crate) fn check_without_engine<'a>(
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
 ) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     if matches!(caller, CallerContext::Local) {
+        // 창이 없어도 봉투 판정은 같다 — [`check_request`] 와 같은 자리.
+        super::idempotency::check_envelope(request, &id)?;
         return Ok(CheckedRequest { request, caller });
     }
-    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     Err(JsonRpcResponse::error(
         id,
         -32000,

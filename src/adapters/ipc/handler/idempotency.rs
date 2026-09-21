@@ -315,6 +315,11 @@ pub(crate) struct Pending {
 
 /// 봉투의 멱등 키가 **모양으로** 유효한가 — 길이 밖 키(빈 문자열 · 상한 초과)는
 /// `-32602` 다. 메서드도 보존소도 안 본다.
+///
+/// 부르는 자리는 진입 게이트([`super::check_request`] · `check_without_engine`)다 — 요청이
+/// App 층 · plugin namespace forward · engine 라우터 중 어디로 가든 그 앞이다. 이 검사가
+/// [`begin`] 안에 있던 때에는 보존소가 닿는 범위(engine 라우터)만 물려받아, 같은 봉투가
+/// 목적지에 따라 유효하기도 무효하기도 했다(ADR-0420).
 pub(crate) fn check_envelope(
     request: &JsonRpcRequest,
     id: &serde_json::Value,
@@ -338,13 +343,15 @@ pub(crate) fn check_envelope(
 ///
 /// `Ok(None)` 은 "키가 없거나 이 메서드에 뜻이 없다" 이고, 그때 동작은 이 모듈이
 /// 생기기 전과 한 글자도 다르지 않다.
+///
+/// 키의 모양은 여기서 다시 안 본다 — 요청은 진입 게이트의 [`check_envelope`] 를 이미
+/// 지났다. 판정을 두 자리에 두면 한쪽만 고쳐진다.
 pub(crate) fn begin(
     now: Instant,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: &serde_json::Value,
 ) -> Result<Option<Pending>, JsonRpcResponse> {
-    check_envelope(request, id)?;
     let Some(key) = request.idempotency_key.as_deref() else {
         return Ok(None);
     };
@@ -678,22 +685,72 @@ mod tests {
         }
     }
 
-    /// 빈 키와 너무 긴 키는 **실행 전에** 거절된다.
+    /// 빈 키와 너무 긴 키는 **실행 전에** 거절된다. 경계 안의 두 끝은 통과한다 — 그래야
+    /// 거절이 "길이" 때문인지 "키가 있어서" 인지 갈린다.
     #[test]
     fn a_key_outside_the_length_bound_is_rejected_before_anything_runs() {
-        for key in ["".to_string(), "k".repeat(MAX_KEY_BYTES + 1)] {
-            let req = JsonRpcRequest {
+        fn keyed(key: String) -> JsonRpcRequest {
+            JsonRpcRequest {
                 jsonrpc: "2.0".into(),
                 method: "workspace.create".into(),
                 params: json!({}),
                 id: Some(json!(1)),
                 session_token: None,
                 response_timeout_ms: None,
-                idempotency_key: Some(key.clone()),
-            };
-            let err = begin(Instant::now(), &CallerContext::Local, &req, &json!(1))
-                .expect_err("길이 밖 키는 거절이어야 한다");
+                idempotency_key: Some(key),
+            }
+        }
+        for key in ["".to_string(), "k".repeat(MAX_KEY_BYTES + 1)] {
+            let err =
+                check_envelope(&keyed(key), &json!(1)).expect_err("길이 밖 키는 거절이어야 한다");
             assert_eq!(err.error.expect("에러").code, -32602);
+        }
+        for key in ["k".to_string(), "k".repeat(MAX_KEY_BYTES)] {
+            assert!(check_envelope(&keyed(key), &json!(1)).is_ok());
+        }
+    }
+
+    /// 봉투 검사는 **목적지와 무관하다** — engine 라우터에 안 닿는 App 층 메서드와
+    /// plugin namespace 이름도 같은 판정을 받는다. 진입 게이트([`super::super::check_request`])
+    /// 가 그 자리이므로 거기서 잰다.
+    ///
+    /// 통제군이 같은 시험 안에 있다: 같은 메서드에 경계 안의 키는 게이트를 통과한다.
+    #[test]
+    fn the_envelope_is_judged_at_the_gate_whatever_the_destination() {
+        use crate::ipc::handler::check_request;
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = crate::ipc::handler::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        // App 층(창 생성) · namespace forward 모양의 이름 · engine 라우터.
+        for method in ["window.create", "someplugin.do_thing", "workspace.create"] {
+            for (key, ok) in [
+                (String::new(), false),
+                ("k".repeat(MAX_KEY_BYTES + 1), false),
+                ("fine".to_string(), true),
+            ] {
+                let req = JsonRpcRequest {
+                    jsonrpc: "2.0".into(),
+                    method: method.into(),
+                    params: json!({}),
+                    id: Some(json!(7)),
+                    session_token: None,
+                    response_timeout_ms: None,
+                    idempotency_key: Some(key.clone()),
+                };
+                let r = check_request(
+                    &mut core,
+                    &mut state,
+                    &mut engine,
+                    &req,
+                    &CallerContext::Local,
+                );
+                match (r, ok) {
+                    (Ok(_), true) => {}
+                    (Err(e), false) => assert_eq!(e.error.expect("에러").code, -32602, "{method}"),
+                    (Ok(_), false) => panic!("{method}: 길이 {} 키가 게이트를 지났다", key.len()),
+                    (Err(e), true) => panic!("{method}: 경계 안 키가 거절됐다: {e:?}"),
+                }
+            }
         }
     }
 
