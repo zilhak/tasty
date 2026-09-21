@@ -292,6 +292,7 @@ impl Core {
     /// **debounce 는 여기서 재지 않는다** — `force=false` 호출은 호스트의
     /// `Tick::LayoutFlush` 타이머가 데드라인에 도달했을 때만 오므로, 이 시점엔
     /// 이미 debounce 를 통과한 것이다(`docs/dev-guide/timer-hub.md`).
+    #[cfg(any(feature = "gui", test))]
     pub(super) fn apply_save_layout_now(
         engine: &mut crate::core::CoreState,
         active_workspace: usize,
@@ -332,6 +333,7 @@ impl Core {
     /// `restored_active_workspace` 도 take 해 CoreEvent payload 로 caller 에게 넘김.
     /// caller (window_lifecycle.rs::create_app_state) 가 결과 받아
     /// `state.switch_workspace` 수행.
+    #[cfg(any(feature = "gui", test))]
     pub(super) fn apply_apply_pending_layout_restore(
         engine: &mut crate::core::CoreState,
     ) -> CoreEvent {
@@ -586,6 +588,7 @@ fn push_tab_to_pane(
 ///
 /// purge 되는 scope 는 정의상 이전 실행의 잔재다(부팅 시점에 live surface 는 아직 없다) —
 /// 곧이어 도는 `purge_dead_surfaces` 가 어차피 지울 대상이므로 추가 손실이 없다.
+#[cfg(any(feature = "gui", test))]
 pub(crate) fn seed_surface_id_floor(
     mem: &mut dyn tasty_memory::MemoryStorage,
     ids: &crate::core::state::IdGenerator,

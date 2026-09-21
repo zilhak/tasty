@@ -6,6 +6,7 @@ impl Core {
     /// `DomainIntent::UpdateTabName` 본문. surface_id 가 속한 tab 을 *모든*
     /// workspace 에서 검색 (포커스 독립) → `osc_title` 필드 set. explicit_name
     /// 은 건드리지 않는다 — 사용자가 직접 이름 지은 tab 보존.
+    #[cfg(any(feature = "gui", test))]
     pub(super) fn apply_update_tab_name(
         engine: &mut crate::core::CoreState,
         surface_id: u32,

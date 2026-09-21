@@ -17,6 +17,7 @@ impl CoreState {
     /// 아니면 0번으로 이동, (3) 또한 발급기 floor 를 기존 최대 카테고리 id + 1 이상으로
     /// 올려 재사용을 차단한다. 어떤 워크스페이스가 존재하지 않는 카테고리를 가리키면
     /// normal 로 귀속한다.
+    #[cfg(any(feature = "gui", test))]
     pub fn ensure_normal_category(&mut self) {
         use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
         // (1)(2) normal 을 0번에 고정.

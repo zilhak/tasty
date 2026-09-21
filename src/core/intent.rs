@@ -209,14 +209,17 @@ pub(crate) enum DomainIntent {
     },
     /// 특정 알림 읽음 처리. cascade 가 알림을 보유한 main/parked engine 의
     /// `notifications.mark_read(id)` 호출.
+    #[cfg(feature = "gui")]
     MarkNotificationRead { id: u64 },
     /// 모든 알림 읽음 처리. cascade 가 main/parked 모두의
     /// `notifications.mark_all_read()` 호출.
+    #[cfg(feature = "gui")]
     MarkAllNotificationsRead,
 
     // ─── Surface lifecycle ───
     /// Terminal 이 OSC 7 등으로 cwd 변경을 알림. cascade 가
     /// `refresh_tab_display_name` + `mark_layout_dirty` 수행.
+    #[cfg(feature = "gui")]
     SurfaceCwdChanged { surface_id: u32 },
 
     // ─── Terminal control ───
@@ -269,6 +272,7 @@ pub(crate) enum DomainIntent {
     /// 은 *건드리지 않음* — 사용자가 직접 이름 지은 tab 의 이름은 OSC title 에
     /// 의해 덮어쓰여지지 않는다 (display_name 우선순위: explicit_name >
     /// osc_title > cached_display_name > name).
+    #[cfg(feature = "gui")]
     UpdateTabName { surface_id: u32, name: String },
 
     // ─── Layout persistence ───
@@ -280,6 +284,7 @@ pub(crate) enum DomainIntent {
     /// - `force=false`: main loop tick 경로. debounce 통과 시에만 저장.
     ///
     /// settings.restore_layout=false 면 skip. cascade 없음. host event 없음.
+    #[cfg(feature = "gui")]
     SaveLayoutNow {
         active_workspace: usize,
         force: bool,
@@ -289,6 +294,7 @@ pub(crate) enum DomainIntent {
     /// 호출 전에 *호출자* 가 wait-for-plugin loop 를 끝내 둬야 함 — Intent 본문
     /// 안에서 plugin manager 를 못 만진다 (Core 의존 없음).
     /// pending_layout_restore 가 None 이면 no-op (`restored=false`).
+    #[cfg(feature = "gui")]
     ApplyPendingLayoutRestore,
 
     // ─── File dispatch ───

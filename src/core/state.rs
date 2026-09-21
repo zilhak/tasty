@@ -103,6 +103,7 @@ impl IdGenerator {
 
     /// category 카운터를 `min_next` 이상으로 끌어올린다(이미 크면 no-op).
     /// 복원 시 layout.json 의 최대 카테고리 id + 1 위로 floor 를 올려 재사용 차단.
+    #[cfg(any(feature = "gui", test))]
     pub fn bump_category_floor(&self, min_next: u32) {
         self.category
             .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
@@ -128,6 +129,7 @@ impl IdGenerator {
     /// (`memory.db`)는 영속되므로, 복원이 발급하는 id 가 이전 실행의 stale
     /// `Scope::Surface(id)` 와 겹칠 수 있다. 복원 *직전* 에 floor 를 stale 최대
     /// id 위로 올려 재사용을 원천 차단한다.
+    #[cfg(any(feature = "gui", test))]
     pub fn bump_surface_floor(&self, min_next: u32) {
         self.surface
             .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);

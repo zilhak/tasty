@@ -129,6 +129,7 @@ impl SurfaceMetaStore {
     /// 발급한 surface 들이 다시 memory.db 에 기록되어 floor 가 영구 유지되는 비가역
     /// 래칫이 된다(`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
     /// 오염 scope 자체의 제거는 [`purge_out_of_range_surfaces`](Self::purge_out_of_range_surfaces).
+    #[cfg(any(feature = "gui", test))]
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
         let scopes = match mem.scopes() {
             Ok(s) => s,
@@ -153,6 +154,7 @@ impl SurfaceMetaStore {
     /// 그런 id 를 가진 surface 는 존재할 수 없으므로(surface 카운터는 PTY 공간에
     /// 진입하지 않는다) 여기 남은 것은 방어가 없던 시절의 잔재이거나 검증을 우회한
     /// 쓰기의 산물이다. 부팅 시 한 번 정리해 이미 걸린 래칫을 해소한다.
+    #[cfg(any(feature = "gui", test))]
     pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
         let scopes = match mem.scopes() {
             Ok(s) => s,
@@ -184,6 +186,7 @@ impl SurfaceMetaStore {
     /// 복원으로 확정된 live id 외 죽은 surface 메타(앱 강제 종료 등으로 graceful
     /// close 의 `AppState::purge_surface_memory_scope` 가 호출되지 못한 잔재)를
     /// 정리해 무한 누적을 막는다.
+    #[cfg(any(feature = "gui", test))]
     pub fn purge_dead_surfaces(
         mem: &mut dyn MemoryStorage,
         live: &std::collections::HashSet<u32>,

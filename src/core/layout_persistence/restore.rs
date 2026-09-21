@@ -14,6 +14,7 @@ use super::schema::{
     SavedLayout, SavedPane, SavedPaneNode, SavedSurface, SavedSurfaceLayout, SavedTab,
     SavedWorkspace,
 };
+#[cfg(any(feature = "gui", test))]
 use super::scrollback::queue_scrollback_for_surface;
 
 impl SavedLayout {
@@ -113,6 +114,7 @@ impl SavedLayout {
 
     /// Restore layout into engine state. Returns true on success.
     /// On failure, engine state is left unchanged (caller should create default workspace).
+    #[cfg(any(feature = "gui", test))]
     pub fn restore(self, engine: &mut CoreState) -> bool {
         if self.workspaces.is_empty() {
             return false;
@@ -158,6 +160,7 @@ impl SavedLayout {
 }
 
 impl SavedWorkspace {
+    #[cfg(any(feature = "gui", test))]
     fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Workspace> {
         let ws_id = engine.next_ids.next_workspace();
         let pane_layout = self.pane_layout.restore(engine, is_active)?;
@@ -182,6 +185,7 @@ impl SavedWorkspace {
 }
 
 impl SavedPaneNode {
+    #[cfg(any(feature = "gui", test))]
     fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<PaneNode> {
         match self {
             SavedPaneNode::Leaf(saved_pane) => {
@@ -208,6 +212,7 @@ impl SavedPaneNode {
 }
 
 impl SavedPane {
+    #[cfg(any(feature = "gui", test))]
     fn restore(self, engine: &mut CoreState, is_active_workspace: bool) -> Option<Pane> {
         let pane_id = engine.next_ids.next_pane();
         let saved_active_tab = self.active_tab.min(self.tabs.len().saturating_sub(1));
@@ -244,6 +249,7 @@ impl SavedPane {
 }
 
 impl SavedTab {
+    #[cfg(any(feature = "gui", test))]
     fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Tab> {
         let tab_id = engine.next_ids.next_tab();
         let layout = self.surface.restore(engine, is_active)?;
@@ -264,6 +270,7 @@ impl SavedSurfaceLayout {
     /// is_active=false면 Terminal leaf를 deferred EmptySurface placeholder로 변환한다.
     /// is_active=true면 모든 leaf를 즉시 spawn한다. Split 노드는 재귀적으로 처리해
     /// 비활성 split 내부의 Terminal들도 deferred로 남는다.
+    #[cfg(any(feature = "gui", test))]
     fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<SurfaceLayout> {
         match self {
             SavedSurfaceLayout::Leaf(saved) => {
@@ -293,6 +300,7 @@ impl SavedSurfaceLayout {
 impl SavedSurface {
     /// 단일 leaf 복원. Terminal이면 is_active에 따라 즉시 spawn 또는 deferred placeholder.
     /// Generic surface는 is_active와 관계없이 즉시 복원 (PTY가 아니므로 cheap).
+    #[cfg(any(feature = "gui", test))]
     fn restore_leaf(self, engine: &mut CoreState, is_active: bool) -> Option<Box<dyn Surface>> {
         let surface_id = engine.next_ids.next_surface();
         match self {
@@ -353,6 +361,7 @@ impl SavedSurface {
     }
 
     /// 항상 즉시 PTY를 spawn하거나 generic surface를 만들어 반환.
+    #[cfg(any(feature = "gui", test))]
     fn restore_immediate_inner(
         self,
         engine: &mut CoreState,
@@ -373,6 +382,7 @@ impl SavedSurface {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 fn restore_terminal_immediate(
     engine: &mut CoreState,
     surface_id: u32,
@@ -429,6 +439,7 @@ fn restore_terminal_immediate(
     Some(Box::new(TerminalSurface { id: surface_id }))
 }
 
+#[cfg(any(feature = "gui", test))]
 fn restore_generic_immediate(
     engine: &mut CoreState,
     surface_id: u32,

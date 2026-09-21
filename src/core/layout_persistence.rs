@@ -11,9 +11,11 @@
 //! `SavedSurface` is `Terminal` + `Generic { kind, data }`. New surface kinds (including
 //! plugins) round-trip via the SurfaceKindRegistry without touching this file.
 
+#[cfg(any(feature = "gui", test))]
 mod capture;
 mod restore;
 mod schema;
+#[cfg(any(feature = "gui", test))]
 mod scrollback;
 #[cfg(test)]
 mod tests;
@@ -23,6 +25,7 @@ use std::time::Instant;
 
 pub use schema::SavedLayout;
 
+#[cfg(any(feature = "gui", test))]
 use crate::core::CoreState;
 
 pub(super) const LAYOUT_VERSION: u32 = 2;
@@ -219,6 +222,7 @@ pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
 ///
 /// 호출자는 항상 `DomainIntent::SaveLayoutNow` (Core::apply 내부) 를 경유한다 —
 /// module 외부에서 본 fn 을 직접 부르지 않도록 `pub(crate)` 로 제한.
+#[cfg(any(feature = "gui", test))]
 pub(crate) fn save_slot(engine: &mut CoreState, active_workspace: usize, slot: LayoutSlotId) {
     // 테스트는 engine 에 심어 둔 임시 경로를 쓴다 — 저장 경로 전체
     // (`apply_save_layout_now` → `save_slot` → 보존 → 쓰기)를 사용자의 실제 홈을
@@ -249,6 +253,7 @@ pub(crate) fn save_slot(engine: &mut CoreState, active_workspace: usize, slot: L
 /// 내부) 하나뿐이다 — 여기를 직접 부르면 `layout_slot_protected` 가드(`apply_save_layout_now`)
 /// 를 건너뛰어 **읽지 못한 슬롯에 써 버린다.** 디렉터리를 지정해야 하는 테스트 외에는
 /// `save_slot` 을 쓴다.
+#[cfg(any(feature = "gui", test))]
 pub(crate) fn save_slot_in_dir(
     engine: &mut CoreState,
     active_workspace: usize,
@@ -272,6 +277,7 @@ pub(crate) fn save_slot_in_dir(
 }
 
 /// 저장 직전 재확인의 결론.
+#[cfg(any(feature = "gui", test))]
 enum SlotReplace {
     /// 원본을 옆으로 옮긴 뒤 써야 한다 — 여전히 해석되지 않는다.
     MoveAside,
@@ -290,6 +296,7 @@ enum SlotReplace {
 /// syscall 이고 사이에 잠금이 없어서, 그 틈에 끼어든 write 는 여전히 정상 파일을
 /// `.bak` 으로 흘린다. 닫히는 것은 "부팅 판정 → 첫 저장"(수 분) 창이고 남는 것은
 /// 두 syscall 사이다. 잠금을 도입하지 않은 근거는 `docs/design/systems/storage.md`.
+#[cfg(any(feature = "gui", test))]
 fn recheck_slot_before_replacing(path: &Path) -> SlotReplace {
     let json = match std::fs::read_to_string(path) {
         Ok(json) => json,
@@ -328,6 +335,7 @@ fn recheck_slot_before_replacing(path: &Path) -> SlotReplace {
 ///
 /// **옮기기 전에 `recheck_slot_before_replacing` 으로 다시 확인한다** — 부팅 때의 판정과
 /// 이 호출 사이에 파일이 바뀌어 있을 수 있다.
+#[cfg(any(feature = "gui", test))]
 fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
     let path = slot_path_in(dir, slot);
     match recheck_slot_before_replacing(&path) {
@@ -358,6 +366,7 @@ fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
     }
 }
 
+#[cfg(any(feature = "gui", test))]
 fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<String> {
     let saved = SavedLayout::capture(engine, active_workspace);
     match serde_json::to_string_pretty(&saved) {
@@ -376,6 +385,7 @@ fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<S
 /// union GC 를 통해 *다른* 슬롯의 scrollback 까지 잃게 만든다
 /// ([`gc_scrollback_orphans_all_slots`] 의 "모르면 지우지 않는다"). tmp write →
 /// rename 은 `store::scrollback::write_in` 과 같은 패턴이다.
+#[cfg(any(feature = "gui", test))]
 fn save_slot_in(dir: &Path, slot: LayoutSlotId, json: &str) {
     let path = slot_path_in(dir, slot);
     if let Err(e) = write_slot_atomic(dir, &path, json) {
@@ -389,6 +399,7 @@ fn save_slot_in(dir: &Path, slot: LayoutSlotId, json: &str) {
 
 /// tmp write → rename. rename 이 실패하면 tmp 를 치운다 — 확장자가 `.tmp` 라
 /// [`list_slots_in`] 이 슬롯으로 오인하지는 않지만 그대로 두면 계속 쌓인다.
+#[cfg(any(feature = "gui", test))]
 fn write_slot_atomic(dir: &Path, path: &Path, json: &str) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let tmp = path.with_extension(format!("{SLOT_EXT}.tmp"));
@@ -560,12 +571,14 @@ impl LayoutDirtyTracker {
     }
 
     /// Reset after a successful save.
+    #[cfg(any(feature = "gui", test))]
     pub fn clear(&mut self) {
         self.dirty = false;
         self.dirty_since = None;
     }
 
     /// Force check if dirty (for shutdown flush).
+    #[cfg(any(feature = "gui", test))]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }

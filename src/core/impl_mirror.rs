@@ -298,12 +298,15 @@ impl Core {
                 body,
                 source,
             }]),
+            #[cfg(feature = "gui")]
             DomainIntent::MarkNotificationRead { id } => {
                 Ok(vec![CoreEvent::NotificationReadRequested { id }])
             }
+            #[cfg(feature = "gui")]
             DomainIntent::MarkAllNotificationsRead => {
                 Ok(vec![CoreEvent::AllNotificationsReadRequested])
             }
+            #[cfg(feature = "gui")]
             DomainIntent::SurfaceCwdChanged { surface_id } => {
                 Ok(vec![CoreEvent::SurfaceCwdChanged { surface_id }])
             }
@@ -438,9 +441,11 @@ impl Core {
                 target_pane_id,
                 scope,
             )]),
+            #[cfg(feature = "gui")]
             DomainIntent::UpdateTabName { surface_id, name } => {
                 Ok(vec![Self::apply_update_tab_name(engine, surface_id, name)])
             }
+            #[cfg(feature = "gui")]
             DomainIntent::SaveLayoutNow {
                 active_workspace,
                 force,
@@ -449,6 +454,7 @@ impl Core {
                 active_workspace,
                 force,
             )]),
+            #[cfg(feature = "gui")]
             DomainIntent::ApplyPendingLayoutRestore => {
                 Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
             }
