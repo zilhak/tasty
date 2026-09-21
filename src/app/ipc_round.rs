@@ -52,25 +52,48 @@ pub(crate) const ROUND_TIME_BUDGET: Duration = Duration::from_millis(16);
 /// 이 프로세스의 회차 시간 예산 — release 에서는 늘 [`ROUND_TIME_BUDGET`] 이다.
 ///
 /// debug 빌드에서만 `TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS` 로 **줄일 수** 있다(늘리는 값은
-/// 버린다). 기본 예산에서는 시험의 동시 요청이 회차를 안 자르므로, 잘린 회차가 루프를 다시
+/// 버린다). 같은 계열 손잡이(`tcp_ipc_server` 의 `debug_env_usize`)처럼 덮어쓰기가 먹으면
+/// `warn!`, 숫자가 아니거나 제품값 이상이라 버리면 그 사유를 `warn!` 으로 남긴다 — 그 헬퍼를
+/// 그대로 쓰지 않는 것은 파싱되는 순간 "덮어쓴다" 를 찍어, 제품값 이상을 버리는 이 자리에서는
+/// 로그가 서로 어긋나기 때문이다. 기본 예산에서는 시험의 동시 요청이 회차를 안 자르므로, 잘린 회차가 루프를 다시
 /// 깨우는 갈래(ADR-0465 · ADR-0413)를 실행 파일째로 지나게 할 다른 길이 없다. 그 갈래를 재는
 /// 시험은 `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut`.
 fn round_time_budget() -> Duration {
     #[cfg(debug_assertions)]
     {
         static SHRUNK: std::sync::OnceLock<Option<Duration>> = std::sync::OnceLock::new();
-        let shrunk = SHRUNK.get_or_init(|| {
-            std::env::var("TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS")
-                .ok()
-                .and_then(|s| s.trim().parse::<u64>().ok())
-                .map(Duration::from_millis)
-                .filter(|d| *d < ROUND_TIME_BUDGET)
-        });
-        if let Some(budget) = *shrunk {
+        if let Some(budget) = *SHRUNK.get_or_init(debug_shrunk_round_time_budget) {
             return budget;
         }
     }
     ROUND_TIME_BUDGET
+}
+
+/// debug 전용 덮어쓰기를 읽는다. 없으면 `None`, 쓸 수 없는 값이면 사유를 남기고 `None`.
+#[cfg(debug_assertions)]
+fn debug_shrunk_round_time_budget() -> Option<Duration> {
+    const NAME: &str = "TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS";
+    let millis = debug_env_millis(NAME)?;
+    let budget = Duration::from_millis(millis);
+    if budget >= ROUND_TIME_BUDGET {
+        tracing::warn!(
+            "{NAME}={millis} is not below the product round time budget of {} ms, ignored",
+            ROUND_TIME_BUDGET.as_millis()
+        );
+        return None;
+    }
+    tracing::warn!("{NAME}={millis} overrides the IPC round time budget (debug build)");
+    Some(budget)
+}
+
+/// debug 전용 환경변수를 밀리초로 읽는다. 없으면 `None`, 숫자가 아니면 경고를 남기고 `None`.
+#[cfg(debug_assertions)]
+fn debug_env_millis(name: &str) -> Option<u64> {
+    let raw = std::env::var(name).ok()?;
+    raw.trim()
+        .parse::<u64>()
+        .inspect_err(|e| tracing::warn!("{name}={raw:?} is not a number, ignored: {e}"))
+        .ok()
 }
 
 /// 진행 중인 회차 하나.
