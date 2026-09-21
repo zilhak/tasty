@@ -822,8 +822,9 @@ mod tests {
         assert_eq!(after.lines, ["after-cap"]);
     }
 
-    // 잠금 대기 상한과 재시도 간격은 ADR-0415 와 dev-guide 가 값으로 적는다(200 ms · 5 ms ·
-    // 40 번). 그 사본들의 판정기다 — 값을 바꾸면 여기가 빨개지고, 그때 두 문서를 같이 고친다.
+    // 세 값의 사본 자리: 200 ms 는 ADR-0415 · dev-guide(child-completion-notify-log) · CHANGELOG,
+    // 5 ms 는 ADR-0415, 40 번은 위 `EXCLUSIVE_LOCK_RETRY` 의 doc 이다. 이 시험이 그 사본들의
+    // 판정기다 — 값을 바꾸면 여기가 빨개지고, 그때 그 자리들을 같이 고친다.
     #[test]
     fn the_exclusive_lock_budget_matches_the_documented_values() {
         assert_eq!(EXCLUSIVE_LOCK_BUDGET, std::time::Duration::from_millis(200));
