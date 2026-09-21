@@ -670,13 +670,32 @@ pub enum StructuralOp {
 /// Only the server's restore stack reads it today: a close whose origin is
 /// [`ForwardOrigin::Agent`] is not snapshotted there. An absent field on the wire
 /// is [`ForwardOrigin::User`] — see [`ForwardOrigin::of_wire`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// **A value this build does not know is read as `Agent`, never rejected.** A
+/// later client may send a third origin; failing to parse it would drop the
+/// whole frame (no `StructuralResult`, a silent failure), so the value is
+/// tolerated instead. It is read as `Agent` because the only thing the origin
+/// decides is whether user state (the restore stack) is touched, and leaving it
+/// alone is the side `docs/identity.md` principle 1 protects. Absence stays
+/// `User` — that is what clients from before the field meant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ForwardOrigin {
     /// The client's user, by hand (shortcut, button, context menu).
     User,
-    /// An agent driving the client over IPC/CLI.
+    /// An agent driving the client over IPC/CLI — and any origin this build
+    /// does not know (see the type's doc).
     Agent,
+}
+
+impl<'de> Deserialize<'de> for ForwardOrigin {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            Some("user") => ForwardOrigin::User,
+            _ => ForwardOrigin::Agent,
+        })
+    }
 }
 
 impl ForwardOrigin {
@@ -1313,6 +1332,33 @@ mod tests {
         let unknown_key =
             r#"{"event":"client_resize","surface_id":1,"cols":80,"rows":24,"origin":"agent"}"#;
         assert!(serde_json::from_str::<StreamControl>(unknown_key).is_ok());
+    }
+
+    /// A value this build does not know must not cost the frame: it is read as
+    /// `Agent` (the side that leaves the restore stack alone), whatever its type.
+    /// Absence is still `User`, and the two known values read as themselves.
+    #[test]
+    fn an_unknown_origin_keeps_the_frame_and_reads_as_agent() {
+        let with = |origin: &str| {
+            format!(
+                r#"{{"event":"structural_op","op_id":9,"op":{{"kind":"close_surface","surface_id":3}},"origin":{origin}}}"#
+            )
+        };
+        let origin_of = |raw: &str| match serde_json::from_str::<StreamControl>(raw) {
+            Ok(StreamControl::StructuralOp {
+                op_id: 9, origin, ..
+            }) => ForwardOrigin::of_wire(origin),
+            other => panic!("the frame must parse as the same structural_op: {other:?}"),
+        };
+        assert_eq!(origin_of(&with(r#""plugin""#)), ForwardOrigin::Agent);
+        assert_eq!(origin_of(&with("7")), ForwardOrigin::Agent);
+        assert_eq!(origin_of(&with(r#"{"by":"x"}"#)), ForwardOrigin::Agent);
+        assert_eq!(origin_of(&with(r#""user""#)), ForwardOrigin::User);
+        assert_eq!(origin_of(&with(r#""agent""#)), ForwardOrigin::Agent);
+        assert_eq!(origin_of(&with("null")), ForwardOrigin::User);
+        let absent =
+            r#"{"event":"structural_op","op_id":9,"op":{"kind":"close_surface","surface_id":3}}"#;
+        assert_eq!(origin_of(absent), ForwardOrigin::User);
     }
 
     /// `wire_kind` is a second spelling of the serde tag — it must not drift.
