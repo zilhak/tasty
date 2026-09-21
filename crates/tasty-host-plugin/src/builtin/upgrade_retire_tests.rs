@@ -89,6 +89,15 @@ fn shut_down(mgr: &mut PluginManager) {
     }
 }
 
+/// (이름, 설치본 minor, 번들 minor, `--force`, 그 갈래를 탔는가).
+type Case = (
+    &'static str,
+    u64,
+    u64,
+    bool,
+    fn(&BuiltinUpgradeAction) -> bool,
+);
+
 /// 재시작으로 회수 중인 plugin 에 **쓰는** upgrade 가 오면, 회수를 기다려 쓰고 그 뒤에 결국
 /// 다시 뜬다 — 기다리며 가져온 재기동 예약을 버리지 않는다.
 ///
@@ -97,7 +106,7 @@ fn shut_down(mgr: &mut PluginManager) {
 /// 종류로 그 갈래를 탔는지 함께 단정한다.
 #[test]
 fn an_upgrade_during_a_restart_keeps_the_restart() {
-    let cases: [(&str, u64, u64, bool, fn(&BuiltinUpgradeAction) -> bool); 3] = [
+    let cases: [Case; 3] = [
         ("same version, changed content", 0, 0, false, |a| {
             matches!(a, BuiltinUpgradeAction::Skipped { .. })
         }),
