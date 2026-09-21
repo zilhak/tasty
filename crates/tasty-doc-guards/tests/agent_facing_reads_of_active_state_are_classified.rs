@@ -74,6 +74,8 @@ const NEEDLES: &[&str] = &[
 /// 대상을 고르는지는 구현 파일에서만 보인다. 호출 자리의 메서드 이름이 바늘을 담는 것
 /// (`set_active_workspace`)은 우연이다 — 이름이 바늘을 안 담는 포트 메서드면 cascade 쪽은
 /// 초록이고 구현만 활성 포인터를 읽는다([ADR-0490](../../../docs/adr/0490-boundary-guards-close-three-holes-found-by-mutation.md)).
+/// adapters 가 선언한 포트의 구현도 같다(`src/state/ipc_window.rs` — IPC 엔진 핸들러의
+/// `IpcWindow`, [ADR-0471](../../../docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md)).
 /// `src/state` · `src/file` 전체를 올리지 않는 이유: 사용자 입력 경로가 섞여 명부가 사람 판정
 /// 없이 부풀고, 이 가드의 물음("에이전트가 부르는 경로인가")이 흐려진다. 포트 구현 파일이
 /// 새로 생기면 여기 한 줄을 더한다.
@@ -86,6 +88,7 @@ const AGENT_FACING: &[&str] = &[
     "src/core/structural_exec.rs",
     "src/file/identify_worker.rs",
     "src/state/cascade_window.rs",
+    "src/state/ipc_window.rs",
 ];
 
 /// 스캔 루트 — 위 접두사를 담는 가장 작은 디렉토리들. 파일 단위 항목(`src/state/…` ·
@@ -243,6 +246,12 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         Recovery,
         2,
         "포트 메서드 set_active_workspace 의 구현 이름과 그 몸체의 대입 — 도메인의 호출은 structural_cascade 의 Recovery 한 자리뿐이다(마지막 워크스페이스가 닫힌 뒤 되만든 기본 워크스페이스를 활성으로 둔다)",
+    ),
+    (
+        "src/state/ipc_window.rs",
+        Attribution,
+        2,
+        "포트 메서드 active_workspace_index 의 구현 이름과 그 몸체의 읽기 — 핸들러 호출 자리의 분류를 물려받는다. 호출 자리 11 곳은 Attribution 7 · Report 3 · PolicyScope 1 로 명부에 있고 대상을 고르는 자리는 0 이다; 한 구현이 여러 갈래로 나뉠 수 없어 가장 많은 Attribution 에 둔다",
     ),
     (
         "src/app/dispatch/intents.rs",

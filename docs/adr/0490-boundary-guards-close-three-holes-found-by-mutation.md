@@ -53,7 +53,10 @@
    (`CascadeWindow`)와 `src/file/identify_worker.rs`(`IdentifySpawner`) — 도메인이 선언하고 창
    쪽이 구현하는 포트는 오늘 이 둘이다. 스캔 루트에 `src/state` · `src/file` 을 더하되 분류는
    파일 단위로 한다. 기존 두 출현(`set_active_workspace` 구현 이름과 그 대입)은 `Recovery` 로
-   명부에 올린다. 파일 단위 항목이 옮겨지면 아무것도 안 걸러 조용히 통과하므로, 모든 항목이
+   명부에 올린다. adapters 가 선언하고 창 쪽이 구현하는 포트의 구현도 같다 — `src/state/ipc_window.rs`
+   (`IpcWindow`, [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md))를 같은 방식으로 올리고,
+   그 두 출현(`active_workspace_index` 구현 이름과 그 읽기)은 핸들러 호출 자리의 분류를 물려받는다.
+   파일 단위 항목이 옮겨지면 아무것도 안 걸러 조용히 통과하므로, 모든 항목이
    트리에 실재하는지 보는 시험을 더한다.
 3. **자동화 실행부 가드를 새 통합 타깃으로 둔다** —
    `automation_runners_do_not_reach_inbound_adapters`. 좌변은 `src/webhook/**` ·
@@ -92,8 +95,8 @@
   windows::Win32::Foundation::HANDLE;`). 오늘 도메인 출하 적중 0.
 - **잃은 것 — 지역 모듈과 같은 이름.** `use` 없이 `image::x` 로 부르는 지역 모듈은 크레이트와
   텍스트로 안 갈린다. 오늘 도메인에 그 이름의 모듈은 없다(`git grep` 적중 0).
-- **잃은 것 — 포트 구현 목록은 손으로 는다.** 도메인이 새 포트를 선언하고 창 쪽이 새 파일에서
-  구현하면 `AGENT_FACING` 에 한 줄을 더해야 한다. 그것을 알려 주는 채널은 없다(아래 재검토 조건).
+- **잃은 것 — 포트 구현 목록은 손으로 는다.** 도메인(또는 adapters)이 새 포트를 선언하고 창 쪽이
+  새 파일에서 구현하면 `AGENT_FACING` 에 한 줄을 더해야 한다. 그것을 알려 주는 채널은 없다(아래 재검토 조건).
 - **운영 비용**: 도메인 gui 게이트 고정값(`GUI_GATES_IN_DOMAIN`)과 GUI 크레이트 목록은 서로
   다른 물음이라 둘 다 유지한다. 앞은 "게이트가 늘었나", 뒤는 "게이트 뒤에 GUI 크레이트가
   들어왔나" 다.
@@ -136,10 +139,10 @@
 
 **원리적으로 안 붙는 것**
 
-- 도메인이 새 포트를 선언하고 창 쪽이 **새 파일**에서 구현한다. 그 파일이 `AGENT_FACING` 에
+- 도메인(또는 adapters)이 새 포트를 선언하고 창 쪽이 **새 파일**에서 구현한다. 그 파일이 `AGENT_FACING` 에
   없으면 활성 읽기가 스캔 밖이다. 재는 법:
-  `git grep -nE '^impl [^{]*(crate::core::|CascadeWindow|IdentifySpawner)[^{]* for ' -- src ':!src/core'`
-  의 파일 목록(2026-09-22 실측: 위 두 파일)을 `AGENT_FACING` 과 견준다. 도메인이 선언한 trait 이
+  `git grep -nE '^impl [^{]*(crate::core::|CascadeWindow|IdentifySpawner|IpcWindow)[^{]* for ' -- src ':!src/core'`
+  의 파일 목록(2026-09-22 실측: 위 두 파일과 `src/state/ipc_window.rs`)을 `AGENT_FACING` 과 견준다. 도메인이 선언한 trait 이
   늘었으면 그 이름을 패턴에 더한다(trait 을 `use` 로 들여와 짧은 이름으로 구현하면 첫 갈래가
   못 본다).
 - 도메인이 `gui` feature 뒤의 워크스페이스 크레이트 갈래(`tasty_platform` 의 gui 모듈 등)를
