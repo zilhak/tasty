@@ -7,8 +7,8 @@
 //!
 //! ## 덩어리는 **모수마다 하나**다
 //!
-//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 일곱이고, 아래에 그 일곱이 한
-//! 절씩 있다. **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
+//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 열이고, 아래에 그 열이 한
+//! 절씩 있다(큐의 두 덩어리는 한 절에 함께 있다). **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
 //! 어느 수가 무엇을 센 것인지 갈린다.
 //!
 //! ★ 이 수를 세는 문장은 이 파일에만 두고 절 제목에는 서수를 쓰지 않는다. 한때
@@ -96,6 +96,34 @@
 //!
 //! 허브가 이 프로세스의 엔진에 주입되지 않은 조립(단위 시험)이면 `null` 이다.
 //!
+//! ## `queue_admission` / `queue_dispatch` — 큐에 **든** 쪽과 **꺼낸** 쪽
+//!
+//! `queue_before_gate` 는 큐에서 나온 명령이 얼마나 기다렸는가다. 이 둘은 그 큐의 양 끝을
+//! 잰다(ADR-0435). `queue_admission` 은 입장 장부(ADR-0391)다 — 지금 든 바이트·명령 수·주입
+//! 명령 수는 **내려가는 값**이고, `peak_bytes` 와 거절 누계 둘(`refused_bytes` ·
+//! `refused_depth`)은 안 내려간다. 모수는 큐에 **들어오려던** 요청이라 거절된 것도 센다 —
+//! 거절은 큐에 한 번도 안 들어가므로 뒤의 어느 덩어리에도 안 남는다. 상한 둘(`limit_bytes` ·
+//! `limit_injected_depth`)은 `connections.limit` 과 같은 이유로 게이지 밖에서, 그 장부가
+//! 집행하는 값으로 온다. 장부는 IPC 서버가 만들고 주입기가 들어서, 서버가 안 뜬 조립(단위
+//! 시험)이면 이 덩어리가 `null` 이다.
+//!
+//! `queue_dispatch` 는 큐에서 **꺼낸** 쪽의 누계다(ADR-0412) — 꺼낸 회차와 그 회차가 예산
+//! (명령 수 · 시간)에 닿아 멈춘 수, 기한이 큐에서 지나 실행하지 않은 수, 실행을 시작한 수,
+//! 그리고 `in_flight`(지금 실행 중이고 응답을 기다리는 쪽이 아직 기다리는 요청)와 그 최댓값.
+//! `in_flight` 만 내려간다. 둘을 한 덩어리로 묶지 않는 이유는 모수가 달라서다 —
+//! `queued_commands` 와 `started` 의 차는 "아직 큐에 있다" 가 아니다(큐 안에서 만료된 것과
+//! 기다리던 쪽이 물러난 것이 섞인다). 아래 "두 수의 차이를 여기서 빼지 않는 이유" 와 같은 함정이다.
+//!
+//! ## `keyed_requests` — **키를 실은 요청만** 센다
+//!
+//! 멱등 키를 실은 요청이 보존소에서 받은 판정이 갈래마다 한 칸이다(ADR-0422) — `executed`
+//! (처음 보는 키, 실행했다) · `replayed`(같은 요청, 보관된 답을 냈다) · `conflicted`(다른 요청,
+//! 아무것도 안 했다) · `discarded`(실행은 됐고 답은 버려졌다) · `in_flight`(같은 요청이 진행
+//! 중이었다 — 합류했다). 한 요청은 자기를 맡은 층의 판정으로 **한 번**만 세진다. 전부 누계다.
+//! `executed` 는 재시도가 아니지만 모수다 — 재생 수만으로는 그것이 키 실은 실행 열 건 중
+//! 하나인지 만 건 중 하나인지 모른다. `queue_dispatch.in_flight` 와 이름이 같고 뜻이 다르다
+//! — 덩어리를 가른 이유 중 하나다.
+//!
 //! ## 아직 안 재는 값의 자리는 미리 비워 두지 않는다
 //!
 //! 위 `connections` 덩어리는 재는 자리가 생겼을 때 함께 생겼다. 빈 덩어리를 미리
@@ -159,7 +187,68 @@ pub(super) fn handle_system_pressure(
     let state_db = crate::db::with_state_db(|db| db.applied_pragmas.clone());
     body["db_pragmas"] = db_pragmas_json(core.memory_pragmas(), state_db.as_ref());
     body["stream_push"] = stream_push_json(engine.attach.notifier().map(|hub| hub.loss()));
+    // 입장 장부는 서버가 만들고 주입기가 같은 것을 든다(ADR-0391) — `Core` 가 닿는 길은 그
+    // 주입기뿐이다. 서버가 안 뜬 조립이면 주입기나 장부가 없고, 그때 `queue_admission` 은 `null`.
+    let ledger = core
+        .host_ipc_injector
+        .get()
+        .and_then(|injector| injector.admission());
+    let queue =
+        tasty_ipc::dispatch::CommandQueueSnapshot::read(ledger.map(|a| &**a), core.dispatch());
+    body["queue_admission"] = queue_admission_json(queue.admission.zip(ledger.map(|a| a.limits())));
+    body["queue_dispatch"] = queue_dispatch_json(&queue.dispatch);
+    body["keyed_requests"] = keyed_requests_json(&super::idempotency::retry_counts());
     JsonRpcResponse::success(id, body)
+}
+
+/// 명령 큐에 **든** 쪽 — 입장 장부의 지금 값 · 최고 바이트 · 거절 누계와, 그것을 집행하는
+/// 상한. 장부가 없으면 `null` 이다(이 파일 머리말 "아직 안 재는 값의 자리는 미리 비워 두지
+/// 않는다").
+pub(super) fn queue_admission_json(
+    ledger: Option<(
+        tasty_ipc::admission::AdmissionSnapshot,
+        tasty_ipc::admission::QueueLimits,
+    )>,
+) -> serde_json::Value {
+    match ledger {
+        Some((a, limits)) => json!({
+            "queued_bytes": a.queued_bytes,
+            "queued_commands": a.queued_commands,
+            "queued_injected": a.queued_injected,
+            "peak_bytes": a.peak_bytes,
+            "refused_bytes": a.refused_bytes,
+            "refused_depth": a.refused_depth,
+            "limit_bytes": limits.queued_bytes,
+            "limit_injected_depth": limits.injected_depth,
+        }),
+        None => serde_json::Value::Null,
+    }
+}
+
+/// 명령 큐에서 **꺼낸** 쪽 — 꺼낸 회차와 그 끝, 실행 전 만료, 시작한 요청과 지금 실행 중인
+/// 요청(ADR-0412). 누계는 `Core` 가 늘 들고 있어 `null` 이 되지 않는다.
+pub(super) fn queue_dispatch_json(d: &tasty_ipc::dispatch::DispatchSnapshot) -> serde_json::Value {
+    json!({
+        "rounds": d.rounds,
+        "rounds_stopped_by_count": d.rounds_stopped_by_count,
+        "rounds_stopped_by_time": d.rounds_stopped_by_time,
+        "expired_before_run": d.expired_before_run,
+        "started": d.started,
+        "in_flight": d.in_flight,
+        "in_flight_max": d.in_flight_max,
+    })
+}
+
+/// 멱등 키를 실은 요청이 보존소에서 받은 판정 — 칸마다 한 갈래(ADR-0422). 보존소는 프로세스에
+/// 하나라 `null` 이 되지 않는다.
+pub(super) fn keyed_requests_json(r: &super::idempotency::RetryCounts) -> serde_json::Value {
+    json!({
+        "executed": r.executed,
+        "replayed": r.replayed,
+        "conflicted": r.conflicted,
+        "discarded": r.discarded,
+        "in_flight": r.in_flight,
+    })
 }
 
 /// 스트림 허브의 밀어내기 누계와 지금의 backlog. 허브가 없으면 `null` — 0 을 내면 "관측된
@@ -402,8 +491,15 @@ mod tests {
                 && result.get("db").is_some()
                 && result.get("connections").is_some()
                 && result.get("db_pragmas").is_some()
-                && result.get("stream_push").is_some(),
+                && result.get("stream_push").is_some()
+                && result.get("queue_admission").is_some()
+                && result.get("queue_dispatch").is_some()
+                && result.get("keyed_requests").is_some(),
             "덩어리들이 응답에 있어야 한다: {result}"
+        );
+        assert!(
+            result["queue_admission"].is_null(),
+            "주입기가 없는 조립에서 장부 값을 지어냈다: {result}"
         );
         assert!(
             result["stream_push"].is_null(),
@@ -562,6 +658,204 @@ mod tests {
             "꺼낸 한 장만큼 내려간 지금의 값이어야 한다: {s}"
         );
         assert_eq!(s["sink_capacity"], SINK_CAPACITY);
+    }
+
+    /// 큐의 두 덩어리와 키 실은 요청 덩어리가 원천의 칸을 **자기 이름 그대로** 싣는다.
+    ///
+    /// 칸마다 다른 값을 넣어, 한 칸이 다른 칸 자리로 새면 대조가 깨지게 한다. 장부가 없으면
+    /// `queue_admission` 은 0 이 든 덩어리가 아니라 `null` 이다.
+    #[test]
+    fn the_queue_and_keyed_blocks_carry_their_sources_slot_by_slot() {
+        use tasty_ipc::admission::{AdmissionSnapshot, QueueLimits};
+        use tasty_ipc::dispatch::DispatchSnapshot;
+        let a = AdmissionSnapshot {
+            queued_bytes: 1,
+            queued_commands: 2,
+            queued_injected: 3,
+            peak_bytes: 4,
+            refused_bytes: 5,
+            refused_depth: 6,
+        };
+        let limits = QueueLimits {
+            queued_bytes: 7,
+            injected_depth: 8,
+        };
+        let q = queue_admission_json(Some((a, limits)));
+        for (k, v) in [
+            ("queued_bytes", 1),
+            ("queued_commands", 2),
+            ("queued_injected", 3),
+            ("peak_bytes", 4),
+            ("refused_bytes", 5),
+            ("refused_depth", 6),
+            ("limit_bytes", 7),
+            ("limit_injected_depth", 8),
+        ] {
+            assert_eq!(q[k], v, "queue_admission.{k}: {q}");
+        }
+        assert!(
+            queue_admission_json(None).is_null(),
+            "장부가 없는데 값을 지어냈다"
+        );
+
+        let d = queue_dispatch_json(&DispatchSnapshot {
+            rounds: 11,
+            rounds_stopped_by_count: 12,
+            rounds_stopped_by_time: 13,
+            expired_before_run: 14,
+            started: 15,
+            in_flight: 16,
+            in_flight_max: 17,
+        });
+        for (k, v) in [
+            ("rounds", 11),
+            ("rounds_stopped_by_count", 12),
+            ("rounds_stopped_by_time", 13),
+            ("expired_before_run", 14),
+            ("started", 15),
+            ("in_flight", 16),
+            ("in_flight_max", 17),
+        ] {
+            assert_eq!(d[k], v, "queue_dispatch.{k}: {d}");
+        }
+
+        let r = keyed_requests_json(&super::super::idempotency::RetryCounts {
+            executed: 21,
+            replayed: 22,
+            conflicted: 23,
+            discarded: 24,
+            in_flight: 25,
+        });
+        for (k, v) in [
+            ("executed", 21),
+            ("replayed", 22),
+            ("conflicted", 23),
+            ("discarded", 24),
+            ("in_flight", 25),
+        ] {
+            assert_eq!(r[k], v, "keyed_requests.{k}: {r}");
+        }
+    }
+
+    /// ★ 새 세 덩어리가 **프로세스가 실제로 세는 그 원천**을 읽는다 — 주입기가 든 입장 장부 ·
+    /// `Core` 의 dispatch 누계 · 프로세스 보존소.
+    ///
+    /// 위 시험은 인자로 준 스냅샷만 보므로 핸들러가 원천 대신 기본값을 읽어도 살아남는다.
+    /// 여기서는 부팅이 하는 주입(`set_host_ipc_injector` + 장부)을 그대로 하고, 장부에 자리를
+    /// 잡고 · 하나를 거절하고 · 실행 중 표를 하나 들고 · 키 실은 요청을 재생시킨 뒤 라우터를
+    /// 지나 읽는다.
+    #[test]
+    fn the_new_blocks_read_the_ledger_the_dispatch_gauge_and_the_process_store() {
+        use tasty_ipc::admission::{CommandAdmission, Origin, QueueLimits};
+        use tasty_ipc::host_call::HostIpcInjector;
+
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let limits = QueueLimits {
+            queued_bytes: 50,
+            injected_depth: 3,
+        };
+        let ledger = CommandAdmission::new(limits);
+        let (tx, _rx) = std::sync::mpsc::channel();
+        core.set_host_ipc_injector(
+            HostIpcInjector::new(tx, std::sync::Arc::new(|| {})).with_admission(ledger.clone()),
+        );
+        let _held = ledger.admit(40, Origin::Socket).expect("빈 큐는 받는다");
+        ledger
+            .admit(20, Origin::Socket)
+            .expect_err("바이트 상한을 넘는다");
+        // 루프가 하는 일을 그대로 한다 — 꺼낸 명령을 실행 직전에 집는다. 명령과 기다리는
+        // 쪽을 둘 다 들고 있는 동안 그 요청은 실행 중이다(ADR-0412).
+        let (reply_tx, _reply_rx) = std::sync::mpsc::sync_channel(1);
+        let running = tasty_ipc::server::IpcCommand::new(
+            tasty_ipc::protocol::JsonRpcRequest {
+                response_timeout_ms: None,
+                idempotency_key: None,
+                jsonrpc: "2.0".into(),
+                id: Some(json!(9)),
+                method: "system.info".into(),
+                params: json!({}),
+                session_token: None,
+            },
+            reply_tx,
+        );
+        assert!(crate::app::ipc_round::claim_or_answer(
+            &running,
+            core.dispatch()
+        ));
+        core.dispatch()
+            .record_round(tasty_ipc::dispatch::RoundEnd::TimeBudget);
+
+        let call = |core: &mut crate::core::Core,
+                    state: &mut crate::state::AppState,
+                    engine: &mut crate::core::CoreState,
+                    method: &str,
+                    params: serde_json::Value,
+                    key: Option<&str>| {
+            let req = tasty_ipc::protocol::JsonRpcRequest {
+                response_timeout_ms: None,
+                idempotency_key: key.map(Into::into),
+                jsonrpc: "2.0".into(),
+                id: Some(json!(1)),
+                method: method.into(),
+                params,
+                session_token: None,
+            };
+            super::super::handle_with_caller(
+                core,
+                state,
+                engine,
+                &req,
+                &crate::ipc::caller::CallerContext::Local,
+            )
+        };
+        // 같은 키 · 같은 요청 두 번 — 처음은 실행, 다음은 재생이다.
+        for _ in 0..2 {
+            call(
+                &mut core,
+                &mut state,
+                &mut engine,
+                "workspace.create",
+                json!({"name": "pressure-keyed-probe"}),
+                Some("pressure-keyed-probe"),
+            );
+        }
+        let floor = super::super::idempotency::retry_counts();
+
+        let result = call(
+            &mut core,
+            &mut state,
+            &mut engine,
+            "system.pressure",
+            json!({}),
+            None,
+        )
+        .result
+        .expect("result");
+        let a = &result["queue_admission"];
+        assert_eq!(a["queued_bytes"], 40, "주입기가 든 장부가 아니다: {a}");
+        assert_eq!(a["queued_commands"], 1);
+        assert_eq!(a["refused_bytes"], 1, "거절 누계가 장부의 것이 아니다: {a}");
+        assert_eq!(
+            a["limit_bytes"], 50,
+            "상한은 그 장부가 집행하는 값이어야 한다"
+        );
+        assert_eq!(a["limit_injected_depth"], 3);
+        let d = &result["queue_dispatch"];
+        assert_eq!(d["in_flight"], 1, "Core 의 dispatch 누계가 아니다: {d}");
+        assert_eq!(d["started"], 1);
+        assert_eq!(d["rounds"], 1);
+        assert_eq!(d["rounds_stopped_by_time"], 1);
+        // 보존소는 전역이고 시험이 병렬로 돌아 다른 시험도 같은 칸을 올린다 — 정확한 값이
+        // 아니라 **이 시험이 올린 뒤의 값 이상**을 본다. 누계는 안 내려가므로 이 하한은 선다.
+        let k = &result["keyed_requests"];
+        assert!(
+            floor.replayed >= 1
+                && k["replayed"].as_u64() >= Some(floor.replayed)
+                && k["executed"].as_u64() >= Some(floor.executed),
+            "프로세스 보존소의 판정이 아니다: {floor:?} → {k}"
+        );
     }
 
     /// 분포가 **자기 덩어리 안에** 들어가고, 경계가 값과 같은 자리에 나간다.

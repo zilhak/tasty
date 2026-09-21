@@ -827,13 +827,8 @@ impl Relay {
     }
 }
 
-/// 프로세스 보존소의 판정 누계 — 값을 읽는 자리.
-///
-/// 아직 IPC 로 안 나간다. 노출 자리는 요청 압력 응답(`system.pressure`)이 될 것이고, 그
-/// 핸들러를 고치는 작업이 따로 있어 이 걸음은 값을 읽을 수 있는 데까지만 만든다.
-// reason: 소비자(압력 응답)가 다른 작업에서 붙는다. 붙으면 이 억제는 경고 없이 남으므로
-// 그 작업이 함께 지운다.
-#[cfg_attr(not(test), allow(dead_code))]
+/// 프로세스 보존소의 판정 누계 — 값을 읽는 자리. 요청 압력 응답(`system.pressure`)의
+/// `keyed_requests` 덩어리가 이것을 싣는다.
 pub(crate) fn retry_counts() -> RetryCounts {
     store().counts()
 }
