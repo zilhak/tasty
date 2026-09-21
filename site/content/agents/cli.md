@@ -68,6 +68,31 @@ tasty read screen --surface 42 --lines 5     # 화면 하단 5줄 (부족하면 
 tasty is-typing --surface 42                  # 최근 5초 내 사람이 키를 눌렀는지
 ```
 
+### 여러 에이전트가 같은 터미널을 읽을 때: 위치를 들고 읽기
+
+마크는 서피스마다 하나뿐이라, 여러 에이전트가 같은 터미널을 보면 한 에이전트의 `set mark` 가 나머지의 읽기 창을 옮깁니다. 서로 간섭하지 않으려면 **읽을 위치를 각자 들고** 읽습니다.
+
+```sh
+tasty read since-mark --surface 42 --strip-ansi --max-bytes 65536
+# 답의 next_cursor 와 stream 을 기억해 두었다가 다음 호출에 넘깁니다
+tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
+```
+
+- 답(JSON)에 `next_cursor`(다음에 읽을 위치) · `stream`(그 위치를 받은 터미널의 표지) · `skipped`(그 사이 버퍼에서 밀려나 사라진 바이트 수)가 함께 옵니다. **이어 읽기는 항상 `next_cursor` 로 합니다** — `text` 의 길이로 계산하면 색 코드를 걷어낸 만큼 어긋납니다.
+- 위치를 든 읽기에 대해 Tasty 는 아무것도 기억하지 않으므로, 읽는 쪽이 몇이든 서로를 밀지 않습니다. 마크도 움직이지 않습니다.
+- `--cursor` 는 `--stream` 과 함께만 씁니다. 서피스가 닫혔다 같은 번호로 다시 열렸거나 터미널이 다시 떴으면 옛 위치는 적용되지 않고 오류로 거절됩니다 — 그때는 위치 없이 한 번 읽어 새로 시작합니다.
+- `skipped` 가 0 이 아니면 그만큼이 읽기 전에 사라진 것입니다. 출력 버퍼는 최근 1 MiB 만 남깁니다.
+- `--max-bytes` 로 한 번에 받을 양을 줄일 수 있습니다. 나머지는 `next_cursor` 부터 이어 읽습니다.
+- 이 인자를 모르는 이전 버전의 Tasty 에는 **요청을 보내지 않습니다.** 그때 명령은 stderr 에 `{"error":{"kind":"unsupported_capability",…,"sent":false}}` 한 줄을 쓰고 종료 코드 1 로 끝납니다. 아무것도 보내지 않았으므로 Tasty 를 업데이트한 뒤 그대로 다시 부르면 됩니다.
+
+### 응답 대기에 상한 걸기
+
+```sh
+tasty --response-timeout-ms 5000 read screen --surface 42
+```
+
+`--response-timeout-ms` 는 명령 **앞**에 적습니다. 그 시간 안에 답이 안 오면 명령이 `Error (-32061): …` 로 끝납니다. 이 오류는 **결과를 모른다**는 뜻입니다 — 요청은 Tasty 안에서 계속 실행될 수 있으므로, 무언가를 바꾸는 명령이었다면 다시 보내기 전에 상태를 먼저 확인합니다. 플래그를 안 주거나 `0` 을 주면 상한 없이 기다립니다. 요청 하나로 끝나는 명령에만 쓸 수 있고, `events follow` 처럼 반복해서 묻거나 원격 attach 처럼 연결을 여는 명령은 이 플래그를 받으면 아무것도 보내지 않고 종료 코드 2 로 거절합니다. 상한을 이해하지 못하는 이전 버전의 Tasty 에는 위와 같은 `sent:false` 거절로 요청을 보내지 않습니다.
+
 `read screen` 은 기본적으로 흐리게 표시되는 자동완성 제안(예: Claude Code 의 회색 제안 텍스트)을 제외합니다. 포함하려면 `--show-dim`.
 
 `--lines N`보다 적은 줄이 반환되면 응답의 `scrollback_len`을 확인하세요. 값이 `0`이면 더 읽을 스크롤백이 없다는 뜻입니다. 전체 화면 앱(TUI)을 처음 실행했을 때 이런 경우가 생길 수 있습니다. 스크롤백이 남아 있는데도 요청한 줄 수보다 적게 반환된다면 출력 조회를 확인해 보세요. `alt_screen`은 현재 전체 화면 앱을 사용 중인지 알려줍니다.
@@ -316,6 +341,8 @@ tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 �
 | 키 보내기 | `tasty send key enter --surface ID` |
 | 마크 찍기 | `tasty set mark --surface ID` |
 | 마크 이후 읽기 | `tasty read since-mark --surface ID --strip-ansi` |
+| 위치를 들고 이어 읽기 | `tasty read since-mark --surface ID --cursor N --stream S` |
+| 응답 대기 상한 | `tasty --response-timeout-ms MS <명령>` |
 | 화면 읽기 | `tasty read screen --surface ID --lines N` |
 | 알림 | `tasty notify "본문" --title "제목"` |
 | 스크린샷 | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
@@ -326,6 +353,7 @@ tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 �
 - **연결이 안 됩니다** — Tasty 가 실행 중인지, `~/.tasty/tasty.port` 파일이 있는지 확인합니다. 파일이 남아 있는데 접속이 안 되면 이전 인스턴스가 비정상 종료된 것입니다 ([문제 해결](../help/troubleshooting.md)).
 - **`--surface` 없이 부르면 거부됩니다** — `TASTY_SURFACE_ID` 가 없는 셸(Tasty 밖)에서는 대상 서피스를 알 수 없어 명령이 오류로 끝납니다. Tasty 는 포커스된 서피스로 추측하지 않습니다 — 어느 윈도우가 앞에 나와 있든 같은 명령은 같은 결과를 냅니다. 스크립트에서는 항상 `--surface` 를 적습니다.
 - **`read since-mark` 가 비어 있습니다** — 마크를 찍기 전에 출력이 끝났거나, 명령이 아직 안 끝난 것입니다. `read screen` 으로 현재 상태를 봅니다.
+- **`"sent":false` 가 든 오류 한 줄이 나옵니다** — 연결된 Tasty 가 그 기능(위치를 든 읽기, 응답 대기 상한 등)을 모르는 이전 버전입니다. 요청은 보내지 않았습니다. `capability` 에 적힌 이름이 무엇이 없는지를 말합니다.
 - **`screenshot` 이 어느 윈도우를 찍는지 모르겠습니다** — 자동 선택은 **메인 윈도우(터미널 윈도우)만** 셉니다. 메인 윈도우가 하나면 `--window` 없이 그 윈도우를 찍고, 메인 윈도우가 여럿이면 `--window` 가 필수입니다(포커스된 윈도우를 임의로 고르지 않습니다). 설정 윈도우처럼 `list windows` 에 안 나오는 윈도우는 이 계산에 들어가지 않습니다 — 설정 윈도우가 떠 있어도 `--window` 없이 메인 윈도우가 찍히며, 설정 윈도우 자체를 찍으려면 `--window` 로 그 ID 를 직접 적습니다.
 
 <a id="다음-읽을-것"></a>

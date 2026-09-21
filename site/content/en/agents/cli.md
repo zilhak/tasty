@@ -1,4 +1,4 @@
-<!-- source-hash: 9f5e6b74c2f1 -->
+<!-- source-hash: 6d58087073d5 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -68,6 +68,31 @@ When you are not sure whether the command has finished, read the screen and chec
 tasty read screen --surface 42 --lines 5     # bottom 5 lines of the screen (reaches into scrollback if needed)
 tasty is-typing --surface 42                  # whether a person pressed a key in the last 5 seconds
 ```
+
+### When several agents read the same terminal: read from a position you hold
+
+There is only one mark per Surface, so when several agents watch the same terminal, one agent's `set mark` moves the others' reading window. To stay out of each other's way, **each reader holds its own position**.
+
+```sh
+tasty read since-mark --surface 42 --strip-ansi --max-bytes 65536
+# keep next_cursor and stream from the reply and pass them to the next call
+tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
+```
+
+- The reply (JSON) carries `next_cursor` (where to read next), `stream` (a token for the terminal that position belongs to) and `skipped` (how many bytes left the buffer before you could read them). **Always continue from `next_cursor`** — counting from the length of `text` drifts by however much colour code was stripped.
+- Tasty remembers nothing for a read that gives a position, so any number of readers never push each other. The mark does not move either.
+- Use `--cursor` only together with `--stream`. If the Surface was closed and another opened under the same number, or its terminal was restarted, the old position is refused with an error instead of being applied — read once without a position to start over.
+- A non-zero `skipped` is what disappeared before you read it. The output buffer keeps only the most recent 1 MiB.
+- `--max-bytes` lowers how much one read returns. Continue from `next_cursor` for the rest.
+- An older Tasty that does not know these arguments is **not sent the request**. The command then writes one line, `{"error":{"kind":"unsupported_capability",…,"sent":false}}`, to stderr and exits with code 1. Nothing was sent, so after updating Tasty you can simply call it again.
+
+### Bounding how long to wait for a reply
+
+```sh
+tasty --response-timeout-ms 5000 read screen --surface 42
+```
+
+Put `--response-timeout-ms` **before** the command. If no reply comes within that time, the command ends with `Error (-32061): …`. That error means **the outcome is unknown** — the request may keep running inside Tasty, so if the command changes something, check the state before sending it again. Without the flag, or with `0`, there is no bound. It only works for commands that send a single request; commands that ask repeatedly, like `events follow`, or open a connection, like remote attach, refuse the flag with exit code 2 and send nothing. An older Tasty that does not understand the bound is not sent the request, with the same `sent:false` refusal as above.
 
 By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them.
 
@@ -305,6 +330,8 @@ The three blocks that measure time also carry a **distribution** next to the mea
 | Send a key | `tasty send key enter --surface ID` |
 | Set a mark | `tasty set mark --surface ID` |
 | Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
+| Continue reading from a held position | `tasty read since-mark --surface ID --cursor N --stream S` |
+| Bound the reply wait | `tasty --response-timeout-ms MS <command>` |
 | Read the screen | `tasty read screen --surface ID --lines N` |
 | Notification | `tasty notify "body" --title "title"` |
 | Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
@@ -315,6 +342,7 @@ The three blocks that measure time also carry a **distribution** next to the mea
 - **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
+- **An error line containing `"sent":false`** — the Tasty you are connected to is an older version that does not know that feature (reading from a position, bounding the reply wait, and so on). The request was not sent. The name under `capability` says what is missing.
 - **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
 
 <a id="what-to-read-next"></a>
