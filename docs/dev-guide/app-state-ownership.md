@@ -77,7 +77,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | `explorer_views` · `dag_graph_views` | 사용자 view 상태 | 열림 (surface 수명) | surface 그리기 → surface 닫힘 | 없음 |
 | `tool_registry` · `palette_plugin_commands` | 도메인 사실의 사본 (plugin 기여 목록) | 세션 | plugin 활성 → 재계산 | 없음 |
 | `pending_plugin_command_invokes` · `pending_tool_events` · `pending_popup_opens` | 실행 자원 (큐) | 요청 | 도구 메뉴·팔레트 → 메인 루프 | 없음 |
-| `pending_handler_ipc` | 실행 자원 (큐) | 요청 | 파일 핸들러 dispatch → 메인 루프 | 읽힘 |
+| `pending_handler_ipc` | 실행 자원 (큐) | 요청 | 파일 핸들러 dispatch → 메인 루프 | 없음 (넣는 자리 `file::dispatch` 의 핸들러 실행도 GUI 다) |
 | `drop_hover` · `pending_file_drops` | 사용자 view 상태 | 열림·요청 | OS drag&drop → frame end | 없음 |
 | `plugin_popup_closes` · `plugin_popup_focus_bumps` · `plugin_banner_closes` | 실행 자원 (큐) | 요청 | egui 패스 → 메인 루프가 plugin 에 통지 | 없음 |
 | `plugin_mesh_popup_regions` · `plugin_popup_ime_cursor_area` | 사용자 view 상태 | 프레임 | egui 패스 → 합성·IME | 없음 |
@@ -97,7 +97,8 @@ headless 빌드에 그 필드가 있는지를 적는다.
   `cfg(feature = "gui")` 다 — headless 에서 그 필드를 세우는 것은 생성자의 초깃값뿐이었다.
   GUI 입력 경로만 부르는 하위 모듈(`detect` · `events` · `focus` · `search`)은 모듈 선언에,
   일부만 GUI 전용인 모듈(`layout` · `mouse` · `pane` · `tab` · `workspace` · `accessors`)은
-  항목에 붙인다.
+  항목에 붙인다. `pending_handler_ipc` 도 ① 이다 — `file/dispatch.rs` 의 모듈 단위 예외가
+  그 필드에 넣는 자리를 덮고 있어 늦게 드러났다.
 - **②** headless 라이브러리에는 소비자가 없지만 **headless 테스트가 실제로 부르는** 정의
   (탭·pane·워크스페이스 조작 메서드, `layout` 모듈, `tab_bar_height`)는
   `cfg(any(feature = "gui", test))` 다. 그 시험들은 base 에서도 headless 구성에서 돌았고 지금도 돈다.

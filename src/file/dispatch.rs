@@ -1,6 +1,3 @@
-// 이유: 파일 열기 디스패치의 호출 트리가 전부 gui 라 headless 빌드엔 호출자가 없다. 모듈을
-// `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! 파일 디스패치 helper 잔존 모듈.
 //!
 //! mouse.rs ctrl+click, drag&drop, explorer plugin, IPC `file_handler.dispatch`
@@ -12,14 +9,23 @@
 //! 본 모듈에는 *parse_link* (URI 분류) 와 위 두 적용 함수가 호출하는 helper
 //! (`open_picker`, `execute_handler_action`) 가 있다. 두 적용 함수 자신은 창 상태를
 //! 바꾸는 GUI 동작이라 gui 로 가린 하위 모듈 [`picker_apply`] 에 있다.
+//!
+//! 모듈 선언은 `cfg(any(feature = "gui", test))` 다 — headless 라이브러리에는 부르는 자리가
+//! 없고, 링크 해석과 대상 판정은 시험이 headless 에서도 부른다. 창 상태를 바꾸는 helper
+//! (핸들러 실행·picker)는 항목마다 `cfg(feature = "gui")` 다.
 
 #[cfg(feature = "gui")]
 pub(crate) mod picker_apply;
 
 use std::path::PathBuf;
 
-use crate::file::format::{DetectorId, FileTarget};
-use crate::file::handler::{FileHandler, HandlerAction, HandlerId};
+#[cfg(feature = "gui")]
+use crate::file::format::DetectorId;
+use crate::file::format::FileTarget;
+use crate::file::handler::HandlerAction;
+#[cfg(feature = "gui")]
+use crate::file::handler::{FileHandler, HandlerId};
+#[cfg(feature = "gui")]
 use crate::state::AppState;
 #[cfg(feature = "gui")]
 use crate::state::{FileHandlerPickerData, PickerHandlerSummary};
@@ -28,7 +34,9 @@ pub(crate) use picker_apply::{apply_file_picker_result, apply_identify_result};
 
 /// 정의는 도메인(`core::origin`)에 있다 — 도메인의 `DispatchFile` intent 와 identify 포트가
 /// 이 값을 싣고, 도메인은 이 모듈(창 상태를 받는 GUI 동작)을 부르지 않는다(ADR-0440).
+#[cfg(feature = "gui")]
 pub use crate::core::origin::FileDispatchOrigin;
+#[cfg(feature = "gui")]
 pub(crate) use crate::core::origin::require_origin_pane;
 
 /// 핸들러 dispatch 의 대상 — 파일 경로 또는 `http(s)` URL.
@@ -54,6 +62,7 @@ impl DispatchTarget {
     }
 
     /// picker 헤더 등 화면 표시용 문자열.
+    #[cfg(feature = "gui")]
     pub fn display(&self) -> String {
         match self {
             Self::File(f) => f.display(),
@@ -313,6 +322,7 @@ fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandl
 ///
 /// 대상을 받지 못하는 핸들러([`handler_accepts_target`])면 아무것도 실행하지 않고
 /// `false` 를 돌려준다 — picker 가 이미 걸렀어도 실행 지점이 마지막 방어선이다.
+#[cfg(feature = "gui")]
 pub fn execute_handler_action(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -359,6 +369,7 @@ pub fn execute_handler_action(
 
 /// 실행 전 두 관문 — origin surface 가 살아 있는 Pane 에 속하는가, 핸들러가 이 대상을
 /// 받는가. 어느 쪽이든 막히면 사유를 남기고 `false`.
+#[cfg(feature = "gui")]
 fn handler_may_run(
     engine: &crate::core::CoreState,
     handler: &FileHandler,
@@ -384,6 +395,7 @@ fn handler_may_run(
 
 /// `HandlerAction::System` — OS 기본 opener 만 호출한다(core/state/engine 미사용).
 /// headless 빌드에는 opener 가 없어 경고만 남긴다.
+#[cfg(feature = "gui")]
 fn open_system_target(target: &DispatchTarget) {
     let uri = target.system_open_uri();
     #[cfg(feature = "gui")]
@@ -393,6 +405,7 @@ fn open_system_target(target: &DispatchTarget) {
 }
 
 /// Preserve the existing path-only plugin payload, with a final type check.
+#[cfg(feature = "gui")]
 fn enqueue_handler_ipc(state: &mut AppState, method: &str, target: &DispatchTarget) -> bool {
     let DispatchTarget::File(file) = target else {
         tracing::warn!(method, "Ipc handler reached with a URL target");
@@ -412,6 +425,7 @@ fn open_surface_params(param_key: &str, target: &DispatchTarget) -> serde_json::
 
 /// OpenSurface 결과를 실제 tab 으로 연다. `origin_surface_id` 가 Some 이면 그 surface
 /// 의 *Pane* 에 새 tab(focus 독립), None 이면 focused pane 의 새 탭.
+#[cfg(feature = "gui")]
 pub(crate) fn open_surface_tab(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -545,6 +559,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "gui")]
     fn handler(id: &str, action: HandlerAction) -> FileHandler {
         FileHandler {
             id: HandlerId::new(id),

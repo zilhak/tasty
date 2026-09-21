@@ -89,7 +89,9 @@ impl IntentOrigin {
 /// 쓴다 — 사용자 입력을 재현하는 debug IPC 를 `User` 로 친다.
 // 이유: 이 값을 만드는 자리(explorer·링크·드롭·picker 확정·`file_handler.dispatch` arm)가 전부
 // gui 에만 있다 — headless 는 파일 열기를 `-32017` 로 거절한다(ADR-0425). 정의를 cfg 로 가리지
-// 않는 것은 headless 에서도 `crate::file::dispatch` 의 시그니처가 타입체크를 받게 하려는 것이다.
+// 않는 것은 도메인의 `DispatchFile` intent 가 headless 에서도 이 값을 싣고 타입체크를 받게 하려는
+// 것이다. 이 값에 딸린 판정(`selects_result` · `require_origin_pane`)은 부르는 자리가 전부 GUI 라
+// 항목마다 `cfg(feature = "gui")` 다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(
@@ -110,6 +112,7 @@ impl FileDispatchOrigin {
     /// 결과 탭을 선택하는가. 사용자가 방금 그 자리에서 한 행동의 결과는 사용자가
     /// 보려고 연 것이므로 선택하고, 에이전트가 만든 것으로는 포커스를 옮기지 않는다
     /// ([ADR-0302](../../docs/adr/0302-a-user-file-open-selects-its-result-tab.md)).
+    #[cfg(feature = "gui")]
     pub(crate) fn selects_result(self) -> bool {
         matches!(self, Self::User)
     }
@@ -117,6 +120,7 @@ impl FileDispatchOrigin {
 
 /// 파일 열기 요청이 준 origin surface 의 pane. 준 origin 은 대상이지, 없을 때 포커스로
 /// 물러날 허락이 아니다 — 없으면 거절한다.
+#[cfg(feature = "gui")]
 pub(crate) fn require_origin_pane(
     engine: &crate::core::CoreState,
     surface_id: u32,

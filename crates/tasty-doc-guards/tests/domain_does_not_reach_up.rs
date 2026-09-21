@@ -122,7 +122,7 @@ const UPPER: &[(&str, &str)] = &[
 ];
 
 /// 도메인 출하 코드의 `feature = "gui"` 개수. 실측 2026-09-21, 이 가드와 같은 판정기로:
-/// 현재 **252** · 경계 작업을 마친 트리 246 · 경계 작업 착수 트리(`17e2a7f56`) **239**.
+/// 현재 **254** · 경계 작업을 마친 트리 246 · 경계 작업 착수 트리(`17e2a7f56`) **239**.
 ///
 /// 경계 작업이 이 수를 7 **올렸다**. 분해: `core/file.rs` −6(GUI 동작인 picker 적용을
 /// `file::dispatch::picker_apply` 로 뺐다) · `core/cascade_window.rs` +9(포트 메서드 중 호출
@@ -145,12 +145,15 @@ const UPPER: &[(&str, &str)] = &[
 /// `core/attach_readonly.rs` 0(속성 −1 · 모듈 전체가 ① 이라 `core/mod.rs` 의 선언 +1) ·
 /// `core/state/soft_occupancy.rs` 0(속성 −1 · `reconcile_soft_occupancy_on_focus` ②).
 /// 도메인 안에 모듈 단위 headless `allow` 는 이제 없다.
+/// 도메인 밖의 모듈 단위 `allow` 도 뿌리 노릇을 했다 — `file/dispatch.rs` 의 것을 지우자
+/// 도메인 `core/origin.rs` 의 `selects_result` · `require_origin_pane` 이 headless 소비자 없는
+/// 정의로 드러났다(① +2). 그래서 지금 254 다.
 ///
 /// 이 수는 **목표가 아니라 현재 상태의 못**이다. 도메인이 GUI 전용 항목을 갖는 이유는
 /// 대부분 "headless 에 소비자가 없다"(ADR-0346)이고 그 판정 자체는 정당하다. 이 못이 막는
 /// 것은 **새 게이트가 조용히 들어오는 것**이다 — 들어올 때 이 수를 올리는 커밋이 그
 /// 판단을 드러낸다.
-const GUI_GATES_IN_DOMAIN: usize = 252;
+const GUI_GATES_IN_DOMAIN: usize = 254;
 
 /// 도메인 뿌리 아래 `.rs` 수의 하한. 실측 2026-09-21: 92 개(`src/core` 84 · `src/ports` 8),
 /// 그중 출하되는 것 91.

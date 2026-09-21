@@ -481,6 +481,8 @@ pub struct AppState {
 
     /// file_handler 디스패치 결과가 plugin IPC method 일 때의 호출 큐.
     /// `(ipc_method, target)`. App 메인 루프가 drain 해 `PluginManager` 로 forward.
+    /// 넣는 자리(`file::dispatch` 의 핸들러 실행)도 비우는 자리도 GUI 다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_handler_ipc: Vec<(String, crate::file::format::FileTarget)>,
 
     /// 외부 drag&drop 으로 파일이 hover 중인 상태. `HoveredFile` 마다 path 누적,
@@ -749,6 +751,7 @@ impl AppState {
             pending_tool_events: Vec::new(),
             #[cfg(feature = "gui")]
             pending_popup_opens: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_handler_ipc: Vec::new(),
             #[cfg(feature = "gui")]
             drop_hover: None,

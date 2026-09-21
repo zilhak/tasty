@@ -1,5 +1,7 @@
 //! 파일 작업 — 형식 식별 / 핸들러 / 드래그 / 디스패치.
 
+// 파일 열기 dispatch — 부르는 자리가 전부 GUI 다. 링크 해석·대상 판정은 시험이 headless 에서도 부른다.
+#[cfg(any(feature = "gui", test))]
 pub mod dispatch;
 #[cfg(feature = "gui")]
 pub mod drag;
