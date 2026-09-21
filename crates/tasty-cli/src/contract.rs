@@ -82,7 +82,7 @@ pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
 ///
 /// **요청이 응답 대기 상한을 실었으면 확인도 그 상한 안에 들어간다** — 두 요청이 상한 하나를
 /// 나눠 쓴다. 확인 요청은 확인을 시작하는 순간 남은 상한을 기한으로 받고
-/// (`IpcConnection::capabilities_within` — 밀리초 내림이라 사실상 상한 전체다),
+/// (`IpcConnection::capabilities_within` — 소켓 기한은 그 시간 그대로, 봉투는 밀리초 올림이다),
 /// 끝나면 요청의 봉투를 **남은 시간**으로 줄여 싣는다. 그래서 굳은 호스트에서도 CLI 는 상한
 /// 뒤에 돌아온다(ADR-0366 이 약속한 것). 확인이 상한 안에 안 끝났거나 남은 시간이 1 ms 도
 /// 안 되면 요청은 안 나가고, 그 답은 요청이 큐에서 만료됐을 때와 같은 `-32067`(실행 안 됨)
@@ -414,6 +414,22 @@ mod tests {
             .as_u64()
             .expect("the probe carries the bound");
         assert!((1..=200).contains(&carried), "{carried}");
+        h.join().unwrap();
+    }
+
+    /// 상한 1 ms 에서도 확인 요청은 **나간다** — 봉투는 올림이라 1 을 싣는다. 내림이면 확인을
+    /// 시작하는 순간 남은 시간(1 ms 미만)이 0 이 되어 아무것도 안 보내고 끝났다. 본 요청은 남은 시간을
+    /// 내림으로 싣고 합계가 상한을 넘지 않아야 하므로, 확인 왕복 뒤에는 늘 1 ms 미만이 남아 안 나간다 —
+    /// 답은 "실행 안 됨"(ADR-0452).
+    #[test]
+    fn a_one_millisecond_bound_still_sends_the_check() {
+        let (addr, seen, h) = fake_host(vec![Some((Duration::ZERO, capabilities_answer()))]);
+        let (r, _) = ensure_with_deadline(addr, req("workspace.list", json!({}), Some(1)));
+        let probe: serde_json::Value =
+            serde_json::from_str(&seen.recv().expect("the check was sent")).expect("json");
+        assert_eq!(probe["method"], "system.info");
+        assert_eq!(probe["response_timeout_ms"], 1);
+        expect_not_run(r, 1);
         h.join().unwrap();
     }
 

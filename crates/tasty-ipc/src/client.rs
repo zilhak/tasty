@@ -261,8 +261,10 @@ impl IpcConnection {
     /// 메인 스레드의 큐를 지나므로, 그것만 상한 없이 기다리면 굳은 호스트에서 그 전제가 확인
     /// 단계에서 깨진다. 그래서 확인 요청은 두 겹으로 자른다:
     ///
-    /// - 봉투에 같은 상한을 싣는다 — 그 이름을 아는 서버는 상한에서 확인 요청을 큐에서 물리고
-    ///   답한다(나중에 실행되지 않는다).
+    /// - 봉투에 같은 상한을 **밀리초 올림**으로 싣는다 — 그 이름을 아는 서버는 상한에서 확인
+    ///   요청을 큐에서 물리고 답한다(나중에 실행되지 않는다). 올림인 이유: 내림이면 1 ms 밑으로
+    ///   남은 상한(`--response-timeout-ms 1` 은 확인을 시작하는 순간 늘 그렇다)이 0 이 되어 확인
+    ///   요청을 보내지도 못한다. 올려도 합계는 안 넘는다 — 기다림을 끊는 것은 아래 소켓 기한이다.
     /// - 소켓 읽기 기한을 같은 시간으로 건다 — 봉투를 모르는 **구 서버**는 필드를 조용히 버리고
     ///   무한정 기다리게 하므로, 그때도 같은 시간에 끝나려면 이쪽이 필요하다.
     ///
@@ -287,7 +289,7 @@ impl IpcConnection {
             let info = match bound {
                 None => self.send(&probe)?,
                 Some(bound) => {
-                    let Some(ms) = whole_millis(bound) else {
+                    let Some(ms) = ceil_millis(bound) else {
                         return Err(CapabilityProbeExpired.into());
                     };
                     probe.response_timeout_ms = Some(ms);
@@ -411,7 +413,19 @@ impl IpcConnection {
     }
 }
 
-/// 남은 시간을 봉투의 밀리초로 옮긴다 — **내림**이다. 올림이면 두 요청의 합이 상한을 넘을 수 있다.
+/// 확인 요청의 봉투에 실을 밀리초 — **올림**이다(1 ms 밑이어도 남은 시간이 있으면 1).
+/// 남은 시간이 0 이면 `None` — 실을 것도 기다릴 것도 없다. 합계를 지키는 것은 봉투가 아니라 같은
+/// 시간으로 거는 소켓 읽기 기한이다([`IpcConnection::capabilities_within`]).
+fn ceil_millis(left: Duration) -> Option<u64> {
+    if left.is_zero() {
+        return None;
+    }
+    let ms = left.as_nanos().div_ceil(1_000_000);
+    Some(u64::try_from(ms).unwrap_or(u64::MAX))
+}
+
+/// 남은 시간을 **본 요청** 봉투의 밀리초로 옮긴다 — **내림**이다. 본 요청은 서버가 봉투 값으로 끊으므로
+/// 올림이면 두 요청의 합이 상한을 넘을 수 있다. 확인 요청의 봉투는 올림이다(`ceil_millis`).
 /// 0 이 되면 `None` — 봉투 규약상 `0` 은 "상한 없음" 이라 실을 수 없고, 남은 시간이 없다는 뜻이다.
 pub fn whole_millis(left: Duration) -> Option<u64> {
     u64::try_from(left.as_millis()).ok().filter(|&ms| ms > 0)
@@ -551,6 +565,18 @@ mod tests {
         assert_eq!(whole_millis(Duration::from_micros(299_900)), Some(299));
         assert_eq!(whole_millis(Duration::from_micros(999)), None);
         assert_eq!(whole_millis(Duration::ZERO), None);
+    }
+
+    /// 확인 요청의 봉투는 올림이다 — 1 ms 밑으로 남아도 1 이고(0 은 "상한 없음" 이라 실을 수 없다),
+    /// 남은 것이 없을 때만 싣지 못한다.
+    #[test]
+    fn the_check_bound_rounds_up_and_only_nothing_left_is_none() {
+        use std::time::Duration;
+        assert_eq!(ceil_millis(Duration::from_nanos(1)), Some(1));
+        assert_eq!(ceil_millis(Duration::from_micros(999)), Some(1));
+        assert_eq!(ceil_millis(Duration::from_micros(1_001)), Some(2));
+        assert_eq!(ceil_millis(Duration::from_millis(300)), Some(300));
+        assert_eq!(ceil_millis(Duration::ZERO), None);
     }
 
     /// 모양이 어긋난 항목은 조용히 빠지고 나머지는 산다 — 한 항목이 전체 조회를
