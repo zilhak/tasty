@@ -46,6 +46,7 @@
 //! 결론이 안 흔들리는데, 그래서 **틀린 절대값이 조용히 살아남는다.**
 
 mod line_render;
+mod overlay;
 mod pipeline;
 mod shaders;
 mod types;
@@ -61,6 +62,8 @@ use tasty_font::{FontConfig, GlyphAtlas, GlyphKey};
 use tasty_model::PhysicalRect;
 use tasty_selection::{NormalizedSelection, SelectionPoint};
 use tasty_terminal_link::LinkHighlight;
+
+use overlay::composite_over;
 
 /// Search match highlights to pass into the renderer.
 pub struct SearchHighlights<'a> {
@@ -414,29 +417,30 @@ impl CellRenderer {
                 if let Some((sel, sel_bg)) = selection
                     && tasty_selection::is_selected(col_idx, abs_row, sel)
                 {
-                    bg_color = *sel_bg;
+                    bg_color = composite_over(*sel_bg, bg_color);
                 }
                 // vi copy mode cursor cell: selection 보다 우선.
                 if let Some((pt, cursor_bg)) = vi_cursor
                     && pt.col == col_idx
                     && pt.absolute_row == abs_row
                 {
-                    bg_color = *cursor_bg;
+                    bg_color = composite_over(*cursor_bg, bg_color);
                 }
                 if let Some(link) = link
                     && link.covers(col_idx, abs_row)
                 {
-                    bg_color = link.bg;
+                    bg_color = composite_over(link.bg, bg_color);
                     fg_color = link.fg;
                 }
                 if let Some(sh) = search {
                     for (i, m) in sh.matches.iter().enumerate() {
                         if m.row == abs_row && col_idx >= m.col_start && col_idx < m.col_end {
-                            bg_color = if i == sh.active_index {
+                            let highlight = if i == sh.active_index {
                                 sh.active_bg
                             } else {
                                 sh.inactive_bg
                             };
+                            bg_color = composite_over(highlight, bg_color);
                             break;
                         }
                     }
@@ -516,7 +520,7 @@ impl CellRenderer {
                     && pt.col == col_idx
                     && pt.absolute_row == abs_row
                 {
-                    bg = *cursor_bg;
+                    bg = composite_over(*cursor_bg, bg);
                 }
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],

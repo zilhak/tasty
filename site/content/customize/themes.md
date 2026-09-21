@@ -98,7 +98,7 @@ rosewater = "#f5e0dc"
 [terminal]
 selection_bg = "#585b70"
 vi_cursor_bg = "#b4befe"
-search_match_bg = "#f9e2af4d"          # 8자리 = 마지막 두 자리가 투명도
+search_match_bg = "#f9e2af4d"          # 8자리 = 마지막 두 자리가 투명도(그 칸의 배경 위에 섞인다)
 search_match_active_bg = "#f9e2afb3"
 
 [ansi]

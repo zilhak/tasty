@@ -7,6 +7,7 @@ use tasty_selection::{NormalizedSelection, SelectionPoint};
 use tasty_terminal_link::LinkHighlight;
 
 use super::CellRenderer;
+use super::overlay::composite_over;
 use super::types::{BgInstance, GlyphInstance};
 use crate::cell_palette::compute_cell_colors;
 use tasty_cell_width::unicode_width;
@@ -38,31 +39,32 @@ impl CellRenderer {
         if let Some((sel, sel_bg)) = selection
             && tasty_selection::is_selected(col_idx, absolute_row, sel)
         {
-            bg_color = *sel_bg;
+            bg_color = composite_over(*sel_bg, bg_color);
         }
         // vi copy mode cursor cell: selection 보다 우선하여 cursor 위치를 강조.
         if let Some((pt, cursor_bg)) = vi_cursor
             && pt.col == col_idx
             && pt.absolute_row == absolute_row
         {
-            bg_color = *cursor_bg;
+            bg_color = composite_over(*cursor_bg, bg_color);
         }
         // Link highlight: override both bg and fg for hovered link spans
         if let Some(link) = link
             && link.covers(col_idx, absolute_row)
         {
-            bg_color = link.bg;
+            bg_color = composite_over(link.bg, bg_color);
             fg_color = link.fg;
         }
         // Search match highlight
         if let Some(sh) = search {
             for (i, m) in sh.matches.iter().enumerate() {
                 if m.row == absolute_row && col_idx >= m.col_start && col_idx < m.col_end {
-                    bg_color = if i == sh.active_index {
+                    let highlight = if i == sh.active_index {
                         sh.active_bg
                     } else {
                         sh.inactive_bg
                     };
+                    bg_color = composite_over(highlight, bg_color);
                     break;
                 }
             }
@@ -159,7 +161,7 @@ impl CellRenderer {
         for c in col_idx..cols {
             let bg_color = vi_cursor
                 .filter(|(pt, _)| pt.col == c && pt.absolute_row == absolute_row)
-                .map(|(_, cursor_bg)| *cursor_bg)
+                .map(|(_, cursor_bg)| composite_over(*cursor_bg, default_bg))
                 .unwrap_or(default_bg);
             self.bg_instances.push(BgInstance {
                 pos: [c as f32, row_idx as f32],
@@ -224,7 +226,7 @@ impl CellRenderer {
         for c in last_col..cols {
             let bg_color = vi_cursor
                 .filter(|(pt, _)| pt.col == c && pt.absolute_row == absolute_row)
-                .map(|(_, cursor_bg)| *cursor_bg)
+                .map(|(_, cursor_bg)| composite_over(*cursor_bg, default_bg))
                 .unwrap_or(default_bg);
             self.bg_instances.push(BgInstance {
                 pos: [c as f32, row_idx as f32],
