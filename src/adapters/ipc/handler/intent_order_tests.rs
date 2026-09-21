@@ -299,3 +299,60 @@ fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
     let expected = ["PushNotification:telemetry.cap"].as_slice();
     assert_eq!(detailed_labels(&state), expected);
 }
+
+/// 출구 **안** 의 순서 — 한 요청이 한 출구에 intent 여럿을 넣으면 넣은 순서 그대로 창 큐에
+/// 도착한다. `telemetry.record_batch` 는 이벤트마다 상한을 평가하므로, 서로 다른 metric 에
+/// 건 `notify` 상한 둘이 **배치 순서대로** 한 출구에 알림을 넣는다. 상한 등록 순서를 배치
+/// 순서의 반대로 두어, 도착 순서가 memory 목록 순서가 아니라 출구에 넣은 순서임을 가른다.
+#[test]
+fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
+    let _home = crate::test_support::TastyHomeGuard::new();
+    let mut core = super::cli_entry_tests::test_core();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    for metric in ["m_a", "m_b"] {
+        let resp = super::handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &request(
+                "telemetry.cap.set",
+                json!({ "agent": "order-probe", "metric": metric, "threshold": 1, "action": "notify" }),
+            ),
+            &CallerContext::Local,
+        );
+        assert!(
+            resp.error.is_none(),
+            "cap({metric}) 등록 실패: {:?}",
+            resp.error
+        );
+    }
+
+    let resp = super::handle_with_caller(
+        &mut core,
+        &mut state,
+        &mut engine,
+        &request(
+            "telemetry.record_batch",
+            json!({ "events": [
+                { "agent": "order-probe", "metric": "m_b", "value": 1 },
+                { "agent": "order-probe", "metric": "m_a", "value": 1 },
+            ] }),
+        ),
+        &CallerContext::Local,
+    );
+    assert!(resp.error.is_none(), "{:?}", resp.error);
+
+    let titles: Vec<&str> = state
+        .pending_intents
+        .iter()
+        .map(|intent| match &intent.body {
+            Intent::Domain(DomainIntent::PushNotification { title, .. }) => title.as_str(),
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(
+        titles,
+        ["Cap 'm_b' 임계 도달", "Cap 'm_a' 임계 도달"],
+        "한 출구에 넣은 intent 는 넣은 순서(배치 순서)대로 쌓여야 한다"
+    );
+}
