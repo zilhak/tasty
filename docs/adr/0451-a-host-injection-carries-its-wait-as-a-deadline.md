@@ -103,10 +103,11 @@ ADR-0391 의 주입 깊이 상한과 거절 갈래.
 
 - 기한을 실은 주입이 큐에서 포기된 뒤 실행되면 `tasty-ipc` `host_call.rs` 의 시험
   `an_injection_abandoned_in_the_queue_is_expired_and_not_run_later` 가 빨개진다.
-- 훅 스텝의 주입이 기한을 싣기 시작하면 같은 파일의
-  `an_injection_even_if_abandoned_carries_no_deadline_and_runs_later` 는 그대로지만
-  `src/hook_handler/exec.rs` 의 `execute_sequence` 가 `dispatch_even_if_abandoned` 를 부르지 않게 된다 —
-  그 호출의 유무가 좌변이다(`git grep -n dispatch_even_if_abandoned src/hook_handler`).
+- 훅 스텝이 기한을 싣기 시작할 때. 좌변: `src/hook_handler/exec.rs` 의 `execute_sequence` 가
+  `dispatch_even_if_abandoned` 를 부르는가(`git grep -n dispatch_even_if_abandoned src/hook_handler`).
+  이 호출을 지키는 시험은 없다 — 스텝 상한이 10 s 라 시험으로 재면 한 건에 10 s 가 든다. 기한 없는
+  주입의 동작 자체는 `host_call.rs` 의 `an_injection_even_if_abandoned_carries_no_deadline_and_runs_later`
+  가 본다.
 
 **원리적으로 안 붙는 것**
 
