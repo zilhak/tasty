@@ -73,6 +73,23 @@ fn next_structural(stream: &mut TcpStream, event: &str) -> Value {
     }
 }
 
+/// `until` 전에 `structural_delta` 가 오면 돌려준다. 다른 구조 프레임은 실패다.
+fn structural_delta_until(stream: &mut TcpStream, until: Instant) -> Option<Value> {
+    while Instant::now() < until {
+        let (tag, payload) = read_frame(stream);
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        match v.get("event").and_then(|e| e.as_str()) {
+            Some("structural_delta") => return Some(v),
+            Some("structural_result") => panic!("unexpected structural_result: {v:?}"),
+            _ => continue,
+        }
+    }
+    None
+}
+
 fn surface_ids(delta: &Value) -> Vec<u64> {
     delta["surfaces"]
         .as_array()
@@ -92,8 +109,22 @@ fn a_shell_exit_on_the_server_reaches_the_holder_as_a_delta() {
     let mut stream = open_workspace_attach(server.port(), ws.id);
     let b = split_and_read_new_surface(&mut stream, ws.surface_id);
 
-    write_workspace_input(&mut stream, b as u32, b"exit\r");
-    let delta = next_structural(&mut stream, "structural_delta");
+    // 갓 만든 셸이 아직 기동 중이면 먼저 온 입력을 버릴 수 있다(부하 하에서 실측: 한 번
+    // 보낸 `exit` 가 사라져 delta 가 안 왔다). 점유 중에는 서버 IPC 로 화면을 읽어 준비를
+    // 확인할 수 없으므로, delta 가 올 때까지 간격을 두고 다시 보낸다 — 닫힌 뒤의 재전송은
+    // 서버가 버린다(살아 있지 않은 surface 로의 입력).
+    let deadline = Instant::now() + STRUCTURAL_WAIT;
+    let delta = loop {
+        assert!(
+            Instant::now() < deadline,
+            "no structural_delta within {STRUCTURAL_WAIT:?}"
+        );
+        write_workspace_input(&mut stream, b as u32, b"exit\r");
+        let resend_at = Instant::now() + Duration::from_secs(2);
+        if let Some(d) = structural_delta_until(&mut stream, resend_at) {
+            break d;
+        }
+    };
     assert_eq!(delta["workspace_id"], ws.id);
     assert_eq!(
         surface_ids(&delta),
