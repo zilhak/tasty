@@ -41,8 +41,12 @@ toast 트리거 정책에 **허용 부류 하나**를 명시한다. **원격 연
   부류가 아니다. 종전대로 toast 하지 않는다([ADR-0117](0117-window-and-modal-creation-failure-policy.md)).
 - 코드는 바꾸지 않는다. 문서를 이미 있는 동작에 맞춘다.
 - **알려진 예외 — `attach.toast.mirror_markdown_truncated`.** 원격 markdown 원문이 크기 상한에 걸려 잘려
-  왔다는 토스트다. 사용자 행동 없이 나지만(plugin 의 lazy 원문 요청과 원격 변경 신호에 따른 재조회에서
-  난다) **연결 사건이 아니라 내용 크기에 관한 알림**이라 이 부류 밖이다. 이 결정은 그것을 부류에
+  왔다는 토스트다. 원문 요청마다 날 수 있고, 요청하는 자리는 markdown plugin 의 넷이다 — 최초 열기(자동),
+  끊김·실패를 보여 주던 문서의 변경 신호 재조회(자동), 새로고침 버튼(사용자), `markdown.reload`
+  IPC(`tasty markdown reload --surface`, 에이전트도 부를 수 있다). 원문을 표시 중인 문서는 원격 변경
+  신호에 재조회하지 않고 stale 표시만 한다. 앞의 둘은 사용자 행동이 아니고, 넷 모두 **연결 사건이 아니라
+  내용 크기에 관한 알림**이라 이 부류 밖이다. 마지막 경로에서는 에이전트 IPC 호출이 토스트를 낸다 —
+  별도 결함 후보(원칙 1)이고, 이 ADR 이 정하지 않는다. 이 결정은 그것을 부류에
   끌어들이지도 없애지도 않는다 — 동작은 그대로이고, 정책 문언과 어긋나는 자리가 여기 한 곳 남는다는
   사실을 적어 둔다. 잘림 표시를 토스트에서 문서 안 표지로 옮길지는 별도 결정이다.
 
@@ -75,9 +79,11 @@ toast 트리거 정책에 **허용 부류 하나**를 명시한다. **원격 연
   `mirror_reconnected` 쌍의 수를 센다. 격리 인스턴스 둘로 재는 절차는 ADR-0400 의 트리거 절에 있다.
 - 사용자가 연결 상태 toast 가 방해된다고 보고하면(배너나 사이드바 표시로 옮길지 재검토).
 - 알려진 예외 `mirror_markdown_truncated` 를 옮길 계기가 생기면 — markdown mirror 가 문서 안에 잘림
-  표지를 그릴 수 있게 되거나, 같은 문서의 재조회마다 잘림 토스트가 되풀이된다는 보고가 오면 — 그
-  표지로 옮기고 이 예외를 지운다. 재는 법: 상한을 넘는 원격 markdown 을 mirror 로 열고 원격에서 몇
-  번 저장해, 창 하나에 뜬 `mirror_markdown_truncated` 수를 센다.
+  표지를 그릴 수 있게 되거나, 같은 문서의 재조회(새로고침 버튼 · `markdown.reload`)마다 잘림 토스트가
+  되풀이된다는 보고가 오면 — 그 표지로 옮기고 이 예외를 지운다. 재는 법: 상한을 넘는 원격 markdown 을
+  mirror 로 열고(최초 열기로 1 회), 새로고침 버튼을 몇 번 누르거나 `tasty markdown reload --surface <id>`
+  를 몇 번 불러, 창 하나에 뜬 `mirror_markdown_truncated` 수가 재조회 수만큼 늘어나는지 센다. 원격에서
+  저장하는 것으로는 재지 못한다 — 원문을 표시 중인 문서는 그 신호에 재조회하지 않는다.
 
 ## References
 
@@ -89,4 +95,4 @@ toast 트리거 정책에 **허용 부류 하나**를 명시한다. **원격 연
   `mirror_reconnected` · `mirror_reconnecting` · `mirror_disconnected` · `mirror_desynced`(`MirrorHost::toast`
   경유) · `mirror_structural_forward_failed` 와 `src/app/auto_attach.rs` `notify_reconnect_giveup` 의
   `mirror_reconnect_giveup`. 세는 법: `git grep -o 'attach\.toast\.[a-z_]*' -- src` (결정 시점 13 자리 ·
-  11 키 — 나머지는 사용자 조작의 결과이거나 위 알려진 예외다)
+  12 키 — 나머지는 사용자 조작의 결과이거나 위 알려진 예외다)
