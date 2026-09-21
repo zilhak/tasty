@@ -93,5 +93,6 @@ Event Bus 는 fan-out 만 하고 **지나간 것을 안 들고 있었다.** 구�
 
 - [ADR-0321](0321-agent-domain-events-publish-only-at-the-funnel-that-already-exists.md) — 이 링이 담는 첫 사건들
 - [`docs/reference/event-catalog.md`](../reference/event-catalog.md) — 사건 카탈로그
+- 부분 개정: [0456](0456-the-event-ring-evicts-by-count-or-bytes-whichever-comes-first.md) (용량의 단위 조항 개정 — 개수와 바이트 중 먼저 닿는 쪽)
 - 코드 근거(결정이 실현된 현재 위치): `EventBus::fetch` · `EVENT_RING_CAPACITY` ·
   `EventFetch` · `EventBus::epoch`

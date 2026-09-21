@@ -158,6 +158,8 @@ reader 스레드가 기다린다.
 - 관련 ADR: [ADR-0304](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md) —
   IPC 소켓 수신 쪽에는 줄 바이트 상한이 이미 있다. plugin 소켓에는 아직 없다.
 - 관련 dev-guide: [plugin-development](../dev-guide/plugin-development.md) "큐 포화 통지".
+- 관련 ADR: [ADR-0456](0456-the-event-ring-evicts-by-count-or-bytes-whichever-comes-first.md) — 이
+  장부 밖에 있던 사건 링에 같은 단위의 바이트 상한을 준다.
 - **코드 근거 (결정이 실현된 현재 위치)**: `tasty-host-plugin` 의 `process::channel_bytes` 모듈 —
   `QUEUE_BYTES_LIMIT` · `TOTAL_BYTES_LIMIT` · `ChannelLedger` · `ChannelLedger::process_wide` ·
   `QueueMeter` · `metered_channel` · `MeteredReceiver`, 그리고 `PluginProcess::try_send_request` ·

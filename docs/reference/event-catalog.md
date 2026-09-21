@@ -26,7 +26,7 @@
 
 ## 지나간 사건 — 위치로 읽는다
 
-버스는 발화한 envelope 을 **메모리 링**에 일정 개수만큼 들고 있다. 구독하지 않고 있던 소비자가 나중에 붙어 그 위치부터 읽을 수 있다.
+버스는 발화한 envelope 을 **메모리 링**에 들고 있다 — 1024 건과 16 MiB(직렬화 바이트) 중 먼저 닿는 쪽까지이고, 넘으면 가장 오래된 것부터 밀려난다. 가장 새 사건 하나는 크기와 무관하게 남는다. 구독하지 않고 있던 소비자가 나중에 붙어 그 위치부터 읽을 수 있다. 바이트로 밀려난 사건도 개수로 밀려난 것과 같은 `truncated` / `skipped` 로 드러난다.
 
 | 개념 | 뜻 |
 |------|-----|
@@ -37,7 +37,7 @@
 
 - **커서는 소비자가 든다.** 서버는 소비자별 상태를 두지 않으므로 같은 인자로 두 번 물으면 같은 답이 오고, 느린 소비자가 호스트 쪽에 아무것도 쌓지 않는다.
 - **사건은 디스크에 안 남는다.** 재시작하면 링이 비는 것이 정상이고, 그 보존 수준은 완료 알림 로그가 부팅 때 지워지는 것과 같다.
-- 근거·용량 단위·대안은 [ADR-0322](../adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md). 끝보다 뒤인 위치의 표지는 [ADR-0405](../adr/0405-a-position-past-the-end-of-the-feed-is-marked-not-waited-on-silently.md).
+- 근거·용량 단위·대안은 [ADR-0322](../adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md), 바이트 상한은 [ADR-0456](../adr/0456-the-event-ring-evicts-by-count-or-bytes-whichever-comes-first.md). 끝보다 뒤인 위치의 표지는 [ADR-0405](../adr/0405-a-position-past-the-end-of-the-feed-is-marked-not-waited-on-silently.md).
 - **읽는 자리는 `events.fetch` 다**(local 전용). `{offset, max, filter, wait_ms}` 를 받아 `{events, next_offset, epoch, truncated, skipped, ahead_of_stream, stream_end}` 로 답하고, 각 봉투에 자기 `offset` 이 실린다. `filter` 는 아래 구독과 **같은 문법**이다 — 정확 일치 또는 `<ns>.*`. `wait_ms` 를 주면 그 시간까지 새 사건을 기다렸다 답한다(상한 60초). CLI 는 `tasty events fetch` / `tasty events follow`. plugin 은 이 메서드 대신 구독을 쓴다 — 대기가 SDK 의 단일 워커를 막기 때문이다. 근거는 [ADR-0323](../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md).
 
 ## 예약 네임스페이스 (호스트만 발화)

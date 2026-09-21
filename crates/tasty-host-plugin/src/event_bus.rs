@@ -7,8 +7,9 @@
 //! - hop count(`MAX_HOP=16`) 초과 envelope는 폐기하고 경고 로그. plugin 이 적은 hop 은
 //!   믿지 않고, 응답 전인 dispatch 가 있으면 재발화 하한으로 올린다(ADR-0406)
 //! - 호스트 listener와 plugin listener를 통합된 [`Subscriber`] 인터페이스로 다룬다
-//! - 지나간 envelope 를 [`EVENT_RING_CAPACITY`] 개까지 들고 있다 — 구독자가 없던
-//!   동안의 사건을 나중에 붙은 소비자가 위치로 읽을 수 있게
+//! - 지나간 envelope 를 [`EVENT_RING_CAPACITY`] 개와 [`EVENT_RING_BYTES_LIMIT`] 바이트 중
+//!   먼저 닿는 쪽까지 들고 있다 — 구독자가 없던 동안의 사건을 나중에 붙은 소비자가
+//!   위치로 읽을 수 있게
 //!
 //! 패턴 매칭은 매니페스트 검증과 같은 형식을 사용한다:
 //! - `surface.created` — 정확 일치
@@ -60,6 +61,10 @@ struct Inner {
     /// 에서 버스가 지나간 것을 아무것도 안 들고 있었고, 그래서 두 빌드의 동작이
     /// 갈렸다. `debug.event_bus.trace` 도 이 링을 읽는다.
     ring: VecDeque<RingSlot>,
+    /// 링에 든 envelope 들의 직렬화 바이트 합. [`RingSlot::bytes`] 의 합과 늘 같다.
+    ring_bytes: usize,
+    /// 링의 바이트 상한. 기본은 [`EVENT_RING_BYTES_LIMIT`] 이고 시험만 바꾼다.
+    ring_bytes_limit: usize,
     /// 다음 발화가 받을 위치. 링에서 밀려나도 **되돌아가지 않는다** — 그래서 소비자가
     /// 든 위치가 보존 밖인지 아직 안 온 것인지가 값으로 갈린다.
     next_offset: u64,
@@ -91,21 +96,61 @@ const MAX_INFLIGHT_DISPATCHES: usize = EVENT_RING_CAPACITY;
 
 /// 링에 보존하는 사건 수.
 ///
-/// **값의 단위는 개수다.** 바이트로 두는 길도 있었지만 payload 는 메모리에서
-/// `serde_json::Value` 라 바이트를 재려면 발화마다 다시 직렬화하거나 직렬화본을
-///따로 들고 있어야 한다 — 둘 다 발화 경로에 비용을 얹는다. 그리고 소비자가 말하는
-/// 단위(`max`)도 개수라, 개수로 두면 두 축이 같은 단위를 쓴다.
+/// **값의 단위는 개수다** — 소비자가 말하는 단위(`max`)도 개수라 두 축이 같은 단위를
+/// 쓴다. 개수만으로는 메모리가 묶이지 않아 바이트 상한([`EVENT_RING_BYTES_LIMIT`])이
+/// 함께 걸린다. 그 값을 재려고 발화마다 envelope 을 한 번 직렬화 길이로 센다(버퍼 없이).
 ///
 /// **이 값은 여기 한 곳에만 있다.** 예전에 `audit` 이 보존 기간을 자기 상수로 들고
 /// 있다가 부팅 경로와 **720 배** 어긋난 적이 있다(`src/adapters/ipc/audit.rs` 머리말).
 /// 링을 읽는 모든 경로는 이 상수를 본다.
 pub const EVENT_RING_CAPACITY: usize = 1024;
 
-/// 링 한 칸 — envelope 과 그것이 받은 위치.
+/// 링이 들고 있는 envelope 들의 **직렬화 바이트** 합의 상한. [`EVENT_RING_CAPACITY`] 와
+/// 함께 걸리고, 둘 중 먼저 닿는 쪽이 가장 오래된 사건을 밀어낸다.
+///
+/// 개수 상한만으로는 링이 쥐는 메모리가 `1024 × 사건 크기` 이고 사건 크기에는 상한이
+/// 없다 — plugin 하나가 1 MB 사건 1100 건을 발행하자 호스트 RSS 가 약 1 GB 늘었다.
+/// 값은 **파생이 아니다.** plugin 채널 큐 하나의 바이트 상한(`QUEUE_BYTES_LIMIT`)과 같게
+/// 둬, 빠른 발행자 하나가 링을 통해 호스트에 붙잡아 둘 수 있는 양이 채널 큐 하나가
+/// 붙잡는 양을 넘지 않게 했다. 근거·대안은 ADR-0456.
+///
+/// **가장 새 사건 하나는 크기와 무관하게 남긴다** — 상한보다 큰 사건을 받자마자 버리면
+/// 그 사건은 위치만 받고 아무도 못 읽는다. 그래서 실제 상한은 `상한 + 사건 한 건` 이다.
+/// 밀려난 사건은 개수로 밀려난 것과 같은 신호(`truncated` · `skipped`)로 소비자에게
+/// 드러난다 — 새 신호를 만들지 않는다.
+pub const EVENT_RING_BYTES_LIMIT: usize = 16 * 1024 * 1024;
+
+/// 링 한 칸 — envelope 과 그것이 받은 위치, 그리고 그 envelope 의 직렬화 바이트.
 #[derive(Debug, Clone)]
 struct RingSlot {
     offset: u64,
     envelope: EventEnvelope,
+    bytes: usize,
+}
+
+/// envelope 을 JSON 으로 직렬화했을 때의 바이트 수. 버퍼를 만들지 않고 센다.
+///
+/// 링이 재는 단위가 이것인 이유는 plugin 채널 장부(ADR-0360)와 같은 단위 — 소켓에 실리는
+/// 줄의 바이트 — 를 쓰기 위해서다. 메모리 안의 `serde_json::Value` 크기와 같지는 않지만
+/// 그것에 비례한다.
+fn serialized_len(envelope: &EventEnvelope) -> usize {
+    struct Counter(usize);
+    impl std::io::Write for Counter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.saturating_add(buf.len());
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter(0);
+    if let Err(e) = serde_json::to_writer(&mut counter, envelope) {
+        // Counter 는 실패하지 않으므로 여기 오는 것은 직렬화 자체의 실패다. 그때까지 센
+        // 값을 쓴다 — 0 으로 두면 그 사건이 바이트 상한을 통째로 피한다.
+        tracing::warn!(key = %envelope.key, "event ring could not size an envelope: {e}");
+    }
+    counter.0
 }
 
 /// 한 번의 [`EventBus::fetch`] 가 돌려주는 것.
@@ -198,6 +243,8 @@ impl EventBus {
                 plugin_subscribe_perms: HashMap::new(),
                 plugin_publish_perms: HashMap::new(),
                 ring: VecDeque::with_capacity(EVENT_RING_CAPACITY),
+                ring_bytes: 0,
+                ring_bytes_limit: EVENT_RING_BYTES_LIMIT,
                 next_offset: 0,
                 inflight_dispatches: HashMap::new(),
             })),
@@ -403,17 +450,29 @@ impl EventBus {
         envelope: EventEnvelope,
         publisher_plugin_id: Option<&str>,
     ) -> Vec<PluginDispatch> {
+        // 크기는 락 밖에서 잰다 — 직렬화 한 번이 다른 발화와 fetch 를 막지 않게.
+        let bytes = serialized_len(&envelope);
         let mut inner = self.lock_recovering();
         // 링에 위치와 함께 적는다. 앞을 `drain` 하지 않고 `VecDeque` 의 `pop_front` 를
         // 쓴다 — `Vec` 앞을 잘라내면 append 마다 뒤 전체를 memmove 한다.
-        if inner.ring.len() == EVENT_RING_CAPACITY {
-            inner.ring.pop_front();
+        // 개수와 바이트 중 먼저 닿는 쪽으로 밀어낸다. 링이 비면 멈추므로 새 사건 하나는
+        // 크기와 무관하게 들어간다(`EVENT_RING_BYTES_LIMIT` 문서).
+        while inner.ring.len() >= EVENT_RING_CAPACITY
+            || (!inner.ring.is_empty()
+                && inner.ring_bytes.saturating_add(bytes) > inner.ring_bytes_limit)
+        {
+            match inner.ring.pop_front() {
+                Some(evicted) => inner.ring_bytes -= evicted.bytes,
+                None => break,
+            }
         }
         let offset = inner.next_offset;
         inner.next_offset = offset.saturating_add(1);
+        inner.ring_bytes += bytes;
         inner.ring.push_back(RingSlot {
             offset,
             envelope: envelope.clone(),
+            bytes,
         });
         // 기다리는 long-poll 을 깨운다. 락은 아래 fan-out 이 끝나고 풀리므로 깨어난
         // 쪽은 그때 이어 받는다.
@@ -583,6 +642,19 @@ impl EventBus {
             ahead_of_stream: offset > inner.next_offset,
             stream_end: inner.next_offset,
         }
+    }
+
+    /// 테스트 전용 — 링의 바이트 상한을 바꾼다. 기본값(16 MiB)을 시험에서 채우지 않으려고.
+    #[cfg(test)]
+    pub(crate) fn set_ring_bytes_limit_for_test(&self, limit: usize) {
+        self.lock_recovering().ring_bytes_limit = limit;
+    }
+
+    /// 테스트 전용 — 링이 지금 든 바이트 합과 칸 수.
+    #[cfg(test)]
+    pub(crate) fn ring_usage_for_test(&self) -> (usize, usize) {
+        let inner = self.lock_recovering();
+        (inner.ring_bytes, inner.ring.len())
     }
 
     /// 테스트 전용 — 락을 든 채 패닉하는 스레드를 띄워 버스를 poison 시킨다.

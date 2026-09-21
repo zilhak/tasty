@@ -456,3 +456,87 @@ fn waking_on_something_the_filter_rejects_keeps_waiting() {
     assert_eq!(got.events.len(), 1, "필터 밖 사건으로 답이 났다");
     assert_eq!(got.events[0].1.key, "agent.task_finished");
 }
+
+fn sized(n: usize) -> EventEnvelope {
+    let mut e = env("loadgen.tick", EventOrigin::Host);
+    e.payload = serde_json::Value::String("x".repeat(n));
+    e
+}
+
+fn wire_len(e: &EventEnvelope) -> usize {
+    serde_json::to_vec(e).expect("envelope serializes").len()
+}
+
+/// 개수 상한 전에 바이트 상한에 닿으면 가장 오래된 사건부터 밀려나고, 그 사실은
+/// 개수로 밀려난 것과 **같은 신호**(`truncated` · `skipped`)로 드러난다.
+#[test]
+fn the_ring_evicts_by_bytes_and_says_so_like_it_does_by_count() {
+    let bus = EventBus::new();
+    let one = wire_len(&sized(1000));
+    bus.set_ring_bytes_limit_for_test(one * 3);
+    for _ in 0..5 {
+        bus.publish_from_host(sized(1000));
+    }
+    let (bytes, slots) = bus.ring_usage_for_test();
+    assert_eq!(
+        slots, 3,
+        "바이트 상한이 사건 셋을 담는데 {slots} 칸이 남았다"
+    );
+    assert_eq!(bytes, one * 3);
+    let got = bus.fetch(0, 10, None);
+    assert!(got.truncated, "바이트로 밀려난 자리를 조용히 건너뛰었다");
+    assert_eq!(got.skipped, 2);
+    assert_eq!(got.events[0].0, 2);
+    assert_eq!(got.stream_end, 5, "밀려나도 위치는 되돌아가지 않는다");
+}
+
+/// 상한보다 큰 사건도 가장 새 것이면 남는다 — 받자마자 버리면 위치만 받고 아무도
+/// 못 읽는다. 다음 사건이 오면 그것이 밀려난다.
+#[test]
+fn an_event_larger_than_the_limit_is_kept_until_the_next_one() {
+    let bus = EventBus::new();
+    bus.set_ring_bytes_limit_for_test(100);
+    bus.publish_from_host(sized(10));
+    bus.publish_from_host(sized(5000));
+    assert_eq!(
+        bus.ring_usage_for_test().1,
+        1,
+        "큰 사건 앞의 것은 밀려나야 한다"
+    );
+    let got = bus.fetch(1, 10, None);
+    assert_eq!(got.events.len(), 1, "가장 새 사건이 링에 없다");
+    bus.publish_from_host(sized(10));
+    let (bytes, slots) = bus.ring_usage_for_test();
+    assert_eq!((bytes, slots), (wire_len(&sized(10)), 1));
+}
+
+/// 링이 세는 바이트는 소켓에 실리는 직렬화 길이다 — 밀어낸 뒤에도 남은 칸들의 합과 같다.
+#[test]
+fn the_ring_counts_the_serialized_bytes_of_what_it_holds() {
+    let bus = EventBus::new();
+    let sizes = [3usize, 700, 40, 1200, 9];
+    bus.set_ring_bytes_limit_for_test(wire_len(&sized(1200)) + wire_len(&sized(9)) + 1);
+    for n in sizes {
+        bus.publish_from_host(sized(n));
+    }
+    let got = bus.fetch(0, 10, None);
+    let held: usize = got.events.iter().map(|(_, e)| wire_len(e)).sum();
+    assert_eq!(bus.ring_usage_for_test(), (held, got.events.len()));
+    assert_eq!(got.events.len(), 2);
+}
+
+/// 개수 상한은 그대로다 — 작은 사건만 오면 바이트가 아니라 개수가 먼저 닿는다.
+#[test]
+fn the_count_limit_still_applies_to_small_events() {
+    let bus = EventBus::new();
+    for _ in 0..(crate::event_bus::EVENT_RING_CAPACITY + 3) {
+        bus.publish_from_host(sized(1));
+    }
+    let (bytes, slots) = bus.ring_usage_for_test();
+    assert_eq!(slots, crate::event_bus::EVENT_RING_CAPACITY);
+    assert_eq!(
+        bytes,
+        wire_len(&sized(1)) * crate::event_bus::EVENT_RING_CAPACITY
+    );
+    assert!(bytes < crate::event_bus::EVENT_RING_BYTES_LIMIT);
+}
