@@ -87,22 +87,25 @@ pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 
 /// 한 dispatch 회차가 큐에서 집어 드는 IPC 명령 수의 상한.
 ///
-/// 이 상한이 없으면 회차의 길이를 큐가 정한다 — 두 drain 자리(`src/app/ipc.rs` 의
-/// `process_ipc`, `src/boot/headless_dispatch.rs` 의 `pump_ipc`)가 둘 다 "빌 때까지
-/// 모아서 전부 처리" 라, 보내는 쪽이 계속 밀어 넣으면 같은 회차가 끝나지 않고
-/// 타이머·터미널 출력·창 이벤트가 그만큼 밀린다.
+/// 이 상한이 없으면 회차의 명령 수를 큐가 정한다 — 두 drain 자리(`src/app/ipc.rs` 의
+/// `process_ipc`, `src/boot/headless_dispatch.rs` 의 `pump_ipc`)는 큐가 빌 때까지 꺼내므로,
+/// 보내는 쪽이 계속 밀어 넣으면 같은 회차가 끝나지 않고 타이머·터미널 출력·창 이벤트가
+/// 그만큼 밀린다. 회차의 **시간**은 따로 자른다(`crate::app::ipc_round::ROUND_TIME_BUDGET`,
+/// ADR-0410).
 ///
 /// **값을 고르지 않고 [`MAX_CONCURRENT_CONNECTIONS`] 에서 파생한다.** 요청을 넣는
 /// 쪽은 둘 다 **응답을 받을 때까지 블록한다**(`dispatch_and_await` 와
 /// `tasty_ipc::host_call::HostIpcInjector::dispatch`). 그래서 살아 있는 연결 하나가
 /// 큐에 동시에 올려 둘 수 있는 명령은 최대 하나이고, 연결 수는 저 상한이 자른다 —
-/// 즉 이 값이 그 상한과 같으면 **TCP 쪽만으로는 회차가 잘릴 수 없다.** 잘릴 수 있는
-/// 것은 호스트 자신이 주입한 몫뿐이고, 그것은 정상적으로 회수된다(아래).
+/// 즉 이 값이 그 상한과 같으면 **TCP 쪽만으로는 이 수 예산에 닿지 않는다.** 닿을 수 있는
+/// 것은 호스트 자신이 주입한 몫뿐이고, 그것은 정상적으로 회수된다(아래). 회차는 시간
+/// 예산(ADR-0410)으로도 잘리므로, TCP 쪽만으로도 회차가 잘리는 일은 있다.
 ///
-/// **남은 것은 다음 회차가 집는다 — 별도 배선이 없다.** 두 생산자 모두 `send` 직후
-/// waker 를 **정확히 한 번** 부르므로 N 개를 넣으면 wake 도 N 개가 큐에 들어간다.
-/// 한 회차가 B(<N) 개만 집어 들면 남은 N-B 개의 wake 가 그대로 남아 루프를 다시
-/// 들여보낸다. 이 성질은 `tests/e2e_tests.rs` 의
+/// **남은 것은 다음 회차가 집는다.** 두 생산자 모두 `send` 직후 waker 를 **정확히 한 번**
+/// 부르므로 N 개를 넣으면 wake 도 N 개가 들어간다. headless 는 한 회차가 B(<N) 개만 집어
+/// 들면 남은 N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. gui 는 wake 를 회차 없이
+/// 건너뛸 수 있어서, 잘린 회차가 루프를 스스로 한 번 더 깨운다(ADR-0413 의 재깨움,
+/// `crate::app::ipc::IpcPacer`). headless 쪽 성질은 `tests/e2e_tests.rs` 의
 /// `concurrent_requests_are_all_answered` 가 잰다 — 다만 그 시험이 여는 연결은
 /// 이 상한보다 적으므로, 실제로 재려면 이 값을 낮춰서 돌려야 한다(그 시험의 주석에
 /// 실측을 적어 두었다).

@@ -31,10 +31,17 @@ IPC 명령을 큐에서 꺼내는 자리는 둘이다 — gui 의 `App::process_
 가 이미 자른다. 예산이 그 상한과 같으면 **TCP 경로만으로는 회차가 잘릴 수 없고**, 잘릴 수
 있는 것은 호스트 자신이 주입한 몫뿐이다.
 
+> 부분 개정: 시간 예산([ADR-0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md))이 생긴 뒤로는 TCP 경로만으로도 회차가 잘린다 —
+> 수 예산에 못 닿아도 16 ms 에서 멈춘다.
+
 **이월 재개에 새 배선을 만들지 않는다.** 두 생산자 모두 `send` 직후 waker 를 정확히 한 번
 부르므로, N 개를 넣으면 wake 도 N 개가 큐에 들어간다. 한 회차가 B(<N) 개만 집어 들면 남은
 N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이월 재개는 이미 있는 성질이고,
 이 ADR 이 하는 일은 그 성질에 **의존한다고 적는 것**이다.
+
+> 부분 개정: gui 에서는 [ADR-0413](0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md) 이후 wake 가 회차 없이 건너뛰어질 수 있어 이 성질이
+> 성립하지 않는다. 그래서 gui 는 아래 대안의 "남은 것을 회차 끝에서 직접 다시 깨운다" 를 채택했다 —
+> 예산에서 잘린 회차가 스스로 한 번 더 깨운다. headless 는 이 문단 그대로다.
 
 ## Consequences
 
@@ -116,6 +123,7 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
 ## References
 
 - 부분 개정: [0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md) (회차 길이를 명령 수로만 자르는 조항 개정 — 시간 예산을 함께 둔다)
+- 부분 개정: [0413](0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md) (gui 의 이월 재개 — wake 를 양보시키고 잘린 회차가 스스로 다시 깨운다)
 
 - 상한의 상대 결정: [ADR-0304](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md)
   (요청 한 줄 바이트 · 동시 연결 수)
