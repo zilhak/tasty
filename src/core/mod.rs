@@ -33,6 +33,7 @@ pub(crate) mod intent;
 pub(crate) mod ipc_facade;
 pub(crate) mod layout_persistence;
 pub(crate) mod mesh_mirror;
+pub(crate) mod origin;
 pub(crate) mod output_observer;
 pub(crate) mod param_bag;
 /// 소비자가 전부 gui 어댑터라 `CoreState` 의 필드와 같은 조건으로 컴파일된다.

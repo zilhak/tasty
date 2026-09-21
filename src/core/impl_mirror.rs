@@ -83,7 +83,7 @@ impl PendingStructuralForward {
 pub(crate) fn mark_last_forward_user_triggered(
     engine: &mut CoreState,
     err: &anyhow::Error,
-    origin: &crate::intent::IntentOrigin,
+    origin: &crate::core::origin::IntentOrigin,
 ) {
     let Some(blocked) = err.downcast_ref::<MirrorStructuralBlocked>() else {
         return;

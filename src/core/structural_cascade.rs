@@ -21,8 +21,8 @@
 //! `docs/architecture/close-sequence.md` "gui 와 headless 의 차이".
 
 use crate::core::intent::CascadeLevel;
+use crate::core::origin::IntentOrigin;
 use crate::core::{Core, CoreState};
-use crate::intent::IntentOrigin;
 use crate::state::AppState;
 
 /// `CoreEvent::SurfaceClosed` / `MoveSurfaceApplied` 가 공유하는 cascade 결과 —

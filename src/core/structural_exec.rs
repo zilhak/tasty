@@ -26,12 +26,12 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use crate::core::intent::{CoreEvent, DomainIntent};
+use crate::core::origin::{AgentSource, IntentOrigin};
 use crate::core::structural_cascade::{
     PaneSplitCascade, SurfaceCloseCascade, cascade_pane_closed_full, cascade_pane_split,
     cascade_surface_closed, cascade_surface_split, cascade_tab_closed_full, cascade_tab_created,
 };
 use crate::core::{Core, CoreState};
-use crate::intent::{AgentSource, IntentOrigin};
 use crate::model::SplitDirection;
 use crate::state::AppState;
 
