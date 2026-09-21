@@ -49,6 +49,30 @@ use crate::ports::ipc_server::IpcServerPort;
 /// — 모듈 doc).
 pub(crate) const ROUND_TIME_BUDGET: Duration = Duration::from_millis(16);
 
+/// 이 프로세스의 회차 시간 예산 — release 에서는 늘 [`ROUND_TIME_BUDGET`] 이다.
+///
+/// debug 빌드에서만 `TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS` 로 **줄일 수** 있다(늘리는 값은
+/// 버린다). 기본 예산에서는 시험의 동시 요청이 회차를 안 자르므로, 잘린 회차가 루프를 다시
+/// 깨우는 갈래(ADR-0465 · ADR-0413)를 실행 파일째로 지나게 할 다른 길이 없다. 그 갈래를 재는
+/// 시험은 `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut`.
+fn round_time_budget() -> Duration {
+    #[cfg(debug_assertions)]
+    {
+        static SHRUNK: std::sync::OnceLock<Option<Duration>> = std::sync::OnceLock::new();
+        let shrunk = SHRUNK.get_or_init(|| {
+            std::env::var("TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS")
+                .ok()
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .map(Duration::from_millis)
+                .filter(|d| *d < ROUND_TIME_BUDGET)
+        });
+        if let Some(budget) = *shrunk {
+            return budget;
+        }
+    }
+    ROUND_TIME_BUDGET
+}
+
 /// 진행 중인 회차 하나.
 pub(crate) struct IpcRound {
     started: Instant,
@@ -61,7 +85,7 @@ pub(crate) struct IpcRound {
 impl IpcRound {
     /// 제품 예산으로 지금 회차를 시작한다.
     pub(crate) fn begin() -> Self {
-        Self::with_budgets(DRAIN_BUDGET_PER_ROUND, ROUND_TIME_BUDGET)
+        Self::with_budgets(DRAIN_BUDGET_PER_ROUND, round_time_budget())
     }
 
     /// 예산을 골라 시작한다 — 시험이 작은 값을 넣는 자리.

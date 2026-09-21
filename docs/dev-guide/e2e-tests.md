@@ -115,7 +115,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 | 예외 | 사례 | 이유 |
 |------|------|------|
-| 기동 시점 config 이 달라야 함 | `spawn_with_inherit_cwd(true)` — `tests/attach_convert_cwd_loopback.rs` | `inherit_cwd` 는 격리 HOME 의 `config.toml` 에 미리 쓰는 값이라 이미 떠 있는 인스턴스에 런타임으로 바꿔 끼울 수 없다 |
+| 기동 시점 config 이 달라야 함 | `spawn_with_inherit_cwd(true)` — `tests/attach_convert_cwd_loopback.rs` · `spawn_with_env(&[("TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS", "0")])` — `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut` | `inherit_cwd` 는 격리 HOME 의 `config.toml` 에 미리 쓰는 값이라 이미 떠 있는 인스턴스에 런타임으로 바꿔 끼울 수 없다. debug 전용 회차 시간 예산([debug-ipc.md](debug-ipc.md))도 부팅 뒤 한 번 읽는 환경 변수라 같은 이유다 — 공유 인스턴스에 켜면 다른 시험이 모두 잘린 회차 위에서 돈다 |
 | 프로세스 자원을 외부에서 측정 | `tests/soak_memory.rs` | 프로세스 트리 RSS 를 `pid()` 로 밖에서 잰다. 다른 테스트의 활동이 섞이면 측정이 무의미해진다 |
 
 웹훅 하네스(`tests/webhook_common/mod.rs`)는 인스턴스마다 `TASTY_HOME`/`webhooks.toml` 을 시딩해야 해서 공유 진입점이 없고, 재시작 영속성 테스트는 같은 HOME 을 물려받는 두 번째 인스턴스가 검증 대상 그 자체다.

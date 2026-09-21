@@ -108,7 +108,8 @@ pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// `src/boot.rs` 의 `rewake_if_left`). gui 는 wake 를 회차 없이 건너뛸 수 있어서, 잘린 회차가
 /// 루프를 스스로 한 번 더 깨운다(ADR-0413 의 재깨움, `crate::app::ipc::IpcPacer`).
 /// `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered` 가 여는 연결은 이 상한보다
-/// 적어 이 수 예산에는 닿지 않는다.
+/// 적어 이 수 예산에는 닿지 않는다. 재깨움 갈래는 시간 예산을 줄여 띄운 인스턴스로 잰다
+/// (`concurrent_requests_are_all_answered_when_every_round_is_cut`).
 pub(crate) const DRAIN_BUDGET_PER_ROUND: usize = MAX_CONCURRENT_CONNECTIONS;
 
 /// 한 응답 줄을 소켓에 밀어 넣는 데 허용되는 최대 시간.

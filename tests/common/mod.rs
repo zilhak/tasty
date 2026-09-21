@@ -224,6 +224,16 @@ impl TastyInstance {
     /// 인스턴스에 런타임으로 바꿔 끼울 수 없다. 값이 다른 인스턴스가 필요하면
     /// 항상 별도 프로세스로 남는다.
     pub fn spawn_with_inherit_cwd(inherit_cwd: bool) -> Self {
+        Self::spawn_configured(inherit_cwd, &[])
+    }
+
+    /// 환경 변수를 더해 띄우는 변형. debug 전용 조절 손잡이(`TASTY_DEBUG_*`)를 켠 인스턴스를
+    /// 공유 인스턴스와 따로 세울 때 쓴다.
+    pub fn spawn_with_env(extra_env: &[(&str, &str)]) -> Self {
+        Self::spawn_configured(false, extra_env)
+    }
+
+    fn spawn_configured(inherit_cwd: bool, extra_env: &[(&str, &str)]) -> Self {
         // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
         // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 완주가 같은 경로를
         // 쓰고 먼저 끝난 쪽이 다른 쪽의 파일을 지운다. 단조 카운터는 해상도가 없어
@@ -278,6 +288,7 @@ impl TastyInstance {
             // 억제가 풀려 오히려 로그가 늘어난다(그 상수의 doc 에 실측이 있다).
             .env(spawn_diag::LOG_ENV, spawn_diag::LOG_FILTER)
             .stderr(Stdio::piped());
+        command.envs(extra_env.iter().copied());
         // 이 스위트가 번들 plugin 을 안 부르면 빈 번들로 띄운다 — 격리 홈으로 가는
         // 1 GB 복사가 통째로 사라진다. 명부와 근거는 `spawn_diag` 에 있다.
         spawn_diag::apply_bundle_opt_in(&mut command);

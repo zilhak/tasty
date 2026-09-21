@@ -80,7 +80,15 @@ wake 의 `swap(true)` 를 획득해야 그 wake 앞에서 큐에 든 명령이 �
 - **운영 비용 / 유지 부담**: 재깨움 판정이 입장 장부를 한 번 잠근다(회차마다 한 번, 정수 읽기).
   게이트와 재깨움 판정은 단위 시험이 잰다(`headless_waker.rs` 의 `ipc_wakes_coalesce_until_the_loop_takes_one` ·
   `a_rewake_obeys_the_same_gate`, `src/boot.rs` 의 `rewake_if_left` 시험 둘). 재깨움 호출을 지우면
-  `rewake_if_left` 가 안 쓰여 headless 조합 컴파일이 `dead_code` 로 멈춘다.
+  `rewake_if_left` 가 안 쓰여 headless 조합 컴파일이 `dead_code` 로 멈춘다. `dispatch_headless_event`
+  의 **배선**(게이트 해제 · 판정 인자 `ipc_commands_left` · `wake_ipc`)은 실행 파일째로
+  `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut` 가 잰다 —
+  debug 전용 `TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS=0` 으로 띄워 회차마다 한 명령만 꺼내게 하고,
+  동시 요청 16 개가 전부 답을 받는지 본다. 기본 예산에서는 그 요청들이 회차를 안 자르므로 이 주입
+  없이는 재깨움 갈래를 지나는 시험이 없다. 실측(headless): 재깨움을 `black_box(false)` 로 무력화 ·
+  판정 인자를 부정 · 판정 인자에 `&& black_box(false)` 를 붙이는 변이 셋 모두 그 시험이 빨갛다
+  (16 s — 응답 상한 10 s 에서 끊긴다). 판정 인자를 `|| false` 로 바꾸면 `ipc_commands_left` 가
+  안 쓰여 컴파일이 먼저 멈춘다.
 
 ## Alternatives Considered
 
@@ -106,6 +114,10 @@ wake 의 `swap(true)` 를 획득해야 그 wake 앞에서 큐에 든 명령이 �
   가드는 없다.
 - 입장 장부를 거치지 않고 명령 큐에 넣는 생산자가 생긴다 — 재깨움 판정이 그 명령을 못 본다. 지금
   이 조건을 재는 가드는 없다.
+- 회차 시간 예산의 debug 주입(`src/app/ipc_round.rs` 의 `round_time_budget`)이 사라지거나, 회차가
+  `IpcRound::begin` 을 안 거치게 바뀐다 — 그러면 `concurrent_requests_are_all_answered_when_every_round_is_cut`
+  가 재깨움 갈래를 안 지난다. 그 시험은 끝에 `queue_dispatch.rounds_stopped_by_time > 0` 을 단언해
+  이 경우 통과가 아니라 빨강으로 끝난다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 

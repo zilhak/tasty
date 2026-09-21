@@ -117,6 +117,16 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 `debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
 
+### 회차 시간 예산 줄이기 (`TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS`)
+
+IPC dispatch 한 회차의 시간 예산(제품값 16 ms)을 밀리초로 **줄여** 띄운다 — 제품값 이상은 버린다.
+`0` 이면 회차마다 첫 명령 하나만 꺼내므로, 동시에 든 나머지 명령은 잘린 회차가 루프를 다시 깨우는
+갈래(headless ADR-0465 · gui ADR-0413)로만 진척한다. 기본 예산에서는 시험의 동시 요청이 회차를
+안 잘라 그 갈래를 실행 파일째로 지날 길이 없어 둔 손잡이다. 쓰는 곳은
+`tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut`. 부팅 뒤
+처음 회차에서 한 번 읽는다. debug 격리(`#[cfg(debug_assertions)]`), release 미노출 — release 의
+회차 예산은 늘 제품값이다.
+
 ### 문자 주입은 키 주입과 다른 채널이다
 
 egui 가 **문자**를 받는 경로는 `Event::Text(String)` 하나뿐이고, `Event::Key` 는 그 문자를

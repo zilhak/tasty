@@ -2052,7 +2052,8 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
 /// ★ **이 시험은 기본 예산에서는 회차를 자르지 않는다** — 동시 연결 16 개는 수 예산(256)
 /// 아래이고, `workspace.list` 16 개는 시간 예산(16 ms) 안에 끝난다. 수 예산은 낮춰 볼 수도
 /// 없다(`INJECTED_DEPTH_LIMIT <= DRAIN_BUDGET_PER_ROUND` 컴파일 단언). 그래서 이 시험은
-/// 재깨움 갈래를 지나지 않는다.
+/// 재깨움 갈래를 지나지 않는다 — 그 갈래는 아래
+/// `concurrent_requests_are_all_answered_when_every_round_is_cut` 가 시간 예산을 줄여 잰다.
 #[test]
 fn concurrent_requests_are_all_answered() {
     let _lane = lane();
@@ -2079,4 +2080,75 @@ fn concurrent_requests_are_all_answered() {
             "{i} 번째 동시 요청의 workspace.list 가 비었다: {row:?}"
         );
     }
+}
+
+/// 회차가 **매번** 잘려도 동시 요청이 전부 답을 받는다 — 잘린 회차가 루프를 다시 깨우는
+/// 갈래(headless ADR-0465 · gui ADR-0413)를 실제로 지나는 시험이다.
+///
+/// 위 시험은 기본 예산에서 회차를 안 자르므로 그 갈래를 안 지난다. 여기서는 debug 전용
+/// `TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS=0` 으로 따로 띄워 회차마다 첫 명령 하나만 꺼내게
+/// 한다(`src/app/ipc_round.rs` 의 `round_time_budget`). 그러면 동시에 든 나머지는 전부 재깨움
+/// 으로만 진척한다 — headless 는 채널에 wake 가 하나뿐이라 재깨움이 빠지면 명령이 큐에 선다.
+///
+/// 응답을 기다리는 상한을 짧게 둔다. 선 명령은 영원히 안 오므로, 상한이 길면 이 시험이
+/// 실패가 아니라 긴 대기로 보인다.
+#[test]
+fn concurrent_requests_are_all_answered_when_every_round_is_cut() {
+    let _lane = lane();
+    let tasty =
+        common::TastyInstance::spawn_with_env(&[("TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS", "0")]);
+    const CLIENTS: usize = 16;
+    const ANSWER_BOUND: Duration = Duration::from_secs(10);
+    let port = tasty.port();
+
+    let answers: Vec<Result<serde_json::Value, String>> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..CLIENTS)
+            .map(|i| {
+                s.spawn(move || {
+                    use std::io::{BufRead, BufReader, Write};
+                    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))
+                        .map_err(|e| format!("connect: {e}"))?;
+                    stream
+                        .set_read_timeout(Some(ANSWER_BOUND))
+                        .map_err(|e| format!("timeout: {e}"))?;
+                    let line = json!({"jsonrpc": "2.0", "id": i, "method": "workspace.list", "params": {}});
+                    writeln!(stream, "{line}").map_err(|e| format!("write: {e}"))?;
+                    let mut got = String::new();
+                    BufReader::new(stream)
+                        .read_line(&mut got)
+                        .map_err(|e| format!("no answer within {ANSWER_BOUND:?}: {e}"))?;
+                    serde_json::from_str(got.trim()).map_err(|e| format!("json: {e}: {got}"))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("동시 요청 스레드가 패닉했다"))
+            .collect()
+    });
+
+    let unanswered: Vec<String> = answers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| a.as_ref().err().map(|e| format!("{i}: {e}")))
+        .collect();
+    assert!(
+        unanswered.is_empty(),
+        "잘린 회차 뒤에 남은 요청이 답을 못 받았다 — 재깨움이 안 섰다: {unanswered:?}"
+    );
+    for (i, a) in answers.iter().enumerate() {
+        let resp = a.as_ref().expect("checked above");
+        assert!(
+            resp["result"].as_array().is_some_and(|a| !a.is_empty()),
+            "{i} 번째 요청의 workspace.list 가 비었다: {resp}"
+        );
+    }
+    let rounds = tasty.call("system.pressure", json!({}));
+    assert!(
+        rounds["queue_dispatch"]["rounds_stopped_by_time"]
+            .as_u64()
+            .is_some_and(|n| n > 0),
+        "회차가 한 번도 시간 예산에서 안 잘렸다 — 예산 주입이 안 먹어 재깨움 갈래를 안 지났다: {}",
+        rounds["queue_dispatch"]
+    );
 }
