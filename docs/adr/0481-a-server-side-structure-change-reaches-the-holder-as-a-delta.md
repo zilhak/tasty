@@ -52,7 +52,7 @@ attach client 는 mirror 워크스페이스의 구조를 `StreamControl::Structu
 
 ## References
 
-- 코드 근거(이 결정이 실현된 현재 위치): `src/core/attach.rs`(`OccupancyRegistry::forget_closed_surface` · `mark_structure_changed` · `take_structure_changed`) · `src/core/attach_runtime.rs`(`CoreState::push_structure_changes` · `tap_new_workspace_member` · `execute_forwarded_structural_op`) · `src/app/process_exit.rs`(`handle`) · `src/app/event_handler.rs`(`apply_stream_outcome`) · `src/boot/headless_stream.rs`(`apply`).
+- 코드 근거(이 결정이 실현된 현재 위치): `src/core/attach.rs`(`OccupancyRegistry::forget_closed_surface` · `mark_structure_changed` · `take_structure_changed`) · `src/core/attach_structure_sync.rs`(`CoreState::push_structure_changes`) · `src/core/attach_runtime.rs`(`tap_new_workspace_member` · `execute_forwarded_structural_op`) · `src/app/process_exit.rs`(`handle`) · `src/app/event_handler.rs`(`apply_stream_outcome`) · `src/boot/headless_stream.rs`(`apply`).
 - [`docs/dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) "mirror 구조 변경 forward" — 역반영 절.
 - [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md) — hard 점유 모델.
 - [ADR-0264](0264-mirror-restore-closed-item-runs-on-the-remote.md) — 같은 delta 채널로 복원 결과를 보내는 선례.

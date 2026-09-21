@@ -128,8 +128,11 @@ fn apply_structural_ops(
             None => (
                 false,
                 Some(
-                    crate::core::attach_runtime::unresolved_anchor_reason(engine, client_id, &op)
-                        .unwrap_or_else(crate::core::attach_runtime::workspace_not_found_reason),
+                    crate::core::attach_structure_sync::unresolved_forward_reason(
+                        [&*engine],
+                        client_id,
+                        &op,
+                    ),
                 ),
                 None,
             ),

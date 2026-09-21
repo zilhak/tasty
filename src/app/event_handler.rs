@@ -2194,17 +2194,16 @@ impl App {
         }
         if !handled {
             // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0482).
-            let reason = self
+            let engines = self
                 .view
                 .views
                 .values()
                 .filter_map(|w| w.as_main())
                 .map(|m| &m.core_state)
-                .chain(self.parked_states.iter().map(|(_, e)| e))
-                .find_map(|e| {
-                    crate::core::attach_runtime::unresolved_anchor_reason(e, client_id, op)
-                })
-                .unwrap_or_else(crate::core::attach_runtime::workspace_not_found_reason);
+                .chain(self.parked_states.iter().map(|(_, e)| e));
+            let reason = crate::core::attach_structure_sync::unresolved_forward_reason(
+                engines, client_id, op,
+            );
             reply_structural_result(hub, client_id, op_id, false, Some(reason));
         }
     }

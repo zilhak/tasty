@@ -12,7 +12,7 @@ mirror client 가 forward 한 구조 op 는 anchor(원격 surface id)로 점유 
 
 ## Decision
 
-anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살아 있는 워크스페이스를 점유 중이면** IPC 와 같은 생성기(`request_target::unowned_target_message` → `tasty_utils::target::unowned_target_message`)로 사유를 만든다. 종류는 `surface`, id 는 anchor, 요청 이름 자리에는 anchor 를 지목한 것 — forward op 의 wire 이름 `structural_op.<kind>`(예: `structural_op.close_surface`)를 넣는다. 점유 워크스페이스가 없거나 그 인스턴스에 없으면 종전 문구 `workspace not found` 그대로다. 판정은 `attach_runtime::unresolved_anchor_reason` 한 함수이고 두 빌드의 호출측이 그것을 부른다. `StructuralResult` 의 모양(`ok:false` + `reason`)과 다른 거절 사유(`not workspace holder` 등)는 바꾸지 않는다 — forward 회신에는 에러 **코드** 칸이 없고 새로 만들지 않는다.
+anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살아 있는 워크스페이스를 점유 중이면** IPC 와 같은 생성기(`request_target::unowned_target_message` → `tasty_utils::target::unowned_target_message`)로 사유를 만든다. 종류는 `surface`, id 는 anchor, 요청 이름 자리에는 anchor 를 지목한 것 — forward op 의 wire 이름 `structural_op.<kind>`(예: `structural_op.close_surface`)를 넣는다. 점유 워크스페이스가 없거나 그 인스턴스에 없으면 종전 문구 `workspace not found` 그대로다. 판정은 `attach_structure_sync::unresolved_anchor_reason` 한 함수이고 두 빌드의 호출측이 그것을 감싼 `unresolved_forward_reason` 을 부른다. `StructuralResult` 의 모양(`ok:false` + `reason`)과 다른 거절 사유(`not workspace holder` 등)는 바꾸지 않는다 — forward 회신에는 에러 **코드** 칸이 없고 새로 만들지 않는다.
 
 ## Consequences
 
@@ -30,7 +30,7 @@ anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살�
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- 두 호출측 중 하나가 `unresolved_anchor_reason` 을 안 거치면 — `tests/attach_structure_sync_loopback.rs` 의 `a_forward_naming_a_gone_surface_is_answered_like_ipc` 가 그 조합에서 실패한다(변이로 확인: headless 호출을 끊으면 `--no-default-features` 조합에서, 헬퍼를 끊으면 gui 조합에서 빨개졌다).
+- 두 호출측 중 하나가 `unresolved_forward_reason` 을 안 거치면 — `tests/attach_structure_sync_loopback.rs` 의 `a_forward_naming_a_gone_surface_is_answered_like_ipc` 가 그 조합에서 실패한다(변이로 확인: headless 호출을 끊으면 `--no-default-features` 조합에서, 헬퍼를 끊으면 gui 조합에서 빨개졌다).
 - IPC 거절 문구의 생성기가 바뀌면 같은 시험의 대조군 단언이 먼저 실패한다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
@@ -39,6 +39,6 @@ anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살�
 
 ## References
 
-- 코드 근거(이 결정이 실현된 현재 위치): `src/core/attach_runtime.rs`(`unresolved_anchor_reason`) · `src/app/event_handler.rs`(`apply_forwarded_structural_op`) · `src/boot/headless_stream.rs`(`apply_structural_ops`) · `src/core/request_target.rs`(`unowned_target_message`) · `crates/tasty-utils/src/target.rs`.
+- 코드 근거(이 결정이 실현된 현재 위치): `src/core/attach_structure_sync.rs`(`unresolved_anchor_reason` · `unresolved_forward_reason`) · `src/app/event_handler.rs`(`apply_forwarded_structural_op`) · `src/boot/headless_stream.rs`(`apply_structural_ops`) · `src/core/request_target.rs`(`unowned_target_message`) · `crates/tasty-utils/src/target.rs`.
 - [`docs/dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) "mirror 구조 변경 forward" — 회신 절.
 - [ADR-0395](0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md) — forward 와 IPC 가 같은 도메인 실행 · 같은 실패 문구를 쓰는 결정. 이 ADR 은 그 규칙을 도메인 실행 **이전**의 거절까지 넓힌다.

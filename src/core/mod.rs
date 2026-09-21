@@ -26,6 +26,7 @@ pub(crate) mod attach_mesh_frames;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
+pub(crate) mod attach_structure_sync;
 pub(crate) mod builder;
 pub(crate) mod bulk_transfer;
 pub(crate) mod capture_upload;
