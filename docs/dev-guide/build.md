@@ -40,7 +40,7 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수�
 | `release` | `opt-level = 3`, `strip = true` | **thin** | 최적화 검증 `cargo build --release` |
 | `dist` | `inherits = "release"` | **full** (`lto = true`) | 배포 산출물 `cargo build --profile dist` |
 
-- **`dev` 는 본체만 opt 0 이다**: 의존성 전체는 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**된 것만 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — 셀 렌더러의 잎 크레이트 셋을 실행·편집 비용으로 잰 예와 재는 절차는 [ADR-0381](../adr/0381-the-cell-renderer-leaf-crates-are-optimized-in-dev.md).
+- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 의존성 전체는 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**된 것만 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — 셀 렌더러의 잎 크레이트 셋을 실행·편집 비용으로 잰 예와 재는 절차는 [ADR-0381](../adr/0381-the-cell-renderer-leaf-crates-are-optimized-in-dev.md).
 - **`release` = thin LTO**: 크레이트 IR 요약을 공유해 cross-crate inlining 을 **병렬** 적용. full 의 95–99% 효과를 1/3 시간에 — 일상 "릴리즈 검증" 은 모두 이걸 쓴다.
 - **`dist` = full LTO**: 모든 IR 을 단일 LLVM 모듈로 합쳐 재최적화. 단일 스레드 단계가 길어 약 3.5배 느림. **배포 바이너리(DMG/MSIX/AppImage) 빌드 시에만** 쓴다. (AI 자체 검증 빌드에는 절대 사용 금지.)
 

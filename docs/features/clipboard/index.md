@@ -8,7 +8,7 @@
 
 ## 목적
 
-터미널 텍스트의 **복사/붙여넣기/선택**, OSC 52 클립보드 설정. 복사/붙여넣기는 사용자 행동이라 토스트로 피드백하지만, 에이전트(IPC)·OSC 52 경로는 사용자 시각 상태를 건드리지 않는다([toast](../../design/systems/toast.md) 트리거 정책).
+터미널 텍스트의 **복사/붙여넣기/선택**, OSC 52 클립보드 설정. 복사/붙여넣기는 사용자 행동이라 토스트로 피드백하고, 에이전트(IPC) 경로는 사용자 시각 상태를 건드리지 않는다. OSC 52 쓰기는 토스트를 낸다 — 보이지 않는 클립보드 쓰기를 사용자에게 보이게 하는 목적이다(PTY 출력이라 origin 을 가를 수 없어 에이전트가 셸에 찍게 해도 뜬다 — [toast](../../design/systems/toast.md) 트리거 정책의 알려진 예외).
 
 > **히스토리 기능 제거됨.** 과거 host 가 OS 클립보드를 폴링해 누적하던 클립보드 히스토리(메모리 `ClipboardHistory` + DB 테이블 + `tasty clipboard` CLI + `tool.clipboard.*` IPC + `clipboard.copied` 이벤트)는 전부 제거됐다. 현재는 *히스토리 누적 없이* 지금 클립보드 내용만 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 read-only 로 보여준다.
 
@@ -32,7 +32,7 @@
 
 ### OSC 52
 
-**쓰기(set)**: 터미널 프로그램이 OSC 52 로 시스템 클립보드에 텍스트를 설정할 수 있다(termwiz `SetSelection` → arboard 반영). 사용자가 누른 동작이 아니라 **토스트 없음**.
+**쓰기(set)**: 터미널 프로그램이 OSC 52 로 시스템 클립보드에 텍스트를 설정할 수 있다(termwiz `SetSelection` → arboard 반영). **토스트를 낸다**(`toast.copied_osc52`, 그 surface 스코프) — 보이지 않는 클립보드 쓰기를 사용자에게 보이게 하는 목적이다. 같은 surface 에서 500 ms 안에 반복된 쓰기는 토스트 coalesce 로 한 장에 합쳐진다.
 
 **읽기(query)**: `OSC 52 ; c ; ? ST` 클립보드 읽기 질의는 설정 토글 `general.allow_clipboard_read`(기본 **off**)로 게이트된다. off 면 **무응답**(1바이트도 내보내지 않음) — 터미널 안의 임의 프로그램(원격/SSH 프로세스 포함)이 로컬 클립보드(비밀번호·토큰)를 조용히 탈취하는 것을 차단한다(xterm/iTerm 계열 정책). on 이면 시스템 클립보드를 base64 로 인코딩해 `OSC 52 ; c ; <base64> ST` 로 회신. 경로: 터미널 크레이트가 `TerminalEventKind::ClipboardQuery` 이벤트만 발화(설정·클립보드 무지) → host(`Core::drain_terminal_events`)가 게이트·읽기·인코딩 후 해당 surface 의 PTY 로 `send_bytes`. 설정 UI 는 Terminal › TUI 섹션(토글 + 바로 아래 bordered warning callout). 토스트 없음.
 

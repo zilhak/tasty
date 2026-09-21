@@ -21,7 +21,15 @@ Toast 는 Popup 의 변종이 *아니다* — 7대 규칙(타이틀바·X·드�
 
 복사 예시:
 - 터미널 선택 후 `Ctrl+C` → ✅ · Explorer 경로 복사 → ✅ · 클립보드 뷰어에서 항목 클릭 복사 → ✅
-- IPC `clipboard.*` 쓰기 → ❌ · OSC 52(터미널 프로그램이 보낸 클립보드 시퀀스) → ❌ (사용자가 직접 누른 게 아님)
+- IPC `clipboard.*` 쓰기 → ❌
+- OSC 52 쓰기(터미널 프로그램이 보낸 클립보드 시퀀스) → ✅ `toast.copied_osc52` — 프로그램이 **보이지 않게**
+  시스템 클립보드를 덮어쓰는 것을 사용자에게 보이게 하려는 것이다(`src/app/dispatch_domain.rs`
+  `cascade_terminal_clipboard_set`).
+
+**OSC 52 는 이 정책의 알려진 예외다.** OSC 52 는 PTY 출력이라 그 바이트를 누가 나오게 했는지
+(origin)를 가를 수 없다 — 사용자가 친 명령이든, 에이전트가 `send text` 로 셸에 찍게 한
+명령이든 같은 바이트다. 그래서 에이전트가 셸에 OSC 52 를 찍게 해도 토스트가 뜬다. 원칙 1 과
+긴장이 있는 자리이고, 가시화(클립보드 무단 덮어쓰기 알림)를 택해 둔 상태다.
 
 **재는 법** — 이 정책을 보는 자동 채널(시험·가드)은 없다. 대신 IPC 가 들어오는 경로에서
 토스트 매니저로 닿는 이름을 센다. 결과가 **0 줄**이어야 한다.
@@ -34,13 +42,26 @@ grep -rnE 'toasts|report_apply_error|push_toast' \
 
 - 이 명령이 잡는다는 것은 변이로 확인했다: IPC 핸들러 파일에 `state.toasts.push_info(...)`
   한 줄을 넣으면 그 줄이 나온다(2026-09-21).
-- **못 보는 경로가 셋이다.** ① IPC 가 창 생성 같은 일을 winit 이벤트로 넘기고, 그 이벤트
+- **못 보는 경로가 넷이다.** ① IPC 가 창 생성 같은 일을 winit 이벤트로 넘기고, 그 이벤트
   핸들러가 실패를 토스트로 알리는 경로(예전 `window.create` 가 그랬다 — 지금은 완료
   채널로 응답한다). ② IPC 가 만든 도메인 이벤트가 `src/app/dispatch_domain.rs` cascade
   에서 토스트를 내는 경로. ③ 에이전트가 터미널에 보낸 텍스트가 프로그램을 거쳐 토스트를
-  내는 경로(OSC 52 등). 이 셋은 호출 이름이 IPC 파일에 안 나타난다.
-- 판정기를 짓지 않은 이유: 이 명령이 없어서 통과한 결함이 없다. 실제로 있었던 결함(위 ①)은
-  IPC 파일 밖에서 났으므로 이 명령으로도 안 잡혔을 것이다.
+  내는 경로(OSC 52 등). ④ IPC 핸들러가 `state.dispatch_intent(... .from_agent_ipc())` 로
+  intent 를 넘기고, 메인 루프가 그것을 `src/intent/*` 에서 처리하면서 토스트를 내는 경로.
+  이 넷은 호출 이름이 IPC 파일에 안 나타난다.
+- **경로 ④ 는 지금 이어져 있다(소스 추적, 실행 재현은 안 했다).** IPC `markdown.navigate` 는
+  `Intent::ConvertSurface` 를 agent origin 으로 넘기고(`src/adapters/ipc/handler/markdown.rs`
+  `navigate_now`), `src/intent/surface.rs` 가 `core.apply` 실패 시 `report_apply_error` 를 부른다.
+  mirror 워크스페이스에서 convert 는 forward 되지 않는 op 라 `forwarded: false` 가 되고,
+  `report_apply_error`(`src/intent.rs`)가 **origin 을 보지 않고** `attach.toast.mirror_structural_blocked`
+  사용자 토스트를 띄운다. 두 끝을 세는 명령(0 줄이 목표가 아니라 경로의 폭을 보는 것이다):
+  `grep -rln dispatch_intent src/adapters/ipc src/app/ipc src/app/ipc.rs`(2026-09-21 에 12 파일) ·
+  `grep -rln 'report_apply_error\|toasts\.push' src/intent.rs src/intent/`(6 파일). 고치는 일은
+  별도 작업으로 다룬다.
+- 판정기를 짓지 않은 이유: 위 명령의 좌변(IPC 파일)에서는 결함이 난 적이 없다. 결함은 늘 그
+  밖에서 났거나 날 수 있다 — 실제로 있었던 ①, 지금 열려 있는 ④ 둘 다 IPC 파일을 스캔하는
+  판정기로는 안 잡힌다. ④ 는 판정기가 아니라 `report_apply_error` 가 origin 을 보게 고치는
+  것이 처방이다.
 
 ## 스코프
 
