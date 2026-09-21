@@ -606,6 +606,7 @@ fn dispatch_headless_event(
     app: &mut crate::app::App,
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
+    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
     event: crate::AppEvent,
 ) -> std::ops::ControlFlow<()> {
     use crate::AppEvent;
@@ -614,10 +615,42 @@ fn dispatch_headless_event(
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
         // pump 가 `system.shutdown` 을 받으면 break 를 돌려준다 — 데몬을 멈추는
         // 유일한 IPC 경로다(gui 의 winit proxy 에 대응).
-        AppEvent::IpcReady => return headless_dispatch::pump_ipc(app, state, engine),
+        AppEvent::IpcReady => {
+            // 채널에는 `IpcReady` 가 하나만 선다(`HeadlessWaker` 의 게이트). 회차를 열기
+            // 전에 풀어, 회차 도중 든 명령이 다음 것을 세우게 한다.
+            waker.note_ipc_drained();
+            let flow = headless_dispatch::pump_ipc(app, state, engine);
+            // 회차가 예산에서 멈춰 명령이 남았으면 다시 깨운다 — 그 명령들의 wake 는 게이트에
+            // 막혀 사라졌다. 채널 꼬리에 붙으므로 그 사이의 PTY·plugin wake 가 먼저 돈다.
+            rewake_if_left(flow, || ipc_commands_left(&app.core), || waker.wake_ipc());
+            return flow;
+        }
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
     }
     std::ops::ControlFlow::Continue(())
+}
+
+/// 회차가 명령을 남기고 끝났으면(`Break` 가 아니고 큐가 안 비었으면) 한 번 다시 깨운다.
+/// 큐가 빈 회차는 깨우지 않으므로 헛도는 루프가 없다. 판정을 떼어 `App` 없이 시험한다.
+#[cfg(not(feature = "gui"))]
+fn rewake_if_left(
+    flow: std::ops::ControlFlow<()>,
+    commands_left: impl FnOnce() -> bool,
+    rewake: impl FnOnce(),
+) {
+    if flow.is_continue() && commands_left() {
+        rewake();
+    }
+}
+
+/// 명령 큐에 아직 안 꺼낸 명령이 있는가 — 입장 장부의 지금 값으로 답한다(명령을 꺼낼 때
+/// 장부에서 빠진다). 장부가 없으면(IPC 서버가 안 뜬 조립) `IpcReady` 자체가 안 온다.
+#[cfg(not(feature = "gui"))]
+fn ipc_commands_left(core: &crate::core::Core) -> bool {
+    core.host_ipc_injector
+        .get()
+        .and_then(|injector| injector.admission())
+        .is_some_and(|ledger| ledger.snapshot().queued_commands > 0)
 }
 
 /// Headless 부트. winit / wgpu / egui 가 없는 빌드 (`--no-default-features`) 전용.
@@ -732,9 +765,34 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         let Some(event) = pending else {
             continue;
         };
-        if dispatch_headless_event(&mut app, &mut state, &mut engine, event).is_break() {
+        if dispatch_headless_event(&mut app, &mut state, &mut engine, &waker, event).is_break() {
             break;
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, not(feature = "gui")))]
+mod tests {
+    use super::rewake_if_left;
+    use std::ops::ControlFlow;
+
+    /// 예산에서 멈춰 명령이 남은 회차는 루프를 다시 깨운다 — 안 깨우면 남은 명령은 다른
+    /// 입력이 올 때까지 선다(그 명령들의 wake 는 게이트에 접혀 사라졌다).
+    #[test]
+    fn a_round_that_left_commands_wakes_the_loop_again() {
+        let mut woke = 0;
+        rewake_if_left(ControlFlow::Continue(()), || true, || woke += 1);
+        assert_eq!(woke, 1);
+    }
+
+    /// 큐가 빈 회차와 데몬을 멈추는 회차는 깨우지 않는다 — 앞은 헛도는 루프, 뒤는 멈추는
+    /// 데몬에 대한 헛 wake 다.
+    #[test]
+    fn an_empty_or_final_round_does_not_wake_the_loop() {
+        let mut woke = 0;
+        rewake_if_left(ControlFlow::Continue(()), || false, || woke += 1);
+        rewake_if_left(ControlFlow::Break(()), || true, || woke += 1);
+        assert_eq!(woke, 0);
+    }
 }

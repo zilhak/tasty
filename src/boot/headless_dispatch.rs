@@ -68,8 +68,9 @@ pub(crate) fn pump_ipc(
         }
     }
     // 멈춘 이유는 여기서 쓰지 않는다. 이 루프는 이벤트 하나마다 due 한 타이머를 돌리므로
-    // 부하가 타이머를 밀어내지 않고, 남은 명령은 그 명령들이 부른 wake 가 다음 회차를 부른다.
-    // gui 는 둘 다 성립하지 않아 따로 다룬다(`src/app/ipc.rs` 의 `IpcPacer`).
+    // 부하가 타이머를 밀어내지 않고, 남은 명령은 부르는 쪽(`src/boot.rs` 의
+    // `dispatch_headless_event`)이 장부를 보고 루프를 다시 깨운다 — 명령마다의 wake 는
+    // 게이트로 하나로 접힌다. gui 는 따로 다룬다(`src/app/ipc.rs` 의 `IpcPacer`).
     round.finish(app.core.pressure(), app.core.dispatch());
     std::ops::ControlFlow::Continue(())
 }

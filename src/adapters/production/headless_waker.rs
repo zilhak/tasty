@@ -20,20 +20,47 @@ use crate::ipc::server::IpcWaker;
 /// IPC / PTY waker 두 가지로 fan-out 한다.
 pub(crate) struct HeadlessWaker {
     tx: Sender<AppEvent>,
+    /// `IpcReady` 게이트 — 메인 루프가 아직 안 꺼낸 `IpcReady` 가 채널에 있으면 `true`.
+    /// 모든 IPC waker 사본이 이것 하나를 나눠 든다.
+    ///
+    /// 게이트가 없으면 IPC 생산자는 명령마다 `IpcReady` 를 한 번 보내고, 회차 하나는 큐의
+    /// 명령을 예산까지 전부 집지만 이벤트는 하나만 소비한다. 지속 부하에서 그 차가 채널에
+    /// 쌓이고(실측: 연결 16 개 20 초에 약 1.8 만 건), 같은 FIFO 꼬리에 붙는 다른 wake —
+    /// plugin 수신 스레드의 default wake, PTY 출력 wake — 가 그 적체를 전부 기다린다
+    /// (실측: default wake 한 건의 송신→처리 16.6 s). 게이트는 채널에 `IpcReady` 를 최대
+    /// 하나만 둔다. 예산에서 멈춘 회차가 남긴 명령은 [`HeadlessWaker::wake_ipc`] 가 다시 깨운다.
+    ipc_gate: Arc<AtomicBool>,
 }
 
 impl HeadlessWaker {
     pub(crate) fn new(tx: Sender<AppEvent>) -> Self {
-        Self { tx }
+        Self {
+            tx,
+            ipc_gate: Arc::new(AtomicBool::new(false)),
+        }
     }
 
-    /// IPC accept 스레드가 호출하는 waker. `IpcReady` 발화.
+    /// IPC accept 스레드가 호출하는 waker. `IpcReady` 발화 — 이미 하나가 채널에 있으면
+    /// 보내지 않는다(위 `ipc_gate`).
     pub(crate) fn ipc_waker(&self) -> IpcWaker {
         let tx = self.tx.clone();
-        Arc::new(move || {
-            // headless receiver 가 종료된 후의 race 는 무시 (정상 shutdown 시퀀스).
-            let _ = tx.send(AppEvent::IpcReady); // receiver dropped during shutdown — drop quietly.
-        })
+        let gate = self.ipc_gate.clone();
+        Arc::new(move || send_ipc_ready(&tx, &gate))
+    }
+
+    /// 메인 루프가 `IpcReady` 를 꺼냈다 — 회차를 **열기 전에** 게이트를 푼다. 회차가 도는
+    /// 동안 들어온 명령의 wake 가 다음 `IpcReady` 를 세우게 하려는 것이다(PTY 게이트의
+    /// early reset 과 같은 순서). `swap` 인 이유: 건너뛴 wake 의 `swap(true)` 를 여기서
+    /// 획득해야, 그 wake 앞에서 큐에 든 명령이 뒤따르는 회차에 보인다.
+    pub(crate) fn note_ipc_drained(&self) {
+        self.ipc_gate.swap(false, Ordering::AcqRel);
+    }
+
+    /// 루프를 한 번 더 깨운다 — 예산에서 멈춘 회차가 명령을 남겼을 때 메인 루프가 부른다.
+    /// 그 명령들의 wake 는 게이트에 막혀 이미 사라졌으므로 안 깨우면 다음 입력까지 남는다.
+    /// 채널 **꼬리**에 붙으므로 그 사이에 온 다른 wake 가 먼저 처리된다.
+    pub(crate) fn wake_ipc(&self) {
+        send_ipc_ready(&self.tx, &self.ipc_gate);
     }
 
     /// 스트림 연결의 read 스레드가 inbound 프레임 수신 시 호출하는 waker.
@@ -55,6 +82,15 @@ impl HeadlessWaker {
             poison_reported: AtomicBool::new(false),
         })
     }
+}
+
+/// 게이트가 닫혀 있으면(이미 하나가 채널에 있으면) 아무것도 안 한다.
+fn send_ipc_ready(tx: &Sender<AppEvent>, gate: &AtomicBool) {
+    if gate.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    // headless receiver 가 종료된 후의 race 는 무시 (정상 shutdown 시퀀스).
+    let _ = tx.send(AppEvent::IpcReady); // receiver dropped during shutdown — drop quietly.
 }
 
 /// `WakerFactory` 의 headless 구현 — winit `WinitWakerFactory` 의 mpsc 미러.
@@ -193,6 +229,49 @@ mod tests {
             !gates.contains_key(&11),
             "poison 이후에도 게이트 정리가 된다"
         );
+    }
+
+    fn ipc_ready_count(rx: &mpsc::Receiver<AppEvent>) -> usize {
+        rx.try_iter()
+            .filter(|ev| matches!(ev, AppEvent::IpcReady))
+            .count()
+    }
+
+    /// 명령마다 wake 해도 채널에는 `IpcReady` 가 하나만 선다 — 서지 않으면 지속 부하에서
+    /// 적체가 쌓여 뒤에 붙은 plugin·PTY wake 가 그 전부를 기다린다. 모든 사본이 게이트를
+    /// 나눠 든다(accept 스레드와 주입기가 각자 사본을 쥔다).
+    #[test]
+    fn ipc_wakes_coalesce_until_the_loop_takes_one() {
+        let (tx, rx) = mpsc::channel();
+        let hw = HeadlessWaker::new(tx);
+        let a = hw.ipc_waker();
+        let b = hw.ipc_waker();
+        a();
+        b();
+        a();
+        assert_eq!(
+            ipc_ready_count(&rx),
+            1,
+            "사본 여럿이 부른 wake 가 하나로 접혀야 한다"
+        );
+
+        hw.note_ipc_drained();
+        b();
+        b();
+        assert_eq!(ipc_ready_count(&rx), 1, "꺼낸 뒤에는 다시 하나가 선다");
+    }
+
+    /// 재깨움은 게이트를 따른다 — 이미 하나가 서 있으면 더하지 않고, 꺼낸 뒤면 선다.
+    #[test]
+    fn a_rewake_obeys_the_same_gate() {
+        let (tx, rx) = mpsc::channel();
+        let hw = HeadlessWaker::new(tx);
+        hw.ipc_waker()();
+        hw.wake_ipc();
+        assert_eq!(ipc_ready_count(&rx), 1);
+        hw.note_ipc_drained();
+        hw.wake_ipc();
+        assert_eq!(ipc_ready_count(&rx), 1, "꺼낸 뒤의 재깨움은 서야 한다");
     }
 
     #[test]
