@@ -37,6 +37,14 @@ pub enum EventsCommands {
     /// its position to scroll out of the ring, the answer says so instead of
     /// quietly restarting from the oldest event, and this command prints that
     /// notice to stderr so a `while read` loop on stdout is not disturbed.
+    ///
+    /// A restart of tasty starts positions over. Pass the `--epoch` your offset
+    /// came from when you reattach: if tasty restarted since, this command says
+    /// so on stderr and starts from the beginning of the new generation. Without
+    /// it, a position past the end of the new feed is reported and handled the
+    /// same way. If the connection drops, this command prints the `--offset` and
+    /// `--epoch` to reattach with and exits; with `--reconnect` it keeps trying
+    /// instead and carries on.
     Follow {
         /// Position to start from. Default 0, the oldest still retained.
         #[arg(long, default_value_t = 0)]
@@ -50,5 +58,15 @@ pub enum EventsCommands {
         /// How long each request waits before coming back empty.
         #[arg(long, default_value_t = 30_000)]
         wait_ms: u64,
+        /// Generation your offset came from, as printed when the connection
+        /// drops or returned by `fetch`. If tasty restarted since, start over
+        /// from the new generation instead of reading an unrelated position.
+        #[arg(long)]
+        epoch: Option<u64>,
+        /// When the connection drops, retry every second instead of exiting.
+        /// The generation is carried over, so a restart is reported and
+        /// followed from its start.
+        #[arg(long)]
+        reconnect: bool,
     },
 }

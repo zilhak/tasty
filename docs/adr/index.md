@@ -334,3 +334,4 @@
 | 0392 | [첫 요청 줄에만 idle 기한을 건다](0392-only-the-first-request-line-has-an-idle-deadline.md) | Accepted | 2026-09-21 | ipc, resource-bounds, connection, idle, timeout, compatibility, adr-0304, adr-0327 |
 | 0405 | [피드 끝보다 뒤인 위치는 조용히 기다리지 않고 표지를 단다](0405-a-position-past-the-end-of-the-feed-is-marked-not-waited-on-silently.md) | Accepted | 2026-09-21 | events, event-bus, cursor, offsets, epoch, compatibility, adr-0322, adr-0323 |
 | 0406 | [dispatch 에 응답하기 전의 publish 는 호스트가 hop 을 올린다](0406-the-host-raises-the-hop-of-a-publish-made-while-a-dispatch-is-unanswered.md) | Accepted | 2026-09-21 | events, event-bus, plugin, hop, loop-prevention, compatibility, adr-0321 |
+| 0407 | [`events follow` 는 재부착을 넘어 세대를 들고 간다](0407-events-follow-carries-the-generation-across-a-reattach.md) | Accepted | 2026-09-21 | events, cli, cursor, epoch, reconnect, compatibility, adr-0323, adr-0405 |

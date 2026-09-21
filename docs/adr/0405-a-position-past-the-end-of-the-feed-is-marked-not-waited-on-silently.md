@@ -91,5 +91,6 @@
 - [ADR-0322](0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md) — 위치가 되돌아가지 않는 링
 - [ADR-0323](0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md) — 위치로 읽는 피드
 - [ADR-0341](0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md) — 같은 물음의 출력 읽기 쪽 답
+- [ADR-0407](0407-events-follow-carries-the-generation-across-a-reattach.md) — 이 표지를 읽는 CLI `follow` 의 재부착 규칙
 - 코드 근거(결정이 실현된 현재 위치): `EventFetch::ahead_of_stream` · `EventFetch::stream_end` ·
   `EventBus::fetch_blocking` 의 대기 규칙 · `events.fetch` 핸들러의 wire 조립

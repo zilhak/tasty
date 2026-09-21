@@ -1,4 +1,4 @@
-<!-- source-hash: 3534c729d1db -->
+<!-- source-hash: 5b40a73bd0f6 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -130,6 +130,7 @@ done
 - **The reader holds the position, not Tasty.** Pass the `next_offset` that comes back as the next `--offset` and you carry on from where you stopped. For a single read rather than a loop, use `tasty events fetch --offset <number>`.
 - Events live in memory only, and only the most recent ones are kept. If you were away long enough for the ones in between to fall out, you are **not** quietly given the oldest ones instead — you are told how many were missed. That notice is kept out of the event stream, so the `while read` above is not disturbed.
 - Restarting Tasty clears the events and starts positions over. If the `epoch` that comes with an answer differs from the one your position came from, that position belongs to a previous generation.
+- If the connection drops, `follow` tells you the `--offset` and `--epoch` to reattach with and exits. Run it again with those, and if Tasty restarted in the meantime you are told so and get the new events from their start. With `--reconnect` it does not exit but reconnects every second and carries on.
 - What comes out today is **a task finishing** and **a barrier closing**. Why something failed is not carried in the event — use `tasty agent task-get` for that.
 - A slow reader queues nothing on the Tasty side.
 

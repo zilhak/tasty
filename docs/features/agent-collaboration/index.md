@@ -100,7 +100,7 @@ claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. �
 
 발화는 `task_await` 의 blocking 동작과 간섭하지 않는다. 같은 호출이 대기자에게 보내고 피드에 적을 뿐이고, **대기자가 없어도 피드에는 적힌다.**
 
-plugin 이 아닌 쪽은 `events.fetch` 로 같은 사건을 **위치로** 읽는다. 부를 수 있는 것은 **로컬 호출자뿐**이다 — 세션 토큰을 들고 붙은 외부 에이전트는 이 메서드를 직접 못 부르고, 로컬 소켓의 `tasty` CLI 를 경유한다. `tasty events follow --filter 'agent.*'` 가 그 루프이고, 한 줄에 한 사건씩 JSON 으로 찍으므로 셸에서 `while read` 로 받는다. 끊겼다 다시 붙을 때는 마지막 위치를 그대로 주면 그 사이 사건부터 이어 받고, 기다린 사이 위치가 링 밖으로 밀렸으면 조용히 처음부터 주는 대신 건너뛴 수를 알린다. 커서를 소비자가 드는 이유와 재시작이 위치를 리셋하는 이유는 [ADR-0322](../../adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md) · [ADR-0323](../../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md).
+plugin 이 아닌 쪽은 `events.fetch` 로 같은 사건을 **위치로** 읽는다. 부를 수 있는 것은 **로컬 호출자뿐**이다 — 세션 토큰을 들고 붙은 외부 에이전트는 이 메서드를 직접 못 부르고, 로컬 소켓의 `tasty` CLI 를 경유한다. `tasty events follow --filter 'agent.*'` 가 그 루프이고, 한 줄에 한 사건씩 JSON 으로 찍으므로 셸에서 `while read` 로 받는다. 끊겼다 다시 붙을 때는 마지막 위치를 그대로 주면 그 사이 사건부터 이어 받고, 기다린 사이 위치가 링 밖으로 밀렸으면 조용히 처음부터 주는 대신 건너뛴 수를 알린다. 재시작을 넘는 재부착은 세대를 함께 준다 — 연결이 끊기면 `follow` 가 다시 붙을 `--offset` · `--epoch` 을 stderr 에 찍고 끝나고(`--reconnect` 면 1 초마다 다시 붙는다), 그 세대가 새 세대와 다르거나 위치가 새 피드의 끝보다 뒤면 stderr 로 알리고 새 세대의 처음부터 잇는다([ADR-0407](../../adr/0407-events-follow-carries-the-generation-across-a-reattach.md)). 커서를 소비자가 드는 이유와 재시작이 위치를 리셋하는 이유는 [ADR-0322](../../adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md) · [ADR-0323](../../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md).
 
 ## 인터페이스
 

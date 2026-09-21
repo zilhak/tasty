@@ -1535,6 +1535,9 @@ unsupported_older = "tasty 인스턴스가 '{}'를 판 {}로 선언했지만 판
 [cli.events]
 epoch_changed = "tasty 가 재시작되었습니다: 사건 피드가 새 세대라 처음부터 다시 잇습니다"
 skipped = "{} 건이 읽히기 전에 링에서 밀려났습니다"
+ahead_of_stream = "위치 {} 가 사건 피드의 끝(지금 {})보다 뒤입니다: 이전 세대의 위치라 처음부터 다시 잇습니다"
+connection_lost = "tasty 와의 연결이 끊겼습니다. 이어서 받으려면 follow 에 다음을 붙이세요: {}"
+reconnecting = "tasty 와의 연결이 끊겼습니다. 1 초마다 다시 연결합니다"
 
 [cli.preset]
 stdin_read_failed = "stdin 읽기 실패: {}"
@@ -4891,7 +4894,7 @@ help = "답하기 전에 뭔가 올 때까지 이만큼 기다린다. 기본 0, 
 
 [cli.help._root.events.follow]
 about = "피드를 따라간다: 어떤 위치부터 long-poll 하며 사건마다 JSON 한 줄을 계속 찍는다. 끊을 때까지 돈다"
-long = "피드를 따라간다: 어떤 위치부터 long-poll 하며 사건마다 JSON 한 줄을 계속 찍는다. 끊을 때까지 돈다.\n\n다시 붙는 것은 마지막 위치로 같은 호출을 하는 것이다 — 멈췄던 소비자는 멈춘 자리에서 이어 읽는다. 위치가 링에서 밀려날 만큼 오래 멈춰 있었으면, 답은 가장 오래된 사건부터 조용히 다시 시작하지 않고 그 사실을 말한다. 이 명령은 그 알림을 stderr 로 찍는다 — stdout 을 읽는 `while read` 루프가 흐트러지지 않게."
+long = "피드를 따라간다: 어떤 위치부터 long-poll 하며 사건마다 JSON 한 줄을 계속 찍는다. 끊을 때까지 돈다.\n\n다시 붙는 것은 마지막 위치로 같은 호출을 하는 것이다 — 멈췄던 소비자는 멈춘 자리에서 이어 읽는다. 위치가 링에서 밀려날 만큼 오래 멈춰 있었으면, 답은 가장 오래된 사건부터 조용히 다시 시작하지 않고 그 사실을 말한다. 이 명령은 그 알림을 stderr 로 찍는다 — stdout 을 읽는 `while read` 루프가 흐트러지지 않게.\n\ntasty 가 재시작하면 위치가 처음부터 다시 매겨진다. 다시 붙을 때 네 offset 이 온 `--epoch` 을 넘겨라: 그 사이 tasty 가 재시작했으면 이 명령이 stderr 로 그렇다고 말하고 새 세대의 처음부터 잇는다. 넘기지 않아도 새 피드의 끝보다 뒤인 위치는 같은 방식으로 알리고 처리한다. 연결이 끊기면 이 명령은 다시 붙을 `--offset` 과 `--epoch` 을 찍고 끝난다. `--reconnect` 를 주면 대신 계속 다시 붙어 이어 간다."
 
 [cli.help._root.events.follow.arg.offset]
 help = "시작할 위치. 기본 0, 아직 남아 있는 것 중 가장 오래된 자리"
@@ -4904,6 +4907,12 @@ help = "요청 하나에 사건 몇 개까지"
 
 [cli.help._root.events.follow.arg.wait_ms]
 help = "요청 하나가 빈 손으로 돌아오기까지 얼마나 기다리는가"
+
+[cli.help._root.events.follow.arg.epoch]
+help = "네 offset 이 온 세대 — 연결이 끊길 때 찍히거나 `fetch` 가 돌려준 값. 그 사이 tasty 가 재시작했으면 무관한 위치를 읽지 않고 새 세대의 처음부터 다시 잇는다"
+
+[cli.help._root.events.follow.arg.reconnect]
+help = "연결이 끊기면 끝내지 않고 1 초마다 다시 붙는다. 세대를 들고 가므로 재시작은 알리고 그 처음부터 따라간다"
 
 [cli.help._root.telemetry]
 about = "에이전트 텔레메트리 (지표 기록, 요약, 시계열, 상위 N)"

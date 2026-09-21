@@ -1563,6 +1563,9 @@ unsupported_older = "The tasty instance declares '{}' at version {}, but version
 [cli.events]
 epoch_changed = "tasty restarted: the event feed is a new generation, resuming from its start"
 skipped = "{} events left the ring before they could be read"
+ahead_of_stream = "position {} is past the end of the event feed (now {}): it belongs to an earlier generation, resuming from the start"
+connection_lost = "connection to tasty lost. To resume where you left off, follow again with: {}"
+reconnecting = "connection to tasty lost, reconnecting every second"
 
 [cli.preset]
 stdin_read_failed = "stdin read failed: {}"
@@ -4923,7 +4926,7 @@ help = "Wait up to this long for something to arrive before answering. Default 0
 
 [cli.help._root.events.follow]
 about = "Follow the feed: long-poll from a position and print each event as a line of JSON, forever. Runs until interrupted"
-long = "Follow the feed: long-poll from a position and print each event as a line of JSON, forever. Runs until interrupted.\n\nReconnecting is the same call with the last position, so a consumer that was stopped resumes where it left off. If it was stopped long enough for its position to scroll out of the ring, the answer says so instead of quietly restarting from the oldest event, and this command prints that notice to stderr so a `while read` loop on stdout is not disturbed."
+long = "Follow the feed: long-poll from a position and print each event as a line of JSON, forever. Runs until interrupted.\n\nReconnecting is the same call with the last position, so a consumer that was stopped resumes where it left off. If it was stopped long enough for its position to scroll out of the ring, the answer says so instead of quietly restarting from the oldest event, and this command prints that notice to stderr so a `while read` loop on stdout is not disturbed.\n\nA restart of tasty starts positions over. Pass the `--epoch` your offset came from when you reattach: if tasty restarted since, this command says so on stderr and starts from the beginning of the new generation. Without it, a position past the end of the new feed is reported and handled the same way. If the connection drops, this command prints the `--offset` and `--epoch` to reattach with and exits; with `--reconnect` it keeps trying instead and carries on."
 
 [cli.help._root.events.follow.arg.offset]
 help = "Position to start from. Default 0, the oldest still retained"
@@ -4936,6 +4939,12 @@ help = "How many events per request"
 
 [cli.help._root.events.follow.arg.wait_ms]
 help = "How long each request waits before coming back empty"
+
+[cli.help._root.events.follow.arg.epoch]
+help = "Generation your offset came from, as printed when the connection drops or returned by `fetch`. If tasty restarted since, start over from the new generation instead of reading an unrelated position"
+
+[cli.help._root.events.follow.arg.reconnect]
+help = "When the connection drops, retry every second instead of exiting. The generation is carried over, so a restart is reported and followed from its start"
 
 [cli.help._root.telemetry]
 about = "Agent telemetry (record metrics, summary, timeseries, top-N)"

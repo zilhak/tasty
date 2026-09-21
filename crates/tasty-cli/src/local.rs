@@ -373,14 +373,20 @@ pub struct EventsFollow<'a> {
     pub filter: &'a Option<String>,
     pub batch: u64,
     pub wait_ms: u64,
+    pub epoch: Option<u64>,
+    pub reconnect: bool,
 }
 impl ClientCommand for EventsFollow<'_> {
     fn run(self: Box<Self>, ctx: &ClientCtx<'_>) -> Result<()> {
         crate::events::run_follow(
-            self.offset,
-            self.filter.as_deref(),
-            self.batch,
-            self.wait_ms,
+            crate::events::FollowArgs {
+                offset: self.offset,
+                filter: self.filter.as_deref(),
+                batch: self.batch,
+                wait_ms: self.wait_ms,
+                epoch: self.epoch,
+                reconnect: self.reconnect,
+            },
             ctx.port_file,
         )
     }

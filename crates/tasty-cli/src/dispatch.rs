@@ -245,12 +245,16 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
                     filter,
                     batch,
                     wait_ms,
+                    epoch,
+                    reconnect,
                 },
         } => Box::new(crate::local::EventsFollow {
             offset: *offset,
             filter,
             batch: *batch,
             wait_ms: *wait_ms,
+            epoch: *epoch,
+            reconnect: *reconnect,
         }),
 
         // ── debug 빌드 전용 ────────────────────────────────────────────────
