@@ -1520,6 +1520,35 @@ fn the_remaining_lifecycle_methods_are_still_absent_in_a_headless_daemon() {
     }
 }
 
+/// 헤드리스에서 `file_handler.dispatch` 는 **수락했다고 답하지 않는다** — `-32017` 로 거절한다.
+///
+/// 그 intent 를 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. 예전에는 arm 이
+/// 헤드리스에도 있어 `{"accepted": true}` 로 답하고 요청을 로그 한 줄과 함께 버렸다 —
+/// 에이전트는 성공으로 읽었다(docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md).
+#[cfg(not(feature = "gui"))]
+#[test]
+fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw(
+        "file_handler.dispatch",
+        json!({"path": "/definitely/not/a/tasty/test/page.html", "depth": "cheap"}),
+    );
+    let code = resp
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        code,
+        Some(-32017),
+        "헤드리스는 파일을 열 수 없으니 dispatch 를 수락했다고 답하면 안 된다: {resp}"
+    );
+    assert!(
+        resp.get("result").is_none(),
+        "거절 응답에 result 가 같이 실리면 호출자가 성공으로 읽는다: {resp}"
+    );
+}
+
 /// 대상을 **지목했는데 아무 창도 안 가진** 요청은 거절된다 — 포커스된 창으로 안 샌다.
 ///
 /// 지우기 전의 폴백은 이 요청을 포커스된 창에 넘겼고, 그래서 **존재하지 않는

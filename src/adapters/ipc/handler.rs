@@ -823,6 +823,11 @@ fn route_engine_handler(
         "file_handler.reload" => file_handler::handle_reload(core, engine, id),
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
+        // (docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md)
+        // 그 intent 를 적용할 identify worker 와 결과를 여는 창이 gui 에만 있어 arm 도
+        // gui 에만 둔다. headless 에 두면 accept 만 받고 요청이 버려진다 —
+        // `git_viewer.query` 와 같은 모양이고, 빼면 라우터 끝이 `-32017` 로 답한다.
+        #[cfg(feature = "gui")]
         "file_handler.dispatch" => {
             file_handler::handle_dispatch(state, engine, id, request.params.clone())
         }

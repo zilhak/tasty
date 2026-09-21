@@ -460,6 +460,10 @@ impl Core {
             DomainIntent::ApplyPendingLayoutRestore => {
                 Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
             }
+            // 이 intent 를 적용할 identify worker 가 gui 에만 있고, 만드는 자리도 전부 gui 에만
+            // 있다 — 에이전트 경로 `file_handler.dispatch` 는 headless 에서 arm 이 없어 `-32017`
+            // 로 거절된다(docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md).
+            #[cfg(feature = "gui")]
             DomainIntent::DispatchFile {
                 target,
                 depth,
@@ -471,39 +475,23 @@ impl Core {
                     crate::file::dispatch::require_origin_pane(engine, sid)
                         .map_err(anyhow::Error::msg)?;
                 }
-                #[cfg(feature = "gui")]
-                {
-                    match engine.identify_worker.as_ref() {
-                        Some(worker) => {
-                            // request id not tracked.
-                            let _id = worker.spawn(
-                                target,
-                                depth,
-                                origin_surface_id,
-                                dispatch_origin,
-                                ignore_size_limit,
-                            );
-                        }
-                        None => {
-                            tracing::warn!(
-                                target = %target.display(),
-                                "DispatchFile: identify_worker not injected — drop",
-                            );
-                        }
+                match engine.identify_worker.as_ref() {
+                    Some(worker) => {
+                        // request id not tracked.
+                        let _id = worker.spawn(
+                            target,
+                            depth,
+                            origin_surface_id,
+                            dispatch_origin,
+                            ignore_size_limit,
+                        );
                     }
-                }
-                #[cfg(not(feature = "gui"))]
-                {
-                    // headless: no identify_worker.
-                    let _ = (
-                        engine,
-                        target,
-                        depth,
-                        origin_surface_id,
-                        dispatch_origin,
-                        ignore_size_limit,
-                    );
-                    tracing::warn!("DispatchFile dropped in headless build");
+                    None => {
+                        tracing::warn!(
+                            target = %target.display(),
+                            "DispatchFile: identify_worker not injected — drop",
+                        );
+                    }
                 }
                 Ok(vec![])
             }

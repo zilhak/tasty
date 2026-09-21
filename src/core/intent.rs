@@ -304,6 +304,11 @@ pub(crate) enum DomainIntent {
     /// `AppEvent::IdentifyDone` 으로 main thread 도착 후 `event_handler` 가
     /// `Core::apply_identify_result` Method 를 직접 호출. worker 미주입 시 drop
     /// + warn.
+    ///
+    /// gui 빌드에만 있다 — 적용할 identify worker 도, 이 intent 를 만드는 자리도 gui 에만
+    /// 있다. headless 에서 에이전트 경로(`file_handler.dispatch`)는 `-32017` 로 거절된다
+    /// (docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md).
+    #[cfg(feature = "gui")]
     DispatchFile {
         target: crate::file::format::FileTarget,
         depth: crate::file::format::DetectDepth,

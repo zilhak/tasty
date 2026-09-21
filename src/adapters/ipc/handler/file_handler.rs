@@ -4,15 +4,23 @@
 //!   Method call wrapper (`Core::reload_file_handlers`) 직접 호출.
 //! - `file_handler.dispatch`: 임의 경로를 file_handler 시스템에 진입시킴.
 //!   `DomainIntent::DispatchFile` 발화 — Core::apply 가 worker spawn,
-//!   결과는 `AppEvent::IdentifyDone` 경로로 비동기 적용.
+//!   결과는 `AppEvent::IdentifyDone` 경로로 비동기 적용. **gui 빌드에만 있다** — 그 intent
+//!   를 적용할 identify worker 와 결과를 여는 창이 headless 에 없어, headless 에서 받으면
+//!   요청을 버리고도 수락했다고 답하게 된다. 그래서 headless 에서는 arm 이 없고 라우터
+//!   끝이 `-32017` 로 답한다
+//!   ([ADR-0425](../../../../docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md)).
 
+#[cfg(feature = "gui")]
 use std::path::PathBuf;
 
+#[cfg(feature = "gui")]
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::core::Core;
+#[cfg(feature = "gui")]
 use crate::file::format::{DetectDepth, FileTarget};
+#[cfg(feature = "gui")]
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -31,6 +39,7 @@ pub fn handle_reload(
     )
 }
 
+#[cfg(feature = "gui")]
 #[derive(Deserialize)]
 struct DispatchReq {
     path: String,
@@ -46,6 +55,7 @@ struct DispatchReq {
     ignore_size_limit: bool,
 }
 
+#[cfg(feature = "gui")]
 fn default_depth() -> String {
     "deep".to_string()
 }
@@ -57,6 +67,7 @@ fn default_depth() -> String {
 /// - `params.depth`: `"cheap"` (확장자/glob 만) 또는 `"deep"` (magic/MIME 포함).
 ///   기본 `"deep"`. 두 경우 모두 worker thread 경유 (통일된 경로) — 응답은
 ///   즉시 돌아오고 handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
+#[cfg(feature = "gui")]
 pub fn handle_dispatch(
     state: &mut AppState,
     engine: &crate::core::CoreState,
@@ -121,7 +132,7 @@ pub fn handle_dispatch(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::*;
 

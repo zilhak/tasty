@@ -325,6 +325,14 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 | `file_picker.trigger` | 창 안 popup(`state.dialogs.file_picker`)을 연다. 그릴 창이 없다 |
 | `webview.set_url` | 설정한 URL 을 소비하는 것이 매 프레임 도는 렌더러뿐이다. 값은 기록되겠지만 아무 일도 일어나지 않는다 |
 
+### census 뒤에 게이트된 arm
+
+위 표의 건수는 census 시점 값이라 그 뒤에 `gui` 로 게이트된 arm 은 거기 안 들어간다. 이름만 여기 세운다.
+
+| 메서드 | 왜 |
+|--------|-----|
+| `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0425](../adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md). 같은 namespace 의 `file_handler.reload` 는 헤드리스에서도 답한다 |
+
 ### `debug.*` 36 건
 
 debug 표면은 **에이전트가 자기 작업을 검증하는 자리**다(popup 이 떴는가, 훅이 발화했는가,
