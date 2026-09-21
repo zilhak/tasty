@@ -104,7 +104,7 @@ gui 전용 심볼(`AppState.toasts` 등)을 `#[cfg(feature = "gui")]` 게이팅 
 
 경계를 가르는 규칙의 정본은 [headless-build-boundaries](headless-build-boundaries.md) 다 —
 세 갈래(`cfg(feature = "gui")` · `cfg(any(feature = "gui", test))` · `expect(dead_code,
-reason)`)와 그것을 재는 네 칸이 거기 있다. 아래 표는 이 빌드 문서에서 자주 걸리는 구체
+reason)`)와 그것을 재는 여덟 칸이 거기 있다. 아래 표는 이 빌드 문서에서 자주 걸리는 구체
 사례다.
 
 | 정의 | 빌드 경계 | 공용으로 남는 부분 |

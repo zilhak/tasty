@@ -41,7 +41,11 @@ dead 로 보이는 이유가 **그 호출자가 같은 실행에서 함께 dead 
 안쪽을 먼저 자르면 컴파일이 깨진다.
 
 **재는 법** — `gui` × `headless` 의 두 feature 조합을, 각각 라이브러리와 `--all-targets`
-로 잰다. 네 칸이다. 한 칸만 보면 나머지에서 회귀가 조용히 나간다.
+로, 각각 debug 와 `--release` 프로필에서 잰다. 여덟 칸이다. 한 칸만 보면 나머지에서 회귀가
+조용히 나간다. 프로필이 축인 이유는 `debug_assertions` 가 feature 와 독립인 두 번째 경계라서다
+— headless 쪽 호출자가 debug 전용 핸들러뿐인 정의는 debug 네 칸에서 살아 있고 release
+headless 에서만 dead 가 된다. 그런 정의의 경계는 호출자 조건의 합집합
+(`cfg(any(feature = "gui", debug_assertions))`, 테스트가 부르면 `test` 추가)이다.
 
 ADR-0111 의 다음 조항은 개정하지 않는다.
 
@@ -56,14 +60,18 @@ ADR-0111 의 다음 조항은 개정하지 않는다.
 ## Consequences
 
 - **얻은 것**: headless 빌드가 라이브러리와 테스트 구성 모두에서 dead 정의 0 을 보고한다.
-  그래서 앞으로 나오는 진단은 전부 새 사실이다. 이 회차 자체가 그 값을 보여줬다 — 예외를
+  이 0 은 **debug 프로필의 두 칸**에서 잰 값이다(실측 2026-09-21). 같은 날 release headless
+  는 dead 16 건을 냈다 — debug 핸들러만 부르던 정의들이다. 그 칸들을 이후 경계로 닫았고, 지금
+  여덟 칸이 모두 0 이라는 것은 위 "재는 법" 으로 그 자리에서 재는 값이다. 그래서 앞으로 나오는
+  진단은 전부 새 사실이다. 이 회차 자체가 그 값을 보여줬다 — 예외를
   끈 상태에서만 보이는 `fire_terminal_hooks` 호출 형태 불일치가 push 를 막아서야 드러났다.
 - **얻은 것**: 무엇이 GUI 전용인지가 정의 옆에 적힌다. 지금까지는 그 답이 아무 데도 없었다.
 - **잃은 것**: GUI 정의에 headless 호출자를 더할 때 `cfg` 와 처리 경로를 함께 고쳐야 한다.
   미리 라우팅해 두던 비용 대신, 새 기능을 들이는 변경에 그 결정을 둔다.
-- **운영 비용**: 위 "재는 법" 의 네 칸을 커밋 전에 돌려야 한다. 자동 채널은 그중 하나도
-  커밋 전에 보지 않는다 — headless 컴파일은 pre-push 가, release gui 는 `check-release` 가
-  본다([ci-gates](../dev-guide/ci-gates.md)).
+- **운영 비용**: 위 "재는 법" 의 여덟 칸을 커밋 전에 돌려야 한다. 자동 채널은 그중 하나도
+  커밋 전에 보지 않는다 — headless debug 컴파일은 pre-push 와 `check-headless` 가, release gui
+  라이브러리는 pre-push 와 `check-release` 가 본다([ci-gates](../dev-guide/ci-gates.md)).
+  release headless 두 칸과 release gui `--all-targets` 칸은 **어떤 자동 채널도 안 본다**.
 - **드러난 것**: headless 는 레이아웃을 저장하지도 복원하지도 않는다. 그 경로 전체가 GUI
   경계 안으로 들어간 것은 기능을 뺀 것이 아니라 이미 그랬던 사실이 보이게 된 것이다.
   마찬가지로 headless 의 OSC 7 cwd 변경은 탭 이름을 갱신하지 않는다 — 터미널 이벤트에서

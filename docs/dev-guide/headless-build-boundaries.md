@@ -52,22 +52,35 @@ dead_code 예외는 쓰지 않는다.
 `E0599` 로 깨졌다. 그 셋을 부르는 `CoreState::mark_notification_read` 가 그 빌드에서
 컴파일되는데, 그쪽도 같은 실행에서 dead 로 보고되고 있었다.
 
-## 재는 법 — 네 칸
+## 재는 법 — 여덟 칸
 
-`gui` × `headless` 의 두 feature 조합을, 각각 라이브러리와 `--all-targets` 로 잰다.
+`gui` × `headless` 의 두 feature 조합을, 각각 라이브러리와 `--all-targets` 로, 각각 debug 와
+`--release` 프로필에서 잰다.
 
 ```bash
 cargo check --workspace --no-default-features
 cargo check --workspace --no-default-features --all-targets
 cargo check --workspace
 cargo check --workspace --all-targets
+cargo check --workspace --release --no-default-features
+cargo check --workspace --release --no-default-features --all-targets
+cargo check --workspace --release
+cargo check --workspace --release --all-targets
 ```
 
 한 칸만 보면 나머지에서 회귀가 조용히 나간다. 라이브러리와 테스트 구성은 서로 다른
 물음의 답이다 — `cfg(any(feature = "gui", test))` 는 앞을 풀고 뒤를 그대로 남긴다.
 
-커밋 전에 이 넷을 보는 자동 채널은 없다. headless 컴파일은 pre-push 가, release gui 컴파일은
-`check-release` 가 본다([ci-gates](ci-gates.md)).
+프로필도 같은 식으로 다른 물음이다. `debug_assertions` 는 feature 와 독립인 두 번째 경계라,
+headless 쪽 호출자가 debug 전용 핸들러(`#[cfg(debug_assertions)]` 모듈)뿐인 정의는 debug 네
+칸에서 살아 있고 release headless 에서만 dead 가 된다. 그런 정의의 경계는 호출자 조건의
+합집합 — `cfg(any(feature = "gui", debug_assertions))`, 테스트가 부르면 `test` 를 더한다.
+실측 2026-09-21: debug 네 칸이 0 이던 트리에서 release headless 라이브러리가 dead 16 건을 냈다.
+
+커밋 전에 이 여덟을 보는 자동 채널은 없다. headless debug 컴파일은 pre-push 와
+`check-headless` 가, release gui 라이브러리는 pre-push 와 `check-release` 가 본다
+([ci-gates](ci-gates.md)). release headless 두 칸과 release gui `--all-targets` 칸은 어떤 자동
+채널도 안 본다 — 직접 돌리지 않으면 아무도 안 돈다.
 
 ## 이 경계가 드러낸 것
 

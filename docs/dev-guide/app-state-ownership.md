@@ -142,7 +142,9 @@ IPC 핸들러가 읽지 않는다 — 같은 Arc 를 `Core` 로 읽는다.
 
 ## 재는 법
 
-`없음`·`②`·`③` 칸은 네 칸 검사로 닫혀 있다([헤드리스 정의 경계](headless-build-boundaries.md) "재는 법"):
+`없음`·`②`·`③` 칸은 headless 두 칸 검사로 닫혀 있다. 아래는 debug 프로필이고, release 두 칸
+(`--release` 를 더한 것)도 함께 돌린다 — debug 핸들러만 읽는 필드는 release headless 에서만
+dead 가 된다. 여덟 칸 전체는 [헤드리스 정의 경계](headless-build-boundaries.md) "재는 법":
 
 ```bash
 cargo check -p tasty --no-default-features --lib
@@ -158,6 +160,6 @@ cargo check -p tasty --no-default-features --all-targets
 
 ## 관련
 
-- [헤드리스 정의 경계](headless-build-boundaries.md) — gui 전용 판정 규칙 세 갈래와 네 칸
+- [헤드리스 정의 경계](headless-build-boundaries.md) — gui 전용 판정 규칙 세 갈래와 여덟 칸
 - [model-view-split](model-view-split.md) — Model 과 Host View 를 가르는 패턴
 - [focus 정책](../design/policies/focus.md) — 사용자 view 상태 중 포커스의 운영 규칙
