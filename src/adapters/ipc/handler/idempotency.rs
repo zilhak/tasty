@@ -716,6 +716,7 @@ fn run_app_layer_in<T>(
                 digest,
                 ticket,
                 reply: cmd.response_tx.clone(),
+                request_seq: cmd.request_seq(),
             };
             return Some(relay.run(spawn, request, handled, dispatch));
         }
@@ -749,6 +750,8 @@ struct Relay {
     ticket: u64,
     /// 원래 통로.
     reply: mpsc::SyncSender<JsonRpcResponse>,
+    /// 원 요청의 호스트 번호. 키를 뗀 사본도 같은 요청이라 이 번호를 그대로 든다.
+    request_seq: tasty_ipc::server::RequestSeq,
 }
 
 impl Relay {
@@ -768,7 +771,7 @@ impl Relay {
         handled: impl FnOnce(&T) -> bool,
         dispatch: impl FnOnce(&IpcCommand) -> T,
     ) -> T {
-        let (store, ticket) = (self.store, self.ticket);
+        let (store, ticket, request_seq) = (self.store, self.ticket, self.request_seq);
         let (scope, key) = (self.scope.clone(), self.key.clone());
         let reply = self.reply.clone();
         let stripped = JsonRpcRequest {
@@ -787,13 +790,13 @@ impl Relay {
             // 본문을 부르기 **전에** 닫는다 — 그 사이에 온 재시도가 결말이 안 날 자리에
             // 합류하지 않게.
             lock(store).abandon(&scope, &key, ticket);
-            let out = dispatch(&IpcCommand::new(stripped, reply));
+            let out = dispatch(&IpcCommand::continuing(stripped, reply, request_seq));
             if !handled(&out) {
                 lock(store).abandon_unhandled(&scope, &key, ticket);
             }
             return out;
         }
-        let relayed = IpcCommand::new(stripped, tx);
+        let relayed = IpcCommand::continuing(stripped, tx, request_seq);
         let out = dispatch(&relayed);
         drop(relayed);
         if !handled(&out) {
@@ -1439,6 +1442,30 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// 키를 뗀 사본은 원 요청의 호스트 번호를 그대로 든다 — 새 번호를 받으면 요청 하나가
+    /// 번호 둘로 갈려, 그 안에서 plugin 으로 넘긴 대기를 원 요청으로 되짚을 수 없다.
+    #[test]
+    fn the_stripped_copy_keeps_the_request_seq_of_the_original() {
+        let seen = std::cell::Cell::new(None);
+        let (first, _rx) = app_cmd("app-seq-probe", 1, "a");
+        let out = run_app_layer(
+            &CallerContext::Local,
+            &first,
+            false,
+            |h| *h,
+            |c: &IpcCommand| {
+                seen.set(Some(c.request_seq()));
+                send_response(
+                    &c.response_tx,
+                    JsonRpcResponse::success(json!(1), json!({})),
+                );
+                true
+            },
+        );
+        assert_eq!(out, Some(true));
+        assert_eq!(seen.get(), Some(first.request_seq()));
     }
 
     /// 답이 **나중에** 오는 메서드(창 생성)에서 첫 실행이 끝나기 전에 같은 키가 오면

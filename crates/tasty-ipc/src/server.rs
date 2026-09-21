@@ -4,13 +4,48 @@
 //! (D.3.D.2.b) 로 이전. 본 모듈은 wire 형식과 강결합된 타입 정의만 보유 —
 //! verify 자율 결정으로 ports/ 가 아닌 wire 모듈 옆에 둔다.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use crate::admission::{AdmissionTicket, CommandAdmission, Origin, Refusal};
 use crate::dispatch::{DispatchStats, FlightTicket};
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+
+/// 호스트가 요청 하나에 붙이는 번호 — 프로세스 수명 동안 1 부터 1 씩 오른다.
+///
+/// **JSON-RPC `id` 와 다른 값이다.** `id` 는 호출자가 고르는 값이라 거의 늘 `1` 이다(정적 CLI
+/// 단발 · 호스트 주입이 전부 `1` 을 싣는다) — 동시에 떠 있는 요청 대부분이 같은 `id` 를 갖는다.
+/// 그래서 진단이 요청 하나를 가리키는 값은 호출자가 아니라 호스트가 정한다. **Event Bus 의
+/// `trace_id` 와도 다른 값이다** — 그것은 사건의 사슬을 잇고, plugin 이 보낸 값을 그대로 싣는다.
+/// 이름에 `trace` 를 안 쓰는 이유가 그 구분이다(ADR-0436).
+///
+/// 만드는 길은 [`RequestSeq::next`] 하나다. 필드가 비공개라 다른 크레이트가 임의의 번호를
+/// 지어낼 수 없고, 가진 번호는 복사해 넘길 수만 있다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RequestSeq(u64);
+
+/// 다음에 줄 번호. 0 은 안 준다 — 첫 번호가 1 이다.
+static NEXT_REQUEST_SEQ: AtomicU64 = AtomicU64::new(1);
+
+impl RequestSeq {
+    /// 새 번호를 하나 받는다. 순서만 보장하면 되는 단조 카운터라 `Relaxed` 로 충분하다.
+    pub fn next() -> Self {
+        Self(NEXT_REQUEST_SEQ.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// 번호의 값. 진단 응답·로그에 싣는 자리가 쓴다 — 메트릭 레이블로는 쓰지 않는다
+    /// (요청마다 다른 값이라 레이블 수가 요청 수만큼 는다).
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for RequestSeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// A command received from an IPC client, with a channel to send the response back.
 pub struct IpcCommand {
@@ -44,6 +79,9 @@ pub struct IpcCommand {
     wait_bound: Option<Duration>,
     /// 실행 전/후 상태. 기다리는 쪽이 [`IpcCommand::lifecycle`] 로 사본을 든다.
     lifecycle: Arc<CommandLifecycle>,
+    /// 호스트가 이 요청에 붙인 번호. 생성자가 받으므로 명령을 만드는 모든 경로(소켓 · 호스트
+    /// 주입)가 번호를 갖는다 — `enqueued_at` 과 같은 강제다.
+    request_seq: RequestSeq,
 }
 
 impl IpcCommand {
@@ -57,15 +95,7 @@ impl IpcCommand {
     /// 무게는 요청을 compact 직렬화한 길이로 잰다 — 줄 없이 만들어지는 명령(호스트 주입)의
     /// 정의다. 받은 줄이 있으면 [`IpcCommand::with_wire_bytes`] 로 그 길이를 넘긴다.
     pub fn new(request: JsonRpcRequest, response_tx: mpsc::SyncSender<JsonRpcResponse>) -> Self {
-        let wire_bytes = match serde_json::to_vec(&request) {
-            Ok(v) => v.len(),
-            Err(e) => {
-                // JsonRpcRequest 는 문자열 키 map 과 Value 뿐이라 직렬화가 실패할 길이 없다.
-                // 실패한다면 무게 0 으로 들어가 바이트 판정만 이 한 건을 못 본다.
-                tracing::warn!("IpcCommand weight: request did not serialize: {e}");
-                0
-            }
-        };
+        let wire_bytes = weigh(&request);
         Self::with_wire_bytes(request, response_tx, wire_bytes)
     }
 
@@ -74,6 +104,29 @@ impl IpcCommand {
         request: JsonRpcRequest,
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         wire_bytes: usize,
+    ) -> Self {
+        Self::build(request, response_tx, wire_bytes, RequestSeq::next())
+    }
+
+    /// 이미 번호를 받은 요청을 **같은 요청으로** 다시 싸는 명령 — 새 번호를 받지 않는다.
+    ///
+    /// 멱등 키를 뗀 사본을 다른 응답 통로로 실행하는 층(본체의 멱등 relay)이 쓴다. 그 사본은
+    /// 호출자가 보낸 요청 그대로이므로, 새 번호를 받으면 요청 하나가 번호 둘로 갈려 그 안에서
+    /// 일어난 plugin 대기를 원 요청으로 되짚을 수 없다.
+    pub fn continuing(
+        request: JsonRpcRequest,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        request_seq: RequestSeq,
+    ) -> Self {
+        let wire_bytes = weigh(&request);
+        Self::build(request, response_tx, wire_bytes, request_seq)
+    }
+
+    fn build(
+        request: JsonRpcRequest,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        wire_bytes: usize,
+        request_seq: RequestSeq,
     ) -> Self {
         let wait_bound = request
             .response_timeout_ms
@@ -87,7 +140,13 @@ impl IpcCommand {
             admission: None,
             wait_bound,
             lifecycle: Arc::new(CommandLifecycle::default()),
+            request_seq,
         }
+    }
+
+    /// 호스트가 이 요청에 붙인 번호([`RequestSeq`]).
+    pub fn request_seq(&self) -> RequestSeq {
+        self.request_seq
     }
 
     /// 이 요청의 무게(바이트).
@@ -153,6 +212,19 @@ impl IpcCommand {
                 stats.record_expired_before_run();
                 Claim::Withdrawn
             }
+        }
+    }
+}
+
+/// 줄 없이 만들어지는 명령의 무게 — 요청을 compact 직렬화한 길이.
+fn weigh(request: &JsonRpcRequest) -> usize {
+    match serde_json::to_vec(request) {
+        Ok(v) => v.len(),
+        Err(e) => {
+            // JsonRpcRequest 는 문자열 키 map 과 Value 뿐이라 직렬화가 실패할 길이 없다.
+            // 실패한다면 무게 0 으로 들어가 바이트 판정만 이 한 건을 못 본다.
+            tracing::warn!("IpcCommand weight: request did not serialize: {e}");
+            0
         }
     }
 }
@@ -365,5 +437,35 @@ mod tests {
             "{}",
             e.message
         );
+    }
+
+    /// 명령을 만드는 두 생성자가 같은 카운터에서 번호를 받는다 — 만들 때마다 새 번호이고,
+    /// 한 스레드가 차례로 만든 명령의 번호는 오른다(다른 시험이 같은 카운터를 동시에 써도
+    /// 이 순서는 안 깨진다 — 단조 카운터다).
+    #[test]
+    fn every_constructor_issues_a_fresh_increasing_request_seq() {
+        let (a, _ra) = cmd(None);
+        let (tx, _rb) = mpsc::sync_channel(1);
+        let b = IpcCommand::with_wire_bytes(a.request.clone(), tx, 10);
+        let (c, _rc) = cmd(None);
+        assert!(
+            a.request_seq() < b.request_seq(),
+            "{a:?} {b:?}",
+            a = a.request_seq(),
+            b = b.request_seq()
+        );
+        assert!(b.request_seq() < c.request_seq());
+        assert!(a.request_seq().get() >= 1, "0 is never issued");
+    }
+
+    /// 같은 요청을 다시 싸는 명령은 번호를 새로 받지 않는다 — 원 요청의 번호를 그대로 든다.
+    #[test]
+    fn a_continuing_command_keeps_the_original_request_seq() {
+        let (a, _ra) = cmd(None);
+        let (tx, _rb) = mpsc::sync_channel(1);
+        let relayed = IpcCommand::continuing(a.request.clone(), tx, a.request_seq());
+        assert_eq!(relayed.request_seq(), a.request_seq());
+        let (next, _rc) = cmd(None);
+        assert!(next.request_seq() > a.request_seq());
     }
 }

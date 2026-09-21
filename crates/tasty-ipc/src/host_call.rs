@@ -312,4 +312,31 @@ mod tests {
             "rpc error -1: m"
         );
     }
+
+    /// 호스트 주입도 소켓과 같은 생성자를 지나 번호를 받는다 — JSON-RPC `id` 는 늘 `1` 인데
+    /// 번호는 주입마다 다르다. 그것이 둘을 가르는 이유다.
+    #[test]
+    fn each_injection_gets_its_own_request_seq_while_the_rpc_id_stays_one() {
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let injector = HostIpcInjector::new(tx, noop_waker());
+        let h = thread::spawn(move || {
+            let mut seen = Vec::new();
+            for _ in 0..2 {
+                let cmd = rx.recv().expect("recv cmd");
+                seen.push((cmd.request_seq(), cmd.request.id.clone()));
+                let resp = JsonRpcResponse::success(Value::from(1u64), serde_json::json!({}));
+                cmd.response_tx.send(resp).expect("send resp");
+            }
+            seen
+        });
+        for _ in 0..2 {
+            injector
+                .dispatch("echo.method", serde_json::json!({}), Duration::from_secs(2))
+                .expect("dispatch ok");
+        }
+        let seen = h.join().unwrap();
+        assert_eq!(seen[0].1, Some(Value::from(1u64)));
+        assert_eq!(seen[0].1, seen[1].1, "the rpc id does not tell them apart");
+        assert!(seen[0].0 < seen[1].0, "{:?}", seen);
+    }
 }
