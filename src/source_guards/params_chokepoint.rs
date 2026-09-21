@@ -47,7 +47,10 @@ const SCAN_DIRS: &[&str] = &["src/adapters/ipc/handler", "src/app/ipc"];
 /// `handler` 디렉터리와 짝인 모듈 루트.
 const HANDLER_ROOT: &str = "src/adapters/ipc/handler.rs";
 
-/// 관문 자신. 여기서는 `as_u64()` 를 부르는 것이 **일**이다.
+/// 관문의 JSON-RPC 얼굴. 판정 본문(`as_u64()` 를 부르는 것이 **일**인 자리)은
+/// `src/core/param_bag.rs` 로 내려갔고 — forward 된 구조 op 의 실행도 같은 규칙으로 읽어야
+/// 해서다 — 그 파일은 위 스캔 계층 밖이다. 이 파일은 그 판정을 재수출하고
+/// `invalid_params` 로 감싼다.
 const CHOKEPOINT: &str = "src/adapters/ipc/handler/params.rs";
 
 /// 스캔한 핸들러 `.rs` 파일 수의 하한 — **연기 검사**다. 경로가 틀리면 예외가 아니라
@@ -359,7 +362,7 @@ fn no_handler_reads_a_param_as_a_number_outside_the_chokepoint() {
     assert!(
         violations.is_empty(),
         "핸들러가 관문 밖에서 params 를 숫자로 읽는다:\n{}\n\
-         `handler/params.rs` 의 `read_int` · `read_i64` · `read_f64` · `read_id_or_name` \
+         `handler/params.rs` 가 재수출하는 `read_int` · `read_i64` · `read_f64` · `read_id_or_name` \
          (또는 `opt_*` / `require_u32`) 을 써라. 직접 읽으면 `as u32` 로 자르기 쉽고, \
          잘린 id 는 **실재하는 다른 대상**을 가리킨다.",
         violations.join("\n")

@@ -53,7 +53,10 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 - **문구를 가른다.** 값이 왔는데 "missing" 이라고 답하면 호출자가 자기가 준 값을 안
   의심한다. 잘못된 값은 그 값을 되비추며 거절한다.
 
-호스트 쪽 공용 판정은 `src/adapters/ipc/handler/params.rs` 에 있다. 새 핸들러는 인라인으로
+호스트 쪽 공용 판정은 `src/core/param_bag.rs` 에 있고, 핸들러는 그것을 재수출하며
+`invalid_params` 로 감싸는 `src/adapters/ipc/handler/params.rs` 를 통해 쓴다. 판정이 도메인
+계층에 있는 것은 원격 mirror 가 forward 한 구조 op 의 실행도 같은 규칙으로 파라미터를 읽어야
+하기 때문이다. 새 핸들러는 인라인으로
 다시 적지 말고 그것을 쓴다 — 같은 몸통이 세 벌로 흩어져 있던 동안 셋 다 같은 결함을 갖고
 있었고, 하나를 고쳐도 나머지 둘은 안 고쳐졌다.
 
