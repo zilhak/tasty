@@ -28,7 +28,9 @@ pub const METHOD_SURFACE_SET_CONTEXT: &str = "surface.set_context";
 /// params에 [`IpcCallResult`].
 pub const METHOD_IPC_RESULT: &str = "ipc.result";
 /// host → plugin: Event Bus dispatch. params에 [`EventDispatchParams`].
-/// 응답은 fire-and-forget — broadcast 모델이라 응답 합치기 없음.
+/// 호스트는 응답을 기다리지 않고 응답 합치기도 없다(broadcast 모델). 다만 응답이 오면 그
+/// dispatch 의 재발화 hop 하한 기록을 지운다 — 응답 전에 그 plugin 이 publish 한 사건은
+/// hop 이 올라가므로, SDK 는 `on_event` 가 돌아온 뒤에 응답한다(ADR-0406).
 pub const METHOD_EVENT_DISPATCH: &str = "event.dispatch";
 /// host → plugin: 사용자 단축키 매칭으로 plugin command가 트리거됨.
 /// params에 [`CommandInvokeParams`]. plugin은 그에 따라 surface state를 변경하고,

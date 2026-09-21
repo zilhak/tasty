@@ -665,7 +665,10 @@ pub(crate) fn dispatch<P: Plugin>(
                 sub_id: parsed.sub_id,
                 envelope: parsed.envelope,
             });
-            // 호스트는 응답을 무시한다. fire-and-forget이라 null 반환.
+            // 호스트는 이 응답을 기다리지 않지만, 받으면 그 dispatch 의 재발화 hop 하한
+            // 기록을 지운다. on_event 가 돌아온 뒤에 응답하는 이 순서가 그 하한의 전제다 —
+            // 응답 전에 이 plugin 이 publish 한 사건은 호스트가 hop 을 올린다(ADR-0406).
+            // 응답 값 자체는 쓰지 않으므로 null.
             Ok(Value::Null)
         }
         METHOD_WEBVIEW_NAVIGATION_ATTEMPT => {
