@@ -66,7 +66,10 @@ pub enum ListCommands {
     /// connection settings that were requested when the database was opened
     /// next to the values read back from it, because a request such as
     /// journal_mode=WAL can be silently refused. `degraded` is true when any
-    /// setting did not take; the database is still in use. `state_db` is null
+    /// setting did not take, and for `memory_db` also when the file could not
+    /// be opened and the instance runs on an in-memory fallback, in which case
+    /// `init_failure` names the cause (it is null otherwise); the database is
+    /// still in use. `state_db` is null
     /// when that database is not open in this process, which is always the
     /// case for a headless instance.
     ///
