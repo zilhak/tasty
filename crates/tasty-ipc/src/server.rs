@@ -5,10 +5,11 @@
 //! verify 자율 결정으로 ports/ 가 아닌 wire 모듈 옆에 둔다.
 
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use crate::admission::{AdmissionTicket, CommandAdmission, Origin, Refusal};
+use crate::dispatch::{DispatchStats, FlightTicket};
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 
 /// A command received from an IPC client, with a channel to send the response back.
@@ -124,10 +125,15 @@ impl IpcCommand {
     ///
     /// `Run` 을 돌려준 뒤로 이 명령은 **시작된 것**이다 — 기다리는 쪽의 상한이 그 뒤에 지나면
     /// 그 답은 "결과 불명" 이다.
-    pub fn claim(&self) -> Claim {
+    ///
+    /// 판정은 `stats` 에 한 번 센다 — 실행 안 됨은 `expired_before_run` 에, 실행은 in-flight 에.
+    /// in-flight 의 몫은 이 명령의 실행 상태 칸에 실려, 응답을 기다리던 쪽까지 칸을 놓을 때
+    /// 빠진다([`crate::dispatch::DispatchSnapshot::in_flight`]).
+    pub fn claim(&self, stats: &Arc<DispatchStats>) -> Claim {
         if let Some(bound) = self.wait_bound {
             let waited = self.queue_wait();
             if waited >= bound {
+                stats.record_expired_before_run();
                 return match self.lifecycle.transition(QUEUED, WITHDRAWN) {
                     Ok(()) => Claim::Expired { waited, bound },
                     Err(_) => Claim::Withdrawn,
@@ -135,8 +141,18 @@ impl IpcCommand {
             }
         }
         match self.lifecycle.transition(QUEUED, STARTED) {
-            Ok(()) => Claim::Run,
-            Err(_) => Claim::Withdrawn,
+            Ok(()) => {
+                if self.lifecycle.flight.set(stats.begin_flight()).is_err() {
+                    // 상태가 QUEUED 에서 STARTED 로 가는 것은 한 번뿐이라 이 칸이 두 번 채워질
+                    // 길이 없다. 채워졌다면 그 몫은 여기서 버려지며 스스로 빠진다.
+                    tracing::warn!("IPC command started twice — in-flight share dropped");
+                }
+                Claim::Run
+            }
+            Err(_) => {
+                stats.record_expired_before_run();
+                Claim::Withdrawn
+            }
         }
     }
 }
@@ -171,6 +187,9 @@ const WITHDRAWN: u8 = 2;
 #[derive(Debug, Default)]
 pub struct CommandLifecycle {
     state: AtomicU8,
+    /// 실행을 시작한 명령의 in-flight 몫. 이 칸을 든 마지막 쪽(명령 또는 기다리는 쪽)이 놓을 때
+    /// 버려진다.
+    flight: OnceLock<FlightTicket>,
 }
 
 impl CommandLifecycle {
@@ -235,6 +254,10 @@ pub type IpcWaker = Arc<dyn Fn() + Send + Sync>;
 mod tests {
     use super::*;
 
+    fn stats() -> Arc<DispatchStats> {
+        Arc::new(DispatchStats::default())
+    }
+
     fn cmd(bound_ms: Option<u64>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
         let (tx, rx) = mpsc::sync_channel(1);
         let req = JsonRpcRequest {
@@ -254,7 +277,7 @@ mod tests {
     fn a_started_command_cannot_be_withdrawn() {
         let (c, _rx) = cmd(Some(60_000));
         let waiter = c.lifecycle();
-        assert_eq!(c.claim(), Claim::Run);
+        assert_eq!(c.claim(&stats()), Claim::Run);
         assert_eq!(waiter.withdraw(), Withdraw::Started);
     }
 
@@ -264,7 +287,7 @@ mod tests {
         let (c, _rx) = cmd(Some(60_000));
         let waiter = c.lifecycle();
         assert_eq!(waiter.withdraw(), Withdraw::NotRun);
-        assert_eq!(c.claim(), Claim::Withdrawn);
+        assert_eq!(c.claim(&stats()), Claim::Withdrawn);
     }
 
     /// 기한이 큐에서 지난 명령은 꺼낸 쪽이 실행하지 않고, 그 뒤 기다리는 쪽의 만료도 "실행 안 됨" 이다.
@@ -273,7 +296,7 @@ mod tests {
         let (c, _rx) = cmd(Some(1));
         let waiter = c.lifecycle();
         std::thread::sleep(Duration::from_millis(5));
-        match c.claim() {
+        match c.claim(&stats()) {
             Claim::Expired { waited, bound } => {
                 assert_eq!(bound, Duration::from_millis(1));
                 assert!(waited >= bound, "{waited:?}");
@@ -289,7 +312,7 @@ mod tests {
         for bound in [None, Some(0)] {
             let (c, _rx) = cmd(bound);
             std::thread::sleep(Duration::from_millis(2));
-            assert_eq!(c.claim(), Claim::Run, "{bound:?}");
+            assert_eq!(c.claim(&stats()), Claim::Run, "{bound:?}");
         }
     }
 
@@ -300,13 +323,34 @@ mod tests {
             let (c, _rx) = cmd(Some(60_000));
             let waiter = c.lifecycle();
             let t = std::thread::spawn(move || waiter.withdraw());
-            let claim = c.claim();
+            let claim = c.claim(&stats());
             let withdraw = t.join().expect("withdraw thread");
             match (claim, withdraw) {
                 (Claim::Run, Withdraw::Started) | (Claim::Withdrawn, Withdraw::NotRun) => {}
                 other => panic!("both or neither won: {other:?}"),
             }
         }
+    }
+
+    /// 실행을 시작한 명령은 명령과 기다리는 쪽이 **둘 다** 놓을 때까지 in-flight 다. 실행하지 않은
+    /// 명령은 in-flight 에 안 들고 `expired_before_run` 에 든다.
+    #[test]
+    fn a_started_command_is_in_flight_until_both_holders_let_go() {
+        let stats = stats();
+        let (c, _rx) = cmd(Some(60_000));
+        let waiter = c.lifecycle();
+        assert_eq!(c.claim(&stats), Claim::Run);
+        drop(waiter);
+        assert_eq!(stats.snapshot().in_flight, 1, "the command still holds it");
+        drop(c);
+        let s = stats.snapshot();
+        assert_eq!((s.in_flight, s.started, s.expired_before_run), (0, 1, 0));
+
+        let (c, _rx) = cmd(Some(60_000));
+        c.lifecycle().withdraw();
+        assert_eq!(c.claim(&stats), Claim::Withdrawn);
+        let s = stats.snapshot();
+        assert_eq!((s.in_flight, s.started, s.expired_before_run), (0, 1, 1));
     }
 
     /// 꺼낸 쪽과 기다리는 쪽이 쓰는 "실행 안 됨" 답은 한 함수에서 나온다.

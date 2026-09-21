@@ -1459,7 +1459,8 @@ mod admission_tests {
             let cmd = cmd_rx
                 .recv_timeout(Duration::from_secs(5))
                 .expect("the request reaches the queue");
-            assert_eq!(cmd.claim(), tasty_ipc::server::Claim::Run);
+            let stats = Arc::new(tasty_ipc::dispatch::DispatchStats::default());
+            assert_eq!(cmd.claim(&stats), tasty_ipc::server::Claim::Run);
             // 받는 쪽이 이미 실패해 사라졌을 수 있다 — 그때는 시험이 다른 실패문으로 끝난다.
             let _ = held_tx.send(cmd);
         });
@@ -1536,7 +1537,7 @@ mod admission_tests {
             .try_recv()
             .expect("the request was queued and nobody took it");
         assert_eq!(
-            queued.claim(),
+            queued.claim(&Arc::new(tasty_ipc::dispatch::DispatchStats::default())),
             tasty_ipc::server::Claim::Withdrawn,
             "the waiter withdrew it, so taking it now must not run it"
         );

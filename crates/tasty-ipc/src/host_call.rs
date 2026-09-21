@@ -102,6 +102,13 @@ impl HostIpcInjector {
         self
     }
 
+    /// 붙은 큐 입장 장부 — 서버와 **같은** 장부다. 진단이 큐에 든 바이트·거절 누계를 읽는
+    /// 자리([`crate::dispatch::CommandQueueSnapshot::read`])가 이것으로 장부에 닿는다. 서버 없이
+    /// 채널만 세운 조립이면 `None`.
+    pub fn admission(&self) -> Option<&Arc<CommandAdmission>> {
+        self.admission.as_ref()
+    }
+
     /// JSON-RPC 메서드를 동기 호출. 응답은 `Ok(result)` 또는 [`InjectError`].
     /// timeout 은 응답 대기 시간 (App tick + plugin 처리 시간 모두 포함).
     pub fn dispatch(
@@ -125,6 +132,10 @@ impl HostIpcInjector {
             cmd.admit(admission, Origin::Injected)
                 .map_err(InjectError::Refused)?;
         }
+        // 실행 상태 칸의 사본을 기다리는 동안 든다 — 명령이 시작되면 그 in-flight 몫이 이
+        // 호출이 돌아갈 때까지 남는다(소켓 경로와 같은 모수). 상한에서 물러나도 명령은 종전대로
+        // 큐에 남아 나중에 실행된다 — 주입 경로는 기한을 싣지 않는다(ADR-0411).
+        let _flight = cmd.lifecycle();
         self.sender
             .send(cmd)
             .map_err(|e| InjectError::Send(e.to_string()))?;

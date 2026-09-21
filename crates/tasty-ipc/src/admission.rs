@@ -129,7 +129,8 @@ impl fmt::Display for Refusal {
     }
 }
 
-/// 한 시점의 장부 값. 노출 자리는 아직 없다 — ADR-0391 재검토 조건.
+/// 한 시점의 장부 값. 읽는 자리는 [`crate::dispatch::CommandQueueSnapshot::read`] 다(ADR-0412) —
+/// IPC·CLI 노출은 아직 없다(ADR-0391 재검토 조건).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AdmissionSnapshot {
     /// 지금 큐에 든 요청 바이트 합.

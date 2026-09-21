@@ -27,6 +27,7 @@
 //! 종료 drain(`shutdown_machine`)은 이 규칙을 쓰지 않는다 — 남은 것을 전부 거절로 답해야 하는
 //! 절차라 예산을 두면 답 없이 끝날 수 있다(ADR-0313).
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tasty_ipc::dispatch::{DispatchStats, RoundEnd};
@@ -107,8 +108,8 @@ impl IpcRound {
 /// 답한다(ADR-0411). 기다리던 쪽이 먼저 물러났으면 그쪽이 이미 답했으므로 조용히 버린다. 두
 /// 경우 모두 게이트(권한·audit·rate limit)에 닿기 **전**이라 실행되지 않은 요청이 토큰을 쓰거나
 /// 감사 행을 남기지 않는다. 큐 대기 계측은 이보다 먼저다 — 만료된 요청도 큐에 앉아 있었다.
-pub(crate) fn claim_or_answer(cmd: &IpcCommand, dispatch: &DispatchStats) -> bool {
-    match cmd.claim() {
+pub(crate) fn claim_or_answer(cmd: &IpcCommand, dispatch: &Arc<DispatchStats>) -> bool {
+    match cmd.claim(dispatch) {
         Claim::Run => true,
         Claim::Expired { waited, bound } => {
             tracing::debug!(
@@ -117,7 +118,6 @@ pub(crate) fn claim_or_answer(cmd: &IpcCommand, dispatch: &DispatchStats) -> boo
                 waited,
                 bound
             );
-            dispatch.record_expired_before_run();
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             crate::ipc::server::send_response(
                 &cmd.response_tx,
@@ -125,10 +125,7 @@ pub(crate) fn claim_or_answer(cmd: &IpcCommand, dispatch: &DispatchStats) -> boo
             );
             false
         }
-        Claim::Withdrawn => {
-            dispatch.record_expired_before_run();
-            false
-        }
+        Claim::Withdrawn => false,
     }
 }
 
@@ -252,7 +249,7 @@ mod tests {
     /// 기한이 큐에서 지난 명령은 실행하지 않고, 꺼낸 쪽이 `-32067` 로 답하고 센다.
     #[test]
     fn a_command_past_its_deadline_is_answered_not_run_and_counted() {
-        let dispatch = DispatchStats::default();
+        let dispatch = Arc::new(DispatchStats::default());
         let (cmd, rx) = bounded(1);
         std::thread::sleep(Duration::from_millis(5));
         assert!(!claim_or_answer(&cmd, &dispatch), "it must not run");
@@ -267,7 +264,7 @@ mod tests {
     /// 기다리던 쪽이 먼저 물러난 명령은 조용히 버린다 — 답은 그쪽이 이미 썼다.
     #[test]
     fn a_withdrawn_command_is_dropped_without_a_second_answer() {
-        let dispatch = DispatchStats::default();
+        let dispatch = Arc::new(DispatchStats::default());
         let (cmd, rx) = bounded(60_000);
         cmd.lifecycle().withdraw();
         assert!(!claim_or_answer(&cmd, &dispatch));
@@ -277,11 +274,18 @@ mod tests {
 
     /// 기한 안의 명령은 실행한다.
     #[test]
-    fn a_command_within_its_deadline_runs() {
-        let dispatch = DispatchStats::default();
+    fn a_command_within_its_deadline_runs_and_is_in_flight_until_its_waiter_lets_go() {
+        let dispatch = Arc::new(DispatchStats::default());
         let (cmd, _rx) = bounded(60_000);
+        let waiter = cmd.lifecycle();
         assert!(claim_or_answer(&cmd, &dispatch));
         assert_eq!(dispatch.snapshot().expired_before_run, 0);
+        assert_eq!(dispatch.snapshot().in_flight, 1);
+        // 메인 스레드가 명령을 놓아도(응답을 워커로 넘긴 경우) 기다리는 쪽이 있는 동안은 실행 중이다.
+        drop(cmd);
+        assert_eq!(dispatch.snapshot().in_flight, 1);
+        drop(waiter);
+        assert_eq!(dispatch.snapshot().in_flight, 0);
     }
 
     /// 서버가 없는 조립에서는 아무것도 꺼내지 않는다.

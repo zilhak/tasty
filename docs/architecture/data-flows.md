@@ -71,6 +71,17 @@ tasty-cli (또는 외부 프로그램)
 올리고, 그래서 어떤 요청 앞에 설 수 있는 명령 수는 연결 상한과 주입 깊이 상한으로 유한하다.
 호출자별 스케줄링은 없다(ADR-0410).
 
+호출자가 봉투에 응답 대기 상한을 실었으면 명령은 **기한**(큐 진입 + 상한)을 든다. 회차는 명령을
+꺼낸 직후, 게이트보다 앞에서 기한을 보고 지났으면 실행하지 않고 `-32067` 로 답한다. 응답을
+기다리는 연결 스레드와 "시작했는가" 를 상태 칸 하나로 정하므로, 시작 뒤의 만료만 `-32061`(결과
+불명)이다([ADR-0411](../adr/0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md)).
+
+큐에서 **꺼낸** 쪽의 누계 — 회차가 멈춘 이유 · 실행 전 만료 수 · 지금 실행 중인(in-flight) 요청
+수 — 는 `tasty_ipc::dispatch::DispatchStats`(`Core::dispatch`)에 있고, 큐에 **든** 쪽(입장 장부)과
+함께 `CommandQueueSnapshot::read` 한 자리에서 읽는다. in-flight 는 "시작했고 호출자가 아직
+기다리는" 요청이다([ADR-0412](../adr/0412-in-flight-counts-a-started-request-while-its-caller-still-waits.md)).
+IPC·CLI 로 내보내는 자리는 아직 없다.
+
 종료 중의 drain 은 이 정책을 따르지 않는다 — 남은 요청을 거절하며 비워야 한다
 ([shutdown-sequence](shutdown-sequence.md)).
 
