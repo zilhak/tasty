@@ -58,10 +58,19 @@ tasty-cli (또는 외부 프로그램)
 
 플러그인 namespace 메서드(`claude.*` 등)는 `plugin_bridge/` 를 거쳐 plugin 프로세스로 위임된다. attach 스트리밍은 별도 `StreamReady` 경로(`tasty_ipc::stream_hub::StreamHub`).
 
-**한 회차가 집어 드는 명령 수에는 상한이 있다.** gui 의 `process_ipc` 와 headless 의
-`pump_ipc` 가 같은 값(`DRAIN_BUDGET_PER_ROUND`)까지만 큐에서 꺼내고, 남은 것은 다음 회차가
-집는다 — 명령을 넣는 쪽이 명령마다 waker 를 한 번 부르므로 그 wake 가 이미 큐에 남아 있다.
-값은 고르지 않고 동시 연결 상한에서 파생한다: [ADR-0313](../adr/0313-the-dispatch-round-budget-is-the-connection-bound.md).
+**한 회차에는 두 예산이 있다.** gui 의 `process_ipc` 와 headless 의 `pump_ipc` 가 같은 규칙
+(`app::ipc_round::IpcRound`)을 쓴다 — 큐에서 명령을 **하나 꺼내 끝까지 처리하고 다음 것을
+꺼내며**, 명령 수가 `DRAIN_BUDGET_PER_ROUND`(동시 연결 상한에서 파생,
+[ADR-0313](../adr/0313-the-dispatch-round-budget-is-the-connection-bound.md))에 닿거나 경과 시간이
+`ROUND_TIME_BUDGET`(16 ms, [ADR-0410](../adr/0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md))에
+닿으면 멈춘다. 첫 명령은 시간과 무관하게 늘 처리한다. 남은 것은 **큐에 그대로** 있다가 다음
+회차가 집는다 — 명령을 넣는 쪽이 명령마다 waker 를 한 번 부르므로 그 wake 가 이미 큐에 남아
+있다. 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
+
+순서는 도착 순이다. 연결 하나는 응답을 받을 때까지 다음 요청을 안 보내므로 큐에 한 번에 하나만
+올리고, 그래서 어떤 요청 앞에 설 수 있는 명령 수는 연결 상한과 주입 깊이 상한으로 유한하다.
+호출자별 스케줄링은 없다(ADR-0410).
+
 종료 중의 drain 은 이 정책을 따르지 않는다 — 남은 요청을 거절하며 비워야 한다
 ([shutdown-sequence](shutdown-sequence.md)).
 

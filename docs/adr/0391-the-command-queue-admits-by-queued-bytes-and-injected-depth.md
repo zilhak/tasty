@@ -73,6 +73,10 @@ IPC 서버의 명령 큐(`src/adapters/production/tcp_ipc_server.rs` 의 `TcpIpc
 - `QUEUED_BYTES_LIMIT < MAX_CONCURRENT_CONNECTIONS × MAX_REQUEST_LINE_BYTES` — 이 상한 이전의 이론상
   최대보다 작다. 아니면 상한이 한 번도 안 걸린다.
 - `INJECTED_DEPTH_LIMIT <= DRAIN_BUDGET_PER_ROUND` — 한 dispatch 회차가 주입 적체를 한 번에 비운다.
+  (2026-09-21 보강: 이 관계는 **명령 수로만** 참이다. 회차는 시간 예산에서도 멈추므로 —
+  [ADR-0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md) —
+  주입 명령이 무거우면 적체가 여러 회차에 나뉘어 비워진다. 남은 것은 큐에 그대로 있어 이 장부가
+  계속 센다.)
 
 그 사이에서 64 MiB 와 256 을 고른 근거는 정상 인구다. 정상 요청은 수백 바이트 규모이고, 최대 크기
 요청(8 MiB)은 드문 `memory.set` 하나다. 64 MiB 는 그런 요청 여덟 건이 겹쳐도 받는 값이다. 256 은

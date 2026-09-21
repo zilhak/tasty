@@ -51,6 +51,18 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
   거기서 예산을 두면 **남은 것을 거절하지 못한 채 종료**할 수 있다. 정상 회차의 정책을
   그대로 적용하지 않는다.
 
+### 진행 보장의 한계 (보강, 2026-09-21)
+
+회차 예산은 명령과 명령 **사이**에서만 작동한다. **이미 실행 중인 동기 handler 는 선점하지
+못한다** — 메인 스레드에서 도는 handler 하나가 오래 걸리면 그동안 이 회차도, 뒤의 요청도,
+타이머와 화면도 기다린다. 그 handler 를 끊을 수단은 트리에 없다. 호출자가 실은 응답 대기 상한
+([ADR-0328](0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md))이
+만료돼도 호스트는 응답 통로를 놓을 뿐이고 실행은 계속된다. 그래서 "진행이 보장된다" 는 말이
+뜻하는 것은 **큐에 든 요청이 유한한 자리 뒤에서 차례를 받는다**는 것이지, 요청 하나의 **시간**이
+유한하다는 것이 아니다. 회차 길이를 시간으로도 자르는 결정은
+[ADR-0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md)
+이고, 그 결정도 이 한계를 넘지 못한다.
+
 ## Alternatives Considered
 
 - **예산 없이 두고 관측만 한다** — `record_drain` 이 이미 회차마다 집어 든 수를 기록한다.
@@ -102,6 +114,8 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
   `record_drain` 항이 먼저다 — 닿은 회차가 없으면 지연도 없다.
 
 ## References
+
+- 부분 개정: [0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md) (회차 길이를 명령 수로만 자르는 조항 개정 — 시간 예산을 함께 둔다)
 
 - 상한의 상대 결정: [ADR-0304](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md)
   (요청 한 줄 바이트 · 동시 연결 수)

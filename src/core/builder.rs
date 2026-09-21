@@ -166,6 +166,8 @@ impl CoreBuilder {
             // 주입 대상이 아니다 — IPC 서버가 `Core` 뒤에 뜨므로 여기서 낳고
             // 부팅이 그 핸들을 서버에 건넨다(`Hub::start_ipc`).
             connections: std::sync::Arc::new(tasty_telemetry::ConnectionStats::default()),
+            // 주입 대상이 아니다 — `pressure` 와 같은 이유(이 프로세스의 누계).
+            dispatch: std::sync::Arc::new(tasty_ipc::dispatch::DispatchStats::default()),
         })
     }
 }

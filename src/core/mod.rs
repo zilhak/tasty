@@ -302,6 +302,13 @@ pub(crate) struct Core {
     /// 그때 `accepted` 가 0 이라 "연결을 받은 적이 없다" 로 읽힌다.
     connections: Arc<tasty_telemetry::ConnectionStats>,
 
+    /// IPC dispatch 회차가 어디서 멈췄는가의 누계(`tasty_ipc::dispatch`).
+    ///
+    /// `pressure` 의 큐 계측과 모수가 같다(명령을 하나 이상 꺼낸 회차). 따로 둔 이유는 재는
+    /// 것이 시간·깊이가 아니라 **회차를 끝낸 규칙**이기 때문이다 — 회차 규칙은 본체
+    /// `app::ipc_round` 가 정한다.
+    dispatch: Arc<tasty_ipc::dispatch::DispatchStats>,
+
     /// `memory.db` 를 열 때 건 연결 pragma 의 요청값과 되읽은 실제값.
     ///
     /// `db_latency` 와 같은 이유로 스토어 밖에 복제해 둔다 — 읽는 자리(진단 응답)가
@@ -345,6 +352,11 @@ impl Core {
     /// 과 같이 `&Arc` 를 돌려준다.
     pub(crate) fn connections(&self) -> &Arc<tasty_telemetry::ConnectionStats> {
         &self.connections
+    }
+
+    /// IPC dispatch 회차 누계. 기록은 `&self` 로 충분하다 — 안이 전부 원자값이다.
+    pub(crate) fn dispatch(&self) -> &Arc<tasty_ipc::dispatch::DispatchStats> {
+        &self.dispatch
     }
 
     /// `Clock` port 경유 현재 Unix ms — 관측 로그(audit/telemetry)의 시각 축이

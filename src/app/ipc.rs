@@ -38,35 +38,22 @@ pub(crate) enum IpcStep {
 
 impl App {
     /// Process pending IPC commands. Returns true if any commands were processed.
+    ///
+    /// 한 회차의 규칙(수 예산 · 시간 예산 · 이월)은 [`crate::app::ipc_round`] 가 정한다 —
+    /// headless `pump_ipc` 와 같은 것을 쓴다.
     pub(crate) fn process_ipc(&mut self) -> bool {
-        // `ipc` 참조를 짧게 유지: 큐가 빌 때까지 cmd 들을 한 번에 drain.
-        // try_recv 결과는 owned `IpcCommand` 이므로 borrow 가 cmd 안으로 따라 가지 않는다.
-        let mut pending: Vec<crate::ipc::server::IpcCommand> = Vec::new();
-        let Some(ipc) = self.hub.ipc_server.as_ref() else {
-            return false;
-        };
-        // 회차 예산 — 큐가 회차의 길이를 정하지 못하게 한다. 남은 것은 넣는 쪽이
-        // 명령마다 부른 waker 가 다시 들여보낸다(`DRAIN_BUDGET_PER_ROUND` 참조).
-        for _ in 0..crate::adapters::production::tcp_ipc_server::DRAIN_BUDGET_PER_ROUND {
-            match ipc.try_recv() {
-                Ok(cmd) => pending.push(cmd),
-                Err(_) => break,
-            }
-        }
-        if pending.is_empty() {
-            return false;
-        }
-        // 이 프레임이 집어 든 명령 수 — 비어 있을 때는 위에서 빠지므로 여기 세는
-        // 것은 "명령이 있었던 프레임" 뿐이다. 예산에 붙은 값이 나오면 그 회차는
-        // 큐를 다 비우지 못한 것이다.
-        self.core.pressure().record_drain(pending.len());
-
+        let mut round = crate::app::ipc_round::IpcRound::begin();
         let mut processed = false;
         let mut tool_registry_dirty = false;
-        for cmd in pending {
+        // `ipc_server` 빌림은 `next` 호출 안에서 끝난다 — 꺼낸 명령은 owned 라 handler 의
+        // 가변 빌림과 안 겹친다.
+        while let Some(cmd) = round.next(self.hub.ipc_server.as_deref()) {
             match self.ipc_dispatch_command(cmd) {
                 #[cfg(debug_assertions)]
-                IpcStep::Shutdown => return true,
+                IpcStep::Shutdown => {
+                    round.finish(self.core.pressure(), self.core.dispatch());
+                    return true;
+                }
                 IpcStep::HandledDirty => {
                     tool_registry_dirty = true;
                     processed = true;
@@ -75,6 +62,7 @@ impl App {
                 IpcStep::NotHandled => {}
             }
         }
+        round.finish(self.core.pressure(), self.core.dispatch());
         if tool_registry_dirty {
             self.refresh_tool_registry();
             self.refresh_palette_plugin_commands();

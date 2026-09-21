@@ -35,6 +35,7 @@ pub(crate) mod idle_hooks;
 pub(crate) mod image_upload;
 #[cfg(feature = "gui")]
 pub(crate) mod ipc;
+pub(crate) mod ipc_round;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]

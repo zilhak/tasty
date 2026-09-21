@@ -12,6 +12,7 @@ pub mod alias;
 pub mod caller;
 pub mod capability;
 pub mod client;
+pub mod dispatch;
 pub mod host_call;
 pub mod host_port;
 pub mod ipc_namespace;

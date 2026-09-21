@@ -51,30 +51,17 @@ pub(crate) fn pump_ipc(
     state: &mut AppState,
     engine: &mut CoreState,
 ) -> std::ops::ControlFlow<()> {
-    // 큐를 한 번에 drain (try_recv 결과는 owned 라 borrow 가 따라가지 않는다).
-    let mut pending = Vec::new();
-    if let Some(ipc) = app.hub.ipc_server.as_ref() {
-        // 회차 예산 — gui 쪽 `process_ipc` 와 같은 값을 쓴다. 남은 것은 넣는 쪽이
-        // 명령마다 부른 waker 가 다시 들여보낸다(`DRAIN_BUDGET_PER_ROUND` 참조).
-        for _ in 0..crate::adapters::production::tcp_ipc_server::DRAIN_BUDGET_PER_ROUND {
-            match ipc.try_recv() {
-                Ok(cmd) => pending.push(cmd),
-                Err(_) => break,
-            }
-        }
-    }
-
-    // GUI 쪽 `process_ipc` 와 같은 자리에서 같은 값을 센다 — 두 경로의 집계 범위가
-    // 어긋나면 headless 에서만 보이는 적체를 못 읽는다.
-    if !pending.is_empty() {
-        app.core.pressure().record_drain(pending.len());
-    }
-
-    for cmd in pending {
+    // 한 회차의 규칙(수 예산 · 시간 예산 · 이월)은 gui 쪽 `process_ipc` 와 같은 것을 쓴다
+    // (`crate::app::ipc_round`). 두 경로의 집계 범위가 어긋나면 headless 에서만 보이는
+    // 적체를 못 읽는다 — 그래서 세는 자리도 그 안의 한 곳이다.
+    let mut round = crate::app::ipc_round::IpcRound::begin();
+    while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
         if dispatch_command(app, state, engine, cmd).is_break() {
+            round.finish(app.core.pressure(), app.core.dispatch());
             return std::ops::ControlFlow::Break(());
         }
     }
+    round.finish(app.core.pressure(), app.core.dispatch());
     std::ops::ControlFlow::Continue(())
 }
 
