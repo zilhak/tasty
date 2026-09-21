@@ -13,6 +13,38 @@ use tracing_subscriber::EnvFilter;
 
 use tasty_utils::path::tasty_home;
 
+/// 보고서 머리의 `Version:` 에 찍을 **본체** 버전. [`init`] 이 받아 둔다.
+///
+/// 이 크레이트에서 `env!("CARGO_PKG_VERSION")` 를 쓰면 이 크레이트(`tasty-platform`)의
+/// 버전으로 풀린다 — 보고서를 받는 사람이 가를 값은 tasty 바이너리의 버전이므로,
+/// 그 값은 본체가 자기 크레이트에서 풀어 넘긴다(ADR-0331: 의미는 부르는 쪽이 정한다).
+static APP_VERSION: OnceLock<&'static str> = OnceLock::new();
+
+/// 보고서에 찍을 버전. [`init`] 전이면 `unknown` 이다 — 틀린 값보다 모른다는 값이 낫다.
+fn app_version() -> &'static str {
+    APP_VERSION.get().copied().unwrap_or("unknown")
+}
+
+/// crash · hang 보고서가 공유하는 머리(제목 · 시각 · 버전 · OS)를 쓴다.
+fn write_report_header(out: &mut impl Write, title: &str, timestamp: &str) {
+    writeln!(out, "=== {title} ===").ok();
+    writeln!(
+        out,
+        "Timestamp: {}",
+        timestamp.replace('T', " ").replace('-', ":")
+    )
+    .ok();
+    writeln!(out, "Version: {}", app_version()).ok();
+    writeln!(
+        out,
+        "OS: {} {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+    .ok();
+    writeln!(out).ok();
+}
+
 /// Return the crash report directory: `~/.tasty/crash-reports/`
 fn crash_report_dir() -> Option<PathBuf> {
     tasty_home().map(|dir| dir.join("crash-reports"))
@@ -64,22 +96,7 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
 
     let mut file = fs::File::create(&path).ok()?;
 
-    writeln!(file, "=== Tasty Crash Report ===").ok();
-    writeln!(
-        file,
-        "Timestamp: {}",
-        timestamp.replace('T', " ").replace('-', ":")
-    )
-    .ok();
-    writeln!(file, "Version: {}", env!("CARGO_PKG_VERSION")).ok();
-    writeln!(
-        file,
-        "OS: {} {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    )
-    .ok();
-    writeln!(file).ok();
+    write_report_header(&mut file, "Tasty Crash Report", &timestamp);
 
     writeln!(file, "=== Panic ===").ok();
     if let Some(location) = info.location() {
@@ -118,22 +135,7 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
     let path = dir.join(format!("hang-{timestamp}.log"));
     let mut file = fs::File::create(&path).ok()?;
 
-    writeln!(file, "=== Tasty Hang Report ===").ok();
-    writeln!(
-        file,
-        "Timestamp: {}",
-        timestamp.replace('T', " ").replace('-', ":")
-    )
-    .ok();
-    writeln!(file, "Version: {}", env!("CARGO_PKG_VERSION")).ok();
-    writeln!(
-        file,
-        "OS: {} {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    )
-    .ok();
-    writeln!(file).ok();
+    write_report_header(&mut file, "Tasty Hang Report", &timestamp);
 
     writeln!(file, "=== Stall ===").ok();
     writeln!(file, "Callback: {site}").ok();
@@ -155,6 +157,9 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
 
 /// Initialize crash reporting and tracing.
 ///
+/// `app_version` 은 보고서 머리의 `Version:` 에 찍힌다 — 본체가 자기 크레이트에서
+/// `env!("CARGO_PKG_VERSION")` 으로 풀어 넘긴다([`APP_VERSION`]).
+///
 /// - **All builds**: Installs a panic hook that writes crash reports to `~/.tasty/crash-reports/`.
 ///   Initializes tracing with stderr output, plus a file layer under `~/.tasty/` (independent of
 ///   the stderr `TASTY_LOG` filter — see `init_tracing`).
@@ -169,7 +174,9 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
 /// 현재 그 구간에는 tracing 호출이 없어 실제 유실은 없지만, 라우팅 이전에 로그를
 /// 추가하면 파일 로그에서 조용히 빠진다. 파일에 반드시 남아야 하는 진단이라면 라우팅
 /// 이후로 옮기거나 전용 파일(`crash-*.log` / `hang-*.log` / `hook-failures.log`)을 쓴다.
-pub fn init() {
+pub fn init(app_version: &'static str) {
+    set_app_version(app_version);
+
     // Install panic hook (always, no runtime cost until panic)
     panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::force_capture();
@@ -184,6 +191,19 @@ pub fn init() {
 
     // Initialize tracing
     init_tracing();
+}
+
+/// [`APP_VERSION`] 을 채운다. 두 번째 호출은 무시한다 — 한 프로세스의 버전은 하나이고,
+/// 부팅 경로의 호출자도 하나라 두 번째 값이 첫 값과 다를 이유가 없다. 먼저 들어간
+/// 값을 지키는 편이 이미 쓰였을지 모를 보고서와도 맞는다.
+fn set_app_version(version: &'static str) {
+    if APP_VERSION.set(version).is_err() {
+        tracing::debug!(
+            ignored = version,
+            kept = app_version(),
+            "crash report version already set; keeping the first value"
+        );
+    }
 }
 
 fn make_env_filter() -> EnvFilter {
@@ -442,3 +462,56 @@ pub use error_loop::record_error;
 #[cfg(all(feature = "gui", not(debug_assertions)))]
 #[inline(always)]
 pub fn record_error(_msg: &str) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 시험이 넣는 버전. `APP_VERSION` 은 프로세스 전역 `OnceLock` 이라 한 번만 들어가므로,
+    /// 이 모듈의 모든 시험이 **같은 값**을 넣는다 — 어느 시험이 먼저 돌든 결과가 같다.
+    /// 이 크레이트의 버전(`CARGO_PKG_VERSION`)과 일부러 다른 값이다.
+    const TEST_VERSION: &str = "9.8.7-crash-report-test";
+
+    fn with_test_version() {
+        set_app_version(TEST_VERSION);
+        assert_eq!(
+            app_version(),
+            TEST_VERSION,
+            "이 모듈 밖에서 다른 값이 먼저 들어갔다 — 전역 OnceLock 을 쓰는 시험이 늘었다"
+        );
+    }
+
+    /// 머리의 `Version:` 은 [`init`] 이 받은 본체 버전이다 — 이 크레이트 자신의 버전이
+    /// 아니다. crash · hang 두 보고서가 이 함수를 공유하므로 headless 조합에서도 잰다.
+    #[test]
+    fn the_report_header_carries_the_version_given_to_init() {
+        with_test_version();
+        let mut out = Vec::new();
+        write_report_header(&mut out, "Tasty Crash Report", "2026-09-21T00-00-00");
+        let text = String::from_utf8(out).expect("utf-8");
+        assert!(
+            text.lines()
+                .any(|l| l == format!("Version: {TEST_VERSION}")),
+            "머리에 넘긴 버전이 없다:\n{text}"
+        );
+        assert_ne!(TEST_VERSION, env!("CARGO_PKG_VERSION"));
+    }
+
+    /// hang 보고서 파일을 격리 홈에 실제로 쓰고 머리를 읽는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_hang_report_written_under_tasty_home_carries_the_version_given_to_init() {
+        with_test_version();
+        let home = tasty_test_support::TastyHomeGuard::new();
+        let path =
+            write_hang_report("redraw", "present", 5000).expect("hang report 가 써져야 한다");
+        assert!(path.starts_with(home.path().join("crash-reports")));
+        let text = fs::read_to_string(&path).expect("read hang report");
+        assert!(text.starts_with("=== Tasty Hang Report ==="));
+        assert!(
+            text.lines()
+                .any(|l| l == format!("Version: {TEST_VERSION}")),
+            "hang 보고서 머리에 넘긴 버전이 없다:\n{text}"
+        );
+    }
+}

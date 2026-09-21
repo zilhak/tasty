@@ -8,7 +8,7 @@
 
 tasty 의 파일 tracing 은 데이터 루트 하나당 파일 하나를 쓴다 — dev 는 `$TASTY_HOME/debug-dev.log`(debug 레벨), release/dist 는 `$TASTY_HOME/debug.log`(warn 이상). 프로세스 시작 시 `fs::File::create` 로 열기 때문에 **매 실행 truncate** 다. 단일 프로세스만 그 파일을 연다는 전제에서는 파일 크기 상한을 공짜로 얻는 합리적인 선택이었다.
 
-그 전제가 tasty 에서는 성립하지 않는다. **GUI(host)와 CLI 클라이언트가 같은 바이너리**이고, 파일 레이어를 만드는 `crash_report::init()` 은 CLI/GUI 역할 판정(`cli_routing::parse_or_route()`)보다 **먼저** 불린다. 그래서 `tasty list info` 한 번이 실행 중인 host 의 로그를 통째로 지운다. tasty 는 에이전트가 CLI 를 상시 호출하는 것을 전제로 만든 터미널이라 이건 예외 상황이 아니라 정상 운용 상태다.
+그 전제가 tasty 에서는 성립하지 않는다. **GUI(host)와 CLI 클라이언트가 같은 바이너리**이고, 파일 레이어를 만드는 `crash_report::init` 은 CLI/GUI 역할 판정(`cli_routing::parse_or_route()`)보다 **먼저** 불린다. 그래서 `tasty list info` 한 번이 실행 중인 host 의 로그를 통째로 지운다. tasty 는 에이전트가 CLI 를 상시 호출하는 것을 전제로 만든 터미널이라 이건 예외 상황이 아니라 정상 운용 상태다.
 
 실측(dev 빌드, 격리된 `TASTY_HOME`):
 
@@ -23,7 +23,7 @@ tasty 의 파일 tracing 은 데이터 루트 하나당 파일 하나를 쓴다 
 
 파일 레이어는 모든 프로세스에 **설치**되지만, 그 writer 는 `OnceLock<Mutex<File>>` 이 채워지기 전까지 출력을 버린다. 파일을 실제로 여는 `crash_report::enable_host_file_log()` 는 `boot::run()` 의 `Routed::Gui` 분기 — 즉 역할이 host 로 확정된 뒤 — 에서만 불린다. host 는 데이터 루트당 하나이므로 시작 시 truncate 는 그대로 유지한다(rotation 불필요).
 
-panic hook 설치와 stderr tracing 초기화는 **위치를 옮기지 않는다.** 둘 다 `main` 진입 직후 `crash_report::init()` 에서 전과 똑같이 일어난다 — 부팅 첫 순간의 panic 과 로그를 놓치지 않는 것이 원래 설계 의도이고, 이 결정은 그 의도를 건드리지 않는다. 바뀌는 것은 "파일을 언제 여는가" 하나뿐이다.
+panic hook 설치와 stderr tracing 초기화는 **위치를 옮기지 않는다.** 둘 다 `main` 진입 직후 `crash_report::init` 에서 전과 똑같이 일어난다 — 부팅 첫 순간의 panic 과 로그를 놓치지 않는 것이 원래 설계 의도이고, 이 결정은 그 의도를 건드리지 않는다. 바뀌는 것은 "파일을 언제 여는가" 하나뿐이다.
 
 ## Consequences
 
@@ -48,7 +48,7 @@ panic hook 설치와 stderr tracing 초기화는 **위치를 옮기지 않는다
 
 ## References
 
-- `crates/tasty-platform/src/crash_report.rs` — `init()` / `init_tracing()` / `enable_host_file_log()`
+- `crates/tasty-platform/src/crash_report.rs` — `init(app_version)` / `init_tracing()` / `enable_host_file_log()`
 - `src/boot.rs`, `src/boot/os.rs` — host 확정 후 파일 개방 호출 지점
 - [dev-guide/crash-diagnostics.md](../dev-guide/crash-diagnostics.md) — 진단 파일 위치·필터 표
 - [ADR-0091](0091-render-stall-watchdog-observation-only.md) — hang 리포트를 별도 파일로 남긴 결정. 그 근거 중 "공유 로그는 CLI 실행에 지워진다" 는 본 ADR 로 해소되지만, "사용자가 실제로 들여다보는 곳" 이라는 근거가 남아 별도 파일 결정 자체는 유효하다.

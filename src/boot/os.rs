@@ -29,7 +29,7 @@ pub(crate) fn attach_windows_console_if_needed() {
 ///
 /// 공유 로그 **파일**은 여기서 열지 않는다 — [`enable_host_file_log`] 참고.
 pub(crate) fn init_crash_report() {
-    crate::crash_report::init();
+    crate::crash_report::init(env!("CARGO_PKG_VERSION"));
 }
 
 /// 공유 로그 파일(`$TASTY_HOME/debug{-dev}.log`)을 열어 파일 tracing 을 켠다.

@@ -14,7 +14,7 @@ tasty 가 죽거나 멈췄을 때 무엇이 어디에 기록되는지, 빌드 �
 ```
 === Tasty Crash Report ===
 Timestamp: 2026-06-17 19:23:07
-Version: 0.8.4                      ← CARGO_PKG_VERSION
+Version: 0.8.4                      ← 본체(tasty) 버전 — `os::init_crash_report` 가 본체 크레이트의 CARGO_PKG_VERSION 을 `crash_report::init` 에 넘긴다
 OS: macos aarch64                  ← std::env::consts::OS / ARCH
 
 === Panic ===
