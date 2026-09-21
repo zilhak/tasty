@@ -16,6 +16,7 @@ use super::{build_event, evaluate_caps_after_record, now_ms, persist_event, reco
 fn detect_rss_self_report(
     core: &Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     ev: &tasty_telemetry::TelemetryEvent,
 ) {
@@ -25,6 +26,7 @@ fn detect_rss_self_report(
     record_rss_sample(
         core,
         state,
+        out,
         engine,
         &ev.agent,
         ev.value.max(0.0) as u64,
@@ -35,6 +37,7 @@ fn detect_rss_self_report(
 pub fn handle_record(
     core: &mut Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -62,8 +65,8 @@ pub fn handle_record(
         ),
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
-    evaluate_caps_after_record(core, state, engine, &ev);
-    detect_rss_self_report(core, state, engine, &ev);
+    evaluate_caps_after_record(core, state, out, engine, &ev);
+    detect_rss_self_report(core, state, out, engine, &ev);
     response
 }
 
@@ -74,6 +77,7 @@ pub fn handle_record(
 pub fn handle_record_batch(
     core: &mut Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -109,8 +113,8 @@ pub fn handle_record_batch(
         }
     }
     for ev in &events {
-        evaluate_caps_after_record(core, state, engine, ev);
-        detect_rss_self_report(core, state, engine, ev);
+        evaluate_caps_after_record(core, state, out, engine, ev);
+        detect_rss_self_report(core, state, out, engine, ev);
     }
     JsonRpcResponse::success(
         id,

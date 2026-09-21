@@ -327,6 +327,7 @@ pub fn handle_cap_reset(
 pub(super) fn evaluate_caps_after_record(
     core: &mut Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     ev: &TelemetryEvent,
 ) {
@@ -341,7 +342,7 @@ pub(super) fn evaluate_caps_after_record(
         if !cap_matches_untriggered(&cap, ev) {
             continue;
         }
-        try_trigger_cap(core, state, engine, &mut cap);
+        try_trigger_cap(core, state, out, engine, &mut cap);
     }
 }
 
@@ -354,6 +355,7 @@ fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
 fn try_trigger_cap(
     core: &mut Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &mut CostCap,
 ) {
@@ -376,7 +378,7 @@ fn try_trigger_cap(
         tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
         return;
     }
-    fire_cap_action(core, state, engine, cap, current);
+    fire_cap_action(core, state, out, engine, cap, current);
 }
 
 /// cap 액션을 실제 시스템으로 발화. `Notify` 는 알림만; `RequireApproval` 은
@@ -386,18 +388,19 @@ fn try_trigger_cap(
 pub(super) fn fire_cap_action(
     core: &mut Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
     match cap.action {
-        CapAction::Notify => fire_notify(state, engine, cap, current),
+        CapAction::Notify => fire_notify(state, out, engine, cap, current),
         CapAction::RequireApproval => fire_require_approval(core, state, engine, cap, current),
         CapAction::Pause => {
             // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
             // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
             // 보이지 않도록.
-            fire_notify(state, engine, cap, current);
+            fire_notify(state, out, engine, cap, current);
             tracing::info!(
                 "cap triggered (action {:?}): cap={} agent={} metric={} value={} threshold={}",
                 cap.action,
@@ -480,6 +483,7 @@ pub(super) fn fire_require_approval(
 /// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
 pub(super) fn fire_notify(
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
@@ -494,7 +498,7 @@ pub(super) fn fire_notify(
         "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={})",
         cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id,
     );
-    state.dispatch_intent(
+    out.push(
         crate::core::intent::DomainIntent::PushNotification {
             ws_id,
             surface_id: 0,

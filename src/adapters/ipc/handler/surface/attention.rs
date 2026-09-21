@@ -2,7 +2,6 @@ use serde_json::json;
 use tasty_ipc::stream::AttentionKindWire;
 
 use crate::core::AttentionKind;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -60,7 +59,7 @@ pub(crate) fn handle_attention_get(
 ///   미러 인스턴스의 에이전트는 원격 surface 를 소유하지도, 그것을 보고 있지도 않다.
 ///   발동 축의 억제(ADR-0098)와 대칭이다.
 pub(crate) fn handle_attention_clear(
-    state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -111,7 +110,7 @@ pub(crate) fn handle_attention_clear(
     // cascade 는 gui 에서 소비처(테두리·탭·개수 배지) redraw 를 얹는다. 위에서 이미
     // 지웠으므로 cascade 의 재적용은 no-op 이고, cascade 는 IPC 를 타지 않는 호출자
     // (도메인 내부 producer)를 위해 자기 완결적으로 남는다.
-    state.dispatch_intent(
+    out.push(
         crate::core::intent::DomainIntent::SurfaceAttentionClear { surface_id, kind }
             .from_agent_ipc(),
     );
@@ -174,12 +173,13 @@ mod tests {
     /// 에이전트가 "지웠다" 고 오인하지 않는다.
     #[test]
     fn clear_is_rejected_for_a_mirror_surface() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine) = crate::state::tests::test_state();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
         state.active_workspace_mut(&mut engine).mirror = true;
 
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_attention_clear(
-            &mut state,
+            &mut out,
             &mut engine,
             json!(1),
             &json!({ "surface_id": sid }),
@@ -194,7 +194,7 @@ mod tests {
         );
         // 거절이므로 도메인 intent 도 발화되지 않는다 — cascade 가 뒤늦게 지우면
         // 거절의 의미가 없다.
-        assert!(state.pending_intents.is_empty());
+        assert!(out.is_empty());
     }
 
     /// 조회는 mirror surface 에서도 허용된다 — 서버가 push 해 준 로컬 레코드를 읽는
@@ -217,12 +217,13 @@ mod tests {
     /// 비-mirror surface 는 그대로 해제된다(위 게이트가 일반 경로를 막지 않는지).
     #[test]
     fn clear_still_works_for_a_local_surface() {
-        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (state, mut engine) = crate::state::tests::test_state();
         let sid = state.focused_surface_id(&engine).expect("focused surface");
         engine.raise_attention(sid, AttentionKind::NeedsInput);
 
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_attention_clear(
-            &mut state,
+            &mut out,
             &mut engine,
             json!(1),
             &json!({ "surface_id": sid }),

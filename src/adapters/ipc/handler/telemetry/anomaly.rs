@@ -46,6 +46,7 @@ pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Re
 
 pub(super) fn fire_anomaly_notification(
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     anomaly: &Anomaly,
 ) {
@@ -101,7 +102,7 @@ pub(super) fn fire_anomaly_notification(
         }
     };
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
-    state.dispatch_intent(
+    out.push(
         crate::core::intent::DomainIntent::PushNotification {
             ws_id,
             surface_id: 0,

@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use crate::core::AttentionKind;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -16,7 +15,7 @@ use super::require_surface_id;
 /// CLI/OSC 133/toast/windows-resume producer 는 kind 를 모른 채 이 IPC 를 호출한다 —
 /// Claude 플러그인 훅만 명시적으로 kind 를 싣는다, `hook.rs::HostCall::SurfaceCompletion`).
 pub(crate) fn handle_completion(
-    state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -40,7 +39,7 @@ pub(crate) fn handle_completion(
         engine.raise_attention(surface_id, kind);
     }
     // gui 에서는 cascade 가 소비처 redraw 를 얹는다(재발동은 같은 kind 라 no-op).
-    state.dispatch_intent(
+    out.push(
         crate::core::intent::DomainIntent::SurfaceCompletion { surface_id, kind }.from_agent_ipc(),
     );
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))

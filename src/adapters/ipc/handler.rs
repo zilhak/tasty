@@ -22,6 +22,8 @@ mod file_picker;
 mod git_viewer;
 mod hook_handler;
 pub(crate) mod idempotency;
+#[cfg(test)]
+mod intent_order_tests;
 // `list_global` 이 두 hook 목록을 합산하므로 크레이트 안에서 보여야 한다.
 pub(crate) mod hooks;
 // `output`/`pane`/`surface` 와 같은 이유로 열려 있다 — `image.list` 도 전 창 합산
@@ -196,7 +198,14 @@ fn dispatch_routed(
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {
+    // 핸들러가 낸 intent 는 요청 하나의 출구에 모였다가 라우팅이 끝난 뒤 이 창의 큐 끝으로
+    // 옮겨진다 — 넣은 순서 그대로다(`window_port` 모듈 문서).
+    let mut out = crate::ipc::window_port::IntentOutbox::default();
+    let routed = route_engine_handler(core, state, &mut out, engine, caller, request, id.clone());
+    for intent in out.into_vec() {
+        state.dispatch_intent(intent);
+    }
+    if let Some(resp) = routed {
         return resp;
     }
 
@@ -390,7 +399,14 @@ fn record_telemetry_and_audit(
     params: &serde_json::Value,
     workspace_id: Option<u32>,
 ) {
-    telemetry::record_ipc_call(core, state, engine, caller, canonical, params);
+    // 게이트가 낸 intent(상한·이상 탐지 알림)도 요청 하나의 출구에 모았다가 이 창의 큐 끝으로
+    // 옮긴다 — 핸들러 쪽 출구와 같은 규칙이다(`window_port` 모듈 문서). 핸들러보다 먼저 돌므로
+    // 같은 요청의 핸들러 intent 보다 앞에 쌓인다.
+    let mut out = crate::ipc::window_port::IntentOutbox::default();
+    telemetry::record_ipc_call(core, state, &mut out, engine, caller, canonical, params);
+    for intent in out.into_vec() {
+        state.dispatch_intent(intent);
+    }
 
     let seq = engine.telemetry_seq.next();
     crate::ipc::audit::record(
@@ -451,8 +467,12 @@ pub fn record_plugin_rss_samples(
     samples: &[(String, u64)],
 ) {
     let ts = telemetry::now_ms();
+    let mut out = crate::ipc::window_port::IntentOutbox::default();
     for (plugin_id, rss_bytes) in samples {
-        telemetry::record_rss_sample(core, state, engine, plugin_id, *rss_bytes, ts);
+        telemetry::record_rss_sample(core, state, &mut out, engine, plugin_id, *rss_bytes, ts);
+    }
+    for intent in out.into_vec() {
+        state.dispatch_intent(intent);
     }
 }
 
@@ -626,6 +646,7 @@ fn spawn_target_guard(
 fn route_engine_handler(
     core: &mut crate::core::Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     request: &JsonRpcRequest,
@@ -720,11 +741,11 @@ fn route_engine_handler(
         }
         "surface.send_to" => surface::handle_surface_send_to(core, engine, id, &request.params),
         "surface.wake" => surface::handle_surface_wake(engine, id, &request.params),
-        "surface.set_mark" => surface::handle_set_mark(state, engine, id, &request.params),
-        "surface.completion" => surface::handle_completion(state, engine, id, &request.params),
+        "surface.set_mark" => surface::handle_set_mark(out, engine, id, &request.params),
+        "surface.completion" => surface::handle_completion(out, engine, id, &request.params),
         "surface.attention.get" => surface::handle_attention_get(engine, id, &request.params),
         "surface.attention.clear" => {
-            surface::handle_attention_clear(state, engine, id, &request.params)
+            surface::handle_attention_clear(out, engine, id, &request.params)
         }
         "surface.read_since_mark" => surface::handle_read_since_mark(engine, id, &request.params),
         "surface.read_since_scan_mark" => {
@@ -791,7 +812,7 @@ fn route_engine_handler(
         // notification (focus-independent — workspace_id/surface_id로 라우팅)
         "notification.list" => notification::handle_notification_list(engine, id),
         "notification.create" => {
-            notification::handle_notification_create(state, engine, id, &request.params)
+            notification::handle_notification_create(out, engine, id, &request.params)
         }
         // file handler: 사용자 설정 reload (host 전용 — plugin 비노출).
         "file_handler.reload" => file_handler::handle_reload(core, engine, id),
@@ -803,7 +824,7 @@ fn route_engine_handler(
         // `git_viewer.query` 와 같은 모양이고, 빼면 라우터 끝이 `-32017` 로 답한다.
         #[cfg(feature = "gui")]
         "file_handler.dispatch" => {
-            file_handler::handle_dispatch(state, engine, id, request.params.clone())
+            file_handler::handle_dispatch(out, engine, id, request.params.clone())
         }
         // hook handler: 공유 훅 핸들러 레지스트리 조회/재로드/수동 발화. 상태는
         // 전역 싱글턴이라 list/reload 는 core/state/engine 미사용. dispatch 만
@@ -820,7 +841,7 @@ fn route_engine_handler(
         "completion_strategy.list" => completion_strategy::handle_list(id),
         // markdown 제자리 이동 — markdown plugin 의 주소창이 자기 surface 를 새 파일로 교체.
         #[cfg(feature = "gui")]
-        "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),
+        "markdown.navigate" => markdown::handle_navigate(out, id, request.params.clone()),
         // generic per-kind 최근목록 조회 — markdown 주소창 드롭다운 데이터 공급원(markdown
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
@@ -955,7 +976,7 @@ fn route_engine_handler(
         // settings.remote_transfer (원격 전송 저장 폴더 + 용량 상한 get/set)
         "settings.get_remote_transfer" => settings::handle_get_remote_transfer(engine, id),
         "settings.set_remote_transfer" => {
-            settings::handle_set_remote_transfer(state, engine, id, &request.params)
+            settings::handle_set_remote_transfer(out, engine, id, &request.params)
         }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => {
@@ -974,10 +995,10 @@ fn route_engine_handler(
         }
         // telemetry (관측 / 비용) — 단계 4.1
         "telemetry.record" => {
-            telemetry::handle_record(core, state, engine, caller, id, &request.params)
+            telemetry::handle_record(core, state, out, engine, caller, id, &request.params)
         }
         "telemetry.record_batch" => {
-            telemetry::handle_record_batch(core, state, engine, caller, id, &request.params)
+            telemetry::handle_record_batch(core, state, out, engine, caller, id, &request.params)
         }
         "telemetry.summary" => telemetry::handle_summary(core, engine, caller, id, &request.params),
         "telemetry.timeseries" => {

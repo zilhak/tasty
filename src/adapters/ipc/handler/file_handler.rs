@@ -21,8 +21,6 @@ use serde_json::json;
 use crate::core::Core;
 #[cfg(feature = "gui")]
 use crate::file::format::{DetectDepth, FileTarget};
-#[cfg(feature = "gui")]
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_reload(
@@ -80,7 +78,7 @@ fn default_depth() -> String {
 ///   즉시 돌아오고 handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
 #[cfg(feature = "gui")]
 pub fn handle_dispatch(
-    state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: serde_json::Value,
@@ -120,7 +118,7 @@ pub fn handle_dispatch(
         );
     }
     let target = FileTarget::new(PathBuf::from(&req.path));
-    state.dispatch_intent(
+    out.push(
         crate::core::intent::DomainIntent::DispatchFile {
             target,
             depth,
@@ -167,36 +165,38 @@ mod tests {
     /// `https://example.com/a.md` 가 확장자로 markdown 핸들러에 걸린다.
     #[test]
     fn dispatch_rejects_a_url_in_the_path_param() {
-        let (mut state, engine) = crate::state::tests::test_state();
+        let (_state, engine) = crate::state::tests::test_state();
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_dispatch(
-            &mut state,
+            &mut out,
             &engine,
             serde_json::json!(1),
             serde_json::json!({ "path": "https://example.com/a.md" }),
         );
         let err = resp.error.expect("URL path must be rejected");
         assert_eq!(err.code, -32602);
-        assert!(state.pending_intents.is_empty());
+        assert!(out.is_empty());
 
         let resp = handle_dispatch(
-            &mut state,
+            &mut out,
             &engine,
             serde_json::json!(2),
             serde_json::json!({ "path": "/tmp/a.md" }),
         );
         assert!(resp.error.is_none());
-        assert_eq!(state.pending_intents.len(), 1);
+        assert_eq!(out.into_vec().len(), 1);
     }
     #[test]
     fn dispatch_rejects_missing_origin_before_enqueueing() {
-        let (mut state, engine) = crate::state::tests::test_state();
+        let (_state, engine) = crate::state::tests::test_state();
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
         let response = handle_dispatch(
-            &mut state,
+            &mut out,
             &engine,
             serde_json::json!(42),
             serde_json::json!({"path":"/a", "origin_surface_id":u32::MAX}),
         );
         assert_eq!(response.error.unwrap().code, -32602);
-        assert!(state.pending_intents.is_empty());
+        assert!(out.is_empty());
     }
 }

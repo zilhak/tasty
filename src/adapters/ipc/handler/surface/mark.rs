@@ -9,7 +9,7 @@ use crate::ipc::handler::params::opt_int;
 use tasty_terminal::OUTPUT_RETENTION_MAX_BYTES;
 
 pub(crate) fn handle_set_mark(
-    state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -19,9 +19,7 @@ pub(crate) fn handle_set_mark(
         Err(e) => return e,
     };
     let _ = engine; // handler 는 enqueue 만. cascade 가 적용.
-    state.dispatch_intent(
-        crate::core::intent::DomainIntent::SetTerminalMark { surface_id }.from_agent_ipc(),
-    );
+    out.push(crate::core::intent::DomainIntent::SetTerminalMark { surface_id }.from_agent_ipc());
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 

@@ -89,6 +89,7 @@ pub(crate) fn check_cap_block(
 pub(crate) fn record_ipc_call(
     core: &mut Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     method: &str,
@@ -118,29 +119,31 @@ pub(crate) fn record_ipc_call(
         tracing::warn!("telemetry middleware: record failed: {e}");
         return;
     }
-    evaluate_caps_after_record(core, state, engine, &ev);
-    detect_anomalies_after_ipc(core, state, engine, agent.as_str(), method, params, ts);
+    evaluate_caps_after_record(core, state, out, engine, &ev);
+    for anomaly in detect_anomalies_after_ipc(core, engine, agent.as_str(), method, params, ts) {
+        fire_anomaly_notification(state, out, engine, &anomaly);
+    }
 }
 
 /// IPC 호출 후 anomaly 검출. `AnomalyDetector::record_call` 이 CallBurst/
-/// SlowLoop 중 하나라도 발화를 보고하면 각각 영속 + notification 으로 알린다.
+/// SlowLoop 중 하나라도 발화를 보고하면 각각 영속하고 돌려준다 — 알림은 호출자가 낸다.
 fn detect_anomalies_after_ipc(
     core: &Core,
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     agent: &str,
     method: &str,
     params: &Value,
     ts: u64,
-) {
+) -> Vec<tasty_telemetry::Anomaly> {
     let seq = engine.telemetry_seq.next();
     let detector = engine.anomaly_detector.clone();
-    for anomaly in detector.record_call(agent, method, params, ts, seq) {
-        if let Err(e) = persist_anomaly(core, &anomaly) {
+    let anomalies = detector.record_call(agent, method, params, ts, seq);
+    for anomaly in &anomalies {
+        if let Err(e) = persist_anomaly(core, anomaly) {
             tracing::warn!("anomaly persist failed: {e}");
         }
-        fire_anomaly_notification(state, engine, &anomaly);
     }
+    anomalies
 }
 
 /// RSS 샘플 1건을 anomaly detector 에 공급 + RssSurge 발화 시 영속·알림.
@@ -155,6 +158,7 @@ fn detect_anomalies_after_ipc(
 pub(crate) fn record_rss_sample(
     core: &Core,
     state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     agent: &str,
     rss_bytes: u64,
@@ -168,7 +172,7 @@ pub(crate) fn record_rss_sample(
     if let Err(e) = persist_anomaly(core, &anomaly) {
         tracing::warn!("anomaly persist failed: {e}");
     }
-    fire_anomaly_notification(state, engine, &anomaly);
+    fire_anomaly_notification(state, out, engine, &anomaly);
 }
 
 fn scope_for(workspace_id: Option<u32>) -> Scope {

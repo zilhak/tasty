@@ -15,7 +15,6 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 #[derive(Deserialize)]
@@ -29,7 +28,7 @@ struct NavigateReq {
 /// `markdown.navigate { surface_id, path }`. 크기게이트 없이 즉시 제자리 변환한다
 /// (대용량 확인은 변환 후 plugin 이 소유).
 pub fn handle_navigate(
-    state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -42,13 +41,17 @@ pub fn handle_navigate(
         return JsonRpcResponse::error(id, -32602, format!("path not found: {}", req.path));
     }
 
-    navigate_now(state, req.surface_id, &req.path);
+    navigate_now(out, req.surface_id, &req.path);
     JsonRpcResponse::success(id, json!({ "accepted": true }))
 }
 
 /// 같은 surface 를 markdown + 새 file 로 제자리 변환한다.
-pub(crate) fn navigate_now(state: &mut AppState, surface_id: u32, path: &str) {
-    state.dispatch_intent(
+pub(crate) fn navigate_now(
+    out: &mut crate::ipc::window_port::IntentOutbox,
+    surface_id: u32,
+    path: &str,
+) {
+    out.push(
         crate::intent::Intent::ConvertSurface {
             surface_id,
             target: crate::intent::ConvertTarget::Kind {

@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use crate::i18n::t;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_notification_list(
@@ -36,7 +35,7 @@ pub(crate) fn latest_notifications(mut rows: Vec<serde_json::Value>) -> Vec<serd
 }
 
 pub fn handle_notification_create(
-    state: &mut AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -99,7 +98,7 @@ pub fn handle_notification_create(
     // mutate 는 Core::apply 단일 진입점 — handler 는 read 후 enqueue.
     // cascade (notifications.add + host event enqueue) 는
     // App.cascade_notification_pushed 가 처리.
-    state.dispatch_intent(
+    out.push(
         crate::core::intent::DomainIntent::PushNotification {
             ws_id,
             surface_id,

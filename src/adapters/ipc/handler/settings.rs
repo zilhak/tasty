@@ -49,7 +49,7 @@ pub fn handle_get_remote_transfer(engine: &CoreState, id: Value) -> JsonRpcRespo
 /// mutate 금지 — collapse 가 prev/new 를 비교하므로 pre-mutate 시 분기가 죽는다.
 /// clone 위에서만 수정). 이후 기존 파이프라인이 config.toml save 까지 처리한다.
 pub fn handle_set_remote_transfer(
-    state: &mut crate::state::AppState,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &CoreState,
     id: Value,
     params: &Value,
@@ -77,9 +77,7 @@ pub fn handle_set_remote_transfer(
     }
 
     let applied = serde_json::to_value(&new_settings.remote_transfer).unwrap_or(Value::Null);
-    state.dispatch_intent(
-        crate::core::intent::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
-    );
+    out.push(crate::core::intent::DomainIntent::UpdateSettings(new_settings).from_agent_ipc());
     JsonRpcResponse::success(id, json!({ "applied": true, "remote_transfer": applied }))
 }
 
