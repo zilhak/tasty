@@ -54,7 +54,7 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
    - IPC 배관(워커 스레드로 응답 보내기)은 **어댑터 쪽**에 둔다 — 승인·태스크 대기의 spawn
      (`ipc::handler::approval` · `ipc::handler::agent::task`).
 3. **gui 게이트 수를 고정한다.** 같은 가드가 도메인 출하 코드의 `feature = "gui"` 개수를
-   양방향으로 고정한다(현재 254 — 아래 "잃은 것" 둘째 항). 도메인이 GUI 전용 항목을 cfg 로 들여오면 상위 참조가 없어도
+   양방향으로 고정한다(현재 256 — 아래 "잃은 것" 둘째 항). 도메인이 GUI 전용 항목을 cfg 로 들여오면 상위 참조가 없어도
    도메인이 GUI 를 안다 — 그 판단이 들어오는 커밋에 드러나게 한다.
 4. **공개 표면은 넓히지 않는다.** 도메인 항목은 `pub(crate)` 그대로다. lib 이 밖에 내는 것은
    여전히 `boot` 하나다. GUI 없는 소비자는 같은 lib 의 headless 구성(`--no-default-features`)
@@ -94,7 +94,8 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   `core/attach.rs` +1 · `core/attach_readonly.rs` 0(모듈 전체가 GUI 전용이라 선언에 cfg) ·
   `core/state/soft_occupancy.rs` 0 — 도메인 안에 모듈 단위 headless `allow` 는 더 없다. 도메인
   밖의 것도 뿌리였다: `file/dispatch.rs` 의 모듈 `allow` 를 지우자 `core/origin.rs` 의 판정 둘이
-  headless 소비자 없는 정의로 드러나 +2. 지금 254 다.
+  headless 소비자 없는 정의로 드러나 +2, `intent.rs` 의 것을 지우자 `core/origin.rs` 의 사용자 발화
+  주체 variant 둘이 headless 에서 안 만들어지는 것으로 드러나 +2(`expect`). 지금 256 이다.
 - **잃은 것 — 전이 의존은 안 본다.** 도메인이 부르는 형제 모듈이 다시 상위를 부르는 경로는
   가드 밖이다. 형제 모듈이 상위 항목을 재수출하면 그 이름으로 우회된다. 창 상태를 받는
   `file::dispatch` 는 그래서 형제 모듈 전체가 아니라 그 하위 항목 자체를 가드의 표에 올렸다.

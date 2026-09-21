@@ -26,7 +26,7 @@ headless 에 생산자도 호출자도 없는 정의. 모듈 통째가 그 안�
 `unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. 모듈이나 crate 전체를 덮는
 dead_code 예외는 쓰지 않는다.
 
-지금 ③ 에 해당하는 것은 일곱이다.
+지금 ③ 에 해당하는 것은 여덟이다.
 
 | 정의 | 왜 남는가 |
 |---|---|
@@ -37,6 +37,7 @@ dead_code 예외는 쓰지 않는다.
 | 파일 열기 발화 주체(`FileDispatchOrigin`, `core/origin.rs`) | 도메인의 `DispatchFile` intent 가 headless 에도 컴파일되지만 값을 만드는 자리(explorer·링크·드롭·picker·`file_handler.dispatch` arm)가 전부 GUI 다. `file::dispatch` 모듈 자체는 headless 라이브러리에 없다(링크 해석·대상 판정을 시험이 부르므로 ②) |
 | `AppState::preset_store` | headless 도 `AppState::new` 로 Core 의 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의 preset IPC 는 `Core.preset_store` 를 잠근다 |
 | `ModalKind` 의 variant | 모달을 여는 자리(`App::open_modal`)가 GUI 뿐이다. 열거와 `active_modal_kind` 는 `ui.state` 덤프가 두 조합에서 같은 키로 읽는다 |
+| 사용자 발화 intent 의 variant(`Intent` 의 단축키·메뉴 variant · `UiIntent` · `OpenPopupMode` · `ConvertTarget` · 도메인의 `IntentOrigin::User` · `UserSource`) | 만드는 자리(단축키·메뉴·우클릭·popup)가 GUI 뿐이다. 열거와 그 match 는 headless 의 intent drain 도 컴파일한다. `IntentOrigin::User` 는 headless 시험이 만들므로 `not(test)` 도 조건이다 |
 
 ## 판정은 바깥에서 안으로
 

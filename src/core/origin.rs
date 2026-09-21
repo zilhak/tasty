@@ -25,6 +25,11 @@
 /// 않으나 `Debug` derive 로 노출 — 아직 이 값을 읽는 소비처는 없다.
 #[derive(Debug, Clone)]
 pub enum IntentOrigin {
+    // 이유: 사용자 발화를 만드는 자리(단축키·메뉴·우클릭)가 GUI 뿐이다. headless 시험은 만든다.
+    #[cfg_attr(
+        all(not(feature = "gui"), not(test)),
+        expect(dead_code, reason = "only the gui raises a user intent")
+    )]
     User {
         #[allow(dead_code)]
         source: UserSource,
@@ -38,6 +43,11 @@ pub enum IntentOrigin {
 
 /// 사용자 발화의 정확한 origin (shortcut id, menu id 등). 페이로드는 audit
 /// trace 전용으로 destructure 되지 않으나 Debug 출력에 노출.
+// 이유: `IntentOrigin::User` 와 같다 — 사용자 발화의 출처를 만드는 자리가 GUI 뿐이다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(dead_code, reason = "only the gui raises a user intent")
+)]
 #[derive(Debug, Clone)]
 pub enum UserSource {
     Shortcut(#[allow(dead_code)] &'static str),

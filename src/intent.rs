@@ -1,8 +1,3 @@
-// 이유: headless 빌드에선 호출 트리 (app::dispatch::intents) 가 cfg(gui) 로 가려져
-// intent variant / 도메인 핸들러 / preset/capture 헬퍼가 미사용으로 잡힌다.
-// 본질적으로 gui 어댑터의 API 면 + IPC handler 경유 후보이므로 *headless 한정*
-// 으로 dead_code/unused_imports 를 침묵 — gui 빌드에서는 검사 그대로.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 // 본 모듈의 `from_*` 메서드는 `From` trait 변환이 아니라 *intent 의 dispatch
 // source 부착* 의미 (예: `intent.from_user_shortcut(id)` = "이 intent 는 사용자
 // 단축키로 발화되었다고 표시"). 따라서 `self` 를 받는 것이 의도된 형태.
@@ -28,7 +23,8 @@ pub mod preset;
 pub mod preset_capture;
 pub mod surface;
 pub mod tab;
-#[cfg(debug_assertions)]
+// 발화 로그 — 부르는 자리가 GUI 메인 루프의 intent drain 뿐이다.
+#[cfg(all(debug_assertions, feature = "gui"))]
 pub mod watch;
 pub mod workspace;
 
@@ -38,7 +34,9 @@ use crate::model::popup_kind::{PopupId, PopupScope};
 pub use preset::ClonedPreset;
 // 발화 주체는 도메인 실행(`core::structural_exec` 등)도 읽으므로 정의는 `core` 에 있다 —
 // 도메인이 이 GUI 큐 모듈을 거꾸로 부르지 않게 하려는 것이다. 기존 경로를 잇는다.
-pub use crate::core::origin::{AgentSource, IntentOrigin, UserSource};
+#[cfg(any(feature = "gui", test))]
+pub use crate::core::origin::UserSource;
+pub use crate::core::origin::{AgentSource, IntentOrigin};
 
 /// `Core::apply` 가 반환한 에러를 도메인 핸들러가 공통 처리한다. mirror(원격 attach
 /// client) 워크스페이스에서 구조 변경을 시도해 거부된 경우
@@ -92,6 +90,15 @@ pub struct DispatchedIntent {
 /// release 빌드에서 *시스템/Core/Domain handler 가 자동으로 `Ui` variant 를
 /// 발화* 하는 것은 금지된다 (`docs/design/systems/popup.md` "Popup 발화 정책").
 /// debug 빌드의 `debug.popup.*` IPC 만 예외.
+// 이유: `Ui`·`Domain` 을 뺀 variant 를 만드는 자리(단축키·메뉴·우클릭)가 GUI 뿐이라 headless 에서
+// 만들어지지 않는다. 열거와 그 match 는 headless 의 intent drain 도 컴파일한다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(
+        dead_code,
+        reason = "only the gui raises the user-shortcut intents, so headless never builds them"
+    )
+)]
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub enum Intent {
@@ -174,6 +181,11 @@ pub enum Intent {
 /// 에서는 본 enum 자체가 컴파일 타임에 사라질 예정 — 그때 `Intent::Ui` variant
 /// 도 `#[cfg(feature = "gui")]` 가드된다. 본 commit 에서는 분류축 표시 + builder
 /// 도입만, cfg 가드는 후속.
+// 이유: popup 을 여닫는 발화가 사용자 입력(GUI)뿐이라 headless 에서 variant 가 만들어지지 않는다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(dead_code, reason = "only user input in the gui raises a popup intent")
+)]
 #[derive(Debug, Clone)]
 pub enum UiIntent {
     /// popup 열기.
@@ -200,23 +212,28 @@ impl From<UiIntent> for Intent {
 /// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
 /// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
 impl UiIntent {
+    #[cfg(feature = "gui")]
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Ui(self).from_user_shortcut(id)
     }
 
+    #[cfg(any(feature = "gui", test))]
     pub fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
         Intent::Ui(self).from_user_menu(id)
     }
 
+    #[cfg(feature = "gui")]
     pub fn from_user_context_menu(self) -> DispatchedIntent {
         Intent::Ui(self).from_user_context_menu()
     }
 
+    #[cfg(feature = "gui")]
     pub fn from_agent_ipc(self) -> DispatchedIntent {
         Intent::Ui(self).from_agent_ipc()
     }
 
     /// agent plugin 발화 — `file_picker.trigger`(ADR-0058)가 실사용처.
+    #[cfg(feature = "gui")]
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Ui(self).from_agent_plugin(plugin_id)
     }
@@ -241,14 +258,17 @@ impl UiIntent {
 /// 발화 경로가 wiring 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이
 /// 필요하므로 보존.
 impl crate::core::intent::DomainIntent {
+    #[cfg(feature = "gui")]
     pub(crate) fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Domain(self).from_user_shortcut(id)
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
         Intent::Domain(self).from_user_menu(id)
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn from_user_context_menu(self) -> DispatchedIntent {
         Intent::Domain(self).from_user_context_menu()
     }
@@ -291,6 +311,14 @@ impl crate::core::intent::DomainIntent {
 /// 의 kind 로 통합. plugin 이 등록한 kind 도 모두 이 경로로 처리한다.
 ///
 /// `Kind` 의 `cwd` 는 호출자가 명시 또는 None (handler 가 source surface 에서 resolve).
+// 이유: surface 변환을 발화하는 자리(변환 입력 popup·메뉴)가 GUI 뿐이다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(
+        dead_code,
+        reason = "only the gui converts a surface through an intent"
+    )
+)]
 #[derive(Debug, Clone)]
 pub enum ConvertTarget {
     Terminal,
@@ -303,6 +331,11 @@ pub enum ConvertTarget {
 }
 
 /// popup open 위치/포커스 정책.
+// 이유: `UiIntent` 와 같다 — popup 을 여는 발화가 GUI 뿐이다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(dead_code, reason = "only user input in the gui opens a popup")
+)]
 #[derive(Debug, Clone)]
 pub enum OpenPopupMode {
     /// 위치 자유, focus 없음.
@@ -324,6 +357,7 @@ pub enum OpenPopupMode {
 /// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
 /// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
 impl Intent {
+    #[cfg(any(feature = "gui", test))]
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
@@ -334,6 +368,7 @@ impl Intent {
         }
     }
 
+    #[cfg(any(feature = "gui", test))]
     pub fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
@@ -344,6 +379,7 @@ impl Intent {
         }
     }
 
+    #[cfg(feature = "gui")]
     pub fn from_user_context_menu(self) -> DispatchedIntent {
         DispatchedIntent {
             body: self,

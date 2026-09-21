@@ -97,7 +97,7 @@ dispatcher 가 강제 거부하지 않고 **핸들러 작성자가 `origin.is_us
 
 **대상이 아닌 자리 셋**: ① 주석·문자열 리터럴(코드가 아니다) ② `#[cfg(test)] mod` 본문과 `*_tests.rs`(도메인이 **피험자**다 — 규율은 도메인을 *도구로* 쓸 때의 규칙이다) ③ 이름만 같은 다른 타입의 메서드(패턴별 면제 경로).
 
-예외는 `// intent-exempt: <사유>` 주석으로 suppress — **같은 줄 · 바로 위 · 바로 아래** 어디든 인정한다. 현재 예외는 popup 자기-close cleanup(on_close 훅에서 큐의 다음 항목), 처리 핸들러 본문의 cascade, 응답이 필요한 mutate(Core method sync 리턴), 그리고 focus 보존을 위해 큐를 우회한 자리 하나다. 호스트 모든 Intent 가시화는 debug 전용 `intent::watch`(`src/intent/watch.rs`)가 `tracing::debug!` 로(release 제거).
+예외는 `// intent-exempt: <사유>` 주석으로 suppress — **같은 줄 · 바로 위 · 바로 아래** 어디든 인정한다. 현재 예외는 popup 자기-close cleanup(on_close 훅에서 큐의 다음 항목), 처리 핸들러 본문의 cascade, 응답이 필요한 mutate(Core method sync 리턴), 그리고 focus 보존을 위해 큐를 우회한 자리 하나다. 호스트 모든 Intent 가시화는 debug 전용 `intent::watch`(`src/intent/watch.rs`)가 `tracing::debug!` 로(release 제거). 부르는 자리가 GUI 메인 루프의 drain 이라 gui 빌드에만 있다 — headless 의 drain(`intent::headless`)은 이 로그를 안 남긴다.
 
 ## dedup
 
