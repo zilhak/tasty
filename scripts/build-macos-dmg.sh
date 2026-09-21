@@ -158,6 +158,15 @@ done
 # Copy icon
 cp "assets/icons/icon.icns" "$APP_DIR/Contents/Resources/icon.icns"
 
+# Stage the notice set (LICENSE, THIRD_PARTY_LICENSES.md, every file under
+# LICENSES/) under Contents/Resources/ — the bundle's place for non-code files,
+# and the one the codesign seal below covers as plain resources. Must happen
+# before codesign: changing the bundle afterwards breaks the signature. The
+# function is shared with build-linux.sh, so both read the set the same way.
+# shellcheck source=lib/notice-set.sh
+. "scripts/lib/notice-set.sh"
+stage_notice "$APP_DIR/Contents/Resources"
+
 # Generate Info.plist
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -278,6 +287,7 @@ if ! codesign --verify --deep --strict "$APP_DIR"; then
     echo "Error: $APP_NAME.app failed codesign --verify" >&2
     exit 1
 fi
+verify_notice_tree "$APP_DIR/Contents/Resources" "$APP_NAME.app" || exit 1
 PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
 [[ "$PLIST_VER" == "$VERSION" ]] || {
     echo "Error: Info.plist version $PLIST_VER != Cargo.toml $VERSION" >&2
@@ -301,6 +311,9 @@ rm -rf "$DMG_STAGE"
 mkdir -p "$DMG_STAGE"
 cp -R "$APP_DIR" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
+# The tree hdiutil packs, checked before it is packed — the same shape as the
+# AppDir check in build-linux.sh.
+verify_notice_tree "$DMG_STAGE/$APP_NAME.app/Contents/Resources" "$DMG_STAGE" || exit 1
 
 hdiutil create -volname "$APP_NAME" \
     -srcfolder "$DMG_STAGE" \
@@ -314,6 +327,15 @@ echo "==> Verifying DMG..."
     echo "Error: DMG missing: $DIST_DIR/$DMG_NAME" >&2
     exit 1
 }
+# Open the image read-only and look at the notice set where a user would find
+# it. The stage check above sees the input; this one sees the artifact.
+DMG_MOUNT=$(mktemp -d)
+hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$DMG_MOUNT" "$DIST_DIR/$DMG_NAME" >/dev/null
+dmg_notice_rc=0
+verify_notice_tree "$DMG_MOUNT/$APP_NAME.app/Contents/Resources" "$DMG_NAME" || dmg_notice_rc=$?
+hdiutil detach "$DMG_MOUNT" >/dev/null || echo "Warning: could not detach $DMG_MOUNT" >&2
+rmdir "$DMG_MOUNT" 2>/dev/null || true
+[[ "$dmg_notice_rc" -eq 0 ]] || exit 1
 
 SHASUMS_FILE="SHA256SUMS-macos.txt"
 (cd "$DIST_DIR" && shasum -a 256 "$DMG_NAME" > "$SHASUMS_FILE")

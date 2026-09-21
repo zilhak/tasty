@@ -96,7 +96,8 @@ MIT 는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 | Linux `.deb` | `/usr/share/doc/tasty/` (Debian 관례. `LICENSES/` 하위 경로를 그대로 유지합니다) |
 | Linux `.rpm` | `/usr/share/licenses/tasty/` (RPM 관례라 deb 과 배치가 다릅니다 — `LICENSES/` 의 본문도 하위 디렉토리 없이 이 자리에 바로 놓입니다) |
 | Linux `.AppImage` | `usr/share/licenses/tasty/` |
-| Windows `.zip` · macOS `.dmg` | **아직 안 들어갑니다.** |
+| macOS `.dmg` | `Tasty.app/Contents/Resources/` (`LICENSES/` 하위 경로를 그대로 유지합니다). **스크립트에 스테이징과 확인을 넣었지만, 그렇게 만든 `.dmg` 를 열어 본 적은 아직 없습니다** — macOS 빌더에서만 만들 수 있습니다. |
+| Windows `.zip` | **아직 안 들어갑니다.** |
 
 산출물 자체에 동봉되는 것이 OFL 1.1 · MIT · BSD-3-Clause 가 요구하는 형태입니다 — 릴리스
 에셋으로 따로 내려받을 수 있는 것은 그 요구를 대신하지 못합니다.
