@@ -57,9 +57,10 @@ pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) 
         engine.file_handler.clone(),
     );
     mgr.set_surface_registry(engine.surface_registry.clone());
-    // gui 경로(`build_plugin_manager`)와 같은 주입 — 두 조합이 같은 게이지를 채운다.
-    mgr.set_plugin_wait(app.core.plugin_wait().clone());
-    mgr.set_slow_requests(app.core.slow_requests().clone());
+    // gui 경로(`build_plugin_manager`)와 같은 묶음을 주입한다 — 두 조합이 같은 게이지를 채운다.
+    let gauges = app.core.plugin_gauges();
+    mgr.set_plugin_wait(gauges.plugin_wait);
+    mgr.set_slow_requests(gauges.slow_requests);
     mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
     mgr.set_hook_handler_registry(std::sync::Arc::new(
         crate::hook_handler::HostHookHandlerPort,
