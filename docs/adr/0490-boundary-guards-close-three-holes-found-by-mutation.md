@@ -40,7 +40,12 @@
    외부 크레이트 경로를 읽는다. 대상 크레이트는 워크스페이스 `Cargo.toml` 의 `gui` feature 가
    `dep:` 로 켜는 optional 의존 전부다(실측 29 개) — 손으로 적지 않고 매니페스트에서 읽는다.
    여기에 `windows` 의 창·그리기 하위 경로(`windows::Win32::UI` · `windows::Win32::Graphics`)와
-   `Foundation` 의 창 핸들 항목(`HWND` · `HINSTANCE` · `LPARAM` · `WPARAM`)을 더한다. gui 게이트 뒤의 줄도 **빼지 않고** 읽는다(`#[cfg(test)]` 만 뺀다). 기존 자리는
+   `Foundation` 의 창 핸들 항목(`HWND` · `HINSTANCE` · `LPARAM` · `WPARAM`)을 더한다. 경로가 그
+   항목들의 **진접두사에서 끝나는** import(`use windows::Win32 as w32;` · `use windows::Win32::*;` ·
+   `use windows::Win32::Foundation::{self, …}` · `use windows as w;`)도 잡는다 — 들인 모듈 이름으로
+   `w32::UI::…` 를 부르면 경로가 창 갈래에 닿기 전에 끊긴다(처음에는 이 형태가 초록이었다 —
+   Gate 4 변이 winalias · winglob). 진접두사에서 끝나는 경로는 모듈을 들이는 import 뿐이라 식
+   안의 경로(`windows::Win32::System::…::X`)는 걸리지 않는다. gui 게이트 뒤의 줄도 **빼지 않고** 읽는다(`#[cfg(test)]` 만 뺀다). 기존 자리는
    **(파일, 경로) 목록**으로 양방향 고정한다 — 늘면 새 자리가, 줄면 남은 항목이 빨갛다. 오늘
    목록은 비어 있다. 수가 아니라 목록인 이유는 1 번 구멍 그 자체다: 수는 기존 자리 안의 추가를
    못 본다.
@@ -77,6 +82,10 @@
   `trash` 등도 `gui` feature 뒤라 목록에 든다. 뺄 이유가 없다고 판단했다 — headless 그래프에
   없으니 도메인이 부르면 gui 게이트 뒤에 숨겨야만 컴파일되고, 그것이 곧 "도메인이 GUI 구성을
   안다" 이다.
+- **잃은 것 — `windows` 창 경로의 조상 모듈을 들이는 것 자체가 막힌다.** `use windows::Win32::Foundation;`
+  로 `Foundation::HANDLE` 을 쓰는 것처럼 창 아닌 항목만 쓰려는 import 도 빨갛다 — 들인 모듈로
+  `Foundation::HWND` 도 닿기 때문이다. 창 아닌 항목은 항목 경로로 들이면 된다(`use
+  windows::Win32::Foundation::HANDLE;`). 오늘 도메인 출하 적중 0.
 - **잃은 것 — 지역 모듈과 같은 이름.** `use` 없이 `image::x` 로 부르는 지역 모듈은 크레이트와
   텍스트로 안 갈린다. 오늘 도메인에 그 이름의 모듈은 없다(`git grep` 적중 0).
 - **잃은 것 — 포트 구현 목록은 손으로 는다.** 도메인이 새 포트를 선언하고 창 쪽이 새 파일에서

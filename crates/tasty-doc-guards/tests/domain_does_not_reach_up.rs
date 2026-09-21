@@ -361,6 +361,11 @@ fn gui_crates() -> Vec<String> {
 /// Windows 타깃에서 조건 없이 링크된다(프로세스·콘솔·파일 시스템도 이것으로 부른다) —
 /// 크레이트 전체를 막을 수는 없고, 창·그리기 갈래만 막는다.
 ///
+/// 경로가 이 항목들의 **진접두사에서 끝나면**(`use windows::Win32 as w32;` · `use windows::Win32::*;` ·
+/// `use windows::Win32::Foundation::{self, …}` · `use windows as w;`) 그것도 잡는다 — 들인 모듈
+/// 이름으로 `w32::UI::…` 를 부르면 경로가 `UI` 에 닿기 전에 끊겨 항목 대조가 안 보기 때문이다.
+/// 진접두사에서 끝나는 경로는 모듈을 들이는 import 뿐이다(식 안의 경로는 항목까지 간다).
+///
 /// 창 핸들과 창 프로시저 인자는 `UI` 가 아니라 `Foundation` 에 산다(windows 0.61 실측 —
 /// `HWND` · `HINSTANCE` · `LPARAM` · `WPARAM`). `Foundation` 전체는 `HANDLE` · `BOOL` 같은 창
 /// 아닌 타입을 담으므로 **항목 단위**로 적는다. 판정이 앞마디 일치라 항목 경로도 그대로 동작한다.
@@ -386,12 +391,20 @@ fn gui_crate_references(text: &str, crates: &[String]) -> Vec<(usize, String, St
     roots.extend(OS_WINDOW_PATHS.iter().filter_map(|p| p.split("::").next()));
     shipped_external_references(text, &roots)
         .into_iter()
-        .filter(|(_, path, _)| {
+        .filter_map(|(line, path, raw)| {
+            // `{self, …}` 의 `self` 는 앞마디 모듈 자체를 들인다.
+            let path = path
+                .strip_suffix("::self")
+                .map(str::to_string)
+                .unwrap_or(path);
             let head = path.split("::").next().unwrap_or("");
-            crates.iter().any(|c| c == head)
-                || OS_WINDOW_PATHS
-                    .iter()
-                    .any(|p| path == p || path.starts_with(&format!("{p}::")))
+            let hit = crates.iter().any(|c| c == head)
+                || OS_WINDOW_PATHS.iter().any(|p| {
+                    path == *p
+                        || path.starts_with(&format!("{p}::"))
+                        || p.starts_with(&format!("{path}::"))
+                });
+            hit.then_some((line, path, raw))
         })
         .collect()
 }
@@ -467,6 +480,10 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::{Graphics::Gdi::HDC, System::Console::X};
 extern crate image;
 use windows::Win32::Foundation::{HANDLE, HWND};
+use windows::Win32 as w32;
+use windows::Win32::*;
+use windows::Win32::System::*;
+use windows::Win32::Foundation::{self, BOOL};
 #[cfg(test)]
 mod tests {
     use egui::Pos2;
@@ -488,6 +505,9 @@ mod tests {
         (17, "windows::Win32::Graphics::Gdi::HDC"),
         (18, "image"),
         (19, "windows::Win32::Foundation::HWND"),
+        (20, "windows::Win32"),
+        (21, "windows::Win32"),
+        (23, "windows::Win32::Foundation"),
     ]
     .into_iter()
     .map(|(l, p)| (l, p.to_string()))
@@ -496,9 +516,10 @@ mod tests {
         got, want,
         "잡혀야 하는 것: gui 게이트 뒤(2) · 절대 경로(3 · 10) · `as` 별칭(4) · 여러 줄 중괄호(6 · 7) · \
          중괄호 루트(9) · 창·그리기 하위 경로(15 · 17) · `extern crate`(18) · Foundation 의 창 \
-         핸들(19 의 `HWND`). 11–12 행(앞에 마디가 붙은 경로 · 필드)이 잡히면 첫 마디 판정이, \
-         13–14 행이면 마스킹이, 16 · 17 행의 `System` 이나 16 · 19 행의 `HANDLE` 이면 하위 경로 \
-         판정이, 22 행이면 test 필터가 죽은 것이다."
+         핸들(19 의 `HWND`) · 창 경로의 진접두사에서 끝나는 별칭 · glob · `self`(20 · 21 · 23). \
+         11–12 행(앞에 마디가 붙은 경로 · 필드)이 잡히면 첫 마디 판정이, 13–14 행이면 마스킹이, \
+         16 · 17 행의 `System` 이나 16 · 19 행의 `HANDLE` · 22 행의 `System` glob · 23 행의 `BOOL` \
+         이면 하위 경로 판정이, 26 행이면 test 필터가 죽은 것이다."
     );
 }
 
