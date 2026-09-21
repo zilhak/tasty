@@ -16,9 +16,11 @@
 //! 하나의 비용은 수십 µs 에서 수십 ms 까지 벌어진다(실측과 판단의 근거는
 //! [ADR-0410](../../docs/adr/0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md)).
 //!
-//! **남은 것은 별도 배선 없이 다음 회차가 집는다** — ADR-0313 과 같은 근거다. 생산자는 명령마다
-//! waker 를 정확히 한 번 부르고, 회차는 적어도 하나를 처리하므로 남은 명령 수보다 남은 wake
-//! 수가 늘 많거나 같다. 빈 큐를 만난 회차는 곧바로 끝난다(busy-spin 없음).
+//! **남은 것은 다음 회차가 집는다.** headless 는 ADR-0313 과 같은 근거로 별도 배선이 없다 —
+//! 생산자는 명령마다 waker 를 정확히 한 번 부르고, 회차는 적어도 하나를 처리하므로 남은 명령
+//! 수보다 남은 wake 수가 늘 많거나 같다. gui 는 wake 를 회차 없이 건너뛸 수 있어서, 회차가
+//! 예산에서 멈추면 [`IpcRound::finish`] 가 돌려준 이유를 보고 루프를 스스로 한 번 더
+//! 깨운다(ADR-0413). 빈 큐를 만난 회차는 곧바로 끝난다(busy-spin 없음).
 //!
 //! **이 예산은 이미 실행 중인 명령을 끊지 못한다.** 예산은 명령과 명령 **사이**에서만 본다.
 //! 메인 스레드에서 도는 동기 handler 하나가 오래 걸리면 그 시간 동안 회차도, 타이머도, 화면도
@@ -39,9 +41,11 @@ use crate::ports::ipc_server::IpcServerPort;
 
 /// 한 회차가 명령을 꺼내는 데 쓸 수 있는 시간. **파생이 아니다** — 근거는 ADR-0410.
 ///
-/// 60 Hz 한 프레임이다. gui 는 회차가 끝나야 그 iteration 의 렌더·타이머로 넘어가므로, 이 값이
-/// 곧 "IPC 부하가 화면 한 프레임보다 오래 루프를 쥐지 않는다" 는 약속이다. 명령 하나가 이보다
-/// 비싸면 그 명령만큼은 넘친다(첫 명령은 늘 처리한다 — 모듈 doc).
+/// 60 Hz 한 프레임이다. 회차가 끝나야 루프가 렌더·타이머로 넘어가므로, 이 값이 곧 "IPC 부하가
+/// 화면 한 프레임보다 오래 루프를 쥐지 않는다" 는 약속이다. gui 에서는 이 값만으로 안 되고, 다음
+/// 회차가 사용자 이벤트로 곧바로 이어지지 않게 하는 양보(`crate::app::ipc::IpcPacer`, ADR-0413)가
+/// 같은 값을 간격으로 쓴다. 명령 하나가 이보다 비싸면 그 명령만큼은 넘친다(첫 명령은 늘 처리한다
+/// — 모듈 doc).
 pub(crate) const ROUND_TIME_BUDGET: Duration = Duration::from_millis(16);
 
 /// 진행 중인 회차 하나.
@@ -91,14 +95,17 @@ impl IpcRound {
 
     /// 회차를 닫고 센다. 하나도 못 꺼낸 회차는 세지 않는다 — 비어 있던 회차를 세면 "명령이
     /// 있었던 회차" 의 깊이 분포가 0 으로 희석된다.
-    pub(crate) fn finish(self, pressure: &PressureStats, dispatch: &DispatchStats) {
+    ///
+    /// 돌려주는 값은 회차가 왜 멈췄는가다. `Drained` 가 아니면 큐에 명령이 남아 있을 수 있다.
+    pub(crate) fn finish(self, pressure: &PressureStats, dispatch: &DispatchStats) -> RoundEnd {
         if self.taken == 0 {
-            return;
+            return self.end;
         }
         // 이 회차가 처리한 명령 수. 예산에 붙은 값이 나오면 그 회차는 큐를 다 비우지 못했을
         // 수 있다.
         pressure.record_drain(self.taken);
         dispatch.record_round(self.end);
+        self.end
     }
 }
 
@@ -212,7 +219,7 @@ mod tests {
 
         let mut empty = IpcRound::with_budgets(4, Duration::MAX);
         assert!(empty.next(Some(&server)).is_none());
-        empty.finish(&pressure, &dispatch);
+        assert_eq!(empty.finish(&pressure, &dispatch), RoundEnd::Drained);
         assert_eq!(pressure.snapshot().queue_drains, 0);
         assert_eq!(dispatch.snapshot().rounds, 0);
 
@@ -220,7 +227,11 @@ mod tests {
         let mut round = IpcRound::with_budgets(2, Duration::MAX);
         drain(&mut round, &server);
         assert_eq!(round.taken, 2);
-        round.finish(&pressure, &dispatch);
+        assert_eq!(
+            round.finish(&pressure, &dispatch),
+            RoundEnd::CountBudget,
+            "the caller learns that work may be left"
+        );
         let p = pressure.snapshot();
         assert_eq!((p.queue_drains, p.queue_commands), (1, 2));
         let d = dispatch.snapshot();

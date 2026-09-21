@@ -64,8 +64,14 @@ tasty-cli (또는 외부 프로그램)
 [ADR-0313](../adr/0313-the-dispatch-round-budget-is-the-connection-bound.md))에 닿거나 경과 시간이
 `ROUND_TIME_BUDGET`(16 ms, [ADR-0410](../adr/0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md))에
 닿으면 멈춘다. 첫 명령은 시간과 무관하게 늘 처리한다. 남은 것은 **큐에 그대로** 있다가 다음
-회차가 집는다 — 명령을 넣는 쪽이 명령마다 waker 를 한 번 부르므로 그 wake 가 이미 큐에 남아
-있다. 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
+회차가 집는다. headless 는 명령을 넣는 쪽이 명령마다 waker 를 한 번 부르므로 그 wake 가 이미
+이벤트 채널에 남아 있다. 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
+
+gui 에서는 회차가 `about_to_wait`(iteration 마다 한 번)와 `IpcReady` 사용자 이벤트 두 자리에서 돈다.
+winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about_to_wait` 로 넘어가므로, 사용자 이벤트가
+늘 회차를 열면 지속 부하에서 타이머·입력·렌더가 굶는다. 그래서 사용자 이벤트는 직전 회차가 끝난 뒤
+한 회차 예산이 지났을 때만 회차를 열고(`app::ipc::IpcPacer`), 예산에서 멈춘 회차는 루프를 스스로 한
+번 더 깨운다 — 건너뛴 wake 가 남은 명령의 몫이었을 수 있어서다([ADR-0413](../adr/0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md)).
 
 순서는 도착 순이다. 연결 하나는 응답을 받을 때까지 다음 요청을 안 보내므로 큐에 한 번에 하나만
 올리고, 그래서 어떤 요청 앞에 설 수 있는 명령 수는 연결 상한과 주입 깊이 상한으로 유한하다.

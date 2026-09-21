@@ -61,6 +61,9 @@ pub(crate) fn pump_ipc(
             return std::ops::ControlFlow::Break(());
         }
     }
+    // 멈춘 이유는 여기서 쓰지 않는다. 이 루프는 이벤트 하나마다 due 한 타이머를 돌리므로
+    // 부하가 타이머를 밀어내지 않고, 남은 명령은 그 명령들이 부른 wake 가 다음 회차를 부른다.
+    // gui 는 둘 다 성립하지 않아 따로 다룬다(`src/app/ipc.rs` 의 `IpcPacer`).
     round.finish(app.core.pressure(), app.core.dispatch());
     std::ops::ControlFlow::Continue(())
 }

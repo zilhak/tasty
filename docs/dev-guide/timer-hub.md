@@ -369,6 +369,19 @@ dirty 자체는 지우지 않는다. 사용자가 세션 중에 `restore_layout`
 가드가 풀리면 밀린 타이머는 **한 번만** 발화하고 위상이 재정렬된다(허브는 발화를
 큐잉하지 않는다).
 
+## gui 는 IPC 부하 중에도 `about_to_wait` 에 닿아야 한다 (계약)
+
+gui 의 타이머는 `about_to_wait` 앞머리에서만 돈다. winit 은 한 iteration 안에서 사용자 이벤트를
+**큐가 빌 때까지** 처리한 뒤에야 `about_to_wait` 을 부르므로, 사용자 이벤트 처리가 새 사용자 이벤트를
+계속 부르면 타이머가 통째로 멈춘다. IPC 가 그 형태였다 — 회차가 답을 주면 호출자가 곧바로 다음
+명령과 wake 를 보낸다. 그래서 `IpcReady` 처리기는 직전 회차가 끝난 뒤 한 회차 예산이 지났을 때만
+회차를 연다(`src/app/ipc.rs` 의 `IpcPacer`,
+[ADR-0413](../adr/0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md)).
+사용자 이벤트 처리기에 새로 무거운 일을 넣을 때도 같은 물음을 한다 — 그 일이 끝나면서 같은
+이벤트를 다시 부르는가.
+
+headless 는 이벤트 하나마다 `run_due_timers` 를 부르므로 이 형태가 없다.
+
 ## 새 주기 작업을 추가할 때
 
 1. `src/app/timers.rs` 의 `Tick` 에 키를 추가한다. gui 전용이면

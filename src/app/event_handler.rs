@@ -57,7 +57,13 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::TerminalOutput(surface_id) => self.handle_terminal_output(surface_id),
             AppEvent::IpcReady => {
-                if self.process_ipc()
+                // 직전 회차가 방금 끝났으면 건너뛴다 — 깨우는 일은 이미 했고, 명령은 이 뒤의
+                // `about_to_wait` 가 집는다. 매번 돌면 지속 부하에서 타이머·입력·렌더가
+                // 굶는다(`crate::app::ipc::IpcPacer`).
+                if self
+                    .ipc_pacer
+                    .event_may_run_round(std::time::Instant::now())
+                    && self.process_ipc()
                     && let Some(w) = self.focused_window_mut()
                 {
                     w.mark_dirty();

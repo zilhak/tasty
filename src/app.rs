@@ -213,6 +213,10 @@ pub(crate) struct App {
     /// `ControlFlow::WaitUntil` 은 창이 있을 때 지연을 줄이는 보조 수단일 뿐이다.
     #[cfg(feature = "gui")]
     pub(crate) timer_waker: tasty_timer::TimerWakerHandle,
+    /// IPC 회차의 양보 규칙 — 직전 회차가 끝난 시각을 들고, 사용자 이벤트(`IpcReady`)가
+    /// 회차를 돌려도 되는지 정한다(`src/app/ipc.rs` 의 `IpcPacer`).
+    #[cfg(feature = "gui")]
+    pub(crate) ipc_pacer: crate::app::ipc::IpcPacer,
     /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor view 는
     /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 view 를 만들지 않고
     /// 이 id 의 view 로 포커스만 이동한다.
@@ -376,6 +380,7 @@ impl App {
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             timers,
             timer_waker,
+            ipc_pacer: crate::app::ipc::IpcPacer::default(),
             preset_view_id: None,
             pending_settings_plugin_tab: false,
             pending_settings_file_handler_tab: false,
