@@ -170,7 +170,8 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 `queue_dispatch` 는 큐에서 **꺼낸** 쪽의 누계다(`tasty_ipc::dispatch::DispatchStats`). 값은 일곱이다 —
 `rounds`(명령을 하나 이상 꺼낸 회차) · `rounds_stopped_by_count` · `rounds_stopped_by_time`(그중 명령 수 ·
 시간 예산에 닿아 멈춘 회차) · `expired_before_run`(호출자의 응답 대기 상한이 큐에서 지나 실행하지 않은
-명령 — `-32067` 로 답한 것) · `started`(실행을 시작한 명령) · `in_flight`(지금 실행 중이고 **응답을
+명령 — 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입 명령([ADR-0451](../../adr/0451-a-host-injection-carries-its-wait-as-a-deadline.md))도
+센다. 주입 명령은 `-32067` 로 답해지지 않고 주입한 호출자 스레드에서 `InjectError::Expired` 로 끝난다) · `started`(실행을 시작한 명령) · `in_flight`(지금 실행 중이고 **응답을
 기다리는 쪽이 아직 기다리는** 요청 — **이 덩어리에서 유일하게 내려가는 값**) · `in_flight_max`. 메인
 스레드 handler 는 한 번에 하나라 `in_flight` 가 1 을 넘는 것은 응답을 워커로 넘긴 요청이 기다리는
 동안이다. 정의는 [ADR-0412](../../adr/0412-in-flight-counts-a-started-request-while-its-caller-still-waits.md).

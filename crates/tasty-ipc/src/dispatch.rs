@@ -121,7 +121,9 @@ pub struct DispatchSnapshot {
     pub rounds_stopped_by_count: u64,
     /// 그중 시간 예산에 닿아 멈춘 회차.
     pub rounds_stopped_by_time: u64,
-    /// 기한이 큐에서 지나 실행하지 않은 명령 수(`-32067` 로 답한 것).
+    /// 기한이 큐에서 지나 실행하지 않은 명령 수. 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입
+    /// 명령도 센다 — 주입 명령은 `-32067` 로 답해지지 않고 호출자 스레드에서
+    /// [`crate::host_call::InjectError::Expired`] 로 끝난다(ADR-0451).
     pub expired_before_run: u64,
     /// 실행을 시작한 명령 수의 누계.
     pub started: u64,
