@@ -13,6 +13,12 @@
 //! 핸드셰이크(`stream.open{target}`) 직후 서버는 attach 결과를 Control 프레임으로
 //! 통지한다(`attached{cols,rows}` 또는 `attach_error{reason}`). 그 다음 Data 프레임이
 //! 초기 스냅샷 + 이후 출력 delta. force-detach 는 `Control{force_detached}`+`Detach`.
+//!
+//! 세 루프 모두 attach 직후 손실 통지를 받겠다고 선언한다(`ClientLossNotify`). 서버가
+//! `Loss` 를 보내면 그 연결의 화면은 이어지지 않으므로 옛 연결을 놓고 **다시 attach** 해
+//! 새 snapshot 을 받는다 — 서버가 snapshot 을 만드는 자리는 attach 하나뿐이다
+//! (`docs/adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md`).
+//! 구 서버는 선언을 모르는 변종으로 무시하고 `Loss` 도 안 보내므로 종전 동작 그대로다.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -22,7 +28,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use tasty_ipc::stream::{self, STREAM_PROTO, StreamFrame, StreamTag};
+use tasty_ipc::stream::{self, STREAM_PROTO, StreamControl, StreamFrame, StreamTag};
 use tasty_terminal::Terminal;
 
 use crate::out::outln;
@@ -37,9 +43,61 @@ pub(crate) enum AttachExit {
     Disconnected,
 }
 
-/// 단일 attach 세션 1 회: `127.0.0.1:port` 접속 → 핸드셰이크 → mirror/raw.
+/// 한 연결이 끝난 사유 — [`AttachExit`] 에 **재attach** 하나를 더한다. 재attach 는 이
+/// 파일 안에서 끝나는 일이라(`run_attach_on_port` · `run_attach_workspace_on_port` 가 다시
+/// 붙는다) 호출자에게 보이는 [`AttachExit`] 에는 없다.
+enum SessionEnd {
+    Exit(AttachExit),
+    /// 서버가 이 연결의 프레임을 버렸다고 알렸고(`StreamControl::Loss`), 옛 연결을 놓았다.
+    /// 값은 그 연결에서 통지된 프레임 수의 합.
+    Desynced(u64),
+}
+
+/// mirror-dump 한 번의 실행에서 손실로 다시 attach 하는 최대 횟수. 넘으면 수집을 이어가
+/// 결과를 찍고 stderr 로 공백이 있다고 알린다(ADR-0400). raw 브리지에는 걸지 않는다 —
+/// 대화형이라 사용자가 `Ctrl+\` 로 끝낼 수 있다.
+const DUMP_RESYNC_LIMIT: u32 = 3;
+
+/// 손실 통지를 받겠다고 선언한다. 선언이 없으면 서버는 그 연결에서 종전대로 조용히
+/// 버린다. 보내지 못해도 attach 는 이어간다 — 그 연결은 종전 동작이 될 뿐이다.
+fn declare_loss_notify(conn: &mut StreamConnection) {
+    let declare = match serde_json::to_vec(&StreamControl::ClientLossNotify {}) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("attach: loss-notify declaration did not serialize: {e}");
+            return;
+        }
+    };
+    if let Err(e) = conn.send(StreamTag::Control, &declare) {
+        tracing::warn!(
+            "attach: loss-notify declaration was not sent; this session will not hear of gaps: {e}"
+        );
+    }
+}
+
+/// mid-session Control 프레임이 이 client 에게 무슨 뜻인가.
+enum ControlSignal {
+    ForceDetached,
+    Loss(u64),
+    Other,
+}
+
+fn classify_control(payload: &[u8]) -> ControlSignal {
+    if let Ok(StreamControl::Loss { frames }) = serde_json::from_slice(payload) {
+        return ControlSignal::Loss(frames);
+    }
+    if String::from_utf8_lossy(payload).contains("force_detached") {
+        return ControlSignal::ForceDetached;
+    }
+    ControlSignal::Other
+}
+
+/// 단일 attach 세션: `127.0.0.1:port` 접속 → 핸드셰이크 → mirror/raw.
 /// 로컬(loopback)과 SSH(터널 localport) 양쪽이 공유한다 — SSH 경로는 이 함수에
 /// **터널의 localport** 를 넘기기만 한다(O7: `--port` 공개 플래그 불필요).
+///
+/// 손실 통지로 끝난 연결은 여기서 다시 붙는다(ADR-0400). `send` 입력은 첫 attach 에서만
+/// 보낸다 — 재attach 가 입력을 되풀이하면 원격에서 명령이 두 번 돈다.
 pub(crate) fn run_attach_on_port(
     port: u16,
     surface: u32,
@@ -47,6 +105,33 @@ pub(crate) fn run_attach_on_port(
     send: Option<&str>,
     raw: bool,
 ) -> Result<AttachExit> {
+    let mut send = send;
+    let mut resyncs = 0u32;
+    loop {
+        let resync_allowed = raw || resyncs < DUMP_RESYNC_LIMIT;
+        match attach_surface_once(port, surface, dump_after, send, raw, resync_allowed)? {
+            SessionEnd::Exit(exit) => return Ok(exit),
+            SessionEnd::Desynced(frames) => {
+                resyncs += 1;
+                send = None;
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.attach.resyncing", &frames.to_string())
+                );
+            }
+        }
+    }
+}
+
+/// [`run_attach_on_port`] 의 연결 한 번.
+fn attach_surface_once(
+    port: u16,
+    surface: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    raw: bool,
+    resync_allowed: bool,
+) -> Result<SessionEnd> {
     let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
             "{}",
@@ -87,6 +172,7 @@ pub(crate) fn run_attach_on_port(
     }
     let cols = ctrl.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
     let rows = ctrl.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
+    declare_loss_notify(&mut conn);
     eprintln!(
         "{}",
         tasty_i18n::t_args(
@@ -103,7 +189,7 @@ pub(crate) fn run_attach_on_port(
     if raw {
         run_raw_bridge(conn, send)
     } else {
-        run_mirror_dump(conn, cols, rows, dump_after, send)
+        run_mirror_dump(conn, cols, rows, dump_after, send, resync_allowed)
     }
 }
 
@@ -195,8 +281,10 @@ pub fn run_attach_ssh(
     }
 }
 
-/// workspace attach 1 회(로컬/SSH 공용). 핸드셰이크 → `attached_workspace` 디스크립터
+/// workspace attach(로컬/SSH 공용). 핸드셰이크 → `attached_workspace` 디스크립터
 /// 파싱 → 터미널마다 mirror 생성 + 비-터미널 placeholder 기록 → demux-dump.
+///
+/// 손실 통지로 끝난 연결은 [`run_attach_on_port`] 와 같은 규칙으로 다시 붙는다.
 pub(crate) fn run_attach_workspace_on_port(
     port: u16,
     workspace: u32,
@@ -204,6 +292,33 @@ pub(crate) fn run_attach_workspace_on_port(
     send: Option<&str>,
     send_to: Option<u32>,
 ) -> Result<AttachExit> {
+    let mut send = send;
+    let mut resyncs = 0u32;
+    loop {
+        let resync_allowed = resyncs < DUMP_RESYNC_LIMIT;
+        match attach_workspace_once(port, workspace, dump_after, send, send_to, resync_allowed)? {
+            SessionEnd::Exit(exit) => return Ok(exit),
+            SessionEnd::Desynced(frames) => {
+                resyncs += 1;
+                send = None;
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.attach.resyncing", &frames.to_string())
+                );
+            }
+        }
+    }
+}
+
+/// [`run_attach_workspace_on_port`] 의 연결 한 번.
+fn attach_workspace_once(
+    port: u16,
+    workspace: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    send_to: Option<u32>,
+    resync_allowed: bool,
+) -> Result<SessionEnd> {
     let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
             "{}",
@@ -285,7 +400,16 @@ pub(crate) fn run_attach_workspace_on_port(
         )
     );
 
-    run_workspace_mirror_dump(conn, mirrors, placeholders, dump_after, send, send_to)
+    declare_loss_notify(&mut conn);
+    run_workspace_mirror_dump(
+        conn,
+        mirrors,
+        placeholders,
+        dump_after,
+        send,
+        send_to,
+        resync_allowed,
+    )
 }
 
 /// `tasty attach --ssh user@host --workspace <id>` (1회성 SSH 터널 workspace attach).
@@ -372,6 +496,10 @@ pub fn run_attach_workspace_ssh(
 
 /// workspace demux-dump: surface-prefixed Data 를 demux 해 각 mirror 에 feed,
 /// deadline 후 surface 별 화면을 섹션으로 stdout 출력. 검증 핵심(GUI 없이 N grid 확인).
+///
+/// 손실 통지를 받으면 `resync_allowed` 일 때 수집을 멈추고 옛 연결을 놓아
+/// [`SessionEnd::Desynced`] 를 돌려준다(화면은 찍지 않는다 — 다시 붙어 새로 받는다).
+/// 아니면 수집을 이어가고, 끝에 stderr 로 공백이 있다고 알린다.
 fn run_workspace_mirror_dump(
     mut conn: StreamConnection,
     mut mirrors: Vec<(u32, Terminal)>,
@@ -379,7 +507,8 @@ fn run_workspace_mirror_dump(
     dump_after: Option<u64>,
     send: Option<&str>,
     send_to: Option<u32>,
-) -> Result<AttachExit> {
+    resync_allowed: bool,
+) -> Result<SessionEnd> {
     let collect_ms = dump_after.unwrap_or(500);
 
     // 초기 입력 1 회(지정 surface 로 surface-prefixed).
@@ -409,6 +538,8 @@ fn run_workspace_mirror_dump(
     let deadline = Instant::now() + Duration::from_millis(collect_ms);
     let mut forced = false;
     let mut disconnected = false;
+    let mut desynced = false;
+    let mut lost = 0u64;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -423,12 +554,20 @@ fn run_workspace_mirror_dump(
                         m.feed_bytes(payload);
                     }
                 }
-                StreamTag::Control => {
-                    if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
+                StreamTag::Control => match classify_control(&frame.payload) {
+                    ControlSignal::ForceDetached => {
                         forced = true;
                         break;
                     }
-                }
+                    ControlSignal::Loss(frames) => {
+                        lost += frames;
+                        if resync_allowed {
+                            desynced = true;
+                            break;
+                        }
+                    }
+                    ControlSignal::Other => {}
+                },
                 StreamTag::Detach => {
                     forced = true;
                     break;
@@ -451,6 +590,12 @@ fn run_workspace_mirror_dump(
         }
     }
 
+    if desynced {
+        return Ok(SessionEnd::Desynced(release_for_resync(
+            writer, reader, lost,
+        )));
+    }
+
     // 각 surface 화면을 섹션 헤더와 함께 stdout 으로 — 검증 grep 용.
     for (sid, m) in &mirrors {
         outln!("=== surface {sid} ===")?;
@@ -467,23 +612,27 @@ fn run_workspace_mirror_dump(
         eprintln!("{}", tasty_i18n::t("cli.attach.force_detached"));
     }
     let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
-    Ok(if disconnected {
+    report_unrecovered_loss(lost);
+    Ok(SessionEnd::Exit(if disconnected {
         AttachExit::Disconnected
     } else {
         AttachExit::Completed
-    })
+    }))
 }
 
 /// mirror-dump 모드: 출력을 수집해 mirror grid 재구성 → stdout 출력.
 /// 1회성이라 항상 `Completed` 를 반환하지만, deadline 전에 reader 가 끊기면
 /// `Disconnected`(터널/서버 단절)로 보고해 SSH 재연결이 가능하게 한다.
+///
+/// 손실 통지는 [`run_workspace_mirror_dump`] 와 같은 규칙이다.
 fn run_mirror_dump(
     mut conn: StreamConnection,
     cols: usize,
     rows: usize,
     dump_after: Option<u64>,
     send: Option<&str>,
-) -> Result<AttachExit> {
+    resync_allowed: bool,
+) -> Result<SessionEnd> {
     let collect_ms = dump_after.unwrap_or(500);
 
     // 초기 입력 1 회(비대화형 검증용).
@@ -508,6 +657,8 @@ fn run_mirror_dump(
     let deadline = Instant::now() + Duration::from_millis(collect_ms);
     let mut forced = false;
     let mut disconnected = false;
+    let mut desynced = false;
+    let mut lost = 0u64;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -518,12 +669,20 @@ fn run_mirror_dump(
                 StreamTag::Data => {
                     mirror.feed_bytes(&frame.payload);
                 }
-                StreamTag::Control => {
-                    if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
+                StreamTag::Control => match classify_control(&frame.payload) {
+                    ControlSignal::ForceDetached => {
                         forced = true;
                         break;
                     }
-                }
+                    ControlSignal::Loss(frames) => {
+                        lost += frames;
+                        if resync_allowed {
+                            desynced = true;
+                            break;
+                        }
+                    }
+                    ControlSignal::Other => {}
+                },
                 StreamTag::Detach => {
                     forced = true;
                     break;
@@ -544,6 +703,12 @@ fn run_mirror_dump(
         }
     }
 
+    if desynced {
+        return Ok(SessionEnd::Desynced(release_for_resync(
+            writer, reader, lost,
+        )));
+    }
+
     // mirror 화면을 stdout 으로 — 검증 핵심(GUI 없이 grid 확인).
     outln!("{}", mirror.screen_text(true))?;
 
@@ -555,11 +720,40 @@ fn run_mirror_dump(
         eprintln!("{}", tasty_i18n::t("cli.attach.force_detached"));
     }
     let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
-    Ok(if disconnected {
+    report_unrecovered_loss(lost);
+    Ok(SessionEnd::Exit(if disconnected {
         AttachExit::Disconnected
     } else {
         AttachExit::Completed
-    })
+    }))
+}
+
+/// 손실로 끝내는 dump 의 옛 연결을 놓는다 — `Detach` 를 보내고 서버가 소켓을 닫을
+/// 때까지(reader 스레드가 EOF 로 끝날 때까지) 기다린다. 서버는 점유 해제를 inbound 에
+/// 넣은 **뒤에** 소켓을 닫으므로, 이 함수가 돌아온 뒤 여는 새 연결의 attach 요청은 그
+/// 해제 뒤에 처리된다 — 점유가 옛 연결에 남아 재attach 가 거절되는 경합이 없다.
+fn release_for_resync(mut writer: TcpStream, reader: thread::JoinHandle<()>, lost: u64) -> u64 {
+    if let Err(e) = stream::write_frame(&mut writer, StreamTag::Detach, &[]) {
+        // 이미 끊기는 중이면 서버가 곧 소켓을 닫는다 — 기다림은 그대로 유효하다.
+        tracing::warn!("attach: detach before re-attach was not written: {e}");
+    }
+    if reader.join().is_err() {
+        tracing::warn!(
+            "attach: reader thread panicked while waiting for the old connection to close"
+        );
+    }
+    lost
+}
+
+/// 재attach 한도를 다 쓰고도 손실이 남았으면 stderr 로 알린다 — 위에 찍힌 화면에 공백이
+/// 있을 수 있다. stdout 은 건드리지 않는다(검증 스크립트가 그 형식을 grep 한다).
+fn report_unrecovered_loss(lost: u64) {
+    if lost > 0 {
+        eprintln!(
+            "{}",
+            tasty_i18n::t_fmt("cli.attach.desync_unrecovered", &lost.to_string())
+        );
+    }
 }
 
 /// raw 브리지 내부 이벤트 — stdin 스레드와 server reader 스레드가 하나의 채널에
@@ -744,7 +938,7 @@ fn note_writer_poisoned(during: &str) {
 /// 지금은 이 경쟁 자체가 구조적으로 불가능하다. 남는 유실 창은 세션 전환의 아주
 /// 짧은 순간(이전 세션이 끝나 슬롯이 비거나 죽은 채널을 가리키는 동안 들어온
 /// 입력)뿐이다. 상세 서술은 `docs/dev-guide/attach-behavior.md` "SSH 터널" 절 참고.
-fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachExit> {
+fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<SessionEnd> {
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
     if let Some(s) = send {
@@ -830,7 +1024,9 @@ fn raw_bridge_main_loop(
     rx: mpsc::Receiver<RawEvent>,
     writer: Arc<Mutex<TcpStream>>,
     out: &mut impl Write,
-) -> Result<AttachExit> {
+) -> Result<SessionEnd> {
+    use AttachExit::{Completed, Disconnected};
+    let done = |exit| Ok(SessionEnd::Exit(exit));
     loop {
         match rx.recv() {
             Ok(RawEvent::Stdin(data)) => {
@@ -850,7 +1046,7 @@ fn raw_bridge_main_loop(
                         }
                         Err(_) => note_writer_poisoned("sending the detach notice"),
                     }
-                    return Ok(AttachExit::Completed);
+                    return done(Completed);
                 }
                 let write_ok = match writer.lock() {
                     Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Data, &data).is_ok(),
@@ -860,35 +1056,80 @@ fn raw_bridge_main_loop(
                     }
                 };
                 if !write_ok {
-                    return Ok(AttachExit::Completed);
+                    return done(Completed);
                 }
             }
-            Ok(RawEvent::StdinEof) => return Ok(AttachExit::Completed),
+            Ok(RawEvent::StdinEof) => return done(Completed),
             Ok(RawEvent::Server(frame)) => match frame.tag {
                 StreamTag::Data => {
                     let _ = out.write_all(&frame.payload); // best-effort 미러 — 무시
                     let _ = out.flush(); // best-effort flush — 무시
                 }
-                StreamTag::Detach => return Ok(AttachExit::Completed),
-                StreamTag::Control => {
-                    if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
+                StreamTag::Detach => return done(Completed),
+                StreamTag::Control => match classify_control(&frame.payload) {
+                    ControlSignal::ForceDetached => {
                         eprintln!("\r\n{}", tasty_i18n::t("cli.attach.force_detached"));
-                        return Ok(AttachExit::Completed);
+                        return done(Completed);
                     }
-                }
+                    // 화면이 이어지지 않는다 — 옛 연결을 놓고 다시 붙는다. 새 snapshot 이
+                    // 화면을 처음부터 다시 그린다(ADR-0400).
+                    ControlSignal::Loss(frames) => {
+                        return Ok(SessionEnd::Desynced(release_raw_for_resync(
+                            &rx, &writer, frames,
+                        )));
+                    }
+                    ControlSignal::Other => {}
+                },
                 // heartbeat — read 자체가 이미 소켓 read timeout 을 리셋하므로 별도
                 // 처리 불필요.
                 StreamTag::Ping => {}
                 // raw 브리지는 순수 PTY passthrough — mesh 는 소비 대상이 아니다.
                 StreamTag::MeshData => {}
             },
-            Ok(RawEvent::ServerRecvErr) => return Ok(AttachExit::Disconnected),
+            Ok(RawEvent::ServerRecvErr) => return done(Disconnected),
             // 두 송신 스레드가 모두 죽어야만 발생 — 사실상 도달 불가(stdin 스레드는
             // 항상 종료 전 StdinEof 를 보내고, 있는대로 서버 스레드도 ServerRecvErr
             // 를 보낸다).
-            Err(_) => return Ok(AttachExit::Completed),
+            Err(_) => return done(Completed),
         }
     }
+}
+
+/// raw 브리지의 옛 연결을 놓는다 — `Detach` 를 쓰고, 서버가 소켓을 닫았다는 신호
+/// (`ServerRecvErr` 또는 서버의 `Detach`)를 기다린다. 기다리는 동안 들어온 stdin 은
+/// 버린다 — 세션 전환 사이의 짧은 창이고, 그 창의 입력은 재연결 때와 같이 원격에 닿지
+/// 않는다(`run_raw_bridge` doc). 신호가 끝내 안 오면 `HEARTBEAT_TIMEOUT` 에서 포기하고
+/// 다시 붙는다 — 그 경우 새 attach 는 서버 점유 해제와 경합할 수 있다.
+fn release_raw_for_resync(
+    rx: &mpsc::Receiver<RawEvent>,
+    writer: &Arc<Mutex<TcpStream>>,
+    frames: u64,
+) -> u64 {
+    match writer.lock() {
+        Ok(mut w) => {
+            if let Err(e) = stream::write_frame(&mut *w, StreamTag::Detach, &[]) {
+                tracing::warn!("attach: detach before re-attach was not written: {e}");
+            }
+        }
+        Err(_) => note_writer_poisoned("sending the detach before a re-attach"),
+    }
+    let deadline = Instant::now() + stream::HEARTBEAT_TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(remaining) {
+            Ok(RawEvent::ServerRecvErr) => break,
+            Ok(RawEvent::Server(f)) if f.tag == StreamTag::Detach => break,
+            Ok(_) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                tracing::warn!(
+                    "attach: the old connection did not close before the heartbeat timeout; re-attaching anyway"
+                );
+                break;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    frames
 }
 
 /// 입력 문자열의 escape 를 raw 바이트로 디코딩: `\r \n \t \0 \\ \xNN`.
@@ -988,8 +1229,8 @@ mod raw_bridge_tests {
     use tasty_ipc::stream::{StreamFrame, StreamTag};
 
     use super::{
-        AttachExit, RawEvent, StdinEofLatch, StdinSlot, install_sender, raw_bridge_main_loop,
-        route_stdin_chunk, route_stdin_eof,
+        AttachExit, RawEvent, SessionEnd, StdinEofLatch, StdinSlot, install_sender,
+        raw_bridge_main_loop, route_stdin_chunk, route_stdin_eof,
     };
 
     /// writer.lock() 이 실제로 잠글 대상이 필요할 뿐 내용은 검사하지 않으므로,
@@ -1018,7 +1259,7 @@ mod raw_bridge_tests {
         drop(tx);
 
         let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
-        assert!(matches!(exit, AttachExit::Disconnected));
+        assert!(matches!(exit, SessionEnd::Exit(AttachExit::Disconnected)));
     }
 
     #[test]
@@ -1032,7 +1273,65 @@ mod raw_bridge_tests {
         drop(tx);
 
         let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
-        assert!(matches!(exit, AttachExit::Completed));
+        assert!(matches!(exit, SessionEnd::Exit(AttachExit::Completed)));
+    }
+
+    /// (ADR-0400) 손실 통지를 받은 raw 브리지는 옛 연결에 `Detach` 를 쓰고, 서버가
+    /// 소켓을 닫았다는 신호를 기다린 뒤 재attach 를 요청한다. 그 사이의 stdin 은 원격에
+    /// 안 간다.
+    #[test]
+    fn a_loss_notice_detaches_the_old_connection_and_asks_for_a_reattach() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let client = TcpStream::connect(listener.local_addr().expect("addr")).expect("connect");
+        let (mut server_side, _) = listener.accept().expect("accept");
+        let writer = Arc::new(Mutex::new(client));
+
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        let loss = serde_json::to_vec(&tasty_ipc::stream::StreamControl::Loss { frames: 4 })
+            .expect("serialize");
+        tx.send(RawEvent::Server(StreamFrame::new(StreamTag::Control, loss)))
+            .unwrap();
+        tx.send(RawEvent::Stdin(b"typed while switching".to_vec()))
+            .unwrap();
+        tx.send(RawEvent::ServerRecvErr).unwrap();
+        drop(tx);
+
+        let end = raw_bridge_main_loop(rx, writer.clone(), &mut Vec::<u8>::new()).unwrap();
+        assert!(
+            matches!(end, SessionEnd::Desynced(4)),
+            "재attach 를 요청해야 한다"
+        );
+
+        drop(writer);
+        let first = tasty_ipc::stream::read_frame(&mut server_side).expect("a frame");
+        assert_eq!(
+            first.tag,
+            StreamTag::Detach,
+            "옛 연결에 Detach 가 먼저 가야 한다"
+        );
+        assert!(
+            tasty_ipc::stream::read_frame(&mut server_side).is_err(),
+            "전환 중 stdin 이 옛 연결로 새어 나갔다"
+        );
+    }
+
+    /// 손실 통지와 강제 detach 와 나머지가 서로 섞이지 않는다.
+    #[test]
+    fn control_frames_are_told_apart() {
+        let loss = serde_json::to_vec(&tasty_ipc::stream::StreamControl::Loss { frames: 9 })
+            .expect("serialize");
+        assert!(matches!(
+            super::classify_control(&loss),
+            super::ControlSignal::Loss(9)
+        ));
+        assert!(matches!(
+            super::classify_control(br#"{"event":"force_detached"}"#),
+            super::ControlSignal::ForceDetached
+        ));
+        assert!(matches!(
+            super::classify_control(br#"{"event":"resize","surface_id":1,"cols":2,"rows":3}"#),
+            super::ControlSignal::Other
+        ));
     }
 
     #[test]
@@ -1047,7 +1346,7 @@ mod raw_bridge_tests {
         drop(tx);
 
         let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
-        assert!(matches!(exit, AttachExit::Completed));
+        assert!(matches!(exit, SessionEnd::Exit(AttachExit::Completed)));
     }
 
     #[test]
@@ -1057,7 +1356,7 @@ mod raw_bridge_tests {
         drop(tx);
 
         let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
-        assert!(matches!(exit, AttachExit::Completed));
+        assert!(matches!(exit, SessionEnd::Exit(AttachExit::Completed)));
     }
 
     #[test]
@@ -1067,7 +1366,7 @@ mod raw_bridge_tests {
         drop(tx);
 
         let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
-        assert!(matches!(exit, AttachExit::Completed));
+        assert!(matches!(exit, SessionEnd::Exit(AttachExit::Completed)));
     }
 
     /// 서버 프레임(Data)이 먼저 여러 번 오고, 그 다음 단절되는 순서도 정상 처리되는지
@@ -1086,7 +1385,7 @@ mod raw_bridge_tests {
         drop(tx);
 
         let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
-        assert!(matches!(exit, AttachExit::Disconnected));
+        assert!(matches!(exit, SessionEnd::Exit(AttachExit::Disconnected)));
     }
 
     // --- 단일 영속 stdin 리더의 슬롯 라우팅 회귀 테스트 ---
