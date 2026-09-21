@@ -40,6 +40,10 @@ SQLite 오류의 원인 분류(`Busy` · `DiskFull` · `Corrupt` · `PermissionD
 - **얻은 것**: 두 DB 의 원인 표가 갈릴 수 없다.
 - **잃은 것**: `SQLITE_CANTOPEN` 이 저장 경로에서도 `permission_denied` 로 나간다. 초기화
   안내가 권한으로 묶어 온 것을 한 표로 합치며 그대로 가져왔다 — 쓰기 중 `CANTOPEN` 은 드물다.
+- **잃은 것**: `SQLITE_READONLY`(읽기 전용 파일·마운트에 쓰기)는 표에 없어 `other` 로 나간다
+  (실측: 읽기 전용 `memory.db` 에 `memory.put` → `storage_failure: "other"`). 표에 넣지 않은 것은
+  표가 초기화와 공유되기 때문이다 — `permission_denied` 로 넣으면 초기화 안내의 분류가
+  `Other` → `PermissionDenied` 로 바뀌는 동작 변경이 된다.
 - **운영 비용**: `as_str` 문자열을 바꾸면 소비자가 깨진다. 이름을 바꾸지 말라는 말이 그 enum
   의 doc 에 있다.
 
