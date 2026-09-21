@@ -6,7 +6,9 @@
 //! 원래 `src/adapters/ui/surface/explorer/view.rs` 의 private 함수였던 것을 이
 //! 모듈로 추출해 `pub(crate)` 로 일반화했다.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "gui")]
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use tasty_model::{SortColumn, SortDir};
@@ -14,6 +16,10 @@ use tasty_model::{SortColumn, SortDir};
 /// 디렉토리 엔트리 한 줄의 메타데이터 (디스크에서 1회 읽어 캐시).
 #[derive(Clone)]
 pub(crate) struct DirEntryInfo {
+    /// 원격 wire 는 이 값을 싣지 않는다 — 받는 쪽이 조회한 디렉터리와 `name` 으로
+    /// 다시 만든다(`attach_client` 의 복원). 읽는 자리가 화면(Explorer·피커)뿐이라
+    /// headless 빌드에는 이 칸이 없다.
+    #[cfg(feature = "gui")]
     pub(crate) path: PathBuf,
     pub(crate) name: String,
     pub(crate) is_dir: bool,
@@ -47,6 +53,7 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
                 .unwrap_or_default()
         };
         out.push(DirEntryInfo {
+            #[cfg(feature = "gui")]
             path,
             name,
             is_dir,
@@ -85,6 +92,7 @@ pub(crate) fn sort_entries(entries: &mut [DirEntryInfo], col: SortColumn, dir: S
 /// 로컬/원격(wire 복원) 어디서 만들어진 `SystemTime` 이든 동일 포맷 — 사람이 읽는
 /// 포맷팅은 view 렌더 직전에서만(파일 피커의 wire 조립/파싱은 `modified_unix: u64`
 /// 그대로 다룬다).
+#[cfg(feature = "gui")]
 pub(crate) fn format_modified(m: Option<SystemTime>) -> String {
     let Some(t) = m else { return "—".to_string() };
     let dur = match t.duration_since(std::time::UNIX_EPOCH) {
@@ -98,6 +106,7 @@ pub(crate) fn format_modified(m: Option<SystemTime>) -> String {
 }
 
 /// Howard Hinnant days→civil 알고리즘 (proleptic Gregorian).
+#[cfg(feature = "gui")]
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -112,6 +121,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 /// 사람이 읽는 파일 크기 (e.g. "4 KB"). 디렉토리는 "—".
+#[cfg(any(feature = "gui", test))]
 pub(crate) fn human_size(is_dir: bool, size: u64) -> String {
     if is_dir {
         return "—".to_string();
@@ -148,6 +158,7 @@ mod tests {
     fn sort_dirs_first() {
         let mut v = vec![
             DirEntryInfo {
+                #[cfg(feature = "gui")]
                 path: "/z".into(),
                 name: "z".into(),
                 is_dir: false,
@@ -156,6 +167,7 @@ mod tests {
                 ext: String::new(),
             },
             DirEntryInfo {
+                #[cfg(feature = "gui")]
                 path: "/a".into(),
                 name: "a".into(),
                 is_dir: true,

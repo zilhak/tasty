@@ -2192,6 +2192,7 @@ mod list_dir_entries_wire_capped_tests {
 
     fn entry(name: &str) -> DirEntryInfo {
         DirEntryInfo {
+            #[cfg(feature = "gui")]
             path: name.into(),
             name: name.to_string(),
             is_dir: false,
