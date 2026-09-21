@@ -59,6 +59,7 @@ const CATALOG_TREE: &str = "crates/tasty-gallery/src/catalog.rs";
 ///
 /// 여러 id 가 한 specimen 을 가리키는 것은 정상이다 — 전송 진행/실패는 한 프레임의 두
 /// 상태이고, 프리셋 적용 셋은 범위만 다르다. 갤러리가 그것을 한 카드에서 보여준다.
+#[cfg(feature = "gui")]
 const POPUP_SPECIMENS: &[(&str, &str)] = &[
     ("notifications", "components/notification_panel.rs"),
     ("convert_surface", "components/convert.rs"),
@@ -94,6 +95,7 @@ const POPUP_SPECIMENS: &[(&str, &str)] = &[
 ///
 /// 이것은 면제가 아니라 **원칙을 어긴 자리의 목록**이다. 비어 있는 것이 좋은 상태이고,
 /// 지금 비어 있다 — 24 자리 전부 specimen 이 있다. 행이 생기면 그 행이 곧 빚이다.
+#[cfg(feature = "gui")]
 const POPUP_WITHOUT_SPECIMEN: &[(&str, &str)] = &[];
 
 /// 전체화면 무대 메타 표(`fullscreen_stages::all_metas()`) ↔ 갤러리 specimen.
