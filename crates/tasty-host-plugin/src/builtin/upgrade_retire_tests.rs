@@ -11,7 +11,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::{BuiltinSpec, apply_builtin_upgrade_decision};
+use super::{BuiltinSpec, BuiltinUpgradeAction, apply_builtin_upgrade_decision};
 use crate::manager::PluginManager;
 use crate::process::PluginProcess;
 use crate::test_fake_plugin::{self as fake, ID};
@@ -40,7 +40,15 @@ fn restarting(home: &HomeEnvGuard) -> (PluginManager, std::path::PathBuf, std::p
     (mgr, src, dest)
 }
 
-fn upgrade(mgr: &mut PluginManager, src: &Path, dest: &Path, installed: u64, bundle: u64) {
+/// 설치본 `1.<installed>.0` 을 번들 `1.<bundle>.0` 으로 맞춘다. 돌려주는 것은 탄 갈래의 보고다.
+fn upgrade(
+    mgr: &mut PluginManager,
+    src: &Path,
+    dest: &Path,
+    installed: u64,
+    bundle: u64,
+    force: bool,
+) -> BuiltinUpgradeAction {
     let spec = BuiltinSpec {
         id: ID,
         crate_dir: "",
@@ -53,9 +61,11 @@ fn upgrade(mgr: &mut PluginManager, src: &Path, dest: &Path, installed: u64, bun
         dest,
         Some(semver::Version::new(1, installed, 0)),
         Some(semver::Version::new(1, bundle, 0)),
+        force,
         false,
-        false,
-    );
+    )
+    .item
+    .action
 }
 
 fn pump_until_running(mgr: &mut PluginManager) {
@@ -81,24 +91,45 @@ fn shut_down(mgr: &mut PluginManager) {
 
 /// 재시작으로 회수 중인 plugin 에 **쓰는** upgrade 가 오면, 회수를 기다려 쓰고 그 뒤에 결국
 /// 다시 뜬다 — 기다리며 가져온 재기동 예약을 버리지 않는다.
+///
+/// 쓰는 갈래 셋(같은 버전에 바뀐 내용 · 버전이 오름 · `--force`)은 예약을 각자 받아 끝에서
+/// 한 줄로 잇는다. 갈래마다 받는 대입이 따로 빠질 수 있으므로 셋을 모두 태운다 — 보고의
+/// 종류로 그 갈래를 탔는지 함께 단정한다.
 #[test]
 fn an_upgrade_during_a_restart_keeps_the_restart() {
-    let home = HomeEnvGuard::tasty_home();
-    let (mut mgr, src, dest) = restarting(&home);
-    std::fs::write(src.join("new-asset"), "x").expect("bundle change");
+    let cases: [(&str, u64, u64, bool, fn(&BuiltinUpgradeAction) -> bool); 3] = [
+        ("same version, changed content", 0, 0, false, |a| {
+            matches!(a, BuiltinUpgradeAction::Skipped { .. })
+        }),
+        ("version upgrade", 0, 1, false, |a| {
+            matches!(a, BuiltinUpgradeAction::Upgraded { .. })
+        }),
+        ("force overwrite", 0, 0, true, |a| {
+            matches!(a, BuiltinUpgradeAction::Reinstalled { .. })
+        }),
+    ];
+    for (label, installed, bundle, force, took_branch) in cases {
+        let home = HomeEnvGuard::tasty_home();
+        let (mut mgr, src, dest) = restarting(&home);
+        std::fs::write(src.join("new-asset"), "x").expect("bundle change");
 
-    upgrade(&mut mgr, &src, &dest, 0, 0);
-    assert_eq!(
-        mgr.retiring_count(),
-        0,
-        "쓰는 갈래는 회수를 끝까지 기다린다"
-    );
-    assert!(
-        dest.join("new-asset").exists(),
-        "같은 버전의 바뀐 내용이 안 쓰였다"
-    );
-    pump_until_running(&mut mgr);
-    shut_down(&mut mgr);
+        let action = upgrade(&mut mgr, &src, &dest, installed, bundle, force);
+        assert!(
+            took_branch(&action),
+            "{label}: 다른 갈래를 탔다: {action:?}"
+        );
+        assert_eq!(
+            mgr.retiring_count(),
+            0,
+            "{label}: 쓰는 갈래는 회수를 끝까지 기다린다"
+        );
+        assert!(
+            dest.join("new-asset").exists(),
+            "{label}: 바뀐 내용이 안 쓰였다"
+        );
+        pump_until_running(&mut mgr);
+        shut_down(&mut mgr);
+    }
 }
 
 /// 쓸 것이 없는 upgrade(같은 버전·같은 내용 / 설치본이 더 높음)는 회수를 기다리지 않는다.
@@ -110,7 +141,7 @@ fn an_upgrade_that_writes_nothing_does_not_wait_for_a_retirement() {
         let (mut mgr, src, dest) = restarting(&home);
 
         let t = Instant::now();
-        upgrade(&mut mgr, &src, &dest, installed, bundle);
+        upgrade(&mut mgr, &src, &dest, installed, bundle, false);
         assert!(
             t.elapsed() < Duration::from_millis(500),
             "쓸 것이 없는 upgrade(v1.{installed} ← v1.{bundle})가 회수를 기다렸다: {:?}",

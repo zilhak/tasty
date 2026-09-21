@@ -128,11 +128,14 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
 - 재시작이 옛 프로세스를 기다리거나 새 것을 그 자리에서 띄우면
   `an_unresponsive_restart_waits_for_the_old_process_before_starting` 이, 종료가 회수 중인 것을 두고
   끝나거나 다시 띄우면 `exit_waits_for_a_retiring_plugin_and_does_not_respawn_it` 이 잡는다.
-- 회수를 기다리는 호출자가 재기동 예약을 버리면 — 무응답 재시작 중에 `upgrade-builtins` 가 오면 —
-  `builtin::upgrade_retire_tests::an_upgrade_during_a_restart_keeps_the_restart` 가 잡는다(예약을
-  잇는 한 줄을 끄는 변이로 죽는 것을 확인했다). 쓰기 갈래가 회수를 안 기다리면 같은 시험이, 쓸 것이
-  없는 갈래가 기다리면 `an_upgrade_that_writes_nothing_does_not_wait_for_a_retirement` 가 잡는다(두
-  변이 모두 확인).
+- 무응답 재시작 중에 `upgrade-builtins` 가 와서 재기동 예약을 버리면
+  `builtin::upgrade_retire_tests::an_upgrade_during_a_restart_keeps_the_restart` 가 잡는다. 그 시험은
+  쓰기 갈래 셋 — 같은 버전에 바뀐 내용 · 버전이 오름 · `--force` — 을 모두 태우고 보고의 종류로 그
+  갈래를 탔는지 단정한다. 확인한 변이: 끝의 예약을 잇는 한 줄을 끄기, 버전이 오르는 갈래와 `--force`
+  갈래에서 각각 예약을 받는 대입만 빼기 — 셋 다 죽었다. 쓰기 갈래가 회수를 안 기다리면 같은 시험이
+  잡는다(같은 버전 갈래와 버전이 오르는 갈래에서 변이로 확인했다. `--force` 갈래는 같은 단정이 있지만
+  변이로 재지 않았다). 쓸 것이 없는 갈래가 기다리면
+  `an_upgrade_that_writes_nothing_does_not_wait_for_a_retirement` 가 잡는다(변이로 확인했다).
 - plugin 프로토콜에 "앞 인스턴스가 살아 있어도 된다" 는 계약이 생기면 — 겹침을 막는 이유가 사라진다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
