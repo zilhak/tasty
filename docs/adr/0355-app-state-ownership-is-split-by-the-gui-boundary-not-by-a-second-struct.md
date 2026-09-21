@@ -67,6 +67,15 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
      GUI 뿐 — `expect`)으로 가른다.
   3. `src/state.rs` 첫머리의 모듈 단위 `allow(dead_code, unused_imports)` 를 지운다. 2 가 끝나야
      지울 수 있다.
+
+  **잔여의 현재 상태 (후속 — 도메인 경계 작업, [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md), 2026-09-21)**:
+  ① 은 도메인 쪽만 끝났다 — 구조 실행·cascade·forward runner(`core::structural_exec` ·
+  `core::structural_cascade` · `core::attach_runtime`)가 `AppState` 대신 도메인이 선언한 포트
+  `CascadeWindow` 를 받는다. `pump_ipc` 와 IPC 핸들러의 인자는 그대로 `AppState` 다. 도메인
+  크레이트를 떼지 않기로 했으므로(ADR-0440) 핸들러 인자를 좁히는 것은 그 크레이트의 선행
+  조건이 아니게 됐다. ②·③ 은 그대로 남아 있다. 그리고 `PendingHostEvent` 가 `state.rs` 밖
+  (`core::host_event`)으로 나가면서 ③ 의 모듈 allow 가 그 타입을 더는 덮지 않게 됐고, 그
+  타입에는 항목 단위 `expect` 가 붙었다.
 - **운영 비용**: 새 dialog 상태를 넣는 사람은 그것이 headless 에서 읽혀야 하는지를 정해야 한다.
   읽혀야 하면 `dialogs` 가 아니라 `AppState` 나 `CoreState` 에 둔다.
 
@@ -104,4 +113,5 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
 - [AppState 필드 소유권](../dev-guide/app-state-ownership.md) — 필드 분류표
 - [헤드리스 정의 경계](../dev-guide/headless-build-boundaries.md) — gui 전용 판정 규칙
 - [ADR-0346](0346-headless-compiles-only-what-it-reaches.md) — 이 결정이 따르는 경계 규칙
+- [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md) — 잔여 ① 의 도메인 쪽을 맡은 결정
 - 결정이 실현된 현재 위치: `src/state/dialogs.rs`, `AppState::dialogs`, `AppState::has_input_dialog_open`

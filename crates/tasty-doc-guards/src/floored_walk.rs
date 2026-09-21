@@ -253,10 +253,14 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 122,
+        measured: 123,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "62f7a86d8 — 파일 핸들러 lane 이 착지한 트리에서 다시 셌다. 121 -> 122 이고 더해진 것은 \
+            "17e2a7f56 + lane — 도메인 경계(RF10) lane 이 \
+             `tasty-doc-guards/tests/domain_does_not_reach_up.rs` 하나를 더해 122 -> 123 이다. \
+             삭제는 0 이다. **lane 트리에서 잰 값이라 구조적으로 낮다** — 같은 회차의 다른 lane 이 \
+             통합 타깃을 더했으면 통합 트리에서는 더 크고, 최종 값은 병합하는 쪽이 거기서 다시 잰다. \
+             이전 회차: 62f7a86d8 — 파일 핸들러 lane 이 착지한 트리에서 다시 셌다. 121 -> 122 이고 더해진 것은 \
              `tasty-gallery/tests/mono_metrics.rs` 하나, 삭제는 0 이다. \
              이전 회차: 4d307aeb3 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 119 -> 121 이고 \
              더해진 둘은 `tasty-cli/tests/localized_help.rs` 와 \

@@ -28,6 +28,15 @@ pub fn mask_literals(src: &str) -> String {
     mask(src, Fate::Keep, Fate::Blank, Fate::Blank)
 }
 
+/// 주석만 덮고 **문자열·문자 리터럴은 원문 그대로 남긴** 사본.
+///
+/// "여기 **코드**에 이 리터럴을 담은 형태가 있나" 를 묻는 가드가 쓴다 —
+/// `#[cfg(feature = "gui")]` 처럼 찾는 형태 안에 문자열 리터럴이 들어 있으면
+/// [`mask_non_code`] 는 그 리터럴까지 지워 형태를 못 찾고, 원문은 주석 속 언급까지 센다.
+pub fn mask_comments(src: &str) -> String {
+    mask(src, Fate::Blank, Fate::Keep, Fate::Keep)
+}
+
 /// 문자 리터럴 안의 `"` 만 안전한 글자로 바꾼 사본. **그 밖은 원문 그대로다** —
 /// 주석도 문자열도 코드도 안 건드린다.
 ///
