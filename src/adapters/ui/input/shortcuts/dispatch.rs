@@ -82,7 +82,7 @@ impl MainView {
                     .from_user_shortcut("new_workspace"),
                 );
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,
@@ -95,7 +95,7 @@ impl MainView {
                     tracing::warn!("add_tab failed: {e}");
                 }
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,
@@ -111,7 +111,7 @@ impl MainView {
                     .from_user_shortcut("split_pane_vertical"),
                 );
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,
@@ -127,7 +127,7 @@ impl MainView {
                     .from_user_shortcut("split_pane_horizontal"),
                 );
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,
@@ -143,7 +143,7 @@ impl MainView {
                     .from_user_shortcut("split_surface_vertical"),
                 );
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,
@@ -159,7 +159,7 @@ impl MainView {
                     .from_user_shortcut("split_surface_horizontal"),
                 );
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,
@@ -213,7 +213,7 @@ impl MainView {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
-                        &self.state,
+                        self.state.tab_bar_height,
                         engine,
                         terminal_rect,
                         cell_w,
@@ -231,7 +231,7 @@ impl MainView {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
-                        &self.state,
+                        self.state.tab_bar_height,
                         engine,
                         terminal_rect,
                         cell_w,
@@ -250,7 +250,7 @@ impl MainView {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
-                        &self.state,
+                        self.state.tab_bar_height,
                         engine,
                         terminal_rect,
                         cell_w,
@@ -268,7 +268,7 @@ impl MainView {
                     self.request_close();
                 } else {
                     crate::core::Core::resize_all_terminals(
-                        &self.state,
+                        self.state.tab_bar_height,
                         engine,
                         terminal_rect,
                         cell_w,
@@ -289,7 +289,7 @@ impl MainView {
                     crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
                 );
                 crate::core::Core::resize_all_terminals(
-                    state,
+                    state.tab_bar_height,
                     engine,
                     terminal_rect,
                     cell_w,

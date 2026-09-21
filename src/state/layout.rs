@@ -253,7 +253,7 @@ impl AppState {
         scale_factor: f32,
     ) {
         crate::core::Core::resize_all_terminals(
-            self,
+            self.tab_bar_height,
             engine,
             terminal_rect,
             cell_width,

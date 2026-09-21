@@ -123,7 +123,7 @@ impl MainView {
             let cell_h = self.base.gpu.cell_height();
             let scale_factor = self.base.gpu.scale_factor();
             crate::core::Core::resize_all_terminals(
-                &self.state,
+                self.state.tab_bar_height,
                 &mut self.core_state,
                 terminal_rect,
                 cell_w,

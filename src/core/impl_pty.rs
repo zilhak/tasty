@@ -8,14 +8,13 @@ use super::*;
 /// resize 호출할 때 borrow 충돌이 없다.
 #[cfg(feature = "gui")]
 fn collect_terminal_resize_targets(
-    state: &crate::state::AppState,
+    tab_bar_h: crate::model::PhysicalPx,
     engine: &crate::core::CoreState,
     terminal_rect: crate::model::PhysicalRect,
     cell_width: f32,
     cell_height: f32,
     scale_factor: f32,
 ) -> Vec<(u32, usize, usize)> {
-    let tab_bar_h = state.tab_bar_height;
     let mut out = Vec::new();
     for ws in &engine.workspaces {
         let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
@@ -205,15 +204,16 @@ impl Core {
     }
 
     /// 모든 workspace 의 모든 terminal 을 layout 에 맞춰 resize. 옛
-    /// `state.resize_all(engine, ...)` 의 진입점. tab_bar_height 가 AppState 에
-    /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
+    /// `state.resize_all(engine, ...)` 의 진입점. 탭 바 높이는 창이 정하는 값이라
+    /// (`AppState::tab_bar_height`) 호출자가 값으로 넘긴다 — 도메인이 창 상태 전체를
+    /// 받지 않게 하려는 것이다.
     ///
     /// D.3.E.4 이후 TerminalSurface 는 id-marker 라 `Surface::resize_all` 은
     /// no-op. Terminal 본체는 `engine.terminals` (TerminalStore) 가 owner 이므로
     /// 여기서 직접 store 를 두드려 resize 한다.
     #[cfg(feature = "gui")]
     pub(crate) fn resize_all_terminals(
-        state: &crate::state::AppState,
+        tab_bar_height: crate::model::PhysicalPx,
         engine: &mut crate::core::CoreState,
         terminal_rect: crate::model::PhysicalRect,
         cell_width: f32,
@@ -221,7 +221,7 @@ impl Core {
         scale_factor: f32,
     ) {
         let targets = collect_terminal_resize_targets(
-            state,
+            tab_bar_height,
             engine,
             terminal_rect,
             cell_width,
