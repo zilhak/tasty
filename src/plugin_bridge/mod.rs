@@ -122,6 +122,7 @@ pub(crate) fn mesh_ime_cursor_area(
 ///   popup 은 ADR-0056 의 비동기 host→plugin push 결과가 같은 칸을 세우며
 ///   (git-viewer 원격 조회 결과 뒤의 강제 repaint, `src/app/attach_client.rs` 두
 ///   자리), banner 는 self-repaint 하나뿐이다.
+#[cfg(feature = "gui")]
 #[derive(Default)]
 pub(crate) struct MeshForwardCommon {
     /// 마지막으로 보낸 `(width_px, height_px, ppp.to_bits())`. 변경 감지의 좌변.
@@ -149,8 +150,10 @@ pub(crate) struct MeshForwardCommon {
 /// 정상 경로에서 첫 paint 는 수십 ms 안에 온다(plugin 프로세스는 이미 기동·handshake
 /// 완료 상태이고 남은 일은 콘텐츠 적재 + tessellate 뿐). 3초는 느린 디스크의 대용량
 /// 파일 적재까지 흡수하면서 실제 고장을 놓치지 않는 선.
+#[cfg(feature = "gui")]
 const BLANK_MESH_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
+#[cfg(feature = "gui")]
 impl MeshForwardCommon {
     /// paint frame 유무를 bootstrap 워치독에 반영한다 — 세 채널이 매 프레임 부른다.
     ///

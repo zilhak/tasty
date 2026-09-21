@@ -471,6 +471,7 @@ pub struct AppState {
     /// repaint 는 그 타입 밖에 있고 **popup 만의 칸이 아니다** — banner 도 같은 칸을
     /// 갖는다(아래 `plugin_mesh_popup_pending_repaint` 와
     /// `plugin_mesh_banner_pending_repaint`).
+    #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_popup_forward:
         std::collections::HashMap<u64, crate::plugin_bridge::MeshForwardCommon>,
 
@@ -485,6 +486,7 @@ pub struct AppState {
     /// egui-mesh banner 인스턴스별 forward 추적 상태. popup 무리와 **같은 타입**이다
     /// ([`crate::plugin_bridge::MeshForwardCommon`]) — 두 채널의 dirty 판정이 한 곳에서
     /// 나오므로 한쪽만 고쳐지는 형태의 drift 가 생기지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_banner_forward:
         std::collections::HashMap<u64, crate::plugin_bridge::MeshForwardCommon>,
 
@@ -1128,8 +1130,10 @@ impl AppState {
             plugin_banner_closes: Vec::new(),
             plugin_mesh_popup_regions: Vec::new(),
             plugin_popup_ime_cursor_area: None,
+            #[cfg(feature = "gui")]
             plugin_mesh_popup_forward: std::collections::HashMap::new(),
             plugin_mesh_banner_regions: Vec::new(),
+            #[cfg(feature = "gui")]
             plugin_mesh_banner_forward: std::collections::HashMap::new(),
             plugin_mesh_popup_pending_repaint: std::collections::HashSet::new(),
             plugin_mesh_banner_pending_repaint: std::collections::HashSet::new(),
