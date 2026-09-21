@@ -106,7 +106,8 @@ headless 빌드에 그 필드가 있는지를 적는다.
   `cfg(any(feature = "gui", test))` 다. 그 시험들은 base 에서도 headless 구성에서 돌았고 지금도 돈다.
 - **③** `preset_store` 와 `ModalKind` 의 variant 는 `expect(dead_code)` 다 — 앞은 headless 도
   `new` 로 사본을 받지만 읽는 자가 GUI 뿐이고, 뒤는 모달을 여는 자리가 GUI 뿐이라 headless 에서
-  variant 가 만들어지지 않는다(열거와 `active_modal_kind` 는 `ui.state` 덤프가 두 조합에서 읽는다).
+  variant 가 만들어지지 않는다(열거와 `active_modal_kind` 는 `ui.state` 덤프가 debug 빌드의 두 조합에서 읽는다 — release
+  헤드리스에는 `active_modal_kind` 필드도 덤프도 없다).
   `CoreState` 에도 같은 가름을 쓴다 — `readonly_views`(점유 surface 의 readonly mirror, 읽는 자가
   render_pass 뿐)와 `input_simulation_enabled`(debug 빌드에만 있는 필드, 읽는 자가 gui 의 입력
   시뮬레이션 IPC 뿐)가 headless 에서 `expect(dead_code)` 다.

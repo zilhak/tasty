@@ -77,8 +77,8 @@ use crate::model::PhysicalPx;
 /// 되짚지 않는다. 여는 쪽은 자기가 무엇을 여는지 이미 알고, downcast 로 되짚으면
 /// 새 모달을 추가한 사람이 이 열거를 안 늘려도 조용히 `None` 이 된다.
 // 이유: 여는 자리(`App::open_modal`)가 GUI 뿐이라 headless 에서 variant 가 만들어지지 않는다.
-// 열거와 `active_modal_kind` 는 headless 에도 남는다 — `ui.state` 덤프가 두 조합에서 같은 키로
-// 그 값(`None`)을 찍는다.
+// 열거는 headless 에도 남는다. `active_modal_kind` 는 debug 빌드의 두 조합에 있고 `ui.state` 덤프가
+// 거기서 같은 키로 그 값(`None`)을 찍는다 — release 헤드리스에는 그 필드가 없다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(
