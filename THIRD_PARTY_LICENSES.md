@@ -92,10 +92,10 @@ MIT 는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 |---|---|
 | GitHub 릴리스 | `LICENSE` · `THIRD_PARTY_LICENSES.md` · `LICENSES/D2Coding-OFL.txt` 세 파일을 릴리스 에셋으로 올리도록 해 두었습니다. **나머지 본문은 아직 안 올라가고, 그 설정으로 발행된 릴리스도 아직 없습니다.** |
 | Windows `.msi` | MIT 본문을 설치 동의 화면과 설치 디렉토리에 `License.rtf` 로 넣습니다. **제3자 고지는 아직 안 들어갑니다.** |
-| Linux `tar.gz` | 압축을 풀면 나오는 디렉토리 최상단. **`LICENSES/` 에서는 `D2Coding-OFL.txt` 만 들어가고 나머지 세 본문은 아직 안 들어갑니다.** |
-| Linux `.deb` | `/usr/share/doc/tasty/` (Debian 관례. `LICENSES/` 하위 경로를 그대로 유지합니다). **`tar.gz` 와 같은 부족이 있습니다.** |
-| Linux `.rpm` | `/usr/share/licenses/tasty/` (RPM 관례라 deb 과 배치가 다릅니다). **`tar.gz` 와 같은 부족이 있습니다.** |
-| Linux `.AppImage` | `usr/share/licenses/tasty/`. **`tar.gz` 와 같은 부족이 있습니다.** |
+| Linux `tar.gz` | 압축을 풀면 나오는 디렉토리 최상단 |
+| Linux `.deb` | `/usr/share/doc/tasty/` (Debian 관례. `LICENSES/` 하위 경로를 그대로 유지합니다) |
+| Linux `.rpm` | `/usr/share/licenses/tasty/` (RPM 관례라 deb 과 배치가 다릅니다 — `LICENSES/` 의 본문도 하위 디렉토리 없이 이 자리에 바로 놓입니다) |
+| Linux `.AppImage` | `usr/share/licenses/tasty/` |
 | Windows `.zip` · macOS `.dmg` | **아직 안 들어갑니다.** |
 
 산출물 자체에 동봉되는 것이 OFL 1.1 · MIT · BSD-3-Clause 가 요구하는 형태입니다 — 릴리스
