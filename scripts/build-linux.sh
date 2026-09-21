@@ -234,7 +234,7 @@ stage_plugins() {
 
 # Stage the notice set into a distribution tree — `stage_notice` lives in a
 # library shared with build-macos-dmg.sh so the two cannot disagree on the set.
-# shellcheck source=lib/notice-set.sh
+# shellcheck source=scripts/lib/notice-set.sh
 . "scripts/lib/notice-set.sh"
 
 echo "==> Assembling archive..."

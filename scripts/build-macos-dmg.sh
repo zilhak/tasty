@@ -163,7 +163,7 @@ cp "assets/icons/icon.icns" "$APP_DIR/Contents/Resources/icon.icns"
 # and the one the codesign seal below covers as plain resources. Must happen
 # before codesign: changing the bundle afterwards breaks the signature. The
 # function is shared with build-linux.sh, so both read the set the same way.
-# shellcheck source=lib/notice-set.sh
+# shellcheck source=scripts/lib/notice-set.sh
 . "scripts/lib/notice-set.sh"
 stage_notice "$APP_DIR/Contents/Resources"
 
