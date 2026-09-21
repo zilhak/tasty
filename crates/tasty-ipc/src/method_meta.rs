@@ -47,27 +47,62 @@ pub enum MethodEffect {
     Mutate,
 }
 
-/// 멱등 키([`crate::protocol::JsonRpcRequest::idempotency_key`])에 대해 이 메서드가
-/// **선언하는 것**.
+/// 멱등 키([`crate::protocol::JsonRpcRequest::idempotency_key`])를 실으면 이 메서드에서
+/// **무엇이 일어나는가** — 호출자가 보내기 **전에** 읽는 선언.
 ///
-/// 값이 둘뿐인 이유는 지금 말할 수 있는 것이 그것뿐이기 때문이다. 호스트의 보존소는
-/// engine 라우터 한 자리에서만 키를 본다(`ADR-0338`). 그 앞에서 끝나는 메서드 가운데
-/// **plugin namespace forward 는 구조상 보존소를 안 거친다** — 호스트는 그 이름의 뜻을 모르고
-/// 요청을 plugin 에게 넘길 뿐이다. 그것만은 확정이라 선언한다. 나머지(호스트 메서드)가
-/// 보존소에 **걸리는지**는 메서드마다 다르고 아직 표에 안 적혀 있다 — 그래서 "걸린다" 가
-/// 아니라 "선언 없음" 이다. "걸린다" 를 뜻하는 값은 그것을 적을 수 있게 될 때 더한다.
+/// 이 값이 답하는 물음은 하나다: *같은 키로 다시 보내면 두 번째 효과가 나는가.* 호스트의
+/// 보존소가 "이 메서드에 걸리는가" 도 같은 물음이라 칸을 따로 두지 않는다 — 걸리면
+/// [`KeyContract::Kept`], 원래 걸 필요가 없으면 [`KeyContract::Unneeded`], 걸리지 않으면
+/// [`KeyContract::Outside`] 다. [`MethodEffect`] 와 다른 물음인 것은 층 때문이다: 같은
+/// `Mutate` 라도 보존소를 지나는 층(engine 라우터 · App 층)이 있고 안 지나는 층(plugin
+/// namespace forward · GUI debug step)이 있다.
 ///
-/// 근거·대안은 [ADR-0361].
+/// 값은 대부분 [`MethodEffect`] 에서 **유도**된다(`Mutate` → `Kept`, 나머지 → `Unneeded`).
+/// 손으로 적는 것은 층이 다른 이름뿐이다 — App 층이 끝내는 `Mutate` 는 `Kept` 의 판이 다르고
+/// ([`KEY_KEPT_BY_APP_LAYER`]), GUI debug step 이 끝내는 `Mutate` 는 `Outside` 다. 그 둘이
+/// 실제 배선과 맞는지는 본체의 source guard(`key_contract_by_layer`)가 dispatch 본문을 읽어
+/// 양방향으로 잰다.
+///
+/// 근거·대안은 [ADR-0423], plugin namespace forward 의 `Outside` 는 [ADR-0361].
 ///
 /// [ADR-0361]: ../../../docs/adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md
+/// [ADR-0423]: ../../../docs/adr/0423-each-method-declares-its-key-contract-and-the-version-that-keeps-it.md
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyContract {
-    /// 이 표가 아무것도 선언하지 않는다. 키가 지켜지는지는 응답의
-    /// [`crate::protocol::JsonRpcResponse::idempotent_replay`] 로만 사후에 안다.
-    Undeclared,
-    /// **계약 밖이다** — 키를 실어도 호스트가 보존소를 안 거친다. 재시도는 두 번째 실행이다.
-    /// 호스트는 그 실행이 정확히 한 번이라고 약속하지 않는다.
+    /// **호스트 보존소가 키를 받는다.** 같은 키·같은 요청의 재시도는 실행되지 않고 보관된 답을
+    /// `idempotent_replay: true` 로 받는다(선언된 보존 범위 안에서). 그래서 성공 응답에 표지가
+    /// 없으면 그 답은 **이번에 실행한 것**이다.
+    ///
+    /// `since` 는 이 보장을 선언하는 `ipc.idempotency-key` 의 판이다. 판 1 서버는 engine
+    /// 라우터에서만 키를 받았으므로, App 층 메서드에 키를 실으려면 상대가 판 2 이상이어야 한다
+    /// — 판이 낮은 서버에서는 키가 조용히 무시되고 재시도가 두 번째 실행이 된다.
+    Kept {
+        /// 요구하는 `ipc.idempotency-key` 의 최소 판.
+        since: u32,
+    },
+    /// **보존소가 필요 없다** — 재전달이 원래 안전하다([`MethodEffect::Read`] ·
+    /// [`MethodEffect::Idempotent`]). 키는 봉투 검사만 받고 보존소에 안 들어가며, 재생 표지는
+    /// 붙지 않는다. 다시 보내도 두 번째 효과가 없다.
+    Unneeded,
+    /// **계약 밖이다** — 키를 실어도 호스트가 보존소를 거친다고 선언하지 않는다. 재시도는 두
+    /// 번째 실행일 수 있다. 호스트는 그 실행이 정확히 한 번이라고 약속하지 않는다.
     Outside,
+}
+
+/// engine 라우터의 보존소가 키를 받기 시작한 `ipc.idempotency-key` 판.
+pub const KEY_KEPT_BY_ROUTER: u32 = 1;
+/// App 층도 키를 받기 시작한 판. 서버가 선언하는 판이 이것이다(`crate::capability`).
+pub const KEY_KEPT_BY_APP_LAYER: u32 = 2;
+
+/// [`MethodEffect`] 에서 유도한 기본 선언. 층이 다른 이름만 [`MethodMeta::kept_by_app_layer`] ·
+/// [`MethodMeta::outside_key_contract`] 로 고친다.
+const fn key_contract_of(effect: MethodEffect) -> KeyContract {
+    match effect {
+        MethodEffect::Mutate => KeyContract::Kept {
+            since: KEY_KEPT_BY_ROUTER,
+        },
+        MethodEffect::Read | MethodEffect::Idempotent => KeyContract::Unneeded,
+    }
 }
 
 /// 한 IPC 메서드에 대한 권한 메타.
@@ -108,7 +143,7 @@ const fn plugin(effect: MethodEffect, required: &'static [Permission]) -> Method
         required,
         namespace_forward: false,
         effect,
-        key_contract: KeyContract::Undeclared,
+        key_contract: key_contract_of(effect),
     }
 }
 
@@ -123,7 +158,31 @@ const fn plugin_only(effect: MethodEffect, required: &'static [Permission]) -> M
         required,
         namespace_forward: false,
         effect,
-        key_contract: KeyContract::Undeclared,
+        key_contract: key_contract_of(effect),
+    }
+}
+
+impl MethodMeta {
+    /// App 층이 끝내는 `Mutate` — 보존소가 받지만 판 [`KEY_KEPT_BY_APP_LAYER`] 부터다.
+    const fn kept_by_app_layer(self) -> Self {
+        assert!(
+            matches!(self.effect, MethodEffect::Mutate),
+            "App 층 보존소 선언은 Mutate 에만 뜻이 있다"
+        );
+        Self {
+            key_contract: KeyContract::Kept {
+                since: KEY_KEPT_BY_APP_LAYER,
+            },
+            ..self
+        }
+    }
+
+    /// 보존소를 안 지나는 층이 끝내는 `Mutate`(GUI debug step).
+    const fn outside_key_contract(self) -> Self {
+        Self {
+            key_contract: KeyContract::Outside,
+            ..self
+        }
     }
 }
 
@@ -134,7 +193,7 @@ const fn local_only(effect: MethodEffect) -> MethodMeta {
         required: &[],
         namespace_forward: false,
         effect,
-        key_contract: KeyContract::Undeclared,
+        key_contract: key_contract_of(effect),
     }
 }
 
@@ -621,7 +680,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
         // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
         // 트리거는 ADR-0121(docs/adr/0121-attach-trust-boundary-covers-remote-queries-not-local-structural-ops.md).
-        ("remote.attach", local_only(Mutate)),
+        ("remote.attach", local_only(Mutate).kept_by_app_layer()),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
         // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).
@@ -722,7 +781,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("plugin.list", local_only(Read)),
         ("plugin.show", local_only(Read)),
         ("plugin.extension.list", local_only(Read)),
-        ("plugin.install", local_only(Mutate)),
+        ("plugin.install", local_only(Mutate).kept_by_app_layer()),
         ("plugin.remove", local_only(Idempotent)),
         ("plugin.enable", local_only(Idempotent)),
         ("plugin.disable", local_only(Idempotent)),
@@ -743,23 +802,26 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // agent 가 자기 권한 부족을 미리 알고 elevation 을 명시
         // 발행할 entry point. approval.request 와 동일한 의미이므로 Approval
         // 권한이 필요.
-        ("plugin.request_permission", plugin(Mutate, &[Approval])),
+        (
+            "plugin.request_permission",
+            plugin(Mutate, &[Approval]).kept_by_app_layer(),
+        ),
         // audit log 조회/집계/삭제. 운영자 전용.
         ("plugin.audit_query", local_only(Read)),
         ("plugin.audit_summary", local_only(Read)),
         ("plugin.audit_follow", local_only(Read)),
         ("plugin.audit_clear", local_only(Idempotent)),
-        ("window.create", local_only(Mutate)),
+        ("window.create", local_only(Mutate).kept_by_app_layer()),
         ("window.close", local_only(Idempotent)),
         ("window.list", local_only(Read)),
         // ui.screenshot — 정식 focus-독립 캡처. 대상 window/surface 를 ID 로 지정하며
         // focused 창에 의존하지 않는다(원칙 3). 임의 경로 파일 쓰기 표면이라 local_only
         // (plugin 미노출) — CLI/로컬 client 만 호출.
-        ("ui.screenshot", local_only(Mutate)),
+        ("ui.screenshot", local_only(Mutate).kept_by_app_layer()),
         // E.C.e (D1=b) — Tasty 내부 어휘 통일에 따른 view.* alias. 동작은 window.* 와 동등.
         // wire format 호환을 위해 양쪽 메서드 명 모두 살림. payload 의 `window_id`
         // 필드는 외부 wire format 이라 변경 X.
-        ("view.create", local_only(Mutate)),
+        ("view.create", local_only(Mutate).kept_by_app_layer()),
         ("view.close", local_only(Idempotent)),
         ("view.list", local_only(Read)),
         // window.focus / view.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
@@ -780,6 +842,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
 /// - `debug.*` — 사용자 입력 재현 / 디버그 dump
 ///
 /// (`ui.screenshot` 은 focus-독립 리팩토링으로 [`METHOD_TABLE`] 로 승격됨.)
+///
+/// `.outside_key_contract()` 가 붙은 `Mutate` 는 GUI 의 debug step(app_methods step **뒤**)이
+/// 끝내는 이름이라 멱등 키 보존소를 안 지난다(ADR-0421 의 "남는 구멍"). 그 목록이 debug step
+/// 의 실제 dispatch 와 맞는지는 본체의 `source_guards::key_contract_by_layer` 가 잰다.
 #[cfg(debug_assertions)]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("system.shutdown", local_only(MethodEffect::Idempotent)),
@@ -798,13 +864,25 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     // (`Event::Text`) 따로 있다 — 키 주입으로는 `TextEdit` 에 글자가 안 들어간다.
     (
         "debug.inject_window_mouse",
-        local_only(MethodEffect::Mutate),
+        local_only(MethodEffect::Mutate).outside_key_contract(),
     ),
-    ("debug.inject_egui_mouse", local_only(MethodEffect::Mutate)),
-    ("debug.inject_egui_key", local_only(MethodEffect::Mutate)),
-    ("debug.inject_egui_text", local_only(MethodEffect::Mutate)),
+    (
+        "debug.inject_egui_mouse",
+        local_only(MethodEffect::Mutate).outside_key_contract(),
+    ),
+    (
+        "debug.inject_egui_key",
+        local_only(MethodEffect::Mutate).outside_key_contract(),
+    ),
+    (
+        "debug.inject_egui_text",
+        local_only(MethodEffect::Mutate).outside_key_contract(),
+    ),
     // 임의 Lua 주입(ADR-0031) — release 에는 이 경로가 없다(원칙 1). local 전용.
-    ("debug.lua.eval", local_only(MethodEffect::Mutate)),
+    (
+        "debug.lua.eval",
+        local_only(MethodEffect::Mutate).outside_key_contract(),
+    ),
     // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*
     // 와 같은 계열이라 같은 debug 격리.
     (
@@ -870,11 +948,14 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.event_bus.list_subscribers",
         local_only(MethodEffect::Read),
     ),
-    ("debug.event_bus.publish", local_only(MethodEffect::Mutate)),
+    (
+        "debug.event_bus.publish",
+        local_only(MethodEffect::Mutate).outside_key_contract(),
+    ),
     ("debug.event_bus.trace", local_only(MethodEffect::Read)),
     (
         "debug.extension.invoke_hook",
-        local_only(MethodEffect::Mutate),
+        local_only(MethodEffect::Mutate).outside_key_contract(),
     ),
     // 전체화면 무대 강제 진입/종료/조회 — 사용자 조작(popup 타이틀바 전체화면 버튼)
     // 재현. release 미노출. 자기검증(무대 렌더 스크린샷)의 진입점.

@@ -77,8 +77,8 @@ impl std::error::Error for UnsupportedCapability {}
 /// [`UnsupportedCapability`] 와 같은 성질의 거절이다. 저쪽은 "서버가 키를 못 읽는다",
 /// 이쪽은 "서버가 키를 읽어도 **이 메서드에서는** 안 지킨다" 다. 어느 쪽이든 키를 실어
 /// 보내면 호출자는 계약이 걸린 줄 알고 재시도하고, 그 재시도는 두 번째 실행이 된다.
-/// 판정은 [`crate::method_meta::key_contract`] 가 하고, 지금 이 값을 내는 것은 plugin
-/// namespace forward 다(ADR-0361).
+/// 판정은 [`crate::method_meta::key_contract`] 가 한다 — plugin namespace forward(ADR-0361)와
+/// GUI debug step 이 끝내는 `Mutate`(ADR-0423)가 이 값을 낸다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyOutsideContract {
     pub method: String,
@@ -97,14 +97,22 @@ impl std::fmt::Display for KeyOutsideContract {
 
 impl std::error::Error for KeyOutsideContract {}
 
-/// 키를 실어 보내기 **전에** 그 메서드가 계약 밖이라고 선언됐는지 본다. 연결이 필요 없다.
-fn refuse_key_outside_contract(method: &str) -> Result<()> {
+/// 키를 실어 보내기 **전에** 그 메서드의 선언을 읽어, 상대에게 요구할
+/// `ipc.idempotency-key` 판을 정한다. 계약 밖이면 거절이다. 연결이 필요 없다.
+///
+/// - `Kept { since }` — 보존소가 그 판부터 이 메서드를 받는다. App 층 메서드는 판 2 부터라,
+///   판 1 서버에 보내면 키가 조용히 무시된다.
+/// - `Unneeded` — 재전달이 원래 안전하다. 서버가 필드를 읽기만 하면 된다(최소 판).
+/// - `Outside` — [`KeyOutsideContract`].
+fn required_key_version(method: &str) -> Result<u32> {
+    use crate::method_meta::KeyContract;
     match crate::method_meta::key_contract(method) {
-        crate::method_meta::KeyContract::Outside => Err(KeyOutsideContract {
+        KeyContract::Kept { since } => Ok(since),
+        KeyContract::Unneeded => Ok(IDEMPOTENCY_CAPABILITY_VERSION),
+        KeyContract::Outside => Err(KeyOutsideContract {
             method: method.to_string(),
         }
         .into()),
-        crate::method_meta::KeyContract::Undeclared => Ok(()),
     }
 }
 
@@ -242,8 +250,9 @@ impl IpcConnection {
     /// 그 계약을 상대가 아는지 **부수효과가 나기 전에** 판정한다.
     ///
     /// 판이 요구값 **이상**이면 통과다. 기능 목록의 판은 올라가는 방향으로만 움직이고
-    /// 뜻이 좁아질 때만 올라가므로(그 규약은 [`crate::capability`] 에 있다), 더 높은
-    /// 판은 "이 이름을 더 잘 안다" 는 뜻이다.
+    /// 뜻이 바뀔 때 올라가며(그 규약은 [`crate::capability`] 에 있다), 높은 판은 낮은 판의
+    /// 약속을 다 지킨다 — `ipc.idempotency-key` 판 2 는 판 1 의 engine 라우터에 App 층을
+    /// 더한 것이다. 그래서 더 높은 판은 "이 이름을 더 잘 안다" 는 뜻이다.
     pub fn require_capability(
         &mut self,
         name: &str,
@@ -271,35 +280,29 @@ impl IpcConnection {
     ///
     /// 확인 자체는 `system.info` 라 부수효과가 없고 연결마다 한 번이다.
     ///
-    /// **확인은 둘이다.** 먼저 그 메서드가 계약 밖이라고 **선언됐는지** 본다
-    /// ([`crate::method_meta::key_contract`]) — plugin namespace forward 가 그렇다(ADR-0361).
-    /// 그러면 연결을 쓰지도 않고 [`KeyOutsideContract`] 로 끝난다. 그다음 서버가 필드를
-    /// 읽는지 capability 로 묻는다.
+    /// **확인은 둘이다.** 먼저 그 메서드의 선언을 읽는다([`crate::method_meta::key_contract`]).
+    /// 계약 밖이면(plugin namespace forward 등) 연결을 쓰지도 않고 [`KeyOutsideContract`] 로
+    /// 끝난다. 그다음 선언이 요구하는 판을 서버가 선언하는지 capability 로 묻는다 — engine
+    /// 라우터 메서드는 판 1, App 층 메서드(창 생성 · plugin 설치 등)는 판 2 다. 판이 모자라면
+    /// [`UnsupportedCapability`] 로 끝나고 요청은 안 나간다.
     ///
-    /// ★ **두 확인이 답하는 것은 "선언된 계약 밖이 아니고, 서버가 이 필드를 읽는다" 까지다.**
-    /// "이 메서드가 그 계약에 걸린다" 는 여전히 아무도 선언하지 않는다 — 호스트의 보존소가
-    /// engine 라우터 한 자리에 있어 그 앞에서 끝나는 **App 층** 메서드는 키를 실어도 그냥
-    /// 실행되는데, 그 목록은 아직 표에 안 적혀 있다(`KeyContract::Undeclared`). 그래서 그
-    /// 메서드들은 이 함수를 통과하고, **거기서는 재시도가 두 번째 효과를 남긴다.**
-    ///
-    /// 호출자가 지금 쓸 수 있는 유일한 사후 표지는 응답의
-    /// [`JsonRpcResponse::idempotent_replay`] 다. 그 표지는 **한 방향으로만** 답한다 —
-    /// 붙어 있으면 계약이 걸린 것이지만, 안 붙은 것은 계약 밖이라는 뜻이 아니다.
-    /// `-32063`·`-32064` 는 에러라 표지가 `false` 인데 그 코드 자신이 계약이 개입했다는
-    /// 증거이고, 보존 범위 밖으로 밀려난 키도 표지 없이 다시 실행된다. 규칙을 문자 그대로
-    /// 적용한 호출자는 `-32063` 을 보고 "이 메서드는 계약 밖" 으로 읽어 **키 없이
-    /// 재전송**하는데, 그것은 계약이 막아 준 두 번째 효과를 스스로 실행하는 일이다.
-    /// 그래서 "표지 없는 재시도 = 계약 밖" 은 **성공 응답들 사이에서, 선언된 보존 범위
-    /// 안에서만** 읽어야 한다. 메서드 단위 선언은 그 세 자리가 배선된 뒤에 붙일 값이다.
+    /// 그래서 이 함수를 통과한 요청은 **보내기 전에** 셋 중 하나로 정해져 있다: 보존소가 받는다
+    /// (`Kept`), 원래 안전하다(`Unneeded`). 계약 밖은 여기까지 안 온다. 응답의
+    /// [`JsonRpcResponse::idempotent_replay`] 는 "이 답이 재생인가" 하나만 답하면 되고, 표지가
+    /// 없는 것을 "계약 밖" 으로 읽을 일이 없다 — 계약 안인지는 이미 선언으로 안다. `Kept`
+    /// 메서드에서 표지 없는 성공은 **이번에 실행한 것**이고, `-32063`·`-32064` 는 계약이
+    /// 개입한(실행을 막거나 실행을 확인한) 답이다. 선언된 보존 범위를 벗어난 키는 처음 보는
+    /// 키와 구별되지 않으므로 다시 실행된다 — 그 경계는 `system.info` 의 `idempotency` 가
+    /// 값으로 준다.
     pub fn send_idempotent(
         &mut self,
         request: &JsonRpcRequest,
         key: &str,
     ) -> Result<serde_json::Value> {
-        refuse_key_outside_contract(&request.method)?;
+        let version = required_key_version(&request.method)?;
         self.require_capability(
             IDEMPOTENCY_CAPABILITY,
-            IDEMPOTENCY_CAPABILITY_VERSION,
+            version,
             request.session_token.as_deref(),
         )?;
         let keyed = JsonRpcRequest {
@@ -312,8 +315,9 @@ impl IpcConnection {
 
 /// [`crate::protocol::JsonRpcRequest::idempotency_key`] 를 서버가 읽는다는 선언의 이름.
 pub const IDEMPOTENCY_CAPABILITY: &str = "ipc.idempotency-key";
-/// 이 client 가 요구하는 최소 판.
-pub const IDEMPOTENCY_CAPABILITY_VERSION: u32 = 1;
+/// 이 client 가 요구하는 **최소** 판 — 서버가 필드를 읽는다는 것까지. 메서드마다 더 높은 판을
+/// 요구할 수 있다(`KeyContract::Kept` 의 `since`).
+pub const IDEMPOTENCY_CAPABILITY_VERSION: u32 = crate::method_meta::KEY_KEPT_BY_ROUTER;
 
 #[cfg(test)]
 mod tests {
@@ -328,17 +332,75 @@ mod tests {
     }
 
     /// plugin namespace 이름은 client 프로세스에서 표가 모르는 이름이다 — 계약 밖으로 읽혀
-    /// **보내기 전에** 거절된다. 호스트 메서드는 선언이 없어 통과한다(서버에 묻는 다음 단계로).
+    /// **보내기 전에** 거절된다. 호스트 메서드는 선언이 요구하는 판을 들고 다음 단계로 간다.
     #[test]
     fn a_key_is_refused_before_sending_for_a_name_the_host_table_does_not_own() {
-        let refused = refuse_key_outside_contract("markdown.recent").unwrap_err();
+        let refused = required_key_version("markdown.recent").unwrap_err();
         let typed = refused
             .downcast_ref::<KeyOutsideContract>()
             .expect("타입으로 갈라져야 호출자가 '안 나갔다' 를 안다");
         assert_eq!(typed.method, "markdown.recent");
         assert!(refused.to_string().contains("nothing was sent"));
 
-        refuse_key_outside_contract("workspace.create").expect("호스트 메서드는 다음 단계로 간다");
+        assert_eq!(
+            required_key_version("workspace.create").expect("engine 라우터 메서드"),
+            crate::method_meta::KEY_KEPT_BY_ROUTER
+        );
+        assert_eq!(
+            required_key_version("window.create").expect("App 층 메서드"),
+            crate::method_meta::KEY_KEPT_BY_APP_LAYER
+        );
+        assert_eq!(
+            required_key_version("workspace.list").expect("읽기"),
+            IDEMPOTENCY_CAPABILITY_VERSION
+        );
+    }
+
+    /// App 층 메서드에 키를 실으려면 상대가 **판 2** 를 선언해야 한다. 판 1 서버는 그 층에서
+    /// 키를 무시하므로(재시도가 두 번째 실행이 된다) 보내기 전에 거절하고, 요청은 안 나간다.
+    /// 같은 서버에 engine 라우터 메서드는 통과한다 — 판 1 서버가 이미 받던 것을 막지 않는다.
+    #[test]
+    fn an_app_layer_key_needs_the_version_that_keeps_it() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+        let mut conn = IpcConnection::new(stream).unwrap();
+        let (mut server, _) = listener.accept().unwrap();
+        // 판 1 만 선언한 서버라고 미리 알고 있다(연결마다 한 번 묻는 `system.info` 의 결과).
+        conn.capabilities = Some(
+            [(IDEMPOTENCY_CAPABILITY.to_string(), 1u32)]
+                .into_iter()
+                .collect(),
+        );
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "window.create".to_string(),
+            params: serde_json::json!({}),
+            id: Some(serde_json::Value::from(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+        };
+        let err = conn.send_idempotent(&req, "k-1").unwrap_err();
+        let typed = err
+            .downcast_ref::<UnsupportedCapability>()
+            .expect("판이 모자라면 capability 거절이다");
+        assert_eq!(typed.required, crate::method_meta::KEY_KEPT_BY_APP_LAYER);
+        assert_eq!(typed.found, Some(1));
+
+        drop(conn);
+        let mut got = Vec::new();
+        server.read_to_end(&mut got).unwrap();
+        assert!(
+            got.is_empty(),
+            "거절됐는데 무언가 나갔다: {}",
+            String::from_utf8_lossy(&got)
+        );
     }
 
     /// 거절은 **연결을 한 바이트도 쓰지 않는다** — 상대가 무엇이든 요청이 안 나간다.

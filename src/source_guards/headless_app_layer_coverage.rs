@@ -203,7 +203,7 @@ fn read(rel: &str) -> String {
 }
 
 /// 본문에 나타나는 `"<something>.<something>"` 꼴 문자열 리터럴 — 메서드 이름 후보.
-fn method_literals(body: &str) -> BTreeSet<String> {
+pub(super) fn method_literals(body: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let mut rest = body;
     while let Some(at) = rest.find('"') {
@@ -248,7 +248,7 @@ fn gui_methods() -> BTreeSet<String> {
 /// 이 문자열이 이 가드의 좌변 전부다 — 이름 추출도, `HEADLESS_COVERS` 의 증거 토큰
 /// 조회도 여기서 한다. 두 물음이 같은 사본을 봐야 "주석 한 줄이 증거로 통하는" 갈래가
 /// 한쪽에만 남지 않는다.
-fn headless_dispatch_code() -> String {
+pub(super) fn headless_dispatch_code() -> String {
     let src = read(HEADLESS_PUMP);
     let mut out = String::new();
     for sig in HEADLESS_DISPATCH_FNS {

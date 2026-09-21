@@ -795,8 +795,7 @@ fn a_forwarded_namespace_name_is_assumed_unsafe_to_redeliver() {
 }
 
 /// plugin namespace forward 는 멱등 키 계약 **밖**이라고 선언된다 — 호스트 프로세스(소유
-/// 표가 설치된 쪽)에서도, 표가 없는 client 프로세스에서도 같은 답이 나와야 한다. 호스트
-/// 메서드는 아무것도 선언하지 않는다("걸린다" 가 아니다). ADR-0361.
+/// 표가 설치된 쪽)에서도, 표가 없는 client 프로세스에서도 같은 답이 나와야 한다. ADR-0361.
 #[test]
 fn a_forwarded_namespace_name_is_declared_outside_the_key_contract() {
     use crate::method_meta::{KeyContract, key_contract};
@@ -811,14 +810,45 @@ fn a_forwarded_namespace_name_is_declared_outside_the_key_contract() {
     assert_eq!(meta.key_contract, KeyContract::Outside);
     assert_eq!(key_contract("zzzkeyns.anything"), KeyContract::Outside);
     ns_unregister("zzzkeyns");
+}
 
-    for (name, meta) in crate::method_meta::METHOD_TABLE {
-        assert_eq!(
-            meta.key_contract,
-            KeyContract::Undeclared,
-            "{name}: 호스트 메서드에 선언이 붙었다 — 보존소가 실제로 거는지 재지 않은 값이다"
-        );
+/// 호스트 메서드의 선언은 [`MethodEffect`] 에서 유도되고, 층이 다른 이름만 손으로 고친다 —
+/// 재전달이 원래 안전한 것은 `Unneeded`, `Mutate` 는 `Kept`(판 1 = engine 라우터, 판 2 = App
+/// 층) 또는 `Outside`(GUI debug step). **`Mutate` 가 아닌데 `Kept`/`Outside` 인 이름은 없다** —
+/// 보존소는 `Mutate` 만 받으므로 그 선언은 거짓이다. 어느 이름이 판 2 이고 어느 이름이
+/// `Outside` 인지가 실제 배선과 맞는지는 본체의 `source_guards::key_contract_by_layer` 가 잰다.
+/// ADR-0423.
+#[test]
+fn a_host_method_declaration_follows_its_effect() {
+    use crate::method_meta::{
+        DEBUG_METHODS, KEY_KEPT_BY_APP_LAYER, KEY_KEPT_BY_ROUTER, KeyContract, METHOD_TABLE,
+        MethodEffect,
+    };
+    for (name, meta) in METHOD_TABLE.iter().chain(DEBUG_METHODS) {
+        match (meta.effect, meta.key_contract) {
+            (MethodEffect::Read | MethodEffect::Idempotent, KeyContract::Unneeded) => {}
+            (MethodEffect::Mutate, KeyContract::Kept { since })
+                if since == KEY_KEPT_BY_ROUTER || since == KEY_KEPT_BY_APP_LAYER => {}
+            (MethodEffect::Mutate, KeyContract::Outside) => {}
+            (effect, contract) => panic!("{name}: {effect:?} 에 {contract:?} 선언"),
+        }
     }
+    assert_eq!(
+        crate::method_meta::key_contract("window.create"),
+        KeyContract::Kept {
+            since: KEY_KEPT_BY_APP_LAYER
+        }
+    );
+    assert_eq!(
+        crate::method_meta::key_contract("workspace.create"),
+        KeyContract::Kept {
+            since: KEY_KEPT_BY_ROUTER
+        }
+    );
+    assert_eq!(
+        crate::method_meta::key_contract("workspace.list"),
+        KeyContract::Unneeded
+    );
 }
 
 /// "언제부터 있었나" 는 **등재 여부와 다른 물음**이다. 미등록 이름에 "예전부터

@@ -62,14 +62,15 @@ pub const CAPABILITIES: &[Capability] = &[
     // 그리고 이 계약은 **부수효과가 남는 메서드**에 쓰이므로 확인이 늦으면 늦은 만큼
     // 두 번째 효과가 이미 남는다.
     //
-    // ★ 이 이름은 **메서드 단위 보장을 뜻하지 않는다.** 호스트의 보존소는 engine
-    // 라우터 한 자리에 있고, 그 앞에서 끝나는 메서드(App 층 · plugin namespace
-    // forward)는 키를 실어도 그냥 실행된다. 그 차이를 말하는 이름은 아직 없다 —
-    // 만들려면 그 자리들이 먼저 배선돼야 하고, 배선 전에 선언하면 "착지한 것만
-    // 적는다" 를 어긴다.
+    //
+    // 판이 **어느 층까지 받는가** 를 말한다 — 판 1 은 engine 라우터, 판 2 는 App 층까지
+    // (ADR-0421). 메서드마다 어느 판이 필요한지는 이름 표의 `KeyContract::Kept { since }` 가
+    // 답하고, plugin namespace forward 처럼 계약 밖인 이름은 판과 무관하게 `Outside` 다
+    // (ADR-0423). 판을 리터럴로 안 적는다 — 표가 요구하는 가장 높은 판이 곧 이 서버가
+    // 선언하는 판이다.
     Capability {
         name: "ipc.idempotency-key",
-        version: 1,
+        version: crate::method_meta::KEY_KEPT_BY_APP_LAYER,
     },
     // 스트리밍 채널의 프레임 프로토콜. 판을 **리터럴로 안 적는다** — 서버가 handshake 에서
     // 동등 비교하는 그 상수를 그대로 싣는다. 둘로 적으면 갈린다.
@@ -157,6 +158,10 @@ mod tests {
                 crate::client::IDEMPOTENCY_CAPABILITY_VERSION,
             ),
             (
+                crate::client::IDEMPOTENCY_CAPABILITY,
+                crate::method_meta::KEY_KEPT_BY_APP_LAYER,
+            ),
+            (
                 crate::output_cursor::CAPABILITY,
                 crate::output_cursor::VERSION,
             ),
@@ -167,6 +172,28 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} 가 선언돼 있지 않다"));
             assert!(declared.version >= required, "{name}");
         }
+    }
+
+    /// 멱등 키의 판은 **이름 표가 요구하는 가장 높은 판**과 같다. 낮으면 이 빌드의 client 가
+    /// 이 빌드의 서버에 그 메서드의 키를 못 싣고, 높으면 서버가 안 받는 층까지 받는다고
+    /// 선언한다.
+    #[test]
+    fn the_idempotency_version_is_the_highest_one_the_table_requires() {
+        use crate::method_meta::{DEBUG_METHODS, KeyContract, METHOD_TABLE};
+        let highest = METHOD_TABLE
+            .iter()
+            .chain(DEBUG_METHODS)
+            .filter_map(|(_, m)| match m.key_contract {
+                KeyContract::Kept { since } => Some(since),
+                _ => None,
+            })
+            .max()
+            .expect("보존소가 받는 메서드가 하나도 없다");
+        let declared = CAPABILITIES
+            .iter()
+            .find(|c| c.name == crate::client::IDEMPOTENCY_CAPABILITY)
+            .expect("멱등 키 capability 가 사라졌다");
+        assert_eq!(declared.version, highest);
     }
 
     /// 실릴 모양이 배열이고, 각 항목이 두 키를 든다.

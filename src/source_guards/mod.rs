@@ -1028,6 +1028,9 @@ mod repo_relative_paths;
 mod home_env_has_one_door;
 
 mod headless_app_layer_coverage;
+// 이름 표의 멱등 키 선언(`KeyContract`)이 App 층 · GUI debug step 의 실제 dispatch 와
+// 맞는가. ADR-0423.
+mod key_contract_by_layer;
 
 #[cfg(test)]
 mod length_constant_frontier;

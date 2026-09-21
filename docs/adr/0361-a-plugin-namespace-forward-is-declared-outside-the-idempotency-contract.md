@@ -115,6 +115,7 @@
   — 멱등 키 계약. 이 ADR 은 그 결정이 후속으로 남긴 두 층 가운데 namespace forward 를 계약 밖으로
   확정한다. App 층은 다루지 않는다.
 - 관련 dev-guide: [api-conventions](../dev-guide/api-conventions.md) 의 멱등 키 절.
+- 부분 개정: [0423](0423-each-method-declares-its-key-contract-and-the-version-that-keeps-it.md) (`key_contract` 의 값 집합 개정)
 - **코드 근거 (결정이 실현된 현재 위치)**: `tasty-ipc` 의 `method_meta::KeyContract` ·
   `MethodMeta::key_contract` · `method_meta::key_contract`, `client::KeyOutsideContract` ·
   `IpcConnection::send_idempotent`, 그리고 `tasty-host-plugin` 의
