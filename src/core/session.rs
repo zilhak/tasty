@@ -7,9 +7,9 @@
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
-use crate::plugin::manifest::Permission;
 use tasty_ipc::caller::SessionToken;
 use tasty_ipc::session::{AgentSession, SessionError, SessionStore};
+use tasty_plugin_manifest::Permission;
 
 impl Core {
     /// 새 SessionToken 발급. `parent` 는 부모 caller (Plugin/Agent id 또는

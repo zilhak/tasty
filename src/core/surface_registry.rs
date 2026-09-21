@@ -84,8 +84,8 @@ pub struct PresetFieldSpec {
 impl PresetFieldSpec {
     /// 매니페스트 `PresetFieldDecl` → host spec. plugin 선언은 항상 `param_key` 로
     /// params 에 write 하므로 target 은 언제나 [`PresetFieldTarget::Params`].
-    pub fn from_decl(decl: &crate::plugin::manifest::PresetFieldDecl) -> Self {
-        use crate::plugin::manifest::PresetFieldInputType as It;
+    pub fn from_decl(decl: &tasty_plugin_manifest::PresetFieldDecl) -> Self {
+        use tasty_plugin_manifest::PresetFieldInputType as It;
         let input = match decl.input_type {
             It::Text => PresetFieldInput::Text,
             It::FilePath => PresetFieldInput::FilePath,
@@ -105,7 +105,7 @@ impl PresetFieldSpec {
     }
 
     /// 매니페스트 decl 슬라이스 → host spec vec (등록 경로 3곳 공용 헬퍼).
-    pub fn from_decls(decls: &[crate::plugin::manifest::PresetFieldDecl]) -> Vec<Self> {
+    pub fn from_decls(decls: &[tasty_plugin_manifest::PresetFieldDecl]) -> Vec<Self> {
         decls.iter().map(Self::from_decl).collect()
     }
 
@@ -273,7 +273,7 @@ pub struct SurfaceKindDef {
     pub default_params: HashMap<String, String>,
 
     /// capability flags — host 의 `kind == "..."` 입력/줌/복사 게이트를 generic 화한다.
-    /// 각 의미는 매니페스트 [`crate::plugin::manifest::SurfaceKindDecl`] 의 동명 필드 참조.
+    /// 각 의미는 매니페스트 [`tasty_plugin_manifest::SurfaceKindDecl`] 의 동명 필드 참조.
     /// builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
     #[cfg_attr(
         not(feature = "gui"),
