@@ -137,7 +137,9 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
     연결의 빚을 갚으므로(`repay_all_pending_loss`) 선언을 적은 그 배치에서 통지가 나간다. 시험
     `a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch`.
   - **평상시 비용.** write 스레드는 연결마다 둔 원자 사본(`StreamSink::owes_notice` —
-    `loss_notify && pending_loss != 0`)만 읽고, 빚이 있을 때만 sink 맵 잠금을 잡는다.
+    `loss_notify && pending_loss != 0`)만 읽고, 빚이 있을 때만 sink 맵 잠금을 잡는다. 선언이
+    손실 뒤·비우기 전에 오면 선언 자리가 사본을 켜서 꺼내는 순간 갚는다 — 시험
+    `a_declaration_between_the_loss_and_the_drain_is_repaid_by_the_write_thread`.
 - **통지 성공은 소비자가 따라잡은 것으로 안 센다.** `repay_pending_loss` 는 `StreamSink::lag`
   을 건드리지 않는다 — 서버가 스스로 넣은 프레임이 `LAG_LIMIT` 강제분리 시계를 되돌리면,
   영원히 안 읽는 소비자가 영원히 안 끊긴다.

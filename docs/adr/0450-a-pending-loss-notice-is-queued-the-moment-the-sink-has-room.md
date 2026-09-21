@@ -88,7 +88,10 @@ mirror stream 표지 · 세 값의 노출) 전부. ADR-0334 의 선언 게이트
     그 한 장 바로 뒤에 선다.
 - **운영 비용 / 유지 부담**: sink 당 `AtomicBool` 하나, 수신 끝에 연결 id 와 sink 맵의 `Weak`
   하나. `loss_notify` · `pending_loss` 를 바꾸는 자리마다 사본을 맞추는 호출 하나(`sync_owed`) —
-  빠뜨리면 사본이 참값과 어긋난다. 그 자리는 셋(선언 · 버림 · 상환 성공)이다.
+  빠뜨리면 사본이 참값과 어긋난다. 그 자리는 셋(선언 · 버림 · 상환 성공)이다. 선언·버림 자리의 호출과
+  꺼낼 때의 상환을 각각 지우는 변이는 아래 시험 중 하나 이상을 실패시킨다. 상환 성공 자리는 지워도
+  사본이 참으로 남을 뿐이고 `repay_pending_loss` 가 참값으로 다시 판정하므로, 잠금을 한 번 더 잡는
+  비용 말고는 달라지는 것이 없다(그 변이에서 `stream_hub` 시험 37/37 통과 — 막을 동작이 없다).
 
 ## Alternatives Considered
 
@@ -136,4 +139,4 @@ mirror stream 표지 · 세 값의 노출) 전부. ADR-0334 의 선언 게이트
 - 개정 대상: [ADR-0334](0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md) (막힌 통지를 갚는 자리)
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
 - 동작 문서: [`docs/dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) — "client 에게 공백을 알린다" 절
-- 코드 근거(결정이 실현된 현재 위치): `tasty_ipc::stream_hub::{SinkReceiver::took, StreamHub::repay_pending_loss, StreamHub::sync_owed, StreamHub::repay_all_pending_loss}` · 시험 `a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss` · `a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch`
+- 코드 근거(결정이 실현된 현재 위치): `tasty_ipc::stream_hub::{SinkReceiver::took, StreamHub::repay_pending_loss, StreamHub::sync_owed, StreamHub::repay_all_pending_loss}` · 시험 `a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss` · `a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch` · `a_declaration_between_the_loss_and_the_drain_is_repaid_by_the_write_thread`
