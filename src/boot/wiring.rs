@@ -77,6 +77,7 @@ fn build_production_core_inner(
     // dyn 으로 접기 **전에** 게이지를 꺼낸다 — trait 에는 이 핸들을 낼 방법이 없고,
     // 여기가 구상 타입을 손에 쥐는 유일한 자리다.
     let db_latency = db_latency_of(&store);
+    let memory_pragmas = memory_pragmas_of(&store);
     let memory: Arc<Mutex<dyn MemoryStorage>> = store;
 
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
@@ -92,6 +93,7 @@ fn build_production_core_inner(
         .with_sound_player(sound_player)
         .with_memory(memory)
         .with_db_latency(db_latency)
+        .with_memory_pragmas(memory_pragmas)
         .with_themes(themes)
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)
@@ -108,6 +110,16 @@ fn db_latency_of(
     store: &Arc<Mutex<tasty_memory::MemoryStore>>,
 ) -> Arc<tasty_memory::DbLatencyStats> {
     crate::poison::recover_mutex(store.lock(), MEMORY_WHAT, &MEMORY_POISONED).db_latency()
+}
+
+/// 스토어가 열 때 되읽은 연결 pragma 결과를 꺼낸다. 이유와 poison 복구는 위
+/// [`db_latency_of`] 와 같다 — 열린 뒤로 안 바뀌는 값이라 복제본으로 충분하다.
+fn memory_pragmas_of(
+    store: &Arc<Mutex<tasty_memory::MemoryStore>>,
+) -> tasty_memory::pragma::AppliedPragmas {
+    crate::poison::recover_mutex(store.lock(), MEMORY_WHAT, &MEMORY_POISONED)
+        .applied_pragmas()
+        .clone()
 }
 
 /// 위 복구의 공용 보고 좌표(첫-1 회).
@@ -133,6 +145,23 @@ impl crate::ports::clipboard::ClipboardSystem for NullClipboard {
 mod tests {
     use super::*;
     use tasty_memory::{MemoryValue, PutOpts, Scope};
+
+    /// 꺼낸 pragma 결과가 **그 스토어가 되읽은 값**인지. 파일 DB 로 열어야 in-memory
+    /// 기본값과 갈린다 — 기본값을 지어내면 `in_memory` 와 `journal_mode` 가 틀린다.
+    #[test]
+    fn the_extracted_pragmas_are_the_ones_the_store_read_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(Mutex::new(
+            tasty_memory::MemoryStore::open(&tmp.path().join("memory.db")).unwrap(),
+        ));
+        let pragmas = memory_pragmas_of(&store);
+        assert!(!pragmas.in_memory);
+        assert_eq!(
+            pragmas.get("journal_mode").unwrap().effective.as_deref(),
+            Some("wal")
+        );
+        assert_eq!(&pragmas, store.lock().unwrap().applied_pragmas());
+    }
 
     /// 게이지를 꺼내는 자리가 **스토어가 올리는 그 게이지**를 주는지. 새 기본값을
     /// 돌려줘도 타입은 맞으므로, 짝이 맞는지는 실제 쓰기를 한 건 일으켜 봐야 갈린다.

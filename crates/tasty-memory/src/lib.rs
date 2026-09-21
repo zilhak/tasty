@@ -41,6 +41,7 @@
 // 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
+mod failure;
 mod latency;
 mod migrations;
 mod port;
@@ -54,6 +55,7 @@ pub mod goal;
 pub mod plan;
 pub mod testing;
 
+pub use failure::StorageFailure;
 pub use latency::{DbLatencySnapshot, DbLatencyStats};
 pub use port::MemoryStorage;
 
@@ -61,7 +63,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 pub use migrations::{DbSchemaError, SCHEMA_VERSION};
@@ -137,6 +139,22 @@ pub enum MemoryError {
     ValueTooLarge { actual: usize, max: usize },
     #[error("db error: {0}")]
     Db(#[from] rusqlite::Error),
+}
+
+impl MemoryError {
+    /// 저장소 자체가 실패한 경우 그 원인 갈래. 요청 거부(`NotFound` · `CasConflict` ·
+    /// quota 등)는 저장소가 멀쩡히 답한 것이라 `None` 이다.
+    ///
+    /// 트랜잭션을 여는 자리 · 문장 실행 · `commit` 어디서 났든 `Db` 로 올라오므로
+    /// 트랜잭션 쓰기 네 자리(`put` · `delete` · `put_secret` · `delete_secret`)와 그
+    /// 밖의 단문 쓰기가 이 한 함수로 같은 표를 쓴다. 표는 초기화 오류와 같다
+    /// ([`StorageFailure`]).
+    pub fn storage_failure(&self) -> Option<StorageFailure> {
+        match self {
+            MemoryError::Db(e) => Some(StorageFailure::classify(e)),
+            _ => None,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, MemoryError>;
@@ -292,6 +310,8 @@ pub struct MemoryStore {
     /// commit·checkpoint 지연 누계. 스토어가 열릴 때 함께 태어나고 `Arc` 로 밖에
     /// 나간다 — 호스트가 이 값을 읽을 때 스토어 뮤텍스를 안 잡게 하기 위해서다.
     db_latency: std::sync::Arc<DbLatencyStats>,
+    /// 열 때 건 연결 pragma 의 요청값과 되읽은 실제값. 열린 뒤로 안 바뀐다.
+    applied_pragmas: pragma::AppliedPragmas,
 }
 
 impl MemoryStore {
@@ -330,7 +350,7 @@ impl MemoryStore {
         path: &Path,
         config: MemoryConfig,
     ) -> std::result::Result<Self, MemoryInitError> {
-        crate::pragma::apply_connection_pragmas(&conn, path);
+        let applied_pragmas = crate::pragma::apply_connection_pragmas(&conn, path);
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
             DbSchemaError::SchemaMismatch { expected, found } => {
                 MemoryInitError::SchemaMismatch { expected, found }
@@ -344,7 +364,13 @@ impl MemoryStore {
             pending_changes: Vec::new(),
             regular_used_bytes,
             db_latency: std::sync::Arc::new(DbLatencyStats::default()),
+            applied_pragmas,
         })
+    }
+
+    /// 열 때 건 연결 pragma 가 실제로 섰는가 — 요청값·실제값·degraded 판정.
+    pub fn applied_pragmas(&self) -> &pragma::AppliedPragmas {
+        &self.applied_pragmas
     }
 
     /// commit·checkpoint 지연 누계 핸들. 호스트가 이것을 복제해 들고 있으면
@@ -1524,23 +1550,18 @@ fn enospc() -> i32 {
     112
 }
 
+/// 원인 표는 [`StorageFailure`] 하나다 — 저장 경로와 같은 표를 쓴다. `Io` 는 초기화
+/// 안내에 따로 된 문구가 없어 `Other` 로 간다(이 표가 생기기 전과 같은 갈래).
 fn classify_sql(err: rusqlite::Error, path: &Path) -> MemoryInitError {
-    if let rusqlite::Error::SqliteFailure(sqlite_err, _) = &err {
-        match sqlite_err.code {
-            ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => {
-                return MemoryInitError::Busy(path.to_path_buf());
-            }
-            ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase => {
-                return MemoryInitError::Corrupt(path.to_path_buf());
-            }
-            ErrorCode::DiskFull => return MemoryInitError::DiskFull,
-            ErrorCode::PermissionDenied | ErrorCode::CannotOpen => {
-                return MemoryInitError::PermissionDenied(path.to_path_buf());
-            }
-            _ => {}
+    match StorageFailure::classify(&err) {
+        StorageFailure::Busy => MemoryInitError::Busy(path.to_path_buf()),
+        StorageFailure::Corrupt => MemoryInitError::Corrupt(path.to_path_buf()),
+        StorageFailure::DiskFull => MemoryInitError::DiskFull,
+        StorageFailure::PermissionDenied => MemoryInitError::PermissionDenied(path.to_path_buf()),
+        StorageFailure::Io | StorageFailure::Other => {
+            MemoryInitError::Other(format!("{}: {err}", path.display()))
         }
     }
-    MemoryInitError::Other(format!("{}: {err}", path.display()))
 }
 
 /// `memory.db` 기본 경로 (`tasty_home()/memory.db`). 홈 디렉터리 미확인 시 `None`.

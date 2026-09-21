@@ -59,8 +59,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use rusqlite::Connection;
-#[cfg(any(feature = "gui", test))]
-use rusqlite::ErrorCode;
 
 #[cfg(any(feature = "gui", test))]
 pub use migrations::DbSchemaError;
@@ -69,6 +67,9 @@ pub struct Db {
     pub conn: Connection,
     /// DB 수명에 묶인 최근 파일 캐시. 창마다 새 스냅샷을 만들지 않는다.
     pub(crate) recent_files: Option<crate::recent_files::RecentFiles>,
+    /// 열 때 건 연결 pragma 의 요청값과 되읽은 실제값(`system.pressure` 의
+    /// `db_pragmas.state_db`). 열린 뒤로 안 바뀐다.
+    pub(crate) applied_pragmas: tasty_memory::pragma::AppliedPragmas,
 }
 
 #[cfg(any(feature = "gui", test))]
@@ -87,7 +88,7 @@ impl Db {
         // 한다. 사본을 두면 한쪽만 고쳐지므로 두 DB 가 같은 함수를 부른다 —
         // WAL·synchronous·foreign_keys 와 WAL 크기 상한, 그리고 그 결과를 어떻게
         // 관측하는지까지 그 함수의 doc 에 있다.
-        tasty_memory::pragma::apply_connection_pragmas(&conn, path);
+        let applied_pragmas = tasty_memory::pragma::apply_connection_pragmas(&conn, path);
 
         migrations::ensure_schema(&mut conn).map_err(|e| match e {
             DbSchemaError::SchemaMismatch { expected, found } => {
@@ -98,6 +99,7 @@ impl Db {
         Ok(Self {
             conn,
             recent_files: None,
+            applied_pragmas,
         })
     }
 }
@@ -184,25 +186,22 @@ pub(crate) fn disk_full_os_error() -> i32 {
     112 // ERROR_DISK_FULL
 }
 
+/// 원인 표는 `memory.db` 와 같은 하나다(`tasty_memory::StorageFailure`) — 두 DB 가
+/// 표를 각자 들고 있으면 한쪽만 고쳐진다. `Io` 는 이 안내에 따로 된 문구가 없어
+/// `Other` 로 간다(그 표가 생기기 전과 같은 갈래).
 #[cfg(any(feature = "gui", test))]
 fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
-    if let rusqlite::Error::SqliteFailure(sqlite_err, _) = &err {
-        match sqlite_err.code {
-            ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => {
-                return DbInitError::Busy(path.to_path_buf());
-            }
-            ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase => {
-                return DbInitError::Corrupt(path.to_path_buf());
-            }
-            ErrorCode::DiskFull => return DbInitError::DiskFull,
-            ErrorCode::PermissionDenied | ErrorCode::CannotOpen => {
-                // CANTOPEN은 권한/존재/디렉터리 등 복합 원인 — 권한으로 묶는다.
-                return DbInitError::PermissionDenied(path.to_path_buf());
-            }
-            _ => {}
+    use tasty_memory::StorageFailure;
+    match StorageFailure::classify(&err) {
+        StorageFailure::Busy => DbInitError::Busy(path.to_path_buf()),
+        StorageFailure::Corrupt => DbInitError::Corrupt(path.to_path_buf()),
+        StorageFailure::DiskFull => DbInitError::DiskFull,
+        // CANTOPEN은 권한/존재/디렉터리 등 복합 원인 — 권한으로 묶는다.
+        StorageFailure::PermissionDenied => DbInitError::PermissionDenied(path.to_path_buf()),
+        StorageFailure::Io | StorageFailure::Other => {
+            DbInitError::Other(format!("{}: {err}", path.display()))
         }
     }
-    DbInitError::Other(format!("{}: {err}", path.display()))
 }
 
 static DB: OnceLock<Mutex<Db>> = OnceLock::new();

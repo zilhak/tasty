@@ -390,7 +390,18 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
             -32007,
             format!("value_too_large: {actual} bytes > {max}"),
         ),
-        Db(e) => JsonRpcResponse::internal_error(id, format!("memory db error: {e}")),
+        // 코드와 문장은 원인 분류가 생기기 전 그대로다 — 소비자가 이미 그것으로
+        // 분기한다. 원인 갈래는 `data` 에 **덧붙인다**: 잠김·용량·I/O·손상은 처방이
+        // 달라 문장 파싱 없이 갈려야 한다(`tasty_memory::StorageFailure`).
+        Db(e) => {
+            let failure = tasty_memory::StorageFailure::classify(&e);
+            JsonRpcResponse::error_with_data(
+                id,
+                -32603,
+                format!("memory db error: {e}"),
+                json!({ "storage_failure": failure.as_str() }),
+            )
+        }
     }
 }
 
@@ -901,5 +912,35 @@ mod tests {
     fn base64_invalid_inputs_rejected() {
         assert!(decode_b64("abc").is_err());
         assert!(decode_b64("ab*=").is_err());
+    }
+
+    /// 저장소 실패는 원인 갈래를 `data` 로 싣고, 코드와 문장은 전과 같다.
+    ///
+    /// 문장·코드가 바뀌면 이미 그것으로 분기하는 소비자가 깨지고, `data` 가 빠지면
+    /// 잠김과 용량 부족이 다시 같은 오류로 보인다 — 두 방향을 다 본다.
+    #[test]
+    fn a_storage_failure_keeps_its_message_and_adds_its_cause() {
+        let busy = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            None,
+        );
+        let expected_message = format!("memory db error: {busy}");
+        let resp = super::map_error(json!(7), tasty_memory::MemoryError::Db(busy));
+        let err = resp.error.expect("error");
+        assert_eq!(err.code, -32603);
+        assert_eq!(err.message, expected_message);
+        assert_eq!(err.data, Some(json!({ "storage_failure": "busy" })));
+
+        let refused = super::map_error(
+            json!(8),
+            tasty_memory::MemoryError::NotFound {
+                scope: "global".into(),
+                key: "k".into(),
+            },
+        );
+        assert!(
+            refused.error.expect("error").data.is_none(),
+            "요청 거부에 저장 실패 원인을 붙이면 안 된다"
+        );
     }
 }

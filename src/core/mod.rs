@@ -293,6 +293,14 @@ pub(crate) struct Core {
     /// 서버가 안 뜬 조립(mock port 만 주입한 테스트용 `Core`)에서는 아무도 안 올린다 —
     /// 그때 `accepted` 가 0 이라 "연결을 받은 적이 없다" 로 읽힌다.
     connections: Arc<tasty_telemetry::ConnectionStats>,
+
+    /// `memory.db` 를 열 때 건 연결 pragma 의 요청값과 되읽은 실제값.
+    ///
+    /// `db_latency` 와 같은 이유로 스토어 밖에 복제해 둔다 — 읽는 자리(진단 응답)가
+    /// 스토어 뮤텍스를 안 잡게 하려는 것이다. 열린 뒤로 안 바뀌는 값이라 복제본이
+    /// 낡을 일이 없다. 스토어가 없는 조립(mock port 만 주입한 테스트용 `Core`)에서는
+    /// `None` 이고, 응답에는 `null` 로 나가 "잰 적이 없다" 로 읽힌다.
+    memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
 }
 
 impl Core {
@@ -318,6 +326,11 @@ impl Core {
     /// `&Arc` 를 돌려준다.
     pub(crate) fn db_latency(&self) -> &Arc<tasty_memory::DbLatencyStats> {
         &self.db_latency
+    }
+
+    /// `memory.db` 연결 pragma 의 적용 결과. 스토어가 없는 조립이면 `None`.
+    pub(crate) fn memory_pragmas(&self) -> Option<&tasty_memory::pragma::AppliedPragmas> {
+        self.memory_pragmas.as_ref()
     }
 
     /// IPC 연결 자리 게이지. IPC 서버에 **핸들을 넘기려고** 존재하므로 `plugin_wait`

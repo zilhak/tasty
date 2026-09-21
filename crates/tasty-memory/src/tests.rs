@@ -1290,7 +1290,9 @@ fn a_read_only_database_says_that_the_requested_pragmas_did_not_take() {
     let conn =
         rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .unwrap();
-    let log = captured_log(|| crate::pragma::apply_connection_pragmas(&conn, &path));
+    let log = captured_log(|| {
+        crate::pragma::apply_connection_pragmas(&conn, &path);
+    });
 
     assert!(
         log.contains("journal_mode is delete, not the requested WAL"),
@@ -1305,7 +1307,9 @@ fn a_healthy_database_logs_nothing_while_setting_its_pragmas() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("healthy.db");
     let conn = rusqlite::Connection::open(&path).unwrap();
-    let log = captured_log(|| crate::pragma::apply_connection_pragmas(&conn, &path));
+    let log = captured_log(|| {
+        crate::pragma::apply_connection_pragmas(&conn, &path);
+    });
     assert!(log.is_empty(), "정상 열기에서 경고가 났다:\n{log}");
 }
 
@@ -1315,7 +1319,7 @@ fn a_healthy_database_logs_nothing_while_setting_its_pragmas() {
 fn an_in_memory_database_does_not_warn_about_its_own_journal_mode() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let log = captured_log(|| {
-        crate::pragma::apply_connection_pragmas(&conn, std::path::Path::new(":memory:"))
+        crate::pragma::apply_connection_pragmas(&conn, std::path::Path::new(":memory:"));
     });
     assert!(log.is_empty(), "in-memory 정상 결과에 경고가 났다:\n{log}");
 }
@@ -1468,5 +1472,192 @@ fn a_checkpoint_lands_in_its_own_population() {
     assert_eq!(
         after.commits, before.commits,
         "checkpoint 가 commit 으로 셌다"
+    );
+}
+
+// ---- 적용값과 저장 실패 (RF20) ----
+
+/// 열린 스토어가 **되읽은 실제값**을 들고 있고, 두 모드가 각자의 허용 결과로 선다.
+///
+/// 파일 DB 와 in-memory DB 의 `journal_mode` 실제값이 달라도 둘 다 `degraded` 가
+/// 아니어야 한다 — 허용 결과표가 모드마다 한 열이기 때문이다. 표에서 열을 바꿔
+/// 읽으면(파일 DB 에 `memory` 를 허용) 이 시험이 아니라 아래 읽기 전용 시험이 죽고,
+/// 모드 판정을 뒤집으면 여기가 죽는다.
+#[test]
+fn an_open_store_carries_the_pragmas_that_took_in_each_mode() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (disk, _path) = disk_store(tmp.path());
+    let d = disk.applied_pragmas();
+    assert!(!d.in_memory, "파일 DB 를 in-memory 로 판정했다");
+    assert!(!d.degraded(), "정상 파일 DB 가 degraded 다: {d:?}");
+    let j = d.get("journal_mode").unwrap();
+    assert_eq!(j.requested, "WAL");
+    assert_eq!(j.effective.as_deref(), Some("wal"));
+    assert_eq!(
+        d.get("synchronous").unwrap().effective.as_deref(),
+        Some("NORMAL")
+    );
+    assert_eq!(
+        d.get("foreign_keys").unwrap().effective.as_deref(),
+        Some("ON")
+    );
+    assert_eq!(
+        d.get("journal_size_limit").unwrap().effective.as_deref(),
+        Some(WAL_SIZE_LIMIT_BYTES.to_string().as_str())
+    );
+
+    // 스토어가 들고 있는 값이 **지금 연결의 실제값**과 같은지 직접 대조한다.
+    assert_eq!(
+        j.effective.as_deref().unwrap(),
+        crate::pragma::effective_journal_mode(&disk.conn).unwrap()
+    );
+
+    let mem = store();
+    let m = mem.applied_pragmas();
+    assert!(m.in_memory, "in-memory DB 를 파일로 판정했다");
+    assert!(!m.degraded(), "in-memory 정상 결과가 degraded 다: {m:?}");
+    assert_eq!(
+        m.get("journal_mode").unwrap().effective.as_deref(),
+        Some("memory")
+    );
+}
+
+/// 요청이 안 선 DB 는 **값으로** degraded 라고 말한다 — 경고 로그만이 아니다.
+#[test]
+fn a_read_only_database_reports_itself_degraded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("readonly.db");
+    rusqlite::Connection::open(&path).unwrap();
+    let conn =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+
+    let applied = crate::pragma::apply_connection_pragmas(&conn, &path);
+
+    assert!(applied.degraded(), "안 선 요청이 degraded 로 안 나왔다");
+    let j = applied.get("journal_mode").unwrap();
+    assert!(!j.took);
+    assert_eq!(j.effective.as_deref(), Some("delete"));
+}
+
+/// 파일 DB 에서 `memory` 는 허용 결과가 **아니다** — in-memory 의 정상값을 파일 DB
+/// 에 빌려주면 WAL 이 조용히 안 선 것을 삼킨다.
+#[test]
+fn a_file_database_in_memory_journal_mode_is_degraded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("m.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    // 파일 DB 에 직접 memory 모드를 건다 — 그 뒤 WAL 요청은 거절되지 않고 받아들여지므로,
+    // 판정 함수만 떼어 대조한다.
+    let mode: String = conn
+        .query_row("PRAGMA journal_mode=MEMORY", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(mode, "memory");
+    let applied = crate::pragma::apply_connection_pragmas(&conn, &path);
+    assert!(!applied.in_memory);
+    // WAL 로 바뀌었으면 정상이고, memory 로 남았으면 degraded 여야 한다 — 어느 쪽이든
+    // "memory 인데 정상" 인 조합은 없어야 한다.
+    let j = applied.get("journal_mode").unwrap();
+    assert!(
+        !(j.effective.as_deref() == Some("memory") && j.took),
+        "파일 DB 의 memory 를 정상으로 봤다: {j:?}"
+    );
+}
+
+/// 잠긴 DB 에 쓰면 **실패로** 돌아오고 원인이 `busy` 로 갈리며, 스토어의 메모리 쪽
+/// 상태(quota 카운터 · 변경 버퍼)는 실패 전 그대로다.
+///
+/// 이것이 "실패한 commit 을 정상 저장으로 표현하지 않는다" 의 저장 축이다. 카운터가
+/// 먼저 움직이면 다음 quota 판정이 디스크에 없는 바이트를 세고, 변경 버퍼가 먼저
+/// 움직이면 `memory.changed` 가 없는 쓰기를 알린다.
+#[test]
+fn a_write_to_a_locked_database_fails_as_busy_and_leaves_the_cache_untouched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut s, path) = disk_store(tmp.path());
+    let scope = Scope::Surface(1);
+    s.put(PLUGIN_A, &scope, "before", &text("x"), &PutOpts::default())
+        .unwrap();
+    s.take_pending_changes();
+    let used_before = s.regular_used_bytes;
+    // 기본 busy_timeout(5 s)을 기다리지 않게 한다 — 판정하려는 것은 분류지 대기가 아니다.
+    s.conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    let err = s
+        .put(PLUGIN_A, &scope, "k", &text("value"), &PutOpts::default())
+        .expect_err("잠긴 DB 에 쓰기가 성공으로 돌아왔다");
+    assert_eq!(err.storage_failure(), Some(StorageFailure::Busy), "{err}");
+    assert_eq!(
+        s.regular_used_bytes, used_before,
+        "실패한 쓰기가 카운터를 옮겼다"
+    );
+    assert!(
+        s.take_pending_changes().is_empty(),
+        "실패한 쓰기가 변경 알림을 남겼다"
+    );
+
+    holder.execute_batch("ROLLBACK").unwrap();
+    assert!(
+        s.get(&scope, "k").unwrap().is_none(),
+        "실패한 쓰기가 디스크에 남았다"
+    );
+}
+
+/// 용량이 찬 DB 에 쓰면 `disk_full` 로 갈린다. 볼륨을 채우는 대신 `max_page_count`
+/// 로 DB 의 페이지 상한을 낮춘다 — SQLite 는 두 경우에 같은 `SQLITE_FULL` 을 낸다.
+#[test]
+fn a_write_past_the_page_ceiling_fails_as_disk_full_and_leaves_the_cache_untouched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut s, _path) = disk_store(tmp.path());
+    let scope = Scope::Surface(1);
+    let pages: i64 = s
+        .conn
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .unwrap();
+    s.conn
+        .query_row(&format!("PRAGMA max_page_count={pages}"), [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
+    let used_before = s.regular_used_bytes;
+
+    let big = "x".repeat(64 * 1024);
+    let err = s
+        .put(PLUGIN_A, &scope, "big", &text(&big), &PutOpts::default())
+        .expect_err("상한을 넘는 쓰기가 성공으로 돌아왔다");
+    assert_eq!(
+        err.storage_failure(),
+        Some(StorageFailure::DiskFull),
+        "{err}"
+    );
+    assert_eq!(s.regular_used_bytes, used_before);
+    assert!(s.take_pending_changes().is_empty());
+}
+
+/// 요청 거부는 저장 실패가 **아니다** — 저장소가 멀쩡히 답한 것이다.
+#[test]
+fn a_refused_request_is_not_a_storage_failure() {
+    let mut s = store();
+    let err = s
+        .delete(PLUGIN_A, &Scope::Surface(1), "missing", None)
+        .unwrap_err();
+    assert_eq!(err.storage_failure(), None);
+}
+
+/// 초기화 오류가 저장 경로와 **같은 표**를 쓴다 — 깨진 파일은 `Corrupt` 로 간다.
+#[test]
+fn opening_a_file_that_is_not_a_database_is_classified_as_corrupt() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("memory.db");
+    std::fs::write(&path, vec![0xAB; 8192]).unwrap();
+    let err = match MemoryStore::open(&path) {
+        Ok(_) => panic!("SQLite 가 아닌 파일이 열렸다"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(err, MemoryInitError::Corrupt(_)),
+        "깨진 파일이 Corrupt 로 안 갔다: {err}"
     );
 }

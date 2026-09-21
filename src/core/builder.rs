@@ -37,6 +37,9 @@ pub(crate) struct CoreBuilder {
     /// 스토어가 열릴 때 그 안에서 태어난 핸들이라, 스토어를 못 여는 조립에서는
     /// 짝이 없는 것이 정상이다.
     db_latency: Option<Arc<tasty_memory::DbLatencyStats>>,
+    /// `db_latency` 와 같은 성격이다 — port 가 아니고, 스토어를 못 여는 조립에서는
+    /// 없는 것이 정상이다.
+    memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
 }
 
 impl CoreBuilder {
@@ -53,6 +56,7 @@ impl CoreBuilder {
             preset_store: None,
             settings_storage: None,
             db_latency: None,
+            memory_pragmas: None,
         }
     }
 
@@ -99,6 +103,15 @@ impl CoreBuilder {
     /// `Core` 는 아무도 안 올리는 게이지를 들고, 진단은 관측 0 으로 답한다.
     pub(crate) fn with_db_latency(mut self, stats: Arc<tasty_memory::DbLatencyStats>) -> Self {
         self.db_latency = Some(stats);
+        self
+    }
+    /// 스토어가 열릴 때 되읽은 연결 pragma 결과를 `Core` 에 붙인다. 안 부르면 진단은
+    /// `null` 로 답한다.
+    pub(crate) fn with_memory_pragmas(
+        mut self,
+        pragmas: tasty_memory::pragma::AppliedPragmas,
+    ) -> Self {
+        self.memory_pragmas = Some(pragmas);
         self
     }
     pub(crate) fn with_settings_storage(mut self, settings: Arc<dyn SettingsStorage>) -> Self {
@@ -149,6 +162,7 @@ impl CoreBuilder {
             pressure: tasty_telemetry::PressureStats::default(),
             plugin_wait: std::sync::Arc::new(tasty_telemetry::PluginWaitStats::default()),
             db_latency: self.db_latency.unwrap_or_default(),
+            memory_pragmas: self.memory_pragmas,
             // 주입 대상이 아니다 — IPC 서버가 `Core` 뒤에 뜨므로 여기서 낳고
             // 부팅이 그 핸들을 서버에 건넨다(`Hub::start_ipc`).
             connections: std::sync::Arc::new(tasty_telemetry::ConnectionStats::default()),

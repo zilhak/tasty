@@ -7,7 +7,7 @@
 //!
 //! ## 덩어리는 **모수마다 하나**다
 //!
-//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 다섯이고, 아래에 그 다섯이 한
+//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 여섯이고, 아래에 그 여섯이 한
 //! 절씩 있다. **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
 //! 어느 수가 무엇을 센 것인지 갈린다.
 //!
@@ -63,6 +63,23 @@
 //! ([`crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS`]) —
 //! 그것이 같이 나가야 `live` 가 얼마나 상한에 가까운지가 한 응답 안에서 읽힌다.
 //!
+//! ## `db_pragmas` — **누계가 아니라 열 때 한 번 되읽은 설정**이다
+//!
+//! 앞의 다섯은 전부 프로세스 수명 동안 자라는 수이고, 이것만 **안 자란다.** 두 SQLite
+//! DB 가 열릴 때 건 연결 pragma(`journal_mode` · `synchronous` · `foreign_keys` ·
+//! `journal_size_limit`)의 요청값과 **되읽은 실제값**을 DB 마다 한 덩어리로 싣는다
+//! (`memory_db` · `state_db`). 여기 있는 이유는 `db` 덩어리와 같은 DB 를 말하기 때문이다
+//! — "commit 이 느리다" 를 읽은 자리에서 "WAL 이 안 섰다" 가 함께 보여야 원인이 갈린다.
+//!
+//! 요청값을 같이 싣는 이유는 소스의 `"WAL"` 이 runtime 보장이 아니어서다(in-memory DB
+//! 는 요청을 조용히 거절한다 — `tasty_memory::pragma` 의 doc). `degraded` 는 하나라도
+//! 그 DB 모드의 허용 결과로 안 섰다는 뜻이고, 오류가 아니라 **열린 채로 쓰이는 상태**다
+//! (ADR-0376).
+//!
+//! `state_db` 가 `null` 이면 "그 DB 가 이 프로세스에 열려 있지 않다" 이다 — 헤드리스는
+//! 늘 그렇고 GUI 도 열기에 실패한 창의 안내 구간에서는 그렇다(`crate::db` 머리말). 두
+//! 출처는 이 값으로 안 갈린다. `memory_db` 가 `null` 이면 스토어가 없는 조립(단위 시험)이다.
+//!
 //! ## 아직 안 재는 값의 자리는 미리 비워 두지 않는다
 //!
 //! 위 `connections` 덩어리는 재는 자리가 생겼을 때 함께 생겼다. 빈 덩어리를 미리
@@ -115,15 +132,50 @@ pub(super) fn handle_system_pressure(
     core: &crate::core::Core,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(
-        id,
-        snapshot_json(
-            &core.pressure().snapshot(),
-            &core.plugin_wait().snapshot(),
-            &core.db_latency().snapshot(),
-            &core.connections().snapshot(),
-        ),
-    )
+    let mut body = snapshot_json(
+        &core.pressure().snapshot(),
+        &core.plugin_wait().snapshot(),
+        &core.db_latency().snapshot(),
+        &core.connections().snapshot(),
+    );
+    let state_db = crate::db::with_state_db(|db| db.applied_pragmas.clone());
+    body["db_pragmas"] = db_pragmas_json(core.memory_pragmas(), state_db.as_ref());
+    JsonRpcResponse::success(id, body)
+}
+
+/// 두 DB 의 pragma 적용 결과. 누계 덩어리들과 성격이 달라 `snapshot_json` 밖에 둔다 —
+/// 저것은 게이지 스냅샷만 받고, 이것은 열 때 한 번 정해진 값이다.
+pub(super) fn db_pragmas_json(
+    memory_db: Option<&tasty_memory::pragma::AppliedPragmas>,
+    state_db: Option<&tasty_memory::pragma::AppliedPragmas>,
+) -> serde_json::Value {
+    json!({
+        "memory_db": memory_db.map(applied_json),
+        "state_db": state_db.map(applied_json),
+    })
+}
+
+fn applied_json(a: &tasty_memory::pragma::AppliedPragmas) -> serde_json::Value {
+    let pragmas: serde_json::Map<String, serde_json::Value> = a
+        .readings
+        .iter()
+        .map(|r| {
+            (
+                r.name.to_string(),
+                json!({
+                    "requested": r.requested,
+                    "effective": r.effective,
+                    "took": r.took,
+                    "error": r.error,
+                }),
+            )
+        })
+        .collect();
+    json!({
+        "in_memory": a.in_memory,
+        "degraded": a.degraded(),
+        "pragmas": pragmas,
+    })
 }
 
 /// 스냅샷 하나를 응답 본문으로 옮긴다.
@@ -313,9 +365,62 @@ mod tests {
             result.get("queue_before_gate").is_some()
                 && result.get("handler_after_gate").is_some()
                 && result.get("db").is_some()
-                && result.get("connections").is_some(),
+                && result.get("connections").is_some()
+                && result.get("db_pragmas").is_some(),
             "덩어리들이 응답에 있어야 한다: {result}"
         );
+        // 이 조립은 mock 스토어라 되읽은 값이 없다 — `null` 이어야 "잰 적이 없다" 로
+        // 읽힌다. 핸들러가 `Core` 대신 아무 값이나 지어내면 여기서 죽는다.
+        assert!(
+            result["db_pragmas"]["memory_db"].is_null(),
+            "스토어가 없는 조립에서 적용값을 지어냈다: {result}"
+        );
+    }
+
+    /// pragma 덩어리는 DB 마다 요청값·실제값·판정을 **함께** 싣고, 하나라도 안 섰으면
+    /// 그 DB 가 `degraded` 다. 열리지 않은 DB 는 `null` 이다.
+    #[test]
+    fn the_pragma_block_carries_requested_effective_and_degraded_per_database() {
+        use tasty_memory::pragma::{AppliedPragmas, PragmaReading};
+        let reading = |name, requested: &str, effective: &str, took| PragmaReading {
+            name,
+            requested: requested.to_string(),
+            effective: Some(effective.to_string()),
+            error: None,
+            took,
+        };
+        let healthy = AppliedPragmas {
+            in_memory: false,
+            readings: vec![reading("journal_mode", "WAL", "wal", true)],
+        };
+        let degraded = AppliedPragmas {
+            in_memory: false,
+            readings: vec![
+                reading("journal_mode", "WAL", "delete", false),
+                reading("synchronous", "NORMAL", "NORMAL", true),
+            ],
+        };
+
+        let v = db_pragmas_json(Some(&healthy), Some(&degraded));
+        let m = &v["memory_db"];
+        assert_eq!(m["degraded"], false);
+        assert_eq!(m["in_memory"], false);
+        assert_eq!(m["pragmas"]["journal_mode"]["requested"], "WAL");
+        assert_eq!(m["pragmas"]["journal_mode"]["effective"], "wal");
+        let s = &v["state_db"];
+        assert_eq!(
+            s["degraded"], true,
+            "안 선 pragma 가 있는데 degraded 가 아니다"
+        );
+        assert_eq!(s["pragmas"]["journal_mode"]["took"], false);
+        assert_eq!(
+            s["pragmas"]["journal_mode"]["effective"], "delete",
+            "실제값이 요청값으로 덮이면 안 된다"
+        );
+        assert_eq!(s["pragmas"]["synchronous"]["took"], true);
+
+        let none = db_pragmas_json(Some(&healthy), None);
+        assert!(none["state_db"].is_null(), "열리지 않은 DB 는 null 이다");
     }
 
     /// ★ 연결 덩어리가 **`Core` 가 들고 있는 그 게이지**를 읽는다.

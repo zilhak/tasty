@@ -61,6 +61,15 @@ pub enum ListCommands {
     /// not computed here. `db` is a duration too but has no distribution, and
     /// `connections` has none because it is not a duration at all.
     ///
+    /// `db_pragmas` is the sixth block and it is not a running total at all:
+    /// for each SQLite database (`memory_db`, `state_db`) it shows the
+    /// connection settings that were requested when the database was opened
+    /// next to the values read back from it, because a request such as
+    /// journal_mode=WAL can be silently refused. `degraded` is true when any
+    /// setting did not take; the database is still in use. `state_db` is null
+    /// when that database is not open in this process, which is always the
+    /// case for a headless instance.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications
