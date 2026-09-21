@@ -42,6 +42,10 @@ use crate::state::AppState;
 
 /// IPC 큐를 비차단으로 비우고 각 명령을 단일 engine 으로 dispatch 한다.
 /// `IpcReady` 수신 시 headless 메인 루프가 호출.
+///
+/// `state` 는 gui 와 같은 `AppState` 타입이지만 이 빌드에서는 GUI 소유 필드(`dialogs` 등)가
+/// 컴파일되지 않은 형태다 — 좁은 타입을 따로 두지 않은 이유는
+/// [ADR-0355](../../docs/adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md).
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut AppState,
