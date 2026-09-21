@@ -561,7 +561,6 @@ fn sort_handlers(v: &mut [FileHandler]) {
     });
 }
 
-/// tie-break 시 owner 우선순위 — 작을수록 우선. `user > plugin > host`.
 /// finalize 가 contribution 을 병합하는 순서 — Host → Plugin → User. 같은 owner 안에서는 설치
 /// 순서를 그대로 둔다(안정 정렬).
 ///
@@ -575,6 +574,7 @@ fn merge_order(contribs: &[HandlerContribution]) -> Vec<&HandlerContribution> {
     ordered
 }
 
+/// tie-break 시 owner 우선순위 — 작을수록 우선. `user > plugin > host`.
 fn owner_rank(owner: &HandlerOwner) -> u8 {
     match owner {
         HandlerOwner::User => 0,
