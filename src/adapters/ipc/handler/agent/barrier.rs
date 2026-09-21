@@ -2,7 +2,6 @@ use serde_json::{Value, json};
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -17,7 +16,6 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 
 pub fn handle_barrier_create(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -49,7 +47,6 @@ pub fn handle_barrier_create(
 
 pub fn handle_barrier_signal(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -71,7 +68,6 @@ pub fn handle_barrier_signal(
 
 pub fn handle_barrier_state(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -94,18 +90,16 @@ pub fn handle_barrier_state(
 /// poll-based — 상태 조회와 동일. 추후 blocking + wakeup 도입.
 pub fn handle_barrier_await(
     core: &Core,
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    handle_barrier_state(core, state, engine, caller, id, params)
+    handle_barrier_state(core, engine, caller, id, params)
 }
 
 pub fn handle_barrier_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -125,7 +119,6 @@ pub fn handle_barrier_list(
 
 pub fn handle_barrier_delete(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

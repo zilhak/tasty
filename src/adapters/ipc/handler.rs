@@ -1043,114 +1043,90 @@ fn route_engine_handler(
             telemetry::handle_session_summary(core, state, engine, caller, id, &request.params)
         }
         // agent.task_* (DAG + state 머신)
-        "agent.task_create" => {
-            agent::handle_task_create(core, state, engine, caller, id, &request.params)
-        }
-        "agent.task_list" => {
-            agent::handle_task_list(core, state, engine, caller, id, &request.params)
-        }
-        "agent.task_get" => {
-            agent::handle_task_get(core, state, engine, caller, id, &request.params)
-        }
+        "agent.task_create" => agent::handle_task_create(core, engine, caller, id, &request.params),
+        "agent.task_list" => agent::handle_task_list(core, engine, caller, id, &request.params),
+        "agent.task_get" => agent::handle_task_get(core, engine, caller, id, &request.params),
         // agent.task_await 는 여기 없다(`approval.await` 가 빠진 것과 같은 이유) — 진짜 blocking 은
         // gui 빌드의 `App::process_ipc` app_methods 단계(`ipc_dispatch_task_await`)
         // 가 라우팅 전에 가로챈다. headless 빌드(`boot/headless_dispatch.rs`)는 그
         // 단계가 없어 이 라우터로 직접 오는데, 팔을 두면 비차단 fallback 이 진짜
         // blocking 응답과 다른 모양으로 조용히 성공해 버리므로 method_not_found 로
         // 정직하게 떨어지는 쪽을 택한다(local_only 라 plugin 경로에는 영향 없음).
-        "agent.task_cancel" => {
-            agent::handle_task_cancel(core, state, engine, caller, id, &request.params)
-        }
-        "agent.task_retry" => {
-            agent::handle_task_retry(core, state, engine, caller, id, &request.params)
-        }
-        "agent.task_graph" => {
-            agent::handle_task_graph(core, state, engine, caller, id, &request.params)
-        }
+        "agent.task_cancel" => agent::handle_task_cancel(core, engine, caller, id, &request.params),
+        "agent.task_retry" => agent::handle_task_retry(core, engine, caller, id, &request.params),
+        "agent.task_graph" => agent::handle_task_graph(core, engine, caller, id, &request.params),
         // agent.dag_* (workspace 안의 flat 한 task 를 무관한 그래프 단위로 쪼갠 뷰)
-        "agent.dag_list" => {
-            agent::handle_dag_list(core, state, engine, caller, id, &request.params)
-        }
-        "agent.dag_get" => agent::handle_dag_get(core, state, engine, caller, id, &request.params),
+        "agent.dag_list" => agent::handle_dag_list(core, engine, caller, id, &request.params),
+        "agent.dag_get" => agent::handle_dag_get(core, engine, caller, id, &request.params),
         // agent.task_set_result (외부 task 완료 신호)
         "agent.task_set_result" => {
-            agent::handle_task_set_result(core, state, engine, caller, id, &request.params)
+            agent::handle_task_set_result(core, engine, caller, id, &request.params)
         }
         // agent.task_run (workspace runner thread 시작/중단/상태)
-        "agent.task_run" => {
-            agent::handle_task_run(core, state, engine, caller, id, &request.params)
-        }
+        "agent.task_run" => agent::handle_task_run(core, engine, caller, id, &request.params),
         // agent.task_delete / agent.task_purge (참조 검사 + 상태 제약을
         // 지키는 단건/일괄 삭제)
-        "agent.task_delete" => {
-            agent::handle_task_delete(core, state, engine, caller, id, &request.params)
-        }
-        "agent.task_purge" => {
-            agent::handle_task_purge(core, state, engine, caller, id, &request.params)
-        }
+        "agent.task_delete" => agent::handle_task_delete(core, engine, caller, id, &request.params),
+        "agent.task_purge" => agent::handle_task_purge(core, engine, caller, id, &request.params),
         // agent.barrier_* / semaphore_* (poll-based 동기화 primitive)
         "agent.barrier_create" => {
-            agent::handle_barrier_create(core, state, engine, caller, id, &request.params)
+            agent::handle_barrier_create(core, engine, caller, id, &request.params)
         }
         "agent.barrier_signal" => {
-            agent::handle_barrier_signal(core, state, engine, caller, id, &request.params)
+            agent::handle_barrier_signal(core, engine, caller, id, &request.params)
         }
         "agent.barrier_await" => {
-            agent::handle_barrier_await(core, state, engine, caller, id, &request.params)
+            agent::handle_barrier_await(core, engine, caller, id, &request.params)
         }
         "agent.barrier_state" => {
-            agent::handle_barrier_state(core, state, engine, caller, id, &request.params)
+            agent::handle_barrier_state(core, engine, caller, id, &request.params)
         }
         "agent.semaphore_create" => {
-            agent::handle_semaphore_create(core, state, engine, caller, id, &request.params)
+            agent::handle_semaphore_create(core, engine, caller, id, &request.params)
         }
         "agent.semaphore_set_permits" => {
-            agent::handle_semaphore_set_permits(core, state, engine, caller, id, &request.params)
+            agent::handle_semaphore_set_permits(core, engine, caller, id, &request.params)
         }
         "agent.semaphore_acquire" => {
-            agent::handle_semaphore_acquire(core, state, engine, caller, id, &request.params)
+            agent::handle_semaphore_acquire(core, engine, caller, id, &request.params)
         }
         "agent.semaphore_release" => {
-            agent::handle_semaphore_release(core, state, engine, caller, id, &request.params)
+            agent::handle_semaphore_release(core, engine, caller, id, &request.params)
         }
         "agent.barrier_list" => {
-            agent::handle_barrier_list(core, state, engine, caller, id, &request.params)
+            agent::handle_barrier_list(core, engine, caller, id, &request.params)
         }
         "agent.barrier_delete" => {
-            agent::handle_barrier_delete(core, state, engine, caller, id, &request.params)
+            agent::handle_barrier_delete(core, engine, caller, id, &request.params)
         }
         "agent.semaphore_list" => {
-            agent::handle_semaphore_list(core, state, engine, caller, id, &request.params)
+            agent::handle_semaphore_list(core, engine, caller, id, &request.params)
         }
         "agent.semaphore_delete" => {
-            agent::handle_semaphore_delete(core, state, engine, caller, id, &request.params)
+            agent::handle_semaphore_delete(core, engine, caller, id, &request.params)
         }
         // agent.lease_* (협조적 점유 마커 + TTL)
         "agent.lease_acquire" => {
-            agent::handle_lease_acquire(core, state, engine, caller, id, &request.params)
+            agent::handle_lease_acquire(core, engine, caller, id, &request.params)
         }
         "agent.lease_release" => {
-            agent::handle_lease_release(core, state, engine, caller, id, &request.params)
+            agent::handle_lease_release(core, engine, caller, id, &request.params)
         }
-        "agent.lease_list" => {
-            agent::handle_lease_list(core, state, engine, caller, id, &request.params)
-        }
+        "agent.lease_list" => agent::handle_lease_list(core, engine, caller, id, &request.params),
         // agent.task_reduce (결과 합성: first_success / all / merge_json / concat_text / custom)
-        "agent.task_reduce" => {
-            agent::handle_task_reduce(core, state, engine, caller, id, &request.params)
-        }
+        "agent.task_reduce" => agent::handle_task_reduce(core, engine, caller, id, &request.params),
         // agent.rate_limit_* (token bucket 시간당 비율 제한)
         "agent.rate_limit_set" => {
-            agent::handle_rate_limit_set(core, state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_set(core, engine, caller, id, &request.params)
         }
         "agent.rate_limit_list" => {
-            agent::handle_rate_limit_list(core, state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_list(core, engine, caller, id, &request.params)
         }
         "agent.rate_limit_remove" => {
-            agent::handle_rate_limit_remove(core, state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_remove(core, engine, caller, id, &request.params)
         }
         "agent.rate_limit_status" => {
-            agent::handle_rate_limit_status(core, state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_status(core, engine, caller, id, &request.params)
         }
         // session.* (자식 agent 신원 토큰 관리)
         "session.issue" => session::handle_issue(core, caller, id, &request.params),

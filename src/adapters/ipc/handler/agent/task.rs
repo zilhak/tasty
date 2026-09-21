@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 
 use crate::core::Core;
 use crate::core::agent::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
-use crate::state::AppState;
 use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
 use tasty_agent::{
     AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
@@ -18,7 +17,6 @@ use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_
 
 pub fn handle_task_create(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -283,7 +281,6 @@ fn retain_by_state(tasks: &mut Vec<Task>, states: Option<&[String]>) {
 
 pub fn handle_task_list(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -373,7 +370,6 @@ fn awaiting_external_json(
 
 pub fn handle_task_get(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -412,7 +408,6 @@ pub fn handle_task_get(
 
 pub fn handle_task_cancel(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -444,7 +439,6 @@ pub fn handle_task_cancel(
 
 pub fn handle_task_retry(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -668,7 +662,6 @@ fn render_graph_edges(tasks: &[Task]) -> Vec<Value> {
 
 pub fn handle_task_graph(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -747,7 +740,6 @@ fn dag_summary_json(dag: &tasty_agent::DagSummary, include_tasks: bool) -> Value
 
 pub fn handle_dag_list(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -805,7 +797,6 @@ fn subset_cycle(tasks: &[Task]) -> Option<AgentError> {
 
 pub fn handle_dag_get(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -865,7 +856,6 @@ pub fn handle_dag_get(
 
 pub fn handle_task_reduce(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -932,7 +922,6 @@ pub fn handle_task_reduce(
 // status: 카운트만 갱신.
 pub fn handle_task_run(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -976,7 +965,6 @@ pub fn handle_task_run(
 // state 인자: "succeeded" | "failed" (그 외 거부).
 pub fn handle_task_set_result(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -1053,7 +1041,6 @@ pub fn handle_task_set_result(
 /// 우회한다(상태 제약은 못 뚫음 — `Running` 은 항상 거부).
 pub fn handle_task_delete(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -1117,7 +1104,6 @@ fn purge_filter_from_params(params: &Value, now_ms: u64) -> Result<TaskPurgeFilt
 /// "상태를 하나도 안 골랐다" 를 "상태 무관 전체" 로 승격시키지 않는다.
 pub fn handle_task_purge(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

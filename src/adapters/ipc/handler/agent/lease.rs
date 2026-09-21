@@ -2,7 +2,6 @@ use serde_json::{Value, json};
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_agent::LeaseMode;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -36,7 +35,6 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 
 pub fn handle_lease_acquire(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -77,7 +75,6 @@ pub fn handle_lease_acquire(
 
 pub fn handle_lease_release(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -103,7 +100,6 @@ pub fn handle_lease_release(
 
 pub fn handle_lease_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
