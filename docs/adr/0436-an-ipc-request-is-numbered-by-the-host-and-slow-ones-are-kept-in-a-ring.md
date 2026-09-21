@@ -46,7 +46,7 @@ plugin 쪽에서 되짚을 길도 없었다. 호스트가 req_id 를 남기는 �
 - `SLOW_REQUEST_CAPACITY` = 32. 파생값이 아니다. 한 번의 조회로 최근의 느린 요청을 훑기에 충분하고 상한에서 수십 KB 다.
 - `OPEN_FORWARD_CAPACITY` = 256. 동시 IPC 연결 상한([ADR-0313](0313-the-dispatch-round-budget-is-the-connection-bound.md) 의 256)과 같다 — 소켓 연결 하나는 요청 하나를 기다리므로 동시에 plugin 을 기다리는 IPC 요청이 대개 이 안에 든다.
 - `MAX_PLUGIN_HOPS` = 3(pre-hook · target · post-hook).
-- `MAX_METHOD_BYTES` = 128. 파생값이 아니다. 메서드 칸은 호출자 문자열이라, 자르지 않으면 한 호출자가 긴 이름으로 링 32 줄을 각각 임의 길이로 채울 수 있다. 실측 2026-09-21: 등록 메서드 표(`METHOD_TABLE`, 264 개)의 가장 긴 이름이 31 바이트(`markdown_mirror.content_request`)였고, debug 표는 25 바이트였다. 그 네 배 남짓이라 정상 이름은 잘리지 않는다. 상한을 넘으면 그 안의 마지막 char 경계에서 자른다(잘렸다는 표지는 따로 없다 — 길이가 상한 근처면 잘린 것이다).
+- `MAX_METHOD_BYTES` = 128. 파생값이 아니다. 메서드 칸은 호출자 문자열이라, 자르지 않으면 한 호출자가 긴 이름으로 링 32 줄을 각각 임의 길이로 채울 수 있다. 실측 2026-09-21: 등록 메서드 표(`METHOD_TABLE`, 286 개)의 가장 긴 이름이 31 바이트(`markdown_mirror.content_request`)였고, debug 표(`DEBUG_METHODS`, 52 개)의 가장 긴 이름이 32 바이트(`debug.event_bus.list_subscribers`)였다. 세는 법: 두 표 본문에서 주석을 지운 뒤 `(` 다음의 첫 문자열 리터럴을 여러 줄 튜플까지 포함해 센다(줄 단위로 세면 여러 줄 튜플이 빠진다). 최장 32 의 네 배라 정상 이름은 잘리지 않는다. 상한을 넘으면 그 안의 마지막 char 경계에서 자른다(잘렸다는 표지는 따로 없다 — 길이가 상한 근처면 잘린 것이다).
 
 ## Consequences
 
