@@ -886,11 +886,9 @@ impl AppState {
         // 여부(`MainView::sync_webviews`)인데, WebView 는 OS 네이티브 자식 뷰라 wgpu
         // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
         // 반드시 `set_visible(false)` 가 필요하고, 그 게이트가 바로 이 함수다.
-        let open = open
-            || self.popups.has_visible_open()
+        open || self.popups.has_visible_open()
             || self.fullscreen_stage.is_some()
-            || self.tutorial.active.is_some();
-        open
+            || self.tutorial.active.is_some()
     }
 
     /// 전체화면 무대 진입. 정의 테이블에 없는 id 는 거부하고 `false` 를 반환한다
