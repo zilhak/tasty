@@ -227,7 +227,7 @@ doc.
 view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상태를 어디에 두든 그릴 수 있다.
 
 - **상태**: 설정 창의 `SettingsUiState.file_chooser`(`SettingsFileChooser`) 가 갖는다. 메인 창의
-  `FilePickerData` 와 별개이며 `src/state.rs` 를 거치지 않는다. 한 번에 하나만 열리고, 새로 열면
+  `FilePickerData` 와 별개이며 메인 창 상태 모듈(`src/state/dialogs.rs`)을 거치지 않는다. 한 번에 하나만 열리고, 새로 열면
   열려 있던 선택은 취소로 끝난다.
 - **popup**: 설정 창 자체 `PopupManager` 에 `settings_file_chooser` 로 등록된다(단축키 충돌 확인
   popup 과 같은 매니저). 크기는 두 모드 모두 메인 피커와 같은 상수(640×480)다.

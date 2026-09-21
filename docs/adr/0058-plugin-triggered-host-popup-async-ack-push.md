@@ -79,7 +79,7 @@ ADR-0042는 "host 무지 원칙"(host는 이 메서드가 어느 plugin·어느 
      id)와는 **완전히 별개의 네임스페이스**다. 둘 다 필드명이 `request_id`라 구현 시
      혼동하기 쉬우므로 코드 주석으로 명시해야 한다.
    - `(plugin_id, request_id)`를 popup의 요청자 정보로 기록한다 — `FilePickerData`
-     (`src/state.rs:775`)에 `requester: Option<FilePickerRequester>` 필드를 신설하고,
+     (`src/state/dialogs.rs`)에 `requester: Option<FilePickerRequester>` 필드를 신설하고,
      Tools 메뉴가 여는 경우(`tools_menu.rs:123`)는 `None`으로 채운다.
    - 기존 `popup::file_picker::open(state, engine)`(`file_picker.rs:691`)을
      `open(state, engine, requester: Option<FilePickerRequester>)`으로 확장해 그대로
