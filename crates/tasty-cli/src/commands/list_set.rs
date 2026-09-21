@@ -115,6 +115,13 @@ pub enum ListCommands {
     /// pushed out are `admitted` minus the rows shown. A query for this answer
     /// is never kept itself.
     ///
+    /// `queue_before_gate.waits` counts the commands whose queue wait was
+    /// recorded, at the moment each was taken out; it is the denominator of
+    /// `wait_us_mean` and equals the sum of `wait_us_hist.counts`. `commands`
+    /// rises only when a round of taking commands out ends, so within one
+    /// answer it can trail `waits` by the round still running, which includes
+    /// the query itself.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications

@@ -110,8 +110,12 @@ pub struct PressureStats {
     queue_drains: AtomicU64,
     /// 한 번의 drain 이 집어 든 명령 수의 최댓값 = 관측된 최대 큐 깊이.
     queue_depth_max: AtomicU64,
-    /// drain 으로 집어 든 명령 수의 합.
+    /// drain 으로 집어 든 명령 수의 합. **회차가 끝날 때** 오른다.
     queue_commands: AtomicU64,
+    /// 대기를 기록한 명령 수 — 아래 합·최댓값·분포와 **같은 자리**(명령을 꺼낼 때)에서 오른다.
+    /// 평균의 분모가 이것이다. `queue_commands` 를 분모로 쓰면 아직 안 끝난 회차(조회 자신의
+    /// 회차 포함)가 꺼낸 명령의 대기는 분자에 있고 분모에 없어, 평균이 최댓값을 넘는다.
+    queue_waits: AtomicU64,
     /// 큐에 들어간 뒤 꺼내질 때까지의 대기 시간 합(마이크로초).
     queue_wait_us_sum: AtomicU64,
     /// 그 대기 시간의 최댓값(마이크로초).
@@ -152,6 +156,7 @@ impl PressureStats {
     /// 명령 하나가 큐에서 기다린 시간.
     pub fn record_queue_wait(&self, waited: Duration) {
         let us = as_micros(waited);
+        self.queue_waits.fetch_add(1, Ordering::Relaxed);
         self.queue_wait_us_sum.fetch_add(us, Ordering::Relaxed);
         self.queue_wait_us_max.fetch_max(us, Ordering::Relaxed);
         self.queue_wait_hist.record_us(us);
@@ -174,6 +179,7 @@ impl PressureStats {
             queue_drains: self.queue_drains.load(Ordering::Relaxed),
             queue_depth_max: self.queue_depth_max.load(Ordering::Relaxed),
             queue_commands: self.queue_commands.load(Ordering::Relaxed),
+            queue_waits: self.queue_waits.load(Ordering::Relaxed),
             queue_wait_us_sum: self.queue_wait_us_sum.load(Ordering::Relaxed),
             queue_wait_us_max: self.queue_wait_us_max.load(Ordering::Relaxed),
             handler_calls: self.handler_calls.load(Ordering::Relaxed),
@@ -192,6 +198,7 @@ pub struct PressureSnapshot {
     pub queue_drains: u64,
     pub queue_depth_max: u64,
     pub queue_commands: u64,
+    pub queue_waits: u64,
     pub queue_wait_us_sum: u64,
     pub queue_wait_us_max: u64,
     pub handler_calls: u64,
@@ -204,8 +211,12 @@ pub struct PressureSnapshot {
 impl PressureSnapshot {
     /// 명령 하나가 큐에서 기다린 평균(마이크로초). 관측이 없으면 `None` — 0 을 돌려주면
     /// "기다림이 없었다" 와 "잰 적이 없다" 가 같은 값이 된다.
+    ///
+    /// 분모는 대기를 기록한 명령 수(`queue_waits`)다 — 합과 같은 자리에서 오르는 수라야
+    /// 평균이 최댓값을 넘지 않는다. `queue_commands` 는 회차가 끝날 때 오르므로 한 스냅샷
+    /// 안에서 분자보다 늦다(ADR-0466).
     pub fn queue_wait_us_mean(&self) -> Option<u64> {
-        (self.queue_commands > 0).then(|| self.queue_wait_us_sum / self.queue_commands)
+        (self.queue_waits > 0).then(|| self.queue_wait_us_sum / self.queue_waits)
     }
 
     /// handler 하나의 평균 실행 시간(마이크로초). 위와 같은 이유로 `Option`.
@@ -379,6 +390,21 @@ mod tests {
         assert_eq!(s.queue_commands, 15);
         assert_eq!(s.queue_depth_max, 11, "최댓값은 내려가지 않는다");
         assert_eq!(s.queue_depth_mean(), Some(5));
+    }
+
+    /// 회차가 아직 안 끝났어도(명령을 꺼내 대기는 기록했지만 `record_drain` 전) 평균은 최댓값을
+    /// 안 넘고, 분포의 합이 평균의 분모와 같다 — 조회는 늘 자기 회차 안에서 스냅샷을 찍는다.
+    #[test]
+    fn the_wait_mean_shares_its_modulus_with_the_sum_while_a_round_is_open() {
+        let p = PressureStats::default();
+        p.record_queue_wait(Duration::from_micros(300));
+        p.record_queue_wait(Duration::from_micros(100));
+        let s = p.snapshot();
+        assert_eq!(s.queue_commands, 0, "대조군: 회차가 아직 안 끝났다");
+        assert_eq!(s.queue_waits, 2);
+        assert_eq!(s.queue_wait_us_mean(), Some(200));
+        assert!(s.queue_wait_us_mean().unwrap() <= s.queue_wait_us_max);
+        assert_eq!(s.queue_wait_hist.total(), s.queue_waits);
     }
 
     #[test]

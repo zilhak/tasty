@@ -452,6 +452,7 @@ pub(super) fn snapshot_json(
         "queue_before_gate": {
             "drains": s.queue_drains,
             "commands": s.queue_commands,
+            "waits": s.queue_waits,
             "depth_max": s.queue_depth_max,
             "depth_mean": s.queue_depth_mean(),
             "wait_us_sum": s.queue_wait_us_sum,
@@ -539,8 +540,12 @@ mod tests {
         assert_eq!(q["wait_us_sum"], 200);
         assert_eq!(q["wait_us_max"], 130);
         assert_eq!(
-            q["wait_us_mean"], 25,
-            "분모는 명령 수(8)지 대기 관측 수가 아니다"
+            q["waits"], 2,
+            "대기를 기록한 명령 수 — 회차 합(8)과 따로 센다"
+        );
+        assert_eq!(
+            q["wait_us_mean"], 100,
+            "분모는 대기를 기록한 수(2)다 — 회차 합(8)이면 한 스냅샷 안에서 모수가 갈린다"
         );
 
         assert_eq!(h["calls"], 1);
@@ -1161,6 +1166,39 @@ mod tests {
             "프로세스 게이지는 caller 별 값이 아니라 plugin 표면이 아니다"
         );
         assert!(!meta.plugin_only, "local 은 부를 수 있어야 한다");
+    }
+
+    /// 첫 조회는 자기 회차 안에서 답한다 — 명령을 꺼내 대기는 기록했지만 회차는 아직 안 끝났다.
+    /// 그 답에서도 평균은 최댓값을 안 넘고, 분포의 합이 `waits` 와 같다(ADR-0466).
+    #[test]
+    fn a_query_inside_an_open_round_keeps_the_mean_under_the_max() {
+        let p = PressureStats::default();
+        p.record_queue_wait(Duration::from_micros(207_972));
+        p.record_queue_wait(Duration::from_micros(327));
+        let v = snapshot_json(
+            &p.snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &DbLatencyStats::default().snapshot(),
+            &ConnectionStats::default().snapshot(),
+        );
+        let q = &v["queue_before_gate"];
+        assert_eq!(q["commands"], 0, "대조군: 회차가 아직 안 끝났다");
+        let mean = q["wait_us_mean"]
+            .as_u64()
+            .expect("대기를 쟀으니 평균이 있다");
+        let max = q["wait_us_max"].as_u64().expect("최댓값");
+        assert!(mean <= max, "평균 {mean} 이 최댓값 {max} 을 넘었다");
+        let hist_total: u64 = q["wait_us_hist"]["counts"]
+            .as_array()
+            .expect("counts")
+            .iter()
+            .map(|c| c.as_u64().expect("정수"))
+            .sum();
+        assert_eq!(
+            q["waits"].as_u64(),
+            Some(hist_total),
+            "분포의 합이 평균의 분모다"
+        );
     }
 
     /// 관측이 없으면 평균은 `null` 이다 — 0 이 아니다.

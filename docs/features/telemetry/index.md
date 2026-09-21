@@ -101,6 +101,8 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `keyed_requests` | 멱등 보존소의 판정 (`idempotency::Store::decide`) | **멱등 키를 실은** 요청만 — 한 요청은 자기를 맡은 층의 판정으로 한 번 |
 | `slow_requests` | 명령을 꺼낸 직후·다 다룬 직후 (`app::ipc_round::CommandObservation`, gui · headless 같은 자리) + plugin 대기 표의 응답·만료·취소 (`PluginManager::record_origin_hop`) | 호스트 IPC 큐를 지난 요청 중 **합이 문턱(100 ms) 이상인 것만** — `system.pressure` 자신은 안 넣는다 |
 
+`queue_before_gate` 안에서 명령을 세는 수가 둘이다. `waits` 는 대기를 기록한 명령 수로, 명령을 **꺼내는 순간** 대기 합·최댓값·분포와 함께 오른다 — `wait_us_mean` 의 분모이고 `wait_us_hist.counts` 의 합과 같다. `commands` 는 회차가 **끝날 때** 그 회차가 꺼낸 수만큼 오르고 `depth_mean`(= `commands / drains`)의 분자다. 조회는 늘 자기 회차 안에서 답하므로 한 답 안에서 `commands` 는 아직 도는 회차(조회 자신 포함)만큼 `waits` 보다 작다 — 평균을 `commands` 로 나누면 최댓값을 넘는 값이 나왔다([ADR-0466](../../adr/0466-the-queue-wait-mean-divides-by-the-waits-it-summed.md)).
+
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
 handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 것이다. 게이지 하나를
