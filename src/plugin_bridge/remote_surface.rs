@@ -18,33 +18,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-use crate::model::{Surface, SurfaceId};
+use crate::model::{NavState, Surface, SurfaceId};
 use serde_json::Value;
-
-/// webview surface 의 navigation 생명주기 상태. native backend 콜백(WebView2 /
-/// WKNavigationDelegate / WebKitGTK)이 갱신하고, host 가 chrome(loading/error) 렌더와
-/// overlay 가시성 게이팅에 쓴다.
-///
-/// 정의 위치가 webview 모듈이 아니라 여기인 이유: `crate::webview`(=`host_api::webview`)는
-/// `#[cfg(feature = "gui")]` 게이트라, webview 안에 두면 비-gui 빌드의 `RemoteSurface` 가
-/// 참조할 수 없다. `RemoteSurface` 는 항상 컴파일되므로 NavState 도 여기 둔다. gui 코드
-/// 편의용으로 `host_api/webview.rs` 가 `pub use` 로 재노출한다.
-///
-/// `Default = Idle` + `Copy` 라 native backend 의 `Rc<Cell<NavState>>` 에 그대로 들어간다
-/// (실패 사유 문자열은 담지 않음 — backend 콜백이 `tracing::warn!` 로그로만 남기고 화면엔
-/// URL 을 쓴다).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NavState {
-    /// 아직 navigation 시작 전(URL 미지정 직후). placeholder/boundary chrome.
-    #[default]
-    Idle,
-    /// navigation 진행 중. overlay 숨기고 egui spinner 노출.
-    Loading,
-    /// navigation 성공 완료. overlay reveal(native 페이지가 보임).
-    Done,
-    /// navigation 실패. overlay 숨긴 채 error chrome. (사유는 tracing 로그로만)
-    Failed,
-}
 
 pub struct RemoteSurface {
     pub id: SurfaceId,

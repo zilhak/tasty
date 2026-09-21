@@ -78,11 +78,10 @@ impl WebViewCreateError {
     }
 }
 
-/// gui 코드 편의용 재노출. 정의처는 비-gui 모듈 `plugin_bridge::remote_surface`
-/// (webview 모듈이 `#[cfg(feature = "gui")]` 게이트라 비-gui 의 RemoteSurface 가
-/// 참조할 수 있도록 그곳에 둔다). backend 들은 `super::NavState`, host gui 코드는
-/// `crate::webview::NavState` 로 참조.
-pub use crate::plugin_bridge::remote_surface::NavState;
+/// 탐색 상태는 도메인 모델(`tasty-model`)이 소유한다 — 비-gui 의 `RemoteSurface` 도 같은
+/// 값을 담기 때문이다. backend 들은 `super::NavState`, host gui 코드는
+/// `crate::webview::NavState` 로 참조한다(어느 쪽도 `plugin_bridge` 경로를 안 거친다).
+pub use crate::model::NavState;
 
 pub use keys::{HostShortcutPolicy, WebViewKeyBridge, WebViewKeyEvent};
 
