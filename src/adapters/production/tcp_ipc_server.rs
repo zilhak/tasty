@@ -102,14 +102,13 @@ pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// 것은 호스트 자신이 주입한 몫뿐이고, 그것은 정상적으로 회수된다(아래). 회차는 시간
 /// 예산(ADR-0410)으로도 잘리므로, TCP 쪽만으로도 회차가 잘리는 일은 있다.
 ///
-/// **남은 것은 다음 회차가 집는다.** 두 생산자 모두 `send` 직후 waker 를 **정확히 한 번**
-/// 부르므로 N 개를 넣으면 wake 도 N 개가 들어간다. headless 는 한 회차가 B(<N) 개만 집어
-/// 들면 남은 N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. gui 는 wake 를 회차 없이
-/// 건너뛸 수 있어서, 잘린 회차가 루프를 스스로 한 번 더 깨운다(ADR-0413 의 재깨움,
-/// `crate::app::ipc::IpcPacer`). headless 쪽 성질은 `tests/e2e_tests.rs` 의
-/// `concurrent_requests_are_all_answered` 가 잰다 — 다만 그 시험이 여는 연결은
-/// 이 상한보다 적으므로, 실제로 재려면 이 값을 낮춰서 돌려야 한다(그 시험의 주석에
-/// 실측을 적어 두었다).
+/// **남은 것은 다음 회차가 집는다.** 두 생산자 모두 `send` 직후 waker 를 부르지만, 그 wake
+/// 가 명령마다 하나씩 남는다고 기대하면 안 된다. headless 는 게이트가 wake 를 채널에 하나로
+/// 접고, 잘린 회차가 입장 장부(`queued_commands`)를 보고 루프를 다시 깨운다(ADR-0465,
+/// `src/boot.rs` 의 `rewake_if_left`). gui 는 wake 를 회차 없이 건너뛸 수 있어서, 잘린 회차가
+/// 루프를 스스로 한 번 더 깨운다(ADR-0413 의 재깨움, `crate::app::ipc::IpcPacer`).
+/// `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered` 가 여는 연결은 이 상한보다
+/// 적어 이 수 예산에는 닿지 않는다.
 pub(crate) const DRAIN_BUDGET_PER_ROUND: usize = MAX_CONCURRENT_CONNECTIONS;
 
 /// 한 응답 줄을 소켓에 밀어 넣는 데 허용되는 최대 시간.
