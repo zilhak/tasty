@@ -474,6 +474,15 @@ impl OccupancyRegistry {
             .collect()
     }
 
+    /// `client_id` 가 hard 점유한 워크스페이스. client 는 한 번에 워크스페이스 하나만
+    /// 점유한다(`acquire_workspace` 의 배타) — 여럿이면 임의의 하나.
+    pub(crate) fn workspace_held_by(&self, client_id: AttachClientId) -> Option<WorkspaceId> {
+        self.workspace_locks
+            .iter()
+            .find(|(_, l)| l.holder == client_id)
+            .map(|(&w, _)| w)
+    }
+
     /// 현재 점유 목록 스냅샷(`attach.list` 용).
     pub fn locks_snapshot(&self) -> Vec<(SurfaceId, AttachLock)> {
         self.surface_locks.iter().map(|(&s, &l)| (s, l)).collect()

@@ -1195,6 +1195,36 @@ pub(crate) fn execute_forwarded_structural_op(
     }))
 }
 
+/// anchor 를 풀 점유 워크스페이스 자체가 없을 때의 forward 회신 사유. 사람에게 보이는
+/// UI 문구가 아니라 wire 의 `StructuralResult.reason` 이다(client 가 토스트 끝에 원문 그대로
+/// 붙인다) — IPC 거절 문구와 같은 이유로 `t()` 를 거치지 않는다.
+pub(crate) const REASON_WORKSPACE_NOT_FOUND: &str = "workspace not found";
+
+/// forward op 의 anchor 가 어느 점유 워크스페이스에서도 안 풀릴 때의 회신 사유.
+///
+/// 요청한 client 가 이 engine 에서 **아직 살아 있는 워크스페이스를 점유 중이면** 사라진 것은
+/// 워크스페이스가 아니라 anchor surface 다(서버에서 PTY 가 끝나 이미 닫힌 surface 를 client 가
+/// 늦게 지목한 경우 — 닫힌 surface 는 점유 역매핑에서 먼저 빠진다). 그때는 IPC 가 같은 상황
+/// (살아 있지 않은 id 지목)에 싣는 문구를 **같은 생성기로** 쓴다 — `no live surface N (named by
+/// '<요청>'); …`. 요청 이름 자리에는 anchor 를 지목한 것, 즉 이 forward op 의 wire 이름
+/// (`structural_op.<kind>`)을 넣는다. 점유 중인 워크스페이스가 없거나 이 engine 에 없으면
+/// `None` — 호출자가 종전 문구(`workspace not found`)를 쓴다(ADR-0482).
+pub(crate) fn unresolved_anchor_reason(
+    engine: &CoreState,
+    client_id: AttachClientId,
+    op: &StructuralOp,
+) -> Option<String> {
+    let ws = engine.attach.workspace_held_by(client_id)?;
+    engine.find_workspace_index_for_id(ws)?;
+    Some(crate::core::request_target::unowned_target_message(
+        crate::core::request_target::ResourceId {
+            kind: crate::core::request_target::Kind::Surface,
+            id: u64::from(op.anchor_surface_id()),
+        },
+        &format!("structural_op.{}", op.wire_kind()),
+    ))
+}
+
 /// 도메인 실행 결과를 forward 회신의 결과로 줄인다 — 성공 값은 버리고(회신은 성공 여부와
 /// 사유 문자열 하나다) 실패는 그 문구를 그대로 쓴다. IPC 진입점이 같은 실패를 JSON-RPC
 /// 에러 메시지로 싣는 문구와 byte 단위로 같다(`handler::structural_failure_response`).

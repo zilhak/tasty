@@ -2193,13 +2193,21 @@ impl App {
             break;
         }
         if !handled {
-            reply_structural_result(
-                hub,
-                client_id,
-                op_id,
-                false,
-                Some("workspace not found".to_string()),
-            );
+            // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0482).
+            let reason = self
+                .view
+                .views
+                .values()
+                .filter_map(|w| w.as_main())
+                .map(|m| &m.core_state)
+                .chain(self.parked_states.iter().map(|(_, e)| e))
+                .find_map(|e| {
+                    crate::core::attach_runtime::unresolved_anchor_reason(e, client_id, op)
+                })
+                .unwrap_or_else(|| {
+                    crate::core::attach_runtime::REASON_WORKSPACE_NOT_FOUND.to_string()
+                });
+            reply_structural_result(hub, client_id, op_id, false, Some(reason));
         }
     }
 

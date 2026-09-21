@@ -124,7 +124,17 @@ fn apply_structural_ops(
                 }
             }
             Some(_) => (false, Some("not workspace holder".to_string()), None),
-            None => (false, Some("workspace not found".to_string()), None),
+            // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0482).
+            None => (
+                false,
+                Some(
+                    crate::core::attach_runtime::unresolved_anchor_reason(engine, client_id, &op)
+                        .unwrap_or_else(|| {
+                            crate::core::attach_runtime::REASON_WORKSPACE_NOT_FOUND.to_string()
+                        }),
+                ),
+                None,
+            ),
         };
         let reply = crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
         let frame = crate::ipc::stream::StreamFrame::new(
