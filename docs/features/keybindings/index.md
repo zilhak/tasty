@@ -132,7 +132,9 @@ import 한 구성이 macOS 에서 만들어졌으면 `option` 바인딩이 이 �
 - **가져갈 콤보는 `KeybindingSettings` + plugin 명령 레지스트리에서 전량 도출**한다 —
   고정 액션 필드 + quick-switch 3 축 합성 콤보 + 스크립트 바인딩 + **활성** plugin
   명령의 effective binding(매니페스트 `default_keybinding` / 사용자 override / host 액션
-  상속). 포워딩 계층에 키 리터럴은 없다.
+  상속). 포워딩 계층에 키 리터럴은 없다. 도출은 단축키 계층
+  (`src/adapters/ui/input/shortcuts/webview_claims.rs`)이 하고, 브리지의 정책은 그 결과인
+  콤보 목록만 받는다([ADR-0385](../../adr/0385-webview-backends-receive-their-host-contract-by-injection.md)).
 - **plugin 바인딩은 scope 로 미리 거르지 않되, 비활성 plugin 은 제외한다** — 스냅샷은
   활성 plugin 의 모든 명령을 담는 상위집합이다(키가 host 에 도착하는 시점의 모델 포커스를
   브리지가 claim 시점에는 알 수 없다). 비활성 plugin 명령은 발화 자체가 불가능하므로 claim

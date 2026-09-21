@@ -269,3 +269,4 @@ macOS 실기 검증 시 확인 순서는 다음과 같다.
 - [`docs/identity.md`](../identity.md) — 불가침 원칙 1(사용자 행동 ↔ 에이전트 행동 분리). 포커스 회수 게이트의 근거.
 - [`docs/plugins/markdown/screens/markdown.md`](../plugins/markdown/screens/markdown.md) — find-in-page 와 `kb.find` 게이트.
 - [`docs/features/keybindings/index.md`](../features/keybindings/index.md) — 현재 동작 사양("webview surface 에서의 단축키" 절).
+- [ADR-0385](0385-webview-backends-receive-their-host-contract-by-injection.md) — 이 결정이 정한 정책의 **입력 경계**. 정책은 콤보 목록을 주입받고, 어느 설정 필드가 host 액션·페이지 예약인지는 단축키 계층이 도출한다. 백엔드는 구체 브리지가 아니라 `WebViewKeySink` 를 받는다.

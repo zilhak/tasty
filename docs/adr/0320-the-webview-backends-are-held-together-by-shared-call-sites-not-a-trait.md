@@ -77,6 +77,7 @@ trait 을 도입하지 않는다. 세 백엔드는 지금처럼 같은 이름을
 
 - 계약 본문: [webview](../design/systems/webview.md)
 - 키보드 계약의 결정: [ADR-0102](0102-webview-key-forwarding.md)
+- 반대 방향(백엔드 → 호스트) 접점의 trait — 이 결정과 별개: [ADR-0385](0385-webview-backends-receive-their-host-contract-by-injection.md)
 - 생성 실패 분류의 결정: [ADR-0159](0159-a-null-gdk-window-is-a-value-not-a-crash.md)
 - teardown 순서의 결정: [ADR-0248](0248-webview-teardown-lets-gdk-finish-before-the-x-window-is-destroyed.md)
 - 코드 근거(결정이 실현된 **현재 위치**): `src/host_api/webview.rs` 의 `cfg` 재수출 셋과

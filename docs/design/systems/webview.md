@@ -28,7 +28,7 @@ trait 을 두지 않기로 한 근거·대안·재검토 조건은 [ADR-0320](..
 
 | 연산 | 입력 | 출력 | 백엔드 차이 |
 |------|------|------|-------------|
-| `new` | 부모 창 handle · `WebViewBounds` · `scale_factor` · `surface_id` · `Rc<WebViewKeyBridge>` | `Result<Self, WebViewCreateError>` | Linux 만 `HasDisplayHandle` 을 추가로 요구한다(X11 display 포인터). macOS 는 실패 셋을 전부 `Permanent` 로 분류한다 |
+| `new` | 부모 창 handle · `WebViewBounds` · `scale_factor` · `surface_id` · `Rc<dyn WebViewKeySink>` | `Result<Self, WebViewCreateError>` | Linux 만 `HasDisplayHandle` 을 추가로 요구한다(X11 display 포인터). macOS 는 실패 셋을 전부 `Permanent` 로 분류한다 |
 | `set_bounds` | `WebViewBounds` · `scale_factor` | — | macOS 는 Cocoa 가 논리 좌표를 그대로 받아 물리 변환을 쓰지 않는다 |
 | `set_visible` | `bool` | — | |
 | `release_keyboard_focus` | — | — | 회수는 조건부다 — 아래 "포커스" |
@@ -96,12 +96,15 @@ release 에서 조용히 UB 가 난다.
 - Windows: `controller.Close()` 후 `DestroyWindow`. 둘 다 이미 닫힌 경우를 `trace` 로만
   남기고 넘어간다.
 
-## 탐색 상태 — 소유는 `plugin_bridge` 다
+## 탐색 상태 — 소유는 도메인 모델이다
 
-`NavState`(`Idle` / `Loading` / `Done` / `Failed`)는 `host_api::webview` 가 재수출하지만
-정의는 `plugin_bridge::remote_surface` 에 있다. gui 코드를 참조할 수 없는 자리에서도 이
-값이 필요하고 `RemoteSurface` 는 항상 컴파일되기 때문이다. `Copy` + `Default = Idle` 이라
-native 백엔드의 `Rc<Cell<NavState>>` 에 그대로 들어간다.
+`NavState`(`Idle` / `Loading` / `Done` / `Failed`)는 `tasty-model` 이 정의하고
+(`tasty_model::NavState`), `host_api::webview` 가 재수출한다. 소비자가 셋이다 — 항상
+컴파일되는 `RemoteSurface`(비-gui 빌드에도 있다)가 mirror 로 담고, gui 뒤의 native 백엔드가
+쓰고, egui chrome 이 읽는다. 셋 중 어느 한쪽 파일에 두면 나머지가 그쪽 경로를 역참조하게
+되므로 셋 모두의 아래인 도메인 모델에 둔다. OS·webview·egui 타입을 담지 않는 네 값짜리
+enum 이다. `Copy` + `Default = Idle` 이라 native 백엔드의 `Rc<Cell<NavState>>` 에 그대로
+들어간다. 근거는 [ADR-0385](../../adr/0385-webview-backends-receive-their-host-contract-by-injection.md).
 
 호스트는 `nav_state()` 로 지금 상태를 읽고, `take_pending_navigations()` 로 페이지가
 요청한 이동을 **소비**한다(읽으면 비워진다).
@@ -109,10 +112,25 @@ native 백엔드의 `Rc<Cell<NavState>>` 에 그대로 들어간다.
 ## 키보드 — 별도 계약
 
 자식 창이 OS 키보드 포커스를 잡으면 winit 은 `WindowEvent::KeyboardInput` 을 받지 못하고
-호스트 단축키 경로가 통째로 도달 불가능해진다. 그 구멍은 `WebViewKeyBridge` 한 곳에서만
-메운다 — 세 백엔드는 자기 native 키 이벤트를 `WebViewKeyEvent` 로 정규화해 올리고, 우선순위
-판정은 bridge 에서만 한다. 판정은 동기, 실행은 다음 프레임이다. 전체 규칙은 그 모듈의 머리
-주석과 [ADR-0102](../../adr/0102-webview-key-forwarding.md) 에 있다.
+호스트 단축키 경로가 통째로 도달 불가능해진다. 그 구멍은 한 곳에서만 메운다 — 세 백엔드는
+자기 native 키 이벤트를 정규화해 `WebViewKeySink` 계약으로 올리고, 우선순위 판정은 그 호스트
+구현 `WebViewKeyBridge` 에서만 한다. 판정은 동기, 실행은 다음 프레임이다. 전체 규칙은 그
+모듈의 머리 주석과 [ADR-0102](../../adr/0102-webview-key-forwarding.md) 에 있다.
+
+백엔드가 호스트에 대해 아는 것은 **두 메서드뿐이다.**
+
+| 계약 | 입력 | 출력 | 누가 부르나 |
+|------|------|------|-------------|
+| `WebViewKeySink::capture_key` | `surface_id` · 레이아웃 문자 `Key` · 물리 위치 `PhysicalKey` · `ModifiersState` | `bool` — `true` 면 백엔드가 페이지 전파를 그 자리에서 막는다 | 백엔드, press·비repeat 에서만 |
+| `WebViewKeySink::note_focus` | `surface_id` | — | 백엔드, native 클릭/포커스 획득에서 |
+
+정책 교체(`set_policy`)와 큐 비우기(`take_pending` · `take_focus_requests`)는 브리지의 고유
+메서드라 백엔드가 볼 수 없다. 정책(`HostShortcutPolicy`)은 **콤보 목록을 주입받는다** —
+`ShortcutSources { host, page_reserved, plugin }` 셋이고, 키 모듈은 modifier 필터와 "페이지
+예약과 동등한 plugin 콤보 제외" 두 축만 판정한다. 어느 설정 필드가 host 액션이고 어느 것이
+페이지 예약인지는 단축키 계층(`adapters/ui/input/shortcuts/webview_claims.rs`)이
+`KeybindingSettings` 에서 도출한다. 근거는
+[ADR-0385](../../adr/0385-webview-backends-receive-their-host-contract-by-injection.md).
 
 ## 포커스 — 회수는 **조건부**다
 
