@@ -319,6 +319,10 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   `forget_plugin_runtime` 을 거친다 — event bus 권한·구독 해제, pending 회수, shared
   buffer 해제, 설정 sub-page 해제, 등록 게이트(`registered_plugins`) 해제. 등록 게이트가
   풀려야 새 프로세스의 hello 가 권한·event bus·설정 sub-page 를 **다시** 받는다.
+  그 결과로 세 경로 모두 새 hello 마다 `plugin.surface_kind_registered` · `plugin.loaded` 를
+  다시 발화하고(구독자는 같은 plugin 의 `plugin.loaded` 를 여러 번 받는다), surface kind 를
+  가진 plugin 이면 호스트 로그에 `SurfaceKindRegistry: kind '<kind>' overwritten` 경고가
+  한 줄 남는다 — kind 등록이 해제 없이 덮어쓰이기 때문이다.
   pending 회수는 두 축으로 찾는다: *무엇을 위한* 요청인가(namespace 호출·hook 은 caller
   에 `-32004` 회신)와 *누구에게 보낸* 요청인가(`surface.create`·`surface.restore`·popup
   open 처럼 회신할 caller 가 없는 것은 조용히 거둔다). 뒤쪽을 안 거두면 새 프로세스가
