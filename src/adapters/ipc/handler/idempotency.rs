@@ -199,7 +199,9 @@ pub(crate) struct Store {
     /// 다음에 줄 진행 중 표.
     next_ticket: u64,
     /// 판정 누계. [`Store::decide`] 가 갈래마다 센다 — 판정이 그 함수 하나에서 나오므로
-    /// 층(engine 라우터 · App 층)마다 세는 자리를 따로 두지 않는다.
+    /// 층(engine 라우터 · App 층)마다 세는 자리를 따로 두지 않는다. 단 한 요청이 두 층의
+    /// 판정을 지나는 갈래가 하나 있어(App 층이 이름을 안 맡아 engine 라우터로 넘긴다),
+    /// 그 갈래는 [`Store::abandon_unhandled`] 가 앞 층의 셈을 되돌린다.
     counts: RetryCounts,
 }
 
@@ -307,6 +309,18 @@ impl Store {
         {
             self.total_bytes -= e.bytes;
         }
+    }
+
+    /// 이 층이 그 이름을 **안 맡은** 실행을 닫는다 — [`Store::abandon`] 에 더해, 연 판정이
+    /// 올린 `executed` 를 되돌린다.
+    ///
+    /// 그 요청은 실행되지 않았다. 다음 층으로 가서 거기서 다시 판정되고(engine 라우터면
+    /// 처음 보는 키로 한 번 더 센다), 보존소를 안 지나는 층(GUI debug step · namespace
+    /// forward)이면 아무 데서도 실행을 세지 않는 것이 맞다. 되돌리지 않으면 한 요청이
+    /// 두 번 세지거나, 계약 밖 호출이 모수에 섞인다(ADR-0422).
+    fn abandon_unhandled(&mut self, scope: &str, key: &str, ticket: u64) {
+        self.abandon(scope, key, ticket);
+        self.counts.executed = self.counts.executed.saturating_sub(1);
     }
 
     /// 라우팅에 들어간 뒤 정해진 답을 그 키로 기록한다.
@@ -630,8 +644,8 @@ fn finish_in(
 ///    **한 실행으로 수렴시키는** 자리다.
 /// 4. 처음 보는 키면 진행 중을 열고, 통로를 relay 로 바꾸고 **키를 뗀** 사본으로
 ///    `dispatch` 를 부른다(떼지 않으면 `dispatch` 가 같은 함수로 돌아와 자기에게 합류한다).
-///    `handled` 가 거짓이면(이 층이 그 이름을 안 맡았다) 연 자리를 닫는다 — 요청은 다음
-///    층으로 가고 거기서 다시 판정된다. 참이면 relay 가 답을 기다렸다가 기록하고, 합류자에게
+///    `handled` 가 거짓이면(이 층이 그 이름을 안 맡았다) 연 자리를 닫고 그 판정의 셈을
+///    되돌린다 — 요청은 다음 층으로 가고 거기서 다시 판정된다. 참이면 relay 가 답을 기다렸다가 기록하고, 합류자에게
 ///    나눠 주고, 원래 통로로 넘긴다.
 ///
 /// 결말 없이 통로가 닫히면(답을 안 보내고 버린 경로) 연 자리를 닫는다. 합류자의 통로도
@@ -735,7 +749,7 @@ impl Relay {
         if handled(&out) {
             std::thread::spawn(move || self.settle_when_answered(&rx));
         } else {
-            lock(self.store).abandon(&self.scope, &self.key, self.ticket);
+            lock(self.store).abandon_unhandled(&self.scope, &self.key, self.ticket);
         }
         out
     }
@@ -1595,6 +1609,88 @@ mod tests {
         let after = retry_counts();
         assert!(after.executed > before.executed, "{before:?} → {after:?}");
         assert!(after.replayed > before.replayed, "{before:?} → {after:?}");
+    }
+
+    /// 다른 시험과 안 섞이는 보존소 — 누계를 정확한 값으로 잰다.
+    fn isolated_store() -> &'static Mutex<Store> {
+        Box::leak(Box::new(Mutex::new(Store::new())))
+    }
+
+    fn keyed(method: &str, key: &str) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: method.into(),
+            params: json!({}),
+            id: Some(json!(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: Some(key.into()),
+        };
+        (IpcCommand::new(req, tx), rx)
+    }
+
+    /// App 층을 지나 engine 라우터에서 실행되는 요청은 `executed` 에 **정확히 한 번** 든다.
+    /// 실제 흐름과 같은 순서로 두 층을 지난다 — App 층이 이름을 안 맡고(NotHandled),
+    /// engine 라우터가 `begin` → `finish` 로 실행한다.
+    ///
+    /// 통제군이 같은 시험 안에 있다: 같은 키의 재시도는 `replayed` 로 들고 `executed` 는
+    /// 그대로다 — 그래야 1 이 "한 번 셌다" 이지 "아무 갈래나 올랐다" 가 아니다. 재시도는
+    /// engine 라우터까지 안 간다: engine 이 기록한 답을 App 층이 먼저 보고 재생한다(두 층의
+    /// 다이제스트가 같다).
+    #[test]
+    fn a_request_that_crosses_both_layers_is_executed_once() {
+        let store = isolated_store();
+        let (cmd, rx) = keyed("workspace.create", "cross-layer");
+        let out = run_app_layer_in(store, &CallerContext::Local, &cmd, true, |h| *h, |_| false);
+        assert_eq!(out, Some(false), "App 층은 그 이름을 안 맡는다");
+        let pending = begin_in(
+            store,
+            Instant::now(),
+            &CallerContext::Local,
+            &cmd.request,
+            &json!(1),
+        )
+        .expect("처음 보는 키");
+        assert!(pending.is_some());
+        finish_in(store, Instant::now(), pending, &resp(1, "ok"));
+        assert_eq!(
+            lock(store).counts(),
+            RetryCounts {
+                executed: 1,
+                ..RetryCounts::default()
+            }
+        );
+        let out = run_app_layer_in(
+            store,
+            &CallerContext::Local,
+            &cmd,
+            true,
+            |h| *h,
+            |_| panic!("재생 갈래는 본문을 안 부른다"),
+        );
+        assert_eq!(out, Some(true), "App 층이 재생으로 답한다");
+        assert!(rx.try_recv().expect("재생 답").idempotent_replay);
+        let after_retry = lock(store).counts();
+        assert_eq!(after_retry.executed, 1, "{after_retry:?}");
+        assert_eq!(after_retry.replayed, 1, "{after_retry:?}");
+    }
+
+    /// 보존소를 안 지나는 호출은 `executed` 에 안 든다 — GUI debug step 의 `Mutate`(App 층을
+    /// 지나지만 그 층이 안 맡고, debug step 은 보존소 없이 실행한다)와 plugin namespace
+    /// forward 이름(표가 모른다).
+    #[test]
+    fn a_call_outside_the_contract_is_not_counted_as_executed() {
+        let store = isolated_store();
+        let mut names = vec!["someplugin.do_thing"];
+        if cfg!(debug_assertions) {
+            names.push("debug.lua.eval");
+        }
+        for name in names {
+            let (cmd, _rx) = keyed(name, "outside");
+            run_app_layer_in(store, &CallerContext::Local, &cmd, true, |h| *h, |_| false);
+            assert_eq!(lock(store).counts(), RetryCounts::default(), "{name}");
+        }
     }
 
     /// 선언은 상수에서 **유도**된다. 리터럴로 다시 적으면 동작과 갈린다.

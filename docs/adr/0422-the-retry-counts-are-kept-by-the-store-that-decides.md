@@ -24,8 +24,15 @@
   `in_flight`. `executed` 는 재시도가 아니지만 **모수**다. 재생 수만으로는 그것이 키 실은 실행 열 건 중
   하나인지 만 건 중 하나인지 모른다([ADR-0305](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md)
   의 "모수를 가른다" 와 같은 판단).
-- **세는 자리가 하나다.** engine 라우터(`begin`)와 App 층(`run_app_layer`)이 둘 다 `Store::decide` 로
-  판정하므로, 층마다 세는 줄을 두지 않고 판정 함수 안에서 센다. 새 층이 보존소를 쓰면 저절로 세진다.
+- **세는 자리는 판정 함수 하나이고, 두 층을 지나는 갈래 하나만 되돌린다.** engine 라우터(`begin`)와
+  App 층(`run_app_layer`)이 둘 다 `Store::decide` 로 판정하므로, 층마다 세는 줄을 두지 않고 판정 함수
+  안에서 센다. 그런데 **한 요청이 두 층의 판정을 지나는** 갈래가 있다 — App 층은 모든 키 실은
+  `Mutate` 를 먼저 판정하고, 그 이름을 안 맡으면(`NotHandled`) 요청을 다음 층으로 넘긴다. engine
+  라우터로 가면 거기서 한 번 더 `Execute` 로 세지고, 보존소를 안 지나는 층(GUI debug step · plugin
+  namespace forward)으로 가면 실행되지 않은 셈이 모수에 남는다. 그래서 그 갈래에서 연 자리를 닫는
+  `Store::abandon_unhandled` 가 앞 층이 올린 `executed` 를 함께 되돌린다. 결과로 한 요청은 **자기를
+  실제로 맡은 층의 판정**으로만 한 번 세진다. 새 층이 보존소를 쓰면 판정은 저절로 세지지만, 그 층도
+  요청을 넘기는 갈래가 있다면 같은 되돌림을 가져야 한다.
 - **보존소의 잠금 안에 있다.** 원자 변수를 따로 두지 않는다 — 판정과 셈이 같은 잠금 아래라 둘이
   어긋날 수 없고, 로컬 `Store` 로 시험할 때 정확한 값이 나온다.
 - **레이블이 없다.** 메서드 · 주체로 가르지 않는다 — 주체는 agent id 라 칸 수를 호출자가 정하게 된다
@@ -45,6 +52,9 @@
 - **압력 게이지(`Core::pressure()`)에 둔다** — App 층의 relay 스레드와 보존소 입구는 `Core` 를 들고
   있지 않다. 판정이 나는 자리에 `Core` 를 끌고 가야 한다.
 - **층마다 원자 카운터를 둔다** — 판정 자리가 둘이라 셈 자리도 둘이 되고, 한쪽을 빠뜨리면 조용하다.
+- **App 층이 표의 선언(`Kept { since: 2 }`)으로 먼저 걸러 자기 이름만 판정한다** — GUI 에서는 이중
+  셈이 사라지지만, 헤드리스에서는 판 2 이름 가운데 `plugin.request_permission` 만 App 층이 맡고 나머지는
+  engine 라우터로 떨어지므로 같은 이중 셈이 남는다. 되돌림은 두 조합을 함께 덮는다.
 - **지금 `system.pressure` 에 붙인다** — 그 핸들러는 같은 회차에 다른 작업이 고치는 파일이다. 두 작업이
   같은 덩어리를 고치면 병합에서 한쪽이 사라진다.
 
@@ -54,6 +64,10 @@
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
+- 한 요청이 두 층에서 두 번 세지면 `idempotency::tests::a_request_that_crosses_both_layers_is_executed_once`
+  가, 계약 밖 호출(debug step `Mutate` · namespace forward)이 `executed` 에 들면
+  `a_call_outside_the_contract_is_not_counted_as_executed` 가 빨개진다(변이 확인: 되돌림을 0 으로
+  바꾸면 둘 다 실패했다, 2026-09-21). 두 시험은 다른 시험과 안 섞이는 보존소에서 **정확한 값**을 본다.
 - 셈이 빠지면 `idempotency::tests::every_decision_is_counted_once_in_its_own_slot` 과
   `the_process_counts_move_where_the_router_decides` 가 빨개진다(변이 확인: 증가분을 0 으로 바꾸면 둘 다
   실패했다, 2026-09-21).
@@ -71,5 +85,6 @@
 - 관련 ADR: [ADR-0305](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md),
   [ADR-0333](0333-the-pressure-gauge-is-read-by-one-local-only-method-and-split-by-population.md),
   [ADR-0421](0421-the-app-layer-keeps-the-idempotency-contract-and-a-running-key-is-joined.md).
-- **코드 근거 (결정이 실현된 현재 위치)**: `idempotency::RetryCounts` · `Store::decide` · `Store::counts` ·
+- **코드 근거 (결정이 실현된 현재 위치)**: `idempotency::RetryCounts` · `Store::decide` ·
+  `Store::abandon_unhandled` · `Store::counts` ·
   `idempotency::retry_counts`.
