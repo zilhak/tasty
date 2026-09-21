@@ -703,6 +703,9 @@ fn state_migration(preview: &mut Option<Preview>) -> &mut [MigrationRow] {
 mod tests {
     use super::*;
 
+    // 부르는 테스트가 권한 비트를 쓰는 unix 전용 하나뿐이라 같은 cfg 로 가른다 —
+    // 안 가르면 Windows 의 lib test 가 dead_code 로 컴파일되지 않는다.
+    #[cfg(unix)]
     fn export(state: &mut ImportExportState, path: &Path) {
         state.export_to(
             path,
