@@ -105,12 +105,14 @@ impl NotificationStore {
     }
 
     /// Total unread notification count.
+    #[cfg(any(feature = "gui", test))]
     pub fn unread_count(&self) -> usize {
         self.notifications.iter().filter(|n| !n.read).count()
     }
 
     /// Whether any unread notification originates from the given surface.
     /// 알림 읽음 처리 시 그 surface 의 highlight 를 지워도 되는지 판단하는 데 쓰인다.
+    #[cfg(any(feature = "gui", test))]
     pub fn has_unread_for_surface(&self, surface_id: SurfaceId) -> bool {
         self.notifications
             .iter()
@@ -123,6 +125,7 @@ impl NotificationStore {
     }
 
     /// Mark a specific notification as read.
+    #[cfg(any(feature = "gui", test))]
     pub fn mark_read(&mut self, id: NotificationId) {
         if let Some(n) = self.notifications.iter_mut().find(|n| n.id == id) {
             n.read = true;
@@ -130,6 +133,7 @@ impl NotificationStore {
     }
 
     /// Mark all notifications as read.
+    #[cfg(any(feature = "gui", test))]
     pub fn mark_all_read(&mut self) {
         for n in &mut self.notifications {
             n.read = true;

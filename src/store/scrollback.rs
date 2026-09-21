@@ -166,11 +166,16 @@ pub fn delete(persist_id: &str) {
     delete_in(&dir, persist_id);
 }
 
+/// 부팅 시 고아 scrollback 회수. 호출자는 GUI 의 레이아웃 복원 경로뿐이다
+/// (headless 는 `gc_orphans_in` 을 직접 부른다).
+#[cfg(feature = "gui")]
 pub fn gc_orphans(known: &HashSet<String>) {
     let Some(dir) = scrollback_dir() else { return };
     gc_orphans_in(&dir, known);
 }
 
+/// 설정 화면의 "scrollback 전부 지우기". GUI 전용 입력이다.
+#[cfg(feature = "gui")]
 pub fn clear_all() {
     gc_orphans(&HashSet::new());
 }
