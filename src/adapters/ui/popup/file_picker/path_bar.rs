@@ -4,7 +4,7 @@
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{IconButton, IconButtonVariant, MenuItemVariant, menu_item};
 
-use tasty_ui_widgets::crumb_alloc::{Caps, CrumbSlot, Measure, Role, plan};
+use tasty_ui_widgets::crumb_alloc::{CrumbSlot, Measure, Role, plan};
 
 use super::{CRUMB_GLYPH, FilePickerAction, FilePickerProps};
 use crate::adapters::ui::icons;
