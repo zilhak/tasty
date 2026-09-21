@@ -26,13 +26,14 @@ headless 에 생산자도 호출자도 없는 정의. 모듈 통째가 그 안�
 `unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. 모듈이나 crate 전체를 덮는
 dead_code 예외는 쓰지 않는다.
 
-지금 ③ 에 해당하는 것은 셋이다.
+지금 ③ 에 해당하는 것은 넷이다.
 
 | 정의 | 왜 남는가 |
 |---|---|
 | git query · markdown content · 구조 op · resize 의 forward 큐 | 양쪽 빌드가 채우고 GUI 의 `about_to_wait` 만 비운다. 칸을 빼면 IPC 핸들러와 공유 pty 경로가 깨진다 |
 | `SurfaceKindDef` 의 입력·줌·복사 플래그 | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
 | CoreEvent 의 페이로드(터미널 OSC 이벤트 전부, `RestoredKind` 의 인덱스) | variant 는 headless 에서도 발화하지만 그 빌드의 drain 이 `other` 갈래로 흘린다 |
+| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | 구조 cascade 가 headless 에서도 세우지만 비우는 자는 GUI 메인 루프뿐이다. headless 는 plugin 에 알릴 이벤트를 그 자리에서 직접 낸다 |
 
 ## 판정은 바깥에서 안으로
 

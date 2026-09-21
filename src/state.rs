@@ -43,6 +43,7 @@ pub mod search;
 /// 거꾸로 보지 않도록 타입 소속만 내렸다). 기존 `state::selection::…` 호출부는 그대로다.
 pub use tasty_selection as selection;
 
+pub use crate::core::host_event::{PendingHostEvent, PendingSurfaceClosed};
 #[cfg(feature = "gui")]
 pub use dialogs::{
     DialogState, FileHandlerPickerData, FileHandlerPickerResult, PendingNativeMenu,
@@ -51,7 +52,7 @@ pub use dialogs::{
 };
 #[cfg(feature = "gui")]
 pub(crate) use dialogs::{FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
-pub use events::{FocusedSurfaceType, PendingHostEvent, PendingSurfaceClosed};
+pub use events::FocusedSurfaceType;
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;

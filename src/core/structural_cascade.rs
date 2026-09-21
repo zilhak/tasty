@@ -325,7 +325,7 @@ fn enqueue_closed_tab_events(
                 .map(|(p, _, _)| *p)
                 .unwrap_or(0)
         });
-        state.enqueue_host_event(crate::state::PendingHostEvent::TabClosed {
+        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
             tab_id: *tab_id,
             pane_id,
         });
@@ -338,7 +338,9 @@ fn enqueue_closed_tab_events(
 #[cfg(feature = "gui")]
 fn enqueue_closed_pane_events(state: &mut AppState, closed_pane_ids: &[u32]) {
     for pane_id in closed_pane_ids {
-        state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id: *pane_id });
+        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed {
+            pane_id: *pane_id,
+        });
     }
 }
 
@@ -421,14 +423,14 @@ pub(crate) fn cascade_pane_split(
 ) {
     #[cfg(feature = "gui")]
     let workspace_id = {
-        state.enqueue_host_event(crate::state::PendingHostEvent::PaneSplit {
+        state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneSplit {
             original_pane: c.original_pane_id,
             new_pane: c.new_pane_id,
             direction: c.direction,
         });
         let workspace_id = engine.workspaces.get(c.workspace_index).map(|w| w.id);
         if let Some(workspace_id) = workspace_id {
-            state.enqueue_host_event(crate::state::PendingHostEvent::PaneCreated {
+            state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneCreated {
                 pane_id: c.new_pane_id,
                 workspace_id,
             });
@@ -452,7 +454,7 @@ pub(crate) fn cascade_pane_split(
 /// `CoreEvent::PaneClosed` 의 외부 cascade. host event (`pane.closed`) enqueue.
 #[cfg(feature = "gui")]
 pub(crate) fn cascade_pane_closed(state: &mut AppState, pane_id: u32) {
-    state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id });
+    state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed { pane_id });
 }
 
 /// `CoreEvent::PaneClosed` 의 full cascade — [`reclaim_closed_surfaces`] 로 자원 회수 +
@@ -488,7 +490,7 @@ pub(crate) fn cascade_surface_created(state: &mut AppState, engine: &CoreState, 
     else {
         return;
     };
-    state.enqueue_host_event(crate::state::PendingHostEvent::SurfaceCreated {
+    state.enqueue_host_event(crate::core::host_event::PendingHostEvent::SurfaceCreated {
         surface_id,
         kind,
         tab_id,
@@ -558,7 +560,7 @@ pub(crate) fn cascade_tab_created(
             .map(|s| s.kind().to_string())
             .unwrap_or_else(|| "unknown".to_string());
         if let Some(workspace_id) = workspace_id {
-            state.enqueue_host_event(crate::state::PendingHostEvent::TabCreated {
+            state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabCreated {
                 tab_id,
                 pane_id,
                 workspace_id,
@@ -578,7 +580,10 @@ pub(crate) fn cascade_tab_closed(state: &mut AppState, tab_id: u32, pane_id: Opt
     let Some(pane_id) = pane_id else {
         return;
     };
-    state.enqueue_host_event(crate::state::PendingHostEvent::TabClosed { tab_id, pane_id });
+    state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
+        tab_id,
+        pane_id,
+    });
     state.lifecycle_baseline_remove_tab(tab_id);
 }
 

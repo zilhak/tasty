@@ -30,6 +30,7 @@ pub(crate) mod explorer_favorites;
 pub(crate) mod file;
 pub(crate) mod fs_list;
 pub(crate) mod hook_event_registry;
+pub(crate) mod host_event;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;
 pub(crate) mod layout_persistence;
