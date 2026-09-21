@@ -1074,9 +1074,7 @@ fn raw_bridge_main_loop(
                     // 화면이 이어지지 않는다 — 옛 연결을 놓고 다시 붙는다. 새 snapshot 이
                     // 화면을 처음부터 다시 그린다(ADR-0400).
                     ControlSignal::Loss(frames) => {
-                        return Ok(SessionEnd::Desynced(release_raw_for_resync(
-                            &rx, &writer, frames,
-                        )));
+                        return Ok(release_raw_for_resync(&rx, &writer, frames));
                     }
                     ControlSignal::Other => {}
                 },
@@ -1100,11 +1098,16 @@ fn raw_bridge_main_loop(
 /// 버린다 — 세션 전환 사이의 짧은 창이고, 그 창의 입력은 재연결 때와 같이 원격에 닿지
 /// 않는다(`run_raw_bridge` doc). 신호가 끝내 안 오면 `HEARTBEAT_TIMEOUT` 에서 포기하고
 /// 다시 붙는다 — 그 경우 새 attach 는 서버 점유 해제와 경합할 수 있다.
+///
+/// 단 **끝내라는 신호는 버리지 않는다** — stdin EOF 와 detach 키(`Ctrl+\`)는 이
+/// 창에서도 정상 루프와 같이 세션을 끝낸다(재attach 하지 않는다). 이 창에서는 슬롯이
+/// 아직 이 세션의 sender 를 들고 있어 EOF 가 latch 에 안 남으므로, 여기서 삼키면 다음
+/// 세션이 받을 EOF 가 없다. 옛 연결에는 이미 `Detach` 를 썼으므로 더 보낼 것도 없다.
 fn release_raw_for_resync(
     rx: &mpsc::Receiver<RawEvent>,
     writer: &Arc<Mutex<TcpStream>>,
     frames: u64,
-) -> u64 {
+) -> SessionEnd {
     match writer.lock() {
         Ok(mut w) => {
             if let Err(e) = stream::write_frame(&mut *w, StreamTag::Detach, &[]) {
@@ -1119,6 +1122,10 @@ fn release_raw_for_resync(
         match rx.recv_timeout(remaining) {
             Ok(RawEvent::ServerRecvErr) => break,
             Ok(RawEvent::Server(f)) if f.tag == StreamTag::Detach => break,
+            Ok(RawEvent::StdinEof) => return SessionEnd::Exit(AttachExit::Completed),
+            Ok(RawEvent::Stdin(data)) if data.contains(&0x1c) => {
+                return SessionEnd::Exit(AttachExit::Completed);
+            }
             Ok(_) => {}
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 tracing::warn!(
@@ -1129,7 +1136,7 @@ fn release_raw_for_resync(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
-    frames
+    SessionEnd::Desynced(frames)
 }
 
 /// 입력 문자열의 escape 를 raw 바이트로 디코딩: `\r \n \t \0 \\ \xNN`.
@@ -1312,6 +1319,54 @@ mod raw_bridge_tests {
         assert!(
             tasty_ipc::stream::read_frame(&mut server_side).is_err(),
             "전환 중 stdin 이 옛 연결로 새어 나갔다"
+        );
+    }
+
+    /// 재attach 창(옛 연결을 놓고 소켓이 닫히길 기다리는 사이)에 stdin 이 닫히면 세션을
+    /// 끝낸다. 그 창에서는 슬롯이 아직 이 세션의 sender 를 들고 있어 EOF 전달이 성공하고
+    /// latch 가 안 서므로, 여기서 삼키면 다음 세션은 EOF 를 영영 못 받는다.
+    #[test]
+    fn a_stdin_eof_during_the_resync_window_ends_the_session() {
+        let slot: StdinSlot = Arc::new(Mutex::new(None));
+        let latch: StdinEofLatch = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        install_sender(&slot, &latch, tx.clone());
+
+        let loss = serde_json::to_vec(&tasty_ipc::stream::StreamControl::Loss { frames: 2 })
+            .expect("serialize");
+        tx.send(RawEvent::Server(StreamFrame::new(StreamTag::Control, loss)))
+            .unwrap();
+        route_stdin_eof(&slot, &latch);
+        assert!(
+            !latch.load(Ordering::Acquire),
+            "전제: 창 안의 EOF 는 옛 sender 로 전달돼 latch 에 안 남는다"
+        );
+        tx.send(RawEvent::ServerRecvErr).unwrap();
+        drop(tx);
+
+        let end = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
+        assert!(
+            matches!(end, SessionEnd::Exit(AttachExit::Completed)),
+            "창 안의 stdin EOF 가 재attach 로 바뀌었다"
+        );
+    }
+
+    /// 재attach 창에서 누른 detach 키(`Ctrl+\`)도 재attach 가 아니라 종료다.
+    #[test]
+    fn a_detach_key_during_the_resync_window_ends_the_session() {
+        let (tx, rx) = mpsc::channel::<RawEvent>();
+        let loss = serde_json::to_vec(&tasty_ipc::stream::StreamControl::Loss { frames: 2 })
+            .expect("serialize");
+        tx.send(RawEvent::Server(StreamFrame::new(StreamTag::Control, loss)))
+            .unwrap();
+        tx.send(RawEvent::Stdin(b"ab\x1c".to_vec())).unwrap();
+        tx.send(RawEvent::ServerRecvErr).unwrap();
+        drop(tx);
+
+        let end = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
+        assert!(
+            matches!(end, SessionEnd::Exit(AttachExit::Completed)),
+            "창 안의 detach 키가 재attach 로 바뀌었다"
         );
     }
 

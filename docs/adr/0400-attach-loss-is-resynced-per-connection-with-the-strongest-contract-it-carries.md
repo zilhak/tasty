@@ -67,6 +67,7 @@ mirror 연결 하나가 PTY Data(surface 접두 mux) · 상태 Control(`Resize`�
      알린다. `--send` 입력은 첫 attach 에서만 보낸다(재attach 가 입력을 되풀이하지 않는다).
    - **CLI raw 브리지**: 재attach. 새 snapshot 이 화면을 다시 그린다. 횟수 제한은 없다 —
      대화형 세션이라 사용자가 `Ctrl+\` 로 끝낼 수 있고, 매 재attach 를 stderr 로 알린다.
+     옛 연결을 놓고 기다리는 창에서도 stdin EOF 와 `Ctrl+\` 는 재attach 가 아니라 종료다.
    - **bulk 연결**: `ClientLossNotify` 를 선언하고, 결과를 기다리는 중 `Loss` 를 받으면 전송을
      중단으로 끝낸다.
 

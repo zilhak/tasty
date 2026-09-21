@@ -194,7 +194,10 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
     남았다고 알린다(`cli.attach.desync_unrecovered`). stdout 형식은 안 바뀐다.
   - **raw 브리지**: 횟수 제한이 없다 — 대화형이라 사용자가 `Ctrl+\` 로 끝낼 수 있다. 새
     snapshot 이 화면을 다시 그리고, 전환하는 동안 들어온 stdin 은 원격에 안 간다(재연결 때의
-    전환 창과 같다). 서버가 `HEARTBEAT_TIMEOUT` 안에 소켓을 안 닫으면 기다림을 포기하고 붙는다.
+    전환 창과 같다). 다만 그 창에서도 **끝내라는 신호는 살아 있다** — stdin EOF 와 detach 키
+    (`Ctrl+\`)를 만나면 다시 붙지 않고 정상 루프와 같이 끝난다. 이 창에서는 stdin 슬롯이 아직
+    옛 세션의 sender 를 들고 있어 EOF 가 latch 에 남지 않으므로, 삼키면 다음 세션이 EOF 를 영영
+    못 받는다. 서버가 `HEARTBEAT_TIMEOUT` 안에 소켓을 안 닫으면 기다림을 포기하고 붙는다.
   - `--send` 입력은 첫 attach 에서만 보낸다 — 되풀이하면 원격에서 명령이 두 번 돈다.
 - **bulk 연결**(`open_bulk_connection`): 핸드셰이크 직후 선언하고, `await_bulk_result` 가
   결과를 기다리는 중 `Loss` 를 받으면 `Detach` 후 **중단** 오류로 끝낸다 — 이 연결로 서버가
