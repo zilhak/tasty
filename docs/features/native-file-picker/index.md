@@ -388,7 +388,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 >
 > **`file_picker.trigger` 검증**: 격리된 `TASTY_HOME` 으로 기동한 실제 debug
 > `tasty` 인스턴스에 raw `TcpStream` 으로 JSON-RPC(`file_picker.trigger`)를 직접 보내
-> `route_engine_handler` 라우팅 전체(dispatch table → `handle_trigger` → `popup::file_picker::
+> `route_window_handler` 라우팅 전체(gui 전용 창 라우터 → `handle_trigger` → `popup::file_picker::
 > open`)를 실행 검증했다 — 1 차 호출은 `{ request_id: 1 }` 로 성공, popup 이 열린 상태에서의
 > 2 차 호출은 정확히 그 자리에서 설계한 busy 에러(`-32000`, "file_picker popup is already
 > open — retry after it closes")로 거부됨을 확인했다. plugin 프로세스(markdown)가 실제로

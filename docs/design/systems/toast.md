@@ -46,9 +46,9 @@ grep -rnE 'toasts|report_apply_error|push_toast' \
   핸들러가 실패를 토스트로 알리는 경로(예전 `window.create` 가 그랬다 — 지금은 완료
   채널로 응답한다). ② IPC 가 만든 도메인 이벤트가 `src/app/dispatch_domain.rs` cascade
   에서 토스트를 내는 경로. ③ 에이전트가 터미널에 보낸 텍스트가 프로그램을 거쳐 토스트를
-  내는 경로(OSC 52 등). ④ IPC 핸들러가 `state.dispatch_intent(... .from_agent_ipc())` 로
-  intent 를 넘기고, 메인 루프가 그것을 `src/intent/*` 에서 처리하면서 토스트를 내는 경로.
-  이 넷은 호출 이름이 IPC 파일에 안 나타난다.
+  내는 경로(OSC 52 등). ④ IPC 엔진 핸들러가 `out.push(... .from_agent_ipc())` 로
+  요청의 intent 출구에 넣고(진입점이 요청 끝에 창 큐로 옮긴다), 메인 루프가 그것을
+  `src/intent/*` 에서 처리하면서 토스트를 내는 경로. 이 넷은 호출 이름이 IPC 파일에 안 나타난다.
 - **경로 ④ 는 형태는 있으나 지금 확인된 실례는 없다.** 형태는 이렇다: IPC 핸들러가
   intent 를 agent origin 으로 넘기고, `src/intent/*` 가 `core.apply` 실패 시
   `report_apply_error`(`src/intent.rs`)를 부르며, 그 함수는 **origin 을 보지 않고** 사용자

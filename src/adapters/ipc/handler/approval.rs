@@ -280,11 +280,6 @@ pub(crate) fn publish_capability_elevation(
     )?;
     #[cfg(feature = "gui")]
     window.enqueue_approval_popup(engine, &record);
-    // 헤드리스 빌드에서는 `state` 를 읽는 유일한 자리가 위 팝업이라 미사용이 된다.
-    // 시그니처는 두 조합이 같아야 한다 — 호출자(gui 의 caller_gate·app_methods)가
-    // 조합마다 다른 인자를 넘기면 그쪽이 갈린다.
-    #[cfg(not(feature = "gui"))]
-    let _ = window;
     Some(record)
 }
 

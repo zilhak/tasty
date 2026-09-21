@@ -12,14 +12,21 @@
 JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate·관측을 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘겨 핸들러를 탐색한다:
 
 ```rust
-if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {
-    return resp;                       // release+debug 공통 핸들러 (~150개)
+let mut out = IntentOutbox::default();   // 요청 하나의 intent 출구
+let routed = route_engine_handler(core, state, &mut out, engine, caller, request, id.clone());
+state.enqueue_intents(out);              // 출구를 이 창의 큐 끝으로
+if let Some(resp) = routed {
+    return resp;                         // release+debug 공통 엔진 핸들러 (~150개)
+}
+#[cfg(feature = "gui")]
+if let Some(resp) = route_window_handler(state, engine, caller, request, id.clone()) {
+    return resp;                         // 창 상태가 대상인 gui 전용 핸들러
 }
 #[cfg(debug_assertions)]
 if let Some(resp) = route_debug_handler(state, engine, request, id.clone()) {
-    return resp;                       // debug 빌드 전용
+    return resp;                         // debug 빌드 전용
 }
-JsonRpcResponse::method_not_found(id, &request.method)
+JsonRpcResponse::unrouted_for_external_caller(id, &request.method)
 ```
 
 `route_debug_handler` 함수 자체가 `#[cfg(debug_assertions)]` 라 release 바이너리엔 분기 한 줄과 함수가 모두 사라진다. release 에서 debug 메서드를 부르면 `method_not_found` 로 떨어진다.
