@@ -187,3 +187,113 @@ pub fn shipped_references<'a>(
     }
     out
 }
+
+/// **외부 크레이트**에서 시작하는 경로들 — `roots` 의 이름이 경로의 첫 마디인 자리.
+///
+/// 잡는 형태: `egui::Context` · `::egui::Context`(절대 경로) · `use egui::{A, b::C}`(여러 줄
+/// 중괄호 포함 — 항목마다 편다) · `use {egui::A, winit::B}` · `use egui as e;` · `use egui;` ·
+/// `extern crate egui;`. 마디가 하나뿐인 형태(`as` 별칭 · `use egui;`)는 경로 `[egui]` 로 싣는다.
+///
+/// 안 잡는 것: 앞에 다른 마디가 붙은 경로(`crate::image::x` · `self::png` · `foo::egui`)와
+/// 필드·메서드(`.egui`). 같은 이름의 **지역 모듈**을 `use` 없이 `image::x` 로 부르는 것은
+/// 텍스트로 크레이트와 안 갈린다 — 그런 자리가 생기면 소비자의 목록에 오른다.
+pub fn external_paths(code: &str, roots: &[&str]) -> Vec<(usize, Vec<String>)> {
+    let b = code.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let boundary = i == 0 || !is_ident_byte(b[i - 1]);
+        if !boundary || !is_ident_byte(b[i]) {
+            i += 1;
+            continue;
+        }
+        let end = ident_end(b, i).unwrap_or(i + 1);
+        let word = &code[i..end];
+        if roots.contains(&word) && starts_a_path(code, i) {
+            if eat_path_sep(b, end).is_some() {
+                expand_tree(code, i, &[], &mut out);
+            } else if names_the_crate_alone(code, i, end) {
+                out.push((i, vec![word.to_string()]));
+            }
+        }
+        i = end;
+    }
+    out
+}
+
+/// `i` 의 식별자가 경로의 **첫 마디**인가 — 앞이 `.` 이 아니고, 앞이 `::` 이면 그 앞에 마디가
+/// 없다(`::egui` 는 절대 경로의 첫 마디, `crate::egui` 는 아니다). `::` 앞의 낱말이
+/// 키워드(`use ::egui` · `-> impl ::egui::X`)면 마디가 아니다.
+fn starts_a_path(code: &str, i: usize) -> bool {
+    let before = code[..i].trim_end();
+    if before.ends_with('.') {
+        return false;
+    }
+    let Some(head) = before.strip_suffix("::") else {
+        return true;
+    };
+    let head = head.trim_end();
+    let hb = head.as_bytes();
+    match hb.last() {
+        // `-> ::egui::X` 는 반환 타입의 절대 경로, `<T as X>::egui` 는 한정 경로의 마디다.
+        Some(b'>') => head.ends_with("->"),
+        Some(c) if is_ident_byte(*c) => {
+            let mut s = hb.len();
+            while s > 0 && is_ident_byte(hb[s - 1]) {
+                s -= 1;
+            }
+            PATH_PRECEDING_KEYWORDS.contains(&&head[s..])
+        }
+        _ => true,
+    }
+}
+
+/// `::` 바로 앞에 와도 경로 마디가 아닌 키워드 — 그 뒤의 `::x` 는 절대 경로다.
+const PATH_PRECEDING_KEYWORDS: &[&str] = &[
+    "use", "as", "dyn", "impl", "return", "in", "mut", "ref", "where", "let", "move", "const",
+    "static", "type", "else", "match", "if", "while", "for", "pub", "break",
+];
+
+/// 뒤에 `::` 가 없는 크레이트 이름이 **크레이트를 부르는** 자리인가 — `use egui;` ·
+/// `use egui as e;` · `extern crate egui;` · 중괄호 안의 `egui as e`. 중괄호 안의 맨 이름
+/// (`{ image, png }`)은 구조체 필드 축약과 텍스트로 안 갈려 안 잡는다.
+fn names_the_crate_alone(code: &str, i: usize, end: usize) -> bool {
+    let before = code[..i].trim_end();
+    let prev_word_is = |w: &str| {
+        before.ends_with(w)
+            && before[..before.len() - w.len()]
+                .as_bytes()
+                .last()
+                .is_none_or(|c| !is_ident_byte(*c))
+    };
+    if prev_word_is("use") || prev_word_is("crate") {
+        return true;
+    }
+    let b = code.as_bytes();
+    let j = skip_ws(b, end);
+    let followed_by_as = code[j..].starts_with("as") && ident_end(b, j) == Some(j + 2);
+    followed_by_as && (before.ends_with('{') || before.ends_with(','))
+}
+
+/// 한 파일의 **출하되는** 코드가 부르는 외부 크레이트 경로 — `(1-기준 줄번호, 경로, 그 줄 원문)`.
+/// 경로는 `::` 로 이은 전체다(`egui::Context`). 인라인 `#[cfg(test)]` 줄은 빼고, 다른 cfg
+/// (`feature = "gui"` 등)는 **안 뺀다** — 게이트 뒤라도 출하된다. 한 줄의 같은 경로는 한 자리다.
+pub fn shipped_external_references(text: &str, roots: &[&str]) -> Vec<(usize, String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let gated = cfg_gated_lines(&lines, "test");
+    let masked = mask_non_code(text);
+    let mut out: Vec<(usize, String, String)> = Vec::new();
+    for (off, path) in external_paths(&masked, roots) {
+        let line = masked[..off].matches('\n').count();
+        if gated.get(line).copied().unwrap_or(false) {
+            continue;
+        }
+        let joined = path.join("::");
+        if out.iter().any(|(l, p, _)| *l == line + 1 && *p == joined) {
+            continue;
+        }
+        let raw = lines.get(line).map(|l| l.trim()).unwrap_or("");
+        out.push((line + 1, joined, raw.to_string()));
+    }
+    out
+}

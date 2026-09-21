@@ -65,3 +65,51 @@ fn is_dep_section(leaf: &str) -> bool {
         "dependencies" | "dev-dependencies" | "build-dependencies"
     )
 }
+
+/// `[features]` 절의 한 feature 가 `dep:` 로 켜는 optional 의존 이름들 — 선언 순서대로.
+///
+/// `tasty-platform/gui` 처럼 **다른 크레이트의 feature** 를 켜는 항목은 안 담는다. 그 크레이트는
+/// feature 없이도 그래프에 있으므로 "이 feature 가 있어야만 링크되는 크레이트" 가 아니다.
+/// feature 가 없거나 `dep:` 항목이 없으면 빈 벡터다.
+pub fn feature_enabled_deps(manifest: &str, feature: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_features = false;
+    let mut in_array = false;
+    for line in manifest.lines() {
+        let t = line.split('#').next().unwrap_or("").trim();
+        if !in_array {
+            if let Some(header) = t.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+                in_features = header.trim() == "features";
+                continue;
+            }
+            if !in_features {
+                continue;
+            }
+            let Some((name, rest)) = t.split_once('=') else {
+                continue;
+            };
+            if name.trim().trim_matches('"') != feature {
+                continue;
+            }
+            in_array = true;
+            collect_dep_entries(rest, &mut out);
+            if rest.contains(']') {
+                return out;
+            }
+            continue;
+        }
+        collect_dep_entries(t, &mut out);
+        if t.contains(']') {
+            return out;
+        }
+    }
+    out
+}
+
+fn collect_dep_entries(text: &str, out: &mut Vec<String>) {
+    for piece in text.split('"').skip(1).step_by(2) {
+        if let Some(dep) = piece.strip_prefix("dep:") {
+            out.push(dep.to_string());
+        }
+    }
+}
