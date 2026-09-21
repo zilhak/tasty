@@ -488,7 +488,7 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "toast-stack",
                             "Toast stack",
-                            Some("Bottom-right stack with newest-on-top and +N more overflow"),
+                            Some("Bottom-right stack, newest at the bottom, oldest dropped past 5"),
                             widgets::toast::draw_stack,
                         ),
                         spec(

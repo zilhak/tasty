@@ -78,31 +78,25 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Toast stack — 우측 하단 앵커 스택(newest top) + "+N more" overflow 행.
+/// Toast stack — 우측 하단 앵커 스택. 본체 계약(`docs/design/systems/toast.md` 의 스코프 ·
+/// 합치기/제한 절)대로 **아래에서 위로 쌓아 가장 새것이 맨 아래**이고, 스코프당 5 장을 넘으면
+/// 가장 오래된 것이 즉시 사라진다 — "+N more" 행은 없다.
 pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
-    // newest top: 위에서부터 가장 최근. fade 그라데이션으로 오래된 카드일수록 옅게.
+    // 위에서부터 오래된 순 → 맨 아래가 가장 최근. 본체는 떠 있는 동안 alpha 1 이고
+    // 등장/소멸 페이드만 있으므로(나이에 따른 그라데이션 없음) 전부 1.0 으로 그린다.
     let stack = [
-        (
-            ToastCardProps {
-                kind: ToastKind::Info,
-                message: "This action isn't supported in a mirrored remote explorer yet.",
-            },
-            1.0,
-        ),
-        (
-            ToastCardProps {
-                kind: ToastKind::Success,
-                message: "Path copied to clipboard",
-            },
-            0.85,
-        ),
-        (
-            ToastCardProps {
-                kind: ToastKind::Warning,
-                message: "Held by another client (readonly)",
-            },
-            0.6,
-        ),
+        ToastCardProps {
+            kind: ToastKind::Warning,
+            message: "Held by another client (readonly)",
+        },
+        ToastCardProps {
+            kind: ToastKind::Success,
+            message: "Path copied to clipboard",
+        },
+        ToastCardProps {
+            kind: ToastKind::Info,
+            message: "This action isn't supported in a mirrored remote explorer yet.",
+        },
     ];
 
     stage(ui, theme, StageVariant::Solo, |ui| {
@@ -114,27 +108,12 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                 ui.set_width(theme.measure_lg.value());
                 ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    for (card, alpha) in &stack {
+                    for card in &stack {
                         ui.scope(|ui| {
                             ui.set_width(theme.toast_max_width.value());
-                            draw_toast_card(ui, theme, card, *alpha);
+                            draw_toast_card(ui, theme, card, 1.0);
                         });
                     }
-                    // "+N more" overflow 행 (height 22 ≈ control-height-tree).
-                    let (r, _) = ui.allocate_exact_size(
-                        egui::vec2(
-                            theme.toast_max_width.value(),
-                            theme.item_height_tree.value(),
-                        ),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter().text(
-                        r.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "+2 more",
-                        egui::FontId::proportional(theme.font_size_caption.value()),
-                        egui::Color32::from(theme.text_muted()),
-                    );
                 });
             });
     });
@@ -142,8 +121,8 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "Anchored bottom-right, newest on top, space-sm gap. Beyond the visible cap the stack \
-         collapses to a +N more row.",
+        "Anchored bottom-right and stacked bottom-up: the newest card is at the bottom, \
+         space-sm gap. At most 5 per scope; a 6th drops the oldest immediately.",
     );
 
     meta(
@@ -151,9 +130,9 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("anchor", "bottom-right"),
-            ("order", "newest top"),
+            ("order", "newest bottom"),
             ("gap", "space-sm 8"),
-            ("cap", "N → +N more"),
+            ("cap", "5 per scope → oldest dropped"),
         ],
         &[
             TokenChip::new(
@@ -165,11 +144,6 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                 "surface-raised",
                 "card fill",
                 egui::Color32::from(theme.surface_raised()),
-            ),
-            TokenChip::new(
-                "text-muted",
-                "+N more",
-                egui::Color32::from(theme.text_muted()),
             ),
         ],
     );
