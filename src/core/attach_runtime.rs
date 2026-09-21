@@ -3166,31 +3166,37 @@ mod forward_exec_tests {
         );
     }
 
-    /// forward 실행과 IPC 진입점은 같은 도메인 실행을 부르므로, 같은 입력의 실패 문구가
-    /// **byte 단위로 같아야** 한다 — forward 회신의 사유 문자열 = IPC 에러 메시지.
+    /// 두 진입점의 실패 문구를 재는 입력 표. 원격이 보내는 파라미터 묶음이 IPC 요청과
+    /// 같은 자리로 읽힌다는 점을 겨냥한다: 원격 묶음에 `target_pane` 이 실려 오는 경우
+    /// (값이 잘못됐거나, 있어서 대상이 둘이 되는 경우), 원격 기준 cwd 가 서버에 없는 경우,
+    /// 서버에 없는 kind.
     ///
-    /// 입력은 원격이 보내는 파라미터 묶음이 IPC 요청과 같은 자리로 읽힌다는 점을 겨냥한다:
-    /// 원격 묶음에 `target_pane` 이 실려 오는 경우(값이 잘못됐거나, 있어서 대상이 둘이
-    /// 되는 경우), 원격 기준 cwd 가 서버에 없는 경우, 서버에 없는 kind.
-    #[test]
-    fn forward_and_ipc_fail_with_the_same_reason_for_the_same_input() {
-        use crate::adapters::ipc::handler::{pane, tab};
-        use serde_json::json;
-
-        let missing_dir = "/definitely/not/a/tasty/test/dir";
-        type Ipc = fn(
+    /// 칸: (이름, 기대 문구, forward op 을 만드는 함수, IPC 핸들러, IPC params 를 만드는
+    /// 함수). 기대 문구는 forward 가 핸들러를 재사용하던 `331baf491` 의 문구를 리터럴로
+    /// 옮긴 것이다 — 도메인 함수가 계산하는 값이 아니다.
+    struct FailureCase(
+        &'static str,
+        &'static str,
+        Box<dyn Fn(u32) -> StructuralOp>,
+        fn(
             &mut crate::core::Core,
             &mut AppState,
             &mut crate::core::CoreState,
             serde_json::Value,
             &serde_json::Value,
-        ) -> tasty_ipc::protocol::JsonRpcResponse;
-        type MakeOp = Box<dyn Fn(u32) -> StructuralOp>;
-        type MakeParams = Box<dyn Fn(u32, u32) -> serde_json::Value>;
-        // (이름, forward op 을 만드는 함수, IPC 핸들러, IPC params 를 만드는 함수)
-        let cases: Vec<(&str, MakeOp, Ipc, MakeParams)> = vec![
-            (
+        ) -> tasty_ipc::protocol::JsonRpcResponse,
+        Box<dyn Fn(u32, u32) -> serde_json::Value>,
+    );
+
+    fn failure_cases() -> Vec<FailureCase> {
+        use crate::adapters::ipc::handler::{pane, tab};
+        use serde_json::json;
+
+        let missing_dir = "/definitely/not/a/tasty/test/dir";
+        vec![
+            FailureCase(
                 "new tab of an unknown kind",
+                "unknown surface kind: definitely-not-registered",
                 Box::new(|a| StructuralOp::NewTab {
                     anchor_surface_id: a,
                     surface_kind: "definitely-not-registered".to_string(),
@@ -3199,8 +3205,9 @@ mod forward_exec_tests {
                 tab::handle_tab_create,
                 Box::new(|_, pane| json!({ "pane_id": pane, "type": "definitely-not-registered" })),
             ),
-            (
+            FailureCase(
                 "new tab with a cwd the server does not have",
+                "cwd does not exist: /definitely/not/a/tasty/test/dir",
                 Box::new(move |a| StructuralOp::NewTab {
                     anchor_surface_id: a,
                     surface_kind: "terminal".to_string(),
@@ -3211,8 +3218,9 @@ mod forward_exec_tests {
                     move |_, pane| json!({ "pane_id": pane, "type": "terminal", "cwd": missing_dir }),
                 ),
             ),
-            (
+            FailureCase(
                 "surface split whose bag also names a pane",
+                "Cannot specify both 'target_surface' and 'target_pane'. Use one.",
                 Box::new(|a| StructuralOp::SplitSurface {
                     surface_id: a,
                     direction: SplitAxis::Vertical,
@@ -3224,8 +3232,12 @@ mod forward_exec_tests {
                     |a, _| json!({ "level": "surface", "target_surface": a, "target_pane": 1, "type": "terminal" }),
                 ),
             ),
-            (
+            FailureCase(
                 "pane split whose bag carries a malformed pane id",
+                "'target_pane' was given as \"not-a-number\" — it must be a whole number that fits in 32 \
+                 bits and is not negative. Refusing rather than coercing it: a truncated id names a \
+                 different, possibly real, target, and a dropped value is indistinguishable from the \
+                 parameter being absent",
                 Box::new(|a| StructuralOp::SplitPane {
                     anchor_surface_id: a,
                     direction: SplitAxis::Horizontal,
@@ -3237,8 +3249,9 @@ mod forward_exec_tests {
                     |a, _| json!({ "level": "pane", "target_surface": a, "target_pane": "not-a-number", "type": "terminal" }),
                 ),
             ),
-            (
+            FailureCase(
                 "surface split with a cwd the server does not have",
+                "cwd does not exist: /definitely/not/a/tasty/test/dir",
                 Box::new(move |a| StructuralOp::SplitSurface {
                     surface_id: a,
                     direction: SplitAxis::Horizontal,
@@ -3250,33 +3263,68 @@ mod forward_exec_tests {
                     move |a, _| json!({ "level": "surface", "target_surface": a, "type": "terminal", "cwd": missing_dir }),
                 ),
             ),
-        ];
+        ]
+    }
 
-        for (name, op, ipc, ipc_params) in cases {
-            let (mut core, mut state, mut engine, _home) = make_core_state();
-            let a = seed(&mut engine);
-            let pane_id = engine.find_pane_for_surface(a).expect("seed pane");
+    /// 한 입력을 두 진입점에 넣고 (IPC 에러 메시지, forward 회신 사유) 를 돌려준다.
+    fn fail_both_ways(case: &FailureCase) -> (String, String) {
+        let FailureCase(name, _, op, ipc, ipc_params) = case;
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let pane_id = engine.find_pane_for_surface(a).expect("seed pane");
 
-            let resp = ipc(
-                &mut core,
-                &mut state,
-                &mut engine,
-                json!(1),
-                &ipc_params(a, pane_id),
-            );
-            let ipc_msg = resp
-                .error
-                .unwrap_or_else(|| panic!("{name}: IPC 가 성공했다 — 실패 입력이 아니다"))
-                .message;
+        let resp = ipc(
+            &mut core,
+            &mut state,
+            &mut engine,
+            serde_json::json!(1),
+            &ipc_params(a, pane_id),
+        );
+        let ipc_msg = resp
+            .error
+            .unwrap_or_else(|| panic!("{name}: IPC 가 성공했다 — 실패 입력이 아니다"))
+            .message;
 
-            let forwarded =
-                execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op(a));
-            let Err(forward_msg) = forwarded else {
-                panic!("{name}: forward 가 성공했다 — IPC 는 `{ipc_msg}` 로 실패했다");
-            };
+        let forwarded = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op(a));
+        let Err(forward_msg) = forwarded else {
+            panic!("{name}: forward 가 성공했다 — IPC 는 `{ipc_msg}` 로 실패했다");
+        };
+        (ipc_msg, forward_msg)
+    }
+
+    /// **진입점 사이의 갈림**을 잰다. forward 실행과 IPC 진입점은 같은 도메인 실행을
+    /// 부르므로, 같은 입력의 실패 문구가 byte 단위로 같아야 한다 — forward 회신의 사유
+    /// 문자열 = IPC 에러 메시지.
+    ///
+    /// 이 시험은 **기준 문구를 모른다.** 도메인 함수의 문구를 바꾸면 두 진입점이 함께
+    /// 바뀌므로 여기서는 초록이다. 옛 문구의 보존은 아래
+    /// `failure_reasons_keep_the_base_literals` 가 잰다.
+    #[test]
+    fn forward_and_ipc_fail_with_the_same_reason_for_the_same_input() {
+        for case in failure_cases() {
+            let (ipc_msg, forward_msg) = fail_both_ways(&case);
             assert_eq!(
                 forward_msg, ipc_msg,
-                "{name}: 두 진입점의 실패 문구가 갈렸다"
+                "{}: 두 진입점의 실패 문구가 갈렸다",
+                case.0
+            );
+        }
+    }
+
+    /// **기준 문구의 고정**을 잰다. forward 회신 사유는 client toast 에 그대로 나가고 IPC
+    /// 에러 메시지는 에이전트가 읽으므로, 실행을 도메인 함수로 옮긴 뒤에도 문구는
+    /// `331baf491`(forward 가 핸들러를 재사용하던 때)과 byte 단위로 같아야 한다
+    /// (ADR-0395). 기대값은 그 커밋의 리터럴을 옮겨 적은 것이라, 문구를 바꾸는 변경은
+    /// 여기서 빨개진다 — 의도한 변경이면 이 표와 ADR 을 함께 고친다.
+    #[test]
+    fn failure_reasons_keep_the_base_literals() {
+        for case in failure_cases() {
+            let (ipc_msg, forward_msg) = fail_both_ways(&case);
+            assert_eq!(ipc_msg, case.1, "{}: IPC 실패 문구가 기준과 다르다", case.0);
+            assert_eq!(
+                forward_msg, case.1,
+                "{}: forward 회신 사유가 기준과 다르다",
+                case.0
             );
         }
     }

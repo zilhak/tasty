@@ -87,7 +87,9 @@ tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러
 **같은** 도메인 실행 함수(`src/core/structural_exec.rs`)를 부르고, 그 실패
 (`StructuralFailure`)를 `forward_result` 한 함수가 사유 문자열로 바꾼다. IPC 핸들러는 같은
 실패를 `invalid_params` / `internal_error` / `structural_apply_error` 로 감싼다 — 그래서 같은
-입력에 두 진입점의 사유 문구가 같다. convert / restore / move-surface 는 `Core::apply` 를
+입력에 두 진입점의 사유 문구가 같다. 그 문구를 재는 시험은 둘이다: 두 진입점이 갈리는지
+(`forward_and_ipc_fail_with_the_same_reason_for_the_same_input`), 문구가 옛 기준과 같은지
+(`failure_reasons_keep_the_base_literals` — 리터럴로 단정). convert / restore / move-surface 는 `Core::apply` 를
 직접 부른다. 호출자가 회신하는 것은 `StreamControl::StructuralResult` 다. 근거는
 [ADR-0395](../adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).
 

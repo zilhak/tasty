@@ -113,12 +113,22 @@ forward 실행의 호출자다(`app/event_handler.rs` · `boot/headless_stream.r
 - **얻은 것**: `core` 의 production 코드가 `adapters` 와 `app` 을 부르지 않는다.
   `execute_forwarded_structural_op` 가 핸들러를 부르던 import 와, `app::dispatch_domain` 을 부르던
   두 자리가 사라졌다.
-- **얻은 것**: 같은 입력에 두 진입점의 실패 문구가 같다는 사실이 시험으로 고정된다.
-  `forward_exec_tests::forward_and_ipc_fail_with_the_same_reason_for_the_same_input` 가 다섯
-  입력으로 잰다: 서버에 없는 kind, 서버에 없는 cwd(탭·split), 묶음에 실린 `target_pane`,
-  잘못된 `target_pane`. 문구 자체는 `331baf491` 과 문자열 리터럴 단위로 대조했다. 대조 대상은
-  forward 실행과 여섯 재사용 핸들러(지금은 도메인 함수)의 리터럴 집합이다. 두 집합이 같았고,
-  옮겨진 `read_int` · `read_u32` · `malformed` 와 `structural_apply_error` 의 본문도 같았다.
+- **얻은 것**: 실패 문구를 두 시험이 나눠 잰다. 둘은 서로 다른 물음에 답한다.
+  - **진입점 사이의 갈림** —
+    `forward_exec_tests::forward_and_ipc_fail_with_the_same_reason_for_the_same_input`. 같은
+    입력에 IPC 에러 메시지와 forward 회신 사유가 같은지 본다. 기준 문구는 모른다 — 도메인
+    함수의 문구를 바꾸면 두 진입점이 함께 바뀌어 이 시험은 초록이다.
+  - **기준 문구의 고정** — `forward_exec_tests::failure_reasons_keep_the_base_literals`. 같은
+    입력들의 두 진입점 문구를 `331baf491` 의 리터럴과 byte 단위로 단정한다. 문구를 바꾸는
+    변경은 여기서 빨개진다. 실측: `structural_exec.rs` 의 `"cwd does not exist: {}"` 두 자리와
+    `"Cannot specify both …"` 한 자리를 바꾸면 lib 전량에서 이 시험 하나만 죽고, 세 자리를
+    한 자리씩 바꿔도 각각 해당 입력에서 죽는다.
+
+  두 시험의 입력 표는 같다(다섯 개): 서버에 없는 kind, 서버에 없는 cwd(탭·split), 묶음에 실린
+  `target_pane`, 잘못된 `target_pane`. 표 밖의 문구는 이동 시점에 `331baf491` 과 문자열 리터럴
+  집합으로 대조했다. 대조 대상은 forward 실행과 여섯 재사용 핸들러(지금은 도메인 함수)의
+  리터럴이고, 두 집합이 같았다. 옮겨진 `read_int` · `read_u32` · `malformed` 와
+  `structural_apply_error` 의 본문도 같았다. 이 집합 대조는 일회성 측정이지 채널이 아니다.
 - **얻은 것**: close 매핑(`SurfaceCloseCascade` 생성자)과 cascade 공통 단계는 기본 빌드 하나로
   모든 자리가 재진다. ADR-0337 이 "재는 채널이 없다" 고 적은 짝이 없어졌다.
 - **잃은 것**: `StructuralFailure` 라는 타입이 하나 늘었다. 그리고 IPC 핸들러는 도메인 함수 앞에
@@ -171,6 +181,8 @@ forward 실행의 호출자다(`app/event_handler.rs` · `boot/headless_stream.r
   `observe_tutorial_pane_split`)를 거친다 — cascade 가 UI 어댑터 타입을 직접 이름 부르지 않게.
 - `forward_exec_tests::forward_and_ipc_fail_with_the_same_reason_for_the_same_input` 가 실패한다.
   두 진입점이 다른 실행을 타기 시작했다는 뜻이다.
+- `forward_exec_tests::failure_reasons_keep_the_base_literals` 가 실패한다. 외부에 보이는 실패
+  문구가 바뀌었다는 뜻이다 — 의도한 변경이면 그 시험의 표와 이 ADR 의 호환 판단을 함께 고친다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다.
 
