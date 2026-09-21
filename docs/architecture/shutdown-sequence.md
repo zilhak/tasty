@@ -115,9 +115,12 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   프로세스가 쥔 포트·파일을 새 것이 못 잡는다). 회수 중에 온 `disable` 은 그 예약을
   거둔다. 호스트 종료가 시작되면 회수 중인 것도 `poll_shutdown_all()` 이 끝날 때까지
   보고 다시 띄우지 않으며, 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다.
-  **옛 프로세스가 반드시 사라져 있어야 하는 두 경로는 기다린다** — `plugin remove`
-  (디렉토리를 지운다)와 swap(`upgrade-builtins --restart-running` · auto-reload,
-  디렉토리를 덮어쓴다). 근거·대안은
+  **옛 프로세스가 반드시 사라져 있어야 하는 자리만 기다린다** — `plugin remove`
+  (디렉토리를 지운다) · swap(`upgrade-builtins --restart-running` · auto-reload,
+  디렉토리를 덮어쓴다) · `upgrade-builtins` 의 **쓰기 갈래**(버전이 달라 덮어쓰거나,
+  같은 버전인데 바뀐 내용이 있을 때). 설치본이 더 높아 건너뛰거나 같은 버전에 바뀐 것이
+  없으면 기다리지 않는다 — 회수와 재기동 예약은 뒤에서 그대로 이어진다. 기다린 자리는
+  회수 뒤의 재기동 예약을 함께 가져오므로 쓰기를 마친 뒤 다시 띄운다. 근거·대안은
   [ADR-0457](../adr/0457-a-single-plugin-shutdown-is-reaped-off-the-main-thread.md).
 
 ## 종료 화면

@@ -210,8 +210,16 @@ impl PluginManager {
         }
     }
 
+    /// `plugin_id` 가 회수 중인가 — 쓰기 전에 기다릴지 묻는 호출자가 쓴다.
+    pub(crate) fn is_retiring(&self, plugin_id: &str) -> bool {
+        self.retiring.contains_key(plugin_id)
+    }
+
     /// `plugin_id` 의 회수가 끝날 때까지 **기다린다**. 옛 프로세스가 반드시 사라져 있어야
-    /// 하는 호출자 — 디스크의 plugin 디렉토리를 지우거나 덮어쓰는 호출자 — 만 부른다.
+    /// 하는 자리만 부른다 — `plugin remove`(디렉토리를 지운다) · swap(디렉토리를 덮어쓴다) ·
+    /// `upgrade-builtins` 의 **쓰기 갈래**(디렉토리에 실제로 쓸 때만. 건너뛰는 갈래와 바뀐
+    /// 내용이 없는 같은 버전 갈래는 안 부른다). 이 목록은 `shutdown-sequence.md` 의 "단건
+    /// 경로" 항과 ADR-0457 에 같은 말로 적혀 있다.
     ///
     /// 돌려주는 값은 **회수 뒤에 다시 띄우기로 예약돼 있었는가**다(무응답 재시작 · 회수 중에
     /// 온 enable). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인

@@ -37,11 +37,18 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
 - **기동은 한 창구에서 미룬다.** `start_plugin_internal` 이 회수 중인 id 를 받으면 띄우지 않고 "회수
   뒤에 띄운다" 고 적는다. 무응답 재시작, 회수 중에 온 `enable`, 전체 기동(`discover_and_start`)이
   모두 그 창구를 지나므로 어느 쪽에서 와도 겹치지 않는다. 회수 중에 온 `disable` 은 그 예약을 거둔다.
-- **옛 프로세스가 사라져 있어야 하는 호출자는 기다린다.** `plugin remove` 는 디렉토리를 지우고,
-  swap(`upgrade-builtins --restart-running` · auto-reload)과 `upgrade-builtins` 의 쓰기 갈래는 디렉토리를
-  덮어쓴다 — 실행 중인 파일은 Windows 에서 지워지지도 덮어써지지도 않고 Linux 에서는 `ETXTBSY` 가
-  난다. 이 자리들은 `wait_retired` 로 그 id 의 회수를 끝까지 기다린 뒤 쓴다. 사용자가 명시적으로 부른
-  수명주기 조작이고 주기적으로 오지 않는다.
+- **옛 프로세스가 사라져 있어야 하는 자리만 기다린다 — `plugin remove` · swap · `upgrade-builtins` 의
+  쓰기 갈래.** `plugin remove` 는 디렉토리를 지우고, swap(`upgrade-builtins --restart-running` ·
+  auto-reload)과 `upgrade-builtins` 의 쓰기 갈래는 디렉토리를 덮어쓴다 — 실행 중인 파일은 Windows 에서
+  지워지지도 덮어써지지도 않고 Linux 에서는 `ETXTBSY` 가 난다. 이 자리들은 `wait_retired` 로 그 id 의
+  회수를 끝까지 기다린 뒤 쓴다. 사용자가 명시적으로 부른 수명주기 조작이고 주기적으로 오지 않는다.
+  `upgrade-builtins` 의 **쓰기 갈래**는 버전이 달라 덮어쓸 때와, 같은 버전인데 바뀐 내용이 있을 때다 —
+  같은 버전 갈래는 회수 중일 때만 쓰지 않고 먼저 물어본다. 설치본이 더 높아 건너뛰거나 바뀐 것이
+  없으면 기다리지 않는다(기다리면 쓸 것도 없이 메인 스레드가 최대 2 s 선다).
+- **기다린 자리는 재기동 예약을 잇는다.** 회수 뒤에 다시 띄우기로 한 예약(무응답 재시작 · 회수 중에 온
+  `enable`)은 회수 기록과 함께 `wait_retired` 가 가져가 돌려준다. 호출자는 쓰기를 마친 뒤 그 값이
+  참이면 다시 띄운다 — 안 이으면 enabled 인 plugin 이 꺼진 채 남는다. swap 은 어차피 다시 띄우므로
+  따로 잇지 않는다.
 - **호스트 종료는 회수 중인 것도 본다.** `poll_shutdown_all` 은 회수 중인 것까지 끝나야 `true` 이고,
   그것들은 다시 띄우지 않는다. 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다. 각 회수는 자기
   deadline 을 들고 있으므로 종료 대기의 상한은 그대로 2 s 로 수렴한다.
@@ -96,7 +103,9 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
   끝나거나 다시 띄우면 `exit_waits_for_a_retiring_plugin_and_does_not_respawn_it` 이 잡는다.
 - 회수를 기다리는 호출자가 재기동 예약을 버리면 — 무응답 재시작 중에 `upgrade-builtins` 가 오면 —
   `builtin::upgrade_retire_tests::an_upgrade_during_a_restart_keeps_the_restart` 가 잡는다(예약을
-  잇는 한 줄을 끄는 변이로 죽는 것을 확인했다).
+  잇는 한 줄을 끄는 변이로 죽는 것을 확인했다). 쓰기 갈래가 회수를 안 기다리면 같은 시험이, 쓸 것이
+  없는 갈래가 기다리면 `an_upgrade_that_writes_nothing_does_not_wait_for_a_retirement` 가 잡는다(두
+  변이 모두 확인).
 - plugin 프로토콜에 "앞 인스턴스가 살아 있어도 된다" 는 계약이 생기면 — 겹침을 막는 이유가 사라진다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
@@ -114,4 +123,5 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
 - 관련 ADR: [ADR-0360](0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md) — 채널 포화가 shutdown 요청을 거절할 때의 판정(이 결정은 그 뒤의 대기만 옮긴다)
 - **코드 근거 (결정이 실현된 현재 위치)**: `tasty-host-plugin` 의 `manager::retire` 모듈 —
   `PluginManager::retire_process` · `defer_start_until_retired` · `poll_retiring` · `wait_retired` ·
-  `poll_retiring_for_exit`, 그리고 `PluginTick::Retire`.
+  `start_if_still_wanted` · `is_retiring` · `poll_retiring_for_exit`, 그리고 `PluginTick::Retire`.
+  `upgrade-builtins` 쪽은 `builtin` 모듈의 `apply_builtin_upgrade_decision` 과 `builtin::sync_probe`.

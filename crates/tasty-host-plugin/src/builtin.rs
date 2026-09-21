@@ -1243,10 +1243,12 @@ fn apply_builtin_upgrade_decision(
     force: bool,
     restart_running: bool,
 ) -> SpecUpgrade {
-    // 방금 disable 된 plugin 은 옛 프로세스가 아직 빠지는 중일 수 있다 — disable 은 회수를
-    // 기다리지 않는다. 아래 갈래는 모두 그 디렉토리에 쓰므로(실행 중인 파일은 Windows 에서
-    // 덮어쓸 수 없고 Linux 에서는 `ETXTBSY` 가 난다) 그 회수부터 끝낸다.
-    let respawn = mgr.wait_retired(spec.id);
+    // 방금 disable 되었거나 무응답 재시작 중인 plugin 은 옛 프로세스가 아직 빠지는 중일 수
+    // 있다 — 둘 다 회수를 기다리지 않는다. 그 디렉토리에 **실제로 쓰는 갈래만** 그 회수를
+    // 끝까지 기다린다(실행 중인 파일은 Windows 에서 덮어쓰거나 지울 수 없고 Linux 에서는
+    // `ETXTBSY` 가 난다). 쓰지 않는 갈래가 기다리면 메인 스레드가 이유 없이 최대 2 s 선다 —
+    // 그때 회수는 뒤에서 이어지고 재기동 예약도 회수 기록과 함께 남는다(ADR-0457).
+    let mut respawn = false;
     let upgrade = match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
         BuiltinUpgradeDecision::Skip => SpecUpgrade {
             item: BuiltinUpgradeItem {
@@ -1259,36 +1261,42 @@ fn apply_builtin_upgrade_decision(
             },
             changed: false,
         },
-        BuiltinUpgradeDecision::ResyncSameVersion => match sync_dir_by_content(src, dest) {
-            Err(e) => SpecUpgrade {
-                item: BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Failed {
-                        reason: e.to_string(),
-                    },
-                },
-                changed: false,
-            },
-            Ok(wrote) => SpecUpgrade {
-                item: BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Skipped {
-                        installed_version: installed_v.map(|v| v.to_string()),
-                        bundle_version: bundle_v.map(|v| v.to_string()),
-                        reason: if wrote {
-                            "same-version (content resync: files rewritten)".into()
-                        } else {
-                            "same-version (content resync: nothing to write)".into()
+        BuiltinUpgradeDecision::ResyncSameVersion => {
+            if mgr.is_retiring(spec.id) && sync_probe::sync_would_touch(src, dest) {
+                respawn = mgr.wait_retired(spec.id);
+            }
+            match sync_dir_by_content(src, dest) {
+                Err(e) => SpecUpgrade {
+                    item: BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Failed {
+                            reason: e.to_string(),
                         },
                     },
+                    changed: false,
                 },
-                // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
-                // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
-                changed: wrote,
-            },
-        },
+                Ok(wrote) => SpecUpgrade {
+                    item: BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Skipped {
+                            installed_version: installed_v.map(|v| v.to_string()),
+                            bundle_version: bundle_v.map(|v| v.to_string()),
+                            reason: if wrote {
+                                "same-version (content resync: files rewritten)".into()
+                            } else {
+                                "same-version (content resync: nothing to write)".into()
+                            },
+                        },
+                    },
+                    // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
+                    // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
+                    changed: wrote,
+                },
+            }
+        }
         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
             tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
+            respawn = mgr.wait_retired(spec.id);
             match swap_overwrite_respawn(mgr, spec, src, dest, restart_running) {
                 Ok(swap) => SpecUpgrade {
                     item: BuiltinUpgradeItem {
@@ -1315,6 +1323,7 @@ fn apply_builtin_upgrade_decision(
                 installed_v.as_ref().map(|v| v.to_string()),
                 bundle_v.as_ref().map(|v| v.to_string()),
             );
+            respawn = mgr.wait_retired(spec.id);
             match swap_overwrite_respawn(mgr, spec, src, dest, restart_running) {
                 Ok(swap) => SpecUpgrade {
                     item: BuiltinUpgradeItem {
@@ -1582,6 +1591,8 @@ fn fill(f: &mut std::fs::File, buf: &mut [u8]) -> std::io::Result<usize> {
     }
     Ok(filled)
 }
+
+mod sync_probe;
 
 #[cfg(test)]
 mod bundle_selection_tests;
