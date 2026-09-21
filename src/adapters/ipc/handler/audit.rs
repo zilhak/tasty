@@ -141,6 +141,7 @@ pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> Js
 /// `plugin.audit_follow` — `after_ts_ms` / `after_seq` 커서 이후의 새 record.
 /// 커서 미지정 시 빈 배열 + 현재 latest 커서를 반환해 호출자가 그 다음부터
 /// 폴링하게 한다 (`tail -f -n 0` 시멘틱).
+#[cfg(feature = "gui")]
 pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
@@ -173,6 +174,7 @@ pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> Jso
 
 /// `plugin.audit_clear` — `before_ms` 이전 record 삭제 (생략 시 전체).
 /// 반환: `{ removed: N }`.
+#[cfg(feature = "gui")]
 pub fn handle_clear(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let before_ms = p_try!(params::opt_int::<u64>(params, "before_ms", &id));
     let result = core.with_memory(|mem| {

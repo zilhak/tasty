@@ -58,6 +58,7 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRp
 }
 
 /// `debug.popup.open` — `{ plugin_id, popup_id, context? }`로 popup 인스턴스 강제 open.
+#[cfg(feature = "gui")]
 pub fn handle_open(
     mgr: Option<&mut PluginManager>,
     id: serde_json::Value,

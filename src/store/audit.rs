@@ -278,6 +278,7 @@ impl<'a> AuditStore<'a> {
     ///
     /// 반환 `next_after_ts_ms` / `next_after_seq` 는 마지막 반환된 record 의 값,
     /// 새 record 가 없으면 입력 커서 그대로.
+    #[cfg(any(feature = "gui", test))]
     pub fn follow(
         &mut self,
         q: &AuditQuery,
@@ -308,6 +309,7 @@ impl<'a> AuditStore<'a> {
 
     /// 전체 삭제. `before_ms` 가 있으면 그 시점 이전 record 만 삭제.
     /// 반환: 삭제 개수.
+    #[cfg(any(feature = "gui", test))]
     pub fn clear(&mut self, before_ms: Option<u64>) -> Result<usize> {
         let opts = ListOpts {
             prefix: Some(AUDIT_KEY_PREFIX.to_string()),

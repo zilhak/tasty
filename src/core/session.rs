@@ -58,6 +58,7 @@ impl Core {
 
     /// agent_id 기반 임시 권한 grant. 반환: `None` 이면 agent_id 의 활성 세션이
     /// 없음. `Some((added, expires_at_ms))` — added=false 이면 base 에 이미 있음.
+    #[cfg(feature = "gui")]
     pub(crate) fn session_grant_permission_for_agent(
         &self,
         agent_id: &str,
@@ -77,6 +78,7 @@ impl Core {
     }
 
     /// agent_id 기반 임시 권한 revoke. agent 없으면 `Ok(false)`.
+    #[cfg(feature = "gui")]
     pub(crate) fn session_revoke_permission_for_agent(
         &self,
         agent_id: &str,

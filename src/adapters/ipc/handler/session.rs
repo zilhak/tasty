@@ -229,6 +229,7 @@ pub fn handle_list(core: &crate::core::Core, id: Value) -> JsonRpcResponse {
 ///
 /// 동일 token 이 base 에 이미 있으면 noop. 중복 grant 는 만료 시점을 갱신.
 /// 응답: `{ agent_id, permission, added, expires_at_ms? }`.
+#[cfg(feature = "gui")]
 pub fn handle_grant_agent_permission(
     core: &crate::core::Core,
     id: Value,
@@ -278,6 +279,7 @@ pub fn handle_grant_agent_permission(
 ///
 /// params: `{ agent_id, permission }`. base permission 은 건드리지 않는다.
 /// 응답: `{ agent_id, permission, removed }`.
+#[cfg(feature = "gui")]
 pub fn handle_revoke_agent_permission(
     core: &crate::core::Core,
     id: Value,

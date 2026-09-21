@@ -443,6 +443,7 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 /// rss_bytes) 목록을 그대로 넘기면 된다 — Agent 타입 self-report 는 이
 /// 함수를 거치지 않고 `telemetry.record` 경로(`telemetry::record::handle_record`)
 /// 에서 처리된다.
+#[cfg(feature = "gui")]
 pub fn record_plugin_rss_samples(
     core: &crate::core::Core,
     state: &mut AppState,
