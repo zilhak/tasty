@@ -3,9 +3,11 @@ use serde_json::Value;
 #[cfg(all(test, feature = "gui"))]
 use serde_json::json;
 
+#[cfg(any(feature = "gui", debug_assertions))]
 use tasty_model::TabSwitch;
 
 use super::AppState;
+#[cfg(any(feature = "gui", debug_assertions, test))]
 use crate::core::CoreState;
 
 impl AppState {
@@ -221,6 +223,8 @@ impl AppState {
     ///
     /// pane 을 못 찾은 것은 인덱스가 틀린 것과 다른 일이라 갈래를 따로 낸다
     /// ([`TabSwitch::NoPane`]).
+    // 부르는 자리가 gui 단축키와 debug `debug.switch_tab` 뿐이다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub fn goto_tab_in_pane(&mut self, engine: &mut CoreState, index: usize) -> TabSwitch {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);

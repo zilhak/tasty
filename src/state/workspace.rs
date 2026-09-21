@@ -20,6 +20,10 @@ use super::AppState;
 pub enum WorkspaceCloseOrigin {
     /// 사용자가 자기 손으로 닫았다 — 단축키 · 사이드바 컨텍스트 메뉴 · 사용자
     /// 입력을 재현하는 debug 전용 IPC.
+    ///
+    /// 만드는 자리가 그 셋(gui · debug IPC)과 테스트뿐이라 release 헤드리스에는 이 값이
+    /// 없다 — 그 조합에서 워크스페이스를 닫는 경로는 에이전트뿐이다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     User,
     /// 에이전트가 release IPC/CLI(`workspace.close`)로 닫았다.
     Agent,
@@ -29,18 +33,29 @@ impl WorkspaceCloseOrigin {
     /// 사용자의 "닫은 항목" 되돌리기 스택(`Ctrl+Shift+T`)에 쌓을지.
     /// 그 스택은 사용자가 자기 손으로 닫은 것만 담는다.
     fn saves_snapshot(self) -> bool {
-        matches!(self, Self::User)
+        self.is_user()
     }
 
     /// plugin `surface.closed` payload 의 `reason` — `LifecycleReason::User` 인지
     /// `::Ipc` 인지를 가른다(`app::dispatch::surface_lifecycle`).
     fn is_user_close(self) -> bool {
-        matches!(self, Self::User)
+        self.is_user()
+    }
+
+    /// [`Self::User`] 인가. `matches!` 가 아니라 `match` 인 것은 그 variant 가 cfg 에
+    /// 걸려 있어서다 — 없는 조합에서도 이 판정은 컴파일되어야 한다.
+    fn is_user(self) -> bool {
+        match self {
+            #[cfg(any(feature = "gui", debug_assertions, test))]
+            Self::User => true,
+            Self::Agent => false,
+        }
     }
 
     /// close 계측(`close_trace`)의 경로 구분값.
     fn trace_path(self) -> &'static str {
         match self {
+            #[cfg(any(feature = "gui", debug_assertions, test))]
             Self::User => "gui",
             Self::Agent => "ipc",
         }
@@ -129,6 +144,9 @@ impl AppState {
     }
 
     /// Switch to workspace by index (0-based).
+    // 부르는 자리가 gui · debug `debug.switch_workspace` · 테스트뿐이다(원칙 1/3 — release
+    // IPC 에는 활성 워크스페이스를 옮기는 표면이 없다).
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
             self.active_workspace = index;
@@ -370,6 +388,8 @@ impl AppState {
     /// 활성 workspace에서 사용자가 보고 있는 active_tab의 deferred surface(들)만 PTY를
     /// spawn. 같은 pane의 비활성 tab은 deferred로 남았다가 tab 전환 시 깨어난다.
     /// active_tab이 split layout이면 그 안의 모든 deferred placeholder를 한번에 spawn한다.
+    // [`Self::switch_workspace`] 만 부른다 — 같은 게이트.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
         let mut spawned: Vec<(u32, tasty_terminal::Terminal, Option<String>)> = Vec::new();
         {

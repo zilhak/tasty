@@ -120,6 +120,7 @@ fn dispatch_command(
     //    `system.shutdown`(debug 격리)은 뒤엣것에서 답한다.
     match intercept_app_layer(app, state, engine, &caller, &cmd) {
         Some(Intercepted::Answered) => return std::ops::ControlFlow::Continue(()),
+        #[cfg(debug_assertions)]
         Some(Intercepted::Shutdown) => return std::ops::ControlFlow::Break(()),
         None => {}
     }
@@ -188,6 +189,9 @@ enum Intercepted {
     /// 이 명령은 여기서 끝났다. 다음 명령으로 넘어간다.
     Answered,
     /// 데몬을 멈추라는 답이었다. 호출자(run loop)가 break 한다.
+    ///
+    /// 이 답을 내는 `system.shutdown` 이 debug 격리라 variant 도 같은 cfg 다.
+    #[cfg(debug_assertions)]
     Shutdown,
 }
 

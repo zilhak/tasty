@@ -24,6 +24,8 @@ impl AppState {
         &engine.workspaces[idx]
     }
 
+    // 부르는 자리가 gui · debug 핸들러 · 테스트뿐이다 — release 헤드리스에는 없다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn active_workspace_mut<'a>(
         &self,
         engine: &'a mut CoreState,
@@ -53,6 +55,8 @@ impl AppState {
 
     /// Get the focused pane (mutable) in the active workspace, or the first pane as fallback.
     /// Returns `None` if no workspaces exist (parked state after last-window close).
+    // 부르는 자리가 gui · debug 핸들러 · 테스트뿐이다 — release 헤드리스에는 없다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub fn focused_pane_mut<'a>(
         &self,
         engine: &'a mut CoreState,

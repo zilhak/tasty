@@ -124,6 +124,8 @@ pub struct AppState {
     /// 다른 워크스페이스로 착지" 하는 조용한 오작동이 된다(실제로 재정렬 경로 두 곳이
     /// 그랬다). id 는 순서 변경과 무관하므로 그 유지보수 자체가 없어진다 —
     /// 착지 시점에 id → 인덱스로 한 번 찾고, 못 찾으면(제거됐으면) first 로 폴백한다.
+    // 읽는 자리가 [`Self::switch_workspace`] 와 카테고리 전환뿐이라 그 게이트를 따른다.
+    #[cfg(any(feature = "gui", debug_assertions, test))]
     pub(crate) category_last_active: std::collections::HashMap<
         tasty_utils::id::WorkspaceCategoryId,
         tasty_utils::id::WorkspaceId,
@@ -172,6 +174,8 @@ pub struct AppState {
     /// ⇒ `mouse_overlay_open` 은 `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 가 **문자열로
     ///    못박고** 있어(정의를 그대로 단언한다) 바꾸면 거기서 큰 소리로 깨진다. 나머지
     ///    셋에는 그런 고정이 없다.
+    // release 헤드리스에는 읽는 자리(gui · debug `ui.state` 덤프)가 없다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) settings_open_requested: bool,
     /// 지금 열려 있는 모달의 창 id — **`view.active_modal_id` 의 거울**이다.
     ///
@@ -186,6 +190,8 @@ pub struct AppState {
     ///
     /// ★ `settings_open_requested` 과 성질이 다르다. 그쪽은 **열기 요청** 래치이고 이쪽은 모달이
     /// 등록된 동안 유지되는 **지속 값**이다. 둘을 같은 물음에 쓰지 마라.
+    // release 헤드리스에는 읽는 자리(gui · debug `ui.state` 덤프)가 없다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) active_modal_id: Option<u64>,
     /// **어느** 모달인가 — `active_modal_id` 와 같은 자리에서 같이 움직이는 짝이다.
     ///
@@ -195,6 +201,8 @@ pub struct AppState {
     ///
     /// 열거인 것이 요점이다 — 문자열이면 오타가 "그 모달이 아니다" 와 같은 모양이 된다.
     /// IPC 로 나갈 때만 `as_str()` 로 납작해진다(JSON 에 열거가 없다).
+    // release 헤드리스에는 읽는 자리(gui · debug `ui.state` 덤프)가 없다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) active_modal_kind: Option<ModalKind>,
     /// plugins 모달 **열기 요청** 플래그 — `settings_open_requested` 과 같은 생애다.
     /// 사이드바 경로만 세우고 같은 `dispatch_pending_modal_opens` 가 다음
@@ -318,6 +326,8 @@ pub struct AppState {
     /// 두는 캐시를 읽는다. 갱신은 `plugin_bridge::popup_render::draw_plugin_popups`
     /// 최상단 리셋 + popup 이 있을 때 set 이며, popup 이 없다는 두 조기 반환 경로도
     /// 리셋이 덮는다(stale `true` 는 키보드가 영영 터미널로 못 가는 상태가 된다).
+    // release 헤드리스에는 읽는 자리(gui · debug `ui.state` 덤프)가 없다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) plugin_popup_open: bool,
     /// Whether the mouse is currently over a banner (input layer state).
     /// Updated each frame by BannerManager::draw(). 배너는 자기 영역의 마우스를
@@ -651,9 +661,13 @@ impl AppState {
             preset_store,
             memory,
             active_workspace,
+            #[cfg(any(feature = "gui", debug_assertions, test))]
             category_last_active: std::collections::HashMap::new(),
+            #[cfg(any(feature = "gui", debug_assertions))]
             settings_open_requested: false,
+            #[cfg(any(feature = "gui", debug_assertions))]
             active_modal_id: None,
+            #[cfg(any(feature = "gui", debug_assertions))]
             active_modal_kind: None,
             #[cfg(feature = "gui")]
             plugins_open: false,
@@ -688,6 +702,7 @@ impl AppState {
             last_tab_locations: None,
             #[cfg(feature = "gui")]
             popup_hovered: false,
+            #[cfg(any(feature = "gui", debug_assertions))]
             plugin_popup_open: false,
             #[cfg(feature = "gui")]
             banner_hovered: false,
@@ -909,6 +924,7 @@ impl AppState {
     /// headless 빌드에는 dialog 가 없으므로 항상 `false` 다. 그래도 이 판정이 두 조합에
     /// 다 있는 것은 `ui.state` debug 덤프가 이 값과 [`Self::keyboard_overlay_open`] 을
     /// 조합과 무관하게 같은 키로 찍기 때문이다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub fn has_input_dialog_open(&self) -> bool {
         #[cfg(feature = "gui")]
         {
@@ -926,6 +942,7 @@ impl AppState {
     /// 포워딩)가 **각자** 계산하던 것을 단일 출처로 합쳤다 — 한쪽만 바뀌면 "egui 에는
     /// 먹였는데 터미널로도 갔다"(이중 처리) 또는 "egui 에 안 먹였는데 터미널도
     /// 차단"(입력 유실)이 된다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub(crate) fn keyboard_overlay_open(&self) -> bool {
         #[cfg(feature = "gui")]
         let host_popup_focused = self.popups.has_focused()
@@ -1042,6 +1059,8 @@ impl AppState {
     ///
     /// headless 빌드에는 무대 개념이 없으므로 항상 `false` — 무대는 화면 투영이라
     /// 대응 도메인이 없다(`docs/identity.md` §2.2).
+    // 읽는 자리가 gui 게이트들과 debug `ui.state` 덤프뿐이다.
+    #[cfg(any(feature = "gui", debug_assertions))]
     pub fn fullscreen_stage_active(&self) -> bool {
         #[cfg(feature = "gui")]
         {
@@ -1383,6 +1402,7 @@ impl AppState {
 /// `PopupManager` 소속이 아니라 `has_focused()` 로 잡히지 않는데, 그 popup 의 키 입력은
 /// host egui 의 `ctx.input` 을 거쳐 plugin 으로 forward 된다. 게이트가 닫혀 있으면 키가
 /// egui 큐에 아예 안 들어가 forward 소스가 비고, 그 키는 그대로 터미널로 샌다.
+#[cfg(any(feature = "gui", debug_assertions, test))]
 pub(crate) fn keyboard_overlay_open(
     settings_open_requested: bool,
     input_dialog_open: bool,

@@ -22,7 +22,9 @@ mod adapters;
 mod app;
 pub mod boot;
 // 셀 색 해석 — gui 게이트 밖이다. 렌더러가 쓰지만 순수 계산이라
-// headless 의 `debug.glyph_color` 도 같은 함수로 답한다.
+// headless 의 `debug.glyph_color` 도 같은 함수로 답한다. 부르는 자리가 그 둘뿐이라
+// 게이트는 그 합이다 — release 헤드리스에는 둘 다 없다.
+#[cfg(any(feature = "gui", debug_assertions))]
 mod cell_palette;
 mod clipboard;
 mod close_trace;
@@ -34,6 +36,9 @@ mod design_token_guard;
 #[cfg(test)]
 mod dpi_conversion_guard;
 mod file;
+// 무대 메타 — 읽는 자리가 gui 의 무대 정의 · debug 조회(`debug.fullscreen.*`) · 테스트
+// 가드뿐이라 게이트는 그 합이다.
+#[cfg(any(feature = "gui", debug_assertions, test))]
 mod fullscreen_stages;
 #[cfg(feature = "gui")]
 mod gfx;
