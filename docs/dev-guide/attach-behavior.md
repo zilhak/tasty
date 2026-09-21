@@ -117,21 +117,27 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
 - **통지는 server→client `StreamControl::Loss{frames}`**: 직전 `Loss` 이후(첫 통지면 연결을 연
   이후) 이 연결에서 버린 프레임 수.
 - **통지 자체가 막힐 수 있다 — 그래서 빚으로 든다.** 버리는 순간은 정의상 sink 가 찬
-  순간이라 통지도 못 넣는다. `StreamSink::pending_loss` 에 수를 쌓아 두고, **다음 `push` 의
-  맨 앞**(`StreamHub::repay_pending_loss`)에서 한 칸이 비면 그때 통지를 먼저 넣는다. 그래서
-  통지는 **마지막 생존 프레임과 공백 이후 첫 프레임 사이**에 정확히 앉는다 — 위치가 곧
-  "여기서 끊겼다" 는 뜻이다. 넣기에 실패하면 빚을 **안 지운다**(다음 기회에 전액 갚는다).
-  - **통지의 지연 상한 — `pump_inbound` 도 갚는다.** server→client push 는 전부 **변화
-    구동**이다 — 1 Hz tick 에 올라타는 셋(`Activity`·`Attention`·`Cwd`)이 diff 만 밀고(그 성질을
-    `busy_activity_forwards_only_on_change` 가 고정한다) 나머지는 PTY 출력 tap · 구조 회신 · mesh
-    처럼 사건이 있을 때만 민다. 그래서 `push` 만 갚으면 폭주 직후 조용해진 연결에서 빚이 무기한
-    남는다. 그래서 `pump_inbound` 가 끝에서 모든 연결의 빚을 갚는다(`repay_all_pending_loss`).
-    `pump_inbound` 는 어느 client 든 프레임을 보낼 때마다 돌고, 살아 있는 연결은
-    `HEARTBEAT_TIMEOUT` 안에 무엇이든 보내야 하므로(안 보내면 서버 read 가 끊는다) 통지는 그
-    연결의 sink 에 자리가 난 뒤 **그 연결 자신의 다음 inbound 프레임까지** 안에 나간다 —
-    심장박동을 보내는 client(GUI · raw 브리지)는 `HEARTBEAT_INTERVAL`, 어떤 살아 있는 연결이든
-    `HEARTBEAT_TIMEOUT`. sink 가 계속 차 있으면 안 나가고, 그 경우는 `LAG_LIMIT` 강제분리가
-    끝낸다. 시험 `a_pending_notice_is_repaid_by_the_next_inbound_frame_without_a_push`.
+  순간이라 통지도 못 넣는다. `StreamSink::pending_loss` 에 수를 쌓아 두고, **sink 에 자리가 나는
+  첫 순간** — write 스레드가 큐에서 한 장을 꺼낸 직후(`SinkReceiver`) — 에 통지를 넣는다. 그
+  순간 큐에 든 것은 전부 버리기 전에 들어간 프레임이라, 통지는 **마지막 생존 프레임 바로 뒤**,
+  즉 공백 이후 첫 프레임 앞에 정확히 앉는다 — 위치가 곧 "여기서 끊겼다" 는 뜻이다. 넣기에
+  실패하면 빚을 **안 지운다**(다음 기회에 전액 갚는다). `push` 의 맨 앞(`StreamHub::repay_pending_loss`)
+  에서도 한 번 더 시도한다.
+  - **통지의 지연 상한 — 소비자가 공백 앞을 다 읽는 순간 통지는 큐의 맨 앞에 있다.** 뒤따르는
+    push 에도, 소비자의 inbound 에도 기대지 않는다. server→client push 는 전부 **변화 구동**이라
+    (1 Hz tick 에 올라타는 `Activity`·`Attention`·`Cwd` 도 diff 만 민다 —
+    `busy_activity_forwards_only_on_change`), 갚는 자리가 `push` · `pump_inbound` 뿐이면 폭주 직후
+    조용해진 연결에서 통지가 다음 사건이나 그 연결의 다음 inbound 를 기다린다. **심장박동이 없는
+    CLI mirror-dump** 는 그 사이에 창이 끝나 공백 앞까지의 화면을 경고 없이 찍었다
+    ([ADR-0450](../adr/0450-a-pending-loss-notice-is-queued-the-moment-the-sink-has-room.md)).
+    sink 가 계속 차 있으면(소비자가 안 읽으면) 여전히 안 나가고, 그 경우는 `LAG_LIMIT` 강제분리가
+    끝낸다. 시험 `a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss`.
+  - **`pump_inbound` 도 갚는다 — 선언이 손실보다 늦게 온 연결.** 소비자가 선언 전에 큐를 다
+    비웠으면 꺼낼 때는 갚을 것이 없었고 선언 뒤에는 꺼낼 것이 없다. `pump_inbound` 가 끝에서 모든
+    연결의 빚을 갚으므로(`repay_all_pending_loss`) 선언을 적은 그 배치에서 통지가 나간다. 시험
+    `a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch`.
+  - **평상시 비용.** write 스레드는 연결마다 둔 원자 사본(`StreamSink::owes_notice` —
+    `loss_notify && pending_loss != 0`)만 읽고, 빚이 있을 때만 sink 맵 잠금을 잡는다.
 - **통지 성공은 소비자가 따라잡은 것으로 안 센다.** `repay_pending_loss` 는 `StreamSink::lag`
   을 건드리지 않는다 — 서버가 스스로 넣은 프레임이 `LAG_LIMIT` 강제분리 시계를 되돌리면,
   영원히 안 읽는 소비자가 영원히 안 끊긴다.

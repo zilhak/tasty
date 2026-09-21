@@ -149,3 +149,4 @@
   `StreamHub::repay_pending_loss`·`StreamSink::pending_loss`
   (`crates/tasty-ipc/src/stream_hub.rs`).
 - 부분 개정: [0400](0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md) (통지 지연 조항 개정)
+- 부분 개정: [0450](0450-a-pending-loss-notice-is-queued-the-moment-the-sink-has-room.md) (막힌 통지를 갚는 자리 개정)

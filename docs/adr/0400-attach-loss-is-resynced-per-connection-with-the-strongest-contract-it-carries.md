@@ -193,3 +193,4 @@ mirror 연결 하나가 PTY Data(surface 접두 mux) · 상태 Control(`Resize`�
 - 동작 문서: [`docs/dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md)
 - 낡음 toast 가 기대는 toast 트리거 정책의 허용 부류: [ADR-0401](0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md)
 - 코드 근거(결정이 실현된 현재 위치): `tasty_ipc::stream_hub::{StreamHub::pump_inbound, StreamHub::loss, SinkReceiver}` · `app::attach_client::{MirrorEvent::Desynced, App::apply_attach_client_output}` · `tasty_cli::local::attach::{run_attach_on_port, run_attach_workspace_on_port}` · `adapters::ipc::handler::pressure::stream_push_json`
+- 부분 개정: [0450](0450-a-pending-loss-notice-is-queued-the-moment-the-sink-has-room.md) (결정 5 — 통지 지연의 상한 개정)
