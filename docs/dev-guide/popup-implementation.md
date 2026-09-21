@@ -132,29 +132,32 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 값을 그대로 비교하면 항등식이 되므로, 변이는 **sizer 쪽 반환값**을 흔들어 그 테스트가 죽는지로
 확인한다(`command_palette.rs::sizer_wiring_tests`).
 
-### sizer 는 매 프레임 돈다 (열 때 한 번이 아니다)
+### scrim 의 범위
 
-`popup::frame::draw_popup_layer` 의 첫 루프가 등록된 모든 def 의 `sizer` 를 **프레임마다**
-부르고 그 결과를 `PopupState.size` 에 넣는다. 그래서 "검색으로 목록이 줄면 카드도 줄어든다"
-같은 **프레임마다 달라지는 크기**에 이 필드를 그대로 쓸 수 있다 — 별도 경로를 만들지 않는다
-(`command_palette`·`tools_menu`·`rail_category` 가 그 형태다).
+scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범위면 그 칸 하나, `Pane`·`Tab`
+범위면 그 pane, `Window`·`Workspace` 범위면 창 전체다. 범위 rect 를 찾지 못하면 창 전체로
+떨어진다(`PopupManager::scope_rect` 의 `None` → `screen_rect`)
+([ADR-0300](../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
+규칙 본문은 [design/systems/popup.md](../design/systems/popup.md) §scrim 의 범위. 새 팝업을
+만들 때 손댈 자리는 둘이다.
 
-이 사실을 쓸 때 함께 지킬 것 둘:
+- **scrim 을 깔 것인가** — `PopupManager::popup_has_scrim` 의 id 명부에 더한다. 범위로
+  판정하지 않는다: `search_bar` 처럼 `Surface` 범위를 쓰면서도 anchored + scrim-less 인
+  갈래가 있고([ADR-0254](../adr/0254-floating-surface-shadow-scope-rule.md)), 범위로
+  판정하면 그 갈래가 조용히 뒤집힌다. anchored 명부(`ANCHORED_POPUPS`)와 이 명부가
+  어긋나면 `no_anchored_popup_takes_a_scrim` 이 잡는다. 이 명부는 host 팝업의 것이다 —
+  plugin 팝업은 명부 없이 예외 없이 scrim 을 깐다(`src/plugin_bridge/popup_render.rs`).
+- **부모-자식이면 자식은 안 깐다** — 같은 범위에 팝업이 여럿이어도 scrim 은 한 번이다.
+  `PopupManager::pick_scrim_layers` 가 host·plugin 두 경로에서 같은 판정을 한다. 자식
+  팝업을 scrim 명부에 넣지 마라.
 
-- **draw 와 sizer 가 같은 식을 본다.** 높이를 구역별로 쪼갠 함수/상수를 양쪽이 **같이**
-  읽게 하고, 한쪽에만 리터럴을 두지 않는다. 두 식이 갈리면 목록 마지막 행이 footer 밑으로
-  밀리는데, 빌드도 테스트도 그대로 통과한다.
-- **배율은 sizer 의 몫이다.** `sizer` 가 있는 popup 은 등록 시 `default_size` 에 host UI zoom 이
-  곱해지지 않는다(`PopupManager::register`). 그래서 폭이 콘텐츠를 안 따르더라도 sizer 가
-  `zoomed_px` 로 직접 곱해 돌려줘야 한다. 높이 식도 같다 — `Theme` 값은 생성 때 배율을
-  이미 탔고 파일 안 const 는 안 탔으므로, 한 식에서 섞으면 그릇만 고정되고 안의 글자가
-  커진다(ADR-0126). 고정 크기였을 때는 등록이 곱해 주던 몫이라 **sizer 로 바꾸는 순간
-  조용히 사라진다.**
-
-**배선은 값으로 확인한다.** `defs.rs` 에 함수를 꽂아 두는 것은 배선이 아니다 — 한 프레임
-(`draw_popups`)을 돌리고 `state.popups.get(id).size` 를 읽는 테스트를 둔다. sizer 가 돌려준
-값을 그대로 비교하면 항등식이 되므로, 변이는 **sizer 쪽 반환값**을 흔들어 그 테스트가 죽는지로
-확인한다(`command_palette.rs::sizer_wiring_tests`).
+경계를 지키는 것은 layer clip(`ctx.layer_painter(..).with_clip_rect(..)` 에 그 범위 rect 를
+넘긴다)이고, **그 clip 은 매니저가 그리는 것만 덮는다** — scrim · 배경 · 프레임 · 그림자.
+콘텐츠는 자기 `Area` 안에서 그려지고, 그 `Ui` 의 clip 은 egui 의 패널 컨테이너가 자기 rect 로
+덮어쓴다(`TopBottomPanel::show_inside` · `CentralPanel::show_inside` 가 `set_clip_rect(panel_rect)`
+를 부른다 — 부모 clip 과 교집합하지 않는다). 그래서 자기 자연폭보다 훨씬 좁은 칸에 묶이는 팝업을
+새로 만들면 콘텐츠가 칸 밖으로 샐 수 있다. 재는 법은 픽셀 비교다 — 그 팝업을 좁은 칸에 띄우고
+칸 바깥을 팝업 없는 같은 화면과 견줘 차이가 0 인지 본다.
 
 매니저가 그리는 쪽은 `nothing_a_surface_scoped_popup_paints_lands_outside_its_surface`
 (`src/adapters/ui/popup/scrim_scope_tests.rs`)가 든다 — 프레임이 낸 도형마다 실제로 칠해지는
