@@ -68,7 +68,14 @@ pub fn report_apply_error(state: &mut crate::state::AppState, label: &str, err: 
 pub struct DispatchedIntent {
     pub body: Intent,
     pub origin: IntentOrigin,
-    /// `Some` 이면 그대로 결과 envelope 에 전파, `None` 이면 bridge 가 새로 발급.
+    /// 비어 있는 자리다 — **아무도 값을 발급하지 않는다.** 모든 생성자가 `None` 을 넣고, 값을
+    /// 넣는 두 helper([`DispatchedIntent::with_trace_id`] · [`Intent::cascaded_from`])는 비-테스트
+    /// 호출처가 없다. 새로 발급하는 bridge 도 없다. 읽는 자리는 debug 빌드의 intent watch 로그
+    /// 하나뿐이고 거기서도 늘 `None` 이다.
+    ///
+    /// 이름이 같지만 **Event Bus envelope 의 `trace_id` 와 무관하고**, IPC 요청을 가리키는 값도
+    /// 아니다 — IPC 요청 하나를 가리키는 값은 호스트가 발급하는
+    /// [`tasty_ipc::server::RequestSeq`] 다(ADR-0436). 칸을 지우지 않고 남긴 이유도 그 ADR 에 있다.
     pub trace_id: Option<String>,
 }
 
@@ -455,8 +462,9 @@ impl Intent {
 }
 
 impl DispatchedIntent {
-    /// `trace_id` 명시 지정 (IPC chain 등). Audit trace 용 helper — IPC
-    /// 핸들러가 외부에서 발급한 trace_id 를 chain 시작 시점에 주입할 때 호출.
+    /// `trace_id` 를 명시 지정한다. 비-테스트 호출처가 없다 — 이 값을 발급하는 IPC 핸들러는
+    /// 없고, IPC 요청의 호스트 번호는 이 칸이 아니라 [`tasty_ipc::server::RequestSeq`] 다
+    /// (ADR-0436).
     #[allow(dead_code)]
     pub fn with_trace_id(mut self, trace_id: impl Into<String>) -> Self {
         self.trace_id = Some(trace_id.into());
