@@ -1444,6 +1444,9 @@ mod admission_tests {
             command_tx: tx.clone(),
             port: 0,
             shutdown: Arc::new(AtomicBool::new(false)),
+            // 가짜 경로를 넣는 진짜 이유: `None` 이면 `effective_port_file_path` 가
+            // `<TASTY_HOME>/tasty.port` 로 폴백하고, 이 서버의 Drop 이 **실행 중인 사용자 tasty 의
+            // 포트 파일을 지운다.** `None` 으로 단순화하지 마라.
             // 이유: 프로세스당 하나여도 된다 — 이 경로는 한 번도 만들어지지 않고, Drop 이 지우려다
             // NotFound 로 끝나는 자리일 뿐이다. 재호출이 앞 호출의 파일을 지울 일이 없다.
             custom_port_file: Some(std::env::temp_dir().join(format!(
