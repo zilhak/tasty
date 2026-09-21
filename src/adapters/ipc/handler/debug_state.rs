@@ -22,15 +22,21 @@ pub(super) fn handle_ui_state(
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let ws = state.active_workspace(engine);
-    let pane_count = ws.pane_layout().all_pane_ids().len();
-    let focused_pane_id = ws.focused_pane;
-    let focused_pane = ws.pane_layout().find_pane(focused_pane_id);
-    let tab_count = focused_pane.map(|p| p.tabs.len()).unwrap_or(0);
+    // parked 엔진(마지막 창이 닫혀 워크스페이스 0)에도 이 요청이 라우팅된다. 접근자
+    // `active_workspace` 는 그때 부르면 안 된다는 invariant 를 `debug_assert!` 로 걸고 있어,
+    // 무조건 부르면 **debug GUI 프로세스 전체가 panic 으로 죽는다.** 그래서 워크스페이스가
+    // 없으면 부르지 않고, 워크스페이스에서 나오는 세 칸(`pane_count` · `tab_count` ·
+    // `active_tab`)을 null 로 싣는다 — 0 으로 싣으면 "워크스페이스는 있는데 비었다" 와
+    // 구별이 안 된다. `active_workspace` 는 `system.info` 가 빈 엔진에 싣는 것과 같게 원래
+    // 인덱스 그대로다.
+    let ws = (!engine.workspaces.is_empty()).then(|| state.active_workspace(engine));
+    let pane_count = ws.map(|ws| ws.pane_layout().all_pane_ids().len());
+    let focused_pane = ws.and_then(|ws| ws.pane_layout().find_pane(ws.focused_pane));
+    let tab_count = ws.map(|_| focused_pane.map(|p| p.tabs.len()).unwrap_or(0));
     // 탭 **전환**은 수로 안 보인다 — `tab_count` 는 전환해도 그대로다. 그래서 전환을
     // 재는 시험은 관측할 것이 없어 고정 sleep 으로 대신하게 되고, 그러면 전환이 아예
     // 안 일어나도 통과한다. 활성 탭 인덱스가 그 관측 축이다.
-    let active_tab = focused_pane.map(|p| p.active_tab).unwrap_or(0);
+    let active_tab = ws.map(|_| focused_pane.map(|p| p.active_tab).unwrap_or(0));
     #[cfg(feature = "gui")]
     let notification_panel_open = state.popups.is_open("notifications");
     #[cfg(not(feature = "gui"))]
@@ -204,5 +210,45 @@ fn json_deep_merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
         (target_slot, patch_val) => {
             *target_slot = patch_val.clone();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_ui_state;
+
+    /// parked 엔진(워크스페이스 0)에 온 `ui.state` 는 응답해야 한다 — 접근자의 invariant 를
+    /// 어기면 debug 프로세스 전체가 panic 으로 죽는다. 워크스페이스에서 나오는 세 칸은 null,
+    /// 나머지 칸은 키 그대로 실린다.
+    #[test]
+    fn ui_state_answers_for_a_parked_engine_without_workspaces() {
+        let (state, mut engine) = crate::state::tests::test_state();
+        engine.workspaces.clear();
+        let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
+        let result = resp.result.expect("성공 응답이어야 한다");
+        assert_eq!(result["workspace_count"], 0);
+        assert!(result["pane_count"].is_null(), "{result}");
+        assert!(result["tab_count"].is_null(), "{result}");
+        assert!(result["active_tab"].is_null(), "{result}");
+        assert_eq!(result["active_workspace"], state.active_workspace);
+        assert!(result["keyboard_shortcuts_gated"].is_boolean(), "{result}");
+    }
+
+    /// 워크스페이스가 있을 때의 모양은 그대로다 — 세 칸이 수로 실린다.
+    #[test]
+    fn ui_state_keeps_the_counts_when_a_workspace_exists() {
+        let (state, engine) = crate::state::tests::test_state();
+        let resp = handle_ui_state(&state, &engine, serde_json::json!(1));
+        let result = resp.result.expect("성공 응답이어야 한다");
+        assert_eq!(result["workspace_count"], 1);
+        assert!(
+            result["pane_count"].as_u64().is_some_and(|n| n >= 1),
+            "{result}"
+        );
+        assert!(
+            result["tab_count"].as_u64().is_some_and(|n| n >= 1),
+            "{result}"
+        );
+        assert_eq!(result["active_tab"], 0);
     }
 }

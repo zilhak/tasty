@@ -91,6 +91,7 @@
 
 ### Fixed
 
+- **debug 빌드에서 마지막 창을 닫은 뒤 `ui.state` 를 물어도 Tasty 가 죽지 않는다.** 마지막 창이 닫히면 Tasty 는 워크스페이스 없이 대기하는데, 그 상태에서 debug 전용 요청 `ui.state` 가 오면 GUI 프로세스 전체가 panic 으로 종료됐다. 이제 응답하고, 워크스페이스에서 나오는 `pane_count` · `tab_count` · `active_tab` 은 `null` 로 싣는다. 다른 칸은 그대로다. release 빌드에는 `ui.state` 가 없어 해당하지 않는다.
 - **`tasty list pressure` 의 큐 대기 평균이 최댓값을 넘지 않는다.** `queue_before_gate.wait_us_mean` 은 대기 합을 회차가 끝나야 오르는 `commands` 로 나눠, 조회할 때마다 지금 도는 회차(조회 자신 포함)의 대기가 분자에만 들어가 평균이 최댓값보다 크게 나왔다. 이제 대기를 잰 명령 수로 나누고, 그 수를 새 칸 `waits` 로 함께 싣는다 — `wait_us_hist.counts` 의 합과 같다. `commands` 의 뜻과 다른 키는 그대로다. 근거는 [ADR-0466](docs/adr/0466-the-queue-wait-mean-divides-by-the-waits-it-summed.md).
 - **헤드리스 Tasty 에 IPC 요청이 쉬지 않고 이어져도 플러그인 답과 터미널 출력이 밀리지 않는다.** 지금까지 창 없이 도는 Tasty 는 IPC 요청마다 내부 깨우기 신호를 하나씩 쌓았고, 여러 연결이 무거운 요청을 쉬지 않고 보내면 그 신호가 수천 건 밀렸다. 같은 줄에 서는 플러그인 답과 터미널 출력이 그 뒤에서 기다려, 부하 중 플러그인 명령(예: `markdown.recent`)의 답이 1–2 초 걸렸다(GUI 는 수백 ms). 이제 깨우기 신호는 한 번에 하나만 쌓이고, 부하 중에도 플러그인 답이 GUI 와 같은 수백 ms 안에 온다. 플러그인 주기 작업(heartbeat 등)의 시각이 올 때마다 헤드리스가 약 1 초씩 CPU 를 헛돌던 것도 고쳤다. 근거는 [ADR-0465](docs/adr/0465-headless-keeps-one-ipc-wake-in-its-channel-and-a-cut-round-wakes-it-again.md).
 - **`--response-timeout-ms` 가 Tasty 가 멈춰 있을 때도 그 시간 안에 끝난다.** 이 플래그를 준 명령은 요청을 보내기 전에 Tasty 가 상한을 이해하는지 먼저 묻는데, 그 확인에는 상한이 걸리지 않아 Tasty 가 멈춰 있으면 거기서 하염없이 기다렸다(8 초 멈춘 Tasty 에 `--response-timeout-ms 300` 을 주면 7.7 초 뒤에 끝났다). 이제 확인과 요청이 같은 시간을 나눠 쓴다 — 확인이 제시간에 안 끝나면 요청을 보내지 않고, 요청이 차례를 기다리다 시간이 다 됐을 때와 같은 `Error (-32067): …` 로 종료 코드 1 이다. 아무것도 실행되지 않았으므로 그대로 다시 보내면 된다. 상한을 모르는 이전 Tasty 가 멈춰 있어도 같은 시간에 끝난다.

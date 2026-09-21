@@ -45,7 +45,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 | method | params | 설명 |
 |--------|--------|------|
-| `ui.state` | `{}` | 현재 UI 상태 덤프 — `settings_open_requested`(열기 **요청** 래치. 모달이 화면에 있는지가 아니다) · `modal_open` + `active_modal_kind`(모달이 실제로 떠 있는가와 **어느** 모달인가. 종류 없이 `modal_open` 만 보면 설정 창을 기다리는 쪽이 plugins·quit 창을 보고 통과한다) · popup · `active_workspace` · `workspace_count` · `pane_count` · `tab_count` · `active_tab`(포커스된 pane 의 활성 탭 인덱스. 수만으로는 **탭 전환이 안 보여서** 있는 축이다) |
+| `ui.state` | `{}` | 현재 UI 상태 덤프 — `settings_open_requested`(열기 **요청** 래치. 모달이 화면에 있는지가 아니다) · `modal_open` + `active_modal_kind`(모달이 실제로 떠 있는가와 **어느** 모달인가. 종류 없이 `modal_open` 만 보면 설정 창을 기다리는 쪽이 plugins·quit 창을 보고 통과한다) · popup · `active_workspace` · `workspace_count` · `pane_count` · `tab_count` · `active_tab`(포커스된 pane 의 활성 탭 인덱스. 수만으로는 **탭 전환이 안 보여서** 있는 축이다). parked 엔진(마지막 창이 닫혀 워크스페이스 0)에서도 답한다 — 그때 `pane_count` · `tab_count` · `active_tab` 은 null 이고 `active_workspace` 는 `system.info` 처럼 원래 인덱스다 |
 | `debug.info` | `{}` | 실행 중 인스턴스 debug 정보 |
 | `debug.cell_info` | `surface_id, row, col` | 셀 단위 렌더 속성(텍스트, fg/bg, bold/italic/underline …) |
 | `debug.screen_attrs` | `surface_id, row` | 한 행 전체 셀 속성 |
