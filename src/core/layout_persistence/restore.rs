@@ -4,10 +4,16 @@
 //! 복원 가능. 호출자가 `required_plugin_kinds()` 로 미리 필요한 kind 목록을 받아 plugin
 //! pump 를 기다린 뒤 `restore()` 를 호출한다.
 
+// 아래 가져오기는 `restore` 계열(전부 `any(gui, test)`)만 쓴다 — headless 라이브러리
+// 조합에서는 쓰는 자리가 없어 같은 cfg 로 가른다.
+#[cfg(any(feature = "gui", test))]
 use std::path::PathBuf;
 
+#[cfg(any(feature = "gui", test))]
 use crate::core::CoreState;
+#[cfg(any(feature = "gui", test))]
 use crate::core::state::ShellConfig;
+#[cfg(any(feature = "gui", test))]
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
 use super::schema::{
