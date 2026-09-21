@@ -76,3 +76,124 @@ fn a_publish_between_a_dispatch_and_its_answer_is_raised_and_one_after_is_not() 
     mgr.route_plugin_event_publish(PLUGIN, relay(0));
     assert_eq!(last_hop(&mgr), 0);
 }
+
+const EXTENSION: &str = "com.example.relay-ext";
+
+fn manifest(
+    id: &str,
+    extends: Option<tasty_plugin_manifest::ExtendsDecl>,
+) -> tasty_plugin_manifest::Manifest {
+    tasty_plugin_manifest::Manifest {
+        manifest_version: 1,
+        id: id.to_string(),
+        name: id.to_string(),
+        version: "1.0.0".to_string(),
+        authors: vec![],
+        description: String::new(),
+        homepage: String::new(),
+        api_version: "1".to_string(),
+        entry: tasty_plugin_manifest::Entry::Process {
+            command: "x".to_string(),
+            args: vec![],
+        },
+        surface_kinds: vec![],
+        permissions: vec![],
+        event_subscribe: vec![],
+        event_publish: vec![],
+        events_emitted: vec![],
+        contributes: tasty_plugin_manifest::Contributes::default(),
+        extends,
+        lang_dir: "lang".to_string(),
+        bundle: true,
+    }
+}
+
+/// pre-event hook 을 거치는 publish 는 fan-out 이 hook 응답 뒤로 밀린다. 그 사이에
+/// dispatch 응답이 오면 하한을 걸 기록이 사라지므로, 하한은 **도착한 순간**에 걸려
+/// 있어야 한다 — hook 응답 뒤에 판정하면 hop 0 이 그대로 나간다(ADR-0406 "판정 시점").
+#[test]
+fn a_publish_held_by_a_pre_event_hook_keeps_the_floor_it_arrived_with() {
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    let (proc, rx) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), proc);
+    let (ext_proc, ext_rx) = PluginProcess::stub_with_request_rx(EXTENSION);
+    mgr.processes.insert(EXTENSION.into(), ext_proc);
+    mgr.event_bus.set_plugin_permissions(
+        PLUGIN,
+        vec!["agent.*".into()],
+        vec![format!("{PLUGIN}.*")],
+    );
+    mgr.event_bus
+        .subscribe_plugin(PLUGIN, 1, "agent.*".into())
+        .unwrap();
+
+    let target = manifest(PLUGIN, None);
+    let ext = manifest(
+        EXTENSION,
+        Some(tasty_plugin_manifest::ExtendsDecl {
+            plugin_id: PLUGIN.to_string(),
+            version_req: ">=1.0.0".to_string(),
+            api_version: "1".to_string(),
+            pre_event: vec![tasty_plugin_manifest::EventHookDecl {
+                event: format!("{PLUGIN}.relay"),
+                modifies: vec![],
+                mode: tasty_plugin_manifest::HookMode::Observe,
+                timeout_ms: 60_000,
+            }],
+            post_event: vec![],
+            pre_ipc: vec![],
+            post_ipc: vec![],
+        }),
+    );
+    mgr.extensions
+        .recompute(&[&target, &ext], &|_| false, &|_, _| true);
+    for m in [target, ext] {
+        mgr.packages.push(tasty_plugin_manifest::PluginPackage {
+            dir: std::path::PathBuf::new(),
+            manifest: m,
+        });
+    }
+
+    mgr.emit_host_event(
+        "agent.task_finished",
+        &serde_json::json!({ "state": "succeeded" }),
+        EventScope::System,
+    );
+    let dispatch = rx
+        .try_recv()
+        .expect("구독한 plugin 에 event.dispatch 가 나가야 한다");
+
+    // 응답 전 도착 — hook 이 붙잡는다. 아직 링에 안 들어간다.
+    mgr.route_plugin_event_publish(PLUGIN, relay(0));
+    let hook = ext_rx
+        .try_recv()
+        .expect("extension 에 pre-event hook 호출이 나가야 한다");
+    assert!(
+        mgr.event_bus
+            .fetch(0, crate::event_bus::EVENT_RING_CAPACITY, None)
+            .events
+            .iter()
+            .all(|(_, e)| e.key != format!("{PLUGIN}.relay")),
+        "hook 응답 전에는 fan-out 되지 않는다"
+    );
+
+    // dispatch 응답이 hook 응답보다 먼저 온다 — 버스의 기록은 여기서 사라진다.
+    let answer = |id| PluginResponse {
+        id,
+        result: Some(serde_json::Value::Null),
+        error: None,
+        error_code: None,
+    };
+    mgr.handle_plugin_response(PLUGIN, answer(dispatch.id));
+    mgr.handle_plugin_response(EXTENSION, answer(hook.id));
+
+    let got = mgr
+        .event_bus
+        .fetch(0, crate::event_bus::EVENT_RING_CAPACITY, None);
+    let (_, last) = got.events.last().expect("링이 비었다");
+    assert_eq!(last.key, format!("{PLUGIN}.relay"));
+    assert_eq!(
+        last.meta.hop, 1,
+        "도착할 때 건 하한이 hook 을 지나도 남는다"
+    );
+}
