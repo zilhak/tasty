@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use crate::admission::{AdmissionTicket, CommandAdmission, Origin, Refusal};
 use crate::dispatch::{DispatchStats, FlightTicket};
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+use tasty_telemetry::slow_requests::{HostOutcome, HostOutcomeCell};
 
 /// 호스트가 요청 하나에 붙이는 번호 — 프로세스 수명 동안 1 부터 1 씩 오른다.
 ///
@@ -176,6 +177,12 @@ impl IpcCommand {
         LifecycleHandle(self.lifecycle.clone())
     }
 
+    /// 이 명령의 답이 끝난 방식을 담을 칸 — 느린 요청 링의 호스트 줄이 들고 간다. 채우는 쪽은
+    /// 기다리는 쪽이다([`LifecycleHandle::record_answer`]).
+    pub fn outcome_cell(&self) -> HostOutcomeCell {
+        self.lifecycle.outcome.clone()
+    }
+
     /// 실행 **직전**에 부른다 — 이 명령을 지금 실행해도 되는가.
     ///
     /// 기한(큐 진입 + 호출자의 응답 대기 상한)이 지났으면 실행하지 않는다. 그 요청을 기다리던
@@ -262,6 +269,9 @@ pub struct CommandLifecycle {
     /// 실행을 시작한 명령의 in-flight 몫. 이 칸을 든 마지막 쪽(명령 또는 기다리는 쪽)이 놓을 때
     /// 버려진다.
     flight: OnceLock<FlightTicket>,
+    /// 호출자에게 나간 답이 끝난 방식. 기다리는 쪽이 답을 받거나 스스로 만든 순간 채우고, 느린
+    /// 요청 링의 호스트 줄이 같은 칸을 들어 읽는다(ADR-0468).
+    outcome: HostOutcomeCell,
 }
 
 impl CommandLifecycle {
@@ -293,6 +303,20 @@ impl LifecycleHandle {
             Err(WITHDRAWN) => Withdraw::NotRun,
             Err(_) => Withdraw::Started,
         }
+    }
+
+    /// 호출자에게 실제로 나간 답을 적는다 — 받은 답이든, 상한에서 스스로 만든 답이든. 한 명령에
+    /// 처음 한 번만 적힌다.
+    pub fn record_answer(&self, response: &JsonRpcResponse) {
+        self.0.outcome.set(match &response.error {
+            Some(err) => HostOutcome::Error { code: err.code },
+            None => HostOutcome::Ok,
+        });
+    }
+
+    /// 응답 봉투 없이 끝난 갈래(주입 경로의 상한 만료)를 코드로 적는다.
+    pub fn record_error_code(&self, code: i32) {
+        self.0.outcome.set(HostOutcome::Error { code });
     }
 }
 
@@ -376,6 +400,38 @@ mod tests {
             other => panic!("expected Expired, got {other:?}"),
         }
         assert_eq!(waiter.withdraw(), Withdraw::NotRun);
+    }
+
+    /// 기다리는 쪽이 적은 답은 명령이 내준 결과 칸에 보이고, 두 번째 답은 첫 답을 덮지 않는다.
+    #[test]
+    fn the_answer_the_waiter_records_shows_in_the_command_cell() {
+        let (c, _rx) = cmd(Some(60_000));
+        let cell = c.outcome_cell();
+        let waiter = c.lifecycle();
+        assert_eq!(cell.get(), None, "nothing answered yet");
+        waiter.record_answer(&JsonRpcResponse::error(
+            serde_json::json!(1),
+            crate::protocol::ERR_EXPIRED_BEFORE_RUN,
+            "expired",
+        ));
+        waiter.record_answer(&JsonRpcResponse::success(
+            serde_json::json!(1),
+            serde_json::Value::Null,
+        ));
+        assert_eq!(
+            cell.get(),
+            Some(HostOutcome::Error {
+                code: crate::protocol::ERR_EXPIRED_BEFORE_RUN
+            })
+        );
+
+        let (ok, _rx) = cmd(None);
+        let cell = ok.outcome_cell();
+        ok.lifecycle().record_answer(&JsonRpcResponse::success(
+            serde_json::json!(1),
+            serde_json::Value::Null,
+        ));
+        assert_eq!(cell.get(), Some(HostOutcome::Ok));
     }
 
     /// 상한이 없거나 0 이면 기한도 없다 — 봉투 규약 그대로다.

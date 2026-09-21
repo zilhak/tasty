@@ -12,6 +12,7 @@ fn host(seq: u64, queue_wait: Duration, host: Duration) -> HostLeg<'static> {
         caller: CallerKind::Local,
         queue_wait,
         host,
+        outcome: HostOutcomeCell::default(),
     }
 }
 
@@ -194,6 +195,7 @@ fn a_method_name_past_the_cap_is_cut_at_a_char_boundary() {
             caller: CallerKind::Agent,
             queue_wait: SLOW,
             host: FAST,
+            outcome: HostOutcomeCell::default(),
         });
     }
     let rows = log.snapshot().rows;

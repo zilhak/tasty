@@ -126,6 +126,14 @@ pub enum ListCommands {
     /// pushed out are `admitted` minus the rows shown. A query for this answer
     /// is never kept itself.
     ///
+    /// The `host` part of a slow row also carries the answer the caller
+    /// actually got: `outcome` is `ok` or `error`, the same words a plugin hop
+    /// uses, and `error_code` is the JSON-RPC error code when it is an error,
+    /// so a request that expired in the queue before it ran (-32067), a refused
+    /// one (-32001) and a normal answer can be told apart from the ring alone.
+    /// Both are null while no answer has gone out yet, for example while a
+    /// forwarded request is still waiting for its plugin.
+    ///
     /// `queue_before_gate.waits` counts the commands whose queue wait was
     /// recorded, at the moment each was taken out; it is the denominator of
     /// `wait_us_mean` and equals the sum of `wait_us_hist.counts`. `commands`

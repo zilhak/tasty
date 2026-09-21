@@ -125,6 +125,8 @@ pub(crate) struct CommandObservation {
     caller: tasty_telemetry::slow_requests::CallerKind,
     queue_wait: Duration,
     started: Instant,
+    /// 그 명령의 답이 끝난 방식 — 기다리는 쪽이 답을 받을 때 채우므로 줄은 칸째 든다.
+    outcome: tasty_telemetry::slow_requests::HostOutcomeCell,
 }
 
 impl CommandObservation {
@@ -146,6 +148,7 @@ impl CommandObservation {
             caller,
             queue_wait,
             started: Instant::now(),
+            outcome: cmd.outcome_cell(),
         }
     }
 
@@ -160,6 +163,7 @@ impl CommandObservation {
             caller: self.caller,
             queue_wait: self.queue_wait,
             host: self.started.elapsed(),
+            outcome: self.outcome,
         });
     }
 }
@@ -413,6 +417,20 @@ mod tests {
         );
         assert!(host.host_us >= 100_000, "{host:?}");
         assert_eq!(pressure.snapshot().queue_wait_hist.total(), 2);
+
+        // 줄은 명령의 결과 칸을 든다 — 줄이 들어간 **뒤에** 기다리는 쪽이 답을 적어도 보인다.
+        assert_eq!(host.outcome.get(), None, "nobody answered yet");
+        cmd.lifecycle()
+            .record_answer(&tasty_ipc::protocol::JsonRpcResponse::success(
+                serde_json::json!(1),
+                serde_json::Value::Null,
+            ));
+        let rows = slow.snapshot().rows;
+        let host = rows[0].host.as_ref().expect("host part");
+        assert_eq!(
+            host.outcome.get(),
+            Some(tasty_telemetry::slow_requests::HostOutcome::Ok)
+        );
     }
 
     /// 두 dispatch 루프가 **같은 자리**에서 관측한다 — 꺼낸 직후 `begin`, 다 다룬 직후 `finish`,

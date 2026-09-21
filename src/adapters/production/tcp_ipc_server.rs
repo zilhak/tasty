@@ -1196,34 +1196,36 @@ impl TcpIpcServer {
         writer: &mut std::net::TcpStream,
         peer: Option<std::net::SocketAddr>,
     ) -> bool {
-        let Some(bound) = wait_bound else {
-            return match resp_rx.recv() {
-                Ok(response) => Self::write_dispatch_response(writer, &response, peer),
-                Err(e) => {
-                    tracing::warn!(
-                        "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
-                        e
-                    );
-                    false
-                }
-            };
-        };
-        match resp_rx.recv_timeout(bound) {
-            Ok(response) => Self::write_dispatch_response(writer, &response, peer),
-            // 만료 순간 명령이 아직 큐에 있었으면 실행되지 않게 막고 "실행 안 됨" 으로 답한다
-            // (ADR-0411). 이미 시작됐으면 종전 그대로 결과 불명이다.
-            Err(mpsc::RecvTimeoutError::Timeout) => match lifecycle.withdraw() {
-                tasty_ipc::server::Withdraw::NotRun => Self::write_dispatch_response(
-                    writer,
-                    &tasty_ipc::server::expired_before_run_response(rpc_id, bound),
-                    peer,
-                ),
-                tasty_ipc::server::Withdraw::Started => {
-                    Self::answer_wait_expired(writer, rpc_id, bound, peer)
+        // 호출자에게 나갈 답을 먼저 정하고, 느린 요청 링이 읽을 결과 칸에 적은 뒤 쓴다 — 받은
+        // 답이든 상한에서 스스로 만든 답이든 호출자가 본 것이 적힌다(ADR-0468).
+        let response = match wait_bound {
+            None => resp_rx
+                .recv()
+                .map_err(|e| format!("{e} (response_tx dropped without sending)")),
+            Some(bound) => match resp_rx.recv_timeout(bound) {
+                Ok(response) => Ok(response),
+                // 만료 순간 명령이 아직 큐에 있었으면 실행되지 않게 막고 "실행 안 됨" 으로
+                // 답한다(ADR-0411). 이미 시작됐으면 종전 그대로 결과 불명이다.
+                Err(mpsc::RecvTimeoutError::Timeout) => Ok(match lifecycle.withdraw() {
+                    tasty_ipc::server::Withdraw::NotRun => {
+                        tasty_ipc::server::expired_before_run_response(rpc_id, bound)
+                    }
+                    tasty_ipc::server::Withdraw::Started => {
+                        Self::wait_expired_response(rpc_id, bound, peer)
+                    }
+                }),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    Err("response_tx dropped without sending".to_string())
                 }
             },
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                tracing::warn!("IPC resp_rx.recv failed (response_tx dropped without sending)");
+        };
+        match response {
+            Ok(response) => {
+                lifecycle.record_answer(&response);
+                Self::write_dispatch_response(writer, &response, peer)
+            }
+            Err(e) => {
+                tracing::warn!("IPC resp_rx.recv failed: {e}");
                 false
             }
         }
@@ -1238,18 +1240,17 @@ impl TcpIpcServer {
     ///
     /// 호출자가 다음에 할 일이 그 구분에 달렸다. 부수효과가 남는 메서드를 그냥 재전송하면
     /// **두 번째 효과**가 남으므로, 재전송 전에 상태를 먼저 읽어야 한다.
-    fn answer_wait_expired(
-        writer: &mut std::net::TcpStream,
+    fn wait_expired_response(
         rpc_id: serde_json::Value,
         bound: Duration,
         peer: Option<std::net::SocketAddr>,
-    ) -> bool {
+    ) -> JsonRpcResponse {
         tracing::warn!(
             "IPC response wait of {:?} expired for {:?} — the request may still be running",
             bound,
             peer
         );
-        let resp = JsonRpcResponse::error(
+        JsonRpcResponse::error(
             rpc_id,
             crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN,
             format!(
@@ -1257,8 +1258,7 @@ impl TcpIpcServer {
                  whether the request ran is unknown — read the state before resending it",
                 bound.as_millis()
             ),
-        );
-        Self::write_dispatch_response(writer, &resp, peer)
+        )
     }
 
     /// 명령 큐가 차서 요청을 넣지 않았다. **연결은 유지한다.** 아무것도 실행되지 않았으므로
@@ -1470,8 +1470,10 @@ mod admission_tests {
                 .expect("the request reaches the queue");
             let stats = Arc::new(tasty_ipc::dispatch::DispatchStats::default());
             assert_eq!(cmd.claim(&stats), tasty_ipc::server::Claim::Run);
+            let cell = cmd.outcome_cell();
             // 받는 쪽이 이미 실패해 사라졌을 수 있다 — 그때는 시험이 다른 실패문으로 끝난다.
             let _ = held_tx.send(cmd);
+            cell
         });
 
         // 기다림을 별도 스레드에 두고 **완료 자체에 상한을 건다.** 상한이 안 걸리는
@@ -1490,8 +1492,15 @@ mod admission_tests {
             .expect("호출자가 실은 상한이 안 걸렸다 — 기다림이 안 끝났다");
         assert!(kept, "만료는 연결을 끊는 사건이 아니다");
         waiter.join().expect("waiter");
-        taker.join().expect("taker");
+        let cell = taker.join().expect("taker");
         drop(held_rx);
+        assert_eq!(
+            cell.get(),
+            Some(tasty_telemetry::slow_requests::HostOutcome::Error {
+                code: crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN
+            }),
+            "the slow-request row reads the answer the waiter sent (ADR-0468)"
+        );
 
         let mut got = String::new();
         BufReader::new(client)
@@ -1544,6 +1553,13 @@ mod admission_tests {
             queued.claim(&Arc::new(tasty_ipc::dispatch::DispatchStats::default())),
             tasty_ipc::server::Claim::Withdrawn,
             "the waiter withdrew it, so taking it now must not run it"
+        );
+        assert_eq!(
+            queued.outcome_cell().get(),
+            Some(tasty_telemetry::slow_requests::HostOutcome::Error {
+                code: crate::ipc::protocol::ERR_EXPIRED_BEFORE_RUN
+            }),
+            "the slow-request row reads the answer the waiter sent (ADR-0468)"
         );
 
         drop(server_side);

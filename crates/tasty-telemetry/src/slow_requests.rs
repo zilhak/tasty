@@ -30,7 +30,7 @@
 //! 문턱을 넘는 순간 링으로 옮겨진다 — 그 뒤에 오는 hop 은 링 안의 줄에 붙는다.
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 /// 링에 넣는 문턱 — 큐 대기 · 호스트 처리 · plugin 대기의 합이 이 값 **이상**이면 넣는다.
@@ -109,8 +109,69 @@ impl HopOutcome {
     }
 }
 
+/// 호스트가 호출자에게 준 답이 끝난 방식 — hop 의 [`HopOutcome`] 과 같은 표기(`ok` · `error`)에
+/// 오류면 그 JSON-RPC 코드를 함께 든다. 같은 느린 줄이라도 `-32067`(실행 전 만료) · `-32001`(거절) ·
+/// 정상 답은 처방이 다르다(ADR-0468).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostOutcome {
+    /// 성공으로 답했다.
+    Ok,
+    /// 오류로 답했다.
+    Error {
+        /// 호출자가 받은 JSON-RPC 오류 코드.
+        code: i32,
+    },
+}
+
+impl HostOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HostOutcome::Ok => "ok",
+            HostOutcome::Error { .. } => "error",
+        }
+    }
+
+    /// 오류면 그 코드, 성공이면 `None`.
+    pub fn error_code(self) -> Option<i32> {
+        match self {
+            HostOutcome::Ok => None,
+            HostOutcome::Error { code } => Some(code),
+        }
+    }
+}
+
+/// 호출자에게 답이 나간 순간 **기다리던 쪽**(소켓 연결 스레드 · 호스트 주입기)이 한 번 채우는 칸.
+///
+/// 답을 보내는 자리는 dispatch 안에 여럿이고(게이트 거절 · 조기 응답 · handler · plugin forward 의
+/// 뒤늦은 답), 기다리는 쪽이 받는 자리는 하나다 — 그래서 받는 쪽이 적는다. 호스트가 명령을 다
+/// 다룬 순간([`SlowRequestLog::finish_host`])에는 아직 안 채워졌을 수 있으므로(plugin 으로 넘긴
+/// 요청은 답이 뒤 프레임에 온다), 줄은 값이 아니라 이 칸을 들고 읽을 때 본다. 비어 있으면 아직 답이
+/// 안 나갔거나, 기다리는 쪽이 답 없이 물러난 것이다.
+#[derive(Debug, Clone, Default)]
+pub struct HostOutcomeCell(Arc<OnceLock<HostOutcome>>);
+
+impl HostOutcomeCell {
+    /// 처음 한 번만 채워진다 — 요청 하나에 답은 하나다.
+    pub fn set(&self, outcome: HostOutcome) {
+        // 이미 채워졌으면 두 번째 답이 없다는 불변식이 이미 지켜진 것이라 버린다.
+        let _already = self.0.set(outcome);
+    }
+
+    pub fn get(&self) -> Option<HostOutcome> {
+        self.0.get().copied()
+    }
+}
+
+impl PartialEq for HostOutcomeCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
+impl Eq for HostOutcomeCell {}
+
 /// 호스트가 명령 하나를 다룬 몫.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct HostLeg<'a> {
     pub request_seq: u64,
     /// canonical 메서드 이름 — 모르는 이름이면 받은 그대로다. 줄에는 [`MAX_METHOD_BYTES`] 까지만
@@ -122,6 +183,8 @@ pub struct HostLeg<'a> {
     /// 꺼낸 뒤 호스트가 그 명령을 다 다룰 때까지(게이트 포함). plugin 으로 넘긴 요청이면 넘기는
     /// 데까지이고, plugin 을 기다린 시간은 hop 쪽에 있다.
     pub host: Duration,
+    /// 그 명령의 답이 끝난 방식 — 기다리는 쪽이 채운다.
+    pub outcome: HostOutcomeCell,
 }
 
 /// 줄에 남는 호스트 몫.
@@ -131,6 +194,8 @@ pub struct HostPart {
     pub caller: CallerKind,
     pub queue_wait_us: u64,
     pub host_us: u64,
+    /// 호출자가 받은 답. 읽는 순간에 비어 있을 수 있다([`HostOutcomeCell`]).
+    pub outcome: HostOutcomeCell,
 }
 
 /// plugin hop 하나.
@@ -259,6 +324,7 @@ impl SlowRequestLog {
     /// 호스트가 명령 하나를 다 다뤘다. plugin 으로 넘긴 요청이면 열린 자리에 몫을 채우고,
     /// 아니면 문턱을 넘었을 때만 링에 넣는다.
     pub fn finish_host(&self, leg: HostLeg<'_>) {
+        let outcome = &leg.outcome;
         let (queue_wait_us, host_us) = (as_micros(leg.queue_wait), as_micros(leg.host));
         // 메서드 이름은 줄에 남길 때만 복사한다 — 이 자리는 요청마다 지난다.
         let part = || HostPart {
@@ -266,6 +332,7 @@ impl SlowRequestLog {
             caller: leg.caller,
             queue_wait_us,
             host_us,
+            outcome: outcome.clone(),
         };
         let mut inner = self.lock();
         if let Some(at) = inner.open_index(leg.request_seq) {

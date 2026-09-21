@@ -293,6 +293,7 @@ fn fast_host_leg(seq: RequestSeq) -> tasty_telemetry::slow_requests::HostLeg<'st
         caller: tasty_telemetry::slow_requests::CallerKind::Local,
         queue_wait: Duration::from_micros(10),
         host: Duration::from_micros(10),
+        outcome: Default::default(),
     }
 }
 

@@ -34,7 +34,9 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::admission::{CommandAdmission, Origin, Refusal};
-use crate::protocol::{ERR_EXPIRED_BEFORE_RUN, JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::{
+    ERR_EXPIRED_BEFORE_RUN, ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN, JsonRpcRequest, JsonRpcResponse,
+};
 use crate::server::{IpcCommand, IpcWaker, Withdraw};
 
 /// 주입 호출의 실패. 갈래마다 **요청이 실행됐는가**가 다르다 — [`InjectError::nothing_ran`].
@@ -193,13 +195,25 @@ impl HostIpcInjector {
             .send(cmd)
             .map_err(|e| InjectError::Send(e.to_string()))?;
         (self.waker)();
+        // 느린 요청 링의 결과 칸은 소켓 경로와 같은 코드로 적는다 — 받은 답은 그 답으로, 상한에서
+        // 물러난 갈래는 소켓 경로가 그 자리에서 보냈을 코드로(ADR-0468). 기한 없이 끝난 대기는
+        // 명령이 큐에 남아 뒤에 실행될 수 있으므로 적지 않는다.
         match resp_rx.recv_timeout(timeout) {
-            Ok(resp) => answer(resp, timeout, with_deadline),
+            Ok(resp) => {
+                lifecycle.record_answer(&resp);
+                answer(resp, timeout, with_deadline)
+            }
             // 기한이 있으면 소켓 경로(`await_dispatch_response`)와 같은 판정이다 — 아직 큐에
             // 있었으면 꺼내질 때 실행되지 않게 막는다. 기한이 없으면 명령은 큐에 남는다.
             Err(mpsc::RecvTimeoutError::Timeout) if with_deadline => match lifecycle.withdraw() {
-                Withdraw::NotRun => Err(InjectError::Expired(timeout)),
-                Withdraw::Started => Err(InjectError::Timeout(timeout)),
+                Withdraw::NotRun => {
+                    lifecycle.record_error_code(ERR_EXPIRED_BEFORE_RUN);
+                    Err(InjectError::Expired(timeout))
+                }
+                Withdraw::Started => {
+                    lifecycle.record_error_code(ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN);
+                    Err(InjectError::Timeout(timeout))
+                }
             },
             Err(mpsc::RecvTimeoutError::Timeout) => Err(InjectError::Timeout(timeout)),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(InjectError::Disconnected),
@@ -275,8 +289,10 @@ mod tests {
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let injector = HostIpcInjector::new(tx, noop_waker());
 
+        let (cell_tx, cell_rx) = mpsc::channel();
         let h = thread::spawn(move || {
             let cmd = rx.recv().expect("recv cmd");
+            cell_tx.send(cmd.outcome_cell()).expect("cell");
             let resp = JsonRpcResponse::error(
                 cmd.request.id.clone().unwrap_or(Value::Null),
                 -32601,
@@ -291,6 +307,11 @@ mod tests {
         assert!(err.to_string().contains("-32601"));
         assert!(!err.nothing_ran(), "an rpc error means the handler ran");
         h.join().unwrap();
+        assert_eq!(
+            cell_rx.recv().expect("cell").get(),
+            Some(tasty_telemetry::slow_requests::HostOutcome::Error { code: -32601 }),
+            "the waiter records the answer it received"
+        );
     }
 
     fn stats() -> Arc<crate::dispatch::DispatchStats> {
@@ -320,6 +341,13 @@ mod tests {
             Claim::Withdrawn,
             "taken after the caller gave up, it must not run"
         );
+        assert_eq!(
+            stale.outcome_cell().get(),
+            Some(tasty_telemetry::slow_requests::HostOutcome::Error {
+                code: ERR_EXPIRED_BEFORE_RUN
+            }),
+            "the slow-request row reads the code the socket path would have sent"
+        );
     }
 
     // 상한 전에 시작된 명령은 끊을 수 없다 — 그 만료는 종전대로 결과 불명이다.
@@ -334,7 +362,7 @@ mod tests {
             started_tx.send(()).expect("started");
             // 답하지 않은 채 상한을 넘긴다 — 굳은 handler 다.
             thread::sleep(Duration::from_millis(200));
-            drop(cmd);
+            cmd.outcome_cell().get()
         });
         let err = injector
             .dispatch("noop", Value::Null, Duration::from_millis(50))
@@ -345,7 +373,12 @@ mod tests {
             !err.nothing_ran(),
             "a started command's timeout is an unknown outcome, not a refusal"
         );
-        h.join().unwrap();
+        assert_eq!(
+            h.join().unwrap(),
+            Some(tasty_telemetry::slow_requests::HostOutcome::Error {
+                code: ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN
+            })
+        );
     }
 
     // 기한 없는 주입은 종전 동작 그대로다 — 상한에서 물러나도 명령은 큐에 남아 나중에 실행된다.

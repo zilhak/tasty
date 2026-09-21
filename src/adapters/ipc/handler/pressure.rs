@@ -139,7 +139,8 @@
 //! `request_seq`(JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · `method`(canonical 이름, 모르는 이름은 받은 그대로 —
 //! `MAX_METHOD_BYTES` 에서 자른다) ·
 //! `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`(꺼낸 뒤 호스트가 다 다루기까지,
-//! 게이트 포함 — `handler_after_gate` 와 모수가 다르다) · plugin 으로 넘겼으면 `plugin_hops`(hop
+//! 게이트 포함 — `handler_after_gate` 와 모수가 다르다) · `outcome` · `error_code`(호출자가 실제로
+//! 받은 답 — 읽는 순간 아직 안 나갔으면 둘 다 `null`, ADR-0468) · plugin 으로 넘겼으면 `plugin_hops`(hop
 //! 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome`) · `total_us`.
 //!
 //! 모수는 **호스트 IPC 큐를 지난 요청 중 문턱을 넘은 것**이다. plugin 이 부른 host-call 은 큐를
@@ -352,12 +353,17 @@ pub(super) fn slow_requests_json(
                     caller,
                     queue_wait_us,
                     host_us,
+                    outcome,
                 } = h;
+                // 답이 아직 안 나갔으면(plugin 으로 넘긴 요청이 기다리는 중) 두 칸 다 null 이다.
+                let outcome = outcome.get();
                 json!({
                     "method": method,
                     "caller": caller.as_str(),
                     "queue_wait_us": queue_wait_us,
                     "host_us": host_us,
+                    "outcome": outcome.map(|o| o.as_str()),
+                    "error_code": outcome.and_then(|o| o.error_code()),
                 })
             });
             json!({
@@ -1276,6 +1282,7 @@ mod tests {
             caller: CallerKind::Local,
             queue_wait: Duration::from_micros(300),
             host: Duration::from_micros(20),
+            outcome: Default::default(),
         });
         log.finish_plugin_hop(
             42,
@@ -1296,7 +1303,8 @@ mod tests {
         assert_eq!(row["total_us"], 250_320);
         assert_eq!(
             row["host"],
-            json!({"method": "orig.run", "caller": "local", "queue_wait_us": 300, "host_us": 20})
+            json!({"method": "orig.run", "caller": "local", "queue_wait_us": 300, "host_us": 20,
+                   "outcome": null, "error_code": null})
         );
         assert_eq!(
             row["plugin_hops"],
@@ -1313,6 +1321,45 @@ mod tests {
         assert_eq!(keys, ["host", "plugin_hops", "request_seq", "total_us"]);
     }
 
+    /// 호스트 몫의 결과는 **읽는 순간의** 칸 값이다 — 줄이 들어간 뒤 답이 나가도 보이고, 성공 ·
+    /// 거절 · 실행 전 만료가 링만으로 갈린다.
+    #[test]
+    fn the_host_part_carries_the_answer_the_caller_got() {
+        use tasty_telemetry::slow_requests::{CallerKind, HostLeg, HostOutcome, HostOutcomeCell};
+        let log = tasty_telemetry::SlowRequestLog::default();
+        let cells: Vec<HostOutcomeCell> = (0..3).map(|_| HostOutcomeCell::default()).collect();
+        for (seq, cell) in (1..).zip(&cells) {
+            log.finish_host(HostLeg {
+                request_seq: seq,
+                method: "workspace.list",
+                caller: CallerKind::Local,
+                queue_wait: Duration::from_millis(150),
+                host: Duration::ZERO,
+                outcome: cell.clone(),
+            });
+        }
+        cells[0].set(HostOutcome::Ok);
+        cells[1].set(HostOutcome::Error { code: -32001 });
+        cells[2].set(HostOutcome::Error { code: -32067 });
+        cells[2].set(HostOutcome::Ok);
+        let v = slow_requests_json(&log.snapshot());
+        let seen: Vec<(serde_json::Value, serde_json::Value)> = (0..3)
+            .map(|i| {
+                let host = &v["rows"][i]["host"];
+                (host["outcome"].clone(), host["error_code"].clone())
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                (json!("ok"), json!(null)),
+                (json!("error"), json!(-32001)),
+                (json!("error"), json!(-32067)),
+            ],
+            "두 번째 답은 첫 답을 덮지 않는다"
+        );
+    }
+
     /// 라우터가 `Core` 가 든 **그 링**을 읽는다 — 핸들러가 빈 링을 새로 세우면 여기서 죽는다.
     #[test]
     fn the_router_reads_the_ring_the_core_holds() {
@@ -1326,6 +1373,7 @@ mod tests {
                 caller: tasty_telemetry::slow_requests::CallerKind::Local,
                 queue_wait: Duration::from_millis(150),
                 host: Duration::ZERO,
+                outcome: Default::default(),
             });
         let req = tasty_ipc::protocol::JsonRpcRequest {
             response_timeout_ms: None,

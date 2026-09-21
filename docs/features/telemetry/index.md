@@ -214,6 +214,14 @@ in-memory" 가 안 갈린다([ADR-0485](../../adr/0485-a-memory-db-that-failed-t
   `outcome` = `ok`/`error`/`expired`/`cancelled`, 최대 셋 — pre-hook · target · post-hook) · `total_us`.
   `host_us` 는 꺼낸 뒤 호스트가 명령을 다 다루기까지(게이트 포함)라 `handler_after_gate` 와 모수가
   다르다. plugin 으로 넘긴 요청이면 넘기는 데까지이고, plugin 을 기다린 시간은 hop 쪽에 있다.
+- **호스트 몫의 결과** — `host` 에는 `outcome`(`ok`/`error` — hop 의 `outcome` 과 같은 낱말)과
+  `error_code`(오류면 호출자가 받은 JSON-RPC 코드, 아니면 `null`)가 함께 실린다. 값은 **호출자에게 실제로
+  나간 답**이다 — 소켓 연결 스레드와 호스트 주입기가 답을 받거나(dispatch 가 보낸 답 · plugin 의 뒤늦은
+  답) 상한에서 스스로 만든 순간(`-32067` 실행 전 만료 · `-32061` 결과 불명) 명령의 결과 칸에 한 번 적고,
+  링의 줄이 같은 칸을 들고 있어 **읽는 순간의 값**이 나간다. 그래서 큐에서 만료된 요청(`-32067`) ·
+  게이트가 거절한 요청(`-32001`) · 정상 답이 링만으로 갈린다. 아직 답이 안 나갔으면(plugin 으로 넘긴
+  요청이 기다리는 중) 둘 다 `null` 이다. 기한 없는 주입이 상한에서 물러난 경우도 `null` 이다 — 그 명령은
+  큐에 남아 뒤에 실행될 수 있어 호출자에게 나간 답이 없다([ADR-0468](../../adr/0468-the-slow-request-host-part-carries-the-answer-the-caller-got.md)).
 - **plugin 로그로 되짚기** — `host_request_id` 는 plugin 이 받은 JSON-RPC id 와 같은 값이다. 호스트의
   plugin 오류 응답 경고와 namespace 만료 경고도 같은 줄에 `id=<host_request_id>` 와
   `request_seq=<번호>` 를 싣는다(번호를 모르는 plugin 요청이면 `none` — IPC 요청에서 오지 않은 것과 아래 "모수 밖" 의 파일 핸들러 경로). 번호는 plugin 에게
