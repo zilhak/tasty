@@ -19,21 +19,25 @@ fn a_queue_refuses_past_its_bytes_but_an_empty_queue_takes_one() {
     let (tx, rx) = metered_channel::<u8>(16, ledger.open_queue("p", Direction::Request));
 
     assert_eq!(
-        tx.try_send(1, 500),
+        tx.try_send(1, 500, Admission::Data),
         Ok(()),
         "빈 큐는 상한보다 큰 한 건을 받는다"
     );
     assert_eq!(
-        tx.try_send(2, 1),
+        tx.try_send(2, 1, Admission::Data),
         Err(TrySendRefusal::Bytes(Refusal::Queue)),
         "상한을 넘은 큐에 더 들어갔다"
     );
 
     assert_eq!(rx.try_recv(), Ok(1));
-    assert_eq!(tx.try_send(3, 60), Ok(()));
-    assert_eq!(tx.try_send(4, 40), Ok(()), "상한과 같으면 들어간다");
+    assert_eq!(tx.try_send(3, 60, Admission::Data), Ok(()));
     assert_eq!(
-        tx.try_send(5, 1),
+        tx.try_send(4, 40, Admission::Data),
+        Ok(()),
+        "상한과 같으면 들어간다"
+    );
+    assert_eq!(
+        tx.try_send(5, 1, Admission::Data),
         Err(TrySendRefusal::Bytes(Refusal::Queue))
     );
     assert_eq!(ledger.snapshot().refused_over_queue, 2);
@@ -46,11 +50,11 @@ fn the_total_is_shared_across_queues() {
     let (a, _ra) = metered_channel::<u8>(16, ledger.open_queue("a", Direction::Request));
     let (b, _rb) = metered_channel::<u8>(16, ledger.open_queue("b", Direction::Request));
 
-    a.try_send(1, 100).unwrap();
-    b.try_send(1, 40).unwrap();
-    a.try_send(2, 10).unwrap();
+    a.try_send(1, 100, Admission::Data).unwrap();
+    b.try_send(1, 40, Admission::Data).unwrap();
+    a.try_send(2, 10, Admission::Data).unwrap();
     assert_eq!(
-        b.try_send(2, 1),
+        b.try_send(2, 1, Admission::Data),
         Err(TrySendRefusal::Bytes(Refusal::Total)),
         "합계가 상한인데 또 들어갔다"
     );
@@ -65,8 +69,8 @@ fn the_total_is_shared_across_queues() {
 fn dropping_the_receiver_returns_its_bytes_to_the_total() {
     let ledger = small(1_000, 1_000);
     let (tx, rx) = metered_channel::<u8>(16, ledger.open_queue("gone", Direction::Event));
-    tx.try_send(1, 300).unwrap();
-    tx.try_send(2, 200).unwrap();
+    tx.try_send(1, 300, Admission::Data).unwrap();
+    tx.try_send(2, 200, Admission::Data).unwrap();
     assert_eq!(ledger.snapshot().total_bytes, 500);
 
     drop(rx);
@@ -75,7 +79,7 @@ fn dropping_the_receiver_returns_its_bytes_to_the_total() {
     assert!(snap.queues.is_empty(), "닫힌 큐가 장부에 남았다");
     assert_eq!(snap.peak_total_bytes, 500, "최댓값은 닫혀도 남는다");
     assert_eq!(
-        tx.try_send(3, 1),
+        tx.try_send(3, 1, Admission::Data),
         Err(TrySendRefusal::Disconnected),
         "닫힌 큐가 받았다"
     );
@@ -89,7 +93,7 @@ fn a_release_after_close_does_not_subtract_twice() {
     let (other_tx, _other_rx) =
         metered_channel::<u8>(16, ledger.open_queue("y", Direction::Request));
     meter.try_reserve(100).unwrap();
-    other_tx.try_send(1, 70).unwrap();
+    other_tx.try_send(1, 70, Admission::Data).unwrap();
     meter.close();
     meter.release(100);
     assert_eq!(ledger.snapshot().total_bytes, 70, "남의 몫까지 빠졌다");

@@ -97,8 +97,9 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   빠졌다" 를 한 값으로 뭉갠다. 두 사건의 처방이 반대다(앞은 호스트 큐·writer 쪽, 뒤는
   plugin 쪽). 가르는 것은 거절 시점에 호스트 로그로 나가는
   `plugin '<id>' shutdown send failed: ...` 한 줄이고(사유는 `request queue full` ·
-  `request queue over its byte budget` · `plugin channels over their total byte budget`
-  셋 중 하나), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
+  `request queue over its byte budget` 둘 중 하나 — shutdown 은 제어 요청이라 합계 바이트
+  판정을 면제받으므로 `plugin channels over their total byte budget` 로는 거절되지 않는다,
+  ADR-0360 2026-09-21 보강), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
   에 남는다.
 - **타임아웃 의미론** — 겹치는 것은 대기 구간뿐이고, plugin 하나가 받는 graceful
   기회는 여전히 2s 다. S4a 는 개별 소요와 `graceful|killed` 사유를 그대로 남긴다.

@@ -25,7 +25,7 @@ use crate::protocol::{PluginEvent, PluginRequest, PluginResponse};
 #[cfg(test)]
 use channel_bytes::ChannelLimits;
 use channel_bytes::{
-    ChannelLedger, Direction, MeteredReceiver, MeteredSender, Refusal, TrySendRefusal,
+    Admission, ChannelLedger, Direction, MeteredReceiver, MeteredSender, Refusal, TrySendRefusal,
     metered_channel,
 };
 use tasty_plugin_manifest::{HOST_API_VERSION, PluginPackage};
@@ -512,7 +512,17 @@ impl PluginProcess {
     /// 바이트 상한도 여기서 판정한다([`channel_bytes`], ADR-0360) — 그래서 직렬화도
     /// 여기서 한다. 바이트로 버린 것도 개수로 버린 것과 같이 plugin 에게 알린다: plugin
     /// 입장에서는 둘 다 "오던 요청이 사라졌다" 다.
-    pub fn try_send_request(&self, mut req: PluginRequest) -> Result<(), RequestSendError> {
+    pub fn try_send_request(&self, req: PluginRequest) -> Result<(), RequestSendError> {
+        self.try_send_request_as(req, Admission::Data)
+    }
+
+    /// [`Self::try_send_request`] 에 갈래를 준 형태. 제어(ping · shutdown)는 합계 상한을
+    /// 면제한다 — 근거는 [`Admission`].
+    fn try_send_request_as(
+        &self,
+        mut req: PluginRequest,
+        admission: Admission,
+    ) -> Result<(), RequestSendError> {
         let carried = self.dropped_requests.load(Ordering::Relaxed);
         req.dropped_requests = carried;
         let line = match serde_json::to_string(&req) {
@@ -524,7 +534,7 @@ impl PluginProcess {
         };
         // 줄 끝 개행까지 소켓에 나가는 바이트다.
         let bytes = line.len() + 1;
-        match self.req_tx.try_send(line, bytes) {
+        match self.req_tx.try_send(line, bytes, admission) {
             Ok(()) => {
                 if carried > 0 {
                     // 송신은 호스트 main thread 한 곳뿐이라(pump) 이 뺄셈이 되감기지
@@ -552,9 +562,10 @@ impl PluginProcess {
     }
 
     pub fn ping(&self, next_id: u64) {
-        if let Err(e) =
-            self.try_send_request(PluginRequest::new("ping", serde_json::json!({}), next_id))
-        {
+        if let Err(e) = self.try_send_request_as(
+            PluginRequest::new("ping", serde_json::json!({}), next_id),
+            Admission::Control,
+        ) {
             tracing::warn!("plugin '{}' ping send failed: {e}", self.plugin_id);
         }
     }
@@ -577,11 +588,10 @@ impl PluginProcess {
     /// 뿌린 뒤 대기 구간만 겹칠 수 있다 — 총 소요가 Σ(개별 대기) 가 아니라
     /// max(개별 대기) 로 수렴한다.
     pub fn begin_shutdown(mut self, deadline: Instant) -> PendingShutdown {
-        if let Err(e) = self.try_send_request(PluginRequest::new(
-            "shutdown",
-            serde_json::json!({}),
-            u64::MAX,
-        )) {
+        if let Err(e) = self.try_send_request_as(
+            PluginRequest::new("shutdown", serde_json::json!({}), u64::MAX),
+            Admission::Control,
+        ) {
             tracing::warn!("plugin '{}' shutdown send failed: {e}", self.plugin_id);
         }
         PendingShutdown {
@@ -1266,6 +1276,46 @@ mod tests {
             next.dropped_requests, 1,
             "바이트로 버린 수가 다음 요청에 안 실렸다"
         );
+    }
+
+    /// 합계가 **다른 plugin** 으로 찬 동안에도 제어(ping · shutdown)는 들어간다 — 같은
+    /// 순간 일반 요청은 합계로 거절된다. 면제가 없으면 건강한 plugin 이 남의 포화 때문에
+    /// ping 을 못 받아 무응답 재시작되고, shutdown 을 못 받아 graceful 없이 kill 된다.
+    #[test]
+    fn control_requests_pass_a_total_filled_by_another_plugin() {
+        let ledger = ChannelLedger::new(ChannelLimits {
+            queue_bytes: 1 << 20,
+            total_bytes: 400,
+        });
+        let (hog, _hog_rx) = PluginProcess::stub_with_request_rx_in("com.example.hog", 16, &ledger);
+        hog.try_send_request(PluginRequest::new(
+            "noop",
+            serde_json::json!({ "pad": "x".repeat(500) }),
+            1,
+        ))
+        .expect("빈 큐는 한 건을 받는다");
+        assert!(ledger.snapshot().total_bytes > 400, "합계가 안 찼다");
+
+        let (proc, rx) = PluginProcess::stub_with_request_rx_in("com.example.ok", 16, &ledger);
+        proc.try_send_request(a_request(1))
+            .expect("빈 큐는 한 건을 받는다");
+        assert_eq!(
+            proc.try_send_request(a_request(2)),
+            Err(RequestSendError::OverBytes(Refusal::Total)),
+            "전제: 비어 있지 않은 큐의 일반 요청은 합계로 거절된다"
+        );
+
+        proc.ping(3);
+        let _pending = proc.begin_shutdown(Instant::now());
+        let methods: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|r| r.method)
+            .collect();
+        assert_eq!(
+            methods,
+            ["noop", "ping", "shutdown"],
+            "합계가 찬 동안 제어 요청이 거절됐다"
+        );
+        assert_eq!(ledger.snapshot().refused_over_total, 1);
     }
 
     /// 자리가 없는 큐에 한 건을 넣어 보고 **그 판정을 다른 스레드에서 받아 온다.**

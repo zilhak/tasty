@@ -42,6 +42,23 @@ const WAIT_SLICE: Duration = Duration::from_millis(50);
 static LEDGER_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const LEDGER_WHAT: &str = "plugin channel byte ledger";
 
+/// 한 건이 어느 갈래로 들어오는가 — 합계 상한을 보느냐가 갈린다.
+///
+/// **제어**(ping · shutdown)는 합계 판정을 면제하고 큐 상한만 본다. 합계는 다른 plugin
+/// 들이 채울 수 있는 값이라, 그것으로 제어를 막으면 건강한 plugin 이 남의 포화 때문에
+/// ping 을 못 받아 무응답으로 재시작되거나 shutdown 을 못 받아 graceful 없이 kill 된다 —
+/// 포화가 **다른 plugin 과 종료 진행**을 막게 된다. 큐 상한은 그대로 본다: 그 큐를 채운
+/// 것은 그 plugin 자신이고, 제어 한 건은 작아서 큐가 빌 때까지 기다리지 않는다(빈 큐는
+/// 늘 받는다). 면제된 한 건도 합계에 **센다** — 장부는 실제로 쥔 양을 적는다. ADR-0360
+/// 2026-09-21 보강.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Admission {
+    /// 일반 요청·응답·이벤트 — 두 상한을 다 본다.
+    Data,
+    /// ping · shutdown — 큐 상한만 본다.
+    Control,
+}
+
 /// 두 상한. 시험이 작은 값을 주입할 수 있도록 상수가 아니라 값으로 든다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct ChannelLimits {
@@ -103,15 +120,22 @@ struct State {
 }
 
 impl State {
-    /// 빈 큐는 늘 받는다 — 모듈 doc 의 "한 건" 규칙. 그 외에는 두 상한을 다 본다.
-    fn admits(&self, limits: ChannelLimits, q: &QueueState, bytes: usize) -> Result<(), Refusal> {
+    /// 빈 큐는 늘 받는다 — 모듈 doc 의 "한 건" 규칙. 그 외에는 두 상한을 다 보되, 제어는
+    /// 합계를 면제한다([`Admission`]).
+    fn admits(
+        &self,
+        limits: ChannelLimits,
+        q: &QueueState,
+        bytes: usize,
+        admission: Admission,
+    ) -> Result<(), Refusal> {
         if q.queued == 0 {
             return Ok(());
         }
         if q.queued.saturating_add(bytes) > limits.queue_bytes {
             return Err(Refusal::Queue);
         }
-        if self.total.saturating_add(bytes) > limits.total_bytes {
+        if admission == Admission::Data && self.total.saturating_add(bytes) > limits.total_bytes {
             return Err(Refusal::Total);
         }
         Ok(())
@@ -224,12 +248,17 @@ pub struct QueueMeter {
 impl QueueMeter {
     /// 한 건을 **기다리지 않고** 들인다. 거절하는 방향(요청)이 쓴다.
     pub fn try_reserve(&self, bytes: usize) -> Result<(), Refusal> {
+        self.try_reserve_as(bytes, Admission::Data)
+    }
+
+    /// [`Self::try_reserve`] 에 갈래를 준 형태 — 제어는 합계를 면제한다([`Admission`]).
+    pub fn try_reserve_as(&self, bytes: usize, admission: Admission) -> Result<(), Refusal> {
         let limits = self.ledger.limits;
         let mut st = self.ledger.lock();
         let Some(q) = st.queues.get(&self.id) else {
             return Err(Refusal::Closed);
         };
-        match st.admits(limits, q, bytes) {
+        match st.admits(limits, q, bytes, admission) {
             Ok(()) => {
                 st.charge(self.id, bytes);
                 Ok(())
@@ -262,7 +291,7 @@ impl QueueMeter {
             let Some(q) = st.queues.get(&self.id) else {
                 return Err(Refusal::Closed);
             };
-            if st.admits(limits, q, bytes).is_ok() {
+            if st.admits(limits, q, bytes, Admission::Data).is_ok() {
                 st.charge(self.id, bytes);
                 if let Some(t0) = waited_since {
                     st.waits += 1;
@@ -362,8 +391,13 @@ pub(crate) enum TrySendRefusal {
 impl<T> MeteredSender<T> {
     /// **절대 블록하지 않는다.** 바이트 → 개수 순으로 보고, 개수에서 막히면 올렸던 바이트를
     /// 되돌린다.
-    pub(crate) fn try_send(&self, item: T, bytes: usize) -> Result<(), TrySendRefusal> {
-        match self.meter.try_reserve(bytes) {
+    pub(crate) fn try_send(
+        &self,
+        item: T,
+        bytes: usize,
+        admission: Admission,
+    ) -> Result<(), TrySendRefusal> {
+        match self.meter.try_reserve_as(bytes, admission) {
             Ok(()) => {}
             Err(Refusal::Closed) => return Err(TrySendRefusal::Disconnected),
             Err(r) => return Err(TrySendRefusal::Bytes(r)),
