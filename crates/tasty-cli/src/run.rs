@@ -469,6 +469,11 @@ fn run_client_inner(command: Commands, port_file: Option<&str>) -> Result<()> {
 
     let mut request = command_to_request(&command);
     let cli_warnings = take_cli_warnings(&mut request);
+    // 새 계약을 쓰는 요청은 상대가 그것을 선언했는지 **보내기 전에** 묻는다 — 모르는
+    // 서버는 그 필드를 조용히 버리고 성공으로 답한다(`contract` 모듈).
+    if let Err(e) = super::contract::ensure(&mut conn, &request) {
+        super::contract::exit_on_failure(e);
+    }
     let result = conn.send(&request);
 
     match result {

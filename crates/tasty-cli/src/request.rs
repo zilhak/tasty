@@ -534,13 +534,28 @@ fn read_command_to_method_params(command: &ReadCommands) -> (&'static str, serde
         ReadCommands::SinceMark {
             surface,
             strip_ansi,
-        } => (
-            "surface.read_since_mark",
-            serde_json::json!({
+            cursor,
+            stream,
+            max_bytes,
+        } => {
+            use tasty_ipc::output_cursor::{METHOD, PARAM_CURSOR, PARAM_MAX_BYTES, PARAM_STREAM};
+            let mut params = serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),
                 "strip_ansi": strip_ansi,
-            }),
-        ),
+            });
+            // 준 것만 싣는다 — 아무것도 안 준 호출은 예전과 바이트까지 같은 요청이고, 그래서
+            // 계약 확인(`contract::required`)도 안 붙는다.
+            if let Some(c) = cursor {
+                params[PARAM_CURSOR] = serde_json::json!(c);
+            }
+            if let Some(s) = stream {
+                params[PARAM_STREAM] = serde_json::json!(s);
+            }
+            if let Some(m) = max_bytes {
+                params[PARAM_MAX_BYTES] = serde_json::json!(m);
+            }
+            (METHOD, params)
+        }
         ReadCommands::ParseSinceMark { surface, parsers } => {
             let mut params = serde_json::json!({
                 "surface_id": resolve_surface_id(*surface),

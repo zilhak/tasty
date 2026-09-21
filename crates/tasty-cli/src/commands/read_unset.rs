@@ -13,6 +13,19 @@ pub enum ReadCommands {
         /// Strip ANSI escape sequences from output
         #[arg(long)]
         strip_ansi: bool,
+        /// Read from this position instead of the mark: the next_cursor of a previous read.
+        /// The server keeps nothing for you, so several readers never move each other.
+        /// Needs --stream from the same earlier reply
+        #[arg(long, requires = "stream")]
+        cursor: Option<u64>,
+        /// Stream token from an earlier reply. A position from another stream (the surface
+        /// was reused or its terminal respawned) is refused instead of applied
+        #[arg(long)]
+        stream: Option<String>,
+        /// Upper bound on the raw output bytes this read returns (the server clamps it to
+        /// its retention). Continue from next_cursor for the rest
+        #[arg(long)]
+        max_bytes: Option<usize>,
     },
     /// Parse output since last mark with builtin parsers (path/url/prompt_boundary/exit_code)
     #[command(name = "parse-since-mark")]

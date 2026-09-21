@@ -1529,6 +1529,10 @@ cap_reset_target_required = "エラー: telemetry cap reset には --id また�
 metadata_not_json = "エラー: --metadata は有効な JSON である必要があります: {}"
 content_file_read_failed = "エラー: --content ファイル '{}' を読み込めませんでした: {}"
 
+[cli.contract]
+unsupported_missing = "tasty インスタンスは '{}'(必要なバージョン {})を宣言していません。何も送信していません。"
+unsupported_older = "tasty インスタンスは '{}' をバージョン {} で宣言していますが、バージョン {} が必要です。何も送信していません。"
+
 [cli.events]
 epoch_changed = "tasty が再起動しました: イベントフィードは新しい世代のため、先頭から再開します"
 skipped = "{} 件が読み取られる前にリングから押し出されました"
@@ -2379,6 +2383,15 @@ help = "サーフェス ID（既定: フォーカス中のターミナル）"
 
 [cli.help._root.read.since-mark.arg.strip_ansi]
 help = "出力から ANSI エスケープシーケンスを取り除く"
+
+[cli.help._root.read.since-mark.arg.cursor]
+help = "マークの代わりにこの位置から読む: 前回の読み取りの next_cursor。サーバーは何も保持しないため、複数の読み手が互いを動かさない。同じ応答の --stream が必要"
+
+[cli.help._root.read.since-mark.arg.stream]
+help = "前回の応答のストリーム識別子。別ストリームの位置(サーフェスが再利用されたかターミナルが再起動された)は適用されず拒否される"
+
+[cli.help._root.read.since-mark.arg.max_bytes]
+help = "この読み取りが返す生の出力バイト数の上限(サーバーが保持サイズで切り詰める)。残りは next_cursor から続けて読む"
 
 [cli.help._root.read.parse-since-mark]
 about = "最後のマーク以降の出力を組み込みパーサーで解析する（path/url/prompt_boundary/exit_code）"

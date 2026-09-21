@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use crate::state::AppState;
+use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -148,14 +149,16 @@ impl OutputReadParams {
             .get("strip_ansi")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let cursor = opt_int::<u64>(params, "cursor", id).map_err(Box::new)?;
+        // 인자 이름은 협상 목록이 싣는 판과 같은 모듈에서 온다 — 여기서 리터럴로 다시
+        // 적으면 선언과 배선이 갈린다(`tasty_ipc::output_cursor`).
+        let cursor = opt_int::<u64>(params, output_cursor::PARAM_CURSOR, id).map_err(Box::new)?;
         // 상한은 보존 크기다 — 그보다 큰 `max_bytes` 는 답을 한 바이트도 못 늘린다.
         // 값을 여기 따로 박으면 보존을 키우는 날 이 상한만 남아 조용히 어긋난다.
-        let max_bytes = opt_int::<usize>(params, "max_bytes", id)
+        let max_bytes = opt_int::<usize>(params, output_cursor::PARAM_MAX_BYTES, id)
             .map_err(Box::new)?
             .unwrap_or(OUTPUT_RETENTION_MAX_BYTES);
         let stream = params
-            .get("stream")
+            .get(output_cursor::PARAM_STREAM)
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(str::to_string);
@@ -366,6 +369,24 @@ mod tests {
         assert_eq!(
             ok(json!({ "max_bytes": 999_999_999u64 })).req.max_bytes,
             999_999_999
+        );
+    }
+
+    /// 협상 목록이 선언하는 계약의 인자 이름이 **이 파서가 실제로 읽는 이름**이다. 이름이
+    /// 갈리면 capability 를 확인한 client 가 보낸 인자를 서버가 조용히 버린다 — 확인이
+    /// 통과했으므로 그 버림은 아무 데서도 안 보인다.
+    #[test]
+    fn the_declared_cursor_contract_names_the_arguments_this_parser_reads() {
+        use tasty_ipc::output_cursor::{PARAM_CURSOR, PARAM_MAX_BYTES, PARAM_STREAM};
+        let p = ok(json!({ PARAM_CURSOR: 7, PARAM_STREAM: "s", PARAM_MAX_BYTES: 9 }));
+        assert!(matches!(p.req.from, tasty_terminal::OutputCursor::At(7)));
+        assert_eq!(p.req.expect_stream.as_deref(), Some("s"));
+        assert_eq!(p.req.max_bytes, 9);
+        assert!(
+            tasty_ipc::capability::CAPABILITIES
+                .iter()
+                .any(|c| c.name == tasty_ipc::output_cursor::CAPABILITY),
+            "파서가 읽는 계약이 협상 목록에 없다"
         );
     }
 

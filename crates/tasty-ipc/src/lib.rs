@@ -16,6 +16,7 @@ pub mod host_port;
 pub mod ipc_namespace;
 pub mod mesh_stream;
 pub mod method_meta;
+pub mod output_cursor;
 pub mod port_file;
 pub mod protocol;
 pub mod server;

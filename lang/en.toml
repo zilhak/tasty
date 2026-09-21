@@ -1555,6 +1555,10 @@ cap_reset_target_required = "Error: telemetry cap reset requires --id or --agent
 metadata_not_json = "Error: --metadata must be valid JSON: {}"
 content_file_read_failed = "Error: failed to read --content file '{}': {}"
 
+[cli.contract]
+unsupported_missing = "The tasty instance does not declare '{}' (required version {}). Nothing was sent."
+unsupported_older = "The tasty instance declares '{}' at version {}, but version {} is required. Nothing was sent."
+
 [cli.events]
 epoch_changed = "tasty restarted: the event feed is a new generation, resuming from its start"
 skipped = "{} events left the ring before they could be read"
@@ -2409,6 +2413,15 @@ help = "Surface ID (default: focused terminal)"
 
 [cli.help._root.read.since-mark.arg.strip_ansi]
 help = "Strip ANSI escape sequences from output"
+
+[cli.help._root.read.since-mark.arg.cursor]
+help = "Read from this position instead of the mark: the next_cursor of a previous read. The server keeps nothing for you, so several readers never move each other. Needs --stream from the same earlier reply"
+
+[cli.help._root.read.since-mark.arg.stream]
+help = "Stream token from an earlier reply. A position from another stream (the surface was reused or its terminal respawned) is refused instead of applied"
+
+[cli.help._root.read.since-mark.arg.max_bytes]
+help = "Upper bound on the raw output bytes this read returns (the server clamps it to its retention). Continue from next_cursor for the rest"
 
 [cli.help._root.read.parse-since-mark]
 about = "Parse output since last mark with builtin parsers (path/url/prompt_boundary/exit_code)"

@@ -52,8 +52,8 @@ pub const CAPABILITIES: &[Capability] = &[
     // 필드를 조용히 버리므로(봉투에 `deny_unknown_fields` 가 없다) client 는 **보내기
     // 전에** 이 이름으로 물어야 상한이 실제로 걸리는지 안다.
     Capability {
-        name: "ipc.response-timeout",
-        version: 1,
+        name: RESPONSE_TIMEOUT,
+        version: RESPONSE_TIMEOUT_VERSION,
     },
     // 봉투가 멱등 키를 실을 수 있다 — 이 서버가 그 필드를 **읽는다**는 선언이다.
     // 근거: `crate::protocol::JsonRpcRequest::idempotency_key` 와 그것을 읽는 호스트의
@@ -86,7 +86,21 @@ pub const CAPABILITIES: &[Capability] = &[
         name: "ipc.stream.loss-notify",
         version: 1,
     },
+    // `surface.read_since_mark` 가 호출자가 든 위치(`cursor` · `stream` · `max_bytes`)로
+    // 답한다. 이 이름이 없는 서버는 그 인자를 조용히 버리고 **공유 마크**에서 읽으므로,
+    // 이어 읽기를 하려는 client 는 보내기 전에 물어야 한다. 이름과 판은 그 인자를 읽는
+    // 서버 파서와 같은 모듈에서 온다 — 리터럴로 다시 적지 않는다.
+    Capability {
+        name: crate::output_cursor::CAPABILITY,
+        version: crate::output_cursor::VERSION,
+    },
 ];
+
+/// 봉투의 응답 대기 상한을 서버가 읽는다는 선언의 이름. client 가 `require_capability`
+/// 로 물을 때 같은 상수를 쓴다 — 선언과 질문이 한 문자열이다.
+pub const RESPONSE_TIMEOUT: &str = "ipc.response-timeout";
+/// 그 선언의 판.
+pub const RESPONSE_TIMEOUT_VERSION: u32 = 1;
 
 /// `system.info` 가 싣는 모양. `[{ "name": …, "version": … }, …]`.
 pub fn capabilities_json() -> serde_json::Value {
@@ -129,6 +143,30 @@ mod tests {
             .find(|c| c.name == "ipc.stream")
             .expect("stream capability 가 사라졌다");
         assert_eq!(declared.version, crate::stream::STREAM_PROTO);
+    }
+
+    /// client 가 **요구하는** 이름은 전부 이 목록에 선언돼 있어야 한다. 빠지면 그
+    /// 계약을 요구하는 호출은 이 빌드의 서버에서도 "선언 안 됨" 으로 거절된다 — 기능이
+    /// 있는데 못 쓰는 상태가 조용히 생긴다.
+    #[test]
+    fn every_name_a_client_requires_is_declared_at_the_version_it_requires() {
+        for (name, required) in [
+            (RESPONSE_TIMEOUT, RESPONSE_TIMEOUT_VERSION),
+            (
+                crate::client::IDEMPOTENCY_CAPABILITY,
+                crate::client::IDEMPOTENCY_CAPABILITY_VERSION,
+            ),
+            (
+                crate::output_cursor::CAPABILITY,
+                crate::output_cursor::VERSION,
+            ),
+        ] {
+            let declared = CAPABILITIES
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("{name} 가 선언돼 있지 않다"));
+            assert!(declared.version >= required, "{name}");
+        }
     }
 
     /// 실릴 모양이 배열이고, 각 항목이 두 키를 든다.

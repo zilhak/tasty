@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md) · [0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)
+- **ADR**: [0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md) · [0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md) · [0365](../../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)
 - **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서) · `surface.read_since_mark`(마크 또는 소비자가 든 위치로 읽는 raw 진입점)
 - **화면**: 없음
 - **메서드/파서**: [reference/api](../../reference/api.md#surface-상호작용) · [reference/output-parsers](../../reference/output-parsers.md)
@@ -43,6 +43,10 @@
 
 표지가 안 맞는 위치(재사용된 surface id·respawn 된 터미널)·스트림 끝을 넘은 위치·터미널이 없는 surface 는 빈 답이 아니라 **거절**이고, 사유가 `error.data.reason` 으로 갈린다.
 
+CLI 로는 `tasty read since-mark --cursor <next_cursor> --stream <stream>` 이다. 첫 읽기는 위치 없이 하고(마크 또는 `--max-bytes` 만), 응답의 `next_cursor`·`stream` 을 다음 호출에 넘긴다. `--cursor` 는 `--stream` 없이 못 쓴다. `--max-bytes` 는 한 번에 받을 원문 바이트를 줄인다.
+
+**구 서버는 이 인자를 조용히 버린다** — 인자 객체에 모르는 키 거절이 없어 공유 마크에서 읽고 성공으로 답한다. 그래서 서버는 이 계약을 `system.info` 의 capability `ipc.output-cursor` 로 선언하고, CLI 는 위치 인자(셋 중 하나라도)를 실은 요청을 보내기 **전에** 그 이름을 묻는다. 없으면 요청을 내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability",…,"sent":false}}` 한 줄을 쓴 뒤 종료 코드 1 로 끝난다([ADR-0365](../../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)). 위치 인자 없는 호출은 묻지 않는다.
+
 ### 명령 인덱싱 (OSC 133)
 
 셸 통합이 OSC 133 을 보내면 각 명령의 prompt 시작/명령 시작/종료/exit code/명령 문자열을 `tasty-memory`(`surface:<id>` scope, `tasty.commands.<ms>`)에 기록. OSC 133 미지원 셸은 빈 배열.
@@ -63,7 +67,7 @@ PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 �
 
 ## 인터페이스
 
-- **AI Agent / CLI**: `tasty read parse-since-mark` · `tasty read commands/last-command/command-at` · `tasty output observe {start,list,info,stop}`. [reference/api](../../reference/api.md#surface-상호작용).
+- **AI Agent / CLI**: `tasty read since-mark [--cursor N --stream S] [--max-bytes N]` · `tasty read parse-since-mark` · `tasty read commands/last-command/command-at` · `tasty output observe {start,list,info,stop}`. [reference/api](../../reference/api.md#surface-상호작용).
 
 ## 관련
 

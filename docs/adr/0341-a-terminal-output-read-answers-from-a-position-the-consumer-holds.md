@@ -104,7 +104,12 @@ journal 과 통합하지 않는다.
   잃은 양이 `skipped` 로 나오는 것이 이 결정이 준 전부다.
 - **운영 비용**: 위치를 옳게 들지 않는 소비자 — 매번 `retention_start` 부터 읽는 것 — 는 같은
   구간을 되풀이해 받는다. 서버에 쌓이는 것은 없지만 그 중복은 서버가 못 막는다.
-- **운영 비용**: CLI 진입점이 아직 없다. `tasty read since-mark` 은 마크 형태만 낸다.
+- **운영 비용**: CLI 진입점은 `tasty read since-mark --cursor N --stream S [--max-bytes N]` 이다.
+  (구현 확정 보강 — CLI 인자 착지 시점: 결정 당시에는 CLI 진입점이 없었고 마크 형태만 냈다.
+  아래 재검토 조건 둘째가 그 착지로 발동했고, 재검토 결과 결정은 그대로다 — 인자는 이 한
+  이름에 더해졌고 새 이름이 생기지 않았다.) 구 서버가 이 인자를 조용히 버리는 갈래는
+  [ADR-0365](0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)
+  가 capability 이름으로 막는다.
 
 ## Alternatives Considered
 

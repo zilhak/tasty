@@ -13,6 +13,7 @@
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod commands;
+mod contract;
 pub mod cwd_resolve;
 pub mod dispatch;
 pub mod dynamic;

@@ -429,6 +429,16 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
 - 판은 가능하면 **근거에서 유도한다** — `ipc.stream` 의 판은 리터럴이 아니라 서버가
   handshake 에서 비교하는 `stream::STREAM_PROTO` 다.
 - 뜻이 바뀌면 배열에서 빼지 말고 그 이름의 `version` 을 올린다.
+- **메서드 인자도 이름이 필요하다.** 봉투 필드와 같은 이유로 — 인자 객체에도 모르는 키 거절이
+  없어 구 서버는 새 인자를 조용히 버리고 성공으로 답한다. `surface.read_since_mark` 의 위치 인자가
+  `ipc.output-cursor` 를 받은 것이 그 형태이고, 이름·판·인자 이름을 한 모듈(`tasty-ipc` 의
+  `output_cursor`)에 둬 서버 파서·선언·CLI 가 같은 값을 쓴다
+  ([ADR-0365](../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)).
+- **CLI 는 요청이 요구하는 이름을 보내기 전에 묻는다**(`tasty-cli` 의 `contract` 모듈). 요구
+  여부는 명령이 아니라 요청에서 판정하고, 새 계약을 안 쓰는 요청은 묻지 않는다. 없으면 요청을
+  내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability","capability":…,"required":…,"found":…,"sent":false,"message":…}}`
+  한 줄을 쓴 뒤 종료 코드 1 로 끝난다. `found` 가 `null` 이면 이름이 없는 것이고, 수면 다른 판으로
+  선언된 것이다.
 - ★ **스트림에 기능을 더할 때 `ipc.stream` 의 판을 올리지 마라 — 새 이름을 더해라.**
   바로 위 줄이 말하듯 그 판은 `STREAM_PROTO` 이고, 서버는 그것을 handshake 에서 **동등
   비교**해 다르면 연결을 거절한다(`validate_stream_proto`). 그래서 그 수를 올리는 것은
