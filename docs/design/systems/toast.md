@@ -49,17 +49,21 @@ grep -rnE 'toasts|report_apply_error|push_toast' \
   내는 경로(OSC 52 등). ④ IPC 핸들러가 `state.dispatch_intent(... .from_agent_ipc())` 로
   intent 를 넘기고, 메인 루프가 그것을 `src/intent/*` 에서 처리하면서 토스트를 내는 경로.
   이 넷은 호출 이름이 IPC 파일에 안 나타난다.
-- **경로 ④ 는 지금 이어져 있다(소스 추적, 실행 재현은 안 했다).** IPC `markdown.navigate` 는
-  `Intent::ConvertSurface` 를 agent origin 으로 넘기고(`src/adapters/ipc/handler/markdown.rs`
-  `navigate_now`), `src/intent/surface.rs` 가 `core.apply` 실패 시 `report_apply_error` 를 부른다.
-  mirror 워크스페이스에서 convert 는 forward 되지 않는 op 라 `forwarded: false` 가 되고,
-  `report_apply_error`(`src/intent.rs`)가 **origin 을 보지 않고** `attach.toast.mirror_structural_blocked`
-  사용자 토스트를 띄운다. 두 끝을 세는 명령(0 줄이 목표가 아니라 경로의 폭을 보는 것이다):
+- **경로 ④ 는 형태는 있으나 지금 확인된 실례는 없다.** 형태는 이렇다: IPC 핸들러가
+  intent 를 agent origin 으로 넘기고, `src/intent/*` 가 `core.apply` 실패 시
+  `report_apply_error`(`src/intent.rs`)를 부르며, 그 함수는 **origin 을 보지 않고** 사용자
+  토스트를 낼 수 있다. mirror 워크스페이스에서 그 토스트(`attach.toast.mirror_structural_blocked`)
+  는 forward 할 수 없는 구조 op(`forwarded: false`)에서만 난다. 그런데 IPC 가 넘기는 intent
+  가운데 그런 op 로 끝나는 것을 찾지 못했다 — 예를 들어 `markdown.navigate` 의 convert 는
+  **항상 forward 된다**([attach-behavior.md](../../dev-guide/attach-behavior.md) 의
+  convert/move-surface 항목, `build_mirror_forward_op`). forward 할 수 없는 것은 워크스페이스
+  경계를 넘는 move-surface 인데, 그것을 agent origin 으로 넘기는 IPC 진입점은 확인하지 못했다.
+  두 끝을 세는 명령(0 줄이 목표가 아니라 경로의 폭을 보는 것이다):
   `grep -rln dispatch_intent src/adapters/ipc src/app/ipc src/app/ipc.rs`(2026-09-21 에 12 파일) ·
-  `grep -rln 'report_apply_error\|toasts\.push' src/intent.rs src/intent/`(6 파일). 고치는 일은
-  별도 작업으로 다룬다.
+  `grep -rln 'report_apply_error\|toasts\.push' src/intent.rs src/intent/`(6 파일). 실례가
+  생기면 `report_apply_error` 가 origin 을 보게 고치는 것이 처방이다.
 - 판정기를 짓지 않은 이유: 위 명령의 좌변(IPC 파일)에서는 결함이 난 적이 없다. 결함은 늘 그
-  밖에서 났거나 날 수 있다 — 실제로 있었던 ①, 지금 열려 있는 ④ 둘 다 IPC 파일을 스캔하는
+  밖에서 났거나 날 수 있다 — 실제로 있었던 ①, 형태만 확인된 ④ 둘 다 IPC 파일을 스캔하는
   판정기로는 안 잡힌다. ④ 는 판정기가 아니라 `report_apply_error` 가 origin 을 보게 고치는
   것이 처방이다.
 

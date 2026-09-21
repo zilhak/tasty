@@ -36,9 +36,11 @@ Consequences). 즉 갤러리는 페이드 중인 카드를 **본체와 다른 �
 발화 금지 정책에는 **판정기를 짓지 않고 재는 법을 적는다.** `docs/design/systems/toast.md`
 "트리거 정책" 절에 IPC 진입 경로에서 토스트 매니저로 닿는 이름을 세는 명령과, 그것이 잡는다는
 변이 확인, 못 보는 경로 넷을 적는다. 그중 ④(IPC → `dispatch_intent(.. from_agent_ipc())` →
-`src/intent/*` 의 `report_apply_error`)는 지금 이어져 있는 **위반 후보**다 — `report_apply_error`
-가 origin 을 안 보고 사용자 토스트를 낸다. 이 결정은 그것을 고치지 않는다. 처방은 판정기가
-아니라 그 함수가 origin 을 보게 하는 것이고, 별도 작업으로 다룬다.
+`src/intent/*` 의 `report_apply_error`)는 **형태는 있으나 지금 확인된 실례는 없다.**
+`report_apply_error` 는 origin 을 안 보고 사용자 토스트를 낼 수 있지만, mirror 에서 그
+토스트가 나는 forward 불가 op 로 끝나는 IPC intent 를 찾지 못했다 — convert 는 항상 forward
+된다(`docs/dev-guide/attach-behavior.md` 의 convert/move-surface 항목). 이 결정은 그 함수를
+고치지 않는다. 실례가 생기면 처방은 판정기가 아니라 그 함수가 origin 을 보게 하는 것이다.
 
 ## Consequences
 
@@ -50,9 +52,9 @@ Consequences). 즉 갤러리는 페이드 중인 카드를 **본체와 다른 �
   두 장 자리에만 있다. 단일 카드(alpha 1) specimen 은 전후 diff 가 없다 — 그 자리에 대상이
   있다는 것은 단일 카드 alpha 를 0.5 로 바꾼 양성 대조가 그 bbox 에서 달라지는 것으로 확인했다.
 - **운영 비용 / 유지 부담**: 발화 금지 정책은 여전히 자동 채널이 없다. 재는 법은 사람이
-  돌려야 하고, 호출 이름이 IPC 파일에 안 나타나는 경로 넷을 원리적으로 못 본다. 그중 ④ 에는
-  지금 열린 위반 후보가 있다(IPC `markdown.navigate` 가 mirror 워크스페이스에서 convert 차단
-  토스트를 낼 수 있다 — 소스 추적, 실행 재현 안 함).
+  돌려야 하고, 호출 이름이 IPC 파일에 안 나타나는 경로 넷을 원리적으로 못 본다. 그중 ④ 는
+  형태는 있으나 지금 확인된 실례는 없다(convert 는 항상 forward 되므로 `markdown.navigate` 는
+  그 실례가 아니다 — `docs/dev-guide/attach-behavior.md` 의 convert/move-surface 항목).
 
 ## Alternatives Considered
 
@@ -63,7 +65,7 @@ Consequences). 즉 갤러리는 페이드 중인 카드를 **본체와 다른 �
 - **발화 금지 소스 스캔 가드를 짓기** — 스캔 좌변(IPC 파일)에서 난 결함을 댈 수 없다. 결함은
   그 밖에서 난다: 실제로 있었던 결함(예전 `window.create` 가 창 생성 실패를 사용자 토스트로
   알리던 것, [ADR-0122](0122-winit-scheduled-fallible-ipc-returns-outcome.md) 가 고쳤다)은 winit
-  이벤트 핸들러에서, 지금 열린 후보(경로 ④)는 `src/intent/*` 에서 난다. 둘 다 IPC 파일 스캔으로는
+  이벤트 핸들러에서 났고, 형태만 확인된 경로 ④ 는 `src/intent/*` 에서 날 수 있다. 둘 다 IPC 파일 스캔으로는
   안 잡힌다. ④ 를 IPC 파일에서 intent 파일까지 따라가는 가드는 호출 그래프 추적이라 문자열 스캔으로
   만들 수 없고, 고치면(origin 을 보게 하면) 필요가 사라진다. 기각.
 
