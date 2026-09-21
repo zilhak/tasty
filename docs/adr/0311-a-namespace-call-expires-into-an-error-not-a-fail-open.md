@@ -102,6 +102,37 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
 `restart_unresponsive_plugins` 가 healthcheck 와 같은 자리에서 한다. 그래서 재시작까지의
 추가 지연 상한은 `PING_INTERVAL`(15 s) 이다.
 
+### 2026-09-21 보강 — 이미 끝난 요청의 늦은 응답은 아무것도 다시 진행시키지 않는다
+
+위 두 절은 만료 **시점**을 정했다. 그 뒤에 target 이나 extension 의 응답이 도착하는 경우는
+값으로 안 적혀 있었다 — 코드는 `handle_plugin_response` 의 `None` 갈래에서 버리고 있었지만,
+그것이 결정인지 우연인지를 말하는 문장이 없었고 post-hook 이 걸린 경로에서 특히 그랬다.
+그 경로에는 응답이 올 수 있는 자리가 셋(target 응답 · pre-hook 응답 · post-hook 응답)이고,
+각각 만료되면 다른 방식으로 이미 끝이 났다.
+
+**늦은 응답을 처리하는 자리를 하나로 둔다(`settle_late_response`). 그 자리는 연속 만료 계수를
+지우는 것(위 보강) 말고는 아무것도 진행시키지 않는다.** 요청이 pending 에서 빠지는 길은 셋 —
+응답 매칭 · deadline 만료 · plugin 이 치워짐 — 이고, 뒤 둘은 **그 자리에서 caller 에 대한 끝을
+이미 냈다.** 끝이 난 요청에 두 번째 끝을 내면 그것이 결함이다. 변종별로:
+
+- **target 응답이 늦으면 post-hook 을 부르지 않는다.** caller 는 이미 `-32004` 를 받았다.
+  post-hook 은 caller 에게 갈 결과를 바꾸는 단계라 결과가 나간 뒤에는 바꿀 대상이 없고, 부르면
+  extension 에 **효과만** 남는다 — caller 가 실패로 본 호출에 대해 기록·전송 같은 일이 난다.
+- **pre-hook 응답이 늦으면 target 을 다시 부르지 않는다.** fail-open 이 원본 payload 로 이미
+  불렀다. 다시 부르면 같은 호출이 두 번 실행된다(변형된 payload 로 한 번 더).
+- **post-hook 응답이 늦으면 결과를 다시 보내지 않는다.** fail-open 이 target 결과를 이미 보냈다.
+- **hook 실패 계수를 되돌리지 않는다.** 만료가 실패로 셌고, backoff 가 묻는 것은 "제때 답하는가"
+  라 늦은 답은 여전히 실패다. namespace 계수와 방향이 반대인 이유는 처방이 다르기 때문이다 —
+  namespace 계수의 처방(재시작)은 느린 plugin 을 벌하므로 늦은 답이 구해야 하고, hook 계수의
+  처방(우회)은 느린 hook 을 건너뛰는 것이 곧 정상 동작이다.
+
+이 결정은 **실행 취소를 약속하지 않는다.** 늦은 응답이 도착했다는 것은 plugin 이 그 호출을
+실제로 실행했다는 뜻이고, 호스트는 그 효과를 되돌리지 못한다. caller 가 받은 `-32004` 는 "결과를
+모른다" 이지 "실행되지 않았다" 가 아니다 — 같은 성질을 IPC 쪽 대기 만료가
+[ADR-0328](0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md)
+에서 `-32061` 로 적었다. 이 경로의 코드는 이미 `-32004` 로 정해져 있어 바꾸지 않는다(대안 C 의
+이유 그대로).
+
 ## Consequences
 
 - **얻은 것**: 건강한 plugin 이 한 호출만 삼켜도 caller 가 끝난다. pending 항목이
@@ -150,6 +181,16 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
   주기적으로 반복된다. 그러면 "느린 plugin 은 안 걸린다" 를 문서에서 **지워야** 하는데,
   그 문장이야말로 이 계수가 healthcheck 와 구별되는 이유다.
 
+- **H (2026-09-21 보강): 늦은 target 응답에도 post-hook 을 부른다** — 기각. post-hook 의
+  존재 이유는 caller 에게 갈 결과를 바꾸는 것인데 그 결과는 이미 나갔다. 부르면 extension 이
+  "결과를 바꿀 수 없는 호출" 을 받고, 그 hook 이 부수효과를 가진 것이면 caller 가 실패로 본
+  호출에 대해 효과가 난다.
+- **I (2026-09-21 보강): 늦은 pre-hook 응답의 변형 payload 로 target 을 다시 부른다** — 기각.
+  fail-open 이 이미 한 번 불렀으므로 이것은 **같은 호출의 두 번째 실행**이다. extension 의 변형을
+  살리는 것보다 한 번 실행이 우선한다.
+- **J (2026-09-21 보강): 늦은 hook 응답이 hook 실패 계수를 지운다** — 기각. 위 보강 절의 이유 —
+  hook 의 처방은 우회라 느린 hook 을 건너뛰는 것이 곧 정상 동작이다.
+
 ## Reconsideration Triggers
 
 다음 중 하나가 충족되면 본 ADR 을 재검토한다.
@@ -171,6 +212,14 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
   (이 좌변에 붙은 판정기는 지금 없다 — 위 보강을 재는 것은
   `tasty-host-plugin` 의 `a_plugin_that_only_expires_namespace_calls_is_restarted` 다.)
 
+- 늦은 응답이 무언가를 다시 진행시키게 됐을 때(2026-09-21 보강). 좌변에 붙은 판정기는
+  `tasty-host-plugin` 의 `a_late_target_answer_does_not_run_the_post_hook_or_answer_twice` ·
+  `a_late_pre_hook_answer_does_not_invoke_the_target_a_second_time` 둘이다. 두 시험은 만료가
+  한 번 끝을 낸 것을 **먼저** 관측한 뒤 늦은 응답을 넣는다 — 그 관측이 없으면 "아무 일도 안
+  했다" 와 "할 일이 없었다" 가 안 갈린다. 이 두 시험을 죽이는 변이는 현재 코드에 자연스러운 형태가
+  없다(`None` 갈래가 진행시킬 재료를 안 들고 있다). 그래서 이것들은 앞으로 그 재료를 들고 오는
+  변경 — 예컨대 만료된 요청의 kind 를 보관해 두는 변경 — 에 대한 회귀 시험이다.
+
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
 - 정상인데 `NAMESPACE_CALL_TIMEOUT` 을 넘기는 namespace 호출이 나타났을 때.
@@ -187,4 +236,4 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
 - 코드 근거(결정이 실현된 현재 위치): `tasty-host-plugin` 의
   `manager::NAMESPACE_CALL_TIMEOUT` · `manager::PendingRequestKind` ·
   `PluginManager::dispatch_target_invoke` · `PluginManager::sweep_expired_requests` ·
-  `PluginManager::expire_pending_request`.
+  `PluginManager::expire_pending_request` · `PluginManager::settle_late_response`.

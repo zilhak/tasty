@@ -81,10 +81,8 @@ impl PluginManager {
         let kind = match pending {
             Some(p) => p.kind,
             None => {
-                // id 가 안 맞는 응답 — 이미 만료·취소돼 거둬진 것이다. 그중
-                // **namespace 호출이었던 것**만 계수를 지운다: 늦어도 답한 것은
-                // 답한 것이다.
-                self.clear_streak_if_late_namespace_answer(plugin_id, resp.id);
+                // id 가 안 맞는 응답 — 이미 만료·취소돼 거둬진 것이다.
+                self.settle_late_response(plugin_id, resp.id);
                 return;
             }
         };
@@ -670,6 +668,34 @@ impl PluginManager {
         while ids.len() > super::NAMESPACE_EXPIRY_RESTART_LIMIT as usize {
             ids.pop_front();
         }
+    }
+
+    /// 이미 거둬진 요청의 **늦은 응답**을 처리하는 유일한 자리.
+    ///
+    /// 요청이 pending 에서 빠지는 길은 셋이다 — 응답 매칭 · deadline 만료(sweep) · plugin
+    /// 이 치워짐(취소). 뒤 둘은 **그 자리에서 이미 끝을 냈다**: namespace 호출은 caller 에
+    /// `-32004` 를 회신했고, hook 은 fail-open 으로 원래 흐름을 진행시켰다. 그래서 늦게
+    /// 온 응답이 할 일은 **아무것도 진행시키지 않는 것**이고, 변종마다 그 이유가 있다.
+    ///
+    /// - **target 응답이 늦으면 post-hook 을 안 부른다.** post-hook 은 caller 에게 갈 결과를
+    ///   바꾸는 단계인데 caller 는 이미 `-32004` 를 받았다. 부르면 extension 이 결과를 못
+    ///   바꾸는 호출을 받고 **효과만 남는다**(post-hook 이 기록·전송을 하는 extension 이면
+    ///   caller 가 실패로 본 호출에 대해 그 효과가 난다).
+    /// - **pre-hook 응답이 늦으면 target 을 다시 안 부른다.** fail-open 이 원본 payload 로
+    ///   이미 불렀다 — 다시 부르면 같은 호출이 두 번 실행된다.
+    /// - **post-hook 응답이 늦으면 결과를 다시 안 보낸다.** fail-open 이 target 결과를 이미
+    ///   보냈다 — caller 는 같은 id 에 답을 두 번 받는다.
+    /// - **hook 실패 계수를 되돌리지 않는다.** 만료가 이미 실패로 셌고, backoff 가 묻는
+    ///   것은 "제때 답하는가" 라 늦은 답은 여전히 실패다.
+    ///
+    /// 남는 일은 하나다 — namespace 호출의 늦은 답은 연속 만료 계수를 지운다(ADR-0311
+    /// 2026-09-20 보강: 늦어도 답한 것은 답한 것이다). 이 정책의 근거와 대안은
+    /// ADR-0311 의 2026-09-21 보강에 있다.
+    fn settle_late_response(&mut self, plugin_id: &str, resp_id: u64) {
+        tracing::debug!(
+            "plugin '{plugin_id}' answered request {resp_id} after it was settled — discarded"
+        );
+        self.clear_streak_if_late_namespace_answer(plugin_id, resp_id);
     }
 
     /// 만료로 이미 거둬진 namespace 호출의 **늦은 응답**이면 그 plugin 의 연속 계수를

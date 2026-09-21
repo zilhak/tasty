@@ -616,6 +616,10 @@ mod tests_timers;
 #[cfg(test)]
 mod tests_lifecycle_toggle;
 
+// 만료·취소로 이미 끝난 요청의 늦은 응답이 아무것도 다시 진행시키지 않는가.
+#[cfg(test)]
+mod tests_late_response;
+
 #[cfg(test)]
 mod tests {
     use super::*;

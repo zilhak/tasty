@@ -308,6 +308,13 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   못 지운다(호스트가 만료된 namespace 호출의 id 만 기억한다). hook 처럼
   backoff 를 걸지 않는 이유는 ADR-0311 의 2026-09-20 보강에 있다 — 우회할 대상이 없는
   호출에 backoff 를 걸면 회복한 plugin 이 그 창 동안 도달 불가가 된다.
+- **이미 끝난 요청의 늦은 응답**: 만료·취소로 caller 에게 이미 답한 요청에 plugin 응답이
+  뒤늦게 오면 호스트는 **아무것도 다시 진행시키지 않는다** — target 응답이 늦어도 post-hook
+  을 안 부르고, pre-hook 응답이 늦어도 target 을 다시 안 부르며, post-hook 응답이 늦어도
+  결과를 다시 안 보낸다. 하는 일은 위 연속 만료 계수를 지우는 것 하나다. caller 가 받은
+  `-32004` 는 "실행되지 않았다" 가 아니라 "결과를 모른다" 다 — 늦은 응답이 왔다는 것은
+  plugin 이 실제로 실행했다는 뜻이고 호스트는 그 효과를 되돌리지 못한다. 근거는 ADR-0311
+  의 2026-09-21 보강.
 - **재시작·disable·swap 의 정리는 한 함수다**: 세 경로가 프로세스를 치운 뒤 모두
   `forget_plugin_runtime` 을 거친다 — event bus 권한·구독 해제, pending 회수, shared
   buffer 해제, 설정 sub-page 해제, 등록 게이트(`registered_plugins`) 해제. 등록 게이트가
