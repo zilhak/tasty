@@ -14,7 +14,8 @@
 
 실측(2026-09-22, 착수 트리 `81fd484b8`). 주석·문자열을 덮은 사본에서 `fn` 인자
 `이름: &(mut )?AppState` 를 찾고 본문에서 그 이름이 어떻게 쓰이는지 셌다. 범위는
-`src/adapters/ipc/**` · `src/boot/headless_dispatch.rs` · `src/app/ipc*` 다.
+`src/adapters/ipc/**` · `src/boot/headless_dispatch.rs` · `src/app/ipc*` 다. 이 수는 옛 패턴(경로 한정
+표기 `&crate::state::AppState` 미포함)으로 셌다 — 아래 재검토 조건의 재는 법 패턴은 그 뒤 넓혔다.
 
 - 253 자리. 그중 **145 는 인자를 한 번도 안 읽었다**(이름이 `_state` 이거나 본문에 없다).
   55 는 통째로 다른 fn 에 넘기기만 했고, 53 은 필드·메서드를 직접 만졌다.
