@@ -41,7 +41,8 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
 
 > 부분 개정: gui 에서는 [ADR-0413](0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md) 이후 wake 가 회차 없이 건너뛰어질 수 있어 이 성질이
 > 성립하지 않는다. 그래서 gui 는 아래 대안의 "남은 것을 회차 끝에서 직접 다시 깨운다" 를 채택했다 —
-> 예산에서 잘린 회차가 스스로 한 번 더 깨운다. headless 는 이 문단 그대로다.
+> 예산에서 잘린 회차가 스스로 한 번 더 깨우고, 그 재깨움은 양보 규칙을 `about_to_wait` 한 번 사이에
+> 한 번 건너뛴다. headless 는 이 문단 그대로다.
 
 ## Consequences
 

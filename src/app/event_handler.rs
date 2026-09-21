@@ -382,6 +382,9 @@ impl ApplicationHandler<AppEvent> for App {
         // (완료는 두 checkpoint 를 지나야 반영 — cascade 이벤트가 완료보다 먼저
         // 큐잉되는 창을 닫기 위한 의도된 1 프레임 지연. autofire.rs 참조.)
         self.lua_autofire.checkpoint();
+        // 루프의 나머지가 차례를 받았다 — 잘린 IPC 회차의 재깨움이 다시 양보 규칙을 건너뛸 수
+        // 있다(`crate::app::ipc::IpcPacer`).
+        self.ipc_pacer.loop_reached_about_to_wait();
 
         // 시간축 — due 한 타이머 키만 실행한다(프레임축 dispatch_* 큐 drain 과 별개).
         // 파이프라인 앞머리에 두어, 여기서 표시한 dirty 와 enqueue 한 host event 가

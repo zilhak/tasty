@@ -377,6 +377,8 @@ gui 의 타이머는 `about_to_wait` 앞머리에서만 돈다. winit 은 한 it
 명령과 wake 를 보낸다. 그래서 `IpcReady` 처리기는 직전 회차가 끝난 뒤 한 회차 예산이 지났을 때만
 회차를 연다(`src/app/ipc.rs` 의 `IpcPacer`,
 [ADR-0413](../adr/0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md)).
+예산에서 잘린 회차가 보내는 재깨움은 그 규칙을 건너뛰지만 `about_to_wait` 한 번 사이에
+한 번뿐이다 — 한도를 풀면 잘림과 재깨움이 사슬을 이뤄 같은 기아가 돌아온다(실측으로 확인됨).
 사용자 이벤트 처리기에 새로 무거운 일을 넣을 때도 같은 물음을 한다 — 그 일이 끝나면서 같은
 이벤트를 다시 부르는가.
 

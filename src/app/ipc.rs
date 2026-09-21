@@ -49,24 +49,64 @@ pub(crate) enum IpcStep {
 /// 그 사이에 온 wake 는 루프를 깨우는 일만 하고, 명령은 곧 올 `about_to_wait` 의 회차가 집는다.
 /// 회차가 안 돌면 답이 안 나가 새 명령도 안 오므로 사용자 이벤트 큐는 곧 빈다.
 ///
+/// 예산에서 잘린 회차는 루프를 한 번 깨우고, 그 재깨움은 양보 규칙을 **한 번** 건너뛴다 —
+/// `about_to_wait` 한 번 사이에 한 회차까지. 재깨움이 연 회차가 또 잘리면 다음 재깨움은 규칙을
+/// 따른다. 한도를 없애면 잘림과 재깨움이 사용자 이벤트 루프 안에서 사슬을 이뤄 기아가 되살아난다
+/// (x11 실측, ADR-0413).
+///
 /// 사용자 이벤트 쪽 회차를 아예 없애지 않는 이유 — 플랫폼 모달 루프(창 크기 조절 · 메뉴 추적
 /// 등)가 `about_to_wait` 없이 사용자 이벤트만 전하는 구간이 있으면, 그 구간에서 IPC 를 살리는
-/// 것이 이 경로다. 그 구간이 실제로 있는지는 이 머신(x11)에서 잴 수 없다(ADR-0410).
-#[derive(Default)]
+/// 것이 이 경로다. 그 구간이 실제로 있는지는 이 머신(x11)에서 잴 수 없다(ADR-0413).
 pub(crate) struct IpcPacer {
     last_round_end: Option<std::time::Instant>,
+    /// 직전 회차가 예산에서 잘렸고, 그 몫의 재깨움이 아직 회차를 열지 않았다.
+    rewake_owed: bool,
+    /// 마지막 `about_to_wait` 뒤로 재깨움이 양보 규칙을 건너뛰어 회차를 이미 한 번 열었다.
+    rewake_spent: bool,
+    /// 루프를 깨우는 수단 — 제품은 `IpcReady` 를 보내고, 시험은 센다.
+    wake: Box<dyn Fn()>,
 }
 
 impl IpcPacer {
+    pub(crate) fn new(wake: Box<dyn Fn()>) -> Self {
+        Self {
+            last_round_end: None,
+            rewake_owed: false,
+            rewake_spent: false,
+            wake,
+        }
+    }
+
     /// 사용자 이벤트가 지금 회차를 돌려도 되는가.
-    pub(crate) fn event_may_run_round(&self, now: std::time::Instant) -> bool {
+    ///
+    /// 잘린 회차가 남긴 재깨움은 양보 규칙을 건너뛴다 — 단 `about_to_wait` 한 번 사이에 한
+    /// 번만. 한도가 없으면 재깨움이 연 회차가 또 잘리고 또 재깨워, 사용자 이벤트 루프가 다시
+    /// 끝나지 않는다.
+    pub(crate) fn event_may_run_round(&mut self, now: std::time::Instant) -> bool {
+        if self.rewake_owed && !self.rewake_spent {
+            self.rewake_owed = false;
+            self.rewake_spent = true;
+            return true;
+        }
         self.last_round_end.is_none_or(|end| {
             now.saturating_duration_since(end) >= crate::app::ipc_round::ROUND_TIME_BUDGET
         })
     }
 
-    fn round_ended(&mut self, at: std::time::Instant) {
+    /// `about_to_wait` 에 닿았다 — 루프의 나머지(타이머 · 렌더)가 차례를 받았으므로 재깨움의
+    /// 면제를 다시 허락한다.
+    pub(crate) fn loop_reached_about_to_wait(&mut self) {
+        self.rewake_spent = false;
+    }
+
+    /// 회차가 끝났다. 예산에서 잘렸으면 루프를 한 번 깨운다 — 남은 명령의 wake 는 이미
+    /// 건너뛴 이벤트로 소비됐을 수 있어서, 안 깨우면 다른 입력이 올 때까지 남는다.
+    fn round_ended(&mut self, at: std::time::Instant, end: tasty_ipc::dispatch::RoundEnd) {
         self.last_round_end = Some(at);
+        self.rewake_owed = end != tasty_ipc::dispatch::RoundEnd::Drained;
+        if self.rewake_owed {
+            (self.wake)();
+        }
     }
 }
 
@@ -86,8 +126,8 @@ impl App {
             match self.ipc_dispatch_command(cmd) {
                 #[cfg(debug_assertions)]
                 IpcStep::Shutdown => {
-                    round.finish(self.core.pressure(), self.core.dispatch());
-                    self.ipc_pacer.round_ended(std::time::Instant::now());
+                    let end = round.finish(self.core.pressure(), self.core.dispatch());
+                    self.ipc_pacer.round_ended(std::time::Instant::now(), end);
                     return true;
                 }
                 IpcStep::HandledDirty => {
@@ -99,10 +139,7 @@ impl App {
             }
         }
         let end = round.finish(self.core.pressure(), self.core.dispatch());
-        self.ipc_pacer.round_ended(std::time::Instant::now());
-        if end != tasty_ipc::dispatch::RoundEnd::Drained {
-            crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::IpcReady);
-        }
+        self.ipc_pacer.round_ended(std::time::Instant::now(), end);
         if tool_registry_dirty {
             self.refresh_tool_registry();
             self.refresh_palette_plugin_commands();
@@ -156,24 +193,38 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
     use std::time::{Duration, Instant};
+
+    use tasty_ipc::dispatch::RoundEnd;
 
     use super::IpcPacer;
     use crate::app::ipc_round::ROUND_TIME_BUDGET;
 
+    /// 깨운 횟수를 세는 페이서.
+    fn counting() -> (IpcPacer, Rc<Cell<u32>>) {
+        let wakes = Rc::new(Cell::new(0));
+        let seen = Rc::clone(&wakes);
+        (
+            IpcPacer::new(Box::new(move || seen.set(seen.get() + 1))),
+            wakes,
+        )
+    }
+
     /// 회차가 한 번도 안 돌았으면 사용자 이벤트가 회차를 연다.
     #[test]
     fn the_first_wake_may_run_a_round() {
-        assert!(IpcPacer::default().event_may_run_round(Instant::now()));
+        assert!(counting().0.event_may_run_round(Instant::now()));
     }
 
     /// 직전 회차가 방금 끝났으면 사용자 이벤트는 회차를 안 연다 — 이것이 빠지면 지속 부하에서
     /// winit 의 사용자 이벤트 큐가 비지 않아 `about_to_wait` 가 영영 안 온다.
     #[test]
     fn a_wake_right_after_a_round_yields_to_the_rest_of_the_loop() {
-        let mut pacer = IpcPacer::default();
+        let (mut pacer, _) = counting();
         let end = Instant::now();
-        pacer.round_ended(end);
+        pacer.round_ended(end, RoundEnd::Drained);
         assert!(!pacer.event_may_run_round(end));
         assert!(!pacer.event_may_run_round(end + ROUND_TIME_BUDGET - Duration::from_millis(1)));
     }
@@ -182,9 +233,59 @@ mod tests {
     /// IPC 가 진척한다.
     #[test]
     fn a_wake_a_budget_after_the_last_round_runs_one() {
-        let mut pacer = IpcPacer::default();
+        let (mut pacer, _) = counting();
         let end = Instant::now();
-        pacer.round_ended(end);
+        pacer.round_ended(end, RoundEnd::Drained);
         assert!(pacer.event_may_run_round(end + ROUND_TIME_BUDGET));
+    }
+
+    /// 예산에서 잘린 회차는 루프를 정확히 한 번 깨우고, 큐를 비운 회차는 안 깨운다.
+    #[test]
+    fn a_cut_round_wakes_the_loop_once_and_a_drained_round_does_not() {
+        let (mut pacer, wakes) = counting();
+        let now = Instant::now();
+        pacer.round_ended(now, RoundEnd::Drained);
+        assert_eq!(
+            wakes.get(),
+            0,
+            "a drained round has nothing left to carry over"
+        );
+        pacer.round_ended(now, RoundEnd::TimeBudget);
+        assert_eq!(wakes.get(), 1);
+        pacer.round_ended(now, RoundEnd::CountBudget);
+        assert_eq!(wakes.get(), 2, "one wake per cut round");
+    }
+
+    /// 잘린 회차의 재깨움은 양보 규칙 안에서도 회차를 연다 — 이것이 없으면 `about_to_wait` 가
+    /// 안 오는 구간에서 남은 명령이 다음 입력까지 선다.
+    #[test]
+    fn the_wake_after_a_cut_round_opens_a_round_inside_the_budget() {
+        let (mut pacer, _) = counting();
+        let end = Instant::now();
+        pacer.round_ended(end, RoundEnd::TimeBudget);
+        assert!(pacer.event_may_run_round(end));
+        assert!(
+            !pacer.event_may_run_round(end),
+            "the exemption is spent by the one round it opened"
+        );
+    }
+
+    /// 면제는 `about_to_wait` 한 번 사이에 한 번이다. 재깨움이 연 회차가 또 잘려도 다음
+    /// 재깨움은 양보 규칙을 따른다 — 한도가 없으면 잘림과 재깨움이 사용자 이벤트 루프 안에서
+    /// 사슬을 이뤄 x11 의 기아가 되살아난다.
+    #[test]
+    fn a_chain_of_cut_rounds_yields_until_the_loop_reaches_about_to_wait() {
+        let (mut pacer, wakes) = counting();
+        let end = Instant::now();
+        pacer.round_ended(end, RoundEnd::TimeBudget);
+        assert!(pacer.event_may_run_round(end));
+        pacer.round_ended(end, RoundEnd::TimeBudget);
+        assert_eq!(wakes.get(), 2, "the second cut round still wakes the loop");
+        assert!(!pacer.event_may_run_round(end), "but its wake yields");
+        pacer.loop_reached_about_to_wait();
+        assert!(
+            pacer.event_may_run_round(end),
+            "after about_to_wait it may skip again"
+        );
     }
 }

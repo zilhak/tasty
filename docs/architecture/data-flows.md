@@ -71,7 +71,8 @@ gui 에서는 회차가 `about_to_wait`(iteration 마다 한 번)와 `IpcReady` 
 winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about_to_wait` 로 넘어가므로, 사용자 이벤트가
 늘 회차를 열면 지속 부하에서 타이머·입력·렌더가 굶는다. 그래서 사용자 이벤트는 직전 회차가 끝난 뒤
 한 회차 예산이 지났을 때만 회차를 열고(`app::ipc::IpcPacer`), 예산에서 멈춘 회차는 루프를 스스로 한
-번 더 깨운다 — 건너뛴 wake 가 남은 명령의 몫이었을 수 있어서다([ADR-0413](../adr/0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md)).
+번 더 깨운다 — 건너뛴 wake 가 남은 명령의 몫이었을 수 있어서다. 그 재깨움은 양보 규칙을
+`about_to_wait` 한 번 사이에 한 번 건너뛴다([ADR-0413](../adr/0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md)).
 
 순서는 도착 순이다. 연결 하나는 응답을 받을 때까지 다음 요청을 안 보내므로 큐에 한 번에 하나만
 올리고, 그래서 어떤 요청 앞에 설 수 있는 명령 수는 연결 상한과 주입 깊이 상한으로 유한하다.

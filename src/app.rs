@@ -380,7 +380,12 @@ impl App {
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             timers,
             timer_waker,
-            ipc_pacer: crate::app::ipc::IpcPacer::default(),
+            ipc_pacer: crate::app::ipc::IpcPacer::new({
+                let proxy = proxy.clone();
+                Box::new(move || {
+                    crate::shortcuts::send_app_event(&proxy, AppEvent::IpcReady);
+                })
+            }),
             preset_view_id: None,
             pending_settings_plugin_tab: false,
             pending_settings_file_handler_tab: false,
