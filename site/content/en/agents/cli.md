@@ -1,4 +1,4 @@
-<!-- source-hash: d396ca65b59f -->
+<!-- source-hash: dabb15b145c1 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -308,7 +308,7 @@ tasty file-handler reload              # read the file handler settings file aga
 
 `set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
 
-`file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error. A `tasty --headless` instance has no window to open a file in, so instead of reporting the request as accepted it returns an error saying this build does not support it.
+`file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error. A headless build, which runs Tasty on a server without a GUI, cannot open files, so instead of reporting the request as accepted it returns an error saying this build does not support it.
 
 The `file-handler reload` response has a `rejected` list. It holds the `id` and the reason (`reason`) of each entry from the settings file that is not applied right now, and it is empty when everything applied. There are three reasons.
 
