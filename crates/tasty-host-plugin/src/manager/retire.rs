@@ -228,6 +228,9 @@ impl PluginManager {
     /// 온 전체 기동). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인
     /// plugin 이 아무 것도 다시 띄우지 않는 채로 꺼져 남는다 — 호출자가 쓰기를 마친 뒤
     /// `true` 면 [`Self::start_if_still_wanted`] 로 이어 받는다.
+    #[must_use = "true means a restart was pending on this retirement and is now yours to carry \
+                  out (start_if_still_wanted after the write); dropping it leaves an enabled plugin \
+                  down"]
     pub fn wait_retired(&mut self, plugin_id: &str) -> bool {
         let mut respawn = false;
         if let Some(r) = self.retiring.remove(plugin_id) {

@@ -681,8 +681,13 @@ impl PluginManager {
         // 자리에서** 띄운다 — 사용자·에이전트가 명시적으로 부른 조작이라, "disable → enable →
         // 곧바로 호출" 이 예전처럼 성공해야 한다. 미뤄 두면 그 사이의 호출이 `not running`
         // 을 받는다. 그 대가로 메인 스레드가 최대 2 s 선다(remove · swap 과 같은 논리,
-        // ADR-0457). 기다리며 가져온 재기동 예약은 바로 아래 기동이 대신한다.
-        self.wait_retired(plugin_id);
+        // ADR-0457). 기다리며 가져온 재기동 예약은 바로 아래 기동이 대신하므로 따로 잇지 않는다.
+        if self.wait_retired(plugin_id) {
+            tracing::debug!(
+                plugin_id,
+                "enable took over a pending restart — started below instead"
+            );
+        }
         if !self.processes.contains_key(plugin_id) {
             self.ensure_listener();
             self.start_plugin_internal(&pkg);
@@ -794,7 +799,12 @@ impl PluginManager {
         // 있어야** 한다 — 그래서 여기는 기다린다. 무응답 재시작으로 이미 회수 중이던
         // 것도 끝까지 기다린다(`manager::retire`). 그 재기동 예약은 여기서 따로 잇지 않는다 —
         // swap 은 뒤의 `swap_respawn_internal` 이 어차피 다시 띄운다.
-        self.wait_retired(plugin_id);
+        if self.wait_retired(plugin_id) {
+            tracing::debug!(
+                plugin_id,
+                "swap took over a pending restart — swap_respawn_internal starts it"
+            );
+        }
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }

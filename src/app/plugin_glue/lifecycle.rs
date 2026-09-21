@@ -123,6 +123,24 @@ fn collect_window_declared_events(plugin_id: &str, pkg: &PluginPackage) -> Vec<C
     events
 }
 
+/// remove 앞단 — plugin 을 내리고 옛 프로세스가 **사라질 때까지** 기다린다.
+///
+/// disable 은 옛 프로세스의 회수를 기다리지 않는다. 뒤에서 그 프로세스가 실행 중인
+/// 디렉토리를 지우므로 여기서는 회수가 끝날 때까지 기다린다 — 실행 중인 파일은 Windows 에서
+/// 지워지지 않는다. 재기동 예약은 이어받지 않는다 — 지우는 plugin 이고, 앞의 disable 이
+/// 예약을 이미 내렸으므로 참이 오는 것은 예상 밖이다.
+fn stop_before_remove(mgr: &mut PluginManager, plugin_id: &str) {
+    if let Err(e) = mgr.disable(plugin_id) {
+        tracing::warn!("disable before remove failed: {e}");
+    }
+    if mgr.wait_retired(plugin_id) {
+        tracing::debug!(
+            plugin_id,
+            "remove dropped a pending restart — the plugin is being removed"
+        );
+    }
+}
+
 impl App {
     /// `plugin.install` IPC handler 의 본문. 파일 시스템 복사 + manifest 등록 +
     /// auto-grant + 자동 enable. CoreEvent 2종 (Installed + 자동 EnableToggled)
@@ -198,13 +216,7 @@ impl App {
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized");
         };
-        if let Err(e) = mgr.disable(&plugin_id) {
-            tracing::warn!("disable before remove failed: {e}");
-        }
-        // disable 은 옛 프로세스의 회수를 기다리지 않는다. 아래에서 그 프로세스가 실행
-        // 중인 디렉토리를 지우므로 여기서는 회수가 끝날 때까지 기다린다 — 실행 중인
-        // 파일은 Windows 에서 지워지지 않는다.
-        mgr.wait_retired(&plugin_id);
+        stop_before_remove(mgr, &plugin_id);
         let plugin_dir = crate::plugin::plugin_root()
             .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?
             .join(&plugin_id);

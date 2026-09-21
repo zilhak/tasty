@@ -247,6 +247,9 @@ fn wait_retired_blocks_until_the_child_is_gone() {
     mgr.processes
         .insert(ID.into(), PluginProcess::stub_with_child(ID, slow_child()));
     mgr.disable(ID).expect("disable");
-    mgr.wait_retired(ID);
+    assert!(
+        !mgr.wait_retired(ID),
+        "disable 로 내려간 회수는 재기동 예약을 넘기지 않는다"
+    );
     assert_eq!(mgr.retiring_count(), 0);
 }
