@@ -82,8 +82,8 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | `plugin_popup_closes` · `plugin_popup_focus_bumps` · `plugin_banner_closes` | 실행 자원 (큐) | 요청 | egui 패스 → 메인 루프가 plugin 에 통지 | 독자 없음 |
 | `plugin_mesh_popup_regions` · `plugin_popup_ime_cursor_area` | 사용자 view 상태 | 프레임 | egui 패스 → 합성·IME | 독자 없음 |
 | `plugin_mesh_popup_forward` · `plugin_mesh_banner_forward` | 사용자 view 상태 | 열림 | egui 패스 → 합성 | 없음 |
-| `plugin_mesh_banner_regions` | 사용자 view 상태 | 프레임 | egui 패스 → 합성 | 읽힘 |
-| `plugin_mesh_popup_pending_repaint` · `plugin_mesh_banner_pending_repaint` | 사용자 view 상태 | 요청 | plugin repaint 요청 → 합성 | 읽힘 |
+| `plugin_mesh_banner_regions` | 사용자 view 상태 | 프레임 | egui 패스 → 합성 | 독자 없음 |
+| `plugin_mesh_popup_pending_repaint` · `plugin_mesh_banner_pending_repaint` | 사용자 view 상태 | 요청 | plugin repaint 요청 → 합성 | 독자 없음 |
 | `pending_intents` | 실행 자원 (큐) | 요청 | 핸들러·GUI 의 `dispatch_intent` → `dispatch_pending_intents` / headless drain | 읽힘 |
 
 ## 남은 것 — `독자 없음` 칸

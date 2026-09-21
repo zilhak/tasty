@@ -59,6 +59,14 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
 - **드러난 것**: headless 가 부팅할 때 picker 선택 기록 파일을 더는 읽지 않는다. 그 값을 읽는
   picker 와 기록하는 `record_file_handler_pick` 이 이미 gui 에만 있었다. 기록이 깨진 파일이면
   나던 경고 로그 한 줄이 headless 에서 사라진다.
+- **잔여 — 이 결정은 부분 착지다.** "headless 는 자기가 필요한 상태만으로 구성된다" 는
+  `dialogs` 덩어리에서만 성립한다. 남은 셋은 도메인 실행을 `AppState` 없이 돌리는 headless
+  core 라이브러리를 세우는 작업이 선행 조건으로 흡수한다.
+  1. `pump_ipc` 와 핸들러가 `AppState` 전체 대신 도메인 상태만 받게 인자를 좁힌다.
+  2. 소유권 문서의 `독자 없음` 필드 31 개를 ①(gui 전용)과 ③(headless 도 쓰지만 읽는 자가
+     GUI 뿐 — `expect`)으로 가른다.
+  3. `src/state.rs` 첫머리의 모듈 단위 `allow(dead_code, unused_imports)` 를 지운다. 2 가 끝나야
+     지울 수 있다.
 - **운영 비용**: 새 dialog 상태를 넣는 사람은 그것이 headless 에서 읽혀야 하는지를 정해야 한다.
   읽혀야 하면 `dialogs` 가 아니라 `AppState` 나 `CoreState` 에 둔다.
 
@@ -66,13 +74,14 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
 
 - **`AppState` 를 도메인 struct 와 GUI struct 로 가른다**: 티켓 문장에 가장 가깝다. 그러나 287
   자리의 핸들러 인자를 바꾸는 변경이고, 같은 회차에 IPC 핸들러 시그니처를 고치는 다른 단위와
-  파일이 겹친다. 그 변경 없이도 headless 의 `AppState` 는 이미 gui 필드가 빠진 형태라, 둘로
-  가른다고 headless 가 들고 다니는 상태가 더 줄지 않는다.
+  파일이 겹친다. `dialogs` 덩어리에 대해서는 cfg gate 만으로도 같은 결과다 — headless 에서 그
+  상태가 사라진다. 소유권 문서의 `독자 없음` 필드까지 빼는 것은 두 방법 어느 쪽으로도 필드마다
+  가르는 일이 따로 필요하다.
 - **`DialogState` 를 가르고 `pending_approval_ids` 만 gate 밖에 남긴다**: 그 큐를 headless
   에서 채우는 자리도 비우는 자리도 없다. 남기면 headless 에 독자 없는 필드를 하나 더 만든다.
 - **`src/state.rs` 의 모듈 단위 `allow(dead_code)` 를 이 회차에 지운다**: 지우고 재면 headless
   라이브러리에서 dead_code 진단 27 건이 나온다(이 결정을 적용한 트리, 2026-09-21). 그중 하나가
-  `AppState` 의 필드 28 개를 한데 묶은 것이다. 경계를 제대로 긋는 길이지만 이
+  `AppState` 의 필드 31 개를 한데 묶은 것이다. 경계를 제대로 긋는 길이지만 이
   단위의 범위(`dialogs`)보다 넓어 다음 단계로 둔다. 그 목록은 소유권 문서의 `독자 없음` 칸이다.
 
 ## Reconsideration Triggers
