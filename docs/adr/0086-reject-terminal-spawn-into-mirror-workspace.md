@@ -78,6 +78,11 @@ hard-occupied 를 함께 판정하므로, 위에 적은 `--pane` 우회가 **두
    고 못박은 이유는 holder 의 forward 실행 경로(`execute_forwarded_structural_op`)가 그 핸들러들을
    직접 함수 호출하기 때문인데, `handle_spawn` 은 그 재사용 목록(6종)에 **포함되지 않는다**
    (ADR-0060 이 확인한 사실). `terminal.spawn` 에 한해서만 핸들러 내부가 안전한 집행 지점이다.
+   (현재 형태: forward 실행은 이제 핸들러를 부르지 않고 IPC 핸들러와 같은 도메인 실행 함수
+   `core::structural_exec` 를 부른다 —
+   [ADR-0395](0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md). 그래서 이
+   근거는 "핸들러 안" 이 아니라 "도메인 실행 함수 안이나 `Core::apply`" 에 가드를 두면 안 된다는
+   말로 읽는다. 라우터 가드 위치는 그대로 맞다.)
 
 ADR-0060 의 결정 자체는 유지된다 — 정책(hard-occupied 워크스페이스로의 spawn 차단)은 그대로이고,
 집행 지점만 더 정확한 곳으로 옮겨 그 정책이 실제로 지켜지도록 만든다.

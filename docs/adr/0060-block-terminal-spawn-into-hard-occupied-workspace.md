@@ -53,7 +53,9 @@ workspace 가 hard-occupied 상태)은 **tab/surface 를 전혀 생성하지 않
 - `terminal.spawn` 은 forward 실행 경로(`execute_forwarded_structural_op`, holder 본인이 mirror
   안에서 만든 구조 변경이 서버에 도달하는 경로)가 재사용하는 6개 IPC 핸들러
   (split/tab.create/tab.close/tab.move/pane.close/surface.close) 목록에 **포함되지 않는다** —
-  가드를 추가해도 holder 본인의 정당한 forward 요청을 막는 회귀는 없다.
+  가드를 추가해도 holder 본인의 정당한 forward 요청을 막는 회귀는 없다. (현재 형태: forward
+  실행은 핸들러를 거치지 않고 도메인 실행 함수 `core::structural_exec` 를 직접 부른다 —
+  [ADR-0395](0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md). 결론은 같다.)
 - 점유되지 않은 workspace 로의 `terminal.spawn` 은 기존과 동일하게 동작한다(회귀 없음).
 
 ## Consequences

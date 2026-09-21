@@ -588,9 +588,9 @@ fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRpcResponse {
 ///
 /// 다른 구조 op 처럼 [`hard_occupied_structural_guard`] 에 두지 않는 이유는
 /// forward 회귀가 없기 때문이다: `execute_forwarded_structural_op`
-/// (`src/core/attach_runtime.rs`)이 재사용하는 6개 핸들러에 `handle_spawn` 은
-/// 포함되지 않는다. 그래서 핸들러 내부에 둬도 holder 본인의 정당한 forward 를
-/// 막지 않는다 — 다른 6종에는 성립하지 않는 조건이다.
+/// (`src/core/attach_runtime.rs`)이 부르는 도메인 실행 함수 6개(`core::structural_exec`)에
+/// spawn 은 포함되지 않는다. 그래서 핸들러 내부에 둬도 holder 본인의 정당한 forward 를
+/// 막지 않는다 — 다른 6종은 가드를 도메인 함수나 `Core::apply` 에 두면 forward 까지 막는다.
 ///
 /// **mirror 판정은 `terminal.spawn` 에만 적용된다.** mirror 워크스페이스 안의
 /// 나머지 구조 변경은 원격으로 forward 되는 것이 정상 설계이므로

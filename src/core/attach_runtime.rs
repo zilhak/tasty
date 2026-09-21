@@ -916,7 +916,7 @@ pub(crate) fn execute_forwarded_structural_op(
             params,
             cwd,
         } => {
-            // generic `surface.convert` IPC 가 없어 재사용할 핸들러가 없다 —
+            // generic `surface.convert` IPC 가 없어 대응하는 도메인 실행 함수가 없다 —
             // `image::handle_open` 과 동일한 형태(`Core::apply` 직접 호출 +
             // `SurfaceConverted{replaced}` 로 성공 판정)를 여기 직접 재현한다.
             //
@@ -971,7 +971,7 @@ pub(crate) fn execute_forwarded_structural_op(
             }
         }
         StructuralOp::RestoreClosedItem { anchor_surface_id } => {
-            // 복원은 IPC/CLI 로 노출된 적이 없어 재사용할 핸들러가 없다 — `ConvertSurface`
+            // 복원은 IPC/CLI 로 노출된 적이 없어 대응하는 도메인 실행 함수가 없다 — `ConvertSurface`
             // /`MoveSurface` 와 같은 형태로 `Core::apply` 를 직접 부른다.
             let pane_id = engine
                 .find_pane_for_surface(*anchor_surface_id)
