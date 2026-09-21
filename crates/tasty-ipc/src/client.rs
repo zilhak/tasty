@@ -544,8 +544,6 @@ mod tests {
         );
     }
 
-    /// 모양이 어긋난 항목은 조용히 빠지고 나머지는 산다 — 한 항목이 전체 조회를
-    /// 깨뜨리면 "추가는 안전하다" 가 거짓이 된다.
     /// 남은 시간은 내림으로 싣고, 1 ms 도 안 남았으면 실을 수 없다 — `0` 은 "상한 없음" 이다.
     #[test]
     fn what_is_left_rounds_down_and_nothing_left_is_none() {
@@ -555,6 +553,8 @@ mod tests {
         assert_eq!(whole_millis(Duration::ZERO), None);
     }
 
+    /// 모양이 어긋난 항목은 조용히 빠지고 나머지는 산다 — 한 항목이 전체 조회를
+    /// 깨뜨리면 "추가는 안전하다" 가 거짓이 된다.
     #[test]
     fn a_malformed_entry_does_not_take_the_others_down() {
         let info = serde_json::json!({
