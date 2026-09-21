@@ -72,7 +72,7 @@ plugin 쪽과 같은 모양을 갖는다.
   배경 · 프레임 · 그림자는 범위 rect 로 잘린다. popup 의 *내용* 은 자기 `Area` 안에서
   그려지고 그 `Ui` 의 clip 은 egui 의 패널 컨테이너가 자기 rect 로 **덮어쓴다**
   (`egui::TopBottomPanel::show_inside` · `CentralPanel::show_inside` 가
-  `panel_ui.set_clip_rect(outer_rect)` 를 부른다). 그래서 자기 자연폭보다 훨씬 좁게
+  `panel_ui.set_clip_rect(panel_rect)` 를 부른다). 그래서 자기 자연폭보다 훨씬 좁게
   눌린 popup 은 내용이 범위 밖으로 샐 수 있다. 실측: 39 칸(277pt) surface 에 `port_scanner`
   를 억지로 묶으면 footer 카운터와 빈 상태 문구가 사이드바 자리(x 124..179)에 430 px 그려졌다.
   제품 경로로는 안 난다 — surface 에 묶이는 host popup 은 `convert_surface`(200×229)와 그것이
