@@ -486,8 +486,13 @@ pub struct CoreState {
     /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
     /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.
     /// headless 는 렌더가 없어 읽지 않는다(gui 한정).
-    // 이유: 이 필드를 읽는 것이 render_pass 뿐이라 렌더가 없는 headless 엔 독자가 없다(위).
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "only render_pass reads the readonly mirror and headless has no renderer"
+        )
+    )]
     pub(crate) readonly_views: HashMap<u32, tasty_terminal::Terminal>,
 
     /// attach/detach 작업 J — GUI in-process attach-client 트리거 큐. IPC
@@ -714,8 +719,13 @@ pub struct CoreState {
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
-    // 이유: 이 플래그를 읽는 것이 debug 전용 입력 시뮬레이션 IPC(gui)뿐이다.
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "only the gui input simulation IPC of debug builds reads the flag"
+        )
+    )]
     pub(crate) input_simulation_enabled: bool,
 
     /// Memory port 의 Arc clone — Core 가 owner. 생성자에서 즉시 주입되며

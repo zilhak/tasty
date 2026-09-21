@@ -105,6 +105,9 @@ headless 빌드에 그 필드가 있는지를 적는다.
 - **③** `preset_store` 와 `ModalKind` 의 variant 는 `expect(dead_code)` 다 — 앞은 headless 도
   `new` 로 사본을 받지만 읽는 자가 GUI 뿐이고, 뒤는 모달을 여는 자리가 GUI 뿐이라 headless 에서
   variant 가 만들어지지 않는다(열거와 `active_modal_kind` 는 `ui.state` 덤프가 두 조합에서 읽는다).
+  `CoreState` 에도 같은 가름을 쓴다 — `readonly_views`(점유 surface 의 readonly mirror, 읽는 자가
+  render_pass 뿐)와 `input_simulation_enabled`(debug 빌드에만 있는 필드, 읽는 자가 gui 의 입력
+  시뮬레이션 IPC 뿐)가 headless 에서 `expect(dead_code)` 다.
 
 `state` 아래에는 모듈 단위 예외가 없다. 마지막이던 `state/command_palette.rs` 는 모듈 선언이
 ②(매칭 로직을 headless 시험이 부른다)이고 그 안의 `CommandPaletteState` 가 ①(필드가 gui 전용)이다.
