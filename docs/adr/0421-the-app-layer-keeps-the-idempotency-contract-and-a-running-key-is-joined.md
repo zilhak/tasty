@@ -10,8 +10,12 @@
 의 보존소는 engine 라우터(`route_checked_request`) 한 자리에서만 키를 봤다. 그 앞의 **App 층** —
 `App` 이 직접 끝내는 메서드 — 에는 `Mutate` 가 여섯 있었고(`window.create` · `view.create` ·
 `ui.screenshot` · `remote.attach` · `plugin.install` · `plugin.request_permission`), 거기 키를 실은
-재시도는 그대로 두 번째 효과를 남겼다. 창이 둘 생기고, 스크린샷이 두 번 찍히고, 승인 레코드가 둘
-생겼다. ADR-0338 은 그 배선을 후속 조각으로 남겼다. plugin namespace forward 는
+재시도는 그대로 두 번째 효과를 남겼다. 창이 둘 생기고, 스크린샷이 두 번 찍혔다.
+`plugin.request_permission` 은 결이 다르다 — 핸들러(`approval::publish_capability_elevation_at`)가
+같은 agent+permission 의 **Pending** 격상이 있으면 그것을 재사용하므로, 승인 전의 재시도는 키 없이도
+같은 레코드를 가리킨다. 그 메서드에서 두 번째 효과가 나는 것은 격상이 이미 **결정된**(승인 · 거절)
+뒤에 재시도가 도착해 새 승인 요청을 여는 갈래다. ADR-0338 은 그 배선을 후속 조각으로 남겼다.
+plugin namespace forward 는
 [ADR-0361](0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md) 이 계약
 밖으로 선언했다.
 
@@ -70,8 +74,9 @@ App 층 가로채기는 두 조합에 따로 있다 — GUI 의 `ipc_step_app_me
 
 - **얻은 것**: App 층 `Mutate` 여섯의 재시도가 두 번째 효과를 안 남긴다. 창 생성처럼 답이 늦는 메서드에서
   동시에 온 같은 키가 한 실행으로 수렴한다.
-- **얻은 것**: 두 조합이 같은 함수를 부른다. 헤드리스의 `plugin.request_permission`(승인 레코드 생성)도
-  같은 보장을 받는다.
+- **얻은 것**: 두 조합이 같은 함수를 부른다. 헤드리스의 `plugin.request_permission` 도 같은 보장을
+  받는다 — 격상이 결정된 뒤에 온 재시도가 새 승인 요청을 여는 대신 앞선 답을 재생으로 받고, 같은 키로
+  다른 권한을 청하면 둘째 격상을 여는 대신 `-32063` 을 받는다.
 - **잃은 것 — 키를 실은 App 층 호출 하나가 스레드 하나를 쓴다.** 답이 올 때까지 relay 스레드가 기다린다.
   키가 없는 호출, `Mutate` 가 아닌 호출, 이 층이 안 맡는 호출은 스레드를 안 세운다. 스레드 수의 상한은
   보존소 항목 수 상한과 같지 않다 — 진행 중 항목이 밀려나도 그 스레드는 답이나 통로 끊김까지 산다.
