@@ -85,11 +85,13 @@ pub(crate) use impl_workspace::{WorkspaceCreationParams, apply_create_workspace_
 
 /// 파일 피커 원격 `list_dir_request` id 시퀀스 — 프로세스 내 유일성만 필요
 /// (capture 의 `upload_id` 시퀀스와 동일 근거).
+#[cfg(feature = "gui")]
 static NEXT_LIST_DIR_REQUEST_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 /// 다음 list_dir_request id 발급. 파일 피커 popup wrapper
 /// (`adapters::ui::popup::file_picker`)가 원격 조회를 트리거할 때 호출.
+#[cfg(feature = "gui")]
 pub(crate) fn next_list_dir_request_id() -> u64 {
     NEXT_LIST_DIR_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
@@ -125,11 +127,13 @@ pub(crate) fn next_markdown_content_request_id() -> u64 {
 /// plugin↔host `file_picker.trigger`/`"file_picker.result"` 왕복 전체를 상관관계
 /// 짓고, 저건 popup 내부의 개별 `list_dir` 왕복(디렉토리 이동마다 새로 발급)만
 /// 상관관계 짓는다 — 하나의 트리거 생명주기 동안 후자는 여러 번 재발급될 수 있다.
+#[cfg(feature = "gui")]
 static NEXT_FILE_PICKER_TRIGGER_REQUEST_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 /// 다음 `file_picker.trigger` request id 발급. `file_picker.trigger` IPC 핸들러
 /// (`adapters::ipc::handler::file_picker`)가 plugin 요청을 접수할 때 호출.
+#[cfg(feature = "gui")]
 pub(crate) fn next_file_picker_trigger_request_id() -> u64 {
     NEXT_FILE_PICKER_TRIGGER_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
