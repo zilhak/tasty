@@ -342,18 +342,7 @@ pub fn execute_handler_action(
     dispatch_origin: FileDispatchOrigin,
     ignore_size_limit: bool,
 ) -> bool {
-    if let Some(sid) = origin_surface_id
-        && let Err(message) = require_origin_pane(engine, sid)
-    {
-        tracing::warn!("{message}");
-        return false;
-    }
-    if !handler_accepts_target(&handler.action, target) {
-        tracing::warn!(
-            handler_id = %handler.id,
-            target = %target.display(),
-            "file handler does not accept this dispatch target; not executed",
-        );
+    if !handler_may_run(engine, handler, target, origin_surface_id) {
         return false;
     }
     match &handler.action {
@@ -382,16 +371,44 @@ pub fn execute_handler_action(
         HandlerAction::Ipc { method, .. } => {
             return enqueue_handler_ipc(state, method, target);
         }
-        HandlerAction::System => {
-            // OS 기본 opener 만 호출 — core/state/engine 미사용.
-            let uri = target.system_open_uri();
-            #[cfg(feature = "gui")]
-            crate::terminal_link::open_uri(&uri);
-            #[cfg(not(feature = "gui"))]
-            tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
-        }
+        HandlerAction::System => open_system_target(target),
     }
     true
+}
+
+/// 실행 전 두 관문 — origin surface 가 살아 있는 Pane 에 속하는가, 핸들러가 이 대상을
+/// 받는가. 어느 쪽이든 막히면 사유를 남기고 `false`.
+fn handler_may_run(
+    engine: &crate::core::CoreState,
+    handler: &FileHandler,
+    target: &DispatchTarget,
+    origin_surface_id: Option<u32>,
+) -> bool {
+    if let Some(sid) = origin_surface_id
+        && let Err(message) = require_origin_pane(engine, sid)
+    {
+        tracing::warn!("{message}");
+        return false;
+    }
+    if !handler_accepts_target(&handler.action, target) {
+        tracing::warn!(
+            handler_id = %handler.id,
+            target = %target.display(),
+            "file handler does not accept this dispatch target; not executed",
+        );
+        return false;
+    }
+    true
+}
+
+/// `HandlerAction::System` — OS 기본 opener 만 호출한다(core/state/engine 미사용).
+/// headless 빌드에는 opener 가 없어 경고만 남긴다.
+fn open_system_target(target: &DispatchTarget) {
+    let uri = target.system_open_uri();
+    #[cfg(feature = "gui")]
+    crate::terminal_link::open_uri(&uri);
+    #[cfg(not(feature = "gui"))]
+    tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
 }
 
 /// Preserve the existing path-only plugin payload, with a final type check.
