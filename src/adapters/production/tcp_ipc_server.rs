@@ -1444,7 +1444,8 @@ mod admission_tests {
             command_tx: tx.clone(),
             port: 0,
             shutdown: Arc::new(AtomicBool::new(false)),
-            // Drop 이 지우는 자리다. 한 번도 안 쓰는 경로라 NotFound 로 끝난다.
+            // 이유: 프로세스당 하나여도 된다 — 이 경로는 한 번도 만들어지지 않고, Drop 이 지우려다
+            // NotFound 로 끝나는 자리일 뿐이다. 재호출이 앞 호출의 파일을 지울 일이 없다.
             custom_port_file: Some(std::env::temp_dir().join(format!(
                 "tasty-dequeue-release-test-{}.port",
                 std::process::id()
