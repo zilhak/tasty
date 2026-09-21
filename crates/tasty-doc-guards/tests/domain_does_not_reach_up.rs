@@ -99,13 +99,15 @@ const UPPER: &[(&str, &str)] = &[
 ];
 
 /// 도메인 출하 코드의 `feature = "gui"` 개수. 실측 2026-09-21, 이 가드와 같은 판정기로:
-/// 이 가드를 들인 트리(`39a092f4f` 위) **245** · 경계 작업 착수 트리(`17e2a7f56`) **239**.
+/// 경계 작업을 마친 트리 **246** · 경계 작업 착수 트리(`17e2a7f56`) **239**.
 ///
-/// 경계 작업이 이 수를 6 **올렸다**. 분해: `core/file.rs` −6(GUI 동작인 picker 적용을
+/// 경계 작업이 이 수를 7 **올렸다**. 분해: `core/file.rs` −6(GUI 동작인 picker 적용을
 /// `file::dispatch::picker_apply` 로 뺐다) · `core/cascade_window.rs` +9(포트 메서드 중 호출
 /// 자리가 이미 gui 로 가려진 통지·튜토리얼 관찰 여덟 개와 그 import 하나) ·
 /// `core/host_event.rs` +2(`state.rs` 의 모듈 단위 `allow(dead_code)` 가 가리던 headless
-/// `expect` 가 드러났다) · `core/mod.rs` +1(`identify_port` 선언). 늘어난 여덟은 새 GUI
+/// `expect` 가 드러났다) · `core/mod.rs` +1(`identify_port` 선언) · `core/origin.rs` +1
+/// (`FileDispatchOrigin` 을 도메인으로 옮기며 `file::dispatch` 의 모듈 단위 `allow` 가 가리던
+/// headless `expect` 가 드러났다). 늘어난 여덟은 새 GUI
 /// 의존이 아니라 **이미 있던 게이트가 도메인 쪽 선언에 옮겨 적힌 것**이다 — 그 메서드들은 GUI
 /// 타입을 하나도 안 부른다.
 ///
@@ -113,7 +115,7 @@ const UPPER: &[(&str, &str)] = &[
 /// 대부분 "headless 에 소비자가 없다"(ADR-0346)이고 그 판정 자체는 정당하다. 이 못이 막는
 /// 것은 **새 게이트가 조용히 들어오는 것**이다 — 들어올 때 이 수를 올리는 커밋이 그
 /// 판단을 드러낸다.
-const GUI_GATES_IN_DOMAIN: usize = 245;
+const GUI_GATES_IN_DOMAIN: usize = 246;
 
 /// 도메인 뿌리 아래 `.rs` 수의 하한. 실측 2026-09-21: 92 개(`src/core` 84 · `src/ports` 8),
 /// 그중 출하되는 것 91.

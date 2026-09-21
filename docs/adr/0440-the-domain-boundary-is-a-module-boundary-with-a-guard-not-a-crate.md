@@ -52,7 +52,7 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
    - IPC 배관(워커 스레드로 응답 보내기)은 **어댑터 쪽**에 둔다 — 승인·태스크 대기의 spawn
      (`ipc::handler::approval` · `ipc::handler::agent::task`).
 3. **gui 게이트 수를 고정한다.** 같은 가드가 도메인 출하 코드의 `feature = "gui"` 개수를
-   양방향으로 고정한다(245). 도메인이 GUI 전용 항목을 cfg 로 들여오면 상위 참조가 없어도
+   양방향으로 고정한다(246). 도메인이 GUI 전용 항목을 cfg 로 들여오면 상위 참조가 없어도
    도메인이 GUI 를 안다 — 그 판단이 들어오는 커밋에 드러나게 한다.
 4. **공개 표면은 넓히지 않는다.** 도메인 항목은 `pub(crate)` 그대로다. lib 이 밖에 내는 것은
    여전히 `boot` 하나다. GUI 없는 소비자는 같은 lib 의 headless 구성(`--no-default-features`)
@@ -73,12 +73,14 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   GUI 를 고쳐도 같은 컴파일 단위가 다시 돈다. (b) 공개 표면의 강제 — `pub(crate)` 는 크레이트
   안에서 모두에게 열려 있어 GUI 쪽이 도메인 내부 필드를 직접 만지는 것은 여전히 막히지 않는다.
   이 결정의 가드는 **도메인→상위** 방향만 본다.
-- **잃은 것**: gui 게이트 수가 경계 작업으로 239 → 245 로 **올랐다**. `core/file.rs` −6(picker
+- **잃은 것**: gui 게이트 수가 경계 작업으로 239 → 246 으로 **올랐다**. `core/file.rs` −6(picker
   적용을 뺐다) · `core/cascade_window.rs` +9(포트 메서드 중 호출 자리가 이미 gui 로 가려진
   통지·튜토리얼 관찰 여덟 개와 import 하나) · `core/host_event.rs` +2(`state.rs` 의 모듈 단위
-  `allow(dead_code)` 가 가리던 headless `expect` 가 드러났다) · `core/mod.rs` +1. 늘어난
+  `allow(dead_code)` 가 가리던 headless `expect` 가 드러났다) · `core/mod.rs` +1 ·
+  `core/origin.rs` +1(`FileDispatchOrigin` 을 도메인으로 옮기며 `file::dispatch` 모듈 단위
+  `allow` 가 가리던 headless `expect` 가 드러났다). 늘어난
   여덟은 새 GUI 의존이 아니라 이미 있던 게이트가 도메인 쪽 선언에 옮겨 적힌 것이다 — 그
-  메서드들은 GUI 타입을 하나도 안 부른다. 그래도 수는 수이고, 크레이트로 떼는 날 이 245 가
+  메서드들은 GUI 타입을 하나도 안 부른다. 그래도 수는 수이고, 크레이트로 떼는 날 이 246 이
   그대로 일감이다.
 - **잃은 것 — 전이 의존은 안 본다.** 도메인이 부르는 형제 모듈이 다시 상위를 부르는 경로는
   가드 밖이다. 실측: `file::dispatch` 가 `AppState` 를 받는다(gui 전용 picker 여는 함수들).

@@ -472,7 +472,7 @@ impl Core {
                 ignore_size_limit,
             } => {
                 if let Some(sid) = origin_surface_id {
-                    crate::file::dispatch::require_origin_pane(engine, sid)
+                    crate::core::origin::require_origin_pane(engine, sid)
                         .map_err(anyhow::Error::msg)?;
                 }
                 match engine.identify_worker.as_ref() {

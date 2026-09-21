@@ -3,6 +3,10 @@
 //! 정책 분기(포커스·닫은 항목 히스토리)의 판정 입력이라 도메인 실행과 GUI intent 큐가 함께
 //! 읽는다. 그래서 정의는 도메인 쪽인 여기 있고, `crate::intent` 는 같은 이름을 재수출한다 —
 //! 도메인이 GUI intent 큐 모듈을 거꾸로 부르지 않게 하려는 것이다.
+//!
+//! 파일 열기의 발화 주체([`FileDispatchOrigin`])와 그 요청이 가리킨 surface 의 소유 판정
+//! ([`require_origin_pane`])도 같은 이유로 여기 있다 — 도메인의 `DispatchFile` intent 와
+//! identify 포트가 쓰고, `crate::file::dispatch` 가 재수출한다.
 
 /// Intent 를 발화한 주체. 핸들러가 정책 분기에 사용.
 ///
@@ -67,4 +71,63 @@ impl IntentOrigin {
     pub fn is_system(&self) -> bool {
         matches!(self, IntentOrigin::System)
     }
+}
+
+/// 파일 열기를 **누가** 시작했는가. `origin_surface_id` 와 축이 다르다 — 저쪽은
+/// *어디로* 가는가(라우팅)이고 이쪽은 *누가* 요청했는가다.
+///
+/// 이 값이 따로 있는 이유는 [`IntentOrigin`] 이 **비동기 식별 왕복을
+/// 못 건너기** 때문이다. 파일 식별은 워커 스레드로 나갔다 `AppEvent::IdentifyDone` 으로
+/// 돌아오고, 그 이벤트가 나르는 것은 발화 당시 intent 가 아니라 명시된 필드들뿐이다.
+/// 그래서 `WorkspaceCloseOrigin` 과 같은 방식으로 **출처를 값으로 싣는다** — 사용자
+/// 경로와 에이전트 경로의 차이를 하나의 값으로 표현하고 갈리는 부수효과를 거기서
+/// 파생시킨다(`docs/design/policies/focus.md`).
+///
+/// **전송 채널이 아니라 행위의 성질로 정한다.** plugin 이 사용자의 클릭을 받아
+/// `file_handler.dispatch` 로 보내는 경우가 있으므로(markdown 문서 안의 링크), "IPC 로
+/// 들어왔는가" 는 이 값의 좌변이 아니다. 같은 기준을 `WorkspaceCloseOrigin` 이 이미
+/// 쓴다 — 사용자 입력을 재현하는 debug IPC 를 `User` 로 친다.
+// 이유: 이 값을 만드는 자리(explorer·링크·드롭·picker 확정·`file_handler.dispatch` arm)가 전부
+// gui 에만 있다 — headless 는 파일 열기를 `-32017` 로 거절한다(ADR-0425). 정의를 cfg 로 가리지
+// 않는 것은 headless 에서도 `crate::file::dispatch` 의 시그니처가 타입체크를 받게 하려는 것이다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(
+        dead_code,
+        reason = "every producer of a file dispatch origin is gui-only"
+    )
+)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileDispatchOrigin {
+    /// 사용자가 자기 손으로 열었다 — explorer 더블클릭 · 터미널 링크 클릭 · 파일 드롭 ·
+    /// 파일 피커 확정.
+    User,
+    /// 에이전트가 release IPC/CLI(`file_handler.dispatch`)로 열었다.
+    Agent,
+}
+
+impl FileDispatchOrigin {
+    /// 결과 탭을 선택하는가. 사용자가 방금 그 자리에서 한 행동의 결과는 사용자가
+    /// 보려고 연 것이므로 선택하고, 에이전트가 만든 것으로는 포커스를 옮기지 않는다
+    /// ([ADR-0302](../../docs/adr/0302-a-user-file-open-selects-its-result-tab.md)).
+    pub(crate) fn selects_result(self) -> bool {
+        matches!(self, Self::User)
+    }
+}
+
+/// 파일 열기 요청이 준 origin surface 의 pane. 준 origin 은 대상이지, 없을 때 포커스로
+/// 물러날 허락이 아니다 — 없으면 거절한다.
+pub(crate) fn require_origin_pane(
+    engine: &crate::core::CoreState,
+    surface_id: u32,
+) -> Result<u32, String> {
+    engine.find_pane_for_surface(surface_id).ok_or_else(|| {
+        crate::core::request_target::unowned_target_message(
+            crate::core::request_target::ResourceId {
+                kind: crate::core::request_target::Kind::Surface,
+                id: u64::from(surface_id),
+            },
+            "file_handler.dispatch",
+        )
+    })
 }

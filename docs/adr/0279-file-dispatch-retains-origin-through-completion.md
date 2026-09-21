@@ -59,4 +59,4 @@ Ipc handler payloads remain path-only; this decision does not redefine plugin me
 - [Focus policy](../design/policies/focus.md)
 - [File handler](../features/file-handler/index.md)
 - Current implementation: `request_resource_id`, `App::handle_identify_done`,
-  `file::dispatch::apply_identify_result`, `file::dispatch::apply_file_picker_result`, `require_origin_pane`.
+  `file::dispatch::apply_identify_result`, `file::dispatch::apply_file_picker_result`, `core::origin::require_origin_pane`.

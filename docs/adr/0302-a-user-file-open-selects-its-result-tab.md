@@ -100,5 +100,5 @@ behaviour. Routing and focus are separate axes and only the second one changes.
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
 - [Focus policy](../design/policies/focus.md)
 - [File handler](../features/file-handler/index.md)
-- Current implementation: `FileDispatchOrigin`, `open_surface_tab`,
+- Current implementation: `core::origin::FileDispatchOrigin`, `open_surface_tab`,
   `file::dispatch::apply_identify_result`, `file::dispatch::apply_file_picker_result`.

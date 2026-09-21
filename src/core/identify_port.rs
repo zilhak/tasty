@@ -5,7 +5,7 @@
 //! 창 조립부에 컴파일 의존하므로, 도메인이 쓰는 연산 하나(식별 시작)만 여기 선언하고 worker
 //! 가 구현한다. 요청 id 는 도메인이 추적하지 않아 반환하지 않는다.
 
-use crate::file::dispatch::FileDispatchOrigin;
+use crate::core::origin::FileDispatchOrigin;
 use crate::file::format::{DetectDepth, FileTarget};
 
 pub(crate) trait IdentifySpawner: Send + Sync {
