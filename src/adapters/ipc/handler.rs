@@ -501,7 +501,7 @@ pub fn record_plugin_rss_samples(
 /// 대상을 찾을 수 없거나(params 누락 등) 점유 아님이면 `None`(핸들러가 그대로
 /// 진행 — 정상 검증/실행 경로에 위임).
 fn hard_occupied_structural_guard(
-    state: &AppState,
+    core: &crate::core::Core,
     engine: &crate::core::CoreState,
     method: &str,
     params: &serde_json::Value,
@@ -519,7 +519,7 @@ fn hard_occupied_structural_guard(
             let target_pane = params::read_int::<u32>(params, "target_pane")
                 .ok()
                 .flatten();
-            let target_surface = pane::resolve_surface_target(state, params);
+            let target_surface = pane::resolve_surface_target(core, params);
             target_pane
                 .and_then(|pid| engine.find_workspace_index_for_pane(pid))
                 .or_else(|| {
@@ -630,7 +630,7 @@ fn route_engine_handler(
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
     if let Some(resp) =
-        hard_occupied_structural_guard(state, engine, &request.method, &request.params, &id)
+        hard_occupied_structural_guard(core, engine, &request.method, &request.params, &id)
     {
         return Some(resp);
     }
@@ -755,10 +755,10 @@ fn route_engine_handler(
         "surface.fire_hook" => {
             hooks::handle_surface_fire_hook(core, state, engine, id, &request.params)
         }
-        "surface.meta.set" => meta::handle_surface_meta_set(state, engine, id, &request.params),
-        "surface.meta.get" => meta::handle_surface_meta_get(state, engine, id, &request.params),
-        "surface.meta.unset" => meta::handle_surface_meta_unset(state, engine, id, &request.params),
-        "surface.meta.list" => meta::handle_surface_meta_list(state, engine, id, &request.params),
+        "surface.meta.set" => meta::handle_surface_meta_set(core, engine, id, &request.params),
+        "surface.meta.get" => meta::handle_surface_meta_get(core, engine, id, &request.params),
+        "surface.meta.unset" => meta::handle_surface_meta_unset(core, engine, id, &request.params),
+        "surface.meta.list" => meta::handle_surface_meta_list(core, engine, id, &request.params),
         "surface.set_cwd" => surface::handle_set_cwd(engine, id, &request.params),
         // hooks
         "hook.set" => hooks::handle_hook_set(core, engine, id, &request.params),

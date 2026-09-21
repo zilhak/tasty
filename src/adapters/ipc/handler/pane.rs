@@ -69,7 +69,10 @@ pub fn handle_pane_close(
 ///
 /// `pub(super)`: hard-occupied dispatch 가드(`handler.rs`)가 `split` 의 대상
 /// workspace 를 판별할 때 이 해석 로직을 그대로 재사용한다(nickname 해석 중복 방지).
-pub(super) fn resolve_surface_target(state: &AppState, params: &serde_json::Value) -> Option<u32> {
+pub(super) fn resolve_surface_target(
+    core: &crate::core::Core,
+    params: &serde_json::Value,
+) -> Option<u32> {
     let val = params.get("target_surface");
     let val = val?;
     if val.is_null() {
@@ -91,7 +94,7 @@ pub(super) fn resolve_surface_target(state: &AppState, params: &serde_json::Valu
             return Some(n);
         }
         // Try nickname lookup
-        return state.with_memory(|m| {
+        return core.with_memory(|m| {
             crate::surface_meta::SurfaceMetaStore::find_by_value(m, "nickname", s)
         });
     }
@@ -122,7 +125,7 @@ pub fn handle_split(
         _ => SplitDirection::Vertical,
     };
 
-    let target_surface = resolve_surface_target(state, params);
+    let target_surface = resolve_surface_target(core, params);
     let target_pane = match super::params::optional_u32(params, "target_pane", &id) {
         Ok(v) => v,
         Err(e) => return e,
