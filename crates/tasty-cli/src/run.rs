@@ -195,13 +195,22 @@ fn run_dynamic_client(
             return Err(e);
         }
     };
-    // 새 계약을 쓰는 요청이면 상대의 선언을 먼저 묻는다. 거절도 **전달 실패**라 앞 갈래들과
-    // 같은 이유로 기록한다 — `UnsupportedCapability` 의 `Display` 는 영어 원본이다.
+    // 새 계약을 쓰는 요청이면 상대의 선언을 먼저 묻는다. 여기서 끝나는 갈래는 어느 것이든
+    // 이 요청이 안 나간 **전달 실패**라 앞 갈래들과 같은 이유로 기록한다. 문구의 출처는
+    // 갈래마다 다르다:
+    //
+    // - 선언이 없다(`UnsupportedCapability`) — `Display` 가 CLI 가 쥔 **영어 원본**이다.
+    // - 확인 요청(`system.info`)의 전송·EOF 실패 — `io::Error` 와 `IpcConnection::send` 의
+    //   고정 영어 문구다.
+    // - 확인 요청이 JSON-RPC 오류로 끝났다 — 문구는 **답한 서버가 만든 문장**이라 CLI 에 영어
+    //   원본이 없다. 아래 `conn.send` 실패 갈래와 같은 처지이고 같은 방식으로 적는다 —
+    //   `new_unchecked` 의 보증이 이 갈래에서는 서지 않는다. 다만 그 코드는 이 요청이 아니라
+    //   확인 요청의 것이라 `code` 칸에 싣지 않는다.
     if let Err(e) = super::contract::ensure(&mut conn, &request) {
         hook_failure::record(
             &request.method,
             &request.params,
-            None, // 요청은 안 나갔다 — JSON-RPC 코드가 없다
+            None, // 이 요청은 안 나갔다 — 이 요청의 JSON-RPC 코드는 없다
             &hook_failure::DiagnosticEnglish::new_unchecked(e.to_string()),
         );
         super::contract::exit_on_failure(e);
