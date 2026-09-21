@@ -46,9 +46,11 @@ use crate::state::AppState;
 /// `state` 는 gui 와 같은 `AppState` 타입이지만 이 빌드에서는 GUI 소유 필드(`dialogs` 등)가
 /// 컴파일되지 않은 형태다 — 좁은 타입을 따로 두지 않은 이유는
 /// [ADR-0355](../../docs/adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md).
-/// 이 인자가 남는 것은 창 상태를 읽는 핸들러가 남아 있어서다 — 안 읽는 핸들러는 `AppState` 를
-/// 받지 않는다([ADR-0470](../../docs/adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)). 이 인자는
-/// 결정이 아니라 현재 상태다 — 그 ADR 의 남은 걸음이 끝나면 `&Core` 로 내린다.
+/// 이 함수는 헤드리스 인스턴스의 창 하나를 **소유하는 자리**라 그것을 받는다 — 요청이 낸
+/// intent 를 응답 전에 그 창의 큐에서 비워 적용하고(intent 적용이 창 상태를 받는다, ADR-0111),
+/// 창 상태 자체가 대상인 debug 핸들러에 그 창을 건넨다. 엔진 핸들러 표와 공통 게이트는 이
+/// 값을 `AppState` 가 아니라 좁은 포트(`IpcWindow`)와 intent 출구로만 본다
+/// ([ADR-0471](../../docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md)).
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut AppState,
@@ -208,7 +210,7 @@ enum Intercepted {
 /// 라우팅 코드를 건드리지 않고 는다.
 fn intercept_app_layer(
     app: &mut App,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     caller: &crate::ipc::caller::CallerContext,
     cmd: &crate::ipc::server::IpcCommand,
@@ -220,7 +222,7 @@ fn intercept_app_layer(
         cmd,
         Some(Intercepted::Answered),
         Option::is_some,
-        |relayed| intercept_app_layer(app, state, engine, caller, relayed),
+        |relayed| intercept_app_layer(app, window, engine, caller, relayed),
     ) {
         return hit;
     }
@@ -304,7 +306,7 @@ fn intercept_app_layer(
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let resp = crate::ipc::handler::session::handle_request_permission(
             &mut app.core,
-            state,
+            window,
             engine,
             &caller,
             rpc_id,

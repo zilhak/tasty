@@ -478,12 +478,12 @@ fn register_one_surface_kind(
 /// 같은 순서로 돌린다. 헤드리스는 engine 이 항상 하나라 그쪽의 view 탐색이 필요 없다.
 fn gates_before_intercept<'a>(
     app: &mut App,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     request: &'a crate::ipc::protocol::JsonRpcRequest,
     caller: &'a crate::ipc::caller::CallerContext,
 ) -> Result<crate::ipc::handler::CheckedRequest<'a>, crate::ipc::protocol::JsonRpcResponse> {
-    crate::ipc::handler::check_request(&mut app.core, state, engine, request, caller)
+    crate::ipc::handler::check_request(&mut app.core, window, engine, request, caller)
 }
 
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.

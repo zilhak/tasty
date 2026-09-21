@@ -152,6 +152,11 @@ pub fn handle_with_caller(
 /// pump·plugin host-call·intent cascade 가 **전부 여기로 모이기** 때문이다 — 게이트
 /// 안(`check_request`)에서 재면 handler 가 아직 돌지 않았고, 호출부마다 재면 자리가
 /// 여덟 곳으로 흩어진다.
+///
+/// 이 진입점은 요청이 닿은 창의 `AppState` 를 받는다 — 창 상태 자체가 대상인 창·debug
+/// 핸들러에 그것을 건네고, 요청의 intent 출구를 그 창 큐로 옮기는 자리이기 때문이다. 그 아래
+/// 엔진 핸들러 표는 그 창을 포트로만 본다
+/// (`docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md`).
 pub(crate) fn handle_checked_request(
     core: &mut crate::core::Core,
     state: &mut AppState,
