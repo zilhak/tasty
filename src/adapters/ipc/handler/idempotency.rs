@@ -1466,6 +1466,23 @@ mod tests {
         );
         assert_eq!(out, Some(true));
         assert_eq!(seen.get(), Some(first.request_seq()));
+
+        // relay 스레드를 못 세운 갈래도 같은 사본을 원래 통로로 실행한다 — 번호도 같아야 한다.
+        let (second, _rx) = app_cmd("app-seq-probe-no-relay", 1, "a");
+        let out = run_app_layer_in(
+            isolated_store(),
+            no_threads,
+            &CallerContext::Local,
+            &second,
+            false,
+            |h| *h,
+            |c: &IpcCommand| {
+                seen.set(Some(c.request_seq()));
+                true
+            },
+        );
+        assert_eq!(out, Some(true));
+        assert_eq!(seen.get(), Some(second.request_seq()));
     }
 
     /// 답이 **나중에** 오는 메서드(창 생성)에서 첫 실행이 끝나기 전에 같은 키가 오면

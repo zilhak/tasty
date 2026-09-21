@@ -123,6 +123,63 @@ fn a_forward_puts_the_original_request_seq_on_its_pending_entry() {
     assert_eq!(pending_to(&mgr, OWNER).1, None);
 }
 
+/// pre-hook 을 선언한 확장이 붙은 namespace 로 넘기면 **첫 hop 이 확장으로** 가고, 그 대기
+/// 항목도 원 요청의 번호를 든다 — 사슬의 첫 칸이 번호를 잃으면 뒤 hop 이 모두 `None` 이 된다.
+#[test]
+fn a_forward_through_a_pre_hook_puts_the_request_seq_on_the_hook_entry() {
+    let mut mgr = mgr_owning("orig");
+    let ext: tasty_plugin_manifest::Manifest = toml::from_str(&format!(
+        r#"
+manifest_version = 1
+id = "{EXT}"
+name = "Origin Extension Fixture"
+version = "0.0.1"
+api_version = "1.0"
+
+[entry]
+type = "process"
+command = "echo"
+args = []
+
+[extends]
+plugin_id = "{OWNER}"
+version_req = ">=0.0.1"
+api_version = "1"
+
+[[extends.pre_ipc]]
+method = "orig.run"
+mode = "observe"
+timeout_ms = 60000
+"#
+    ))
+    .expect("extension fixture manifest should parse");
+    mgr.packages.push(PluginPackage {
+        dir: PathBuf::from("/nonexistent/origin_ext_fixture"),
+        manifest: ext,
+    });
+    mgr.config.set_granted(EXT, vec![format!("ext:{OWNER}")]);
+    let (owner, _owner_rx) = PluginProcess::stub_with_request_rx(OWNER);
+    let (ext_proc, ext_rx) = PluginProcess::stub_with_request_rx(EXT);
+    mgr.processes.insert(OWNER.into(), owner);
+    mgr.processes.insert(EXT.into(), ext_proc);
+    let seq = RequestSeq::next();
+    let (tx, _rx) = mpsc::sync_channel(1);
+    mgr.forward_namespace_call(
+        "orig.run",
+        serde_json::json!({}),
+        None,
+        serde_json::json!(1),
+        tx,
+        Some(seq),
+    );
+    let hook = ext_rx
+        .try_recv()
+        .expect("확장에 pre-hook 호출이 먼저 가야 한다");
+    let (req_id, origin) = pending_to(&mgr, EXT);
+    assert_eq!(hook.id, req_id);
+    assert_eq!(origin, Some(seq), "pre-hook hop 이 번호를 잃었다");
+}
+
 /// pre-hook 응답이 target 을 부르면 target 대기 항목이 **같은 번호**를 든다 — hop 마다 req_id
 /// 는 새로 받지만 원 요청은 하나다. target 응답이 post-hook 을 부를 때도 같다.
 #[test]
