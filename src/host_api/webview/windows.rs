@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::keys::WebViewKeyBridge;
+use super::keys::WebViewKeySink;
 use super::{NavState, WebViewBounds};
 
 pub struct PlatformWebView {
@@ -72,7 +72,7 @@ impl PlatformWebView {
         bounds: WebViewBounds,
         scale_factor: f64,
         surface_id: u32,
-        key_bridge: Rc<WebViewKeyBridge>,
+        key_bridge: Rc<dyn WebViewKeySink>,
     ) -> std::result::Result<Self, super::WebViewCreateError> {
         let parent = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut std::ffi::c_void),

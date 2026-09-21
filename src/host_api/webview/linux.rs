@@ -25,7 +25,7 @@ use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
-use super::keys::WebViewKeyBridge;
+use super::keys::WebViewKeySink;
 use super::{NavState, WebViewBounds};
 
 pub struct PlatformWebView {
@@ -243,7 +243,7 @@ impl PlatformWebView {
         bounds: WebViewBounds,
         scale_factor: f64,
         surface_id: u32,
-        key_bridge: Rc<WebViewKeyBridge>,
+        key_bridge: Rc<dyn WebViewKeySink>,
     ) -> Result<Self, super::WebViewCreateError> {
         let parent_xid = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Xlib(w) => w.window,

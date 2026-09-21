@@ -801,11 +801,9 @@ impl MainView {
             let plugin_combos = plugin_manager
                 .map(|m| crate::plugin_bridge::key_dispatch::all_command_bindings(m, kb))
                 .unwrap_or_default();
-            self.webview_key_bridge
-                .set_policy(crate::webview::HostShortcutPolicy::from_sources(
-                    kb,
-                    plugin_combos,
-                ));
+            self.webview_key_bridge.set_policy(
+                crate::adapters::ui::input::shortcuts::webview_shortcut_policy(kb, plugin_combos),
+            );
             self.webview_policy_src = Some(kb.clone());
             self.webview_policy_plugin_epoch = plugin_epoch;
         }

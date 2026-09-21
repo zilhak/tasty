@@ -19,7 +19,7 @@ use objc2_web_kit::{
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::keys::WebViewKeyBridge;
+use super::keys::WebViewKeySink;
 use super::{NavState, WebViewBounds};
 
 /// `NavDelegate` 의 ivar — host 와 공유하는 navigation 상태 셀.
@@ -148,7 +148,7 @@ impl NavDelegate {
 /// `KeyWebView` 의 ivar — 어느 surface 의 webview 인지 + host 키 브리지.
 struct KeyWebViewIvars {
     surface_id: u32,
-    key_bridge: Rc<WebViewKeyBridge>,
+    key_bridge: Rc<dyn WebViewKeySink>,
 }
 
 define_class!(
@@ -237,7 +237,7 @@ impl KeyWebView {
         frame: NSRect,
         config: &WKWebViewConfiguration,
         surface_id: u32,
-        key_bridge: Rc<WebViewKeyBridge>,
+        key_bridge: Rc<dyn WebViewKeySink>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(KeyWebViewIvars {
             surface_id,
@@ -328,7 +328,7 @@ impl PlatformWebView {
         bounds: WebViewBounds,
         scale_factor: f64,
         surface_id: u32,
-        key_bridge: Rc<WebViewKeyBridge>,
+        key_bridge: Rc<dyn WebViewKeySink>,
     ) -> Result<Self, super::WebViewCreateError> {
         let mtm = MainThreadMarker::new().ok_or_else(|| perm("Must be called from main thread"))?;
 

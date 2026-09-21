@@ -14,7 +14,8 @@
 //! 거기에 **키보드 계약**이 하나 더 붙는다([`keys`]). native webview 는 winit 창과
 //! 별개의 OS 자식 창/뷰라 자기가 키보드 포커스를 잡으면 host 단축키가 통째로
 //! 도달하지 못한다 — 세 백엔드는 자기 native 키 이벤트를 [`WebViewKeyEvent`] 로
-//! 정규화해 [`WebViewKeyBridge`] 에 올리고, 우선순위 판정은 그 한 곳에서만 한다.
+//! 정규화해 [`WebViewKeySink`] 계약으로 올리고, 우선순위 판정은 그 host 구현
+//! [`WebViewKeyBridge`] 한 곳에서만 한다. 백엔드가 받는 것은 구체 브리지가 아니라 그 계약이다.
 //! 배경·대안은 `docs/adr/0102-webview-key-forwarding.md`.
 
 pub mod keys;
@@ -83,7 +84,9 @@ impl WebViewCreateError {
 /// `crate::webview::NavState` 로 참조한다(어느 쪽도 `plugin_bridge` 경로를 안 거친다).
 pub use crate::model::NavState;
 
-pub use keys::{HostShortcutPolicy, WebViewKeyBridge, WebViewKeyEvent};
+pub use keys::{
+    HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKeyEvent, WebViewKeySink,
+};
 
 /// Logical bounds for a webview (in logical pixels, origin at top-left).
 ///
