@@ -115,7 +115,7 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
     출처가 둘인 것은 위 `with_state_db` 의 `None` 과 같다. `memory_db` 는 파일을 못 열어
     in-memory 대체로 떴을 때도 `degraded` 이고, 그때 `init_failure` 가 원인을 싣는다(아래
     "초기화 실패" 절의 `memory.db` 항).
-  - `journal_size_limit` 은 WAL 파일 크기 상한이다. **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이고, 두 DB 가 그 상수를 쓰는 **같은 함수**를 부른다. 한때는 `src/db.rs` 와 `crates/tasty-memory/` 가 같은 네 줄을 각자 박아 두어 한쪽만 고치면 다른 쪽이 그대로 자랐다 — 그래서 사본을 없앴다.
+  - `journal_size_limit` 은 WAL 을 **되감을 때 남길 크기의 한도**다 — 활성 WAL 의 상한이 아니다. 되감기가 막힌 동안(읽는 쪽이 오래된 스냅샷을 쥐고 있을 때)이나 큰 트랜잭션 도중에는 WAL 이 이 값을 넘어 자라고, 다음 되감기에서 이 크기로 잘린다(실측은 [memory](memory.md) "파일 위생"). **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이고, 두 DB 가 그 상수를 쓰는 **같은 함수**를 부른다. 한때는 `src/db.rs` 와 `crates/tasty-memory/` 가 같은 네 줄을 각자 박아 두어 한쪽만 고치면 다른 쪽이 그대로 자랐다 — 그래서 사본을 없앴다.
 - 쓰기는 `Connection::transaction()` 패턴. 실패 시 `tracing::warn!`/`error!` 기록 후 진행.
 
 ### 보장 범위 — `synchronous=NORMAL` 이 약속하는 것과 안 하는 것

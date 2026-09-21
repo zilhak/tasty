@@ -1184,7 +1184,7 @@ fn purge_scope_records_deleted_for_each_regular_key() {
     assert_eq!(changes[1].key, "b");
 }
 
-// ---- WAL 크기 상한 ----
+// ---- WAL 되감기 한도 ----
 //
 // 아래 세 테스트만 파일 기반 DB 를 쓴다(나머지는 인메모리) — WAL 은 파일이 있어야
 // 존재하고, 이 항목의 회귀는 "파일 크기" 로만 드러나기 때문이다.
@@ -1365,13 +1365,13 @@ fn a_ballooned_wal_shrinks_back_under_the_limit() {
     for i in 0..350 {
         s.delete(PLUGIN_A, &scope, &format!("k{i}"), None).unwrap();
     }
-    // VACUUM 은 DB 를 통째로 다시 쓰므로 WAL 을 상한보다 훨씬 크게 부풀린다 —
+    // VACUUM 은 DB 를 통째로 다시 쓰므로 WAL 을 한도보다 훨씬 크게 부풀린다 —
     // 이 항목이 재현하려는 "한 번 커진 WAL" 의 실제 발생 경로 중 하나다.
     assert!(s.vacuum_if_fragmented(1).unwrap(), "VACUUM 이 돌지 않았다");
     let ballooned = wal_len(&path);
     assert!(
         ballooned > WAL_SIZE_LIMIT_BYTES as u64,
-        "WAL 이 상한을 넘겨 부풀지 않아 회수를 검증할 수 없다: {ballooned}"
+        "WAL 이 한도를 넘겨 부풀지 않아 회수를 검증할 수 없다: {ballooned}"
     );
 
     // 이후의 평범한 커밋 몇 개면 되감기가 일어나고, 그때 상한으로 잘린다.

@@ -86,7 +86,7 @@ impl Db {
     fn prepare(mut conn: Connection, path: &Path) -> Result<Self, DbInitError> {
         // state.db 는 memory.db 와 **별개의 prepare** 를 쓰지만 연결 pragma 는 같아야
         // 한다. 사본을 두면 한쪽만 고쳐지므로 두 DB 가 같은 함수를 부른다 —
-        // WAL·synchronous·foreign_keys 와 WAL 크기 상한, 그리고 그 결과를 어떻게
+        // WAL·synchronous·foreign_keys 와 WAL 되감기 한도, 그리고 그 결과를 어떻게
         // 관측하는지까지 그 함수의 doc 에 있다.
         let applied_pragmas = tasty_memory::pragma::apply_connection_pragmas(&conn, path);
 

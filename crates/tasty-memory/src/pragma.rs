@@ -158,7 +158,7 @@ fn set_pragma(conn: &Connection, path: &Path, name: &str, value: &str) -> Option
     }
 }
 
-/// WAL 크기 상한. 이 pragma 가 빠지면 증상이 "조금 느려짐" 이 아니라 WAL 고착
+/// WAL 되감기 한도. 이 pragma 가 빠지면 증상이 "조금 느려짐" 이 아니라 WAL 고착
 /// (`WAL_SIZE_LIMIT_BYTES` doc)이라, 조용히 없는 것과 조용히 실패한 것을 구별할 수
 /// 없으면 같은 조사를 처음부터 다시 하게 된다.
 fn set_wal_size_limit(conn: &Connection, path: &Path) -> Option<String> {
@@ -166,7 +166,7 @@ fn set_wal_size_limit(conn: &Connection, path: &Path) -> Option<String> {
         Ok(()) => None,
         Err(e) => {
             tracing::warn!(
-                "{}: failed to set journal_size_limit; the WAL file can grow without bound: {e}",
+                "{}: failed to set journal_size_limit; the WAL file will keep its largest size after checkpoints: {e}",
                 path.display()
             );
             Some(e.to_string())

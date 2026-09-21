@@ -52,8 +52,8 @@ fn vacuum_if_needed(store: &mut tasty_memory::MemoryStore, pruned: u64) {
 }
 
 /// 이미 비대해진 WAL 회수 — `journal_size_limit`(`tasty_memory::WAL_SIZE_LIMIT_BYTES`)
-/// 은 앞으로 커지는 것만 막으므로, 기존 인스턴스의 큰 WAL 은 되감기를 한 번
-/// 강제해야 줄어든다.
+/// 은 되감기 때만 작동해 커지는 것 자체는 못 막으므로, 기존 인스턴스의 큰 WAL 은
+/// 되감기를 한 번 강제해야 줄어든다.
 ///
 /// **VACUUM 뒤에** 부른다: VACUUM 은 DB 전체를 다시 쓰므로 그 자체로 WAL 을 크게
 /// 부풀린다. 순서를 뒤집으면 잘라낸 직후 다시 커진 채로 부팅이 끝난다.

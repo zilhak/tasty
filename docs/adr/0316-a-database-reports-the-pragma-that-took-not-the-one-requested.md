@@ -102,7 +102,7 @@ pragma 를 세운다. 그 코드가 두 자리에 **글자 그대로 복제**돼
   `a_healthy_database_logs_nothing_while_setting_its_pragmas` ·
   `an_in_memory_database_does_not_warn_about_its_own_journal_mode` ·
   `the_effective_journal_mode_differs_between_a_file_and_an_in_memory_database`
-- WAL 크기 상한 값의 근거: `crates/tasty-memory/src/lib.rs` 의 `WAL_SIZE_LIMIT_BYTES`
+- WAL 되감기 한도 값의 근거: `crates/tasty-memory/src/lib.rs` 의 `WAL_SIZE_LIMIT_BYTES`
 - 보장 범위를 적는 정본 문서: [storage](../design/systems/storage.md) ·
   [memory](../design/systems/memory.md)
 - SQLite 가 in-memory DB 에 WAL 을 못 쓰는 근거: <https://www.sqlite.org/wal.html>
