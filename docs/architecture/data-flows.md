@@ -64,8 +64,10 @@ tasty-cli (또는 외부 프로그램)
 [ADR-0313](../adr/0313-the-dispatch-round-budget-is-the-connection-bound.md))에 닿거나 경과 시간이
 `ROUND_TIME_BUDGET`(16 ms, [ADR-0410](../adr/0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md))에
 닿으면 멈춘다. 첫 명령은 시간과 무관하게 늘 처리한다. 남은 것은 **큐에 그대로** 있다가 다음
-회차가 집는다. headless 는 명령을 넣는 쪽이 명령마다 waker 를 한 번 부르므로 그 wake 가 이미
-이벤트 채널에 남아 있다. 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
+회차가 집는다. headless 는 이벤트 채널에 `IpcReady` 를 하나만 둔다(생산자 쪽 게이트) — 루프가 회차를
+열기 전에 게이트를 풀고, 회차가 끝났을 때 큐에 명령이 남았으면 루프를 한 번 더 깨운다. 명령마다 wake 를
+두면 지속 부하에서 채널에 적체가 쌓여 같은 채널의 plugin·PTY wake 가 그 뒤에서 굶는다
+([ADR-0465](../adr/0465-headless-keeps-one-ipc-wake-in-its-channel-and-a-cut-round-wakes-it-again.md)). 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
 
 gui 에서는 회차가 `about_to_wait`(iteration 마다 한 번)와 `IpcReady` 사용자 이벤트 두 자리에서 돈다.
 winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about_to_wait` 로 넘어가므로, 사용자 이벤트가

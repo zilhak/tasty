@@ -187,9 +187,15 @@ let pending = match wait_for_event(&rx, app.timers.next_deadline()) {
     Wait::Deadline => None,          // 타이머만 돌린다
     Wait::Disconnected => break,
 };
-run_due_timers(&mut app, &mut state, &mut engine);  // drain_due + headless 실행부
+run_due_timers(&mut app, &mut state, &mut engine);  // drain_due + headless 실행부 + plugin 허브
 let Some(event) = pending else { continue };
 ```
+
+`run_due_timers` 는 앱 허브를 비운 뒤 plugin 허브의 데드라인이 지났으면 그쪽도 pump 한다
+(`pump_plugins_if_due`). 대기가 두 허브의 `min` 이라 plugin 데드라인에 깨어난 바퀴가 그것을 안
+거두면 데드라인이 과거에 남고 다음 대기가 0 이 된다 — 루프가 다음 `Tick::Busy` 까지 헛돈다(실측:
+`PluginTick::Ping` 15 s 마다 약 1 s 동안 160 만 회). `src/source_guards/headless_loop_reaps_both_hubs.rs`
+가 그 호출이 시간축에 있는지 문다.
 
 `Wait` 가 필요한 이유는 `Option<AppEvent>` 하나로는 "타이머만 돌린다"(계속)와
 "송신단이 사라졌다"(종료)가 구분되지 않기 때문이다 — 대기를 함수로 빼려면 그 셋이
@@ -382,7 +388,9 @@ gui 의 타이머는 `about_to_wait` 앞머리에서만 돈다. winit 은 한 it
 사용자 이벤트 처리기에 새로 무거운 일을 넣을 때도 같은 물음을 한다 — 그 일이 끝나면서 같은
 이벤트를 다시 부르는가.
 
-headless 는 이벤트 하나마다 `run_due_timers` 를 부르므로 이 형태가 없다.
+headless 는 이벤트 하나마다 `run_due_timers` 를 부르므로 타이머에는 이 형태가 없다. 대신 같은 이벤트
+채널을 쓰는 다른 wake 가 굶을 수 있어서, IPC waker 는 채널에 `IpcReady` 를 하나만 두고 예산에서 잘린
+회차가 루프를 다시 깨운다([ADR-0465](../adr/0465-headless-keeps-one-ipc-wake-in-its-channel-and-a-cut-round-wakes-it-again.md)).
 
 ## 새 주기 작업을 추가할 때
 

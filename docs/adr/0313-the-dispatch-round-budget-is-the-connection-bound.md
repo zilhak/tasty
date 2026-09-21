@@ -125,6 +125,7 @@ N-B 개의 wake 가 그대로 남아 루프를 다시 들여보낸다. 즉 이�
 
 - 부분 개정: [0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md) (회차 길이를 명령 수로만 자르는 조항 개정 — 시간 예산을 함께 둔다)
 - 부분 개정: [0413](0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md) (gui 의 이월 재개 — wake 를 양보시키고 잘린 회차가 스스로 다시 깨운다)
+- 부분 개정: [0465](0465-headless-keeps-one-ipc-wake-in-its-channel-and-a-cut-round-wakes-it-again.md) (headless 의 이월 — "명령마다 wake 한 번" 이 채널 적체를 만들어, wake 를 하나로 접고 잘린 회차가 다시 깨운다)
 
 - 상한의 상대 결정: [ADR-0304](0304-ipc-admission-carries-two-bounds-a-line-and-a-connection-count.md)
   (요청 한 줄 바이트 · 동시 연결 수)

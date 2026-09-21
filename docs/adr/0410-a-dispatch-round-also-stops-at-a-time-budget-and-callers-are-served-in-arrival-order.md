@@ -141,6 +141,8 @@ headless `pump_ipc`)는 둘 다 집어 든 것을 전부 실행한 뒤에야 회
 
 ## References
 
+- 부분 개정: [0465](0465-headless-keeps-one-ipc-wake-in-its-channel-and-a-cut-round-wakes-it-again.md) (headless 이월 bullet — 명령마다의 wake 를 하나로 접고 잘린 회차가 다시 깨운다)
+
 - 개정 대상: [ADR-0313](0313-the-dispatch-round-budget-is-the-connection-bound.md) (회차 길이를
   명령 수로만 자르는 조항)
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
