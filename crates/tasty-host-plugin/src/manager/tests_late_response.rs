@@ -1,7 +1,7 @@
 //! 만료로 이미 끝난 요청에 **늦게** 도착한 응답은 아무것도 다시 진행시키지 않는다
 //! (`PluginManager::settle_late_response`, ADR-0311 2026-09-21 보강).
 //!
-//! 두 시험 모두 "만료가 한 번 끝을 냈다" 를 먼저 관측하고 나서 늦은 응답을 넣는다. 만료
+//! 세 시험 모두 "만료가 한 번 끝을 냈다" 를 먼저 관측하고 나서 늦은 응답을 넣는다. 만료
 //! 쪽 관측이 없으면 늦은 응답이 아무 일도 안 한 것인지 애초에 할 일이 없었던 것인지
 //! 가려지지 않는다.
 
@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use tasty_plugin_manifest::{HookMode, IpcHookDecl};
 use tasty_terminal::waker_factory::NoopWakerFactory;
 
-use super::{FinalCaller, PendingRequest, PendingRequestKind, PluginManager};
+use super::{FinalCaller, PendingRequest, PendingRequestKind, PluginManager, TargetOutcome};
 use crate::process::PluginProcess;
 use crate::protocol::PluginResponse;
 
@@ -141,5 +141,66 @@ fn a_late_pre_hook_answer_does_not_invoke_the_target_a_second_time() {
     assert!(
         target_rx.try_recv().is_err(),
         "늦은 pre-hook 응답이 target 을 한 번 더 불렀다"
+    );
+}
+
+/// post-hook 응답이 만료 뒤에 오면 **결과를 다시 보내지 않는다** — fail-open 이 target 결과를
+/// 이미 보냈다. 다시 보내면 caller 는 같은 id 에 답을 두 번 받고, 두 번째는 post-hook 이
+/// 바꾼 값이라 첫 답과 다를 수도 있다.
+#[test]
+fn a_late_post_hook_answer_does_not_answer_the_caller_a_second_time() {
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    let (target, target_rx) = PluginProcess::stub_with_request_rx(TARGET);
+    let (ext, _ext_rx) = PluginProcess::stub_with_request_rx(EXT);
+    mgr.processes.insert(TARGET.into(), target);
+    mgr.processes.insert(EXT.into(), ext);
+
+    let (tx, caller_rx) = mpsc::sync_channel(4);
+    mgr.pending_requests.insert(
+        70,
+        PendingRequest::now(
+            EXT,
+            PendingRequestKind::ExtensionPostIpcHook {
+                extension_plugin_id: EXT.into(),
+                method: "target.do".into(),
+                post_hook_mode: HookMode::Transform,
+                target_outcome: TargetOutcome::Ok(serde_json::json!({ "from": "target" })),
+                final_caller: FinalCaller::Local {
+                    response_tx: tx,
+                    original_id: serde_json::json!(3),
+                },
+                deadline: past(),
+            },
+        ),
+    );
+
+    mgr.sweep_expired_requests(Instant::now());
+    let first = caller_rx
+        .try_recv()
+        .expect("fail-open 이 target 결과를 caller 에 보내야 한다");
+    assert_eq!(first.id, serde_json::json!(3));
+    assert_eq!(first.result, Some(serde_json::json!({ "from": "target" })));
+
+    mgr.handle_plugin_response(
+        EXT,
+        PluginResponse {
+            id: 70,
+            result: Some(serde_json::json!({ "modified_payload": { "from": "hook" } })),
+            error: None,
+            error_code: None,
+        },
+    );
+
+    assert!(
+        caller_rx.try_recv().is_err(),
+        "늦은 post-hook 응답이 caller 에 두 번째 답을 보냈다"
+    );
+    assert!(
+        target_rx.try_recv().is_err(),
+        "늦은 post-hook 응답이 target 을 불렀다"
+    );
+    assert!(
+        mgr.pending_requests.is_empty(),
+        "늦은 응답이 pending 을 되살렸다"
     );
 }

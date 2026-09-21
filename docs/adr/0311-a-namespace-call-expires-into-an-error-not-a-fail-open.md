@@ -216,9 +216,11 @@ plugin 을 다시 띄우므로 다음 호출은 기다림 없이 건강한 프�
 
 - 늦은 응답이 무언가를 다시 진행시키게 됐을 때(2026-09-21 보강). 좌변에 붙은 판정기는
   `tasty-host-plugin` 의 `a_late_target_answer_does_not_run_the_post_hook_or_answer_twice` ·
-  `a_late_pre_hook_answer_does_not_invoke_the_target_a_second_time` 둘이다. 두 시험은 만료가
+  `a_late_pre_hook_answer_does_not_invoke_the_target_a_second_time` ·
+  `a_late_post_hook_answer_does_not_answer_the_caller_a_second_time` 셋이다(위 보강의 세 갈래에
+  하나씩). 세 시험은 만료가
   한 번 끝을 낸 것을 **먼저** 관측한 뒤 늦은 응답을 넣는다 — 그 관측이 없으면 "아무 일도 안
-  했다" 와 "할 일이 없었다" 가 안 갈린다. 이 두 시험을 죽이는 변이는 현재 코드에 자연스러운 형태가
+  했다" 와 "할 일이 없었다" 가 안 갈린다. 이 세 시험을 죽이는 변이는 현재 코드에 자연스러운 형태가
   없다(`None` 갈래가 진행시킬 재료를 안 들고 있다). 그래서 이것들은 앞으로 그 재료를 들고 오는
   변경 — 예컨대 만료된 요청의 kind 를 보관해 두는 변경 — 에 대한 회귀 시험이다.
 
