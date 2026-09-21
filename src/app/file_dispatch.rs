@@ -30,7 +30,8 @@ impl App {
             .and_then(|id| self.view.views.get_mut(&id))
             .and_then(|view| view.as_main_mut())
         {
-            self.core.apply_identify_result(
+            crate::file::dispatch::apply_identify_result(
+                &mut self.core,
                 &mut main.state,
                 &mut main.core_state,
                 target,
@@ -48,7 +49,8 @@ impl App {
                 .iter_mut()
                 .find(|(_, engine)| engine_has_resource(engine, rid))
             {
-                self.core.apply_identify_result(
+                crate::file::dispatch::apply_identify_result(
+                    &mut self.core,
                     state,
                     engine,
                     target,

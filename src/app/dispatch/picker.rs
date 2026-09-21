@@ -2,7 +2,7 @@
 //!
 //! popup draw_fn 이 `state.dialogs.file_handler_picker.result` 에 채워둔
 //! `FileHandlerPickerResult` 를 본 dispatcher 가 매 frame begin 에 검사.
-//! 채워져 있으면 슬롯 해제 + `Core::apply_file_picker_result` Method 호출.
+//! 채워져 있으면 슬롯 해제 + `file::dispatch::apply_file_picker_result` 호출.
 //! 옛 `file_dispatch::consume_picker_result` 의 자리.
 
 use crate::app::App;
@@ -47,7 +47,8 @@ impl App {
                 self.pending_settings_file_handler_tab = true;
                 crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             } else {
-                core.apply_file_picker_result(
+                crate::file::dispatch::apply_file_picker_result(
+                    core,
                     &mut main.state,
                     &mut main.core_state,
                     target,

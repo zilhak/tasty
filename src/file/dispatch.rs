@@ -6,11 +6,15 @@
 //! mouse.rs ctrl+click, drag&drop, explorer plugin, IPC `file_handler.dispatch`
 //! 가 모두 `DomainIntent::DispatchFile` 발화로 통일된다. Core::apply 가
 //! `engine.identify_worker.spawn(...)` 호출 → 비동기 detect → AppEvent::IdentifyDone
-//! → `Core::apply_identify_result` Method 호출. picker 결과는
-//! `App::dispatch_pending_picker_results` → `Core::apply_file_picker_result`.
+//! → [`apply_identify_result`] 호출. picker 결과는
+//! `App::dispatch_pending_picker_results` → [`apply_file_picker_result`].
 //!
-//! 본 모듈에는 *parse_link* (URI 분류) 와 Core method 가 호출하는 helper
-//! (`open_picker`, `execute_handler_action`) 만 남아 있다.
+//! 본 모듈에는 *parse_link* (URI 분류) 와 위 두 적용 함수가 호출하는 helper
+//! (`open_picker`, `execute_handler_action`) 가 있다. 두 적용 함수 자신은 창 상태를
+//! 바꾸는 GUI 동작이라 gui 로 가린 하위 모듈 [`picker_apply`] 에 있다.
+
+#[cfg(feature = "gui")]
+pub(crate) mod picker_apply;
 
 use std::path::PathBuf;
 
@@ -19,6 +23,8 @@ use crate::file::handler::{FileHandler, HandlerAction, HandlerId};
 use crate::state::AppState;
 #[cfg(feature = "gui")]
 use crate::state::{FileHandlerPickerData, PickerHandlerSummary};
+#[cfg(feature = "gui")]
+pub(crate) use picker_apply::{apply_file_picker_result, apply_identify_result};
 
 /// 파일 열기를 **누가** 시작했는가. `origin_surface_id` 와 축이 다르다 — 저쪽은
 /// *어디로* 가는가(라우팅)이고 이쪽은 *누가* 요청했는가다.
@@ -226,7 +232,7 @@ pub(crate) fn open_picker(
         .collect();
     let (recent, cand) = picker_lists(&target, &recent_handlers, &candidates);
     // fallback 후보는 이 형식에 매칭된 것이 아니라 전체 핸들러라 기본이 없다. 매칭
-    // 후보일 때만 정렬 1순위가 "그냥 열었으면 실행됐을" 핸들러다(`Core::apply_identify_result`
+    // 후보일 때만 정렬 1순위가 "그냥 열었으면 실행됐을" 핸들러다([`apply_identify_result`]
     // 가 같은 첫 항목을 자동 실행한다).
     let default_handler = (!candidates_are_fallback)
         .then(|| candidates.first().map(|h| h.id.clone()))

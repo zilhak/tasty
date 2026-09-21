@@ -1,4 +1,5 @@
 use super::tests::build_test_core;
+use super::{apply_file_picker_result, apply_identify_result};
 use crate::core::intent::DomainIntent;
 use crate::file::dispatch::{
     DispatchTarget, FileDispatchOrigin, execute_handler_action, open_surface_tab,
@@ -34,7 +35,8 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
             "action":{"kind":"open_surface", "surface_kind":"empty", "param_key":"file"}}),
         ],
     );
-    core.apply_identify_result(
+    apply_identify_result(
+        &mut core,
         &mut state,
         &mut engine,
         FileTarget::new("/unknown"),
@@ -61,7 +63,8 @@ fn delayed_picker_selection_uses_origin_pane_after_active_workspace_changes() {
     let before = engine.workspaces[0].all_surface_ids();
     let active_tab = engine.find_pane_by_id(pane).unwrap().active_tab;
     let focused_surface = state.focused_surface_id(&engine);
-    core.apply_file_picker_result(
+    apply_file_picker_result(
+        &mut core,
         &mut state,
         &mut engine,
         picker.target,
@@ -156,7 +159,8 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     let sid = engine.workspaces[0].all_surface_ids()[0];
     let pane = engine.find_pane_for_surface(sid).unwrap();
     let target = FileTarget::new("/missing/unknown");
-    core.apply_identify_result(
+    apply_identify_result(
+        &mut core,
         &mut state,
         &mut engine,
         target.clone(),
@@ -169,7 +173,8 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert_eq!(picker.origin_surface_id, Some(sid));
     assert!(picker.ignore_size_limit);
     let recent_before = engine.file_handler_recent.list().len();
-    core.apply_file_picker_result(
+    apply_file_picker_result(
+        &mut core,
         &mut state,
         &mut engine,
         picker.target,
@@ -202,7 +207,8 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     )
     .unwrap();
     assert!(!engine.has_surface(sid));
-    core.apply_identify_result(
+    apply_identify_result(
+        &mut core,
         &mut state,
         &mut engine,
         target.clone(),
@@ -218,7 +224,8 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
         .into_iter()
         .next()
         .unwrap();
-    core.apply_file_picker_result(
+    apply_file_picker_result(
+        &mut core,
         &mut state,
         &mut engine,
         DispatchTarget::File(target),

@@ -54,7 +54,7 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 
 | 경로 | 후보 | fallback 인가 |
 |---|---|---|
-| 이 detector 에 매칭되는 handler 가 0개 (`Core::apply_identify_result`) | `all_handlers()` | 예 |
+| 이 detector 에 매칭되는 handler 가 0개 (`file::dispatch::apply_identify_result`) | `all_handlers()` | 예 |
 | 터미널 링크 메뉴의 "연결 동작" — 식별을 건너뛰고 강제로 연다 | `all_handlers()` | 예 |
 | 원격(mirror) surface 의 경로 링크 (`open_remote_placeholder_picker`) | **없음** — 후보도 recent 도 안 싣는다 | 아니오 |
 

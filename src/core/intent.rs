@@ -302,7 +302,7 @@ pub(crate) enum DomainIntent {
     /// 가 발화. apply 분기에서 `engine.identify_worker.spawn(target, depth)` 호출 —
     /// Cheap/Deep 모두 worker thread 경유 (통일된 경로). 결과는
     /// `AppEvent::IdentifyDone` 으로 main thread 도착 후 `event_handler` 가
-    /// `Core::apply_identify_result` Method 를 직접 호출. worker 미주입 시 drop
+    /// `file::dispatch::apply_identify_result` 를 직접 호출. worker 미주입 시 drop
     /// + warn.
     ///
     /// gui 빌드에만 있다 — 적용할 identify worker 도, 이 intent 를 만드는 자리도 gui 에만

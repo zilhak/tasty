@@ -316,7 +316,7 @@ pub enum FileHandlerPickerResult {
     /// 취소 또는 ESC — dispatch 없음.
     Cancelled,
     /// 시스템 전체 handler 가 0개(빈 상태)일 때 "설정에서 핸들러 등록" 클릭.
-    /// App 레이어(`dispatch_pending_picker_results`)가 `Core::apply_file_picker_result`
+    /// App 레이어(`dispatch_pending_picker_results`)가 `file::dispatch::apply_file_picker_result`
     /// 로 내려보내지 않고 직접 가로채 Settings 모달을 FileHandler 탭으로 연다 —
     /// Core 는 winit `ActiveEventLoop` 에 접근할 수 없다.
     OpenSettings,

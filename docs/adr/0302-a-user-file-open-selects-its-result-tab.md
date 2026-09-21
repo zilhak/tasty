@@ -101,4 +101,4 @@ behaviour. Routing and focus are separate axes and only the second one changes.
 - [Focus policy](../design/policies/focus.md)
 - [File handler](../features/file-handler/index.md)
 - Current implementation: `FileDispatchOrigin`, `open_surface_tab`,
-  `Core::apply_identify_result`, `Core::apply_file_picker_result`.
+  `file::dispatch::apply_identify_result`, `file::dispatch::apply_file_picker_result`.
