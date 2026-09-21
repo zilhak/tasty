@@ -9,18 +9,19 @@
 이 저장소는 upstream 프로젝트 넷의 제3자 자산을 번들한다 — 본체가 임베드하는 D2Coding
 ligature 폰트(OFL 1.1)와, markdown plugin 바이너리가 임베드하는 mermaid(MIT) · highlight.js
 (BSD-3-Clause) · KaTeX(MIT, woff2 폰트 20 개 포함)다. 넷 다 **라이선스 본문(과 저작권 고지)을
-배포물과 함께 넣을 것**을 요구한다.
+배포물과 함께 넣을 것**을 요구한다. 그 의무를 적은 문서
+(`THIRD_PARTY_LICENSES.md`)는 폰트가 들어온 커밋(2026-04-26)에 함께 생겼고, 릴리스 체크리스트
+절에 "`.github/workflows/` 에 릴리스 자동화가 추가되는 시점에 위 두 파일이 에셋으로
+업로드되도록 설정합니다" 라고 적었다.
 
 > **사실 정정 (2026-09-21)** — 이 절은 처음에 "제3자 자산을 **하나** 번들한다 — D2Coding
 > 폰트" 로 적혀 있었다. 결정 시점(2026-09-20)에도 틀린 서술이었다: markdown plugin 의 세 엔진은
 > 2026-08-11 에 들어와 `crates/tasty-plugin-markdown/src/render.rs` 가 `include_str!`/
 > `include_bytes!` 로 24 개 파일을 임베드하고 있었고, 그 출처·라이선스는
-> `crates/tasty-plugin-markdown/assets/NOTICE.md` 에 이미 적혀 있었다. 최상위 인벤토리가 plugin 디렉토리 안의 NOTICE 를
-> 세지 않아서 모수가 하나로 보였다. 아래 Decision 의 세트 정의와 근거는 그 모수를 넷으로 바로잡아
-> 다시 세운 것이다 — 결론(생성하지 않는다)은 유지되고 근거가 바뀌었다. 그 의무를 적은 문서
-(`THIRD_PARTY_LICENSES.md`)는 폰트가 들어온 커밋(2026-04-26)에 함께 생겼고, 릴리스 체크리스트
-절에 "`.github/workflows/` 에 릴리스 자동화가 추가되는 시점에 위 두 파일이 에셋으로
-업로드되도록 설정합니다" 라고 적었다.
+> `crates/tasty-plugin-markdown/assets/NOTICE.md` 에 이미 적혀 있었다. 최상위 인벤토리가
+> plugin 디렉토리 안의 NOTICE 를 세지 않아서 모수가 하나로 보였다. 아래 Decision 의 세트
+> 정의와 근거는 그 모수를 넷으로 바로잡아 다시 세운 것이다 — 결론(생성하지 않는다)은
+> 유지되고 근거가 바뀌었다.
 
 **그 조건은 닷새 뒤 충족됐다** — 릴리스 워크플로가 2026-05-01 에 들어왔다. 그런데 후속이 안
 왔다. 이 결정을 쓰는 시점까지 넉 달 반 동안, 배포 입력 어디에도 고지가 없었다:
@@ -145,7 +146,7 @@ deb·tar.gz·AppImage 에서 유지한다 — `THIRD_PARTY_LICENSES.md` 안의 �
 ## References
 
 - `THIRD_PARTY_LICENSES.md` — 고지 세트와 산출물별 자리의 정본 표. (결정이 실현된 현재 위치)
-- `scripts/build-linux.sh` 의 `stage_notice` — Linux 넷의 스테이징. (결정이 실현된 현재 위치)
+- `scripts/lib/notice-set.sh` 의 `stage_notice` — 스테이징 함수. `scripts/build-linux.sh` · `scripts/build-macos-dmg.sh` 가 source 한다. (결정이 실현된 현재 위치)
 - 루트 `Cargo.toml` 의 `[package.metadata.deb]` · `[package.metadata.generate-rpm]` asset 목록. (결정이 실현된 현재 위치)
 - `.github/workflows/release.yml` 의 publish 잡. (결정이 실현된 현재 위치)
 - `wix/main.wxs` 의 `Component Id='License'` — MSI 가 이미 MIT 본문을 넣는 자리. (결정 시점의 기록)
