@@ -67,7 +67,7 @@ grep -rnE 'toasts|report_apply_error|push_toast' \
   판정기로는 안 잡힌다. ④ 는 판정기가 아니라 `report_apply_error` 가 origin 을 보게 고치는
   것이 처방이다.
 
-**허용 부류 — 원격 연결 상태 사건.** attach mirror 의 연결 상태 사건(끊김 · 재연결 · 손실 · 구조 전달 실패)은 사용자 행동 없이도 토스트를 띄운다. 원인이 에이전트 IPC 가 아니라 네트워크·원격 처리·소비 속도이고, 알리지 않으면 사용자가 원격의 사본인 mirror 의 낡은 화면을 최신으로 읽는다. 현재 구성원은 `attach.toast.mirror_reconnecting` · `mirror_reconnected` · `mirror_disconnected` · `mirror_desynced` · `mirror_structural_forward_failed` 다. 창 없는(parked) engine 에서는 띄우지 않는다. 에이전트 IPC 호출이 직접 일으킨 결과는 이 부류가 아니다(위 원칙대로 ❌). 근거·대안은 [ADR-0401](../../adr/0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md).
+**허용 부류 — 원격 연결 상태 사건.** attach mirror 의 연결 상태 사건(끊김 · 재연결 · 손실 · 구조 전달 실패)은 사용자 행동 없이도 토스트를 띄운다. 원인이 에이전트 IPC 가 아니라 네트워크·원격 처리·소비 속도이고, 알리지 않으면 사용자가 원격의 사본인 mirror 의 낡은 화면을 최신으로 읽는다. 현재 구성원은 `attach.toast.mirror_reconnecting` · `mirror_reconnected` · `mirror_reconnect_giveup` · `mirror_disconnected` · `mirror_desynced` · `mirror_structural_forward_failed` 여섯이다. `mirror_markdown_truncated`(원격 문서가 잘렸다)는 사용자 행동 없이 나지만 연결 사건이 아니라 이 부류 밖이다 — 알려진 예외로 ADR-0401 에 적혀 있다. 창 없는(parked) engine 에서는 띄우지 않는다. 에이전트 IPC 호출이 직접 일으킨 결과는 이 부류가 아니다(위 원칙대로 ❌). 근거·대안은 [ADR-0401](../../adr/0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md).
 
 ## 스코프
 
