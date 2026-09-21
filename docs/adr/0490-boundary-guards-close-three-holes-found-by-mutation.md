@@ -54,7 +54,9 @@
    `automation_runners_do_not_reach_inbound_adapters`. 좌변은 `src/webhook/**` ·
    `src/hook_handler/**` 의 출하 코드, 금지 표는 `adapters::ipc` · `adapters::cli` ·
    `adapters::production::tcp_ipc_server` · `hub` · `app` 과 그 lib 루트 별칭(`ipc` · `cli` ·
-   `App` · `AppEvent`)이다. 기대값 0, 면제 명부 없음.
+   `App` · `AppEvent` · `debug_info`)이다. 별칭은 `src/lib.rs` 의 `pub(crate) use` 전부를 두 표
+   (`UPPER` · `INBOUND`)와 대조해 빠짐이 없게 적었다 — 처음에 `debug_info` 가 빠져 초록이었다
+   (Gate 4 변이로 확인). 기대값 0, 면제 명부 없음.
 
 ## Consequences
 

@@ -69,6 +69,7 @@ const INBOUND: &[(&str, &str)] = &[
     ),
     ("App", "`app::App` 의 lib 루트 별칭"),
     ("AppEvent", "`app::event::AppEvent` 의 lib 루트 별칭"),
+    ("debug_info", "`app::debug_info` 의 lib 루트 별칭"),
 ];
 
 fn inbound_match(path: &[String]) -> Option<&'static str> {
@@ -146,6 +147,7 @@ use tasty_ipc::host_call::HostIpcInjector;
 use crate::{hook_handler::IpcCall, adapters::ipc::host_call};
 fn f() -> crate::AppEvent { todo!() }
 fn g() { super::super::hub::x(); }
+fn h() { crate::debug_info::dump(); }
 // crate::app::App 은 주석이다
 #[cfg(test)]
 mod tests {
@@ -164,10 +166,11 @@ mod tests {
             (5, "adapters::ipc"),
             (6, "AppEvent"),
             (7, "hub"),
+            (8, "debug_info"),
         ],
         "잡혀야 하는 것: IPC 서버(1) · 핸들러 별칭(3) · 중괄호 항목(5) · 메인 루프 별칭(6) · \
-         `super::` 사슬로 루트에 올라간 서버 조립(7 — 깊이 2 파일). 2 행(outbound adapter) · \
-         4 행(공용 계약)이 잡히면 표가 넓어진 것이고, 8 행이면 마스킹이, 11 행이면 test 필터가 \
-         죽은 것이다."
+         `super::` 사슬로 루트에 올라간 서버 조립(7 — 깊이 2 파일) · debug 별칭(8). 2 행(outbound \
+         adapter) · 4 행(공용 계약)이 잡히면 표가 넓어진 것이고, 9 행이면 마스킹이, 12 행이면 \
+         test 필터가 죽은 것이다."
     );
 }
