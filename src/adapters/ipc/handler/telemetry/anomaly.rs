@@ -117,7 +117,6 @@ pub(super) fn fire_anomaly_notification(
 /// `since`, `until` (unix ms). 응답은 `detected_at` 오름차순.
 pub fn handle_anomaly_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

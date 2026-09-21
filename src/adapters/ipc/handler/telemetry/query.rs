@@ -9,7 +9,6 @@ use tasty_telemetry::{
 };
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -135,7 +134,6 @@ pub(super) fn collect_events(
 /// `telemetry.summary` — (metric, agent) 별 합/카운트/min/max/last.
 pub fn handle_summary(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -171,7 +169,6 @@ pub fn handle_summary(
 /// `since` / `until` (선택, unix ms).
 pub fn handle_timeseries(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -223,7 +220,6 @@ pub fn handle_timeseries(
 /// `telemetry.top` — agent 또는 workspace 기준 sum 내림차순.
 pub fn handle_top(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

@@ -987,22 +987,16 @@ fn route_engine_handler(
         "approval.request" => {
             approval::handle_request(core, state, engine, caller, id, &request.params)
         }
-        "approval.respond" => {
-            approval::handle_respond(core, state, engine, caller, id, &request.params)
-        }
-        "approval.cancel" => {
-            approval::handle_cancel(core, state, engine, caller, id, &request.params)
-        }
-        "approval.get" => approval::handle_get(core, state, engine, caller, id, &request.params),
-        "approval.list" => approval::handle_list(core, state, engine, caller, id, &request.params),
-        "approval.history" => {
-            approval::handle_history(core, state, engine, caller, id, &request.params)
-        }
+        "approval.respond" => approval::handle_respond(core, engine, caller, id, &request.params),
+        "approval.cancel" => approval::handle_cancel(core, engine, caller, id, &request.params),
+        "approval.get" => approval::handle_get(core, engine, caller, id, &request.params),
+        "approval.list" => approval::handle_list(core, engine, caller, id, &request.params),
+        "approval.history" => approval::handle_history(core, engine, caller, id, &request.params),
         "approval.summary.set" => {
-            approval::handle_summary_set(core, state, engine, caller, id, &request.params)
+            approval::handle_summary_set(core, engine, caller, id, &request.params)
         }
         "approval.summary.get" => {
-            approval::handle_summary_get(core, state, engine, caller, id, &request.params)
+            approval::handle_summary_get(core, engine, caller, id, &request.params)
         }
         // telemetry (관측 / 비용) — 단계 4.1
         "telemetry.record" => {
@@ -1011,36 +1005,32 @@ fn route_engine_handler(
         "telemetry.record_batch" => {
             telemetry::handle_record_batch(core, state, engine, caller, id, &request.params)
         }
-        "telemetry.summary" => {
-            telemetry::handle_summary(core, state, engine, caller, id, &request.params)
-        }
+        "telemetry.summary" => telemetry::handle_summary(core, engine, caller, id, &request.params),
         "telemetry.timeseries" => {
-            telemetry::handle_timeseries(core, state, engine, caller, id, &request.params)
+            telemetry::handle_timeseries(core, engine, caller, id, &request.params)
         }
-        "telemetry.top" => telemetry::handle_top(core, state, engine, caller, id, &request.params),
+        "telemetry.top" => telemetry::handle_top(core, engine, caller, id, &request.params),
         // telemetry.cap — CRUD + eval/action 발화(cap.rs)/차단(check_cap_block) 완전 결합
-        "telemetry.cap.set" => {
-            telemetry::handle_cap_set(core, state, engine, caller, id, &request.params)
-        }
+        "telemetry.cap.set" => telemetry::handle_cap_set(core, engine, caller, id, &request.params),
         "telemetry.cap.list" => {
-            telemetry::handle_cap_list(core, state, engine, caller, id, &request.params)
+            telemetry::handle_cap_list(core, engine, caller, id, &request.params)
         }
         "telemetry.cap.remove" => {
-            telemetry::handle_cap_remove(core, state, engine, caller, id, &request.params)
+            telemetry::handle_cap_remove(core, engine, caller, id, &request.params)
         }
         "telemetry.cap.status" => {
-            telemetry::handle_cap_status(core, state, engine, caller, id, &request.params)
+            telemetry::handle_cap_status(core, engine, caller, id, &request.params)
         }
         "telemetry.cap.reset" => {
-            telemetry::handle_cap_reset(core, state, engine, caller, id, &request.params)
+            telemetry::handle_cap_reset(core, engine, caller, id, &request.params)
         }
         // telemetry.anomaly (영속 anomaly 조회만; 검출은 dispatcher 후크)
         "telemetry.anomaly.list" => {
-            telemetry::handle_anomaly_list(core, state, engine, caller, id, &request.params)
+            telemetry::handle_anomaly_list(core, engine, caller, id, &request.params)
         }
         // telemetry.session_summary (메트릭/승인/이상 집계)
         "telemetry.session_summary" => {
-            telemetry::handle_session_summary(core, state, engine, caller, id, &request.params)
+            telemetry::handle_session_summary(core, engine, caller, id, &request.params)
         }
         // agent.task_* (DAG + state 머신)
         "agent.task_create" => agent::handle_task_create(core, engine, caller, id, &request.params),

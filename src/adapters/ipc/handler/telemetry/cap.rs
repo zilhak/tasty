@@ -72,7 +72,6 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 /// `telemetry.cap.set` — cap 등록.
 pub fn handle_cap_set(
     core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -145,7 +144,6 @@ pub fn handle_cap_set(
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
 pub fn handle_cap_list(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -170,7 +168,6 @@ pub fn handle_cap_list(
 /// `telemetry.cap.remove` — cap 삭제.
 pub fn handle_cap_remove(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -225,7 +222,6 @@ pub(super) fn compute_current_value(
 /// `telemetry.cap.status` — agent 별 cap 들의 현재 값/임계/triggered 상태.
 pub fn handle_cap_status(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -277,7 +273,6 @@ pub fn handle_cap_status(
 /// `telemetry.cap.reset` — `triggered` 상태 제거. `id` 또는 `agent` 둘 중 하나 필수.
 pub fn handle_cap_reset(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,

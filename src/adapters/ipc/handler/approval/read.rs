@@ -6,7 +6,6 @@ use crate::core::Core;
 
 pub fn handle_cancel(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -99,7 +98,6 @@ pub(crate) fn spawn_approval_await(
 /// `approval.get` — 단일 record 조회.
 pub fn handle_get(
     _core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -119,7 +117,6 @@ pub fn handle_get(
 /// `workspace_id`.
 pub fn handle_list(
     _core: &Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -165,7 +162,6 @@ pub fn handle_list(
 /// 응답: `{ entries: [...], count, returned }`.
 pub fn handle_history(
     core: &Core,
-    _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
