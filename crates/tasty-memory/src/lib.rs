@@ -57,7 +57,7 @@ pub mod testing;
 
 pub use failure::StorageFailure;
 pub use latency::{DbLatencySnapshot, DbLatencyStats};
-pub use port::MemoryStorage;
+pub use port::{MemoryStorage, STORE_LOCK_POISONED, STORE_LOCK_WHAT};
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

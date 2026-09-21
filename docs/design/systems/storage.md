@@ -151,6 +151,31 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   알림도 내지 않는다.
 - 근거는 [ADR-0377](../../adr/0377-a-failed-memory-write-names-its-cause-with-the-same-table-as-init.md).
 
+### 터미널 출력 observer 의 memory sink — 저장 계약
+
+`output.observe_start` 로 등록한 observer 중 sink 가 memory 인 것은 파싱된 항목을 `memory.db` 에
+쓴다(`src/core/output_observer.rs` 의 `run_memory_sink`). 이 sink 는 **store 의 port
+(`MemoryStorage`)만 본다** — 도메인 `core` 를 참조하지 않는다.
+
+- **키**: `global` 스코프의 `tasty.observer.<id>.<ms>`, owner 는 `_host`. `<ms>` 는 쓰는 순간의
+  밀리초라 **같은 밀리초에 온 두 항목은 한 키로 겹친다**(뒤엣것이 남는다).
+- **상한 `max_records` 는 근사다.** sink 가 자기가 쓴 키를 기억해 넘치면 가장 오래된 것부터
+  지우는데, 그 삭제는 best-effort 다 — 실패해도 경고 없이 넘어가고 다음 쓰기에서 다시 줄인다.
+  sink 가 재시작하면 기억이 비므로 이전 실행이 남긴 키는 이 상한의 대상이 아니다.
+- **put 실패는 그 항목만 버린다.** `tracing::warn!` 을 한 줄 남기고 다음 항목으로 간다 — sink 가
+  멈추지 않는다. **소비자에게 gap 신호는 가지 않는다**: observer 의 `dropped` 는 채널 역압으로
+  못 넣은 항목만 세고 put 실패는 세지 않는다. 원인은 위 "저장 실패의 의미" 의 표로 갈리지만 이
+  sink 는 그것을 로그 문장에만 싣는다.
+- **락 poison**: sink 는 store 락을 `tasty_utils::poison::recover_mutex` 로 복구해 계속 쓰고, 보고
+  좌표는 store 의 port 가 준다(`tasty_memory::STORE_LOCK_WHAT` · `STORE_LOCK_POISONED`). 본체
+  `core` 의 `MEMORY_WHAT` · `MEMORY_POISONED` 는 **같은 static 의 재수출**이라 프로세스에 첫-1 회
+  플래그가 하나다.
+- **종료 계약**: surface 가 닫히면 sink 의 sender 만 떨어뜨리고 join 은 미룬다 — 채널에 들어간
+  항목은 std mpsc 계약상 워커가 끝까지 비운 뒤 끝나므로 잃지 않는다. 앱 종료 경로가
+  `join_retired` 로 남은 워커를 회수하고, 그 호출을 빠뜨린 경로에서도 라우터의 `Drop` 이 같은
+  회수를 한다(마지막 방어선). 유일한 유실 경로는 워커가 다 쓰기 전에 프로세스가 죽는 것이다.
+- 근거는 [ADR-0378](../../adr/0378-the-poison-coordinate-of-the-memory-store-lives-at-its-port.md).
+
 ### 초기화 실패 = 인메모리 폴백 없음
 
 `db::init()` 실패는 **치명적**이다. `:memory:` 폴백을 두지 않는다 — `DbInitError` 로 분류해 사용자에게 InfoModal 로 안내한 뒤 앱을 종료한다(`src/app/window_lifecycle.rs`). variant 별로 i18n key 를 가진다:

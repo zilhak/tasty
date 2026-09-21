@@ -12,6 +12,23 @@ use crate::{
     PurgeStats, PutOpts, Result, Scope,
 };
 
+/// 프로세스에 하나인 memory store 락의 poison 보고 좌표 — 이름.
+///
+/// store 는 호스트가 하나 열어 `Arc<Mutex<dyn MemoryStorage>>` 로 여러 모듈에 나눠 준다.
+/// 락도 하나이므로 "첫 1 회만 보고" 하는 플래그도 하나여야 한다 — 모듈마다 제 좌표를
+/// 두면 같은 poison 이 좌표 수만큼 보고되고, 어느 것도 "첫 1 회" 가 아니게 된다.
+///
+/// **여기(port) 에 두는 이유**: 이 좌표는 락을 잡는 쪽이 아니라 **락을 나눠 주는 port**
+/// 의 성질이다. 한때 본체 `core` 가 들고 있었고, 그래서 `core` 밖의 소비자(터미널 출력
+/// observer 의 memory sink)까지 `core` 를 참조해야 했다 — sink 는 port 만 보면 되는
+/// 자리인데 도메인 전체에 묶였다. 복구 자체는 호출자가 `tasty_utils::poison::recover_mutex`
+/// 로 한다(이 크레이트는 그 헬퍼의 소비자가 아니다).
+pub const STORE_LOCK_WHAT: &str = "memory store";
+
+/// [`STORE_LOCK_WHAT`] 의 첫-1 회 보고 플래그.
+pub static STORE_LOCK_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Memory store 의 동작 인터페이스. `MemoryStore` 와 mock 모두 impl.
 ///
 /// `Sync` 아님 — `MemoryStore` 내부의 SQLite `Connection` 이 `!Sync` (`RefCell` 캐시).

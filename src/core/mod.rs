@@ -150,9 +150,14 @@ pub(crate) fn next_file_picker_trigger_request_id() -> u64 {
 /// store 는 프로세스에 하나(App 이 소유, `Arc` clone 으로 여러 모듈이 나눠 갖는다)라
 /// 첫-1 회 플래그도 하나다. 여러 모듈이 이 락을 잡되 복구는 전부
 /// `poison::recover_mutex` 를 거쳐 이 좌표로 모인다 — 조용한 복구를 첫 1 회만 보고한다.
-pub(crate) const MEMORY_WHAT: &str = "memory store";
-pub(crate) static MEMORY_POISONED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+///
+/// **실체는 store 의 port 에 있다**(`tasty_memory::STORE_LOCK_WHAT` ·
+/// `STORE_LOCK_POISONED`). 여기는 이름만 잇는다 — 같은 static 을 가리키므로 `core` 를
+/// 거치는 자리와 port 를 바로 보는 자리(터미널 출력 observer 의 memory sink)가 **한
+/// 플래그**를 나눈다. 둘을 따로 두면 같은 poison 이 두 번 보고된다.
+pub(crate) use tasty_memory::{
+    STORE_LOCK_POISONED as MEMORY_POISONED, STORE_LOCK_WHAT as MEMORY_WHAT,
+};
 
 /// preset store 락의 poison 복구 공용 보고 좌표. `preset_store`(concrete)와 `presets`
 /// (dyn)는 같은 allocation 이라 락도 하나 — 첫-1 회 플래그도 하나다.

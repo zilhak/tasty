@@ -555,10 +555,13 @@ fn run_memory_sink(
             "data": item.data,
             "at_ms": now,
         });
+        // poison 보고 좌표는 store 의 port 가 준다 — 이 sink 는 port 만 알면 되고
+        // 도메인(`crate::core`)을 알 이유가 없다. 좌표가 하나라 `core` 를 거치는 다른
+        // 소비자와 첫-1 회 플래그를 나눈다.
         let mut guard = crate::poison::recover_mutex(
             memory.lock(),
-            crate::core::MEMORY_WHAT,
-            &crate::core::MEMORY_POISONED,
+            tasty_memory::STORE_LOCK_WHAT,
+            &tasty_memory::STORE_LOCK_POISONED,
         );
         let put_result = guard.put(
             HOST_OWNER,
@@ -918,5 +921,111 @@ mod tests {
             )
             .unwrap_err();
         assert!(matches!(err, ObserverError::UnknownParser(_)));
+    }
+
+    // ── memory sink 의 저장 계약 ──
+
+    fn item(data: serde_json::Value) -> ParsedItem {
+        ParsedItem {
+            kind: "path",
+            line: 0,
+            byte_start: 0,
+            byte_end: 1,
+            data,
+        }
+    }
+
+    /// 그 observer 가 남긴 레코드의 `data`. 키에 밀리초가 들어가 같은 ms 의 두 레코드는
+    /// 한 키로 겹치므로, 수가 아니라 **내용**으로 대조한다.
+    fn observer_records(
+        memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        id: ObserverId,
+    ) -> Vec<serde_json::Value> {
+        let prefix = format!("tasty.observer.{id}.");
+        memory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .list(
+                &tasty_memory::Scope::Global,
+                &tasty_memory::ListOpts {
+                    prefix: Some(prefix),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .into_iter()
+            .map(|e| match e.value {
+                tasty_memory::MemoryValue::Json(v) => v["data"].clone(),
+                other => panic!("observer 레코드는 JSON 이다: {other:?}"),
+            })
+            .collect()
+    }
+
+    /// sink 의 poison 보고 좌표는 `core` 를 거치는 소비자와 **같은 한 벌**이다.
+    ///
+    /// 좌표를 port 로 옮기면서 두 벌이 되면 같은 poison 이 두 번 보고되고 어느 쪽도
+    /// "첫 1 회" 가 아니게 된다 — 이름을 잇는 재수출이 끊기면 여기가 죽는다.
+    #[test]
+    fn the_memory_sink_shares_one_poison_coordinate_with_the_core() {
+        assert!(std::ptr::eq(
+            &tasty_memory::STORE_LOCK_POISONED,
+            &crate::core::MEMORY_POISONED
+        ));
+        assert_eq!(tasty_memory::STORE_LOCK_WHAT, crate::core::MEMORY_WHAT);
+    }
+
+    /// put 이 실패한 레코드는 버려지고 **sink 는 멈추지 않는다** — 다음 레코드는 쓰인다.
+    ///
+    /// 소비자에게 gap 신호는 가지 않는다(경고 로그뿐) — 그것이 이 sink 의 계약이고
+    /// `docs/design/systems/storage.md` 의 observer sink 절이 적는다. sink 가 첫 실패에서
+    /// 끝나면 뒤 레코드가 전부 사라지고, 그것은 조용한 손실이 한 건이 아니라 무한이다.
+    #[test]
+    fn a_failed_put_drops_that_record_and_the_sink_keeps_going() {
+        let config = tasty_memory::MemoryConfig {
+            entry_max_bytes: 512,
+            ..Default::default()
+        };
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory_with_config(config).unwrap(),
+            ));
+        let (tx, rx) = sync_channel::<ParsedItem>(4);
+        tx.send(item(json!({ "big": "x".repeat(4096) }))).unwrap();
+        tx.send(item(json!({ "small": 1 }))).unwrap();
+        drop(tx);
+
+        run_memory_sink(41, 10, rx, memory.clone());
+
+        let records = observer_records(&memory, 41);
+        assert_eq!(
+            records,
+            vec![json!({ "small": 1 })],
+            "실패한 레코드가 쓰였거나 그 뒤 레코드가 안 쓰였다"
+        );
+    }
+
+    /// 락이 poison 돼도 sink 는 복구해서 쓴다 — 보고는 port 의 좌표로 간다.
+    #[test]
+    fn a_poisoned_store_lock_is_recovered_by_the_sink() {
+        let memory = mem_store();
+        let holder = memory.clone();
+        let poisoned = std::thread::spawn(move || {
+            let _guard = holder.lock().unwrap();
+            panic!("poison the store lock on purpose");
+        })
+        .join();
+        assert!(poisoned.is_err());
+        assert!(memory.is_poisoned());
+
+        let (tx, rx) = sync_channel::<ParsedItem>(1);
+        tx.send(item(json!({ "n": 1 }))).unwrap();
+        drop(tx);
+        run_memory_sink(42, 10, rx, memory.clone());
+
+        assert_eq!(observer_records(&memory, 42), vec![json!({ "n": 1 })]);
+        assert!(
+            tasty_memory::STORE_LOCK_POISONED.load(std::sync::atomic::Ordering::Relaxed),
+            "복구가 port 의 좌표로 보고되지 않았다"
+        );
     }
 }
