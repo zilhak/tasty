@@ -1430,6 +1430,53 @@ mod admission_tests {
         );
     }
 
+    // 장부의 몫은 **큐에서 꺼내는 순간** 돌아온다 — 꺼낸 명령을 아직 쥐고 있어도 그렇다.
+    // 장부가 재는 것은 대기열이지 처리 중인 일이 아니다(ADR-0391). 지금은 소비자가 꺼낸
+    // 명령을 한 회차 안에서 버리므로 표의 Drop 만으로도 곧 반납되지만, 명령을 회차 밖에
+    // 보관하도록 바뀌면 그 차이가 조용한 과계수가 된다. 그래서 반납을 Drop 이 아니라
+    // `try_recv` 에 묶은 것을 여기서 고정한다.
+    #[test]
+    fn a_dequeued_command_stops_counting_while_it_is_still_held() {
+        let (tx, rx) = mpsc::channel();
+        let admission = CommandAdmission::new(QueueLimits::DEFAULT);
+        let server = TcpIpcServer {
+            command_rx: rx,
+            command_tx: tx.clone(),
+            port: 0,
+            shutdown: Arc::new(AtomicBool::new(false)),
+            // Drop 이 지우는 자리다. 한 번도 안 쓰는 경로라 NotFound 로 끝난다.
+            custom_port_file: Some(std::env::temp_dir().join(format!(
+                "tasty-dequeue-release-test-{}.port",
+                std::process::id()
+            ))),
+            admission: admission.clone(),
+        };
+        let (resp_tx, _resp_rx) = mpsc::sync_channel(1);
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "workspace.list".to_string(),
+            params: serde_json::Value::Null,
+            id: Some(serde_json::json!(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+        };
+        let mut cmd = IpcCommand::with_wire_bytes(request, resp_tx, 100);
+        cmd.admit(&admission, Origin::Socket)
+            .expect("an empty queue takes one");
+        tx.send(cmd).expect("queue");
+        assert_eq!(admission.snapshot().queued_bytes, 100);
+
+        let held = server.try_recv().expect("dequeue");
+        let snap = admission.snapshot();
+        assert_eq!(
+            (snap.queued_bytes, snap.queued_commands),
+            (0, 0),
+            "a command taken off the queue still counts — the share is returned on drop, not on dequeue"
+        );
+        drop(held);
+    }
+
     // 큐 바이트 상한을 넘기는 요청은 **큐에 안 들어가고** `ERR_COMMAND_QUEUE_FULL` 로 답을
     // 받으며 연결은 유지된다. 몫이 돌아오면 같은 요청이 다시 들어간다.
     //
