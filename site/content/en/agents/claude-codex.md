@@ -1,4 +1,4 @@
-<!-- source-hash: cd9e4d63469f -->
+<!-- source-hash: 621574b8ab79 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -116,7 +116,10 @@ a tab you closed stays where it is until the next restart. At 256 KiB the file i
 rather than trimmed back to the last 256 KiB**, so anything you had not read yet goes with it.
 What disappears here is whole lines too - a line is never cut in the middle. How much was thrown
 away is written to the log at that moment, so you can trace afterwards why a notification never
-arrived.
+arrived. If you read the completion log yourself and pick up where you left off, also look at the
+`<number>.log.meta` file next to it. Its `retention_start` is the total number of bytes emptied so
+far. Compare your read position with that value to learn how much disappeared unread while you
+were away. A Monitor subscription does not need this file.
 
 **Do not run two copies of tasty against the same data folder.** The one that starts later wipes
 the completion-log folder as it boots, which takes the live log the earlier one was writing to.

@@ -24,7 +24,8 @@
 //!
 //! - **완료 알림 로그**(`<parent_home>/notify/<surface>.log`) — 바이트 상한 하나이고,
 //!   도달하면 그 파일을 **전량** 버린다. 시간 상한도 파일 수 상한도 없고, 회수는 호스트
-//!   부팅의 디렉토리 삭제뿐이다. 보존 범위·유실·인스턴스 정체성의 정본은
+//!   부팅의 디렉토리 삭제뿐이다. 버린 바이트 누계는 옆 `<surface>.log.meta` 에 남는다
+//!   (ADR-0415). 보존 범위·유실·인스턴스 정체성의 정본은
 //!   `crates/tasty-utils/src/notify.rs` 의 모듈 문서와
 //!   [ADR-0344](../../docs/adr/0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md).
 //! - **hook 전달 실패 로그**(`<tasty_home>/hook-failures.log`) — 같은 바이트 값(256 KiB)

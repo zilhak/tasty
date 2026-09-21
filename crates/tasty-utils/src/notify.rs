@@ -42,7 +42,9 @@
 //!   로그의 보존 범위는 **지금 호스트 세대 하나**이고, 재시작을 사이에 두고 과거 줄을
 //!   되읽을 방법은 없다. 그 삭제가 데이터 루트 단위라는 점이 곧 전제다 — **한 데이터
 //!   루트에 호스트 하나.** 둘이 같은 루트로 뜨면 나중 것이 먼저 것의 살아 있는 로그를
-//!   지운다.
+//!   지운다. 단 포트 파일을 데이터 루트 **밖**으로 옮긴 호스트는 지우지 않는다 — 그
+//!   판정은 호스트 쪽 `TcpIpcServer::notify_dir_to_clear` 에 있다(ADR-0416). 메타 파일도
+//!   같은 디렉토리라 함께 지워지고, 새 세대의 `retention_start` 는 0 부터 다시 센다.
 //! - **크기** — 축은 **바이트 하나**다(`NOTIFY_LOG_CAP_BYTES`). 시간 상한도, 파일 수
 //!   상한도 없다. 닫힌 surface 의 파일은 그 세대가 끝날 때까지 남는다(회수는 다음 부팅
 //!   삭제뿐). 그리고 cap 은 "마지막 256 KiB 를 남긴다" 가 아니라 **"넘으면 전량
@@ -52,6 +54,30 @@
 //! 남긴다 — 이 파일 자신에는 안 쓴다. 읽는 쪽 계약이 "한 줄 = 완료 통지" 라 메타 줄을
 //! 끼우면 그것이 완료로 읽히기 때문이다(ADR-0330 이 그 대안을 기각한 자리). 근거·측정·
 //! 재검토 조건은 `docs/adr/0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md`.
+//!
+//! # 독자 복구 — 줄 밖 메타 `<caller_surface>.log.meta`
+//!
+//! 멈췄다 재개하는 reader 는 "그 사이 무엇을 잃었나" 를 물을 수 있어야 한다. 그 값을 파일
+//! 안에 둘 수 없으므로(위 문단) **옆 파일**에 둔다. 메타 파일은 `key=value` 줄이고 지금
+//! 키는 하나다.
+//!
+//! - **`retention_start`** — 이 로그가 세대 시작부터 **버린 바이트 누계**. 달리 말해 지금
+//!   파일의 첫 바이트가 세대 전체 스트림에서 몇 번째 바이트인가다. 비울 때마다 버린 양만큼
+//!   늘고 줄지 않는다. 메타 파일이 없거나 비었거나 키가 없으면 0 이다(아직 한 번도 안
+//!   비웠다).
+//!
+//! reader 는 **논리 오프셋** `next_offset`(= `retention_start` + 파일 안 위치)을 들고 있다가
+//! 재개할 때 견준다 — `next_offset < retention_start` 면 그 사이 비우기가 있었고
+//! (`truncated`), `retention_start - next_offset` 바이트를 못 읽고 잃었다(`skipped`). 그때는
+//! 파일 처음부터 읽는다. 어휘는 `events.fetch` · `surface.read_since_mark` 의 것을 빌렸고
+//! 저장소는 공유하지 않는다. 계약 전문·잠금 규약·대안은
+//! `docs/adr/0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md`.
+//!
+//! 이 수가 **정확**하려면 비우기가 append 와 겹치면 안 된다. 그래서 메타 파일에 advisory
+//! 잠금을 건다 — append 는 공유, 비우기(크기 재기 · 비우기 · 누계 갱신)는 배타. 잠금
+//! 대상이 로그가 아니라 메타인 이유는 Windows 의 잠금이 강제형이라 로그에 걸면 다른
+//! writer 의 append 가 막히기 때문이다. 줄 형식과 경로는 안 바뀌므로 `tail -n0 -F` 소비자는
+//! 이 파일을 몰라도 된다.
 //!
 //! 라인 포맷은 완료 메시지 한 줄로 둔다 — 예: `surface 42 작업 완료 (호출 방식: spawn)`.
 //! 호출 방식(spawn/tell)을 문장 맨 앞에 두지 않는 이유는 `crates/tasty-plugin-claude`/
@@ -105,6 +131,37 @@ fn notify_log_path_in(home: &Path, caller_surface: u32) -> PathBuf {
     home.join("notify").join(format!("{caller_surface}.log"))
 }
 
+/// 완료 로그 옆의 메타 파일 경로 — `<log>.meta`. 로그 경로에서 순수하게 만든다.
+fn notify_meta_path(log: &Path) -> PathBuf {
+    let mut raw = log.as_os_str().to_owned();
+    raw.push(".meta");
+    PathBuf::from(raw)
+}
+
+/// 메타 파일에서 버린 바이트 누계를 담는 키(모듈 문서 "독자 복구").
+const RETENTION_START_KEY: &str = "retention_start";
+
+/// 누계 값의 고정 폭. `u64` 의 최대 자릿수(20)다. 값을 **왼쪽 정렬 + 공백 채움**으로 늘
+/// 같은 폭에 쓰므로 메타 파일은 한 번 쓰이면 길이가 안 변한다 — 제자리 덮어쓰기가
+/// 파일을 줄이는 단계 없이 한 번의 `write` 로 끝나, 잠금을 안 거는 reader 도 빈 파일을
+/// 볼 일이 없다. 0 채움이 아니라 공백 채움인 이유는 셸 산술(`$((…))`)이 앞자리 0 을
+/// 8 진수로 읽기 때문이다.
+const RETENTION_START_WIDTH: usize = 20;
+
+/// 메타 파일 한 벌의 내용. 파싱은 관대하다 — 모르는 키는 건너뛰고, 값의 앞뒤 공백을
+/// 벗기며, 못 읽으면 0(아직 안 비웠다)으로 본다.
+fn parse_retention_start(meta: &str) -> u64 {
+    meta.lines()
+        .filter_map(|l| l.split_once('='))
+        .find(|(k, _)| k.trim() == RETENTION_START_KEY)
+        .and_then(|(_, v)| v.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+fn format_retention_start(value: u64) -> String {
+    format!("{RETENTION_START_KEY}={value:<RETENTION_START_WIDTH$}\n")
+}
+
 /// caller_surface 의 완료 로그에 한 줄 append 한다(개행 자동 부가). `notify/` 디렉토리는
 /// 없으면 생성한다. best-effort — 호출자는 실패 시 `tracing::warn!` 로 흘려보내고 기존
 /// `terminal.tell` 알림 경로에는 영향을 주지 않는다.
@@ -130,31 +187,29 @@ pub fn append_notify_line(caller_surface: u32, line: &str) -> io::Result<()> {
 ///   `O_APPEND` 가 보장하는 것은 **한 번의 write** 가 끝에 통째로 붙는 것뿐이다.
 ///
 /// 비우는 일은 쓰기와 **분리한다.** 판정과 실행 사이에 다른 writer 가 이미 비웠을 수
-/// 있어 같은 핸들로 한 번 더 재고 비운다. 그래도 남는 창이 있다 — 비우기 직전에
-/// append 된 줄은 사라진다. 그 줄은 파일이 이미 cap 을 넘은 뒤에 쓰인 것이라
-/// **애초에 이 truncate 가 버릴 구간**이고, 손실의 범위가 "cap 을 넘은 시점 이전" 으로
-/// 정의된다는 뜻이다. 사라지는 것은 줄 단위이고 줄 중간이 잘리지는 않는다.
+/// 있어 같은 핸들로 한 번 더 재고 비운다. 재기와 비우기는 메타 파일의 **배타** 잠금
+/// 아래에서, append 는 **공유** 잠금 아래에서 하므로 둘이 겹치지 않는다 — 비우기가 잰
+/// 크기가 곧 버린 양이고, 그 수가 `retention_start` 에 더해진다. 잠금을 모르는 writer
+/// (메타 이전 버전)가 섞이거나 잠금이 실패하면 예전 창이 돌아온다: 비우기 직전에
+/// append 된 줄이 누계에 안 잡힌 채 사라진다. 그때도 사라지는 것은 줄 단위이고 줄
+/// 중간이 잘리지는 않는다.
 fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    let meta_path = notify_meta_path(path);
+    let meta = open_meta(&meta_path);
     // 기존 파일이 cap 이상이면 새로 시작. `tail -F` 는 파일 축소를 감지해 재오픈하므로
     // arm 된 Monitor 가 그 뒤 append 된 라인을 계속 받는다.
     if std::fs::metadata(path)
         .map(|m| m.len() >= cap)
         .unwrap_or(false)
-        && let Some(discarded) = truncate_over_cap(path, cap)
     {
-        // 버린 양을 **로그에** 남긴다 — 이 파일 자신에는 안 쓴다. 읽는 쪽 계약은
-        // "한 줄 = 완료 통지" 이므로 여기에 메타 줄을 끼우면 그 줄이 완료로 읽힌다
-        // (ADR-0330 이 그 대안을 기각한 이유). 그렇다고 아무 데도 안 남기면 뒤처진
-        // reader 의 미독분이 통째로 사라진 사실을 아무도 설명하지 못한다.
-        tracing::warn!(
-            "notify log {} hit the {cap}-byte cap — discarded {discarded} bytes of completion lines, \
-             including anything a lagging reader had not read yet",
-            path.display()
-        );
+        truncate_and_account(path, cap, meta.as_ref(), &meta_path);
     }
+    // append 는 **공유** 잠금 아래에서 한다. 비우기는 배타 잠금을 잡으므로, 비우기가 크기를
+    // 잰 뒤와 비우기 사이에 이 줄이 끼어 **누계에 안 잡힌 채 사라지는** 일이 없다.
+    let _shared = meta.as_ref().and_then(|m| MetaLock::shared(m, &meta_path));
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -163,6 +218,129 @@ fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
     record.push_str(line);
     record.push('\n');
     file.write_all(record.as_bytes())
+}
+
+/// 메타 파일을 연다(없으면 빈 파일로 만든다). 못 열면 잠금·누계 없이 진행한다 — 완료
+/// 통지를 메타 때문에 잃지 않는 것이 우선이다. 그 대가는 이번 비우기가 누계에 안 잡히는
+/// 것이고, 재개하는 reader 는 그것을 "계약 밖 비우기" 로 알아챈다(ADR-0415).
+fn open_meta(meta_path: &Path) -> Option<std::fs::File> {
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(meta_path)
+    {
+        Ok(f) => Some(f),
+        Err(e) => {
+            tracing::warn!(
+                "notify meta {} open failed: {e} — appending without the lock, a truncation now \
+                 would not be counted",
+                meta_path.display()
+            );
+            None
+        }
+    }
+}
+
+/// 메타 파일 advisory 잠금. drop 에서 푼다(핸들을 닫아도 풀리지만 핸들 수명이 더 길다).
+struct MetaLock<'a>(&'a std::fs::File);
+
+impl<'a> MetaLock<'a> {
+    fn shared(file: &'a std::fs::File, meta_path: &Path) -> Option<Self> {
+        match file.lock_shared() {
+            Ok(()) => Some(Self(file)),
+            Err(e) => {
+                tracing::warn!(
+                    "notify meta {} shared lock failed: {e}",
+                    meta_path.display()
+                );
+                None
+            }
+        }
+    }
+
+    fn exclusive(file: &'a std::fs::File, meta_path: &Path) -> Option<Self> {
+        match file.lock() {
+            Ok(()) => Some(Self(file)),
+            Err(e) => {
+                tracing::warn!(
+                    "notify meta {} exclusive lock failed: {e}",
+                    meta_path.display()
+                );
+                None
+            }
+        }
+    }
+}
+
+impl Drop for MetaLock<'_> {
+    fn drop(&mut self) {
+        if let Err(e) = self.0.unlock() {
+            tracing::warn!("notify meta unlock failed: {e}");
+        }
+    }
+}
+
+/// 배타 잠금 아래에서 비우고, 버린 양을 누계에 더하고, 로그에 남긴다.
+///
+/// 잠금을 못 잡아도 비우기는 한다 — 크기 축(ADR-0344)이 먼저다. 그때 수는 정확하지 않을
+/// 수 있고 그 사실이 warn 로 남는다.
+fn truncate_and_account(path: &Path, cap: u64, meta: Option<&std::fs::File>, meta_path: &Path) {
+    let _exclusive = meta.and_then(|m| MetaLock::exclusive(m, meta_path));
+    let Some(discarded) = truncate_over_cap(path, cap) else {
+        return;
+    };
+    let retention_start = match meta {
+        Some(m) => advance_retention_start(m, discarded, meta_path),
+        None => None,
+    };
+    // 버린 양을 **로그에** 남긴다 — 이 파일 자신에는 안 쓴다. 읽는 쪽 계약은
+    // "한 줄 = 완료 통지" 이므로 여기에 메타 줄을 끼우면 그 줄이 완료로 읽힌다
+    // (ADR-0330 이 그 대안을 기각한 이유). 재개하는 reader 에게는 옆 메타 파일의
+    // 누계가 같은 사실을 값으로 준다.
+    match retention_start {
+        Some(start) => tracing::warn!(
+            "notify log {} hit the {cap}-byte cap — discarded {discarded} bytes of completion lines, \
+             including anything a lagging reader had not read yet (retention_start is now {start})",
+            path.display()
+        ),
+        None => tracing::warn!(
+            "notify log {} hit the {cap}-byte cap — discarded {discarded} bytes of completion lines, \
+             including anything a lagging reader had not read yet (retention_start NOT advanced — \
+             a resuming reader will see an unaccounted truncation)",
+            path.display()
+        ),
+    }
+}
+
+/// 누계를 읽어 `discarded` 를 더하고 제자리에 다시 쓴다. 새 누계를 돌려준다. 호출자가 배타
+/// 잠금을 쥐고 있어야 한다.
+fn advance_retention_start(meta: &std::fs::File, discarded: u64, meta_path: &Path) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut handle = meta;
+    let mut current = String::new();
+    let result = handle
+        .seek(SeekFrom::Start(0))
+        .and_then(|_| handle.read_to_string(&mut current))
+        .and_then(|_| {
+            let next = parse_retention_start(&current).saturating_add(discarded);
+            // 내용이 이 모듈이 쓴 한 줄의 폭이 아니면(빈 파일 포함) 먼저 비운다. 폭이 같으면
+            // 줄이는 단계 없이 덮어쓴다(`RETENTION_START_WIDTH` 의 이유).
+            if current.len() != format_retention_start(0).len() {
+                handle.set_len(0)?;
+            }
+            handle.seek(SeekFrom::Start(0))?;
+            handle.write_all(format_retention_start(next).as_bytes())?;
+            Ok(next)
+        });
+    match result {
+        Ok(next) => Some(next),
+        Err(e) => {
+            tracing::warn!("notify meta {} update failed: {e}", meta_path.display());
+            None
+        }
+    }
 }
 
 /// cap 을 넘은 파일을 비운다 — **쓰기 핸들과 분리된 자리**다.
@@ -377,6 +555,234 @@ mod tests {
             !content.contains("unread-00"),
             "첫 줄이 남아 있다 — 비우기가 초과분만 잘라냈다는 뜻이고, 그러면 보존 \
              범위를 '마지막 비우기 이후' 로 말할 수 없다: {content:?}"
+        );
+    }
+
+    // ── 독자 복구 계약(ADR-0415) ───────────────────────────────────────────────
+    //
+    // 아래 `resume` 은 ADR 이 적은 reader 절차의 **참조 구현**이다. 제품 코드에는 reader
+    // 가 없고(소비자는 `tail -F` 와 셸이다) 계약만 있으므로, 그 계약이 writer 와 맞물리는지를
+    // 여기서 잰다.
+
+    /// 한 번의 재개 결과. 어휘는 `events.fetch` 의 것이다.
+    #[derive(Debug)]
+    struct Resume {
+        lines: Vec<String>,
+        next_offset: u64,
+        truncated: bool,
+        /// `None` 은 "모른다" — 누계에 안 잡힌 비우기(계약 밖)가 있었다.
+        skipped: Option<u64>,
+    }
+
+    fn resume(log: &Path, next_offset: u64) -> Resume {
+        let meta_path = notify_meta_path(log);
+        // 공유 잠금 아래에서 누계와 로그를 함께 읽는다 — 비우기가 그 사이에 끼지 않는다.
+        let meta = std::fs::OpenOptions::new().read(true).open(&meta_path).ok();
+        let _guard = meta.as_ref().and_then(|m| MetaLock::shared(m, &meta_path));
+        let base = std::fs::read_to_string(&meta_path)
+            .map(|t| parse_retention_start(&t))
+            .unwrap_or(0);
+        let bytes = std::fs::read(log).unwrap_or_default();
+        let len = bytes.len() as u64;
+        let (physical, truncated, skipped) = if next_offset < base {
+            (0, true, Some(base - next_offset))
+        } else if next_offset - base > len {
+            (0, true, None)
+        } else {
+            (next_offset - base, false, Some(0))
+        };
+        let tail = &bytes[physical as usize..];
+        // 완결된 줄만 소비한다 — 마지막 개행 뒤의 조각은 다음 재개로 넘긴다.
+        let consumed = tail.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+        let lines = String::from_utf8_lossy(&tail[..consumed])
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        Resume {
+            lines,
+            next_offset: base + physical + consumed as u64,
+            truncated,
+            skipped,
+        }
+    }
+
+    // 한 번도 안 비웠으면 누계는 0 이고, 논리 오프셋은 파일 안 위치와 같다.
+    #[test]
+    fn before_any_truncation_the_offset_is_the_file_position() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("notify").join("3.log");
+        append_line_to(&log, "one", 1024).unwrap();
+        append_line_to(&log, "two", 1024).unwrap();
+        let first = resume(&log, 0);
+        assert_eq!(first.lines, ["one", "two"]);
+        assert_eq!(first.next_offset, 8);
+        assert!(!first.truncated);
+        assert_eq!(
+            parse_retention_start(&std::fs::read_to_string(notify_meta_path(&log)).unwrap()),
+            0
+        );
+        let again = resume(&log, first.next_offset);
+        assert!(again.lines.is_empty());
+        assert_eq!(again.next_offset, 8);
+    }
+
+    // 비우기마다 버린 양이 누계에 **더해진다** — 덮어쓰는 것이 아니다. 두 번 비운 뒤의
+    // 값이 두 비우기의 합이어야 reader 가 두 번 사이에 멈췄어도 맞게 센다.
+    #[test]
+    fn retention_start_accumulates_what_every_truncation_threw_away() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("acc.log");
+        // cap 8: "aaaaaa\n"(7) 다음 "bbbbbb\n" 로 14 → 세 번째 append 전에 14 를 버린다.
+        for l in ["aaaaaa", "bbbbbb", "cccccc", "dddddd", "eeeeee"] {
+            append_line_to(&log, l, 8).unwrap();
+        }
+        // 버린 것: [aaaaaa bbbbbb](14) 그리고 [cccccc dddddd](14).
+        let meta = std::fs::read_to_string(notify_meta_path(&log)).unwrap();
+        assert_eq!(parse_retention_start(&meta), 28);
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "eeeeee\n");
+    }
+
+    // 확인 절차 1 — 고유 표식으로 cap 전후와 reader 중지/재개를 대조한다. reader 가 멈춘
+    // 사이 비우기가 났으면 `truncated` 이고, `skipped` 는 **못 읽은 줄의 바이트 합과 정확히
+    // 같다.** 재개 뒤 받은 줄은 비우기 이후의 것뿐이다.
+    #[test]
+    fn a_resuming_reader_is_told_exactly_how_many_bytes_it_lost() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("resume.log");
+        const CAP: u64 = 64;
+        let mut written = Vec::new();
+        let push = |i: usize| {
+            let l = format!("mark-{i:04}");
+            append_line_to(&log, &l, CAP).unwrap();
+            l
+        };
+        for i in 0..3 {
+            written.push(push(i));
+        }
+        let first = resume(&log, 0);
+        assert_eq!(first.lines, written[..3]);
+        // reader 가 멈춘 동안 cap 을 몇 번 넘긴다.
+        for i in 3..30 {
+            written.push(push(i));
+        }
+        let second = resume(&log, first.next_offset);
+        assert!(
+            second.truncated,
+            "멈춘 사이 비우기가 있었는데 truncated 가 아니다"
+        );
+        let got: std::collections::BTreeSet<&str> =
+            second.lines.iter().map(String::as_str).collect();
+        let lost_bytes: u64 = written[3..]
+            .iter()
+            .filter(|l| !got.contains(l.as_str()))
+            .map(|l| l.len() as u64 + 1)
+            .sum();
+        assert_eq!(second.skipped, Some(lost_bytes));
+        // 받은 줄은 쓴 순서의 **꼬리**여야 한다 — 비우기 이후 것만 남는다.
+        assert_eq!(second.lines, written[written.len() - second.lines.len()..]);
+        assert!(!second.lines.is_empty());
+    }
+
+    // 누계에 안 잡힌 비우기(잠금을 모르는 writer · 누계 갱신 실패)는 reader 가 **모른다고**
+    // 말해야 한다. 조용히 파일 중간부터 읽으면 줄 앞부분이 잘린 잔해를 완료로 읽는다.
+    #[test]
+    fn an_unaccounted_truncation_is_reported_as_unknown_loss() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("foreign.log");
+        append_line_to(&log, "first-line", 1024).unwrap();
+        let first = resume(&log, 0);
+        // 메타 없이 비운 것처럼 만든다.
+        std::fs::write(&log, b"x\n").unwrap();
+        let second = resume(&log, first.next_offset);
+        assert!(second.truncated);
+        assert_eq!(second.skipped, None);
+        assert_eq!(second.lines, ["x"]);
+    }
+
+    // 완결되지 않은 줄 조각은 소비하지 않는다 — 다음 재개가 통째로 받는다.
+    #[test]
+    fn a_partial_trailing_line_is_left_for_the_next_resume() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("partial.log");
+        std::fs::write(&log, b"done\nhal").unwrap();
+        let first = resume(&log, 0);
+        assert_eq!(first.lines, ["done"]);
+        assert_eq!(first.next_offset, 5);
+    }
+
+    // 메타 파일은 늘 같은 폭이다 — 제자리 덮어쓰기가 파일을 줄이지 않아야 잠금 없는
+    // reader 가 빈 파일을 안 본다. 그리고 셸이 읽을 수 있어야 한다(앞자리 0 없음).
+    #[test]
+    fn the_meta_line_has_a_fixed_width_and_no_leading_zeros() {
+        let small = format_retention_start(7);
+        let big = format_retention_start(u64::MAX);
+        assert_eq!(small.len(), big.len());
+        assert!(small.starts_with("retention_start=7 "), "{small:?}");
+        assert!(small.ends_with('\n'));
+        assert_eq!(parse_retention_start(&small), 7);
+        assert_eq!(parse_retention_start(&big), u64::MAX);
+        assert_eq!(parse_retention_start(""), 0);
+        assert_eq!(parse_retention_start("other=3\n"), 0);
+    }
+
+    #[test]
+    fn meta_path_sits_next_to_the_log() {
+        assert_eq!(
+            notify_meta_path(Path::new("/h/notify/42.log")),
+            PathBuf::from("/h/notify/42.log.meta")
+        );
+    }
+
+    // 확인 절차 1 의 동시 판 — 작은 cap 에서 writer 여럿과 주기적으로 재개하는 reader 하나.
+    // 끝까지 따라잡은 뒤 **받은 바이트 + skipped 합 = 쓴 바이트 합** 이어야 한다. 비우기와
+    // append 가 겹쳐 누계에 안 잡힌 줄이 생기면 좌변이 모자라 깨진다(잠금이 지키는 것).
+    #[test]
+    fn under_concurrent_writers_read_plus_skipped_equals_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("conc.log");
+        const CAP: u64 = 512;
+        const WRITERS: usize = 6;
+        const ROUNDS: usize = 1_500;
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let (mut read_bytes, mut skipped_bytes, mut unknown) = (0u64, 0u64, 0usize);
+        let mut seen = std::collections::HashSet::new();
+        std::thread::scope(|scope| {
+            for w in 0..WRITERS {
+                let log = &log;
+                let done = &done;
+                scope.spawn(move || {
+                    for i in 0..ROUNDS {
+                        append_line_to(log, &format!("w{w}-{i:05}"), CAP).unwrap();
+                    }
+                    done.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                });
+            }
+            let mut offset = 0u64;
+            loop {
+                let finished = done.load(std::sync::atomic::Ordering::SeqCst) == WRITERS;
+                let r = resume(&log, offset);
+                for l in &r.lines {
+                    read_bytes += l.len() as u64 + 1;
+                    assert!(seen.insert(l.clone()), "같은 줄을 두 번 받았다: {l}");
+                }
+                match r.skipped {
+                    Some(n) => skipped_bytes += n,
+                    None => unknown += 1,
+                }
+                offset = r.next_offset;
+                if finished {
+                    break;
+                }
+            }
+        });
+        let written: u64 = (0..WRITERS)
+            .flat_map(|w| (0..ROUNDS).map(move |i| format!("w{w}-{i:05}").len() as u64 + 1))
+            .sum();
+        assert_eq!(unknown, 0, "누계에 안 잡힌 비우기를 {unknown} 번 봤다");
+        assert_eq!(
+            read_bytes + skipped_bytes,
+            written,
+            "받은 {read_bytes} + 잃은 {skipped_bytes} 가 쓴 {written} 과 다르다"
         );
     }
 

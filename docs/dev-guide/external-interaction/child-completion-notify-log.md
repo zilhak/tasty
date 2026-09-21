@@ -82,16 +82,50 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   에서 0 으로 되돌린다" 이므로 실제 보존량은 0 과 256 KiB 사이를 톱니로 오간다. 뒤처진
   reader 의 미독분도 그 안에 있다.
 
-  **버린 양은 기록된다.** 비울 때마다 `tracing::warn!` 로 경로와 **버린 바이트 수**를
-  남긴다(plugin 이 writer 이므로 그 plugin 의 로그 파일로 간다). 이 파일 **자신에는
-  안 쓴다** — 읽는 쪽 계약이 "한 줄 = 완료 통지" 라 메타 줄을 끼우면 그것이 완료로 읽힌다
-  ([ADR-0330](../../adr/0330-one-completion-line-is-one-write.md) 이 그 대안을 기각한
-  자리). 비우고 나면 파일이 0 바이트라 그 수는 **그 순간에만** 알 수 있다.
+  **버린 양은 기록된다 — 두 자리에.** 비울 때마다 `tracing::warn!` 로 경로와 **버린 바이트
+  수**를 남긴다(plugin 이 writer 이므로 그 plugin 의 로그 파일로 간다). 그리고 같은 수를
+  로그 **옆 메타 파일** `<caller_surface>.log.meta` 의 누계 `retention_start` 에 더한다(아래
+  "재개하는 reader"). 로그 파일 **자신에는 안 쓴다** — 읽는 쪽 계약이 "한 줄 = 완료 통지"
+  라 메타 줄을 끼우면 그것이 완료로 읽힌다
+  ([ADR-0330](../../adr/0330-one-completion-line-is-one-write.md) 이 그 대안을 기각한 자리).
 
   비우기는 쓰기와 **분리된 단계**이고, 별도 핸들에서 크기를 다시 재고 그때도 cap 을 넘을
-  때만 실행한다. 그래도 남는 창이 있다 — 비우기 직전에 append 된 줄은 사라진다. **손실의
-  범위는 정의돼 있다**: 그 줄은 파일이 이미 cap 을 넘은 뒤에 쓰인 것이라 애초에 이 비우기가
-  버릴 구간이고, 사라지는 단위는 **줄**이다(줄 중간이 잘리지 않는다).
+  때만 실행한다. 재기 · 비우기 · 누계 갱신은 메타 파일의 **배타** advisory 잠금 아래에서,
+  append 는 **공유** 잠금 아래에서 하므로 둘이 겹치지 않는다 — 비우기가 잰 크기가 곧 버린
+  양이다. 잠금을 모르는 writer(메타 이전 plugin)가 섞이거나 잠금이 실패하면 예전 창이
+  돌아온다: 비우기 직전에 append 된 줄이 누계에 안 잡힌 채 사라진다. 그때도 사라지는 단위는
+  **줄**이다(줄 중간이 잘리지 않는다).
+
+- **재개하는 reader — `<caller_surface>.log.meta`**: `tail -F` 는 arm 된 동안만 비우기를
+  따라간다. 멈췄다 다시 붙는 reader 는 그 사이 무엇을 잃었는지 옆 메타 파일로 안다. 정본은
+  [ADR-0415](../../adr/0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md).
+  - 메타 파일은 `key=value` 줄이고 지금 키는 `retention_start` 하나다 — 이 세대에서 **버린
+    바이트 누계**, 곧 지금 파일 첫 바이트의 논리 위치다. 값은 왼쪽 정렬 · 공백 채움 폭 20
+    이다(셸 `$((…))` 이 그대로 읽는다). 파일이 없거나 비었으면 0 이다. 메타 파일은 첫
+    append 때 빈 파일로 생기고 첫 비우기 때 값이 적힌다.
+  - reader 는 **논리 오프셋** `next_offset` = `retention_start` + 파일 안 위치를 들고 있다가
+    재개 때 견준다. `next_offset < retention_start` 면 `truncated` 이고
+    `skipped = retention_start - next_offset` 바이트를 잃었다 — 파일 처음부터 읽는다.
+    `next_offset - retention_start` 가 파일 길이보다 크면 누계에 안 잡힌 비우기가 있었다 —
+    잃은 양은 **모른다**, 처음부터 읽는다. 아니면 그 파일 위치부터 읽는다. 마지막 개행까지만
+    소비한다. 어휘는 `events.fetch` 와 같고 저장소는 따로다.
+  - 정확한 수가 필요하면 누계와 로그를 메타 파일의 **공유** 잠금 아래에서 함께 읽는다
+    (Linux: `flock -s "$f.meta" …`). 잠금 없이 읽어도 값이 깨지지는 않는다 — 메타 줄은 늘
+    같은 폭이라 제자리 덮어쓰기가 파일을 줄이지 않는다.
+  - 예 — 셸 reader 한 번의 재개(Linux, `off` 는 직전에 들고 있던 `next_offset`):
+
+    ```sh
+    f="$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log"
+    flock -s "$f.meta" sh -c '
+      base=$(sed -n "s/^retention_start=//p" "$1.meta" 2>/dev/null); base=$((${base:-0}))
+      len=$(stat -c %s "$1" 2>/dev/null || echo 0); off=$2
+      if [ "$off" -lt "$base" ]; then echo "skipped=$((base - off))" >&2; pos=0
+      elif [ $((off - base)) -gt "$len" ]; then echo "skipped=unknown" >&2; pos=0
+      else pos=$((off - base)); fi
+      tail -c +$((pos + 1)) "$1"' _ "$f" "$off"
+    ```
+
+    출력한 바이트 중 마지막 개행까지의 길이를 `base + pos` 에 더한 값이 다음 `next_offset` 이다.
 - **호스트 부팅 시 전량 삭제**: 호스트는 자기 데이터 루트의 주인이 되는 순간 `notify/`
   디렉토리를 **통째로 지운다.** surface_id 는 재시작마다 **1 부터 다시** 발급되므로
   (`IdGenerator::next_surface`) 이전 실행이 남긴 파일과 이번 실행의 파일은 **이름이
@@ -171,7 +205,11 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
   `hitting_the_cap_discards_the_whole_file_not_just_the_excess`(cap 이 전량 폐기인가) ·
   `truncate_reports_how_many_bytes_it_threw_away`(버린 양이 값으로 나오는가) ·
   `truncate_reports_nothing_when_another_writer_already_emptied_it`(안 버렸으면 손실을
-  보고하지 않는가). **`tracing` 출력 자체에는 채널이 없다** — `tasty-utils` 는 구독자를
+  보고하지 않는가). 재개 reader 계약은 같은 `mod tests` 의 참조 reader `resume` 으로 잰다 —
+  `a_resuming_reader_is_told_exactly_how_many_bytes_it_lost`(고유 표식으로 중지/재개 대조) ·
+  `under_concurrent_writers_read_plus_skipped_equals_written`(동시 writer 에서 받은 바이트 +
+  `skipped` = 쓴 바이트, 잠금을 빼면 깨진다) · `retention_start_accumulates_what_every_truncation_threw_away`
+  · `an_unaccounted_truncation_is_reported_as_unknown_loss`. **`tracing` 출력 자체에는 채널이 없다** — `tasty-utils` 는 구독자를
   갖지 않는 leaf crate 라, 그 줄이 실제로 나가는지는 호스트를 띄워 plugin 로그에서
   확인한다(ADR-0344 의 재검토 조건 절).
 - **Claude Code 측(Monitor 가 idle 세션을 깨움 / 채널이 idle 을 못 깨움)**: 상류

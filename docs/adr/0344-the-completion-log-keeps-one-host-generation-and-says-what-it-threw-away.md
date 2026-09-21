@@ -132,6 +132,7 @@ isolation")은 **포트 파일만** 옮기고 청소 대상은 `tasty_home()/not
 - 세대를 정하는 자리(**다른 파일**): `TcpIpcServer::clear_notify_then_publish_port` 와
   `clear_notify_dir` — 청소 대상을 `tasty_home()` 으로 고르는 곳이 여기다. 포트 파일 뿌리와의
   비교는 `TcpIpcServer::notify_dir_to_clear`([ADR-0416](0416-the-boot-cleanup-follows-the-port-file-root.md)).
+- 후속 확장: [ADR-0415](0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md) — 버린 양을 `tracing` 에 더해 옆 메타 파일의 누계 `retention_start` 로도 남긴다(재개 reader 용). 이 ADR 의 세 축은 바꾸지 않는다.
 - 후속 해소: [ADR-0416](0416-the-boot-cleanup-follows-the-port-file-root.md) (Consequences 의 "안 고친 것").
 - 한 줄의 원자성(이 ADR 이 바꾸지 않는 것): [ADR-0330](0330-one-completion-line-is-one-write.md).
 - 같은 데이터 루트의 다른 파일 로그가 쓰는 1 단 rotation:
