@@ -15,12 +15,12 @@ use std::time::Duration;
 use anyhow::Result;
 use tasty_telemetry::ConnectionStats;
 
-use crate::adapters::production::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 use crate::ipc::port_file;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::ipc::server::{IpcCommand, IpcWaker};
 use crate::ipc::stream::{self, StreamAck, StreamFrame, StreamTag};
 use crate::ports::ipc_server::IpcServerPort;
+use tasty_ipc::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 
 /// 한 요청 줄이 읽어 들일 수 있는 최대 바이트.
 ///
@@ -1626,7 +1626,7 @@ mod handshake_tests {
     use std::sync::mpsc;
 
     use super::*;
-    use crate::adapters::production::stream_hub::StreamHub;
+    use tasty_ipc::stream_hub::StreamHub;
 
     fn ctx() -> (StreamContext, mpsc::Receiver<StreamInbound>) {
         let (inbound_tx, inbound_rx) = mpsc::channel();

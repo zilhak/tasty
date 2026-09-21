@@ -503,7 +503,7 @@ fn start_ipc_and_seed(
     app: &mut crate::app::App,
     waker: &crate::adapters::production::headless_waker::HeadlessWaker,
 ) {
-    let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
+    let stream_ctx = tasty_ipc::stream_hub::StreamContext {
         hub: app.stream_hub.clone(),
         inbound_tx: app.stream_inbound_tx.clone(),
         waker: waker.stream_waker(),

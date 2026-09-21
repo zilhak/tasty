@@ -68,7 +68,7 @@ impl MainView {
         &mut self,
         _event_loop: &ActiveEventLoop,
         plugin_manager: Option<&PluginManager>,
-        stream_hub: &crate::adapters::production::stream_hub::StreamHub,
+        stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         // ★ 이 호출이 **`render_if_dirty` 앞**이라는 것이 계약이다 — 위치가 값을 정한다.
         //
@@ -301,7 +301,7 @@ impl MainView {
     fn render_if_dirty(
         &mut self,
         plugin_manager: Option<&PluginManager>,
-        stream_hub: &crate::adapters::production::stream_hub::StreamHub,
+        stream_hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         if !self.base.dirty {
             return;

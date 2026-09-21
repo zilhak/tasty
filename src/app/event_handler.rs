@@ -1621,10 +1621,7 @@ impl App {
     /// `pump_inbound` 가 분류한 stream inbound 를 적용한다(attach/detach 단계 4).
     /// gui 는 engine 이 여럿(활성 main view + parked)이라, 각 요청을 *대상 surface 를
     /// 소유한 engine* 에 라우팅한다. 끊김은 전 engine 해제(멱등).
-    pub(crate) fn apply_stream_outcome(
-        &mut self,
-        outcome: crate::adapters::production::stream_hub::PumpOutcome,
-    ) {
+    pub(crate) fn apply_stream_outcome(&mut self, outcome: tasty_ipc::stream_hub::PumpOutcome) {
         // StreamHub 는 Arc clone(저렴) — 필드 동시 차용 회피용.
         let hub = self.stream_hub.clone();
 
@@ -1682,7 +1679,7 @@ impl App {
     fn apply_attach_requests_batch(
         &mut self,
         requests: impl IntoIterator<Item = (u32, u32)>,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, surface_id) in requests {
             if !self.attach_on_owning_engine(surface_id, client_id, hub) {
@@ -1696,7 +1693,7 @@ impl App {
     fn apply_workspace_attach_requests_batch(
         &mut self,
         requests: impl IntoIterator<Item = (u32, u32)>,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, workspace_id) in requests {
             if !self.attach_workspace_on_owning_engine(workspace_id, client_id, hub) {
@@ -1732,7 +1729,7 @@ impl App {
     fn apply_structural_ops_batch(
         &mut self,
         ops: impl IntoIterator<Item = (u32, u64, crate::ipc::stream::StructuralOp)>,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, op_id, op) in ops {
             self.apply_forwarded_structural_op(client_id, op_id, &op, hub);
@@ -1805,7 +1802,7 @@ impl App {
                 bool,
             ),
         >,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
             requests
@@ -1829,7 +1826,7 @@ impl App {
     fn apply_mesh_full_resend_requests_batch(
         &mut self,
         requests: impl IntoIterator<Item = (u32, u32)>,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, surface_id) in requests {
             let ok = self.apply_mesh_full_resend_on_owning_engine(surface_id, client_id);
@@ -1847,7 +1844,7 @@ impl App {
     fn apply_mesh_input_events_batch(
         &mut self,
         events: impl IntoIterator<Item = (u32, u32, tasty_plugin_protocol::protocol::RawInputWire)>,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, surface_id, input) in events {
             let ok = self.apply_mesh_input_on_owning_engine(surface_id, client_id, input);
@@ -1860,13 +1857,8 @@ impl App {
     /// `apply_stream_outcome` 지원 — `capture_uploads` 배치 적용.
     fn apply_capture_uploads_batch(
         &mut self,
-        uploads: impl IntoIterator<
-            Item = (
-                u32,
-                crate::adapters::production::stream_hub::CaptureUploadMsg,
-            ),
-        >,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        uploads: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::CaptureUploadMsg)>,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, msg) in uploads {
             self.apply_capture_upload_msg(client_id, msg, hub);
@@ -1876,13 +1868,8 @@ impl App {
     /// `apply_stream_outcome` 지원 — `list_dir_requests` 배치 적용.
     fn apply_list_dir_requests_batch(
         &mut self,
-        requests: impl IntoIterator<
-            Item = (
-                u32,
-                crate::adapters::production::stream_hub::ListDirRequestMsg,
-            ),
-        >,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        requests: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::ListDirRequestMsg)>,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, msg) in requests {
             self.apply_list_dir_request_msg(client_id, msg, hub);
@@ -1895,13 +1882,8 @@ impl App {
     /// 워크스페이스를 가진 engine)를 찾아 처리.
     fn apply_git_query_requests_batch(
         &mut self,
-        requests: impl IntoIterator<
-            Item = (
-                u32,
-                crate::adapters::production::stream_hub::GitQueryRequestMsg,
-            ),
-        >,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        requests: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::GitQueryRequestMsg)>,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, msg) in requests {
             self.apply_git_query_request_msg(client_id, msg, hub);
@@ -1913,13 +1895,8 @@ impl App {
     /// mirror client 가 attach 채널로 보낸 원문 조회 요청. holder 를 찾아 처리.
     fn apply_markdown_content_requests_batch(
         &mut self,
-        requests: impl IntoIterator<
-            Item = (
-                u32,
-                crate::adapters::production::stream_hub::MarkdownContentRequestMsg,
-            ),
-        >,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        requests: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::MarkdownContentRequestMsg)>,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, msg) in requests {
             self.apply_markdown_content_request_msg(client_id, msg, hub);
@@ -1929,8 +1906,8 @@ impl App {
     /// `apply_stream_outcome` 지원 — `bulk_events` 배치 적용.
     fn apply_bulk_events_batch(
         &mut self,
-        events: impl IntoIterator<Item = (u32, crate::adapters::production::stream_hub::BulkEvent)>,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        events: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::BulkEvent)>,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         for (client_id, event) in events {
             match hub.bulk_workspace(client_id) {
@@ -1947,7 +1924,7 @@ impl App {
         &mut self,
         surface_id: u32,
         client_id: u32,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) -> bool {
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
@@ -1972,7 +1949,7 @@ impl App {
         &mut self,
         workspace_id: u32,
         client_id: u32,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) -> bool {
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
@@ -2144,7 +2121,7 @@ impl App {
         client_id: u32,
         op_id: u64,
         op: &crate::ipc::stream::StructuralOp,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         let anchor = op.anchor_surface_id();
         let core = &mut self.core;
@@ -2244,10 +2221,10 @@ impl App {
     fn apply_capture_upload_msg(
         &mut self,
         client_id: u32,
-        msg: crate::adapters::production::stream_hub::CaptureUploadMsg,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        msg: tasty_ipc::stream_hub::CaptureUploadMsg,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        use crate::adapters::production::stream_hub::CaptureUploadMsg;
+        use tasty_ipc::stream_hub::CaptureUploadMsg;
         match msg {
             CaptureUploadMsg::CaptureChunk {
                 upload_id,
@@ -2319,10 +2296,10 @@ impl App {
     fn apply_list_dir_request_msg(
         &mut self,
         client_id: u32,
-        msg: crate::adapters::production::stream_hub::ListDirRequestMsg,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        msg: tasty_ipc::stream_hub::ListDirRequestMsg,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        use crate::adapters::production::stream_hub::ListDirRequestMsg;
+        use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut()
@@ -2367,10 +2344,10 @@ impl App {
     fn apply_markdown_content_request_msg(
         &mut self,
         client_id: u32,
-        msg: crate::adapters::production::stream_hub::MarkdownContentRequestMsg,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        msg: tasty_ipc::stream_hub::MarkdownContentRequestMsg,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        use crate::adapters::production::stream_hub::MarkdownContentRequestMsg;
+        use tasty_ipc::stream_hub::MarkdownContentRequestMsg;
         let MarkdownContentRequestMsg::MarkdownContentRequest {
             request_id,
             surface_id,
@@ -2419,10 +2396,10 @@ impl App {
     fn apply_git_query_request_msg(
         &mut self,
         client_id: u32,
-        msg: crate::adapters::production::stream_hub::GitQueryRequestMsg,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        msg: tasty_ipc::stream_hub::GitQueryRequestMsg,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        use crate::adapters::production::stream_hub::GitQueryRequestMsg;
+        use tasty_ipc::stream_hub::GitQueryRequestMsg;
         let GitQueryRequestMsg::GitQueryRequest {
             request_id,
             surface_id,
@@ -2489,11 +2466,11 @@ impl App {
     fn apply_bulk_event(
         &mut self,
         client_id: u32,
-        event: crate::adapters::production::stream_hub::BulkEvent,
+        event: tasty_ipc::stream_hub::BulkEvent,
         bulk_ws: u32,
-        hub: &crate::adapters::production::stream_hub::StreamHub,
+        hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        use crate::adapters::production::stream_hub::BulkEvent;
+        use tasty_ipc::stream_hub::BulkEvent;
         match event {
             BulkEvent::Begin {
                 transfer_id,
@@ -2622,7 +2599,7 @@ fn log_bulk_chunk_result(found: Option<bool>, client_id: u32, transfer_id: u64, 
 /// `apply_bulk_event` 의 `Commit` 처리 — 소유 engine 을 못 찾았을 때 `BulkResult`
 /// 실패 회신을 client 에 push(best-effort).
 fn send_bulk_commit_failure(
-    hub: &crate::adapters::production::stream_hub::StreamHub,
+    hub: &tasty_ipc::stream_hub::StreamHub,
     client_id: u32,
     transfer_id: u64,
 ) {
@@ -2640,7 +2617,7 @@ fn send_bulk_commit_failure(
 }
 
 fn reply_structural_result(
-    hub: &crate::adapters::production::stream_hub::StreamHub,
+    hub: &tasty_ipc::stream_hub::StreamHub,
     client_id: u32,
     op_id: u64,
     ok: bool,
@@ -2656,7 +2633,7 @@ fn reply_structural_result(
 
 /// `StructuralDelta`(역반영) 프레임을 client 에 push(best-effort).
 fn push_structural_delta(
-    hub: &crate::adapters::production::stream_hub::StreamHub,
+    hub: &tasty_ipc::stream_hub::StreamHub,
     client_id: u32,
     delta: &crate::ipc::stream::StreamControl,
 ) {
@@ -2671,7 +2648,7 @@ fn push_structural_delta(
 /// `docs/dev-guide/attach-behavior.md` / `docs/dev-guide/egui-mesh-channel.md`)
 /// 회신 프레임을 client 에 push(best-effort).
 fn reply_mesh_error(
-    hub: &crate::adapters::production::stream_hub::StreamHub,
+    hub: &tasty_ipc::stream_hub::StreamHub,
     client_id: u32,
     surface_id: u32,
     reason: &str,

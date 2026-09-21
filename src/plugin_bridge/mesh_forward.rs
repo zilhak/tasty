@@ -20,11 +20,11 @@
 //!   pending_full 메커니즘에 위임)만 하고, 이미 만들어진 frame 을 client 로 흘리는
 //!   꼬리 로직만 [`relay_mesh_frame_if_new`]로 공유한다.
 
-use crate::adapters::production::stream_hub::{PushResult, StreamHub};
 use crate::core::CoreState;
 use crate::core::attach::AttachClientId;
 use crate::ipc::stream::{StreamFrame, StreamTag};
 use crate::plugin::PluginManager;
+use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
 /// `CoreState::mesh_mirror`(구독 상태)를 읽어 plugin 을 구동하고, 새 frame 을 attach
 /// client 에 chunk forward 한다(`docs/dev-guide/attach-behavior.md` "frame 소비·forward

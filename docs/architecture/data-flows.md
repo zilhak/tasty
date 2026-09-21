@@ -56,7 +56,7 @@ tasty-cli (또는 외부 프로그램)
   → tasty-cli 결과 포맷 출력
 ```
 
-플러그인 namespace 메서드(`claude.*` 등)는 `plugin_bridge/` 를 거쳐 plugin 프로세스로 위임된다. attach 스트리밍은 별도 `StreamReady` 경로(stream_hub).
+플러그인 namespace 메서드(`claude.*` 등)는 `plugin_bridge/` 를 거쳐 plugin 프로세스로 위임된다. attach 스트리밍은 별도 `StreamReady` 경로(`tasty_ipc::stream_hub::StreamHub`).
 
 **한 회차가 집어 드는 명령 수에는 상한이 있다.** gui 의 `process_ipc` 와 headless 의
 `pump_ipc` 가 같은 값(`DRAIN_BUDGET_PER_ROUND`)까지만 큐에서 꺼내고, 남은 것은 다음 회차가

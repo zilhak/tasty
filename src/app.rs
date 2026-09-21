@@ -113,14 +113,12 @@ pub(crate) struct App {
     pub(crate) hub: Hub,
     /// Streaming-channel push registry (attach/detach step 1). The IPC accept
     /// threads register/unregister client sinks; the main loop pushes via this.
-    pub(crate) stream_hub: crate::adapters::production::stream_hub::StreamHub,
+    pub(crate) stream_hub: tasty_ipc::stream_hub::StreamHub,
     /// Sender cloned into each stream connection so its read thread can route
     /// inbound frames to the main loop.
-    pub(crate) stream_inbound_tx:
-        std::sync::mpsc::Sender<crate::adapters::production::stream_hub::StreamInbound>,
+    pub(crate) stream_inbound_tx: std::sync::mpsc::Sender<tasty_ipc::stream_hub::StreamInbound>,
     /// Receiver drained by the main loop on `AppEvent::StreamReady`.
-    pub(crate) stream_inbound_rx:
-        std::sync::mpsc::Receiver<crate::adapters::production::stream_hub::StreamInbound>,
+    pub(crate) stream_inbound_rx: std::sync::mpsc::Receiver<tasty_ipc::stream_hub::StreamInbound>,
     /// GUI 어댑터. proxy, modal/focus 식별자, views HashMap 보유.
     #[cfg(feature = "gui")]
     pub(crate) view: ViewRegistry,
@@ -347,7 +345,7 @@ impl App {
         Ok(Self {
             core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
-            stream_hub: crate::adapters::production::stream_hub::StreamHub::new(),
+            stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
             stream_inbound_rx,
             view: ViewRegistry::new(proxy.clone()),
@@ -419,7 +417,7 @@ impl App {
         Ok(Self {
             core: crate::boot::wiring::build_production_core_headless(memory)?,
             hub: Hub::new(port_file),
-            stream_hub: crate::adapters::production::stream_hub::StreamHub::new(),
+            stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
             stream_inbound_rx,
             #[cfg(debug_assertions)]

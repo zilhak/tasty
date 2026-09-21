@@ -265,7 +265,7 @@ mod tests {
     /// 신호는 그 surface 에 대해 한 번만 가고, set_url 이 실패한 surface 에는 가지 않는다.
     #[test]
     fn set_url_on_markdown_surface_signals_attached_clients() {
-        use crate::adapters::production::stream_hub::StreamHub;
+        use tasty_ipc::stream_hub::StreamHub;
 
         let (state, mut engine) = crate::state::tests::test_state();
         let terminal_sid = focused_surface_id(&state, &engine);

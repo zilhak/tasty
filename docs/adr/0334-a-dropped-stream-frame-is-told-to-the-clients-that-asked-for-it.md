@@ -147,4 +147,4 @@
   `STREAM_PROTO` (`crates/tasty-ipc/src/stream.rs`), `capability::CAPABILITIES`
   (`crates/tasty-ipc/src/capability.rs`), `StreamHub::enable_loss_notify`·
   `StreamHub::repay_pending_loss`·`StreamSink::pending_loss`
-  (`src/adapters/production/stream_hub.rs`).
+  (`crates/tasty-ipc/src/stream_hub.rs`).

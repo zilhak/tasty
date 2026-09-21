@@ -1281,7 +1281,7 @@ impl App {
     fn fail_pending_git_query(
         &mut self,
         request_id: u64,
-        kind: crate::adapters::production::stream_hub::GitQueryKind,
+        kind: tasty_ipc::stream_hub::GitQueryKind,
         reason: &str,
     ) {
         self.broadcast_git_query_reply(serde_json::json!({
@@ -3739,7 +3739,7 @@ impl App {
         &mut self,
         local_surface_id: u32,
         request_id: u64,
-        kind: crate::adapters::production::stream_hub::GitQueryKind,
+        kind: tasty_ipc::stream_hub::GitQueryKind,
         worktree_path: Option<&str>,
         diff_path: Option<&str>,
     ) -> anyhow::Result<()> {

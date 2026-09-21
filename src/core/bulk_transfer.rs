@@ -8,7 +8,7 @@
 //! - 대용량이라 disconnect 시 남은 partial 을 [`clear_client`](BulkTransferRegistry::clear_client)
 //!   로 일괄 청소한다(캡처 레지스트리의 알려진 partial 잔존 결함을 여기선 회피).
 //!
-//! 파싱/분류는 `stream_hub.rs`(`BulkEvent`/`decode_bulk_chunk`), 인가·저장·경로
+//! 파싱/분류는 `tasty_ipc::stream_hub`(`BulkEvent`)·`tasty_ipc::stream`(`decode_bulk_chunk`), 인가·저장·경로
 //! 회신은 `attach_runtime.rs`(`finalize_bulk_transfer`) 담당 — 이 파일은 그 사이의
 //! 상태만 보관한다.
 
@@ -152,5 +152,78 @@ mod tests {
         reg.begin(1, 1, "new".to_string(), 0);
         reg.append(1, 1, 0, b"fresh");
         assert_eq!(reg.take(1, 1), Some(("new".to_string(), b"fresh".to_vec())));
+    }
+
+    #[test]
+    fn ordered_batch_routes_to_intact_bytes() {
+        // 회귀(Gate4) end-to-end: begin+chunk0+chunk1+commit 이 **한 pump 배치**에
+        // 함께 도착 → 라우팅이 bulk_events 를 순서대로 레지스트리에 반영하면 최종
+        // take 된 bytes 가 전량 온전해야 한다. (분리 벡터 시절엔 chunk pass 가 begin
+        // pass 보다 먼저 돌아 청크가 미등록 transfer 로 폐기 → 빈 파일이 저장됐다.)
+        //
+        // 허브(`tasty_ipc::stream_hub`)와 이 레지스트리를 **함께** 재는 시험이라 두 계층 중
+        // 위쪽인 여기에 둔다 — 허브 크레이트가 본체 core 를 역참조할 수는 없다
+        // (docs/adr/0350-the-stream-hub-lives-in-the-ipc-crate.md).
+        use std::sync::mpsc;
+
+        use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, encode_bulk_chunk};
+        use tasty_ipc::stream_hub::{BulkEvent, StreamHub, StreamInbound};
+
+        let frame = |tag: StreamTag, p: &[u8]| StreamFrame::new(tag, p.to_vec());
+
+        let hub = StreamHub::new();
+        hub.register_bulk(5, 2);
+        let (tx, inbound_rx) = mpsc::channel();
+        let begin = serde_json::to_vec(&StreamControl::BulkBegin {
+            transfer_id: 7,
+            filename: "f.bin".to_string(),
+            total_size: 6,
+        })
+        .unwrap();
+        let commit = serde_json::to_vec(&StreamControl::BulkCommit { transfer_id: 7 }).unwrap();
+        for f in [
+            frame(StreamTag::Control, &begin),
+            frame(StreamTag::Data, &encode_bulk_chunk(7, 0, b"abc")),
+            frame(StreamTag::Data, &encode_bulk_chunk(7, 1, b"def")),
+            frame(StreamTag::Control, &commit),
+        ] {
+            tx.send(StreamInbound::Frame {
+                client_id: 5,
+                frame: f,
+            })
+            .unwrap();
+        }
+        let out = hub.pump_inbound(&inbound_rx);
+
+        // 라우팅(boot.rs/event_handler.rs)이 하는 것과 동형: 단일 벡터를 순서대로 처리.
+        let mut reg = BulkTransferRegistry::new();
+        let mut committed: Option<(String, Vec<u8>)> = None;
+        for (client_id, event) in out.bulk_events {
+            match event {
+                BulkEvent::Begin {
+                    transfer_id,
+                    filename,
+                    total_size,
+                } => reg.begin(client_id, transfer_id, filename, total_size),
+                BulkEvent::Chunk {
+                    transfer_id,
+                    seq,
+                    bytes,
+                } => {
+                    assert!(
+                        reg.append(client_id, transfer_id, seq, &bytes),
+                        "chunk must land on a registered transfer (begin already processed)"
+                    );
+                }
+                BulkEvent::Commit { transfer_id } => {
+                    committed = reg.take(client_id, transfer_id);
+                }
+            }
+        }
+        assert_eq!(
+            committed,
+            Some(("f.bin".to_string(), b"abcdef".to_vec())),
+            "commit 시 누적 bytes 가 전량 온전해야 한다"
+        );
     }
 }

@@ -9,14 +9,19 @@
 //! — trust is delegated to SSH + 127.0.0.1 loopback. No auth layer here.
 //!
 //! See `docs/dev-guide/attach-behavior.md` ("SSH 터널", "IPC 표면").
+//!
+//! 이 모듈은 전송 수단(TCP)을 모른다 — sink 는 `std::sync::mpsc` 채널이고, 소켓에
+//! 쓰고 읽는 쪽(accept 스레드)은 본체 adapter(`src/adapters/production/tcp_ipc_server.rs`)
+//! 에 있다. 그래서 본체 core 가 adapter 를 거치지 않고 이 허브를 쓸 수 있다
+//! (docs/adr/0350-the-stream-hub-lives-in-the-ipc-crate.md).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
-use crate::ipc::server::IpcWaker;
-use crate::ipc::stream::StreamFrame;
+use crate::server::IpcWaker;
+use crate::stream::StreamFrame;
 
 /// Bounded capacity of each per-client push sink. A client whose sink fills up
 /// has frames dropped — the main loop never blocks on a slow consumer.
@@ -74,16 +79,16 @@ pub struct PumpOutcome {
     /// clients (a mirror workspace's split/new-tab/close/move, forwarded to run
     /// on this authoritative instance). The main loop verifies the client is the
     /// workspace holder, executes via the existing IPC handlers, and replies with
-    /// a [`StreamControl::StructuralResult`](crate::ipc::stream::StreamControl).
-    pub structural_ops: Vec<(StreamClientId, u64, crate::ipc::stream::StructuralOp)>,
+    /// a [`StreamControl::StructuralResult`](crate::stream::StreamControl).
+    pub structural_ops: Vec<(StreamClientId, u64, crate::stream::StructuralOp)>,
     /// `(client_id, remote surface_id, cols, rows)` client-driven resize requests
-    /// from mirror clients ([`StreamControl::ClientResize`](crate::ipc::stream::StreamControl)).
+    /// from mirror clients ([`StreamControl::ClientResize`](crate::stream::StreamControl)).
     /// The main loop verifies the client is the anchor surface's workspace holder,
     /// then resizes the real remote PTY (`Terminal::resize`) — the existing resize
     /// tap echoes the settled grid back as a `Resize` (no extra push here).
     pub resize_requests: Vec<(StreamClientId, u32, usize, usize)>,
     /// `(client_id, remote surface_id)` attention 해제 edge 요청
-    /// ([`StreamControl::ClientAttentionClear`](crate::ipc::stream::StreamControl)).
+    /// ([`StreamControl::ClientAttentionClear`](crate::stream::StreamControl)).
     /// 미러 사용자가 그 surface 를 확인(실-포커스 / 알림 읽음)했다는 판정을 소유
     /// 인스턴스로 옮긴 것이다. 메인 루프가 anchor surface 워크스페이스의 holder 임을
     /// 검증한 뒤 서버 레코드를 지운다 — 결과는 기존 attention diff push 가
@@ -91,7 +96,7 @@ pub struct PumpOutcome {
     pub attention_clear_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused)`
     /// mesh-mirror subscribe/geometry-update requests from an attach client
-    /// ([`StreamControl::MeshContext`](crate::ipc::stream::StreamControl)). The
+    /// ([`StreamControl::MeshContext`](crate::stream::StreamControl)). The
     /// subscribe request itself doubles as capability negotiation — no
     /// separate handshake. The main loop validates holder authority +
     /// mesh whitelist membership before applying to `CoreState::mesh_mirror`.
@@ -106,12 +111,12 @@ pub struct PumpOutcome {
         bool,
     )>,
     /// `(client_id, surface_id)` explicit full-texture-resend requests
-    /// ([`StreamControl::MeshFullResendRequest`](crate::ipc::stream::StreamControl)),
+    /// ([`StreamControl::MeshFullResendRequest`](crate::stream::StreamControl)),
     /// e.g. after a client-side decode error or reconnect.
     pub mesh_full_resend_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, surface_id, input)` — local input captured over an attach
     /// client's mesh mirror pane, forwarded verbatim
-    /// ([`StreamControl::MeshInput`](crate::ipc::stream::StreamControl)).
+    /// ([`StreamControl::MeshInput`](crate::stream::StreamControl)).
     /// The main loop validates holder authority before appending to
     /// `CoreState::mesh_mirror`'s pending-input queue.
     pub mesh_input_events: Vec<(
@@ -120,7 +125,7 @@ pub struct PumpOutcome {
         tasty_plugin_protocol::protocol::RawInputWire,
     )>,
     /// `(client_id, msg)` — screenshot→remote-clipboard upload chunks/commit
-    /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::ipc::stream::StreamControl)
+    /// from a mirror client. Deliberately **not** a [`StreamControl`](crate::stream::StreamControl)
     /// variant (that enum is a concurrent workstream's file) — it rides the same
     /// `StreamTag::Control` channel as a raw JSON payload with an "event" tag value
     /// `StreamControl`'s tagged parse doesn't recognize, so it falls through to the
@@ -153,9 +158,9 @@ pub struct PumpOutcome {
 }
 
 /// native bulk 파일 전송의 client→server 이벤트를 **도착 순서 그대로** 담기 위한
-/// 통합 enum. begin/commit 은 wire 상 [`StreamControl::BulkBegin`](crate::ipc::stream::StreamControl)
-/// / [`StreamControl::BulkCommit`](crate::ipc::stream::StreamControl) (Control 프레임),
-/// chunk 는 [`decode_bulk_chunk`](crate::ipc::stream::decode_bulk_chunk)로 뜯은 Data
+/// 통합 enum. begin/commit 은 wire 상 [`StreamControl::BulkBegin`](crate::stream::StreamControl)
+/// / [`StreamControl::BulkCommit`](crate::stream::StreamControl) (Control 프레임),
+/// chunk 는 [`decode_bulk_chunk`](crate::stream::decode_bulk_chunk)로 뜯은 Data
 /// 프레임이지만, `PumpOutcome` 는 이 셋을 한 벡터에 순서보존해 라우팅이 begin→chunk→
 /// commit 을 올바른 순서로 처리하게 한다(capture 의 `CaptureUploadMsg` 와 동형).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,7 +267,7 @@ pub enum GitQueryKind {
 impl GitQueryKind {
     /// wire `kind` 필드 문자열. 서버 회신 조립(`attach_runtime`)과 클라이언트
     /// 요청 조립(`attach_client`) 양쪽이 공유해 두 곳의 문자열이 drift 하지 않게 한다.
-    pub(crate) fn as_wire_str(self) -> &'static str {
+    pub fn as_wire_str(self) -> &'static str {
         match self {
             GitQueryKind::Snapshot => "snapshot",
             GitQueryKind::Diff => "diff",
@@ -275,9 +280,9 @@ struct StreamSink {
     tx: SyncSender<StreamFrame>,
     /// Consecutive dropped-frame count (reset on a successful send).
     lag: u32,
-    /// 이 연결이 [`StreamControl::Loss`](crate::ipc::stream::StreamControl) 를 받겠다고
+    /// 이 연결이 [`StreamControl::Loss`](crate::stream::StreamControl) 를 받겠다고
     /// 선언했는가. 선언은 client 가 보내는
-    /// [`ClientLossNotify`](crate::ipc::stream::StreamControl::ClientLossNotify) 프레임
+    /// [`ClientLossNotify`](crate::stream::StreamControl::ClientLossNotify) 프레임
     /// 하나뿐이고, 선언하지 않은 연결은 종전과 **완전히 같게** 동작한다(조용한 drop).
     loss_notify: bool,
     /// 이 연결에 대해 **마지막 통지 이후** 버린 프레임 수. 통지를 실제로 태운 순간에만
@@ -386,7 +391,7 @@ impl StreamHub {
     /// write thread drains to the socket.
     pub fn register(&self, id: StreamClientId) -> Receiver<StreamFrame> {
         let (tx, rx) = mpsc::sync_channel(SINK_CAP);
-        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
             id,
             StreamSink {
                 tx,
@@ -399,7 +404,7 @@ impl StreamHub {
     }
 
     /// 이 연결이 손실 통지를 받겠다고 선언했음을 기록한다
-    /// ([`StreamControl::ClientLossNotify`](crate::ipc::stream::StreamControl::ClientLossNotify)).
+    /// ([`StreamControl::ClientLossNotify`](crate::stream::StreamControl::ClientLossNotify)).
     ///
     /// 선언을 handshake 가 아니라 프레임으로 받는 이유는 판을 게이트로 쓸 수 없기
     /// 때문이다 — 서버는 `StreamOpenParams::proto` 를 **동등 비교**하므로 판을 올리면
@@ -409,7 +414,7 @@ impl StreamHub {
     /// 멱등. 이미 끊긴 연결에 대해서는 아무것도 하지 않는다.
     pub fn enable_loss_notify(&self, id: StreamClientId) {
         if let Some(sink) =
-            crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
                 .get_mut(&id)
         {
             sink.loss_notify = true;
@@ -419,8 +424,9 @@ impl StreamHub {
     /// Drop a client's sink (its write thread then exits when the sender drops).
     /// Idempotent. bulk 결속(있으면)도 함께 청소한다.
     pub fn unregister(&self, id: StreamClientId) {
-        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).remove(&id);
-        crate::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .remove(&id);
+        tasty_utils::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
             .remove(&id);
     }
 
@@ -429,14 +435,14 @@ impl StreamHub {
     /// 시작 사이(같은 accept 스레드)에서 이뤄지므로 이후 pump 되는 모든 프레임에서
     /// [`bulk_workspace`](Self::bulk_workspace)로 조회된다.
     pub fn register_bulk(&self, id: StreamClientId, workspace_id: u32) {
-        crate::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+        tasty_utils::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
             .insert(id, workspace_id);
     }
 
     /// 이 연결이 bulk 전용이면 결속 workspace_id, 아니면 `None`. pump_inbound 의
     /// Data 분류(파일 청크 vs PTY 입력)와 begin/commit 인가에서 참조한다.
     pub fn bulk_workspace(&self, id: StreamClientId) -> Option<u32> {
-        crate::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+        tasty_utils::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
             .get(&id)
             .copied()
     }
@@ -445,7 +451,7 @@ impl StreamHub {
     /// past [`LAG_LIMIT`] consecutive drops, disconnects the client.
     pub fn push(&self, id: StreamClientId, frame: StreamFrame) -> PushResult {
         let mut sinks =
-            crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
         let Some(sink) = sinks.get_mut(&id) else {
             return PushResult::Unknown;
         };
@@ -497,7 +503,7 @@ impl StreamHub {
         if !sink.loss_notify || sink.pending_loss == 0 {
             return;
         }
-        let notice = crate::ipc::stream::StreamControl::Loss {
+        let notice = crate::stream::StreamControl::Loss {
             frames: sink.pending_loss,
         };
         let Ok(payload) = serde_json::to_vec(&notice) else {
@@ -505,10 +511,7 @@ impl StreamHub {
         };
         if sink
             .tx
-            .try_send(StreamFrame::new(
-                crate::ipc::stream::StreamTag::Control,
-                payload,
-            ))
+            .try_send(StreamFrame::new(crate::stream::StreamTag::Control, payload))
             .is_ok()
         {
             sink.pending_loss = 0;
@@ -534,7 +537,7 @@ impl StreamHub {
     // crate 전역 reachability 가 좁아지며 드러남.
     #[allow(dead_code)]
     pub fn client_count(&self) -> usize {
-        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
+        tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
     }
 
     /// Drain inbound messages routed from stream clients (called by the main loop
@@ -567,8 +570,8 @@ impl StreamHub {
                     // 연결 단위로 구분해야 한다 — ADR-0054, 전용 연결이 필수인 이유).
                     let bulk_ws = self.bulk_workspace(client_id);
                     match frame.tag {
-                        crate::ipc::stream::StreamTag::Data if bulk_ws.is_some() => {
-                            match crate::ipc::stream::decode_bulk_chunk(&frame.payload) {
+                        crate::stream::StreamTag::Data if bulk_ws.is_some() => {
+                            match crate::stream::decode_bulk_chunk(&frame.payload) {
                                 Some((transfer_id, seq, data)) => {
                                     out.bulk_events.push((
                                         client_id,
@@ -584,10 +587,10 @@ impl StreamHub {
                                 ),
                             }
                         }
-                        crate::ipc::stream::StreamTag::Data => {
+                        crate::stream::StreamTag::Data => {
                             out.input_frames.push((client_id, frame.payload));
                         }
-                        crate::ipc::stream::StreamTag::Control => {
+                        crate::stream::StreamTag::Control => {
                             // Client→server Control messages: `StructuralOp`
                             // (split/new-tab/close/move forward), `ClientResize`
                             // (client-driven mirror geometry), and the native
@@ -597,11 +600,10 @@ impl StreamHub {
                             // all falls to `Err` and is tried against the screenshot
                             // capture-upload mini-protocol before being dropped.
                             match serde_json::from_slice(&frame.payload) {
-                                Ok(crate::ipc::stream::StreamControl::StructuralOp {
-                                    op_id,
-                                    op,
-                                }) => out.structural_ops.push((client_id, op_id, op)),
-                                Ok(crate::ipc::stream::StreamControl::ClientResize {
+                                Ok(crate::stream::StreamControl::StructuralOp { op_id, op }) => {
+                                    out.structural_ops.push((client_id, op_id, op))
+                                }
+                                Ok(crate::stream::StreamControl::ClientResize {
                                     surface_id,
                                     cols,
                                     rows,
@@ -609,12 +611,12 @@ impl StreamHub {
                                     out.resize_requests
                                         .push((client_id, surface_id, cols, rows));
                                 }
-                                Ok(crate::ipc::stream::StreamControl::ClientAttentionClear {
+                                Ok(crate::stream::StreamControl::ClientAttentionClear {
                                     surface_id,
                                 }) => {
                                     out.attention_clear_requests.push((client_id, surface_id));
                                 }
-                                Ok(crate::ipc::stream::StreamControl::BulkBegin {
+                                Ok(crate::stream::StreamControl::BulkBegin {
                                     transfer_id,
                                     filename,
                                     total_size,
@@ -626,12 +628,10 @@ impl StreamHub {
                                         total_size,
                                     },
                                 )),
-                                Ok(crate::ipc::stream::StreamControl::BulkCommit {
-                                    transfer_id,
-                                }) => out
+                                Ok(crate::stream::StreamControl::BulkCommit { transfer_id }) => out
                                     .bulk_events
                                     .push((client_id, BulkEvent::Commit { transfer_id })),
-                                Ok(crate::ipc::stream::StreamControl::MeshContext {
+                                Ok(crate::stream::StreamControl::MeshContext {
                                     surface_id,
                                     width_px,
                                     height_px,
@@ -649,12 +649,12 @@ impl StreamHub {
                                         focused,
                                     ));
                                 }
-                                Ok(crate::ipc::stream::StreamControl::MeshFullResendRequest {
+                                Ok(crate::stream::StreamControl::MeshFullResendRequest {
                                     surface_id,
                                 }) => {
                                     out.mesh_full_resend_requests.push((client_id, surface_id));
                                 }
-                                Ok(crate::ipc::stream::StreamControl::MeshInput {
+                                Ok(crate::stream::StreamControl::MeshInput {
                                     surface_id,
                                     input,
                                 }) => {
@@ -664,7 +664,7 @@ impl StreamHub {
                                 // 허브 상태에 적는다 — 엔진을 한 줄도 안 보는 연결 단위
                                 // 사실이고, 선언과 그 다음 `push` 사이에 메인 루프 tick 을
                                 // 끼우면 그 사이의 공백을 놓친다.
-                                Ok(crate::ipc::stream::StreamControl::ClientLossNotify {}) => {
+                                Ok(crate::stream::StreamControl::ClientLossNotify {}) => {
                                     self.enable_loss_notify(client_id);
                                 }
                                 Ok(_) => {}
@@ -707,7 +707,7 @@ impl StreamHub {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ipc::stream::StreamTag;
+    use crate::stream::StreamTag;
 
     fn frame(tag: StreamTag, p: &[u8]) -> StreamFrame {
         StreamFrame::new(tag, p.to_vec())
@@ -918,11 +918,11 @@ mod tests {
             drained[..notice_at].iter().all(|f| f.payload == b"pre"),
             "통지 앞에 공백 뒤 프레임이 섞였다"
         );
-        let parsed: crate::ipc::stream::StreamControl =
+        let parsed: crate::stream::StreamControl =
             serde_json::from_slice(&drained[notice_at].payload).expect("통지 파싱");
         assert_eq!(
             parsed,
-            crate::ipc::stream::StreamControl::Loss { frames: 3 },
+            crate::stream::StreamControl::Loss { frames: 3 },
             "잃은 수가 안 맞는다"
         );
     }
@@ -963,11 +963,11 @@ mod tests {
             .iter()
             .find(|f| f.tag == StreamTag::Control)
             .expect("통지가 결국에도 안 왔다");
-        let parsed: crate::ipc::stream::StreamControl =
+        let parsed: crate::stream::StreamControl =
             serde_json::from_slice(&notice.payload).expect("통지 파싱");
         assert_eq!(
             parsed,
-            crate::ipc::stream::StreamControl::Loss { frames: 2 },
+            crate::stream::StreamControl::Loss { frames: 2 },
             "통지가 태워지기 전에 빚이 지워졌다"
         );
     }
@@ -1007,7 +1007,7 @@ mod tests {
         let rx = hub.register(id);
         let (tx, inbound_rx) = mpsc::channel();
         let payload =
-            serde_json::to_vec(&crate::ipc::stream::StreamControl::ClientLossNotify {}).unwrap();
+            serde_json::to_vec(&crate::stream::StreamControl::ClientLossNotify {}).unwrap();
         tx.send(StreamInbound::Frame {
             client_id: id,
             frame: frame(StreamTag::Control, &payload),
@@ -1104,7 +1104,7 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_structural_op() {
-        use crate::ipc::stream::{SplitAxis, StreamControl, StructuralOp};
+        use crate::stream::{SplitAxis, StreamControl, StructuralOp};
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
         let op = StructuralOp::SplitSurface {
@@ -1136,7 +1136,7 @@ mod tests {
         // or a resize request.
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
-        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::Resize {
+        let payload = serde_json::to_vec(&crate::stream::StreamControl::Resize {
             surface_id: 1,
             cols: 80,
             rows: 24,
@@ -1156,7 +1156,7 @@ mod tests {
     fn pump_inbound_classifies_client_resize() {
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
-        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::ClientResize {
+        let payload = serde_json::to_vec(&crate::stream::StreamControl::ClientResize {
             surface_id: 12,
             cols: 203,
             rows: 57,
@@ -1178,7 +1178,7 @@ mod tests {
     fn pump_inbound_classifies_mesh_context() {
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
-        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::MeshContext {
+        let payload = serde_json::to_vec(&crate::stream::StreamControl::MeshContext {
             surface_id: 7,
             width_px: 800,
             height_px: 600,
@@ -1205,11 +1205,10 @@ mod tests {
     fn pump_inbound_classifies_mesh_full_resend_request() {
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
-        let payload =
-            serde_json::to_vec(&crate::ipc::stream::StreamControl::MeshFullResendRequest {
-                surface_id: 7,
-            })
-            .unwrap();
+        let payload = serde_json::to_vec(&crate::stream::StreamControl::MeshFullResendRequest {
+            surface_id: 7,
+        })
+        .unwrap();
         tx.send(StreamInbound::Frame {
             client_id: 9,
             frame: frame(StreamTag::Control, &payload),
@@ -1234,7 +1233,7 @@ mod tests {
             },
             events: vec![RawInputEventWire::PointerMoved { x: 3.0, y: 4.0 }],
         };
-        let payload = serde_json::to_vec(&crate::ipc::stream::StreamControl::MeshInput {
+        let payload = serde_json::to_vec(&crate::stream::StreamControl::MeshInput {
             surface_id: 7,
             input: input.clone(),
         })
@@ -1395,7 +1394,7 @@ mod tests {
         let hub = StreamHub::new();
         hub.register_bulk(7, 3); // client 7 = bulk 연결(ws 3 결속)
         let (tx, inbound_rx) = mpsc::channel();
-        let payload = crate::ipc::stream::encode_bulk_chunk(99, 2, b"filebytes");
+        let payload = crate::stream::encode_bulk_chunk(99, 2, b"filebytes");
         tx.send(StreamInbound::Frame {
             client_id: 7,
             frame: frame(StreamTag::Data, &payload),
@@ -1433,7 +1432,7 @@ mod tests {
 
     #[test]
     fn pump_inbound_classifies_bulk_begin_and_commit() {
-        use crate::ipc::stream::StreamControl;
+        use crate::stream::StreamControl;
         let hub = StreamHub::new();
         hub.register_bulk(9, 1);
         let (tx, inbound_rx) = mpsc::channel();
@@ -1482,7 +1481,7 @@ mod tests {
         // bulk_events 가 도착 순서를 그대로 보존해야 한다(분리 벡터였을 때의
         // chunk-before-begin data-loss 결함 재발 방지). 라우팅이 이 순서대로 처리하면
         // begin→append→append→finalize 로 전량 저장된다.
-        use crate::ipc::stream::{StreamControl, encode_bulk_chunk};
+        use crate::stream::{StreamControl, encode_bulk_chunk};
         let hub = StreamHub::new();
         hub.register_bulk(5, 2);
         let (tx, inbound_rx) = mpsc::channel();
@@ -1527,70 +1526,9 @@ mod tests {
         assert!(matches!(events[3], BulkEvent::Commit { transfer_id: 7 }));
     }
 
-    #[test]
-    fn ordered_batch_routes_to_intact_bytes() {
-        // 회귀(Gate4) end-to-end: begin+chunk0+chunk1+commit 이 **한 pump 배치**에
-        // 함께 도착 → 라우팅이 bulk_events 를 순서대로 레지스트리에 반영하면 최종
-        // take 된 bytes 가 전량 온전해야 한다. (분리 벡터 시절엔 chunk pass 가 begin
-        // pass 보다 먼저 돌아 청크가 미등록 transfer 로 폐기 → 빈 파일이 저장됐다.)
-        use crate::core::bulk_transfer::BulkTransferRegistry;
-        use crate::ipc::stream::{StreamControl, encode_bulk_chunk};
-
-        let hub = StreamHub::new();
-        hub.register_bulk(5, 2);
-        let (tx, inbound_rx) = mpsc::channel();
-        let begin = serde_json::to_vec(&StreamControl::BulkBegin {
-            transfer_id: 7,
-            filename: "f.bin".to_string(),
-            total_size: 6,
-        })
-        .unwrap();
-        let commit = serde_json::to_vec(&StreamControl::BulkCommit { transfer_id: 7 }).unwrap();
-        for f in [
-            frame(StreamTag::Control, &begin),
-            frame(StreamTag::Data, &encode_bulk_chunk(7, 0, b"abc")),
-            frame(StreamTag::Data, &encode_bulk_chunk(7, 1, b"def")),
-            frame(StreamTag::Control, &commit),
-        ] {
-            tx.send(StreamInbound::Frame {
-                client_id: 5,
-                frame: f,
-            })
-            .unwrap();
-        }
-        let out = hub.pump_inbound(&inbound_rx);
-
-        // 라우팅(boot.rs/event_handler.rs)이 하는 것과 동형: 단일 벡터를 순서대로 처리.
-        let mut reg = BulkTransferRegistry::new();
-        let mut committed: Option<(String, Vec<u8>)> = None;
-        for (client_id, event) in out.bulk_events {
-            match event {
-                BulkEvent::Begin {
-                    transfer_id,
-                    filename,
-                    total_size,
-                } => reg.begin(client_id, transfer_id, filename, total_size),
-                BulkEvent::Chunk {
-                    transfer_id,
-                    seq,
-                    bytes,
-                } => {
-                    assert!(
-                        reg.append(client_id, transfer_id, seq, &bytes),
-                        "chunk must land on a registered transfer (begin already processed)"
-                    );
-                }
-                BulkEvent::Commit { transfer_id } => {
-                    committed = reg.take(client_id, transfer_id);
-                }
-            }
-        }
-        assert_eq!(
-            committed,
-            Some(("f.bin".to_string(), b"abcdef".to_vec())),
-            "commit 시 누적 bytes 가 전량 온전해야 한다"
-        );
-    }
+    // begin/chunk/commit 이 한 배치로 와도 저장 bytes 가 온전한가를 `BulkTransferRegistry`
+    // 까지 이어 재는 end-to-end 시험은 본체 `src/core/bulk_transfer.rs` 에 있다 — 이
+    // 크레이트는 본체 core 를 참조할 수 없다. 순서 보존 자체는 바로 위 시험이 여기서 잰다.
 
     #[test]
     fn pump_inbound_reports_disconnects() {

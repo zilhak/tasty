@@ -732,7 +732,7 @@ impl App {
         let stream_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&stream_proxy, crate::AppEvent::StreamReady);
         });
-        let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
+        let stream_ctx = tasty_ipc::stream_hub::StreamContext {
             hub: self.stream_hub.clone(),
             inbound_tx: self.stream_inbound_tx.clone(),
             waker: stream_waker,

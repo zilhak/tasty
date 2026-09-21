@@ -62,7 +62,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 이 계층은 도메인-IO 에 **직접 의존하지 않는다**(sandbox 경계) — protocol/sdk 만 통과.
 
 ### plugin host (IPC 인프라)
-`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait + 클라이언트 연결 `client::{IpcConnection, StreamConnection}` — 서버·프레이밍과 같은 크레이트 · off-main 스레드가 호스트 큐에 요청을 주입하는 `host_call::HostIpcInjector`) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
+`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait + 클라이언트 연결 `client::{IpcConnection, StreamConnection}` — 서버·프레이밍과 같은 크레이트 · off-main 스레드가 호스트 큐에 요청을 주입하는 `host_call::HostIpcInjector` · attach 스트림 연결마다 bounded push sink 를 드는 서버측 레지스트리 `stream_hub::StreamHub` — 소켓을 읽고 쓰는 accept 스레드는 본체 adapter `tcp_ipc_server.rs` 에 남는다, [ADR-0350](../adr/0350-the-stream-hub-lives-in-the-ipc-crate.md)) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
 
 ### 번들 plugin (bin 크레이트, 모두 `tasty-plugin-sdk` 의존)
 `tasty-plugin-claude`(lib 도 함께 노출) · `tasty-plugin-codex` · `tasty-plugin-git-viewer` · `tasty-plugin-clipboard-viewer` · `tasty-plugin-image` · `tasty-plugin-html` · `tasty-plugin-markdown` · `tasty-plugin-agent-stream` · `tasty-plugin-mesh-demo`(+ manifest). 뒤의 둘은 `bundle = false` 라 배포 패키징에서는 빠지고 dev 번들 sync 로만 붙는다. — [concepts/plugins](../concepts/plugins.md)

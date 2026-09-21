@@ -11,7 +11,7 @@
 //!   PTY 로 전달(holder 검증 후, 서버 로컬 입력 차단 우회).
 //!
 //! 메인루프(gui `event_handler` / headless `boot`)의 `StreamReady` arm 이
-//! `pump_inbound` 가 분류한 [`PumpOutcome`](crate::adapters::production::stream_hub::PumpOutcome)
+//! `pump_inbound` 가 분류한 [`PumpOutcome`](tasty_ipc::stream_hub::PumpOutcome)
 //! 를 받아 이 메서드들을 호출한다.
 //!
 //! 범위: surface 단위(터미널 1개). workspace 단위는 단계 6.
@@ -19,12 +19,12 @@
 use std::collections::HashMap;
 use std::thread;
 
-use crate::adapters::production::stream_hub::{PushResult, StreamHub};
 use crate::core::Core;
 use crate::core::CoreState;
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, StructuralOp, encode_mux};
+use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
 impl CoreState {
     /// stream client 의 attach 요청 처리(`stream.open` 의 `target`). 성공 시 그 client
@@ -1499,11 +1499,11 @@ pub(crate) fn handle_git_query_request(
     client_id: u32,
     request_id: u64,
     surface_id: u32,
-    kind: crate::adapters::production::stream_hub::GitQueryKind,
+    kind: tasty_ipc::stream_hub::GitQueryKind,
     worktree_path: Option<String>,
     diff_path: Option<String>,
 ) {
-    use crate::adapters::production::stream_hub::GitQueryKind;
+    use tasty_ipc::stream_hub::GitQueryKind;
 
     let is_holder = engine.attach.client_holds_workspace(client_id);
     let result: Result<serde_json::Value, String> = if !is_holder {
@@ -2053,9 +2053,9 @@ mod markdown_content_tests {
 #[cfg(all(test, feature = "gui"))]
 mod markdown_changed_tests {
     use super::notify_markdown_changed;
-    use crate::adapters::production::stream_hub::StreamHub;
     use crate::core::attach::OccupancyRegistry;
     use tasty_ipc::stream::StreamTag;
+    use tasty_ipc::stream_hub::StreamHub;
 
     fn changed_surface_id(frame: &tasty_ipc::stream::StreamFrame) -> Option<u64> {
         assert_eq!(frame.tag, StreamTag::Control);
@@ -3016,7 +3016,7 @@ mod forward_exec_tests {
             .attach
             .acquire_workspace(ws_id, &[a], &[a], client_id)
             .expect("workspace 점유 획득");
-        let hub = crate::adapters::production::stream_hub::StreamHub::new();
+        let hub = tasty_ipc::stream_hub::StreamHub::new();
         let _rx = hub.register(client_id);
         engine.attach.set_notifier(hub.clone());
 
@@ -3328,9 +3328,9 @@ mod forward_exec_tests {
     /// stale lock 도 정리해야 한다.
     #[test]
     fn forward_close_last_surface_force_detaches_holder() {
-        use crate::adapters::production::stream_hub::StreamHub;
         use std::time::Duration;
         use tasty_ipc::stream::StreamTag;
+        use tasty_ipc::stream_hub::StreamHub;
 
         let (mut core, mut state, mut engine, _home) = make_core_state();
         let a = seed(&mut engine); // 단일 surface, 형제 없음

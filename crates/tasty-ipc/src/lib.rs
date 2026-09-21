@@ -22,6 +22,7 @@ pub mod protocol;
 pub mod server;
 pub mod session;
 pub mod stream;
+pub mod stream_hub;
 
 // 테스트는 method_meta.rs / session.rs 에서 각각 *_tests.rs 를 로드 (co-located).
 

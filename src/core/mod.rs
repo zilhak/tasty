@@ -192,7 +192,7 @@ pub(crate) struct PendingGitQueryForward {
     /// mirror 재생 의존 제거).
     pub(crate) local_surface_id: u32,
     pub(crate) request_id: u64,
-    pub(crate) kind: crate::adapters::production::stream_hub::GitQueryKind,
+    pub(crate) kind: tasty_ipc::stream_hub::GitQueryKind,
     /// worktree 전환/새로고침 — 이전 응답이 돌려준 opaque 서버 경로 echo.
     pub(crate) worktree_path: Option<String>,
     /// `kind = Diff` 전용.

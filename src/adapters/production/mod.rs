@@ -12,5 +12,4 @@ pub mod notification_sound;
 pub mod std_clock;
 pub mod std_fs;
 pub mod std_process;
-pub mod stream_hub;
 pub mod tcp_ipc_server;

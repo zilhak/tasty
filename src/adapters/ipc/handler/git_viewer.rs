@@ -15,8 +15,8 @@ use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use crate::adapters::production::stream_hub::GitQueryKind;
 use crate::core::{CoreState, PendingGitQueryForward};
+use tasty_ipc::stream_hub::GitQueryKind;
 
 /// `git_viewer.query { kind, local_surface_id, worktree_path?, diff_path? }` 요청.
 #[derive(Deserialize)]

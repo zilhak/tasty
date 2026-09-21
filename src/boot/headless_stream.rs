@@ -17,10 +17,10 @@
 
 #![cfg(not(feature = "gui"))]
 
-use crate::adapters::production::stream_hub::{PumpOutcome, StreamClientId};
 use crate::app::App;
 use crate::core::CoreState;
 use crate::state::AppState;
+use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId};
 
 /// `AppEvent::StreamReady` 처리 — inbound 큐를 분류해 engine 에 적용한다.
 pub(crate) fn handle_stream_ready(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
@@ -227,7 +227,7 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
         // screenshot→remote-clipboard: mirror client 가 이 headless
         // 인스턴스로 화면 캡처를 업로드 — headless 는 단일 engine 이라
         // gui 의 holder 순회가 필요 없다. holder 검증은 finalize 내부.
-        use crate::adapters::production::stream_hub::CaptureUploadMsg;
+        use tasty_ipc::stream_hub::CaptureUploadMsg;
         match msg {
             CaptureUploadMsg::CaptureChunk {
                 upload_id,
@@ -276,7 +276,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
         // file picker: mirror client 가 이 headless 인스턴스로
         // 디렉토리 목록을 요청 — headless 는 단일 engine 이라 gui 의
         // holder 순회가 필요 없다. holder 검증은 핸들러 내부.
-        use crate::adapters::production::stream_hub::ListDirRequestMsg;
+        use tasty_ipc::stream_hub::ListDirRequestMsg;
         let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
         crate::core::attach_runtime::handle_list_dir_request(
             engine,
@@ -291,7 +291,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
         // mirror client 가 이 headless 인스턴스로 git status/log/worktrees
         // 또는 diff 조회를 요청 — list_dir 와 동일하게 headless 는 단일
         // engine 이라 holder 순회 불요.
-        use crate::adapters::production::stream_hub::GitQueryRequestMsg;
+        use tasty_ipc::stream_hub::GitQueryRequestMsg;
         let GitQueryRequestMsg::GitQueryRequest {
             request_id,
             surface_id,
@@ -314,7 +314,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
         // markdown mirror(`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`):
         // mirror client 가 이 headless 인스턴스로 markdown 원문을 요청 —
         // list_dir 와 동일하게 headless 는 단일 engine 이라 holder 순회 불요.
-        use crate::adapters::production::stream_hub::MarkdownContentRequestMsg;
+        use tasty_ipc::stream_hub::MarkdownContentRequestMsg;
         let MarkdownContentRequestMsg::MarkdownContentRequest {
             request_id,
             surface_id,
@@ -336,7 +336,7 @@ fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOu
         // 그대로** 처리한다(단일 벡터라 chunk 가 begin 을 앞지르지 않음 —
         // 분리 벡터 시절의 전량 폐기 + 빈 파일 성공 오보 결함 방지). 결속
         // workspace 는 연결-단위 bulk 태깅에서 조회(begin 이 ws 를 싣지 않음).
-        use crate::adapters::production::stream_hub::BulkEvent;
+        use tasty_ipc::stream_hub::BulkEvent;
         let Some(ws) = app.stream_hub.bulk_workspace(client_id) else {
             tracing::warn!("bulk transfer: event from non-bulk client {client_id} — ignoring");
             continue;

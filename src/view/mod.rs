@@ -61,7 +61,7 @@ pub(crate) struct ViewCtx<'a> {
     /// attach 스트림 허브. MainView 가 로컬 redraw 로 만든 egui-mesh frame 을 attach
     /// mesh mirror 구독자에게 중계할 때 쓴다(`docs/dev-guide/egui-mesh-channel.md`의
     /// "서버측(GUI, 살아있는 window)" 참고) — Arc 기반 clone 이라 참조만 전달.
-    pub(crate) stream_hub: &'a crate::adapters::production::stream_hub::StreamHub,
+    pub(crate) stream_hub: &'a tasty_ipc::stream_hub::StreamHub,
 }
 
 pub(crate) struct ViewRegistry {
