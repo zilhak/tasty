@@ -59,7 +59,8 @@
 
 ### 남은 걸음의 착지 (후속 — [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md), 2026-09-22)
 
-위 "현재 상태" 문단은 이 결정 시점의 사실이다. 남은 걸음은 ADR-0471 이 이렇게 닫았다.
+위 "현재 상태" 문단은 이 결정 시점의 사실이다. 남은 걸음은 ADR-0471 에서 이렇게 착지했다 — 1 · 2 · 4 는
+끝났고 5 는 부분이다.
 
 - 1(intent 큐) — 핸들러는 창 큐가 아니라 요청 하나의 출구 `IntentOutbox` 에 넣고, 진입점이 요청 끝에
   창 큐로 옮긴다. 적재 순서는 그대로다.
@@ -134,7 +135,7 @@
 
 ## References
 
-- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 IPC 쪽을 좁힌 잔여 ①(부분 — 남은 걸음은 ADR-0471 이 닫았다)
+- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 IPC 쪽을 좁힌 잔여 ①(부분 — 남은 걸음의 엔진 핸들러 층은 ADR-0471 이 닫았고 진입점은 열려 있다)
 - [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md) — Decision 의 남은 걸음 1 · 2 · 4 · 5 의 착지
 - [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md) — 도메인 쪽 포트
 - [AppState 필드 소유권](../dev-guide/app-state-ownership.md) — 필드 분류표

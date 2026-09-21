@@ -82,6 +82,9 @@ GUI·debug 핸들러만 `AppState` 를 받고, 그것은 엔진 핸들러 표와
 - **잃은 것**: `pump_ipc` 와 `handle_checked_request` 는 `&Core` 로 내려가지 않았다. ADR-0470 이 적은
   "라우터 · `check_request` · `pump_ipc` 를 `&Core` 로" 중 라우터 표와 게이트만 그렇게 됐다. 창을 쥔
   자리는 창을 받아야 한다 — 출구를 옮길 창 큐와, 창 상태를 조작하는 debug 핸들러가 거기 있다.
+  그래서 ADR-0355 잔여 ① 은 엔진 핸들러 층만 닫혔고, 진입점은 헤드리스 intent 적용
+  (`drain_pending_intents` · `drain_pending_host_events`)이 창을 받는 동안 열려 있다 — 아래 재검토 조건
+  "헤드리스 intent 적용이 창 상태 없이 돌게 되면" 이 풀리면 닫는다.
 - **운영 비용**: 새 엔진 핸들러가 창에서 새 것을 읽어야 하면 `IpcWindow` 에 메서드를 더하고
   `state/ipc_window.rs` 에 한 줄 위임을 쓴다. 창 상태 자체를 조작하는 새 핸들러는 엔진 표가 아니라
   창·debug 라우터에 등록한다. intent 를 내는 새 핸들러는 `&mut IntentOutbox` 를 받는다.
@@ -128,7 +131,7 @@ GUI·debug 핸들러만 `AppState` 를 받고, 그것은 엔진 핸들러 표와
 
 ## References
 
-- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 닫는 잔여 ①
+- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 엔진 핸들러 층을 닫는 잔여 ①(진입점은 열려 있다)
 - [ADR-0470](0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md) — 인자를 빼는 앞 걸음과 이 결정이 이은 남은 걸음
 - [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md) — 이 포트가 물려받는 도메인 포트 `CascadeWindow`
 - [ADR-0111](0111-headless-drains-the-intent-queue.md) — 헤드리스 pump 가 창 큐를 비우는 이유

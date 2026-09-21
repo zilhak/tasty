@@ -90,17 +90,22 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
     시그니처가 말한다 — "잃은 것" 첫 항은 **창 상태를 실제로 읽는 핸들러에만** 남는다. 라우터 ·
     `check_request` · `pump_ipc` 는 그 핸들러들에게 넘겨야 하므로 아직 `AppState` 를 받는다. 남은 91
     자리의 내용(intent 큐 · 로컬 사용자의 `active_workspace` 기본값 · GUI·debug 모듈 · 구조 op 의 창
-    연산)은 ADR-0470 이 적는다. **① 은 IPC 쪽도 부분 착지라 아직 열려 있다** — 남은 걸음은 intent
-    큐를 `AppState` 밖으로 빼고, `active_workspace` 기본값을 정하고, 구조 op 의 창 연산을 포트로 뺀 뒤
-    라우터 · `check_request` · `pump_ipc` 를 `&Core` 로 내리는 것이다(ADR-0470 Decision 의 남은 걸음).
-  - **① 의 닫힘 (후속 — [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md), 2026-09-22)**:
+    연산)은 ADR-0470 이 적는다. ADR-0470 시점의 남은 걸음은 intent 큐를 `AppState` 밖으로 빼고,
+    `active_workspace` 기본값을 정하고, 구조 op 의 창 연산을 포트로 뺀 뒤 라우터 · `check_request` ·
+    `pump_ipc` 를 `&Core` 로 내리는 것이었다(ADR-0470 Decision 의 남은 걸음). 그 걸음이 어디까지
+    착지했는지는 바로 아래 항목이 적는다.
+  - **① 의 부분 닫힘 (후속 — [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md), 2026-09-22)**:
+    **엔진 핸들러 층은 닫혔다. `pump_ipc` · `handle_checked_request` 등 진입점은 헤드리스 intent 적용
+    (`drain_pending_intents` · `drain_pending_host_events`)이 창을 받는 동안 열려 있다** — ADR-0471 의
+    재검토 조건 "헤드리스 intent 적용이 창 상태 없이 돌게 되면" 이 풀리면 닫는다.
     IPC 엔진 핸들러와 공통 게이트는 `AppState` 를 받지 않는다. intent 는 요청 하나의 출구에 모였다가
     진입점이 창 큐로 옮기고, 창 연산(대상 생략 시의 `active_workspace` 포함)은 좁은 포트 `IpcWindow` 로
     읽는다. 같은 범위에서 `AppState` 를 받는 자리가 91 → 35 이고, 남은 것은 창을 쥔 진입점
     (`handle_checked_request` · 헤드리스 `pump_ipc`) · 창 상태 자체가 대상인 GUI·debug 핸들러와 그 라우터 ·
     시험 도우미다. **"이 핸들러는 도메인 상태만 만진다" 를 타입이 말한다** — 엔진 핸들러의 시그니처에
-    `AppState` 가 없고, 창에서 쓰는 것은 포트 메서드 목록이 답한다. 그래서 "잃은 것" 첫 항은 닫혔다.
-    `pump_ipc` 는 `&Core` 가 아니라 창의 소유자로 `AppState` 를 받는다 — 그 이유와 재검토 조건은 ADR-0471.
+    `AppState` 가 없고, 창에서 쓰는 것은 포트 메서드 목록이 답한다. 그래서 "잃은 것" 첫 항은 엔진 핸들러
+    층에서 닫혔다. `pump_ipc` 는 `&Core` 가 아니라 창의 소유자로 `AppState` 를 받는다 — 그 이유와 재검토
+    조건은 ADR-0471.
 - **운영 비용**: 새 dialog 상태를 넣는 사람은 그것이 headless 에서 읽혀야 하는지를 정해야 한다.
   읽혀야 하면 `dialogs` 가 아니라 `AppState` 나 `CoreState` 에 둔다.
 
@@ -139,5 +144,5 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
 - [헤드리스 정의 경계](../dev-guide/headless-build-boundaries.md) — gui 전용 판정 규칙
 - [ADR-0346](0346-headless-compiles-only-what-it-reaches.md) — 이 결정이 따르는 경계 규칙
 - [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md) — 잔여 ① 의 도메인 쪽을 맡은 결정
-- [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md) — 잔여 ① 의 IPC 쪽을 닫은 결정
+- [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md) — 잔여 ① 의 엔진 핸들러 층을 닫은 결정(진입점은 열려 있다)
 - 결정이 실현된 현재 위치: `src/state/dialogs.rs`, `AppState::dialogs`, `AppState::has_input_dialog_open`
