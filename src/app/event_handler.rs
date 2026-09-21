@@ -2204,9 +2204,7 @@ impl App {
                 .find_map(|e| {
                     crate::core::attach_runtime::unresolved_anchor_reason(e, client_id, op)
                 })
-                .unwrap_or_else(|| {
-                    crate::core::attach_runtime::REASON_WORKSPACE_NOT_FOUND.to_string()
-                });
+                .unwrap_or_else(crate::core::attach_runtime::workspace_not_found_reason);
             reply_structural_result(hub, client_id, op_id, false, Some(reason));
         }
     }

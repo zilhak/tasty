@@ -129,9 +129,7 @@ fn apply_structural_ops(
                 false,
                 Some(
                     crate::core::attach_runtime::unresolved_anchor_reason(engine, client_id, &op)
-                        .unwrap_or_else(|| {
-                            crate::core::attach_runtime::REASON_WORKSPACE_NOT_FOUND.to_string()
-                        }),
+                        .unwrap_or_else(crate::core::attach_runtime::workspace_not_found_reason),
                 ),
                 None,
             ),
