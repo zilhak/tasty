@@ -17,8 +17,9 @@ pub(crate) struct MirrorStructuralBlocked {
     pub workspace_index: usize,
     /// `true` 면 이 구조 op 를 원격으로 **forward** 하도록 큐에 넣었다(2단계). 이 경우
     /// 로컬 실행만 막고 차단 toast 는 띄우지 않는다(원격 실행 결과가 UX 를 결정 —
-    /// 성공 시 무음, 실패 시 forward 실패 toast). `false` 면 forward 대상이 아닌 op
-    /// (convert/move-surface 등)라 기존 차단 toast 를 띄운다.
+    /// 성공 시 무음, 실패 시 forward 실패 toast). `false` 면 forward 할 수 없는 op
+    /// (워크스페이스 경계를 넘는 move-surface, 또는 anchor 를 못 찾은 op)라 기존 차단
+    /// toast 를 띄운다. convert 는 항상 forward 된다(`build_mirror_forward_op`).
     pub forwarded: bool,
 }
 
@@ -262,8 +263,9 @@ impl Core {
         if let Some(workspace_index) = engine.mirror_workspace_index_for_structural(&intent) {
             // 2단계: 로컬 실행은 여전히 막되(불변식 유지), forward 가능한 op 는 원격에
             // 넘기도록 큐에 넣는다. anchor 는 아직 로컬 surface id — App drain 이 세션
-            // 매핑으로 원격 id 로 치환해 전송한다. forward 불가 op(convert/move-surface)는
-            // None → 기존 차단 toast.
+            // 매핑으로 원격 id 로 치환해 전송한다. forward 불가 op(워크스페이스 경계를 넘는
+            // move-surface, anchor 를 못 찾은 op)는 None → 기존 차단 toast. convert 는 항상
+            // forward 된다.
             let forwarded = match build_mirror_forward_op(engine, &intent) {
                 Some(op) => {
                     engine

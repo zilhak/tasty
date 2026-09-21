@@ -1377,7 +1377,7 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
 /// 이를 실패(`internal_error`)로 오보하지 않고 `{forwarded:true}` success 로
 /// 회신한다. 원격 실행 결과는 비동기이며(역반영 delta 로 mirror 트리에 반영),
 /// 호출자는 `list surfaces` 등으로 관측한다. forward 대상이 아닌 mirror 거부
-/// (`forwarded:false`, 예: convert/move-surface) 또는 일반 에러는 기존대로
+/// (`forwarded:false`, 예: 워크스페이스 경계를 넘는 move-surface) 또는 일반 에러는 기존대로
 /// internal_error 로 반환한다.
 pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -> JsonRpcResponse {
     if let Some(blocked) = e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
@@ -1628,7 +1628,7 @@ mod structural_apply_error_tests {
 
     #[test]
     fn non_forwarded_mirror_block_stays_internal_error() {
-        // forward 불가 op(convert/move-surface)의 mirror 거부는 기존대로 에러.
+        // forward 불가 op(워크스페이스 경계를 넘는 move-surface)의 mirror 거부는 기존대로 에러.
         let err = anyhow::Error::new(crate::core::MirrorStructuralBlocked {
             workspace_index: 0,
             forwarded: false,
