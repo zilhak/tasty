@@ -394,14 +394,10 @@ fn handler_may_run(
 }
 
 /// `HandlerAction::System` — OS 기본 opener 만 호출한다(core/state/engine 미사용).
-/// headless 빌드에는 opener 가 없어 경고만 남긴다.
 #[cfg(feature = "gui")]
 fn open_system_target(target: &DispatchTarget) {
     let uri = target.system_open_uri();
-    #[cfg(feature = "gui")]
     crate::terminal_link::open_uri(&uri);
-    #[cfg(not(feature = "gui"))]
-    tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
 }
 
 /// Preserve the existing path-only plugin payload, with a final type check.
