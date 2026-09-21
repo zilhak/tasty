@@ -103,6 +103,13 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
 - **잃은 것 — 전이 의존은 안 본다.** 도메인이 부르는 형제 모듈이 다시 상위를 부르는 경로는
   가드 밖이다. 형제 모듈이 상위 항목을 재수출하면 그 이름으로 우회된다. 창 상태를 받는
   `file::dispatch` 는 그래서 형제 모듈 전체가 아니라 그 하위 항목 자체를 가드의 표에 올렸다.
+- **잃은 것이었다가 닫은 것 — 기존 gui 게이트 뒤의 GUI 크레이트** (2026-09-22 보강,
+  [ADR-0490](0490-boundary-guards-close-three-holes-found-by-mutation.md)). 이 결정의 가드는 처음에
+  `crate::`·`super::` 경로와 gui 게이트 **수**만 봤다. 이미 있는 게이트 뒤 import 에 `egui::Context`
+  를 끼워 넣으면 수가 그대로라 아무것도 안 빨개졌다(변이로 확인). 지금은 같은 가드가 `gui` feature
+  의 optional 의존(매니페스트에서 읽는다)과 `windows` 의 창·그리기 하위 경로를 게이트 뒤까지 읽고
+  (파일, 경로) 목록으로 고정한다(오늘 0). 남은 한계 — 다른 워크스페이스 크레이트의 GUI 갈래
+  (`tasty-platform/gui` 등)는 이름으로 안 갈려 여전히 밖이다.
 - **운영 비용**: 도메인에 창 쪽 연산이 새로 필요하면 `CascadeWindow` 에 메서드를 더하고
   `state/cascade_window.rs` 에 위임을 쓴다. 도메인에 gui 게이트를 더하면 가드의 상수를 올리고
   커밋 본문에 판정(ADR-0346 ① 인가)을 적는다.
@@ -138,6 +145,8 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   `the_domain_does_not_name_an_upper_layer` 가 파일:줄로 가리킨다. 그 자리에서 역전 수단 넷
   중 하나를 고른다. 넷 다 안 맞으면 이 ADR 을 다시 연다.
 - 도메인 gui 게이트 수가 움직인다 — 같은 파일의 `gui_gates_in_the_domain_are_pinned`.
+- 도메인 출하 코드가 GUI 크레이트를 부른다 — 같은 파일의
+  `the_domain_names_no_gui_crate_beyond_the_pinned_list`(ADR-0490 이 더했다).
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다.
 
@@ -157,6 +166,8 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
 - [ADR-0346](0346-headless-compiles-only-what-it-reaches.md) — headless 컴파일 경계의 세 갈래
 - [ADR-0325](0325-the-root-package-splits-into-a-lib-and-a-bin.md) — lib·bin 분리
 - [ADR-0123](0123-layering-guard-excludes-cfg-test-modules.md) — 계층 가드가 test 모듈을 빼는 이유
+- [ADR-0490](0490-boundary-guards-close-three-holes-found-by-mutation.md) — 이 가드의 판정 범위를
+  넓혔다(GUI 크레이트 목록 래칫 · 판정기를 `tasty_doc_guards::crate_paths` 로 공유)
 - [아키텍처](../architecture/index.md) · [헤드리스 정의 경계](../dev-guide/headless-build-boundaries.md) ·
   [AppState 필드 소유권](../dev-guide/app-state-ownership.md)
 - 결정이 실현된 현재 위치: `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` ·

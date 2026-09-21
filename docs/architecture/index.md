@@ -42,11 +42,15 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
   가리키는 형제 모듈 하위 항목 `file::dispatch` · `file::identify_worker` · `host_api::webview` ·
   `clipboard`)을 이름으로 부르지 않는다. 같은 크레이트 안이라 컴파일러는 이 방향을 막지 못하므로
   `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(기대값 0, 면제 명부 없음).
-  같은 가드가 도메인 출하 코드의 `feature = "gui"` 개수를 양방향으로 고정한다.
+  같은 가드가 도메인 출하 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, **GUI 크레이트**
+  (워크스페이스 `Cargo.toml` 의 `gui` feature 가 켜는 optional 의존 전부와 `windows` 의 창·그리기
+  하위 경로)를 부르는 자리를 gui 게이트 뒤까지 읽어 (파일, 경로) 목록으로 고정한다(오늘 0 —
+  [ADR-0490](../adr/0490-boundary-guards-close-three-holes-found-by-mutation.md)).
 - **창 쪽 연산은 도메인이 선언한 포트로 닿는다**: 구조 실행·cascade 가 필요로 하는 창
   연산은 `core::cascade_window::CascadeWindow`(`AppState` 가 `state/cascade_window.rs` 에서
   한 줄 위임으로 구현), 파일 식별 시작은 `core::identify_port::IdentifySpawner`
-  (`IdentifyWorker` 가 구현).
+  (`IdentifyWorker` 가 구현). 두 구현 파일은 에이전트 대면 경로로 분류돼 전역 활성 포인터
+  읽기가 명부에 오른다(`agent_facing_reads_of_active_state_are_classified`).
 - **양쪽이 쓰는 타입은 도메인에 정의한다**: 발화 주체(`core::origin` — 파일 열기의
   `FileDispatchOrigin` 포함)·호스트 이벤트 큐
   항목(`core::host_event`)·egui-mesh surface 자리표(`core::egui_mesh_surface`). 옛 경로
@@ -58,6 +62,12 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 - **이 경계가 안 보는 것**: 도메인이 부르는 형제 모듈(`file` · `store` · `hook_handler` ·
   `host_api` · `completion_strategy`)이 다시 상위를 부르는 전이 경로. 그래서 gui 전용 picker 를
   여느라 `AppState` 를 받는 `file::dispatch` 는 하위 항목 자체를 가드가 막는다.
+- **자동화 실행부도 요청을 받는 쪽을 모른다**: webhook(`src/webhook/`)과 hook handler
+  (`src/hook_handler/`)는 호스트 내부 IPC 호출을 공용 계약(`tasty_ipc::host_call::HostIpcInjector`)
+  으로 주입한다. 그 출하 코드가 inbound adapter(`adapters::ipc` · `adapters::cli` ·
+  `adapters::production::tcp_ipc_server` · `hub`)나 메인 루프(`app`)를 이름으로 부르면
+  `crates/tasty-doc-guards/tests/automation_runners_do_not_reach_inbound_adapters.rs` 가 막는다
+  (기대값 0, 면제 명부 없음 — 판정기는 도메인 가드와 같은 `tasty_doc_guards::crate_paths`).
 
 ## 워크스페이스 크레이트 (60)
 
