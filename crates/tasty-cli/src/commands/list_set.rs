@@ -45,8 +45,9 @@ pub enum ListCommands {
     ///
     /// `connections` is the fifth block and it is not time, it is seats: every
     /// TCP connection attached to this port, including attach and mesh streams
-    /// that never send a request. `live` is the only value here that goes
-    /// down, `limit` is the ceiling the server enforces and travels with the
+    /// that never send a request. Of the counts and current values here only
+    /// `live` goes down (the accept wait mean below is derived, so it can fall
+    /// too), `limit` is the ceiling the server enforces and travels with the
     /// values so the two can be read together, and `refused_saturated` counts
     /// connections turned away at that ceiling — before they became requests,
     /// so they appear in none of the four blocks above.
