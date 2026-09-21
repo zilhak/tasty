@@ -155,3 +155,147 @@ fn a_rejected_request_leaves_the_queue_untouched() {
     assert!(resp.error.is_some(), "surface_id 없는 set_mark 는 거절된다");
     assert_eq!(labels(&state), ["RestoreClosedItem"]);
 }
+
+/// 알림 · 팝업의 제목까지 가르는 이름. 상한의 승인 알림(`… — 승인 필요`)과 요청 핸들러의
+/// 알림은 둘 다 `source: "host"` 라 `label` 로는 안 갈린다.
+fn detailed_labels(state: &crate::state::AppState) -> Vec<String> {
+    state
+        .pending_intents
+        .iter()
+        .map(|intent| match &intent.body {
+            Intent::Domain(DomainIntent::PushNotification { source, title, .. })
+                if source == "host" =>
+            {
+                if title.contains("승인 필요") {
+                    format!("PushNotification:{source}:approval")
+                } else {
+                    format!("PushNotification:{source}:{title}")
+                }
+            }
+            Intent::Ui(crate::intent::UiIntent::OpenPopup { .. }) => "OpenPopup".into(),
+            _ => label(intent),
+        })
+        .collect()
+}
+
+/// 운영과 같은 SQLite memory 를 쓰는 `Core`. 상한은 memory 의 목록 순서(키 오름차순 —
+/// 등록 순서)대로 평가되는데, 시험용 `InMemoryStorage` 는 그 순서를 `HashMap` 에 맡겨
+/// 실행마다 바뀐다. 여러 상한의 발화 순서를 보는 시험은 운영의 순서를 써야 한다.
+fn core_with_ordered_memory() -> crate::core::Core {
+    let store = tasty_memory::MemoryStore::open_in_memory().expect("in-memory sqlite");
+    super::cli_entry_tests::test_core_builder()
+        .with_memory(Arc::new(std::sync::Mutex::new(store)))
+        .build()
+        .expect("test Core")
+}
+
+/// 같은 agent · metric 에 `notify` 와 `require_approval` 상한을 이 순서로 건다.
+fn set_notify_and_approval_caps(
+    core: &mut crate::core::Core,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    agent: &str,
+    metric: &str,
+) {
+    for action in ["notify", "require_approval"] {
+        let resp = super::handle_with_caller(
+            core,
+            state,
+            engine,
+            &request(
+                "telemetry.cap.set",
+                json!({
+                    "agent": agent,
+                    "metric": metric,
+                    "threshold": 1,
+                    "action": action,
+                }),
+            ),
+            &CallerContext::Local,
+        );
+        assert!(
+            resp.error.is_none(),
+            "cap({action}) 등록 실패: {:?}",
+            resp.error
+        );
+    }
+    assert!(state.pending_intents.is_empty());
+}
+
+/// 한 평가에서 `notify` 와 `require_approval` 상한이 함께 발화하면 **발화 순서대로**
+/// 쌓인다 — 먼저 발화한 상한 알림이 출구에 남은 채 승인 팝업(창 큐에 즉시 적재)에
+/// 앞질리면 안 된다. 게이트(IPC 호출 수) 갈래.
+#[test]
+fn a_notify_cap_precedes_the_approval_popup_fired_by_the_same_gate() {
+    let _home = crate::test_support::TastyHomeGuard::new();
+    let mut core = core_with_ordered_memory();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    let sid = state.focused_surface_id(&engine).expect("focused surface");
+    set_notify_and_approval_caps(
+        &mut core,
+        &mut state,
+        &mut engine,
+        "order-probe",
+        "ipc_calls",
+    );
+
+    let agent = CallerContext::Agent {
+        agent_id: "order-probe".into(),
+        permissions: Arc::new([Permission::Notification].into_iter().collect()),
+    };
+    let resp = super::handle_with_caller(
+        &mut core,
+        &mut state,
+        &mut engine,
+        &request(
+            "notification.create",
+            json!({ "title": "t", "body": "b", "surface_id": sid }),
+        ),
+        &agent,
+    );
+    assert!(resp.error.is_none(), "{:?}", resp.error);
+
+    #[cfg(feature = "gui")]
+    let expected = [
+        "PushNotification:telemetry.cap",
+        "OpenPopup",
+        "PushNotification:host:approval",
+        "PushNotification:host:t",
+    ]
+    .as_slice();
+    #[cfg(not(feature = "gui"))]
+    let expected = ["PushNotification:telemetry.cap", "PushNotification:host:t"].as_slice();
+    assert_eq!(detailed_labels(&state), expected);
+}
+
+/// 같은 순서 계약의 `telemetry.record` 핸들러 갈래.
+#[test]
+fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
+    let _home = crate::test_support::TastyHomeGuard::new();
+    let mut core = core_with_ordered_memory();
+    let (mut state, mut engine) = crate::state::tests::test_state();
+    set_notify_and_approval_caps(&mut core, &mut state, &mut engine, "order-probe", "tokens");
+
+    let resp = super::handle_with_caller(
+        &mut core,
+        &mut state,
+        &mut engine,
+        &request(
+            "telemetry.record",
+            json!({ "agent": "order-probe", "metric": "tokens", "value": 1 }),
+        ),
+        &CallerContext::Local,
+    );
+    assert!(resp.error.is_none(), "{:?}", resp.error);
+
+    #[cfg(feature = "gui")]
+    let expected = [
+        "PushNotification:telemetry.cap",
+        "OpenPopup",
+        "PushNotification:host:approval",
+    ]
+    .as_slice();
+    #[cfg(not(feature = "gui"))]
+    let expected = ["PushNotification:telemetry.cap"].as_slice();
+    assert_eq!(detailed_labels(&state), expected);
+}

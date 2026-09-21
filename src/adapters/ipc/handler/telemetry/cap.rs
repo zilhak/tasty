@@ -394,7 +394,9 @@ pub(super) fn fire_cap_action(
 ) {
     match cap.action {
         CapAction::Notify => fire_notify(window, out, engine, cap, current),
-        CapAction::RequireApproval => fire_require_approval(core, window, engine, cap, current),
+        CapAction::RequireApproval => {
+            fire_require_approval(core, window, out, engine, cap, current)
+        }
         CapAction::Pause => {
             // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
             // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
@@ -424,6 +426,7 @@ pub(super) fn fire_cap_action(
 pub(super) fn fire_require_approval(
     core: &mut Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
+    out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
@@ -464,6 +467,10 @@ pub(super) fn fire_require_approval(
     match core.request_approval(engine, req) {
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(core, &change.record);
+            // 승인 팝업은 창 큐에 즉시 들어간다. 같은 평가에서 먼저 발화한 cap 의 알림이
+            // 출구에 남아 있으면 팝업이 그것을 앞지르므로, 출구를 먼저 창 큐로 옮겨 발화
+            // 순서대로 쌓이게 한다(ADR-0471).
+            window.enqueue_intents(std::mem::take(out));
             #[cfg(feature = "gui")]
             window.enqueue_approval_popup(engine, &change.record);
             tracing::info!(
