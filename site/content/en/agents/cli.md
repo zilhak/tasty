@@ -1,4 +1,4 @@
-<!-- source-hash: 02ff4171771c -->
+<!-- source-hash: 7a5d0600ac97 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -92,7 +92,7 @@ tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
 tasty --response-timeout-ms 5000 read screen --surface 42
 ```
 
-Put `--response-timeout-ms` **before** the command. If no reply comes within that time, the command ends with `Error (-32061): …`. That error means **the outcome is unknown** — the request may keep running inside Tasty, so if the command changes something, check the state before sending it again. If the time runs out while the request is still waiting its turn inside Tasty, the command ends with `Error (-32067): …` instead. Then **nothing ran**, so you can send it again as is. Without the flag, or with `0`, there is no bound. It only works for commands that send a single request; commands that ask repeatedly, like `events follow`, or open a connection, like remote attach, refuse the flag with exit code 2 and send nothing. An older Tasty that does not understand the bound is not sent the request, with the same `sent:false` refusal as above.
+Put `--response-timeout-ms` **before** the command. If no reply comes within that time, the command ends with `Error (-32061): …`. That error means **the outcome is unknown** — the request may keep running inside Tasty, so if the command changes something, check the state before sending it again. If the time runs out while the request is still waiting its turn inside Tasty, the command ends with `Error (-32067): …` instead. Then **nothing ran**, so you can send it again as is. Without the flag, or with `0`, there is no bound. It only works for commands that send a single request; commands that ask repeatedly, like `events follow`, or open a connection, like remote attach, refuse the flag with exit code 2 and send nothing. An older Tasty that does not understand the bound is not sent the request, with the same `sent:false` refusal as above. That check counts against the same time: if Tasty is stuck and even the check does not finish in time, the request is not sent and the command ends with `Error (-32067): …`, so you can send it again as is.
 
 By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them.
 

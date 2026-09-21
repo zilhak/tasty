@@ -70,8 +70,9 @@ pub struct Cli {
     /// When it runs out the instance answers -32061 if the request had started: the
     /// outcome is unknown and the request may still run. If it was still queued the
     /// answer is -32067 and nothing ran. 0 or no flag waits without a bound. The instance
-    /// must declare ipc.response-timeout, or nothing is sent. Commands that loop or stream
-    /// refuse the flag
+    /// must declare ipc.response-timeout, or nothing is sent. Checking that shares the same
+    /// bound: if the check does not finish in time the answer is -32067 and nothing was
+    /// sent. Commands that loop or stream refuse the flag
     #[arg(long, value_name = "MS")]
     pub response_timeout_ms: Option<u64>,
 

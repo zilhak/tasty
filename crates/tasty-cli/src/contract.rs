@@ -10,9 +10,13 @@
 //!
 //! 근거: `docs/adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md`.
 
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use tasty_ipc::capability::{RESPONSE_TIMEOUT, RESPONSE_TIMEOUT_VERSION};
-use tasty_ipc::client::{IpcConnection, UnsupportedCapability};
+use tasty_ipc::client::{
+    CapabilityProbeExpired, IpcConnection, JsonRpcCallError, UnsupportedCapability, whole_millis,
+};
 use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -75,11 +79,60 @@ pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
 ///
 /// 확인 자체(`system.info`)가 실패하면 그 오류가 그대로 온다 — 그것은 거절이 아니라 연결의
 /// 실패다.
-pub(crate) fn ensure(conn: &mut IpcConnection, request: &JsonRpcRequest) -> Result<()> {
-    for (name, version) in required(request) {
-        conn.require_capability(name, version, request.session_token.as_deref())?;
+///
+/// **요청이 응답 대기 상한을 실었으면 확인도 그 상한 안에 들어간다** — 두 요청이 상한 하나를
+/// 나눠 쓴다. 확인 요청은 상한 전체를 기한으로 받고(`IpcConnection::capabilities_within`),
+/// 끝나면 요청의 봉투를 **남은 시간**으로 줄여 싣는다. 그래서 굳은 호스트에서도 CLI 는 상한
+/// 뒤에 돌아온다(ADR-0366 이 약속한 것). 확인이 상한 안에 안 끝났거나 남은 시간이 1 ms 도
+/// 안 되면 요청은 안 나가고, 그 답은 요청이 큐에서 만료됐을 때와 같은 `-32067`(실행 안 됨)
+/// 이다 — 문구도 같다. 근거:
+/// `docs/adr/0452-the-cli-capability-check-spends-the-same-response-bound.md`.
+pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> Result<()> {
+    let needed = required(request);
+    if needed.is_empty() {
+        return Ok(());
+    }
+    let bound = request
+        .response_timeout_ms
+        .filter(|&ms| ms > 0)
+        .map(Duration::from_millis);
+    let started = Instant::now();
+    let left = |bound: Duration| bound.saturating_sub(started.elapsed());
+    for (name, version) in needed {
+        conn.require_capability_within(
+            name,
+            version,
+            request.session_token.as_deref(),
+            bound.map(left),
+        )
+        .map_err(
+            |e| match (bound, e.downcast_ref::<CapabilityProbeExpired>()) {
+                (Some(bound), Some(_)) => not_run(bound),
+                _ => e,
+            },
+        )?;
+    }
+    if let Some(bound) = bound {
+        match whole_millis(left(bound)) {
+            Some(ms) => request.response_timeout_ms = Some(ms),
+            None => return Err(not_run(bound)),
+        }
     }
     Ok(())
+}
+
+/// 상한 안에 요청을 못 내보냈다 — 그 요청이 큐에서 만료됐을 때의 답과 **같은 코드·문구**다.
+/// 요청은 안 나갔으므로 "실행 안 됨 — 그대로 다시 보내도 된다" 가 참이다.
+fn not_run(bound: Duration) -> anyhow::Error {
+    let answer = tasty_ipc::server::expired_before_run_response(serde_json::Value::Null, bound);
+    let err = answer
+        .error
+        .expect("expired_before_run_response 는 늘 오류 응답이다");
+    JsonRpcCallError {
+        code: err.code,
+        message: err.message,
+    }
+    .into()
 }
 
 /// 거절을 stderr 에 낼 **한 줄 JSON**. 사람이 읽는 문장은 `message` 에 싣고, 호출자가
@@ -253,6 +306,193 @@ mod tests {
         let r = since_mark(&["--stream", "s1"]);
         assert_eq!(r.params["stream"], "s1");
         assert!(r.params.get("cursor").is_none());
+    }
+
+    /// 가짜 호스트 — 받은 줄을 돌려주고, `answer` 가 정한 대로 답한다(`None` 이면 답하지 않고
+    /// 소켓을 연 채 둔다 — 메인 스레드가 선 호스트이거나, 봉투 상한을 모르는 구 서버다).
+    fn fake_host(
+        answers: Vec<Option<(std::time::Duration, String)>>,
+    ) -> (
+        std::net::SocketAddr,
+        std::sync::mpsc::Receiver<String>,
+        std::thread::JoinHandle<()>,
+    ) {
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let (seen_tx, seen_rx) = std::sync::mpsc::channel();
+        let h = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut writer = stream.try_clone().expect("clone");
+            let mut reader = std::io::BufReader::new(stream);
+            for answer in answers {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                if seen_tx.send(line).is_err() {
+                    return;
+                }
+                match answer {
+                    Some((delay, body)) => {
+                        std::thread::sleep(delay);
+                        if writer.write_all(format!("{body}\n").as_bytes()).is_err() {
+                            return;
+                        }
+                    }
+                    // 답하지 않는다 — 상대가 연결을 닫을 때까지 붙들고 있는다.
+                    None => {
+                        let mut rest = String::new();
+                        let _ = reader.read_line(&mut rest); // 상대가 닫으면 0 — 끝낸다
+                        return;
+                    }
+                }
+            }
+        });
+        (addr, seen_rx, h)
+    }
+
+    fn capabilities_answer() -> String {
+        json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "result": { "capabilities": [ { "name": RESPONSE_TIMEOUT, "version": RESPONSE_TIMEOUT_VERSION } ] }
+        })
+        .to_string()
+    }
+
+    /// `ensure` 를 다른 스레드에서 돌리고 5 s 까지만 기다린다 — 결함이 되살아나면 시험이 매달리지
+    /// 않고 빨개진다.
+    fn ensure_with_deadline(
+        addr: std::net::SocketAddr,
+        mut request: JsonRpcRequest,
+    ) -> (Result<JsonRpcRequest>, std::time::Duration) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let stream = std::net::TcpStream::connect(addr).expect("connect");
+            let mut conn = IpcConnection::new(stream).expect("conn");
+            let started = Instant::now();
+            let r = ensure(&mut conn, &mut request).map(|()| request);
+            // 받는 쪽이 5 s 에 떠났으면 그 결과는 버린다 — 시험은 이미 실패로 끝났다.
+            let _ = tx.send((r, started.elapsed(), conn));
+        });
+        let (r, took, conn) = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("ensure did not return within 5 s — the bound did not cover the check");
+        drop(conn);
+        (r, took)
+    }
+
+    fn expect_not_run(r: Result<JsonRpcRequest>, bound_ms: u64) {
+        let e = r.expect_err("the request must not go out");
+        let rpc = e
+            .downcast_ref::<JsonRpcCallError>()
+            .unwrap_or_else(|| panic!("expected the not-run answer, got {e}"));
+        assert_eq!(rpc.code, tasty_ipc::protocol::ERR_EXPIRED_BEFORE_RUN);
+        // 본 요청이 큐에서 만료됐을 때와 같은 문장이다 — 사용자가 준 상한 그대로를 싣는다.
+        let same = tasty_ipc::server::expired_before_run_response(
+            serde_json::Value::Null,
+            Duration::from_millis(bound_ms),
+        );
+        assert_eq!(rpc.message, same.error.expect("error").message);
+    }
+
+    /// 굳은 호스트(또는 봉투 상한을 모르는 구 서버)가 확인 요청에 답하지 않아도 CLI 는 상한 뒤에
+    /// 돌아온다. 확인 요청을 상한 없이 기다려 무한정 매달리던 결함의 회귀 시험이다.
+    #[test]
+    fn a_bound_covers_the_capability_check_when_the_host_does_not_answer() {
+        let (addr, seen, h) = fake_host(vec![None]);
+        let (r, took) = ensure_with_deadline(addr, req("workspace.list", json!({}), Some(200)));
+        expect_not_run(r, 200);
+        assert!(took >= Duration::from_millis(190), "{took:?}");
+        assert!(took < Duration::from_millis(1500), "{took:?}");
+        let probe: serde_json::Value =
+            serde_json::from_str(&seen.recv().expect("probe line")).expect("json");
+        assert_eq!(probe["method"], "system.info");
+        let carried = probe["response_timeout_ms"]
+            .as_u64()
+            .expect("the probe carries the bound");
+        assert!((1..=200).contains(&carried), "{carried}");
+        h.join().unwrap();
+    }
+
+    /// 봉투 상한을 아는 서버는 확인 요청을 상한에서 물리고 `-32067` 로 답한다 — CLI 는 그 답도
+    /// 사용자 상한의 "실행 안 됨" 으로 옮긴다(확인 요청의 문장이 아니라 본 요청의 문장이다).
+    #[test]
+    fn a_server_that_expires_the_check_is_reported_as_the_request_not_run() {
+        let answer = json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "error": { "code": tasty_ipc::protocol::ERR_EXPIRED_BEFORE_RUN, "message": "probe expired" }
+        })
+        .to_string();
+        let (addr, _seen, h) = fake_host(vec![Some((Duration::from_millis(20), answer))]);
+        let (r, _) = ensure_with_deadline(addr, req("workspace.list", json!({}), Some(300)));
+        expect_not_run(r, 300);
+        h.join().unwrap();
+    }
+
+    /// 확인이 상한 안에 끝나면 요청은 **남은 시간**을 싣고 나간다 — 두 요청이 상한 하나를 나눠
+    /// 쓴다. 그리고 확인이 건 읽기 기한은 풀려 있어야 한다(본 요청은 서버가 상한으로 끊는다).
+    #[test]
+    fn the_request_carries_what_is_left_after_the_check() {
+        let (addr, _seen, h) = fake_host(vec![Some((
+            Duration::from_millis(120),
+            capabilities_answer(),
+        ))]);
+        let (r, _) = ensure_with_deadline(addr, req("workspace.list", json!({}), Some(500)));
+        let request = r.expect("declared — the check passes");
+        let left = request.response_timeout_ms.expect("still bounded");
+        assert!(left > 0 && left <= 380, "{left}");
+        h.join().unwrap();
+    }
+
+    /// 확인 뒤의 연결은 읽기 기한이 없다 — 상한보다 늦게 오는 본 요청의 답도 받는다.
+    #[test]
+    fn the_check_leaves_no_read_timeout_on_the_connection() {
+        let late = json!({ "jsonrpc": "2.0", "id": 1, "result": { "ok": true } }).to_string();
+        let (addr, _seen, h) = fake_host(vec![
+            Some((Duration::from_millis(0), capabilities_answer())),
+            Some((Duration::from_millis(400), late)),
+        ]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let stream = std::net::TcpStream::connect(addr).expect("connect");
+            let mut conn = IpcConnection::new(stream).expect("conn");
+            let mut r = req("workspace.list", json!({}), Some(150));
+            ensure(&mut conn, &mut r).expect("declared");
+            // 받는 쪽이 5 s 에 떠났으면 그 결과는 버린다 — 시험은 이미 실패로 끝났다.
+            let _ = tx.send(conn.send(&r).map_err(|e| e.to_string()));
+        });
+        let answer = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("send returned");
+        assert_eq!(answer, Ok(json!({ "ok": true })));
+        h.join().unwrap();
+    }
+
+    /// 상한이 없으면 확인 요청도 종전 그대로다 — 봉투에 아무것도 안 싣는다.
+    #[test]
+    fn without_a_bound_the_check_is_sent_as_before() {
+        let (addr, seen, h) = fake_host(vec![Some((
+            Duration::from_millis(0),
+            capabilities_answer(),
+        ))]);
+        let mut r = req(
+            "surface.read_since_mark",
+            json!({ "surface_id": 1, "max_bytes": 64 }),
+            None,
+        );
+        let stream = std::net::TcpStream::connect(addr).expect("connect");
+        let mut conn = IpcConnection::new(stream).expect("conn");
+        // output-cursor 는 선언 안 됐으니 거절이지만, 확인 요청은 나갔다.
+        assert!(ensure(&mut conn, &mut r).is_err());
+        let probe: serde_json::Value =
+            serde_json::from_str(&seen.recv().expect("probe")).expect("json");
+        assert!(probe.get("response_timeout_ms").is_none(), "{probe}");
+        assert_eq!(r.response_timeout_ms, None);
+        drop(conn);
+        h.join().unwrap();
     }
 
     /// 거절 줄은 **한 줄 JSON** 이고, 호출자가 분기할 값을 문장과 따로 싣는다. 특히

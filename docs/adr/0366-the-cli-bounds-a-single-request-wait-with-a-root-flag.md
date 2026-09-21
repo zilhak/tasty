@@ -99,5 +99,6 @@ CLI 에는 그 필드를 채우는 자리가 **여섯** 있었고 전부 `None` 
 - [ADR-0365](0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)
   — 보내기 전 확인과 구조화 거절의 모양
 - [ADR-0312](0312-the-server-declares-what-it-can-negotiate-not-what-version-it-is.md) — 선언 자리
+- 부분 개정: [0452](0452-the-cli-capability-check-spends-the-same-response-bound.md) (사전 확인에 시간 상한이 없던 것 — 조항 개정)
 - 코드 근거(결정이 실현된 현재 위치): `tasty-cli` 의 `Cli::response_timeout_ms` ·
   `contract::Envelope` · `run::run_client_with`, 본체의 `boot::cli_routing::Routed::Subcommand`

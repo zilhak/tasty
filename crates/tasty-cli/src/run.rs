@@ -142,7 +142,7 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
 /// (`outln!`). 그것은 전달 실패가 아니라 출력 실패이고, 파이프 조기 종료는 ADR-0101 이
 /// 조용한 종료 코드 0 으로 접는다.
 fn run_dynamic_client(
-    request: tasty_ipc::protocol::JsonRpcRequest,
+    mut request: tasty_ipc::protocol::JsonRpcRequest,
     port_file: Option<&str>,
 ) -> Result<()> {
     // CLI 가 문구를 만드는 갈래는 모두 **로그에는 영어, stderr 에는 번역문**을 낸다.
@@ -202,11 +202,13 @@ fn run_dynamic_client(
     // - 선언이 없다(`UnsupportedCapability`) — `Display` 가 CLI 가 쥔 **영어 원본**이다.
     // - 확인 요청(`system.info`)의 전송·EOF 실패 — `io::Error` 와 `IpcConnection::send` 의
     //   고정 영어 문구다.
+    // - 확인이 요청의 응답 대기 상한 안에 안 끝났다 — CLI 가 만든 `-32067` 문장이다(본 요청이
+    //   큐에서 만료됐을 때 호스트가 쓰는 영어 문장과 같은 함수로 만든다).
     // - 확인 요청이 JSON-RPC 오류로 끝났다 — 문구는 **답한 서버가 만든 문장**이라 CLI 에 영어
     //   원본이 없다. 아래 `conn.send` 실패 갈래와 같은 처지이고 같은 방식으로 적는다 —
     //   `new_unchecked` 의 보증이 이 갈래에서는 서지 않는다. 다만 그 코드는 이 요청이 아니라
     //   확인 요청의 것이라 `code` 칸에 싣지 않는다.
-    if let Err(e) = super::contract::ensure(&mut conn, &request) {
+    if let Err(e) = super::contract::ensure(&mut conn, &mut request) {
         hook_failure::record(
             &request.method,
             &request.params,
@@ -513,7 +515,7 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
     let cli_warnings = take_cli_warnings(&mut request);
     // 새 계약을 쓰는 요청은 상대가 그것을 선언했는지 **보내기 전에** 묻는다 — 모르는
     // 서버는 그 필드를 조용히 버리고 성공으로 답한다(`contract` 모듈).
-    if let Err(e) = super::contract::ensure(&mut conn, &request) {
+    if let Err(e) = super::contract::ensure(&mut conn, &mut request) {
         super::contract::exit_on_failure(e);
     }
     let result = conn.send(&request);

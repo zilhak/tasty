@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -71,6 +72,26 @@ impl std::fmt::Display for UnsupportedCapability {
 }
 
 impl std::error::Error for UnsupportedCapability {}
+
+/// 계약 확인 요청(`system.info`)이 호출자가 준 시간 안에 안 끝났다 — **그 뒤에 보낼 요청은
+/// 아직 안 나갔다.**
+///
+/// 확인 요청은 부수효과가 없으므로 클라이언트가 먼저 물러나도 안전하다. 그래서 이 판정은 서버를
+/// 믿지 않고 소켓 읽기 기한으로도 건다 — 봉투 상한을 모르는 구 서버에서도 같은 시간에 끝난다.
+/// 이 오류 뒤의 연결은 다시 쓰지 않는다(늦은 답이 소켓에 남을 수 있다).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapabilityProbeExpired;
+
+impl std::fmt::Display for CapabilityProbeExpired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the capability check did not finish within the response timeout; nothing was sent"
+        )
+    }
+}
+
+impl std::error::Error for CapabilityProbeExpired {}
 
 /// 그 메서드는 멱등 키 계약 **밖**이다 — **요청은 아직 안 나갔다.**
 ///
@@ -231,8 +252,30 @@ impl IpcConnection {
     /// 물으면 그 조회는 `Local` 로 판정돼, 실제로 요청을 보낼 주체와 **다른 주체의**
     /// 답을 보게 된다.
     pub fn capabilities(&mut self, session_token: Option<&str>) -> Result<&BTreeMap<String, u32>> {
+        self.capabilities_within(session_token, None)
+    }
+
+    /// [`IpcConnection::capabilities`] 와 같되, 아직 안 물었으면 그 확인을 `bound` 안에 끝낸다.
+    ///
+    /// 상한을 실은 요청의 호출자는 "이 시간 뒤에는 돌아온다" 를 전제로 한다. 확인 요청도 호스트
+    /// 메인 스레드의 큐를 지나므로, 그것만 상한 없이 기다리면 굳은 호스트에서 그 전제가 확인
+    /// 단계에서 깨진다. 그래서 확인 요청은 두 겹으로 자른다:
+    ///
+    /// - 봉투에 같은 상한을 싣는다 — 그 이름을 아는 서버는 상한에서 확인 요청을 큐에서 물리고
+    ///   답한다(나중에 실행되지 않는다).
+    /// - 소켓 읽기 기한을 같은 시간으로 건다 — 봉투를 모르는 **구 서버**는 필드를 조용히 버리고
+    ///   무한정 기다리게 하므로, 그때도 같은 시간에 끝나려면 이쪽이 필요하다.
+    ///
+    /// 어느 쪽으로 끝나든 [`CapabilityProbeExpired`] 다 — 확인 요청의 결과가 무엇이었든 그 뒤에
+    /// 보낼 요청은 안 나갔다. 확인이 끝나면 읽기 기한을 원래대로(없음) 돌린다. `bound` 가 0 이면
+    /// 확인 요청을 보내지 않고 곧바로 그 오류다.
+    pub fn capabilities_within(
+        &mut self,
+        session_token: Option<&str>,
+        bound: Option<Duration>,
+    ) -> Result<&BTreeMap<String, u32>> {
         if self.capabilities.is_none() {
-            let probe = JsonRpcRequest {
+            let mut probe = JsonRpcRequest {
                 jsonrpc: "2.0".to_string(),
                 method: "system.info".to_string(),
                 params: serde_json::Value::Null,
@@ -241,10 +284,74 @@ impl IpcConnection {
                 response_timeout_ms: None,
                 idempotency_key: None,
             };
-            let info = self.send(&probe)?;
+            let info = match bound {
+                None => self.send(&probe)?,
+                Some(bound) => {
+                    let Some(ms) = whole_millis(bound) else {
+                        return Err(CapabilityProbeExpired.into());
+                    };
+                    probe.response_timeout_ms = Some(ms);
+                    self.send_within(&probe, bound)?
+                }
+            };
             self.capabilities = Some(parse_capabilities(&info));
         }
         Ok(self.capabilities.as_ref().expect("직전 분기가 채웠다"))
+    }
+
+    /// 읽기 기한을 걸고 보낸다. 기한 만료와, 상대가 봉투 상한으로 답한 만료(`-32061` ·
+    /// `-32067`)는 [`CapabilityProbeExpired`] 로 모은다.
+    fn send_within(
+        &mut self,
+        request: &JsonRpcRequest,
+        bound: Duration,
+    ) -> Result<serde_json::Value> {
+        self.reader.get_ref().set_read_timeout(Some(bound))?;
+        let sent = self.send(request);
+        let expired = match &sent {
+            Ok(_) => false,
+            Err(e) => {
+                e.downcast_ref::<std::io::Error>().is_some_and(|io| {
+                    matches!(
+                        io.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    )
+                }) || e.downcast_ref::<JsonRpcCallError>().is_some_and(|rpc| {
+                    rpc.code == crate::protocol::ERR_EXPIRED_BEFORE_RUN
+                        || rpc.code == crate::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN
+                })
+            }
+        };
+        if expired {
+            return Err(CapabilityProbeExpired.into());
+        }
+        // 기한 안에 답이 왔다. 뒤의 요청은 이 연결의 원래 규약(읽기 기한 없음)으로 기다린다.
+        self.reader.get_ref().set_read_timeout(None)?;
+        sent
+    }
+
+    /// [`IpcConnection::require_capability`] 와 같되, 확인 요청을 `bound` 안에 끝낸다
+    /// ([`IpcConnection::capabilities_within`]).
+    pub fn require_capability_within(
+        &mut self,
+        name: &str,
+        min_version: u32,
+        session_token: Option<&str>,
+        bound: Option<Duration>,
+    ) -> Result<()> {
+        let found = self
+            .capabilities_within(session_token, bound)?
+            .get(name)
+            .copied();
+        match found {
+            Some(v) if v >= min_version => Ok(()),
+            other => Err(UnsupportedCapability {
+                name: name.to_string(),
+                required: min_version,
+                found: other,
+            }
+            .into()),
+        }
     }
 
     /// 그 계약을 상대가 아는지 **부수효과가 나기 전에** 판정한다.
@@ -259,16 +366,7 @@ impl IpcConnection {
         min_version: u32,
         session_token: Option<&str>,
     ) -> Result<()> {
-        let found = self.capabilities(session_token)?.get(name).copied();
-        match found {
-            Some(v) if v >= min_version => Ok(()),
-            other => Err(UnsupportedCapability {
-                name: name.to_string(),
-                required: min_version,
-                found: other,
-            }
-            .into()),
-        }
+        self.require_capability_within(name, min_version, session_token, None)
     }
 
     /// 멱등 키를 실어 보낸다 — 단, **보내기 전에** 상대가 그 계약을 아는지 묻는다.
@@ -311,6 +409,12 @@ impl IpcConnection {
         };
         self.send(&keyed)
     }
+}
+
+/// 남은 시간을 봉투의 밀리초로 옮긴다 — **내림**이다. 올림이면 두 요청의 합이 상한을 넘을 수 있다.
+/// 0 이 되면 `None` — 봉투 규약상 `0` 은 "상한 없음" 이라 실을 수 없고, 남은 시간이 없다는 뜻이다.
+pub fn whole_millis(left: Duration) -> Option<u64> {
+    u64::try_from(left.as_millis()).ok().filter(|&ms| ms > 0)
 }
 
 /// [`crate::protocol::JsonRpcRequest::idempotency_key`] 를 서버가 읽는다는 선언의 이름.
@@ -442,6 +546,15 @@ mod tests {
 
     /// 모양이 어긋난 항목은 조용히 빠지고 나머지는 산다 — 한 항목이 전체 조회를
     /// 깨뜨리면 "추가는 안전하다" 가 거짓이 된다.
+    /// 남은 시간은 내림으로 싣고, 1 ms 도 안 남았으면 실을 수 없다 — `0` 은 "상한 없음" 이다.
+    #[test]
+    fn what_is_left_rounds_down_and_nothing_left_is_none() {
+        use std::time::Duration;
+        assert_eq!(whole_millis(Duration::from_micros(299_900)), Some(299));
+        assert_eq!(whole_millis(Duration::from_micros(999)), None);
+        assert_eq!(whole_millis(Duration::ZERO), None);
+    }
+
     #[test]
     fn a_malformed_entry_does_not_take_the_others_down() {
         let info = serde_json::json!({
