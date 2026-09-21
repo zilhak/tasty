@@ -699,9 +699,15 @@ impl PluginManager {
     /// 남는 일은 하나다 — namespace 호출의 늦은 답은 연속 만료 계수를 지운다(ADR-0311
     /// 2026-09-20 보강: 늦어도 답한 것은 답한 것이다). 이 정책의 근거와 대안은
     /// ADR-0311 의 2026-09-21 보강에 있다.
+    ///
+    /// ★ **이 자리에 오는 것이 늦은 응답만은 아니다.** pending 에 애초에 안 들어가는
+    /// 요청(ping · `event.dispatch` 같은 알림성 요청)에도 plugin 은 답하고, 그 답도 id 가
+    /// 안 맞아 여기로 온다. id 만으로는 둘을 못 가르고, 뒤엣것은 정상 운용에서 늘 난다 —
+    /// 그래서 한 건마다 남기는 기록은 trace 에 둔다(debug 에 두면 ping 마다 한 줄이 쌓인다).
     fn settle_late_response(&mut self, plugin_id: &str, resp_id: u64) {
-        tracing::debug!(
-            "plugin '{plugin_id}' answered request {resp_id} after it was settled — discarded"
+        tracing::trace!(
+            "plugin '{plugin_id}' answered request {resp_id} that has no pending entry \
+             (settled, or never tracked) — discarded"
         );
         self.clear_streak_if_late_namespace_answer(plugin_id, resp_id);
     }
