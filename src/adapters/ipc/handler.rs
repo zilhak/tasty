@@ -637,8 +637,9 @@ fn route_engine_handler(
     Some(match request.method.as_str() {
         "system.info" => handle_system_info(state, engine, id),
         // 게이지 조회. `&*core` 인 이유는 읽기가 원자값이라 가변 빌림이 필요 없기
-        // 때문이다 — 그 근거는 `Core::pressure` 의 doc 에 있다.
-        "system.pressure" => pressure::handle_system_pressure(&*core, id),
+        // 때문이다 — 그 근거는 `Core::pressure` 의 doc 에 있다. `engine` 은 스트림
+        // 허브를 거기서만 꺼낼 수 있어서다(`OccupancyRegistry::notifier`).
+        "system.pressure" => pressure::handle_system_pressure(&*core, engine, id),
         // workspace
         "workspace.list" => workspace::handle_workspace_list(state, engine, id),
         "workspace.create" => {

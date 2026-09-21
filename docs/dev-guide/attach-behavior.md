@@ -82,10 +82,17 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   `Unknown`/`Disconnected` 에만 `break` 하고 `Dropped` 면 **남은 chunk 를 계속 보낸다** —
   순서 있는 열에서 가운데 한 장이 빠진 채 나머지가 간다. 나머지 하나
   (`core/attach_runtime.rs` 의 markdown 변경 신호)는 `Sent` 외 전부를 한 덩어리로 debug
-  로그한다. 즉 이 카운터는 **손실이 있었는지를 값으로 남기는 자리**이고, 그것을 밖으로
-  내보내는 경로는 아직 없다 — **그 자리와 아래 "client 에게 공백을 알린다" 는 물음이
-  다르다.** 이 카운터는 *서버 전체*의 누적이고, 아래 통지는 *그 연결 하나*가 이번에 몇 장을
-  잃었는가다. 통지가 붙어도 이 값을 읽는 제품 경로는 여전히 없다.
+  로그한다. 즉 이 카운터는 **손실이 있었는지를 값으로 남기는 자리**이고, 밖으로는
+  `system.pressure` 의 `stream_push` 덩어리(CLI `tasty list pressure`)로 나간다
+  ([telemetry](../features/telemetry/index.md)) — **그 자리와 아래 "client 에게 공백을
+  알린다" 는 물음이 다르다.** 이 카운터는 *서버 전체*의 누적이고, 아래 통지는 *그 연결
+  하나*가 이번에 몇 장을 잃었는가다.
+- **`backlog` 은 지금의 적체다 — 누계와 다르고 `lag` 과도 다르다.** 연결마다
+  `StreamSink::queued` 가 push 성공에 +1, write 스레드가 `SinkReceiver` 로 꺼낼 때 −1 이다
+  (`SyncSender` 가 길이를 안 주므로 넣는 쪽과 꺼내는 쪽이 함께 센다 — 꺼내는 경로가 그 타입의
+  메서드뿐이라 −1 을 빠뜨릴 수 없다). `StreamHub::loss()` 는 **살아 있는 연결의 몫만** 더한다 —
+  끊긴 연결의 큐는 채널과 함께 사라지므로 전체 카운터 하나로 세면 그 몫이 영구히 떠오른다.
+  세 값의 구분은 [ADR-0400](../adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md).
 - **그 37 은 `#[cfg(test)]` 밖만 센 값이다.** 세는 법은 수신자에 숫자 접미사가 붙는 것
   (`hub2` · `hub3`)까지 포함해야 한다 — 그것을 빼면 넷이 빠지고, 하필 그 넷이 결과를
   **보는** 자리라 위 "여섯" 이 "둘" 로 줄어든다.
@@ -117,12 +124,17 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   맨 앞**(`StreamHub::repay_pending_loss`)에서 한 칸이 비면 그때 통지를 먼저 넣는다. 그래서
   통지는 **마지막 생존 프레임과 공백 이후 첫 프레임 사이**에 정확히 앉는다 — 위치가 곧
   "여기서 끊겼다" 는 뜻이다. 넣기에 실패하면 빚을 **안 지운다**(다음 기회에 전액 갚는다).
-  - **★ 그래서 통지의 지연에는 상한이 없다.** 갚는 자리가 `push` 하나뿐인데 server→client push 는
-    전부 **변화 구동**이다 — 1 Hz tick 에 올라타는 셋(`Activity`·`Attention`·`Cwd`)이 diff 만 밀고
-    (그 성질을 `busy_activity_forwards_only_on_change` 가 고정한다) 나머지는 PTY 출력 tap · 구조
-    회신 · mesh 처럼 사건이 있을 때만 민다. **무조건 도는 주기 push 가 없다.** 그래서 폭주 직후
-    그 surface 가 조용해지면 빚은 무기한 남고, mirror 는 이미 공백이 난 화면을 경고 없이 그린
-    채로 있는다.
+  - **통지의 지연 상한 — `pump_inbound` 도 갚는다.** server→client push 는 전부 **변화
+    구동**이다 — 1 Hz tick 에 올라타는 셋(`Activity`·`Attention`·`Cwd`)이 diff 만 밀고(그 성질을
+    `busy_activity_forwards_only_on_change` 가 고정한다) 나머지는 PTY 출력 tap · 구조 회신 · mesh
+    처럼 사건이 있을 때만 민다. 그래서 `push` 만 갚으면 폭주 직후 조용해진 연결에서 빚이 무기한
+    남는다. 그래서 `pump_inbound` 가 끝에서 모든 연결의 빚을 갚는다(`repay_all_pending_loss`).
+    `pump_inbound` 는 어느 client 든 프레임을 보낼 때마다 돌고, 살아 있는 연결은
+    `HEARTBEAT_TIMEOUT` 안에 무엇이든 보내야 하므로(안 보내면 서버 read 가 끊는다) 통지는 그
+    연결의 sink 에 자리가 난 뒤 **그 연결 자신의 다음 inbound 프레임까지** 안에 나간다 —
+    심장박동을 보내는 client(GUI · raw 브리지)는 `HEARTBEAT_INTERVAL`, 어떤 살아 있는 연결이든
+    `HEARTBEAT_TIMEOUT`. sink 가 계속 차 있으면 안 나가고, 그 경우는 `LAG_LIMIT` 강제분리가
+    끝낸다. 시험 `a_pending_notice_is_repaid_by_the_next_inbound_frame_without_a_push`.
 - **통지 성공은 소비자가 따라잡은 것으로 안 센다.** `repay_pending_loss` 는 `StreamSink::lag`
   을 건드리지 않는다 — 서버가 스스로 넣은 프레임이 `LAG_LIMIT` 강제분리 시계를 되돌리면,
   영원히 안 읽는 소비자가 영원히 안 끊긴다.

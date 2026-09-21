@@ -7,7 +7,7 @@
 //!
 //! ## 덩어리는 **모수마다 하나**다
 //!
-//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 여섯이고, 아래에 그 여섯이 한
+//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 일곱이고, 아래에 그 일곱이 한
 //! 절씩 있다. **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
 //! 어느 수가 무엇을 센 것인지 갈린다.
 //!
@@ -80,6 +80,22 @@
 //! 늘 그렇고 GUI 도 열기에 실패한 창의 안내 구간에서는 그렇다(`crate::db` 머리말). 두
 //! 출처는 이 값으로 안 갈린다. `memory_db` 가 `null` 이면 스토어가 없는 조립(단위 시험)이다.
 //!
+//! ## `stream_push` — **요청이 아니라 밀어내기**다
+//!
+//! 앞의 덩어리들은 전부 client 가 **물어본** 것(요청·연결·쓰기)을 잰다. 이것은 서버가
+//! attach·mesh 스트림 연결로 **밀어낸** 프레임을 잰다 — 모수는 스트림 허브의 push 이고,
+//! 요청 하나 없이도 자란다. 그래서 `connections` 와 겹치지 않는다: 그 덩어리는 자리를
+//! 세고, 이것은 그 자리 중 스트림 연결에 무엇이 쌓이고 무엇이 버려졌는가를 센다.
+//!
+//! 안의 세 수는 성질이 둘로 갈린다(ADR-0400). `frames_dropped` · `clients_lagged_out` 는
+//! **누계**라 안 내려가고, `backlog` 만 지금 살아 있는 연결들의 sink 에 쌓인 양이라
+//! 내려간다. `sink_capacity` 는 연결 **하나**의 sink 상한이다 — `connections.limit` 과 같은
+//! 이유로(서버가 집행하는 상수) 게이지 밖에서 와서, `backlog` 이 얼마나 찼는지가 한
+//! 응답에서 읽힌다. 연결별 **연속** drop 수(`lag`)는 여기 없다 — 성공 한 번에 0 이 되는
+//! 강제분리의 좌변이라, 뽑는 시점에 따라 같은 사건이 0 으로도 보인다.
+//!
+//! 허브가 이 프로세스의 엔진에 주입되지 않은 조립(단위 시험)이면 `null` 이다.
+//!
 //! ## 아직 안 재는 값의 자리는 미리 비워 두지 않는다
 //!
 //! 위 `connections` 덩어리는 재는 자리가 생겼을 때 함께 생겼다. 빈 덩어리를 미리
@@ -127,9 +143,11 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// `system.pressure` — 프로세스 수명 누계를 읽는다.
 ///
 /// `&Core` 로 충분하다. 안이 전부 원자값이라 읽기가 요청 처리의 가변 빌림과 다투지
-/// 않는다 — `Core::pressure` 가 `&self` 인 것과 같은 이유다.
+/// 않는다 — `Core::pressure` 가 `&self` 인 것과 같은 이유다. `engine` 은 스트림 허브를
+/// 꺼내는 데만 쓴다 — 허브는 부팅이 attach 레지스트리에 주입한 것 하나뿐이다.
 pub(super) fn handle_system_pressure(
     core: &crate::core::Core,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut body = snapshot_json(
@@ -140,7 +158,24 @@ pub(super) fn handle_system_pressure(
     );
     let state_db = crate::db::with_state_db(|db| db.applied_pragmas.clone());
     body["db_pragmas"] = db_pragmas_json(core.memory_pragmas(), state_db.as_ref());
+    body["stream_push"] = stream_push_json(engine.attach.notifier().map(|hub| hub.loss()));
     JsonRpcResponse::success(id, body)
+}
+
+/// 스트림 허브의 밀어내기 누계와 지금의 backlog. 허브가 없으면 `null` — 0 을 내면 "관측된
+/// 0" 으로 읽힌다(이 파일 머리말 "아직 안 재는 값의 자리는 미리 비워 두지 않는다").
+pub(super) fn stream_push_json(
+    loss: Option<tasty_ipc::stream_hub::StreamLossSnapshot>,
+) -> serde_json::Value {
+    match loss {
+        Some(l) => json!({
+            "frames_dropped": l.frames_dropped,
+            "clients_lagged_out": l.clients_lagged_out,
+            "backlog": l.backlog,
+            "sink_capacity": tasty_ipc::stream_hub::SINK_CAPACITY,
+        }),
+        None => serde_json::Value::Null,
+    }
 }
 
 /// 두 DB 의 pragma 적용 결과. 누계 덩어리들과 성격이 달라 `snapshot_json` 밖에 둔다 —
@@ -366,8 +401,13 @@ mod tests {
                 && result.get("handler_after_gate").is_some()
                 && result.get("db").is_some()
                 && result.get("connections").is_some()
-                && result.get("db_pragmas").is_some(),
+                && result.get("db_pragmas").is_some()
+                && result.get("stream_push").is_some(),
             "덩어리들이 응답에 있어야 한다: {result}"
+        );
+        assert!(
+            result["stream_push"].is_null(),
+            "허브가 주입되지 않은 조립에서 스트림 값을 지어냈다: {result}"
         );
         // 이 조립은 mock 스토어라 되읽은 값이 없다 — `null` 이어야 "잰 적이 없다" 로
         // 읽힌다. 핸들러가 `Core` 대신 아무 값이나 지어내면 여기서 죽는다.
@@ -465,6 +505,63 @@ mod tests {
             crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS,
             "상한은 서버가 집행하는 그 상수여야 한다"
         );
+    }
+
+    /// ★ 스트림 덩어리가 **엔진에 주입된 그 허브**를 읽는다.
+    ///
+    /// `stream_push_json` 만 시험하면 핸들러가 새 허브를 만들어 읽어도 살아남는다. 부팅이
+    /// 하는 주입(`set_notifier`)을 그대로 하고 라우터를 지나, 그 허브에서 난 손실과
+    /// backlog 이 응답에 나오는지 본다.
+    #[test]
+    fn the_stream_block_reads_the_hub_injected_into_the_engine() {
+        use tasty_ipc::stream::{StreamFrame, StreamTag};
+        use tasty_ipc::stream_hub::{PushResult, SINK_CAPACITY, StreamHub};
+
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let hub = StreamHub::new();
+        engine.attach.set_notifier(hub.clone());
+
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        for _ in 0..SINK_CAPACITY {
+            assert_eq!(
+                hub.push(id, StreamFrame::new(StreamTag::Data, b"x".to_vec())),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(id, StreamFrame::new(StreamTag::Data, b"lost".to_vec())),
+            PushResult::Dropped
+        );
+        rx.recv().expect("한 장 꺼낸다");
+
+        let req = tasty_ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
+            idempotency_key: None,
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "system.pressure".into(),
+            params: json!({}),
+            session_token: None,
+        };
+        let resp = super::super::handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &crate::ipc::caller::CallerContext::Local,
+        );
+        let s = resp.result.expect("result")["stream_push"].clone();
+        assert_eq!(s["frames_dropped"], 1, "주입된 허브의 손실이 아니다: {s}");
+        assert_eq!(s["clients_lagged_out"], 0);
+        assert_eq!(
+            s["backlog"],
+            (SINK_CAPACITY - 1) as u64,
+            "꺼낸 한 장만큼 내려간 지금의 값이어야 한다: {s}"
+        );
+        assert_eq!(s["sink_capacity"], SINK_CAPACITY);
     }
 
     /// 분포가 **자기 덩어리 안에** 들어가고, 경계가 값과 같은 자리에 나간다.

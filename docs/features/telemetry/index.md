@@ -78,7 +78,8 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 평균은 파생이라 메서드로 낸다. 시간 축 셋(`db` 제외)에는 **고정 경계 분포**가 하나씩 더
 붙는다([ADR-0340](../../adr/0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md)).
 여기에 **시간이 아닌 축**이 하나 더 있다 — 동시 IPC 연결 자리다. 그리고 누계가 아닌 덩어리가
-하나 있다 — 두 SQLite DB 가 열 때 되읽은 pragma 다.
+하나 있다 — 두 SQLite DB 가 열 때 되읽은 pragma 다. 마지막 하나는 **요청이 아니라 밀어내기**를
+잰다 — 스트림 연결로 민 프레임의 손실과 적체다.
 
 `system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
@@ -90,6 +91,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `db` | `MemoryStore` 의 `tx.commit()` 뒤 · `checkpoint_truncate` | **성공한** commit 과 시도된 checkpoint — 거부된 쓰기는 롤백이라 안 센다 |
 | `connections` | accept 루프의 자리 획득·반납 (`TcpIpcServer`) | 이 포트에 붙은 **TCP 연결 전부** — 요청을 하나도 안 보내는 attach·mesh 스트림도 센다 |
 | `db_pragmas` | DB 를 열 때 한 번 (`tasty_memory::pragma::apply_connection_pragmas`) | 누계가 아니다 — DB(`memory_db` · `state_db`)마다 요청값과 되읽은 실제값 |
+| `stream_push` | 스트림 허브의 push 와 write 스레드의 수신 (`tasty_ipc::stream_hub::StreamHub`) | 서버가 attach·mesh 스트림 연결로 **민 프레임** — 요청 하나 없이도 자란다 |
 
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
@@ -131,6 +133,18 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 [storage](../../design/systems/storage.md) 와
 [ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md)).
 
+일곱째는 **요청이 아니라 밀어내기**다. 앞의 여섯은 전부 client 가 물어본 것(요청 · 연결 · 쓰기)을
+재고, 이것은 서버가 스트림 연결로 **민** 프레임을 잰다. 값은 넷이다 —
+`frames_dropped`(연결이 살아 있는데 그 연결의 큐가 차서 버린 프레임 누계 — **조용한 손실**) ·
+`clients_lagged_out`(연속 drop 한도로 끊은 연결 누계 — 소비자가 이미 아는 손실) · `backlog`(지금
+살아 있는 연결들의 큐에 쌓여 아직 write 스레드가 안 가져간 프레임 수의 합 — **이 덩어리에서 유일하게
+내려가는 값**) · `sink_capacity`(연결 하나의 큐 상한 — `connections.limit` 과 같은 이유로 값과 함께
+나간다). 연결별 **연속** drop 수는 없다 — 성공 한 번에 0 이 되는 강제분리의 좌변이라 읽는 시점에 따라
+같은 사건이 0 으로 보인다. 세 값의 정의와 손실을 받은 client 가 하는 일은
+[ADR-0400](../../adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md)
+과 [attach-behavior](../../dev-guide/attach-behavior.md) 에 있다. 허브가 엔진에 주입되지 않은
+조립(단위 시험)에서는 덩어리가 `null` 이다.
+
 다섯째(연결 자리)와 같은 성질의 자리가 하나 더 있는데 **아직 이 응답에 없다** — 명령 큐의 입장 장부
 (`tasty_ipc::admission::CommandAdmission`)다. 큐에 든 요청 바이트 합과 호스트 주입 명령 수에
 상한이 걸려 있고, 넘으면 요청은 큐에 들어가지 않는다(소켓 요청은 `-32065`, 호스트 주입은
@@ -158,7 +172,7 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 
 `db` 에는 분포가 없다 — 그 게이지는 `tasty-memory` 에 살고 histogram 타입은
 `tasty-telemetry` 에 있어 의존 방향이 반대다. `connections` 에도 없다 — 시간이 아니라
-자리라 분포를 잴 축이 아니다.
+자리라 분포를 잴 축이 아니다. `stream_push` 도 시간이 아니라 수라 없다.
 
 #### 덩어리를 가리지 않고 걸리는 것
 

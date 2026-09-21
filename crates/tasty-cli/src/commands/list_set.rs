@@ -70,6 +70,15 @@ pub enum ListCommands {
     /// when that database is not open in this process, which is always the
     /// case for a headless instance.
     ///
+    /// `stream_push` is the seventh block and it counts frames this instance
+    /// pushed rather than requests it answered: frames sent to attach and mesh
+    /// stream connections. `frames_dropped` counts frames thrown away because a
+    /// connection's queue was full while the connection stayed up, and
+    /// `clients_lagged_out` counts connections cut for falling too far behind;
+    /// both only go up. `backlog` is how many frames are queued right now and
+    /// not yet written, summed over the live connections, and `sink_capacity`
+    /// is the queue ceiling of one connection to read it against.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications
