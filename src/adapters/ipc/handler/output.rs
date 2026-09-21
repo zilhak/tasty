@@ -1,5 +1,5 @@
 //! `output.observe_*` IPC 핸들러. 모든 mutate / read 는 `Core` wrapper 를 거친다
-//! (`core.observer_*`) — handler 는 *engine 직접 mutate 금지* (Phase D 원칙).
+//! (`core.observer_*`) — handler 는 *engine 직접 mutate 금지* (`core` 모듈 문서의 단일 mutate 진입점).
 
 use super::params::{self, p_try};
 use std::path::PathBuf;

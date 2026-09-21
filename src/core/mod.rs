@@ -7,9 +7,15 @@
 //! Core::apply ──mutate self.state          (도메인 일관성 보장)
 //! ```
 //!
-//! Phase D 진행 중. 본 Core 는 11 outbound port + preset_store 직속 보유만.
-//! 도메인 데이터 (`CoreState`) 는 `crate::core::state` 에 — App.core_state
-//! 가 main owner. D.3.C 의 도메인 마이그레이션으로 점진 흡수 예정.
+//! `Core` 는 App 에 하나이고 outbound port 들과 `preset_store` 를 든다. 도메인 데이터
+//! (`CoreState`, `crate::core::state`)는 창마다 하나다 — gui 는 각 MainView 가 들고(부팅
+//! 중에는 첫 창이 생길 때까지 `App.core_state` 에 있다), headless 는 부팅이 만든 하나를
+//! pump 가 든다. 그래서 `Core` 의 메서드는 대상 `CoreState` 를 인자로 받는다.
+//!
+//! 이 모듈과 `crate::ports` 가 **도메인**이다. 도메인의 출하 코드는 창 상태·IPC 핸들러·
+//! GUI·부팅 모듈을 이름으로 부르지 않는다 — 창 쪽 연산은 도메인이 선언한 포트
+//! (`cascade_window` · `identify_port`)로만 닿는다. 경계와 그것을 재는 가드는
+//! [ADR-0440](../../docs/adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md).
 
 pub(crate) mod agent;
 pub(crate) mod attach;
@@ -229,12 +235,11 @@ pub(crate) struct PendingMarkdownContentForward {
     pub(crate) request_id: u64,
 }
 
-/// 도메인 본체. 10 outbound port (6 external + 4 internal) + preset_store 직속.
+/// 도메인 본체. outbound port(아래 외부 6 · 워크스페이스 크레이트 trait 4) + preset_store 직속.
 ///
-/// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
-/// `App.core_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C
-/// 에서 점진 흡수.
-#[allow(dead_code)] // 이유: Phase D 공존 layer scaffolding — App.core_state 가 main owner, D.3.C 흡수 대기.
+/// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아니라 창마다 따로 있다
+/// (모듈 문서). 메서드가 대상 `CoreState` 를 인자로 받는 이유다.
+#[allow(dead_code)] // 이유: 주입은 되지만 아직 읽는 자가 없는 포트 필드가 있다(실측 2026-09-21, gui 조합: fs·process·home·themes·presets·settings_storage). 조립(`CoreBuilder`)이 모든 포트를 한 번에 주입하는 형태를 유지한다.
 pub(crate) struct Core {
     // ─── External ports (bin 안 정의, src/ports/) ───
     fs: Arc<dyn FileSystem>,

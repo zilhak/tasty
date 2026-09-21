@@ -21,7 +21,7 @@
 //!   `tasty_memory::MemoryStorage`, `tasty_presets::PresetStorage`,
 //!   `tasty_settings::SettingsStorage`, `tasty_themes::ThemeStorage`.
 //!
-//! ## Phase D 진행 중
+//! ## 구현 위치
 //!
 //! 본 모듈은 *trait 정의 만*. production adapter / test mock 은 `src/adapters/`
 //! 에 구현돼 있고, Core 는 그 구현들을 trait object 로 보유해 실제로 호출한다.

@@ -4,7 +4,7 @@
 //! 변경, `crate::intent::UiIntent`) 또는 *Domain Intent* (도메인 mutate, 본
 //! 타입) 중 하나다. `DomainIntent` 는 headless 빌드에서도 그대로 실행된다.
 //!
-//! 현재 큐 구조 (Phase D 진행 중):
+//! 현재 큐 구조:
 //! - `AppState.pending_intents`: 통합 Intent 큐. UI Intent (`Intent::Ui`) 와
 //!   Domain Intent (`Intent::Domain(DomainIntent)`) 가 같은 큐 위에서 처리됨.
 //!   `App::dispatch_pending_intents` 가 매 frame drain — UI 항목은 popup handler

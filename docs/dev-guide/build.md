@@ -329,3 +329,19 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 | `BASELINE_FILES` | 한시 허용 | 이행 중인 위반의 스냅샷. **현재 비어 있다** — 본체는 `tasty-ssh` / `tasty-remote` / `tasty_ipc::client` 를 직접 참조한다. **줄어들기만 한다**(새 항목 추가 금지, 참조를 걷어냈으면 목록에서도 지워야 통과 — 역방향 검사) |
 
 주석 안의 언급도 위반으로 잡는다 — 주석이 옛 경로를 가리키면 그것도 실제 오정보이므로 코드와 함께 갱신한다.
+
+### 의존 방향 규칙 — 도메인은 조립부를 부르지 않는다
+
+도메인(`src/core/` · `src/ports/`)은 **크레이트로 떼지 않았다** — 본체와 같은 크레이트에 있고,
+방향은 모듈 경계와 가드로 선다. 떼지 않은 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
+`pub(crate)` 표면)와 다시 볼 조건은 [ADR-0440](../adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md),
+경계의 내용은 [아키텍처](../architecture/index.md) 의 "도메인 경계" 절이다.
+
+같은 크레이트 안에서는 `crate::app::…` 이 언제나 해석되므로 컴파일러가 이 방향을 못 막는다.
+`crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(`doc-guards.yml` 이 경로
+필터 없이 돌린다). 위 `tasty-cli` 가드와 달리 **면제 명부가 없다** — 기대값이 0 이다. 테스트
+(파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 좌변이 아니다. 같은 파일이 도메인
+출하 코드의 `feature = "gui"` 개수를 양방향으로 고정한다.
+
+그래서 이 경계를 세운다고 편집 빌드 범위가 줄지는 않는다 — 도메인을 고쳐도 GUI 를 고쳐도 같은
+컴파일 단위(`tasty` lib)가 다시 돈다. 그 범위가 필요해지는 날이 ADR-0440 의 재검토 조건이다.

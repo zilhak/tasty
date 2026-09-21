@@ -1,11 +1,15 @@
 //! `DomainIntent` 발행 진입점 + `CoreEvent` cascade dispatcher.
 //!
-//! Phase D 의 *Strangler Fig* 단계:
-//! - `Core::apply` 는 *순수 이벤트 발행* (Core 가 도메인 데이터 보유 안 함, 진행 중)
-//! - 실제 cascade (settings 적용 / plugin event 발화 / theme install 등) 는 `App`
-//!   안에 결합되어 있어 본 dispatcher 가 `handle_core_event` 로 처리한다.
+//! 책임은 셋으로 갈린다:
+//! - `Core::apply` 는 도메인 변경의 단일 진입점이고 결과를 `CoreEvent` 로 돌려준다.
+//! - 구조 cascade(자원 회수 · 포인터 보정 · 호스트 이벤트 큐잉)는 도메인
+//!   (`core::structural_cascade`)이 한다. 창 쪽 연산은 도메인이 선언한 포트
+//!   (`core::cascade_window::CascadeWindow`)로 닿는다.
+//! - 창·App 에 닿는 cascade(settings 적용 / plugin event 발화 / theme install 등)는 본
+//!   dispatcher 가 `handle_core_event` 로 한다 — App 의 필드가 필요하기 때문이다.
 //!
-//! 도메인 마이그레이션 진행에 따라 점진 *Core::apply 안으로 이동* 한다.
+//! 도메인이 이 모듈을 거꾸로 부르지 않는 경계는
+//! [ADR-0440](../../docs/adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md).
 
 use tasty_settings::Settings;
 use winit::window::WindowId;
@@ -84,7 +88,7 @@ impl App {
         self.handle_core_event(source, &origin, event);
     }
 
-    /// `CoreEvent` 처리 — Phase D 진행 중에는 *옛 cascade 코드의 위치 이동*.
+    /// `CoreEvent` 처리 — 창·App 에 닿는 cascade.
     /// `source` / `origin` 은 *발화 컨텍스트가 필요한 cascade* (workspace.create
     /// 의 host event + active 전환 등) 에서만 사용. 전역 cascade (settings,
     /// clipboard 등) 는 무시한다.

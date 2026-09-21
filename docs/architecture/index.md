@@ -32,6 +32,31 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 > 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. 전환기 컨테이너로 남아 있던 `engine` 모듈도 사라졌고, 그 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)은 `src/core/` 아래로 옮겨졌다.
 
+### 도메인 경계 — `core` + `ports`
+
+**도메인은 `src/core/` 와 `src/ports/` 다.** 도메인은 본체와 같은 크레이트에 살고, 경계는
+크레이트가 아니라 모듈 경계와 가드로 선다([ADR-0440](../adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md)).
+
+- **방향**: 도메인의 출하 코드는 조립·어댑터·GUI 모듈(`app` · `adapters`(`ipc` · `cli`) ·
+  `plugin_bridge` · `state` · `intent` · `view` · `gfx` · `boot` · `hub` 와 그 lib 루트 별칭)을
+  이름으로 부르지 않는다. 같은 크레이트 안이라 컴파일러는 이 방향을 막지 못하므로
+  `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(기대값 0, 면제 명부 없음).
+  같은 가드가 도메인 출하 코드의 `feature = "gui"` 개수를 양방향으로 고정한다.
+- **창 쪽 연산은 도메인이 선언한 포트로 닿는다**: 구조 실행·cascade 가 필요로 하는 창
+  연산은 `core::cascade_window::CascadeWindow`(`AppState` 가 `state/cascade_window.rs` 에서
+  한 줄 위임으로 구현), 파일 식별 시작은 `core::identify_port::IdentifySpawner`
+  (`IdentifyWorker` 가 구현).
+- **양쪽이 쓰는 타입은 도메인에 정의한다**: 발화 주체(`core::origin`)·호스트 이벤트 큐
+  항목(`core::host_event`)·egui-mesh surface 자리표(`core::egui_mesh_surface`). 옛 경로
+  (`intent::IntentOrigin`, `state::PendingHostEvent`)는 재수출로 남는다.
+- **책임 분담**: `Core::apply` 가 도메인 변경의 단일 진입점이고 결과를 `CoreEvent` 로
+  돌려준다. 구조 cascade 는 도메인(`core::structural_cascade`)이, 창·App 에 닿는
+  cascade(settings 적용·plugin 이벤트·theme)는 App 쪽 dispatcher(`app::dispatch_domain`)가
+  한다. `Core` 는 App 에 하나, `CoreState` 는 창마다 하나다(headless 는 하나).
+- **이 경계가 안 보는 것**: 도메인이 부르는 형제 모듈(`file` · `store` · `hook_handler` ·
+  `host_api` · `completion_strategy`)이 다시 상위를 부르는 전이 경로. `file::dispatch` 는
+  gui 전용 picker 를 여느라 `AppState` 를 받는다.
+
 ## 워크스페이스 크레이트 (60)
 
 의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. **그 순서를 `crates/tasty-doc-guards/tests/architecture_layer_order_holds.rs` 가 매니페스트 의존과 대조한다** — 절 소속은 각 절 **첫 문단의 열거**에서 읽고(항목마다 `` `이름` `` 으로 시작), 순서를 거스르는 간선은 문서 본문이 이유를 적은 것만 허용한다. 지금 그런 예외는 셋이고 전부 도메인-IO 절이다 — `tasty-remote` → `tasty-ipc`, 그리고 `tasty-file-format`·`tasty-file-handler` → `tasty-plugin-protocol`(아래 도메인-IO 절이 각각 이유를 적는다). **순서를 거스르는 간선을 보면 그 간선보다 절 순서를 먼저 의심해라** — 실측에서 그런 넷은 전부 정상 의존이었고 절 넷이 잘못된 자리에 있었다. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다([ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 push 전에 직접 돌려라.
@@ -87,13 +112,13 @@ ports-and-adapters 배치:
 |------|------|
 | `boot/` | `fn main` 부팅 시퀀스(`run()` 진입점) — event_loop, headless_{dispatch,stream,plugins}, cli_routing, wiring, locale, trace(부팅 계측) |
 | `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), shutdown_cascade(종료 cascade — [shutdown-sequence](shutdown-sequence.md)), modal, ipc dispatch, attach, dispatch_domain(workspace close cascade — [close-sequence](close-sequence.md)) |
-| `core/` | **도메인 본체**(`Core`) — state, session, attach, agent, terminal_store, ipc_facade |
+| `core/` | **도메인 본체**(`Core`) — state, session, attach, agent, terminal_store, ipc_facade, 구조 실행·cascade, 도메인이 선언한 창 포트(`cascade_window` · `identify_port`). 위 "도메인 경계" 절 |
 | `hub.rs` | **외부 통신**(`Hub`) — IPC 서버, 포트 파일 |
 | `view/` | **GUI**(gui-gated) — `View` sealed trait 계층 + MainView/SettingsView/QuitView/PluginsView/PresetView. — [multi-window](multi-window.md) |
-| `state/` | `AppState` — MainView 당 1개 런타임 상태(focus/layout/mouse/mark/restore) |
+| `state/` | `AppState` — MainView 당 1개 런타임 상태(focus/layout/mouse/mark/restore). 도메인 포트 `CascadeWindow` 의 구현(`cascade_window.rs`) |
 | `gfx/` | GPU — `GpuState`, renderer(셀 렌더), screenshot, perf. — [gpu-rendering](../dev-guide/gpu-rendering.md) |
 | `adapters/` | 외부 경계 구현 — `ui`(egui 컴포넌트·popup), `ipc`(handler), `production`/`test`(port 구현체), `cli`, `plugin` |
-| `ports/` | **의존성 역전 trait** — ipc_server, clipboard, clock, fs, home, process, notification_sound (production/test adapter 가 구현 → headless·테스트 교체) |
+| `ports/` | **의존성 역전 trait** — ipc_server, clipboard, clock, fs, home, process, notification_sound (production/test adapter 가 구현 → headless·테스트 교체). 도메인의 일부다 |
 | `intent/` | **Intent 큐** — 호스트 내부 동작 디스패치. — [action-dispatch](../design/flows/action-dispatch.md) |
 | `host_api/` | 호스트가 외부(plugin/agent)에 제공하는 인터페이스 — hooks, webview |
 | `plugin_bridge/` | 호스트 측 plugin 라우팅 facade |

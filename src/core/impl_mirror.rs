@@ -244,10 +244,10 @@ fn build_mirror_forward_op(
 
 impl Core {
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `DomainIntent` 를 받아
-    /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
+    /// 결과 이벤트 목록을 반환. variant 를 더하면 본 match 도 채운다.
     ///
     /// `engine` 인자: 발화 대상 engine. 현재 *이벤트만 발행* 패턴인 variant
-    /// 들은 인자를 사용하지 않으나 (점진적 흡수 진행 중), workspace.create
+    /// 들은 인자를 사용하지 않으나, workspace.create
     /// 처럼 *결과 정보가 필요한* variant 는 본 메서드 안에서 직접 mutate 후
     /// event 에 결과를 담아 반환한다. CreateWorkspace 분기만 engine 을
     /// 사용하므로 rustc 는 unused 경고를 내지 않는다.
@@ -281,9 +281,9 @@ impl Core {
             }));
         }
         match intent {
-            // Phase D 진행 중 — 본 stub 들은 *이벤트만 발행*. cascade
-            // (Theme apply / Scrollback limit / clipboard max / notification
-            // coalesce 등) 는 후속 sub-step (호출처 전환과 함께) 에서 통합.
+            // 본 분기들은 *이벤트만 발행*한다. cascade(Theme apply / Scrollback
+            // limit / clipboard max / notification coalesce 등)는 창·App 에 닿으므로
+            // 이벤트를 받는 App 쪽 dispatcher(`app::dispatch_domain`)가 한다.
             DomainIntent::UpdateSettings(new_settings) => {
                 Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
             }

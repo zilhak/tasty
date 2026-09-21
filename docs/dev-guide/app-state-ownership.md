@@ -108,9 +108,16 @@ GUI 뿐 — `expect`)으로 가르는 것이 다음 단계다.
 | `SurfaceMessage` | `src/core/state/message.rs` | `CoreState` 의 surface 간 메시지 큐 항목 |
 | `default_tab_name_for_kind` | `src/core/surface_registry.rs` | surface kind 선언과 params 로 탭 표시명을 도출 |
 | `collect_close_targets` | `src/core/impl_close.rs` | 닫히는 탭의 surface 와 scrollback persist id 를 모은다 |
+| `PendingHostEvent` · `PendingSurfaceClosed` | `src/core/host_event.rs` | 도메인 cascade 가 세우고 GUI 메인 루프가 비우는 호스트 이벤트 큐 항목. `crate::state` 가 재수출한다 |
 
-`state` 쪽 호출자(탭·pane·preset 적용)도 같은 정의를 `core` 경로로 부른다. `core` 가 아직
-`AppState` 를 인자로 받는 자리는 남아 있다 — 핸들러 인자 모양 전체의 문제라
+`state` 쪽 호출자(탭·pane·preset 적용)도 같은 정의를 `core` 경로로 부른다.
+
+`core` 는 `AppState` 를 이름으로 부르지 않는다. 구조 실행·cascade 가 필요로 하는 창 연산은
+도메인이 선언한 포트 `core::cascade_window::CascadeWindow` 로 닿고, `AppState` 가
+`src/state/cascade_window.rs` 에서 메서드마다 한 줄 위임으로 구현한다
+([ADR-0440](../adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md)).
+그 포트의 메서드 목록이 "도메인 실행이 `AppState` 에서 무엇을 쓰는가" 의 답이다. IPC 핸들러와
+`pump_ipc` 는 여전히 `AppState` 전체를 받는다 — 핸들러 인자 모양 전체의 문제라
 [ADR-0355](../adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md)
 의 재검토 조건에 걸려 있다.
 
