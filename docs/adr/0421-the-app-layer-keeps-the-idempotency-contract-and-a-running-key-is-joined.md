@@ -113,7 +113,9 @@ App 층 가로채기는 두 조합에 따로 있다 — GUI 의 `ipc_step_app_me
 - **두 조합의 가로채기가 실제로 이 함수를 지나는가.** 단위 시험은 함수만 잰다. 재는 법: 격리
   `TASTY_HOME` 의 debug 인스턴스에 같은 키로 `window.create` 를 두 번 보내 창 수와 둘째 답의
   `idempotent_replay` 를 본다(GUI), 헤드리스에 같은 키로 `plugin.request_permission` 을 두 번 보내
-  `approval.list` 의 레코드 수를 본다.
+  둘째 답의 `idempotent_replay` 를 본다. 그 메서드에서 `approval.list` 의 레코드 수는 판별력이 없다 —
+  핸들러가 같은 (agent, permission) 의 pending 격상을 스스로 합쳐, 키 없이 다시 불러도 레코드가 하나다
+  (실측 2026-09-21: 키 없는 재호출이 같은 `approval_id` 를 받았다).
 - **relay 스레드가 쌓이는가.** 재는 법: 키를 실은 App 층 호출을 반복한 뒤 프로세스 스레드 수
   (`/proc/<pid>/status` 의 `Threads`)가 답이 끝난 호출만큼 줄어드는지 본다.
 
