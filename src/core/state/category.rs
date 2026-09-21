@@ -56,7 +56,7 @@ impl CoreState {
     /// 제거하고 그 안의 워크스페이스를 모두 normal 로 귀속한다. **워크스페이스의 물리
     /// 순서(전역 인덱스)는 그대로 두므로** active(전역 인덱스) 도 불변이다 — 사이드바가
     /// off 면 평면이라 순서만 보존되면 충분하다.
-    #[cfg(any(feature = "gui", test))]
+    #[cfg(feature = "gui")]
     pub fn collapse_categories_to_normal(&mut self) {
         use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
         for ws in &mut self.workspaces {
