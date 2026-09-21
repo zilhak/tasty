@@ -522,9 +522,6 @@ impl StreamHub {
     /// 유일한 자리다 — 제품 코드 37 자리 중 31 이 `let _ =` 로 버리고, 결과를 보는
     /// 여섯도 `Dropped` 를 따로 다루지 않는다(다섯은 `Unknown`/`Disconnected` 에만
     /// 반응해 계속 보내고, 하나는 `Sent` 외 전부를 한 덩어리로 로그한다).
-    // 이유: 이 값을 읽는 제품 호출처는 아직 없다. 손실을 재는 자리를 먼저 두고
-    // 노출 경로(진단 응답)는 그것이 정해질 때 붙인다.
-    #[allow(dead_code)]
     pub fn loss(&self) -> StreamLossSnapshot {
         StreamLossSnapshot {
             frames_dropped: self.loss.frames.load(Ordering::Relaxed),
@@ -533,9 +530,6 @@ impl StreamHub {
     }
 
     /// Number of currently connected stream clients.
-    // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — engine.rs → core/ 재배치로
-    // crate 전역 reachability 가 좁아지며 드러남.
-    #[allow(dead_code)]
     pub fn client_count(&self) -> usize {
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
     }
