@@ -207,4 +207,4 @@ plugin이 왜 요청했는지 몰라도 되며(`context`/결과 필드는 순전
 - `src/adapters/ipc/handler/git_viewer.rs` — 본 ADR이 직접 모델로 삼은 기존 구현
 - `src/adapters/ui/popup/file_picker.rs`, `src/app/dispatch/file_picker.rs` — 이 ADR이
   트리거 대상으로 삼는 popup과 confirm dispatch 지점
-- `src/state.rs` — `FilePickerData`
+- `src/state/dialogs.rs` — `FilePickerData`

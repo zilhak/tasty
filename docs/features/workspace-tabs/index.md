@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (탭 도메인 조작은 AI Agent 도 — [work-area](../work-area/index.md))
 - **ADR**: 없음
-- **코드**: `src/adapters/ui/tab_bar.rs` (`PaneTabBarView`/`TabBarAction`/`draw_pane_tab_bars_view`), drag 상태 `src/state.rs` `TabDragState`
+- **코드**: `src/adapters/ui/tab_bar.rs` (`PaneTabBarView`/`TabBarAction`/`draw_pane_tab_bars_view`), drag 상태 `src/state/dialogs.rs` `TabDragState`
 - **화면**: [screens/workspace-tabs.md](screens/workspace-tabs.md)
 
 ## 목적
@@ -71,7 +71,7 @@
 - 공개 진입점과 재수출: `src/adapters/ui/tab_bar.rs`.
 - props: `PaneTabBarView`(pane별 탭명/kind/알림/busy/active/focus/scroll), `PaneTabBarsProps`(테마/탭폭/폰트/drag).
 - 액션 반영: `apply_tab_bar_actions`(`src/adapters/ui/tab_bar/apply.rs`) — `TabBarAction::focus_target_pane` 로 primary-click 계열 액션 처리 전 focus 를 선-이동한다.
-- drag 상태: `src/state.rs` `TabDragState`(UI 전용, 비영속).
+- drag 상태: `src/state/dialogs.rs` `TabDragState`(UI 전용, 비영속).
 
 ## 화면
 

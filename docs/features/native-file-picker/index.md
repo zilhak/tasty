@@ -413,7 +413,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - Result drain: `src/app/dispatch/file_picker.rs`(`dispatch_pending_file_picker_results`,
   `apply_remote_confirm`, `emit_file_picker_result` — `requester` 가 `Some` 이면
   `"file_picker.result"` unicast), `src/app/event_handler.rs`(`about_to_wait` 호출).
-- plugin 요청자 상태: `src/state.rs`(`FilePickerRequester`, `FilePickerData.requester`/
+- plugin 요청자 상태: `src/state/dialogs.rs`(`FilePickerRequester`, `FilePickerData.requester`/
   `filters`), `src/core/mod.rs`(`next_file_picker_trigger_request_id` — `FpLoadState::Loading`
   의 내부 `request_id` 와 별개 네임스페이스), `src/intent.rs`(`Intent`/`UiIntent::
   from_agent_plugin` — 이 트리거가 첫 실사용처).
@@ -429,7 +429,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `list_dir_entry_wire`, `list_dir_entries_wire_capped`/`LIST_DIR_ENTRIES_BYTE_BUDGET`). GUI
   (`src/app/event_handler.rs::apply_list_dir_request_msg`)와 headless(`src/boot.rs`) 양쪽
   진입점에서 동일 서버 로직을 호출.
-- Popup 상태: `src/state.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult`).
+- Popup 상태: `src/state/dialogs.rs`(`FilePickerData`, `FpLoadState`, `FilePickerResult`).
 - 설정 창 재사용: `src/view/settings/ui/file_chooser.rs`(`SettingsFileChooser`/`FileChooserMode`/
   `FileChooserOutcome`, 저장 모드 이름 칸·덮어쓰기 판정), `src/view/settings/ui.rs`(`PopupManager` 등록 ·
   `open_file_chooser` · `settings_escape_owner` · `apply_file_chooser_outcomes`),

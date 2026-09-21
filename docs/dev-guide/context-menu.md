@@ -20,7 +20,7 @@ surface 우클릭 컨텍스트 메뉴는 surface 종류에 따라 생산 경로�
 
 egui render 루프 안에서는 OS 네이티브 메뉴를 직접 호출할 수 없다(`winit::Window` 참조 불가). 우클릭 시점에 정보+좌표만 저장하고, MainView 가 꺼내 표시한다.
 
-### 1. egui 에서 우클릭 감지 → `PendingNativeMenu` 설정 (`src/state.rs`)
+### 1. egui 에서 우클릭 감지 → `PendingNativeMenu` 설정 (`src/state/dialogs.rs`)
 
 ```rust
 pub enum PendingNativeMenu {
