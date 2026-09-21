@@ -26,12 +26,9 @@ headless 에 생산자도 호출자도 없는 정의. 모듈 통째가 그 안�
 `unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. 모듈이나 crate 전체를 덮는
 dead_code 예외는 쓰지 않는다.
 
-이 규칙에 아직 안 맞는 모듈 단위 `allow(dead_code)` 가 다섯 자리 남아 있다. 조건 없는 것 넷 —
-`src/adapters/test/mod.rs` · `src/adapters/ui/input/shortcuts/modifier_hint.rs` ·
-`src/app/dispatch_domain_stubs.rs` · `src/plugin_bridge/remote_surface.rs` — 과,
-`crates/tasty-platform/src/macos_permissions.rs` 의 `not(all(target_os = "macos", feature = "gui"))`
-조건 하나(비-macOS 와 함께 headless 도 덮는다)다. 조건이 `not(feature = "gui")` 하나뿐인 모듈
-단위 `allow(dead_code)` 는 없다.
+조건이 `not(feature = "gui")` 하나뿐인 모듈 단위 `allow(dead_code)` 는 0 이다. 이 규칙에 아직
+안 맞는 모듈·crate 단위 `dead_code` 억제(조건 없는 것 · 다른 cfg 조합의 것)는 남아 있고, 그 자리는
+목록으로 적지 않는다 — 세는 법: `git grep -nE '#!\[(cfg_attr\([^]]*)?allow\([^)]*dead_code' -- '*.rs'`.
 
 지금 ③ 에 해당하는 것은 여덟이다.
 

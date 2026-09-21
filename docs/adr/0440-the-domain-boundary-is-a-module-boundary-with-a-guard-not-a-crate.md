@@ -97,12 +97,9 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   headless 소비자 없는 정의로 드러나 +2, `intent.rs` 의 것을 지우자 `core/origin.rs` 의 사용자 발화
   주체 variant 둘이 headless 에서 안 만들어지는 것으로 드러나 +2(`expect`), `adapters/ipc.rs` 의 것을
   지우자 `core/session.rs` 의 agent 권한 임시 grant·revoke 가 드러나 +2. 지금 258 이다. 조건이
-  `not(feature = "gui")` 하나뿐인 모듈 단위 `allow(dead_code)` 는 레포에 더 없다. 그러나 모듈 단위
-  `allow(dead_code)` 자체가 없어진 것은 아니다 — 조건 없는(무조건) 것 넷과 다른 cfg 조합의 것
-  하나가 남아 있다: `src/adapters/test/mod.rs` · `src/adapters/ui/input/shortcuts/modifier_hint.rs` ·
-  `src/app/dispatch_domain_stubs.rs` · `src/plugin_bridge/remote_surface.rs`(무조건),
-  `crates/tasty-platform/src/macos_permissions.rs`(`not(all(target_os = "macos", feature = "gui"))`
-  — 비-macOS 와 함께 headless 도 덮는다).
+  `not(feature = "gui")` 하나뿐인 모듈 단위 `allow(dead_code)` 는 0 이다. 모듈 단위 `dead_code` 억제
+  자체가 없어진 것은 아니다 — 조건 없는 것과 다른 cfg 조합의 것이 남아 있다. 그 자리는 여기 적지
+  않고 재는 법만 둔다: `git grep -nE '#!\[(cfg_attr\([^]]*)?allow\([^)]*dead_code' -- '*.rs'`.
 - **잃은 것 — 전이 의존은 안 본다.** 도메인이 부르는 형제 모듈이 다시 상위를 부르는 경로는
   가드 밖이다. 형제 모듈이 상위 항목을 재수출하면 그 이름으로 우회된다. 창 상태를 받는
   `file::dispatch` 는 그래서 형제 모듈 전체가 아니라 그 하위 항목 자체를 가드의 표에 올렸다.
