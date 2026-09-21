@@ -42,6 +42,8 @@ CLI 에는 그 필드를 채우는 자리가 **여섯** 있었고 전부 `None` 
   plugin 의 폴링·자동 대기 명령은 플래그를 받으면 통신을 시작하기 전에 사용 오류(종료 코드
   2)로 끝난다. 봉투 상한은 요청 하나의 대기를 자르는 값이라 요청이 여럿인 루프에 걸 뜻이
   정해지지 않고, `events.fetch --wait-ms` 같은 긴 폴링은 걸면 매 회 `-32061` 로 끊긴다.
+  **서브커맨드가 없는 호출**(GUI 기동 · augmented help)도 실을 요청이 없으므로 진입점
+  라우팅에서 같은 exit 2 로 거절한다.
 - **만료는 그대로 전달한다.** `-32061` 은 다른 호스트 오류와 같은 모양(`Error (-32061): …`,
   종료 코드 1)이다. 그 코드가 "결과 불명 — 부수효과가 남는 메서드는 상태를 먼저 읽어라" 를
   말한다.
@@ -80,6 +82,8 @@ CLI 에는 그 필드를 채우는 자리가 **여섯** 있었고 전부 `None` 
 - `--response-timeout-ms` 가 루트가 아닌 자리로 옮겨질 때. 좌변: `tasty-cli` `contract.rs` 의
   시험 `the_root_flag_parses_before_the_subcommand`.
 - `0` 이 봉투에 실리기 시작할 때. 좌변: 같은 파일의 `a_zero_bound_is_not_carried`.
+- 서브커맨드 없는 호출이 플래그를 조용히 버리기 시작할 때. 좌변: `tests/cli_help_locales.rs` 의
+  `a_reply_bound_without_a_command_is_refused_instead_of_dropped`.
 
 **원리적으로 안 붙는 것**
 

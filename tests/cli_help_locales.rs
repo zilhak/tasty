@@ -112,3 +112,33 @@ fn help_and_parse_errors_follow_locale_while_wire_messages_stay_unchanged() {
         assert!(String::from_utf8_lossy(&output.stderr).contains("fixture wire error"));
     }
 }
+
+/// 서브커맨드 없이 `--response-timeout-ms` 를 주면 실을 요청이 없다. 조용히 버리지 않고
+/// 명령 쪽과 같은 exit 2 로 거절한다. augmented help 갈래(`TASTY_SURFACE_ID` 가 있고
+/// `--launch` 가 없음)로 재는 것은 거절이 빠져도 GUI 가 뜨지 않는 갈래라서다 — 두 갈래는
+/// 라우팅의 같은 한 자리에서 거절된다.
+#[test]
+fn a_reply_bound_without_a_command_is_refused_instead_of_dropped() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("en");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.toml"), "[general]\nlanguage='en'\n").unwrap();
+    let mut cmd = Command::new(spawn_diag::instance_bin());
+    spawn_diag::apply_bundle_opt_in(&mut cmd);
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("TASTY_") {
+            cmd.env_remove(key);
+        }
+    }
+    let output = cmd
+        .env("TASTY_HOME", &home)
+        .env("TASTY_SURFACE_ID", "1")
+        .env("NO_COLOR", "1")
+        .args(["--response-timeout-ms", "500"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(err.contains("--response-timeout-ms"), "{err}");
+    assert!(err.contains("Nothing was sent"), "{err}");
+}

@@ -43,7 +43,10 @@ impl Envelope {
 
     /// 봉투를 못 싣는 명령에 플래그가 왔으면 사용 오류로 끝낸다(종료 코드 2 — clap 의
     /// 인자 오류와 같은 값이다). 통신은 시작 전이다.
-    pub(crate) fn refuse_if_set(&self) {
+    ///
+    /// 서브커맨드가 없는 호출(GUI 기동 · augmented help)도 실을 요청이 없으므로 진입점
+    /// 라우팅이 같은 자리에서 이것을 부른다 — 그래서 `pub` 이다.
+    pub fn refuse_if_set(&self) {
         if self.is_set() {
             eprintln!("{}", tasty_i18n::t("cli.contract.bound_not_applicable"));
             std::process::exit(2);

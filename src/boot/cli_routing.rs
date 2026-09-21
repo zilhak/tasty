@@ -82,6 +82,13 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
         };
         return Ok(Routed::Subcommand(command, cli.port_file, envelope));
     }
+    // 서브커맨드가 없는 호출(아래 augmented help · GUI 기동)은 봉투를 실을 요청이 없다.
+    // 플래그를 받으면 조용히 버리지 않고 명령 쪽과 같은 모양으로 거절한다
+    // (docs/adr/0366-the-cli-bounds-a-single-request-wait-with-a-root-flag.md).
+    cli::Envelope {
+        response_timeout_ms: cli.response_timeout_ms,
+    }
+    .refuse_if_set();
     if !cli.launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
         return Ok(Routed::AugmentedHelp);
     }
