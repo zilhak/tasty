@@ -10,7 +10,8 @@ use super::require_surface_id;
 ///
 /// IPC 요청 진입점은 에이전트 경로라 `save_snapshot=false` 다(되돌리기 스택은 사용자 행동의
 /// 것이다). 원격 holder 가 forward 한 close 는 이 함수를 거치지 않고 forward 실행이
-/// 도메인 함수를 `save_snapshot=true` 로 직접 부른다 — 그 축의 근거는 도메인 함수의 문서.
+/// 도메인 함수를 직접 부르며, 그때 `save_snapshot` 은 op 의 origin 이 정한다(User=true ·
+/// Agent=false, ADR-0480) — 그 축의 근거는 도메인 함수의 문서.
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
     state: &mut AppState,

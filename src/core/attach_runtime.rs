@@ -2741,10 +2741,11 @@ mod forward_exec_tests {
         );
     }
 
-    /// forward 된 `CloseSurface` 는 서버의 복원 스택에 항목을 남긴다.
+    /// 사용자(`ForwardOrigin::User`)가 forward 한 `CloseSurface` 는 서버의 복원 스택에 항목을
+    /// 남긴다.
     ///
-    /// 그 close 를 일으킨 것은 원격 **사용자**의 손 조작이므로 되돌릴 수 있어야 한다
-    /// (ADR-0264 결정 4). 이 앞단이 없으면 복원 forward 를 아무리 정확히 붙여도 원격에
+    /// forward 된 close 의 `save_snapshot` 은 op 의 origin 이 정한다(User=true · Agent=false,
+    /// ADR-0480) — 이 시험은 User 쪽이다. 이 앞단이 없으면 복원 forward 를 아무리 정확히 붙여도 원격에
     /// 꺼낼 항목이 존재하지 않는다.
     #[test]
     fn a_forwarded_close_surface_leaves_a_restorable_snapshot() {

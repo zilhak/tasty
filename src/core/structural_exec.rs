@@ -502,9 +502,9 @@ pub(crate) fn move_tab(
 /// surface 를 닫는다. 워크스페이스가 비면 cascade 가 기본 워크스페이스를 다시 만든다.
 ///
 /// `save_snapshot` 은 **진입점이 정한다.** IPC 요청은 에이전트 경로라 `false` 이고(되돌리기
-/// 스택은 사용자 행동의 것이다), forward 된 holder 의 close 는 `true` 다 — 그 close 를 일으킨
-/// 것은 원격 사용자의 손 조작이기 때문이다
-/// (`docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md` 결정 4). 그 축을 params 가
+/// 스택은 사용자 행동의 것이다), forward 된 holder 의 close 는 op 의 origin 이 정한다 —
+/// `User` 면 `true`, `Agent` 면 `false`
+/// (`docs/adr/0480-a-forwarded-close-carries-who-asked-for-it.md`). 그 축을 params 가
 /// 아니라 인자로 받는 이유는 IPC 진입점의 `refuse_if_hard_occupied` 문서에 있다 — params 는
 /// 호출자가 만들므로 데이터로 두면 아무 에이전트나 같은 키를 실어 사용자 스택을 채운다.
 ///
