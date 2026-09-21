@@ -232,17 +232,10 @@ stage_plugins() {
     done
 }
 
-# Stage the notice set (LICENSE + third-party notice + the bundled font's OFL
-# text) into a distribution tree. The set is static — see THIRD_PARTY_LICENSES.md
-# — so there is nothing to generate here. `LICENSES/` keeps its subdirectory so
-# that the relative links inside THIRD_PARTY_LICENSES.md still resolve.
-stage_notice() {
-    local dest="$1"
-    mkdir -p "$dest/LICENSES"
-    cp LICENSE "$dest/LICENSE"
-    cp THIRD_PARTY_LICENSES.md "$dest/THIRD_PARTY_LICENSES.md"
-    cp LICENSES/D2Coding-OFL.txt "$dest/LICENSES/D2Coding-OFL.txt"
-}
+# Stage the notice set into a distribution tree — `stage_notice` lives in a
+# library shared with build-macos-dmg.sh so the two cannot disagree on the set.
+# shellcheck source=lib/notice-set.sh
+. "scripts/lib/notice-set.sh"
 
 echo "==> Assembling archive..."
 rm -rf "${DIST_DIR:?}/${PKG_DIR:?}"
