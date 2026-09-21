@@ -23,7 +23,7 @@ use crate::state::{AppState, FileHandlerPickerResult};
 pub(crate) struct ReloadFileHandlersOutcome {
     pub(crate) path: PathBuf,
     pub(crate) exists: bool,
-    /// file handler registry 가 이번 reload 에서 버린 user 항목.
+    /// file handler registry 가 이번 reload 에서 적용하지 않은 user 항목.
     pub(crate) rejected: Vec<tasty_file_handler::RejectedUserHandler>,
 }
 

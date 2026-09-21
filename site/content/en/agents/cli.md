@@ -1,4 +1,4 @@
-<!-- source-hash: 89f83c4034b2 -->
+<!-- source-hash: d396ca65b59f -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -310,7 +310,11 @@ tasty file-handler reload              # read the file handler settings file aga
 
 `file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error. A `tasty --headless` instance has no window to open a file in, so instead of reporting the request as accepted it returns an error saying this build does not support it.
 
-The `file-handler reload` response has a `rejected` list. It holds the `id` and the reason (`reason`) of each entry from the settings file that was dropped instead of applied, and it is empty when everything applied. There are two reasons: `missing_owner_prefix` means the `id` has no owner part such as `user/` in front of it (write it as `user/name`), and `missing_detector_or_action` means the entry is missing either which files it handles (`detector`) or what to do (`action`).
+The `file-handler reload` response has a `rejected` list. It holds the `id` and the reason (`reason`) of each entry from the settings file that is not applied right now, and it is empty when everything applied. There are three reasons.
+
+- `missing_owner_prefix` — the `id` has no owner part such as `user/` in front of it (write it as `user/name`). The entry is dropped.
+- `missing_detector_or_action` — an entry you made yourself (`user/…`) is missing either which files it handles (`detector`) or what to do (`action`). The entry is dropped.
+- `target_not_contributed` — the entry changes a built-in or plugin handler, but that handler is not there right now. Either the plugin is off or the `id` is wrong. The entry is kept, and it applies as soon as the plugin is on. If it is still listed after you turn the plugin on, check the `id`.
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
 

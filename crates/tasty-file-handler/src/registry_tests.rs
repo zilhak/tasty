@@ -613,7 +613,7 @@ fn a_poisoned_registry_still_installs_and_resolves() {
     );
 }
 
-/// reload 는 버린 user 항목을 사유와 함께 돌려준다 — 경고 로그에만 있던 사실이다.
+/// reload 는 적용하지 않은 user 항목을 사유와 함께 돌려준다 — 경고 로그에만 있던 사실이다.
 /// 접두사 없는 id 는 설치 전에, detector·action 이 빈 id 는 finalize 에서 버려진다.
 /// 기존 handler 를 메타만 덮는 patch 와 온전한 user 항목은 보고에 없다.
 #[test]
@@ -680,7 +680,7 @@ fn reload_user_config_reports_the_entries_it_dropped() {
     assert_eq!(patched.priority, 7);
 }
 
-/// 버린 것이 없으면 빈 목록이다. 파싱 실패로 reload 가 멈춘 경우도 항목을 모르므로 빈 목록이다.
+/// 적용하지 않은 것이 없으면 빈 목록이다. 파싱 실패로 reload 가 멈춘 경우도 항목을 모르므로 빈 목록이다.
 #[test]
 fn reload_user_config_reports_nothing_when_nothing_was_dropped() {
     let reg = FileHandlerRegistry::new();
@@ -715,4 +715,92 @@ fn reject_reason_codes_are_stable() {
         UserHandlerRejectReason::MissingDetectorOrAction.as_str(),
         "missing_detector_or_action"
     );
+    assert_eq!(
+        UserHandlerRejectReason::TargetNotContributed.as_str(),
+        "target_not_contributed"
+    );
+}
+
+/// plugin handler 를 patch 하는 user 항목은 그 plugin 이 contribute 하지 않은 동안 등록되지
+/// 않는다. 그런데 **버려진 것이 아니다** — 남아 있다가 plugin 이 contribute 하면 적용된다. 그래서
+/// 사유는 `missing_detector_or_action` 이 아니라 `target_not_contributed` 다. 오타 id 도 같은
+/// 모양이라 같은 사유로 보고된다(둘은 여기서 가를 수 없다).
+#[test]
+fn a_patch_whose_plugin_has_not_contributed_is_reported_as_target_not_contributed() {
+    let reg = FileHandlerRegistry::new();
+    load_host(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("file-handlers.toml");
+    std::fs::write(
+        &p,
+        format!(
+            r#"
+                [[handler]]
+                id = "{MD_VIEWER_ID}"
+                priority = 10
+
+                [[handler]]
+                id = "com.tasty.markdown/viewer-typo"
+                priority = 10
+            "#
+        ),
+    )
+    .unwrap();
+
+    let rejected = reg.reload_user_config(&p);
+
+    assert_eq!(
+        rejected,
+        vec![
+            RejectedUserHandler {
+                id: MD_VIEWER_ID.into(),
+                reason: UserHandlerRejectReason::TargetNotContributed,
+            },
+            RejectedUserHandler {
+                id: "com.tasty.markdown/viewer-typo".into(),
+                reason: UserHandlerRejectReason::TargetNotContributed,
+            },
+        ]
+    );
+}
+
+/// 대상 plugin 이 contribute 한 뒤 같은 파일로 reload 하면 그 patch 는 보고에서 빠지고 실제로
+/// 적용된다. 오타 id 는 대상이 여전히 없으므로 남는다.
+#[test]
+fn a_patch_leaves_the_report_once_its_plugin_contributes() {
+    let reg = FileHandlerRegistry::new();
+    load_host(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("file-handlers.toml");
+    std::fs::write(
+        &p,
+        format!(
+            r#"
+                [[handler]]
+                id = "{MD_VIEWER_ID}"
+                priority = 10
+
+                [[handler]]
+                id = "com.tasty.markdown/viewer-typo"
+                priority = 10
+            "#
+        ),
+    )
+    .unwrap();
+    assert_eq!(reg.reload_user_config(&p).len(), 2);
+
+    install_markdown_plugin(&reg);
+    let rejected = reg.reload_user_config(&p);
+
+    assert_eq!(
+        rejected,
+        vec![RejectedUserHandler {
+            id: "com.tasty.markdown/viewer-typo".into(),
+            reason: UserHandlerRejectReason::TargetNotContributed,
+        }]
+    );
+    let viewer = reg
+        .get(&HandlerId(MD_VIEWER_ID.into()))
+        .expect("plugin 이 contribute 한 뒤에는 patch 가 적용된 handler 가 있다");
+    assert_eq!(viewer.priority, 10);
 }

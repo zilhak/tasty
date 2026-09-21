@@ -2,7 +2,7 @@
 //!
 //! - `file_handler.reload`: user TOML 재로드. host/plugin 영향 없음.
 //!   Method call wrapper (`Core::reload_file_handlers`) 직접 호출. 응답의 `rejected` 는
-//!   이번 reload 가 버린 user 항목과 사유다.
+//!   이번 reload 가 적용하지 않은 user 항목과 사유다.
 //! - `file_handler.dispatch`: 임의 경로를 file_handler 시스템에 진입시킴.
 //!   `DomainIntent::DispatchFile` 발화 — Core::apply 가 worker spawn,
 //!   결과는 `AppEvent::IdentifyDone` 경로로 비동기 적용. **gui 빌드에만 있다** — 그 intent
@@ -41,7 +41,7 @@ pub fn handle_reload(
     )
 }
 
-/// reload 가 버린 user 항목을 `[{ "id", "reason" }]` 로 싣는다. 버린 것이 없으면 빈 배열이다
+/// reload 가 적용하지 않은 user 항목을 `[{ "id", "reason" }]` 로 싣는다. 없으면 빈 배열이다
 /// (docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
 fn rejected_json(rejected: &[tasty_file_handler::RejectedUserHandler]) -> serde_json::Value {
     rejected

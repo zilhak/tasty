@@ -78,7 +78,7 @@ pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
 ///
 /// host embedded 기본값 + plugin contribution 은 영향받지 않는다(user 출처만 교체).
 /// 파일 핸들러 `file_handler.reload` 응답의 `{path, exists}` 를 미러링한다. 그쪽이 더한 `rejected`
-/// (버린 user 항목 보고, docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md)는
+/// (적용되지 않은 user 항목 보고, docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md)는
 /// 아직 없다.
 pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
     let Some(path) = hook_handler::user_config_path() else {

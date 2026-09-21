@@ -192,7 +192,7 @@ impl FileHandlerRegistry {
             }
         };
         let mut inner = self.lock_write();
-        // 부팅 로드는 버린 항목을 돌려줄 호출자가 없다 — 접두사 누락은 install_user 가,
+        // 부팅 로드는 적용되지 않은 항목을 돌려줄 호출자가 없다 — 접두사 누락은 install_user 가,
         // detector·action 누락은 finalize 가 각자 warn 으로 남긴다.
         install_user_decls(&mut inner, decls);
         inner.dirty = true;
@@ -396,7 +396,7 @@ impl FileHandlerRegistry {
     /// **Transactional**: read/parse 실패 시 기존 user contribution 보존 (write lock 잡기 전에
     /// 검증). 파일이 없으면 user contribution 만 제거.
     ///
-    /// 돌려주는 것은 **이 reload 가 버린 user 항목**이다 — 경고 로그와 같은 사실을 호출자가
+    /// 돌려주는 것은 **이 reload 가 적용하지 않은 user 항목**이다 — 경고 로그와 같은 사실을 호출자가
     /// 응답에 실을 수 있게 한다(docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
     /// read/parse 실패로 reload 자체가 멈춘 경우는 항목을 모르므로 빈 목록이다.
     pub fn reload_user_config(&self, path: &std::path::Path) -> Vec<RejectedUserHandler> {
@@ -495,7 +495,7 @@ impl FileHandlerRegistry {
                 owner = c.owner.clone();
             }
 
-            // detector + action 둘 다 있어야 등록. reload 가 보고하는 버림(`is_complete`)과
+            // detector + action 둘 다 있어야 등록. reload 가 보고하는 미등록(`is_complete`)과
             // 같은 판정이다 — 마지막 non-None 이 이기므로 "어느 출처든 하나라도 있는가" 와 같다.
             let (Some(detector), Some(action)) = (detector, action) else {
                 warn!(
@@ -614,7 +614,9 @@ fn install_plugin(inner: &mut Inner, plugin_id: &str, decl: HandlerDecl<PluginHa
     let _: Option<HandlerDeclError> = None; // suppress unused import if all paths Ok
 }
 
-/// user 설정 reload 가 버린 항목 하나 — 그 id 와 사유.
+/// user 설정 reload 가 **적용하지 않은** 항목 하나 — 그 id 와 사유. 버려진 것도 있고
+/// (`MissingOwnerPrefix` · `MissingDetectorOrAction`), 남아 있다가 대상이 나타나면 적용되는 것도
+/// 있다(`TargetNotContributed`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedUserHandler {
     /// user TOML 에 적힌 그대로의 id.
@@ -622,13 +624,17 @@ pub struct RejectedUserHandler {
     pub reason: UserHandlerRejectReason,
 }
 
-/// user 항목을 버린 사유. 응답에는 [`UserHandlerRejectReason::as_str`] 의 코드로 나간다.
+/// user 항목이 적용되지 않은 사유. 응답에는 [`UserHandlerRejectReason::as_str`] 의 코드로 나간다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UserHandlerRejectReason {
     /// id 에 `<owner>/` 접두사가 없다 — 설치하지 않는다.
     MissingOwnerPrefix,
-    /// 모든 출처를 겹쳐도 detector 나 action 이 비어 finalize 가 버린다.
+    /// user 가 만든 항목(`user/…`)인데 detector 나 action 이 비어 finalize 가 버린다.
     MissingDetectorOrAction,
+    /// 다른 출처(host · plugin)의 handler 를 patch 하는 항목인데 그 대상이 지금 registry 에
+    /// 없다 — plugin 이 안 떠 있거나 id 가 틀렸다. 둘은 여기서 가를 수 없다. 항목은
+    /// 버려지지 않고 남아 있어, 대상이 contribute 되면 그대로 적용된다.
+    TargetNotContributed,
 }
 
 impl UserHandlerRejectReason {
@@ -636,16 +642,17 @@ impl UserHandlerRejectReason {
         match self {
             Self::MissingOwnerPrefix => "missing_owner_prefix",
             Self::MissingDetectorOrAction => "missing_detector_or_action",
+            Self::TargetNotContributed => "target_not_contributed",
         }
     }
 }
 
-/// user 선언을 설치하고 **버린 항목**을 돌려준다 — 설치 전에 거절한 것과, 설치했지만
-/// finalize 가 버릴 것 둘 다.
+/// user 선언을 설치하고 **적용되지 않은 항목**을 돌려준다 — 설치 전에 거절한 것과, 설치했지만
+/// finalize 가 등록하지 않을 것 둘 다.
 ///
-/// finalize 는 lookup 때 게으르게 돈다. 그때 detector·action 이 없어 버려질 user 항목을
-/// 지금 같은 판정([`is_complete`])으로 골라 둔다 — 그렇지 않으면 reload 의 응답이 그 버림을
-/// 모른다.
+/// finalize 는 lookup 때 게으르게 돈다. 그때 detector·action 이 없어 등록되지 않을 user 항목을
+/// 지금 같은 판정([`is_complete`])으로 골라 둔다 — 그렇지 않으면 reload 의 응답이 그것을
+/// 모른다. 사유는 [`incomplete_reason`] 이 가른다.
 fn install_user_decls(
     inner: &mut Inner,
     decls: Vec<UserHandlerSettingsDecl>,
@@ -659,19 +666,45 @@ fn install_user_decls(
         }
     }
     for id in installed {
-        let incomplete = inner
+        let reason = inner
             .contributions
             .get(&id)
-            .is_some_and(|contribs| !is_complete(contribs));
+            .and_then(|contribs| incomplete_reason(&id, contribs));
         // 같은 id 가 파일에 두 번 적혔으면 한 번만 보고한다.
-        if incomplete && !rejected.iter().any(|r| r.id == id.0) {
-            rejected.push(RejectedUserHandler {
-                id: id.0,
-                reason: UserHandlerRejectReason::MissingDetectorOrAction,
-            });
+        if let Some(reason) = reason
+            && !rejected.iter().any(|r| r.id == id.0)
+        {
+            rejected.push(RejectedUserHandler { id: id.0, reason });
         }
     }
     rejected
+}
+
+/// finalize 가 이 id 를 등록하지 않는다면 그 사유. 등록하면 `None`.
+///
+/// `user/` 가 아닌 id 에 user contribution 만 있으면 patch 대상이 아직 없는 것이다 — 항목은
+/// 남아 있다가 대상이 contribute 되면 적용되므로 "버렸다" 가 아니다
+/// (docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
+fn incomplete_reason(
+    id: &HandlerId,
+    contribs: &[HandlerContribution],
+) -> Option<UserHandlerRejectReason> {
+    if is_complete(contribs) {
+        return None;
+    }
+    let patches_another_owner = !id.as_str().starts_with("user/");
+    // host · plugin 선언은 타입상 detector 와 action 을 둘 다 가진다(`HandlerDecl`). 그래서 user 가
+    // 아닌 contribution 이 하나라도 있으면 위 `is_complete` 가 이미 참이고, 지금은 이 조건이 거짓인
+    // 채로 여기 닿는 입력이 없다. 그 전제가 깨질 때 대상이 있는 patch 를 "대상 없음" 으로 부르지
+    // 않도록 남겨 둔다.
+    let only_user = contribs
+        .iter()
+        .all(|c| matches!(c.owner, HandlerOwner::User));
+    if patches_another_owner && only_user {
+        Some(UserHandlerRejectReason::TargetNotContributed)
+    } else {
+        Some(UserHandlerRejectReason::MissingDetectorOrAction)
+    }
 }
 
 /// finalize 가 이 id 를 등록하는가 — 어느 출처든 detector 와 action 을 하나씩 가졌는가.

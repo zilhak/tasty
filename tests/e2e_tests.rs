@@ -1549,7 +1549,7 @@ fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
     );
 }
 
-/// `file_handler.reload` 는 버린 user 항목을 `rejected` 에 사유와 함께 싣는다 — 기존 필드는
+/// `file_handler.reload` 는 적용하지 않은 user 항목을 `rejected` 에 사유와 함께 싣는다 — 기존 필드는
 /// 그대로다. 예전에는 `{path, exists}` 뿐이라 설정이 무시된 것이 로그에만 남았다
 /// (docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
 ///
@@ -1583,6 +1583,10 @@ id = "user/good"
 detector = "markdown"
 [handler.action]
 kind = "system"
+
+[[handler]]
+id = "com.example.absent/viewer"
+priority = 10
 "#,
     )
     .expect("user 설정 쓰기");
@@ -1600,13 +1604,14 @@ kind = "system"
         json!([
             {"id": "md-as-html", "reason": "missing_owner_prefix"},
             {"id": "user/no-action", "reason": "missing_detector_or_action"},
+            {"id": "com.example.absent/viewer", "reason": "target_not_contributed"},
         ]),
-        "버린 항목과 사유가 응답에 있어야 한다: {resp}"
+        "적용하지 않은 항목과 사유가 응답에 있어야 한다: {resp}"
     );
     assert_eq!(
         restored["rejected"],
         json!([]),
-        "버린 것이 없으면 빈 배열이다: {restored}"
+        "적용하지 않은 것이 없으면 빈 배열이다: {restored}"
     );
 }
 
