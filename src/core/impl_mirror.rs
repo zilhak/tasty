@@ -49,6 +49,16 @@ impl std::error::Error for MirrorStructuralBlocked {}
 ///   after_delta`가 복원할 대상을 잃는 경우) 첫 번째로 살아남은 후보로 focus 를
 ///   옮긴다. new-tab/split 등 close 가 아닌 op 은 항상 빈 벡터.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(
+        dead_code,
+        reason = "이 큐는 headless 에서도 채워지지만 비우는 쪽이 GUI 의 about_to_wait \
+                  하나뿐이라 그 빌드에는 읽는 자리가 없다. 필드를 빼면 IPC 핸들러가 \
+                  깨지고, 핸들러를 거절로 바꾸는 것은 plugin 계약의 변경이라 이 경계 \
+                  작업의 범위가 아니다 — 그쪽은 따로 판정한다"
+    )
+)]
 pub(crate) struct PendingStructuralForward {
     pub(crate) op: tasty_ipc::stream::StructuralOp,
     pub(crate) user_triggered: bool,

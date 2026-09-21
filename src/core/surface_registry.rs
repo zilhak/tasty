@@ -275,6 +275,15 @@ pub struct SurfaceKindDef {
     /// capability flags — host 의 `kind == "..."` 입력/줌/복사 게이트를 generic 화한다.
     /// 각 의미는 매니페스트 [`crate::plugin::manifest::SurfaceKindDecl`] 의 동명 필드 참조.
     /// builtin 은 등록 코드에서, plugin kind 는 decl 에서 채운다.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "plugin 매니페스트의 SurfaceKindDecl 에서 그대로 복사되는 값이다. \
+                      복사는 headless 에서도 일어나고, 읽는 쪽만 GUI 의 입력·줌·복사 \
+                      게이트다. 칸을 빼면 그 빌드가 매니페스트의 그 키를 잃는다"
+        )
+    )]
     pub consumes_egui_input: bool,
     pub zoomable: bool,
     pub egui_copy: bool,
