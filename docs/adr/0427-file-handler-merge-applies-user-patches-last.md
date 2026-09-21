@@ -31,16 +31,21 @@ user 설정의 항목이 plugin handler 를 patch 할 때(예: `com.tasty.markdo
 ## Decision
 
 **finalize 가 병합 전에 contribution 을 owner 순 — Host → Plugin → User — 으로 안정 정렬한다.**
-같은 owner 안의 순서는 설치 순서 그대로다. 그래서 user patch 는 설치 시점과 무관하게 늘 마지막으로
+정렬은 안정 정렬이라 같은 owner 안의 순서는 설치 순서 그대로다(지금은 owner 당 contribution 이
+하나뿐이라 이 경우가 없다 — Consequences). 그래서 user patch 는 설치 시점과 무관하게 늘 마지막으로
 이긴다. 정렬은 `crates/tasty-file-handler/src/registry.rs` 의 `merge_order` 한 자리에 있다.
 
 ## Consequences
 
 - **얻은 것**: 설정 파일의 user patch 가 재시작 뒤에도, plugin 을 껐다 켠 뒤에도 reload 없이
   적용된다. ADR-0426 의 "대상이 contribute 되면 그대로 적용된다" 가 참이 된다.
-- **잃은 것 / 한계**: 없다고 판단한다. host 와 plugin 사이의 순서는 바뀌지 않는다 — host 기본값은
-  부팅 때 한 번, plugin 보다 먼저 설치되므로 설치 순서가 이미 Host → Plugin 이었다. 여러 plugin 이
-  같은 id 를 contribute 하면 그들 사이는 여전히 설치 순서다.
+- **잃은 것 / 한계**: 없다고 판단한다. 정렬이 host 와 plugin 사이, 또는 plugin 끼리의 순서를 바꿀
+  입력이 없다 — id 이름공간이 출처를 가른다. host 는 `host/<short>`, plugin 은 `<plugin_id>/<short>`
+  로만 contribute 하고, plugin id 는 `.` 을 반드시 품어(`tasty_utils::plugin_id::is_valid_plugin_id`)
+  `host` 와 겹치지 않는다. 그래서 한 id 에 host 와 plugin 이 함께 오지 않고, 서로 다른 plugin 도
+  함께 오지 않는다. 또 `push_contribution` 이 같은 owner 의 이전 contribution 을 지우고 붙이므로
+  owner 당 contribution 은 하나다. 한 id 에 모일 수 있는 것은 원 출처 하나(host 또는 그 plugin)와
+  user 하나뿐이고, 정렬이 실제로 옮기는 것은 user 의 자리뿐이다.
 - **운영 비용 / 유지 부담**: 병합 순서가 설치 순서와 갈라졌다. contribution 을 넣는 새 경로가
   생겨도 순서는 `merge_order` 가 정하므로 그 경로는 순서를 신경 쓰지 않아도 된다.
 - **호환성**: 부팅 직후의 결과가 바뀐다. 전에는 plugin 값이, 이제는 user patch 값이 나온다. 사용자가
@@ -67,8 +72,8 @@ user 설정의 항목이 plugin handler 를 patch 할 때(예: `com.tasty.markdo
 
 **원리적으로 안 붙는 것**
 
-- plugin 이 host 기본값을 **덮지 않아야** 하는 경우가 생긴다(지금은 Plugin 이 Host 뒤다). 그때 owner
-  순서를 다시 정한다.
+- id 이름공간이 바뀌어 한 id 에 host 와 plugin(또는 서로 다른 plugin)이 함께 contribute 할 수 있게
+  된다. 그때 Host → Plugin 순서와 plugin 끼리의 순서가 처음으로 뜻을 갖게 되므로 다시 정한다.
 
 ## References
 
