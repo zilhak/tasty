@@ -7,7 +7,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, checkbox};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-use crate::catalog::toast_card::{self, CardColors, ToastKind};
+use crate::catalog::toast_card::{self, ToastKind};
 use crate::catalog::widgets::dialog as kit;
 
 use super::paint::{caption, glyph_at, intro};
@@ -272,25 +272,9 @@ pub(super) fn action_row(
 }
 
 /// 내보내기 완료 — 설정 창 자체 `ToastManager` 의 success 카드에 해석된 경로.
+///
+/// 치수·색은 본체 토스트와 같은 함수(`draw_single_card`)에서 온다 — 여기서 다시 계산하지 않는다.
 fn export_toast(ui: &mut egui::Ui, theme: &Theme) {
     let text = format!("Exported to ~/tasty/{IE_FILE}");
-    let font = egui::FontId::proportional(theme.font_size_body.value());
-    let chrome = toast_card::ACCENT_BAR_WIDTH + toast_card::PADDING_X * 2.0;
-    let wrap = theme.toast_max_width.value() - chrome;
-    let galley = ui.fonts(|f| f.layout(text, font, theme.text_primary().to_egui(), wrap));
-    let w = galley.rect.width() + chrome;
-    let h = galley.rect.height() + toast_card::PADDING_Y * 2.0;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    toast_card::draw_card(
-        ui.painter(),
-        theme,
-        rect,
-        CardColors {
-            bg: theme.surface_raised().to_egui(),
-            border: theme.border_strong().to_egui(),
-            accent: toast_card::accent_color(ToastKind::Success, theme),
-            text: theme.text_primary().to_egui(),
-        },
-        galley,
-    );
+    toast_card::draw_single_card(ui, theme, ToastKind::Success, &text, 1.0);
 }
