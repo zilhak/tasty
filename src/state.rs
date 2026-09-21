@@ -5,6 +5,7 @@
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
 mod accessors;
+mod cascade_window;
 mod detect;
 // dialog·popup 입력 상태는 GUI 가 소유한다 — headless 에는 세우는 쪽도 비우는 쪽도 없다
 // (`docs/dev-guide/app-state-ownership.md`).

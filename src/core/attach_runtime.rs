@@ -746,7 +746,7 @@ pub(crate) struct ForwardedDelta {
 /// 하고, 그 다음 added_terminals 를 tap 한다(순서: result → delta → snapshot).
 pub(crate) fn execute_forwarded_structural_op(
     core: &mut crate::core::Core,
-    state: &mut crate::state::AppState,
+    state: &mut dyn crate::core::cascade_window::CascadeWindow,
     engine: &mut CoreState,
     op: &StructuralOp,
 ) -> Result<Option<ForwardedDelta>, String> {

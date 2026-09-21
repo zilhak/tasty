@@ -25,6 +25,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
+use crate::core::cascade_window::CascadeWindow;
 use crate::core::intent::{CoreEvent, DomainIntent};
 use crate::core::origin::{AgentSource, IntentOrigin};
 use crate::core::structural_cascade::{
@@ -33,7 +34,6 @@ use crate::core::structural_cascade::{
 };
 use crate::core::{Core, CoreState};
 use crate::model::SplitDirection;
-use crate::state::AppState;
 
 /// 구조 변경 실행의 실패. 갈래가 IPC 응답 코드를 정하고, 문구는 두 진입점이 byte 단위로
 /// 같게 받는다.
@@ -98,7 +98,7 @@ pub(crate) enum SplitOutcome {
 /// cwd 상속 · `Core::apply` · cascade · `meta` 적용 순서다.
 pub(crate) fn split(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     req: SplitRequest<'_>,
 ) -> Result<SplitOutcome, StructuralFailure> {
@@ -278,13 +278,15 @@ pub(crate) fn split(
 }
 
 /// Apply metadata key-value pairs to a surface.
-fn apply_meta(state: &AppState, surface_id: u32, meta: Option<&serde_json::Map<String, Value>>) {
+fn apply_meta(
+    state: &dyn CascadeWindow,
+    surface_id: u32,
+    meta: Option<&serde_json::Map<String, Value>>,
+) {
     if let Some(map) = meta {
         for (key, value) in map {
             if let Some(v) = value.as_str() {
-                let result = state.with_memory(|m| {
-                    crate::surface_meta::SurfaceMetaStore::set(m, surface_id, key, v)
-                });
+                let result = state.set_surface_meta(surface_id, key, v);
                 if let Err(e) = result {
                     tracing::warn!(
                         "surface_meta set failed for surface {surface_id} key '{key}': {e}"
@@ -308,7 +310,7 @@ pub(crate) struct TabCreated {
 /// kind 의 fresh-context 기본 파라미터를 채운 사본이 새 surface 의 `surface_params` 가 된다.
 pub(crate) fn create_tab(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     pane_id: u32,
     params: &Value,
@@ -410,7 +412,7 @@ pub(crate) struct Closed {
 /// 탭을 닫는다. 에이전트 경로라 `is_user_close=false` 로 cascade 한다.
 pub(crate) fn close_tab(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     tab_id: u32,
 ) -> Result<Closed, StructuralFailure> {
@@ -440,7 +442,7 @@ pub(crate) fn close_tab(
 /// 페인을 닫는다. 없는 페인은 `Rejected` 다(탭과 달리 `Core::apply` 전에 거른다).
 pub(crate) fn close_pane(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     pane_id: u32,
 ) -> Result<Closed, StructuralFailure> {
@@ -512,7 +514,7 @@ pub(crate) fn move_tab(
 /// 고정한다). forward 된 close 도 `is_user_close=false` 로 나간다.
 pub(crate) fn close_surface(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     surface_id: u32,
     save_snapshot: bool,

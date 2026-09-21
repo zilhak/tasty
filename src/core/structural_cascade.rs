@@ -20,10 +20,10 @@
 //! 포커스 이동은 소비자가 상태 자신이라 양쪽에 똑같이 돈다. 표는
 //! `docs/architecture/close-sequence.md` "gui 와 headless 의 차이".
 
+use crate::core::cascade_window::CascadeWindow;
 use crate::core::intent::CascadeLevel;
 use crate::core::origin::IntentOrigin;
 use crate::core::{Core, CoreState};
-use crate::state::AppState;
 
 /// `CoreEvent::SurfaceClosed` / `MoveSurfaceApplied` 가 공유하는 cascade 결과 —
 /// 하나의 close 판정에서 나온 개념적 단위라 필드를 낱개로 끌고 다니지 않고 묶는다.
@@ -198,7 +198,7 @@ pub(crate) struct PaneSplitCascade {
 )]
 pub(crate) fn cascade_surface_closed(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     c: SurfaceCloseCascade,
 ) {
@@ -284,7 +284,7 @@ pub(crate) fn cascade_surface_closed(
     )
 )]
 fn reclaim_closed_surfaces(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
@@ -295,7 +295,7 @@ fn reclaim_closed_surfaces(
     let mut sums = crate::close_trace::CleanupSums::default();
     for (sid, pid) in cleanup_targets {
         #[cfg(feature = "gui")]
-        let kind = state.surface_kind(engine, sid);
+        let kind = engine.find_surface_by_id(sid).map(|s| s.kind());
         state.cleanup_surface_traced(engine, sid, pid, &mut sums);
         #[cfg(feature = "gui")]
         state.enqueue_surface_closed(sid, kind, is_user_close);
@@ -312,19 +312,15 @@ fn reclaim_closed_surfaces(
 /// 있음 — 이때는 baseline 에서 lookup).
 #[cfg(feature = "gui")]
 fn enqueue_closed_tab_events(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     closed_tab_ids: &[u32],
     closed_pane_ids: &[u32],
 ) {
     for tab_id in closed_tab_ids {
-        let pane_id = closed_pane_ids.first().copied().unwrap_or_else(|| {
-            state
-                .last_tab_locations
-                .as_ref()
-                .and_then(|m| m.get(tab_id))
-                .map(|(p, _, _)| *p)
-                .unwrap_or(0)
-        });
+        let pane_id = closed_pane_ids
+            .first()
+            .copied()
+            .unwrap_or_else(|| state.lifecycle_baseline_pane_of(*tab_id).unwrap_or(0));
         state.enqueue_host_event(crate::core::host_event::PendingHostEvent::TabClosed {
             tab_id: *tab_id,
             pane_id,
@@ -336,7 +332,7 @@ fn enqueue_closed_tab_events(
 /// `cascade_surface_closed` 2 단계 (pane): 닫힌 pane 마다 `pane.closed` host
 /// event enqueue.
 #[cfg(feature = "gui")]
-fn enqueue_closed_pane_events(state: &mut AppState, closed_pane_ids: &[u32]) {
+fn enqueue_closed_pane_events(state: &mut dyn CascadeWindow, closed_pane_ids: &[u32]) {
     for pane_id in closed_pane_ids {
         state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed {
             pane_id: *pane_id,
@@ -351,7 +347,7 @@ fn enqueue_closed_pane_events(state: &mut AppState, closed_pane_ids: &[u32]) {
 /// pane.rs::close_surface_by_id_no_snapshot) 의 중복 분기를 단일 지점으로 통합.
 fn recreate_workspace_if_now_empty(
     core: &mut Core,
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     workspaces_now_empty: bool,
 ) {
@@ -359,7 +355,7 @@ fn recreate_workspace_if_now_empty(
         return;
     }
     match core.create_default_workspace(engine) {
-        Ok(idx) => state.active_workspace = idx,
+        Ok(idx) => state.set_active_workspace(idx),
         Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
     }
 }
@@ -380,7 +376,7 @@ fn recreate_workspace_if_now_empty(
     )
 )]
 pub(crate) fn cascade_surface_split(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     origin: &IntentOrigin,
     workspace_index: usize,
@@ -416,7 +412,7 @@ pub(crate) fn cascade_surface_split(
     )
 )]
 pub(crate) fn cascade_pane_split(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     origin: &IntentOrigin,
     c: PaneSplitCascade,
@@ -453,7 +449,7 @@ pub(crate) fn cascade_pane_split(
 
 /// `CoreEvent::PaneClosed` 의 외부 cascade. host event (`pane.closed`) enqueue.
 #[cfg(feature = "gui")]
-pub(crate) fn cascade_pane_closed(state: &mut AppState, pane_id: u32) {
+pub(crate) fn cascade_pane_closed(state: &mut dyn CascadeWindow, pane_id: u32) {
     state.enqueue_host_event(crate::core::host_event::PendingHostEvent::PaneClosed { pane_id });
 }
 
@@ -470,7 +466,7 @@ pub(crate) fn cascade_pane_closed(state: &mut AppState, pane_id: u32) {
     )
 )]
 pub(crate) fn cascade_pane_closed_full(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     pane_id: u32,
     cleanup_targets: Vec<(u32, Option<String>)>,
@@ -485,7 +481,11 @@ pub(crate) fn cascade_pane_closed_full(
 /// / WorkspaceCreated cascade 가 모두 사용. `surface_id` 의 위치 정보를 engine
 /// 에서 lookup 해 `PendingHostEvent::SurfaceCreated` enqueue.
 #[cfg(feature = "gui")]
-pub(crate) fn cascade_surface_created(state: &mut AppState, engine: &CoreState, surface_id: u32) {
+pub(crate) fn cascade_surface_created(
+    state: &mut dyn CascadeWindow,
+    engine: &CoreState,
+    surface_id: u32,
+) {
     let Some((tab_id, pane_id, workspace_id, kind)) = find_surface_location(engine, surface_id)
     else {
         return;
@@ -539,7 +539,7 @@ fn find_surface_location(
     )
 )]
 pub(crate) fn cascade_tab_created(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &CoreState,
     pane_id: u32,
     tab_id: u32,
@@ -576,7 +576,7 @@ pub(crate) fn cascade_tab_created(
 /// polling baseline 동기화. `pane_id` 가 `None` 이면 close 가 실패한 케이스
 /// (find 못 함) — 아무것도 안 함.
 #[cfg(feature = "gui")]
-pub(crate) fn cascade_tab_closed(state: &mut AppState, tab_id: u32, pane_id: Option<u32>) {
+pub(crate) fn cascade_tab_closed(state: &mut dyn CascadeWindow, tab_id: u32, pane_id: Option<u32>) {
     let Some(pane_id) = pane_id else {
         return;
     };
@@ -599,7 +599,7 @@ pub(crate) fn cascade_tab_closed(state: &mut AppState, tab_id: u32, pane_id: Opt
     )
 )]
 pub(crate) fn cascade_tab_closed_full(
-    state: &mut AppState,
+    state: &mut dyn CascadeWindow,
     engine: &mut CoreState,
     tab_id: u32,
     pane_id: Option<u32>,

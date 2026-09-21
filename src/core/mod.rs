@@ -21,6 +21,7 @@ pub(crate) mod attach_runtime;
 pub(crate) mod builder;
 pub(crate) mod bulk_transfer;
 pub(crate) mod capture_upload;
+pub(crate) mod cascade_window;
 pub(crate) mod child_terminal;
 pub(crate) mod command_index;
 pub(crate) mod egui_mesh_surface;
