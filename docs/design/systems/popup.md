@@ -119,9 +119,13 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 
 scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](../../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
 `Surface` 범위면 그 칸 하나이고, 경계는 그 surface 의 **보더를 포함**하며 인접 surface ·
-사이드바 · pane 탭바 · 상태바는 **제외**한다. radius 는 범위 대상 자신의 radius 를 따른다 —
-오늘의 셸에서 surface radius 는 0 이라 직각이다. 알파는 한 벌이다(`--tasty-scrim-bg`) —
-범위가 둘이라고 값을 나누지 않는다. 바인딩이 없으면(창·워크스페이스 범위, 그리고 선언이
+사이드바 · pane 탭바 · 상태바는 **제외**한다. `Pane`·`Tab` 범위면 그 pane 의 rect 다 — 현재
+동작이다: `src/adapters/ui/popup/draw.rs::PopupManager::scope_rect` 가 두 범위 모두
+`LayoutContext::pane_rects` 에서 찾은 rect 를 내고, scrim 은 그 rect 에 깔린다. radius 는 범위
+대상 자신의 radius 를 따른다 — 오늘의 셸에서 surface radius 는 0 이라 직각이고, 코드는 범위와
+무관하게 radius 0 으로 칠한다. 알파는 한 벌이다(`--tasty-scrim-bg`) — 범위 갈래가 몇이든 값을
+나누지 않는다(host·plugin 두 경로 모두 범위와 무관하게 같은 `scrim()` 한 값으로 칠한다).
+바인딩이 없으면(창·워크스페이스 범위, 범위 rect 를 그 frame 에 못 찾은 경우, 그리고 선언이
 `surface` 여도 대상이 없는 호환 경로) 창 전체다.
 
 **scrim 은 범위당 한 번 깔린다.** 같은 범위에 팝업이 여럿 떠도(부모 팝업과 그것이 연 자식
