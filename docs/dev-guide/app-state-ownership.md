@@ -84,7 +84,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | `plugin_mesh_popup_forward` · `plugin_mesh_banner_forward` | 사용자 view 상태 | 열림 | egui 패스 → 합성 | 없음 |
 | `plugin_mesh_banner_regions` | 사용자 view 상태 | 프레임 | egui 패스 → 합성 | 없음 |
 | `plugin_mesh_popup_pending_repaint` · `plugin_mesh_banner_pending_repaint` | 사용자 view 상태 | 요청 | plugin repaint 요청 → 합성 | 없음 |
-| `pending_intents` | 실행 자원 (큐) | 요청 | 핸들러·GUI 의 `dispatch_intent` → `dispatch_pending_intents` / headless drain | 읽힘 |
+| `pending_intents` | 실행 자원 (큐) | 요청 | GUI 의 `dispatch_intent` · IPC 진입점이 옮기는 요청 출구 → `dispatch_pending_intents` / headless drain | 읽힘 |
 
 ## 모듈 단위 예외 없이 가른다
 
@@ -130,15 +130,23 @@ headless 빌드에 그 필드가 있는지를 적는다.
 그 포트의 메서드 목록이 "도메인 실행이 `AppState` 에서 무엇을 쓰는가" 의 답이다.
 
 IPC 핸들러는 **창 상태를 읽을 때만** `AppState` 를 받는다
-([ADR-0470](../adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)). 창 상태를 안
-읽는 핸들러(memory · agent 협업 · telemetry·approval 조회 · surface 조회·전송 · hook · message 등)는
-`Core`/`CoreState` 만 받으므로, 그 핸들러가 창 상태를 안 만진다는 것을 컴파일러가 보증한다.
-`AppState` 를 받는 핸들러가 읽는 것은 intent 큐(`pending_intents`) · 대상 생략 시의
-`active_workspace` · GUI·debug 전용 필드 · 구조 op 의 창 연산이다. 라우터 · `check_request` ·
-`pump_ipc` 는 그 핸들러들에게 넘겨야 하므로 아직 `AppState` 를 받는다 — 이것은 선행 조건이 안 찬
-현재 상태이고, 남은 걸음(큐 분리 · `active_workspace` 기본값 · 창 연산 포트화 뒤 `&Core` 로)은
-ADR-0470 Decision 이 적는다. `AppState` 가 든 Core memory 핸들 사본(`memory`)은
-IPC 핸들러가 읽지 않는다 — 같은 Arc 를 `Core` 로 읽는다.
+([ADR-0470](../adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)). 그리고 **엔진
+핸들러는 창 상태를 받지 않는다** — 창에 닿아야 하는 일은 좁은 포트와 intent 출구로만 한다
+([ADR-0471](../adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md)).
+
+- **창 연산** — `IpcWindow`(`src/adapters/ipc/window_port.rs`)가 `CascadeWindow` 를 물려받아 엔진
+  핸들러가 쓰는 창 연산을 선언하고, `AppState` 가 `src/state/ipc_window.rs` 에서 한 줄 위임으로
+  구현한다. 대상 생략 시의 기본 워크스페이스(`active_workspace`)도 그 포트의
+  `active_workspace_index` 로 읽는다. 그 메서드 목록이 "IPC 엔진 핸들러가 `AppState` 에서 무엇을
+  쓰는가" 의 답이다.
+- **intent** — 핸들러는 `pending_intents` 에 직접 넣지 않고 요청 하나의 `IntentOutbox` 에 넣는다.
+  진입점(게이트 · 엔진 라우터 · `record_plugin_rss_samples`)이 요청 끝에 출구를 창 큐 끝으로 옮긴다.
+- **`AppState` 를 받는 자리** — 창을 쥔 진입점(`handle_checked_request` · 헤드리스 `pump_ipc`)과,
+  창 상태 자체가 대상인 GUI·debug 핸들러(파일 선택기 · popup · 배너 · 도구 메뉴 · debug 주입 ·
+  `ui.state`)와 그 라우터(`route_window_handler` · `route_debug_handler`)뿐이다.
+
+`AppState` 가 든 Core memory 핸들 사본(`memory`)은 IPC 핸들러가 읽지 않는다 — 같은 Arc 를 `Core`
+로 읽는다.
 
 ## 재는 법
 

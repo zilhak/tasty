@@ -57,6 +57,22 @@
 4. 구조 op 의 창 연산을 `CascadeWindow` 처럼 포트로 뺀다.
 5. 1 · 2 · 4 가 끝나면 라우터 · `check_request` · `pump_ipc` 의 인자를 `&Core` 로 내린다.
 
+### 남은 걸음의 착지 (후속 — [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md), 2026-09-22)
+
+위 "현재 상태" 문단은 이 결정 시점의 사실이다. 남은 걸음은 ADR-0471 이 이렇게 닫았다.
+
+- 1(intent 큐) — 핸들러는 창 큐가 아니라 요청 하나의 출구 `IntentOutbox` 에 넣고, 진입점이 요청 끝에
+  창 큐로 옮긴다. 적재 순서는 그대로다.
+- 2(`active_workspace` 기본값) — 동작은 안 바꿨다. 값은 좁은 포트 `IpcWindow::active_workspace_index` 로
+  읽는다. 기본값 자체의 재결정은 열려 있다.
+- 4(창 연산) — `IpcWindow` 가 `CascadeWindow` 를 물려받아 엔진 핸들러가 쓰는 창 연산을 선언한다.
+- 5 — 라우터 표(`route_engine_handler`)와 `check_request` 는 `&Core`·`&mut CoreState` 와 그 포트만 받는다.
+  **`&Core` 만으로 내려가지는 않았다** — 창을 쥔 진입점 `handle_checked_request` 와 헤드리스 `pump_ipc` 는
+  `AppState` 를 받는다. 요청의 출구를 옮길 창 큐와, 창 상태 자체가 대상인 창·debug 핸들러가 거기 있기
+  때문이다(ADR-0471 Decision 5).
+- Decision 3 이 `AppState` 에 남긴 `read_since_mark` 의 포커스 폴백은 부르는 자리가 없어 지웠다. 대상을
+  준 읽기는 `CoreState::read_since_mark_of` 다.
+
 ## Consequences
 
 - **얻은 것**: IPC 범위에서 `AppState` 를 받는 자리가 253 → 91 이다(같은 판정기, 2026-09-22).
@@ -118,7 +134,8 @@
 
 ## References
 
-- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 IPC 쪽을 좁힌 잔여 ①(부분 — `pump_ipc` · 라우터 · `check_request` 는 남음, Decision 의 남은 걸음)
+- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 IPC 쪽을 좁힌 잔여 ①(부분 — 남은 걸음은 ADR-0471 이 닫았다)
+- [ADR-0471](0471-ipc-engine-handlers-reach-the-window-through-a-port.md) — Decision 의 남은 걸음 1 · 2 · 4 · 5 의 착지
 - [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md) — 도메인 쪽 포트
 - [AppState 필드 소유권](../dev-guide/app-state-ownership.md) — 필드 분류표
 - [포커스 정책](../design/policies/focus.md)
