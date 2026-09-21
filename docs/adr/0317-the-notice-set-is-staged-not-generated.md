@@ -41,8 +41,16 @@ OFL 은 아니다.
 
 - `LICENSE` — Tasty 자체 코드의 MIT 본문
 - `THIRD_PARTY_LICENSES.md` — 무엇이 번들되고 무슨 의무가 따르는지
-- `LICENSES/` 의 **모든 파일** — 번들 자산의 라이선스 본문. upstream 태그의 `LICENSE` 를 고치지
-  않고 옮긴다(2026-09-21 기준 넷: D2Coding OFL · mermaid MIT · highlight.js BSD-3-Clause · KaTeX MIT)
+- `LICENSES/` 의 **모든 파일** — 번들 자산의 라이선스 본문. upstream 태그의 라이선스 파일을
+  고치지 않고 옮긴다(2026-09-21 기준 넷: D2Coding OFL · mermaid MIT · highlight.js BSD-3-Clause · KaTeX MIT)
+
+> **사실 정정 (2026-09-21, D2Coding 본문)** — 위 항목은 처음에 "upstream 태그의 `LICENSE` 를
+> 고치지 않고 옮긴다" 였고, D2Coding 에는 두 겹으로 맞지 않았다. 번들한 Ver 1.3.2 의 태그와
+> 릴리스 zip 에는 라이선스 파일이 아예 없고, 저장소의 `LICENSES/D2Coding-OFL.txt` 머리(저작권
+> 줄 · Reserved Font Name)는 upstream 어느 자료에도 없는 문구였다(`D2Coding-Bold` RFN 누락).
+> 지금 그 파일은 upstream 이 라이선스 파일을 처음 둔 태그 `VER1.3.3` 의 `OFL.txt` 와 바이트
+> 동일하다. 출처 URL · 커밋 · 해시는 `THIRD_PARTY_LICENSES.md` 의 D2Coding 절이 정본이다.
+> 이 결정(세트를 생성하지 않는다)은 그대로다.
 
 셋째 항목은 파일 이름이 아니라 **디렉토리**로 정한다. 본문이 하나 늘 때 스테이징 자리마다 파일
 이름을 다시 적게 하면, 그 자리 중 하나가 빠지는 것이 기본값이 된다(이 결정의 첫 판이 정확히

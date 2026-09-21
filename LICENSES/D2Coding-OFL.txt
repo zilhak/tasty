@@ -1,5 +1,8 @@
-Copyright (c) 2014-2018, NAVER Corp. (https://www.navercorp.com),
+Copyright (c) 2015, NAVER Corporation (https://www.navercorp.com),
 with Reserved Font Name D2Coding.
+
+Copyright (c) 2015, NAVER Corporation (https://www.navercorp.com),
+with Reserved Font Name D2Coding-Bold.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

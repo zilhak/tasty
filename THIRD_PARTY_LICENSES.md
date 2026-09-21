@@ -11,25 +11,33 @@ Tasty 자체 코드는 [`LICENSE`](LICENSE) 파일에 명시된 MIT 라이선스
 | highlight.js | 11.10.0 | BSD-3-Clause | markdown plugin 바이너리 | [`LICENSES/highlightjs-BSD-3-Clause.txt`](LICENSES/highlightjs-BSD-3-Clause.txt) |
 | KaTeX | 0.18.4 | MIT | markdown plugin 바이너리 (JS · CSS · 폰트 20 개) | [`LICENSES/KaTeX-MIT.txt`](LICENSES/KaTeX-MIT.txt) |
 
-`LICENSES/` 의 본문은 각 upstream 이 **그 버전의 태그**에 둔 `LICENSE` 파일을 한 글자도 고치지
-않고 옮긴 것입니다. 저작권 줄이 프로젝트마다 다르므로 일반 라이선스 템플릿으로 대신하지
-않습니다.
+`LICENSES/` 의 본문은 upstream 이 둔 라이선스 파일을 한 글자도 고치지 않고 옮긴 것입니다.
+mermaid · highlight.js · KaTeX 는 **그 버전의 태그**에 둔 `LICENSE` 파일입니다. D2Coding 은
+예외입니다 — 번들한 Ver 1.3.2 의 태그(`VER1.3.2`)와 그 릴리스 zip 에는 라이선스 파일이 없어서,
+upstream 이 라이선스 파일을 처음 둔 다음 태그 `VER1.3.3` 의 `OFL.txt` 를 옮겼습니다(아래 D2Coding
+절). 저작권 줄이 프로젝트마다 다르므로 일반 라이선스 템플릿으로 대신하지 않습니다.
 
 ## 폰트
 
 ### D2Coding (D2Coding ligature)
 
-- 출처: NAVER Corp. — https://github.com/naver/d2codingfont
+- 출처: NAVER Corporation — https://github.com/naver/d2-coding-font (옛 이름 `naver/d2codingfont` 는 이 주소로 넘어갑니다)
 - 버전: Ver 1.3.2 (2018-05-24)
 - 적용 범위: `crates/tasty-font/assets/D2Coding-ligature-Regular.ttf`, `crates/tasty-font/assets/D2Coding-ligature-Bold.ttf`
 - 라이선스: SIL Open Font License, Version 1.1 (OFL 1.1)
-- 라이선스 본문: [`LICENSES/D2Coding-OFL.txt`](LICENSES/D2Coding-OFL.txt)
-- Reserved Font Name: `D2Coding`
+- 라이선스 본문: [`LICENSES/D2Coding-OFL.txt`](LICENSES/D2Coding-OFL.txt) — upstream 태그 `VER1.3.3`
+  (커밋 `d95bc36438113099566bb39064334608955c2612`)의 `OFL.txt` 와 바이트 동일
+  (`https://raw.githubusercontent.com/naver/d2-coding-font/VER1.3.3/OFL.txt`, sha256
+  `1807e8dec4d65f474cbf9be39f5e2254ecb81702babc320749e272ea66ffcc69`). 태그 `VER1.3.2` 에는
+  라이선스 파일이 없고, 그 시점 README 가 라이선스로 링크한 upstream wiki 의 `Open-Font-License`
+  문서도 같은 두 저작권 줄을 적고 있습니다.
+- 저작권: Copyright (c) 2015, NAVER Corporation — 위 파일 머리의 두 줄을 그대로 따릅니다.
+- Reserved Font Name: `D2Coding`, `D2Coding-Bold`
 
 OFL 1.1은 폰트의 사용·변경·재배포(상용 포함)를 허용하지만 다음을 요구합니다.
 
 - 라이선스 본문(`LICENSES/D2Coding-OFL.txt`)을 함께 배포할 것.
-- Reserved Font Name(`D2Coding`)을 보존할 것. 폰트 파일을 수정·재포장하여 재배포하려는 경우 파생물에 다른 이름을 사용해야 합니다. 본 저장소는 NAVER 공식 ttf를 그대로 번들하므로 원래 이름을 사용할 수 있습니다.
+- Reserved Font Name(`D2Coding` · `D2Coding-Bold`)을 보존할 것. 폰트 파일을 수정·재포장하여 재배포하려는 경우 파생물에 다른 이름을 사용해야 합니다. 본 저장소는 NAVER 공식 ttf를 그대로 번들하므로 원래 이름을 사용할 수 있습니다.
 
 ## markdown plugin 의 렌더링 엔진
 
