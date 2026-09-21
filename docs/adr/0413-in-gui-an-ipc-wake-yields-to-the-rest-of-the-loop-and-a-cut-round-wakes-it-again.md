@@ -119,13 +119,23 @@ IPC 생산자는 명령마다 wake 를 한 번 부르고, 회차가 답을 주�
 - 잘린 회차가 루프를 안 깨우면 `a_cut_round_wakes_the_loop_once_and_a_drained_round_does_not` 이,
   재깨움의 면제가 빠지면 `the_wake_after_a_cut_round_opens_a_round_inside_the_budget` 이, 면제의
   한도가 빠지면 `a_chain_of_cut_rounds_yields_until_the_loop_reaches_about_to_wait` 가 빨개진다(세 변이
-  모두 걸어 확인했다).
+  모두 걸어 확인했다). 셋 다 페이서 안의 논리이고, 페이서를 부르는 gui 루프 쪽 배선은 아래 "안 붙는
+  것" 에 있다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
 - **gui 에서 지속 부하 중 타이머가 도는가.** 재는 법: 격리 홈 gui 에 `set global-hook --condition
   interval:1 --command "date +%s.%N >> <파일>"` 을 걸고, 연결 16 개로 탭 만들기·목록·닫기를 20 초
   보내는 동안 기록의 최대 간격을 본다. 2 초 남짓이면 돈다.
+- **`about_to_wait` 의 `loop_reached_about_to_wait` 호출이 제자리에 있는가.** 어느 시험도 이것을 안
+  잰다 — gui 루프를 도는 시험 채널이 없다. 호출을 **지우면** 시험은 통과하지만(`app::ipc::tests` 6 개,
+  시험이 그 메서드를 부르므로) 제품 빌드가 `dead_code` 거부로 실패한다(`cargo check -p tasty` rc=101,
+  변이로 확인). 채널이 없는 것은 호출을 **잘못된 자리로 옮기는** 경우다 — 조건 갈래 안에 넣거나
+  회차 뒤로 옮기면 면제가 드물게만 풀리거나 한 번 쓰이고 말아, 재깨움도 양보하는 동작으로 조용히
+  돌아간다. **위 gui 지속 부하 절차로는 안 드러난다** — x11 에서는 면제가 없어도 `about_to_wait` 이
+  남은 명령을 집으므로 타이머 간격이 같다(면제 도입 전 바이너리가 2.02 s 였다). 드러나는 자리는
+  `AboutToWait` 이 안 오는 구간뿐이라, 재는 법은 아래 모달 루프 절차와 같다 — 부하를 건 채 두 번 이상
+  연달아 잘리는 회차 뒤에도 `tasty list info` 가 곧바로 답하는지 본다.
 - **macOS · Windows 에서 모달 루프 중 IPC 가 도는가.** 재는 법: 창 크기를 조절하거나 메뉴를 연 채
   `tasty list info` 가 답하는지 본다. 이 경로가 불필요하다고 확인되면 첫째 대안(사용자 이벤트 쪽
   회차 제거)을 다시 본다.
