@@ -70,6 +70,9 @@ fn workspace_not_found_reason() -> String {
 /// 시작한다). 요청 이름 자리에는 anchor 를 지목한 것, 즉 이 forward op 의 wire 이름
 /// (`structural_op.<kind>`)을 넣는다. 점유 중인 워크스페이스가 없거나 이 engine 에 없으면
 /// `None` — 호출자가 종전 문구(`workspace not found`)를 쓴다(ADR-0482).
+///
+/// anchor 가 어딘가에 **살아 있는지는 여기서 안 본다** — 호출자 [`unresolved_forward_reason`]
+/// 이 모든 engine 을 먼저 보고 살아 있으면 이 함수를 부르지 않는다.
 fn unresolved_anchor_reason(
     engine: &CoreState,
     client_id: AttachClientId,
@@ -89,11 +92,24 @@ fn unresolved_anchor_reason(
 /// anchor 를 못 푼 forward 의 회신 사유 — 호출자가 가진 engine 들을 차례로 물어
 /// [`unresolved_anchor_reason`] 이 처음 답한 것을, 아무도 답하지 않으면 종전 문구를 쓴다.
 /// GUI(창 engine 여럿 + parked engine)와 headless(engine 하나)가 같은 판정을 쓰게 한 자리.
+///
+/// "no live surface" 는 anchor 가 **어디에도** 살아 있지 않을 때만 참이다. 점유 워크스페이스
+/// 밖 — 같은 engine 의 다른 워크스페이스든 다른 engine(GUI 의 다른 창)이든 — 에 살아 있으면
+/// 그 사유는 거짓이 되므로, 먼저 모든 engine 에서 anchor 를 찾고 어디든 있으면 종전 문구를
+/// 쓴다(ADR-0482). engine 하나씩 물으면 점유한 engine 은 다른 engine 의 surface 를 모른다.
 pub(crate) fn unresolved_forward_reason<'a>(
     engines: impl IntoIterator<Item = &'a CoreState>,
     client_id: AttachClientId,
     op: &StructuralOp,
 ) -> String {
+    let engines: Vec<&CoreState> = engines.into_iter().collect();
+    let anchor = op.anchor_surface_id();
+    if engines
+        .iter()
+        .any(|e| e.find_workspace_index_for_surface(anchor).is_some())
+    {
+        return workspace_not_found_reason();
+    }
     engines
         .into_iter()
         .find_map(|e| unresolved_anchor_reason(e, client_id, op))

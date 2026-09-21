@@ -3385,6 +3385,65 @@ mod forward_exec_tests {
         assert_eq!(surface_ids_of(&delta).len(), 3, "a · b · 새 탭");
     }
 
+    /// `engine` 에 점유와 무관한 워크스페이스(`ws_id`)를 하나 더 두고 그 안에 `surface_id` 를
+    /// 살려 둔다 — anchor 가 "다른 곳에 살아 있는" 상황의 fixture.
+    fn push_unrelated_workspace(engine: &mut crate::core::CoreState, ws_id: u32, surface_id: u32) {
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::core::egui_mesh_surface::EguiMeshSurface::new(
+                surface_id,
+                "image",
+                "com.tasty.image".to_string(),
+                "elsewhere".to_string(),
+                None,
+            ));
+        let pane =
+            crate::model::Pane::new_with_surface(ws_id, ws_id, "elsewhere".to_string(), surface);
+        engine
+            .workspaces
+            .push(crate::model::Workspace::new_with_pane(
+                ws_id,
+                "elsewhere".to_string(),
+                pane,
+            ));
+    }
+
+    /// anchor 가 점유 워크스페이스 밖이라도 **살아 있으면** "no live surface" 는 거짓이다 —
+    /// 사유는 종전 문구로 남는다. 정말 없는 id 에만 IPC 와 같은 문구가 붙는다(ADR-0482).
+    #[test]
+    fn an_anchor_alive_in_another_workspace_is_not_called_gone() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (_a, _b, _ws_id, _rx) = attached_pair(&mut core, &mut state, &mut engine);
+        push_unrelated_workspace(&mut engine, 900, 901);
+        let alive = StructuralOp::CloseSurface { surface_id: 901 };
+        let gone = StructuralOp::CloseSurface { surface_id: 555 };
+        let reason =
+            |op| crate::core::attach_structure_sync::unresolved_forward_reason([&engine], 7, op);
+        assert_eq!(reason(&alive), "workspace not found");
+        assert!(
+            reason(&gone).starts_with("no live surface 555 "),
+            "{}",
+            reason(&gone)
+        );
+    }
+
+    /// GUI 는 engine 을 여럿 가진다. 점유한 engine 은 다른 engine 의 surface 를 모르므로,
+    /// anchor 가 거기 살아 있으면 판정은 모든 engine 을 본 뒤에 내려져야 한다.
+    #[test]
+    fn an_anchor_alive_in_another_engine_is_not_called_gone() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let (_a, _b, _ws_id, _rx) = attached_pair(&mut core, &mut state, &mut engine);
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut other = crate::core::CoreState::new(80, 24, waker).expect("engine");
+        push_unrelated_workspace(&mut other, 900, 901);
+        let op = StructuralOp::CloseSurface { surface_id: 901 };
+        let reason = |engines: Vec<&crate::core::CoreState>| {
+            crate::core::attach_structure_sync::unresolved_forward_reason(engines, 7, &op)
+        };
+        assert_eq!(reason(vec![&engine, &other]), "workspace not found");
+        assert_eq!(reason(vec![&other, &engine]), "workspace not found");
+        assert!(reason(vec![&engine]).starts_with("no live surface 901 "));
+    }
+
     /// forward 된 NewTab 도 실제 실행(pane 은 anchor surface 로 resolve). Ok + delta + 터미널 +1.
     #[test]
     fn forward_new_tab_executes() {

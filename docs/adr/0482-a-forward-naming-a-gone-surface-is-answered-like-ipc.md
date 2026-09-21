@@ -12,7 +12,7 @@ mirror client 가 forward 한 구조 op 는 anchor(원격 surface id)로 점유 
 
 ## Decision
 
-anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살아 있는 워크스페이스를 점유 중이면** IPC 와 같은 생성기(`request_target::unowned_target_message` → `tasty_utils::target::unowned_target_message`)로 사유를 만든다. 종류는 `surface`, id 는 anchor, 요청 이름 자리에는 anchor 를 지목한 것 — forward op 의 wire 이름 `structural_op.<kind>`(예: `structural_op.close_surface`)를 넣는다. 점유 워크스페이스가 없거나 그 인스턴스에 없으면 종전 문구 `workspace not found` 그대로다. 판정은 `attach_structure_sync::unresolved_anchor_reason` 한 함수이고 두 빌드의 호출측이 그것을 감싼 `unresolved_forward_reason` 을 부른다. `StructuralResult` 의 모양(`ok:false` + `reason`)과 다른 거절 사유(`not workspace holder` 등)는 바꾸지 않는다 — forward 회신에는 에러 **코드** 칸이 없고 새로 만들지 않는다.
+anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살아 있는 워크스페이스를 점유 중이면** IPC 와 같은 생성기(`request_target::unowned_target_message` → `tasty_utils::target::unowned_target_message`)로 사유를 만든다. 종류는 `surface`, id 는 anchor, 요청 이름 자리에는 anchor 를 지목한 것 — forward op 의 wire 이름 `structural_op.<kind>`(예: `structural_op.close_surface`)를 넣는다. 점유 워크스페이스가 없거나 그 인스턴스에 없으면 종전 문구 `workspace not found` 그대로다. **anchor 가 인스턴스 어딘가에 살아 있으면**(점유 워크스페이스 밖 — 같은 engine 의 다른 워크스페이스든 GUI 의 다른 창 engine 이든) 역시 종전 문구다: 그 surface 는 살아 있으므로 "no live surface" 는 거짓이 되고, 이 결정은 사유가 사실을 말하게 하려는 것이다. 이 검사는 engine 하나씩이 아니라 **모든 engine 을 먼저** 본다 — 점유한 engine 은 다른 engine 의 surface 를 모르므로 engine 단위로 물으면 거짓 사유가 나온다. 판정은 `attach_structure_sync::unresolved_anchor_reason` 한 함수이고 두 빌드의 호출측이 그것을 감싼 `unresolved_forward_reason` 을 부른다. `StructuralResult` 의 모양(`ok:false` + `reason`)과 다른 거절 사유(`not workspace holder` 등)는 바꾸지 않는다 — forward 회신에는 에러 **코드** 칸이 없고 새로 만들지 않는다.
 
 ## Consequences
 
@@ -24,6 +24,7 @@ anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살�
 
 - **요청 이름 자리에 대응 IPC 메서드(`surface.close` · `tab.close` · `split` …)를 넣는다** — IPC 문구와 완전히 같아지지만 거짓이 섞인다. `tab.close` 는 tab id 로 대상을 지목하는데 forward 는 surface 로 지목하고, convert · restore · move-surface 는 대응 IPC 가 없다. 그 자리의 정의("그 대상을 이름으로 지목한 요청")를 지키는 쪽을 골랐다.
 - **"anchor surface not found" 같은 새 문구** — 사실은 맞지만 IPC 와 문구가 또 갈라진다. 같은 상황에 같은 문구를 쓰는 것이 이 결정의 목적이다.
+- **살아 있는지를 engine 마다 `unresolved_anchor_reason` 안에서 본다** — 같은 engine 의 다른 워크스페이스는 잡지만, GUI 에서 anchor 가 다른 창 engine 에 살아 있으면 점유한 engine 이 먼저 "no live" 를 답한다. 모든 engine 을 먼저 보는 한 자리면 두 경우가 다 잡히고, engine 안 검사는 그 뒤에서 도달할 수 없는 중복이 된다(변이로 확인: engine 안 검사만 끄면 아무 시험도 안 빨개졌다) — 그래서 한 자리만 둔다.
 - **anchor 가 서버에 살아 있기만 하면(다른 워크스페이스라도) 실행한다** — holder 가 점유하지 않은 워크스페이스를 바꾸게 되어 hard 점유 모델(ADR-0040)을 깬다.
 
 ## Reconsideration Triggers
@@ -32,6 +33,7 @@ anchor 가 풀리지 않을 때, **요청 client 가 이 인스턴스에서 살�
 
 - 두 호출측 중 하나가 `unresolved_forward_reason` 을 안 거치면 — `tests/attach_structure_sync_loopback.rs` 의 `a_forward_naming_a_gone_surface_is_answered_like_ipc` 가 그 조합에서 실패한다(변이로 확인: headless 호출을 끊으면 `--no-default-features` 조합에서, 헬퍼를 끊으면 gui 조합에서 빨개졌다).
 - IPC 거절 문구의 생성기가 바뀌면 같은 시험의 대조군 단언이 먼저 실패한다.
+- anchor 가 다른 곳에 살아 있을 때도 "no live surface" 를 싣게 되면 — `src/core/attach_runtime.rs` 의 `an_anchor_alive_in_another_workspace_is_not_called_gone`(같은 engine 의 다른 워크스페이스) · `an_anchor_alive_in_another_engine_is_not_called_gone`(다른 engine) 이 실패한다(변이로 확인: `unresolved_forward_reason` 의 전 engine 검사를 끄면 둘 다 빨개졌다).
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
