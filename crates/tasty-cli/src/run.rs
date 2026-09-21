@@ -203,7 +203,9 @@ fn run_dynamic_client(
     // - 확인 요청(`system.info`)의 전송·EOF 실패 — `io::Error` 와 `IpcConnection::send` 의
     //   고정 영어 문구다.
     // - 확인이 요청의 응답 대기 상한 안에 안 끝났다 — CLI 가 만든 `-32067` 문장이다(본 요청이
-    //   큐에서 만료됐을 때 호스트가 쓰는 영어 문장과 같은 함수로 만든다).
+    //   큐에서 만료됐을 때 호스트가 쓰는 영어 문장과 같은 함수로 만든다). 이 갈래만 `code` 칸에
+    //   `-32067` 을 싣는다 — 이 요청에 대한 답이고, 서버가 이 요청을 큐에서 만료시킨 아래 `conn.send`
+    //   갈래가 싣는 값과 같다(`contract::failure_code`).
     // - 확인 요청이 JSON-RPC 오류로 끝났다 — 문구는 **답한 서버가 만든 문장**이라 CLI 에 영어
     //   원본이 없다. 아래 `conn.send` 실패 갈래와 같은 처지이고 같은 방식으로 적는다 —
     //   `new_unchecked` 의 보증이 이 갈래에서는 서지 않는다. 다만 그 코드는 이 요청이 아니라
@@ -212,7 +214,8 @@ fn run_dynamic_client(
         hook_failure::record(
             &request.method,
             &request.params,
-            None, // 이 요청은 안 나갔다 — 이 요청의 JSON-RPC 코드는 없다
+            // 이 요청은 안 나갔다 — 확인 만료(이 요청의 -32067)만 코드가 있다
+            super::contract::failure_code(&e),
             &hook_failure::DiagnosticEnglish::new_unchecked(e.to_string()),
         );
         super::contract::exit_on_failure(e);

@@ -122,6 +122,18 @@ pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> 
     Ok(())
 }
 
+/// [`ensure`] 실패를 기록할 때 **이 요청의** JSON-RPC 코드 칸에 실을 값.
+///
+/// 확인이 상한 안에 안 끝난 갈래([`not_run`])는 이 요청에 대한 답이다 — 서버가 이 요청을 큐에서
+/// 만료시켰을 때와 같은 `-32067` 이므로 같은 코드를 싣는다(같은 사실에는 같은 답, ADR-0452). 그
+/// 밖의 실패는 싣지 않는다: 선언 없음 · 전송 실패에는 코드가 없고, 확인 요청 자체가 받은 다른
+/// JSON-RPC 오류는 이 요청이 아니라 **확인 요청의** 코드다.
+pub(crate) fn failure_code(e: &anyhow::Error) -> Option<i32> {
+    e.downcast_ref::<JsonRpcCallError>()
+        .map(|rpc| rpc.code)
+        .filter(|&code| code == tasty_ipc::protocol::ERR_EXPIRED_BEFORE_RUN)
+}
+
 /// 상한 안에 요청을 못 내보냈다 — 그 요청이 큐에서 만료됐을 때의 답과 **같은 코드·문구**다.
 /// 요청은 안 나갔으므로 "실행 안 됨 — 그대로 다시 보내도 된다" 가 참이다.
 fn not_run(bound: Duration) -> anyhow::Error {
@@ -510,6 +522,29 @@ mod tests {
         assert_eq!(r.response_timeout_ms, None);
         drop(conn);
         h.join().unwrap();
+    }
+
+    /// 기록의 코드 칸 — 확인 만료는 이 요청의 `-32067` 이고, 확인 요청 자신의 다른 오류 코드와 선언
+    /// 없음은 싣지 않는다.
+    #[test]
+    fn only_the_not_run_answer_fills_the_recorded_code() {
+        assert_eq!(
+            failure_code(&not_run(Duration::from_millis(300))),
+            Some(tasty_ipc::protocol::ERR_EXPIRED_BEFORE_RUN)
+        );
+        let probe_error: anyhow::Error = JsonRpcCallError {
+            code: -32001,
+            message: "permission denied".into(),
+        }
+        .into();
+        assert_eq!(failure_code(&probe_error), None);
+        let refusal: anyhow::Error = UnsupportedCapability {
+            name: RESPONSE_TIMEOUT.into(),
+            required: 1,
+            found: None,
+        }
+        .into();
+        assert_eq!(failure_code(&refusal), None);
     }
 
     /// 거절 줄은 **한 줄 JSON** 이고, 호출자가 분기할 값을 문장과 따로 싣는다. 특히
