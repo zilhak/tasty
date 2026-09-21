@@ -16,8 +16,8 @@
 |------|------|
 | `key` | `<namespace>.<event_name>`. 예약 네임스페이스는 호스트만 publish |
 | `payload` | 이벤트별(아래 카탈로그) |
-| `meta.trace_id` | chain 전체 공유 opaque id. 호스트 발화 시 생성, plugin 재발화해도 전파 |
-| `meta.hop` | 호스트 발화 시 `0`, plugin 재발화 시 `+1`. **`hop > 16`(MAX_HOP) 이면 dispatcher 차단** |
+| `meta.trace_id` | chain 전체 공유 opaque id. 호스트 발화 시 생성. 재발화에서 전파되는 것은 plugin 이 받은 값을 실어 보낼 때다 — 호스트는 이 값을 고치지 않는다 |
+| `meta.hop` | 호스트 발화 시 `0`. plugin 의 publish 는 **호스트가 정한다**: 그 plugin 에게 보낸 `event.dispatch` 중 아직 응답이 안 온 것이 있으면 `max(보낸 값, 그 dispatch 들의 hop 최댓값 + 1)`, 없으면 보낸 값 그대로. SDK 는 `on_event` 를 마친 뒤 응답하므로 콜백 안의 publish 가 곧 재발화이고 `+1` 이 된다. **올린 값이 `hop > 16`(MAX_HOP) 이면 dispatcher 차단** — 서로의 사건에 hop 0 으로 반응하는 두 plugin 도 16 번 안에 끊긴다. 근거·한계는 [ADR-0406](../adr/0406-the-host-raises-the-hop-of-a-publish-made-while-a-dispatch-is-unanswered.md) |
 | `meta.origin` | `{kind:host}` 또는 `{kind:plugin, plugin_id}` |
 | `meta.scope` | `system`(전역) 또는 `surface`(대상 id 는 payload 필드로) |
 

@@ -4,7 +4,8 @@
 //! - 매니페스트의 `event_subscribe`/`event_publish` 패턴을 권한 게이트로 보유
 //! - plugin 또는 호스트가 발화한 [`EventEnvelope`]를 구독 패턴에 매칭되는 모든 대상에 fan-out
 //! - 호스트 본문은 `publish()`로 직접 발화, plugin은 [`PluginEvent::EventPublish`] 경로로 위임
-//! - hop count(`MAX_HOP=16`) 초과 envelope는 폐기하고 경고 로그
+//! - hop count(`MAX_HOP=16`) 초과 envelope는 폐기하고 경고 로그. plugin 이 적은 hop 은
+//!   믿지 않고, 응답 전인 dispatch 가 있으면 재발화 하한으로 올린다(ADR-0406)
 //! - 호스트 listener와 plugin listener를 통합된 [`Subscriber`] 인터페이스로 다룬다
 //! - 지나간 envelope 를 [`EVENT_RING_CAPACITY`] 개까지 들고 있다 — 구독자가 없던
 //!   동안의 사건을 나중에 붙은 소비자가 위치로 읽을 수 있게
@@ -62,7 +63,31 @@ struct Inner {
     /// 다음 발화가 받을 위치. 링에서 밀려나도 **되돌아가지 않는다** — 그래서 소비자가
     /// 든 위치가 보존 밖인지 아직 안 온 것인지가 값으로 갈린다.
     next_offset: u64,
+    /// plugin 별로 **보냈지만 아직 응답이 안 온** `event.dispatch` 의 (request id, hop).
+    /// 그 plugin 이 이 목록이 비지 않은 동안 publish 하면 그것은 받은 사건에 대한
+    /// 반응(재발화)이고, hop 에 하한이 걸린다 — [`Inner::relay_floor`]. 근거는 ADR-0406.
+    inflight_dispatches: HashMap<String, VecDeque<(u64, u8)>>,
 }
+
+impl Inner {
+    /// `plugin_id` 가 지금 publish 하면 가져야 할 hop 의 하한. 응답을 기다리는
+    /// dispatch 가 없으면 `None` — 그 publish 는 반응이 아니라 새 발화다.
+    fn relay_floor(&self, plugin_id: &str) -> Option<u8> {
+        self.inflight_dispatches
+            .get(plugin_id)
+            .and_then(|q| q.iter().map(|(_, hop)| *hop).max())
+            .map(|hop| hop.saturating_add(1))
+    }
+}
+
+/// 한 plugin 에 대해 응답을 기다리는 dispatch 기록의 상한. 넘으면 가장 오래된 것부터
+/// 버린다.
+///
+/// 응답하지 않는 plugin 에 기록이 끝없이 쌓이지 않게 하는 값이고, **링 용량에서
+/// 파생한다** — 그보다 많이 밀린 dispatch 의 사건은 링에서도 이미 밀려났다. 버린
+/// 기록은 하한을 낮출 수만 있다(최댓값에서 빠진다). 그래서 이 상한이 루프를 여는
+/// 방향으로 작동하려면 plugin 이 1024 건을 응답 없이 쌓아야 한다.
+const MAX_INFLIGHT_DISPATCHES: usize = EVENT_RING_CAPACITY;
 
 /// 링에 보존하는 사건 수.
 ///
@@ -174,6 +199,7 @@ impl EventBus {
                 plugin_publish_perms: HashMap::new(),
                 ring: VecDeque::with_capacity(EVENT_RING_CAPACITY),
                 next_offset: 0,
+                inflight_dispatches: HashMap::new(),
             })),
             published: Arc::new(Condvar::new()),
             poison_reported: Arc::new(AtomicBool::new(false)),
@@ -211,6 +237,60 @@ impl EventBus {
         inner.plugin_subscribe_perms.remove(plugin_id);
         inner.plugin_publish_perms.remove(plugin_id);
         inner.plugin_subs.retain(|s| s.plugin_id != plugin_id);
+        // 재시작한 plugin 은 옛 프로세스가 받던 dispatch 에 응답하지 않는다.
+        inner.inflight_dispatches.remove(plugin_id);
+    }
+
+    /// `event.dispatch` 를 `plugin_id` 에게 보냈다 — 응답이 올 때까지 그 plugin 의
+    /// publish 는 이 사건에 대한 반응으로 친다([`Self::publish_from_plugin`]).
+    /// 송신에 실패한 dispatch 는 부르지 않는다: 받지 않은 사건에 반응할 수는 없다.
+    pub fn note_dispatch_sent(&self, plugin_id: &str, request_id: u64, hop: u8) {
+        let mut inner = self.lock_recovering();
+        let q = inner
+            .inflight_dispatches
+            .entry(plugin_id.to_string())
+            .or_default();
+        if q.len() == MAX_INFLIGHT_DISPATCHES {
+            q.pop_front();
+        }
+        q.push_back((request_id, hop));
+    }
+
+    /// `plugin_id` 가 `request_id` 에 응답했다. 그것이 이 버스가 기록한 dispatch 였으면
+    /// `true` — 호출자는 그 응답을 다른 pending 요청과 견주지 않는다.
+    pub fn note_dispatch_answered(&self, plugin_id: &str, request_id: u64) -> bool {
+        let mut inner = self.lock_recovering();
+        let Some(q) = inner.inflight_dispatches.get_mut(plugin_id) else {
+            return false;
+        };
+        let Some(pos) = q.iter().position(|(id, _)| *id == request_id) else {
+            return false;
+        };
+        q.remove(pos);
+        if q.is_empty() {
+            inner.inflight_dispatches.remove(plugin_id);
+        }
+        true
+    }
+
+    /// `plugin_id` 의 publish 에 재발화 hop 하한을 건다 — 응답을 기다리는 dispatch 가
+    /// 있으면 `hop = max(보낸 값, 그 dispatch 들의 hop 최댓값 + 1)`.
+    ///
+    /// **hop 은 plugin 이 적어 보내는 값이라 그대로 믿으면 루프 차단이 안 된다.** 두
+    /// plugin 이 서로의 사건에 hop 0 · 새 trace 로 반응하면 `MAX_HOP` 에 영영 안 닿는다
+    /// (SDK 의 `publish_fresh` 가 바로 그 모양이다). 반응인지는 plugin 이 아니라 **호스트가
+    /// 본 순서**로 판정한다: SDK 는 `on_event` 를 마친 뒤에 dispatch 에 응답하므로 그
+    /// 안에서 한 publish 는 응답보다 먼저 도착한다. 근거·한계·대안은 ADR-0406.
+    ///
+    /// 호출 시점이 판정 시점이다 — publish 가 도착한 순간에 불러야 한다. hook 을 거쳐
+    /// 나중에 fan-out 되는 publish 는 그 사이에 응답이 와 하한이 사라질 수 있다.
+    pub fn apply_relay_floor(&self, plugin_id: &str, envelope: &mut EventEnvelope) {
+        let floor = self.lock_recovering().relay_floor(plugin_id);
+        if let Some(floor) = floor
+            && envelope.meta.hop < floor
+        {
+            envelope.meta.hop = floor;
+        }
     }
 
     /// plugin이 `event.subscribe` IPC로 등록한 구독. 매니페스트 권한과 매칭되지 않으면 `Err`.
@@ -271,11 +351,16 @@ impl EventBus {
     }
 
     /// plugin이 발화한 envelope. publish 권한 매칭 + hop count 검사 후 fan-out.
+    ///
+    /// hop 은 먼저 [`Self::apply_relay_floor`] 로 올린 뒤 `MAX_HOP` 과 견준다 — 그래서
+    /// 서로의 사건에 반응하는 plugin 루프는 plugin 이 hop 을 뭐라고 적든 `MAX_HOP` 번
+    /// 안에 끊긴다.
     pub fn publish_from_plugin(
         &self,
         plugin_id: &str,
-        envelope: EventEnvelope,
+        mut envelope: EventEnvelope,
     ) -> Result<Vec<PluginDispatch>, EventBusError> {
+        self.apply_relay_floor(plugin_id, &mut envelope);
         if envelope.meta.hop > MAX_HOP {
             return Err(EventBusError::HopExceeded {
                 key: envelope.key,
@@ -593,3 +678,7 @@ impl std::error::Error for EventBusError {}
 #[cfg(test)]
 #[path = "event_bus_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "event_bus_relay_tests.rs"]
+mod relay_tests;

@@ -89,6 +89,11 @@ impl PluginManager {
         let kind = match pending {
             Some(p) => p.kind,
             None => {
+                // `event.dispatch` 의 응답은 pending 을 안 만든다(fire-and-forget) — 버스가
+                // 재발화 hop 하한을 위해 따로 기록한다. 그 기록이면 여기서 끝난다.
+                if self.event_bus.note_dispatch_answered(plugin_id, resp.id) {
+                    return;
+                }
                 // id 가 안 맞는 응답 — 이미 만료·취소돼 거둬진 것이다.
                 self.settle_late_response(plugin_id, resp.id);
                 return;

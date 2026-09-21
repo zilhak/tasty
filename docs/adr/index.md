@@ -333,3 +333,4 @@
 | 0391 | [명령 큐는 쌓인 바이트와 주입 깊이로 입장을 판정한다](0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md) | Accepted | 2026-09-21 | ipc, resource-bounds, admission, backpressure, queue, host-call, webhook, adr-0304, adr-0313, adr-0327 |
 | 0392 | [첫 요청 줄에만 idle 기한을 건다](0392-only-the-first-request-line-has-an-idle-deadline.md) | Accepted | 2026-09-21 | ipc, resource-bounds, connection, idle, timeout, compatibility, adr-0304, adr-0327 |
 | 0405 | [피드 끝보다 뒤인 위치는 조용히 기다리지 않고 표지를 단다](0405-a-position-past-the-end-of-the-feed-is-marked-not-waited-on-silently.md) | Accepted | 2026-09-21 | events, event-bus, cursor, offsets, epoch, compatibility, adr-0322, adr-0323 |
+| 0406 | [dispatch 에 응답하기 전의 publish 는 호스트가 hop 을 올린다](0406-the-host-raises-the-hop-of-a-publish-made-while-a-dispatch-is-unanswered.md) | Accepted | 2026-09-21 | events, event-bus, plugin, hop, loop-prevention, compatibility, adr-0321 |

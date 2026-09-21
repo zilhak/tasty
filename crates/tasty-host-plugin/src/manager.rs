@@ -623,6 +623,9 @@ mod tests_lifecycle_toggle;
 // 만료·취소로 이미 끝난 요청의 늦은 응답이 아무것도 다시 진행시키지 않는가.
 #[cfg(test)]
 mod tests_late_response;
+// 재발화 hop 하한이 dispatch 송신 · 응답 · publish 도착 세 자리에 이어졌는가(ADR-0406).
+#[cfg(test)]
+mod tests_relay_floor;
 // namespace forward 가 정확히 한 번을 약속하지 않는다는 사실의 고정(ADR-0361).
 #[cfg(test)]
 mod tests_forward_idempotency;

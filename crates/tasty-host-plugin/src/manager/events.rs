@@ -106,8 +106,11 @@ impl PluginManager {
     pub(super) fn route_plugin_event_publish(
         &mut self,
         plugin_id: &str,
-        envelope: tasty_plugin_protocol::EventEnvelope,
+        mut envelope: tasty_plugin_protocol::EventEnvelope,
     ) {
+        // 재발화 판정은 **도착한 순간**에 한다. hook 을 거치는 publish 는 fan-out 이
+        // hook 응답 뒤로 밀리고, 그 사이에 dispatch 응답이 오면 하한이 사라진다.
+        self.event_bus.apply_relay_floor(plugin_id, &mut envelope);
         // hook이 적용되는 publisher인지 먼저 검사. caller가 extension 자신이면 self-loop 방지.
         let hooks = self.find_active_event_hooks(plugin_id, &envelope.key);
         match hooks {
@@ -407,10 +410,20 @@ impl PluginManager {
         for d in dispatches {
             let mut req = crate::event_bus::EventBus::build_dispatch_request(&d);
             req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-            if let Some(proc) = self.processes.get(&d.plugin_id)
-                && let Err(e) = proc.try_send_request(req)
-            {
-                tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e);
+            let request_id = req.id;
+            let Some(proc) = self.processes.get(&d.plugin_id) else {
+                continue;
+            };
+            match proc.try_send_request(req) {
+                // 응답이 올 때까지 이 plugin 의 publish 는 이 사건에 대한 반응으로 친다
+                // (재발화 hop 하한 — `EventBus::apply_relay_floor`).
+                Ok(()) => {
+                    self.event_bus
+                        .note_dispatch_sent(&d.plugin_id, request_id, d.envelope.meta.hop)
+                }
+                Err(e) => {
+                    tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e)
+                }
             }
         }
     }
