@@ -352,6 +352,16 @@ pub(crate) enum CoreEvent {
     },
     /// workspace 가 이동됨. cascade 가 발화 source 의 active_workspace 보정.
     /// `moved=false` 면 no-op (out-of-range / from==to).
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     WorkspaceMoved {
         from_index: usize,
         to_index: usize,
@@ -431,6 +441,16 @@ pub(crate) enum CoreEvent {
         workspaces_now_empty: bool,
     },
     /// surface 변환 완료. `replaced=false` 면 surface 못 찾음 또는 변환 실패.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     SurfaceConverted { surface_id: u32, replaced: bool },
     /// surface 이동(replace) 완료 (T9). `moved=false` 면 self-ref / source 무효 /
     /// target 못 찾음 (no-op, 슬롯만 비움).
@@ -467,6 +487,16 @@ pub(crate) enum CoreEvent {
 
     // ─── Notifications ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     NotificationPushRequested {
         ws_id: u32,
         surface_id: u32,
@@ -502,6 +532,16 @@ pub(crate) enum CoreEvent {
     /// Surface attention 해제 요청. cascade 가 surface 보유 engine 의
     /// `clear_attention(surface_id)` + redraw. `kind` 가 `Some` 이면 현재 기록된
     /// kind 가 일치할 때만 지운다(선택적 필터).
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     SurfaceAttentionClearRequested {
         surface_id: u32,
         kind: Option<super::AttentionKind>,
@@ -522,10 +562,30 @@ pub(crate) enum CoreEvent {
 
     /// OSC 0/2 로 받은 terminal window title. cascade 가 SurfaceTitleChanged
     /// host event 발화 (plugin 호환) + 후속 `DomainIntent::UpdateTabName` 발행.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalTitleChanged { surface_id: u32, title: String },
 
     /// OSC 9 / OSC 99 / OSC 777 알림. cascade 가 settings.notification gate
     /// 적용 + `DomainIntent::PushNotification` 발행 + hook 발화.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalNotification {
         surface_id: u32,
         title: String,
@@ -534,6 +594,16 @@ pub(crate) enum CoreEvent {
 
     /// Bell (\\a) 수신. cascade 가 settings.notification gate 적용 +
     /// `DomainIntent::PushNotification { title: t("notification.bell_title") }` 발행 + hook 발화.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalBellRing { surface_id: u32 },
 
     /// PTY 출력이 완성된 한 라인을 이뤘다. cascade 가 등록된
@@ -543,6 +613,16 @@ pub(crate) enum CoreEvent {
     TerminalOutputMatch { surface_id: u32, text: String },
 
     /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalCwdChanged { surface_id: u32 },
 
     /// OSC 133 D phase — 셸 통합이 명령 완료 + exit code 를 보고했다. cascade
@@ -550,6 +630,16 @@ pub(crate) enum CoreEvent {
     /// (자동 경로), 동시에 `HookEvent::CommandCompleted(exit_code)` 로 훅도 발화한다
     /// (커스터마이즈 경로 — 두 경로는 상호 배타적이지 않다. 상세:
     /// `docs/features/surface-highlight/index.md`).
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalCommandCompleted {
         surface_id: u32,
         exit_code: Option<i32>,
@@ -558,11 +648,31 @@ pub(crate) enum CoreEvent {
     /// 이 surface 가 출력을 내고 있는데도 일정 시간 `PromptBoundary` 를 한 번도
     /// 못 받았다 — OSC 133 셸 통합 미설치로 추정. cascade 가 안내 배너를
     /// 1 회 띄운다(자동 조치 없음).
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalShellIntegrationHint { surface_id: u32 },
 
     /// OSC 52 clipboard set. cascade 가 `toast.copied_osc52` 토스트만 발행한다.
     /// 시스템 clipboard 쓰기는 Core::process_pty_output 이 self.clipboard 로 직접 처리한다.
     /// `surface_id` 는 토스트를 Surface 스코프로 띄우기 위함 (호스트가 stamp 한 실제 sid).
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "이 이벤트는 headless 에서도 발화하지만 그 빌드의 drain 에 cascade 가 \
+                      없어(`intent::headless::handle_core_event` 의 마지막 갈래) 칸을 읽는 \
+                      자리가 없다. 칸을 빼면 발화점이 정보를 잃으므로 남긴다 — 배선이 \
+                      생기면 이 기대가 깨져 그 자리를 가리킨다"
+        )
+    )]
     TerminalClipboardSet { surface_id: u32 },
 
     /// `DomainIntent::UpdateTabName` 적용 결과. cascade 가 mark_dirty 만.
@@ -666,6 +776,14 @@ pub(crate) enum RestoredKind {
     /// 비어있는 스택 또는 rebuild 실패.
     Nothing,
     /// Workspace 복원 — cascade 가 `state.active_workspace = new_ws_index` 적용.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "닫은 항목 복원은 headless 에서도 돌아 이 값을 싣지만, 그 값을 쓰는 \
+                      것은 활성 워크스페이스 보정과 focus 이동이라 GUI 에만 있다"
+        )
+    )]
     Workspace { new_ws_index: usize },
     /// Surface 또는 Tab 이 기존 pane 의 tab 으로 attach 됨.
     /// cascade 가 별도 mutate 없이 mark_dirty 만 발화 (Core::apply 가 이미
@@ -674,6 +792,14 @@ pub(crate) enum RestoredKind {
     /// Pane 이 현재 활성 워크스페이스의 split 트리에 재삽입됨. cascade 가
     /// 복원된 pane 으로 focus 를 옮긴다 — Workspace 복원이 `active_workspace`
     /// 를 옮기는 것과 같은 취지(사용자가 복원 결과를 바로 보게 한다).
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "닫은 항목 복원은 headless 에서도 돌아 이 값을 싣지만, 그 값을 쓰는 \
+                      것은 활성 워크스페이스 보정과 focus 이동이라 GUI 에만 있다"
+        )
+    )]
     PaneIntoWorkspace { pane_id: u32 },
 }
 
