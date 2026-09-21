@@ -6,9 +6,7 @@
 
 use std::collections::VecDeque;
 
-#[cfg(feature = "gui")]
 use crate::adapters::ui::info_modal::InfoModal;
-#[cfg(feature = "gui")]
 use crate::adapters::ui::popup::transfer::{TransferError, TransferProgress};
 
 use super::selection;
@@ -118,7 +116,6 @@ pub struct DialogState {
     pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 시점 정보/에러 알림용 modal 큐. 큐 head를 [확인] 버튼으로 처리한다.
     /// `crate::adapters::ui::info_modal::show_info_modal()`로 push.
-    #[cfg(feature = "gui")]
     pub(crate) info_modal_queue: VecDeque<InfoModal>,
     /// 휴먼 핸드오프 — 응답 대기 중인 approval 큐. popup 의 head 가 현재 화면.
     /// `approval.request` IPC 가 push하고, 선택지 클릭 시 pop.
@@ -132,7 +129,6 @@ pub struct DialogState {
     /// DAG 목록 popup 의 전 상태(검색/필터/열린 DAG/그래프 뷰). `on_close` 가
     /// 통째로 기본값으로 되돌린다 — popup 은 surface 가 아니라 snapshot/restore
     /// 대상이 아니고, 닫힌 뒤에도 남는 상태는 다음 open 을 오염시킨다.
-    #[cfg(feature = "gui")]
     pub(crate) dag_list: crate::adapters::ui::popup::dag_list::DagListState,
     /// 도구 메뉴 클릭 / preset save 후속 — PresetView 를 열어달라는 요청.
     /// `selection` 이 `Some` 이면 PresetView 가 열린 뒤 해당 preset 을 선택한다.
@@ -169,11 +165,9 @@ pub struct DialogState {
     pub(crate) pending_script_confirm: Option<PendingScriptConfirm>,
     /// 원격 전송 진행 팝업(`transfer_progress`) 상태. 진행 중인 파일 행들을 담고,
     /// 이미지 붙여넣기 업로드 워커의 진행 이벤트가 갱신한다. 모든 행이 끝나면 `None` + 팝업 self-close.
-    #[cfg(feature = "gui")]
     pub(crate) transfer_progress: Option<TransferProgress>,
     /// 원격 전송 실패 팝업(`transfer_error`) 큐. 전송 실패/거부 시 push, Dismiss 시
     /// pop(큐가 비면 팝업 닫힘 — info_modal 큐 패턴). head 가 현재 화면.
-    #[cfg(feature = "gui")]
     pub(crate) transfer_error: VecDeque<TransferError>,
 }
 
@@ -223,13 +217,11 @@ impl DialogState {
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
-            #[cfg(feature = "gui")]
             info_modal_queue: VecDeque::new(),
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
             file_handler_picker: None,
             file_picker: None,
-            #[cfg(feature = "gui")]
             dag_list: Default::default(),
             pending_preset_window_selection: None,
             pending_open_preset_window: false,
@@ -240,9 +232,7 @@ impl DialogState {
             pending_category_delete: None,
             pending_force_detach_workspace: None,
             pending_script_confirm: None,
-            #[cfg(feature = "gui")]
             transfer_progress: None,
-            #[cfg(feature = "gui")]
             transfer_error: VecDeque::new(),
         }
     }
