@@ -79,7 +79,7 @@ impl AppState {
         let cwd = self.resolve_inherit_cwd(engine);
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
-        let name = super::pane::default_tab_name_for_kind(
+        let name = crate::core::surface_registry::default_tab_name_for_kind(
             kind,
             params,
             engine.surface_registry.get(kind).as_deref(),
@@ -126,7 +126,7 @@ impl AppState {
         let cwd = self.resolve_inherit_cwd(engine);
         let surface =
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
-        let name = super::pane::default_tab_name_for_kind(
+        let name = crate::core::surface_registry::default_tab_name_for_kind(
             kind,
             params,
             engine.surface_registry.get(kind).as_deref(),
@@ -259,7 +259,7 @@ impl AppState {
                 .find_pane(pane_id)
                 && let Some(tab) = pane.tabs.get(tab_index)
             {
-                super::AppState::collect_close_targets(tab, engine, &mut t);
+                crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
             }
             t.into_iter().map(|(sid, _)| sid).collect()
         };
@@ -273,7 +273,7 @@ impl AppState {
             .find_pane(pane_id)
             && let Some(tab) = pane.tabs.get(tab_index)
         {
-            super::AppState::collect_close_targets(tab, engine, &mut targets);
+            crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
         }
         if let Some(snapshot) = engine.capture_closed_tab(pane_id, tab_index) {
             engine.push_closed_item(snapshot);
@@ -320,7 +320,7 @@ impl AppState {
             if let Some(pane) = self.focused_pane(engine)
                 && let Some(tab) = pane.tabs.get(pane.active_tab)
             {
-                super::AppState::collect_close_targets(tab, engine, &mut t);
+                crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
             }
             t.into_iter().map(|(sid, _)| sid).collect()
         };
@@ -334,7 +334,7 @@ impl AppState {
             && let Some(pane) = self.focused_pane(engine)
             && let Some(tab) = pane.tabs.get(active)
         {
-            super::AppState::collect_close_targets(tab, engine, &mut targets);
+            crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
             if let Some(snapshot) = engine.capture_closed_tab(pane_id, active) {
                 engine.push_closed_item(snapshot);
             }

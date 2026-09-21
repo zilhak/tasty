@@ -6,7 +6,7 @@ use crate::global_hooks::GlobalHookManager;
 use crate::model::Workspace;
 use crate::notification::NotificationStore;
 use crate::settings::Settings;
-use crate::state::SurfaceMessage;
+pub(crate) use message::SurfaceMessage;
 use tasty_hooks::HookManager;
 use tasty_terminal::Waker;
 

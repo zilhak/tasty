@@ -51,7 +51,7 @@ pub use dialogs::{
 };
 #[cfg(feature = "gui")]
 pub(crate) use dialogs::{FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
-pub use events::{FocusedSurfaceType, PendingHostEvent, PendingSurfaceClosed, SurfaceMessage};
+pub use events::{FocusedSurfaceType, PendingHostEvent, PendingSurfaceClosed};
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
@@ -958,39 +958,6 @@ impl AppState {
         }
     }
 
-    /// 닫히는 surface 의 `(surface_id, scrollback_persist_id)` 를 추출. Tab/Pane/Workspace
-    /// 닫기 전에 layout 을 한 번 walk 해 결과를 모아두고, 닫기 후에 `cleanup_surface` 에
-    /// 전달한다. TerminalSurface 와 deferred EmptySurface 두 케이스를 모두 처리한다.
-    pub(crate) fn collect_close_targets(
-        tab: &crate::model::Tab,
-        engine: &CoreState,
-        out: &mut Vec<(u32, Option<String>)>,
-    ) {
-        tab.for_each_surface(&mut |s| {
-            if let Some(ts) = s.as_any().downcast_ref::<crate::model::TerminalSurface>() {
-                out.push((
-                    ts.id,
-                    engine
-                        .terminals
-                        .scrollback_persist_id(ts.id)
-                        .map(str::to_string),
-                ));
-            } else if let Some(es) = s.as_any().downcast_ref::<crate::model::EmptySurface>() {
-                let pid = es
-                    .deferred_spawn()
-                    .and_then(|sp| sp.scrollback_persist_id.clone());
-                out.push((es.id, pid));
-            } else if let Some(sid) = s.surface_id() {
-                // 나머지 kind (plugin RemoteSurface / EguiMeshSurface / webview 등).
-                // scrollback persist 는 없지만 cleanup_surface + surface.closed
-                // lifecycle(→ 소유 plugin 에 surface.destroy 통지) 대상이다. 이 분기가
-                // 없으면 cleanup 대상에서 조용히 빠져 plugin 프로세스의 per-surface
-                // 상태가 영원히 남는다 (soak S6 실측: markdown 사이클당 ~30MB 누수).
-                out.push((sid, None));
-            }
-        });
-    }
-
     /// Clean up all state associated with a closed surface:
     /// surface metadata, per-surface host view state, and memory entries
     /// scoped to this surface (regular + secret).
@@ -1120,7 +1087,7 @@ impl AppState {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    Self::collect_close_targets(tab, engine, &mut targets);
+                    crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
                 }
             }
         }

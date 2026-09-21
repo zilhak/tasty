@@ -1,5 +1,3 @@
-use serde_json::Value;
-
 use crate::core::CoreState;
 #[cfg(test)]
 use crate::model::SplitDirection;
@@ -202,7 +200,7 @@ impl AppState {
                 .map(|pane| {
                     let mut t: Vec<(u32, Option<String>)> = Vec::new();
                     for tab in &pane.tabs {
-                        Self::collect_close_targets(tab, engine, &mut t);
+                        crate::core::impl_close::collect_close_targets(tab, engine, &mut t);
                     }
                     t.into_iter().map(|(sid, _)| sid).collect()
                 })
@@ -227,7 +225,7 @@ impl AppState {
             let ws = self.active_workspace(engine);
             if let Some(pane) = ws.pane_layout().find_pane(target_id) {
                 for tab in &pane.tabs {
-                    Self::collect_close_targets(tab, engine, &mut targets);
+                    crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
                 }
             }
         }
@@ -508,7 +506,11 @@ impl AppState {
             let ws = &engine.workspaces[loc.ws_idx];
             let pane = ws.pane_layout().find_pane(loc.pane_id).unwrap();
             if pane.tabs.len() > 1 {
-                Self::collect_close_targets(&pane.tabs[loc.tab_idx], engine, &mut targets);
+                crate::core::impl_close::collect_close_targets(
+                    &pane.tabs[loc.tab_idx],
+                    engine,
+                    &mut targets,
+                );
             }
         }
         let ws = &mut engine.workspaces[loc.ws_idx];
@@ -571,7 +573,7 @@ impl AppState {
                 && let Some(pane) = ws.pane_layout().find_pane(loc.pane_id)
             {
                 for tab in &pane.tabs {
-                    Self::collect_close_targets(tab, engine, &mut targets);
+                    crate::core::impl_close::collect_close_targets(tab, engine, &mut targets);
                 }
             }
         }
@@ -697,36 +699,4 @@ impl AppState {
         });
         Ok(())
     }
-}
-
-/// kind+params로부터 합리적인 탭 표시명을 도출한다.
-///
-/// kind 가 매니페스트 `name_from_param`(registry `SurfaceKindDef.name_from_param`)을
-/// 선언하면 그 params 키의 값 basename 을 표시명으로 쓴다(예: markdown="file" →
-/// `README.md`). 미선언이거나 그 키가 params 에 없으면 kind 의 표시명 fallback
-/// (`display_name_i18n_key` 번역, 미등록이면 kind 문자열)으로 떨어진다. 본체의
-/// `kind == "markdown"` basename 명명 하드코딩을 generic 화한다.
-pub(crate) fn default_tab_name_for_kind(
-    kind: &str,
-    params: &Value,
-    def: Option<&crate::core::surface_registry::SurfaceKindDef>,
-) -> String {
-    fn basename_or(path: &str, fallback: &str) -> String {
-        path.split(['/', '\\'])
-            .rfind(|s| !s.is_empty())
-            .unwrap_or(fallback)
-            .to_string()
-    }
-    // kind 표시명 fallback: registry display_name_i18n_key 번역(미등록이면 kind 그대로).
-    let fallback = || {
-        def.map(|d| crate::i18n::t(d.display_name_i18n_key).to_string())
-            .unwrap_or_else(|| kind.to_string())
-    };
-    if let Some(key) = def.and_then(|d| d.name_from_param.as_deref())
-        && let Some(p) = params.get(key).and_then(|v| v.as_str())
-    {
-        let fb = fallback();
-        return basename_or(p, &fb);
-    }
-    fallback()
 }

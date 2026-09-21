@@ -1,5 +1,11 @@
 use super::CoreState;
-use crate::state::SurfaceMessage;
+
+#[derive(Debug, Clone)]
+pub struct SurfaceMessage {
+    pub(crate) id: u32,
+    pub(crate) from_surface_id: u32,
+    pub(crate) content: String,
+}
 
 impl CoreState {
     /// Send a message from one surface to another. Returns the assigned message ID.

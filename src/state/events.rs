@@ -1,4 +1,5 @@
-//! `AppState` 가 주고받는 **호스트 이벤트·메시지 타입**.
+//! `AppState` 가 주고받는 **호스트 이벤트 타입**. surface 간 메시지(`SurfaceMessage`)는
+//! 그것을 담는 `CoreState` 쪽(`core/state/message.rs`)에 있다.
 //!
 //! `state.rs` 에서 그대로 옮겨 온 것이다 — 동작 변경이 없다. 이 자리를 고른 이유는
 //! 크기가 아니라 **방향**이다: 이 타입들은 `state.rs` 의 다른 타입을 하나도 안 들고
@@ -46,13 +47,6 @@ impl FocusedSurfaceType {
             _ => false,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct SurfaceMessage {
-    pub(crate) id: u32,
-    pub(crate) from_surface_id: u32,
-    pub(crate) content: String,
 }
 
 /// Surface가 닫혔다는 사실을 plugin 측에 broadcast하기 위해 메인 루프가 소비할

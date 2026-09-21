@@ -502,6 +502,38 @@ impl tasty_plugin_protocol::host_port::SurfaceRegistry for SurfaceKindRegistry {
     }
 }
 
+/// kind+params로부터 합리적인 탭 표시명을 도출한다.
+///
+/// kind 가 매니페스트 `name_from_param`(registry `SurfaceKindDef.name_from_param`)을
+/// 선언하면 그 params 키의 값 basename 을 표시명으로 쓴다(예: markdown="file" →
+/// `README.md`). 미선언이거나 그 키가 params 에 없으면 kind 의 표시명 fallback
+/// (`display_name_i18n_key` 번역, 미등록이면 kind 문자열)으로 떨어진다. 본체의
+/// `kind == "markdown"` basename 명명 하드코딩을 generic 화한다.
+pub(crate) fn default_tab_name_for_kind(
+    kind: &str,
+    params: &serde_json::Value,
+    def: Option<&SurfaceKindDef>,
+) -> String {
+    fn basename_or(path: &str, fallback: &str) -> String {
+        path.split(['/', '\\'])
+            .rfind(|s| !s.is_empty())
+            .unwrap_or(fallback)
+            .to_string()
+    }
+    // kind 표시명 fallback: registry display_name_i18n_key 번역(미등록이면 kind 그대로).
+    let fallback = || {
+        def.map(|d| crate::i18n::t(d.display_name_i18n_key).to_string())
+            .unwrap_or_else(|| kind.to_string())
+    };
+    if let Some(key) = def.and_then(|d| d.name_from_param.as_deref())
+        && let Some(p) = params.get(key).and_then(|v| v.as_str())
+    {
+        let fb = fallback();
+        return basename_or(p, &fb);
+    }
+    fallback()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,7 +675,7 @@ mod tests {
         d.name_from_param = Some("file".to_string());
         // name_from_param 키가 params 에 있으면 basename.
         assert_eq!(
-            crate::state::pane::default_tab_name_for_kind(
+            super::default_tab_name_for_kind(
                 "markdown",
                 &serde_json::json!({"file": "/a/b/README.md"}),
                 Some(&d),
@@ -652,17 +684,13 @@ mod tests {
         );
         // 키가 없으면 display_name_i18n_key 번역(테스트: lang 미로드 → 키 그대로).
         assert_eq!(
-            crate::state::pane::default_tab_name_for_kind(
-                "markdown",
-                &serde_json::json!({}),
-                Some(&d),
-            ),
+            super::default_tab_name_for_kind("markdown", &serde_json::json!({}), Some(&d),),
             "test.dummy"
         );
         // name_from_param 미선언이면 파생 없이 fallback.
         let plain = dummy_def("empty");
         assert_eq!(
-            crate::state::pane::default_tab_name_for_kind(
+            super::default_tab_name_for_kind(
                 "empty",
                 &serde_json::json!({"file": "/x/y.md"}),
                 Some(&plain),
@@ -671,7 +699,7 @@ mod tests {
         );
         // def 미등록이면 kind 문자열 그대로(catch-all 보존).
         assert_eq!(
-            crate::state::pane::default_tab_name_for_kind("plugin_x", &serde_json::json!({}), None),
+            super::default_tab_name_for_kind("plugin_x", &serde_json::json!({}), None),
             "plugin_x"
         );
     }

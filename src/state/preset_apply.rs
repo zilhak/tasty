@@ -447,11 +447,11 @@ impl AppState {
 }
 
 /// preset leaf 의 kind 로부터 자동 탭 이름 도출.
-/// `state/pane.rs::default_tab_name_for_kind` 와 동일 정책이지만 PresetSurfaceLayout
+/// `core/surface_registry.rs::default_tab_name_for_kind` 와 동일 정책이지만 PresetSurfaceLayout
 /// 트리에서 첫 leaf 를 직접 찾는다.
 fn preset_default_tab_name(engine: &CoreState, layout: &PresetSurfaceLayout) -> String {
     let first = first_preset_leaf(layout);
-    super::pane::default_tab_name_for_kind(
+    crate::core::surface_registry::default_tab_name_for_kind(
         &first.kind,
         &first.params,
         engine.surface_registry.get(&first.kind).as_deref(),

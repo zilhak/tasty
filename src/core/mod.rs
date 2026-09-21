@@ -351,7 +351,7 @@ impl Core {
         sid: u32,
         from: Option<u32>,
         peek: bool,
-    ) -> Vec<crate::state::SurfaceMessage> {
+    ) -> Vec<state::SurfaceMessage> {
         engine.read_messages(sid, from, peek)
     }
 

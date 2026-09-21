@@ -98,6 +98,22 @@ headless 빌드에 그 필드가 있는지를 적는다.
 형태가 이 모듈에만 남아 있다. 필드마다 ①(gui 전용) 또는 ③(headless 도 세우지만 읽는 자가
 GUI 뿐 — `expect`)으로 가르는 것이 다음 단계다.
 
+## `state` 가 아니라 `core` 에 두는 것
+
+`AppState` 필드를 읽지 않는 공용 동작은 `core` 에 둔다. `core` 가 부르는 동작이 `state` 에
+있으면 도메인 계층이 view 상태 모듈을 거꾸로 보게 된다.
+
+| 정의 | 자리 | 하는 일 |
+|---|---|---|
+| `SurfaceMessage` | `src/core/state/message.rs` | `CoreState` 의 surface 간 메시지 큐 항목 |
+| `default_tab_name_for_kind` | `src/core/surface_registry.rs` | surface kind 선언과 params 로 탭 표시명을 도출 |
+| `collect_close_targets` | `src/core/impl_close.rs` | 닫히는 탭의 surface 와 scrollback persist id 를 모은다 |
+
+`state` 쪽 호출자(탭·pane·preset 적용)도 같은 정의를 `core` 경로로 부른다. `core` 가 아직
+`AppState` 를 인자로 받는 자리는 남아 있다 — 핸들러 인자 모양 전체의 문제라
+[ADR-0355](../adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md)
+의 재검토 조건에 걸려 있다.
+
 ## 재는 법
 
 `독자 없음` 칸은 위 모듈 예외를 잠시 지우고 headless 라이브러리를 검사해 나온 진단이다.

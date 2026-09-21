@@ -492,7 +492,7 @@ pub(crate) fn apply_create_workspace_inner(
             cwd.as_deref(),
             &surface_params,
         )?;
-        let tab_name = crate::state::pane::default_tab_name_for_kind(
+        let tab_name = crate::core::surface_registry::default_tab_name_for_kind(
             &kind,
             &surface_params,
             engine.surface_registry.get(&kind).as_deref(),
