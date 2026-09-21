@@ -47,7 +47,10 @@ impl Hub {
         ) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());
-                let injector = HostIpcInjector::new(ipc.command_sender(), ipc_waker);
+                // 주입기는 서버와 **같은** 입장 장부를 든다 — 소켓 요청과 주입이 같은 큐의
+                // 바이트를 나눠 쓰고, 주입 깊이는 그 장부가 따로 센다(ADR-0391).
+                let injector = HostIpcInjector::new(ipc.command_sender(), ipc_waker)
+                    .with_admission(ipc.admission());
                 self.ipc_server = Some(Box::new(ipc));
                 Some(injector)
             }

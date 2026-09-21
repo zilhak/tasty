@@ -63,6 +63,16 @@ pub const ERR_IDEMPOTENCY_KEY_CONFLICT: i32 = -32063;
 /// 호출자가 할 일은 재전송이 아니라 조회다.
 pub const ERR_IDEMPOTENT_RESULT_DISCARDED: i32 = -32064;
 
+/// 호스트의 명령 큐가 차서 이 요청을 **큐에 넣지 않았다**. **요청이 실행되지 않았다** —
+/// 판정은 큐에 넣기 전에 일어나므로 `-32061` 과 달리 결과가 불명이지 않다.
+///
+/// "찼다" 의 좌변은 명령 수가 아니라 큐에 든 요청 **바이트의 합**이다(정의와 상한은
+/// `crate::admission`). 한 건의 크기는 [`ERR_REQUEST_LINE_TOO_LONG`] 이 따로 자르므로, 이
+/// 코드가 뜻하는 것은 "이 요청이 크다" 가 아니라 "지금 호스트가 밀려 있다" 다. 그래서
+/// 고칠 것이 없고, 호출자가 할 일은 **잠시 뒤 그대로 다시 거는 것**이다. 연결은 닫히지
+/// 않는다 — 줄은 끝까지 읽혔으므로 다음 요청이 같은 연결로 와도 된다.
+pub const ERR_COMMAND_QUEUE_FULL: i32 = -32065;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,

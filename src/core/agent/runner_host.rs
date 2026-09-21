@@ -133,6 +133,10 @@ impl RunnerContext {
     }
 
     /// host→plugin sync dispatch. injector 미초기화 시 Err.
+    ///
+    /// 큐 입장 거절(`InjectError::Refused`)도 다시 걸지 않고 그대로 올린다 — 호출자는 task
+    /// 실행이고 그 실패는 task 결과로 agent 에게 간다. 여기서 재시도하면 이미 밀린 큐에
+    /// 부하를 더한다. 문구는 "nothing ran" 을 실어 시간 초과(결과 불명)와 갈린다.
     pub fn dispatch_plugin(
         &self,
         method: &str,
@@ -143,6 +147,7 @@ impl RunnerContext {
             .get()
             .ok_or_else(|| INJECTOR_UNINIT_MSG.to_string())?;
         inj.dispatch(method, params, HOST_DISPATCH_TIMEOUT)
+            .map_err(|e| e.to_string())
     }
 }
 

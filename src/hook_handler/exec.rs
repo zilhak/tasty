@@ -18,7 +18,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::types::IpcCall;
-use tasty_ipc::host_call::HostIpcInjector;
+use tasty_ipc::host_call::{HostIpcInjector, InjectError};
 
 /// IpcSequence 한 스텝의 응답 대기 상한. 메인루프 tick + 핸들러 처리 시간 포함.
 const STEP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -136,6 +136,11 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
 /// 지점이다 — 일상적 경고(`warn!`)로는 운영 중 놓치기 쉽다. push 완료 전략의
 /// 필수 timeout(§C-3, 레지스트리 쪽 트랙)이 이 실패로 인한 task 영구 hang 자체의
 /// 안전망이고, 이 로그 레벨 변경은 그 안전망이 왜 발동했는지 진단 가능하게 한다.
+///
+/// 큐 입장 거절(호스트 명령 큐가 밀려 주입을 받지 않음)은 다른 실패와 **다른 문구**로
+/// 남긴다 — 그 스텝은 실행되지 않았고(시간 초과와 달리 결과 불명이 아니다), 원인은 스텝이
+/// 아니라 호스트의 적체다. 다시 걸지 않는다: 웹훅·idle 훅은 밖에서 계속 오는 사건이라
+/// 재시도가 곧 적체를 키우는 부하다. 다음 스텝은 그대로 진행한다(위 MVP 정책).
 pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &SubstitutionContext) {
     for (i, call) in calls.iter().enumerate() {
         let params = substitute_params(&call.params, ctx);
@@ -143,10 +148,20 @@ pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &Sub
             Ok(_result) => {
                 tracing::debug!("webhook IpcSequence step {i} ({}) ok", call.method);
             }
-            Err(e) => {
-                tracing::error!("webhook IpcSequence step {i} ({}) failed: {e}", call.method);
-            }
+            Err(e) => log_step_failure(i, &call.method, &e),
         }
+    }
+}
+
+/// 실패한 스텝 하나를 남긴다. 실행되지 않은 실패(큐 입장 거절 · 큐 송신 실패)는 문구를 갈라
+/// 시간 초과·handler 거절과 구별되게 한다 — 앞의 것은 스텝이 아니라 호스트의 적체가 원인이다.
+fn log_step_failure(i: usize, method: &str, e: &InjectError) {
+    if e.nothing_ran() {
+        tracing::error!(
+            "webhook IpcSequence step {i} ({method}) not run — the host did not queue it: {e}"
+        );
+    } else {
+        tracing::error!("webhook IpcSequence step {i} ({method}) failed: {e}");
     }
 }
 

@@ -7,6 +7,7 @@
 //! 이동했다. handler (`crate::adapters::ipc::handler`) 는 본 바이너리에 잔존
 //! (AppState/Core 결합 깊음).
 
+pub mod admission;
 pub mod alias;
 pub mod caller;
 pub mod capability;

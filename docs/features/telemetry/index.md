@@ -131,6 +131,13 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 [storage](../../design/systems/storage.md) 와
 [ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md)).
 
+같은 성질의 자리가 하나 더 있는데 **아직 이 응답에 없다** — 명령 큐의 입장 장부
+(`tasty_ipc::admission::CommandAdmission`)다. 큐에 든 요청 바이트 합과 호스트 주입 명령 수에
+상한이 걸려 있고, 넘으면 요청은 큐에 들어가지 않는다(소켓 요청은 `-32065`, 호스트 주입은
+`InjectError::Refused`). 장부는 지금 값·최고 바이트·거절 누계 둘을 `snapshot()` 으로 들고 있지만
+그것을 읽는 IPC 자리가 없어, 거절은 요청자가 받은 응답과 `debug` 로그로만 드러난다. 1 바이트의
+정의와 상한 값은 [ADR-0391](../../adr/0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md).
+
 #### 분포 — 평균·최대가 못 답하는 것
 
 `queue_before_gate.wait_us_hist` · `handler_after_gate.us_hist` ·

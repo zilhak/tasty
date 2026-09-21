@@ -7,6 +7,7 @@
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
+use crate::admission::{AdmissionTicket, CommandAdmission, Origin, Refusal};
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 
 /// A command received from an IPC client, with a channel to send the response back.
@@ -28,6 +29,14 @@ pub struct IpcCommand {
     /// 수를 세는 어떤 판정에도 안 잡힌다. 크레이트 밖에서 이 값을 직접 읽는 자리는 없고
     /// 필요한 것은 [`IpcCommand::queue_wait`] 뿐이라 비공개로 두는 데 드는 비용이 없다.
     enqueued_at: Instant,
+    /// 이 요청의 무게 — 요청 JSON 한 줄의 바이트 수(정의는 `crate::admission`).
+    wire_bytes: usize,
+    /// 큐 입장 장부에서 받은 몫. 큐에서 꺼낼 때([`IpcCommand::mark_dequeued`]) 버려져
+    /// 반납된다. 명령이 큐째 버려지는 경로에서도 표가 함께 버려지므로 따로 반납할 일이 없다.
+    ///
+    /// 이 타입 자체에 `Drop` 을 달지 않는 이유: 소비자가 필드를 꺼내 옮기는(`request` 를
+    /// move) 자리가 있고, `Drop` 이 붙은 구조체는 필드를 옮길 수 없다.
+    admission: Option<AdmissionTicket>,
 }
 
 impl IpcCommand {
@@ -37,12 +46,51 @@ impl IpcCommand {
     /// 없게** 하려는 것이다 — 빠뜨리면 그 경로의 대기 시간만 조용히 0 이 된다.
     /// 그 강제는 이 doc 이 아니라 `enqueued_at` 의 비공개성이 한다: 크레이트 밖에서는
     /// 리터럴로 이 타입을 만들 수 없으므로 주입 경로는 여기를 지날 수밖에 없다.
+    ///
+    /// 무게는 요청을 compact 직렬화한 길이로 잰다 — 줄 없이 만들어지는 명령(호스트 주입)의
+    /// 정의다. 받은 줄이 있으면 [`IpcCommand::with_wire_bytes`] 로 그 길이를 넘긴다.
     pub fn new(request: JsonRpcRequest, response_tx: mpsc::SyncSender<JsonRpcResponse>) -> Self {
+        let wire_bytes = match serde_json::to_vec(&request) {
+            Ok(v) => v.len(),
+            Err(e) => {
+                // JsonRpcRequest 는 문자열 키 map 과 Value 뿐이라 직렬화가 실패할 길이 없다.
+                // 실패한다면 무게 0 으로 들어가 바이트 판정만 이 한 건을 못 본다.
+                tracing::warn!("IpcCommand weight: request did not serialize: {e}");
+                0
+            }
+        };
+        Self::with_wire_bytes(request, response_tx, wire_bytes)
+    }
+
+    /// 무게를 호출자가 잰 값으로 받아 명령을 만든다 — 소켓 경로가 받은 줄의 길이를 넘긴다.
+    pub fn with_wire_bytes(
+        request: JsonRpcRequest,
+        response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        wire_bytes: usize,
+    ) -> Self {
         Self {
             request,
             response_tx,
             enqueued_at: Instant::now(),
+            wire_bytes,
+            admission: None,
         }
+    }
+
+    /// 이 요청의 무게(바이트).
+    pub fn wire_bytes(&self) -> usize {
+        self.wire_bytes
+    }
+
+    /// 입장 장부에서 이 명령의 몫을 받는다. 거절이면 명령은 큐에 넣지 말아야 한다.
+    pub fn admit(&mut self, ledger: &Arc<CommandAdmission>, origin: Origin) -> Result<(), Refusal> {
+        self.admission = Some(ledger.admit(self.wire_bytes, origin)?);
+        Ok(())
+    }
+
+    /// 큐에서 꺼냈다 — 몫을 반납한다. 여러 번 불러도 한 번만 반납된다.
+    pub fn mark_dequeued(&mut self) {
+        self.admission = None;
     }
 
     /// 큐에 들어간 뒤 지금까지 기다린 시간.
