@@ -172,6 +172,22 @@ impl OutputBuffer {
         }
     }
 
+    /// Declare that what arrives from here on does not continue what came
+    /// before: give the stream a new token.
+    ///
+    /// A mirror terminal replays bytes another instance sent, and that
+    /// transport can lose some of them or hand over a fresh snapshot after a
+    /// re-attach. Either way the bytes on both sides of that point are not one
+    /// continuous stream, so a position taken before it must not be read as
+    /// if it were — the same hazard the token already names for a replaced
+    /// terminal. Positions keep counting and the retained bytes stay, so a
+    /// reader that never sends the token sees nothing change; one that does
+    /// gets a stream mismatch instead of bytes across the gap
+    /// (`docs/adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md`).
+    pub fn renew_stream(&mut self) {
+        self.stream = mint_stream_id();
+    }
+
     /// Set a read mark at the current end of the buffer.
     pub fn set_mark(&mut self) {
         self.read_mark = Some(self.end());
@@ -336,6 +352,41 @@ mod tests {
             expect_stream: None,
         })
         .expect("the mark is never ahead of the stream")
+    }
+
+    /// Renewing the stream turns a position taken before it into a mismatch
+    /// for a reader that carries the token, and changes nothing for one that
+    /// does not: positions keep counting and the retained bytes stay.
+    #[test]
+    fn a_renewed_stream_refuses_the_old_token_but_keeps_counting_positions() {
+        let mut b = OutputBuffer::new();
+        b.append(b"before");
+        let first = at(&b, 0);
+        assert_eq!(first.text, "before");
+
+        b.renew_stream();
+        b.append(b"after");
+
+        let refused = b.read(&OutputReadRequest {
+            from: OutputCursor::At(first.next_cursor),
+            max_bytes: OUTPUT_RETENTION_MAX_BYTES,
+            strip_ansi: false,
+            expect_stream: Some(first.stream.clone()),
+        });
+        match refused {
+            Err(OutputReadError::StreamMismatch { expected, actual }) => {
+                assert_eq!(expected, first.stream);
+                assert_ne!(actual, first.stream, "the token did not change");
+            }
+            other => panic!("a read across the renewal must be refused: {other:?}"),
+        }
+
+        let tokenless = at(&b, first.next_cursor);
+        assert_eq!(
+            tokenless.text, "after",
+            "a reader without the token sees positions continue as before"
+        );
+        assert_ne!(tokenless.stream, first.stream);
     }
 
     #[test]

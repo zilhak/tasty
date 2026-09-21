@@ -49,6 +49,10 @@ impl TerminalState {
         self.output.set_mark();
     }
 
+    pub(crate) fn renew_output_stream(&mut self) {
+        self.output.renew_stream();
+    }
+
     pub(crate) fn take_since_output_scan_mark(&mut self, strip_ansi: bool) -> String {
         self.output.take_since_scan_mark(strip_ansi)
     }
@@ -331,6 +335,14 @@ impl Terminal {
     /// Read output since the last mark. If no mark was set, reads from the beginning.
     pub fn read_since_mark(&self, strip_ansi: bool) -> String {
         self.lock_state().read_since_mark(strip_ansi)
+    }
+
+    /// Give this terminal's output stream a new token, so a position taken
+    /// before this point reads as a different stream. A mirror calls this where
+    /// the bytes it replays stop being continuous; see
+    /// `OutputBuffer::renew_stream`.
+    pub fn renew_output_stream(&mut self) {
+        self.lock_state().renew_output_stream();
     }
 
     /// Answer a read from a position, saying where the retained window is, what
