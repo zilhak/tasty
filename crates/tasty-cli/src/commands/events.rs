@@ -4,7 +4,11 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum EventsCommands {
-    /// Read events from a position. Prints one JSON object per line.
+    /// Read events from a position. Prints the answer as one JSON object.
+    ///
+    /// The events are in its `events` array, next to `next_offset`, `epoch`
+    /// and the other fields of the answer. For one event per line, use
+    /// `follow`.
     ///
     /// The cursor is yours, not the host's: pass the `next_offset` from the
     /// previous answer to continue. Asking twice with the same arguments gives

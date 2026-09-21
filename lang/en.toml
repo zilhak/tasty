@@ -4909,8 +4909,8 @@ about = "Read the host event feed by position (fetch, follow)"
 long = "Read the host event feed by position (fetch, follow)\n\nThe feed lives in memory only: a restart clears it and starts positions over, so every answer carries an `epoch` that says which generation a position belongs to. A position that has scrolled out of the ring is not quietly replaced by the oldest one — the answer says how many were skipped."
 
 [cli.help._root.events.fetch]
-about = "Read events from a position. Prints one JSON object per line"
-long = "Read events from a position. Prints one JSON object per line.\n\nThe cursor is yours, not the host's: pass the `next_offset` from the previous answer to continue. Asking twice with the same arguments gives the same answer, and a slow reader queues nothing on the host side.\n\nEvents live in memory only. A restart clears them and starts positions over, which is why every answer carries an `epoch` — if it differs from the one your offset came from, that offset is from a previous generation."
+about = "Read events from a position. Prints the answer as one JSON object"
+long = "Read events from a position. Prints the answer as one JSON object.\n\nThe events are in its `events` array, next to `next_offset`, `epoch` and the other fields of the answer. For one event per line, use `follow`.\n\nThe cursor is yours, not the host's: pass the `next_offset` from the previous answer to continue. Asking twice with the same arguments gives the same answer, and a slow reader queues nothing on the host side.\n\nEvents live in memory only. A restart clears them and starts positions over, which is why every answer carries an `epoch` — if it differs from the one your offset came from, that offset is from a previous generation."
 
 [cli.help._root.events.fetch.arg.offset]
 help = "Position to read from. Default 0, the oldest still retained"
