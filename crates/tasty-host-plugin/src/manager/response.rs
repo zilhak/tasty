@@ -27,6 +27,11 @@ fn namespace_timeout_message(plugin_id: &str) -> String {
     )
 }
 
+/// 경고 줄에 싣는 원 요청 번호. IPC 요청에서 오지 않은 plugin 요청이면 `none` 이다.
+fn request_seq_label(origin: Option<tasty_ipc::server::RequestSeq>) -> String {
+    origin.map_or_else(|| "none".to_string(), |seq| seq.to_string())
+}
+
 // surface handle 슬롯 락의 poison 보고 플래그(각 첫 1 회만). 둘 다 값 슬롯(String ·
 // Option<Value>)이라 락을 든 채 죽어도 불변식이 성하다 — 복구가 맞다. 조용히 삼키면
 // 라벨/스냅샷이 갱신 없이 stale 로 남는데 그 사실이 어디에도 안 남는다.
@@ -139,9 +144,12 @@ impl PluginManager {
             self.record_origin_hop(resp.id, p, waited, outcome, last);
         }
         if let Some(err) = &resp.error {
+            // 원 IPC 요청 번호를 같은 줄에 싣는다 — plugin 로그의 id(= 호스트 req_id)에서 호스트
+            // 쪽 원 요청으로 되짚는 열쇠다(ADR-0436). 새 줄을 만들지 않는다.
             tracing::warn!(
-                "plugin '{plugin_id}' response error (id={}): {err}",
-                resp.id
+                "plugin '{plugin_id}' response error (id={}, request_seq={}): {err}",
+                resp.id,
+                request_seq_label(pending.as_ref().and_then(|p| p.origin))
             );
         }
         let kind = match pending {
@@ -575,7 +583,7 @@ impl PluginManager {
                     tasty_telemetry::slow_requests::HopOutcome::Expired,
                     last,
                 );
-                self.expire_pending_request(id, p.kind);
+                self.expire_pending_request(id, p.kind, p.origin);
             }
         }
     }
@@ -610,7 +618,12 @@ impl PluginManager {
     /// namespace 호출은 기다리던 응답이 곧 목적이라 진행시킬 것이 없다 — plugin 이
     /// 사라졌을 때(`cancel_pending_namespace_calls`)와 같은 모양으로 caller 에
     /// `-32004` 를 회신한다.
-    fn expire_pending_request(&mut self, id: u64, kind: PendingRequestKind) {
+    fn expire_pending_request(
+        &mut self,
+        id: u64,
+        kind: PendingRequestKind,
+        origin: Option<tasty_ipc::server::RequestSeq>,
+    ) {
         match kind {
             PendingRequestKind::ExtensionPreIpcHook {
                 target_plugin_id,
@@ -660,7 +673,7 @@ impl PluginManager {
                 event_key,
                 deadline: _,
             } => self.fail_open_post_event_hook(extension_plugin_id, event_key),
-            other => self.expire_pending_answer(id, other),
+            other => self.expire_pending_answer(id, other, origin),
         }
     }
 
@@ -669,7 +682,12 @@ impl PluginManager {
     /// caller 종류(local `response_tx` · plugin `ipc.result` · post-hook 이 걸린
     /// `send_final_error`)만 다르고 싣는 코드는 셋 다 `-32004` 로 같다
     /// (`docs/adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md`).
-    fn expire_pending_answer(&mut self, id: u64, kind: PendingRequestKind) {
+    fn expire_pending_answer(
+        &mut self,
+        id: u64,
+        kind: PendingRequestKind,
+        origin: Option<tasty_ipc::server::RequestSeq>,
+    ) {
         match kind {
             PendingRequestKind::NamespaceInvoke {
                 plugin_id,
@@ -677,7 +695,7 @@ impl PluginManager {
                 original_id,
                 deadline: _,
             } => {
-                let msg = self.note_namespace_expiry(&plugin_id, id);
+                let msg = self.note_namespace_expiry(&plugin_id, id, origin);
                 send_response(
                     &response_tx,
                     JsonRpcResponse::error(original_id, -32004, &msg),
@@ -689,7 +707,7 @@ impl PluginManager {
                 call_id,
                 deadline: _,
             } => {
-                let msg = self.note_namespace_expiry(&plugin_id, id);
+                let msg = self.note_namespace_expiry(&plugin_id, id, origin);
                 // 바로 위 local 갈래와 같은 `-32004`. 만료는 caller 종류와 무관한
                 // 같은 사건이다.
                 self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), Some(-32004));
@@ -702,7 +720,7 @@ impl PluginManager {
                 final_caller,
                 deadline: _,
             } => {
-                let msg = self.note_namespace_expiry(&target_plugin_id, id);
+                let msg = self.note_namespace_expiry(&target_plugin_id, id, origin);
                 self.send_final_error(final_caller, -32004, msg);
             }
             // debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어 회신이 목적이다.
@@ -730,9 +748,20 @@ impl PluginManager {
     /// namespace 만료 한 건을 기록한다 — 경고를 남기고 연속 계수에 더한 뒤,
     /// caller 에 실을 문구를 돌려준다. 세 caller 갈래가 같은 문구·같은 계수를
     /// 쓰므로 그 셋을 여기 한 자리로 모은다.
-    fn note_namespace_expiry(&mut self, plugin_id: &str, req_id: u64) -> String {
+    ///
+    /// 경고에는 호스트 req_id 와 원 IPC 요청 번호를 **같은 줄에** 더한다 — caller 에 가는 문구
+    /// (`msg`)는 그대로다. 둘은 plugin 쪽 로그(req_id)와 호스트 쪽 원 요청을 잇는 열쇠다(ADR-0436).
+    fn note_namespace_expiry(
+        &mut self,
+        plugin_id: &str,
+        req_id: u64,
+        origin: Option<tasty_ipc::server::RequestSeq>,
+    ) -> String {
         let msg = namespace_timeout_message(plugin_id);
-        tracing::warn!("{msg}");
+        tracing::warn!(
+            "{msg} (id={req_id}, request_seq={})",
+            request_seq_label(origin)
+        );
         self.record_namespace_expiry(plugin_id);
         self.remember_expired_namespace_call(plugin_id, req_id);
         msg

@@ -270,3 +270,84 @@ fn a_fast_answer_leaves_no_row() {
     mgr.handle_plugin_response(OWNER, ok(req_id));
     assert!(log.snapshot().rows.is_empty());
 }
+
+/// 이 스코프 동안 나가는 tracing 이벤트를 문자열로 모은다(`builtin.rs` 시험과 같은 모양).
+fn capture_logs(f: impl FnOnce()) -> String {
+    use std::sync::Mutex;
+    #[derive(Clone)]
+    struct Buf(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Buf {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let buf = Buf(Arc::new(Mutex::new(Vec::new())));
+    let sink = buf.clone();
+    let sub = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .with_writer(move || sink.clone())
+        .finish();
+    tracing::subscriber::with_default(sub, f);
+    let out = buf.0.lock().unwrap().clone();
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// `needle` 을 담은 WARN 줄 하나.
+fn warn_line<'a>(logs: &'a str, needle: &str) -> &'a str {
+    logs.lines()
+        .find(|l| l.contains("WARN") && l.contains(needle))
+        .unwrap_or_else(|| panic!("{needle:?} 를 담은 WARN 줄이 없다: {logs}"))
+}
+
+/// plugin 이 오류로 답한 경고 한 줄에 호스트 req_id 와 원 요청 번호가 **함께** 있다 — plugin
+/// 로그의 id 에서 원 요청으로 되짚는 열쇠다. 줄을 새로 만들지 않는다.
+#[test]
+fn the_error_answer_warning_names_the_host_id_and_the_request_seq_on_one_line() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, seq, _rx) = forwarded(&log);
+    let (req_id, _) = pending_to(&mgr, OWNER);
+    let logs = capture_logs(|| {
+        mgr.handle_plugin_response(
+            OWNER,
+            PluginResponse {
+                id: req_id,
+                result: None,
+                error: Some("boom".into()),
+                error_code: None,
+            },
+        );
+    });
+    let line = warn_line(&logs, "response error");
+    assert!(
+        line.contains(&format!("id={req_id}")) && line.contains(&format!("request_seq={seq}")),
+        "{line}"
+    );
+    assert_eq!(logs.matches("WARN").count(), 1, "경고 줄이 늘었다: {logs}");
+}
+
+/// namespace 만료 경고 한 줄에도 둘이 함께 있다. caller 에 가는 문구는 그대로다.
+#[test]
+fn the_expiry_warning_names_the_host_id_and_the_request_seq_on_one_line() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, seq, rx) = forwarded(&log);
+    let (req_id, _) = pending_to(&mgr, OWNER);
+    let logs = capture_logs(|| {
+        mgr.sweep_expired_requests(Instant::now() + Duration::from_secs(3600));
+    });
+    let line = warn_line(&logs, "did not answer");
+    assert!(
+        line.contains(&format!("id={req_id}")) && line.contains(&format!("request_seq={seq}")),
+        "{line}"
+    );
+    let answer = rx.try_recv().expect("caller answer").error.expect("error");
+    assert!(
+        !answer.message.contains("request_seq"),
+        "caller 문구가 바뀌었다: {}",
+        answer.message
+    );
+}
