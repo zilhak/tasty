@@ -154,10 +154,44 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
 위 `client_loss_notify` 프레임이 client 쪽이다. 결정은
 [ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
 
-**남는 것**: 통지는 "몇 장 잃었다" 까지만 말하고 **무엇을 어떻게 복구하라** 는 말하지 않는다.
-프레임 종류마다 복구 수단이 다르고(터미널 출력은 재요청할 곳이 없고, mesh 는
-`MeshFullResendRequest` 가 있고, 1Hz diff push 는 다음 tick 이 고친다) 그 계약은 이 절 밖이다.
-client 측 소비도 지금은 `tracing::warn!` 한 줄이다.
+### 통지를 받은 client 가 하는 일 (재동기화 계약)
+
+통지는 "몇 장 잃었다" 까지만 말하고 무엇을 잃었는지는 안 싣는다(연결 단위). 그래서 계약은
+**데이터 종류마다** 두고, 연결 하나에는 그 연결이 나르는 종류 중 **가장 강한** 것을 건다.
+근거·기각한 대안은 [ADR-0400](../adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md).
+
+| 종류 | 계약 |
+|---|---|
+| PTY byte delta | **snapshot 재요청** — 공백 뒤 바이트를 공백 앞 화면에 잇지 않는다 |
+| 상태 snapshot (`Resize`·`Activity`·`Attention`·`Cwd`·구조) | **낡음 표시** — 새 값이 올 때까지 최신이라고 말하지 않는다 |
+| mesh | **종료** — 공백을 건넌 조립·캐시를 잇지 않고, 처음부터(full texture) 다시 구독한다 |
+| bulk | **전송 중단** — 결과를 모르는 전송을 성공으로도 실패로도 확정하지 않는다 |
+
+- **snapshot 재요청의 수단은 재attach 다.** 서버가 PTY snapshot 을 만드는 자리는 attach 경로
+  하나뿐이다(`snapshot_as_vt()` 와 출력 tap 을 메인 루프의 한 턴에 함께 잡는다). 새 wire 가
+  없으므로 구 서버에서도 그대로 동작한다.
+- **순서: `Detach` → 옛 연결의 EOF → 새 연결.** 서버는 옛 연결의 `Disconnected` 를 inbound
+  채널에 넣은 **뒤에** 소켓을 닫는다(`finish_stream_connection`). 그래서 EOF 를 본 client 가
+  여는 새 연결의 attach 요청은 같은 FIFO 에서 반드시 점유 해제 뒤에 처리된다 — 점유가 옛
+  client 에 남아 새 attach 가 `already_attached` 로 거절되는 경합이 없다.
+- **GUI mirror**(PTY + 상태 + mesh 를 한 연결로): 리더 스레드가 `Loss` 를
+  `MirrorEvent::Desynced` 로 옮기고, 적용(`begin_resync`)이 셋을 한다 — 이 세션의 mirror
+  터미널마다 출력 stream 표지를 새로 만들고(아래), 옛 연결에 `Detach` 를 보내고, 경고 toast
+  (`attach.toast.mirror_desynced`)로 화면·상태가 낡았음을 알린다. 세션의 `resync_pending` 이 선
+  동안 EOF 가 오면 `apply_attach_client_output` 이 끊김 정리 대신 `resync_session` →
+  `reconnect_session` 으로 다시 붙는다 — anchor 유무와 무관하다. 성공하면 재연결 toast 가
+  뒤따르고, 실패하면 끊김과 같은 갈래다(anchor 가 있으면 `Reconnecting`, 없으면 정리). 세션마다
+  재attach 는 한 번에 하나이고, 기다리는 동안 온 통지는 수만 더한다.
+- **재연결은 mesh 를 처음부터 다시 구독한다.** 서버의 mesh 구독은 client id 에 묶여 옛 연결과
+  함께 사라진다. `reconnect_session` 이 그 세션의 mesh surface 마다 캐시된 frame
+  (`attach_mesh_frames`)과 구독 dedup 상태(`MainView::attach_mesh_input`)를 지워, 다음 렌더가
+  `MeshContext` 를 다시 보내게 한다. dedup 상태가 남으면 크기·테마가 안 바뀌는 한 구독이 다시
+  안 나간다. 이 정리는 손실 재attach 와 네트워크 재연결에 똑같이 걸린다.
+- **mirror 출력의 stream 표지가 바뀐다.** mirror 터미널도 받은 바이트를 자기 출력 버퍼에
+  쌓고, 에이전트는 그것을 위치 커서로 읽는다([ADR-0341](../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)).
+  `Desynced` 를 받을 때와 재연결로 snapshot 을 다시 받을 때 `Terminal::renew_output_stream` 이
+  표지를 새로 만든다 — 옛 표지를 들고 읽는 소비자는 공백을 건넌 바이트 대신 stream 불일치를
+  받는다. 위치 수는 이어서 세므로 표지를 안 싣는 소비자에게는 무변경이다.
 
 ## 갱신 cadence 분리
 

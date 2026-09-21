@@ -164,6 +164,10 @@ pub(crate) enum MirrorEvent {
     /// 이벤트). `surface_id` 는 **원격** id. 이 세션이 mirror 하지 않는 문서의 신호도 온다
     /// — 수신자가 워크스페이스 holder 가 아니라 점유 client 전부라서다.
     MarkdownChanged { surface_id: u32 },
+    /// 서버가 이 연결로 보내려던 프레임을 버렸다(`StreamControl::Loss`). 이 지점 앞뒤의
+    /// 데이터는 연속이 아니다. `frames` 는 이번 통지가 말한 수다. 적용은 세션을
+    /// 재동기화 대기로 돌리고 옛 연결을 놓는다 — 이어 그리지 않는다(ADR-0400).
+    Desynced { frames: u64 },
 }
 
 /// [`MirrorOutbox`] 를 담는 **모듈 경계**.
@@ -386,6 +390,15 @@ pub(crate) struct AttachClientSession {
     /// plugin 의 per-surface 문서 상태가 남지 않는다. 재구성마다 새 집합과 견줘 빠진
     /// 것을 destroy 하고, 끊김(Reconnecting) 때는 이 집합에 원문 대기 abandon 을 알린다.
     markdown_locals: HashSet<u32>,
+    /// (ADR-0400) 손실 통지를 받아 **재attach 를 기다리는** 중이면 그때까지 통지된 프레임
+    /// 수의 합. `Some` 이면 옛 연결에 이미 `Detach` 를 보냈고, 그 연결의 EOF
+    /// (`disconnected`)를 본 `apply_attach_client_output` 이 끊김 정리 대신
+    /// `reconnect_session` 으로 다시 붙는다. EOF 를 기다리는 이유는 서버가 옛 연결의 점유
+    /// 해제를 inbound 채널에 넣은 **뒤에** 소켓을 닫기 때문이다 — 그 뒤에 여는 새 연결의
+    /// attach 요청은 같은 FIFO 에서 반드시 해제 뒤에 처리되어, 점유가 옛 client 에 남아
+    /// 새 attach 가 거절되는 경합이 없다. 한 세션의 재attach 는 한 번에 하나다 — 기다리는
+    /// 동안 온 통지는 이 수에 더하기만 한다.
+    resync_pending: Option<u64>,
 }
 
 impl AttachClientSession {
@@ -598,6 +611,7 @@ impl App {
             remote_label: format!("127.0.0.1:{port}"),
             pending_list_dir_consumers: HashMap::new(),
             markdown_locals,
+            resync_pending: None,
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -672,6 +686,22 @@ impl App {
                 engine,
             );
             sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+            // (ADR-0400) 새 연결의 snapshot 은 survivor 터미널에 **이어** 들어간다. 끊긴 동안
+            // (또는 손실로 놓은 동안)의 바이트는 없으므로 그 앞뒤는 한 stream 이 아니다 —
+            // 옛 위치로 읽는 소비자가 이어진 바이트로 오해하지 않게 표지를 새로 만든다.
+            for &local in sess.remote_to_local.values() {
+                if let Some(t) = engine.terminals.get_mut(local) {
+                    t.renew_output_stream();
+                }
+            }
+            // (ADR-0400) mesh 는 공백을 건너 잇지 않는다. 서버의 mesh 구독은 client id 에
+            // 묶여 옛 연결과 함께 사라졌으므로, 캐시된 frame 과 구독 dedup 상태를 지워
+            // 다음 렌더가 `MeshContext` 를 다시 보내 처음부터(full texture) 받게 한다.
+            // dedup 상태가 남으면 크기·테마가 안 바뀌는 한 구독이 다시 안 나간다.
+            for &local in mapping.mesh.keys() {
+                engine.attach_mesh_frames.remove(local);
+                main.attach_mesh_input.remove(&local);
+            }
             let new_markdown = mapping.markdown_ids();
             removed_markdown = sess
                 .markdown_locals
@@ -759,6 +789,7 @@ impl App {
         // 물려 있던 request_id 는 다시 응답이 안 온다). explorer/File Picker 쪽의
         // Loading 상태는 각자의 soft timeout 으로 알아서 ErrorConn 전이한다.
         sess.pending_list_dir_consumers.clear();
+        sess.resync_pending = None;
         sess.state = SessionState::Connected;
         sess.remote_label = format!("127.0.0.1:{port}");
         // (ADR-0255) 끊긴 동안의 변경 신호는 쌓이지 않았고, survivor markdown 문서는 핸들을
@@ -814,6 +845,7 @@ impl App {
         }
         let mut dead: Vec<usize> = Vec::new();
         let mut reconnecting: Vec<usize> = Vec::new();
+        let mut resyncing: Vec<usize> = Vec::new();
         for idx in 0..self.attach_client_sessions.len() {
             let (local_ws, disconnected, state, anchor_ws_id) = {
                 let sess = &self.attach_client_sessions[idx];
@@ -869,7 +901,14 @@ impl App {
             // 다음 성공적 재연결 전까지 계속 true 로 남는다(리더/write 스레드가 리셋하지
             // 않음) — `Connected` 일 때만 "방금 처음 감지"로 보고 1 회 반응, 이미
             // `Reconnecting` 이면 매 프레임 재처리하지 않는다(attach-behavior.md#재연결-시-세션-상태-보존 참고).
-            if disconnected && state == SessionState::Connected {
+            // 재attach 대기 여부는 이벤트 적용 **뒤에** 읽는다 — 같은 drain 에 `Desynced` 와
+            // EOF 가 함께 왔을 수 있다.
+            let resync_pending = self.attach_client_sessions[idx].resync_pending.is_some();
+            if disconnected && state == SessionState::Connected && resync_pending {
+                // (ADR-0400) 손실로 스스로 놓은 연결이다 — 끊김이 아니라 재attach 차례다.
+                // anchor 유무와 무관하다: 수동 attach 도 재attach 할 곳(포트)을 안다.
+                resyncing.push(idx);
+            } else if disconnected && state == SessionState::Connected {
                 // anchor(자동 attach 매핑) 가 있으면 재연결 가능 후보 — mirror 를 지우지
                 // 않고 Reconnecting 으로 전이(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고). 없으면(수동/IPC attach) 재연결
                 // 트리거 소스가 없으므로 기존처럼 완전 정리.
@@ -880,12 +919,55 @@ impl App {
                 }
             }
         }
+        for &idx in &resyncing {
+            if !self.resync_session(idx) {
+                // 재attach 가 실패하면 끊김과 같은 갈래다.
+                if self.attach_client_sessions[idx].anchor_ws_id.is_some() {
+                    reconnecting.push(idx);
+                } else {
+                    dead.push(idx);
+                }
+            }
+        }
         for &idx in &reconnecting {
             self.enter_reconnecting(idx);
         }
+        dead.sort_unstable();
         for &idx in dead.iter().rev() {
             let sess = self.attach_client_sessions.remove(idx);
             self.cleanup_mirror_workspace(&sess, true);
+        }
+    }
+
+    /// (ADR-0400) 손실 통지로 옛 연결을 놓은 세션을 **재attach** 로 다시 세운다 — PTY 의
+    /// snapshot 재요청이다. 서버가 snapshot 을 만드는 자리가 attach 하나뿐이라 새 wire 가
+    /// 필요 없고, 그래서 구 서버에서도 그대로 동작한다. 경로는 네트워크 재연결과 같은
+    /// `reconnect_session` 이다(survivor 매핑으로 로컬 id·scrollback 보존, stream 표지 갱신,
+    /// mesh 재구독). 성공하면 `true`.
+    fn resync_session(&mut self, idx: usize) -> bool {
+        let (port, tunnel, frames, local_workspace) = {
+            let sess = &mut self.attach_client_sessions[idx];
+            (
+                sess.bulk_port,
+                sess.tunnel.take(),
+                sess.resync_pending.unwrap_or(0),
+                sess.local_workspace,
+            )
+        };
+        match self.reconnect_session(idx, port, tunnel) {
+            Ok(()) => {
+                tracing::info!(
+                    "gui attach: mirror workspace {local_workspace} 재동기화 완료 — 프레임 {frames} 장 손실 뒤 재attach"
+                );
+                true
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "gui attach: mirror workspace {local_workspace} 재동기화 실패 — 끊김으로 처리한다: {e}"
+                );
+                self.attach_client_sessions[idx].resync_pending = None;
+                false
+            }
         }
     }
 
@@ -1902,18 +1984,11 @@ fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
         }
         Ok(StreamControl::Cwd { surface_id, cwd }) => Some(MirrorEvent::Cwd(surface_id, cwd)),
         // 서버가 이 연결로 보내려던 프레임을 버렸다 — 이 지점
-        // 앞뒤의 데이터는 연속이 아니다. 이 lane 은 그 사실을
-        // 값으로 남기는 데까지만 간다: 종류별 복구 계약(PTY
-        // byte delta · 상태 snapshot · mesh · bulk 가 각각
-        // 다르다)은 후속 작업이 정한다. 그때까지 mirror 는
-        // 종전처럼 계속 그리되, 무엇이 언제 사라졌는지는
-        // 로그에 남는다.
-        Ok(StreamControl::Loss { frames }) => {
-            tracing::warn!(
-                "attach mirror: 서버가 이 연결의 프레임 {frames} 장을 버렸다 — 이 지점 이후의 화면은 이전과 연속이 아니다"
-            );
-            None
-        }
+        // 앞뒤의 데이터는 연속이 아니다. `Loss` 는 무엇을 잃었는지
+        // 안 싣고(연결 단위) 이 연결은 PTY · 상태 · mesh 를 함께
+        // 나르므로, 그중 가장 강한 계약인 snapshot 재요청(=재attach)
+        // 을 연결 전체에 건다(ADR-0400).
+        Ok(StreamControl::Loss { frames }) => Some(MirrorEvent::Desynced { frames }),
         // 2단계: forward 실패 회신 → 실패 toast.
         Ok(StreamControl::StructuralResult {
             ok: false, reason, ..
@@ -2532,6 +2607,40 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
 
 /// 드레인된 `MirrorEvent` 한 건을 mirror 세션/engine 상태에 적용한다. 대상은
 /// `MirrorHost` — 창 있는 engine 이든 parked engine 이든 같은 분기 로직을 탄다.
+/// (ADR-0400) 손실 통지를 받은 세션을 재attach 대기로 돌린다.
+///
+/// 하는 일은 셋이다. 이 세션의 mirror 터미널마다 출력 stream 표지를 새로 만들어, 공백을
+/// 건넌 위치로 읽는 소비자가 이어진 바이트로 오해하지 않게 한다. 옛 연결에 `Detach` 를
+/// 보내 서버가 점유를 풀고 소켓을 닫게 한다 — 재attach 는 그 EOF 를 본 뒤
+/// `apply_attach_client_output` 이 건다([`AttachClientSession::resync_pending`] 에 순서의
+/// 근거가 있다). 그리고 화면·상태가 낡았다는 것을 사용자에게 알린다 — 재attach 가 끝나면
+/// 재연결 toast 가 뒤따른다. 이미 기다리는 중이면 수만 더한다.
+fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frames: u64) {
+    for &local in sess.remote_to_local.values() {
+        if let Some(t) = host.engine.terminals.get_mut(local) {
+            t.renew_output_stream();
+        }
+    }
+    if let Some(total) = sess.resync_pending.as_mut() {
+        *total += frames;
+        return;
+    }
+    sess.resync_pending = Some(frames);
+    tracing::warn!(
+        "attach mirror: mirror workspace {} — 서버가 이 연결의 프레임 {frames} 장을 버렸다. 옛 연결을 놓고 재attach 한다",
+        sess.local_workspace
+    );
+    if let Err(e) = sess.send_frame(StreamTag::Detach, Vec::new()) {
+        // write 큐가 이미 닫혔다 = 연결이 이미 끊기는 중이다. 그 EOF 가 같은 재attach
+        // 갈래로 온다(`resync_pending` 이 섰으므로).
+        tracing::warn!("attach mirror: 재동기화용 Detach 를 큐에 못 넣었다 — 끊김을 기다린다: {e}");
+    }
+    host.toast(
+        crate::i18n::t("attach.toast.mirror_desynced").to_string(),
+        crate::adapters::ui::ToastKind::Warning,
+    );
+}
+
 fn apply_one_mirror_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_>,
@@ -2539,6 +2648,7 @@ fn apply_one_mirror_event(
     ev: MirrorEvent,
 ) {
     match ev {
+        MirrorEvent::Desynced { frames } => begin_resync(sess, host, frames),
         MirrorEvent::Data(remote_id, bytes) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id)
                 && let Some(t) = host.engine.terminals.get_mut(local)
@@ -5109,6 +5219,95 @@ mod tests {
         );
     }
 
+    /// (ADR-0400) 서버의 손실 통지는 이제 로그로 끝나지 않고 재동기화 이벤트가 된다.
+    #[test]
+    fn a_loss_notice_becomes_a_desync_event() {
+        let payload = serde_json::to_vec(&StreamControl::Loss { frames: 7 }).unwrap();
+        assert!(
+            matches!(
+                mirror_event_from_control(&payload),
+                Some(MirrorEvent::Desynced { frames: 7 })
+            ),
+            "Loss 가 재동기화 이벤트로 옮겨지지 않았다"
+        );
+    }
+
+    /// (ADR-0400) 손실을 받은 세션은 재attach 대기로 들어가고, 옛 연결에 `Detach` 를
+    /// **한 번만** 보내며, mirror 터미널의 출력 stream 표지를 새로 만든다. 기다리는 중에 온
+    /// 통지는 수만 더한다.
+    #[test]
+    fn a_desync_detaches_once_renews_the_stream_and_sums_later_notices() {
+        use tasty_terminal::{OUTPUT_RETENTION_MAX_BYTES, OutputCursor, OutputReadRequest};
+
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (remote_surface, local_surface) = (42u32, 9_003u32);
+        engine
+            .terminals
+            .insert(local_surface, Terminal::new_detached(80, 24));
+        let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
+        let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
+        sess.frame_tx = Arc::new(Mutex::new(tx));
+        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+
+        let read = |engine: &crate::core::CoreState, expect: Option<String>| {
+            engine
+                .terminals
+                .get(local_surface)
+                .expect("mirror terminal")
+                .read_output(&OutputReadRequest {
+                    from: OutputCursor::At(0),
+                    max_bytes: OUTPUT_RETENTION_MAX_BYTES,
+                    strip_ansi: false,
+                    expect_stream: expect,
+                })
+        };
+        {
+            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            apply_mirror_events(
+                &mut sess,
+                &mut host,
+                &mut plugin_manager,
+                vec![MirrorEvent::Data(remote_surface, b"before".to_vec())],
+            );
+        }
+        let before = read(&engine, None).expect("read").stream;
+
+        {
+            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            apply_mirror_events(
+                &mut sess,
+                &mut host,
+                &mut plugin_manager,
+                vec![
+                    MirrorEvent::Desynced { frames: 3 },
+                    MirrorEvent::Desynced { frames: 2 },
+                ],
+            );
+        }
+        assert_eq!(
+            sess.resync_pending,
+            Some(5),
+            "기다리는 동안의 통지는 합산한다"
+        );
+        let sent: Vec<OutFrame> = frames_out.try_iter().collect();
+        assert_eq!(
+            sent.len(),
+            1,
+            "재attach 를 위해 옛 연결을 놓는 것은 한 번이다"
+        );
+        assert_eq!(sent[0].tag, StreamTag::Detach);
+        assert!(
+            read(&engine, Some(before)).is_err(),
+            "공백 앞의 표지로 읽으면 stream 불일치여야 한다"
+        );
+        assert_eq!(
+            sess.state,
+            SessionState::Connected,
+            "재attach 는 EOF 를 본 뒤에 건다 — 통지만으로 상태를 바꾸지 않는다"
+        );
+    }
+
     /// 테스트용 mirror 세션 — transport 없이 매핑·이벤트 버퍼만 있다. write 큐의
     /// 수신측을 바로 drop 하므로 delta 가 만드는 mirror 터미널의 입력 forwarder 는
     /// 전송에 실패해도 조용히 계속된다(production 의 disconnect 구간과 동일).
@@ -5136,6 +5335,7 @@ mod tests {
             remote_label: "127.0.0.1:0".to_string(),
             pending_list_dir_consumers: HashMap::new(),
             markdown_locals: HashSet::new(),
+            resync_pending: None,
         }
     }
 
