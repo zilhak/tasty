@@ -251,6 +251,7 @@ impl CoreState {
     ///
     /// 렌더 경로(`gpu.rs`)는 GPU 없이 실행할 수 없어, 게이트 판정만 이렇게 떼어
     /// 단위 테스트가 직접 검증한다(`effects_of` 와 같은 형태).
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn local_attention_clear_allowed(&self, surface_id: u32) -> bool {
         !self.attach.is_hard_occupied(surface_id)
     }
@@ -271,6 +272,7 @@ impl CoreState {
     /// `OccupancyRegistry` 에 lock 이 없다(점유는 surface 를 **소유한** 인스턴스가
     /// 기록한다). 미러 사용자의 확인은 그대로 `clear_attention` 의 제거 edge 를 만들어
     /// 서버로 forward 된다(ADR-0104).
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn clear_attention_local(&mut self, surface_id: u32) -> bool {
         if !self.local_attention_clear_allowed(surface_id) {
             tracing::trace!(
@@ -298,6 +300,7 @@ impl CoreState {
     /// 집합에 둬야 했지만, attention 에는 그런 wholesale 교체가 없다. 그래서 push 된
     /// 값을 **기존 `AttentionStore` 에 그대로** 넣는다 — 사이드바 배지·테두리·탭
     /// 제목 소비처가 코드 변경 없이 그대로 읽는다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn set_mirror_surface_attention(
         &mut self,
         surface_id: u32,
@@ -321,6 +324,7 @@ impl CoreState {
     /// [`set_mirror_surface_attention`](Self::set_mirror_surface_attention) 과 같다 —
     /// teardown 은 로컬 사용자의 해제가 아니라 surface 소멸이므로 해제 forward 축을
     /// 타면 안 된다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn forget_mirror_surface_attention(&mut self, surface_id: u32) {
         // 제거 edge 를 무시한다 — surface 소멸이지 사용자의 "확인" 이 아니라
         // 해제 forward 축(`clear_attention`)을 타면 안 된다.
@@ -380,6 +384,7 @@ impl CoreState {
     /// Number of surfaces with an attention record of the given kind among the
     /// given list. 워크스페이스 행의 kind 별 배지 2종(NeedsInput/Completion)이
     /// 각각 이 API 를 호출한다(`sidebar/full.rs::entry_view`).
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn attention_count_of_kind(
         &self,
         kind: AttentionKind,
@@ -392,6 +397,7 @@ impl CoreState {
     /// kind — `NeedsInput > Completion` 순서(디자인 rank 토큰 미러링). 탭 제목·
     /// collapsed rail dot 처럼 "여러 surface 를 하나의 색으로 압축" 해야 하는
     /// 소비처 전용(`tab_bar/tab.rs`, `sidebar/view.rs` collapsed dot).
+    #[cfg(any(feature = "gui", test))]
     pub fn attention_dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
         self.attention.dominant_kind(surface_ids)
     }
@@ -407,6 +413,7 @@ impl CoreState {
     /// 지나므로, 점유 중 surface 의 알림을 읽어도 attention 은 유지된다 — 알림 자체는
     /// 점유와 무관하게 읽음 처리된다(읽음은 이 인스턴스 사용자의 알림 패널 상태이고,
     /// attention 은 홀더와 공유하는 상태다).
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn mark_notification_read(&mut self, id: u64) {
         let source_surface = self
             .notifications
@@ -431,6 +438,7 @@ impl CoreState {
     /// 셋이 같은 규칙을 공유해야 하기 때문이다(`mark_notification_read` 와 실-포커스
     /// 해제도 같은 함수를 지난다). "모두 읽음" 한 번으로 점유 중 배지가 전부
     /// 사라지는 구멍이 이 게이트로 막힌다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn mark_all_notifications_read(&mut self) {
         let unread_surfaces: std::collections::HashSet<u32> = self
             .notifications
