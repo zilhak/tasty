@@ -418,6 +418,10 @@ pub struct PluginManager {
     /// 세운다). 그때 `None` 이면 **아무것도 안 센다** — 0 을 쌓지 않으므로 읽는 쪽이
     /// "안 쟀다" 와 "기다림이 없었다" 를 그대로 가른다.
     plugin_wait: Option<Arc<tasty_telemetry::PluginWaitStats>>,
+    /// plugin 채널 바이트 장부. 운영 경로는 **프로세스 하나에 하나**다
+    /// (`ChannelLedger::process_wide`) — 창마다 매니저를 세워도 합계의 축은 메모리이고
+    /// 메모리는 하나다. 이 매니저가 띄우는 모든 plugin 프로세스의 세 채널이 여기에 올라간다.
+    pub(super) channel_ledger: Arc<crate::process::channel_bytes::ChannelLedger>,
     /// 각 plugin에 grant된 권한. 매니페스트 + plugins.toml의 granted를 교집합한 결과.
     /// `Arc`로 공유하여 CallerContext가 동시 호출 시 안전.
     plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,

@@ -87,15 +87,18 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
 - **요청 순서 계약** — shutdown 요청은 `dispatch_pending_surface_lifecycle()` 이
   같은 `req_tx` 에 이미 넣어 둔 `surface.closed` 뒤에 놓인다. plugin 이 cleanup
   대상 surface 를 모르는 채 종료되면 안 되므로 S3 → S4 순서는 고정이다.
-- **요청이 큐에 못 들어갈 수 있다** — 그 큐는 유한하고, 호스트→plugin 방향의 포화는
+- **요청이 큐에 못 들어갈 수 있다** — 그 큐는 개수로도 바이트로도 유한하고(바이트는 큐마다와
+  모든 plugin 채널의 합계로 — [ADR-0360](../adr/0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md)),
+  호스트→plugin 방향의 포화는
   대기가 아니라 **거절**이다([ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)).
   writer 스레드가 소켓에서 막혀 큐가 차 있으면 shutdown 요청이 거절되고, 그 plugin 은
   graceful 기회 없이 deadline 뒤 kill 로 회수된다. **그 사후 판별을 S4a 의 `killed` 로
   하지 마라** — `killed` 는 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
   빠졌다" 를 한 값으로 뭉갠다. 두 사건의 처방이 반대다(앞은 호스트 큐·writer 쪽, 뒤는
   plugin 쪽). 가르는 것은 거절 시점에 호스트 로그로 나가는
-  `plugin '<id>' shutdown send failed: request queue full (...)` 한 줄이고, 그 줄이 있으면
-  거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
+  `plugin '<id>' shutdown send failed: ...` 한 줄이고(사유는 `request queue full` ·
+  `request queue over its byte budget` · `plugin channels over their total byte budget`
+  셋 중 하나), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
   에 남는다.
 - **타임아웃 의미론** — 겹치는 것은 대기 구간뿐이고, plugin 하나가 받는 graceful
   기회는 여전히 2s 다. S4a 는 개별 소요와 `graceful|killed` 사유를 그대로 남긴다.

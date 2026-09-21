@@ -325,9 +325,35 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   새 request id 를 쓰므로 그 항목은 영영 매칭되지 않고 남는다.
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
 
+### 채널 상한 (개수 · 바이트 · 합계)
+
+호스트와 plugin 프로세스 하나 사이의 세 채널(요청 · 응답 · 이벤트)에는 상한이 셋 걸린다.
+
+| 상한 | 값 | 무엇을 묶나 | 근거 |
+|---|---|---|---|
+| 개수 | 채널마다 1024 건 | 큐에 쌓인 메시지 수 | [ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md) |
+| 큐 바이트 | 큐마다 16 MiB | 큐 하나에 쌓인 줄의 바이트 | [ADR-0360](../adr/0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md) |
+| 합계 바이트 | 프로세스 전체 64 MiB | 모든 plugin · 모든 채널을 더한 바이트 | ADR-0360 |
+
+- **포화의 답은 방향이 정한다** — 호스트 → plugin 요청은 **거절**(호스트 프레임이 서지 않게),
+  plugin → 호스트 응답·이벤트는 **대기**(plugin 의 소켓 읽기가 선다 = backpressure). 세 상한 모두
+  같은 규칙이다.
+- **빈 큐는 한 건을 늘 받는다.** 상한은 누적에 걸린다 — 상한보다 큰 한 건도 큐가 비어 있으면
+  들어간다. 그러지 않으면 그 한 건이 대기 방향을 영영 세운다. 그래서 실제 상한은 "상한 + 큐마다
+  한 건" 이고, 한 줄의 크기는 따로 묶이지 않는다(plugin 소켓에 줄 길이 상한이 없다).
+- **바이트는 소켓의 줄 길이로 잰다**(개행 포함). 추정하지 않는다.
+- **합계는 plugin 을 가로지른다.** 합계가 찬 동안에는 **다른** plugin 의 요청도 거절되고 다른
+  plugin 의 reader 도 기다린다. 큐 상한이 합계보다 작아 plugin 하나가 혼자서는 합계를 못 채운다.
+- 호스트 로그에서 구분된다 — `request queue full`(개수) · `request queue over its byte budget`
+  (큐 바이트) · `plugin channels over their total byte budget`(합계).
+- 렌더 데이터(egui-mesh 기하·텍스처)는 이 채널을 안 탄다 — 공유 메모리 버퍼 한 칸을 덮어쓰고
+  host 는 surface 마다 마지막 프레임만 든다. 쌓이는 큐가 없다(ADR-0315 2026-09-21 보강).
+- 현재 누적은 `PluginManager::channel_bytes`(큐별 바이트·최댓값·거절·대기 누계)가 낸다. **이
+  값을 읽는 IPC/CLI 는 아직 없다.**
+
 ### 큐 포화 통지 (호스트가 버린 요청을 plugin 이 안다)
 
-호스트 → plugin 요청 큐는 유한하고, 차면 **기다리지 않고 거절**한다 — 그 방향에서
+호스트 → plugin 요청 큐는 유한하고, 차면(개수든 바이트든 — 위 "채널 상한") **기다리지 않고 거절**한다 — 그 방향에서
 기다리면 호스트 프레임이 통째로 선다([ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)).
 거절된 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 모른다.
 

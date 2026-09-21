@@ -22,6 +22,12 @@ use tasty_plugin_protocol::{HandleChannelMessage, PixelRect, SharedBufferId};
 use crate::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
 use crate::listener::HostListener;
 use crate::protocol::{PluginEvent, PluginRequest, PluginResponse};
+#[cfg(test)]
+use channel_bytes::ChannelLimits;
+use channel_bytes::{
+    ChannelLedger, Direction, MeteredReceiver, MeteredSender, Refusal, TrySendRefusal,
+    metered_channel,
+};
 use tasty_plugin_manifest::{HOST_API_VERSION, PluginPackage};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -92,8 +98,16 @@ pub(crate) const EVENT_QUEUE_CAPACITY: usize = 1024;
 pub enum RequestSendError {
     /// 큐가 찼다 — writer 스레드가 소켓에 못 밀어 넣고 있다. 요청은 버려진다.
     Full,
+    /// 바이트 상한 — 이 큐의 누적이나 모든 plugin 채널의 합계가 넘친다
+    /// ([`channel_bytes`], ADR-0360). 요청은 버려진다. 개수 포화(`Full`)와 가르는 이유는
+    /// 처방이 다르기 때문이다 — 개수는 plugin 이 안 읽는 것이고, 합계는 **다른** plugin
+    /// 이 자리를 먹은 것일 수 있다.
+    OverBytes(Refusal),
     /// writer 스레드가 끝났다 — 프로세스 종료 또는 소켓 끊김.
     Disconnected,
+    /// 요청을 줄로 직렬화하지 못했다. `serde_json::Value` 를 담은 요청이라 실제로는 안
+    /// 나지만, 났을 때 "끊겼다" 로 보고하면 거짓이 된다.
+    Encode,
 }
 
 impl std::fmt::Display for RequestSendError {
@@ -103,7 +117,19 @@ impl std::fmt::Display for RequestSendError {
                 f,
                 "request queue full ({REQUEST_QUEUE_CAPACITY}) — plugin is not draining"
             ),
-            Self::Disconnected => write!(f, "writer thread gone"),
+            Self::OverBytes(Refusal::Queue) => write!(
+                f,
+                "request queue over its byte budget — plugin is not draining"
+            ),
+            Self::OverBytes(Refusal::Total) => write!(
+                f,
+                "plugin channels over their total byte budget — the host is holding too much \
+                 for all plugins together"
+            ),
+            Self::OverBytes(Refusal::Closed) | Self::Disconnected => {
+                write!(f, "writer thread gone")
+            }
+            Self::Encode => write!(f, "request could not be encoded"),
         }
     }
 }
@@ -115,9 +141,9 @@ impl std::fmt::Display for RequestSendError {
 /// `drain_host_cmds`), 거기서 블록하면 큐가 찼다는 이유로 **프레임이 통째로 멈춘다.**
 /// 그래서 포화는 대기가 아니라 거절로 처리하고, 거절은 호출부가 이미 들고 있던
 /// "보내기 실패" 갈래로 흘려보낸다.
-pub(crate) fn try_send_request(
-    tx: &mpsc::SyncSender<PluginRequest>,
-    req: PluginRequest,
+pub(crate) fn try_send_request<T>(
+    tx: &mpsc::SyncSender<T>,
+    req: T,
 ) -> Result<(), RequestSendError> {
     match tx.try_send(req) {
         Ok(()) => Ok(()),
@@ -132,14 +158,18 @@ pub struct PluginProcess {
     /// 비공개인 것이 정책 강제의 전부다 — `pub` 이면 형제 모듈이 `.send()` 로
     /// 블로킹 송신을 되살릴 수 있고, 그 자리는 컴파일러가 안 잡는다. 송신은
     /// [`PluginProcess::try_send_request`] 하나로만 들어간다.
-    req_tx: mpsc::SyncSender<PluginRequest>,
+    ///
+    /// 싣는 것은 요청이 아니라 **이미 직렬화한 줄**이다. 바이트 상한은 넣기 전에 크기를
+    /// 알아야 판정할 수 있고, 크기를 알려면 직렬화해야 한다 — 그래서 직렬화를 writer
+    /// 스레드에서 송신 자리로 옮겼다. 두 번 직렬화하지 않으려고 그 결과를 그대로 싣는다.
+    req_tx: MeteredSender<String>,
     /// 포화로 **버린** 요청 수 가운데 아직 plugin 에게 안 알린 몫. 다음으로 큐에
     /// 실제로 들어가는 요청이 이 값을 싣고 그만큼 뺀다
     /// ([`PluginRequest::dropped_requests`]). 송신은 호스트 main thread 한 곳에서만
     /// 일어나지만(pump), 이 필드는 `&self` 메서드에서 갱신되므로 원자값이다.
     dropped_requests: AtomicU64,
-    pub resp_rx: mpsc::Receiver<PluginResponse>,
-    pub event_rx: mpsc::Receiver<PluginEvent>,
+    pub resp_rx: MeteredReceiver<PluginResponse>,
+    pub event_rx: MeteredReceiver<PluginEvent>,
     last_pong: Arc<Mutex<Instant>>,
     /// 보조 핸들 채널 상태. 첫 사용 시 Pending → Ready 전이하며 reader 스레드 시작.
     handle_state: Mutex<HandleStreamState>,
@@ -154,7 +184,7 @@ impl PluginProcess {
     /// 송신 큐의 수신단을 살려 둔 stub — 호스트가 plugin 에 **무엇을 보냈는지**를
     /// 재는 자리. [`PluginProcess::stub_for_test`] 는 rx 를 즉시 버려서 모든 송신이
     /// `Disconnected` 로 떨어지므로, 보낸 내용을 단정할 수 없다.
-    pub(crate) fn stub_with_request_rx(plugin_id: &str) -> (Self, mpsc::Receiver<PluginRequest>) {
+    pub(crate) fn stub_with_request_rx(plugin_id: &str) -> (Self, RequestTap) {
         Self::stub_with_request_rx_capacity(plugin_id, REQUEST_QUEUE_CAPACITY)
     }
 
@@ -162,19 +192,43 @@ impl PluginProcess {
     pub(crate) fn stub_with_request_rx_capacity(
         plugin_id: &str,
         capacity: usize,
-    ) -> (Self, mpsc::Receiver<PluginRequest>) {
-        let (req_tx, req_rx) = mpsc::sync_channel(capacity);
+    ) -> (Self, RequestTap) {
+        Self::stub_with_request_rx_in(
+            plugin_id,
+            capacity,
+            &ChannelLedger::new(ChannelLimits::default()),
+        )
+    }
+
+    /// 위와 같되 바이트 장부를 고른다 — 바이트 상한을 재려면 작은 상한이 필요하다.
+    pub(crate) fn stub_with_request_rx_in(
+        plugin_id: &str,
+        capacity: usize,
+        ledger: &Arc<ChannelLedger>,
+    ) -> (Self, RequestTap) {
+        let (req_tx, req_rx) =
+            metered_channel(capacity, ledger.open_queue(plugin_id, Direction::Request));
         let mut proc = Self::stub_for_test(plugin_id);
         proc.req_tx = req_tx;
-        (proc, req_rx)
+        (proc, RequestTap(req_rx))
     }
 
     /// 단위 테스트 전용 stub. child/last_pong 등 외부에서 접근 불가능한 필드를
     /// 합리적인 기본값으로 채운다. 송수신 채널은 dangling이라 실제로 사용하면 안 된다.
     pub(crate) fn stub_for_test(plugin_id: &str) -> Self {
-        let (req_tx, _req_rx) = mpsc::sync_channel(REQUEST_QUEUE_CAPACITY);
-        let (_resp_tx, resp_rx) = mpsc::sync_channel(RESPONSE_QUEUE_CAPACITY);
-        let (_event_tx, event_rx) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
+        let ledger = ChannelLedger::new(ChannelLimits::default());
+        let (req_tx, _req_rx) = metered_channel(
+            REQUEST_QUEUE_CAPACITY,
+            ledger.open_queue(plugin_id, Direction::Request),
+        );
+        let (_resp_tx, resp_rx) = metered_channel(
+            RESPONSE_QUEUE_CAPACITY,
+            ledger.open_queue(plugin_id, Direction::Response),
+        );
+        let (_event_tx, event_rx) = metered_channel(
+            EVENT_QUEUE_CAPACITY,
+            ledger.open_queue(plugin_id, Direction::Event),
+        );
         Self {
             plugin_id: plugin_id.into(),
             child: None,
@@ -189,6 +243,19 @@ impl PluginProcess {
     }
 }
 
+/// 시험이 호스트가 **무엇을 보냈는지** 읽는 자리. 큐에는 직렬화된 줄이 들어 있으므로
+/// 꺼낼 때 요청으로 되돌린다 — 되돌린 값이 곧 plugin 이 소켓에서 읽을 값이다.
+#[cfg(test)]
+pub(crate) struct RequestTap(MeteredReceiver<String>);
+
+#[cfg(test)]
+impl RequestTap {
+    pub(crate) fn try_recv(&self) -> Result<PluginRequest, mpsc::TryRecvError> {
+        let line = self.0.try_recv()?;
+        Ok(serde_json::from_str(&line).expect("호스트가 보낸 줄은 요청으로 읽혀야 한다"))
+    }
+}
+
 impl PluginProcess {
     pub fn spawn(
         package: &PluginPackage,
@@ -197,6 +264,7 @@ impl PluginProcess {
         log_dir: &Path,
         waker: tasty_terminal::waker_factory::SharedWakerFactory,
         reaper: &crate::reaper::PluginReaper,
+        ledger: &Arc<ChannelLedger>,
     ) -> anyhow::Result<Self> {
         let token = generate_token();
         std::fs::create_dir_all(log_dir).ok();
@@ -254,9 +322,19 @@ impl PluginProcess {
         // 비로소 try_recv로 가져온다. plugin이 영영 connect 안 해도 startup 지연 0.
 
         let last_pong = Arc::new(Mutex::new(Instant::now()));
-        let (req_tx, req_rx) = mpsc::sync_channel::<PluginRequest>(REQUEST_QUEUE_CAPACITY);
-        let (resp_tx, resp_rx) = mpsc::sync_channel::<PluginResponse>(RESPONSE_QUEUE_CAPACITY);
-        let (event_tx, event_rx) = mpsc::sync_channel::<PluginEvent>(EVENT_QUEUE_CAPACITY);
+        let id = &package.manifest.id;
+        let (req_tx, req_rx) = metered_channel::<String>(
+            REQUEST_QUEUE_CAPACITY,
+            ledger.open_queue(id, Direction::Request),
+        );
+        let (resp_tx, resp_rx) = metered_channel::<PluginResponse>(
+            RESPONSE_QUEUE_CAPACITY,
+            ledger.open_queue(id, Direction::Response),
+        );
+        let (event_tx, event_rx) = metered_channel::<PluginEvent>(
+            EVENT_QUEUE_CAPACITY,
+            ledger.open_queue(id, Direction::Event),
+        );
 
         let writer = stream.try_clone()?;
         spawn_tx_thread(&package.manifest.id, writer, req_rx)?;
@@ -430,10 +508,23 @@ impl PluginProcess {
     /// 써야 해서 자기모순이므로, 다음으로 실제 들어가는 요청에 얹는다
     /// ([`PluginRequest::dropped_requests`]). 실린 만큼만 빼므로, load 와 send 사이에
     /// 늘어난 몫은 그 다음 요청이 싣는다 — 누락도 중복도 없다.
+    ///
+    /// 바이트 상한도 여기서 판정한다([`channel_bytes`], ADR-0360) — 그래서 직렬화도
+    /// 여기서 한다. 바이트로 버린 것도 개수로 버린 것과 같이 plugin 에게 알린다: plugin
+    /// 입장에서는 둘 다 "오던 요청이 사라졌다" 다.
     pub fn try_send_request(&self, mut req: PluginRequest) -> Result<(), RequestSendError> {
         let carried = self.dropped_requests.load(Ordering::Relaxed);
         req.dropped_requests = carried;
-        match try_send_request(&self.req_tx, req) {
+        let line = match serde_json::to_string(&req) {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::warn!("plugin '{}' request encode error: {e}", self.plugin_id);
+                return Err(RequestSendError::Encode);
+            }
+        };
+        // 줄 끝 개행까지 소켓에 나가는 바이트다.
+        let bytes = line.len() + 1;
+        match self.req_tx.try_send(line, bytes) {
             Ok(()) => {
                 if carried > 0 {
                     // 송신은 호스트 main thread 한 곳뿐이라(pump) 이 뺄셈이 되감기지
@@ -442,11 +533,15 @@ impl PluginProcess {
                 }
                 Ok(())
             }
-            Err(RequestSendError::Full) => {
+            Err(TrySendRefusal::Full) => {
                 self.dropped_requests.fetch_add(1, Ordering::Relaxed);
                 Err(RequestSendError::Full)
             }
-            Err(e) => Err(e),
+            Err(TrySendRefusal::Bytes(r)) => {
+                self.dropped_requests.fetch_add(1, Ordering::Relaxed);
+                Err(RequestSendError::OverBytes(r))
+            }
+            Err(TrySendRefusal::Disconnected) => Err(RequestSendError::Disconnected),
         }
     }
 
@@ -833,24 +928,18 @@ fn inject_plugin_data_env(
     Ok(())
 }
 
-/// 송신 스레드 — `req_rx` 로 들어오는 요청을 NDJSON 한 줄씩 `writer` 에 기록.
+/// 송신 스레드 — `req_rx` 로 들어오는 줄(이미 직렬화됨)을 NDJSON 한 줄씩 `writer` 에 기록.
+/// 꺼내는 순간 그 줄의 바이트가 장부에서 내려간다.
 fn spawn_tx_thread(
     plugin_id: &str,
     mut writer: std::net::TcpStream,
-    req_rx: mpsc::Receiver<PluginRequest>,
+    req_rx: MeteredReceiver<String>,
 ) -> io::Result<()> {
     let plugin_id_tx = plugin_id.to_string();
     std::thread::Builder::new()
         .name(format!("plugin-tx-{}", sanitize_id(&plugin_id_tx)))
         .spawn(move || {
-            for req in req_rx.iter() {
-                let line = match serde_json::to_string(&req) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::warn!("plugin '{}' request encode error: {}", plugin_id_tx, e);
-                        continue;
-                    }
-                };
+            while let Ok(line) = req_rx.recv() {
                 if writeln!(writer, "{line}").is_err() {
                     break;
                 }
@@ -868,8 +957,8 @@ fn spawn_rx_thread(
     stream: std::net::TcpStream,
     waker: tasty_terminal::waker_factory::SharedWakerFactory,
     last_pong: Arc<Mutex<Instant>>,
-    resp_tx: mpsc::SyncSender<PluginResponse>,
-    event_tx: mpsc::SyncSender<PluginEvent>,
+    resp_tx: MeteredSender<PluginResponse>,
+    event_tx: MeteredSender<PluginEvent>,
 ) -> io::Result<()> {
     let plugin_id_rx = plugin_id.to_string();
     std::thread::Builder::new()
@@ -885,19 +974,24 @@ fn spawn_rx_thread(
                 if trim.is_empty() {
                     continue;
                 }
-                handle_incoming_line(trim, &resp_tx, &event_tx, &last_pong, &plugin_id_rx);
+                // 바이트 상한에 막혀 서기 전에 호스트를 깨운다 — 자리를 만드는 것은 pump 다.
+                let wake = || waker.make_default_waker()();
+                handle_incoming_line(trim, &resp_tx, &event_tx, &last_pong, &plugin_id_rx, wake);
                 waker.make_default_waker()();
             }
         })?;
     Ok(())
 }
 
+/// `line` 의 길이가 곧 그 메시지가 큐에 들고 있는 바이트다 — 디코드한 값의 크기를 다시
+/// 재지 않는다. 받은 줄이 plugin 이 실제로 보낸 양이고, 상한이 묶으려는 것도 그것이다.
 fn handle_incoming_line(
     line: &str,
-    resp_tx: &mpsc::SyncSender<PluginResponse>,
-    event_tx: &mpsc::SyncSender<PluginEvent>,
+    resp_tx: &MeteredSender<PluginResponse>,
+    event_tx: &MeteredSender<PluginEvent>,
     last_pong: &Arc<Mutex<Instant>>,
     plugin_id: &str,
+    before_wait: impl FnMut(),
 ) {
     let v: serde_json::Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -906,20 +1000,23 @@ fn handle_incoming_line(
             return;
         }
     };
+    let bytes = line.len() + 1;
     if v.get("id").and_then(|x| x.as_u64()).is_some() {
-        handle_incoming_response(v, resp_tx, last_pong, plugin_id);
+        handle_incoming_response(v, bytes, resp_tx, last_pong, plugin_id, before_wait);
         return;
     }
     if let Some(ev_value) = v.get("event") {
-        handle_incoming_event(ev_value.clone(), event_tx, plugin_id);
+        handle_incoming_event(ev_value.clone(), bytes, event_tx, plugin_id, before_wait);
     }
 }
 
 fn handle_incoming_response(
     v: serde_json::Value,
-    resp_tx: &mpsc::SyncSender<PluginResponse>,
+    bytes: usize,
+    resp_tx: &MeteredSender<PluginResponse>,
     last_pong: &Arc<Mutex<Instant>>,
     plugin_id: &str,
+    before_wait: impl FnMut(),
 ) {
     match serde_json::from_value::<PluginResponse>(v) {
         Ok(resp) => {
@@ -928,8 +1025,8 @@ fn handle_incoming_response(
                 LAST_PONG_WHAT,
                 &LAST_PONG_POISONED,
             ) = Instant::now();
-            if let Err(e) = resp_tx.send(resp) {
-                tracing::trace!("plugin response forward dropped (consumer exited): {e}");
+            if resp_tx.send_waiting(resp, bytes, before_wait).is_err() {
+                tracing::trace!("plugin response forward dropped (consumer exited)");
             }
         }
         Err(e) => {
@@ -940,13 +1037,15 @@ fn handle_incoming_response(
 
 fn handle_incoming_event(
     ev_value: serde_json::Value,
-    event_tx: &mpsc::SyncSender<PluginEvent>,
+    bytes: usize,
+    event_tx: &MeteredSender<PluginEvent>,
     plugin_id: &str,
+    before_wait: impl FnMut(),
 ) {
     match serde_json::from_value::<PluginEvent>(ev_value) {
         Ok(ev) => {
-            if let Err(e) = event_tx.send(ev) {
-                tracing::trace!("plugin event forward dropped (consumer exited): {e}");
+            if event_tx.send_waiting(ev, bytes, before_wait).is_err() {
+                tracing::trace!("plugin event forward dropped (consumer exited)");
             }
         }
         Err(e) => {
@@ -1120,6 +1219,55 @@ mod tests {
         assert_eq!(proc.unreported_drops(), 0, "실은 만큼 빠져야 한다");
     }
 
+    /// 장부에 오르는 바이트는 **소켓에 나가는 줄의 길이**(개행 포함)다 — 추정이 아니다.
+    /// 그리고 writer 가 꺼내면 장부에서 내려간다.
+    #[test]
+    fn the_ledger_counts_the_wire_bytes_of_a_queued_request() {
+        let ledger = ChannelLedger::new(ChannelLimits::default());
+        let (proc, rx) = PluginProcess::stub_with_request_rx_in("com.example.x", 16, &ledger);
+        let req = PluginRequest::new("noop", serde_json::json!({ "k": "v" }), 7);
+        let wire = serde_json::to_string(&req).unwrap().len() + 1;
+
+        proc.try_send_request(req).unwrap();
+        let snap = ledger.snapshot();
+        assert_eq!(snap.total_bytes, wire);
+        assert_eq!(snap.queues[0].queued_bytes, wire);
+        assert_eq!(snap.queues[0].direction, Direction::Request);
+
+        rx.try_recv().unwrap();
+        assert_eq!(ledger.snapshot().total_bytes, 0, "꺼낸 줄이 장부에 남았다");
+    }
+
+    /// 바이트 상한으로 버린 요청도 개수 포화와 **같이** plugin 에게 알린다 — plugin 입장에서
+    /// 둘은 같은 사건(오던 요청이 사라졌다)이다. 호출부 로그에서는 둘이 갈린다.
+    #[test]
+    fn a_request_over_the_byte_budget_is_dropped_and_reported_like_a_full_queue() {
+        let ledger = ChannelLedger::new(ChannelLimits {
+            queue_bytes: 64,
+            total_bytes: 1 << 20,
+        });
+        let (proc, rx) = PluginProcess::stub_with_request_rx_in("com.example.big", 16, &ledger);
+        let big = PluginRequest::new("noop", serde_json::json!({ "pad": "x".repeat(200) }), 1);
+        proc.try_send_request(big)
+            .expect("빈 큐는 상한보다 큰 한 건을 받는다");
+        let refused = proc.try_send_request(a_request(2));
+        assert_eq!(refused, Err(RequestSendError::OverBytes(Refusal::Queue)));
+        assert_ne!(
+            refused.unwrap_err().to_string(),
+            RequestSendError::Full.to_string(),
+            "바이트 포화와 개수 포화가 로그에서 안 갈린다"
+        );
+        assert_eq!(proc.unreported_drops(), 1);
+
+        rx.try_recv().unwrap();
+        proc.try_send_request(a_request(3)).unwrap();
+        let next = rx.try_recv().unwrap();
+        assert_eq!(
+            next.dropped_requests, 1,
+            "바이트로 버린 수가 다음 요청에 안 실렸다"
+        );
+    }
+
     /// 자리가 없는 큐에 한 건을 넣어 보고 **그 판정을 다른 스레드에서 받아 온다.**
     ///
     /// 포화 송신을 본 스레드에서 직접 부르면 안 된다. 정책이 블로킹 `send` 로
@@ -1207,17 +1355,26 @@ mod tests {
     // **거짓 빨강이 없고**, 부하가 어떻든 한쪽으로만 틀릴 수 있다.
     const OVERFLOW_ROUNDS: u64 = 1000;
 
+    /// 개수를 재는 두 시험이 바이트 장부의 판정에 먼저 걸리지 않게 넉넉한 장부를 쓴다 — 이
+    /// 시험들이 재는 것은 **개수** 포화의 답이다(바이트 쪽은 `channel_bytes` 의 시험).
+    fn roomy_queue<T>(direction: Direction) -> (MeteredSender<T>, MeteredReceiver<T>) {
+        let ledger = ChannelLedger::new(ChannelLimits::default());
+        metered_channel(1, ledger.open_queue("com.example.x", direction))
+    }
+
     #[test]
     fn responses_past_the_capacity_are_delayed_not_dropped() {
-        let (tx, rx) = mpsc::sync_channel::<PluginResponse>(1);
+        let (tx, rx) = roomy_queue::<PluginResponse>(Direction::Response);
         let last_pong = Arc::new(Mutex::new(Instant::now()));
         let writer = std::thread::spawn(move || {
             for id in 0..OVERFLOW_ROUNDS {
                 handle_incoming_response(
                     serde_json::json!({ "id": id, "result": {} }),
+                    16,
                     &tx,
                     &last_pong,
                     "com.example.x",
+                    || {},
                 );
             }
         });
@@ -1233,13 +1390,15 @@ mod tests {
 
     #[test]
     fn events_past_the_capacity_are_delayed_not_dropped() {
-        let (tx, rx) = mpsc::sync_channel::<PluginEvent>(1);
+        let (tx, rx) = roomy_queue::<PluginEvent>(Direction::Event);
         let writer = std::thread::spawn(move || {
             for id in 0..OVERFLOW_ROUNDS {
                 handle_incoming_event(
                     serde_json::json!({ "kind": "surface_invalidated", "surface_id": id }),
+                    16,
                     &tx,
                     "com.example.x",
+                    || {},
                 );
             }
         });
@@ -1588,4 +1747,5 @@ mod shutdown_tests {
 #[cfg(test)]
 mod tests_parent_home;
 
+pub mod channel_bytes;
 mod launch;

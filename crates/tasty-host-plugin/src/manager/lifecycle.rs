@@ -173,6 +173,7 @@ impl PluginManager {
             surfaces: HashMap::new(),
             pending_requests: HashMap::new(),
             plugin_wait: None,
+            channel_ledger: crate::process::channel_bytes::ChannelLedger::process_wide(),
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),
             command_registry: crate::command_registry::PluginCommandRegistry::new(),
@@ -501,6 +502,7 @@ impl PluginManager {
             &self.log_dir,
             self.waker.clone(),
             &self.plugin_reaper,
+            &self.channel_ledger,
         ) {
             Ok(p) => self.on_plugin_spawn_success(pkg, p),
             Err(e) => self.on_plugin_spawn_failure(pkg, e),

@@ -58,6 +58,14 @@ impl PluginManager {
         self.plugin_wait = Some(stats);
     }
 
+    /// plugin 채널에 지금 쌓인 바이트와 상한·거절·대기 누계(ADR-0360).
+    ///
+    /// 값을 만드는 데까지다 — IPC/CLI 로 내보내는 자리(`system.pressure`)는 아직 이 값을
+    /// 안 읽는다. 장부가 프로세스 하나라서 어느 매니저에서 불러도 같은 값이 나온다.
+    pub fn channel_bytes(&self) -> crate::process::channel_bytes::ChannelBytesSnapshot {
+        self.channel_ledger.snapshot()
+    }
+
     /// 응답 하나가 매칭됐다 — 보낸 뒤 흐른 시간을 게이지에 접는다.
     fn record_plugin_wait(&self, waited: std::time::Duration) {
         if let Some(stats) = &self.plugin_wait {

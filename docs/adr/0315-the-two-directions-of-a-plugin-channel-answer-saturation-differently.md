@@ -53,6 +53,51 @@ deadline 으로만 회수되고([ADR-0311](0311-a-namespace-call-expires-into-an
 분량의 버스트를 여러 번 담을 수 있으면 정상 사용은 상한에 안 닿는다, (2) 곱이 작다:
 채널 3 × 1024 × 번들 plugin 9 = 27,648 슬롯이고 메시지가 수 KB 라도 수십 MB 다.
 
+### 2026-09-21 보강 — 바이트 축, 렌더 데이터 갈래, 병합 갈래
+
+위 결정은 세 채널을 **개수**로 묶었고, 포화의 답을 거절과 대기 둘로 나눴다. 그 분류에서 비어
+있던 자리가 셋이었다.
+
+**바이트 축.** 개수 상한이 메모리 상한이라는 위 논증("곱이 수십 MB")은 메시지가 수 KB 라는
+가정 위에 있었고, plugin 수도 번들 아홉으로 고정이 아니었다. 큐마다와 합계로 바이트 상한을 더했다
+— [ADR-0360](0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md). **포화의 답은
+이 ADR 의 방향 규칙을 그대로 따른다**(요청은 거절, 응답·이벤트는 대기). 거절 사유에 바이트가
+더해져 `RequestSendError` 가 개수 포화(`Full`)와 바이트 포화(`OverBytes`)를 가른다.
+
+**렌더 데이터는 이 세 채널을 타지 않고, 그 경로의 답은 넷째 — 병합(최신만 남긴다)이다.**
+egui-mesh 의 기하·텍스처는 공유 메모리 버퍼에 쓰인다([`egui-mesh-channel`](../dev-guide/egui-mesh-channel.md)).
+그 경로에는 **큐가 없다**:
+
+- 버퍼는 surface(popup·banner) 하나에 한 칸이고, plugin 은 매 프레임 같은 칸을 **덮어쓴다.**
+  host 는 footer generation 으로 반쯤 쓰인 프레임을 거른다 — 밀리면 중간 프레임이 사라질 뿐
+  쌓이지 않는다.
+- 그 프레임을 알리는 `PaintFrame` 메타는 이벤트 채널을 타지만(그래서 위 "대기" 규칙과 ADR-0360
+  의 바이트 상한 안에 있다), host 는 surface 마다 **마지막 값만** 든다
+  (`egui_mesh_frames.insert` — 덮어쓰기). 끊긴 순번은 `frame_seq` 체인이 full 재전송으로 복구한다.
+- dirty 영역은 보조 핸들 채널로 오고 host 가 buffer 마다 **합집합으로 접는다**(`merge_dirty`).
+
+즉 렌더 데이터의 포화 정책은 "없다" 가 아니라 **병합이 경로에 내장돼 있다** — 무한히 자랄 자리가
+없다. 네 갈래(거절 · 대기 · 병합 · 연결 종료) 가운데 연결 종료는 여전히 어느 경로도 안 쓴다 —
+healthcheck 재시작이 그 역할을 대신한다.
+
+**호스트 → plugin 쪽에 병합 갈래는 두지 않는다.** 위 Consequences 가 "`surface.set_context` 가
+빠지면 그 프레임의 입력이 안 간다" 고 적은 자리가 병합의 후보였다 — 같은 surface 에 대한 set_context
+가 여럿 밀려 있으면 마지막 하나만 보내면 되지 않느냐. 그렇지 않다:
+
+- **set_context 는 상태가 아니라 입력을 나른다.** `raw_input` 에는 그 프레임의 키·마우스 이벤트가
+  들어 있다. 마지막 하나만 남기면 그 앞의 키 입력이 사라진다. 합치려면 크기·ppp·테마는 최신으로,
+  이벤트는 이어 붙여야 하는데, 그것은 `RawInputWire` 의 뜻을 아는 병합이라 채널이 할 일이 아니다.
+- **FIFO 가 계약이다.** `surface.create` 는 첫 set_context **앞에** 도착해야 하고 그 순서를 본체의
+  가드가 호출자를 스캔해 판정한다(`src/source_guards/mesh_bootstrap_order.rs`). 병합하려면 큐에
+  들어간 항목을 고치거나 별도 슬롯을 둬야 하는데, 앞은 `mpsc` 가 허용하지 않고 뒤는 그 순서를 깬다.
+- **병합은 거절의 비용을 못 없앤다.** 거절은 큐가 **찼을 때** 난다. 그 자리를 채운 것이 다른
+  surface 의 set_context 나 다른 종류의 요청이면 합칠 짝이 큐 안에 없다. 빠진 set_context 는 다음
+  입력·geom 변경이 다시 보낸다. 첫 bootstrap 이 빠지면 그 surface 는 다음 입력·geom 변경까지 비어
+  있다 — bootstrap 래치(`bootstrap_sent`)는 frame 이 보여야 풀리므로 스스로 재전송하지 않는다.
+  그것이 이 방향 거절의 실제 비용이고, 위 Consequences 의 "그 프레임의 입력이 안 간다" 에 더해 적는다.
+
+그래서 호스트 → plugin 은 거절 하나로 둔다. 병합이 답인 자리는 이미 병합하고 있는 렌더 경로뿐이다.
+
 ## Consequences
 
 - **얻은 것**: 세 자리가 **유한해졌다.** 그전에는 어느 쪽도 상한이 없었다.
@@ -104,7 +149,8 @@ deadline 으로만 회수되고([ADR-0311](0311-a-namespace-call-expires-into-an
   시점에 막는다. 나머지 둘(`RESPONSE_QUEUE_CAPACITY` · `EVENT_QUEUE_CAPACITY`)에는
   **그 채널이 없다** — 둘을 0 으로 바꿔도 이 크레이트의 시험 266 건이 전부 통과한다(실측).
   그쪽을 재는 두 시험(`responses_past_the_capacity_…` · `events_past_the_capacity_…`)이
-  상수가 아니라 리터럴 `sync_channel(1)` 을 쓰는 것은 일부러다: 그 시험이 재는 것은 값이
+  상수가 아니라 용량 리터럴 `1` 을 쓰는 것(`metered_channel(1, …)` — 2026-09-21 부터 채널이
+  바이트 장부를 거친다, ADR-0360)은 일부러다: 그 시험이 재는 것은 값이
   아니라 **버리는가 기다리는가**이고, 버퍼가 작을수록 가득 찬 순간을 확실히 만난다(용량의
   여러 배를 흘리는 것과 같은 근거). 상수를 읽게 바꾸면 그 확실성이 줄고, 그래도 증명되는
   것은 *시험이* 상수를 읽는다는 것뿐이라 프로덕션의 0 은 여전히 안 잡힌다.
@@ -136,6 +182,8 @@ deadline 으로만 회수되고([ADR-0311](0311-a-namespace-call-expires-into-an
   경계로 넓힌다.
 - 관련 ADR: [ADR-0311](0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md)
   — 응답을 버리면 안 되는 이유(만료가 caller 에 대한 오류가 된다).
+- 관련 ADR: [ADR-0360](0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md)
+  — 같은 세 채널에 바이트 축(큐마다 · 합계)을 더한 결정(2026-09-21 보강).
 - 관련 architecture: [shutdown-sequence](../architecture/shutdown-sequence.md)
   — `req_tx` 에 넣는 shutdown 요청이 이제 거절될 수 있다는 것.
 - **코드 근거 (결정이 실현된 현재 위치)**: `PluginProcess::try_send_request` ·
