@@ -2974,7 +2974,9 @@ grep -rE 'cfg\((windows\)|target_os *= *"windows"\)|all\([^)]*windows)' /tmp/mas
 크로스 체크는 **된다**: `x86_64-pc-windows-gnu` 는 통과하고(`-msvc` 는 `libsqlite3-sys`·
 `mlua-sys` 의 빌드 스크립트가 C 크로스 컴파일러를 못 찾아 멈춘다 — 타깃마다 갈린다).
 그러니 컴파일 갈래의 구멍은 "Linux 에서는 원리적으로 불가능" 이 아니라 **아무도 그 타깃을
-안 걸었다**는 뜻이다.
+안 걸었다**는 뜻이다. 단 빌드 스크립트는 예외다 — 루트 `build.rs` 의 `#[cfg(windows)]` 는 빌드
+**호스트** 기준이라, 이 크로스 체크에서는 Windows 리소스(아이콘 · VERSIONINFO) 단계가 빈 채로
+지나간다. 그 갈래는 Windows 러너에서만 보인다([`build.md`](build.md) 의 빌드 스크립트 절).
 
 ```bash
 cargo check --workspace --all-targets --target x86_64-pc-windows-gnu --locked

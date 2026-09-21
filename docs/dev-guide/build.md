@@ -144,6 +144,20 @@ dev 워크플로에 openssl 의존 미부과). dist 스크립트(`build-*.{sh,ps
 본문은 통째로 `#[cfg(windows)]` 안에 있고, `winresource` 는 `[target.'cfg(windows)'.build-dependencies]`
 에만 선언돼 있어 **Linux · macOS 빌드는 그 크레이트를 받지도 않고 스크립트 본문이 빈 `main`** 이다.
 
+**여기서 `windows` 는 빌드 대상이 아니라 빌드 호스트다.** 빌드 스크립트는 호스트용으로 컴파일되므로
+그 안의 `#[cfg(windows)]` 는 호스트 OS 로 갈린다. 대상 OS 는 스크립트가 실행 중에
+`CARGO_CFG_TARGET_OS` 로 읽어야만 보이는데, 이 스크립트는 그것을 안 읽는다. `winresource`
+build-dependency 도 호스트가 Windows 일 때만 해석된다. 실측(2026-09-21, Linux aarch64 호스트에서
+`cargo check -p tasty --target x86_64-pc-windows-gnu -vv`): 스크립트는 `CARGO_CFG_TARGET_OS=windows`
+로 **돌았지만**, 내보낸 것은 `rerun-if-changed` 두 줄뿐이었다. `OUT_DIR` 은 비었고 `winresource` 는 한 번도
+컴파일되지 않았으며, `cargo tree -i winresource --target x86_64-pc-windows-gnu` 도 비었다. 그 머신에
+`x86_64-w64-mingw32-windres` 가 있었는데도 그렇다.
+
+그래서 **Windows 가 아닌 호스트(실측은 Linux)에서 교차 빌드한 Windows exe 에는 아이콘도 VERSIONINFO 도 없고, 빌드는 그
+사실을 경고하지 않는다.** 출하 산출물은 이 갈래를 타지 않는다 — Windows 산출물은 네이티브 Windows
+러너가 만든다(`.github/workflows/release.yml` 의 `runs-on: [self-hosted, Windows]` 잡). 교차 빌드한
+exe 는 컴파일 · 시험 확인용으로만 쓰고 배포물로 쓰지 않는다.
+
 ### 입력 선언이 곧 계약이다
 
 스크립트는 자기 입력을 `cargo:rerun-if-changed` 로 선언한다. **하나라도 선언하면 cargo 는
@@ -178,9 +192,10 @@ append 하게 해서 **실행 횟수**를 세야 갈린다. 저장소 밖 임시
 
 ### 이 문서가 못 말하는 것
 
-아이콘이나 `Cargo.toml` 이 바뀌었을 때 **Windows 산출물이 실제로 달라지는지**는 Windows 에서만
-관측된다(리소스 컴파일이 그 OS 에서만 돈다). 위 표는 재실행 여부까지만 재고 산출물 차이는 재지
-않는다.
+아이콘이나 `Cargo.toml` 이 바뀌었을 때 **Windows 산출물이 실제로 달라지는지**는 Windows **호스트**에서만
+관측된다 — 리소스 컴파일은 빌드 호스트가 Windows 일 때만 돈다. Linux 에서 `--target` 으로 Windows 를
+걸어도 리소스 단계는 빈 채로 지나가므로(위 "여기서 `windows` 는 빌드 호스트다"), 교차 빌드로는 이
+물음에 답할 수 없다. 위 표는 재실행 여부까지만 재고 산출물 차이는 재지 않는다.
 
 ### 나머지 빌드 스크립트
 
