@@ -1,4 +1,4 @@
-<!-- source-hash: a6f962d6bd8a -->
+<!-- source-hash: 89f83c4034b2 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -303,11 +303,14 @@ tasty list recent --kind markdown      # files recently opened as that kind
 tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
 tasty set url --surface 42 --url URL   # change the address of a webview surface
 tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
+tasty file-handler reload              # read the file handler settings file again
 ```
 
 `set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
 
 `file-handler dispatch` accepts file paths only. Passing a web address such as `https://…` returns an error. A `tasty --headless` instance has no window to open a file in, so instead of reporting the request as accepted it returns an error saying this build does not support it.
+
+The `file-handler reload` response has a `rejected` list. It holds the `id` and the reason (`reason`) of each entry from the settings file that was dropped instead of applied, and it is empty when everything applied. There are two reasons: `missing_owner_prefix` means the `id` has no owner part such as `user/` in front of it (write it as `user/name`), and `missing_detector_or_action` means the entry is missing either which files it handles (`detector`) or what to do (`action`).
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
 

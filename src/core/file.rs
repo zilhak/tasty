@@ -23,17 +23,23 @@ use crate::state::{AppState, FileHandlerPickerResult};
 pub(crate) struct ReloadFileHandlersOutcome {
     pub(crate) path: PathBuf,
     pub(crate) exists: bool,
+    /// file handler registry 가 이번 reload 에서 버린 user 항목.
+    pub(crate) rejected: Vec<tasty_file_handler::RejectedUserHandler>,
 }
 
 impl Core {
     /// User TOML (`~/.tasty/file-handlers.toml`) 재로드. file_format / file_handler
-    /// registry 모두 reload. 응답: `{ path, exists }`.
+    /// registry 모두 reload. 응답: `{ path, exists, rejected }`.
     pub(crate) fn reload_file_handlers(&self, engine: &CoreState) -> ReloadFileHandlersOutcome {
         let path = user_config_path();
         engine.file_format.reload_user_config(&path);
-        engine.file_handler.reload_user_config(&path);
+        let rejected = engine.file_handler.reload_user_config(&path);
         let exists = path.exists();
-        ReloadFileHandlersOutcome { path, exists }
+        ReloadFileHandlersOutcome {
+            path,
+            exists,
+            rejected,
+        }
     }
 
     /// IdentifyWorker 의 비동기 detect 결과 적용. `event_handler` 가

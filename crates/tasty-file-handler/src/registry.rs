@@ -193,7 +193,8 @@ impl FileHandlerRegistry {
         };
         let mut inner = self.lock_write();
         for decl in decls {
-            install_user(&mut inner, decl);
+            // 부팅 로드는 응답을 돌려줄 호출자가 없다 — 거절은 install_user 가 이미 warn 으로 남겼다.
+            let _ = install_user(&mut inner, decl);
         }
         inner.dirty = true;
     }
@@ -395,16 +396,42 @@ impl FileHandlerRegistry {
     ///
     /// **Transactional**: read/parse 실패 시 기존 user contribution 보존 (write lock 잡기 전에
     /// 검증). 파일이 없으면 user contribution 만 제거.
-    pub fn reload_user_config(&self, path: &std::path::Path) {
+    ///
+    /// 돌려주는 것은 **이 reload 가 버린 user 항목**이다 — 경고 로그와 같은 사실을 호출자가
+    /// 응답에 실을 수 있게 한다(docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
+    /// read/parse 실패로 reload 자체가 멈춘 경우는 항목을 모르므로 빈 목록이다.
+    pub fn reload_user_config(&self, path: &std::path::Path) -> Vec<RejectedUserHandler> {
         let Some(decls) = Self::load_user_handler_decls(path) else {
-            return;
+            return Vec::new();
         };
         let mut inner = self.lock_write();
         Self::purge_user_owned(&mut inner);
+        let mut rejected = Vec::new();
+        let mut installed = Vec::new();
         for decl in decls {
-            install_user(&mut inner, decl);
+            match install_user(&mut inner, decl) {
+                Ok(id) => installed.push(id),
+                Err(r) => rejected.push(r),
+            }
+        }
+        // finalize 는 lookup 때 게으르게 돈다. 그때 detector·action 이 없어 버려질 user 항목을
+        // 지금 같은 판정으로 골라 둔다 — 그렇지 않으면 이 reload 의 응답이 그 버림을 모른다.
+        for id in installed {
+            if inner
+                .contributions
+                .get(&id)
+                .is_some_and(|contribs| !is_complete(contribs))
+                // 같은 id 가 파일에 두 번 적혔으면 한 번만 보고한다.
+                && !rejected.iter().any(|r| r.id == id.0)
+            {
+                rejected.push(RejectedUserHandler {
+                    id: id.0,
+                    reason: UserHandlerRejectReason::MissingDetectorOrAction,
+                });
+            }
         }
         inner.dirty = true;
+        rejected
     }
 
     /// user config 파일을 읽어 handler 선언을 파싱한다. 파일이 없으면 빈 목록(=
@@ -492,7 +519,8 @@ impl FileHandlerRegistry {
                 owner = c.owner.clone();
             }
 
-            // detector + action 둘 다 있어야 등록.
+            // detector + action 둘 다 있어야 등록. reload 가 보고하는 버림(`is_complete`)과
+            // 같은 판정이다 — 마지막 non-None 이 이기므로 "어느 출처든 하나라도 있는가" 와 같다.
             let (Some(detector), Some(action)) = (detector, action) else {
                 warn!(
                     handler_id = id.as_str(),
@@ -610,7 +638,41 @@ fn install_plugin(inner: &mut Inner, plugin_id: &str, decl: HandlerDecl<PluginHa
     let _: Option<HandlerDeclError> = None; // suppress unused import if all paths Ok
 }
 
-fn install_user(inner: &mut Inner, decl: UserHandlerSettingsDecl) {
+/// user 설정 reload 가 버린 항목 하나 — 그 id 와 사유.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedUserHandler {
+    /// user TOML 에 적힌 그대로의 id.
+    pub id: String,
+    pub reason: UserHandlerRejectReason,
+}
+
+/// user 항목을 버린 사유. 응답에는 [`UserHandlerRejectReason::as_str`] 의 코드로 나간다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserHandlerRejectReason {
+    /// id 에 `<owner>/` 접두사가 없다 — 설치하지 않는다.
+    MissingOwnerPrefix,
+    /// 모든 출처를 겹쳐도 detector 나 action 이 비어 finalize 가 버린다.
+    MissingDetectorOrAction,
+}
+
+impl UserHandlerRejectReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingOwnerPrefix => "missing_owner_prefix",
+            Self::MissingDetectorOrAction => "missing_detector_or_action",
+        }
+    }
+}
+
+/// finalize 가 이 id 를 등록하는가 — 어느 출처든 detector 와 action 을 하나씩 가졌는가.
+fn is_complete(contribs: &[HandlerContribution]) -> bool {
+    contribs.iter().any(|c| c.detector.is_some()) && contribs.iter().any(|c| c.action.is_some())
+}
+
+fn install_user(
+    inner: &mut Inner,
+    decl: UserHandlerSettingsDecl,
+) -> Result<HandlerId, RejectedUserHandler> {
     // user TOML 의 id 는 전역 id 형태로 적힌다 — 예: 자작 "user/<short>", 또는 기존
     // "host/<short>" / "<plugin>/<short>" 패치. 어느 경우든 contribution 의 owner 는
     // 항상 `User` (= 출처가 사용자 TOML). 그래야 base contribution(원 출처) 가
@@ -622,11 +684,15 @@ fn install_user(inner: &mut Inner, decl: UserHandlerSettingsDecl) {
             id = id_str.as_str(),
             "file_handler: user handler id missing owner prefix",
         );
-        return;
+        return Err(RejectedUserHandler {
+            id: id_str,
+            reason: UserHandlerRejectReason::MissingOwnerPrefix,
+        });
     }
+    let id = HandlerId(id_str);
     push_contribution(
         inner,
-        HandlerId(id_str),
+        id.clone(),
         HandlerContribution {
             owner: HandlerOwner::User,
             detector: decl.detector,
@@ -636,6 +702,7 @@ fn install_user(inner: &mut Inner, decl: UserHandlerSettingsDecl) {
             action: decl.action.map(Into::into),
         },
     );
+    Ok(id)
 }
 
 fn push_contribution(inner: &mut Inner, id: HandlerId, contrib: HandlerContribution) {

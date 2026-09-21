@@ -1549,6 +1549,67 @@ fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
     );
 }
 
+/// `file_handler.reload` 는 버린 user 항목을 `rejected` 에 사유와 함께 싣는다 — 기존 필드는
+/// 그대로다. 예전에는 `{path, exists}` 뿐이라 설정이 무시된 것이 로그에만 남았다
+/// (docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
+///
+/// 공유 인스턴스의 user 설정을 바꾸므로 단독 차선에서 돌고, 끝에 파일을 지우고 다시
+/// reload 해 원래 상태(user 설정 없음)로 돌려 놓는다. 두 조합 모두에서 돈다.
+#[test]
+fn file_handler_reload_reports_the_entries_it_dropped() {
+    let _lane = exclusive_lane();
+    let tasty = common::shared();
+    let path = tasty.tasty_home().join("file-handlers.toml");
+    assert!(
+        !path.exists(),
+        "격리 홈에 user 설정이 이미 있으면 복원 기준이 없다: {}",
+        path.display()
+    );
+    std::fs::write(
+        &path,
+        r#"
+[[handler]]
+id = "md-as-html"
+detector = "markdown"
+[handler.action]
+kind = "system"
+
+[[handler]]
+id = "user/no-action"
+detector = "markdown"
+
+[[handler]]
+id = "user/good"
+detector = "markdown"
+[handler.action]
+kind = "system"
+"#,
+    )
+    .expect("user 설정 쓰기");
+
+    let resp = tasty.call("file_handler.reload", json!({}));
+
+    // 파일을 먼저 지워 두어 아래 단언이 실패해도 다음 시나리오가 이 설정을 안 물려받게 한다.
+    std::fs::remove_file(&path).expect("user 설정 지우기");
+    let restored = tasty.call("file_handler.reload", json!({}));
+
+    assert_eq!(resp["exists"], json!(true), "기존 필드는 그대로다: {resp}");
+    assert!(resp["path"].is_string(), "기존 필드는 그대로다: {resp}");
+    assert_eq!(
+        resp["rejected"],
+        json!([
+            {"id": "md-as-html", "reason": "missing_owner_prefix"},
+            {"id": "user/no-action", "reason": "missing_detector_or_action"},
+        ]),
+        "버린 항목과 사유가 응답에 있어야 한다: {resp}"
+    );
+    assert_eq!(
+        restored["rejected"],
+        json!([]),
+        "버린 것이 없으면 빈 배열이다: {restored}"
+    );
+}
+
 /// 대상을 **지목했는데 아무 창도 안 가진** 요청은 거절된다 — 포커스된 창으로 안 샌다.
 ///
 /// 지우기 전의 폴백은 이 요청을 포커스된 창에 넘겼고, 그래서 **존재하지 않는

@@ -11,7 +11,9 @@ pub mod save;
 pub mod types;
 
 pub use config::{HandlerDeclError, UserHandlerActionDecl};
-pub use registry::{FileHandlerRegistry, UserHandlerUpsertDecl};
+pub use registry::{
+    FileHandlerRegistry, RejectedUserHandler, UserHandlerRejectReason, UserHandlerUpsertDecl,
+};
 pub use types::{FileHandler, HandlerAction, HandlerId, HandlerOwner, is_valid_handler_short_name};
 
 /// 호스트가 기본 제공하는 handler 선언 묶음.

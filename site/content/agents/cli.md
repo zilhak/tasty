@@ -314,11 +314,14 @@ tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
 tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경
 tasty set url --surface 42 --url URL   # 웹뷰 서피스의 주소 변경
 tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
+tasty file-handler reload               # 파일 핸들러 설정 파일을 다시 읽기
 ```
 
 `set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 지원하지 않는 대상이라는 오류를 반환합니다.
 
 `file-handler dispatch` 는 파일 경로만 받습니다. `https://…` 같은 웹 주소를 넘기면 오류를 반환합니다. 윈도우가 없는 `tasty --headless` 인스턴스는 파일을 열 수 없으므로, 이 명령에 요청을 받아들였다고 답하지 않고 이 빌드에서는 지원하지 않는다는 오류를 반환합니다.
+
+`file-handler reload` 의 응답에는 `rejected` 목록이 있습니다. 설정 파일에서 적용하지 못하고 버린 항목의 `id` 와 사유(`reason`)가 들어 있고, 모두 적용됐으면 빈 목록입니다. 사유는 둘입니다 — `missing_owner_prefix` 는 `id` 앞에 `user/` 같은 소유자 부분을 붙이지 않은 경우이고(`user/이름` 으로 적어야 합니다), `missing_detector_or_action` 은 어떤 파일을 다룰지(`detector`)나 무엇을 할지(`action`)가 비어 있는 경우입니다.
 
 `list info`의 워크스페이스 수와 활성 위치는 조회한 윈도우의 값이며, 함께 반환된 워크스페이스 ID로 소속을 확인할 수 있습니다. 전체 워크스페이스는 `list workspaces`, 각 윈도우의 상태는 `list windows`로 확인하세요.
 

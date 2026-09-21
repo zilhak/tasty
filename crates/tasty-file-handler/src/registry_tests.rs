@@ -612,3 +612,107 @@ fn a_poisoned_registry_still_installs_and_resolves() {
         "poison 이후에도 조회가 빈 결과가 아니어야 한다"
     );
 }
+
+/// reload 는 버린 user 항목을 사유와 함께 돌려준다 — 경고 로그에만 있던 사실이다.
+/// 접두사 없는 id 는 설치 전에, detector·action 이 빈 id 는 finalize 에서 버려진다.
+/// 기존 handler 를 메타만 덮는 patch 와 온전한 user 항목은 보고에 없다.
+#[test]
+fn reload_user_config_reports_the_entries_it_dropped() {
+    let reg = FileHandlerRegistry::new();
+    load_host(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("file-handlers.toml");
+    std::fs::write(
+        &p,
+        r#"
+            [[handler]]
+            id = "md-as-html"
+            detector = "markdown"
+            [handler.action]
+            kind = "system"
+
+            [[handler]]
+            id = "user/no-action"
+            detector = "markdown"
+
+            [[handler]]
+            id = "user/good"
+            detector = "markdown"
+            [handler.action]
+            kind = "system"
+
+            [[handler]]
+            id = "host/html-system"
+            priority = 7
+        "#,
+    )
+    .unwrap();
+
+    let rejected = reg.reload_user_config(&p);
+
+    assert_eq!(
+        rejected,
+        vec![
+            RejectedUserHandler {
+                id: "md-as-html".into(),
+                reason: UserHandlerRejectReason::MissingOwnerPrefix,
+            },
+            RejectedUserHandler {
+                id: "user/no-action".into(),
+                reason: UserHandlerRejectReason::MissingDetectorOrAction,
+            },
+        ]
+    );
+    // 보고는 finalize 의 실제 판정과 같아야 한다 — 보고한 것은 없고, 안 한 것은 있다.
+    let ids: Vec<String> = reg
+        .all_handlers()
+        .into_iter()
+        .map(|h| h.id.as_str().to_string())
+        .collect();
+    assert!(
+        !ids.iter()
+            .any(|i| i == "user/no-action" || i == "md-as-html")
+    );
+    assert!(ids.iter().any(|i| i == "user/good"));
+    let patched = reg
+        .get(&HandlerId("host/html-system".into()))
+        .expect("host handler 는 patch 로 살아 있다");
+    assert_eq!(patched.priority, 7);
+}
+
+/// 버린 것이 없으면 빈 목록이다. 파싱 실패로 reload 가 멈춘 경우도 항목을 모르므로 빈 목록이다.
+#[test]
+fn reload_user_config_reports_nothing_when_nothing_was_dropped() {
+    let reg = FileHandlerRegistry::new();
+    load_host(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("file-handlers.toml");
+    std::fs::write(
+        &p,
+        r#"
+            [[handler]]
+            id = "user/good"
+            detector = "markdown"
+            [handler.action]
+            kind = "system"
+        "#,
+    )
+    .unwrap();
+    assert!(reg.reload_user_config(&p).is_empty());
+
+    std::fs::write(&p, "[[handler\n id = broken").unwrap();
+    assert!(reg.reload_user_config(&p).is_empty());
+}
+
+/// 사유 코드는 응답에 나가는 계약이다.
+#[test]
+fn reject_reason_codes_are_stable() {
+    assert_eq!(
+        UserHandlerRejectReason::MissingOwnerPrefix.as_str(),
+        "missing_owner_prefix"
+    );
+    assert_eq!(
+        UserHandlerRejectReason::MissingDetectorOrAction.as_str(),
+        "missing_detector_or_action"
+    );
+}

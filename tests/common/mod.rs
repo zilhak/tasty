@@ -636,6 +636,12 @@ impl TastyInstance {
         self.process.id()
     }
 
+    /// 이 인스턴스의 격리 `TASTY_HOME` — user 설정 파일을 써 넣고 reload 를 재는 test binary 용.
+    #[allow(dead_code)] // 일부 test binary 만 사용
+    pub fn tasty_home(&self) -> PathBuf {
+        self.isolated_home.join(".tasty")
+    }
+
     /// Loopback IPC port — attach stream 핸드셰이크처럼 `call()` 이 감싸지 않는
     /// raw `TcpStream` 을 직접 여는 test binary 용.
     #[allow(dead_code)] // 일부 test binary 만 사용
