@@ -132,8 +132,8 @@ headless `pump_ipc`)는 둘 다 집어 든 것을 전부 실행한 뒤에야 회
 
 - **정상 사용에서 시간 예산이 얼마나 자주 회차를 자르는가.** 거의 안 자르면 값이 느슨한 것이고,
   가벼운 부하에서도 자주 자르면 값이 빡빡하거나 명령 비용이 늘어난 것이다. 재는 법:
-  `Core::dispatch` 의 `rounds_stopped_by_time` 을 `rounds` 와 견준다(IPC·CLI 노출 자리는 아직
-  없다).
+  `Core::dispatch` 의 `rounds_stopped_by_time` 을 `rounds` 와 견준다(보강: 노출 자리는
+  `system.pressure` 의 `queue_dispatch` 덩어리다 — [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)).
 - **처리량 손실이 체감되는가.** 재는 법: 같은 무거운 부하를 이 결정 전후 바이너리로 돌려 명령 수 /
   벽시계를 견준다.
 - **호출자 정체 단위 공정성이 필요해지는가** — 한 에이전트가 연결 수십 개로 다른 에이전트를

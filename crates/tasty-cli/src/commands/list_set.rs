@@ -79,6 +79,27 @@ pub enum ListCommands {
     /// not yet written, summed over the live connections, and `sink_capacity`
     /// is the queue ceiling of one connection to read it against.
     ///
+    /// `queue_admission` and `queue_dispatch` are the two ends of the command
+    /// queue. `queue_admission` is what is in the queue right now (bytes,
+    /// commands, and how many of those this instance injected itself) with the
+    /// peak byte count, the requests turned away at the byte ceiling
+    /// (`refused_bytes`) or the injected depth ceiling (`refused_depth`), and
+    /// the two ceilings (`limit_bytes`, `limit_injected_depth`) to read them
+    /// against; a turned-away request never entered the queue, so it appears
+    /// in no other block. It is null when this process has no IPC server.
+    /// `queue_dispatch` is what was taken out: rounds and how many stopped at
+    /// the command or time budget, commands whose deadline passed while they
+    /// waited (`expired_before_run`), commands started, and `in_flight`, the
+    /// requests running now whose caller is still waiting, with its peak.
+    ///
+    /// `keyed_requests` counts only requests that carried an idempotency key,
+    /// one slot per decision: `executed` (a new key, it ran), `replayed` (the
+    /// same request again, the kept answer was returned), `conflicted` (a
+    /// different request under the same key, nothing ran), `discarded` (it
+    /// ran but its answer was thrown away) and `in_flight` (the same request
+    /// was still running and this one joined it). Each request is counted
+    /// once. This `in_flight` is not the one in `queue_dispatch`.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications

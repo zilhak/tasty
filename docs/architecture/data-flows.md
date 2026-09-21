@@ -87,7 +87,8 @@ winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about
 수 — 는 `tasty_ipc::dispatch::DispatchStats`(`Core::dispatch`)에 있고, 큐에 **든** 쪽(입장 장부)과
 함께 `CommandQueueSnapshot::read` 한 자리에서 읽는다. in-flight 는 "시작했고 호출자가 아직
 기다리는" 요청이다([ADR-0412](../adr/0412-in-flight-counts-a-started-request-while-its-caller-still-waits.md)).
-IPC·CLI 로 내보내는 자리는 아직 없다.
+두 값은 `system.pressure`(CLI `tasty list pressure`)의 `queue_admission` · `queue_dispatch` 덩어리로
+나간다([ADR-0435](../adr/0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)).
 
 종료 중의 drain 은 이 정책을 따르지 않는다 — 남은 요청을 거절하며 비워야 한다
 ([shutdown-sequence](shutdown-sequence.md)).

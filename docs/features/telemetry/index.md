@@ -78,8 +78,10 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 평균은 파생이라 메서드로 낸다. 시간 축 셋(`db` 제외)에는 **고정 경계 분포**가 하나씩 더
 붙는다([ADR-0340](../../adr/0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md)).
 여기에 **시간이 아닌 축**이 하나 더 있다 — 동시 IPC 연결 자리다. 그리고 누계가 아닌 덩어리가
-하나 있다 — 두 SQLite DB 가 열 때 되읽은 pragma 다. 마지막 하나는 **요청이 아니라 밀어내기**를
-잰다 — 스트림 연결로 민 프레임의 손실과 적체다.
+하나 있다 — 두 SQLite DB 가 열 때 되읽은 pragma 다. 또 하나는 **요청이 아니라 밀어내기**를
+잰다 — 스트림 연결로 민 프레임의 손실과 적체다. 마지막 셋은 명령 큐의 **양 끝**(들어온 쪽의 입장
+장부 · 꺼낸 쪽의 회차와 실행 중인 요청)과 멱등 키를 실은 요청이 받은 **판정**이다
+([ADR-0435](../../adr/0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)).
 
 `system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
@@ -92,6 +94,9 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `connections` | accept 루프의 자리 획득·반납 (`TcpIpcServer`) | 이 포트에 붙은 **TCP 연결 전부** — 요청을 하나도 안 보내는 attach·mesh 스트림도 센다 |
 | `db_pragmas` | DB 를 열 때 한 번 (`tasty_memory::pragma::apply_connection_pragmas`) | 누계가 아니다 — DB(`memory_db` · `state_db`)마다 요청값과 되읽은 실제값 |
 | `stream_push` | 스트림 허브의 push 와 write 스레드의 수신 (`tasty_ipc::stream_hub::StreamHub`) | 서버가 attach·mesh 스트림 연결로 **민 프레임** — 요청 하나 없이도 자란다 |
+| `queue_admission` | 명령 큐 입장 판정 (`tasty_ipc::admission::CommandAdmission`) | 큐에 **들어오려던** 요청 전부 — 상한에 걸려 돌려보낸 것도 센다 |
+| `queue_dispatch` | 큐에서 꺼내는 회차와 실행 직전 (`tasty_ipc::dispatch::DispatchStats`) | 큐에서 **꺼낸** 명령과 그 회차 — 실행 중인 요청은 호출자가 아직 기다리는 것만 |
+| `keyed_requests` | 멱등 보존소의 판정 (`idempotency::Store::decide`) | **멱등 키를 실은** 요청만 — 한 요청은 자기를 맡은 층의 판정으로 한 번 |
 
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
@@ -114,7 +119,7 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 하나도 안 느려도 동시 연결 상한(`MAX_CONCURRENT_CONNECTIONS`, 256)이 차면 새 client 는
 **붙지도 못한다.** 그 거절은 요청이 되기 전에 일어나므로 앞의 네 덩어리 어디에도 안 남고
 `ipc_calls` 에도 안 남는다(JSON-RPC 요청이 아니라 TCP 연결이다). 값은 다섯이다 —
-`live`(지금 붙어 있는 수, **이 응답에서 유일하게 내려가는 값**) · `live_max`(관측된 최댓값) ·
+`live`(지금 붙어 있는 수, **이 덩어리에서 유일하게 내려가는 값**) · `live_max`(관측된 최댓값) ·
 `limit`(서버가 집행하는 상한) · `accepted`(자리를 받아 간 누계) ·
 `refused_saturated`(상한에 걸려 거절된 누계). `limit` 이 같이 나가야 `live` 가 상한에 얼마나
 가까운지가 한 응답 안에서 읽힌다. 거절 로그는 포화로 들어가는 순간만 `warn` 이고 그 뒤로는
@@ -145,12 +150,37 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 과 [attach-behavior](../../dev-guide/attach-behavior.md) 에 있다. 허브가 엔진에 주입되지 않은
 조립(단위 시험)에서는 덩어리가 `null` 이다.
 
-다섯째(연결 자리)와 같은 성질의 자리가 하나 더 있는데 **아직 이 응답에 없다** — 명령 큐의 입장 장부
-(`tasty_ipc::admission::CommandAdmission`)다. 큐에 든 요청 바이트 합과 호스트 주입 명령 수에
-상한이 걸려 있고, 넘으면 요청은 큐에 들어가지 않는다(소켓 요청은 `-32065`, 호스트 주입은
-`InjectError::Refused`). 장부는 지금 값·최고 바이트·거절 누계 둘을 `snapshot()` 으로 들고 있지만
-그것을 읽는 IPC 자리가 없어, 거절은 요청자가 받은 응답과 `debug` 로그로만 드러난다. 1 바이트의
-정의와 상한 값은 [ADR-0391](../../adr/0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md).
+여덟째 `queue_admission` 과 아홉째 `queue_dispatch` 는 **명령 큐의 양 끝**이다. `queue_before_gate` 가
+큐에서 나온 명령이 얼마나 기다렸는가를 잰다면, 이 둘은 무엇이 들어오려 했고 무엇이 나갔는가를 잰다.
+
+`queue_admission` 은 입장 장부다(`tasty_ipc::admission::CommandAdmission`). 큐에 든 요청 바이트 합과
+호스트 주입 명령 수에 상한이 걸려 있고, 넘으면 요청은 큐에 들어가지 않는다(소켓 요청은 `-32065`,
+호스트 주입은 `InjectError::Refused`). 값은 여덟이다 — 지금 값 셋(`queued_bytes` · `queued_commands` ·
+`queued_injected`, **내려간다**) · `peak_bytes`(관측된 최고 바이트) · 거절 누계 둘(`refused_bytes` 바이트
+상한 · `refused_depth` 주입 깊이 상한) · 그 장부가 집행하는 상한 둘(`limit_bytes` ·
+`limit_injected_depth` — `connections.limit` 과 같은 이유로 값과 함께 나간다). 돌려보낸 요청은 큐에 한
+번도 안 들어가므로 **다른 어느 덩어리에도 안 남는다** — 이 덩어리가 없으면 그 거절은 요청자가 받은
+응답과 `debug` 로그로만 드러난다. 장부는 IPC 서버가 만들고 호스트 주입기가 같은 것을 든다. 서버가
+안 뜬 조립(단위 시험)에서는 덩어리가 `null` 이다. 1 바이트의 정의와 상한 값은
+[ADR-0391](../../adr/0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md).
+
+`queue_dispatch` 는 큐에서 **꺼낸** 쪽의 누계다(`tasty_ipc::dispatch::DispatchStats`). 값은 일곱이다 —
+`rounds`(명령을 하나 이상 꺼낸 회차) · `rounds_stopped_by_count` · `rounds_stopped_by_time`(그중 명령 수 ·
+시간 예산에 닿아 멈춘 회차) · `expired_before_run`(호출자의 응답 대기 상한이 큐에서 지나 실행하지 않은
+명령 — `-32067` 로 답한 것) · `started`(실행을 시작한 명령) · `in_flight`(지금 실행 중이고 **응답을
+기다리는 쪽이 아직 기다리는** 요청 — **이 덩어리에서 유일하게 내려가는 값**) · `in_flight_max`. 메인
+스레드 handler 는 한 번에 하나라 `in_flight` 가 1 을 넘는 것은 응답을 워커로 넘긴 요청이 기다리는
+동안이다. 정의는 [ADR-0412](../../adr/0412-in-flight-counts-a-started-request-while-its-caller-still-waits.md).
+두 덩어리를 합치지 않는 이유는 모수가 달라서다 — `queued_commands` 와 `started` 의 차는 "아직 큐에
+있다" 가 아니다(큐 안에서 만료된 것과 기다리던 쪽이 물러난 것이 섞인다).
+
+열째 `keyed_requests` 는 **멱등 키를 실은 요청만** 센다. 보존소가 내린 판정마다 한 칸이다 —
+`executed`(처음 보는 키, 실행했다) · `replayed`(같은 요청, 보관된 답을 냈다) · `conflicted`(같은 키에
+다른 요청, 아무것도 실행하지 않았다) · `discarded`(실행은 됐고 답은 버려졌다) · `in_flight`(같은 요청이
+진행 중이어서 거기에 합류했다). 전부 누계다. `executed` 는 재시도가 아니지만 **모수**다 — 재생 수만으로는
+그것이 키 실은 실행 열 건 중 하나인지 만 건 중 하나인지 모른다. 한 요청은 자기를 맡은 층의 판정으로
+**한 번만** 세진다. 이 `in_flight` 는 `queue_dispatch.in_flight` 와 이름만 같다. 정의는
+[ADR-0422](../../adr/0422-the-retry-counts-are-kept-by-the-store-that-decides.md).
 
 #### 분포 — 평균·최대가 못 답하는 것
 
@@ -172,7 +202,7 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 
 `db` 에는 분포가 없다 — 그 게이지는 `tasty-memory` 에 살고 histogram 타입은
 `tasty-telemetry` 에 있어 의존 방향이 반대다. `connections` 에도 없다 — 시간이 아니라
-자리라 분포를 잴 축이 아니다. `stream_push` 도 시간이 아니라 수라 없다.
+자리라 분포를 잴 축이 아니다. `stream_push` 와 마지막 세 덩어리도 시간이 아니라 수라 없다.
 
 #### 덩어리를 가리지 않고 걸리는 것
 

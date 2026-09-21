@@ -40,11 +40,17 @@
 - **노출하지 않는다.** IPC 응답 모양은 이 결정에서 안 바뀐다. 소비자가 붙기 전까지 `retry_counts` 에
   사유를 단 `dead_code` 억제가 붙어 있다.
 
+#### 보강 — 노출 착지 (2026-09-21, [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md))
+
+위 마지막 조항이 미룬 걸음이 착지했다. `system.pressure` 의 `keyed_requests` 덩어리가
+`retry_counts()` 를 칸 이름 그대로 싣고(`executed` · `replayed` · `conflicted` · `discarded` ·
+`in_flight`), 그 걸음이 `dead_code` 억제를 지웠다. 칸의 뜻과 "한 요청 한 번" 규칙은 그대로다.
+
 ## Consequences
 
 - **얻은 것**: 재시도가 실제로 얼마나 오는지, 그중 몇이 실행을 막았는지(재생 · 충돌 · 버려짐 · 합류)를
   프로세스 안에서 읽을 수 있다.
-- **잃은 것**: 아직 호출자가 못 읽는다. 노출하는 걸음이 따로 필요하다.
+- **잃은 것**: 결정 시점에는 호출자가 못 읽었다. 보강: 노출하는 걸음이 [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md) 로 착지했다.
 - **운영 비용**: 판정마다 정수 하나 증가. 보존소 잠금은 이미 잡혀 있다.
 
 ## Alternatives Considered
@@ -73,12 +79,15 @@
   실패했다, 2026-09-21).
 - `Decision` 에 갈래가 더해지면 `decide` 의 셈 `match` 가 컴파일 오류로 칸을 요구한다.
 - `retry_counts` 에 소비자가 붙으면 — 사유를 단 `dead_code` 억제를 그 걸음이 지운다(억제는 소비자가 생겨도
-  경고 없이 남는다. 그 걸음의 검토가 유일한 채널이다).
+  경고 없이 남는다. 그 걸음의 검토가 유일한 채널이다). 보강: 소비자가 붙었고(`system.pressure`,
+  [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)) 억제는 지워졌다. 이제 소비자가 사라지면 `dead_code` 가 빌드를 멈춘다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
 - 칸 이름이 노출될 때 호출자가 읽는 뜻과 맞는가. 재는 법: 노출 걸음에서 응답 문서가 이 ADR 의 칸 정의를
-  그대로 옮기는지 본다.
+  그대로 옮기는지 본다. 보강: 노출 걸음([ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md))에서 옮겼다 —
+  [telemetry](../features/telemetry/index.md) 의 `keyed_requests` 문단과 CLI 도움말이 이 ADR 의 칸 정의를
+  옮긴다. 옮긴 사본이 이 정의와 갈리는지는 여전히 사람이 본다.
 
 ## References
 

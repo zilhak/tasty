@@ -47,6 +47,13 @@
 다른 작업이 같은 시기에 고치는 중이라, 덩어리를 더하는 것은 그 작업이 착지한 뒤의 별도 단계다.
 그때까지 이 값을 읽는 것은 시험뿐이다.
 
+#### 보강 — 노출 착지 (2026-09-21, [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md))
+
+위 문단이 미룬 단계가 착지했다. `system.pressure` 가 이 함수 하나로 두 원천을 읽어 덩어리 둘로
+싣는다 — 장부는 `queue_admission`(장부가 없으면 `null`), dispatch 누계는 `queue_dispatch`. 칸 이름은
+`AdmissionSnapshot` · `DispatchSnapshot` 의 필드 이름 그대로이고, 장부 쪽에 그 장부가 집행하는 상한 둘이
+더해진다. 이 결정이 정한 in-flight 의 정의는 그대로다.
+
 ## Consequences
 
 - **얻은 것**: "연결은 많은데 요청이 없는가 · 요청이 긴 대기에 걸려 있는가 · 메인 스레드가 막혔는가"
@@ -57,8 +64,8 @@
   `queue_before_gate` 의 대기로 나타난다.
 - **잃은 것**: 장부에 닿는 길이 주입기를 거친다. 서버가 안 뜬 조립(시험용 `Core`)에서는 주입기가
   없어 장부 값이 `None` 이다 — "잰 적이 없다" 로 읽힌다.
-- **운영 비용**: 노출 전까지는 값이 프로세스 안에만 있다. 그 사실을 ADR-0305 가 겪은 것과 같은
-  형태로 적는다 — 노출이 늦어지면 이 게이지는 시험만 읽는다.
+- **운영 비용**: 결정 시점에는 노출 전이라 값이 프로세스 안에만 있었다(ADR-0305 가 겪은 것과 같은
+  형태). 보강: [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md) 로 노출이 착지해 지금은 `tasty list pressure` 가 읽는다.
 
 ## Alternatives Considered
 
@@ -86,8 +93,9 @@
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
-- **노출 단계가 착지했는가.** 착지 전까지 이 값은 시험만 읽는다. 재는 법: `system.pressure` 응답에
-  in-flight 가 있는지 본다.
+- **노출 단계가 착지했는가.** 보강: 착지했다([ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)). 이제 채널이 붙는다 — 응답이 `Core` 의
+  누계와 주입기의 장부를 안 읽으면
+  `pressure::tests::the_new_blocks_read_the_ledger_the_dispatch_gauge_and_the_process_store` 가 빨개진다.
 - **결과 불명 뒤에도 도는 일이 진단에 필요해지는가.** 재는 법: 만료 로그(`IPC response wait of`)
   뒤에 메인 스레드 대기가 오르는 사례가 반복되는지 본다.
 

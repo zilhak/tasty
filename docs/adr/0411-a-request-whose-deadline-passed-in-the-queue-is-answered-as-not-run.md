@@ -117,7 +117,8 @@ audit · rate limit) 앞**에서 기한을 보고, 지났으면 실행하지 않
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
 - **`-32067` 이 실제로 나오는가.** 상한을 싣는 호출자가 없으면 이 결정은 표면만 있다. 재는 법:
-  `Core::dispatch` 의 `expired_before_run` 누계(IPC·CLI 노출 자리는 아직 없다)나, 격리 인스턴스에서
+  `Core::dispatch` 의 `expired_before_run` 누계(보강: `system.pressure` 의 `queue_dispatch` 덩어리가
+  싣는다 — [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md))나, 격리 인스턴스에서
   메인 스레드를 세워 둔 채 `--response-timeout-ms` 를 건 CLI 호출.
 - **호스트 주입의 늦은 실행이 문제가 되는가** — 웹훅이 제 시간 상한 뒤에 실행돼 사고가 나는 보고.
   재는 법: `host_dispatch timeout after` 로그와 같은 요청의 실행 흔적을 시각으로 대조한다.

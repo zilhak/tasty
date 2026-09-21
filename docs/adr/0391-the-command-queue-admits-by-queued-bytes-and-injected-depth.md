@@ -100,7 +100,9 @@ dispatch 회차 예산과 같은 값이다. **실행 인스턴스에서 분포�
   - 모든 명령에 장부 락 두 번(입장·반납)이 붙는다.
 - **운영 비용 / 유지 부담**
   - 장부의 누계(`CommandAdmission::snapshot`: 지금 바이트·명령·주입 수, 최고 바이트, 거절 누계 둘)를
-    **아직 아무도 밖으로 내보내지 않는다.** 거절은 요청자의 응답과 `debug` 로그로만 드러난다.
+    결정 시점에는 **아무도 밖으로 내보내지 않았다.** 거절은 요청자의 응답과 `debug` 로그로만 드러났다.
+    보강(2026-09-21): [ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md) 로 `system.pressure` 의 `queue_admission` 덩어리가 그 누계와 두 상한을
+    싣는다.
   - `tasty-ipc` 는 번들 plugin 의 의존 폐포 밖이다. plugin 버전 bump 가 없다.
 
 ## Alternatives Considered
@@ -135,7 +137,8 @@ dispatch 회차 예산과 같은 값이다. **실행 인스턴스에서 분포�
 **원리적으로 안 붙는 것**
 
 - **`system.pressure` 가 장부 누계를 노출한 뒤, 그 분포로 두 값을 재보정한다.** 지금 값은 관계로 고른
-  것이고 분포를 본 적이 없다. 재는 법: 노출된 최고 바이트(`peak_bytes`)와 거절 누계를 정상 사용 기간
+  것이고 분포를 본 적이 없다. 보강: 노출은 착지했다([ADR-0435](0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md), `queue_admission`). 정상 사용 기간의
+  분포는 아직 안 읽었다. 재는 법: 노출된 최고 바이트(`peak_bytes`)와 거절 누계를 정상 사용 기간
   동안 읽는다. 정상 사용에서 거절이 0 이 아니거나 최고치가 상한의 절반을 넘으면 값을 다시 고른다.
 - `-32065` 를 받은 client 가 재시도 폭주를 만든다는 보고. 재는 법: 거절 누계가 짧은 구간에 몰리는지
   본다. 그때 응답에 재시도 지연 힌트를 싣는 것을 검토한다.
