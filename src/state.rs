@@ -39,6 +39,8 @@ mod tab;
 pub(crate) mod tests;
 mod workspace;
 
+// 팔레트 — 여는 것도 실행하는 것도 GUI 다. 매칭 로직은 시험이 headless 에서도 부른다.
+#[cfg(any(feature = "gui", test))]
 pub mod command_palette;
 pub mod preset_apply;
 // 터미널 검색 바의 상태 — 검색 바 popup 만 세우고 읽는다.

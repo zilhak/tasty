@@ -105,8 +105,8 @@ headless 빌드에 그 필드가 있는지를 적는다.
   `new` 로 사본을 받지만 읽는 자가 GUI 뿐이고, 뒤는 모달을 여는 자리가 GUI 뿐이라 headless 에서
   variant 가 만들어지지 않는다(열거와 `active_modal_kind` 는 `ui.state` 덤프가 두 조합에서 읽는다).
 
-`state` 아래에서 모듈 단위 예외가 남은 곳은 `state/command_palette.rs` 하나다(팔레트 상태 —
-그 필드는 이제 gui 전용이다).
+`state` 아래에는 모듈 단위 예외가 없다. 마지막이던 `state/command_palette.rs` 는 모듈 선언이
+②(매칭 로직을 headless 시험이 부른다)이고 그 안의 `CommandPaletteState` 가 ①(필드가 gui 전용)이다.
 
 ## `state` 가 아니라 `core` 에 두는 것
 

@@ -1,6 +1,3 @@
-// 이유: 팔레트 상태를 읽고 쓰는 것이 gui 어댑터뿐이라 headless 빌드엔 호출자가 없다. 모듈을
-// `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! Command palette state + 매칭 로직.
 //!
 //! 팔레트는 사용자 입력으로만 열리는 popup이다 (Ctrl+Shift+P 또는 Tools 메뉴).
@@ -69,7 +66,8 @@ pub fn all_commands(
     out
 }
 
-/// 팔레트 UI 상태. `AppState`가 소유한다.
+/// 팔레트 UI 상태. `AppState`가 소유한다(그 필드가 gui 전용이다).
+#[cfg(feature = "gui")]
 #[derive(Debug, Default)]
 pub struct CommandPaletteState {
     /// 사용자 입력 쿼리.
@@ -80,6 +78,7 @@ pub struct CommandPaletteState {
     pub pending_run: Option<PaletteCommand>,
 }
 
+#[cfg(feature = "gui")]
 impl CommandPaletteState {
     pub fn reset(&mut self) {
         self.query.clear();
