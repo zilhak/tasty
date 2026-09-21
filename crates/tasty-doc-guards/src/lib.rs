@@ -36,6 +36,9 @@ pub mod crate_layers;
 /// 소스를 텍스트로 읽는 가드들이 공유하는 마스킹·순회.
 pub mod source_text;
 
+/// 소스가 부르는 크레이트 루트 경로(`crate::…` · `super::…` · 중괄호 import)를 편다.
+pub mod crate_paths;
+
 /// **이 파일은 출하되는가** — 선언 기반 판정 하나.
 pub mod shipping_scope;
 
