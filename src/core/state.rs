@@ -175,6 +175,7 @@ impl ShellConfig {
 
 /// Explorer 파일 클립보드 (T11) — 복사/잘라내기한 경로 + cut 여부.
 #[derive(Clone, Debug)]
+#[cfg(feature = "gui")]
 pub struct ExplorerClipboard {
     pub paths: Vec<std::path::PathBuf>,
     /// true = 잘라내기(이동), false = 복사.
@@ -186,6 +187,7 @@ pub struct ExplorerClipboard {
 /// 재사용(loopback 이면 None). `App::dispatch_pending_gui_attach` 가 drain 해
 /// `start_gui_attach` 로 mirror 를 띄우고, 성공 시 새 mirror ws 로 focus 를 옮긴다.
 /// `Clone`/`Debug` 불가(SshTunnel = 자식 process 핸들) — 큐로 단발 이동한다.
+#[cfg(feature = "gui")]
 pub(crate) struct GuiAttachUserReq {
     pub(crate) port: u16,
     pub(crate) workspace: u32,
@@ -197,6 +199,7 @@ pub(crate) struct GuiAttachUserReq {
 /// 않게), 실제 bulk 업로드(블로킹, ADR-0054)는 `App::poll_image_uploads` 가 백그라운드
 /// 스레드에서 수행한다. 완료 시 원격 절대경로를 `surface_id`(=paste 시점 mirror surface)
 /// 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격에 투명 전달된다.
+#[cfg(feature = "gui")]
 pub(crate) struct PendingImageUpload {
     /// 업로드 대상 로컬 mirror workspace id(attach 세션 `local_workspace`).
     pub(crate) mirror_ws_id: u32,
@@ -214,6 +217,7 @@ pub(crate) struct PendingImageUpload {
 /// `MeshContext` forward 요청 하나의 payload.
 /// `StreamControl::MeshContext`의 필드를 그대로 미러(surface_id 는 큐의 키라 여기 없음).
 #[derive(Debug, Clone)]
+#[cfg(feature = "gui")]
 pub(crate) struct AttachMeshContextForward {
     pub(crate) width_px: u32,
     pub(crate) height_px: u32,
@@ -414,6 +418,7 @@ pub struct CoreState {
     /// cut 여부를 들고 있다가 "붙여넣기"에서 소비한다. OS 텍스트 클립보드와 별개의
     /// explorer 내부 파일 이동 슬롯 — 단일 슬롯·세션 휘발(layout.json 비영속).
     /// 사용자 우클릭 조작이라 release 경로에서 직접 갱신(도메인 mutate 아님).
+    #[cfg(feature = "gui")]
     pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
 
     /// Explorer 즐겨찾기 (T11). 전역(surface 무관)·영속 — 부팅 시
@@ -454,6 +459,7 @@ pub struct CoreState {
     /// 재조립한 원격 mesh 바이트를 `AttachMeshSurface` local id 별로 보관한다. 렌더은
     /// `gfx/gpu/egui_mesh_prepare.rs::render_attach_mesh_surfaces`가 매 frame 읽는다.
     /// 휘발성(직렬화 안 함).
+    #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore,
 
     /// child-terminal registry (ADR-0040 / occupancy-04). 에이전트가 `terminal.spawn`
@@ -494,6 +500,7 @@ pub struct CoreState {
     /// 후 로컬 클립보드에 직접 기록). mirror 판별은 트리거 시점에 끝내 두고(포커스가
     /// 캡처 완료 전에 바뀌어도 흔들리지 않게), 실제 OS 캡처(블로킹)는
     /// `App::poll_screenshot_captures` 가 백그라운드 스레드에서 수행한다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_screenshot_captures: Vec<Option<u32>>,
 
     /// mirror 터미널 이미지 paste → 원격 업로드 트리거 큐. `MainView::paste_to_terminal`
@@ -501,6 +508,7 @@ pub struct CoreState {
     /// `about_to_wait`(`poll_image_uploads`)에서 drain 해 백그라운드 스레드로 bulk 업로드를
     /// 수행하고, 완료 시 원격 경로를 그 mirror surface 입력에 삽입한다. mirror client 는
     /// 항상 GUI 라 headless 에서는 채워지지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_image_uploads: Vec<PendingImageUpload>,
 
     /// 스크린샷→원격 클립보드의 attach 서버측 — mirror client 가 청크로 보내는 캡처 파일 바이트를
@@ -558,6 +566,7 @@ pub struct CoreState {
     /// `list_dir_request` 를 전송한다. 응답은 reader thread 가 받아
     /// `MirrorEvent::ListDirResult` 로 별도 이벤트 큐를 통해 되돌아온다(이 큐는
     /// 요청 방향 전용, 응답은 여기 담기지 않음).
+    #[cfg(feature = "gui")]
     pub(crate) pending_list_dir_forward: Vec<crate::core::PendingListDirForward>,
     /// git-viewer(원격) git 조회 forward 큐. `git_viewer.query` IPC 핸들러
     /// (`adapters::ipc::handler::git_viewer`)가 mirror surface 에서 git 조회가
@@ -580,6 +589,7 @@ pub struct CoreState {
     /// gui)에서 drain 해 세션 매핑으로 원격 id 치환 후
     /// `StreamControl::MeshFullResendRequest` 로 forward 한다. `pending_resize_forward`
     /// 와 동형(mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다).
+    #[cfg(feature = "gui")]
     pub(crate) pending_mesh_full_resend_forward: std::collections::HashSet<u32>,
 
     /// attach mesh mirror(attach-behavior.md "구독 = MeshContext" 참고) client→server
@@ -589,6 +599,7 @@ pub struct CoreState {
     /// 채운다(HashMap coalesce — `pending_resize_forward`와 동형). App 이
     /// `about_to_wait`(`dispatch_pending_mesh_context_forwards`, gui)에서 drain 해
     /// 세션 매핑으로 원격 id 치환 후 `StreamControl::MeshContext` 로 forward한다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_mesh_context_forward:
         std::collections::HashMap<u32, AttachMeshContextForward>,
 
@@ -597,6 +608,7 @@ pub struct CoreState {
     /// surface_id → 그 redraw 사이클에 누적된 입력 배치(`RawInputWire`). App 이
     /// `about_to_wait`(`dispatch_pending_mesh_input_forwards`, gui)에서 drain 해
     /// `StreamControl::MeshInput` 으로 forward한다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_mesh_input_forward:
         std::collections::HashMap<u32, tasty_plugin_protocol::protocol::RawInputWire>,
 
@@ -606,6 +618,7 @@ pub struct CoreState {
     /// attach 성공 시 새 mirror ws 로 **focus 를 이동**하는데(사용자 확정 동작), 그 focus
     /// 이동은 사용자 입력 경로에서만 허용된다(원칙 1②). release IPC/CLI 는 이 큐에 push
     /// 하지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_gui_attach_user: Vec<GuiAttachUserReq>,
 
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
@@ -892,6 +905,7 @@ impl CoreState {
             #[cfg(feature = "gui")]
             branch_cache: branch::BranchCache::default(),
             pending_move_surface: None,
+            #[cfg(feature = "gui")]
             explorer_clipboard: None,
             #[cfg(feature = "gui")]
             explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites::load(),
@@ -900,6 +914,7 @@ impl CoreState {
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::OccupancyRegistry::new(),
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
+            #[cfg(feature = "gui")]
             attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
             pty_registry: crate::core::pty_registry::PtyRegistry::with_counter(
@@ -907,19 +922,26 @@ impl CoreState {
             ),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_screenshot_captures: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_image_uploads: Vec::new(),
             capture_uploads: crate::core::capture_upload::CaptureUploadRegistry::new(),
             bulk_transfers: crate::core::bulk_transfer::BulkTransferRegistry::new(),
             pending_structural_forward: Vec::new(),
             pending_resize_forward: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
             pending_list_dir_forward: Vec::new(),
             pending_git_query_forward: Vec::new(),
             pending_markdown_content_forward: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_mesh_full_resend_forward: std::collections::HashSet::new(),
             pending_attention_clear_forward: std::collections::HashSet::new(),
+            #[cfg(feature = "gui")]
             pending_mesh_context_forward: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
             pending_mesh_input_forward: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
             pending_gui_attach_user: Vec::new(),
             waker_factory: None,
             surface_registry: {

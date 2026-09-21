@@ -57,9 +57,10 @@ pub(crate) mod impl_tab;
 pub(crate) mod impl_workspace;
 pub(crate) mod request_target;
 
-pub(crate) use state::{
-    AttachMeshContextForward, AttentionKind, CoreState, GuiAttachUserReq, PendingImageUpload,
-};
+/// mirror 클라이언트 쪽 요청 타입 셋 — 만드는 자리도 읽는 자리도 GUI 다.
+#[cfg(feature = "gui")]
+pub(crate) use state::{AttachMeshContextForward, GuiAttachUserReq, PendingImageUpload};
+pub(crate) use state::{AttentionKind, CoreState};
 
 use std::sync::{Arc, Mutex, OnceLock};
 
