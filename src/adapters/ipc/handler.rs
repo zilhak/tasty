@@ -18,6 +18,7 @@ mod debug_terminal;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
+#[cfg(feature = "gui")]
 mod git_viewer;
 mod hook_handler;
 mod idempotency;
@@ -31,6 +32,7 @@ pub(crate) mod image;
 mod input_source;
 #[cfg(feature = "gui")]
 mod markdown;
+#[cfg(feature = "gui")]
 mod markdown_mirror;
 mod memory;
 mod message;
@@ -844,13 +846,19 @@ fn route_engine_handler(
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
         "recent.query" => recent::handle_query(state, id, request.params.clone()),
         // (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md) git-viewer
-        // 원격 조회 트리거 — mirror workspace/attach 세션은
-        // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
-        // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
+        // 원격 조회 트리거. **비우는 쪽이 gui 에만 있으므로 arm 도 gui 에만 둔다** —
+        // 이 핸들러는 큐에 넣고 `request_id` 만 회신하고, 그 큐를 attach 채널로 보내는
+        // 것은 `App::dispatch_pending_git_query_forwards` 다. headless 에 arm 을 두면
+        // plugin 이 accept 를 받고 결과를 영영 못 받는다 — gui 가 세션을 못 찾았을 때
+        // 즉시 실패를 돌려주는 것과 정반대다(ADR-0053 "무한 로딩 없음"). 빼 두면
+        // 라우터의 마지막 갈래가 `-32017` 로 "이 조합엔 arm 이 없다" 고 답한다
+        // (ADR-0154 · ADR-0163 이 정한 형태).
+        #[cfg(feature = "gui")]
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
         // (docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md) markdown
         // plugin 이 mirror 문서의 원격 원문을 요청한다 — `git_viewer.query` 와 같은 비동기
-        // accept(큐잉 + request_id 회신). 결과는 attach 응답 도착 후 unicast 이벤트로 간다.
+        // accept(큐잉 + request_id 회신)이고 같은 이유로 같은 경계를 갖는다.
+        #[cfg(feature = "gui")]
         "markdown_mirror.content_request" => {
             markdown_mirror::handle_content_request(engine, id, &request.params)
         }

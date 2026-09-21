@@ -586,12 +586,14 @@ pub struct CoreState {
     /// (`dispatch_pending_git_query_forwards`)에서 drain 해 세션의 attach 채널로
     /// `git_query_request` 를 전송한다. 응답은 `MirrorEvent::GitQueryResult` 로
     /// 되돌아온다(`pending_list_dir_forward` 와 동형).
+    #[cfg(feature = "gui")]
     pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
     /// markdown mirror(ADR-0255) 원문 조회 forward 큐. `markdown_mirror.content_request`
     /// IPC 핸들러가 push 하고, App 이 `about_to_wait`
     /// (`dispatch_pending_markdown_content_forwards`)에서 drain 해 세션의 attach 채널로
     /// `markdown_content_request` 를 전송한다. 응답은 `MirrorEvent::MarkdownContentResult`
     /// 로 되돌아온다(`pending_git_query_forward` 와 동형).
+    #[cfg(feature = "gui")]
     pub(crate) pending_markdown_content_forward: Vec<crate::core::PendingMarkdownContentForward>,
     /// attach mesh mirror(attach-behavior.md "MeshFullResendRequest 복구" 참고) full
     /// 재전송 요청 forward 큐. GPU 렌더 prepare
@@ -944,7 +946,9 @@ impl CoreState {
             pending_resize_forward: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             pending_list_dir_forward: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_git_query_forward: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_markdown_content_forward: Vec::new(),
             #[cfg(feature = "gui")]
             pending_mesh_full_resend_forward: std::collections::HashSet::new(),

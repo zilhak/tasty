@@ -101,11 +101,13 @@ pub(crate) fn next_list_dir_request_id() -> u64 {
 
 /// git-viewer(원격) `git_query_request` id 시퀀스 — `next_list_dir_request_id` 와
 /// 동일 근거(프로세스 내 유일성만 필요).
+#[cfg(feature = "gui")]
 static NEXT_GIT_QUERY_REQUEST_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 /// 다음 git_query_request id 발급. `git_viewer.query` IPC 핸들러
 /// (`adapters::ipc::handler::git_viewer`)가 원격 조회를 트리거할 때 호출.
+#[cfg(feature = "gui")]
 pub(crate) fn next_git_query_request_id() -> u64 {
     NEXT_GIT_QUERY_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
@@ -114,11 +116,13 @@ pub(crate) fn next_git_query_request_id() -> u64 {
 /// `next_list_dir_request_id` 와 동일 근거(프로세스 내 유일성만 필요). **0 은 발급하지
 /// 않는다** — host 가 "기다리던 요청이 있으면 버려라" sentinel 로 쓴다
 /// (`markdown_mirror.content_result` 의 `request_id = 0`, git-viewer 의 abandon 과 같은 형태).
+#[cfg(feature = "gui")]
 static NEXT_MARKDOWN_CONTENT_REQUEST_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
 /// 다음 markdown_content_request id 발급. `markdown_mirror.content_request` IPC 핸들러
 /// (`adapters::ipc::handler::markdown_mirror`)가 원격 원문 조회를 접수할 때 호출.
+#[cfg(feature = "gui")]
 pub(crate) fn next_markdown_content_request_id() -> u64 {
     NEXT_MARKDOWN_CONTENT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
@@ -180,16 +184,7 @@ pub(crate) struct PendingListDirForward {
 /// `about_to_wait` 에서 drain 해 mirror 세션의 attach 채널로 `git_query_request` 를
 /// 전송한다 — `PendingListDirForward` 와 동형.
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        dead_code,
-        reason = "이 큐는 headless 에서도 채워지지만 비우는 쪽이 GUI 의 about_to_wait \
-                  하나뿐이라 그 빌드에는 읽는 자리가 없다. 필드를 빼면 IPC 핸들러가 \
-                  깨지고, 핸들러를 거절로 바꾸는 것은 plugin 계약의 변경이라 이 경계 \
-                  작업의 범위가 아니다 — 그쪽은 따로 판정한다"
-    )
-)]
+#[cfg(feature = "gui")]
 pub(crate) struct PendingGitQueryForward {
     /// popup 이 attach 된 **로컬** mirror surface id — 세션 조회(local→remote 치환)의
     /// 앵커. `list_dir` 와 달리 cwd 를 클라이언트가 미리 계산해 보내지 않고, 서버가
@@ -213,16 +208,7 @@ pub(crate) struct PendingGitQueryForward {
 /// `surface_id` 가 실려 오므로 host 는 `request_id → consumer` 표를 만들지 않는다
 /// (pending 추적은 plugin 이 surface 별로 한다, ADR-0255 항목 2).
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        dead_code,
-        reason = "이 큐는 headless 에서도 채워지지만 비우는 쪽이 GUI 의 about_to_wait \
-                  하나뿐이라 그 빌드에는 읽는 자리가 없다. 필드를 빼면 IPC 핸들러가 \
-                  깨지고, 핸들러를 거절로 바꾸는 것은 plugin 계약의 변경이라 이 경계 \
-                  작업의 범위가 아니다 — 그쪽은 따로 판정한다"
-    )
-)]
+#[cfg(feature = "gui")]
 pub(crate) struct PendingMarkdownContentForward {
     /// 원문을 기다리는 **로컬** mirror markdown surface id.
     pub(crate) local_surface_id: u32,
