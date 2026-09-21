@@ -285,6 +285,50 @@ struct StreamSink {
     /// 0 으로 돌아간다 — 선언하지 않은 연결에서도 센다(나중에 선언해도 그때까지의 공백을
     /// 한 번에 말할 수 있어야 한다).
     pending_loss: u64,
+    /// 이 연결의 sink 에 **들어가 있고 아직 write 스레드가 안 가져간** 프레임 수. push 가
+    /// 넣기 전에 +1(실패하면 되돌린다), [`SinkReceiver`] 가 꺼낼 때 −1 이다.
+    ///
+    /// 연결마다 따로 두는 이유는 끊긴 연결의 몫을 빼기 위해서다 — 연결이 끊기면 큐에 남은
+    /// 프레임은 채널과 함께 사라지는데, 허브 전체 카운터 하나로 세면 그 몫을 뺄 자리가 없어
+    /// 값이 영구히 떠오른다. 연결별로 세고 **살아 있는 연결만** 합하면 저절로 빠진다
+    /// ([`StreamHub::loss`]).
+    queued: Arc<AtomicU64>,
+}
+
+/// [`StreamHub::register`] 가 돌려주는 sink 의 수신 끝. 연결의 write 스레드가 이것을 비워
+/// 소켓에 쓴다.
+///
+/// `Receiver` 를 그대로 주지 않는 이유는 꺼낼 때 [`StreamSink::queued`] 를 내려야 해서다 —
+/// `SyncSender` 는 길이를 알려 주지 않으므로 backlog 는 넣는 쪽과 꺼내는 쪽이 함께 세야만
+/// 값이 된다. 꺼내는 경로가 이 타입의 메서드뿐이라 −1 을 빠뜨릴 수 없다.
+pub struct SinkReceiver {
+    rx: Receiver<StreamFrame>,
+    queued: Arc<AtomicU64>,
+}
+
+impl SinkReceiver {
+    fn took(&self, frame: StreamFrame) -> StreamFrame {
+        self.queued.fetch_sub(1, Ordering::Relaxed);
+        frame
+    }
+
+    /// [`Receiver::recv_timeout`] 과 같다.
+    pub fn recv_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<StreamFrame, mpsc::RecvTimeoutError> {
+        self.rx.recv_timeout(timeout).map(|f| self.took(f))
+    }
+
+    /// [`Receiver::try_recv`] 와 같다.
+    pub fn try_recv(&self) -> Result<StreamFrame, mpsc::TryRecvError> {
+        self.rx.try_recv().map(|f| self.took(f))
+    }
+
+    /// [`Receiver::recv`] 와 같다.
+    pub fn recv(&self) -> Result<StreamFrame, mpsc::RecvError> {
+        self.rx.recv().map(|f| self.took(f))
+    }
 }
 
 /// Outcome of a [`StreamHub::push`] attempt.
@@ -314,13 +358,25 @@ struct StreamLoss {
 }
 
 /// [`StreamHub::loss`] 가 돌려주는 한 시점의 값.
+///
+/// 세 수가 서로 다른 것을 잰다(`docs/adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md`).
+/// 앞의 둘은 프로세스 수명 **누계**라 안 내려가고, `backlog` 만 **지금** 의 값이라 내려간다.
+/// 셋 다 연결별 연속 drop 수(`StreamSink::lag`)와 다르다 — 그것은 성공 한 번에 0 이 되는
+/// 강제분리의 좌변이고 밖에 안 나간다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StreamLossSnapshot {
     /// 연결이 살아 있는데 sink 가 차서 버린 프레임 수 — **조용한 손실**.
     pub frames_dropped: u64,
     /// lag 한도를 넘겨 끊은 연결 수. 그 마지막 프레임도 `frames_dropped` 에 든다.
     pub clients_lagged_out: u64,
+    /// 지금 살아 있는 연결들의 sink 에 쌓여 있고 아직 write 스레드가 안 가져간 프레임 수의
+    /// 합. 한 연결의 몫은 [`SINK_CAPACITY`] 를 넘지 못한다.
+    pub backlog: u64,
 }
+
+/// 연결 하나의 sink 가 담을 수 있는 프레임 수. 밖에 내보내는 이유는 [`StreamLossSnapshot::backlog`]
+/// 가 얼마나 상한에 가까운지를 같은 응답에서 읽게 하려는 것이다.
+pub const SINK_CAPACITY: usize = SINK_CAP;
 
 /// Context handed to each accepted connection so it can register a stream sink,
 /// forward inbound frames, and wake the main loop. Cloneable + `Send`.
@@ -385,8 +441,9 @@ impl StreamHub {
 
     /// Register a client's push sink. Returns the receiving end the connection's
     /// write thread drains to the socket.
-    pub fn register(&self, id: StreamClientId) -> Receiver<StreamFrame> {
+    pub fn register(&self, id: StreamClientId) -> SinkReceiver {
         let (tx, rx) = mpsc::sync_channel(SINK_CAP);
+        let queued = Arc::new(AtomicU64::new(0));
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
             id,
             StreamSink {
@@ -394,9 +451,10 @@ impl StreamHub {
                 lag: 0,
                 loss_notify: false,
                 pending_loss: 0,
+                queued: queued.clone(),
             },
         );
-        rx
+        SinkReceiver { rx, queued }
     }
 
     /// 이 연결이 손실 통지를 받겠다고 선언했음을 기록한다
@@ -458,7 +516,7 @@ impl StreamHub {
         // 연속/불연속을 가를 수 있다. 자리가 아직 없으면 빚은 그대로 남고 다음 기회에
         // 다시 시도한다 — 통지는 **태워진 순간에만** 지워진다.
         Self::repay_pending_loss(sink);
-        match sink.tx.try_send(frame) {
+        match Self::try_enqueue(sink, frame) {
             Ok(()) => {
                 sink.lag = 0;
                 PushResult::Sent
@@ -505,12 +563,42 @@ impl StreamHub {
         let Ok(payload) = serde_json::to_vec(&notice) else {
             return; // 빚을 유지한다 — 다음 기회에 다시 만든다.
         };
-        if sink
-            .tx
-            .try_send(StreamFrame::new(crate::stream::StreamTag::Control, payload))
-            .is_ok()
+        if Self::try_enqueue(
+            sink,
+            StreamFrame::new(crate::stream::StreamTag::Control, payload),
+        )
+        .is_ok()
         {
             sink.pending_loss = 0;
+        }
+    }
+
+    /// sink 에 프레임 하나를 넣고 [`StreamSink::queued`] 를 맞춘다.
+    ///
+    /// **넣기 전에** 올리는 이유: 성공 뒤에 올리면 write 스레드가 그 사이에 꺼내 먼저
+    /// 내릴 수 있고, 그러면 카운터가 0 아래로 내려갔다가 돌아온다(`u64` 라 wrap 한다).
+    fn try_enqueue(sink: &StreamSink, frame: StreamFrame) -> Result<(), TrySendError<StreamFrame>> {
+        sink.queued.fetch_add(1, Ordering::Relaxed);
+        let sent = sink.tx.try_send(frame);
+        if sent.is_err() {
+            sink.queued.fetch_sub(1, Ordering::Relaxed);
+        }
+        sent
+    }
+
+    /// 모든 연결의 밀린 손실 통지를 갚는다 — [`pump_inbound`](Self::pump_inbound) 가 끝에서
+    /// 부른다.
+    ///
+    /// `push` 만 갚으면 통지는 **그 연결에 다음 프레임이 밀릴 때까지** 안 나가고, server→client
+    /// push 는 전부 변화 구동이라 조용해진 연결에서는 그때가 오지 않을 수 있다. `pump_inbound`
+    /// 는 어느 client 든 프레임을 보낼 때마다 돌고, 살아 있는 연결은 `HEARTBEAT_TIMEOUT` 안에
+    /// 무엇이든 보내야 하므로(안 보내면 서버 read 가 끊는다), 통지의 지연이 그 안으로
+    /// 묶인다(ADR-0400 결정 5). 자리가 아직 없으면 빚은 그대로다 — 규칙은 `push` 와 같다.
+    fn repay_all_pending_loss(&self) {
+        let mut sinks =
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
+        for sink in sinks.values_mut() {
+            Self::repay_pending_loss(sink);
         }
     }
 
@@ -518,10 +606,19 @@ impl StreamHub {
     /// 유일한 자리다 — 제품 코드 37 자리 중 31 이 `let _ =` 로 버리고, 결과를 보는
     /// 여섯도 `Dropped` 를 따로 다루지 않는다(다섯은 `Unknown`/`Disconnected` 에만
     /// 반응해 계속 보내고, 하나는 `Sent` 외 전부를 한 덩어리로 로그한다).
+    ///
+    /// `backlog` 은 지금 등록된 연결만 합한다 — 끊긴 연결의 큐는 채널과 함께 사라졌으므로
+    /// 그 몫을 셀 이유가 없다([`StreamSink::queued`]).
     pub fn loss(&self) -> StreamLossSnapshot {
+        let backlog =
+            tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+                .values()
+                .map(|s| s.queued.load(Ordering::Relaxed))
+                .sum();
         StreamLossSnapshot {
             frames_dropped: self.loss.frames.load(Ordering::Relaxed),
             clients_lagged_out: self.loss.lagged_out.load(Ordering::Relaxed),
+            backlog,
         }
     }
 
@@ -690,6 +787,8 @@ impl StreamHub {
                 }
             }
         }
+        // 이 배치의 선언(`ClientLossNotify`)까지 반영한 뒤에 갚는다.
+        self.repay_all_pending_loss();
         out
     }
 }
@@ -1048,6 +1147,144 @@ mod tests {
             PushResult::Dropped
         );
         assert_eq!(hub.loss().frames_dropped, 1, "클론이 자기 수를 따로 셌다");
+    }
+
+    /// backlog 은 **지금** 쌓인 양이라 꺼내면 내려가고, 누계 둘과 섞이지 않는다.
+    #[test]
+    fn backlog_rises_with_queued_frames_and_falls_as_the_writer_takes_them() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        for _ in 0..3 {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        assert_eq!(hub.loss().backlog, 3);
+        rx.recv().expect("한 장");
+        rx.try_recv().expect("두 장");
+        assert_eq!(hub.loss().backlog, 1, "꺼낸 만큼 안 내려갔다");
+        rx.recv_timeout(std::time::Duration::from_millis(10))
+            .expect("세 장");
+        let loss = hub.loss();
+        assert_eq!(loss.backlog, 0);
+        assert_eq!(loss.frames_dropped, 0, "backlog 이 손실 누계로 샜다");
+    }
+
+    /// 넣지 못한 프레임은 backlog 에 안 남는다 — 가득 찬 sink 의 몫은 정확히 용량이다.
+    #[test]
+    fn a_refused_frame_does_not_count_as_backlog() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let _rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"lost")),
+            PushResult::Dropped
+        );
+        assert_eq!(hub.loss().backlog, SINK_CAPACITY as u64);
+        assert_eq!(hub.loss().frames_dropped, 1);
+    }
+
+    /// 끊긴 연결의 큐는 채널과 함께 사라진다. 그 몫이 합에 남으면 backlog 이 영구히
+    /// 떠오른다 — 살아 있는 연결만 합한다.
+    #[test]
+    fn a_disconnected_client_leaves_nothing_in_the_backlog() {
+        let hub = StreamHub::new();
+        let gone = hub.alloc_id();
+        let stays = hub.alloc_id();
+        let _gone_rx = hub.register(gone);
+        let _stays_rx = hub.register(stays);
+        for _ in 0..5 {
+            assert_eq!(
+                hub.push(gone, frame(StreamTag::Data, b"x")),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(stays, frame(StreamTag::Data, b"y")),
+            PushResult::Sent
+        );
+        assert_eq!(hub.loss().backlog, 6);
+        hub.unregister(gone);
+        assert_eq!(hub.loss().backlog, 1, "끊긴 연결의 큐가 합에 남았다");
+    }
+
+    /// ★ 통지는 그 연결에 다음 push 가 없어도 나간다 — 어느 client 든 프레임을 보내
+    /// `pump_inbound` 가 돌면 갚는다(ADR-0400 결정 5). 예전에는 빚을 갚는 자리가 `push`
+    /// 하나라 폭주 뒤 조용해진 연결에서 통지가 무기한 안 나갔다.
+    #[test]
+    fn a_pending_notice_is_repaid_by_the_next_inbound_frame_without_a_push() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        hub.enable_loss_notify(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"gap")),
+            PushResult::Dropped
+        );
+        // 소비자가 전부 비운다. 이후 이 연결로 밀리는 것은 없다.
+        let before: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(before.len(), SINK_CAP);
+        assert!(
+            before.iter().all(|f| f.tag == StreamTag::Data),
+            "자리가 없을 때 통지가 새어 들어갔다"
+        );
+
+        // 이 연결의 심장박동 하나가 들어온다.
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound::Frame {
+            client_id: id,
+            frame: frame(StreamTag::Ping, b""),
+        })
+        .unwrap();
+        hub.pump_inbound(&inbound_rx);
+
+        let after = rx.try_recv().expect("push 없이도 통지가 나가야 한다");
+        assert_eq!(after.tag, StreamTag::Control);
+        let notice: crate::stream::StreamControl =
+            serde_json::from_slice(&after.payload).expect("StreamControl");
+        assert!(
+            matches!(notice, crate::stream::StreamControl::Loss { frames: 1 }),
+            "통지가 잃은 수를 말해야 한다: {notice:?}"
+        );
+        // 갚은 빚은 다시 안 나간다.
+        hub.pump_inbound(&inbound_rx);
+        assert!(rx.try_recv().is_err(), "갚은 통지가 되풀이됐다");
+    }
+
+    /// 선언하지 않은 연결에는 `pump_inbound` 도 아무것도 넣지 않는다 — 구 peer 무영향.
+    #[test]
+    fn pump_inbound_adds_nothing_for_a_client_that_never_declared() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"gap")),
+            PushResult::Dropped
+        );
+        let drained = std::iter::from_fn(|| rx.try_recv().ok()).count();
+        assert_eq!(drained, SINK_CAP);
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound::Frame {
+            client_id: id,
+            frame: frame(StreamTag::Ping, b""),
+        })
+        .unwrap();
+        hub.pump_inbound(&inbound_rx);
+        assert!(rx.try_recv().is_err(), "선언 안 한 연결에 통지를 넣었다");
     }
 
     #[test]

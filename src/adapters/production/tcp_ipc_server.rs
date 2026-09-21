@@ -836,7 +836,7 @@ impl TcpIpcServer {
     /// Data/Control 트래픽이 있으면 그 자체가 liveness 라 Ping 은 나가지 않는다.
     fn spawn_stream_write_thread(
         writer: std::net::TcpStream,
-        sink_rx: mpsc::Receiver<StreamFrame>,
+        sink_rx: tasty_ipc::stream_hub::SinkReceiver,
     ) -> thread::JoinHandle<()> {
         let mut w = writer;
         thread::spawn(move || {
