@@ -32,7 +32,7 @@ impl App {
                 // A row outside its engine's newest 50 cannot be in the global top 50.
                 let rows = one(self.merge_fields(
                     &id,
-                    |_c, s, e, id| notification::handle_notification_list(s, e, id),
+                    |_c, _s, e, id| notification::handle_notification_list(e, id),
                     &[],
                 ));
                 Some(JsonRpcResponse::success(
@@ -79,7 +79,7 @@ impl App {
             // id 가 창을 건너 유일하다: 항목의 키는 `surface_id` 이고 surface id 는
             // `IdGenerator` 공유다(`surface.list` 가 합산인 근거와 같다).
             "image.list" => {
-                Some(self.collect_field(id, "entries", |_c, s, e, id| image::handle_list(s, e, id)))
+                Some(self.collect_field(id, "entries", |_c, _s, e, id| image::handle_list(e, id)))
             }
             "workspace_category.list" => Some(self.collect_categories(id)),
             // 두 hook 표면은 **id 공간이 공유로 바뀐 뒤에야** 합산이 뜻을 갖는다. 그 전에는
@@ -90,12 +90,12 @@ impl App {
             // 정해지지 않으므로 여기서 합산한다. 필터는 각 engine 에 그대로 넘긴다.
             "hook.list" => {
                 let params = request.params.clone();
-                Some(self.collect_list(id, move |_c, s, e, id| {
-                    hooks::handle_hook_list(s, e, id, &params)
+                Some(self.collect_list(id, move |_c, _s, e, id| {
+                    hooks::handle_hook_list(e, id, &params)
                 }))
             }
             "global_hook.list" => {
-                Some(self.collect_list(id, |_c, s, e, id| hooks::handle_global_hook_list(s, e, id)))
+                Some(self.collect_list(id, |_c, _s, e, id| hooks::handle_global_hook_list(e, id)))
             }
             // 점유 레지스트리(`OccupancyRegistry`)는 engine 마다 하나다 — 이름이 attach 라
             // 창 밖의 것처럼 읽히지만 저장소가 `CoreState` 에 산다. 그래서 창이 둘일 때
@@ -127,7 +127,7 @@ impl App {
     fn collect_categories(&mut self, id: serde_json::Value) -> JsonRpcResponse {
         let rows = self.merge_fields(
             &id,
-            |_c, s, e, id| workspace_category::handle_list(s, e, id),
+            |_c, _s, e, id| workspace_category::handle_list(e, id),
             &[],
         );
         let rows = one(rows);

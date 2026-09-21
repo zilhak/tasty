@@ -9,7 +9,6 @@
 
 use serde_json::{Value, json};
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -17,7 +16,6 @@ use super::require_surface_id;
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
 pub fn handle_open(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
@@ -58,11 +56,7 @@ pub fn handle_open(
 }
 
 /// `image.list` — 열린 모든 image surface 목록.
-pub fn handle_list(
-    _state: &AppState,
-    engine: &crate::core::CoreState,
-    id: Value,
-) -> JsonRpcResponse {
+pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces {
         for pid in workspace.pane_layout().all_pane_ids() {
@@ -210,14 +204,13 @@ mod tests {
 
         let resp = handle_open(
             &mut core,
-            &mut state,
             &mut engine,
             Value::Null,
             &json!({ "surface_id": sid, "path": path.clone() }),
         );
         assert!(resp.result.is_some(), "open failed: {resp:?}");
         // 변환 결과는 egui-mesh stand-in — list 로 kind/path 반영을 확인한다.
-        let resp = handle_list(&state, &engine, Value::Null);
+        let resp = handle_list(&engine, Value::Null);
         let v = resp.result.expect("list ok");
         let entries = v["entries"].as_array().unwrap();
         assert_eq!(entries.len(), 1);
@@ -231,7 +224,6 @@ mod tests {
         let sid = first_surface_id(&mut state, &mut engine);
         let resp = handle_open(
             &mut core,
-            &mut state,
             &mut engine,
             Value::Null,
             &json!({ "surface_id": sid }),
@@ -241,10 +233,9 @@ mod tests {
 
     #[test]
     fn open_rejects_unknown_surface() {
-        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
+        let (mut core, _state, mut engine, _home_tmp) = make_test_core_state();
         let resp = handle_open(
             &mut core,
-            &mut state,
             &mut engine,
             Value::Null,
             &json!({ "surface_id": 999_999, "path": "/tmp/x.png" }),
@@ -259,7 +250,7 @@ mod tests {
         // Convert to image (blank canvas — no file).
         assert!(state.test_convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 
-        let resp = handle_list(&state, &engine, Value::Null);
+        let resp = handle_list(&engine, Value::Null);
         let v = resp.result.expect("list ok");
         let entries = v["entries"].as_array().unwrap();
         assert_eq!(entries.len(), 1);

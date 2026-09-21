@@ -5,7 +5,6 @@ use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_notification_list(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -119,8 +118,8 @@ mod tests {
 
     #[test]
     fn notification_merge_has_one_global_limit_and_matches_creation_order() {
-        let (state_a, mut a) = crate::state::tests::test_state();
-        let (state_b, mut b) = crate::state::tests::test_state();
+        let (_state_a, mut a) = crate::state::tests::test_state();
+        let (_state_b, mut b) = crate::state::tests::test_state();
         let ids = crate::core::state::IdGenerator::new();
         a.notifications =
             crate::notification::NotificationStore::with_counter(0, ids.notification_counter());
@@ -135,9 +134,9 @@ mod tests {
             store.add(1, 1, format!("entry-{i}"), String::new());
         }
         let mut rows = Vec::new();
-        for (state, engine) in [(&state_b, &b), (&state_a, &a)] {
+        for engine in [&b, &a] {
             rows.extend(
-                handle_notification_list(state, engine, json!(1))
+                handle_notification_list(engine, json!(1))
                     .result
                     .unwrap()
                     .as_array()

@@ -42,7 +42,6 @@ fn validate_hook_event(
 
 pub(crate) fn handle_hook_set(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -131,7 +130,6 @@ pub(crate) fn handle_hook_set(
 }
 
 pub(crate) fn handle_hook_list(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -164,7 +162,6 @@ pub(crate) fn handle_hook_list(
 
 pub(crate) fn handle_hook_unset(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -180,7 +177,6 @@ pub(crate) fn handle_hook_unset(
 
 pub(crate) fn handle_global_hook_set(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -218,7 +214,6 @@ pub(crate) fn handle_global_hook_set(
 }
 
 pub(crate) fn handle_global_hook_list(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -240,7 +235,6 @@ pub(crate) fn handle_global_hook_list(
 
 pub(crate) fn handle_global_hook_unset(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

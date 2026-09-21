@@ -17,15 +17,10 @@ use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::core::state::CategoryOpError;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 카테고리 목록 조회(read). 각 카테고리의 워크스페이스 수를 동봉한다.
-pub fn handle_list(
-    _state: &AppState,
-    engine: &crate::core::CoreState,
-    id: serde_json::Value,
-) -> JsonRpcResponse {
+pub fn handle_list(engine: &crate::core::CoreState, id: serde_json::Value) -> JsonRpcResponse {
     let cats: Vec<_> = engine
         .categories()
         .iter()

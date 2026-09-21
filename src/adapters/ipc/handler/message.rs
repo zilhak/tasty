@@ -1,14 +1,12 @@
 use super::params::require_u32;
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
 pub fn handle_message_send(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -34,7 +32,6 @@ pub fn handle_message_send(
 
 pub fn handle_message_read(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -60,7 +57,6 @@ pub fn handle_message_read(
 }
 
 pub fn handle_message_count(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -75,7 +71,6 @@ pub fn handle_message_count(
 
 pub fn handle_message_clear(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

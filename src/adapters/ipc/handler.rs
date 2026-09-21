@@ -653,7 +653,7 @@ fn route_engine_handler(
         }
         "workspace.close" => workspace::handle_workspace_close(state, engine, id, &request.params),
         // workspace category (사이드바 폴더 CRUD — 원칙 1·3: active/포커스 불변)
-        "workspace_category.list" => workspace_category::handle_list(state, engine, id),
+        "workspace_category.list" => workspace_category::handle_list(engine, id),
         "workspace_category.create" => {
             workspace_category::handle_create(engine, id, &request.params)
         }
@@ -750,8 +750,8 @@ fn route_engine_handler(
         "surface.respawn_terminal" => {
             surface::handle_surface_respawn_terminal(core, engine, id, &request.params)
         }
-        "surface.is_typing" => handle_is_typing(state, engine, id, &request.params),
-        "surface.send_wait_idle" => handle_send_wait_idle(state, engine, id, &request.params),
+        "surface.is_typing" => handle_is_typing(engine, id, &request.params),
+        "surface.send_wait_idle" => handle_send_wait_idle(engine, id, &request.params),
         "surface.fire_hook" => {
             hooks::handle_surface_fire_hook(core, state, engine, id, &request.params)
         }
@@ -761,16 +761,12 @@ fn route_engine_handler(
         "surface.meta.list" => meta::handle_surface_meta_list(state, engine, id, &request.params),
         "surface.set_cwd" => surface::handle_set_cwd(engine, id, &request.params),
         // hooks
-        "hook.set" => hooks::handle_hook_set(core, state, engine, id, &request.params),
-        "hook.list" => hooks::handle_hook_list(state, engine, id, &request.params),
-        "hook.unset" => hooks::handle_hook_unset(core, state, engine, id, &request.params),
-        "global_hook.set" => {
-            hooks::handle_global_hook_set(core, state, engine, id, &request.params)
-        }
-        "global_hook.list" => hooks::handle_global_hook_list(state, engine, id),
-        "global_hook.unset" => {
-            hooks::handle_global_hook_unset(core, state, engine, id, &request.params)
-        }
+        "hook.set" => hooks::handle_hook_set(core, engine, id, &request.params),
+        "hook.list" => hooks::handle_hook_list(engine, id, &request.params),
+        "hook.unset" => hooks::handle_hook_unset(core, engine, id, &request.params),
+        "global_hook.set" => hooks::handle_global_hook_set(core, engine, id, &request.params),
+        "global_hook.list" => hooks::handle_global_hook_list(engine, id),
+        "global_hook.unset" => hooks::handle_global_hook_unset(core, engine, id, &request.params),
         // webhook (인바운드 웹훅 — 원칙 2·3: id 지정, list 전범위, 포커스 불변).
         // 상태는 전역 싱글턴이라 core/state/engine 미사용.
         "webhook.register" => webhook::handle_register(caller, id, &request.params),
@@ -781,19 +777,19 @@ fn route_engine_handler(
         "webhook.config" => webhook::handle_config(id, &request.params),
         // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
         #[cfg(feature = "gui")]
-        "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),
+        "webview.set_url" => webview::handle_set_url(engine, id, &request.params),
         // webview-kind surface(예: markdown) 는 egui-mesh 와 달리 `surface.set_context` 를
         // 받지 않아 Theme 이 자동으로 밀리지 않는다 — 이 read-only 조회가 그 대체 경로다.
         "theme.query" => theme::handle_query(engine, id),
         // tree
         "tree" => handle_tree(state, engine, id),
         // message
-        "message.send" => message::handle_message_send(core, state, engine, id, &request.params),
-        "message.read" => message::handle_message_read(core, state, engine, id, &request.params),
-        "message.count" => message::handle_message_count(state, engine, id, &request.params),
-        "message.clear" => message::handle_message_clear(core, state, engine, id, &request.params),
+        "message.send" => message::handle_message_send(core, engine, id, &request.params),
+        "message.read" => message::handle_message_read(core, engine, id, &request.params),
+        "message.count" => message::handle_message_count(engine, id, &request.params),
+        "message.clear" => message::handle_message_clear(core, engine, id, &request.params),
         // notification (focus-independent — workspace_id/surface_id로 라우팅)
-        "notification.list" => notification::handle_notification_list(state, engine, id),
+        "notification.list" => notification::handle_notification_list(engine, id),
         "notification.create" => {
             notification::handle_notification_create(state, engine, id, &request.params)
         }
@@ -852,9 +848,9 @@ fn route_engine_handler(
         // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
         // (save/export_png/paste/next/prev)은 plugin 이 자기 namespace 에서 처리한다.
         #[cfg(feature = "gui")]
-        "image.open" => image::handle_open(core, state, engine, id, &request.params),
+        "image.open" => image::handle_open(core, engine, id, &request.params),
         #[cfg(feature = "gui")]
-        "image.list" => image::handle_list(state, engine, id),
+        "image.list" => image::handle_list(engine, id),
         // memory: regular (공유 네임스페이스 + owner enforcement)
         "memory.put" => memory::handle_put(core, engine, caller, id, &request.params),
         "memory.get" => memory::handle_get(core, engine, caller, id, &request.params),
@@ -1149,24 +1145,18 @@ fn route_debug_handler(
         "debug.gpu.stall" => debug::handle_debug_gpu_stall(id, &request.params),
         // 아래 셋은 터미널 그리드만 본다 — gui 게이트 없이 `debug_terminal` 모듈에
         // 있고 헤드리스 debug 데몬에도 등록된다(그 모듈 doc).
-        "debug.cell_info" => {
-            debug_terminal::handle_debug_cell_info(state, engine, id, &request.params)
-        }
+        "debug.cell_info" => debug_terminal::handle_debug_cell_info(engine, id, &request.params),
         "debug.screen_attrs" => {
-            debug_terminal::handle_debug_screen_attrs(state, engine, id, &request.params)
+            debug_terminal::handle_debug_screen_attrs(engine, id, &request.params)
         }
         "debug.glyph_color" => {
-            debug_terminal::handle_debug_glyph_color(state, engine, id, &request.params)
+            debug_terminal::handle_debug_glyph_color(engine, id, &request.params)
         }
-        "debug.feed_bytes" => {
-            debug_terminal::handle_debug_feed_bytes(state, engine, id, &request.params)
-        }
+        "debug.feed_bytes" => debug_terminal::handle_debug_feed_bytes(engine, id, &request.params),
         #[cfg(feature = "gui")]
-        "debug.inject_mouse" => {
-            debug::handle_debug_inject_mouse(state, engine, id, &request.params)
-        }
+        "debug.inject_mouse" => debug::handle_debug_inject_mouse(engine, id, &request.params),
         #[cfg(feature = "gui")]
-        "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
+        "debug.inject_key" => debug::handle_debug_inject_key(engine, id, &request.params),
         // OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현이라 debug 격리.
         // 이름은 `surface.*` 이지만 대상 surface 를 받지 못한다(CGEvent/TIS 가
         // OS 전역에 나간다). 자세한 근거는 docs/adr/0115-input-reproduction-ipc-debug-isolation.md.
@@ -1467,7 +1457,6 @@ fn annotate_tree_busy(node: &mut serde_json::Value, engine: &CoreState) {
 }
 
 fn handle_is_typing(
-    _state: &AppState,
     engine: &CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -1497,7 +1486,6 @@ fn handle_is_typing(
 }
 
 fn handle_send_wait_idle(
-    _state: &mut AppState,
     engine: &mut CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

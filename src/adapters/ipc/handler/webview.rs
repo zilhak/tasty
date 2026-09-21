@@ -8,7 +8,6 @@ use super::params::require_u32;
 use serde_json::Value;
 
 use crate::plugin::PluginManager;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// attach mirror 문서의 변경 신호원(ADR-0255 항목 5) — 다시 그려진 surface 를 attach
@@ -31,7 +30,6 @@ fn notify_content_changed(
 /// `engine` 도 `&engine.workspaces` 순회 + `RemoteSurface::set_webview_url`
 /// (interior-mut `&self` 메서드) 만 호출. `handle_tree` 와 동일 패턴이다.
 pub fn handle_set_url(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: Value,
     params: &Value,
@@ -166,13 +164,8 @@ mod tests {
         pane.tabs[pane.active_tab].focused_surface
     }
 
-    fn set_url(
-        state: &crate::state::AppState,
-        engine: &crate::core::CoreState,
-        sid: u32,
-    ) -> JsonRpcResponse {
+    fn set_url(engine: &crate::core::CoreState, sid: u32) -> JsonRpcResponse {
         handle_set_url(
-            state,
             engine,
             json!(1),
             &json!({ "surface_id": sid, "url": "file:///tmp/doc.html" }),
@@ -196,7 +189,7 @@ mod tests {
         // 포커스는 원래 터미널 leaf 에 남아 있어야 한다(= md_sid 는 비포커스 leaf).
         assert_eq!(focused_surface_id(&state, &engine), terminal_sid);
 
-        let resp = set_url(&state, &engine, md_sid);
+        let resp = set_url(&engine, md_sid);
         assert!(
             resp.error.is_none(),
             "non-focused split leaf should be reachable: {:?}",
@@ -227,7 +220,7 @@ mod tests {
         );
 
         for sid in [md_a, md_b] {
-            let resp = set_url(&state, &engine, sid);
+            let resp = set_url(&engine, sid);
             assert!(
                 resp.error.is_none(),
                 "leaf {sid} should be reachable: {:?}",
@@ -244,14 +237,14 @@ mod tests {
             .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
             .unwrap();
         let md_sid = focused_surface_id(&state, &engine);
-        let resp = set_url(&state, &engine, md_sid);
+        let resp = set_url(&engine, md_sid);
         assert!(
             resp.error.is_none(),
             "sole leaf regression: {:?}",
             resp.error
         );
 
-        let resp = set_url(&state, &engine, 999_999);
+        let resp = set_url(&engine, 999_999);
         assert_eq!(
             resp.error.map(|e| e.message),
             Some("surface_id not found".to_string())
@@ -286,14 +279,14 @@ mod tests {
             .acquire_workspace(ws_id, &[terminal_sid], &[terminal_sid, md_sid], client)
             .expect("acquire workspace");
 
-        assert!(set_url(&state, &engine, md_sid).error.is_none());
+        assert!(set_url(&engine, md_sid).error.is_none());
         let frame = rx.try_recv().expect("markdown_changed frame");
         let payload: Value = serde_json::from_slice(&frame.payload).expect("json payload");
         assert_eq!(payload["event"], "markdown_changed");
         assert_eq!(payload["surface_id"], md_sid);
         assert!(rx.try_recv().is_err(), "한 번의 set_url 에 신호는 한 번");
 
-        assert!(set_url(&state, &engine, terminal_sid).error.is_some());
+        assert!(set_url(&engine, terminal_sid).error.is_some());
         assert!(
             rx.try_recv().is_err(),
             "webview surface 가 아니면 신호가 없다"
@@ -315,7 +308,7 @@ mod tests {
             "markdown",
             &json!({ "file": "/workspace/proj/readme.md" }),
         );
-        let resp = set_url(&state, &engine, terminal_sid);
+        let resp = set_url(&engine, terminal_sid);
         assert_eq!(
             resp.error.map(|e| e.message),
             Some("surface is not a webview-enabled RemoteSurface".to_string())

@@ -19,13 +19,11 @@
 use super::params::{self, p_try};
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
 pub(super) fn handle_debug_cell_info(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -77,7 +75,6 @@ pub(super) fn cell_info_to_json(info: &tasty_terminal::CellInfo) -> serde_json::
 
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_screen_attrs(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -116,7 +113,6 @@ pub(super) fn handle_debug_screen_attrs(
 /// `\xHH` escape support disabled — the text is fed verbatim).
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_feed_bytes(
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -159,7 +155,6 @@ pub(super) fn handle_debug_feed_bytes(
 /// will report colors that match the (broken) GPU output, exposing the gap.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_glyph_color(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

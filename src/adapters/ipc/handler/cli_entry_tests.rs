@@ -181,7 +181,7 @@ fn fire_hook_cli_entry_point_reaches_its_handler() {
 /// `tasty send text --wait-idle` — 플래그가 메서드를 가르고, params 는 그대로다.
 #[test]
 fn send_text_wait_idle_cli_entry_point_switches_method_and_reaches_its_handler() {
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (_state, mut engine) = crate::state::tests::test_state();
     let surface = engine.workspaces[0].all_surface_ids()[0];
 
     let plain = command_to_request(&Commands::Send {
@@ -202,7 +202,7 @@ fn send_text_wait_idle_cli_entry_point_switches_method_and_reaches_its_handler()
     });
     assert_eq!(req.method, "surface.send_wait_idle");
 
-    let resp = super::handle_send_wait_idle(&mut state, &mut engine, json!(1), &req.params);
+    let resp = super::handle_send_wait_idle(&mut engine, json!(1), &req.params);
     assert_params_were_understood("surface.send_wait_idle", &resp);
     assert!(
         resp.result.is_some(),

@@ -15,7 +15,6 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use super::require_surface_id;
 
 pub(super) fn require_input_simulation(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: &serde_json::Value,
 ) -> Result<(), JsonRpcResponse> {
@@ -34,12 +33,11 @@ pub(super) fn require_input_simulation(
 /// Encodes as SGR mouse (mode 1006) bytes: ESC [ < Cb ; Cx ; Cy M/m
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_mouse(
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(state, engine, &id) {
+    if let Err(e) = require_input_simulation(engine, &id) {
         return e;
     }
     let surface_id = match require_surface_id(params, &id) {
@@ -411,12 +409,11 @@ pub(super) fn handle_debug_banner_set_countdown(
 /// Inject a key event into a surface's PTY.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_key(
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(state, engine, &id) {
+    if let Err(e) = require_input_simulation(engine, &id) {
         return e;
     }
     let surface_id = match require_surface_id(params, &id) {
