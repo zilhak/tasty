@@ -62,8 +62,9 @@ iteration 의 렌더·타이머로 넘어가므로, "IPC 부하가 한 프레임
 도착 순이므로 뒤에 온 요청이 B 를 앞지르지 못한다.
 
 그 "하나" 에는 예외가 하나 있다. 호출자가 실은 응답 대기 상한([ADR-0328](0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md))이
-만료되면 연결은 다음 줄을 읽는데 만료된 명령은 큐에 남는다. 그 명령이 나중에 실행되지 않게 하는
-것은 이 결정의 몫이 아니라 짝 결정(실행 전 만료)의 몫이다.
+만료되면 연결은 다음 줄을 읽는데 만료된 명령은 큐에 남는다. 그 명령은 꺼내질 때 실행되지 않고
+버려진다([ADR-0411](0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md)) —
+그래서 연결마다 큐에 **살아 있는** 명령은 여전히 하나이고, 남은 것은 비용 없이 지나간다.
 
 **요청별 순서의 뜻**: 한 연결 안에서는 보낸 순서 그대로 하나씩 실행된다. 연결 사이에서는 큐에
 도착한 순서로 **실행을 시작한다**. 응답을 워커 스레드로 넘기는 요청(`approval.await` ·
@@ -141,7 +142,9 @@ iteration 의 렌더·타이머로 넘어가므로, "IPC 부하가 한 프레임
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
 - 관련: [ADR-0305](0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md)
   (caller 로 나누지 않는 게이지 — 개정하지 않음) ·
-  [ADR-0391](0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md) (입장 장부)
+  [ADR-0391](0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md) (입장 장부) ·
+  [ADR-0411](0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md)
+  (만료된 명령을 실행하지 않아 연결당 살아 있는 명령 하나를 지키는 짝 결정)
 - 결정이 실현된 현재 위치: `src/app/ipc_round.rs` 의 `IpcRound` · `ROUND_TIME_BUDGET`, 두 호출자
   `src/app/ipc.rs` 의 `App::process_ipc` 와 `src/boot/headless_dispatch.rs` 의 `pump_ipc`, 누계
   `crates/tasty-ipc/src/dispatch.rs` 의 `DispatchStats`

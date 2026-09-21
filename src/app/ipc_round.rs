@@ -33,7 +33,7 @@ use tasty_ipc::dispatch::{DispatchStats, RoundEnd};
 use tasty_telemetry::PressureStats;
 
 use crate::adapters::production::tcp_ipc_server::DRAIN_BUDGET_PER_ROUND;
-use crate::ipc::server::IpcCommand;
+use crate::ipc::server::{Claim, IpcCommand, expired_before_run_response};
 use crate::ports::ipc_server::IpcServerPort;
 
 /// 한 회차가 명령을 꺼내는 데 쓸 수 있는 시간. **파생이 아니다** — 근거는 ADR-0410.
@@ -98,6 +98,37 @@ impl IpcRound {
         // 수 있다.
         pressure.record_drain(self.taken);
         dispatch.record_round(self.end);
+    }
+}
+
+/// 꺼낸 명령을 **실행하기 직전**에 부른다. 실행해도 되면 `true`.
+///
+/// 호출자가 실은 응답 대기 상한이 큐에서 기다리는 동안 지났으면 실행하지 않고 `-32067` 로
+/// 답한다(ADR-0411). 기다리던 쪽이 먼저 물러났으면 그쪽이 이미 답했으므로 조용히 버린다. 두
+/// 경우 모두 게이트(권한·audit·rate limit)에 닿기 **전**이라 실행되지 않은 요청이 토큰을 쓰거나
+/// 감사 행을 남기지 않는다. 큐 대기 계측은 이보다 먼저다 — 만료된 요청도 큐에 앉아 있었다.
+pub(crate) fn claim_or_answer(cmd: &IpcCommand, dispatch: &DispatchStats) -> bool {
+    match cmd.claim() {
+        Claim::Run => true,
+        Claim::Expired { waited, bound } => {
+            tracing::debug!(
+                "IPC {} not run: waited {:?} in the queue past the caller's {:?} bound",
+                cmd.request.method,
+                waited,
+                bound
+            );
+            dispatch.record_expired_before_run();
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            crate::ipc::server::send_response(
+                &cmd.response_tx,
+                expired_before_run_response(id, bound),
+            );
+            false
+        }
+        Claim::Withdrawn => {
+            dispatch.record_expired_before_run();
+            false
+        }
     }
 }
 
@@ -197,6 +228,60 @@ mod tests {
         assert_eq!((p.queue_drains, p.queue_commands), (1, 2));
         let d = dispatch.snapshot();
         assert_eq!((d.rounds, d.rounds_stopped_by_count), (1, 1));
+    }
+
+    fn bounded(
+        ms: u64,
+    ) -> (
+        IpcCommand,
+        mpsc::Receiver<crate::ipc::protocol::JsonRpcResponse>,
+    ) {
+        let (resp_tx, resp_rx) = mpsc::sync_channel(1);
+        let req = JsonRpcRequest {
+            response_timeout_ms: Some(ms),
+            idempotency_key: None,
+            jsonrpc: "2.0".to_string(),
+            method: "workspace.create".to_string(),
+            id: Some(serde_json::Value::from(5u64)),
+            params: serde_json::Value::Null,
+            session_token: None,
+        };
+        (IpcCommand::new(req, resp_tx), resp_rx)
+    }
+
+    /// 기한이 큐에서 지난 명령은 실행하지 않고, 꺼낸 쪽이 `-32067` 로 답하고 센다.
+    #[test]
+    fn a_command_past_its_deadline_is_answered_not_run_and_counted() {
+        let dispatch = DispatchStats::default();
+        let (cmd, rx) = bounded(1);
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(!claim_or_answer(&cmd, &dispatch), "it must not run");
+        let resp = rx.try_recv().expect("the taker answers it");
+        assert_eq!(
+            resp.error.expect("error").code,
+            crate::ipc::protocol::ERR_EXPIRED_BEFORE_RUN
+        );
+        assert_eq!(dispatch.snapshot().expired_before_run, 1);
+    }
+
+    /// 기다리던 쪽이 먼저 물러난 명령은 조용히 버린다 — 답은 그쪽이 이미 썼다.
+    #[test]
+    fn a_withdrawn_command_is_dropped_without_a_second_answer() {
+        let dispatch = DispatchStats::default();
+        let (cmd, rx) = bounded(60_000);
+        cmd.lifecycle().withdraw();
+        assert!(!claim_or_answer(&cmd, &dispatch));
+        assert!(rx.try_recv().is_err(), "no second answer");
+        assert_eq!(dispatch.snapshot().expired_before_run, 1);
+    }
+
+    /// 기한 안의 명령은 실행한다.
+    #[test]
+    fn a_command_within_its_deadline_runs() {
+        let dispatch = DispatchStats::default();
+        let (cmd, _rx) = bounded(60_000);
+        assert!(claim_or_answer(&cmd, &dispatch));
+        assert_eq!(dispatch.snapshot().expired_before_run, 0);
     }
 
     /// 서버가 없는 조립에서는 아무것도 꺼내지 않는다.

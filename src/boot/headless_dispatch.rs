@@ -76,6 +76,11 @@ fn dispatch_command(
     cmd: crate::ipc::server::IpcCommand,
 ) -> std::ops::ControlFlow<()> {
     app.core.pressure().record_queue_wait(cmd.queue_wait());
+    // 0) 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(gui 와 같은 자리,
+    //    ADR-0411).
+    if !crate::app::ipc_round::claim_or_answer(&cmd, app.core.dispatch()) {
+        return std::ops::ControlFlow::Continue(());
+    }
     // 1) caller 해석 (Local / Agent / 세션 토큰 검증). 실패 시 에러를 그대로 회신.
     let caller = match resolve_caller_from_envelope(&app.core, &cmd.request) {
         Ok(c) => c,

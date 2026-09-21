@@ -1158,6 +1158,8 @@ impl TcpIpcServer {
         if let Err(refusal) = cmd.admit(&queue.admission, Origin::Socket) {
             return Self::answer_queue_full(writer, rpc_id, &refusal.to_string(), peer);
         }
+        // 상한에서 물러날 때 "아직 시작 전이었나" 를 물을 사본 — 보내면 명령은 옮겨진다.
+        let lifecycle = cmd.lifecycle();
 
         // Send command to main thread
         if queue.tx.send(cmd).is_err() {
@@ -1170,7 +1172,7 @@ impl TcpIpcServer {
             waker();
         }
 
-        Self::await_dispatch_response(&resp_rx, wait_bound, rpc_id, writer, peer)
+        Self::await_dispatch_response(&resp_rx, wait_bound, &lifecycle, rpc_id, writer, peer)
     }
 
     /// 메인 스레드의 응답을 기다려 소켓에 쓴다. 상한이 없으면 무기한 기다린다.
@@ -1180,6 +1182,7 @@ impl TcpIpcServer {
     fn await_dispatch_response(
         resp_rx: &mpsc::Receiver<JsonRpcResponse>,
         wait_bound: Option<Duration>,
+        lifecycle: &tasty_ipc::server::LifecycleHandle,
         rpc_id: serde_json::Value,
         writer: &mut std::net::TcpStream,
         peer: Option<std::net::SocketAddr>,
@@ -1198,9 +1201,18 @@ impl TcpIpcServer {
         };
         match resp_rx.recv_timeout(bound) {
             Ok(response) => Self::write_dispatch_response(writer, &response, peer),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                Self::answer_wait_expired(writer, rpc_id, bound, peer)
-            }
+            // 만료 순간 명령이 아직 큐에 있었으면 실행되지 않게 막고 "실행 안 됨" 으로 답한다
+            // (ADR-0411). 이미 시작됐으면 종전 그대로 결과 불명이다.
+            Err(mpsc::RecvTimeoutError::Timeout) => match lifecycle.withdraw() {
+                tasty_ipc::server::Withdraw::NotRun => Self::write_dispatch_response(
+                    writer,
+                    &tasty_ipc::server::expired_before_run_response(rpc_id, bound),
+                    peer,
+                ),
+                tasty_ipc::server::Withdraw::Started => {
+                    Self::answer_wait_expired(writer, rpc_id, bound, peer)
+                }
+            },
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 tracing::warn!("IPC resp_rx.recv failed (response_tx dropped without sending)");
                 false
@@ -1408,12 +1420,12 @@ mod admission_tests {
     }
 
     // 응답이 안 오면 **호출자가 실은 상한**에서 끝나고, 그 답은 실패가 아니라
-    // "결과 불명" 이다.
+    // "결과 불명" 이다 — 단 요청이 **이미 시작된** 경우만이다.
     //
-    // 아무도 명령을 집지 않게 두는 것이 이 시험의 장치다 — `cmd_rx` 를 살려 두면
-    // 보낸 `IpcCommand` 가 큐에 그대로 남아 `response_tx` 가 **살아 있고**, 그래서
-    // 기다림이 `Disconnected` 로 일찍 끝나지 않는다. 그 갈래가 바로 이 상한이 없으면
-    // 영원히 안 끝나는 자리다.
+    // 명령을 꺼내 실행을 시작한 채(`claim`) 답하지 않고 쥐고 있는 것이 이 시험의 장치다 —
+    // 그러면 `response_tx` 가 **살아 있어** 기다림이 `Disconnected` 로 일찍 끝나지 않는다.
+    // 그 갈래가 바로 이 상한이 없으면 영원히 안 끝나는 자리다. 아무도 명령을 안 집으면
+    // 만료 순간 요청은 시작 전이라 답이 "실행 안 됨" 으로 갈린다(ADR-0411).
     fn test_queue(tx: mpsc::Sender<IpcCommand>, limits: QueueLimits) -> CommandQueue {
         CommandQueue {
             tx,
@@ -1428,7 +1440,7 @@ mod admission_tests {
         let client = std::net::TcpStream::connect(addr).expect("connect");
         let (mut server_side, _) = listener.accept().expect("accept");
 
-        let (cmd_tx, _cmd_rx) = mpsc::channel();
+        let (cmd_tx, cmd_rx) = mpsc::channel::<IpcCommand>();
         let queue = test_queue(cmd_tx, QueueLimits::DEFAULT);
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -1439,6 +1451,18 @@ mod admission_tests {
             response_timeout_ms: Some(50),
             idempotency_key: None,
         };
+        // 메인 스레드 역할 — 명령을 꺼내 **실행을 시작하고** 답하지 않는다. 시작된 뒤의
+        // 만료만 "결과 불명" 이다(큐에 남은 채 만료되면 "실행 안 됨" 이다 — 아래 짝 시험).
+        // 답 통로는 끝까지 쥔다 — 버려지면 기다림이 만료가 아니라 끊김으로 끝난다.
+        let (held_tx, held_rx) = mpsc::channel();
+        let taker = std::thread::spawn(move || {
+            let cmd = cmd_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the request reaches the queue");
+            assert_eq!(cmd.claim(), tasty_ipc::server::Claim::Run);
+            // 받는 쪽이 이미 실패해 사라졌을 수 있다 — 그때는 시험이 다른 실패문으로 끝난다.
+            let _ = held_tx.send(cmd);
+        });
 
         // 기다림을 별도 스레드에 두고 **완료 자체에 상한을 건다.** 상한이 안 걸리는
         // 회귀에서 이 시험이 멈춰 서면 안 된다 — 그때 CI 는 실패가 아니라 hang 을 본다.
@@ -1456,6 +1480,8 @@ mod admission_tests {
             .expect("호출자가 실은 상한이 안 걸렸다 — 기다림이 안 끝났다");
         assert!(kept, "만료는 연결을 끊는 사건이 아니다");
         waiter.join().expect("waiter");
+        taker.join().expect("taker");
+        drop(held_rx);
 
         let mut got = String::new();
         BufReader::new(client)
@@ -1482,6 +1508,51 @@ mod admission_tests {
     // 명령을 한 회차 안에서 버리므로 표의 Drop 만으로도 곧 반납되지만, 명령을 회차 밖에
     // 보관하도록 바뀌면 그 차이가 조용한 과계수가 된다. 그래서 반납을 Drop 이 아니라
     // `try_recv` 에 묶은 것을 여기서 고정한다.
+    // 같은 상한이 **요청이 큐에서 기다리는 동안** 지나면 답은 "실행 안 됨" 이고, 그 뒤에
+    // 명령을 꺼내도 실행되지 않는다 — 기다리는 쪽이 물러나며 막았기 때문이다(ADR-0411).
+    #[test]
+    fn a_wait_that_ends_while_queued_answers_not_run_and_the_command_is_not_run_later() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let client = std::net::TcpStream::connect(addr).expect("connect");
+        let (mut server_side, _) = listener.accept().expect("accept");
+
+        let (cmd_tx, cmd_rx) = mpsc::channel::<IpcCommand>();
+        let queue = test_queue(cmd_tx, QueueLimits::DEFAULT);
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "workspace.create".to_string(),
+            params: serde_json::Value::Null,
+            id: Some(serde_json::json!(9)),
+            session_token: None,
+            response_timeout_ms: Some(30),
+            idempotency_key: None,
+        };
+        let kept =
+            TcpIpcServer::dispatch_and_await(request, 0, &queue, &None, &mut server_side, None);
+        assert!(kept, "만료는 연결을 끊는 사건이 아니다");
+
+        let queued = cmd_rx
+            .try_recv()
+            .expect("the request was queued and nobody took it");
+        assert_eq!(
+            queued.claim(),
+            tasty_ipc::server::Claim::Withdrawn,
+            "the waiter withdrew it, so taking it now must not run it"
+        );
+
+        drop(server_side);
+        let mut got = String::new();
+        BufReader::new(client)
+            .read_line(&mut got)
+            .expect("the expiry answer");
+        let resp: JsonRpcResponse = serde_json::from_str(got.trim()).expect("one JSON line");
+        assert_eq!(resp.id, serde_json::json!(9));
+        let err = resp.error.expect("an error response");
+        assert_eq!(err.code, crate::ipc::protocol::ERR_EXPIRED_BEFORE_RUN);
+        assert!(err.message.contains("did not run"), "{}", err.message);
+    }
+
     #[test]
     fn a_dequeued_command_stops_counting_while_it_is_still_held() {
         let (tx, rx) = mpsc::channel();
@@ -1590,8 +1661,8 @@ mod admission_tests {
             serde_json::from_str(&lines.next().expect("line").expect("read")).expect("json");
         assert_eq!(
             second.error.expect("nobody answers the queued one").code,
-            crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN,
-            "the second request was queued, so its wait expired instead"
+            crate::ipc::protocol::ERR_EXPIRED_BEFORE_RUN,
+            "the second request was queued and never taken, so its wait expired before it ran"
         );
         let snap = queue.admission.snapshot();
         assert_eq!(snap.refused_bytes, 1);

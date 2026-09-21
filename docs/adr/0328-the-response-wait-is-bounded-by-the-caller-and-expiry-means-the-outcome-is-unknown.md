@@ -78,6 +78,14 @@
   넘게 있다(`DispatchHandle` 계열). 그래서 봉투 필드를 `deadline_ms` 로 부르지 않고
   `response_timeout_ms` 로 부른다 — grep 이 갈리고, 재는 대상(응답 대기)이 이름에 있다.
 
+### 취소 가능 범위 (보강, 2026-09-21)
+
+만료는 **취소가 아니다.** 시작 전에 만료된 요청은 실행되지 않고 `-32067` 로 답한다 — 그 갈래는
+[ADR-0411](0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md) 이 이
+결정의 "만료는 결과 불명" 을 시작 전/후로 갈라 개정했다. **시작 뒤에는 끊지 않는다** — 메인 스레드의
+동기 handler 를 선점할 수단이 없고, 응답을 워커 스레드로 넘긴 요청도 만료로 멈추지 않는다. 만료가
+하는 일은 응답 통로를 놓는 것뿐이다. 그 밖의 취소 수단(취소 메서드 · 연결 끊김을 취소로 읽기)은 없다.
+
 ## Alternatives Considered
 
 - **블랭킷 기본 상한** — 오늘 효과가 있는 유일한 안이지만 `approval.await` 를 자른다.
@@ -116,6 +124,8 @@
   같은 시각대에서 대조한다. 멱등 키가 생기면 그때 이 자리가 바뀐다.
 
 ## References
+
+- 부분 개정: [0411](0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md) (만료의 뜻 개정 — 시작 전 만료는 "실행 안 됨" `-32067`)
 
 - 관련 ADR: [ADR-0311](0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md)
   — 만료를 fail-open 이 아니라 오류로 끝낸다는 원칙. 이 결정이 그 원칙을 RPC 봉투 쪽에

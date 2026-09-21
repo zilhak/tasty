@@ -78,6 +78,10 @@ impl App {
         // 큐 체류 시간. handler 실행 시간과 **따로** 잰다 — 합쳐 두면 느린 응답을
         // 보고도 적체인지 handler 비용인지 고를 수 없다.
         self.core.pressure().record_queue_wait(cmd.queue_wait());
+        // 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(ADR-0411).
+        if !crate::app::ipc_round::claim_or_answer(&cmd, self.core.dispatch()) {
+            return IpcStep::Handled;
+        }
         let caller = match self.ipc_resolve_caller(&cmd) {
             Some(c) => c,
             None => return IpcStep::Handled,

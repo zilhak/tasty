@@ -1,4 +1,5 @@
-//! IPC 명령을 **큐에서 꺼낸 쪽**의 누계 — dispatch 회차가 어디서 멈췄는가.
+//! IPC 명령을 **큐에서 꺼낸 쪽**의 누계 — dispatch 회차가 어디서 멈췄는가, 그리고 기한이 지나
+//! 실행하지 않은 명령이 몇인가.
 //!
 //! 큐에 든 쪽은 입장 장부([`crate::admission::CommandAdmission`])가 센다. 이 모듈은 그 반대편,
 //! 메인 스레드가 한 회차에 명령을 꺼내다가 **왜 멈췄는가**를 센다. 회차는 셋 중 하나로 끝난다 —
@@ -24,12 +25,13 @@ pub enum RoundEnd {
     TimeBudget,
 }
 
-/// dispatch 쪽 누계. 올리는 자리는 메인 스레드의 회차 하나뿐이다.
+/// dispatch 쪽 누계. 올리는 자리는 메인 스레드의 회차(`app::ipc_round`) 하나뿐이다.
 #[derive(Debug, Default)]
 pub struct DispatchStats {
     rounds: AtomicU64,
     stopped_by_count: AtomicU64,
     stopped_by_time: AtomicU64,
+    expired_before_run: AtomicU64,
 }
 
 impl DispatchStats {
@@ -48,12 +50,19 @@ impl DispatchStats {
         }
     }
 
+    /// 기한이 큐에서 지나 **실행하지 않은** 명령 하나를 센다. 꺼낸 쪽이 만료를 본 경우와
+    /// 기다리던 쪽이 먼저 물러난 경우를 함께 센다 — 둘 다 "기한이 지나 실행 안 됨" 이다.
+    pub fn record_expired_before_run(&self) {
+        self.expired_before_run.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// 지금 값.
     pub fn snapshot(&self) -> DispatchSnapshot {
         DispatchSnapshot {
             rounds: self.rounds.load(Ordering::Relaxed),
             rounds_stopped_by_count: self.stopped_by_count.load(Ordering::Relaxed),
             rounds_stopped_by_time: self.stopped_by_time.load(Ordering::Relaxed),
+            expired_before_run: self.expired_before_run.load(Ordering::Relaxed),
         }
     }
 }
@@ -67,6 +76,8 @@ pub struct DispatchSnapshot {
     pub rounds_stopped_by_count: u64,
     /// 그중 시간 예산에 닿아 멈춘 회차.
     pub rounds_stopped_by_time: u64,
+    /// 기한이 큐에서 지나 실행하지 않은 명령 수(`-32067` 로 답한 것).
+    pub expired_before_run: u64,
 }
 
 #[cfg(test)]
@@ -86,6 +97,7 @@ mod tests {
                 rounds: 4,
                 rounds_stopped_by_count: 1,
                 rounds_stopped_by_time: 2,
+                expired_before_run: 0,
             }
         );
     }

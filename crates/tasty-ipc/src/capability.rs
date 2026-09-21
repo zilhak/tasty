@@ -55,6 +55,16 @@ pub const CAPABILITIES: &[Capability] = &[
         name: RESPONSE_TIMEOUT,
         version: RESPONSE_TIMEOUT_VERSION,
     },
+    // 응답 대기 상한이 **요청이 큐에서 기다리는 동안** 지나면 서버가 그 요청을 실행하지 않고
+    // `-32067`(`crate::protocol::ERR_EXPIRED_BEFORE_RUN`)로 답한다. 그래서 이 이름을 선언한
+    // 서버의 `-32061` 은 "요청이 이미 시작됐다" 까지 말한다. `ipc.response-timeout` 의 판을
+    // 올리지 않고 이름을 더한 이유: 그 판은 client 가 **최소 판으로 요구**하는 수라(CLI 의
+    // `--response-timeout-ms`), 올리면 새 client 가 구 서버에 상한을 못 싣는다. 더해지는 뜻은
+    // 이름으로 선언한다(`ipc.stream.loss-notify` 와 같은 형태). 근거: ADR-0411.
+    Capability {
+        name: RESPONSE_TIMEOUT_NOT_RUN,
+        version: 1,
+    },
     // 봉투가 멱등 키를 실을 수 있다 — 이 서버가 그 필드를 **읽는다**는 선언이다.
     // 근거: `crate::protocol::JsonRpcRequest::idempotency_key` 와 그것을 읽는 호스트의
     // 보존소. `ipc.response-timeout` 과 같은 이유로 이름이 필요하다 — 이 이름이 없는
@@ -102,6 +112,8 @@ pub const CAPABILITIES: &[Capability] = &[
 pub const RESPONSE_TIMEOUT: &str = "ipc.response-timeout";
 /// 그 선언의 판.
 pub const RESPONSE_TIMEOUT_VERSION: u32 = 1;
+/// 큐에서 만료된 요청을 실행하지 않고 `-32067` 로 답한다는 선언의 이름.
+pub const RESPONSE_TIMEOUT_NOT_RUN: &str = "ipc.response-timeout.not-run";
 
 /// `system.info` 가 싣는 모양. `[{ "name": …, "version": … }, …]`.
 pub fn capabilities_json() -> serde_json::Value {

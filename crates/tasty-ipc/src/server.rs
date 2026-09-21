@@ -4,6 +4,7 @@
 //! (D.3.D.2.b) 로 이전. 본 모듈은 wire 형식과 강결합된 타입 정의만 보유 —
 //! verify 자율 결정으로 ports/ 가 아닌 wire 모듈 옆에 둔다.
 
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
@@ -37,6 +38,11 @@ pub struct IpcCommand {
     /// 이 타입 자체에 `Drop` 을 달지 않는 이유: 소비자가 필드를 꺼내 옮기는(`request` 를
     /// move) 자리가 있고, `Drop` 이 붙은 구조체는 필드를 옮길 수 없다.
     admission: Option<AdmissionTicket>,
+    /// 호출자가 실은 응답 대기 상한([`JsonRpcRequest::response_timeout_ms`]). 없거나 0 이면
+    /// 상한이 없다 — 봉투 규약 그대로다. 큐 진입 시각과 합쳐 이 명령의 **기한**이 된다.
+    wait_bound: Option<Duration>,
+    /// 실행 전/후 상태. 기다리는 쪽이 [`IpcCommand::lifecycle`] 로 사본을 든다.
+    lifecycle: Arc<CommandLifecycle>,
 }
 
 impl IpcCommand {
@@ -68,12 +74,18 @@ impl IpcCommand {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         wire_bytes: usize,
     ) -> Self {
+        let wait_bound = request
+            .response_timeout_ms
+            .filter(|ms| *ms > 0)
+            .map(Duration::from_millis);
         Self {
             request,
             response_tx,
             enqueued_at: Instant::now(),
             wire_bytes,
             admission: None,
+            wait_bound,
+            lifecycle: Arc::new(CommandLifecycle::default()),
         }
     }
 
@@ -97,6 +109,114 @@ impl IpcCommand {
     pub fn queue_wait(&self) -> Duration {
         self.enqueued_at.elapsed()
     }
+
+    /// 이 명령의 실행 상태 사본 — 응답을 기다리는 쪽이 **보내기 전에** 든다. 기다림이 상한에서
+    /// 끝나면 [`LifecycleHandle::withdraw`] 로 "아직 시작 전이었나" 를 묻는다.
+    pub fn lifecycle(&self) -> LifecycleHandle {
+        LifecycleHandle(self.lifecycle.clone())
+    }
+
+    /// 실행 **직전**에 부른다 — 이 명령을 지금 실행해도 되는가.
+    ///
+    /// 기한(큐 진입 + 호출자의 응답 대기 상한)이 지났으면 실행하지 않는다. 그 요청을 기다리던
+    /// 호출자는 이미 돌아갔거나 곧 돌아가므로, 지금 실행하면 결과를 아무도 못 받는 효과만
+    /// 남는다. 기다리던 쪽이 먼저 물러났어도(`withdraw`) 실행하지 않는다.
+    ///
+    /// `Run` 을 돌려준 뒤로 이 명령은 **시작된 것**이다 — 기다리는 쪽의 상한이 그 뒤에 지나면
+    /// 그 답은 "결과 불명" 이다.
+    pub fn claim(&self) -> Claim {
+        if let Some(bound) = self.wait_bound {
+            let waited = self.queue_wait();
+            if waited >= bound {
+                return match self.lifecycle.transition(QUEUED, WITHDRAWN) {
+                    Ok(()) => Claim::Expired { waited, bound },
+                    Err(_) => Claim::Withdrawn,
+                };
+            }
+        }
+        match self.lifecycle.transition(QUEUED, STARTED) {
+            Ok(()) => Claim::Run,
+            Err(_) => Claim::Withdrawn,
+        }
+    }
+}
+
+/// [`IpcCommand::claim`] 의 답.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Claim {
+    /// 실행한다. 이 순간부터 명령은 시작된 것이다.
+    Run,
+    /// 큐에서 기다리는 동안 기한이 지났다 — 실행하지 않는다. 기다리는 쪽이 아직 있을 수 있으므로
+    /// 꺼낸 쪽이 [`expired_before_run_response`] 로 답한다.
+    Expired {
+        /// 큐에서 기다린 시간.
+        waited: Duration,
+        /// 호출자가 실은 응답 대기 상한.
+        bound: Duration,
+    },
+    /// 기다리던 쪽이 상한에서 먼저 물러났다 — 실행하지 않는다. 답은 그쪽이 이미 썼다.
+    Withdrawn,
+}
+
+const QUEUED: u8 = 0;
+const STARTED: u8 = 1;
+const WITHDRAWN: u8 = 2;
+
+/// 명령 하나의 실행 전/후 상태. 꺼내는 쪽(메인 스레드)과 기다리는 쪽(연결 스레드)이 나눠 든다.
+///
+/// 상태는 한 방향으로만 한 번 움직인다 — `QUEUED` 에서 `STARTED`(꺼낸 쪽이 실행을 시작) 또는
+/// `WITHDRAWN`(기한이 지나 실행하지 않기로 함) 중 **먼저 온 쪽**으로. 비교-교환 하나로 정하므로
+/// 두 스레드가 같은 순간에 다퉈도 답이 하나다: 실행했으면 기다리는 쪽은 "결과 불명" 을, 안
+/// 했으면 "실행하지 않음" 을 말한다. 둘 다 말하는 경우는 없다.
+#[derive(Debug, Default)]
+pub struct CommandLifecycle {
+    state: AtomicU8,
+}
+
+impl CommandLifecycle {
+    fn transition(&self, from: u8, to: u8) -> Result<(), u8> {
+        self.state
+            .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| ())
+    }
+}
+
+/// 기다리는 쪽이 드는 [`CommandLifecycle`] 사본.
+#[derive(Debug, Clone)]
+pub struct LifecycleHandle(Arc<CommandLifecycle>);
+
+/// [`LifecycleHandle::withdraw`] 의 답.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Withdraw {
+    /// 명령은 실행되지 않았고 앞으로도 안 된다. 그대로 다시 보내도 두 번째 효과가 없다.
+    NotRun,
+    /// 명령은 이미 시작됐다 — 끝났는지, 무엇을 남겼는지는 모른다.
+    Started,
+}
+
+impl LifecycleHandle {
+    /// 기다림을 상한에서 끝낸다. 명령이 아직 큐에 있었으면 실행되지 않게 막는다.
+    pub fn withdraw(&self) -> Withdraw {
+        match self.0.transition(QUEUED, WITHDRAWN) {
+            Ok(()) => Withdraw::NotRun,
+            Err(WITHDRAWN) => Withdraw::NotRun,
+            Err(_) => Withdraw::Started,
+        }
+    }
+}
+
+/// 기한이 큐에서 지나 실행하지 않은 요청의 답. 꺼낸 쪽과 기다리는 쪽 어느 쪽이 쓰든 같은 문장이
+/// 나가도록 한 자리에 둔다.
+pub fn expired_before_run_response(id: serde_json::Value, bound: Duration) -> JsonRpcResponse {
+    JsonRpcResponse::error(
+        id,
+        crate::protocol::ERR_EXPIRED_BEFORE_RUN,
+        format!(
+            "the caller's response timeout of {} ms passed while the request was still queued; \
+             it did not run — sending it again is safe",
+            bound.as_millis()
+        ),
+    )
 }
 
 /// IPC 응답 송신용 헬퍼. 클라이언트가 응답 전에 연결을 끊었거나 receiver가 drop된
@@ -110,3 +230,96 @@ pub fn send_response(tx: &mpsc::SyncSender<JsonRpcResponse>, response: JsonRpcRe
 
 /// Callback to wake the main event loop when an IPC command arrives.
 pub type IpcWaker = Arc<dyn Fn() + Send + Sync>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cmd(bound_ms: Option<u64>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "workspace.create".to_string(),
+            params: serde_json::Value::Null,
+            id: Some(serde_json::json!(1)),
+            session_token: None,
+            response_timeout_ms: bound_ms,
+            idempotency_key: None,
+        };
+        (IpcCommand::new(req, tx), rx)
+    }
+
+    /// 꺼낸 쪽이 먼저 시작하면 기다리는 쪽의 만료는 "시작됨"(결과 불명)이다.
+    #[test]
+    fn a_started_command_cannot_be_withdrawn() {
+        let (c, _rx) = cmd(Some(60_000));
+        let waiter = c.lifecycle();
+        assert_eq!(c.claim(), Claim::Run);
+        assert_eq!(waiter.withdraw(), Withdraw::Started);
+    }
+
+    /// 기다리는 쪽이 먼저 물러나면 그 명령은 나중에 꺼내도 실행되지 않는다.
+    #[test]
+    fn a_withdrawn_command_is_not_run_when_taken_later() {
+        let (c, _rx) = cmd(Some(60_000));
+        let waiter = c.lifecycle();
+        assert_eq!(waiter.withdraw(), Withdraw::NotRun);
+        assert_eq!(c.claim(), Claim::Withdrawn);
+    }
+
+    /// 기한이 큐에서 지난 명령은 꺼낸 쪽이 실행하지 않고, 그 뒤 기다리는 쪽의 만료도 "실행 안 됨" 이다.
+    #[test]
+    fn a_command_past_its_deadline_is_expired_by_the_taker() {
+        let (c, _rx) = cmd(Some(1));
+        let waiter = c.lifecycle();
+        std::thread::sleep(Duration::from_millis(5));
+        match c.claim() {
+            Claim::Expired { waited, bound } => {
+                assert_eq!(bound, Duration::from_millis(1));
+                assert!(waited >= bound, "{waited:?}");
+            }
+            other => panic!("expected Expired, got {other:?}"),
+        }
+        assert_eq!(waiter.withdraw(), Withdraw::NotRun);
+    }
+
+    /// 상한이 없거나 0 이면 기한도 없다 — 봉투 규약 그대로다.
+    #[test]
+    fn no_bound_or_zero_means_no_deadline() {
+        for bound in [None, Some(0)] {
+            let (c, _rx) = cmd(bound);
+            std::thread::sleep(Duration::from_millis(2));
+            assert_eq!(c.claim(), Claim::Run, "{bound:?}");
+        }
+    }
+
+    /// 두 쪽이 같은 순간에 다퉈도 답은 하나다 — 시작과 물러남이 둘 다 이기는 경우가 없다.
+    #[test]
+    fn a_race_between_taker_and_waiter_has_one_winner() {
+        for _ in 0..200 {
+            let (c, _rx) = cmd(Some(60_000));
+            let waiter = c.lifecycle();
+            let t = std::thread::spawn(move || waiter.withdraw());
+            let claim = c.claim();
+            let withdraw = t.join().expect("withdraw thread");
+            match (claim, withdraw) {
+                (Claim::Run, Withdraw::Started) | (Claim::Withdrawn, Withdraw::NotRun) => {}
+                other => panic!("both or neither won: {other:?}"),
+            }
+        }
+    }
+
+    /// 꺼낸 쪽과 기다리는 쪽이 쓰는 "실행 안 됨" 답은 한 함수에서 나온다.
+    #[test]
+    fn the_not_run_answer_carries_its_code_the_id_and_the_bound() {
+        let r = expired_before_run_response(serde_json::json!(4), Duration::from_millis(250));
+        assert_eq!(r.id, serde_json::json!(4));
+        let e = r.error.expect("error");
+        assert_eq!(e.code, crate::protocol::ERR_EXPIRED_BEFORE_RUN);
+        assert!(
+            e.message.contains("250 ms") && e.message.contains("did not run"),
+            "{}",
+            e.message
+        );
+    }
+}
