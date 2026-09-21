@@ -305,10 +305,15 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 500,
+        measured: 502,
         measured_on: "2026-09-21",
         counted_on: super::CountedOn::Tree(
-            "0f37f8565 — 마지막 lane 묶음이 착지한 트리에서 다시 셌다. 501 -> 500 이고 \
+            "c81b7454b — headless 정의 경계 회차가 문서 둘을 들여왔다. 500 -> 502 이고 \
+             삭제는 0 이다(`docs/adr/0346-headless-compiles-only-what-it-reaches.md` 와 \
+             `docs/dev-guide/headless-build-boundaries.md`). ★ 아래 이력에 적힌 `0346` 은 \
+             **다른 문서**다 — 그 번호를 달고 있던 것은 e2e 디스플레이 결정의 중복 사본이라 \
+             지워졌고(정본은 0297), 비워진 번호를 이 회차가 새 결정에 다시 썼다. \
+             이전 회차: 0f37f8565 — 마지막 lane 묶음이 착지한 트리에서 다시 셌다. 501 -> 500 이고 \
              **줄었다** — 마지막 묶음이 ADR 하나를 들여왔고, 같은 결정의 중복 사본 \
              둘을 함께 지웠다(그 셋은 본문이 같았다). 이전 회차: 65bcd1988 — 위 두 문서가 이 트리에 들었다(`docs/adr/0280-cli-help-localizes-presentation-not-protocol.md` \
              와 `docs/dev-guide/paired-agent-handlers.md`). 499 -> 501 이고 삭제는 0 이다. \
