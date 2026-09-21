@@ -10,7 +10,6 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// recent 목록 상한 — `RecentFiles` 캐시가 이미 kind 별 최신순 10개로 수렴돼 있으나,
@@ -53,7 +52,7 @@ fn recent_entries(paths: &[String]) -> Vec<RecentEntry> {
 /// 필터 없이 `AppState.recent_files.get(kind)` 캐시를 최신순 그대로 반환한다. 조회만
 /// 하므로 `&AppState`(불변) 를 받아 사용자 상태 불변을 타입 수준에서 보장한다.
 pub fn handle_query(
-    state: &AppState,
+    window: &dyn crate::ipc::window_port::IpcWindow,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -61,13 +60,14 @@ pub fn handle_query(
         Ok(r) => r,
         Err(e) => return JsonRpcResponse::error(id, -32602, format!("invalid params: {e}")),
     };
-    let entries = recent_entries(&state.recent_files.get(&req.kind));
+    let entries = recent_entries(&window.recent_files(&req.kind));
     JsonRpcResponse::success(id, json!({ "recent": entries }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::AppState;
 
     #[test]
     fn recent_query_agrees_across_states_after_either_window_records() {

@@ -1,5 +1,6 @@
 mod accessors;
 mod cascade_window;
+mod ipc_window;
 // 포커스·탭 변화의 polling 감지 — GUI tick 만 부른다. headless 의 Event Bus 발화는 cascade 가
 // 직접 세운다.
 #[cfg(feature = "gui")]
@@ -21,7 +22,6 @@ mod fullscreen_stage_tests;
 // 화면 좌표 → surface/pane 영역 계산 — 그리기와 마우스 히트 판정만 쓴다.
 #[cfg(any(feature = "gui", test))]
 mod layout;
-mod mark;
 pub mod mouse;
 pub(crate) mod pane;
 // gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는

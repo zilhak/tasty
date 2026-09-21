@@ -4,6 +4,7 @@
 //! 기준으로 한다. parked 상태(워크스페이스 0개) 에서는 `Option::None` 또는 panic 직전
 //! invariant 호출자가 책임.
 
+#[cfg(feature = "gui")]
 use tasty_terminal::Terminal;
 
 use super::AppState;
@@ -92,6 +93,7 @@ impl AppState {
     }
 
     /// Get the ultimately focused terminal (mutable).
+    #[cfg(feature = "gui")]
     pub fn focused_terminal_mut<'a>(&self, engine: &'a mut CoreState) -> Option<&'a mut Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.terminals.get_mut(id)

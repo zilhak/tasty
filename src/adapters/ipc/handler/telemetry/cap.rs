@@ -8,7 +8,6 @@ use tasty_telemetry::{
 };
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -326,7 +325,7 @@ pub fn handle_cap_reset(
 /// 의 실제 IPC 차단은 호출 전 [`check_cap_block`](super::check_cap_block) 이 담당한다.
 pub(super) fn evaluate_caps_after_record(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     ev: &TelemetryEvent,
@@ -342,7 +341,7 @@ pub(super) fn evaluate_caps_after_record(
         if !cap_matches_untriggered(&cap, ev) {
             continue;
         }
-        try_trigger_cap(core, state, out, engine, &mut cap);
+        try_trigger_cap(core, window, out, engine, &mut cap);
     }
 }
 
@@ -354,7 +353,7 @@ fn cap_matches_untriggered(cap: &CostCap, ev: &TelemetryEvent) -> bool {
 /// 현재 값을 계산해 임계를 넘었으면 `triggered` 마크 + 저장 + 액션 발화.
 fn try_trigger_cap(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &mut CostCap,
@@ -378,7 +377,7 @@ fn try_trigger_cap(
         tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
         return;
     }
-    fire_cap_action(core, state, out, engine, cap, current);
+    fire_cap_action(core, window, out, engine, cap, current);
 }
 
 /// cap 액션을 실제 시스템으로 발화. `Notify` 는 알림만; `RequireApproval` 은
@@ -387,20 +386,20 @@ fn try_trigger_cap(
 /// status 조회로도 확인 가능하다.
 pub(super) fn fire_cap_action(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
     match cap.action {
-        CapAction::Notify => fire_notify(state, out, engine, cap, current),
-        CapAction::RequireApproval => fire_require_approval(core, state, engine, cap, current),
+        CapAction::Notify => fire_notify(window, out, engine, cap, current),
+        CapAction::RequireApproval => fire_require_approval(core, window, engine, cap, current),
         CapAction::Pause => {
             // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
             // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
             // 보이지 않도록.
-            fire_notify(state, out, engine, cap, current);
+            fire_notify(window, out, engine, cap, current);
             tracing::info!(
                 "cap triggered (action {:?}): cap={} agent={} metric={} value={} threshold={}",
                 cap.action,
@@ -424,12 +423,15 @@ pub(super) fn fire_cap_action(
 /// 필요하면 `cap.reset` 후 다음 record 가 임계를 다시 넘을 때 fire 된다.
 pub(super) fn fire_require_approval(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
-    let ws_id = engine.workspaces.get(state.active_workspace).map(|w| w.id);
+    let ws_id = engine
+        .workspaces
+        .get(window.active_workspace_index())
+        .map(|w| w.id);
     let title = format!("Cap '{}' — 승인 필요", cap.metric);
     let body = format!(
         "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={}). \
@@ -463,7 +465,7 @@ pub(super) fn fire_require_approval(
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(core, &change.record);
             #[cfg(feature = "gui")]
-            crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &change.record);
+            window.enqueue_approval_popup(engine, &change.record);
             tracing::info!(
                 "cap require_approval: issued approval id={} for cap={}",
                 change.record.request.id.as_str(),
@@ -482,13 +484,13 @@ pub(super) fn fire_require_approval(
 /// `Notify` 액션: 활성 워크스페이스에 notification 추가 + host event enqueue.
 /// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
 pub(super) fn fire_notify(
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
-    let Some(ws) = engine.workspaces.get(state.active_workspace) else {
+    let Some(ws) = engine.workspaces.get(window.active_workspace_index()) else {
         tracing::warn!("cap notify: no active workspace, skipping cap {}", cap.id);
         return;
     };

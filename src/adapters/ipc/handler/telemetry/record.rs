@@ -3,7 +3,6 @@
 use serde_json::{Value, json};
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -15,7 +14,7 @@ use super::{build_event, evaluate_caps_after_record, now_ms, persist_event, reco
 /// 측정이 구조적으로 불가능한 caller(원격/agent 프로세스) 를 위한 경로다.
 fn detect_rss_self_report(
     core: &Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     ev: &tasty_telemetry::TelemetryEvent,
@@ -25,7 +24,7 @@ fn detect_rss_self_report(
     }
     record_rss_sample(
         core,
-        state,
+        window,
         out,
         engine,
         &ev.agent,
@@ -36,7 +35,7 @@ fn detect_rss_self_report(
 
 pub fn handle_record(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -46,7 +45,7 @@ pub fn handle_record(
     let default_agent = caller.agent_id();
     let default_ws = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(window.active_workspace_index())
         .map(|ws| ws.id);
     let ts = now_ms();
     let ev = match build_event(params, default_agent.as_str(), default_ws, ts) {
@@ -65,8 +64,8 @@ pub fn handle_record(
         ),
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
-    evaluate_caps_after_record(core, state, out, engine, &ev);
-    detect_rss_self_report(core, state, out, engine, &ev);
+    evaluate_caps_after_record(core, window, out, engine, &ev);
+    detect_rss_self_report(core, window, out, engine, &ev);
     response
 }
 
@@ -76,7 +75,7 @@ pub fn handle_record(
 /// 모든 이벤트는 동일한 호출 ts 를 공유하며, seq 만 단조 증가하여 정렬을 보장한다.
 pub fn handle_record_batch(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -92,7 +91,7 @@ pub fn handle_record_batch(
     let default_agent = caller.agent_id();
     let default_ws = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(window.active_workspace_index())
         .map(|ws| ws.id);
     let ts = now_ms();
     // pre-validate all → 부분 실패 방지.
@@ -113,8 +112,8 @@ pub fn handle_record_batch(
         }
     }
     for ev in &events {
-        evaluate_caps_after_record(core, state, out, engine, ev);
-        detect_rss_self_report(core, state, out, engine, ev);
+        evaluate_caps_after_record(core, window, out, engine, ev);
+        detect_rss_self_report(core, window, out, engine, ev);
     }
     JsonRpcResponse::success(
         id,

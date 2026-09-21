@@ -5,7 +5,7 @@ use crate::adapters::ipc::handler::params::{self, p_try};
 
 pub fn handle_request(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -83,7 +83,7 @@ pub fn handle_request(
             // 미지정이면 활성 워크스페이스로 fallback (편의).
             engine
                 .workspaces
-                .get(state.active_workspace)
+                .get(window.active_workspace_index())
                 .map(|ws| ws.id)
         });
 
@@ -114,7 +114,7 @@ pub fn handle_request(
         Ok(change) => {
             persist_record(core, &change.record);
             #[cfg(feature = "gui")]
-            crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &change.record);
+            window.enqueue_approval_popup(engine, &change.record);
             JsonRpcResponse::success(
                 id,
                 json!({

@@ -2,7 +2,6 @@ use serde_json::json;
 
 use super::params::{self, p_try};
 use crate::core::structural_exec::{self, Closed, TabCreated};
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
@@ -55,7 +54,7 @@ pub fn handle_tab_list(
 
 pub fn handle_tab_create(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -65,7 +64,7 @@ pub fn handle_tab_create(
         Err(e) => return e,
     };
 
-    match structural_exec::create_tab(core, state, engine, pane_id, params) {
+    match structural_exec::create_tab(core, window, engine, pane_id, params) {
         Ok(TabCreated {
             pane_id,
             surface_id,
@@ -86,7 +85,7 @@ pub fn handle_tab_create(
 
 pub fn handle_tab_close(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -109,7 +108,7 @@ pub fn handle_tab_close(
         );
     }
 
-    match structural_exec::close_tab(core, state, engine, tab_id) {
+    match structural_exec::close_tab(core, window, engine, tab_id) {
         Ok(Closed {
             id: tab_id,
             closed: true,

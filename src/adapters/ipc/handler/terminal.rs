@@ -19,7 +19,6 @@ use serde_json::{Value, json};
 
 use crate::core::child_terminal::ChildEntry;
 use crate::core::state::child_liveness::ChildLiveness;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{surface, tab};
@@ -327,7 +326,7 @@ fn first_pane_in_workspace(engine: &CoreState, ws_id: u32) -> Option<u32> {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_spawn(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -403,7 +402,7 @@ pub(crate) fn handle_spawn(
     if let Some(c) = &cwd {
         tab_params["cwd"] = Value::String(c.clone());
     }
-    let tab_resp = tab::handle_tab_create(core, state, engine, id.clone(), &tab_params);
+    let tab_resp = tab::handle_tab_create(core, window, engine, id.clone(), &tab_params);
     let tab_val = match unwrap_ok(tab_resp, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -421,7 +420,7 @@ pub(crate) fn handle_spawn(
 
     if let Err(error) = spawn_transaction::finish(
         core,
-        state,
+        window,
         engine,
         &id,
         parent,
@@ -597,7 +596,7 @@ pub(crate) fn handle_parent(engine: &mut CoreState, id: Value, params: &Value) -
 
 pub(crate) fn handle_kill(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -625,7 +624,7 @@ pub(crate) fn handle_kill(
 
     let close_params = json!({ "surface_id": removed.child_surface_id });
     if let Err(e) = unwrap_ok(
-        surface::handle_surface_close(core, state, engine, id.clone(), &close_params),
+        surface::handle_surface_close(core, window, engine, id.clone(), &close_params),
         &id,
     ) {
         return e;

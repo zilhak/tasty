@@ -1,6 +1,5 @@
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -14,12 +13,12 @@ use super::require_surface_id;
 /// Agent=false, ADR-0480) — 그 축의 근거는 도메인 함수의 문서.
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     surface_id: u32,
 ) -> JsonRpcResponse {
-    match crate::core::structural_exec::close_surface(core, state, engine, surface_id, false) {
+    match crate::core::structural_exec::close_surface(core, window, engine, surface_id, false) {
         Ok(crate::core::structural_exec::Closed {
             id: surface_id,
             closed: true,
@@ -74,7 +73,7 @@ fn refuse_if_hard_occupied(
 
 pub(crate) fn handle_surface_close(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -95,13 +94,13 @@ pub(crate) fn handle_surface_close(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, state, engine, id, surface_id)
+    close_surface_via_intent(core, window, engine, id, surface_id)
 }
 
 /// Close the calling surface itself. Only way for a surface to close itself.
 pub(crate) fn handle_surface_close_self(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -113,7 +112,7 @@ pub(crate) fn handle_surface_close_self(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, state, engine, id, surface_id)
+    close_surface_via_intent(core, window, engine, id, surface_id)
 }
 
 #[cfg(test)]

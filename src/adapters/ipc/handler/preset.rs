@@ -11,10 +11,9 @@ use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
 
 use crate::intent::ClonedPreset;
 use crate::intent::preset::{
-    ApplyOutcome, PresetApplyTarget, PresetMutationError, SaveOutcome, apply_inner, capture_inner,
-    delete_inner, rename_inner, save_inner,
+    ApplyOutcome, PresetApplyTarget, PresetMutationError, SaveOutcome, capture_inner, delete_inner,
+    rename_inner, save_inner,
 };
-use crate::state::AppState;
 use crate::state::preset_apply::ApplyOptions;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -130,7 +129,6 @@ pub fn handle_get(
 
 pub fn handle_save(
     core: &crate::core::Core,
-    state: &AppState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -177,7 +175,7 @@ pub fn handle_save(
     };
 
     // 2. 공유 save_inner 호출.
-    match save_inner(core, state, "", Some(&name), overwrite, cloned) {
+    match save_inner(core, "", Some(&name), overwrite, cloned) {
         Ok(SaveOutcome::Saved(saved_name)) => {
             JsonRpcResponse::success(id, json!({ "name": saved_name }))
         }
@@ -191,7 +189,6 @@ pub fn handle_save(
 
 pub fn handle_delete(
     core: &crate::core::Core,
-    state: &AppState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -204,7 +201,7 @@ pub fn handle_delete(
         Err(e) => return e,
     };
 
-    match delete_inner(core, state, kind, &name) {
+    match delete_inner(core, kind, &name) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
         Err(e) => mutation_error(id, e),
     }
@@ -212,7 +209,6 @@ pub fn handle_delete(
 
 pub fn handle_rename(
     core: &crate::core::Core,
-    state: &AppState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -229,7 +225,7 @@ pub fn handle_rename(
         Err(e) => return e,
     };
 
-    match rename_inner(core, state, kind, &from, &to) {
+    match rename_inner(core, kind, &from, &to) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "renamed": to })),
         Err(e) => mutation_error(id, e),
     }
@@ -237,7 +233,6 @@ pub fn handle_rename(
 
 pub fn handle_capture(
     core: &crate::core::Core,
-    state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -256,20 +251,13 @@ pub fn handle_capture(
         .map(str::to_string);
 
     // 1. capture (read-only on engine).
-    let (cloned, base_name) = match capture_inner(state, engine, kind, source_id) {
+    let (cloned, base_name) = match capture_inner(engine, kind, source_id) {
         Ok(v) => v,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
     // 2. save (overwrite=false; explicit_name=Some 이면 충돌 시 SkippedExists).
-    match save_inner(
-        core,
-        state,
-        &base_name,
-        explicit_name.as_deref(),
-        false,
-        cloned,
-    ) {
+    match save_inner(core, &base_name, explicit_name.as_deref(), false, cloned) {
         Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
         Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
             id,
@@ -281,7 +269,7 @@ pub fn handle_capture(
 
 pub fn handle_apply(
     core: &crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -306,9 +294,8 @@ pub fn handle_apply(
 
     // CLI/IPC 포커스 독립 원칙 — focus 항상 false.
     let opts = ApplyOptions { focus: false };
-    match apply_inner(
+    match window.apply_preset(
         core,
-        state,
         engine,
         PresetApplyTarget {
             kind,

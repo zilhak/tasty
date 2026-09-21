@@ -1,7 +1,6 @@
 //! 요청과 caller에 묶인 게이트 통과 증거. wire에서 만들거나 역직렬화할 수 없다.
 use super::{CallerContext, JsonRpcRequest, JsonRpcResponse};
 use crate::core::{Core, CoreState};
-use crate::state::AppState;
 
 /// 라우팅 전에 권한·cap·rate 검사 및 허용 관측을 끝낸 요청.
 pub(crate) struct CheckedRequest<'a> {
@@ -22,22 +21,25 @@ impl<'a> CheckedRequest<'a> {
 /// 모든 진입점의 공통 게이트. 거부는 한 번 기록하고, 허용만 한 번 계측한다.
 pub(crate) fn check_request<'a>(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     request: &'a JsonRpcRequest,
     caller: &'a CallerContext,
 ) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
     let canonical = crate::ipc::alias::canonicalize(&request.method);
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-    let ws = engine.workspaces.get(state.active_workspace).map(|w| w.id);
+    let ws = engine
+        .workspaces
+        .get(window.active_workspace_index())
+        .map(|w| w.id);
     if let Some(response) =
-        super::check_permission_gate(core, state, engine, caller, canonical, ws, &id)
+        super::check_permission_gate(core, window, engine, caller, canonical, ws, &id)
             .or_else(|| super::check_cap_gate(core, engine, caller, canonical, ws, &id))
             .or_else(|| super::check_rate_limit_gate(core, engine, caller, canonical, ws, &id))
     {
         return Err(response);
     }
-    super::record_telemetry_and_audit(core, state, engine, caller, canonical, &request.params, ws);
+    super::record_telemetry_and_audit(core, window, engine, caller, canonical, &request.params, ws);
     // 봉투 검사는 **모든 층의 앞**이다 — App 층·namespace forward·engine 라우터 중 어디로
     // 가든 같은 봉투는 같은 판정을 받는다. 게이트 **뒤**인 것은 옛 자리(engine 라우터의
     // 보존소 입구)가 게이트 뒤였기 때문이다: 권한 없는 호출자는 여전히 `-32001` 을 먼저
@@ -69,6 +71,7 @@ pub(crate) fn check_without_engine<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::AppState;
     use serde_json::json;
     use std::sync::Arc;
     use tasty_plugin_manifest::Permission;

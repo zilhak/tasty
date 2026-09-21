@@ -2,7 +2,6 @@ use serde_json::json;
 
 use crate::core::structural_exec::{self, Closed, SplitLevel, SplitOutcome, SplitRequest};
 use crate::model::SplitDirection;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
@@ -32,7 +31,7 @@ pub fn handle_pane_list(engine: &crate::core::CoreState, id: serde_json::Value) 
 
 pub fn handle_pane_close(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -51,7 +50,7 @@ pub fn handle_pane_close(
         );
     }
 
-    match structural_exec::close_pane(core, state, engine, pane_id) {
+    match structural_exec::close_pane(core, window, engine, pane_id) {
         Ok(Closed {
             id: pane_id,
             closed: true,
@@ -103,7 +102,7 @@ pub(super) fn resolve_surface_target(
 
 pub fn handle_split(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -138,7 +137,7 @@ pub fn handle_split(
         target_pane,
         params,
     };
-    match structural_exec::split(core, state, engine, req) {
+    match structural_exec::split(core, window, engine, req) {
         Ok(SplitOutcome::Pane {
             new_pane_id,
             new_surface_id,

@@ -23,7 +23,6 @@ use tasty_telemetry::{
 };
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 
 pub(crate) fn now_ms() -> u64 {
@@ -88,7 +87,7 @@ pub(crate) fn check_cap_block(
 /// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
 pub(crate) fn record_ipc_call(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -119,9 +118,9 @@ pub(crate) fn record_ipc_call(
         tracing::warn!("telemetry middleware: record failed: {e}");
         return;
     }
-    evaluate_caps_after_record(core, state, out, engine, &ev);
+    evaluate_caps_after_record(core, window, out, engine, &ev);
     for anomaly in detect_anomalies_after_ipc(core, engine, agent.as_str(), method, params, ts) {
-        fire_anomaly_notification(state, out, engine, &anomaly);
+        fire_anomaly_notification(window, out, engine, &anomaly);
     }
 }
 
@@ -157,7 +156,7 @@ fn detect_anomalies_after_ipc(
 ///   ([`crate::adapters::ipc::handler::record_plugin_rss_samples`]).
 pub(crate) fn record_rss_sample(
     core: &Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     agent: &str,
@@ -172,7 +171,7 @@ pub(crate) fn record_rss_sample(
     if let Err(e) = persist_anomaly(core, &anomaly) {
         tracing::warn!("anomaly persist failed: {e}");
     }
-    fire_anomaly_notification(state, out, engine, &anomaly);
+    fire_anomaly_notification(window, out, engine, &anomaly);
 }
 
 fn scope_for(workspace_id: Option<u32>) -> Scope {

@@ -2,7 +2,6 @@ use serde_json::json;
 
 use super::params::{self, p_try};
 use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 단계 7 — workspace.create/update params 에서 SSH attach 매핑을 파싱한다.
@@ -109,7 +108,7 @@ fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Valu
 }
 
 pub fn handle_workspace_list(
-    state: &AppState,
+    window: &dyn crate::ipc::window_port::IpcWindow,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -124,7 +123,7 @@ pub fn handle_workspace_list(
                 "name": ws.name,
                 "subtitle": ws.subtitle,
                 "description": ws.description,
-                "active": i == state.active_workspace,
+                "active": i == window.active_workspace_index(),
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
                 "busy_count": engine.busy_count(&sids),
                 "attach_mapping": mapping_to_json(&ws.attach_mapping),
@@ -142,7 +141,7 @@ pub fn handle_workspace_list(
 
 pub fn handle_workspace_create(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -184,7 +183,7 @@ pub fn handle_workspace_create(
     // mirror surface 면 inherit 은 `None`(= 홈)이고, 명시 `cwd` 는 그대로 존중한다
     // (`docs/architecture/invariants/surface-cwd.md` §3-2).
     let resolved_cwd = if kind == "terminal" {
-        explicit_cwd.or_else(|| state.resolve_inherit_cwd(engine))
+        explicit_cwd.or_else(|| window.resolve_inherit_cwd(engine))
     } else {
         None
     };
@@ -240,8 +239,7 @@ pub fn handle_workspace_create(
     let agent_origin = crate::intent::IntentOrigin::Agent {
         source: crate::intent::AgentSource::Ipc,
     };
-    crate::app::dispatch_domain::cascade_workspace_created(
-        state,
+    window.cascade_workspace_created(
         engine,
         &agent_origin,
         0,
@@ -294,7 +292,7 @@ pub fn handle_workspace_create(
 
 pub fn handle_workspace_update(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -369,13 +367,7 @@ pub fn handle_workspace_update(
         );
     };
 
-    crate::app::dispatch_domain::cascade_workspace_meta_updated(
-        state,
-        workspace_id,
-        name,
-        subtitle,
-        description,
-    );
+    window.cascade_workspace_meta_updated(workspace_id, name, subtitle, description);
 
     // S-WSCAT — 카테고리 소속 변경(있으면). 사용자 active 불변(원칙 1·3).
     match resolve_category_param(engine, params) {
@@ -440,7 +432,7 @@ pub fn handle_workspace_update(
 /// 별개의 결정이라 에이전트에게는 `window.close` 라는 명시적 수단을 따로 준다 —
 /// 워크스페이스 하나를 닫으라는 요청이 창 종료로 번지지 않게 한다.
 pub fn handle_workspace_close(
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -535,7 +527,7 @@ pub fn handle_workspace_close(
     // 참일 수밖에 없다. 그래도 상수 `true` 를 싣지 않고 반환값을 그대로 싣는다 — 그
     // 불변이 언젠가 깨지면 응답이 조용히 성공을 주장하는 대신 사실을 말한다.
     let closed =
-        state.close_workspace_at(engine, ws_idx, crate::state::WorkspaceCloseOrigin::Agent);
+        window.close_workspace_at(engine, ws_idx, crate::state::WorkspaceCloseOrigin::Agent);
     JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
 }
 
@@ -548,7 +540,7 @@ pub fn handle_workspace_close(
 /// `to_index` 는 지목된 창 **안에서의** 목적지라 창이 정해진 뒤에는 뜻이 분명하다.
 pub fn handle_workspace_move(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -593,7 +585,7 @@ pub fn handle_workspace_move(
         Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
     );
     if moved {
-        crate::app::dispatch_domain::cascade_workspace_moved(state, from, to);
+        window.fix_workspace_pointers_after_move(from, to);
     }
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }

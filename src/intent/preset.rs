@@ -126,7 +126,6 @@ fn save(
     let kind = request.preset.kind();
     let save_result = save_inner(
         core,
-        state,
         request.base_name,
         request.explicit_name,
         request.overwrite,
@@ -174,9 +173,9 @@ fn save(
         state.dialogs.pending_open_preset_window = true;
         state.dialogs.pending_preset_window_selection = Some((kind, saved_name));
     }
-    // headless: 위 요청을 만들지 않으므로 세 값을 읽는 쪽이 없다.
+    // headless: 위 요청을 만들지 않고 토스트도 없으므로 창 상태와 세 값을 읽는 쪽이 없다.
     #[cfg(not(feature = "gui"))]
-    let _ = (intent, kind, saved_name);
+    let _ = (state, intent, kind, saved_name);
 }
 
 // ───────────────────────────────── Shared mutation API ─────────────────────────────────
@@ -221,7 +220,6 @@ impl std::error::Error for PresetMutationError {}
 
 /// preset_store 잠금 + clone. lock 안 ↔ apply 본체를 분리해 critical section 을 짧게 유지.
 fn clone_preset_from_store(
-    _state: &AppState,
     core: &crate::core::Core,
     kind: PresetKind,
     name: &str,
@@ -270,13 +268,12 @@ pub fn apply_inner(
     target: PresetApplyTarget,
     options: ApplyOptions,
 ) -> Result<ApplyOutcome, PresetMutationError> {
-    let cloned =
-        clone_preset_from_store(state, core, target.kind, target.name)?.ok_or_else(|| {
-            PresetMutationError::NotFound {
-                kind: target.kind,
-                name: target.name.to_string(),
-            }
-        })?;
+    let cloned = clone_preset_from_store(core, target.kind, target.name)?.ok_or_else(|| {
+        PresetMutationError::NotFound {
+            kind: target.kind,
+            name: target.name.to_string(),
+        }
+    })?;
 
     match cloned {
         ClonedPreset::Workspace(p) => {
@@ -368,7 +365,6 @@ fn store_preset(
 /// 없으면 `base_name` 기반 unique_name 자동 부여.
 pub fn save_inner(
     core: &crate::core::Core,
-    _state: &AppState,
     base_name: &str,
     explicit_name: Option<&str>,
     overwrite: bool,
@@ -392,7 +388,6 @@ pub fn save_inner(
 
 pub fn delete_inner(
     core: &crate::core::Core,
-    _state: &AppState,
     kind: PresetKind,
     name: &str,
 ) -> Result<(), PresetMutationError> {
@@ -406,7 +401,6 @@ pub fn delete_inner(
 
 pub fn rename_inner(
     core: &crate::core::Core,
-    _state: &AppState,
     kind: PresetKind,
     from: &str,
     to: &str,
@@ -425,7 +419,6 @@ pub fn rename_inner(
 /// IPC `preset.capture` 가 사용. UI 우클릭 경로는 자신이 직접 capture 한 뒤
 /// `Intent::SavePreset { preset: ClonedPreset, .. }` 로 발화하므로 별도 경로.
 pub fn capture_inner(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     kind: PresetKind,
     source_id: u32,

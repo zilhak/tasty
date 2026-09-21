@@ -1,6 +1,5 @@
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -243,7 +242,6 @@ pub(crate) fn handle_read_since_scan_mark(
 /// /`exit_code` 같이 ANSI escape 자체가 의미인 파서를 쓸 수 있도록 raw 텍스트
 /// (strip_ansi=false) 를 항상 입력으로 한다.
 pub(crate) fn handle_parse_since_mark(
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -269,7 +267,7 @@ pub(crate) fn handle_parse_since_mark(
             .collect(),
     };
 
-    let text = state.read_since_mark(engine, Some(surface_id), false);
+    let text = engine.read_since_mark_of(surface_id, false);
     let items = match tasty_output::parse_buffer(&text, parser_ids.iter().map(String::as_str)) {
         Ok(v) => v,
         Err(unknown) => {

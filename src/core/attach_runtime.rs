@@ -3556,7 +3556,7 @@ mod forward_exec_tests {
         Box<dyn Fn(u32) -> StructuralOp>,
         fn(
             &mut crate::core::Core,
-            &mut AppState,
+            &mut dyn crate::adapters::ipc::window_port::IpcWindow,
             &mut crate::core::CoreState,
             serde_json::Value,
             &serde_json::Value,

@@ -365,7 +365,7 @@ pub fn handle_list_agent_permissions(
 /// 은 publish_capability_elevation 안에서 처리.
 pub fn handle_request_permission(
     core: &mut crate::core::Core,
-    state: &mut crate::state::AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
@@ -409,7 +409,7 @@ pub fn handle_request_permission(
         .unwrap_or("(self-request)");
     match crate::ipc::handler::approval::publish_capability_elevation(
         core,
-        state,
+        window,
         engine,
         &agent_id,
         method,

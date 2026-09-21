@@ -4,7 +4,6 @@ use serde_json::json;
 use tasty_hooks::HookEvent;
 
 use crate::global_hooks::HookCondition;
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 내장 surface hook 이벤트 안내 문자열 (검증 실패 메시지용).
@@ -250,7 +249,7 @@ pub(crate) fn handle_global_hook_unset(
 
 pub(crate) fn handle_surface_fire_hook(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -289,7 +288,7 @@ pub(crate) fn handle_surface_fire_hook(
         _ => None,
     };
     for hook_id in &fired {
-        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+        window.push_host_event(crate::state::PendingHostEvent::HookFired {
             hook_id: *hook_id,
             event_kind: event_kind.clone(),
             surface_id,

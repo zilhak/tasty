@@ -13,7 +13,6 @@ use tasty_approval::{
 use tasty_memory::{MemoryValue, PutOpts, Scope};
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -259,7 +258,7 @@ pub(crate) fn publish_capability_elevation_at(
 /// 창을 가진 경계용 — [`publish_capability_elevation_at`] 에 팝업 enqueue 를 더한다.
 pub(crate) fn publish_capability_elevation(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut crate::core::CoreState,
     agent_id: &str,
     method: &str,
@@ -268,7 +267,7 @@ pub(crate) fn publish_capability_elevation(
 ) -> Option<ApprovalRecord> {
     let workspace_id = engine
         .workspaces
-        .get(state.active_workspace)
+        .get(window.active_workspace_index())
         .map(|ws| ws.id);
     let record = publish_capability_elevation_at(
         core,
@@ -280,12 +279,12 @@ pub(crate) fn publish_capability_elevation(
         reason,
     )?;
     #[cfg(feature = "gui")]
-    crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &record);
+    window.enqueue_approval_popup(engine, &record);
     // 헤드리스 빌드에서는 `state` 를 읽는 유일한 자리가 위 팝업이라 미사용이 된다.
     // 시그니처는 두 조합이 같아야 한다 — 호출자(gui 의 caller_gate·app_methods)가
     // 조합마다 다른 인자를 넘기면 그쪽이 갈린다.
     #[cfg(not(feature = "gui"))]
-    let _ = state;
+    let _ = window;
     Some(record)
 }
 

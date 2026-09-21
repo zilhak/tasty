@@ -111,16 +111,21 @@ use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 #[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
 const PLATFORM_ONLY_MACOS_GUI: &str = "input reproduction over the OS event stream is macOS-only and needs the gui build \
      (CGEventPost / TISSelectInputSource have no equivalent here)";
+use crate::ipc::window_port::IpcWindow;
 use crate::state::AppState;
 
 /// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
 /// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
 ///
 /// 라우터 구조:
-/// 1. **engine 핸들러** (`route_engine_handler`): 등록된 핸들러 전부. 핸들러는 자기가
-///    닿는 상태만 인자로 받는다 — 창 상태를 읽는 핸들러만 `AppState` 를 받는다
-///    (`docs/adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md`).
-/// 2. **debug 핸들러** (`route_debug_handler`): debug build 전용. release 에서는 정의 안 됨.
+/// 1. **engine 핸들러** (`route_engine_handler`): 창 상태 자체가 대상이 아닌 핸들러 전부.
+///    핸들러는 자기가 닿는 상태만 인자로 받고(ADR-0470), 창에는 `AppState` 가 아니라
+///    [`IpcWindow`] 포트와 intent 출구로만 닿는다
+///    (`docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md`).
+/// 2. **창 핸들러** (`route_window_handler`): gui 빌드 전용. 창 상태 자체를 여는 핸들러
+///    (파일 선택기 팝업) — 진입점이 쥔 `AppState` 를 받는다.
+/// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release 에서는 정의 안 됨.
+///    창 상태를 조작하는 debug 표면이라 역시 `AppState` 를 받는다.
 ///
 /// 게이트 3종(권한 / telemetry cap / rate limit)은 라우팅보다 **먼저** 돈다. plugin 이
 /// 호출한 명령이 권한을 통과하지 못하면 `permission_denied` 로 즉시 회신한다.
@@ -202,10 +207,13 @@ fn dispatch_routed(
     // 옮겨진다 — 넣은 순서 그대로다(`window_port` 모듈 문서).
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     let routed = route_engine_handler(core, state, &mut out, engine, caller, request, id.clone());
-    for intent in out.into_vec() {
-        state.dispatch_intent(intent);
-    }
+    state.enqueue_intents(out);
     if let Some(resp) = routed {
+        return resp;
+    }
+
+    #[cfg(feature = "gui")]
+    if let Some(resp) = route_window_handler(state, engine, caller, request, id.clone()) {
         return resp;
     }
 
@@ -256,7 +264,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 /// capability elevation은 공유 approval store에 기록된다.
 pub(crate) fn check_permission_gate(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
@@ -288,7 +296,7 @@ pub(crate) fn check_permission_gate(
             let perm_token = permission.as_token();
             if let Some(record) = approval::publish_capability_elevation(
                 core,
-                state,
+                window,
                 engine,
                 agent_id,
                 canonical,
@@ -392,7 +400,7 @@ pub(crate) fn check_rate_limit_gate(
 /// 정책이 바뀌면 게이트 통과 지점을 다시 찾아 붙이지 않아도 되게 하기 위해서다.
 fn record_telemetry_and_audit(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn IpcWindow,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     canonical: &str,
@@ -403,10 +411,8 @@ fn record_telemetry_and_audit(
     // 옮긴다 — 핸들러 쪽 출구와 같은 규칙이다(`window_port` 모듈 문서). 핸들러보다 먼저 돌므로
     // 같은 요청의 핸들러 intent 보다 앞에 쌓인다.
     let mut out = crate::ipc::window_port::IntentOutbox::default();
-    telemetry::record_ipc_call(core, state, &mut out, engine, caller, canonical, params);
-    for intent in out.into_vec() {
-        state.dispatch_intent(intent);
-    }
+    telemetry::record_ipc_call(core, window, &mut out, engine, caller, canonical, params);
+    window.enqueue_intents(out);
 
     let seq = engine.telemetry_seq.next();
     crate::ipc::audit::record(
@@ -462,18 +468,16 @@ fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
 #[cfg(feature = "gui")]
 pub fn record_plugin_rss_samples(
     core: &crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn IpcWindow,
     engine: &mut crate::core::CoreState,
     samples: &[(String, u64)],
 ) {
     let ts = telemetry::now_ms();
     let mut out = crate::ipc::window_port::IntentOutbox::default();
     for (plugin_id, rss_bytes) in samples {
-        telemetry::record_rss_sample(core, state, &mut out, engine, plugin_id, *rss_bytes, ts);
+        telemetry::record_rss_sample(core, window, &mut out, engine, plugin_id, *rss_bytes, ts);
     }
-    for intent in out.into_vec() {
-        state.dispatch_intent(intent);
-    }
+    window.enqueue_intents(out);
 }
 
 /// engine-substate handlers — UI에 의존하지 않음. 권한 게이트(`check_permission_gate`) 대상.
@@ -645,7 +649,7 @@ fn spawn_target_guard(
 
 fn route_engine_handler(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    window: &mut dyn IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -658,23 +662,23 @@ fn route_engine_handler(
         return Some(resp);
     }
     Some(match request.method.as_str() {
-        "system.info" => handle_system_info(state, engine, id),
+        "system.info" => handle_system_info(window, engine, id),
         // 게이지 조회. `&*core` 인 이유는 읽기가 원자값이라 가변 빌림이 필요 없기
         // 때문이다 — 그 근거는 `Core::pressure` 의 doc 에 있다. `engine` 은 스트림
         // 허브를 거기서만 꺼낼 수 있어서다(`OccupancyRegistry::notifier`).
         "system.pressure" => pressure::handle_system_pressure(&*core, engine, id),
         // workspace
-        "workspace.list" => workspace::handle_workspace_list(state, engine, id),
+        "workspace.list" => workspace::handle_workspace_list(window, engine, id),
         "workspace.create" => {
-            workspace::handle_workspace_create(core, state, engine, id, &request.params)
+            workspace::handle_workspace_create(core, window, engine, id, &request.params)
         }
         "workspace.update" => {
-            workspace::handle_workspace_update(core, state, engine, id, &request.params)
+            workspace::handle_workspace_update(core, window, engine, id, &request.params)
         }
         "workspace.move" => {
-            workspace::handle_workspace_move(core, state, engine, id, &request.params)
+            workspace::handle_workspace_move(core, window, engine, id, &request.params)
         }
-        "workspace.close" => workspace::handle_workspace_close(state, engine, id, &request.params),
+        "workspace.close" => workspace::handle_workspace_close(window, engine, id, &request.params),
         // workspace category (사이드바 폴더 CRUD — 원칙 1·3: active/포커스 불변)
         "workspace_category.list" => workspace_category::handle_list(engine, id),
         "workspace_category.create" => {
@@ -689,20 +693,20 @@ fn route_engine_handler(
         "workspace_category.move" => workspace_category::handle_move(engine, id, &request.params),
         // pane / split
         "pane.list" => pane::handle_pane_list(engine, id),
-        "pane.close" => pane::handle_pane_close(core, state, engine, id, &request.params),
-        "split" => pane::handle_split(core, state, engine, id, &request.params),
+        "pane.close" => pane::handle_pane_close(core, window, engine, id, &request.params),
+        "split" => pane::handle_split(core, window, engine, id, &request.params),
         // tab
         "tab.list" => tab::handle_tab_list(engine, id, &request.params),
-        "tab.create" => tab::handle_tab_create(core, state, engine, id, &request.params),
-        "tab.close" => tab::handle_tab_close(core, state, engine, id, &request.params),
+        "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params),
+        "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params),
         "tab.move" => tab::handle_tab_move(core, engine, id, &request.params),
         // terminal (child-terminal 관리, ADR-0040 / occupancy-04)
-        "terminal.spawn" => terminal::handle_spawn(core, state, engine, id, &request.params),
+        "terminal.spawn" => terminal::handle_spawn(core, window, engine, id, &request.params),
         "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
-        "terminal.kill" => terminal::handle_kill(core, state, engine, id, &request.params),
+        "terminal.kill" => terminal::handle_kill(core, window, engine, id, &request.params),
         "terminal.respawn" => terminal::handle_respawn(core, engine, id, &request.params),
         "terminal.broadcast" => terminal::handle_broadcast(core, engine, id, &request.params),
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
@@ -717,20 +721,20 @@ fn route_engine_handler(
         "pty.kill" => pty::handle_kill(engine, id, &request.params),
         "pty.list" => pty::handle_list(engine, id),
         "pty.attach_surface" => {
-            pty::handle_attach_surface(core, state, engine, id, &request.params)
+            pty::handle_attach_surface(core, window, engine, id, &request.params)
         }
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, id, &request.params),
         "preset.get" => preset::handle_get(core, id, &request.params),
-        "preset.save" => preset::handle_save(core, state, id, &request.params),
-        "preset.delete" => preset::handle_delete(core, state, id, &request.params),
-        "preset.rename" => preset::handle_rename(core, state, id, &request.params),
-        "preset.capture" => preset::handle_capture(core, state, engine, id, &request.params),
-        "preset.apply" => preset::handle_apply(core, state, engine, id, &request.params),
+        "preset.save" => preset::handle_save(core, id, &request.params),
+        "preset.delete" => preset::handle_delete(core, id, &request.params),
+        "preset.rename" => preset::handle_rename(core, id, &request.params),
+        "preset.capture" => preset::handle_capture(core, engine, id, &request.params),
+        "preset.apply" => preset::handle_apply(core, window, engine, id, &request.params),
         // surface
-        "surface.close" => surface::handle_surface_close(core, state, engine, id, &request.params),
+        "surface.close" => surface::handle_surface_close(core, window, engine, id, &request.params),
         "surface.close_self" => {
-            surface::handle_surface_close_self(core, state, engine, id, &request.params)
+            surface::handle_surface_close_self(core, window, engine, id, &request.params)
         }
         "surface.list" => surface::handle_surface_list(engine, id),
         "surface.kinds" => surface::handle_surface_kinds(engine, id),
@@ -751,9 +755,7 @@ fn route_engine_handler(
         "surface.read_since_scan_mark" => {
             surface::handle_read_since_scan_mark(engine, id, &request.params)
         }
-        "surface.parse_since_mark" => {
-            surface::handle_parse_since_mark(state, engine, id, &request.params)
-        }
+        "surface.parse_since_mark" => surface::handle_parse_since_mark(engine, id, &request.params),
         "surface.commands" => surface::handle_commands(core, engine, id, &request.params),
         "surface.last_command" => surface::handle_last_command(core, engine, id, &request.params),
         "surface.command_at" => surface::handle_command_at(core, engine, id, &request.params),
@@ -774,7 +776,7 @@ fn route_engine_handler(
         "surface.is_typing" => handle_is_typing(engine, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(engine, id, &request.params),
         "surface.fire_hook" => {
-            hooks::handle_surface_fire_hook(core, state, engine, id, &request.params)
+            hooks::handle_surface_fire_hook(core, window, engine, id, &request.params)
         }
         "surface.meta.set" => meta::handle_surface_meta_set(core, engine, id, &request.params),
         "surface.meta.get" => meta::handle_surface_meta_get(core, engine, id, &request.params),
@@ -803,7 +805,7 @@ fn route_engine_handler(
         // 받지 않아 Theme 이 자동으로 밀리지 않는다 — 이 read-only 조회가 그 대체 경로다.
         "theme.query" => theme::handle_query(engine, id),
         // tree
-        "tree" => handle_tree(state, engine, id),
+        "tree" => handle_tree(window, engine, id),
         // message
         "message.send" => message::handle_message_send(core, engine, id, &request.params),
         "message.read" => message::handle_message_read(core, engine, id, &request.params),
@@ -845,7 +847,7 @@ fn route_engine_handler(
         // generic per-kind 최근목록 조회 — markdown 주소창 드롭다운 데이터 공급원(markdown
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
-        "recent.query" => recent::handle_query(state, id, request.params.clone()),
+        "recent.query" => recent::handle_query(window, id, request.params.clone()),
         // (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md) git-viewer
         // 원격 조회 트리거 — 큐잉 + request_id 회신. 큐를 비우는
         // `App::dispatch_pending_git_query_forwards` 가 gui 전용이라 arm 도 gui 에만
@@ -858,12 +860,6 @@ fn route_engine_handler(
         #[cfg(feature = "gui")]
         "markdown_mirror.content_request" => {
             markdown_mirror::handle_content_request(engine, id, &request.params)
-        }
-        // (ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
-        // 여는 UI state 변경이라 gui feature 전용.
-        #[cfg(feature = "gui")]
-        "file_picker.trigger" => {
-            file_picker::handle_trigger(state, engine, caller, id, &request.params)
         }
         // image surface 조작 — com.tasty.image plugin namespace 의 호스트 어댑터.
         // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
@@ -980,7 +976,7 @@ fn route_engine_handler(
         }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => {
-            approval::handle_request(core, state, engine, caller, id, &request.params)
+            approval::handle_request(core, window, engine, caller, id, &request.params)
         }
         "approval.respond" => approval::handle_respond(core, engine, caller, id, &request.params),
         "approval.cancel" => approval::handle_cancel(core, engine, caller, id, &request.params),
@@ -995,10 +991,10 @@ fn route_engine_handler(
         }
         // telemetry (관측 / 비용) — 단계 4.1
         "telemetry.record" => {
-            telemetry::handle_record(core, state, out, engine, caller, id, &request.params)
+            telemetry::handle_record(core, window, out, engine, caller, id, &request.params)
         }
         "telemetry.record_batch" => {
-            telemetry::handle_record_batch(core, state, out, engine, caller, id, &request.params)
+            telemetry::handle_record_batch(core, window, out, engine, caller, id, &request.params)
         }
         "telemetry.summary" => telemetry::handle_summary(core, engine, caller, id, &request.params),
         "telemetry.timeseries" => {
@@ -1141,6 +1137,31 @@ fn route_engine_handler(
         "remote.passkey.get" => passkey::handle_get(id, &request.params),
         "remote.passkey.add" => passkey::handle_add(id, &request.params),
         "remote.passkey.remove" => passkey::handle_remove(id, &request.params),
+        _ => return None,
+    })
+}
+
+/// 창 상태를 **실제로 조작하는** GUI 핸들러의 라우터 — 엔진 핸들러 표(`route_engine_handler`)
+/// 에 없는 메서드만 여기 온다. debug 쪽 짝은 [`route_debug_handler`] 다.
+///
+/// 엔진 핸들러는 창에 [`IpcWindow`] 포트로만 닿는다. 여기와 debug 라우터에 있는 것은 popup ·
+/// 파일 선택기 · debug 주입처럼 창 상태 자체가 대상인 핸들러라 포트로 좁힐 것이 없다 — 그래서
+/// 진입점이 쥔 `AppState` 를 그대로 받는다
+/// (`docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md`).
+#[cfg(feature = "gui")]
+fn route_window_handler(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    caller: &CallerContext,
+    request: &JsonRpcRequest,
+    id: serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    Some(match request.method.as_str() {
+        // (ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
+        // 여는 UI state 변경이라 gui feature 전용.
+        "file_picker.trigger" => {
+            file_picker::handle_trigger(state, engine, caller, id, &request.params)
+        }
         _ => return None,
     })
 }
@@ -1349,11 +1370,11 @@ pub(super) fn structural_failure_response(
 /// 구 client 에 미치는 영향은 없다 — 모르는 키는 무시된다. 그래서 이것은 표면 **추가**
 /// 이고 동결 baseline 가드와 부딪히지 않는다(그 가드가 보는 것은 메서드 이름 집합이다).
 fn handle_system_info(
-    state: &AppState,
+    window: &dyn IpcWindow,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let mut info = system_info_fields(state, engine);
+    let mut info = system_info_fields(window, engine);
     info["capabilities"] = tasty_ipc::capability::capabilities_json();
     // capability 목록은 "이 계약을 아는가" 만 답한다. 멱등 키는 그 위에 **얼마나**
     // 가 있고(보존 시간·항목 수·답 크기) 그 값을 모르면 호출자가 자기 재시도 간격이
@@ -1365,8 +1386,8 @@ fn handle_system_info(
 /// Version is process-wide; the legacy count/index describe this engine. Include
 /// its workspace IDs so an observation never silently looks like a global count.
 /// window.list reuses the same fields beside the OS window ID.
-pub(crate) fn system_info_fields(state: &AppState, engine: &CoreState) -> serde_json::Value {
-    let active_workspace = state.active_workspace;
+pub(crate) fn system_info_fields(window: &dyn IpcWindow, engine: &CoreState) -> serde_json::Value {
+    let active_workspace = window.active_workspace_index();
     json!({
         "version": env!("CARGO_PKG_VERSION"),
         "scope": "engine",
@@ -1379,11 +1400,11 @@ pub(crate) fn system_info_fields(state: &AppState, engine: &CoreState) -> serde_
 }
 
 fn handle_tree(
-    state: &AppState,
+    window: &dyn IpcWindow,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    JsonRpcResponse::success(id, json!(build_engine_tree(state, engine)))
+    JsonRpcResponse::success(id, json!(build_engine_tree(window, engine)))
 }
 
 /// 한 (state, engine) 쌍의 워크스페이스 트리를 JSON 배열로 빌드한다.
@@ -1392,7 +1413,7 @@ fn handle_tree(
 /// **같은 구조**를 내도록 공유하는 빌더 — 노드 필드(active/busy_count/busy, panes/tabs/surface)가
 /// 드리프트하지 않게 단일 소스로 유지한다.
 pub(crate) fn build_engine_tree(
-    state: &AppState,
+    window: &dyn IpcWindow,
     engine: &crate::core::CoreState,
 ) -> Vec<serde_json::Value> {
     engine
@@ -1401,7 +1422,7 @@ pub(crate) fn build_engine_tree(
         .enumerate()
         .map(|(i, ws)| {
             let mut t = ws.to_tree_json();
-            t["active"] = json!(i == state.active_workspace);
+            t["active"] = json!(i == window.active_workspace_index());
             t["busy_count"] = json!(engine.busy_count(&ws.all_surface_ids()));
             annotate_tree_busy(&mut t, engine);
             t

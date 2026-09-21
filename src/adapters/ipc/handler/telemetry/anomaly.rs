@@ -11,7 +11,6 @@ use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, AnomalyKind, anomaly_key};
 
 use crate::core::Core;
-use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -45,12 +44,12 @@ pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Re
 }
 
 pub(super) fn fire_anomaly_notification(
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
     anomaly: &Anomaly,
 ) {
-    let Some(ws) = engine.workspaces.get(state.active_workspace) else {
+    let Some(ws) = engine.workspaces.get(window.active_workspace_index()) else {
         return;
     };
     let ws_id = ws.id;

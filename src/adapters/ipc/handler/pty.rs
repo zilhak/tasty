@@ -302,7 +302,7 @@ pub(crate) fn handle_kill(engine: &mut CoreState, id: Value, params: &Value) -> 
 /// 나타나지 않는다(같은 Terminal 인스턴스가 surface_id 키로 옮겨짐 — 상태 보존).
 pub(crate) fn handle_attach_surface(
     core: &mut crate::core::Core,
-    state: &mut crate::state::AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -352,7 +352,7 @@ pub(crate) fn handle_attach_surface(
     // tab.create 와 동형 cascade — tab.created/surface.created host event enqueue +
     // polling baseline 동기화. 이 호출을 빠뜨리면 데이터만 옮겨지고 화면엔 안 뜬다.
     crate::core::structural_cascade::cascade_tab_created(
-        state, engine, pane_id, tab_id, surface_id,
+        window, engine, pane_id, tab_id, surface_id,
     );
 
     JsonRpcResponse::success(

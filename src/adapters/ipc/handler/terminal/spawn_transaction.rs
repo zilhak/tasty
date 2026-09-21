@@ -4,7 +4,7 @@ use super::*;
 /// `child` must be the fresh surface returned by this spawn's tab.create.
 pub(super) fn finish(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     id: &Value,
     parent: u32,
@@ -18,13 +18,13 @@ pub(super) fn finish(
     if let Err(error) = engine.occupy_soft(target, parent, label) {
         let error =
             JsonRpcResponse::error(id.clone(), -32020, format!("occupy_soft failed: {error:?}"));
-        return Err(rollback(core, state, engine, parent, &child, error));
+        return Err(rollback(core, window, engine, parent, &child, error));
     }
     if let Some(command) = command {
         if let Err(error) =
             send_body_then_submit(engine, core, id, target, build_tell_payload(command))
         {
-            return Err(rollback(core, state, engine, parent, &child, error));
+            return Err(rollback(core, window, engine, parent, &child, error));
         }
     }
     Ok(())
@@ -32,7 +32,7 @@ pub(super) fn finish(
 
 fn rollback(
     core: &mut Core,
-    state: &mut AppState,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &mut CoreState,
     parent: u32,
     child: &ChildEntry,
@@ -51,7 +51,7 @@ fn rollback(
     // user close history. The only close target is this invocation's fresh surface.
     let closed = surface::handle_surface_close(
         core,
-        state,
+        window,
         engine,
         original.id.clone(),
         &json!({"surface_id":child.child_surface_id}),
