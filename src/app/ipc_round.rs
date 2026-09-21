@@ -432,4 +432,28 @@ mod tests {
             assert_eq!(body.matches("record_queue_wait(").count(), 0, "{name}");
         }
     }
+
+    /// IPC 명령을 plugin namespace 로 넘기는 두 자리(gui 라우터 · headless)가 **그 명령의 번호**를
+    /// 넘긴다 — `None` 을 넘기면 plugin hop 이 호스트 몫과 이어지지 않아 링에 두 줄로 갈리거나
+    /// 아예 안 남는데, 매니저 쪽 시험은 번호를 직접 넣으므로 그것을 못 본다(ADR-0436).
+    #[test]
+    fn both_namespace_forwards_pass_the_commands_request_seq() {
+        for (name, src) in [
+            ("gui", include_str!("ipc/routing.rs")),
+            ("headless", include_str!("../boot/headless_dispatch.rs")),
+        ] {
+            let body = src.split("\n#[cfg(test)]").next().unwrap_or(src);
+            let calls: Vec<&str> = body
+                .split("forward_namespace_call(")
+                .skip(1)
+                .map(|rest| rest.split(");").next().unwrap_or(rest))
+                .collect();
+            assert_eq!(calls.len(), 1, "{name}");
+            assert!(
+                calls[0].contains("Some(cmd.request_seq())"),
+                "{name}: {}",
+                calls[0]
+            );
+        }
+    }
 }
