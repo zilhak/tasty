@@ -127,3 +127,53 @@ fn the_open_table_is_bounded_and_a_late_hop_stands_alone() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].host, None);
 }
+
+/// plugin hop 쪽 판정도 문턱 **이상**이다 — 호스트 몫과 hop 대기의 합이 문턱과 같으면 들고,
+/// 1µs 모자라면 안 든다.
+#[test]
+fn a_forward_is_kept_at_the_threshold_and_not_just_under_it() {
+    let log = SlowRequestLog::default();
+    for (seq, wait) in [
+        (1, SLOW_REQUEST_THRESHOLD - Duration::from_micros(1)),
+        (2, SLOW_REQUEST_THRESHOLD),
+    ] {
+        log.note_forwarded(seq);
+        log.finish_host(host(seq, Duration::ZERO, Duration::ZERO));
+        log.finish_plugin_hop(seq, hop(seq, wait, HopOutcome::Ok), true);
+    }
+    assert_eq!(seqs(&log), [2]);
+}
+
+/// 열린 자리를 잃은 사슬이라도 앞 hop 이 `last` 가 아니면 새 자리를 열어 뒤 hop 과 잇는다.
+/// 그렇게 여는 자리도 열린 표의 상한을 지킨다.
+#[test]
+fn a_late_hop_that_is_not_last_opens_a_bounded_entry_for_the_next() {
+    let log = SlowRequestLog::default();
+    log.finish_plugin_hop(1, hop(70, FAST, HopOutcome::Ok), false);
+    log.finish_plugin_hop(1, hop(71, SLOW, HopOutcome::Ok), true);
+    let rows = log.snapshot().rows;
+    assert_eq!(rows.len(), 1);
+    let ids: Vec<u64> = rows[0]
+        .plugin_hops
+        .iter()
+        .map(|h| h.host_request_id)
+        .collect();
+    assert_eq!(ids, [70, 71]);
+
+    for seq in 10..=(10 + OPEN_FORWARD_CAPACITY as u64) {
+        log.finish_plugin_hop(seq, hop(seq, FAST, HopOutcome::Ok), false);
+    }
+    assert_eq!(log.lock().open.len(), OPEN_FORWARD_CAPACITY);
+}
+
+/// 한 줄의 hop 수는 [`MAX_PLUGIN_HOPS`] 에서 멈춘다 — pre-hook · target · post-hook 이 사슬의
+/// 최대이고, 그 밖의 hop 이 줄을 키우지 못한다.
+#[test]
+fn a_row_keeps_at_most_the_hops_of_one_chain() {
+    let log = SlowRequestLog::default();
+    log.finish_host(host(3, SLOW, FAST));
+    for req_id in 0..(MAX_PLUGIN_HOPS as u64 + 2) {
+        log.finish_plugin_hop(3, hop(req_id, FAST, HopOutcome::Ok), false);
+    }
+    assert_eq!(log.snapshot().rows[0].plugin_hops.len(), MAX_PLUGIN_HOPS);
+}
