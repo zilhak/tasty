@@ -26,12 +26,12 @@
 |---|---|---|
 | tell/spawn 의 `\r` 재주입(`terminal.rs`) | 5 s | 해롭다 — 위 결함 |
 | agent runner 의 `dispatch_plugin`(`src/core/agent/runner_host.rs`) | 5 s | 해롭다 — task 는 이미 실패로 보고됐고, 그 뒤의 효과는 아무도 모른다. 재시도하면 두 번째 효과다 |
-| 웹훅 · idle 훅 · 수동 발화의 스텝(`src/hook_handler/exec.rs` 의 `execute_sequence`) | 10 s | 필요하다 — 사건은 밖에서 이미 ACK 됐고 다시 오지 않는다. `agent.task_set_result` 스텝이 버려지면 그 task 는 끝나지 않는다 |
+| `execute_sequence`(`src/hook_handler/exec.rs`)를 지나는 모든 훅 스텝 — 웹훅 · surface 훅(notification · bell · output-match · command-completed · process-exit) · idle 훅 · 수동 발화 | 10 s | 필요하다 — 웹훅은 밖에서 이미 ACK 된 사건이고, surface 훅은 다시 오지 않는 사건이다(그 알림·벨·출력·종료는 한 번 일어나고 끝난다). `agent.task_set_result` 스텝이 버려지면 그 task 는 끝나지 않는다 |
 
 ## Decision
 
 **주입은 제 응답 대기 상한을 명령의 기한으로 싣는다 — 소켓 요청과 같은 자리와 같은 판정으로.
-포기해도 실행돼야 하는 훅 스텝만 기한 없이 넣는다.**
+포기해도 실행돼야 하는 훅 스텝(`execute_sequence` 를 지나는 전부)만 기한 없이 넣는다.**
 
 - `HostIpcInjector::dispatch(method, params, timeout)` 은 `timeout` 을 봉투의 `response_timeout_ms` 에
   싣는다(1 ms 밑이면 1 — `0` 은 봉투 규약상 "기한 없음" 이다). 기한 판정은 ADR-0411 그대로다: 꺼내는
@@ -41,7 +41,8 @@
   앞으로도 안 된다(`nothing_ran()` 이 참). 꺼낸 쪽이 먼저 기한 경과를 봐 `-32067` 을 답으로 보낸 경우도
   같은 갈래다. 이미 시작됐으면 종전대로 `InjectError::Timeout`(결과 불명)이다.
 - `HostIpcInjector::dispatch_even_if_abandoned` 는 종전 동작이다 — 기한을 싣지 않고, 상한에서
-  물러나도 명령은 큐에 남아 나중에 실행된다. 훅 스텝(`execute_sequence`)이 이것을 쓴다.
+  물러나도 명령은 큐에 남아 나중에 실행된다. `execute_sequence` 를 지나는 모든 훅 스텝(웹훅 · surface 훅 —
+  notification · bell · output-match · command-completed · process-exit · idle 훅 · 수동 발화)이 이것을 쓴다.
 - 문구: `Expired` 의 `Display` 는 `host_dispatch timeout after <상한> while still queued (nothing ran)`
   이다. 앞부분이 `Timeout` 의 문구와 같아 그 문구로 로그를 찾던 사람은 계속 찾는다. `Timeout` ·
   `Refused` · `Rpc` · `Disconnected` 의 문구는 안 바뀐다.
@@ -88,8 +89,9 @@ ADR-0391 의 주입 깊이 상한과 거절 갈래.
   따로 본다) — 안 골랐다. 늦은 실행은 주입기의 성질이고, runner 도 같은 형태다. 호출부마다 막으면
   새 호출자가 또 빠진다. 또 호출부는 명령이 큐에서 언제 꺼내지는지 모른다 — 그것을 아는 자리는 꺼내는
   쪽뿐이고, ADR-0411 의 상태 칸이 이미 거기 있다.
-- **B: 모든 주입에 기한을 싣는다(훅 스텝 포함)** — 가장 단순하다. 안 골랐다. 훅 스텝은 밖에서 이미
-  ACK 된 사건을 반영하고 다시 오지 않으므로, 메인 스레드가 10 s 넘게 서 있던 동안 온 웹훅의 효과가
+- **B: 모든 주입에 기한을 싣는다(훅 스텝 포함)** — 가장 단순하다. 안 골랐다. 훅 스텝이 반영하는
+  사건은 다시 오지 않는다 — 웹훅은 밖에서 이미 ACK 됐고, surface 훅의 알림·벨·출력 일치·명령 완료·프로세스
+  종료는 한 번 일어나고 끝난다. 그래서 메인 스레드가 10 s 넘게 서 있던 동안 일어난 그 사건들의 효과가
   통째로 사라진다. 지금 동작(늦게라도 반영)을 바꿀 근거가 없다 — 호환이 가장 많이 남는 쪽을 골랐다.
 - **C: 기한을 호출자의 상한과 다른 값으로 둔다**(예: 상한의 두 배) — 안 골랐다. 호출자가 포기한
   시점과 명령이 무효가 되는 시점이 갈리면, 그 사이에 실행된 명령이 다시 "포기 뒤의 실행" 이 된다.

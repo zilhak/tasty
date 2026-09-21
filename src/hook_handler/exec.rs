@@ -139,12 +139,14 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
 ///
 /// 큐 입장 거절(호스트 명령 큐가 밀려 주입을 받지 않음)은 다른 실패와 **다른 문구**로
 /// 남긴다 — 그 스텝은 실행되지 않았고(시간 초과와 달리 결과 불명이 아니다), 원인은 스텝이
-/// 아니라 호스트의 적체다. 다시 걸지 않는다: 웹훅·idle 훅은 밖에서 계속 오는 사건이라
+/// 아니라 호스트의 적체다. 다시 걸지 않는다: 훅 스텝(웹훅 · surface 훅 · idle 훅)은 계속 오는 사건이라
 /// 재시도가 곧 적체를 키우는 부하다. 다음 스텝은 그대로 진행한다(위 MVP 정책).
 ///
 /// 스텝은 **기한 없이** 넣는다(`dispatch_even_if_abandoned`) — 스텝 상한에서 물러나도 명령은
-/// 큐에 남아 나중에 실행된다. 이 사건은 밖에서 이미 ACK 됐고 다시 오지 않으므로, 늦게라도
-/// 반영되는 쪽이 안 반영되는 쪽보다 낫다(`agent.task_set_result` 스텝이 버려지면 그 task 는
+/// 큐에 남아 나중에 실행된다. 이 함수를 지나는 훅 스텝 전부(웹훅 · surface 훅 — notification ·
+/// bell · output-match · command-completed · process-exit · idle 훅 · 수동 발화)가 그렇다. 그 사건은
+/// 다시 오지 않는다 — 웹훅은 밖에서 이미 ACK 됐고, surface 훅의 사건은 한 번 일어나고 끝난다. 그래서
+/// 늦게라도 반영되는 쪽이 안 반영되는 쪽보다 낫다(`agent.task_set_result` 스텝이 버려지면 그 task 는
 /// 끝나지 않는다). 근거: `docs/adr/0451-a-host-injection-carries-its-wait-as-a-deadline.md`.
 pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &SubstitutionContext) {
     for (i, call) in calls.iter().enumerate() {
