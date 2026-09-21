@@ -63,6 +63,7 @@ fn the_same_forward_twice_runs_the_target_twice_and_is_never_replayed() {
             None,
             serde_json::json!(7),
             tx.clone(),
+            None,
         );
     }
 

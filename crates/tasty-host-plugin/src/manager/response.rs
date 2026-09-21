@@ -461,6 +461,7 @@ impl PluginManager {
             return;
         }
         let deadline = Instant::now() + Duration::from_millis(post_hook_decl.timeout_ms as u64);
+        let origin = final_caller.origin();
         match self.send_extension_invoke_hook(
             &extension_plugin_id,
             tasty_plugin_protocol::ExtensionHookKind::Ipc,
@@ -482,7 +483,8 @@ impl PluginManager {
                             final_caller,
                             deadline,
                         },
-                    ),
+                    )
+                    .for_request(origin),
                 );
             }
             Err(msg) => {

@@ -539,6 +539,7 @@ fn forward_to_plugin_namespace(
         None, // CLI/사용자 호출 — plugin → plugin 호출은 별도 경로(gui 와 같다).
         id,
         cmd.response_tx.clone(),
+        Some(cmd.request_seq()),
     );
     true
 }

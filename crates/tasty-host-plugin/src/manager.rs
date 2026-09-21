@@ -128,11 +128,26 @@ pub(super) enum FinalCaller {
     Local {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         original_id: serde_json::Value,
+        /// 이 호출을 낳은 IPC 요청의 호스트 번호. 회신처와 한 몸으로 사슬(pre-hook → target →
+        /// post-hook)을 따라가므로, 다음 hop 을 대기 표에 넣는 자리가 여기서 읽어
+        /// [`PendingRequest::origin`] 에 복사한다. IPC 큐를 안 지난 호출이면 `None`.
+        origin: Option<tasty_ipc::server::RequestSeq>,
     },
     Plugin {
         caller_plugin_id: String,
         call_id: u64,
     },
+}
+
+impl FinalCaller {
+    /// 이 회신처를 낳은 IPC 요청의 호스트 번호. plugin 이 부른 호출은 호스트 IPC 큐를 안
+    /// 지나 번호가 없다(ADR-0436).
+    pub(super) fn origin(&self) -> Option<tasty_ipc::server::RequestSeq> {
+        match self {
+            FinalCaller::Local { origin, .. } => *origin,
+            FinalCaller::Plugin { .. } => None,
+        }
+    }
 }
 
 /// 응답을 기다리는 host→plugin request 하나 — **무엇을 기다리는지와 언제 보냈는지**.
@@ -152,6 +167,17 @@ pub(super) struct PendingRequest {
     /// 동안 남았다 — 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 까지 참으로
     /// 묶는다. 변종마다 칸을 더하는 대신 여기 하나로 둔다: 받는 쪽은 모든 요청에 있다.
     pub(super) to: String,
+    /// 이 plugin 요청을 낳은 **IPC 요청의 호스트 번호**([`tasty_ipc::server::RequestSeq`]).
+    ///
+    /// IPC 요청을 plugin namespace 로 넘긴 것이면 그 요청의 번호이고, pre/post hook 사슬의 다음
+    /// hop 도 같은 값이다 — 사슬이 들고 가는 [`FinalCaller::origin`] 에서 복사하므로 사슬 전체가
+    /// 원 요청 하나를 가리킨다. IPC 요청에서 오지 않은 plugin 요청(event.dispatch · surface ·
+    /// plugin 이 부른 namespace 등)은 `None` 이다.
+    ///
+    /// `to` 와 같은 이유로 변종이 아니라 여기 칸 하나다 — 어느 변종이 이 값을 가질 수 있는지는
+    /// 넘기는 쪽이 정하고, 응답·만료·취소는 변종과 무관하게 이 칸을 읽는다. plugin 에게는 안
+    /// 간다(ADR-0436): 호스트 쪽 대응표이고, 그 대응을 잇는 것이 호스트 req_id 다.
+    pub(super) origin: Option<tasty_ipc::server::RequestSeq>,
 }
 
 impl PendingRequest {
@@ -162,7 +188,14 @@ impl PendingRequest {
             kind,
             sent_at: Instant::now(),
             to: to.into(),
+            origin: None,
         }
+    }
+
+    /// 이 요청을 낳은 IPC 요청의 번호를 붙인다(`None` 이면 그대로).
+    pub(super) fn for_request(mut self, origin: Option<tasty_ipc::server::RequestSeq>) -> Self {
+        self.origin = origin;
+        self
     }
 }
 
@@ -629,6 +662,9 @@ mod tests_relay_floor;
 // namespace forward 가 정확히 한 번을 약속하지 않는다는 사실의 고정(ADR-0361).
 #[cfg(test)]
 mod tests_forward_idempotency;
+// plugin 으로 넘긴 요청의 대기 항목이 hop 마다 원 IPC 요청의 번호를 드는가(ADR-0436).
+#[cfg(test)]
+mod tests_request_origin;
 
 #[cfg(test)]
 mod tests {
@@ -878,6 +914,7 @@ prefix = "{prefix}"
                 // 자기 벽시계를 쓰면 부하에 따라 값이 흔들린다.
                 sent_at: Instant::now() - Duration::from_millis(50),
                 to: "com.example.x".into(),
+                origin: None,
             },
         );
 

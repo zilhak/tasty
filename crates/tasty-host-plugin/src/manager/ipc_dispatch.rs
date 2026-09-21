@@ -57,6 +57,10 @@ impl PluginManager {
 
     /// 호스트 본문이 새 envelope를 발화. 호스트는 모든 namespace에 publish 가능.
     /// 매칭되는 모든 plugin 구독자에게 `event.dispatch` 송신.
+    ///
+    /// `origin` 은 이 호출을 낳은 IPC 요청의 호스트 번호다 — 큐에서 꺼낸 명령을 넘기는 자리는
+    /// 그 명령의 [`tasty_ipc::server::IpcCommand::request_seq`] 를, IPC 요청에서 오지 않은
+    /// 호출(파일 핸들러 등)은 `None` 을 준다. 번호는 plugin 에게 안 가고 대기 중 표에만 실린다.
     pub fn forward_namespace_call(
         &mut self,
         method: &str,
@@ -64,6 +68,7 @@ impl PluginManager {
         caller_plugin_id: Option<&str>,
         original_id: serde_json::Value,
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
+        origin: Option<tasty_ipc::server::RequestSeq>,
     ) {
         let plugin_id = match self.validate_namespace_call(method, caller_plugin_id) {
             Ok(id) => id,
@@ -83,6 +88,7 @@ impl PluginManager {
             FinalCaller::Local {
                 response_tx,
                 original_id,
+                origin,
             },
         );
     }
@@ -164,6 +170,7 @@ impl PluginManager {
                         "caller_plugin_id": caller_plugin_id,
                     });
                     let deadline = Instant::now() + Duration::from_millis(pre.timeout_ms as u64);
+                    let origin = final_caller.origin();
                     match self.send_extension_invoke_hook(
                         &ext_id,
                         tasty_plugin_protocol::ExtensionHookKind::Ipc,
@@ -187,7 +194,8 @@ impl PluginManager {
                                         post_hook: post,
                                         deadline,
                                     },
-                                ),
+                                )
+                                .for_request(origin),
                             );
                         }
                         Err(msg) => {
@@ -303,11 +311,13 @@ impl PluginManager {
             };
         let deadline = Instant::now() + NAMESPACE_CALL_TIMEOUT;
         let to = target_plugin_id.clone();
+        let origin = final_caller.origin();
         let kind = match (final_caller, post_hook) {
             (
                 FinalCaller::Local {
                     response_tx,
                     original_id,
+                    origin: _,
                 },
                 None,
             ) => PendingRequestKind::NamespaceInvoke {
@@ -338,7 +348,7 @@ impl PluginManager {
             },
         };
         self.pending_requests
-            .insert(req_id, PendingRequest::now(to, kind));
+            .insert(req_id, PendingRequest::now(to, kind).for_request(origin));
     }
 
     /// 활성 extension이 있고 method에 매칭되는 pre/post IPC hook을 검색.
@@ -430,6 +440,7 @@ impl PluginManager {
             FinalCaller::Local {
                 response_tx,
                 original_id,
+                origin: _,
             } => {
                 send_response(
                     &response_tx,
@@ -455,6 +466,7 @@ impl PluginManager {
             FinalCaller::Local {
                 response_tx,
                 original_id,
+                origin: _,
             } => {
                 send_response(&response_tx, JsonRpcResponse::success(original_id, result));
             }

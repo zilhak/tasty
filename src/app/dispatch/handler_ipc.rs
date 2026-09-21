@@ -35,7 +35,8 @@ impl App {
                 "path": target.as_path().to_string_lossy(),
             });
             let (tx, _rx) = std::sync::mpsc::sync_channel(1);
-            mgr.forward_namespace_call(&method, params, None, serde_json::Value::Null, tx);
+            // 파일 핸들러는 IPC 큐를 안 지난 호출이라 원 요청 번호가 없다.
+            mgr.forward_namespace_call(&method, params, None, serde_json::Value::Null, tx, None);
         }
     }
 }
