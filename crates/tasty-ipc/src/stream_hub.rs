@@ -1364,6 +1364,39 @@ mod tests {
         assert!(rx.try_recv().is_err(), "갚은 통지가 되풀이됐다");
     }
 
+    /// 선언이 손실 **뒤**, 소비자가 큐를 비우기 **전**에 온 연결 — 선언이 write 스레드 쪽
+    /// 사본(`owes_notice`)을 켜야 꺼내는 순간 통지가 나간다. 선언 자리가 사본을 안 맞추면
+    /// 사본은 "선언 전이라 빚 없음" 에 머물고, 소비자는 공백 앞을 다 읽고도 통지를 못 받는다
+    /// (`pump_inbound` 가 이 연결의 inbound 를 한 번 더 받기 전까지).
+    #[test]
+    fn a_declaration_between_the_loss_and_the_drain_is_repaid_by_the_write_thread() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"gap")),
+            PushResult::Dropped
+        );
+        hub.enable_loss_notify(id);
+        let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(
+            drained.len(),
+            SINK_CAP + 1,
+            "선언 뒤 공백 앞을 다 읽었는데 통지가 안 왔다"
+        );
+        let last = &drained[SINK_CAP];
+        assert_eq!(last.tag, StreamTag::Control);
+        let notice: crate::stream::StreamControl =
+            serde_json::from_slice(&last.payload).expect("StreamControl");
+        assert_eq!(notice, crate::stream::StreamControl::Loss { frames: 1 });
+    }
+
     /// 선언하지 않은 연결에는 `pump_inbound` 도 아무것도 넣지 않는다 — 구 peer 무영향.
     #[test]
     fn pump_inbound_adds_nothing_for_a_client_that_never_declared() {
