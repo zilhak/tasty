@@ -17,7 +17,6 @@ fn require_tab_id(
 }
 
 pub fn handle_tab_list(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -129,7 +128,6 @@ pub fn handle_tab_close(
 
 pub fn handle_tab_move(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

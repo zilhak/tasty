@@ -44,10 +44,10 @@ impl App {
                 workspace::handle_workspace_list(s, e, id)
             })),
             "surface.list" => {
-                Some(self.collect_list(id, |_c, s, e, id| surface::handle_surface_list(s, e, id)))
+                Some(self.collect_list(id, |_c, _s, e, id| surface::handle_surface_list(e, id)))
             }
             "pane.list" => {
-                Some(self.collect_list(id, |_c, s, e, id| pane::handle_pane_list(s, e, id)))
+                Some(self.collect_list(id, |_c, _s, e, id| pane::handle_pane_list(e, id)))
             }
             // `tree` 는 이름이 `*.list` 가 아니라서 이 집합을 이름 모양으로 훑는
             // 눈에 오래 안 보였다. 성질은 같다 — 창 소유 컬렉션을 순회하고, 대상 인자가
@@ -63,8 +63,8 @@ impl App {
             "pty.list" => {
                 Some(self.collect_field(id, "ptys", |_c, _s, e, id| pty::handle_list(e, id)))
             }
-            "output.observe_list" => Some(self.collect_field(id, "observers", |c, s, e, id| {
-                output::handle_observe_list(c, s, e, id)
+            "output.observe_list" => Some(self.collect_field(id, "observers", |c, _s, e, id| {
+                output::handle_observe_list(c, e, id)
             })),
             // `image.list` 도 `engine.workspaces` 를 순회한다 — 창 소유인데 여기 없었다.
             //

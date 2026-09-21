@@ -1,13 +1,11 @@
 use serde_json::json;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 // `_state` 는 미사용이지만 시그니처는 유지 — `App::collect_list` 의
 // `Fn(&AppState, &CoreState, Value)` generic 으로 workspace.list / pane.list
 // 핸들러와 공유하는 호출 컨벤션이다.
 pub(crate) fn handle_surface_list(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {

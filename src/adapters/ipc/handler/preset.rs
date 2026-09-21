@@ -51,11 +51,7 @@ fn require_str<'a>(
 use super::params::require_u32;
 
 /// Core.preset_store 잠금 후 클로저 실행. Core 가 항상 보유하므로 실패 분기 없음.
-fn with_store<R>(
-    _state: &AppState,
-    core: &crate::core::Core,
-    f: impl FnOnce(&tasty_presets::PresetStore) -> R,
-) -> R {
+fn with_store<R>(core: &crate::core::Core, f: impl FnOnce(&tasty_presets::PresetStore) -> R) -> R {
     let guard = crate::poison::recover_mutex(
         core.preset_store.lock(),
         crate::core::PRESET_STORE_WHAT,
@@ -77,7 +73,6 @@ fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcRespo
 
 pub fn handle_list(
     core: &crate::core::Core,
-    state: &AppState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -85,13 +80,12 @@ pub fn handle_list(
         Ok(k) => k,
         Err(e) => return e,
     };
-    let names = with_store(state, core, |s| s.list(kind));
+    let names = with_store(core, |s| s.list(kind));
     JsonRpcResponse::success(id, json!({ "kind": kind.as_str(), "presets": names }))
 }
 
 pub fn handle_get(
     core: &crate::core::Core,
-    state: &AppState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -104,7 +98,7 @@ pub fn handle_get(
         Err(e) => return e,
     };
 
-    let data = match with_store(state, core, |s| -> Result<serde_json::Value, String> {
+    let data = match with_store(core, |s| -> Result<serde_json::Value, String> {
         match kind {
             PresetKind::Workspace => s
                 .get_workspace(&name)

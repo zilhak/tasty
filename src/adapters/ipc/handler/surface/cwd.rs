@@ -8,11 +8,9 @@ use crate::adapters::ipc::handler::params::require_u32;
 use serde_json::Value;
 use std::path::PathBuf;
 
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_set_cwd(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: Value,
     params: &Value,

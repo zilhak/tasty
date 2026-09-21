@@ -17,7 +17,6 @@ use super::require_surface_id;
 /// `surface.completion` 파라미터 및 attach 스트림([`AttentionKindWire`])과 같은
 /// 어휘를 쓴다.
 pub(crate) fn handle_attention_get(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -207,7 +206,7 @@ mod tests {
         let sid = state.focused_surface_id(&engine).expect("focused surface");
         state.active_workspace_mut(&mut engine).mirror = true;
 
-        let resp = handle_attention_get(&state, &engine, json!(1), &json!({ "surface_id": sid }));
+        let resp = handle_attention_get(&engine, json!(1), &json!({ "surface_id": sid }));
         assert!(resp.error.is_none(), "{:?}", resp.error);
         assert_eq!(
             resp.result,

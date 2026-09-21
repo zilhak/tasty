@@ -84,7 +84,7 @@ pub(crate) fn test_core_builder() -> crate::core::builder::CoreBuilder {
 /// 살아 있는 surface 를 넘겨 **성공까지** 확인한다.
 #[test]
 fn surface_query_cli_entry_points_reach_their_handlers() {
-    let (state, engine) = crate::state::tests::test_state();
+    let (_state, engine) = crate::state::tests::test_state();
     let surface = engine.workspaces[0]
         .all_surface_ids()
         .first()
@@ -109,12 +109,12 @@ fn surface_query_cli_entry_points_reach_their_handlers() {
 
         let resp = match expected_method {
             "surface.cursor_position" => {
-                super::surface::handle_cursor_position(&state, &engine, json!(1), &req.params)
+                super::surface::handle_cursor_position(&engine, json!(1), &req.params)
             }
             "surface.foreground_process" => {
-                super::surface::handle_foreground_process(&state, &engine, json!(1), &req.params)
+                super::surface::handle_foreground_process(&engine, json!(1), &req.params)
             }
-            _ => super::surface::handle_surface_locate(&state, &engine, json!(1), &req.params),
+            _ => super::surface::handle_surface_locate(&engine, json!(1), &req.params),
         };
         assert_params_were_understood(expected_method, &resp);
         assert!(
@@ -130,7 +130,7 @@ fn surface_query_cli_entry_points_reach_their_handlers() {
 #[test]
 fn respawn_terminal_cli_entry_point_reaches_target_lookup() {
     let mut core = test_core();
-    let (mut state, mut engine) = crate::state::tests::test_state();
+    let (_state, mut engine) = crate::state::tests::test_state();
     let missing = 999_999u32;
 
     let req = command_to_request(&Commands::Surface {
@@ -140,7 +140,6 @@ fn respawn_terminal_cli_entry_point_reaches_target_lookup() {
 
     let resp = super::surface::handle_surface_respawn_terminal(
         &mut core,
-        &mut state,
         &mut engine,
         json!(1),
         &req.params,

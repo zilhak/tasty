@@ -450,7 +450,6 @@ pub(crate) fn handle_spawn(
 
 pub(crate) fn handle_tell(
     core: &mut Core,
-    _state: &mut AppState,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -768,7 +767,6 @@ pub(crate) fn handle_adopt(engine: &mut CoreState, id: Value, params: &Value) ->
 
 pub(crate) fn handle_respawn(
     core: &mut Core,
-    state: &mut AppState,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -803,13 +801,7 @@ pub(crate) fn handle_respawn(
             respawn_params["cwd"] = Value::String(c.to_string());
         }
         if let Err(e) = unwrap_ok(
-            surface::handle_surface_respawn_terminal(
-                core,
-                state,
-                engine,
-                id.clone(),
-                &respawn_params,
-            ),
+            surface::handle_surface_respawn_terminal(core, engine, id.clone(), &respawn_params),
             &id,
         ) {
             return e;
@@ -821,7 +813,7 @@ pub(crate) fn handle_respawn(
             "modifiers": ["ctrl"],
         });
         if let Err(e) = unwrap_ok(
-            surface::handle_surface_send_combo(core, state, engine, id.clone(), &combo),
+            surface::handle_surface_send_combo(core, engine, id.clone(), &combo),
             &id,
         ) {
             return e;
@@ -830,7 +822,7 @@ pub(crate) fn handle_respawn(
     if let Some(cmd) = &command {
         let send_params = json!({ "surface_id": entry.child_surface_id, "text": cmd });
         if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, state, engine, id.clone(), &send_params),
+            surface::handle_surface_send(core, engine, id.clone(), &send_params),
             &id,
         ) {
             return e;
@@ -875,7 +867,6 @@ pub(crate) fn handle_respawn(
 #[allow(clippy::too_many_arguments)]
 fn send_broadcast_to_child(
     core: &mut Core,
-    state: &mut AppState,
     engine: &mut CoreState,
     id: &Value,
     sid: u32,
@@ -884,7 +875,7 @@ fn send_broadcast_to_child(
 ) -> bool {
     let body_params = json!({ "surface_id": sid, "text": body });
     if let Err(e) = unwrap_ok(
-        surface::handle_surface_send(core, state, engine, id.clone(), &body_params),
+        surface::handle_surface_send(core, engine, id.clone(), &body_params),
         id,
     ) {
         tracing::warn!("terminal.broadcast surface.send (sid={sid}) failed: {e:?}");
@@ -893,7 +884,7 @@ fn send_broadcast_to_child(
     if submit {
         let cr_params = json!({ "surface_id": sid, "text": "\r" });
         if let Err(e) = unwrap_ok(
-            surface::handle_surface_send(core, state, engine, id.clone(), &cr_params),
+            surface::handle_surface_send(core, engine, id.clone(), &cr_params),
             id,
         ) {
             tracing::warn!("terminal.broadcast submit (sid={sid}) failed: {e:?}");
@@ -904,7 +895,6 @@ fn send_broadcast_to_child(
 
 pub(crate) fn handle_broadcast(
     core: &mut Core,
-    state: &mut AppState,
     engine: &mut CoreState,
     id: Value,
     params: &Value,
@@ -935,7 +925,7 @@ pub(crate) fn handle_broadcast(
     let mut sent_ids: Vec<u32> = Vec::new();
     let mut idle_cleared = false;
     for sid in targets {
-        if send_broadcast_to_child(core, state, engine, &id, sid, &body, submit) {
+        if send_broadcast_to_child(core, engine, &id, sid, &body, submit) {
             // tell 과 같은 이유로 여기서도 내린다 — 프롬프트를 밀어넣은 자식이
             // `idle` 로 남아 있으면 그 상태를 읽는 모든 소비자가 거짓을 본다.
             idle_cleared |= clear_idle_for_new_prompt(&mut engine.child_terminals, sid);

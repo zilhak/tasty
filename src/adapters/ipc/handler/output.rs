@@ -8,12 +8,10 @@ use serde_json::{Value, json};
 
 use crate::core::Core;
 use crate::output_observer::{ObserverError, ObserverSpec, SinkSpec};
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_observe_start(
     core: &mut Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
@@ -35,7 +33,6 @@ pub fn handle_observe_start(
 
 pub fn handle_observe_stop(
     core: &mut Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
@@ -52,7 +49,6 @@ pub fn handle_observe_stop(
 
 pub fn handle_observe_list(
     core: &Core,
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: Value,
 ) -> JsonRpcResponse {
@@ -62,7 +58,6 @@ pub fn handle_observe_list(
 
 pub fn handle_observe_info(
     core: &Core,
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: Value,
     params: &Value,

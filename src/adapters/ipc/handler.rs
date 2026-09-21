@@ -665,25 +665,23 @@ fn route_engine_handler(
         }
         "workspace_category.move" => workspace_category::handle_move(engine, id, &request.params),
         // pane / split
-        "pane.list" => pane::handle_pane_list(state, engine, id),
+        "pane.list" => pane::handle_pane_list(engine, id),
         "pane.close" => pane::handle_pane_close(core, state, engine, id, &request.params),
         "split" => pane::handle_split(core, state, engine, id, &request.params),
         // tab
-        "tab.list" => tab::handle_tab_list(state, engine, id, &request.params),
+        "tab.list" => tab::handle_tab_list(engine, id, &request.params),
         "tab.create" => tab::handle_tab_create(core, state, engine, id, &request.params),
         "tab.close" => tab::handle_tab_close(core, state, engine, id, &request.params),
-        "tab.move" => tab::handle_tab_move(core, state, engine, id, &request.params),
+        "tab.move" => tab::handle_tab_move(core, engine, id, &request.params),
         // terminal (child-terminal 관리, ADR-0040 / occupancy-04)
         "terminal.spawn" => terminal::handle_spawn(core, state, engine, id, &request.params),
-        "terminal.tell" => terminal::handle_tell(core, state, engine, id, &request.params),
+        "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
         "terminal.kill" => terminal::handle_kill(core, state, engine, id, &request.params),
-        "terminal.respawn" => terminal::handle_respawn(core, state, engine, id, &request.params),
-        "terminal.broadcast" => {
-            terminal::handle_broadcast(core, state, engine, id, &request.params)
-        }
+        "terminal.respawn" => terminal::handle_respawn(core, engine, id, &request.params),
+        "terminal.broadcast" => terminal::handle_broadcast(core, engine, id, &request.params),
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
         "terminal.adopt" => terminal::handle_adopt(engine, id, &request.params),
         "terminal.release" => terminal::handle_release(engine, id, &request.params),
@@ -699,8 +697,8 @@ fn route_engine_handler(
             pty::handle_attach_surface(core, state, engine, id, &request.params)
         }
         // preset (layout preset CRUD + apply)
-        "preset.list" => preset::handle_list(core, state, id, &request.params),
-        "preset.get" => preset::handle_get(core, state, id, &request.params),
+        "preset.list" => preset::handle_list(core, id, &request.params),
+        "preset.get" => preset::handle_get(core, id, &request.params),
         "preset.save" => preset::handle_save(core, state, id, &request.params),
         "preset.delete" => preset::handle_delete(core, state, id, &request.params),
         "preset.rename" => preset::handle_rename(core, state, id, &request.params),
@@ -711,24 +709,18 @@ fn route_engine_handler(
         "surface.close_self" => {
             surface::handle_surface_close_self(core, state, engine, id, &request.params)
         }
-        "surface.list" => surface::handle_surface_list(state, engine, id),
+        "surface.list" => surface::handle_surface_list(engine, id),
         "surface.kinds" => surface::handle_surface_kinds(engine, id),
-        "surface.send" => surface::handle_surface_send(core, state, engine, id, &request.params),
-        "surface.send_key" => {
-            surface::handle_surface_send_key(core, state, engine, id, &request.params)
-        }
+        "surface.send" => surface::handle_surface_send(core, engine, id, &request.params),
+        "surface.send_key" => surface::handle_surface_send_key(core, engine, id, &request.params),
         "surface.send_combo" => {
-            surface::handle_surface_send_combo(core, state, engine, id, &request.params)
+            surface::handle_surface_send_combo(core, engine, id, &request.params)
         }
-        "surface.send_to" => {
-            surface::handle_surface_send_to(core, state, engine, id, &request.params)
-        }
-        "surface.wake" => surface::handle_surface_wake(state, engine, id, &request.params),
+        "surface.send_to" => surface::handle_surface_send_to(core, engine, id, &request.params),
+        "surface.wake" => surface::handle_surface_wake(engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, engine, id, &request.params),
         "surface.completion" => surface::handle_completion(state, engine, id, &request.params),
-        "surface.attention.get" => {
-            surface::handle_attention_get(state, engine, id, &request.params)
-        }
+        "surface.attention.get" => surface::handle_attention_get(engine, id, &request.params),
         "surface.attention.clear" => {
             surface::handle_attention_clear(state, engine, id, &request.params)
         }
@@ -741,36 +733,22 @@ fn route_engine_handler(
         "surface.parse_since_mark" => {
             surface::handle_parse_since_mark(state, engine, id, &request.params)
         }
-        "surface.commands" => surface::handle_commands(core, state, engine, id, &request.params),
-        "surface.last_command" => {
-            surface::handle_last_command(core, state, engine, id, &request.params)
-        }
-        "surface.command_at" => {
-            surface::handle_command_at(core, state, engine, id, &request.params)
-        }
-        "output.observe_start" => {
-            output::handle_observe_start(core, state, engine, id, &request.params)
-        }
-        "output.observe_stop" => {
-            output::handle_observe_stop(core, state, engine, id, &request.params)
-        }
-        "output.observe_list" => output::handle_observe_list(core, state, engine, id),
-        "output.observe_info" => {
-            output::handle_observe_info(core, state, engine, id, &request.params)
-        }
-        "surface.screen_text" => surface::handle_screen_text(state, engine, id, &request.params),
-        "surface.cursor_position" => {
-            surface::handle_cursor_position(state, engine, id, &request.params)
-        }
-        "surface.mouse_tracking" => {
-            surface::handle_mouse_tracking(state, engine, id, &request.params)
-        }
+        "surface.commands" => surface::handle_commands(core, engine, id, &request.params),
+        "surface.last_command" => surface::handle_last_command(core, engine, id, &request.params),
+        "surface.command_at" => surface::handle_command_at(core, engine, id, &request.params),
+        "output.observe_start" => output::handle_observe_start(core, engine, id, &request.params),
+        "output.observe_stop" => output::handle_observe_stop(core, engine, id, &request.params),
+        "output.observe_list" => output::handle_observe_list(core, engine, id),
+        "output.observe_info" => output::handle_observe_info(core, engine, id, &request.params),
+        "surface.screen_text" => surface::handle_screen_text(engine, id, &request.params),
+        "surface.cursor_position" => surface::handle_cursor_position(engine, id, &request.params),
+        "surface.mouse_tracking" => surface::handle_mouse_tracking(engine, id, &request.params),
         "surface.foreground_process" => {
-            surface::handle_foreground_process(state, engine, id, &request.params)
+            surface::handle_foreground_process(engine, id, &request.params)
         }
-        "surface.locate" => surface::handle_surface_locate(state, engine, id, &request.params),
+        "surface.locate" => surface::handle_surface_locate(engine, id, &request.params),
         "surface.respawn_terminal" => {
-            surface::handle_surface_respawn_terminal(core, state, engine, id, &request.params)
+            surface::handle_surface_respawn_terminal(core, engine, id, &request.params)
         }
         "surface.is_typing" => handle_is_typing(state, engine, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, engine, id, &request.params),
@@ -781,7 +759,7 @@ fn route_engine_handler(
         "surface.meta.get" => meta::handle_surface_meta_get(state, engine, id, &request.params),
         "surface.meta.unset" => meta::handle_surface_meta_unset(state, engine, id, &request.params),
         "surface.meta.list" => meta::handle_surface_meta_list(state, engine, id, &request.params),
-        "surface.set_cwd" => surface::handle_set_cwd(state, engine, id, &request.params),
+        "surface.set_cwd" => surface::handle_set_cwd(engine, id, &request.params),
         // hooks
         "hook.set" => hooks::handle_hook_set(core, state, engine, id, &request.params),
         "hook.list" => hooks::handle_hook_list(state, engine, id, &request.params),

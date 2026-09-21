@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use crate::adapters::ipc::handler::params::{self, p_try};
-use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
@@ -50,7 +49,6 @@ pub(crate) fn with_screen_diagnostics(
 /// 응답에는 `is_terminal` · `scrollback_len` · `alt_screen` 이 함께 실린다 —
 /// 위 [`ScreenDiag`] 참조.
 pub(crate) fn handle_screen_text(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -85,7 +83,6 @@ pub(crate) fn handle_screen_text(
 }
 
 pub(crate) fn handle_cursor_position(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -131,7 +128,6 @@ pub(crate) fn handle_cursor_position(
 ///   `effective_click_tracking == false` 여도 휠 보고는 살아 있을 수 있다.
 /// - **보고가 실제로 PTY 로 나갔는지**는 안 낸다. 이 값은 결정의 입력이지 결과가 아니다.
 pub(crate) fn handle_mouse_tracking(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -208,7 +204,6 @@ fn mouse_tracking_label(mode: tasty_terminal::MouseTrackingMode) -> &'static str
 /// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
 pub(crate) fn handle_foreground_process(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -240,7 +235,6 @@ pub(crate) fn handle_foreground_process(
 /// surface.send로 `claude` 명령을 재송신한다.
 pub(crate) fn handle_surface_respawn_terminal(
     core: &mut crate::core::Core,
-    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -283,7 +277,6 @@ pub(crate) fn handle_surface_respawn_terminal(
 /// 플러그인이 자기 자식 surface를 죽이거나 wait할 때, 호스트 트리에 여전히
 /// 살아있는지 확인하기 위해 사용한다.
 pub(crate) fn handle_surface_locate(
-    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,

@@ -7,11 +7,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_pane_id;
 
-pub fn handle_pane_list(
-    _state: &AppState,
-    engine: &crate::core::CoreState,
-    id: serde_json::Value,
-) -> JsonRpcResponse {
+pub fn handle_pane_list(engine: &crate::core::CoreState, id: serde_json::Value) -> JsonRpcResponse {
     let mut panes = Vec::new();
     for ws in &engine.workspaces {
         let pane_ids = ws.pane_layout().all_pane_ids();
