@@ -1246,8 +1246,8 @@ fn apply_builtin_upgrade_decision(
     // 방금 disable 된 plugin 은 옛 프로세스가 아직 빠지는 중일 수 있다 — disable 은 회수를
     // 기다리지 않는다. 아래 갈래는 모두 그 디렉토리에 쓰므로(실행 중인 파일은 Windows 에서
     // 덮어쓸 수 없고 Linux 에서는 `ETXTBSY` 가 난다) 그 회수부터 끝낸다.
-    mgr.wait_retired(spec.id);
-    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
+    let respawn = mgr.wait_retired(spec.id);
+    let upgrade = match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
         BuiltinUpgradeDecision::Skip => SpecUpgrade {
             item: BuiltinUpgradeItem {
                 id: spec.id.into(),
@@ -1259,22 +1259,17 @@ fn apply_builtin_upgrade_decision(
             },
             changed: false,
         },
-        BuiltinUpgradeDecision::ResyncSameVersion => {
-            let wrote = match sync_dir_by_content(src, dest) {
-                Ok(w) => w,
-                Err(e) => {
-                    return SpecUpgrade {
-                        item: BuiltinUpgradeItem {
-                            id: spec.id.into(),
-                            action: BuiltinUpgradeAction::Failed {
-                                reason: e.to_string(),
-                            },
-                        },
-                        changed: false,
-                    };
-                }
-            };
-            SpecUpgrade {
+        BuiltinUpgradeDecision::ResyncSameVersion => match sync_dir_by_content(src, dest) {
+            Err(e) => SpecUpgrade {
+                item: BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Failed {
+                        reason: e.to_string(),
+                    },
+                },
+                changed: false,
+            },
+            Ok(wrote) => SpecUpgrade {
                 item: BuiltinUpgradeItem {
                     id: spec.id.into(),
                     action: BuiltinUpgradeAction::Skipped {
@@ -1290,8 +1285,8 @@ fn apply_builtin_upgrade_decision(
                 // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
                 // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
                 changed: wrote,
-            }
-        }
+            },
+        },
         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
             tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
             match swap_overwrite_respawn(mgr, spec, src, dest, restart_running) {
@@ -1338,7 +1333,14 @@ fn apply_builtin_upgrade_decision(
                 },
             }
         }
+    };
+    // 회수 중이던 것이 무응답 재시작이나 회수 중에 온 enable 이었으면 그 재기동 예약을
+    // 여기서 잇는다 — 기다리며 예약을 가져왔으므로 안 이으면 enabled 인 plugin 이 꺼진 채
+    // 남는다(새 파일로 뜬다).
+    if respawn {
+        mgr.start_if_still_wanted(spec.id);
     }
+    upgrade
 }
 
 /// 한 builtin spec 의 upgrade 전체 처리 (removed → not-in-bundle → 서명 → install/decide).
@@ -1583,6 +1585,9 @@ fn fill(f: &mut std::fs::File, buf: &mut [u8]) -> std::io::Result<usize> {
 
 #[cfg(test)]
 mod bundle_selection_tests;
+
+#[cfg(test)]
+mod upgrade_retire_tests;
 
 #[cfg(test)]
 mod tests {

@@ -63,7 +63,8 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
   스레드가 서 있어 아무도 그 틈을 못 봤다. 지금은 그 사이의 namespace 호출이 `-32002 plugin '…' is not
   running` 을 받고, `plugin list` 가 `running: false` 를 보인다.
 - **잃은 것**: disable 의 응답이 "프로세스가 끝났다" 를 뜻하지 않는다. 끝났음을 알아야 하는 호출자는
-  `remove` · `upgrade-builtins` 처럼 `wait_retired` 를 거쳐야 한다.
+  `remove` · `upgrade-builtins` 처럼 `wait_retired` 를 거쳐야 한다. 그 호출은 회수 뒤의 재기동 예약을
+  함께 가져오므로, 돌려받은 값이 참이면 쓰기를 마친 뒤 호출자가 다시 띄운다.
 - **운영 비용**: 회수마다 스레드 하나(최대 약 2 s 산다). 회수 중에만 50 ms 타이머가 호스트를 깨운다.
 
 ## Alternatives Considered
@@ -93,6 +94,9 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
 - 재시작이 옛 프로세스를 기다리거나 새 것을 그 자리에서 띄우면
   `an_unresponsive_restart_waits_for_the_old_process_before_starting` 이, 종료가 회수 중인 것을 두고
   끝나거나 다시 띄우면 `exit_waits_for_a_retiring_plugin_and_does_not_respawn_it` 이 잡는다.
+- 회수를 기다리는 호출자가 재기동 예약을 버리면 — 무응답 재시작 중에 `upgrade-builtins` 가 오면 —
+  `builtin::upgrade_retire_tests::an_upgrade_during_a_restart_keeps_the_restart` 가 잡는다(예약을
+  잇는 한 줄을 끄는 변이로 죽는 것을 확인했다).
 - plugin 프로토콜에 "앞 인스턴스가 살아 있어도 된다" 는 계약이 생기면 — 겹침을 막는 이유가 사라진다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.

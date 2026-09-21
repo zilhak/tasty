@@ -187,31 +187,52 @@ impl PluginManager {
     /// [`PluginTick::Retire`] 한 번 — 끝난 회수를 거두고, 다시 띄울 것을 띄운다.
     pub(super) fn poll_retiring(&mut self) {
         for (id, respawn) in self.reap_finished_retirements() {
-            if !respawn || self.config.is_disabled(&id) || self.processes.contains_key(&id) {
-                continue;
-            }
-            if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
-                self.ensure_listener();
-                self.start_plugin_internal(&pkg);
+            if respawn {
+                self.start_if_still_wanted(&id);
             }
         }
     }
 
+    /// 회수 뒤로 미뤄 둔 기동을 한다 — 그 사이 disable 되었거나 이미 떠 있거나 설치 목록에서
+    /// 빠졌으면 아무것도 안 한다.
+    pub(crate) fn start_if_still_wanted(&mut self, plugin_id: &str) {
+        if self.config.is_disabled(plugin_id) || self.processes.contains_key(plugin_id) {
+            return;
+        }
+        if let Some(pkg) = self
+            .packages
+            .iter()
+            .find(|p| p.manifest.id == plugin_id)
+            .cloned()
+        {
+            self.ensure_listener();
+            self.start_plugin_internal(&pkg);
+        }
+    }
+
     /// `plugin_id` 의 회수가 끝날 때까지 **기다린다**. 옛 프로세스가 반드시 사라져 있어야
-    /// 하는 호출자 — 디스크의 plugin 디렉토리를 지우거나 덮어쓰는 `remove` · swap — 만
-    /// 부른다. 다시 띄우지 않는다.
-    pub fn wait_retired(&mut self, plugin_id: &str) {
+    /// 하는 호출자 — 디스크의 plugin 디렉토리를 지우거나 덮어쓰는 호출자 — 만 부른다.
+    ///
+    /// 돌려주는 값은 **회수 뒤에 다시 띄우기로 예약돼 있었는가**다(무응답 재시작 · 회수 중에
+    /// 온 enable). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인
+    /// plugin 이 아무 것도 다시 띄우지 않는 채로 꺼져 남는다 — 호출자가 쓰기를 마친 뒤
+    /// `true` 면 [`Self::start_if_still_wanted`] 로 이어 받는다.
+    pub fn wait_retired(&mut self, plugin_id: &str) -> bool {
+        let mut respawn = false;
         if let Some(r) = self.retiring.remove(plugin_id) {
+            respawn = r.respawn;
             let outcome = r.join();
             tracing::info!(
                 plugin_id,
                 reason = outcome.as_str(),
+                respawn,
                 "plugin process retired (waited)"
             );
         }
         if self.retiring.is_empty() {
             self.timers.cancel(PluginTick::Retire);
         }
+        respawn
     }
 
     /// 호스트 종료 — 회수 중인 것은 다시 띄우지 않고, 전부 끝났는지만 본다. 기다리지
@@ -244,6 +265,12 @@ impl PluginManager {
         } else {
             false
         }
+    }
+
+    /// 헬스체크의 무응답 재시작 한 번 — 시험 전용(다른 모듈의 시험이 부른다).
+    #[cfg(test)]
+    pub(crate) fn restart_unresponsive_for_test(&mut self) {
+        self.restart_unresponsive_plugins();
     }
 
     /// 지금 회수 중인 plugin 수 — 시험 전용.

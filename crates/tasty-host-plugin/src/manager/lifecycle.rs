@@ -786,7 +786,8 @@ impl PluginManager {
     pub(crate) fn swap_shutdown_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // swap 은 이 뒤에 디스크의 plugin 디렉토리를 덮어쓰므로 옛 프로세스가 **사라져
         // 있어야** 한다 — 그래서 여기는 기다린다. 무응답 재시작으로 이미 회수 중이던
-        // 것도 끝까지 기다린다(`manager::retire`).
+        // 것도 끝까지 기다린다(`manager::retire`). 그 재기동 예약은 여기서 따로 잇지 않는다 —
+        // swap 은 뒤의 `swap_respawn_internal` 이 어차피 다시 띄운다.
         self.wait_retired(plugin_id);
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
