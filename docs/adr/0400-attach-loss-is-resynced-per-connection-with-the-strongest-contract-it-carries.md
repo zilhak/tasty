@@ -62,6 +62,14 @@ mirror 연결 하나가 PTY Data(surface 접두 mux) · 상태 Control(`Resize`�
      frame 과 구독 dedup 상태를 지워 새 연결에서 처음부터 다시 구독한다. 세션마다 재attach 는
      **한 번에 하나**다 — 진행 중에 온 통지는 합산만 한다. 재attach 가 실패하면 disconnect 와
      같은 갈래다(anchor 가 있으면 `Reconnecting`, 없으면 정리).
+     **창 없는(parked) engine 에서 온 통지는 재attach 를 미룬다** — 마지막 창을 닫았거나
+     macOS 최소화로 engine 이 parked 에 있으면, 표지 갱신과 로그만 하고 옛 연결에 `Detach` 를
+     보내지 않는다. 재attach 의 마지막 단계는 mirror 를 담은 창을 찾으므로 parked 에서 걸면
+     실패하고, 실패 갈래는 anchor 없는 수동 attach 를 정리한다 — 손실 한 번에 mirror 가
+     사라진다(아래 "손실이 나면 mirror 를 닫는다" 를 기각한 결과와 같다). 그 engine 이 다시
+     창에 붙으면 `apply_attach_client_output`(3 초 주기 backstop 포함)이 그 창에서 옛 연결을
+     놓고 낡음 toast 를 띄운다. 미루는 동안 옛 연결은 계속 출력을 실어 오고, 그 사이 연결이
+     따로 끊기면 손실과 무관한 끊김 갈래를 탄다(이 결정 이전과 같다).
    - **CLI surface / workspace dump**: 재attach 후 처음부터 다시 수집한다. 한 번의 실행에서
      재attach 는 최대 3 회이고, 넘으면 수집을 이어가 결과를 출력하되 stderr 로 공백이 있다고
      알린다. `--send` 입력은 첫 attach 에서만 보낸다(재attach 가 입력을 되풀이하지 않는다).
@@ -135,6 +143,11 @@ mirror 연결 하나가 PTY Data(surface 접두 mux) · 상태 Control(`Resize`�
   연결 하나에 계약 둘을 걸면 둘의 순서를 또 정해야 한다.
 - **손실이 나면 mirror 를 닫는다** — 안 골랐다. 사용자의 작업 공간이 사라진다. 끊김에서도
   anchor 세션은 살려 두는 기존 방침과 어긋난다.
+- **parked 에서도 곧바로 옛 연결을 놓고, 재attach 실패가 "창 없음" 때문이면 정리 대신
+  `Reconnecting` 으로 남긴다** — 안 골랐다. anchor 없는 세션에는 `Reconnecting` 을 다시 깨울
+  트리거(backoff 스케줄러)가 없어, 창이 돌아와도 mirror 가 끊긴 채 남는다. 미루는 쪽은 연결을
+  살려 둬 parked 동안의 출력도 계속 받고, 이 결정 이전에 parked 손실이 mirror 를 남기던 동작을
+  그대로 보존한다.
 - **CLI dump 는 재attach 없이 공백을 표시하고 끝낸다** — 3 회 소진 뒤의 갈래로만 남겼다.
   dump 는 한 번 찍고 끝나는 검증 경로라, 다시 붙으면 공백 없는 화면을 얻을 수 있는데 그것을
   안 하면 검증 결과가 우연에 달린다.

@@ -178,7 +178,16 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
   동안 EOF 가 오면 `apply_attach_client_output` 이 끊김 정리 대신 `resync_session` →
   `reconnect_session` 으로 다시 붙는다 — anchor 유무와 무관하다. 성공하면 재연결 toast 가
   뒤따르고, 실패하면 끊김과 같은 갈래다(anchor 가 있으면 `Reconnecting`, 없으면 정리). 세션마다
-  재attach 는 한 번에 하나이고, 기다리는 동안 온 통지는 수만 더한다.
+  재attach 는 한 번에 하나이고, 기다리는 동안 온 통지는 수만 더한다. 끊김 판정 규칙은
+  `disconnect_disposition` 한 함수에 있다.
+- **창 없는(parked) engine 의 손실은 재attach 를 미룬다.** `begin_resync` 는 host 가 parked 면
+  표지만 갱신하고 `resync_awaiting_window` 를 세운다 — 옛 연결에 `Detach` 를 안 보낸다.
+  `reconnect_session` 은 mirror 를 담은 창을 `find_main_with_workspace` 로 찾으므로 parked 에서
+  걸면 실패하고, 실패 갈래는 anchor 없는 세션을 정리하기 때문이다. 그 engine 이 창에 다시
+  붙으면 `apply_attach_client_output` 의 창 갈래가 `resume_resync_in_window` 로 옛 연결을 놓고
+  낡음 toast 를 띄운다. 이 함수는 `AttachClientData` wake 와 `Tick::AttachView`(3 초 backstop)
+  둘 다에서 돌므로, 복원 뒤 원격이 조용해도 늦어도 한 주기 안에 시작한다. 미루는 동안 옛
+  연결이 따로 끊기면 `resync_released()` 가 거짓이라 손실과 무관한 끊김 갈래를 탄다.
 - **재연결은 mesh 를 처음부터 다시 구독한다.** 서버의 mesh 구독은 client id 에 묶여 옛 연결과
   함께 사라진다. `reconnect_session` 이 그 세션의 mesh surface 마다 캐시된 frame
   (`attach_mesh_frames`)과 구독 dedup 상태(`MainView::attach_mesh_input`)를 지워, 다음 렌더가

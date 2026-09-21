@@ -399,9 +399,22 @@ pub(crate) struct AttachClientSession {
     /// 새 attach 가 거절되는 경합이 없다. 한 세션의 재attach 는 한 번에 하나다 — 기다리는
     /// 동안 온 통지는 이 수에 더하기만 한다.
     resync_pending: Option<u64>,
+    /// (ADR-0400) 손실 통지가 **창 없는(parked) engine** 에서 왔다 — `resync_pending` 은
+    /// 섰지만 옛 연결에 `Detach` 를 아직 안 보냈다. 재attach 의 마지막 단계
+    /// (`reconnect_session`)는 mirror 를 담은 창을 찾으므로 parked 에서 걸면 실패하고, 실패
+    /// 갈래는 anchor 없는 세션을 정리한다 — 손실 한 번에 mirror 가 사라진다. 그래서 연결을
+    /// 그대로 두고 기다렸다가, 그 engine 이 다시 창에 붙은 뒤 `apply_attach_client_output`
+    /// 이 이 자리에서 옛 연결을 놓는다([`resume_resync_in_window`]).
+    resync_awaiting_window: bool,
 }
 
 impl AttachClientSession {
+    /// (ADR-0400) 손실 재attach 를 위해 옛 연결을 **이미 놓았는가** — 그렇다면 그 연결의
+    /// EOF 는 끊김이 아니라 재attach 차례다. parked 에서 미뤄 둔 손실은 아직 놓지 않았다.
+    fn resync_released(&self) -> bool {
+        self.resync_pending.is_some() && !self.resync_awaiting_window
+    }
+
     /// attach-behavior.md#gui-자동-재연결-스코프 참고 — `auto_attach.rs` 의 backoff 스케줄러가 재연결 후보(anchor 매핑 +
     /// `Reconnecting` 상태)를 찾는 데 쓴다. 필드가 모듈 비공개라 sibling 모듈
     /// (`auto_attach.rs`)에서 직접 접근할 수 없어 최소 getter 로 노출한다.
@@ -612,6 +625,7 @@ impl App {
             pending_list_dir_consumers: HashMap::new(),
             markdown_locals,
             resync_pending: None,
+            resync_awaiting_window: false,
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -790,6 +804,7 @@ impl App {
         // Loading 상태는 각자의 soft timeout 으로 알아서 ErrorConn 전이한다.
         sess.pending_list_dir_consumers.clear();
         sess.resync_pending = None;
+        sess.resync_awaiting_window = false;
         sess.state = SessionState::Connected;
         sess.remote_label = format!("127.0.0.1:{port}");
         // (ADR-0255) 끊긴 동안의 변경 신호는 쌓이지 않았고, survivor markdown 문서는 핸들을
@@ -875,9 +890,13 @@ impl App {
                 Some(MirrorOutputHost::Window(wid)) => {
                     let sess = &mut self.attach_client_sessions[idx];
                     let mut main = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut());
-                    let mirror_host = main
+                    let mut mirror_host = main
                         .as_mut()
                         .map(|m| MirrorHost::windowed(&mut m.state, &mut m.core_state));
+                    // (ADR-0400) parked 동안 미뤄 둔 재attach — 창이 돌아왔으니 이제 놓는다.
+                    if let Some(host) = mirror_host.as_mut() {
+                        resume_resync_in_window(sess, host);
+                    }
                     let applied =
                         apply_pending_mirror_output(sess, mirror_host, &mut self.plugin_manager);
                     if applied && let Some(main) = main {
@@ -897,26 +916,20 @@ impl App {
                 }
                 None => {}
             }
-            // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면
-            // 다음 성공적 재연결 전까지 계속 true 로 남는다(리더/write 스레드가 리셋하지
-            // 않음) — `Connected` 일 때만 "방금 처음 감지"로 보고 1 회 반응, 이미
-            // `Reconnecting` 이면 매 프레임 재처리하지 않는다(attach-behavior.md#재연결-시-세션-상태-보존 참고).
-            // 재attach 대기 여부는 이벤트 적용 **뒤에** 읽는다 — 같은 drain 에 `Desynced` 와
+            // 판정 규칙은 `disconnect_disposition` 에 있다. 재attach 대기 여부는 이벤트 적용
+            // **뒤에** 읽는다 — 같은 drain 에 `Desynced` 와
             // EOF 가 함께 왔을 수 있다.
-            let resync_pending = self.attach_client_sessions[idx].resync_pending.is_some();
-            if disconnected && state == SessionState::Connected && resync_pending {
-                // (ADR-0400) 손실로 스스로 놓은 연결이다 — 끊김이 아니라 재attach 차례다.
-                // anchor 유무와 무관하다: 수동 attach 도 재attach 할 곳(포트)을 안다.
-                resyncing.push(idx);
-            } else if disconnected && state == SessionState::Connected {
-                // anchor(자동 attach 매핑) 가 있으면 재연결 가능 후보 — mirror 를 지우지
-                // 않고 Reconnecting 으로 전이(attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고). 없으면(수동/IPC attach) 재연결
-                // 트리거 소스가 없으므로 기존처럼 완전 정리.
-                if anchor_ws_id.is_some() {
-                    reconnecting.push(idx);
-                } else {
-                    dead.push(idx);
-                }
+            let sess = &self.attach_client_sessions[idx];
+            match disconnect_disposition(
+                disconnected,
+                state,
+                sess.resync_released(),
+                anchor_ws_id.is_some(),
+            ) {
+                DisconnectDisposition::Resync => resyncing.push(idx),
+                DisconnectDisposition::Reconnect => reconnecting.push(idx),
+                DisconnectDisposition::Cleanup => dead.push(idx),
+                DisconnectDisposition::None => {}
             }
         }
         for &idx in &resyncing {
@@ -1802,6 +1815,43 @@ pub(super) fn find_parked_with_workspace(
         .position(|(_, engine)| engine.has_workspace(local_workspace))
 }
 
+/// `apply_attach_client_output` 이 연결 상태를 보고 세션을 어디로 보낼지.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DisconnectDisposition {
+    /// 아무 일도 없다 — 연결이 살아 있거나 이미 `Reconnecting` 이다.
+    None,
+    /// (ADR-0400) 손실로 스스로 놓은 연결이다 — 재attach 차례다.
+    Resync,
+    /// 끊겼고 anchor 가 있다 — mirror 를 남긴 채 `Reconnecting` 으로.
+    Reconnect,
+    /// 끊겼고 anchor 가 없다 — 재연결 트리거가 없어 정리한다.
+    Cleanup,
+}
+
+/// 끊김 감지 한 번에 대한 판정. `disconnected` atomic 은 다음 성공적 재연결 전까지 true 로
+/// 남으므로 `Connected` 일 때만 "방금 처음 감지" 로 보고 한 번 반응한다
+/// (attach-behavior.md#재연결-시-세션-상태-보존). `resync_released` 는 손실 재attach 를 위해
+/// **이미 옛 연결을 놓았는가**다 — parked 에서 미뤄 둔 손실은 여기에 들지 않으므로, 그 사이
+/// 연결이 따로 끊기면 base 와 같은 끊김 갈래를 탄다. 재attach 는 anchor 유무와 무관하다:
+/// 수동 attach 도 다시 붙을 곳(포트)을 안다.
+fn disconnect_disposition(
+    disconnected: bool,
+    state: SessionState,
+    resync_released: bool,
+    has_anchor: bool,
+) -> DisconnectDisposition {
+    if !disconnected || state != SessionState::Connected {
+        DisconnectDisposition::None
+    } else if resync_released {
+        DisconnectDisposition::Resync
+    } else if has_anchor {
+        // attach-behavior.md#gui-자동-재연결-스코프 / #재연결-시-세션-상태-보존 참고.
+        DisconnectDisposition::Reconnect
+    } else {
+        DisconnectDisposition::Cleanup
+    }
+}
+
 /// mirror 이벤트를 적용할 대상 engine — 창이 있든(`MainView` 의 `state`/`core_state`)
 /// 없든(parked 튜플) 같은 `(AppState, CoreState)` 쌍이다. 창 유무는 상태 적용에는
 /// 영향이 없고, toast 처럼 **창 표면이 있어야 의미 있는 부수효과**만 게이트한다.
@@ -2605,8 +2655,6 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
     })
 }
 
-/// 드레인된 `MirrorEvent` 한 건을 mirror 세션/engine 상태에 적용한다. 대상은
-/// `MirrorHost` — 창 있는 engine 이든 parked engine 이든 같은 분기 로직을 탄다.
 /// (ADR-0400) 손실 통지를 받은 세션을 재attach 대기로 돌린다.
 ///
 /// 하는 일은 셋이다. 이 세션의 mirror 터미널마다 출력 stream 표지를 새로 만들어, 공백을
@@ -2615,6 +2663,11 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
 /// `apply_attach_client_output` 이 건다([`AttachClientSession::resync_pending`] 에 순서의
 /// 근거가 있다). 그리고 화면·상태가 낡았다는 것을 사용자에게 알린다 — 재attach 가 끝나면
 /// 재연결 toast 가 뒤따른다. 이미 기다리는 중이면 수만 더한다.
+///
+/// host 가 **창 없는(parked)** engine 이면 표지 갱신과 로그만 하고 옛 연결은 그대로 둔다
+/// ([`AttachClientSession::resync_awaiting_window`] 에 이유가 있다). 옛 연결은 그 사이에도
+/// 계속 출력을 실어 오므로 parked mirror 의 화면은 종전처럼 자란다 — 공백이 메워지는 것은
+/// 창이 돌아와 재attach 한 뒤다.
 fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frames: u64) {
     for &local in sess.remote_to_local.values() {
         if let Some(t) = host.engine.terminals.get_mut(local) {
@@ -2626,10 +2679,39 @@ fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frame
         return;
     }
     sess.resync_pending = Some(frames);
+    if !host.windowed {
+        sess.resync_awaiting_window = true;
+        tracing::warn!(
+            "attach mirror: mirror workspace {} — 서버가 이 연결의 프레임 {frames} 장을 버렸다. 창이 없어(parked) 재attach 를 창이 돌아올 때까지 미룬다",
+            sess.local_workspace
+        );
+        return;
+    }
     tracing::warn!(
         "attach mirror: mirror workspace {} — 서버가 이 연결의 프레임 {frames} 장을 버렸다. 옛 연결을 놓고 재attach 한다",
         sess.local_workspace
     );
+    release_for_resync(sess, host);
+}
+
+/// (ADR-0400) parked 동안 미뤄 둔 재attach 를 창이 있는 host 에서 시작한다. 미뤄 둔 것이
+/// 없거나 host 가 아직 창이 없으면 아무것도 안 한다.
+fn resume_resync_in_window(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>) {
+    if !sess.resync_awaiting_window || !host.windowed {
+        return;
+    }
+    sess.resync_awaiting_window = false;
+    tracing::info!(
+        "attach mirror: mirror workspace {} — 창이 돌아왔다. 미뤄 둔 재attach 를 시작한다(손실 {} 장)",
+        sess.local_workspace,
+        sess.resync_pending.unwrap_or(0)
+    );
+    release_for_resync(sess, host);
+}
+
+/// 옛 연결에 `Detach` 를 보내고 낡음을 알린다 — 재attach 는 그 연결의 EOF 를 본
+/// `apply_attach_client_output` 이 건다.
+fn release_for_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>) {
     if let Err(e) = sess.send_frame(StreamTag::Detach, Vec::new()) {
         // write 큐가 이미 닫혔다 = 연결이 이미 끊기는 중이다. 그 EOF 가 같은 재attach
         // 갈래로 온다(`resync_pending` 이 섰으므로).
@@ -2641,6 +2723,8 @@ fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frame
     );
 }
 
+/// 드레인된 `MirrorEvent` 한 건을 mirror 세션/engine 상태에 적용한다. 대상은
+/// `MirrorHost` — 창 있는 engine 이든 parked engine 이든 같은 분기 로직을 탄다.
 fn apply_one_mirror_event(
     sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_>,
@@ -5302,7 +5386,7 @@ mod tests {
         let before = read(&engine, None).expect("read").stream;
 
         {
-            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            let mut host = MirrorHost::windowed(&mut state, &mut engine);
             apply_mirror_events(
                 &mut sess,
                 &mut host,
@@ -5333,6 +5417,94 @@ mod tests {
             sess.state,
             SessionState::Connected,
             "재attach 는 EOF 를 본 뒤에 건다 — 통지만으로 상태를 바꾸지 않는다"
+        );
+    }
+
+    /// (ADR-0400) 창 없는(parked) engine 의 수동 attach(anchor 없음) mirror 는 손실 한
+    /// 번에 사라지지 않는다. parked 에서 재attach 를 걸면 창을 못 찾아 실패하고, 실패
+    /// 갈래는 anchor 없는 세션을 정리한다 — 그래서 옛 연결을 놓지 않고 창을 기다린다.
+    /// 창이 돌아오면 그때 놓고, 낡음을 창에 알린다.
+    #[test]
+    fn a_loss_on_a_parked_mirror_without_an_anchor_waits_for_a_window_instead_of_closing() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let (remote_surface, local_surface) = (42u32, 9_003u32);
+        engine
+            .terminals
+            .insert(local_surface, Terminal::new_detached(80, 24));
+        let mut sess = test_session(9_000, HashMap::from([(remote_surface, local_surface)]));
+        assert!(
+            sess.anchor_ws_id.is_none(),
+            "전제: 수동 attach(anchor 없음)"
+        );
+        let (tx, frames_out) = std::sync::mpsc::channel::<OutFrame>();
+        sess.frame_tx = Arc::new(Mutex::new(tx));
+        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+
+        {
+            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            apply_mirror_events(
+                &mut sess,
+                &mut host,
+                &mut plugin_manager,
+                vec![MirrorEvent::Desynced { frames: 4 }],
+            );
+        }
+        assert_eq!(sess.resync_pending, Some(4));
+        assert!(sess.resync_awaiting_window);
+        assert!(
+            frames_out.try_iter().next().is_none(),
+            "parked 에서 옛 연결을 놓으면 재attach 가 창을 못 찾아 mirror 가 정리된다"
+        );
+        // 연결이 살아 있으니 끊김 판정도 없다 — mirror 는 parked 에 그대로 남는다.
+        assert_eq!(
+            disconnect_disposition(
+                sess.disconnected.load(Ordering::SeqCst),
+                sess.state,
+                sess.resync_released(),
+                sess.anchor_ws_id.is_some(),
+            ),
+            DisconnectDisposition::None
+        );
+        // parked 동안 연결이 따로 끊기면 base 와 같은 끊김 갈래다(재attach 가 아니다).
+        assert_eq!(
+            disconnect_disposition(
+                true,
+                sess.state,
+                sess.resync_released(),
+                sess.anchor_ws_id.is_some(),
+            ),
+            DisconnectDisposition::Cleanup
+        );
+
+        // 창이 돌아오면 그 host 에서 옛 연결을 놓고 낡음을 알린다.
+        let toasts_before = state.toasts.len();
+        {
+            let mut host = MirrorHost::parked(&mut state, &mut engine);
+            resume_resync_in_window(&mut sess, &mut host);
+        }
+        assert!(
+            frames_out.try_iter().next().is_none(),
+            "아직 창이 없으면 놓지 않는다"
+        );
+        {
+            let mut host = MirrorHost::windowed(&mut state, &mut engine);
+            resume_resync_in_window(&mut sess, &mut host);
+        }
+        let sent: Vec<OutFrame> = frames_out.try_iter().collect();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].tag, StreamTag::Detach);
+        assert!(!sess.resync_awaiting_window);
+        assert_eq!(state.toasts.len(), toasts_before + 1, "낡음 toast");
+        assert_eq!(
+            disconnect_disposition(
+                true,
+                sess.state,
+                sess.resync_released(),
+                sess.anchor_ws_id.is_some(),
+            ),
+            DisconnectDisposition::Resync,
+            "놓은 뒤의 EOF 는 재attach 차례다"
         );
     }
 
@@ -5411,6 +5583,7 @@ mod tests {
             pending_list_dir_consumers: HashMap::new(),
             markdown_locals: HashSet::new(),
             resync_pending: None,
+            resync_awaiting_window: false,
         }
     }
 
