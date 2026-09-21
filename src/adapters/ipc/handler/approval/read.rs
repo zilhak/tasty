@@ -80,6 +80,22 @@ pub fn await_blocking(
     }
 }
 
+/// `approval.await` — 블로킹 대기를 워커로 돌린다. store 선택은 호출자 몫
+/// (`agent::task::spawn_task_await` 와 같은 이유).
+pub(crate) fn spawn_approval_await(
+    store: std::sync::Arc<tasty_approval::ApprovalStore>,
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    rpc_id: Value,
+    params: Value,
+    response_tx: &std::sync::mpsc::SyncSender<JsonRpcResponse>,
+) {
+    let response_tx = response_tx.clone();
+    std::thread::spawn(move || {
+        let resp = await_blocking(&store, &memory, rpc_id, &params);
+        tasty_ipc::server::send_response(&response_tx, resp);
+    });
+}
+
 /// `approval.get` — 단일 record 조회.
 pub fn handle_get(
     _core: &Core,

@@ -840,7 +840,7 @@ impl App {
 
     /// `agent.task_await`: 블로킹. **어느 engine 의 허브인지 고르는 것만** 여기 있다 —
     /// 창 → parked → (헤드리스 전용) 단일 engine 순으로 훑는다. 고른 뒤의 대기는 두
-    /// 조합이 공유한다(`crate::core::app_surface::spawn_task_await`).
+    /// 조합이 공유한다(`crate::ipc::handler::agent::task::spawn_task_await`).
     fn ipc_dispatch_task_await(&mut self, cmd: &IpcCommand) {
         let hub_opt = self
             .view
@@ -863,7 +863,7 @@ impl App {
         let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match (hub_opt, seq_opt) {
-            (Some(hub), Some(seq)) => crate::core::app_surface::spawn_task_await(
+            (Some(hub), Some(seq)) => crate::ipc::handler::agent::task::spawn_task_await(
                 hub,
                 memory,
                 seq,
@@ -898,7 +898,7 @@ impl App {
         let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {
-            Some(store) => crate::core::app_surface::spawn_approval_await(
+            Some(store) => crate::ipc::handler::approval::spawn_approval_await(
                 store,
                 memory,
                 rpc_id,

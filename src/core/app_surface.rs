@@ -2,8 +2,13 @@
 //!
 //! gui 는 5-step 라우터의 `app_methods` step 에서, 헤드리스는 dispatch pump 에서
 //! 부른다. 여기 있는 것들의 공통점은 **창이 없어도 답이 정의된다**는 것이다 — 읽는
-//! 것이 `Core`(클립보드·메모리) 이거나, 인자만으로 끝나거나(원격 브라우징), engine 이
-//! 가진 store 하나(승인·태스크 대기)다. `App.view` 에 닿는 것은 여기 없다.
+//! 것이 `Core`(클립보드·메모리) 이거나, 인자만으로 끝나는 것(원격 브라우징)이다.
+//! `App.view` 에 닿는 것은 여기 없다.
+//!
+//! 승인·태스크 대기(`approval.await` · `agent.task_await`)도 두 조합이 같은 함수로 답하지만
+//! 그 함수는 여기가 아니라 대기 본문 옆(`ipc::handler::approval` ·
+//! `ipc::handler::agent::task`)에 있다 — 이 모듈은 도메인 쪽(`core`)이라 IPC 핸들러를
+//! 거꾸로 부르지 않는다.
 //!
 //! ## 왜 한 벌인가
 //!
@@ -130,44 +135,6 @@ pub(crate) fn spawn_remote_workspaces(
             }
             Err(e) => JsonRpcResponse::error(rpc_id, -32050, format!("{e}")),
         };
-        send_response(&response_tx, resp);
-    });
-}
-
-/// `agent.task_await` — 블로킹 대기를 워커로 돌린다.
-///
-/// 호출자가 이미 푼 store 를 받는다. **어느 engine 의 것인지 고르는 일이 조합마다
-/// 다르기 때문**이다 — gui 는 창/parked 를 훑고 헤드리스는 하나뿐인 engine 을 쓴다.
-/// 고른 뒤에 하는 일은 같으므로 그 뒤만 여기 있다.
-pub(crate) fn spawn_task_await(
-    hub: std::sync::Arc<crate::core::agent::task_waker::TaskWakerHub>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    rpc_id: Value,
-    params: Value,
-    response_tx: &SyncSender<JsonRpcResponse>,
-) {
-    let response_tx = response_tx.clone();
-    std::thread::spawn(move || {
-        let resp = crate::ipc::handler::agent::task::await_task_blocking(
-            &hub, &memory, agent_seq, rpc_id, &params,
-        );
-        send_response(&response_tx, resp);
-    });
-}
-
-/// `approval.await` — 블로킹 대기를 워커로 돌린다. store 선택은 호출자 몫
-/// (`spawn_task_await` 와 같은 이유).
-pub(crate) fn spawn_approval_await(
-    store: std::sync::Arc<tasty_approval::ApprovalStore>,
-    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    rpc_id: Value,
-    params: Value,
-    response_tx: &SyncSender<JsonRpcResponse>,
-) {
-    let response_tx = response_tx.clone();
-    std::thread::spawn(move || {
-        let resp = crate::ipc::handler::approval::await_blocking(&store, &memory, rpc_id, &params);
         send_response(&response_tx, resp);
     });
 }

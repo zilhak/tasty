@@ -385,7 +385,8 @@ mod request;
 mod respond;
 mod summary;
 
-pub use read::{await_blocking, handle_cancel, handle_get, handle_history, handle_list};
+pub(crate) use read::spawn_approval_await;
+pub use read::{handle_cancel, handle_get, handle_history, handle_list};
 pub use request::handle_request;
 pub use respond::handle_respond;
 pub use summary::{handle_summary_get, handle_summary_set};

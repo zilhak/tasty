@@ -105,7 +105,9 @@ plugin 에 내주면 `fs.*` 가 호스트 파일시스템 표면처럼 읽히는
   않는다. 그래서 (a) 의 선행 작업은 다이얼로그 교체가 아니라 **host-call 경로에 host-측 지연
   완료 종류를 새로 만들고 두 조합(gui dispatch + headless pump)에 각각 배선하는 것** —
   최소 9 개 인라인 응답 지점이 걸린 축이다. 외부 IPC 경로에는 이미 지연 응답이 있지만
-  (`src/core/app_surface.rs` 의 `spawn_*` 3 종) plugin caller 는 그 채널을 안 탄다.
+  (`spawn_*` 3 종 — `src/core/app_surface.rs` 의 `spawn_remote_workspaces` 와, 대기 본문
+  옆으로 옮겨 간 `ipc::handler::agent::task::spawn_task_await` ·
+  `ipc::handler::approval::spawn_approval_await`) plugin caller 는 그 채널을 안 탄다.
   그 선행 작업의 크기가 이 축(호출자 0 개인 메서드 하나)보다 크고, 다 만들어도 결과는
   ADR-0058 이 이미 제공하는 것과 같은 형태다 — 즉 (a) 는 ADR-0058 을 다시 여는 일이다.
 - **(b) 타임아웃을 걸어 유한 시간에 실패시킨다** — 기각. 메인 스레드가 막힌 동안은 타이머도

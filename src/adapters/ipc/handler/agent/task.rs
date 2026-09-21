@@ -559,6 +559,26 @@ pub fn await_task_blocking(
     }
 }
 
+/// `agent.task_await` — 블로킹 대기를 워커로 돌린다.
+///
+/// 호출자가 이미 푼 store 를 받는다. **어느 engine 의 것인지 고르는 일이 조합마다
+/// 다르기 때문**이다 — gui 는 창/parked 를 훑고 헤드리스는 하나뿐인 engine 을 쓴다.
+/// 고른 뒤에 하는 일은 같으므로 그 뒤만 여기 있다.
+pub(crate) fn spawn_task_await(
+    hub: std::sync::Arc<crate::core::agent::task_waker::TaskWakerHub>,
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    rpc_id: Value,
+    params: Value,
+    response_tx: &std::sync::mpsc::SyncSender<JsonRpcResponse>,
+) {
+    let response_tx = response_tx.clone();
+    std::thread::spawn(move || {
+        let resp = await_task_blocking(&hub, &memory, agent_seq, rpc_id, &params);
+        tasty_ipc::server::send_response(&response_tx, resp);
+    });
+}
+
 // ============================================================
 // agent.task_graph
 // ============================================================

@@ -382,7 +382,7 @@ fn intercept_app_layer(
             // 일이 없다 — 헤드리스는 engine 이 하나뿐이고 `app.core_state` 는
             // 부팅이 채우지 않는다(`boot::bootstrap_engine` 이 새로 만들어 돌려준다).
             "agent.task_await" => {
-                crate::core::app_surface::spawn_task_await(
+                crate::ipc::handler::agent::task::spawn_task_await(
                     engine.task_waker_hub.clone(),
                     app.core.memory_arc(),
                     engine.agent_seq.clone(),
@@ -393,7 +393,7 @@ fn intercept_app_layer(
                 return Some(Intercepted::Answered);
             }
             "approval.await" => {
-                crate::core::app_surface::spawn_approval_await(
+                crate::ipc::handler::approval::spawn_approval_await(
                     engine.approval_store.clone(),
                     app.core.memory_arc(),
                     rpc_id,

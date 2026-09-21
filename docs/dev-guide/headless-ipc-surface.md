@@ -202,7 +202,8 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 ### 답한다 (7)
 
 창이 없어도 답이 정의되는 것들이다. 본체는 두 조합이 **같은 함수**를 쓴다
-(`src/core/app_surface.rs`) — `system.shutdown` 만 끊는 방식이 조합마다 달라 예외다.
+(`src/core/app_surface.rs`, 승인·태스크 대기는 대기 본문 옆인 `handler/approval/read.rs` ·
+`handler/agent/task.rs`) — `system.shutdown` 만 끊는 방식이 조합마다 달라 예외다.
 
 | 메서드 | 읽는 것 / 하는 일 |
 |--------|-------------------|
