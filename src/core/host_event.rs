@@ -11,8 +11,9 @@
 /// Surface가 닫혔다는 사실을 plugin 측에 broadcast하기 위해 메인 루프가 소비할
 /// 큐 항목. `state/`는 `plugin/` 의존이 없으므로 enum 대신 `is_user_close: bool`로
 /// reason을 담고, App 메인 루프에서 `SurfaceCloseReason`으로 매핑한다.
-// 이유: headless 도 이 항목을 세우지만(구조 cascade 의 surface 닫힘) 비우는 자는 GUI 메인
-// 루프뿐이다 — headless 는 plugin 에 알릴 이벤트를 큐를 거치지 않고 그 자리에서 낸다.
+// 이유: headless 빌드에도 이 항목을 세우는 코드가 컴파일된다(`AppState` 의 enqueue 메서드 —
+// `state.rs`·`state/pane.rs`·`state/tab.rs`). 비우는 자는 GUI 메인 루프뿐이다. 구조 cascade 의
+// enqueue 자리는 gui 로 가려져 있다(`core/structural_cascade.rs` 모듈 문서).
 #[cfg_attr(
     not(feature = "gui"),
     expect(
@@ -33,8 +34,8 @@ pub struct PendingSurfaceClosed {
 /// Event Bus 1.0 호스트 자동 발화용 큐 항목. `state/`가 `plugin/`/`tasty-plugin-protocol`
 /// 의존을 갖지 않게, payload 필드는 wire 타입이 아닌 plain 데이터로 보관하고 App
 /// 메인 루프가 [`tasty_plugin_protocol`] 타입으로 변환해 발화한다.
-// 이유: 위 `PendingSurfaceClosed` 와 같다 — 세우는 자리 일부가 headless 에도 있지만 비우는
-// 자리(`app/dispatch/host_events.rs`)는 GUI 에만 있다.
+// 이유: 위 `PendingSurfaceClosed` 와 같다 — 세우는 코드 일부가 headless 빌드에도 컴파일되지만
+// 비우는 자리(`app/dispatch/host_events.rs`)는 GUI 에만 있다.
 #[cfg_attr(
     not(feature = "gui"),
     expect(
