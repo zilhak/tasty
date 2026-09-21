@@ -313,18 +313,14 @@ pub(crate) struct Pending {
     digest: u64,
 }
 
-/// 라우팅 **전에** 이 요청을 실행해도 되는지 정한다.
-///
-/// `Ok(None)` 은 "키가 없거나 이 메서드에 뜻이 없다" 이고, 그때 동작은 이 모듈이
-/// 생기기 전과 한 글자도 다르지 않다.
-pub(crate) fn begin(
-    now: Instant,
-    caller: &CallerContext,
+/// 봉투의 멱등 키가 **모양으로** 유효한가 — 길이 밖 키(빈 문자열 · 상한 초과)는
+/// `-32602` 다. 메서드도 보존소도 안 본다.
+pub(crate) fn check_envelope(
     request: &JsonRpcRequest,
     id: &serde_json::Value,
-) -> Result<Option<Pending>, JsonRpcResponse> {
+) -> Result<(), JsonRpcResponse> {
     let Some(key) = request.idempotency_key.as_deref() else {
-        return Ok(None);
+        return Ok(());
     };
     if key.is_empty() || key.len() > MAX_KEY_BYTES {
         return Err(JsonRpcResponse::invalid_params(
@@ -335,6 +331,23 @@ pub(crate) fn begin(
             ),
         ));
     }
+    Ok(())
+}
+
+/// 라우팅 **전에** 이 요청을 실행해도 되는지 정한다.
+///
+/// `Ok(None)` 은 "키가 없거나 이 메서드에 뜻이 없다" 이고, 그때 동작은 이 모듈이
+/// 생기기 전과 한 글자도 다르지 않다.
+pub(crate) fn begin(
+    now: Instant,
+    caller: &CallerContext,
+    request: &JsonRpcRequest,
+    id: &serde_json::Value,
+) -> Result<Option<Pending>, JsonRpcResponse> {
+    check_envelope(request, id)?;
+    let Some(key) = request.idempotency_key.as_deref() else {
+        return Ok(None);
+    };
     // 표가 이 이름을 모르면 라우팅도 못 한다 — 그 답은 라우터가 낸다.
     if method_meta(&request.method).map(|m| m.effect) != Some(MethodEffect::Mutate) {
         return Ok(None);
