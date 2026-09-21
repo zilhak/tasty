@@ -317,7 +317,18 @@ grep -ohE '"[a-z_]+\.[a-z_.]+"' src/app/ipc/app_methods.rs src/app/ipc/app_metho
 두 번째 효과가 남는다. 그래서 기능 목록의 `ipc.idempotency-key` 를 확인하는 것이 필수이고,
 `IpcConnection::send_idempotent` 가 그 확인을 **먼저** 하고 없으면 요청을 아예 안 내보낸다.
 그 이름이 답하는 것은 **"서버가 이 필드를 읽는가" 까지다** — "이 메서드가 걸리는가" 는 위
-"무엇이 아직 안 걸리나" 의 물음이고, 지금 그 값은 응답에도 선언에도 없다.
+"무엇이 아직 안 걸리나" 의 물음이다.
+
+**plugin namespace forward 는 계약 밖이라고 선언돼 있다.** 이름 표(`method_meta`)의
+`key_contract` 가 그 이름에 `Outside` 를 내고, 표가 모르는 이름도 `Outside` 로 읽는다(client
+프로세스에는 namespace 소유 표가 없어 plugin 이름이 그렇게 보인다). `send_idempotent` 는
+capability 확인보다 **먼저** 그 값을 보고 `Outside` 면 `KeyOutsideContract` 로 끝낸다 — 연결을
+안 쓰고, 그 타입이 "아무것도 안 나갔다" 를 뜻한다. 서버는 키를 실은 forward 를 거절하지 않고
+예전처럼 키를 무시한 채 넘긴다(이미 키를 싣고 있는 구 client 를 깨지 않으려는 것이다). 그래서
+**호스트는 forward 가 정확히 한 번 실행된다고 약속하지 않는다** — 같은 호출이 두 번 오면 owner
+plugin 이 두 번 실행하고, 그것을 거를 수 있는 자리는 plugin 자신뿐이다. 호스트 메서드는 아무것도
+선언하지 않는다(`Undeclared` — "걸린다" 가 아니다). 결정 근거는
+[ADR-0361](../adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md).
 그 거절은 호스트가 답한 실패와 다른 타입(`UnsupportedCapability`)으로 오는데, 그 차이가
 "아무것도 일어나지 않았다" 를 뜻한다. 결정 근거는
 [ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md).

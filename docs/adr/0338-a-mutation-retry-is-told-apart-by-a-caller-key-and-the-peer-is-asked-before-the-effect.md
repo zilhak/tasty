@@ -178,5 +178,7 @@
   는 사실을 하나 더 든다.
 - [api-conventions](../dev-guide/api-conventions.md) 의 "변경 명령의 재시도는 키로 구별한다" —
   운영 상태 서술.
+- 후속: [ADR-0361](0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md)
+  — 이 결정이 후속으로 남긴 두 층 가운데 plugin namespace forward 를 계약 밖으로 확정했다.
 - 코드 근거(결정이 실현된 현재 위치): `tasty_ipc::protocol::JsonRpcRequest::idempotency_key` ·
   `tasty_ipc::client::IpcConnection::send_idempotent` · 호스트 보존소의 `begin`/`finish`.

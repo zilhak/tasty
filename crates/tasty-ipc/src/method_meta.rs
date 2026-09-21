@@ -47,6 +47,29 @@ pub enum MethodEffect {
     Mutate,
 }
 
+/// 멱등 키([`crate::protocol::JsonRpcRequest::idempotency_key`])에 대해 이 메서드가
+/// **선언하는 것**.
+///
+/// 값이 둘뿐인 이유는 지금 말할 수 있는 것이 그것뿐이기 때문이다. 호스트의 보존소는
+/// engine 라우터 한 자리에서만 키를 본다(`ADR-0338`). 그 앞에서 끝나는 메서드 가운데
+/// **plugin namespace forward 는 구조상 보존소를 안 거친다** — 호스트는 그 이름의 뜻을 모르고
+/// 요청을 plugin 에게 넘길 뿐이다. 그것만은 확정이라 선언한다. 나머지(호스트 메서드)가
+/// 보존소에 **걸리는지**는 메서드마다 다르고 아직 표에 안 적혀 있다 — 그래서 "걸린다" 가
+/// 아니라 "선언 없음" 이다. "걸린다" 를 뜻하는 값은 그것을 적을 수 있게 될 때 더한다.
+///
+/// 근거·대안은 [ADR-0361].
+///
+/// [ADR-0361]: ../../../docs/adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyContract {
+    /// 이 표가 아무것도 선언하지 않는다. 키가 지켜지는지는 응답의
+    /// [`crate::protocol::JsonRpcResponse::idempotent_replay`] 로만 사후에 안다.
+    Undeclared,
+    /// **계약 밖이다** — 키를 실어도 호스트가 보존소를 안 거친다. 재시도는 두 번째 실행이다.
+    /// 호스트는 그 실행이 정확히 한 번이라고 약속하지 않는다.
+    Outside,
+}
+
 /// 한 IPC 메서드에 대한 권한 메타.
 #[derive(Debug, Clone, Copy)]
 pub struct MethodMeta {
@@ -74,6 +97,8 @@ pub struct MethodMeta {
     pub namespace_forward: bool,
     /// 이 메서드를 두 번 전달했을 때 무엇이 남는가. [`MethodEffect`] 참조.
     pub effect: MethodEffect,
+    /// 멱등 키에 대해 무엇을 선언하는가. [`KeyContract`] 참조.
+    pub key_contract: KeyContract,
 }
 
 const fn plugin(effect: MethodEffect, required: &'static [Permission]) -> MethodMeta {
@@ -83,6 +108,7 @@ const fn plugin(effect: MethodEffect, required: &'static [Permission]) -> Method
         required,
         namespace_forward: false,
         effect,
+        key_contract: KeyContract::Undeclared,
     }
 }
 
@@ -97,6 +123,7 @@ const fn plugin_only(effect: MethodEffect, required: &'static [Permission]) -> M
         required,
         namespace_forward: false,
         effect,
+        key_contract: KeyContract::Undeclared,
     }
 }
 
@@ -107,6 +134,7 @@ const fn local_only(effect: MethodEffect) -> MethodMeta {
         required: &[],
         namespace_forward: false,
         effect,
+        key_contract: KeyContract::Undeclared,
     }
 }
 
@@ -1079,9 +1107,28 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
             // 재전달이 안전한지도 모르고, 모를 때 고를 값은 **가장 조심스러운 쪽**이다 —
             // `Read` 로 두면 소비자가 마음대로 다시 보내도 된다고 읽는다.
             effect: MethodEffect::Mutate,
+            // forward 는 engine 라우터의 보존소 앞에서 plugin 으로 나간다 — 키를 실어도
+            // 재생되지 않는다(ADR-0361).
+            key_contract: KeyContract::Outside,
         });
     }
     None
+}
+
+/// 이 이름에 멱등 키를 실으면 지켜지는가 — **이 프로세스가 아는 표로** 답한다.
+///
+/// 표가 이름을 모르면 [`KeyContract::Outside`] 다. 호스트의 보존소는 호스트가 아는 이름에만
+/// 닿을 수 있고, 표가 모르는 이름은 둘 중 하나다 — 존재하지 않는 메서드(`-32601`)이거나
+/// plugin namespace. 뒤쪽이 이 판정의 요점이다: **client 프로세스에는 namespace 소유 표가
+/// 없어서**(그 표는 호스트가 부팅 때 설치한다) 거기서 plugin 메서드는 `method_meta` 가 `None`
+/// 이 된다. 호스트 프로세스에서는 같은 이름이 namespace fallback 으로 해소돼 `Outside` 가
+/// 나온다 — 두 프로세스의 답이 같다.
+///
+/// 비용이 한 방향으로만 틀린다: 표보다 **새로운** 서버에 더해진 호스트 메서드는 옛 client 가
+/// `Outside` 로 읽어 키를 안 싣는다. 그때 호출자는 보내기 전에 거절을 받으므로 두 번째 효과는
+/// 안 난다.
+pub fn key_contract(method: &str) -> KeyContract {
+    method_meta(method).map_or(KeyContract::Outside, |m| m.key_contract)
 }
 
 #[cfg(test)]

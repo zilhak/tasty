@@ -72,6 +72,42 @@ impl std::fmt::Display for UnsupportedCapability {
 
 impl std::error::Error for UnsupportedCapability {}
 
+/// 그 메서드는 멱등 키 계약 **밖**이다 — **요청은 아직 안 나갔다.**
+///
+/// [`UnsupportedCapability`] 와 같은 성질의 거절이다. 저쪽은 "서버가 키를 못 읽는다",
+/// 이쪽은 "서버가 키를 읽어도 **이 메서드에서는** 안 지킨다" 다. 어느 쪽이든 키를 실어
+/// 보내면 호출자는 계약이 걸린 줄 알고 재시도하고, 그 재시도는 두 번째 실행이 된다.
+/// 판정은 [`crate::method_meta::key_contract`] 가 하고, 지금 이 값을 내는 것은 plugin
+/// namespace forward 다(ADR-0361).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyOutsideContract {
+    pub method: String,
+}
+
+impl std::fmt::Display for KeyOutsideContract {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "'{}' is outside the idempotency-key contract — the host does not replay it for a \
+             key, so a retry runs it again; nothing was sent",
+            self.method
+        )
+    }
+}
+
+impl std::error::Error for KeyOutsideContract {}
+
+/// 키를 실어 보내기 **전에** 그 메서드가 계약 밖이라고 선언됐는지 본다. 연결이 필요 없다.
+fn refuse_key_outside_contract(method: &str) -> Result<()> {
+    match crate::method_meta::key_contract(method) {
+        crate::method_meta::KeyContract::Outside => Err(KeyOutsideContract {
+            method: method.to_string(),
+        }
+        .into()),
+        crate::method_meta::KeyContract::Undeclared => Ok(()),
+    }
+}
+
 /// `system.info` 응답에서 capability 이름 → 판 을 뽑는다.
 ///
 /// 키가 아예 없는 구 서버는 **빈 map** 이다. 그것이 "아무것도 선언하지 않았다" 의 옳은
@@ -235,11 +271,16 @@ impl IpcConnection {
     ///
     /// 확인 자체는 `system.info` 라 부수효과가 없고 연결마다 한 번이다.
     ///
-    /// ★ **이 확인이 답하는 것은 "서버가 이 필드를 읽는가" 까지다.** "이 메서드가 그
-    /// 계약에 걸리는가" 는 다른 물음이고, 지금 응답에도 선언에도 그 값이 없다 — 호스트의
-    /// 보존소가 engine 라우터 한 자리에 있어 그 앞에서 끝나는 메서드(App 층 · plugin
-    /// namespace forward)는 키를 실어도 그냥 실행된다. 그래서 이 함수는 통과시키고
-    /// 요청은 나가며, **그 메서드에서는 재시도가 두 번째 효과를 남긴다.**
+    /// **확인은 둘이다.** 먼저 그 메서드가 계약 밖이라고 **선언됐는지** 본다
+    /// ([`crate::method_meta::key_contract`]) — plugin namespace forward 가 그렇다(ADR-0361).
+    /// 그러면 연결을 쓰지도 않고 [`KeyOutsideContract`] 로 끝난다. 그다음 서버가 필드를
+    /// 읽는지 capability 로 묻는다.
+    ///
+    /// ★ **두 확인이 답하는 것은 "선언된 계약 밖이 아니고, 서버가 이 필드를 읽는다" 까지다.**
+    /// "이 메서드가 그 계약에 걸린다" 는 여전히 아무도 선언하지 않는다 — 호스트의 보존소가
+    /// engine 라우터 한 자리에 있어 그 앞에서 끝나는 **App 층** 메서드는 키를 실어도 그냥
+    /// 실행되는데, 그 목록은 아직 표에 안 적혀 있다(`KeyContract::Undeclared`). 그래서 그
+    /// 메서드들은 이 함수를 통과하고, **거기서는 재시도가 두 번째 효과를 남긴다.**
     ///
     /// 호출자가 지금 쓸 수 있는 유일한 사후 표지는 응답의
     /// [`JsonRpcResponse::idempotent_replay`] 다. 그 표지는 **한 방향으로만** 답한다 —
@@ -255,6 +296,7 @@ impl IpcConnection {
         request: &JsonRpcRequest,
         key: &str,
     ) -> Result<serde_json::Value> {
+        refuse_key_outside_contract(&request.method)?;
         self.require_capability(
             IDEMPOTENCY_CAPABILITY,
             IDEMPOTENCY_CAPABILITY_VERSION,
@@ -283,6 +325,57 @@ mod tests {
     fn an_old_server_without_the_key_declares_nothing() {
         let info = serde_json::json!({ "version": "0.6.0", "scope": "engine" });
         assert!(parse_capabilities(&info).is_empty());
+    }
+
+    /// plugin namespace 이름은 client 프로세스에서 표가 모르는 이름이다 — 계약 밖으로 읽혀
+    /// **보내기 전에** 거절된다. 호스트 메서드는 선언이 없어 통과한다(서버에 묻는 다음 단계로).
+    #[test]
+    fn a_key_is_refused_before_sending_for_a_name_the_host_table_does_not_own() {
+        let refused = refuse_key_outside_contract("markdown.recent").unwrap_err();
+        let typed = refused
+            .downcast_ref::<KeyOutsideContract>()
+            .expect("타입으로 갈라져야 호출자가 '안 나갔다' 를 안다");
+        assert_eq!(typed.method, "markdown.recent");
+        assert!(refused.to_string().contains("nothing was sent"));
+
+        refuse_key_outside_contract("workspace.create").expect("호스트 메서드는 다음 단계로 간다");
+    }
+
+    /// 거절은 **연결을 한 바이트도 쓰지 않는다** — 상대가 무엇이든 요청이 안 나간다.
+    #[test]
+    fn a_refused_key_never_touches_the_connection() {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let stream = TcpStream::connect(addr).unwrap();
+        // 거절이 사라져 요청이 나가면 서버가 답하지 않으므로 client 가 영영 선다 — 시험이
+        // 멈추지 않고 실패하도록 읽기에 시한을 둔다.
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+        let mut conn = IpcConnection::new(stream).unwrap();
+        let (mut server, _) = listener.accept().unwrap();
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "markdown.recent".to_string(),
+            params: serde_json::json!({}),
+            id: Some(serde_json::Value::from(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: None,
+        };
+        let err = conn.send_idempotent(&req, "k-1").unwrap_err();
+        assert!(err.downcast_ref::<KeyOutsideContract>().is_some(), "{err}");
+
+        drop(conn);
+        let mut got = Vec::new();
+        server.read_to_end(&mut got).unwrap();
+        assert!(
+            got.is_empty(),
+            "거절됐는데 무언가 나갔다: {}",
+            String::from_utf8_lossy(&got)
+        );
     }
 
     /// 모양이 어긋난 항목은 조용히 빠지고 나머지는 산다 — 한 항목이 전체 조회를

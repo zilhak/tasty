@@ -794,6 +794,33 @@ fn a_forwarded_namespace_name_is_assumed_unsafe_to_redeliver() {
     ns_unregister("zzzeffectns");
 }
 
+/// plugin namespace forward 는 멱등 키 계약 **밖**이라고 선언된다 — 호스트 프로세스(소유
+/// 표가 설치된 쪽)에서도, 표가 없는 client 프로세스에서도 같은 답이 나와야 한다. 호스트
+/// 메서드는 아무것도 선언하지 않는다("걸린다" 가 아니다). ADR-0361.
+#[test]
+fn a_forwarded_namespace_name_is_declared_outside_the_key_contract() {
+    use crate::method_meta::{KeyContract, key_contract};
+    let _g = test_lock();
+    ns_clear();
+    // 소유 표에 없는 이름 = client 프로세스가 plugin 메서드를 보는 모양.
+    assert_eq!(key_contract("zzzkeyns.anything"), KeyContract::Outside);
+    ns_register("zzzkeyns");
+    // 호스트 프로세스가 같은 이름을 보는 모양 — namespace fallback 으로 해소된다.
+    let meta = method_meta("zzzkeyns.anything").expect("prefix 등록이 안 먹었다");
+    assert!(meta.namespace_forward);
+    assert_eq!(meta.key_contract, KeyContract::Outside);
+    assert_eq!(key_contract("zzzkeyns.anything"), KeyContract::Outside);
+    ns_unregister("zzzkeyns");
+
+    for (name, meta) in crate::method_meta::METHOD_TABLE {
+        assert_eq!(
+            meta.key_contract,
+            KeyContract::Undeclared,
+            "{name}: 호스트 메서드에 선언이 붙었다 — 보존소가 실제로 거는지 재지 않은 값이다"
+        );
+    }
+}
+
 /// "언제부터 있었나" 는 **등재 여부와 다른 물음**이다. 미등록 이름에 "예전부터
 /// 있었다" 를 답하면 client 가 없는 메서드를 부를 수 있다고 읽는다.
 #[test]
