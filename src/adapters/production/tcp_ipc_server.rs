@@ -269,7 +269,7 @@ impl TcpIpcServer {
         let custom_port_file = port_file_override.map(std::path::PathBuf::from);
 
         Self::clear_notify_then_publish_port(
-            tasty_utils::path::tasty_home().map(|home| home.join("notify")),
+            Self::notify_dir_to_clear(tasty_utils::path::tasty_home(), custom_port_file.as_deref()),
             port,
             custom_port_file.as_deref(),
         )?;
@@ -362,7 +362,8 @@ impl TcpIpcServer {
     /// 치르는 값은 부팅 경로에 `remove_dir_all` 한 번이다. 지우는 것은 완료 알림 줄
     /// 몇 개가 든 작은 파일들뿐이라 그 비용이 위 경합과 바꿀 만하다고 봤다.
     ///
-    /// `notify_dir` 가 `None`(홈 미확인)이면 청소는 건너뛰고 포트 파일만 쓴다. 인자로
+    /// `notify_dir` 가 `None`(홈 미확인, 또는 포트 파일이 데이터 루트 밖 — [`Self::notify_dir_to_clear`])
+    /// 이면 청소는 건너뛰고 포트 파일만 쓴다. 인자로
     /// 받는 이유는 시험이 실제 홈을 건드리지 않고 순서를 재게 하려는 것이다.
     fn clear_notify_then_publish_port(
         notify_dir: Option<std::path::PathBuf>,
@@ -372,6 +373,52 @@ impl TcpIpcServer {
         Self::clear_notify_then_publish(notify_dir, || {
             port_file::write_port_file_to(port, custom_port_file)
         })
+    }
+
+    /// 부팅 청소가 지울 `notify/` — **포트 파일과 같은 뿌리일 때만** 데이터 루트의 것을 준다.
+    ///
+    /// 완료 로그의 writer 는 데이터 루트(`TASTY_PARENT_HOME` = 이 호스트의 `tasty_home()`)
+    /// 밑에 쓴다. 기본 포트 파일도 그 루트 바로 밑(`<루트>/tasty.port`)이라, 기본 부팅에서는
+    /// 두 뿌리가 같고 청소 대상은 예전 그대로 `<루트>/notify` 다.
+    ///
+    /// `--port-file` 이 포트 파일을 **다른 디렉토리로** 옮기면 이 호스트는 그 데이터 루트의
+    /// 주인임을 알리지 않는 것이다 — 같은 루트에 기본 포트 파일로 뜬 호스트가 따로 있을 수
+    /// 있고, 그 호스트의 **살아 있는** 완료 로그를 지우게 된다(ADR-0344 가 실측한 사고).
+    /// 그래서 그때는 `None`(청소 안 함)을 준다. 뿌리를 포트 파일 쪽 `notify/` 로 옮기지
+    /// 않는 이유는 writer 가 그곳에 안 쓰기 때문이다 — 아무도 안 쓰는 디렉토리를 지우는
+    /// 것은 청소가 아니다. 근거·대안: `docs/adr/0416-the-boot-cleanup-follows-the-port-file-root.md`.
+    ///
+    /// 같은 디렉토리인지는 정규화한 경로로 가린다. 어느 한쪽이 아직 없으면(첫 부팅) 정규화가
+    /// 실패하므로 적힌 그대로 견준다.
+    fn notify_dir_to_clear(
+        data_root: Option<std::path::PathBuf>,
+        custom_port_file: Option<&std::path::Path>,
+    ) -> Option<std::path::PathBuf> {
+        let root = data_root?;
+        if let Some(port_file) = custom_port_file {
+            let port_dir = match port_file.parent() {
+                Some(dir) if !dir.as_os_str().is_empty() => dir,
+                _ => std::path::Path::new("."),
+            };
+            let same = match (
+                std::fs::canonicalize(port_dir),
+                std::fs::canonicalize(&root),
+            ) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => port_dir == root.as_path(),
+            };
+            if !same {
+                tracing::info!(
+                    "port file {} is outside the data root {} — leaving {}/notify alone, \
+                     another host may own it",
+                    port_file.display(),
+                    root.display(),
+                    root.display()
+                );
+                return None;
+            }
+        }
+        Some(root.join("notify"))
     }
 
     /// 청소를 끝낸 **뒤** 발행 단계를 부른다.
@@ -1886,6 +1933,66 @@ mod admission_tests {
 #[cfg(test)]
 mod notify_cleanup_tests {
     use super::*;
+
+    // 기본 부팅(`--port-file` 없음)은 예전 그대로 데이터 루트의 `notify/` 를 치운다.
+    #[test]
+    fn without_a_port_file_override_the_data_root_notify_dir_is_cleared() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            TcpIpcServer::notify_dir_to_clear(Some(tmp.path().to_path_buf()), None),
+            Some(tmp.path().join("notify"))
+        );
+    }
+
+    // `--port-file` 이 데이터 루트 안(기본 자리와 같은 디렉토리)이면 그 호스트가 루트의
+    // 주인이다 — 청소 대상은 그대로다.
+    #[test]
+    fn a_port_file_inside_the_data_root_keeps_the_cleanup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let port_file = tmp.path().join("other-name.port");
+        assert_eq!(
+            TcpIpcServer::notify_dir_to_clear(Some(tmp.path().to_path_buf()), Some(&port_file)),
+            Some(tmp.path().join("notify"))
+        );
+    }
+
+    // ADR-0344 가 실측한 사고의 회귀 시험. 같은 데이터 루트에 기본 포트 파일로 뜬 호스트 A
+    // 가 있고, 호스트 B 가 `--port-file` 만 다른 디렉토리로 주고 뜬다. B 는 A 의 살아 있는
+    // `notify/` 를 지우면 안 된다 — 청소 대상 자체가 없어야 한다.
+    #[test]
+    fn a_port_file_outside_the_data_root_leaves_the_notify_dir_alone() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let live = home.path().join("notify").join("9.log");
+        std::fs::create_dir_all(live.parent().unwrap()).unwrap();
+        std::fs::write(&live, b"surface 9 task complete (via spawn)\n").unwrap();
+        let port_file = elsewhere.path().join("tasty.port");
+
+        let target =
+            TcpIpcServer::notify_dir_to_clear(Some(home.path().to_path_buf()), Some(&port_file));
+        assert_eq!(
+            target, None,
+            "데이터 루트 밖의 포트 파일인데 청소 대상이 나왔다"
+        );
+
+        TcpIpcServer::clear_notify_then_publish_port(target, 4244, Some(&port_file))
+            .expect("port file write");
+        assert!(port_file.exists(), "포트 파일은 그래도 써야 한다");
+        assert!(
+            live.exists(),
+            "다른 호스트의 살아 있는 완료 로그가 지워졌다"
+        );
+    }
+
+    // 홈을 못 찾으면 포트 파일이 어디 있든 청소 대상이 없다.
+    #[test]
+    fn an_unresolved_data_root_has_nothing_to_clear() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            TcpIpcServer::notify_dir_to_clear(None, Some(&tmp.path().join("tasty.port"))),
+            None
+        );
+    }
 
     // 더미 파일이 든 notify/ 를 clear 하면 디렉토리가 통째로 사라진다.
     #[test]

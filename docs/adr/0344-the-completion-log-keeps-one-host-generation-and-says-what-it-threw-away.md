@@ -71,6 +71,8 @@ isolation")은 **포트 파일만** 옮기고 청소 대상은 `tasty_home()/not
 - **안 고친 것**: `--port-file` 이 청소 대상을 안 옮기는 것은 그대로다. 위 Context 의
   실측이 그 자리를 가리키고, 고칠 자리는 `TcpIpcServer::clear_notify_then_publish_port`
   가 청소 대상을 고르는 한 줄이다.
+  → [ADR-0416](0416-the-boot-cleanup-follows-the-port-file-root.md) 이 고쳤다. 포트 파일이
+  데이터 루트 밖이면 청소를 건너뛴다. 이 ADR 의 세 축은 그대로다.
 
 ## Alternatives Considered
 
@@ -111,6 +113,9 @@ isolation")은 **포트 파일만** 옮기고 청소 대상은 `tasty_home()/not
   없다. 재는 법: 격리 홈 하나를 `TASTY_HOME` 으로 주고 호스트를 띄운 뒤
   `<home>/notify/<임의 번호>.log` 에 한 줄을 남기고, **같은 홈**으로 두 번째 호스트를
   (`--port-file` 을 다른 경로로) 띄운다. 그 파일이 사라지면 전제가 깨진 것이다.
+  (정정 2026-09-21: [ADR-0416](0416-the-boot-cleanup-follows-the-port-file-root.md) 이후에는
+  포트 파일이 데이터 루트 **밖**이면 청소를 건너뛰므로 이 절차로는 안 사라진다. 전제 위반을
+  재려면 두 번째 호스트의 `--port-file` 을 **데이터 루트 안의 다른 이름**으로 준다.)
 - **버린 양이 실제로 로그에 나가는 것.** 반환값에는 채널이 있으나 `tracing` 출력에는
   없다 — `tasty-utils` 는 구독자를 갖지 않는 leaf crate다. 재는 법: 호스트를 띄우고
   한 caller surface 의 완료 로그를 cap 위로 넘긴 뒤, 그 plugin 의 로그
@@ -125,7 +130,9 @@ isolation")은 **포트 파일만** 옮기고 청소 대상은 `tasty_home()/not
 - 구현(현재 위치): `crates/tasty-utils/src/notify.rs` 의 모듈 문서 "보존 범위" 절 ·
   `NOTIFY_LOG_CAP_BYTES` · `truncate_over_cap` · `append_line_to`.
 - 세대를 정하는 자리(**다른 파일**): `TcpIpcServer::clear_notify_then_publish_port` 와
-  `clear_notify_dir` — 청소 대상을 `tasty_home()` 으로 고르는 곳이 여기다.
+  `clear_notify_dir` — 청소 대상을 `tasty_home()` 으로 고르는 곳이 여기다. 포트 파일 뿌리와의
+  비교는 `TcpIpcServer::notify_dir_to_clear`([ADR-0416](0416-the-boot-cleanup-follows-the-port-file-root.md)).
+- 후속 해소: [ADR-0416](0416-the-boot-cleanup-follows-the-port-file-root.md) (Consequences 의 "안 고친 것").
 - 한 줄의 원자성(이 ADR 이 바꾸지 않는 것): [ADR-0330](0330-one-completion-line-is-one-write.md).
 - 같은 데이터 루트의 다른 파일 로그가 쓰는 1 단 rotation:
   `crates/tasty-cli/src/hook_failure.rs` · [ADR-0075](0075-agent-hook-delivery-failure-record.md).
