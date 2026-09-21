@@ -87,5 +87,5 @@
 - [ADR-0425](0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md) — 같은 namespace 의
   dispatch 가 거짓 성공을 고친 결정
 - 코드 근거(결정이 실현된 현재 위치): `crates/tasty-file-handler/src/registry.rs` 의
-  `reload_user_config` · `RejectedUserHandler` · `is_complete` · `src/core/file.rs` 의
+  `reload_user_config` · `install_user_decls` · `RejectedUserHandler` · `is_complete` · `src/core/file.rs` 의
   `ReloadFileHandlersOutcome` · `src/adapters/ipc/handler/file_handler.rs` 의 `handle_reload`

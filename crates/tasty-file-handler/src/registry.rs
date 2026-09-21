@@ -192,10 +192,9 @@ impl FileHandlerRegistry {
             }
         };
         let mut inner = self.lock_write();
-        for decl in decls {
-            // 부팅 로드는 응답을 돌려줄 호출자가 없다 — 거절은 install_user 가 이미 warn 으로 남겼다.
-            let _ = install_user(&mut inner, decl);
-        }
+        // 부팅 로드는 버린 항목을 돌려줄 호출자가 없다 — 접두사 누락은 install_user 가,
+        // detector·action 누락은 finalize 가 각자 warn 으로 남긴다.
+        install_user_decls(&mut inner, decls);
         inner.dirty = true;
     }
 
@@ -406,30 +405,7 @@ impl FileHandlerRegistry {
         };
         let mut inner = self.lock_write();
         Self::purge_user_owned(&mut inner);
-        let mut rejected = Vec::new();
-        let mut installed = Vec::new();
-        for decl in decls {
-            match install_user(&mut inner, decl) {
-                Ok(id) => installed.push(id),
-                Err(r) => rejected.push(r),
-            }
-        }
-        // finalize 는 lookup 때 게으르게 돈다. 그때 detector·action 이 없어 버려질 user 항목을
-        // 지금 같은 판정으로 골라 둔다 — 그렇지 않으면 이 reload 의 응답이 그 버림을 모른다.
-        for id in installed {
-            if inner
-                .contributions
-                .get(&id)
-                .is_some_and(|contribs| !is_complete(contribs))
-                // 같은 id 가 파일에 두 번 적혔으면 한 번만 보고한다.
-                && !rejected.iter().any(|r| r.id == id.0)
-            {
-                rejected.push(RejectedUserHandler {
-                    id: id.0,
-                    reason: UserHandlerRejectReason::MissingDetectorOrAction,
-                });
-            }
-        }
+        let rejected = install_user_decls(&mut inner, decls);
         inner.dirty = true;
         rejected
     }
@@ -662,6 +638,40 @@ impl UserHandlerRejectReason {
             Self::MissingDetectorOrAction => "missing_detector_or_action",
         }
     }
+}
+
+/// user 선언을 설치하고 **버린 항목**을 돌려준다 — 설치 전에 거절한 것과, 설치했지만
+/// finalize 가 버릴 것 둘 다.
+///
+/// finalize 는 lookup 때 게으르게 돈다. 그때 detector·action 이 없어 버려질 user 항목을
+/// 지금 같은 판정([`is_complete`])으로 골라 둔다 — 그렇지 않으면 reload 의 응답이 그 버림을
+/// 모른다.
+fn install_user_decls(
+    inner: &mut Inner,
+    decls: Vec<UserHandlerSettingsDecl>,
+) -> Vec<RejectedUserHandler> {
+    let mut rejected = Vec::new();
+    let mut installed = Vec::new();
+    for decl in decls {
+        match install_user(inner, decl) {
+            Ok(id) => installed.push(id),
+            Err(r) => rejected.push(r),
+        }
+    }
+    for id in installed {
+        let incomplete = inner
+            .contributions
+            .get(&id)
+            .is_some_and(|contribs| !is_complete(contribs));
+        // 같은 id 가 파일에 두 번 적혔으면 한 번만 보고한다.
+        if incomplete && !rejected.iter().any(|r| r.id == id.0) {
+            rejected.push(RejectedUserHandler {
+                id: id.0,
+                reason: UserHandlerRejectReason::MissingDetectorOrAction,
+            });
+        }
+    }
+    rejected
 }
 
 /// finalize 가 이 id 를 등록하는가 — 어느 출처든 detector 와 action 을 하나씩 가졌는가.
