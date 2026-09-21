@@ -147,6 +147,7 @@ surface 무관 — `condition` 으로 트리거:
 - **최소 한 필드**는 있어야 한다. 아무 필드도 없는 upsert 는 아무것도 안 고친 채 성공으로 보고되므로 거부한다. 형식이 틀린 `action` 도 같은 이유로 조용히 무시하지 않는다.
 - **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발화 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md) 의 모양이다.
 - **`remove` 는 user 기여분만** 지운다. host/plugin 이 같은 id 에 기본값을 심어 뒀으면 그것이 다시 드러나므로, 응답의 `still_present` 가 그 사실을 값으로 말한다.
+- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 로 접는다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값이 이긴다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0430](../../adr/0430-hook-handler-merge-applies-user-patches-last.md)).
 - 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 사라질 변경을 초록으로 덮지 않는다).
 
 ## 관련

@@ -48,3 +48,4 @@ tasty 에는 이미 **내부 이벤트 트리거**(`tasty-hooks`: surface/global
 - [`features/webhook/index.md`](../features/webhook/index.md) · [`features/hooks/index.md`](../features/hooks/index.md) · [`features/file-handler/index.md`](../features/file-handler/index.md)(정본 템플릿)
 - [ADR-0046](0046-webhook-owner-trust-one-way-ack.md) — owner 신뢰 모델 + 불변식(셸 웹훅 거부의 보안 근거)
 - 코드: `src/hook_handler/{types,config,registry,exec}.rs`, `src/hook_handler/defaults/default-hook-handlers.toml`; 정본 템플릿 `crates/tasty-file-handler/src/{registry,types,config}.rs`
+- 부분 개정: [0430](0430-hook-handler-merge-applies-user-patches-last.md) (병합 순서 조항의 "install 순서 보존" 개정 — 병합은 출처 순서 Host → Plugin → User)
