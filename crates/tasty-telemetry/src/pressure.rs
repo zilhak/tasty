@@ -319,6 +319,14 @@ pub struct ConnectionStats {
     accepted: AtomicU64,
     /// 상한에 걸려 거절된 연결 수의 누계.
     refused_saturated: AtomicU64,
+    /// accept 대기 상한을 기록한 연결 수 — accept 루프가 꺼낸 TCP 연결 **전부**(자리를 받은 것과
+    /// 거절된 것 둘 다)다. 그래서 `accepted + refused_saturated` 와 같다.
+    accept_waits: AtomicU64,
+    /// 연결 하나가 OS 의 accept 큐에서 기다렸을 수 있는 시간의 **상한** 합(마이크로초). 재는 법은
+    /// [`ConnectionStats::record_accept_wait`].
+    accept_wait_bound_us_sum: AtomicU64,
+    /// 그 상한의 최댓값(마이크로초).
+    accept_wait_bound_us_max: AtomicU64,
 }
 
 impl ConnectionStats {
@@ -342,6 +350,23 @@ impl ConnectionStats {
         Some(now)
     }
 
+    /// accept 루프가 연결 하나를 꺼냈다 — 그 연결이 OS 의 accept 큐에서 기다렸을 수 있는 시간의
+    /// **상한**을 기록한다.
+    ///
+    /// OS 가 연결을 큐에 넣은 시각은 사용자 공간에서 안 보인다. 보이는 것은 루프가 큐를 **마지막으로
+    /// 비어 있다고 본 시각**(accept 가 `WouldBlock` 을 돌려준 순간)이고, 그 뒤에 꺼낸 연결은 그
+    /// 시각 **뒤에** 도착했다. 그래서 `꺼낸 시각 − 마지막으로 비어 있던 시각` 은 그 연결의 대기를
+    /// 넘지 않는 값이 아니라 **넘을 수 없는 값**(상한)이다. 루프가 빈 큐를 보면 100 ms 자므로 이
+    /// 값은 대개 0–100 ms 이고, 잠든 동안 고르게 도착하면 실제 대기는 평균적으로 그 절반이다.
+    pub fn record_accept_wait(&self, bound: Duration) {
+        let us = as_micros(bound);
+        self.accept_waits.fetch_add(1, Ordering::Relaxed);
+        self.accept_wait_bound_us_sum
+            .fetch_add(us, Ordering::Relaxed);
+        self.accept_wait_bound_us_max
+            .fetch_max(us, Ordering::Relaxed);
+    }
+
     /// 자리 하나를 돌려준다. [`ConnectionStats::try_open`] 이 `Some` 을 돌려준
     /// 자리에서만 부른다 — 짝이 안 맞으면 `live` 가 0 아래로 돌아 감싼다.
     pub fn close(&self) {
@@ -354,6 +379,9 @@ impl ConnectionStats {
             live_max: self.live_max.load(Ordering::Relaxed),
             accepted: self.accepted.load(Ordering::Relaxed),
             refused_saturated: self.refused_saturated.load(Ordering::Relaxed),
+            accept_waits: self.accept_waits.load(Ordering::Relaxed),
+            accept_wait_bound_us_sum: self.accept_wait_bound_us_sum.load(Ordering::Relaxed),
+            accept_wait_bound_us_max: self.accept_wait_bound_us_max.load(Ordering::Relaxed),
         }
     }
 }
@@ -366,6 +394,16 @@ pub struct ConnectionSnapshot {
     pub live_max: u64,
     pub accepted: u64,
     pub refused_saturated: u64,
+    pub accept_waits: u64,
+    pub accept_wait_bound_us_sum: u64,
+    pub accept_wait_bound_us_max: u64,
+}
+
+impl ConnectionSnapshot {
+    /// accept 대기 상한의 평균(마이크로초). 기록이 없으면 `None`.
+    pub fn accept_wait_bound_us_mean(&self) -> Option<u64> {
+        (self.accept_waits > 0).then(|| self.accept_wait_bound_us_sum / self.accept_waits)
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -467,8 +505,28 @@ mod tests {
         assert_eq!(plugin.snapshot().us_max, 900_000);
     }
 
-    // 연결 게이지는 **시간이 아니라 자리**를 센다 — live 는 내려가고 누계 셋은 안
-    // 내려간다. 그 비대칭이 이 게이지의 전부다.
+    /// accept 대기 상한은 자리 계수와 따로 쌓이고, 평균은 자기 기록 수로 나눈다.
+    #[test]
+    fn the_accept_wait_bound_has_its_own_count() {
+        let c = ConnectionStats::default();
+        assert_eq!(c.snapshot().accept_wait_bound_us_mean(), None);
+        c.record_accept_wait(Duration::from_millis(100));
+        c.record_accept_wait(Duration::from_millis(20));
+        let s = c.snapshot();
+        assert_eq!(
+            (
+                s.accept_waits,
+                s.accept_wait_bound_us_sum,
+                s.accept_wait_bound_us_max
+            ),
+            (2, 120_000, 100_000)
+        );
+        assert_eq!(s.accept_wait_bound_us_mean(), Some(60_000));
+        assert_eq!((s.live, s.accepted), (0, 0), "기록은 자리를 잡지 않는다");
+    }
+
+    // 연결 게이지의 자리 계수는 **시간이 아니라 자리**를 센다 — live 는 내려가고 누계 셋은 안
+    // 내려간다. 그 비대칭이 자리 계수의 전부다(accept 대기 상한은 위 시험이 따로 잰다).
     #[test]
     fn a_closed_connection_frees_the_seat_but_not_the_total() {
         let c = ConnectionStats::default();

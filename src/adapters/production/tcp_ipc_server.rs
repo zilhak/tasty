@@ -25,6 +25,7 @@ use tasty_ipc::admission::{
 };
 use tasty_ipc::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 
+mod accept_clock;
 mod first_line;
 
 /// 한 요청 줄이 읽어 들일 수 있는 최대 바이트.
@@ -295,12 +296,16 @@ impl TcpIpcServer {
         let saturated = Arc::new(AtomicBool::new(false));
         listener.set_nonblocking(true)?;
         thread::spawn(move || {
+            // 빈 큐를 보면 100 ms 자므로 새 연결은 accept 에서 그만큼 기다릴 수 있다. 그 대기는
+            // 요청 줄을 읽기 전이라 큐 대기 계측에 안 잡힌다 — 그 상한을 `connections` 에 싣는다.
+            let mut clock = accept_clock::AcceptClock::new(std::time::Instant::now());
             loop {
                 if shutdown_clone.load(Ordering::Relaxed) {
                     break;
                 }
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        connections.record_accept_wait(clock.bound(std::time::Instant::now()));
                         let Some(slot) = ConnectionSlot::try_acquire(&connections, &saturated)
                         else {
                             Self::refuse_saturated_connection(stream);
@@ -324,6 +329,7 @@ impl TcpIpcServer {
                         });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        clock.saw_empty(std::time::Instant::now());
                         thread::sleep(Duration::from_millis(100));
                     }
                     Err(e) => {

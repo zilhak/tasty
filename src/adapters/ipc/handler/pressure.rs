@@ -63,6 +63,13 @@
 //! ([`crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS`]) —
 //! 그것이 같이 나가야 `live` 가 얼마나 상한에 가까운지가 한 응답 안에서 읽힌다.
 //!
+//! 이 덩어리에 시간이 **하나** 있다 — `accept_wait_bound_us_*` 와 그 기록 수 `accept_waits`. 새 연결이
+//! OS 의 accept 큐에서 기다렸을 수 있는 시간의 **상한**이다(accept 루프가 큐를 마지막으로 비어 있다고
+//! 본 뒤 지난 시간). 모수가 자리 계수와 같아서(루프가 꺼낸 TCP 연결 전부 = `accepted +
+//! refused_saturated`) 여기 둔다. 그 대기는 요청 줄을 읽기 전이라 큐 대기(`queue_before_gate`)에 안
+//! 잡히고, 루프가 빈 큐에서 100 ms 자므로 호출마다 연결을 여는 client 에게는 그만큼이 된다
+//! ([ADR-0467](../../../../docs/adr/0467-the-accept-wait-is-reported-as-a-bound-in-the-connection-block.md)).
+//!
 //! ## `db_pragmas` — **누계가 아니라 열 때 한 번 되읽은 설정**이다
 //!
 //! 앞의 다섯은 전부 프로세스 수명 동안 자라는 수이고, 이것만 **안 자란다.** 두 SQLite
@@ -174,8 +181,8 @@
 //! 넘었는지는 같은 덩어리의 `us_max` 가 답한다.
 //!
 //! `db` 와 `connections` 에는 분포가 없다. 앞은 게이지가 다른 크레이트(`tasty-memory`)에
-//! 살아 이 histogram 타입을 못 보고(의존이 그 방향이다), 뒤는 시간이 아니라 자리라
-//! 분포를 잴 축이 아니다.
+//! 살아 이 histogram 타입을 못 보고(의존이 그 방향이다), 뒤는 자리가 시간이 아니고 하나 있는
+//! 시간(accept 대기)도 잰 값이 아니라 상한이라 분포를 잴 축이 아니다.
 //!
 //! ## 평균이 `null` 일 수 있는 이유
 //!
@@ -491,6 +498,10 @@ pub(super) fn snapshot_json(
             "limit": crate::adapters::production::tcp_ipc_server::MAX_CONCURRENT_CONNECTIONS,
             "accepted": c.accepted,
             "refused_saturated": c.refused_saturated,
+            "accept_waits": c.accept_waits,
+            "accept_wait_bound_us_sum": c.accept_wait_bound_us_sum,
+            "accept_wait_bound_us_max": c.accept_wait_bound_us_max,
+            "accept_wait_bound_us_mean": c.accept_wait_bound_us_mean(),
         },
     })
 }
@@ -1123,6 +1134,37 @@ mod tests {
             v["db"].get("us_hist").is_none() && v["connections"].get("us_hist").is_none(),
             "분포가 없는 덩어리에 빈 분포를 넣지 않는다"
         );
+    }
+
+    /// accept 대기 상한은 `connections` 덩어리에 자기 기록 수와 함께 나간다 — 모수가 그 덩어리와
+    /// 같다(accept 루프가 꺼낸 TCP 연결 전부). 큐 대기(`queue_before_gate`)에는 안 섞인다.
+    #[test]
+    fn the_accept_wait_bound_ships_in_the_connection_block() {
+        let c = ConnectionStats::default();
+        c.record_accept_wait(Duration::from_micros(100_100));
+        c.record_accept_wait(Duration::from_micros(300));
+        let v = snapshot_json(
+            &PressureStats::default().snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &DbLatencyStats::default().snapshot(),
+            &c.snapshot(),
+        );
+        let k = &v["connections"];
+        assert_eq!(k["accept_waits"], 2);
+        assert_eq!(k["accept_wait_bound_us_sum"], 100_400);
+        assert_eq!(k["accept_wait_bound_us_max"], 100_100);
+        assert_eq!(k["accept_wait_bound_us_mean"], 50_200);
+        assert_eq!(
+            v["queue_before_gate"]["wait_us_sum"], 0,
+            "큐 대기에 섞이면 안 된다"
+        );
+        let unobserved = snapshot_json(
+            &PressureStats::default().snapshot(),
+            &PluginWaitStats::default().snapshot(),
+            &DbLatencyStats::default().snapshot(),
+            &ConnectionStats::default().snapshot(),
+        );
+        assert!(unobserved["connections"]["accept_wait_bound_us_mean"].is_null());
     }
 
     /// 자원 축이 시간 축과 **섞이지 않는다.** 연결이 꽉 차 거절이 나도 handler 는

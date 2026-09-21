@@ -51,6 +51,16 @@ pub enum ListCommands {
     /// connections turned away at that ceiling — before they became requests,
     /// so they appear in none of the four blocks above.
     ///
+    /// `connections` also carries one duration, and it is a bound rather than a
+    /// measurement: for every connection the accept loop took (`accept_waits`,
+    /// which equals `accepted` plus `refused_saturated`), the time since the
+    /// accept queue was last seen empty, which the connection's wait in the
+    /// operating system's queue can never exceed (`accept_wait_bound_us_sum`,
+    /// `accept_wait_bound_us_max`, `accept_wait_bound_us_mean`). The loop
+    /// sleeps 100 ms when the queue is empty, so a client that opens a new
+    /// connection for every call can lose up to that much before its request is
+    /// read, and this is the only block where that time shows.
+    ///
     /// Three of those four — `queue_before_gate`, `handler_after_gate` and
     /// `plugin_round_trip` — also carry a `*_hist` with the distribution of
     /// the same observations, because an average and a maximum cannot tell
@@ -59,7 +69,8 @@ pub enum ListCommands {
     /// and is not cumulative, so the entries sum to the observation count and
     /// the last one means only that the top bound was passed. Quantiles are
     /// not computed here. `db` is a duration too but has no distribution, and
-    /// `connections` has none because it is not a duration at all.
+    /// `connections` has none because its seats are not durations and its one
+    /// duration is only a bound.
     ///
     /// `db_pragmas` is the sixth block and it is not a running total at all:
     /// for each SQLite database (`memory_db`, `state_db`) it shows the

@@ -133,6 +133,15 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 보다 **뒤에** 뜨기 때문이다. 서버가 안 뜬 조립(단위 시험)에서는 `accepted` 가 0 으로 남아
 "연결을 받은 적이 없다" 로 읽힌다.
 
+이 덩어리에 시간이 하나 있다 — **accept 대기의 상한**(`accept_waits` · `accept_wait_bound_us_sum` ·
+`accept_wait_bound_us_max` · `accept_wait_bound_us_mean`). accept 루프는 논블로킹이라 큐가 비면 100 ms
+자고, 그 사이 도착한 연결은 요청 줄을 읽히기 전에 기다린다 — 큐 대기 계측(`queue_before_gate`)은 줄을
+읽은 뒤에 시작하므로 그 시간이 어디에도 안 잡혔다. OS 가 연결을 큐에 넣은 시각은 사용자 공간에서 안
+보이므로, 재는 것은 **루프가 큐를 마지막으로 비어 있다고 본 뒤 지난 시간**이다. 그 뒤에 꺼낸 연결은 그
+순간 뒤에 도착했으므로 이 값은 실제 대기를 넘을 수 없는 **상한**이고, 잠든 동안 고르게 도착하면 실제
+대기는 평균적으로 그 절반이다. 모수는 루프가 꺼낸 TCP 연결 전부라 `accept_waits = accepted +
+refused_saturated` 다([ADR-0467](../../adr/0467-the-accept-wait-is-reported-as-a-bound-in-the-connection-block.md)).
+
 여섯째는 **누계가 아니라 설정**이다. `memory_db` · `state_db` 두 칸이 각각 `in_memory` ·
 `degraded` 와 pragma 넷(`journal_mode` · `synchronous` · `foreign_keys` · `journal_size_limit`)의
 `requested` · `effective` · `took` · `error` 를 싣는다. 요청값을 함께 싣는 것은 소스의 `WAL` 이
