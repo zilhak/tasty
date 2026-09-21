@@ -46,6 +46,7 @@
 
 - `StreamControl::StructuralOp` 에서 `origin` 칸이 사라지거나 `ForwardOrigin::of_wire` 가 부재를 `User` 가 아닌 값으로 풀면 이 결정의 호환 조항이 바뀐 것이다 — `crates/tasty-ipc/src/stream.rs` 의 `a_structural_op_without_origin_is_a_users_op` 가 그 자리에서 실패한다.
 - 모르는 origin 값이 프레임을 버리게 되거나 `Agent` 가 아닌 값으로 풀리면 — `crates/tasty-ipc/src/stream.rs` 의 `an_unknown_origin_keeps_the_frame_and_reads_as_agent` 가 실패한다(변이로 확인: 모르는 값을 `User` 로 바꿔도, 역직렬화 에러로 바꿔도 그 시험이 빨개졌다).
+- 새 클라이언트가 에이전트 경로의 op 를 `"agent"` 로 싣지 않으면 서버 쪽 판정이 아무리 옳아도 결함이 되살아난다 — `src/app/attach_client.rs` 의 `an_agent_close_is_forwarded_with_the_agent_origin` 이 실패한다(변이로 확인: `forward_origin_of` 의 `ForwardOrigin::Agent` 를 `User` 로 바꾸면 전량 lib 2608 중 그 시험 하나만 빨개졌다).
 - forward 실행이 origin 과 무관하게 close 를 스냅샷하면 결정이 뒤집힌 것이다 — `src/core/attach_runtime.rs` 의 `a_forwarded_agent_close_leaves_no_snapshot` 이 실패한다(변이로 확인: `restorable` 을 상수 `true` 로 바꾸면 그 시험만 빨개졌다).
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
@@ -57,5 +58,5 @@
 
 - 개정 대상: [ADR-0264](0264-mirror-restore-closed-item-runs-on-the-remote.md) (결정 4 의 전제)
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
-- 코드 근거(이 결정이 실현된 현재 위치): `crates/tasty-ipc/src/stream.rs`(`StreamControl::StructuralOp` 의 `origin` · `ForwardOrigin`) · `crates/tasty-ipc/src/stream_hub.rs`(`PumpOutcome::structural_ops`) · `src/core/attach_runtime.rs`(`execute_forwarded_structural_op`) · `src/app/attach_client.rs`(`forward_one_structural_op`) · `src/core/impl_mirror.rs`(`PendingStructuralForward`).
+- 코드 근거(이 결정이 실현된 현재 위치): `crates/tasty-ipc/src/stream.rs`(`StreamControl::StructuralOp` 의 `origin` · `ForwardOrigin`) · `crates/tasty-ipc/src/stream_hub.rs`(`PumpOutcome::structural_ops`) · `src/core/attach_runtime.rs`(`execute_forwarded_structural_op`) · `src/app/attach_client.rs`(`forward_one_structural_op` · `forward_origin_of` · `structural_op_payload`) · `src/core/impl_mirror.rs`(`PendingStructuralForward`).
 - [`docs/identity.md`](../identity.md) 원칙 1 · [`docs/dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) "mirror 구조 변경 forward".

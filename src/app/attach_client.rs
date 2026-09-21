@@ -1217,20 +1217,7 @@ impl App {
             sess.pending_op_focus.insert(op_id, intent);
         }
 
-        // 누구의 요청인가를 함께 싣는다 — 서버는 이것으로 close 를 자기 복원 스택에
-        // 남길지 정한다. 사용자의 손 조작이 아닌 op(에이전트 IPC/CLI 유래)는 남기지
-        // 않는다(`docs/identity.md` 원칙 1, ADR-0480).
-        let origin = if user_triggered {
-            tasty_ipc::stream::ForwardOrigin::User
-        } else {
-            tasty_ipc::stream::ForwardOrigin::Agent
-        };
-        let payload = serde_json::to_vec(&StreamControl::StructuralOp {
-            op_id,
-            op: wire,
-            origin: Some(origin),
-        })
-        .unwrap_or_default();
+        let payload = structural_op_payload(op_id, wire, user_triggered);
         // write 큐로 보내 write 스레드가 순차로 쓴다(락 직접 획득 제거).
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("structural forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
@@ -1611,6 +1598,31 @@ impl App {
             );
         }
     }
+}
+
+/// forward 큐 원소의 `user_triggered` 를 wire 의 `origin` 으로 옮긴다. 서버는 이것으로 close 를
+/// 자기 복원 스택에 남길지 정한다 — 사용자의 손 조작이 아닌 op(에이전트 IPC/CLI 유래)는 남기지
+/// 않는다(`docs/identity.md` 원칙 1, ADR-0480).
+fn forward_origin_of(user_triggered: bool) -> tasty_ipc::stream::ForwardOrigin {
+    if user_triggered {
+        tasty_ipc::stream::ForwardOrigin::User
+    } else {
+        tasty_ipc::stream::ForwardOrigin::Agent
+    }
+}
+
+/// forward 한 건의 Control 프레임 payload — 새 클라이언트는 `origin` 을 언제나 명시한다.
+fn structural_op_payload(
+    op_id: u64,
+    op: tasty_ipc::stream::StructuralOp,
+    user_triggered: bool,
+) -> Vec<u8> {
+    serde_json::to_vec(&StreamControl::StructuralOp {
+        op_id,
+        op,
+        origin: Some(forward_origin_of(user_triggered)),
+    })
+    .unwrap_or_default()
 }
 
 /// `local_sid` 를 mirror 로 보유한 세션과 그 원격 surface id 를 찾는다. 세션이
@@ -4206,6 +4218,26 @@ pub(crate) fn upload_file_over_bulk(
 mod tests {
     use super::*;
     use crate::core::state::IdGenerator;
+
+    /// 에이전트 경로(`user_triggered=false`)로 큐에 쌓인 close 는 wire 에 `"origin":"agent"` 로
+    /// 나가야 서버가 그것을 복원 스택에 안 넣는다 — D-RF03-1 의 클라이언트 쪽 절반(ADR-0480).
+    /// 손 조작 close 는 `"user"` 다.
+    #[test]
+    fn an_agent_close_is_forwarded_with_the_agent_origin() {
+        let queued = |user_triggered| crate::core::PendingStructuralForward {
+            op: tasty_ipc::stream::StructuralOp::CloseSurface { surface_id: 9 },
+            user_triggered,
+            close_focus_candidates: Vec::new(),
+        };
+        let origin_on_wire = |p: crate::core::PendingStructuralForward| {
+            let payload = structural_op_payload(3, p.op, p.user_triggered);
+            let v: serde_json::Value = serde_json::from_slice(&payload).expect("json");
+            assert_eq!(v["event"], "structural_op");
+            v["origin"].clone()
+        };
+        assert_eq!(origin_on_wire(queued(false)), "agent");
+        assert_eq!(origin_on_wire(queued(true)), "user");
+    }
     use crate::ipc::stream::SplitAxis;
 
     /// 창이 없는(parked) engine 이든 창이 있는 engine 이든, mirror 워크스페이스
