@@ -107,7 +107,7 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   [ADR-0490](0490-boundary-guards-close-three-holes-found-by-mutation.md)). 이 결정의 가드는 처음에
   `crate::`·`super::` 경로와 gui 게이트 **수**만 봤다. 이미 있는 게이트 뒤 import 에 `egui::Context`
   를 끼워 넣으면 수가 그대로라 아무것도 안 빨개졌다(변이로 확인). 지금은 같은 가드가 `gui` feature
-  의 optional 의존(매니페스트에서 읽는다)과 `windows` 의 창·그리기 하위 경로를 게이트 뒤까지 읽고
+  의 optional 의존(매니페스트에서 읽는다)과 `windows` 의 창·그리기 하위 경로·창 핸들을 게이트 뒤까지 읽고
   (파일, 경로) 목록으로 고정한다(오늘 0). 남은 한계 — 다른 워크스페이스 크레이트의 GUI 갈래
   (`tasty-platform/gui` 등)는 이름으로 안 갈려 여전히 밖이다.
 - **운영 비용**: 도메인에 창 쪽 연산이 새로 필요하면 `CascadeWindow` 에 메서드를 더하고

@@ -20,7 +20,7 @@
 //!    내린다(남는 여유가 곧 안 보는 구간이다).
 //! 3. **GUI 크레이트** — 출하 코드가 `gui` feature 뒤의 외부 크레이트(egui · winit · wgpu ·
 //!    webkit2gtk · gtk · objc2 계열 · webview2-com 등 — 목록은 매니페스트에서 읽는다,
-//!    [`gui_crates`])나 `windows` 의 창·그리기 하위 경로를 부르는가. 2 번의 수는 **새 게이트**만
+//!    [`gui_crates`])나 `windows` 의 창·그리기 하위 경로·창 핸들을 부르는가. 2 번의 수는 **새 게이트**만
 //!    센다 — 이미 있는 게이트 뒤 import 에 `egui::Context` 를 끼워 넣으면 수가 그대로라 안
 //!    보였다([ADR-0490](../../../docs/adr/0490-boundary-guards-close-three-holes-found-by-mutation.md)).
 //!    그래서 이 물음은 게이트를 안 빼고 읽고, 기존 자리를 **(파일, 경로) 목록**으로
@@ -360,7 +360,18 @@ fn gui_crates() -> Vec<String> {
 /// `gui` feature 뒤가 아닌데 OS 창·그리기 타입을 담은 크레이트의 **하위 경로**. `windows` 는
 /// Windows 타깃에서 조건 없이 링크된다(프로세스·콘솔·파일 시스템도 이것으로 부른다) —
 /// 크레이트 전체를 막을 수는 없고, 창·그리기 갈래만 막는다.
-const OS_WINDOW_PATHS: &[&str] = &["windows::Win32::UI", "windows::Win32::Graphics"];
+///
+/// 창 핸들과 창 프로시저 인자는 `UI` 가 아니라 `Foundation` 에 산다(windows 0.61 실측 —
+/// `HWND` · `HINSTANCE` · `LPARAM` · `WPARAM`). `Foundation` 전체는 `HANDLE` · `BOOL` 같은 창
+/// 아닌 타입을 담으므로 **항목 단위**로 적는다. 판정이 앞마디 일치라 항목 경로도 그대로 동작한다.
+const OS_WINDOW_PATHS: &[&str] = &[
+    "windows::Win32::UI",
+    "windows::Win32::Graphics",
+    "windows::Win32::Foundation::HWND",
+    "windows::Win32::Foundation::HINSTANCE",
+    "windows::Win32::Foundation::LPARAM",
+    "windows::Win32::Foundation::WPARAM",
+];
 
 /// 도메인 출하 코드가 **이미** GUI 크레이트를 부르는 자리 — `(파일, 경로)`.
 ///
@@ -455,6 +466,7 @@ use windows::Win32::UI::WindowsAndMessaging::SetFocus;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::{Graphics::Gdi::HDC, System::Console::X};
 extern crate image;
+use windows::Win32::Foundation::{HANDLE, HWND};
 #[cfg(test)]
 mod tests {
     use egui::Pos2;
@@ -475,6 +487,7 @@ mod tests {
         (15, "windows::Win32::UI::WindowsAndMessaging::SetFocus"),
         (17, "windows::Win32::Graphics::Gdi::HDC"),
         (18, "image"),
+        (19, "windows::Win32::Foundation::HWND"),
     ]
     .into_iter()
     .map(|(l, p)| (l, p.to_string()))
@@ -482,9 +495,10 @@ mod tests {
     assert_eq!(
         got, want,
         "잡혀야 하는 것: gui 게이트 뒤(2) · 절대 경로(3 · 10) · `as` 별칭(4) · 여러 줄 중괄호(6 · 7) · \
-         중괄호 루트(9) · 창·그리기 하위 경로(15 · 17) · `extern crate`(18). 11–12 행(앞에 마디가 \
-         붙은 경로 · 필드)이 잡히면 첫 마디 판정이, 13–14 행이면 마스킹이, 16 · 17 행의 \
-         `System` 이면 하위 경로 판정이, 21 행이면 test 필터가 죽은 것이다."
+         중괄호 루트(9) · 창·그리기 하위 경로(15 · 17) · `extern crate`(18) · Foundation 의 창 \
+         핸들(19 의 `HWND`). 11–12 행(앞에 마디가 붙은 경로 · 필드)이 잡히면 첫 마디 판정이, \
+         13–14 행이면 마스킹이, 16 · 17 행의 `System` 이나 16 · 19 행의 `HANDLE` 이면 하위 경로 \
+         판정이, 22 행이면 test 필터가 죽은 것이다."
     );
 }
 

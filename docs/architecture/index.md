@@ -44,7 +44,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
   `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 막는다(기대값 0, 면제 명부 없음).
   같은 가드가 도메인 출하 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, **GUI 크레이트**
   (워크스페이스 `Cargo.toml` 의 `gui` feature 가 켜는 optional 의존 전부와 `windows` 의 창·그리기
-  하위 경로)를 부르는 자리를 gui 게이트 뒤까지 읽어 (파일, 경로) 목록으로 고정한다(오늘 0 —
+  하위 경로·`Foundation` 의 창 핸들)를 부르는 자리를 gui 게이트 뒤까지 읽어 (파일, 경로) 목록으로 고정한다(오늘 0 —
   [ADR-0490](../adr/0490-boundary-guards-close-three-holes-found-by-mutation.md)).
 - **창 쪽 연산은 도메인이 선언한 포트로 닿는다**: 구조 실행·cascade 가 필요로 하는 창
   연산은 `core::cascade_window::CascadeWindow`(`AppState` 가 `state/cascade_window.rs` 에서
