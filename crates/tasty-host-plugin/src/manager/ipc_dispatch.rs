@@ -180,7 +180,7 @@ impl PluginManager {
                         payload,
                     ) {
                         Ok(req_id) => {
-                            self.pending_requests.insert(
+                            self.insert_pending(
                                 req_id,
                                 PendingRequest::now(
                                     ext_id.clone(),
@@ -347,8 +347,7 @@ impl PluginManager {
                 deadline,
             },
         };
-        self.pending_requests
-            .insert(req_id, PendingRequest::now(to, kind).for_request(origin));
+        self.insert_pending(req_id, PendingRequest::now(to, kind).for_request(origin));
     }
 
     /// 활성 extension이 있고 method에 매칭되는 pre/post IPC hook을 검색.
@@ -591,7 +590,18 @@ impl PluginManager {
             .collect();
         for id in to_cancel {
             let msg = format!("plugin '{plugin_id}' unavailable: {reason}");
-            match self.pending_requests.remove(&id).map(|p| p.kind) {
+            let removed = self.pending_requests.remove(&id);
+            if let Some(p) = &removed {
+                // plugin 이 치워지면 사슬은 여기서 끝난다 — 모든 갈래가 caller 에 오류로 답한다.
+                self.record_origin_hop(
+                    id,
+                    p,
+                    p.sent_at.elapsed(),
+                    tasty_telemetry::slow_requests::HopOutcome::Cancelled,
+                    true,
+                );
+            }
+            match removed.map(|p| p.kind) {
                 Some(PendingRequestKind::NamespaceInvoke {
                     response_tx,
                     original_id,

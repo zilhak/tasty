@@ -403,7 +403,7 @@ impl App {
         let proxy = self.view.proxy.clone();
         let memory = self.core.memory_arc();
         // 게이지 핸들은 메인 스레드에서 뽑아 워커로 move 한다 — 워커는 `App` 을 안 본다.
-        let plugin_wait = self.core.plugin_wait().clone();
+        let gauges = self.core.plugin_gauges();
         // 슬롯 선택은 `App` 순회(점유 스캔)가 필요하므로 **메인 스레드에서** 정해
         // 워커로 move 한다. 부팅 시점엔 살아있는 engine 이 없으니 점유는 비어 있고,
         // 저장된 슬롯이 있으면 그 중 가장 낮은 번호(보통 1), 없으면 1 이 된다 —
@@ -422,7 +422,7 @@ impl App {
                     proxy,
                     memory,
                     layout_slot,
-                    plugin_wait,
+                    gauges,
                     #[cfg(debug_assertions)]
                     input_simulation_enabled,
                 );

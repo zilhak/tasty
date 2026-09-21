@@ -173,6 +173,7 @@ impl PluginManager {
             surfaces: HashMap::new(),
             pending_requests: HashMap::new(),
             plugin_wait: None,
+            slow_requests: None,
             channel_ledger: crate::process::channel_bytes::ChannelLedger::process_wide(),
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),

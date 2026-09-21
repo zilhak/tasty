@@ -56,7 +56,10 @@ pub(crate) fn pump_ipc(
     // 적체를 못 읽는다 — 그래서 세는 자리도 그 안의 한 곳이다.
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
-        if dispatch_command(app, state, engine, cmd).is_break() {
+        let observed = crate::app::ipc_round::CommandObservation::begin(app.core.pressure(), &cmd);
+        let flow = dispatch_command(app, state, engine, cmd);
+        observed.finish(app.core.slow_requests());
+        if flow.is_break() {
             round.finish(app.core.pressure(), app.core.dispatch());
             return std::ops::ControlFlow::Break(());
         }
@@ -78,7 +81,7 @@ fn dispatch_command(
     engine: &mut CoreState,
     cmd: crate::ipc::server::IpcCommand,
 ) -> std::ops::ControlFlow<()> {
-    app.core.pressure().record_queue_wait(cmd.queue_wait());
+    // 큐 대기는 꺼낸 자리(`CommandObservation::begin`)가 이미 쟀다 — gui 와 같은 자리다.
     // 0) 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(gui 와 같은 자리,
     //    ADR-0411).
     if !crate::app::ipc_round::claim_or_answer(&cmd, app.core.dispatch()) {

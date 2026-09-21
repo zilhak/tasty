@@ -66,6 +66,51 @@ impl PluginManager {
         self.channel_ledger.snapshot()
     }
 
+    /// 느린 요청 링을 주입한다(ADR-0436). `set_plugin_wait` 과 같이 프로세스의 한 인스턴스를
+    /// 호스트 dispatch 루프와 나눠 든다 — 호스트 몫과 plugin hop 이 같은 줄에 이어지려면 둘이
+    /// 같은 링을 봐야 한다.
+    pub fn set_slow_requests(&mut self, log: Arc<tasty_telemetry::SlowRequestLog>) {
+        self.slow_requests = Some(log);
+    }
+
+    /// 원 IPC 요청 번호를 든 plugin 요청을 대기 표에 넣는다 — 링에 그 요청의 자리를 먼저 연다.
+    /// hop 이 끝나기 전에 호스트 몫이 채워지므로(forward 는 dispatch 안에서 일어난다) 자리가
+    /// 먼저 있어야 호스트 몫이 문턱 아래여도 버려지지 않고 hop 을 기다린다.
+    pub(super) fn insert_pending(&mut self, req_id: u64, pending: PendingRequest) {
+        if let (Some(log), Some(seq)) = (&self.slow_requests, pending.origin) {
+            log.note_forwarded(seq.get());
+        }
+        self.pending_requests.insert(req_id, pending);
+    }
+
+    /// 원 IPC 요청 번호를 든 대기 항목 하나가 끝났다 — 그 hop 을 링의 줄에 붙인다. 번호가 없는
+    /// 항목(IPC 요청에서 오지 않은 것)은 남기지 않는다.
+    ///
+    /// `last` 는 사슬이 이 hop 에서 끝나는가다. pre-hook 은 늘 target 으로 이어지고(응답이든
+    /// fail-open 이든), post-hook 이 걸린 target 은 응답이 오면 post-hook 으로 이어진다.
+    pub(super) fn record_origin_hop(
+        &self,
+        req_id: u64,
+        pending: &PendingRequest,
+        waited: std::time::Duration,
+        outcome: tasty_telemetry::slow_requests::HopOutcome,
+        last: bool,
+    ) {
+        let (Some(log), Some(seq)) = (&self.slow_requests, pending.origin) else {
+            return;
+        };
+        log.finish_plugin_hop(
+            seq.get(),
+            tasty_telemetry::slow_requests::PluginHop {
+                plugin_id: pending.to.clone(),
+                host_request_id: req_id,
+                wait_us: u64::try_from(waited.as_micros()).unwrap_or(u64::MAX),
+                outcome,
+            },
+            last,
+        );
+    }
+
     /// 응답 하나가 매칭됐다 — 보낸 뒤 흐른 시간을 게이지에 접는다.
     fn record_plugin_wait(&self, waited: std::time::Duration) {
         if let Some(stats) = &self.plugin_wait {
@@ -78,7 +123,20 @@ impl PluginManager {
         // 왕복 대기 — 여기가 모든 plugin 응답이 지나는 한 자리다. 매칭되지 않은
         // 응답(이미 만료·취소된 id)은 재지 않는다: 잰 값의 끝점이 없다.
         if let Some(p) = &pending {
-            self.record_plugin_wait(p.sent_at.elapsed());
+            let waited = p.sent_at.elapsed();
+            self.record_plugin_wait(waited);
+            let outcome = if resp.error.is_some() {
+                tasty_telemetry::slow_requests::HopOutcome::Error
+            } else {
+                tasty_telemetry::slow_requests::HopOutcome::Ok
+            };
+            // 응답이 사슬의 다음 hop 을 부르는 두 종류 — 그 밖은 여기서 끝난다.
+            let last = !matches!(
+                p.kind,
+                PendingRequestKind::ExtensionPreIpcHook { .. }
+                    | PendingRequestKind::NamespaceInvokeWithPostHook { .. }
+            );
+            self.record_origin_hop(resp.id, p, waited, outcome, last);
         }
         if let Some(err) = &resp.error {
             tracing::warn!(
@@ -471,7 +529,7 @@ impl PluginManager {
             payload,
         ) {
             Ok(req_id) => {
-                self.pending_requests.insert(
+                self.insert_pending(
                     req_id,
                     PendingRequest::now(
                         extension_plugin_id.clone(),
@@ -508,6 +566,15 @@ impl PluginManager {
         let expired = self.collect_expired_request_ids(now);
         for id in expired {
             if let Some(p) = self.pending_requests.remove(&id) {
+                // pre-hook 만료는 fail-open 으로 target 을 부른다 — 사슬이 이어진다.
+                let last = !matches!(p.kind, PendingRequestKind::ExtensionPreIpcHook { .. });
+                self.record_origin_hop(
+                    id,
+                    &p,
+                    now.saturating_duration_since(p.sent_at),
+                    tasty_telemetry::slow_requests::HopOutcome::Expired,
+                    last,
+                );
                 self.expire_pending_request(id, p.kind);
             }
         }

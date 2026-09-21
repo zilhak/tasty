@@ -278,6 +278,11 @@ pub(crate) struct Core {
     /// 창마다 매니저를 다시 만들어도 같은 핸들을 넘기므로 축이 프로세스로 유지된다.
     plugin_wait: Arc<tasty_telemetry::PluginWaitStats>,
 
+    /// 느린 요청 링(ADR-0436). 호스트 몫은 dispatch 루프가(GUI · headless 같은 자리),
+    /// plugin hop 은 `tasty-host-plugin` 의 매니저가 채운다 — `plugin_wait` 과 같은 이유로
+    /// `Arc` 이고 매니저에 같은 핸들을 넘긴다. 고정 용량이라 프로세스 수명 동안 안 자란다.
+    slow_requests: Arc<tasty_telemetry::SlowRequestLog>,
+
     /// DB commit·checkpoint 지연 게이지.
     ///
     /// `plugin_wait` 과 같은 이유로 `Arc` 이고, 한 가지가 더 있다. 기록자는
@@ -318,6 +323,17 @@ pub(crate) struct Core {
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
 }
 
+/// plugin 매니저가 채우는 프로세스 게이지 핸들 — 왕복 대기 분포와 느린 요청 링.
+///
+/// 매니저를 세우는 두 경로(gui `build_plugin_manager` · headless 부트스트랩)가 같은 묶음을
+/// 주입해야 두 조합이 같은 값을 채운다. 하나를 빠뜨리면 그 값은 조용히 비어 "안 기다렸다" 처럼
+/// 읽힌다.
+#[derive(Clone)]
+pub(crate) struct PluginGauges {
+    pub(crate) plugin_wait: Arc<tasty_telemetry::PluginWaitStats>,
+    pub(crate) slow_requests: Arc<tasty_telemetry::SlowRequestLog>,
+}
+
 impl Core {
     /// `Clock` port 경유 현재 시각(monotonic). outbound port 실제 소비 경로 최소
     /// 1곳 확보(`pty.spawn`, `handler/pty.rs`).
@@ -335,6 +351,20 @@ impl Core {
     /// `&Arc` 를 돌려준다 — 읽기만 하는 자리는 `.snapshot()` 을 부른다.
     pub(crate) fn plugin_wait(&self) -> &Arc<tasty_telemetry::PluginWaitStats> {
         &self.plugin_wait
+    }
+
+    /// 느린 요청 링. dispatch 루프가 기록하고 `system.pressure` 가 읽는다.
+    pub(crate) fn slow_requests(&self) -> &Arc<tasty_telemetry::SlowRequestLog> {
+        &self.slow_requests
+    }
+
+    /// plugin 매니저에 넘길 게이지 핸들 묶음 — 매니저를 세우는 자리가 `Core` 를 안 보고도
+    /// 둘을 함께 받게 한다(첫 부팅은 워커 스레드에서 세운다).
+    pub(crate) fn plugin_gauges(&self) -> PluginGauges {
+        PluginGauges {
+            plugin_wait: self.plugin_wait.clone(),
+            slow_requests: self.slow_requests.clone(),
+        }
     }
 
     /// DB 지연 게이지. 읽기 전용 소비처(진단 응답)만 있으므로 스냅샷을 부르라고

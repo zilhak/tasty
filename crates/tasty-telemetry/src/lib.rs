@@ -302,6 +302,7 @@ mod aggregate;
 mod anomaly;
 mod cap;
 pub mod pressure;
+pub mod slow_requests;
 
 pub use aggregate::*;
 pub use anomaly::*;
@@ -320,6 +321,8 @@ pub use pressure::{
     ConnectionSnapshot, ConnectionStats, HistogramSnapshot, LATENCY_BUCKET_COUNT,
     PluginWaitSnapshot, PluginWaitStats, PressureSnapshot, PressureStats,
 };
+// 링의 줄 타입들은 `slow_requests::…` 로 부른다 — 루트에는 프로세스가 드는 핸들 하나만 둔다.
+pub use slow_requests::SlowRequestLog;
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

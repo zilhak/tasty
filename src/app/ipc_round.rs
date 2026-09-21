@@ -109,6 +109,63 @@ impl IpcRound {
     }
 }
 
+/// 꺼낸 명령 하나의 관측 — 큐 대기를 재고, 명령을 다 다룬 뒤 호스트 몫을 느린 요청 링에 넘긴다.
+///
+/// gui `process_ipc` 와 headless `pump_ipc` 가 **같은 자리**(명령을 꺼낸 직후 · 다 다룬 직후)에서
+/// 이것을 부른다. 두 경로의 모수가 갈리면 한쪽에서만 보이는 느린 요청이 생긴다.
+///
+/// 명령을 빌리지 않고 필요한 값만 복사해 든다 — 명령은 dispatch 로 옮겨지고, dispatch 는
+/// `Core` 를 가변으로 빌린다. 그래서 `begin` 과 `finish` 가 따로 있다.
+pub(crate) struct CommandObservation {
+    request_seq: u64,
+    /// canonical 메서드. `system.pressure` 자신이면 `None` — 진단 조회가 링을 밀어내면 조회할
+    /// 때마다 원인 요청이 한 칸씩 사라진다.
+    method: Option<String>,
+    caller: tasty_telemetry::slow_requests::CallerKind,
+    queue_wait: Duration,
+    started: Instant,
+}
+
+impl CommandObservation {
+    /// 명령을 막 꺼냈다 — 큐 대기를 접고 호스트 처리의 시작을 찍는다. 큐 대기 계측이 기한
+    /// 판정(`claim_or_answer`)보다 먼저다: 만료된 요청도 큐에 앉아 있었다.
+    pub(crate) fn begin(pressure: &PressureStats, cmd: &IpcCommand) -> Self {
+        let queue_wait = cmd.queue_wait();
+        pressure.record_queue_wait(queue_wait);
+        let method = tasty_ipc::alias::canonicalize(&cmd.request.method);
+        // 봉투가 말한 종류다. 토큰이 무효면 게이트가 곧바로 거절하므로 느린 줄이 될 일이 드물다.
+        let caller = if cmd.request.session_token.is_some() {
+            tasty_telemetry::slow_requests::CallerKind::Agent
+        } else {
+            tasty_telemetry::slow_requests::CallerKind::Local
+        };
+        Self {
+            request_seq: cmd.request_seq().get(),
+            method: (method != PRESSURE_METHOD).then(|| method.to_string()),
+            caller,
+            queue_wait,
+            started: Instant::now(),
+        }
+    }
+
+    /// 명령을 다 다뤘다(답을 냈거나 plugin 으로 넘겼다).
+    pub(crate) fn finish(self, slow: &tasty_telemetry::SlowRequestLog) {
+        let Some(method) = self.method else {
+            return;
+        };
+        slow.finish_host(tasty_telemetry::slow_requests::HostLeg {
+            request_seq: self.request_seq,
+            method: &method,
+            caller: self.caller,
+            queue_wait: self.queue_wait,
+            host: self.started.elapsed(),
+        });
+    }
+}
+
+/// 링에 넣지 않는 진단 조회.
+const PRESSURE_METHOD: &str = "system.pressure";
+
 /// 꺼낸 명령을 **실행하기 직전**에 부른다. 실행해도 되면 `true`.
 ///
 /// 호출자가 실은 응답 대기 상한이 큐에서 기다리는 동안 지났으면 실행하지 않고 `-32067` 로
@@ -305,5 +362,74 @@ mod tests {
         let mut round = IpcRound::begin();
         assert!(round.next(None).is_none());
         assert_eq!(round.taken, 0);
+    }
+
+    fn named(method: &str) -> IpcCommand {
+        let (resp_tx, _resp_rx) = mpsc::sync_channel(1);
+        let req = JsonRpcRequest {
+            response_timeout_ms: None,
+            idempotency_key: None,
+            jsonrpc: "2.0".to_string(),
+            method: method.to_string(),
+            id: Some(serde_json::Value::from(1u64)),
+            params: serde_json::Value::Null,
+            session_token: Some("token-is-not-copied".to_string()),
+        };
+        IpcCommand::new(req, resp_tx)
+    }
+
+    /// 문턱을 넘긴 명령은 호스트 번호와 함께 링에 들고, `system.pressure` 자신은 같은 시간을
+    /// 써도 안 든다 — 진단 조회가 링을 밀어내면 조회할 때마다 원인 요청이 한 칸씩 사라진다.
+    /// 둘 다 큐 대기는 센다(링에서만 뺀다).
+    #[test]
+    fn a_slow_command_is_kept_and_the_pressure_query_itself_is_not() {
+        let pressure = PressureStats::default();
+        let slow = tasty_telemetry::SlowRequestLog::default();
+        let over =
+            tasty_telemetry::slow_requests::SLOW_REQUEST_THRESHOLD + Duration::from_millis(5);
+
+        let query = named("system.pressure");
+        let observed = CommandObservation::begin(&pressure, &query);
+        std::thread::sleep(over);
+        observed.finish(&slow);
+        assert!(
+            slow.snapshot().rows.is_empty(),
+            "the query landed in its own ring"
+        );
+
+        let cmd = named("workspace.list");
+        let observed = CommandObservation::begin(&pressure, &cmd);
+        std::thread::sleep(over);
+        observed.finish(&slow);
+        let rows = slow.snapshot().rows;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].request_seq, cmd.request_seq().get());
+        let host = rows[0].host.as_ref().expect("host part");
+        assert_eq!(host.method, "workspace.list");
+        assert_eq!(
+            host.caller,
+            tasty_telemetry::slow_requests::CallerKind::Agent
+        );
+        assert!(host.host_us >= 100_000, "{host:?}");
+        assert_eq!(pressure.snapshot().queue_wait_hist.total(), 2);
+    }
+
+    /// 두 dispatch 루프가 **같은 자리**에서 관측한다 — 꺼낸 직후 `begin`, 다 다룬 직후 `finish`,
+    /// 그리고 큐 대기를 루프 본문이 따로 재지 않는다(재면 한 명령이 두 번 접힌다).
+    #[test]
+    fn both_dispatch_loops_observe_at_the_same_place_and_once() {
+        for (name, src) in [
+            ("gui", include_str!("ipc.rs")),
+            ("headless", include_str!("../boot/headless_dispatch.rs")),
+        ] {
+            let body = src.split("\n#[cfg(test)]").next().unwrap_or(src);
+            assert_eq!(
+                body.matches("CommandObservation::begin(").count(),
+                1,
+                "{name}"
+            );
+            assert_eq!(body.matches("observed.finish(").count(), 1, "{name}");
+            assert_eq!(body.matches("record_queue_wait(").count(), 0, "{name}");
+        }
     }
 }

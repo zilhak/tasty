@@ -451,6 +451,10 @@ pub struct PluginManager {
     /// 세운다). 그때 `None` 이면 **아무것도 안 센다** — 0 을 쌓지 않으므로 읽는 쪽이
     /// "안 쟀다" 와 "기다림이 없었다" 를 그대로 가른다.
     plugin_wait: Option<Arc<tasty_telemetry::PluginWaitStats>>,
+    /// 느린 요청 링(ADR-0436). 원 IPC 요청 번호를 든 대기 항목이 끝날 때(응답 · 만료 · 취소)
+    /// 그 hop 을 원 요청의 줄에 붙인다. `plugin_wait` 과 같은 이유로 `Option` 이고, `None` 이면
+    /// 아무것도 안 남긴다.
+    slow_requests: Option<Arc<tasty_telemetry::SlowRequestLog>>,
     /// plugin 채널 바이트 장부. 운영 경로는 **프로세스 하나에 하나**다
     /// (`ChannelLedger::process_wide`) — 창마다 매니저를 세워도 합계의 축은 메모리이고
     /// 메모리는 하나다. 이 매니저가 띄우는 모든 plugin 프로세스의 세 채널이 여기에 올라간다.

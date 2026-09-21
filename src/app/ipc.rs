@@ -123,7 +123,11 @@ impl App {
         // `ipc_server` 빌림은 `next` 호출 안에서 끝난다 — 꺼낸 명령은 owned 라 handler 의
         // 가변 빌림과 안 겹친다.
         while let Some(cmd) = round.next(self.hub.ipc_server.as_deref()) {
-            match self.ipc_dispatch_command(cmd) {
+            let observed =
+                crate::app::ipc_round::CommandObservation::begin(self.core.pressure(), &cmd);
+            let step = self.ipc_dispatch_command(cmd);
+            observed.finish(self.core.slow_requests());
+            match step {
                 #[cfg(debug_assertions)]
                 IpcStep::Shutdown => {
                     let end = round.finish(self.core.pressure(), self.core.dispatch());
@@ -152,9 +156,8 @@ impl App {
     /// 돌려주는 값은 회차가 알아야 할 것뿐이다 — 처리됐는가, tool registry 를 다시 모아야
     /// 하는가, (debug) 종료하라는 명령이었는가. 아무 단계도 답하지 않았으면 `NotHandled`.
     fn ipc_dispatch_command(&mut self, cmd: crate::ipc::server::IpcCommand) -> IpcStep {
-        // 큐 체류 시간. handler 실행 시간과 **따로** 잰다 — 합쳐 두면 느린 응답을
-        // 보고도 적체인지 handler 비용인지 고를 수 없다.
-        self.core.pressure().record_queue_wait(cmd.queue_wait());
+        // 큐 체류 시간은 꺼낸 자리(`CommandObservation::begin`)가 이미 쟀다 — handler 실행
+        // 시간과 **따로** 잰다. 합쳐 두면 느린 응답을 보고도 적체인지 handler 비용인지 고를 수 없다.
         // 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(ADR-0411).
         if !crate::app::ipc_round::claim_or_answer(&cmd, self.core.dispatch()) {
             return IpcStep::Handled;

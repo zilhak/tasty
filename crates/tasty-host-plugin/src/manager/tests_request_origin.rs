@@ -171,3 +171,102 @@ fn every_hop_of_a_hook_chain_carries_the_same_request_seq() {
     assert_ne!(post_id, 70);
     assert_eq!(origin, Some(seq), "target → post-hook hop 이 번호를 잃었다");
 }
+
+fn forwarded(
+    log: &Arc<tasty_telemetry::SlowRequestLog>,
+) -> (
+    PluginManager,
+    RequestSeq,
+    mpsc::Receiver<tasty_ipc::protocol::JsonRpcResponse>,
+) {
+    let mut mgr = mgr_owning("orig");
+    mgr.set_slow_requests(log.clone());
+    let (owner, _owner_rx) = PluginProcess::stub_with_request_rx(OWNER);
+    mgr.processes.insert(OWNER.into(), owner);
+    let seq = RequestSeq::next();
+    let (tx, rx) = mpsc::sync_channel(1);
+    mgr.forward_namespace_call(
+        "orig.run",
+        serde_json::json!({}),
+        None,
+        serde_json::json!(1),
+        tx,
+        Some(seq),
+    );
+    // 호스트 몫은 dispatch 루프가 forward 직후 채운다 — 여기서는 빠른 값으로 흉내 낸다.
+    log.finish_host(tasty_telemetry::slow_requests::HostLeg {
+        request_seq: seq.get(),
+        method: "orig.run",
+        caller: tasty_telemetry::slow_requests::CallerKind::Local,
+        queue_wait: Duration::from_micros(10),
+        host: Duration::from_micros(10),
+    });
+    assert!(
+        log.snapshot().rows.is_empty(),
+        "호스트 몫만으로는 안 느리다"
+    );
+    (mgr, seq, rx)
+}
+
+/// plugin 이 늦게 답한 forward 는 그 대기가 **원 요청의 줄**에 붙는다 — hop 의 호스트 req_id 가
+/// plugin 이 받은 JSON-RPC id 와 같아 plugin 로그를 원 요청으로 되짚을 수 있다.
+#[test]
+fn a_slow_answer_lands_on_the_original_requests_row() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, seq, _rx) = forwarded(&log);
+    let (req_id, _) = pending_to(&mgr, OWNER);
+    // 실제로 기다리지 않고 보낸 시각을 뒤로 민다 — 벽시계는 부하에 흔들린다.
+    if let Some(p) = mgr.pending_requests.get_mut(&req_id) {
+        p.sent_at = Instant::now() - Duration::from_millis(150);
+    }
+    mgr.handle_plugin_response(OWNER, ok(req_id));
+    let rows = log.snapshot().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].request_seq, seq.get());
+    assert!(rows[0].host.is_some(), "호스트 몫과 이어지지 않았다");
+    let hop = &rows[0].plugin_hops[0];
+    assert_eq!(
+        (hop.plugin_id.as_str(), hop.host_request_id, hop.outcome),
+        (
+            OWNER,
+            req_id,
+            tasty_telemetry::slow_requests::HopOutcome::Ok
+        )
+    );
+    assert!(hop.wait_us >= 150_000, "{hop:?}");
+}
+
+/// 끝내 답이 없어 만료된 forward 도 같은 줄에 `expired` 로 붙는다 — 분포(`plugin_round_trip`)는
+/// 끝점이 없어 이 건을 못 세지만, 링은 그 한 건을 남긴다.
+#[test]
+fn an_expired_forward_lands_on_the_row_as_expired() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, seq, rx) = forwarded(&log);
+    let (req_id, _) = pending_to(&mgr, OWNER);
+    mgr.sweep_expired_requests(Instant::now() + Duration::from_secs(3600));
+    assert_eq!(
+        rx.try_recv()
+            .expect("만료가 caller 에 답한다")
+            .error
+            .map(|e| e.code),
+        Some(-32004)
+    );
+    let rows = log.snapshot().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].request_seq, seq.get());
+    assert_eq!(rows[0].plugin_hops[0].host_request_id, req_id);
+    assert_eq!(
+        rows[0].plugin_hops[0].outcome,
+        tasty_telemetry::slow_requests::HopOutcome::Expired
+    );
+}
+
+/// 빨리 답한 forward 는 줄을 안 남긴다 — 링은 전 요청의 기록이 아니다.
+#[test]
+fn a_fast_answer_leaves_no_row() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, _seq, _rx) = forwarded(&log);
+    let (req_id, _) = pending_to(&mgr, OWNER);
+    mgr.handle_plugin_response(OWNER, ok(req_id));
+    assert!(log.snapshot().rows.is_empty());
+}

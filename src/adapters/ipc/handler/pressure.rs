@@ -7,7 +7,7 @@
 //!
 //! ## 덩어리는 **모수마다 하나**다
 //!
-//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 열이고, 아래에 그 열이 한
+//! 응답은 재는 모수마다 한 덩어리로 갈린다 — 오늘 열하나이고, 아래에 그 열하나가 한
 //! 절씩 있다(큐의 두 덩어리는 한 절에 함께 있다). **덩어리 이름 자체에 그 모수의 경계를 넣는다**: 응답을 그대로 덤프해도
 //! 어느 수가 무엇을 센 것인지 갈린다.
 //!
@@ -124,6 +124,22 @@
 //! 하나인지 만 건 중 하나인지 모른다. `queue_dispatch.in_flight` 와 이름이 같고 뜻이 다르다
 //! — 덩어리를 가른 이유 중 하나다.
 //!
+//! ## `slow_requests` — 분포가 아니라 **느린 요청 한 건씩**이다
+//!
+//! 앞의 덩어리들은 전부 집계다. 집계는 "100 ms 를 넘은 것이 몇 건" 까지 말하고, **그 한 건의
+//! 시간이 어느 단계에 있었나** · **그 plugin 대기가 어느 요청의 것이었나** 는 못 말한다
+//! (ADR-0436). 이 덩어리는 문턱(`threshold_us`)을 넘은 요청을 한 줄씩 싣는다 — 호스트가 발급한
+//! `request_seq`(JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · canonical `method` ·
+//! `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`(꺼낸 뒤 호스트가 다 다루기까지,
+//! 게이트 포함 — `handler_after_gate` 와 모수가 다르다) · plugin 으로 넘겼으면 `plugin_hops`(hop
+//! 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome`) · `total_us`.
+//!
+//! 모수는 **호스트 IPC 큐를 지난 요청 중 문턱을 넘은 것**이다. plugin 이 부른 host-call 은 큐를
+//! 안 지나 번호가 없어 여기 안 든다. `system.pressure` 자신은 넣지 않는다 — 조회가 링을 밀어내면
+//! 조회할 때마다 원인 요청이 사라진다. 링은 메모리 안의 고정 용량(`capacity`)이라 넘치면 오래된
+//! 줄부터 밀려나고, `admitted` 는 켜진 뒤 링에 든 누계라 줄 수와의 차가 밀려난 수다. `host` 가
+//! `null` 인 줄은 열린 자리가 밀려난 뒤 plugin hop 만 온 것이다.
+//!
 //! ## 아직 안 재는 값의 자리는 미리 비워 두지 않는다
 //!
 //! 위 `connections` 덩어리는 재는 자리가 생겼을 때 함께 생겼다. 빈 덩어리를 미리
@@ -198,6 +214,7 @@ pub(super) fn handle_system_pressure(
     body["queue_admission"] = queue_admission_json(queue.admission.zip(ledger.map(|a| a.limits())));
     body["queue_dispatch"] = queue_dispatch_json(&queue.dispatch);
     body["keyed_requests"] = keyed_requests_json(&super::idempotency::retry_counts());
+    body["slow_requests"] = slow_requests_json(&core.slow_requests().snapshot());
     JsonRpcResponse::success(id, body)
 }
 
@@ -278,6 +295,71 @@ pub(super) fn keyed_requests_json(r: &super::idempotency::RetryCounts) -> serde_
         "conflicted": conflicted,
         "discarded": discarded,
         "in_flight": in_flight,
+    })
+}
+
+/// 느린 요청 링(ADR-0436) — 문턱을 넘은 요청 한 건씩. 링은 `Core` 가 늘 들고 있어 `null` 이 되지
+/// 않는다. 줄과 hop 을 **`..` 없이** 분해하는 것은 위 세 함수와 같은 이유다.
+pub(super) fn slow_requests_json(
+    s: &tasty_telemetry::slow_requests::SlowRequestsSnapshot,
+) -> serde_json::Value {
+    use tasty_telemetry::slow_requests::{
+        HostPart, PluginHop, SLOW_REQUEST_CAPACITY, SLOW_REQUEST_THRESHOLD, SlowRequest,
+        SlowRequestsSnapshot,
+    };
+    let SlowRequestsSnapshot { rows, admitted } = s;
+    let rows: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|row| {
+            let SlowRequest {
+                request_seq,
+                host,
+                plugin_hops,
+            } = row;
+            let hops: Vec<serde_json::Value> = plugin_hops
+                .iter()
+                .map(|hop| {
+                    let PluginHop {
+                        plugin_id,
+                        host_request_id,
+                        wait_us,
+                        outcome,
+                    } = hop;
+                    json!({
+                        "plugin_id": plugin_id,
+                        "host_request_id": host_request_id,
+                        "wait_us": wait_us,
+                        "outcome": outcome.as_str(),
+                    })
+                })
+                .collect();
+            let host = host.as_ref().map(|h| {
+                let HostPart {
+                    method,
+                    caller,
+                    queue_wait_us,
+                    host_us,
+                } = h;
+                json!({
+                    "method": method,
+                    "caller": caller.as_str(),
+                    "queue_wait_us": queue_wait_us,
+                    "host_us": host_us,
+                })
+            });
+            json!({
+                "request_seq": request_seq,
+                "host": host,
+                "plugin_hops": hops,
+                "total_us": row.total_us(),
+            })
+        })
+        .collect();
+    json!({
+        "threshold_us": u64::try_from(SLOW_REQUEST_THRESHOLD.as_micros()).unwrap_or(u64::MAX),
+        "capacity": SLOW_REQUEST_CAPACITY,
+        "admitted": admitted,
+        "rows": rows,
     })
 }
 
@@ -524,7 +606,8 @@ mod tests {
                 && result.get("stream_push").is_some()
                 && result.get("queue_admission").is_some()
                 && result.get("queue_dispatch").is_some()
-                && result.get("keyed_requests").is_some(),
+                && result.get("keyed_requests").is_some()
+                && result.get("slow_requests").is_some(),
             "덩어리들이 응답에 있어야 한다: {result}"
         );
         assert!(
@@ -1033,6 +1116,93 @@ mod tests {
         assert_eq!(
             v["queue_before_gate"]["wait_us_sum"], 0,
             "합은 0 이 맞다 — null 인 것은 평균뿐이다"
+        );
+    }
+
+    /// 느린 요청 줄은 호스트 몫과 hop 을 **칸마다 제자리에** 싣고, 싣지 않기로 한 것(params ·
+    /// 토큰 · RPC id)은 줄에 없다.
+    #[test]
+    fn the_slow_request_block_carries_each_row_slot_by_slot() {
+        use tasty_telemetry::slow_requests::{CallerKind, HopOutcome, HostLeg, PluginHop};
+        let log = tasty_telemetry::SlowRequestLog::default();
+        log.note_forwarded(42);
+        log.finish_host(HostLeg {
+            request_seq: 42,
+            method: "orig.run",
+            caller: CallerKind::Local,
+            queue_wait: Duration::from_micros(300),
+            host: Duration::from_micros(20),
+        });
+        log.finish_plugin_hop(
+            42,
+            PluginHop {
+                plugin_id: "com.example.owner".into(),
+                host_request_id: 9001,
+                wait_us: 250_000,
+                outcome: HopOutcome::Expired,
+            },
+            true,
+        );
+        let v = slow_requests_json(&log.snapshot());
+        assert_eq!(v["threshold_us"], 100_000);
+        assert_eq!(v["capacity"], 32);
+        assert_eq!(v["admitted"], 1);
+        let row = &v["rows"][0];
+        assert_eq!(row["request_seq"], 42);
+        assert_eq!(row["total_us"], 250_320);
+        assert_eq!(
+            row["host"],
+            json!({"method": "orig.run", "caller": "local", "queue_wait_us": 300, "host_us": 20})
+        );
+        assert_eq!(
+            row["plugin_hops"],
+            json!([{"plugin_id": "com.example.owner", "host_request_id": 9001,
+                    "wait_us": 250_000, "outcome": "expired"}])
+        );
+        let mut keys: Vec<&str> = row
+            .as_object()
+            .expect("row")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["host", "plugin_hops", "request_seq", "total_us"]);
+    }
+
+    /// 라우터가 `Core` 가 든 **그 링**을 읽는다 — 핸들러가 빈 링을 새로 세우면 여기서 죽는다.
+    #[test]
+    fn the_router_reads_the_ring_the_core_holds() {
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let mut core = super::super::cli_entry_tests::test_core();
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        core.slow_requests()
+            .finish_host(tasty_telemetry::slow_requests::HostLeg {
+                request_seq: 77,
+                method: "workspace.list",
+                caller: tasty_telemetry::slow_requests::CallerKind::Local,
+                queue_wait: Duration::from_millis(150),
+                host: Duration::ZERO,
+            });
+        let req = tasty_ipc::protocol::JsonRpcRequest {
+            response_timeout_ms: None,
+            idempotency_key: None,
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "system.pressure".into(),
+            params: json!({}),
+            session_token: None,
+        };
+        let resp = super::super::handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &req,
+            &crate::ipc::caller::CallerContext::Local,
+        );
+        let result = resp.result.expect("result");
+        assert_eq!(
+            result["slow_requests"]["rows"][0]["request_seq"], 77,
+            "{result}"
         );
     }
 }
