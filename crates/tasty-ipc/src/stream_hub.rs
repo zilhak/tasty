@@ -16,9 +16,9 @@
 //! (docs/adr/0350-the-stream-hub-lives-in-the-ipc-crate.md).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::server::IpcWaker;
 use crate::stream::StreamFrame;
@@ -285,6 +285,11 @@ struct StreamSink {
     /// 0 으로 돌아간다 — 선언하지 않은 연결에서도 센다(나중에 선언해도 그때까지의 공백을
     /// 한 번에 말할 수 있어야 한다).
     pending_loss: u64,
+    /// `loss_notify && pending_loss > 0` 의 사본 — 이 연결에 **갚을 통지가 있다.** [`SinkReceiver`]
+    /// 가 한 장을 꺼낼 때마다 읽는다. 빚이 없는 평상시에 write 스레드가 sink 맵 잠금을 잡지
+    /// 않게 하려는 것이라, 참값은 언제나 위 두 칸이고 이 칸은 그 둘이 바뀌는 자리
+    /// ([`StreamHub::sync_owed`])에서만 따라 쓴다.
+    owes_notice: Arc<AtomicBool>,
     /// 이 연결의 sink 에 **들어가 있고 아직 write 스레드가 안 가져간** 프레임 수. push 가
     /// 넣기 전에 +1(실패하면 되돌린다), [`SinkReceiver`] 가 꺼낼 때 −1 이다.
     ///
@@ -301,15 +306,46 @@ struct StreamSink {
 /// `Receiver` 를 그대로 주지 않는 이유는 꺼낼 때 [`StreamSink::queued`] 를 내려야 해서다 —
 /// `SyncSender` 는 길이를 알려 주지 않으므로 backlog 는 넣는 쪽과 꺼내는 쪽이 함께 세야만
 /// 값이 된다. 꺼내는 경로가 이 타입의 메서드뿐이라 −1 을 빠뜨릴 수 없다.
+///
+/// 꺼내는 순간은 sink 에 **자리가 생기는** 순간이기도 하다. 그래서 밀린 손실 통지도 여기서
+/// 갚는다 — [`took`](Self::took).
 pub struct SinkReceiver {
     rx: Receiver<StreamFrame>,
     queued: Arc<AtomicU64>,
+    id: StreamClientId,
+    owes_notice: Arc<AtomicBool>,
+    /// 허브의 sink 맵. `Weak` 인 이유: 수신 끝이 맵을 붙들면 허브가 사라진 뒤에도 맵이 남는다.
+    /// 맵에 든 `SyncSender` 가 살아 있으면 이 채널이 안 끊겨 write 스레드가 종료를 못 본다.
+    sinks: Weak<Mutex<HashMap<StreamClientId, StreamSink>>>,
 }
 
 impl SinkReceiver {
+    /// 한 장을 꺼낸 뒤의 일 — backlog 을 내리고, 밀린 손실 통지가 있으면 **지금** 갚는다.
+    ///
+    /// 통지가 밀리는 것은 버리던 순간 큐가 차 있었기 때문이고, 그 뒤 처음 자리가 생기는 것이
+    /// 바로 이 순간이다. 여기서 넣으면 통지는 큐의 맨 끝, 즉 버리기 전에 들어간 마지막
+    /// 프레임 바로 뒤에 선다 — 소비자는 공백 앞을 다 읽자마자 통지를 읽는다.
+    ///
+    /// 이 자리가 없으면 통지는 **다음 push 나 다음 inbound** 를 기다린다. 버린 프레임이 그
+    /// 연결의 마지막 출력이었고 소비자가 아무것도 안 보내면(CLI mirror-dump 는 심장박동이
+    /// 없다) 소비자는 공백 앞을 다 읽고도 공백을 모른 채 끝난다(ADR-0450).
     fn took(&self, frame: StreamFrame) -> StreamFrame {
         self.queued.fetch_sub(1, Ordering::Relaxed);
+        if self.owes_notice.load(Ordering::Acquire) {
+            self.repay_now();
+        }
         frame
+    }
+
+    fn repay_now(&self) {
+        let Some(sinks) = self.sinks.upgrade() else {
+            return; // 허브가 사라졌다 — 이 연결도 곧 끝난다.
+        };
+        let mut sinks =
+            tasty_utils::poison::recover_mutex(sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
+        if let Some(sink) = sinks.get_mut(&self.id) {
+            StreamHub::repay_pending_loss(sink);
+        }
     }
 
     /// [`Receiver::recv_timeout`] 과 같다.
@@ -444,6 +480,7 @@ impl StreamHub {
     pub fn register(&self, id: StreamClientId) -> SinkReceiver {
         let (tx, rx) = mpsc::sync_channel(SINK_CAP);
         let queued = Arc::new(AtomicU64::new(0));
+        let owes_notice = Arc::new(AtomicBool::new(false));
         tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).insert(
             id,
             StreamSink {
@@ -451,10 +488,17 @@ impl StreamHub {
                 lag: 0,
                 loss_notify: false,
                 pending_loss: 0,
+                owes_notice: owes_notice.clone(),
                 queued: queued.clone(),
             },
         );
-        SinkReceiver { rx, queued }
+        SinkReceiver {
+            rx,
+            queued,
+            id,
+            owes_notice,
+            sinks: Arc::downgrade(&self.sinks),
+        }
     }
 
     /// 이 연결이 손실 통지를 받겠다고 선언했음을 기록한다
@@ -472,6 +516,7 @@ impl StreamHub {
                 .get_mut(&id)
         {
             sink.loss_notify = true;
+            Self::sync_owed(sink);
         }
     }
 
@@ -511,7 +556,8 @@ impl StreamHub {
         };
         // 손실은 **큐가 찼을 때** 난다. 그래서 통지를 그 순간에 같은 큐로 보내면 통지도
         // 함께 사라진다 — 손실을 알리는 프레임이 손실의 첫 희생자가 된다. 대신 빚으로
-        // 적어 두고(`pending_loss`), 큐에 자리가 생긴 **다음 push 의 맨 앞**에서 갚는다.
+        // 적어 두고(`pending_loss`), 큐에 자리가 생기는 **첫 순간** — write 스레드가 한 장을
+        // 꺼낼 때([`SinkReceiver`]) — 에 갚는다. 여기 push 의 맨 앞에서도 한 번 더 시도한다.
         // 그 자리가 곧 스트림에서 공백이 난 지점이라, 소비자는 순번 없이도 통지 앞뒤로
         // 연속/불연속을 가를 수 있다. 자리가 아직 없으면 빚은 그대로 남고 다음 기회에
         // 다시 시도한다 — 통지는 **태워진 순간에만** 지워진다.
@@ -526,6 +572,7 @@ impl StreamHub {
                 // 그래서 세는 자리가 분기 **앞**이다.
                 self.loss.frames.fetch_add(1, Ordering::Relaxed);
                 sink.pending_loss += 1;
+                Self::sync_owed(sink);
                 sink.lag += 1;
                 if sink.lag >= LAG_LIMIT {
                     sinks.remove(&id); // sender dropped → write thread exits
@@ -542,8 +589,10 @@ impl StreamHub {
         }
     }
 
-    /// 밀린 손실 통지를 갚는다 — [`push`](Self::push) 가 본 프레임을 태우기 **직전**에
-    /// 한 번 부른다.
+    /// 밀린 손실 통지를 갚는다. 부르는 자리는 셋이다 — write 스레드가 한 장을 꺼낸 직후
+    /// ([`SinkReceiver`] — 큐에 자리가 생기는 첫 순간이라 통지가 공백 지점에 선다),
+    /// [`push`](Self::push) 가 본 프레임을 태우기 **직전**, [`pump_inbound`](Self::pump_inbound)
+    /// 의 끝(선언이 손실보다 늦게 온 연결).
     ///
     /// 갚을 자리가 없으면(선언 안 함 · 빚 없음 · 큐가 아직 참) 아무것도 안 하고 빚을
     /// 그대로 둔다. 통지가 자리를 차지해 바로 뒤의 본 프레임이 떨어질 수 있는데, 그것이
@@ -554,7 +603,7 @@ impl StreamHub {
     /// [`LAG_LIMIT`] 강제분리의 좌변인데, 서버가 스스로 넣은 통지의 성공을 소비자의
     /// 진척으로 세면 느린 소비자가 그 한도를 영원히 피할 수 있다.
     fn repay_pending_loss(sink: &mut StreamSink) {
-        if !sink.loss_notify || sink.pending_loss == 0 {
+        if !Self::owes(sink) {
             return;
         }
         let notice = crate::stream::StreamControl::Loss {
@@ -570,7 +619,19 @@ impl StreamHub {
         .is_ok()
         {
             sink.pending_loss = 0;
+            Self::sync_owed(sink);
         }
+    }
+
+    /// 이 연결에 태우지 못한 통지가 있는가 — 선언했고 빚이 있다.
+    fn owes(sink: &StreamSink) -> bool {
+        sink.loss_notify && sink.pending_loss != 0
+    }
+
+    /// [`StreamSink::owes_notice`] 를 참값에 맞춘다. `loss_notify` · `pending_loss` 를 바꾸는
+    /// 자리마다 부른다.
+    fn sync_owed(sink: &StreamSink) {
+        sink.owes_notice.store(Self::owes(sink), Ordering::Release);
     }
 
     /// sink 에 프레임 하나를 넣고 [`StreamSink::queued`] 를 맞춘다.
@@ -589,11 +650,10 @@ impl StreamHub {
     /// 모든 연결의 밀린 손실 통지를 갚는다 — [`pump_inbound`](Self::pump_inbound) 가 끝에서
     /// 부른다.
     ///
-    /// `push` 만 갚으면 통지는 **그 연결에 다음 프레임이 밀릴 때까지** 안 나가고, server→client
-    /// push 는 전부 변화 구동이라 조용해진 연결에서는 그때가 오지 않을 수 있다. `pump_inbound`
-    /// 는 어느 client 든 프레임을 보낼 때마다 돌고, 살아 있는 연결은 `HEARTBEAT_TIMEOUT` 안에
-    /// 무엇이든 보내야 하므로(안 보내면 서버 read 가 끊는다), 통지의 지연이 그 안으로
-    /// 묶인다(ADR-0400 결정 5). 자리가 아직 없으면 빚은 그대로다 — 규칙은 `push` 와 같다.
+    /// 통지를 공백 지점에 세우는 것은 write 스레드 쪽([`SinkReceiver`])이다. 이 자리가 따로
+    /// 필요한 것은 그 자리가 못 보는 갈래다 — 손실이 **선언보다 먼저** 났고 소비자가 그
+    /// 사이 큐를 다 비운 연결. 꺼낼 때는 아직 선언 전이라 갚을 것이 없었고, 선언이 들어온
+    /// 뒤에는 꺼낼 것이 없다. 자리가 아직 없으면 빚은 그대로다 — 규칙은 `push` 와 같다.
     fn repay_all_pending_loss(&self) {
         let mut sinks =
             tasty_utils::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
@@ -1210,11 +1270,13 @@ mod tests {
         assert_eq!(hub.loss().backlog, 1, "끊긴 연결의 큐가 합에 남았다");
     }
 
-    /// ★ 통지는 그 연결에 다음 push 가 없어도 나간다 — 어느 client 든 프레임을 보내
-    /// `pump_inbound` 가 돌면 갚는다(ADR-0400 결정 5). 예전에는 빚을 갚는 자리가 `push`
-    /// 하나라 폭주 뒤 조용해진 연결에서 통지가 무기한 안 나갔다.
+    /// ★ 통지는 **소비자가 공백 앞을 다 읽는 즉시** 뒤따른다 — 그 연결에 다음 push 도, 어떤
+    /// inbound 도 없어도. 버린 프레임이 그 연결의 마지막 출력이고 소비자가 아무것도 안 보내면
+    /// (CLI mirror-dump) 예전에는 통지가 다음 push 나 다음 inbound 까지 밀려, 소비자는 공백
+    /// 앞을 다 읽고도 공백을 모른 채 끝났다(ADR-0450). 통지가 공백 앞 마지막 프레임 **바로
+    /// 뒤**에 있어야 하므로 위치까지 본다.
     #[test]
-    fn a_pending_notice_is_repaid_by_the_next_inbound_frame_without_a_push() {
+    fn a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss() {
         let hub = StreamHub::new();
         let id = hub.alloc_id();
         let rx = hub.register(id);
@@ -1229,32 +1291,75 @@ mod tests {
             hub.push(id, frame(StreamTag::Data, b"gap")),
             PushResult::Dropped
         );
-        // 소비자가 전부 비운다. 이후 이 연결로 밀리는 것은 없다.
+        // 이후 이 연결로 밀리는 것도, 이 연결이 보내는 것도 없다. 소비자는 비우기만 한다.
+        let drained: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(
+            drained.len(),
+            SINK_CAP + 1,
+            "공백 앞을 다 읽었는데 통지가 안 왔다"
+        );
+        assert!(
+            drained[..SINK_CAP].iter().all(|f| f.payload == b"pre"),
+            "통지가 공백 앞 프레임 사이에 끼었다"
+        );
+        let last = &drained[SINK_CAP];
+        assert_eq!(last.tag, StreamTag::Control);
+        let notice: crate::stream::StreamControl =
+            serde_json::from_slice(&last.payload).expect("StreamControl");
+        assert_eq!(notice, crate::stream::StreamControl::Loss { frames: 1 });
+        assert_eq!(hub.loss().backlog, 0, "꺼낸 통지가 backlog 에 남았다");
+    }
+
+    /// 선언이 손실보다 **늦게** 온 연결 — 소비자가 선언 전에 큐를 다 비웠으면 write 스레드
+    /// 쪽은 갚을 기회가 없다(꺼낼 때는 선언 전, 선언 뒤에는 꺼낼 것이 없다). 그 갈래는
+    /// `pump_inbound` 가 선언을 적은 바로 그 배치의 끝에서 갚는다 — 선언 전에 센 공백도
+    /// 한 번에 말한다.
+    #[test]
+    fn a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        for _ in 0..SINK_CAP {
+            assert_eq!(
+                hub.push(id, frame(StreamTag::Data, b"pre")),
+                PushResult::Sent
+            );
+        }
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"gap")),
+            PushResult::Dropped
+        );
         let before: Vec<StreamFrame> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         assert_eq!(before.len(), SINK_CAP);
         assert!(
             before.iter().all(|f| f.tag == StreamTag::Data),
-            "자리가 없을 때 통지가 새어 들어갔다"
+            "선언 전인데 통지가 나갔다"
         );
 
-        // 이 연결의 심장박동 하나가 들어온다.
         let (tx, inbound_rx) = mpsc::channel();
+        let declare =
+            serde_json::to_vec(&crate::stream::StreamControl::ClientLossNotify {}).unwrap();
         tx.send(StreamInbound::Frame {
             client_id: id,
-            frame: frame(StreamTag::Ping, b""),
+            frame: frame(StreamTag::Control, &declare),
         })
         .unwrap();
         hub.pump_inbound(&inbound_rx);
 
-        let after = rx.try_recv().expect("push 없이도 통지가 나가야 한다");
+        let after = rx.try_recv().expect("선언한 배치에서 통지가 나가야 한다");
         assert_eq!(after.tag, StreamTag::Control);
         let notice: crate::stream::StreamControl =
             serde_json::from_slice(&after.payload).expect("StreamControl");
         assert!(
             matches!(notice, crate::stream::StreamControl::Loss { frames: 1 }),
-            "통지가 잃은 수를 말해야 한다: {notice:?}"
+            "선언 전에 센 공백을 말해야 한다: {notice:?}"
         );
         // 갚은 빚은 다시 안 나간다.
+        tx.send(StreamInbound::Frame {
+            client_id: id,
+            frame: frame(StreamTag::Ping, b""),
+        })
+        .unwrap();
         hub.pump_inbound(&inbound_rx);
         assert!(rx.try_recv().is_err(), "갚은 통지가 되풀이됐다");
     }
