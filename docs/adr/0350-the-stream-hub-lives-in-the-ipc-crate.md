@@ -15,13 +15,18 @@ adapter 가 아니라 **core** 였다 — `src/core/attach.rs`(점유 레지스�
 전부가 이 파일 하나**를 가리켰다. core 가 concrete inbound adapter 의 파일 배치에 의존하는
 유일한 자리였다.
 
-그 파일이 본체에 남을 이유가 있는지를 재면 **없다**. 파일이 부르는 것은 셋뿐이었다.
+그 파일이 본체에 남을 이유가 있는지를 재면 **없다**. 파일이 `std` 밖에서 부르는 것을 전수로
+세면(`crate::` 경로와 외부 크레이트 경로 모두) 다섯 갈래였고, 본체 모듈은 시험 하나뿐이었다.
 
-| 부르는 것 | 실체 |
-|---|---|
-| `crate::ipc::stream`·`crate::ipc::server::IpcWaker` | `tasty-ipc` 의 재수출(`src/adapters/ipc.rs` 의 `pub use tasty_ipc::{…}`) |
-| `crate::poison` | `tasty-utils` 의 재수출(`src/lib.rs`) |
-| `crate::core::bulk_transfer::BulkTransferRegistry` | **시험 하나**(`ordered_batch_routes_to_intact_bytes`)만 쓴다 |
+| 부르는 것 | 실체 | 자리 |
+|---|---|---|
+| `crate::ipc::stream`·`crate::ipc::server::IpcWaker` | `tasty-ipc` 의 재수출(`src/adapters/ipc.rs` 의 `pub use tasty_ipc::{…}`) | 47 |
+| `crate::poison` | `tasty-utils` 의 재수출(`src/lib.rs`) | 8 |
+| `tasty_plugin_protocol::protocol`(`ThemeWire`·`RawInputWire`, 시험의 `ModifiersWire`·`RawInputEventWire`) | 외부 크레이트 직접 경로 — `tasty-ipc` 가 이미 의존한다 | 3 (제품 2 · 시험 1) |
+| `serde`(derive)·`serde_json` | 외부 크레이트 직접 경로 — `tasty-ipc` 가 이미 의존한다 | 6 · 26 |
+| `crate::core::bulk_transfer::BulkTransferRegistry` | **시험 하나**(`ordered_batch_routes_to_intact_bytes`)만 쓴다 | 1 |
+
+재는 법: 결정 시점 커밋 `5dbb0787c` 의 옛 파일(production adapter 폴더의 `stream_hub.rs`)을 `git show` 로 꺼내 `grep -oE '\b(crate::[a-z_]+|tasty_[a-z_]+|serde_json|serde)::' | sort | uniq -c` 로 센다.
 
 전송 수단도 모른다 — sink 는 `std::sync::mpsc` 채널이고, 소켓을 읽고 쓰는 accept 스레드는
 `src/adapters/production/tcp_ipc_server.rs` 에 따로 있다. 즉 허브는 "TCP 구현" 이 아니라 **wire
@@ -53,7 +58,7 @@ adapter 가 아니라 **core** 였다 — `src/core/attach.rs`(점유 레지스�
 - **얻은 것**: `src/core/` 의 `adapters::production` 참조가 9 → 0 이다. 허브가 본체를 부를
   수 없다는 사실을 문장이 아니라 **크레이트 경계**가 강제한다 — `tasty-ipc` 의
   `Cargo.toml` 에 본체가 없다. 새 의존은 없다(`tasty-ipc` 는 이미 `serde`·`serde_json`·
-  `tasty-utils` 를 가진다).
+  `tasty-utils`·`tasty-plugin-protocol` 을 가진다).
 - **잃은 것**: 본체에서 허브를 부르는 18 파일(시험 이동처 `bulk_transfer.rs` 포함)의 경로가 바뀌어, 같은 파일을 동시에
   고치는 다른 작업과 기계적인 병합 충돌이 난다. 허브를 부르는 core 와 app 이 이제 크레이트
   이름을 직접 적는다.
