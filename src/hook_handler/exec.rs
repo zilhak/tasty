@@ -141,10 +141,15 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
 /// 남긴다 — 그 스텝은 실행되지 않았고(시간 초과와 달리 결과 불명이 아니다), 원인은 스텝이
 /// 아니라 호스트의 적체다. 다시 걸지 않는다: 웹훅·idle 훅은 밖에서 계속 오는 사건이라
 /// 재시도가 곧 적체를 키우는 부하다. 다음 스텝은 그대로 진행한다(위 MVP 정책).
+///
+/// 스텝은 **기한 없이** 넣는다(`dispatch_even_if_abandoned`) — 스텝 상한에서 물러나도 명령은
+/// 큐에 남아 나중에 실행된다. 이 사건은 밖에서 이미 ACK 됐고 다시 오지 않으므로, 늦게라도
+/// 반영되는 쪽이 안 반영되는 쪽보다 낫다(`agent.task_set_result` 스텝이 버려지면 그 task 는
+/// 끝나지 않는다). 근거: `docs/adr/0451-a-host-injection-carries-its-wait-as-a-deadline.md`.
 pub fn execute_sequence(injector: &HostIpcInjector, calls: &[IpcCall], ctx: &SubstitutionContext) {
     for (i, call) in calls.iter().enumerate() {
         let params = substitute_params(&call.params, ctx);
-        match injector.dispatch(&call.method, params, STEP_TIMEOUT) {
+        match injector.dispatch_even_if_abandoned(&call.method, params, STEP_TIMEOUT) {
             Ok(_result) => {
                 tracing::debug!("webhook IpcSequence step {i} ({}) ok", call.method);
             }

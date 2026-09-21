@@ -270,7 +270,9 @@ fn send_body_then_submit(
         };
         let params = json!({ "surface_id": surface_id, "text": "\r" });
         // 실패는 남기기만 한다. 큐 입장 거절(문구에 "nothing ran")이어도 다시 걸지 않는다 —
-        // 늦은 `\r` 은 사용자가 그 사이 친 입력 뒤에 붙어 엉뚱한 줄을 제출할 수 있다.
+        // 늦은 `\r` 은 사용자가 그 사이 친 입력 뒤에 붙어 엉뚱한 줄을 제출할 수 있다. 같은
+        // 이유로 주입은 이 상한을 기한으로 싣는다: 상한까지 큐에서 못 나간 `\r` 은 나중에도
+        // 실행되지 않는다(`InjectError::Expired`). 상한 전에 시작된 것은 끊을 수 없다.
         if let Err(e) = injector.dispatch("surface.send", params, TELL_SUBMIT_ACK_TIMEOUT) {
             tracing::warn!(
                 "terminal tell/spawn: submit \\r re-injection failed (surface={surface_id}): {e}"

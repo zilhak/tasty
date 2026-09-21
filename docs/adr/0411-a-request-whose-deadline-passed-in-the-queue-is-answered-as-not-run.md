@@ -127,6 +127,7 @@ audit · rate limit) 앞**에서 기한을 보고, 지났으면 실행하지 않
 
 - 개정 대상: [ADR-0328](0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md)
   (만료의 뜻 — 시작 전/후로 가른다)
+- 부분 개정: [0451](0451-a-host-injection-carries-its-wait-as-a-deadline.md) (호스트 주입은 바꾸지 않는다 — 조항 개정)
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
 - 관련: [ADR-0410](0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md)
   (연결마다 큐에 살아 있는 명령 하나 — 이 결정이 그 근거를 지킨다) ·
