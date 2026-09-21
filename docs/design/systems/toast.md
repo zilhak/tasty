@@ -11,13 +11,13 @@
 | 입력 | 클릭/드래그/X | **소비 안 함**(마우스 통과) |
 | 타이틀바 | 있음 | 없음(본문만) |
 | 위치 | 자유 이동 | 스코프별 고정 스택 |
-| 트리거 | 사용자 또는(debug)에이전트 | **사용자 행동만** |
+| 트리거 | 사용자 또는(debug)에이전트 | **사용자 행동만** (예외: 원격 연결 상태 사건 — 아래 허용 부류) |
 
 Toast 는 Popup 의 변종이 *아니다* — 7대 규칙(타이틀바·X·드래그·z-order 승격·외부클릭닫기)이 토스트와 정면 충돌하므로 별도 매니저로 둔다. 단 스코프 정의와 스코프-rect 계산은 `LayoutContext` 를 재사용해 일관성을 유지한다.
 
 ## 트리거 정책 (CRITICAL)
 
-**Toast 는 사용자 행동(키보드 단축키 / 마우스)에서만 발사된다.** CLI/IPC 를 통한 에이전트 동작은 사용자 시각 상태에 영향을 주면 안 되므로 토스트를 띄우지 않는다([identity](../../identity.md) 원칙 1, [popup.md](popup.md) 발화 정책과 동일).
+**Toast 는 사용자 행동(키보드 단축키 / 마우스)에서만 발사된다** — 예외는 아래 허용 부류 하나다. CLI/IPC 를 통한 에이전트 동작은 사용자 시각 상태에 영향을 주면 안 되므로 토스트를 띄우지 않는다([identity](../../identity.md) 원칙 1, [popup.md](popup.md) 발화 정책과 동일).
 
 복사 예시:
 - 터미널 선택 후 `Ctrl+C` → ✅ · Explorer 경로 복사 → ✅ · 클립보드 뷰어에서 항목 클릭 복사 → ✅
@@ -66,6 +66,8 @@ grep -rnE 'toasts|report_apply_error|push_toast' \
   밖에서 났거나 날 수 있다 — 실제로 있었던 ①, 형태만 확인된 ④ 둘 다 IPC 파일을 스캔하는
   판정기로는 안 잡힌다. ④ 는 판정기가 아니라 `report_apply_error` 가 origin 을 보게 고치는
   것이 처방이다.
+
+**허용 부류 — 원격 연결 상태 사건.** attach mirror 의 연결 상태 사건(끊김 · 재연결 · 손실 · 구조 전달 실패)은 사용자 행동 없이도 토스트를 띄운다. 원인이 에이전트 IPC 가 아니라 네트워크·원격 처리·소비 속도이고, 알리지 않으면 사용자가 원격의 사본인 mirror 의 낡은 화면을 최신으로 읽는다. 현재 구성원은 `attach.toast.mirror_reconnecting` · `mirror_reconnected` · `mirror_disconnected` · `mirror_desynced` · `mirror_structural_forward_failed` 다. 창 없는(parked) engine 에서는 띄우지 않는다. 에이전트 IPC 호출이 직접 일으킨 결과는 이 부류가 아니다(위 원칙대로 ❌). 근거·대안은 [ADR-0401](../../adr/0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md).
 
 ## 스코프
 

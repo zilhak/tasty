@@ -141,7 +141,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - ✅ 사용자 행동(키보드/마우스로 유발된 상태) → 배너 발화
 - ❌ release 의 IPC/CLI/Plugin/시스템 cascade 에서 배너 발화
 
-tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 상태에 닿지 않는다, [identity](../../identity.md))과 정합하며, [popup.md](popup.md)·[toast.md](toast.md) 의 "사용자 행동에서만 발사" 와 **동일한 규칙** 이다.
+tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 상태에 닿지 않는다, [identity](../../identity.md))과 정합하며, [popup.md](popup.md)·[toast.md](toast.md) 의 "사용자 행동에서만 발사" 와 **동일한 규칙** 이다(toast 에만 원격 연결 상태 사건이라는 허용 부류가 하나 더 있다 — [ADR-0401](../../adr/0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md). 배너는 그 예외를 갖지 않는다).
 
 ## IPC / debug
 
