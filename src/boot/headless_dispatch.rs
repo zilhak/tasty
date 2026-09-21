@@ -71,99 +71,113 @@ pub(crate) fn pump_ipc(
     }
 
     for cmd in pending {
-        app.core.pressure().record_queue_wait(cmd.queue_wait());
-        // 1) caller 해석 (Local / Agent / 세션 토큰 검증). 실패 시 에러를 그대로 회신.
-        let caller = match resolve_caller_from_envelope(&app.core, &cmd.request) {
-            Ok(c) => c,
-            Err(resp) => {
-                send_response(&cmd.response_tx, resp);
-                continue;
-            }
-        };
-        // 1b) 모든 조기 응답보다 먼저 검사·관측한다. 이후 같은 요청은 재소비하지 않는다.
-        let checked = match crate::ipc::handler::check_request(
-            &mut app.core,
-            state,
-            engine,
-            &cmd.request,
-            &caller,
-        ) {
-            Ok(checked) => checked,
-            Err(response) => {
-                send_response(&cmd.response_tx, response);
-                continue;
-            }
-        };
-        // 2) App 층 가로채기 — 창이 없어도 답이 정의되는 표면들을 engine 앞에서 답한다.
-        //    어느 하나가 답했으면 응답은 그 안에서 이미 나갔다. 그 안의 갈래는
-        //    **그 함수에 적힌 순서 그대로** `2-hub` / `2-plugin` / `2-toggle` /
-        //    `2-elev` / debug / `2-surface` 다 — debug 가 `2-surface` **앞**이라
-        //    `system.shutdown`(debug 격리)은 뒤엣것에서 답한다.
-        match intercept_app_layer(app, state, engine, &caller, &cmd) {
-            Some(Intercepted::Answered) => continue,
-            Some(Intercepted::Shutdown) => return std::ops::ControlFlow::Break(()),
-            None => {}
+        if dispatch_command(app, state, engine, cmd).is_break() {
+            return std::ops::ControlFlow::Break(());
         }
-        // 2c) 지목한 대상을 이 engine 이 안 가졌으면 거절한다 — gui 와 같은 판정
-        //     (`app/ipc/routing.rs`). 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만,
-        //     **판정은 있어야 한다**: 없으면 대상을 잘못 적은 요청이 그대로 실행된다.
-        //     실측(2026-09-05): `workspace.create {workspace_id: <없는 id>}` 가 성공을
-        //     돌려주고 워크스페이스를 만들었다 — 핸들러가 그 키를 안 읽기 때문이다.
-        //
-        //     예약 prefix 로 한정하는 이유는 아래 5) 와의 순서다. 예약되지 않은
-        //     prefix 는 plugin 이 점유할 수 있어서, 여기서 자르면 forward 될 호출을
-        //     불러 보기도 전에 죽인다. 예약된 것은 어떤 plugin 도 못 가지므로
-        //     (매니페스트 검증이 거절한다) 그런 위험이 없다.
-        if let Some(rid) = crate::core::request_target::request_resource_id(
-            &cmd.request.method,
-            &cmd.request.params,
-        ) && crate::core::request_target::prefix_is_host_reserved(&cmd.request.method)
-            && !crate::core::request_target::engine_has_resource(engine, rid)
-        {
-            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            send_response(
-                &cmd.response_tx,
-                crate::ipc::protocol::JsonRpcResponse::invalid_params(
-                    id,
-                    crate::core::request_target::unowned_target_message(rid, &cmd.request.method),
-                ),
-            );
-            continue;
-        }
-        // 2d) plugin namespace forward — **engine 에 묻기 전에** 정한다. gui 가
-        //     라우터 step 5 에서 같은 자리를 잡는 것과 같은 순서이고, 재료도 같은
-        //     `mgr.namespace_owner` 하나다.
-        //
-        //     예전에는 이 판정이 engine 응답 **뒤**에 있었고 "engine 이 못 답했나" 를
-        //     오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅 신호로 고정해,
-        //     종단을 더 정확하게 만드는 변경이 forward 를 조용히 깨뜨렸다(실측: 표에
-        //     등재된 채 plugin namespace 아래 있던 여덟). 이제 코드는 라우팅에 안
-        //     쓰인다 — [ADR-0173](../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
-        if forward_to_plugin_namespace(app, engine, &cmd) {
-            continue;
-        }
-        // 2e) plugin 이 선언한 surface kind 를 지목했으면 **그 하나를** 먼저 띄운다.
-        //     바로 위 forward 와 **같은 두 층**이다 — 소속은 매니페스트가 답하고,
-        //     기동은 소속이 맞은 뒤에만 한다. 다른 것은 묻는 대상뿐이다(메서드 이름 vs
-        //     surface kind).
-        //
-        //     namespace는 매칭 IPC hook extension도 준비할 수 있지만, kind는
-        //     그 kind를 선언한 소유자 하나만 준비한다
-        //     (`start_one_enabled`). 설치·권한 grant 도 여기엔 없다. 근거·대기 시한은
-        //     `headless_plugins::ensure_plugin_for_surface_kind`.
-        super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
-        // 3) 이미 검사한 요청을 engine handler에 넘긴다.
-        let resp =
-            crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
-        // 4) 핸들러가 발화한 Intent 를 **응답 전에** 적용한다. gui 의
-        //    `App::dispatch_with_caller` 가 응답 반환 전에 `dispatch_pending_intents`
-        //    를 부르는 것과 같은 계약이며, 이게 없으면 큐가 프로세스 수명 동안 쌓이고
-        //    (`docs/adr/0111-headless-drains-the-intent-queue.md`) set_mark /
-        //    completion / notification 같은 에이전트 표면이 headless 에서 무응답이 된다.
-        crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
-        crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
-        send_response(&cmd.response_tx, resp);
     }
+    std::ops::ControlFlow::Continue(())
+}
+
+/// 명령 하나를 caller 해석부터 응답까지 끝까지 다룬다. 답은 이 안에서 나간다.
+///
+/// `Break` 는 데몬을 멈추라는 명령(debug `system.shutdown`)이었다는 뜻이다 — 회차가 그대로
+/// 루프를 끝낸다.
+fn dispatch_command(
+    app: &mut App,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    cmd: crate::ipc::server::IpcCommand,
+) -> std::ops::ControlFlow<()> {
+    app.core.pressure().record_queue_wait(cmd.queue_wait());
+    // 1) caller 해석 (Local / Agent / 세션 토큰 검증). 실패 시 에러를 그대로 회신.
+    let caller = match resolve_caller_from_envelope(&app.core, &cmd.request) {
+        Ok(c) => c,
+        Err(resp) => {
+            send_response(&cmd.response_tx, resp);
+            return std::ops::ControlFlow::Continue(());
+        }
+    };
+    // 1b) 모든 조기 응답보다 먼저 검사·관측한다. 이후 같은 요청은 재소비하지 않는다.
+    let checked = match crate::ipc::handler::check_request(
+        &mut app.core,
+        state,
+        engine,
+        &cmd.request,
+        &caller,
+    ) {
+        Ok(checked) => checked,
+        Err(response) => {
+            send_response(&cmd.response_tx, response);
+            return std::ops::ControlFlow::Continue(());
+        }
+    };
+    // 2) App 층 가로채기 — 창이 없어도 답이 정의되는 표면들을 engine 앞에서 답한다.
+    //    어느 하나가 답했으면 응답은 그 안에서 이미 나갔다. 그 안의 갈래는
+    //    **그 함수에 적힌 순서 그대로** `2-hub` / `2-plugin` / `2-toggle` /
+    //    `2-elev` / debug / `2-surface` 다 — debug 가 `2-surface` **앞**이라
+    //    `system.shutdown`(debug 격리)은 뒤엣것에서 답한다.
+    match intercept_app_layer(app, state, engine, &caller, &cmd) {
+        Some(Intercepted::Answered) => return std::ops::ControlFlow::Continue(()),
+        Some(Intercepted::Shutdown) => return std::ops::ControlFlow::Break(()),
+        None => {}
+    }
+    // 2c) 지목한 대상을 이 engine 이 안 가졌으면 거절한다 — gui 와 같은 판정
+    //     (`app/ipc/routing.rs`). 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만,
+    //     **판정은 있어야 한다**: 없으면 대상을 잘못 적은 요청이 그대로 실행된다.
+    //     실측(2026-09-05): `workspace.create {workspace_id: <없는 id>}` 가 성공을
+    //     돌려주고 워크스페이스를 만들었다 — 핸들러가 그 키를 안 읽기 때문이다.
+    //
+    //     예약 prefix 로 한정하는 이유는 아래 5) 와의 순서다. 예약되지 않은
+    //     prefix 는 plugin 이 점유할 수 있어서, 여기서 자르면 forward 될 호출을
+    //     불러 보기도 전에 죽인다. 예약된 것은 어떤 plugin 도 못 가지므로
+    //     (매니페스트 검증이 거절한다) 그런 위험이 없다.
+    if let Some(rid) =
+        crate::core::request_target::request_resource_id(&cmd.request.method, &cmd.request.params)
+        && crate::core::request_target::prefix_is_host_reserved(&cmd.request.method)
+        && !crate::core::request_target::engine_has_resource(engine, rid)
+    {
+        let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        send_response(
+            &cmd.response_tx,
+            crate::ipc::protocol::JsonRpcResponse::invalid_params(
+                id,
+                crate::core::request_target::unowned_target_message(rid, &cmd.request.method),
+            ),
+        );
+        return std::ops::ControlFlow::Continue(());
+    }
+    // 2d) plugin namespace forward — **engine 에 묻기 전에** 정한다. gui 가
+    //     라우터 step 5 에서 같은 자리를 잡는 것과 같은 순서이고, 재료도 같은
+    //     `mgr.namespace_owner` 하나다.
+    //
+    //     예전에는 이 판정이 engine 응답 **뒤**에 있었고 "engine 이 못 답했나" 를
+    //     오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅 신호로 고정해,
+    //     종단을 더 정확하게 만드는 변경이 forward 를 조용히 깨뜨렸다(실측: 표에
+    //     등재된 채 plugin namespace 아래 있던 여덟). 이제 코드는 라우팅에 안
+    //     쓰인다 — [ADR-0173](../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
+    if forward_to_plugin_namespace(app, engine, &cmd) {
+        return std::ops::ControlFlow::Continue(());
+    }
+    // 2e) plugin 이 선언한 surface kind 를 지목했으면 **그 하나를** 먼저 띄운다.
+    //     바로 위 forward 와 **같은 두 층**이다 — 소속은 매니페스트가 답하고,
+    //     기동은 소속이 맞은 뒤에만 한다. 다른 것은 묻는 대상뿐이다(메서드 이름 vs
+    //     surface kind).
+    //
+    //     namespace는 매칭 IPC hook extension도 준비할 수 있지만, kind는
+    //     그 kind를 선언한 소유자 하나만 준비한다
+    //     (`start_one_enabled`). 설치·권한 grant 도 여기엔 없다. 근거·대기 시한은
+    //     `headless_plugins::ensure_plugin_for_surface_kind`.
+    super::headless_plugins::ensure_plugin_for_surface_kind(app, state, engine, &cmd.request);
+    // 3) 이미 검사한 요청을 engine handler에 넘긴다.
+    let resp = crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
+    // 4) 핸들러가 발화한 Intent 를 **응답 전에** 적용한다. gui 의
+    //    `App::dispatch_with_caller` 가 응답 반환 전에 `dispatch_pending_intents`
+    //    를 부르는 것과 같은 계약이며, 이게 없으면 큐가 프로세스 수명 동안 쌓이고
+    //    (`docs/adr/0111-headless-drains-the-intent-queue.md`) set_mark /
+    //    completion / notification 같은 에이전트 표면이 headless 에서 무응답이 된다.
+    crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
+    crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
+    send_response(&cmd.response_tx, resp);
     std::ops::ControlFlow::Continue(())
 }
 

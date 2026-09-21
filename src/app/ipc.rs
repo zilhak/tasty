@@ -64,50 +64,15 @@ impl App {
         let mut processed = false;
         let mut tool_registry_dirty = false;
         for cmd in pending {
-            // 큐 체류 시간. handler 실행 시간과 **따로** 잰다 — 합쳐 두면 느린 응답을
-            // 보고도 적체인지 handler 비용인지 고를 수 없다.
-            self.core.pressure().record_queue_wait(cmd.queue_wait());
-            let caller = match self.ipc_resolve_caller(&cmd) {
-                Some(c) => c,
-                None => {
-                    processed = true;
-                    continue;
-                }
-            };
-            let checked = match self.gates_before_routing(&cmd.request, &caller) {
-                Ok(checked) => checked,
-                Err(response) => {
-                    crate::ipc::server::send_response(&cmd.response_tx, response);
-                    processed = true;
-                    continue;
-                }
-            };
-            match self.ipc_step_app_methods(&cmd, &caller) {
+            match self.ipc_dispatch_command(cmd) {
                 #[cfg(debug_assertions)]
                 IpcStep::Shutdown => return true,
                 IpcStep::HandledDirty => {
                     tool_registry_dirty = true;
                     processed = true;
-                    continue;
                 }
-                IpcStep::Handled => {
-                    processed = true;
-                    continue;
-                }
+                IpcStep::Handled => processed = true,
                 IpcStep::NotHandled => {}
-            }
-            #[cfg(debug_assertions)]
-            if matches!(self.ipc_step_debug(&cmd), IpcStep::Handled) {
-                processed = true;
-                continue;
-            }
-            if matches!(self.ipc_step_window_required(&cmd), IpcStep::Handled) {
-                processed = true;
-                continue;
-            }
-            if matches!(self.ipc_step_routing(&cmd, &checked), IpcStep::Handled) {
-                processed = true;
-                continue;
             }
         }
         if tool_registry_dirty {
@@ -115,5 +80,44 @@ impl App {
             self.refresh_palette_plugin_commands();
         }
         processed
+    }
+
+    /// 명령 하나를 단계 순서대로 끝까지 다룬다. 답은 이 안에서 나간다.
+    ///
+    /// 돌려주는 값은 회차가 알아야 할 것뿐이다 — 처리됐는가, tool registry 를 다시 모아야
+    /// 하는가, (debug) 종료하라는 명령이었는가. 아무 단계도 답하지 않았으면 `NotHandled`.
+    fn ipc_dispatch_command(&mut self, cmd: crate::ipc::server::IpcCommand) -> IpcStep {
+        // 큐 체류 시간. handler 실행 시간과 **따로** 잰다 — 합쳐 두면 느린 응답을
+        // 보고도 적체인지 handler 비용인지 고를 수 없다.
+        self.core.pressure().record_queue_wait(cmd.queue_wait());
+        let caller = match self.ipc_resolve_caller(&cmd) {
+            Some(c) => c,
+            None => return IpcStep::Handled,
+        };
+        let checked = match self.gates_before_routing(&cmd.request, &caller) {
+            Ok(checked) => checked,
+            Err(response) => {
+                crate::ipc::server::send_response(&cmd.response_tx, response);
+                return IpcStep::Handled;
+            }
+        };
+        match self.ipc_step_app_methods(&cmd, &caller) {
+            #[cfg(debug_assertions)]
+            IpcStep::Shutdown => return IpcStep::Shutdown,
+            IpcStep::HandledDirty => return IpcStep::HandledDirty,
+            IpcStep::Handled => return IpcStep::Handled,
+            IpcStep::NotHandled => {}
+        }
+        #[cfg(debug_assertions)]
+        if matches!(self.ipc_step_debug(&cmd), IpcStep::Handled) {
+            return IpcStep::Handled;
+        }
+        if matches!(self.ipc_step_window_required(&cmd), IpcStep::Handled) {
+            return IpcStep::Handled;
+        }
+        if matches!(self.ipc_step_routing(&cmd, &checked), IpcStep::Handled) {
+            return IpcStep::Handled;
+        }
+        IpcStep::NotHandled
     }
 }
