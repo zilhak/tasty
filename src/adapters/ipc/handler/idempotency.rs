@@ -166,6 +166,30 @@ pub(crate) enum Decision {
     InFlight,
 }
 
+/// 키를 실은 요청을 보존소가 **어떻게 판정했는가** 의 프로세스 누계. [`Decision`] 한
+/// 갈래에 칸 하나다.
+///
+/// 재시도가 실제로 얼마나 오는지(RF16 의 "재시도" 축)를 이 값이 답한다. `executed` 를 함께
+/// 두는 이유는 모수다 — 재생 수만으로는 그것이 키 실은 실행 열 건 중 하나인지 만 건 중
+/// 하나인지 모른다.
+///
+/// 레이블(메서드 · 주체)은 없다. 키는 호출자가 고르는 문자열이고 주체는 agent id 라, 그것을
+/// 레이블로 달면 칸 수를 호출자가 정한다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RetryCounts {
+    /// 처음 보는 키 — 실행했다([`Decision::Execute`]).
+    pub(crate) executed: u64,
+    /// 같은 키·같은 요청 — 실행하지 않고 보관된 답을 냈다([`Decision::Replay`]).
+    pub(crate) replayed: u64,
+    /// 같은 키·다른 요청 — 아무것도 실행하지 않았다([`Decision::Conflict`]).
+    pub(crate) conflicted: u64,
+    /// 실행은 됐고 답은 버려졌다 — 실행하지 않았다([`Decision::Discarded`]).
+    pub(crate) discarded: u64,
+    /// 같은 키·같은 요청이 진행 중이었다 — App 층에서는 합류했고, engine 라우터에서는
+    /// (도달하지 않지만) 결과 불명으로 답했다([`Decision::InFlight`]).
+    pub(crate) in_flight: u64,
+}
+
 /// 키를 받는 보존소. 프로세스에 하나다.
 #[derive(Debug, Default)]
 pub(crate) struct Store {
@@ -174,6 +198,9 @@ pub(crate) struct Store {
     total_bytes: usize,
     /// 다음에 줄 진행 중 표.
     next_ticket: u64,
+    /// 판정 누계. [`Store::decide`] 가 갈래마다 센다 — 판정이 그 함수 하나에서 나오므로
+    /// 층(engine 라우터 · App 층)마다 세는 자리를 따로 두지 않는다.
+    counts: RetryCounts,
 }
 
 impl Store {
@@ -182,6 +209,13 @@ impl Store {
             entries: VecDeque::new(),
             total_bytes: 0,
             next_ticket: 0,
+            counts: RetryCounts {
+                executed: 0,
+                replayed: 0,
+                conflicted: 0,
+                discarded: 0,
+                in_flight: 0,
+            },
         }
     }
 
@@ -196,7 +230,7 @@ impl Store {
     ) -> Decision {
         self.purge_expired(now);
         let digest = digest(method, params);
-        match self
+        let decision = match self
             .entries
             .iter()
             .find(|e| e.scope == scope && e.key == key)
@@ -208,7 +242,21 @@ impl Store {
                 Stored::Discarded => Decision::Discarded,
                 Stored::InFlight { .. } => Decision::InFlight,
             },
-        }
+        };
+        let slot = match decision {
+            Decision::Execute(_) => &mut self.counts.executed,
+            Decision::Replay(_) => &mut self.counts.replayed,
+            Decision::Conflict => &mut self.counts.conflicted,
+            Decision::Discarded => &mut self.counts.discarded,
+            Decision::InFlight => &mut self.counts.in_flight,
+        };
+        *slot = slot.saturating_add(1);
+        decision
+    }
+
+    /// 판정 누계의 사본.
+    pub(crate) fn counts(&self) -> RetryCounts {
+        self.counts
     }
 
     /// 실행을 연다 — 결말이 올 때까지 이 키는 [`Decision::InFlight`] 로 답한다.
@@ -676,6 +724,17 @@ impl Relay {
         }
         send_response(&self.reply, response);
     }
+}
+
+/// 프로세스 보존소의 판정 누계 — 값을 읽는 자리.
+///
+/// 아직 IPC 로 안 나간다. 노출 자리는 요청 압력 응답(`system.pressure`)이 될 것이고, 그
+/// 핸들러를 고치는 작업이 따로 있어 이 걸음은 값을 읽을 수 있는 데까지만 만든다.
+// reason: 소비자(압력 응답)가 다른 작업에서 붙는다. 붙으면 이 억제는 경고 없이 남으므로
+// 그 작업이 함께 지운다.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn retry_counts() -> RetryCounts {
+    store().counts()
 }
 
 /// `system.info` 가 싣는 보장 범위. 상한을 **리터럴로 다시 적지 않는다** — 위 상수를
@@ -1424,6 +1483,79 @@ mod tests {
         );
         let h = s.settle(t0, "local", "k", 1, Some(newer), &resp(2, "mine"));
         assert!(h.kept);
+    }
+
+    /// 판정 갈래마다 칸 하나가 한 번씩 오른다 — 다섯 갈래를 한 번씩 밟고 누계를 본다.
+    #[test]
+    fn every_decision_is_counted_once_in_its_own_slot() {
+        let mut s = Store::new();
+        let t0 = Instant::now();
+        let p = json!({"name": "a"});
+        let Decision::Execute(d) = s.decide(t0, "local", "k", "workspace.create", &p) else {
+            panic!("처음 보는 키");
+        };
+        s.record(t0, "local", "k", d, &resp(1, "ok"));
+        assert!(matches!(
+            s.decide(t0, "local", "k", "workspace.create", &p),
+            Decision::Replay(_)
+        ));
+        assert!(matches!(
+            s.decide(t0, "local", "k", "workspace.create", &json!({"name": "b"})),
+            Decision::Conflict
+        ));
+        let Decision::Execute(big) = s.decide(t0, "local", "big", "workspace.create", &p) else {
+            panic!("처음 보는 키");
+        };
+        let huge =
+            JsonRpcResponse::success(json!(1), json!("x".repeat(MAX_STORED_RESPONSE_BYTES + 1)));
+        s.record(t0, "local", "big", big, &huge);
+        assert!(matches!(
+            s.decide(t0, "local", "big", "workspace.create", &p),
+            Decision::Discarded
+        ));
+        let Decision::Execute(run) = s.decide(t0, "local", "run", "window.create", &p) else {
+            panic!("처음 보는 키");
+        };
+        s.open(t0, "local", "run", run);
+        assert!(matches!(
+            s.decide(t0, "local", "run", "window.create", &p),
+            Decision::InFlight
+        ));
+
+        assert_eq!(
+            s.counts(),
+            RetryCounts {
+                executed: 3,
+                replayed: 1,
+                conflicted: 1,
+                discarded: 1,
+                in_flight: 1,
+            }
+        );
+    }
+
+    /// 프로세스 보존소의 누계가 **실제 판정 자리**에서 오르는가 — engine 라우터의 입구를
+    /// 지나 재생을 한 번 만들고 읽는다. 보존소는 전역이고 시험이 병렬로 돌아 다른 시험도
+    /// 같은 칸을 올리므로, 정확한 값이 아니라 **적어도 이만큼 올랐다** 를 본다.
+    #[test]
+    fn the_process_counts_move_where_the_router_decides() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "workspace.create".into(),
+            params: json!({"name": "count-probe"}),
+            id: Some(json!(1)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: Some("retry-count-probe".into()),
+        };
+        let before = retry_counts();
+        let now = Instant::now();
+        let pending = begin(now, &CallerContext::Local, &req, &json!(1)).expect("처음 보는 키");
+        finish(now, pending, &resp(1, "ok"));
+        begin(now, &CallerContext::Local, &req, &json!(2)).expect_err("재생");
+        let after = retry_counts();
+        assert!(after.executed > before.executed, "{before:?} → {after:?}");
+        assert!(after.replayed > before.replayed, "{before:?} → {after:?}");
     }
 
     /// 선언은 상수에서 **유도**된다. 리터럴로 다시 적으면 동작과 갈린다.
