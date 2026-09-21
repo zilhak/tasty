@@ -464,6 +464,7 @@ impl FileHandlerRegistry {
         }
         let mut next = BTreeMap::new();
         for (id, contribs) in inner.contributions.iter() {
+            let contribs = merge_order(contribs);
             // 1번째 contribution 이 base — detector / action 필수
             let Some(base) = contribs.first() else {
                 continue;
@@ -561,6 +562,19 @@ fn sort_handlers(v: &mut [FileHandler]) {
 }
 
 /// tie-break 시 owner 우선순위 — 작을수록 우선. `user > plugin > host`.
+/// finalize 가 contribution 을 병합하는 순서 — Host → Plugin → User. 같은 owner 안에서는 설치
+/// 순서를 그대로 둔다(안정 정렬).
+///
+/// 병합은 "마지막 non-None 이 이긴다" 라서 순서가 곧 우선순위다. 설치 순서로 병합하면 부팅
+/// (user 설정을 plugin 보다 먼저 읽는다)이나 plugin 이 나중에 contribute 한 경우 plugin 의 값이
+/// user patch 를 덮는다. user patch 는 host · plugin 의 값을 덮어쓰는 것이 뜻이므로
+/// ([`UserHandlerUpsertDecl`]) 늘 마지막에 둔다.
+fn merge_order(contribs: &[HandlerContribution]) -> Vec<&HandlerContribution> {
+    let mut ordered: Vec<&HandlerContribution> = contribs.iter().collect();
+    ordered.sort_by_key(|c| std::cmp::Reverse(owner_rank(&c.owner)));
+    ordered
+}
+
 fn owner_rank(owner: &HandlerOwner) -> u8 {
     match owner {
         HandlerOwner::User => 0,

@@ -790,6 +790,14 @@ fn a_patch_leaves_the_report_once_its_plugin_contributes() {
     assert_eq!(reg.reload_user_config(&p).len(), 2);
 
     install_markdown_plugin(&reg);
+    // plugin 이 contribute 하는 것만으로 patch 가 적용된다 — reload 를 기다리지 않는다.
+    let viewer = reg
+        .get(&HandlerId(MD_VIEWER_ID.into()))
+        .expect("plugin 이 contribute 한 뒤에는 handler 가 있다");
+    assert_eq!(
+        viewer.priority, 10,
+        "plugin 이 나중에 와도 user patch 의 priority 가 이겨야 한다"
+    );
     let rejected = reg.reload_user_config(&p);
 
     assert_eq!(
@@ -803,4 +811,67 @@ fn a_patch_leaves_the_report_once_its_plugin_contributes() {
         .get(&HandlerId(MD_VIEWER_ID.into()))
         .expect("plugin 이 contribute 한 뒤에는 patch 가 적용된 handler 가 있다");
     assert_eq!(viewer.priority, 10);
+}
+
+/// 부팅 순서 — user 설정을 plugin 보다 **먼저** 읽는다. 그래도 plugin handler 를 겨냥한 user
+/// patch 가 이긴다. 설치 순서로 병합하던 때는 plugin 의 priority 가 user 값을 덮었다.
+#[test]
+fn a_user_patch_wins_over_a_plugin_installed_after_the_boot_load() {
+    let reg = FileHandlerRegistry::new();
+    load_host(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("file-handlers.toml");
+    std::fs::write(
+        &p,
+        format!(
+            r#"
+                [[handler]]
+                id = "{MD_VIEWER_ID}"
+                priority = 10
+            "#
+        ),
+    )
+    .unwrap();
+
+    reg.install_user_config(&p);
+    install_markdown_plugin(&reg);
+
+    let viewer = reg.get(&HandlerId(MD_VIEWER_ID.into())).unwrap();
+    assert_eq!(
+        viewer.priority, 10,
+        "user patch 가 plugin 기본값 50 을 덮어야 한다"
+    );
+    assert!(matches!(viewer.owner, HandlerOwner::User));
+}
+
+/// reload 로 user patch 를 먼저 넣고 plugin 이 **reload 없이** 나중에 contribute 해도 user
+/// patch 가 이긴다 — plugin 을 끄고 다시 켜는 것과 같은 흐름이다.
+#[test]
+fn a_user_patch_wins_over_a_plugin_that_contributes_later_without_a_reload() {
+    let reg = FileHandlerRegistry::new();
+    load_host(&reg);
+    install_markdown_plugin(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("file-handlers.toml");
+    std::fs::write(
+        &p,
+        format!(
+            r#"
+                [[handler]]
+                id = "{MD_VIEWER_ID}"
+                priority = 10
+            "#
+        ),
+    )
+    .unwrap();
+    assert!(reg.reload_user_config(&p).is_empty());
+
+    reg.uninstall_plugin("com.tasty.markdown");
+    install_markdown_plugin(&reg);
+
+    let viewer = reg.get(&HandlerId(MD_VIEWER_ID.into())).unwrap();
+    assert_eq!(
+        viewer.priority, 10,
+        "다시 contribute 한 plugin 이 user patch 를 덮으면 안 된다"
+    );
 }
