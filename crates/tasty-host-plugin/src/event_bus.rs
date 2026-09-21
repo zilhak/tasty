@@ -98,6 +98,14 @@ pub struct EventFetch {
     pub truncated: bool,
     /// 보존 밖이라 못 준 사건 수.
     pub skipped: u64,
+    /// 요청한 위치가 **아직 발화되지 않은 자리**였나 — 링의 끝([`Self::stream_end`])
+    /// 보다 뒤다. 이 세대에 그 위치는 없다. 흔한 원인은 재시작 전 세대의 위치를 들고
+    /// 온 것이다. 그래도 답의 나머지(`events`·`next_offset`)는 이 필드가 없던 때와
+    /// 같다 — 이 필드를 모르는 소비자는 예전처럼 기다리고, 아는 소비자는 **조용히
+    /// 기다리지 않는다**. 근거는 ADR-0405.
+    pub ahead_of_stream: bool,
+    /// 다음 발화가 받을 위치 — 지금 링의 끝. 모든 답에 실린다.
+    pub stream_end: u64,
 }
 
 #[derive(Clone)]
@@ -407,6 +415,11 @@ impl EventBus {
     /// 기다리는 것은 **새 발화**이지 필터에 맞는 발화가 아니다. 맞지 않는 사건이
     /// 오면 한 번 더 보고 그래도 없으면 남은 시간만큼 다시 기다린다 — 그래서 시끄러운
     /// 버스에서도 깨어난 횟수가 답의 크기를 안 바꾼다.
+    ///
+    /// 끝보다 뒤인 위치([`EventFetch::ahead_of_stream`])도 **즉답하지 않고 기다린다.**
+    /// 즉답으로 바꾸면 그 필드를 모르는 옛 소비자가 같은 위치로 대기 없이 되묻는
+    /// 루프가 된다. 표지는 기다린 뒤의 답에도 실린다 — 즉시 알고 싶은 소비자는
+    /// `wait` 를 0 으로 한 번 묻는다(`tasty events follow` 의 첫 요청이 그렇다).
     pub fn fetch_blocking(
         &self,
         offset: u64,
@@ -480,6 +493,10 @@ impl EventBus {
             epoch,
             truncated,
             skipped,
+            // 끝과 **같은** 위치는 정상이다 — 다 읽은 소비자가 다음 사건을 기다리는
+            // 자리다. 끝보다 **뒤**만 이 세대에 없는 위치다.
+            ahead_of_stream: offset > inner.next_offset,
+            stream_end: inner.next_offset,
         }
     }
 

@@ -274,6 +274,49 @@ fn asking_for_a_position_that_scrolled_away_says_how_many_were_skipped() {
     assert_eq!(got.events[0].0, 7);
 }
 
+/// 재시작한 호스트에 옛 세대의 위치를 들고 오면 그 위치는 새 링의 끝보다 뒤다.
+/// 빈 답만 주면 소비자는 스트림이 그 번호에 닿을 때까지 모든 사건을 조용히 놓친다.
+#[test]
+fn a_position_past_the_end_is_marked_ahead_and_says_where_the_end_is() {
+    let bus = EventBus::new();
+    bus.publish_from_host(env("tab.created", EventOrigin::Host));
+    bus.publish_from_host(env("tab.closed", EventOrigin::Host));
+    let got = bus.fetch(2404, 10, None);
+    assert!(got.ahead_of_stream, "끝(2) 보다 뒤인 위치다");
+    assert_eq!(got.stream_end, 2);
+    // 나머지는 이 표지가 없던 때와 같다 — 옛 소비자의 동작을 안 바꾼다.
+    assert!(got.events.is_empty());
+    assert_eq!(got.next_offset, 2404);
+    assert!(!got.truncated);
+    assert_eq!(got.skipped, 0);
+}
+
+/// 끝과 같은 위치는 다 읽은 소비자가 다음 사건을 기다리는 정상 자리다.
+#[test]
+fn the_position_right_at_the_end_is_not_ahead() {
+    let bus = EventBus::new();
+    bus.publish_from_host(env("tab.created", EventOrigin::Host));
+    let got = bus.fetch(1, 10, None);
+    assert!(!got.ahead_of_stream);
+    assert_eq!(got.stream_end, 1);
+    let inside = bus.fetch(0, 10, None);
+    assert!(!inside.ahead_of_stream);
+    assert_eq!(inside.stream_end, 1);
+}
+
+/// 앞선 위치도 즉답하지 않는다 — 즉답하면 표지를 모르는 옛 소비자가 대기 없이
+/// 되묻는 루프가 된다. 기다린 뒤의 답에도 표지가 실린다.
+#[test]
+fn a_blocking_fetch_past_the_end_still_waits_and_then_marks_it() {
+    let bus = EventBus::new();
+    let wait = std::time::Duration::from_millis(80);
+    let started = std::time::Instant::now();
+    let got = bus.fetch_blocking(50, 10, None, wait);
+    assert!(started.elapsed() >= wait, "기다리지 않고 돌아왔다");
+    assert!(got.ahead_of_stream);
+    assert_eq!(got.stream_end, 0);
+}
+
 #[test]
 fn a_position_inside_the_ring_is_not_reported_as_truncated() {
     let bus = EventBus::new();

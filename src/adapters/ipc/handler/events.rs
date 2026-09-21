@@ -97,6 +97,8 @@ pub(crate) fn fetch(bus: &EventBus, args: &FetchParams, id: serde_json::Value) -
             "epoch": got.epoch,
             "truncated": got.truncated,
             "skipped": got.skipped,
+            "ahead_of_stream": got.ahead_of_stream,
+            "stream_end": got.stream_end,
         }),
     )
 }
@@ -159,5 +161,25 @@ mod tests {
             panic!("문자열 위치는 거절한다");
         };
         assert!(resp.error.is_some());
+    }
+
+    /// wire 에 앞섬 표지와 끝 위치가 실린다. 예전 다섯 필드는 이름도 값도 그대로다 —
+    /// 그 필드만 읽는 소비자의 동작은 바뀌지 않는다(ADR-0405).
+    #[test]
+    fn the_answer_carries_the_ahead_marker_next_to_the_old_fields() {
+        let bus = EventBus::new();
+        let resp = fetch(
+            &bus,
+            &ok(serde_json::json!({ "offset": 7 })),
+            serde_json::json!(1),
+        );
+        let r = resp.result.expect("정상 답");
+        assert_eq!(r["ahead_of_stream"], serde_json::json!(true));
+        assert_eq!(r["stream_end"], serde_json::json!(0));
+        assert_eq!(r["next_offset"], serde_json::json!(7));
+        assert_eq!(r["truncated"], serde_json::json!(false));
+        assert_eq!(r["skipped"], serde_json::json!(0));
+        assert_eq!(r["events"], serde_json::json!([]));
+        assert!(r["epoch"].is_u64());
     }
 }

@@ -33,11 +33,12 @@
 | 위치(offset) | 발화 순서대로 0 부터 매겨진다. **링에서 밀려나도 되돌아가지 않는다** — 옛 위치가 새 사건을 가리키는 일이 없다 |
 | 세대(epoch) | 호스트가 선 순간의 표지. **재시작하면 위치가 0 부터 다시 매겨지므로**, 소비자가 옛 위치를 들고 와도 이 값이 다르면 그것이 옛 세대다 |
 | `truncated` / `skipped` | 요청한 위치가 이미 밀려났을 때. **조용히 처음부터 주지 않고** 몇 개를 건너뛰었는지 함께 답한다 |
+| `ahead_of_stream` / `stream_end` | 요청한 위치가 링의 끝(`stream_end`, 다음 발화가 받을 위치)보다 **뒤**일 때 — 이 세대에 아직 없는 위치다. 흔한 원인은 재시작 전 세대의 위치다. **조용히 기다리지 않고** 표지를 단다. 나머지 필드는 표지가 없던 때와 같다 |
 
 - **커서는 소비자가 든다.** 서버는 소비자별 상태를 두지 않으므로 같은 인자로 두 번 물으면 같은 답이 오고, 느린 소비자가 호스트 쪽에 아무것도 쌓지 않는다.
 - **사건은 디스크에 안 남는다.** 재시작하면 링이 비는 것이 정상이고, 그 보존 수준은 완료 알림 로그가 부팅 때 지워지는 것과 같다.
-- 근거·용량 단위·대안은 [ADR-0322](../adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md).
-- **읽는 자리는 `events.fetch` 다**(local 전용). `{offset, max, filter, wait_ms}` 를 받아 `{events, next_offset, epoch, truncated, skipped}` 로 답하고, 각 봉투에 자기 `offset` 이 실린다. `filter` 는 아래 구독과 **같은 문법**이다 — 정확 일치 또는 `<ns>.*`. `wait_ms` 를 주면 그 시간까지 새 사건을 기다렸다 답한다(상한 60초). CLI 는 `tasty events fetch` / `tasty events follow`. plugin 은 이 메서드 대신 구독을 쓴다 — 대기가 SDK 의 단일 워커를 막기 때문이다. 근거는 [ADR-0323](../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md).
+- 근거·용량 단위·대안은 [ADR-0322](../adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md). 끝보다 뒤인 위치의 표지는 [ADR-0405](../adr/0405-a-position-past-the-end-of-the-feed-is-marked-not-waited-on-silently.md).
+- **읽는 자리는 `events.fetch` 다**(local 전용). `{offset, max, filter, wait_ms}` 를 받아 `{events, next_offset, epoch, truncated, skipped, ahead_of_stream, stream_end}` 로 답하고, 각 봉투에 자기 `offset` 이 실린다. `filter` 는 아래 구독과 **같은 문법**이다 — 정확 일치 또는 `<ns>.*`. `wait_ms` 를 주면 그 시간까지 새 사건을 기다렸다 답한다(상한 60초). CLI 는 `tasty events fetch` / `tasty events follow`. plugin 은 이 메서드 대신 구독을 쓴다 — 대기가 SDK 의 단일 워커를 막기 때문이다. 근거는 [ADR-0323](../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md).
 
 ## 예약 네임스페이스 (호스트만 발화)
 
