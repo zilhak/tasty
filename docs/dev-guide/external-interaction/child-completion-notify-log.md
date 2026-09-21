@@ -145,6 +145,18 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   유일한 통로이므로, 그 전에 삭제를 끝내 두면 새 인스턴스의 첫 append 가 삭제와 겹칠 수
   없다(`TcpIpcServer::clear_notify_then_publish_port`). 겹치면 방금 쓰인 줄이 지워진다.
 
+  **청소가 실패해도 부팅은 이어지고, 다시 시도하지 않는다.** 삭제는 디렉토리를 훑어 파일을
+  지운 뒤 마지막에 디렉토리 자신을 지운다. 그 사이 누군가 `notify/` 에 새 파일을 만들면
+  마지막 단계가 `Directory not empty` 로 실패한다. 그때 호스트는 호스트 로그에 경고 한 줄
+  (`failed to clear notify dir <경로>: …`)만 남기고 그대로 포트 파일을 쓴다 — 재시도도, IPC ·
+  CLI 로 보이는 신호도 없다(`TcpIpcServer::clear_notify_dir`). 남는 것은 훑기가 지나간 뒤에
+  생긴 파일이고, 훑을 때 있던 지난 세대 파일은 지워진다. 실측 2026-09-21: 격리 홈의 `notify/`
+  에 쉬지 않고 append 하는 셸 writer 를 돌리는 중에 호스트를 부팅했더니 경고가 한 줄 났고,
+  지난 세대로 심어 둔 `9.log`·`9.log.meta` 는 지워졌으며, writer 가 포트 파일 뒤에 쓴 줄은
+  하나도 빠지지 않았다. 정상 부팅에서는 포트 파일 전에 writer 가 없으므로(위 순서) 이 갈래는
+  아래 "한 데이터 루트에 호스트 하나" 전제가 깨졌을 때만 난다. 다시 시도하면 그 동시 writer
+  가 방금 쓴 파일을 지우게 되므로 동작은 이대로 둔다.
+
 - 구현: `crates/tasty-utils/src/notify.rs`(공유 append 헬퍼) + 이 파일에 쓰는 **세 자리** —
   `crates/tasty-plugin-claude/src/notifications.rs` 의 `handle_notify_done`(완료) ·
   `handle_notify_error`(위 "완료 외의 라인"), `crates/tasty-plugin-codex/src/handlers.rs` 의
