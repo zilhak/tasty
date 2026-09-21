@@ -318,6 +318,9 @@ grep -ohE '"[a-z_]+\.[a-z_.]+"' src/app/ipc/app_methods.rs src/app/ipc/app_metho
 `IpcConnection::send_idempotent` 가 그 확인을 **먼저** 하고 없으면 요청을 아예 안 내보낸다.
 그 이름이 답하는 것은 **"서버가 이 필드를 읽는가" 까지다** — "이 메서드가 걸리는가" 는 위
 "무엇이 아직 안 걸리나" 의 물음이다.
+그 거절은 호스트가 답한 실패와 다른 타입(`UnsupportedCapability`)으로 오는데, 그 차이가
+"아무것도 일어나지 않았다" 를 뜻한다. 결정 근거는
+[ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md).
 
 **plugin namespace forward 는 계약 밖이라고 선언돼 있다.** 이름 표(`method_meta`)의
 `key_contract` 가 그 이름에 `Outside` 를 내고, 표가 모르는 이름도 `Outside` 로 읽는다(client
@@ -329,9 +332,6 @@ capability 확인보다 **먼저** 그 값을 보고 `Outside` 면 `KeyOutsideCo
 plugin 이 두 번 실행하고, 그것을 거를 수 있는 자리는 plugin 자신뿐이다. 호스트 메서드는 아무것도
 선언하지 않는다(`Undeclared` — "걸린다" 가 아니다). 결정 근거는
 [ADR-0361](../adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md).
-그 거절은 호스트가 답한 실패와 다른 타입(`UnsupportedCapability`)으로 오는데, 그 차이가
-"아무것도 일어나지 않았다" 를 뜻한다. 결정 근거는
-[ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md).
 
 ### plugin 을 거쳐 온 실패도 호스트가 준 코드를 그대로 낸다
 
