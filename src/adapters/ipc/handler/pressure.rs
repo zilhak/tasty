@@ -204,6 +204,10 @@ pub(super) fn handle_system_pressure(
 /// 명령 큐에 **든** 쪽 — 입장 장부의 지금 값 · 최고 바이트 · 거절 누계와, 그것을 집행하는
 /// 상한. 장부가 없으면 `null` 이다(이 파일 머리말 "아직 안 재는 값의 자리는 미리 비워 두지
 /// 않는다").
+///
+/// 아래 세 함수는 원천 구조체를 **`..` 없이** 분해한다. 원천에 필드가 더해지면 여기서
+/// E0027 로 빌드가 멈춘다 — 필드를 이름으로 옮기는 응답이 새 필드를 조용히 빠뜨리지 않게
+/// 하는 채널이다(ADR-0435).
 pub(super) fn queue_admission_json(
     ledger: Option<(
         tasty_ipc::admission::AdmissionSnapshot,
@@ -211,16 +215,26 @@ pub(super) fn queue_admission_json(
     )>,
 ) -> serde_json::Value {
     match ledger {
-        Some((a, limits)) => json!({
-            "queued_bytes": a.queued_bytes,
-            "queued_commands": a.queued_commands,
-            "queued_injected": a.queued_injected,
-            "peak_bytes": a.peak_bytes,
-            "refused_bytes": a.refused_bytes,
-            "refused_depth": a.refused_depth,
-            "limit_bytes": limits.queued_bytes,
-            "limit_injected_depth": limits.injected_depth,
-        }),
+        Some((a, limits)) => {
+            let tasty_ipc::admission::AdmissionSnapshot {
+                queued_bytes,
+                queued_commands,
+                queued_injected,
+                peak_bytes,
+                refused_bytes,
+                refused_depth,
+            } = a;
+            json!({
+                "queued_bytes": queued_bytes,
+                "queued_commands": queued_commands,
+                "queued_injected": queued_injected,
+                "peak_bytes": peak_bytes,
+                "refused_bytes": refused_bytes,
+                "refused_depth": refused_depth,
+                "limit_bytes": limits.queued_bytes,
+                "limit_injected_depth": limits.injected_depth,
+            })
+        }
         None => serde_json::Value::Null,
     }
 }
@@ -228,26 +242,42 @@ pub(super) fn queue_admission_json(
 /// 명령 큐에서 **꺼낸** 쪽 — 꺼낸 회차와 그 끝, 실행 전 만료, 시작한 요청과 지금 실행 중인
 /// 요청(ADR-0412). 누계는 `Core` 가 늘 들고 있어 `null` 이 되지 않는다.
 pub(super) fn queue_dispatch_json(d: &tasty_ipc::dispatch::DispatchSnapshot) -> serde_json::Value {
+    let tasty_ipc::dispatch::DispatchSnapshot {
+        rounds,
+        rounds_stopped_by_count,
+        rounds_stopped_by_time,
+        expired_before_run,
+        started,
+        in_flight,
+        in_flight_max,
+    } = *d;
     json!({
-        "rounds": d.rounds,
-        "rounds_stopped_by_count": d.rounds_stopped_by_count,
-        "rounds_stopped_by_time": d.rounds_stopped_by_time,
-        "expired_before_run": d.expired_before_run,
-        "started": d.started,
-        "in_flight": d.in_flight,
-        "in_flight_max": d.in_flight_max,
+        "rounds": rounds,
+        "rounds_stopped_by_count": rounds_stopped_by_count,
+        "rounds_stopped_by_time": rounds_stopped_by_time,
+        "expired_before_run": expired_before_run,
+        "started": started,
+        "in_flight": in_flight,
+        "in_flight_max": in_flight_max,
     })
 }
 
 /// 멱등 키를 실은 요청이 보존소에서 받은 판정 — 칸마다 한 갈래(ADR-0422). 보존소는 프로세스에
 /// 하나라 `null` 이 되지 않는다.
 pub(super) fn keyed_requests_json(r: &super::idempotency::RetryCounts) -> serde_json::Value {
+    let super::idempotency::RetryCounts {
+        executed,
+        replayed,
+        conflicted,
+        discarded,
+        in_flight,
+    } = *r;
     json!({
-        "executed": r.executed,
-        "replayed": r.replayed,
-        "conflicted": r.conflicted,
-        "discarded": r.discarded,
-        "in_flight": r.in_flight,
+        "executed": executed,
+        "replayed": replayed,
+        "conflicted": conflicted,
+        "discarded": discarded,
+        "in_flight": in_flight,
     })
 }
 

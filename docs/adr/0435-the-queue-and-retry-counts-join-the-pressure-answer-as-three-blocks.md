@@ -36,6 +36,9 @@
   상수이고, `connections.limit` · `stream_push.sink_capacity` 와 같은 이유로 같이 나가야 지금 값이
   얼마나 찼는지가 한 응답에서 읽힌다. 원천 필드 이름(`queued_bytes`)을 그대로 쓰면 지금 값과
   이름이 겹친다.
+- **원천은 `..` 없이 분해한다.** 필드를 이름으로 옮기는 응답은 원천에 필드가 더해져도 컴파일되고
+  새 필드를 조용히 빠뜨린다. 분해가 모든 필드를 이름으로 부르게 하면 그 추가가 이 자리에서 빌드를
+  멈춘다.
 - **`queue_admission` 은 장부가 없으면 `null` 이다.** 장부는 IPC 서버가 만들고 주입기가 같은 것을
   든다. 서버가 안 뜬 조립(단위 시험, 서버 기동 실패)에는 장부가 없다. 0 이 든 덩어리를 내면 "관측된
   0" 으로 읽힌다 — `stream_push` 와 같은 규칙이다. 나머지 둘은 `Core` 와 프로세스가 늘 들고 있어
@@ -55,6 +58,7 @@
   그 번역 셋 · API 참조 · 기능 문서 · 사용자 가이드 두 언어 · CHANGELOG 에 흩어져 있어, 이 걸음이
   그 전부를 함께 옮긴다.
 - **운영 비용**: 읽기마다 장부의 잠금 한 번과 보존소의 잠금 한 번. 진단 요청 빈도에서 무시할 수 있다.
+  원천 스냅샷에 필드를 더하는 걸음은 이 응답의 분해도 함께 고쳐야 빌드된다 — 의도한 비용이다.
 
 ## Alternatives Considered
 
@@ -84,9 +88,11 @@
   기본값으로 · 상한을 제품 기본값으로 바꾼 넷이 모두 이 시험 하나로 실패했다).
 - 칸이 다른 칸 자리로 새면 `the_queue_and_keyed_blocks_carry_their_sources_slot_by_slot` 이, 덩어리가
   응답에서 빠지면 `the_router_answers_this_name_for_a_local_caller` 가 빨개진다.
-- 원천 스냅샷(`AdmissionSnapshot` · `DispatchSnapshot` · `RetryCounts`)에 필드가 더해지면 — 채널이 없다.
-  응답은 필드를 이름으로 옮기므로 새 필드는 **조용히 빠진다.** 그 필드를 더하는 걸음의 검토가 유일한
-  채널이다.
+- 원천 스냅샷(`AdmissionSnapshot` · `DispatchSnapshot` · `RetryCounts`)에 필드가 더해지면 — 응답을 만드는
+  세 함수(`queue_admission_json` · `queue_dispatch_json` · `keyed_requests_json`)가 원천을 `..` 없이
+  분해하므로 빌드가 E0027(pattern does not mention field)로 멈춘다(변이 확인 2026-09-21: 세 구조체에
+  각각 임시 필드를 더하고 생성 자리만 맞추자 셋 다 `pressure.rs` 의 분해에서 E0027 로 멈췄다). 그
+  필드를 응답에 실을지 · 싣지 않을지를 그 걸음이 **이름으로** 정해야 한다 — 조용히 빠지는 길은 없다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
