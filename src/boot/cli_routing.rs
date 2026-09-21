@@ -13,9 +13,10 @@ pub(crate) enum Routed {
     /// - clap parse 에러 → `cli::format_parse_error` 내부 std::process::exit (unreachable)
     /// - plugin CLI 매칭 → `cli::try_run_plugin_cli` 실행 완료 (에러는 Result 채널로 propagate)
     AlreadyHandled,
-    /// `cli.command.is_some()` — client mode 진입 (i18n 후 `cli::run_client`).
-    /// 두 번째 필드는 전역 `--port-file` 값(없으면 None).
-    Subcommand(cli::Commands, Option<String>),
+    /// `cli.command.is_some()` — client mode 진입 (i18n 후 `cli::run_client_with`).
+    /// 두 번째 필드는 전역 `--port-file` 값(없으면 None), 세 번째는 루트 플래그가 정한
+    /// 요청 봉투 값(`--response-timeout-ms`).
+    Subcommand(cli::Commands, Option<String>, cli::Envelope),
     /// `TASTY_SURFACE_ID` + `!cli.launch` — augmented help (i18n 후 `cli::print_augmented_help`).
     AugmentedHelp,
     /// 본 GUI. 호출자가 event loop / app 생성.
@@ -76,7 +77,10 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
 
     if let Some(command) = cli.command {
         // `cli.command` 만 부분 이동 — 다른 필드 `cli.port_file` 접근은 허용된다.
-        return Ok(Routed::Subcommand(command, cli.port_file));
+        let envelope = cli::Envelope {
+            response_timeout_ms: cli.response_timeout_ms,
+        };
+        return Ok(Routed::Subcommand(command, cli.port_file, envelope));
     }
     if !cli.launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
         return Ok(Routed::AugmentedHelp);

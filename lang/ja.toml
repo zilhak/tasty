@@ -1530,6 +1530,7 @@ metadata_not_json = "エラー: --metadata は有効な JSON である必要が�
 content_file_read_failed = "エラー: --content ファイル '{}' を読み込めませんでした: {}"
 
 [cli.contract]
+bound_not_applicable = "--response-timeout-ms は単一リクエストの応答を区切りますが、このコマンドはそのようなリクエストを送りません(ループ・ストリーム・ローカル実行)。何も送信していません。"
 unsupported_missing = "tasty インスタンスは '{}'(必要なバージョン {})を宣言していません。何も送信していません。"
 unsupported_older = "tasty インスタンスは '{}' をバージョン {} で宣言していますが、バージョン {} が必要です。何も送信していません。"
 
@@ -1900,6 +1901,9 @@ about = "AI コーディングエージェントのための GPU アクセラレ
 
 [cli.help._root.arg.port_file]
 help = "ポートファイルのパスを指定（テスト分離用）"
+
+[cli.help._root.arg.response_timeout_ms]
+help = "単一リクエストのコマンドが応答を待つ上限(ミリ秒)。超えるとインスタンスが -32061 で応答: 結果は不明で、リクエストは実行を続けることがある。0 またはフラグなしなら上限なしで待つ。インスタンスが ipc.response-timeout を宣言している必要があり、そうでなければ何も送信しない。ループ・ストリームのコマンドはこのフラグを拒否する"
 
 [cli.help._root.arg.launch]
 help = "tasty ターミナル内でも GUI を強制的に起動する"

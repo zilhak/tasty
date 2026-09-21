@@ -202,6 +202,10 @@ plugin 의 메서드는 "그런 메서드 없다"(거짓)가 아니라 "있는�
 필드를 읽는지는 `system.info` 의 capability 목록에서 `ipc.response-timeout` 으로 확인한다
 (구 서버는 모르는 필드를 조용히 버린다). 근거는
 [ADR-0328](../adr/0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md).
+CLI 는 루트 플래그 `tasty --response-timeout-ms <MS> <명령>` 으로 **요청 하나로 끝나는 명령**에만
+싣는다. 상대가 `ipc.response-timeout` 을 선언하지 않으면 보내지 않고(아래 "호환 협상" 의 구조화
+거절), 요청을 여럿 보내거나 IPC 를 안 타는 명령은 플래그를 받으면 종료 코드 2 로 거절한다.
+`0` 은 안 싣는다 — [ADR-0366](../adr/0366-the-cli-bounds-a-single-request-wait-with-a-root-flag.md).
 
 `-32062` 는 **최선 노력**이다. 거절이 일어나는 자리가 accept 스레드라 거기서 막히는 쓰기를
 할 수 없고(멈추면 자리가 나도 아무도 못 붙는다), 그래서 서버는 한 번만 시도하고 안 되면

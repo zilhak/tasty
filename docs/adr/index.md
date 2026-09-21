@@ -318,3 +318,4 @@
 | 0345 | [파일 SLOC 게이트는 파일 전체가 시험인 것도 지운다 — 출하 줄이라는 이름의 근거가 그것이다](0345-the-file-sloc-gate-erases-whole-test-only-files.md) | Accepted | 2026-09-21 | complexity, quality-gate, file-size, tokei, shipping-scope, measurement, complexity-gate, adr-0166, adr-0168 |
 | 0346 | [headless 는 자기가 닿는 정의만 컴파일한다 — ADR-0111 의 non-Domain 보존 조항 개정](0346-headless-compiles-only-what-it-reaches.md) | Accepted | 2026-09-21 | headless, intent, feature, dead-code, adr-0111 |
 | 0365 | [출력 위치 계약은 이름으로 협상하고, CLI 는 그 이름을 확인한 뒤에만 위치를 싣는다](0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md) | Accepted | 2026-09-21 | ipc, capability, compatibility, cli, terminal, output, cursor, adr-0307, adr-0312, adr-0341 |
+| 0366 | [CLI 는 단발 요청의 응답 대기를 루트 플래그로 자르고, 못 거는 상대와 못 싣는 명령은 거절한다](0366-the-cli-bounds-a-single-request-wait-with-a-root-flag.md) | Accepted | 2026-09-21 | ipc, cli, envelope, response-timeout, capability, compatibility, adr-0312, adr-0328, adr-0365 |

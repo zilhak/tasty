@@ -6,7 +6,7 @@
 //! 2. CLI 라우팅 결정 (`cli_routing::parse_or_route`)
 //! 3. 결정에 따라 mode helper 호출:
 //!    - `AlreadyHandled` → Ok(())
-//!    - `Subcommand` → i18n init + `cli::run_client`
+//!    - `Subcommand` → i18n init + `cli::run_client_with`
 //!    - `AugmentedHelp` → i18n init + `cli::print_augmented_help`
 //!    - `Gui` → 공유 로그 파일 개방(`os::enable_host_file_log`) + i18n init +
 //!      event loop / background threads / App / event_loop.run_app
@@ -106,7 +106,9 @@ pub fn run() -> anyhow::Result<()> {
 
     match cli_routing::parse_or_route()? {
         cli_routing::Routed::AlreadyHandled => Ok(()),
-        cli_routing::Routed::Subcommand(cmd, port_file) => run_subcommand(cmd, port_file),
+        cli_routing::Routed::Subcommand(cmd, port_file, envelope) => {
+            run_subcommand(cmd, port_file, envelope)
+        }
         cli_routing::Routed::AugmentedHelp => run_augmented_help(),
         cli_routing::Routed::Gui(cli) => {
             // 공유 로그 파일은 host 만 연다(= 여기서 연다). CLI 클라이언트도 같은
@@ -136,9 +138,13 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 /// `cli.command.is_some()` — i18n 후 client mode 진입.
-fn run_subcommand(cmd: cli::Commands, port_file: Option<String>) -> anyhow::Result<()> {
+fn run_subcommand(
+    cmd: cli::Commands,
+    port_file: Option<String>,
+    envelope: cli::Envelope,
+) -> anyhow::Result<()> {
     locale::init();
-    cli::run_client(cmd, port_file.as_deref())
+    cli::run_client_with(cmd, port_file.as_deref(), envelope)
 }
 
 /// `TASTY_SURFACE_ID` + `!cli.launch` — i18n 후 augmented help 출력.

@@ -1556,6 +1556,7 @@ metadata_not_json = "Error: --metadata must be valid JSON: {}"
 content_file_read_failed = "Error: failed to read --content file '{}': {}"
 
 [cli.contract]
+bound_not_applicable = "--response-timeout-ms bounds the reply of a single request, and this command does not send one: it loops, streams or runs locally. Nothing was sent."
 unsupported_missing = "The tasty instance does not declare '{}' (required version {}). Nothing was sent."
 unsupported_older = "The tasty instance declares '{}' at version {}, but version {} is required. Nothing was sent."
 
@@ -1930,6 +1931,9 @@ about = "GPU-accelerated terminal emulator for AI coding agents"
 
 [cli.help._root.arg.port_file]
 help = "Custom port file path (for test isolation)"
+
+[cli.help._root.arg.response_timeout_ms]
+help = "Bound, in milliseconds, on how long a single-request command waits for its reply. When it runs out the instance answers -32061: the outcome is unknown and the request may still run. 0 or no flag waits without a bound. The instance must declare ipc.response-timeout, or nothing is sent. Commands that loop or stream refuse the flag"
 
 [cli.help._root.arg.launch]
 help = "Force GUI launch even inside a tasty terminal"

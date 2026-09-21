@@ -48,8 +48,9 @@ pub use help::{format_parse_error, print_augmented_help, print_command_tree};
 // `help_i18n::command`. 배경 설명이 한국어라 `///` 가 아니라 `//` 다: 이 파일은
 // `no_hardcoded_ui_strings` 의 clap 도움말 스캔 뿌리라, 게이트 밖 `///` 의 CJK 는
 // 부착 대상과 무관하게 걸린다.
+pub use contract::Envelope;
 pub use help_i18n::command as localized_command;
-pub use run::{run_client, try_run_plugin_cli};
+pub use run::{run_client, run_client_with, try_run_plugin_cli};
 
 #[derive(Parser)]
 #[command(
@@ -64,6 +65,14 @@ pub struct Cli {
     /// Custom port file path (for test isolation)
     #[arg(long)]
     pub port_file: Option<String>,
+
+    /// Bound, in milliseconds, on how long a single-request command waits for its reply.
+    /// When it runs out the instance answers -32061: the outcome is unknown and the
+    /// request may still run. 0 or no flag waits without a bound. The instance must
+    /// declare ipc.response-timeout, or nothing is sent. Commands that loop or stream
+    /// refuse the flag
+    #[arg(long, value_name = "MS")]
+    pub response_timeout_ms: Option<u64>,
 
     /// Force GUI launch even inside a tasty terminal
     #[arg(long)]

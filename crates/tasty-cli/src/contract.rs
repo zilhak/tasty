@@ -16,6 +16,41 @@ use tasty_ipc::client::{IpcConnection, UnsupportedCapability};
 use tasty_ipc::output_cursor;
 use tasty_ipc::protocol::JsonRpcRequest;
 
+/// 단발 요청 봉투에 CLI 가 싣는 값. 루트 플래그에서 온다.
+///
+/// 봉투 상한은 **요청 하나의 응답 대기**를 자른다. 그래서 요청 하나로 끝나는 명령(정적
+/// CLI 의 단발 RPC · plugin CLI 의 단발 요청)만 이것을 싣는다. 루프를 도는 명령(사건
+/// 따라가기 · 감사 따라가기 · plugin 의 폴링과 자동 대기)과 스트림·SSH 경유 명령은 싣지
+/// 않고, 플래그를 받으면 **거절한다** — 조용히 무시하면 이 모듈이 막으려는 결함을 CLI 가
+/// 스스로 만든다. 근거:
+/// `docs/adr/0366-the-cli-bounds-a-single-request-wait-with-a-root-flag.md`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Envelope {
+    /// `--response-timeout-ms`. `Some(0)` 은 봉투 규약상 "상한 없음" 이라 없는 것과 같다.
+    pub response_timeout_ms: Option<u64>,
+}
+
+impl Envelope {
+    /// 봉투에 싣는다. 0 은 안 싣는다 — 실으면 구 서버에 계약 확인만 붙고 뜻은 같다.
+    pub(crate) fn apply(&self, request: &mut JsonRpcRequest) {
+        request.response_timeout_ms = self.response_timeout_ms.filter(|&ms| ms > 0);
+    }
+
+    /// 이 봉투가 싣는 것이 있는가. 싣는 것이 있는데 그것을 못 싣는 명령이면 거절한다.
+    pub(crate) fn is_set(&self) -> bool {
+        self.response_timeout_ms.is_some_and(|ms| ms > 0)
+    }
+
+    /// 봉투를 못 싣는 명령에 플래그가 왔으면 사용 오류로 끝낸다(종료 코드 2 — clap 의
+    /// 인자 오류와 같은 값이다). 통신은 시작 전이다.
+    pub(crate) fn refuse_if_set(&self) {
+        if self.is_set() {
+            eprintln!("{}", tasty_i18n::t("cli.contract.bound_not_applicable"));
+            std::process::exit(2);
+        }
+    }
+}
+
 /// 이 요청이 상대에게 요구하는 계약 — `(이름, 최소 판)`.
 ///
 /// 비어 있으면 묻지 않는다. 새 계약을 하나도 안 쓰는 요청은 구 서버에서도 뜻이 같으므로,
@@ -138,6 +173,40 @@ mod tests {
                 (output_cursor::CAPABILITY, output_cursor::VERSION),
             ]
         );
+    }
+
+    /// 0 은 "상한 없음" 이라 봉투에 안 싣고, 그래서 구 서버에 계약 확인도 안 붙는다.
+    #[test]
+    fn a_zero_bound_is_not_carried() {
+        let mut r = req("workspace.list", json!({}), None);
+        let zero = Envelope {
+            response_timeout_ms: Some(0),
+        };
+        zero.apply(&mut r);
+        assert_eq!(r.response_timeout_ms, None);
+        assert!(!zero.is_set());
+        let bound = Envelope {
+            response_timeout_ms: Some(250),
+        };
+        bound.apply(&mut r);
+        assert_eq!(r.response_timeout_ms, Some(250));
+        assert!(bound.is_set());
+        assert!(!Envelope::default().is_set());
+    }
+
+    /// 루트 플래그는 서브커맨드 **앞**에 온다(`--port-file` 과 같은 자리).
+    #[test]
+    fn the_root_flag_parses_before_the_subcommand() {
+        use clap::Parser;
+        let cli = crate::Cli::try_parse_from([
+            "tasty",
+            "--response-timeout-ms",
+            "500",
+            "list",
+            "workspaces",
+        ])
+        .expect("파싱");
+        assert_eq!(cli.response_timeout_ms, Some(500));
     }
 
     fn since_mark(args: &[&str]) -> JsonRpcRequest {

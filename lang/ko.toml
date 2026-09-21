@@ -1528,6 +1528,7 @@ metadata_not_json = "오류: --metadata 는 올바른 JSON 이어야 합니다: 
 content_file_read_failed = "오류: --content 파일 '{}' 을(를) 읽지 못했습니다: {}"
 
 [cli.contract]
+bound_not_applicable = "--response-timeout-ms 는 요청 하나의 응답을 자르는데, 이 명령은 그런 요청을 보내지 않습니다(반복·스트림·로컬 실행). 아무것도 보내지 않았습니다."
 unsupported_missing = "tasty 인스턴스가 '{}'(필요한 판 {})를 선언하지 않았습니다. 아무것도 보내지 않았습니다."
 unsupported_older = "tasty 인스턴스가 '{}'를 판 {}로 선언했지만 판 {}가 필요합니다. 아무것도 보내지 않았습니다."
 
@@ -1898,6 +1899,9 @@ about = "AI 코딩 에이전트를 위한 GPU 가속 터미널 에뮬레이터"
 
 [cli.help._root.arg.port_file]
 help = "포트 파일 경로 지정 (테스트 격리용)"
+
+[cli.help._root.arg.response_timeout_ms]
+help = "요청 하나로 끝나는 명령이 응답을 기다리는 상한(밀리초). 넘기면 인스턴스가 -32061 로 답함: 결과 불명이며 요청은 계속 실행될 수 있음. 0 이거나 플래그가 없으면 상한 없이 기다림. 인스턴스가 ipc.response-timeout 을 선언해야 하고, 아니면 아무것도 보내지 않음. 반복·스트림 명령은 이 플래그를 거절함"
 
 [cli.help._root.arg.launch]
 help = "tasty 터미널 안에서도 GUI 를 강제로 실행"

@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::Result;
 
 use super::Commands;
+use super::contract::Envelope;
 use super::dispatch::{ClientCtx, Dispatch};
 use super::dynamic;
 use super::format::format_output;
@@ -94,14 +95,22 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     };
     // 루트 `--port-file` 플래그는 augmented(Cli 기반)에 그대로 포함됨. 추출해 dynamic 경로로 전달.
     let port_file = matches.get_one::<String>("port_file").cloned();
+    // 루트 `--response-timeout-ms` 도 같다. 단발 요청만 싣고, 폴링·자동 대기는 거절한다.
+    let envelope = Envelope {
+        response_timeout_ms: matches.get_one::<u64>("response_timeout_ms").copied(),
+    };
     let (top_name, _) = matches.subcommand()?;
     if !entries.iter().any(|e| e.cli.name == top_name) {
         return None;
     }
-    let (request, polling, auto_wait) = match dynamic::matches_to_request(&entries, &matches) {
+    let (mut request, polling, auto_wait) = match dynamic::matches_to_request(&entries, &matches) {
         Ok(r) => r,
         Err(e) => return Some(Err(e)),
     };
+    if polling.is_some() || auto_wait.is_some() {
+        envelope.refuse_if_set();
+    }
+    envelope.apply(&mut request);
     // stdout 파이프 조기 종료(EPIPE)는 조용한 종료 코드 0 — ADR-0101.
     Some(crate::out::quiet_if_stdout_closed(
         match (polling, auto_wait) {
@@ -186,6 +195,17 @@ fn run_dynamic_client(
             return Err(e);
         }
     };
+    // 새 계약을 쓰는 요청이면 상대의 선언을 먼저 묻는다. 거절도 **전달 실패**라 앞 갈래들과
+    // 같은 이유로 기록한다 — `UnsupportedCapability` 의 `Display` 는 영어 원본이다.
+    if let Err(e) = super::contract::ensure(&mut conn, &request) {
+        hook_failure::record(
+            &request.method,
+            &request.params,
+            None, // 요청은 안 나갔다 — JSON-RPC 코드가 없다
+            &hook_failure::DiagnosticEnglish::new_unchecked(e.to_string()),
+        );
+        super::contract::exit_on_failure(e);
+    }
     match conn.send(&request) {
         Ok(value) => {
             // **성공 응답도 실패를 담을 수 있다.** 최선노력 host 호출을 가진 훅 핸들러는
@@ -451,14 +471,26 @@ fn run_dynamic_client_polling(
 /// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
 /// 출력 경로 전체가 [`crate::out`] 을 거치므로 `StdoutClosed` 가 여기까지 `?` 로 올라온다.
 pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
-    crate::out::quiet_if_stdout_closed(run_client_inner(command, port_file))
+    run_client_with(command, port_file, Envelope::default())
 }
 
-fn run_client_inner(command: Commands, port_file: Option<&str>) -> Result<()> {
+/// [`run_client`] 에 루트 플래그가 정한 봉투 값을 더한 판. 진입점(`boot`)이 부른다.
+pub fn run_client_with(
+    command: Commands,
+    port_file: Option<&str>,
+    envelope: Envelope,
+) -> Result<()> {
+    crate::out::quiet_if_stdout_closed(run_client_inner(command, port_file, envelope))
+}
+
+fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelope) -> Result<()> {
     // 갈래는 `dispatch` 가 정한다 — 클라이언트 주도 실행이면 그쪽으로 넘기고,
     // 아니면 아래 단발 JSON-RPC 경로를 탄다. 새 로컬 명령을 추가할 때 이 함수를
     // 고칠 필요는 없다(`dispatch::classify` 만 손댄다).
     if let Dispatch::ClientDriven(cmd) = command.dispatch()? {
+        // 클라이언트 주도 명령은 요청을 여럿 보내거나 IPC 를 안 탄다 — 봉투 상한을 실을
+        // 요청 하나가 없다. 받으면 조용히 버리지 않고 거절한다.
+        envelope.refuse_if_set();
         return cmd.run(&ClientCtx { port_file });
     }
 
@@ -468,6 +500,7 @@ fn run_client_inner(command: Commands, port_file: Option<&str>) -> Result<()> {
     let mut conn = IpcConnection::new(stream)?;
 
     let mut request = command_to_request(&command);
+    envelope.apply(&mut request);
     let cli_warnings = take_cli_warnings(&mut request);
     // 새 계약을 쓰는 요청은 상대가 그것을 선언했는지 **보내기 전에** 묻는다 — 모르는
     // 서버는 그 필드를 조용히 버리고 성공으로 답한다(`contract` 모듈).
