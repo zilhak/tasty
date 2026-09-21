@@ -123,8 +123,9 @@ impl ModifierHintRuntime {
 /// 원칙1상 오버레이는 실 modifier 홀드(`ModifiersChanged`)로만 뜨고 IPC 로 강제 표시할 수
 /// 없다. 이 접근자들은 `host_popup.open`(사용자 클릭 우회 force-open)과 동일 성격의 debug
 /// 격리 표면으로, 오버레이 내부 홀드 상태만 세팅/덤프한다(PTY raw 주입 아님). release
-/// 미노출.
-#[cfg(debug_assertions)]
+/// 미노출. 테스트도 같은 손잡이로 홀드 시각을 당기므로 `test` 에도 산다 — 테스트는 release
+/// 산출물이 아니다.
+#[cfg(any(debug_assertions, test))]
 impl ModifierHintRuntime {
     /// 현재 홀드 상태 스냅샷 — `(눌린 조합, 경과시간, dismissed)`.
     pub fn debug_snapshot(&self) -> (Option<Combo>, Option<std::time::Duration>, bool) {
@@ -148,8 +149,9 @@ impl ModifierHintRuntime {
 ///
 /// `debug.modifier_hint.state` 가 쓴다. `reveal_delay_ms`(Shift 단독 판정) · `hold_reveal_alpha`
 /// · `build_hint_sections`(좁힘) · `combo_keycaps` 를 그대로 재사용하므로, 스크린샷 없이도
-/// "무엇이 어떻게 표시되는가" 를 자동 단정할 수 있다. release 미노출.
-#[cfg(debug_assertions)]
+/// "무엇이 어떻게 표시되는가" 를 자동 단정할 수 있다. release 미노출(테스트는 위와 같은 이유로
+/// 부른다).
+#[cfg(any(debug_assertions, test))]
 pub fn debug_state_json(
     rt: &ModifierHintRuntime,
     settings: &Settings,
@@ -839,8 +841,8 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
 /// 선택 가능). **JSON 직렬화 경로 전용**(`debug_state_json`) — 화면 렌더링(스트립
 /// 헤더·섹션 헤더)은 tofu box 위험이 있는 심볼 스타일을 텍스트가 아니라 아이콘으로
 /// 그려야 해서 [`combo_keycap_parts`] 로 분리됐다. 호출처가 `debug_state_json` 하나뿐이라
-/// release 빌드에는 포함하지 않는다.
-#[cfg(debug_assertions)]
+/// release 빌드에는 포함하지 않는다(그 함수와 같은 cfg).
+#[cfg(any(debug_assertions, test))]
 fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String {
     let mut parts: Vec<&str> = Vec::new();
     if c.ctrl {
