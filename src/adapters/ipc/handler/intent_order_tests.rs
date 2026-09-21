@@ -302,8 +302,10 @@ fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
 
 /// 출구 **안** 의 순서 — 한 요청이 한 출구에 intent 여럿을 넣으면 넣은 순서 그대로 창 큐에
 /// 도착한다. `telemetry.record_batch` 는 이벤트마다 상한을 평가하므로, 서로 다른 metric 에
-/// 건 `notify` 상한 둘이 **배치 순서대로** 한 출구에 알림을 넣는다. 상한 등록 순서를 배치
-/// 순서의 반대로 두어, 도착 순서가 memory 목록 순서가 아니라 출구에 넣은 순서임을 가른다.
+/// 건 `notify` 상한 둘이 **배치 순서대로** 한 출구에 알림을 넣는다. 각 이벤트에 걸리는 상한이
+/// 하나라, 도착 순서는 memory 의 목록 순서(시험 저장소는 `HashMap` 순서)와 무관하게 배치 순서로만
+/// 정해진다. 상한을 배치와 다른 순서로 등록한 것은 그 무관함을 드러낼 뿐 판별 장치는 아니다 —
+/// 판별하는 것은 배치 순서와 도착 순서의 대조다.
 #[test]
 fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
     let _home = crate::test_support::TastyHomeGuard::new();
