@@ -35,14 +35,16 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
 안에서 모듈 경계와 가드로 방향을 세운다.**
 
 1. **방향**: 도메인의 출하 코드는 본체의 조립·어댑터·GUI 모듈(`app`·`adapters`·`ipc`·`cli`·
-   `plugin_bridge`·`state`·`intent`·`view`·`gfx`·`boot`·`hub` 와 그 lib 루트 별칭)을 이름으로
-   부르지 않는다. `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 강제하고,
+   `plugin_bridge`·`state`·`intent`·`view`·`gfx`·`boot`·`hub` 와 그 lib 루트 별칭, 별칭이 가리키는
+   형제 모듈의 하위 항목 `file::dispatch`·`file::identify_worker`·`host_api::webview`·`clipboard`)을
+   이름으로 부르지 않는다. 판정은 경로의 앞마디 일치이고, 중괄호 import 는 항목마다, 줄을 넘는
+   경로는 이어서 읽는다. `crates/tasty-doc-guards/tests/domain_does_not_reach_up.rs` 가 강제하고,
    기대값은 0 이다 — 한시 허용 명부를 두지 않는다. 테스트(파일 단위 test-only · 인라인
    `#[cfg(test)]`)는 좌변이 아니다(ADR-0123 과 같은 이유).
 2. **역전 수단**은 넷 중 하나다.
    - 양쪽이 쓰는 타입은 **정의를 도메인에** 두고 상위 모듈이 재수출한다 — 발화 주체
-     (`core::origin`), 호스트 이벤트 큐 항목(`core::host_event`), egui-mesh surface 자리표
-     (`core::egui_mesh_surface`).
+     (`core::origin` — 요청 발화 주체와 파일 열기 발화 주체 `FileDispatchOrigin`), 호스트 이벤트
+     큐 항목(`core::host_event`), egui-mesh surface 자리표(`core::egui_mesh_surface`).
    - 도메인이 창 쪽 연산을 필요로 하면 **도메인이 trait 을 선언하고** 창 쪽이 구현한다 —
      구조 실행의 창 연산(`core::cascade_window::CascadeWindow`, `AppState` 가 한 줄 위임으로
      구현), 파일 식별 시작(`core::identify_port::IdentifySpawner`, `IdentifyWorker` 가 구현).
@@ -83,7 +85,8 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   메서드들은 GUI 타입을 하나도 안 부른다. 그래도 수는 수이고, 크레이트로 떼는 날 이 246 이
   그대로 일감이다.
 - **잃은 것 — 전이 의존은 안 본다.** 도메인이 부르는 형제 모듈이 다시 상위를 부르는 경로는
-  가드 밖이다. 실측: `file::dispatch` 가 `AppState` 를 받는다(gui 전용 picker 여는 함수들).
+  가드 밖이다. 형제 모듈이 상위 항목을 재수출하면 그 이름으로 우회된다. 창 상태를 받는
+  `file::dispatch` 는 그래서 형제 모듈 전체가 아니라 그 하위 항목 자체를 가드의 표에 올렸다.
 - **운영 비용**: 도메인에 창 쪽 연산이 새로 필요하면 `CascadeWindow` 에 메서드를 더하고
   `state/cascade_window.rs` 에 위임을 쓴다. 도메인에 gui 게이트를 더하면 가드의 상수를 올리고
   커밋 본문에 판정(ADR-0346 ① 인가)을 적는다.

@@ -12,7 +12,7 @@
 //! # 두 물음
 //!
 //! 1. **상위 참조** — [`UPPER`] 의 모듈을 출하 코드가 부르는가. 기대값 0, 베이스라인 없음.
-//!    착수 시점(2026-09-21, `17e2a7f56`)에 34 자리였고 이동·포트 역전으로 0 이 된 뒤에
+//!    착수 시점(2026-09-21, `17e2a7f56`)에 24 자리였고 이동·포트 역전으로 0 이 된 뒤에
 //!    세웠다 — 그래서 "줄기만 하는 한시 허용" 명부가 필요 없다. 새 자리는 곧 위반이다.
 //! 2. **gui 게이트 수** — 도메인 출하 코드에 코드로 쓰인 `feature = "gui"` 의 개수. 도메인에
 //!    GUI 전용 항목을 cfg 로 숨겨 들여오면 상위 참조가 없어 보여도 **도메인이 GUI 를 안다**.
@@ -29,12 +29,16 @@
 //! 주석과 문자열은 [`mask_non_code`] 로 지운다. 도메인의 문서 주석은 "이 일은 창 쪽
 //! `AppState` 가 한다" 처럼 상위 모듈을 **설명으로** 말하는 것이 정상이다.
 //!
+//! 경로는 줄이 아니라 **마스킹한 파일 전체**에서 읽는다 — 중괄호 import(`crate::{a, b::c}`)는
+//! 항목마다 펴고, 마디 사이의 공백·줄바꿈은 건넌다. 줄 번호는 항목이 시작한 오프셋으로
+//! 환산한다. 판정은 **앞마디 일치**다: [`UPPER`] 의 `file::dispatch` 는 `crate::file::dispatch::X`
+//! 를 잡고 `crate::file::format::X` 는 안 잡는다.
+//!
 //! # 이 가드가 안 보는 것
 //!
 //! - **전이 의존.** 도메인이 부르는 형제 모듈(`file`·`store`·`hook_handler` 등)이 다시 상위
-//!   모듈을 부르는 경로는 안 센다. 실측 2026-09-21: `file::dispatch` 가 `AppState` 를
-//!   받는다(`open_picker` 등 gui 전용). 크레이트를 떼는 날 그 경로가 경계를 넘는다 —
-//!   ADR-0440 의 재검토 조건이 그 값을 잰다.
+//!   모듈을 부르는 경로는 안 센다. 형제 모듈이 상위 항목을 **재수출**하면 그 이름으로 우회된다.
+//!   크레이트를 떼는 날 그 경로가 경계를 넘는다 — ADR-0440 의 재검토 조건이 그 값을 잰다.
 //! - **`#[path]` 로 옮겨 붙인 모듈의 `super::` 깊이.** `super::` 이탈 판정은 파일 경로로
 //!   모듈 깊이를 계산한다. 오늘 도메인에 `#[path]` 는 test 모듈에만 있다.
 
@@ -51,7 +55,9 @@ const DOMAIN_ROOTS: &[&str] = &["src/core/", "src/ports/"];
 /// 도메인이 이름으로 부르면 안 되는 크레이트 루트 항목 — `(이름, 무엇이라 안 되는가)`.
 ///
 /// 모듈과 함께 **lib 루트의 별칭**(`src/lib.rs` 의 `pub(crate) use …`)도 적는다. 별칭은
-/// 같은 모듈의 다른 이름이라, 모듈만 막으면 별칭으로 우회된다.
+/// 같은 모듈의 다른 이름이라, 모듈만 막으면 별칭으로 우회된다. 거꾸로 별칭이 **형제 모듈의
+/// 하위 항목**을 가리키면(`file_dispatch` = `file::dispatch`) 그 정식 경로도 여러 마디로 적는다 —
+/// 별칭만 막으면 정식 경로로 우회된다.
 const UPPER: &[(&str, &str)] = &[
     ("app", "창·이벤트 루프 조립(`App`)"),
     ("AppEvent", "`app::event::AppEvent` 의 lib 루트 별칭"),
@@ -60,6 +66,10 @@ const UPPER: &[(&str, &str)] = &[
     ("ipc", "`adapters::ipc` 의 별칭 — 요청 핸들러 트리"),
     ("cli", "`adapters::cli` 의 별칭 — CLI 진입 계층"),
     ("plugin_bridge", "plugin 매니저와 본체 GUI 를 잇는 glue"),
+    (
+        "plugin",
+        "`adapters::plugin` 의 별칭 — 매니페스트 타입은 `tasty_plugin_manifest` 로 직접 닿는다",
+    ),
     (
         "state",
         "창 상태(`AppState`) — 도메인은 `core::cascade_window` 포트로만 닿는다",
@@ -81,7 +91,15 @@ const UPPER: &[(&str, &str)] = &[
         "identify_worker",
         "winit proxy 로 결과를 보내는 GUI worker — `core::identify_port` 로만 닿는다",
     ),
+    (
+        "file::identify_worker",
+        "`identify_worker` 의 정식 경로 — `core::identify_port` 로만 닿는다",
+    ),
     ("file_dispatch", "`file::dispatch` 의 gui 별칭"),
+    (
+        "file::dispatch",
+        "창 상태를 받는 파일 열기 동작 — 도메인이 쓰는 발화 주체는 `core::origin` 에 있다",
+    ),
     ("shortcuts", "UI 입력 단축키"),
     ("click_cursor", "UI 입력"),
     ("double_tap", "UI 입력"),
@@ -93,7 +111,12 @@ const UPPER: &[(&str, &str)] = &[
     ("plugins_ui", "UI"),
     ("settings_ui", "UI"),
     ("webview", "`host_api::webview` 의 gui 별칭"),
+    ("host_api::webview", "`webview` 의 정식 경로 — GUI webview"),
     ("ClipboardContext", "GUI 클립보드 컨텍스트"),
+    (
+        "clipboard",
+        "`ClipboardContext` 의 정식 모듈 — 도메인은 `ports::clipboard` 로 닿는다",
+    ),
     ("waker_factory_winit", "winit waker"),
     ("debug_info", "`app::debug_info` 의 별칭"),
 ];
@@ -143,78 +166,164 @@ fn module_depth(rel: &str) -> usize {
     }
 }
 
-/// `code` 에서 `head` 바로 뒤에 오는 식별자들(`head` 앞은 식별자 경계여야 한다).
-fn idents_after<'a>(code: &'a str, head: &str) -> Vec<(usize, &'a str)> {
+fn is_ident_byte(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_' || c >= 0x80
+}
+
+fn skip_ws(b: &[u8], mut i: usize) -> usize {
+    while i < b.len() && b[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    i
+}
+
+/// `i` 에서 공백을 건너 `::` 가 오면 그 뒤(공백까지 건넌) 위치.
+fn eat_path_sep(b: &[u8], i: usize) -> Option<usize> {
+    let j = skip_ws(b, i);
+    b[j..].starts_with(b"::").then(|| skip_ws(b, j + 2))
+}
+
+/// `i` 에서 시작하는 식별자의 끝. 식별자가 아니면 `None`.
+fn ident_end(b: &[u8], i: usize) -> Option<usize> {
+    let mut j = i;
+    while j < b.len() && is_ident_byte(b[j]) {
+        j += 1;
+    }
+    (j > i).then_some(j)
+}
+
+/// 크레이트 루트 뒤의 경로 나무를 편다 — `a::b` 는 하나, `{a::b, c::{d, e}}` 는 셋.
+/// `(마디가 시작한 오프셋, 크레이트 루트부터의 마디들)` 을 `out` 에 싣고 읽은 끝을 돌려준다.
+/// 마디 사이의 공백·줄바꿈은 건넌다(rustfmt 가 긴 경로를 줄에서 끊는다).
+fn expand_tree(
+    code: &str,
+    mut i: usize,
+    prefix: &[&str],
+    out: &mut Vec<(usize, Vec<String>)>,
+) -> usize {
+    let b = code.as_bytes();
+    i = skip_ws(b, i);
+    if b.get(i) == Some(&b'{') {
+        i += 1;
+        loop {
+            i = skip_ws(b, i);
+            match b.get(i) {
+                None => return i,
+                Some(b'}') => return i + 1,
+                Some(b',') => i += 1,
+                Some(_) => {
+                    let next = expand_tree(code, i, prefix, out);
+                    if next == i {
+                        // 읽을 수 없는 항목(`*` 등) — 한 바이트 건너 무한 반복을 막는다.
+                        i += 1;
+                    } else {
+                        i = next;
+                    }
+                }
+            }
+        }
+    }
+    let Some(end) = ident_end(b, i) else {
+        return i;
+    };
+    let mut path: Vec<&str> = prefix.to_vec();
+    path.push(&code[i..end]);
+    match eat_path_sep(b, end) {
+        Some(j) if b.get(j) == Some(&b'{') || ident_end(b, j).is_some() => {
+            let before = out.len();
+            let after = expand_tree(code, j, &path, out);
+            // 하위 항목의 오프셋은 그 항목 자리다. 한 줄짜리 경로는 첫 마디 자리로 맞춘다.
+            if b.get(j) != Some(&b'{') {
+                for p in &mut out[before..] {
+                    p.0 = p.0.min(i);
+                }
+            }
+            after
+        }
+        _ => {
+            out.push((i, path.iter().map(|s| s.to_string()).collect()));
+            end
+        }
+    }
+}
+
+/// 크레이트 루트에서 시작하는 경로들 — `crate::…`(`$crate::…` 포함)과, 모듈 깊이와 같은
+/// 길이의 `super::` 사슬. 중괄호 import 는 항목마다, 줄을 넘는 경로는 이어서 읽는다.
+fn root_paths(code: &str, depth: usize) -> Vec<(usize, Vec<String>)> {
+    let b = code.as_bytes();
     let mut out = Vec::new();
-    let mut from = 0;
-    while let Some(off) = code[from..].find(head) {
-        let at = from + off;
-        from = at + head.len();
-        let boundary = code[..at]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
-        if !boundary {
+    let mut i = 0;
+    while i < b.len() {
+        let boundary = i == 0 || !is_ident_byte(b[i - 1]);
+        if !boundary || !is_ident_byte(b[i]) {
+            i += 1;
             continue;
         }
-        let rest = &code[from..];
-        let end = rest
-            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-            .unwrap_or(rest.len());
-        out.push((at, &rest[..end]));
+        let end = ident_end(b, i).unwrap_or(i + 1);
+        let word = &code[i..end];
+        if word == "crate" {
+            if let Some(j) = eat_path_sep(b, end) {
+                expand_tree(code, j, &[], &mut out);
+            }
+        } else if word == "super" {
+            // 사슬의 머리만 센다 — 앞에 `::` 가 붙은 `super` 는 사슬의 중간이다.
+            let before = code[..i].trim_end();
+            if !before.ends_with("::") {
+                let mut k = 1;
+                let mut j = end;
+                while let Some(n) = eat_path_sep(b, j) {
+                    match ident_end(b, n) {
+                        Some(e) if &code[n..e] == "super" => {
+                            k += 1;
+                            j = e;
+                        }
+                        _ => {
+                            j = n;
+                            break;
+                        }
+                    }
+                }
+                if k == depth && j > end {
+                    expand_tree(code, j, &[], &mut out);
+                }
+            }
+        }
+        i = end;
     }
     out
 }
 
-/// 한 줄(주석·문자열을 지운 코드)이 부르는 상위 항목 이름. `super::` 사슬이 크레이트
-/// 루트까지 올라가 상위 항목을 부르는 형태도 잡는다.
-fn upper_names_in(code: &str, depth: usize) -> Vec<&'static str> {
-    let upper = |name: &str| UPPER.iter().find(|(n, _)| *n == name).map(|(n, _)| *n);
-    let mut out = Vec::new();
-    for (_, name) in idents_after(code, "crate::") {
-        out.extend(upper(name));
-    }
-    // `super::super::…::X` — 사슬 길이가 모듈 깊이와 같으면 X 는 크레이트 루트 항목이다.
-    let mut from = 0;
-    while let Some(off) = code[from..].find("super::") {
-        let at = from + off;
-        let boundary = code[..at]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == ':'));
-        let mut k = 0;
-        let mut i = at;
-        while code[i..].starts_with("super::") {
-            k += 1;
-            i += "super::".len();
-        }
-        from = i;
-        if !boundary || k != depth {
-            continue;
-        }
-        let rest = &code[i..];
-        let end = rest
-            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-            .unwrap_or(rest.len());
-        out.extend(upper(&rest[..end]));
-    }
-    out
+/// 크레이트 루트부터의 마디들이 [`UPPER`] 의 어느 항목 아래인가. 항목의 마디가 경로의
+/// 앞마디와 통째로 같아야 한다(`file::dispatch` 는 `file::dispatch::X` 를 잡고 `file::format` 은
+/// 안 잡는다).
+fn upper_match(path: &[String]) -> Option<&'static str> {
+    UPPER.iter().map(|(n, _)| *n).find(|n| {
+        let segs: Vec<&str> = n.split("::").collect();
+        segs.len() <= path.len() && segs.iter().zip(path).all(|(a, b)| *a == b)
+    })
 }
 
-/// 한 파일의 출하되는 줄 가운데 상위 항목을 부르는 줄. `(1-기준 줄번호, 이름, 원문)`.
+/// 한 파일의 출하되는 코드가 부르는 상위 항목. `(1-기준 줄번호, 이름, 그 줄 원문)`.
+/// 경로를 파일 전체에서 읽고(줄을 넘는 경로 · 여러 줄 중괄호 import) 줄 번호는 경로 항목이
+/// 시작한 오프셋으로 환산한다. 한 줄에 같은 항목이 여러 번이면 한 자리로 센다.
 fn upper_references(rel: &str, text: &str) -> Vec<(usize, &'static str, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let gated = cfg_gated_lines(&lines, "test");
     let masked = mask_non_code(text);
-    let depth = module_depth(rel);
-    let mut out = Vec::new();
-    for (i, code) in masked.lines().enumerate() {
-        if gated.get(i).copied().unwrap_or(false) {
+    let mut out: Vec<(usize, &'static str, String)> = Vec::new();
+    for (off, path) in root_paths(&masked, module_depth(rel)) {
+        let line = masked[..off].matches('\n').count();
+        if gated.get(line).copied().unwrap_or(false) {
             continue;
         }
-        for name in upper_names_in(code, depth) {
-            out.push((i + 1, name, lines[i].trim().to_string()));
+        let Some(name) = upper_match(&path) else {
+            continue;
+        };
+        if out.iter().any(|(l, n, _)| *l == line + 1 && *n == name) {
+            continue;
         }
+        let raw = lines.get(line).map(|l| l.trim()).unwrap_or("");
+        out.push((line + 1, name, raw.to_string()));
     }
     out
 }
@@ -390,4 +499,49 @@ mod tests {
     assert_eq!(module_depth("src/core/agent/mod.rs"), 2);
     assert_eq!(module_depth("src/core/agent/task.rs"), 3);
     assert_eq!(module_depth("src/ports/clock.rs"), 2);
+
+    // 정식 경로 · 중괄호 import · 줄을 넘는 경로의 양성 대조와, 같은 형제 모듈의 다른 하위
+    // 항목이 안 잡히는 음성 대조. 한 줄짜리 첫 마디 판정은 이 형태들을 전부 놓쳤다.
+    let src2 = "\
+use crate::file::identify_worker::IdentifyWorker;
+use crate::file::dispatch;
+use crate::host_api::webview;
+use crate::clipboard::ClipboardContext;
+use crate::plugin::manager::PluginManager;
+use crate::file::format::FileTarget;
+use crate::host_api::hooks::global::GlobalHookManager;
+use crate::ports::clipboard::ClipboardSystem;
+use crate::{core::CoreState, state::AppState};
+use crate::{file::{format::DetectDepth, dispatch::open_picker}};
+use crate::
+    app::App;
+use crate::{
+    core::origin::IntentOrigin,
+    intent::Intent,
+};
+fn m() { crate :: view :: x(); }
+fn n() -> crate::core::origin::FileDispatchOrigin { todo!() }
+";
+    let got2: Vec<(usize, &str)> = upper_references("src/core/attach.rs", src2)
+        .into_iter()
+        .map(|(l, n, _)| (l, n))
+        .collect();
+    assert_eq!(
+        got2,
+        vec![
+            (1, "file::identify_worker"),
+            (2, "file::dispatch"),
+            (3, "host_api::webview"),
+            (4, "clipboard"),
+            (5, "plugin"),
+            (9, "state"),
+            (10, "file::dispatch"),
+            (12, "app"),
+            (15, "intent"),
+            (17, "view"),
+        ],
+        "정식 경로(1–4 행) · plugin 별칭(5 행) · 중괄호 항목(9 · 10 행) · 줄을 넘는 경로(11–12 행 — \
+         줄 번호는 항목 자리인 12 행) · 여러 줄 중괄호(15 행) · 마디 사이 공백(17 행)이 잡혀야 \
+         한다. 6–8 · 18 행이 잡히면 앞마디 일치가 아니라 부분 일치가 된 것이다."
+    );
 }
