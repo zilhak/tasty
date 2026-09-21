@@ -586,14 +586,15 @@ fn apply_contribution(acc: &mut MergeAcc, c: &HookHandlerContribution) {
 }
 
 /// 한 handler id 의 3출처 contribution 을 patch semantics(Host → Plugin → User
-/// 순서로 `Some` 필드만 덮어씀)로 병합해 최종 `HookHandler` 를 만든다. 필수
-/// 필드(source/action) 누락이나 셸 불변식 위반이면 `None`(호출자는 drop) —
-/// 사유는 여기서 warn 로그로 남긴다.
+/// 순서로 `Some` 필드만 덮어씀)로 병합해 최종 `HookHandler` 를 만든다. 순서는 설치
+/// 순서가 아니라 [`merge_order`] 가 정한다. 필수 필드(source/action) 누락이나 셸
+/// 불변식 위반이면 `None`(호출자는 drop) — 사유는 여기서 warn 로그로 남긴다.
 fn merge_contribution(
     id: &HookHandlerId,
     contribs: &[HookHandlerContribution],
 ) -> Option<HookHandler> {
-    let base = contribs.first()?;
+    let ordered = merge_order(contribs);
+    let base = *ordered.first()?;
     let mut acc = MergeAcc {
         source: base.source,
         priority: base.priority,
@@ -602,7 +603,7 @@ fn merge_contribution(
         action: base.action.clone(),
         owner: base.owner.clone(),
     };
-    for c in contribs.iter().skip(1) {
+    for c in ordered.iter().skip(1) {
         apply_contribution(&mut acc, c);
     }
 
@@ -647,6 +648,21 @@ fn sort_handlers(v: &mut [HookHandler]) {
             .then_with(|| owner_rank(&a.owner).cmp(&owner_rank(&b.owner)))
             .then_with(|| a.id.cmp(&b.id))
     });
+}
+
+/// finalize 가 contribution 을 병합하는 순서 — Host → Plugin → User. 같은 owner 안에서는 설치
+/// 순서를 그대로 둔다(안정 정렬).
+///
+/// 병합은 "마지막 non-None 이 이긴다" 라서 순서가 곧 우선순위다. 설치 순서로 병합하면 user
+/// 설정을 plugin 보다 먼저 읽는 부팅(headless 는 plugin 을 필요할 때 띄운다)이나 plugin 을
+/// 껐다 켠 경우 plugin 의 값이 user patch 를 덮는다. user patch 는 host · plugin 의 값을
+/// 덮어쓰는 것이 뜻이므로([`UserHookHandlerUpsertDecl`]) 늘 마지막에 둔다. host 와 plugin 은
+/// 한 id 에 함께 오지 않는다 — id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈린다
+/// ([`install_host`] · [`install_plugin`]). 그래서 둘 사이 순서는 결과를 바꾸지 않는다.
+fn merge_order(contribs: &[HookHandlerContribution]) -> Vec<&HookHandlerContribution> {
+    let mut ordered: Vec<&HookHandlerContribution> = contribs.iter().collect();
+    ordered.sort_by_key(|c| std::cmp::Reverse(owner_rank(&c.owner)));
+    ordered
 }
 
 /// tie-break 시 owner 우선순위 — 작을수록 우선. `user > plugin > host`.

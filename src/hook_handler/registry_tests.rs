@@ -208,6 +208,68 @@ fn owner_tiebreak_user_gt_plugin_gt_host() {
 
 // ── user override (patch semantics) ───────────────────────────────────────
 
+/// plugin hook handler 를 patch 하는 user 설정. 부팅이 user 설정을 plugin 보다 먼저 읽는 경우와
+/// plugin 을 껐다 켠 경우 모두 이 값이 이겨야 한다(ADR-0430).
+const PLUGIN_PATCH_ID: &str = "com.example.hookp/notify";
+
+fn user_patch_for_plugin(dir: &tempfile::TempDir) -> std::path::PathBuf {
+    write_user_toml(
+        dir,
+        &format!(
+            r#"
+            [[handler]]
+            id = "{PLUGIN_PATCH_ID}"
+            priority = 10
+            display_name_i18n_key = "user.key"
+            "#
+        ),
+    )
+}
+
+fn plugin_notify() -> HookHandlerDecl<PluginHookHandlerActionDecl> {
+    let mut d = plugin_ipc("notify", HookSource::Webhook, 50, "notification.create");
+    d.display_name_i18n_key = Some("plugin.key".into());
+    d
+}
+
+#[test]
+fn a_user_patch_wins_over_a_plugin_installed_after_the_boot_load() {
+    let reg = HookHandlerRegistry::new();
+    load_host(&reg);
+    let dir = tempfile::tempdir().unwrap();
+    // headless 부팅 순서: host 기본값 + user 설정을 먼저 읽고, plugin 은 나중에 contribute 한다.
+    reg.install_user_config(&user_patch_for_plugin(&dir));
+    reg.install_plugin_handlers("com.example.hookp", &[plugin_notify()]);
+    let h = reg.get(&HookHandlerId::new(PLUGIN_PATCH_ID)).unwrap();
+    assert_eq!(h.priority, 10);
+    assert_eq!(h.display_name_i18n_key.as_deref(), Some("user.key"));
+    assert_eq!(h.owner, HookHandlerOwner::User);
+    // user 가 안 건드린 필드는 plugin 것이 base 로 남는다.
+    assert_eq!(h.source, HookSource::Webhook);
+}
+
+#[test]
+fn a_user_patch_wins_over_a_plugin_that_contributes_later_without_a_reload() {
+    let reg = HookHandlerRegistry::new();
+    load_host(&reg);
+    reg.install_plugin_handlers("com.example.hookp", &[plugin_notify()]);
+    let dir = tempfile::tempdir().unwrap();
+    reg.reload_user_config(&user_patch_for_plugin(&dir));
+    assert_eq!(
+        reg.get(&HookHandlerId::new(PLUGIN_PATCH_ID))
+            .unwrap()
+            .priority,
+        10
+    );
+    // plugin 을 껐다 켠다 — contribution 이 user 것 뒤에 다시 붙는다. reload 는 없다.
+    reg.uninstall_plugin("com.example.hookp");
+    reg.install_plugin_handlers("com.example.hookp", &[plugin_notify()]);
+    let h = reg.get(&HookHandlerId::new(PLUGIN_PATCH_ID)).unwrap();
+    assert_eq!(h.priority, 10);
+    assert_eq!(h.display_name_i18n_key.as_deref(), Some("user.key"));
+    assert_eq!(h.owner, HookHandlerOwner::User);
+}
+
 #[test]
 fn user_can_disable_host_handler() {
     let reg = HookHandlerRegistry::new();
