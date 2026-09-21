@@ -68,10 +68,26 @@
     끼지 않는다.
   - 잠금을 로그 파일에 걸지 않는 이유는 Windows 의 파일 잠금이 강제형이기 때문이다. 로그에
     공유 잠금을 걸면 다른 writer 의 append 가 막힌다.
-- **실패는 완료 통지를 막지 않는다.**
-  - 메타 파일을 못 열거나 잠금이 실패하면 잠금 없이 예전처럼 append 한다.
+- **배타 잠금은 기다리지 않는다.**
+  - 비우기는 `try_lock` 을 **200 ms** 동안 5 ms 간격으로 다시 시도한다. 못 잡으면 잠금 없이
+    비우고 누계는 **올리지 않는다.** 잠금 없이 잰 크기는 버린 양과 다를 수 있으므로, 틀린
+    수보다 "모른다" 를 남긴다. reader 에게는 위 두 번째 갈래다 — 새 어휘가 없다.
+  - 이유: 공유 잠금을 쥐는 쪽에는 reader 도 있다. 그 reader 의 출력 소비자가 멈추면 잠금이
+    계속 잡혀 있다. 블로킹 잠금이면 cap 에 닿은 writer — 곧 plugin 의 완료 통지 — 가 그 reader
+    가 풀 때까지 선다(Gate 4 리뷰 실측: 2 s 뒤에도 안 끝났다). 통지 지연의 상한을 reader 가
+    정하게 두지 않는다.
+  - 공유 잠금(append)은 기다린다. 배타를 쥐는 것은 비우는 writer 뿐이고, 그 구간은 자기
+    일(재기 · 비우기 · 누계 한 줄)로 끝난다.
+  - **잠금 대기 상한(200 ms)은 파생되지 않는다 — 근거로 고른 값이다.** 아래로 누르는 쪽은 append
+    의 공유 구간이다. 한 줄 write 한 번이라 µs 단위다(Gate 4 리뷰 실측: cap 아래 append 전체
+    11.6 µs). writer 끼리의 경합으로는 이 상한에 닿으면 안 되므로 네 자릿수 이상 크게 잡았다.
+    위로 누르는 쪽은 이 대기가 완료 통지 한 줄의 지연에 그대로 더해진다는 사실이다.
+  - Windows 도 같은 의미다. `File::try_lock` 은 std 의 크로스 플랫폼 API 라 cfg 분기가 없다.
+- **실패는 완료 통지를 막지도, 기다리게 하지도 않는다.**
+  - 메타 파일을 못 열거나 공유 잠금이 실패하면 잠금 없이 예전처럼 append 한다.
+  - 배타 잠금을 상한 안에 못 잡거나 실패하면 잠금 없이 비우고 누계는 안 올린다.
   - 누계 갱신이 실패하면 비우기는 그대로 한다(크기 축이 먼저다).
-  - 두 경우 다 `warn` 이 남는다. reader 쪽에서는 위 두 번째 갈래("모른다")로 드러난다.
+  - 모든 경우에 `warn` 이 남는다. reader 쪽에서는 위 두 번째 갈래("모른다")로 드러난다.
 - **세대 경계는 그대로다.** 메타 파일은 `notify/` 안에 있어서 부팅 청소가 함께 지운다. 새
   세대의 누계는 0 부터 다시 센다. reader 의 `next_offset` 은 **한 호스트 세대 안에서만**
   뜻이 있다(ADR-0344 의 보존 범위).
@@ -91,8 +107,12 @@
   섞이면, 그 writer 가 한 비우기는 누계에 안 잡힌다. 대부분은 reader 의 "모른다" 갈래로
   드러난다. 다만 비운 뒤 파일이 옛 위치를 넘어 다시 자랐으면 **감지되지 않는다.** 번들 plugin
   은 같은 `tasty-utils` 를 링크하고 함께 bump 되므로, 섞이는 것은 업그레이드 과도기뿐이다.
+- **잃은 것 — 오래 쥔 reader 가 정확성을 깎는다.** reader 가 공유 잠금을 200 ms 넘게 쥐고
+  있는 동안 비우기가 나면, 그 비우기는 누계에 안 잡힌다. 통지는 서지 않는 대신 그 reader 가
+  다음 재개에서 "모른다" 를 받는다. 그래서 reader 는 공유 잠금 구간을 짧게 해야 한다 — 누계와
+  로그를 읽어 **파일로 복사한 뒤** 풀고, 소비는 잠금 밖에서 한다(dev-guide 의 reader 절).
 - **운영 비용**: append 마다 메타 파일 open 한 번과 잠금 한 쌍이 든다. 완료 통지 빈도(분 단위)
-  에서는 무시할 만하다.
+  에서는 무시할 만하다. 비우기는 최악의 경우 200 ms 를 더 기다린다.
 
 ## Alternatives Considered
 
@@ -128,6 +148,10 @@
   `notify::tests::under_concurrent_writers_read_plus_skipped_equals_written` 이 빨개진다.
 - 누계가 더해지지 않고 덮어써지면
   `notify::tests::retention_start_accumulates_what_every_truncation_threw_away` 가 빨개진다.
+- 배타 잠금이 다시 블로킹이 되면(공유 잠금을 쥔 reader 가 비우는 writer 를 세우면)
+  `notify::tests::a_reader_holding_the_shared_lock_does_not_stall_a_truncating_writer` 가
+  시간 초과로 빨개진다. 같은 시험이 그때 누계를 안 올리는지와 reader 가 "모른다" 를
+  받는지도 본다.
 - 메타 한 줄의 폭이 값마다 달라지거나 앞자리 0 이 생기면
   `notify::tests::the_meta_line_has_a_fixed_width_and_no_leading_zeros` 가 빨개진다.
 - `notify_meta_path` 가 `<log>.meta` 말고 다른 모양을 만들면
@@ -138,9 +162,10 @@
 - **재개 reader 가 실제로 생기는가.** 지금 레포 안의 소비자는 `tail -F` 뿐이다. 재는 법:
   conductor 절차나 plugin 이 메타 파일을 읽기 시작하는지 본다. 둘 이상이 같은 절차를 따로
   구현하면 읽기 CLI 를 낼 때다.
-- **"모른다" 갈래가 실제로 자주 나는가**(버전 혼재나 잠금 실패). 재는 법: writer plugin
-  로그(`<home>/plugins-logs/<plugin id>.log`)에서 `retention_start NOT advanced` 또는
-  `lock failed` 줄을 센다.
+- **"모른다" 갈래가 실제로 자주 나는가**(버전 혼재 · 잠금 실패 · 잠금 대기 상한 초과). 재는 법:
+  writer plugin 로그(`<home>/plugins-logs/<plugin id>.log`)에서 `retention_start NOT advanced`,
+  `lock failed`, `still locked by another holder` 줄을 센다. 상한 초과가 reader 없이도 나면
+  200 ms 가 writer 끼리의 경합에 비해 작다는 뜻이다 — 그때 값을 다시 고른다.
 
 ## References
 
@@ -151,6 +176,7 @@
   [ADR-0341](0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md).
 - **코드 근거 (결정이 실현된 현재 위치)**: `crates/tasty-utils/src/notify.rs` 의
   `notify_meta_path` · `parse_retention_start` · `RETENTION_START_KEY` · `append_line_to` ·
-  `truncate_and_account` · `advance_retention_start` · `MetaLock`. reader 절차의 참조 구현은
+  `truncate_and_account` · `advance_retention_start` · `MetaLock` · `EXCLUSIVE_LOCK_BUDGET` ·
+  `EXCLUSIVE_LOCK_RETRY`. reader 절차의 참조 구현은
   같은 파일 `mod tests` 의 `resume` 이다.
 - 사용자 경로: [dev-guide/external-interaction/child-completion-notify-log.md](../dev-guide/external-interaction/child-completion-notify-log.md).

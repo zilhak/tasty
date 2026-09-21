@@ -74,7 +74,9 @@
 //! `docs/adr/0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md`.
 //!
 //! 이 수가 **정확**하려면 비우기가 append 와 겹치면 안 된다. 그래서 메타 파일에 advisory
-//! 잠금을 건다 — append 는 공유, 비우기(크기 재기 · 비우기 · 누계 갱신)는 배타. 잠금
+//! 잠금을 건다 — append 는 공유, 비우기(크기 재기 · 비우기 · 누계 갱신)는 배타. 배타는
+//! 기다리지 않는다: 유한 시간만 시도하고, 못 잡으면 잠금 없이 비우되 누계는 안 올린다
+//! (공유 잠금을 쥔 reader 가 멈춰도 완료 통지가 서지 않게 한다). 잠금
 //! 대상이 로그가 아니라 메타인 이유는 Windows 의 잠금이 강제형이라 로그에 걸면 다른
 //! writer 의 append 가 막히기 때문이다. 줄 형식과 경로는 안 바뀌므로 `tail -n0 -F` 소비자는
 //! 이 파일을 몰라도 된다.
@@ -189,9 +191,9 @@ pub fn append_notify_line(caller_surface: u32, line: &str) -> io::Result<()> {
 /// 비우는 일은 쓰기와 **분리한다.** 판정과 실행 사이에 다른 writer 가 이미 비웠을 수
 /// 있어 같은 핸들로 한 번 더 재고 비운다. 재기와 비우기는 메타 파일의 **배타** 잠금
 /// 아래에서, append 는 **공유** 잠금 아래에서 하므로 둘이 겹치지 않는다 — 비우기가 잰
-/// 크기가 곧 버린 양이고, 그 수가 `retention_start` 에 더해진다. 잠금을 모르는 writer
-/// (메타 이전 버전)가 섞이거나 잠금이 실패하면 예전 창이 돌아온다: 비우기 직전에
-/// append 된 줄이 누계에 안 잡힌 채 사라진다. 그때도 사라지는 것은 줄 단위이고 줄
+/// 크기가 곧 버린 양이고, 그 수가 `retention_start` 에 더해진다. 배타 잠금을 유한 시간
+/// 안에 못 잡거나 잠금을 모르는 writer(메타 이전 버전)가 비우면 그 비우기는 누계에 안
+/// 잡힌다 — 재개 reader 에게 "모른다" 로 보인다. 그때도 사라지는 것은 줄 단위이고 줄
 /// 중간이 잘리지는 않는다.
 fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
     if let Some(dir) = path.parent() {
@@ -221,8 +223,9 @@ fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
 }
 
 /// 메타 파일을 연다(없으면 빈 파일로 만든다). 못 열면 잠금·누계 없이 진행한다 — 완료
-/// 통지를 메타 때문에 잃지 않는 것이 우선이다. 그 대가는 이번 비우기가 누계에 안 잡히는
-/// 것이고, 재개하는 reader 는 그것을 "계약 밖 비우기" 로 알아챈다(ADR-0415).
+/// 통지를 메타 때문에 잃지도, **기다리지도** 않는 것이 우선이다. 같은 이유로 비우기는
+/// 배타 잠금을 유한 시간만 시도한다([`MetaLock::exclusive`]). 그 대가는 이번 비우기가
+/// 누계에 안 잡히는 것이고, 재개하는 reader 는 그것을 "계약 밖 비우기" 로 알아챈다(ADR-0415).
 fn open_meta(meta_path: &Path) -> Option<std::fs::File> {
     match std::fs::OpenOptions::new()
         .create(true)
@@ -243,7 +246,24 @@ fn open_meta(meta_path: &Path) -> Option<std::fs::File> {
     }
 }
 
+/// 비우기가 배타 잠금을 기다리는 상한. 이 값은 **파생되지 않는다** — 근거로 고른 값이다
+/// (ADR-0415 "잠금 대기 상한").
+///
+/// - 아래로 누르는 쪽: append 가 공유 잠금을 쥐는 구간은 한 줄 write 한 번이라 µs 단위다
+///   (Gate 4 리뷰 실측: cap 아래 append 전체가 11.6 µs). writer 끼리의 경합으로는 이 상한에 닿지 않아야 한다 —
+///   닿으면 정상 운용에서도 누계가 "모른다" 로 떨어진다. 그 구간보다 네 자릿수 이상 크다.
+/// - 위로 누르는 쪽: 이 대기는 완료 통지 한 줄의 지연에 그대로 더해진다. 통지는 사람이
+///   기다리는 신호라 그 지연이 눈에 띄지 않을 만큼 짧아야 한다.
+const EXCLUSIVE_LOCK_BUDGET: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// 배타 잠금 재시도 간격. append 의 공유 구간(µs)보다 훨씬 길게 잡아 빈 틈을 여러 번
+/// 본다. 상한 안에서 시도 횟수는 40 번이다.
+const EXCLUSIVE_LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(5);
+
 /// 메타 파일 advisory 잠금. drop 에서 푼다(핸들을 닫아도 풀리지만 핸들 수명이 더 길다).
+///
+/// 공유 잠금은 기다린다 — 배타를 쥐는 것은 비우는 writer 뿐이고 그 구간은 자기 일(재기 ·
+/// 비우기 · 누계 한 줄)로 끝난다. 배타 쪽은 기다리지 않는다([`MetaLock::exclusive`]).
 struct MetaLock<'a>(&'a std::fs::File);
 
 impl<'a> MetaLock<'a> {
@@ -260,15 +280,38 @@ impl<'a> MetaLock<'a> {
         }
     }
 
+    /// 배타 잠금은 **기다리지 않는다** — `try_lock` 을 [`EXCLUSIVE_LOCK_BUDGET`] 동안
+    /// [`EXCLUSIVE_LOCK_RETRY`] 간격으로 다시 시도하고, 못 잡으면 `None` 이다.
+    ///
+    /// 공유 잠금을 쥐는 쪽에는 reader 도 있다. 그 reader 의 출력 소비자가 멈추면 잠금이
+    /// 계속 잡혀 있고, 블로킹 `lock()` 이면 cap 에 닿은 writer — 곧 plugin 의 완료 통지
+    /// 경로 — 가 그 reader 가 풀 때까지 선다. 통지 지연의 상한을 reader 가 정하게 두지
+    /// 않는다. 못 잡으면 호출자가 잠금 없이 비우고 누계를 올리지 않는다(재개 reader 에게는
+    /// 계약의 "모른다" 갈래다 — ADR-0415).
     fn exclusive(file: &'a std::fs::File, meta_path: &Path) -> Option<Self> {
-        match file.lock() {
-            Ok(()) => Some(Self(file)),
-            Err(e) => {
-                tracing::warn!(
-                    "notify meta {} exclusive lock failed: {e}",
-                    meta_path.display()
-                );
-                None
+        let deadline = std::time::Instant::now() + EXCLUSIVE_LOCK_BUDGET;
+        loop {
+            match file.try_lock() {
+                Ok(()) => return Some(Self(file)),
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    if std::time::Instant::now() >= deadline {
+                        tracing::warn!(
+                            "notify meta {} is still locked by another holder after {:?} — \
+                             truncating without the lock",
+                            meta_path.display(),
+                            EXCLUSIVE_LOCK_BUDGET
+                        );
+                        return None;
+                    }
+                    std::thread::sleep(EXCLUSIVE_LOCK_RETRY);
+                }
+                Err(std::fs::TryLockError::Error(e)) => {
+                    tracing::warn!(
+                        "notify meta {} exclusive lock failed: {e}",
+                        meta_path.display()
+                    );
+                    return None;
+                }
             }
         }
     }
@@ -284,16 +327,17 @@ impl Drop for MetaLock<'_> {
 
 /// 배타 잠금 아래에서 비우고, 버린 양을 누계에 더하고, 로그에 남긴다.
 ///
-/// 잠금을 못 잡아도 비우기는 한다 — 크기 축(ADR-0344)이 먼저다. 그때 수는 정확하지 않을
-/// 수 있고 그 사실이 warn 로 남는다.
+/// 잠금을 못 잡아도 비우기는 한다 — 크기 축(ADR-0344)이 먼저다. 그때는 누계를 **올리지
+/// 않는다**: 잠금 없이 잰 크기는 버린 양과 다를 수 있고, 틀린 수보다 "모른다" 가 낫다.
+/// 재개 reader 는 그 비우기를 계약의 "모른다" 갈래로 본다. 그 사실이 warn 로 남는다.
 fn truncate_and_account(path: &Path, cap: u64, meta: Option<&std::fs::File>, meta_path: &Path) {
-    let _exclusive = meta.and_then(|m| MetaLock::exclusive(m, meta_path));
+    let exclusive = meta.and_then(|m| MetaLock::exclusive(m, meta_path));
     let Some(discarded) = truncate_over_cap(path, cap) else {
         return;
     };
-    let retention_start = match meta {
-        Some(m) => advance_retention_start(m, discarded, meta_path),
-        None => None,
+    let retention_start = match (&exclusive, meta) {
+        (Some(_), Some(m)) => advance_retention_start(m, discarded, meta_path),
+        _ => None,
     };
     // 버린 양을 **로그에** 남긴다 — 이 파일 자신에는 안 쓴다. 읽는 쪽 계약은
     // "한 줄 = 완료 통지" 이므로 여기에 메타 줄을 끼우면 그 줄이 완료로 읽힌다
@@ -725,6 +769,69 @@ mod tests {
         assert_eq!(parse_retention_start(&big), u64::MAX);
         assert_eq!(parse_retention_start(""), 0);
         assert_eq!(parse_retention_start("other=3\n"), 0);
+    }
+
+    // 공유 잠금을 오래 쥔 reader 가 있어도 cap 에 닿은 writer — 완료 통지 경로 — 는 서지
+    // 않는다. 배타 잠금은 유한 시간만 시도하고, 못 잡으면 잠금 없이 비우되 누계는 안
+    // 올린다. 그 비우기는 재개 reader 에게 "모른다" 로 보인다. 배타 잠금을 블로킹 `lock()`
+    // 으로 되돌리면 이 시험의 append 가 잠금이 풀릴 때까지 돌아오지 않아 시간 초과로 죽는다.
+    #[test]
+    fn a_reader_holding_the_shared_lock_does_not_stall_a_truncating_writer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("held.log");
+        append_line_to(&log, "read-before-hold", 1 << 20).unwrap();
+        let before = resume(&log, 0);
+        std::fs::write(&log, vec![b'x'; 300]).unwrap();
+        // reader 가 공유 잠금을 쥐고 멈춘 상태.
+        let meta = std::fs::File::open(notify_meta_path(&log)).unwrap();
+        meta.lock_shared().unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let writer_log = log.clone();
+        let started = std::time::Instant::now();
+        // scope 가 아니라 떼어 낸 스레드다 — 되돌린 코드에서 이 시험이 죽을 때 막힌 writer
+        // 를 join 하느라 시험 자체가 멈추지 않게 한다.
+        std::thread::spawn(move || {
+            let r = append_line_to(&writer_log, "after-cap", 256);
+            // 수신 쪽이 이미 시간 초과로 떠났으면 보낼 곳이 없다 — 그 결과는 버린다.
+            tx.send(r.is_ok()).ok();
+        });
+        let finished = rx.recv_timeout(EXCLUSIVE_LOCK_BUDGET * 10);
+        let elapsed = started.elapsed();
+        assert_eq!(
+            finished,
+            Ok(true),
+            "공유 잠금을 쥔 reader 때문에 cap 을 넘긴 append 가 {elapsed:?} 뒤에도 안 끝났다"
+        );
+        assert!(
+            elapsed >= EXCLUSIVE_LOCK_BUDGET,
+            "재시도 없이 바로 포기했다: {elapsed:?}"
+        );
+        meta.unlock().unwrap();
+
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "after-cap\n");
+        let meta_text = std::fs::read_to_string(notify_meta_path(&log)).unwrap();
+        assert_eq!(
+            parse_retention_start(&meta_text),
+            0,
+            "잠금 없이 잰 수로 누계를 올렸다"
+        );
+        let after = resume(&log, before.next_offset);
+        assert!(after.truncated);
+        assert_eq!(after.skipped, None, "누계 밖 비우기는 '모른다' 여야 한다");
+        assert_eq!(after.lines, ["after-cap"]);
+    }
+
+    // 잠금 대기 상한과 재시도 간격은 ADR-0415 와 dev-guide 가 값으로 적는다(200 ms · 5 ms ·
+    // 40 번). 그 사본들의 판정기다 — 값을 바꾸면 여기가 빨개지고, 그때 두 문서를 같이 고친다.
+    #[test]
+    fn the_exclusive_lock_budget_matches_the_documented_values() {
+        assert_eq!(EXCLUSIVE_LOCK_BUDGET, std::time::Duration::from_millis(200));
+        assert_eq!(EXCLUSIVE_LOCK_RETRY, std::time::Duration::from_millis(5));
+        assert_eq!(
+            EXCLUSIVE_LOCK_BUDGET.as_millis() / EXCLUSIVE_LOCK_RETRY.as_millis(),
+            40
+        );
     }
 
     #[test]

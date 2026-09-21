@@ -92,9 +92,11 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   비우기는 쓰기와 **분리된 단계**이고, 별도 핸들에서 크기를 다시 재고 그때도 cap 을 넘을
   때만 실행한다. 재기 · 비우기 · 누계 갱신은 메타 파일의 **배타** advisory 잠금 아래에서,
   append 는 **공유** 잠금 아래에서 하므로 둘이 겹치지 않는다 — 비우기가 잰 크기가 곧 버린
-  양이다. 잠금을 모르는 writer(메타 이전 plugin)가 섞이거나 잠금이 실패하면 예전 창이
-  돌아온다: 비우기 직전에 append 된 줄이 누계에 안 잡힌 채 사라진다. 그때도 사라지는 단위는
-  **줄**이다(줄 중간이 잘리지 않는다).
+  양이다. 배타 잠금은 **기다리지 않는다**: 200 ms 동안 다시 시도하고, 못 잡으면 잠금 없이
+  비우되 누계는 **안 올린다**(공유 잠금을 쥔 reader 가 멈춰도 완료 통지가 서지 않게 한다).
+  그 비우기와 잠금을 모르는 writer(메타 이전 plugin)의 비우기는 누계에 안 잡힌다 — 재개
+  reader 에게는 "모른다" 로 보인다. 어느 경우든 사라지는 단위는 **줄**이다(줄 중간이 잘리지
+  않는다).
 
 - **재개하는 reader — `<caller_surface>.log.meta`**: `tail -F` 는 arm 된 동안만 비우기를
   따라간다. 멈췄다 다시 붙는 reader 는 그 사이 무엇을 잃었는지 옆 메타 파일로 안다. 정본은
@@ -112,20 +114,26 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
   - 정확한 수가 필요하면 누계와 로그를 메타 파일의 **공유** 잠금 아래에서 함께 읽는다
     (Linux: `flock -s "$f.meta" …`). 잠금 없이 읽어도 값이 깨지지는 않는다 — 메타 줄은 늘
     같은 폭이라 제자리 덮어쓰기가 파일을 줄이지 않는다.
+  - **공유 잠금 구간은 짧게 한다.** 잠금 안에서는 누계와 로그를 **파일로 복사만** 하고, 풀고
+    나서 소비한다. 잠금을 쥔 채 출력을 파이프로 흘리면 소비자가 멈출 때 잠금도 같이 잡혀
+    있다. 그 동안 비우기는 200 ms 를 기다린 뒤 잠금 없이 진행하고, 그 비우기는 누계에 안
+    잡혀 **이 reader 가 다음 재개에서 "모른다" 를 받는다.** 완료 통지 자체는 서지 않는다.
   - 예 — 셸 reader 한 번의 재개(Linux, `off` 는 직전에 들고 있던 `next_offset`):
 
     ```sh
-    f="$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log"
-    flock -s "$f.meta" sh -c '
+    f="$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log"; chunk=$(mktemp)
+    at=$(flock -s "$f.meta" sh -c '
       base=$(sed -n "s/^retention_start=//p" "$1.meta" 2>/dev/null); base=$((${base:-0}))
       len=$(stat -c %s "$1" 2>/dev/null || echo 0); off=$2
       if [ "$off" -lt "$base" ]; then echo "skipped=$((base - off))" >&2; pos=0
       elif [ $((off - base)) -gt "$len" ]; then echo "skipped=unknown" >&2; pos=0
       else pos=$((off - base)); fi
-      tail -c +$((pos + 1)) "$1"' _ "$f" "$off"
+      tail -c +$((pos + 1)) "$1" | head -c $((len - pos)) > "$3"
+      echo $((base + pos))' _ "$f" "$off" "$chunk")
+    cat "$chunk"   # 공유 잠금은 이미 풀렸다 — 소비는 잠금 밖에서 한다
     ```
 
-    출력한 바이트 중 마지막 개행까지의 길이를 `base + pos` 에 더한 값이 다음 `next_offset` 이다.
+    `$chunk` 의 마지막 개행까지의 바이트 수를 `$at` 에 더한 값이 다음 `next_offset` 이다.
 - **호스트 부팅 시 전량 삭제**: 호스트는 자기 데이터 루트의 주인이 되는 순간 `notify/`
   디렉토리를 **통째로 지운다.** surface_id 는 재시작마다 **1 부터 다시** 발급되므로
   (`IdGenerator::next_surface`) 이전 실행이 남긴 파일과 이번 실행의 파일은 **이름이

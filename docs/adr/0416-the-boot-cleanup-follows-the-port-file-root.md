@@ -53,7 +53,11 @@ reader(conductor 셸)는 호스트가 주입한 `TASTY_PARENT_HOME` 을 보고, 
 - **잃은 것 — 루트 밖 포트 파일로 뜬 호스트는 자기 세대 경계를 못 만든다.** 그 호스트의
   writer 는 공유 루트의 `notify/` 에 쓰는데, 그 호스트는 그 디렉토리를 지우지 않는다. 그래서
   이전 실행의 파일이 남을 수 있다. `tail -n0 -F` reader 는 arm 시점 이후만 읽으므로 영향이
-  없다. 파일 처음부터 읽는 reader 는 과거 줄을 볼 수 있다. 테스트 하네스(`tests/common` 이
+  없다. 파일 처음부터 읽는 reader 는 과거 줄을 볼 수 있다. 옆 메타 파일의 누계
+  (`retention_start`, [ADR-0415](0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md))도
+  이전 실행 값에서 이어지므로, **청소 없는 루트에서 새로 붙는 reader 는 0 이 아니라 현재
+  `retention_start` 에서 시작해야 한다** — 0 에서 시작하면 이번 세대에 잃은 것이 없는데도
+  `truncated` 와 이전 세대 누계만큼의 `skipped` 를 받는다. 테스트 하네스(`tests/common` 이
   포트 파일을 임시 디렉토리에, 홈을 새 격리 디렉토리에 둔다)는 홈이 매번 새것이라 지울 것이
   애초에 없다.
 - **잃은 것**: 두 호스트가 한 루트를 공유할 때 생기는 이름 겹침(같은 surface 번호의 줄이 한
