@@ -3185,15 +3185,10 @@ mod forward_exec_tests {
             serde_json::Value,
             &serde_json::Value,
         ) -> tasty_ipc::protocol::JsonRpcResponse;
+        type MakeOp = Box<dyn Fn(u32) -> StructuralOp>;
+        type MakeParams = Box<dyn Fn(u32, u32) -> serde_json::Value>;
         // (이름, forward op 을 만드는 함수, IPC 핸들러, IPC params 를 만드는 함수)
-        #[allow(clippy::type_complexity)]
-        // 이유: 시험 표의 한 행이다 — 이름을 따로 두면 표가 흩어진다.
-        let cases: Vec<(
-            &str,
-            Box<dyn Fn(u32) -> StructuralOp>,
-            Ipc,
-            Box<dyn Fn(u32, u32) -> serde_json::Value>,
-        )> = vec![
+        let cases: Vec<(&str, MakeOp, Ipc, MakeParams)> = vec![
             (
                 "new tab of an unknown kind",
                 Box::new(|a| StructuralOp::NewTab {
