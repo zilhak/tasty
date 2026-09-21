@@ -101,7 +101,7 @@ fn apply_structural_ops(
     engine: &mut CoreState,
     outcome: &mut PumpOutcome,
 ) {
-    for (client_id, op_id, op) in std::mem::take(&mut outcome.structural_ops) {
+    for (client_id, op_id, op, origin) in std::mem::take(&mut outcome.structural_ops) {
         // mirror client 가 forward 한 구조 op — anchor 워크스페이스를 그
         // client 가 점유(holder)할 때만 실행하고 StructuralResult 로 회신,
         // 성공 시 StructuralDelta 로 역반영(3단계). 순서: result → delta →
@@ -114,6 +114,7 @@ fn apply_structural_ops(
                     state,
                     engine,
                     &op,
+                    origin,
                 ) {
                     Ok(delta) => (true, None, delta),
                     Err(reason) => (false, Some(reason), None),

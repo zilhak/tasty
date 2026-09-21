@@ -24,6 +24,7 @@
 
 - 복원을 트리거하는 CLI/IPC 없음 (`RestoreClosedItem` intent 는 사용자 단축키 전용).
 - **에이전트가 닫은 항목은 스택에 안 들어간다** — IPC `surface.close` 는 `save_snapshot=false`, `tab.close`/`pane.close`(DomainIntent)는 스냅샷 경로 자체가 없다. 스냅샷 push 는 사용자 단축키/마우스 닫기 경로에서만.
+- **원격 attach 로 forward 된 close 도 같은 규칙이다** — 서버는 mirror 에서 온 close 를 요청 주체(`origin`)로 가르고, 원격 사용자의 손 조작만 스냅샷한다. 원격 에이전트의 CLI/IPC close 는 서버 스택에도 안 들어간다([remote-attach](../remote-attach/index.md), [ADR-0480](../../adr/0480-a-forwarded-close-carries-who-asked-for-it.md)).
 
 ## 비-목표
 

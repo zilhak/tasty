@@ -75,12 +75,19 @@ pub struct PumpOutcome {
     /// In workspace mode the bytes are surface-prefixed (`decode_mux`); the main
     /// loop demuxes based on whether the client holds a workspace.
     pub input_frames: Vec<(StreamClientId, Vec<u8>)>,
-    /// `(client_id, op_id, op)` structural-op forward requests from mirror
+    /// `(client_id, op_id, op, origin)` structural-op forward requests from mirror
     /// clients (a mirror workspace's split/new-tab/close/move, forwarded to run
     /// on this authoritative instance). The main loop verifies the client is the
     /// workspace holder, executes via the existing IPC handlers, and replies with
     /// a [`StreamControl::StructuralResult`](crate::stream::StreamControl).
-    pub structural_ops: Vec<(StreamClientId, u64, crate::stream::StructuralOp)>,
+    /// `origin` is already resolved ([`ForwardOrigin::of_wire`](crate::stream::ForwardOrigin::of_wire)
+    /// — an absent wire field is a user's op), so no consumer reads the option.
+    pub structural_ops: Vec<(
+        StreamClientId,
+        u64,
+        crate::stream::StructuralOp,
+        crate::stream::ForwardOrigin,
+    )>,
     /// `(client_id, remote surface_id, cols, rows)` client-driven resize requests
     /// from mirror clients ([`StreamControl::ClientResize`](crate::stream::StreamControl)).
     /// The main loop verifies the client is the anchor surface's workspace holder,
@@ -747,9 +754,16 @@ impl StreamHub {
                             // all falls to `Err` and is tried against the screenshot
                             // capture-upload mini-protocol before being dropped.
                             match serde_json::from_slice(&frame.payload) {
-                                Ok(crate::stream::StreamControl::StructuralOp { op_id, op }) => {
-                                    out.structural_ops.push((client_id, op_id, op))
-                                }
+                                Ok(crate::stream::StreamControl::StructuralOp {
+                                    op_id,
+                                    op,
+                                    origin,
+                                }) => out.structural_ops.push((
+                                    client_id,
+                                    op_id,
+                                    op,
+                                    crate::stream::ForwardOrigin::of_wire(origin),
+                                )),
                                 Ok(crate::stream::StreamControl::ClientResize {
                                     surface_id,
                                     cols,
@@ -1481,6 +1495,7 @@ mod tests {
         let payload = serde_json::to_vec(&StreamControl::StructuralOp {
             op_id: 3,
             op: op.clone(),
+            origin: Some(crate::stream::ForwardOrigin::Agent),
         })
         .unwrap();
         tx.send(StreamInbound::Frame {
@@ -1489,7 +1504,10 @@ mod tests {
         })
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
-        assert_eq!(out.structural_ops, vec![(8u32, 3u64, op)]);
+        assert_eq!(
+            out.structural_ops,
+            vec![(8u32, 3u64, op, crate::stream::ForwardOrigin::Agent)]
+        );
         // Not misclassified as input.
         assert!(out.input_frames.is_empty());
     }

@@ -744,11 +744,16 @@ pub(crate) struct ForwardedDelta {
 ///
 /// 호출자(메인루프)가 [`StreamControl::StructuralResult`] 로 회신한 **뒤** delta 를 push
 /// 하고, 그 다음 added_terminals 를 tap 한다(순서: result → delta → snapshot).
+///
+/// `origin` 은 client 가 그 op 를 누구의 요청으로 보냈는가다(wire 에 칸이 없으면 이미
+/// `User` 로 풀려 온다). close 계열만 읽는다 — `User` 면 서버 복원 스택에 남기고,
+/// `Agent` 면 남기지 않는다(`docs/identity.md` 원칙 1, ADR-0480).
 pub(crate) fn execute_forwarded_structural_op(
     core: &mut crate::core::Core,
     state: &mut dyn crate::core::cascade_window::CascadeWindow,
     engine: &mut CoreState,
     op: &StructuralOp,
+    origin: tasty_ipc::stream::ForwardOrigin,
 ) -> Result<Option<ForwardedDelta>, String> {
     use crate::core::structural_exec::{self as exec, SplitLevel, SplitRequest};
     use serde_json::json;
@@ -773,6 +778,9 @@ pub(crate) fn execute_forwarded_structural_op(
     // `PluginManager::drop_egui_mesh_frame` 을 트리거하는 신호(위 `ForwardedDelta` 문서
     // 참조).
     let mut converted_surface: Option<SurfaceId> = None;
+    // 복원 스택에 남기는가 — 원격 **사용자**의 손 조작일 때만이다. 원격 에이전트의
+    // close 를 남기면 서버 앞 사용자의 Ctrl+Shift+T 가 에이전트가 닫은 것을 되살린다.
+    let restorable = origin == tasty_ipc::stream::ForwardOrigin::User;
 
     let outcome: Result<(), String> = match op {
         StructuralOp::SplitSurface {
@@ -855,20 +863,28 @@ pub(crate) fn execute_forwarded_structural_op(
         StructuralOp::CloseSurface { surface_id } => {
             // holder 자신이 보낸 close 라 IPC 진입점의 하드 점유 검사를 지나지 않고 도메인
             // 실행을 직접 부른다 — 면제를 params 플래그로 두면 아무 에이전트나 같은 키를 실어
-            // 우회한다. save_snapshot=true: 원격 **사용자**의 손 조작이라 되돌릴 수 있어야
-            // 한다(ADR-0264 결정 4, `exec::close_surface` 의 doc).
-            forward_result(exec::close_surface(core, state, engine, *surface_id, true))
+            // 우회한다. save_snapshot 은 op 의 origin 이 정한다: 원격 **사용자**의 손
+            // 조작이면 되돌릴 수 있어야 하고(ADR-0264 결정 4), 원격 에이전트의 close 면
+            // 사용자 복원 스택에 닿지 않는다(ADR-0480).
+            forward_result(exec::close_surface(
+                core,
+                state,
+                engine,
+                *surface_id,
+                restorable,
+            ))
         }
         StructuralOp::CloseTab { anchor_surface_id } => {
             let tab_id = engine
                 .find_tab_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} tab not found"))?;
-            // forward 된 close 는 원격 **사용자**의 손 조작이라 되돌릴 수 있어야 한다
-            // (ADR-0264 결정 4). `CloseSurface` 는 holder 진입점이 save_snapshot=true 로
-            // 갈라 들어가지만 `apply_close_tab` 에는 그 축이 없으므로, 여기서 핸들러가
-            // 트리를 건드리기 **전에** 직접 캡처한다.
-            if let Some(item) = engine
-                .find_pane_for_tab(tab_id)
+            // 원격 **사용자**가 손으로 닫은 것은 되돌릴 수 있어야 한다(ADR-0264 결정 4).
+            // `CloseSurface` 는 holder 진입점이 save_snapshot 인자로 갈라 들어가지만
+            // `apply_close_tab` 에는 그 축이 없으므로, 여기서 핸들러가 트리를 건드리기
+            // **전에** 직접 캡처한다. 원격 에이전트의 close 는 캡처하지 않는다(ADR-0480).
+            if let Some(item) = restorable
+                .then(|| engine.find_pane_for_tab(tab_id))
+                .flatten()
                 .and_then(|pane_id| {
                     let idx = engine
                         .find_pane_by_id(pane_id)?
@@ -889,7 +905,10 @@ pub(crate) fn execute_forwarded_structural_op(
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
             // 위 `CloseTab` 과 같은 근거. pane 캡처는 `close_pane` 이 트리를 재배치하기
             // 전이어야 split context 가 남는다(`capture_closed_pane` 의 doc).
-            if let Some(item) = engine.capture_closed_pane(pane_id) {
+            if let Some(item) = restorable
+                .then(|| engine.capture_closed_pane(pane_id))
+                .flatten()
+            {
                 engine.push_closed_item(item);
             }
             forward_result(exec::close_pane(core, state, engine, pane_id))
@@ -2530,7 +2549,7 @@ mod forward_exec_tests {
     //! kind 는 `Err(reason)` 으로 실패 회신된다.
     use super::execute_forwarded_structural_op;
     use crate::state::AppState;
-    use tasty_ipc::stream::{SplitAxis, StructuralOp};
+    use tasty_ipc::stream::{ForwardOrigin, SplitAxis, StructuralOp};
     use tasty_terminal::Terminal;
 
     fn make_core_state() -> (
@@ -2610,7 +2629,13 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         let fd = r
             .expect("expected Ok")
             .expect("split 성공은 delta 를 동반해야 한다");
@@ -2650,6 +2675,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("split ok")
         .expect("split delta");
@@ -2661,6 +2687,7 @@ mod forward_exec_tests {
             &mut state,
             &mut engine,
             &StructuralOp::CloseSurface { surface_id: b },
+            ForwardOrigin::User,
         )
         .expect("forwarded close must succeed");
         assert_eq!(
@@ -2685,6 +2712,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("new tab ok")
         .expect("new tab delta");
@@ -2698,6 +2726,7 @@ mod forward_exec_tests {
             &StructuralOp::CloseTab {
                 anchor_surface_id: b,
             },
+            ForwardOrigin::User,
         )
         .expect("forwarded close must succeed");
         assert_eq!(
@@ -2730,6 +2759,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("split pane ok")
         .expect("split pane delta");
@@ -2743,6 +2773,7 @@ mod forward_exec_tests {
             &StructuralOp::ClosePane {
                 anchor_surface_id: b,
             },
+            ForwardOrigin::User,
         )
         .expect("forwarded close must succeed");
         assert_eq!(
@@ -2756,6 +2787,86 @@ mod forward_exec_tests {
                 Some(crate::model::ClosedItem::Pane { .. })
             ),
             "pane 단위로(split context 를 실어) 캡처돼야 한다 — 재배치 전 캡처의 증거"
+        );
+    }
+
+    /// 원격 **에이전트**가 보낸 close 는 서버 복원 스택에 아무것도 남기지 않는다 — 세
+    /// close 모두. 복원 스택은 사용자 상태라 에이전트 행동의 부수효과가 닿으면 안 되고
+    /// (`docs/identity.md` 원칙 1), 남기면 서버 앞 사용자의 Ctrl+Shift+T 가 에이전트가
+    /// 닫은 것을 자기 워크스페이스에 되살린다(ADR-0480). 같은 모양의 op 를 `User` 로
+    /// 보내면 남는다는 것은 위 세 시험이 본다 — 둘을 가르는 것이 origin 하나뿐이다.
+    #[test]
+    fn a_forwarded_agent_close_leaves_no_snapshot() {
+        let (mut core, mut state, mut engine, _home) = make_core_state();
+        let a = seed(&mut engine);
+        let creates = [
+            StructuralOp::SplitSurface {
+                surface_id: a,
+                direction: SplitAxis::Horizontal,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+            StructuralOp::NewTab {
+                anchor_surface_id: a,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+            StructuralOp::SplitPane {
+                anchor_surface_id: a,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+        ];
+        let mut added = Vec::new();
+        for op in &creates {
+            let fd = execute_forwarded_structural_op(
+                &mut core,
+                &mut state,
+                &mut engine,
+                op,
+                ForwardOrigin::User,
+            )
+            .expect("create ok")
+            .expect("create delta");
+            added.push(fd.added_terminals[0]);
+        }
+        let closes = [
+            StructuralOp::CloseSurface {
+                surface_id: added[0],
+            },
+            StructuralOp::CloseTab {
+                anchor_surface_id: added[1],
+            },
+            StructuralOp::ClosePane {
+                anchor_surface_id: added[2],
+            },
+        ];
+        let before = engine.closed_items.len();
+        for op in &closes {
+            execute_forwarded_structural_op(
+                &mut core,
+                &mut state,
+                &mut engine,
+                op,
+                ForwardOrigin::Agent,
+            )
+            .unwrap_or_else(|e| panic!("agent close {op:?} must succeed: {e}"));
+            assert!(
+                engine.find_workspace_index_for_surface(a).is_some(),
+                "시험 전제: anchor 가 살아 있어 워크스페이스 통째 close 갈래가 아니어야 한다"
+            );
+        }
+        for sid in &added {
+            assert!(
+                engine.find_workspace_index_for_surface(*sid).is_none(),
+                "시험 전제: 에이전트 close 가 실제로 닫았어야 한다 — surface {sid}"
+            );
+        }
+        assert_eq!(
+            engine.closed_items.len(),
+            before,
+            "원격 에이전트의 close 는 서버 복원 스택에 아무것도 남기지 않아야 한다"
         );
     }
 
@@ -2775,6 +2886,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("split ok")
         .expect("split delta");
@@ -2812,6 +2924,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("new tab ok")
         .expect("new tab delta");
@@ -2823,6 +2936,7 @@ mod forward_exec_tests {
             &StructuralOp::CloseTab {
                 anchor_surface_id: b,
             },
+            ForwardOrigin::User,
         )
         .expect("close ok");
 
@@ -2834,6 +2948,7 @@ mod forward_exec_tests {
             &StructuralOp::RestoreClosedItem {
                 anchor_surface_id: a,
             },
+            ForwardOrigin::User,
         )
         .expect("restore must succeed")
         .expect("delta must be produced");
@@ -2862,6 +2977,7 @@ mod forward_exec_tests {
             &StructuralOp::RestoreClosedItem {
                 anchor_surface_id: a,
             },
+            ForwardOrigin::User,
         )
         .expect_err("빈 스택은 Err(reason) 이어야 한다");
         assert_eq!(err, tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY);
@@ -2884,6 +3000,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("split pane ok")
         .expect("split pane delta");
@@ -2895,6 +3012,7 @@ mod forward_exec_tests {
             &StructuralOp::ClosePane {
                 anchor_surface_id: b,
             },
+            ForwardOrigin::User,
         )
         .expect("close pane ok");
 
@@ -2911,6 +3029,7 @@ mod forward_exec_tests {
             &StructuralOp::RestoreClosedItem {
                 anchor_surface_id: a,
             },
+            ForwardOrigin::User,
         )
         .expect("restore must succeed");
         assert_eq!(
@@ -2944,6 +3063,7 @@ mod forward_exec_tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            ForwardOrigin::User,
         )
         .expect("new tab ok")
         .expect("new tab delta");
@@ -2955,6 +3075,7 @@ mod forward_exec_tests {
             &StructuralOp::CloseTab {
                 anchor_surface_id: b,
             },
+            ForwardOrigin::User,
         )
         .expect("close ok");
 
@@ -2985,6 +3106,7 @@ mod forward_exec_tests {
             &StructuralOp::RestoreClosedItem {
                 anchor_surface_id: a,
             },
+            ForwardOrigin::User,
         )
         .expect("restore must succeed");
         assert_eq!(
@@ -3020,9 +3142,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
-            .expect("expected Ok")
-            .expect("split delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        )
+        .expect("expected Ok")
+        .expect("split delta");
         let new_sid = fd.added_terminals[0];
         assert!(
             engine.attach.is_hard_occupied(new_sid),
@@ -3070,9 +3198,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
-            .expect("expected Ok")
-            .expect("split delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        )
+        .expect("expected Ok")
+        .expect("split delta");
         let new_sid = fd.added_terminals[0];
 
         assert_eq!(
@@ -3103,7 +3237,13 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         let fd = r.expect("expected Ok").expect("new-tab 성공은 delta 동반");
         assert_eq!(engine.terminals.iter().count(), before + 1);
         assert_eq!(fd.added_terminals.len(), 1);
@@ -3121,17 +3261,29 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let added = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mk)
-            .expect("new-tab Ok")
-            .expect("new-tab delta");
+        let added = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &mk,
+            ForwardOrigin::User,
+        )
+        .expect("new-tab Ok")
+        .expect("new-tab delta");
         let new_sid = added.added_terminals[0];
         // 새 surface 가 속한 탭을 닫는다.
         let close = StructuralOp::CloseTab {
             anchor_surface_id: new_sid,
         };
-        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close)
-            .expect("close Ok")
-            .expect("close delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &close,
+            ForwardOrigin::User,
+        )
+        .expect("close Ok")
+        .expect("close delta");
         assert!(fd.added_terminals.is_empty(), "close 는 added 없음");
         let ids = delta_surface_ids(&fd);
         assert!(
@@ -3153,7 +3305,13 @@ mod forward_exec_tests {
             surface_kind: "definitely-not-registered".to_string(),
             params: serde_json::json!({}),
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         assert!(r.is_err(), "unknown kind must fail");
         assert!(
             r.unwrap_err().contains("unknown surface kind"),
@@ -3285,7 +3443,13 @@ mod forward_exec_tests {
             .unwrap_or_else(|| panic!("{name}: IPC 가 성공했다 — 실패 입력이 아니다"))
             .message;
 
-        let forwarded = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op(a));
+        let forwarded = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op(a),
+            ForwardOrigin::User,
+        );
         let Err(forward_msg) = forwarded else {
             panic!("{name}: forward 가 성공했다 — IPC 는 `{ipc_msg}` 로 실패했다");
         };
@@ -3337,7 +3501,13 @@ mod forward_exec_tests {
         let op = StructuralOp::ClosePane {
             anchor_surface_id: 999_999,
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         assert!(r.is_err(), "missing anchor must fail");
     }
 
@@ -3384,7 +3554,13 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward NewTab 은 hard-occupied 상태에서도 성공해야 한다"
@@ -3409,7 +3585,13 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward SplitPane 은 hard-occupied 상태에서도 성공해야 한다"
@@ -3434,9 +3616,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split)
-            .expect("split ok")
-            .expect("split delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &split,
+            ForwardOrigin::User,
+        )
+        .expect("split ok")
+        .expect("split delta");
         let b = fd.added_terminals[0];
         let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
         engine
@@ -3447,7 +3635,13 @@ mod forward_exec_tests {
         let close = StructuralOp::ClosePane {
             anchor_surface_id: b,
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &close,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward ClosePane 은 hard-occupied 상태에서도 성공해야 한다"
@@ -3471,9 +3665,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &new_tab)
-            .expect("new-tab ok")
-            .expect("new-tab delta");
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &new_tab,
+            ForwardOrigin::User,
+        )
+        .expect("new-tab ok")
+        .expect("new-tab delta");
         let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
         engine
             .attach
@@ -3484,7 +3684,13 @@ mod forward_exec_tests {
             from_index: 0,
             to_index: 1,
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mv);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &mv,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward MoveTab 은 hard-occupied 상태에서도 성공해야 한다"
@@ -3505,10 +3711,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let fd =
-            execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split_surface)
-                .expect("split ok")
-                .expect("split delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &split_surface,
+            ForwardOrigin::User,
+        )
+        .expect("split ok")
+        .expect("split delta");
         let b = fd.added_terminals[0];
         let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
         engine
@@ -3517,7 +3728,13 @@ mod forward_exec_tests {
             .expect("workspace 점유 획득");
         let before = engine.terminals.iter().count();
         let close = StructuralOp::CloseSurface { surface_id: b };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &close,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward CloseSurface 는 hard-occupied 상태에서도 성공해야 한다"
@@ -3554,7 +3771,13 @@ mod forward_exec_tests {
             .expect("workspace 점유 획득");
 
         let close = StructuralOp::CloseSurface { surface_id: a };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &close);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &close,
+            ForwardOrigin::User,
+        );
 
         assert!(
             r.is_ok(),
@@ -3595,9 +3818,15 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
             cwd: None,
         };
-        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
-            .expect("convert ok")
-            .expect("convert delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        )
+        .expect("convert ok")
+        .expect("convert delta");
         assert_eq!(
             fd.converted_surface,
             Some(a),
@@ -3627,7 +3856,13 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
             cwd: None,
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward ConvertSurface 는 hard-occupied 상태에서도 성공해야 한다"
@@ -3659,9 +3894,15 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
             cwd: Some(dir.path().to_string_lossy().into_owned()),
         };
-        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
-            .expect("convert ok")
-            .expect("convert delta");
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        )
+        .expect("convert ok")
+        .expect("convert delta");
         assert_eq!(explorer_root(&engine, a), dir.path());
     }
 
@@ -3683,9 +3924,15 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
             cwd: None,
         };
-        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
-            .expect("convert ok")
-            .expect("convert delta");
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        )
+        .expect("convert ok")
+        .expect("convert delta");
         assert_eq!(explorer_root(&engine, a), dir.path());
     }
 
@@ -3708,9 +3955,15 @@ mod forward_exec_tests {
             params: serde_json::json!({}),
             cwd: None,
         };
-        execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op)
-            .expect("convert ok")
-            .expect("convert delta");
+        execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &op,
+            ForwardOrigin::User,
+        )
+        .expect("convert ok")
+        .expect("convert delta");
         assert_ne!(explorer_root(&engine, a), dir.path());
     }
 
@@ -3728,10 +3981,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let fd =
-            execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split_surface)
-                .expect("split ok")
-                .expect("split delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &split_surface,
+            ForwardOrigin::User,
+        )
+        .expect("split ok")
+        .expect("split delta");
         let b = fd.added_terminals[0];
         let before = engine.terminals.iter().count();
 
@@ -3739,9 +3997,15 @@ mod forward_exec_tests {
             source_surface_id: a,
             target_surface_id: b,
         };
-        let fd = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mv)
-            .expect("move ok")
-            .expect("move delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &mv,
+            ForwardOrigin::User,
+        )
+        .expect("move ok")
+        .expect("move delta");
         assert!(
             fd.converted_surface.is_none(),
             "move 는 convert 가 아니다 — mesh stale-frame 처리 대상 아님"
@@ -3770,10 +4034,15 @@ mod forward_exec_tests {
             surface_kind: "terminal".to_string(),
             params: serde_json::json!({}),
         };
-        let fd =
-            execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &split_surface)
-                .expect("split ok")
-                .expect("split delta");
+        let fd = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &split_surface,
+            ForwardOrigin::User,
+        )
+        .expect("split ok")
+        .expect("split delta");
         let b = fd.added_terminals[0];
         let all: Vec<u32> = engine.workspaces[0].all_surface_ids();
         engine
@@ -3784,7 +4053,13 @@ mod forward_exec_tests {
             source_surface_id: a,
             target_surface_id: b,
         };
-        let r = execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &mv);
+        let r = execute_forwarded_structural_op(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &mv,
+            ForwardOrigin::User,
+        );
         assert!(
             r.is_ok(),
             "holder 의 forward MoveSurface 는 hard-occupied 상태에서도 성공해야 한다"

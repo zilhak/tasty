@@ -312,6 +312,19 @@ pub enum StreamControl {
         /// can correlate the reply (and toast on failure).
         op_id: u64,
         op: StructuralOp,
+        /// Who asked for this op on the client — its user's own hand or an agent
+        /// (IPC/CLI) driving the client. The server decides from this alone
+        /// whether a forwarded close lands on its restore stack: an agent's close
+        /// must not, because the restore stack is user state
+        /// (`docs/identity.md` principle 1).
+        ///
+        /// **Optional, and absent means [`ForwardOrigin::User`].** Clients from
+        /// before this field never send it, and every close they forwarded was
+        /// kept restorable — reading absence as `User` keeps exactly that. A new
+        /// client always sends it. See
+        /// `docs/adr/0480-a-forwarded-close-carries-who-asked-for-it.md`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<ForwardOrigin>,
     },
     /// Result of a forwarded [`StreamControl::StructuralOp`]. `ok=false` carries a
     /// `reason` — most notably a **remote-unsupported surface kind** (e.g. a
@@ -652,6 +665,29 @@ pub enum StructuralOp {
     RestoreClosedItem { anchor_surface_id: u32 },
 }
 
+/// Who asked the client for a forwarded [`StreamControl::StructuralOp`].
+///
+/// Only the server's restore stack reads it today: a close whose origin is
+/// [`ForwardOrigin::Agent`] is not snapshotted there. An absent field on the wire
+/// is [`ForwardOrigin::User`] — see [`ForwardOrigin::of_wire`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForwardOrigin {
+    /// The client's user, by hand (shortcut, button, context menu).
+    User,
+    /// An agent driving the client over IPC/CLI.
+    Agent,
+}
+
+impl ForwardOrigin {
+    /// The origin a received op stands for. Absence is `User` because that is
+    /// what every client before the field meant — see the field's doc on
+    /// [`StreamControl::StructuralOp`].
+    pub fn of_wire(field: Option<ForwardOrigin>) -> ForwardOrigin {
+        field.unwrap_or(ForwardOrigin::User)
+    }
+}
+
 /// `StructuralResult.reason` for a forwarded restore that found nothing in the
 /// anchor workspace's restore stack.
 ///
@@ -685,6 +721,24 @@ impl StructuralOp {
             StructuralOp::MoveSurface {
                 source_surface_id, ..
             } => *source_surface_id,
+        }
+    }
+
+    /// The op's wire tag (`kind`) — the same string serde writes. The server
+    /// names a forwarded op by it when the op points at something that is no
+    /// longer there, the way an IPC rejection names the request's method.
+    pub fn wire_kind(&self) -> &'static str {
+        match self {
+            StructuralOp::SplitSurface { .. } => "split_surface",
+            StructuralOp::SplitPane { .. } => "split_pane",
+            StructuralOp::NewTab { .. } => "new_tab",
+            StructuralOp::CloseSurface { .. } => "close_surface",
+            StructuralOp::CloseTab { .. } => "close_tab",
+            StructuralOp::ClosePane { .. } => "close_pane",
+            StructuralOp::MoveTab { .. } => "move_tab",
+            StructuralOp::ConvertSurface { .. } => "convert_surface",
+            StructuralOp::MoveSurface { .. } => "move_surface",
+            StructuralOp::RestoreClosedItem { .. } => "restore_closed_item",
         }
     }
 
@@ -1160,6 +1214,7 @@ mod tests {
                 surface_kind: "terminal".to_string(),
                 params: serde_json::json!({}),
             },
+            origin: Some(ForwardOrigin::User),
         };
         let s = serde_json::to_string(&msg).unwrap();
         // outer tagged on `event`, inner op tagged on `kind`.
@@ -1211,10 +1266,105 @@ mod tests {
             let msg = StreamControl::StructuralOp {
                 op_id: 1,
                 op: op.clone(),
+                origin: Some(ForwardOrigin::Agent),
             };
             let s = serde_json::to_string(&msg).unwrap();
             let back: StreamControl = serde_json::from_str(&s).unwrap();
             assert_eq!(back, msg, "roundtrip failed for {op:?}");
+        }
+    }
+
+    /// A client from before the `origin` field sends no such key. That op must
+    /// still parse, and must stand for a user's close — every close such a client
+    /// forwarded was restorable, and reading absence otherwise would silently
+    /// take the undo away from its users.
+    #[test]
+    fn a_structural_op_without_origin_is_a_users_op() {
+        let raw =
+            r#"{"event":"structural_op","op_id":5,"op":{"kind":"close_surface","surface_id":3}}"#;
+        let StreamControl::StructuralOp { op_id, op, origin } =
+            serde_json::from_str::<StreamControl>(raw).unwrap()
+        else {
+            panic!("expected structural_op");
+        };
+        assert_eq!(
+            (op_id, op),
+            (5, StructuralOp::CloseSurface { surface_id: 3 })
+        );
+        assert_eq!(origin, None);
+        assert_eq!(ForwardOrigin::of_wire(origin), ForwardOrigin::User);
+    }
+
+    /// The field's spelling on the wire, and its tolerance on an old server: an
+    /// unknown key inside a known variant is ignored by serde (no
+    /// `deny_unknown_fields` on `StreamControl`), so an old server reads a new
+    /// client's op as before — the field is dropped, not the frame.
+    #[test]
+    fn the_origin_field_is_spelled_and_ignored_as_documented() {
+        let msg = StreamControl::StructuralOp {
+            op_id: 1,
+            op: StructuralOp::CloseTab {
+                anchor_surface_id: 2,
+            },
+            origin: Some(ForwardOrigin::Agent),
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""origin":"agent""#), "{s}");
+        let unknown_key =
+            r#"{"event":"client_resize","surface_id":1,"cols":80,"rows":24,"origin":"agent"}"#;
+        assert!(serde_json::from_str::<StreamControl>(unknown_key).is_ok());
+    }
+
+    /// `wire_kind` is a second spelling of the serde tag — it must not drift.
+    #[test]
+    fn wire_kind_is_the_serde_tag() {
+        let ops = [
+            StructuralOp::SplitSurface {
+                surface_id: 1,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+            StructuralOp::SplitPane {
+                anchor_surface_id: 1,
+                direction: SplitAxis::Vertical,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+            StructuralOp::NewTab {
+                anchor_surface_id: 1,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+            },
+            StructuralOp::CloseSurface { surface_id: 1 },
+            StructuralOp::CloseTab {
+                anchor_surface_id: 1,
+            },
+            StructuralOp::ClosePane {
+                anchor_surface_id: 1,
+            },
+            StructuralOp::MoveTab {
+                anchor_surface_id: 1,
+                from_index: 0,
+                to_index: 1,
+            },
+            StructuralOp::ConvertSurface {
+                surface_id: 1,
+                surface_kind: "terminal".to_string(),
+                params: serde_json::json!({}),
+                cwd: None,
+            },
+            StructuralOp::MoveSurface {
+                source_surface_id: 1,
+                target_surface_id: 2,
+            },
+            StructuralOp::RestoreClosedItem {
+                anchor_surface_id: 1,
+            },
+        ];
+        for op in ops {
+            let v = serde_json::to_value(&op).unwrap();
+            assert_eq!(v["kind"], op.wire_kind(), "{op:?}");
         }
     }
 

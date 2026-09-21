@@ -1217,8 +1217,20 @@ impl App {
             sess.pending_op_focus.insert(op_id, intent);
         }
 
-        let payload = serde_json::to_vec(&StreamControl::StructuralOp { op_id, op: wire })
-            .unwrap_or_default();
+        // 누구의 요청인가를 함께 싣는다 — 서버는 이것으로 close 를 자기 복원 스택에
+        // 남길지 정한다. 사용자의 손 조작이 아닌 op(에이전트 IPC/CLI 유래)는 남기지
+        // 않는다(`docs/identity.md` 원칙 1, ADR-0480).
+        let origin = if user_triggered {
+            tasty_ipc::stream::ForwardOrigin::User
+        } else {
+            tasty_ipc::stream::ForwardOrigin::Agent
+        };
+        let payload = serde_json::to_vec(&StreamControl::StructuralOp {
+            op_id,
+            op: wire,
+            origin: Some(origin),
+        })
+        .unwrap_or_default();
         // write 큐로 보내 write 스레드가 순차로 쓴다(락 직접 획득 제거).
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("structural forward: write 큐 send 실패(세션 종료 중) — drop: {e}");

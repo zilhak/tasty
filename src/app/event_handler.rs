@@ -1737,11 +1737,18 @@ impl App {
     /// `apply_stream_outcome` 지원 — `structural_ops` 배치 적용.
     fn apply_structural_ops_batch(
         &mut self,
-        ops: impl IntoIterator<Item = (u32, u64, crate::ipc::stream::StructuralOp)>,
+        ops: impl IntoIterator<
+            Item = (
+                u32,
+                u64,
+                crate::ipc::stream::StructuralOp,
+                crate::ipc::stream::ForwardOrigin,
+            ),
+        >,
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
-        for (client_id, op_id, op) in ops {
-            self.apply_forwarded_structural_op(client_id, op_id, &op, hub);
+        for (client_id, op_id, op, origin) in ops {
+            self.apply_forwarded_structural_op(client_id, op_id, &op, origin, hub);
         }
     }
 
@@ -2130,6 +2137,7 @@ impl App {
         client_id: u32,
         op_id: u64,
         op: &crate::ipc::stream::StructuralOp,
+        origin: crate::ipc::stream::ForwardOrigin,
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) {
         let anchor = op.anchor_surface_id();
@@ -2153,6 +2161,7 @@ impl App {
                     &mut main.state,
                     engine,
                     op,
+                    origin,
                 ) {
                     Ok(delta) => (true, None, delta),
                     Err(reason) => (false, Some(reason), None),

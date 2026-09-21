@@ -103,3 +103,4 @@ forward 된 close 를 일으킨 것은 **원격 사용자의 손 조작**(단축
 - [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md) 계열 — hard 점유 = 구조 변경 권한 모델.
 - [ADR-0045](0045-mirror-geometry-client-driven.md) — client→server forward 큐 패턴의 원형.
 - [ADR-0086](0086-reject-terminal-spawn-into-mirror-workspace.md) — mirror 워크스페이스에 로컬 터미널을 만들지 않는다는 같은 축의 선례. 그 ADR 이 열거한 라우터 가드 대상에는 복원이 없었다.
+- 부분 개정: [0480](0480-a-forwarded-close-carries-who-asked-for-it.md) (결정 4 개정 — forward 된 close 가 전부 원격 사용자의 손 조작이라는 전제를 걷고, 에이전트가 요청한 close 는 서버 복원 스택에 남기지 않는다)
