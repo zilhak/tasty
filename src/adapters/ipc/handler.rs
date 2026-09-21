@@ -724,11 +724,9 @@ fn route_engine_handler(
         "surface.attention.clear" => {
             surface::handle_attention_clear(state, engine, id, &request.params)
         }
-        "surface.read_since_mark" => {
-            surface::handle_read_since_mark(state, engine, id, &request.params)
-        }
+        "surface.read_since_mark" => surface::handle_read_since_mark(engine, id, &request.params),
         "surface.read_since_scan_mark" => {
-            surface::handle_read_since_scan_mark(state, engine, id, &request.params)
+            surface::handle_read_since_scan_mark(engine, id, &request.params)
         }
         "surface.parse_since_mark" => {
             surface::handle_parse_since_mark(state, engine, id, &request.params)

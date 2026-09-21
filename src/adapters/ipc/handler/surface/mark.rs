@@ -46,7 +46,6 @@ pub(crate) fn handle_set_mark(
 /// `surface.respawn_terminal` 은 id 를 그대로 둔 채 터미널을 갈아 끼우므로, 표지가
 /// 없으면 옛 위치가 **남의 출력**에 조용히 적용된다.
 pub(crate) fn handle_read_since_mark(
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -61,7 +60,7 @@ pub(crate) fn handle_read_since_mark(
         Err(e) => return *e,
     };
 
-    match state.read_output(engine, surface_id, &req) {
+    match engine.read_output(surface_id, &req) {
         Some(Ok(read)) => answered(id, surface_id, read),
         Some(Err(tasty_terminal::OutputReadError::StreamMismatch { expected, actual })) => refused(
             id,
@@ -223,7 +222,6 @@ fn refused(
 /// 소비자는 하나라는 전제 위에 있다 — 둘이 부르면 서로의 바이트를 먹고 그 손실은
 /// 조용하다. 그 전제가 위 ADR 의 재검토 조건이다.
 pub(crate) fn handle_read_since_scan_mark(
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -238,7 +236,7 @@ pub(crate) fn handle_read_since_scan_mark(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let text = state.take_since_output_scan_mark(engine, surface_id, strip_ansi);
+    let text = engine.take_since_output_scan_mark(surface_id, strip_ansi);
     JsonRpcResponse::success(id, json!({ "text": text, "surface_id": surface_id }))
 }
 

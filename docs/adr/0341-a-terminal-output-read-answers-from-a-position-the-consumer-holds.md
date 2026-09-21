@@ -180,4 +180,4 @@ journal 과 통합하지 않는다.
   [`docs/reference/api.md`](../reference/api.md) — 표면 기술
 - 코드 근거(결정이 실현된 현재 위치): `OutputBuffer::read` · `OutputCursor` ·
   `OUTPUT_RETENTION_MAX_BYTES` · `handle_read_since_mark` 의 `OutputReadParams` 와
-  `answered` · `AppState::read_output`
+  `answered` · `CoreState::read_output`

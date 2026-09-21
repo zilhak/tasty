@@ -1451,6 +1451,7 @@ mod finders;
 mod global_hooks;
 mod idle_hooks;
 mod message;
+mod output_read;
 mod pty;
 mod shell_integration_hint;
 mod soft_occupancy;
