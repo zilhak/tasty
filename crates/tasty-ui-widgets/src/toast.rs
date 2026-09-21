@@ -158,9 +158,11 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
 /// 본체 스택([`draw_toast_scopes`])과 갤러리의 단일 카드([`draw_single_card`])가 이 함수
 /// 하나로 색을 얻는다. 예전에는 갤러리가 같은 도출을 손으로 되풀이했고, alpha 를 곱하는
 /// 자리가 달랐다 — 본체는 테마 색(straight alpha)에 곱한 뒤 `Color32` 로 바꾸고, 갤러리는
-/// `Color32`(premultiplied)로 바꾼 뒤 곱했다. 두 길은 반올림이 달라(alpha 절사 대 네 채널
-/// 반올림) alpha 가 1 이 아닐 때 채널 값이 몇 LSB 갈린다. alpha 가 1 이면 같다. 정본은
-/// 사용자가 보는 본체 쪽이라 그 순서를 여기 고정한다.
+/// `Color32`(premultiplied)로 바꾼 뒤 곱했다. 앞의 길은 `from_rgba_unmultiplied` 가
+/// **선형 공간**에서 premultiply 하고, 뒤의 길은 `Color32::gamma_multiply` 가 **감마 공간**
+/// 에서 네 채널을 곱한다. 그래서 alpha 가 1 이 아니면 fill·border 가 갈린다(갤러리
+/// Toast stack specimen 의 alpha 0.85·0.6 카드에서 채널 델타 최대 20, 실측 2026-09-21).
+/// alpha 가 1 이면 두 길이 같다. 정본은 사용자가 보는 본체 쪽이라 그 순서를 여기 고정한다.
 pub fn card_colors(theme: &Theme, kind: ToastKind, alpha: f32) -> CardColors {
     CardColors {
         bg: theme.surface_raised().gamma_multiply(alpha).into(),

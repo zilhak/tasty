@@ -382,7 +382,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | 헬퍼 | 제공 | 쓰는 곳 |
 |---|---|---|
 | `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 106 개 `.rs` 중 96 개 |
-| `toast_card.rs` | `tasty-ui-widgets` 의 `toast_accent_color` / `draw_toast_card`(`ToastCardColors`) 재수출 — 정의는 여기 없다 | toast(components/widgets) |
+| `toast_card.rs` | `tasty-ui-widgets` 의 `toast_accent_color` / `draw_toast_card`(`ToastCardColors`) / `draw_toast_single_card` 재수출 — 정의는 여기 없다 | toast(components/widgets) · kb import/export |
 | `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | info_modal · notification_panel · fullscreen_stage (`draw_title_buttons` 만) |
 
 ## Primitive 컴포넌트 레이어 (Components)

@@ -23,6 +23,25 @@ Toast 는 Popup 의 변종이 *아니다* — 7대 규칙(타이틀바·X·드�
 - 터미널 선택 후 `Ctrl+C` → ✅ · Explorer 경로 복사 → ✅ · 클립보드 뷰어에서 항목 클릭 복사 → ✅
 - IPC `clipboard.*` 쓰기 → ❌ · OSC 52(터미널 프로그램이 보낸 클립보드 시퀀스) → ❌ (사용자가 직접 누른 게 아님)
 
+**재는 법** — 이 정책을 보는 자동 채널(시험·가드)은 없다. 대신 IPC 가 들어오는 경로에서
+토스트 매니저로 닿는 이름을 센다. 결과가 **0 줄**이어야 한다.
+
+```bash
+grep -rnE 'toasts|report_apply_error|push_toast' \
+  src/adapters/ipc/ src/app/ipc/ src/app/ipc.rs \
+  src/boot/headless_dispatch.rs src/boot/headless_plugins.rs
+```
+
+- 이 명령이 잡는다는 것은 변이로 확인했다: IPC 핸들러 파일에 `state.toasts.push_info(...)`
+  한 줄을 넣으면 그 줄이 나온다(2026-09-21).
+- **못 보는 경로가 셋이다.** ① IPC 가 창 생성 같은 일을 winit 이벤트로 넘기고, 그 이벤트
+  핸들러가 실패를 토스트로 알리는 경로(예전 `window.create` 가 그랬다 — 지금은 완료
+  채널로 응답한다). ② IPC 가 만든 도메인 이벤트가 `src/app/dispatch_domain.rs` cascade
+  에서 토스트를 내는 경로. ③ 에이전트가 터미널에 보낸 텍스트가 프로그램을 거쳐 토스트를
+  내는 경로(OSC 52 등). 이 셋은 호출 이름이 IPC 파일에 안 나타난다.
+- 판정기를 짓지 않은 이유: 이 명령이 없어서 통과한 결함이 없다. 실제로 있었던 결함(위 ①)은
+  IPC 파일 밖에서 났으므로 이 명령으로도 안 잡혔을 것이다.
+
 ## 스코프
 
 Popup 과 같은 enum 을 쓰지만 **위치 앵커 용도** 다(가시성 필터 역할은 거의 없음 — 어차피 짧게 떴다 사라짐). `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 아래에서 위로 쌓고, 스코프가 화면에서 사라지면 즉시 제거.
@@ -66,7 +85,16 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 - `draw_toast_scopes(painter, props)` — 스택 배치 + 카드 chrome. `Context` 가 아니라
   `Painter` 를 받는 이유는 **떠오르는 자리가 부르는 쪽마다 다르기 때문**이다: 본체는
   `Order::Tooltip` 레이어 painter 를, 갤러리는 무대 frame 의 painter 를 넘긴다.
-- `draw_toast_card` / `ToastCardColors` — 스택 없이 카드 한 장만 그려야 하는 자리용.
+- `toast_layout_card(ctx, theme, message, max_width)` — 본문 galley 와 카드 크기(폭 × 높이).
+  폭 상한을 **어디서 얻는가**(본체는 스코프 폭, 단일 카드는 `toast_max_width`)만 부르는 쪽이
+  정하고, 줄바꿈 폭·패딩·accent 바·높이는 여기서 한 번만 정한다.
+- `toast_card_colors(theme, kind, alpha)` — alpha 를 반영한 fill · border · accent · 글자 색.
+  alpha 를 곱하는 순서가 여기 고정돼 있다 — 테마 색(straight)에 곱한 뒤 `Color32` 로 바꾼다.
+  `Color32` 로 바꾼 뒤 곱하면 감마 공간 곱이 돼 alpha < 1 에서 색이 달라진다.
+- `draw_toast_single_card(ui, theme, kind, message, alpha)` — 스택 없이 카드 한 장만
+  그려야 하는 자리용(갤러리의 Toast · Toast stack specimen). 치수와 색은 위 두 함수에서 온다.
+- `draw_toast_card` / `ToastCardColors` — 카드 chrome 만 그리는 하위 함수. 치수·색을
+  부르는 쪽이 직접 채운다.
 - `toast_accent_color(kind, theme)` — kind → 좌측 바 색.
 - `toast_fade_alpha(age, lifetime, reduced_motion)` — 페이드 곡선. `Duration` 둘만 받아
   어떤 상태 타입도 안 본다.
@@ -94,3 +122,4 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 - [popup.md](popup.md) — 내부 팝업 시스템
 - [banner.md](banner.md) — parent 상단 info+action 오버레이 (내용 적으면 Toast 권장)
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리
+- [ADR-0380](../../adr/0380-the-toast-card-geometry-and-color-have-one-derivation.md) — 카드 치수·색 도출이 하나인 이유, 발화 금지 정책에 판정기를 안 지은 이유
