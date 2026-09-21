@@ -35,9 +35,13 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
   등록되고, 그 tick 에서 끝난 스레드만 join 한다 — 끝난 스레드의 join 은 즉시 돌아온다. 마지막 회수가
   끝나면 타이머를 내린다. 한 건마다 `plugin process retired`(`ms` · `reason`) 한 줄을 남긴다.
 - **기동은 한 창구에서 미룬다.** `start_plugin_internal` 이 회수 중인 id 를 받으면 띄우지 않고 "회수
-  뒤에 띄운다" 고 적는다. 무응답 재시작, 회수 중에 온 `enable`, 전체 기동(`discover_and_start`)이
-  모두 그 창구를 지나므로 어느 쪽에서 와도 겹치지 않는다. 회수 중에 온 `disable` 은 그 예약을 거둔다.
-- **옛 프로세스가 사라져 있어야 하는 자리만 기다린다 — `plugin remove` · swap · `upgrade-builtins` 의
+  뒤에 띄운다" 고 적는다. 무응답 재시작의 재기동과 전체 기동(`discover_and_start`)이 그 창구를
+  지나므로 어느 쪽에서 와도 겹치지 않는다. 회수 중에 온 `disable` 은 그 예약을 거둔다. 명시적 `enable` 은
+  이 창구에 닿기 전에 회수를 끝내므로 미뤄지지 않는다(아래).
+- **기다리는 자리는 넷이다 — `plugin remove` · swap · `upgrade-builtins` 의 쓰기 갈래 · 명시적
+  `enable`.** 헬스체크 재시작과 `disable` 은 기다리지 않는다. 앞의 셋은 옛 프로세스가 **사라져 있어야**
+  하는 자리이고, `enable` 은 그 자리에서 띄우려는 자리다.
+- **옛 프로세스가 사라져 있어야 하는 자리는 기다린다 — `plugin remove` · swap · `upgrade-builtins` 의
   쓰기 갈래.** `plugin remove` 는 디렉토리를 지우고, swap(`upgrade-builtins --restart-running` ·
   auto-reload)과 `upgrade-builtins` 의 쓰기 갈래는 디렉토리를 덮어쓴다 — 실행 중인 파일은 Windows 에서
   지워지지도 덮어써지지도 않고 Linux 에서는 `ETXTBSY` 가 난다. 이 자리들은 `wait_retired` 로 그 id 의
@@ -45,10 +49,16 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
   `upgrade-builtins` 의 **쓰기 갈래**는 버전이 달라 덮어쓸 때와, 같은 버전인데 바뀐 내용이 있을 때다 —
   같은 버전 갈래는 회수 중일 때만 쓰지 않고 먼저 물어본다. 설치본이 더 높아 건너뛰거나 바뀐 것이
   없으면 기다리지 않는다(기다리면 쓸 것도 없이 메인 스레드가 최대 2 s 선다).
-- **기다린 자리는 재기동 예약을 잇는다.** 회수 뒤에 다시 띄우기로 한 예약(무응답 재시작 · 회수 중에 온
-  `enable`)은 회수 기록과 함께 `wait_retired` 가 가져가 돌려준다. 호출자는 쓰기를 마친 뒤 그 값이
-  참이면 다시 띄운다 — 안 이으면 enabled 인 plugin 이 꺼진 채 남는다. swap 은 어차피 다시 띄우므로
-  따로 잇지 않는다.
+- **명시적 `enable` 은 회수를 기다려 그 자리에서 띄운다.** 사용자·에이전트가 부른 `enable`(IPC · CLI ·
+  설치 직후의 기동 · 재승인)이 회수 중인 id 를 만나면 `wait_retired` 로 그 id 의 회수만 끝까지 기다린 뒤
+  바로 띄운다. 그래서 `enable` 이 돌아온 순간 plugin 이 떠 있고, "disable → enable → 곧바로 호출" 이
+  예전처럼 성공한다. 그 대가로 **이 조작에 한해** 메인 스레드가 최대 2 s 선다 — remove · swap 과 같은
+  논리다: 사용자가 명시적으로 부른 수명주기 조작이고 주기적으로 오지 않는다. 주기적으로 오는 헬스체크
+  재시작과, 끝을 기다릴 이유가 없는 `disable` 은 계속 기다리지 않는다.
+- **기다린 자리는 재기동 예약을 잇는다.** 회수 뒤에 다시 띄우기로 한 예약(무응답 재시작 · 회수 중에
+  기동 창구를 지난 전체 기동)은 회수 기록과 함께 `wait_retired` 가 가져가 돌려준다. 호출자는 쓰기를 마친 뒤 그 값이
+  참이면 다시 띄운다 — 안 이으면 enabled 인 plugin 이 꺼진 채 남는다. swap 과 `enable` 은 어차피 다시
+  띄우므로 따로 잇지 않는다.
 - **호스트 종료는 회수 중인 것도 본다.** `poll_shutdown_all` 은 회수 중인 것까지 끝나야 `true` 이고,
   그것들은 다시 띄우지 않는다. 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다. 각 회수는 자기
   deadline 을 들고 있으므로 종료 대기의 상한은 그대로 2 s 로 수렴한다.
@@ -65,13 +75,16 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
   98 ms 였다(전 2065 ms · 2101 ms). 옛 프로세스는 뒤에서 2050 ms 에 kill 로 회수됐다. 헬스체크 재시작
   구간의 `list info` 최댓값은 194 ms 였다(전 2161 ms). 격리 debug GUI 인스턴스, 2026-09-21.
 - **얻은 것**: 새 프로세스가 옛 것과 겹치지 않는다 — 같은 재현에서 새 slowsub 는 옛 것이 회수되고
-  44 ms 뒤에 떴다. disable 직후 enable 도 로그에 `start deferred` 뒤 회수 → 기동 순으로 남았다.
-- **잃은 것**: 회수가 끝날 때까지(최대 2 s) 그 plugin 은 **떠 있지 않다.** 예전에는 그 2 s 동안 메인
+  44 ms 뒤에 떴다.
+- **잃은 것**: 헬스체크 재시작과 `disable` 뒤에는 회수가 끝날 때까지(최대 2 s) 그 plugin 이 **떠 있지
+  않다.** 예전에는 그 2 s 동안 메인
   스레드가 서 있어 아무도 그 틈을 못 봤다. 지금은 그 사이의 namespace 호출이 `-32002 plugin '…' is not
   running` 을 받고, `plugin list` 가 `running: false` 를 보인다.
 - **잃은 것**: disable 의 응답이 "프로세스가 끝났다" 를 뜻하지 않는다. 끝났음을 알아야 하는 호출자는
   `remove` · `upgrade-builtins` 처럼 `wait_retired` 를 거쳐야 한다. 그 호출은 회수 뒤의 재기동 예약을
   함께 가져오므로, 돌려받은 값이 참이면 쓰기를 마친 뒤 호출자가 다시 띄운다.
+- **잃은 것**: 회수 중인 plugin 에 온 명시적 `enable` 은 메인 스레드를 최대 2 s 세운다 — 예전 disable 이
+  서던 만큼이 disable 에서 enable 로 옮겨 간 것이고, 회수가 이미 끝났으면 서지 않는다.
 - **운영 비용**: 회수마다 스레드 하나(최대 약 2 s 산다). 회수 중에만 50 ms 타이머가 호스트를 깨운다.
 
 ## Alternatives Considered
@@ -87,6 +100,10 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
   같이 줄어든다.
 - **E: `remove` · `upgrade-builtins` 도 기다리지 않는다** — 실행 중인 파일을 지우거나 덮어쓰게 된다.
   Windows 에서 실패하고, 그 실패가 사용자에게는 "제거가 안 된다" 로 보인다.
+- **F: 명시적 `enable` 도 미룬다** — 메인 스레드가 한 번도 안 선다. 안 고른 이유는 호환이다. 예전에는
+  `enable` 이 돌아오면 plugin 이 떠 있었고, "disable → enable → 곧바로 호출" 하는 스크립트가 그것에
+  기대었다. 미루면 그 호출이 최대 2 s 동안 `-32002 not running` 을 받는다 — 부른 쪽은 성공 응답을 받고도
+  실패를 본다.
 
 ## Reconsideration Triggers
 
@@ -95,9 +112,12 @@ plugin 을 disable 하자 CLI 가 2065 ms 걸렸고 같은 구간의 `list info`
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
 - disable 이 다시 회수를 기다리면 `manager::tests_retire::disable_returns_before_a_stalled_child_exits`
-  가, 기동 창구가 회수 중인 id 를 그대로 띄우면
-  `enable_during_retirement_is_deferred_and_a_later_disable_cancels_it` 가 잡는다(두 변이를 실제로 붙여
-  죽는 것을 확인했다).
+  가, 기동 창구가 회수 중인 id 를 그대로 띄우면 `the_start_gate_defers_a_plugin_that_is_still_retiring`
+  이 잡는다(두 변이를 실제로 붙여 죽는 것을 확인했다). 회수 중의 disable 이 예약을 안 거두면
+  `a_disable_during_a_restart_cancels_the_restart` 가 잡는다.
+- 명시적 enable 이 회수를 안 기다리고 미루면
+  `an_explicit_enable_during_retirement_waits_and_starts_in_place` 가 잡는다(기다림을 빼는 변이로
+  확인했다).
 - 재시작이 옛 프로세스를 기다리거나 새 것을 그 자리에서 띄우면
   `an_unresponsive_restart_waits_for_the_old_process_before_starting` 이, 종료가 회수 중인 것을 두고
   끝나거나 다시 띄우면 `exit_waits_for_a_retiring_plugin_and_does_not_respawn_it` 이 잡는다.

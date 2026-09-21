@@ -460,6 +460,8 @@ tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재s
 #      보고문은 여전히 'skipped' 로 나오지만 사유가 갈린다 — 'content resync: files rewritten' 이면 옮긴 것이고
 #      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **내용까지 같은데도** 다시 쓸 때만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
+#   ※ 옛 프로세스가 아직 빠지는 중이면 enable 이 그 회수(최대 2 s)를 기다린 뒤 그 자리에서 띄운다 —
+#      enable 이 돌아오면 plugin 은 이미 떠 있다(ADR-0457).
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은

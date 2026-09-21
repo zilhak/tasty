@@ -6,7 +6,6 @@
 //! 남는다.
 #![cfg(unix)]
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
@@ -15,50 +14,19 @@ use std::time::{Duration, Instant};
 use super::{BuiltinSpec, apply_builtin_upgrade_decision};
 use crate::manager::PluginManager;
 use crate::process::PluginProcess;
+use crate::test_fake_plugin::{self as fake, ID};
 use crate::test_support::HomeEnvGuard;
 use tasty_terminal::waker_factory::NoopWakerFactory;
-
-const ID: &str = "com.example.test";
-
-const MANIFEST: &str = r#"
-manifest_version = 1
-id = "com.example.test"
-name = "Test"
-version = "1.0.0"
-api_version = "1"
-[entry]
-type = "process"
-command = "fake.sh"
-"#;
-
-/// 인증 한 줄을 보내고 소켓이 닫힐 때까지 읽기만 하는 plugin — 기동이 성공하는 데 필요한
-/// 만큼만 한다.
-const FAKE_PLUGIN: &str = r#"#!/bin/bash
-exec 3<>/dev/tcp/127.0.0.1/"$TASTY_HOST_IPC_PORT"
-printf '{"plugin_id":"%s","token":"%s"}\n' "$TASTY_PLUGIN_ID" "$TASTY_PLUGIN_TOKEN" >&3
-exec cat <&3 >/dev/null
-"#;
-
-fn write_plugin(dir: &Path) {
-    std::fs::create_dir_all(dir).expect("plugin dir");
-    std::fs::write(dir.join("tasty-plugin.toml"), MANIFEST).expect("manifest");
-    let entry = dir.join("fake.sh");
-    std::fs::write(&entry, FAKE_PLUGIN).expect("entry");
-    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-}
 
 /// 무응답 재시작을 걸어 회수 중으로 만든 manager 와, 번들(src)·설치본(dest) 경로.
 fn restarting(home: &HomeEnvGuard) -> (PluginManager, std::path::PathBuf, std::path::PathBuf) {
     let src = home.path().join("bundle");
     let dest = home.path().join("installed");
-    write_plugin(&src);
-    write_plugin(&dest);
+    fake::write(&src);
+    fake::write(&dest);
 
     let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
-    mgr.set_packages_for_tests(vec![tasty_plugin_manifest::PluginPackage {
-        dir: dest.clone(),
-        manifest: toml::from_str(MANIFEST).expect("fixture manifest"),
-    }]);
+    mgr.set_packages_for_tests(vec![fake::package(&dest)]);
     let stalled = Command::new("sleep").arg("30").spawn().expect("child");
     let proc = PluginProcess::stub_with_child(ID, stalled);
     proc.backdate_pong_for_test(Duration::from_secs(120));

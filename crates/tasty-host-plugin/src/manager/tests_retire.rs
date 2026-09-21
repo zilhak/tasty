@@ -96,27 +96,96 @@ fn disable_returns_before_a_stalled_child_exits() {
     assert!(!mgr.is_running(ID));
 }
 
-/// 회수 중에 온 enable 은 곧바로 띄우지 않고 회수 뒤로 미룬다. 그 뒤 다시 온 disable 은
-/// 그 예약을 거둔다.
+/// 재시작으로 회수 중에 온 disable 은 회수 뒤의 재기동 예약을 거둔다.
 #[test]
-fn enable_during_retirement_is_deferred_and_a_later_disable_cancels_it() {
+fn a_disable_during_a_restart_cancels_the_restart() {
     let home = HomeEnvGuard::tasty_home();
     let mut mgr = installed(&home);
+    let proc = PluginProcess::stub_with_child(ID, slow_child());
+    proc.backdate_pong_for_test(super::HEALTHCHECK_TIMEOUT + Duration::from_secs(1));
+    mgr.processes.insert(ID.into(), proc);
+    mgr.restart_unresponsive_plugins();
+    assert_eq!(mgr.retiring_respawn(ID), Some(true));
+
+    mgr.disable(ID).expect("disable");
+    assert_eq!(mgr.retiring_respawn(ID), Some(false));
+    pump_until_retired(&mut mgr);
+    assert!(!mgr.is_running(ID), "disable 로 거둔 예약이 기동됐다");
+}
+
+/// 회수 중에 온 **명시적** enable 은 미루지 않는다 — 옛 프로세스가 빠지기를 그 자리에서
+/// 기다렸다가 띄운다. 그래서 enable 이 돌아온 직후에 plugin 이 떠 있다("disable → enable →
+/// 곧바로 호출" 이 예전처럼 성공한다). 그 대가인 대기는 이 조작에만 있다.
+#[cfg(unix)]
+#[test]
+fn an_explicit_enable_during_retirement_waits_and_starts_in_place() {
+    use crate::test_fake_plugin as fake;
+
+    let home = HomeEnvGuard::tasty_home();
+    let dir = home.path().join("plugin");
+    fake::write(&dir);
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    mgr.set_packages_for_tests(vec![fake::package(&dir)]);
     mgr.processes
         .insert(ID.into(), PluginProcess::stub_with_child(ID, slow_child()));
     mgr.disable(ID).expect("disable");
+    assert_eq!(mgr.retiring_count(), 1);
 
+    let t = Instant::now();
     mgr.enable(ID).expect("enable");
+    assert!(
+        mgr.is_running(ID),
+        "enable 이 돌아왔는데 plugin 이 떠 있지 않다"
+    );
+    assert_eq!(mgr.retiring_count(), 0, "옛 프로세스를 두고 새 것이 떴다");
+    assert!(
+        t.elapsed() >= Duration::from_millis(1500),
+        "shutdown 을 못 받는 옛 프로세스를 기다리지 않았다: {:?}",
+        t.elapsed()
+    );
+
+    mgr.begin_shutdown_all();
+    let give_up = Instant::now() + Duration::from_secs(10);
+    while !mgr.poll_shutdown_all() {
+        assert!(Instant::now() < give_up, "종료가 10 초 안에 안 끝났다");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// 기동 창구는 회수 중인 id 를 띄우지 않고 회수 뒤로 미룬다 — 명시적 enable 말고 그 창구를
+/// 지나는 것(전체 기동)이 옛 프로세스와 겹치지 않게 하는 한 자리다. 띄울 수 있는 plugin 으로
+/// 재야 창구가 빠졌을 때 실제로 뜬다.
+#[cfg(unix)]
+#[test]
+fn the_start_gate_defers_a_plugin_that_is_still_retiring() {
+    use crate::test_fake_plugin as fake;
+
+    let home = HomeEnvGuard::tasty_home();
+    let dir = home.path().join("plugin");
+    fake::write(&dir);
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    mgr.set_packages_for_tests(vec![fake::package(&dir)]);
+    let proc = PluginProcess::stub_with_child(ID, slow_child());
+    proc.backdate_pong_for_test(super::HEALTHCHECK_TIMEOUT + Duration::from_secs(1));
+    mgr.processes.insert(ID.into(), proc);
+    mgr.restart_unresponsive_plugins();
+
+    mgr.ensure_listener();
+    mgr.start_plugin_internal(&fake::package(&dir));
     assert!(
         !mgr.is_running(ID),
         "옛 프로세스가 빠지기 전에 새 프로세스가 떴다"
     );
     assert_eq!(mgr.retiring_respawn(ID), Some(true));
 
-    mgr.disable(ID).expect("disable again");
-    assert_eq!(mgr.retiring_respawn(ID), Some(false));
     pump_until_retired(&mut mgr);
-    assert!(!mgr.is_running(ID), "disable 로 거둔 예약이 기동됐다");
+    assert!(mgr.is_running(ID), "회수 뒤에 미뤄 둔 기동이 안 됐다");
+    mgr.begin_shutdown_all();
+    let give_up = Instant::now() + Duration::from_secs(10);
+    while !mgr.poll_shutdown_all() {
+        assert!(Instant::now() < give_up, "종료가 10 초 안에 안 끝났다");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// 무응답 재시작은 옛 프로세스를 뒤에서 회수하고, 새 프로세스를 **그 자리에서** 띄우지

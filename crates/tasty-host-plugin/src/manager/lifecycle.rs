@@ -677,6 +677,12 @@ impl PluginManager {
             );
         }
 
+        // 옛 프로세스가 아직 빠지는 중이면(방금 disable) 그 회수를 끝까지 기다렸다가 **이
+        // 자리에서** 띄운다 — 사용자·에이전트가 명시적으로 부른 조작이라, "disable → enable →
+        // 곧바로 호출" 이 예전처럼 성공해야 한다. 미뤄 두면 그 사이의 호출이 `not running`
+        // 을 받는다. 그 대가로 메인 스레드가 최대 2 s 선다(remove · swap 과 같은 논리,
+        // ADR-0457). 기다리며 가져온 재기동 예약은 바로 아래 기동이 대신한다.
+        self.wait_retired(plugin_id);
         if !self.processes.contains_key(plugin_id) {
             self.ensure_listener();
             self.start_plugin_internal(&pkg);

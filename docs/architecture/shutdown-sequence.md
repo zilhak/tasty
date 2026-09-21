@@ -110,12 +110,15 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   재시작은 shutdown 요청을 보낸 뒤 회수 대기(최대 2s, 넘으면 kill)를 전용 스레드
   (`plugin-retire-<id>`)에 맡긴다. 메인 스레드는 50 ms 주기 타이머(`PluginRetire`,
   회수 중인 것이 있을 때만 등록)로 끝난 것만 거두고, 로그에 `plugin process retired`
-  한 줄(`ms` · `reason`)을 남긴다. **새 프로세스는 옛 것이 회수된 뒤에 뜬다** — 재시작,
-  그리고 회수 중에 온 `enable` 은 기동을 미뤘다가 회수가 끝난 tick 에 한다(겹치면 옛
-  프로세스가 쥔 포트·파일을 새 것이 못 잡는다). 회수 중에 온 `disable` 은 그 예약을
-  거둔다. 호스트 종료가 시작되면 회수 중인 것도 `poll_shutdown_all()` 이 끝날 때까지
-  보고 다시 띄우지 않으며, 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다.
-  **옛 프로세스가 반드시 사라져 있어야 하는 자리만 기다린다** — `plugin remove`
+  한 줄(`ms` · `reason`)을 남긴다. **새 프로세스는 옛 것이 회수된 뒤에 뜬다** — 재시작은
+  기동을 미뤘다가 회수가 끝난 tick 에 한다(겹치면 옛 프로세스가 쥔 포트·파일을 새 것이
+  못 잡는다). 회수 중에 온 `disable` 은 그 예약을 거둔다. 회수 중에 온 명시적 `enable`
+  은 미루지 않고 그 id 의 회수를 기다린 뒤 그 자리에서 띄운다 — `enable` 이 돌아오면
+  plugin 이 떠 있다. 그 대가로 이 조작에 한해 메인 스레드가 최대 2s 선다. 호스트 종료가
+  시작되면 회수 중인 것도 `poll_shutdown_all()` 이 끝날 때까지 보고 다시 띄우지 않으며, 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다.
+  **기다리는 자리는 넷이다** — `plugin remove` · swap · `upgrade-builtins` 의 쓰기 갈래 ·
+  명시적 `enable`. 헬스체크 재시작과 `disable` 은 기다리지 않는다. 앞의 셋은 옛
+  프로세스가 반드시 사라져 있어야 하는 자리다 — `plugin remove`
   (디렉토리를 지운다) · swap(`upgrade-builtins --restart-running` · auto-reload,
   디렉토리를 덮어쓴다) · `upgrade-builtins` 의 **쓰기 갈래**(버전이 달라 덮어쓰거나,
   같은 버전인데 바뀐 내용이 있을 때). 설치본이 더 높아 건너뛰거나 같은 버전에 바뀐 것이

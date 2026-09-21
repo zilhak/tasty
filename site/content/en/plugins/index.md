@@ -1,4 +1,4 @@
-<!-- source-hash: ae9254b4d91c -->
+<!-- source-hash: 64c3ac096ae9 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -124,7 +124,7 @@ Use it from a terminal while Tasty is running. The output is JSON.
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
-`disable` returns without waiting for the plugin to exit. A plugin that does not respond is force-stopped in the background after at most 2 seconds. If you `enable` it in the meantime, it starts again only after the previous process has fully exited, so `tasty plugin list` may briefly show it as not running.
+`disable` returns without waiting for the plugin to exit. A plugin that does not respond is force-stopped in the background after at most 2 seconds. If you `enable` it in the meantime, `enable` waits for the previous process to exit and then starts the plugin right away, so it can take up to 2 seconds. When `enable` returns, the plugin is already running and ready to use.
 
 ```sh
 tasty plugin list

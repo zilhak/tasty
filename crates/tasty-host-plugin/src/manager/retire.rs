@@ -9,8 +9,9 @@
 //!
 //! **새 프로세스는 옛 프로세스가 회수된 뒤에 뜬다.** 겹치면 옛 프로세스가 쥔 자원 —
 //! 번들 `agent-stream` 이 재시작 때 다시 여는 SSE 포트, plugin 데이터 디렉토리의 파일 —
-//! 을 새 프로세스가 못 잡는다. 그래서 재시작과 "회수 중에 온 enable" 은 기동을
-//! 미뤘다가 회수가 끝나는 tick 에 한다([`PluginManager::poll_retiring`]).
+//! 을 새 프로세스가 못 잡는다. 그래서 재시작은 기동을 미뤘다가 회수가 끝나는 tick 에
+//! 한다([`PluginManager::poll_retiring`]). 명시적 `enable` 은 미루지 않고 그 자리에서 회수를
+//! 기다린 뒤 띄운다([`PluginManager::wait_retired`]).
 //!
 //! plugin 이 보는 순서(shutdown 요청 → 종료)는 그대로다. 근거·대안은 ADR-0457.
 
@@ -30,8 +31,9 @@ pub(crate) struct Retiring {
     handle: Option<JoinHandle<ShutdownOutcome>>,
     done: Option<ShutdownOutcome>,
     started: Instant,
-    /// 회수가 끝나면 다시 띄우는가. 무응답 재시작이 세우고, 회수 중에 온 `enable` 이
-    /// 세우며, 회수 중에 온 `disable` 과 호스트 종료가 내린다.
+    /// 회수가 끝나면 다시 띄우는가. 무응답 재시작과, 회수 중에 기동 창구를 지난 전체 기동
+    /// (`discover_and_start`)이 세우며, 회수 중에 온 `disable` 과 호스트 종료가 내린다.
+    /// 명시적 `enable` 은 이것을 세우지 않고 회수를 기다려 그 자리에서 띄운다.
     respawn: bool,
 }
 
@@ -218,11 +220,12 @@ impl PluginManager {
     /// `plugin_id` 의 회수가 끝날 때까지 **기다린다**. 옛 프로세스가 반드시 사라져 있어야
     /// 하는 자리만 부른다 — `plugin remove`(디렉토리를 지운다) · swap(디렉토리를 덮어쓴다) ·
     /// `upgrade-builtins` 의 **쓰기 갈래**(디렉토리에 실제로 쓸 때만. 건너뛰는 갈래와 바뀐
-    /// 내용이 없는 같은 버전 갈래는 안 부른다). 이 목록은 `shutdown-sequence.md` 의 "단건
-    /// 경로" 항과 ADR-0457 에 같은 말로 적혀 있다.
+    /// 내용이 없는 같은 버전 갈래는 안 부른다) · 명시적 `enable`(그 자리에서 띄우려고).
+    /// 헬스체크 재시작과 `disable` 은 부르지 않는다. 이 목록은 `shutdown-sequence.md` 의
+    /// "단건 경로" 항과 ADR-0457 에 같은 말로 적혀 있다.
     ///
     /// 돌려주는 값은 **회수 뒤에 다시 띄우기로 예약돼 있었는가**다(무응답 재시작 · 회수 중에
-    /// 온 enable). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인
+    /// 온 전체 기동). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인
     /// plugin 이 아무 것도 다시 띄우지 않는 채로 꺼져 남는다 — 호출자가 쓰기를 마친 뒤
     /// `true` 면 [`Self::start_if_still_wanted`] 로 이어 받는다.
     pub fn wait_retired(&mut self, plugin_id: &str) -> bool {
