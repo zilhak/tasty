@@ -1243,6 +1243,10 @@ fn apply_builtin_upgrade_decision(
     force: bool,
     restart_running: bool,
 ) -> SpecUpgrade {
+    // 방금 disable 된 plugin 은 옛 프로세스가 아직 빠지는 중일 수 있다 — disable 은 회수를
+    // 기다리지 않는다. 아래 갈래는 모두 그 디렉토리에 쓰므로(실행 중인 파일은 Windows 에서
+    // 덮어쓸 수 없고 Linux 에서는 `ETXTBSY` 가 난다) 그 회수부터 끝낸다.
+    mgr.wait_retired(spec.id);
     match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
         BuiltinUpgradeDecision::Skip => SpecUpgrade {
             item: BuiltinUpgradeItem {

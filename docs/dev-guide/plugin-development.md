@@ -451,6 +451,8 @@ cp crates/tasty-plugin-<name>/tasty-plugin.toml.sig target/release/builtin-plugi
 **3) 정지 → 재동기화 → 재기동 (순서 중요)**
 ```bash
 tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .exe 를 잠가 upgrade 가 'os error 5(액세스 거부)'
+#   ※ disable 은 프로세스가 빠지기를 기다리지 않고 곧바로 돌아온다(ADR-0457). 옛 프로세스가 아직
+#      빠지는 중이면 다음 줄의 upgrade-builtins 가 그 회수(최대 2 s)를 기다린 뒤 쓴다.
 tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
 #   ※ version 을 안 올려도 반영된다 — 같은 버전 갈래는 **내용으로** 판정해 다른 파일만 옮긴다
 #      (2026-09-07 부터. 그전에는 mtime 비교였고, `cp -p`·아카이브처럼 mtime 이 보존되면 조용히 건너뛰었다).

@@ -201,6 +201,10 @@ impl App {
         if let Err(e) = mgr.disable(&plugin_id) {
             tracing::warn!("disable before remove failed: {e}");
         }
+        // disable 은 옛 프로세스의 회수를 기다리지 않는다. 아래에서 그 프로세스가 실행
+        // 중인 디렉토리를 지우므로 여기서는 회수가 끝날 때까지 기다린다 — 실행 중인
+        // 파일은 Windows 에서 지워지지 않는다.
+        mgr.wait_retired(&plugin_id);
         let plugin_dir = crate::plugin::plugin_root()
             .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?
             .join(&plugin_id);

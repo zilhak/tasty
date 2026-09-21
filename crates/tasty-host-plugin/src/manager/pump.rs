@@ -147,6 +147,7 @@ impl PluginManager {
                 }
                 PluginTick::Rss => self.sample_plugin_rss(),
                 PluginTick::AutoReload => self.poll_auto_reload(),
+                PluginTick::Retire => self.poll_retiring(),
             }
         }
 
@@ -661,9 +662,15 @@ impl PluginManager {
                 };
                 self.emit_host_event("plugin.error", &payload, EventScope::System);
             }
-            if let Some(proc) = self.processes.remove(&id) {
-                proc.shutdown(super::PLUGIN_SHUTDOWN_TIMEOUT);
-            }
+            // 회수는 기다리지 않고, 새 프로세스는 옛 것이 빠진 뒤에 뜬다 — 겹치면 옛
+            // 프로세스가 쥔 포트·파일을 새 것이 못 잡는다(`manager::retire`).
+            let retired = match self.processes.remove(&id) {
+                Some(proc) => {
+                    self.retire_process(&id, proc, true);
+                    true
+                }
+                None => false,
+            };
             // ipc namespace 유지 — 재시작 중에 오는 호출은 "없는 메서드" 가 아니라
             // "지금 안 뜬 plugin" 이다(ADR-0173). 정리는 disable · swap 과 같은 한
             // 함수를 거친다 — 따로 적었을 때 여기만 등록 게이트를 안 풀었다.
@@ -674,7 +681,9 @@ impl PluginManager {
             self.banner_mesh_frames.retain(|_, f| f.plugin_id != id);
             // 죽은 plugin 의 banner 인스턴스도 정리 — 다음 spawn 에서 새 인스턴스로 시작.
             self.banner_instances.retain(|_, inst| inst.plugin_id != id);
-            if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
+            if !retired
+                && let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned()
+            {
                 self.start_plugin_internal(&pkg);
             }
         }

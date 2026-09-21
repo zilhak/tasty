@@ -106,8 +106,19 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
 - **잔존 프로세스 없음** — `poll_shutdown_all()` 이 `true` 를 반환한 시점에 모든
   자식이 회수(exit 관측 또는 kill+wait 완료)돼 있다. 폴링을 끝내지 않고 매니저가
   drop 되면 남은 자식은 그 자리에서 kill 된다.
-- **단건 경로는 그대로 블로킹** — `plugin disable` / 헬스체크 재시작 / swap 은
-  대상이 하나뿐이라 겹칠 것이 없다. 요청 후 최대 2s 동기 대기를 유지한다.
+- **단건 경로는 메인 스레드가 기다리지 않는다** — `plugin disable` 과 헬스체크
+  재시작은 shutdown 요청을 보낸 뒤 회수 대기(최대 2s, 넘으면 kill)를 전용 스레드
+  (`plugin-retire-<id>`)에 맡긴다. 메인 스레드는 50 ms 주기 타이머(`PluginRetire`,
+  회수 중인 것이 있을 때만 등록)로 끝난 것만 거두고, 로그에 `plugin process retired`
+  한 줄(`ms` · `reason`)을 남긴다. **새 프로세스는 옛 것이 회수된 뒤에 뜬다** — 재시작,
+  그리고 회수 중에 온 `enable` 은 기동을 미뤘다가 회수가 끝난 tick 에 한다(겹치면 옛
+  프로세스가 쥔 포트·파일을 새 것이 못 잡는다). 회수 중에 온 `disable` 은 그 예약을
+  거둔다. 호스트 종료가 시작되면 회수 중인 것도 `poll_shutdown_all()` 이 끝날 때까지
+  보고 다시 띄우지 않으며, 끝난 것마다 S4a 를 `retiring before exit` 문구로 남긴다.
+  **옛 프로세스가 반드시 사라져 있어야 하는 두 경로는 기다린다** — `plugin remove`
+  (디렉토리를 지운다)와 swap(`upgrade-builtins --restart-running` · auto-reload,
+  디렉토리를 덮어쓴다). 근거·대안은
+  [ADR-0457](../adr/0457-a-single-plugin-shutdown-is-reaped-off-the-main-thread.md).
 
 ## 종료 화면
 

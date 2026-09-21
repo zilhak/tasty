@@ -120,6 +120,9 @@ pub(super) enum PluginTick {
     /// `AUTO_RELOAD_POLL_INTERVAL` 주기 auto-reload polling. flag off 면 **등록
     /// 자체를 하지 않는다** — 꺼진 기능이 데드라인에 기여하지 않는다.
     AutoReload,
+    /// 회수 중인 plugin 이 있을 때만 등록된다 — 끝난 회수를 거두고 미뤄 둔 기동을 한다
+    /// (`manager::retire`). 마지막 회수가 끝나면 내려간다.
+    Retire,
 }
 
 /// IPC 응답을 최종적으로 어디로 회신해야 하는지를 식별. 호스트 외부 caller(CLI/사용자)는
@@ -582,6 +585,9 @@ pub struct PluginManager {
     /// 진행 중인 종료 대기. `begin_shutdown_all()` 이 채우고 `poll_shutdown_all()`
     /// 이 비운다. `None` 이면 종료 대기 중이 아니다.
     pub(super) shutdown_batch: Option<ShutdownBatch>,
+    /// 무응답 재시작 · disable 로 내려가는 중인 plugin. 회수 대기는 스레드가 하고
+    /// 메인 스레드는 [`PluginTick::Retire`] 에서 끝난 것만 거둔다(`manager::retire`).
+    pub(super) retiring: HashMap<String, retire::Retiring>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.
@@ -639,6 +645,7 @@ mod popup;
 mod pump;
 mod queries;
 mod response;
+mod retire;
 
 // 유도 상태(확장 집합)의 신선도 단정 — 텍스트가 못 보는 "순서" 를 런타임이 본다.
 #[cfg(test)]
@@ -671,6 +678,10 @@ mod tests_forward_idempotency;
 // plugin 으로 넘긴 요청의 대기 항목이 hop 마다 원 IPC 요청의 번호를 드는가(ADR-0436).
 #[cfg(test)]
 mod tests_request_origin;
+
+#[cfg(test)]
+#[cfg(any(unix, windows))]
+mod tests_retire;
 
 #[cfg(test)]
 mod tests {

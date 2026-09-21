@@ -1,4 +1,4 @@
-<!-- source-hash: 6133aca6944e -->
+<!-- source-hash: ae9254b4d91c -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -123,6 +123,8 @@ Use it from a terminal while Tasty is running. The output is JSON.
 | `tasty plugin upgrade-builtins [--force] [--restore-removed <id>]` | Realigns the bundled plugins with the bundled version. `--restore-removed` brings back a bundled plugin you removed |
 
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
+
+`disable` returns without waiting for the plugin to exit. A plugin that does not respond is force-stopped in the background after at most 2 seconds. If you `enable` it in the meantime, it starts again only after the previous process has fully exited, so `tasty plugin list` may briefly show it as not running.
 
 ```sh
 tasty plugin list

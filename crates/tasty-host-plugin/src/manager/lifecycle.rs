@@ -102,6 +102,7 @@ impl PluginManager {
                     PluginTick::Ping => "PluginPing",
                     PluginTick::Rss => "PluginRss",
                     PluginTick::AutoReload => "PluginAutoReload",
+                    PluginTick::Retire => "PluginRetire",
                 },
                 interval: s.interval,
                 next_due: s.next_due,
@@ -209,6 +210,7 @@ impl PluginManager {
             i18n_registrar: None,
             plugin_reaper,
             shutdown_batch: None,
+            retiring: HashMap::new(),
         }
     }
 
@@ -448,7 +450,7 @@ impl PluginManager {
         self.start_plugin_internal(&pkg);
     }
 
-    fn ensure_listener(&mut self) {
+    pub(super) fn ensure_listener(&mut self) {
         self.ensure_tcp_listener();
         self.ensure_handle_listener();
     }
@@ -487,6 +489,11 @@ impl PluginManager {
 
     pub(super) fn start_plugin_internal(&mut self, pkg: &PluginPackage) {
         if self.auto_disabled.contains(&pkg.manifest.id) {
+            return;
+        }
+        // 옛 프로세스가 아직 빠지는 중이면 겹쳐 띄우지 않는다 — 회수가 끝나는 tick 에
+        // 띄운다(`manager::retire`). 기동 창구가 여럿이라 이 한 자리에서 막는다.
+        if self.defer_start_until_retired(&pkg.manifest.id) {
             return;
         }
         let listener = match &self.listener {
@@ -611,8 +618,10 @@ impl PluginManager {
     ///
     /// 완료된 plugin 마다 `S4a` 를 발화하고, 전부 끝난 라운드에 `S4` 를 발화한다.
     pub fn poll_shutdown_all(&mut self) -> bool {
+        // 단건 경로로 이미 내려가던 plugin 도 끝날 때까지 본다 — 다시 띄우지 않는다.
+        let retired = self.poll_retiring_for_exit();
         let Some(batch) = self.shutdown_batch.as_mut() else {
-            return true;
+            return retired;
         };
         for report in batch.poll() {
             tracing::info!(
@@ -623,7 +632,7 @@ impl PluginManager {
                 "S4a plugin_shutdown_one (graceful deadline 2s)"
             );
         }
-        if !batch.is_done() {
+        if !batch.is_done() || !retired {
             return false;
         }
         let ms = batch.elapsed().as_secs_f64() * 1000.0;
@@ -690,8 +699,12 @@ impl PluginManager {
         self.config.save()?;
         self.recompute_extensions();
         let was_running = self.processes.contains_key(plugin_id);
+        // 회수는 기다리지 않는다 — 대기는 스레드가 한다(`manager::retire`). 이미 회수
+        // 중이던 것(무응답 재시작)은 다시 띄우지 않게 한다.
         if let Some(proc) = self.processes.remove(plugin_id) {
-            proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
+            self.retire_process(plugin_id, proc, false);
+        } else {
+            self.cancel_respawn_after_retire(plugin_id);
         }
         // ipc namespace 는 **해제하지 않는다.** disable 은 설치를 되돌리는 것이 아니라
         // 기동을 끄는 것이고, 소유는 설치 사실이다. 해제하면 그 plugin 의 메서드가
@@ -771,6 +784,10 @@ impl PluginManager {
     /// 호출 순서: `swap_shutdown_internal` → 외부에서 disk overwrite → `swap_respawn_internal`.
     /// upgrade_builtins 의 `--restart-running` flag 경로 외에서는 사용 금지.
     pub(crate) fn swap_shutdown_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        // swap 은 이 뒤에 디스크의 plugin 디렉토리를 덮어쓰므로 옛 프로세스가 **사라져
+        // 있어야** 한다 — 그래서 여기는 기다린다. 무응답 재시작으로 이미 회수 중이던
+        // 것도 끝까지 기다린다(`manager::retire`).
+        self.wait_retired(plugin_id);
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }

@@ -213,6 +213,23 @@ impl PluginProcess {
         (proc, RequestTap(req_rx))
     }
 
+    /// 실제 자식을 든 stub — 회수 경로(`manager::retire`)가 자식이 빠질 때까지 무엇을
+    /// 하는지 재는 자리. 송신 큐는 [`Self::stub_for_test`] 와 같이 끊겨 있어 shutdown
+    /// 요청은 안 닿는다 — 자식은 스스로 끝나거나 deadline 뒤 kill 된다.
+    pub(crate) fn stub_with_child(plugin_id: &str, child: Child) -> Self {
+        let mut proc = Self::stub_for_test(plugin_id);
+        proc.child = Some(child);
+        proc
+    }
+
+    /// 마지막 pong 을 `by` 만큼 과거로 민다 — 무응답 재시작을 60 초 기다리지 않고 재려고.
+    pub(crate) fn backdate_pong_for_test(&self, by: Duration) {
+        let mut last = self.last_pong.lock().expect("fresh mutex");
+        *last = Instant::now()
+            .checked_sub(by)
+            .expect("the clock goes back far enough");
+    }
+
     /// 단위 테스트 전용 stub. child/last_pong 등 외부에서 접근 불가능한 필드를
     /// 합리적인 기본값으로 채운다. 송수신 채널은 dangling이라 실제로 사용하면 안 된다.
     pub(crate) fn stub_for_test(plugin_id: &str) -> Self {
