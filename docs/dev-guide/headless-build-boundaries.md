@@ -1,0 +1,74 @@
+# 헤드리스 정의 경계
+
+headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 제품 형태다. GUI 가
+없다는 이유로 공유 Core·AppState·registry 를 통째로 숨기지 않는다. `dead_code` 진단이
+가리키는 정의의 생산자와 소비자를 따라가며 아래 기준으로 컴파일 대상을 나눈다.
+
+결정과 그 근거는 [ADR-0346](../adr/0346-headless-compiles-only-what-it-reaches.md).
+
+## 세 갈래
+
+**① GUI 전용 정의 — `cfg(feature = "gui")`**
+
+headless 에 생산자도 호출자도 없는 정의. 모듈 통째가 그 안쪽이면 모듈 선언에 붙이고,
+일부 항목만이면 그 항목에 붙인다.
+
+**② GUI 와 순수 테스트가 함께 쓰는 정의 — `cfg(any(feature = "gui", test))`**
+
+테스트가 **실제로 그 정의를 호출할 때만** 쓴다. 호출하지 않는데 `test` 를 포함시키면 그
+정의는 라이브러리 대신 테스트 구성에서 dead 로 남는다 — 자리만 옮긴 것이다. 테스트의
+존재는 headless 출하 코드가 그 정의를 쓴다는 증거가 아니다.
+
+**③ headless 도 만들지만 읽는 자가 GUI 뿐인 정의 — `expect(dead_code, reason = ...)`**
+
+빼면 동작이 바뀌므로 제외하지 않는다. 자리마다 `cfg_attr(not(feature = "gui"), expect(...))`
+로 계약 하나만 설명한다. 조건이 달라져 진단이 사라지면
+`unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. 모듈이나 crate 전체를 덮는
+dead_code 예외는 쓰지 않는다.
+
+지금 ③ 에 해당하는 것은 셋이다.
+
+| 정의 | 왜 남는가 |
+|---|---|
+| git query · markdown content · 구조 op · resize 의 forward 큐 | 양쪽 빌드가 채우고 GUI 의 `about_to_wait` 만 비운다. 칸을 빼면 IPC 핸들러와 공유 pty 경로가 깨진다 |
+| `SurfaceKindDef` 의 입력·줌·복사 플래그 | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
+| CoreEvent 의 페이로드(터미널 OSC 이벤트 전부, `RestoredKind` 의 인덱스) | variant 는 headless 에서도 발화하지만 그 빌드의 drain 이 `other` 갈래로 흘린다 |
+
+## 판정은 바깥에서 안으로
+
+진단 목록은 평면이지만 사실은 그래프다. 어떤 정의가 dead 로 보이는 이유가 **그 호출자가
+같은 실행에서 함께 dead 로 잡혔기 때문**일 수 있다. 안쪽을 먼저 자르면 컴파일이 깨진다.
+
+실측 2026-09-21: `NotificationStore` 의 읽음 처리 셋을 GUI 로 게이팅했더니 headless 라이브러리가
+`E0599` 로 깨졌다. 그 셋을 부르는 `CoreState::mark_notification_read` 가 그 빌드에서
+컴파일되는데, 그쪽도 같은 실행에서 dead 로 보고되고 있었다.
+
+## 재는 법 — 네 칸
+
+`gui` × `headless` 의 두 feature 조합을, 각각 라이브러리와 `--all-targets` 로 잰다.
+
+```bash
+cargo check --workspace --no-default-features
+cargo check --workspace --no-default-features --all-targets
+cargo check --workspace
+cargo check --workspace --all-targets
+```
+
+한 칸만 보면 나머지에서 회귀가 조용히 나간다. 라이브러리와 테스트 구성은 서로 다른
+물음의 답이다 — `cfg(any(feature = "gui", test))` 는 앞을 풀고 뒤를 그대로 남긴다.
+
+커밋 전에 이 넷을 보는 자동 채널은 없다. headless 컴파일은 pre-push 가, release gui 컴파일은
+`check-release` 가 본다([ci-gates](ci-gates.md)).
+
+## 이 경계가 드러낸 것
+
+경계를 그으면서 보인 사실 둘이다. 둘 다 기능을 뺀 것이 아니라 이미 그랬던 것이 보이게 된
+것이고, 바꿀지는 별도 판단이다.
+
+- headless 는 레이아웃을 저장하지도 복원하지도 않는다. capture·restore·scrollback 경로
+  전체에 그 빌드의 호출자가 없다.
+- headless 의 OSC 7 cwd 변경은 탭 이름을 갱신하지 않는다. 터미널 이벤트에서 그 intent 로
+  가는 배선이 그 빌드에 없어, drain 의 처리 갈래가 도달 불가능했다.
+
+관련 문서: [build](build.md) · [model-view-split](model-view-split.md) ·
+[unit-test-isolation](unit-test-isolation.md) · [action-dispatch](../design/flows/action-dispatch.md)

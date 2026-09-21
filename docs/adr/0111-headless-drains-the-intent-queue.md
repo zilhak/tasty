@@ -125,3 +125,4 @@ drain 모듈은 **gui 빌드에서도 컴파일한다**(호출부는 headless �
 - [ADR-0039](0039-surface-highlight-shared-primitive.md) — attention 이 producer 중립 공유 상태라는 근거
 - [ADR-0050](0050-headless-pty-primitive.md) — headless 실행 형태의 자원 회수 모델
 - [identity](../identity.md) — 불가침 원칙 2(에이전트 기능의 IPC + CLI 양면 동작)
+- 부분 개정: [0346](0346-headless-compiles-only-what-it-reaches.md) (생산자 없는 non-Domain 라우팅 보존 조항 개정)
