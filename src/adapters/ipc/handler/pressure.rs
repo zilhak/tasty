@@ -765,6 +765,19 @@ mod tests {
         ledger
             .admit(20, Origin::Socket)
             .expect_err("바이트 상한을 넘는다");
+        // 주입 깊이 상한(3)을 넘는 주입이 두 번 거절된다 — 바이트 거절(1)과 다른 값이라 두 칸이
+        // 뒤바뀌면 갈린다. 표는 이 블록 끝에서 놓아, 아래의 지금 값(`queued_bytes` ·
+        // `queued_commands`) 단언은 소켓 한 건만 본다 — 거절 누계는 남는다.
+        {
+            let _injected: Vec<_> = (0..3)
+                .map(|_| ledger.admit(1, Origin::Injected).expect("깊이 상한 안"))
+                .collect();
+            for _ in 0..2 {
+                ledger
+                    .admit(1, Origin::Injected)
+                    .expect_err("주입 깊이 상한을 넘는다");
+            }
+        }
         // 루프가 하는 일을 그대로 한다 — 꺼낸 명령을 실행 직전에 집는다. 명령과 기다리는
         // 쪽을 둘 다 들고 있는 동안 그 요청은 실행 중이다(ADR-0412).
         let (reply_tx, _reply_rx) = std::sync::mpsc::sync_channel(1);
@@ -837,6 +850,11 @@ mod tests {
         assert_eq!(a["queued_bytes"], 40, "주입기가 든 장부가 아니다: {a}");
         assert_eq!(a["queued_commands"], 1);
         assert_eq!(a["refused_bytes"], 1, "거절 누계가 장부의 것이 아니다: {a}");
+        assert_eq!(
+            a["refused_depth"], 2,
+            "깊이 거절 누계가 장부의 것이 아니다: {a}"
+        );
+        assert_eq!(a["queued_injected"], 0, "놓은 주입 표가 남아 있다: {a}");
         assert_eq!(
             a["limit_bytes"], 50,
             "상한은 그 장부가 집행하는 값이어야 한다"
