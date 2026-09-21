@@ -485,12 +485,13 @@ pub struct CoreState {
     /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_hard_occupied
     /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
     /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.
-    /// headless 는 렌더가 없어 읽지 않는다(gui 한정).
+    /// 읽는 자는 gui 의 render_pass 와 attach 폴링(`refresh_readonly_views`)뿐이라 headless 는
+    /// 읽지 않는다(gui 한정).
     #[cfg_attr(
         not(feature = "gui"),
         expect(
             dead_code,
-            reason = "only render_pass reads the readonly mirror and headless has no renderer"
+            reason = "only the gui render_pass and attach poll read the readonly mirror"
         )
     )]
     pub(crate) readonly_views: HashMap<u32, tasty_terminal::Terminal>,
