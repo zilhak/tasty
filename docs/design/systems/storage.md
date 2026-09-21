@@ -131,9 +131,11 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   것은 일관된 이전 상태다.
 - 이 값을 바꾸지 않는다. FULL 로 올리는 것은 commit 마다 fsync 비용을 받는 **별도 결정**이고,
   지금 코드는 적용 여부만 본다([ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md)).
-- **이 보장은 측정된 적이 없다.** 위 두 줄은 SQLite 문서의 계약이다. 재는 법은 commit 직후
+- **전원 장애 쪽은 측정된 적이 없다.** 그 줄은 SQLite 문서의 계약이다. 재는 법은 commit 직후
   전원을 끊고 재시작해 마지막 commit 의 생존을 보는 것인데 — **이 레포에 그 장비는 없다.**
-  프로세스 kill 쪽은 이 머신에서 잴 수 있다.
+- **프로세스 kill 쪽은 쟀다**(2026-09-21, Linux, 격리 홈의 GUI debug 인스턴스): `memory.put` 다섯
+  건이 응답한 직후 `SIGKILL`, 같은 홈으로 재시작해 `memory.get` — 다섯 건 전부 남아 있었다. 한
+  번의 관측이지 확률의 측정은 아니다.
 
 ### 저장 실패의 의미 — `memory.db`
 
