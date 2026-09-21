@@ -46,6 +46,8 @@ use crate::state::AppState;
 /// `state` 는 gui 와 같은 `AppState` 타입이지만 이 빌드에서는 GUI 소유 필드(`dialogs` 등)가
 /// 컴파일되지 않은 형태다 — 좁은 타입을 따로 두지 않은 이유는
 /// [ADR-0355](../../docs/adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md).
+/// 이 인자가 남는 것은 창 상태를 읽는 핸들러가 남아 있어서다 — 안 읽는 핸들러는 `AppState` 를
+/// 받지 않는다([ADR-0470](../../docs/adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)).
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut AppState,

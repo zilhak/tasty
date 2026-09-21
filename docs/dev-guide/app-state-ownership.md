@@ -126,10 +126,16 @@ headless 빌드에 그 필드가 있는지를 적는다.
 도메인이 선언한 포트 `core::cascade_window::CascadeWindow` 로 닿고, `AppState` 가
 `src/state/cascade_window.rs` 에서 메서드마다 한 줄 위임으로 구현한다
 ([ADR-0440](../adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md)).
-그 포트의 메서드 목록이 "도메인 실행이 `AppState` 에서 무엇을 쓰는가" 의 답이다. IPC 핸들러와
-`pump_ipc` 는 여전히 `AppState` 전체를 받는다 — 핸들러 인자 모양 전체의 문제라
-[ADR-0355](../adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md)
-의 재검토 조건에 걸려 있다.
+그 포트의 메서드 목록이 "도메인 실행이 `AppState` 에서 무엇을 쓰는가" 의 답이다.
+
+IPC 핸들러는 **창 상태를 읽을 때만** `AppState` 를 받는다
+([ADR-0470](../adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)). 창 상태를 안
+읽는 핸들러(memory · agent 협업 · telemetry·approval 조회 · surface 조회·전송 · hook · message 등)는
+`Core`/`CoreState` 만 받으므로, 그 핸들러가 창 상태를 안 만진다는 것을 컴파일러가 보증한다.
+`AppState` 를 받는 핸들러가 읽는 것은 intent 큐(`pending_intents`) · 대상 생략 시의
+`active_workspace` · GUI·debug 전용 필드 · 구조 op 의 창 연산이다. 라우터와 `pump_ipc` 는 그
+핸들러들에게 넘겨야 하므로 `AppState` 를 받는다. `AppState` 가 든 Core memory 핸들 사본(`memory`)은
+IPC 핸들러가 읽지 않는다 — 같은 Arc 를 `Core` 로 읽는다.
 
 ## 재는 법
 

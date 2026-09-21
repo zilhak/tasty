@@ -115,8 +115,9 @@ use crate::state::AppState;
 /// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
 ///
 /// 라우터 구조:
-/// 1. **engine 핸들러** (`route_engine_handler`): 등록된 핸들러 전부. `&mut AppState`
-///    를 받지만 본문이 `state.engine` 만 접근하거나 AppState 메서드만 호출한다.
+/// 1. **engine 핸들러** (`route_engine_handler`): 등록된 핸들러 전부. 핸들러는 자기가
+///    닿는 상태만 인자로 받는다 — 창 상태를 읽는 핸들러만 `AppState` 를 받는다
+///    (`docs/adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md`).
 /// 2. **debug 핸들러** (`route_debug_handler`): debug build 전용. release 에서는 정의 안 됨.
 ///
 /// 게이트 3종(권한 / telemetry cap / rate limit)은 라우팅보다 **먼저** 돈다. plugin 이

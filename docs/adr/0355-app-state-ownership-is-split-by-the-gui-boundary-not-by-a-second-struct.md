@@ -84,6 +84,13 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
     "잃은 것" 첫 항) — 로는 그대로 남는다. 다음 주인은 IPC 핸들러와 `pump_ipc` 의 인자를 좁히는
     후속 단위다. 아래 재검토 조건 "`독자 없음` 칸이 비면" 이 이 착지로 충족됐고, 그 조건이
     가리키는 물음이 바로 이것이다.
+  - **① 의 IPC 쪽 (후속 — [ADR-0470](0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md), 2026-09-22)**:
+    창 상태를 읽지 않는 IPC 핸들러에서 `AppState` 인자를 뺐다. IPC 범위에서 `AppState` 를 받는
+    자리가 253 → 91 이고, 안 읽는 자리는 0 이다. 이제 "이 핸들러는 창 상태를 안 만진다" 를
+    시그니처가 말한다 — "잃은 것" 첫 항은 **창 상태를 실제로 읽는 핸들러에만** 남는다. 라우터와
+    `pump_ipc` 는 그 핸들러들에게 넘겨야 하므로 `AppState` 를 계속 받는다. 남은 91 자리의 내용
+    (intent 큐 · 로컬 사용자의 `active_workspace` 기본값 · GUI·debug 모듈 · 구조 op 의 창 연산)은
+    ADR-0470 이 적는다.
 - **운영 비용**: 새 dialog 상태를 넣는 사람은 그것이 headless 에서 읽혀야 하는지를 정해야 한다.
   읽혀야 하면 `dialogs` 가 아니라 `AppState` 나 `CoreState` 에 둔다.
 
