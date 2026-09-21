@@ -18,29 +18,36 @@
 //! 수렴한다), 보존소에 넣으면 오히려 **조회가 낡은 답을 받는다.** 그 분류가 이미 표에
 //! 있으므로 여기서 목록을 다시 만들지 않는다 — 두 목록이면 갈리고, 갈렸을 때 조용하다.
 //!
-//! ★ **그 상한과 실제로 도는 범위가 다르다.** 이 모듈을 부르는 자리는
-//! [`super::route_checked_request`] **하나**이고, 그 자리는
-//! [`super::handle_checked_request`] 를 지나는 요청만 본다. 호스트의 IPC 는 그 앞에
-//! 층이 둘 더 있고 둘 다 `Mutate` 를 포함한다:
+//! ★ **그 상한과 실제로 도는 범위는 층마다 따로 배선된다.** 호스트의 IPC 는 층이 셋이고,
+//! 이 모듈을 부르는 자리가 층마다 있다:
 //!
+//! - **engine 라우터** — [`super::route_checked_request`] 가 [`begin`]/[`finish`] 를 부른다.
+//!   [`super::handle_checked_request`] 를 지나는 모든 요청이다.
 //! - **App 층** — 창 생성·화면 캡처·plugin 설치·원격 attach 처럼 `App` 이 직접 끝내는
-//!   메서드. 실측 2026-09-21 기준 여섯이다(`window.create` · `view.create` ·
-//!   `ui.screenshot` · `remote.attach` · `plugin.install` · `plugin.request_permission`).
-//! - **plugin namespace forward** — plugin 이 점유한 prefix 아래의 **모든 이름**.
-//!   [`method_meta`] 의 fallback 이 그것을 전부 `Mutate` 로 주는데, 그 호출은 engine
-//!   라우터에 닿기 전에 plugin 으로 나간다.
+//!   메서드. GUI 의 app_methods step 과 헤드리스의 App 층 가로채기가 각각 첫 줄에서
+//!   [`run_app_layer`] 를 부른다(ADR-0421). 답을 **나중에** 보내는 메서드가 있어서 진행
+//!   중 상태가 여기서만 생긴다 — 아래 "동시에 같은 키가 둘 오면".
+//! - **plugin namespace forward** — plugin 이 점유한 prefix 아래의 **모든 이름**. 호스트는
+//!   그 뜻을 모르고 plugin 에게 넘길 뿐이라 보존소를 안 거친다. 이 층은 계약 **밖**이라고
+//!   이름 표가 선언한다(ADR-0361).
 //!
-//! 그 자리들은 이 lane 의 배타 소유 밖이라 여기서 못 닫는다. **그래서 이 모듈은
-//! "`Mutate` 면 걸린다" 가 아니라 "`Mutate` 이면서 engine 라우터로 가면 걸린다" 를
-//! 구현한다.** 그 차이를 요청마다 아는 값은 응답의 `idempotent_replay` 하나뿐이다.
+//! 남는 구멍이 하나 있다: GUI 의 **debug step**(`src/app/ipc/debug_methods.rs` ·
+//! `window_required.rs`)은 app_methods step **뒤**에서 돌고 거기 `Mutate` 가 있다
+//! (`debug.lua.eval` · 입력 주입 등). 그 이름은 [`run_app_layer`] 를 거치지만 app_methods
+//! step 이 안 맡으므로 연 자리가 닫히고 보존소 없이 실행된다. 사용자 입력 재현이라
+//! release 에 없는 표면이고, 이름 표가 그것을 계약 밖으로 선언한다.
 //!
 //! ## 동시에 같은 키가 둘 오면
 //!
-//! 수렴한다. 다만 그것을 **이 모듈이 만드는 것이 아니다** — 호스트의 IPC 실행은
-//! [`super::handle_checked_request`] 한 자리로 모이고 거기서 직렬로 돈다(요청 하나가
-//! 끝나야 다음 것이 시작한다). 그래서 둘째 요청이 보존소를 볼 때 첫째는 이미 끝나 있고,
-//! 관측 가능한 "진행 중" 상태가 없다. 진행 중을 뜻하는 값을 따로 두지 않은 이유가
-//! 이것이다 — **도달할 수 없는 상태를 만들면 그 갈래는 영원히 안 재진다.**
+//! 수렴한다. 그 수렴을 누가 만드는가는 층마다 다르다.
+//!
+//! - **engine 라우터**에서는 이 모듈이 만드는 것이 아니다 — 실행이
+//!   [`super::handle_checked_request`] 한 자리로 모이고 거기서 직렬로 돈다. 둘째 요청이
+//!   보존소를 볼 때 첫째는 이미 끝나 있다.
+//! - **App 층**에서는 이 모듈이 만든다. 창 생성의 답은 winit 핸들러가, 원격 attach 의 답은
+//!   워커가 나중에 보내므로 그 사이에 같은 키가 올 수 있다. 그때 둘째는 첫 실행에
+//!   **합류**하고(두 번째 실행 없음), 첫 결말이 나오면 그것을 재생 표지와 함께 받는다.
+//!   진행 중을 뜻하는 값([`Decision::InFlight`])은 이 층이 열 때만 생긴다.
 //!
 //! ## 보장의 경계 — 없는 것을 약속하지 않는다
 //!
@@ -57,14 +64,16 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, mpsc};
 use std::time::{Duration, Instant};
 
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::method_meta::{MethodEffect, method_meta};
 use tasty_ipc::protocol::{
-    ERR_IDEMPOTENCY_KEY_CONFLICT, ERR_IDEMPOTENT_RESULT_DISCARDED, JsonRpcRequest, JsonRpcResponse,
+    ERR_IDEMPOTENCY_KEY_CONFLICT, ERR_IDEMPOTENT_RESULT_DISCARDED,
+    ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN, JsonRpcRequest, JsonRpcResponse,
 };
+use tasty_ipc::server::{IpcCommand, send_response};
 
 /// 보관한 답이 유효한 시간.
 ///
@@ -99,6 +108,29 @@ enum Stored {
     Response(Box<JsonRpcResponse>),
     /// 실행은 됐지만 답이 상한을 넘어 버렸다.
     Discarded,
+    /// 실행이 시작됐고 답이 아직 안 왔다. App 층의 지연 응답 메서드에서만 생긴다 —
+    /// [`admit_app_call`] 참조.
+    InFlight {
+        /// 이 실행을 연 쪽의 표. 늦게 온 결말이 **자기 자리**에만 기록되게 한다.
+        ticket: u64,
+        /// 이 실행에 합류한 재시도. 결말이 나면 그것을 재생으로 받는다.
+        waiters: Vec<Waiter>,
+    },
+}
+
+/// 진행 중인 실행에 합류한 재시도 하나 — 답할 `id` 와 답할 통로.
+#[derive(Debug)]
+struct Waiter {
+    id: serde_json::Value,
+    reply: mpsc::SyncSender<JsonRpcResponse>,
+}
+
+/// 결말을 기록한 뒤 합류자에게 나눠 줄 것.
+#[derive(Debug, Default)]
+struct Handoff {
+    waiters: Vec<Waiter>,
+    /// 답을 보관했는가(거짓이면 상한을 넘어 버렸다).
+    kept: bool,
 }
 
 #[derive(Debug)]
@@ -130,6 +162,8 @@ pub(crate) enum Decision {
     Conflict,
     /// 실행은 됐고 답은 버려졌다.
     Discarded,
+    /// 같은 키·같은 요청의 실행이 **아직 끝나지 않았다.**
+    InFlight,
 }
 
 /// 키를 받는 보존소. 프로세스에 하나다.
@@ -138,6 +172,8 @@ pub(crate) struct Store {
     /// 삽입 순서. 밀어내는 쪽은 항상 앞이다.
     entries: VecDeque<Entry>,
     total_bytes: usize,
+    /// 다음에 줄 진행 중 표.
+    next_ticket: u64,
 }
 
 impl Store {
@@ -145,6 +181,7 @@ impl Store {
         Self {
             entries: VecDeque::new(),
             total_bytes: 0,
+            next_ticket: 0,
         }
     }
 
@@ -169,7 +206,58 @@ impl Store {
             Some(e) => match &e.outcome {
                 Stored::Response(r) => Decision::Replay(r.clone()),
                 Stored::Discarded => Decision::Discarded,
+                Stored::InFlight { .. } => Decision::InFlight,
             },
+        }
+    }
+
+    /// 실행을 연다 — 결말이 올 때까지 이 키는 [`Decision::InFlight`] 로 답한다.
+    fn open(&mut self, now: Instant, scope: &str, key: &str, digest: u64) -> u64 {
+        self.next_ticket += 1;
+        let ticket = self.next_ticket;
+        self.remove(scope, key);
+        self.entries.push_back(Entry {
+            scope: scope.to_string(),
+            key: key.to_string(),
+            digest,
+            stored_at: now,
+            outcome: Stored::InFlight {
+                ticket,
+                waiters: Vec::new(),
+            },
+            bytes: 0,
+        });
+        self.enforce_bounds();
+        ticket
+    }
+
+    /// 진행 중인 실행에 재시도를 합류시킨다. 그 자리가 이미 진행 중이 아니면 거짓이다.
+    fn join(&mut self, scope: &str, key: &str, waiter: Waiter) -> Result<(), Waiter> {
+        match self
+            .entries
+            .iter_mut()
+            .find(|e| e.scope == scope && e.key == key)
+            .map(|e| &mut e.outcome)
+        {
+            Some(Stored::InFlight { waiters, .. }) => {
+                waiters.push(waiter);
+                Ok(())
+            }
+            _ => Err(waiter),
+        }
+    }
+
+    /// 연 실행을 결말 없이 닫는다. 그 자리가 **이 표의** 진행 중일 때만 걷는다 — 이미
+    /// 밀려나 다른 실행이 그 키를 쥐었으면 그쪽을 건드리지 않는다. 합류자의 통로는
+    /// 함께 버려진다(첫 요청이 답을 못 받는 것과 같은 결말이다).
+    fn abandon(&mut self, scope: &str, key: &str, ticket: u64) {
+        if let Some(i) = self.entries.iter().position(|e| {
+            e.scope == scope
+                && e.key == key
+                && matches!(e.outcome, Stored::InFlight { ticket: t, .. } if t == ticket)
+        }) && let Some(e) = self.entries.remove(i)
+        {
+            self.total_bytes -= e.bytes;
         }
     }
 
@@ -189,6 +277,36 @@ impl Store {
         digest: u64,
         response: &JsonRpcResponse,
     ) {
+        self.settle(now, scope, key, digest, None, response);
+    }
+
+    /// [`Store::record`] 의 본체. `ticket` 은 [`Store::open`] 이 준 표다.
+    ///
+    /// 표가 있는데 그 자리가 **다른 표의** 진행 중이면 기록하지 않는다 — 이 실행은
+    /// 상한에 밀려났고 그 키는 이미 다른 실행이 쥐었다. 그쪽의 결말이 그 자리를 채운다.
+    fn settle(
+        &mut self,
+        now: Instant,
+        scope: &str,
+        key: &str,
+        digest: u64,
+        ticket: Option<u64>,
+        response: &JsonRpcResponse,
+    ) -> Handoff {
+        let mut handoff = Handoff::default();
+        let slot = self
+            .entries
+            .iter_mut()
+            .find(|e| e.scope == scope && e.key == key);
+        if let (Some(mine), Some(Entry { outcome, .. })) = (ticket, slot) {
+            match outcome {
+                Stored::InFlight { ticket: t, waiters } if *t == mine => {
+                    handoff.waiters = std::mem::take(waiters);
+                }
+                Stored::InFlight { .. } => return handoff,
+                _ => {}
+            }
+        }
         // 같은 키의 옛 항목은 남기지 않는다 — 앞의 것이 남아 있으면 `decide` 가
         // 둘 중 어느 것을 볼지가 삽입 순서에 달린다.
         self.remove(scope, key);
@@ -200,6 +318,7 @@ impl Store {
         } else {
             (Stored::Response(Box::new(response.clone())), size)
         };
+        handoff.kept = matches!(outcome, Stored::Response(_));
         self.entries.push_back(Entry {
             scope: scope.to_string(),
             key: key.to_string(),
@@ -210,6 +329,7 @@ impl Store {
         });
         self.total_bytes += bytes;
         self.enforce_bounds();
+        handoff
     }
 
     fn remove(&mut self, scope: &str, key: &str) {
@@ -367,29 +487,194 @@ pub(crate) fn begin(
             digest,
         })),
         Decision::Replay(stored) => Err(stored.replayed_for(id.clone())),
-        Decision::Conflict => Err(JsonRpcResponse::error(
-            id.clone(),
-            ERR_IDEMPOTENCY_KEY_CONFLICT,
-            format!(
-                "idempotency_key '{key}' was already used for a different request; \
-                 use a new key for a new request"
-            ),
-        )),
-        Decision::Discarded => Err(JsonRpcResponse::error(
-            id.clone(),
-            ERR_IDEMPOTENT_RESULT_DISCARDED,
-            format!(
-                "the request for idempotency_key '{key}' did run, but its response exceeded \
-                 {MAX_STORED_RESPONSE_BYTES} bytes and was not kept: do not resend, query instead"
-            ),
-        )),
+        Decision::Conflict => Err(conflict_error(key, id)),
+        Decision::Discarded => Err(discarded_error(key, id)),
+        // engine 라우터에서는 도달하지 않는다 — 진행 중은 App 층의 지연 응답만 열고, 같은
+        // `(주체, 키, 요청)` 은 같은 메서드라 같은 층으로 간다. 라우터는 동기라 기다릴 수
+        // 없으므로, 닿는다면 결과 불명으로 답한다(재전송하지 말고 조회하라는 뜻이다).
+        Decision::InFlight => Err(still_running_error(key, id)),
     }
+}
+
+fn conflict_error(key: &str, id: &serde_json::Value) -> JsonRpcResponse {
+    JsonRpcResponse::error(
+        id.clone(),
+        ERR_IDEMPOTENCY_KEY_CONFLICT,
+        format!(
+            "idempotency_key '{key}' was already used for a different request; \
+             use a new key for a new request"
+        ),
+    )
+}
+
+fn discarded_error(key: &str, id: &serde_json::Value) -> JsonRpcResponse {
+    JsonRpcResponse::error(
+        id.clone(),
+        ERR_IDEMPOTENT_RESULT_DISCARDED,
+        format!(
+            "the request for idempotency_key '{key}' did run, but its response exceeded \
+             {MAX_STORED_RESPONSE_BYTES} bytes and was not kept: do not resend, query instead"
+        ),
+    )
+}
+
+fn still_running_error(key: &str, id: &serde_json::Value) -> JsonRpcResponse {
+    JsonRpcResponse::error(
+        id.clone(),
+        ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN,
+        format!(
+            "the request for idempotency_key '{key}' is still running and its outcome is not \
+             known yet: do not resend, query instead"
+        ),
+    )
 }
 
 /// 실행이 끝났다. [`begin`] 이 키를 줬을 때만 기록한다.
 pub(crate) fn finish(now: Instant, pending: Option<Pending>, response: &JsonRpcResponse) {
     if let Some(p) = pending {
         store().record(now, &p.scope, &p.key, p.digest, response);
+    }
+}
+
+/// App 층 메서드가 보존소를 지나게 한다 — engine 라우터의 [`begin`]/[`finish`] 와 같은
+/// 판정을, **응답을 나중에 보내는** 메서드에도 걸리게 하는 자리.
+///
+/// ## 왜 [`begin`]/[`finish`] 를 그대로 못 쓰나
+///
+/// App 층 메서드는 답을 반환하지 않고 **통로에 보낸다**. 창 생성은 winit 핸들러가
+/// 나중에 완료 채널로, 원격 attach 는 워커 스레드가 SSH 수립 뒤에 보낸다. 그래서 결말을
+/// 기록할 자리가 "handler 가 돌아온 뒤" 가 아니라 "답이 통로에 들어온 뒤" 이고, 그
+/// 사이에 같은 키의 재시도가 올 수 있다 — engine 라우터에서는 실행이 직렬이라 닿지
+/// 않던 **진행 중** 상태가 여기서는 실재한다.
+///
+/// ## 어떻게 도는가
+///
+/// 1. 키가 없거나 `Mutate` 가 아니면 개입하지 않는다(`None`) — 호출자는 원래 본문을 돈다.
+/// 2. 판정이 재생·충돌·버려짐이면 그 답을 원래 통로로 보내고 `answered` 를 돌려준다.
+/// 3. 같은 키·같은 요청이 **진행 중**이면 그 실행에 합류한다. 답은 첫 실행의 결말이
+///    나올 때 재생 표지와 함께 나간다 — 두 번째 실행은 없다. 이것이 동시에 온 같은 키를
+///    **한 실행으로 수렴시키는** 자리다.
+/// 4. 처음 보는 키면 진행 중을 열고, 통로를 relay 로 바꾸고 **키를 뗀** 사본으로
+///    `dispatch` 를 부른다(떼지 않으면 `dispatch` 가 같은 함수로 돌아와 자기에게 합류한다).
+///    `handled` 가 거짓이면(이 층이 그 이름을 안 맡았다) 연 자리를 닫는다 — 요청은 다음
+///    층으로 가고 거기서 다시 판정된다. 참이면 relay 가 답을 기다렸다가 기록하고, 합류자에게
+///    나눠 주고, 원래 통로로 넘긴다.
+///
+/// 결말 없이 통로가 닫히면(답을 안 보내고 버린 경로) 연 자리를 닫는다. 합류자의 통로도
+/// 함께 버려져 첫 요청과 같은 결말(응답 없이 연결 종료)을 받는다.
+///
+/// 시각은 `Instant::now()` 다 — relay 스레드는 `Core` 를 들고 있지 않고, 여는 쪽과 닫는
+/// 쪽이 같은 원천을 봐야 보존 시간이 한 시계로 잰다.
+pub(crate) fn run_app_layer<T>(
+    caller: &CallerContext,
+    cmd: &IpcCommand,
+    answered: T,
+    handled: impl FnOnce(&T) -> bool,
+    dispatch: impl FnOnce(&IpcCommand) -> T,
+) -> Option<T> {
+    let request = &cmd.request;
+    let key = request.idempotency_key.as_deref()?;
+    let method = tasty_ipc::alias::canonicalize(&request.method);
+    if method_meta(method).map(|m| m.effect) != Some(MethodEffect::Mutate) {
+        return None;
+    }
+    let now = Instant::now();
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let scope = caller_scope(caller);
+    let mut guard = store();
+    let answer = match guard.decide(now, &scope, key, method, &request.params) {
+        Decision::Execute(digest) => {
+            let ticket = guard.open(now, &scope, key, digest);
+            drop(guard);
+            let relay = Relay {
+                scope,
+                key: key.to_string(),
+                digest,
+                ticket,
+                reply: cmd.response_tx.clone(),
+            };
+            return Some(relay.run(request, handled, dispatch));
+        }
+        Decision::InFlight => {
+            let waiter = Waiter {
+                id,
+                reply: cmd.response_tx.clone(),
+            };
+            match guard.join(&scope, key, waiter) {
+                Ok(()) => return Some(answered),
+                // `decide` 와 같은 잠금 안이라 닿지 않는다. 닿는다면 합류할 자리가 없으니
+                // 결과 불명으로 답한다.
+                Err(w) => still_running_error(key, &w.id),
+            }
+        }
+        Decision::Replay(stored) => stored.replayed_for(id),
+        Decision::Conflict => conflict_error(key, &id),
+        Decision::Discarded => discarded_error(key, &id),
+    };
+    drop(guard);
+    send_response(&cmd.response_tx, answer);
+    Some(answered)
+}
+
+/// App 층에서 연 실행 하나 — 결말을 기다렸다가 기록하고 원래 통로로 넘긴다.
+struct Relay {
+    scope: String,
+    key: String,
+    digest: u64,
+    ticket: u64,
+    /// 원래 통로.
+    reply: mpsc::SyncSender<JsonRpcResponse>,
+}
+
+impl Relay {
+    fn run<T>(
+        self,
+        request: &JsonRpcRequest,
+        handled: impl FnOnce(&T) -> bool,
+        dispatch: impl FnOnce(&IpcCommand) -> T,
+    ) -> T {
+        // 칸이 하나인 것은 원래 통로와 같다 — 요청 하나에 답은 하나다. 동기로 답하는
+        // 메서드는 relay 스레드가 서기 전에 이 칸에 답을 넣는다.
+        let (tx, rx) = mpsc::sync_channel::<JsonRpcResponse>(1);
+        let relayed = IpcCommand::new(
+            JsonRpcRequest {
+                idempotency_key: None,
+                ..request.clone()
+            },
+            tx,
+        );
+        let out = dispatch(&relayed);
+        drop(relayed);
+        if handled(&out) {
+            std::thread::spawn(move || self.settle_when_answered(&rx));
+        } else {
+            store().abandon(&self.scope, &self.key, self.ticket);
+        }
+        out
+    }
+
+    fn settle_when_answered(self, rx: &mpsc::Receiver<JsonRpcResponse>) {
+        let Ok(response) = rx.recv() else {
+            store().abandon(&self.scope, &self.key, self.ticket);
+            return;
+        };
+        let handoff = store().settle(
+            Instant::now(),
+            &self.scope,
+            &self.key,
+            self.digest,
+            Some(self.ticket),
+            &response,
+        );
+        for w in handoff.waiters {
+            let answer = if handoff.kept {
+                response.replayed_for(w.id)
+            } else {
+                discarded_error(&self.key, &w.id)
+            };
+            send_response(&w.reply, answer);
+        }
+        send_response(&self.reply, response);
     }
 }
 
@@ -887,6 +1172,258 @@ mod tests {
             after_first,
             "충돌인데 워크스페이스가 생겼다"
         );
+    }
+
+    // ── App 층(`run_app_layer`) ──
+    //
+    // 보존소는 프로세스 전역이라 시험마다 다른 키를 쓴다. relay 는 스레드에서 결말을
+    // 기록하므로 답은 원래 통로에서 기한을 두고 받는다.
+
+    const WAIT: Duration = Duration::from_secs(5);
+
+    /// `Mutate` 인 App 층 이름 하나(창 생성). params 로 요청을 가른다.
+    fn app_cmd(key: &str, id: i64, name: &str) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: "window.create".into(),
+            params: json!({ "name": name }),
+            id: Some(json!(id)),
+            session_token: None,
+            response_timeout_ms: None,
+            idempotency_key: Some(key.into()),
+        };
+        (IpcCommand::new(req, tx), rx)
+    }
+
+    /// 동기로 답하는 App 층 메서드 흉내 — 부른 횟수를 세고 그 자리에서 답한다.
+    fn answer_now(runs: &std::cell::Cell<u32>) -> impl FnOnce(&IpcCommand) -> bool + '_ {
+        move |c: &IpcCommand| {
+            runs.set(runs.get() + 1);
+            assert!(
+                c.request.idempotency_key.is_none(),
+                "dispatch 는 키를 뗀 사본을 받아야 한다 — 안 떼면 자기에게 합류한다"
+            );
+            send_response(
+                &c.response_tx,
+                JsonRpcResponse::success(c.request.id.clone().unwrap(), json!({"run": runs.get()})),
+            );
+            true
+        }
+    }
+
+    /// App 층 메서드도 같은 키의 재시도를 **한 번만 실행**하고 재생으로 답한다.
+    ///
+    /// 통제군이 같은 시험 안에 있다: 키 없이 두 번 부르면 보존소가 개입하지 않고(`None`)
+    /// 호출자의 원래 본문이 두 번 돈다.
+    #[test]
+    fn an_app_layer_call_runs_once_per_key_and_the_retry_is_a_replay() {
+        let runs = std::cell::Cell::new(0);
+        let (first, rx1) = app_cmd("app-once-probe", 1, "a");
+        let out = run_app_layer(
+            &CallerContext::Local,
+            &first,
+            false,
+            |h| *h,
+            answer_now(&runs),
+        );
+        assert_eq!(out, Some(true));
+        let r1 = rx1.recv_timeout(WAIT).expect("첫 답");
+        assert!(!r1.idempotent_replay);
+
+        let (retry, rx2) = app_cmd("app-once-probe", 2, "a");
+        let out = run_app_layer(
+            &CallerContext::Local,
+            &retry,
+            false,
+            |h| *h,
+            answer_now(&runs),
+        );
+        assert_eq!(
+            out,
+            Some(false),
+            "재생은 dispatch 없이 `answered` 를 돌려준다"
+        );
+        let r2 = rx2.recv_timeout(WAIT).expect("재생 답");
+        assert_eq!(runs.get(), 1, "같은 키의 재시도가 두 번째 실행을 냈다");
+        assert!(r2.idempotent_replay, "재생 표지가 없다");
+        assert_eq!(r2.id, json!(2), "재생은 이번 요청의 id 로 답한다");
+        assert_eq!(r2.result, r1.result);
+
+        // 통제군 — 키가 없으면 개입하지 않는다.
+        let (tx, _rx) = mpsc::sync_channel(1);
+        let mut req = first.request.clone();
+        req.idempotency_key = None;
+        let unkeyed = IpcCommand::new(req, tx);
+        assert!(
+            run_app_layer(
+                &CallerContext::Local,
+                &unkeyed,
+                false,
+                |h| *h,
+                answer_now(&runs)
+            )
+            .is_none()
+        );
+    }
+
+    /// 답이 **나중에** 오는 메서드(창 생성)에서 첫 실행이 끝나기 전에 같은 키가 오면
+    /// 두 번째 실행 없이 합류하고, 첫 결말을 재생으로 받는다. 이것이 동시 동일 키의
+    /// 수렴이다 — engine 라우터에서는 실행이 직렬이라 닿지 않던 상태다.
+    #[test]
+    fn a_retry_that_arrives_while_the_first_is_running_joins_it() {
+        let runs = std::cell::Cell::new(0);
+        let parked: std::cell::RefCell<Option<IpcCommand>> = std::cell::RefCell::new(None);
+        let (first, rx1) = app_cmd("app-join-probe", 1, "a");
+        let out = run_app_layer(
+            &CallerContext::Local,
+            &first,
+            false,
+            |h| *h,
+            |c| {
+                runs.set(runs.get() + 1);
+                // 완료 채널처럼 통로를 들고 나간다 — 답은 나중에.
+                *parked.borrow_mut() =
+                    Some(IpcCommand::new(c.request.clone(), c.response_tx.clone()));
+                true
+            },
+        );
+        assert_eq!(out, Some(true));
+
+        let (retry, rx2) = app_cmd("app-join-probe", 2, "a");
+        let out = run_app_layer(
+            &CallerContext::Local,
+            &retry,
+            false,
+            |h| *h,
+            |_| panic!("진행 중인 키가 두 번째 실행을 냈다"),
+        );
+        assert_eq!(out, Some(false));
+        assert!(
+            rx2.try_recv().is_err(),
+            "합류자는 첫 실행이 끝나기 전에 답을 받으면 안 된다"
+        );
+
+        // 진행 중인데 요청이 다르면 충돌이다 — 합류가 아니다.
+        let (other, rx3) = app_cmd("app-join-probe", 3, "b");
+        run_app_layer(
+            &CallerContext::Local,
+            &other,
+            false,
+            |h| *h,
+            |_| -> bool { panic!("충돌인데 실행됐다") },
+        );
+        assert_eq!(
+            rx3.recv_timeout(WAIT)
+                .expect("충돌 답")
+                .error
+                .expect("에러")
+                .code,
+            ERR_IDEMPOTENCY_KEY_CONFLICT
+        );
+
+        let c = parked.borrow_mut().take().expect("통로를 들고 있어야 한다");
+        send_response(
+            &c.response_tx,
+            JsonRpcResponse::success(json!(1), json!({"window_id": 7})),
+        );
+        let r1 = rx1.recv_timeout(WAIT).expect("첫 요청의 답");
+        let r2 = rx2.recv_timeout(WAIT).expect("합류자의 답");
+        assert_eq!(runs.get(), 1);
+        assert!(!r1.idempotent_replay);
+        assert!(r2.idempotent_replay, "합류자의 답은 재생이다");
+        assert_eq!(r2.id, json!(2));
+        assert_eq!(r2.result, r1.result);
+    }
+
+    /// 이 층이 그 이름을 **안 맡으면** 연 자리를 닫는다 — 다음 층(engine 라우터)이 같은
+    /// 키를 처음 보는 키로 판정해야 한다. 닫지 않으면 라우터가 진행 중을 보고 결과
+    /// 불명으로 답한다.
+    #[test]
+    fn a_layer_that_does_not_handle_the_name_leaves_no_trace() {
+        let (cmd, _rx) = app_cmd("app-unhandled-probe", 1, "a");
+        let out = run_app_layer(&CallerContext::Local, &cmd, false, |h| *h, |_| false);
+        assert_eq!(out, Some(false));
+        let pending = begin(
+            Instant::now(),
+            &CallerContext::Local,
+            &cmd.request,
+            &json!(1),
+        )
+        .expect("다음 층은 처음 보는 키로 실행해야 한다");
+        assert!(pending.is_some());
+    }
+
+    /// 답을 안 보내고 통로를 버린 실행은 기록을 안 남긴다 — 다음 재시도는 실행된다. 합류자는
+    /// 첫 요청과 같은 결말(통로 끊김)을 받는다.
+    #[test]
+    fn a_run_that_drops_its_reply_is_forgotten_with_its_joiners() {
+        let parked: std::cell::RefCell<Option<IpcCommand>> = std::cell::RefCell::new(None);
+        let (first, rx1) = app_cmd("app-dropped-probe", 1, "a");
+        run_app_layer(
+            &CallerContext::Local,
+            &first,
+            false,
+            |h| *h,
+            |c| {
+                *parked.borrow_mut() =
+                    Some(IpcCommand::new(c.request.clone(), c.response_tx.clone()));
+                true
+            },
+        );
+        let (retry, rx2) = app_cmd("app-dropped-probe", 2, "a");
+        run_app_layer(
+            &CallerContext::Local,
+            &retry,
+            false,
+            |h| *h,
+            |_| -> bool { panic!("합류해야 한다") },
+        );
+        // 원래 통로의 송신 쪽은 명령 자신도 들고 있다 — 서버에서는 처리가 끝나면 버려진다.
+        drop((first, retry));
+        drop(parked.borrow_mut().take());
+        assert!(matches!(
+            rx1.recv_timeout(WAIT),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        assert!(matches!(
+            rx2.recv_timeout(WAIT),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+
+        let runs = std::cell::Cell::new(0);
+        let (again, rx3) = app_cmd("app-dropped-probe", 3, "a");
+        run_app_layer(
+            &CallerContext::Local,
+            &again,
+            false,
+            |h| *h,
+            answer_now(&runs),
+        );
+        assert_eq!(runs.get(), 1, "결말이 없던 키는 다시 실행돼야 한다");
+        assert!(!rx3.recv_timeout(WAIT).expect("답").idempotent_replay);
+    }
+
+    /// 진행 중인 실행이 상한에 밀려나 같은 키를 다른 실행이 쥐었으면, 늦게 온 첫 결말은
+    /// **남의 자리**를 덮지 않는다.
+    #[test]
+    fn a_late_outcome_does_not_overwrite_a_newer_run_of_the_same_key() {
+        let mut s = Store::new();
+        let t0 = Instant::now();
+        let old = s.open(t0, "local", "k", 1);
+        s.abandon("local", "k", old); // 밀려남을 흉내 낸다
+        let newer = s.open(t0, "local", "k", 1);
+        let h = s.settle(t0, "local", "k", 1, Some(old), &resp(1, "late"));
+        assert!(h.waiters.is_empty());
+        assert!(
+            matches!(
+                s.entries.front().map(|e| &e.outcome),
+                Some(Stored::InFlight { ticket, .. }) if *ticket == newer
+            ),
+            "늦은 결말이 새 실행의 자리를 덮었다"
+        );
+        let h = s.settle(t0, "local", "k", 1, Some(newer), &resp(2, "mine"));
+        assert!(h.kept);
     }
 
     /// 선언은 상수에서 **유도**된다. 리터럴로 다시 적으면 동작과 갈린다.

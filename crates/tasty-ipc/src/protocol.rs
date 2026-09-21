@@ -127,12 +127,11 @@ pub struct JsonRpcRequest {
     /// plugin namespace forward · engine 라우터 중 어디로 가든 `-32602` 다. 검사 자리가 그
     /// 셋보다 앞인 진입 게이트(`check_request`)이기 때문이다 — ADR-0420.
     ///
-    /// ★ **`Mutate` 는 상한이지 보장이 아니다.** 보존소는 호스트의 **engine 라우터**
-    /// 한 자리에 있고, 거기 닿기 전에 끝나는 요청은 키를 실어도 그냥 실행된다 — 창·
-    /// plugin 설치·스크린샷·원격 attach 처럼 App 층에서 끝나는 메서드와, plugin
-    /// namespace 로 forward 되는 이름 전부가 그렇다. 그 자리들의 배선은 아직 없다.
-    /// 지금 그 차이를 요청마다 알 수 있는 값은 **응답의 [`JsonRpcResponse::idempotent_replay`]
-    /// 하나뿐**이다. 다만 그 표지는 **한 방향으로만** 답한다 — 붙어 있으면 계약이 걸렸고
+    /// ★ **`Mutate` 는 상한이지 보장이 아니다.** 호스트의 보존소는 engine 라우터와 App 층
+    /// (창 · plugin 설치 · 스크린샷 · 원격 attach 처럼 `App` 이 끝내는 메서드) 두 층에
+    /// 배선돼 있다(ADR-0421). plugin namespace 로 forward 되는 이름은 계약 **밖**이다 —
+    /// 키를 실어도 호스트가 보존소를 안 거친다(ADR-0361). 요청마다 그것을 알려 주는 값은
+    /// **응답의 [`JsonRpcResponse::idempotent_replay`]** 다. 다만 그 표지는 **한 방향으로만** 답한다 — 붙어 있으면 계약이 걸렸고
     /// 이 답이 재생이라는 뜻이지만, **안 붙은 것은 계약 밖이라는 뜻이 아니다.** 안 붙는
     /// 경우 셋 중 둘은 계약이 걸린 자리다: [`ERR_IDEMPOTENCY_KEY_CONFLICT`](같은 키·다른
     /// 요청)와 [`ERR_IDEMPOTENT_RESULT_DISCARDED`](실행은 됐고 답을 버림)는 둘 다 에러로

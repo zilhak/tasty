@@ -257,7 +257,7 @@ CLI 는 루트 플래그 `tasty --response-timeout-ms <MS> <명령>` 으로 **�
 - **뜻이 있을 수 있는 것은 `Mutate` 로 분류된 메서드뿐이다.** 읽기는 흔적을 안 남기고 멱등은
   같은 끝 상태로 수렴하므로 보존할 이유가 없다 — 보존하면 오히려 조회가 낡은 답을 받는다.
   분류는 `method_meta::MethodEffect` 하나가 답한다(목록을 따로 두지 않는다).
-- ★ **그러나 `Mutate` 는 상한이지 보장이 아니다 — 아래 "무엇이 아직 안 걸리나" 를 읽어라.**
+- ★ **그러나 `Mutate` 는 상한이지 보장이 아니다 — 아래 "어느 층에 걸리나" 를 읽어라.**
 - 봉투 검사(키 길이 1..=256)는 메서드와 **목적지** 모두와 무관하다 — 길이 밖 키는 `Read` 든
   `Mutate` 든, App 층 · plugin namespace · engine 라우터 중 어디로 가든 실행 전에 `-32602` 다.
   검사가 그 셋보다 앞인 진입 게이트(`check_request`)에 있다. 권한 게이트 **뒤**라 권한 없는
@@ -271,8 +271,12 @@ CLI 는 루트 플래그 `tasty --response-timeout-ms <MS> <명령>` 으로 **�
   찾은 답(`-32601`/`-32017`) 둘 다 그 키에 대한 종결된 답이다. 권한·cap·rate 게이트의 거절은
   라우팅 **전에** 끝나므로 보관하지 않는다 — 보관하면 권한이 생긴 뒤의 재시도까지 옛 거절을
   받는다.
-- 동시에 같은 키가 둘 와도 수렴한다. 다만 그것을 보존소가 만드는 것이 아니라 호스트의
-  IPC 실행이 한 자리에서 **직렬로** 돌기 때문이다 — 그래서 "진행 중" 을 뜻하는 답이 없다.
+- 동시에 같은 키가 둘 와도 **한 실행으로 수렴한다.** engine 라우터에서는 실행이 한
+  자리에서 직렬로 돌아 둘째가 볼 때 첫째가 이미 끝나 있다. App 층에는 답을 **나중에**
+  보내는 메서드가 있어(창 생성은 winit 핸들러가, 원격 attach 는 워커가 보낸다) 그 사이에
+  같은 키가 올 수 있다 — 그때 둘째는 첫 실행에 **합류**하고, 첫 결말이 나오면 그것을
+  `idempotent_replay: true` 와 자기 `id` 로 받는다. 첫 실행이 답 없이 통로를 버리면 합류자도
+  같은 결말(응답 없이 연결 종료)을 받는다.
 
 **보장의 경계는 값으로 선언된다.** `system.info` 응답의 `idempotency` 키가 보존 시간 ·
 항목 수 · 보관하는 답의 최대 바이트 · 키 길이 상한 · 재시작 생존 여부를 그대로 싣는다.
@@ -285,23 +289,24 @@ CLI 는 루트 플래그 `tasty --response-timeout-ms <MS> <명령>` 으로 **�
 호스트가 재시작하면 전부 사라진다(`survives_restart: false`). crash 이후의 영속은 약속하지
 않는다.
 
-#### 무엇이 아직 안 걸리나 — 배선은 engine 라우터 한 자리다
+#### 어느 층에 걸리나 — engine 라우터 · App 층은 안, namespace forward 는 밖
 
-보존소는 `handle_checked_request` 를 **지나는** 요청만 본다. 호스트의 IPC 에는 그 앞에 층이
-둘 더 있고, 둘 다 `Mutate` 를 포함한다. **그 층에서 끝나는 요청은 키를 실어도 그냥 실행되고,
-재시도는 두 번째 효과를 남긴다.**
+호스트의 IPC 는 층이 셋이고, 보존소는 층마다 따로 배선된다.
 
-- **App 층** — `App` 이 직접 끝내는 메서드. 실측 2026-09-21 기준 여섯이다:
-  `window.create` · `view.create` · `ui.screenshot` · `remote.attach` · `plugin.install` ·
-  `plugin.request_permission`. (`local_only(Mutate)` 여섯 중 `hook_handler.dispatch` 하나만
-  engine 라우터로 간다.)
-- **plugin namespace forward** — plugin 이 점유한 prefix 아래의 **모든 이름.** 표의 fallback 이
-  그것을 전부 `Mutate` 로 주는데, 그 호출은 engine 라우터에 닿기 전에 plugin 으로 나간다.
+- **engine 라우터** — `handle_checked_request` 를 지나는 모든 요청.
+- **App 층** — `App` 이 직접 끝내는 메서드. `Mutate` 는 여섯이다: `window.create` ·
+  `view.create` · `ui.screenshot` · `remote.attach` · `plugin.install` ·
+  `plugin.request_permission`. GUI 의 app_methods step 과 헤드리스의 App 층 가로채기가 같은
+  함수(`idempotency::run_app_layer`)로 보존소를 먼저 지난다. 근거는
+  [ADR-0421](../adr/0421-the-app-layer-keeps-the-idempotency-contract-and-a-running-key-is-joined.md).
+- **plugin namespace forward** — plugin 이 점유한 prefix 아래의 **모든 이름.** 호스트는 그
+  뜻을 모르고 넘길 뿐이라 **계약 밖**이다. client 는 보내기 전에 거절한다
+  ([ADR-0361](../adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md)).
 
-헤드리스 경로도 같은 순서다(App 층 가로채기 → namespace forward → engine 라우터).
+GUI 의 debug step(입력 주입 · `debug.lua.eval` 등 release 에 없는 표면)은 app_methods step
+**뒤**에서 돌아 보존소를 안 거친다. 그 이름들도 계약 밖이다.
 
-그래서 지금의 실제 좌변은 "`Mutate`" 가 아니라 **"`Mutate` 이면서 engine 라우터로 가는 것"**
-이다. 세는 명령:
+App 층 이름을 세는 명령:
 
 ```bash
 # App 층이 직접 끝내는 이름 (그 목록의 소유자는 src/app/ipc/app_methods.rs 다)
@@ -332,7 +337,7 @@ grep -ohE '"[a-z_]+\.[a-z_.]+"' src/app/ipc/app_methods.rs src/app/ipc/app_metho
 두 번째 효과가 남는다. 그래서 기능 목록의 `ipc.idempotency-key` 를 확인하는 것이 필수이고,
 `IpcConnection::send_idempotent` 가 그 확인을 **먼저** 하고 없으면 요청을 아예 안 내보낸다.
 그 이름이 답하는 것은 **"서버가 이 필드를 읽는가" 까지다** — "이 메서드가 걸리는가" 는 위
-"무엇이 아직 안 걸리나" 의 물음이다.
+"어느 층에 걸리나" 의 물음이다.
 그 거절은 호스트가 답한 실패와 다른 타입(`UnsupportedCapability`)으로 오는데, 그 차이가
 "아무것도 일어나지 않았다" 를 뜻한다. 결정 근거는
 [ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md).

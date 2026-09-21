@@ -22,6 +22,18 @@ impl App {
         cmd: &IpcCommand,
         caller: &host_ipc::caller::CallerContext,
     ) -> IpcStep {
+        // 멱등 키를 실은 `Mutate` 는 보존소를 먼저 지난다 — 이 층의 메서드는 engine
+        // 라우터에 안 닿으므로 거기 보존소가 못 본다. 이 층이 그 이름을 안 맡으면
+        // (`NotHandled`) 연 자리를 닫고 다음 층이 다시 판정한다(ADR-0421).
+        if let Some(step) = host_ipc::handler::idempotency::run_app_layer(
+            caller,
+            cmd,
+            IpcStep::Handled,
+            |step| !matches!(step, IpcStep::NotHandled),
+            |relayed| self.ipc_step_app_methods(relayed, caller),
+        ) {
+            return step;
+        }
         #[cfg(debug_assertions)]
         if cmd.request.method == "system.shutdown" {
             let response = host_ipc::protocol::JsonRpcResponse::success(

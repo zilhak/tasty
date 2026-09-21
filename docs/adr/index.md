@@ -341,3 +341,4 @@
 | 0415 | [재개하는 완료 로그 reader 는 옆 메타 파일에서 잃은 양을 안다](0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md) | Accepted | 2026-09-21 | notify, retention, reader-recovery, offset, plugin, compatibility, adr-0330, adr-0344 |
 | 0416 | [부팅 청소는 포트 파일과 같은 뿌리일 때만 돈다 — ADR-0344 의 "안 고친 것" 해소](0416-the-boot-cleanup-follows-the-port-file-root.md) | Accepted | 2026-09-21 | notify, retention, instance-identity, port-file, boot, adr-0344 |
 | 0420 | [멱등 키의 봉투 검사는 진입 게이트에서 한다 — 목적지와 무관한 판정](0420-the-idempotency-key-envelope-is-judged-at-the-admission-gate.md) | Accepted | 2026-09-21 | ipc, protocol, idempotency, envelope, gate, compatibility, adr-0338 |
+| 0421 | [App 층도 멱등 키 계약을 지킨다 — 진행 중인 키에 온 재시도는 첫 실행에 합류한다](0421-the-app-layer-keeps-the-idempotency-contract-and-a-running-key-is-joined.md) | Accepted | 2026-09-21 | ipc, idempotency, retry, app-layer, concurrency, deferred-response, headless, adr-0338, adr-0361 |

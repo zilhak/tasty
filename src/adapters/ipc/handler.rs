@@ -21,7 +21,7 @@ mod file_picker;
 #[cfg(feature = "gui")]
 mod git_viewer;
 mod hook_handler;
-mod idempotency;
+pub(crate) mod idempotency;
 // `list_global` 이 두 hook 목록을 합산하므로 크레이트 안에서 보여야 한다.
 pub(crate) mod hooks;
 // `output`/`pane`/`surface` 와 같은 이유로 열려 있다 — `image.list` 도 전 창 합산

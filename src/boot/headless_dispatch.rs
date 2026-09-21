@@ -193,6 +193,17 @@ fn intercept_app_layer(
     caller: &crate::ipc::caller::CallerContext,
     cmd: &crate::ipc::server::IpcCommand,
 ) -> Option<Intercepted> {
+    // 멱등 키를 실은 `Mutate` 는 보존소를 먼저 지난다 — gui 의 app_methods step 과 같은
+    // 함수다(ADR-0421).
+    if let Some(hit) = crate::ipc::handler::idempotency::run_app_layer(
+        caller,
+        cmd,
+        Some(Intercepted::Answered),
+        Option::is_some,
+        |relayed| intercept_app_layer(app, state, engine, caller, relayed),
+    ) {
+        return hit;
+    }
     // 2-hub) 허브 관측만 App 층에서 가로챈다 — `timer.list` 가 읽는 TimerHub 는
     //    `App` 필드(+ plugin manager 자기 허브)라 `CoreState` 만 받는 engine
     //    handler 에서는 닿지 않는다. gui 의 app_methods step 과 같은 함수를 쓴다.
