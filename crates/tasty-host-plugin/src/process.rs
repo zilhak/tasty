@@ -1294,7 +1294,8 @@ mod tests {
             1,
         ))
         .expect("빈 큐는 한 건을 받는다");
-        assert!(ledger.snapshot().total_bytes > 400, "합계가 안 찼다");
+        let before = ledger.snapshot().total_bytes;
+        assert!(before > 400, "합계가 안 찼다");
 
         let (proc, rx) = PluginProcess::stub_with_request_rx_in("com.example.ok", 16, &ledger);
         proc.try_send_request(a_request(1))
@@ -1307,15 +1308,57 @@ mod tests {
 
         proc.ping(3);
         let _pending = proc.begin_shutdown(Instant::now());
-        let methods: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
-            .map(|r| r.method)
-            .collect();
+        // 꺼내기 **전에** 잰다 — 꺼내면 그 몫이 풀린다.
+        let after = ledger.snapshot().total_bytes;
+        let received: Vec<PluginRequest> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let methods: Vec<&str> = received.iter().map(|r| r.method.as_str()).collect();
         assert_eq!(
             methods,
             ["noop", "ping", "shutdown"],
             "합계가 찬 동안 제어 요청이 거절됐다"
         );
         assert_eq!(ledger.snapshot().refused_over_total, 1);
+
+        // 면제는 판정만 건너뛴다 — 들어간 제어 요청도 합계에 **센다.** 안 세면 writer 가
+        // 꺼낼 때 올리지 않은 몫을 빼서 다른 큐의 몫을 깎는다(차감이 포화 뺄셈이라 조용하다).
+        let wire: usize = received
+            .iter()
+            .map(|r| serde_json::to_string(r).unwrap().len() + 1)
+            .sum();
+        assert_eq!(
+            after - before,
+            wire,
+            "들어간 세 줄(noop · ping · shutdown)의 wire 바이트만큼 합계가 늘지 않았다"
+        );
+    }
+
+    /// 제어가 면제받는 것은 **합계뿐**이다 — 큐 상한은 그대로 받는다. 그 큐를 채운 것은
+    /// 그 plugin 자신이고, 안 읽는 plugin 의 ping 이 막혀 무응답으로 재시작되는 것이
+    /// healthcheck 의 뜻이다.
+    #[test]
+    fn control_requests_still_obey_the_queue_byte_limit() {
+        let ledger = ChannelLedger::new(ChannelLimits {
+            queue_bytes: 64,
+            total_bytes: 1 << 20,
+        });
+        let (proc, _rx) = PluginProcess::stub_with_request_rx_in("com.example.full", 16, &ledger);
+        proc.try_send_request(PluginRequest::new(
+            "noop",
+            serde_json::json!({ "pad": "x".repeat(200) }),
+            1,
+        ))
+        .expect("빈 큐는 한 건을 받는다");
+        for (method, id) in [("ping", 2), ("shutdown", u64::MAX)] {
+            assert_eq!(
+                proc.try_send_request_as(
+                    PluginRequest::new(method, serde_json::json!({}), id),
+                    Admission::Control,
+                ),
+                Err(RequestSendError::OverBytes(Refusal::Queue)),
+                "큐 상한을 넘은 큐에 제어 요청 '{method}' 이 들어갔다"
+            );
+        }
+        assert_eq!(ledger.snapshot().refused_over_queue, 2);
     }
 
     /// 자리가 없는 큐에 한 건을 넣어 보고 **그 판정을 다른 스레드에서 받아 온다.**

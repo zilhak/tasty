@@ -126,8 +126,13 @@ reader 스레드가 기다린다.
   `a_request_over_the_byte_budget_is_dropped_and_reported_like_a_full_queue` 가 잡는다.
 - 장부의 바이트가 소켓 바이트와 어긋나면 `the_ledger_counts_the_wire_bytes_of_a_queued_request`
   가 잡는다.
-- 제어 요청이 다시 합계 판정을 받게 되면 `control_requests_pass_a_total_filled_by_another_plugin`
-  이 잡는다(면제 조건을 지우는 변이를 붙여 죽는 것을 확인했다).
+- 제어 요청의 면제는 세 방향으로 고정돼 있다. 각 변이를 실제로 붙여 죽는 것을 확인했다.
+  - 제어 요청이 다시 합계 판정을 받게 되면 `control_requests_pass_a_total_filled_by_another_plugin`
+    이 잡는다.
+  - 면제된 제어 요청이 합계에 안 세이게 되면 같은 시험이 잡는다. 들어간 줄들의 wire 바이트 합과
+    합계 증가분을 견준다.
+  - 제어 요청이 큐 상한까지 면제받게 되면 `control_requests_still_obey_the_queue_byte_limit` 가
+    잡는다.
 - plugin 소켓에 줄 길이 상한이 생기면 — 빈 큐 예외의 크기가 묶이므로 "실제 상한은 무한" 이라는
   Consequences 문장이 틀리게 된다. 고쳐 적는다.
 - `system.pressure`(또는 다른 IPC/CLI 표면)가 `PluginManager::channel_bytes` 를 읽게 되면 — 위
