@@ -200,6 +200,7 @@ forward 실행의 호출자다(`app/event_handler.rs` · `boot/headless_stream.r
 - [attach 동작](../dev-guide/attach-behavior.md) — forward 실행과 비-holder 차단의 메커니즘
 - [ADR-0277](0277-ipc-admission-and-observation-run-once.md) — 진입 요청당 한 번의 판정. 이 결정은 그 자리를 옮기지 않는다
 - [ADR-0264](0264-mirror-restore-closed-item-runs-on-the-remote.md) — forward 된 close 의 복원 스택 축
+- [ADR-0480](0480-a-forwarded-close-carries-who-asked-for-it.md) — forward 된 close 의 복원 스택 여부는 이제 op 의 origin 이 정한다
 - 결정이 실현된 현재 위치: `core::structural_exec`(`split` · `create_tab` · `close_tab` · `move_tab` ·
   `close_pane` · `close_surface` · `StructuralFailure`), `core::structural_cascade`,
   `core::param_bag`, `core::attach_runtime` 의 `forward_result` 와 `ForwardedDelta::converted_surface`,

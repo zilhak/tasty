@@ -133,6 +133,7 @@ dispatcher · 원격 forward 실행)가 그것을 부른다. 다만 **이름이 
   headless cascade 가 같은 헬퍼를 지나야 하는 근거.
 - [ADR-0264](0264-mirror-restore-closed-item-runs-on-the-remote.md) — forward 된 close 가 원격 사용자의 손
   조작이라 복원 스택에 들어간다는 결정. 이 ADR 의 결정 1 은 그 판정을 안 건드린다.
+- [ADR-0480](0480-a-forwarded-close-carries-who-asked-for-it.md) — forward 된 close 의 복원 스택 여부는 이제 op 의 origin 이 정한다
 - 코드 근거(결정이 실현된 현재 위치): `core::attach_runtime` 의 `forward_result` ·
   `core::structural_cascade` 의 `reclaim_closed_surfaces` ·
   `SurfaceCloseCascade::from_move_surface_applied`. `handler_result` 와 빌드 형태별 두 사본은
