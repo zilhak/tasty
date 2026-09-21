@@ -154,6 +154,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 ### 이벤트 구독 / 윈도우 / 확장
 
 - **event_subscribe** — `event_subscribe = ["surface.closed"]` + `on_start` 에서 `bus.subscribe(...)`. `on_event` 로 envelope 수신(`reason`: user/ipc/crash). 예: [claude](../plugins/claude/index.md)/[codex](../plugins/codex/index.md).
+  - **`event.dispatch` 에 응답하라.** 호스트는 그 응답을 기다리지 않지만, 응답이 오기 전까지 그 dispatch 의 hop 을 기억해 그 사이 이 plugin 이 publish 하는 사건의 hop 하한으로 쓴다. 응답하지 않으면 그 기억이 재시작 전까지 남아, hop 이 높은 사건을 한 번 받은 뒤의 publish 가 무엇이든 `MAX_HOP` 으로 거절될 수 있다. SDK 는 `on_event` 를 마친 뒤 자동으로 응답한다 — SDK 없이 프로토콜을 직접 구현할 때의 계약이다. 근거는 [ADR-0406](../adr/0406-the-host-raises-the-hop-of-a-publish-made-while-a-dispatch-is-unanswered.md).
 - **window** — `[[contributes.window]]`(`window.spawn`). 현재는 schema + 등록 stub 까지(실 spawn 은 별도 영역).
 - **extension** — 다른 플러그인의 IPC/event 흐름을 가로채기. `[extends]` + `ext:<target>` 권한 + `handle_extension_hook`. mode: `transform`/`filter`/`observe`. target 당 활성 1개(나머지 `Conflict`). fail-open(timeout/에러 시 원래 값 사용).
 

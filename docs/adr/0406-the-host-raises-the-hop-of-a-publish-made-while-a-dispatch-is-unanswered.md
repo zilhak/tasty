@@ -19,8 +19,8 @@
 hop 이 영영 0 에 머물러 `MAX_HOP` 차단에 닿지 않는다. 루프 차단 장치가 있는 것처럼 문서에
 적혀 있었지만 그 장치에 입력되는 값은 루프 당사자가 정했다.
 
-호스트가 쓸 수 있는 사실은 순서뿐이다. `event.dispatch` 는 fire-and-forget 이라 호스트가
-응답을 기다리지 않지만, plugin 은 응답한다. SDK 는 `on_event` 를 **마친 뒤에** 응답하므로
+호스트가 쓸 수 있는 사실은 순서뿐이다. 호스트는 `event.dispatch` 의 응답을 기다리지 않지만(pending 을
+만들지 않는다), plugin 은 응답한다 — 그리고 이 결정 뒤로는 응답해야 한다(아래 Consequences). SDK 는 `on_event` 를 **마친 뒤에** 응답하므로
 (`tasty-plugin-sdk` runtime 의 `event.dispatch` 갈래), 콜백 안에서 한 publish 는 같은 연결에서
 그 응답보다 먼저 도착한다. 그리고 pump 는 한 tick 안에서 plugin 의 사건을 응답보다 먼저
 처리한다.
@@ -61,6 +61,11 @@ publish 하면, hop 을 `max(보낸 값, 그 dispatch 들의 hop 최댓값 + 1)`
 - **잃은 것**: 한 dispatch 를 처리하는 동안 **무관한** publish 를 한 plugin 은 그 publish 의
   hop 도 올라간다. 호스트는 콜백 안의 publish 가 반응인지 무관한지 가를 수 없다. 올라간
   hop 은 `MAX_HOP` 에 가까운 chain 이 아니면 아무것도 막지 않는다.
+- **잃은 것 — 응답하지 않는 plugin**: 기록은 응답이 와야 지워지므로, `event.dispatch` 에 응답하지 않는
+  plugin 은 **받은 최대 hop + 1 이 재시작 전까지 영구 하한**이 된다(그 사이 1024 건이 더 쌓여 밀려나지
+  않는 한). hop 16 사건을 한 번 받고 응답하지 않으면 그 뒤의 publish 는 무엇이든 hop 17 로 올라 `MAX_HOP`
+  으로 거절된다. SDK 는 `on_event` 뒤에 응답하므로 SDK plugin 은 해당하지 않는다. 그래서 plugin 계약에
+  "`event.dispatch` 에 응답하라" 를 적는다(`docs/dev-guide/plugin-development.md` · 사건 카탈로그의 `meta.hop` 행).
 - **운영 비용**: 이 규칙은 SDK 의 응답 순서(콜백 뒤 응답)에 기댄다. 그 순서가 바뀌면 하한이
   말없이 사라진다 — 아래 재검토 조건.
 

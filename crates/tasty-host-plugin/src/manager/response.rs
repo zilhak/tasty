@@ -89,8 +89,9 @@ impl PluginManager {
         let kind = match pending {
             Some(p) => p.kind,
             None => {
-                // `event.dispatch` 의 응답은 pending 을 안 만든다(fire-and-forget) — 버스가
-                // 재발화 hop 하한을 위해 따로 기록한다. 그 기록이면 여기서 끝난다.
+                // `event.dispatch` 의 응답은 pending 을 안 만든다(호스트가 기다리지 않는다) —
+                // 대신 버스가 재발화 hop 하한을 위해 따로 기록하고, plugin 은 응답해야 한다
+                // (ADR-0406). 그 기록이면 여기서 끝난다.
                 if self.event_bus.note_dispatch_answered(plugin_id, resp.id) {
                     return;
                 }
