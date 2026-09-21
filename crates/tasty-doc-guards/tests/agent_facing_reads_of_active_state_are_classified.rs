@@ -67,6 +67,16 @@ const NEEDLES: &[&str] = &[
 /// 구조 변경 실행(`src/core/structural_exec.rs`)과 그 cascade(split / tab / close,
 /// `src/core/structural_cascade.rs`)는 core 에 있다 — IPC 핸들러와 원격 forward 실행이
 /// 부르므로 에이전트 대면이다.
+///
+/// **도메인이 선언하고 창 쪽이 구현하는 포트의 구현 파일**도 같은 경로다
+/// (`src/state/cascade_window.rs` — `CascadeWindow` · `src/file/identify_worker.rs` —
+/// `IdentifySpawner`). 도메인은 포트 메서드를 부를 뿐이고, 그 메서드가 전역 활성 포인터로
+/// 대상을 고르는지는 구현 파일에서만 보인다. 호출 자리의 메서드 이름이 바늘을 담는 것
+/// (`set_active_workspace`)은 우연이다 — 이름이 바늘을 안 담는 포트 메서드면 cascade 쪽은
+/// 초록이고 구현만 활성 포인터를 읽는다([ADR-0490](../../../docs/adr/0490-boundary-guards-close-three-holes-found-by-mutation.md)).
+/// `src/state` · `src/file` 전체를 올리지 않는 이유: 사용자 입력 경로가 섞여 명부가 사람 판정
+/// 없이 부풀고, 이 가드의 물음("에이전트가 부르는 경로인가")이 흐려진다. 포트 구현 파일이
+/// 새로 생기면 여기 한 줄을 더한다.
 const AGENT_FACING: &[&str] = &[
     "src/adapters/ipc/handler.rs",
     "src/adapters/ipc/handler/",
@@ -74,10 +84,19 @@ const AGENT_FACING: &[&str] = &[
     "src/app/dispatch_domain.rs",
     "src/core/structural_cascade.rs",
     "src/core/structural_exec.rs",
+    "src/file/identify_worker.rs",
+    "src/state/cascade_window.rs",
 ];
 
-/// 스캔 루트 — 위 접두사를 담는 가장 작은 디렉토리들.
-const SCAN_ROOTS: &[&str] = &["src/adapters/ipc", "src/app", "src/core"];
+/// 스캔 루트 — 위 접두사를 담는 가장 작은 디렉토리들. 파일 단위 항목(`src/state/…` ·
+/// `src/file/…`)은 순회가 디렉토리만 받으므로 그 부모를 걷고 [`is_agent_facing`] 이 거른다.
+const SCAN_ROOTS: &[&str] = &[
+    "src/adapters/ipc",
+    "src/app",
+    "src/core",
+    "src/file",
+    "src/state",
+];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
@@ -220,6 +239,12 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "마지막 워크스페이스가 닫힌 뒤 기본 워크스페이스를 다시 만들고 그 인덱스를 활성으로 둔다 — 활성이 없는 상태를 안 남기는 것",
     ),
     (
+        "src/state/cascade_window.rs",
+        Recovery,
+        2,
+        "포트 메서드 set_active_workspace 의 구현 이름과 그 몸체의 대입 — 도메인의 호출은 structural_cascade 의 Recovery 한 자리뿐이다(마지막 워크스페이스가 닫힌 뒤 되만든 기본 워크스페이스를 활성으로 둔다)",
+    ),
+    (
         "src/app/dispatch/intents.rs",
         AnyWindow,
         1,
@@ -341,6 +366,32 @@ fn every_occurrence_is_registered() {
          ★ 대상을 고르는 자리라면 갈래는 `OpenDefect` 다. 그 갈래로 적으면 아래 시험이 수를 \
          묻고, 그것이 이 저장소가 그 결함을 아는 유일한 방법이 된다.",
         bad.join("\n")
+    );
+}
+
+/// `AGENT_FACING` 의 항목이 트리에 실재한다. 파일 단위 항목(포트 구현 파일)은 옮겨지거나
+/// 이름이 바뀌면 **아무것도 안 걸러** 명부 대조가 공짜로 성립한다 — 바늘이 0 인 파일은
+/// 명부에도 없어서 위 대조가 그 소실을 못 본다.
+#[test]
+fn every_agent_facing_entry_exists() {
+    let root = repo_root();
+    let scanned: Vec<String> = rust_sources(&root, SCAN_ROOTS)
+        .into_iter()
+        .map(|(rel, _)| rel.to_string_lossy().replace('\\', "/"))
+        .collect();
+    let missing: Vec<&&str> = AGENT_FACING
+        .iter()
+        .filter(|p| {
+            !scanned
+                .iter()
+                .any(|r| r == **p || (p.ends_with('/') && r.starts_with(**p)))
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "에이전트 대면 경로 항목이 스캔 루트 {SCAN_ROOTS:?} 안에 없다 — 옮겨졌으면 새 자리로 \
+         고쳐라. 지우지 마라: 포트 구현이 사라진 것이 아니라 옮겨진 것이면 그 구현이 명부 밖으로 \
+         나간다.\n  {missing:?}"
     );
 }
 
