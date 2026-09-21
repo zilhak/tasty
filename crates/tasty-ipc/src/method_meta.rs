@@ -178,6 +178,10 @@ impl MethodMeta {
     }
 
     /// 보존소를 안 지나는 층이 끝내는 `Mutate`(GUI debug step).
+    ///
+    /// 부르는 자리가 [`DEBUG_METHODS`] 뿐이라 그 표와 같은 cfg 로 게이트한다 — release 에는
+    /// debug step 이 없으므로 이 선언을 쓸 이름도 없다.
+    #[cfg(debug_assertions)]
     const fn outside_key_contract(self) -> Self {
         Self {
             key_contract: KeyContract::Outside,
