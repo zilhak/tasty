@@ -64,6 +64,7 @@ impl ResolvedLocale {
 /// 없으면 `None`. host 의 두 egui 폰트 셋업 경로(`src/gfx/gpu/fonts.rs` ·
 /// `src/adapters/ui/font_registry.rs`)가 같은 값을 읽어 체인 뒤에 붙이는 단일 출처다.
 /// plugin 프로세스도 같은 env 를 상속받아 자기 미러에서 읽는다.
+#[cfg(feature = "gui")]
 pub(crate) fn font_env_path() -> Option<PathBuf> {
     std::env::var_os(LOCALE_FONT_ENV)
         .filter(|v| !v.is_empty())
@@ -93,6 +94,7 @@ static INIT: Once = Once::new();
 static FONT_WARNING: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// 부팅 시 실패한 `[font]` resolve 의 사유. 실패가 없었으면 `None`.
+#[cfg(feature = "gui")]
 pub(crate) fn font_warning() -> Option<String> {
     FONT_WARNING.get().cloned()
 }

@@ -50,6 +50,7 @@ pub fn register_webview_kind(plugin_id: &str, kind: &str) {
 
 /// 주어진 surface kind 가 webview overlay 를 사용하는지 query.
 /// `sync_webviews` 가 매 프레임 호출.
+#[cfg(any(feature = "gui", test))]
 pub fn is_webview_kind(kind: &str) -> bool {
     crate::poison::recover_read(WEBVIEW_KINDS.read(), WHAT, &POISON_REPORTED)
         .as_ref()

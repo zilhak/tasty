@@ -589,17 +589,6 @@ fn wait_for_event(
     }
 }
 
-/// `RunLuaScript` 처리 — gui event_handler 와 동일. headless 발신원은 현재 없지만
-/// (단축키=gui, debug IPC=App 경로) 이벤트 계약상 동작을 미러링한다.
-#[cfg(not(feature = "gui"))]
-fn run_lua_script(app: &crate::app::App, source: &str, name: &str) {
-    if let Some(engine) = app.lua_engine.as_ref() {
-        engine.run_script(source, Some(name));
-    } else {
-        tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
-    }
-}
-
 /// 도착한 이벤트 하나를 처리한다. `Break` 면 메인 루프를 끝낸다.
 #[cfg(not(feature = "gui"))]
 fn dispatch_headless_event(
@@ -616,7 +605,6 @@ fn dispatch_headless_event(
         // 유일한 IPC 경로다(gui 의 winit proxy 에 대응).
         AppEvent::IpcReady => return headless_dispatch::pump_ipc(app, state, engine),
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
-        AppEvent::RunLuaScript { source, name } => run_lua_script(app, &source, &name),
     }
     std::ops::ControlFlow::Continue(())
 }

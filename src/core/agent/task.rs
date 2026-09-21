@@ -763,6 +763,7 @@ pub(crate) fn dag_list_from_state(
 ///
 /// 반환은 `(running, crashed)`. 레지스트리가 아직 주입되지 않았으면(headless 초기·
 /// 테스트) `(false, false)` — "러너 없음" 으로 읽힌다.
+#[cfg(feature = "gui")]
 pub(crate) fn runner_liveness(engine: &CoreState, workspace_id: u32) -> (bool, bool) {
     engine
         .agent_runner_registry

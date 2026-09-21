@@ -80,6 +80,7 @@ const RELEASE_METAS: &[StageMeta] = &[
 ];
 
 /// id 로 메타를 찾는다.
+#[cfg(any(feature = "gui", test))]
 pub fn find(id: &str) -> Option<&'static StageMeta> {
     all_metas().iter().find(|m| m.id == id)
 }

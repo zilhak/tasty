@@ -173,6 +173,7 @@ pub(crate) fn spawn_approval_await(
 }
 
 /// 응답을 낼 store 를 못 찾았을 때의 답 — 두 조합이 같은 문구를 쓴다.
+#[cfg(feature = "gui")]
 pub(crate) fn no_application_state(rpc_id: Value) -> JsonRpcResponse {
     JsonRpcResponse::error(rpc_id, -32000, "no application state available")
 }

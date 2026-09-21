@@ -52,6 +52,7 @@ pub(crate) fn arm_cascade(t0: Instant, snapshot: bool) {
 
 /// cascade cleanup 완료 지점에서 호출 — 무장된 t0 을 소비한다. `None` 이면 이번
 /// cascade 는 workspace level 이 아니었다는 뜻이라 `close_total` 을 찍지 않는다.
+#[cfg(feature = "gui")]
 pub(crate) fn take_cascade() -> Option<(Instant, bool)> {
     let mut g = crate::poison::recover_mutex(CASCADE_T0.lock(), CASCADE_WHAT, &CASCADE_POISONED);
     g.take()

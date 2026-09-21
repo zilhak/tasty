@@ -113,6 +113,9 @@ pub(crate) enum AppEvent {
     /// 사용자 스크립트 단축키가 눌려 Lua 워커에서 실행 요청 (ADR-0031).
     /// view 의 `handle_shortcut` 이 combo 매칭 후 스크립트 소스를 읽어 발행하고,
     /// App 이 소유한 `lua_engine` 워커로 실행한다(사용자 키 입력 경로에서만 — identity 원칙 1).
+    ///
+    /// 그 "사용자 키 입력 경로" 가 유일한 발신원이라 headless 에는 만드는 자리가 없다.
+    #[cfg(feature = "gui")]
     RunLuaScript { source: String, name: String },
     /// Request to open settings modal.
     #[cfg(feature = "gui")]

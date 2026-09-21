@@ -362,6 +362,7 @@ impl HookHandlerRegistry {
     }
 
     /// host/plugin/user handler 를 user-origin override 로 disable/enable.
+    #[cfg(any(feature = "gui", test))]
     pub fn set_user_handler_disabled(&self, id: &HookHandlerId, disabled: bool) {
         let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
