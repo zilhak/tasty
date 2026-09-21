@@ -648,6 +648,9 @@ fn finish_in(
 ///    되돌린다 — 요청은 다음 층으로 가고 거기서 다시 판정된다. 참이면 relay 가 답을 기다렸다가 기록하고, 합류자에게
 ///    나눠 주고, 원래 통로로 넘긴다.
 ///
+/// relay 스레드는 본문을 부르기 **전에** 선다. 못 세우면 연 자리를 닫고 키를 뗀 요청을
+/// 원래 통로로 부른다 — 보장만 잃고 동작은 키가 없을 때와 같다([`Relay::run`]).
+///
 /// 결말 없이 통로가 닫히면(답을 안 보내고 버린 경로) 연 자리를 닫는다. 합류자의 통로도
 /// 함께 버려져 첫 요청과 같은 결말(응답 없이 연결 종료)을 받는다.
 ///
@@ -660,11 +663,32 @@ pub(crate) fn run_app_layer<T>(
     handled: impl FnOnce(&T) -> bool,
     dispatch: impl FnOnce(&IpcCommand) -> T,
 ) -> Option<T> {
-    run_app_layer_in(&STORE, caller, cmd, answered, handled, dispatch)
+    run_app_layer_in(
+        &STORE,
+        spawn_relay,
+        caller,
+        cmd,
+        answered,
+        handled,
+        dispatch,
+    )
+}
+
+/// relay 스레드를 세우는 함수. 시험은 실패하는 것을 넣어 그 갈래를 잰다.
+type Spawn = fn(Box<dyn FnOnce() + Send>) -> std::io::Result<()>;
+
+/// 프로세스의 relay 스레드. `std::thread::spawn` 이 아닌 이유는 그것이 OS 가 스레드를 못
+/// 만들 때 **패닉**하고, 부르는 자리가 GUI 이벤트 루프 · 헤드리스 펌프라는 것이다.
+fn spawn_relay(work: Box<dyn FnOnce() + Send>) -> std::io::Result<()> {
+    std::thread::Builder::new()
+        .name("ipc-idempotency-relay".into())
+        .spawn(work)
+        .map(|_| ())
 }
 
 fn run_app_layer_in<T>(
     store: &'static Mutex<Store>,
+    spawn: Spawn,
     caller: &CallerContext,
     cmd: &IpcCommand,
     answered: T,
@@ -693,7 +717,7 @@ fn run_app_layer_in<T>(
                 ticket,
                 reply: cmd.response_tx.clone(),
             };
-            return Some(relay.run(request, handled, dispatch));
+            return Some(relay.run(spawn, request, handled, dispatch));
         }
         Decision::InFlight => {
             let waiter = Waiter {
@@ -728,28 +752,52 @@ struct Relay {
 }
 
 impl Relay {
+    /// relay 스레드를 **먼저** 세우고 본문을 부른다.
+    ///
+    /// 순서가 이런 것은 스레드를 못 세운 갈래 때문이다. 본문을 부른 뒤에 세우다 실패하면
+    /// 답이 이미 relay 통로로 가 있거나(동기 메서드) 나중에 그리로 온다(창 생성 · 원격
+    /// attach) — 어느 쪽이든 원래 통로로 넘겨 줄 쪽이 없다. 먼저 세우면 실패했을 때 아직
+    /// 아무것도 안 불렀으므로, 연 자리를 닫고 키를 뗀 요청을 **원래 통로로** 부르면 된다.
+    /// 잃는 것은 이 요청의 보장뿐이고 동작은 키가 없을 때와 같다.
+    ///
+    /// 이 층이 이름을 안 맡으면 스레드는 본문이 relay 통로를 놓는 즉시(통로 끊김) 끝난다.
     fn run<T>(
         self,
+        spawn: Spawn,
         request: &JsonRpcRequest,
         handled: impl FnOnce(&T) -> bool,
         dispatch: impl FnOnce(&IpcCommand) -> T,
     ) -> T {
-        // 칸이 하나인 것은 원래 통로와 같다 — 요청 하나에 답은 하나다. 동기로 답하는
-        // 메서드는 relay 스레드가 서기 전에 이 칸에 답을 넣는다.
+        let (store, ticket) = (self.store, self.ticket);
+        let (scope, key) = (self.scope.clone(), self.key.clone());
+        let reply = self.reply.clone();
+        let stripped = JsonRpcRequest {
+            idempotency_key: None,
+            ..request.clone()
+        };
+        // 칸이 하나인 것은 원래 통로와 같다 — 요청 하나에 답은 하나다.
         let (tx, rx) = mpsc::sync_channel::<JsonRpcResponse>(1);
-        let relayed = IpcCommand::new(
-            JsonRpcRequest {
-                idempotency_key: None,
-                ..request.clone()
-            },
-            tx,
-        );
+        if let Err(e) = spawn(Box::new(move || self.settle_when_answered(&rx))) {
+            tracing::warn!(
+                method = %request.method,
+                error = %e,
+                "could not start the idempotency relay thread; running the request \
+                 without the key guarantee"
+            );
+            // 본문을 부르기 **전에** 닫는다 — 그 사이에 온 재시도가 결말이 안 날 자리에
+            // 합류하지 않게.
+            lock(store).abandon(&scope, &key, ticket);
+            let out = dispatch(&IpcCommand::new(stripped, reply));
+            if !handled(&out) {
+                lock(store).abandon_unhandled(&scope, &key, ticket);
+            }
+            return out;
+        }
+        let relayed = IpcCommand::new(stripped, tx);
         let out = dispatch(&relayed);
         drop(relayed);
-        if handled(&out) {
-            std::thread::spawn(move || self.settle_when_answered(&rx));
-        } else {
-            lock(self.store).abandon_unhandled(&self.scope, &self.key, self.ticket);
+        if !handled(&out) {
+            lock(store).abandon_unhandled(&scope, &key, ticket);
         }
         out
     }
@@ -1661,7 +1709,15 @@ mod tests {
     fn a_request_that_crosses_both_layers_is_executed_once() {
         let store = isolated_store();
         let (cmd, rx) = keyed("workspace.create", "cross-layer");
-        let out = run_app_layer_in(store, &CallerContext::Local, &cmd, true, |h| *h, |_| false);
+        let out = run_app_layer_in(
+            store,
+            spawn_relay,
+            &CallerContext::Local,
+            &cmd,
+            true,
+            |h| *h,
+            |_| false,
+        );
         assert_eq!(out, Some(false), "App 층은 그 이름을 안 맡는다");
         let pending = begin_in(
             store,
@@ -1682,6 +1738,7 @@ mod tests {
         );
         let out = run_app_layer_in(
             store,
+            spawn_relay,
             &CallerContext::Local,
             &cmd,
             true,
@@ -1707,9 +1764,63 @@ mod tests {
         }
         for name in names {
             let (cmd, _rx) = keyed(name, "outside");
-            run_app_layer_in(store, &CallerContext::Local, &cmd, true, |h| *h, |_| false);
+            run_app_layer_in(
+                store,
+                spawn_relay,
+                &CallerContext::Local,
+                &cmd,
+                true,
+                |h| *h,
+                |_| false,
+            );
             assert_eq!(lock(store).counts(), RetryCounts::default(), "{name}");
         }
+    }
+
+    fn no_threads(_: Box<dyn FnOnce() + Send>) -> std::io::Result<()> {
+        Err(std::io::Error::other("no threads left"))
+    }
+
+    /// relay 스레드를 못 세우면 보장만 잃고 동작은 키가 없을 때와 같다 — 본문이 한 번 돌고
+    /// 답은 **원래 통로로**, 재생 표지 없이 간다. 보존소에는 자국이 안 남아 같은 키의
+    /// 재시도는 다시 실행된다.
+    ///
+    /// 이 층이 안 맡는 이름이면 그 판정은 세지 않는다 — 다음 층이 다시 판정한다.
+    #[test]
+    fn a_relay_that_cannot_start_runs_the_request_without_the_guarantee() {
+        let store = isolated_store();
+        let runs = std::cell::Cell::new(0);
+        for expected_runs in [1, 2] {
+            let (cmd, rx) = app_cmd("no-relay", 1, "a");
+            let out = run_app_layer_in(
+                store,
+                no_threads,
+                &CallerContext::Local,
+                &cmd,
+                false,
+                |h| *h,
+                answer_now(&runs),
+            );
+            assert_eq!(out, Some(true));
+            assert_eq!(runs.get(), expected_runs, "재시도가 다시 실행돼야 한다");
+            let answer = rx.try_recv().expect("원래 통로로 답이 와야 한다");
+            assert!(!answer.idempotent_replay);
+            assert_eq!(lock(store).len(), 0);
+        }
+        assert_eq!(lock(store).counts().executed, 2);
+
+        let (cmd, _rx) = keyed("workspace.create", "no-relay-unhandled");
+        let out = run_app_layer_in(
+            store,
+            no_threads,
+            &CallerContext::Local,
+            &cmd,
+            true,
+            |h| *h,
+            |_| false,
+        );
+        assert_eq!(out, Some(false));
+        assert_eq!(lock(store).counts().executed, 2, "안 맡은 판정은 되돌린다");
     }
 
     /// 선언은 상수에서 **유도**된다. 리터럴로 다시 적으면 동작과 갈린다.

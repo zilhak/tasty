@@ -42,15 +42,22 @@ App 층 가로채기는 두 조합에 따로 있다 — GUI 의 `ipc_step_app_me
 
 - **판정은 engine 라우터와 같다.** 키가 있고 `MethodEffect::Mutate` 인 이름만 개입한다(이름은 alias
   정규화 뒤). 재생 · 충돌(`-32063`) · 버려짐(`-32064`)의 답과 보존 상한도 그대로다.
-- **통로를 relay 로 바꾼다.** 처음 보는 키면 보존소에 진행 중 항목을 열고, 칸 하나짜리 새 통로를 만든
-  뒤 **키를 뗀** 요청 사본으로 원래 본문을 다시 부른다. 키를 떼는 것이 재귀를 끊는다 — 떼지 않으면
+- **통로를 relay 로 바꾼다.** 처음 보는 키면 보존소에 진행 중 항목을 열고, 칸 하나짜리 새 통로와 그
+  통로를 기다릴 relay 스레드를 세운 뒤 **키를 뗀** 요청 사본으로 원래 본문을 다시 부른다. 키를 떼는 것이 재귀를 끊는다 — 떼지 않으면
   본문이 같은 함수로 돌아와 자기에게 합류한다. 본문이 그 이름을 맡았으면(GUI `IpcStep` 이
   `NotHandled` 가 아님, 헤드리스 `Some`) relay 스레드가 그 통로의 답을 기다렸다가 **먼저 기록하고,
   합류자에게 나눠 준 뒤, 원래 통로로 넘긴다.** 기록이 먼저라 답을 받은 호출자의 재시도는 반드시
   기록을 본다.
 - **이 층이 이름을 안 맡으면 자국을 남기지 않는다.** 본문이 `NotHandled` 면 연 항목을 그 자리에서
-  닫는다(스레드를 세우지 않는다). 요청은 다음 층으로 가고 거기서 처음 보는 키로 다시 판정된다. 그래서
-  engine 라우터로 가는 `Mutate` 는 App 층을 지나며 항목을 한 번 열고 닫을 뿐 동작이 안 바뀐다.
+  닫고 그 판정의 셈도 되돌린다([ADR-0422](0422-the-retry-counts-are-kept-by-the-store-that-decides.md)).
+  relay 스레드는 본문이 relay 통로를 놓는 즉시(통로 끊김) 끝난다. 요청은 다음 층으로 가고 거기서
+  처음 보는 키로 다시 판정된다. 그래서 engine 라우터로 가는 `Mutate` 는 App 층을 지나며 항목을 한 번
+  열고 닫을 뿐 응답이 안 바뀐다.
+- **relay 스레드를 못 세우면 보장만 잃는다.** 스레드는 `std::thread::Builder` 로 세우고(실패하면
+  `std::thread::spawn` 은 패닉하고, 부르는 자리는 GUI 이벤트 루프 · 헤드리스 펌프다), 본문을 부르기
+  **전에** 세운다. 실패하면 연 항목을 닫고 키를 뗀 요청을 **원래 통로로** 부르며 `warn` 을 남긴다 —
+  동작은 키가 없을 때와 같고, 같은 키의 재시도는 다시 실행된다. 본문을 부른 뒤에 세우면 이 갈래가
+  없다: 답이 이미 relay 통로에 있거나 나중에 그리로 오는데, 원래 통로로 넘겨 줄 쪽이 없다.
 - **합류.** 같은 `(주체, 키, 요청)` 이 진행 중이면 합류자의 `id` 와 통로를 그 항목에 붙이고 끝난다. 첫
   결말이 보관되면 합류자는 그 답을 `idempotent_replay: true` 와 **자기** `id` 로 받는다. 답이 상한을
   넘어 버려졌으면 `-32064` 를 받는다. 진행 중인데 요청이 다르면 합류가 아니라 충돌(`-32063`)이다.
@@ -78,8 +85,10 @@ App 층 가로채기는 두 조합에 따로 있다 — GUI 의 `ipc_step_app_me
   받는다 — 격상이 결정된 뒤에 온 재시도가 새 승인 요청을 여는 대신 앞선 답을 재생으로 받고, 같은 키로
   다른 권한을 청하면 둘째 격상을 여는 대신 `-32063` 을 받는다.
 - **잃은 것 — 키를 실은 App 층 호출 하나가 스레드 하나를 쓴다.** 답이 올 때까지 relay 스레드가 기다린다.
-  키가 없는 호출, `Mutate` 가 아닌 호출, 이 층이 안 맡는 호출은 스레드를 안 세운다. 스레드 수의 상한은
-  보존소 항목 수 상한과 같지 않다 — 진행 중 항목이 밀려나도 그 스레드는 답이나 통로 끊김까지 산다.
+  키가 없는 호출, `Mutate` 가 아닌 호출은 스레드를 안 세운다. 키를 실은 `Mutate` 가운데 이 층이 안 맡는
+  호출(engine 라우터로 가는 것)도 스레드를 **잠깐** 세운다 — 스레드가 본문보다 먼저 서야 하기 때문이고,
+  본문이 통로를 놓는 즉시 끝난다. 스레드 수의 상한은 보존소 항목 수 상한과 같지 않다 — 진행 중 항목이
+  밀려나도 그 스레드는 답이나 통로 끊김까지 산다.
 - **잃은 것 — 요청 사본 하나.** relay 는 키를 뗀 요청을 복제한다. params 크기만큼이다.
 - **운영 비용**: 보존소가 진행 중 상태를 다룬다(항목 · 합류자 목록 · 표). 기존 engine 라우터 경로는
   그 갈래에 닿지 않는다.
@@ -107,6 +116,10 @@ App 층 가로채기는 두 조합에 따로 있다 — GUI 의 `ipc_step_app_me
   `idempotency::tests::a_retry_that_arrives_while_the_first_is_running_joins_it` 가 빨개진다(변이 확인:
   합류를 항상 실패시키면 그 시험과 `a_run_that_drops_its_reply_is_forgotten_with_its_joiners` 가
   실패했다, 2026-09-21).
+- relay 스레드를 못 세운 갈래가 연 항목을 안 닫거나 답을 원래 통로로 안 보내면
+  `idempotency::tests::a_relay_that_cannot_start_runs_the_request_without_the_guarantee` 가 빨개진다
+  (시험은 실패하는 생성 함수를 넣는다. 변이 확인: 그 갈래의 닫는 줄을 지우면 실패했다, 2026-09-21).
+  실제 OS 의 스레드 생성 실패는 재지 않았다.
 - 이 층이 안 맡은 이름의 항목을 안 닫으면
   `idempotency::tests::a_layer_that_does_not_handle_the_name_leaves_no_trace` 가 빨개진다(변이 확인: 닫는
   줄을 지우면 실패했다, 2026-09-21).
@@ -132,6 +145,6 @@ App 층 가로채기는 두 조합에 따로 있다 — GUI 의 `ipc_step_app_me
   계약 밖. [ADR-0122](0122-winit-scheduled-fallible-ipc-returns-outcome.md) — 창 생성의 지연 응답.
   [ADR-0420](0420-the-idempotency-key-envelope-is-judged-at-the-admission-gate.md) — 봉투 검사 위치.
 - 관련 dev-guide: [api-conventions](../dev-guide/api-conventions.md) 의 멱등 키 절.
-- **코드 근거 (결정이 실현된 현재 위치)**: `idempotency::run_app_layer` · `Relay` · `Store::open` ·
+- **코드 근거 (결정이 실현된 현재 위치)**: `idempotency::run_app_layer` · `Relay::run` · `spawn_relay` · `Store::open` ·
   `Store::join` · `Store::abandon` · `Store::settle`, `App::ipc_step_app_methods` 첫 줄,
   `headless_dispatch::intercept_app_layer` 첫 줄.
