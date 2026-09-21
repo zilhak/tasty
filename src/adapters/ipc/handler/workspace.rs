@@ -515,11 +515,7 @@ pub fn handle_workspace_close(
     }
 
     if engine.workspaces.len() == 1 {
-        return JsonRpcResponse::invalid_params(
-            id,
-            "Refusing to close the last workspace — closing the window instead is a separate \
-             decision; use 'window.close' explicitly if that is what you want",
-        );
+        return JsonRpcResponse::invalid_params(id, last_workspace_refusal());
     }
 
     let workspace_id = engine.workspaces[ws_idx].id;
@@ -529,6 +525,20 @@ pub fn handle_workspace_close(
     let closed =
         window.close_workspace_at(engine, ws_idx, crate::state::WorkspaceCloseOrigin::Agent);
     JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
+}
+
+/// 마지막 워크스페이스 거절 문구. gui 는 창을 닫는 별개의 수단(`window.close`)을 권한다.
+/// 헤드리스에는 그 수단이 없다 — `window.close` 가 그 조합에서 `-32017`(gated out)이라, 권하면
+/// 실행할 수 없는 처방이 된다. 그래서 헤드리스는 닫을 수 없다는 사실만 말한다. 에러 코드는
+/// 두 조합 모두 `-32602` 그대로다.
+fn last_workspace_refusal() -> &'static str {
+    if cfg!(feature = "gui") {
+        "Refusing to close the last workspace — closing the window instead is a separate \
+         decision; use 'window.close' explicitly if that is what you want"
+    } else {
+        "Refusing to close the last workspace — the last workspace of a headless instance \
+         cannot be closed (there is no window to close instead)"
+    }
 }
 
 /// 워크스페이스 순서 이동.
@@ -618,7 +628,28 @@ mod close_tests {
 
         let res = handle_workspace_close(&mut state, &mut engine, json!(1), &json!({ "id": only }));
 
-        assert!(res.error.is_some(), "마지막 워크스페이스는 거절해야 한다");
+        let err = res.error.expect("마지막 워크스페이스는 거절해야 한다");
+        assert_eq!(
+            err.code, -32602,
+            "코드는 두 조합 모두 invalid_params 그대로"
+        );
+        // gui 는 창을 닫는 별개의 수단을 권하고, 헤드리스는 그 수단(`window.close`)이
+        // gated out 이라 권하지 않는다 — 실행할 수 없는 처방을 싣지 않는다.
+        if cfg!(feature = "gui") {
+            assert!(
+                err.message.contains("use 'window.close' explicitly"),
+                "{}",
+                err.message
+            );
+        } else {
+            assert!(
+                err.message
+                    .contains("the last workspace of a headless instance cannot be closed"),
+                "{}",
+                err.message
+            );
+            assert!(!err.message.contains("window.close"), "{}", err.message);
+        }
         assert_eq!(
             engine.workspaces.len(),
             1,

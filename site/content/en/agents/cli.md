@@ -1,4 +1,4 @@
-<!-- source-hash: 35b0187d5d9f -->
+<!-- source-hash: 97a8971548bc -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -141,7 +141,8 @@ tasty close self                                        # close this very Surfac
 
 The last remaining workspace and the last remaining window cannot be closed. Closing a workspace
 never takes the window down with it; it is refused instead, so reach for `tasty close window` when
-that is what you mean. A target holding your own terminal is refused too - use `tasty close self`
+that is what you mean (an instance started with `tasty --headless` has no window to close, so its
+last workspace simply cannot be closed). A target holding your own terminal is refused too - use `tasty close self`
 there. A workspace mirroring a remote connection is refused as well - end that connection instead.
 The other way round, a workspace holding **a terminal someone is using over a remote connection**
 is refused too - it closes once that person lets go of it.
