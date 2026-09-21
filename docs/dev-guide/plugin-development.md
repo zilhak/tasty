@@ -308,6 +308,14 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   못 지운다(호스트가 만료된 namespace 호출의 id 만 기억한다). hook 처럼
   backoff 를 걸지 않는 이유는 ADR-0311 의 2026-09-20 보강에 있다 — 우회할 대상이 없는
   호출에 backoff 를 걸면 회복한 plugin 이 그 창 동안 도달 불가가 된다.
+- **재시작·disable·swap 의 정리는 한 함수다**: 세 경로가 프로세스를 치운 뒤 모두
+  `forget_plugin_runtime` 을 거친다 — event bus 권한·구독 해제, pending 회수, shared
+  buffer 해제, 설정 sub-page 해제, 등록 게이트(`registered_plugins`) 해제. 등록 게이트가
+  풀려야 새 프로세스의 hello 가 권한·event bus·설정 sub-page 를 **다시** 받는다.
+  pending 회수는 두 축으로 찾는다: *무엇을 위한* 요청인가(namespace 호출·hook 은 caller
+  에 `-32004` 회신)와 *누구에게 보낸* 요청인가(`surface.create`·`surface.restore`·popup
+  open 처럼 회신할 caller 가 없는 것은 조용히 거둔다). 뒤쪽을 안 거두면 새 프로세스가
+  새 request id 를 쓰므로 그 항목은 영영 매칭되지 않고 남는다.
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
 
 ### 큐 포화 통지 (호스트가 버린 요청을 plugin 이 안다)

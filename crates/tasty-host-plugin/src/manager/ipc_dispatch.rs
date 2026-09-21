@@ -175,16 +175,19 @@ impl PluginManager {
                         Ok(req_id) => {
                             self.pending_requests.insert(
                                 req_id,
-                                PendingRequest::now(PendingRequestKind::ExtensionPreIpcHook {
-                                    target_plugin_id,
-                                    extension_plugin_id: ext_id,
-                                    method,
-                                    params,
-                                    pre_hook_mode: pre.mode,
-                                    final_caller,
-                                    post_hook: post,
-                                    deadline,
-                                }),
+                                PendingRequest::now(
+                                    ext_id.clone(),
+                                    PendingRequestKind::ExtensionPreIpcHook {
+                                        target_plugin_id,
+                                        extension_plugin_id: ext_id,
+                                        method,
+                                        params,
+                                        pre_hook_mode: pre.mode,
+                                        final_caller,
+                                        post_hook: post,
+                                        deadline,
+                                    },
+                                ),
                             );
                         }
                         Err(msg) => {
@@ -299,6 +302,7 @@ impl PluginManager {
                 }
             };
         let deadline = Instant::now() + NAMESPACE_CALL_TIMEOUT;
+        let to = target_plugin_id.clone();
         let kind = match (final_caller, post_hook) {
             (
                 FinalCaller::Local {
@@ -334,7 +338,7 @@ impl PluginManager {
             },
         };
         self.pending_requests
-            .insert(req_id, PendingRequest::now(kind));
+            .insert(req_id, PendingRequest::now(to, kind));
     }
 
     /// 활성 extension이 있고 method에 매칭되는 pre/post IPC hook을 검색.
@@ -604,6 +608,51 @@ impl PluginManager {
                 | Some(PendingRequestKind::ExtensionPostEventHook { .. }) => {
                     // event는 fire-and-forget이라 caller에 회신할 필요 없음.
                 }
+                _ => {}
+            }
+        }
+        self.reclaim_requests_sent_to(plugin_id, reason);
+    }
+
+    /// 위 취소가 못 보는 나머지 — **그 plugin 에게 보냈는데** 회신할 caller 가 따로
+    /// 없는 요청(`SurfaceCreate` · `SurfaceRestore` · `CommandInvoke` · `PopupOpen` ·
+    /// `Other`)과 debug hook 호출을 거둔다.
+    ///
+    /// 거두지 않으면 영영 안 끝난다. 새 프로세스는 새 request id 를 쓰므로 옛 id 의
+    /// 응답은 다시 오지 않고, deadline 도 없는 변종이라 sweep 도 안 본다. 그 항목들이
+    /// 재시작마다 쌓이고, 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 를
+    /// 영구히 참으로 묶는다.
+    ///
+    /// 받는 쪽으로 찾는다(`PendingRequest::to`) — 위 취소는 *무엇을 위한* 요청인가
+    /// (target) 로 찾으므로, 둘을 합쳐야 이 plugin 이 얽힌 요청이 전부 덮인다.
+    fn reclaim_requests_sent_to(&mut self, plugin_id: &str, reason: &str) {
+        let leftover: Vec<u64> = self
+            .pending_requests
+            .iter()
+            .filter(|(_, p)| p.to == plugin_id)
+            .map(|(id, _)| *id)
+            .collect();
+        if !leftover.is_empty() {
+            tracing::debug!(
+                "reclaimed {} request(s) sent to plugin '{plugin_id}' ({reason})",
+                leftover.len()
+            );
+        }
+        for id in leftover {
+            match self.pending_requests.remove(&id).map(|p| p.kind) {
+                #[cfg(debug_assertions)]
+                Some(PendingRequestKind::DebugExtensionInvokeHook {
+                    response_tx,
+                    original_id,
+                    ..
+                }) => {
+                    let msg = format!("plugin '{plugin_id}' unavailable: {reason}");
+                    send_response(
+                        &response_tx,
+                        JsonRpcResponse::error(original_id, -32004, &msg),
+                    );
+                }
+                // 회신할 caller 가 없다 — 응답은 호스트 자신의 상태 동기화용이었다.
                 _ => {}
             }
         }

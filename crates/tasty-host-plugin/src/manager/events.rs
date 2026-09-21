@@ -199,14 +199,17 @@ impl PluginManager {
             Ok(req_id) => {
                 self.pending_requests.insert(
                     req_id,
-                    PendingRequest::now(PendingRequestKind::ExtensionPreEventHook {
-                        publisher_plugin_id: publisher_plugin_id.to_string(),
-                        extension_plugin_id: ext_id,
-                        envelope,
-                        pre_hook_mode: pre.mode,
-                        post_hook: post,
-                        deadline,
-                    }),
+                    PendingRequest::now(
+                        ext_id.clone(),
+                        PendingRequestKind::ExtensionPreEventHook {
+                            publisher_plugin_id: publisher_plugin_id.to_string(),
+                            extension_plugin_id: ext_id,
+                            envelope,
+                            pre_hook_mode: pre.mode,
+                            post_hook: post,
+                            deadline,
+                        },
+                    ),
                 );
             }
             Err(msg) => {
@@ -243,11 +246,14 @@ impl PluginManager {
                 Ok(req_id) => {
                     self.pending_requests.insert(
                         req_id,
-                        PendingRequest::now(PendingRequestKind::ExtensionPostEventHook {
-                            extension_plugin_id: ext_id,
-                            event_key,
-                            deadline,
-                        }),
+                        PendingRequest::now(
+                            ext_id.clone(),
+                            PendingRequestKind::ExtensionPostEventHook {
+                                extension_plugin_id: ext_id,
+                                event_key,
+                                deadline,
+                            },
+                        ),
                     );
                 }
                 Err(msg) => {

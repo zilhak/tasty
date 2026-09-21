@@ -144,15 +144,24 @@ pub(super) struct PendingRequest {
     pub(super) kind: PendingRequestKind,
     /// 보낸 시각. 응답이 매칭될 때 왕복 대기 시간으로 접힌다.
     pub(super) sent_at: Instant,
+    /// 이 요청을 **받은** plugin — 응답을 줄 쪽이다.
+    ///
+    /// 변종 가운데 절반(`SurfaceCreate` · `SurfaceRestore` · `CommandInvoke` · `PopupOpen`
+    /// · `Other`)은 이 값을 안 든다. 그래서 그 plugin 이 치워질 때 그 항목들을 찾을 길이
+    /// 없었고, 새 프로세스는 새 id 를 쓰므로 **영영 매칭되지 않는 항목**이 프로세스 수명
+    /// 동안 남았다 — 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 까지 참으로
+    /// 묶는다. 변종마다 칸을 더하는 대신 여기 하나로 둔다: 받는 쪽은 모든 요청에 있다.
+    pub(super) to: String,
 }
 
 impl PendingRequest {
-    /// 지금 보냈다. `Instant::now()` 를 쓰는 것은 이 크레이트의 기존 관례다 —
+    /// `to` 에게 지금 보냈다. `Instant::now()` 를 쓰는 것은 이 크레이트의 기존 관례다 —
     /// `Clock` port 는 본 바이너리의 `Core` 에 있고 여기서는 안 보인다.
-    pub(super) fn now(kind: PendingRequestKind) -> Self {
+    pub(super) fn now(to: impl Into<String>, kind: PendingRequestKind) -> Self {
         Self {
             kind,
             sent_at: Instant::now(),
+            to: to.into(),
         }
     }
 }
@@ -854,6 +863,7 @@ prefix = "{prefix}"
                 // 실제로 기다린 것이 아니라 **보낸 시각을 뒤로 밀어** 잰다 — 시험이
                 // 자기 벽시계를 쓰면 부하에 따라 값이 흔들린다.
                 sent_at: Instant::now() - Duration::from_millis(50),
+                to: "com.example.x".into(),
             },
         );
 
@@ -928,12 +938,15 @@ prefix = "{prefix}"
             let id = 100 + i as u64;
             mgr.pending_requests.insert(
                 id,
-                PendingRequest::now(PendingRequestKind::NamespaceInvoke {
-                    plugin_id: plugin_id.into(),
-                    response_tx: tx,
-                    original_id: serde_json::json!(id),
-                    deadline: Instant::now() - Duration::from_secs(1),
-                }),
+                PendingRequest::now(
+                    plugin_id,
+                    PendingRequestKind::NamespaceInvoke {
+                        plugin_id: plugin_id.into(),
+                        response_tx: tx,
+                        original_id: serde_json::json!(id),
+                        deadline: Instant::now() - Duration::from_secs(1),
+                    },
+                ),
             );
             mgr.sweep_expired_requests(Instant::now());
         }
@@ -967,6 +980,75 @@ prefix = "{prefix}"
         );
     }
 
+    /// 재시작은 disable · swap 과 **같은 정리**를 거친다 — 등록 게이트까지 푼다.
+    ///
+    /// 게이트가 안 풀리면 새 프로세스의 hello 가 "이미 등록됨" 으로 읽혀
+    /// `register_new_hellos` 가 안 돈다. 그런데 재시작은 그 plugin 의 이벤트 권한
+    /// (`event_bus.clear_plugin`)과 설정 sub-page 를 이미 지웠으므로, 재시작된 plugin 은
+    /// `event.subscribe` 가 전부 거절되고 설정 탭이 사라진 채로 남는다.
+    #[test]
+    fn a_restarted_plugin_is_registered_again_on_its_next_hello() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.silent".into(), stub_process());
+        mgr.registered_plugins.insert("com.example.silent".into());
+
+        expire_namespace_calls(
+            &mut mgr,
+            "com.example.silent",
+            NAMESPACE_EXPIRY_RESTART_LIMIT,
+        );
+        mgr.restart_unresponsive_plugins();
+
+        assert!(!mgr.processes.contains_key("com.example.silent"));
+        assert!(
+            !mgr.registered_plugins.contains("com.example.silent"),
+            "재시작이 등록 게이트를 안 풀었다 — 다음 hello 가 권한을 다시 못 받는다"
+        );
+    }
+
+    /// 재시작된 plugin **에게 보낸** 요청은 caller 가 없어도 거둬진다.
+    ///
+    /// 새 프로세스는 새 request id 를 쓰므로 옛 id 의 응답은 다시 안 온다. deadline 도
+    /// 없는 변종이라 sweep 도 안 본다 — 여기서 안 거두면 프로세스 수명 동안 남고,
+    /// 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 를 영구히 참으로 묶는다.
+    /// 다른 plugin 에게 간 요청은 건드리지 않는다.
+    #[test]
+    fn requests_sent_to_a_restarted_plugin_are_reclaimed() {
+        let mut mgr = PluginManager::new(empty_waker());
+        mgr.processes
+            .insert("com.example.silent".into(), stub_process());
+        mgr.pending_requests.insert(
+            900,
+            PendingRequest::now(
+                "com.example.silent",
+                PendingRequestKind::SurfaceRestore { surface_id: 3 },
+            ),
+        );
+        mgr.pending_requests.insert(
+            901,
+            PendingRequest::now("com.example.other", PendingRequestKind::Other),
+        );
+        assert!(mgr.has_pending_surface_restores());
+
+        expire_namespace_calls(
+            &mut mgr,
+            "com.example.silent",
+            NAMESPACE_EXPIRY_RESTART_LIMIT,
+        );
+        mgr.restart_unresponsive_plugins();
+
+        assert!(
+            !mgr.has_pending_surface_restores(),
+            "재시작된 plugin 에게 보낸 surface.restore 가 남았다"
+        );
+        assert!(!mgr.pending_requests.contains_key(&900));
+        assert!(
+            mgr.pending_requests.contains_key(&901),
+            "다른 plugin 에게 간 요청까지 거뒀다"
+        );
+    }
+
     /// namespace 응답이 하나라도 오면 계수가 0 으로 돌아간다 — 답하고 있는 plugin 은
     /// 아무리 느려도 이 판정에 안 걸린다.
     #[test]
@@ -989,12 +1071,15 @@ prefix = "{prefix}"
         let (tx, _rx) = mpsc::sync_channel(1);
         mgr.pending_requests.insert(
             7,
-            PendingRequest::now(PendingRequestKind::NamespaceInvoke {
-                plugin_id: "com.example.slow".into(),
-                response_tx: tx,
-                original_id: serde_json::json!(7),
-                deadline: Instant::now() + NAMESPACE_CALL_TIMEOUT,
-            }),
+            PendingRequest::now(
+                "com.example.slow",
+                PendingRequestKind::NamespaceInvoke {
+                    plugin_id: "com.example.slow".into(),
+                    response_tx: tx,
+                    original_id: serde_json::json!(7),
+                    deadline: Instant::now() + NAMESPACE_CALL_TIMEOUT,
+                },
+            ),
         );
         mgr.handle_plugin_response(
             "com.example.slow",
@@ -1079,8 +1164,10 @@ prefix = "{prefix}"
         );
 
         // (1) pending 이 있는 non-namespace 응답.
-        mgr.pending_requests
-            .insert(500, PendingRequest::now(PendingRequestKind::Other));
+        mgr.pending_requests.insert(
+            500,
+            PendingRequest::now("com.example.silent", PendingRequestKind::Other),
+        );
         mgr.handle_plugin_response(
             "com.example.silent",
             crate::protocol::PluginResponse {
@@ -1163,12 +1250,15 @@ prefix = "{prefix}"
         let (tx, rx) = mpsc::sync_channel(1);
         mgr.pending_requests.insert(
             7,
-            PendingRequest::now(PendingRequestKind::NamespaceInvoke {
-                plugin_id: "com.example.silent".into(),
-                response_tx: tx,
-                original_id: serde_json::json!(42),
-                deadline,
-            }),
+            PendingRequest::now(
+                "com.example.silent",
+                PendingRequestKind::NamespaceInvoke {
+                    plugin_id: "com.example.silent".into(),
+                    response_tx: tx,
+                    original_id: serde_json::json!(42),
+                    deadline,
+                },
+            ),
         );
         mgr.sweep_expired_requests(now);
         (mgr.pending_requests.contains_key(&7), rx.try_recv().ok())
@@ -1217,11 +1307,14 @@ prefix = "{prefix}"
         let deadline = Instant::now() + DEBUG_HOOK_INVOKE_TIMEOUT;
         mgr.pending_requests.insert(
             11,
-            PendingRequest::now(PendingRequestKind::DebugExtensionInvokeHook {
-                response_tx: tx,
-                original_id: serde_json::json!("dbg"),
-                deadline,
-            }),
+            PendingRequest::now(
+                "com.example.ext",
+                PendingRequestKind::DebugExtensionInvokeHook {
+                    response_tx: tx,
+                    original_id: serde_json::json!("dbg"),
+                    deadline,
+                },
+            ),
         );
         mgr.sweep_expired_requests(deadline - Duration::from_millis(1));
         assert!(

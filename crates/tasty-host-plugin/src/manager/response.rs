@@ -316,11 +316,14 @@ impl PluginManager {
             Ok(req_id) => {
                 self.pending_requests.insert(
                     req_id,
-                    PendingRequest::now(PendingRequestKind::DebugExtensionInvokeHook {
-                        response_tx,
-                        original_id,
-                        deadline: Instant::now() + super::DEBUG_HOOK_INVOKE_TIMEOUT,
-                    }),
+                    PendingRequest::now(
+                        extension_id,
+                        PendingRequestKind::DebugExtensionInvokeHook {
+                            response_tx,
+                            original_id,
+                            deadline: Instant::now() + super::DEBUG_HOOK_INVOKE_TIMEOUT,
+                        },
+                    ),
                 );
             }
             Err(msg) => {
@@ -457,14 +460,17 @@ impl PluginManager {
             Ok(req_id) => {
                 self.pending_requests.insert(
                     req_id,
-                    PendingRequest::now(PendingRequestKind::ExtensionPostIpcHook {
-                        extension_plugin_id,
-                        method,
-                        post_hook_mode: post_hook_decl.mode,
-                        target_outcome,
-                        final_caller,
-                        deadline,
-                    }),
+                    PendingRequest::now(
+                        extension_plugin_id.clone(),
+                        PendingRequestKind::ExtensionPostIpcHook {
+                            extension_plugin_id,
+                            method,
+                            post_hook_mode: post_hook_decl.mode,
+                            target_outcome,
+                            final_caller,
+                            deadline,
+                        },
+                    ),
                 );
             }
             Err(msg) => {

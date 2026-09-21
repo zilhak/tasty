@@ -665,17 +665,15 @@ impl PluginManager {
                 proc.shutdown(super::PLUGIN_SHUTDOWN_TIMEOUT);
             }
             // ipc namespace 유지 — 재시작 중에 오는 호출은 "없는 메서드" 가 아니라
-            // "지금 안 뜬 plugin" 이다(ADR-0173).
-            self.event_bus.clear_plugin(&id);
-            self.cancel_pending_namespace_calls(&id, "plugin restarting");
-            self.plugin_buffers.remove(&id);
+            // "지금 안 뜬 plugin" 이다(ADR-0173). 정리는 disable · swap 과 같은 한
+            // 함수를 거친다 — 따로 적었을 때 여기만 등록 게이트를 안 풀었다.
+            self.forget_plugin_runtime(&id, "plugin restarting");
             // egui-mesh: 죽은 plugin 의 buffer 를 가리키는 stale frame 메타 제거 (A1-S3 / A2 / A3).
             self.egui_mesh_frames.retain(|_, f| f.plugin_id != id);
             self.popup_mesh_frames.retain(|_, f| f.plugin_id != id);
             self.banner_mesh_frames.retain(|_, f| f.plugin_id != id);
             // 죽은 plugin 의 banner 인스턴스도 정리 — 다음 spawn 에서 새 인스턴스로 시작.
             self.banner_instances.retain(|_, inst| inst.plugin_id != id);
-            self.settings_pages.unregister_plugin(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
             }

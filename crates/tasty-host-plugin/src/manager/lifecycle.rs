@@ -715,16 +715,35 @@ impl PluginManager {
         // → cascade). was_running 분기는 App::plugin_disable 가 사전 캡처하므로 본
         // 메서드 안에서는 사용 안 함.
         let _ = was_running; // 의도적으로 무시 — 발화는 cascade 가 담당.
+        // plugin_remove 도 내부적으로 이 disable() 을 거치므로 함께 커버된다.
+        self.forget_plugin_runtime(plugin_id, "plugin disabled");
+        Ok(())
+    }
+
+    /// plugin 프로세스를 치운 **뒤** 호스트가 그 plugin 에 대해 들고 있던 실행 상태를
+    /// 잊는다. disable · graceful swap · 무응답 재시작 셋이 **이 한 함수**를 거친다.
+    ///
+    /// 셋이 각자 줄을 들고 있던 때에는 재시작 경로만 마지막 줄을 빠뜨렸다. 그러면
+    /// `event_bus.clear_plugin` 이 지운 이벤트 권한과 `settings_pages` 가 지운 sub-page 가
+    /// 새 프로세스의 hello 에서 **다시 채워지지 않는다** — hello 가 "이미 등록됨" 게이트에
+    /// 막혀 `register_new_hellos` 가 안 돌기 때문이다. 재시작된 plugin 은 떠 있는데
+    /// `event.subscribe` 가 전부 거절되고 설정 탭이 사라진 채로 남았다.
+    ///
+    /// 여기 **안** 들어가는 것: ipc namespace 소유(설치 사실이라 유지 — ADR-0173),
+    /// registry contribute(disable 만 지운다 — 설정을 끄는 일이다), mesh 프레임(재시작만
+    /// 지운다 — 호출자 쪽 사정이 갈린다).
+    pub(super) fn forget_plugin_runtime(&mut self, plugin_id: &str, reason: &str) {
         self.event_bus.clear_plugin(plugin_id);
-        self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
+        // namespace 호출·hook 은 caller 에 회신하고, 그 plugin 에게 보낸 나머지 요청도
+        // 거둔다(`reclaim_requests_sent_to`).
+        self.cancel_pending_namespace_calls(plugin_id, reason);
         self.plugin_buffers.remove(plugin_id);
         self.settings_pages.unregister_plugin(plugin_id);
         // registered_plugins gate 해제 — 이걸 안 지우면 재기동 후 새 프로세스의
         // hello 가 pump::classify_event 에서 "이미 등록됨"으로 오판돼
-        // finalize_plugin_hello(→ hook_event_registry.register 등)가 재실행되지
-        // 않는다. plugin_remove 도 내부적으로 이 disable() 을 거치므로 함께 커버된다.
+        // register_new_hellos(권한·event bus·settings page) 와
+        // finalize_plugin_hello(→ hook_event_registry.register 등)가 재실행되지 않는다.
         self.registered_plugins.remove(plugin_id);
-        Ok(())
     }
 
     pub fn is_running(&self, plugin_id: &str) -> bool {
@@ -754,14 +773,7 @@ impl PluginManager {
         }
         // ipc namespace 유지 — swap 중에 오는 호출은 "없는 메서드" 가 아니라
         // "지금 안 뜬 plugin" 이다(ADR-0173).
-        self.event_bus.clear_plugin(plugin_id);
-        self.cancel_pending_namespace_calls(plugin_id, "plugin swap restart");
-        self.plugin_buffers.remove(plugin_id);
-        self.settings_pages.unregister_plugin(plugin_id);
-        // registered_plugins gate 해제 — disable() 과 동일한 이유(Task 14). 여기서
-        // 안 지우면 swap_respawn_internal 이 띄운 새 프로세스의 hello 가 pump 의
-        // "이미 등록됨" 게이트에 막혀 finalize_plugin_hello 재실행이 안 된다.
-        self.registered_plugins.remove(plugin_id);
+        self.forget_plugin_runtime(plugin_id, "plugin swap restart");
         Ok(())
     }
 
