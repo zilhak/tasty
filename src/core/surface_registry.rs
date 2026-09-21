@@ -285,9 +285,37 @@ pub struct SurfaceKindDef {
         )
     )]
     pub consumes_egui_input: bool,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "위 consumes_egui_input 과 같다 — 매니페스트에서 복사되고 읽는 쪽만 GUI 다"
+        )
+    )]
     pub zoomable: bool,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "위 consumes_egui_input 과 같다 — 매니페스트에서 복사되고 읽는 쪽만 GUI 다"
+        )
+    )]
     pub egui_copy: bool,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "위 consumes_egui_input 과 같다 — 매니페스트에서 복사되고 읽는 쪽만 GUI 다"
+        )
+    )]
     pub copy_path: bool,
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "위 consumes_egui_input 과 같다 — 매니페스트에서 복사되고 읽는 쪽만 GUI 다"
+        )
+    )]
     pub egui_paste: bool,
 
     /// 자동 탭 명명에 basename 을 파생할 params 키(매니페스트 `name_from_param`).
@@ -306,6 +334,13 @@ pub struct SurfaceKindDef {
     /// (매니페스트 `convert_requires_input`). `true` 면 convert 팝업에서 이 kind 선택
     /// 시 즉시 빈 params 변환 대신 `convert_input_popup` 팝업을 연다. host 본체의
     /// `kind == "markdown"` convert 분기를 generic 화. builtin 은 false.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "위 consumes_egui_input 과 같다 — 매니페스트에서 복사되고 읽는 쪽만 GUI 다"
+        )
+    )]
     pub convert_requires_input: bool,
 
     /// `convert_requires_input == true` 일 때 host 가 열 plugin file-input 팝업의
