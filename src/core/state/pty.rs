@@ -265,7 +265,10 @@ impl CoreState {
     /// 가 셸이 아닌) 살아있는 surface 들의 ID** 를 의심 목록으로 반환한다. 죽은
     /// 자식은 여기서 건드리지 않고 곧이은 `process_all` 의 `ProcessExited` cascade
     /// 가 정리한다. 호출자는 의심 목록으로 사용자 알림을 발행한다.
-    #[cfg(windows)]
+    ///
+    /// cfg 는 유일한 호출자 `App::resume_health_pass` 와 같은 짝이다 — Windows 에서 gui 를
+    /// 끄면 호출자가 없어 `dead_code = "deny"` 에 걸린다.
+    #[cfg(all(windows, feature = "gui"))]
     pub(crate) fn wake_terminals_after_resume(&mut self) -> Vec<u32> {
         let mut suspects = Vec::new();
         for (sid, term) in self.terminals.iter_mut() {
