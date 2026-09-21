@@ -470,7 +470,14 @@ static POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 const WHAT: &str = "the IPC idempotency store";
 
 fn store() -> MutexGuard<'static, Store> {
-    tasty_utils::poison::recover_mutex(STORE.lock(), WHAT, &POISON_REPORTED)
+    lock(&STORE)
+}
+
+/// 보존소 하나를 잠근다. 프로세스 보존소는 [`STORE`] 하나지만, 판정 함수들은 그것을
+/// 인자로 받는다 — 층을 차례로 지나는 흐름의 누계를 시험이 **정확한 값**으로 재려면
+/// 다른 시험과 안 섞이는 보존소가 필요하다(전역 보존소는 병렬 시험이 함께 올린다).
+fn lock(store: &'static Mutex<Store>) -> MutexGuard<'static, Store> {
+    tasty_utils::poison::recover_mutex(store.lock(), WHAT, &POISON_REPORTED)
 }
 
 /// 실행을 기다리는 키. [`begin`] 이 주고 [`finish`] 가 받는다.
@@ -520,6 +527,16 @@ pub(crate) fn begin(
     request: &JsonRpcRequest,
     id: &serde_json::Value,
 ) -> Result<Option<Pending>, JsonRpcResponse> {
+    begin_in(&STORE, now, caller, request, id)
+}
+
+fn begin_in(
+    store: &'static Mutex<Store>,
+    now: Instant,
+    caller: &CallerContext,
+    request: &JsonRpcRequest,
+    id: &serde_json::Value,
+) -> Result<Option<Pending>, JsonRpcResponse> {
     let Some(key) = request.idempotency_key.as_deref() else {
         return Ok(None);
     };
@@ -528,7 +545,7 @@ pub(crate) fn begin(
         return Ok(None);
     }
     let scope = caller_scope(caller);
-    match store().decide(now, &scope, key, &request.method, &request.params) {
+    match lock(store).decide(now, &scope, key, &request.method, &request.params) {
         Decision::Execute(digest) => Ok(Some(Pending {
             scope,
             key: key.to_string(),
@@ -579,8 +596,17 @@ fn still_running_error(key: &str, id: &serde_json::Value) -> JsonRpcResponse {
 
 /// 실행이 끝났다. [`begin`] 이 키를 줬을 때만 기록한다.
 pub(crate) fn finish(now: Instant, pending: Option<Pending>, response: &JsonRpcResponse) {
+    finish_in(&STORE, now, pending, response);
+}
+
+fn finish_in(
+    store: &'static Mutex<Store>,
+    now: Instant,
+    pending: Option<Pending>,
+    response: &JsonRpcResponse,
+) {
     if let Some(p) = pending {
-        store().record(now, &p.scope, &p.key, p.digest, response);
+        lock(store).record(now, &p.scope, &p.key, p.digest, response);
     }
 }
 
@@ -620,6 +646,17 @@ pub(crate) fn run_app_layer<T>(
     handled: impl FnOnce(&T) -> bool,
     dispatch: impl FnOnce(&IpcCommand) -> T,
 ) -> Option<T> {
+    run_app_layer_in(&STORE, caller, cmd, answered, handled, dispatch)
+}
+
+fn run_app_layer_in<T>(
+    store: &'static Mutex<Store>,
+    caller: &CallerContext,
+    cmd: &IpcCommand,
+    answered: T,
+    handled: impl FnOnce(&T) -> bool,
+    dispatch: impl FnOnce(&IpcCommand) -> T,
+) -> Option<T> {
     let request = &cmd.request;
     let key = request.idempotency_key.as_deref()?;
     let method = tasty_ipc::alias::canonicalize(&request.method);
@@ -629,12 +666,13 @@ pub(crate) fn run_app_layer<T>(
     let now = Instant::now();
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     let scope = caller_scope(caller);
-    let mut guard = store();
+    let mut guard = lock(store);
     let answer = match guard.decide(now, &scope, key, method, &request.params) {
         Decision::Execute(digest) => {
             let ticket = guard.open(now, &scope, key, digest);
             drop(guard);
             let relay = Relay {
+                store,
                 scope,
                 key: key.to_string(),
                 digest,
@@ -666,6 +704,7 @@ pub(crate) fn run_app_layer<T>(
 
 /// App 층에서 연 실행 하나 — 결말을 기다렸다가 기록하고 원래 통로로 넘긴다.
 struct Relay {
+    store: &'static Mutex<Store>,
     scope: String,
     key: String,
     digest: u64,
@@ -696,17 +735,17 @@ impl Relay {
         if handled(&out) {
             std::thread::spawn(move || self.settle_when_answered(&rx));
         } else {
-            store().abandon(&self.scope, &self.key, self.ticket);
+            lock(self.store).abandon(&self.scope, &self.key, self.ticket);
         }
         out
     }
 
     fn settle_when_answered(self, rx: &mpsc::Receiver<JsonRpcResponse>) {
         let Ok(response) = rx.recv() else {
-            store().abandon(&self.scope, &self.key, self.ticket);
+            lock(self.store).abandon(&self.scope, &self.key, self.ticket);
             return;
         };
-        let handoff = store().settle(
+        let handoff = lock(self.store).settle(
             Instant::now(),
             &self.scope,
             &self.key,
