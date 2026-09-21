@@ -166,7 +166,9 @@ jobs:
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" LICENSE
           gh release upload --clobber "v${VERSION}" THIRD_PARTY_LICENSES.md
-          gh release upload --clobber "v${VERSION}" LICENSES/D2Coding-OFL.txt
+          # Every licence text under LICENSES/ — the notice set reads the
+          # directory, not a file list (THIRD_PARTY_LICENSES.md "notice set").
+          gh release upload --clobber "v${VERSION}" LICENSES/*
 
       - name: Upload agent-guide docs
         env:
