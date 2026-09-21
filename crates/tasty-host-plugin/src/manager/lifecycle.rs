@@ -313,7 +313,9 @@ impl PluginManager {
 
     /// 설치 목록만 바꾸고 **유도를 안 돌린다** — 신선도 단정의 대조군 전용이다.
     /// 운영 경로에 이런 자리가 있으면 그것이 곧 이 단정이 잡으려는 결함이다.
-    #[cfg(test)]
+    ///
+    /// 그 대조군 시험이 `debug_assertions` 에 걸려 있어(단정 자체가 debug 전용) 같은 cfg 다.
+    #[cfg(all(test, debug_assertions))]
     pub(crate) fn overwrite_packages_without_deriving_for_tests(
         &mut self,
         packages: Vec<crate::PluginPackage>,
