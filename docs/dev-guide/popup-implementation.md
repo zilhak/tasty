@@ -147,9 +147,11 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
   판정하면 그 갈래가 조용히 뒤집힌다. anchored 명부(`ANCHORED_POPUPS`)와 이 명부가
   어긋나면 `no_anchored_popup_takes_a_scrim` 이 잡는다. 이 명부는 host 팝업의 것이다 —
   plugin 팝업은 명부 없이 예외 없이 scrim 을 깐다(`src/plugin_bridge/popup_render.rs`).
-- **부모-자식이면 자식은 안 깐다** — 같은 범위에 팝업이 여럿이어도 scrim 은 한 번이다.
-  `PopupManager::pick_scrim_layers` 가 host·plugin 두 경로에서 같은 판정을 한다. 자식
-  팝업을 scrim 명부에 넣지 마라.
+- **부모-자식이면 자식은 안 깐다** — 한 경로(host 또는 plugin) 안에서는 같은 범위에 팝업이
+  여럿이어도 scrim 은 한 번이다. `PopupManager::pick_scrim_layers` 가 두 경로에서 같은 판정을
+  하지만 입력은 경로별로 갈린다 — host 는 host 팝업만, plugin 은 plugin 팝업만 모아 따로
+  판정한다. 그래서 plugin 부모 + host 자식처럼 경로가 갈리면 자식이 명부에 없는 것만이 이중
+  scrim 을 막는다. 자식 팝업을 scrim 명부에 넣지 마라.
 
 경계를 지키는 것은 layer clip(`ctx.layer_painter(..).with_clip_rect(..)` 에 그 범위 rect 를
 넘긴다)이고, **그 clip 은 매니저가 그리는 것만 덮는다** — scrim · 배경 · 프레임 · 그림자.
