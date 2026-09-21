@@ -117,163 +117,164 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
     vspace(ui, theme.spacing_md);
 
-    egui::ScrollArea::vertical()
-        .id_salt("toast_demo_scroll")
-        .drag_to_scroll(false)
-        .show(ui, |ui| {
-            // Case 1 — Info
-            ui.label(
-                egui::RichText::new("Case 1 — Info (blue accent, alpha=1.0)")
-                    .strong()
-                    .color(egui::Color32::from(theme.text_primary())),
-            );
-            vspace(ui, STRUCT_GAP_2);
-            frame_case(
-                ui,
-                theme,
-                SPECIMEN_W.value(),
-                SPECIMEN_H_SINGLE.value(),
-                vec![ToastEntryView {
-                    kind: ToastKind::Info,
-                    message: "Reloaded settings.json".into(),
-                    alpha: 1.0,
-                }],
-            );
-            vspace(ui, theme.spacing_lg);
+    // 여섯 케이스를 접지 않고 전부 세운다. 예전에는 `ScrollArea` 로 감쌌는데, 페이지
+    // 스크롤 안에 놓인 그 영역이 케이스 1 frame 의 위쪽 일부만큼만 높이를 잡았고,
+    // 카드는 frame **우하단**에 앵커되므로 전부 그 클립 밖에 그려져 한 장도 안 보였다.
+    // 갤러리는 접으면 캡처에서 사라진다 — 무대는 펼쳐 둔다.
+    ui.vertical(|ui| {
+        // Case 1 — Info
+        ui.label(
+            egui::RichText::new("Case 1 — Info (blue accent, alpha=1.0)")
+                .strong()
+                .color(egui::Color32::from(theme.text_primary())),
+        );
+        vspace(ui, STRUCT_GAP_2);
+        frame_case(
+            ui,
+            theme,
+            SPECIMEN_W.value(),
+            SPECIMEN_H_SINGLE.value(),
+            vec![ToastEntryView {
+                kind: ToastKind::Info,
+                message: "Reloaded settings.json".into(),
+                alpha: 1.0,
+            }],
+        );
+        vspace(ui, theme.spacing_lg);
 
-            // Case 2 — Success
-            ui.label(
-                egui::RichText::new("Case 2 — Success (green accent)")
-                    .strong()
-                    .color(egui::Color32::from(theme.text_primary())),
-            );
-            vspace(ui, STRUCT_GAP_2);
-            frame_case(
-                ui,
-                theme,
-                SPECIMEN_W.value(),
-                SPECIMEN_H_SINGLE.value(),
-                vec![ToastEntryView {
-                    kind: ToastKind::Success,
-                    message: "Workspace saved.".into(),
-                    alpha: 1.0,
-                }],
-            );
-            vspace(ui, theme.spacing_lg);
+        // Case 2 — Success
+        ui.label(
+            egui::RichText::new("Case 2 — Success (green accent)")
+                .strong()
+                .color(egui::Color32::from(theme.text_primary())),
+        );
+        vspace(ui, STRUCT_GAP_2);
+        frame_case(
+            ui,
+            theme,
+            SPECIMEN_W.value(),
+            SPECIMEN_H_SINGLE.value(),
+            vec![ToastEntryView {
+                kind: ToastKind::Success,
+                message: "Workspace saved.".into(),
+                alpha: 1.0,
+            }],
+        );
+        vspace(ui, theme.spacing_lg);
 
-            // Case 3 — Warning
-            ui.label(
-                egui::RichText::new("Case 3 — Warning (yellow accent)")
-                    .strong()
-                    .color(egui::Color32::from(theme.text_primary())),
-            );
-            vspace(ui, STRUCT_GAP_2);
-            frame_case(
-                ui,
-                theme,
-                SPECIMEN_W.value(),
-                SPECIMEN_H_SINGLE.value(),
-                vec![ToastEntryView {
-                    kind: ToastKind::Warning,
-                    message: "Low disk space — clean up downloads.".into(),
-                    alpha: 1.0,
-                }],
-            );
-            vspace(ui, theme.spacing_lg);
+        // Case 3 — Warning
+        ui.label(
+            egui::RichText::new("Case 3 — Warning (yellow accent)")
+                .strong()
+                .color(egui::Color32::from(theme.text_primary())),
+        );
+        vspace(ui, STRUCT_GAP_2);
+        frame_case(
+            ui,
+            theme,
+            SPECIMEN_W.value(),
+            SPECIMEN_H_SINGLE.value(),
+            vec![ToastEntryView {
+                kind: ToastKind::Warning,
+                message: "Low disk space — clean up downloads.".into(),
+                alpha: 1.0,
+            }],
+        );
+        vspace(ui, theme.spacing_lg);
 
-            // Case 4 — Error
-            ui.label(
-                egui::RichText::new("Case 4 — Error (red accent)")
-                    .strong()
-                    .color(egui::Color32::from(theme.text_primary())),
-            );
-            vspace(ui, STRUCT_GAP_2);
-            frame_case(
-                ui,
-                theme,
-                SPECIMEN_W.value(),
-                SPECIMEN_H_SINGLE.value(),
-                vec![ToastEntryView {
-                    kind: ToastKind::Error,
-                    message: "Plugin crashed: tasty-plugin-foo. See logs.".into(),
-                    alpha: 1.0,
-                }],
-            );
-            vspace(ui, theme.spacing_lg);
+        // Case 4 — Error
+        ui.label(
+            egui::RichText::new("Case 4 — Error (red accent)")
+                .strong()
+                .color(egui::Color32::from(theme.text_primary())),
+        );
+        vspace(ui, STRUCT_GAP_2);
+        frame_case(
+            ui,
+            theme,
+            SPECIMEN_W.value(),
+            SPECIMEN_H_SINGLE.value(),
+            vec![ToastEntryView {
+                kind: ToastKind::Error,
+                message: "Plugin crashed: tasty-plugin-foo. See logs.".into(),
+                alpha: 1.0,
+            }],
+        );
+        vspace(ui, theme.spacing_lg);
 
-            // Case 5 — Long body (wrap)
-            ui.label(
-                egui::RichText::new("Case 5 — 긴 본문 (max_width 80% 내 줄바꿈 wrap)")
-                    .strong()
-                    .color(egui::Color32::from(theme.text_primary())),
-            );
-            vspace(ui, STRUCT_GAP_2);
-            frame_case(
-                ui,
-                theme,
-                SPECIMEN_W.value(),
-                SPECIMEN_H_WRAP.value(),
-                vec![ToastEntryView {
-                    kind: ToastKind::Warning,
-                    message:
-                        "이것은 매우 긴 toast 메시지로, scope 의 가로 80% 폭을 초과하면 여러 줄에 \
+        // Case 5 — Long body (wrap)
+        ui.label(
+            egui::RichText::new("Case 5 — 긴 본문 (max_width 80% 내 줄바꿈 wrap)")
+                .strong()
+                .color(egui::Color32::from(theme.text_primary())),
+        );
+        vspace(ui, STRUCT_GAP_2);
+        frame_case(
+            ui,
+            theme,
+            SPECIMEN_W.value(),
+            SPECIMEN_H_WRAP.value(),
+            vec![ToastEntryView {
+                kind: ToastKind::Warning,
+                message:
+                    "이것은 매우 긴 toast 메시지로, scope 의 가로 80% 폭을 초과하면 여러 줄에 \
                          걸쳐 wrap 된다. 본체 view 가 ctx.fonts(|f| f.layout(...)) 로 측정하고 \
                          toast 카드 크기를 동적으로 늘린다. 여기서는 mock 으로 같은 알고리즘을 \
                          시연한다."
-                            .into(),
-                    alpha: 1.0,
-                }],
-            );
-            vspace(ui, theme.spacing_lg);
+                        .into(),
+                alpha: 1.0,
+            }],
+        );
+        vspace(ui, theme.spacing_lg);
 
-            // Case 6 — 스택 4 개 (fade 그라데이션)
-            ui.label(
-                egui::RichText::new(
-                    "Case 6 — 4 toast 스택 (id 오름차순: Info → Success → Warning → Error). \
+        // Case 6 — 스택 4 개 (fade 그라데이션)
+        ui.label(
+            egui::RichText::new(
+                "Case 6 — 4 toast 스택 (id 오름차순: Info → Success → Warning → Error). \
                      alpha 그라데이션으로 fade-in/out 단계 시각화.",
-                )
-                .strong()
-                .color(egui::Color32::from(theme.text_primary())),
-            );
-            vspace(ui, STRUCT_GAP_2);
-            frame_case(
-                ui,
-                theme,
-                SPECIMEN_W.value(),
-                SPECIMEN_H_STACK.value(),
-                vec![
-                    ToastEntryView {
-                        kind: ToastKind::Info,
-                        message: "Connected to plugin host.".into(),
-                        alpha: 0.4, // 가장 오래된 — fade-out 진행
-                    },
-                    ToastEntryView {
-                        kind: ToastKind::Success,
-                        message: "Loaded 3 plugins.".into(),
-                        alpha: 0.7,
-                    },
-                    ToastEntryView {
-                        kind: ToastKind::Warning,
-                        message: "Plugin 'foo' missing signature.".into(),
-                        alpha: 1.0,
-                    },
-                    ToastEntryView {
-                        kind: ToastKind::Error,
-                        message: "Failed to start 'bar': missing entrypoint.".into(),
-                        alpha: 1.0, // 가장 최근 — full opacity
-                    },
-                ],
-            );
+            )
+            .strong()
+            .color(egui::Color32::from(theme.text_primary())),
+        );
+        vspace(ui, STRUCT_GAP_2);
+        frame_case(
+            ui,
+            theme,
+            SPECIMEN_W.value(),
+            SPECIMEN_H_STACK.value(),
+            vec![
+                ToastEntryView {
+                    kind: ToastKind::Info,
+                    message: "Connected to plugin host.".into(),
+                    alpha: 0.4, // 가장 오래된 — fade-out 진행
+                },
+                ToastEntryView {
+                    kind: ToastKind::Success,
+                    message: "Loaded 3 plugins.".into(),
+                    alpha: 0.7,
+                },
+                ToastEntryView {
+                    kind: ToastKind::Warning,
+                    message: "Plugin 'foo' missing signature.".into(),
+                    alpha: 1.0,
+                },
+                ToastEntryView {
+                    kind: ToastKind::Error,
+                    message: "Failed to start 'bar': missing entrypoint.".into(),
+                    alpha: 1.0, // 가장 최근 — full opacity
+                },
+            ],
+        );
 
-            vspace(ui, theme.spacing_md);
-            ui.label(
-                egui::RichText::new(
-                    "⚠ 본체는 Tooltip 레이어에 그려 모든 UI 위에 표시. lifetime (2s) + \
+        vspace(ui, theme.spacing_md);
+        ui.label(
+            egui::RichText::new(
+                "⚠ 본체는 Tooltip 레이어에 그려 모든 UI 위에 표시. lifetime (2s) + \
                      fade-in (80ms) / fade-out (160ms) 은 ToastManager 가 매 프레임 \
                      alpha 로 계산해 view 에 전달 — view 는 시간 의존 없음.",
-                )
-                .small()
-                .color(egui::Color32::from(theme.text_muted())),
-            );
-        });
+            )
+            .small()
+            .color(egui::Color32::from(theme.text_muted())),
+        );
+    });
 }
