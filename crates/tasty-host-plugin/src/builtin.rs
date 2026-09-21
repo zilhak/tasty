@@ -1262,37 +1262,10 @@ fn apply_builtin_upgrade_decision(
             changed: false,
         },
         BuiltinUpgradeDecision::ResyncSameVersion => {
-            if mgr.is_retiring(spec.id) && sync_probe::sync_would_touch(src, dest) {
-                respawn = mgr.wait_retired(spec.id);
-            }
-            match sync_dir_by_content(src, dest) {
-                Err(e) => SpecUpgrade {
-                    item: BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Failed {
-                            reason: e.to_string(),
-                        },
-                    },
-                    changed: false,
-                },
-                Ok(wrote) => SpecUpgrade {
-                    item: BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Skipped {
-                            installed_version: installed_v.map(|v| v.to_string()),
-                            bundle_version: bundle_v.map(|v| v.to_string()),
-                            reason: if wrote {
-                                "same-version (content resync: files rewritten)".into()
-                            } else {
-                                "same-version (content resync: nothing to write)".into()
-                            },
-                        },
-                    },
-                    // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
-                    // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
-                    changed: wrote,
-                },
-            }
+            let (upgrade, waited_respawn) =
+                resync_same_version(mgr, spec, src, dest, installed_v, bundle_v);
+            respawn = waited_respawn;
+            upgrade
         }
         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
             tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
@@ -1350,6 +1323,53 @@ fn apply_builtin_upgrade_decision(
         mgr.start_if_still_wanted(spec.id);
     }
     upgrade
+}
+
+/// 같은 버전 갈래 — 내용이 다른 파일만 옮긴다. 두 번째 값은 회수를 기다리며 가져온 재기동
+/// 예약이다([`PluginManager::wait_retired`]).
+fn resync_same_version(
+    mgr: &mut PluginManager,
+    spec: &BuiltinSpec,
+    src: &Path,
+    dest: &Path,
+    installed_v: Option<semver::Version>,
+    bundle_v: Option<semver::Version>,
+) -> (SpecUpgrade, bool) {
+    // 회수 중이면 쓰기 전에 기다려야 하는데, 이 갈래는 대개 아무것도 안 쓴다 — 쓸 것이 있을
+    // 때만 기다린다.
+    let mut respawn = false;
+    if mgr.is_retiring(spec.id) && sync_probe::sync_would_touch(src, dest) {
+        respawn = mgr.wait_retired(spec.id);
+    }
+    let upgrade = match sync_dir_by_content(src, dest) {
+        Err(e) => SpecUpgrade {
+            item: BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Failed {
+                    reason: e.to_string(),
+                },
+            },
+            changed: false,
+        },
+        Ok(wrote) => SpecUpgrade {
+            item: BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Skipped {
+                    installed_version: installed_v.map(|v| v.to_string()),
+                    bundle_version: bundle_v.map(|v| v.to_string()),
+                    reason: if wrote {
+                        "same-version (content resync: files rewritten)".into()
+                    } else {
+                        "same-version (content resync: nothing to write)".into()
+                    },
+                },
+            },
+            // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
+            // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
+            changed: wrote,
+        },
+    };
+    (upgrade, respawn)
 }
 
 /// 한 builtin spec 의 upgrade 전체 처리 (removed → not-in-bundle → 서명 → install/decide).
