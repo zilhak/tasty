@@ -40,6 +40,8 @@ pub(crate) struct CoreBuilder {
     /// `db_latency` 와 같은 성격이다 — port 가 아니고, 스토어를 못 여는 조립에서는
     /// 없는 것이 정상이다.
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
+    /// `memory_pragmas` 와 같은 성격이다. 대체 저장소가 아니면 없는 것이 정상이다.
+    memory_init_fallback: Option<tasty_memory::InitFallback>,
 }
 
 impl CoreBuilder {
@@ -57,6 +59,7 @@ impl CoreBuilder {
             settings_storage: None,
             db_latency: None,
             memory_pragmas: None,
+            memory_init_fallback: None,
         }
     }
 
@@ -114,6 +117,15 @@ impl CoreBuilder {
         self.memory_pragmas = Some(pragmas);
         self
     }
+    /// 스토어가 `memory.db` 초기화 실패의 대체면 그 까닭을 `Core` 에 붙인다. `None` 이면
+    /// durable 저장소다(ADR-0485).
+    pub(crate) fn with_memory_init_fallback(
+        mut self,
+        fallback: Option<tasty_memory::InitFallback>,
+    ) -> Self {
+        self.memory_init_fallback = fallback;
+        self
+    }
     pub(crate) fn with_settings_storage(mut self, settings: Arc<dyn SettingsStorage>) -> Self {
         self.settings_storage = Some(settings);
         self
@@ -164,6 +176,7 @@ impl CoreBuilder {
             slow_requests: std::sync::Arc::new(tasty_telemetry::SlowRequestLog::default()),
             db_latency: self.db_latency.unwrap_or_default(),
             memory_pragmas: self.memory_pragmas,
+            memory_init_fallback: self.memory_init_fallback,
             // 주입 대상이 아니다 — IPC 서버가 `Core` 뒤에 뜨므로 여기서 낳고
             // 부팅이 그 핸들을 서버에 건넨다(`Hub::start_ipc`).
             connections: std::sync::Arc::new(tasty_telemetry::ConnectionStats::default()),

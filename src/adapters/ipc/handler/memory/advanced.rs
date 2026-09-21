@@ -26,7 +26,8 @@ pub fn handle_gc(
     _params: &Value,
 ) -> JsonRpcResponse {
     match core.with_memory(|s| s.purge_expired()) {
-        Ok(stats) => JsonRpcResponse::success(
+        Ok(stats) => super::written(
+            core,
             id,
             json!({ "regular": stats.regular, "secret": stats.secret }),
         ),
@@ -139,7 +140,8 @@ pub fn handle_import(
     }
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.import_regular(&owner, &entries, replace)) {
-        Ok(stats) => JsonRpcResponse::success(
+        Ok(stats) => super::written(
+            core,
             id,
             json!({ "applied": stats.applied, "skipped": stats.skipped }),
         ),

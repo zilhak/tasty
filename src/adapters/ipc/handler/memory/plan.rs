@@ -66,7 +66,7 @@ pub fn handle_plan_create(
     match core
         .with_memory(|s| plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps))
     {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -133,7 +133,7 @@ pub fn handle_plan_delete(
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| plan_mod::plan_delete(s, &owner, workspace_id, &plan_id)) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => super::written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
@@ -168,7 +168,7 @@ pub fn handle_plan_add_step(
     match core.with_memory(|s| {
         plan_mod::plan_add_step(s, &owner, workspace_id, &plan_id, step, position, cas)
     }) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -198,7 +198,7 @@ pub fn handle_plan_remove_step(
     match core.with_memory(|s| {
         plan_mod::plan_remove_step(s, &owner, workspace_id, &plan_id, &step_id, cas)
     }) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -264,7 +264,7 @@ pub fn handle_plan_update_step(
             },
         )
     }) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }

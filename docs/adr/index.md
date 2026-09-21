@@ -361,3 +361,4 @@
 | 0456 | [사건 링은 개수와 바이트 중 먼저 닿는 쪽으로 밀어낸다 — ADR-0322 의 용량 단위 조항 개정](0456-the-event-ring-evicts-by-count-or-bytes-whichever-comes-first.md) | Accepted | 2026-09-21 | events, event-bus, ring-buffer, retention, resource-bounds, plugin, adr-0322, adr-0360 |
 | 0457 | [단건 plugin 종료는 메인 스레드 밖에서 회수하고, 새 프로세스는 옛 것이 빠진 뒤에 뜬다](0457-a-single-plugin-shutdown-is-reaped-off-the-main-thread.md) | Accepted | 2026-09-21 | plugin, host-plugin, lifecycle, shutdown, main-thread, healthcheck, restart, concurrency |
 | 0460 | [셀 강조색의 alpha 는 CPU 에서 그 셀 배경 위에 합성한다](0460-cell-highlight-alpha-is-composited-on-the-cpu-over-the-cell-bg.md) | Accepted | 2026-09-21 | renderer, gpu, theme, search, selection, alpha, blending, compatibility |
+| 0485 | [못 연 `memory.db` 는 in-memory 대체로 계속 뜨되, 그 사실을 진단과 쓰기 응답이 말한다](0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md) | Accepted | 2026-09-22 | sqlite, storage, memory, degraded, durability, ipc, cli, fallback |

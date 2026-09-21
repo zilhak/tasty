@@ -41,7 +41,7 @@ pub fn handle_secret_put(
     let owner = caller.owner().to_string();
 
     match core.with_memory(|s| s.put_secret(&owner, &scope, &key, &value, &opts)) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -89,7 +89,7 @@ pub fn handle_secret_delete(
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.delete_secret(&owner, &scope, &key, cas)) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => super::written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }

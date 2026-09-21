@@ -42,6 +42,7 @@
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod failure;
+mod fallback;
 mod latency;
 mod migrations;
 mod port;
@@ -56,6 +57,7 @@ pub mod plan;
 pub mod testing;
 
 pub use failure::StorageFailure;
+pub use fallback::InitFallback;
 pub use latency::{DbLatencySnapshot, DbLatencyStats};
 pub use port::{MemoryStorage, STORE_LOCK_POISONED, STORE_LOCK_WHAT};
 
@@ -312,6 +314,8 @@ pub struct MemoryStore {
     db_latency: std::sync::Arc<DbLatencyStats>,
     /// 열 때 건 연결 pragma 의 요청값과 되읽은 실제값. 열린 뒤로 안 바뀐다.
     applied_pragmas: pragma::AppliedPragmas,
+    /// `memory.db` 초기화 실패의 대체로 열렸으면 그 까닭. `fallback` 모듈 참조.
+    init_fallback: Option<InitFallback>,
 }
 
 impl MemoryStore {
@@ -365,6 +369,7 @@ impl MemoryStore {
             regular_used_bytes,
             db_latency: std::sync::Arc::new(DbLatencyStats::default()),
             applied_pragmas,
+            init_fallback: None,
         })
     }
 

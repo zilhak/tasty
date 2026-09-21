@@ -30,7 +30,7 @@ pub fn handle_bb_create(
     let schema = params.get("schema").cloned();
     let owner = caller.owner().to_string();
     match core.with_memory(|s| blackboard::bb_create(s, &owner, workspace_id, &name, schema)) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -64,7 +64,7 @@ pub fn handle_bb_put(
     match core
         .with_memory(|s| blackboard::bb_put(s, &owner, workspace_id, &name, &field, &value, cas))
     {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -169,7 +169,7 @@ pub fn handle_bb_delete_field(
     match core
         .with_memory(|s| blackboard::bb_delete_field(s, &owner, workspace_id, &name, &field, cas))
     {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => super::written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
@@ -192,7 +192,7 @@ pub fn handle_bb_delete(
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| blackboard::bb_delete(s, &owner, workspace_id, &name)) {
-        Ok(removed) => JsonRpcResponse::success(id, json!({ "ok": true, "removed": removed })),
+        Ok(removed) => super::written(core, id, json!({ "ok": true, "removed": removed })),
         Err(e) => map_error(id, e),
     }
 }
@@ -263,7 +263,7 @@ pub fn handle_bb_snapshot(
     match core
         .with_memory(|s| blackboard::bb_snapshot(s, &owner, workspace_id, &name, &snapshot_id))
     {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -344,7 +344,7 @@ pub fn handle_bb_snapshot_delete(
     match core.with_memory(|s| {
         blackboard::bb_snapshot_delete(s, &owner, workspace_id, &name, &snapshot_id)
     }) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => super::written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
@@ -373,7 +373,7 @@ pub fn handle_bb_snapshot_restore(
     match core.with_memory(|s| {
         blackboard::bb_snapshot_restore(s, &owner, workspace_id, &name, &snapshot_id)
     }) {
-        Ok(restored) => JsonRpcResponse::success(id, json!({ "ok": true, "restored": restored })),
+        Ok(restored) => super::written(core, id, json!({ "ok": true, "restored": restored })),
         Err(e) => map_error(id, e),
     }
 }

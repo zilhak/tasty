@@ -48,6 +48,12 @@ fn assert_params_were_understood(method: &str, resp: &tasty_ipc::protocol::JsonR
 /// 재사용한다 — 핸들러 테스트마다 어댑터 열 개를 다시 조립하면 그중 하나가 조용히
 /// 달라진다.
 pub(crate) fn test_core() -> crate::core::Core {
+    test_core_builder().build().expect("test Core")
+}
+
+/// [`test_core`] 의 조립을 `build` 직전에서 돌려준다 — 한두 칸만 바꾼 `Core` 가 필요한
+/// 시험(memory 대체 저장소 표시 등)이 어댑터 열 개를 다시 조립하지 않게 한다.
+pub(crate) fn test_core_builder() -> crate::core::builder::CoreBuilder {
     use std::sync::{Arc, Mutex};
     crate::core::builder::CoreBuilder::new()
         .with_fs(Arc::new(crate::adapters::test::mem_fs::MemFileSystem::new()))
@@ -72,8 +78,6 @@ pub(crate) fn test_core() -> crate::core::Core {
             tasty_presets::PresetStore::load_default(),
         )))
         .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
-        .build()
-        .expect("test Core")
 }
 
 /// `tasty surface cursor-position|foreground-process|locate` — 조회 셋.

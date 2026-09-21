@@ -69,8 +69,9 @@ pub struct PragmaReading {
 /// ## degraded 는 오류가 아니라 상태다
 ///
 /// 하나라도 `took == false` 면 [`degraded`](Self::degraded) 가 `true` 다. 그래도 DB 는
-/// 열린 채로 쓰인다 — 열기 자체의 실패(`MemoryInitError` · `DbInitError`, 둘 다 안내 후
-/// 종료)와 다른 축이고, pragma 가 안 선 DB 는 느리거나 덜 내구적일 뿐 동작은 한다.
+/// 열린 채로 쓰인다 — 열기 자체의 실패(`DbInitError` 는 안내 후 종료, `MemoryInitError` 는
+/// in-memory 대체 — `crate::InitFallback`)와 다른 축이고, pragma 가 안 선 DB 는 느리거나
+/// 덜 내구적일 뿐 동작은 한다.
 /// 그 선택의 근거는 `docs/adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedPragmas {

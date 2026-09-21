@@ -203,7 +203,11 @@ pub(super) fn handle_system_pressure(
         &core.connections().snapshot(),
     );
     let state_db = crate::db::with_state_db(|db| db.applied_pragmas.clone());
-    body["db_pragmas"] = db_pragmas_json(core.memory_pragmas(), state_db.as_ref());
+    body["db_pragmas"] = db_pragmas_json(
+        core.memory_pragmas(),
+        core.memory_init_fallback(),
+        state_db.as_ref(),
+    );
     body["stream_push"] = stream_push_json(engine.attach.notifier().map(|hub| hub.loss()));
     // 입장 장부는 서버가 만들고 주입기가 같은 것을 든다(ADR-0391) — `Core` 가 닿는 길은 그
     // 주입기뿐이다. 서버가 안 뜬 조립이면 주입기나 장부가 없고, 그때 `queue_admission` 은 `null`.
@@ -383,12 +387,30 @@ pub(super) fn stream_push_json(
 
 /// 두 DB 의 pragma 적용 결과. 누계 덩어리들과 성격이 달라 `snapshot_json` 밖에 둔다 —
 /// 저것은 게이지 스냅샷만 받고, 이것은 열 때 한 번 정해진 값이다.
+///
+/// `memory_db` 에는 `init_failure` 가 하나 더 붙는다 — `memory.db` 를 못 열어 in-memory
+/// 대체로 떴으면 `{cause, error}`, 아니면 `null`. 대체면 pragma 가 다 섰어도 `degraded`
+/// 가 `true` 다: 파일을 못 연 저장소는 정상 상태가 아니고, `in_memory: true` 만으로는
+/// "원래 in-memory" 와 "파일을 못 열어 in-memory" 가 안 갈린다(ADR-0485). `state_db`
+/// 에는 이 칸이 없다 — `state.db` 초기화 실패는 대체 없이 안내 후 종료다.
 pub(super) fn db_pragmas_json(
     memory_db: Option<&tasty_memory::pragma::AppliedPragmas>,
+    memory_fallback: Option<&tasty_memory::InitFallback>,
     state_db: Option<&tasty_memory::pragma::AppliedPragmas>,
 ) -> serde_json::Value {
+    let memory = memory_db.map(|a| {
+        let mut v = applied_json(a);
+        if memory_fallback.is_some() {
+            v["degraded"] = json!(true);
+        }
+        v["init_failure"] = match memory_fallback {
+            Some(f) => json!({ "cause": f.cause, "error": f.error }),
+            None => serde_json::Value::Null,
+        };
+        v
+    });
     json!({
-        "memory_db": memory_db.map(applied_json),
+        "memory_db": memory,
         "state_db": state_db.map(applied_json),
     })
 }
@@ -652,7 +674,7 @@ mod tests {
             ],
         };
 
-        let v = db_pragmas_json(Some(&healthy), Some(&degraded));
+        let v = db_pragmas_json(Some(&healthy), None, Some(&degraded));
         let m = &v["memory_db"];
         assert_eq!(m["degraded"], false);
         assert_eq!(m["in_memory"], false);
@@ -670,8 +692,48 @@ mod tests {
         );
         assert_eq!(s["pragmas"]["synchronous"]["took"], true);
 
-        let none = db_pragmas_json(Some(&healthy), None);
+        assert!(
+            m["init_failure"].is_null(),
+            "대체가 아닌데 초기화 실패를 지어냈다"
+        );
+        assert!(
+            s.get("init_failure").is_none(),
+            "state.db 는 대체가 없다 — 칸을 싣지 않는다"
+        );
+
+        let none = db_pragmas_json(Some(&healthy), None, None);
         assert!(none["state_db"].is_null(), "열리지 않은 DB 는 null 이다");
+    }
+
+    /// `memory.db` 를 못 열어 in-memory 로 대체했으면, pragma 가 다 섰어도 `degraded` 이고
+    /// 원인이 실린다. 이것이 없던 때 손상된 DB 로 부팅한 호스트가 `degraded: false` 로 답했다.
+    #[test]
+    fn a_fallback_memory_store_is_degraded_and_names_its_cause() {
+        use tasty_memory::pragma::{AppliedPragmas, PragmaReading};
+        let all_took = AppliedPragmas {
+            in_memory: true,
+            readings: vec![PragmaReading {
+                name: "journal_mode",
+                requested: "WAL".into(),
+                effective: Some("memory".into()),
+                error: None,
+                took: true,
+            }],
+        };
+        let fallback = tasty_memory::InitFallback {
+            cause: "corrupt",
+            error: "memory.db corrupted: /x/memory.db".into(),
+        };
+        let v = db_pragmas_json(Some(&all_took), Some(&fallback), None);
+        let m = &v["memory_db"];
+        assert_eq!(m["degraded"], true, "대체 저장소가 정상으로 보고됐다: {v}");
+        assert_eq!(m["in_memory"], true);
+        assert_eq!(m["init_failure"]["cause"], "corrupt");
+        assert_eq!(
+            m["init_failure"]["error"],
+            "memory.db corrupted: /x/memory.db"
+        );
+        assert_eq!(m["pragmas"]["journal_mode"]["took"], true);
     }
 
     /// ★ 연결 덩어리가 **`Core` 가 들고 있는 그 게이지**를 읽는다.

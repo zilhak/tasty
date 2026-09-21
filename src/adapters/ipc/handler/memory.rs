@@ -12,6 +12,9 @@ pub mod goal;
 pub mod plan;
 pub mod secret;
 
+#[cfg(test)]
+mod durable_tests;
+
 pub use advanced::{handle_export, handle_gc, handle_import, handle_query};
 pub use bb::*;
 pub use cache::*;
@@ -405,6 +408,20 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
     }
 }
 
+/// 쓰기 성공 응답. 저장소가 `memory.db` 초기화 실패의 in-memory 대체면 `durable: false`
+/// 를 더한다 — 그 쓰기는 프로세스와 함께 사라진다. `ok` 는 그대로 두고(기존 호출자는
+/// 그것만 본다), 정상 저장소에서는 칸을 싣지 않아 응답이 종전과 같다(ADR-0485).
+///
+/// 이 모듈의 쓰기 계열 메서드는 전부 이것으로 답한다 — 어느 이름이 쓰기 계열인지는
+/// `tasty_ipc::method_meta` 의 효과 분류가 정하고, 시험
+/// `every_memory_write_reports_a_fallback_store_as_not_durable` 가 그 표로 잰다.
+pub(super) fn written(core: &Core, id: Value, mut body: Value) -> JsonRpcResponse {
+    if core.memory_init_fallback().is_some() {
+        body["durable"] = json!(false);
+    }
+    JsonRpcResponse::success(id, body)
+}
+
 // ============================================================
 // Regular `memory.*`
 // ============================================================
@@ -439,7 +456,7 @@ pub fn handle_put(
     let owner = caller.owner().to_string();
 
     match core.with_memory(|s| s.put(&owner, &scope, &key, &value, &opts)) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -492,7 +509,7 @@ pub fn handle_delete(
     let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.delete(&owner, &scope, &key, cas)) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }

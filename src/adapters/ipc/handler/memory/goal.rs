@@ -31,7 +31,7 @@ pub fn handle_goal_set(
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| goal_mod::goal_set(s, &owner, surface_id, &goal)) {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -69,7 +69,7 @@ pub fn handle_goal_clear(
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| goal_mod::goal_clear(s, &owner, surface_id)) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => super::written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }

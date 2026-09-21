@@ -332,6 +332,10 @@ pub(crate) struct Core {
     /// 낡을 일이 없다. 스토어가 없는 조립(mock port 만 주입한 테스트용 `Core`)에서는
     /// `None` 이고, 응답에는 `null` 로 나가 "잰 적이 없다" 로 읽힌다.
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
+
+    /// `memory` 가 `memory.db` 초기화 실패의 in-memory 대체면 그 까닭. `None` 이면 쓰기가
+    /// 파일에 남는다. 진단 응답과 쓰기 응답(`durable: false`)이 이것을 읽는다(ADR-0485).
+    memory_init_fallback: Option<tasty_memory::InitFallback>,
 }
 
 /// plugin 매니저가 채우는 프로세스 게이지 핸들 — 왕복 대기 분포와 느린 요청 링.
@@ -387,6 +391,11 @@ impl Core {
     /// `memory.db` 연결 pragma 의 적용 결과. 스토어가 없는 조립이면 `None`.
     pub(crate) fn memory_pragmas(&self) -> Option<&tasty_memory::pragma::AppliedPragmas> {
         self.memory_pragmas.as_ref()
+    }
+
+    /// `memory` 가 초기화 실패의 in-memory 대체인가. 대체면 그 까닭.
+    pub(crate) fn memory_init_fallback(&self) -> Option<&tasty_memory::InitFallback> {
+        self.memory_init_fallback.as_ref()
     }
 
     /// IPC 연결 자리 게이지. IPC 서버에 **핸들을 넘기려고** 존재하므로 `plugin_wait`

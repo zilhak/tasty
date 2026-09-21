@@ -189,7 +189,7 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
         }
         Err(e) => {
             tracing::warn!("memory.db init at boot failed: {e}");
-            None
+            crate::boot::wiring::memory_fallback_after(&e)
         }
     };
 
@@ -489,7 +489,7 @@ fn boot_memory(
         }
         Err(e) => {
             tracing::warn!("memory.db init at boot failed: {e}");
-            None
+            crate::boot::wiring::memory_fallback_after(&e)
         }
     };
     memory_arc

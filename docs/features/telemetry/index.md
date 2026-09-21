@@ -140,6 +140,10 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 않은 DB 는 `null` 이다 — 헤드리스의 `state_db` 는 늘 `null` 이다(허용 결과표·근거는
 [storage](../../design/systems/storage.md) 와
 [ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md)).
+`memory_db` 에만 `init_failure` 가 하나 더 있다 — 부팅이 `memory.db` 를 못 열어 in-memory 대체로
+떴으면 `{cause, error}`(원인 이름과 오류 문구), 아니면 `null` 이다. 대체면 pragma 가 다 섰어도
+`degraded` 가 `true` 다 — `in_memory: true` 만으로는 "원래 in-memory" 와 "파일을 못 열어
+in-memory" 가 안 갈린다([ADR-0485](../../adr/0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md)).
 
 일곱째는 **요청이 아니라 밀어내기**다. 앞의 여섯은 전부 client 가 물어본 것(요청 · 연결 · 쓰기)을
 재고, 이것은 서버가 스트림 연결로 **민** 프레임을 잰다. 값은 넷이다 —

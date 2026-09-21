@@ -27,8 +27,10 @@ use crate::core::builder::CoreBuilder;
 /// 를 만들어 본 함수에 전달. Core 가 그 Arc 의 유일 owner — 모든 하위 표면
 /// (AppState.memory, CoreState.memory, worker thread capture) 은 Core 의 Arc clone 을 공유한다.
 ///
-/// `memory` 가 `None` 이면 (homedir 미확인 등 boot fail), in-memory placeholder
-/// 로 fallback 해 앱 자체는 기동시킨다 — handler 가 자체적으로 store 의 가용성을 평가.
+/// boot 가 `memory.db` 를 못 열면 [`memory_fallback_after`] 로 in-memory 대체 저장소를
+/// 열어 넘긴다 — 앱 자체는 기동시키되, 그 저장소가 대체라는 사실을 진단·쓰기 응답이
+/// 말하게 한다(ADR-0485). `memory` 가 `None` 이면(대체조차 못 연 경우) 여기서 한 번 더
+/// 대체를 시도한다.
 #[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
@@ -65,11 +67,14 @@ fn build_production_core_inner(
     let process: Arc<dyn crate::ports::process::ProcessSpawner> = Arc::new(StdProcessSpawner);
     let home: Arc<dyn crate::ports::home::HomeDirectory> = Arc::new(DirectoriesHome);
 
-    // Memory: boot 에서 받은 Arc 를 dyn coerce. 실패 시 in-memory fallback.
+    // Memory: boot 에서 받은 Arc 를 dyn coerce. 없으면 in-memory 대체(원인 미상).
     let store: Arc<Mutex<tasty_memory::MemoryStore>> = match memory_arc {
         Some(arc) => arc,
         None => {
-            let store = tasty_memory::MemoryStore::open_in_memory()
+            let unknown = tasty_memory::MemoryInitError::Other(
+                "no memory store was handed over at boot".into(),
+            );
+            let store = tasty_memory::MemoryStore::open_in_memory_after_init_failure(&unknown)
                 .map_err(|e| anyhow::anyhow!("fallback memory store: {e:?}"))?;
             Arc::new(Mutex::new(store))
         }
@@ -78,6 +83,7 @@ fn build_production_core_inner(
     // 여기가 구상 타입을 손에 쥐는 유일한 자리다.
     let db_latency = db_latency_of(&store);
     let memory_pragmas = memory_pragmas_of(&store);
+    let memory_init_fallback = memory_init_fallback_of(&store);
     let memory: Arc<Mutex<dyn MemoryStorage>> = store;
 
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
@@ -94,6 +100,7 @@ fn build_production_core_inner(
         .with_memory(memory)
         .with_db_latency(db_latency)
         .with_memory_pragmas(memory_pragmas)
+        .with_memory_init_fallback(memory_init_fallback)
         .with_themes(themes)
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)
@@ -120,6 +127,40 @@ fn memory_pragmas_of(
     crate::poison::recover_mutex(store.lock(), MEMORY_WHAT, &MEMORY_POISONED)
         .applied_pragmas()
         .clone()
+}
+
+/// 스토어가 `memory.db` 초기화 실패의 대체인지 꺼낸다. 이유와 poison 복구는 위
+/// [`db_latency_of`] 와 같다 — 열린 뒤로 안 바뀌는 값이다.
+fn memory_init_fallback_of(
+    store: &Arc<Mutex<tasty_memory::MemoryStore>>,
+) -> Option<tasty_memory::InitFallback> {
+    crate::poison::recover_mutex(store.lock(), MEMORY_WHAT, &MEMORY_POISONED)
+        .init_fallback()
+        .cloned()
+}
+
+/// `memory.db` 초기화가 `err` 로 실패했을 때 쓸 in-memory 대체 저장소를 연다.
+///
+/// 부팅은 계속한다 — 손상된 파일로도 앱을 쓸 수 있게 하는 기존 동작이다. 대신 대체라는
+/// 사실이 저장소에 실려 `system.pressure` 의 `db_pragmas.memory_db` 가 `degraded` 로,
+/// 쓰기 응답이 `durable: false` 로 말한다(ADR-0485). 대체조차 못 열면 `None` 이고,
+/// 그때는 [`build_production_core_inner`] 가 한 번 더 시도한다.
+pub(crate) fn memory_fallback_after(
+    err: &tasty_memory::MemoryInitError,
+) -> Option<Arc<Mutex<tasty_memory::MemoryStore>>> {
+    match tasty_memory::MemoryStore::open_in_memory_after_init_failure(err) {
+        Ok(store) => {
+            tracing::warn!(
+                "memory.db falls back to an in-memory store (cause={}) — writes will not survive a restart",
+                err.cause()
+            );
+            Some(Arc::new(Mutex::new(store)))
+        }
+        Err(e) => {
+            tracing::error!("in-memory fallback for memory.db failed to open: {e}");
+            None
+        }
+    }
 }
 
 /// 위 복구의 공용 보고 좌표(첫-1 회).
@@ -161,6 +202,23 @@ mod tests {
             Some("wal")
         );
         assert_eq!(&pragmas, store.lock().unwrap().applied_pragmas());
+    }
+
+    /// 대체 저장소를 여는 자리가 원인을 실은 저장소를 넘기고, 꺼내는 자리가 **그 저장소의
+    /// 값**을 준다. 파일 DB 는 대체가 아니다.
+    #[test]
+    fn the_fallback_store_carries_the_init_failure_and_a_file_store_does_not() {
+        let err = tasty_memory::MemoryInitError::Corrupt("/x/memory.db".into());
+        let store = memory_fallback_after(&err).expect("fallback opens");
+        let fallback = memory_init_fallback_of(&store).expect("fallback is marked");
+        assert_eq!(fallback.cause, "corrupt");
+        assert_eq!(fallback.error, err.to_string());
+
+        let tmp = tempfile::tempdir().unwrap();
+        let file = Arc::new(Mutex::new(
+            tasty_memory::MemoryStore::open(&tmp.path().join("memory.db")).unwrap(),
+        ));
+        assert_eq!(memory_init_fallback_of(&file), None);
     }
 
     /// 게이지를 꺼내는 자리가 **스토어가 올리는 그 게이지**를 주는지. 새 기본값을

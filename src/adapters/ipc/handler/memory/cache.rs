@@ -41,7 +41,7 @@ pub fn handle_cache_put(
     match core
         .with_memory(|s| cache_mod::cache_put(s, &owner, workspace_id, &key, &value, ttl_secs))
     {
-        Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
+        Ok(version) => super::written(core, id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
@@ -87,7 +87,7 @@ pub fn handle_cache_invalidate(
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| cache_mod::cache_invalidate(s, &owner, workspace_id, &key)) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Ok(()) => super::written(core, id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
@@ -106,7 +106,7 @@ pub fn handle_cache_clear(
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| cache_mod::cache_clear(s, &owner, workspace_id)) {
-        Ok(removed) => JsonRpcResponse::success(id, json!({ "ok": true, "removed": removed })),
+        Ok(removed) => super::written(core, id, json!({ "ok": true, "removed": removed })),
         Err(e) => map_error(id, e),
     }
 }

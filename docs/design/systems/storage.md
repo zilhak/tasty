@@ -112,7 +112,9 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
     자체의 실패는 아래 "초기화 실패" 절이 다루는 다른 축이다). 두 DB 의 결과는 실행 중에
     `system.pressure` 의 `db_pragmas` 덩어리(`memory_db` · `state_db`)로 조회한다 — CLI
     `tasty list pressure`. `state_db` 가 `null` 이면 이 프로세스에 열려 있지 않다는 뜻이고,
-    출처가 둘인 것은 위 `with_state_db` 의 `None` 과 같다.
+    출처가 둘인 것은 위 `with_state_db` 의 `None` 과 같다. `memory_db` 는 파일을 못 열어
+    in-memory 대체로 떴을 때도 `degraded` 이고, 그때 `init_failure` 가 원인을 싣는다(아래
+    "초기화 실패" 절의 `memory.db` 항).
   - `journal_size_limit` 은 WAL 파일 크기 상한이다. **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이고, 두 DB 가 그 상수를 쓰는 **같은 함수**를 부른다. 한때는 `src/db.rs` 와 `crates/tasty-memory/` 가 같은 네 줄을 각자 박아 두어 한쪽만 고치면 다른 쪽이 그대로 자랐다 — 그래서 사본을 없앴다.
 - 쓰기는 `Connection::transaction()` 패턴. 실패 시 `tracing::warn!`/`error!` 기록 후 진행.
 
@@ -151,6 +153,10 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   버퍼(`pending_changes`, `memory.changed` 이벤트의 원천)는 commit 성공 뒤에만 움직인다.
   트랜잭션은 롤백돼 디스크에도 안 남는다. 그래서 실패한 쓰기는 quota 를 먹지 않고 변경
   알림도 내지 않는다.
+- **저장소가 파일이 아니면 성공도 durable 이 아니다.** 부팅이 `memory.db` 를 못 열어 in-memory
+  대체로 떴으면(아래 "초기화 실패" 절) commit 은 성공하지만 프로세스와 함께 사라진다. 그때
+  `memory.*` 쓰기 계열의 성공 응답은 `ok` 를 그대로 두고 `durable: false` 를 더한다. 파일 DB
+  에서는 이 칸이 없다 — 칸이 없는 성공은 위 "보장 범위" 가 말하는 durable 이다.
 - 근거는 [ADR-0377](../../adr/0377-a-failed-memory-write-names-its-cause-with-the-same-table-as-init.md).
 
 ### 터미널 출력 observer 의 memory sink — 저장 계약
@@ -182,7 +188,11 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   회수를 한다(마지막 방어선). 유일한 유실 경로는 워커가 다 쓰기 전에 프로세스가 죽는 것이다.
 - 근거는 [ADR-0378](../../adr/0378-the-poison-coordinate-of-the-memory-store-lives-at-its-port.md).
 
-### 초기화 실패 = 인메모리 폴백 없음
+### 초기화 실패 — `state.db` 는 종료, `memory.db` 는 in-memory 대체 + degraded
+
+**두 DB 의 정책이 반대다.** 원인 분류는 같은 표를 쓰지만, 실패한 뒤에 하는 일은 다르다.
+
+#### `state.db` — 인메모리 폴백 없음
 
 `db::init()` 실패는 **치명적**이다. `:memory:` 폴백을 두지 않는다 — `DbInitError` 로 분류해 사용자에게 InfoModal 로 안내한 뒤 앱을 종료한다(`src/app/window_lifecycle.rs`). variant 별로 i18n key 를 가진다:
 
@@ -200,6 +210,27 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 쓴다. **원인 표는 둘이 공유하는 하나다** — `tasty_memory::StorageFailure` 가 SQLite 오류를
 분류하고, 두 타입은 그 결과를 자기 variant 로 옮기기만 한다. 그 표의 `io` 갈래는 초기화
 안내에 따로 된 문구가 없어 `Other` 로 간다.
+
+#### `memory.db` — in-memory 대체로 계속 뜨고, degraded 로 말한다
+
+`tasty_memory::init_with_config` 가 실패해도 부팅은 **종료하지 않는다.** 로그에
+`memory.db init at boot failed: <원인>` 을 남기고 in-memory 저장소로 대체해 계속 뜬다(GUI ·
+headless 같은 동작). 손상된 파일로도 앱을 쓸 수 있게 하는 것이 목적이다. 대체 저장소는 기본
+config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 그 자리에 그대로 남는다).
+
+그 상태는 조용하지 않다:
+
+- `system.pressure` 의 `db_pragmas.memory_db` 가 `degraded: true` · `in_memory: true` 이고
+  `init_failure: {cause, error}` 가 원인을 싣는다. `cause` 는 `MemoryInitError::cause()` 의 이름
+  (`home_missing` · `permission_denied` · `busy` · `disk_full` · `corrupt` · `schema_mismatch` ·
+  `other`)이다. 정상이면 `init_failure` 는 `null` 이다.
+- `memory.*` 쓰기 계열의 성공 응답이 `durable: false` 를 더한다(위 "저장 실패의 의미").
+- 로그에 `memory.db falls back to an in-memory store (cause=…) — writes will not survive a
+  restart` 가 한 줄 더 남는다.
+- **화면 안내는 없다** — `state.db` 와 달리 InfoModal 도 toast 도 뜨지 않는다.
+
+근거·대안(fatal · 쓰기 거절)·재검토 조건은
+[ADR-0485](../../adr/0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md).
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
 

@@ -117,6 +117,11 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
 - **내구성 범위**(`synchronous=NORMAL` — 프로세스 kill 은 견디고 전원 장애는 최신 commit 을
   약속하지 않는다)와 **저장 실패의 의미**(원인 분류 · 실패한 쓰기는 quota 카운터와 변경
   버퍼를 안 옮긴다)는 [storage](storage.md) 의 두 절이 정본이다.
+- **부팅이 `memory.db` 를 못 열면 앱은 in-memory 대체로 계속 뜬다** — `state.db` 와 달리 종료하지
+  않는다. 그 상태의 쓰기는 재시작에 사라지므로 `db_pragmas.memory_db` 가 `degraded: true` 와
+  `init_failure` 로, 쓰기 응답이 `durable: false` 로 그 사실을 말한다. 정본은 [storage](storage.md)
+  "초기화 실패" 절의 `memory.db` 항이고 근거는
+  [ADR-0485](../../adr/0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md).
 
 ## 보안·신뢰 모델
 
