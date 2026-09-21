@@ -100,6 +100,18 @@ pub enum ListCommands {
     /// was still running and this one joined it). Each request is counted
     /// once. This `in_flight` is not the one in `queue_dispatch`.
     ///
+    /// `slow_requests` is the eleventh block and it lists single slow requests
+    /// instead of totals: each request whose queue wait, host time and plugin
+    /// waits add up to `threshold_us` (100 ms) or more gets one row, oldest
+    /// first, up to `capacity` rows. A row carries `request_seq`, a number this
+    /// instance gives every request (not the JSON-RPC id and not an event trace
+    /// id), the `method`, the `caller`, `queue_wait_us`, `host_us` and, when
+    /// the request was forwarded to a plugin, `plugin_hops` with the plugin,
+    /// the `host_request_id` that plugin received as its request id, the wait
+    /// and the outcome. `admitted` counts every row ever kept, so the rows
+    /// pushed out are `admitted` minus the rows shown. A query for this answer
+    /// is never kept itself.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications

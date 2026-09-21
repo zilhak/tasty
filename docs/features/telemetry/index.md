@@ -79,9 +79,11 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 붙는다([ADR-0340](../../adr/0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md)).
 여기에 **시간이 아닌 축**이 하나 더 있다 — 동시 IPC 연결 자리다. 그리고 누계가 아닌 덩어리가
 하나 있다 — 두 SQLite DB 가 열 때 되읽은 pragma 다. 또 하나는 **요청이 아니라 밀어내기**를
-잰다 — 스트림 연결로 민 프레임의 손실과 적체다. 마지막 셋은 명령 큐의 **양 끝**(들어온 쪽의 입장
+잰다 — 스트림 연결로 민 프레임의 손실과 적체다. 다음 셋은 명령 큐의 **양 끝**(들어온 쪽의 입장
 장부 · 꺼낸 쪽의 회차와 실행 중인 요청)과 멱등 키를 실은 요청이 받은 **판정**이다
 ([ADR-0435](../../adr/0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)).
+마지막 하나는 집계가 아니라 **느린 요청 한 건씩**이다 — 호스트가 발급한 요청 번호로 큐 대기 · 호스트
+처리 · plugin 대기를 한 줄에 잇는다([ADR-0436](../../adr/0436-an-ipc-request-is-numbered-by-the-host-and-slow-ones-are-kept-in-a-ring.md)).
 
 `system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
@@ -97,6 +99,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `queue_admission` | 명령 큐 입장 판정 (`tasty_ipc::admission::CommandAdmission`) | 큐에 **들어오려던** 요청 전부 — 상한에 걸려 돌려보낸 것도 센다 |
 | `queue_dispatch` | 큐에서 꺼내는 회차와 실행 직전 (`tasty_ipc::dispatch::DispatchStats`) | 큐에서 **꺼낸** 명령과 그 회차 — 실행 중인 요청은 호출자가 아직 기다리는 것만 |
 | `keyed_requests` | 멱등 보존소의 판정 (`idempotency::Store::decide`) | **멱등 키를 실은** 요청만 — 한 요청은 자기를 맡은 층의 판정으로 한 번 |
+| `slow_requests` | 명령을 꺼낸 직후·다 다룬 직후 (`app::ipc_round::CommandObservation`, gui · headless 같은 자리) + plugin 대기 표의 응답·만료·취소 (`PluginManager::record_origin_hop`) | 호스트 IPC 큐를 지난 요청 중 **합이 문턱(100 ms) 이상인 것만** — `system.pressure` 자신은 안 넣는다 |
 
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
@@ -182,6 +185,37 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 **한 번만** 세진다. 이 `in_flight` 는 `queue_dispatch.in_flight` 와 이름만 같다. 정의는
 [ADR-0422](../../adr/0422-the-retry-counts-are-kept-by-the-store-that-decides.md).
 
+열한째 `slow_requests` 는 **집계가 아니라 느린 요청 한 건씩**이다(`tasty_telemetry::SlowRequestLog`).
+분포는 "100 ms 를 넘은 것이 몇 건" 까지 말하고, 그 한 건의 시간이 큐 · 호스트 · plugin 중 어디에
+있었는지와 그 plugin 대기가 **어느 요청의 것**이었는지는 못 말한다 — 이 덩어리가 그것을 말한다.
+
+- **요청 번호** — `request_seq` 는 호스트가 `IpcCommand` 를 만들 때 매기는 프로세스 전역 단조 번호다
+  (`tasty_ipc::server::RequestSeq`). JSON-RPC `id` 가 아니다(호출자 값이라 거의 늘 `1` 이다). Event Bus
+  envelope 의 `trace_id` 도 아니다(사건 사슬의 값이고 plugin 이 보낸 값을 그대로 싣는다). 재시작하면 1
+  부터 다시 센다.
+- **한 줄** — `request_seq` · `host`(`method` canonical · `caller` 봉투가 말한 `local`/`agent` ·
+  `queue_wait_us` · `host_us`) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id` · `wait_us` ·
+  `outcome` = `ok`/`error`/`expired`/`cancelled`, 최대 셋 — pre-hook · target · post-hook) · `total_us`.
+  `host_us` 는 꺼낸 뒤 호스트가 명령을 다 다루기까지(게이트 포함)라 `handler_after_gate` 와 모수가
+  다르다. plugin 으로 넘긴 요청이면 넘기는 데까지이고, plugin 을 기다린 시간은 hop 쪽에 있다.
+- **plugin 로그로 되짚기** — `host_request_id` 는 plugin 이 받은 JSON-RPC id 와 같은 값이다. 호스트의
+  plugin 오류 응답 경고와 namespace 만료 경고도 같은 줄에 `id=<host_request_id>` 와
+  `request_seq=<번호>` 를 싣는다(IPC 요청에서 오지 않은 plugin 요청이면 `none`). 번호는 plugin 에게
+  안 간다 — plugin wire 는 그대로다.
+- **넣는 기준** — 큐 대기 · 호스트 처리 · plugin 대기의 합이 `threshold_us`(100 ms) 이상인 요청만.
+  plugin 으로 넘긴 요청은 넘기는 순간 열린 자리를 잡고, 합이 문턱을 넘는 순간 링에 든다 — 그 뒤 hop
+  도 같은 줄에 붙는다. 만료된 forward 는 `plugin_round_trip`(매칭된 것만 센다)에는 끝내 안 남지만 여기에는
+  `expired` 로 남는다.
+- **상한** — 링은 메모리 안의 `capacity`(32) 줄이고 넘치면 오래된 줄부터 밀려난다. `admitted` 는 켜진
+  뒤 링에 든 누계라 줄 수와의 차가 밀려난 수다. 끝나지 않은 forward 를 드는 열린 자리는 256 이 상한이다.
+  호출당 저장소 기록은 0 이다.
+- **싣지 않는 것** — params 원문 · session token · 멱등 키 · JSON-RPC `id` 값. 요청 번호는 레이블로
+  쓰지 않는다.
+- **모수 밖** — plugin 이 부른 host-call 은 호스트 IPC 큐를 안 지나 번호가 없고 여기 안 든다. plugin 이
+  부른 namespace forward 도 번호가 없다. `host` 가 `null` 인 줄은 열린 자리가 밀려난 뒤 hop 만 온 것이다.
+
+값과 상수의 근거는 [ADR-0436](../../adr/0436-an-ipc-request-is-numbered-by-the-host-and-slow-ones-are-kept-in-a-ring.md).
+
 #### 분포 — 평균·최대가 못 답하는 것
 
 `queue_before_gate.wait_us_hist` · `handler_after_gate.us_hist` ·
@@ -202,7 +236,7 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 
 `db` 에는 분포가 없다 — 그 게이지는 `tasty-memory` 에 살고 histogram 타입은
 `tasty-telemetry` 에 있어 의존 방향이 반대다. `connections` 에도 없다 — 시간이 아니라
-자리라 분포를 잴 축이 아니다. `stream_push` 와 마지막 세 덩어리도 시간이 아니라 수라 없다.
+자리라 분포를 잴 축이 아니다. `stream_push` 와 그 뒤 세 덩어리도 시간이 아니라 수라 없다. `slow_requests` 는 시간을 싣지만 분포가 아니라 문턱을 넘은 요청 한 건씩이다.
 
 #### 덩어리를 가리지 않고 걸리는 것
 
