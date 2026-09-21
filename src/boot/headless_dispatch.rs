@@ -47,7 +47,8 @@ use crate::state::AppState;
 /// 컴파일되지 않은 형태다 — 좁은 타입을 따로 두지 않은 이유는
 /// [ADR-0355](../../docs/adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md).
 /// 이 인자가 남는 것은 창 상태를 읽는 핸들러가 남아 있어서다 — 안 읽는 핸들러는 `AppState` 를
-/// 받지 않는다([ADR-0470](../../docs/adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)).
+/// 받지 않는다([ADR-0470](../../docs/adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)). 이 인자는
+/// 결정이 아니라 현재 상태다 — 그 ADR 의 남은 걸음이 끝나면 `&Core` 로 내린다.
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut AppState,

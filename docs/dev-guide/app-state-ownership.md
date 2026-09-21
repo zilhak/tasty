@@ -134,8 +134,10 @@ IPC 핸들러는 **창 상태를 읽을 때만** `AppState` 를 받는다
 읽는 핸들러(memory · agent 협업 · telemetry·approval 조회 · surface 조회·전송 · hook · message 등)는
 `Core`/`CoreState` 만 받으므로, 그 핸들러가 창 상태를 안 만진다는 것을 컴파일러가 보증한다.
 `AppState` 를 받는 핸들러가 읽는 것은 intent 큐(`pending_intents`) · 대상 생략 시의
-`active_workspace` · GUI·debug 전용 필드 · 구조 op 의 창 연산이다. 라우터와 `pump_ipc` 는 그
-핸들러들에게 넘겨야 하므로 `AppState` 를 받는다. `AppState` 가 든 Core memory 핸들 사본(`memory`)은
+`active_workspace` · GUI·debug 전용 필드 · 구조 op 의 창 연산이다. 라우터 · `check_request` ·
+`pump_ipc` 는 그 핸들러들에게 넘겨야 하므로 아직 `AppState` 를 받는다 — 이것은 선행 조건이 안 찬
+현재 상태이고, 남은 걸음(큐 분리 · `active_workspace` 기본값 · 창 연산 포트화 뒤 `&Core` 로)은
+ADR-0470 Decision 이 적는다. `AppState` 가 든 Core memory 핸들 사본(`memory`)은
 IPC 핸들러가 읽지 않는다 — 같은 Arc 를 `Core` 로 읽는다.
 
 ## 재는 법

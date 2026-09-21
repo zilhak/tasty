@@ -44,9 +44,18 @@
 3. `self` 를 안 읽는 `AppState` 메서드 둘을 `CoreState` 로 옮긴다(`core/state/output_read.rs`).
    포커스로 떨어지는 `read_since_mark` 는 로컬 사용자의 포커스를 읽으므로 `AppState` 에 남긴다.
 
-**라우터와 `pump_ipc` 는 `AppState` 를 계속 받는다.** 남은 핸들러가 실제로 창 상태를 읽기
-때문이다 — 라우터는 그 핸들러들에게 넘겨야 하고, `check_request` 자신도 발화 주체의 기본
-워크스페이스를 `active_workspace` 에서 읽는다.
+**현재 상태 — 라우터 · `check_request` · `pump_ipc` 는 아직 `AppState` 를 받는다.** 이것은 결정이
+아니라 선행 조건이 안 찬 상태다. 남은 핸들러가 실제로 창 상태를 읽어 라우터가 그것을 넘겨야 하고,
+`check_request` 자신도 발화 주체의 기본 워크스페이스를 `active_workspace` 에서 읽는다. ADR-0355
+잔여 ① 은 그래서 **열려 있다.** 그것을 닫는 남은 걸음은 이 순서다.
+
+1. intent 큐에 넣기만 하는 핸들러의 큐를 `AppState` 밖으로 뺀다(동작 경계가 바뀌므로 이동 커밋과
+   섞지 않는다).
+2. 대상 생략 시 `active_workspace` 로 떨어지는 핸들러의 기본값을 어떻게 할지 정한다(포커스
+   독립성 쪽 물음 — 새 ADR 이 필요하다).
+3. GUI·debug 전용 모듈은 창 상태를 실제로 조작하므로 좁힐 대상이 아니다.
+4. 구조 op 의 창 연산을 `CascadeWindow` 처럼 포트로 뺀다.
+5. 1 · 2 · 4 가 끝나면 라우터 · `check_request` · `pump_ipc` 의 인자를 `&Core` 로 내린다.
 
 ## Consequences
 
@@ -56,7 +65,8 @@
   terminal tell · 구조 list 류 핸들러는 이제 `Core`/`CoreState` 만 받는다.
 - **얻은 것**: IPC 응답 형태·CLI 출력·plugin wire 가 하나도 안 바뀐다. 모든 걸음이 인자 제거
   또는 이동이다.
-- **남은 것 — 창 상태를 읽는 핸들러** (91 자리의 내용). 이것들은 좁혀도 창 상태 쪽 인자가 남는다.
+- **남은 것 — 창 상태를 읽는 핸들러** (91 자리의 내용). 인자를 빼는 이 결정의 걸음으로는 안 좁혀지고,
+  Decision 의 남은 걸음 1 · 2 · 4 가 먼저다.
   - intent 큐에 넣기만 하는 핸들러(`surface.set_mark` · `surface.completion` ·
     `surface.attention.clear` · `notification.create` · `file_handler.dispatch` · `markdown.navigate` ·
     `settings.set_remote_transfer` 등). 큐가 창마다 있다.
@@ -80,9 +90,10 @@
   상태에서 떨어진다.
 - **intent 큐만 쓰는 핸들러에 큐 하나(`&mut Vec<DispatchedIntent>`)만 넘긴다**: 시그니처가 "큐에
   넣기만 한다" 를 말하게 된다. 안 고른 이유: 큐는 창 소유이고 요청이 어느 창의 큐에 들어가는지가
-  라우팅의 일이라, 큐를 따로 떼어 넘기는 모양이 창 상태를 받는 것과 소유 관계상 다르지 않다.
-  그리고 큐 push 앞뒤에 창 상태를 읽는 핸들러가 섞여 있어 모양이 둘로 갈린다. 핸들러 12 자리의
-  이득으로 규칙을 하나 더 두지 않았다.
+  라우팅의 일이라, 큐를 따로 떼어 넘기는 모양은 창 상태를 받는 것과 소유 관계상 다르지 않다.
+  **이번 회차 범위 밖(다음 걸음)이다** — 기각이 아니다. 큐를 창 밖으로 옮기는 것은 인자 제거가
+  아니라 동작 경계의 변경이라 이 결정의 "동작을 바꾸지 않는 걸음" 에 안 들어간다. Decision 의
+  남은 걸음 1 이 이것이다.
 - **`active_workspace` 를 읽는 핸들러의 대상 생략 갈래를 없앤다**: 포커스 독립성 쪽 물음이고
   외부 동작(대상 생략 시 응답)이 바뀐다. 이 결정은 인자의 모양만 다룬다.
 - **`_state` 로 된 안 읽는 인자를 막는 가드를 둔다**: 한 번 없앤 형태가 다시 들어오는 입구를
@@ -101,13 +112,13 @@
 - 안 읽는 `AppState` 인자가 다시 늘어난다. 재는 법: 주석·문자열을 덮은 사본(`mask-source`)에서
   `fn` 인자 `이름: &(mut )?AppState` 중 이름이 `_` 로 시작하거나 본문에 안 나오는 것을 센다
   (이 결정 직후 IPC 범위 0). 그 수가 다시 쌓이면 가드를 둔다.
-- 도메인 실행을 `AppState` 없이 도는 별도 소비자(크레이트 분리 · 별도 데몬)를 세우게 된다 —
-  그때는 위 "남은 것" 의 넷째 묶음(구조 op 의 창 연산)이 `CascadeWindow` 처럼 포트로 가야 한다.
+- Decision 의 남은 걸음(큐 분리 · `active_workspace` 기본값 · 창 연산 포트화)이 착지한다 — 그때
+  라우터 · `check_request` · `pump_ipc` 를 `&Core` 로 내리고 위 "현재 상태" 문단을 고친다.
   재는 법: 같은 판정기로 IPC 범위의 access 자리를 모아 읽는 필드·메서드를 대조한다.
 
 ## References
 
-- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 닫는 잔여 ①
+- [ADR-0355](0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md) — 이 결정이 IPC 쪽을 좁힌 잔여 ①(부분 — `pump_ipc` · 라우터 · `check_request` 는 남음, Decision 의 남은 걸음)
 - [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md) — 도메인 쪽 포트
 - [AppState 필드 소유권](../dev-guide/app-state-ownership.md) — 필드 분류표
 - [포커스 정책](../design/policies/focus.md)
