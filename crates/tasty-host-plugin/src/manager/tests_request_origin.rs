@@ -123,10 +123,14 @@ fn a_forward_puts_the_original_request_seq_on_its_pending_entry() {
     assert_eq!(pending_to(&mgr, OWNER).1, None);
 }
 
-/// pre-hook 을 선언한 확장이 붙은 namespace 로 넘기면 **첫 hop 이 확장으로** 가고, 그 대기
-/// 항목도 원 요청의 번호를 든다 — 사슬의 첫 칸이 번호를 잃으면 뒤 hop 이 모두 `None` 이 된다.
-#[test]
-fn a_forward_through_a_pre_hook_puts_the_request_seq_on_the_hook_entry() {
+/// `orig.run` 에 제한 `timeout_ms` 의 pre-hook 을 선언한 확장이 붙은 매니저. 두 plugin 의 요청 수신 통로를 함께 준다.
+fn mgr_with_pre_hook(
+    timeout_ms: u64,
+) -> (
+    PluginManager,
+    crate::process::RequestTap,
+    crate::process::RequestTap,
+) {
     let mut mgr = mgr_owning("orig");
     let ext: tasty_plugin_manifest::Manifest = toml::from_str(&format!(
         r#"
@@ -149,7 +153,7 @@ api_version = "1"
 [[extends.pre_ipc]]
 method = "orig.run"
 mode = "observe"
-timeout_ms = 60000
+timeout_ms = {timeout_ms}
 "#
     ))
     .expect("extension fixture manifest should parse");
@@ -158,10 +162,18 @@ timeout_ms = 60000
         manifest: ext,
     });
     mgr.config.set_granted(EXT, vec![format!("ext:{OWNER}")]);
-    let (owner, _owner_rx) = PluginProcess::stub_with_request_rx(OWNER);
+    let (owner, owner_rx) = PluginProcess::stub_with_request_rx(OWNER);
     let (ext_proc, ext_rx) = PluginProcess::stub_with_request_rx(EXT);
     mgr.processes.insert(OWNER.into(), owner);
     mgr.processes.insert(EXT.into(), ext_proc);
+    (mgr, owner_rx, ext_rx)
+}
+
+/// pre-hook 을 선언한 확장이 붙은 namespace 로 넘기면 **첫 hop 이 확장으로** 가고, 그 대기
+/// 항목도 원 요청의 번호를 든다 — 사슬의 첫 칸이 번호를 잃으면 뒤 hop 이 모두 `None` 이 된다.
+#[test]
+fn a_forward_through_a_pre_hook_puts_the_request_seq_on_the_hook_entry() {
+    let (mut mgr, _owner_rx, ext_rx) = mgr_with_pre_hook(60_000);
     let seq = RequestSeq::next();
     let (tx, _rx) = mpsc::sync_channel(1);
     mgr.forward_namespace_call(
@@ -178,6 +190,50 @@ timeout_ms = 60000
     let (req_id, origin) = pending_to(&mgr, EXT);
     assert_eq!(hook.id, req_id);
     assert_eq!(origin, Some(seq), "pre-hook hop 이 번호를 잃었다");
+}
+
+/// 빠른 pre-hook 뒤에 느린 target 이 오면 **한 줄에 호스트 몫과 hop 둘**이 순서대로 남는다 —
+/// 빠른 pre-hook 응답에서 열린 자리를 닫으면 target hop 이 호스트 몫과 이을 자리를 잃는다.
+#[test]
+fn a_fast_pre_hook_and_its_slow_target_land_on_one_row_in_order() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, _owner_rx, _ext_rx) = mgr_with_pre_hook(60_000);
+    mgr.set_slow_requests(log.clone());
+    let seq = RequestSeq::next();
+    let (tx, _rx) = mpsc::sync_channel(1);
+    mgr.forward_namespace_call(
+        "orig.run",
+        serde_json::json!({}),
+        None,
+        serde_json::json!(1),
+        tx,
+        Some(seq),
+    );
+    log.finish_host(fast_host_leg(seq));
+    let (hook_id, _) = pending_to(&mgr, EXT);
+    mgr.handle_plugin_response(EXT, ok(hook_id));
+    assert!(
+        log.snapshot().rows.is_empty(),
+        "빠른 pre-hook 은 아직 줄이 아니다"
+    );
+    let (target_id, _) = pending_to(&mgr, OWNER);
+    if let Some(p) = mgr.pending_requests.get_mut(&target_id) {
+        p.sent_at = Instant::now() - Duration::from_millis(150);
+    }
+    mgr.handle_plugin_response(OWNER, ok(target_id));
+
+    let rows = log.snapshot().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(
+        rows[0].host.is_some(),
+        "호스트 몫과 이어지지 않았다: {rows:?}"
+    );
+    let hops: Vec<_> = rows[0]
+        .plugin_hops
+        .iter()
+        .map(|h| (h.plugin_id.as_str(), h.host_request_id))
+        .collect();
+    assert_eq!(hops, [(EXT, hook_id), (OWNER, target_id)]);
 }
 
 /// pre-hook 응답이 target 을 부르면 target 대기 항목이 **같은 번호**를 든다 — hop 마다 req_id
@@ -229,6 +285,17 @@ fn every_hop_of_a_hook_chain_carries_the_same_request_seq() {
     assert_eq!(origin, Some(seq), "target → post-hook hop 이 번호를 잃었다");
 }
 
+/// 빠른 호스트 몫 — dispatch 루프가 forward 직후 채우는 값을 흉내 낸다.
+fn fast_host_leg(seq: RequestSeq) -> tasty_telemetry::slow_requests::HostLeg<'static> {
+    tasty_telemetry::slow_requests::HostLeg {
+        request_seq: seq.get(),
+        method: "orig.run",
+        caller: tasty_telemetry::slow_requests::CallerKind::Local,
+        queue_wait: Duration::from_micros(10),
+        host: Duration::from_micros(10),
+    }
+}
+
 fn forwarded(
     log: &Arc<tasty_telemetry::SlowRequestLog>,
 ) -> (
@@ -251,13 +318,7 @@ fn forwarded(
         Some(seq),
     );
     // 호스트 몫은 dispatch 루프가 forward 직후 채운다 — 여기서는 빠른 값으로 흉내 낸다.
-    log.finish_host(tasty_telemetry::slow_requests::HostLeg {
-        request_seq: seq.get(),
-        method: "orig.run",
-        caller: tasty_telemetry::slow_requests::CallerKind::Local,
-        queue_wait: Duration::from_micros(10),
-        host: Duration::from_micros(10),
-    });
+    log.finish_host(fast_host_leg(seq));
     assert!(
         log.snapshot().rows.is_empty(),
         "호스트 몫만으로는 안 느리다"
@@ -326,6 +387,83 @@ fn a_fast_answer_leaves_no_row() {
     let (req_id, _) = pending_to(&mgr, OWNER);
     mgr.handle_plugin_response(OWNER, ok(req_id));
     assert!(log.snapshot().rows.is_empty());
+}
+
+/// 답을 기다리던 plugin 이 치워지면 그 hop 이 `cancelled` 로 같은 줄에 붙는다.
+#[test]
+fn a_forward_cancelled_by_plugin_removal_lands_as_cancelled() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, seq, _rx) = forwarded(&log);
+    let (req_id, _) = pending_to(&mgr, OWNER);
+    if let Some(p) = mgr.pending_requests.get_mut(&req_id) {
+        p.sent_at = Instant::now() - Duration::from_millis(150);
+    }
+    mgr.cancel_pending_namespace_calls(OWNER, "removed");
+    let rows = log.snapshot().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].request_seq, seq.get());
+    assert_eq!(
+        (
+            rows[0].plugin_hops[0].host_request_id,
+            rows[0].plugin_hops[0].outcome
+        ),
+        (
+            req_id,
+            tasty_telemetry::slow_requests::HopOutcome::Cancelled
+        )
+    );
+}
+
+/// pre-hook 이 만료돼도 fail-open 으로 target 이 불리므로 사슬은 이어진다 — 짧은 hook 의 만료가
+/// 열린 자리를 닫으면 뒤의 느린 target 이 호스트 몫과 이을 자리를 잃는다.
+#[test]
+fn an_expired_pre_hook_keeps_the_row_open_for_its_target() {
+    let log = Arc::new(tasty_telemetry::SlowRequestLog::default());
+    let (mut mgr, _owner_rx, _ext_rx) = mgr_with_pre_hook(50);
+    mgr.set_slow_requests(log.clone());
+    let seq = RequestSeq::next();
+    let (tx, _rx) = mpsc::sync_channel(1);
+    mgr.forward_namespace_call(
+        "orig.run",
+        serde_json::json!({}),
+        None,
+        serde_json::json!(1),
+        tx,
+        Some(seq),
+    );
+    log.finish_host(fast_host_leg(seq));
+    let (hook_id, _) = pending_to(&mgr, EXT);
+    // hook 제한(50 ms)은 넘기되 문턱(100 ms) 아래에서 만료시킨다.
+    let sent_at = mgr.pending_requests[&hook_id].sent_at;
+    mgr.sweep_expired_requests(sent_at + Duration::from_millis(60));
+    assert!(
+        log.snapshot().rows.is_empty(),
+        "문턱 아래 만료는 아직 줄이 아니다"
+    );
+    let (target_id, _) = pending_to(&mgr, OWNER);
+    if let Some(p) = mgr.pending_requests.get_mut(&target_id) {
+        p.sent_at = Instant::now() - Duration::from_millis(150);
+    }
+    mgr.handle_plugin_response(OWNER, ok(target_id));
+
+    let rows = log.snapshot().rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(
+        rows[0].host.is_some(),
+        "호스트 몫과 이어지지 않았다: {rows:?}"
+    );
+    let hops: Vec<_> = rows[0]
+        .plugin_hops
+        .iter()
+        .map(|h| (h.plugin_id.as_str(), h.outcome))
+        .collect();
+    assert_eq!(
+        hops,
+        [
+            (EXT, tasty_telemetry::slow_requests::HopOutcome::Expired),
+            (OWNER, tasty_telemetry::slow_requests::HopOutcome::Ok)
+        ]
+    );
 }
 
 /// 이 스코프 동안 나가는 tracing 이벤트를 문자열로 모은다(`builtin.rs` 시험과 같은 모양).
