@@ -652,6 +652,21 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tasty-i18n]
 opt-level = 3
+# 셀 렌더러가 셀마다 부르는 잎 세 개. 추출 전에는 본체(opt 0) 안에 있었다 — 등재는
+# 옛 상태로 돌리는 것이 아니라 이 세 크레이트를 새로 최적화하는 것이다. 값은 실측
+# (2026-09-21, 240×70 한 화면, opt 0 호출자에서 부름, 두 빌드를 번갈아 스무 번씩 · 중앙값,
+#  재컴파일은 크레이트 하나만 · 3 회 중앙값):
+#   cell-width    폭 판정(셀마다 2 회)      2.12 ms → 0.24 ms / 프레임 · 수정 후 재컴파일 +0.09 s
+#   terminal-link 링크 판정 covers           0.41 ms → 0.18 ms / 프레임 · 한 줄 검출 84 µs → 5 µs / hover
+#                                            수정 후 재컴파일 +1.4 s
+#   selection     선택 판정 is_selected      0.23 ms → 0.17 ms / 프레임 · 수정 후 재컴파일 +0.6 s
+# 재는 법·고른 이유·재검토 조건: docs/adr/0381-the-cell-renderer-leaf-crates-are-optimized-in-dev.md
+[profile.dev.package.tasty-cell-width]
+opt-level = 3
+[profile.dev.package.tasty-terminal-link]
+opt-level = 3
+[profile.dev.package.tasty-selection]
+opt-level = 3
 
 [profile.release]
 lto = "thin"
