@@ -31,7 +31,7 @@ pub(crate) fn duration_ms(d: Duration) -> f64 {
 ///
 /// GUI 경로(`AppState::close_workspace_at`)는 한 함수 안에서 끝나 지역 `Instant`
 /// 로 충분하지만, cascade 경로는 `Core::close_case_workspace`(도메인 — 스냅샷 +
-/// 대상 수집)와 `cascade_surface_closed`(앱 — 실제 cleanup)로 **함수가 갈린다**.
+/// 대상 수집)와 `cascade_surface_closed`(cascade — 실제 cleanup)로 **함수가 갈린다**.
 /// 두 구간을 하나의 `close_total` 로 묶으려면 함수 경계를 넘는 t0 이 필요하다.
 ///
 /// 원샷이 아니라 **재무장(re-arm)** 이다 — 종료 t0(`SHUTDOWN_T0`)과 달리 close 는

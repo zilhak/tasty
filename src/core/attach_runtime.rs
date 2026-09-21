@@ -1023,12 +1023,12 @@ pub(crate) fn execute_forwarded_structural_op(
                     // 로컬 dispatcher 도 같은 것을 쓴다. IPC 는 agent 경로라
                     // is_user_close=false(`close_surface_via_intent` 와 동일 근거).
                     match ev.and_then(|ev| {
-                        crate::app::dispatch_domain::SurfaceCloseCascade::from_move_surface_applied(
+                        crate::core::structural_cascade::SurfaceCloseCascade::from_move_surface_applied(
                             ev, false,
                         )
                     }) {
                         Some(c) => {
-                            crate::app::dispatch_domain::cascade_surface_closed(
+                            crate::core::structural_cascade::cascade_surface_closed(
                                 core, state, engine, c,
                             );
                             Ok(())

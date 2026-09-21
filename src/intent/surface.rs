@@ -64,7 +64,7 @@ fn split(
             ..
         } = ev
         {
-            crate::app::dispatch_domain::cascade_surface_split(
+            crate::core::structural_cascade::cascade_surface_split(
                 state,
                 engine,
                 origin,

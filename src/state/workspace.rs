@@ -505,32 +505,44 @@ mod workspace_pointer_tests {
 
     /// **두 실행 형태 모두** close cascade 가 이 헬퍼를 지나는지 소스 수준으로 고정한다.
     ///
-    /// cascade 는 gui(`app/dispatch_domain.rs`)와 headless(`app/dispatch_domain_stubs.rs`)
-    /// 로 `#[cfg(feature = "gui")]` 분기되어 있다. CI 는 이제 headless 도 실행한다
-    /// (`.github/workflows/crossplatform-check.yml` 의 `cargo test --workspace --lib
-    /// --bins --no-default-features`). **그런데도 이 소스 가드가 여전히 필요하다** —
-    /// 이 불변식은 headless **행동** 테스트로 원리적으로 잡히지 않기 때문이다: 오늘의
-    /// headless 는 `active_workspace` 가 0 을 벗어날 수단이 없어(레이아웃 복원 없음 ·
-    /// `preset.apply` 가 `focus: false` 강제 · `debug.switch_workspace` 는 gui 게이트)
-    /// 올바른 보정과 옛 범위 초과 clamp 의 **결과가 같다**. 그래서 headless 쪽만 옛
-    /// clamp 로 남아도 어떤 실행 테스트도 실패하지 않는다 — 실제로 그렇게 한 번
-    /// 놓쳤고, 그때 잡은 것도 (기본 빌드에서 도는) 이 소스 가드였다.
+    /// cascade 는 두 빌드(gui / headless)가 같은 파일(`core/structural_cascade.rs`)을
+    /// 컴파일하고, 빌드 형태의 차이는 그 안의 `#[cfg(feature = "gui")]` 블록으로만 있다.
+    /// 그래서 이 가드가 묻는 것은 "헬퍼를 부르는가" 와 **"그 호출이 gui 블록 안에 갇히지
+    /// 않았는가"** 둘이다. 뒤쪽은 호출 **직전 줄**의 속성만 본다 — `#[cfg(feature = "gui")]`
+    /// 가 붙은 `{ … }` 블록 안으로 옮기는 형태는 못 잡는다. 소스 가드가 여전히 필요한
+    /// 이유는 이 불변식이 headless **행동** 테스트로 원리적으로 잡히지 않기 때문이다:
+    /// 오늘의 headless 는 `active_workspace` 가
+    /// 0 을 벗어날 수단이 없어(레이아웃 복원 없음 · `preset.apply` 가 `focus: false` 강제 ·
+    /// `debug.switch_workspace` 는 gui 게이트) 올바른 보정과 옛 범위 초과 clamp 의 **결과가
+    /// 같다**. 그래서 headless 쪽만 옛 clamp 로 남아도 어떤 실행 테스트도 실패하지 않는다 —
+    /// 실제로 그렇게 한 번 놓쳤고, 그때 잡은 것도 (기본 빌드에서 도는) 이 소스 가드였다.
     /// 근거 [ADR-0113](../../docs/adr/0113-close-preserves-the-focused-target.md).
     #[test]
     fn both_close_cascades_route_through_the_pointer_helper() {
-        for (label, src) in [
-            ("gui", include_str!("../app/dispatch_domain.rs")),
-            ("headless", include_str!("../app/dispatch_domain_stubs.rs")),
-        ] {
+        let src = include_str!("../core/structural_cascade.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let calls: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains("state.fix_workspace_pointers_after_removal("))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            !calls.is_empty(),
+            "close cascade 가 활성 포인터 보정 헬퍼를 부르지 않는다"
+        );
+        for i in calls {
             assert!(
-                src.contains("fix_workspace_pointers_after_removal"),
-                "{label} cascade 가 활성 포인터 보정 헬퍼를 부르지 않는다"
-            );
-            assert!(
-                !src.contains("state.active_workspace = engine.workspaces.len() - 1"),
-                "{label} cascade 에 범위 초과 clamp 만 하는 옛 보정이 남아 있다"
+                !lines[i - 1].contains("cfg(feature = \"gui\")"),
+                "structural_cascade.rs:{} 의 포인터 보정이 gui 전용으로 갇혔다 — headless 는 \
+                 보정 없이 남는다",
+                i + 1
             );
         }
+        assert!(
+            !src.contains("state.active_workspace = engine.workspaces.len() - 1"),
+            "close cascade 에 범위 초과 clamp 만 하는 옛 보정이 남아 있다"
+        );
     }
 
     #[test]

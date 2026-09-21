@@ -14,7 +14,7 @@ surface 정리)와 그 상시 tracing 계측(`tasty::close`)을 기술한다. �
 |--------|--------|--------|--------|
 | `gui` | `AppState::close_workspace_at` (`src/state/workspace.rs`) | 워크스페이스 컨텍스트 메뉴 "Close workspace" / 단축키 `close_active_workspace` | 항상 |
 | `inline` | `AppState::close_case_workspace` (`src/state/pane.rs`) | surface→tab→pane→workspace cascade 의 인라인 디스패처 (PTY exit, egui diff close 등) | `save_snapshot` 조건부 |
-| `cascade` | `Core::close_case_workspace` (`src/core/impl_close.rs`) → `cascade_surface_closed` (`src/app/dispatch_domain.rs`) | `DomainIntent::CloseSurface` 도메인 이벤트 경로 (IPC `surface.close` 등) | `save_snapshot` 조건부 (IPC 는 false) |
+| `cascade` | `Core::close_case_workspace` (`src/core/impl_close.rs`) → `cascade_surface_closed` (`src/core/structural_cascade.rs`) | `DomainIntent::CloseSurface` 도메인 이벤트 경로 (IPC `surface.close` 등) | `save_snapshot` 조건부 (IPC 는 false) |
 
 **세 경로의 비용 구조는 근본적으로 다르다.** `gui` 만 "탭이 N 개인 워크스페이스를
 통째로" 닫는다 — 나머지 둘은 cascade 특성상 *마지막 한 개의 surface* 가 닫히면서
@@ -27,9 +27,9 @@ workspace 까지 무너지는 경우라 cleanup 대상이 사실상 항상 1개�
 "삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다". 네 번째 경로를 추가하면 같은 보정을
 함께 태운다(계측 단계에는 포함되지 않는 O(1) 작업이다).
 
-`cascade` 경로만 단계가 두 함수로 갈린다 — C1~C3 은 도메인(`Core`) 쪽, C4/C5 는
-앱(`cascade_surface_closed`) 쪽이다. 그래서 이 경로의 로그 순서는 **C5 가 C4 보다
-먼저** 나온다(앱 쪽 1단계가 cleanup, 3단계가 workspace purge). `gui`/`inline` 은
+`cascade` 경로만 단계가 두 함수로 갈린다 — C1~C3 은 `Core::apply` 쪽, C4/C5 는
+cascade(`cascade_surface_closed`) 쪽이다. 그래서 이 경로의 로그 순서는 **C5 가 C4 보다
+먼저** 나온다(cascade 쪽 1단계가 cleanup, 3단계가 workspace purge). `gui`/`inline` 은
 C1→C2→C3→C4→C5 순이다.
 
 ## 자원 회수의 소유
@@ -39,10 +39,12 @@ C1→C2→C3→C4→C5 순이다.
 kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory scope purge · attach 점유 흔적
 제거)와 `surface.closed` lifecycle 통지는 cascade 쪽이 한다.
 
-그 회수는 빌드 형태마다 **한 함수**가 소유한다 — `reclaim_closed_surfaces`. gui 는
-`src/app/dispatch_domain.rs`, headless 는 `src/app/dispatch_domain_stubs.rs` 에 같은 이름으로
-있고, close cascade 셋(`cascade_surface_closed` · `cascade_pane_closed_full` ·
-`cascade_tab_closed_full`)이 모두 그것을 부른다. 근거는
+그 회수는 **한 함수**가 소유한다 — `src/core/structural_cascade.rs` 의
+`reclaim_closed_surfaces`. close cascade 셋(`cascade_surface_closed` · `cascade_pane_closed_full` ·
+`cascade_tab_closed_full`)이 모두 그것을 부르고, 그 셋과 split / tab 생성 cascade 를 사용자
+GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. 두 빌드(gui / headless)가 같은
+파일을 컴파일하므로 함수 하나에 본문 하나이고, 빌드 형태의 차이는 그 본문 안의
+`#[cfg(feature = "gui")]` 블록으로만 존재한다. 근거는
 [ADR-0337](../adr/0337-structural-execution-answers-with-domain-values.md).
 
 ### gui 와 headless 의 차이
@@ -52,20 +54,29 @@ kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory sco
 | `cleanup_surface` (PTY · 스크롤백 · 인덱스 · memory scope) | 한다 | 한다 |
 | `surface.closed` lifecycle enqueue | 한다 | **안 한다** |
 | `tab.closed` / `pane.closed` / `workspace.closed` host event | 한다 | **안 한다** |
+| C4 워크스페이스 memory scope purge (`after_workspace_removed`) | 한다 | **안 한다** — 아래 기준으로는 회수라 양쪽에 있어야 하는 단계다. `workspace.closed` 통지와 한 함수에 묶여 함께 빠져 있고, 의도인지는 정해지지 않았다 |
 | 활성 포인터 보정 (`fix_workspace_pointers_after_removal`) | 한다 | 한다 |
 | 워크스페이스가 비면 재생성 | 한다 | 한다 |
-| C5 계측 발화 | `cascade_surface_closed` 만 | 안 한다 |
+| C5 계측 · `close_total` 발화 | `cascade_surface_closed` 만 | 안 한다 |
+| `surface.created` / `pane.split` / `pane.created` / `tab.created` host event (split · 탭 생성) | 한다 | **안 한다** |
+| 사용자 origin 의 split 포커스 이동 | 한다 | 한다 — headless 에는 `User` origin 발화점이 없어 닿지 않는다 |
+| 튜토리얼 관찰 (split) | 한다 | 안 한다 (튜토리얼이 gui 전용) |
 
-**차이를 가르는 것은 "그 통지에 소비자가 있는가" 하나다.** headless 에는
-`pending_lifecycle_events` / `pending_host_events` 를 plugin event bus 로 내보내는 주체
-(plugin manager / view)가 없어, enqueue 하면 큐가 프로세스 수명 동안 자란다. 반대로 자원
-회수와 포인터 보정은 소비자가 상태 자신이라 양쪽에 똑같이 필요하다. 같은 기준의 서술이
+**차이를 가르는 것은 "그 통지에 소비자가 있는가" 하나다.** headless 에는 두 큐를 plugin
+event bus 로 내보내는 주체(plugin manager / view)가 없다. `pending_lifecycle_events` 는
+headless 에서 아무도 비우지 않아 enqueue 하면 프로세스 수명 동안 자라고,
+`pending_host_events` 는 headless drain(`drain_pending_host_events`)이 `HookFired` 만 적용하고
+나머지 종류를 버리므로 여기서 넣는 종류(`tab.*` · `pane.*` · `surface.created` ·
+`workspace.closed`)는 넣어도 닿는 곳이 없다. 반대로 자원 회수와 포인터 보정은 소비자가 상태
+자신이라 양쪽에 똑같이 필요하다. 같은 기준의 서술이
 `src/intent/headless.rs` 모듈 주석에도 있다.
 
-**이 짝을 재는 채널은 없다.** 두 파일은 `cfg(feature = "gui")` 가 배타라 한 빌드가 둘을 같이
-컴파일하지 않는다 — 한쪽만 고친 상태도 그 빌드에서는 초록이다. 양쪽이 적어도 컴파일은
-됐다는 것까지만 `cargo check --workspace --all-targets` 와
-`cargo check --workspace --no-default-features --all-targets` 를 둘 다 돌려 확인한다.
+**본문이 하나라 "한쪽만 고친 상태" 는 없다.** 매핑(`SurfaceCloseCascade` 생성자)과 공통
+단계는 두 빌드가 같은 소스를 컴파일한다. 남는 것은 `cfg` 블록 안쪽이다 — gui 블록 안의
+코드는 headless 빌드가 컴파일하지 않고, headless 에서 안 읽히는 필드·인자는
+`cfg_attr(not(feature = "gui"), expect(...))` 로 그 사실을 적어 둔다(그 기대가 어긋나면
+headless 빌드가 경고한다). 그래서 이 파일을 고치면 `cargo check --workspace --all-targets` 와
+`cargo check --workspace --no-default-features --all-targets` 를 둘 다 돌린다.
 
 ### forward 경로의 결과 타입
 

@@ -1102,7 +1102,7 @@ impl AppState {
     ///
     /// - [`AppState::close_workspace_at`] — GUI 닫기 · `workspace.close` IPC
     /// - `AppState::close_case_workspace`(`state/pane.rs`) — 인라인 cascade
-    /// - `app::dispatch_domain::cascade_surface_closed` — Core cascade
+    /// - `core::structural_cascade::cascade_surface_closed` — Core cascade
     ///
     /// `path` 는 close 계측의 경로 구분값(`"gui"`/`"ipc"`/`"inline"`/`"cascade"`)이다.
     pub(crate) fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str) {

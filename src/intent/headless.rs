@@ -191,7 +191,7 @@ fn handle_core_event(engine: &mut CoreState, event: CoreEvent) {
         // (`SurfaceClosed` / `PaneClosed` / `TabClosed`)이 여기 없는 것은 생략이 아니라
         // **발화점이 없는 것**이다 — `DomainIntent::Close*` 를 만드는 자리는 IPC 핸들러
         // 셋(`handler/surface/close.rs` · `handler/pane.rs` · `handler/tab.rs`)뿐이고,
-        // 셋 다 큐를 거치지 않고 `Core::apply` 를 직접 부른 뒤 `dispatch_domain_stubs` 의
+        // 셋 다 큐를 거치지 않고 `Core::apply` 를 직접 부른 뒤 `core::structural_cascade` 의
         // cascade 로 자원을 회수한다. 그러니 이 분기에 close 를 넣으면 회수가 두 번 돈다.
         // **큐를 거치는 close 발화점이 생기면 그때 여기에 회수를 배선해야 한다** — 안 하면
         // 닫힌 surface 의 PTY·memory scope 가 조용히 남는다(패닉도 로그도 없다).

@@ -59,11 +59,11 @@ fn close_surface_via_intent(
 
     // is_user_close=false — IPC 는 agent 경로. cleanup_targets 의 모든 surface 에 대한
     // lifecycle enqueue 는 cascade_surface_closed 가 처리 (R1 분석 참조).
-    crate::app::dispatch_domain::cascade_surface_closed(
+    crate::core::structural_cascade::cascade_surface_closed(
         core,
         state,
         engine,
-        crate::app::dispatch_domain::SurfaceCloseCascade {
+        crate::core::structural_cascade::SurfaceCloseCascade {
             cascade_level,
             cleanup_targets,
             closed_tab_ids,

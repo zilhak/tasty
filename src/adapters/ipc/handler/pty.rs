@@ -351,7 +351,9 @@ pub(crate) fn handle_attach_surface(
 
     // tab.create 와 동형 cascade — tab.created/surface.created host event enqueue +
     // polling baseline 동기화. 이 호출을 빠뜨리면 데이터만 옮겨지고 화면엔 안 뜬다.
-    crate::app::dispatch_domain::cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+    crate::core::structural_cascade::cascade_tab_created(
+        state, engine, pane_id, tab_id, surface_id,
+    );
 
     JsonRpcResponse::success(
         id,

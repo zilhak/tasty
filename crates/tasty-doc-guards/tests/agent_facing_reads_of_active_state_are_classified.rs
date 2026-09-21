@@ -63,15 +63,19 @@ const NEEDLES: &[&str] = &[
 ];
 
 /// 에이전트 대면 경로. IPC 핸들러와 그것이 부르는 도메인 cascade.
+///
+/// 구조 변경 cascade(split / tab / close)는 `src/core/structural_cascade.rs` 에 있다 — IPC
+/// 핸들러와 원격 forward 실행이 부르므로 에이전트 대면이다.
 const AGENT_FACING: &[&str] = &[
     "src/adapters/ipc/handler.rs",
     "src/adapters/ipc/handler/",
     "src/app/dispatch/",
     "src/app/dispatch_domain.rs",
+    "src/core/structural_cascade.rs",
 ];
 
 /// 스캔 루트 — 위 접두사를 담는 가장 작은 디렉토리들.
-const SCAN_ROOTS: &[&str] = &["src/adapters/ipc", "src/app"];
+const SCAN_ROOTS: &[&str] = &["src/adapters/ipc", "src/app", "src/core"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
@@ -198,11 +202,17 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
     (
         "src/app/dispatch_domain.rs",
         UserOrigin,
-        4,
-        "닫은 항목 복원·워크스페이스 이동·포커스 서피스 갱신 — 전부 origin 이 User 일 때만 도는 cascade 다",
+        3,
+        "닫은 항목 복원·워크스페이스 이동 — 전부 origin 이 User 일 때만 도는 cascade 다",
     ),
     (
-        "src/app/dispatch_domain.rs",
+        "src/core/structural_cascade.rs",
+        UserOrigin,
+        1,
+        "surface split 뒤 포커스 서피스 갱신 — origin 이 User 일 때만 돈다(에이전트 split 은 앞에서 return)",
+    ),
+    (
+        "src/core/structural_cascade.rs",
         Recovery,
         1,
         "마지막 워크스페이스가 닫힌 뒤 기본 워크스페이스를 다시 만들고 그 인덱스를 활성으로 둔다 — 활성이 없는 상태를 안 남기는 것",

@@ -76,7 +76,7 @@ pub fn handle_pane_close(
         // IPC = Agent origin → is_user_close=false.
         // helper 가 cleanup_surface + surface.closed lifecycle enqueue +
         // pane.closed host event enqueue 를 일괄 처리한다.
-        crate::app::dispatch_domain::cascade_pane_closed_full(
+        crate::core::structural_cascade::cascade_pane_closed_full(
             state,
             engine,
             pane_id,
@@ -262,11 +262,11 @@ pub fn handle_split(
             let agent_origin = crate::intent::IntentOrigin::Agent {
                 source: crate::intent::AgentSource::Ipc,
             };
-            crate::app::dispatch_domain::cascade_pane_split(
+            crate::core::structural_cascade::cascade_pane_split(
                 state,
                 engine,
                 &agent_origin,
-                crate::app::dispatch_domain::PaneSplitCascade {
+                crate::core::structural_cascade::PaneSplitCascade {
                     workspace_index,
                     original_pane_id,
                     new_pane_id,
@@ -329,7 +329,7 @@ pub fn handle_split(
             let agent_origin = crate::intent::IntentOrigin::Agent {
                 source: crate::intent::AgentSource::Ipc,
             };
-            crate::app::dispatch_domain::cascade_surface_split(
+            crate::core::structural_cascade::cascade_surface_split(
                 state,
                 engine,
                 &agent_origin,

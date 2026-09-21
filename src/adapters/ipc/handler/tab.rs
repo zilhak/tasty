@@ -138,7 +138,9 @@ pub fn handle_tab_create(
 
     // dispatcher 와 같은 cascade 공유 (handle_tab_close ↔ cascade_tab_closed_full
     // 동형) — tab.created/surface.created host event enqueue + baseline 동기화.
-    crate::app::dispatch_domain::cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
+    crate::core::structural_cascade::cascade_tab_created(
+        state, engine, pane_id, tab_id, surface_id,
+    );
 
     JsonRpcResponse::success(
         id,
@@ -196,7 +198,7 @@ pub fn handle_tab_close(
         // IPC = Agent origin → is_user_close=false.
         // helper 가 cleanup_surface + surface.closed lifecycle enqueue +
         // tab.closed host event enqueue + baseline 갱신을 일괄 처리한다.
-        crate::app::dispatch_domain::cascade_tab_closed_full(
+        crate::core::structural_cascade::cascade_tab_closed_full(
             state,
             engine,
             tab_id,

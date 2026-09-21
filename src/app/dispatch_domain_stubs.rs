@@ -5,12 +5,16 @@
 //!
 //! state mutation 만 필요한 일부 cascade (closed_item_restored 등) 도 모두 no-op
 //! — headless 의 IPC 표면이 그 state 를 의존하지 않는다 (popup/toast 등 GUI 객체뿐).
+//!
+//! 구조 변경 cascade(split / tab / close — 자원 회수 포함)는 여기 없다. 두 빌드가 같은
+//! 파일을 컴파일하는 `core::structural_cascade` 가 소유하고, gui 와 갈리는 지점은 그 안의
+//! `cfg` 블록이다.
 
 #![cfg(not(feature = "gui"))]
 #![allow(dead_code, unused_variables)]
 
-use crate::core::intent::{CascadeLevel, RestoredKind};
-use crate::core::{Core, CoreState};
+use crate::core::CoreState;
+use crate::core::intent::RestoredKind;
 use crate::intent::IntentOrigin;
 use crate::state::AppState;
 
@@ -19,84 +23,6 @@ use crate::state::AppState;
 pub(crate) enum DispatchSource {
     Main(u64),
     Parked(usize),
-}
-
-/// gui 의 `SurfaceCloseCascade` 와 동등 — 필드 구성은 dispatch_domain.rs 와 동일하게 유지.
-pub(crate) struct SurfaceCloseCascade {
-    pub(crate) cascade_level: CascadeLevel,
-    pub(crate) cleanup_targets: Vec<(u32, Option<String>)>,
-    pub(crate) closed_tab_ids: Vec<u32>,
-    pub(crate) closed_pane_ids: Vec<u32>,
-    pub(crate) workspace_purged: Option<(usize, u32)>,
-    pub(crate) workspaces_now_empty: bool,
-    pub(crate) is_user_close: bool,
-}
-
-impl SurfaceCloseCascade {
-    /// gui `SurfaceCloseCascade::from_move_surface_applied` 의 headless 쌍둥이.
-    ///
-    /// `core::attach_runtime::execute_forwarded_structural_op` 은 두 조합 모두에서
-    /// 컴파일되고 `crate::app::dispatch_domain::` 경로로 이것을 부른다(모듈 별칭은
-    /// `src/app.rs` 가 `cfg` 로 가른다). 그래서 이 함수는 gui 쪽과 **같은 매핑을 두 번**
-    /// 적은 것이고, 자리가 하나가 아니다.
-    ///
-    /// ★ **기본 빌드는 이 파일을 안 본다**(`cfg(not(feature = "gui"))`). `MoveSurfaceApplied`
-    /// 에 필드를 더하면 gui 조합은 초록인 채 여기만 `E0027` 로 깨진다 — `--no-default-features`
-    /// 로 따로 재야 보인다. 그 짝을 재는 채널은 이 저장소에 없다.
-    pub(crate) fn from_move_surface_applied(
-        event: crate::core::intent::CoreEvent,
-        is_user_close: bool,
-    ) -> Option<Self> {
-        let crate::core::intent::CoreEvent::MoveSurfaceApplied {
-            moved,
-            b_cleanup,
-            cascade_level,
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_purged,
-            workspaces_now_empty,
-        } = event
-        else {
-            return None;
-        };
-        if !moved {
-            return None;
-        }
-        Some(Self {
-            cascade_level,
-            cleanup_targets: b_cleanup.into_iter().collect(),
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_purged,
-            workspaces_now_empty,
-            is_user_close,
-        })
-    }
-}
-
-/// 닫힌 surface 들의 자원 회수 — headless close cascade 셋이 공유하는 한 자리다.
-///
-/// gui 의 `reclaim_closed_surfaces` 와 갈리는 지점은 **lifecycle 통지 한 줄**이다.
-/// headless 에는 `pending_lifecycle_events` 를 비우는 주체(plugin manager / view)가
-/// 없어 enqueue 하면 큐가 무한 적재된다. 그 차이를 세 사본에 흩어 두면 어느 것이
-/// 의도된 생략이고 어느 것이 누락인지 구분할 수 없다.
-fn reclaim_closed_surfaces(
-    state: &mut AppState,
-    engine: &mut CoreState,
-    cleanup_targets: Vec<(u32, Option<String>)>,
-) {
-    for (sid, pid) in cleanup_targets {
-        state.cleanup_surface(engine, sid, pid);
-    }
-}
-
-/// gui 의 `PaneSplitCascade` 와 동등.
-pub(crate) struct PaneSplitCascade {
-    pub(crate) workspace_index: usize,
-    pub(crate) original_pane_id: u32,
-    pub(crate) new_pane_id: u32,
-    pub(crate) new_surface_id: u32,
-    pub(crate) direction: crate::model::SplitDirection,
 }
 
 /// gui 의 `WorkspaceCreatedCascade` 와 동등.
@@ -125,97 +51,10 @@ pub(crate) fn cascade_closed_item_restored(
 ) {
 }
 
-pub(crate) fn cascade_surface_closed(
-    core: &mut Core,
-    state: &mut AppState,
-    engine: &mut CoreState,
-    c: SurfaceCloseCascade,
-) {
-    // headless: PTY/scrollback/메모리 scope 등 *자원* 만 실제 해제. host event /
-    // surface.closed lifecycle 통지는 drain 주체(plugin manager / view)가 없으므로
-    // 생략 — 통지를 enqueue 하면 pending 큐가 무한 적재된다.
-    // c.closed_tab_ids / c.closed_pane_ids / c.is_user_close: lifecycle 통지용 필드 —
-    // drain 주체가 없어 미사용.
-    reclaim_closed_surfaces(state, engine, c.cleanup_targets);
-    // 활성 포인터 보정은 **gui cascade 와 같은 헬퍼로** 한다. 범위 초과 clamp 만으로는
-    // 앞쪽 workspace 가 빠졌을 때 인덱스가 유효한 채 다른 workspace 를 가리킨다.
-    //
-    // 오늘의 headless 는 `active_workspace` 가 0 을 벗어나지 못해(레이아웃 복원 미적용,
-    // `preset.apply` 는 focus 를 강제로 끄고, 워크스페이스 전환은 gui 전용 debug IPC 뿐)
-    // 이 분기의 결과가 옛 clamp 와 같다. 그래도 헬퍼를 지나게 두는 이유는, 포인터를
-    // 움직이는 headless 경로가 하나라도 생기는 순간 같은 불변식이 빌드 형태에 따라
-    // 다르게 성립하기 때문이다 — 그때 여기를 고쳐야 한다는 걸 아무도 기억하지 못한다.
-    // 근거 `docs/adr/0113-close-preserves-the-focused-target.md`.
-    if let Some((removed_idx, _workspace_id)) = c.workspace_purged {
-        state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
-    }
-    if c.workspaces_now_empty {
-        match core.create_default_workspace(engine) {
-            Ok(idx) => state.active_workspace = idx,
-            Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
-        }
-    }
-}
-
-/// gui `cascade_pane_closed_full` 의 headless 등가. pane close 시 닫힌 surface 들의
-/// PTY/scrollback 을 실제 해제한다. host event / lifecycle 통지는 생략 (drain 주체 없음).
-pub(crate) fn cascade_pane_closed_full(
-    state: &mut AppState,
-    engine: &mut CoreState,
-    pane_id: u32,
-    cleanup_targets: Vec<(u32, Option<String>)>,
-    is_user_close: bool,
-) {
-    let _ = (pane_id, is_user_close); // headless: lifecycle 통지용 인자 미사용 — 값 drop(Result 아님).
-    reclaim_closed_surfaces(state, engine, cleanup_targets);
-}
-
-/// gui `cascade_tab_created` 의 headless 등가. host event / baseline 통지는
-/// drain 주체(plugin manager / view)가 없으므로 생략 — silent no-op.
-pub(crate) fn cascade_tab_created(
-    state: &mut AppState,
-    engine: &CoreState,
-    pane_id: u32,
-    tab_id: u32,
-    surface_id: u32,
-) {
-}
-
-/// gui `cascade_tab_closed_full` 의 headless 등가. tab close 시 닫힌 surface 들의
-/// PTY/scrollback 을 실제 해제한다. host event / lifecycle 통지는 생략 (drain 주체 없음).
-pub(crate) fn cascade_tab_closed_full(
-    state: &mut AppState,
-    engine: &mut CoreState,
-    tab_id: u32,
-    pane_id: Option<u32>,
-    cleanup_targets: Vec<(u32, Option<String>)>,
-    is_user_close: bool,
-) {
-    let _ = (tab_id, pane_id, is_user_close); // headless: lifecycle 통지용 인자 미사용 — 값 drop(Result 아님).
-    reclaim_closed_surfaces(state, engine, cleanup_targets);
-}
-
-pub(crate) fn cascade_surface_split(
-    state: &mut AppState,
-    engine: &mut CoreState,
-    origin: &IntentOrigin,
-    workspace_index: usize,
-    pane_id: u32,
-    new_surface_id: u32,
-) {
-}
-
-pub(crate) fn cascade_pane_split(
-    state: &mut AppState,
-    engine: &mut CoreState,
-    origin: &IntentOrigin,
-    c: PaneSplitCascade,
-) {
-}
-
 /// 다른 stub 과 달리 no-op 이 아니다 — 이 cascade 는 view 가 아니라 `AppState` 의
 /// 인덱스 포인터를 고치는 일이라 headless 에도 그대로 필요하다. 제거 축
-/// (`cascade_surface_closed` 의 `fix_workspace_pointers_after_removal`)과 같은 이유다.
+/// (`core::structural_cascade::cascade_surface_closed` 의
+/// `fix_workspace_pointers_after_removal`)과 같은 이유다.
 pub(crate) fn cascade_workspace_moved(state: &mut AppState, from_index: usize, to_index: usize) {
     state.fix_workspace_pointers_after_move(from_index, to_index);
 }
