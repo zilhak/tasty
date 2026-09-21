@@ -1,61 +1,24 @@
 //! Toast 데모 — 디자인(4) `components/feedback/Toast` + `Toast stack` 두 카드.
 //!
-//! 카드 **한 장**만 보여주는 데모라 스택 함수를 안 부르고 카드 chrome 함수
-//! (`toast_card::draw_card` = `tasty_ui_widgets::draw_toast_card`)를 직접 부른다.
-//! coalesce / fade / lifetime 등 시간 의존 상태는 본 데모 범위 밖이다. 색·치수는 모두
-//! `Theme` 토큰이고 `ToastKind` 는 **정본 그대로**다 — 미러가 아니다.
+//! 카드 **한 장**만 보여주는 데모라 스택 함수를 안 부르고 단일 카드 함수
+//! (`toast_card::draw_single_card` = `tasty_ui_widgets::draw_toast_single_card`)를 부른다.
+//! 그 함수의 치수(galley · 폭 · 높이)와 색(fill · border · accent · alpha 곱)은 본체
+//! 스택이 쓰는 `toast_layout_card` · `toast_card_colors` 에서 온다 — 여기서 다시 계산하지
+//! 않는다. coalesce / fade / lifetime 등 시간 의존 상태는 본 데모 범위 밖이다.
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
-use crate::catalog::toast_card::{self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind};
+use crate::catalog::toast_card::{self, ToastKind};
 
 struct ToastCardProps {
     kind: ToastKind,
     message: &'static str,
 }
 
-/// 본체 `ToastManager::draw` 의 카드 1장 그리기와 동등한 시각.
+/// 본체 스택의 카드 1장과 같은 시각 — 치수·색 계산까지 위젯 크레이트의 같은 함수다.
 fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps, alpha: f32) {
-    let bg = egui::Color32::from(theme.surface_raised()).gamma_multiply(alpha);
-    // `component.toast-border` — 본체가 쓰는 토큰이다. 여기는 `border-default` 를 쓰고
-    // 있었고 그 둘은 값이 다르다(strong=surface1 / default=surface0).
-    let border = egui::Color32::from(theme.toast_border()).gamma_multiply(alpha);
-    let accent = toast_card::accent_color(props.kind, theme).gamma_multiply(alpha);
-    // 본문 글자는 페이드하지 않는다 — 본체가 layout 색에 alpha 를 안 곱하므로 카드
-    // chrome 만 흐려지고 글자는 그대로다. 글자도 흐려야 하는지는 디자인이 정할 값이다.
-    let text_color = egui::Color32::from(theme.text_primary());
-
-    let max_width = theme.toast_max_width.value();
-    let font = egui::FontId::proportional(theme.font_size_body.value());
-
-    let galley = ui.ctx().fonts(|f| {
-        f.layout(
-            props.message.to_string(),
-            font.clone(),
-            text_color,
-            max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH,
-        )
-    });
-
-    let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
-    let toast_h = galley.size().y + PADDING_Y * 2.0;
-
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(toast_w, toast_h), egui::Sense::hover());
-    let painter = ui.painter_at(rect);
-
-    toast_card::draw_card(
-        &painter,
-        theme,
-        rect,
-        toast_card::CardColors {
-            bg,
-            border,
-            accent,
-            text: text_color,
-        },
-        galley,
-    );
+    toast_card::draw_single_card(ui, theme, props.kind, props.message, alpha);
 }
 
 /// Toast — 단일 카드 variant (info/success/warning/error).

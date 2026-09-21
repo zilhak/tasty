@@ -102,8 +102,9 @@ pub use table::{Table, TableAlign, TableColumn, TableColumnWidth, TableOutput, T
 pub use toast::{
     CardColors as ToastCardColors, FADE_IN_MS as TOAST_FADE_IN_MS,
     FADE_OUT_MS as TOAST_FADE_OUT_MS, ToastEntryView, ToastScopeView, ToastViewProps,
-    accent_color as toast_accent_color, draw_card as draw_toast_card, draw_toast_scopes,
-    fade_alpha as toast_fade_alpha,
+    accent_color as toast_accent_color, card_colors as toast_card_colors,
+    draw_card as draw_toast_card, draw_single_card as draw_toast_single_card, draw_toast_scopes,
+    fade_alpha as toast_fade_alpha, layout_card as toast_layout_card,
 };
 pub use toggle::{checkbox, checkbox_width, switch};
 pub use tooltip::{Tooltip, TooltipPlacement};

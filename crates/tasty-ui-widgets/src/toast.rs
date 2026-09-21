@@ -123,28 +123,8 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
             let max_width = (scope_rect.width() * 0.8)
                 .max(TOAST_MIN_MAX_WIDTH)
                 .min(inner_limit);
-            let font = egui::FontId::proportional(th.font_size_body.value());
-            // wrap_width 음수 방지(클램프로 max_width 가 작아질 때).
-            let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
-
-            // ★ layout 색에 alpha 를 곱하지 않는다 — 본체가 지금 그렇게 그린다.
-            // `Fonts::layout` 에 색을 명시하면 그 색이 galley 에 박히고
-            // `Painter::galley` 의 fallback 은 `Color32::PLACEHOLDER` 구간에만 쓰이므로
-            // **본문 글자는 페이드하지 않고 카드 chrome 만 페이드한다.** 갤러리
-            // specimen 은 여기서 갈려 있었다(글자까지 흐려졌다). 경계를 옮기면서
-            // 시각을 바꾸지 않으려고 본체 쪽을 그대로 둔다 — 어느 쪽이 옳은지는
-            // 디자인이 정할 값이다.
-            let galley = ctx.fonts(|f| {
-                f.layout(
-                    entry.message.clone(),
-                    font.clone(),
-                    th.text_primary().into(),
-                    wrap_width,
-                )
-            });
-
-            let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
-            let toast_h = galley.size().y + PADDING_Y * 2.0;
+            let (galley, size) = layout_card(&ctx, th, entry.message.clone(), max_width);
+            let (toast_w, toast_h) = (size.x, size.y);
 
             let max_x = scope_rect.max.x - SCOPE_MARGIN;
             let bottom_y = cursor_y;
@@ -160,27 +140,90 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
             let rect =
                 egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
 
-            let bg = th.surface_raised().gamma_multiply(alpha);
-            // toast 보더 — canonical `toast-border`.
-            let border = th.toast_border().gamma_multiply(alpha);
-            let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
-
             draw_card(
                 &painter,
                 th,
                 rect,
-                CardColors {
-                    bg: bg.into(),
-                    border: border.into(),
-                    accent,
-                    text: th.text_primary().gamma_multiply(alpha).into(),
-                },
+                card_colors(th, entry.kind, alpha),
                 galley,
             );
 
             cursor_y = top_y - TOAST_GAP;
         }
     }
+}
+
+/// 카드 한 장의 chrome 색 — `alpha` 를 반영한 최종 색.
+///
+/// 본체 스택([`draw_toast_scopes`])과 갤러리의 단일 카드([`draw_single_card`])가 이 함수
+/// 하나로 색을 얻는다. 예전에는 갤러리가 같은 도출을 손으로 되풀이했고, alpha 를 곱하는
+/// 자리가 달랐다 — 본체는 테마 색(straight alpha)에 곱한 뒤 `Color32` 로 바꾸고, 갤러리는
+/// `Color32`(premultiplied)로 바꾼 뒤 곱했다. 두 길은 반올림이 달라(alpha 절사 대 네 채널
+/// 반올림) alpha 가 1 이 아닐 때 채널 값이 몇 LSB 갈린다. alpha 가 1 이면 같다. 정본은
+/// 사용자가 보는 본체 쪽이라 그 순서를 여기 고정한다.
+pub fn card_colors(theme: &Theme, kind: ToastKind, alpha: f32) -> CardColors {
+    CardColors {
+        bg: theme.surface_raised().gamma_multiply(alpha).into(),
+        // toast 보더 — canonical `toast-border`.
+        border: theme.toast_border().gamma_multiply(alpha).into(),
+        accent: accent_color(kind, theme).gamma_multiply(alpha),
+        text: theme.text_primary().gamma_multiply(alpha).into(),
+    }
+}
+
+/// 본문 galley 와 카드 크기(폭 × 높이)를 계산한다.
+///
+/// `max_width` 는 카드 폭 상한이다 — 본체는 스코프 폭에서, 갤러리는
+/// `theme.toast_max_width` 에서 얻는다. 그 상한을 **어디서 얻는가** 만 부르는 쪽이 정하고
+/// 나머지(줄바꿈 폭 · 패딩 · accent 바 · 높이)는 여기서 한 번만 정한다.
+///
+/// ★ layout 색에 alpha 를 곱하지 않는다. `Fonts::layout` 에 색을 명시하면 그 색이
+/// galley 에 박히고 `Painter::galley` 의 fallback 은 `Color32::PLACEHOLDER` 구간에만
+/// 쓰이므로 **본문 글자는 페이드하지 않고 카드 chrome 만 페이드한다.** 글자도 흐려야
+/// 하는지는 디자인이 정할 값이다.
+pub fn layout_card(
+    ctx: &egui::Context,
+    theme: &Theme,
+    message: String,
+    max_width: f32,
+) -> (std::sync::Arc<egui::Galley>, egui::Vec2) {
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+    // wrap_width 음수 방지(스코프 클램프로 max_width 가 작아질 때).
+    let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
+    let galley = ctx.fonts(|f| f.layout(message, font, theme.text_primary().into(), wrap_width));
+    let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
+    let toast_h = galley.size().y + PADDING_Y * 2.0;
+    (galley, egui::vec2(toast_w, toast_h))
+}
+
+/// 스택 없이 카드 **한 장**을 `ui` 에 자리 잡아 그린다.
+///
+/// 폭 상한은 `theme.toast_max_width` 다. 갤러리의 단일 카드 specimen 처럼 스코프가 없는
+/// 자리용이며, 치수와 색은 본체 스택과 같은 [`layout_card`] · [`card_colors`] 에서 온다 —
+/// 부르는 쪽은 무엇을(`kind`, `message`) 얼마나 흐리게(`alpha`) 그릴지만 넘긴다.
+pub fn draw_single_card(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    kind: ToastKind,
+    message: &str,
+    alpha: f32,
+) -> egui::Response {
+    let (galley, size) = layout_card(
+        ui.ctx(),
+        theme,
+        message.to_string(),
+        theme.toast_max_width.value(),
+    );
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    draw_card(
+        &painter,
+        theme,
+        rect,
+        card_colors(theme, kind, alpha),
+        galley,
+    );
+    response
 }
 
 /// 카드 chrome 색 묶음 (부르는 쪽이 alpha 반영 후 최종 색을 채워 넘긴다).
