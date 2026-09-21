@@ -2401,7 +2401,7 @@ help = "마크 대신 이 위치부터 읽기: 앞선 읽기의 next_cursor. 서
 help = "앞선 응답의 스트림 표지. 다른 스트림의 위치(서피스가 재사용됐거나 터미널이 다시 떴음)는 적용되지 않고 거절됨"
 
 [cli.help._root.read.since-mark.arg.max_bytes]
-help = "이번 읽기가 돌려줄 원문 출력 바이트 상한(서버가 보존 크기로 자름). 나머지는 next_cursor 부터 이어 읽기"
+help = "이번 읽기가 돌려줄 원문 출력 바이트 상한(서버가 1..=보존 크기로 자름 — 0 은 한도 없음이 아니라 1 바이트이고, 한도 없이 읽으려면 이 플래그를 뺌). 나머지는 next_cursor 부터 이어 읽기"
 
 [cli.help._root.read.parse-since-mark]
 about = "마지막 마크 이후의 출력을 내장 파서로 파싱 (path/url/prompt_boundary/exit_code)"

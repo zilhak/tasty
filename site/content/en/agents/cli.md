@@ -1,4 +1,4 @@
-<!-- source-hash: 0617be739c69 -->
+<!-- source-hash: 02ff4171771c -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -83,7 +83,7 @@ tasty read since-mark --surface 42 --strip-ansi --cursor 81920 --stream 1a2b-7
 - Tasty remembers nothing for a read that gives a position, so any number of readers never push each other. The mark does not move either.
 - Use `--cursor` only together with `--stream`. If the Surface was closed and another opened under the same number, or its terminal was restarted, the old position is refused with an error instead of being applied — read once without a position to start over.
 - A non-zero `skipped` is what disappeared before you read it. The output buffer keeps only the most recent 1 MiB.
-- `--max-bytes` lowers how much one read returns. Continue from `next_cursor` for the rest.
+- `--max-bytes` lowers how much one read returns. Continue from `next_cursor` for the rest. `0` does not mean "no limit" — it is treated as 1 byte. To read without a limit, leave `--max-bytes` out.
 - An older Tasty that does not know these arguments is **not sent the request**. The command then writes one line, `{"error":{"kind":"unsupported_capability",…,"sent":false}}`, to stderr and exits with code 1. Nothing was sent, so after updating Tasty you can simply call it again.
 
 ### Bounding how long to wait for a reply

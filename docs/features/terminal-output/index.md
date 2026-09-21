@@ -43,7 +43,7 @@
 
 표지가 안 맞는 위치(재사용된 surface id·respawn 된 터미널)·스트림 끝을 넘은 위치·터미널이 없는 surface 는 빈 답이 아니라 **거절**이고, 사유가 `error.data.reason` 으로 갈린다.
 
-CLI 로는 `tasty read since-mark --cursor <next_cursor> --stream <stream>` 이다. 첫 읽기는 위치 없이 하고(마크 또는 `--max-bytes` 만), 응답의 `next_cursor`·`stream` 을 다음 호출에 넘긴다. `--cursor` 는 `--stream` 없이 못 쓴다. `--max-bytes` 는 한 번에 받을 원문 바이트를 줄인다.
+CLI 로는 `tasty read since-mark --cursor <next_cursor> --stream <stream>` 이다. 첫 읽기는 위치 없이 하고(마크 또는 `--max-bytes` 만), 응답의 `next_cursor`·`stream` 을 다음 호출에 넘긴다. `--cursor` 는 `--stream` 없이 못 쓴다. `--max-bytes` 는 한 번에 받을 원문 바이트를 줄인다 — 1 부터 보존 크기(1 MiB)까지이고, `0` 은 한도 없음이 아니라 1 바이트로 올린다(0 이면 매번 빈 답이라 못 나아간다). 한도 없이 읽으려면 인자를 뺀다.
 
 **구 서버는 이 인자를 조용히 버린다** — 인자 객체에 모르는 키 거절이 없어 공유 마크에서 읽고 성공으로 답한다. 그래서 서버는 이 계약을 `system.info` 의 capability `ipc.output-cursor` 로 선언하고, CLI 는 위치 인자(셋 중 하나라도)를 실은 요청을 보내기 **전에** 그 이름을 묻는다. 없으면 요청을 내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability",…,"sent":false}}` 한 줄을 쓴 뒤 종료 코드 1 로 끝난다([ADR-0365](../../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)). 위치 인자 없는 호출은 묻지 않는다.
 

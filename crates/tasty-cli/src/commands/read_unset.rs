@@ -23,7 +23,8 @@ pub enum ReadCommands {
         #[arg(long)]
         stream: Option<String>,
         /// Upper bound on the raw output bytes this read returns (the server clamps it to
-        /// its retention). Continue from next_cursor for the rest
+        /// 1..=its retention, so 0 reads one byte rather than meaning no limit — leave the
+        /// flag out for no limit). Continue from next_cursor for the rest
         #[arg(long)]
         max_bytes: Option<usize>,
     },
