@@ -11,16 +11,14 @@
 //! decision 5: 자체 인증/토큰 레이어 없음 — SSH + 127.0.0.1 loopback 위임.
 //!
 //! attach 제어 API(acquire/release/force_detach/통지)의 호출자는 `attach.*` IPC
-//! 핸들러로, `ipc/handler.rs:5` 와 동일하게 gui 라우팅 경유다. headless 빌드엔
-//! 호출자가 없어(같은 정책) dead_code 를 *headless 한정* 침묵한다. `is_hard_occupied`
-//! (서버 입력 차단)만 headless 에서도 `apply_send_to_surface` 가 호출한다.
+//! 핸들러와 attach 서버이고, headless 빌드에서도 돈다. headless 에 호출자가 없는
+//! 정의는 모듈 단위로 덮지 않고 항목마다 가른다(`docs/dev-guide/headless-build-boundaries.md`):
+//! 렌더 분기용 `is_content_hidden` 은 GUI 와 시험이, markdown 원문 채널의
+//! `workspace_holders` 는 GUI 만 부른다.
 //!
 //! ADR-0040: 이 레지스트리는 hard(원격 attach)와 soft(표시만) 점유를 통합한다. hard 는
 //! 위 기존 메커니즘 그대로이고, soft 는 `soft` 테이블에 additive 로 얹혀 hard 술어를
 //! 오염하지 않는다. 통합 조회는 `occupancy_of`.
-// 이유: 이 레지스트리를 읽고 쓰는 것이 렌더·attach 폴링(gui)이라 headless 엔 호출자가 거의 없다
-// (위 모듈 주석). 모듈을 `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
-#![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
 use std::collections::HashMap;
 
@@ -530,6 +528,7 @@ impl OccupancyRegistry {
 
     /// surface 의 *내용을 숨겨야* 하는가(D2, decision 3). 터미널(surface_locks)이거나
     /// 점유된 workspace 의 멤버(비-터미널 포함)면 true. render 분기용.
+    #[cfg(any(feature = "gui", test))]
     pub fn is_content_hidden(&self, surface_id: SurfaceId) -> bool {
         self.surface_locks.contains_key(&surface_id)
             || self.surface_to_workspace.contains_key(&surface_id)
@@ -563,6 +562,7 @@ impl OccupancyRegistry {
     /// [`Self::client_holds_workspace`] 가 참인 집합과 같다 — markdown 원문 채널이 요청을
     /// 인가하는 집합과 변경 신호를 받는 집합이 갈라지지 않게 같은 표에서 뽑는다
     /// (`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md` 항목 5).
+    #[cfg(feature = "gui")]
     pub fn workspace_holders(&self) -> Vec<AttachClientId> {
         let mut holders: Vec<AttachClientId> =
             self.workspace_locks.values().map(|l| l.holder).collect();
