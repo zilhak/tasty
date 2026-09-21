@@ -921,9 +921,9 @@ impl AppState {
 
     /// Returns true if any dialog with text input is open.
     ///
-    /// headless 빌드에는 dialog 가 없으므로 항상 `false` 다. 그래도 이 판정이 두 조합에
-    /// 다 있는 것은 `ui.state` debug 덤프가 이 값과 [`Self::keyboard_overlay_open`] 을
-    /// 조합과 무관하게 같은 키로 찍기 때문이다.
+    /// headless 빌드에는 dialog 가 없으므로 항상 `false` 다. 그래도 이 판정이 debug 빌드의
+    /// 두 조합에 다 있는 것은(release 헤드리스에는 없다) `ui.state` debug 덤프가 이 값과
+    /// [`Self::keyboard_overlay_open`] 을 두 조합에서 같은 키로 찍기 때문이다.
     #[cfg(any(feature = "gui", debug_assertions))]
     pub fn has_input_dialog_open(&self) -> bool {
         #[cfg(feature = "gui")]
