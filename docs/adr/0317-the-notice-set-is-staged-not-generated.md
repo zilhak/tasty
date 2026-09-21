@@ -90,7 +90,9 @@ deb·tar.gz·AppImage 에서 유지한다 — `THIRD_PARTY_LICENSES.md` 안의 �
   저작권 문구 재현을 요구한다. 그 의무의 현재 충족률은 **0** 이다 — 이 결정 전에도 0 이었고 이
   결정이 그것을 바꾸지 않는다. `deny.toml` 의 licenses allowlist 는 **정책 게이트**이지 고지
   산출물이 아니다.
-- **운영 비용 / 유지 부담**: 새 제3자 자산이 들어오면 움직일 자리가 **다섯**이다 —
+- **운영 비용 / 유지 부담** (2026-09-21 에 세트를 디렉토리로 읽게 되면서 이 항목의 자리 수가
+  줄었다 — 현재 값은 [ADR-0370](0370-macos-and-windows-artifacts-carry-the-notice-set-before-it-is-observed.md)
+  의 Consequences 가 갖는다. 아래는 결정 시점의 기록이다): 새 제3자 자산이 들어오면 움직일 자리가 **다섯**이다 —
   `LICENSES/` · `THIRD_PARTY_LICENSES.md` · `build-linux.sh` 의 `stage_notice` ·
   `[package.metadata.deb]` · `[package.metadata.generate-rpm]`. **그 다섯이 함께 움직이는지
   재는 채널은 없다.** 만들지 않은 이유는 이 회차가 새 게이트를 만들지 않기로 한 회차이기
@@ -148,3 +150,4 @@ deb·tar.gz·AppImage 에서 유지한다 — `THIRD_PARTY_LICENSES.md` 안의 �
 - `.github/workflows/release.yml` 의 publish 잡. (결정이 실현된 현재 위치)
 - `wix/main.wxs` 의 `Component Id='License'` — MSI 가 이미 MIT 본문을 넣는 자리. (결정 시점의 기록)
 - [`docs/dev-guide/dist-build.md`](../dev-guide/dist-build.md) — 빌더가 읽는 절차.
+- 부분 개정: [0370](0370-macos-and-windows-artifacts-carry-the-notice-set-before-it-is-observed.md) (이행 순서 조항과 대안 D 개정 — macOS·Windows 산출물도 관측 전에 배선한다)
