@@ -62,7 +62,8 @@ GUI 부팅 구간은 `check_without_engine` 을 부른다. App 층 가로채기�
 - 게이트에서 검사가 빠지면
   `idempotency::tests::the_envelope_is_judged_at_the_gate_whatever_the_destination` 이 App 층 ·
   namespace · engine 세 목적지 모두에서 빨개진다(변이 확인: `check_request` 의 호출 한 줄을 지우면
-  그 시험이 실패했다, 2026-09-21).
+  그 시험이 실패했다, 2026-09-21). 창 없는 GUI 구간의 `check_without_engine` 갈래도 같은 시험이 gui
+  조합에서 함께 잰다(변이 확인: 그 갈래의 호출 한 줄을 지우면 실패했다, 2026-09-21).
 - `check_request` 를 안 지나는 새 IPC 진입점이 생기면 — 그 진입점은 권한 게이트도 건너뛰므로 게이트
   자신의 시험들(`checked::tests`)이 먼저 문제를 드러낸다. 이 검사는 그 게이트에 얹혀 있다.
 

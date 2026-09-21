@@ -1112,6 +1112,10 @@ mod tests {
     /// 가 그 자리이므로 거기서 잰다.
     ///
     /// 통제군이 같은 시험 안에 있다: 같은 메서드에 경계 안의 키는 게이트를 통과한다.
+    ///
+    /// 게이트는 둘이다. 창도 parked engine 도 없는 GUI 구간의 Local 호출은
+    /// `check_without_engine` 을 지나고, 그 구간에서 부를 수 있는 대표 메서드가 App 층의
+    /// `window.create` 다 — 그 갈래도 같은 판정을 받아야 한다(gui 조합에만 있다).
     #[test]
     fn the_envelope_is_judged_at_the_gate_whatever_the_destination() {
         use crate::ipc::handler::check_request;
@@ -1141,11 +1145,26 @@ mod tests {
                     &req,
                     &CallerContext::Local,
                 );
-                match (r, ok) {
-                    (Ok(_), true) => {}
-                    (Err(e), false) => assert_eq!(e.error.expect("에러").code, -32602, "{method}"),
-                    (Ok(_), false) => panic!("{method}: 길이 {} 키가 게이트를 지났다", key.len()),
-                    (Err(e), true) => panic!("{method}: 경계 안 키가 거절됐다: {e:?}"),
+                #[cfg(feature = "gui")]
+                let without_engine = Some((
+                    "check_without_engine",
+                    crate::ipc::handler::check_without_engine(&req, &CallerContext::Local)
+                        .map(|_| ()),
+                ));
+                #[cfg(not(feature = "gui"))]
+                let without_engine = None;
+                let gates = std::iter::once(("check_request", r.map(|_| ()))).chain(without_engine);
+                for (gate, r) in gates {
+                    match (r, ok) {
+                        (Ok(()), true) => {}
+                        (Err(e), false) => {
+                            assert_eq!(e.error.expect("에러").code, -32602, "{gate} {method}")
+                        }
+                        (Ok(()), false) => {
+                            panic!("{gate} {method}: 길이 {} 키가 게이트를 지났다", key.len())
+                        }
+                        (Err(e), true) => panic!("{gate} {method}: 경계 안 키가 거절됐다: {e:?}"),
+                    }
                 }
             }
         }
