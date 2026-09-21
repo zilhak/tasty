@@ -13,6 +13,8 @@
 
 pub(crate) mod agent;
 pub(crate) mod attach;
+/// attach client 가 받은 mesh 프레임 보관소. 채우는 쪽도 읽는 쪽도 GUI 다.
+#[cfg(feature = "gui")]
 pub(crate) mod attach_mesh_frames;
 pub(crate) mod attach_readonly;
 pub(crate) mod attach_runtime;
@@ -160,6 +162,7 @@ pub(crate) static PRESET_STORE_POISONED: std::sync::atomic::AtomicBool =
 /// 구조 op forward(`PendingStructuralForward`)/resize forward(`pending_resize_forward`)와
 /// 동형의 "popup/domain 이 큐에 push, App 레이어가 drain 해 실제 소켓 IO" 패턴.
 #[derive(Debug, Clone)]
+#[cfg(feature = "gui")]
 pub(crate) struct PendingListDirForward {
     pub(crate) local_ws_id: u32,
     pub(crate) request_id: u64,
