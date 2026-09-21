@@ -78,9 +78,9 @@ use egui::epaint::textures::TexturesDelta;
 use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 
 use super::GpuState;
+use crate::core::egui_mesh_surface::EguiMeshSurface;
 use crate::model::PhysicalRect;
 use crate::plugin::PluginManager;
-use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 use crate::state::AppState;
 
 /// 디코드 ppp 와 host ppp 의 허용 오차. float 비교라 작은 epsilon.

@@ -84,8 +84,8 @@ fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Valu
             // 소유하므로 host list 는 surface_id/path 만 노출한다.
             if let Some(ms) = surface
                 .as_any()
-                .downcast_ref::<crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface>(
-            ) && ms.kind_static == "image"
+                .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>()
+                && ms.kind_static == "image"
             {
                 out.push(json!({
                     "surface_id": ms.id,

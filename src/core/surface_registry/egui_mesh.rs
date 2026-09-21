@@ -11,12 +11,12 @@
 
 use std::sync::Arc;
 
+use crate::core::egui_mesh_surface::EguiMeshSurface;
 use crate::core::surface_registry::{
     KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
 };
 use crate::model::Surface;
 use crate::plugin::manifest::{HOST_API_VERSION, SurfaceKindDecl};
-use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 
 /// kind / i18n 키 문자열을 정적화. 같은 입력에 대해 leak 이 반복되지 않도록
 /// caller(`register_egui_mesh_kind`)가 plugin hello 1회당 한 번만 호출한다.

@@ -41,10 +41,10 @@ use tasty_plugin_protocol::{
     SurfaceSetContextParams, ThemeWire,
 };
 
+use crate::core::egui_mesh_surface::EguiMeshSurface;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::MeshForwardCommon;
-use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 use tasty_ipc::stream_hub::StreamHub;
 
 use super::MainView;

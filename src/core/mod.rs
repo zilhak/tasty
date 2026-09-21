@@ -23,6 +23,7 @@ pub(crate) mod bulk_transfer;
 pub(crate) mod capture_upload;
 pub(crate) mod child_terminal;
 pub(crate) mod command_index;
+pub(crate) mod egui_mesh_surface;
 /// 소비자가 전부 gui 어댑터라 `CoreState` 의 필드와 같은 조건으로 컴파일된다.
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_favorites;

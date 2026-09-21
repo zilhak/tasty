@@ -2459,7 +2459,7 @@ mod mesh_descriptor_display_name_tests {
     //! 대체 표시했다. markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서
     //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(ADR-0255 의 전용
     //! `role:"markdown"` 으로 분류) 여기 fixture 로 쓰지 않는다.
-    use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
+    use crate::core::egui_mesh_surface::EguiMeshSurface;
 
     fn engine_with_mesh_surface(
         kind: &'static str,

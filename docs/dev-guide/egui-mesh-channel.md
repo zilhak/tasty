@@ -39,7 +39,7 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 | host→plugin set_context + 입력 forward | `src/view/main/egui_mesh.rs` |
 | paint_frame 수신 라우팅 / 송신 헬퍼 | `crates/tasty-host-plugin/src/manager/{pump,events,buffer}.rs` |
 | 보조 핸들 채널 (shared buffer 핸들 전송) | host `crates/tasty-host-plugin/src/handle_channel.rs` · plugin `crates/tasty-plugin-sdk/src/handle_channel.rs` · 매핑 `crates/tasty-shm/` |
-| host 측 surface stand-in | `src/plugin_bridge/egui_mesh_surface.rs` |
+| host 측 surface stand-in | `src/core/egui_mesh_surface.rs` |
 | 화이트리스트 + api_version gate + registry 등록 | `src/core/surface_registry/egui_mesh.rs` |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` |
 
@@ -548,7 +548,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   규칙은 로컬 경로와 **완전히 동일**하게 client 에서도 적용된다 — 다만 복구 요청
   (`need_full_textures`)이 로컬 IPC 대신 `StreamControl::MeshFullResendRequest` 네트워크
   프레임으로 나간다는 점만 다르다.
-- **surface stand-in**: 로컬 `EguiMeshSurface`(`src/plugin_bridge/egui_mesh_surface.rs`)의
+- **surface stand-in**: 로컬 `EguiMeshSurface`(`src/core/egui_mesh_surface.rs`)의
   attach 대응은 `AttachMeshSurface`(`crates/tasty-model/src/attach_mesh_surface.rs`) —
   plugin 콘텐츠(예: image 파일 경로)를 소유하지 않는 순수 표시용 stand-in이라 `file` 필드가
   없다(원격이 이미 콘텐츠를 소유·bootstrap 한 상태이므로 client 가 재전달할 게 없다).

@@ -44,7 +44,7 @@ impl AppState {
     /// retain 에 쓴다. 탭 전환/workspace 전환으로 안 보이게 된 surface 의 텍스처 상태를
     /// 파괴하지 않기 위한 열거다.
     pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
-        use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
+        use crate::core::egui_mesh_surface::EguiMeshSurface;
         let mut out: Vec<(u32, String)> = Vec::new();
         for ws in &engine.workspaces {
             for pane_id in ws.pane_layout().all_pane_ids() {

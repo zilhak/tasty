@@ -6,7 +6,6 @@
 
 #[cfg(feature = "gui")]
 pub mod banner_render;
-pub mod egui_mesh_surface;
 #[cfg(feature = "gui")]
 pub mod key_dispatch;
 #[cfg(feature = "gui")]

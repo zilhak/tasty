@@ -118,7 +118,7 @@ impl CoreState {
     pub(crate) fn find_egui_mesh_surface(
         &self,
         surface_id: u32,
-    ) -> Option<&crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface> {
+    ) -> Option<&crate::core::egui_mesh_surface::EguiMeshSurface> {
         for ws in &self.workspaces {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
@@ -128,7 +128,8 @@ impl CoreState {
                             && let Some(surface) = layout.find_surface(surface_id)
                             && let Some(ms) = surface
                                 .as_any()
-                                .downcast_ref::<crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface>()
+                                .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>(
+                            )
                         {
                             return Some(ms);
                         }

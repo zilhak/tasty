@@ -194,7 +194,7 @@ pub(crate) fn relay_mesh_frame_if_new(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
+    use crate::core::egui_mesh_surface::EguiMeshSurface;
     use std::sync::Arc;
     use tasty_terminal::waker_factory::NoopWakerFactory;
 
