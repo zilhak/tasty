@@ -261,8 +261,7 @@ fn names_the_crate_alone(code: &str, i: usize, end: usize) -> bool {
     let before = code[..i].trim_end();
     let prev_word_is = |w: &str| {
         before.ends_with(w)
-            && before[..before.len() - w.len()]
-                .as_bytes()
+            && before.as_bytes()[..before.len() - w.len()]
                 .last()
                 .is_none_or(|c| !is_ident_byte(*c))
     };
