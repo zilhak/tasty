@@ -6,12 +6,14 @@
 //!
 //! Trait 표면은 *런타임 polling 만* — `try_recv()` + `port()`. shutdown 은 Drop.
 //!
-//! `IpcCommand` / `IpcWaker` 타입은 옛 위치 (`crate::ipc::server`) 유지 — wire 형식
-//! (JSON-RPC) 과 강결합이라 trait 옆이 아니라 wire 모듈에 두는 게 자연스럽다.
+//! `IpcCommand` / `IpcWaker` 타입은 wire 크레이트(`tasty_ipc::server`)에 있다 — wire 형식
+//! (JSON-RPC) 과 강결합이라 trait 옆이 아니라 wire 모듈에 두는 게 자연스럽다. 본체의
+//! IPC 모듈 재수출(`ipc::server`)도 같은 모듈이지만 IPC 어댑터(`adapters::ipc`)를 거치므로
+//! 포트는 크레이트를 직접 부른다.
 
 use std::sync::mpsc;
 
-use crate::ipc::server::IpcCommand;
+use tasty_ipc::server::IpcCommand;
 
 /// IPC server adapter — Hub 가 `Option<Box<dyn IpcServerPort>>` 로 보유.
 ///
