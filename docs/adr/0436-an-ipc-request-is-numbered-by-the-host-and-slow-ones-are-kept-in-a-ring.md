@@ -23,7 +23,7 @@ plugin 쪽에서 되짚을 길도 없었다. 호스트가 req_id 를 남기는 �
 **호스트가 요청마다 번호를 매기고, 그 번호로 plugin 대기까지 한 줄에 남긴다.** 부분은 다섯이다.
 
 1. **번호** — `tasty_ipc::server::RequestSeq`. 프로세스 전역 단조 카운터에서 1 부터 받는다. `IpcCommand` 의 생성자가 받으므로(필드가 비공개라 크레이트 밖에서 리터럴로 못 만든다) 소켓 경로와 호스트 주입이 둘 다 번호를 갖는다. **이름에 `trace` 를 쓰지 않는다** — 이미 셋이 그 이름을 쓰고, 넷째가 되면 "RPC id · event trace 와 구분" 이 이름부터 깨진다. JSON-RPC `id` 에서 파생하지 않는다. 멱등 relay 가 키를 뗀 사본을 다시 쌀 때는 `IpcCommand::continuing` 으로 원 번호를 그대로 든다 — 새 번호를 받으면 요청 하나가 번호 둘로 갈린다.
-2. **plugin forward 로 전달** — `forward_namespace_call` 이 원 번호를 받는다(GUI routing · headless forward 는 `Some(cmd.request_seq())`, 파일 핸들러 forward 는 `None`). 번호는 `FinalCaller::Local` 안에 실려 회신처와 **한 몸으로** pre-hook → target → post-hook 사슬을 따라가고, 각 hop 을 대기 표에 넣는 자리가 거기서 읽어 `PendingRequest.origin`(변종이 아니라 구조체 칸 하나)에 복사한다. IPC 큐를 안 지난 plugin 요청(event.dispatch · surface · plugin 이 부른 namespace)은 `None` 이다.
+2. **plugin forward 로 전달** — `forward_namespace_call` 이 원 번호를 받는다(GUI routing · headless forward 는 `Some(cmd.request_seq())`, 파일 핸들러 큐의 forward 는 `None` — 그 큐는 IPC `file_handler.dispatch` 로도 차지만, 번호가 intent → `pending_handler_ipc` 로 옮겨지는 사이에 떨어진다. 아래 "잃은 것"). 번호는 `FinalCaller::Local` 안에 실려 회신처와 **한 몸으로** pre-hook → target → post-hook 사슬을 따라가고, 각 hop 을 대기 표에 넣는 자리가 거기서 읽어 `PendingRequest.origin`(변종이 아니라 구조체 칸 하나)에 복사한다. IPC 큐를 안 지난 plugin 요청(event.dispatch · surface · plugin 이 부른 namespace)도 `None` 이다.
 3. **관측** — `system.pressure` 의 열한째 덩어리 `slow_requests`. 메모리 전용 고정 용량 링이고, 넣는 기준은 **큐 대기 · 호스트 처리 · plugin 대기의 합이 문턱 이상인 요청**이다. 한 줄은 `request_seq` · `host`(`method`(canonical) · `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome` = ok/error/expired/cancelled) · `total_us` 다. 덩어리에는 `threshold_us` · `capacity` · `admitted`(켜진 뒤 링에 든 누계) · `rows` 가 함께 나간다. 기존 열 덩어리는 한 글자도 안 바뀐다.
    - 호스트 몫은 GUI `process_ipc` 와 headless `pump_ipc` 가 **같은 자리**에서 넘긴다(`app::ipc_round::CommandObservation` — 명령을 꺼낸 직후 `begin`, 다 다룬 직후 `finish`). 큐 대기 계측도 그 `begin` 으로 옮겨, 두 루프에 한 자리씩만 남는다.
    - plugin 몫은 매니저가 넘긴다. 번호를 든 요청을 대기 표에 넣을 때 링에 **열린 자리**를 먼저 만들고(forward 는 dispatch 안에서 일어나므로 호스트 몫보다 먼저다), 응답 · 만료 · 취소 때 그 hop 을 같은 줄에 붙인다. 열린 줄은 합이 문턱을 넘는 순간 링으로 옮겨지고, 사슬이 끝났는데 문턱 아래면 치워진다.
@@ -56,6 +56,7 @@ plugin 쪽에서 되짚을 길도 없었다. 호스트가 req_id 를 남기는 �
 - **잃은 것**:
   - 요청마다 메서드 이름 하나를 복사하고(링에 넣지 않을 요청도), 뮤텍스를 한 번 잡는다. 열린 표 탐색은 선형(상한 256)이다.
   - 모수가 **호스트 IPC 큐를 지난 요청**뿐이다. plugin 이 부른 host-call 은 `IpcCommand` 를 안 지나 번호가 없고 링에 안 든다(`handle_checked_request` 로 곧장 간다). plugin 이 부른 namespace forward 도 번호가 없다.
+  - IPC `file_handler.dispatch` 가 plugin 핸들러로 가는 forward 는 **IPC 큐를 지났는데도 번호가 없다.** 명령이 intent → `enqueue_handler_ipc` → `pending_handler_ipc` → `dispatch_pending_handler_ipc` 를 거치는데, 그 큐의 튜플 `(method, target)` 에 번호 칸이 없다. 잇는 방법은 intent 와 큐 튜플에 번호 칸을 두는 것이다. 다만 그 forward 는 caller 에게 답하지 않는 fire-and-forget 이라(`file_handler.dispatch` 의 답은 큐에 넣는 순간 나간다) 이어도 "이 요청이 왜 느렸나" 에 답하는 줄이 되지 않는다. 그래서 미뤘다.
   - `host_us` 는 꺼낸 뒤 호스트가 명령을 다 다루기까지(게이트 포함)라 `handler_after_gate` 와 모수가 다르다. 이름을 다르게 둔 것이 그 표시다.
   - 링은 재시작하면 비고, 번호도 1 부터 다시 센다.
 - **운영 비용 / 유지 부담**:

@@ -59,8 +59,10 @@ impl PluginManager {
     /// 매칭되는 모든 plugin 구독자에게 `event.dispatch` 송신.
     ///
     /// `origin` 은 이 호출을 낳은 IPC 요청의 호스트 번호다 — 큐에서 꺼낸 명령을 넘기는 자리는
-    /// 그 명령의 [`tasty_ipc::server::IpcCommand::request_seq`] 를, IPC 요청에서 오지 않은
-    /// 호출(파일 핸들러 등)은 `None` 을 준다. 번호는 plugin 에게 안 가고 대기 중 표에만 실린다.
+    /// 그 명령의 [`tasty_ipc::server::IpcCommand::request_seq`] 를 준다. 번호를 모르는 호출은
+    /// `None` 이다 — 파일 핸들러 큐를 거친 forward 는 IPC `file_handler.dispatch` 에서 왔더라도
+    /// 큐로 옮겨지는 사이에 번호를 잃어 `None` 이다. 번호는 plugin 에게 안 가고 대기 중 표에만
+    /// 실린다.
     pub fn forward_namespace_call(
         &mut self,
         method: &str,

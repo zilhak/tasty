@@ -135,7 +135,8 @@
 //! 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome`) · `total_us`.
 //!
 //! 모수는 **호스트 IPC 큐를 지난 요청 중 문턱을 넘은 것**이다. plugin 이 부른 host-call 은 큐를
-//! 안 지나 번호가 없어 여기 안 든다. `system.pressure` 자신은 넣지 않는다 — 조회가 링을 밀어내면
+//! 안 지나 번호가 없어 여기 안 든다. IPC `file_handler.dispatch` 가 파일 핸들러 큐를 거쳐 plugin
+//! 으로 넘긴 forward 도 큐에서 번호를 잃어 그 hop 이 원 요청 줄에 안 붙는다. `system.pressure` 자신은 넣지 않는다 — 조회가 링을 밀어내면
 //! 조회할 때마다 원인 요청이 사라진다. 링은 메모리 안의 고정 용량(`capacity`)이라 넘치면 오래된
 //! 줄부터 밀려나고, `admitted` 는 켜진 뒤 링에 든 누계라 줄 수와의 차가 밀려난 수다. `host` 가
 //! `null` 인 줄은 열린 자리가 밀려난 뒤 plugin hop 만 온 것이다.

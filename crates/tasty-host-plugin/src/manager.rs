@@ -130,7 +130,8 @@ pub(super) enum FinalCaller {
         original_id: serde_json::Value,
         /// 이 호출을 낳은 IPC 요청의 호스트 번호. 회신처와 한 몸으로 사슬(pre-hook → target →
         /// post-hook)을 따라가므로, 다음 hop 을 대기 표에 넣는 자리가 여기서 읽어
-        /// [`PendingRequest::origin`] 에 복사한다. IPC 큐를 안 지난 호출이면 `None`.
+        /// [`PendingRequest::origin`] 에 복사한다. 번호를 모르는 호출이면 `None` — IPC 큐를 안 지난
+        /// 호출과, IPC `file_handler.dispatch` 처럼 큐를 지났지만 파일 핸들러 큐에서 번호를 잃은 호출.
         origin: Option<tasty_ipc::server::RequestSeq>,
     },
     Plugin {
@@ -171,8 +172,9 @@ pub(super) struct PendingRequest {
     ///
     /// IPC 요청을 plugin namespace 로 넘긴 것이면 그 요청의 번호이고, pre/post hook 사슬의 다음
     /// hop 도 같은 값이다 — 사슬이 들고 가는 [`FinalCaller::origin`] 에서 복사하므로 사슬 전체가
-    /// 원 요청 하나를 가리킨다. IPC 요청에서 오지 않은 plugin 요청(event.dispatch · surface ·
-    /// plugin 이 부른 namespace 등)은 `None` 이다.
+    /// 원 요청 하나를 가리킨다. 번호를 모르는 plugin 요청은 `None` 이다 — IPC 요청에서 오지 않은
+    /// 것(event.dispatch · surface · plugin 이 부른 namespace 등)과, IPC `file_handler.dispatch` 가
+    /// 파일 핸들러 큐를 거쳐 넘긴 것(큐에 옮겨지는 사이 번호가 떨어진다, ADR-0436).
     ///
     /// `to` 와 같은 이유로 변종이 아니라 여기 칸 하나다 — 어느 변종이 이 값을 가질 수 있는지는
     /// 넘기는 쪽이 정하고, 응답·만료·취소는 변종과 무관하게 이 칸을 읽는다. plugin 에게는 안

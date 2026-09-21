@@ -27,7 +27,8 @@ fn namespace_timeout_message(plugin_id: &str) -> String {
     )
 }
 
-/// 경고 줄에 싣는 원 요청 번호. IPC 요청에서 오지 않은 plugin 요청이면 `none` 이다.
+/// 경고 줄에 싣는 원 요청 번호. 번호를 모르는 plugin 요청이면 `none` 이다(IPC 요청에서 오지 않은
+/// 것, 그리고 파일 핸들러 큐를 거쳐 번호를 잃은 것).
 fn request_seq_label(origin: Option<tasty_ipc::server::RequestSeq>) -> String {
     origin.map_or_else(|| "none".to_string(), |seq| seq.to_string())
 }
@@ -89,7 +90,7 @@ impl PluginManager {
     }
 
     /// 원 IPC 요청 번호를 든 대기 항목 하나가 끝났다 — 그 hop 을 링의 줄에 붙인다. 번호가 없는
-    /// 항목(IPC 요청에서 오지 않은 것)은 남기지 않는다.
+    /// 항목(IPC 요청에서 오지 않았거나 파일 핸들러 큐에서 번호를 잃은 것)은 남기지 않는다.
     ///
     /// `last` 는 사슬이 이 hop 에서 끝나는가다. pre-hook 은 늘 target 으로 이어지고(응답이든
     /// fail-open 이든), post-hook 이 걸린 target 은 응답이 오면 post-hook 으로 이어진다.

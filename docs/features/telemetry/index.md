@@ -200,7 +200,7 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
   다르다. plugin 으로 넘긴 요청이면 넘기는 데까지이고, plugin 을 기다린 시간은 hop 쪽에 있다.
 - **plugin 로그로 되짚기** — `host_request_id` 는 plugin 이 받은 JSON-RPC id 와 같은 값이다. 호스트의
   plugin 오류 응답 경고와 namespace 만료 경고도 같은 줄에 `id=<host_request_id>` 와
-  `request_seq=<번호>` 를 싣는다(IPC 요청에서 오지 않은 plugin 요청이면 `none`). 번호는 plugin 에게
+  `request_seq=<번호>` 를 싣는다(번호를 모르는 plugin 요청이면 `none` — IPC 요청에서 오지 않은 것과 아래 "모수 밖" 의 파일 핸들러 경로). 번호는 plugin 에게
   안 간다 — plugin wire 는 그대로다.
 - **넣는 기준** — 큐 대기 · 호스트 처리 · plugin 대기의 합이 `threshold_us`(100 ms) 이상인 요청만.
   plugin 으로 넘긴 요청은 넘기는 순간 열린 자리를 잡고, 합이 문턱을 넘는 순간 링에 든다 — 그 뒤 hop
@@ -212,7 +212,9 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
 - **싣지 않는 것** — params 원문 · session token · 멱등 키 · JSON-RPC `id` 값. 요청 번호는 레이블로
   쓰지 않는다.
 - **모수 밖** — plugin 이 부른 host-call 은 호스트 IPC 큐를 안 지나 번호가 없고 여기 안 든다. plugin 이
-  부른 namespace forward 도 번호가 없다. `host` 가 `null` 인 줄은 열린 자리가 밀려난 뒤 hop 만 온 것이다.
+  부른 namespace forward 도 번호가 없다. IPC `file_handler.dispatch` 는 요청 자신은 링의 모수에 들지만,
+  그 명령이 파일 핸들러 큐를 거쳐 plugin 으로 넘기는 forward 는 번호를 잃는다 — 그 plugin 대기는 원 요청 줄에
+  안 붙는다(그 forward 는 호출자에게 답하지 않는다). `host` 가 `null` 인 줄은 열린 자리가 밀려난 뒤 hop 만 온 것이다.
 
 값과 상수의 근거는 [ADR-0436](../../adr/0436-an-ipc-request-is-numbered-by-the-host-and-slow-ones-are-kept-in-a-ring.md).
 
