@@ -148,3 +148,4 @@
   (`crates/tasty-ipc/src/capability.rs`), `StreamHub::enable_loss_notify`·
   `StreamHub::repay_pending_loss`·`StreamSink::pending_loss`
   (`crates/tasty-ipc/src/stream_hub.rs`).
+- 부분 개정: [0400](0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md) (통지 지연 조항 개정)
