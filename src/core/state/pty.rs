@@ -296,6 +296,7 @@ impl CoreState {
     }
 
     /// Flush deferred PTY resizes (throttled). Returns true if any terminal still has pending resize.
+    #[cfg(any(feature = "gui", test))]
     pub fn flush_all_pty_resizes(&mut self) -> bool {
         self.terminals.flush_pty_resizes()
     }

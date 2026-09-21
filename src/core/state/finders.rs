@@ -245,6 +245,7 @@ impl CoreState {
 
     /// Resolve a surface to its display path (workspace name + tab display name).
     /// Returns `None` if the surface does not belong to any workspace.
+    #[cfg(any(feature = "gui", test))]
     pub fn surface_display_path(&self, surface_id: u32) -> Option<SurfaceDisplayPath> {
         for workspace in &self.workspaces {
             for pid in workspace.pane_layout().all_pane_ids() {
@@ -268,6 +269,7 @@ impl CoreState {
 /// tab name when known. Used by UI surfaces that label cross-workspace data
 /// (e.g. the port scanner popup) by human-readable name rather than ID.
 #[derive(Clone, Debug)]
+#[cfg(any(feature = "gui", test))]
 pub struct SurfaceDisplayPath {
     pub workspace_name: String,
     pub tab_name: Option<String>,

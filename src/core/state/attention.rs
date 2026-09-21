@@ -148,6 +148,7 @@ impl AttentionStore {
         self.records.get(&surface_id).map(|r| r.kind)
     }
 
+    #[cfg(any(feature = "gui", test))]
     fn count_of_kind(&self, kind: AttentionKind, surface_ids: &[u32]) -> usize {
         surface_ids
             .iter()
@@ -159,6 +160,7 @@ impl AttentionStore {
     /// 한 surface 는 kind 하나만 갖지만, 목록(탭의 여러 surface, 워크스페이스의
     /// 여러 surface)에는 서로 다른 kind 가 섞여 있을 수 있다 — 이 값이 그 목록을
     /// 대표하는 색 하나를 고른다.
+    #[cfg(any(feature = "gui", test))]
     fn dominant_kind(&self, surface_ids: &[u32]) -> Option<AttentionKind> {
         surface_ids
             .iter()

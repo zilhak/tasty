@@ -1191,6 +1191,7 @@ impl CoreState {
     }
 
     /// Record that the user typed on the given surface.
+    #[cfg(any(feature = "gui", test))]
     pub fn record_typing(&mut self, surface_id: u32) {
         self.last_key_input
             .insert(surface_id, std::time::Instant::now());
@@ -1198,6 +1199,7 @@ impl CoreState {
 
     /// Re-plumb the current global theme palette into every terminal so OSC
     /// 10/11/12/4 color queries report the new theme. Called on theme change.
+    #[cfg(any(feature = "gui", test))]
     pub fn resync_terminal_palettes(&mut self) {
         self.terminals.resync_palettes();
     }
@@ -1212,6 +1214,7 @@ impl CoreState {
     }
 
     /// 사용자 picker 선택 기록 — 즉시 디스크에 atomic save. 실패 시 warn 로그.
+    #[cfg(any(feature = "gui", test))]
     pub fn record_file_handler_pick(&mut self, id: &crate::file::handler::HandlerId) {
         self.file_handler_recent.record(id);
         let path = file_handler_recent_path();
@@ -1370,6 +1373,7 @@ impl CoreState {
     }
 
     /// Update stored grid dimensions.
+    #[cfg(any(feature = "gui", test))]
     pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
         self.default_cols = cols;
         self.default_rows = rows;

@@ -40,6 +40,7 @@ impl CoreState {
     /// 어긋나 사용자가 드래그한 영역과 실제 복사되는 텍스트가 달라질 수 있다
     /// (ADR-0049). 휠 스크롤백 mutate(`&mut Terminal` 필요)는 hard 점유 시 자체를
     /// 조기 차단하므로 이 헬퍼로 커버할 필요가 없다.
+    #[cfg(any(feature = "gui", test))]
     pub fn visible_terminal(&self, surface_id: u32) -> Option<&Terminal> {
         if self.attach.is_hard_occupied(surface_id) {
             self.readonly_view(surface_id)

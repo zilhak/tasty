@@ -97,6 +97,7 @@ impl CoreState {
     /// `StreamControl::Cwd` 를 적용하는 유일한 writer 다(`app/attach_client.rs`).
     /// `None` 은 원격도 cwd 를 모르게 됐다는 뜻이라 엔트리를 지운다 — 남겨 두면 옛 원격
     /// 경로가 영구히 남는다.
+    #[cfg(any(feature = "gui", test))]
     pub fn set_mirror_surface_cwd(&mut self, surface_id: u32, cwd: Option<String>) {
         match cwd {
             Some(path) => {
@@ -112,6 +113,7 @@ impl CoreState {
     /// mirror surface 의 cwd 레코드를 버린다(surface 제거 · 워크스페이스/세션 teardown ·
     /// kind 전환). busy 와 달리 cwd 는 비-terminal kind 에도 있으므로 kind 전환 전부에서
     /// 부른다.
+    #[cfg(any(feature = "gui", test))]
     pub fn forget_mirror_surface_cwd(&mut self, surface_id: u32) {
         self.mirror_surface_cwd.remove(&surface_id);
     }

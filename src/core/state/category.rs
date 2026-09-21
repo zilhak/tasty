@@ -56,6 +56,7 @@ impl CoreState {
     /// 제거하고 그 안의 워크스페이스를 모두 normal 로 귀속한다. **워크스페이스의 물리
     /// 순서(전역 인덱스)는 그대로 두므로** active(전역 인덱스) 도 불변이다 — 사이드바가
     /// off 면 평면이라 순서만 보존되면 충분하다.
+    #[cfg(any(feature = "gui", test))]
     pub fn collapse_categories_to_normal(&mut self) {
         use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
         for ws in &mut self.workspaces {
@@ -186,6 +187,7 @@ impl CoreState {
     }
 
     /// 카테고리 접힘 상태를 뒤집는다(호출부 단순화용 편의 메서드). 대상이 없으면 no-op.
+    #[cfg(any(feature = "gui", test))]
     pub fn toggle_category_collapsed(&mut self, id: crate::model::WorkspaceCategoryId) {
         if let Some(cat) = self.categories.iter_mut().find(|c| c.id == id) {
             cat.collapsed = !cat.collapsed;
@@ -196,6 +198,7 @@ impl CoreState {
     /// 전부 접고, 전부 접혀 있으면 전부 편다** — "전체 접기/펴기" 단축키용. `set_category_collapsed`
     /// 와 동일하게 접힘은 layout.json 영속 대상이므로 호출자가 `mark_layout_dirty` 를 책임진다.
     /// 카테고리가 normal 하나뿐이어도 그 하나를 토글한다.
+    #[cfg(any(feature = "gui", test))]
     pub fn toggle_all_categories_collapsed(&mut self) {
         let target = self.categories.iter().any(|c| !c.collapsed);
         for cat in &mut self.categories {

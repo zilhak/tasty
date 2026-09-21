@@ -89,6 +89,7 @@ impl CoreState {
     /// `refresh_busy_surfaces` poll). When true, the capture-active hint banner
     /// is skipped while capture itself remains on — independent of
     /// [`is_surface_mouse_capture_disabled`](Self::is_surface_mouse_capture_disabled).
+    #[cfg(any(feature = "gui", test))]
     pub fn is_surface_mouse_capture_banner_suppressed(&self, surface_id: u32) -> bool {
         self.mouse_capture_banner_suppressed_surfaces
             .contains(&surface_id)
@@ -124,6 +125,7 @@ impl CoreState {
     /// `vim` starts again before the next poll) are not distinguished as a new
     /// incarnation — a known limitation shared with the mouse-capture blacklist
     /// matching (ADR-0055), which is also name-based rather than pid-based.
+    #[cfg(any(feature = "gui", test))]
     pub fn foreground_generation(&self, surface_id: u32) -> u64 {
         self.foreground_generation
             .get(&surface_id)
@@ -163,6 +165,7 @@ impl CoreState {
     /// `StreamControl::Activity` push from the remote host it mirrors
     /// (`app/attach_client.rs`). This is the only writer of
     /// `mirror_busy_surfaces` — local terminals are never touched here.
+    #[cfg(any(feature = "gui", test))]
     pub fn set_mirror_surface_busy(&mut self, surface_id: u32, busy: bool) {
         if busy {
             self.mirror_busy_surfaces.insert(surface_id);
@@ -173,6 +176,7 @@ impl CoreState {
 
     /// Drop a mirror terminal's tracked busy state entirely (surface removed —
     /// mirror workspace/session torn down, or a structural delta dropped it).
+    #[cfg(any(feature = "gui", test))]
     pub fn forget_mirror_surface_busy(&mut self, surface_id: u32) {
         self.mirror_busy_surfaces.remove(&surface_id);
     }

@@ -110,6 +110,7 @@ impl TerminalStore {
 
     /// Re-plumb the current theme palette into every terminal. Called after a
     /// theme change so subsequent OSC color queries report the new theme.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn resync_palettes(&mut self) {
         let palette = current_terminal_palette();
         for t in self.terminals.values_mut() {
@@ -173,6 +174,7 @@ impl TerminalStore {
     }
 
     /// PTY resize throttled flush. 한 곳이라도 pending 이면 true.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn flush_pty_resizes(&mut self) -> bool {
         let mut any_pending = false;
         for t in self.terminals.values_mut() {
