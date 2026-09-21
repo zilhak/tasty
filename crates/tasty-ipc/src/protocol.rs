@@ -73,6 +73,14 @@ pub const ERR_IDEMPOTENT_RESULT_DISCARDED: i32 = -32064;
 /// 않는다 — 줄은 끝까지 읽혔으므로 다음 요청이 같은 연결로 와도 된다.
 pub const ERR_COMMAND_QUEUE_FULL: i32 = -32065;
 
+/// 연결이 열린 뒤 첫 요청 줄이 정해진 시간 안에 오지 않아 호스트가 연결을 닫는다.
+/// **요청이 실행되지 않았다** — 줄을 받지 못했으므로 실행할 것이 없다.
+///
+/// 이 한도는 **첫 줄에만** 걸린다. 한 번이라도 요청을 보낸 연결은 요청 사이에 얼마나
+/// 쉬어도 닫히지 않는다(오래 붙어 있는 client 의 호환). 이 답은 최선 노력이다 — 쓰기에도
+/// 시간 상한이 있어 client 는 이 줄 대신 EOF 를 볼 수 있다. 근거는 ADR-0392.
+pub const ERR_FIRST_LINE_IDLE: i32 = -32066;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,

@@ -331,3 +331,4 @@
 | 0381 | [셀 렌더러의 잎 크레이트 셋은 dev 에서도 최적화한다](0381-the-cell-renderer-leaf-crates-are-optimized-in-dev.md) | Accepted | 2026-09-21 | build, dev-profile, opt-level, renderer, selection, terminal-link, cell-width, measurement, adr-0342 |
 | 0385 | [webview 백엔드는 호스트 계약을 주입받는다 — 탐색 상태는 도메인 모델, 키 정책은 콤보 목록, 키 접점은 trait](0385-webview-backends-receive-their-host-contract-by-injection.md) | Accepted | 2026-09-21 | architecture, webview, host-api, keybindings, layering, injection, cross-platform, adr-0102, adr-0320 |
 | 0391 | [명령 큐는 쌓인 바이트와 주입 깊이로 입장을 판정한다](0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md) | Accepted | 2026-09-21 | ipc, resource-bounds, admission, backpressure, queue, host-call, webhook, adr-0304, adr-0313, adr-0327 |
+| 0392 | [첫 요청 줄에만 idle 기한을 건다](0392-only-the-first-request-line-has-an-idle-deadline.md) | Accepted | 2026-09-21 | ipc, resource-bounds, connection, idle, timeout, compatibility, adr-0304, adr-0327 |

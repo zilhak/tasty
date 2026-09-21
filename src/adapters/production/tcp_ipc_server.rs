@@ -25,6 +25,8 @@ use tasty_ipc::admission::{
 };
 use tasty_ipc::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 
+mod first_line;
+
 /// 한 요청 줄이 읽어 들일 수 있는 최대 바이트.
 ///
 /// `read_line` 은 개행을 만날 때까지 `String` 을 키운다. 상한이 없으면 **개행을 끝내
@@ -62,6 +64,9 @@ enum LineRead {
     Eof,
     /// 개행 없이 [`MAX_REQUEST_LINE_BYTES`] 를 채웠다 — 거절을 응답으로 알리고 닫는다.
     TooLong,
+    /// 읽기 기한이 지났다. 기한은 첫 줄에만 걸리므로([`first_line`]) 이 갈래는 첫 줄
+    /// 자리에서만 난다 — 거절을 응답으로 알리고 닫는다.
+    Idle,
     /// 소켓 오류 또는 비-UTF-8.
     Failed,
 }
@@ -280,6 +285,7 @@ impl TcpIpcServer {
         let shutdown_clone = shutdown.clone();
         let accept_tx = cmd_tx.clone();
         let accept_admission = admission.clone();
+        let first_line_idle = first_line::first_line_idle_timeout();
         // 살아 있는 연결 수 + 포화 로그 게이트. accept 스레드만 읽고 쓰지만 자리 반납은
         // 각 연결 스레드의 `Drop` 이 하므로 공유 소유가 필요하다. 계수는 호출자가 준
         // 게이지에 쌓인다 — 포화 게이트는 로그 전용이라 여기서 만든다.
@@ -304,7 +310,14 @@ impl TcpIpcServer {
                         let waker = waker.clone();
                         let stream_ctx = stream_ctx.clone();
                         thread::spawn(move || {
-                            Self::handle_connection(stream, queue, waker, stream_ctx, slot);
+                            Self::handle_connection(
+                                stream,
+                                queue,
+                                waker,
+                                stream_ctx,
+                                slot,
+                                first_line_idle,
+                            );
                         });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -403,6 +416,7 @@ impl TcpIpcServer {
         waker: Option<IpcWaker>,
         stream_ctx: StreamContext,
         _slot: ConnectionSlot,
+        first_line_idle: Duration,
     ) {
         let Some((mut reader, mut writer, peer)) = Self::prepare_stream(stream) else {
             return;
@@ -412,8 +426,15 @@ impl TcpIpcServer {
         // buffered after it. On a streaming-channel upgrade those buffered bytes
         // are the start of the binary frames following the handshake line.
         let mut line = String::new();
-        match Self::read_first_line(&mut reader, &mut line, peer) {
+        match Self::read_first_line(&mut reader, &mut line, peer, first_line_idle) {
+            // 첫 줄의 기한은 여기까지다 — 걷지 못하면 요청 사이의 쉼에 상한이 남으므로 닫는다.
+            LineRead::Line if !first_line::clear_read_timeout(&reader) => return,
             LineRead::Line => {}
+            // 줄을 끝내 안 보냈다 — 자리를 돌려주기 전에 사유를 알린다.
+            LineRead::Idle => {
+                Self::refuse_idle_first_line(&mut writer, peer, first_line_idle);
+                return;
+            }
             // 첫 줄이 상한을 넘었다 — 이 연결은 업그레이드 판별에 닿지 못한다.
             // 핸드셰이크 줄은 상한 근처에 갈 일이 없으므로 여기서 RPC 쪽 거절로
             // 답하는 것이 맞다.
@@ -539,6 +560,7 @@ impl TcpIpcServer {
                 LineRead::TooLong
             }
             Ok(_) => LineRead::Line,
+            Err(e) if first_line::is_idle_expiry(&e) => LineRead::Idle,
             Err(e) => {
                 tracing::warn!("IPC read error from {:?}: {}", peer, e);
                 LineRead::Failed
@@ -554,12 +576,20 @@ impl TcpIpcServer {
     /// 그냥 끝내면 되지만, [`LineRead::TooLong`] 은 **끝내기 전에 답할 일**이 남아 있다
     /// ([`Self::refuse_oversized_line`]). 그 갈래를 `Failed` 와 한 덩어리로 다루면 첫 줄
     /// 초과가 다시 무응답 종료로 돌아간다.
+    ///
+    /// 첫 줄에는 `within` 의 기한이 줄 전체에 걸린다([`first_line`]). 만료는
+    /// [`LineRead::Idle`] 로 돌아온다.
     fn read_first_line(
         reader: &mut BufReader<std::net::TcpStream>,
         line: &mut String,
         peer: Option<std::net::SocketAddr>,
+        within: Duration,
     ) -> LineRead {
-        let outcome = Self::read_line_capped(reader, line, peer);
+        let outcome = Self::read_line_capped(
+            &mut first_line::DeadlineReader::new(reader, within),
+            line,
+            peer,
+        );
         if matches!(outcome, LineRead::Eof) {
             tracing::debug!("IPC client disconnected (eof) {:?}", peer);
         }
@@ -588,7 +618,8 @@ impl TcpIpcServer {
                     Self::refuse_oversized_line(writer, peer);
                     break;
                 }
-                LineRead::Eof | LineRead::Failed => break,
+                // `Idle` 은 요청 사이에 기한이 없으므로 여기서는 안 난다 — 나면 소켓 오류로 본다.
+                LineRead::Eof | LineRead::Failed | LineRead::Idle => break,
             }
             if !Self::process_request_line(line, queue, waker, writer, peer) {
                 break;
@@ -995,6 +1026,51 @@ impl TcpIpcServer {
         }
         if let Err(e) = flush_result {
             tracing::debug!("IPC oversize refusal flush failed for {peer:?}: {e}");
+        }
+    }
+
+    /// 첫 줄 기한 만료를 **응답으로** 알린다. 쓰고 나면 호출자가 연결을 끝낸다.
+    ///
+    /// 연결을 닫는 이유가 "줄이 안 왔다" 라는 것을 client 가 EOF 와 구별하게 하려는 것이다 —
+    /// 네트워크 단절과 처방이 다르다(앞은 연결 직후 바로 보내면 되고, 뒤는 다시 붙는다).
+    /// 쓰기 상한을 여기서 거는 이유는 [`Self::refuse_oversized_line`] 과 같다 — 업그레이드
+    /// 판별 전이라 아직 안 걸려 있고, 줄을 안 보내는 peer 는 응답도 안 읽을 수 있다.
+    ///
+    /// 받은 바이트가 있었어도(개행 없이 흘린 경우) `id` 는 `Null` 이다 — 끝나지 않은 줄이다.
+    fn refuse_idle_first_line(
+        writer: &mut std::net::TcpStream,
+        peer: Option<std::net::SocketAddr>,
+        within: Duration,
+    ) {
+        tracing::warn!(
+            "IPC client {peer:?} sent no complete request line within {within:?} — closing the connection"
+        );
+        Self::arm_response_write_timeout(writer);
+        let resp = JsonRpcResponse::error(
+            serde_json::Value::Null,
+            crate::ipc::protocol::ERR_FIRST_LINE_IDLE,
+            format!(
+                "no complete request line arrived within {} ms of connecting — nothing ran; \
+                 the connection is closed, send the request right after connecting",
+                within.as_millis()
+            ),
+        );
+        Self::write_final_line(writer, &resp, peer);
+    }
+
+    /// 닫기 직전의 마지막 응답 한 줄을 쓴다. 이 연결은 어차피 끝나므로 쓰기 실패는 남기기만 한다.
+    fn write_final_line(
+        writer: &mut std::net::TcpStream,
+        resp: &JsonRpcResponse,
+        peer: Option<std::net::SocketAddr>,
+    ) {
+        let json = serde_json::to_string(resp).unwrap();
+        let (write_result, flush_result) = Self::write_json_line(writer, &json);
+        if let Err(e) = write_result {
+            tracing::debug!("IPC closing refusal write failed for {peer:?}: {e}");
+        }
+        if let Err(e) = flush_result {
+            tracing::debug!("IPC closing refusal flush failed for {peer:?}: {e}");
         }
     }
 
@@ -1565,6 +1641,83 @@ mod admission_tests {
 
     fn slots() -> (Arc<ConnectionStats>, AtomicBool) {
         (Arc::new(ConnectionStats::default()), AtomicBool::new(false))
+    }
+
+    /// `handle_connection` 을 실제 소켓 쌍 위에서 돌린다. 끝나면 `done` 에 신호가 온다.
+    fn serve_one(
+        first_line_idle: Duration,
+    ) -> (
+        std::net::TcpStream,
+        Arc<ConnectionStats>,
+        mpsc::Receiver<()>,
+        mpsc::Receiver<IpcCommand>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let client =
+            std::net::TcpStream::connect(listener.local_addr().expect("addr")).expect("connect");
+        let (server_side, _) = listener.accept().expect("accept");
+        let (stats, sat) = slots();
+        let slot = ConnectionSlot::try_acquire(&stats, &sat).expect("seat");
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let queue = test_queue(cmd_tx, QueueLimits::DEFAULT);
+        let (inbound_tx, _inbound_rx) = mpsc::channel();
+        let ctx = StreamContext {
+            hub: tasty_ipc::stream_hub::StreamHub::new(),
+            inbound_tx,
+            waker: Arc::new(|| {}),
+        };
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            TcpIpcServer::handle_connection(server_side, queue, None, ctx, slot, first_line_idle);
+            // 받는 쪽이 이미 실패해 사라졌을 수 있다 — 그때 시험은 다른 실패문으로 끝난다.
+            let _ = done_tx.send(());
+        });
+        (client, stats, done_rx, cmd_rx)
+    }
+
+    // 줄을 한 번도 안 보내는 연결은 기한에서 **사유를 받고** 닫히며, 자리가 돌아온다.
+    // 이 상한이 없으면 연결 스레드가 첫 읽기에서 영원히 멈추고 자리를 쥔다.
+    #[test]
+    fn a_connection_that_never_sends_a_line_is_told_why_and_its_seat_returned() {
+        let (client, stats, done, _cmd_rx) = serve_one(Duration::from_millis(100));
+        assert_eq!(stats.snapshot().live, 1);
+        done.recv_timeout(Duration::from_secs(5))
+            .expect("the connection thread never ended — the first line has no deadline");
+        assert_eq!(stats.snapshot().live, 0, "the seat was not returned");
+
+        let mut got = String::new();
+        BufReader::new(client).read_line(&mut got).expect("read");
+        let resp: JsonRpcResponse =
+            serde_json::from_str(got.trim()).expect("one JSON line, not a bare close");
+        let err = resp.error.expect("error response");
+        assert_eq!(err.code, crate::ipc::protocol::ERR_FIRST_LINE_IDLE);
+        assert!(err.message.contains("nothing ran"), "{}", err.message);
+    }
+
+    // 기한은 **첫 줄에만** 걸린다. 첫 줄 뒤에는 기한보다 오래 쉬어도 연결이 살아 있어야
+    // 한다 — 요청 사이에 쉬는 client 의 호환이 이 결정의 조건이다.
+    #[test]
+    fn a_pause_after_the_first_line_does_not_close_the_connection() {
+        let (mut client, stats, done, _cmd_rx) = serve_one(Duration::from_millis(100));
+        client.write_all(b"\n").expect("first line");
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(
+            done.try_recv().is_err(),
+            "the connection closed during a pause after its first line"
+        );
+        assert_eq!(stats.snapshot().live, 1);
+
+        // 연결이 살아 있다는 것을 응답으로 확인한다 — 잘못된 JSON 은 parse error 로 답한다.
+        client.write_all(b"{not json\n").expect("second line");
+        let mut got = String::new();
+        BufReader::new(client.try_clone().expect("clone"))
+            .read_line(&mut got)
+            .expect("read");
+        let resp: JsonRpcResponse = serde_json::from_str(got.trim()).expect("json");
+        assert_eq!(resp.error.expect("error").code, -32700);
+        drop(client);
+        done.recv_timeout(Duration::from_secs(5))
+            .expect("ends on EOF");
     }
 
     // 자리는 잡히고, 스레드가 어떻게 끝나든 Drop 이 돌려준다.
