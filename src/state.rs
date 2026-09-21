@@ -6,6 +6,9 @@
 
 mod accessors;
 mod detect;
+// dialog·popup 입력 상태는 GUI 가 소유한다 — headless 에는 세우는 쪽도 비우는 쪽도 없다
+// (`docs/dev-guide/app-state-ownership.md`).
+#[cfg(feature = "gui")]
 mod dialogs;
 mod events;
 mod focus;
@@ -40,11 +43,13 @@ pub mod search;
 /// 거꾸로 보지 않도록 타입 소속만 내렸다). 기존 `state::selection::…` 호출부는 그대로다.
 pub use tasty_selection as selection;
 
+#[cfg(feature = "gui")]
 pub use dialogs::{
     DialogState, FileHandlerPickerData, FileHandlerPickerResult, PendingNativeMenu,
     PendingScriptConfirm, PickerHandlerSummary, RenameTarget, TabDragState, TerminalLinkMenu,
     WsDragState,
 };
+#[cfg(feature = "gui")]
 pub(crate) use dialogs::{FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
 pub use events::{FocusedSurfaceType, PendingHostEvent, PendingSurfaceClosed, SurfaceMessage};
 pub use workspace::WorkspaceCloseOrigin;
@@ -209,6 +214,7 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) tutorial: crate::adapters::ui::tutorial::TutorialRuntime,
     /// All transient dialog/popup state.
+    #[cfg(feature = "gui")]
     pub(crate) dialogs: DialogState,
     /// 측정된 탭바 높이(물리 픽셀). 매 프레임 `adapters::ui::tab_bar` 가 실측값으로
     /// 덮는다 — 여기 있는 것은 **아직 안 쟀다**는 뜻의 자리표시자다.
@@ -598,6 +604,7 @@ impl AppState {
             ),
             #[cfg(feature = "gui")]
             tutorial: crate::adapters::ui::tutorial::TutorialRuntime::default(),
+            #[cfg(feature = "gui")]
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(0.0),
             pending_lifecycle_events: Vec::new(),
@@ -801,8 +808,19 @@ impl AppState {
     }
 
     /// Returns true if any dialog with text input is open.
+    ///
+    /// headless 빌드에는 dialog 가 없으므로 항상 `false` 다. 그래도 이 판정이 두 조합에
+    /// 다 있는 것은 `ui.state` debug 덤프가 이 값과 [`Self::keyboard_overlay_open`] 을
+    /// 조합과 무관하게 같은 키로 찍기 때문이다.
     pub fn has_input_dialog_open(&self) -> bool {
-        self.dialogs.has_text_input_open()
+        #[cfg(feature = "gui")]
+        {
+            self.dialogs.has_text_input_open()
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            false
+        }
     }
 
     /// 키/IME 를 host egui 로 들여보낼지(그리고 터미널 포워딩을 막을지) 판정한다.
@@ -830,6 +848,7 @@ impl AppState {
     /// 소유 관계는 자식 쪽(`FilePickerRequester.owner_popup_instance`)에만 기록되므로
     /// 이 조회가 곧 단일 진실이다 — 부모 쪽에 사본을 두지 않아 둘이 어긋날 수 없다.
     /// host 는 plugin id/kind 를 보지 않는다(핵심 원칙 2 — generic 계약).
+    #[cfg(feature = "gui")]
     pub(crate) fn plugin_popup_has_open_child(&self, instance_id: u64) -> bool {
         self.dialogs
             .file_picker
@@ -844,6 +863,7 @@ impl AppState {
     /// plugin egui-mesh popup 도 센다 — 이 값의 소비처(webview 가리기)는 "네이티브
     /// 뷰가 egui 오버레이를 덮지 않게" 하는 목적이고, plugin popup 도 같은 wgpu
     /// 표면 위에 그려지므로 host popup 과 구분할 이유가 없다.
+    #[cfg(feature = "gui")]
     pub fn has_egui_overlay_open(&self) -> bool {
         // `settings_open_requested`/`plugins_open` 은 **여기 안 든다.** 그 둘은 "열려 있는가" 가 아니라
         // 한 프레임짜리 **열기 요청**이고(선언부 주석 참조), 두 모달은 `event_loop.create_window`
@@ -866,7 +886,6 @@ impl AppState {
         // 여부(`MainView::sync_webviews`)인데, WebView 는 OS 네이티브 자식 뷰라 wgpu
         // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
         // 반드시 `set_visible(false)` 가 필요하고, 그 게이트가 바로 이 함수다.
-        #[cfg(feature = "gui")]
         let open = open
             || self.popups.has_visible_open()
             || self.fullscreen_stage.is_some()

@@ -16,7 +16,9 @@ use std::path::PathBuf;
 
 use crate::file::format::{DetectorId, FileTarget};
 use crate::file::handler::{FileHandler, HandlerAction, HandlerId};
-use crate::state::{AppState, FileHandlerPickerData, PickerHandlerSummary};
+use crate::state::AppState;
+#[cfg(feature = "gui")]
+use crate::state::{FileHandlerPickerData, PickerHandlerSummary};
 
 /// 파일 열기를 **누가** 시작했는가. `origin_surface_id` 와 축이 다르다 — 저쪽은
 /// *어디로* 가는가(라우팅)이고 이쪽은 *누가* 요청했는가다.
@@ -201,6 +203,7 @@ fn hex_val(b: u8) -> Option<u8> {
 ///
 /// 대상이 받지 못하는 핸들러([`handler_accepts_target`])는 후보에서도 recent 에서도
 /// 뺀다 — recent 는 `candidates` 와 무관하게 저장 파일에서 읽히므로 따로 거른다.
+#[cfg(feature = "gui")]
 pub(crate) fn open_picker(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
@@ -243,18 +246,16 @@ pub(crate) fn open_picker(
         result: None,
         ignore_size_limit,
     });
-    #[cfg(feature = "gui")]
     state
         .popups
         .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
-    #[cfg(not(feature = "gui"))]
-    let _ = state; // headless: picker popup unavailable.
 }
 
 /// picker 의 두 그룹(recent, 후보)을 만든다 — **한 목록 안의 두 묶음**이다. 둘 다
 /// 대상이 받지 못하는 핸들러를 빼고, 후보는 recent 와 겹치는 항목을 뺀다(같은 목록에
 /// 두 번 나온다). recent 에서 걸러진 핸들러는 후보 쪽 중복 제거에도 쓰이지 않는다 —
 /// 걸러졌으면 어느 그룹에도 없다.
+#[cfg(feature = "gui")]
 fn picker_lists(
     target: &DispatchTarget,
     recent_handlers: &[(FileHandler, i64)],
@@ -279,6 +280,7 @@ fn picker_lists(
 /// 핸들러로 열 수 없으므로 후보도 **recent 도** 싣지 않는다 — `open_picker` 는 recent 를
 /// 저장 파일에서 채우므로, 그것을 쓰면 사용자가 recent 를 골라 로컬 핸들러가 원격 경로로
 /// 실행된다.
+#[cfg(feature = "gui")]
 pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileTarget) {
     let target = DispatchTarget::File(target);
     let target_display = target.display();
@@ -298,12 +300,12 @@ pub(crate) fn open_remote_placeholder_picker(state: &mut AppState, target: FileT
         result: None,
         ignore_size_limit: false,
     });
-    #[cfg(feature = "gui")]
     state
         .popups
         .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
 }
 
+#[cfg(feature = "gui")]
 fn handler_to_summary(h: &FileHandler, last_used_at: Option<i64>) -> PickerHandlerSummary {
     // 키가 번역 테이블에 없으면 `t` 가 키를 그대로 돌려준다 — 그것은 표시명이 아니라
     // 선언이 안 풀린 것이므로 `None` 으로 떨어뜨려 화면이 id 조각을 쓰게 한다.
@@ -681,6 +683,8 @@ mod tests {
 
     /// recent 는 candidates 와 무관하게 저장 파일에서 읽힌다 — URL 을 못 받는 핸들러가
     /// recent 에 있어도 picker 의 어느 그룹에도 실리지 않아야 한다.
+    // picker 행은 GUI 가 소유하는 popup 상태라 headless 테스트 구성에는 대상이 없다.
+    #[cfg(feature = "gui")]
     #[test]
     fn picker_lists_drop_handlers_that_cannot_take_a_url_from_recent_and_candidates() {
         let md = handler("host/md", open_surface("markdown", "file"));
@@ -715,6 +719,7 @@ mod tests {
     /// 원격 경로 picker 는 recent 가 차 있어도 어느 그룹에도 핸들러를 싣지 않는다 — 실으면
     /// 사용자가 recent 를 골라 로컬 핸들러가 원격 호스트 경로로 실행된다. 갓 만든 프로필은
     /// recent 가 비어 있어 이 결함이 안 드러나므로 recent 를 먼저 채운다.
+    #[cfg(feature = "gui")]
     #[test]
     fn remote_placeholder_picker_carries_no_recent_even_when_recent_is_populated() {
         let (mut state, mut engine) = crate::state::tests::test_state();

@@ -167,11 +167,16 @@ fn save(
     };
 
     // User origin cascade: save 후 PresetView 자동 오픈 + select.
-    // Agent origin 은 cascade 미수행 (focus 독립성).
+    // Agent origin 은 cascade 미수행 (focus 독립성). headless 에는 열 창도 이 요청을 비울
+    // 소비자(`process_pending_open_preset_window`)도 없어 요청 자체를 안 만든다.
+    #[cfg(feature = "gui")]
     if intent.origin.is_user() {
         state.dialogs.pending_open_preset_window = true;
         state.dialogs.pending_preset_window_selection = Some((kind, saved_name));
     }
+    // headless: 위 요청을 만들지 않으므로 세 값을 읽는 쪽이 없다.
+    #[cfg(not(feature = "gui"))]
+    let _ = (intent, kind, saved_name);
 }
 
 // ───────────────────────────────── Shared mutation API ─────────────────────────────────

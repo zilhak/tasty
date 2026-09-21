@@ -659,7 +659,9 @@ pub struct CoreState {
     /// 파일 핸들러 디스패치 테이블. `PluginManager` 와 같은 Arc 를 공유한다.
     pub(crate) file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     /// 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (보조 신호).
-    /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save.
+    /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save. picker 가 GUI popup 이라 읽는
+    /// 쪽도 기록하는 쪽도 gui 에만 있다.
+    #[cfg(feature = "gui")]
     pub(crate) file_handler_recent: crate::file::handler::recent::RecentPicks,
     /// 비동기 파일 식별 worker. `App` 이 EventLoopProxy 를 가진 시점에
     /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴.
@@ -984,6 +986,7 @@ impl CoreState {
                 }
                 Arc::new(reg)
             },
+            #[cfg(feature = "gui")]
             file_handler_recent: crate::file::handler::recent::RecentPicks::load(
                 &file_handler_recent_path(),
             ),
@@ -1426,6 +1429,7 @@ fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
 
 /// `~/.tasty/file-handler-recent.json` — picker 선택 LRU. 부팅 시 로드, 매 선택마다 save.
 /// 홈을 못 찾으면 (CI 등) 임시 경로로 fallback — save 가 안 되더라도 in-memory 동작.
+#[cfg(feature = "gui")]
 fn file_handler_recent_path() -> std::path::PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("file-handler-recent.json"))

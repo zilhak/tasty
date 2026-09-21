@@ -70,5 +70,6 @@ cargo check --workspace --all-targets
 - headless 의 OSC 7 cwd 변경은 탭 이름을 갱신하지 않는다. 터미널 이벤트에서 그 intent 로
   가는 배선이 그 빌드에 없어, drain 의 처리 갈래가 도달 불가능했다.
 
-관련 문서: [build](build.md) · [model-view-split](model-view-split.md) ·
+관련 문서: [app-state-ownership](app-state-ownership.md)(이 규칙을 `AppState` 필드에 적용한 표) ·
+[build](build.md) · [model-view-split](model-view-split.md) ·
 [unit-test-isolation](unit-test-isolation.md) · [action-dispatch](../design/flows/action-dispatch.md)

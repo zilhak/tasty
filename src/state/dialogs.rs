@@ -16,8 +16,8 @@ use super::selection;
 /// 링크 우클릭 메뉴의 대상 — 우클릭 시점에 hover 링크에서 찍은 스냅샷.
 ///
 /// 메뉴가 열려 있는 동안 화면이 바뀔 수 있어(새 출력·scrollback 트림·resize) 좌표만
-/// 들고 있지 않고 **표시 문자열**(`text`)도 함께 담는다. 좌표는 gui 전용 `LinkSegment`
-/// 대신 선택 좌표(`SelectionPoint`)로 담는다 — 이 타입은 비-gui 빌드에도 있다.
+/// 들고 있지 않고 **표시 문자열**(`text`)도 함께 담는다. 좌표는 렌더러의 `LinkSegment`
+/// 대신 선택 좌표(`SelectionPoint`)로 담는다 — 메뉴 대상이 렌더 캐시의 수명에 묶이지 않게.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalLinkMenu {
     pub(crate) surface_id: u32,
