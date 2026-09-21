@@ -3973,9 +3973,14 @@ fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConne
         tracing::warn!("bulk upload: failed to set write timeout: {e}");
     }
     let (mut conn, _client_id) = StreamConnection::open_bulk(sock, STREAM_PROTO, remote_ws)?;
-    // (ADR-0400) 결과 채널의 손실을 통지받겠다고 선언한다. 이 연결로 서버가 미는 것은
-    // `BulkResult` 하나뿐이라, 그것이 버려지면 선언 없이는 결과를 read timeout 까지
-    // 기다리다 원인 모를 실패로 끝난다. 구 서버는 모르는 변종으로 무시한다.
+    declare_bulk_loss_notify(&mut conn);
+    Ok(conn)
+}
+
+/// (ADR-0400) bulk 연결의 결과 채널 손실을 통지받겠다고 선언한다. 이 연결로 서버가 미는
+/// 것은 `BulkResult` 하나뿐이라, 그것이 버려지면 선언 없이는 결과를 read timeout 까지
+/// 기다리다 원인 모를 실패로 끝난다. 구 서버는 모르는 변종으로 무시한다.
+fn declare_bulk_loss_notify(conn: &mut StreamConnection) {
     match serde_json::to_vec(&StreamControl::ClientLossNotify {}) {
         Ok(declare) => {
             if let Err(e) = conn.send(StreamTag::Control, &declare) {
@@ -3984,7 +3989,6 @@ fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConne
         }
         Err(e) => tracing::warn!("bulk upload: loss-notify declaration did not serialize: {e}"),
     }
-    Ok(conn)
 }
 
 /// `transfer_id` 로 begin→chunk(들)→commit 를 순서대로 보낸다. `on_progress(sent,
