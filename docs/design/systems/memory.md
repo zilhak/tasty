@@ -110,6 +110,13 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   남는다(반환값은 성공이다). 그 모드에는 `-wal`·`-shm` 도, 여기 적은 위생 문제도 없다.
   그래서 그 값은 실패가 아니라 정상 결과로 규정하고 경고하지 않는다 —
   [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md).
+  반대로 **파일 DB 가 `memory` 로 서면 정상이 아니다** — 허용 결과는 모드별이다. 열린
+  스토어는 되읽은 결과를 `MemoryStore::applied_pragmas()` 로 들고 있고, 실행 중에는
+  `system.pressure` 의 `db_pragmas.memory_db`(CLI `tasty list pressure`)로 조회한다
+  ([ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md)).
+- **내구성 범위**(`synchronous=NORMAL` — 프로세스 kill 은 견디고 전원 장애는 최신 commit 을
+  약속하지 않는다)와 **저장 실패의 의미**(원인 분류 · 실패한 쓰기는 quota 카운터와 변경
+  버퍼를 안 옮긴다)는 [storage](storage.md) 의 두 절이 정본이다.
 
 ## 보안·신뢰 모델
 

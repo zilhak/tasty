@@ -106,3 +106,4 @@ pragma 를 세운다. 그 코드가 두 자리에 **글자 그대로 복제**돼
 - 보장 범위를 적는 정본 문서: [storage](../design/systems/storage.md) ·
   [memory](../design/systems/memory.md)
 - SQLite 가 in-memory DB 에 WAL 을 못 쓰는 근거: <https://www.sqlite.org/wal.html>
+- 부분 개정: [0376](0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md) (보고 채널 조항 개정 — 로그 단독에서 값 + IPC·CLI 로, 되읽기를 넷 전부로)

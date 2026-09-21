@@ -101,11 +101,55 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   건다 — 자유도 없는 사본이라 두 곳에 두지 않는다.
   - **요청한 값과 실제 적용된 값은 다른 축이다.** `journal_mode` 는 요청이 거절돼도 성공을
     반환하므로(실측: in-memory DB 에 WAL 을 요청하면 `Ok` 이고 값은 `memory`), 위 목록은
-    *요청* 이고 실제 모드는 되읽어야 안다. 그 함수가 매 연결마다 되읽어 대조하고, 어긋나면
-    `tracing::warn!` 을 남긴다. `state.db` 는 항상 파일 DB 라 정상값이 `wal` 하나다.
-    근거는 [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md).
+    *요청* 이고 실제 값은 되읽어야 안다. 그 함수가 매 연결마다 **넷 다** 되읽어 대조하고,
+    어긋나면 `tracing::warn!` 을 남기며, 결과를 `AppliedPragmas` 값으로 돌려준다.
+    근거는 [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md)
+    과 그 보고 채널을 개정한 [ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md).
+  - **허용 결과는 모드별이다.** 파일 DB 의 `journal_mode` 는 `wal` 만, in-memory DB 는
+    `memory` 만 정상이다. `synchronous` · `foreign_keys` · `journal_size_limit` 은 두 모드 모두
+    요청값 그대로여야 한다. `state.db` 는 항상 파일 DB 라 `journal_mode` 의 정상값이 `wal` 하나다.
+  - **하나라도 안 섰으면 그 DB 는 `degraded` 다 — 치명이 아니다.** DB 는 열린 채로 쓰인다(열기
+    자체의 실패는 아래 "초기화 실패" 절이 다루는 다른 축이다). 두 DB 의 결과는 실행 중에
+    `system.pressure` 의 `db_pragmas` 덩어리(`memory_db` · `state_db`)로 조회한다 — CLI
+    `tasty list pressure`. `state_db` 가 `null` 이면 이 프로세스에 열려 있지 않다는 뜻이고,
+    출처가 둘인 것은 위 `with_state_db` 의 `None` 과 같다.
   - `journal_size_limit` 은 WAL 파일 크기 상한이다. **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이고, 두 DB 가 그 상수를 쓰는 **같은 함수**를 부른다. 한때는 `src/db.rs` 와 `crates/tasty-memory/` 가 같은 네 줄을 각자 박아 두어 한쪽만 고치면 다른 쪽이 그대로 자랐다 — 그래서 사본을 없앴다.
 - 쓰기는 `Connection::transaction()` 패턴. 실패 시 `tracing::warn!`/`error!` 기록 후 진행.
+
+### 보장 범위 — `synchronous=NORMAL` 이 약속하는 것과 안 하는 것
+
+두 DB 는 `journal_mode=WAL` + `synchronous=NORMAL` 로 연다(위 PRAGMA 목록). 이 조합의 내구성은
+장애 종류에 따라 갈린다(<https://sqlite.org/pragma.html#pragma_synchronous> ·
+<https://www.sqlite.org/wal.html>).
+
+- **프로세스 crash · kill**: commit 이 돌아온 트랜잭션은 남는다. WAL 에 쓴 내용은 OS 페이지
+  캐시에 있고, 프로세스가 죽어도 OS 가 그것을 파일로 내보낸다. 다음 열기가 WAL 을 되감아
+  일관된 상태로 연다.
+- **전원 장애 · OS crash**: **최신 commit 의 보존을 약속하지 않는다.** NORMAL 은 commit 마다
+  WAL 을 fsync 하지 않고 체크포인트 때만 한다. 그래서 전원이 나간 순간 fsync 되지 않은 최근
+  commit 들은 잃을 수 있다. DB 가 깨지지는 않는다 — 잃는 것은 끝부분의 commit 이고, 남은
+  것은 일관된 이전 상태다.
+- 이 값을 바꾸지 않는다. FULL 로 올리는 것은 commit 마다 fsync 비용을 받는 **별도 결정**이고,
+  지금 코드는 적용 여부만 본다([ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md)).
+- **이 보장은 측정된 적이 없다.** 위 두 줄은 SQLite 문서의 계약이다. 재는 법은 commit 직후
+  전원을 끊고 재시작해 마지막 commit 의 생존을 보는 것인데 — **이 레포에 그 장비는 없다.**
+  프로세스 kill 쪽은 이 머신에서 잴 수 있다.
+
+### 저장 실패의 의미 — `memory.db`
+
+`MemoryStore` 의 트랜잭션 쓰기(`put` · `delete` · `put_secret` · `delete_secret`)가 실패하면
+그 호출은 `Err` 로 돌아온다. **실패한 commit 을 성공으로 돌려주는 경로는 없다.**
+
+- **원인은 초기화와 같은 표로 갈린다** — `tasty_memory::StorageFailure`(`busy` · `disk_full` ·
+  `io` · `corrupt` · `permission_denied` · `other`). `MemoryError::storage_failure()` 가 그 값을
+  주고, 요청 거부(`NotFound` · `CasConflict` · quota 등)는 저장 실패가 아니라 `None` 이다.
+- **IPC** 는 코드 `-32603` 과 문장 `memory db error: …` 을 그대로 두고
+  `error.data.storage_failure` 에 원인을 싣는다.
+- **메모리 쪽 상태는 실패 전 그대로다.** quota 카운터(`regular_used_bytes`)와 변경
+  버퍼(`pending_changes`, `memory.changed` 이벤트의 원천)는 commit 성공 뒤에만 움직인다.
+  트랜잭션은 롤백돼 디스크에도 안 남는다. 그래서 실패한 쓰기는 quota 를 먹지 않고 변경
+  알림도 내지 않는다.
+- 근거는 [ADR-0377](../../adr/0377-a-failed-memory-write-names-its-cause-with-the-same-table-as-init.md).
 
 ### 초기화 실패 = 인메모리 폴백 없음
 
@@ -121,7 +165,10 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 | `SchemaMismatch{expected,found}` | user_version 불일치 | `db_error.schema_mismatch` |
 | `Other(msg)` | 그 외 | `db_error.other` |
 
-`memory.db`(`crates/tasty-memory/`)도 같은 분류 체계(`MemoryInitError`)를 별도로 가진다.
+`memory.db`(`crates/tasty-memory/`)는 같은 variant 를 가진 자기 타입(`MemoryInitError`)을
+쓴다. **원인 표는 둘이 공유하는 하나다** — `tasty_memory::StorageFailure` 가 SQLite 오류를
+분류하고, 두 타입은 그 결과를 자기 variant 로 옮기기만 한다. 그 표의 `io` 갈래는 초기화
+안내에 따로 된 문구가 없어 `Other` 로 간다.
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
 
@@ -144,7 +191,12 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 ## 테스트
 
 - 스키마 로직: `:memory:` Connection 으로 단위 테스트(`src/db/migrations.rs` 의 `tests` — fresh init / 재호출이 버전을 안 바꿈 / additive ensure 가 기존 DB 에 닿음 / mismatch 두 갈래).
-- 에러 분류: `classify_sql` 단위 테스트(busy / corrupt / notadb), `user_message_i18n` key 안정성 테스트.
+- 에러 분류: 표 자체는 `crates/tasty-memory/src/failure.rs` 의 `each_sqlite_code_lands_in_its_own_branch`,
+  `state.db` 쪽 옮기기는 `classify_sql` 단위 테스트(busy / corrupt / notadb), `user_message_i18n` key 안정성 테스트.
+- 저장 실패: `crates/tasty-memory/src/tests.rs` 가 잠금(`busy`)과 페이지 상한(`disk_full`)을 실제로
+  일으켜 원인과 메모리 쪽 상태를 본다. `io` 는 합성 오류 코드로 표만 본다.
+- 적용값: `an_open_store_carries_the_pragmas_that_took_in_each_mode` ·
+  `a_read_only_database_reports_itself_degraded` 가 모드별 허용 결과와 degraded 판정을 본다.
 
 ## 관련
 

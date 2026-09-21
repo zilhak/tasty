@@ -77,7 +77,8 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 재는 것은 큐 깊이 · 큐 대기 · handler 실행 시간 · plugin 왕복 · DB 지연의 count·sum·max 이고,
 평균은 파생이라 메서드로 낸다. 시간 축 셋(`db` 제외)에는 **고정 경계 분포**가 하나씩 더
 붙는다([ADR-0340](../../adr/0340-the-pressure-answer-counts-seats-and-carries-a-fixed-bound-distribution.md)).
-여기에 **시간이 아닌 축**이 하나 더 있다 — 동시 IPC 연결 자리다.
+여기에 **시간이 아닌 축**이 하나 더 있다 — 동시 IPC 연결 자리다. 그리고 누계가 아닌 덩어리가
+하나 있다 — 두 SQLite DB 가 열 때 되읽은 pragma 다.
 
 `system.pressure`(local-only) 가 그 누계를 읽는다. 응답은 **모수마다 한 덩어리**다.
 
@@ -88,6 +89,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `plugin_round_trip` | plugin 응답 매칭부 (`PluginManager::handle_plugin_response`) | 응답이 **매칭된 요청만** — 취소·만료된 것은 끝점이 없다 |
 | `db` | `MemoryStore` 의 `tx.commit()` 뒤 · `checkpoint_truncate` | **성공한** commit 과 시도된 checkpoint — 거부된 쓰기는 롤백이라 안 센다 |
 | `connections` | accept 루프의 자리 획득·반납 (`TcpIpcServer`) | 이 포트에 붙은 **TCP 연결 전부** — 요청을 하나도 안 보내는 attach·mesh 스트림도 센다 |
+| `db_pragmas` | DB 를 열 때 한 번 (`tasty_memory::pragma::apply_connection_pragmas`) | 누계가 아니다 — DB(`memory_db` · `state_db`)마다 요청값과 되읽은 실제값 |
 
 셋째는 앞의 둘과 축이 다르다. 앞의 둘은 호스트가 **자기 큐와 자기 handler** 에서 보낸
 시간이고, 셋째는 호스트가 **남의 프로세스를 기다린** 시간이다(`PluginWaitStats`). 큐도
@@ -118,6 +120,16 @@ handler 도 빠른데 응답이 느리면 그 시간은 plugin 안에 있었던 
 `Core` 가 낳아 부팅이 IPC 서버에 핸들을 건넨다 — `db` 와 방향이 반대인 이유는 서버가 `Core`
 보다 **뒤에** 뜨기 때문이다. 서버가 안 뜬 조립(단위 시험)에서는 `accepted` 가 0 으로 남아
 "연결을 받은 적이 없다" 로 읽힌다.
+
+여섯째는 **누계가 아니라 설정**이다. `memory_db` · `state_db` 두 칸이 각각 `in_memory` ·
+`degraded` 와 pragma 넷(`journal_mode` · `synchronous` · `foreign_keys` · `journal_size_limit`)의
+`requested` · `effective` · `took` · `error` 를 싣는다. 요청값을 함께 싣는 것은 소스의 `WAL` 이
+runtime 보장이 아니어서다 — SQLite 는 요청을 조용히 거절할 수 있다. `degraded` 는 하나라도 그
+DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열린 채로 쓰이는 상태**다. `db` 덩어리와
+같은 DB 를 말하므로 한 응답에서 "commit 이 느리다" 와 "WAL 이 안 섰다" 가 함께 읽힌다. 열리지
+않은 DB 는 `null` 이다 — 헤드리스의 `state_db` 는 늘 `null` 이다(허용 결과표·근거는
+[storage](../../design/systems/storage.md) 와
+[ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md)).
 
 #### 분포 — 평균·최대가 못 답하는 것
 
