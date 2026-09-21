@@ -193,7 +193,7 @@ DB 모드의 허용 결과로 안 섰다는 뜻이고 **오류가 아니라 열�
   (`tasty_ipc::server::RequestSeq`). JSON-RPC `id` 가 아니다(호출자 값이라 거의 늘 `1` 이다). Event Bus
   envelope 의 `trace_id` 도 아니다(사건 사슬의 값이고 plugin 이 보낸 값을 그대로 싣는다). 재시작하면 1
   부터 다시 센다.
-- **한 줄** — `request_seq` · `host`(`method` canonical · `caller` 봉투가 말한 `local`/`agent` ·
+- **한 줄** — `request_seq` · `host`(`method` canonical 이름 — 모르는 이름은 받은 그대로이고 128 바이트에서 자른다 · `caller` 봉투가 말한 `local`/`agent` ·
   `queue_wait_us` · `host_us`) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id` · `wait_us` ·
   `outcome` = `ok`/`error`/`expired`/`cancelled`, 최대 셋 — pre-hook · target · post-hook) · `total_us`.
   `host_us` 는 꺼낸 뒤 호스트가 명령을 다 다루기까지(게이트 포함)라 `handler_after_gate` 와 모수가

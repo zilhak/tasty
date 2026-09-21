@@ -118,7 +118,7 @@ impl IpcRound {
 /// `Core` 를 가변으로 빌린다. 그래서 `begin` 과 `finish` 가 따로 있다.
 pub(crate) struct CommandObservation {
     request_seq: u64,
-    /// canonical 메서드. `system.pressure` 자신이면 `None` — 진단 조회가 링을 밀어내면 조회할
+    /// canonical 메서드(모르는 이름은 받은 그대로 — 링이 실을 때 길이를 자른다). `system.pressure` 자신이면 `None` — 진단 조회가 링을 밀어내면 조회할
     /// 때마다 원인 요청이 한 칸씩 사라진다.
     method: Option<String>,
     caller: tasty_telemetry::slow_requests::CallerKind,

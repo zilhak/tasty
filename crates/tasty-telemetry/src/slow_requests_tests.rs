@@ -177,3 +177,31 @@ fn a_row_keeps_at_most_the_hops_of_one_chain() {
     }
     assert_eq!(log.snapshot().rows[0].plugin_hops.len(), MAX_PLUGIN_HOPS);
 }
+
+/// 메서드 칸은 호출자 문자열이라 길이를 자른다 — 상한을 넘는 이름은 상한 안의 마지막 char 경계까지만
+/// 실리고(여러 바이트 글자를 반으로 가르지 않는다), 상한 이하 이름은 그대로다.
+#[test]
+fn a_method_name_past_the_cap_is_cut_at_a_char_boundary() {
+    let log = SlowRequestLog::default();
+    let ascii = "x".repeat(MAX_METHOD_BYTES + 40);
+    // 3 바이트 글자로 채워 상한이 글자 한가운데 떨어지게 한다.
+    let wide = "가".repeat(MAX_METHOD_BYTES);
+    let exact = "y".repeat(MAX_METHOD_BYTES);
+    for (seq, method) in [(1, ascii.as_str()), (2, wide.as_str()), (3, exact.as_str())] {
+        log.finish_host(HostLeg {
+            request_seq: seq,
+            method,
+            caller: CallerKind::Agent,
+            queue_wait: SLOW,
+            host: FAST,
+        });
+    }
+    let rows = log.snapshot().rows;
+    let method = |i: usize| rows[i].host.as_ref().expect("host part").method.clone();
+    assert_eq!(method(0), "x".repeat(MAX_METHOD_BYTES));
+    let cut = method(1);
+    assert!(cut.len() <= MAX_METHOD_BYTES, "{}", cut.len());
+    assert!(cut.len() > MAX_METHOD_BYTES - 3, "{}", cut.len());
+    assert!(cut.chars().all(|c| c == '가'));
+    assert_eq!(method(2), exact);
+}

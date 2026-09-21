@@ -16,8 +16,10 @@
 //! 호출당 기록 폭주를 다시 만들지 않는다(ADR-0085 · ADR-0246 · ADR-0277 과 같은 축).
 //!
 //! **싣지 않는 것**: params 원문 · session token · 멱등 키 · JSON-RPC `id` 값. 메서드는
-//! canonical 이름(유한 집합)이고 plugin id 는 설치 수만큼만 있다. 요청 번호는 이 줄의 열쇠일
-//! 뿐 메트릭 레이블로 쓰지 않는다.
+//! canonical 이름이지만 **유한 집합이 아니다** — alias 해석은 모르는 이름을 받은 그대로
+//! 통과시키므로(plugin namespace 메서드 · 오타 · 없는 이름) 호출자 문자열이 그대로 실린다. 그래서
+//! 싣는 길이를 [`MAX_METHOD_BYTES`] 로 자른다. plugin id 는 설치 수만큼만 있다. 요청 번호는
+//! 이 줄의 열쇠일 뿐 메트릭 레이블로 쓰지 않는다.
 //!
 //! ## 한 줄이 두 번에 나눠 채워진다
 //!
@@ -57,6 +59,14 @@ pub const OPEN_FORWARD_CAPACITY: usize = 256;
 
 /// 한 줄이 드는 plugin hop 의 상한 — pre-hook · target · post-hook 셋.
 pub const MAX_PLUGIN_HOPS: usize = 3;
+
+/// 줄에 싣는 메서드 이름의 바이트 상한. 넘으면 이 길이 안의 마지막 char 경계에서 자른다.
+///
+/// 메서드 칸은 호출자가 보낸 문자열이다(모르는 이름은 alias 해석을 그대로 통과한다). 자르지
+/// 않으면 한 호출자가 긴 이름으로 링 32 줄을 각각 임의 길이로 채울 수 있다. **파생값이 아니다**
+/// (ADR-0436) — 실측 2026-09-21 에 등록 메서드 표(264 개)의 가장 긴 이름이 31 바이트였고, 그
+/// 네 배 남짓이라 정상 이름은 잘리지 않는다.
+pub const MAX_METHOD_BYTES: usize = 128;
 
 /// 요청을 보낸 쪽의 종류. 봉투(session token 유무)가 말한 종류다 — 토큰이 무효인 요청은
 /// 게이트에서 곧바로 거절돼 느린 줄이 될 일이 드물다.
@@ -103,7 +113,8 @@ impl HopOutcome {
 #[derive(Debug, Clone, Copy)]
 pub struct HostLeg<'a> {
     pub request_seq: u64,
-    /// canonical 메서드 이름.
+    /// canonical 메서드 이름 — 모르는 이름이면 받은 그대로다. 줄에는 [`MAX_METHOD_BYTES`] 까지만
+    /// 실린다.
     pub method: &'a str,
     pub caller: CallerKind,
     /// 큐에 들어간 뒤 꺼내질 때까지.
@@ -251,7 +262,7 @@ impl SlowRequestLog {
         let (queue_wait_us, host_us) = (as_micros(leg.queue_wait), as_micros(leg.host));
         // 메서드 이름은 줄에 남길 때만 복사한다 — 이 자리는 요청마다 지난다.
         let part = || HostPart {
-            method: leg.method.to_string(),
+            method: clip_method(leg.method).to_string(),
             caller: leg.caller,
             queue_wait_us,
             host_us,
@@ -303,6 +314,18 @@ impl SlowRequestLog {
             admitted: inner.admitted,
         }
     }
+}
+
+/// `method` 를 [`MAX_METHOD_BYTES`] 안의 마지막 char 경계까지로 줄인다.
+fn clip_method(method: &str) -> &str {
+    if method.len() <= MAX_METHOD_BYTES {
+        return method;
+    }
+    let mut end = MAX_METHOD_BYTES;
+    while !method.is_char_boundary(end) {
+        end -= 1;
+    }
+    &method[..end]
 }
 
 /// 마이크로초로 접는다 — [`crate::PressureStats`] 와 같은 해상도.

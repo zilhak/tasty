@@ -129,7 +129,8 @@
 //! 앞의 덩어리들은 전부 집계다. 집계는 "100 ms 를 넘은 것이 몇 건" 까지 말하고, **그 한 건의
 //! 시간이 어느 단계에 있었나** · **그 plugin 대기가 어느 요청의 것이었나** 는 못 말한다
 //! (ADR-0436). 이 덩어리는 문턱(`threshold_us`)을 넘은 요청을 한 줄씩 싣는다 — 호스트가 발급한
-//! `request_seq`(JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · canonical `method` ·
+//! `request_seq`(JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · `method`(canonical 이름, 모르는 이름은 받은 그대로 —
+//! `MAX_METHOD_BYTES` 에서 자른다) ·
 //! `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`(꺼낸 뒤 호스트가 다 다루기까지,
 //! 게이트 포함 — `handler_after_gate` 와 모수가 다르다) · plugin 으로 넘겼으면 `plugin_hops`(hop
 //! 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome`) · `total_us`.

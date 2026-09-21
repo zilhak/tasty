@@ -24,7 +24,7 @@ plugin 쪽에서 되짚을 길도 없었다. 호스트가 req_id 를 남기는 �
 
 1. **번호** — `tasty_ipc::server::RequestSeq`. 프로세스 전역 단조 카운터에서 1 부터 받는다. `IpcCommand` 의 생성자가 받으므로(필드가 비공개라 크레이트 밖에서 리터럴로 못 만든다) 소켓 경로와 호스트 주입이 둘 다 번호를 갖는다. **이름에 `trace` 를 쓰지 않는다** — 이미 셋이 그 이름을 쓰고, 넷째가 되면 "RPC id · event trace 와 구분" 이 이름부터 깨진다. JSON-RPC `id` 에서 파생하지 않는다. 멱등 relay 가 키를 뗀 사본을 다시 쌀 때는 `IpcCommand::continuing` 으로 원 번호를 그대로 든다 — 새 번호를 받으면 요청 하나가 번호 둘로 갈린다.
 2. **plugin forward 로 전달** — `forward_namespace_call` 이 원 번호를 받는다(GUI routing · headless forward 는 `Some(cmd.request_seq())`, 파일 핸들러 큐의 forward 는 `None` — 그 큐는 IPC `file_handler.dispatch` 로도 차지만, 번호가 intent → `pending_handler_ipc` 로 옮겨지는 사이에 떨어진다. 아래 "잃은 것"). 번호는 `FinalCaller::Local` 안에 실려 회신처와 **한 몸으로** pre-hook → target → post-hook 사슬을 따라가고, 각 hop 을 대기 표에 넣는 자리가 거기서 읽어 `PendingRequest.origin`(변종이 아니라 구조체 칸 하나)에 복사한다. IPC 큐를 안 지난 plugin 요청(event.dispatch · surface · plugin 이 부른 namespace)도 `None` 이다.
-3. **관측** — `system.pressure` 의 열한째 덩어리 `slow_requests`. 메모리 전용 고정 용량 링이고, 넣는 기준은 **큐 대기 · 호스트 처리 · plugin 대기의 합이 문턱 이상인 요청**이다. 한 줄은 `request_seq` · `host`(`method`(canonical) · `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome` = ok/error/expired/cancelled) · `total_us` 다. 덩어리에는 `threshold_us` · `capacity` · `admitted`(켜진 뒤 링에 든 누계) · `rows` 가 함께 나간다. 기존 열 덩어리는 한 글자도 안 바뀐다.
+3. **관측** — `system.pressure` 의 열한째 덩어리 `slow_requests`. 메모리 전용 고정 용량 링이고, 넣는 기준은 **큐 대기 · 호스트 처리 · plugin 대기의 합이 문턱 이상인 요청**이다. 한 줄은 `request_seq` · `host`(`method`(canonical 이름. alias 해석은 모르는 이름을 받은 그대로 통과시키므로 plugin namespace 메서드나 없는 이름은 호출자 문자열 그대로이고, 그래서 `MAX_METHOD_BYTES` 에서 자른다) · `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`) · `plugin_hops`(hop 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome` = ok/error/expired/cancelled) · `total_us` 다. 덩어리에는 `threshold_us` · `capacity` · `admitted`(켜진 뒤 링에 든 누계) · `rows` 가 함께 나간다. 기존 열 덩어리는 한 글자도 안 바뀐다.
    - 호스트 몫은 GUI `process_ipc` 와 headless `pump_ipc` 가 **같은 자리**에서 넘긴다(`app::ipc_round::CommandObservation` — 명령을 꺼낸 직후 `begin`, 다 다룬 직후 `finish`). 큐 대기 계측도 그 `begin` 으로 옮겨, 두 루프에 한 자리씩만 남는다.
    - plugin 몫은 매니저가 넘긴다. 번호를 든 요청을 대기 표에 넣을 때 링에 **열린 자리**를 먼저 만들고(forward 는 dispatch 안에서 일어나므로 호스트 몫보다 먼저다), 응답 · 만료 · 취소 때 그 hop 을 같은 줄에 붙인다. 열린 줄은 합이 문턱을 넘는 순간 링으로 옮겨지고, 사슬이 끝났는데 문턱 아래면 치워진다.
    - `system.pressure` 자신은 넣지 않는다 — 조회가 링을 밀어내면 조회할 때마다 원인 요청이 한 칸씩 사라진다.
@@ -46,6 +46,7 @@ plugin 쪽에서 되짚을 길도 없었다. 호스트가 req_id 를 남기는 �
 - `SLOW_REQUEST_CAPACITY` = 32. 파생값이 아니다. 한 번의 조회로 최근의 느린 요청을 훑기에 충분하고 상한에서 수십 KB 다.
 - `OPEN_FORWARD_CAPACITY` = 256. 동시 IPC 연결 상한([ADR-0313](0313-the-dispatch-round-budget-is-the-connection-bound.md) 의 256)과 같다 — 소켓 연결 하나는 요청 하나를 기다리므로 동시에 plugin 을 기다리는 IPC 요청이 대개 이 안에 든다.
 - `MAX_PLUGIN_HOPS` = 3(pre-hook · target · post-hook).
+- `MAX_METHOD_BYTES` = 128. 파생값이 아니다. 메서드 칸은 호출자 문자열이라, 자르지 않으면 한 호출자가 긴 이름으로 링 32 줄을 각각 임의 길이로 채울 수 있다. 실측 2026-09-21: 등록 메서드 표(`METHOD_TABLE`, 264 개)의 가장 긴 이름이 31 바이트(`markdown_mirror.content_request`)였고, debug 표는 25 바이트였다. 그 네 배 남짓이라 정상 이름은 잘리지 않는다. 상한을 넘으면 그 안의 마지막 char 경계에서 자른다(잘렸다는 표지는 따로 없다 — 길이가 상한 근처면 잘린 것이다).
 
 ## Consequences
 
