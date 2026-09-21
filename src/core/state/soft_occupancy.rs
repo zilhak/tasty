@@ -5,13 +5,11 @@
 //! 뿐이라 전부 in-process 호출이다(ADR-0040 §주체·범위: 살아있는 임의 surface 를
 //! 직접 점유하는 CLI/IPC 는 두지 않는다). hard 의 [`attach_runtime`](crate::core::attach_runtime)
 //! 가 stream 바이트를 결선하는 자리와 대칭이되, soft 는 StreamHub/gui 비의존이라
-//! headless 에서도 컴파일된다. 단 소비처가 전부 gui(gpu.rs·egui_panels) + 후속 작업
-//! (terminal.spawn/kill)이라 headless 빌드엔 아직 호출자가 없어 모듈 단위로 침묵한다.
-// 이유: soft 점유의 소비처가 전부 gui 라 headless 엔 아직 호출자가 없다(위 모듈 주석).
-#![cfg_attr(not(feature = "gui"), allow(dead_code))]
+//! headless 에서도 컴파일된다. acquire/release 는 headless 에서도 `terminal.spawn`/`kill`
+//! 이 부른다. focus 지연 청소만 실 사용자 포커스를 받는 GUI(`gfx/gpu.rs`)와 시험이 부른다.
 
 use super::CoreState;
-use crate::core::attach::{OccupancyError, OccupancyTier};
+use crate::core::attach::OccupancyError;
 
 impl CoreState {
     /// soft 점유 획득(표시만, write 차단 없음 — ADR-0040). 주체 = `parent` surface.
@@ -61,11 +59,12 @@ impl CoreState {
     /// 못하므로, parent 를 기록만 해두고 이 지연 청소로 회수한다. surface attention 의
     /// 실-포커스 해제(`clear_attention`)와 **같은 자리**에서 호출되어 원칙1(사용자
     /// 상태 불가침)에 안전하다. parent 가 살아있으면 점유를 유지한다.
+    #[cfg(any(feature = "gui", test))]
     pub fn reconcile_soft_occupancy_on_focus(&mut self, surface_id: u32) {
         let Some(occ) = self.attach.occupancy_of(surface_id) else {
             return;
         };
-        if occ.tier != OccupancyTier::Soft {
+        if occ.tier != crate::core::attach::OccupancyTier::Soft {
             return; // hard 는 연결 EOF/force-detach 수명 — 이 경로 무관.
         }
         // soft 는 항상 parent 를 기록한다(occupancy_of 투영). live set 판정은 전

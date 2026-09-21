@@ -142,7 +142,9 @@ const UPPER: &[(&str, &str)] = &[
 /// 그 뒤 도메인 안의 모듈 단위 headless `allow(dead_code)` 를 지우고 드러난 정의를 항목마다
 /// 갈랐다. 모듈 속성 줄 자체가 `feature = "gui"` 를 하나 담고 있어 지울 때마다 −1 이다:
 /// `core/attach.rs` +1(속성 −1 · `is_content_hidden` ② · `workspace_holders` ①) ·
-/// `core/attach_readonly.rs` 0(속성 −1 · 모듈 전체가 ① 이라 `core/mod.rs` 의 선언 +1).
+/// `core/attach_readonly.rs` 0(속성 −1 · 모듈 전체가 ① 이라 `core/mod.rs` 의 선언 +1) ·
+/// `core/state/soft_occupancy.rs` 0(속성 −1 · `reconcile_soft_occupancy_on_focus` ②).
+/// 도메인 안에 모듈 단위 headless `allow` 는 이제 없다.
 ///
 /// 이 수는 **목표가 아니라 현재 상태의 못**이다. 도메인이 GUI 전용 항목을 갖는 이유는
 /// 대부분 "headless 에 소비자가 없다"(ADR-0346)이고 그 판정 자체는 정당하다. 이 못이 막는

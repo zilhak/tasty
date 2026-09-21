@@ -91,7 +91,8 @@ headless 빌드(`--no-default-features`)는 GUI 없이 IPC/CLI 와 attach 서버
   5 를 더 올려 251 이 됐다 — 그 `allow` 가 가리던 `core` 의 headless 소비자 없는 정의 다섯이
   드러났다(ADR-0355 의 "잔여의 현재 상태"). 이어 도메인 안의 모듈 단위 headless `allow(dead_code)`
   를 지우고 드러난 정의를 항목마다 갈랐다(모듈 속성 줄 자체가 게이트 하나라 지울 때마다 −1):
-  `core/attach.rs` +1 · `core/attach_readonly.rs` 0(모듈 전체가 GUI 전용이라 선언에 cfg). 지금 252 다.
+  `core/attach.rs` +1 · `core/attach_readonly.rs` 0(모듈 전체가 GUI 전용이라 선언에 cfg) ·
+  `core/state/soft_occupancy.rs` 0. 지금 252 다. 도메인 안에 모듈 단위 headless `allow` 는 더 없다.
 - **잃은 것 — 전이 의존은 안 본다.** 도메인이 부르는 형제 모듈이 다시 상위를 부르는 경로는
   가드 밖이다. 형제 모듈이 상위 항목을 재수출하면 그 이름으로 우회된다. 창 상태를 받는
   `file::dispatch` 는 그래서 형제 모듈 전체가 아니라 그 하위 항목 자체를 가드의 표에 올렸다.
