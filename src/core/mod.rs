@@ -32,6 +32,8 @@ pub(crate) mod file;
 pub(crate) mod fs_list;
 pub(crate) mod hook_event_registry;
 pub(crate) mod host_event;
+#[cfg(feature = "gui")]
+pub(crate) mod identify_port;
 pub(crate) mod intent;
 pub(crate) mod ipc_facade;
 pub(crate) mod layout_persistence;

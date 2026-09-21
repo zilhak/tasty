@@ -478,7 +478,7 @@ impl Core {
                 match engine.identify_worker.as_ref() {
                     Some(worker) => {
                         // request id not tracked.
-                        let _id = worker.spawn(
+                        worker.spawn_identify(
                             target,
                             depth,
                             origin_surface_id,

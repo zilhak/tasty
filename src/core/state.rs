@@ -664,10 +664,12 @@ pub struct CoreState {
     #[cfg(feature = "gui")]
     pub(crate) file_handler_recent: crate::file::handler::recent::RecentPicks,
     /// 비동기 파일 식별 worker. `App` 이 EventLoopProxy 를 가진 시점에
-    /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴.
+    /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴. 실체는
+    /// `file::identify_worker::IdentifyWorker` 이고 도메인은 포트로만 안다.
     /// Phase C 의 mouse.rs 콜사이트가 이걸 호출해 deep identify 를 띄운다.
     #[cfg(feature = "gui")]
-    pub(crate) identify_worker: Option<std::sync::Arc<crate::identify_worker::IdentifyWorker>>,
+    pub(crate) identify_worker:
+        Option<std::sync::Arc<dyn crate::core::identify_port::IdentifySpawner>>,
 
     // ── Layout persistence ──
     pub(crate) layout_dirty: crate::core::layout_persistence::LayoutDirtyTracker,

@@ -73,6 +73,26 @@ impl IdentifyWorker {
     }
 }
 
+impl crate::core::identify_port::IdentifySpawner for IdentifyWorker {
+    fn spawn_identify(
+        &self,
+        target: FileTarget,
+        depth: DetectDepth,
+        origin_surface_id: Option<u32>,
+        dispatch_origin: crate::file::dispatch::FileDispatchOrigin,
+        ignore_size_limit: bool,
+    ) {
+        // 요청 id 는 도메인이 추적하지 않는다(포트 문서).
+        let _id = self.spawn(
+            target,
+            depth,
+            origin_surface_id,
+            dispatch_origin,
+            ignore_size_limit,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
