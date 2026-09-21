@@ -1,4 +1,4 @@
-<!-- source-hash: d263eaf85480 -->
+<!-- source-hash: df572a0c5737 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -345,6 +345,8 @@ The sixth block, `db_pragmas`, is **neither time nor seats — it is the setting
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
 - **An error line containing `"sent":false`** — the Tasty you are connected to is an older version that does not know that feature (reading from a position, bounding the reply wait, and so on). The request was not sent. The name under `capability` says what is missing.
+- **The command ends with `Error (-32065): …`** — Tasty has a backlog of requests to handle and did not take this one. The request did not run, so call it again as is after a short pause.
+- **The command ends with `Error (-32066): …`** — nothing was sent within 20 seconds of connecting, so Tasty closed the connection. Nothing ran. If your tool opens the socket itself, send the request right after connecting. A connection that has sent one request is not closed however long it pauses between requests.
 - **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
 
 <a id="what-to-read-next"></a>
