@@ -717,6 +717,8 @@ mod tests {
         let small = format_retention_start(7);
         let big = format_retention_start(u64::MAX);
         assert_eq!(small.len(), big.len());
+        // ADR-0415 이 이 폭(키 16 + 값 20 + 개행 1)을 바이트 수로 적는다 — 그 사본의 판정기.
+        assert_eq!(small.len(), 37);
         assert!(small.starts_with("retention_start=7 "), "{small:?}");
         assert!(small.ends_with('\n'));
         assert_eq!(parse_retention_start(&small), 7);
