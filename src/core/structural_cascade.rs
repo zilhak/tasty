@@ -63,9 +63,8 @@ impl SurfaceCloseCascade {
     /// `surface_id` 는 싣지 않는다 — 닫힌 surface 는 `cleanup_targets` 에 이미 들어 있고,
     /// cascade 는 그 목록만 본다.
     ///
-    /// 부르는 곳은 gui dispatcher(`App::handle_core_event`) 하나다 — IPC 핸들러는 이벤트를
-    /// 직접 분해하고, headless 의 intent drain 에는 close 발화점이 없다.
-    #[cfg(feature = "gui")]
+    /// 부르는 곳은 둘이다 — gui dispatcher(`App::handle_core_event`)와 surface close 실행
+    /// (`core::structural_exec::close_surface`, IPC 와 forward 가 함께 쓴다).
     pub(crate) fn from_surface_closed(
         event: crate::core::intent::CoreEvent,
         is_user_close: bool,
@@ -398,23 +397,7 @@ pub(crate) fn cascade_surface_split(
         tab.focused_surface = new_surface_id;
     }
     #[cfg(feature = "gui")]
-    if let Some(ws) = engine.workspaces.get(workspace_index) {
-        if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-            if let Some(tab) = pane
-                .tabs
-                .iter()
-                .find(|tab| tab.contains_surface(new_surface_id))
-            {
-                state.tutorial.observe(
-                    crate::adapters::ui::tutorial::PracticeEvent::SplitSurface {
-                        workspace: ws.id,
-                        pane: pane_id,
-                        tab: tab.id,
-                    },
-                );
-            }
-        }
-    }
+    state.observe_tutorial_surface_split(engine, workspace_index, pane_id, new_surface_id);
 }
 
 /// `CoreEvent::PaneSplit` 의 외부 cascade. host events (`pane.split` +
@@ -459,16 +442,10 @@ pub(crate) fn cascade_pane_split(
         ws.focused_pane = c.new_pane_id;
     }
     #[cfg(feature = "gui")]
-    if origin.is_user() {
-        if let Some(workspace) = workspace_id {
-            state
-                .tutorial
-                .observe(crate::adapters::ui::tutorial::PracticeEvent::SplitPane {
-                    workspace,
-                    original: c.original_pane_id,
-                    new_pane: c.new_pane_id,
-                });
-        }
+    if origin.is_user()
+        && let Some(workspace) = workspace_id
+    {
+        state.observe_tutorial_pane_split(workspace, c.original_pane_id, c.new_pane_id);
     }
 }
 

@@ -2113,8 +2113,8 @@ impl App {
     /// main window 에서만 실행한다(ADR-0040 hard 점유 = 구조 변경 권한). holder 가
     /// 아니거나 대상 워크스페이스를 찾지 못하면 `ok:false` 로 거부한다.
     ///
-    /// 한계: parked engine(백그라운드 창)은 `AppState` 를 갖지 않아 재사용 핸들러를
-    /// 호출할 수 없다 — mirror-attach 된 워크스페이스는 활성 호스팅 상태라 실제로는
+    /// 한계: parked engine(백그라운드 창)은 `AppState` 를 갖지 않아 도메인 실행 함수
+    /// (`core::structural_exec`)를 호출할 수 없다 — mirror-attach 된 워크스페이스는 활성 호스팅 상태라 실제로는
     /// main window 에 있다.
     fn apply_forwarded_structural_op(
         &mut self,

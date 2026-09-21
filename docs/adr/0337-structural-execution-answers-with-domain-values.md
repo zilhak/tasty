@@ -133,6 +133,10 @@ dispatcher · 원격 forward 실행)가 그것을 부른다. 다만 **이름이 
   headless cascade 가 같은 헬퍼를 지나야 하는 근거.
 - [ADR-0264](0264-mirror-restore-closed-item-runs-on-the-remote.md) — forward 된 close 가 원격 사용자의 손
   조작이라 복원 스택에 들어간다는 결정. 이 ADR 의 결정 1 은 그 판정을 안 건드린다.
-- 코드 근거(결정이 실현된 현재 위치): `core::attach_runtime` 의 `handler_result` ·
-  `app::dispatch_domain` 과 `app::dispatch_domain_stubs` 의 `reclaim_closed_surfaces` ·
-  `SurfaceCloseCascade::from_move_surface_applied`.
+- 코드 근거(결정이 실현된 현재 위치): `core::attach_runtime` 의 `forward_result` ·
+  `core::structural_cascade` 의 `reclaim_closed_surfaces` ·
+  `SurfaceCloseCascade::from_move_surface_applied`. `handler_result` 와 빌드 형태별 두 사본은
+  ADR-0395 가 없앴다.
+- 부분 개정: [0395](0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md) (결정 2 의
+  "빌드 형태마다 한 함수" 와 "핸들러 재사용 자체는 범위 밖" 조항 개정 — 구조 변경 실행과 cascade 가
+  도메인 계층의 한 함수가 됐다)

@@ -1110,7 +1110,8 @@ impl CoreState {
     ///
     /// `AppState` 안에 인라인으로 흩어져 있던 같은 코드를 여기로 모은 것이다. forward
     /// 된 close 를 실행하는 경로(`attach_runtime::execute_forwarded_structural_op`)는
-    /// `AppState` 의 close 함수를 타지 않고 IPC 핸들러를 재사용하므로, 캡처를 공유하려면
+    /// `AppState` 의 close 함수를 타지 않고 도메인 실행 함수(`core::structural_exec`)를
+    /// 부르므로, 캡처를 공유하려면
     /// engine 쪽에 있어야 한다(ADR-0264 결정 4).
     ///
     /// **트리에서 탭을 제거하기 전에 불러야 한다** — 제거 후엔 읽을 것이 없다.

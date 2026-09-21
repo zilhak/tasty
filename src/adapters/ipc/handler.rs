@@ -1370,28 +1370,6 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
     engine.find_pane_for_surface(surface_id) == Some(pane_id)
 }
 
-/// Apply metadata key-value pairs to a surface.
-pub(crate) fn apply_meta(
-    state: &AppState,
-    surface_id: u32,
-    meta: Option<&serde_json::Map<String, serde_json::Value>>,
-) {
-    if let Some(map) = meta {
-        for (key, value) in map {
-            if let Some(v) = value.as_str() {
-                let result = state.with_memory(|m| {
-                    crate::surface_meta::SurfaceMetaStore::set(m, surface_id, key, v)
-                });
-                if let Err(e) = result {
-                    tracing::warn!(
-                        "surface_meta set failed for surface {surface_id} key '{key}': {e}"
-                    );
-                }
-            }
-        }
-    }
-}
-
 /// 구조변경 IPC 핸들러 공용 — `Core::apply` 가 반환한 에러를 JSON-RPC 응답으로
 /// 변환한다. mirror(원격 attach client) 워크스페이스에서 forward 로 큐잉된 구조
 /// op([`crate::core::MirrorStructuralBlocked`] `forwarded: true`)는 로컬 실행이
@@ -1414,6 +1392,21 @@ pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -
         );
     }
     JsonRpcResponse::internal_error(id, e.to_string())
+}
+
+/// 구조 변경 도메인 실행(`core::structural_exec`)의 실패를 JSON-RPC 응답으로 바꾼다. 갈래가
+/// 코드를 정하고 문구는 그대로 싣는다 — forward 실행이 같은 실패에서 받는 사유 문자열과
+/// byte 단위로 같다.
+pub(super) fn structural_failure_response(
+    id: serde_json::Value,
+    failure: crate::core::structural_exec::StructuralFailure,
+) -> JsonRpcResponse {
+    use crate::core::structural_exec::StructuralFailure;
+    match failure {
+        StructuralFailure::Rejected(msg) => JsonRpcResponse::invalid_params(id, msg),
+        StructuralFailure::MissingEvent(msg) => JsonRpcResponse::internal_error(id, msg),
+        StructuralFailure::Apply(e) => structural_apply_error(id, &e),
+    }
 }
 
 /// `system.info` — engine 서술 + **이 서버가 협상할 수 있는 것의 목록**.

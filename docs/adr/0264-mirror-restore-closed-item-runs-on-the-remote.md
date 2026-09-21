@@ -56,7 +56,7 @@ pop 은 스코프 술어를 받는다.
 
 ### 4. forward 된 close 는 "복원 가능한 close" 다
 
-forward 된 close 를 일으킨 것은 **원격 사용자의 손 조작**(단축키/버튼/컨텍스트 메뉴)이다. 그래서 서버는 그 close 에 스냅샷을 남긴다. IPC 전반의 정책(`save_snapshot=false`, 에이전트 경로 전제)은 그대로 두고 **forward 경로만** 갈라낸다 — 면제를 `params` 플래그가 아니라 **호출 경로**로 표현하는 `close_surface_for_attach_holder` 의 기존 규율과 같은 형태다.
+forward 된 close 를 일으킨 것은 **원격 사용자의 손 조작**(단축키/버튼/컨텍스트 메뉴)이다. 그래서 서버는 그 close 에 스냅샷을 남긴다. IPC 전반의 정책(`save_snapshot=false`, 에이전트 경로 전제)은 그대로 두고 **forward 경로만** 갈라낸다 — 면제를 `params` 플래그가 아니라 **호출 경로**로 표현하는 `close_surface_for_attach_holder` 의 기존 규율과 같은 형태다. (현재 형태: 그 축은 도메인 함수 `core::structural_exec::close_surface` 의 `save_snapshot` 인자이고, forward 실행이 `true`, IPC 핸들러가 `false` 로 부른다 — [ADR-0395](0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).)
 
 `save_snapshot`(되돌리기 스택)과 `is_user_close`(plugin lifecycle 이벤트)는 **독립 축**이고 하나로 접지 않는다. 이 결정이 바꾸는 것은 `save_snapshot` 축뿐이다. forward 된 close 는 지금처럼 `is_user_close=false` 로 나간다.
 
@@ -88,7 +88,7 @@ forward 된 close 를 일으킨 것은 **원격 사용자의 손 조작**(단축
 
 - `ClosedItemStore` 가 출처 워크스페이스를 더 이상 싣지 않게 되면(엔트리 타입에서 그 필드가 사라지면) 결정 3 의 전제가 없어진다.
 - `StructuralOp` 의 복원 variant 가 사라지면 결정 1·2 가 실행 중이 아니다.
-- `close_surface_for_attach_holder` 가 `save_snapshot=false` 로 되돌아가면 결정 4 가 뒤집힌 것이다.
+- forward 실행(`execute_forwarded_structural_op` 의 `CloseSurface` arm)이 `structural_exec::close_surface` 를 `save_snapshot=false` 로 부르면 결정 4 가 뒤집힌 것이다(옛 이름 `close_surface_for_attach_holder` 는 ADR-0395 에서 사라졌다).
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 

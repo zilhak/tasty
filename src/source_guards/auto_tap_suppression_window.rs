@@ -2,21 +2,23 @@
 //!
 //! # 계약
 //!
-//! `execute_forwarded_structural_op` 는 재사용 IPC 핸들러(`handle_split` ·
-//! `handle_tab_create`)를 부르기 직전에 `set_auto_tap_suppressed(true)` 로 즉시-tap 을
-//! 끄고 직후에 `false` 로 되돌린다. 그 사이에 함수를 빠져나가면 플래그는 **켜진 채로
+//! `execute_forwarded_structural_op` 는 도메인 실행 함수(`structural_exec::split` ·
+//! `structural_exec::create_tab`)를 부르기 직전에 `set_auto_tap_suppressed(true)` 로
+//! 즉시-tap 을 끄고 직후에 `false` 로 되돌린다. 그 사이에 함수를 빠져나가면 플래그는 **켜진 채로
 //! 남는다** — `AttachState` 는 프로세스 수명 동안 살아 있으므로 이후 모든
 //! `tap_new_workspace_member` 가 영구히 tap 을 건너뛴다. 증상은 점유된 workspace 에
 //! 새로 생긴 터미널이 그냥 스트리밍되지 않는 것뿐이고, 패닉도 로그도 없다.
 //!
 //! `src/core/attach.rs` 의 필드 doc 이 그 안전성을 **산문으로만** 진술하고 있었다:
 //! *"핸들러 호출 자체는 `Result` 를 반환하지 않아 `?` 로 건너뛸 수 없다."* 참인
-//! 진술인데, 참으로 유지된다는 보장이 아무 데도 없었다.
+//! 진술인데, 참으로 유지된다는 보장이 아무 데도 없었다. 지금 구간이 감싸는 도메인 실행은
+//! `Result` 를 **반환한다** — 그 산문의 전제는 사라졌고, 구간이 안전한 이유는 결과를
+//! 바인딩만 하고 구간을 닫은 뒤에 판정하기 때문이다. 그것을 지키는 것이 이 가드다.
 //!
 //! # 왜 이 자리가 정적으로만 판정 가능한가
 //!
 //! 런타임 시험으로는 못 묻는다. "두 줄 사이에 탈출 경로가 없다" 를 실행으로 관측하려면
-//! 핸들러를 실제로 실패시켜야 하고, 그러려면 `Core` · `AppState` · `CoreState` 를 전부
+//! 감싼 실행을 실제로 실패시켜야 하고, 그러려면 `Core` · `AppState` · `CoreState` 를 전부
 //! 세워야 한다 — 이 세 개는 앱 그 자체다. 반면 플래그 자신은 `bool` 이라 그것만 따로
 //! 시험하면 아무것도 증명하지 못한다(무엇을 뽑아내도 계약이 안 따라온다).
 //! 그래서 여기서 묻는 것은 **그 구간의 소스 모양**이다.
@@ -29,11 +31,11 @@
 //!
 //! 초록이 뜻하지 **않는** 것:
 //!
-//! - **패닉 unwind 로는 안 닫힌다.** `?` 가 없어도 핸들러가 패닉하면 플래그는 켜진 채
+//! - **패닉 unwind 로는 안 닫힌다.** `?` 가 없어도 감싼 실행이 패닉하면 플래그는 켜진 채
 //!   남는다. 그것을 원천 봉쇄하려면 RAII 가드로 바꿔야 하고, 그건 이 판정기가 아니라
 //!   설계 변경이다.
 //! - **구간이 옳은 것을 감싼다는 뜻이 아니다.** 사이에 호출이 하나라도 있으면 통과한다.
-//!   그것이 재사용 핸들러인지는 안 본다.
+//!   그것이 도메인 실행 함수인지는 안 본다.
 //! - **닫는 호출이 실행된다는 뜻이 아니다.** 조건 분기 뒤에 있어도 텍스트로는 통과한다.
 //! - **RAII 로 바꾸면 이 판정기는 좌변이 비어 빨개진다.** 조용히 초록이 되지 않게
 //!   비공허를 따로 단정한다 — 좌변이 0 이 되는 것은 "지켜졌다" 가 아니라 "이 가드가
@@ -204,7 +206,7 @@ fn the_guard_cuts_the_two_functions_and_not_some_others() {
     // 공허 방지 — `fn_body` 가 엉뚱한 함수를 잘라도 위 이름들이 우연히 들어 있을 수 있다.
     let masked = masked_home();
     let window = body_of(&masked, WINDOW_FN);
-    for neighbour in ["StructuralOp::SplitSurface", "handle_tab_create("] {
+    for neighbour in ["StructuralOp::SplitSurface", "exec::create_tab("] {
         assert!(
             window.contains(neighbour),
             "잘라 온 본문이 `{WINDOW_FN}` 이 아니다 — `{neighbour}` 가 안 보인다"

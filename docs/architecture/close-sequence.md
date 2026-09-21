@@ -45,7 +45,8 @@ kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory sco
 GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. 두 빌드(gui / headless)가 같은
 파일을 컴파일하므로 함수 하나에 본문 하나이고, 빌드 형태의 차이는 그 본문 안의
 `#[cfg(feature = "gui")]` 블록으로만 존재한다. 근거는
-[ADR-0337](../adr/0337-structural-execution-answers-with-domain-values.md).
+[ADR-0337](../adr/0337-structural-execution-answers-with-domain-values.md) 과 그것을 부분 개정한
+[ADR-0395](../adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).
 
 ### gui 와 headless 의 차이
 
@@ -81,11 +82,14 @@ headless 빌드가 경고한다). 그래서 이 파일을 고치면 `cargo check
 ### forward 경로의 결과 타입
 
 원격 mirror 가 forward 한 구조 op 의 실행(`src/core/attach_runtime.rs`)은 도메인 값
-(`Result<(), String>`)으로 답한다. 재사용 IPC 핸들러를 타는 op(split / tab.create /
-tab.close / tab.move / pane.close / surface.close)만 `JsonRpcResponse` 를 거치고, 그 변환은
-`handler_result` 한 함수가 한다. 핸들러를 안 타는 op(convert / restore / move-surface)는
-wire 타입을 만들지 않는다 — 그 응답은 어차피 아무 데도 보내지지 않고(호출자가 회신하는
-것은 `StreamControl::StructuralResult` 다), 곧바로 실패 사유 문자열로 되풀렸다.
+(`Result<(), String>`)으로 답하고, wire 타입(`JsonRpcResponse`)을 만들지 않는다. split /
+tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러가 부르는 것과
+**같은** 도메인 실행 함수(`src/core/structural_exec.rs`)를 부르고, 그 실패
+(`StructuralFailure`)를 `forward_result` 한 함수가 사유 문자열로 바꾼다. IPC 핸들러는 같은
+실패를 `invalid_params` / `internal_error` / `structural_apply_error` 로 감싼다 — 그래서 같은
+입력에 두 진입점의 사유 문구가 같다. convert / restore / move-surface 는 `Core::apply` 를
+직접 부른다. 호출자가 회신하는 것은 `StreamControl::StructuralResult` 다. 근거는
+[ADR-0395](../adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).
 
 ## 단계
 

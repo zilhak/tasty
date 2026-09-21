@@ -700,3 +700,47 @@ impl AppState {
         Ok(())
     }
 }
+
+/// split 튜토리얼 관찰. 호출자는 구조 변경 cascade(`core::structural_cascade`)의 사용자
+/// origin 분기다 — 튜토리얼 런타임이 gui 전용이라 이 관찰도 gui 에만 있다.
+#[cfg(feature = "gui")]
+impl AppState {
+    /// surface split 뒤: 새 surface 가 든 tab 을 찾아 `SplitSurface` 연습을 기록한다.
+    pub(crate) fn observe_tutorial_surface_split(
+        &mut self,
+        engine: &CoreState,
+        workspace_index: usize,
+        pane_id: u32,
+        new_surface_id: u32,
+    ) {
+        if let Some(ws) = engine.workspaces.get(workspace_index)
+            && let Some(pane) = ws.pane_layout().find_pane(pane_id)
+            && let Some(tab) = pane
+                .tabs
+                .iter()
+                .find(|tab| tab.contains_surface(new_surface_id))
+        {
+            self.tutorial
+                .observe(crate::adapters::ui::tutorial::PracticeEvent::SplitSurface {
+                    workspace: ws.id,
+                    pane: pane_id,
+                    tab: tab.id,
+                });
+        }
+    }
+
+    /// pane split 뒤: `SplitPane` 연습을 기록한다.
+    pub(crate) fn observe_tutorial_pane_split(
+        &mut self,
+        workspace: u32,
+        original: u32,
+        new_pane: u32,
+    ) {
+        self.tutorial
+            .observe(crate::adapters::ui::tutorial::PracticeEvent::SplitPane {
+                workspace,
+                original,
+                new_pane,
+            });
+    }
+}

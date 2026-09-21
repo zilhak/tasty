@@ -396,8 +396,8 @@ impl CoreState {
     /// attach 점유 중인 workspace 에 새로 생긴 멤버 surface 를 편입한다(occupancy
     /// 등록 + 즉시 스트림 tap). create-tab/split-pane/split-surface/adopt-terminal
     /// 이 공통으로 호출하는데, 이 함수들은 **로컬 생성 경로**(`tasty claude spawn`
-    /// 등)와 **forward-op 경로**(`execute_forwarded_structural_op` 가 재사용하는
-    /// `handle_split`/`handle_tab_create`) 양쪽에서 재사용된다. 로컬 경로는 여기서
+    /// 등)와 **forward-op 경로**(`execute_forwarded_structural_op` 가 부르는
+    /// `structural_exec::split`/`structural_exec::create_tab`) 양쪽에서 재사용된다. 로컬 경로는 여기서
     /// 즉시 tap 되는 게 맞지만, forward-op 경로는 호출측(`event_handler.rs`/
     /// `boot.rs`)이 `StructuralDelta` 전송 **후** 별도로 직접 tap 하므로 여기서
     /// 또 tap 하면 이중 tap 이 된다 — `attach.is_auto_tap_suppressed()`
@@ -707,34 +707,40 @@ pub(crate) struct ForwardedDelta {
     /// `ConvertSurface` 가 실제로 kind 를 교체한(`replaced=true`) 경우의 대상
     /// surface_id. egui-mesh(markdown 등) 로 제자리 변환 시 같은 surface_id 에 stale
     /// frame 이 남는 문제를 막으려면 `PluginManager::drop_egui_mesh_frame` 호출이
-    /// 필요한데, 그건 App(GUI) 레벨 상태라 이 함수(core/state/engine 만 소유)에서
-    /// 직접 못 하고 호출자(`app/event_handler.rs`, `boot.rs`)에 위임한다 — 로컬(비-forward)
-    /// 변환 경로의 동일 처리(`app/dispatch_domain.rs` `SurfaceConverted` cascade)와
-    /// 짝을 맞춘다.
+    /// 필요한데, plugin manager 는 이 함수가 받는 상태(`Core`/`AppState`/`CoreState`)
+    /// 어디에도 없고 두 빌드 모두 그것을 소유하는 쪽이 이 함수의 호출자다
+    /// (`app/event_handler.rs` · `boot/headless_stream.rs`). 그래서 실행 결과를 **값으로**
+    /// 돌려주고 호출자가 투영한다 — 로컬(비-forward) 변환 경로의 동일 처리
+    /// (`app/dispatch_domain.rs` 의 `SurfaceConverted` 분기)와 짝을 맞춘다. 이 모양을
+    /// 유지하는 근거와 대안은
+    /// `docs/adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md`.
     pub converted_surface: Option<SurfaceId>,
 }
 
 /// mirror client 가 forward 한 구조 op 를 이 인스턴스(원격 = authoritative)에서
-/// 실행한다. anchor **원격 surface id** 로 pane/tab/workspace 를 resolve 한 뒤 기존
-/// IPC 핸들러(split / tab.create / tab.close / tab.move / pane.close / surface.close)를
-/// 그대로 재사용해 full cascade(PTY spawn·host event·cleanup)로 처리한다 — 서버측
-/// 워크스페이스는 mirror 가 아니므로 `Core::apply` 의 mirror 가드에 걸리지 않고 실제로
-/// 실행된다. `ConvertSurface`/`MoveSurface` 는 재사용할 기존 IPC 핸들러가 없어(image/
-/// markdown 처럼 kind 별 전용 핸들러만 있고 generic `surface.convert`/`surface.move`
-/// IPC 는 없음) `Core::apply(DomainIntent)` 를 직접 호출하고, 그 cascade(PTY cleanup /
-/// mesh stale-frame 방지)도 이 함수 안에서(또는 `converted_surface` 를 통해 호출자가)
-/// 직접 재현한다.
+/// 실행한다. anchor **원격 surface id** 로 pane/tab/workspace 를 resolve 한 뒤 도메인 실행
+/// 함수(`core::structural_exec` 의 split / create_tab / close_tab / move_tab / close_pane /
+/// close_surface)를 부른다 — IPC 핸들러가 부르는 것과 **같은 함수**라 검증·cascade(PTY
+/// spawn·host event·cleanup)·실패 문구가 두 진입점에서 같다. 서버측 워크스페이스는 mirror
+/// 가 아니므로 `Core::apply` 의 mirror 가드에 걸리지 않고 실제로 실행된다.
+/// `ConvertSurface`/`RestoreClosedItem`/`MoveSurface` 는 대응하는 도메인 실행 함수가 없어
+/// (generic `surface.convert`/`surface.move` IPC 가 없고 복원은 IPC 로 노출된 적이 없다)
+/// `Core::apply(DomainIntent)` 를 직접 호출하고, 그 cascade(PTY cleanup / mesh stale-frame
+/// 방지)도 이 함수 안에서(또는 `converted_surface` 를 통해 호출자가) 직접 재현한다.
+///
+/// IPC 진입점의 요청 게이트(호출자 자기 대상 거절 · 하드 점유 거절 · 요청당 한 번의 권한
+/// 판정)는 여기서 돌지 않는다 — 이 경로의 게이트는 호출자의 holder 검증이다.
 ///
 /// 반환:
 /// - 성공: `Ok(Some(delta))` — anchor 워크스페이스의 실행 **전/후** `all_surface_ids`
 ///   diff 로 added(신규 터미널)를 계산하고, 실행 후 트리+surfaces 를 담은
-///   [`StreamControl::StructuralDelta`] 를 만들어 반환한다(핸들러 응답 파싱이 아니라
+///   [`StreamControl::StructuralDelta`] 를 만들어 반환한다(실행 결과 파싱이 아니라
 ///   트리 diff 라 close cascade·move 도 균일 커버). 워크스페이스가 통째로 사라진 극단
 ///   케이스는 `Ok(None)`.
-/// - 실패: `Err(reason)` — 사유 문자열 하나다. 재사용 핸들러를 타는 op 는 그 핸들러의
-///   JSON-RPC 에러 메시지(예: 원격 미등록 plugin kind → "unknown surface kind")를
-///   [`handler_result`] 가 여기로 되돌리고, 핸들러를 안 타는 op(convert / restore /
-///   move-surface)는 wire 타입을 거치지 않고 바로 이 사유를 만든다.
+/// - 실패: `Err(reason)` — 사유 문자열 하나다. 도메인 실행 함수를 타는 op 는 그 실패
+///   문구(예: 원격 미등록 plugin kind → "unknown surface kind")를 [`forward_result`] 가
+///   그대로 옮기고 — IPC 진입점이 같은 실패에 싣는 JSON-RPC 에러 메시지와 byte 단위로 같다 —,
+///   나머지 op(convert / restore / move-surface)는 이 함수가 사유를 만든다.
 ///
 /// 호출자(메인루프)가 [`StreamControl::StructuralResult`] 로 회신한 **뒤** delta 를 push
 /// 하고, 그 다음 added_terminals 를 tap 한다(순서: result → delta → snapshot).
@@ -744,7 +750,7 @@ pub(crate) fn execute_forwarded_structural_op(
     engine: &mut CoreState,
     op: &StructuralOp,
 ) -> Result<Option<ForwardedDelta>, String> {
-    use crate::adapters::ipc::handler::{pane, surface, tab};
+    use crate::core::structural_exec::{self as exec, SplitLevel, SplitRequest};
     use serde_json::json;
     use std::collections::HashSet;
 
@@ -763,8 +769,6 @@ pub(crate) fn execute_forwarded_structural_op(
         })
         .unwrap_or_default();
 
-    // 재사용 핸들러는 응답 id 를 페이로드로만 쓴다(내부 호출 → Null).
-    let rid = serde_json::Value::Null;
     // `ConvertSurface` 성공(kind 실제 교체) 시에만 채워진다 — 호출자가
     // `PluginManager::drop_egui_mesh_frame` 을 트리거하는 신호(위 `ForwardedDelta` 문서
     // 참조).
@@ -786,14 +790,24 @@ pub(crate) fn execute_forwarded_structural_op(
                     "type": surface_kind,
                 }),
             );
-            // 이 핸들러는 새 터미널을 만들면 내부에서 `tap_new_workspace_member` 를
+            // 원격이 보낸 묶음에 `target_pane` 이 실려 있으면 IPC 와 같은 규칙으로 읽는다 —
+            // 잘못 온 값은 그 문구로, 있으면 대상 둘 지정으로 거절된다.
+            let target_pane = crate::core::param_bag::read_u32(&p, "target_pane")?;
+            let req = SplitRequest {
+                level: SplitLevel::Surface,
+                direction: split_direction(*direction),
+                target_surface: Some(*surface_id),
+                target_pane,
+                params: &p,
+            };
+            // 이 실행은 새 터미널을 만들면 내부에서 `tap_new_workspace_member` 를
             // 호출한다 — 그 즉시-tap 을 억제한다(이 함수 끝의 added_terminals 루프가
-            // delta 전송 후 정확한 순서로 직접 tap 한다). 핸들러 호출은 `Result` 를
-            // 반환하지 않아 사이에 `?` 로 새는 경로가 없다.
+            // delta 전송 후 정확한 순서로 직접 tap 한다). 결과를 바인딩만 하고 구간을
+            // 닫은 뒤에 판정하므로 사이에 `?` 로 새는 경로가 없다.
             engine.attach.set_auto_tap_suppressed(true);
-            let resp = pane::handle_split(core, state, engine, rid, &p);
+            let result = exec::split(core, state, engine, req);
             engine.attach.set_auto_tap_suppressed(false);
-            handler_result(resp)
+            forward_result(result)
         }
         StructuralOp::SplitPane {
             anchor_surface_id,
@@ -801,7 +815,7 @@ pub(crate) fn execute_forwarded_structural_op(
             surface_kind,
             params,
         } => {
-            // pane-level split 은 target_surface 로도 pane 을 resolve 한다(handle_split).
+            // pane-level split 은 target_surface 로도 pane 을 resolve 한다(`exec::split`).
             let p = structural_params(
                 params,
                 json!({
@@ -811,10 +825,18 @@ pub(crate) fn execute_forwarded_structural_op(
                     "type": surface_kind,
                 }),
             );
+            let target_pane = crate::core::param_bag::read_u32(&p, "target_pane")?;
+            let req = SplitRequest {
+                level: SplitLevel::Pane,
+                direction: split_direction(*direction),
+                target_surface: Some(*anchor_surface_id),
+                target_pane,
+                params: &p,
+            };
             engine.attach.set_auto_tap_suppressed(true);
-            let resp = pane::handle_split(core, state, engine, rid, &p);
+            let result = exec::split(core, state, engine, req);
             engine.attach.set_auto_tap_suppressed(false);
-            handler_result(resp)
+            forward_result(result)
         }
         StructuralOp::NewTab {
             anchor_surface_id,
@@ -826,21 +848,16 @@ pub(crate) fn execute_forwarded_structural_op(
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} not found"))?;
             let p = structural_params(params, json!({ "pane_id": pane_id, "type": surface_kind }));
             engine.attach.set_auto_tap_suppressed(true);
-            let resp = tab::handle_tab_create(core, state, engine, rid, &p);
+            let result = exec::create_tab(core, state, engine, pane_id, &p);
             engine.attach.set_auto_tap_suppressed(false);
-            handler_result(resp)
+            forward_result(result)
         }
         StructuralOp::CloseSurface { surface_id } => {
-            // holder 자신이 보낸 close 라 하드 점유 검사를 지나지 않는 진입점을 쓴다
-            // (`surface::close::close_surface_for_attach_holder` 의 doc 참조) — 면제를
-            // params 플래그로 두면 아무 에이전트나 같은 키를 실어 우회한다.
-            handler_result(surface::close_surface_for_attach_holder(
-                core,
-                state,
-                engine,
-                rid,
-                *surface_id,
-            ))
+            // holder 자신이 보낸 close 라 IPC 진입점의 하드 점유 검사를 지나지 않고 도메인
+            // 실행을 직접 부른다 — 면제를 params 플래그로 두면 아무 에이전트나 같은 키를 실어
+            // 우회한다. save_snapshot=true: 원격 **사용자**의 손 조작이라 되돌릴 수 있어야
+            // 한다(ADR-0264 결정 4, `exec::close_surface` 의 doc).
+            forward_result(exec::close_surface(core, state, engine, *surface_id, true))
         }
         StructuralOp::CloseTab { anchor_surface_id } => {
             let tab_id = engine
@@ -864,8 +881,7 @@ pub(crate) fn execute_forwarded_structural_op(
             {
                 engine.push_closed_item(item);
             }
-            let p = json!({ "tab_id": tab_id });
-            handler_result(tab::handle_tab_close(core, state, engine, rid, &p))
+            forward_result(exec::close_tab(core, state, engine, tab_id))
         }
         StructuralOp::ClosePane { anchor_surface_id } => {
             let pane_id = engine
@@ -876,8 +892,7 @@ pub(crate) fn execute_forwarded_structural_op(
             if let Some(item) = engine.capture_closed_pane(pane_id) {
                 engine.push_closed_item(item);
             }
-            let p = json!({ "pane_id": pane_id });
-            handler_result(pane::handle_pane_close(core, state, engine, rid, &p))
+            forward_result(exec::close_pane(core, state, engine, pane_id))
         }
         StructuralOp::MoveTab {
             anchor_surface_id,
@@ -887,8 +902,13 @@ pub(crate) fn execute_forwarded_structural_op(
             let pane_id = engine
                 .find_pane_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} pane not found"))?;
-            let p = json!({ "pane_id": pane_id, "from_index": from_index, "to_index": to_index });
-            handler_result(tab::handle_tab_move(core, state, engine, rid, &p))
+            forward_result(exec::move_tab(
+                core,
+                engine,
+                pane_id,
+                *from_index,
+                *to_index,
+            ))
         }
         StructuralOp::ConvertSurface {
             surface_id,
@@ -1101,24 +1121,48 @@ pub(crate) fn execute_forwarded_structural_op(
     }))
 }
 
-/// 재사용 IPC 핸들러의 응답을 forward 실행의 도메인 결과로 되돌린다.
+/// 도메인 실행 결과를 forward 회신의 결과로 줄인다 — 성공 값은 버리고(회신은 성공 여부와
+/// 사유 문자열 하나다) 실패는 그 문구를 그대로 쓴다. IPC 진입점이 같은 실패를 JSON-RPC
+/// 에러 메시지로 싣는 문구와 byte 단위로 같다(`handler::structural_failure_response`).
 ///
-/// forward 경로는 JSON-RPC 회신을 **아무 데도 보내지 않는다** — 호출자가 회신하는 것은
-/// `StreamControl::StructuralResult` 이고, 그 실패 사유는 문자열 하나다. 그래서 wire
-/// 타입은 재사용 핸들러가 그 모양으로만 답하기 때문에 생기는 것이고, 이 함수가 그
-/// **한 자리**에서 도메인 결과로 되돌린다. 핸들러를 안 거치는 op(convert / restore /
-/// move-surface)는 애초에 wire 타입을 만들지 않는다 — 과거엔 그 셋도 응답을 조립한 뒤
-/// 곧바로 `resp.error` 로 되풀었고, 그래서 이 모듈이 wire 타입을 아홉 자리에서 만졌다.
-fn handler_result(resp: tasty_ipc::protocol::JsonRpcResponse) -> Result<(), String> {
-    match resp.error {
-        Some(err) => Err(err.message),
-        None => Ok(()),
+/// mirror 로 다시 forward 된 차단(`MirrorStructuralBlocked { forwarded: true }`)은 실패가
+/// 아니다 — IPC 진입점은 그것을 `{forwarded: true}` 성공으로 답하고, 이 경로도 그 답을
+/// 성공으로 읽어 왔다. 이 워크스페이스 자체가 또 다른 인스턴스의 mirror 인 연쇄 attach
+/// 에서만 난다.
+fn forward_result<T>(
+    result: Result<T, crate::core::structural_exec::StructuralFailure>,
+) -> Result<(), String> {
+    use crate::core::structural_exec::StructuralFailure;
+    match result {
+        Ok(_) => Ok(()),
+        Err(StructuralFailure::Rejected(msg)) => Err(msg),
+        Err(StructuralFailure::MissingEvent(msg)) => Err(msg.to_string()),
+        Err(StructuralFailure::Apply(e)) => {
+            if e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
+                .is_some_and(|blocked| blocked.forwarded)
+            {
+                Ok(())
+            } else {
+                Err(e.to_string())
+            }
+        }
     }
 }
 
-/// forward 된 op 의 kind params(있으면)에 재사용 핸들러가 기대하는 제어 키
-/// (level/direction/target_surface/type/pane_id 등)를 덮어 얹는다. `base` 가 객체가
-/// 아니면 빈 객체에서 시작한다.
+/// op 의 split 축을 도메인 방향으로. IPC 진입점이 `direction` 문자열을 읽는 규칙
+/// (`"horizontal"` 만 가로, 나머지는 세로)과 같은 답을 낸다 — 예전에는 이 값을
+/// `as_ipc_str()` 로 문자열로 만든 뒤 그 규칙으로 되읽었다.
+fn split_direction(axis: tasty_ipc::stream::SplitAxis) -> crate::model::SplitDirection {
+    match axis {
+        tasty_ipc::stream::SplitAxis::Horizontal => crate::model::SplitDirection::Horizontal,
+        tasty_ipc::stream::SplitAxis::Vertical => crate::model::SplitDirection::Vertical,
+    }
+}
+
+/// forward 된 op 의 kind params(있으면)에 제어 키(level/direction/target_surface/type/
+/// pane_id)를 덮어 얹는다. `base` 가 객체가 아니면 빈 객체에서 시작한다. 결과는 도메인
+/// 실행이 IPC 요청의 params 와 같은 자리로 읽는 파라미터 묶음이고, 그대로 새 surface 의
+/// `surface_params` 가 된다 — 그래서 제어 키도 IPC 요청이 싣던 모양 그대로 남긴다.
 fn structural_params(base: &serde_json::Value, control: serde_json::Value) -> serde_json::Value {
     let mut obj = base.as_object().cloned().unwrap_or_default();
     if let Some(ctrl) = control.as_object() {
@@ -2481,8 +2525,8 @@ mod mesh_descriptor_display_name_tests {
 #[cfg(test)]
 mod forward_exec_tests {
     //! forward 된 구조 op 실행(2단계). 서버(원격 authoritative)측 워크스페이스는
-    //! mirror 가 아니므로 `execute_forwarded_structural_op` 이 기존 IPC 핸들러를 재사용해
-    //! **실제로** split/new-tab 을 수행한다(로컬 PTY = 원격의 정당한 PTY). 원격에 없는
+    //! mirror 가 아니므로 `execute_forwarded_structural_op` 이 IPC 핸들러와 같은 도메인 실행
+    //! 함수(`core::structural_exec`)로 **실제로** split/new-tab 을 수행한다(로컬 PTY = 원격의 정당한 PTY). 원격에 없는
     //! kind 는 `Err(reason)` 으로 실패 회신된다.
     use super::execute_forwarded_structural_op;
     use crate::state::AppState;
@@ -3122,6 +3166,126 @@ mod forward_exec_tests {
         );
     }
 
+    /// forward 실행과 IPC 진입점은 같은 도메인 실행을 부르므로, 같은 입력의 실패 문구가
+    /// **byte 단위로 같아야** 한다 — forward 회신의 사유 문자열 = IPC 에러 메시지.
+    ///
+    /// 입력은 원격이 보내는 파라미터 묶음이 IPC 요청과 같은 자리로 읽힌다는 점을 겨냥한다:
+    /// 원격 묶음에 `target_pane` 이 실려 오는 경우(값이 잘못됐거나, 있어서 대상이 둘이
+    /// 되는 경우), 원격 기준 cwd 가 서버에 없는 경우, 서버에 없는 kind.
+    #[test]
+    fn forward_and_ipc_fail_with_the_same_reason_for_the_same_input() {
+        use crate::adapters::ipc::handler::{pane, tab};
+        use serde_json::json;
+
+        let missing_dir = "/definitely/not/a/tasty/test/dir";
+        type Ipc = fn(
+            &mut crate::core::Core,
+            &mut AppState,
+            &mut crate::core::CoreState,
+            serde_json::Value,
+            &serde_json::Value,
+        ) -> tasty_ipc::protocol::JsonRpcResponse;
+        // (이름, forward op 을 만드는 함수, IPC 핸들러, IPC params 를 만드는 함수)
+        #[allow(clippy::type_complexity)]
+        // 이유: 시험 표의 한 행이다 — 이름을 따로 두면 표가 흩어진다.
+        let cases: Vec<(
+            &str,
+            Box<dyn Fn(u32) -> StructuralOp>,
+            Ipc,
+            Box<dyn Fn(u32, u32) -> serde_json::Value>,
+        )> = vec![
+            (
+                "new tab of an unknown kind",
+                Box::new(|a| StructuralOp::NewTab {
+                    anchor_surface_id: a,
+                    surface_kind: "definitely-not-registered".to_string(),
+                    params: json!({}),
+                }),
+                tab::handle_tab_create,
+                Box::new(|_, pane| json!({ "pane_id": pane, "type": "definitely-not-registered" })),
+            ),
+            (
+                "new tab with a cwd the server does not have",
+                Box::new(move |a| StructuralOp::NewTab {
+                    anchor_surface_id: a,
+                    surface_kind: "terminal".to_string(),
+                    params: json!({ "cwd": missing_dir }),
+                }),
+                tab::handle_tab_create,
+                Box::new(
+                    move |_, pane| json!({ "pane_id": pane, "type": "terminal", "cwd": missing_dir }),
+                ),
+            ),
+            (
+                "surface split whose bag also names a pane",
+                Box::new(|a| StructuralOp::SplitSurface {
+                    surface_id: a,
+                    direction: SplitAxis::Vertical,
+                    surface_kind: "terminal".to_string(),
+                    params: json!({ "target_pane": 1 }),
+                }),
+                pane::handle_split,
+                Box::new(
+                    |a, _| json!({ "level": "surface", "target_surface": a, "target_pane": 1, "type": "terminal" }),
+                ),
+            ),
+            (
+                "pane split whose bag carries a malformed pane id",
+                Box::new(|a| StructuralOp::SplitPane {
+                    anchor_surface_id: a,
+                    direction: SplitAxis::Horizontal,
+                    surface_kind: "terminal".to_string(),
+                    params: json!({ "target_pane": "not-a-number" }),
+                }),
+                pane::handle_split,
+                Box::new(
+                    |a, _| json!({ "level": "pane", "target_surface": a, "target_pane": "not-a-number", "type": "terminal" }),
+                ),
+            ),
+            (
+                "surface split with a cwd the server does not have",
+                Box::new(move |a| StructuralOp::SplitSurface {
+                    surface_id: a,
+                    direction: SplitAxis::Horizontal,
+                    surface_kind: "terminal".to_string(),
+                    params: json!({ "cwd": missing_dir }),
+                }),
+                pane::handle_split,
+                Box::new(
+                    move |a, _| json!({ "level": "surface", "target_surface": a, "type": "terminal", "cwd": missing_dir }),
+                ),
+            ),
+        ];
+
+        for (name, op, ipc, ipc_params) in cases {
+            let (mut core, mut state, mut engine, _home) = make_core_state();
+            let a = seed(&mut engine);
+            let pane_id = engine.find_pane_for_surface(a).expect("seed pane");
+
+            let resp = ipc(
+                &mut core,
+                &mut state,
+                &mut engine,
+                json!(1),
+                &ipc_params(a, pane_id),
+            );
+            let ipc_msg = resp
+                .error
+                .unwrap_or_else(|| panic!("{name}: IPC 가 성공했다 — 실패 입력이 아니다"))
+                .message;
+
+            let forwarded =
+                execute_forwarded_structural_op(&mut core, &mut state, &mut engine, &op(a));
+            let Err(forward_msg) = forwarded else {
+                panic!("{name}: forward 가 성공했다 — IPC 는 `{ipc_msg}` 로 실패했다");
+            };
+            assert_eq!(
+                forward_msg, ipc_msg,
+                "{name}: 두 진입점의 실패 문구가 갈렸다"
+            );
+        }
+    }
+
     /// anchor surface 가 서버 트리에 없으면 Err(회신) — client 매핑이 stale 한 경우.
     #[test]
     fn forward_missing_anchor_fails() {
@@ -3138,7 +3302,7 @@ mod forward_exec_tests {
     //
     // `hard_occupied_structural_guard`(`adapters/ipc/handler.rs`)는 일반 IPC
     // method-string dispatch 에만 걸려 있고, 이 파일의 `execute_forwarded_structural_op`
-    // 가 핸들러 함수를 직접 호출하는 forward 실행 경로는 우회한다. 아래 테스트들은
+    // 가 도메인 실행 함수를 직접 호출하는 forward 실행 경로는 우회한다. 아래 테스트들은
     // 그 분기가 실제로 지켜지는지 — (a) holder 의 forward 는 hard-occupied 워크스페이스
     // 에서도 여전히 성공하고, (b) 비-holder 의 일반 IPC 호출은 거부되는지 — 를 같은
     // fixture 로 함께 확인한다.

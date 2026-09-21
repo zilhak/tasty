@@ -5,76 +5,32 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-/// 공용 close 본문 — IPC handle_surface_close / handle_surface_close_self 와
-/// [`close_surface_for_attach_holder`] 가 공유한다. auto-recreate empty workspace.
+/// 공용 close 본문 — [`handle_surface_close`] 와 [`handle_surface_close_self`] 가 공유한다.
+/// 실행은 `core::structural_exec::close_surface` 이고, 여기는 응답 JSON 을 만든다.
 ///
-/// `save_snapshot` 은 **진입 경로가 정한다.** IPC 요청 진입점은 에이전트 경로라 `false`
-/// 이고(되돌리기 스택은 사용자 행동의 것이다), holder 경로는 `true` 다 — 그 close 를
-/// 일으킨 것은 원격 사용자의 손 조작이기 때문이다
-/// (`docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md` 결정 4).
-/// 아래 [`refuse_if_hard_occupied`] 의 "왜 params 플래그가 아니라 호출 경로로 면제하는가"
-/// 와 같은 규율이다 — params 는 호출자가 만들므로 그 축을 데이터로 두면 아무 에이전트나
-/// 같은 키를 실어 사용자 스택을 채운다.
-///
-/// `is_user_close` 는 **독립 축**이라 여기서 함께 뒤집지 않는다(plugin lifecycle 이벤트에
-/// 나가는 값 — `src/state/tests.rs` 의
-/// `pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close` 가 두 축이 별개임을
-/// 고정한다). forward 된 close 도 지금처럼 `is_user_close=false` 로 나간다.
+/// IPC 요청 진입점은 에이전트 경로라 `save_snapshot=false` 다(되돌리기 스택은 사용자 행동의
+/// 것이다). 원격 holder 가 forward 한 close 는 이 함수를 거치지 않고 forward 실행이
+/// 도메인 함수를 `save_snapshot=true` 로 직접 부른다 — 그 축의 근거는 도메인 함수의 문서.
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     surface_id: u32,
-    save_snapshot: bool,
 ) -> JsonRpcResponse {
-    let intent = crate::core::intent::DomainIntent::CloseSurface {
-        surface_id,
-        save_snapshot,
-    };
-    let events = match core.apply(engine, intent) {
-        Ok(events) => events,
-        Err(e) => return super::super::structural_apply_error(id, &e),
-    };
-    let Some(crate::core::intent::CoreEvent::SurfaceClosed {
-        surface_id,
-        closed,
-        cascade_level,
-        cleanup_targets,
-        closed_tab_ids,
-        closed_pane_ids,
-        workspace_purged,
-        workspaces_now_empty,
-    }) = events.into_iter().next()
-    else {
-        return JsonRpcResponse::internal_error(id, "Core::apply returned no SurfaceClosed event");
-    };
-
-    if !closed {
-        return JsonRpcResponse::success(
-            id,
-            json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }),
-        );
+    match crate::core::structural_exec::close_surface(core, state, engine, surface_id, false) {
+        Ok(crate::core::structural_exec::Closed {
+            id: surface_id,
+            closed: true,
+        }) => JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id })),
+        Ok(crate::core::structural_exec::Closed { id: surface_id, .. }) => {
+            JsonRpcResponse::success(
+                id,
+                json!({ "closed": false, "surface_id": surface_id, "reason": "surface not found" }),
+            )
+        }
+        Err(f) => super::super::structural_failure_response(id, f),
     }
-
-    // is_user_close=false — IPC 는 agent 경로. cleanup_targets 의 모든 surface 에 대한
-    // lifecycle enqueue 는 cascade_surface_closed 가 처리 (R1 분석 참조).
-    crate::core::structural_cascade::cascade_surface_closed(
-        core,
-        state,
-        engine,
-        crate::core::structural_cascade::SurfaceCloseCascade {
-            cascade_level,
-            cleanup_targets,
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_purged,
-            workspaces_now_empty,
-            is_user_close: false,
-        },
-    );
-
-    JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
 }
 
 /// 원격 attach 가 **하드 점유** 중이면 거절 응답을 돌린다.
@@ -92,7 +48,8 @@ fn close_surface_via_intent(
 /// 표현하면 **아무 에이전트나 같은 키를 실어 우회한다** — params 는 호출자가 만든다.
 /// 그래서 면제는 데이터가 아니라 **어느 함수를 부르느냐**로 표현한다: 요청 진입점
 /// ([`handle_surface_close`] · [`handle_surface_close_self`])은 이 검사를 지나고, holder
-/// 경로([`close_surface_for_attach_holder`])는 지나지 않는다.
+/// 경로는 IPC 진입점을 아예 거치지 않고 도메인 실행(`core::structural_exec::close_surface`)을
+/// 직접 부른다. 그 실행은 점유를 묻지 않는다 — 점유는 요청 진입의 게이트다.
 ///
 /// `surface.close_self` 가 예외가 아닌 것도 같은 이유다 — 그 메서드는 호출자를 확인하지
 /// 않고 params 의 `surface_id` 를 그대로 받으므로, 예외로 두면 그대로 우회 통로가 된다.
@@ -112,24 +69,6 @@ fn refuse_if_hard_occupied(
              attaching instance first."
         ),
     ))
-}
-
-/// holder 가 원격에서 보낸 close 를 실행한다 — 하드 점유 검사를 **지나지 않는다.**
-///
-/// 이 경로로 들어오는 요청은 holder 의 attach 스트림에서 온 것이라 행위자가 곧 점유자다.
-/// 자기 터미널을 닫는 것이므로 막을 이유가 없다. 진입점이 갈려 있는 것 자체가 면제의
-/// 근거이고, 그래서 params 로는 흉내 낼 수 없다.
-///
-/// 같은 근거로 `save_snapshot=true` 다 — 이 close 를 일으킨 것은 원격 **사용자**의 손
-/// 조작이므로 되돌릴 수 있어야 한다([`close_surface_via_intent`] 의 doc 참조).
-pub(crate) fn close_surface_for_attach_holder(
-    core: &mut crate::core::Core,
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: serde_json::Value,
-    surface_id: u32,
-) -> JsonRpcResponse {
-    close_surface_via_intent(core, state, engine, id, surface_id, true)
 }
 
 pub(crate) fn handle_surface_close(
@@ -155,7 +94,7 @@ pub(crate) fn handle_surface_close(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, state, engine, id, surface_id, false)
+    close_surface_via_intent(core, state, engine, id, surface_id)
 }
 
 /// Close the calling surface itself. Only way for a surface to close itself.
@@ -173,7 +112,7 @@ pub(crate) fn handle_surface_close_self(
     if let Some(refusal) = refuse_if_hard_occupied(engine, &id, surface_id) {
         return refusal;
     }
-    close_surface_via_intent(core, state, engine, id, surface_id, false)
+    close_surface_via_intent(core, state, engine, id, surface_id)
 }
 
 #[cfg(test)]

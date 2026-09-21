@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::params::{self, p_try};
+use crate::core::structural_exec::{self, Closed, TabCreated};
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -65,92 +66,23 @@ pub fn handle_tab_create(
         Err(e) => return e,
     };
 
-    if engine.find_pane_by_id(pane_id).is_none() {
-        return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
+    match structural_exec::create_tab(core, state, engine, pane_id, params) {
+        Ok(TabCreated {
+            pane_id,
+            surface_id,
+            tab_count,
+            active_tab,
+        }) => JsonRpcResponse::success(
+            id,
+            json!({
+                "pane_id": pane_id,
+                "surface_id": surface_id,
+                "tab_count": tab_count,
+                "active_tab": active_tab,
+            }),
+        ),
+        Err(f) => super::structural_failure_response(id, f),
     }
-
-    let surface_type = params
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("terminal");
-
-    // 새 탭은 상속·carry cwd 컨텍스트가 없다(fresh-context). kind 가 `@home` 같은
-    // fresh-context 기본값(예: explorer path)을 선언하면 여기서 주입한다(generic —
-    // kind 하드코딩 없음). split/preset/workspace 는 이 경로를 거치지 않아 회귀 없음.
-    let mut params = params.clone();
-    if let Some(def) = engine.surface_registry.get(surface_type) {
-        let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
-        engine.apply_kind_default_params(&def, &mut params, home.as_deref());
-    }
-
-    // cwd resolve — terminal 만. explicit > pane active surface 의 inherit.
-    let cwd = if surface_type == "terminal" {
-        let explicit = params
-            .get("cwd")
-            .and_then(|v| v.as_str())
-            .map(std::path::PathBuf::from);
-        // 2 차 방어: 호스트가 absolute + valid 만 받는다는 contract 검증.
-        if let Some(p) = &explicit
-            && !p.is_dir()
-        {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("cwd does not exist: {}", p.display()),
-            );
-        }
-        explicit.or_else(|| {
-            let sid = engine
-                .find_pane_by_id(pane_id)
-                .and_then(|p| p.tabs.get(p.active_tab))
-                .and_then(|t| t.focused_surface_id())?;
-            state.resolve_inherit_cwd_from_surface(engine, sid)
-        })
-    } else {
-        None
-    };
-
-    let tab_name = params
-        .get("name")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let intent = crate::core::intent::DomainIntent::CreateTab {
-        pane_id,
-        cwd,
-        kind: surface_type.to_string(),
-        name: tab_name,
-        surface_params: params,
-    };
-    let events = match core.apply(engine, intent) {
-        Ok(events) => events,
-        Err(e) => return super::structural_apply_error(id, &e),
-    };
-
-    let Some(crate::core::intent::CoreEvent::TabCreated {
-        pane_id,
-        tab_id,
-        surface_id,
-        tab_count,
-        active_tab,
-    }) = events.into_iter().next()
-    else {
-        return JsonRpcResponse::internal_error(id, "Core::apply returned no TabCreated event");
-    };
-
-    // dispatcher 와 같은 cascade 공유 (handle_tab_close ↔ cascade_tab_closed_full
-    // 동형) — tab.created/surface.created host event enqueue + baseline 동기화.
-    crate::core::structural_cascade::cascade_tab_created(
-        state, engine, pane_id, tab_id, surface_id,
-    );
-
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "pane_id": pane_id,
-            "surface_id": surface_id,
-            "tab_count": tab_count,
-            "active_tab": active_tab,
-        }),
-    )
 }
 
 pub fn handle_tab_close(
@@ -178,44 +110,20 @@ pub fn handle_tab_close(
         );
     }
 
-    let intent = crate::core::intent::DomainIntent::CloseTab { tab_id };
-    let events = match core.apply(engine, intent) {
-        Ok(events) => events,
-        Err(e) => return super::structural_apply_error(id, &e),
-    };
-
-    let Some(crate::core::intent::CoreEvent::TabClosed {
-        tab_id,
-        pane_id,
-        closed,
-        cleanup_targets,
-    }) = events.into_iter().next()
-    else {
-        return JsonRpcResponse::internal_error(id, "Core::apply returned no TabClosed event");
-    };
-
-    if closed {
-        // IPC = Agent origin → is_user_close=false.
-        // helper 가 cleanup_surface + surface.closed lifecycle enqueue +
-        // tab.closed host event enqueue + baseline 갱신을 일괄 처리한다.
-        crate::core::structural_cascade::cascade_tab_closed_full(
-            state,
-            engine,
-            tab_id,
-            pane_id,
-            cleanup_targets,
-            false,
-        );
-        JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id }))
-    } else {
-        JsonRpcResponse::success(
+    match structural_exec::close_tab(core, state, engine, tab_id) {
+        Ok(Closed {
+            id: tab_id,
+            closed: true,
+        }) => JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id })),
+        Ok(Closed { id: tab_id, .. }) => JsonRpcResponse::success(
             id,
             json!({
                 "closed": false,
                 "tab_id": tab_id,
                 "reason": "tab not found or cannot close the last tab",
             }),
-        )
+        ),
+        Err(f) => super::structural_failure_response(id, f),
     }
 }
 
@@ -239,20 +147,10 @@ pub fn handle_tab_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    let intent = crate::core::intent::DomainIntent::MoveTab {
-        pane_id,
-        from_index: from,
-        to_index: to,
-    };
-    let events = match core.apply(engine, intent) {
-        Ok(events) => events,
-        Err(e) => return super::structural_apply_error(id, &e),
-    };
-    let moved = matches!(
-        events.into_iter().next(),
-        Some(crate::core::intent::CoreEvent::TabMoved { moved: true, .. })
-    );
-    JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id }))
+    match structural_exec::move_tab(core, engine, pane_id, from, to) {
+        Ok(moved) => JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id })),
+        Err(f) => super::structural_failure_response(id, f),
+    }
 }
 
 // handle_open_markdown / handle_open_explorer removed: use handle_tab_create with type parameter

@@ -136,10 +136,10 @@ pub struct OccupancyRegistry {
     soft: HashMap<SurfaceId, SoftEntry>,
     /// `true` 인 동안 [`CoreState::tap_new_workspace_member`](crate::core::CoreState::tap_new_workspace_member)
     /// 는 멤버 편입(`add_workspace_member`)만 하고 실제 stream tap(`tap_surface_for_stream`)
-    /// 은 스킵한다. forward-op 실행(`execute_forwarded_structural_op`)이 재사용 IPC
-    /// 핸들러(`handle_split`/`handle_tab_create`)를 호출하는 동안만 켠다 — 그 경로는
-    /// 호출측(`apply_forwarded_structural_op`/`boot.rs`)이 `StructuralDelta` 전송 **후**
-    /// 정확한 순서로 직접 tap 하므로, 핸들러 내부의 즉시-tap 이 겹치면 이중 tap(문자
+    /// 은 스킵한다. forward-op 실행(`execute_forwarded_structural_op`)이 도메인 실행
+    /// 함수(`structural_exec::split`/`structural_exec::create_tab`)를 호출하는 동안만 켠다 —
+    /// 그 경로는 호출측(`apply_forwarded_structural_op`/`boot.rs`)이 `StructuralDelta` 전송
+    /// **후** 정확한 순서로 직접 tap 하므로, 실행 내부의 즉시-tap 이 겹치면 이중 tap(문자
     /// 중복 echo)이 된다. 로컬 생성 경로(예: `tasty claude spawn`)는 이 플래그가 항상
     /// `false`라 기존대로 즉시 tap 된다.
     suppress_auto_tap: bool,
@@ -173,8 +173,9 @@ impl OccupancyRegistry {
     }
 
     /// forward-op 실행 구간 동안 즉시-tap 을 켜고/끈다. `execute_forwarded_structural_op`
-    /// 가 재사용 핸들러 호출 직전/직후에만 짧게 감싼다(early-return 경로 없음 —
-    /// 핸들러 호출 자체는 `Result` 를 반환하지 않아 `?` 로 건너뛸 수 없다).
+    /// 가 도메인 실행 호출 직전/직후에만 짧게 감싼다(early-return 경로 없음 — 그 호출의
+    /// `Result` 는 바인딩만 하고 구간을 닫은 뒤에 판정한다. 구간 모양은
+    /// `src/source_guards/auto_tap_suppression_window.rs` 가 고정한다).
     pub(crate) fn set_auto_tap_suppressed(&mut self, suppressed: bool) {
         self.suppress_auto_tap = suppressed;
     }

@@ -48,7 +48,9 @@
 - **그 면제를 데이터가 아니라 호출 경로로 표현한다.** `params` 의 플래그로 두면 아무
   에이전트나 같은 키를 실어 우회한다 — params 는 호출자가 만든다. 그래서 진입점을 갈랐다:
   `close_surface_for_attach_holder` 는 검사를 지나지 않고, `handle_surface_close` ·
-  `handle_surface_close_self` 는 지난다. 같은 이유로 **`close_self` 는 예외가 아니다** —
+  `handle_surface_close_self` 는 지난다. (현재 형태: forward 실행은 핸들러를 거치지 않고 도메인
+  함수 `core::structural_exec::close_surface` 를 직접 부르므로 검사가 붙은 진입점을 애초에 안
+  지난다 — [ADR-0395](0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).) 같은 이유로 **`close_self` 는 예외가 아니다** —
   그 메서드는 호출자를 확인하지 않고 params 의 id 를 그대로 받는다.
 
 ### 거절의 사용자 경험

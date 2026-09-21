@@ -43,6 +43,7 @@ pub(crate) mod restore_rebuild;
 pub(crate) mod session;
 pub(crate) mod state;
 pub(crate) mod structural_cascade;
+pub(crate) mod structural_exec;
 pub(crate) mod surface_registry;
 pub(crate) mod terminal_store;
 

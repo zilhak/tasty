@@ -64,14 +64,16 @@ const NEEDLES: &[&str] = &[
 
 /// 에이전트 대면 경로. IPC 핸들러와 그것이 부르는 도메인 cascade.
 ///
-/// 구조 변경 cascade(split / tab / close)는 `src/core/structural_cascade.rs` 에 있다 — IPC
-/// 핸들러와 원격 forward 실행이 부르므로 에이전트 대면이다.
+/// 구조 변경 실행(`src/core/structural_exec.rs`)과 그 cascade(split / tab / close,
+/// `src/core/structural_cascade.rs`)는 core 에 있다 — IPC 핸들러와 원격 forward 실행이
+/// 부르므로 에이전트 대면이다.
 const AGENT_FACING: &[&str] = &[
     "src/adapters/ipc/handler.rs",
     "src/adapters/ipc/handler/",
     "src/app/dispatch/",
     "src/app/dispatch_domain.rs",
     "src/core/structural_cascade.rs",
+    "src/core/structural_exec.rs",
 ];
 
 /// 스캔 루트 — 위 접두사를 담는 가장 작은 디렉토리들.
@@ -116,16 +118,16 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "탭 목록의 \"active\" 플래그와 TabCreated 이벤트가 실어 온 active_tab 을 응답에 그대로 싣는다",
     ),
     (
-        "src/adapters/ipc/handler/tab.rs",
+        "src/core/structural_exec.rs",
         IdResolved,
-        1,
-        "cwd 상속 원본을 고를 때 호출자가 준 pane_id 로 푼 페인의 활성 탭을 본다 — 전역 포커스가 아니다",
+        2,
+        "탭 생성과 split 의 cwd 상속 원본을 고를 때 호출자가 준 pane_id(split 은 resolved_pane_id)로 푼 페인의 활성 탭을 본다 — 전역 포커스가 아니다",
     ),
     (
-        "src/adapters/ipc/handler/pane.rs",
-        IdResolved,
-        1,
-        "위와 같은 cwd 상속인데 페인을 resolved_pane_id 로 먼저 푼다는 점도 같다",
+        "src/core/structural_exec.rs",
+        Report,
+        3,
+        "TabCreated 이벤트가 실어 온 active_tab 을 결과 값(TabCreated)에 옮겨 담는다 — 핸들러가 그것을 응답에 싣는다",
     ),
     (
         "src/adapters/ipc/handler/workspace.rs",
