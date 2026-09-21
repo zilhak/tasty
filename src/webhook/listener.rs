@@ -53,7 +53,12 @@ fn on_bind_failed(error: String, addr: &str, port: u16) -> WebhookInitReport {
     tracing::warn!(
         "webhook listener bind {addr} failed: {error} — set a free port and check firewall (no auto-fallback)"
     );
-    WebhookInitReport::BindFailed { port, error }
+    WebhookInitReport::BindFailed {
+        #[cfg(feature = "gui")]
+        port,
+        #[cfg(feature = "gui")]
+        error,
+    }
 }
 
 /// accept 스레드 스폰. 실패해도 bind 자체는 이미 성공했으므로 경고만 남긴다

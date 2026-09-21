@@ -23,7 +23,9 @@
 //! 미배선(v1 스코프 밖)이므로 이 가드가 1차 필수 방어다.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+#[cfg(any(feature = "gui", test))]
+use std::sync::atomic::Ordering;
 
 use tasty_settings::ScriptRegistry;
 
@@ -39,6 +41,7 @@ pub(crate) struct AutofireGuard {
     /// "정산"된 완료 수 — suppression 판정 기준 (메인 전용).
     acknowledged: u64,
     /// 직전 checkpoint 에서 샘플한 `completed` 값 (메인 전용).
+    #[cfg(any(feature = "gui", test))]
     prev_sample: u64,
     /// 워커가 실행 종료 시 증가시키는 완료 카운터 (CompletionToken 공유).
     completed: Arc<AtomicU64>,
@@ -49,6 +52,7 @@ impl AutofireGuard {
         Self {
             submitted: 0,
             acknowledged: 0,
+            #[cfg(any(feature = "gui", test))]
             prev_sample: 0,
             completed: Arc::new(AtomicU64::new(0)),
         }
@@ -65,6 +69,7 @@ impl AutofireGuard {
     /// host 이벤트는 스크립트 완료 *이전에* 이미 pending 큐/이벤트 루프에 들어가
     /// 있으므로(run_cli 는 IPC 응답까지 블록), 완료 직후 프레임까지 suppression 을
     /// 유지해야 그 이벤트들이 같은 스크립트를 재점화하지 못한다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn checkpoint(&mut self) {
         self.acknowledged = self.prev_sample;
         self.prev_sample = self.completed.load(Ordering::SeqCst);

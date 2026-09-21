@@ -45,7 +45,16 @@ pub enum WebhookInitReport {
     /// 설정 포트가 비어 리스너를 띄우지 않았다.
     PortNotConfigured,
     /// 설정된 포트가 충돌/권한 등으로 bind 실패했다(자동 회피 없음).
-    BindFailed { port: u16, error: String },
+    ///
+    /// 페이로드를 읽는 자리는 아래 `user_warning` 하나뿐이고 그것은 GUI toast 용이다.
+    /// headless 는 이 보고서를 버리고 bind 실패를 `listener::on_bind_failed` 의
+    /// `tracing::warn!` 으로만 노출하므로, 그 빌드에서는 값을 싣지 않는다.
+    BindFailed {
+        #[cfg(feature = "gui")]
+        port: u16,
+        #[cfg(feature = "gui")]
+        error: String,
+    },
 }
 
 impl WebhookInitReport {
@@ -53,6 +62,7 @@ impl WebhookInitReport {
     ///
     /// GUI 는 이 값을 toast(`ToastManager`)로, headless 는 이미 `tracing::warn!`
     /// 으로 노출한다(중복 로그 방지 위해 headless 는 이 문자열을 다시 찍지 않음).
+    #[cfg(feature = "gui")]
     pub fn user_warning(&self) -> Option<String> {
         match self {
             WebhookInitReport::Bound => None,
