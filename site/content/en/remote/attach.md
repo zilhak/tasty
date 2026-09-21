@@ -1,4 +1,4 @@
-<!-- source-hash: 0adcbdfbf07a -->
+<!-- source-hash: 7205a4e3c184 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -101,6 +101,7 @@ tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/pro
 - A Workspace attach mirrors the terminals inside it, including the split structure. Image Surfaces show their content as well, and clicks and key presses reach the remote. The explorer can only be browsed — renaming, deleting and opening files are blocked. Markdown Surfaces show the remote document in this computer's theme, and the refresh button at the document's top right fetches the latest content again. When the document changes on the remote, the content isn't replaced on its own — only the refresh button changes color (if the remote Tasty runs with `--headless`, the color doesn't change, so press it yourself to check). While the connection is lost and waiting to reconnect, the document shows a notice that the connection was lost instead of the old content, and once it reconnects it fetches the latest content on its own. Relative image paths and file links inside a remote document don't open, and the address bar can't open another file. HTML Surfaces still only take up their place; their content is not shown yet.
 - `--raw` works only at the Surface level.
 - Unless you pass `--no-reconnect`, it automatically tries to reconnect when SSH drops.
+- If a slow link makes you miss part of the screen the remote was sending, the remote says so and the attach re-attaches on its own to fetch the screen again, printing a one-line notice in your terminal. An attach that prints the screen and exits re-attaches up to three times per run; if it still misses something, it prints the result and then warns that part of the screen may be missing. `--raw` re-attaches with no limit and redraws the screen from scratch. Input given with `--send` is not sent again.
 
 To bring it up as a mirror Workspace inside a running Tasty window, use "Set up automatic attach on a Workspace" below.
 
@@ -125,6 +126,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 - **Reopening a closed item** (`Ctrl+Shift+T` by default) inside a mirror brings back a Tab that was closed on the remote — that Tab is a remote terminal, so your input goes to the remote too. Its earlier scrollback is fully visible only in the remote window (a mirror starts from the visible screen).
   - A reopen only brings back what was closed **in that remote Workspace**. If the remote has nothing to reopen you just get an informational toast and nothing happens — a Tab you closed on your own side is never created inside the mirror instead. Go back to your own Workspace and press the same key to reopen yours.
 - The remote terminal's completion · input-needed indicators (border · badge) also arrive in the mirror as they are.
+- If part of what the remote was sending is lost, a "Part of the remote screen was lost" toast appears and the mirror re-attaches on its own to fetch the screen again (a mirror attached without a profile does the same). After it re-attaches, the same screen may appear once more in the scrollback. If this happens during a clipboard image upload, the upload ends as failed and you can try again — it is not resent automatically, because the remote may already have saved it.
 - Pasting a clipboard image uploads it to the remote and inputs the **remote path**. Text paste works as usual.
 - You cannot create child agents in a mirror Workspace with `tasty claude spawn` and the like. Launch them directly on the remote instance.
 - Closing the last terminal of a mirror removes the remote Workspace itself and disconnects.

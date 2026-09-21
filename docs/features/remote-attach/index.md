@@ -69,12 +69,18 @@ client→server 요청 채널은 `ClientResize`(geometry 구동), `ClientAttenti
 **서버가 프레임을 버렸다는 통지(`Loss`)는 위 넷과 성질이 반대다** — 위 넷은 멱등 상태라 유실돼도
 다음 tick 에 수렴하지만, PTY 출력처럼 수렴하지 않는 것이 유실되면 mirror 는 끊긴 데이터를 연속으로
 계속 그린다. 그래서 서버는 그 연결에서 버린 프레임 수를 `StreamControl::Loss{frames}` 로 되돌려
-준다. **받겠다고 선언한 연결에만** 간다(`ClientLossNotify`, 지금은 GUI mirror 가 유일한 선언자) —
-선언 안 한 peer 의 바이트 열은 무변경이고, 이 통지를 못 읽는 client 에게 "무시" 는 "손실 없음" 과
-구별되지 않기 때문이다. mirror 측 소비는 현재 경고 로그 한 줄이고 화면은 종전처럼 계속 그린다 —
-종류별 복구 계약은 아직 없다. 메커니즘·선언자 전수·비용은
-[dev-guide/attach-behavior "client 에게 공백을 알린다"](../../dev-guide/attach-behavior.md#client-에게-공백을-알린다-loss--client_loss_notify),
-근거는 [ADR-0334](../../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
+준다. **받겠다고 선언한 연결에만** 간다(`ClientLossNotify` — GUI mirror · GUI bulk 전송 · CLI
+`tasty attach` 가 선언한다) — 선언 안 한 peer 의 바이트 열은 무변경이고, 이 통지를 못 읽는
+client 에게 "무시" 는 "손실 없음" 과 구별되지 않기 때문이다. 통지를 받은 client 는 **다시
+attach 해 화면을 새로 받는다** — 서버가 터미널 snapshot 을 만드는 자리가 attach 하나뿐이라서다.
+GUI mirror 는 "원격 화면 일부를 놓쳤다" 경고 toast 를 띄운 뒤 스스로 다시 붙고(수동 attach 도
+같다), 그 사이 mirror 터미널의 출력 위치 표지(stream)가 바뀌어 공백을 건너 읽는 에이전트는
+불일치 오류를 받는다. CLI 는 stderr 로 알리고 다시 붙으며, bulk 전송은 결과를 모르므로 중단으로
+끝난다. 서버 전체의 손실 누계와 지금 쌓인 양은 `tasty list pressure` 의 `stream_push` 로
+읽는다([telemetry](../telemetry/index.md)). 종류별 계약·순서·한도는
+[dev-guide/attach-behavior "통지를 받은 client 가 하는 일"](../../dev-guide/attach-behavior.md#통지를-받은-client-가-하는-일-재동기화-계약),
+근거는 [ADR-0334](../../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md) ·
+[ADR-0400](../../adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md).
 
 ### mirror 워크스페이스 내 구조 변경
 
