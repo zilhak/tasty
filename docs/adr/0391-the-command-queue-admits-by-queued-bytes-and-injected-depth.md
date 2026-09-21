@@ -45,6 +45,9 @@ IPC 서버의 명령 큐(`src/adapters/production/tcp_ipc_server.rs` 의 `TcpIpc
 **반납 시점은 큐에서 꺼낼 때다** — 서버 port 의 `try_recv` 가 명령의 몫을 돌려준다. handler 가 실행
 중인 명령은 이미 큐 밖이다. 몫은 표(`AdmissionTicket`)가 들고 표가 버려질 때 빠지므로, 큐째 버려지는
 종료 경로나 송신 실패로 명령이 되돌아오는 경로도 따로 배선하지 않는다.
+이 반납 시점은 `src/adapters/production/tcp_ipc_server.rs` 의 시험
+`a_dequeued_command_stops_counting_while_it_is_still_held` 가 고정한다. 꺼낸 명령을 쥔 채로 장부가 이미
+0 인지를 본다.
 
 **거절은 응답으로 온다.**
 
@@ -107,8 +110,12 @@ dispatch 회차 예산과 같은 값이다. **실행 인스턴스에서 분포�
   아니라 서술이다. 안 골랐다.
 - **C. 주입 깊이 대신 주입 호출자마다 따로 자른다**(웹훅 큐 · runner 동시성). 문제는 호출자가 아니라
   "큐에 남은 명령" 이다. 호출자별 상한은 새 호출자가 생길 때마다 빠진다. 안 골랐다.
-- **D. 반납을 handler 완료 시점으로.** 그러면 이 장부가 대기열이 아니라 처리 중인 일까지 센다.
-  `approval.await` 처럼 사람을 기다리는 handler 하나가 몫을 무한정 쥔다. 안 골랐다.
+- **D. 반납을 명령이 버려질 때로**(표의 Drop 에만 맡긴다). 그러면 이 장부가 대기열이 아니라 꺼낸
+  명령을 쥔 동안까지 센다. **지금 트리에서는 차이가 작다.** 소비자(`src/app/ipc.rs` 의 `process_ipc`)가
+  한 회차에 꺼낸 명령을 그 회차 안에서 값으로 소비하고 버리며, handler 에 넘기는 것은 명령이 아니라
+  응답 통로다. 그래서 `approval.await` 같은 장수 handler 도 몫을 쥐지 않는다. 이 결정이 막는 것은
+  **앞으로** 누가 명령을 회차 밖에 보관하게 바꿀 때 생길 조용한 과계수다. 그때도 장부가 대기열만
+  재도록 반납을 `try_recv` 에 묶었다. 안 골랐다.
 
 ## Reconsideration Triggers
 
