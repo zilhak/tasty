@@ -23,6 +23,8 @@ headless 빌드에 그 필드가 있는지를 적는다.
   `읽힘` 은 headless 라이브러리 안에 그 필드를 읽는 자리가 있는 것이다. `③` 은 필드가
   headless 에도 컴파일되고 그 빌드가 값을 세우지만 읽는 자가 GUI 뿐이라 항목 단위
   `expect(dead_code)` 를 단 것이다. `②` 는 headless 라이브러리에는 없고 테스트 구성에만 있는 것이다.
+  `debug 헤드리스만 읽힘` 은 게이트가 `cfg(any(feature = "gui", debug_assertions[, test]))` 라 debug
+  헤드리스에서만 컴파일되고 읽히는(주로 debug `ui.state` 덤프) 것이다 — release 헤드리스에는 필드가 없다.
 
 이 칸은 소스를 읽어 정한 값이 아니라 진단으로 잰 값이다. 재는 법은 아래 "재는 법".
 
@@ -54,9 +56,9 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | 필드 | 분류 | 수명 | 세우는 쪽 → 비우는 쪽 | headless |
 |---|---|---|---|---|
 | `active_workspace` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 (대상 생략 시 기본값) |
-| `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 |
-| `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 앞은 읽힘(`ui.state`), 뒤는 없음 |
-| `active_modal_id` · `active_modal_kind` | 사용자 view 상태 | 열림 | `App::open_modal` → 모달 닫힘 | 읽힘 |
+| `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | debug 헤드리스만 읽힘(release 에는 필드 없음) |
+| `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 앞은 debug 헤드리스만 읽힘(`ui.state`, release 에는 필드 없음), 뒤는 없음 |
+| `active_modal_id` · `active_modal_kind` | 사용자 view 상태 | 열림 | `App::open_modal` → 모달 닫힘 | debug 헤드리스만 읽힘(release 에는 필드 없음) |
 | `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 설정·사용자 토글 → — | 없음 |
 | `pending_resize_cursor` · `switch_overlay` · `modifier_hint` · `tutorial` | 사용자 view 상태 | 프레임·열림 | GUI 입력 → GUI | 없음 |
 | `dialogs` | 사용자 view 상태 | 열림·요청 | 위 절 | 없음 |
@@ -68,7 +70,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | `command_palette` | 사용자 view 상태 | 열림 | 팔레트 → 팔레트 | 없음 |
 | `recent_files` | 도메인 사실 | 영속 | 디스크 로드·파일 열기 → — | 읽힘 |
 | `popup_hovered` · `banner_hovered` · `modifier_hint_hovered` · `resize_edge_widget_hovered` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
-| `plugin_popup_open` | 사용자 view 상태 | 프레임 | plugin popup 그리기 → 입력 라우팅 | 읽힘(`ui.state`) |
+| `plugin_popup_open` | 사용자 view 상태 | 프레임 | plugin popup 그리기 → 입력 라우팅 | debug 헤드리스만 읽힘(`ui.state`, release 에는 필드 없음) |
 | `popup_layers` · `plugin_popup_layers` · `host_popup_hittest` · `popup_escape_owner` · `plugin_popup_hittest` · `banner_layer` · `modifier_hint_layer` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
 | `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory` 는 읽힘, `preset_store` 는 ③(사본을 받지만 읽는 자가 GUI 뿐 — `expect`) |
 | `pending_lifecycle_events` | 실행 자원 (큐) | 요청 | close cascade → 메인 루프가 plugin 에 통지 | 읽힘 |
@@ -164,7 +166,9 @@ cargo check -p tasty --no-default-features --all-targets
 
 `dead_code` 는 이 크레이트에서 error 라, 새 필드가 headless 에 컴파일되고 아무도 안 읽으면 앞
 검사가 그 필드를 이름으로 찍고 실패한다. `③` 의 `expect` 는 거꾸로 — headless 에 읽는 자가 생겨
-진단이 사라지면 `unfulfilled_lint_expectations` 가 그 자리를 가리킨다. `②` 를 `cfg(feature =
+진단이 사라지면 `unfulfilled_lint_expectations` 가 그 자리를 **경고로** 가리킨다. 빌드·CI 를 막지는
+않는다 — 그 lint 는 warn 이고 `Cargo.toml` 의 `[workspace.lints.rust]` deny 목록 밖이며, CI 는 `-D warnings` 를
+안 쓴다. 그래서 이 칸의 변화는 경고 수로만 보인다. `②` 를 `cfg(feature =
 "gui")` 로 좁히면 뒤 검사가 그 정의를 부르는 시험에서 실패한다.
 
 `없음` 칸은 필드 선언 앞의 `#[cfg(feature = "gui")]` 로 읽는다.

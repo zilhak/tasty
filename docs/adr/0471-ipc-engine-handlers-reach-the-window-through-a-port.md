@@ -125,9 +125,14 @@ GUI·debug 핸들러만 `AppState` 를 받고, 그것은 엔진 핸들러 표와
 - 헤드리스 intent 적용이 창 상태 없이 돌게 되면(intent 핸들러가 `AppState` 대신 포트를 받게 되면)
   `pump_ipc` 가 포트로 내려갈 수 있다. 재는 법: `src/intent/headless.rs` 의 `route_non_domain` 이
   부르는 도메인 핸들러의 인자 타입.
-- `AppState` 를 받는 자리가 다시 는다. 재는 법: 위 범위에서 `fn` 인자 `&(mut )?AppState` 를 세고
-  (이 결정 직후 35) 늘어난 자리가 창을 쥔 진입점 · 창·debug 라우터 · 창 상태 자체가 대상인 핸들러
-  중 하나인지 본다.
+- `AppState` 를 받는 자리가 다시 는다. 재는 법: 주석·문자열을 덮은 사본(`mask-source`)의 위 범위
+  (`src/adapters/ipc/**` · `src/boot/headless_dispatch.rs` · `src/app/ipc*`)에서 인자 `[A-Za-z_][A-Za-z0-9_]*: &(mut )?([A-Za-z_][A-Za-z0-9_]*::)*AppState\b` 를
+  센다 — 경로 한정 표기(`&crate::state::AppState`)도 세야 한다. 늘어난 자리가 창을 쥔 진입점 ·
+  창·debug 라우터 · 창 상태 자체가 대상인 핸들러 중 하나인지 본다. 기록값: 이 결정 직후 35(출하 27 ·
+  시험 8 — 그 "출하" 는 시험 전용 `handle_with_caller` 를 담고 있어, 갈라 세면 출하 26). 2026-09-22
+  위 패턴 실측 40 = **출하 26 · 시험 14**(클로저 인자 2 포함, 둘 다 시험). 출하는 그대로이고 는 것은
+  전부 시험이다. 경로 한정 표기만 잡히는 자리는 6 이고 전부 시험이다. 옛 패턴
+  `이름: &(mut )?AppState` 로는 34 가 나와 그 6 을 놓친다.
 
 ## References
 

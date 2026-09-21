@@ -23,7 +23,8 @@ headless 에 생산자도 호출자도 없는 정의. 모듈 통째가 그 안�
 
 빼면 동작이 바뀌므로 제외하지 않는다. 자리마다 `cfg_attr(not(feature = "gui"), expect(...))`
 로 계약 하나만 설명한다. 조건이 달라져 진단이 사라지면
-`unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. 모듈이나 crate 전체를 덮는
+`unfulfilled_lint_expectations` 가 그 자리를 이름으로 **경고한다** — 빌드·CI 를 막지는 않는다
+(그 lint 는 warn 이고 `Cargo.toml` 의 deny 목록 밖이며, CI 는 `-D warnings` 를 안 쓴다). 모듈이나 crate 전체를 덮는
 dead_code 예외는 쓰지 않는다.
 
 조건이 `not(feature = "gui")` 하나뿐인 모듈 단위 `allow(dead_code)` 는 0 이다. 이 규칙에 아직

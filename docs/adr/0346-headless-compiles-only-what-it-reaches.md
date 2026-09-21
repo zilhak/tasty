@@ -92,7 +92,8 @@ ADR-0111 의 다음 조항은 개정하지 않는다.
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
 - 위 "근거" 로 남긴 자리의 조건이 달라지면 `expect` 가 충족되지 않아
-  `unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. headless drain 에 cascade
+  `unfulfilled_lint_expectations` 가 그 자리를 이름으로 경고한다(빌드·CI 를 막지는 않는다 — warn 이고
+  `Cargo.toml` deny 목록 밖이며 CI 는 `-D warnings` 를 안 쓴다). headless drain 에 cascade
   를 배선하거나 forward 큐를 비우는 쪽이 생기는 순간이 그 시점이다.
 
 **원리적으로 안 붙는 것** — 사람이 요구사항으로 판단한다.
