@@ -19,6 +19,7 @@ use super::scrollback::queue_scrollback_for_surface;
 impl SavedLayout {
     /// Layout 안의 모든 Generic surface kind 토큰을 수집. 호출자는 첫 plugin pump
     /// 후에 registry에 이 kind들이 등록됐는지 확인하여 복원 시점을 결정한다.
+    #[cfg(feature = "gui")]
     pub fn required_plugin_kinds(&self) -> Vec<String> {
         let mut kinds = std::collections::HashSet::new();
         for ws in &self.workspaces {
@@ -78,6 +79,7 @@ impl SavedLayout {
         }
     }
 
+    #[cfg(feature = "gui")]
     fn collect_kinds_in_pane(node: &SavedPaneNode, out: &mut std::collections::HashSet<String>) {
         match node {
             SavedPaneNode::Leaf(pane) => {
@@ -92,6 +94,7 @@ impl SavedLayout {
         }
     }
 
+    #[cfg(feature = "gui")]
     fn collect_kinds_in_layout(
         layout: &SavedSurfaceLayout,
         out: &mut std::collections::HashSet<String>,

@@ -406,6 +406,7 @@ fn write_slot_atomic(dir: &Path, path: &Path, json: &str) -> std::io::Result<()>
 
 // ── 삭제 ──
 
+#[cfg(any(feature = "gui", test))]
 fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
     let path = slot_path_in(dir, slot);
     if let Err(e) = std::fs::remove_file(&path)
@@ -417,6 +418,7 @@ fn delete_slot_in(dir: &Path, slot: LayoutSlotId) {
 
 /// 슬롯 파일을 지운다. 없으면 no-op — `restore_layout` 이 꺼진 채로 창이 닫힐 때
 /// (`App::retire_main_engine`) 쓴다.
+#[cfg(feature = "gui")]
 pub(crate) fn delete_slot(slot: LayoutSlotId) {
     let Some(dir) = layouts_dir() else { return };
     delete_slot_in(&dir, slot);
@@ -552,6 +554,7 @@ impl LayoutDirtyTracker {
     /// 처음 dirty 가 된 시각. 호스트가 여기에 debounce 를 더해
     /// `Tick::LayoutFlush` 데드라인을 잡는다(`docs/dev-guide/timer-hub.md`) —
     /// 주기 판정은 이 타입이 아니라 타이머 허브가 한다.
+    #[cfg(feature = "gui")]
     pub fn dirty_since(&self) -> Option<Instant> {
         self.dirty_since
     }
