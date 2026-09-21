@@ -40,7 +40,9 @@
 셋째를 둘째와 가르는 조건은 "id 의 owner 접두사가 `user/` 가 아니고 그 id 의 contribution 이 user
 것뿐인가" 다. plugin 이 안 떠 있는 것과 id 오타는 여기서 가를 수 없다(둘 다 contribution 이 user 것
 하나뿐이다). 그래서 코드 하나가 두 경우를 합친 뜻을 가진다. 헤드리스는 부팅 시 번들 plugin 이 떠
-있지 않으므로, 정상적인 plugin patch 도 plugin 을 켜기 전까지 이 사유로 보고된다.
+있지 않으므로, 정상적인 plugin patch 도 plugin 을 켜기 전까지 이 사유로 보고된다. "대상이 contribute 되면
+그대로 적용된다" 는 병합이 user patch 를 늘 마지막에 두기 때문에 참이다 — reload 없이도 그렇다
+([ADR-0427](0427-file-handler-merge-applies-user-patches-last.md)).
 
 둘째 · 셋째는 finalize 를 기다리지 않고 reload 가 **같은 판정**으로 미리 고른다
 ("어느 출처든 detector 하나 · action 하나를 가졌는가" — finalize 는 마지막 non-None 이 이기므로

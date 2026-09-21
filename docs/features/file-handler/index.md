@@ -38,7 +38,7 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 
 ### Contribution 머지 + 부팅 자동 등록
 
-두 registry 모두 출처별(Host/Plugin/User) contribution 을 보관하고 finalize 시 patch 머지(last-writer-wins, rules union+dedupe). **부팅 시** enabled plugin(빌트인 포함)의 detector/handler 가 plugin spawn 과 **분리되어** 등록된다 — 그래서 앱 켠 직후 별도 enable 없이 `.md`/이미지 등이 동작. 멱등(retain 교체)이라 disable→enable·다중 윈도우에서 중복 없음. plugin uninstall 시 그 contribution 만 제거.
+두 registry 모두 출처별(Host/Plugin/User) contribution 을 보관하고 finalize 시 patch 머지(last-writer-wins, rules union+dedupe). handler registry 의 병합 순서는 설치 순서가 아니라 **Host → Plugin → User** 다(같은 출처 안은 설치 순서) — 그래서 plugin handler 를 patch 하는 user 항목은 부팅 때 plugin 보다 먼저 읽혀도, plugin 을 껐다 켜도 reload 없이 이긴다. 근거 [ADR-0427](../../adr/0427-file-handler-merge-applies-user-patches-last.md). **부팅 시** enabled plugin(빌트인 포함)의 detector/handler 가 plugin spawn 과 **분리되어** 등록된다 — 그래서 앱 켠 직후 별도 enable 없이 `.md`/이미지 등이 동작. 멱등(retain 교체)이라 disable→enable·다중 윈도우에서 중복 없음. plugin uninstall 시 그 contribution 만 제거.
 
 ### Picker + Recent
 
