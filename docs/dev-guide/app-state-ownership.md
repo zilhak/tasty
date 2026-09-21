@@ -20,11 +20,11 @@ headless 빌드에 그 필드가 있는지를 적는다.
   `요청`(세운 쪽 다음 소비 한 번에 비워진다) · `세션`(창이 사는 동안) · `영속`(디스크에서
   로드된다).
 - **headless**: `없음` 은 `cfg(feature = "gui")` 로 그 빌드에서 필드가 사라진 것이다.
-  `읽힘` 은 headless 라이브러리 안에 그 필드를 읽는 자리가 있는 것이다. `독자 없음` 은
-  필드가 headless 에도 컴파일되지만 그 빌드에 읽는 자리가 없는 것이다 — 아래 "남은 것" 참조.
+  `읽힘` 은 headless 라이브러리 안에 그 필드를 읽는 자리가 있는 것이다. `③` 은 필드가
+  headless 에도 컴파일되고 그 빌드가 값을 세우지만 읽는 자가 GUI 뿐이라 항목 단위
+  `expect(dead_code)` 를 단 것이다. `②` 는 headless 라이브러리에는 없고 테스트 구성에만 있는 것이다.
 
-`읽힘`/`독자 없음` 은 소스를 읽어 정한 값이 아니라 진단으로 잰 값이다. 재는 법은 아래
-"재는 법".
+이 칸은 소스를 읽어 정한 값이 아니라 진단으로 잰 값이다. 재는 법은 아래 "재는 법".
 
 ## `dialogs` — GUI 소유 한 덩어리
 
@@ -55,48 +55,58 @@ headless 빌드에 그 필드가 있는지를 적는다.
 |---|---|---|---|---|
 | `active_workspace` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 (대상 생략 시 기본값) |
 | `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 |
-| `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 앞은 읽힘(`ui.state`), 뒤는 독자 없음 |
+| `settings_open_requested` · `plugins_open` | 사용자 view 상태 | 요청 | 사이드바 버튼 → 다음 프레임 `dispatch_pending_modal_opens` | 앞은 읽힘(`ui.state`), 뒤는 없음 |
 | `active_modal_id` · `active_modal_kind` | 사용자 view 상태 | 열림 | `App::open_modal` → 모달 닫힘 | 읽힘 |
-| `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 설정·사용자 토글 → — | 독자 없음 |
+| `sidebar_width` · `sidebar_visible` · `sidebar_collapsed` | 사용자 view 상태 | 세션 | 설정·사용자 토글 → — | 없음 |
 | `pending_resize_cursor` · `switch_overlay` · `modifier_hint` · `tutorial` | 사용자 view 상태 | 프레임·열림 | GUI 입력 → GUI | 없음 |
 | `dialogs` | 사용자 view 상태 | 열림·요청 | 위 절 | 없음 |
-| `tab_bar_height` | 사용자 view 상태 | 프레임 | 탭바 실측 → — | 독자 없음 |
+| `tab_bar_height` | 사용자 view 상태 | 프레임 | 탭바 실측 → — | 없음 (테스트 구성에는 있다 — ②) |
 | `popups` · `toasts` · `banners` | 사용자 view 상태 | 열림 | GUI → GUI | 없음 |
 | `fullscreen_stage` · `stage_closed_queue` · `stage_deferred_grid_resync` | 사용자 view 상태 | 열림 | GUI → GUI | 없음 |
-| `search` | 사용자 view 상태 | 열림 | 검색 바 → 검색 바 | 독자 없음 |
+| `search` | 사용자 view 상태 | 열림 | 검색 바 → 검색 바 | 없음 |
 | `port_scan` · `port_favorites_scan` | 사용자 view 상태 | 열림 | port scanner popup → popup | 없음 |
-| `command_palette` | 사용자 view 상태 | 열림 | 팔레트 → 팔레트 | 독자 없음 |
+| `command_palette` | 사용자 view 상태 | 열림 | 팔레트 → 팔레트 | 없음 |
 | `recent_files` | 도메인 사실 | 영속 | 디스크 로드·파일 열기 → — | 읽힘 |
-| `popup_hovered` · `banner_hovered` · `modifier_hint_hovered` · `resize_edge_widget_hovered` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 독자 없음 |
+| `popup_hovered` · `banner_hovered` · `modifier_hint_hovered` · `resize_edge_widget_hovered` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
 | `plugin_popup_open` | 사용자 view 상태 | 프레임 | plugin popup 그리기 → 입력 라우팅 | 읽힘(`ui.state`) |
 | `popup_layers` · `plugin_popup_layers` · `host_popup_hittest` · `popup_escape_owner` · `plugin_popup_hittest` · `banner_layer` · `modifier_hint_layer` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
-| `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory` 는 읽힘, `preset_store` 는 독자 없음 |
+| `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory` 는 읽힘, `preset_store` 는 ③(사본을 받지만 읽는 자가 GUI 뿐 — `expect`) |
 | `pending_lifecycle_events` | 실행 자원 (큐) | 요청 | close cascade → 메인 루프가 plugin 에 통지 | 읽힘 |
 | `pending_host_events` | 실행 자원 (큐) | 요청 | `enqueue_host_event` → Event Bus 발화 | 읽힘 (headless drain) |
-| `last_focused_surface_id` · `last_active_workspace_id` · `last_focused_tab` · `last_tab_locations` | 실행 자원 (변화 감지 기준값) | 세션 | GUI tick 의 감지 → 같은 자리 | 독자 없음 |
+| `last_focused_surface_id` · `last_active_workspace_id` · `last_focused_tab` · `last_tab_locations` | 실행 자원 (변화 감지 기준값) | 세션 | GUI tick 의 감지 → 같은 자리 | 없음 |
 | `explorer_views` · `dag_graph_views` | 사용자 view 상태 | 열림 (surface 수명) | surface 그리기 → surface 닫힘 | 없음 |
-| `tool_registry` · `palette_plugin_commands` | 도메인 사실의 사본 (plugin 기여 목록) | 세션 | plugin 활성 → 재계산 | 독자 없음 |
-| `pending_plugin_command_invokes` · `pending_tool_events` · `pending_popup_opens` | 실행 자원 (큐) | 요청 | 도구 메뉴·팔레트 → 메인 루프 | 독자 없음 |
+| `tool_registry` · `palette_plugin_commands` | 도메인 사실의 사본 (plugin 기여 목록) | 세션 | plugin 활성 → 재계산 | 없음 |
+| `pending_plugin_command_invokes` · `pending_tool_events` · `pending_popup_opens` | 실행 자원 (큐) | 요청 | 도구 메뉴·팔레트 → 메인 루프 | 없음 |
 | `pending_handler_ipc` | 실행 자원 (큐) | 요청 | 파일 핸들러 dispatch → 메인 루프 | 읽힘 |
-| `drop_hover` · `pending_file_drops` | 사용자 view 상태 | 열림·요청 | OS drag&drop → frame end | 독자 없음 |
-| `plugin_popup_closes` · `plugin_popup_focus_bumps` · `plugin_banner_closes` | 실행 자원 (큐) | 요청 | egui 패스 → 메인 루프가 plugin 에 통지 | 독자 없음 |
-| `plugin_mesh_popup_regions` · `plugin_popup_ime_cursor_area` | 사용자 view 상태 | 프레임 | egui 패스 → 합성·IME | 독자 없음 |
+| `drop_hover` · `pending_file_drops` | 사용자 view 상태 | 열림·요청 | OS drag&drop → frame end | 없음 |
+| `plugin_popup_closes` · `plugin_popup_focus_bumps` · `plugin_banner_closes` | 실행 자원 (큐) | 요청 | egui 패스 → 메인 루프가 plugin 에 통지 | 없음 |
+| `plugin_mesh_popup_regions` · `plugin_popup_ime_cursor_area` | 사용자 view 상태 | 프레임 | egui 패스 → 합성·IME | 없음 |
 | `plugin_mesh_popup_forward` · `plugin_mesh_banner_forward` | 사용자 view 상태 | 열림 | egui 패스 → 합성 | 없음 |
-| `plugin_mesh_banner_regions` | 사용자 view 상태 | 프레임 | egui 패스 → 합성 | 독자 없음 |
-| `plugin_mesh_popup_pending_repaint` · `plugin_mesh_banner_pending_repaint` | 사용자 view 상태 | 요청 | plugin repaint 요청 → 합성 | 독자 없음 |
+| `plugin_mesh_banner_regions` | 사용자 view 상태 | 프레임 | egui 패스 → 합성 | 없음 |
+| `plugin_mesh_popup_pending_repaint` · `plugin_mesh_banner_pending_repaint` | 사용자 view 상태 | 요청 | plugin repaint 요청 → 합성 | 없음 |
 | `pending_intents` | 실행 자원 (큐) | 요청 | 핸들러·GUI 의 `dispatch_intent` → `dispatch_pending_intents` / headless drain | 읽힘 |
 
-## 남은 것 — `독자 없음` 칸
+## 모듈 단위 예외 없이 가른다
 
-위 표에서 `독자 없음` 인 필드는 **headless 빌드에 컴파일되지만 그 빌드 안에서 아무도 읽지
-않는다.** 대부분 사용자 view 상태이고 몇은 GUI 메인 루프만 비우는 큐다. 이 칸이 비어 있지 않은
-동안 "headless 는 필요한 상태만으로 구성된다" 는 `dialogs` 덩어리에서만 참이다.
+`state` 모듈에는 headless 진단을 덮는 모듈 단위 예외가 없다. 한때 `src/state.rs` 첫머리의
+`cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))` 가 `state` 와 하위 모듈 전체를
+덮었고, 그 아래에 headless 에 컴파일되지만 아무도 읽지 않는 필드 31 개가 있었다. 지금은
+[헤드리스 정의 경계](headless-build-boundaries.md) 의 세 갈래를 항목마다 적용한다.
 
-이 필드들이 조용히 남아 있는 이유는 `src/state.rs` 첫머리의 모듈 단위
-`cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))` 다. 그것이 `state` 모듈과
-하위 모듈 전체의 진단을 덮는다 — [헤드리스 정의 경계](headless-build-boundaries.md) 가 금지하는
-형태가 이 모듈에만 남아 있다. 필드마다 ①(gui 전용) 또는 ③(headless 도 세우지만 읽는 자가
-GUI 뿐 — `expect`)으로 가르는 것이 다음 단계다.
+- **①** 필드 29 개와 그 필드만 쓰는 자료형(`PendingPopupOpen` · `DropHoverState`)은
+  `cfg(feature = "gui")` 다 — headless 에서 그 필드를 세우는 것은 생성자의 초깃값뿐이었다.
+  GUI 입력 경로만 부르는 하위 모듈(`detect` · `events` · `focus` · `search`)은 모듈 선언에,
+  일부만 GUI 전용인 모듈(`layout` · `mouse` · `pane` · `tab` · `workspace` · `accessors`)은
+  항목에 붙인다.
+- **②** headless 라이브러리에는 소비자가 없지만 **headless 테스트가 실제로 부르는** 정의
+  (탭·pane·워크스페이스 조작 메서드, `layout` 모듈, `tab_bar_height`)는
+  `cfg(any(feature = "gui", test))` 다. 그 시험들은 base 에서도 headless 구성에서 돌았고 지금도 돈다.
+- **③** `preset_store` 와 `ModalKind` 의 variant 는 `expect(dead_code)` 다 — 앞은 headless 도
+  `new` 로 사본을 받지만 읽는 자가 GUI 뿐이고, 뒤는 모달을 여는 자리가 GUI 뿐이라 headless 에서
+  variant 가 만들어지지 않는다(열거와 `active_modal_kind` 는 `ui.state` 덤프가 두 조합에서 읽는다).
+
+`state` 아래에서 모듈 단위 예외가 남은 곳은 `state/command_palette.rs` 하나다(팔레트 상태 —
+그 필드는 이제 gui 전용이다).
 
 ## `state` 가 아니라 `core` 에 두는 것
 
@@ -123,19 +133,19 @@ GUI 뿐 — `expect`)으로 가르는 것이 다음 단계다.
 
 ## 재는 법
 
-`독자 없음` 칸은 위 모듈 예외를 잠시 지우고 headless 라이브러리를 검사해 나온 진단이다.
+`없음`·`②`·`③` 칸은 네 칸 검사로 닫혀 있다([헤드리스 정의 경계](headless-build-boundaries.md) "재는 법"):
 
 ```bash
-# src/state.rs 의 첫 cfg_attr(... allow(dead_code, unused_imports)) 줄을 지운 뒤
 cargo check -p tasty --no-default-features --lib
+cargo check -p tasty --no-default-features --all-targets
 ```
 
-`dead_code` 는 이 크레이트에서 error 라 검사가 실패하고, `multiple fields are never read`
-진단의 `pub struct AppState` 아래에 그 필드들이 줄마다 찍힌다. 같은 실행이 필드가 아닌 정의(메서드·
-자료형)도 함께 보고한다. 검사가 끝나면 그 줄을 되돌린다 — 되돌리지 않으면 빌드가 깨진다.
+`dead_code` 는 이 크레이트에서 error 라, 새 필드가 headless 에 컴파일되고 아무도 안 읽으면 앞
+검사가 그 필드를 이름으로 찍고 실패한다. `③` 의 `expect` 는 거꾸로 — headless 에 읽는 자가 생겨
+진단이 사라지면 `unfulfilled_lint_expectations` 가 그 자리를 가리킨다. `②` 를 `cfg(feature =
+"gui")` 로 좁히면 뒤 검사가 그 정의를 부르는 시험에서 실패한다.
 
-`없음` 칸은 필드 선언 앞의 `#[cfg(feature = "gui")]` 로 읽고, `cargo check --workspace
---no-default-features --all-targets` 가 초록인 것으로 그 경계가 닫혀 있음을 확인한다.
+`없음` 칸은 필드 선언 앞의 `#[cfg(feature = "gui")]` 로 읽는다.
 
 ## 관련
 

@@ -24,6 +24,7 @@ impl RemoteCwd {
     }
 
     /// 표시·wire·원격 조회 요청에 싣는 문자열. 로컬 `Path` 로 감싸 쓰지 않는다.
+    #[cfg(any(feature = "gui", test))]
     pub fn as_str(&self) -> &str {
         &self.0
     }

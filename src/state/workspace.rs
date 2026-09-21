@@ -149,6 +149,7 @@ impl AppState {
     /// [`switch_workspace`](Self::switch_workspace) 재사용.
     //
     // 사용자 키 경로로만 호출(원칙 1/3: active_workspace 이동은 release IPC/CLI 노출 금지).
+    #[cfg(any(feature = "gui", test))]
     pub fn switch_to_category(&mut self, engine: &mut CoreState, section_idx: usize) {
         let Some(cat) = engine.categories().get(section_idx).map(|c| c.id) else {
             return;
@@ -192,6 +193,7 @@ impl AppState {
     /// 기존 [`switch_workspace`](Self::switch_workspace) 를 재사용한다. 전역 인덱스가
     /// 단일 진실 소스이므로 move/close/cascade 의 active 보정 로직을 그대로 쓴다.
     /// 카테고리 토글 off 거나 active 카테고리에 `local_idx` 가 없으면 no-op.
+    #[cfg(feature = "gui")]
     pub fn switch_workspace_in_active_category(
         &mut self,
         engine: &mut CoreState,
@@ -220,6 +222,7 @@ impl AppState {
     //
     // quick-switch 키바인딩(`handle_numeric_switch_shortcuts`)에서 **사용자 키 경로로만** 호출된다. (원칙 1/3:
     // active_workspace 를 바꾸는 사용자 포커스 이동 — release IPC/CLI 로 노출 금지.)
+    #[cfg(any(feature = "gui", test))]
     pub fn next_workspace_in_active_category(&mut self, engine: &mut CoreState) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, 1) {
             self.switch_workspace(engine, target);
@@ -231,6 +234,7 @@ impl AppState {
     /// 역방향(첫 항목에서 이전으로 가면 `workspace_switch_crosses_category` off 시 마지막
     /// 항목으로 wrap-around, on 시 이전 카테고리의 마지막 워크스페이스로 이동).
     // quick-switch 키바인딩에서 사용자 키 경로로 호출 (next_ 동일).
+    #[cfg(any(feature = "gui", test))]
     pub fn prev_workspace_in_active_category(&mut self, engine: &mut CoreState) {
         if let Some(target) = self.relative_workspace_in_active_category(engine, -1) {
             self.switch_workspace(engine, target);
@@ -247,6 +251,7 @@ impl AppState {
     /// 로 인접 카테고리의 첫/마지막 워크스페이스로 넘어간다(카테고리가 1개뿐이라 넘어갈
     /// 곳이 없으면 아래 로컬 wrap 으로 자연히 폴백). off 이거나 로컬 목록이 1개 이하면
     /// 기존과 동일하게 카테고리 로컬 wrap 만 수행한다.
+    #[cfg(any(feature = "gui", test))]
     fn relative_workspace_in_active_category(
         &self,
         engine: &CoreState,
@@ -289,6 +294,7 @@ impl AppState {
     /// 항상 방향에 맞는 끝 원소로 착지해야 방향성이 유지된다. 카테고리가 1개 이하이면
     /// [`relative_category_section`](Self::relative_category_section) 이 `None` 을
     /// 반환해 호출부가 로컬 wrap 으로 폴백한다.
+    #[cfg(any(feature = "gui", test))]
     fn relative_category_boundary_workspace(
         &self,
         engine: &CoreState,
@@ -312,6 +318,7 @@ impl AppState {
     /// no-op([`relative_workspace_in_active_category`] 의 `len <= 1` 가드와 동형).
     //
     // quick-switch 키바인딩에서 **사용자 키 경로로만** 호출된다(원칙 1/3).
+    #[cfg(any(feature = "gui", test))]
     pub fn next_category(&mut self, engine: &mut CoreState) {
         if let Some(section_idx) = self.relative_category_section(engine, 1) {
             self.switch_to_category(engine, section_idx);
@@ -320,6 +327,7 @@ impl AppState {
 
     /// 현재 active 워크스페이스가 속한 카테고리의 **이전** 카테고리로 전환한다.
     /// [`next_category`](Self::next_category) 의 역방향(wrap-around 포함).
+    #[cfg(any(feature = "gui", test))]
     pub fn prev_category(&mut self, engine: &mut CoreState) {
         if let Some(section_idx) = self.relative_category_section(engine, -1) {
             self.switch_to_category(engine, section_idx);
@@ -329,6 +337,7 @@ impl AppState {
     /// active 워크스페이스가 속한 카테고리로부터 `delta`(±1) 만큼 wrap-around 이동한
     /// 카테고리의 **section_idx**(= `engine.categories()` 리스트 내 위치)를 반환한다.
     /// active OOB · 카테고리 1개 이하 · 위치 미검출(방어) 시 `None`.
+    #[cfg(any(feature = "gui", test))]
     fn relative_category_section(&self, engine: &CoreState, delta: isize) -> Option<usize> {
         if self.active_workspace >= engine.workspaces.len() {
             return None;
@@ -346,6 +355,7 @@ impl AppState {
 
     /// Move a workspace from one index to another, adjusting active_workspace accordingly.
     /// Returns false if indices are out of bounds or equal.
+    #[cfg(any(feature = "gui", test))]
     pub fn move_workspace(&mut self, engine: &mut CoreState, from: usize, to: usize) -> bool {
         let len = engine.workspaces.len();
         if from == to || from >= len || to >= len {
@@ -387,6 +397,7 @@ impl AppState {
 
     /// Close the active workspace. Returns true if the workspace was removed.
     /// Cleans up all surfaces (surface meta + per-surface view state) in the workspace.
+    #[cfg(feature = "gui")]
     pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
         self.close_workspace_at(engine, self.active_workspace, WorkspaceCloseOrigin::User)
     }

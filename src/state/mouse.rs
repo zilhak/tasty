@@ -1,6 +1,8 @@
+#[cfg(feature = "gui")]
 use crate::model::{DividerInfo, LogicalPx, PhysicalPx, PhysicalRect, SplitDirection};
 
 use super::AppState;
+#[cfg(feature = "gui")]
 use crate::core::CoreState;
 
 /// divider 히트 판정 밴드의 반폭. press 로 드래그를 시작하는 경로, 커서 아이콘 경로,
@@ -11,6 +13,7 @@ use crate::core::CoreState;
 /// 크기가 절반이 됐다 — 물리 픽셀은 배율이 오를수록 작아지므로, 조작 표적을 물리로
 /// 고정하면 고배율일수록 집기 어려워진다. 배율 1 에서는 논리=물리라 그 회귀가
 /// 드러나지 않는다. 비교 좌표계로 내리는 것은 [`divider_hit_threshold_physical`].
+#[cfg(feature = "gui")]
 pub const DIVIDER_HIT_THRESHOLD: LogicalPx = LogicalPx(4.0);
 
 /// 히트 밴드를 비교 좌표계(물리)로 내린다.
@@ -18,6 +21,7 @@ pub const DIVIDER_HIT_THRESHOLD: LogicalPx = LogicalPx(4.0);
 /// 마우스 좌표가 물리라 비교 직전에 한 번만 변환한다. 호출부마다 `to_physical` 을
 /// 적으면 그것이 곧 위 doc 이 경고하는 드리프트의 다음 형태이므로, 변환도 이 한
 /// 곳에만 둔다.
+#[cfg(feature = "gui")]
 pub fn divider_hit_threshold_physical(scale_factor: f32) -> f32 {
     DIVIDER_HIT_THRESHOLD.to_physical(scale_factor).value()
 }
@@ -77,6 +81,7 @@ impl AppState {
     }
 
     /// Find a pane-level divider at the given position.
+    #[cfg(feature = "gui")]
     pub fn find_pane_divider_at(
         &self,
         engine: &CoreState,
@@ -96,6 +101,7 @@ impl AppState {
     }
 
     /// Find a surface-level divider at the given position (within the focused pane's panel).
+    #[cfg(feature = "gui")]
     pub fn find_surface_divider_at(
         &self,
         engine: &CoreState,
@@ -134,6 +140,7 @@ impl AppState {
     }
 
     /// Update a pane-level split ratio based on a divider drag.
+    #[cfg(feature = "gui")]
     pub fn update_pane_divider(
         &mut self,
         engine: &mut CoreState,
@@ -165,6 +172,7 @@ impl AppState {
     }
 
     /// Update a surface-level split ratio based on a divider drag.
+    #[cfg(feature = "gui")]
     pub fn update_surface_divider(
         &mut self,
         engine: &mut CoreState,

@@ -177,6 +177,7 @@ impl CoreState {
     /// 지정 값으로 둔다. normal 포함 모든 카테고리 접기 허용(디자인상 normal 도 접힘 가능).
     /// 접힘은 사용자 UI 상태지만 layout.json 영속 대상이므로 호출자가 다른 mutator
     /// 관례대로 `mark_layout_dirty` 를 책임진다. 대상이 없으면 no-op.
+    #[cfg(any(feature = "gui", test))]
     pub fn set_category_collapsed(
         &mut self,
         id: crate::model::WorkspaceCategoryId,

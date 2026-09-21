@@ -1,4 +1,5 @@
 use crate::core::CoreState;
+#[cfg(feature = "gui")]
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
 use super::AppState;
@@ -6,6 +7,7 @@ use super::AppState;
 impl AppState {
     /// Compute all surface regions for the active workspace.
     /// Returns: for each pane, the pane rect and all surface regions within it.
+    #[cfg(feature = "gui")]
     pub fn surface_regions<'a>(
         &self,
         engine: &'a CoreState,
@@ -43,6 +45,7 @@ impl AppState {
     /// surface 수명 귀속(렌더 prepare 의 retain / 비가시 디코드)과 forward 추적 상태
     /// retain 에 쓴다. 탭 전환/workspace 전환으로 안 보이게 된 surface 의 텍스처 상태를
     /// 파괴하지 않기 위한 열거다.
+    #[cfg(feature = "gui")]
     pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
         use crate::core::egui_mesh_surface::EguiMeshSurface;
         let mut out: Vec<(u32, String)> = Vec::new();
@@ -72,6 +75,7 @@ impl AppState {
     /// surface(`AttachMeshSurface`) local id 일람. [`Self::egui_mesh_surfaces_existing`]의
     /// attach 대응 — plugin_id 는 `PluginManager` 조회에 쓰이지 않으므로(로컬에 plugin
     /// 프로세스가 없다) id 만 반환한다.
+    #[cfg(feature = "gui")]
     pub fn attach_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<u32> {
         use crate::model::AttachMeshSurface;
         let mut out: Vec<u32> = Vec::new();
@@ -142,6 +146,7 @@ impl AppState {
 
     /// Get the actual content rect for the focused surface (accounting for tab bar).
     /// Returns None if no surface is focused.
+    #[cfg(feature = "gui")]
     pub fn focused_surface_rect(
         &self,
         engine: &CoreState,
@@ -163,6 +168,7 @@ impl AppState {
 
     /// Get the physical pixel rect of a specific terminal cell within a surface.
     #[allow(clippy::too_many_arguments)] // reason: cell geometry lookup 컨텍스트
+    #[cfg(feature = "gui")]
     pub fn surface_cell_rect(
         &self,
         engine: &CoreState,
@@ -192,6 +198,7 @@ impl AppState {
     }
 
     /// Get the rect of a specific surface by id.
+    #[cfg(feature = "gui")]
     pub fn surface_rect_by_id(
         &self,
         engine: &CoreState,
@@ -212,6 +219,7 @@ impl AppState {
     }
 
     /// Find the surface ID at the given physical pixel position.
+    #[cfg(feature = "gui")]
     pub fn surface_id_at_position(
         &self,
         engine: &CoreState,

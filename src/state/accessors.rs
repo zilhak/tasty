@@ -81,6 +81,7 @@ impl AppState {
     }
 
     /// Get the ultimately focused terminal.
+    #[cfg(feature = "gui")]
     pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
         let id = self.focused_surface_id(engine)?;
         engine.terminals.get(id)
@@ -93,6 +94,7 @@ impl AppState {
     }
 
     /// Get the focused pane ID.
+    #[cfg(feature = "gui")]
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
         self.active_workspace(engine).focused_pane
     }

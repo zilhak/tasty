@@ -1461,7 +1461,10 @@ pub(crate) use attention::AttentionKind;
 /// IPC 핸들러가 `crate::core::state::CategoryOpError` 로 집어 간다 — 표가 옮겨져도
 /// 그 경로는 그대로 둔다.
 pub use category::CategoryOpError;
-pub(crate) use surface_cwd::{RemoteCwd, SurfaceCwd};
+pub(crate) use surface_cwd::RemoteCwd;
+// 읽는 자(상태바·파일 열기 cwd)가 GUI 뿐이다.
+#[cfg(any(feature = "gui", test))]
+pub(crate) use surface_cwd::SurfaceCwd;
 // 유일한 소비자가 gui 전용 port_scanner popup 이라 headless 에서는 unused.
 #[cfg(feature = "gui")]
 pub use finders::SurfaceDisplayPath;

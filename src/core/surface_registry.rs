@@ -348,6 +348,13 @@ pub struct SurfaceKindDef {
     /// `open_popup_instance` 로 연다. 등록 시점(egui_mesh.rs/remote_kind.rs)에
     /// 소유 plugin_id 로 qualify 한다 — host 는 kind 이름을 몰라도 이 데이터만 따른다.
     /// builtin 은 `None`.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "위 consumes_egui_input 과 같다 — 매니페스트에서 복사되고 읽는 쪽만 GUI 다"
+        )
+    )]
     pub convert_input_popup: Option<String>,
 }
 

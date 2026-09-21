@@ -1757,6 +1757,7 @@ fn set_explorer_cwd_moves_root_and_clears_history() {
 
 /// pane 이 2개(pane_a, pane_b)인 워크스페이스를 만들고, split 직후 focus 인
 /// pane_b 와 비-focused pane_a 의 ID를 반환한다.
+#[cfg(feature = "gui")]
 fn two_pane_setup(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,

@@ -185,6 +185,7 @@ impl CoreState {
     /// placeholder 가 그대로 남는다 — 의도된 상태다(`to_tree_json` 이 `ready:false`
     /// 로 노출; 상세 `docs/features/layout-persistence/index.md`).
     /// 반환: 이 프레임에 실제화됐으면 `true`.
+    #[cfg(any(feature = "gui", test))]
     pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
         let registry = self.surface_registry.clone();
         for ws in &mut self.workspaces {

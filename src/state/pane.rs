@@ -79,6 +79,7 @@ impl AppState {
     /// 계열 호출부가 닫히기 **전** 트리에서 계산해 넘긴다 — 닫힌 surface 가 focus 였고
     /// 원격의 옛 focus 복원이 실패할 때 client-only fallback 대상이 된다. new-tab/
     /// split/move-tab 등 close 가 아닌 op 은 빈 벡터를 넘긴다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn forward_mirror_structural(
         &mut self,
         engine: &mut CoreState,
@@ -116,6 +117,7 @@ impl AppState {
     /// 탭이 마지막이 아니면 다음 탭, 마지막이면 이전 탭이 1순위. 그 슬롯도 못 쓰게 되는
     /// (예상 밖) 경우를 대비해 나머지 탭도 순서대로 방어적 fallback 으로 담는다. pane
     /// 에 탭이 하나뿐이면 빈 벡터(호출부가 기존 동작 — 원격 고정값 — 으로 남는다).
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn pane_sibling_tab_focus_candidates(
         pane: &crate::model::Pane,
         closing_tab_index: usize,
@@ -150,6 +152,7 @@ impl AppState {
     /// 실행 시 쓰는 `Tab::close_surface`/`SurfaceLayout::close_surface` 의 "첫 leaf
     /// 승격"과 동형)를, split 안 된 tab(닫으면 탭 자체가 사라짐)이면
     /// [`pane_sibling_tab_focus_candidates`] 를 그대로 위임한다.
+    #[cfg(any(feature = "gui", test))]
     fn active_surface_close_focus_candidates(
         &self,
         engine: &CoreState,
@@ -177,6 +180,7 @@ impl AppState {
     }
 
     /// Close the focused pane (unsplit). Returns true if a pane was removed.
+    #[cfg(any(feature = "gui", test))]
     pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
         // mirror 워크스페이스면 로컬 트리를 건드리지 않고 ClosePane 을 원격으로
         // forward 한다. true 를 돌려 fallback 체인(→ close_active_workspace)을 멈춘다.
@@ -252,6 +256,7 @@ impl AppState {
     /// Close the focused surface. For split tabs, closes the focused surface
     /// within the tab. For single-surface tabs, delegates to close_surface_by_id
     /// which handles tab/pane/workspace cascading.
+    #[cfg(any(feature = "gui", test))]
     pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
         // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseSurface 를 원격으로
         // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
@@ -335,6 +340,7 @@ impl AppState {
     /// surface -> tab -> pane -> workspace as needed.
     /// When `save_snapshot` is true, the closed item is saved for user restore (Ctrl+Shift+T).
     /// Agent/IPC closures should pass false to avoid polluting the user's undo stack.
+    #[cfg(any(feature = "gui", test))]
     pub fn close_surface_by_id(
         &mut self,
         engine: &mut CoreState,

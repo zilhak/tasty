@@ -132,6 +132,7 @@ pub(crate) use platform::stall_watchdog;
     feature = "gui"
 ))]
 pub(crate) use platform::system_tray;
+#[cfg(feature = "gui")]
 pub(crate) use state::search as search_state;
 #[cfg(feature = "gui")]
 pub(crate) use state::selection;

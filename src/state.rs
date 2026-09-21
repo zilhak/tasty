@@ -1,23 +1,25 @@
-// 이유: headless 빌드에선 호출 트리 (app::dispatch/intents) 가 cfg(gui) 로 가려져
-// state 의 gui 전용 필드/메서드가 미사용으로 잡힌다. 본질적으로 gui 어댑터의
-// API 면이므로 *headless 한정* 으로 dead_code/unused_imports 를 침묵시킨다.
-// gui 빌드에서는 검사 그대로 작동.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
-
 mod accessors;
 mod cascade_window;
+// 포커스·탭 변화의 polling 감지 — GUI tick 만 부른다. headless 의 Event Bus 발화는 cascade 가
+// 직접 세운다.
+#[cfg(feature = "gui")]
 mod detect;
 // dialog·popup 입력 상태는 GUI 가 소유한다 — headless 에는 세우는 쪽도 비우는 쪽도 없다
 // (`docs/dev-guide/app-state-ownership.md`).
 #[cfg(feature = "gui")]
 mod dialogs;
+// 키보드 라우팅용 포커스 surface 분류와 방향 포커스 이동 — 사용자 입력 경로만 쓴다.
+#[cfg(feature = "gui")]
 mod events;
+#[cfg(feature = "gui")]
 mod focus;
 // gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
 // 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
 // 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
 #[cfg(all(test, feature = "gui"))]
 mod fullscreen_stage_tests;
+// 화면 좌표 → surface/pane 영역 계산 — 그리기와 마우스 히트 판정만 쓴다.
+#[cfg(any(feature = "gui", test))]
 mod layout;
 mod mark;
 pub mod mouse;
@@ -39,9 +41,12 @@ mod workspace;
 
 pub mod command_palette;
 pub mod preset_apply;
+// 터미널 검색 바의 상태 — 검색 바 popup 만 세우고 읽는다.
+#[cfg(feature = "gui")]
 pub mod search;
 /// 텍스트 선택 — 실체는 `tasty-selection` 크레이트에 있다(렌더러가 앱 상태 모듈을
 /// 거꾸로 보지 않도록 타입 소속만 내렸다). 기존 `state::selection::…` 호출부는 그대로다.
+#[cfg(feature = "gui")]
 pub use tasty_selection as selection;
 
 pub use crate::core::host_event::{PendingHostEvent, PendingSurfaceClosed};
@@ -53,11 +58,15 @@ pub use dialogs::{
 };
 #[cfg(feature = "gui")]
 pub(crate) use dialogs::{FilePickerData, FilePickerRequester, FilePickerResult, FpLoadState};
+#[cfg(feature = "gui")]
 pub use events::FocusedSurfaceType;
 pub use workspace::WorkspaceCloseOrigin;
 
 use crate::core::CoreState;
-use crate::model::{LogicalPx, PhysicalPx};
+#[cfg(feature = "gui")]
+use crate::model::LogicalPx;
+#[cfg(any(feature = "gui", test))]
+use crate::model::PhysicalPx;
 
 // IdGenerator is now in core_state.rs
 
@@ -65,6 +74,16 @@ use crate::model::{LogicalPx, PhysicalPx};
 /// `App::open_modal` 이 여는 쪽에서 받아 세운다 — 열린 `View` 를 downcast 해서
 /// 되짚지 않는다. 여는 쪽은 자기가 무엇을 여는지 이미 알고, downcast 로 되짚으면
 /// 새 모달을 추가한 사람이 이 열거를 안 늘려도 조용히 `None` 이 된다.
+// 이유: 여는 자리(`App::open_modal`)가 GUI 뿐이라 headless 에서 variant 가 만들어지지 않는다.
+// 열거와 `active_modal_kind` 는 headless 에도 남는다 — `ui.state` 덤프가 두 조합에서 같은 키로
+// 그 값(`None`)을 찍는다.
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(
+        dead_code,
+        reason = "only the gui opens a modal, so headless never builds a variant"
+    )
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ModalKind {
     Settings,
@@ -181,12 +200,16 @@ pub struct AppState {
     ///
     /// ⇒ plugins 창을 키보드로 여는 시험은 **아직 없다.** 쓰는 순간 이 필드로는
     ///    관측이 안 돼 설정 쪽과 똑같이 죽는다. 그때는 시험이 아니라 채널을 고쳐라.
+    #[cfg(feature = "gui")]
     pub(crate) plugins_open: bool,
     /// Cached sidebar width from settings (logical pixels).
+    #[cfg(feature = "gui")]
     pub(crate) sidebar_width: LogicalPx,
     /// Sidebar visibility: false = completely hidden.
+    #[cfg(feature = "gui")]
     pub(crate) sidebar_visible: bool,
     /// Sidebar collapsed: true = compact mode (narrow width, icons only).
+    #[cfg(feature = "gui")]
     pub(crate) sidebar_collapsed: bool,
     /// 통합 리사이즈 커서 피드백 — `handle_cursor_moved` 가 창 가장자리 hover 를
     /// 감지하면 그 8방향을 저장하고, egui 프레임(`run_egui_frame`)이 매 프레임
@@ -225,6 +248,7 @@ pub struct AppState {
     /// **배율 1 에서만 우연히 맞는 값**이 되어, 덮는 자리가 조건부가 되거나 첫 프레임
     /// 전에 읽는 경로가 생겼을 때 배율 2 에서 정확히 절반인 그럴듯한 수로 조용히
     /// 지나간다. 0 은 그 상황에서 탭바가 사라져 눈에 띈다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
     #[cfg(feature = "gui")]
@@ -251,6 +275,7 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) stage_deferred_grid_resync: bool,
     /// Terminal text search state.
+    #[cfg(feature = "gui")]
     pub(crate) search: crate::search_state::SearchState,
     /// Listening-port scanner async state machine. Driven by the port scanner
     /// popup: Idle → Loading (background thread + mpsc channel) → Ready / Failed.
@@ -265,6 +290,7 @@ pub struct AppState {
     pub(crate) port_favorites_scan: crate::adapters::ui::popup::port_scanner::PortScanState,
     /// Command palette UI state — query buffer, selection cursor, and a pending
     /// dispatch slot that MainView drains each frame.
+    #[cfg(feature = "gui")]
     pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
@@ -280,6 +306,7 @@ pub struct AppState {
     /// Whether the mouse is currently over an open popup (input layer state).
     /// Updated each frame by PopupManager::draw(). Mouse handlers check this
     /// to block events from reaching lower layers (terminal, dividers).
+    #[cfg(feature = "gui")]
     pub(crate) popup_hovered: bool,
     /// plugin egui-mesh popup 이 하나라도 열려 있는가 (입력 계층 상태).
     ///
@@ -293,13 +320,14 @@ pub struct AppState {
     /// Whether the mouse is currently over a banner (input layer state).
     /// Updated each frame by BannerManager::draw(). 배너는 자기 영역의 마우스를
     /// 소비(뒤로 전파 X)하므로 mouse 핸들러가 이 값으로 하위 레이어 전파를 막는다.
-    /// (포커스는 받지 않음 — 마우스 소비만.) popup_hovered 와 동일하게 비-gui 빌드도
-    /// 필드를 갖는다(입력 가드가 공유).
+    /// (포커스는 받지 않음 — 마우스 소비만.)
+    #[cfg(feature = "gui")]
     pub(crate) banner_hovered: bool,
     /// 마우스가 modifier-hint 오버레이 위인지(입력 레이어 상태). `draw_modifier_hint` 가
     /// 매 프레임 갱신한다. 오버레이는 **키보드 포커스를 받지 않고 마우스만 소비**하므로
     /// (원칙3), mouse 핸들러가 이 값으로 click-to-activate/휠/드래그가 하위 surface 로
-    /// 새지 않게 막는다. banner_hovered 와 동일 성질(비-gui 빌드도 필드 보유).
+    /// 새지 않게 막는다. banner_hovered 와 동일 성질.
+    #[cfg(feature = "gui")]
     pub(crate) modifier_hint_hovered: bool,
     /// 이번 프레임에 그려진 각 popup 의 `LayerId`. `PopupManager::draw()` 가 갱신.
     /// `enforce_foreground_z_order`(`src/gfx/gpu/egui_bridge.rs`)가 modifier-hint
@@ -356,12 +384,22 @@ pub struct AppState {
     /// 상태). 각 위젯이 매 프레임 자신의 `Response::hovered()` 로 갱신한다 —
     /// `egui_consumed`(패널/Area 전체의 bounding rect 단위)와 달리 위젯 단위라
     /// 빈 여백까지 리사이즈를 막지 않는다. `try_begin_os_resize` 가 가장자리 margin
-    /// 안에서 리사이즈를 양보할지 판단할 때만 쓰인다. popup_hovered 와 동일하게
-    /// 비-gui 빌드도 필드를 갖는다(입력 가드가 공유).
+    /// 안에서 리사이즈를 양보할지 판단할 때만 쓰인다.
+    #[cfg(feature = "gui")]
     pub(crate) resize_edge_widget_hovered: bool,
     /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
+    ///
+    /// headless 도 `new` 로 이 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의
+    /// preset IPC 는 이 사본이 아니라 `Core.preset_store` 를 잠근다.
+    #[cfg_attr(
+        not(feature = "gui"),
+        expect(
+            dead_code,
+            reason = "headless receives the preset store copy but only gui popups read it"
+        )
+    )]
     pub(crate) preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
     /// Memory store 의 Arc clone — Core 가 owner. UI thread (popup draw_fn) 와
     /// engine state cleanup 이 dispatcher cascade 없이 직접 영속할 때 사용한다.
@@ -377,19 +415,23 @@ pub struct AppState {
     /// `surface.focused` 발화용 변화 감지 상태. tick마다 `focused_surface_id()`와
     /// 비교해 달라졌으면 `SurfaceFocused`를 enqueue한다. focus 전환 경로가 많아
     /// (키보드/마우스/IPC/탭전환/워크스페이스전환) 각각을 hook하기보다 polling이 단순.
+    #[cfg(feature = "gui")]
     pub(crate) last_focused_surface_id: Option<u32>,
     /// `workspace.activated` 발화용 변화 감지 상태. `active_workspace` 인덱스가
     /// 가리키는 워크스페이스 ID를 기록해 두고, 다음 tick에서 달라졌다면
     /// `WorkspaceActivated`를 enqueue한다.
+    #[cfg(feature = "gui")]
     pub(crate) last_active_workspace_id: Option<u32>,
     /// `tab.focused` 발화용 변화 감지 상태. 활성 워크스페이스의 focused pane이 보유한
     /// 현재 active tab의 (pane_id, tab_id)를 기록. 다음 tick에서 달라졌다면
     /// `TabFocused`를 enqueue한다. pane 전환·in-pane tab 전환을 한꺼번에 다룬다.
+    #[cfg(feature = "gui")]
     pub(crate) last_focused_tab: Option<(u32, u32)>,
     /// `tab.created`/`tab.closed`/`tab.moved` 발화용 polling 상태. tab_id →
     /// (pane_id, workspace_id, kind) 스냅샷. `None`은 아직 한 번도 polling하지
     /// 않은 상태(초기 로드된 탭에 대해 spurious `tab.created`가 발화되는 것을 막기
     /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
+    #[cfg(feature = "gui")]
     pub(crate) last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
 
     /// Per-surface host view state for `ExplorerPanel` (directory entry cache, selection,
@@ -405,6 +447,7 @@ pub struct AppState {
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
+    #[cfg(feature = "gui")]
     pub(crate) tool_registry: crate::plugin::tool_registry::ToolRegistry,
 
     /// Command palette에 노출할 plugin 전역 command snapshot. `tool_registry`와
@@ -412,6 +455,7 @@ pub struct AppState {
     /// `mgr.plugin_palette_commands()`로 갱신한다(`App::refresh_palette_plugin_commands`,
     /// `tool_registry_dirty`와 동일 트리거 조건). draw 함수는 `PluginManager`에 직접
     /// 접근할 수 없는 `PopupDef` 고정 시그니처 제약 때문에 이 snapshot을 대신 읽는다.
+    #[cfg(feature = "gui")]
     pub(crate) palette_plugin_commands: Vec<crate::plugin::command_registry::PluginCommandEntry>,
 
     /// Command palette에서 plugin 전역 command를 실행했을 때의 (plugin_id, command_id)
@@ -419,15 +463,18 @@ pub struct AppState {
     /// 없어, 실행 시점에 enqueue하고 App 메인 루프가 drain해
     /// `PluginManager::command_registry`로 action/IPC를 dispatch한다
     /// (`App::dispatch_pending_palette_plugin_commands`, `pending_tool_events`와 동형).
+    #[cfg(feature = "gui")]
     pub(crate) pending_plugin_command_invokes: Vec<(String, String)>,
 
     /// 도구 메뉴 항목 클릭 시 publish해야 할 이벤트 큐. tools_menu가 `&mut AppState`만
     /// 가지므로 PluginManager에 직접 접근할 수 없어, 클릭 시점에 enqueue하고 App 메인
     /// 루프가 drain해 `PluginManager::emit_host_event`로 발화한다.
+    #[cfg(feature = "gui")]
     pub(crate) pending_tool_events: Vec<(String, serde_json::Value)>,
 
     /// 열어야 할 plugin popup 큐(도구 메뉴 · 변환 입력 popup). App 메인 루프가 drain해
     /// `PluginManager::open_popup_instance`로 dispatch.
+    #[cfg(feature = "gui")]
     pub(crate) pending_popup_opens: Vec<PendingPopupOpen>,
 
     /// file_handler 디스패치 결과가 plugin IPC method 일 때의 호출 큐.
@@ -436,31 +483,37 @@ pub struct AppState {
 
     /// 외부 drag&drop 으로 파일이 hover 중인 상태. `HoveredFile` 마다 path 누적,
     /// `HoveredFileCancelled` / `DroppedFile` 시 해제. 비주얼 overlay 의 입력.
+    #[cfg(feature = "gui")]
     pub(crate) drop_hover: Option<DropHoverState>,
 
     /// `DroppedFile` 이벤트로 받은 경로 큐. frame end 에서 drain 해
     /// `DomainIntent::DispatchFile` 으로 발화.
+    #[cfg(feature = "gui")]
     pub(crate) pending_file_drops: Vec<std::path::PathBuf>,
 
     /// plugin popup 렌더 중 감지된 close 사유 (outside-click / Escape).
     /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
 
     /// plugin popup 콘텐츠 영역 내부 클릭으로 z-order 순번 갱신이 필요한 instance_id 큐
     /// (`docs/design/systems/popup.md` 규칙 7 "클릭된 것이 앞"). 렌더 경로(`draw_plugin_popups`)는
     /// `&PluginManager` 불변 참조만 가지므로 직접 갱신할 수 없어 여기 적재하고, App 메인
     /// 루프가 drain해 `PluginManager::touch_popup_instance_z`를 호출한다(close queue 와 같은 모양).
+    #[cfg(feature = "gui")]
     pub(crate) plugin_popup_focus_bumps: Vec<u64>,
 
     /// plugin egui-mesh banner(A3) host 측 생명주기(TTL/close X)로 닫힌 사유.
     /// `draw_plugin_banners` 가 적재하고, App 메인 루프가 drain 해
     /// `PluginManager::close_banner_instance` 를 호출한다(popup closes 와 같은 모양 — 렌더
     /// 경로가 manager 를 직접 mutate 하지 않도록 지연).
+    #[cfg(feature = "gui")]
     pub(crate) plugin_banner_closes: Vec<(u64, tasty_plugin_protocol::BannerCloseReason)>,
 
     /// egui-mesh popup(A2) 합성 영역. `draw_plugin_popups` 가 매 egui frame 채우고,
     /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
     /// mesh 를 합성한다. 셸(scrim/bg/border)은 host egui 가, 내용만 plugin mesh 가 그린다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_popup_regions: Vec<(u64, crate::model::PhysicalRect)>,
 
     /// 키 포커스를 가진 egui-mesh popup 이 알려온 IME 커서 영역(창 물리 좌표).
@@ -472,6 +525,7 @@ pub struct AppState {
     /// 없어 `platform_output.ime` 가 늘 `None`), 그 값은 `PopupPaintFrame` 알림으로
     /// 돌아온다. `None` 이면 그 popup 에 편집 위젯 포커스가 없다는 뜻이라 후보창 위치를
     /// 정하지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_popup_ime_cursor_area: Option<crate::model::PhysicalRect>,
 
     /// egui-mesh popup 인스턴스별 forward 추적 상태. **칸의 정의도 dirty 판정도
@@ -490,6 +544,7 @@ pub struct AppState {
     /// manager)가, 내용만 plugin mesh 가 그린다. popup regions 와 **같은 튜플 타입이고
     /// 같은 소비자**(`gpu.render` 의 합성 pass)를 먹인다 — 한쪽 모양만 바뀌면 그 소비자가
     /// 컴파일되지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_banner_regions: Vec<(u64, crate::model::PhysicalRect)>,
 
     /// egui-mesh banner 인스턴스별 forward 추적 상태. popup 무리와 **같은 타입**이다
@@ -513,6 +568,7 @@ pub struct AppState {
     /// 결과, `attach_client.rs` 두 자리)가 같은 칸을 쓰고, banner 는 self-repaint 하나
     /// 뿐이다. 두 칸을 `MeshForwardCommon` 으로 합치지 않은 이유는
     /// [`crate::plugin_bridge::MeshForwardCommon`] 의 doc 에 있다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_popup_pending_repaint: std::collections::HashSet<u64>,
 
     /// 위 popup 칸의 banner 대응 — 무입력 강제 repaint 를 요청받은 egui-mesh banner
@@ -525,6 +581,7 @@ pub struct AppState {
     /// 비동기 host→plugin push 뒤의 강제 repaint(`attach_client.rs` 두 자리). (2) 는
     /// `com.tasty.git-viewer` 전용 경로이고 그 plugin 은 banner 를 기여하지 않으므로
     /// banner 에는 대응 자리가 **없다** — 대칭을 맞추려고 만들지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) plugin_mesh_banner_pending_repaint: std::collections::HashSet<u64>,
 
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
@@ -540,6 +597,7 @@ pub struct AppState {
 /// 의 소속 범위 대상으로 바인딩할 surface 다. 둘을 가르는 이유는 plugin context 의 키
 /// 이름(`surface_id` 등)을 host 가 해석하지 않기 위해서다. 선언이 `scope = "surface"` 가
 /// 아니면 `target_surface` 는 쓰이지 않는다.
+#[cfg(feature = "gui")]
 #[derive(Debug, Clone)]
 pub(crate) struct PendingPopupOpen {
     pub(crate) plugin_id: String,
@@ -550,6 +608,7 @@ pub(crate) struct PendingPopupOpen {
 
 /// 외부 drag&drop hover 중 누적되는 파일 경로 + 시작 cursor 좌표.
 /// winit `HoveredFile` 이 N 파일에 대해 N번 발화하므로 `paths` 에 누적.
+#[cfg(feature = "gui")]
 #[derive(Debug, Clone, Default)]
 pub struct DropHoverState {
     pub(crate) paths: Vec<std::path::PathBuf>,
@@ -583,7 +642,6 @@ impl AppState {
         preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Self {
-        let sidebar_width = engine.settings.appearance.sidebar_width;
         let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
         Self {
             preset_store,
@@ -593,9 +651,13 @@ impl AppState {
             settings_open_requested: false,
             active_modal_id: None,
             active_modal_kind: None,
+            #[cfg(feature = "gui")]
             plugins_open: false,
-            sidebar_width,
+            #[cfg(feature = "gui")]
+            sidebar_width: engine.settings.appearance.sidebar_width,
+            #[cfg(feature = "gui")]
             sidebar_visible: true,
+            #[cfg(feature = "gui")]
             sidebar_collapsed: false,
             #[cfg(feature = "gui")]
             pending_resize_cursor: None,
@@ -608,16 +670,24 @@ impl AppState {
             tutorial: crate::adapters::ui::tutorial::TutorialRuntime::default(),
             #[cfg(feature = "gui")]
             dialogs: DialogState::new(),
+            #[cfg(any(feature = "gui", test))]
             tab_bar_height: PhysicalPx(0.0),
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
+            #[cfg(feature = "gui")]
             last_focused_surface_id: None,
+            #[cfg(feature = "gui")]
             last_active_workspace_id: None,
+            #[cfg(feature = "gui")]
             last_focused_tab: None,
+            #[cfg(feature = "gui")]
             last_tab_locations: None,
+            #[cfg(feature = "gui")]
             popup_hovered: false,
             plugin_popup_open: false,
+            #[cfg(feature = "gui")]
             banner_hovered: false,
+            #[cfg(feature = "gui")]
             modifier_hint_hovered: false,
             #[cfg(feature = "gui")]
             popup_layers: Vec::new(),
@@ -633,6 +703,7 @@ impl AppState {
             banner_layer: None,
             #[cfg(feature = "gui")]
             modifier_hint_layer: None,
+            #[cfg(feature = "gui")]
             resize_edge_widget_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             #[cfg(feature = "gui")]
@@ -650,11 +721,13 @@ impl AppState {
             stage_closed_queue: Vec::new(),
             #[cfg(feature = "gui")]
             stage_deferred_grid_resync: false,
+            #[cfg(feature = "gui")]
             search: crate::search_state::SearchState::new(),
             #[cfg(feature = "gui")]
             port_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
             #[cfg(feature = "gui")]
             port_favorites_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
+            #[cfg(feature = "gui")]
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
             #[cfg(feature = "gui")]
             toasts: crate::adapters::ui::ToastManager::new(),
@@ -664,25 +737,40 @@ impl AppState {
             explorer_views: Default::default(),
             #[cfg(feature = "gui")]
             dag_graph_views: Default::default(),
+            #[cfg(feature = "gui")]
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
+            #[cfg(feature = "gui")]
             palette_plugin_commands: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_plugin_command_invokes: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_tool_events: Vec::new(),
+            #[cfg(feature = "gui")]
             pending_popup_opens: Vec::new(),
             pending_handler_ipc: Vec::new(),
+            #[cfg(feature = "gui")]
             drop_hover: None,
+            #[cfg(feature = "gui")]
             pending_file_drops: Vec::new(),
+            #[cfg(feature = "gui")]
             plugin_popup_closes: Vec::new(),
+            #[cfg(feature = "gui")]
             plugin_popup_focus_bumps: Vec::new(),
+            #[cfg(feature = "gui")]
             plugin_banner_closes: Vec::new(),
+            #[cfg(feature = "gui")]
             plugin_mesh_popup_regions: Vec::new(),
+            #[cfg(feature = "gui")]
             plugin_popup_ime_cursor_area: None,
             #[cfg(feature = "gui")]
             plugin_mesh_popup_forward: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
             plugin_mesh_banner_regions: Vec::new(),
             #[cfg(feature = "gui")]
             plugin_mesh_banner_forward: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
             plugin_mesh_popup_pending_repaint: std::collections::HashSet::new(),
+            #[cfg(feature = "gui")]
             plugin_mesh_banner_pending_repaint: std::collections::HashSet::new(),
             pending_intents: Vec::new(),
         }
@@ -727,6 +815,7 @@ impl AppState {
     /// 제자리 변환(`markdown.navigate`), `None` 이면 새 탭으로 연다.
     ///
     /// 반환값: 요청을 enqueue 했으면 `true`, kind/팝업 미상이면 `false`(warn 로그).
+    #[cfg(feature = "gui")]
     pub(crate) fn enqueue_convert_input_popup(
         &mut self,
         engine: &CoreState,
@@ -780,6 +869,7 @@ impl AppState {
     /// - `mirror: true` · `local_surface_id` — mirror workspace 판별
     ///   (`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`). `inherit_cwd` 와
     ///   무관하게 항상 판정한다 — "원격 인지" 는 그 설정이 꺼져 있어도 필요한 정보다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn popup_surface_context(
         &self,
         engine: &CoreState,
@@ -1154,6 +1244,7 @@ impl AppState {
     }
 
     /// Determine the type of the currently focused surface.
+    #[cfg(feature = "gui")]
     pub fn focused_surface_type(&self, engine: &CoreState) -> FocusedSurfaceType {
         let pane = match self.focused_pane(engine) {
             Some(p) => p,
@@ -1172,6 +1263,7 @@ impl AppState {
         FocusedSurfaceType::None
     }
 
+    #[cfg(feature = "gui")]
     fn surface_to_type(surface: &dyn crate::model::Surface) -> FocusedSurfaceType {
         match surface.kind() {
             "terminal" => FocusedSurfaceType::Terminal,
@@ -1205,6 +1297,7 @@ impl AppState {
     }
 
     /// Surface close lifecycle 큐를 비우고 항목을 반환한다.
+    #[cfg(any(feature = "gui", test))]
     pub fn take_pending_lifecycle_events(&mut self) -> Vec<PendingSurfaceClosed> {
         std::mem::take(&mut self.pending_lifecycle_events)
     }
@@ -1224,6 +1317,7 @@ impl AppState {
     /// baseline 을 *현재 engine 상태* 와 일치시키는 역할. baseline 이 아직 `None`
     /// (한 번도 polling 안 함) 이면 no-op — 첫 detect 가 알아서 현재 상태를
     /// 베이스라인으로 잡는다.
+    #[cfg(feature = "gui")]
     pub fn lifecycle_baseline_insert_tab(
         &mut self,
         tab_id: u32,
@@ -1238,6 +1332,7 @@ impl AppState {
 
     /// `lifecycle_baseline_insert_tab` 의 close 대응. 닫힌 tab 을 baseline 에서
     /// 제거해 polling 이 중복 `TabClosed` 발화하지 않도록 한다.
+    #[cfg(feature = "gui")]
     pub fn lifecycle_baseline_remove_tab(&mut self, tab_id: u32) {
         if let Some(map) = self.last_tab_locations.as_mut() {
             map.remove(&tab_id);

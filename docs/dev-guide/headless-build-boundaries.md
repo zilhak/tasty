@@ -26,14 +26,17 @@ headless 에 생산자도 호출자도 없는 정의. 모듈 통째가 그 안�
 `unfulfilled_lint_expectations` 가 그 자리를 이름으로 가리킨다. 모듈이나 crate 전체를 덮는
 dead_code 예외는 쓰지 않는다.
 
-지금 ③ 에 해당하는 것은 넷이다.
+지금 ③ 에 해당하는 것은 일곱이다.
 
 | 정의 | 왜 남는가 |
 |---|---|
 | git query · markdown content · 구조 op · resize 의 forward 큐 | 양쪽 빌드가 채우고 GUI 의 `about_to_wait` 만 비운다. 칸을 빼면 IPC 핸들러와 공유 pty 경로가 깨진다 |
-| `SurfaceKindDef` 의 입력·줌·복사 플래그 | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
+| `SurfaceKindDef` 의 입력·줌·복사 플래그와 변환 입력 popup id | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
 | CoreEvent 의 페이로드(터미널 OSC 이벤트 전부, `RestoredKind` 의 인덱스) | variant 는 headless 에서도 발화하지만 그 빌드의 drain 이 `other` 갈래로 흘린다 |
-| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | 세우는 코드(`AppState` 의 enqueue 메서드)가 headless 빌드에도 컴파일되지만 비우는 자는 GUI 메인 루프뿐이다. 그 메서드들이 headless 실행에서 실제로 도달되는지는 이 표가 아니라 [AppState 필드 소유권](app-state-ownership.md) 의 `독자 없음` 분류가 다룰 물음이다 |
+| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | 세우는 코드(`AppState` 의 enqueue 메서드)가 headless 빌드에도 컴파일되지만 비우는 자는 GUI 메인 루프뿐이다. 그 메서드들이 headless 에서 어느 갈래인지는 [AppState 필드 소유권](app-state-ownership.md) 이 적는다 |
+| 파일 열기 발화 주체(`FileDispatchOrigin`, `core/origin.rs`) | 도메인의 `DispatchFile` intent 와 `file::dispatch` 의 시그니처가 headless 에도 컴파일되지만 값을 만드는 자리(explorer·링크·드롭·picker·`file_handler.dispatch` arm)가 전부 GUI 다 |
+| `AppState::preset_store` | headless 도 `AppState::new` 로 Core 의 사본을 받지만 읽는 자(preset popup)가 GUI 뿐이다. 에이전트의 preset IPC 는 `Core.preset_store` 를 잠근다 |
+| `ModalKind` 의 variant | 모달을 여는 자리(`App::open_modal`)가 GUI 뿐이다. 열거와 `active_modal_kind` 는 `ui.state` 덤프가 두 조합에서 같은 키로 읽는다 |
 
 ## 판정은 바깥에서 안으로
 

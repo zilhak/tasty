@@ -1,5 +1,6 @@
+#[cfg(any(feature = "gui", test))]
 use serde_json::Value;
-#[cfg(test)]
+#[cfg(all(test, feature = "gui"))]
 use serde_json::json;
 
 use tasty_model::TabSwitch;
@@ -9,6 +10,7 @@ use crate::core::CoreState;
 
 impl AppState {
     /// Add a new tab in the focused pane.
+    #[cfg(any(feature = "gui", test))]
     pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
         // mirror 워크스페이스면 로컬 PTY spawn 대신 NewTab 을 원격으로 forward 한다
         // (로컬 spawn 은 "workspace 전체가 remote" 불변식을 깬다). no-op(Ok) 로 반환.
@@ -56,6 +58,7 @@ impl AppState {
 
     /// Generic kind+params 기반 탭 추가. SurfaceKindRegistry를 통해 surface를 만들고
     /// 포커스된 pane에 부착한다. Returns (tab_id, surface_id) on success.
+    #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab(
         &mut self,
         engine: &mut CoreState,
@@ -97,6 +100,7 @@ impl AppState {
     /// 가 속한 pane 에 탭을 추가한다. 우클릭한 explorer 가 focused pane 이 아니어도
     /// (background pane) 그 explorer 가 있는 pane 에 새 탭이 열리도록 해 focused-pane
     /// 의존을 제거한다. Returns (tab_id, surface_id) on success.
+    #[cfg(any(feature = "gui", test))]
     pub fn add_kind_tab_by_owner(
         &mut self,
         engine: &mut CoreState,
@@ -144,6 +148,7 @@ impl AppState {
     /// 대상 explorer surface(`sid`)의 활성 탭 cwd 를 `folder` 로 설정하고(좌측 트리
     /// 루트 이동 + current=folder + 히스토리 초기화) 뷰를 리로드한다. 컨텍스트 메뉴
     /// "이 폴더로 루트 설정" 이 사용. surface_id→패널 탐색은 focus 독립(전 pane 순회).
+    #[cfg(any(feature = "gui", test))]
     pub fn set_explorer_cwd(
         &mut self,
         engine: &mut CoreState,
@@ -183,11 +188,13 @@ impl AppState {
     }
 
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
+    #[cfg(feature = "gui")]
     pub fn add_empty_tab(&mut self, engine: &mut CoreState) -> Option<(u32, u32)> {
         self.add_kind_tab(engine, "empty", &Value::Null).ok()
     }
 
     /// Next tab in the focused pane.
+    #[cfg(any(feature = "gui", test))]
     pub fn next_tab_in_pane(&mut self, engine: &mut CoreState) {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);
@@ -199,6 +206,7 @@ impl AppState {
     }
 
     /// Previous tab in the focused pane.
+    #[cfg(feature = "gui")]
     pub fn prev_tab_in_pane(&mut self, engine: &mut CoreState) {
         #[cfg(feature = "gui")]
         let before = self.tutorial_tab_snapshot(engine);
@@ -229,6 +237,7 @@ impl AppState {
     /// Close a specific tab in a specific pane (context menu 등 임의 (pane_id, tab_index)
     /// 지정 close). focused pane / active tab 와 무관하게 동작한다.
     /// 내부 모든 surface cleanup + closed_item snapshot + layout dirty 마킹을 수행.
+    #[cfg(feature = "gui")]
     pub fn close_tab(&mut self, engine: &mut CoreState, pane_id: u32, tab_index: usize) -> bool {
         // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseTab 을 원격으로
         // forward 한다(로컬 close 는 원격 트리와 어긋남).
@@ -299,6 +308,7 @@ impl AppState {
     }
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
+    #[cfg(any(feature = "gui", test))]
     pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
         // mirror 워크스페이스면 로컬 트리를 건드리지 않고 CloseTab 을 원격으로
         // forward 한다. true 를 돌려 호출부의 close fallback 체인을 멈춘다.
@@ -358,7 +368,8 @@ impl AppState {
     }
 }
 
-#[cfg(test)]
+// 이 두 테스트 헬퍼를 부르는 시험은 전부 gui 조합에서만 돈다.
+#[cfg(all(test, feature = "gui"))]
 impl AppState {
     /// Test-only helper: add a Markdown viewer tab in the focused pane.
     ///

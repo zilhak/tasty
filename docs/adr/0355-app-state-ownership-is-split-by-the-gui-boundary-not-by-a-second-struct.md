@@ -69,13 +69,21 @@ headless 빌드(`--no-default-features`)도 같은 struct 를 쓴다. 그래서 
      지울 수 있다.
 
   **잔여의 현재 상태 (후속 — 도메인 경계 작업, [ADR-0440](0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md), 2026-09-21)**:
-  ① 은 도메인 쪽만 끝났다 — 구조 실행·cascade·forward runner(`core::structural_exec` ·
-  `core::structural_cascade` · `core::attach_runtime`)가 `AppState` 대신 도메인이 선언한 포트
-  `CascadeWindow` 를 받는다. `pump_ipc` 와 IPC 핸들러의 인자는 그대로 `AppState` 다. 도메인
-  크레이트를 떼지 않기로 했으므로(ADR-0440) 핸들러 인자를 좁히는 것은 그 크레이트의 선행
-  조건이 아니게 됐다. ②·③ 은 그대로 남아 있다. 그리고 `PendingHostEvent` 가 `state.rs` 밖
-  (`core::host_event`)으로 나가면서 ③ 의 모듈 allow 가 그 타입을 더는 덮지 않게 됐고, 그
-  타입에는 항목 단위 `expect` 가 붙었다.
+  - ②·③ 은 끝났다. `독자 없음` 필드 31 개를 ① 29 · ② 1(`tab_bar_height` — headless 테스트가
+    읽는다) · ③ 1(`preset_store`)로 갈랐고, `src/state.rs` 의 모듈 단위 `allow` 를 지웠다. 필드가
+    아닌 dead 정의(하위 모듈 · 메서드 · 자료형 · `ModalKind` 의 variant)도 같은 세 갈래로 항목마다
+    가렸다. 그 `allow` 는 진단만 덮은 것이 아니라 dead 판정의 **뿌리** 노릇도 했다 — 지우자
+    `core` 쪽 다섯 자리(`set_category_collapsed` · `reify_plugin_surface` · `SurfaceCwd` 와 그
+    `as_str` · `SurfaceKindDef::convert_input_popup`)가 새로 dead 로 드러났고, 같은 규칙으로 갈랐다.
+    headless lib 테스트 수는 그대로다(②). 분류표는 [AppState 필드 소유권](../dev-guide/app-state-ownership.md).
+  - ① 은 도메인 쪽만 끝났다 — 구조 실행·cascade·forward runner(`core::structural_exec` ·
+    `core::structural_cascade` · `core::attach_runtime`)가 `AppState` 대신 도메인이 선언한 포트
+    `CascadeWindow` 를 받는다. `pump_ipc` 와 IPC 핸들러의 인자(위 287 자리)는 그대로 `AppState` 다.
+    ADR-0440 이 도메인 크레이트를 떼지 않기로 해서 이것은 **크레이트의 선행 조건은 아니게 됐다.**
+    그러나 이 ADR 의 목표 — "이 핸들러는 도메인 상태만 만진다" 를 타입이 말하는 것(Consequences
+    "잃은 것" 첫 항) — 로는 그대로 남는다. 다음 주인은 IPC 핸들러와 `pump_ipc` 의 인자를 좁히는
+    후속 단위다. 아래 재검토 조건 "`독자 없음` 칸이 비면" 이 이 착지로 충족됐고, 그 조건이
+    가리키는 물음이 바로 이것이다.
 - **운영 비용**: 새 dialog 상태를 넣는 사람은 그것이 headless 에서 읽혀야 하는지를 정해야 한다.
   읽혀야 하면 `dialogs` 가 아니라 `AppState` 나 `CoreState` 에 둔다.
 
