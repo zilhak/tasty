@@ -1112,3 +1112,8 @@ mod modifier_hint_paint_order;
 /// 세 자리에 흩어져 있던 산문을 집행 자리 하나로 모으고 그것을 값으로 문다.
 #[cfg(test)]
 mod shutdown_channel_order;
+
+/// headless 루프의 한 바퀴가 **두 타이머 허브를 다 거두는지** — 루프는 앱 허브와 plugin 허브의
+/// `min` 에 깨어나므로, 한쪽만 거두면 그쪽 데드라인이 과거에 남아 대기가 0 이 된다.
+#[cfg(test)]
+mod headless_loop_reaps_both_hubs;

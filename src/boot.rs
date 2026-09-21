@@ -293,8 +293,9 @@ impl DropTailCounters {
     }
 }
 
-/// 시간축 — 이번 바퀴에 due 한 타이머 키를 전부 실행한다. gui `about_to_wait` 의
-/// drain 블록과 동형이며, 각 arm 이 무엇의 headless 등가인지는 arm 주석에 있다.
+/// 시간축 — 이번 바퀴에 due 한 타이머 키를 전부 실행하고, plugin 허브의 데드라인이
+/// 지났으면 그쪽도 거둔다. gui `about_to_wait` 의 drain 블록과 동형이며, 각 arm 이
+/// 무엇의 headless 등가인지는 arm 주석에 있다.
 #[cfg(not(feature = "gui"))]
 fn run_due_timers(
     app: &mut crate::app::App,
@@ -370,6 +371,10 @@ fn run_due_timers(
             }
         }
     }
+    // plugin 허브의 시간축 — 루프는 두 허브의 `min` 에 깨어나므로 여기서 plugin 쪽도
+    // 거둔다. 빠지면 plugin 데드라인이 과거에 남아 대기가 0 이 되고 루프가 다음
+    // `Tick::Busy` 까지 헛돈다(gui 는 `about_to_wait` 가 깨어날 때마다 `mgr.pump`).
+    headless_plugins::pump_plugins_if_due(app, state, engine, Instant::now());
 }
 
 /// PTY 출력 wake 처리 — dedup 게이트 해제 후 대상 surface(또는 전체)를 drain 한다.

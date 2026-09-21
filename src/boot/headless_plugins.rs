@@ -15,10 +15,13 @@
 //!   을 발화하므로, plugin 이벤트(hello 응답, `PaintFrame` 등)는 이미 이 이벤트로 host 를
 //!   깨운다 — 별도 wake 채널이 필요 없다("PaintFrame 도착 시 즉시 wake" 요구도 이
 //!   경로가 충족한다).
-//! - plugin 자체 주기 작업(ping/healthcheck/RSS/auto-reload)은 `PluginManager` 가
+//! - plugin 자체 주기 작업(ping/healthcheck/RSS/auto-reload/retire)은 `PluginManager` 가
 //!   소유한 타이머 허브가 스케줄한다 — headless 메인 루프가 그 데드라인을 자기
 //!   대기 계산에 합성하므로(`docs/dev-guide/timer-hub.md`) plugin 소켓이 조용해도
-//!   제때 깨어난다. 1Hz `Tick::Busy` 에 편승하던 안전망은 그래서 더는 필요 없다.
+//!   제때 깨어난다. **깨어난 바퀴가 그 데드라인을 거두는 자리는 [`pump_plugins_if_due`]
+//!   다** — 깨우기만 하고 안 거두면 데드라인이 과거에 남아 `recv_timeout(0)` 이 다음
+//!   `Tick::Busy`(1 Hz)까지 헛돈다(실측: `PluginTick::Ping` 15 s 마다 약 1 s 동안
+//!   루프 160 만 회). 그래서 `Tick::Busy` 편승은 안전망으로만 남는다.
 
 use crate::app::App;
 use crate::core::CoreState;
@@ -111,6 +114,37 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut AppState, engine: &mut Cor
     }
     dispatch_plugin_ipc_calls_headless(app, state, engine);
     forward_mesh_frames(app, engine);
+}
+
+/// plugin 허브의 데드라인이 지났으면 [`pump_plugins`] 를 부른다. 불렀는지를 돌려준다.
+///
+/// headless 루프는 대기를 두 허브의 `min` 으로 계산하므로(`crate::app::timers::min_deadline`)
+/// plugin 데드라인에 깨어난다. 그 바퀴가 plugin 허브를 안 돌리면 데드라인이 그대로
+/// 과거에 남고, 다음 대기가 0 이 되어 루프가 헛돈다 — gui 는 `about_to_wait` 가 깨어날
+/// 때마다 `mgr.pump` 를 불러 이 형태가 없다. 앱 허브의 due 판정(`drain_due`)과 같은
+/// 규칙(`at <= now`)을 쓴다.
+pub(crate) fn pump_plugins_if_due(
+    app: &mut App,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    now: std::time::Instant,
+) -> bool {
+    let deadline = app.plugin_manager.as_ref().and_then(|m| m.next_deadline());
+    run_if_due(deadline, now, || pump_plugins(app, state, engine))
+}
+
+/// 데드라인이 지났으면 `pump` 를 한 번 부른다 — 판정을 [`pump_plugins_if_due`] 에서 떼어
+/// `App` 없이 시험한다.
+fn run_if_due(
+    deadline: Option<std::time::Instant>,
+    now: std::time::Instant,
+    pump: impl FnOnce(),
+) -> bool {
+    let due = deadline.is_some_and(|at| at <= now);
+    if due {
+        pump();
+    }
+    due
 }
 
 /// `CoreState::mesh_mirror`(구독 상태)를 읽어 plugin 을 구동하고, 새 frame 을 attach
@@ -536,7 +570,58 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
 
 #[cfg(test)]
 mod tests {
-    use super::owner_of_kind;
+    use super::{owner_of_kind, run_if_due};
+    use std::time::{Duration, Instant};
+
+    /// 지난 데드라인은 거둔다 — 안 거두면 headless 루프가 다음 `Tick::Busy` 까지 헛돈다.
+    /// 데드라인과 같은 시각도 지난 것이다(앱 허브 `drain_due` 와 같은 규칙).
+    #[test]
+    fn a_passed_plugin_deadline_is_pumped() {
+        let now = Instant::now();
+        for deadline in [now - Duration::from_millis(50), now] {
+            let mut pumped = 0;
+            assert!(run_if_due(Some(deadline), now, || pumped += 1));
+            assert_eq!(pumped, 1, "지난 데드라인을 거두지 않았다 — 루프가 헛돈다");
+        }
+    }
+
+    /// 아직 안 온 데드라인과 데드라인 없음은 pump 하지 않는다 — 이 판정이 늘 참이면 매
+    /// 바퀴(IPC 명령마다) plugin 허브를 돌리게 된다.
+    #[test]
+    fn a_future_or_absent_plugin_deadline_is_not_pumped() {
+        let now = Instant::now();
+        for deadline in [Some(now + Duration::from_millis(50)), None] {
+            let mut pumped = 0;
+            assert!(!run_if_due(deadline, now, || pumped += 1));
+            assert_eq!(pumped, 0);
+        }
+    }
+
+    /// plugin 허브를 한 번 pump 하면 지난 데드라인이 **미래로 간다** — 그래야 위 판정이
+    /// 루프를 끝낸다. 매니저가 부팅 때 등록하는 주기 타이머(`PluginTick::Ping` 등)로 잰다.
+    #[test]
+    fn one_pump_moves_a_passed_plugin_deadline_into_the_future() {
+        let factory: tasty_terminal::waker_factory::SharedWakerFactory =
+            std::sync::Arc::new(tasty_terminal::waker_factory::NoopWakerFactory);
+        // `PluginManager::new` 는 그 크레이트 안 전용(`#[cfg(test)]`)이라 공개 생성자를 쓴다.
+        let mut mgr = crate::plugin::PluginManager::with_registries(
+            factory,
+            std::sync::Arc::new(crate::file::format::FileFormatRegistry::new()),
+            std::sync::Arc::new(crate::file::handler::FileHandlerRegistry::new()),
+        );
+        let first = mgr
+            .next_deadline()
+            .expect("매니저가 부팅 때 주기 타이머를 하나도 안 걸었다 — 대조군이 죽었다");
+        let late = first + Duration::from_millis(1);
+        assert!(run_if_due(mgr.next_deadline(), late, || {
+            mgr.pump(late);
+        }));
+        let next = mgr.next_deadline().expect("pump 뒤 주기 타이머가 사라졌다");
+        assert!(
+            next > late,
+            "pump 뒤에도 데드라인이 과거({next:?} <= {late:?})다 — 루프가 계속 헛돈다"
+        );
+    }
 
     fn decl(kind: &str) -> crate::plugin::manifest::SurfaceKindDecl {
         serde_json::from_value(serde_json::json!({
