@@ -4,10 +4,10 @@ impl CoreState {
     /// Read a specific surface's output since its mark (`surface.set_mark`).
     /// Empty when that surface has no terminal.
     ///
-    /// The focused-surface fallback of `surface.read_since_mark` without a
-    /// target reads the local user's focus and so stays on the window side
-    /// (`AppState::read_since_mark`); this is the half that needs only the
-    /// surface the caller named.
+    /// The focused-surface fallback that used to sit on `AppState` had no
+    /// caller and was removed
+    /// (`docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md`);
+    /// every caller names the surface.
     pub fn read_since_mark_of(&mut self, surface_id: u32, strip_ansi: bool) -> String {
         self.terminals
             .get_mut(surface_id)
