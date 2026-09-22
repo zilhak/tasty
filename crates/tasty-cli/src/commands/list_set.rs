@@ -142,6 +142,33 @@ pub enum ListCommands {
     /// answer it can trail `waits` by the round still running, which includes
     /// the query itself.
     ///
+    /// `gate_refusals` is the twelfth block and counts requests the admission
+    /// gate **turned away**: `judged` is every request that reached the gate
+    /// (requests from this CLI and calls plugins make into this instance
+    /// included), and each gate has its own slot — `permission_denied`
+    /// (permission, -32001), `cap_blocked` (telemetry cap, -32007) and
+    /// `throttled` (rate limit, -32010). The gates run in that order and a
+    /// request turned away by one never reaches the next, so a request is
+    /// counted in at most one slot. The three call for different fixes: ask for
+    /// the permission, lift the cap, or wait. `permission_denied` counts only
+    /// the -32001 answers the permission gate gives: every refusal there is
+    /// -32001, but not every -32001 is one. Besides a missing permission, that
+    /// gate also turns away calls a plugin or agent makes to a method that does
+    /// not exist or to a method it is not allowed to call. Asking for a
+    /// permission does not fix those two; calling a different method does.
+    /// Calls from this CLI without a session token are never turned away at
+    /// this gate, so they do not land here even when the method does not exist.
+    /// Two kinds of -32001 never land here either: a rejected session token
+    /// (malformed, unknown, expired or revoked, such as a stale
+    /// TASTY_SESSION_TOKEN), which is answered before the gate so `judged` does
+    /// not count it, and a -32001 returned after the request passed the gate
+    /// (such as a refused grant), which counts as passed. The numbers are
+    /// totals since this instance started and go back to 0 on restart. The
+    /// `throttled_count` reported by `tasty agent rate-limit-status` is a
+    /// per-bucket total that survives restarts, so it is not the same number.
+    /// A request turned away for a malformed idempotency key is not counted
+    /// here.
+    ///
     /// An average with nothing behind it comes back as null, not zero.
     Pressure,
     /// List notifications
