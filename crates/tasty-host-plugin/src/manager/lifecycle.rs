@@ -371,6 +371,10 @@ impl PluginManager {
         for id in &to_start {
             self.start_enabled_package(id);
         }
+        // 전체 기동은 연결까지 기다린다 — 부팅은 이 뒤에 hello 를 짧은 시한으로 기다리므로
+        // (T4) 연결이 그 시한을 갉아먹으면 안 된다. 연결 대기는 plugin 마다 스레드라 겹치고,
+        // 이 자리는 GUI 에서 부팅 워커다(메인 스레드가 아니다).
+        self.wait_for_connections();
     }
 
     /// command registry에 모든 발견된 plugin의 commands를 등록.
@@ -515,14 +519,17 @@ impl PluginManager {
             &self.channel_ledger,
         ) {
             Ok(p) => self.on_plugin_spawn_success(pkg, p),
-            Err(e) => self.on_plugin_spawn_failure(pkg, e),
+            Err(e) => self.on_plugin_spawn_failure(&pkg.manifest.id, e),
         }
     }
 
     fn on_plugin_spawn_success(&mut self, pkg: &PluginPackage, p: PluginProcess) {
         tracing::info!("plugin started: {}", p.plugin_id);
         self.processes.insert(pkg.manifest.id.clone(), p);
-        self.spawn_failures.remove(&pkg.manifest.id);
+        // 연속 실패 기록(`spawn_failures`)은 여기서 지우지 않는다 — 연결은 아직이고, 연결이
+        // 끝내 안 오는 것도 기동 실패로 센다. 지우는 자리는 연결이 성사된 때다
+        // (`manager::connect`). 여기서 지우면 매번 연결에 실패하는 plugin 의 누적이 매
+        // 기동마다 0 으로 돌아가 자동 비활성이 영영 안 걸린다.
         // H.b — spawn 성공 분기에서만 baseline 캡처. 무한 swap loop 회피용
         // 기준점. 실패 시 entry 가 디스크에 없거나 metadata 실패해도
         // capture 가 None 으로 끝남 — 다음 check_for_updates 에서 비교 대상
@@ -536,19 +543,19 @@ impl PluginManager {
         // 아니므로 `sync_ipc_namespaces_from_packages` 가 스캔 시점에 채운다.
     }
 
-    fn on_plugin_spawn_failure(&mut self, pkg: &PluginPackage, e: anyhow::Error) {
-        tracing::error!("plugin '{}' spawn failed: {}", pkg.manifest.id, e);
+    pub(super) fn on_plugin_spawn_failure(&mut self, plugin_id: &str, e: anyhow::Error) {
+        tracing::error!("plugin '{}' spawn failed: {}", plugin_id, e);
         {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::PluginError;
             let payload = PluginError {
-                plugin_id: pkg.manifest.id.clone(),
+                plugin_id: plugin_id.to_string(),
                 error_kind: "spawn_failed".to_string(),
                 message: e.to_string(),
             };
             self.emit_host_event("plugin.error", &payload, EventScope::System);
         }
-        self.record_spawn_failure(&pkg.manifest.id);
+        self.record_spawn_failure(plugin_id);
     }
 
     fn record_spawn_failure(&mut self, plugin_id: &str) {
@@ -750,7 +757,8 @@ impl PluginManager {
     }
 
     /// plugin 프로세스를 치운 **뒤** 호스트가 그 plugin 에 대해 들고 있던 실행 상태를
-    /// 잊는다. disable · graceful swap · 무응답 재시작 셋이 **이 한 함수**를 거친다.
+    /// 잊는다. disable · graceful swap · 무응답 재시작 · 연결 실패(`connect::on_connect_failure`)
+    /// 넷이 **이 한 함수**를 거친다.
     ///
     /// 셋이 각자 줄을 들고 있던 때에는 재시작 경로만 마지막 줄을 빠뜨렸다. 그러면
     /// `event_bus.clear_plugin` 이 지운 이벤트 권한과 `settings_pages` 가 지운 sub-page 가

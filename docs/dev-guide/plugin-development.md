@@ -280,12 +280,22 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
 
 `manager.rs` 상수 기준:
 
-- **부팅**: `~/.tasty/plugins/` 스캔 → enabled 전부 spawn.
+- **부팅**: `~/.tasty/plugins/` 스캔 → enabled 전부 spawn. 전체 기동은 각 plugin 의 연결 결과까지 기다린다 —
+  부팅은 그 뒤 hello 를 짧은 시한으로 기다리므로 연결 시간이 그 시한을 먹으면 안 된다. 연결 대기는 plugin 마다
+  스레드라 겹친다(가장 느린 하나로 수렴). GUI 에서 이 자리는 부팅 워커 스레드다.
+- **기동과 연결**: 기동(명시적 `enable` · namespace 호출이 owner 를 띄울 때 · 재시작 · swap)은 자식을 띄우자마자
+  돌아오고, 연결(`HANDSHAKE_TIMEOUT` 10s 안)은 `plugin-connect-<id>` 스레드가 기다린다 — 메인 스레드가 서지 않는다.
+  연결 전의 plugin 도 `processes` 에 있어 `running: true` 이고, 그 사이 온 요청은 송신 큐에 쌓였다가 연결 뒤 순서대로
+  나간다. 그 요청의 시한(hook `timeout_ms` · namespace 호출 만료)은 **연결이 성사된 뒤부터** 센다 — 연결 중에는
+  만료되지 않고, 연결되면 기다린 만큼 밀린다. 헤드리스 `--type <kind>` 의 hello 대기도 연결 뒤부터 센다.
+  끝내 연결하지 않으면 spawn 실패와 같은 갈래로 간다(프로세스 kill · `plugin.error` `spawn_failed` ·
+  아래 자동 비활성화 누적 · 쌓인 namespace 호출은 caller 에 오류 회신 · 그 extension 에 보낸 hook 은 hook 없이
+  진행). 근거 [ADR-0505](../adr/0505-a-plugin-start-waits-for-its-connection-off-the-main-thread.md).
 - **헬스체크**: `PING_INTERVAL`(15s)마다 ping, `HEALTHCHECK_TIMEOUT`(60s) 무응답이면 강제 재시작.
   판정은 ping 을 보내는 tick 에서 함께 하므로 **비응답 검출 상한은 60s + 15s = 75s** 다
   ([timer-hub](timer-hub.md#계층을-넘는-허브-합성)). 프로세스가 실제로 죽은 경우는 이 경로가
   아니라 event 채널 Disconnected 로 즉시 잡히므로 이 상한의 영향을 받지 않는다.
-- **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지).
+- **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지). 연결 한도 초과도 한 건으로 세지만, 한 건이 한도(10s)만큼 걸리므로 연결 실패만으로는 창 안에 3 건이 안 쌓이고 빠른 spawn 실패와 섞일 때만 닿는다. 누적은 연결이 성사될 때 지워진다.
 - **namespace 호출 만료**: 위 재시작 경로는 프로세스가 굳은 경우만 본다 — ping 에는 답하면서
   특정 호출만 안 돌려주는 plugin 은 healthcheck 에 안 걸린다. 그래서 plugin namespace 로
   forward 한 pending 호출에는 별도로 `NAMESPACE_CALL_TIMEOUT` 데드라인이 붙고, 넘기면
@@ -316,11 +326,11 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
   `-32004` 는 "실행되지 않았다" 가 아니라 "결과를 모른다" 다 — 늦은 응답이 왔다는 것은
   plugin 이 실제로 실행했다는 뜻이고 호스트는 그 효과를 되돌리지 못한다. 근거는 ADR-0311
   의 2026-09-21 보강.
-- **재시작·disable·swap 의 정리는 한 함수다**: 세 경로가 프로세스를 치운 뒤 모두
+- **재시작·disable·swap·연결 실패의 정리는 한 함수다**: 네 경로가 프로세스를 치운 뒤 모두
   `forget_plugin_runtime` 을 거친다 — event bus 권한·구독 해제, pending 회수, shared
   buffer 해제, 설정 sub-page 해제, 등록 게이트(`registered_plugins`) 해제. 등록 게이트가
   풀려야 새 프로세스의 hello 가 권한·event bus·설정 sub-page 를 **다시** 받는다.
-  그 결과로 세 경로 모두 새 hello 마다 `plugin.surface_kind_registered` · `plugin.loaded` 를
+  그 결과로 다시 띄우는 세 경로(재시작·disable 뒤 enable·swap) 모두 새 hello 마다 `plugin.surface_kind_registered` · `plugin.loaded` 를
   다시 발화하고(구독자는 같은 plugin 의 `plugin.loaded` 를 여러 번 받는다), surface kind 를
   가진 plugin 이면 호스트 로그에 `SurfaceKindRegistry: kind '<kind>' overwritten` 경고가
   한 줄 남는다 — kind 등록이 해제 없이 덮어쓰이기 때문이다.
@@ -438,7 +448,7 @@ SDK 가 셋으로 노출한다.
 
 ### 토큰 핸드셰이크 (보안)
 
-호스트가 `127.0.0.1:0`(랜덤 포트) listen → 토큰을 listener 에 **먼저 등록**(`HostListener::register_connection`)하고 spawn 하며 `TASTY_HOST_IPC_PORT` + `TASTY_PLUGIN_TOKEN` 전달 → 플러그인이 그 포트로 connect 후 **첫 줄에 `AuthMessage{plugin_id, token}`** 전송 → 토큰 일치해야 인증 통과(`HANDSHAKE_TIMEOUT` 내), mismatch 면 즉시 끊음. 등록이 spawn 보다 앞서는 이유: 채널이 Nagle 을 끄므로 인증 줄이 지연 없이 도착해, spawn 뒤에 등록하면 plugin 이 그 틈에서 이겨 모르는 토큰으로 거절된다(시험 `a_connection_that_authenticates_before_the_wait_is_kept` 은 등록 뒤·대기 전에 도착한 인증을 listener 가 붙잡아 두는지만 본다). 등록이 spawn 보다 앞선다는 순서 자체는 단위 시험이 고정하지 않는다 — 재는 법: GUI 부팅 로그의 `plugin auth with unknown/expired token` 줄 수(0 이어야 한다). SDK transport 가 이 핸드셰이크를 자동 수행하므로 작성자는 보통 신경 쓸 필요 없다.
+호스트가 `127.0.0.1:0`(랜덤 포트) listen → 토큰을 listener 에 **먼저 등록**(`HostListener::register`)하고 spawn 하며 `TASTY_HOST_IPC_PORT` + `TASTY_PLUGIN_TOKEN` 전달 → 플러그인이 그 포트로 connect 후 **첫 줄에 `AuthMessage{plugin_id, token}`** 전송 → 토큰 일치해야 인증 통과(`HANDSHAKE_TIMEOUT` 10s 내 — 호스트는 이 대기를 메인 스레드 밖에서 한다, 위 "기동과 연결"), mismatch 면 즉시 끊음. 등록이 spawn 보다 앞서는 이유: 채널이 Nagle 을 끄므로 인증 줄이 지연 없이 도착해, spawn 뒤에 등록하면 plugin 이 그 틈에서 이겨 모르는 토큰으로 거절된다(시험 `a_connection_that_authenticates_before_the_wait_is_kept` 은 등록 뒤·대기 전에 도착한 인증을 listener 가 붙잡아 두는지, `a_dropped_registration_is_withdrawn` 은 버린 등록이 거둬지는지 본다). 등록이 spawn 보다 앞선다는 순서 자체는 `manager::tests_connect::the_connection_is_registered_before_the_child_starts` 가 고정한다 — 시험 전용 hook(`process::AFTER_CHILD_SPAWN_DELAY`)이 자식을 띄운 직후 호출 스레드를 1 s 세워, 등록이 그 뒤면 곧바로 연결한 가짜 plugin 이 모르는 토큰으로 거절돼 실패한다. 실행 중에는 GUI 부팅 로그의 `plugin auth with unknown/expired token` 줄 수로도 볼 수 있다(0 이어야 한다). SDK transport 가 이 핸드셰이크를 자동 수행하므로 작성자는 보통 신경 쓸 필요 없다.
 
 ## 8. 규약
 

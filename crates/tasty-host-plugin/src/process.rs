@@ -3,8 +3,9 @@
 //! `PluginProcess::spawn(...)`는:
 //! 1. 토큰 생성
 //! 2. 자식 프로세스 spawn (env로 host port + token + plugin id 전달, stdout/stderr는 로그 파일)
-//! 3. listener에서 token 매칭된 connection 수신 (timeout 10s)
-//! 4. 송신/수신 스레드 가동 → mpsc 채널로 호스트 메인 루프에 노출
+//! 3. 연결 대기(timeout 10s)와 송신/수신 스레드 가동을 `plugin-connect-<id>` 스레드에 맡기고
+//!    **즉시 돌아온다** — 그 사이의 요청은 송신 큐에 쌓였다가 연결 뒤 나간다(`connect`, ADR-0505)
+//! 4. 채널은 mpsc 로 호스트 메인 루프에 노출
 //!
 //! plugin이 응답할 때마다 `last_pong`이 갱신된다. 헬스체크는 `since_last_pong()` 비교.
 
@@ -29,8 +30,6 @@ use channel_bytes::{
     metered_channel,
 };
 use tasty_plugin_manifest::{HOST_API_VERSION, PluginPackage};
-
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 // plugin 프로세스 상태를 지키는 내부 락들의 poison 보고 플래그(각 첫 1 회만).
 //
@@ -177,6 +176,12 @@ pub struct PluginProcess {
     /// "전체 갱신" sticky flag. 호스트 main loop이 frame 합성 시 `take_dirty_rects`로
     /// drain한다.
     dirty_rects: Arc<Mutex<HashMap<SharedBufferId, Option<PixelRect>>>>,
+    /// 연결 대기의 결과 자리. 연결 대기 스레드가 채우고 매니저가 pump 에서 한 번 거둔다.
+    connect: Arc<connect::ConnectSlot>,
+    /// 매니저가 거둔 연결 성사 시각. `None` 이면 아직 연결 중이다 — 연결에 실패한 프로세스는
+    /// `processes` 에서 빠지므로 여기 남지 않는다. 요청의 시한을 연결 성사부터 세는 데
+    /// 쓴다(ADR-0505).
+    connected_at: Option<Instant>,
 }
 
 #[cfg(test)]
@@ -222,6 +227,11 @@ impl PluginProcess {
         proc
     }
 
+    /// 아직 연결 결과가 안 거둬진 프로세스로 만든다 — 연결 전에 보낸 요청의 시한을 재려고.
+    pub(crate) fn mark_connecting_for_test(&mut self) {
+        self.connected_at = None;
+    }
+
     /// 마지막 pong 을 `by` 만큼 과거로 민다 — 무응답 재시작을 60 초 기다리지 않고 재려고.
     pub(crate) fn backdate_pong_for_test(&self, by: Duration) {
         let mut last = self.last_pong.lock().expect("fresh mutex");
@@ -256,8 +266,19 @@ impl PluginProcess {
             last_pong: Arc::new(Mutex::new(Instant::now())),
             handle_state: Mutex::new(HandleStreamState::Unavailable),
             dirty_rects: Arc::new(Mutex::new(HashMap::new())),
+            connect: connect::ConnectSlot::reported(),
+            connected_at: Some(Instant::now()),
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 자식을 띄운 직후 호출 스레드를 이만큼 세운다 — 시험 전용. 부하로 호출 스레드가 밀리는
+    /// 상황을 결정적으로 만든다: 그 사이 곧바로 연결한 plugin 이 인증하므로, 연결을 받을
+    /// 자리를 자식을 띄운 **뒤에** 여는 구현이면 그 인증이 토큰 없음으로 거절된다.
+    pub(crate) static AFTER_CHILD_SPAWN_DELAY: std::cell::Cell<Duration> =
+        const { std::cell::Cell::new(Duration::ZERO) };
 }
 
 /// 시험이 호스트가 **무엇을 보냈는지** 읽는 자리. 큐에는 직렬화된 줄이 들어 있으므로
@@ -289,8 +310,6 @@ impl PluginProcess {
         let log_file = std::fs::File::create(&log_path)?;
         let log_clone = log_file.try_clone()?;
         let entry_path = package.entry_command_path();
-        // spawn 보다 먼저 — plugin 의 인증이 등록보다 앞서면 거절된다(`register_connection`).
-        let expected = listener.register_connection(&token);
 
         let (mut cmd, handle_stream_rx) = build_plugin_command(
             package,
@@ -303,6 +322,11 @@ impl PluginProcess {
         )?;
         inject_plugin_data_env(&mut cmd, package, &log_path)?;
 
+        // 연결을 받을 자리는 자식을 띄우기 **전에** 연다 — 빠르게 connect 한 plugin 이 토큰
+        // 없음으로 거절되지 않게(보조 채널 mailbox 와 같은 이유). spawn 이 실패하면 이
+        // 값이 버려지며 등록을 거둔다.
+        let pending = listener.register(&token);
+
         // spawn 은 reaper 를 경유한다 — Linux 는 PDEATHSIG 가 fork 한 스레드 수명에
         // 결박되므로(단명 부트 워커에서 직접 spawn 하면 그 스레드 종료 시 plugin
         // 전원 SIGKILL) 영속 spawner 스레드에서 fork 해야 한다. 타 OS 는 직접 spawn.
@@ -314,6 +338,9 @@ impl PluginProcess {
                 e
             )
         })?;
+        let spawned_at = Instant::now();
+        #[cfg(test)]
+        std::thread::sleep(AFTER_CHILD_SPAWN_DELAY.with(std::cell::Cell::get));
 
         // spawn 직후 자식이 살아있는 시점에 Job 에 assign(Windows). 실패해도
         // 플러그인 기능은 정상이며 수명 결박만 누락되므로 warn 후 진행한다.
@@ -323,18 +350,6 @@ impl PluginProcess {
                 package.manifest.id
             );
         }
-
-        let stream = match expected.wait(HANDSHAKE_TIMEOUT) {
-            Some(s) => s,
-            None => {
-                anyhow::bail!(
-                    "plugin '{}' did not connect within {}s — log: {}",
-                    package.manifest.id,
-                    HANDSHAKE_TIMEOUT.as_secs(),
-                    log_path.display()
-                );
-            }
-        };
 
         // 보조 채널은 별도 mailbox로 받는다 — blocking하지 않는다. plugin이 connect하면
         // listener accept thread가 stream을 receiver로 넣어 둠. shared buffer 사용 시점에
@@ -355,16 +370,20 @@ impl PluginProcess {
             ledger.open_queue(id, Direction::Event),
         );
 
-        let writer = stream.try_clone()?;
-        spawn_tx_thread(&package.manifest.id, writer, req_rx)?;
-        spawn_rx_thread(
-            &package.manifest.id,
-            stream,
-            waker,
-            last_pong.clone(),
+        // 연결 대기는 여기서 하지 않는다 — 부르는 자리가 호스트 메인 스레드라 최대 10 s 가
+        // 모든 IPC 와 프레임을 세운다. 송신 큐는 이미 살아 있으므로 연결 전의 요청은 쌓였다가
+        // 연결 뒤 나간다.
+        let connect = connect::start(connect::ConnectJob {
+            plugin_id: id.clone(),
+            log_path,
+            pending,
+            req_rx,
             resp_tx,
             event_tx,
-        )?;
+            last_pong: last_pong.clone(),
+            waker,
+            spawned_at,
+        });
 
         let initial_state = match handle_stream_rx {
             Some(rx) => HandleStreamState::Pending(rx),
@@ -380,7 +399,31 @@ impl PluginProcess {
             last_pong,
             handle_state: Mutex::new(initial_state),
             dirty_rects: Arc::new(Mutex::new(HashMap::new())),
+            connect,
+            connected_at: None,
         })
+    }
+
+    /// 연결 대기의 결과가 났으면 한 번만 꺼낸다 — 매니저가 pump 에서 거둔다. 아직 연결
+    /// 중이거나 이미 거뒀으면 `None`.
+    pub(crate) fn take_connect_outcome(&self) -> Option<connect::ConnectOutcome> {
+        self.connect.take()
+    }
+
+    /// 연결 성사 시각. 아직 연결 중이면 `None`.
+    pub(crate) fn connected_at(&self) -> Option<Instant> {
+        self.connected_at
+    }
+
+    /// 매니저가 연결 성사를 거뒀을 때 부른다.
+    pub(crate) fn mark_connected(&mut self, at: Instant) {
+        self.connected_at = Some(at);
+    }
+
+    /// 연결 대기의 결과가 날 때까지 `deadline` 까지 기다린다 — 부팅 워커처럼 기다려도
+    /// 되는 자리만 부른다. 결과는 꺼내지 않는다.
+    pub(crate) fn wait_connect_settled(&self, deadline: Instant) {
+        self.connect.wait_settled(deadline);
     }
 
     /// 보조 핸들 채널 stream을 첫 호출 시 materialize한 뒤 closure로 노출한다.
@@ -618,6 +661,19 @@ impl PluginProcess {
             child: self.child.take(),
             deadline,
             started: Instant::now(),
+        }
+    }
+
+    /// 연결이 끝내 안 온 프로세스를 내린다 — 요청을 읽을 소켓이 없으므로 shutdown 요청을
+    /// 보내지 않고, 곧바로 kill 할 핸들을 돌려준다(deadline 이 지금이다). kill 과 회수는
+    /// 핸들을 쥔 쪽이 한다 — 메인 스레드가 아니라 회수 스레드다(`manager::retire`).
+    pub(crate) fn abandon(mut self) -> PendingShutdown {
+        let now = Instant::now();
+        PendingShutdown {
+            plugin_id: std::mem::take(&mut self.plugin_id),
+            child: self.child.take(),
+            deadline: now,
+            started: now,
         }
     }
 
@@ -1858,4 +1914,5 @@ mod shutdown_tests {
 mod tests_parent_home;
 
 pub mod channel_bytes;
+pub(crate) mod connect;
 mod launch;
