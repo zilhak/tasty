@@ -292,6 +292,18 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
+        // 에이전트 창의 초기 포커스 힌트는 map 뒤에 지운다. winit(X11)은 MapNotify 를 받은
+        // 자리에서 `Focused(has_focus)` 를 내므로, 그 창의 첫 `Focused(_)` 가 map 의 가장
+        // 이른 신호다(ADR-0497).
+        if let WindowEvent::Focused(_) = &event
+            && self.pending_focus_hint_clear.remove(&id)
+            && let Some(view) = self.view.views.get(&id)
+            && let Err(e) =
+                crate::platform::window_stacking::clear_initial_focus_hint(&view.base().winit)
+        {
+            tracing::warn!("agent window: clearing the initial focus hint failed: {e}");
+        }
+
         // Track focused window on focus events
         if let WindowEvent::Focused(true) = &event {
             self.handle_window_focused(id);

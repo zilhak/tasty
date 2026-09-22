@@ -22,7 +22,10 @@
 //!   map 전에 EWMH `_NET_WM_USER_TIME = 0`(초기 포커스를 주지 말라)을 걸고, map 은 winit 으로
 //!   하고(보임 상태를 winit 이 들고 있다), 그 뒤 `_NET_RESTACK_WINDOW` 로 사용자 창 아래를
 //!   **요청한다.** 창 관리자가 무시할 수 있다. winit 의 Xlib 연결을 그대로 써서 winit 의
-//!   map 요청 뒤에 순서대로 닿는다.
+//!   map 요청 뒤에 순서대로 닿는다. `_NET_WM_USER_TIME = 0` 은 map 뒤에
+//!   [`clear_initial_focus_hint`] 로 지운다 — EWMH 가 그 값을 map 시점의 초기 포커스로만
+//!   정하므로 목적은 그대로이고, 남겨 두면 나중에 사용자가 부른 활성화(트레이 show 등)를
+//!   막는 창 관리자가 있을 수 있다.
 //! - **Wayland**: 클라이언트가 쌓임 순서나 포커스를 정할 프로토콜이 없다. xdg-activation 을
 //!   요청하지 않는 것이 최선이고 winit 은 `with_active(false)` 로 요청하지 않는다. 그냥
 //!   보인다.
@@ -39,6 +42,12 @@ use winit::window::Window;
 /// `anchor` 가 없으면 활성화 없이 보이기만 한다.
 pub fn show_behind(window: &Window, anchor: Option<&Window>) -> Result<(), String> {
     imp::show_behind(window, anchor)
+}
+
+/// [`show_behind`] 가 map 전에 건 초기 포커스 힌트를 지운다. 창이 map 된 뒤 한 번 부른다.
+/// X11 에서만 무언가를 하고(`_NET_WM_USER_TIME` 삭제), 그 밖에서는 아무것도 안 한다.
+pub fn clear_initial_focus_hint(window: &Window) -> Result<(), String> {
+    imp::clear_initial_focus_hint(window)
 }
 
 #[cfg(windows)]
@@ -93,6 +102,10 @@ mod imp {
         // 보이고, 호출자의 `set_visible(true)` 폴백은 winit 안에서 아무것도 안 한다.
         place_below(new, below)
     }
+
+    pub(super) fn clear_initial_focus_hint(_window: &Window) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -132,6 +145,10 @@ mod imp {
             // 것과 같은 호출(키 창으로 만들지 않고 보이기만).
             None => new.orderFront(None),
         }
+        Ok(())
+    }
+
+    pub(super) fn clear_initial_focus_hint(_window: &Window) -> Result<(), String> {
         Ok(())
     }
 }
@@ -271,6 +288,21 @@ mod imp {
             None => Ok(()),
         }
     }
+
+    pub(super) fn clear_initial_focus_hint(window: &Window) -> Result<(), String> {
+        let Some(win) = xlib_window(window)? else {
+            return Ok(());
+        };
+        let dpy = xlib_display(window)?;
+        let x = xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
+        let atom = intern(&x, dpy, c"_NET_WM_USER_TIME");
+        // SAFETY: dpy 는 winit 의 살아 있는 연결이고 win 은 winit 이 만든 살아 있는 창이다.
+        // 프로퍼티가 없어도 XDeleteProperty 는 아무것도 안 한다.
+        unsafe { (x.XDeleteProperty)(dpy, win, atom) };
+        // SAFETY: 같은 연결의 요청 버퍼를 비운다.
+        unsafe { (x.XFlush)(dpy) };
+        Ok(())
+    }
 }
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -279,6 +311,10 @@ mod imp {
 
     pub(super) fn show_behind(window: &Window, _anchor: Option<&Window>) -> Result<(), String> {
         window.set_visible(true);
+        Ok(())
+    }
+
+    pub(super) fn clear_initial_focus_hint(_window: &Window) -> Result<(), String> {
         Ok(())
     }
 }

@@ -222,6 +222,10 @@ pub(crate) struct App {
     /// 이 id 의 view 로 포커스만 이동한다.
     #[cfg(feature = "gui")]
     pub(crate) preset_view_id: Option<WindowId>,
+    /// map 뒤에 초기 포커스 힌트(X11 `_NET_WM_USER_TIME = 0`)를 지워야 하는 에이전트 창.
+    /// winit 이 map 을 알리는 첫 `WindowEvent::Focused(_)` 에서 비운다(ADR-0497).
+    #[cfg(feature = "gui")]
+    pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
     /// Plugins 모달의 `Configure` 진입점이 Settings 모달을 열 때, 첫 진입 탭을
     /// `Plugin` 으로 강제하기 위한 1회성 플래그. `open_settings_modal` 이 소비한다.
     #[cfg(feature = "gui")]
@@ -387,6 +391,7 @@ impl App {
                 })
             }),
             preset_view_id: None,
+            pending_focus_hint_clear: std::collections::HashSet::new(),
             pending_settings_plugin_tab: false,
             pending_settings_file_handler_tab: false,
             #[cfg(debug_assertions)]

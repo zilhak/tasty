@@ -722,6 +722,7 @@ impl App {
         self.register_window(gpu, state, core_state, window, origin);
         if let Some((window, anchor)) = behind {
             show_agent_window(&window, anchor.as_deref());
+            self.pending_focus_hint_clear.insert(window_id);
         }
         tracing::info!("created new window {window_id:?} ({origin:?})");
         Ok(window_id)
