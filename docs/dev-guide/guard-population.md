@@ -60,6 +60,102 @@ ADR-0133 의 처방은 동적 모수를 겨눈다. 정적 모수에는 그대로
   삼키면 자기 픽스처를 실제 값으로 센다. 자기 제외 면제를 두지 말고 **루트를 좁게
   유지하고 그 조건 자체를 테스트로 고정**한다.
 
+## `match` 팔을 읽는 가드는 공용 판정기를 쓴다
+
+라우터·액션 문처럼 **`match` 팔의 집합**을 명부·표와 대조하는 가드는 팔을
+`tasty_doc_guards::match_arms` 로 뗀다. 그 판정기는 구조(괄호 짝 · `=>` · `,` · `|` ·
+` if `)를 주석·문자열·문자 리터럴을 **바이트 수까지 맞춰** 덮은 사본
+(`source_text::mask_non_code_aligned`)에서 찾고, 이름은 같은 구간의 원본에서 읽는다.
+팔은 앞에서부터 떼므로 팔 본문 안의 중첩 `match` · 클로저의 `=>` 는 팔 머리로 읽히지 않는다.
+
+손으로 짠 추출기가 조용히 틀린 형태는 둘이고, 둘 다 실측됐다.
+
+- **리터럴 안의 구분자.** guard 문자열 안의 `,` 가 팔 머리를 자르거나, 본문 문자열의
+  `}`(format escape `"}}"` 가 평범한 예다)·`'}'`·주석 속 `}` 가 본문을 일찍 닫아 **그 뒤의
+  팔을 전부** 놓친다.
+- **줄 앞머리 판독.** `"…" =>` 로 시작하는 줄만 세면 `"a" | "b" =>` 와 guard 가 붙은
+  `"a" if … =>` 가 통째로 빠진다.
+
+명제가 부분집합(팔 ⊆ 표)이면 둘 다 **초록**으로 나간다 — 놓친 팔은 검사를 안 받을 뿐이다.
+
+판정기는 **구조**를 모르는 모양을 조용히 넘기지 않고 `Err` 로 돌려준다. 블록형 식 뒤
+쉼표를 생략해 다음 팔로 이어지는 본문이 그 예다(쉼표를 찾아 가면 다음 팔을 본문으로 삼킨다).
+
+그 말은 판정기에 대해서만 참이다. 팔을 뗀 뒤 **따옴표 이름이 아닌 조각**(`CONST =>` ·
+`r"…" =>` · 바인딩)을 어떻게 다룰지는 소비자가 정하고, 소비자는 두 무리로 갈린다.
+
+- **실패시키는 쪽**: 창 라우터 호출자 명부 · 합산 명부 · 권한 토큰 판독 ·
+  `src/source_guards/` 의 `non_literal_arms`(`_` 와 guard 없는 바인딩만 봐준다).
+- **조용히 건너뛰는 쪽**: 액션 문 · 라우터 표 정합 · `bundled_plugin_namespace_coverage` ·
+  단축키 표 대조 · `routing_key_method_scope` 의 `dispatch_arms`(조각 하나라도 이름이 아니면
+  그 팔을 통째로 버린다).
+
+뒤쪽은 회귀가 아니다 — 줄 단위로 읽던 구판도 따옴표로 시작하지 않는 조각은 안 셌다. 다만
+"판정기가 모르는 모양은 실패" 를 그 가드들의 성질로 읽으면 안 된다. 재는 법: 액션 문
+(`src/adapters/ui/input/shortcuts/dispatch.rs` 의 `match action_id`) 첫 팔 앞에
+`ZZ_NOT_A_FIELD => {}` 와 `r"zz_raw_not_a_field" => {}` 를 넣으면 그 타깃이 초록으로 남고,
+같은 자리에 `"zz_not_a_field" => {}` 를 넣으면 빨개진다(양성 대조).
+
+**정의를 찾는 헬퍼는 범위가 서로 다르다 — 아래는 이 절이 이름 붙인 소비자 안에서 찾은 것이고,
+그 밖까지 센 목록이 아니다.** 판정기의 `fn_bodies` 는 이름이 같은 정의를 **전부** 돌려준다.
+그것을 쓰는 소비자는 받은 정의를 전부 돌거나(release 표 가드 · 액션 문 · 합산 명부 · 창 라우터
+호출자 명부 · 단축키 표 대조 — `#[cfg]` 로 갈린 둘째 정의의 팔도 대조한다) 정확히 하나를
+요구한다(권한 토큰 판독 — 둘이면 실패한다). 반면 아래 두 헬퍼는 **첫 정의만** 본다 — 이름이
+같은 정의가 `#[cfg]` 로 갈려 둘 있으면 둘째 정의 본문은 대조를 안 받고, 첫 정의가 꺼진 쪽이면
+살아 있는 정의가 통째로 안 보인다.
+
+- `src/source_guards/mod.rs` 의 `fn_body` — 판정기의 덮은 사본에서 찾되 첫 정의만 돌려준다.
+  그 소비자 전부(`src/source_guards/` 안)에 이 사각이 걸린다. 재는 법:
+  `src/adapters/ipc/handler.rs` 의 `should_rate_limit` 첫 정의 본문에
+  `let zz = String::new(); if method == zz { return false; }` 를 넣으면
+  `every_delegated_router_decides_by_a_name_the_scan_can_see` 가 빨개지고(양성 대조), 같은
+  비교를 `#[cfg(any())]` 를 단 둘째 `fn should_rate_limit` 에만 넣으면 초록으로 남는다.
+- `src/source_guards/routing_key_method_scope.rs` 의 `fn_index` 와 그것이 부르는 사설
+  `fn_bodies` — **판정기의 `fn_bodies` 와 이름만 같은 다른 함수다.** 주석만 지운 원문에서
+  `fn ` 을 찾아 정의를 전부 뽑지만, `fn_index` 가 (모듈, 함수 이름) 을 열쇠로 `or_insert` 해
+  같은 모듈의 같은 이름은 먼저 나온 것만 남긴다. 그래서 `fn_index` 의 결과를 쓰는 테스트가
+  전부 이 사각을 갖는다. `fn_index` 는 `pub(super)` 라 그 파일 밖에서도 부른다 — 소비자는
+  이름을 적어 두지 않고 `git grep -n 'fn_index(' -- src` 로 호출 자리를 센 뒤 각 자리를 감싼
+  함수의 호출자를 따라가 센다. 작업 트리 기준으로는 그 파일의 `method_id_keys` 를 거치는
+  `every_method_scoped_key_is_read_only_where_it_routes` · `the_four_layers_partition_every_pair`
+  와, `src/source_guards/unrouted_dispatch_reasons.rs` 의 `unrouted_methods` 를 거치는
+  `every_unrouted_method_is_classified` 다. 재는 법 둘:
+  - `handler.rs` 의 `handle_system_info` 첫 정의 본문에
+    `let params = serde_json::json!({}); let _zz = params.get("observer_id").and_then(|v| v.as_u64());`
+    를 넣으면 앞의 두 테스트가 빨개지고 실패문이 `("system.info", "observer_id")` 를 찍는다(양성
+    대조). 같은 읽기를 그 뒤에 둔 `#[cfg(any())]` 둘째 `fn handle_system_info` 에만 넣으면 그
+    파일의 테스트 7 개가 초록으로 남는다.
+  - `src/adapters/ipc/handler/hook_handler.rs` 의 `handle_reload` 첫 정의 본문에 범용 키
+    `surface_id` 를 읽는 줄을 넣으면 `every_unrouted_method_is_classified` 가 빨개진다(양성
+    대조 — 그 파일은 3 통과 · 1 실패, rc 101). 같은 읽기를 그 함수 뒤에 둔 `#[cfg(any())]` 둘째
+    `fn handle_reload` 에만 넣으면 그 파일의 테스트 4 개가 초록으로 남는다.
+- 위 두 헬퍼를 거치지 않고 본문 안에서 `find("fn <이름>")` 으로 첫 정의를 곧장 찾는 자리도
+  있다 — `routing_key_method_scope.rs` 의 `generic_keys_all` · `scoped_pairs` 와 같은 파일의
+  `find("fn method_scoped_resource_id")`, `src/source_guards/dispatch_name_literals.rs` 의
+  `param_index_at_call`. 코드상으로는 같은 모양의 사각이지만 **변이를 걸어 재지 않았다.** 이
+  목록은 헬퍼 단위로 세었으므로 이것들은 위 두 불릿에 안 들고, 이 절 머리의 "그 밖까지 센 목록이
+  아니다" 로만 덮인다 — 재면 불릿으로 올린다.
+
+이것은 렉서 위의 구조 주사이지 Rust 문법 파서가 아니다. `syn` 을 안 쓰는 이유는
+`crates/tasty-doc-guards/src/match_arms.rs` 의 모듈 doc 에 있다 — 소비자 일부가 의존 0 인
+그 크레이트 안에 있다.
+
+**이 판정기를 쓰는 자리**(작업 트리 기준): 창 라우터 호출자 명부
+(`src/adapters/ipc/handler/window_router_caller_tests.rs`) · release 표 가드
+(`tests/ipc_release_table_excludes_input_reproduction.rs`, 본문 경계만) · 라우터 표 정합
+(`tests/ipc_router_table_parity.rs`) · 액션 문(`the_action_door_has_only_the_registered_callers.rs`)
+· 합산 명부(`window_owned_lists_are_classified.rs`) · 권한 토큰 판독
+(`crates/tasty-doc-guards/src/manifest_text.rs`, `permission_token_docs_parity.rs` 가 그것을 쓴다)
+· `src/source_guards/` 의 공용 헬퍼(`strip_comments` · `fn_body`(첫 정의만 — 위) · `non_literal_arms`)와
+`debug_gate_dagger` · `platform_gated_dispatch_complement` · `routing_key_method_scope` ·
+`bundled_plugin_namespace_coverage` · 단축키 표 대조(`src/adapters/ui/input/shortcuts/tests.rs`).
+뒤의 넷 중 dagger 와 platform 은 팔을 떼지 않고 구분자만 덮은 사본에서 찾는다.
+
+**안 쓰는 자리와 그 이유.** `ipc_window_create_returns_outcome.rs` 는 팔 명부가 아니라 한
+블록의 모양을 고정 텍스트로 찾는다. `poison_recovery` 는 이미 덮은 사본을 읽는다.
+`memory/durable_tests.rs` 는 표의 메서드마다 `"<메서드>" =>` 를 찾아 없으면 실패한다 —
+주석 속 같은 텍스트를 먼저 집을 여지는 있지만 팔이 사라지는 방향은 아니다.
+
 ## 1 회성 스캔도 같은 마스킹을 쓴다
 
 모수를 재는 일은 가드 안에서만 일어나지 않는다. **수를 하나 얻으려고 그 자리에서 쓰는
