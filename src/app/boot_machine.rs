@@ -544,7 +544,14 @@ impl App {
         self.core.purge_stale_agent_state_on_boot(&core_state);
         self.core.inject_agent_runner_registry(&core_state);
         Self::report_missing_full_disk_access(&mut state, &mut core_state.settings);
-        self.register_window(gpu, state, core_state, window.clone());
+        // 부팅 첫 창은 사용자가 앱을 띄운 결과다 — 옮겨 갈 이전 포커스도 없다.
+        self.register_window(
+            gpu,
+            state,
+            core_state,
+            window.clone(),
+            crate::app::event::WindowRequestOrigin::User,
+        );
         self.emit_startup_complete_event();
 
         // macOS 파일 TCC 프롬프트를 여기서 몰아 띄운다. 첫 윈도우가 등록돼 앱이

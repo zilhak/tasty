@@ -3,8 +3,8 @@
 //! - `create_app_state`: GPU 상태 + 사이드바 폭으로부터 새 `AppState` 를 만든다.
 //!   첫 호출 시 plugin manager 도 초기화하며, `pending_layout_restore` 가 있으면
 //!   plugin 등록을 짧게 기다린 뒤 layout 을 복원한다.
-//! - `register_window`: 만들어진 `MainView` 를 hash 에 등록 + focused 로 설정 +
-//!   `window.created` host event / lua hook 발화.
+//! - `register_window`: 만들어진 `MainView` 를 hash 에 등록 + (사용자 발화면) focused 로
+//!   설정 + `window.created` host event / lua hook 발화.
 //! - `create_new_window`: 다중 윈도우용 — 새 winit window + GPU + AppState (parked 우선) + 모달 안내.
 //!
 //! 첫 부팅(첫 윈도우)은 이 모듈의 동기 함수 대신 부팅 상태 머신
@@ -19,6 +19,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 use crate::app::App;
+use crate::app::event::WindowRequestOrigin;
 use crate::gpu::GpuState;
 use crate::{plugin, window};
 
@@ -554,19 +555,22 @@ impl App {
         !still_pending
     }
 
-    /// Register a MainView and set it as focused.
+    /// Register a MainView. 사용자 발화 창이면 focused 로 설정하고, 에이전트 발화 창이면
+    /// focused 를 그대로 둔다([`focus_after_register`]).
     pub(crate) fn register_window(
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
         core_state: crate::core::CoreState,
         window: Arc<Window>,
+        origin: WindowRequestOrigin,
     ) {
         let window_id = window.id();
         let main =
             window::main::MainView::new(gpu, state, core_state, window, self.view.proxy.clone());
         self.view.views.insert(window_id, Box::new(main));
-        self.view.focused_view_id = Some(window_id);
+        self.view.focused_view_id =
+            focus_after_register(self.view.focused_view_id, window_id, origin);
         let scripts = self.autofire_scripts();
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
@@ -597,7 +601,7 @@ impl App {
     pub(crate) fn create_new_window(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        origin: crate::app::event::WindowRequestOrigin,
+        origin: WindowRequestOrigin,
     ) -> Result<winit::window::WindowId, String> {
         use winit::window::WindowAttributes;
 
@@ -615,6 +619,10 @@ impl App {
         }
         // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
         attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
+        // 에이전트가 만든 창은 OS 포커스를 가져가지 않는다(원칙 1·3). winit 은 macOS ·
+        // Windows 에서만 이 값을 따르고 X11 · Wayland 에서는 무시한다 — 그 두 곳의 OS
+        // 포커스는 창 관리자가 정한다(ADR-0497).
+        attrs = attrs.with_active(matches!(origin, WindowRequestOrigin::User));
 
         // 새 창 생성 실패는 패닉이 아니다 — 이미 떠 있는 창들의 세션을 죽이지 않도록,
         // 기존 창에 안내를 띄우고 새 창만 취소한다.
@@ -702,8 +710,8 @@ impl App {
         // register_window 가 window 을 consume 하므로 id 를 먼저 캡처 — IPC 요청자에게
         // 돌려줄 window_id 다(ADR-0122). window.list 와 동일한 u64 변환을 쓴다.
         let window_id = window.id();
-        self.register_window(gpu, state, core_state, window);
-        tracing::info!("created new window {:?}", self.view.focused_view_id);
+        self.register_window(gpu, state, core_state, window, origin);
+        tracing::info!("created new window {window_id:?} ({origin:?})");
         Ok(window_id)
     }
 
@@ -895,3 +903,25 @@ fn build_theme_fallback_modal(
         extra_buttons: Vec::new(),
     }
 }
+
+/// 새 main 창을 등록한 뒤 `focused_view_id` 가 가리킬 창.
+///
+/// 사용자 발화(메뉴 · 단축키 · dock · tray · 부팅)는 방금 그 조작의 결과이므로 새 창으로
+/// 옮긴다. 에이전트 발화(`window.create` / `view.create`)는 옮기지 않는다 — 대상 없는 IPC
+/// 요청이 떨어지는 자리가 사용자가 보던 창에서 바뀌면 안 된다(원칙 1·3, ADR-0497).
+/// 에이전트 창도 가리키던 창이 없을 때(main 창이 하나도 없던 상태)는 새 창을 잡는다 —
+/// 그때는 빼앗을 사용자 포커스가 없다. 사용자가 그 창을 직접 고르면
+/// `WindowEvent::Focused(true)` 경로가 옮긴다.
+pub(crate) fn focus_after_register(
+    current: Option<winit::window::WindowId>,
+    registered: winit::window::WindowId,
+    origin: WindowRequestOrigin,
+) -> Option<winit::window::WindowId> {
+    match origin {
+        WindowRequestOrigin::User => Some(registered),
+        WindowRequestOrigin::Agent => current.or(Some(registered)),
+    }
+}
+
+#[cfg(test)]
+mod register_focus_tests;
