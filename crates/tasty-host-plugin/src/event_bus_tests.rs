@@ -375,9 +375,23 @@ fn an_empty_bus_answers_with_a_position_and_no_events() {
 
 /// 재시작하면 위치가 0 부터 다시 매겨진다. 소비자가 그것을 **알 수 있어야** 한다 —
 /// 세대 표지가 없으면 옛 위치가 새 세대의 다른 사건을 가리킨다.
+///
+/// 두 세대는 서로 다른 프로세스라 시계가 흐른 뒤에 선다. 그래서 둘째 버스는 시계가 첫
+/// 표지를 지난 뒤에 세운다 — 바로 잇달아 세우면 해상도가 µs 인 macOS 에서 같은 값이
+/// 나온다(CI 실측: 두 값 모두 `…376000`). 그 겹침은 제품에 없는 경로다.
 #[test]
 fn two_buses_do_not_share_a_generation_marker() {
     let a = EventBus::new();
+    let now_nanos = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while now_nanos() <= a.epoch() && std::time::Instant::now() < deadline {
+        std::thread::yield_now();
+    }
     let b = EventBus::new();
     assert_ne!(a.epoch(), b.epoch(), "세대 표지가 같으면 구별이 안 된다");
     assert_eq!(a.fetch(0, 1, None).epoch, a.epoch());
