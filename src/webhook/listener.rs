@@ -141,9 +141,9 @@ struct BodyTooLarge;
 
 /// 요청 하나에서 JSON 처리에 허용하는 body 의 상한(바이트).
 ///
-/// 이 값은 JSON 입력에 적용된다. 동시에 들어오는 요청 수나 HTTP 정리 중의
-/// 잔여 body 읽기·임시 할당은 제한하지 않으며, 프로세스 전체 메모리 상한이 아니다.
-/// 리스너는 요청마다 스레드를 띄운다.
+/// 이 값은 JSON 입력에 적용된다. 동시에 들어오는 요청 수는 제한하지 않으며,
+/// 프로세스 전체 메모리 상한이 아니다. 리스너는 요청마다 스레드를 띄운다.
+/// 초과 요청의 잔여 body 는 읽지 않고 연결을 닫는다([`Screened::respond`]).
 /// ([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
 ///
 /// 기본 1 MiB. `TASTY_WEBHOOK_MAX_BODY_BYTES` 로 오버라이드한다(0·파싱 실패는 기본값).
@@ -164,7 +164,7 @@ fn max_body_bytes() -> usize {
 /// 이 타입은 body 를 JSON 입력으로 모으는 파서의 입구를 제한한다.
 /// 쿨다운 중인 요청은 [`reject_if_abusive`] 에서 소비되므로 `Screened` 가 만들어지지
 /// 않고 `read_json_body` 도 호출되지 않는다. HTTP 라이브러리의 작은 body 사전
-/// 버퍼링과 Content-Length 리더의 Drop drain 은 이 타입의 제어 범위 밖이다.
+/// 버퍼링은 이 타입의 제어 범위 밖이다.
 /// 타입은 남용차단 뒤에 파서를 호출하는 순서를 강제한다.
 /// ([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)).
 struct Screened(tiny_http::Request);
@@ -201,9 +201,8 @@ impl Screened {
     /// 상한이 상한이 아니다 — chunked 에는 선언된 길이가 아예 없다
     /// ([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
     ///
-    /// 상한을 넘기면 이 파서는 더 읽지 않는다. 다만 `tiny_http` 의 Content-Length
-    /// 리더는 응답 후 Drop 에서 잔여 body 를 읽어 버릴 수 있다. 413 전달과
-    /// HTTP 연결의 수신 정리 완료는 별개의 사건이다.
+    /// 상한을 넘기면 이 파서는 더 읽지 않는다. 잔여 body 를 HTTP 계층도 읽지 않게
+    /// 하는 것은 413 을 보내는 [`Screened::respond`] 의 몫이다.
     fn read_json_body(&mut self, limit: usize) -> Result<Value, BodyTooLarge> {
         if self
             .0
@@ -233,8 +232,20 @@ impl Screened {
     }
 
     /// 고정 ACK 로 응답하고 요청을 소비한다.
+    ///
+    /// 413 은 응답 뒤 연결을 닫는다 — 상한을 넘긴 body 의 나머지를 읽지 않으므로 그
+    /// 연결의 스트림은 다음 요청의 시작에 있지 않다. 닫지 않으면 `tiny_http` 의
+    /// Content-Length 리더가 Drop 에서 잔여 선언 길이를 끝까지 읽는다(drain). 닫는
+    /// 경로는 레포에 vendoring 한 `tiny_http` 의 패치다
+    /// ([ADR-0516](../../docs/adr/0516-the-webhook-413-closes-the-connection-through-a-vendored-tiny-http-patch.md)).
     fn respond(self, ack: AckStatus) {
-        if let Err(e) = self.0.respond(build_ack(ack)) {
+        let response = build_ack(ack);
+        let result = if ack == AckStatus::PayloadTooLarge {
+            self.0.respond_and_close(response)
+        } else {
+            self.0.respond(response)
+        };
+        if let Err(e) = result {
             tracing::debug!("webhook ack respond failed: {e}");
         }
     }
@@ -243,11 +254,15 @@ impl Screened {
 /// 남용 차단(쿨다운 중) 출처면 즉시 429 로 응답하고 `None`(요청 소비 완료,
 /// 호출자는 더 진행하지 않음)을 반환한다. 아니면 `request` 소유권을 그대로
 /// 돌려준다.
+///
+/// 429 도 413 처럼 body 를 읽지 않고 답하므로 같은 자리에서 연결을 닫는다
+/// ([`Screened::respond`] 와 같은 이유 — 읽지 않은 body 를 HTTP 계층이 Drop 에서 끝까지
+/// 읽으면 선언 길이에 비례한 할당이 생기고, 그 할당이 실패하면 프로세스가 끝난다).
 fn reject_if_abusive(request: tiny_http::Request, source: Option<&str>) -> Option<Screened> {
     if let Some(src) = source
         && abuse::is_source_blocked(src)
     {
-        if let Err(e) = request.respond(build_ack(AckStatus::TooManyRequests)) {
+        if let Err(e) = request.respond_and_close(build_ack(AckStatus::TooManyRequests)) {
             tracing::debug!("webhook 429 respond failed: {e}");
         }
         return None;
