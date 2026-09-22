@@ -1035,7 +1035,30 @@ pre-push `B.4` 는 `--locked` 없이 `-D clippy::correctness` 만 건다 — 셋
 
 채널이 하나뿐인 축은 그 하나가 빨간 순간부터 커버리지가 0 이고, **0 인 채로 흐른 시간은
 초록이 돌아와도 소급되지 않는다** — 초록은 그 51 커밋의 **끝점 하나**를 판정할 뿐, 사이의
-50 개를 각각 판정한 것이 아니다.
+50 개를 각각 판정한 것이 아니다. 50 은 "초록이 판정하지 않은" 수다 — 그 중 push tip 셋은 위 표의
+빨간 시도가 판정했으니, **어떤 판정도 받지 않은** 수는 아래의 47 이다.
+
+### push 범위 안쪽의 커밋 — 어느 채널도 안 보고, **안 보기로 했다**
+
+위 51 커밋은 push 4 번에 걸쳐 들어왔고, 그 중 push tip 이 아닌 47 개가 그 예다(모수는 이 클론의
+origin/main reflog 다 — `git rev-list c3e78aaa8..dd5ef243a | grep -cvxFf <(git reflog show --format=%H origin/main)`.
+reflog 는 만료되고(`gc.reflogExpire` 기본 90 일) 새 클론에는 아예 없어서, 시간이 지나면 같은 명령이 47 보다
+큰 값을 낸다 — 최대 51).
+채널마다 모수가 다르고, 그 어느 것도 범위 안쪽이 아니다:
+
+| 채널 | 보는 것 |
+|---|---|
+| pre-commit | staged 트리 (`P.1` 은 `main` 과의 merge-base 대비) |
+| pre-push `B.9` · `B.10` | git 이 stdin 으로 준 원격 tip 과 로컬 tip — 두 끝점 |
+| pre-push `B.4`~`B.8` | 훅이 도는 **작업 트리** — tip 도 아니다 |
+| CI 워크플로 전부 | push 된 tip 하나. 범위를 쓰는 `plugin-version-check.yml` 도 `before` 와 tip 의 두 끝점 |
+
+그래서 범위 안쪽 커밋이 빨간 채로 지나가도 아무것도 안 운다. 이것은 결함이 아니라 결정이다 —
+그 커밋을 체크아웃해 무언가를 판정하는 소비자가 이 레포에 없다(`git bisect` 실행 0 · 기계
+revert 0 · 범위를 순회하는 잡 0). 실재하는 소비자인 lane base 는 착지 tip 에 선다. 초록을 요구하는
+단위는 **push tip 과 착지 tip** 이고, 빨간 중간 커밋이 발견돼도 이력을 다시 쓰지 않는다. 원인
+커밋을 좁힐 때는 push tip 과 착지 tip 위에서 좁힌다. 실측·대안(각 커밋에 게이트를 돌리는 비용)·재검토 조건은
+[ADR-0558](../adr/0558-a-middle-commit-of-a-push-range-is-not-required-to-be-green.md).
 
 ### 러너는 작업 트리를 재사용한다 — 채널의 성질이지 그 잡의 상태가 아니다
 
