@@ -100,7 +100,8 @@ use crate::ports::process::ProcessSpawner;
 
 pub(crate) use impl_close::{SurfaceCloseLocation, locate_surface_in_pane};
 pub(crate) use impl_mirror::{
-    MirrorStructuralBlocked, PendingStructuralForward, mark_last_forward_user_triggered,
+    MirrorStructuralBlocked, PendingStructuralForward, mark_last_forward_agent_origin,
+    mark_last_forward_user_triggered,
 };
 pub(crate) use impl_workspace::{WorkspaceCreationParams, apply_create_workspace_inner};
 
@@ -236,6 +237,9 @@ pub(crate) struct PendingMarkdownContentForward {
     /// 원문을 기다리는 **로컬** mirror markdown surface id.
     pub(crate) local_surface_id: u32,
     pub(crate) request_id: u64,
+    /// 에이전트가 건 요청이다(`markdown.reload` IPC). 그 회신이 잘려 와도 사용자 toast 를
+    /// 띄우지 않는다(ADR-0503).
+    pub(crate) agent_origin: bool,
 }
 
 /// 도메인 본체. outbound port(아래 외부 6 · 워크스페이스 크레이트 trait 4) + preset_store 직속.

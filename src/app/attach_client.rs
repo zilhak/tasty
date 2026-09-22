@@ -20,6 +20,7 @@
 //! 3초 cadence 로 게이트한다. 자동 매핑(ssh-profiles/`workspace.attach_mapping`)은 이
 //! 모듈 밖에서 정해지고, 이 모듈의 `start_gui_attach` 가 그쪽이 부르는 진입점이다.
 
+mod agent_origin;
 mod dispatch;
 
 use dispatch::{AttachSource, Outcome, dispatch_attach};
@@ -89,9 +90,10 @@ pub(crate) enum MirrorEvent {
     /// 값은 원격 경로라 로컬 파일시스템에 쓰지 않는다(`CoreState::set_mirror_surface_cwd`,
     /// ADR-0267).
     Cwd(u32, Option<String>),
-    /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
-    /// 메인루프가 실패 toast 를 띄운다.
-    StructuralFailed(String),
+    /// forward 한 구조 op 가 원격에서 실패했다(2단계) — `(op_id, reason)`. `reason`(예:
+    /// 미등록 kind)을 담아 메인루프가 실패 toast 를 띄운다. 에이전트 발화 op(세션의
+    /// `agent_requests` 에 있는 op_id)는 toast 대신 로그로 끝난다(identity 원칙 1).
+    StructuralFailed(u64, Option<String>),
     /// forward 한 구조 op 가 원격에서 **성공**했다(2단계) — 페이로드는 `op_id`.
     /// client-only focus 보정 대상 op(`user_triggered`)만 correlate 할 필요가 있어
     /// 세션의 `pending_op_focus`에서 이 id 를 찾아 `next_delta_focus`로 옮겨두는 데
@@ -364,6 +366,8 @@ pub(crate) struct AttachClientSession {
     /// 반드시 제거해야 한다 — 실패 시엔 애초에 삽입되지 않는 성공 전용 슬롯이라
     /// 자연히 문제없다).
     pending_op_focus: HashMap<u64, PendingOpFocus>,
+    /// 에이전트가 건 요청의 id — 그 회신은 toast 가 아니라 로그로 간다(`agent_origin` 모듈).
+    agent_requests: agent_origin::AgentRequests,
     /// 방금 성공한 op 의 focus 의도 — 다음 `StructuralDelta` 적용에 1회 소비(take)된다.
     next_delta_focus: Option<PendingOpFocus>,
     /// client-driven resize(ADR-0045) 중복 전송 억제. **원격 surface_id →
@@ -619,6 +623,7 @@ impl App {
             anchor_ws_id,
             op_seq: 0,
             pending_op_focus: HashMap::new(),
+            agent_requests: Default::default(),
             next_delta_focus: None,
             last_forwarded_resize: HashMap::new(),
             remote_label: format!("127.0.0.1:{port}"),
@@ -797,6 +802,7 @@ impl App {
         sess.tunnel = tunnel;
         sess.op_seq = 0;
         sess.pending_op_focus.clear();
+        sess.agent_requests.clear();
         sess.next_delta_focus = None;
         sess.last_forwarded_resize.clear();
         // ADR-0059 Decision 6 — 재연결 시 pending list_dir 요청 폐기(끊긴 연결에
@@ -1197,7 +1203,8 @@ impl App {
             op: local_op,
             user_triggered,
             close_focus_candidates,
-        } = pending;
+            ..
+        } = &pending;
         let local_anchor = local_op.anchor_surface_id();
         let Some((sess, remote_anchor)) = find_mirror_session_and_remote_id(
             &mut self.attach_client_sessions,
@@ -1210,14 +1217,15 @@ impl App {
         let op_id = sess.op_seq;
         sess.op_seq += 1;
 
-        if user_triggered
+        if *user_triggered
             && let Some(intent) =
-                pending_op_focus_for(&local_op, &close_focus_candidates, &sess.remote_to_local)
+                pending_op_focus_for(local_op, close_focus_candidates, &sess.remote_to_local)
         {
             sess.pending_op_focus.insert(op_id, intent);
         }
+        sess.agent_requests.note_structural_from(&pending, op_id);
 
-        let payload = structural_op_payload(op_id, wire, user_triggered);
+        let payload = structural_op_payload(op_id, wire, *user_triggered);
         // write 큐로 보내 write 스레드가 순차로 쓴다(락 직접 획득 제거).
         if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
             tracing::warn!("structural forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
@@ -1352,8 +1360,7 @@ impl App {
             pending.append(&mut e.pending_markdown_content_forward);
         }
         for req in pending {
-            if let Err(e) = self.send_markdown_content_request(req.local_surface_id, req.request_id)
-            {
+            if let Err(e) = self.send_markdown_content_request(&req) {
                 tracing::warn!(
                     "markdown_content_request send 실패 (local surface {}, request {}): {e}",
                     req.local_surface_id,
@@ -2063,10 +2070,12 @@ fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
         // 나르므로, 그중 가장 강한 계약인 snapshot 재요청(=재attach)
         // 을 연결 전체에 건다(ADR-0400).
         Ok(StreamControl::Loss { frames }) => Some(MirrorEvent::Desynced { frames }),
-        // 2단계: forward 실패 회신 → 실패 toast.
+        // 2단계: forward 실패 회신 → 실패 toast(에이전트 op 는 로그).
         Ok(StreamControl::StructuralResult {
-            ok: false, reason, ..
-        }) => Some(MirrorEvent::StructuralFailed(reason.unwrap_or_default())),
+            ok: false,
+            op_id,
+            reason,
+        }) => Some(MirrorEvent::StructuralFailed(op_id, reason)),
         // 성공 회신 — UX 로는 무음이지만(구조 반영은
         // 뒤따르는 StructuralDelta), client-only focus 보정
         // op 를 correlate 하려면 op_id 가 필요하다.
@@ -2794,35 +2803,15 @@ fn apply_one_mirror_event(
                 );
             }
         }
-        MirrorEvent::StructuralFailed(reason) => {
-            // forward 한 구조 op 가 원격에서 실패(예: 미등록 kind).
-            // 사용자에게 실패 toast. 로컬/원격 어느 쪽도 구조 변경
-            // 없음(요청/응답).
-            //
-            // "원격에 복원할 항목이 없다" 는 **실패가 아니다** — 아래 일반 문구
-            // ("적용하지 못했습니다")로 내보내면 오류로 읽힌다. 서버가 전용 sentinel
-            // (`STRUCTURAL_REASON_RESTORE_EMPTY`)로 그 경우를 표시하고 여기서 다른
-            // 문구를 쓴다(ADR-0264 결정 2).
-            if reason == tasty_ipc::stream::STRUCTURAL_REASON_RESTORE_EMPTY {
-                host.toast(
-                    crate::i18n::t("attach.toast.mirror_restore_empty").to_string(),
-                    crate::adapters::ui::ToastKind::Info,
-                );
-                return;
-            }
-            let base = crate::i18n::t("attach.toast.mirror_structural_forward_failed");
-            let msg: String = if reason.is_empty() {
-                base.to_string()
-            } else {
-                format!("{base} ({reason})")
-            };
-            host.toast(msg, crate::adapters::ui::ToastKind::Warning);
+        MirrorEvent::StructuralFailed(op_id, reason) => {
+            agent_origin::apply_structural_failed(sess, host, op_id, reason)
         }
         MirrorEvent::StructuralSucceeded(op_id) => {
             // 이 op 이 client-only focus 보정 대상(user_triggered)으로
             // 등록돼 있었으면, 뒤따르는(프로토콜 보장) 다음
             // StructuralDelta 적용 시 1회 소비할 의도로 옮겨둔다.
             // 등록돼 있지 않았으면(에이전트/IPC 유래 등) no-op.
+            sess.agent_requests.forget_structural(op_id);
             if let Some(intent) = sess.pending_op_focus.remove(&op_id) {
                 sess.next_delta_focus = Some(intent);
             }
@@ -3083,7 +3072,7 @@ fn markdown_mirror_local(sess: &AttachClientSession, remote_surface_id: u32) -> 
 /// 바뀜)은 조용히 버린다 — 받을 문서가 없다.
 #[allow(clippy::too_many_arguments)] // reason: wire 회신 필드를 풀어 받는다(GitQueryResult 적용과 같은 형태)
 fn apply_markdown_content_result_event(
-    sess: &AttachClientSession,
+    sess: &mut AttachClientSession,
     host: &mut MirrorHost<'_>,
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     request_id: u64,
@@ -3094,6 +3083,7 @@ fn apply_markdown_content_result_event(
     truncated: bool,
     reason: Option<String>,
 ) {
+    let agent_origin = sess.agent_requests.take_markdown(request_id);
     let Some(local) = markdown_mirror_local(sess, remote_surface_id) else {
         return;
     };
@@ -3108,10 +3098,7 @@ fn apply_markdown_content_result_event(
     });
     push_markdown_content_result(plugin_manager, &payload);
     if ok && truncated {
-        host.toast(
-            crate::i18n::t("attach.toast.mirror_markdown_truncated").to_string(),
-            crate::adapters::ui::ToastKind::Warning,
-        );
+        agent_origin::notify_markdown_truncated(host, local, agent_origin);
     }
 }
 
@@ -3992,12 +3979,12 @@ impl App {
     /// 와 같다. 응답은 reader thread 가 `MirrorEvent::MarkdownContentResult` 로 흘려보낸다.
     pub(crate) fn send_markdown_content_request(
         &mut self,
-        local_surface_id: u32,
-        request_id: u64,
+        req: &crate::core::PendingMarkdownContentForward,
     ) -> anyhow::Result<()> {
+        let (local_surface_id, request_id) = (req.local_surface_id, req.request_id);
         let Some(sess) = self
             .attach_client_sessions
-            .iter()
+            .iter_mut()
             .find(|s| s.markdown_locals.contains(&local_surface_id))
         else {
             anyhow::bail!("no attach session holds mirror markdown surface {local_surface_id}");
@@ -4018,7 +4005,9 @@ impl App {
             "request_id": request_id,
             "surface_id": remote_sid,
         });
-        send_capture_control_frame(&sess.frame_tx, &msg)
+        send_capture_control_frame(&sess.frame_tx, &msg)?;
+        sess.agent_requests.note_markdown_from(req, request_id);
+        Ok(())
     }
 }
 
@@ -4228,6 +4217,7 @@ mod tests {
             op: tasty_ipc::stream::StructuralOp::CloseSurface { surface_id: 9 },
             user_triggered,
             close_focus_candidates: Vec::new(),
+            silent_failure: false,
         };
         let origin_on_wire = |p: crate::core::PendingStructuralForward| {
             let payload = structural_op_payload(3, p.op, p.user_triggered);
@@ -5602,7 +5592,7 @@ mod tests {
     /// 테스트용 mirror 세션 — transport 없이 매핑·이벤트 버퍼만 있다. write 큐의
     /// 수신측을 바로 drop 하므로 delta 가 만드는 mirror 터미널의 입력 forwarder 는
     /// 전송에 실패해도 조용히 계속된다(production 의 disconnect 구간과 동일).
-    fn test_session(
+    pub(super) fn test_session(
         local_workspace: u32,
         remote_to_local: HashMap<u32, u32>,
     ) -> AttachClientSession {
@@ -5621,6 +5611,7 @@ mod tests {
             anchor_ws_id: None,
             op_seq: 0,
             pending_op_focus: HashMap::new(),
+            agent_requests: Default::default(),
             next_delta_focus: None,
             last_forwarded_resize: HashMap::new(),
             remote_label: "127.0.0.1:0".to_string(),
@@ -6224,7 +6215,7 @@ mod tests {
         let ws_id = 9_000u32;
         let mut sess = test_session(ws_id, HashMap::new());
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
-        let failure = || vec![MirrorEvent::StructuralFailed("nope".to_string())];
+        let failure = || vec![MirrorEvent::StructuralFailed(0, Some("nope".to_string()))];
 
         let (mut parked_state, mut parked_engine) = crate::state::tests::test_state();
         {
