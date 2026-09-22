@@ -26,7 +26,8 @@ use std::time::Duration;
 ///
 /// **왜 생겼나 — 실측(기본 gui 조합, Xvfb).** `multi_window_owner_routing` 이 두
 /// 번째 창을 만들면 그 창이 포커스를 가져가는데, **owner 를 params 에서 못 찾는
-/// 메서드는 포커스된 창으로 라우팅된다**. 그때 근거로 든 것은 `Kind` 가
+/// 메서드는 포커스된 창으로 라우팅된다**. (그 앞쪽 전제 — IPC 로 만든 창이 포커스를
+/// 가져간다 — 는 ADR-0497 로 사라졌다: 에이전트 창은 focused 를 옮기지 않는다.) 그때 근거로 든 것은 `Kind` 가
 /// surface / workspace / pane 셋뿐이라 `tab.close {tab_id}` 와 `pty.*` 의 headless
 /// pty id 가 owner 를 못 찾고 `focused_view_id` 로 떨어진다는 것이었다(3 건 실패).
 ///
@@ -1221,8 +1222,10 @@ fn headless_pty_attach_surface_promotes_to_a_tab() {
 /// `crates/tasty-doc-guards/tests/headless_skip_names_are_exact.rs` 가 그 이름의 정확성을 강제한다).
 #[test]
 fn multi_window_owner_routing() {
-    // 두 번째 main window 를 생성하고, focused 가 새 윈도우로 전환되어도
-    // 첫 윈도우의 surface 가 IPC 로 접근 가능한지 검증. CLAUDE.md "포커스 독립".
+    // 두 번째 main window 를 IPC 로 생성하고, 두 윈도우의 surface 가 모두 IPC 로
+    // 접근 가능한지 검증. CLAUDE.md "포커스 독립". 에이전트 창은 focused 를 옮기지
+    // 않으므로(ADR-0497) focused 는 첫 윈도우에 남는다 — 그래서 owner 라우팅을
+    // 실제로 재는 것은 focused 가 아닌 새 윈도우 surface 로의 send 다.
     let _lane = exclusive_lane();
     let tasty = common::shared();
     let ws = tasty.create_workspace("e2e-multi-window");
@@ -1238,6 +1241,19 @@ fn multi_window_owner_routing() {
         .filter_map(|s| s["id"].as_u64())
         .collect();
 
+    let focused_window = |tasty: &common::TastyInstance| -> Option<u64> {
+        tasty
+            .call("window.list", json!({}))
+            .as_array()
+            .and_then(|ws| ws.iter().find(|w| w["focused"] == true))
+            .and_then(|w| w["id"].as_u64())
+    };
+    let focused_before = focused_window(tasty);
+    assert!(
+        focused_before.is_some(),
+        "window.create 전에 focused 창이 있어야 아래 단언이 무언가를 잰다"
+    );
+
     let create_resp = tasty.call("window.create", json!({}));
     // window.create 는 더 이상 fire-and-forget(`{"scheduled": true}`)이 아니라 완료
     // 채널로 생성 성공/실패를 왕복시킨다 — 성공은 `{"created": true, "window_id": …}`
@@ -1249,6 +1265,12 @@ fn multi_window_owner_routing() {
     assert!(
         create_resp["window_id"].as_u64().is_some(),
         "window.create 성공 응답에 window_id 가 있어야 한다: {create_resp:?}"
+    );
+    // 에이전트가 만든 창은 사용자가 보던 창의 focused 를 가져가지 않는다(ADR-0497).
+    assert_eq!(
+        focused_window(tasty),
+        focused_before,
+        "window.create 뒤 window.list 의 focused 는 원래 창이어야 한다: {create_resp:?}"
     );
 
     // 새 윈도우의 PTY shell 이 surface.list 에 등장할 때까지 polling.
@@ -1323,8 +1345,9 @@ fn multi_window_owner_routing() {
          보고 있다. tree={tree:?} workspace.list={workspaces:?}"
     );
 
-    // owner-based routing: focused 가 새 윈도우인 상태에서 첫 윈도우 surface 에 IPC.
-    // (focus 는 사용자 단축키 영역이라 IPC 로 전환 안 함 — 자동 focus 가 새 윈도우.)
+    // owner-based routing: focused 는 첫 윈도우다(에이전트 창은 focused 를 옮기지
+    // 않는다, ADR-0497). 첫 윈도우 surface 로의 send 는 focused 폴백과 owner 가 같은
+    // 창이고, 아래 두 번째 윈도우 surface 로의 send 가 owner 라우팅을 잰다.
     tasty.set_mark(sid);
     let send_first = tasty.call(
         "surface.send",
@@ -1340,7 +1363,8 @@ fn multi_window_owner_routing() {
         "첫 윈도우 surface 가 명령을 실행하지 못함: {out:?}"
     );
 
-    // 두 번째 윈도우 surface 에도 send 동작.
+    // 두 번째 윈도우 surface 에도 send 동작 — focused 가 아닌 창이라 owner 라우팅이
+    // 아니면 닿지 않는다.
     tasty.set_mark(new_sid);
     let send_second = tasty.call(
         "surface.send",
