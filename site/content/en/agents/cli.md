@@ -1,4 +1,4 @@
-<!-- source-hash: 39f7e216dbad -->
+<!-- source-hash: 370059771fe7 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -140,7 +140,7 @@ tasty close self                                        # close this very Surfac
 
 `--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)).
 
-A window opened with `tasty new window` does not take the focus from the window the person was looking at. So a following command with no target (`tasty new workspace` and so on) lands in the window they were looking at, not the new one. To create something in the new window, target it with the `window_id` from the reply. On Linux (X11 · Wayland) the window manager may still bring the new window to the front, but the window that untargeted commands go to does not change.
+A window opened with `tasty new window` does not take the focus from the window the person was looking at. So a following command with no target (`tasty new workspace` and so on) lands in the window they were looking at, not the new one. To create something in the new window, target it with the `window_id` from the reply. On Linux (X11 · Wayland) the window manager may still move keyboard input to the new window, but the window that untargeted commands go to does not change.
 
 The last remaining workspace and the last remaining window cannot be closed. Closing a workspace
 never takes the window down with it; it is refused instead, so reach for `tasty close window` when

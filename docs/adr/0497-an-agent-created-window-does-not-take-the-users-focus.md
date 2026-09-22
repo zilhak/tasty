@@ -117,9 +117,10 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- winit 을 올렸고, 새 버전이 X11 또는 Wayland 에서 `with_active` 를 지원하거나 X11 확장에 user
-  time · 포커스 힌트 setter 를 더했다. 재는 법: 새 버전 소스의 `WindowAttributes::with_active`
-  문서의 플랫폼 절과 `platform/x11.rs` 의 `WindowAttributesExtX11` 목록.
+- `Cargo.lock` 의 winit 이 0.30.13 이 아니게 됐다. 재는 법: 새 버전이 X11 또는 Wayland 에서
+  `with_active` 를 지원하거나 X11 확장에 user time · 포커스 힌트 setter 를 더했는지 — 새 버전
+  소스의 `WindowAttributes::with_active` 문서의 플랫폼 절과 `platform/x11.rs` 의
+  `WindowAttributesExtX11` 목록.
 - 창을 만드는 경로가 새로 생겼는데 사용자/에이전트 둘로 안 갈린다(예: plugin 이 IPC 를 거치지
   않고 창을 만든다).
 
