@@ -57,6 +57,9 @@ visible 이면 그대로 map 한다.
 올라와 보였다.** 사용자 결정: **OS 마다 가능한 데까지 막는다** — 에이전트 창은 사용자가 보던 창
 뒤(바로 아래)에 생기고 키 포커스도 안 가져간다. 사용자 창은 불변.
 
+처음에는 X11 의 `_NET_WM_USER_TIME` 을 범위에서 뺐다(창 관리자가 있는 환경에서 잴 수 없어서).
+openbox 실측으로 채택했다.
+
 그 수단은 `tasty_platform::window_stacking::show_behind` 하나에 모았다. 기준 창(anchor)은
 등록 시점의 focused main 창이고, 그것이 없으면 활성화 없이 보이기만 한다. winit 0.30.13 의
 show 경로를 그대로 쓸 수 없는 자리가 있어 OS 마다 다르다.
@@ -66,11 +69,18 @@ show 경로를 그대로 쓸 수 없는 자리가 있어 OS 마다 다르다.
 - **Windows**: winit 이 `WindowFlags::VISIBLE` 를 들고 있고, 그것이 꺼진 채 다른 플래그가 바뀌면
   `ShowWindow(SW_HIDE)` 를 부른다. 그래서 네이티브로 보이지 않는다. 보이기 전과 뒤에
   `SetWindowPos(hWndInsertAfter = 사용자 창, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE)` 를 걸고,
-  보이는 것은 winit(`SW_SHOWNOACTIVATE`)으로 한다.
+  보이는 것은 winit(`SW_SHOWNOACTIVATE`)으로 한다. 두 `SetWindowPos` 사이에 창이 맨 위에 보이는
+  틈은 생기지 않을 것으로 본다 — winit 의 `set_visible` 은 이벤트 루프 스레드에서 동기로 돌고,
+  `apply_diff` 는 `SW_SHOWNOACTIVATE` 만 부르며 z-order 를 올리는 호출이 없다. 실기 미측정이다.
 - **X11**: map 전에 EWMH `_NET_WM_USER_TIME = 0`(초기 포커스를 주지 말라)을 건다. map 은
   winit 으로 한다(winit 이 보임 상태를 들고 있다). 그 뒤 `_NET_RESTACK_WINDOW`(detail `Below`,
   sibling = 사용자 창, source 2)로 사용자 창 아래를 **요청한다.** winit 의 Xlib 연결을 그대로 써
   map 요청 뒤에 순서대로 닿는다. 창 관리자가 받아들일지는 그쪽이 정한다.
+  map 된 뒤에는 `_NET_WM_USER_TIME` 을 지운다(`clear_initial_focus_hint`). 값 0 이 남아 있으면
+  나중에 사용자가 그 창을 고를 때 창 관리자가 "사용자 조작이 한 번도 없던 창" 으로 다룰 수 있다.
+  지우는 시점은 그 창의 첫 `WindowEvent::Focused` 다 — winit 0.30.13 의 X11 백엔드는 MapNotify
+  를 받는 자리(`event_processor` 의 map 처리)에서 그 이벤트를 내고, 앱이 받는 map 신호 중 가장
+  이르다. map 전에 지우면 초기 포커스 힌트가 사라진다.
 - **Wayland**: 클라이언트가 쌓임 순서나 포커스를 정할 프로토콜이 없다. xdg-activation 을
   요청하지 않는 것(winit `with_active(false)`)이 최선이라 보이기만 한다.
 
@@ -82,8 +92,8 @@ show 경로를 그대로 쓸 수 없는 자리가 있어 OS 마다 다르다.
 | 플랫폼 | tasty 의 `focused_view_id` | 키 포커스(OS) | 쌓임 순서 |
 |---|---|---|---|
 | macOS | 안 옮김 | 안 가져간다 — 키 창으로 만들지 않는다. 미측정 | 사용자 창 **바로 아래**에 둔다. 미측정 |
-| Windows | 안 옮김 | 안 가져간다 — 활성화 없이 보인다. 미측정 | 사용자 창 **바로 아래**에 둔다. 두 `SetWindowPos` 사이에 잠깐 위에 보일 수 있다. 미측정 |
-| X11 | 안 옮김 | `_NET_WM_USER_TIME = 0` 으로 **요청한다.** openbox 3.6.1 에서 새 창은 포커스를 안 받았다(실측) | `_NET_RESTACK_WINDOW` 로 사용자 창 아래를 **요청한다.** openbox 3.6.1 에서는 사용자 창 **뒤**, 다만 바로 아래가 아니라 맨 아래였다(실측 — `Below` 의 sibling 을 안 쓰는 것으로 보인다) |
+| Windows | 안 옮김 | 안 가져간다 — 활성화 없이 보인다. 미측정 | 사용자 창 **바로 아래**에 둔다. 두 `SetWindowPos` 사이에 위에 보이는 틈은 생기지 않을 것으로 본다(근거: winit `set_visible` 이 이벤트 루프 스레드에서 동기 · `apply_diff` 가 `SW_SHOWNOACTIVATE` 만 부름). 실기 미측정 |
+| X11 | 안 옮김 | `_NET_WM_USER_TIME = 0` 으로 **요청한다.** openbox 3.6.1 에서 새 창은 포커스를 안 받았다(실측). map 뒤에는 그 속성을 지운다 | `_NET_RESTACK_WINDOW` 로 사용자 창 아래를 **요청한다.** openbox 3.6.1 에서는 사용자 창 **뒤**, 다만 바로 아래가 아니라 맨 아래였다(실측 — `Below` 의 sibling 을 안 쓰는 것으로 보인다) |
 | Wayland | 안 옮김 | 컴포지터가 정한다(요청하지 않는다) | 컴포지터가 정한다 |
 
 첫 열(tasty 가 대상 없는 요청을 보낼 창)은 모든 플랫폼에서 같다. 원칙 3 이 지키려는 것이 그
@@ -97,6 +107,13 @@ X11 실측의 조건과 대조:
   - user_time 설정을 빼면 새 창이 `_NET_ACTIVE_WINDOW` 를 가져갔다.
   - restack 요청을 빼면 새 창이 사용자 창 위에 쌓였다.
   - 즉 두 수단이 각각 포커스와 쌓임을 맡는다.
+- user_time 삭제:
+  - 새 창의 `_NET_WM_USER_TIME` 은 map 뒤 `xprop` 에서 없었다. 창은 여전히 사용자 창 뒤에
+    쌓였고 `_NET_ACTIVE_WINDOW` 는 사용자 창에 남았다.
+  - 그 뒤 debug `window.focus` 로 고르면 새 창이 맨 위로 오고 active 가 됐다.
+  - 삭제를 빼는 변이에서는 map 뒤에도 `_NET_WM_USER_TIME = 0` 이 남았다. 쌓임 · active 는 같았다.
+    user_time 설정을 빼면 포커스를 뺏긴다는 위 대조와 합치면, 그 속성은 map 시점에 있었고 삭제가
+    그 뒤에 일어났다.
 - 사용자 단축키로 만든 창은 맨 위에 쌓이고 포커스를 받았다.
 
 ### X11 에서 winit 이 주지 않는 것
@@ -136,6 +153,9 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
     인자라 빠뜨리면 컴파일이 안 된다.
   - OS 별 네이티브 코드 세 벌(`window_stacking`)을 winit 을 올릴 때마다 winit 의 show 경로와
     대조해야 한다. 이 머신에서 실행을 잴 수 있는 것은 X11 뿐이다.
+  - 에이전트 창이 결국 보이는지(X11 map state `IsViewable`)는 gui e2e
+    `multi_window_owner_routing` 이 본다. `show_agent_window` 호출을 빼는 변이로 빨개지는 것을
+    확인했다. 쌓임 순서와 OS 포커스는 창 관리자에 달려 있어 그 e2e 가 보지 않는다.
 
 ## Alternatives Considered
 
@@ -148,6 +168,9 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
 - **Windows 에서 네이티브 `SWP_SHOWWINDOW` 로 한 번에 보인다** — 깜빡임 틈이 없다. 그러나 winit
   의 `VISIBLE` 플래그가 꺼진 채 남아, 뒤에 다른 창 플래그가 바뀌면 winit 이 `SW_HIDE` 로 창을
   숨긴다.
+- **X11 `_NET_RESTACK_WINDOW` 에 source 1(스펙대로의 응용 값)을 쓴다** — openbox 3.6.1 이
+  "invalid source indication 1" 로 버린다(실측). 그래서 source 2 를 쓴다. 다른 창 관리자는
+  미측정이다.
 - **macOS 에서 winit `set_visible(true)` 뒤에 `orderWindow` 로 내린다** — winit 의 show 가 이미
   키 창을 만든 뒤라 키 포커스를 뺏는다.
 - **에이전트 창은 `focused_view_id` 가 `None` 이어도 안 잡는다** — 규칙은 더 단순하다. 그러나
@@ -174,6 +197,10 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
   보고가 온다(어느 OS 든). 재는 법: 그 OS 에서 한 창에 타이핑하는 중에 `tasty new window` 를
   부르고, 키 입력이 어느 창에 들어가는지와 새 창이 위에 보이는지를 본다. X11 이면
   `xprop -root _NET_CLIENT_LIST_STACKING` · `_NET_ACTIVE_WINDOW` 로 잰다.
+- source 2 의 `_NET_RESTACK_WINDOW` 를 거부하거나, 응용이 2 를 보내는 것을 벌하는 창 관리자가
+  보고된다. 재는 법: 그 창 관리자 아래에서 `tasty new window` 뒤
+  `xprop -root _NET_CLIENT_LIST_STACKING` 으로 새 창이 사용자 창 아래인지 보고, 창 관리자 로그에
+  source 관련 경고가 찍히는지 본다.
 
 ## References
 
@@ -185,5 +212,6 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
   축이 실패 안내 채널을 가른다
 - 코드 근거(결정이 실현된 현재 위치): `App::register_window` · `App::create_new_window` ·
   `focus_after_register` · `origin_window_attributes` · `show_agent_window`
-  (`src/app/window_lifecycle.rs`), `show_behind`(`crates/tasty-platform/src/window_stacking.rs`),
+  (`src/app/window_lifecycle.rs`), `show_behind` · `clear_initial_focus_hint`
+  (`crates/tasty-platform/src/window_stacking.rs`),
   `WindowRequestOrigin`(`src/app/event.rs`), `App::handle_window_focused`(`src/app/event_handler.rs`)
