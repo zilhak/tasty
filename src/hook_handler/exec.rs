@@ -297,11 +297,20 @@ mod tests {
             args,
             vec![("TASTY_HOOK_EVENT".to_string(), "user/envtest".to_string())],
         );
+        // **존재가 아니라 내용을 기다린다.** 리다이렉트(`> file`)는 파일을 먼저 만들고
+        // 나중에 쓴다 — `exists()` 로 깨면 빈 파일을 읽는 창이 열린다. Windows 의 cmd 는
+        // 그 창이 넓어 CI 에서 빈 문자열을 읽고 실패했다. 환경변수가 정말 안 넘어갔다면
+        // 빈 값이 아니라 cmd 가 확장하지 못한 `%TASTY_HOOK_EVENT%` 원문이 남는다.
+        // `trigger.rs` 의 `shell_binding_receives_command_completed_exit_code_env` 와 같은 대기다.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline && !marker.exists() {
+        let mut content = String::new();
+        while Instant::now() < deadline {
+            content = std::fs::read_to_string(&marker).unwrap_or_default();
+            if !content.trim().is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(25));
         }
-        let content = std::fs::read_to_string(&marker).expect("marker written");
         assert_eq!(content.trim(), "user/envtest");
     }
 
