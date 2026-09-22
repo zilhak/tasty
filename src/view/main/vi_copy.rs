@@ -1006,25 +1006,14 @@ fn _module_uses_core_state(_: &CoreState) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tasty_terminal::{Terminal, TerminalConfig};
+    use tasty_terminal::Terminal;
 
+    /// 셸도 parser 스레드도 없는 격자. 실제 PTY 를 띄우면 셸 프롬프트가 parser 스레드를
+    /// 거쳐 같은 격자에 비동기로 들어와, 시험이 `process_bytes` 로 쓴 내용과 경합한다
+    /// (공백만 쓴 행의 커서 자리에 프롬프트가 찍히면 `^` 가 그 칸을 첫 비공백으로 읽는다).
+    /// 이 시험들은 격자 내용만 보므로 입력은 전부 `process_bytes` 로 넣는다.
     fn term(cols: usize, rows: usize) -> Terminal {
-        let waker: tasty_terminal::Waker = Arc::new(|| {});
-        Terminal::new(
-            TerminalConfig {
-                cols,
-                rows,
-                shell: None,
-                args: &[],
-                surface_id: 0,
-                working_dir: None,
-                initial_input: None,
-                extra_env: &[],
-            },
-            waker,
-        )
-        .expect("terminal creation")
+        Terminal::new_detached(cols, rows)
     }
 
     fn key_char(c: char) -> Key {
