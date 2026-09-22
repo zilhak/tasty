@@ -159,10 +159,15 @@ fn assert_missing_paths_still_build(binary: &Path) {
         binary.to_str().unwrap(),
     ))
     .unwrap();
-    assert_eq!(
-        missing.spawn().unwrap_err().kind(),
-        std::io::ErrorKind::NotFound
-    );
+    // 없는 것은 실행 파일이 아니라 작업 디렉토리다. 그 실패의 종류는 OS 가 정한다 —
+    // Unix 는 자식이 `chdir` 에서 `ENOENT` 를 받아 `NotFound`, Windows 는 `CreateProcessW`
+    // 가 `ERROR_DIRECTORY`(267)를 돌려 `NotADirectory` 다(CI 실측). 제품은 이 종류로
+    // 분기하지 않는다 — spawn 실패는 메시지와 고정 `spawn_failed` 로만 나간다.
+    #[cfg(windows)]
+    let expected = std::io::ErrorKind::NotADirectory;
+    #[cfg(not(windows))]
+    let expected = std::io::ErrorKind::NotFound;
+    assert_eq!(missing.spawn().unwrap_err().kind(), expected);
 }
 
 /// 행렬 한 칸. 축이 여덟이라 인자로 늘어놓으면 호출부에서 어느 것이 어느 축인지
