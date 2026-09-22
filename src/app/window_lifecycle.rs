@@ -593,6 +593,13 @@ impl App {
         }
     }
 
+    /// focused main 창의 winit 창(에이전트 창을 그 뒤에 둘 기준). 없으면 `None`.
+    fn focused_main_winit(&self) -> Option<Arc<Window>> {
+        let id = self.view.focused_view_id?;
+        let view = self.view.views.get(&id)?;
+        view.as_main().map(|_| view.base().winit.clone())
+    }
+
     /// Create a new window with its own terminal.
     /// 새 창을 만든다. 성공하면 새 창의 `WindowId`, 실패하면 사람이 읽을 원인 문자열을
     /// 돌려준다 — IPC 요청자(`AppEvent::CreateWindow` 의 완료 채널)가 이 결과를 그대로
@@ -619,10 +626,9 @@ impl App {
         }
         // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
         attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
-        // 에이전트가 만든 창은 OS 포커스를 가져가지 않는다(원칙 1·3). winit 은 macOS ·
-        // Windows 에서만 이 값을 따르고 X11 · Wayland 에서는 무시한다 — 그 두 곳의 OS
-        // 포커스는 창 관리자가 정한다(ADR-0497).
-        attrs = attrs.with_active(matches!(origin, WindowRequestOrigin::User));
+        // 에이전트가 만든 창은 숨긴 채 만들어 등록 뒤 사용자 창 뒤에 보인다(원칙 1·3,
+        // ADR-0497). 사용자 창은 지금까지와 같다.
+        attrs = origin_window_attributes(attrs, origin);
 
         // 새 창 생성 실패는 패닉이 아니다 — 이미 떠 있는 창들의 세션을 죽이지 않도록,
         // 기존 창에 안내를 띄우고 새 창만 취소한다.
@@ -710,7 +716,13 @@ impl App {
         // register_window 가 window 을 consume 하므로 id 를 먼저 캡처 — IPC 요청자에게
         // 돌려줄 window_id 다(ADR-0122). window.list 와 동일한 u64 변환을 쓴다.
         let window_id = window.id();
+        // 에이전트 창을 둘 자리 — 사용자가 보던 창. register_window 전에 잡는다.
+        let behind = matches!(origin, WindowRequestOrigin::Agent)
+            .then(|| (window.clone(), self.focused_main_winit()));
         self.register_window(gpu, state, core_state, window, origin);
+        if let Some((window, anchor)) = behind {
+            show_agent_window(&window, anchor.as_deref());
+        }
         tracing::info!("created new window {window_id:?} ({origin:?})");
         Ok(window_id)
     }
@@ -921,6 +933,31 @@ pub(crate) fn focus_after_register(
         WindowRequestOrigin::User => Some(registered),
         WindowRequestOrigin::Agent => current.or(Some(registered)),
     }
+}
+
+/// 창 생성 속성의 발화 주체 갈래. 사용자 창은 활성화된 채 보이게 만든다(winit 기본값과
+/// 같다). 에이전트 창은 활성화하지 않고 **숨긴 채** 만든다 — 보이는 것은 등록 뒤
+/// [`show_agent_window`] 가 사용자 창 뒤에 한다(ADR-0497).
+pub(crate) fn origin_window_attributes(
+    attrs: winit::window::WindowAttributes,
+    origin: WindowRequestOrigin,
+) -> winit::window::WindowAttributes {
+    match origin {
+        WindowRequestOrigin::User => attrs.with_active(true),
+        WindowRequestOrigin::Agent => attrs.with_active(false).with_visible(false),
+    }
+}
+
+/// 숨겨 만든 에이전트 창을 `anchor`(사용자가 보던 창) 뒤에, 키 포커스 없이 보인다.
+/// 네이티브 호출이 실패하면 창 생성을 실패시키지 않고 경고 뒤 winit 기본 경로로 보인다.
+fn show_agent_window(window: &Window, anchor: Option<&Window>) {
+    if let Err(e) = crate::platform::window_stacking::show_behind(window, anchor) {
+        tracing::warn!(
+            "agent window: showing behind the user's window failed ({e}) — showing it the default way"
+        );
+        window.set_visible(true);
+    }
+    window.request_redraw();
 }
 
 #[cfg(test)]

@@ -34,3 +34,23 @@ fn an_agent_window_takes_the_focus_when_no_window_had_it() {
     let after = focus_after_register(None, WindowId::from(NEW_WINDOW), WindowRequestOrigin::Agent);
     assert_eq!(after, Some(WindowId::from(NEW_WINDOW)));
 }
+
+#[test]
+fn an_agent_window_is_created_hidden_and_inactive() {
+    let attrs = super::origin_window_attributes(
+        winit::window::WindowAttributes::default(),
+        WindowRequestOrigin::Agent,
+    );
+    assert!(!attrs.visible);
+    assert!(!attrs.active);
+}
+
+#[test]
+fn a_user_window_is_created_visible_and_active() {
+    let attrs = super::origin_window_attributes(
+        winit::window::WindowAttributes::default(),
+        WindowRequestOrigin::User,
+    );
+    assert!(attrs.visible);
+    assert!(attrs.active);
+}

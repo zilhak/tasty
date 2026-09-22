@@ -41,6 +41,9 @@ pub mod stall_watchdog;
 pub mod system_tray;
 #[cfg(feature = "gui")]
 pub mod window_chrome;
+/// 에이전트가 만든 창을 사용자 창 뒤에, 키 포커스 없이 보인다(ADR-0497).
+#[cfg(feature = "gui")]
+pub mod window_stacking;
 /// X11 XID → `GdkWindow` 변환. GTK 백엔드가 X11 인 Linux 에서만 쓴다.
 #[cfg(all(target_os = "linux", feature = "gui"))]
 pub mod x11_gdk_window;

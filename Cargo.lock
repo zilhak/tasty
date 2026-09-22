@@ -6100,6 +6100,7 @@ dependencies = [
  "tray-icon",
  "windows 0.61.3",
  "winit",
+ "x11-dl",
 ]
 
 [[package]]

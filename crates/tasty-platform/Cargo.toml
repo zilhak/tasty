@@ -47,6 +47,8 @@ windows = { version = "0.61", features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", optional = true }
 gdkx11 = { version = "0.18", optional = true }
+# 에이전트 창의 X11 포커스·쌓임 요청(`window_stacking`). 본체가 이미 같은 버전을 쓴다.
+x11-dl = { version = "2.21", optional = true }
 
 [dev-dependencies]
 # 프로세스 전역 env 와 `TASTY_HOME` 을 시험 동안만 갈아끼우는 RAII 가드. 출하되지
@@ -65,6 +67,7 @@ gui = [
     "dep:objc2-app-kit",
     "dep:gtk",
     "dep:gdkx11",
+    "dep:x11-dl",
 ]
 
 [lints]
