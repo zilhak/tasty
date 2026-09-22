@@ -1431,6 +1431,8 @@ impl App {
     /// 치운다. 닫기 버튼 경로(`close_main_window`)와 달리 plugin/Lua 통지를 내지
     /// 않는 내부 경로다.
     fn close_self_requesting_window(&mut self, id: WindowId) {
+        // map 전에 닫힌 에이전트 창의 id 가 남지 않게 한다(`pending_focus_hint_clear`).
+        self.pending_focus_hint_clear.remove(&id);
         // `remove` 결과를 먼저 지역 변수로 받는다 — 조건 체인(`if let ... && ...`)
         // 안에 두면 중간 조건이 실패했을 때 MainView 가 조건식 안에서 drop 되어
         // 은퇴 처리를 걸 자리가 없다.
@@ -1561,6 +1563,8 @@ impl App {
         // 은퇴 처리는 아래 `window.closed` / `window.delete.post` 발화 **앞**에서
         // 끝낸다 — 통지 순서는 기존 그대로 두고, engine 이 drop 되기 전에만
         // 슬롯을 마무리하면 된다.
+        // map 전에 닫힌 에이전트 창의 id 가 남지 않게 한다(`pending_focus_hint_clear`).
+        self.pending_focus_hint_clear.remove(&id);
         let removed = self.view.views.remove(&id);
         if let Some(mut main_box) = removed.and_then(crate::view::unbox_main) {
             let active_workspace = main_box.state.active_workspace;

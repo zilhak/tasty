@@ -1336,7 +1336,11 @@ fn multi_window_owner_routing() {
     );
     // 에이전트 창은 숨긴 채 만들어 등록 뒤에 보인다(ADR-0497) — 결국 화면에 보여야 한다.
     #[cfg(all(target_os = "linux", feature = "gui"))]
-    wait_x11_window_viewable(create_resp["window_id"].as_u64().unwrap_or_default());
+    wait_x11_window_viewable(
+        create_resp["window_id"]
+            .as_u64()
+            .expect("window.create 성공 응답에 window_id 가 있어야 한다"),
+    );
 
     // 새 윈도우의 PTY shell 이 surface.list 에 등장할 때까지 polling.
     let start = std::time::Instant::now();

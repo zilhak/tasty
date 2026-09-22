@@ -223,7 +223,8 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) preset_view_id: Option<WindowId>,
     /// map 뒤에 초기 포커스 힌트(X11 `_NET_WM_USER_TIME = 0`)를 지워야 하는 에이전트 창.
-    /// winit 이 map 을 알리는 첫 `WindowEvent::Focused(_)` 에서 비운다(ADR-0497).
+    /// winit 이 map 을 알리는 첫 `WindowEvent::Focused(_)` 에서 비운다(ADR-0497). 그 전에 창이
+    /// 닫히면 닫힘 경로(`close_main_window` · `close_self_requesting_window`)가 뺀다.
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
     /// Plugins 모달의 `Configure` 진입점이 Settings 모달을 열 때, 첫 진입 탭을
