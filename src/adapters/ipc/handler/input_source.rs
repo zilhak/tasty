@@ -26,12 +26,12 @@ use crate::state::AppState;
 ///
 /// 시스템 전역 입력 소스를 바꾸므로 `--enable-input-simulation` 게이트를 지난다.
 pub fn handle_switch_input_source(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(state, engine, &id) {
+    if let Err(e) = require_input_simulation(engine, &id) {
         return e;
     }
     let source_id = match params.get("source_id").and_then(|v| v.as_str()) {
@@ -57,12 +57,12 @@ pub fn handle_switch_input_source(
 /// 시점마다** 한다 — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼 경우를 잘못
 /// 판정하고, 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있다.
 pub fn handle_raw_key(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_input_simulation(state, engine, &id) {
+    if let Err(e) = require_input_simulation(engine, &id) {
         return e;
     }
     let keycode = match p_try!(params::opt_int::<u64>(params, "keycode", &id)) {
