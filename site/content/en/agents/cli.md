@@ -1,4 +1,4 @@
-<!-- source-hash: 8f7ca6aef5f6 -->
+<!-- source-hash: 4d414b14dc6c -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -39,7 +39,7 @@ tasty list surface-kinds   # Surface kinds this instance actually registered
       └─ surface:418 (markdown)
 ```
 
-`list surface-kinds` shows the surface kinds you can currently create with `--type <kind>`. A kind will be absent if its plugin is not running or the current build does not support it. Disabling or removing a plugin drops its kinds right away, and a request to create one of them fails with an error saying the plugin that provides it is turned off. Each row shows the rendering method and the plugin or built-in feature that provides it.
+`list surface-kinds` shows the surface kinds you can currently create with `--type <kind>`. A kind will be absent if its plugin is not running or the current build does not support it. Disabling or removing a plugin drops its kinds right away, and a request to create one of them fails with an error saying the plugin that provides it is turned off or has not reconnected yet. Each row shows the rendering method and the plugin or built-in feature that provides it.
 
 Each row of `list workspaces` has the form `name (id:N) (pane count)`. The active Workspace is marked `*`, and a remote mirror is marked `[mirror]` ([Working remotely](../remote/attach.md)).
 
