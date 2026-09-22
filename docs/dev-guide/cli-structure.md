@@ -109,6 +109,21 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 쓰기" 와 [ADR-0101](../adr/0101-cli-stdout-broken-pipe-exit-zero.md), 강제는
 `tests/cli_stdout_broken_pipe.rs`.
 
+stderr 는 같은 모듈의 `errln!` 으로만 쓴다(`eprintln!` 금지). 쓰기 실패는 버리고 종료 코드는
+그대로 둔다 — [ADR-0513](../adr/0513-cli-stderr-broken-pipe-keeps-the-exit-code.md). 강제는 같은
+시험 파일이다.
+
+## 호스트 오류 출력 (`rpc_error.rs`)
+
+호스트가 JSON-RPC 오류로 답하면 단발 RPC 경로 · `auto_wait` · 폴링 · 계약 확인 실패가
+모두 `rpc_error::exit_with` 하나로 stderr 에 내고 종료 코드 1 로 끝난다. 첫 줄은
+`Error (<code>): <message>` 이고, 응답에 `error.data` 가 있으면(`null` 제외) 둘째 줄
+`data: <한 줄 JSON>` 이 원형 그대로 붙는다 — `reason` · `storage_failure` 같은 실패 분류를
+CLI 호출자도 IPC 와 같은 값으로 얻는다. 예외는 스트리밍 두 명령(`events follow` ·
+`plugin audit-follow`)이다 — 호스트 오류를 `main` 까지 올려 std 가 `Error: Error (…)` 한 줄로
+찍으므로 **아직 `data` 를 싣지 않는다.** 근거는
+[ADR-0512](../adr/0512-the-cli-relays-ipc-error-data-on-a-second-stderr-line.md).
+
 ## `debug` 갈래
 
 `commands/debug.rs`(선언)와 `local/debug.rs`(실행) 둘 다 모듈째

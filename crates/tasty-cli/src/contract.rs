@@ -52,7 +52,7 @@ impl Envelope {
     /// 라우팅이 같은 자리에서 이것을 부른다 — 그래서 `pub` 이다.
     pub fn refuse_if_set(&self) {
         if self.is_set() {
-            eprintln!("{}", tasty_i18n::t("cli.contract.bound_not_applicable"));
+            crate::out::errln!("{}", tasty_i18n::t("cli.contract.bound_not_applicable"));
             std::process::exit(2);
         }
     }
@@ -144,6 +144,7 @@ fn not_run(bound: Duration) -> anyhow::Error {
     JsonRpcCallError {
         code: err.code,
         message: err.message,
+        data: err.data,
     }
     .into()
 }
@@ -183,8 +184,8 @@ pub(crate) fn refusal_line(refusal: &UnsupportedCapability) -> String {
 /// (확인 요청이 안 닿음 등)는 다른 전송 실패와 같은 모양이다. 종료 코드는 둘 다 1 이다.
 pub(crate) fn exit_on_failure(e: anyhow::Error) -> ! {
     match e.downcast_ref::<UnsupportedCapability>() {
-        Some(refusal) => eprintln!("{}", refusal_line(refusal)),
-        None => eprintln!("{e}"),
+        Some(refusal) => crate::out::errln!("{}", refusal_line(refusal)),
+        None => crate::rpc_error::exit_with(&e),
     }
     std::process::exit(1);
 }
@@ -535,6 +536,7 @@ mod tests {
         let probe_error: anyhow::Error = JsonRpcCallError {
             code: -32001,
             message: "permission denied".into(),
+            data: None,
         }
         .into();
         assert_eq!(failure_code(&probe_error), None);

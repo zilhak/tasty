@@ -1,4 +1,4 @@
-<!-- source-hash: b592b0a7bc37 -->
+<!-- source-hash: 04d5c4121bb4 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -127,6 +127,7 @@ Other shells such as fish return an empty list unless you install shell integrat
 
 ```sh
 tasty new workspace --name build --cwd ~/proj          # new Workspace
+tasty new workspace --surface 42                       # new Workspace in the window that holds Surface 42
 tasty new window                                        # new window (the reply carries window_id)
 tasty split --level surface --target-surface this --direction vertical   # split my Surface left/right
 tasty split --level pane --target-pane 3 --direction horizontal          # split a Pane
@@ -142,7 +143,7 @@ tasty close self                                        # close this very Surfac
 
 A tab opened with `tasty new tab` does not change the tab the person was looking at, whatever its kind. The new tab is added at the end of the pane and stays in the background until the person picks it. The reply's `active_tab` is the tab currently selected in that pane, not the new one, so use the reply's `surface_id` to work with the new tab. A tab the person opens by shortcut or menu is selected right away.
 
-A window opened with `tasty new window` does not take the focus from the window the person was looking at. So a following command with no target (`tasty new workspace` and so on) lands in the window they were looking at, not the new one. To create something in the new window, target it with the `window_id` from the reply. The new window appears behind the window the person was looking at and does not take keyboard input (macOS · Windows). On Linux, X11 asks the window manager to do the same, but whether it does is up to the window manager, and on Wayland the compositor decides. Either way, the window that untargeted commands go to does not change.
+A window opened with `tasty new window` does not take the focus from the window the person was looking at. So a following command with no target (`tasty new workspace` and so on) lands in the window they were looking at, not the new one. To create a workspace in the new window, give a Surface ID from that window with `tasty new workspace --surface <ID>` — `tasty list windows` shows the `workspace_ids` of each window, and `tasty list surfaces` shows the `workspace_id` of each Surface. If no window holds the Surface you give, the command ends with an error instead of landing in another window. The new window appears behind the window the person was looking at and does not take keyboard input (macOS · Windows). On Linux, X11 asks the window manager to do the same, but whether it does is up to the window manager, and on Wayland the compositor decides. Either way, the window that untargeted commands go to does not change.
 
 The last remaining workspace and the last remaining window cannot be closed. Closing a workspace
 never takes the window down with it; it is refused instead, so reach for `tasty close window` when
@@ -368,6 +369,7 @@ The eleventh block, `slow_requests`, shows **single slow requests instead of tot
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
 - **An error line containing `"sent":false`** — the Tasty you are connected to is an older version that does not know that feature (reading from a position, bounding the reply wait, and so on). The request was not sent. The name under `capability` says what is missing.
+- **A `data: {…}` line follows the `Error (…)` line** — Tasty sent a classification of the failure along with it (for example `storage_failure` when a memory write fails, or `reason` for a refusal). Everything after `data: ` is one line of JSON, so a script can branch on that value instead of the first line. The first line, `Error (code): message`, is the same whether or not this line is present. `tasty events follow` and `tasty plugin audit-follow` do not add this line yet.
 - **The command ends with `Error (-32065): …`** — Tasty has a backlog of requests to handle and did not take this one. The request did not run, so call it again as is after a short pause.
 - **The command ends with `Error (-32066): …`** — nothing was sent within 20 seconds of connecting, so Tasty closed the connection. Nothing ran. If your tool opens the socket itself, send the request right after connecting. A connection that has sent one request is not closed however long it pauses between requests.
 - **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.

@@ -29,6 +29,7 @@ pub mod out;
 pub mod plugin;
 pub mod port_file;
 pub mod request;
+mod rpc_error;
 pub mod run;
 
 use clap::{Parser, Subcommand};
@@ -1041,6 +1042,15 @@ mod workspace_category_tests {
         assert_eq!(r.params["methods"][0], "POST");
         // --sequence 는 JSON 문자열 → 배열 Value 로 파싱돼 전달.
         assert_eq!(r.params["sequence"][0]["method"], "notification.create");
+    }
+
+    /// `--method` 생략은 빈 배열이 아니라 null 이다 — 빈 배열은 서버가 거절하고, null 이면
+    /// 서버 기본값(POST)이 선다(도움말 "Defaults to POST").
+    #[test]
+    fn webhook_register_without_method_leaves_the_default_to_the_server() {
+        let r = req(&["tasty", "webhook", "register", "--handler", "host/notify"]);
+        assert_eq!(r.method, "webhook.register");
+        assert!(r.params["methods"].is_null(), "{:?}", r.params["methods"]);
     }
 
     #[test]
