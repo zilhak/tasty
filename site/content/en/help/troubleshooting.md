@@ -1,4 +1,4 @@
-<!-- source-hash: aa5cd320c7cb -->
+<!-- source-hash: 6e872ae9b8a2 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -34,7 +34,7 @@ TASTY_LOG=debug tasty 2> tasty.log
 - **"No GPU adapter found" appears and it exits** — there is no GPU driver (Vulkan / DirectX 12 / Metal). Install or update the driver. On Linux, Tasty runs GPU-accelerated when `libvulkan1` / `vulkan-loader` is present, and falls back to software rendering when it is not. On a server · VM with no GPU at all, the distributed files cannot run.
 - **Windows: "Git Bash not found"** — Tasty uses Git Bash as the shell on Windows. Install Git for Windows, or set the bash path yourself in **Settings** > **Terminal** > **Shell**.
 - **It exits right after starting with "Database initialization error"** — read the message body. "The database is locked" means another Tasty is already running. "corrupted" / "schema version mismatch" means you can back up `~/.tasty/state.db`, delete it, and start fresh. Only the recent-files list is lost.
-- **You typed `tasty` inside a Tasty terminal but no new window appeared** — run with no arguments inside Tasty, it shows the help instead of opening a new window. For a new window use `tasty new window`; to force the GUI to launch, `tasty --launch`.
+- **You typed `tasty` inside a Tasty terminal but no new window appeared** — run with no arguments inside Tasty, it shows the help instead of opening a new window. For a new window use `tasty new window` (it leaves the focus on the window you were looking at); to force the GUI to launch, `tasty --launch`.
 
 The install procedure itself is in [Install](../getting-started/install.md).
 

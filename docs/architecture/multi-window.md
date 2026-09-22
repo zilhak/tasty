@@ -15,6 +15,8 @@ App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
     └── focused_view_id: Option<WindowId>
 ```
 
+`focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0497](../adr/0497-an-agent-created-window-does-not-take-the-users-focus.md)).
+
 모든 윈도우(모달 포함)는 단일 `views` 맵에 저장된다. 모달은 별개 엔티티가 아니라 `active_modal_id: Option<WindowId>` 로 식별되는 View 상태이며, 활성 모달은 이 필드로 식별한다. (옛 `Engine` struct 는 삭제됐고 그 역할이 Core/Hub/ViewRegistry 로 분산됐다.)
 
 ## Window 트레잇 계층 (`src/view/`)

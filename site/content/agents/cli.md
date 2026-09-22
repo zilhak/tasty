@@ -126,6 +126,7 @@ fish 등 다른 셸은 직접 셸 통합을 설치하지 않으면 빈 목록이
 
 ```sh
 tasty new workspace --name build --cwd ~/proj          # 새 워크스페이스
+tasty new window                                        # 새 윈도우 (응답에 window_id)
 tasty split --level surface --target-surface this --direction vertical   # 내 서피스를 좌우 분할
 tasty split --level pane --target-pane 3 --direction horizontal          # 페인 분할
 tasty new tab --pane 3 --cwd ~/proj                     # 페인에 새 탭
@@ -137,6 +138,8 @@ tasty close self                                        # 지금 이 서피스 �
 ```
 
 `--target-surface this` 는 자기 자신(`TASTY_SURFACE_ID`)입니다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있습니다 ([파일 열기](../using/files.md)).
+
+`tasty new window` 로 연 윈도우는 사용자가 보던 윈도우의 포커스를 가져가지 않습니다. 그래서 뒤이어 대상을 안 적은 명령(`tasty new workspace` 등)은 새 윈도우가 아니라 사용자가 보던 윈도우에 만들어집니다. 새 윈도우에 무언가를 만들려면 응답의 `window_id` 로 대상을 지정하세요. Linux(X11 · Wayland)에서는 윈도우 관리자에 따라 새 윈도우가 화면 앞으로 나올 수 있지만, 그래도 대상 없는 명령이 가는 윈도우는 바뀌지 않습니다.
 
 워크스페이스와 윈도우는 마지막 하나를 닫지 못합니다. 워크스페이스를 닫으면 윈도우까지 사라지는 것이 아니라
 거절되므로, 윈도우를 없앨 생각이면 `tasty close window` 를 따로 씁니다(윈도우 없이 `tasty --headless` 로 실행한

@@ -213,6 +213,26 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 - 파일 열기도 같은 형태다 — `FileDispatchOrigin` **하나**가 사용자/에이전트를 가르고, 결과 탭을 선택하는지와 `None` 분기가 발화하는 intent 의 출처가 거기서 파생된다. **전송 채널이 아니라 행위의 성질로 정한다**: plugin 이 사용자의 클릭을 `file_handler.dispatch` 로 중계하는 경로가 있어(markdown 문서 안의 링크) "IPC 로 들어왔는가" 는 좌변이 아니다. 그 값이 `IntentOrigin` 과 별개인 이유는 파일 식별이 워커 스레드를 왕복하면서 발화 당시 intent 를 잃기 때문이다 ([ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md)).
 - `workspace.closed` host event 는 origin 과 무관하게 발화한다. 워크스페이스가 사라졌다는 사실 자체는 누가 닫았든 같기 때문이다. 워크스페이스를 제거하는 경로는 셋(GUI·IPC 닫기 · Core cascade · 인라인 cascade)이고, 발화는 각 경로가 아니라 그 셋이 공유하는 초크포인트 `AppState::after_workspace_removed`(`src/state.rs`)가 한다 — 경로마다 각자 쏘던 때 인라인 cascade 하나가 실제로 빠져 있었다. 워크스페이스를 제거하는 새 경로를 추가하면 그 초크포인트를 반드시 지나게 한다.
 
+## 에이전트가 만든 창과 포커스
+
+에이전트가 창을 만들어도 사용자가 보던 창은 그대로 focused 창이다.
+
+- 창을 만든 주체는 `WindowRequestOrigin` **하나**가 정한다.
+  - `User`: 부팅 첫 창 · 단축키 · 명령 팔레트 · CSD 버튼 · 트레이 · macOS dock.
+  - `Agent`: IPC `window.create` / `view.create`. CLI `tasty new window` 와 hook 의
+    `ipc_sequence` 도 여기로 온다.
+  - 창 생성 실패를 누구에게 알릴지도 같은 값이 가른다. 새 경로도 이 값을 정해 넘긴다.
+- `User` 창은 `focused_view_id` 를 새 창으로 옮긴다. `Agent` 창은 옮기지 않는다. 그래서 뒤이은
+  대상 없는 요청(`tasty new workspace` 등)은 사용자가 보던 창에 떨어진다. 새 창을 조작하려면
+  `window.create` 응답의 `window_id` 로 지정한다.
+  - 예외: 가리키던 창이 없으면(main 창이 0 개였으면) 에이전트 창이 잡는다. 빼앗을 포커스가 없다.
+- 에이전트 창은 OS 포커스도 요청하지 않는다(`with_active(false)`). macOS · Windows 만 이것을 따르고,
+  X11 · Wayland 에서는 창 관리자가 정한다.
+- 사용자가 에이전트 창을 직접 고르면 `WindowEvent::Focused(true)` 추적이 `focused_view_id` 를
+  옮긴다.
+
+근거와 플랫폼별 결과는 [ADR-0497](../../adr/0497-an-agent-created-window-does-not-take-the-users-focus.md).
+
 ## 원격이 점유한 surface 는 닫기 요청이 죽이지 않는다
 
 하드 점유(ADR-0040)는 "이 surface 는 지금 원격 사용자가 쓰고 있다" 는 선언이다. 닫기는
@@ -256,6 +276,7 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
 - 삭제 시 활성 포인터 보정: `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`) · `active_index_after_removal` / `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`) · cascade 진입점 `cascade_surface_closed`(`src/core/structural_cascade.rs` — 두 빌드가 같은 본문).
 - 재정렬 시 활성 포인터 보정: `active_index_after_move` / `AppState::fix_workspace_pointers_after_move`(`src/state/workspace.rs`) · 호출 경로 `AppState::move_workspace` 와 `cascade_workspace_moved`(`src/app/dispatch_domain.rs`, headless 는 `dispatch_domain_stubs.rs`).
+- 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 `with_active` 가 여기서 파생된다.
 - 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
 - 워크스페이스 제거 후 공통 뒷정리(`workspace.closed` 발화 + workspace scope memory purge): `AppState::after_workspace_removed`(`src/state.rs`).
 
