@@ -1214,6 +1214,45 @@ fn headless_pty_attach_surface_promotes_to_a_tab() {
 
 // ========== Multi-window: owner-based routing + list 전체 순회 ==========
 
+/// X11 창이 화면에 보이는가(map state 가 `IsViewable`). 에이전트 창은 숨긴 채 만들어 등록
+/// 뒤에 보이는데(ADR-0497) `window.list` 에는 보임 필드가 없어, 보이게 하는 호출이 빠지는
+/// 회귀가 IPC 로는 안 보인다 — 그래서 X 서버에 직접 묻는다.
+///
+/// 하네스가 자식에게 준 디스플레이(`TASTY_E2E_DISPLAY`, `inherit` 이면 `DISPLAY`)를 연다.
+/// `Ok(None)` 은 물을 수 없는 경우다 — `inherit` 에 Wayland 세션이면 창이 X 창이 아닐 수
+/// 있고, 그때 X 에 그 id 를 물으면 Xlib 기본 에러 처리가 프로세스를 끝낸다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn x11_window_is_viewable(xid: u64) -> Result<Option<bool>, String> {
+    use x11_dl::xlib;
+    let declared = std::env::var("TASTY_E2E_DISPLAY").unwrap_or_default();
+    let name = if declared.trim() == "inherit" {
+        if std::env::var("WAYLAND_DISPLAY").is_ok_and(|v| !v.is_empty()) {
+            return Ok(None);
+        }
+        std::env::var("DISPLAY").map_err(|_| "DISPLAY is not set".to_string())?
+    } else {
+        declared.trim().to_string()
+    };
+    let x = xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
+    let cname = std::ffi::CString::new(name.clone()).map_err(|e| e.to_string())?;
+    // SAFETY: cname 은 NUL 종단 문자열이고 반환값은 아래에서 null 을 검사한다.
+    let dpy = unsafe { (x.XOpenDisplay)(cname.as_ptr()) };
+    if dpy.is_null() {
+        return Err(format!("XOpenDisplay({name}) failed"));
+    }
+    // SAFETY: XWindowAttributes 는 정수·포인터만 담은 C 구조체라 0 이 유효한 초기값이다.
+    let mut attrs: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
+    // SAFETY: dpy 는 위에서 연 연결, xid 는 이 디스플레이에 창을 만든 데몬이 돌려준 X 창
+    // id(winit 의 X11 `WindowId` 는 X 창 id 다)이고 attrs 는 쓰기 가능한 지역 변수다.
+    let status = unsafe { (x.XGetWindowAttributes)(dpy, xid as xlib::Window, &mut attrs) };
+    // SAFETY: 위에서 연 연결을 닫는다. 이후 dpy 를 쓰지 않는다.
+    unsafe { (x.XCloseDisplay)(dpy) };
+    if status == 0 {
+        return Err(format!("XGetWindowAttributes(0x{xid:x}) failed"));
+    }
+    Ok(Some(attrs.map_state == xlib::IsViewable))
+}
+
 /// **이 파일에서 유일하게 창을 요구하는 시나리오다.** `window.create` 는 gui 라우터의
 /// `app_methods` step 에만 있어 헤드리스 데몬에서는 `-32017`("표에는 있는데 이 바이너리에
 /// arm 이 없다")이 난다 — 배선 결함이 아니라 창이 없다는 사실 그 자체이므로, 헤드리스
@@ -1272,6 +1311,28 @@ fn multi_window_owner_routing() {
         focused_before,
         "window.create 뒤 window.list 의 focused 는 원래 창이어야 한다: {create_resp:?}"
     );
+    // 에이전트 창은 숨긴 채 만들어 등록 뒤에 보인다(ADR-0497) — 결국 화면에 보여야 한다.
+    #[cfg(all(target_os = "linux", feature = "gui"))]
+    {
+        let xid = create_resp["window_id"].as_u64().unwrap_or_default();
+        let start = std::time::Instant::now();
+        loop {
+            match x11_window_is_viewable(xid) {
+                Ok(None) => {
+                    tracing::warn!("inherit + Wayland — skipping the agent window map state check");
+                    break;
+                }
+                Ok(Some(true)) => break,
+                Ok(Some(false)) if start.elapsed() < Duration::from_secs(5) => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Ok(Some(false)) => {
+                    panic!("에이전트 창 0x{xid:x} 이 5 초 안에 보이지(IsViewable) 않았다")
+                }
+                Err(e) => panic!("에이전트 창 0x{xid:x} 의 map state 를 못 읽었다: {e}"),
+            }
+        }
+    }
 
     // 새 윈도우의 PTY shell 이 surface.list 에 등장할 때까지 polling.
     let start = std::time::Instant::now();
