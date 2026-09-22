@@ -883,6 +883,12 @@ mod tests {
                 if finished {
                     break;
                 }
+                // 재개 사이에 잠금 밖에서 쉰다. 쉬지 않고 다시 잡으면 공유 잠금이 사실상 계속
+                // 잡혀 있어(읽기가 느린 러너일수록) 비우는 writer 가 배타 잠금 상한을 넘기고,
+                // 그 비우기는 계약대로 "모른다" 가 된다 — ADR-0415 "잃은 것" 이 reader 에게
+                // 공유 구간을 짧게 하라고 요구하는 그 경우다. 이 시험이 재는 것은 writer 끼리의
+                // 경합이지 reader 의 잠금 점유가 아니다.
+                std::thread::sleep(EXCLUSIVE_LOCK_RETRY);
             }
         });
         let written: u64 = (0..WRITERS)
