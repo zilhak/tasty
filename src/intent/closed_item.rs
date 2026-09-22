@@ -77,7 +77,17 @@ pub fn handle(
         if let crate::core::intent::CoreEvent::ClosedItemRestored { restored, kind } = ev
             && restored
         {
-            crate::app::dispatch_domain::cascade_closed_item_restored(state, engine, kind);
+            crate::app::dispatch_domain::cascade_closed_item_restored(
+                state,
+                engine,
+                &intent.origin,
+                kind,
+            );
         }
     }
 }
+
+// 헤드리스의 복원 cascade 는 no-op stub 이라 포커스 이동이 원래 없다 — gui 조합에서만 잰다.
+#[cfg(all(test, feature = "gui"))]
+#[path = "closed_item_origin_tests.rs"]
+mod origin_tests;

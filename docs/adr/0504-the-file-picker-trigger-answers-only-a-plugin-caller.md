@@ -1,4 +1,4 @@
-# ADR-0498: `file_picker.trigger` 는 plugin 호출자에게만 답한다
+# ADR-0504: `file_picker.trigger` 는 plugin 호출자에게만 답한다
 
 - **Status**: Accepted
 - **Date**: 2026-09-23
@@ -76,6 +76,10 @@ host-call 진입부가 직접 인터셉트한다" 이고(`src/source_guards/plug
 - **popup 을 포커스 없이 연다**: 사용자 입력은 안 막는다. 안 고른 이유: 에이전트가 사용자 화면에
   popup 을 띄우는 것 자체가 원칙 2.1 ② 의 "popup 강제 open" 이고, 결과를 받을 곳도 여전히 없다.
 - **발화 라벨만 바로 세운다(`from_agent_…`)**: 기록은 맞아진다. 안 고른 이유: 포커스 효과가 그대로다.
+- **한 minor deprecation 을 거친다**: 0.x 의 break 는 한 minor 이상 deprecation 을 먼저 두는 것이
+  기본 정책이다(`docs/dev-guide/api-conventions.md`). 안 고른 이유: 그 기간 동안 원칙 2.1 ①·2.3
+  위반이 release 에 그대로 남는다. 그리고 CLI·agent 호출자는 고른 경로를 받을 방법이 원래 없었으므로,
+  그 기간에 옮겨 갈 대체 경로도 없다 — 이행할 것이 없다.
 - **debug 로 옮긴다**: 자기검증용으로는 debug popup 강제 open(`debug.popup.*`)이 이미 있다. 이 메서드의
   정상 사용자는 plugin 이라 release 에 남아야 한다.
 
@@ -86,7 +90,8 @@ host-call 진입부가 직접 인터셉트한다" 이고(`src/source_guards/plug
 - 비-plugin 호출이 다시 popup 을 연다 — `src/adapters/ipc/handler/file_picker.rs` 의
   `trigger_from_a_non_plugin_caller_is_refused_without_opening_the_popup` 이 깨진다.
 - 창 라우터(`route_window_handler`)에 팔이 새로 생기거나 이 메서드가 호출자를 다시 가리지 않는다 —
-  `src/adapters/ipc/handler/window_router_caller_tests.rs` 가 깨진다. 앞쪽은 팔과 호출자 명부의 집합
+  `src/adapters/ipc/handler/window_router_caller_tests.rs` 가 깨진다(시험 모듈 doc 의 "한계" 자리는
+  제외 — 그 목록은 닫혀 있지 않다). 앞쪽은 팔과 호출자 명부의 집합
   대조이고, 뒤쪽은 `PluginOnly` 팔을 CLI·agent 로 불러 `-32016` 과 창 무변화를 본다.
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다.
