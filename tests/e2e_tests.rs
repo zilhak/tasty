@@ -153,6 +153,55 @@ fn read_only_queries() {
     assert!(!tabs["tabs"].as_array().unwrap().is_empty());
 }
 
+/// 셸이 OSC 7 로 알린 cwd 가 그 탭의 이름이 된다 — **두 조합에서 같다.** gui 는
+/// `App::cascade_terminal_pty_cwd_changed` 가, 헤드리스는 PTY drain 의
+/// `intent::headless::apply_terminal_cwd_changed` 가 한다(docs/dev-guide/headless-build-boundaries.md
+/// "두 조합이 같게 하는 것"). 헤드리스에 그 배선이 없던 동안은 이름이 안 바뀌었다.
+///
+/// 하네스 셸은 `/bin/sh` 라 스스로 OSC 7 도 제목(OSC 0/2)도 안 쏜다 — 제목이 이름을 덮는 경우가
+/// 없어 이 시험은 cwd 갈래만 잰다. `printf` 의 `\033` 해석이 셸마다 달라 Unix 로 한정한다
+/// (`dim_sgr2_survives_to_the_renderer` 와 같은 이유).
+#[cfg(not(windows))]
+#[test]
+fn an_osc7_cwd_becomes_the_tab_name() {
+    // `tab.list` 는 표시 이름이 아니라 원본 `name` 을 싣는다 — 표시 이름(명시 이름 → OSC 제목 →
+    // cwd → 원본)을 싣는 것은 `tree` 의 탭 행이다.
+    fn tab_names(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if o.contains_key("surface")
+                    && let Some(n) = o.get("name").and_then(|n| n.as_str())
+                {
+                    out.push(n.to_string());
+                }
+                o.values().for_each(|c| tab_names(c, out));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|c| tab_names(c, out)),
+            _ => {}
+        }
+    }
+    let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-osc7-tab-name");
+    let dir = format!("tasty-osc7-{}", std::process::id());
+    tasty.send_text(
+        sid,
+        &format!("printf '\\033]7;file://localhost/tmp/{dir}\\007'\r"),
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let mut names = Vec::new();
+        tab_names(&tasty.call("tree", json!({})), &mut names);
+        if names.iter().any(|n| n == &dir) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "OSC 7 cwd({dir}) 가 탭 이름이 되지 않았다: {names:?} / 화면: {}",
+            tasty.screen_text_of(sid)
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 fn workspace_list_rows_carry_mirror_and_id() {
     // workspace.list 는 mirror(원격 attach client 인지) 를 함께 실어야 한다 — GUI
@@ -1639,6 +1688,137 @@ fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
     assert!(
         resp.get("result").is_none(),
         "거절 응답에 result 가 같이 실리면 호출자가 성공으로 읽는다: {resp}"
+    );
+}
+
+/// 헤드리스는 attach mirror 로 나가는 두 plugin 요청을 **수락하지 않는다** — 큐를 비워 attach
+/// 채널로 보내는 쪽(`App::about_to_wait`)이 gui 에만 있어, 수락하면 `request_id` 만 받은 plugin 이
+/// 결과를 영영 기다린다. 라우터 끝의 `-32017` 이 답하고, 문구가 메서드 이름을 실어 **무엇이
+/// 거절됐는지** 두 자리가 갈린다(docs/dev-guide/headless-ipc-surface.md "census 뒤에 게이트된 arm").
+/// 셋째 자리(mirror 구조 op)는 헤드리스에 mirror workspace 가 없어 여기서 못 부른다 — 그 거절은
+/// `core::attach_runtime` 의 `dispatch_refuses_tab_create_in_mirror_workspace_in_headless` 가 본다.
+#[cfg(not(feature = "gui"))]
+#[test]
+fn mirror_forward_requests_are_refused_by_name_in_a_headless_daemon() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let mut messages = Vec::new();
+    for (method, params) in [
+        (
+            "git_viewer.query",
+            json!({"kind": "status", "local_surface_id": 1}),
+        ),
+        ("markdown_mirror.content_request", json!({"surface_id": 1})),
+    ] {
+        let resp = tasty.call_raw(method, params);
+        let error = resp.get("error");
+        assert_eq!(
+            error.and_then(|e| e.get("code")).and_then(|c| c.as_i64()),
+            Some(-32017),
+            "헤드리스는 {method} 를 수락하면 안 된다 — 결과를 보낼 쪽이 없다: {resp}"
+        );
+        assert!(
+            resp.get("result").is_none(),
+            "거절 응답에 result 가 같이 실리면 호출자가 성공으로 읽는다: {resp}"
+        );
+        let message = error
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default()
+            .to_string();
+        assert!(
+            message.contains(method),
+            "거절 문구가 무엇이 거절됐는지 말해야 한다: {message}"
+        );
+        messages.push(message);
+    }
+    assert_ne!(
+        messages[0], messages[1],
+        "두 자리의 거절 사유가 같은 문자열이면 무엇이 거절했는지 못 가른다"
+    );
+}
+
+/// 헤드리스는 레이아웃을 영속하지 않는다 — 슬롯을 점유하지 않고, 그 사실을 `system.info` 의
+/// `layout_slot: null` 로 답한다(docs/adr/0539-headless-does-not-persist-layouts.md). 에이전트가
+/// "재시작하면 워크스페이스가 돌아오는가" 를 이 값 하나로 판정하므로, 슬롯을 잡기 시작하면(저장·
+/// 복원 배선이 생기면) 이 시험이 먼저 알린다.
+#[cfg(not(feature = "gui"))]
+#[test]
+fn a_headless_daemon_answers_that_it_holds_no_layout_slot() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let info = tasty.call("system.info", json!({}));
+    assert!(
+        info.as_object()
+            .is_some_and(|o| o.contains_key("layout_slot")),
+        "system.info 가 layout_slot 칸을 아예 안 냈다 — 소비자 쪽에서 null 과 구별되지 않는다: {info}"
+    );
+    assert_eq!(
+        info["layout_slot"],
+        serde_json::Value::Null,
+        "헤드리스는 레이아웃 슬롯을 잡지 않는다: {info}"
+    );
+}
+
+/// `general.restore_layout` 을 켠 헤드리스는 그 설정이 이 빌드에서 아무 일도 안 한다는 것을
+/// 부팅 때 **경고로** 말한다(docs/adr/0539-headless-does-not-persist-layouts.md 결정 ①). 문구는
+/// `src/boot.rs` 의 단위 시험이 재지만, 그 시험은 함수의 반환값만 본다 — 부팅이 그것을 어느
+/// 레벨로 내보내는지는 이 시험만 본다. stderr 기본 필터가 warn 이라, 레벨이 info 이하로 내려가면
+/// 사람은 아무것도 못 보는데 단위 시험은 초록으로 남는다. 그래서 자식의 stderr 를 **제품 기본
+/// 필터 그대로**(하네스가 `spawn_diag::LOG_FILTER` 로 박는다) 읽어 줄이 있는지와 그 줄의 레벨을
+/// 함께 단언한다.
+#[cfg(not(feature = "gui"))]
+#[test]
+fn a_headless_daemon_warns_at_boot_that_restore_layout_is_ignored() {
+    let _lane = lane();
+    let tasty = common::TastyInstance::spawn_with_restore_layout();
+    // 고지는 포트 파일 **뒤**에 나간다 — `run_headless` 가 IPC 를 먼저 열어 포트 파일을 쓰고
+    // (`start_ipc_and_seed`), 그 다음 `bootstrap_engine` 이 고지를 warn 한다. 그래도 하네스 spawn 은
+    // 포트 파일 뒤에 `surface.list`·셸 대기로 메인 루프를 왕복한 다음 돌아오므로, 이 시점에는
+    // 고지가 이미 stderr 로 나갔다. 아래 폴링은 배출 스레드가 링에 넣는 지연만 흡수한다.
+    // `system.info` 호출은 지금은 중복이다 — 하네스 spawn 이 나중에 포트 파일만 보고 돌아오게
+    // 바뀌어도 이 시험이 안 흔들리게 하는 보험이다(메인 루프가 응답했으면 고지는 나갔다). 이
+    // 보험은 문다 — 하네스를 영구히 바꿀 필요 없이 임시 변이로 잰다: `src/boot.rs` 의 고지 직전에
+    // 6 초 sleep 을 넣고(초록), `tests/common/mod.rs` 의 `wait_for_shell` 호출을 빼 하네스가 포트
+    // 파일만 보고 돌아오게 하면 여전히 초록이며, 거기서 이 호출까지 빼면 아래 단언이 FAILED 가 된다.
+    // 6 초는 아래 폴링 창(`from_secs(5)`)보다 길게 잡은 값이다. 창보다 짧으면 호출을 뺀 마지막
+    // 변이에서도 폴링이 지연을 흡수해 초록이 나와 "보험이 안 문다" 로 거꾸로 읽힐 것이다 — 이것은
+    // 창 길이에서 끌어낸 추론이고, 더 짧은 sleep 으로 돌려 본 적은 없다.
+    tasty.call("system.info", json!({}));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let line = loop {
+        if let Some(line) = tasty.find_stderr(|l| l.contains("general.restore_layout is on")) {
+            break line;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "restore_layout 을 켠 헤드리스가 부팅 고지를 stderr 에 안 냈다 — 레벨이 기본 필터 아래로 \
+             내려갔거나 호출이 사라졌다:\n{}",
+            tasty.startup_diagnostics()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    // fmt 레이어는 파이프에도 ANSI 색을 붙인다 — 레벨 토큰을 가르기 전에 벗긴다.
+    let mut plain = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            plain.push(c);
+        }
+    }
+    assert!(
+        plain.split_whitespace().any(|token| token == "WARN"),
+        "부팅 고지가 warn 이 아니다 — 기본 필터가 warn 이라 이 줄이 보인 것은 필터가 바뀐 탓일 수 있다: {plain}"
+    );
+    assert!(
+        plain.contains("does not save or restore layouts"),
+        "고지가 무엇을 안 하는지 말하지 않는다: {plain}"
     );
 }
 
