@@ -71,8 +71,23 @@
 use std::path::{Path, PathBuf};
 
 /// 스캔이 최소한 이만큼은 파일을 봐야 한다. 경로가 틀어져 대상이 줄면 위반이 0건이 되어
-/// 가드가 **조용히 초록**이 된다 — 그 실패를 잡는 유일한 장치다. 현재 실측 1109개이고,
-/// `src`(550) 또는 `crates`(559) 한쪽만 훑는 사고도 이 하한에 걸린다.
+/// 가드가 **조용히 초록**이 된다 — 그 실패를 잡으려고 설계한 장치가 이 하한이다.
+///
+/// 파일 수를 여기 적지 않는다. 적었던 판은 공용 모수가 움직여도 안 따라와 여러 회차
+/// 낡아 있었다. 대신 성질을 적는다 — 시험이 재는 성질에는 그 시험 이름을, 시험이 없는
+/// 성질에는 재는 법을 붙인다:
+///
+/// - `src` 한쪽만 훑는 사고는 이 하한에 걸린다 — `src/` 의 `.rs` 수가 하한 아래라는
+///   것을 `a_src_only_scan_falls_below_the_floor` 가 **지금 트리를 세어** 고정한다.
+/// - ★ `crates` 한쪽만 훑는 사고는 이 하한이 **못 잡는다** — `crates/` 의 `.rs` 수가
+///   이미 하한을 넘었다. 재는 법: `find -L crates -name '*.rs' -type f | wc -l` 을 이
+///   하한과 견준다(순회가 심볼릭 링크를 따라가므로 `-L`). 그래도 가드 전체로는 지금
+///   잡힌다: [`ALLOWED`]·[`PENDING_PORT`] 에 `src/` 행이 남아 있는 동안은 그 행의
+///   **존재 검사**("등재가 있는데 스캔 대상에 없다")가 실패시킨다. 설계된 채널이 아니라
+///   부수 효과이고, 시험으로 고정하지 않았으며, 두 표의 `src/` 행이 0 이 되면 사라진다.
+///   재는 법: `scan()` 의 `src` 순회 줄을 주석 처리하고
+///   `dpi_conversion_goes_through_the_typed_api` 를 돌려, 하한 단정이 아니라 `verdict`
+///   단정이 그 존재 검사 문구로 실패하는지 본다.
 const MIN_SCANNED_FILES: usize = 800;
 
 /// 수동 DPI 산술이 남아도 되는 자리 — `(경로, 건수, 사유)`.
@@ -449,6 +464,28 @@ mod tests {
 
     fn repo_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// 하한 문장의 `src` 쪽 성질을 **지금 트리에서 세어** 고정한다. 값을 문장에 베끼면
+    /// 트리가 움직여도 안 따라온다. 좌변은 가드 본체와 같은 순회(`collect_rs`)로 센 수다 —
+    /// 선언된 공용 모수 `SRC_RS` 를 좌변으로 쓰면 선언이 낡은 동안 성질이 거짓인 트리에서도
+    /// 초록이 된다. 선언이 트리와 맞는가는 이 시험의 물음이 아니다
+    /// (`scripts/check-population-freshness.sh` 의 물음이다). 선언 값은 진단용으로만 찍는다.
+    #[test]
+    fn a_src_only_scan_falls_below_the_floor() {
+        let mut files = Vec::new();
+        collect_rs(&repo_root().join("src"), &mut files);
+        let declared = tasty_doc_guards::floored_walk::populations::SRC_RS;
+        assert!(
+            files.len() < MIN_SCANNED_FILES,
+            "`src/` 의 `.rs` 가 지금 트리에서 {}개라 하한 {MIN_SCANNED_FILES} 이상이다(진단용: \
+             선언 모수 `SRC_RS` = {}, {} 실측) — `src` 한쪽만 훑는 사고를 이 하한이 더는 못 \
+             잡는다. 스캔 루트별 하한을 두거나, 합계 스캔 수 아래에서 하한을 올려라. 이 단정을 \
+             지우거나 완화하지 마라 — 그러면 하한 문장의 `src` 항목이 거짓인 채 남는다.",
+            files.len(),
+            declared.measured,
+            declared.measured_on,
+        );
     }
 
     fn count_in_source(source: &str) -> usize {
