@@ -155,7 +155,9 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
     대조해야 한다. 이 머신에서 실행을 잴 수 있는 것은 X11 뿐이다.
   - 에이전트 창이 결국 보이는지(X11 map state `IsViewable`)는 gui e2e
     `multi_window_owner_routing` 이 본다. `show_agent_window` 호출을 빼는 변이로 빨개지는 것을
-    확인했다. 쌓임 순서와 OS 포커스는 창 관리자에 달려 있어 그 e2e 가 보지 않는다.
+    확인했다. 쌓임 순서와 OS 포커스는 창 관리자에 달려 있어 그 e2e 가 보지 않는다. CI 에서는
+    `crossplatform-check` 의 관측용(비차단, `continue-on-error`) gui e2e 스텝이 돌린다 —
+    `check-headless` 는 이 이름을 skip 한다.
 
 ## Alternatives Considered
 
@@ -197,6 +199,11 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
   보고가 온다(어느 OS 든). 재는 법: 그 OS 에서 한 창에 타이핑하는 중에 `tasty new window` 를
   부르고, 키 입력이 어느 창에 들어가는지와 새 창이 위에 보이는지를 본다. X11 이면
   `xprop -root _NET_CLIENT_LIST_STACKING` · `_NET_ACTIVE_WINDOW` 로 잰다.
+- 반대 방향: 에이전트 창을 트레이 · 알림으로 불러도 앞으로 안 온다는 보고가 온다(X11). map 뒤
+  `_NET_WM_USER_TIME` 삭제가 창 관리자가 map 시점에 캐시한 값을 못 바꾼 경우다. 재는 법: 그 창
+  관리자 아래에서 `tasty new window` 로 만든 창을 트레이 · 알림으로 불러
+  `xprop -root _NET_ACTIVE_WINDOW` 가 그 창으로 바뀌는지, `xprop -id <창>` 에
+  `_NET_WM_USER_TIME` 이 없는지 본다.
 - source 2 의 `_NET_RESTACK_WINDOW` 를 거부하거나, 응용이 2 를 보내는 것을 벌하는 창 관리자가
   보고된다. 재는 법: 그 창 관리자 아래에서 `tasty new window` 뒤
   `xprop -root _NET_CLIENT_LIST_STACKING` 으로 새 창이 사용자 창 아래인지 보고, 창 관리자 로그에
