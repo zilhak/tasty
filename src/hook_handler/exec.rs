@@ -311,7 +311,14 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(25));
         }
-        assert_eq!(content.trim(), "user/envtest");
+        // 빈 값 하나로는 원인이 셋으로 갈린다 — 마커 존재 여부와 원문 여부를 함께 찍는다.
+        assert_eq!(
+            content.trim(),
+            "user/envtest",
+            "marker exists={} — false 면 셸이 안 떴다, 값이 %TASTY_HOOK_EVENT% 원문이면 \
+             env 가 안 넘어갔다, true 인데 비어 있으면 5 초 안에 안 쓰였다",
+            marker.exists()
+        );
     }
 
     #[test]
