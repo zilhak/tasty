@@ -1989,6 +1989,10 @@ fn write_fake_browser(home: &std::path::Path) -> std::io::Result<std::path::Path
 /// 어느 갈래든 제품 코드의 설치 경로는 그대로다 — 서명·업그레이드 판정이 얹혀 있는 자리를
 /// 테스트 사정으로 바꾸지 않는다. `tasty_home` 은 자식에게 주는 `TASTY_HOME` 이다.
 pub fn apply_bundle_opt_in(command: &mut std::process::Command, tasty_home: &std::path::Path) {
+    // 아래 갈래의 물러남 사유는 `tracing::warn!` 으로만 남는다. 구독자가 없으면 그 줄은
+    // 어디에도 안 찍힌다 — `common` 은 spawn 뒤에야 설치하고 `gui_common` 은 아예 안 한다.
+    // 그래서 판정보다 먼저 여기서 설치한다(멱등).
+    init_test_tracing();
     if suite_calls_bundled_plugins() {
         prefill_bundle_links(tasty_home);
         return;
@@ -2053,14 +2057,18 @@ fn bundle_link_snapshot() -> Option<&'static std::path::Path> {
 /// 자식이 부팅하며 고를 번들을 정하고, 그 내용 서명으로 이름 붙인 스냅숏을 돌려준다.
 /// 같은 서명의 스냅숏이 이미 있으면 그대로 쓴다 — 번들이 안 바뀌는 동안 스냅숏 쓰기는 0 이다.
 fn build_bundle_link_snapshot() -> Result<std::path::PathBuf, String> {
-    let bin = std::path::PathBuf::from(instance_bin());
     // override 된 바이너리는 테스트와 다른 프로필일 수 있다. 그때 아래의 dev 스테이징을
     // 테스트 프로필로 돌리면 자식이 안 할 쓰기를 남의 번들에 하게 된다 — 대신 정하지 않는다.
-    if bin.as_os_str() != env!("CARGO_BIN_EXE_tasty") {
+    // 판정은 [`instance_bin`] 과 같은 규칙([`effective_override`])으로 한다 — 바이너리를 고르는
+    // 자리를 여기에 하나 더 만들지 않는다.
+    if effective_override(daemon_kind(), std::env::var_os(INSTANCE_BIN_ENV))
+        .is_some_and(|v| !v.is_empty())
+    {
         return Err(format!(
             "{INSTANCE_BIN_ENV} override 중이라 자식의 번들을 대신 못 정한다"
         ));
     }
+    let bin = std::path::PathBuf::from(instance_bin());
     let bin_dir = bin
         .parent()
         .ok_or_else(|| format!("바이너리 경로에 부모가 없다: {}", bin.display()))?;
