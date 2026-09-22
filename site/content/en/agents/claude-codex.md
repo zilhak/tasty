@@ -1,4 +1,4 @@
-<!-- source-hash: 621574b8ab79 -->
+<!-- source-hash: 3abab8c45aa2 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -16,6 +16,7 @@ tasty codex install     # add the Tasty entry to [hooks] in ~/.codex/config.toml
 
 - Hooks you added yourself are preserved as they are. Running it several times does not create duplicates.
 - **Run it again after updating Tasty.** The hook command string is baked into the settings file, so a reinstall is needed to pick up the new format.
+- The hook that reports a turn Claude Code ended on an API error (server overload, rate limit, authentication failure, and so on) as idle also arrives only with a reinstall. Until then such a child keeps looking "working".
 - These hooks do not run when you use Claude Code outside Tasty.
 - To remove: `tasty claude uninstall` / `tasty codex uninstall`.
 
@@ -94,6 +95,7 @@ When there are too many children, a warning is attached to the spawn response. C
 
 Completion lands in the same log file as one line per event, whatever the parent is, and for both Claude and Codex children. Input requests,
 interruptions, errors, and process exits are state notifications too; they do not establish task success.
+When a Claude child ended its turn on an API error, the end of the completion line says so and names the error kind (for example `overloaded`).
 
 ### Receiving through Claude Code's Monitor
 
@@ -124,6 +126,18 @@ were away. A Monitor subscription does not need this file.
 **Do not run two copies of tasty against the same data folder.** The one that starts later wipes
 the completion-log folder as it boots, which takes the live log the earlier one was writing to.
 Give each copy its own data folder with `TASTY_HOME` if you need both.
+
+### Resuming Claude automatically after an API error
+
+When a temporary API error such as a server overload ends Claude's turn, Tasty can send a "please continue" message for you after a short wait so the work carries on. **It is off by default.** Turn it on at **Settings** › **Plugin** › **Claude Code**.
+
+- **Resume automatically after a temporary API error (server overload)** — on/off.
+- **Seconds to wait before resuming** — 10 seconds by default. Any value from 1 second to one day (86400 seconds) works, and a value outside that range is moved to the nearest end.
+- **Consecutive automatic resumes before giving up** — 5 by default. When failures in a row reach this number, Tasty stops sending and shows one notification.
+- Errors that would fail the same way again — rate limits, authentication failures, billing problems — are not resumed.
+- If you type something yourself while it waits, nothing is sent. If you pressed any key on that surface after the turn began (there may be a half-written message in the input box), it does not resume.
+- The number of automatic resumes is in the surface meta `claude-auto-resume-count`.
+- This needs the hooks installed by `tasty claude install`. Run it again after updating Tasty.
 
 ## 5. Codex approval policy
 

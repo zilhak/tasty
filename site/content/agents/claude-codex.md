@@ -15,6 +15,7 @@ tasty codex install     # ~/.codex/config.toml 의 [hooks] 에 Tasty 항목 추�
 
 - 이미 직접 넣어 둔 훅은 그대로 보존됩니다. 여러 번 실행해도 중복되지 않습니다.
 - **Tasty 를 업데이트한 뒤에는 다시 실행합니다.** 훅 명령 문자열은 설정 파일에 저장되므로 새 형식을 반영하려면 재설치가 필요합니다.
+- Claude Code 가 API 에러(서버 과부하 · 요청 한도 · 인증 실패 등)로 턴을 끝낸 경우를 대기로 알리는 훅도 재설치해야 들어갑니다. 그 전에는 그런 자식이 계속 "작업 중" 으로 보입니다.
 - Codex에서 `hook returned invalid ... JSON output` 오류가 뜨면 업데이트 후 `tasty codex install`을 다시 실행하세요. Tasty의 상태 전달 결과가 Codex의 훅 응답에 섞이지 않도록 설정됩니다.
 - Tasty 밖에서 Claude Code를 실행하면 이 훅은 동작하지 않습니다.
 - 제거는 `tasty claude uninstall` / `tasty codex uninstall`.
@@ -94,6 +95,7 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 
 완료는 부모 종류와 관계없이 같은 로그 파일에 한 줄씩 쌓입니다. 자식이 Claude인지 Codex인지도 관계없습니다.
 입력 요청·중단·오류·프로세스 종료도 상태 알림이므로, 알림을 작업 성공으로 단정하지 마세요.
+Claude 자식이 API 에러로 턴을 끝냈으면 완료 알림 줄 끝에 그 사실과 에러 종류(예: `overloaded`)가 붙습니다.
 
 ### Claude Code의 Monitor로 받기
 
@@ -122,6 +124,18 @@ Monitor 없이 직접 읽을 수는 있지만 자동 재개나 영구 보관을 
 같은 데이터 폴더로 tasty 를 **두 번 띄우지 마세요.** 나중에 뜬 쪽이 시작하면서 완료 로그
 폴더를 통째로 지우는데, 그때 먼저 떠 있던 쪽이 쓰고 있던 완료 로그까지 사라집니다. 두 벌을
 같이 쓰려면 `TASTY_HOME` 으로 데이터 폴더를 따로 주세요.
+
+### API 에러로 멈춘 Claude 자동 재개
+
+서버 과부하 같은 일시적인 API 에러로 Claude 의 턴이 끝나면, Tasty 가 잠시 뒤 "이어서 진행해" 문구를 대신 보내 작업을 잇게 할 수 있습니다. **기본은 꺼져 있습니다.** **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugin --> › **Claude Code** 에서 켭니다.
+
+- **일시적인 API 에러(서버 과부하) 뒤 자동으로 이어서 진행** <!-- en: Resume automatically after a temporary API error (server overload) --> — 켜기/끄기.
+- **재개 전 대기 시간(초)** <!-- en: Seconds to wait before resuming --> — 기본 10초. 1초부터 하루(86400초)까지 정할 수 있고, 범위를 벗어난 값은 가장 가까운 끝으로 맞춥니다.
+- **포기하기 전 연속 자동 재개 횟수** <!-- en: Consecutive automatic resumes before giving up --> — 기본 5번. 연달아 실패해 이 수에 닿으면 더 보내지 않고 알림을 한 번 띄웁니다.
+- 요청 한도 초과·인증 실패·결제 문제처럼 다시 보내도 같은 에러는 재개하지 않습니다.
+- 기다리는 동안 직접 입력하면 보내지 않습니다. 그 턴이 시작된 뒤 그 서피스에 키를 한 번이라도 눌렀다면(입력 칸에 쓰다 만 글이 있을 수 있으므로) 재개하지 않습니다.
+- 자동으로 보낸 횟수는 서피스 메타 `claude-auto-resume-count` 에서 볼 수 있습니다.
+- 이 기능은 `tasty claude install` 로 설치한 훅이 필요합니다. Tasty 를 업데이트한 뒤에는 다시 설치하세요.
 
 ## 5. Codex 승인 정책
 
