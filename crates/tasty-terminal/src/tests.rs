@@ -1440,6 +1440,140 @@ fn process_exited_eventually_emitted() {
     }
 }
 
+/// PTY EOF 가 자식 종료보다 먼저 오는 창에서도 `ProcessExited` 가 나온다 — **wake 만으로**.
+///
+/// 호스트는 PTY 가 조용해진 터미널을 wake 없이는 `process()` 하지 않는다(headless 는
+/// 그 surface 를 다시 부를 자리가 아예 없다). EOF 직후 한 번의 wake 가 이끈 alive 판정이
+/// 아직 좀비가 안 된 자식을 보면, 그 뒤로 아무도 안 깨워 종료가 영영 안 보였다 — 서버
+/// shell `exit` 가 holder 에 delta 로 안 가던 CI 실패의 원인이다. 커널에서 그 창은 보통
+/// 짧아 경주로는 재현이 들쭉날쭉하므로, 여기서는 자식이 PTY 를 **먼저 닫고 1 초 뒤에**
+/// 죽게 해 창을 결정적으로 넓힌다. 대기 루프는 일부러 폴링 폴백 없이 wake 에만 반응한다
+/// (위 `process_exited_eventually_emitted` 와 다른 점) — 폴링이 있으면 이 결함이 가려진다.
+#[cfg(unix)]
+#[test]
+fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
+    let waker: Waker = Arc::new(move || {
+        // 버퍼(1)가 차 있으면 이미 깨우기 신호가 대기 중이라 이번 실패는 버려도 된다.
+        let _ = tx.try_send(());
+    });
+    // 바깥 셸(`-li` 가 붙는다)은 job control 용 tty fd 를 따로 쥘 수 있어 곧장 비대화형
+    // `sh` 로 exec 한다(pid 는 그대로라 우리 자식이다). 그 셸이 표준 fd 를 PTY 에서 떼면
+    // master 가 EOF 를 보고, 자식은 1 초 뒤에야 끝난다.
+    let mut t = Terminal::new(
+        TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: Some("sh"),
+            args: &[
+                "-c",
+                "exec sh -c 'exec </dev/null >/dev/null 2>&1; sleep 1'",
+            ],
+            surface_id: 0,
+            working_dir: None,
+            initial_input: None,
+            extra_env: &[],
+        },
+        waker,
+    )
+    .expect("terminal creation");
+
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + BUDGET;
+    let mut wakes = 0usize;
+    let mut eof_seen_alive = false;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if rx.recv_timeout(remaining).is_err() {
+            panic!(
+                "no wake within {BUDGET:?} after {wakes} wakes (EOF seen while alive: \
+                 {eof_seen_alive}) — the exit behind an early PTY EOF was never driven"
+            );
+        }
+        wakes += 1;
+        t.process();
+        if t.lock_state()
+            .events
+            .iter()
+            .any(|e| matches!(e.kind, TerminalEventKind::ProcessExited))
+        {
+            break;
+        }
+        if t.parser_eof.load(std::sync::atomic::Ordering::Acquire) {
+            eof_seen_alive = true;
+        }
+    }
+    assert!(
+        eof_seen_alive,
+        "the child must outlive the PTY EOF, or this test does not open the window it is about"
+    );
+}
+
+/// 위 시험의 반대쪽 — 재-wake 가 **멈추는** 조건을 고정한다. `ProcessExited` 를 낸 뒤에는
+/// `exit_settled` 가 서서 parser 스레드의 EOF 꼬리가 끝나야 한다. 그 플래그를 안 세우면 꼬리는
+/// 핸들이 drop 될 때까지 500 ms 마다 깨운다(ADR-0523) — 이 시험이 아니면 그 회귀는 아무
+/// 결과도 안 바꿔 조용히 남는다.
+///
+/// 종료 판정 뒤에 합법적으로 올 수 있는 wake 는 최대 한 번이다: 판정이 EOF 보다 먼저 났으면
+/// EOF 가 한 번 깨우고 멈추고, EOF 가 먼저였으면 꼬리가 플래그를 읽은 직후·세워지기 직전에
+/// 한 번 더 깨울 수 있다. 둘은 동시에 안 일어난다.
+#[cfg(unix)]
+#[test]
+fn eof_rewakes_stop_once_the_exit_is_settled() {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
+    let waker: Waker = Arc::new(move || {
+        // 버퍼(1)가 차 있으면 이미 깨우기 신호가 대기 중이라 이번 실패는 버려도 된다.
+        let _ = tx.try_send(());
+    });
+    let mut t = Terminal::new(
+        TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: Some("sh"),
+            args: &["-c", "exit 0"],
+            surface_id: 0,
+            working_dir: None,
+            initial_input: None,
+            extra_env: &[],
+        },
+        waker,
+    )
+    .expect("terminal creation");
+
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + BUDGET;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        rx.recv_timeout(remaining)
+            .unwrap_or_else(|_| panic!("no ProcessExited within {BUDGET:?}"));
+        t.process();
+        if t.lock_state()
+            .events
+            .iter()
+            .any(|e| matches!(e.kind, TerminalEventKind::ProcessExited))
+        {
+            break;
+        }
+    }
+
+    // 상한(500 ms)의 네 배 — 플래그가 안 서면 이 창에 wake 가 여러 번 온다.
+    let window = ALIVE_CHECK_INTERVAL * 4;
+    let until = std::time::Instant::now() + window;
+    let mut late_wakes = 0usize;
+    loop {
+        let remaining = until.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() || rx.recv_timeout(remaining).is_err() {
+            break;
+        }
+        late_wakes += 1;
+    }
+    assert!(
+        late_wakes <= 1,
+        "{late_wakes} wakes in {window:?} after ProcessExited — the EOF re-wake did not stop \
+         once the exit was settled"
+    );
+}
+
 // ---- OutputAppended observer gate tests ----
 
 /// Concat of all OutputAppended texts — termwiz may deliver "hello" as one
