@@ -119,6 +119,12 @@ abort 시킨다.
   된 이 사본을 crates.io 권고와 대조하는지는 재지 않았다 — 대조한다고 가정하지 않는다(licenses · bans ·
   sources 는 이 사본을 넣은 트리에서 `ok` 로 실측했다). 번들 plugin 중 `tiny_http` 를 쓰는 agent-stream 의 산출물도
   이 사본으로 빌드되지만 그 동작은 상류와 같다 — `respond_and_close` 를 부르지 않는다.
+- **plugin 버전 판정의 사각과 처방**: 사본이 `crates/` 밖·워크스페이스 밖에 살아서, 이 결정을 착지시킨 시점의
+  plugin 버전 게이트는 그것을 못 봤다 — 착지 범위에서 `판정 대상 0 건`, `vendor/tiny_http/src` 한 줄만 고친
+  커밋도 P.1 · B.9 · CI 세 채널 모두 초록이었다(agent-stream 0.1.43 bump 는 손으로 한 것이다). 처방은
+  게이트의 좌변에 plugin 폐포 안의 워크스페이스 밖 path 의존을 더하는 것이고,
+  [ADR-0537](0537-the-plugin-version-gate-follows-path-dependencies-outside-the-workspace.md) 이 그렇게 했다.
+  이제 사본의 출하 코드를 고치면 게이트가 agent-stream 의 patch +1 을 요구한다.
 - **남는 한계**: 작은 `Content-Length` body(1024 이하)는 상류가 요청을 만들 때 이미 다 읽으므로 그 경로에는
   drain 이 원래 없다. 그 경로에서 `respond_and_close` 는 응답의 `Connection: close` 로 닫는다 — 연결
   스레드가 이미 다음 헤더를 기다리는 중이라, 클라이언트가 그 헤더를 무시하고 연결을 붙잡으면 다른 idle
@@ -142,15 +148,18 @@ abort 시킨다.
 **채널이 붙는 것**
 
 - 루트 `Cargo.toml` 의 `[patch.crates-io]` 에서 `tiny_http` 줄이 바뀌거나 빠지면, 또는 `vendor/tiny_http/src`
-  가 바뀌면 — `src/webhook/listener_body_tests.rs` 의 `raw_oversize_*` 시험 넷이 그 사본으로 다시 돈다.
+  가 바뀌면 — `src/webhook/listener_body_tests.rs` 의 `raw_oversize_*` 시험 넷과 429 시험
+  `raw_blocked_source_is_closed_without_draining` 이 그 사본으로 다시 돈다.
   패치가 빠지면 `Request::respond_and_close` 가 없어 본체가 컴파일되지 않는다.
-- 웹훅의 413 응답 경로(`Screened::respond`)가 바뀌면 — 같은 시험 넷이 ADR-0281 의 완결 조건을 다시 잰다.
+- 웹훅의 413 응답 경로(`Screened::respond`)가 바뀌면 — `raw_oversize_*` 시험 넷이 ADR-0281 의 완결 조건을 다시 잰다.
+  429 응답 경로(`reject_if_abusive`)가 바뀌면 — `raw_blocked_source_is_closed_without_draining` 이 같은 조건을 잰다.
 
 **원리적으로 안 붙는 것**
 
 - 상류 `tiny_http` 가 요청 단위로 잔여 body 를 읽지 않고 연결을 닫는 공개 API 를 내면 — 이 사본을 걷고
   `[patch.crates-io]` 줄을 지운 뒤 그 API 로 옮긴다. 재는 법: 상류 릴리스의 `Request` API 와
-  `EqualReader::drop` 을 읽고, body 를 안 보낸 `Content-Length` 초과 요청에서 위 raw 시험 넷이 통과하는지 본다.
+  `EqualReader::drop` 을 읽고, body 를 안 보낸 `Content-Length` 초과 요청에서 위 raw 시험 다섯(`raw_oversize_*` 넷 +
+  429 의 `raw_blocked_source_is_closed_without_draining`)이 통과하는지 본다.
 - 상류에 보안 권고가 붙으면 — 사본은 자동으로 안 따라간다. 재는 법: RustSec 에서 `tiny_http` 를 조회하고,
   해당 수정을 사본에 옮기거나 상류 새 버전 위에 이 패치를 다시 얹는다.
 - 413 뒤 RST 로 응답을 못 받는다는 발신자 보고가 나오면 — 재는 법: 실제 네트워크(루프백 아님)에서 상한을
@@ -164,6 +173,7 @@ abort 시킨다.
 - [`vendor/tiny_http/PATCHES.md`](../../vendor/tiny_http/PATCHES.md) — 사본 범위와 패치 목록
 - [의존성 이슈](../dev-guide/dep-issues.md) — 탈출 대기 중인 의존 패치 목록
 - [웹훅](../features/webhook/index.md) — 현재 보장
+- [ADR-0537](0537-the-plugin-version-gate-follows-path-dependencies-outside-the-workspace.md) — 이 사본을 plugin 버전 게이트의 좌변에 넣은 결정
 - 현재 코드(결정이 실현된 위치): `src/webhook/listener.rs` 의 `Screened::respond`,
   `vendor/tiny_http/src/request.rs` 의 `Request::respond_and_close`, `vendor/tiny_http/src/client.rs` 의
   `ClientConnection::next`, `vendor/tiny_http/src/util/equal_reader.rs` 의 `EqualReader::drop`
