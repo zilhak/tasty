@@ -1253,6 +1253,29 @@ fn x11_window_is_viewable(xid: u64) -> Result<Option<bool>, String> {
     Ok(Some(attrs.map_state == xlib::IsViewable))
 }
 
+/// `xid` 가 5 초 안에 보이게(`IsViewable`) 되지 않으면 panic 한다. 물을 수 없는 경우
+/// (`x11_window_is_viewable` 의 `Ok(None)`)는 경고만 남기고 넘어간다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn wait_x11_window_viewable(xid: u64) {
+    let start = std::time::Instant::now();
+    loop {
+        match x11_window_is_viewable(xid) {
+            Ok(None) => {
+                tracing::warn!("inherit + Wayland — skipping the agent window map state check");
+                return;
+            }
+            Ok(Some(true)) => return,
+            Ok(Some(false)) if start.elapsed() < Duration::from_secs(5) => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Ok(Some(false)) => {
+                panic!("에이전트 창 0x{xid:x} 이 5 초 안에 보이지(IsViewable) 않았다")
+            }
+            Err(e) => panic!("에이전트 창 0x{xid:x} 의 map state 를 못 읽었다: {e}"),
+        }
+    }
+}
+
 /// **이 파일에서 유일하게 창을 요구하는 시나리오다.** `window.create` 는 gui 라우터의
 /// `app_methods` step 에만 있어 헤드리스 데몬에서는 `-32017`("표에는 있는데 이 바이너리에
 /// arm 이 없다")이 난다 — 배선 결함이 아니라 창이 없다는 사실 그 자체이므로, 헤드리스
@@ -1313,26 +1336,7 @@ fn multi_window_owner_routing() {
     );
     // 에이전트 창은 숨긴 채 만들어 등록 뒤에 보인다(ADR-0497) — 결국 화면에 보여야 한다.
     #[cfg(all(target_os = "linux", feature = "gui"))]
-    {
-        let xid = create_resp["window_id"].as_u64().unwrap_or_default();
-        let start = std::time::Instant::now();
-        loop {
-            match x11_window_is_viewable(xid) {
-                Ok(None) => {
-                    tracing::warn!("inherit + Wayland — skipping the agent window map state check");
-                    break;
-                }
-                Ok(Some(true)) => break,
-                Ok(Some(false)) if start.elapsed() < Duration::from_secs(5) => {
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Ok(Some(false)) => {
-                    panic!("에이전트 창 0x{xid:x} 이 5 초 안에 보이지(IsViewable) 않았다")
-                }
-                Err(e) => panic!("에이전트 창 0x{xid:x} 의 map state 를 못 읽었다: {e}"),
-            }
-        }
-    }
+    wait_x11_window_viewable(create_resp["window_id"].as_u64().unwrap_or_default());
 
     // 새 윈도우의 PTY shell 이 surface.list 에 등장할 때까지 polling.
     let start = std::time::Instant::now();
