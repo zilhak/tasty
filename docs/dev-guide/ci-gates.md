@@ -26,7 +26,7 @@
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
 | macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [실측] |
-| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
+| headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 위 `--skip` 1 건을 돌리되 빨개져도 잡을 안 막는다) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) | [실측] |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
@@ -1506,8 +1506,8 @@ done | wc -l
 
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
-| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **대체로 있다** — 두 조합 모두가 유닛 타깃을 포함한다(Windows 잡은 `--lib --bins`, 헤드리스 잡은 그 상위집합인 전체 스위트). **다만 조합 격자에 빈 칸이 하나 있어 그 칸의 유닛 테스트는 어디서도 안 돈다** — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
-| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 1 건 제외). **기본 조합에는 없다** — Windows 잡은 `--lib --bins` 이고 `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/i18n_key_parity.rs` |
+| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — 두 조합 모두가 유닛 타깃을 포함한다. 기본 조합은 `crossplatform-check` 의 **세 잡 모두**가 `--lib --bins` 로 돌린다(`check-macos` · `check-windows` · `check-headless` 의 `cargo test (linux, gui, unit)` 스텝), 헤드리스 조합은 `check-headless` 의 전체 스위트가 담는다. 한때 조합 격자에 빈 칸(Linux + gui + debug)이 있었고 지금은 그 gui 스텝이 채운다 — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
+| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 1 건 제외 — 그 1 건은 같은 잡의 관측용 gui/Xvfb 스텝이 돌리지만 `continue-on-error` 라 **차단하지 않는다**). **기본 조합에는 없다** — 그 조합의 세 잡은 `--lib --bins` 이고(예외는 Windows 잡이 지목하는 `-p tasty-shm -p tasty-doc-guards` 뿐이다) `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/i18n_key_parity.rs` |
 | 문서 가드 통합 테스트 (`crates/tasty-doc-guards/tests/*.rs`) | **있다 — 두 조합과 무관하게** `doc-guards.yml` 이 `-p tasty-doc-guards` 로 돌리고, **Windows 잡도 같은 지목으로 돌린다**(그쪽은 OS 축을 연다). 그 잡에만 `paths-ignore` 가 없어, 문서만 바뀐 push 에서 도는 **유일한** 테스트 채널이다([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)). `check-headless` 의 전체 스위트에서도 함께 돈다 | 있다 | `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
@@ -1920,8 +1920,60 @@ positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡�
 |---|---|---|
 | 전체 스위트 | `cargo test --workspace --locked` | 병합 후 main 에서 conductor 1회. `test.yml` 의 `test-linux-x64` 잡을 수동 실행해도 같다. **그것이 자동 채널 위로 새로 사는 것은 아래에서 잰 대로 1 건이다** |
 | Linux x64 gui 컴파일 | — | **더 이상 여기 없다.** `check-headless` 의 `cargo test (linux, gui, unit)` 스텝이 main push 마다 본다 |
-| 기본 조합 clippy (Linux) | `cargo clippy --workspace --all-targets --locked` | 각 작업 lane. CI 에서 이 조합을 보는 것은 Windows 잡뿐이다 |
+| 기본 조합 clippy (Linux) | `cargo clippy --workspace --all-targets --locked` | 각 작업 lane. CI 에서 이 조합을 보는 것은 Windows 잡뿐이다. ★ **`--workspace` 가 모수다** — `-p <크레이트>` 로 좁히면 다른 feature 집합을 재고, 그 초록은 push 의 초록이 아니다(아래 [절](#크레이트를-지목한-clippy-는-push-와-다른-feature-집합을-잰다)) |
 | dist 산출물 빌드 | `scripts/build-*.sh` | `build-check.yml` 수동 실행 |
+
+### 크레이트를 지목한 clippy 는 push 와 다른 feature 집합을 잰다
+
+위 표의 "기본 조합 clippy" 행은 워크스페이스 **전체**를 말한다. lane 이 시간을 아끼려고
+`cargo clippy -p <크레이트>` 로 좁히면 다른 물음에 답하게 된다 — cargo 는 `--workspace` 일
+때 워크스페이스 전체의 feature 를 통합하고, `-p` 일 때는 그 크레이트의 의존 폐포 안에서만
+통합한다. **그 차이가 판정을 가르는 자리가 실제로 있고, lane 에서 초록을 본 뒤 push 에서
+빨개진 적이 있다.**
+
+- **기제.** 인지복잡도 lint(`cognitive_complexity = "deny"`, 문턱은 [complexity-gate](complexity-gate.md))는
+  매크로 전개 뒤를 센다. `tracing` 의 `log` feature 가 켜지면 `tracing::info!`·`warn!` 한
+  자리가 log 통합 분기까지 전개돼 훨씬 크게 세어진다. 그래서 같은 함수가 `-p` 에서는 문턱
+  아래, `--workspace` 에서는 문턱 위가 된다.
+- **누가 켜나.** Linux 에서 `tracing/log` 를 켜는 것은 `calloop` 다(← `calloop-wayland-source`
+  ← `smithay-client-toolkit` ← `smithay-clipboard` ← `egui-winit`). 번들 plugin 크레이트는
+  이 사슬 밖이라 `-p` 트리에는 `"log"` 가 없다. 헤드리스 조합(`--no-default-features`)의
+  워크스페이스 트리에도 있다.
+- **플랫폼마다 답이 다르다.** `cargo tree --workspace --target <triple> -e features -i tracing`
+  에서 `tracing feature "log"` 가 나오는 것은 Linux 뿐이다 — `x86_64-pc-windows-msvc` ·
+  `aarch64-apple-darwin` 트리에는 없다. 그래서 기본 조합 clippy 를 배선한 유일한 자동 잡인
+  `check-windows` 는 **이 갈림을 못 본다** — 그 트리의 `tracing` feature 집합이 `-p` 쪽과
+  같다. 이 문턱을 넘는 자리를 잡는 채널은 Linux 쪽 둘이다: pre-push `B.4`(훅을 깐
+  체크아웃만)와 `check-headless` 의 clippy. 뒤쪽은 `--no-default-features` 라 `gui` 뒤에
+  있는 코드는 안 본다 — 그 자리에서는 `B.4` 하나만 남는다.
+
+실측 2026-09-23 — `tasty-plugin-claude` 에 `if` 셋과 `tracing` 매크로 넷을 가진 함수 하나를
+심고(변이) 잰 뒤 원복했다. 변이 없는 트리에서는 앞 두 명령이 모두 rc=0 이었다.
+
+| 명령 | rc | 판정 |
+|---|---|---|
+| `cargo clippy -p tasty-plugin-claude --all-targets -- -D clippy::correctness` | 0 | 문턱 안 넘음 |
+| 같은 명령 + `--features tracing/log` | 101 | 인지복잡도 32 로 문턱 초과 |
+| `cargo clippy --workspace --all-targets -- -D clippy::correctness` (pre-push `B.4` 와 같은 명령) | 101 | 같은 자리 32 로 문턱 초과 |
+| `cargo clippy --workspace --all-targets --no-default-features --locked` (`check-headless` 와 같은 명령) | 101 | 같은 자리 32 로 문턱 초과 |
+| `cargo clippy --workspace --all-targets --locked --target x86_64-pc-windows-msvc` (`check-windows` 의 대리) | **미측정** | 이 머신에서는 `libsqlite3-sys` · `mlua-sys` 빌드 스크립트에서 멈춘다. 위 "못 본다" 는 clippy 실측이 아니라 cargo tree 의 feature 집합에서 나온 추론이다 |
+
+**그래서 "`-p` 로 초록이면 push 에서도 초록인가" 의 답은 아니다.** lane 에서 push 의 모수로
+미리 재는 법:
+
+```bash
+cargo tree --workspace -e features -i tracing \
+  | grep -A1 'tracing feature "log"'        # 이 갈림이 지금 있는가 — 비면 없다
+cargo clippy -p <크레이트> --all-targets --features tracing/log \
+  -- -D clippy::correctness                 # 싼 쪽 — 이 한 갈래만 닫는다
+cargo clippy --workspace --all-targets \
+  -- -D clippy::correctness                 # push(B.4) 와 같은 모수
+```
+
+가운데 명령은 그 크레이트가 `tracing` 을 의존으로 가질 때만 받아들여지고, `tracing/log` 라는
+**알려진 한 갈래**만 맞춘다 — feature 통합이 만드는 다른 차이까지 맞추는 것은 마지막 명령
+하나다. 첫 명령이 비게 되면(워크스페이스에서 `tracing/log` 를 켜는 의존이 사라지면) 이 갈래의
+차이는 없어진다.
 
 ### 남은 것은 둘이고, 둘 다 **디스플레이를 요구한다** (2026-09-05 실측)
 
@@ -1936,7 +1988,10 @@ Linux gui 유닛 스텝이 붙은 뒤 모수를 다시 잡았다 — 술어가 �
 
 1. **`multi_window_owner_routing` 1 건** — `check-headless` 가 이름으로 `--skip` 한다
    (사유는 그 워크플로 주석). 이 하나가 "전체 스위트를 자동으로 올리면 새로 사는 것" 의
-   전부다. **Xvfb 아래에서는 통과한다**(실측 2.77s) — 디스플레이 없이는 기본 feature
+   전부다. ★ **이 칸은 "안 돈다" 가 아니라 "돌지만 차단하지 않는다" 다** — 같은 잡의
+   `cargo test (linux, gui, e2e — 관측용)` 스텝이 이 한 건을 Xvfb 아래에서 돌리고(`if: !cancelled()`),
+   `continue-on-error: true` 라 빨개져도 잡은 초록이다. 새로 사는 것은 실행이 아니라
+   **차단성**이다. **Xvfb 아래에서는 통과한다**(실측 2.77s) — 디스플레이 없이는 기본 feature
    e2e 하네스가 0.10s 만에 죽는다. 즉 이 칸은 *배선 불가*가 아니라 *디스플레이 비용*이다.
 
    그 `--skip` 의 사유는 **논증이 아니라 실측이다**(2026-09-06). headless 조합에서 그
@@ -2940,7 +2995,7 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 | pre-commit | 커밋되지 않는 티켓을 가리키는 인용 P1~P7 (T.1) | ✅ `doc-guards.yml` — **같은 타깃을 부른다**(`cargo test -p tasty-doc-guards --test no_todo_file_citation`). pre-push `B.7` 도 그 타깃을 포함한다 — 셋이 겹치는 것은 의도다: 커밋 · push · main/PR 은 서로 다른 자리고, 자동 채널 둘은 **push 된 커밋만** 본다. ★ 이 검사만 staged diff 가 아니라 **레포 전체 작업 트리**를 본다(가드의 좌변이 순회다) — 내가 안 건드린 파일이 범인일 수 있는 대신, staged 밖에 남은 죽은 인용도 같이 막힌다. 실측 2.0 s |
 | pre-push | plugin 의 **발행 판정** — `--range <원격 tip> <로컬 tip>` (B.9) | ✅ `plugin-version-check.yml` — **같은 스크립트를 같은 물음으로** 부른다. 모수도 같은 축이다: CI 는 `github.event.before`, 훅은 git 이 stdin 으로 준 원격 tip. 차이는 **시점** 하나다 — CI 는 push 된 뒤에 답하고 훅은 push 되기 전에 답한다. pre-commit `P.1` 과는 같은 스크립트지만 **다른 물음**이다(그쪽은 "내 커밋이 올렸나"). 모수를 못 정하면 통과가 아니라 실패다 |
 | pre-push | 공용 모수의 **트리 판정** — `scripts/check-population-freshness.sh --rev <로컬 tip>` (B.10) | **자동 채널 없음.** `crates/tasty-doc-guards/src/floored_walk.rs` 의 `populations::*` 가 그 tip 의 트리와 맞는지 묻는 자리는 이 훅뿐이다 — 어느 CI 잡도 이 스크립트를 안 부른다. 훅을 안 깐 체크아웃에는 이 채널이 없고, 그때 그 선언이 틀려도 **아무것도 안 운다**(`Floor::validate` 는 `min <= measured` 와 날짜 형식만 본다). ★ 모수가 **병합된 트리**여야 하는 축이다: lane 둘이 같은 모수에 파일을 하나씩 더하면 둘 다 같은 +1 값을 적고 git 이 충돌을 안 내며, 두 lane 의 트리에서는 각각 참이다. 실측 2026-09-20: 그 형태를 재현하면 lane 둘이 `통과` · 병합 트리가 `위반`(선언 451 · 트리 452)이었다. CI 로 옮기는 것은 가능하다 — 이 판정은 이력이 아니라 **트리 하나**만 읽으므로 `fetch-depth: 1` 에서도 돈다. 다만 그때는 push 된 뒤에 답한다 |
-| pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다 |
+| pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다. 그리고 이 훅은 Linux 트리의 feature 집합(`tracing/log` 가 켜진 쪽)으로 lint 를 센다 — Windows 잡은 그 갈림을 못 본다([크레이트를 지목한 clippy](#크레이트를-지목한-clippy-는-push-와-다른-feature-집합을-잰다)) |
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
 | pre-push | `cargo test -p tasty-doc-guards` | ✅ `doc-guards.yml` — **같은 크레이트를 부른다**. 훅은 push 하는 머신에서만 돌아 worker 머신엔 이 채널이 없다 |
