@@ -313,7 +313,7 @@ modifier-hint 는 0035(좁힘 + 지연) · 0038(빈 섹션) · 0064(타이머 �
 
 ## 웹훅 · 훅 핸들러
 
-남용차단은 0046 → 0195 → 0196 → 0197 → 0198 → 0199 → 0200 → 0281 이다. 각 ADR 이 다른 상수 · 타입 · 불변식(401 계수 · 출처 키 · 문턱 · 쿨다운 · `Screened` 타입 · body 상한)을 만들어 합치지 않는다. 훅 핸들러는 0047 → 0298 · 0430(병합 순서) · 0498(훅 스텝의 대기 스레드)이다.
+남용차단은 0046 → 0195 → 0196 → 0197 → 0198 → 0199 → 0200 → 0281 이다. 각 ADR 이 다른 상수 · 타입 · 불변식(401 계수 · 출처 키 · 문턱 · 쿨다운 · `Screened` 타입 · body 상한)을 만들어 합치지 않는다. 훅 핸들러는 0047 → 0298 · 0430(병합 순서) · 0498(훅 스텝의 대기 스레드) → 0515(수동 발화도 같은 실행기)이다.
 운영 문서: [features/webhook](../features/webhook/index.md) · [features/hooks](../features/hooks/index.md)
 
 | # | Title | Status | Date | Tags |
@@ -331,6 +331,7 @@ modifier-hint 는 0035(좁힘 + 지연) · 0038(빈 섹션) · 0064(타이머 �
 | 0298 | [훅 핸들러 시퀀스는 CLI 에서 제자리로 고친다 — 지우고 다시 만들지 않는다](0298-a-hook-handler-sequence-is-edited-in-place-from-the-cli.md) | Accepted | 2026-09-20 | hook-handler, cli, ipc, registry, ipc-sequence, local-only, settings, adr-0046, adr-0047 |
 | 0430 | [hook handler 병합은 출처 순서(Host → Plugin → User)로 하고 user patch 를 늘 마지막에 둔다 — ADR-0047 의 병합 순서 조항 개정](0430-hook-handler-merge-applies-user-patches-last.md) | Accepted | 2026-09-21 | hook-handler, registry, plugin, settings, boot, headless, patch-semantics, adr-0047, adr-0427 |
 | 0498 | [surface 훅의 IpcSequence 는 호스트 명령 큐를 비우는 스레드 밖에서 실행한다](0498-a-surface-hook-sequence-runs-off-the-thread-that-drains-the-queue.md) | Accepted | 2026-09-23 | hooks, hook-handler, ipc, host-injection, main-thread, concurrency, adr-0451 |
+| 0515 | [수동 발화한 훅 시퀀스는 surface 훅과 같은 실행기에 줄 선다 — ADR-0498 의 수동 발화 조항 개정](0515-a-manually-dispatched-hook-sequence-joins-the-surface-hook-worker.md) | Accepted | 2026-09-23 | hooks, hook-handler, ipc, concurrency, logging, adr-0498 |
 
 ## plugin 시스템 — 경계 · namespace · 수명
 
