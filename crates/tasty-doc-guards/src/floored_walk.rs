@@ -193,10 +193,17 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 611,
-        measured_on: "2026-09-21",
+        measured: 632,
+        measured_on: "2026-09-22",
         counted_on: super::CountedOn::Tree(
-            "62f7a86d8 — 같은 트리에서 다시 셌다. 610 -> 611 이고 더해진 것은 \
+            "86d08cc85 — 여러 lane 이 착지한 main 트리에서 다시 셌다. 선언 611 이 이 트리의 \
+             632 와 어긋나 push 가 pre-push B.10 에서 막혔다 — 각 lane 이 자기 base 에서 \
+             이 항을 안 건드린 채 파일을 더한 형태다. `62f7a86d8` 의 추적 트리는 610 이고(611 \
+             은 아래 `src/file/picker_caps.rs` 가 든 lane 트리의 값이다) 거기서 더해진 것 26 · \
+             빠진 것 4 다. 빠진 넷은 `src/adapters/production/stream_hub.rs` · \
+             `src/core/file_origin_tests.rs` · `src/plugin_bridge/egui_mesh_surface.rs`(같은 \
+             이름이 `src/core/` 에 더해졌다) · `src/state/mark.rs` 다. \
+             이전 회차: 62f7a86d8 — 같은 트리에서 다시 셌다. 610 -> 611 이고 더해진 것은 \
              `src/file/picker_caps.rs` 하나(component 층 토큰을 뷰 밖에서 읽는 자리), \
              삭제는 0 이다. 이전 회차: 5120fcda1 — 앞 회차 lane 착지(층 1·2)를 담은 트리에서 다시 셌다. 607 → 610, 신규 \
              파일 3 개(`src/app/attach_client/dispatch.rs` · 그 아래 `debug_completion.rs` · \
@@ -223,20 +230,24 @@ pub mod populations {
         ),
         how: "`src/` 를 뿌리로 `SkipBuildCaches` 순회하고 `rel` 이 `.rs` 로 끝나는 것 전부. \
               재는 법: `git ls-tree -r --name-only <rev>` 에서 `src/` 로 시작하고 `.rs` 로 \
-              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-21 재확인: 작업 \
-              트리를 `find` 로 센 607 과 추적 트리 계수 607 이 같았다. 623 · 645 였을 \
+              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-22 재확인: 작업 \
+              트리를 `find` 로 센 632 와 추적 트리 계수 632 가 같았다. 607 · 623 · 645 였을 \
               때도, 2026-09-08 에도 같았다). \
               같은 좌변을 `scripts/check-intent-discipline.sh` 가 자기 실패문에 \
               `좌변(src/) 의 .rs N개` 로 찍으므로 **대조가 공짜다** — 두 수가 갈리면 술어가 \
-              갈린 것이다(2026-09-21: 둘 다 607).",
+              갈린 것이다(2026-09-22: 둘 다 632).",
     };
 
     /// 루트 패키지의 통합 테스트 타깃 — `tests/` 바로 아래 한 겹.
     pub const ROOT_TEST_TARGETS: Population = Population {
-        measured: 42,
-        measured_on: "2026-09-21",
+        measured: 43,
+        measured_on: "2026-09-22",
         counted_on: super::CountedOn::Tree(
-            "62f7a86d8 — 같은 트리에서 다시 셌다. 41 -> 42 이고 더해진 것은 \
+            "86d08cc85 — 여러 lane 이 착지한 main 트리에서 다시 셌다. 42 -> 43 이고 더해진 \
+             것은 `tests/attach_structure_sync_loopback.rs` 하나(`5a6c6b810`, attach 구조 동기화 \
+             lane), 삭제는 0 이다. 그 lane 이 이 항을 안 건드려 push 가 pre-push B.10 에서 \
+             막혔다. \
+             이전 회차: 62f7a86d8 — 같은 트리에서 다시 셌다. 41 -> 42 이고 더해진 것은 \
              `tests/file_handler_when_fits_column.rs` 하나, 삭제는 0 이다. \
              이전 회차: 65bcd1988 — CLI 도움말 현지화 lane 이 착지한 트리에서 다시 셌다. 40 -> 41 이고 \
              더해진 것은 `tests/cli_help_locales.rs` 하나, 삭제는 0 이다. \
@@ -314,10 +325,15 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 502,
-        measured_on: "2026-09-21",
+        measured: 558,
+        measured_on: "2026-09-22",
         counted_on: super::CountedOn::Tree(
-            "c81b7454b — headless 정의 경계 회차가 문서 둘을 들여왔다. 500 -> 502 이고 \
+            "86d08cc85 — 여러 lane 이 착지한 main 트리에서 다시 셌다. 502 -> 558 이고 삭제는 \
+             0 이라 **감소 0 이 이어졌다.** 더해진 56 중 55 가 `docs/adr/`(0350~0490 사이)이고 \
+             하나가 `docs/dev-guide/app-state-ownership.md` 다. 아래 이력이 여덟 번 적은 형태가 \
+             아홉 번째로 났다 — lane 마다 ADR 을 더하면서 아무도 자기 base 에서 이 항을 안 \
+             건드렸고, 이번에는 pre-push B.10 이 병합된 트리에서 그것을 잡았다. \
+             이전 회차: c81b7454b — headless 정의 경계 회차가 문서 둘을 들여왔다. 500 -> 502 이고 \
              삭제는 0 이다(`docs/adr/0346-headless-compiles-only-what-it-reaches.md` 와 \
              `docs/dev-guide/headless-build-boundaries.md`). ★ 아래 이력에 적힌 `0346` 은 \
              **다른 문서**다 — 그 번호를 달고 있던 것은 e2e 디스플레이 결정의 중복 사본이라 \
