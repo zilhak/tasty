@@ -228,7 +228,9 @@ arm 시점 이후만 받게 한다. `persistent: true` 로 세션 내내 열려 
   보고하지 않는가). 재개 reader 계약은 같은 `mod tests` 의 참조 reader `resume` 으로 잰다 —
   `a_resuming_reader_is_told_exactly_how_many_bytes_it_lost`(고유 표식으로 중지/재개 대조) ·
   `under_concurrent_writers_read_plus_skipped_equals_written`(동시 writer 에서 받은 바이트 +
-  `skipped` = 쓴 바이트, 잠금을 빼면 깨진다) · `retention_start_accumulates_what_every_truncation_threw_away`
+  `skipped` = 쓴 바이트. 확률적 채널이라 잠금을 빼도 한 번 실행에 약 30~40% 만 깨진다 — 검출률
+  실측과 재는 법은 [ADR-0415](../../adr/0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md)
+  의 Consequences) · `retention_start_accumulates_what_every_truncation_threw_away`
   · `an_unaccounted_truncation_is_reported_as_unknown_loss`. **`tracing` 출력 자체에는 채널이 없다** — `tasty-utils` 는 구독자를
   갖지 않는 leaf crate 라, 그 줄이 실제로 나가는지는 호스트를 띄워 plugin 로그에서
   확인한다(ADR-0344 의 재검토 조건 절).

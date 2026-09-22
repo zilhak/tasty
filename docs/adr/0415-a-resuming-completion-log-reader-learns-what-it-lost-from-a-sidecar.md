@@ -98,7 +98,14 @@
 - **얻은 것**: 재개하는 reader 가 "잃었나 / 얼마나" 를 값으로 안다. 그 수는 동시 writer 가
   있어도 정확하다. 시험 `under_concurrent_writers_read_plus_skipped_equals_written` 이 이를
   잰다: writer 6 개가 cap 512 에서 쓰는 동안 reader 가 재개를 반복하고, 끝에 **받은 바이트 +
-  skipped = 쓴 바이트** 를 확인한다. 공유 잠금을 빼면 이 시험이 3/3 깨졌다.
+  skipped = 쓴 바이트** 를 확인한다. **이 채널은 확률적이다** — 공유 잠금을 빼도 한 번 실행에
+  약 30~40% 만 깨진다(변이 = `append_line_to` 의 `_shared` 줄 제거, 한 번 빌드 뒤 30 회 실행:
+  12/30 · 9/30, 2026-09-22 두 사람 실측). 그래서 이 시험의 초록 한 번은 잠금이 있다는 증거가
+  아니다. 재는 법: 그 줄을 지우고 `cargo test -p tasty-utils --lib --locked --no-run` 으로 한 번
+  빌드한 뒤, 찍힌 `target/debug/deps/tasty_utils-<hash>` 를
+  `--exact notify::tests::under_concurrent_writers_read_plus_skipped_equals_written` 로 30 회
+  돌려 `test result: FAILED` 줄을 센다(매 회 `1 passed` 또는 `1 failed` 인지 함께 본다 — 이름이
+  어긋나면 0 건이 돈다).
 - **얻은 것**: `tail -n0 -F` 소비자, 줄 문구, 경로 규약이 하나도 안 바뀐다. 메타 파일을 모르는
   reader 는 예전 그대로 동작한다.
 - **잃은 것**: `notify/` 에 파일이 surface 마다 하나 더 생긴다(37 바이트 — `retention_start=` 16 + 값 20 + 개행 1). `notify/*` 를
@@ -145,7 +152,13 @@
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
 - 누계가 정확하지 않게 되면(잠금이 빠지거나, 비우기가 누계 밖에서 일어나면)
-  `notify::tests::under_concurrent_writers_read_plus_skipped_equals_written` 이 빨개진다.
+  `notify::tests::under_concurrent_writers_read_plus_skipped_equals_written` 이 빨개질 수 있다
+  — **확률적 채널**이다: 잠금을 빼도 한 번 실행에 약 30~40% 만 빨개진다(검출률과 재는 법은 위
+  Consequences 의 첫 "얻은 것"). 초록 한 번으로 잠금이 있다고 판정하지 않는다.
+- Windows 러너에서 같은 시험이 reader 휴지(재개 사이에 잠금 밖에서 `EXCLUSIVE_LOCK_RETRY` 만큼
+  쉰다) 뒤에도 빨갛다 — append 공유 구간(`OpenOptions::open` 포함)을 Windows 에서 재서 수백 µs
+  면 `notify.rs` 의 `EXCLUSIVE_LOCK_BUDGET` doc 이 말하는 "writer 끼리의 경합으로는 상한에 닿지
+  않는다" 를 재판정한다. 채널은 CI `crossplatform-check` 의 `check-windows` 잡이다.
 - 누계가 더해지지 않고 덮어써지면
   `notify::tests::retention_start_accumulates_what_every_truncation_threw_away` 가 빨개진다.
 - 배타 잠금이 다시 블로킹이 되면(공유 잠금을 쥔 reader 가 비우는 writer 를 세우면)
