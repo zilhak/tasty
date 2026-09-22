@@ -65,8 +65,12 @@ fn sdk() {
     );
     assert_eq!(catalog.t("launch.fallback"), "English fallback");
     assert_eq!(catalog.t("launch.empty"), "Installed empty fallback");
+    // 두 쪽을 모두 canonicalize 한다. 한쪽만 하면 Windows 에서 `\\?\` verbatim 접두가 그쪽에만
+    // 붙어 같은 디렉토리가 다르게 보인다(`current_dir` 은 접두 없는 `C:\…` 를 돌려준다).
+    // macOS 의 `/var` → `/private/var` 처럼 임시 경로가 symlink 를 거치는 경우를 흡수하려는
+    // 원래 의도는 그대로다.
     assert_eq!(
-        std::env::current_dir().unwrap(),
+        std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap(),
         std::fs::canonicalize(std::env::var_os("INSTALL_CWD").unwrap()).unwrap()
     );
 }
