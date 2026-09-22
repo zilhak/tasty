@@ -91,6 +91,10 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     // 된다. 그 대가로 격리 홈이 커진다.
     "tests/attach_markdown_content_loopback.rs",
     "tests/attach_silent_disconnect.rs",
+    // forward 가 아닌 원인의 구조 변경 역반영(ADR-0481)과 사라진 anchor 의 회신(ADR-0482).
+    // 검증 대상이 서버와 holder 사이의 **실제 attach 스트림**이라 루프백 attach 로 두
+    // 끝(서버 인스턴스 + 붙는 client)이 필요하다 — 위 attach 가족과 같은 이유로 별도 binary 다.
+    "tests/attach_structure_sync_loopback.rs",
     "tests/e2e_tests.rs",
     "tests/gui_tests.rs",
     "tests/hook_env_integration.rs",
@@ -419,7 +423,10 @@ fn daemon_kind_roster_matches_instance_test_roster() {
 
     // 조합 의존 단언을 가져 자기 조합의 데몬이 필요한 것들. `gui_tests` 는 이 경로를
     // 아예 안 쓰지만(BIN_SELECTION_ALLOWLIST) 데몬이 gui 여야 하는 것은 같다.
-    let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests"]
+    // `attach_structure_sync_loopback` 은 조합 의존 단언이 없지만 HeadlessOk 로 올릴지는
+    // 아직 판정하지 않았다 — 런타임 `daemon_kind()` 도 명부에 없으면 SameCombo 로 떨어지므로,
+    // 여기에 두는 것이 실제 분류를 그대로 적는 것이다(최적화 누락은 안전한 쪽).
+    let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests", "attach_structure_sync_loopback"]
         .iter()
         .map(|s| (*s).to_string())
         .collect();
