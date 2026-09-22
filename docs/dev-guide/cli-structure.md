@@ -96,7 +96,16 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 ## 진입점 (`run.rs`)
 
 `run_client` 는 갈래를 묻고 `ClientDriven` 이면 넘긴 뒤, 나머지 단발 RPC 경로
-(포트 파일 읽기 → 연결 → 요청 → 출력, `auto_wait` 폴링 포함)만 직접 수행한다.
+(요청 매핑 → 포트 파일 읽기 → 연결 → 계약 확인 → 전송 → 출력, `auto_wait` 폴링 포함)만 직접 수행한다.
+
+**요청 매핑(`request/`)은 연결보다 먼저다.** 매핑은 서버 없이 끝나는 검증(깨진 JSON 인자 ·
+없는 `--cwd` 등)이라, 실패하면 그 자리에서 원인을 stderr 에 내고 종료한다 — 인스턴스가 없어도
+사용자는 "실행 중인 인스턴스가 없다" 가 아니라 자기 인자의 잘못을 받고, 호스트에는 아무것도
+안 보낸 빈 연결이 생기지 않는다. 서버의 값이 있어야 하는 확인(계약 확인 `contract::ensure`)만
+연결 뒤에 남는다. plugin 동적 명령(`try_run_plugin_cli`)도 같은 순서다. 그래서 인스턴스가 없을
+때의 종료 코드도 그 인자 오류의 값이다(근거·대안은
+[ADR-0542](../adr/0542-the-cli-judges-request-arguments-before-connecting-and-exits-with-their-code.md)).
+시험은 `tests/cli_maps_args_before_connecting.rs`.
 
 ## stdout 출력 (`out.rs`)
 
@@ -119,9 +128,10 @@ stderr 는 같은 모듈의 `errln!` 으로만 쓴다(`eprintln!` 금지). 쓰�
 모두 `rpc_error::exit_with` 하나로 stderr 에 내고 종료 코드 1 로 끝난다. 첫 줄은
 `Error (<code>): <message>` 이고, 응답에 `error.data` 가 있으면(`null` 제외) 둘째 줄
 `data: <한 줄 JSON>` 이 원형 그대로 붙는다 — `reason` · `storage_failure` 같은 실패 분류를
-CLI 호출자도 IPC 와 같은 값으로 얻는다. 예외는 스트리밍 두 명령(`events follow` ·
-`plugin audit-follow`)이다 — 호스트 오류를 `main` 까지 올려 std 가 `Error: Error (…)` 한 줄로
-찍으므로 **아직 `data` 를 싣지 않는다.** 근거는
+CLI 호출자도 IPC 와 같은 값으로 얻는다. 스트리밍 두 명령(`events follow` ·
+`plugin audit-follow`)은 호스트 오류를 `main` 까지 올려 std 가 찍으므로 첫 줄이
+`Error: Error (…)` 다 — 그 접두를 지키려고 `exit_with` 대신 `rpc_error::with_data_line` 으로
+올라가는 값의 문구만 같은 두 줄로 바꾼다. 근거는
 [ADR-0512](../adr/0512-the-cli-relays-ipc-error-data-on-a-second-stderr-line.md).
 
 ## `debug` 갈래
