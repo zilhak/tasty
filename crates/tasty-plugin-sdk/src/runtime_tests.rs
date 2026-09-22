@@ -5,6 +5,7 @@
 #![allow(clippy::type_complexity)]
 
 use super::*;
+use crate::error::PluginError;
 use crate::plugin::{IpcMethodCtx, IpcMethodError, SurfaceResult};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -543,6 +544,17 @@ fn run_against_fake_host() -> (
     std::io::BufReader<TcpStream>,
     mpsc::Receiver<std::result::Result<(), String>>,
 ) {
+    run_plugin_against_fake_host(HostKeeper { kept: None })
+}
+
+/// [`run_against_fake_host`] 의 본체 — 붙일 plugin 을 받는다.
+fn run_plugin_against_fake_host<P: Plugin + Send + 'static>(
+    plugin: P,
+) -> (
+    TcpStream,
+    std::io::BufReader<TcpStream>,
+    mpsc::Receiver<std::result::Result<(), String>>,
+) {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
     let env = PluginEnv {
@@ -560,7 +572,7 @@ fn run_against_fake_host() -> (
     };
     let (done_tx, done_rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let r = run_with_env(HostKeeper { kept: None }, &env).map_err(|e| e.to_string());
+        let r = run_with_env(plugin, &env).map_err(|e| e.to_string());
         if done_tx.send(r).is_err() {
             tracing::debug!("test already gave up waiting for run_with_env");
         }
@@ -610,5 +622,137 @@ fn run_returns_after_host_closes_even_when_plugin_keeps_host_handle() {
     let outcome = done_rx
         .recv_timeout(std::time::Duration::from_secs(1))
         .expect("run did not return within 1 s of the host closing the connection");
+    assert_eq!(outcome, Ok(()));
+}
+
+/// ipc 메서드를 받으면 host 를 한 번 부르고, 그 결과(에러 표시)를 시험에 넘기는 plugin.
+struct HostCaller {
+    outcomes: mpsc::Sender<std::result::Result<Value, String>>,
+}
+
+impl Plugin for HostCaller {
+    fn id(&self) -> &str {
+        "test.caller"
+    }
+    fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
+        SurfaceResult::default()
+    }
+    fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
+        let outcome = ctx
+            .host
+            .call("host.anything", json!({}))
+            .map_err(|e| e.to_string());
+        if self.outcomes.send(outcome).is_err() {
+            tracing::debug!("test stopped listening for host call outcomes");
+        }
+        Ok(Value::Null)
+    }
+}
+
+fn send_line(stream: &mut TcpStream, req: &PluginRequest) {
+    writeln!(stream, "{}", serde_json::to_string(req).unwrap()).unwrap();
+    stream.flush().unwrap();
+}
+
+/// shutdown 앞에 쌓인 요청이 host 를 부르면, 결과를 읽어 줄 recv 루프가 이미 끝나
+/// 있다. 그 call 이 [`HostHandle::timeout`](60 s)까지 서면 `run` 도 서고 호스트가
+/// 2 s 뒤 강제 종료한다 — 그러지 말고 "호스트가 떠났다" 로 곧바로 돌아와야 한다.
+///
+/// 두 갈래를 함께 본다: 루프가 끝날 때 **이미 기다리던** call(첫 요청)과, 끝난 **뒤에**
+/// 시작한 call(둘째 요청 — worker 가 Stop 앞에서 처리한다).
+#[test]
+fn host_calls_left_at_shutdown_fail_fast_instead_of_timing_out() {
+    let (outcome_tx, outcome_rx) = mpsc::channel();
+    let (mut stream, mut reader, done_rx) = run_plugin_against_fake_host(HostCaller {
+        outcomes: outcome_tx,
+    });
+    send_line(
+        &mut stream,
+        &PluginRequest::new(
+            METHOD_IPC_INVOKE,
+            invoke_params("test.caller.first", json!({}), None),
+            1,
+        ),
+    );
+    // worker 가 host 를 불렀다(IpcCall 이 나왔다) — 이 call 은 이제 결과를 기다린다.
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    assert!(
+        line.contains("ipc_call"),
+        "expected the host call, got {line}"
+    );
+    send_line(
+        &mut stream,
+        &PluginRequest::new(
+            METHOD_IPC_INVOKE,
+            invoke_params("test.caller.second", json!({}), None),
+            2,
+        ),
+    );
+    send_line(
+        &mut stream,
+        &PluginRequest::new(METHOD_SHUTDOWN, json!({}), 3),
+    );
+
+    let wait = std::time::Duration::from_secs(1);
+    for which in [
+        "first (waiting at shutdown)",
+        "second (started after shutdown)",
+    ] {
+        let outcome = outcome_rx
+            .recv_timeout(wait)
+            .unwrap_or_else(|_| panic!("the {which} host call did not return within 1 s"));
+        assert_eq!(
+            outcome,
+            Err(PluginError::HostClosed.to_string()),
+            "the {which} host call should report that the host left"
+        );
+    }
+    let outcome = done_rx
+        .recv_timeout(wait)
+        .expect("run did not return within 1 s of the shutdown request");
+    assert_eq!(outcome, Ok(()));
+    drop(stream);
+}
+
+/// 요청 한 줄이 read timeout(50 ms)보다 긴 간격으로 조각나 도착해도 처리돼야 한다.
+/// 자르는 자리는 멀티바이트 문자 한가운데 — `read_line` 이라면 앞 조각이 UTF-8 검사로
+/// 지워지는 갈래다. 줄이 깨지면 요청이 버려져 응답이 오지 않는다.
+#[test]
+fn run_handles_a_request_line_split_across_read_timeouts() {
+    let (mut stream, mut reader, done_rx) = run_against_fake_host();
+    let req = PluginRequest::new(METHOD_PING, json!({ "note": "한글 조각" }), 77);
+    let bytes = format!("{}\n", serde_json::to_string(&req).unwrap()).into_bytes();
+    let cut = bytes
+        .iter()
+        .position(|b| *b >= 0x80)
+        .expect("the line carries a multibyte character")
+        + 1;
+    stream.write_all(&bytes[..cut]).unwrap();
+    stream.flush().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    stream.write_all(&bytes[cut..]).unwrap();
+    stream.flush().unwrap();
+
+    reader
+        .get_ref()
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .unwrap();
+    let mut resp = String::new();
+    reader
+        .read_line(&mut resp)
+        .expect("no response to the split request within 2 s");
+    assert!(
+        resp.contains("\"id\":77"),
+        "response to the split request expected, got {resp}"
+    );
+
+    send_line(
+        &mut stream,
+        &PluginRequest::new(METHOD_SHUTDOWN, json!({}), 78),
+    );
+    let outcome = done_rx
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .expect("run did not return after shutdown");
     assert_eq!(outcome, Ok(()));
 }

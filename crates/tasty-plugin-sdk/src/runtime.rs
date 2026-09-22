@@ -11,6 +11,8 @@
 //!
 //! shutdown 요청은 메인이 즉시 ack 보내고, 메인 루프를 빠져나오면 worker 큐에
 //! [`WorkerItem::Stop`] 을 넣는다 — worker 는 그 앞에 쌓인 요청까지 처리한 뒤 멈춘다.
+//! 그 요청들이 부르는 host call 은 결과를 읽어 줄 루프가 없으므로 기다리지 않고
+//! [`crate::PluginError::HostClosed`] 를 받는다([`HostHandle::fail_pending_calls`]).
 //! 큐가 닫히기를 기다리지 않는 이유는 `Stop` 의 문서를 본다.
 
 use std::collections::HashMap;
@@ -137,17 +139,22 @@ fn run_with_env<P: Plugin>(plugin: P, env: &PluginEnv) -> Result<()> {
         .name("plugin-worker".into())
         .spawn(move || worker_loop(plugin, req_rx, worker_writer, worker_host))?;
 
-    // 메인 recv loop.
+    // 메인 recv loop. 줄 버퍼는 루프 밖에 둔다 — read timeout 이 줄 중간에 걸리면
+    // `read_until` 은 이미 소비한 앞부분을 버퍼에 남긴 채 에러를 돌려주므로, 다음 회가 그
+    // 뒤에 이어 붙여야 줄이 온전하다. 매 회 새 버퍼를 만들면 앞부분이 사라져 요청 하나가
+    // 통째로 깨진다. `String` 이 아니라 바이트인 이유: `read_line` 은 문자 중간에서 끊긴
+    // 조각을 UTF-8 검사로 **지워** 버린다.
+    let mut line_buf: Vec<u8> = Vec::new();
     loop {
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
+        match reader.read_until(b'\n', &mut line_buf) {
             Ok(0) => break, // host closed
             Ok(_) => {
-                let trim = line.trim();
+                let line = std::mem::take(&mut line_buf);
+                let trim = line.trim_ascii();
                 if trim.is_empty() {
                     continue;
                 }
-                let req: PluginRequest = match serde_json::from_str(trim) {
+                let req: PluginRequest = match serde_json::from_slice(trim) {
                     Ok(r) => r,
                     Err(e) => {
                         tracing::warn!("unparseable host line: {e}");
@@ -198,6 +205,8 @@ fn run_with_env<P: Plugin>(plugin: P, env: &PluginEnv) -> Result<()> {
             }
         }
     }
+    // 이제 `ipc.result` 를 읽을 스레드가 없다 — host 를 기다리는 worker 를 깨운다.
+    host.fail_pending_calls();
     // 큐를 닫는 것으로는 worker 가 안 멈춘다 — `WorkerItem::Stop` 문서 참고. send 가
     // 실패하면 worker 가 이미 끝나 receiver 가 없는 것이라 join 이 곧바로 돌아온다.
     if req_tx.send(WorkerItem::Stop).is_err() {
