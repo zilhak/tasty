@@ -38,6 +38,12 @@ e2e 하네스는 `CARGO_BIN_EXE_tasty` 를 띄운다 — 테스트 자신과 같
 
 **그리고 기본으로 켜지 않는다.** `TASTY_E2E_BIN` 미설정이 기존 동작이므로, 배선을 안 하면 아무것도 바뀌지 않는다. 위 두 측정(이득 ~4 초 대 비용 25~113 초, 회차 안 spawn 타임아웃 0/418)이 지금 켤 근거가 되지 못한다.
 
+### 보강 (2026-09-23) — "조합 의존 단언" 은 데몬 쪽 갈림도 포함한다
+
+위 판정의 좌변은 테스트 파일의 `cfg(feature = "gui")` 사이트로 셌다. 그것으로 안 보이는 갈래가 하나 있다: 테스트 쪽 단언은 하나인데 **그 단언의 대상이 데몬 조합마다 다른 코드 경로**인 스위트다. `tests/attach_structure_sync_loopback.rs` 가 그 형태다 — forward 회신을 gui 데몬은 `apply_forwarded_structural_op`, 헤드리스 데몬은 `apply_structural_ops` 로 만들고([ADR-0482](0482-a-forward-naming-a-gone-surface-is-answered-like-ipc.md)), 테스트와 `tests/attach_common` 의 `cfg(feature` 사이트는 0 이다.
+
+그런 스위트도 `SameCombo` 다. 헤드리스 데몬을 받으면 초록은 그대로인데 gui 완주가 헤드리스 호출측을 한 번 더 잴 뿐이다. 실측(2026-09-23): gui 호출측이 `unresolved_forward_reason` 대신 고정 문구를 싣게 하는 변이에서 `a_forward_naming_a_gone_surface_is_answered_like_ipc` 가 `SameCombo` 로는 FAILED 이고, `HEADLESS_OK_SUITES` 에 임시로 넣고 `TASTY_E2E_BIN` 헤드리스 데몬으로는 **passed** 였다. 변이 없이는 두 경우 모두 통과했다 — 통과만으로는 이 분류를 가를 수 없다. 명부 정합 가드(`tests/e2e_single_instance_guard.rs` 의 `same_combo`)가 이 스위트를 그 이유와 함께 적는다.
+
 ### 판정 불가를 통과시키는 이유
 
 `source_newer_than` 은 **mtime 을 못 읽는 경로를 "새것 아님" 으로 넘긴다.** "못 읽었다" 와 "안 낡았다" 는 다른 사건인데 같은 처리를 받는다 — 그것을 알고 고른 것이다. 이 판정의 목적은 **낡은 것을 잡는 것**이지 파일시스템을 검사하는 것이 아니고, 판정 불가를 빨강으로 만들면 권한·심볼릭 링크·경쟁 삭제 같은 환경 차이가 곧바로 거짓 빨강이 된다. 두 오류의 비대칭이 근거다: 놓친 낡음은 **다음 빌드에서 다시 걸리지만**, 거짓 빨강은 그 자리에서 사람을 세운다. 반대로 바꾸려면 먼저 "못 읽는 경로가 실제로 얼마나 나오는가" 를 재야 한다.

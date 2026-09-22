@@ -257,11 +257,17 @@ const HEADLESS_OK_SUITES: &[&str] = &[
 /// 확장되고(실측), 이 모듈은 각 테스트 바이너리에 함께 컴파일되므로 스위트마다
 /// 다른 값이 된다.
 ///
-/// **`e2e_tests` 만 [`DaemonKind::SameCombo`] 다.** 실측 2026-09-05: 인스턴스를 띄우는
-/// 11 스위트 중 `cfg(feature = "gui")` 계열 사이트를 가진 것은 `e2e_tests.rs` 하나였고
-/// (10 사이트), 나머지 10 개는 각 0 이었다. 실행 쪽 확인도 있다 —
-/// `docs/dev-guide/e2e-tests.md` §0-1 이 gui 테스트 바이너리 + 헤드리스 데몬으로
-/// 11 스위트를 돌려 10 개가 통과하고 `e2e_tests` 만 깨진 것을 기록해 두었다.
+/// 명부 밖(= [`DaemonKind::SameCombo`])은 두 갈래다.
+///
+/// * 테스트 쪽 단언이 조합으로 갈린다 — `e2e_tests`. 실측 2026-09-05: 인스턴스를 띄우는
+///   11 스위트 중 `cfg(feature = "gui")` 계열 사이트를 가진 것은 `e2e_tests.rs` 하나였다.
+///   `docs/dev-guide/e2e-tests.md` §0-1 이 gui 테스트 바이너리 + 헤드리스 데몬으로 그
+///   11 스위트를 돌려 `e2e_tests` 만 깨진 것을 기록해 두었다.
+/// * 단언은 하나인데 **데몬 쪽**이 조합마다 다른 호출측을 잰다 —
+///   `attach_structure_sync_loopback`(ADR-0482 의 forward 회신: gui 데몬과 헤드리스 데몬이
+///   서로 다른 함수로 만든다). `cfg(feature` 를 세는 것으로는 안 보인다. 헤드리스 데몬을
+///   받으면 초록은 그대로인데 gui 호출측을 안 잰다(실측 2026-09-23, ADR-0170 보강).
+///
 /// `gui_tests` 는 애초에 이 경로를 안 쓴다(`BIN_SELECTION_ALLOWLIST`).
 pub fn daemon_kind() -> DaemonKind {
     if HEADLESS_OK_SUITES.contains(&env!("CARGO_CRATE_NAME")) {
@@ -1803,6 +1809,76 @@ pub fn bundle_staging_note() -> String {
         .parent()
         .and_then(|dir| staged_bundle_note(dir, suite_calls_bundled_plugins()))
         .unwrap_or_default()
+}
+
+/// [`apply_os_open_record`] 가 `home` 아래에 만드는 기록 파일 이름.
+pub const OS_OPEN_LOG_FILE: &str = "os-open.log";
+
+/// 자식이 OS 열기(브라우저 · 파일 관리자)를 **띄우지 않고** `<home>/`[`OS_OPEN_LOG_FILE`] 에 기록만
+/// 하게 한다. 돌려주는 경로가 그 기록 파일이다.
+///
+/// 격리 홈도 전용 디스플레이도 이 축을 못 막는다 — 브라우저는 이미 떠 있는 자기 인스턴스에
+/// URL 을 넘기는 원격 제어 채널을 가져서, 시험 인스턴스가 연 것이 **실행자의 브라우저 탭**
+/// 으로 나타난다(ADR-0511). 스위치는 제품의 debug 격리라 release 로 지은 자식은 무시한다
+/// — 그래서 이름을 문자열로 옮겨 적지 않고 제품 상수를 그대로 쓴다.
+///
+/// 스위치는 host 프로세스 안의 OS 열기만 덮는다. 번들 plugin 은 `tasty-platform` 을 링크하지
+/// 않고 자기 프로세스에서 `webbrowser::open` 을 직접 부르므로(markdown 의 외부 링크), 그 자리는
+/// 가짜 `BROWSER`([`apply_fake_browser`])가 막는다 — 같은 기록 파일에 `BROWSER\t<인자>` 로 남는다.
+pub fn apply_os_open_record(
+    command: &mut std::process::Command,
+    home: &std::path::Path,
+) -> std::path::PathBuf {
+    let log = home.join(OS_OPEN_LOG_FILE);
+    #[cfg(debug_assertions)]
+    command.env(tasty_platform::debug_os_open::ENV, &log);
+    apply_fake_browser(command, home);
+    log
+}
+
+/// [`apply_fake_browser`] 가 `home` 아래에 쓰는 가짜 브라우저 스크립트 이름.
+pub const FAKE_BROWSER_FILE: &str = "os-open-browser.sh";
+
+/// 자식(과 그 자식인 plugin)의 `BROWSER` 를 받은 인자를 [`OS_OPEN_LOG_FILE`] 에 적기만 하는
+/// 스크립트로 준다. 아무것도 열지 않는다.
+///
+/// `webbrowser` 는 unix(macOS 제외)에서 `BROWSER` 를 먼저 보고, 그 명령이 성공하면 거기서
+/// 멈춘다 — 그래서 여기서 막히는 것은 **Linux·BSD 의 `webbrowser` 경로뿐**이다. macOS·Windows
+/// 의 plugin 쪽 열기는 이것으로 안 막힌다(ADR-0511). 빌드 프로필과 무관하게 준다 — 제품
+/// 스위치가 없는 release 자식도 Linux 에서는 이것으로 막힌다.
+///
+/// 빈 `BROWSER=` 는 막지 않는다 — `webbrowser` 가 빈 항목을 건너뛰고 xdg desktop entry 를
+/// 직접 실행한다. 그래서 경로가 `BROWSER` 문법(공백·`:` 로 가른다)에 안 맞으면 `true` 로
+/// 떨어진다 — 기록은 없지만 여전히 아무것도 안 연다. 스크립트를 못 쓰면 하네스가 선다.
+pub fn apply_fake_browser(command: &mut std::process::Command, home: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        let script = write_fake_browser(home).expect("write fake BROWSER script");
+        let value = match script.to_str() {
+            Some(s) if !s.contains(|c: char| c == ':' || c.is_whitespace()) => s,
+            _ => "true",
+        };
+        command.env("BROWSER", value);
+    }
+    #[cfg(not(unix))]
+    {
+        // `webbrowser` 가 `BROWSER` 를 읽지 않는 플랫폼 — 줄 것이 없다.
+        let _ = (command, home);
+    }
+}
+
+#[cfg(unix)]
+fn write_fake_browser(home: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(home)?;
+    let script = home.join(FAKE_BROWSER_FILE);
+    // 기록 파일은 스크립트 옆이다 — 경로를 스크립트 본문에 박지 않아 따옴표 문제가 없다.
+    let body = format!(
+        "#!/bin/sh\nprintf 'BROWSER\\t%s\\n' \"$*\" >> \"$(dirname \"$0\")/{OS_OPEN_LOG_FILE}\"\n"
+    );
+    std::fs::write(&script, body)?;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))?;
+    Ok(script)
 }
 
 pub fn apply_bundle_opt_in(command: &mut std::process::Command) {
