@@ -226,8 +226,13 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
   대상 없는 요청(`tasty new workspace` 등)은 사용자가 보던 창에 떨어진다. 새 창을 조작하려면
   `window.create` 응답의 `window_id` 로 지정한다.
   - 예외: 가리키던 창이 없으면(main 창이 0 개였으면) 에이전트 창이 잡는다. 빼앗을 포커스가 없다.
-- 에이전트 창은 OS 포커스도 요청하지 않는다(`with_active(false)`). macOS · Windows 만 이것을 따르고,
-  X11 · Wayland 에서는 창 관리자가 정한다.
+- 에이전트 창은 숨긴 채 만들어, 등록 뒤 사용자가 보던 창 **뒤에** 키 포커스 없이 보인다
+  (`tasty_platform::window_stacking::show_behind`). OS 마다 할 수 있는 데까지다.
+  - macOS · Windows: 사용자 창 바로 아래에 둔다. 키 포커스를 가져가지 않는다.
+  - X11: 창 관리자에게 **요청한다** — `_NET_WM_USER_TIME = 0`(포커스를 주지 말라)과
+    `_NET_RESTACK_WINDOW`(사용자 창 아래). 창 관리자가 무시하거나 "맨 아래" 로 다룰 수 있다.
+  - Wayland: 할 수단이 없다. 컴포지터가 정한다.
+  - 네이티브 호출이 실패하면 경고 뒤 winit 기본 경로로 보인다.
 - 사용자가 에이전트 창을 직접 고르면 `WindowEvent::Focused(true)` 추적이 `focused_view_id` 를
   옮긴다.
 
@@ -276,7 +281,7 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
 - 삭제 시 활성 포인터 보정: `Pane::remove_tab_preserving_active`(`crates/tasty-model/src/pane.rs`) · `active_index_after_removal` / `AppState::fix_workspace_pointers_after_removal`(`src/state/workspace.rs`) · cascade 진입점 `cascade_surface_closed`(`src/core/structural_cascade.rs` — 두 빌드가 같은 본문).
 - 재정렬 시 활성 포인터 보정: `active_index_after_move` / `AppState::fix_workspace_pointers_after_move`(`src/state/workspace.rs`) · 호출 경로 `AppState::move_workspace` 와 `cascade_workspace_moved`(`src/app/dispatch_domain.rs`, headless 는 `dispatch_domain_stubs.rs`).
-- 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 `with_active` 가 여기서 파생된다.
+- 창 생성의 origin 분기: `WindowRequestOrigin`(`src/app/event.rs`) → `focus_after_register` · `origin_window_attributes`(`src/app/window_lifecycle.rs`) — 등록 뒤 focused 창과 생성 속성(`with_active` · `with_visible`)이 여기서 파생된다. 에이전트 창을 사용자 창 뒤에 보이는 OS 호출은 `crates/tasty-platform/src/window_stacking.rs`.
 - 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
 - 워크스페이스 제거 후 공통 뒷정리(`workspace.closed` 발화 + workspace scope memory purge): `AppState::after_workspace_removed`(`src/state.rs`).
 

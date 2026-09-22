@@ -372,4 +372,4 @@
 | 0482 | [forward 가 사라진 surface 를 지목하면 IPC 와 같은 "no live surface" 사유로 거절한다](0482-a-forward-naming-a-gone-surface-is-answered-like-ipc.md) | Accepted | 2026-09-22 | attach, mirror, remote, error-message, wire-format, parity, adr-0395 |
 | 0485 | [못 연 `memory.db` 는 in-memory 대체로 계속 뜨되, 그 사실을 진단과 쓰기 응답이 말한다](0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md) | Accepted | 2026-09-22 | sqlite, storage, memory, degraded, durability, ipc, cli, fallback |
 | 0490 | [경계 가드의 세 빈자리를 판정기를 넓혀 닫는다 — 변이로 찾은 것](0490-boundary-guards-close-three-holes-found-by-mutation.md) | Accepted | 2026-09-22 | guard, domain, layering, mutation, gui, focus, automation, webhook, hook-handler, adr-0440 |
-| 0497 | [에이전트가 만든 창은 사용자의 포커스를 가져가지 않는다](0497-an-agent-created-window-does-not-take-the-users-focus.md) | Accepted | 2026-09-22 | focus, window, multi-window, ipc, cli, user-agent-separation, identity, winit, x11, wayland |
+| 0497 | [에이전트가 만든 창은 사용자의 포커스를 가져가지 않는다](0497-an-agent-created-window-does-not-take-the-users-focus.md) | Accepted | 2026-09-22 | focus, window, multi-window, ipc, cli, user-agent-separation, identity, winit, x11, wayland, stacking |

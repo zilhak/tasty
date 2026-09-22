@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-22
-- **Tags**: focus, window, multi-window, ipc, cli, user-agent-separation, identity, winit, x11, wayland
+- **Tags**: focus, window, multi-window, ipc, cli, user-agent-separation, identity, winit, x11, wayland, stacking
 
 ## Context
 
@@ -44,32 +44,69 @@ visible 이면 그대로 map 한다.
     이전 포커스도 없다.
   - `Agent` 면 옮기지 않는다. 단 가리키던 창이 없으면(main 창이 0 개였으면) 새 창을 잡는다.
     빼앗을 사용자 포커스가 없고, `None` 으로 두면 이후 대상 없는 IPC 가 전부 실패한다.
-- 에이전트 창의 `WindowAttributes` 에는 `with_active(false)` 를 준다. 사용자 창은 `true`(winit
-  기본값)다. 이 호출에는 `#[cfg]` 가 없다 — 지원하지 않는 플랫폼에서는 winit 이 무시한다.
+- 에이전트 창은 `with_active(false)` · `with_visible(false)` 로 만들고, 등록 뒤 사용자 창 뒤에
+  보인다(아래 "보강"). 사용자 창은 `with_active(true)`(winit 기본값)에 보이는 채로 만든다 —
+  이 결정 전과 같다. 속성 갈래는 순수함수 `origin_window_attributes` 하나다.
 - 사용자가 에이전트 창을 직접 고르면 기존 `WindowEvent::Focused(true)` 추적 경로
   (`App::handle_window_focused`)가 `focused_view_id` 를 옮긴다. 이 결정은 그 경로를 바꾸지 않는다.
 
+### 보강 — 에이전트 창은 사용자 창 뒤에 생긴다
+
+처음 이 결정은 키 포커스와 `focused_view_id` 만 막았다. 그 뒤 winit 소스로 확인하니 macOS
+(`orderFront`) · Windows(`SW_SHOWNOACTIVATE`)에서 그 창은 키 포커스 없이도 **사용자 창 위로
+올라와 보였다.** 사용자 결정: **OS 마다 가능한 데까지 막는다** — 에이전트 창은 사용자가 보던 창
+뒤(바로 아래)에 생기고 키 포커스도 안 가져간다. 사용자 창은 불변.
+
+그 수단은 `tasty_platform::window_stacking::show_behind` 하나에 모았다. 기준 창(anchor)은
+등록 시점의 focused main 창이고, 그것이 없으면 활성화 없이 보이기만 한다. winit 0.30.13 의
+show 경로를 그대로 쓸 수 없는 자리가 있어 OS 마다 다르다.
+
+- **macOS**: winit `set_visible(true)` 는 `makeKeyAndOrderFront` 다(키 창 + 맨 앞). 그래서 winit 을
+  거치지 않고 `orderWindow:relativeTo:`(`NSWindowBelow`, 사용자 창의 `windowNumber`)로 보인다.
+- **Windows**: winit 이 `WindowFlags::VISIBLE` 를 들고 있고, 그것이 꺼진 채 다른 플래그가 바뀌면
+  `ShowWindow(SW_HIDE)` 를 부른다. 그래서 네이티브로 보이지 않는다. 보이기 전과 뒤에
+  `SetWindowPos(hWndInsertAfter = 사용자 창, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE)` 를 걸고,
+  보이는 것은 winit(`SW_SHOWNOACTIVATE`)으로 한다.
+- **X11**: map 전에 EWMH `_NET_WM_USER_TIME = 0`(초기 포커스를 주지 말라)을 건다. map 은
+  winit 으로 한다(winit 이 보임 상태를 들고 있다). 그 뒤 `_NET_RESTACK_WINDOW`(detail `Below`,
+  sibling = 사용자 창, source 2)로 사용자 창 아래를 **요청한다.** winit 의 Xlib 연결을 그대로 써
+  map 요청 뒤에 순서대로 닿는다. 창 관리자가 받아들일지는 그쪽이 정한다.
+- **Wayland**: 클라이언트가 쌓임 순서나 포커스를 정할 프로토콜이 없다. xdg-activation 을
+  요청하지 않는 것(winit `with_active(false)`)이 최선이라 보이기만 한다.
+
+네이티브 호출이 실패하면 창 생성을 실패시키지 않는다. 경고를 남기고 winit 기본 경로
+(`set_visible(true)`)로 보인다.
+
 ### 플랫폼별 결과
 
-| 플랫폼 | tasty 의 `focused_view_id` | OS 포커스 |
-|---|---|---|
-| macOS | 안 옮김 | `with_active(false)` — 새 창을 key window 로 만들지 않는다. 미측정 |
-| Windows | 안 옮김 | `with_active(false)` — 활성화 없이 표시한다. 미측정 |
-| X11 | 안 옮김 | winit 이 무시한다. 창 관리자가 정한다(대개 새 창에 포커스를 준다) |
-| Wayland | 안 옮김 | winit 이 무시한다. 컴포지터가 정한다 |
+| 플랫폼 | tasty 의 `focused_view_id` | 키 포커스(OS) | 쌓임 순서 |
+|---|---|---|---|
+| macOS | 안 옮김 | 안 가져간다 — 키 창으로 만들지 않는다. 미측정 | 사용자 창 **바로 아래**에 둔다. 미측정 |
+| Windows | 안 옮김 | 안 가져간다 — 활성화 없이 보인다. 미측정 | 사용자 창 **바로 아래**에 둔다. 두 `SetWindowPos` 사이에 잠깐 위에 보일 수 있다. 미측정 |
+| X11 | 안 옮김 | `_NET_WM_USER_TIME = 0` 으로 **요청한다.** openbox 3.6.1 에서 새 창은 포커스를 안 받았다(실측) | `_NET_RESTACK_WINDOW` 로 사용자 창 아래를 **요청한다.** openbox 3.6.1 에서는 사용자 창 **뒤**, 다만 바로 아래가 아니라 맨 아래였다(실측 — `Below` 의 sibling 을 안 쓰는 것으로 보인다) |
+| Wayland | 안 옮김 | 컴포지터가 정한다(요청하지 않는다) | 컴포지터가 정한다 |
 
 첫 열(tasty 가 대상 없는 요청을 보낼 창)은 모든 플랫폼에서 같다. 원칙 3 이 지키려는 것이 그
 값이다. OS 포커스가 새 창으로 가도 사용자가 그 창을 실제로 조작하면(`Focused(true)`) 그때
 옮겨 간다 — 사용자가 한 일이니 옳다.
 
-### X11 · Wayland 의 한계
+X11 실측의 조건과 대조:
+
+- 조건: Xvfb 위의 openbox 3.6.1, 격리 debug 인스턴스.
+- 변이 대조:
+  - user_time 설정을 빼면 새 창이 `_NET_ACTIVE_WINDOW` 를 가져갔다.
+  - restack 요청을 빼면 새 창이 사용자 창 위에 쌓였다.
+  - 즉 두 수단이 각각 포커스와 쌓임을 맡는다.
+- 사용자 단축키로 만든 창은 맨 위에 쌓이고 포커스를 받았다.
+
+### X11 에서 winit 이 주지 않는 것
 
 winit 0.30.13 의 X11 확장(`WindowAttributesExtX11`)이 주는 것은 visual · screen · name ·
 override-redirect · window type · base size · embed parent 다. 포커스 힌트
 (`_NET_WM_USER_TIME` · `WM_HINTS.input` 류)를 주는 것은 없고, 백엔드도 `_NET_WM_USER_TIME` 을
-쓰지 않는다.
+쓰지 않는다. 그래서 위 X11 수단은 raw window/display handle 로 X 연결을 얻어 직접 쓴다.
 
-가까워 보이는 것들도 답이 아니다.
+가까워 보이지만 답이 아닌 것:
 
 - `with_override_redirect(true)` 는 창 관리자를 통째로 우회한다. 장식 · 스태킹 · 포커스 관리를
   전부 잃는다.
@@ -77,26 +114,28 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
 - startup-notify 의 activation token 과 Wayland 의 xdg-activation 은 반대 방향이다. 포커스를
   **받으려는** 장치다.
 
-남는 길은 raw window handle 로 X window id 를 얻어 프로퍼티를 직접 쓰는 것이다. 이 결정은 그것을
-구현하지 않는다(재검토 조건 참조).
-
 ## Consequences
 
 - **얻은 것**:
   - 에이전트가 창을 만들어도 대상 없는 요청이 떨어지는 창이 바뀌지 않는다. 모든 플랫폼에서
     같다.
-  - macOS · Windows 에서는 OS 포커스도 안 옮겨 간다.
+  - macOS · Windows 에서는 OS 포커스도 안 옮겨 가고, 창은 사용자 창 바로 아래에 생긴다.
+  - X11 에서는 포커스를 주지 말라는 것과 사용자 창 아래에 두라는 것을 창 관리자에게 요청한다.
   - 포커스를 가르는 축이 실패 안내 축과 같은 값 하나라, 한쪽만 갈리는 사고가 안 난다.
 - **잃은 것**:
   - `tasty new window` 직후 대상 없는 명령으로 새 창을 조작하던 스크립트는 이제 원래 창을
     조작한다. 새 창을 다루려면 `window.create` 응답의 `window_id` 로 대상을 지정한다. 원칙 3 이
     원래 요구하던 형태다.
-  - X11 · Wayland 에서는 OS 포커스와 tasty 의 `focused_view_id` 가 잠시 어긋날 수 있다. 창
-    관리자가 새 창에 포커스를 줘도 winit 이 `Focused(true)` 를 전하면 추적 경로가 따라가므로
-    어긋남은 그 이벤트 전까지다.
+  - X11 은 요청일 뿐이라 창 관리자가 무시할 수 있다. openbox 처럼 `Below` 를 "맨 아래" 로 다루는
+    창 관리자에서는 사용자 창 바로 아래가 아니라 맨 아래에 생긴다.
+  - Wayland 는 컴포지터가 정한다. 그곳과 요청을 무시하는 X11 창 관리자에서는 OS 포커스와
+    tasty 의 `focused_view_id` 가 잠시 어긋날 수 있다. winit 이 `Focused(true)` 를 전하면 추적
+    경로가 따라가므로 어긋남은 그 이벤트 전까지다.
 - **운영 비용 / 유지 부담**:
   - 창을 만드는 새 경로는 `WindowRequestOrigin` 을 정해 넘겨야 한다. `register_window` 의
     인자라 빠뜨리면 컴파일이 안 된다.
+  - OS 별 네이티브 코드 세 벌(`window_stacking`)을 winit 을 올릴 때마다 winit 의 show 경로와
+    대조해야 한다. 이 머신에서 실행을 잴 수 있는 것은 X11 뿐이다.
 
 ## Alternatives Considered
 
@@ -104,9 +143,13 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
   손대지 않는다. 사용자가 기각했다. OS 포커스 쪽은 X11 · Wayland 에서 실제로 이 상태가 남지만,
   `focused_view_id` 까지 따라가게 두면 에이전트의 창 생성이 대상 없는 요청의 목적지를 바꾼다.
   그것은 OS 가 강제하지 않는 tasty 자신의 선택이다.
-- **X11 에 `_NET_WM_USER_TIME` 을 직접 쓴다** — winit 밖에서 raw handle 로 프로퍼티를 쓰는
-  구현이다. 창 관리자마다 해석이 달라 효과를 이 머신(Xvfb, 창 관리자 없음)에서 잴 수 없다. 이번
-  범위에서 제외했다.
+- **키 포커스만 막고 창은 앞에 보이게 둔다** — 처음 이 결정의 범위였다. 사용자가 "가능한
+  데까지 막는다" 로 넓혔다. 앞에 올라온 창은 사용자가 보던 내용을 가린다.
+- **Windows 에서 네이티브 `SWP_SHOWWINDOW` 로 한 번에 보인다** — 깜빡임 틈이 없다. 그러나 winit
+  의 `VISIBLE` 플래그가 꺼진 채 남아, 뒤에 다른 창 플래그가 바뀌면 winit 이 `SW_HIDE` 로 창을
+  숨긴다.
+- **macOS 에서 winit `set_visible(true)` 뒤에 `orderWindow` 로 내린다** — winit 의 show 가 이미
+  키 창을 만든 뒤라 키 포커스를 뺏는다.
 - **에이전트 창은 `focused_view_id` 가 `None` 이어도 안 잡는다** — 규칙은 더 단순하다. 그러나
   main 창이 0 개인 상태(macOS 에서 전부 파킹 · 트레이)에서 에이전트가 창을 만들면 이후 대상 없는
   IPC 가 전부 실패한다. 빼앗을 포커스가 없는 자리에서 원칙이 지키는 것이 없다.
@@ -117,20 +160,20 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- `Cargo.lock` 의 winit 이 0.30.13 이 아니게 됐다. 재는 법: 새 버전이 X11 또는 Wayland 에서
-  `with_active` 를 지원하거나 X11 확장에 user time · 포커스 힌트 setter 를 더했는지 — 새 버전
-  소스의 `WindowAttributes::with_active` 문서의 플랫폼 절과 `platform/x11.rs` 의
-  `WindowAttributesExtX11` 목록.
+- `Cargo.lock` 의 winit 이 0.30.13 이 아니게 됐다. 재는 법: 새 버전 소스에서 세 가지를 본다.
+  - 각 OS 의 `set_visible(true)` 가 무엇을 부르는가 — macOS `makeKeyAndOrderFront` · Windows
+    `apply_diff` 의 `VISIBLE` 처리 · X11 map + `ABOVE`.
+  - `WindowAttributes::with_active` 문서의 플랫폼 절.
+  - `platform/x11.rs` 의 `WindowAttributesExtX11` 목록.
 - 창을 만드는 경로가 새로 생겼는데 사용자/에이전트 둘로 안 갈린다(예: plugin 이 IPC 를 거치지
   않고 창을 만든다).
 
 **원리적으로 안 붙는 것** — 사람이 관측해야 한다. 재는 법을 함께 적는다.
 
-- X11 · Wayland 사용자가 에이전트 창이 포커스를 가져가 타이핑이 새 창으로 샌다고 보고한다.
-  재는 법: 창 관리자가 있는 X11 · Wayland 세션에서 한 창에 타이핑하는 중에 `tasty new window`
-  를 부르고, 키 입력이 어느 창에 들어가는지 본다.
-- macOS · Windows 에서 `with_active(false)` 창이 그래도 포커스를 가져간다. 재는 법: 같은 절차를
-  그 OS 에서.
+- 에이전트 창이 포커스를 가져가 타이핑이 새 창으로 샌다는 보고, 또는 사용자 창 위에 뜬다는
+  보고가 온다(어느 OS 든). 재는 법: 그 OS 에서 한 창에 타이핑하는 중에 `tasty new window` 를
+  부르고, 키 입력이 어느 창에 들어가는지와 새 창이 위에 보이는지를 본다. X11 이면
+  `xprop -root _NET_CLIENT_LIST_STACKING` · `_NET_ACTIVE_WINDOW` 로 잰다.
 
 ## References
 
@@ -141,5 +184,6 @@ override-redirect · window type · base size · embed parent 다. 포커스 힌
   [ADR-0122](0122-winit-scheduled-fallible-ipc-returns-outcome.md) — 같은 `WindowRequestOrigin`
   축이 실패 안내 채널을 가른다
 - 코드 근거(결정이 실현된 현재 위치): `App::register_window` · `App::create_new_window` ·
-  `focus_after_register`(`src/app/window_lifecycle.rs`), `WindowRequestOrigin`(`src/app/event.rs`),
-  `App::handle_window_focused`(`src/app/event_handler.rs`)
+  `focus_after_register` · `origin_window_attributes` · `show_agent_window`
+  (`src/app/window_lifecycle.rs`), `show_behind`(`crates/tasty-platform/src/window_stacking.rs`),
+  `WindowRequestOrigin`(`src/app/event.rs`), `App::handle_window_focused`(`src/app/event_handler.rs`)
