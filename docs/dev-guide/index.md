@@ -20,6 +20,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | 문서 | 내용 |
 |------|------|
 | [commit-convention](commit-convention.md) | Conventional Commits |
+| [adr-landing](adr-landing.md) | lane 착지 때 새 ADR 끼리·기존 ADR 과 같은 조항을 결정하지 않는지 대조 — 보고 도구 `scripts/adr-landing-report.sh`(겹침은 판정하지 않는다) |
 | [error-handling](error-handling.md) | Result 처리·락 poison 복구와 관측 범위 |
 | [clippy-policy](clippy-policy.md) | 위치별 allow 선호, 워크스페이스 끄기 지양 |
 | [complexity-gate](complexity-gate.md) | 복잡도 게이트(cognitive deny + 파일 SLOC), 예외 컨벤션 |
@@ -47,7 +48,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [gpu-rendering](gpu-rendering.md) | GPU 렌더링 구조 |
 | [egui-mesh-channel](egui-mesh-channel.md) | plugin egui mesh → host 합성 렌더 채널 (ADR-0028) |
 | [perf-benchmarks](perf-benchmarks.md) | GPU 성능 측정 |
-| [design-change-workflow](design-change-workflow.md) | 디자인 변경 루프 — 요청문서→Claude design 시안→Figma/갤러리/본체 정합 |
+| [design-change-workflow](design-change-workflow.md) | 디자인 변경 루프 — 요청문서→Claude design 시안→갤러리/본체/사이트 사본 정합 |
 | [gallery-first](gallery-first.md) | 새 UI 컴포넌트는 디자인→갤러리→본체 순서 (cut 금지), specimen 기하의 역할 명명 |
 | [popup-implementation](popup-implementation.md) | Popup(`PopupDef` 시스템) |
 | [dag-layout](dag-layout.md) | Task DAG 좌표 계산(`tasty-dag-layout`) — 레이어 배치·엣지 라우팅·어댑터 경계 |
