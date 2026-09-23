@@ -909,8 +909,9 @@ fn a_missing_bias_line_is_a_measurement_failure() {
 ///
 /// 예산을 합으로 맞추면 같은 커밋에 섞인 진짜 성장까지 함께 사면된다. 옮길 폭은
 /// 편향의 차뿐이고, 성장은 그 뒤 합 판정이 봐야 한다. 그리고 그 실패문은 **어느
-/// 파일이 오독 형태를 보유하는지**를 함께 찍는다 — ADR 의 요건 (2)("내려감이 그
-/// 형태를 담은 파일에 갇혔는가")의 앞쪽 절반이 그 표 없이는 손 측정으로 남는다.
+/// 파일이 오독 형태를 보유하는지**도 함께 출력한다. 감소한 파일의 전후 값을
+/// 비교해 해당 형태가 없는 파일까지 줄지 않았는지 확인할 때 필요한 자료다.
+/// 근거는 `docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정`을 따른다.
 #[test]
 fn the_bias_failure_moves_both_pins_by_the_delta() {
     let d = root_with_bias(Some(BUDGET), Some(3), &[P]);
@@ -933,8 +934,8 @@ fn the_bias_failure_moves_both_pins_by_the_delta() {
     );
     assert!(
         text.lines().any(|l| l.contains(P)),
-        "어느 파일이 오독 형태를 보유하는지를 안 찍는다 — 그 표가 없으면 ㄹ 의 둘째 \
-         요건 앞쪽 절반이 손 측정으로 남는다:\n{text}"
+        "어느 파일이 오독 형태를 보유하는지 출력하지 않는다 — 감소한 파일과 오독 형태를 \
+         대조할 자료가 없다:\n{text}"
     );
 }
 
@@ -943,8 +944,9 @@ fn the_bias_failure_moves_both_pins_by_the_delta() {
 /// 편향의 수만 고정하면 "얼마나" 는 지키지만 "무엇 때문에" 는 안 지킨다. 계측기가 이
 /// 오독을 고치거나 다른 형태로 바꾸면 편향의 수는 여전히 어떤 값을 갖는데 그 뜻이
 /// 달라진다. 그래서 게이트가 세 줄짜리 최소 재현을 매번 함께 재고, 그 값이 갈리면
-/// 합·편향을 판정하기 전에 멈춘다. ADR 이 갈래 ㄹ 의 요건 (1)로 요구하는 "형태의
-/// 최소 재현" 이 이 자리에 산다.
+/// 합·편향을 판정하기 전에 멈춘다. 최소 재현의 결과가 달라지면 도구의 계산 방식부터
+/// 확인해야 하므로, 편향 값만 바꾸고 진행하지 못하게 한다.
+/// 근거는 `docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정`을 따른다.
 #[test]
 fn the_form_probe_stands_before_the_sum() {
     let d = root_with_bias(Some(BUDGET), Some(0), &[P]);

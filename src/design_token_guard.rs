@@ -136,9 +136,8 @@ const UI_FONT_TOKEN_VALUES: &[f32] = &[10.0, 11.0, 13.0, 14.0];
 /// 명명 const 로 두는 것을 허용하되 **이름에 primitive 임을 남기라**고 요구한다 —
 /// 호출 자리에서 "토큰인가 미배정 primitive 인가" 가 이름만으로 갈리게 하려는 것이다.
 ///
-/// 값은 ADR 본문이 명시한 둘(12 · 16)만 본다. 다른 primitive(17 · 20)까지 넓히지 않은
-/// 이유는 그것들이 semantic 을 갖고 있어(brand-wordmark · prose) 같은 처지가 아니기
-/// 때문이다 — 규칙이 쓰여 있는 범위만 강제한다.
+/// 이 검사는 아래 `UNMAPPED_PRIMITIVE_FONT_VALUES`에 등록된 12와 16만 확인한다.
+/// 17과 20은 각각 brand-wordmark와 prose라는 semantic이 있으므로 이 목록에서 제외한다.
 const UNMAPPED_PRIMITIVE_FONT_VALUES: &[f32] = &[12.0, 16.0];
 
 /// 폰트 크기를 받는 호출 형태. 접두 뒤 첫 인자가 크기다.
