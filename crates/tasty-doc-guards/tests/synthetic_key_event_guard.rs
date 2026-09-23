@@ -73,9 +73,12 @@ fn double_tap_detectors_reset_on_focus_change() {
             "WindowEvent::Focused(focused) => {",
         ),
         (
+            // 이 arm 은 포커스 **복귀** 도 본다(권한 상태 스냅샷 갱신) — 그래서 값을
+            // 묶는 `Focused(focused)` 형태다. MainView 와 같은 모양이 된 것은 우연이
+            // 아니라, 둘 다 포커스 방향을 읽어야 하기 때문이다.
             "src/view/settings.rs",
             "SettingsView",
-            "WindowEvent::Focused(_) => {",
+            "WindowEvent::Focused(focused) => {",
         ),
     ] {
         let src = read(rel);
