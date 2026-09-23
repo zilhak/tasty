@@ -269,6 +269,18 @@ impl Plugin for ClaudePlugin {
     }
 
     fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
+        let input_host = host.clone();
+        std::thread::Builder::new()
+            .name("claude-input-default".into())
+            .spawn(move || {
+                if let Err(error) = input_host.call(
+                    "settings.initialize_input_rule",
+                    serde_json::json!({ "app": "claude", "shift_enter_newline": true }),
+                ) {
+                    tracing::warn!("could not register Claude input default: {error}");
+                }
+            })
+            .expect("spawn claude-input-default thread");
         // PTY error scan 을 위한 background polling thread 만 띄운다. child registry
         // lifecycle(spawn/kill/reconcile)은 호스트가 소유하므로 여기서 하지 않는다 —
         // error_scan 은 launch surface(top-level)와 spawn/respawn 자식 모두에 대해

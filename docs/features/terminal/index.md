@@ -55,6 +55,12 @@ termwiz `Parser`/`Surface` 로 VT 시퀀스를 파싱·grid 갱신. 지원: 텍�
 
 ### 키보드 입력
 
+**앱별 Shift+Enter**: 설정 → 터미널 → 입력에서 앱을 추가하고 LF 전송을 켜거나 끄며 규칙을 삭제한다. 저장 모델은 `Settings.terminal_input.rules`의 `app`(실행 파일명)과 `shift_enter_newline`이다. 값이 true인 앱에서 Shift만 누른 Enter는 LF 한 바이트를 보낸다. false 또는 미일치는 아래 플랫폼 기본 인코딩을 쓴다. basename의 대소문자와 `.exe`를 정규화한 정확한 이름으로 매칭하며 부분 문자열이나 `node` 런처를 Claude로 추정하지 않는다. foreground는 기존 약 1초 주기 프로세스 캐시를 재사용하므로 앱 전환 직후에는 다음 갱신까지 지연될 수 있다. 붙여넣기·IME·IPC 텍스트와 호스트에서 소비한 키는 이 규칙을 거치지 않는다.
+
+CLI는 `tasty settings get-input-rules`, `set-input-rule --app claude --shift-enter-newline true`, `remove-input-rule --app claude`이다. 해당 IPC는 `settings.get_input_rules`, `settings.set_input_rule`, `settings.remove_input_rule`이며 전역 설정 저장·전 윈도우 반영 경로를 공유한다. `settings.initialize_input_rule`은 호출자와 앱별 최초 기본값만 등록한다. 기존 사용자 규칙은 우선하며 최초 등록 이력은 삭제 후에도 남아 재시작으로 규칙을 복구하지 않는다. Claude 플러그인은 최초 활성화에서 `claude`의 LF 규칙을 등록한다(이미 설치된 플러그인도 새 버전의 최초 활성화에서 등록).
+
+**Windows 줄바꿈 키**: Shift+Enter와 Ctrl+J는 ConPTY의 win32-input 시퀀스(`CSI Vk;Sc;Uc;Kd;Cs;Rc _`)로 key-down/up 한 쌍을 보낸다. Shift+Enter는 VK_RETURN·CR·SHIFT_PRESSED, Ctrl+J는 VK_J·LF·LEFT_CTRL_PRESSED를 보존한다. CSI-u는 ConPTY에서 소실되고, bare LF는 VK_RETURN으로 변환되어 Windows 네이티브 콘솔 앱이 Ctrl+J와 구분하지 못하기 때문이다. 보조키 좌우는 구분하지 않는다. 일반 Enter와 다른 Ctrl+문자는 기존 제어문자를 보내고, Unix에서는 Shift+Enter의 CSI-u와 Ctrl+J의 LF를 유지한다. 별도 설정은 없다. 프로토콜 필드는 [Microsoft Terminal 구현](https://github.com/microsoft/terminal/blob/main/src/terminal/input/terminalInput.cpp)의 `_makeWin32Output`을 따른다. 인코딩 회귀는 `src/view/main/keyboard.rs`의 `newline_keys_*` 시험이 검사하며 실제 콘솔 수신은 Windows에서 별도로 검증한다.
+
 중앙 키보드 디스패처가 focused surface 타입에 따라 정확히 한 대상에만 전달 — Terminal 은 PTY 로 바이트. 특수 키(Enter/Backspace/Tab/Escape/방향키/Home·End/PageUp·Down/Insert·Delete/F1~F12) 매핑, DECCKM 모드에 따라 방향키 시퀀스 전환(`\x1b[{A..D}` ↔ `\x1bO{A..D}`). 복사/붙여넣기/선택/IME 는 [clipboard](../clipboard/index.md).
 
 방향키와 함께 누른 Shift·물리 Alt(macOS Option)·Ctrl은 xterm 방식 `CSI 1 ; m A/B/C/D`로 전달한다. `m`은 1 + Shift(1) + Alt(2) + Ctrl(4)이며, 보조키가 있으면 DECCKM on/off 모두 CSI를 쓴다. 예: Option/Alt+↑는 `\x1b[1;3A`, Ctrl+Shift+←는 `\x1b[1;6D`. 보조키 없는 방향키는 위 DECCKM 규칙을 유지한다. 근거: [xterm cursor-key 및 modifier 표](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys)와 [modifyCursorKeys](https://invisible-island.net/xterm/manpage/xterm.html#VT100-Widget-Resources:modifyCursorKeys).

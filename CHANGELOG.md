@@ -18,6 +18,8 @@
 
 ### Added
 
+- **앱별 Shift+Enter 입력 설정**: 설정 → 터미널 → 입력에서 실행 파일명별 줄바꿈 문자(LF) 전송을 켜고 끄거나 규칙을 추가·삭제할 수 있다. Claude Code 플러그인은 최초 활성화에서 `claude`의 LF 규칙을 등록하며 기존 사용자 설정과 이후 수정·삭제를 보존한다. CLI `tasty settings get-input-rules`, `set-input-rule`, `remove-input-rule`, `initialize-input-rule`과 대응 IPC를 제공한다. Windows 기본 키 전송은 Shift+Enter·Ctrl+J의 Win32 키 정보를 보존한다.
+
 - **파일 형식 판별 규칙이 지금 어떻게 합쳐져 있는지 물을 수 있다.** `tasty file-handler detectors`(IPC `file_handler.detectors`, local-only)가 finalize 된 detector 마다 적용 값(`display_name_i18n_key` · `icon` · `disabled` · `rules`)과 그것을 만든 출처별 원본 `contributions`(`host` · `plugin:<id>` · `user`)를 함께 싣는다. 지금까지는 기본값 · plugin · 설정 파일 중 어느 값이 이겼는지 밖에서 볼 수단이 없었다. `contributions` 는 설치 순서다. 읽기 전용이다.
 - **plugin 이 자기 webview 의 외부 링크를 host 에게 열게 할 수 있다 — `webview.open_external { surface_id, url }`.** plugin 전용 IPC 메서드다(외부 호출자는 `-32016` plugin-only 를 받는다). host 는 호출 plugin 이 그 surface 의 소유자이고 URL 에 스킴이 있으며 `javascript:` 가 아닐 때만 OS 기본 핸들러로 열고 `{ "opened": bool }` 을 돌려준다. 권한은 `surface.write`. 번들 markdown plugin 의 외부 링크가 이 길로 열린다 — 클릭하면 기본 브라우저가 열리는 동작은 그대로이고, debug 빌드의 `TASTY_DEBUG_OS_OPEN_LOG` 가 이 열기도 기록한다. 근거는 [ADR-0527](docs/adr/0527-a-plugin-opens-external-links-through-the-host.md).
 - **요청이 왜 안 먹었는지 수로 물을 수 있다.** `tasty list pressure`(IPC `system.pressure`)에 열둘째 덩어리 `gate_refusals` 가 더해졌다 — `judged`(진입 게이트가 판정한 요청 수) 와 게이트마다의 거절 수 `permission_denied`(-32001) · `cap_blocked`(-32007) · `throttled`(-32010). 이 인스턴스가 뜬 뒤의 누계이고 재시작하면 0 이다. 기존 덩어리는 그대로다([ADR-0548](docs/adr/0548-gate-refusals-join-the-pressure-answer-as-one-block-split-by-gate.md)).

@@ -4,6 +4,7 @@ pub mod keybindings;
 mod port;
 mod port_impl;
 mod scripts;
+pub mod terminal_input;
 mod types;
 
 pub mod general;
@@ -61,6 +62,7 @@ pub enum SettingsOrigin {
 #[serde(default)]
 #[derive(Default)]
 pub struct Settings {
+    pub terminal_input: terminal_input::TerminalInputSettings,
     pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
     pub notification: NotificationSettings,

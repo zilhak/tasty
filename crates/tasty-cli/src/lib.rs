@@ -251,7 +251,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: MemoryCommands,
     },
-    /// Global settings — get/set the remote-transfer storage folder and size cap
+    /// Global settings — terminal input rules and remote-transfer storage
     Settings {
         #[command(subcommand)]
         command: SettingsCommands,

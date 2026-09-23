@@ -1,4 +1,4 @@
-<!-- source-hash: 2116e3c9a7f2 -->
+<!-- source-hash: 434835dbabcc -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -23,6 +23,16 @@ When the program exits and the shell ends, that Surface closes automatically.
 Terminal programs can distinguish arrow keys pressed with `Shift`, `Ctrl`, or `Alt` from plain arrow keys. **For these combinations on macOS, use the physical `Option` key, not `Cmd`.** For example, press `Option+↑` when a program displays `⌥ + ↑`. The program inside the terminal determines the action.
 
 Modified arrow keys are forwarded with **Option as Meta** either on or off. That setting only controls whether Option+character input on macOS produces a composed character or a Meta key sequence. Keys consumed by a Tasty shortcut, copy mode, or an overlay that captures keyboard input are not also sent to the program.
+
+## Shift+Enter per application
+
+In **Settings → Terminal → Input**, add an executable name (such as `claude`) and toggle **Send a newline with Shift+Enter**. When enabled, Shift+Enter sends a newline character (LF). Turning it off or removing the rule restores the platform's default key encoding. Save settings to apply your changes.
+
+The Claude Code plugin adds the newline rule for `claude` when first activated after installation. Existing installations also receive it on their first activation after updating. Existing choices and any later edits or deletions are preserved.
+
+Executable names must match exactly, ignoring case and `.exe`. Detecting an application change can take up to one second. If only a launcher such as `node` is detected, add a rule for that executable name. These rules do not affect pasted text or plain Enter.
+
+With the default key encoding, Codex CLI for Windows uses `Shift+Enter` or `Ctrl+J` to insert a newline and `Enter` to send.
 
 ## Copy · paste
 

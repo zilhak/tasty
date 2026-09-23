@@ -1,13 +1,31 @@
-//! `tasty settings` subcommand 정의 — 원격 전송 저장 정책 get/set.
-//!
-//! general settings 전역 조작 CLI 는 이 서브커맨드가 처음이다. 현재는
-//! `remote-transfer` 저장 폴더 + 용량 상한만 노출한다. focus 독립(전역 설정,
-//! 대상 ID 불요) — 인스턴스 IPC 포트 하나로 처리한다.
+//! Global terminal input rules and remote-transfer storage settings.
+//! Settings are instance-wide; no focused surface or workspace is required.
 
 use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum SettingsCommands {
+    /// List application-specific Shift+Enter rules.
+    GetInputRules,
+    /// Set an application's Shift+Enter encoding (true = LF, false = platform default).
+    SetInputRule {
+        #[arg(long)]
+        app: String,
+        #[arg(long, action = clap::ArgAction::Set)]
+        shift_enter_newline: bool,
+    },
+    /// Remove an application's input rule.
+    RemoveInputRule {
+        #[arg(long)]
+        app: String,
+    },
+    /// Seed an absent rule once, preserving later user edits and deletion.
+    InitializeInputRule {
+        #[arg(long)]
+        app: String,
+        #[arg(long, action = clap::ArgAction::Set)]
+        shift_enter_newline: bool,
+    },
     /// Show the receive-side storage folder and size cap for remote transfers
     /// (bulk file channel).
     GetRemoteTransfer,

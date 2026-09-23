@@ -54,7 +54,7 @@
 | `ui.tool_item` | 없음 | `[[contributes.tool]]` 매니페스트 게이트 + 도구 메뉴 노출 조건(grant 없으면 항목이 뜨지 않음) |
 | `ui.popup` | `popup.close` | `[[contributes.popup]]` · `[[contributes.commands]]`(`action.kind = "open_popup"`) 매니페스트 게이트 + popup contribute 노출 조건 |
 | `ui.banner` | `banner.open` · `banner.close` | `[[contributes.banner]]` 매니페스트 게이트 |
-| `ui.settings_page` | `settings.get_plugin_setting` | `[[contributes.settings_pages]]` 매니페스트 게이트 |
+| `ui.settings_page` | `settings.get_plugin_setting` · `settings.initialize_input_rule` | `[[contributes.settings_pages]]` 매니페스트 게이트. 입력 기본값은 호출자/앱별 최초 등록만 허용하며 기존 규칙·사용자 삭제를 덮어쓰지 않음 |
 | `window.spawn` | 없음 | `[[contributes.window]]` 매니페스트 게이트. spawn 핸들러 자체가 아직 schema + stub 이라 이 토큰이 여는 실행 경로는 없다 |
 | `file_handler.define` | 없음 | `[[contributes.detector]]` 로 **신규** detector id 를 선언할 때 요구 |
 | `hook_handler.define` | 없음 | `[[contributes.hook_handler]]` 매니페스트 게이트 |

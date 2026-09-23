@@ -410,6 +410,26 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "`engine.settings` 는 창마다의 사본이지만 값이 하나다 — `App::cascade_settings_updated` 가 모든 main window 에 같은 `Settings` 를 써 넣는다",
     ),
     (
+        "settings.get_input_rules",
+        NotWindowOwned,
+        "Settings are synchronized across all main windows by cascade_settings_updated",
+    ),
+    (
+        "settings.set_input_rule",
+        NotWindowOwned,
+        "Settings are synchronized across all main windows by cascade_settings_updated",
+    ),
+    (
+        "settings.remove_input_rule",
+        NotWindowOwned,
+        "Settings are synchronized across all main windows by cascade_settings_updated",
+    ),
+    (
+        "settings.initialize_input_rule",
+        NotWindowOwned,
+        "Settings are synchronized across all main windows by cascade_settings_updated",
+    ),
+    (
         "settings.get_plugin_setting",
         NotWindowOwned,
         "상동 — 설정은 전 창 동일 사본",

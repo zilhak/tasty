@@ -260,6 +260,10 @@ const DELEGATED_ROUTERS: &[(&str, &str)] = &[
     ),
     ("src/adapters/ipc/handler/plugin.rs", "dispatch_readonly"),
     ("src/adapters/ipc/handler/telemetry.rs", "record_ipc_call"),
+    (
+        "src/adapters/ipc/handler/terminal_input.rs",
+        "handle_input_rule_update",
+    ),
     ("src/app/ipc/debug_methods.rs", "ipc_debug_fullscreen"),
     ("src/core/request_target.rs", "method_scoped_resource_id"),
 ];

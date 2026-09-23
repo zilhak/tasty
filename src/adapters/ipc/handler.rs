@@ -60,6 +60,7 @@ pub(crate) mod surface;
 pub(crate) mod tab;
 mod telemetry;
 mod terminal;
+mod terminal_input;
 pub(crate) mod theme;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod tool;
@@ -992,6 +993,17 @@ fn route_engine_handler(
         }
         // settings.remote_transfer (원격 전송 저장 폴더 + 용량 상한 get/set)
         "settings.get_remote_transfer" => settings::handle_get_remote_transfer(engine, id),
+        "settings.get_input_rules" => terminal_input::get(engine, id),
+        "settings.set_input_rule"
+        | "settings.remove_input_rule"
+        | "settings.initialize_input_rule" => terminal_input::handle_input_rule_update(
+            out,
+            engine,
+            caller,
+            id,
+            &request.params,
+            &request.method,
+        ),
         "settings.set_remote_transfer" => {
             settings::handle_set_remote_transfer(out, engine, id, &request.params)
         }

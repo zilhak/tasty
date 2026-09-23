@@ -9,6 +9,7 @@ use crate::view::ui::View;
 /// `decide_key_to_terminal` 의 입력 — 현재 focused terminal 의 read-only 상태.
 /// UI 가 sequence 결정에 필요한 정보만 추출. terminal mut borrow 불필요.
 struct KeyboardReadState {
+    shift_enter_newline: bool,
     app_cursor: bool,
     is_alt_screen: bool,
     scroll_offset: usize,
@@ -376,10 +377,17 @@ impl MainView {
         #[cfg(not(target_os = "macos"))]
         let option_as_meta = false;
 
+        let shift_enter_newline = self.core_state.settings.terminal_input.shift_enter_newline(
+            self.state
+                .focused_surface_id(&self.core_state)
+                .and_then(|sid| self.core_state.foreground_name(sid)),
+        );
+
         let read_state = self
             .state
             .focused_terminal(&self.core_state)
             .map(|t| KeyboardReadState {
+                shift_enter_newline,
                 app_cursor: t.application_cursor_keys(),
                 is_alt_screen: t.is_alternate_screen(),
                 scroll_offset: t.scroll_offset(),
@@ -504,9 +512,17 @@ impl MainView {
 
         match key.as_ref() {
             Key::Named(NamedKey::Enter) => {
-                if modifiers.shift_key() {
-                    // Kitty keyboard protocol: CSI 13 ; 2 u (Shift+Enter)
-                    push_bytes(&mut payloads, b"\x1b[13;2u");
+                if modifiers == ModifiersState::SHIFT && state.shift_enter_newline {
+                    push_bytes(&mut payloads, b"\n");
+                } else if modifiers.shift_key() {
+                    #[cfg(windows)]
+                    push_bytes(&mut payloads, &win32_key_press(13, 13, modifiers));
+                    #[cfg(not(windows))]
+                    // Unix PTYs pass CSI-u through to the application.
+                    {
+                        // Kitty keyboard protocol: CSI 13 ; 2 u (Shift+Enter)
+                        push_bytes(&mut payloads, b"\x1b[13;2u");
+                    }
                 } else {
                     push_bytes(&mut payloads, b"\r");
                 }
@@ -650,6 +666,15 @@ impl MainView {
                     && ch.is_ascii_alphabetic()
                 {
                     let ctrl_char = (ch.to_ascii_lowercase() as u8) - b'a' + 1;
+                    #[cfg(windows)]
+                    if ctrl_char == b'\n' {
+                        // ConPTY decodes bare LF as Ctrl+Enter (VK_RETURN), not
+                        // Ctrl+J. Native console readers need the original VK_J.
+                        push_bytes(&mut payloads, &win32_key_press(b'J', ctrl_char, modifiers));
+                    } else {
+                        push_bytes(&mut payloads, &[ctrl_char]);
+                    }
+                    #[cfg(not(windows))]
                     push_bytes(&mut payloads, &[ctrl_char]);
                     sent = true;
                     // 옛 코드의 early return (scroll_to_bottom 분기 우회).
@@ -787,6 +812,23 @@ fn is_printable_char(chr: char) -> bool {
     !is_in_private_use_area && !chr.is_ascii_control()
 }
 
+/// ConPTY's win32-input sequence: VK;scan;Unicode;down;control-state;repeat.
+/// CSI-u is swallowed by ConPTY, whereas this encoding preserves modified
+/// Enter and Ctrl+J for native ReadConsoleInput consumers. Emit a balanced pair
+/// because the terminal forwarding path only receives pressed winit events.
+#[cfg(windows)]
+fn win32_key_press(virtual_key: u8, character: u8, modifiers: ModifiersState) -> Vec<u8> {
+    // Win32 KEY_EVENT_RECORD flags: LEFT_ALT_PRESSED, LEFT_CTRL_PRESSED,
+    // SHIFT_PRESSED. Winit's aggregate modifiers do not retain left/right.
+    let control_state = u8::from(modifiers.alt_key()) * 2
+        | u8::from(modifiers.control_key()) * 8
+        | u8::from(modifiers.shift_key()) * 16;
+    format!(
+        "\x1b[{virtual_key};0;{character};1;{control_state};1_\x1b[{virtual_key};0;{character};0;{control_state};1_"
+    )
+    .into_bytes()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -912,6 +954,7 @@ mod tests {
 
     fn read_state(option_as_meta: bool) -> KeyboardReadState {
         KeyboardReadState {
+            shift_enter_newline: false,
             app_cursor: false,
             is_alt_screen: false,
             scroll_offset: 0,
@@ -930,6 +973,65 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn newline_rule_only_changes_unmodified_shift_enter() {
+        for (key, modifiers, expected) in [
+            (Key::Named(NamedKey::Enter), ModifiersState::SHIFT, b'\n'),
+            (Key::Named(NamedKey::Enter), ModifiersState::empty(), b'\r'),
+            (Key::Character("c".into()), ModifiersState::CONTROL, 3),
+        ] {
+            let mut state = read_state(false);
+            state.shift_enter_newline = true;
+            let out = MainView::decide_key_to_terminal(state, &key, &None, modifiers);
+            assert_eq!(collect_bytes(&out.payloads), [expected]);
+        }
+        let mut state = read_state(false);
+        state.shift_enter_newline = true;
+        let modifiers = ModifiersState::SHIFT | ModifiersState::CONTROL;
+        let out =
+            MainView::decide_key_to_terminal(state, &Key::Named(NamedKey::Enter), &None, modifiers);
+        assert_ne!(collect_bytes(&out.payloads), b"\n");
+    }
+
+    #[test]
+    fn newline_keys_preserve_enter_and_other_control_characters() {
+        let cases = [
+            (Key::Named(NamedKey::Enter), ModifiersState::empty(), b'\r'),
+            (Key::Character("m".into()), ModifiersState::CONTROL, b'\r'),
+            (Key::Character("i".into()), ModifiersState::CONTROL, b'\t'),
+            (Key::Character("c".into()), ModifiersState::CONTROL, 3),
+        ];
+        for (key, modifiers, expected) in cases {
+            let out = MainView::decide_key_to_terminal(read_state(false), &key, &None, modifiers);
+            assert_eq!(collect_bytes(&out.payloads), [expected]);
+            assert!(out.sent);
+        }
+    }
+
+    #[test]
+    fn newline_keys_use_platform_console_encoding() {
+        let cases = [
+            (Key::Named(NamedKey::Enter), ModifiersState::SHIFT),
+            (Key::Character("j".into()), ModifiersState::CONTROL),
+        ];
+        #[cfg(windows)]
+        let expected: [&[u8]; 2] = [
+            b"\x1b[13;0;13;1;16;1_\x1b[13;0;13;0;16;1_",
+            b"\x1b[74;0;10;1;8;1_\x1b[74;0;10;0;8;1_",
+        ];
+        #[cfg(not(windows))]
+        let expected: [&[u8]; 2] = [b"\x1b[13;2u", b"\n"];
+        for ((key, modifiers), expected) in cases.into_iter().zip(expected) {
+            let mut state = read_state(false);
+            state.scroll_offset = 12;
+            let out =
+                MainView::decide_key_to_terminal(state, &key, &Some("ignored".into()), modifiers);
+            assert_eq!(collect_bytes(&out.payloads), expected);
+            assert_eq!(out.payloads.len(), 1);
+            assert!(out.sent);
+        }
     }
 
     // Independent xterm PC-style cursor-key table: modifier parameter 2..8.

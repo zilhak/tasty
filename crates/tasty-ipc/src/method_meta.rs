@@ -737,6 +737,15 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 대상 ID 불요). set 은 핸들러가 UpdateSettings intent 로 태워 collapse/save
         // 파이프라인을 재사용한다.
         ("settings.get_remote_transfer", local_only(Read)),
+        ("settings.get_input_rules", local_only(Read)),
+        ("settings.set_input_rule", local_only(Idempotent)),
+        ("settings.remove_input_rule", local_only(Idempotent)),
+        // Settings contributors may seed absent input defaults once; they cannot
+        // overwrite user rules or restore a rule the user has removed.
+        (
+            "settings.initialize_input_rule",
+            plugin(Idempotent, &[UiSettingsPage]),
+        ),
         ("settings.set_remote_transfer", local_only(Idempotent)),
         // ── file_handler.* (host config 관리 — local-only) ───────────
         // user TOML 변경 후 재로드. plugin 이 호출할 일은 없으며 (자기 manifest
