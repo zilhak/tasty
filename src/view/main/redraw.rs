@@ -931,6 +931,21 @@ impl MainView {
                 }
             }
         }
+        // 작성자 전이는 시도를 다 반영한 **뒤** 가져간다 — 위 통지가 읽은 작성자가 소유 plugin 의 새
+        // 페이지였다면 이 표지도 서 있다(`RemoteSurface::set_webview_url` 의 기록 순서). 전이가 있던
+        // surface 의 이 프레임 기록은 버린다(`user_navigation::settle_frame`). plugin 이 없어도
+        // 표지는 매 프레임 내린다 — 오래된 표지가 나중의 정당한 클릭을 버리지 않게.
+        let sids: Vec<u32> = self.webviews.keys().copied().collect();
+        for sid in sids {
+            let took_over = self
+                .find_remote_surface(sid)
+                .is_some_and(|rs| rs.take_webview_owner_takeover());
+            crate::plugin_bridge::user_navigation::settle_frame(
+                &mut self.state.webview_user_navigations,
+                sid,
+                took_over,
+            );
+        }
     }
 
     /// surface_id 로 surface 를 전 workspace 에서 찾는다. 탭당 1 개만 보는

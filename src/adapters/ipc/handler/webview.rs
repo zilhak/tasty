@@ -263,6 +263,40 @@ mod tests {
         assert!(!written_by(&plugin_caller("com.example.other")));
     }
 
+    /// 페이지 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀌면 host 가 가져갈 때까지 전이
+    /// 표지가 선다 — 가져가면 내려간다. 소유 plugin 이 연달아 쓰거나 에이전트가 덮는 것은 전이가
+    /// 아니다(ADR-0568).
+    #[test]
+    fn set_url_marks_when_the_owning_plugin_takes_the_page_back() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        state
+            .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
+            .unwrap();
+        let md_sid = focused_surface_id(&state, &engine);
+        let owner = plugin_caller(&remote_surface(&engine, md_sid).plugin_id.clone());
+        let agent = tasty_ipc::caller::CallerContext::Local;
+
+        let took_over_after = |caller: &tasty_ipc::caller::CallerContext| {
+            assert!(set_url_as(&engine, caller, md_sid).error.is_none());
+            remote_surface(&engine, md_sid).take_webview_owner_takeover()
+        };
+        assert!(took_over_after(&owner), "처음 쓴 페이지도 전이다");
+        assert!(!took_over_after(&owner));
+        assert!(!took_over_after(&agent));
+        assert!(took_over_after(&owner));
+        assert!(
+            !remote_surface(&engine, md_sid).take_webview_owner_takeover(),
+            "가져가면 내려간다"
+        );
+        assert!(!took_over_after(&agent));
+        assert!(set_url_as(&engine, &owner, md_sid).error.is_none());
+        assert!(set_url_as(&engine, &owner, md_sid).error.is_none());
+        assert!(
+            remote_surface(&engine, md_sid).take_webview_owner_takeover(),
+            "가져가기 전의 전이는 뒤에 쓴 것이 지우지 않는다"
+        );
+    }
+
     /// split 탭의 **비포커스** leaf 도 `webview.set_url` 로 도달해야 한다.
     /// 수정 전에는 `Tab::surface()`(포커스 leaf 1 개)만 봐서 `surface_id not found` 였다.
     #[test]

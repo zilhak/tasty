@@ -92,8 +92,10 @@ IPC 경로는 기본이 에이전트다. 예외는 둘이고, 둘 다 plugin 호
   페이지를 쓴 `webview.set_url` 호출자가 호출 plugin 이며, 그 시도를 바로 호출 plugin 에 통지했고, 그
   시도가 그 surface 의 가장 최근 시도이며 그 URL 일 때만 사용자로 치고, 그 기록을 한 번 쓰고 지운다.
   근거가 못 되는 시도(제스처가 아님 · 에이전트가 쓴 페이지)가 그 surface 에 오면 앞선 기록은
-  지워진다 — 에이전트는 `webview.set_url` 로 페이지를 쓸 수 있지만 그 페이지 위의 클릭이나 스크립트로
-  plugin 이 이 키를 싣게 만들어도 사용자 행동을 얻지 못한다. macOS 는 엔진이 그 값을 주지 않아 늘 에이전트다. markdown 문서 안의 파일
+  지워지고, 에이전트가 쓴 페이지를 소유 plugin 이 되찾은 뒤 첫 프레임에 host 가 받은 시도도 근거로
+  치지 않는다 — 에이전트는 `webview.set_url` 로 페이지를 쓸 수 있지만 그 페이지 위의 클릭이나 스크립트로
+  plugin 이 이 키를 싣게 만들어도 사용자 행동을 얻지 못한다(재지 않은 예외 하나: 에이전트 페이지 위 클릭의
+  시도가 소유 plugin 이 되찾은 프레임의 drain 뒤에야 도착하는 순서 — ADR-0568 "잃은 것"). macOS 는 엔진이 그 값을 주지 않아 늘 에이전트다. markdown 문서 안의 파일
   링크가 이 경로다.
 
 외부 IPC 호출자가 같은 키를 실어도, 남의 popup · 닫힌 popup · 입력을 안 받은 popup · 통지받은 적
@@ -103,7 +105,7 @@ origin 을 생략한 요청도 같은 축으로 갈린다 — 에이전트면 fo
 하고, 사용자면 선택한다.
 근거: [ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md) ·
 [ADR-0526](../../adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md) ·
-[ADR-0568](../../adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md).
+[ADR-0568](../../adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md).
 
 처음부터 없는 origin은 기존 `-32602`와 unowned-target 문구로 거절한다. 접수 후
 origin이 사라지면 경고 로그를 남기고 실행하지 않는다. 다른 창의 새 탭으로 폴백하지

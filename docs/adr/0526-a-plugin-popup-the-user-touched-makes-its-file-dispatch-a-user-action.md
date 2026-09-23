@@ -137,7 +137,7 @@ markdown plugin 의 파일열기 팝업 [열기] 는 `owner_popup_instance` 를 
 - 개정 대상: [ADR-0502](0502-an-agent-created-tab-does-not-take-the-users-tab.md) (`Intent::NewTab` 의 `activate: true` 조항)
 - 개정 대상: [ADR-0503](0503-an-agent-intents-apply-failure-goes-to-the-log-not-a-user-toast.md) (잃은 것(오분류) 조항)
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md)
-- 부분 개정: [0568](0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md) ("세 조건이 모두 맞을 때만 사용자로 친다" 조항 개정 — 엔진이 사용자 제스처로 보고하고 자기가 쓴 페이지 위에서 난 자기 webview 의 navigation 도 근거가 된다)
+- 부분 개정: [0568](0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md) ("세 조건이 모두 맞을 때만 사용자로 친다" 조항 개정 — 엔진이 사용자 제스처로 보고하고 자기가 쓴 페이지 위에서 난 자기 webview 의 navigation 도 근거가 된다)
 - 선행 결정: [ADR-0084](0084-plugin-triggered-host-popup-ownership.md) (plugin 이 자기 popup instance 를 `owner_popup_instance` 로 신고하는 선례 — 같은 키 이름을 쓴다)
 - 탐색: `git grep -l 'owner_popup_instance\|FileDispatchOrigin\|Intent::NewTab' -- docs/adr/`
 - [Focus policy](../design/policies/focus.md) · [File handler](../features/file-handler/index.md) · [markdown plugin](../plugins/markdown/index.md)

@@ -315,7 +315,8 @@ fn link_then_selection(
     (origin, intent_is_user, (pane.tabs.len(), pane.active_tab))
 }
 
-/// 사용자가 plugin webview 안의 링크를 눌러 연 파일은 사용자 행동이다 — 새 탭이 선택된다.
+/// 사용자가 plugin webview 안, 그 plugin 이 쓴 페이지의 링크를 눌러 연 파일은 사용자 행동이다 — 새 탭이
+/// 선택된다.
 #[test]
 fn a_link_the_user_clicked_in_the_plugins_webview_selects_the_new_tab() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(true)], link_params());
@@ -384,6 +385,40 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
         link_params(),
     );
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+}
+
+/// 에이전트가 쓴 페이지 위의 클릭이 drain 전에 소유 plugin 의 재작성으로 덮이면 그 시도는 소유
+/// 페이지 위의 제스처로 보인다 — host 는 그 프레임에 작성자 전이가 있었으면 기록을 버린다. 대가는
+/// 그 한 프레임이다: 다음 프레임의 소유 페이지 위 클릭은 사용자 행동이다.
+#[test]
+fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.workspaces[0].all_surface_ids()[0];
+    let mut params = link_params();
+    params["origin_surface_id"] = json!(sid);
+    let mut origins = Vec::new();
+    for (id, owner_took_over) in [(0, true), (1, false)] {
+        gesture(true).record(&mut state, sid);
+        crate::plugin_bridge::user_navigation::settle_frame(
+            &mut state.webview_user_navigations,
+            sid,
+            owner_took_over,
+        );
+        let mut out = crate::ipc::window_port::IntentOutbox::default();
+        let resp = handle_dispatch(
+            &mut out,
+            &mut state,
+            &engine,
+            &plugin_caller(PLUGIN),
+            json!(id),
+            params.clone(),
+        );
+        assert!(resp.error.is_none(), "dispatch must be accepted: {resp:?}");
+        let emitted = out.into_vec();
+        assert_eq!(emitted.len(), 1);
+        origins.push(emitted[0].origin.is_user());
+    }
+    assert_eq!(origins, vec![false, true]);
 }
 
 /// 근거는 한 번 쓰면 사라진다 — 같은 클릭을 두 번 대면 두 번째는 에이전트다.

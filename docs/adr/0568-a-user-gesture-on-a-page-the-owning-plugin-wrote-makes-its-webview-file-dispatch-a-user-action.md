@@ -3,6 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-09-23
 - **Tags**: file-handler, focus, tab, plugin, webview, markdown, user-agent-separation, identity, identity-principle-1, user-activation, adr-0526, adr-0302
+- **Group**: file-handler
 
 ## Context
 
@@ -63,7 +64,12 @@ Linux(WebKitGTK)는 `webkit_navigation_action_is_user_gesture`, Windows(WebView2
 페이지를 쓴 호출자는 host 가 `webview.set_url` 을 처리할 때 surface 에 페이지와 함께 적는다(호출자가 그
 surface 의 소유 plugin 인가 하나). `webview.set_url` 자체는 에이전트에게 계속 열어 둔다(원칙 2) — 에이전트는
 페이지를 쓸 수 있지만, 자기가 쓴 페이지 위의 사용자 클릭을 파일 열기의 사용자 행동으로 바꾸지는 못한다.
-소유 plugin 이 페이지를 다시 쓰면 그때부터 그 페이지 위의 클릭은 다시 근거가 된다.
+소유 plugin 이 페이지를 다시 쓰면 그때부터 그 페이지 위의 클릭은 다시 근거가 된다 — 단 host 는 시도의
+작성자를 클릭 시점이 아니라 **drain 시점**에 읽으므로, 직전 drain 이후 작성자가 소유 plugin 이 아닌 쪽에서
+소유 plugin 으로 **바뀐** surface 는 그 프레임에 drain 한 시도를 근거로 치지 않는다(그 프레임의 기록을
+지운다). 그 프레임의 클릭은 에이전트가 쓴 페이지 위에서 났을 수 있다. 전이는 `webview.set_url` 을 처리할
+때 surface 에 표지로 남고, host 는 그 프레임의 시도를 다 반영한 **뒤** 표지를 가져간다 — 표지를 작성자보다
+먼저 적으므로, 새 작성자를 본 프레임은 표지도 반드시 본다.
 
 그래서 **ADR-0526 의 "세 조건이 모두 맞을 때만 사용자로 친다" 조항을 개정한다** — 사용자로 치는 근거는
 이제 둘이다: 사용자가 만진 자기 popup(ADR-0526 의 세 조건 그대로)과 엔진이 사용자 제스처로 보고한 자기
@@ -121,10 +127,28 @@ markdown plugin 의 문서 안 파일 링크는 통지받은 URL 을 그대로 `
     순서가 나지 않았다(아래 실측 — 재로드를 클릭에 겹친 70 회 중 0 회). plugin 이 재로드를 먼저 처리하느라
     dispatch 가 그 시도의 drain 보다 늦어지면 난다.
   - 페이지를 쓴 호출자는 `webview.set_url` 한 번 단위로 적는다. 에이전트가 쓴 뒤 소유 plugin 이 다시 쓰기
-    전까지 그 surface 의 사용자 클릭은 에이전트로 도착한다. 반대로 에이전트 페이지 위의 클릭과 plugin 의
-    재작성이 한 프레임 안에 겹치면, 그 클릭은 host 가 시도를 drain 하는 시점의 작성자(소유 plugin)로
-    판정된다 — 그 뒤 재작성의 `load_html` 시도가 기록을 지우기 전에 dispatch 가 돌아오면 쓰인다. 이 겹침은
-    재지 않았다.
+    전까지 그 surface 의 사용자 클릭은 에이전트로 도착한다. 그리고 소유 plugin 이 에이전트의 페이지를 되찾은
+    뒤 **첫 drain 프레임**의 시도는 근거로 치지 않는다(위 Decision) — 그 프레임 간격 안에 사용자가 소유
+    plugin 의 페이지를 정당하게 눌렀어도(에이전트가 쓰고 소유 plugin 이 되쓴 일이 그 클릭과 같은 간격에 든
+    경우) 그 클릭은 에이전트로 떨어진다. 떨어지는 방향은 안전한 쪽이다 — 사용자 행동이 에이전트로 분류되는
+    것은 사용성 손실이고, 반대 방향이 원칙 1 위반이다. 폭은 그 한 프레임이다: 다음 프레임의 클릭은 다시
+    근거가 된다(시험 `a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action` 과
+    아래 실측의 "되찾은 뒤의 클릭"). 이 규칙이 닫는 겹침 — 에이전트 페이지 위의 클릭이 drain 전에 소유
+    plugin 의 재작성으로 덮여 소유 페이지 위 제스처로 보이는 것 — 은 라이브로 재현하지 못했다: 아래 실측의
+    절차로는 규칙을 끈 바이너리에서도 그 클릭이 에이전트로 도착했다(왜 안 났는지는 두 설명이 서고 어느
+    쪽인지 재지 않았다 — 아래 실측). 그래서 이 규칙이 그 겹침을 닫는다는 것은 단위 시험과 소스의 기록
+    순서로만 보증되고, 라이브는 규칙이 라이브 경로에 배선돼 있다는 것(규칙을 늘 켠 바이너리에서 정당한
+    클릭이 떨어짐)까지만 잰다. **기록 순서(시도를 다 반영한 뒤 표지를 가져간다)는 소스로만 보증된다** —
+    `sync_webviews` 에서 표지를 가져가는 루프를 시도 drain 루프 앞으로 옮긴 변이를 lib 시험 전량도 라이브
+    절차도 잡지 못했다(2026-09-23 실측). 재는 법: 그 두 루프를 순수 함수로 떼어 단위 시험으로 순서를
+    고정하거나, 아래 실측의 후보 채널로 겹침을 라이브로 만든 뒤 같은 변이가 그것을 빨갛게 하는지 본다.
+    그리고 순서 논거가 보증하는 것은 "전이 표지와 새 작성자를 **같은 drain 에서** 본다" 까지다 — 클릭이 낸
+    시도가 전이 프레임의 drain 뒤에야 큐에 도착하면(Linux 의 시도는 `connect_decide_policy` 콜백이 넣는데
+    그 콜백은 WebProcess→UI 비동기 왕복 뒤에 돈다: 클릭 → 소유 plugin 의 `webview.set_url` → 전이
+    프레임의 drain → 콜백 도착) 그 시도는 다음 프레임에 작성자 = 소유 plugin · 표지 없음으로 기록되어 이
+    규칙이 그 겹침을 닫지 못하며, 이 순서가 실제로 나는지는 재지 않았다(재는 법: host 로그에서 그 시도가
+    drain 된 시점과 그 surface 의 `webview.set_url` 을 처리한 시점의 순서를 본다 — 지금은 두 자리 모두
+    로그 줄이 없어 debug 로그를 달아야 한다).
 - **운영 비용 / 유지 부담**: native backend 가 새로 생기면 그 엔진의 사용자 제스처 값을
   `PendingNavigation::user_gesture` 에 옮겨야 한다. 옮기지 않으면(늘 거짓) 그 플랫폼은 macOS 와 같이
   에이전트로 떨어질 뿐 사칭 창은 생기지 않는다.
@@ -148,6 +172,14 @@ markdown plugin 의 문서 안 파일 링크는 통지받은 URL 을 그대로 `
   기록을 지운다.
 - **기록에 시간 한도를 둔다**: 창 길이를 정할 근거가 없다(위 "최근 사용자 입력" 과 같은 기각). 시간은 남은
   기록을 줄일 뿐 없애지 못한다 — 한도 안에서는 에이전트의 스크립트가 그대로 쓴다.
+- **native 백엔드가 시도를 잡는 순간의 페이지 세대(`webview.set_url` 카운터)를 `PendingNavigation` 에
+  싣는다**: 전이 규칙의 대가(되찾은 프레임의 정당한 클릭)가 없다. 그러나 백엔드가 세대를 읽는 것은 클릭
+  시점이 아니라 **콜백이 도는 시점**이다 — Linux 의 `connect_decide_policy` 콜백은 WebProcess→UI 비동기
+  왕복 뒤에 돌므로, 그 사이에 소유 plugin 의 `webview.set_url` 이 처리되면 콜백은 이미 새 세대를 읽는다.
+  그래서 이 대안도 위 "잃은 것" 여섯째의 늦게 도착한 시도를 닫지 못하고, 전이 규칙보다 정확하다고 할
+  수 없다. 그리고 세 백엔드와 host↔백엔드 계약이 함께 바뀌고, 그중 macOS · Windows 는 이 레포의 측정
+  환경에서 컴파일만 잴 수 있다 — 같은 창을 닫지도 못하면서 **잴 수 없는 면적**을 세 배로 늘리는 거래라
+  기각했다. 전이 규칙은 host 한 자리(플랫폼 무관)라 Linux 에서 잰 것이 세 플랫폼에 그대로 선다.
 - **사용자 제스처가 아닌 시도는 기록을 그대로 둔다(이 결정의 첫 형태)**: 쓰이지 않은 클릭 기록이 남아
   에이전트의 `webview.set_url` 스크립트가 그것을 쓴다 — 사용자 입력 없이 새 탭이 선택된 것이 라이브로
   재현됐다(아래 실측).
@@ -208,15 +240,32 @@ markdown plugin 의 문서 안 파일 링크는 통지받은 URL 을 그대로 `
     링크를 누른 70 회(재로드 위상에 클릭을 겹친 63 회 포함)에서, 기록과 그 기록을 쓰는 dispatch 사이에
     같은 surface 의 다른 시도가 끼어든 것은 0 회였다. 기록에서 dispatch 까지 0.9–150 ms, 재로드의
     `about:blank` 시도는 늘 dispatch 뒤에 왔다(8–58 ms).
+  - 작성자 전이(위 "잃은 것" 여섯째, 같은 조건 — 전이 규칙 추가 뒤 바이너리와 그 규칙을 끄거나 늘 켠 변이
+    바이너리를 같은 절차로): 에이전트가 투명 링크 페이지를 쓰고 사용자가 누른 뒤 1 초 안에 문서 파일을 고쳐
+    소유 plugin 이 페이지를 되쓰게 하면, 새 탭은 생기되 선택되지 않았다 — 규칙을 끈 바이너리에서도 같았다
+    (겹침이 이 절차로는 재현되지 않는다). 되찾은 뒤 사용자가 문서의 파일 링크를 누르면 새 탭이 선택됐다.
+    겹침이 안 난 이유는 두 설명이 서고 어느 쪽인지 재지 않았다: ⑴ 재작성의 `load_html` 시도가 같은
+    drain 에서 뒤따라 기록을 지운다, ⑵ 절차가 클릭 1 초 **뒤에** 파일을 고치므로 그 1 초 안에 redraw 가
+    한 번이라도 돌면(포인터 이벤트 · nav 상태 변화의 `mark_dirty`) 클릭의 시도가 작성자 = 에이전트로 먼저
+    drain 되어 지워지고, 겹침 자체가 안 만들어진다. 가르는 법은 host 로그에서 그 시도의 drain 시점과
+    `webview.set_url` 처리 시점의 순서를 보는 것이다(위 "잃은 것" 여섯째의 로그 조건과 같다). 겹침을
+    만들 후보 채널(설계·측정 안 함): debug 전용 `debug.gpu.stall` 로 메인 스레드를 막고, 그동안 클릭과
+    소유 plugin 의 재작성 트리거를 둘 다 걸어 둔 뒤 풀면 둘이 같은 redraw 앞에 쌓일 수 있다 —
+    `webview.set_url` 의 IPC 처리와 GTK 펌프의 순서가 결정적이지 않으므로, 위 "70 회 중 0 회" 와 같이
+    반복 횟수로 잰다.
+    규칙을 늘 켠(모든 프레임을 전이로 보는) 바이너리에서는 소유 plugin 의 문서에서 링크를 누른 정당한
+    클릭과 되찾은 뒤의 클릭이 모두 선택되지 않았다 — 규칙이 라이브 경로에 배선돼 있고, 두 정당한 클릭이 과잉 차단을 잡는 대조라는 뜻이다.
   - WM 없는 Xvfb 에서는 webview 안의 클릭만으로 host 프레임이 돌지 않아, 쌓인 시도가 다음 IPC 요청 등으로
     루프가 깨어날 때 drain 된다 — 탭이 생기는 시각을 재려면 한 번 깨운 뒤 읽는다.
-- 현재 구현(심볼): `plugin_bridge::user_navigation`(`record` · `take`) ·
+- 현재 구현(심볼): `plugin_bridge::user_navigation`(`record` · `settle_frame` · `take`) ·
   `AppState::webview_user_navigations` · `IpcWindow::take_webview_user_navigation` ·
   `adapters::ipc::handler::file_handler::dispatch_origin_of` · `host_api::webview::PendingNavigation` ·
   `adapters::ipc::handler::webview::notify_navigation_attempt`(통지한 plugin 과 그 plugin 이 페이지를
   썼는가를 돌려준다) · `adapters::ipc::handler::webview::handle_set_url`(호출자를 적는다) ·
-  `RemoteSurface::webview_page_by_owner` · `MainView::sync_webviews` · markdown plugin 의
+  `RemoteSurface::webview_page_by_owner` · `RemoteSurface::take_webview_owner_takeover`(작성자 전이 표지) ·
+  `MainView::sync_webviews` · markdown plugin 의
   `file_link_params`. 입구 시험은 `adapters/ipc/handler/file_handler_origin_tests.rs` 의 webview 절, 기록
   규칙 시험은 `plugin_bridge/user_navigation.rs`, 작성자 기록 시험은 `adapters/ipc/handler/webview.rs` 의
-  `set_url_remembers_whether_the_owning_plugin_wrote_the_page`. native 백엔드가 제스처 값을 옮기는 자리와 `sync_webviews` 의 기록
+  `set_url_remembers_whether_the_owning_plugin_wrote_the_page` · 전이 표지 시험은 같은 파일의
+  `set_url_marks_when_the_owning_plugin_takes_the_page_back`. native 백엔드가 제스처 값을 옮기는 자리와 `sync_webviews` 의 기록
   배선에는 시험 채널이 없다 — 위 실측이 그 자리를 잰 유일한 측정이다.

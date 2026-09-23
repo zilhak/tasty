@@ -282,7 +282,7 @@ fn dispatch_origin_of(
         tracing::debug!(
             plugin_id = %plugin_id,
             ?origin_surface_id,
-            "file_handler.dispatch: user_navigation_url is not an unused user-gesture navigation the caller received on origin_surface_id; treated as an agent request",
+            "file_handler.dispatch: user_navigation_url is not an unused user-gesture navigation the caller received on origin_surface_id over a page the caller wrote; treated as an agent request",
         );
     }
     FileDispatchOrigin::Agent

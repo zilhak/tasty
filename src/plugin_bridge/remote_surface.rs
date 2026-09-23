@@ -39,6 +39,13 @@ pub struct RemoteSurface {
     /// 근거로 기록한다(`crate::plugin_bridge::user_navigation`). 쓴 적이 없으면 거짓이다.
     #[cfg(feature = "gui")]
     pub webview_page_by_owner: Arc<AtomicBool>,
+    /// host 가 이 surface 의 시도를 마지막으로 drain 한 뒤 페이지 작성자가 소유 plugin 이 아닌
+    /// 쪽에서 소유 plugin 으로 바뀌었는가. host 는 시도의 작성자를 클릭 시점이 아니라 drain
+    /// 시점의 [`Self::webview_page_by_owner`] 로 읽으므로, 에이전트 페이지 위의 클릭이 drain
+    /// 전에 소유 plugin 의 재작성으로 덮이면 소유 페이지 위 제스처로 보인다. 그 프레임의 기록은
+    /// 이 표지로 지운다(`crate::plugin_bridge::user_navigation::settle_frame`).
+    #[cfg(feature = "gui")]
+    pub webview_owner_took_over: Arc<AtomicBool>,
     /// webview-enabled kind 의 navigation 생명주기 상태 mirror. host 의 sync_webviews 가
     /// 매 프레임 native `PlatformWebView.nav_state()` 를 이 값에 복사하고, egui 렌더 경로
     /// (egui_panels → webview_chrome)가 여기서 읽어 loading/error chrome 을 그린다.
@@ -92,6 +99,8 @@ impl RemoteSurface {
             webview_url: Arc::new(Mutex::new(None)),
             #[cfg(feature = "gui")]
             webview_page_by_owner: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "gui")]
+            webview_owner_took_over: Arc::new(AtomicBool::new(false)),
             #[cfg(any(feature = "gui", test))]
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
             cwd: Arc::new(Mutex::new(None)),
@@ -113,6 +122,7 @@ impl RemoteSurface {
             display_name: Arc::clone(&self.display_name),
             webview_url: Arc::clone(&self.webview_url),
             webview_page_by_owner: Arc::clone(&self.webview_page_by_owner),
+            webview_owner_took_over: Arc::clone(&self.webview_owner_took_over),
             nav_state: Arc::clone(&self.nav_state),
             cwd: Arc::clone(&self.cwd),
         }
@@ -130,8 +140,26 @@ impl RemoteSurface {
         );
         *slot = url;
         // URL 과 같은 임계구역 안에서 적는다 — 둘이 다른 호출자의 값으로 섞이지 않게.
+        // 전이 표지를 작성자보다 **먼저** 적는다: 읽는 쪽은 작성자를 읽은 뒤 표지를 가져가므로,
+        // 새 작성자(참)를 본 프레임은 이 표지도 반드시 본다.
+        let was_owner = self
+            .webview_page_by_owner
+            .load(std::sync::atomic::Ordering::Acquire);
+        if by_owner && !was_owner {
+            self.webview_owner_took_over
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
         self.webview_page_by_owner
             .store(by_owner, std::sync::atomic::Ordering::Release);
+    }
+
+    /// 마지막으로 가져간 뒤 페이지 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀌었는가를
+    /// 돌려주고 표지를 내린다. `sync_webviews` 가 매 프레임, 그 프레임의 시도를 다 반영한 **뒤**
+    /// 부른다([`Self::webview_owner_took_over`]).
+    #[cfg(feature = "gui")]
+    pub fn take_webview_owner_takeover(&self) -> bool {
+        self.webview_owner_took_over
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
     }
 
     /// 지금 이 surface 의 페이지를 쓴 호출자가 소유 plugin 이었는가.

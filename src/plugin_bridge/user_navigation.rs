@@ -10,10 +10,12 @@
 //! 기록은 surface 마다 **가장 최근 시도 한 건에 대한 것**이고 **한 번 쓰면 사라진다.** 근거가 못 되는
 //! 시도(제스처가 아님 · 소유 plugin 이 쓴 페이지가 아님 · 통지할 소유자가 없음)가 오면 그 surface 의
 //! 기록은 **지워진다** — 앞선 클릭의 기록이 남아 있으면, 그 뒤 에이전트가 `webview.set_url` 로 쓴
-//! 스크립트가 같은 URL 의 navigation 을 내고 plugin 이 그것을 되대어 사용자 행동을 얻는다. plugin 이
+//! 스크립트가 같은 URL 의 navigation 을 내고 plugin 이 그것을 되대어 사용자 행동을 얻는다. 작성자는
+//! host 가 시도를 drain 하는 시점에 읽으므로, 직전 drain 이후 작성자가 소유 plugin 으로 **바뀐** surface 는
+//! 그 프레임의 기록도 버린다([`settle_frame`]). plugin 이
 //! 사용자 행동을 주장하려면 그 시도의 URL 을 그대로 되대야 한다 — 그 surface 를 소유한 plugin 만,
 //! 그 한 번만. 근거·대안은
-//! `docs/adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md`.
+//! `docs/adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md`.
 
 use std::collections::HashMap;
 
@@ -64,6 +66,20 @@ pub(crate) fn record(
         _ => {
             records.remove(&surface_id);
         }
+    }
+}
+
+/// 한 프레임의 시도를 [`record`] 로 다 반영한 **뒤** 부른다. 직전 프레임 이후 그 surface 의 페이지
+/// 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀌었으면(`owner_took_over`) 그 surface 의
+/// 기록을 지운다.
+///
+/// [`record`] 는 작성자를 클릭 시점이 아니라 host 가 시도를 drain 하는 시점에 읽는다. 에이전트가 쓴
+/// 페이지 위의 클릭이 drain 전에 소유 plugin 의 재작성으로 덮이면 그 클릭은 소유 페이지 위의 제스처로
+/// 보인다 — 이 함수가 그 프레임의 기록을 버린다. 대가는 같은 프레임 간격 안에 에이전트 페이지가 소유
+/// 페이지로 다시 바뀐 경우의 정당한 클릭이 에이전트로 떨어지는 것이고, 다음 프레임부터는 영향이 없다.
+pub(crate) fn settle_frame(records: &mut UserNavigations, surface_id: u32, owner_took_over: bool) {
+    if owner_took_over {
+        records.remove(&surface_id);
     }
 }
 
@@ -167,6 +183,27 @@ mod tests {
         );
         assert!(!take(&mut r, "p", 3, "about:blank#1"));
         assert!(take(&mut r, "p", 3, "about:blank#2"));
+    }
+
+    /// drain 전에 소유 plugin 이 페이지를 되찾은 프레임의 기록은 버려진다 — 그 클릭은 에이전트가 쓴
+    /// 페이지 위에서 났을 수 있다. 버리는 것은 그 프레임뿐이고, 다음 프레임의 클릭은 다시 근거가
+    /// 된다. 다른 surface 의 기록은 그대로다.
+    #[test]
+    fn an_owner_takeover_drops_only_that_frames_record() {
+        let mut r = UserNavigations::new();
+        record(&mut r, 3, Some(&owner("p", true)), &nav(URL, true));
+        record(&mut r, 4, Some(&owner("p", true)), &nav(URL, true));
+        settle_frame(&mut r, 3, true);
+        settle_frame(&mut r, 4, false);
+        assert!(!take(&mut r, "p", 3, URL));
+        assert!(take(&mut r, "p", 4, URL));
+
+        record(&mut r, 3, Some(&owner("p", true)), &nav(URL, true));
+        settle_frame(&mut r, 3, false);
+        assert!(
+            take(&mut r, "p", 3, URL),
+            "전이가 없는 다음 프레임의 클릭은 근거다"
+        );
     }
 
     /// 근거가 못 되는 시도가 오면 그 surface 의 앞선 기록이 지워진다 — 쓰이지 않은 클릭 기록이

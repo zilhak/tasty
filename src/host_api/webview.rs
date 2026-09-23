@@ -98,7 +98,7 @@ pub use keys::{HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKey
 /// 입력 없이 스크립트만으로 낸 navigation 은 참이 아니라서, 사람의 입력 없이는 이 값을 만들 수
 /// 없다. 사람의 제스처 **안에서** 페이지 스크립트가 낸 navigation 은 엔진이 참으로 본다(그래서
 /// 페이지를 쓴 쪽이 눌린 클릭을 다른 목적지로 바꿀 수 있다 — host 는 소유 plugin 이 쓴 페이지 위의
-/// 시도만 기록한다)(`docs/adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md`).
+/// 시도만 기록한다)(`docs/adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingNavigation {
     pub url: String,

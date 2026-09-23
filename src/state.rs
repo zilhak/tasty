@@ -564,8 +564,8 @@ pub struct AppState {
 
     /// plugin webview surface 마다 가장 최근 navigation 시도가 근거일 때(엔진이 사용자 제스처로
     /// 보고했고 소유 plugin 이 쓴 페이지 위에서 났다) 그 시도와 그것을 통지받은 plugin.
-    /// `sync_webviews` 가 시도를 plugin 에 통지하는 자리에서 정하고(근거가 못 되는 시도는 그
-    /// surface 의 기록을 지운다), webview 가 사라진 surface 의 기록은 같은 자리에서 걷힌다. plugin 이 그 시도의 URL 을 되대면 한 번
+    /// `sync_webviews` 가 시도를 plugin 에 통지하는 자리에서 정하고(근거가 못 되는 시도와, 작성자가
+    /// 소유 plugin 으로 바뀐 프레임은 그 surface 의 기록을 지운다), webview 가 사라진 surface 의 기록은 같은 자리에서 걷힌다. plugin 이 그 시도의 URL 을 되대면 한 번
     /// 쓰이고 사라진다 — webview 안의 사용자 클릭을 host 가 사용자 행동으로 칠 유일한 근거다
     /// (ADR-0568, [`crate::plugin_bridge::user_navigation`]).
     #[cfg(feature = "gui")]
