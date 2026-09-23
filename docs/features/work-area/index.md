@@ -4,7 +4,7 @@
 - **주체**: 로컬 사용자(GUI 직접) · AI Agent(IPC/CLI 로 ID 지정 조작) · 원격 접속 사용자(surface/workspace 점유)
 - **ADR**: 없음
 - **코드**: `crates/tasty-model/` (`workspace.rs`/`pane.rs`/`tab.rs`/`surface_layout.rs`/`pane_tree.rs`/surface 타입들), `src/core/state.rs` (`CoreState`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs` 동작)
-- **화면**: [screens/work-area.md](screens/work-area.md)
+- **화면**: [아래 절](#화면)
 
 ## 목적
 
@@ -55,7 +55,7 @@ Pane 안의 탭 하나. 내부에 Surface 들의 `SurfaceLayout` 이진 트리(`
 
 ### Surface
 
-Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` 를 갖고, **타입(kind)** 을 가진다(아래). `Surface` trait 의 핵심: `kind()`(불변 식별자) · `type_name()`(표시 라벨) · `surface_id()` · `source_cwd()`(새 surface 생성 시 상속할 시작 cwd — Surface cwd invariant, [`architecture/invariants/surface-cwd`](../../architecture/invariants/surface-cwd.md)) · `display_name()`. 닫기/포커스/리스트 동작은 타입과 무관하게 동일하다.
+Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` 를 갖고, **타입(kind)** 을 가진다(아래). `Surface` trait 의 핵심: `kind()`(불변 식별자) · `type_name()`(표시 라벨) · `surface_id()` · `source_cwd()`(새 surface 생성 시 상속할 시작 cwd — Surface cwd invariant, [`design/policies/cwd` Surface cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant)) · `display_name()`. 닫기/포커스/리스트 동작은 타입과 무관하게 동일하다.
 
 #### Deferred 터미널
 
@@ -78,12 +78,12 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 |------|-----------|------|------|------|
 | `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. deferred 가능(아래 `empty`) |
 | `empty` | Empty | **host 내장** | egui | 빈 자리(타입 선택 UI). **deferred 터미널 placeholder 도 이 타입** |
-| `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0065](../../adr/0065-markdown-webview-render-channel.md), 대용량/파일열기 확인 팝업 2개만 egui-mesh |
-| `image` | Image | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
+| `markdown` | Remote | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0065](../../adr/0065-markdown-webview-render-channel.md), 대용량/파일열기 확인 팝업 2개만 egui-mesh |
+| `image` | EguiMesh | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
 | `explorer` | Explorer | **host 내장** (T11) | egui | host builtin surface |
 | `dag_graph` | DAG | **host 내장** | egui | agent task DAG 뷰 ([agent-collaboration](../agent-collaboration/index.md)) |
-| `html` | (plugin 제공) | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
-| `mesh_demo` | egui-mesh Demo | `com.tasty.mesh-demo` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh | 개발/검증용. 매니페스트가 `bundle = false` 라 배포 패키징에는 안 들어간다 |
+| `html` | Remote | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
+| `mesh_demo` | EguiMesh | `com.tasty.mesh-demo` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh | 개발/검증용. 매니페스트가 `bundle = false` 라 배포 패키징에는 안 들어간다 |
 
 - **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`/`dag_graph`) 가 부팅 시 등록.
 - **egui-mesh plugin**(`image`, 그리고 markdown 의 대용량/파일열기 확인 팝업 2개만)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
@@ -100,13 +100,69 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - **AI Agent (IPC/CLI)**: 작업 영역의 도메인을 ID 로 직접 조작.
   - 생성: `tasty new workspace [--surface <S>]` · `tasty new tab --pane <P> [--type terminal|markdown|explorer|html|image]`. `--surface` 는 새 워크스페이스를 **그 surface 를 가진 창**에 만든다(IPC `workspace.create` 의 `surface_id` — 라우터가 주인 창을 고르고, 그 surface 를 가진 창이 없으면 포커스로 새지 않고 거절한다). 생략하면 사용자가 보고 있는 창이다([ADR-0514](../../adr/0514-new-workspace-names-its-window-by-a-surface-and-keeps-no-env-default.md)). `--cwd` 를 생략한 terminal 워크스페이스는 `--surface` 를 주면 **그 surface** 의 cwd 를, 안 주면 그 창의 포커스 surface 의 cwd 를 상속한다(`inherit_cwd` 설정이 켜져 있을 때 · [ADR-0532](../../adr/0532-workspace-create-inherits-cwd-from-the-surface-that-names-its-window.md)).
     에이전트가 만든 탭은 kind 와 무관하게 선택되지 않는다 — pane 의 `active_tab` 과 포커스가 그대로다([focus 정책](../../design/policies/focus.md) "에이전트가 만든 탭과 선택").
-  - 분할: `tasty split --level pane|surface --target <ID> [--direction …]` (상위/하위 레이아웃 각각).
+  - 분할: `tasty split --level pane|surface [--target-surface <S>] [--target-pane <P>] [--direction …]` (상위/하위 레이아웃 각각, `--target-pane` 은 `--level pane` 전용).
   - 닫기: `tasty close tab|pane|surface --… <ID>` · `tasty close workspace --id <W>`(안의 모든 pane/tab/surface 포함) · `tasty close window --id <N>`.
     워크스페이스 닫기는 마지막 하나, mirror 워크스페이스, **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스**를 거부한다 — 창까지 없앨지는 별개의 결정이라 `close window` 로 명시하고(헤드리스는 `window.close` 가 없어 거절 문구가 그것을 권하지 않고 마지막 워크스페이스를 닫을 수 없다고만 말한다), mirror 는 attach 세션 쪽에서 거두며, 점유 중인 터미널은 그것을 쓰고 있는 원격 세션이 놓아야 닫힌다. **되돌릴 수 없다**(안의 터미널이 죽고 되돌리기 스택·스크롤백에 남지 않는다). 경계와 근거는 [ADR-0120](../../adr/0120-agent-workspace-close-boundaries.md).
     사용자가 보고 있지 않은 워크스페이스를 닫아도 화면에 있는 워크스페이스는 그대로다([포커스 독립성](../../design/policies/focus.md)).
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
 - **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 원본 kind(terminal)를 그대로 유지하고, 점유는 `OccupancyRegistry`(`is_hard_occupied`)가 추적하며 서버측은 readonly mirror 오버레이(`src/core/attach_readonly.rs`)로 렌더 + 로컬 입력을 차단한다(전용 트리 marker kind 없음). 점유된 워크스페이스는 mirror 면 사이드바 이름 앞 하늘색 glyph(레일=우하단 corner chip)로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
+
+## split 명령
+
+IPC/CLI 모두 **단일 `split` 명령**으로 상위(Pane)/하위(Surface) 레이아웃 분할을 통합한다(위 [내부 동작](#내부-동작-headless-valid)의 두 레벨 레이아웃).
+
+```bash
+tasty split --level surface --target-surface this --direction vertical --meta '{"nickname":"logs"}'
+tasty split --level pane --target-pane 2 --direction horizontal
+tasty split --level pane --target-surface this --type markdown --file /path/doc.md
+```
+
+### 파라미터
+
+| 파라미터 | 필수 | 설명 |
+|----------|------|------|
+| `level` | yes | `pane` \| `surface` |
+| `target_surface` | * | surface ID / `"this"` / nickname |
+| `target_pane` | * | pane ID (pane level 만) |
+| `direction` | no | `vertical`(기본) \| `horizontal` |
+| `type` | no | `terminal`(기본) \| `markdown` \| `explorer` \| `html` + plugin kind |
+| `file`/`path`/`url` | type별 | markdown=file 필수, explorer=path, html=url 필수 |
+| `cwd` | no | 터미널 작업 디렉토리 |
+| `meta` | no | 새 surface 에 설정할 메타데이터(JSON) |
+
+`target_surface` 와 `target_pane` 중 정확히 하나(둘 다 지정 시 에러). ID 는 전역 고유 → target 주어지면 **전 workspace 검색**.
+
+#### target 해석
+
+- `target_surface`: 숫자=ID 직접 / `"this"`=`TASTY_SURFACE_ID` 환경변수(자기 surface) / 문자열=surface_meta `nickname` 검색.
+- level별: pane+target_surface = surface 가 속한 pane 옆 분할 / pane+target_pane = 그 pane 옆 / surface+target_surface = 그 surface 내부 분할 / **surface+target_pane = 에러**.
+
+### cwd 결정 (우선순위)
+
+1. 호출자가 명시한 `cwd`(IPC/CLI).
+2. `inherit_cwd` 켜져 있으면 source surface 의 `Surface::source_cwd()`.
+3. 그 외 None → 셸 home.
+
+source 별 `source_cwd()` 는 [cwd 정책](../../design/policies/cwd.md). 이 정책은 새 탭·새 워크스페이스·pane/surface 분할·타입 변환 등 **모든 생성 경로**에 동일 적용(carry invariant: [surface-cwd](../../design/policies/cwd.md#surface-cwd-invariant)).
+
+### 포커스 정책
+
+**split 은 포커스를 이동하지 않는다.** workspace.create/tab.create 도 IPC/CLI 시 포커스 유지:
+
+| 동작 | UI(키보드/클릭) | IPC/CLI |
+|------|-----------------|---------|
+| split / workspace 생성 / tab 생성 | 새 영역으로 포커스 | **포커스 유지** |
+
+포커스 이동은 CLI/IPC 로 불가, 단축키/마우스로만([focus 독립성](../../design/policies/focus.md)).
+
+### meta
+
+새 surface 에 key-value 설정(각각 `surface.meta.set`). 주 용도: `nickname`(이름 참조), 커스텀 태그(에이전트가 surface 분류/추적). 응답: `{new_pane_id?, new_surface_id}`.
+
+### 관련
+
+- 두 레벨 레이아웃은 위 [내부 동작](#내부-동작-headless-valid) · [cwd 정책](../../design/policies/cwd.md) · [surface-cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant) · [reference/api](../../reference/api.md)
 
 ## 비-목표 (Out of scope)
 
@@ -120,24 +176,61 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 
 - Given 빈 워크스페이스 When `tasty new tab --pane <P>` Then 새 탭이 추가되고 `tasty list tabs --pane <P>` 에 보인다.
 - Given 사용자가 보던 탭이 있는 Pane When 에이전트가 `tasty new tab --pane <P> --type html|markdown|…` 로 탭을 만든다 Then `tasty list tree` 의 활성 탭과 focus 가 그대로이고, 단축키·메뉴로 사용자가 연 탭은 선택된다.
-- Given Pane 하나 When `tasty split --level pane --target <P>` Then 워크스페이스에 Pane 이 둘이 되고 탭 전환과 무관하게 분할이 유지된다.
-- Given 탭 안 Surface 하나 When `tasty split --level surface --target <S>` Then 그 탭에서만 Surface 가 둘이 되고, 다른 탭으로 전환하면 분할이 사라졌다 돌아온다.
+- Given Pane 하나 When `tasty split --level pane --target-pane <P>` Then 워크스페이스에 Pane 이 둘이 되고 탭 전환과 무관하게 분할이 유지된다.
+- Given 탭 안 Surface 하나 When `tasty split --level surface --target-surface <S>` Then 그 탭에서만 Surface 가 둘이 되고, 다른 탭으로 전환하면 분할이 사라졌다 돌아온다.
 - Given 마지막 탭 하나 When 닫기 Then 닫히지 않는다.
 - Given 사용자가 보고 있지 않은 탭 · Pane · 워크스페이스 When 그것이 닫힌다(에이전트 `tasty close`/`surface.close` 포함) Then 사용자가 보고 있던 대상은 그대로다 — 시야는 보던 대상 **자체**가 사라졌을 때만 움직인다 ([focus 정책](../../design/policies/focus.md) "삭제로 인한 인덱스 이동").
 - Given deferred 탭 When `tasty list surfaces` Then `Terminal` / `pty_ready:false` 로 보고되고, 활성화하면 `pty_ready:true` 로 바뀐다.
-- Given `--type markdown` 으로 만든 surface When `tasty list surfaces` Then `kind:"markdown"` 으로 보고된다.
+- Given `--type markdown` 으로 만든 surface When `tasty list tree` Then `kind:"markdown"` 으로 보고된다.
 
 > 전부 headless(IPC/CLI)로 검증 가능 — 트리 조작·분할·닫기·종류는 `tasty list/new/split/close` 시나리오로 확인.
 
 ## 구현
 
-- 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `Surface` trait(`surface_trait.rs`) · 타입(`terminal_surface.rs`/`empty_surface.rs`/`explorer_panel.rs`/`attach_mesh_surface.rs`). markdown/image 는 별도 domain 타입이 아니라 host `src/core/egui_mesh_surface.rs`의 `EguiMeshSurface`(plugin 공용 mesh surface)로 구현된다.
+- 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `Surface` trait(`surface_trait.rs`) · 타입(`terminal_surface.rs`/`empty_surface.rs`/`explorer_panel.rs`/`attach_mesh_surface.rs`). markdown/image 는 별도 domain 타입이 아니라 image 는 host `src/core/egui_mesh_surface.rs`의 `EguiMeshSurface`(plugin 공용 mesh surface), markdown 은 `src/plugin_bridge/remote_surface.rs` 의 `RemoteSurface`(webview)로 구현된다.
 - 이진 트리 공통: `binary_tree.rs` (`BinaryTree` trait — Pane/Surface 양쪽이 구현).
 - 보유/동작: `src/core/state.rs` `CoreState`(`workspaces`, `surface_registry`, `terminals`, `attach`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs`).
 - 종류 레지스트리: `src/core/surface_registry/` (`register_builtin_kinds`, egui-mesh whitelist `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
 
 ## 화면
 
-- [screens/work-area.md](screens/work-area.md) — 중앙 영역(탭 스트립 + Pane/Surface 분할)의 시각과 각 부분 연결.
-</content>
-</invoke>
+화면정의서 — **작업 영역 화면**.
+
+- **시각 소스**: `site/vendor/ui_kits/terminal/work.jsx` — claude design
+
+[MainView](../main-view/index.md#화면) 중앙. 이 화면은 부모 기획의 **두 레벨 레이아웃**(상위 Pane / 하위 Surface)을 투영한다 — 동작 정의는 부모에, 여기선 시각 배치만. 위임 요소는 링크만 둔다(연결 개념).
+
+### 트리거
+
+MainView 가 열리면 항상 표시(중앙 고정 영역). 사이드바에서 Workspace 를 전환하면 해당 Workspace 의 Pane/Tab/Surface 트리로 내용이 바뀐다.
+
+### UI 요소 인벤토리
+
+```
+┌─ 작업 영역 ────────────────────────────────┐
+│ [Pane A 탭바] tab1 tab2 + │ [Pane B 탭바] …  │  → workspace-tabs (탭 스트립)
+│ ┌───────────────────────┐ │ ┌────────────┐  │
+│ │ Surface (분할 가능)    │ │ │ Surface     │  │
+│ │  ┌─────────┬────────┐ │ │ │             │  │  ← 상위 레이아웃: Pane A | Pane B (탭 무관)
+│ │  │ surface │ surface│ │ │ │             │  │  ← 하위 레이아웃: 탭 안 surface 분할 (탭 종속)
+│ │  └─────────┴────────┘ │ │ └────────────┘  │
+│ └───────────────────────┘ │                  │
+└────────────────────────────────────────────┘
+```
+
+- **Pane 영역(상위 레이아웃)** — 워크스페이스를 물리적으로 나눈 칸. 각 Pane 은 자기 **탭 스트립**을 머리에 둔다. Pane 사이 경계는 분할 보더(`PANE_BORDER_WIDTH`).
+- **탭 스트립** (각 Pane 상단) — 그 Pane 의 탭 목록 + active 탭 강조. 시각/드래그/추가 버튼은 → [`features/workspace-tabs/`](../workspace-tabs/index.md). 표시명 규칙은 부모 기획.
+- **Surface 타일(하위 레이아웃)** — active 탭의 SurfaceLayout 을 타일로 렌더. 분할 시 surface 사이 경계는 `SURFACE_BORDER_WIDTH`. 포커스된 surface 강조.
+- **Surface 콘텐츠** — 타입별로 다르게 렌더(terminal=GPU, image=egui-mesh, markdown/html=WebView, empty=타입 선택 UI). 종류 표는 부모 기획 [Surface 종류](#surface-종류).
+- **Empty surface** — 빈 자리. 타입 선택 버튼을 보여 다른 종류로 전환. deferred 터미널이면 PTY 준비 전 표시.
+
+### 상태별 시각
+
+- **단일 / 분할** — Pane·Surface 모두 1개면 보더 없음, 분할되면 방향(좌우/상하)·비율(`ratio`)대로 타일 + 보더.
+- **포커스** — 포커스된 Pane / focused_surface 가 강조된다.
+- **탭 전환** — 하위 레이아웃 전체가 함께 전환(상위 Pane 분할은 불변).
+- **deferred / readonly** — deferred 터미널은 PTY 준비 전, attach 점유된 surface 는 readonly mirror 로 표시(내용 보임 + 조작 차단).
+
+### 시각 소스
+
+`site/vendor/ui_kits/terminal/work.jsx` — 작업 영역 치수·보더·타일 배치의 단일 출처. 보더 폭은 코드 상수와 일치하되 **두 상수의 좌표계가 다르다**: `PANE_BORDER_WIDTH` 는 논리 2px(디자인이 정한 두께라 배율을 따라 커진다 — 배율 2 에서 4 물리px), `SURFACE_BORDER_WIDTH` 는 물리 1px(hairline 이라 밀도와 무관하게 1 device px 로 남는다). 근거는 [`docs/adr/0148-physical-px-constants-are-split-by-what-they-are-for.md`](../../adr/0148-physical-px-constants-are-split-by-what-they-are-for.md).

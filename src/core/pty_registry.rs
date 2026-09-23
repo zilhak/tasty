@@ -151,7 +151,7 @@ const PHASE_REAPED: u8 = 3;
 /// 담지 않는다 — 18-b 에서 동일 id 로 `engine.terminals`(`TerminalStore`)가 보관한다.
 pub struct PtyEntry {
     pub id: u32,
-    /// AgentId — cap/telemetry 귀속용(위조 가능한 잠정 모델, agent-identification.md).
+    /// AgentId — cap/telemetry 귀속용(위조 가능한 잠정 모델, docs/features/telemetry/index.md 의 "AgentId — agent 식별").
     pub owner_agent_id: String,
     pub cwd: Option<String>,
     pub command: Vec<String>,
@@ -740,7 +740,7 @@ mod tests {
     ///
     /// 이 갈래는 오래 문장만 있고 표본이 0 이었다. 재 보면 도달 가능하다 — 그런데 그
     /// 도달 경로가 하나뿐이다: 대기가 상한을 다 써서 마지막 검사를 마친 **뒤에** 자식이
-    /// 끝나는 것. 대기 쪽 결함이 아니다. 아래 [`a_fill_while_the_waiter_is_parked_is_never_missed`]
+    /// 끝나는 것. 대기 쪽 결함이 아니다. 아래 [`a_fill_is_never_lost_even_if_the_wakeup_never_comes`]
     /// 가 그 반대편(대기가 놓치는 경로)이 없다는 것을 같은 크레이트에서 잰다.
     #[test]
     fn the_reaped_but_unseen_branch_is_a_late_child_not_a_missed_wakeup() {

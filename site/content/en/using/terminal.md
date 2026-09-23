@@ -1,5 +1,4 @@
-<!-- source-hash: 286a80a0f4a4 -->
-<!-- source-hash: 430cc40170e9 -->
+<!-- source-hash: 2116e3c9a7f2 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -102,7 +101,7 @@ How files are opened (Markdown · image · Explorer) is in [Opening files](files
 - The number of lines kept is **Settings** > **Terminal** > **Scrollback lines** (default 10,000, maximum 100,000). `clear` also empties the scrollback.
 - The scrollback continues after a restart — [Workspaces](workspaces.md#restoring-after-a-restart).
 
-Increase and decrease the font size with `Ctrl+=` / `Ctrl+-` and reset it with `Ctrl+0`. This applies only to the terminal font.
+Increase and decrease the font size with `Ctrl+=` / `Ctrl+-` and reset it with `Ctrl+0`. It applies to the focused Surface — a terminal, Explorer or Markdown.
 
 ## Programs that capture the mouse
 
@@ -128,7 +127,7 @@ Terminal bells (`\a`) and notification sequences sent by programs (OSC 9 · 99 �
 
 - `Ctrl+Shift+I` — the **Notifications** panel. A newest-first list with a **Jump** button and **Mark all read**. Opening it marks everything as read. The fullscreen button on the title bar shows it at a large size ([Fullscreen](panes-tabs-splits.md#fullscreen)).
 - If the window is in the background, an OS notification is shown as well.
-- **Settings** > **Notifications** — **Notifications enabled** · **Sound** · **Coalesce interval (ms)** (the interval within which consecutive notifications from the same place are merged into one, default 500).
+- **Settings** > **General** > **Notifications** — **Notifications enabled** · **Sound** · **Coalesce interval (ms)** (the interval within which consecutive notifications from the same place are merged into one, default 500).
 - To turn off only the bell, **Settings** > **Terminal** > **Show bell notification**.
 
 To send a notification directly from a script, `tasty notify "build done" --title build`.

@@ -93,10 +93,10 @@ deb·tar.gz·AppImage 에서 유지한다 — `THIRD_PARTY_LICENSES.md` 안의 �
 - **얻은 것**: Linux 산출물 넷이 OFL 1.1 이 요구하는 형태를 만족한다 — 빌더에서 열어 확인한
   값이다. 릴리스 에셋 쪽은 그 형태를 **만든다고 선언한 배선**이고 아직 관측된 실행이 없다(위
   Decision). 스테이징이
-  `build-linux.sh` 의 한 함수(`stage_notice`)라 새 Linux 산출물이 생겨도 한 줄로 붙는다.
+  `scripts/lib/notice-set.sh` 의 한 함수(`stage_notice`)라 새 Linux 산출물이 생겨도 한 줄로 붙는다.
   같은 스크립트의 sanity check 가 tar.gz 셋·deb·rpm 의 고지 유무를 함께 본다.
 - **잃은 것 (중요)**: 이 세트는 **정적 링크되는 Rust 의존 크레이트의 저작권 고지를 담지
-  않는다.** `Cargo.lock` 에 이름이 844 개 있고 그중 MIT·Apache-2.0·BSD 계열은 바이너리 배포 시
+  않는다.** `Cargo.lock` 에 이름이 844 개(2026-09-20 실측) 있고 그중 MIT·Apache-2.0·BSD 계열은 바이너리 배포 시
   저작권 문구 재현을 요구한다. 그 의무의 현재 충족률은 **0** 이다 — 이 결정 전에도 0 이었고 이
   결정이 그것을 바꾸지 않는다. `deny.toml` 의 licenses allowlist 는 **정책 게이트**이지 고지
   산출물이 아니다.
@@ -113,7 +113,7 @@ deb·tar.gz·AppImage 에서 유지한다 — `THIRD_PARTY_LICENSES.md` 안의 �
 - **A: 의존 크레이트 고지를 생성한다** (`cargo about` · `cargo-bundle-licenses` 류) — 위
   "잃은 것" 을 실제로 닫는 유일한 길이다. 이번에 안 고른 이유는 셋이다. 첫째, 이 머신에도
   릴리스 러너에도 그 도구가 없어서 **이 회차에서 출력을 확인할 수 없다**(설치 자체가 새 공급망
-  입력이다). 둘째, 844 개짜리 출력의 정확성은 도구 버전에 딸려 있어 "배선했다" 와 "맞다" 가
+  입력이다). 둘째, 그 규모의 출력의 정확성은 도구 버전에 딸려 있어 "배선했다" 와 "맞다" 가
   갈린다. 셋째, 그것은 고지 세트의 **내용을 바꾸는 결정**이라 벤더링한 본문을 나르는 이 이행과 크기가
   다르다. **따로 결정할 일로 남긴다** — 위 "잃은 것" 이 그 입구다.
 - **B: 전 플랫폼을 한 자리(`usr/share/licenses/tasty/`)로 통일한다** — 배치가 하나라 표가 짧아
@@ -159,5 +159,5 @@ deb·tar.gz·AppImage 에서 유지한다 — `THIRD_PARTY_LICENSES.md` 안의 �
 - 루트 `Cargo.toml` 의 `[package.metadata.deb]` · `[package.metadata.generate-rpm]` asset 목록. (결정이 실현된 현재 위치)
 - `.github/workflows/release.yml` 의 publish 잡. (결정이 실현된 현재 위치)
 - `wix/main.wxs` 의 `Component Id='License'` — MSI 가 이미 MIT 본문을 넣는 자리. (결정 시점의 기록)
-- [`docs/dev-guide/dist-build.md`](../dev-guide/dist-build.md) — 빌더가 읽는 절차.
+- [`docs/dev-guide/build.md`](../dev-guide/build.md#dist-빌드-명령-카탈로그) — 빌더가 읽는 절차.
 - 부분 개정: [0370](0370-macos-and-windows-artifacts-carry-the-notice-set-before-it-is-observed.md) (이행 순서 조항과 대안 D 개정 — macOS·Windows 산출물도 관측 전에 배선한다)

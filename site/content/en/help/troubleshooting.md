@@ -1,4 +1,4 @@
-<!-- source-hash: 620f9e433ad4 -->
+<!-- source-hash: 10f43ba1d3d8 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -31,9 +31,9 @@ TASTY_LOG=debug tasty 2> tasty.log
 - **Linux: the AppImage does not run** — it lacks the execute bit or FUSE is missing. Run `chmod +x Tasty-*.AppImage` first; if it still fails, start it with `./Tasty-*.AppImage --appimage-extract-and-run`.
 - **Linux: it does not start, with `GLIBC_2.39 not found`** — your distribution is older than the build baseline (Ubuntu 24.04), for example Ubuntu 20.04 · Debian 11. There is no build for older distributions.
 - **Linux `.tar.gz`: it exits saying a library is missing** — `tasty` lists the missing library and exits. Install the packages it names (`libfreetype6` · `libfontconfig1` · `libgtk-3` · `libwebkit2gtk-4.1` and so on). To have them pulled in automatically, use the `.deb` / `.rpm` instead.
-- **"No GPU adapter found" appears and it exits** — there is no GPU driver (Vulkan / DirectX 12 / Metal). Install or update the driver. On Linux, Tasty runs GPU-accelerated when `libvulkan1` / `vulkan-loader` is present, and falls back to software rendering when it is not. On a server · VM with no GPU at all, the distributed files cannot run.
+- **"No GPU adapter found" appears and it exits** — there is no GPU driver (Vulkan / DirectX 12 / Metal). Install or update the driver. On Linux, Tasty uses Vulkan when `libvulkan1` / `vulkan-loader` is present, OpenGL when it is not, and software rendering if that fails too. On a server · VM with no GPU at all, the distributed files cannot run.
 - **Windows: "Git Bash not found"** — Tasty uses Git Bash as the shell on Windows. Install Git for Windows, or set the bash path yourself in **Settings** > **Terminal** > **Shell**.
-- **It exits right after starting with "Database initialization error"** — read the message body. "The database is locked" means another Tasty is already running. "corrupted" / "schema version mismatch" means you can back up `~/.tasty/state.db`, delete it, and start fresh. Only the recent-files list is lost.
+- **It exits right after starting with "Database initialization error"** — read the message body. "The database is locked" means another Tasty is already running. "corrupted" / "schema version mismatch" means you can back up `~/.tasty/state.db`, delete it, and start fresh. Only the recent-files list and tutorial progress are lost.
 - **You typed `tasty` inside a Tasty terminal but no new window appeared** — run with no arguments inside Tasty, it shows the help instead of opening a new window. For a new window use `tasty new window` (it leaves the focus on the window you were looking at); to force the GUI to launch, `tasty --launch`.
 
 The install procedure itself is in [Install](../getting-started/install.md).
@@ -75,20 +75,20 @@ You can see the current state in the **Settings** > **General** > **Permissions*
 
 ## The `tasty` command cannot connect
 
-- **`No running tasty instance found (port file not found at …)`** — no Tasty window is running. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`). The message follows your configured language (`general.language`, English by default), so it is worded differently if you set another one. A wrong argument (broken JSON, a `--cwd` folder that does not exist, and so on) is reported before this message, so if you see this message the arguments themselves passed.
+- **`No running tasty instance found (port file not found at …)`** — no Tasty is running. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`). The message follows your configured language (`general.language`, English by default), so it is worded differently if you set another one. A wrong argument (broken JSON, a `--cwd` folder that does not exist, and so on) is reported before this message, so if you see this message the arguments themselves passed.
 - **The port file exists but it cannot connect** — a previous Tasty exited abnormally and left only the port file behind. Make sure Tasty is not running, then delete the file and start it again.
 
   ```sh
-  pgrep -x tasty || rm ~/.tasty/tasty.port
+  pgrep -x 'tasty|tasty\.bin' || rm ~/.tasty/tasty.port
   ```
 
-- **`tasty: command not found`** — inside a terminal that Tasty opened it is on the PATH automatically, but in another terminal app you have to add it yourself. The path for each install method is in [Install location](../getting-started/install.md#install-locations).
+- **`tasty: command not found`** — inside a terminal that Tasty opened it is on the PATH automatically, and a `.deb` · `.rpm` · `.msi` install puts it on the PATH for other terminal apps too. With any other install method you have to add it yourself. The path for each install method is in [Install location](../getting-started/install.md#install-locations).
 
 ## Notifications do not arrive · there are too many
 
-- **OS notifications do not appear** — while the Tasty window is active, no OS notification is sent; you are notified only inside the app, through the panel · border · badge. OS notifications go out only while the window is inactive, and are limited to one per second. Check that **Notifications enabled** under **Settings** > **Notifications** is not turned off. The panel opens with `Ctrl+Shift+I` (macOS `Cmd+Shift+I`).
+- **OS notifications do not appear** — while the Tasty window is active, no OS notification is sent; you are notified only inside the app, through the panel · border · badge. OS notifications go out only while the window is inactive, and are limited to one per second. Check that **Notifications enabled** under **Settings** > **General** > **Notifications** is not turned off. The panel opens with `Ctrl+Shift+I`.
 - **A notification for every bell (`\a`) is noisy** — turn off **Settings** > **Terminal** > **Show bell notification**. In `config.toml`, that is `bell_notification = false` under `[general]`. Bell hooks still fire.
-- **There is no sound** — **Settings** > **Notifications** > **Sound** is off by default. Even when it is on, consecutive notifications from the same source within the merge interval are combined into one, so the sound plays only once.
+- **There is no sound** — **Settings** > **General** > **Notifications** > **Sound** is off by default. Even when it is on, consecutive notifications from the same source within the merge interval are combined into one, so the sound plays only once.
 
 The full list of settings is in [Hooks · notifications · webhooks](../agents/hooks-notifications.md#settings).
 

@@ -1,6 +1,6 @@
 # 플러그인 제작 가이드
 
-외부 Tasty 플러그인을 작성·빌드·설치하는 법. 개념(배포/통합 축·권한)은 [concepts/plugins](../concepts/plugins.md) 먼저. 권한 모델 상세는 [plugin-permissions](plugin-permissions.md), 민감 데이터는 [plugin-sensitive-data](plugin-sensitive-data.md).
+외부 Tasty 플러그인을 작성·빌드·설치하는 법. 개념(배포/통합 축·권한)은 [concepts/plugins](../concepts/plugins.md) 먼저. 권한 모델 상세는 [plugin-permissions](plugin-permissions.md), 민감 데이터는 [아래 "민감 데이터"](#민감-데이터--regular--secret--keyring-선택).
 
 **번들 플러그인이 곧 reference 예제다** — 각 기여 타입을 만들 때 아래 표의 해당 플러그인 코드를 시작점으로 복사·수정하는 게 가장 빠르다.
 
@@ -124,7 +124,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 
 ### CLI + IPC namespace
 
-`[[contributes.ipc_namespace]]`(prefix) + `[[contributes.cli]]`(`tasty <name> …`). 플러그인은 `handle_ipc_method` 로 `<prefix>.*` 메서드를 받는다. prefix 는 소문자+숫자+`_`, 호스트 예약어 금지 — 목록은 `tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES` 하나뿐이고 47 개다. 매니페스트 검증이 여기 걸리면 plugin 이 뜨지 않는다. **호스트가 자기 메서드에 쓰는 prefix 는 전부 예약이라고 보면 된다** — 유일한 예외가 `image`·`markdown` 이고, 번들 plugin 이 이미 같은 이름의 namespace 를 갖고 있어서 예약할 수 없다(예약하면 그 plugin 의 매니페스트가 거절된다). 그래서 이름은 자기 plugin 고유어로 짓는다 — `theme`·`session`·`preset` 처럼 호스트가 쓰는 일반 명사는 거절된다. 목록과 호스트 메서드 표의 정합은 `every_host_method_prefix_is_reserved_or_carries_a_reason` 이 양방향으로 지킨다. 결정과 감수한 비용은 [ADR-0140](../adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md). **그 예외 둘에는 따라오는 의무가 있다** — host 가 같은 prefix 아래 구현한 메서드는 그 plugin 의 `handle_ipc_method` 가 self-call trampoline(`host.call(&ctx.method, ctx.params)`)으로 host 에 되돌려 줘야 한다. arm 이 없으면 그 host 구현은 **plugin 이 설치돼 있는 동안에만** 외부에서 안 닿아, 같은 호출의 결과가 설치 상태에 따라 흔들린다. `bundled_plugin_namespace_coverage` 가 매니페스트 prefix 마다 이를 강제한다 — 판정은 `handle_ipc_method` **본문만** 본다(plugin 이 host 로 *거는* 같은 이름의 `host.call` 이 파일 안에 있어서, 파일 전체를 세면 빠진 arm 을 놓친다). 근거는 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md). CLI 서브커맨드의 `ipc_method` 는 자기 prefix 와 매칭돼야 한다. **CLI top-level 이름은 매니페스트가 판정하지 않는다** — 호스트 명령(그 alias 포함)과 겹쳐도 매니페스트는 통과하고, 대신 등록 시점에 그 이름만 건너뛰며 경고가 뜬다(`tasty <name>` 은 호스트 명령이 그대로 받는다). 매니페스트 크레이트는 CLI 크레이트 아래에 있어 실제 clap 명령 집합을 볼 수 없고, 거기 손목록을 두면 호스트 명령이 늘 때마다 늙기 때문이다 — 실제로 늙어 있었고, 목록 밖 이름은 debug 빌드에서 `tasty --help` 를 포함한 CLI 전체를 패닉시켰다. 예: [codex](../plugins/codex/index.md)·[claude](../plugins/claude/index.md).
+`[[contributes.ipc_namespace]]`(prefix) + `[[contributes.cli]]`(`tasty <name> …`). 플러그인은 `handle_ipc_method` 로 `<prefix>.*` 메서드를 받는다. prefix 는 소문자+숫자+`_`, 호스트 예약어 금지 — 목록은 `tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES` 하나뿐이다. 매니페스트 검증이 여기 걸리면 plugin 이 뜨지 않는다. **호스트가 자기 메서드에 쓰는 prefix 는 전부 예약이라고 보면 된다** — 유일한 예외가 `image`·`markdown` 이고, 번들 plugin 이 이미 같은 이름의 namespace 를 갖고 있어서 예약할 수 없다(예약하면 그 plugin 의 매니페스트가 거절된다). 그래서 이름은 자기 plugin 고유어로 짓는다 — `theme`·`session`·`preset` 처럼 호스트가 쓰는 일반 명사는 거절된다. 목록과 호스트 메서드 표의 정합은 `every_host_method_prefix_is_reserved_or_carries_a_reason` 이 양방향으로 지킨다. 결정과 감수한 비용은 [ADR-0140](../adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md). **그 예외 둘에는 따라오는 의무가 있다** — host 가 같은 prefix 아래 구현한 메서드는 그 plugin 의 `handle_ipc_method` 가 self-call trampoline(`host.call(&ctx.method, ctx.params)`)으로 host 에 되돌려 줘야 한다. arm 이 없으면 그 host 구현은 **plugin 이 설치돼 있는 동안에만** 외부에서 안 닿아, 같은 호출의 결과가 설치 상태에 따라 흔들린다. `bundled_plugin_namespace_coverage` 가 매니페스트 prefix 마다 이를 강제한다 — 판정은 `handle_ipc_method` **본문만** 본다(plugin 이 host 로 *거는* 같은 이름의 `host.call` 이 파일 안에 있어서, 파일 전체를 세면 빠진 arm 을 놓친다). 근거는 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md). CLI 서브커맨드의 `ipc_method` 는 자기 prefix 와 매칭돼야 한다. **CLI top-level 이름은 매니페스트가 판정하지 않는다** — 호스트 명령(그 alias 포함)과 겹쳐도 매니페스트는 통과하고, 대신 등록 시점에 그 이름만 건너뛰며 경고가 뜬다(`tasty <name>` 은 호스트 명령이 그대로 받는다). 매니페스트 크레이트는 CLI 크레이트 아래에 있어 실제 clap 명령 집합을 볼 수 없고, 거기 손목록을 두면 호스트 명령이 늘 때마다 늙기 때문이다 — 실제로 늙어 있었고, 목록 밖 이름은 debug 빌드에서 `tasty --help` 를 포함한 CLI 전체를 패닉시켰다. 예: [codex](../plugins/codex/index.md)·[claude](../plugins/claude/index.md).
 
 ### 단축키 (commands)
 
@@ -235,11 +235,61 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 | 사용자 편집 설정 | `TASTY_PLUGIN_CONFIG_PATH` | 업그레이드 보존 |
 | DB·캐시·로그 | `TASTY_PLUGIN_DATA_DIR` | **쓰기 OK**, 업그레이드 보존 |
 | 작업 메타/진행 상태(≤1 MiB) | `memory.*` / `memory.secret.*` | host SQLite. cap 초과는 `ValueTooLarge` |
-| **진짜 민감 데이터**(토큰/키/자격증명) | **OS keyring** | secret 영역 금지 — [plugin-sensitive-data](plugin-sensitive-data.md) |
+| **진짜 민감 데이터**(토큰/키/자격증명) | **OS keyring** | secret 영역 금지 — [아래 "민감 데이터"](#민감-데이터--regular--secret--keyring-선택) |
 
-`memory.secret` 의 유일한 보장은 **플러그인 간 IPC 격리**다 — 디스크엔 평문. regular vs secret vs keyring 선택은 [plugin-sensitive-data](plugin-sensitive-data.md).
+`memory.secret` 의 유일한 보장은 **플러그인 간 IPC 격리**다 — 디스크엔 평문. regular vs secret vs keyring 선택은 [아래 "민감 데이터"](#민감-데이터--regular--secret--keyring-선택).
 
 **`TASTY_PLUGIN_DATA_DIR` 수명 계약** — 실경로는 `~/.tasty/plugin-data/<plugin-id>` 로 **설치 디렉터리(`TASTY_PLUGIN_DIR`)와 분리**돼 있고(`crates/tasty-host-plugin/src/process.rs`), 번들 plugin 재동기화(`upgrade-builtins`)는 설치 디렉터리 내용만 mirror 하므로(`crates/tasty-host-plugin/src/builtin.rs`) data dir 을 건드리지 않는다. 즉 §9.1 의 `disable` → `upgrade-builtins` → `enable` 절차나 plugin 업그레이드·재설치를 건너 **data dir 내용은 보존된다** — plugin 을 지우기 전까지 살아 있어야 하는 상태(claude plugin 의 checklist 라운드, 프로필 부착 기록 등)를 여기 두어도 안전하다. 반대로 설치 디렉터리에 쓴 것은 다음 업그레이드에 사라진다.
+
+### 민감 데이터 — regular · secret · keyring 선택
+
+플러그인 안에서 비밀번호 / OAuth refresh token / API 결제 key 같은 민감 데이터를 어떻게 저장해야 하는지. 저장 위치 전반은 위 [§6 표](#6-데이터-저장-위치).
+
+#### 핵심: secret 영역은 "안전 보관소"가 아니다
+
+`memory.secret.*` 는 이름이 오해를 준다. 실제 보호 수준:
+
+| 상황 | 결과 |
+|------|------|
+| 플러그인 A 가 IPC 로 B 의 secret 요청 | **차단**(owner 분리, 존재조차 모름) |
+| 사용자/host(CLI·GUI)의 secret 조회 | 허용(의도된 동작) |
+| 플러그인이 `~/.tasty/memory.db` 직접 열기 | **평문 그대로 보임** |
+| `~/.tasty/` 백업/cloud sync | **평문 그대로 들어감** |
+| 디바이스 분실 + 디스크 암호화 없음 | **평문 노출** |
+
+즉 secret 의 보장은 **"플러그인 간 IPC 격리" 한 가지**뿐.
+
+#### 권고
+
+##### ✅ secret 에 둬도 되는 것
+다른 플러그인이 못 보게만 하면 충분한 것 — UI 옵션, API 응답 캐시, 작업 중 임시 컨텍스트. *디스크에 평문으로 있어도 사용자에게 큰 손해 없는* 데이터.
+
+##### ❌ secret 에 두면 안 되는 것
+**디스크 평문 정착이 안전한가**로 판단 — master password, OAuth refresh/access token, 결제 정보·API 결제 key, 개인정보(의료/금융/식별), 타 서비스 자격증명.
+
+이 종류는 플러그인이 **직접 OS keyring** 을 호출한다. Rust `keyring` 크레이트:
+
+```rust
+let entry = keyring::Entry::new("com.example.myplugin", "refresh_token")?;
+entry.set_password(&token)?;
+let token = entry.get_password()?;
+```
+
+- service 이름은 plugin id prefix, user 이름은 데이터 의미(`refresh_token`).
+- 키체인 없는 환경(Linux headless 등)에서 실패 시 사용자에게 명시 알림 + 기능 disable. **평문 파일 폴백 금지.**
+
+##### 큰 민감 데이터 — 외부 파일 + memory 링크
+값이 큰 것(예: SSH 개인키): ① 파일은 적절한 외부 위치, ② memory 엔 *경로만*, ③ 파일 권한 OS-level 강하게(0600). memory 시스템 원칙("한계 넘는 데이터는 외부 파일 + 링크")과 동일.
+
+#### sandbox 가 들어오면
+
+플러그인 sandbox(macOS `sandbox-exec` / Linux `landlock` / Windows `AppContainer`)가 도입되면 플러그인이 `memory.db` 직접 열기·keyring 직접 호출도 capability 로 제어된다 — 그 시점에 secret 의 IPC 격리만으로 진짜 격리가 완성된다. 도입 시기 미정. **그 전까지 위 권고를 따른다.**
+
+#### 요약
+
+- secret 영역 = "다른 플러그인한테 안 보이는 자리", 그 이상도 이하도 아니다.
+- 진짜 민감 데이터 = OS keyring 직접 호출 또는 외부 파일 + 권한 관리.
+- 모호하면 "이 데이터가 평문으로 디스크에 있어도 괜찮은가?" — 괜찮으면 secret, 아니면 keyring.
 
 ## 7. 호스트 런타임 계약 (env · 생명주기 · 핸드셰이크)
 
@@ -510,7 +560,7 @@ tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재s
 #   ※ version 을 안 올려도 반영된다 — 같은 버전 갈래는 **내용으로** 판정해 다른 파일만 옮긴다
 #      (2026-09-07 부터. 그전에는 mtime 비교였고, `cp -p`·아카이브처럼 mtime 이 보존되면 조용히 건너뛰었다).
 #      보고문은 여전히 'skipped' 로 나오지만 사유가 갈린다 — 'content resync: files rewritten' 이면 옮긴 것이고
-#      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **내용까지 같은데도** 다시 쓸 때만 필요하다.
+#      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **설치본 버전이 번들보다 높아** 건너뛰는 갈래에만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 #   ※ 옛 프로세스가 아직 빠지는 중이면 enable 이 그 회수(최대 2 s)를 기다린 뒤 그 자리에서 띄운다 —
 #      enable 이 돌아오면 plugin 은 이미 떠 있다(ADR-0457).
@@ -536,7 +586,6 @@ tasty <plugin-cli> <cmd> ...          # CLI→IPC→실행 중 호스트→플�
 ## 관련
 
 - [concepts/plugins](../concepts/plugins.md) — 분류 축·권한 개요
-- [plugin-permissions](plugin-permissions.md) · [plugin-sensitive-data](plugin-sensitive-data.md)
+- [plugin-permissions](plugin-permissions.md)
 - [plugins/](../plugins/index.md) — 번들 플러그인(= 예제) 카탈로그
 - [features/plugin-system](../features/plugin-system/index.md) — 설치/관리 UI
-</content>

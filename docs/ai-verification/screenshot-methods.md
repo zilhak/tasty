@@ -23,7 +23,7 @@
 찍어 대조했다. **하드웨어 GPU 가 붙은 X 서버는 이 표에서 미측정이다**(그쪽은 OS 캡처가
 GPU 창에서 검게 나온다고 알려져 있고, 이 실측은 그 조건이 아니다).
 
-시각 판단 휴리스틱·체크리스트는 [visual-verification](visual-verification.md).
+시각 판단 휴리스틱·체크리스트는 아래 [시각 판정 체크리스트](#시각-판정-체크리스트).
 
 ## `tasty screenshot` CLI / `ui.screenshot` IPC (권장)
 
@@ -159,7 +159,7 @@ tasty screenshot --path /abs/settings.png --window <아래 표로 고른 id>
 
 CLI 없이 raw JSON-RPC(개행 구분)를 포트로 직접 보낼 수도 있다. 포트 파일은 debug 빌드면
 **debug 루트** `~/.tasty-debug/tasty.port`, release 면 `~/.tasty/tasty.port` 다(루트 분리 —
-격리 표 [independent-verification](../dev-guide/independent-verification.md), 구현
+격리 표 [self-verification 독립 검증](../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다), 구현
 `crates/tasty-ipc/src/port_file.rs`).
 
 ```python
@@ -173,17 +173,19 @@ print(s.recv(8192).decode().strip())   # {"result":{"path":..,"surface_id":5,"sc
 
 ### 사용자 세션을 건드리지 않고 격리 실행
 
-debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자동 분리되므로, 보통은 그냥 `./target/debug/tasty --launch` 로 띄우고 `~/.tasty-debug/tasty.port` 로 접속하면 사용자 release 세션과 충돌하지 않는다(격리 표·상세: [independent-verification](../dev-guide/independent-verification.md)).
+debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자동 분리되므로, 보통은 그냥 `./target/debug/tasty --launch` 로 띄우고 `~/.tasty-debug/tasty.port` 로 접속하면 사용자 release 세션과 충돌하지 않는다(격리 표·상세: [self-verification 독립 검증](../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다)).
 
 루트를 명시적으로 분리하고 싶으면(병렬 debug 인스턴스 등) `TASTY_HOME` env 로 루트를 강제한다 — `tasty_home()` 이 `TASTY_HOME` 을 debug/release 자동 분기보다 우선한다(`crates/tasty-utils/src/path.rs`).
 
 ```bash
 TH=$(mktemp -d); cp ~/.tasty/config.toml "$TH/"    # config 는 루트 바로 아래
-TASTY_HOME="$TH" TASTY_DEBUG_OS_OPEN_LOG="$TH/os-open.log" \
+env -u TASTY_SESSION_TOKEN -u TASTY_SURFACE_ID -u TASTY_PARENT_HOME \
+  TASTY_HOME="$TH" TASTY_DEBUG_OS_OPEN_LOG="$TH/os-open.log" \
   ./target/debug/tasty --launch &                  # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
                                                    # OS 열기는 띄우지 않고 기록만 — 격리 홈은 사용자 브라우저를 못 막는다
 MY_APP=$!                                          # 띄운 즉시 PID 를 잡는다
-until TASTY_HOME="$TH" ./target/debug/tasty list info >/dev/null 2>&1; do   # IPC 대기
+until env -u TASTY_SESSION_TOKEN -u TASTY_SURFACE_ID -u TASTY_PARENT_HOME \
+      TASTY_HOME="$TH" ./target/debug/tasty list info >/dev/null 2>&1; do   # IPC 대기
   kill -0 "$MY_APP" 2>/dev/null || { echo "기동 실패 — 로그를 본다"; break; }  # 죽은 프로세스를 무한정 기다리지 않는다
   sleep 1
 done
@@ -237,9 +239,11 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 
 여기에 스테이징이 겹친다. host 는 **debug 빌드에서 부팅할 때만** `copy_if_newer` 로
 `target/debug/builtin-plugins/` 를 갱신한다. release/dist 는 빌드 단계에서 스테이징한다. 모든 프로필은 번들에서 `<TASTY_HOME>/plugins/` 로
-sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 그 스테이징 판정은 2026-09-07 부터
-**내용**이다 — 내용이 다르면 옮기고 같으면 안 옮기며 **시각이 같아도 내용을 본다.** 그래서
-"시각이 같아 조용히 건너뛴다" 는 갈래는 닫혔다.
+sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). debug 스테이징 판정(`copy_if_newer`)은
+**mtime 우선**이다(번들 → 홈 sync 는 내용 판정이다) — src 가 새것이면 내용을 안 보고 옮기고, dest 가 새것이면 내용을 안 보고
+건너뛰며, **시각이 같을 때만 내용을 본다.** 그래서 "시각이 같아 조용히 건너뛴다" 는 갈래는
+닫혔지만, **dest 가 더 새것인데 내용이 다른 경우**(src 가 `cp -p` 복원 등으로 더 옛 시각을 달고
+바뀐 경우)는 여전히 못 본다.
 **닫히지 않은 것이 이 절의 본론이다**: 안 만들어진 바이너리는 **내용도 옛것**이라 스테이징이
 옳게 동작해도 옛 코드가 그대로 간다 — 즉 위 문단의 함정은 스테이징이 아니라 **빌드**에 있다.
 
@@ -258,7 +262,7 @@ cargo build --workspace                 # 최소한 이것 (스테이징은 부�
 
 확인은 mtime·크기 비교가 제일 싸다. **묻는 것은 "스테이징이 반영했나" 가 아니라
 "빌드가 산출물을 다시 만들었나" 다** — 산출물이 소스보다 뒤면 만들어진 것이고, 그 뒤는
-부팅이 내용으로 판정해 옮긴다:
+부팅이 위 판정으로 옮긴다:
 
 ```bash
 ls -la target/debug/tasty-plugin-<name> \
@@ -338,18 +342,8 @@ PointerRoot 모델이 구해 주는 것은 **포인터**뿐이다. 키보드 포
 판정하면 "쳤는데 필터가 안 먹는다" 로 오진한다.
 
 그래서 `TextEdit` 에 쿼리를 넣어 **목록이 줄어든 화면**을 찍으려면 egui 입력 큐로 직접
-주입한다:
-
-```bash
-tasty debug host-popup open --popup-id command_palette
-tasty debug inject egui-text --text split      # {"injected":true} 를 확인한다
-tasty screenshot --window "$WIN" --path /tmp/palette-filtered.png
-```
-
-`{"injected":false}` 면 그 문자열이 실입력 경로가 나를 수 없는 것이다(제어문자 · 빈
-문자열). Enter·↑↓·Esc 같은 **키**는 문자가 아니므로 `tasty debug inject egui-key --key Enter`
-쪽이다 — 둘은 egui 에서도 다른 이벤트라, 한쪽으로 다른 쪽을 대신할 수 없다.
-상세는 [debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다".
+주입한다(`tasty debug inject egui-text`). 절차·거절 조건은
+[debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
 
 그 밖에 이 조합에서 지키는 것:
 
@@ -377,8 +371,8 @@ tasty screenshot --window "$WIN" --path /tmp/palette-filtered.png
 
 ```bash
 B="${TMPDIR:-/tmp}/tasty-shots"; mkdir -p "$B"
-# 여러 specimen 한 방에 (init 1회): idx 3=Button, 6=Badge·Tag·Kbd, 9=MenuItem·TreeRow
-TASTY_GALLERY_SHOT="3:$B/button.png,6:$B/chips.png,9:$B/nav.png" ./target/debug/tasty-gallery
+# 여러 페이지 한 방에 (init 1회): idx 1=Components(Button·Badge·MenuItem…), 3=Overlays, 6=Chrome
+TASTY_GALLERY_SHOT="1:$B/components.png,3:$B/overlays.png,6:$B/chrome.png" ./target/debug/tasty-gallery
 
 # 페이지 중간 섹션(Layouts 페이지의 Task DAG)을 전폭으로
 TASTY_GALLERY_SIZE=1360x1000 \
@@ -386,10 +380,75 @@ TASTY_GALLERY_SIZE=1360x1000 \
 # 윈도우 1100x720, 1:1(논-레티나) → 좌측 사이드바 ~240px, 우측이 specimen 패널
 ```
 
-## OS 화면 캡처 (폴백만)
+## OS 화면 캡처
 
+- **Linux** `scrot` — native WebView 화면은 이 채널로만 찍힌다(위 "무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다").
 - **macOS** `screencapture` — 해당 프로세스에 화면 녹화 권한 필요(없으면 `could not create image from display` 실패 → `ui.screenshot` 또는 갤러리는 `TASTY_GALLERY_SHOT` 사용).
 - **Windows** PowerShell `CopyFromScreen`. 윈도우가 가려져 있으면 `ShowWindow`+`SetForegroundWindow` 로 최대화 후 캡처. tasty.exe 실행 중이면 `cargo build` 가 exe 를 못 덮어쓰니 빌드 전 종료(`Stop-Process -Force`).
+
+## 시각 판정 체크리스트
+
+스크린샷의 "눈으로 보이는지" 에만 의존하지 말고, **코드 레벨에서 논리적으로** + **픽셀 수치로** 검증한다. 자체 검증 일반 절차는 [dev-guide/self-verification](../dev-guide/self-verification.md).
+
+### 스크린샷은 tasty 자체 `ui.screenshot` 우선
+
+화면 캡처는 OS 캡처 도구가 아니라 **tasty 의 `ui.screenshot`**(CLI `tasty screenshot`)를 우선 쓴다 — 정확한 윈도우/surface 영역을 결정적으로 얻고, 좌표가 tasty 내부 레이아웃과 일치한다(OS 캡처는 데코·DPI·다른 창 혼입 위험). focus-독립 정식 기능이라 release 에서도 동작하고 `--surface <id>` 로 특정 터미널 surface 도 캡처 가능 → [screenshot-methods](#). 셀 색 검증은 `debug.glyph_color`(렌더러가 GPU 에 push 하는 실제 RGBA, debug 빌드)도 함께.
+
+**예외 하나 — 이건 우선순위가 아니라 유무다.** `markdown`·`html` 처럼 native WebView 로 그리는 화면은 `ui.screenshot` 에 **담기지 않는다**(swapchain 밖의 OS 자식 창이라 host chrome 만 찍힌다). 그쪽 픽셀이 필요하면 OS 화면 캡처가 폴백이 아니라 **유일 채널**이다 — 어느 대상이 어느 채널에 있는지는 [screenshot-methods](#) 맨 위 표가 정본이다. "OS 캡처는 최후 폴백" 으로만 읽으면 그 두 kind 의 시각 검증을 통째로 건너뛰게 된다.
+
+### 체크리스트 ("보인다"고 말하기 전에)
+
+#### 1. 색상 대비
+
+새 UI 요소의 색과 배경색의 RGB 차이를 계산한다. 배경과 같거나 유사하면 **확대해도 안 보인다.** 각 채널(R/G/B) 중 하나 이상이 충분히 차이나야 한다.
+
+```
+예: 배경 rgb(26,26,30) 에 경계선 rgb(60,60,75) → 차이 최대 45 (겨우 보임)
+```
+
+(실제 색은 Theme 토큰에서 — 하드코딩 금지, [theme › 색 생성 정책](../design/systems/theme.md#색-생성-정책). 대비 기준은 [theme.md](../design/systems/theme.md) "텍스트 대비 4.5:1".)
+
+#### 2. 렌더 레이어/순서
+
+요소가 실제로 화면에 나타나는지 렌더 파이프라인 순서를 코드에서 추적한다.
+
+- egui `LayerId::background()` 는 모든 패널 **뒤** → 터미널 위에 그리려면 `Order::Foreground`.
+- 터미널 GPU 렌더는 **누적(accumulate) → flush 1회 → 단일 패스 + per-surface scissor** 모델이다. 한 surface 의 인스턴스가 다른 surface range 를 침범하지 않는지(scissor rect / instance range)를 확인한다 — 상세 [gpu-rendering](../dev-guide/gpu-rendering.md).
+
+#### 3. 픽셀 수치 검증
+
+스크린샷(또는 `ui.screenshot`) 후 해당 영역의 RGB 를 직접 읽어 기대값과 비교한다.
+
+```python
+for x in range(expected_x - 5, expected_x + 5):
+    idx = (y * width + x) * 3
+    print(f'pixel({x},{y}) = rgb({data[idx]},{data[idx+1]},{data[idx+2]})')
+```
+
+기대 색이 그 좌표에 실제로 있는지 확인한 뒤에야 "보인다" 고 판단한다.
+
+체크: ① 색이 배경과 다른가(코드) ② 레이어가 위에 그려지나(렌더 순서) ③ 픽셀 RGB 가 기대값과 일치하나(수치). 셋 다 통과 안 하면 "보인다" 고 말하지 않는다.
+
+**전후 캡처를 비교해 "안 바뀌었다" 를 판정하는 것은 위와 다른 축이다.** 그쪽은 양성 대조와
+노이즈 바닥을 먼저 세워야 하고, "바이트 동일" 은 판정 기준이 될 수 없다 —
+절차는 [screenshot-methods](#) "픽셀 diff 판정 전" 절이 정본이다.
+
+### 스크린샷 판단 휴리스틱 (인지 함정 방지)
+
+픽셀 검증과 별개로, 눈으로 볼 때 빠지는 함정:
+
+1. **전체를 훑지 말 것.** 변경 영역을 좌표로 특정하고 그 영역만 집중해서 본다 — 전체 인상으로 판단하면 변경분이 묻힌다.
+2. **"안 보인다" 단정 전 좌표 재확인.** 작은 요소는 축소 스크린샷에서 안 보인다. "안 보인다" 는 자주 "내가 못 찾았다" 다 — 잘라 확대하거나 픽셀을 읽는다.
+3. **코드 수치와 스크린샷 대조.** 알파 12 오버레이가 배경 위에서 실제로 어떤 차이를 내는지 직접 본다 — "12 면 약하다/강하다" 를 코드만 보고 추측하지 않는다.
+4. **불확실하면 "잘 모르겠다" 라고 말한다.** 틀린 확신이 신뢰를 깎는다.
+
+체크리스트는 *기준*, 휴리스틱은 *판단 과정의 함정 방지* 다.
+
+### 관련
+
+- 이 문서의 앞 절들 — 캡처 수단 · Xvfb 함정, 바로 아래 [픽셀 diff 판정 전](#픽셀-diff-판정-전--통제군으로-노이즈-바닥을-먼저-재라) — **전후 diff 판정의 노이즈 바닥과 양성 대조**
+- [dev-guide/debug-ipc](../dev-guide/debug-ipc.md) — `ui.screenshot` / `debug.glyph_color`
+- [dev-guide/gpu-rendering](../dev-guide/gpu-rendering.md) · [design/systems/theme › 색 생성 정책](../design/systems/theme.md#색-생성-정책) · [design/systems/theme](../design/systems/theme.md)
 
 ## 픽셀 diff 판정 전 — 통제군으로 노이즈 바닥을 먼저 재라
 

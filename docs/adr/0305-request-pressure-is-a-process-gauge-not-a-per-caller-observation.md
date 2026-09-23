@@ -27,7 +27,7 @@
 ## Decision
 
 요청 압력을 **caller 별 관측과 다른 축**으로 둔다. `PressureStats` 는 프로세스 수명 동안
-누적되는 고정 크기 게이지다 — 원자값 여덟 개이고, 호출 수와 무관하게 자라지 않으며,
+누적되는 고정 크기 게이지다 — 원자값 여덟 개(결정 시점 — 아홉째 `queue_waits` 는 [ADR-0466](0466-the-queue-wait-mean-divides-by-the-waits-it-summed.md) 이 더했다)이고, 호출 수와 무관하게 자라지 않으며,
 저장소를 거치지 않고, **caller 로 나누지 않는다.**
 
 세는 값은 큐 깊이 · 큐 대기 · handler 실행 시간이다. 각각 count·sum·max 를 들며, 평균은
@@ -108,7 +108,8 @@ telemetry 행을 한 건도 읽지 않으므로 `record_ipc_call` 을 거부까�
   (2026-09-21 좌표 이동: `record_drain` 은 회차 규칙과 함께 `src/app/ipc_round.rs` 의
   `IpcRound::finish` 로 옮겨 gui·headless 가 한 자리를 쓴다 — 그 한 줄에는
   `only_rounds_that_took_something_are_counted` 가 채널로 붙었다.
-  `record_queue_wait` 는 `App::ipc_dispatch_command` 의 첫 줄이고 여전히 채널이 없다.)
+  `record_queue_wait` 는 `src/app/ipc_round.rs` 의 `CommandObservation::begin` 첫 줄로 옮겨
+  두 dispatch 루프가 명령을 꺼낸 직후 부른다 — 이 한 줄의 채널 유무는 미측정이다.)
 - **값이 쓸모 있는가.** 노출 경로가 없으므로 지금은 아무도 안 읽는다. 재는 법: 노출
   메서드가 생긴 뒤, 실제 적체 상황에서 큐 대기 max 와 handler max 가 원인을 갈라 주는지
   본다. 안 갈라지면 재는 자리가 틀린 것이다.

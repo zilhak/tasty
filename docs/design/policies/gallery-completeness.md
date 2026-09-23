@@ -14,7 +14,7 @@
 
 갤러리 specimen 은 본체와 **같은 view-only 함수**를 호출한다(mirror 아님). 따라서 갤러리에서 디자인과 맞으면 본체도 맞는다. 이 등가성이 갤러리를 "본체 전체의 거울"로 만들고, 그래서 **거울에 빠진 컴포넌트가 있으면 그만큼 본체에 검증 사각이 생긴다.** 완전성은 demo=main 의 가치를 지키기 위한 전제다.
 
-- 위젯의 집·demo=main 구조: [shared-widgets](shared-widgets.md), [architecture/ui-widgets-crate](../../architecture/ui-widgets-crate.md).
+- 위젯의 집·demo=main 구조: [architecture/ui-widgets-crate](../../architecture/ui-widgets-crate.md) (무엇을 공용 위젯으로 만드나는 [그 문서의 절](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로)).
 - 본체 view 가 props 분리(view-only)돼 있어야 갤러리가 직접 호출할 수 있다: [dev-guide/model-view-split](../../dev-guide/model-view-split.md). 분리가 안 된 컴포넌트는 분리가 선행 과제이며, 그 전까지도 갤러리에서 빼지 않고 시각 복제 specimen 으로 둔다(본체 의존 0, 로컬 mock props).
 - 본체 binary(`tasty`) 안에만 있는 view 는 props 가 분리돼 있어도 갤러리가 **호출**할 수는 없다 — 물리적 위치를 `crates/tasty-ui-widgets` 로 옮겨야 같은 함수 호출이 성립한다. 끌어올릴 때 crate 로 넘기지 않는 것(Area/z-order · i18n · 글로벌 `theme()`)과 선례는 [gallery-first §이미 본체에만 있는 view 를 갤러리로 끌어올릴 때](../../dev-guide/gallery-first.md).
 
@@ -43,7 +43,7 @@ non-exhaustive patterns`). 런타임 대조는 그 시험이 **실행돼야** �
 두 `ALL` 을 런타임에 열거해 어느 한쪽에만 변종이 있으면 실패시킨다. 정본 크레이트는 그
 테스트의 `dev-dependencies` 로만 넣어 갤러리 산출물의 의존을 늘리지 않는다.
 
-그 대조는 통합 테스트가 아니라 **lib 유닛 테스트**로 둔다. 통합 테스트(`tests/*.rs`)는
+그 대조는 통합 테스트가 아니라 **lib 유닛 테스트**로 둔다. `tasty-gallery` 의 통합 테스트(`tests/*.rs`)는
 헤드리스 조합 하나에서만 실행되고 기본 조합의 자동 잡은 `--lib --bins` 라 못 보는데, 이런
 가드의 본체는 런타임 열거라 실행되지 않으면 아무것도 보지 않기 때문이다 — 어느 한쪽에만
 변종을 더해도 컴파일은 통과한다.
@@ -106,4 +106,4 @@ lib 에 두면 `--lib --bins` 자동 잡에서 함께 실행된다([dev-guide/ci
 - [dev-guide/gallery-first](../../dev-guide/gallery-first.md) — 새 컴포넌트는 디자인→갤러리→본체 순서.
 - [design/systems/design-gallery-mapping](../systems/design-gallery-mapping.md) — 디자인 jsx ↔ 갤러리 항목 ↔ 본체 함수 3자 매핑.
 - [design/systems/theme](../systems/theme.md) — UI 디자인 규칙 표. 무대 치수가 그리드·배율 축의 모수 밖인 근거가 그 표의 두 행에 있다.
-- [shared-widgets](shared-widgets.md) — 보편 컴포넌트는 공용 위젯으로(완전성의 부품 단위 기반).
+- [ui-widgets-crate › 무엇을 공용 위젯으로](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로) — 보편 컴포넌트는 공용 위젯으로(완전성의 부품 단위 기반).

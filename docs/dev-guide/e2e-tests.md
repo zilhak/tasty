@@ -23,7 +23,7 @@
 
 **바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
 
-**헤드리스 데몬은 `scripts/build-e2e-headless.sh` 가 짓는다**(`just e2e-headless-bin`). 빌드가 실패하거나 결과가 낡았으면 **아무것도 내지 않는다** — 호출자가 그때 `TASTY_E2E_BIN` 을 안 넘기면 하네스는 오늘 동작으로 떨어진다. 배선이 틀려도 초록이 거짓이 되지 않는 방향이다. 왜 별도 빌드여야 하는지는 그 스크립트 머리에 적혀 있다: 루트 `tasty` 에는 lib 타깃이 없고(바이너리 전용 패키지다) `gui` 는 **패키지 단위** feature 라, `[[bin]]` 을 하나 더 넣어 그 타깃만 `gui` 를 끄는 것은 cargo 에서 **불가능**하다.
+**헤드리스 데몬은 `scripts/build-e2e-headless.sh` 가 짓는다**(`just e2e-headless-bin`). 빌드가 실패하거나 결과가 낡았으면 **아무것도 내지 않는다** — 호출자가 그때 `TASTY_E2E_BIN` 을 안 넘기면 하네스는 오늘 동작으로 떨어진다. 배선이 틀려도 초록이 거짓이 되지 않는 방향이다. 왜 별도 빌드여야 하는지는 그 스크립트 머리에 적혀 있다: `gui` 는 **패키지 단위** feature 라, `[[bin]]` 을 하나 더 넣어 그 타깃만 `gui` 를 끄는 것은 cargo 에서 **불가능**하다.
 
 **낡은 override 는 하네스가 거절한다.** `spawn_diag::source_newer_than` 이 `src/`·`crates/` 의 `.rs` 중 그 바이너리보다 새것이거나 **mtime 이 같은** 것이 있으면 패닉으로 세운다 — 낡은 데몬은 정상 부팅해 정상 응답하므로, 안 잡으면 스위트가 **옛 코드에 대해** 판정하고 그 오진은 양방향이다.
 
@@ -86,7 +86,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 소속 판정 자체는 더 이상 기동을 기다리지 않으므로, 예전에 이 자리에 적혀 있던 "첫 호출이 드물게 `Method not found` 로 답한다"(namespace 표가 hello 뒤에 채워져서 기동과 첫 조회가 겹치던 형태)는 그 원인이 사라졌다. 여전히 `-32601` 이 나오면 그건 이름이나 설치를 의심할 신호다 — 설치된 owner가 비활성·자동 비활성이거나 기동에 실패하면 `-32002 plugin '<id>' is not running` 이 온다.
 
-**이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 위 절차는 `--workspace` 없이 빌드한다. 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 번들을 따로 복사하므로 이 스위트들의 판정에는 영향이 없지만, **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
+**이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 그러니 **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
 
 **★ 조합 교차는 스위트 단위 판정으로 닫혔다.** `TASTY_E2E_BIN` 은 **데몬만** 다른 조합으로 바꾼다. 테스트 바이너리는 여전히 자기 조합으로 컴파일돼 있어서, 데몬의 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 그 단언이 **구조적으로 뒤집힌다** — `tests/e2e_tests.rs` 의 `..._answers_in_both_combos` 계열이 그 형태다. 그래서 **그런 단언을 가진 스위트는 override 를 받지 않는다**(`daemon_kind()`). override 를 켜도 `e2e_tests` 는 자기 조합의 데몬을 그대로 띄우고, GPU 부팅을 건너뛰는 것은 나머지 스위트다.
 
@@ -140,7 +140,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 **선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 `cargo test --workspace` 에서도 실행되지 않는다 — 어느 채널에도 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
 
-**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 통합 테스트라 **컴파일은 두 조합 모두 자동, 실행은 헤드리스 조합에서만 자동**이다(기본 조합의 전체 스위트는 자동 채널이 없다). 조합별 실태와 단서(`paths-ignore` 등)는 [ci-gates](ci-gates.md) 가 정본이고 여기 복제하지 않는다. 세 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`), ③ 바이너리 선택이 §0-1 의 한 곳을 거치는지(`BIN_SELECTION_ALLOWLIST` — **면제는 파일 통째가 아니라 횟수까지 묶는다**). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
+**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 통합 테스트라 **컴파일은 두 조합 모두 자동, 실행은 헤드리스 조합에서만 자동**이다(기본 조합의 전체 스위트는 자동 채널이 없다). 조합별 실태와 단서(`paths-ignore` 등)는 [ci-gates](ci-gates.md) 가 정본이고 여기 복제하지 않는다. 세 축을 본다 — ① 파일당 전용 spawn 호출 수(`DEDICATED_SPAWN_MARKERS` 에 든 생성자만 센다 — `spawn_with_env`·`spawn_with_restore_layout` 은 안 센다. 미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`), ③ 바이너리 선택이 §0-1 의 한 곳을 거치는지(`BIN_SELECTION_ALLOWLIST` — **면제는 파일 통째가 아니라 횟수까지 묶는다**). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
 
 ## 2. 공유 하네스 (`common::shared()`)
 
@@ -156,7 +156,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 격리 헬퍼가 돌려주는 `TestWorkspace` 는 `workspace.create` 응답의 `id` / `index` / `surface_id` 를 그대로 담는다. 공유 경로에서는 `first_surface_id()` / `first_pane_id()`(목록의 `[0]` 번째를 집는다 — 전용 인스턴스 전용) 대신 `first_surface_id_in_workspace()` / `first_pane_id_in_workspace()` 를 쓴다. 갓 만든 workspace 의 PTY 가 필요하면 `wait_for_shell()` 로 첫 프롬프트를 기다린다.
 
-**workspace 로 격리되지 않는 전역 상태**: headless PTY(`pty.*`), `global_hook.*`, notification 은 전역 목록이라 같은 binary 의 다른 테스트가 만든 항목까지 함께 조회된다. 공유 인스턴스 위의 목록 검증은 "내 것이 있는가"(`any`) 형태로 쓰고 길이나 `[0]` 번째를 assert 하지 않는다. surface hook(`hook.unset`)과 headless PTY(`pty.kill`)는 인스턴스가 test 프로세스와 함께 죽으므로 회수가 필수는 아니지만, 같은 binary 의 후속 테스트를 오염시키지 않도록 만든 테스트가 회수하는 것을 기본으로 한다. workspace 자체는 회수하지 않는다 — `workspace.close` IPC 가 없고 회수할 이유도 없다.
+**workspace 로 격리되지 않는 전역 상태**: headless PTY(`pty.*`), `global_hook.*`, notification 은 전역 목록이라 같은 binary 의 다른 테스트가 만든 항목까지 함께 조회된다. 공유 인스턴스 위의 목록 검증은 "내 것이 있는가"(`any`) 형태로 쓰고 길이나 `[0]` 번째를 assert 하지 않는다. surface hook(`hook.unset`)과 headless PTY(`pty.kill`)는 인스턴스가 test 프로세스와 함께 죽으므로 회수가 필수는 아니지만, 같은 binary 의 후속 테스트를 오염시키지 않도록 만든 테스트가 회수하는 것을 기본으로 한다. workspace 자체는 회수하지 않는다 — 인스턴스가 test 프로세스와 함께 죽으므로 회수할 이유가 없다.
 
 `attach_*` test binary 들이 쓰는 attach 스트림 frame/handshake 헬퍼(`read_frame` / `write_control_frame` / `open_workspace_attach` / `open_surface_attach` / `open_stream_without_attach` / `wait_for_control_event`)는 **`tests/attach_common/mod.rs`** 한 곳에 있다 — `tests/common`(인스턴스 하네스)·`tests/webhook_common`(웹훅 하네스)과 같은 층위의 세 번째 공유 test 모듈이다. 개별 `#[test]` 파일끼리는 서로 `mod` 할 수 없지만 디렉토리 모듈은 여러 test binary 가 각자 `mod attach_common;` 으로 가져갈 수 있으므로, 파일마다 복제하지 않는다. 이 모듈에는 "첫 workspace 를 집는" 헬퍼를 두지 않는다 — 공유 인스턴스 위에서 그 습관이 남으면 남의 격리 단위를 밟는다.
 
@@ -445,7 +445,104 @@ handshake/raise/read/clear/quiet 경과와 frame tag가 없는 과거 총시간�
 
 터미널 동작 검증용 도구 — 고수준 명령을 raw VTE escape 시퀀스로 변환해 출력한다(터미널 입장에선 실제 TUI 앱과 같은 바이트 스트림). **인터랙티브 모드**(stdin REPL — 외부에서 `surface.send` 로 명령 단계 전송, 명령마다 `OK` 동기화)와 원샷 시나리오를 제공한다. 명령: cursor/print/sgr/fg·bg/altscreen/scroll-region/erase/raw/esc 등, 종료 제어 `quit`/`exit-code N`/`crash`(SIGABRT)/`panic`. debug 의 `debug.cell_info`/`debug.screen_attrs`([debug-ipc](debug-ipc.md))와 조합하면 셀 속성을 결정적으로 자동 검증할 수 있다.
 
-로직은 `lib.rs` 에 있고 두 진입점이 공유한다(SoT 하나) — 독립 바이너리 `tasty-tui-sim`(`cargo build -p tasty-tui-simulator`, release 빌드 가능) 과 `tasty debug sim <subcommand>`(debug 빌드 한정). **debug 빌드에선 별도 빌드/PATH 설정 없이** `tasty debug sim ...` 으로 바로 호출할 수 있다(이미 `tasty` 가 PATH 에 있으므로). surface 안에서 stdout 에 직접 VTE 를 뿜는 로컬 동작이라 IPC 를 거치지 않는다. 자세한 명령 목록·부하 모드(`flood`)는 [tui-testing](tui-testing.md).
+로직은 `lib.rs` 에 있고 두 진입점이 공유한다(SoT 하나) — 독립 바이너리 `tasty-tui-sim`(`cargo build -p tasty-tui-simulator`, release 빌드 가능) 과 `tasty debug sim <subcommand>`(debug 빌드 한정). **debug 빌드에선 별도 빌드/PATH 설정 없이** `tasty debug sim ...` 으로 바로 호출할 수 있다(이미 `tasty` 가 PATH 에 있으므로). surface 안에서 stdout 에 직접 VTE 를 뿜는 로컬 동작이라 IPC 를 거치지 않는다. 자세한 명령 목록·부하 모드(`flood`)는 아래 [TUI 테스트 가이드](#tui-테스트-가이드--시뮬레이터--셀-검증--골든-스냅샷).
+
+### TUI 테스트 가이드 — 시뮬레이터 · 셀 검증 · 골든 스냅샷
+
+터미널 에뮬레이션 버그를 결정적으로 재현·검증하는 방법. E2E 격리/timeout 정책은 이 문서 위 §1–§6.
+
+#### 원칙 — 재현 먼저
+
+TUI 버그 발견 시: ① 최소 재현 VTE 시퀀스 특정 → ② `tasty-tui-sim` 에 시나리오 추가 → ③ `debug.cell_info`/`debug.screen_attrs` 로 정상 상태를 검증하는 E2E 테스트 작성 → ④ 버그 상태에서 테스트가 **실패하는지 확인** → ⑤ 수정 후 통과. "수정 먼저, 테스트 나중" 금지.
+
+#### tasty-tui-sim (VTE 시뮬레이터)
+
+`crates/tasty-tui-simulator/` — 고수준 명령("cursor 5 3", "bold", "print hello")을 raw VTE escape 로 변환해 출력한다. 터미널 입장에선 실제 TUI 앱과 동일한 바이트 스트림. 테스트 전용이 아닌 독립 도구(`cargo build -p tasty-tui-simulator`).
+
+로직은 `lib.rs` 에 있고 두 진입점이 공유한다(SoT 하나):
+
+- 독립 바이너리 `tasty-tui-sim` — release 빌드 가능. PATH 에서 어느 surface 든 실행(부하 테스트는 보통 release 본체 대상이라 이쪽).
+- `tasty debug sim <subcommand>` — debug 빌드 한정. **별도 빌드/PATH 설정 없이** 바로 호출 가능(이미 `tasty` 가 PATH 에 있으므로). surface 안에서 stdout 에 직접 VTE 를 뿜는 로컬 동작(IPC 미경유). `tasty debug sim flood` 가 화면 갱신 부하(full-screen truecolor redraw)를 거는 스트레스 모드.
+
+##### 인터랙티브 모드 (핵심)
+
+서브커맨드 없이 실행하면 stdin REPL. E2E 가 `surface.send` 로 명령을 한 줄씩 보내 터미널 상태를 단계 구성한다. 시작 시 `READY`, 매 명령 후 `OK` 출력 → 테스트는 `wait_for_output("OK")` 로 동기화.
+
+```bash
+tasty-tui-sim   # = tasty-tui-sim interactive
+```
+
+##### 명령 카테고리
+
+raw escape 직접 출력이 목적이라 crossterm/ratatui 같은 추상화는 쓰지 않는다. 전체 목록은 `crates/tasty-tui-simulator/src/lib.rs`. 주요 카테고리:
+
+- **화면/커서**: `clear` `reset` `cursor <r> <c>` `cursor-{up,down,left,right} [N]` `cursor-save`/`-restore`
+- **텍스트**: `print`/`println <text>` `newline` `cr` `tab` `bell`
+- **SGR**: `sgr <params>` `bold` `italic` `underline[-double|-curly|-dotted|-dashed]` `underline-color` `strikethrough` `inverse` `dim` `blink[-rapid]` `invisible` `overline` `fg <N|r;g;b>` `bg <…>` + `*-off`
+- **지우기/스크롤**: `erase-display [N]` `erase-line [N]` `scroll-region <top> <bottom>` `scroll-{up,down} [N]`
+- **모드**: `altscreen-enter`/`-exit` `decset/decrst <mode>` `mouse-track[-motion|-all]` `size`
+- **raw**: `raw <hex>` `esc <seq>`
+- **프리셋**: `scenario {cursor,colors,attrs,unicode,scroll-region}`
+- **종료**: `quit`/`exit` (`BYE`) `exit-code <N>` `crash`(SIGABRT) `panic`
+
+원샷(`tasty-tui-sim cursor --row 5 --col 10 --exit` 등)은 수동 눈 확인용 — `--exit` 없으면 키 대기. E2E 는 인터랙티브 모드 사용.
+
+#### 디버그 IPC (debug 빌드 전용, `#[cfg(debug_assertions)]`)
+
+##### `debug.cell_info` — termwiz 파싱 단계 셀 속성
+
+`tasty debug cell-info --row 0 --col 0`. termwiz `CellAttributes` 단계를 그대로 노출 — **렌더러가 GPU 에 반영했는지는 `debug.glyph_color` 로 별도 확인.** 필드: `text` `fg`/`bg`(`default`/`palette:N`/`#rrggbb`) `bold` `italic` `underline` `strikethrough` `inverse` `width`(1/2) `intensity`(normal/bold/half) `underline_style` `underline_color` `blink` `invisible` `overline` `vertical_align`.
+
+> `overline`/`underline_color`/`vertical_align` 은 termwiz `CellAttributes` 엔 있으나 `AttributeChange` enum 에 variant 가 없어 현재 SGR 파이프라인(`crates/tasty-terminal/src/vte_handler.rs`)이 셀에 전달하지 못한다 — SGR 로 입력해도 기본값 반환. 검증 인프라만 준비된 상태.
+
+##### `debug.glyph_color` — 렌더러가 GPU 에 push 하는 색
+
+`tasty debug glyph-color --row 0 --col 0 [--bg-mode unfocused] [--surface 3]`. 응답: `in_bounds` `bg_mode`(focused/unfocused) `default_bg`/`bg`/`fg`(각 `{r,g,b,a,hex}`). `compute_cell_colors`(`src/cell_palette.rs`)가 GPU 인스턴스 색의 단일 출처 — 렌더러와 `debug.glyph_color` 가 같은 함수를 쓰므로 누락된 SGR 처리가 즉시 드러난다. (faint/dim 회귀: cell_info `intensity == "half"` → glyph_color 에서 fg 가 어둡게 적용됐는지 비교.)
+
+##### 입력 시뮬레이션 (debug + `--enable-input-simulation`)
+
+2단계 게이트: `#[cfg(debug_assertions)]` + `--enable-input-simulation` 플래그(없으면 "input simulation not enabled" 거부). `debug.inject_mouse`(SGR 마우스: surface_id/col/row/button/event_type) · `debug.inject_key`(text 또는 hex bytes).
+
+#### E2E 테스트 패턴
+
+```rust
+tasty.set_mark(sid);
+tasty.send_text(sid, "tasty-tui-sim\n");
+tasty.wait_for_output(sid, "READY", Duration::from_secs(5));
+tasty.send_text(sid, "print 한글\n");
+tasty.wait_for_output(sid, "OK", Duration::from_secs(2));
+let cell = tasty.call("debug.cell_info", json!({ "surface_id": sid, "row": 0, "col": 0 }));
+assert_eq!(cell["text"], "한");
+assert_eq!(cell["width"], 2);
+tasty.send_text(sid, "quit\n");
+tasty.wait_for_output(sid, "BYE", Duration::from_secs(2));
+```
+
+같은 프로세스에서 여러 단계 연속 수행 가능. 프리셋 시나리오의 기대 출력(cursor/colors/attrs/altscreen/unicode/scroll-region 의 행·열별 값)은 `tasty-tui-sim` 소스의 각 `scenario_*` 함수가 SoT — 검증값은 거기서 읽는다.
+
+#### 골든 셀 그리드 스냅샷 (`cargo test`, headless)
+
+E2E 와 달리 **GUI surface 없이** 도는 결정적 회귀 가드. `crates/tasty-terminal/tests/golden_grid.rs` 가 production VTE ingest 경로(`Terminal::new_detached` → `feed_bytes`, 실제 PTY 와 동일한 핸들러)에 `tasty-tui-sim` 의 고수준 명령에 대응하는 raw escape 를 먹이고, 결과 셀 그리드의 **결정적 텍스트 표현**을 골든으로 고정한다. `cargo test --workspace` 에 포함되어 별도 인프라 없이 돈다 — 기본 조합의 그 잡은 수동 전용이고, 자동 실행은 `check-headless` 잡에서만 일어난다([ci-gates](ci-gates.md)).
+
+- `grid_text()` — 가시 그리드를 행당 한 줄로(후행 공백 trim, 빈 행 보존) 덤프. 레이아웃/커서/줄바꿈/스크롤/지우기 회귀용.
+- `styled_cells()` — populated 셀별 SGR 속성(bold/italic/underline/inverse/strike + palette fg/bg)을 `"{row},{col} {glyph} {flags}"` 로 덤프. SGR 적용 회귀의 정식 가드(예: bold 처리 누락 시 `0,0 B bold` → `0,0 B -` 로 골든이 깨짐).
+
+**커버 범위(의도적으로 좁게):**
+
+- 커버: 커서 절대 위치/레이아웃, autowrap 줄바꿈, scroll-region(DECSTBM) 스크롤업, erase-display(CSI J), per-cell SGR 속성.
+- **미커버**: GPU 픽셀 렌더(환경의존 → 골든 부적합, `debug.glyph_color` 로 검증), chrome/위젯 레이아웃(`src/view` — GUI 하니스 필요). 둘 다 수동 시각 검증(`docs/ai-verification/screenshot-methods.md#시각-판정-체크리스트`) 영역으로 남는다.
+
+픽셀이 아닌 **텍스트**를 고정하는 이유: 그리드의 텍스트 표현은 OS/GPU 무관하게 안정적이라, 로직 회귀가 골든 한 줄을 뒤집어 실패시키되 픽셀 골든처럼 flaky 하지 않다.
+
+#### 시나리오 추가
+
+`crates/tasty-tui-simulator/src/lib.rs` 에 서브커맨드 + 함수 추가. `clear_and_setup()` 시작 → raw escape 직접 출력 → `finish(out, "{NAME}_TEST_DONE", exit)`.
+
+#### 주의
+
+- **ratatui 금지** — raw escape 직접 출력해야 "터미널이 시퀀스를 올바로 해석하는가"를 검증할 수 있다.
+- 디버그 IPC 는 release 에 없다 — E2E 는 debug 빌드 전용.
+- **shell ZLE/readline 함정**: E2E 하네스는 격리 config 에 `shell = "/bin/sh"` 를 박고 `SHELL` 을 지우지만(`tests/common/mod.rs`), 셸을 직접 띄운 surface 나 수동 검증 인스턴스는 사용자 로그인 셸을 쓴다(`GeneralSettings::detect_shell`). `Alt+X`(execute-named-cmd), `Ctrl+R`(history-search), `Ctrl+X Ctrl+E`(edit-command-line) 등은 prompt 를 바꿔 후속 명령을 오염시킨다. shell-disruptive 키는 별도 임시 surface 에서 보내고 닫거나, `Ctrl+G`(abort)로 reset 후 진행. 증상: stripped 출력에 글자 사이 `_` 나 BEL 다수면 ZLE incremental 모드에 갇힌 것.
 
 ## 관련
 

@@ -13,7 +13,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 
 - **namespace 단수형** (`surface`, NOT `surfaces`). list 반환 키는 복수 (`surfaces: [...]`).
 - **root 예외**: `split`(pane 분할) · `tree`(surface tree)만 namespace 없이 root 에 등록(자주 쓰는 짧은 명령). 새 메서드는 이 예외에 동참 금지.
-- **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `tool.ssh.*`, `surface.meta.*` 점 표기).
+- **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `remote.profile.*`, `surface.meta.*` 점 표기).
 
 namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요), **제거는 SemVer 위반**(major bump 필요). 카운트 snapshot 은 테스트가 SoT 라 본 문서에 박지 않는다.
 
@@ -87,6 +87,67 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 `crates/tasty-cli` 의 plugin CLI 빌더는 **top/sub 2단만** 지원 — plugin 이 `x.meta.set` 을 노출하려면 `tasty <plugin> meta-set` 같은 2단으로 매핑. 호스트 본체 CLI 는 3단 직접 빌드 가능.
 
 `attach.*` IPC namespace 는 `tasty attach` 로 노출되지 않고 용도별 CLI 로 갈린다: `tasty remote attach`/`remote check`(release, 원격 SSH), `tasty debug attach`(debug 전용, 로컬 loopback). 근거·동작은 [attach-behavior](attach-behavior.md), 격리는 [debug-ipc](debug-ipc.md).
+
+### CLI ↔ IPC 표면 — 무엇이 CLI 로 닿고, 무엇이 왜 안 닿는가
+
+[`docs/identity.md`](../identity.md) 원칙 2 는 에이전트 기능이 **IPC 와 CLI 양면**으로
+동작해야 한다고 못 박는다. 이 문서는 그 대조를 **어떻게 판정하고 어떻게 세는지**를 적는다.
+결정의 근거·대안·재검토 조건은
+[ADR-0160](../adr/0160-every-ipc-method-is-cli-reachable-or-carries-a-reason.md).
+
+**어느 메서드가 CLI 없이 남아 있고 그 사유가 무엇인지의 정본은
+이 절 아래의 두 표**다([release 절반](#release-ipc-에-있는데-cli-가-없는-메서드) · [debug 절반](#debug-표에-있는데-cli-가-없는-메서드)).
+`tests/cli_method_table_parity.rs` 가 그 표와 실제 집합을 **양방향으로** 대조하므로,
+진입점이 생기면 행을 지워야 하고 새 메서드를 CLI 없이 얹으면 행을 넣어야 한다. 목록을
+여기 옮겨 적지 않는다 — 두 벌이 되는 순간 한쪽만 고쳐진다.
+
+#### 판별식
+
+> **호출자가 누구인지가 응답의 일부인가.**
+
+응답이 호출자의 신원(자기 배너·자기 팝업·자기 plugin 설정)이나 호출자에게 push 되는
+이벤트 수신처에 매여 있으면 셸은 호출자가 될 수 없다 — 셸에는 plugin 신원도 이벤트
+수신처도 없다. 매여 있지 않으면(전역 스냅샷 조회든 id 로 대상을 지정하는 쓰기든)
+진입점이 있어야 한다.
+
+**이 판별식은 "전형적 호출자가 plugin 인가" 와 다르다.** 뒤엣것은 *관행*이고 앞엣것은
+*불가능성*이다. 관행으로 가르면 `surface_id` 를 인자로 받아 셸도 부를 수 있는 메서드가
+"plugin 이 자기 surface 를 위해 부른다" 는 이유로 진입점 없이 남는다 — 실제로 그렇게
+남아 있던 것이 여섯이었다(ADR-0160 의 "판별식이 이전 기준을 대체한다").
+
+#### 어떻게 세는가
+
+**실행으로 센다.** 이름이 비슷한 잎을 찾는 방식은 두 방향으로 틀린다.
+
+- 플래그 뒤에 숨은 진입점을 못 본다. `message.clear` 는 `tasty read queue --clear` 가,
+  `surface.send_wait_idle` 은 `tasty send text --wait-idle` 이 보낸다 — 서브커맨드
+  이름에는 그 메서드가 없다.
+- **와이어 침묵을 진입점 부재로 오해한다.** `tasty tool remote-profile add-ssh` 는 rc=0
+  인데 IPC 를 한 번도 안 탄다 — `crates/tasty-cli/src/local/` 이 그 자리에서 실행한다.
+  그런 명령은 진입점이 **있는** 것이다.
+
+세는 절차는 살아 있는 인스턴스 앞에 프록시를 세워 각 CLI 잎이 실제로 실은 메서드를
+관측하는 것이다. 인자를 못 맞춰 실행이 안 된 잎은 **미측정**이지 부재가 아니다 — 그
+편향은 한쪽으로만 작용하므로(부재 집합은 줄어들 수만 있다) 상한으로만 쓴다. 실제로
+재확인하니 "잎은 있는데 인자를 못 맞춘 것" 22 건이 전부 진입점 있음으로 바뀌었다.
+
+가드가 소스에서 판정할 때 쓰는 "CLI 로 닿는다" 의 정의는 세 갈래다
+(`cli_reachable_methods`): CLI 의 요청 조립 자리에 있는 값 위치 리터럴, 크레이트 전체의
+`method: "…"` 필드, 그리고 **번들 plugin 매니페스트의 `ipc_method`**. 마지막 것이 없으면
+`tasty image open` 처럼 plugin 이 기여하는 명령이 전부 "진입점 없음" 으로 잘못 잡힌다.
+
+#### 선행 작업이 필요해 미룬 것
+
+- **`markdown.navigate` 의 CLI 진입점** — namespace 를 번들 plugin 이 점유해 외부 호출이
+  plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)).
+  host 잎을 만들면 plugin 설치 여부에 따라 흔들리므로, 진입점은 plugin 의 매니페스트
+  `ipc_method` 기여로 가야 한다 — plugin 크레이트 수정 + 매니페스트/Cargo 버전 bump.
+
+#### 관련 문서
+
+- [ADR-0160](../adr/0160-every-ipc-method-is-cli-reachable-or-carries-a-reason.md) — 이 규칙의 결정
+- [headless-ipc-surface](headless-ipc-surface.md) — 같은 표를 조합(gui/headless) 축으로 가른 대조
+- [debug-ipc](debug-ipc.md) — debug 격리 정책과 CLI 의 debug 트리
 
 ### release IPC 에 있는데 CLI 가 없는 메서드
 
@@ -427,7 +488,7 @@ debug 표 기준 총 3개.
 
 | 이유 | debug 메서드 | 왜 CLI 가 없나 |
 |---|---|---|
-| 사용자 행동 | `system.shutdown` | 호스트 종료는 사용자가 직접 하는 동작이다. debug 빌드에서도 에이전트 표면에 두지 않는다 |
+| 사용자 행동 | `system.shutdown` | 호스트 종료는 사용자가 직접 하는 동작이다. debug IPC 에 local 전용으로만 있고 CLI 진입점은 두지 않는다 |
 | 사용자 행동 | `window.focus` · `view.focus` | 포커스 전환은 사용자의 단축키/마우스 영역이다(원칙 3). debug IPC 에 재현 수단이 있는 것과, 그것을 CLI 한 줄로 상시 노출하는 것은 다르다 |
 
 ## 응답 계약 — mirror 워크스페이스로 간 구조 op
@@ -452,7 +513,7 @@ debug 표 기준 총 3개.
 
 ## plugin 점유 namespace
 
-plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace claude plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry timer` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
+plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry timer` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
 
 ### 대상 surface 는 `surface` / `surface_id` 어느 이름으로 와도 같은 필드다
 
@@ -556,10 +617,10 @@ deprecation 기간은 "한 minor 이상"이 원칙이다. 아래 셋은 유예 �
 ## 관련
 
 - [reference/api](../reference/api.md) — 전체 IPC/CLI 메서드 카탈로그
-- [plugin-development](plugin-development.md) · [plugin-ecosystem](plugin-ecosystem.md) · [release](release.md)
+- [plugin-development](plugin-development.md) · [plugin-packaging 생태계 정책](plugin-packaging.md#생태계-정책--자동-upgrade--호환성-분류) · [release](release.md)
 
 ### child 상태 전달의 채널
 
 완료 알림 채널은 `<parent_home>/notify/<caller_surface>.log` 하나이며, notify 형제 hook의
 surface 생존 판정·재무장이 그 경로를 채운다. `auto_wait`의 작업 성공 판정과는 별개다.
-[완료 알림 로그](external-interaction/child-completion-notify-log.md)를 따른다.
+[완료 알림 로그](external-interaction.md#child-완료-알림--completion-log)를 따른다.

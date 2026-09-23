@@ -418,7 +418,7 @@ pub struct AppState {
     /// `Core::with_memory` 와 같은 lock 정책 (poisoning 시 inner 사용).
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     /// Surface close lifecycle 알림 큐. close 직후 enqueue되고, App 메인 루프가
-    /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
+    /// drain하여 `surface.closed` 로 broadcast한다(`App::dispatch_pending_surface_lifecycle`).
     /// `state/`는 `plugin/` 의존이 없어 별도 plain struct로 둔다.
     pub(crate) pending_lifecycle_events: Vec<PendingSurfaceClosed>,
     /// Event Bus 1.0 호스트 자동 발화 큐. 호스트 코드 곳곳에서 `enqueue_host_event`로
@@ -619,7 +619,7 @@ pub struct AppState {
 
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
-    /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
+    /// (`Intent::Domain`) 가 한 큐 위에서 처리됨. 설계:
     /// `docs/design/flows/action-dispatch.md`, `intent-ui-vs-domain.md`.
     pub(crate) pending_intents: Vec<crate::intent::DispatchedIntent>,
 }
@@ -820,7 +820,7 @@ impl AppState {
     }
 
     /// Intent 발화. `App::dispatch_pending_intents` 가 메인 루프에서 drain.
-    /// UI Intent / Domain Intent 모두 본 큐로 발화 (D.3.I.3 두 큐 통합).
+    /// UI Intent / Domain Intent 모두 본 큐로 발화.
     pub fn dispatch_intent(&mut self, intent: crate::intent::DispatchedIntent) {
         self.pending_intents.push(intent);
     }
@@ -1148,7 +1148,7 @@ impl AppState {
         }
     }
 
-    /// **D.3.E.4.f** — TerminalStore 의 Terminal/부속 데이터 cascade 정리.
+    /// TerminalStore 의 Terminal/부속 데이터 cascade 정리.
     /// store.remove 가 Terminal drop → PTY SIGHUP 발사 + busy/scrollback_persist
     /// /deferred/pending_scrollback_inject 까지 함께 정리.
     fn drop_terminal(&mut self, engine: &mut CoreState, surface_id: u32) {
@@ -1393,7 +1393,7 @@ impl AppState {
     ///
     /// **로컬 출처만** 돌려준다 — 이 값은 로컬 PTY `working_dir` 등 로컬에서 실행되는
     /// 생성 자리에 들어가므로, mirror surface 의 원격 경로는 `None` 이 된다
-    /// (`docs/architecture/invariants/surface-cwd.md` §3-2). mirror 워크스페이스 안의 구조
+    /// (`docs/design/policies/cwd.md#surface-cwd-invariant` §3-2). mirror 워크스페이스 안의 구조
     /// 변경은 원격으로 forward 되고 서버가 자기 PTY 에서 cwd 를 resolve 하므로 이 `None`
     /// 으로 잃는 것이 없다.
     pub(crate) fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<std::path::PathBuf> {

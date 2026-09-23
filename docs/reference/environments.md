@@ -9,7 +9,7 @@ AI 에이전트가 tasty 를 조작하기 전 알아야 할 OS별 경로·실행
 | 포트 파일 | `~/.tasty/tasty.port` | IPC 동적 포트. 실행 시 생성 |
 | 설정 | `~/.tasty/config.toml` | 사용자 설정 |
 
-(Windows 는 `~` = `%USERPROFILE%`. debug 빌드는 루트 자체가 분리되어 `~/.tasty-debug/` 아래에 같은 파일들을 둔다 — 격리 상세 [dev-guide/independent-verification](../dev-guide/independent-verification.md).)
+(Windows 는 `~` = `%USERPROFILE%`. debug 빌드는 루트 자체가 분리되어 `~/.tasty-debug/` 아래에 같은 파일들을 둔다 — 격리 상세 [dev-guide/self-verification 독립 검증](../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다).)
 
 ## 실행 여부 확인
 
@@ -28,7 +28,7 @@ tasty &
 until tasty list info 2>/dev/null; do sleep 0.2; done    # 포트 뜰 때까지 (sleep 루프 대신 조건검사)
 tasty list tree            # 구조 (ID 포함)
 tasty send text "ls -la\r" --surface <id>
-# 종료: system.shutdown IPC (또는 tasty 명령)
+# 종료: system.shutdown IPC 는 debug 빌드 전용 — release 는 프로세스를 끝낸다(kill <pid>)
 ```
 
 ## IPC 직접 (Python)
@@ -51,4 +51,4 @@ release 기능이다(focus 독립 — `--surface <id>` 로 터미널 surface 를
 
 ## 관련
 
-- [api.md](api.md) — 전체 IPC/CLI · [dev-guide/self-verification](../dev-guide/self-verification.md) — 검증 시나리오
+- [api.md](api.md) — 주요 IPC/CLI · [dev-guide/self-verification](../dev-guide/self-verification.md) — 검증 시나리오

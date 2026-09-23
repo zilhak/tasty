@@ -156,8 +156,7 @@ let _ = tx.send(msg);
 
 이 명부는 로컬 전용이 아니다. clippy 는 자동으로도 돌아서(`--all-targets` 라 테스트
 타깃까지 본다) 프로덕션에 새로 들어오는 자리가 거기 **나타난다** — 다만 `-D warnings` 가
-없어 **막지는 않는다**. 규칙을 실제로 막는 층은 위의 전수 가드인데, 그쪽은 통합 테스트라
-**컴파일은 자동으로 검사되고 실행은 수동**이다. 어느 검사가 언제 도는지는
+없어 **막지는 않는다**. 규칙을 실제로 막는 층은 위의 전수 가드다. 어느 검사가 언제 도는지는
 [ci-gates](ci-gates.md) 가 정본이다 — 여기에 채널 표를 복제하지 않는다.
 
 ## plugin 핸들러의 host 호출 — 전파와 최선노력
@@ -218,7 +217,7 @@ host 호출이 전부 실패해도 전부 성공했을 때와 바이트가 같�
 
 **관측 지점은 둘이다** — IPC 응답과, 그 응답을 그대로 찍는 CLI(`tasty claude hook …`).
 다만 실사용에서 그 CLI 는 훅 명령 안에서 돌고 훅 명령은 출력을 버리므로, 0 이 아닌 수는
-`hook-failures.log` 에도 함께 남긴다(위 "왜 IPC 가 아니라 파일인가" 와 같은 이유다).
+`hook-failures.log` 에도 함께 남긴다([ADR-0075](../adr/0075-agent-hook-delivery-failure-record.md)).
 
 ## 락 poison (`Mutex` / `RwLock`)
 
@@ -357,17 +356,19 @@ println!("{}", serde_json::to_string_pretty(&value)?);
 
 | 지점 | 처리 |
 |------|------|
-| 부팅 창 생성 · 부팅 엔진 생성 · GPU 어댑터 부재 | 진단 3줄을 `tracing::error!` 한 이벤트로 내고 `exit(1)`. `eprintln!` 은 파일 로그에 안 남아 쓰지 않는다 |
+| 부팅 창 생성 · GPU 어댑터 부재 | 진단 3줄을 `tracing::error!` 한 이벤트로 내고 `exit(1)`. `eprintln!` 은 파일 로그에 안 남아 쓰지 않는다 — 그릴 창·GPU 가 없어 로그가 유일한 채널이다 |
+| 부팅 엔진 생성 | 같은 진단을 `tracing::error!` 로 내고, 이미 살아 있는 창에 실패 화면을 그려 둔다. 사용자가 닫을 때(종료 버튼 · Esc/Enter · 창 닫기) `exit(1)` |
 | 부팅의 그 외 GPU 실패 | 패닉 유지 — 환경 문제가 아니라 버그이므로 크래시 리포팅 경로에 남긴다 |
-| 새 창 · 설정 · 플러그인 모달 | 그 창만 취소하고 살아 있는 메인 창에 안내. 안내 문구는 지점별 i18n 키 |
+| 새 창 · 설정 · 플러그인 모달 | 그 창만 취소한다. 사용자 조작발이면 살아 있는 메인 창에 안내하고(문구는 지점별 i18n 키), 에이전트 IPC 발이면 안내 없이 요청자에게 응답 에러로 돌려준다 — 아래 origin 절 |
 | 종료 확인 모달 | 확인을 건너뛰고 `begin_shutdown()`. 생략 사실을 toast + `error!` 로 알린다 |
 | 호스트 스레드 spawn | 에러 반환(`ObserverError::ThreadSpawn`) 또는 로그 후 미등록 |
 | plugin 프로세스 스레드 spawn | 패닉 유지 — 폭발 반경이 그 plugin 프로세스로 한정된다 |
 
 **안내 채널은 요청 origin 이 가른다.** 사용자 조작(메뉴 · 단축키 · dock · tray)발 실패는
-`InfoModal`, 에이전트 IPC(`window.create`)발 실패는 **toast** 다. `InfoModal` 은 포커스를
-가져가므로, 에이전트 행동의 부수효과가 사용자 포커스에 닿지 않는다는 핵심 원칙 1 을
-어기게 된다.
+`InfoModal`, 에이전트 IPC(`window.create`)발 실패는 **요청자에게 IPC 응답 에러로만** 돌려주고
+사용자 화면에는 아무것도 띄우지 않는다(toast 도 아니다). `InfoModal` 은 포커스를 가져가고
+toast 도 요청하지 않은 일의 통지라, 어느 쪽이든 에이전트 행동의 부수효과가 사용자 상태에
+닿지 않는다는 핵심 원칙 1 을 어기게 된다([ADR-0122](../adr/0122-winit-scheduled-fallible-ipc-returns-outcome.md)).
 
 이 경로들은 winit `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다 —
 `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs` 가 소스 형태로 패닉 재유입을 막는다.

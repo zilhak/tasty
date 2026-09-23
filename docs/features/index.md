@@ -1,6 +1,6 @@
 # 기능 (Features)
 
-각 기능은 폴더 하나다 — `features/<f>/index.md`(기획, 내부 동작 · 1순위) + `screens/<s>.md`(화면, 투영 · 0..N). 모델·작성 규칙은 [documentation-model.md](../documentation-model.md), 작성 전 [identity.md](../identity.md) 필독.
+각 기능은 폴더 하나다 — `features/<f>/index.md`(기획, 내부 동작 · 1순위)와 화면(투영 · 0..N). 화면은 기획문서의 `## 화면` 절이 기본이고, 화면이 둘 이상이거나 자기 규칙을 가지면 `screens/<s>.md` 파일이다(기준은 documentation-model §3). 모델·작성 규칙은 [documentation-model.md](../documentation-model.md), 작성 전 [identity.md](../identity.md) 필독.
 
 양식: [`_feature.template.md`](_feature.template.md) (기획) · [`_screen.template.md`](_screen.template.md) (화면). 새 기능은 양식을 복사해 채운다.
 
@@ -9,27 +9,26 @@
 
 | 기능 | 주체 | 화면 |
 |------|------|------|
-| [main-view](main-view/index.md) — MainView (메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/screens/main-view.md) |
-| [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/screens/work-area.md) |
+| [main-view](main-view/index.md) — MainView (메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/index.md#화면) |
+| [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/index.md#화면) |
 | [terminal](terminal/index.md) — 터미널 (PTY·VTE·보조키 방향키·scrollback·GPU) | 로컬 사용자 · AI Agent · 원격 | GPU 그리드 |
 | [terminal-search](terminal-search/index.md) — 터미널 검색 (스크롤백+화면) | 로컬 사용자 | 검색 바 popup |
 | [terminal-link](terminal-link/index.md) — 링크 hover·수식키 좌클릭·좌클릭 열기 끄기 · 우클릭 메뉴 | 로컬 사용자 | hover 하이라이트 |
-| [workspace-tabs](workspace-tabs/index.md) — 탭 스트립 (Pane 별 탭 바) | 로컬 사용자 | [화면](workspace-tabs/screens/workspace-tabs.md) · [구현](workspace-tabs/index.md#구현) |
-| [workspace-tabs](workspace-tabs/index.md) — 탭 스트립 (Pane 별 탭 바) | 로컬 사용자 | [화면](workspace-tabs/screens/workspace-tabs.md) |
-| [workspace-category](workspace-category/index.md) — 워크스페이스 카테고리 (사이드바 폴더) | AI Agent · 로컬 사용자 | [사이드바](sidebar/screens/sidebar.md) 카테고리 섹션 (토글 on 시 그룹 렌더) · 레일 `---` 팝업 · 생성/이름변경/삭제 다이얼로그 |
-| [window-chrome](window-chrome/index.md) — 윈도우 크롬 (CSD 타이틀바) | 로컬 사용자 | [화면](window-chrome/screens/window-chrome.md) |
-| [workspace-status-bar](workspace-status-bar/index.md) — 상태바 (작업영역 하단) | 로컬 사용자 | [화면](workspace-status-bar/screens/workspace-status-bar.md) |
-| [sidebar](sidebar/index.md) — 사이드바 (MainView 좌측 패널) | 로컬 사용자 | [화면](sidebar/screens/sidebar.md) |
-| [tools-menu](tools-menu/index.md) — 도구 메뉴 (사이드바 도구 버튼) | 로컬 사용자 | [메뉴](tools-menu/screens/tools-menu.md) |
+| [workspace-tabs](workspace-tabs/index.md) — 탭 스트립 (Pane 별 탭 바) | 로컬 사용자 | [화면](workspace-tabs/index.md#화면) · [구현](workspace-tabs/index.md#구현) |
+| [workspace-category](workspace-category/index.md) — 워크스페이스 카테고리 (사이드바 폴더) | AI Agent · 로컬 사용자 | [사이드바](sidebar/index.md#화면) 카테고리 섹션 (토글 on 시 그룹 렌더) · 레일 `---` 팝업 · 생성/이름변경/삭제 다이얼로그 |
+| [window-chrome](window-chrome/index.md) — 윈도우 크롬 (CSD 타이틀바) | 로컬 사용자 | [화면](window-chrome/index.md#화면) |
+| [workspace-status-bar](workspace-status-bar/index.md) — 상태바 (작업영역 하단) | 로컬 사용자 | [화면](workspace-status-bar/index.md#화면) |
+| [sidebar](sidebar/index.md) — 사이드바 (MainView 좌측 패널) | 로컬 사용자 | [화면](sidebar/index.md#화면) |
+| [tools-menu](tools-menu/index.md) — 도구 메뉴 (사이드바 도구 버튼) | 로컬 사용자 | [메뉴](tools-menu/index.md#화면) |
 | [settings](settings/index.md) — 설정 창 (사이드바 설정 버튼) | 로컬 사용자 | [창](settings/screens/settings.md) |
-| [plugin-system](plugin-system/index.md) — 플러그인 관리 (설치 패키지 활성/비활성 · 사이드바 플러그인 버튼) | 로컬 사용자 · AI Agent | [창](plugin-system/screens/plugins-window.md) |
-| [command-palette](command-palette/index.md) — 명령 팔레트 (도구 메뉴 항목) | 로컬 사용자 | [화면](command-palette/screens/command-palette.md) |
-| [fullscreen-stage](fullscreen-stage/index.md) — 전체화면 무대 (창 전체를 독점하는 독립 표면) | 로컬 사용자 | 없음 (무대 자체가 화면) |
+| [plugin-system](plugin-system/index.md) — 플러그인 관리 (설치 패키지 활성/비활성 · 사이드바 플러그인 버튼) | 로컬 사용자 · AI Agent | [창](plugin-system/index.md#화면) |
+| [command-palette](command-palette/index.md) — 명령 팔레트 (도구 메뉴 항목) | 로컬 사용자 | [화면](command-palette/index.md#화면) |
+| [fullscreen-stage](../design/systems/fullscreen-stage.md#기능-명세--상태--인터페이스--acceptance-criteria) — 전체화면 무대 (창 전체를 독점하는 독립 표면 · 기획은 design 시스템 문서의 절) | 로컬 사용자 | 없음 (무대 자체가 화면) |
 | [tutorial](tutorial/index.md) — 튜토리얼 (화면 구조·분할 실습·명령 안내, 완료/재개 기록) | 로컬 사용자 | 마커+말풍선+주제 팝업 |
 | [remote-profiles](remote-profiles/index.md) — 원격 접속 프로필 + Passkey (도구 메뉴 항목) | 로컬 사용자 · AI Agent | [창](remote-profiles/screens/remote-tool.md) |
-| [remote-attach](remote-attach/index.md) — 원격 attach (점유/mirror) | 원격 · AI Agent · 로컬(force-detach) | [GUI mirror](remote-attach/screens/remote-attach.md) |
+| [remote-attach](remote-attach/index.md) — 원격 attach (점유/mirror) | 원격 · AI Agent · 로컬(force-detach) | [GUI mirror](remote-attach/index.md#화면) |
 | [remote-screenshot-clipboard](remote-screenshot-clipboard/index.md) — 원격 스크린샷 → 클립보드 (mirror 포커스 시 원격 clipboard 반영) | 로컬 사용자 | 없음 (토스트만) |
-| [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/screens/listening-ports.md) |
+| [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/index.md#화면) |
 | [keybindings](keybindings/index.md) — 단축키 (KeybindingSettings 도메인) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [clipboard](clipboard/index.md) — 클립보드 (복사/붙여넣기/선택) | 로컬 사용자 | [뷰어 plugin](../plugins/clipboard-viewer/index.md) |
 | [notifications](notifications/index.md) — 알림 (전역 IPC 목록·창별 패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |

@@ -11,14 +11,14 @@
 //! suite); the default-combination job is `--lib --bins` and never sees integration
 //! targets (see `docs/dev-guide/ci-gates.md`).
 //!
-//! Scope is deliberately narrow (see `docs/dev-guide/tui-testing.md`):
+//! Scope is deliberately narrow (see `docs/dev-guide/e2e-tests.md#tui-테스트-가이드--시뮬레이터--셀-검증--골든-스냅샷`):
 //!   - COVERED: cursor positioning/layout, line wrapping, scroll-region scroll,
 //!     erase-display, and per-cell SGR attributes (bold/italic/underline/
 //!     inverse/strikethrough + palette fg/bg).
 //!   - NOT COVERED here: GPU pixel rendering (environment-dependent → unfit for
 //!     golden), and chrome/widget layout (lives in `src/view`, needs the GUI
 //!     harness). Those remain on manual visual verification
-//!     (`docs/ai-verification/visual-verification.md`).
+//!     (`docs/ai-verification/screenshot-methods.md#시각-판정-체크리스트`).
 //!
 //! Why text (not pixels): the grid's deterministic text form is stable across
 //! OS/GPU, so a logic regression (e.g. SGR bold no longer applied) flips a

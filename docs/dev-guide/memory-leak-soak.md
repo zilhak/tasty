@@ -66,7 +66,7 @@ env 제어:
 
 **`s6` 은 경로를 탔는지 열어 둔 채로 확인한다.** 닫은 뒤의 체크포인트는 경로를 안 탔을 때도 기준선(0)이라 그 값으로는 못 가른다. 그래서 하네스는 explorer 를 열면 `system.gpu_stats` 의 `explorer_views` 가, image 를 열면 `egui_mesh_targets` 가 연 직전보다 커질 때까지 기다리고, 30 초 안에 안 커지면 **soak 을 실패시킨다**(`… was never rendered … the scenario is not measuring its path`). markdown(webview)은 호스트가 세는 값이 없어 이 확인이 없다 — 고정 700 ms 뒤에 닫는다. 분할이 `surface0` 을 매번 리사이즈하므로 `s6` 에는 `s2` 의 레이아웃·PTY 리사이즈 성분이 함께 섞인다. `s9` 의 s6 몫(8 사이클마다 한 번)도 같은 함수를 부르고 세 view 를 차례로 돈다.
 
-미구현: workspace 삭제 churn(삭제 release IPC 없음 — list/create/update/move 뿐), 창 resize churn(resize 는 사용자 조작이라 release IPC 없음, 원칙 1).
+미구현: workspace 삭제 churn, 창 resize churn(resize 는 사용자 조작이라 release IPC 없음, 원칙 1).
 
 ### 기록 지표
 
@@ -187,7 +187,7 @@ surface 를 열고 닫은 전후로 두 번 찍어 `textures/buffers.allocated` 
 ## 관련
 
 - [crash-diagnostics](crash-diagnostics.md) — panic/hang 진단 (누수가 아니라 죽음/멈춤일 때)
-- [perf-benchmarks](perf-benchmarks.md) — 렌더 성능 측정 (RSS/GPU 메모리는 그쪽 범위 밖, 여기가 담당)
+- [gpu-rendering 성능 측정](gpu-rendering.md#성능-측정) — 렌더 성능 측정 (RSS/GPU 메모리는 그쪽 범위 밖, 여기가 담당)
 - [model-view-split](model-view-split.md) — `drop_view` 누락이 만드는 L2/L3 누수의 설계 차원 방지
 - [e2e-tests](e2e-tests.md) — soak 이 재활용하는 `TastyInstance` 격리 하네스
 - ADR-0034 — 셸/conhost 좀비(L4) 의 과거 사례와 Job Object 방어

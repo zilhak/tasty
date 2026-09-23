@@ -15,11 +15,62 @@ AI 에이전트 활동을 도메인 메트릭으로 **기록·집계·차단**�
 
 ### 모델
 
-Metric(`input_tokens`/`ipc_calls`/…) × Agent(`tasty.<plugin_id>`/`cli.<exe>`/`_host`, 미명시 시 CallerContext 자동) × Workspace(없으면 `global`) × Op(`Set`/`Inc`, 시계열은 둘 다 sum) × Window(`1m/5m/1h/1d`) × Tags. 이벤트는 `tasty.telemetry.event.{ts}.{seq}` 로 영속, 조회는 prefix scan + 순수 집계(재시작 후 누적 보존).
+Metric(`input_tokens`/`ipc_calls`/…) × Agent(plugin 은 id 의 비허용 문자를 `_` 로 바꾼 값 — 예 `com_tasty_claude`, Local 은 `TASTY_AGENT_ID` 없으면 `_host`, 미명시 시 CallerContext 자동) × Workspace(없으면 `global`) × Op(`Set`/`Inc`/`Dec`, 집계에서 `Inc`·`Dec` 는 sum 누적·`Set` 은 덮어쓰기) × Window(`1m/1h/1d`) × Tags. 이벤트는 `tasty.telemetry.event.{ts}.{seq}` 로 영속, 조회는 prefix scan + 순수 집계(재시작 후 누적 보존).
 
 **집계본은 영속되지 않는다.** bucket 은 조회할 때마다 raw event 로부터 새로 만들어지고 버려진다 — 주기 rollup task 도, `tasty.telemetry.bucket.*` 키도 없다. 따라서 **raw event 보존량이 곧 조회 가능 범위**이며, 그 상한은 관측 로그 3종 공통 정책(`store::log_retention`)이 정하는 **최근 20,000 이벤트**다. 조용한 인스턴스에서는 수일치, 폴링이 도는 인스턴스에서는 수십 분치가 되므로 조회 범위가 데이터 양에 종속된다. 롤업을 신설하지 않기로 한 근거와 재검토 조건은 [ADR-0085](../../adr/0085-ipc-log-retention-bounded.md).
 
 `ipc_calls` 는 dispatcher 가 plugin IPC 호출마다 자동 1회 기록(`tags.method`). `_host` 또는 `telemetry.*` 는 자기측정/재귀 방지로 skip.
+
+### AgentId — agent 식별
+
+`AgentId`(`crates/tasty-telemetry/src/agent_id.rs`)는 메트릭/cap/anomaly/rate-limit 이 *agent 차원* 으로 집계되기 위한 식별자다. session token 을 동반한 호출은 호스트가 발급 때 기록한 `agent_id` 로 검증되고, 토큰 없는 Local 호출의 env 값은 위조 가능하다(아래 한계).
+
+#### 도출 규칙
+
+| Caller | agent_id |
+|--------|----------|
+| Agent (session token 동반) | 호스트가 `session.issue` 때 기록한 `agent_id`(토큰 검증 통과) |
+| Plugin process | 매니페스트 `plugin_id`(매니페스트 등록으로 인증됨) |
+| Local CLI/사용자 | env `TASTY_AGENT_ID`, 없으면 sentinel `_host` |
+
+```rust
+caller.agent_id()                  // CallerContext (crates/tasty-ipc/src/caller.rs)
+tasty_telemetry::AgentId::from_env()  // 라이브러리 크레이트가 자기 caller 식별
+```
+
+- `AgentId::HOST` = `"_host"` (빈 문자열도 HOST 로 대체), env key = `AgentId::ENV_KEY` (`"TASTY_AGENT_ID"`).
+
+#### child agent env 주입
+
+`claude.spawn`/`launch` 로 띄운 child 는 PTY shell 위에서 inline env prefix 로 실행된다:
+
+```
+$ TASTY_SURFACE_ID=<surface_id> TASTY_AGENT_ID=claude_s<surface_id> TASTY_SESSION_TOKEN=<hex> claude
+```
+
+- `claude_s<surface_id>` 는 surface 와 1:1 — 호스트가 surface_id 로 역추적 가능.
+- inline prefix 라 export 와 달리 history/profile 오염 없음(cd echo 와 같은 정책).
+
+#### 호환 표
+
+| 위치 | sentinel / 형식 |
+|------|-----------------|
+| `AgentId::HOST` | `"_host"` |
+| `tasty_memory::HOST_OWNER` | `"_host"` (memory.db `owner` 컬럼) |
+| `CallerContext::owner()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
+| `CallerContext::agent_id()` | Local → env 또는 `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
+
+`agent_id()` 는 Local 분기에서 env 를 본다는 점이 `owner()` 와 다르다 — memory `owner` 는 plugin 간 데이터 격리용이라 `_host` 로 일괄 묶고, telemetry `agent_id` 는 child agent 까지 분리해야 해 env 를 추가로 본다.
+
+#### 보안 한계
+
+토큰 없는 Local 호출의 env `TASTY_AGENT_ID` 는 **위조 가능**하다 — 적대적 agent 가 다른 id 를 사칭해 cap/budget 우회 가능. 이 모델은 **악의보다 버그** 영역으로 처리한다 — *정직한 agent 의 폭주를 막는 안전망*. 적대적 agent 방어는 OS 권한·plugin 매니페스트가 우선.
+
+검증 가능한 신원: claude plugin 은 child 기동 때 `issue_session_token`(`crates/tasty-plugin-claude/src/handlers.rs`)으로 `session.issue` 토큰을 받아 `TASTY_SESSION_TOKEN` 으로 싣고, CLI 가 그 env 를 envelope 에 실으면 `resolve_caller_from_envelope`(`crates/tasty-ipc/src/caller.rs`)가 `CallerContext::Agent` 로 해석한다. 토큰이 잘못됐거나 만료면 Local 로 떨어지지 않고 거부된다.
+
+#### 테스트
+
+`tasty_telemetry::agent_id::tests` 의 `from_env_all_cases` 하나가 세 경우(미설정 → host / 값 있음 → 그 값 / 빈 값 → host)를 함께 단정한다.
 
 ### IPC 진입 관측
 
@@ -42,7 +93,7 @@ GUI·headless의 외부 소켓과 plugin host-call은 라우팅 전에 권한·c
 | `pause` | 그 plugin agent 의 모든 IPC `-32007 cap_blocked`(과거 `stop` 값으로 저장된 cap 은 `pause` 로 자동 마이그레이션됨) |
 | `require_approval` | `approval.request`(severity=warn) 자동 + IPC 차단 → 사용자 응답 후 `cap.reset` 으로 재개 |
 
-차단된 plugin 본인은 `cap.reset` 도 막힌다 — **Local(CLI)만 reset**. 누적 임계인 cap 과 *시간당 비율*인 [agent rate-limit](../agent-collaboration/index.md) 은 다른 시스템.
+차단된 plugin 본인은 `cap.reset` 도 막힌다 — 다른 plugin(`Telemetry` 권한)·Local(CLI)은 reset 할 수 있다. 누적 임계인 cap 과 *시간당 비율*인 [agent rate-limit](../agent-collaboration/index.md) 은 다른 시스템.
 
 ### 이상 탐지
 
@@ -310,7 +361,7 @@ Local 호출자는 이 게이트에서 돌려보내지지 않으므로 없는 �
 
 - **AI Agent / CLI**: `telemetry.record(_batch)`(`telemetry` 권한) · `summary/timeseries/top` · `cap.{set,list,remove,status,reset}` · `anomaly.list` · `session_summary`. [reference/api](../../reference/api.md#텔레메트리-telemetry).
 - **로컬 운영자 / CLI**: `system.pressure` (local-only) · `tasty list pressure` — 위 "요청 압력 게이지" 절.
-- **Claude Code 통합**: `tasty claude install` hook 이 `session-start`→`stop` 의 `wall_time_ms`, notification 의 `input_tokens`(`tokens: N` 패턴)를 `tasty.com.tasty.claude` agent 로 자동 적재. [claude plugin](../../plugins/claude/index.md).
+- **Claude Code 통합**: `tasty claude install` hook 이 `session-start`→`stop` 의 `wall_time_ms`, notification 의 `input_tokens`(`tokens: N` 패턴)를 `com_tasty_claude` agent 로 자동 적재. [claude plugin](../../plugins/claude/index.md).
 
 ## 관련
 

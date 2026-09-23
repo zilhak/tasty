@@ -1,7 +1,4 @@
-<!-- source-hash: 937bc882c841 -->
-<!-- source-hash: 566aeb51a6d8 -->
-<!-- source-hash: 4d29d4555043 -->
-<!-- source-hash: 889e7471180f -->
+<!-- source-hash: 18ba4238e683 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -14,7 +11,7 @@ Run a shell command when an event occurs on a specific Surface (terminal).
 
 ```sh
 tasty set hook --surface 42 --event process-exit --command "tasty notify 'Shell exited'"
-tasty set hook --surface 42 --event 'output-match:error\[E\d+\]' --command "tasty notify \"$TASTY_HOOK_MATCHED_TEXT\""
+tasty set hook --surface 42 --event 'output-match:error\[E\d+\]' --command 'tasty notify "$TASTY_HOOK_MATCHED_TEXT"'
 tasty set hook --surface 42 --event idle-timeout:30 --command "tasty notify 'No output for 30 seconds'" --once
 tasty list hooks [--surface 42]
 tasty unset hook --hook <HOOK_ID>
@@ -80,7 +77,7 @@ pointing at it follows along).
 ```sh
 # change only what it does — read it with get first, then hand the same shape back
 tasty hook-handler upsert --id user/my-handler \
-  --calls '[{"method":"notification.create","params":{"message":"Build finished"}}]'
+  --calls '[{"method":"notification.create","params":{"body":"Build finished"}}]'
 
 # switch it off for a while, or back on
 tasty hook-handler upsert --id user/my-handler --disabled true
@@ -91,7 +88,7 @@ tasty hook-handler remove --id user/my-handler
 
 The change is saved to `~/.tasty/hook-handlers.toml` right away. One thing does not follow: **a webhook address you already created keeps doing what it did** — it holds on to the actions it was given at the time, so register it again to pick up the new ones.
 
-User handlers are added and edited in the **Settings** › **Handlers** › **Hook Handlers** tab. Saving writes them to `~/.tasty/hook-handlers.toml`, and you can also write the file directly (apply with `tasty hook-handler reload`).
+User handlers are added and edited in the **Settings** › **Handler** › **Hook Handlers** tab. Saving writes them to `~/.tasty/hook-handlers.toml`, and you can also write the file directly (apply with `tasty hook-handler reload`).
 
 Every row shows who planted it — `host` for Tasty itself, the plugin's own name for a plugin, and `you` for the ones you made. Only the rows you can delete carry a trash button; the rest carry a padlock, because Tasty and its plugins plant their handlers again on every start. A handler that chains several internal actions shows that chain on one line, and the tab cannot change it — use `tasty hook-handler upsert` above, or edit the file and run `tasty hook-handler reload`.
 
@@ -124,7 +121,7 @@ Notification sequences sent by terminal programs (OSC 9 / 99 / 777) and bells ar
 
 ### Where they appear
 
-- **Notification panel** — open it with `Ctrl+Shift+I` (macOS `Cmd+Shift+I`). The newest-first list shows Workspace, title, body, and elapsed time, and **Jump** takes you to that Workspace. Opening it marks everything read; there is also a **Mark all read** button.
+- **Notification panel** — open it with `Ctrl+Shift+I`. The newest-first list shows Workspace, title, body, and elapsed time, and **Jump** takes you to that Workspace. Opening it marks everything read; there is also a **Mark all read** button.
 - **Surface border** — a blue border on the Surface where the notification occurred. It disappears when you focus that Surface.
 - **Sidebar badge** — a count badge on the row of any Workspace that has a Surface needing attention.
 - **OS notification** — a system notification when the Tasty window is inactive (limited to once per second).
@@ -132,7 +129,7 @@ Notification sequences sent by terminal programs (OSC 9 / 99 / 777) and bells ar
 
 ### Settings
 
-The **Settings** › **Notifications** tab, or `~/.tasty/config.toml`:
+The **Settings** › **General** › **Notifications** tab, or `~/.tasty/config.toml`:
 
 ```toml
 [notification]
@@ -150,7 +147,7 @@ Send an approval request when a task needs the user's decision before it can pro
 
 ```sh
 ID=$(tasty approval request --title "Run the prod DB migration?" --severity danger \
-      --choices "approve:Run,deny:Abort:1" --timeout-ms 600000)
+      --choices "approve:Run,deny:Abort:1" --timeout-ms 600000 | jq -r .id)
 tasty approval await --id "$ID"            # wait until a response arrives, print the result as JSON
 ```
 
@@ -180,7 +177,7 @@ tasty webhook config --port 28429   # change the port — applied after restart
 
 ```sh
 # attach to a registered handler
-tasty webhook register --method POST --handler host/notify --persistent
+tasty webhook register --method POST --handler host/webhook-notify --persistent
 
 # define the action inline — pull values from the body with ${body.x}
 tasty webhook register --method POST \

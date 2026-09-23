@@ -10,7 +10,7 @@ headless 인스턴스에서도 셸 종료 훅이 실행됩니다. 서피스를 �
 
 ```sh
 tasty set hook --surface 42 --event process-exit --command "tasty notify '셸 종료됨'"
-tasty set hook --surface 42 --event 'output-match:error\[E\d+\]' --command "tasty notify \"$TASTY_HOOK_MATCHED_TEXT\""
+tasty set hook --surface 42 --event 'output-match:error\[E\d+\]' --command 'tasty notify "$TASTY_HOOK_MATCHED_TEXT"'
 tasty set hook --surface 42 --event idle-timeout:30 --command "tasty notify '30초간 출력 없음'" --once
 tasty list hooks [--surface 42]
 tasty unset hook --hook <HOOK_ID>
@@ -75,7 +75,7 @@ tasty hook-handler reload                                   # ~/.tasty/hook-hand
 ```sh
 # 하는 일만 바꾸기 — 먼저 get 으로 지금 무엇을 하는지 보고, 그 모양 그대로 돌려줍니다
 tasty hook-handler upsert --id user/my-handler \
-  --calls '[{"method":"notification.create","params":{"message":"빌드 끝"}}]'
+  --calls '[{"method":"notification.create","params":{"body":"빌드 끝"}}]'
 
 # 잠시 꺼두기 / 다시 켜기
 tasty hook-handler upsert --id user/my-handler --disabled true
@@ -86,7 +86,7 @@ tasty hook-handler remove --id user/my-handler
 
 바꾼 내용은 바로 `~/.tasty/hook-handlers.toml` 에 저장됩니다. 다만 **이미 만들어 둔 웹훅 주소는 따라오지 않습니다** — 웹훅은 등록하던 순간의 동작을 그대로 들고 있어서, 새 동작을 쓰려면 그 웹훅을 다시 등록하세요.
 
-사용자 핸들러는 **설정** <!-- en: Settings --> › **핸들러** <!-- en: Handlers --> › **훅 핸들러** <!-- en: Hook Handlers --> 탭에서 추가·편집합니다. 저장하면 `~/.tasty/hook-handlers.toml` 에 기록되며, 파일을 직접 써도 됩니다 (`tasty hook-handler reload` 로 반영).
+사용자 핸들러는 **설정** <!-- en: Settings --> › **핸들러** <!-- en: Handler --> › **훅 핸들러** <!-- en: Hook Handlers --> 탭에서 추가·편집합니다. 저장하면 `~/.tasty/hook-handlers.toml` 에 기록되며, 파일을 직접 써도 됩니다 (`tasty hook-handler reload` 로 반영).
 
 목록의 각 줄에는 그것을 심은 쪽이 표시됩니다 — Tasty 자신은 `host`, 플러그인은 그 플러그인 이름, 직접 만든 것은 `you` 입니다. 지울 수 있는 줄에만 휴지통이 붙고, 나머지 줄에는 자물쇠가 놓입니다 (Tasty 와 플러그인이 시작할 때마다 자기 핸들러를 다시 심기 때문입니다). 여러 내부 동작을 잇는 핸들러는 그 순서가 한 줄로 보이며, 탭 안에서는 고칠 수 없습니다 — 위의 `tasty hook-handler upsert` 로 바꾸거나, 파일을 고치고 `tasty hook-handler reload` 하면 됩니다.
 
@@ -119,7 +119,7 @@ tasty list notifications
 
 ### 어디에 나타나나
 
-- **알림 패널** — `Ctrl+Shift+I` (macOS `Cmd+Shift+I`) 로 엽니다. 최신순 목록에 워크스페이스·제목·본문·경과 시간이 보이고, **이동** <!-- en: Jump --> 으로 그 워크스페이스로 갑니다. 열면 전부 읽음 처리되며 **모두 읽음** <!-- en: Mark all read --> 버튼도 있습니다.
+- **알림 패널** — `Ctrl+Shift+I` 로 엽니다. 최신순 목록에 워크스페이스·제목·본문·경과 시간이 보이고, **이동** <!-- en: Jump --> 으로 그 워크스페이스로 갑니다. 열면 전부 읽음 처리되며 **모두 읽음** <!-- en: Mark all read --> 버튼도 있습니다.
 - **서피스 테두리** — 알림이 난 서피스에 파란 테두리. 그 서피스로 포커스하면 사라집니다.
 - **사이드바 배지** — 주의가 필요한 서피스가 있는 워크스페이스 행에 개수 배지.
 - **OS 알림** — Tasty 윈도우가 비활성일 때 시스템 알림 (초당 1회 제한).
@@ -127,7 +127,7 @@ tasty list notifications
 
 ### 설정
 
-**설정** › **알림** <!-- en: Notifications --> 탭, 또는 `~/.tasty/config.toml`:
+**설정** › **일반** › **알림** <!-- en: Notifications --> 탭, 또는 `~/.tasty/config.toml`:
 
 ```toml
 [notification]
@@ -145,7 +145,7 @@ bell_notification = true   # 벨 알림 표시 (끄면 벨 토스트만 억제, 
 
 ```sh
 ID=$(tasty approval request --title "prod DB 마이그레이션 실행?" --severity danger \
-      --choices "approve:실행,deny:중단:1" --timeout-ms 600000)
+      --choices "approve:실행,deny:중단:1" --timeout-ms 600000 | jq -r .id)
 tasty approval await --id "$ID"            # 응답이 올 때까지 대기, 결과를 JSON 으로 출력
 ```
 
@@ -175,7 +175,7 @@ tasty webhook config --port 28429   # 포트 변경 — 재시작 후 반영
 
 ```sh
 # 등록된 핸들러에 연결
-tasty webhook register --method POST --handler host/notify --persistent
+tasty webhook register --method POST --handler host/webhook-notify --persistent
 
 # 인라인 동작 정의 — 바디의 값을 ${body.x} 로 끌어다 쓰기
 tasty webhook register --method POST \

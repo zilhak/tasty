@@ -15,8 +15,6 @@ Tasty 는 GitHub Releases 에서 OS·아키텍처·설치 형태별 산출물로
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | 바이너리만 압축 |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | 시작 메뉴/제거 등록 인스톨러 |
 
-릴리스에는 에이전트용 [reference/](reference/index.md) 문서(IPC/CLI 레퍼런스)도 함께 첨부된다.
-
 ## Linux
 
 ```bash
@@ -57,7 +55,7 @@ xattr -dr com.apple.quarantine /Applications/Tasty.app
 ```powershell
 # .msi (권장) — 더블클릭 → 설치 마법사. 시작 메뉴 바로가기 + 프로그램 추가/제거 등록
 # .zip (수동)
-Expand-Archive tasty-{ver}-windows-x64.zip; .\tasty\tasty.exe
+Expand-Archive tasty-{ver}-windows-x64.zip -DestinationPath tasty; .\tasty\tasty.exe
 ```
 
 ### SmartScreen 경고 우회
@@ -99,4 +97,4 @@ tasty list info       # GUI 인스턴스가 떠 있을 때 시스템 정보 IPC
 
 ## 패키지 빌드 (메인테이너)
 
-[dev-guide/build](dev-guide/build.md) · [dev-guide/dist-build](dev-guide/dist-build.md) · [dev-guide/release-runners](dev-guide/release-runners.md).
+[dev-guide/build](dev-guide/build.md) · [dev-guide/build › dist 빌드 명령](dev-guide/build.md#dist-빌드-명령-카탈로그) · [dev-guide/release › 러너](dev-guide/release.md#러너).
