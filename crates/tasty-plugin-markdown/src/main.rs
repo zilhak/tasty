@@ -614,7 +614,7 @@ impl Plugin for MarkdownPlugin {
                     .get(&ctx.surface_id)
                     .and_then(|d| d.base_dir.clone());
                 if let Some(click) = render::classify_link(&dest, base_dir.as_deref()) {
-                    dispatch_link(&host, ctx.surface_id, click);
+                    dispatch_link(&host, ctx.surface_id, &ctx.url, click);
                 }
             }
             render::NavIntent::Addr(path) => navigate(&host, ctx.surface_id, &path),
@@ -973,26 +973,41 @@ fn parse_recent(v: &Value) -> Vec<String> {
 /// `#tasty-nav:link:` fragment 에서만 도달한다(module doc). 파일은 host
 /// `file_handler.dispatch`(같은 Pane 새 탭, origin_surface_id)로, 외부 URL 은 host
 /// `webview.open_external` 로 OS 핸들러에 넘긴다 — 이 plugin 은 OS 열기를 직접 하지 않는다.
-fn dispatch_link(host: &HostHandle, sid: u32, click: render::LinkClick) {
+/// `nav_url` 은 host 가 통지한 시도의 URL 그대로다(파일 링크가 사용자 행동의 근거로 되댄다).
+fn dispatch_link(host: &HostHandle, sid: u32, nav_url: &str, click: render::LinkClick) {
     match click {
-        render::LinkClick::File(path) => dispatch_file_link(host, sid, &path),
+        render::LinkClick::File(path) => dispatch_file_link(host, sid, nav_url, &path),
         render::LinkClick::External(url) => dispatch_external_link(host, sid, &url),
     }
 }
 
-fn dispatch_file_link(host: &HostHandle, sid: u32, path: &std::path::Path) {
+fn dispatch_file_link(host: &HostHandle, sid: u32, nav_url: &str, path: &std::path::Path) {
     if !path.exists() {
         tracing::debug!("markdown link target does not exist: {}", path.display());
         return;
     }
-    let params = json!({
+    if let Err(e) = host.call(
+        "file_handler.dispatch",
+        file_link_params(sid, nav_url, path),
+    ) {
+        tracing::warn!("markdown link file dispatch failed: {e}");
+    }
+}
+
+/// 문서 안 파일 링크의 `file_handler.dispatch` 파라미터. 호출(`HostHandle`)과 떼어 두어 단위
+/// 테스트가 wire 모양을 본다.
+///
+/// `user_navigation_url` 은 이 호출이 링크 클릭에서 왔다는 표지다 — host 는 엔진이 그 시도를
+/// 사용자 제스처로 보고했을 때만 그 한 번을 사용자 행동으로 쳐 새 탭을 선택하고, 아니면(스크립트가
+/// 낸 시도 · macOS 처럼 엔진이 그 값을 안 주는 곳) 에이전트로 받아 사용자가 보던 탭을 그대로 둔다
+/// (ADR-0568). 이 plugin 이 판정하지 않는다 — 받은 URL 을 그대로 되댈 뿐이다.
+fn file_link_params(sid: u32, nav_url: &str, path: &std::path::Path) -> Value {
+    json!({
         "path": path.to_string_lossy(),
         "depth": "deep",
         "origin_surface_id": sid,
-    });
-    if let Err(e) = host.call("file_handler.dispatch", params) {
-        tracing::warn!("markdown link file dispatch failed: {e}");
-    }
+        "user_navigation_url": nav_url,
+    })
 }
 
 /// 외부 URL 을 host 의 OS 열기 자리로 보낸다(ADR-0527). host 가 거기서 열기를 한 곳으로 모아

@@ -487,6 +487,24 @@ fn file_open_dispatch_params_carry_the_owner_popup() {
     assert!(params.get("origin_surface_id").is_none());
 }
 
+/// 문서 안 파일 링크는 host 가 통지한 시도의 URL 을 `user_navigation_url` 로 그대로 되댄다 —
+/// host 가 그 클릭을 사용자 행동으로 칠 근거를 찾는 열쇠다(ADR-0568). 새 탭은 링크가 눌린 surface
+/// 의 pane 에 붙는다.
+#[test]
+fn a_file_link_echoes_the_navigation_it_came_from() {
+    let url = "about:blank#tasty-nav:link:b.md";
+    let params = file_link_params(7, url, std::path::Path::new("/work/b.md"));
+    assert_eq!(
+        params,
+        json!({
+            "path": "/work/b.md",
+            "depth": "deep",
+            "origin_surface_id": 7,
+            "user_navigation_url": url,
+        })
+    );
+}
+
 /// 외부 링크는 host `webview.open_external` 로 간다 — host 가 읽는 두 키(`surface_id` · `url`)를
 /// 싣는다. 이 plugin 은 OS 열기를 직접 하지 않는다(ADR-0527).
 #[test]

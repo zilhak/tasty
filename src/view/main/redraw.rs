@@ -907,14 +907,26 @@ impl MainView {
         // 소유 plugin 에 forward. "원격 http(s) 차단" 판정(위 native 레벨에서 독립 처리)과
         // 무관하게 항상 통지한다. `plugin_manager`가 없어도(headless 등) 큐는 그대로
         // drain 해 무한정 쌓이지 않게 한다.
+        //
+        // 엔진이 사용자 제스처로 본 시도는 통지받은 plugin 에 묶어 기록한다 — plugin 이 그 URL 을
+        // 되대면 그 호출 하나가 사용자 행동이 된다(ADR-0568). 기록은 통지와 **같은 자리**에서
+        // 세운다: plugin 이 시도를 받기 전에 기록이 서 있어야 그 응답 호출이 근거를 찾는다.
+        let records = &mut self.state.webview_user_navigations;
+        records.retain(|sid, _| self.webviews.contains_key(sid));
         for (sid, wv) in &self.webviews {
-            for url in wv.take_pending_navigations() {
+            for nav in wv.take_pending_navigations() {
                 if let Some(mgr) = plugin_manager {
-                    crate::adapters::ipc::handler::webview::notify_navigation_attempt(
+                    let owner = crate::adapters::ipc::handler::webview::notify_navigation_attempt(
                         mgr,
                         &self.core_state,
                         *sid,
-                        &url,
+                        &nav.url,
+                    );
+                    crate::plugin_bridge::user_navigation::record(
+                        records,
+                        *sid,
+                        owner.as_deref(),
+                        &nav,
                     );
                 }
             }

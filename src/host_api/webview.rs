@@ -86,6 +86,23 @@ pub use crate::model::NavState;
 
 pub use keys::{HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKeyEvent};
 
+/// 네이티브 backend 가 캡처한 navigation 시도 하나. [`PlatformWebView::take_pending_navigations`]
+/// 가 도착 순서대로 낸다.
+///
+/// `user_gesture` 는 **엔진 자신이** 이 navigation 을 사용자의 제스처(클릭 · 키)에서 났다고
+/// 보고했는가다 — Linux 는 `webkit_navigation_action_is_user_gesture`, Windows 는
+/// `NavigationStarting` 의 `IsUserInitiated` 를 그대로 옮긴다. macOS 는 공개 API 에 같은 뜻의
+/// 값이 없어 늘 `false` 다 — `WKNavigationType::LinkActivated` 가 스크립트의 `a.click()` 과
+/// 사람의 클릭을 가르는지는 재지 않았고, 못 가르면 plugin 이 제 스크립트로 근거를 만든다.
+/// host 는 이 값이 참인 시도만 plugin 이 사용자 조작의 근거로 댈 수 있게 기록한다 —
+/// plugin 이 쓴 페이지 스크립트가 낸 navigation 은 참이 아니라서, plugin 은 이 값을 스스로
+/// 만들 수 없다(`docs/adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingNavigation {
+    pub url: String,
+    pub user_gesture: bool,
+}
+
 /// Logical bounds for a webview (in logical pixels, origin at top-left).
 ///
 /// 이 타입과 [`PhysicalWebViewBounds`] 는 한 쌍이다 — 좌표계가 필드 주석이 아니라

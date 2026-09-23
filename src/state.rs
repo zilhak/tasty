@@ -562,6 +562,14 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_user_activated: std::collections::HashMap<u64, String>,
 
+    /// plugin webview surface 마다 엔진이 사용자 제스처로 보고한 마지막 navigation 과 그것을
+    /// 통지받은 plugin. `sync_webviews` 가 시도를 plugin 에 통지하는 자리에서 세우고, webview 가
+    /// 사라진 surface 의 기록은 같은 자리에서 걷힌다. plugin 이 그 시도의 URL 을 되대면 한 번
+    /// 쓰이고 사라진다 — webview 안의 사용자 클릭을 host 가 사용자 행동으로 칠 유일한 근거다
+    /// (ADR-0568, [`crate::plugin_bridge::user_navigation`]).
+    #[cfg(feature = "gui")]
+    pub(crate) webview_user_navigations: crate::plugin_bridge::user_navigation::UserNavigations,
+
     /// egui-mesh banner(A3) 합성 영역. `draw_plugin_banners` 가 매 egui frame 채우고,
     /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
     /// mesh 를 합성한다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
@@ -796,6 +804,8 @@ impl AppState {
             plugin_mesh_popup_forward: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             plugin_popup_user_activated: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
+            webview_user_navigations: std::collections::HashMap::new(),
             #[cfg(feature = "gui")]
             plugin_mesh_banner_regions: Vec::new(),
             #[cfg(feature = "gui")]

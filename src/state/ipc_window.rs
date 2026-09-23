@@ -93,6 +93,21 @@ impl IpcWindow for AppState {
             .is_some_and(|owner| owner == plugin_id)
     }
 
+    #[cfg(feature = "gui")]
+    fn take_webview_user_navigation(
+        &mut self,
+        plugin_id: &str,
+        surface_id: u32,
+        url: &str,
+    ) -> bool {
+        crate::plugin_bridge::user_navigation::take(
+            &mut self.webview_user_navigations,
+            plugin_id,
+            surface_id,
+            url,
+        )
+    }
+
     fn enqueue_intents(&mut self, intents: IntentOutbox) {
         for intent in intents.into_vec() {
             self.dispatch_intent(intent);

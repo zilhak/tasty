@@ -99,6 +99,13 @@ pub(crate) trait IpcWindow: CascadeWindow {
     #[cfg(feature = "gui")]
     fn plugin_popup_user_activated(&self, plugin_id: &str, instance_id: u64) -> bool;
 
+    /// `plugin_id` 가 소유한 webview surface `surface_id` 에서 엔진이 사용자 제스처로 보고한
+    /// 마지막 navigation 이 `url` 인가. 맞으면 그 기록을 **쓴다**(한 번만 참이다). plugin 이 자기
+    /// webview 안의 사용자 클릭으로 host 를 부를 때 그 호출을 사용자 행동으로 칠지 정한다(ADR-0568).
+    #[cfg(feature = "gui")]
+    fn take_webview_user_navigation(&mut self, plugin_id: &str, surface_id: u32, url: &str)
+    -> bool;
+
     /// 요청 하나가 모은 intent 를 이 창의 큐 끝에 순서대로 옮긴다. 진입점만 부른다.
     fn enqueue_intents(&mut self, intents: IntentOutbox);
 }

@@ -89,12 +89,15 @@ pub fn handle_set_url(
 ///
 /// surface_id 에 대응하는 webview-enabled `RemoteSurface` 가 없으면 조용히 no-op —
 /// 네비게이션 캡처와 surface 제거 사이에 프레임 경계가 끼어드는 정상적인 레이스다.
+///
+/// 통지한 plugin(그 surface 의 소유자)의 id 를 돌려준다 — 통지하지 않았으면 `None`. 호출부는
+/// 사용자 제스처 시도를 **바로 이 plugin 에** 묶어 기록한다(ADR-0568).
 pub fn notify_navigation_attempt(
     mgr: &PluginManager,
     engine: &crate::core::CoreState,
     surface_id: u32,
     url: &str,
-) {
+) -> Option<String> {
     // `handle_set_url` 과 동일하게 레이아웃 트리 전체를 조회한다(split 비포커스 leaf 포함).
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
@@ -117,12 +120,14 @@ pub fn notify_navigation_attempt(
                                 url: url.to_string(),
                             },
                         );
+                        return Some(rs.plugin_id.clone());
                     }
-                    return;
+                    return None;
                 }
             }
         }
     }
+    None
 }
 
 #[cfg(test)]

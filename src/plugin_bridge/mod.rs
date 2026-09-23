@@ -18,6 +18,8 @@ pub(crate) mod popup_scope;
 pub mod remote_kind;
 pub mod remote_surface;
 #[cfg(feature = "gui")]
+pub(crate) mod user_navigation;
+#[cfg(feature = "gui")]
 pub mod wire_scroll;
 
 // host_cmd / host_actions 는 tasty-host-plugin crate 가 owning (manager 가 채널

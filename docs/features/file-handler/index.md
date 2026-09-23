@@ -81,16 +81,26 @@ URL 대상의 picker 헤더에는 **URL 전용 형태가 따로 없다** — det
 origin으로 옮기지 않는다. 사용자가 GUI에서 직접 연 파일은 반대로 그 결과 탭이 **선택된다**
 (explorer 더블클릭 · 터미널 링크 클릭 · 드롭 · 파일 피커 확정 · 링크 우클릭 메뉴).
 라우팅은 양쪽이 같다. 이 값은 `origin_surface_id` 와 나란히 식별 왕복과 picker를 통과한다.
-IPC 경로는 기본이 에이전트다. 예외는 plugin 이 자기 popup 안의 사용자 조작으로 부르며
-`owner_popup_instance` 에 그 popup 을 실은 경우 하나다 — host 는 호출자가 그 popup 의 소유
-plugin 이고, 그 popup 이 이 창에 열려 있으며, 사용자의 확정형 입력(포인터 버튼 · 키 누름)을
-받았을 때만 사용자로 친다. 외부 IPC 호출자가 같은 키를 실어도, 남의 popup · 닫힌 popup · 입력을
-안 받은 popup 을 대도 에이전트로 떨어진다(거절하지 않는다). markdown 파일열기 팝업의 [열기] 가
-이 경로다.
+IPC 경로는 기본이 에이전트다. 예외는 둘이고, 둘 다 plugin 호출자가 **host 가 직접 관측한 사용자
+입력**을 가리킬 때다.
+- **자기 popup** — `owner_popup_instance` 에 그 popup 을 실은 경우. host 는 호출자가 그 popup 의 소유
+  plugin 이고, 그 popup 이 이 창에 열려 있으며, 사용자의 확정형 입력(포인터 버튼 · 키 누름)을
+  받았을 때만 사용자로 친다. markdown 파일열기 팝업의 [열기] 가 이 경로다.
+- **자기 webview 의 사용자 navigation** — `user_navigation_url` 에 `origin_surface_id` 의 webview 에서
+  통지받은 `webview.navigation_attempt` 의 URL 을 그대로 실은 경우. host 는 native 엔진이 그 시도를
+  사용자 제스처로 보고했고(Linux `is_user_gesture` · Windows `IsUserInitiated`), 그 시도를 바로 호출
+  plugin 에 통지했으며, 그 surface 의 마지막 사용자 navigation 이 그 URL 일 때만 사용자로 치고, 그
+  기록을 한 번 쓰고 지운다. macOS 는 엔진이 그 값을 주지 않아 늘 에이전트다. markdown 문서 안의 파일
+  링크가 이 경로다.
+
+외부 IPC 호출자가 같은 키를 실어도, 남의 popup · 닫힌 popup · 입력을 안 받은 popup · 통지받은 적
+없거나 이미 쓴 navigation · 사용자 제스처가 아닌 navigation 을 대도 에이전트로 떨어진다(거절하지
+않는다).
 origin 을 생략한 요청도 같은 축으로 갈린다 — 에이전트면 focused pane 에 새 탭을 뒤에 붙이기만
 하고, 사용자면 선택한다.
 근거: [ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md) ·
-[ADR-0526](../../adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md).
+[ADR-0526](../../adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md) ·
+[ADR-0568](../../adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md).
 
 처음부터 없는 origin은 기존 `-32602`와 unowned-target 문구로 거절한다. 접수 후
 origin이 사라지면 경고 로그를 남기고 실행하지 않는다. 다른 창의 새 탭으로 폴백하지

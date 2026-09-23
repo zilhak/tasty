@@ -112,7 +112,9 @@ impl IntentOrigin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileDispatchOrigin {
     /// 사용자가 자기 손으로 열었다 — explorer 더블클릭 · 터미널 링크 클릭 · 파일 드롭 ·
-    /// 파일 피커 확정.
+    /// 파일 피커 확정, 그리고 plugin 이 host 가 직접 관측한 사용자 입력(자기 popup 의 누름 ·
+    /// 엔진이 사용자 제스처로 보고한 자기 webview 의 navigation)을 대고 중계한
+    /// `file_handler.dispatch`(ADR-0526 · ADR-0568).
     User,
     /// 에이전트가 release IPC/CLI(`file_handler.dispatch`)로 열었다.
     Agent,

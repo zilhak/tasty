@@ -35,7 +35,7 @@ trait 을 두지 않기로 한 근거·대안·재검토 조건은 [ADR-0320](..
 | `load_url` | `&str` | — | |
 | `load_html` | `&str` | — | |
 | `nav_state` | — | `NavState` | |
-| `take_pending_navigations` | — | `Vec<String>` | |
+| `take_pending_navigations` | — | `Vec<PendingNavigation>` | `user_gesture` 는 Linux 가 `is_user_gesture`, Windows 가 `IsUserInitiated` 에서 옮긴다. macOS 는 늘 `false` 다 — 아래 "탐색" |
 | `set_zoom` | `f64` | — | |
 | `set_javascript_enabled` | `bool` | — | |
 | `set_color_scheme` | `ColorScheme` | — | |
@@ -108,6 +108,14 @@ enum 이다. `Copy` + `Default = Idle` 이라 native 백엔드의 `Rc<Cell<NavSt
 
 호스트는 `nav_state()` 로 지금 상태를 읽고, `take_pending_navigations()` 로 페이지가
 요청한 이동을 **소비**한다(읽으면 비워진다).
+
+시도 하나(`PendingNavigation`)는 URL 과 **엔진이 그 시도를 사용자 제스처로 봤는가**
+(`user_gesture`)를 함께 싣는다. 호스트는 시도를 소유 plugin 에 `webview.navigation_attempt` 로
+통지하는 자리에서, 이 값이 참인 시도를 그 plugin 에 묶어 surface 마다 마지막 한 건 기록한다.
+plugin 이 그 URL 을 `file_handler.dispatch` 의 `user_navigation_url` 로 되대면 그 호출 한 번이
+사용자 행동이 된다 — 근거는 plugin 의 주장이 아니라 엔진의 보고다. macOS 는 공개 API 에 같은
+뜻의 값이 없어 늘 `false` 이고, 그래서 macOS 의 webview 링크 클릭은 에이전트로 도착한다. 근거는
+[ADR-0568](../../adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md).
 
 ## 키보드 — 별도 계약
 

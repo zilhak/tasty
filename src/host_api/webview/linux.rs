@@ -26,7 +26,7 @@ use winit::raw_window_handle::{
 };
 
 use super::keys::WebViewKeySink;
-use super::{NavState, WebViewBounds};
+use super::{NavState, PendingNavigation, WebViewBounds};
 
 pub struct PlatformWebView {
     webview: WebView,
@@ -50,7 +50,7 @@ pub struct PlatformWebView {
     /// (도착 순서 보존). host `sync_webviews` 가 매 프레임 `take_pending_navigations`
     /// 로 비우고 plugin 에 `webview.navigation_attempt` 로 forward — "원격 http(s)
     /// 차단" 판정과 독립적으로 차단 여부와 무관하게 쌓인다.
-    pending_navigations: Rc<RefCell<Vec<String>>>,
+    pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
     /// 부모 winit X11 창. `release_keyboard_focus` 가 키보드 포커스를 여기로
     /// 되돌린다(overlay 가 열려 webview 를 숨길 때).
     parent_x11_window: std::os::raw::c_ulong,
@@ -397,7 +397,16 @@ impl PlatformWebView {
                     PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction
                 ) && let Some(uri) = &uri
                 {
-                    pending_nav.borrow_mut().push(uri.as_str().to_string());
+                    // 엔진이 이 시도를 사용자 제스처로 봤는가 — plugin 이 사용자 조작의 근거로
+                    // 댈 수 있는 유일한 값이다(`PendingNavigation` 문서).
+                    let user_gesture = decision
+                        .downcast_ref::<NavigationPolicyDecision>()
+                        .and_then(|d| d.navigation_action())
+                        .is_some_and(|a| a.is_user_gesture());
+                    pending_nav.borrow_mut().push(PendingNavigation {
+                        url: uri.as_str().to_string(),
+                        user_gesture,
+                    });
                 }
                 if !block.get() {
                     return false;
@@ -693,7 +702,7 @@ impl PlatformWebView {
 
     /// decide-policy 가 캡처한 navigation 시도 URL 을 도착 순서대로 비워서 반환한다.
     /// host `sync_webviews` 가 매 프레임 호출해 plugin 에 forward.
-    pub fn take_pending_navigations(&self) -> Vec<String> {
+    pub fn take_pending_navigations(&self) -> Vec<PendingNavigation> {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 

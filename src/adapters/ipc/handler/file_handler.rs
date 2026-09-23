@@ -137,6 +137,13 @@ struct DispatchReq {
     /// 안 받은 popup) 값이 없는 것과 같다(ADR-0526).
     #[serde(default)]
     owner_popup_instance: Option<u64>,
+    /// 이 호출을 낸 plugin 이 `origin_surface_id` 의 자기 webview 에서 받은
+    /// `webview.navigation_attempt` 의 **URL 그대로**. plugin 이 자기 webview 안의 사용자
+    /// 클릭(예: markdown 문서 안의 파일 링크)으로 부를 때 싣는다. host 는 엔진이 그 시도를 사용자
+    /// 제스처로 보고했고 그 surface 의 소유가 호출 plugin 일 때만, 그 한 번을 사용자 행동으로
+    /// 친다 — 그 밖에는 값이 없는 것과 같다(ADR-0568).
+    #[serde(default)]
+    user_navigation_url: Option<String>,
 }
 
 #[cfg(feature = "gui")]
@@ -153,11 +160,12 @@ fn default_depth() -> String {
 ///   즉시 돌아오고 handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
 ///
 /// 발화 주체는 [`dispatch_origin_of`] 가 정한다 — 기본은 에이전트고, plugin 이 사용자가 만진
-/// 자기 popup 을 `owner_popup_instance` 로 대면 사용자다.
+/// 자기 popup 을 `owner_popup_instance` 로 대거나 자기 webview 의 사용자 navigation 을
+/// `user_navigation_url` 로 되대면 사용자다.
 #[cfg(feature = "gui")]
 pub fn handle_dispatch(
     out: &mut crate::ipc::window_port::IntentOutbox,
-    window: &dyn crate::ipc::window_port::IpcWindow,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     engine: &crate::core::CoreState,
     caller: &tasty_ipc::caller::CallerContext,
     id: serde_json::Value,
@@ -198,7 +206,13 @@ pub fn handle_dispatch(
         );
     }
     let target = FileTarget::new(PathBuf::from(&req.path));
-    let dispatch_origin = dispatch_origin_of(window, caller, req.owner_popup_instance);
+    let dispatch_origin = dispatch_origin_of(
+        window,
+        caller,
+        req.owner_popup_instance,
+        req.origin_surface_id,
+        req.user_navigation_url.as_deref(),
+    );
     let intent = crate::core::intent::DomainIntent::DispatchFile {
         target,
         depth,
@@ -222,36 +236,55 @@ pub fn handle_dispatch(
     )
 }
 
-/// 이 호출을 누가 냈는가. 채널이 아니라 행위의 성질로 정한다 — plugin 이 사용자의 popup
-/// 조작을 받아 이 메서드를 부르는 경우가 있다(markdown 파일열기 팝업).
+/// 이 호출을 누가 냈는가. 채널이 아니라 행위의 성질로 정한다 — plugin 이 사용자의 조작을 받아
+/// 이 메서드를 부르는 경우가 있다(markdown 파일열기 팝업 · markdown 문서 안의 파일 링크).
 ///
-/// 사용자로 치는 것은 **셋이 모두 맞을 때뿐이다**: 호출자가 plugin 이고, 그 plugin 이 댄
-/// `owner_popup_instance` 가 그 plugin 소유로 이 창에 열려 있으며, 그 popup 이 사용자의
-/// 확정형 입력을 받았다. 요청 값만으로는 사용자가 될 수 없다 — 외부 IPC 호출자가 같은 키를
-/// 실어도 에이전트다. 어느 하나라도 어긋나면 포커스를 안 옮기는 쪽(에이전트)으로 떨어진다
-/// (ADR-0526).
+/// 사용자로 치는 근거는 둘이고, 둘 다 **host 가 직접 관측한 입력**이다 — 요청 값은 그 관측을
+/// 가리키는 열쇠일 뿐이라, 요청 값만으로는 사용자가 될 수 없다. 외부 IPC 호출자는 어느 키를
+/// 실어도 에이전트다.
+///
+/// - popup: 호출자가 plugin 이고, 그 plugin 이 댄 `owner_popup_instance` 가 그 plugin 소유로 이
+///   창에 열려 있으며, 그 popup 이 사용자의 확정형 입력을 받았다(ADR-0526).
+/// - webview: 호출자가 plugin 이고, `origin_surface_id` 의 webview 에서 엔진이 사용자 제스처로
+///   보고한 마지막 navigation 을 host 가 **바로 그 plugin 에** 통지했으며, plugin 이 댄
+///   `user_navigation_url` 이 그 URL 이다. 이 근거는 한 번 쓰면 사라진다(ADR-0568).
+///
+/// 어느 것도 안 맞으면 포커스를 안 옮기는 쪽(에이전트)으로 떨어진다.
 #[cfg(feature = "gui")]
 fn dispatch_origin_of(
-    window: &dyn crate::ipc::window_port::IpcWindow,
+    window: &mut dyn crate::ipc::window_port::IpcWindow,
     caller: &tasty_ipc::caller::CallerContext,
     owner_popup_instance: Option<u64>,
+    origin_surface_id: Option<u32>,
+    user_navigation_url: Option<&str>,
 ) -> crate::file::dispatch::FileDispatchOrigin {
     use crate::file::dispatch::FileDispatchOrigin;
-    let (tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. }, Some(instance_id)) =
-        (caller, owner_popup_instance)
-    else {
+    let tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. } = caller else {
         return FileDispatchOrigin::Agent;
     };
-    if window.plugin_popup_user_activated(plugin_id, instance_id) {
-        FileDispatchOrigin::User
-    } else {
+    if let Some(instance_id) = owner_popup_instance {
+        if window.plugin_popup_user_activated(plugin_id, instance_id) {
+            return FileDispatchOrigin::User;
+        }
         tracing::debug!(
             plugin_id = %plugin_id,
             instance_id,
             "file_handler.dispatch: owner_popup_instance is not a user-activated popup of the caller; treated as an agent request",
         );
-        FileDispatchOrigin::Agent
     }
+    if let Some(url) = user_navigation_url {
+        if let Some(surface_id) = origin_surface_id
+            && window.take_webview_user_navigation(plugin_id, surface_id, url)
+        {
+            return FileDispatchOrigin::User;
+        }
+        tracing::debug!(
+            plugin_id = %plugin_id,
+            ?origin_surface_id,
+            "file_handler.dispatch: user_navigation_url is not an unused user-gesture navigation the caller received on origin_surface_id; treated as an agent request",
+        );
+    }
+    FileDispatchOrigin::Agent
 }
 
 #[cfg(all(test, feature = "gui"))]
@@ -278,11 +311,11 @@ mod tests {
     /// `https://example.com/a.md` 가 확장자로 markdown 핸들러에 걸린다.
     #[test]
     fn dispatch_rejects_a_url_in_the_path_param() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (mut state, engine) = crate::state::tests::test_state();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let resp = handle_dispatch(
             &mut out,
-            &state,
+            &mut state,
             &engine,
             &tasty_ipc::caller::CallerContext::Local,
             serde_json::json!(1),
@@ -294,7 +327,7 @@ mod tests {
 
         let resp = handle_dispatch(
             &mut out,
-            &state,
+            &mut state,
             &engine,
             &tasty_ipc::caller::CallerContext::Local,
             serde_json::json!(2),
@@ -305,11 +338,11 @@ mod tests {
     }
     #[test]
     fn dispatch_rejects_missing_origin_before_enqueueing() {
-        let (state, engine) = crate::state::tests::test_state();
+        let (mut state, engine) = crate::state::tests::test_state();
         let mut out = crate::ipc::window_port::IntentOutbox::default();
         let response = handle_dispatch(
             &mut out,
-            &state,
+            &mut state,
             &engine,
             &tasty_ipc::caller::CallerContext::Local,
             serde_json::json!(42),
