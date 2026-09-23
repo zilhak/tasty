@@ -11,7 +11,7 @@
 //! 필터가 필요 없다. 배경·대안·재검토 트리거는 ADR-0138.
 //!
 //! 여기에 의존을 하나라도 더하면 그 결정의 전제가 사라진다. `Cargo.toml` 의
-//! `[dependencies]` 는 비어 있어야 하고, `the_crate_has_no_dependencies` 가 그것을 본다.
+//! `[dependencies]` 는 비어 있어야 한다. 그것을 재는 시험은 없다(채널 없음 — ADR-0565).
 
 // 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
 // `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
@@ -22,6 +22,8 @@
 
 /// ADR 인덱스의 행을 ADR 헤더에서 만든다 — 생성기와 가드가 같은 함수를 부른다.
 pub mod adr_index;
+/// ADR 재번호의 판정(매핑 파일 · 인용 형태) — `adr-renumber` 가 부른다.
+pub mod adr_renumber;
 
 /// `#[cfg(...)]` 술어를 읽는다.
 pub mod cfg_predicate;
