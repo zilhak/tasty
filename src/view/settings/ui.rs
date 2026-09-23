@@ -1330,7 +1330,14 @@ fn build_plugin_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
 /// L2 row 클릭 → 해당 L1 의 sub-tab 상태에 반영.
 fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
     match select {
-        L2Select::General(v) => ui_state.general_sub_tab = *v,
+        L2Select::General(v) => {
+            ui_state.general_sub_tab = *v;
+            // 권한 화면은 상태를 draw 에서 재지 않고 스냅샷을 읽는다. 진입이 그 갱신
+            // 트리거 중 하나다 — macOS 외에서는 no-op.
+            if matches!(v, GeneralSubTab::MacosPermissions) {
+                crate::macos_permissions::refresh_permission_snapshot();
+            }
+        }
         L2Select::Terminal(v) => ui_state.terminal_sub_tab = *v,
         L2Select::Appearance(v) => ui_state.appearance_sub_tab = v.clone(),
         L2Select::Keybindings(v) => {

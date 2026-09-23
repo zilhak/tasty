@@ -299,16 +299,96 @@ pub fn full_disk_access_state() -> FullDiskAccess {
     decide_full_disk_access(&probes)
 }
 
-/// 부팅 시 FDA 안내를 띄워야 하는가.
-#[cfg(all(target_os = "macos", feature = "gui"))]
+/// 부팅 시 FDA 안내를 띄워야 하는가. **이때 표시용 스냅샷을 새로 재서 보관한다** —
+/// 부팅 판정과 권한 화면이 같은 측정 1 회를 공유한다. 비-macOS / headless 에서는
+/// 스냅샷이 `Unknown` 이라 안내하지 않는다.
 pub fn wants_full_disk_access_notice() -> bool {
-    should_show_fda_notice(full_disk_access_state())
+    should_show_fda_notice(refresh_permission_snapshot().full_disk_access)
 }
 
-/// 비-macOS / headless — FDA 개념이 없으므로 안내하지 않는다.
+// ── 표시용 권한 상태 스냅샷 ────────────────────────────────────────────────────
+//
+// 설정 > 일반 > 권한 탭은 상태를 **재지 않고 읽는다.** 측정은 파일 열기 syscall 과 TCC
+// 데몬 IPC 라, draw(렌더) 경로에 두면 tccd 응답이 늦는 만큼 설정 창이 멈추고, egui 가
+// repaint 를 요구하는 입력(마우스 이동·호버)이 이어지는 동안 그 횟수만큼 반복된다.
+// 값이 필요한 시점은 프레임이 아니라 "상태가 바뀔 수 있었던 시점" 이다.
+//
+// **캐시와 갱신은 세트다.** FDA 는 앱이 요청할 수 없어 사용자가 시스템 설정에 다녀오는
+// 왕복이 반드시 생기고(위 "Full Disk Access" 주석), 화면 기록도 거부 이후에는 시스템
+// 설정에서만 되돌릴 수 있다. 부팅 값만 들고 있으면 그 왕복 결과가 화면에 영영 반영되지
+// 않는다. 그래서 갱신 트리거를 함께 둔다 — 부팅 1 회(`wants_full_disk_access_notice`),
+// 권한 화면 진입(`apply_l2_select`), 설정 창 포커스 복귀(`SettingsView::handle_event`).
+//
+// **캡처·주입 경로는 이 스냅샷을 쓰지 않는다.** `screen_capture.rs` 의
+// `screen_recording_authorized()` 와 `input_source.rs` 의 `accessibility_trusted()` 는
+// 그 동작 직전 실측이 의도된 정책이다(각 함수의 주석). 두 소비처를 같은 캐시로 묶으면
+// 캡처·주입 판정이 낡은 값을 보게 된다.
+
+/// 권한 화면이 표시하는 상태 한 벌. **측정 시점의 값**이며, 그 뒤 사용자가 시스템
+/// 설정에서 바꾼 것은 다음 갱신 전까지 반영되지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PermissionSnapshot {
+    /// Full Disk Access 추정 3 상태.
+    pub full_disk_access: FullDiskAccess,
+    /// 화면 기록 승인 여부.
+    pub screen_recording: bool,
+    /// 손쉬운 사용 승인 여부. **debug 빌드에만 있다** — release 에는 이 권한을 소비하는
+    /// 코드가 없어 표시할 행 자체가 없다(`accessibility_trusted` 참고).
+    #[cfg(debug_assertions)]
+    pub accessibility: bool,
+}
+
+/// 마지막으로 잰 값. `None` 은 아직 한 번도 재지 않았다는 뜻이다.
+static PERMISSION_SNAPSHOT: std::sync::RwLock<Option<PermissionSnapshot>> =
+    std::sync::RwLock::new(None);
+
+/// 보관된 값을 읽는다 — **측정하지 않는다.** 표시 경로(draw)가 부르는 쪽이다.
+///
+/// 아직 한 번도 재지 않았으면 그 자리에서 1 회 잰다. 부팅이 먼저 재므로 정상 흐름에서는
+/// 일어나지 않고, 측정 없이 "허용 안 됨" 을 표시해 승인을 가진 사용자에게 거짓을 말하는
+/// 것보다 1 회 측정이 낫다.
+pub fn permission_snapshot() -> PermissionSnapshot {
+    if let Some(snapshot) = PERMISSION_SNAPSHOT.read().ok().and_then(|g| *g) {
+        return snapshot;
+    }
+    refresh_permission_snapshot()
+}
+
+/// 지금 상태를 다시 재서 보관하고 그 값을 돌려준다. 위 "갱신 트리거" 에서만 부른다.
+pub fn refresh_permission_snapshot() -> PermissionSnapshot {
+    let snapshot = measure_permissions();
+    // 측정이 실제로 여기서만 일어나는지(= draw 경로에서 빠졌는지) 세는 자리다.
+    tracing::debug!(?snapshot, "권한 상태 스냅샷 갱신");
+    match PERMISSION_SNAPSHOT.write() {
+        Ok(mut guard) => *guard = Some(snapshot),
+        // 보관만 실패한 것이라 이번 측정값은 그대로 쓴다 — 다음 갱신에서 다시 시도한다.
+        Err(err) => tracing::warn!(%err, "권한 상태 스냅샷 보관 실패"),
+    }
+    snapshot
+}
+
+/// 실제 측정. 여기서만 TCC 를 건드린다.
+#[cfg(all(target_os = "macos", feature = "gui"))]
+fn measure_permissions() -> PermissionSnapshot {
+    PermissionSnapshot {
+        full_disk_access: full_disk_access_state(),
+        screen_recording: screen_recording_authorized(),
+        #[cfg(debug_assertions)]
+        accessibility: accessibility_trusted(),
+    }
+}
+
+/// 비-macOS / headless — 항목별 동명 조회와 같은 답을 낸다(권한 개념이 없으므로 제약
+/// 없음). FDA 만 `Unknown` 이다: 없는 권한을 "보유" 로 적으면 안내 판정이 그 값을 근거로
+/// 쓰게 된다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub fn wants_full_disk_access_notice() -> bool {
-    false
+fn measure_permissions() -> PermissionSnapshot {
+    PermissionSnapshot {
+        full_disk_access: FullDiskAccess::Unknown,
+        screen_recording: screen_recording_authorized(),
+        #[cfg(debug_assertions)]
+        accessibility: accessibility_trusted(),
+    }
 }
 
 /// 시스템 설정의 전체 디스크 접근 권한 패널을 연다. `open(1)` 로 띄운다 —
@@ -415,6 +495,13 @@ mod tests {
         assert_eq!(raw_key_decision(true), RawKeyDecision::Inject);
         // 미승인 상태에서 주입하면 CGEventPost 가 조용히 무시된다 — 성공으로 답하면 안 된다.
         assert_eq!(raw_key_decision(false), RawKeyDecision::PermissionDenied);
+    }
+
+    /// 읽기는 보관된 값을 그대로 돌려준다 — draw 가 매번 재지 않아도 되는 근거.
+    #[test]
+    fn snapshot_read_returns_last_refreshed_value() {
+        let refreshed = refresh_permission_snapshot();
+        assert_eq!(permission_snapshot(), refreshed);
     }
 
     #[test]

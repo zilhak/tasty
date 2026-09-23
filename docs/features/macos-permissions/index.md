@@ -113,6 +113,12 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기를 담는다. 부팅 안내를 지나쳤어도 여기서 현재 상태를 볼 수 있다. FDA 행은 3 상태를 그대로 보여준다 — 허용됨 / 허용 안 됨 / **확인 불가**. 판정 근거가 없는 상태를 "허용 안 됨" 으로 적으면 이미 허용된 사용자에게도 잘못 안내할 수 있다.
 
+**상태는 이 화면이 재지 않는다 — 스냅샷을 읽는다.** 측정(FDA 프로브의 `File::open`, `CGPreflightScreenCaptureAccess`, debug 의 `AXIsProcessTrusted`)은 `refresh_permission_snapshot()` 안에서만 일어나고, draw 는 `permission_snapshot()` 으로 보관된 값을 읽기만 한다. 측정을 draw 에 두면 TCC 데몬 IPC 가 프레임마다 반복되고(설정 창은 dirty 구동이라 가만히 두면 안 돌지만, 마우스 이동·호버처럼 repaint 를 요구하는 입력이 있는 동안에는 그 횟수만큼 돈다), tccd 응답이 늦는 만큼 창이 멈춘다.
+
+**갱신 트리거는 셋이다** — 부팅 1 회(`wants_full_disk_access_notice` 가 재는 그 측정을 그대로 보관한다. 부팅 안내 판정과 화면 표시가 같은 측정 1 회를 공유한다), 권한 화면 L2 진입(`apply_l2_select`), **설정 창 포커스 복귀**(`SettingsView::handle_event` 의 `WindowEvent::Focused(true)`). 마지막 것이 빠지면 캐시가 곧 오판이 된다 — FDA 는 앱이 요청할 수 없어 사용자가 시스템 설정에 다녀오는 왕복이 반드시 생기고, 화면 기록도 거부 이후에는 시스템 설정에서만 되돌릴 수 있는데, 그 복귀가 값이 달라지는 유일한 순간이기 때문이다.
+
+**캡처·주입 경로는 이 스냅샷을 쓰지 않는다.** `screen_capture.rs` 의 `screen_recording_authorized()` 와 `input_source.rs` 의 `accessibility_trusted()` 는 그 동작 직전 실측이 의도된 정책이다(위 "화면 기록" · "주입 시점의 소비"). 표시용 캐시로 묶으면 캡처·주입이 낡은 값으로 판정하게 된다.
+
 **손쉬운 사용 상태 행은 debug 빌드에만 있다.** release 에는 이 권한을 소비하는 코드가 없어 프롬프트도 띄우지 않으므로, 행을 남기면 켤 이유도 끌 이유도 없는 항목이 영구히 "미승인" 으로 보인다. debug 빌드에서는 주입 경로를 자기검증할 때 승인 상태를 확인할 자리가 필요해 그대로 둔다.
 
 ### 프롬프트 본문 설명 문구
@@ -147,6 +153,8 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA �
 - Given 안내를 본 뒤 권한을 부여 When 재부팅 Then 안내가 뜨지 않는다
 - Given 안내를 본 뒤 권한을 주지 않음 When 재부팅 Then 안내가 다시 뜬다
 - Given ad-hoc 서명 빌드에 FDA 를 준 뒤 재빌드 When 부팅 Then 승인이 초기화돼 안내가 다시 뜬다
+- Given 권한 탭이 열려 있음 When 그 위에서 마우스를 움직여 repaint 가 반복됨 Then TCC 측정은 한 번도 더 일어나지 않는다
+- Given 권한 탭이 열린 설정 창 When 시스템 설정에 다녀와 그 창에 포커스가 돌아옴 Then 상태를 다시 재서 표시가 갱신된다
 - Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다
 - Given 손쉬운 사용 권한 미결정 When debug 빌드 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
 - Given 손쉬운 사용 권한 미결정 When release 빌드 실행 Then 손쉬운 사용 프롬프트가 뜨지 않는다(요청 자체가 없다)

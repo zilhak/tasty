@@ -172,10 +172,17 @@ impl View for SettingsView {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.base.modifiers = modifiers.state();
             }
-            WindowEvent::Focused(_) => {
+            WindowEvent::Focused(focused) => {
                 // MainView 와 **별개 인스턴스**의 detector 라 여기서도 따로 지운다.
                 // 이유는 `DoubleTapDetector::reset` 주석 참조.
                 self.double_tap.reset();
+                if focused {
+                    // 권한(TCC) 상태를 바꾸는 유일한 길은 시스템 설정이고, 이 창으로
+                    // 돌아오는 것이 그 왕복의 끝이다. 권한 화면이 낡은 값을 들고 있지
+                    // 않도록 여기서 다시 잰다 — macOS 외에서는 no-op.
+                    crate::macos_permissions::refresh_permission_snapshot();
+                    self.mark_dirty();
+                }
             }
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
