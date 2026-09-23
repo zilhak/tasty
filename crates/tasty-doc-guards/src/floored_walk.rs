@@ -193,10 +193,13 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 649,
-        measured_on: "2026-09-23",
+        measured: 651,
+        measured_on: "2026-09-24",
         counted_on: super::CountedOn::Tree(
-            "cc2e5e72e — 세 lane(명세 정정 · 비-ADR 문서 통폐합 · ADR 번호 이동 도구)이 착지한 \
+            "d5a894e04 — 프리셋 캐시 분리 뒤 main 트리에서 다시 셌다. 649 -> 651 이고 \
+             `src/adapters/ui/preset/cache_slot_tests.rs` 와 `src/adapters/ui/preset/demo_cache.rs` 가 \
+             더해졌다. 삭제는 없다. 두 파일 모두 깊이 5 라 깊이 4 이하의 428 개는 그대로다. \
+             이전 회차: cc2e5e72e — 세 lane(명세 정정 · 비-ADR 문서 통폐합 · ADR 번호 이동 도구)이 착지한 \
              main 트리에서 다시 셌다. 649 그대로이고 더해진 것도 빠진 것도 없다 — 세 lane 이 \
              고친 `src/` 의 `.rs` 는 11 이고(명세 정정 2 — `src/app/event_handler.rs` · \
              `src/app/window_lifecycle.rs` — · 비-ADR 통폐합 9 · 번호 도구 0) 전부 기존 파일의 \
@@ -256,9 +259,9 @@ pub mod populations {
         ),
         how: "`src/` 를 뿌리로 `SkipBuildCaches` 순회하고 `rel` 이 `.rs` 로 끝나는 것 전부. \
               재는 법: `git ls-tree -r --name-only <rev>` 에서 `src/` 로 시작하고 `.rs` 로 \
-              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-23 재확인: 작업 \
-              트리를 `find` 로 센 649 와 추적 트리 계수 649 가 같았다. 607 · 623 · \
-              632 · 633 · 645 · 646 이었을 \
+              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-24 재확인: 작업 \
+              트리를 센 651 과 추적 트리 계수 651 이 같았다. 607 · 623 · \
+              632 · 633 · 645 · 646 · 649 이었을 \
               때도, 2026-09-08 에도 같았다). \
               같은 좌변을 `scripts/check-intent-discipline.sh` 가 자기 실패문에 \
               `좌변(src/) 의 .rs N개` 로 찍으므로 **대조가 공짜다** — 두 수가 갈리면 술어가 \
