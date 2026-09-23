@@ -66,12 +66,7 @@ pub fn handle_set_url(
                         .as_any()
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
                     ) {
-                        let by_owner = matches!(
-                            caller,
-                            tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. }
-                                if *plugin_id == rs.plugin_id
-                        );
-                        rs.set_webview_url(Some(url), by_owner);
+                        rs.set_webview_url(Some(url), is_owner(caller, rs));
                         notify_content_changed(engine, rs, sid);
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
@@ -93,6 +88,17 @@ pub fn handle_set_url(
     JsonRpcResponse::error(id, -32000, "surface_id not found")
 }
 
+/// `caller` 가 `rs` 를 소유한 plugin 인가 — `handle_set_url` 이 페이지 작성자로 적는 값이다.
+fn is_owner(
+    caller: &tasty_ipc::caller::CallerContext,
+    rs: &crate::plugin_bridge::remote_surface::RemoteSurface,
+) -> bool {
+    matches!(
+        caller,
+        tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. } if *plugin_id == rs.plugin_id
+    )
+}
+
 /// webview 가 네비게이션을 시도한 URL 을 소유 plugin 에 통지(`webview.navigation_attempt`,
 /// host→plugin — `handle_set_url` 의 반대 방향). "원격 http(s) 차단" 판정과 독립적으로,
 /// 차단 여부와 무관하게 시도마다 항상 호출된다(호출부가 native backend 의
@@ -102,7 +108,7 @@ pub fn handle_set_url(
 /// 네비게이션 캡처와 surface 제거 사이에 프레임 경계가 끼어드는 정상적인 레이스다.
 ///
 /// 통지한 plugin(그 surface 의 소유자)과 그 plugin 이 지금 페이지를 썼는가를 돌려준다 —
-/// 통지하지 않았으면 `None`. 호출부는 사용자 제스처 시도를 **바로 이 plugin 에** 묶어
+/// 통지하지 않았으면 `None`. 호출부는 근거가 되는 시도(사용자 제스처 · 이 plugin 이 쓴 페이지)를 **바로 이 plugin 에** 묶어
 /// 기록하고, 근거가 못 되는 시도면 그 surface 의 기록을 지운다(ADR-0568).
 pub fn notify_navigation_attempt(
     mgr: &PluginManager,

@@ -1,4 +1,4 @@
-# ADR-0568: 엔진이 사용자 제스처로 보고한 plugin webview 의 navigation 에서 온 파일 열기는 사용자 행동이다 — ADR-0526 의 "세 조건이 모두 맞을 때만" 조항 개정
+# ADR-0568: 엔진이 사용자 제스처로 보고하고 소유 plugin 이 쓴 페이지 위에서 난 plugin webview 의 navigation 에서 온 파일 열기는 사용자 행동이다 — ADR-0526 의 "세 조건이 모두 맞을 때만" 조항 개정
 
 - **Status**: Accepted
 - **Date**: 2026-09-23
@@ -196,6 +196,20 @@ markdown plugin 의 문서 안 파일 링크는 통지받은 URL 을 그대로 `
   독립 인스턴스 둘에서 재현. 같은 조작을 `user_navigation_url` 을 싣지 않도록 바꾼 plugin 빌드로 하면
   새 탭이 생기되 선택되지 않았다. 세 인스턴스 중 둘에서는 링크 첫 클릭이 navigation 을 안 냈고 두 번째
   클릭부터 났다(원인은 재지 않았다 — WM 없는 Xvfb 의 포커스 전달로 짐작한다). Windows · macOS 는 미측정.
+- 실측(Linux, 2026-09-23, 같은 조건 — 기록 규칙 개정 전후 바이너리를 같은 절차로):
+  - 남은 기록: 대상 파일이 없는 링크를 사용자가 누르고(기록만 남는다) 10 초 뒤 대상 파일을 만든 다음
+    에이전트가 `tasty set url` 로 `location.hash` 를 바꾸는 스크립트를 쓰면, 개정 전에는 새 탭이 사용자 입력
+    없이 **선택됐고** 개정 후에는 생기되 선택되지 않았다.
+  - 에이전트가 쓴 페이지: 에이전트가 `tasty set url` 로 surface 전체를 덮는 투명 링크를 쓰고 사용자가 그
+    자리를 누르면, 개정 전에는 에이전트가 고른 파일이 **선택된 탭으로** 열렸고 개정 후에는 생기되 선택되지
+    않았다.
+  - 같은 실행에서 소유 plugin 이 쓴 문서의 파일 링크를 누르면 개정 전후 모두 새 탭이 선택됐다.
+  - 정당한 클릭이 떨어지는 순서(위 "잃은 것" 다섯째): 파일 감시 재로드가 1 초마다 문서를 다시 쓰게 해 두고
+    링크를 누른 70 회(재로드 위상에 클릭을 겹친 63 회 포함)에서, 기록과 그 기록을 쓰는 dispatch 사이에
+    같은 surface 의 다른 시도가 끼어든 것은 0 회였다. 기록에서 dispatch 까지 0.9–150 ms, 재로드의
+    `about:blank` 시도는 늘 dispatch 뒤에 왔다(8–58 ms).
+  - WM 없는 Xvfb 에서는 webview 안의 클릭만으로 host 프레임이 돌지 않아, 쌓인 시도가 다음 IPC 요청 등으로
+    루프가 깨어날 때 drain 된다 — 탭이 생기는 시각을 재려면 한 번 깨운 뒤 읽는다.
 - 현재 구현(심볼): `plugin_bridge::user_navigation`(`record` · `take`) ·
   `AppState::webview_user_navigations` · `IpcWindow::take_webview_user_navigation` ·
   `adapters::ipc::handler::file_handler::dispatch_origin_of` · `host_api::webview::PendingNavigation` ·
