@@ -8,6 +8,9 @@
 //! 로케일은 격리 홈의 기본값을 따르므로 번역되는 문장이 아니라 **번역되지 않는 조각**
 //! (인자 이름 · 포트 파일 경로의 파일 이름)으로 판정한다.
 
+#[path = "spawn_diag/mod.rs"]
+mod spawn_diag;
+
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -15,7 +18,7 @@ use std::process::{Command, Stdio};
 const NO_INSTANCE_MARK: &str = "tasty.port";
 
 fn run(home: &Path, args: &[&str]) -> (Option<i32>, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_tasty"))
+    let out = Command::new(spawn_diag::instance_bin())
         .args(args)
         .env("TASTY_HOME", home)
         .env_remove("TASTY_SURFACE_ID")

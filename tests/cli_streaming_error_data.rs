@@ -9,6 +9,9 @@
 //! std 가 `Err` 를 찍는 모양까지 이 경로에만 있다. `TASTY_HOME` 을 tempdir 로 격리하고 그 안에
 //! 포트 파일을 쓴다.
 
+#[path = "spawn_diag/mod.rs"]
+mod spawn_diag;
+
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::net::TcpListener;
 use std::path::Path;
@@ -88,7 +91,7 @@ fn host_method(host: std::thread::JoinHandle<Result<String, String>>, stderr: &s
 
 /// 격리 홈에서 CLI 를 돌려 (종료 코드, stderr) 를 얻는다.
 fn run(home: &Path, args: &[&str]) -> (Option<i32>, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_tasty"))
+    let out = Command::new(spawn_diag::instance_bin())
         .args(args)
         .env("TASTY_HOME", home)
         .env_remove("TASTY_SURFACE_ID")
