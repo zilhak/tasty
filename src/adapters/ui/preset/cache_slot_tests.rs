@@ -3,6 +3,7 @@
 //! preset 수만큼 쌓이지 않아야 한다. [`draw_preview`] 를 헤드리스 egui 프레임으로 돌려
 //! 칸에서 잰다.
 
+use super::demo_cache::{DemoCache, demo_cache_id, drew_editing_id, preset_key};
 use super::*;
 use tasty_presets::{PresetPane, PresetSurface, PresetTab, WorkspacePreset};
 

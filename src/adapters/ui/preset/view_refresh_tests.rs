@@ -3,6 +3,7 @@
 //! 두 성질을 [`draw_preview`] 를 헤드리스 egui 프레임으로 돌려 캐시 칸에서 잰다 —
 //! 새로고침을 부르는 자리가 어느 모드 갈래에 있는지가 곧 시험 대상이다.
 
+use super::demo_cache::{DemoCache, demo_cache_id, preset_key};
 use super::*;
 use tasty_presets::{PresetPane, PresetSurface, PresetTab, WorkspacePreset};
 

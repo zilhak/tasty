@@ -136,5 +136,5 @@ preset 의 캐시가 경고 없이 저장소 판으로 돌아갔다(잰 값: 편
 ## References
 
 - 선행 결정: [ADR-0531](0531-the-preset-editor-does-not-overwrite-a-preset-changed-behind-its-cache.md) (다른 조항 — 편집 모드의 저장 시점 대조는 그대로 유효, 그 "잃은 것" 중 보기 모드 미리보기 부분을 이 결정이 닫는다)
-- 코드 근거(결정이 실현된 현재 위치): `src/adapters/ui/preset.rs` 의 `draw_preview` · `refresh_view_cache` · `drew_editing_last` · `touch_slot`, 시험 `src/adapters/ui/preset/view_refresh_tests.rs` · `src/adapters/ui/preset/cache_slot_tests.rs`
+- 코드 근거(결정이 실현된 현재 위치): `src/adapters/ui/preset.rs` 의 `draw_preview`, `src/adapters/ui/preset/demo_cache.rs` 의 `refresh_view_cache` · `drew_editing_last` · `touch_slot`, 시험 `src/adapters/ui/preset/view_refresh_tests.rs` · `src/adapters/ui/preset/cache_slot_tests.rs`
 - [`docs/features/layout-presets/index.md`](../features/layout-presets/index.md) "편집 모드"

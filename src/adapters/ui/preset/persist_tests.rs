@@ -2,6 +2,7 @@
 //! 캐시로 덮지 않는다(원칙 1). 설정 화면 확인과 구조 편집 자동 저장이 둘 다
 //! [`persist_layout`] 을 지나므로 여기서 한 번에 고정한다.
 
+use super::demo_cache::{DemoCache, build_cache, reload_after_conflict};
 use super::*;
 use tasty_presets::{PresetPane, PresetSurface, PresetTab, WorkspacePreset};
 
