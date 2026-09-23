@@ -24,6 +24,8 @@
 //! 레이아웃이 바뀌면 다음 프레임에 캐시를 다시 짓는다([`refresh_view_cache`]). 편집 모드의
 //! 캐시는 사용자가 겨냥 중인 트리라 따라가지 않는다.
 
+#[cfg(test)]
+mod cache_slot_tests;
 pub mod demo_layout;
 mod layout_base;
 #[cfg(test)]
@@ -524,7 +526,7 @@ fn draw_preview(
     // 편집 갈래는 저장소를 따라가지 않는다. 다만 보기 → 편집 전이 프레임(직전에 그린 것이
     // 보기 모드)에서는 먼저 한 번 따라간다 — Edit 를 누른 프레임이 곧 저장 뒤 첫 프레임이면
     // 보기 갈래가 새로고침할 기회가 없었고, 이 시점의 캐시에는 아직 사용자 편집이 없다.
-    let entering_edit = editing && !drew_editing_last(ui);
+    let entering_edit = editing && !drew_editing_last(ui, &cache.key);
     if !editing || entering_edit {
         // 보기 모드만 저장소를 따라간다 — 편집 모드의 캐시는 ADR-0531 대로 저장 직전에만
         // 대조한다(`docs/adr/0564-the-preset-view-mode-follows-the-store-and-the-edit-mode-does-not.md`).
@@ -533,7 +535,7 @@ fn draw_preview(
             ui.ctx().request_repaint();
         }
     }
-    set_drew_editing_last(ui, editing);
+    set_drew_editing_last(ui, &cache.key, editing);
 
     if editing {
         draw_preview_editing(
@@ -559,19 +561,22 @@ fn draw_preview(
     store_demo(ui, cache);
 }
 
-/// 직전 [`draw_preview`] 가 그린 모드(편집이면 `true`) 의 temp memory id. 캐시 칸과 따로
-/// 둔다 — 설정 화면·경합 재적재가 캐시를 새로 지어도 이 값이 흔들리지 않게.
-fn drew_editing_id() -> egui::Id {
-    egui::Id::new("preset_demo_drew_editing")
+/// 그 preset 을 직전에 그린 [`draw_preview`] 의 모드(편집이면 `true`) 의 temp memory id.
+/// 캐시 칸과 따로 둔다 — 설정 화면·경합 재적재가 캐시를 새로 지어도 이 값이 흔들리지 않게.
+/// 캐시 칸처럼 preset 마다 따로다 — 한 프레임에 다른 preset 의 보기가 먼저 그려져도 이
+/// preset 의 편집이 전이 프레임으로 오인되지 않게.
+fn drew_editing_id(key: &str) -> egui::Id {
+    egui::Id::new("preset_demo_drew_editing").with(key)
 }
 
-/// 직전 프레임이 편집 모드로 그렸는가. 기록이 없으면 보기로 본다.
-fn drew_editing_last(ui: &egui::Ui) -> bool {
-    ui.data(|d| d.get_temp(drew_editing_id())).unwrap_or(false)
+/// 그 preset 을 직전에 편집 모드로 그렸는가. 기록이 없으면 보기로 본다.
+fn drew_editing_last(ui: &egui::Ui, key: &str) -> bool {
+    ui.data(|d| d.get_temp(drew_editing_id(key)))
+        .unwrap_or(false)
 }
 
-fn set_drew_editing_last(ui: &egui::Ui, editing: bool) {
-    ui.data_mut(|d| d.insert_temp(drew_editing_id(), editing));
+fn set_drew_editing_last(ui: &egui::Ui, key: &str, editing: bool) {
+    ui.data_mut(|d| d.insert_temp(drew_editing_id(key), editing));
 }
 
 /// 미리보기 캐시 키 — `{kind}:{name}`. 설정 화면의 draft 도 같은 키로 자기 preset 을 적는다.
@@ -579,10 +584,49 @@ fn preset_key(kind: PresetKind, name: &str) -> String {
     format!("{}:{}", kind.as_str(), name)
 }
 
-/// 미리보기 layout 캐시(egui temp memory) 의 id. 미리보기와 설정 화면이 **같은
-/// 인스턴스**를 읽고 쓴다 — 설정 화면이 사본을 따로 지으면 확인 뒤 미리보기와 어긋난다.
-fn demo_cache_id() -> egui::Id {
-    egui::Id::new("preset_demo_layout_cache")
+/// 미리보기 layout 캐시(egui temp memory) 의 id — preset 마다 한 칸. 같은 preset 이면
+/// 미리보기와 설정 화면이 **같은 인스턴스**를 읽고 쓴다 — 설정 화면이 사본을 따로 지으면
+/// 확인 뒤 미리보기와 어긋난다. 칸이 하나뿐이면 한 프레임에 다른 preset 을 그리는 호출이
+/// 그 칸을 갈아 끼워, 편집 중인 preset 의 캐시가 경고 없이 저장소 판으로 돌아간다.
+fn demo_cache_id(key: &str) -> egui::Id {
+    egui::Id::new("preset_demo_layout_cache").with(key)
+}
+
+/// 살아 있는 캐시 칸의 명부(egui temp memory) 의 id — [`DemoSlots`].
+fn demo_slots_id() -> egui::Id {
+    egui::Id::new("preset_demo_layout_slots")
+}
+
+/// 캐시 칸 명부. 칸은 직전에 그린 pass 와 지금 pass 에 쓰인 preset 의 것만 남는다 —
+/// preset 을 둘러볼 때마다 칸이 쌓이지 않고, 다른 preset 으로 옮겼다 돌아오면 칸이 하나일
+/// 때처럼 저장소에서 새로 짓는다.
+#[derive(Clone, Default)]
+struct DemoSlots {
+    /// `now` 가 기록된 pass(`egui::Context::cumulative_pass_nr`).
+    pass: u64,
+    now: Vec<String>,
+    prev: Vec<String>,
+}
+
+/// `key` 의 칸을 이번 pass 에 쓴다고 적는다. 새 pass 의 첫 기록이면 직전에 그린 pass 에도
+/// 안 쓰인 칸(캐시·모드 기록)을 비운다.
+fn touch_slot(ui: &egui::Ui, key: &str) {
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.data_mut(|d| {
+        let mut slots: DemoSlots = d.get_temp(demo_slots_id()).unwrap_or_default();
+        if slots.pass != pass {
+            for stale in slots.prev.iter().filter(|k| !slots.now.contains(k)) {
+                d.remove::<DemoCache>(demo_cache_id(stale));
+                d.remove::<bool>(drew_editing_id(stale));
+            }
+            slots.prev = std::mem::take(&mut slots.now);
+            slots.pass = pass;
+        }
+        if !slots.now.iter().any(|k| k == key) {
+            slots.now.push(key.to_owned());
+        }
+        d.insert_temp(demo_slots_id(), slots);
+    });
 }
 
 /// 미리보기 캐시 한 칸 — layout 과, 그것이 지어진(또는 마지막으로 저장된) 저장소 판.
@@ -617,7 +661,8 @@ fn load_demo(
     catalog: &KindCatalog,
 ) -> Option<DemoCache> {
     let key = preset_key(kind, name);
-    let cached: Option<DemoCache> = ui.data(|d| d.get_temp(demo_cache_id()));
+    touch_slot(ui, &key);
+    let cached: Option<DemoCache> = ui.data(|d| d.get_temp(demo_cache_id(&key)));
     match cached {
         Some(c) if c.key == key => Some(c),
         _ => build_cache(store, kind, name, catalog),
@@ -625,7 +670,7 @@ fn load_demo(
 }
 
 fn store_demo(ui: &egui::Ui, cache: DemoCache) {
-    ui.data_mut(|d| d.insert_temp(demo_cache_id(), cache));
+    ui.data_mut(|d| d.insert_temp(demo_cache_id(&cache.key), cache));
 }
 
 /// 저장이 [`Persisted::Conflict`] 로 끝났을 때: 캐시를 저장소 판으로 다시 짓고 알린다.

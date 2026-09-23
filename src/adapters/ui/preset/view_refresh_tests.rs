@@ -72,9 +72,13 @@ fn frame(
 /// 캐시 칸에 든 미리보기의 탭 수.
 fn cached_tabs(ctx: &egui::Context) -> usize {
     let cache: DemoCache = ctx
-        .data(|d| d.get_temp(demo_cache_id()))
+        .data(|d| d.get_temp(demo_cache_id(&dev_key())))
         .expect("미리보기 캐시");
     count_ws_tabs(&cache.layout.rebuild_pane_node().expect("workspace layout"))
+}
+
+fn dev_key() -> String {
+    preset_key(PresetKind::Workspace, "dev")
 }
 
 fn seeded() -> (tempfile::TempDir, PresetStore) {
@@ -104,7 +108,9 @@ fn view_mode_shows_an_agent_save_on_the_next_frame() {
     );
 
     // 새 판이 기준 판이 됐으므로 이어서 편집 모드로 들어간 첫 저장은 경합이 아니다.
-    let cache: DemoCache = ctx.data(|d| d.get_temp(demo_cache_id())).expect("cache");
+    let cache: DemoCache = ctx
+        .data(|d| d.get_temp(demo_cache_id(&dev_key())))
+        .expect("cache");
     assert_eq!(
         cache.base,
         LayoutBase::current(&store, PresetKind::Workspace, "dev")
@@ -143,9 +149,11 @@ fn view_mode_keeps_its_cache_while_the_store_is_unchanged() {
     frame(&ctx, &mut store, false, &mut selected);
 
     // 캐시만 다른 트리로 바꾼다(기준 판은 그대로) — 저장소와 무관한 미리보기 쪽 상태의 대역.
-    let mut cache: DemoCache = ctx.data(|d| d.get_temp(demo_cache_id())).expect("cache");
+    let mut cache: DemoCache = ctx
+        .data(|d| d.get_temp(demo_cache_id(&dev_key())))
+        .expect("cache");
     cache.layout = DemoLayout::from_workspace(&ws("dev", 3), &KindCatalog::default());
-    ctx.data_mut(|d| d.insert_temp(demo_cache_id(), cache));
+    ctx.data_mut(|d| d.insert_temp(demo_cache_id(&dev_key()), cache));
 
     frame(&ctx, &mut store, false, &mut selected);
     assert_eq!(
@@ -175,7 +183,9 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
         2,
         "Edit 를 누른 프레임의 편집 모드가 옛 판으로 시작했다"
     );
-    let cache: DemoCache = ctx.data(|d| d.get_temp(demo_cache_id())).expect("cache");
+    let cache: DemoCache = ctx
+        .data(|d| d.get_temp(demo_cache_id(&dev_key())))
+        .expect("cache");
     assert_eq!(
         cache.base,
         LayoutBase::current(&store, PresetKind::Workspace, "dev"),

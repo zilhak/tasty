@@ -41,7 +41,7 @@
   저장되지 않았다는 것을 toast 로 안다.
 - **잃은 것**: 경합이 나면 사용자의 그 변경 하나(설정 화면이면 draft 전체)가 버려진다. 다시 해야 한다.
   캐시는 저장 시점에만 대조하므로, 저장하기 전까지 미리보기는 옛 판을 보여 줄 수 있다.
-- **운영 비용 / 유지 부담**: 캐시 한 칸에 기준 판 하나. 캐시로 저장하는 자리를 새로 만들면
+- **운영 비용 / 유지 부담**: 캐시 칸 하나에 기준 판 하나(칸은 preset 마다 — [ADR-0564](0564-the-preset-view-mode-follows-the-store-and-the-edit-mode-does-not.md) "캐시 칸은 preset 마다"). 캐시로 저장하는 자리를 새로 만들면
   `persist_layout` 을 지나게 하고 `Persisted::Conflict` 를 처리한다.
 
 ## Alternatives Considered

@@ -8,8 +8,8 @@
 ## Context
 
 프리셋 창(`PresetView`)의 미리보기는 선택한 preset 을 저장소(`PresetStore`)에서 한 번 읽어
-`DemoLayout` 으로 짓고 egui temp memory 에 캐시한다. 보기 모드(read-only)와 편집 모드(WYSIWYG)가
-**같은 캐시 칸**을 쓴다.
+`DemoLayout` 으로 짓고 egui temp memory 에 캐시한다. 같은 preset 이면 보기 모드(read-only)와 편집
+모드(WYSIWYG)가 **같은 캐시 칸**을 쓴다.
 
 [ADR-0531](0531-the-preset-editor-does-not-overwrite-a-preset-changed-behind-its-cache.md) 은 편집
 화면의 저장이 에이전트의 `preset.save` 를 덮지 않도록, 저장 직전에만 저장소와 대조하게 했다.
@@ -54,6 +54,27 @@
   temp memory 에 둔다(설정 화면 · 경합 재적재가 캐시를 새로 지어도 흔들리지 않게). 이 시점의
   캐시에는 아직 사용자 편집이 없으므로 편집 모드 조항과 부딪히지 않는다. 그 뒤의 편집 프레임은
   따라가지 않는다.
+
+### 캐시 칸은 preset 마다 (같은 날 보강)
+
+이 조항은 위 두 조항의 결정을 바꾸지 않는다 — 두 조항이 기대던 "칸이 하나이고 한 프레임에 한 번
+그린다" 는 불변이 아무 가드 없이 우연히 성립하던 것을, 칸의 단위를 바꿔 불변 자체를 없앤 것이다.
+칸이 하나일 때는 한 프레임에 다른 preset 을 그리는 호출이 먼저 오면 그 칸을 갈아 끼워, 편집 중인
+preset 의 캐시가 경고 없이 저장소 판으로 돌아갔다(잰 값: 편집 대역 `tabs=3` 에서 `[ops 보기, dev 편집]` ·
+`[ops 편집, dev 편집]` 모두 `tabs=1`, 에이전트 저장이 끼면 `tabs=2`).
+
+- 캐시 칸과 직전 모드 기록은 preset(`{kind}:{name}`) 마다 따로 둔다. 한 프레임에 여러 preset 을
+  그려도 서로의 칸과 전이 판정을 건드리지 않는다.
+- 칸은 **직전에 그린 pass 와 지금 pass 에 쓰인 preset 의 것만** 남긴다. 그래서 둘러본 preset 수만큼
+  쌓이지 않고, 다른 preset 으로 옮겼다 돌아오면 칸이 하나일 때처럼 저장소에서 새로 짓는다 — 한
+  preset 만 그리는 지금 화면의 동작은 그대로다.
+- 기각한 쪽 — `draw_preview` 가 한 프레임 두 번째 호출을 거부하는 계약: 칸을 가진 첫 호출이 다른
+  preset 이면 그 호출이 이미 칸을 갈아 끼운 뒤라 막히지 않고, 두 preset 을 나란히 보이는 화면을
+  계약으로 금지한다.
+- 남는 경로: **같은 preset** 을 한 프레임에 보기와 편집으로 함께 그리고 그 사이 에이전트 저장이 있으면
+  보기 호출이 칸을 저장소 판으로 다시 짓는다(잰 값 `tabs=2`). 한 칸이 저장소를 따라가는 것과 안
+  따라가는 것을 동시에 할 수는 없다 — 칸의 단위가 아니라 두 모드 조항의 모순이라 이 보강의 범위
+  밖이고, 지금 그렇게 그리는 호출자는 없다.
 
 ## Consequences
 
@@ -115,5 +136,5 @@
 ## References
 
 - 선행 결정: [ADR-0531](0531-the-preset-editor-does-not-overwrite-a-preset-changed-behind-its-cache.md) (다른 조항 — 편집 모드의 저장 시점 대조는 그대로 유효, 그 "잃은 것" 중 보기 모드 미리보기 부분을 이 결정이 닫는다)
-- 코드 근거(결정이 실현된 현재 위치): `src/adapters/ui/preset.rs` 의 `draw_preview` · `refresh_view_cache` · `drew_editing_last`, 시험 `src/adapters/ui/preset/view_refresh_tests.rs`
+- 코드 근거(결정이 실현된 현재 위치): `src/adapters/ui/preset.rs` 의 `draw_preview` · `refresh_view_cache` · `drew_editing_last` · `touch_slot`, 시험 `src/adapters/ui/preset/view_refresh_tests.rs` · `src/adapters/ui/preset/cache_slot_tests.rs`
 - [`docs/features/layout-presets/index.md`](../features/layout-presets/index.md) "편집 모드"
