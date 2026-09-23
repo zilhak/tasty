@@ -58,22 +58,22 @@ fn disabling_a_plugin_withdraws_its_surface_kinds_and_keeps_open_surfaces() {
     let pane_id = server.first_pane_id_in_workspace(ws.id);
 
     // 켜진 상태: kind 지목 생성이 소유자를 띄우고 kind 를 등록한다(ADR-0259).
-    let opened = create_markdown_tab(&server, pane_id, &file);
+    let opened = create_markdown_tab(server, pane_id, &file);
     let open_sid = opened["result"]["surface_id"].as_u64().unwrap_or_else(|| {
         panic!(
             "켜진 markdown 으로 탭을 못 만들었다: {opened}{}",
             common::bundle_staging_note()
         )
     });
-    assert!(kinds(&server).iter().any(|k| k == "markdown"));
+    assert!(kinds(server).iter().any(|k| k == "markdown"));
 
     server.call("plugin.disable", json!({ "id": MARKDOWN_PLUGIN }));
 
     assert!(
-        !kinds(&server).iter().any(|k| k == "markdown"),
+        !kinds(server).iter().any(|k| k == "markdown"),
         "끈 plugin 의 kind 가 surface.kinds 에 남았다"
     );
-    let refused = create_markdown_tab(&server, pane_id, &file);
+    let refused = create_markdown_tab(server, pane_id, &file);
     let message = refused["error"]["message"].as_str().unwrap_or_default();
     assert!(
         message.contains("is disabled or removed, or has not reconnected")
@@ -81,7 +81,7 @@ fn disabling_a_plugin_withdraws_its_surface_kinds_and_keeps_open_surfaces() {
         "끈 plugin 의 kind 로 만든 요청은 제공 plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 사유로 거절돼야 한다: {refused}"
     );
     assert!(
-        surface_ids(&server).contains(&open_sid),
+        surface_ids(server).contains(&open_sid),
         "이미 열린 surface 는 그대로 남아야 한다"
     );
 
@@ -89,7 +89,7 @@ fn disabling_a_plugin_withdraws_its_surface_kinds_and_keeps_open_surfaces() {
     server.call("plugin.enable", json!({ "id": MARKDOWN_PLUGIN }));
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let again = create_markdown_tab(&server, pane_id, &file);
+        let again = create_markdown_tab(server, pane_id, &file);
         if again["result"]["surface_id"].as_u64().is_some() {
             break;
         }
