@@ -6,15 +6,13 @@
 //! [`violating_prefix`] 하나를 공유한다 — 토큰을 넘기는 정상 코드
 //! (`Stroke::new(th.border_width.value(), ..)`)는 숫자로 시작하지 않아 걸리지 않는다.
 //!
-//! design-tokens-02 가 `add_space`/`Margin` 의 off-grid 리터럴을 typed 헬퍼
-//! (`vspace`/`hspace`/`margin_all`/`margin_sym` + `th.spacing_*` / `STRUCT_GAP_*`)로
-//! 이식했다. 이 가드는 그 결과를 되돌림 없이 유지한다 — 소스에 `add_space(8.0)` 이나
-//! `Margin::same(12)` 같은 **인라인 숫자 리터럴**을 다시 넣으면 `cargo test --workspace`
-//! 에서 fail 한다. 통합 테스트라 **자동 실행은 `check-headless` 잡에서만** 일어나고 기본
-//! 조합에는 채널이 없다(컴파일은 자동 잡의 clippy `--all-targets` 가 본다 —
-//! `docs/dev-guide/ci-gates.md`). 소스를 런타임에 스캔하는
-//! 가드에게 컴파일만으로는 아무것도 검사되지 않으므로, 리터럴을 건드렸으면 직접
-//! 돌려야 한다. 선례: `tests/cli_naming_count_drift.rs`.
+//! `add_space`/`Margin`에 숫자를 직접 넣는 대신 typed 헬퍼와 Theme의 간격 값을 쓴다.
+//! 이 가드는 인라인 숫자가 다시 들어오는지 소스에서 검사한다. 자동 실행 채널은
+//! `doc-guards.yml`의 main push·PR 검사다(경로 필터 없음). GUI 의존성이 없는 크레이트라
+//! 기본·헤드리스 조합 모두 검사할 수 있고, `crossplatform-check.yml`의 Windows 잡도
+//! 이 크레이트를 실행한다. 컴파일만으로는 소스 검사가 실행되지 않으므로 관련 변경을
+//! 커밋하기 전에 `cargo test -p tasty-doc-guards --test design_token_adherence --locked`로
+//! 확인한다. 전체 채널은 `docs/dev-guide/ci-gates.md`를 따른다.
 //!
 //! **스코프 밖(의도적)**: `const NAME: LogicalPx = LogicalPx(N)` 같은 **명명 구조 상수**는
 //! 금지하지 않는다 — 그게 구조값(사이드바 폭·카드 크기·control nudge)의 *권장* 해결책이다

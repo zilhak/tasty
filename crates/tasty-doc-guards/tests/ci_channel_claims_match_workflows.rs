@@ -3950,61 +3950,33 @@ fn the_gate_script_index_dies_when_extraction_dies() {
     );
 }
 
-/// 문서의 한 서술이 워크플로를 이름으로 들면서 그 워크플로의 게이트 스크립트를
-/// **일부만** 들고 있는가.
+/// 워크플로 설명에서 실제로 호출하는 게이트의 일부를 빠뜨렸는지 확인한다.
+/// 게이트 하나의 실행 채널을 설명하는 문장은 전체 목록 주장이 아니므로 제외한다.
+/// 워크플로가 먼저 나오거나 같은 문단에서 게이트를 둘 이상 열거할 때만 목록으로 본다.
+/// 표에서 다른 워크플로의 게이트를 연결한 경우는 별도로 오류로 보고한다.
 ///
-/// ## 좌변은 **두 겹**이다 — 여기를 한 겹으로 읽으면 모수를 몇 배로 틀린다
+/// ADR 통폐합 뒤 현재 문서는 게이트별 채널을 설명하며 전체 목록 주장은 없다.
+/// 목록 수를 늘리려고 문서 사본을 만들지 않는다. 실제 문서에서 워크플로·스크립트를
+/// 계속 수집하는지는 별도 단정으로, 목록의 판별력은 같은 검사 경로의 합성 입력으로 확인한다.
 ///
-/// 워크플로 이름은 실행 목록 밖에서도 쓰인다("그 워크플로는 run 이력이 0 건이었다").
-/// 그런 서술에 스크립트 목록을 요구하면 거짓 위반이 된다. 그래서 좁히는데, **한 번이
-/// 아니라 두 번 좁힌다.** 아래 본문의 두 `continue` 가 그것이고, 둘 다 좌변의 일부다.
-///
-/// 1. **하나라도 든 자리** — 그 워크플로의 게이트 스크립트를 하나도 안 들면 그 서술은
-///    실행 목록이 아니다. 조용히 통과한다.
-/// 2. **자칭 두 모양** — `named.len() >= 2 || workflow_is_subject`. 하나만 든 자리가
-///    전부 목록인 것은 아니다. 이 레포의 채널 서술은 압도적으로 **게이트가 주어**이고
-///    워크플로가 그 게이트의 속성이다(`| <축> | <스크립트> | <워크플로> |` — 실물 행은
-///    아래 본문 주석이 하나 들고 있고, 여기서 다시 베끼면 그 사본이 둘이 되면서 이 축의
-///    모수도 한 칸 는다). 그런 자리에 형제 게이트를 적으라고 요구하면 게이트마다
-///    한 행씩인 **정본 표의 모든 행이 형제 이름을 베껴 갖게 된다 — 이 가드가 막으려는
-///    바로 그 사본이다.** 그래서 워크플로가 주어로 앞에 오거나 스크립트를 둘 이상 든
-///    자리만 목록으로 친다.
-///
-/// **2 를 군더더기로 읽고 지우지 마라.** 그것 없이 재면 판정이 몇 배로 늘고 늘어난
-/// 것이 전부 오탐이다 — 값은 아래 모듈 주석의 "가드가 막지 못하는 것" 절에 날짜와 함께
-/// 있다. 지운 쪽이 조용한 것도 아니다: 위반이 무더기로 나오는데 그 처방이 사본을 만든다.
-///
-/// ## 그 좌변이 지금 몇 곳인가 — **여기 안 적는다, 테스트가 센다**
-///
-/// 깔때기(이름을 든 자리 → 하나라도 든 자리 → 실제 판정)의 수는 문서가 하나 늘 때마다
-/// 바뀐다. 적는 순간 낡는 부류라([수치 기록 원칙](../../../docs/documentation-model.md))
-/// 이 테스트가 셋을 직접 세어 `FUNNEL` 한 줄로 찍고, 모수 assert 도 그 셋을 함께 든다.
-/// 지금 값을 보려면:
-///
-/// ```text
-/// cargo test -p tasty-doc-guards --test ci_channel_claims_match_workflows \
-///   no_file_lists_only_some_of_the_gates_a_workflow_runs -- --nocapture
-/// ```
-///
-/// 반대로 **한 번 하고 마는 실측**(문턱을 낮추면 오탐이 몇이더냐 같은)은 커밋마다 바뀌는
-/// 값이 아니라 그 회차의 관측이라, 날짜를 붙여 산문에 남긴다. 두 부류를 같은 자리에
-/// 섞지 않는 것이 이 갈래의 요지다.
-///
-/// ## 실물 둘이 이 축을 세우게 했다 (2026-09-07)
-///
-/// 두 자리가 같은 형태로 어긋나 있었다 — 워크플로는 셋을 부르는데 문서는 둘을 들고,
-/// 다른 워크플로는 둘을 부르는데 문서는 하나를 들었다. **설명은 있고 돌리는 법이
-/// 없다.** 두 워크플로 · 두 문서에서 같은 형태로 났으니 우연이 아니다: 문서가 CI 를
-/// 서술할 때 워크플로 파일이 아니라 기억에서 쓴다.
-/// 파일이 자기 이름을 드는 것은 목록도 주장도 아니라 자기소개다.
+/// 파일이 자기 이름을 드는 것은 목록이 아니라 자기소개다.
 fn own_name(rel: &str) -> &str {
     rel.rsplit('/').next().unwrap_or(rel)
 }
 
-#[test]
-fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
-    let root = &repo_root();
-    let index = gate_scripts_by_workflow(&root.join(".github/workflows"), &WORKFLOW_FLOOR);
+#[derive(Debug)]
+struct GateListAudit {
+    mentions: usize,
+    named_any: usize,
+    none_named: usize,
+    judged: usize,
+    violations: Vec<String>,
+    misattributed: Vec<String>,
+}
+
+/// 실제 문서와 합성 트리가 같은 순회·문장 분류·목록 대조를 사용한다.
+fn gate_list_audit(root: &Path, floor: &Floor) -> GateListAudit {
+    let index = gate_scripts_by_workflow(&root.join(".github/workflows"), floor);
     assert!(
         !index.is_empty(),
         "게이트 스크립트를 부르는 워크플로가 0 개다 — 순회나 추출이 죽었다. 이 상태의 \
@@ -4147,6 +4119,26 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
         }
     }
 
+    GateListAudit {
+        mentions,
+        named_any,
+        none_named,
+        judged,
+        violations,
+        misattributed,
+    }
+}
+
+#[test]
+fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
+    let GateListAudit {
+        mentions,
+        named_any,
+        none_named,
+        judged,
+        violations,
+        misattributed,
+    } = gate_list_audit(&repo_root(), &WORKFLOW_FLOOR);
     println!(
         "FUNNEL 워크플로 이름을 든 자리 {mentions} → 게이트를 하나라도 든 자리 \
          {named_any} → 자칭 두 모양까지 통과해 판정된 자리 {judged} (스크립트를 하나도 \
@@ -4161,13 +4153,12 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
          증가시키는 `continue` 가 새로 생겼을 가능성이 높다). 이 줄이 빨간 동안 \
          FUNNEL 의 수는 전부 못 믿는다."
     );
+    // 통폐합 뒤 문서는 게이트별 채널을 설명하며, 워크플로 전체 목록을 주장하지 않는다.
+    // 목록이 0개여도 정상이다. 수집이 살아 있는지와 목록 판정이 맞는지는 따로 확인한다.
+    assert!(mentions > 0, "워크플로 이름을 든 문서를 하나도 찾지 못했다");
     assert!(
-        judged > 0,
-        "워크플로의 실행 목록을 적은 자리가 0 곳이다 — 검출기가 죽었을 때도 이 축은 \
-         초록이 되므로 모수를 함께 본다. 좌변 깔때기: 이름을 든 자리 {mentions} → \
-         하나라도 든 자리 {named_any} → 판정 {judged}. 어느 칸에서 0 이 되는지가 \
-         무엇이 죽었는지를 가른다 — 첫 칸이 0 이면 순회가, 둘째가 0 이면 추출이, \
-         셋째만 0 이면 자칭 필터가 원인이다."
+        named_any > 0,
+        "워크플로와 게이트를 함께 든 문서를 하나도 찾지 못했다"
     );
     // ── 좌변 둘째 겹이 **지금도 무언가를 거르는가** ─────────────────────────────
     // 이 겹(`named.len() >= 2 || workflow_is_subject`)을 지키는 것이 오래 주석 한 줄뿐이었다.
@@ -4210,6 +4201,105 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
         misattributed.len(),
         misattributed.join("\n")
     );
+}
+
+/// 현재 문서에 전체 목록이 없어도 같은 검사 경로가 누락과 오귀속을 잡아야 한다.
+#[test]
+fn gate_list_audit_checks_complete_partial_single_and_empty_claims() {
+    const ALPHA: &str = "jobs:\n  a:\n    steps:\n      - run: bash scripts/check-one.sh\n      - run: bash scripts/check-two.sh\n      - run: bash scripts/check-three.sh\n";
+    const BETA: &str = "jobs:\n  b:\n    steps:\n      - run: bash scripts/check-other.sh\n";
+    let cases = [
+        (
+            "complete",
+            "alpha.yml runs check-one.sh, check-two.sh and check-three.sh.\n",
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+        ),
+        (
+            "missing",
+            "alpha.yml runs check-one.sh.\n",
+            1,
+            1,
+            0,
+            1,
+            1,
+            0,
+        ),
+        (
+            "two-before-workflow",
+            "check-one.sh and check-two.sh run in alpha.yml.\n",
+            1,
+            1,
+            0,
+            1,
+            1,
+            0,
+        ),
+        (
+            "single-gate",
+            "| rule | check-one.sh | alpha.yml |\n",
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+        ),
+        (
+            "no-gates",
+            "alpha.yml has a manual trigger.\n",
+            1,
+            0,
+            1,
+            0,
+            0,
+            0,
+        ),
+        ("empty", "No workflow claim.\n", 0, 0, 0, 0, 0, 0),
+        (
+            "wrong-channel",
+            "| rule | check-other.sh | alpha.yml |\n",
+            1,
+            0,
+            1,
+            0,
+            0,
+            1,
+        ),
+    ];
+    for (name, text, mentions, named, none, judged, missing, wrong) in cases {
+        let probe = fake_repo(name, &[], &[("alpha.yml", ALPHA), ("beta.yml", BETA)]);
+        std::fs::write(probe.path().join("README.md"), text).expect("합성 설명을 쓰지 못했다");
+        let got = gate_list_audit(probe.path(), &CALLER_SUPPLIED_FLOOR);
+        assert_eq!(
+            (
+                got.mentions,
+                got.named_any,
+                got.none_named,
+                got.judged,
+                got.violations.len(),
+                got.misattributed.len()
+            ),
+            (mentions, named, none, judged, missing, wrong),
+            "{name}: {got:?}"
+        );
+        if missing > 0 {
+            assert!(
+                got.violations[0].contains("check-three.sh"),
+                "빠진 형제 이름이 없다"
+            );
+        }
+        if wrong > 0 {
+            assert!(
+                got.misattributed[0].contains("check-other.sh"),
+                "잘못 연결한 이름이 없다"
+            );
+        }
+    }
 }
 
 /// **양성 대조 — 시점 표지 판정기.**

@@ -93,22 +93,22 @@ pub struct Section {
 /// `known` 은 실재하는 크레이트 디렉토리 이름이다. 그 밖의 이름(바이너리 이름 등)은 뺀다.
 pub fn sections(doc: &str, known: &[String]) -> Vec<Section> {
     let mut out: Vec<Section> = Vec::new();
-    let mut cur: Option<(String, Vec<String>, bool)> = None; // 이름, 항목, 첫 문단 끝났나
+    let mut cur: Option<(String, Vec<String>, bool, bool)> = None; // 이름, 항목, 문단 시작, 문단 끝
     for line in doc.lines() {
         if let Some(name) = line.strip_prefix("### ") {
-            if let Some((n, c, _)) = cur.take() {
+            if let Some((n, c, _, _)) = cur.take() {
                 out.push(Section { name: n, crates: c });
             }
-            cur = Some((name.replace('\\', ""), Vec::new(), false));
+            cur = Some((name.replace('\\', ""), Vec::new(), false, false));
             continue;
         }
         if line.starts_with("## ") {
-            if let Some((n, c, _)) = cur.take() {
+            if let Some((n, c, _, _)) = cur.take() {
                 out.push(Section { name: n, crates: c });
             }
             continue;
         }
-        let Some((_, items, done)) = cur.as_mut() else {
+        let Some((_, items, started, done)) = cur.as_mut() else {
             continue;
         };
         if *done {
@@ -116,9 +116,10 @@ pub fn sections(doc: &str, known: &[String]) -> Vec<Section> {
         }
         if line.trim().is_empty() {
             // 첫 문단이 시작도 안 했으면 절 제목 바로 아래의 빈 줄이다.
-            *done = !items.is_empty();
+            *done = *started;
             continue;
         }
+        *started = true;
         for item in line.split(" · ") {
             let t = item.trim_start();
             let Some(rest) = t.strip_prefix('`') else {
@@ -132,7 +133,7 @@ pub fn sections(doc: &str, known: &[String]) -> Vec<Section> {
             }
         }
     }
-    if let Some((n, c, _)) = cur.take() {
+    if let Some((n, c, _, _)) = cur.take() {
         out.push(Section { name: n, crates: c });
     }
     out
@@ -226,6 +227,17 @@ mod tests {
         let doc = "### 하나\n`tasty-a`\n\n이 절은 `tasty-c` 에 의존할 수 있다.\n";
         let s = sections(doc, &known());
         assert_eq!(s[0].crates, vec!["tasty-a"], "규칙 문단을 열거로 셌다");
+    }
+
+    #[test]
+    fn prose_before_a_later_crate_example_is_not_an_enumeration() {
+        let doc = "### 기준\n\n\n분리할 때 의존 방향을 확인한다.\n설명은 여러 줄일 수 있다.\n\n`tasty-a`는 이 기준의 예다.\n\n### 실제 계층\n\n`tasty-a` · `tasty-b`\n`tasty-c`\n";
+        let s = sections(doc, &known());
+        assert!(
+            s[0].crates.is_empty(),
+            "첫 설명 문단 뒤의 예시를 계층 소속으로 셌다"
+        );
+        assert_eq!(s[1].crates, vec!["tasty-a", "tasty-b", "tasty-c"]);
     }
 
     #[test]

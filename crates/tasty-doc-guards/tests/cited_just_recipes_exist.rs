@@ -37,29 +37,17 @@ use tasty_doc_guards::temp_scratch::Scratch;
 
 const JUSTFILE: &str = "Justfile";
 
-/// 추적 문서 순회 하한.
-///
-/// **`measured` 가 세는 것은 `keep` 이 남긴 파일이다** — [`walk_with_floor`] 의 하한은
-/// 방문 수가 아니라 반환 벡터의 길이를 본다. 같은 모듈의 `walk_dirs_with_floor` 는 반대로
-/// **방문한 것**을 세므로(그 파일의 `the_directory_walk_floors_what_it_visited_not_what_it_kept`
-/// 가 그 차이를 못박는다) 두 값을 같은 저울에 올리면 안 된다. 여기서 남는 것은 레포 전체의
-/// `.md`(`target/` 제외, 점 디렉토리 안 내려감)이고, 아래 `citations` 의 doc 주석이 적은
-/// 440 과 **같은 모수**다.
-///
-/// ★ 첫 판의 `measured: 60` 은 낡은 값이 아니라 **안 잰 값**이었다. 이 파일이 태어난 날
-/// (2026-09-07) 이 트리의 추적 `.md` 는 이미 **428** 이었고, 그 커밋이 값으로 남긴 것은
-/// recipe 16 · 명령 자리 인용 33 뿐이다 — 세 하한 중 이 하나만 실측 없이 들어갔다.
-/// 하루 만에 60 → 440 으로 벌어진 것이 아니라, 60 이 이 순회의 수였던 적이 없다.
+/// 저장소의 Markdown 파일을 읽는다. 점 디렉터리와 빌드 캐시는 제외한다.
+/// 로컬 전용 문서가 없는 clone에서도 같은 기준을 적용한다.
 const DOC_FLOOR: Floor = Floor {
-    min: 300,
-    measured: 440,
-    measured_on: "2026-09-08",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::LaneTip("671aa69b2"),
-    why_this_gap: "여유 140 은 증감 폭이 아니라 **못 잡는 것의 크기**로 정했다. 실측 \
-                   2026-08-25~09-08 에 이 모수는 271 → 440 으로 늘기만 했고 하락은 0 건이라, \
-                   증감으로 여유를 잡으면 근거가 없는 수가 된다. 300 이 잡는 것은 순회가 \
-                   죽는 것과 `docs/`(394) 또는 `docs/adr/`(203) 가 통째로 빠지는 것이고, \
-                   `docs/features/`(64) · `site/`(36) 규모의 누락은 여전히 못 본다",
+    min: 215,
+    measured: 267,
+    measured_on: "2026-09-24",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree("dd8974087"),
+    why_this_gap: "ADR 406편을 51편으로 통합한 뒤 추적 Markdown은 267개다. 로컬 전용 \
+                   문서를 포함한 실제 순회는 268개였다. 가장 큰 비-ADR 문서 분류인 \
+                   docs/features 52개만큼 여유를 두어 하한을 215로 잡는다. 작은 분류 \
+                   하나의 누락까지 보장하지 않으며 검사 범위가 바뀌면 다시 측정한다.",
 };
 
 /// recipe 수 하한. 2026-09-07 실측 16.
@@ -151,10 +139,8 @@ fn just_target(fragment: &str) -> Option<String> {
 /// 이 가드가 rc=101 로 그 좌표를 찍었다. 형제 가드(`cited_anchors_resolve`)가 통합
 /// 자리에서 같은 형태로 빨개진 뒤 같은 처방을 받았다.
 ///
-/// **판정 능력은 안 준다** — 추적되는 `.md` 중 점 디렉토리 아래 있는 것이 0 개다
-/// (`git ls-files '*.md' | grep -c '^\.\|/\.'`). 이 트리에서 잰 좌변은 점 배제 전후로
-/// 440 · 440 이다(worktree 라 그 폴더가 링크여서 원래도 안 세어졌다 — 값이 갈리는 것은
-/// 원본 저장소 쪽이고 그것은 여기서 못 잰다).
+/// 추적 Markdown은 모두 점 디렉터리 밖에 있다. 실제 파일 수와 하한의 근거는
+/// `DOC_FLOOR`에 기록한다. 로컬 전용 파일 유무로 문서가 하나 더 잡힐 수 있다.
 fn citations(root: &Path) -> Vec<(String, usize, String)> {
     citations_under(root, &DOC_FLOOR)
 }
