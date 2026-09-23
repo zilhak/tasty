@@ -68,6 +68,7 @@ pub mod search_bar;
 pub mod segmented;
 pub mod settings;
 pub mod settings_handler;
+pub mod settings_macos_permissions;
 pub mod settings_number;
 pub mod settings_remote_transfer;
 pub mod sidebar;

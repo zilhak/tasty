@@ -1234,6 +1234,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_handler::draw_hook_handlers,
                         ),
                         spec(
+                            "settings-macos-permissions",
+                            "General › Permissions (macOS)",
+                            Some(
+                                "status rows (3 Full Disk Access states) · Request all (primary, disabled while running) · Open FDA settings",
+                            ),
+                            components::settings_macos_permissions::draw,
+                        ),
+                        spec(
                             "settings-remote-transfer",
                             "General › Remote transfer",
                             Some(

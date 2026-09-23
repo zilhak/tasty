@@ -124,7 +124,9 @@ const AREAS: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-gallery/",
         // 전시용 프레임·스크롤 위치와 본체를 재현하는 치수를 구별해 해당 선언의 근거를 유지한다.
-        100,
+        // 100 -> 101 은 권한 화면 specimen 의 콘텐츠 컬럼 폭 560 이다. specimen 마다 자기
+        // 폭을 이름 붙이는 것이 이 카탈로그의 모양이고, 그 폭은 Theme 이 가진 값이 아니다.
+        101,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -581,7 +583,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (26, 71, 0, 8),
+        (27, 71, 0, 8),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
