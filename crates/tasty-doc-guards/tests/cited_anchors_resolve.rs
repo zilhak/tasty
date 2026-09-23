@@ -88,8 +88,18 @@ fn link_text_only(text: &str) -> String {
 /// 인라인 코드 스팬을 지운다 — 백틱 안의 `](#x)` 는 링크가 아니라 예시다.
 fn without_inline_code(mut line: &str) -> String {
     let mut out = String::new();
-    while let Some(at) = line.find('`') {
+    while let Some(at) = line.find(['`', '<']) {
         out.push_str(&line[..at]);
+        if line.as_bytes()[at] == b'<' {
+            // HTML 속성의 백틱은 코드 구분자가 아니다. 유효한 태그 전체를 먼저 소비한다.
+            let tail = &line[at + 1..];
+            let end = html_tag_end(tail)
+                .filter(|end| html_tag_name(&tail[..*end]).is_some())
+                .map_or(at + 1, |end| at + end + 2);
+            out.push_str(&line[at..end]);
+            line = &line[end..];
+            continue;
+        }
         let run = line[at..].bytes().take_while(|b| *b == b'`').count();
         let after = &line[at + run..];
         let mut scan = after;
@@ -206,12 +216,10 @@ fn explicit_html_anchors(contents: &str) -> HashSet<String> {
             };
             let tag = &after[..end];
             rest = &after[end + 1..];
-            let name_end = tag.find(char::is_whitespace).unwrap_or(tag.len());
-            let name = &tag[..name_end];
-            if !name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+            let Some(name) = html_tag_name(tag) else {
                 continue;
-            }
-            for (key, value) in html_attributes(&tag[name_end..]) {
+            };
+            for (key, value) in html_attributes(&tag[name.len()..]) {
                 if (key.eq_ignore_ascii_case("id")
                     || (name.eq_ignore_ascii_case("a") && key.eq_ignore_ascii_case("name")))
                     && !value.is_empty()
@@ -222,6 +230,21 @@ fn explicit_html_anchors(contents: &str) -> HashSet<String> {
         }
     }
     out
+}
+
+/// CommonMark의 시작 태그명: 영문자로 시작하고 영문자·숫자·하이픈만 이어진다.
+fn html_tag_name(tag: &str) -> Option<&str> {
+    let end = tag
+        .find(|c: char| c.is_whitespace() || c == '/')
+        .unwrap_or(tag.len());
+    let name = &tag[..end];
+    if tag[end..].starts_with('/') && &tag[end..] != "/" {
+        return None;
+    }
+    let mut chars = name.chars();
+    (chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '-'))
+    .then_some(name)
 }
 
 /// 따옴표로 감싼 속성값 안의 >는 태그를 닫지 않는다.
@@ -311,6 +334,17 @@ fn explicit_anchors_resolve_but_examples_and_unrelated_attributes_do_not() {
     let checked = audit(&corpus, RENDERER_OWNED_PREFIX);
     assert_eq!(checked.violations.len(), 1, "{:?}", checked.violations);
     assert!(checked.violations[0].contains("absent"));
+}
+
+#[test]
+fn punctuation_does_not_make_an_html_tag_name() {
+    assert!(anchors_of(r#"<a! id="ghost"></a!>"#).is_empty());
+}
+
+#[test]
+fn a_backtick_in_an_html_attribute_does_not_start_inline_code() {
+    let text = "<span title=\"`\"><a id=\"real-after\"></a> `";
+    assert_eq!(anchors_of(text), HashSet::from(["real-after".to_string()]));
 }
 
 /// 그 문서가 **인용하는** 링크 대상 전부 — `(줄번호, 대상)`.
