@@ -193,10 +193,24 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 633,
-        measured_on: "2026-09-22",
+        measured: 649,
+        measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "6c3c9a4fc — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 632 -> 633 이고 \
+            "00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 646 -> 649 이고 \
+             더해진 것 4 · 빠진 것 1 이다. 더해진 넷은 `src/adapters/ui/preset/view_refresh_tests.rs` · \
+             `src/namespace_table_for_tests.rs` · `src/plugin_bridge/popup_render_activation_tests.rs` · \
+             `src/plugin_bridge/user_navigation.rs` 이고, 빠진 하나는 `src/file/picker_caps.rs` 다. \
+             그 lane 들이 이 항을 안 건드려 push 가 pre-push B.10 에서 막혔다. \
+             이전 회차: 4bace058e — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 633 -> 646 이고 \
+             더해진 것 13 · 삭제 0 이다. 더해진 것은 `src/adapters/ipc/handler/` 넷 \
+             (`entry_window.rs` · `entry_window_debug.rs` · `file_handler_origin_tests.rs` · \
+             `window_router_caller_tests.rs`), `src/adapters/ui/preset/` 넷(`layout_base.rs` · \
+             `persist_tests.rs` · `surface_settings.rs` · `demo_layout/surface_draft.rs`), \
+             `src/intent/` 둘(`apply_error_tests.rs` · `closed_item_origin_tests.rs`), \
+             `src/app/attach_client/agent_origin.rs` · `src/app/dispatch/plugin_webview_open.rs` · \
+             `src/app/dispatch_domain_restore_tests.rs` 다. 그 lane 들이 이 항을 안 건드려 push 가 \
+             pre-push B.10 에서 막혔다. \
+             이전 회차: 6c3c9a4fc — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 632 -> 633 이고 \
              더해진 것은 `src/app/window_lifecycle/register_focus_tests.rs` 하나(`af8da5089`, \
              에이전트 창 포커스 lane), 삭제는 0 이다. 그 lane 이 이 항을 안 건드려 push 가 \
              pre-push B.10 에서 막혔다. \
@@ -234,20 +248,27 @@ pub mod populations {
         ),
         how: "`src/` 를 뿌리로 `SkipBuildCaches` 순회하고 `rel` 이 `.rs` 로 끝나는 것 전부. \
               재는 법: `git ls-tree -r --name-only <rev>` 에서 `src/` 로 시작하고 `.rs` 로 \
-              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-22 재확인: 작업 \
-              트리를 `find` 로 센 633 과 추적 트리 계수 633 이 같았다. 607 · 623 · 632 · 645 였을 \
+              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-23 재확인: 작업 \
+              트리를 `find` 로 센 649 와 추적 트리 계수 649 가 같았다. 607 · 623 · \
+              632 · 633 · 645 · 646 이었을 \
               때도, 2026-09-08 에도 같았다). \
               같은 좌변을 `scripts/check-intent-discipline.sh` 가 자기 실패문에 \
               `좌변(src/) 의 .rs N개` 로 찍으므로 **대조가 공짜다** — 두 수가 갈리면 술어가 \
-              갈린 것이다(2026-09-22: 둘 다 633).",
+              갈린 것이다(2026-09-23: 둘 다 649).",
     };
 
     /// 루트 패키지의 통합 테스트 타깃 — `tests/` 바로 아래 한 겹.
     pub const ROOT_TEST_TARGETS: Population = Population {
-        measured: 43,
-        measured_on: "2026-09-22",
+        measured: 46,
+        measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "86d08cc85 — 여러 lane 이 착지한 main 트리에서 다시 셌다. 42 -> 43 이고 더해진 \
+            "00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 46 그대로이고 \
+             더해진 것도 빠진 것도 없다 — 같은 창에서 `SRC_RS` · `DOCS_MD` 는 움직였다. \
+             이전 회차: 4bace058e — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 43 -> 46 이고 \
+             삭제는 0 이다. 더해진 셋은 `tests/cli_maps_args_before_connecting.rs` · \
+             `tests/cli_streaming_error_data.rs` · `tests/plugin_disable_withdraws_surface_kinds.rs` \
+             다. 그 lane 들이 이 항을 안 건드려 push 가 pre-push B.10 에서 막혔다. \
+             이전 회차: 86d08cc85 — 여러 lane 이 착지한 main 트리에서 다시 셌다. 42 -> 43 이고 더해진 \
              것은 `tests/attach_structure_sync_loopback.rs` 하나(`5a6c6b810`, attach 구조 동기화 \
              lane), 삭제는 0 이다. 그 lane 이 이 항을 안 건드려 push 가 pre-push B.10 에서 \
              막혔다. \
@@ -334,10 +355,25 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 559,
-        measured_on: "2026-09-22",
+        measured: 605,
+        measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "6c3c9a4fc — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 558 -> 559 이고 \
+            "00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 591 -> 605 이고 \
+             삭제는 0 이다. 더해진 14 중 13 이 `docs/adr/`(0538~0568 사이)이고 하나가 \
+             `docs/dev-guide/adr-index.md` 다. 아래 이력의 형태가 열두 번째로 났다 — lane 마다 \
+             문서를 더하면서 아무도 자기 base 에서 이 항을 안 건드렸고, pre-push B.10 이 병합된 \
+             트리에서 그것을 잡았다. \
+             이전 회차: 4bace058e — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 559 -> 591 이고 \
+             더해진 것 38 · 빠진 것 6 이다. 더해진 38 중 37 이 `docs/adr/`(0498~0543 사이)이고 \
+             하나가 `docs/dev-guide/adr-landing.md` 다. ★ **이 창에서 감소가 한 번 났다** — \
+             이 모수의 첫 감소는 아니다(앞서 아래 `0f37f8565` 이력의 502 -> 500, −2 가 \
+             있었다). 빠진 여섯(0018 · 0020 · 0025 · 0027 · 0057 · 0294)은 전부 한 커밋 \
+             `e1e80e2b8` 에서 디자인 작업 ADR 을 하나로 흡수하며 지운 것이고, 그 커밋이 흡수처 \
+             하나를 더해 567 -> 562(−5)다(first-parent 로 커밋마다 센 값). 같은 창에서 더해진 \
+             것이 더 많아 순이동은 +32 다. \
+             아래 이력의 형태가 열한 번째로 났다 — lane 마다 ADR 을 더하면서 아무도 자기 base \
+             에서 이 항을 안 건드렸고, pre-push B.10 이 병합된 트리에서 그것을 잡았다. \
+             이전 회차: 6c3c9a4fc — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 558 -> 559 이고 \
              삭제는 0 이다. 더해진 것은 \
              `docs/adr/0497-an-agent-created-window-does-not-take-the-users-focus.md` \
              하나(`5a3cee3d5`, 에이전트 창 포커스 lane)다. 그 lane 이 이 항을 안 건드려 push \
@@ -384,7 +420,12 @@ pub mod populations {
              자리에 적었다.",
         ),
         how: "경로가 `docs/` 로 시작하고 `.md` 로 끝나는 것 전부 — 깊이 제한이 없다. \
-              동역학도 함께 적는다: **감소가 여전히 한 번도 없다.** 앞선 창(1215 커밋, \
+              동역학도 함께 적는다: 아래 세 창에서는 감소가 한 번도 없었고, \
+              `65bcd1988`..`4bace058e` 를 first-parent 로 커밋마다 세면 **감소가 두 번** \
+              관측된다 — `0f37f8565`(502 -> 500, −2, 중복 결정 사본 둘을 지운 정리)와 \
+              `e1e80e2b8`(567 -> 562, −5, 중복 결정 여섯을 하나로 흡수한 정리)다. 둘 다 \
+              카테고리가 접힌 사건보다 훨씬 작다. 이 자리는 한때 뒤엣것을 '첫 감소' 라고 \
+              적었다 — 앞엣것은 그때 이미 `counted_on` 이력에 있었다. 앞선 창(1215 커밋, \
               2026-09-05~09-08)에서 354 에서 399 로 단조 증가했고 한 커밋 최대 이동이 1 \
               이었는데, 그 창의 좌표는 지금 도달 불가라 **도달 가능한 창에서 다시 쟀다**: \
               `fdca139c0`..`91ca7d37d` 의 558 커밋(직선 이력)에서 285 에서 448 로 가는 \
