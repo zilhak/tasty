@@ -1,0 +1,73 @@
+# ADR-0606: 로컬 IPC는 TCP를 쓰고 수신·송신 자원을 제한한다
+
+- **Status**: Accepted
+- **Date**: 2026-09-24
+- **Tags**: ipc, transport, backpressure
+- **Group**: foundation
+
+## Context
+
+세 OS에서 같은 IPC 경로를 사용하면서도 느리거나 응답하지 않는 상대가 호스트 자원을 무한히
+점유하지 않게 해야 한다. 연결 수만 제한하면 긴 요청, 내부 주입, 막힌 응답 쓰기가 별도로 남는다.
+플러그인 채널은 main thread와 reader thread의 역할도 다르다.
+
+## Decision
+
+로컬 IPC는 loopback 동적 TCP 포트와 포트 파일을 사용한다.
+이 선택은 단일 사용자 환경을 전제로 하며 loopback 자체의 OS 사용자 인증을 제공하지 않는다.
+원격 접속은 SSH에 위임한다.
+
+요청 줄, 연결 수, 큐 바이트와 내부 주입 깊이를 각각 제한한다.
+제한값과 단위는 IPC 서버 가이드와 실제 상수에서 확인한다.
+명령 큐는 dequeue할 때 사용량을 반환하고 종료·전송 실패에서도 소유권으로 회수한다.
+첫 요청 줄 전체에는 기한을 두되 첫 요청 뒤의 idle은 제한하지 않는다.
+
+요청·응답 연결의 쓰기는 시간 제한을 두고 실패하면 연결을 닫는다.
+stream 업그레이드 뒤의 프레임 쓰기에는 이 정책을 그대로 적용하지 않는다.
+줄 초과와 연결·큐 포화는 서로 다른 오류로 알려 재시도 방법을 구분한다.
+accept의 포화 통지는 accept 자체를 막지 않도록 nonblocking 최선 노력으로 보낸다.
+
+plugin 요청은 main thread에서 대기하지 않고 거절한다.
+plugin 응답·event는 reader를 대기시켜 완료 응답과 Hello를 잃지 않게 한다.
+개수와 함께 큐별·프로세스 합계 바이트를 제한하고 빈 큐의 한 건은 허용한다.
+ping·shutdown은 합계 입장 제한만 면제하며 사용량에는 포함한다.
+렌더 데이터는 최신 프레임·dirty 영역 병합을 쓰지만 입력을 나르는 set_context는 단순 병합하지 않는다.
+포화로 버린 요청 수는 다음 전달 요청에 델타로 실어 plugin이 부하를 줄일 수 있게 한다.
+
+## Consequences
+
+한 경로의 적체가 무제한 메모리·스레드 증가로 이어지는 것을 제한한다.
+거절·대기·최신 프레임 보존을 메시지 성격에 맞게 구분한다.
+
+호스트가 거절한 요청은 자동 재전송하지 않는다. set_context의 입력을 잃을 수 있고,
+첫 bootstrap이 거절되면 다음 입력·크기·테마 변경 등의 계기까지 빈 화면이 남을 수 있다.
+ipc.result 유실은 호출한 플러그인의 결과 수신을 막고, shutdown 유실은 정상 종료 기회를 없앨 수 있다.
+dropped_requests는 부하 완화 신호이며 이 손실을 복구하는 기능은 아니다.
+
+빈 큐 한 건 예외와 가변 메시지 크기 때문에 엄밀한 RSS 상한은 아니다.
+plugin 합계 제한은 다른 plugin에도 영향을 줄 수 있다.
+첫 요청 뒤 쉬는 TCP 연결은 계속 자리를 점유하며 stream client는 포화 JSON의 사유를 해석하지 못할 수 있다.
+Local TCP에 접속할 수 있는 다른 OS 사용자와 같은 사용자 프로세스를 격리하지 않는다.
+
+## Alternatives Considered
+
+- OS별 socket·pipe는 사용자 격리가 강하지만 플랫폼별 구현과 권한 관리가 필요하다.
+- 메시지 개수만 제한하면 큰 메시지와 늘어나는 plugin 수에 대응하지 못한다.
+- 양방향 모두 대기하면 GUI가 plugin 소비 속도에 묶이고, 양방향 모두 버리면 상태 전이가 유실된다.
+- 포화 통지를 별도 요청으로 넣으면 통지 자체도 같은 큐에 막힌다.
+- 모든 idle 연결을 끊으면 long-poll과 제3자 장수 연결의 기존 계약이 달라진다.
+
+## Reconsideration Triggers
+
+공유 머신·다중 사용자 데몬을 지원하게 되면 transport 인증·OS 권한을 재설계한다.
+정상 사용에서 포화 거절이나 reader 대기가 늘면 실제 크기와 분포로 상한을 재검토한다.
+
+memory 항목 설정을 올릴 때 요청 줄 상한이 자동으로 늘지 않는 점을 확인한다.
+plugin 단일 메시지 제한, 제어 전용 채널, stream 포화 사유가 필요해지면 각각의 계약을 정한다.
+새 producer나 receiver 종료 경로는 사용량 장부를 빠뜨리지 않는지 확인한다.
+
+## References
+
+- [IPC 서버의 상한과 채널 정책](../architecture/ipc-server.md)
+- [전송 오류 표](../dev-guide/api-conventions.md)
+- 구현: `crates/tasty-ipc/src/admission.rs`, `src/adapters/production/tcp_ipc_server.rs`, `crates/tasty-host-plugin/src/process/`.

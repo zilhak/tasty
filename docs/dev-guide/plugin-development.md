@@ -9,17 +9,17 @@
 | 만들고 싶은 것 | 보면 되는 번들 플러그인 | 난이도 |
 |---------------|------------------------|--------|
 | **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../plugins/image/index.md) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
-| **webview surface** | [html](../plugins/html/index.md) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings, ADR-0065) | ★★ |
+| **webview surface** | [html](../plugins/html/index.md) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings, ADR-0629) | ★★ |
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
-| **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [ADR-0009](../adr/0009-plugin-sandbox-deferred.md) | ★★ |
+| **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [ADR-0625](../adr/0625-plugin-trust-and-distribution.md) | ★★ |
 
 전부 `crates/tasty-plugin-<name>/` 에 있다.
 
 ## 개요
 
-플러그인은 **별도 OS 프로세스**로 실행되어 호스트와 TCP+NDJSON 으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/` 에서 매니페스트를 발견하면 자동 spawn 한다. 작성자는 SDK(`tasty-plugin-sdk`)의 `Plugin` trait 을 구현하고 `run()` 을 호출하면 — SDK 가 핸드셰이크(토큰 인증, AuthAck 5초 대기)·NDJSON 직렬화·dispatch loop·ping/shutdown 을 가린다.
+플러그인은 **별도 OS 프로세스**로 실행되어 호스트와 TCP+NDJSON 으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/`의 매니페스트로 소유권을 등록한다. GUI 부팅과 headless 요청별 시작 정책은 아래 수명주기 절을 따른다. 작성자는 SDK(`tasty-plugin-sdk`)의 `Plugin` trait 을 구현하고 `run()` 을 호출하면 — SDK 가 핸드셰이크(토큰 인증, AuthAck 5 초 대기)·NDJSON 직렬화·dispatch loop·ping/shutdown 을 가린다.
 
 플러그인이 contribute 할 수 있는 것은 [concepts/plugins 통합 축](../concepts/plugins.md#통합-축--host-에-무엇을-기여하나) 참고. **contribute 0 개여도 valid** (예: 다른 surface 닫힘만 관찰).
 
@@ -81,8 +81,8 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 ### Surface kind — `rendering` 3 종
 
-- **`rendering = "egui-mesh"`** (image/mesh_demo, 그리고 markdown 의 확인 팝업 2개만): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
-- **`rendering = "webview"`** (html, markdown — [ADR-0065](../adr/0065-markdown-webview-render-channel.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
+- **`rendering = "egui-mesh"`** (image/mesh_demo, 그리고 markdown 의 확인 팝업 2 개만): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
+- **`rendering = "webview"`** (html, markdown — [ADR-0629](../adr/0629-webview-host-integration.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
 - **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
 surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 함께 실린다 — host 본체에 `if kind == "..."` 를 박지 않기 위한 것들이다:
@@ -94,12 +94,15 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 - **capability flags**(모두 기본 false) — host 의 입력/줌/복사/붙여넣기 게이트를 kind 하드코딩 없이 판정한다:
   - **`consumes_egui_input`** — host 가 이 kind 를 host egui 위젯으로 렌더해 winit 키/IME 를 host egui 로 흘린다(예: explorer). egui-mesh 렌더 kind 는 false(중앙 키 디스패처가 forward).
   - **`zoomable`** — 줌 in/out/reset 단축키로 폰트 크기 override 조절(예: markdown/explorer).
-  - **`egui_copy`** — copy 단축키를 이 kind 의 egui-mesh surface 에 `Copy` wire 이벤트로 forward한다. plugin 자신의 egui `Context` 가 텍스트 선택(selectable label/`TextEdit`)을 복사하고, plugin 이 그 텍스트를 OS 클립보드에 직접 쓴다(ADR-0009 — host round-trip 없음). markdown 이 webview 로 전환된 뒤([ADR-0065](../adr/0065-markdown-webview-render-channel.md)) 현재 이를 선언하는 번들 plugin 은 없다.
+  - **`egui_copy`** — copy 단축키를 이 kind 의 egui-mesh surface 에 `Copy` wire 이벤트로 forward한다. plugin 자신의 egui `Context` 가 텍스트 선택(selectable label/`TextEdit`)을 복사하고, plugin 이 그 텍스트를 OS 클립보드에 직접 쓴다(ADR-0625 — host round-trip 없음). markdown 이 webview 로 전환된 뒤([ADR-0629](../adr/0629-webview-host-integration.md)) 현재 이를 선언하는 번들 plugin 은 없다.
   - **`copy_path`** — select-all / copy-path 단축키(선택 항목 경로 복사) 소비(예: explorer).
   - **`egui_paste`** — paste 를 이 kind 가 자체 소비(host 가 terminal paste 로 흘리지 않음, 예: image).
 - **`name_from_param`** — 자동 탭 명명 시 basename 을 파생할 params 키. 선언하면 그 키 값의 basename 을 탭 표시명으로 쓴다(예: markdown/image 는 `"file"`, explorer(builtin)는 `"path"` → `README.md`). 미선언이면 kind 표시명(`display_name_i18n_key`)으로 fallback. host 의 `kind == "markdown"` basename 명명 하드코딩을 대체.
 - **`records_recent`**(기본 false) — 이 kind 의 surface 를 파일로 열 때 host 가 "최근 연 파일" 목록에 kind 별로 기록할지. host 는 특정 kind 이름을 모르고 이 플래그로 기록 대상을 판정한다(generic per-kind). plugin 은 host 의 generic `recent.query {kind}` IPC 로 자기 최근 목록을 조회한다(예: markdown 주소창 드롭다운). 예: markdown 은 `true`.
-- **`convert_requires_input`**(기본 false) + **`convert_input_popup`** — 이 kind 로 convert 하려면 host 가 먼저 "파일 입력 팝업"을 띄워야 하는지, 그리고 그때 열 이 plugin 의 팝업 **local id**. host 는 kind 이름·event key 하드코딩 없이 이 데이터만 따라 `<plugin_id>/<popup_id>` 팝업을 `open_popup_instance` 로 연다(payload 의 `surface_id` 로 제자리 변환 / 새 탭 분기). 예: markdown 은 `convert_requires_input = true`, `convert_input_popup = "file-open"`([ADR-0043](../adr/0043-convert-input-popup-capability.md)). 미선언이면 빈 params 즉시 변환.
+- **`convert_requires_input`**(기본 false) + **`convert_input_popup`** — 이 kind 로 convert 하려면 host 가 먼저 "파일 입력 팝업"을 띄워야 하는지, 그리고 그때 열 이 plugin 의 팝업 **local id**. host 는 kind 이름·event key 하드코딩 없이 이 데이터만 따라 `<plugin_id>/<popup_id>` 팝업을 `open_popup_instance` 로 연다(payload 의 `surface_id` 로 제자리 변환 / 새 탭 분기). 예: markdown 은 `convert_requires_input = true`, `convert_input_popup = "file-open"`([ADR-0631](../adr/0631-file-handler-routing.md)). 미선언이면 빈 params 즉시 변환.
+
+변환 입력 popup 요청은 pending popup queue로 전달해 렌더 중 직접 상태를 변경하지 않는다.
+등록 때 local popup ID에 plugin ID를 붙이며 payload의 surface_id가 제자리 변환과 새 탭 열기를 구별한다.
 
 > 대용량 파일 확인 게이트는 SurfaceKindDef 필드가 아니라 **플러그인 소유**다. 플러그인이 자기 프로세스에서 크기를 감지(`std::fs::metadata`)해 event 를 publish 하고, event trigger `[[contributes.popup]]`(아래 "도구 메뉴 항목 + popup")로 확인 팝업을 자가 렌더한다(예: markdown). host 는 파일 크기를 알지 않는다.
 
@@ -124,7 +127,27 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 
 ### CLI + IPC namespace
 
-`[[contributes.ipc_namespace]]`(prefix) + `[[contributes.cli]]`(`tasty <name> …`). 플러그인은 `handle_ipc_method` 로 `<prefix>.*` 메서드를 받는다. prefix 는 소문자+숫자+`_`, 호스트 예약어 금지 — 목록은 `tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES` 하나뿐이다. 매니페스트 검증이 여기 걸리면 plugin 이 뜨지 않는다. **호스트가 자기 메서드에 쓰는 prefix 는 전부 예약이라고 보면 된다** — 유일한 예외가 `image`·`markdown` 이고, 번들 plugin 이 이미 같은 이름의 namespace 를 갖고 있어서 예약할 수 없다(예약하면 그 plugin 의 매니페스트가 거절된다). 그래서 이름은 자기 plugin 고유어로 짓는다 — `theme`·`session`·`preset` 처럼 호스트가 쓰는 일반 명사는 거절된다. 목록과 호스트 메서드 표의 정합은 `every_host_method_prefix_is_reserved_or_carries_a_reason` 이 양방향으로 지킨다. 결정과 감수한 비용은 [ADR-0140](../adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md). **그 예외 둘에는 따라오는 의무가 있다** — host 가 같은 prefix 아래 구현한 메서드는 그 plugin 의 `handle_ipc_method` 가 self-call trampoline(`host.call(&ctx.method, ctx.params)`)으로 host 에 되돌려 줘야 한다. arm 이 없으면 그 host 구현은 **plugin 이 설치돼 있는 동안에만** 외부에서 안 닿아, 같은 호출의 결과가 설치 상태에 따라 흔들린다. `bundled_plugin_namespace_coverage` 가 매니페스트 prefix 마다 이를 강제한다 — 판정은 `handle_ipc_method` **본문만** 본다(plugin 이 host 로 *거는* 같은 이름의 `host.call` 이 파일 안에 있어서, 파일 전체를 세면 빠진 arm 을 놓친다). 근거는 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md). CLI 서브커맨드의 `ipc_method` 는 자기 prefix 와 매칭돼야 한다. **CLI top-level 이름은 매니페스트가 판정하지 않는다** — 호스트 명령(그 alias 포함)과 겹쳐도 매니페스트는 통과하고, 대신 등록 시점에 그 이름만 건너뛰며 경고가 뜬다(`tasty <name>` 은 호스트 명령이 그대로 받는다). 매니페스트 크레이트는 CLI 크레이트 아래에 있어 실제 clap 명령 집합을 볼 수 없고, 거기 손목록을 두면 호스트 명령이 늘 때마다 늙기 때문이다 — 실제로 늙어 있었고, 목록 밖 이름은 debug 빌드에서 `tasty --help` 를 포함한 CLI 전체를 패닉시켰다. 예: [codex](../plugins/codex/index.md)·[claude](../plugins/claude/index.md).
+`[[contributes.ipc_namespace]]`의 prefix로 IPC를 받고 `[[contributes.cli]]`로 CLI 명령을 기여한다.
+플러그인의 `handle_ipc_method`가 `<prefix>.*`를 처리한다.
+
+- prefix는 소문자·숫자·`_`를 사용하고 `RESERVED_IPC_PREFIXES`의 호스트 예약어를 피한다.
+  이 검사는 모든 매니페스트 load에 적용한다. `image`·`markdown`은 기존 번들이 공유하는 예외다.
+- 공유 prefix 안의 호스트 메서드는 해당 번들의 inbound handler가 `host.call`로 되돌려 준다.
+  다른 곳에서 같은 이름을 호출한다는 사실만으로 이 위임이 구현됐다고 판단하지 않는다.
+- CLI top-level 이름과 alias 충돌은 실제 clap 명령 집합으로 등록 때 검사한다.
+  충돌한 CLI 이름만 건너뛰고 warning을 남긴다. 플러그인 전체를 거절하지 않는다.
+- CLI의 `ipc_method`는 자기 prefix에 속해야 한다. `commands`는 팔레트·단축키 기여 목록이며 전체 IPC 허용 목록은 아니다.
+
+선언된 인자 타입은 문서용 힌트가 아니다. flag와 stdin에서 받은 잘못된 타입은 요청 전체를 거절한다.
+실패한 변환을 None으로 바꾸어 현재 대상이나 기본값으로 실행하지 않는다.
+CLI에 직접 준 key는 stdin 값보다 우선하고 오류는 인자명과 잘못된 값을 설명한다.
+
+namespace 소유권은 설치 manifest에서 만든 NamespaceTable로 조회한다.
+관리자와 IPC가 같은 Arc 핸들을 공유하며 부팅 때 한 번 설치한다. 조회 callback이나 별도 prefix 복사본은 두지 않는다.
+표 갱신은 잠금 밖에서 계산한 뒤 한 번 교체하고 조회는 소유 여부를 값으로 돌려준다.
+비활성화·재시작은 소유를 유지하며 패키지 제거가 소유를 없앤다.
+허용된 호출은 소유자와 실제 매칭되는 활성 pre/post IPC extension만 준비한다.
+self-loop·backoff로 건너뛸 hook은 시작하지 않고 소유자 기동 실패 때도 extension을 시작하지 않는다.
 
 ### 단축키 (commands)
 
@@ -154,7 +177,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 ### 이벤트 구독 / 윈도우 / 확장
 
 - **event_subscribe** — `event_subscribe = ["surface.closed"]` + `on_start` 에서 `bus.subscribe(...)`. `on_event` 로 envelope 수신(`reason`: user/ipc/crash). 예: [claude](../plugins/claude/index.md)/[codex](../plugins/codex/index.md).
-  - **`event.dispatch` 에 응답하라.** 호스트는 그 응답을 기다리지 않지만, 응답이 오기 전까지 그 dispatch 의 hop 을 기억해 그 사이 이 plugin 이 publish 하는 사건의 hop 하한으로 쓴다. 응답하지 않으면 그 기억이 재시작 전까지 남아, hop 이 높은 사건을 한 번 받은 뒤의 publish 가 무엇이든 `MAX_HOP` 으로 거절될 수 있다. SDK 는 `on_event` 를 마친 뒤 자동으로 응답한다 — SDK 없이 프로토콜을 직접 구현할 때의 계약이다. 근거는 [ADR-0406](../adr/0406-the-host-raises-the-hop-of-a-publish-made-while-a-dispatch-is-unanswered.md).
+  - **`event.dispatch` 에 응답하라.** 호스트는 그 응답을 기다리지 않지만, 응답이 오기 전까지 그 dispatch 의 hop 을 기억해 그 사이 이 plugin 이 publish 하는 사건의 hop 하한으로 쓴다. 응답하지 않으면 그 기억이 재시작 전까지 남아, hop 이 높은 사건을 한 번 받은 뒤의 publish 가 무엇이든 `MAX_HOP` 으로 거절될 수 있다. SDK 는 `on_event` 를 마친 뒤 자동으로 응답한다 — SDK 없이 프로토콜을 직접 구현할 때의 계약이다. 근거는 [ADR-0633](../adr/0633-event-feed-delivery.md).
 - **window** — `[[contributes.window]]`(`window.spawn`). 현재는 schema + 등록 stub 까지(실 spawn 은 별도 영역).
 - **extension** — 다른 플러그인의 IPC/event 흐름을 가로채기. `[extends]` + `ext:<target>` 권한 + `handle_extension_hook`. mode: `transform`/`filter`/`observe`. target 당 활성 1개(나머지 `Conflict`). fail-open(timeout/에러 시 원래 값 사용).
 
@@ -213,7 +236,7 @@ TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한�
 가져온다. 상세·SDK 헬퍼(`EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner`)는
 [egui-mesh-channel](egui-mesh-channel.md). (`rendering = "webview"` surface(html/markdown)
 의 본문은 이 채널을 타지 않는다 — host native WebView 가 직접 렌더한다. 단 markdown
-의 대용량/파일열기 확인 팝업 2개는 여전히 egui-mesh 채널을 쓴다.)
+의 대용량/파일열기 확인 팝업 2 개는 여전히 egui-mesh 채널을 쓴다.)
 
 **chrome 아이콘**(툴바·주소창 등)은 raw 유니코드 글리프로 그리지 말고 `tasty-icons`
 canonical 아이콘을 쓴다. plugin `build.rs` 가 `[build-dependencies] tasty-icons`(egui off)
@@ -311,7 +334,7 @@ CLI도 설치 영어 → 선택 언어 → host 홈의 사용자 plugin 파일 �
 | `TASTY_PLUGIN_DIR` | host CWD 기준 절대 설치 디렉터리(읽기 전용). 자식의 초기 CWD도 같은 경로 |
 | `TASTY_PLUGIN_DATA_DIR` / `TASTY_PLUGIN_CONFIG_PATH` / `TASTY_PLUGIN_LOG_PATH` | 데이터·설정·로그 경로 |
 | `TASTY_HOST_IPC_PORT` | 호스트 listener 포트 |
-| `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1회용) |
+| `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1 회용) |
 | `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 |
 | `TASTY_PLUGIN_HANDLE_ENDPOINT` | handle 채널 엔드포인트(있을 때) |
 | `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([ADR-0103](../adr/0103-plugin-locale-via-host-process-env.md)) |
@@ -328,85 +351,72 @@ SDK가 자기 CWD에서 절대화하여 이 경계를 대신하지 않는다.
 
 ### 생명주기 (healthcheck / 자동 재시작·비활성화)
 
-`manager.rs` 상수 기준:
+번들 설치·패키지 등록·부팅 정리는 GUI와 headless의 명시적 부팅 경로에서 수행한다.
+플러그인을 쓰지 않아도 필요한 작업을 첫 namespace 호출에만 의존시키지 않는다.
+프로세스 시작은 다음 정책을 따른다.
 
-- **부팅**: `~/.tasty/plugins/` 스캔 → enabled 전부 spawn. 전체 기동은 각 plugin 의 연결 결과까지 기다린다 —
-  부팅은 그 뒤 hello 를 짧은 시한으로 기다리므로 연결 시간이 그 시한을 먹으면 안 된다. 연결 대기는 plugin 마다
-  스레드라 겹친다(가장 느린 하나로 수렴). GUI 에서 이 자리는 부팅 워커 스레드다.
-- **기동과 연결**: 기동(명시적 `enable` · namespace 호출이 owner 를 띄울 때 · 재시작 · swap)은 자식을 띄우자마자
-  돌아오고, 연결(`HANDSHAKE_TIMEOUT` 10s 안)은 `plugin-connect-<id>` 스레드가 기다린다 — 메인 스레드가 서지 않는다.
-  연결 전의 plugin 도 `processes` 에 있어 `running: true` 이고, 그 사이 온 요청은 송신 큐에 쌓였다가 연결 뒤 순서대로
-  나간다. 그 요청의 시한(hook `timeout_ms` · namespace 호출 만료)은 **연결이 성사된 뒤부터** 센다 — 연결 중에는
-  만료되지 않고, 연결되면 기다린 만큼 밀린다. 헤드리스 `--type <kind>` 의 hello 대기도 연결 뒤부터 센다.
-  끝내 연결하지 않으면 spawn 실패와 같은 갈래로 간다(프로세스 kill · `plugin.error` `spawn_failed` ·
-  아래 자동 비활성화 누적 · 쌓인 namespace 호출은 caller 에 오류 회신 · 그 extension 에 보낸 hook 은 hook 없이
-  진행). 근거 [ADR-0505](../adr/0505-a-plugin-start-waits-for-its-connection-off-the-main-thread.md).
-- **헬스체크**: `PING_INTERVAL`(15s)마다 ping, `HEALTHCHECK_TIMEOUT`(60s) 무응답이면 강제 재시작.
-  판정은 ping 을 보내는 tick 에서 함께 하므로 **비응답 검출 상한은 60s + 15s = 75s** 다
-  ([timer-hub](timer-hub.md#계층을-넘는-허브-합성)). 프로세스가 실제로 죽은 경우는 이 경로가
-  아니라 event 채널 Disconnected 로 즉시 잡히므로 이 상한의 영향을 받지 않는다.
-- **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지). 연결 한도 초과도 한 건으로 세지만, 한 건이 한도(10s)만큼 걸리므로 연결 실패만으로는 창 안에 3 건이 안 쌓이고 빠른 spawn 실패와 섞일 때만 닿는다. 누적은 연결이 성사될 때 지워진다.
-- **namespace 호출 만료**: 위 재시작 경로는 프로세스가 굳은 경우만 본다 — ping 에는 답하면서
-  특정 호출만 안 돌려주는 plugin 은 healthcheck 에 안 걸린다. 그래서 plugin namespace 로
-  forward 한 pending 호출에는 별도로 `NAMESPACE_CALL_TIMEOUT` 데드라인이 붙고, 넘기면
-  caller 에 오류로 회신하고 pending 에서 지운다(`sweep_expired_requests`, 매 pump).
-  회신 경로는 plugin 이 사라졌을 때의 취소 경로와 같고, **코드도 같다** — local/CLI
-  caller 와 plugin caller 가 똑같이 `-32004` 를 받는다. 한동안 plugin caller 쪽만
-  코드를 잃고 SDK 기본값(`-32000`)을 봤는데, 그것은 같은 사건이 아니라 "누가 물었는가"
-  를 보고하는 것이라 고쳤다
-  ([ADR-0171](../adr/0171-a-host-error-code-survives-the-plugin-boundary.md) 의
-  2026-09-20 보강).
-  값은 위 회수 상한의 두 배로 **유도**한다 — 짧으면 재시작 경로가 이미 처리하는 경우를
-  앞지른다. extension hook 만료는 이것과 달리 fail-open 이다(원래 흐름을 그대로 진행).
-  근거는 [ADR-0311](../adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md).
-- **반복 만료 → 재시작**: 만료 한 건은 caller 에 대한 답이지 plugin 에 대한 판정이 아니다.
-  그러나 그 plugin 의 namespace 응답이 하나도 없는 채로 만료가 `NAMESPACE_EXPIRY_RESTART_LIMIT`
-  (3)회 연달아 쌓이면, 다음 ping tick 에서 healthcheck 무응답과 **같은 경로로** 재시작한다
-  (`plugin.error` 이벤트의 `error_kind` 는 `namespace_unresponsive`). 계수는 그 plugin 의
-  namespace 응답이 하나라도 오면 0 으로 돌아간다 — **만료 뒤에 늦게 도착한 응답도 센다**.
-  그래서 느린 plugin 은 걸리지 않는다: caller 는 150 초에 오류를 받지만 그 뒤 도착한 답이
-  계수를 지운다. 걸리는 것은 **아무 답도 안 보내는** plugin 뿐이다. 늦은 hook 응답은 계수를
-  못 지운다(호스트가 만료된 namespace 호출의 id 만 기억한다). hook 처럼
-  backoff 를 걸지 않는 이유는 ADR-0311 의 2026-09-20 보강에 있다 — 우회할 대상이 없는
-  호출에 backoff 를 걸면 회복한 plugin 이 그 창 동안 도달 불가가 된다.
-- **이미 끝난 요청의 늦은 응답**: 만료·취소로 caller 에게 이미 답한 요청에 plugin 응답이
-  뒤늦게 오면 호스트는 **아무것도 다시 진행시키지 않는다** — target 응답이 늦어도 post-hook
-  을 안 부르고, pre-hook 응답이 늦어도 target 을 다시 안 부르며, post-hook 응답이 늦어도
-  결과를 다시 안 보낸다. 하는 일은 위 연속 만료 계수를 지우는 것 하나다. caller 가 받은
-  `-32004` 는 "실행되지 않았다" 가 아니라 "결과를 모른다" 다 — 늦은 응답이 왔다는 것은
-  plugin 이 실제로 실행했다는 뜻이고 호스트는 그 효과를 되돌리지 못한다. 근거는 ADR-0311
-  의 2026-09-21 보강.
-- **재시작·disable·swap·연결 실패의 정리는 한 함수다**: 네 경로가 프로세스를 치운 뒤 모두
-  `forget_plugin_runtime` 을 거친다 — event bus 권한·구독 해제, pending 회수, shared
-  buffer 해제, 설정 sub-page 해제, 등록 게이트(`registered_plugins`) 해제. 등록 게이트가
-  풀려야 새 프로세스의 hello 가 권한·event bus·설정 sub-page 를 **다시** 받는다.
-  그 결과로 다시 띄우는 세 경로(재시작·disable 뒤 enable·swap) 모두 새 hello 마다 `plugin.surface_kind_registered` · `plugin.loaded` 를
-  다시 발화하고(구독자는 같은 plugin 의 `plugin.loaded` 를 여러 번 받는다), surface kind 를
-  가진 plugin 이면 재시작·swap 에서는 호스트 로그에 `SurfaceKindRegistry: kind '<kind>' overwritten`
-  경고가 한 줄 남는다 — kind 등록이 해제 없이 덮어쓰이기 때문이다.
-  pending 회수는 두 축으로 찾는다: *무엇을 위한* 요청인가(namespace 호출·hook 은 caller
-  에 `-32004` 회신)와 *누구에게 보낸* 요청인가(`surface.create`·`surface.restore`·popup
-  open 처럼 회신할 caller 가 없는 것은 조용히 거둔다). 뒤쪽을 안 거두면 새 프로세스가
-  새 request id 를 쓰므로 그 항목은 영영 매칭되지 않고 남는다.
-- **disable · remove 는 surface kind 를 철회한다**([ADR-0534](../adr/0534-a-disabled-plugins-surface-kinds-are-withdrawn-not-erased.md)):
-  위 정리 함수는 매니저 안의 상태만 거두고, 본체의 `SurfaceKindRegistry` 는 disable 을 받는
-  `ipc::handler::plugin::disable`(gui IPC · 헤드리스 IPC · 설정 모달 공용)과 `App::plugin_remove`
-  가 거둔다. 정의는 지우지 않고 철회로 표시한다 — 이미 열린 surface 는 저장·아이콘을 계속 읽고,
-  새 생성(`create_surface_via_registry`)은 `SurfaceKindWithdrawn`("그 kind 를 제공하던 plugin 이
-  꺼졌거나, 다시 켠 뒤 아직 연결되지 않았다")으로 거절되며, 닫은 탭 복원·프리셋 적용·mirror markdown 은 kind 대기 placeholder 가
-  된다. `surface.kinds` 목록에서도 빠진다. 다시 켜서 hello 가 오면 등록이 철회를 풀고, 그때 로그는
-  경고가 아니라 `withdrawn kind '<kind>' registered again` 이다. 재시작 · swap · 연결 실패는
-  철회하지 않는다.
-- **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
-  SDK 의 `run()` 은 shutdown 을 받으면 ack 를 보내고, 그 앞에 worker 큐에 쌓인 요청까지
-  처리한 뒤 돌아온다 — 호스트가 연결을 닫았을 때도 같다. plugin 이 `on_start` 로 받은
-  `HostHandle` 을 백그라운드 스레드에 쥐고 있어도 기다리지 않는다(그 핸들이 worker 큐의
-  sender 를 들고 있어 큐가 닫히기를 기다리면 영영 안 끝난다). `main` 이 `run()` 을 반환하면
-  프로세스가 끝나고, plugin 의 백그라운드 스레드는 그때 함께 사라진다.
-  그 남은 요청이 `HostHandle::call` 로 호스트를 부르면 결과를 읽어 줄 수신 루프가 이미 끝나
-  있으므로, SDK 는 기다리지 않고 `PluginError::HostClosed` 를 돌려준다 — 루프가 끝날 때 결과를
-  기다리던 call 도, 끝난 뒤에 시작한 call 도 같다. 그 에러를 받은 요청은 그대로 실패로 응답하면
-  된다(시험 `host_calls_left_at_shutdown_fail_fast_instead_of_timing_out`).
+| 상황 | 시작·대기 정책 |
+|------|----------------|
+| GUI 전체 기동 | 부팅 워커가 활성 plugin들을 시작하고 연결 결과를 받은 뒤 hello를 기다린다 |
+| 허용된 namespace 호출 | 소유자와 실제 매칭되는 활성 IPC extension만 시작한다 |
+| headless kind 생성 | `tab.create`·`pane.split`·`workspace.create`의 type 소유자가 활성일 때 그 하나만 시작한다 |
+| headless attach 전체 기동 | 기존 전체 기동을 유지하며 메인 스레드에서 연결 결과까지 기다린다 |
+
+headless도 hello의 webview·remote·egui-mesh kind를 등록한다. 새로 시작한 kind 소유자는 연결 한도까지,
+연결 성공 후에는 `KIND_REGISTRATION_WAIT`(5 초)까지 hello 등록을 기다린다.
+이미 실행 중인데 kind가 없으면 추가 대기를 하지 않는다. 이 경로는 설치·권한 승인을 수행하지 않는다.
+Local 이외 호출자도 기존 생성 권한을 만족하면 같은 시작 정책을 적용받는다.
+
+#### 기동과 연결
+
+토큰을 listener에 등록한 뒤 자식을 spawn한다. 연결을 먼저 시도한 자식이 unknown token으로 거절되는 경합을 피한다.
+연결 대기는 `plugin-connect-<id>`가 최대 `HANDSHAKE_TIMEOUT`(10 초) 동안 수행한다.
+연결 전에도 running:true이며 송신 큐에 쌓은 요청은 연결 후 순서대로 보낸다.
+요청 기한은 연결 완료부터 계산한다. 전체 기동의 여러 연결 대기는 겹쳐 진행된다.
+
+`settle_connections`가 결과를 한 번 처리한다. 성공하면 실패 기록을 지우고 실패하면 자식을 kill·회수하며
+`plugin.error`의 spawn_failed를 알린다. namespace 대기는 오류로 끝낸다.
+연결되지 않은 extension에 보낸 hook은 실행되지 않은 것으로 건너뛰고 원래 흐름을 이어가며 hook 실패 횟수는 올리지 않는다.
+pre-hook 우회 뒤에도 caller plugin ID를 target에 전달한다. 연결 스레드 생성 실패는 동기 대기로 돌아간다.
+enable·swap 응답은 자식을 만들었다는 뜻이며 연결 완료를 보장하지 않는다.
+
+#### 무응답과 늦은 응답
+
+- ping 간격은 15 초, healthcheck 무응답 기준은 60 초다. tick 판정까지 최대 75 초이며 실제 연결 종료는 별도로 감지한다.
+- 10 초 안에 spawn 실패 3 회면 자동 비활성화한다.10 초짜리 연결 실패만 반복해서는 이 창 안에 3 회가 쌓이지 않는다.
+- namespace 요청 기한은 `2 × (HEALTHCHECK_TIMEOUT + PING_INTERVAL)`, 현재 150 초다. 만료는 모든 caller에 `-32004`로 답한다.
+- namespace 연속 만료 3 회는 다음 ping tick에서 재시작한다. 실제 namespace 응답은 늦게 와도 계수를 지운다.
+  최근 만료 ID와 일치하는 응답만 한 번 소비하며 pong·hook 응답은 이 계수를 지우지 않는다.
+- 늦은 target 응답은 post-hook을 부르지 않고 늦은 pre-hook은 target을 다시 부르지 않는다. 늦은 post-hook도 두 번 회신하지 않는다.
+  hook의 지연 실패 계수는 그대로다. `-32004`는 결과를 모른다는 뜻이며 실행 취소를 보장하지 않는다.
+
+#### 종료와 재기동
+
+disable·healthcheck 재시작은 shutdown 요청 후 전용 회수 스레드가 최대 2 초의 정상 종료 기회를 주고 필요하면 kill한다.
+메인은 회수 중에만 50ms 타이머로 완료된 스레드를 정리하고 `plugin process retired`에 시간·이유를 남긴다.
+새 인스턴스는 회수 후에 시작한다. 회수 중 disable은 재시작 예약을 지운다.
+회수 스레드 생성 실패에는 기존 동기 대기가 남는다.
+
+remove·swap·실제 쓰기가 있는 upgrade-builtins·명시적 enable은 해당 회수를 기다린다.
+변경할 파일이 없는 upgrade는 기다리지 않는다. 쓰기 뒤 재시작 예약을 잃지 않아야 한다.
+disable 응답은 종료 완료가 아니며 회수 중 호출에는 `-32002`가 올 수 있다.
+호스트 종료는 회수 중 자식도 정리하고 다시 띄우지 않는다.
+
+재시작·disable·swap·연결 실패는 `forget_plugin_runtime`으로 권한·subscription·pending·shared buffer·설정 페이지·등록 gate를 정리한다.
+새 hello가 다시 등록되므로 plugin.loaded 등의 사건은 같은 plugin에 여러 번 올 수 있다.
+회신 대상 없는 surface.create·restore·popup open pending도 보낸 plugin 기준으로 회수한다.
+
+SDK shutdown은 ack 후 이미 worker 큐에 들어간 요청까지 처리한다. 백그라운드 HostHandle 때문에 큐가 닫히기를 기다리지 않는다.
+수신 루프 종료 전후의 host.call 대기는 HostClosed로 끝낸다. main에서 run이 반환하면 자식 프로세스가 끝난다.
+
+#### Surface kind 철회
+
+disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 surface의 저장·아이콘·이름은 get으로 읽고,
+새 생성과 목록은 get_live·contains·kinds_snapshot에서 제외한다.
+새 생성은 SurfaceKindWithdrawn으로 거절하며 사용자 동작에는 toast, Agent 동작에는 로그로 알린다.
+거절된 변환은 최근 목록에도 넣지 않는다.
+닫은 탭 복원·프리셋·markdown mirror는 대기 placeholder로 두고 새 hello가 오면 다시 만든다.
+재시작·swap·연결 실패는 kind를 철회하지 않는다. 열린 surface 자체는 닫거나 바꾸지 않는다.
 
 ### 전송 지연 (Nagle 금지)
 
@@ -500,7 +510,7 @@ SDK 가 셋으로 노출한다.
 
 **결박 대상은 플러그인에 국한되지 않는다.** PTY pane 의 사용자 셸과 그 안에서 돌던 모든 것(AI 에이전트·빌드·MCP 서버 등 자식 트리)도 호스트 수명에 묶인다 — **tasty 가 죽으면(정상 종료·크래시·`taskkill /f`·디버거 강제 stop 무관) tasty 안에서 돌던 프로세스는 함께 종료된다.** 메커니즘은 OS 별로 다르지만 결과는 같다:
 
-- **Windows**: 터미널 셸을 전역 호스트 Job Object 에 결박한다 (공용 primitive `tasty-reaper`, `Terminal::new` 이 spawn 직후 `adopt_pid`, 부팅 시 `boot.rs` 에서 `init_host_reaper` 1회). ConPTY 는 "pseudoconsole 종료 ⇒ 자식 종료" 를 보장하지 않아, 결박이 없으면 tasty 비정상 종료 시 화면 없는 좀비 셸 트리가 누적된다(개발 중 디버거 stop 마다 수십 개씩). 플러그인 job(위 표, `PluginManager` 소유)과 터미널 job(전역)은 별개 인스턴스지만 둘 다 `KILL_ON_JOB_CLOSE` 라 프로세스 사망 시 동일하게 정리된다.
+- **Windows**: 터미널 셸을 전역 호스트 Job Object 에 결박한다 (공용 primitive `tasty-reaper`, `Terminal::new` 이 spawn 직후 `adopt_pid`, 부팅 시 `boot.rs` 에서 `init_host_reaper` 1 회). ConPTY 는 "pseudoconsole 종료 ⇒ 자식 종료" 를 보장하지 않아, 결박이 없으면 tasty 비정상 종료 시 화면 없는 좀비 셸 트리가 누적된다(개발 중 디버거 stop 마다 수십 개씩). 플러그인 job(위 표, `PluginManager` 소유)과 터미널 job(전역)은 별개 인스턴스지만 둘 다 `KILL_ON_JOB_CLOSE` 라 프로세스 사망 시 동일하게 정리된다.
 - **Unix**: tasty 종료 시 커널이 PTY master fd 를 닫으며 발생하는 SIGHUP 이 셸 foreground 프로세스 그룹을 정리하므로 별도 결박 없이 같은 결과가 난다(portable-pty `CommandBuilder` 가 `pre_exec` 를 노출하지 않아 셸에는 PDEATHSIG 설치 불가 — 대신 SIGHUP 이 그 역할을 한다).
 
 정상 종료 경로(surface 닫기/quit)에서는 `PtyBackend::Drop` 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0034](../adr/0034-terminal-shell-host-lifetime-binding.md).
@@ -567,7 +577,7 @@ tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은
-[ADR-0191](../adr/0191-two-local-files-are-compared-bytewise-not-hashed.md).
+[ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md).
 
 **4) 실행 중 tasty 에 대해 실동작 검증**
 ```bash
@@ -589,3 +599,10 @@ tasty <plugin-cli> <cmd> ...          # CLI→IPC→실행 중 호스트→플�
 - [plugin-permissions](plugin-permissions.md)
 - [plugins/](../plugins/index.md) — 번들 플러그인(= 예제) 카탈로그
 - [features/plugin-system](../features/plugin-system/index.md) — 설치/관리 UI
+
+## 실패 후 로컬 정리
+
+hook callback 뒤에 반드시 할 로컬 정리가 있다면 호스트 호출 실패를 기록한 뒤 그 정리를 마친다.
+예를 들어 surface가 이미 닫힌 Claude hook은 host 알림 실패 때문에 로컬 hook 상태 정리까지 건너뛰지 않는다.
+호출 성공으로 위장하는 것이 아니라 warning과 로컬 정리를 함께 수행하는 규칙이다.
+정리가 없는 경로는 기존 오류 전파를 유지할 수 있다. Codex hook 등과 모양만 맞추려고 일괄 변경하지 않는다.

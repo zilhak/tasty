@@ -8,7 +8,7 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
 
 | 경로 | 포맷 | 내용 | 관리 주체 | 코드 |
 |------|------|------|-----------|------|
-| `state.db` (+ `-wal`/`-shm`) | SQLite | 종류별 최근 파일·폴더 | 앱 | `src/db.rs` |
+| `state.db` (+ `-wal`/`-shm`) | SQLite | 종류별 최근 파일·폴더·튜토리얼 진행 | 앱 | `src/db.rs` |
 | `memory.db` (+ `-wal`/`-shm`) | SQLite | 에이전트 메모리 (별도 스키마·연결) | 앱 | `crates/tasty-memory/` |
 | `config.toml` | TOML | 사용자 설정(셸·외관·단축키·언어 등) | 사용자 | `crates/tasty-settings/` |
 | `remote-profiles.toml` (+ `passkeys.toml`) | TOML | 원격 접속 프로필(`ssh`/`tasty-attach` kind) + 자격증명 — `config.toml` 과 분리해 손편집 보존 | 사용자 | `crates/tasty-remote-profiles/` |
@@ -32,7 +32,7 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
   - 그 외 → `SchemaMismatch{expected, found}` 에러 → 호출자가 사용자에게 안내 후 종료.
 
 **additive ensure 가 이 정책의 유일한 예외 통로다.** v1 이 나간 뒤에 생긴 테이블
-(`tutorial_progress` — [ADR-0260](../../adr/0260-tutorial-progress-belongs-to-user-state.md))은
+(`tutorial_progress` — [ADR-0609](../../adr/0609-state-storage-and-retention.md))은
 버전을 올리지 않고 그 갈래로 기존 DB 에 닿는다. 그래서 **거기에 얹는 스키마 변경은 버전
 값으로 아무 신호를 내지 않는다** — 실측하면 그 줄을 지워도 나머지 시험이 전부 초록이었다.
 지금은 `an_existing_database_still_gets_the_tutorial_table` 이 그 갈래를 고정한다. 새
@@ -68,55 +68,25 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 
 ### 최근 목록의 창 간 일관성
 
-`state.db`의 `Db`가 최근 목록 캐시를 한 벌 소유하고, `RecentFiles::load`는 그 캐시의
-공유 핸들을 반환한다. 먼저 열린 창, 나중에 열린 창, 창이 닫힌 뒤 다시 열린 창 모두
-같은 인스턴스의 목록을 본다. 종류별 최신순·정규화 중복 제거·10개 상한과 raw 경로 표기는
-유지한다. 읽기는 최대 10개 경로의 스냅샷이며 DB 재조회나 목록 갱신을 하지 않는다.
+최근 파일 캐시는 Db가 한 벌 소유하고 모든 창이 공유 핸들로 조회한다. 종류별 최신순·중복 제거·10개 상한을 유지한다. add는 같은 lock 안에서 메모리 갱신과 DB 저장을 순서대로 수행해 같은 초의 순서와 저장 실패 때의 메모리 상태도 창마다 같게 한다. 조회는 최대 10개 경로 snapshot을 반환하며 매번 DB를 다시 읽지 않는다. DB 없는 테스트 캐시는 독립적이다. 다른 프로세스의 변경 감지는 보장하지 않으며 그런 요구가 생기면 재검토한다.
 
-기록은 캐시 갱신과 기존 DB 저장을 같은 캐시 락 안에서 순서대로 수행한다. DB 저장에
-실패해도 이미 반영된 메모리 목록은 모든 창에 동일하게 남고, 오류는 기존 저장 경로가
-로그로 남긴다. 인스턴스 간 공유나 외부 프로세스의 DB 직접 수정 감지는 지원하지 않는다.
-근거는 [최근 캐시 소유권](../../adr/0275-recent-cache-belongs-to-the-state-database.md).
+### 튜토리얼 진행
+
+튜토리얼 진행은 state.db의 tutorial_progress에 주제·콘텐츠 revision·완료·재개 단계·row version을 저장한다. schema 검증을 통과한 DB에 idempotent하게 테이블을 추가하고 버전 불일치 보호를 유지한다. 완료는 되돌리지 않고 재개 위치는 낙관적 version 검사로 오래된 View의 덮어쓰기를 막는다. runtime 객체 ID는 저장하지 않아 실습 재개 시 준비부터 시작한다. 설정·레이아웃과 진행 기록을 섞지 않는다. 외부 콘텐츠 기여·정식 migration·객체 복원 요구가 생기면 소유권과 revision을 검토한다.
 
 ### 접근 규칙
 
-- **메인 프로세스 단독 접근.** 자식 CLI 프로세스는 DB 를 직접 열지 않고 IPC 로 메인에 위임한다.
-- 전역 싱글톤. `db::init()` 선행 호출 후 `db::with_state_db(|db| { ... })` 로 접근(미초기화면 `None`).
-  접근자 이름이 `with_db` 가 아닌 것은 `memory.db` 쪽 접근자(`with_memory`)와 호출부에서
-  구분되게 하기 위해서다 — 둘이 같은 파일에 함께 나오는 자리가 없어 오독이 조용하다.
-- **여는 쪽은 GUI 부팅 하나다.** `init()`·`default_db_path()` 는 `cfg(feature = "gui")` 라
-  헤드리스 빌드에는 이 DB 를 여는 코드가 컴파일되지 않는다. 그래서 헤드리스 데몬의 홈에는
-  `memory.db` 만 생기고 `state.db` 는 파일도 로그도 남지 않는다.
-- **`with_state_db` 의 `None` 은 "열려 있지 않다" 이고, 출처가 둘인데 이 값으로는 안
-  갈린다.** 락 poison 은 복구되어 `Some` 이라 여기 오지 않는다. 남는 둘은 ① 헤드리스라 여는
-  코드가 없다 ② GUI 가 열다 실패했다 — **②를 "앱이 끝나니까 안 보인다" 로 배제할 수 없다.**
-  안내 모달의 `on_close` 가 `Exit(1)` 이라 종료는 사용자 확인 시점이고, 모달이 뜨기 전에
-  `AppState::new` 의 최근 파일 로드가 이미 그 구간을 지난다. 최근 파일 조회는 두 경우 모두
-  오류가 아니라 빈 목록으로 답한다.
-- 그래서 **`None` 을 원인 판정에 쓰지 않는다.** "저장소가 없는 빌드니까 안내하지 않는다"
-  류의 분기는 DB 가 깨진 사용자에게서 안내를 빼앗는다. 구분에 필요한 `DbInitError` 는 부팅이
-  모달로 바꾼 뒤 버린다. 근거는 [저장소 소유권](../../adr/0335-the-state-database-is-opened-by-gui-boot-alone.md).
-- PRAGMA: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `journal_size_limit`.
-  네 pragma 는 `memory.db` 와 **같은 함수**(`tasty_memory::pragma::apply_connection_pragmas`)가
-  건다 — 자유도 없는 사본이라 두 곳에 두지 않는다.
-  - **요청한 값과 실제 적용된 값은 다른 축이다.** `journal_mode` 는 요청이 거절돼도 성공을
-    반환하므로(실측: in-memory DB 에 WAL 을 요청하면 `Ok` 이고 값은 `memory`), 위 목록은
-    *요청* 이고 실제 값은 되읽어야 안다. 그 함수가 매 연결마다 **넷 다** 되읽어 대조하고,
-    어긋나면 `tracing::warn!` 을 남기며, 결과를 `AppliedPragmas` 값으로 돌려준다.
-    근거는 [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md)
-    과 그 보고 채널을 개정한 [ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md).
-  - **허용 결과는 모드별이다.** 파일 DB 의 `journal_mode` 는 `wal` 만, in-memory DB 는
-    `memory` 만 정상이다. `synchronous` · `foreign_keys` · `journal_size_limit` 은 두 모드 모두
-    요청값 그대로여야 한다. `state.db` 는 항상 파일 DB 라 `journal_mode` 의 정상값이 `wal` 하나다.
-  - **하나라도 안 섰으면 그 DB 는 `degraded` 다 — 치명이 아니다.** DB 는 열린 채로 쓰인다(열기
-    자체의 실패는 아래 "초기화 실패" 절이 다루는 다른 축이다). 두 DB 의 결과는 실행 중에
-    `system.pressure` 의 `db_pragmas` 덩어리(`memory_db` · `state_db`)로 조회한다 — CLI
-    `tasty list pressure`. `state_db` 가 `null` 이면 이 프로세스에 열려 있지 않다는 뜻이고,
-    출처가 둘인 것은 위 `with_state_db` 의 `None` 과 같다. `memory_db` 는 파일을 못 열어
-    in-memory 대체로 떴을 때도 `degraded` 이고, 그때 `init_failure` 가 원인을 싣는다(아래
-    "초기화 실패" 절의 `memory.db` 항).
-  - `journal_size_limit` 은 WAL 을 **되감을 때 남길 크기의 한도**다 — 활성 WAL 의 상한이 아니다. 되감기가 막힌 동안(읽는 쪽이 오래된 스냅샷을 쥐고 있을 때)이나 큰 트랜잭션 도중에는 WAL 이 이 값을 넘어 자라고, 다음 되감기에서 이 크기로 잘린다(실측은 [memory](memory.md) "파일 위생"). **이 pragma 가 없으면 WAL 은 한 번 커진 크기를 영구히 유지한다** — SQLite 가 재사용을 위해 체크포인트 후에도 파일을 줄이지 않기 때문이다. 그러면 `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 커밋마다 체크포인트가 트리거되고 그 비용은 WAL 크기에 비례한다. 값은 임계와 정확히 같은 `tasty_memory::WAL_SIZE_LIMIT_BYTES`(= 1000 페이지 × 4096B)이고, 두 DB 가 그 상수를 쓰는 **같은 함수**를 부른다. 한때는 `src/db.rs` 와 `crates/tasty-memory/` 가 같은 네 줄을 각자 박아 두어 한쪽만 고치면 다른 쪽이 그대로 자랐다 — 그래서 사본을 없앴다.
-- 쓰기는 `Connection::transaction()` 패턴. 실패 시 `tracing::warn!`/`error!` 기록 후 진행.
+state.db는 GUI 부팅만 열고 with_state_db로 접근한다. None은 현재 열려 있지 않다는 뜻이며 헤드리스인지 GUI 초기화 실패인지 원인을 구분하지 못한다. GUI 초기화 실패 안내가 사용자 확인 전까지 살아 있을 수 있어 빈 최근 목록만으로 실행 형태를 판단하지 않는다. storage 소비자는 기본값을 사용할 수 있고 state DB lock poison은 복구 경로다. GUI 없는 실행에도 recent.query는 빈 목록으로 응답한다. state DB를 여는 범위나 초기화 오류 보존 방식이 바뀌면 이 의미를 다시 검토한다.
+
+CLI는 DB를 직접 열지 않고 IPC로 호스트에 요청한다. state.db와 memory.db의 연결·스키마·실패 정책은 서로 다르다.
+
+### 적용된 SQLite 설정
+
+memory.db와 state.db는 공용 apply_connection_pragmas를 사용한다. pragma 호출이 성공해도 적용값은 다를 수 있어 값을 다시 읽는다. 파일 DB의 WAL과 in-memory의 memory journal은 각 모드의 정상값이다. 적용 실패만으로 열린 DB를 버리지 않는다. synchronous NORMAL은 전원 장애 때 최신 commit의 보존을 약속하지 않는다. 설정 상수만 공유하고 적용 함수를 복제하면 양쪽 구현이 갈라지므로 함수 자체를 공유한다.
+
+AppliedPragmas는 journal_mode·synchronous·foreign_keys·journal_size_limit의 요청값, 실제값, 오류와 took를 보존한다. 하나라도 적용되지 않으면 열린 DB를 degraded로 표시하고 계속 사용한다. system.pressure.db_pragmas가 memory_db·state_db를 제공하며 미개방 DB는 null이다. 이 값은 프로세스 누계가 아니라 연결을 열 때의 상태다. 로그는 발생 시점, IPC는 상태 조회를 담당한다. 파일 journal의 memory 값을 정상으로 받아들이지 않는다.
+
+`journal_size_limit`은 checkpoint 후 WAL을 재사용할 때 남길 크기의 제한이다. 활성 WAL은 긴 읽기 트랜잭션이나 큰 쓰기 중 이 값을 넘을 수 있다. 두 DB는 공용 `WAL_SIZE_LIMIT_BYTES`를 사용한다.
 
 ### 보장 범위 — `synchronous=NORMAL` 이 약속하는 것과 안 하는 것
 
@@ -132,7 +102,7 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   commit 들은 잃을 수 있다. DB 가 깨지지는 않는다 — 잃는 것은 끝부분의 commit 이고, 남은
   것은 일관된 이전 상태다.
 - 이 값을 바꾸지 않는다. FULL 로 올리는 것은 commit 마다 fsync 비용을 받는 **별도 결정**이고,
-  지금 코드는 적용 여부만 본다([ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md)).
+  지금 코드는 적용 여부만 본다([ADR-0610](../../adr/0610-storage-failure-reporting.md)).
 - **전원 장애 쪽은 측정된 적이 없다.** 그 줄은 SQLite 문서의 계약이다. 재는 법은 commit 직후
   전원을 끊고 재시작해 마지막 commit 의 생존을 보는 것인데 — **이 레포에 그 장비는 없다.**
 - **프로세스 kill 쪽은 쟀다**(2026-09-21, Linux, 격리 홈의 GUI debug 인스턴스): `memory.put` 다섯
@@ -141,25 +111,14 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 
 ### 저장 실패의 의미 — `memory.db`
 
-`MemoryStore` 의 트랜잭션 쓰기(`put` · `delete` · `put_secret` · `delete_secret`)가 실패하면
-그 호출은 `Err` 로 돌아온다. **실패한 commit 을 성공으로 돌려주는 경로는 없다.**
+초기화와 쓰기 오류는 StorageFailure의 busy·disk_full·io·corrupt·permission_denied·other 분류를 공유한다.
+IPC는 기존 오류 코드·문구를 유지하고 error.data.storage_failure를 추가한다.
+NotFound·CAS 충돌·quota 거절은 저장장치 오류가 아니다.
+실패한 commit은 quota 카운터와 pending_changes를 갱신하지 않으며 트랜잭션이 롤백된다.
+현재 CANTOPEN은 permission_denied, READONLY는 other이고 초기화의 Io는 기존 안내 Other로 매핑된다.
+이 값은 계약이므로 분류를 바꿀 때 소비자 호환을 검토한다.
 
-- **원인은 초기화와 같은 표로 갈린다** — `tasty_memory::StorageFailure`(`busy` · `disk_full` ·
-  `io` · `corrupt` · `permission_denied` · `other`). `MemoryError::storage_failure()` 가 그 값을
-  주고, 요청 거부(`NotFound` · `CasConflict` · quota 등)는 저장 실패가 아니라 `None` 이다.
-- **IPC** 는 코드 `-32603` 과 문장 `memory db error: …` 을 그대로 두고
-  `error.data.storage_failure` 에 원인을 싣는다.
-- **메모리 쪽 상태는 실패 전 그대로다.** quota 카운터(`regular_used_bytes`)와 변경
-  버퍼(`pending_changes`, `memory.changed` 이벤트의 원천)는 commit 성공 뒤에만 움직인다.
-  트랜잭션은 롤백돼 디스크에도 안 남는다. 그래서 실패한 쓰기는 quota 를 먹지 않고 변경
-  알림도 내지 않는다.
-- **저장소가 파일이 아니면 성공도 durable 이 아니다.** 부팅이 `memory.db` 를 못 열어 in-memory
-  대체로 떴으면(아래 "초기화 실패" 절) commit 은 성공하지만 프로세스와 함께 사라진다. 그때
-  `memory.db` 에 쓰는 IPC 쓰기 계열의 성공 응답은 `ok` 를 그대로 두고 `durable: false` 를 더한다 —
-  `memory.*` 뿐 아니라 같은 저장소에 쓰는 `agent.*` · `approval.*` · `surface.meta.*` ·
-  `telemetry.*` · `session.*` 도 같다([ADR-0518](../../adr/0518-every-ipc-write-to-memory-db-says-when-it-is-not-durable.md)).
-  파일 DB 에서는 이 칸이 없다 — 칸이 없는 성공은 위 "보장 범위" 가 말하는 durable 이다.
-- 근거는 [ADR-0377](../../adr/0377-a-failed-memory-write-names-its-cause-with-the-same-table-as-init.md).
+fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·telemetry·session 메서드의 성공 객체에는 durable:false를 추가한다. 표상 비Read라도 저장하지 않는 memory.export·agent.task_run·agent.task_reduce는 제외한다. 정상 저장소는 기존 응답을 유지하므로 필드 부재만으로 구 호스트와 정상 영속을 구분하지 못한다. dry-run에도 fallback 상태가 표시될 수 있고 Read로 분류한 조회의 부수 정리 쓰기에는 표시하지 않는다. 새 저장 이름공간은 명시적으로 목록과 검증에 추가한다.
 
 ### 터미널 출력 observer 의 memory sink — 저장 계약
 
@@ -169,9 +128,9 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
 
 - **키**: `global` 스코프의 `tasty.observer.<id>.<ms>.<seq>`, owner 는 `_host`. `<ms>` 는 쓰는 순간의
   밀리초, `<seq>` 는 그 sink 가 쓴 순번(0 부터, 6 자리로 채움)이다. 순번이 있어 **같은 밀리초에 온
-  항목도 각자 키를 가진다** — 한 줄에서 여러 항목이 나와도 덮어쓰지 않는다. 키 오름차순이 곧 도착
-  순서이므로 `memory.list --prefix tasty.observer.<id>.` 가 시간순으로 읽힌다. 근거는
-  [ADR-0519](../../adr/0519-an-observer-memory-record-key-carries-a-sequence.md).
+  항목도 각자 키를 가진다** — 한 줄에서 여러 항목이 나와도 덮어쓰지 않는다. 시계가 역행하지 않고 같은 ms 안의 순번이 여섯 자리 범위에 있으면 키 오름차순이 도착
+  순서와 같으므로 `memory.list --prefix tasty.observer.<id>.` 가 시간순으로 읽힌다. 근거는
+  [ADR-0609](../../adr/0609-state-storage-and-retention.md).
 - **상한 `max_records` 는 가장 최근 N 건을 남긴다.** sink 는 자기가 쓴 키를 순서대로 기억해 넘치면
   가장 오래된 것부터 지운다. 키가 유일하므로 지우는 칸은 늘 그 옛 레코드 자신이다. 삭제는
   best-effort 다 — 실패해도 경고 없이 넘어가므로 그때는 N 을 넘는 레코드가 남을 수 있다. sink 가
@@ -188,7 +147,17 @@ CREATE TABLE recent_files (      -- 종류별 최근 경로
   항목은 std mpsc 계약상 워커가 끝까지 비운 뒤 끝나므로 잃지 않는다. 앱 종료 경로가
   `join_retired` 로 남은 워커를 회수하고, 그 호출을 빠뜨린 경로에서도 라우터의 `Drop` 이 같은
   회수를 한다(마지막 방어선). 유일한 유실 경로는 워커가 다 쓰기 전에 프로세스가 죽는 것이다.
-- 근거는 [ADR-0378](../../adr/0378-the-poison-coordinate-of-the-memory-store-lives-at-its-port.md).
+- 근거는 [ADR-0610](../../adr/0610-storage-failure-reporting.md).
+
+### 관측 로그 보존
+
+관측 로그는 공용 정책 테이블에서 개수와 시간으로 정리한다.
+audit는 Deny만 영속하고 5만건·50시간, telemetry raw event는 최근 2만건, anomaly는 5천건·50시간이다.
+raw event의 별도 rollup은 구현하지 않아 조회 가능 기간은 이벤트 유입량에 따라 달라진다.
+부팅·append·주기 timer가 같은 정리 함수와 한 시간 gate를 사용한다.
+따라서 순간 행 수는 상한에 정리 사이 유입량이 더해질 수 있다.
+Allow 미기록으로 정상 호출의 사후 행동 감사가 불가능한 대가를 수용한다.
+사고 조사·장기 비용 조회·자동 이상 대응·로그 저장소 분리가 필요해지면 보존 정책을 재검토한다.
 
 ### 초기화 실패 — `state.db` 는 종료, `memory.db` 는 in-memory 대체 + degraded
 
@@ -233,7 +202,7 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 - **화면 안내는 없다** — `state.db` 와 달리 InfoModal 도 toast 도 뜨지 않는다.
 
 근거·대안(fatal · 쓰기 거절)·재검토 조건은
-[ADR-0485](../../adr/0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md).
+[ADR-0610](../../adr/0610-storage-failure-reporting.md).
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
 
@@ -251,7 +220,10 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 
 보존이 실패했거나 **읽기가 실패한**(권한 · IO) 경우에는 파일을 건드리지 않고 그 대상에 대한 저장을 막는다. 내용을 확인하지 못한 파일을 옮기면 일시적 오류에도 사용자 데이터가 자리를 뜨기 때문이다. 공용 헬퍼는 `tasty_utils::path::preserve_corrupt_file`.
 
-**같은 `TASTY_HOME` 을 두 인스턴스가 쓰면 창이 남는다.** 부팅 판정과 첫 저장 사이(수 분)에 다른 인스턴스가 정상 파일을 써 넣을 수 있으므로, 옮기기 직전에 파일을 다시 읽어 지금도 해석되지 않는지 확인한다. 다만 그 **재확인(read)과 옮기기(rename)는 별개 syscall 이고 사이에 잠금이 없다** — 그 사이에 끼어든 write 는 여전히 정상 파일을 `.bak` 으로 흘린다. 파일 잠금을 도입하지 않은 것은 같은 홈의 다중 인스턴스가 지원 구성이 아니고(슬롯 점유는 프로세스 안에서만 본다), 남은 창의 폭이 두 syscall 사이라 실무상 도달하기 어렵기 때문이다. 데이터가 사라지는 것이 아니라 백업 예산(9개)이 한 칸 깎이는 형태로만 드러난다.
+**같은 `TASTY_HOME` 을 두 인스턴스가 쓰면 창이 남는다.** 부팅 판정과 첫 저장 사이(수 분)에 다른 인스턴스가 정상 파일을 써 넣을 수 있으므로, 옮기기 직전에 파일을 다시 읽어 지금도 해석되지 않는지 확인한다.
+다만 그 **재확인(read)과 옮기기(rename)는 별개 syscall 이고 사이에 잠금이 없다** — 그 사이에 끼어든 write 는 여전히 정상 파일을 `.bak` 으로 흘린다.
+파일 잠금을 도입하지 않은 것은 같은 홈의 다중 인스턴스가 지원 구성이 아니고(슬롯 점유는 프로세스 안에서만 본다), 남은 창의 폭이 두 syscall 사이라 실무상 도달하기 어렵기 때문이다.
+데이터가 사라지는 것이 아니라 백업 예산(9개)이 한 칸 깎이는 형태로만 드러난다.
 
 ## 테스트
 

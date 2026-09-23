@@ -1,6 +1,8 @@
 # 에이전트 메모리 시스템
 
-`~/.tasty/memory.db` (SQLite WAL 단일 파일)에 저장되는 영속 키-값 스토어. AI 에이전트·plugin 이 작업 도중 누적·검색·공유하는 데이터의 backing store 다. 본 바이너리는 `init_with_config` 로 연 store 를 `Arc<Mutex<dyn MemoryStorage>>` 로 Core 에 주입해 동기 접근한다(`crates/tasty-memory/`). 이 문서는 **가시성·소유권 모델**을 정의한다. 암호화 안 하는 결정의 근거는 [ADR-0005](../../adr/0005-memory-secret-not-a-vault.md), IPC trust boundary 는 [ADR-0004](../../adr/0004-ipc-transport-tcp.md).
+`~/.tasty/memory.db` (SQLite WAL 단일 파일)에 저장되는 영속 키-값 스토어. AI 에이전트·plugin 이 작업 도중 누적·검색·공유하는 데이터의 backing store 다.
+본 바이너리는 `init_with_config` 로 연 store 를 `Arc<Mutex<dyn MemoryStorage>>` 로 Core 에 주입해 동기 접근한다(`crates/tasty-memory/`). 이 문서는 **가시성·소유권 모델**을 정의한다.
+암호화 안 하는 결정의 근거는 [ADR-0611](../../adr/0611-secrets-and-local-trust.md), IPC trust boundary 는 [ADR-0606](../../adr/0606-bounded-ipc-transport.md).
 
 ## 책임 범위
 
@@ -25,10 +27,11 @@
 
 ## owner — 숨겨진 host 전용 차원
 
-`owner` 는 모든 entry 에 붙지만 **plugin 에게는 보이지 않는다** — IPC schema 에 `owner` 인자가 없다. host 가 caller 에서 자동 도출한다:
+`owner`는 호출자가 지정할 수 없는 내부 소유자 값이다. 호스트가 caller에서 정한다. regular 조회 응답에는 소유자가 표시되고 secret 응답에는 표시되지 않는다:
 
 ```
 CallerContext::Plugin(id) → owner = id        (예: "com.tasty.claude")
+CallerContext::Agent(id)  → owner = id
 CallerContext::Local      → owner = "_host"    (HOST_OWNER, CLI·사용자)
 ```
 
@@ -44,11 +47,11 @@ CallerContext::Local      → owner = "_host"    (HOST_OWNER, CLI·사용자)
 | Plugin A | Plugin B / `_host` | `OwnedByOther` (`-32006`) |
 | `_host` | anything | OK (root) |
 
-read(`get`/`list`/`exists`/`count`/`scopes`/`stats`)는 caller 무관 전체를 보고, 응답에 `owner` 가 포함된다("누가 만들었나"). 권한 토큰(`memory.read`/`write`)은 *메서드 호출 가능 여부*, owner check 는 *그 entry 권한* — 둘 다 통과해야 쓰기 성공.
+regular 읽기는 공유 데이터를 조회하되, 권한을 받는 caller의 raw KV 요청에서는 `tasty.` 호스트 예약 키를 숨긴다([권한 규칙](../../dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다)). 응답에 `owner` 가 포함된다("누가 만들었나"). 권한 토큰(`memory.read`/`write`)은 *메서드 호출 가능 여부*, owner check 는 *그 entry 권한* — 둘 다 통과해야 쓰기 성공.
 
 ## Secret — plugin 별 사전 분할
 
-권한 체크가 아니라 **아키텍처적 분할**이다. plugin 입장에서 secret 은 자기만의 우주 — *다른 plugin 의 secret 은 개념 자체가 없다*(존재를 숨기는 게 아니라 접근 경로가 IPC 에 없다). PK 가 `(owner, scope, key)` 라 owner 다른 두 plugin 이 같은 `(scope, key)` 를 충돌 없이 쓴다. host 가 모든 secret 쿼리에 `WHERE owner = :caller_owner` 를 자동 부착하고, 응답에 `owner` 를 **포함하지 않는다**(추상화 누수 방지). R/W 를 토큰 하나(`memory.secret`)로 묶는다 — 항상 "자기 영역 only" 라 분리할 이유가 없다.
+Secret 쿼리는 caller의 owner로 제한한다. plugin은 다른 owner의 키나 존재 여부를 조회할 수 없다. PK 가 `(owner, scope, key)` 라 owner 다른 두 plugin 이 같은 `(scope, key)` 를 충돌 없이 쓴다. host 가 모든 secret 쿼리에 `WHERE owner = :caller_owner` 를 자동 부착하고, 응답에 `owner` 를 **포함하지 않는다**(추상화 누수 방지). R/W 를 토큰 하나(`memory.secret`)로 묶는다 — 항상 "자기 영역 only" 라 분리할 이유가 없다.
 
 ## CLI 표면
 
@@ -109,11 +112,11 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   파일이 없어 SQLite 가 WAL 을 못 쓰고, 요청은 조용히 거절돼 `journal_mode` 가 `memory` 로
   남는다(반환값은 성공이다). 그 모드에는 `-wal`·`-shm` 도, 여기 적은 위생 문제도 없다.
   그래서 그 값은 실패가 아니라 정상 결과로 규정하고 경고하지 않는다 —
-  [ADR-0316](../../adr/0316-a-database-reports-the-pragma-that-took-not-the-one-requested.md).
+  [ADR-0610](../../adr/0610-storage-failure-reporting.md).
   반대로 **파일 DB 가 `memory` 로 서면 정상이 아니다** — 허용 결과는 모드별이다. 열린
   스토어는 되읽은 결과를 `MemoryStore::applied_pragmas()` 로 들고 있고, 실행 중에는
   `system.pressure` 의 `db_pragmas.memory_db`(CLI `tasty list pressure`)로 조회한다
-  ([ADR-0376](../../adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md)).
+  ([ADR-0610](../../adr/0610-storage-failure-reporting.md)).
 - **내구성 범위**(`synchronous=NORMAL` — 프로세스 kill 은 견디고 전원 장애는 최신 commit 을
   약속하지 않는다)와 **저장 실패의 의미**(원인 분류 · 실패한 쓰기는 quota 카운터와 변경
   버퍼를 안 옮긴다)는 [storage](storage.md) 의 두 절이 정본이다.
@@ -121,23 +124,21 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   않는다. 그 상태의 쓰기는 재시작에 사라지므로 `db_pragmas.memory_db` 가 `degraded: true` 와
   `init_failure` 로, 쓰기 응답이 `durable: false` 로 그 사실을 말한다. 정본은 [storage](storage.md)
   "초기화 실패" 절의 `memory.db` 항이고 근거는
-  [ADR-0485](../../adr/0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md).
+  [ADR-0610](../../adr/0610-storage-failure-reporting.md).
 
 ## 보안·신뢰 모델
 
-Secret 의 격리 약속은 **"plugin 간 IPC 격리" 하나로 좁혀져 있다.** 자세한 위협 모델·왜 암호화 안 하는가·sandbox 도입 시 미래 경로는 [ADR-0005](../../adr/0005-memory-secret-not-a-vault.md).
+memory secret은 평문 BLOB이며 plugin별 IPC owner 격리만 제공한다. 다른 plugin의 존재 조회도 막지만 같은 OS 사용자 프로세스의 DB 직접 접근·백업·장치 도난을 막는 암호화 보관소는 아니다. OS sandbox 없는 plugin에서 host가 keyring 암호화만 추가해도 프로세스 격리가 완성되지 않아 AES-GCM과 평문 fallback 혼합은 채택하지 않았다. 실제 민감 자격증명은 plugin이 OS keyring 또는 외부 저장소 정책으로 다룬다. sandbox나 저장 시 암호화 요구가 생기면 실제 접근 제한을 검증한 뒤 보호 약속을 다시 정한다.
 
-| 시나리오 | Regular | Secret |
-|---|---|---|
-| Plugin A → Plugin B 의 entry 갱신/secret 요청 | **차단**(`OwnedByOther`) | **차단**(owner 분리) |
-| 사용자/host 가 모든 entry 조회·수정 | 허용 | 허용 |
-| plugin/타 프로세스가 `memory.db` 파일 직접 열기 | 평문(책임 밖) | 평문(책임 밖) |
+Local TCP 연결의 신뢰 범위는 [IPC 서버](../../architecture/ipc-server.md#연결과-신뢰-범위)를 따른다.
 
-> 정말 민감한 데이터(master password, OAuth refresh token, 결제 key)는 secret 영역에 두지 *말고* OS keyring/외부 보관소를 쓴다 — [plugin-development 민감 데이터](../../dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택).
+### Passkey 저장과 열람
+
+Passkey는 프로필에서 이름으로 참조하며 passkeys.toml에는 name·kind·path만 저장한다. path는 사용자 파일을 참조하고 inline은 Tasty 소유 파일로 만들어 삭제 시 함께 지운다. Unix 파일 0600·디렉터리 0700으로 보호하고 대화형 이름은 허용 문자 밖을 거절하되 migration 이름은 치환한다. IPC·CLI는 내용을 반환하지 않고 마스킹한다. 로컬 GUI와 승인된 plugin의 선언 타입 열람은 설치 신뢰에 기반한 편의이며 OS 수준 격리를 뜻하지 않는다. 암호화·master passphrase는 headless 자동 접속과 플랫폼 비용 때문에 현재 보류다.
 
 ## 관련
 
 - 코드: `crates/tasty-memory/`
-- [ADR-0005](../../adr/0005-memory-secret-not-a-vault.md) · [ADR-0004](../../adr/0004-ipc-transport-tcp.md)
+- [ADR-0611](../../adr/0611-secrets-and-local-trust.md) · [ADR-0606](../../adr/0606-bounded-ipc-transport.md)
 - [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-development 민감 데이터](../../dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택)
 - 저장 위치 규칙: [storage.md](storage.md) (`~/.tasty/` 전체 저장소 지도; `memory.db` 는 `state.db` 와 별도 연결)

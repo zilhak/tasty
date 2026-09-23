@@ -2,7 +2,7 @@
 
 plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를 host 가
 전용 `egui_wgpu::Renderer` 로 surface 영역에 합성하는 채널. 결정·대안·재검토 조건은
-[ADR-0028](../adr/0028-plugin-egui-mesh-render-channel.md) (Accepted). 이 문서는
+[ADR-0628](../adr/0628-egui-mesh-rendering.md) (Accepted). 이 문서는
 **현재 동작 상태**만 기술한다.
 
 ## 데이터 흐름
@@ -98,7 +98,7 @@ frame 이 사라지면 다시 bootstrap 한다.
 
 ## idle invalidate (SurfaceInvalidated, 단계 06)
 
-위 5개 host-side 트리거와 별개로, plugin 은 `HostHandle::notify(&PluginEvent::SurfaceInvalidated
+위 5 개 host-side 트리거와 별개로, plugin 은 `HostHandle::notify(&PluginEvent::SurfaceInvalidated
 { surface_id })` 로 **입력과 무관하게** 재forward 를 요청할 수 있다. host 수신 스레드는
 어떤 이벤트든 라인마다 waker 를 깨우므로(`process.rs`) idle(입력 없는) 상태에서도 이
 알림이 도착하면 다음 tick 에서 즉시 처리된다:
@@ -109,13 +109,13 @@ frame 이 사라지면 다시 bootstrap 한다.
    `MeshForwardState::set_invalidated()` + `mark_dirty()`(redraw 요청)를 건다
    (`src/app/event_handler.rs`).
 3. 다음 `forward_egui_mesh_context` 게이트에서 `invalidated` 플래그가 (다른 트리거 없이도)
-   빈 입력 `set_context` 를 1회 통과시키고, 송신 시 플래그를 소거한다(`src/view/main/egui_mesh.rs`).
+   빈 입력 `set_context` 를 1 회 통과시키고, 송신 시 플래그를 소거한다(`src/view/main/egui_mesh.rs`).
 4. plugin 의 `paint_surface` 가 이 무입력 frame 을 받아 자기 상태를 재확인·재-read 한다.
 
 **과거 소비자(현재는 다른 경로로 대체됨)**: markdown plugin 이 egui-mesh 로 본문을 그리던
 시절엔 markdown 의 idle 폴링 worker(현재 `crates/tasty-plugin-sdk/src/file_watch.rs`)가 이
 채널로 `SurfaceInvalidated` 를 emit 해 재-read 를 트리거했다. markdown 이 webview 로
-전환된 뒤([ADR-0065](../adr/0065-markdown-webview-render-channel.md))로는 webview-kind
+전환된 뒤([ADR-0629](../adr/0629-webview-host-integration.md))로는 webview-kind
 surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 무의미해졌다 — 지금
 `file_watch` 는 변경 감지 시 이 채널 대신 `self_invoke` 로 `markdown.reload` IPC 를
 직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
@@ -153,7 +153,7 @@ variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준�
 
 ## plugin self-repaint (out-of-band 상태 변경)
 
-위 5개 트리거(크기/ppp · 입력 · 테마 · bootstrap · 포커스)는 전부 **host-side** 요인이라, plugin 이
+위 5 개 트리거(크기/ppp · 입력 · 테마 · bootstrap · 포커스)는 전부 **host-side** 요인이라, plugin 이
 IPC 메서드나 파일 변경 등으로 **자기 상태를 out-of-band 로 바꿔도** host 는 새 set_context 를
 보내지 않는다. 이 경우 plugin 은 SDK 의 `EguiMeshSurface::repaint_last`(popup/banner 동형)로
 스스로 재-paint 한다:
@@ -174,70 +174,28 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 
 소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤). git-viewer 는 모든 상태
 변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다. (markdown
-은 이 문서의 이전 리비전까지 대표 소비자였으나, [ADR-0065](../adr/0065-markdown-webview-render-channel.md)
+은 이 문서의 이전 리비전까지 대표 소비자였으나, [ADR-0629](../adr/0629-webview-host-integration.md)
 로 본문 surface 가 webview 전환되며 egui-mesh self-repaint 경로 자체를 타지 않게 됐다 —
 `markdown.reload` IPC 는 지금은 host 가 webview 를 직접 재로드하는 별개 경로다.)
 
 ## egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용
 
-위 "set_context 송신 정책"의 이벤트 기반 게이팅(host-side 이벤트가 있을 때만 pass 를
-구동)은 **egui 자신의 다중 프레임 애니메이션**(스크롤 스무딩, `ctx.request_repaint_after`
-류 전반)이 매 프레임 무관하게 이어지는 pass 를 전제로 설계됐다는 사실과 충돌할 수 있다.
-egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::render`(SDK)가
-`ctx.run()` 의 반환값 `FullOutput::viewport_output`(egui 가 "다음 pass 도 그려달라"고
-신호하는 채널, `repaint_delay: Duration`)을 전혀 읽지 않고 버렸다.
+host 입력이 없을 때도 egui가 다음 pass를 요청할 수 있다.
+SDK는 ROOT viewport의 repaint_delay를 읽어 SurfaceInvalidated·PopupInvalidated·BannerInvalidated로 다음 context를 요청한다.
+출력 frame이 dedup으로 생략돼도 이 요청은 확인한다.
 
-**증상**: 트랙패드로 스크롤(휠 드래그 제스처)하고 손을 떼면, egui 내부에
-`unprocessed_scroll_delta`(egui 0.31 `input_state/mod.rs` — `Point` 단위 8pt 이상이거나
-`Line`/`Page` 단위 델타는 즉시 반영되지 않고 지수완화로 여러 pass 에 걸쳐 drain 된다)가
-아직 남아있어도, host 는 더 이상 host-side 이벤트가 없으므로 다음 pass 를 구동하지 않는다
-— 스크롤이 입력한 양만큼 반영되지 않고 멈춘 채 방치된다. 이후 무관한 입력(마우스 이동
-등)이 들어와야 host 가 다시 pass 를 구동해 남은 delta 가 그 시점에 몰아서 반영된다.
+SelfRepaintTimer는 plugin 프로세스당 하나이며 첫 요청에 시작한다.
+Condvar로 가장 이른 기한까지 기다린 뒤 lock 밖에서 인스턴스 arm을 풀고 알린다.
+인스턴스당 대기 요청은 최대 하나다.0 지연도 같은 큐를 사용하고 checked_add 범위를 넘는 기한은 버린다.
+callback panic은 요청별로 기록하고 계속한다. 루프가 종료되면 대기 arm과 running 상태를 풀어 다음 요청이 재기동하게 한다.
+타이머 thread 생성 실패에는 일회성 thread를 시도하고 실패를 로그로 남긴다.
 
-**고친 지점(두 가지, 병행)**:
+0 지연을 inline 알림으로 바꾸면 frame 송신 전에 invalidation이 항상 나가는 식으로 관측 순서가 달라질 수 있다.
+현재 blocking read_line plugin loop에는 host TimerHub의 프레임별 drain을 그대로 사용할 수 없다.
 
-1. **self-repaint 편승** (`crates/tasty-plugin-sdk/src/egui_surface.rs`) —
-   `EguiMeshCore::render` 가 매 pass 마다 `full.viewport_output.get(&ViewportId::ROOT)`
-   (egui-mesh 는 단일 ROOT viewport 만 씀)의 `repaint_delay` 를 읽어
-   `pending_self_repaint`(`Duration::MAX` = 요청 없음 → `None`)로 캐시한다.
-   `EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner` 의 `paint`/`repaint_last` 는 매
-   호출 뒤(frame 이 `None` 이어도) 이 값을 확인해 `Some(delay)` 면 `delay` 뒤 위
-   "idle invalidate" 채널
-   (`SurfaceInvalidated`/`PopupInvalidated`/`BannerInvalidated`)로 host 에 재-forward 를
-   요청한다. 이 지연
-   알림은 **plugin 프로세스당 상주 타이머 스레드 1 개**(`SelfRepaintTimer`, 첫 요청 때
-   lazily 기동 후 재사용)가 발사한다 — 요청마다 스레드를 만들지 않는다([ADR-0097](../adr/0097-plugin-self-repaint-resident-timer.md)).
-   `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(`Context::request_repaint`
-   를 부르는 위젯 애니메이션이 대표적) 요청당 스레드 방식은 애니메이션 중 프레임마다 생성·소멸을
-   반복한다. 휠 스크롤은 아래 "스크롤은 한 pass 에 전량 전달된다" 대로 도착 프레임에서 소진되므로
-   이 경로를 타지 않는다 — 조각 수 상한(64)을 넘겨 분할을 포기한 극단적 델타만 예외다.
-   `self_repaint_armed`(`AtomicBool`) 로 대기 요청을 인스턴스당 최대 1 건으로 묶고, 타이머가
-   fire 하면(가드 해제 → 알림 순) 풀려 다음 `render()` 가 여전히 필요하면 재-arm 한다
-   (자연 수렴, idle 상태에서 요청이 쌓이지 않음). 스레드가 하나라 그것이 죽으면 self-repaint
-   가 영구 정지하므로, 알림 panic 은 요청 단위로 삼키고 루프가 풀리면 대기 가드를 모두 푼 뒤
-   다음 요청이 재기동하며 spawn 실패 시엔 그 요청만 1 회용 스레드로 폴백한다. 이 채널은 host-side 코드 변경 없이
-   (surface) 또는 이미 있던 popup pending-repaint 필드에 편승해(popup) 동작한다 —
-   `EguiMeshCore` 를 공유하는 surface/popup/banner 전체에 적용된다(위 "popup·banner 대응"
-   참조).
-2. **raw_input.time 보정** (`src/view/main/egui_mesh.rs`) — `forward_egui_mesh_context`
-   가 surface 로 보내는 `set_context.raw_input.time` 이 과거엔 항상 `None` 이었다. egui는
-   `time` 이 없으면 `predicted_dt`(1/60초 고정)로만 dt 를 추정하므로, 1번의 idle-invalidate
-   재forward 처럼 실제 forward 간격이 그보다 훨씬 길어도 egui 는 매번 "짧은 프레임"으로
-   착각해 스크롤 스무딩의 지수완화 계수(`exponential_smooth_factor`)가 실제보다 느리게
-   수렴한다. `mesh_time_now()`(프로세스 시작 시 고정한 `Instant` 로부터의 경과 초 — 절대
-   기준은 의미 없고 단조 증가만 필요) 를 채워 보내 실제 경과 시간을 반영한다. 현재는
-   local surface forward 경로(가시·비가시 pending_full 재전송)에만 적용했고, attach mesh
-   mirror 경로(`attach_mesh_input.rs`/`mesh_forward.rs`/`stream_hub.rs`/`mesh_mirror.rs`)와
-   popup/banner forward(`popup_render.rs`/`banner_render.rs`)는 아직 `time: None` 그대로다
-   — 위 1번(self-repaint)만으로 "유휴 상태 방치" 증상 자체는 해소되므로 필수는 아니었고,
-   범위를 넓히면 손대는 파일이 늘어 실제 버그 재현 경로(markdown surface)에
-   한정했다. 필요해지면 같은 패턴으로 확장 가능.
-
-**popup(git-viewer/clipboard-viewer)도 같은 결함을 안고 있었다** — `EguiMeshCore` 를
-공유하므로 스크롤 가능한 popup 콘텐츠도 이론상 동일 증상을 재현할 수 있었다. 1번을 popup
-에도 적용했다(`PopupInvalidated`, 위 "popup·banner 대응" 절). **banner 도 같은 이유로
-같은 결함을 안고 있었고** — SDK 가 `pending_self_repaint` 를 계산해 놓고 읽는 자리가
-없었다 — 지금은 `BannerInvalidated` 로 같은 네 자리를 지난다.
+local surface의 raw_input.time은 mesh_time_now의 단조 경과시간을 사용한다.
+attach mirror와 popup·banner의 time 값은 별도이며 현재 None 경로가 남아 있다.
+wheel smoothing을 줄이는 입력 분할과 프로그램적 scroll animation 정책은 아래 입력 절을 따른다.
 
 ## Theme 스냅샷 (generic parity)
 
@@ -246,15 +204,15 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
 포함된다. plugin 은 `Theme::with_colors_and_zoom` 으로 host 와 동일한 `Theme` 인스턴스를
 재구성해 디자인 토큰대로 그린다(sizing 은 zoom 으로 재도출). 모든 egui-mesh surface 가
 공유하는 generic 필드다 — image/git-viewer 등이 같은 경로로 Theme parity 를 얻는다
-(markdown 은 [ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 본문 surface 가
+(markdown 은 [ADR-0629](../adr/0629-webview-host-integration.md) 로 본문 surface 가
 webview 전환돼 이 경로 밖 — 대신 `theme.query`/`theme.changed` 를 쓴다. 대용량/파일열기
-확인 팝업 2개는 여전히 이 경로를 탄다).
+확인 팝업 2 개는 여전히 이 경로를 탄다).
 테마 변경은 위 송신 정책의 트리거이므로, 사용자가 테마를 바꾸면 입력이 없어도 재forward 된다.
 
 ## 콘텐츠 전달 (surface.create bootstrap)
 
 egui-mesh surface 는 plugin 이 콘텐츠를 소유하므로(예: image 의 파일 경로), host 는
-**첫 set_context bootstrap 직전에 `surface.create{params}` 를 plugin 에 1회 보낸다**
+**첫 set_context bootstrap 직전에 `surface.create{params}` 를 plugin 에 1 회 보낸다**
 (`MainView::forward_egui_mesh_context` → `send_egui_mesh_surface_create`). 같은 plugin
 req 채널 FIFO 라 create 가 set_context 보다 먼저 도착해, plugin 이 생성 params 를 렌더 전에
 받는다(set_context-before-create 레이스 제거). host 측 `EguiMeshSurface` stand-in 은
@@ -289,16 +247,16 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
    리셋한다(full 미포함 텍스처는 free). Context 생성 직후 첫 frame 도 자연-full 로 마킹돼,
    bootstrap 직후 gen1 이 덮여도(생성 race) 같은 경로로 회복된다.
 
-   **재무장(single-shot deadlock 제거)**: 요청한 full frame 이 다시 latest-wins 버퍼에서
+   **전체 텍스처 요청 재등록**: 요청한 full frame 이 다시 latest-wins 버퍼에서
    유실될 수 있으므로, host 는 수락될 때까지 **매 tick full 재전송을 재요청**한다(로그는
-   최초 1회만). frame 수락 시 해제되어 다음 단절 때 다시 요청·로그한다.
+   최초 1 회만). frame 수락 시 해제되어 다음 단절 때 다시 요청·로그한다.
 3. **mesh(기하) 채택은 delta 체인과 분리** — reflow frame 의 mesh 는 자기완결적 기하라
    중간 frame 유실(delta 손실)과 무관하다. 따라서 위 체인 가드는 **텍스처 delta 적용
    여부만** 막고, mesh 채택은 `decode_mesh_into_target` 이 디코드 후 `classify_decode` 로
    세 결과 중 하나로 판정한다. 입력 축은 셋: `chain_ok`(full 이거나 `frame_seq == last+1`),
    참조 상주(`all_textures_live` — 이 frame 의 mesh 가 참조하는 모든 `TextureId` 가 이미
    상주), delta 경계 정합(`deltas_fit_live` — patch delta 가 상주 텍스처 크기 안에 들어감,
-   3d74217c 의 오버런 방어선).
+   오버런 검사).
 
    | 결과 | 조건 | mesh | `textures_delta` | `last_seq` | full 재요청 |
    |---|---|---|---|---|---|
@@ -308,7 +266,7 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
 
    **불변식**: delta 를 실제 적용하지 못한(체인 단절으로 스킵한) frame 의 mesh 는 채택하되
    `last_seq` 를 전진시키지 않는다(**AcceptedStale**). 그러면 다음 tick 도 체인 단절로 남아
-   full 재전송이 계속 무장되고, 유실로 stale 해진 atlas 는 다음 full frame 으로 정합
+   full 재전송 요청을 계속 유지하고, 유실로 stale 해진 atlas 는 다음 full frame 으로 정합
    복구된다. mesh(기하)는 최신으로 갱신되므로 리사이즈/split 로 폭이 바뀌어 seq 가 튀어도
    mesh-demo 등 mesh surface 가 옛 폭에 고정(우측 잘림)되지 않고 즉시 reflow 되고, 그 사이
    글리프 uv 만 다음 full 까지 stale atlas 를 가리킨다. 참조가 하나라도 미상주(image plugin
@@ -322,9 +280,9 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
 옮김(surface 는 `MeshForwardState` 안에, popup/banner 는 `AppState` 의
 `plugin_mesh_{popup,banner}_forward` 맵 안에) → 다음 tick 의 forward 가
 `need_full_textures` set_context 를 송신(비가시 surface 는 마지막 geom/theme 으로 송신).
-plugin generation 이 정지해 새 frame 이 안 와도 이미 무장된 surface 는 매 tick 재요청을
+plugin generation 이 정지해 새 frame 이 안 와도 이미 재전송 대기 중인 surface 는 매 tick 재요청을
 유지한다(재-tessellation·업로드 없이 IPC 메시지만). popup/banner 도 같은 체인 규칙·재무장·
-mesh 분리 규칙을 공유한다 — 규칙이 닮아서가 아니라 **칸이 같은 타입 한 벌**이기 때문이다.
+mesh 분리 규칙을 공유한다 — 규칙이 닮아서가 아니라 같은 MeshForwardCommon 상태 타입을 사용하기 때문이다.
 
 ## 입력 forward · identity 경계
 
@@ -346,7 +304,7 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 조각들로 쪼개 **같은 프레임의 이벤트 목록**에 넣는다. 쪼개지 않으면 egui 가 델타를
 `unprocessed_scroll_delta` 에 적립해 여러 프레임에 걸쳐 소진하고, egui-mesh 에서는 그
 프레임 하나하나가 `*Invalidated` → `set_context` → 전체 egui pass 라는 프로세스 간 왕복이
-된다([ADR-0108](../adr/0108-egui-mesh-scroll-delivered-in-one-pass.md)). 조각 합은 원본
+된다([ADR-0628](../adr/0628-egui-mesh-rendering.md)). 조각 합은 원본
 델타와 같아 이동량이 보존되고, 잔여 델타가 남지 않아 위 "유휴 상태 방치" 경로도 타지 않는다.
 조각 수 상한(64)을 넘는 극단적 델타만 쪼개지 않고 그대로 넘긴다. 같은 이유로 모든 egui-mesh
 Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_animation`)을 꺼 둔다.
@@ -374,7 +332,7 @@ Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_
 그 아래로 못 내려가고, `config.toml` 을 직접 고친 경우에만 도달한다.
 
 `MainView.mesh_pointer_hover`(`Option<MeshHoverTarget>`, `Local(surface_id)`/`Attach(surface_id)`)가
-마지막으로 `PointerMoved` 를 받은 mesh surface 1개를 추적한다. `handle_cursor_moved`
+마지막으로 `PointerMoved` 를 받은 mesh surface 1 개를 추적한다. `handle_cursor_moved`
 (egui-mesh·attach mesh mirror 판정 지점)와 `handle_cursor_left`(`WindowEvent::CursorLeft`)가
 매 `CursorMoved`/`CursorLeft` 이벤트마다 `update_mesh_hover(new_target)` 를 거쳐 슬롯을
 갱신하며 — `egui_consumed`/오버레이(설정창)/팝업/배너/modifier-hint hover 로 인한
@@ -391,8 +349,8 @@ escape 소비를 **먼저** 처리한 뒤, 소비되지 않은 키를 이 forwar
 (commit-only 아님) plugin 의 egui `TextEdit` 이 조합 중간 상태를 인라인 표시한다.
 image/mesh_demo 는 이 forward 로 host egui 를 거치지 않으므로(`main.rs` 의 host-egui 키
 피드에서 제외) host egui 가 그 키/IME 를 삼키지 않는다. (markdown 은 본문 surface 가
-[ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 webview 전환되어 이
-경로 밖 — 대용량/파일열기 확인 팝업 2개만 여전히 이 forward 대상이다.)
+[ADR-0629](../adr/0629-webview-host-integration.md) 로 webview 전환되어 이
+경로 밖 — 대용량/파일열기 확인 팝업 2 개만 여전히 이 forward 대상이다.)
 
 키 wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK(`map_event`)가
 `Key::from_name` 으로 복원한다. winit→egui `Key` 변환은 논리 키 우선·물리 키 폴백
@@ -444,7 +402,7 @@ Copy 는 위 표대로 `egui_copy` capability 를 가진 kind 한정으로 wire 
 plugin 프로세스가 죽으면(reader 스레드 종료 → event_rx Disconnected) host 는 그
 plugin 의 `egui_mesh_frames` 를 즉시 비운다. 합성기는 frame 이 없으면 skip 하므로
 surface 가 곧장 blank 로 전환되어 마지막 mesh 가 stale 합성되지 않는다. host 는 죽지
-않으며, 60초 healthcheck 가 plugin 을 재시작하면 bootstrap set_context 로 재합성된다.
+않으며, 60 초 healthcheck 가 plugin 을 재시작하면 bootstrap set_context 로 재합성된다.
 
 ### 빈 화면 감지 (host 로그)
 
@@ -455,7 +413,7 @@ forward 루프는 frame 이 없는 채널을 조용히 건너뛰므로, host std
 
 그래서 `MeshForwardCommon` 이 bootstrap set_context 송신 시각을 기록해두고(`record_sent`
 가 첫 송신 때만 무장한다 — 재forward 마다 갱신하면 유예가 계속 밀려 빈 화면을 영영 못
-잡는다), `BLANK_MESH_GRACE`(3초)가 지나도록 frame 이 하나도 오지 않으면 대상 하나당 **1회**
+잡는다), `BLANK_MESH_GRACE`(3 초)가 지나도록 frame 이 하나도 오지 않으면 대상 하나당 **1회**
 (surface 는 surface 당, popup·banner 는 인스턴스 당) `ERROR` 로 그 사실과 plugin 로그 확인
 경로를 남긴다. frame 이 도착하면 래치가 풀려, 이후 crash 로 다시
 비면 재경고한다. 원인 자체는 여전히 plugin 로그에서 확인해야 한다 — 이 로그는 "어디를
@@ -474,8 +432,8 @@ forward 루프는 frame 이 없는 채널을 조용히 건너뛰므로, host std
 bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` 이 호스트와 일치할
 때만 등록된다 (epaint 와이어가 host·plugin 동일 컴파일을 강제하는 동안의 보호). 현재
 허용: `(image, com.tasty.image)`, `(mesh_demo, com.tasty.mesh-demo)`. (`markdown` 은
-[ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 webview 전환되며 이
-화이트리스트에서 빠졌다 — 대용량/파일열기 확인 팝업 2개는 이 화이트리스트와 무관하게
+[ADR-0629](../adr/0629-webview-host-integration.md) 로 webview 전환되며 이
+화이트리스트에서 빠졌다 — 대용량/파일열기 확인 팝업 2 개는 이 화이트리스트와 무관하게
 `[[contributes.popup]]` 로 별도 등록된다.)
 
 ## attach mesh mirror 소비 경로
@@ -519,7 +477,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   탭/워크스페이스에 있어 로컬 target 목록에 전혀 없어 plugin 이 그 surface_id 자체를 모름)인
   경우뿐 — 이땐 경합할 로컬 루프가 없으므로 이 훅이 `find_egui_mesh_surface`
   (`src/core/state/pty.rs`)로 메타데이터를 조회해 최소 `surface.create` + `set_context`
-  bootstrap 을 1회 대신 보낸다. 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이
+  bootstrap 을 1 회 대신 보낸다. 이미 렌더 중인 surface 에 새 구독(또는 명시 재전송 요청)이
   들어와 전체 텍스처가 필요하면, 직접 보내지 않고 로컬 `MeshForwardState::pending_full` 에
   위임해 다음 tick 의 authoritative loop 가 `need_full_textures` 를 실어 보내게 한다(그
   사이엔 캐시된 델타뿐일 수 있는 frame 을 새 구독자에 흘리지 않고 건너뛴다 — 텍스처 손상
@@ -535,7 +493,7 @@ plugin 이 그린 mesh 를 자기 화면에 렌더하고, 자기 입력을 원�
   순회하며 각 engine 에 `forward_mesh_frames_for_engine` 을 호출한다(구독/입력 forward/
   full-resend 요청 자체는 `apply_mesh_context_on_owning_engine` 류의 owning-engine 순회
   패턴으로 이미 parked engine 에도 정상 반영되고 있었다 — 실제 frame 구동/relay 만
-  빠져 있었다). `window_lifecycle.rs` 의 창 복원은 `parked_states.remove(0)` 으로 **1개씩만**
+  빠져 있었다). `window_lifecycle.rs` 의 창 복원은 `parked_states.remove(0)` 으로 **1 개씩만**
   꺼내므로, 여러 window 가 동시에 minimize 돼 있으면 나머지는 계속 이 순회의 대상으로
   남는다 — 첫 매치에서 멈추는 owning-engine 패턴과 달리, 이 순회는 매 tick `parked_states`
   전부를 무조건 방문한다.
@@ -612,11 +570,11 @@ plugin 콘텐츠는 **`set_context` 를 받을 때마다 egui pass 를 통째로
 경로는 위 "스크롤은 한 pass 에 전량 전달된다" 로 닫혀 있다 — 조각 수 상한을 넘긴 델타만 예외.)
 
 ```rust
+pane.spacing_mut().item_spacing.y = 0.0;
 egui::ScrollArea::vertical()
     .id_salt("my_list")
     .auto_shrink([false, false])
     .show_rows(&mut pane, ROW_H, items.len(), |ui, row_range| {
-        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         for idx in row_range {
             let Some(item) = items.get(idx) else { continue };
             ui.push_id(idx, |ui| row(ui, theme, item));
@@ -625,7 +583,7 @@ egui::ScrollArea::vertical()
 ```
 
 지켜야 하는 것 네 가지 — 근거·대안은
-[ADR-0095](../adr/0095-plugin-list-virtualization-and-fixed-content-width.md).
+[ADR-0628](../adr/0628-egui-mesh-rendering.md).
 
 - **행 높이가 균일해야 한다.** `show_rows` 는 `row_height × total_rows` 로 위치를 계산한다. 상수든
   theme 파생이든 **한 프레임 안에서 모든 행이 같은 값**이면 된다. 행 함수와 높이 값이 어긋나면 행이
@@ -732,11 +690,11 @@ winit IME 이벤트를 터미널 PTY 로 보내지 않는 차단은 `src/view/ma
 ### bootstrap 은 1회만 (불필요 paint 억제)
 
 set_context 는 **geom 변경 · 입력 · bootstrap(미paint)** 일 때만 보낸다. 특히 bootstrap 은
-1회만 — paint frame 도착 전 매 frame 스팸하면 plugin 이 불필요하게 여러 번 paint 한다.
-1회 보내고 frame 을 기다린다(래치는 surface 와 **같은 칸**이다 —
+1 회만 — paint frame 도착 전 매 frame 스팸하면 plugin 이 불필요하게 여러 번 paint 한다.
+1 회 보내고 frame 을 기다린다(래치는 surface 와 **같은 칸**이다 —
 `MeshForwardCommon::bootstrap_sent`; frame 이 보이면 해제돼 crash 후 재bootstrap). 스팸으로 첫 frame(full atlas)이 덮여도 이제는 frame_seq 체인
 검증이 감지해 full 재전송으로 회복되지만(위 "텍스처 상태 수명 + delta 체인" — popup 도
-동일 규칙), 회복 왕복 자체가 낭비이므로 1회 원칙은 유지한다.
+동일 규칙), 회복 왕복 자체가 낭비이므로 1 회 원칙은 유지한다.
 
 ### 개방 정책
 
@@ -845,3 +803,12 @@ surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 
 `draw_banner`. debug 검증은 `debug.plugin_banner.open/close`.
 
 > 현 단계는 채널 **인프라 + 검증용 더미 PoC banner** 까지다. 실제 소비자 전환은 별도 작업.
+
+## 이미지 텍스처의 전송
+
+image는 원본·편집 레이어·floating selection을 egui texture로 올리고 툴바·핸들과 같은 mesh로 합성한다.
+별도 Canvas/SharedBuffer 비트맵 레이어를 두지 않는다. TexturesDelta는 변경된 texture만 전송하므로
+정적인 이미지의 pan·zoom은 캐시 texture를 참조하는 geometry를 보낸다.
+최초 대형 이미지 업로드와 편집 레이어 갱신 비용은 남는다.
+ImageDelta.pos는 부분 업로드를 표현할 수 있으나 image 편집의 부분 갱신 최적화를 구현된 기능으로 가정하지 않는다.
+데이터·undo·저장은 [image plugin](../plugins/image/index.md)이 소유한다.

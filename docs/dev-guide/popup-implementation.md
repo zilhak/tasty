@@ -131,9 +131,9 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
   커진다(ADR-0126). 고정 크기였을 때는 등록이 곱해 주던 몫이라 **sizer 로 바꾸는 순간
   조용히 사라진다.**
 
-**배선은 값으로 확인한다.** `defs.rs` 에 함수를 꽂아 두는 것은 배선이 아니다 — 한 프레임
+sizer 연결은 실제 팝업 크기로 확인한다. `defs.rs`에 함수를 등록한 뒤 한 프레임
 (`draw_popups`)을 돌리고 `state.popups.get(id).size` 를 읽는 테스트를 둔다. sizer 가 돌려준
-값을 그대로 비교하면 항등식이 되므로, 변이는 **sizer 쪽 반환값**을 흔들어 그 테스트가 죽는지로
+반환값 자체만 비교하지 말고 sizer 반환값을 바꿨을 때 실제 크기를 검사하는 테스트가 실패하는지로
 확인한다(`command_palette.rs::sizer_wiring_tests`).
 
 ### scrim 의 범위
@@ -166,9 +166,9 @@ scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범�
 칸 바깥을 팝업 없는 같은 화면과 견줘 차이가 0 인지 본다.
 
 매니저가 그리는 쪽은 `nothing_a_surface_scoped_popup_paints_lands_outside_its_surface`
-(`src/adapters/ui/popup/scrim_scope_tests.rs`)가 든다 — 프레임이 낸 도형마다 실제로 칠해지는
+(`src/adapters/ui/popup/scrim_scope_tests.rs`)가 확인한다. 프레임이 만든 도형마다 실제로 칠해지는
 자리(clip ∩ 도형 경계)를 구해 칸 안인지 본다. **scrim 색 사각형만 세는 시험으로는 이것이 안
-잡힌다**: clip 을 지우는 변이에서 그쪽 다섯 시험은 전부 살아남았고, 이 시험만 죽는다. 그리고
+잡힌다**: clip 을 지우는 변이에서 scrim 색만 보던 시험은 차이를 놓쳤고 이 시험은 실패했다. 그리고
 그 시험의 픽스처는 좁은 칸이어야 한다 — 넉넉한 칸에서는 그림자가 경계에 닿지 않아 clip 이
 없어도 아무것도 안 샌다.
 
@@ -247,8 +247,24 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { /* apply
 
 **새 팝업이 draft 버퍼/대상 id 같은 상태를 가지면 반드시 `PopupDef.on_close` 를 선언한다.** draw_fn 내부에서 Escape/버튼 클릭 시에만 정리하면 X 버튼·바깥 클릭·`UiIntent::ClosePopup`(디버그 IPC 포함)처럼 draw_fn 을 거치지 않는 닫힘 경로에서 정리가 새고, 재오픈 시 이전 상태가 그대로 보이거나(가벼운 경우) 진행 중 워커/네트워크 연결이 살아남는다(무거운 경우 — 예: `remote_attach`/`remote_tool` 의 ssh 터널). `on_close` 는 어떤 닫힘 경로로도 정확히 한 번 호출되는 유일한 지점이므로, 상태 정리는 draw_fn 안에 흩어놓지 말고 여기 모은다. 상태가 전혀 없거나(예: `notifications`) 남아도 무해하다고 **판단**했다면(예: `mouse_capture_menu` 의 대상 id) `on_close: None` 옆에 근거를 한 줄 남긴다 — `src/adapters/ui/popup/defs.rs` 의 기존 항목들이 그 예시다.
 
+닫힘 큐에는 실제로 열려 있던 인스턴스만 추가한다. 훅이 다른 팝업을 닫으면 같은 처리 과정에서 그 훅도 실행한다. `ON_CLOSE_DRAIN_MAX_ROUNDS = 8`을 넘으면 경고를 남기고 해당 라운드의 훅은 실행하지 않는다. 정상 사용이 상한에 걸리는 경우에는 상한을 무조건 늘리지 말고 닫힘 관계를 확인한다.
+
 ## 관련
 
 - [concepts/ubiquitous-language](../concepts/ubiquitous-language.md) — Window/Modal/Popup/Toast 구분
 - [`design/systems/popup.md`](../design/systems/popup.md) — 팝업 시스템 전체 설계 (스코프·z-order·입력 계층)
 - [architecture/input-layer](../architecture/input-layer.md) — 마우스 입력 계층/소비
+
+## 플러그인이 호스트 팝업 결과를 기다릴 때
+
+`<popup_id>.trigger`는 사용자 선택을 기다리지 않고 `{request_id}`를 돌려준다. 결과는 `<popup_id>.result` 이벤트로 요청 플러그인에게만 전송한다. 플러그인은 pending map에서 ID를 대조한다. 반대 방향인 호스트→플러그인 요청의 `PendingRequestKind`는 이 흐름에 쓰지 않는다.
+
+파일 피커는 `file_picker.trigger`와 `file_picker.result`를 사용한다. 결과에는 `request_id`, `paths`, 취소 여부가 들어가며 취소 시 `paths`는 빈 배열이다. 피커 내부의 원격 디렉터리 조회 ID는 외부 trigger ID와 별개다. 요청자는 플러그인으로 확인되어야 하며, 권한은 `FsRead`, 기능은 GUI 빌드에 한정된다. CLI·에이전트 호출은 피커를 열 수 없다.
+
+호스트는 플러그인의 이름이나 요청 목적을 하드코딩하지 않는다. 로컬·원격 파일 조회는 기존 피커가 처리한다. 새 팝업에 같은 패턴을 적용할 때에는 중복 요청의 거부·대기 정책과 확정/취소 양쪽의 결과 전송을 함께 확인한다.
+
+부모 팝업에서 열었다면 `owner_popup_instance`를 전달한다. 플러그인 팝업 닫힘은 `AppState.plugin_popup_closes` 큐를 거쳐 한 곳에서 처리해야 한다. 부모 종료로 자식을 취소한 뒤에는 자식의 부모 링크를 끊는다. 이미 확정된 결과는 취소로 덮지 않고 링크도 남겨, 결과 전송 시 부모가 없으면 경고를 기록한다. 경고 여부와 관계없이 결과 이벤트는 전송한다. 플러그인이 팝업 밖에서 결과를 기다릴 수도 있기 때문이다.
+
+부모를 신고하지 않은 요청은 단독 팝업이다. 현재 host끼리의 Esc 중재는 공통 처리되지 않으며, 부모·자식 스택에 참여하는 파일 피커만 Esc 소유권을 확인한다.
+
+팝업의 context와 host 범위 바인딩은 같은 원본 surface에서 만든다. 단일 인스턴스 제한으로 기존 팝업을 재사용하면 최초 context가 남으므로 범위도 덮어쓰지 않는다. 다른 surface에서 열기를 요청해도 기존 대상이 숨겨져 있으면 팝업이 보이지 않을 수 있다.

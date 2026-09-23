@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`preset.*`)
-- **ADR**: 없음
+- **ADR**: [프리셋 초안과 저장 충돌](../../adr/0638-preset-drafts-and-store-conflicts.md)
 - **코드**: `tasty-presets` 크레이트, `~/.tasty/presets/{workspace,tab,pane}/<name>.toml`, `preset.*` 핸들러
 - **화면**: PresetView (`View` + `sealed::Sealed` 직접 구현, modeless)
 
@@ -40,7 +40,26 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 툴바 **Edit** 버튼을 누르면 같은 미리보기 영역이 그 자리에서 **구조**를 편집하는 WYSIWYG 모드로 전환된다. Edit 는 primary **Done** 으로 바뀌고, 옆에 "자동 저장됨" 안내가 표시된다 — 구조 편집에는 **별도 Save 버튼 없음**. 구조 변경(split·제거·탭·pane)은 `PresetStore::save_*_overwrite` 로 즉시 디스크에 write-through 된다(기존 preset 의 메타데이터는 보존하고 레이아웃 트리만 교체). surface 의 **파라미터**(kind · 작업 디렉터리 · 시작 명령어 · kind 선언 필드)는 칸 안이 아니라 아래 **surface 설정 화면**에서 draft 로 고치고 확인해야 저장된다.
 
-- **다른 곳에서 바뀐 preset 은 덮지 않는다**: 편집 화면은 preset 을 열 때 한 번 읽어 둔 트리로 저장한다. 그 사이 저장소의 레이아웃이 바뀌었으면(에이전트의 IPC `preset.save` 등) 구조 편집 자동 저장도, 설정 화면 확인도 **쓰지 않는다** — 그 변경(설정 화면이면 draft 전체)을 버리고, 저장된 판을 다시 불러와 미리보기에 보이며, 경고 toast("다른 곳에서 프리셋이 바뀌어 변경을 저장하지 않고 저장된 내용을 다시 불러옴")를 띄운다. 설정 화면은 닫히고 선택은 풀린다. 이름·subtitle 같은 메타만 바뀐 쓰기는 덮이지 않으므로 막지 않는다. 편집 모드에서는 판정을 저장하는 순간에만 한다 — 저장하기 전까지 편집 중인 미리보기는 옛 트리를 보일 수 있다([ADR-0531](../../adr/0531-the-preset-editor-does-not-overwrite-a-preset-changed-behind-its-cache.md)). **보기 모드**(Edit 를 누르기 전)의 미리보기는 저장소를 따라간다 — 저장소의 레이아웃이 바뀌면 다음 프레임에 저장된 판으로 다시 그리므로, 에이전트가 저장한 뒤 들어간 편집 모드의 첫 편집은 경합이 되지 않는다. 다시 그릴 때 toast 는 뜨지 않고 선택한 preset·모드는 그대로이며, 미리보기에서 눌러 둔 mini-tab 만 저장된 active 탭으로 돌아간다. 에이전트의 저장은 프리셋 창을 다시 그리게 하지 않으므로(IPC 처리 뒤의 다시 그리기 요청은 메인 창에만 간다) 저장 뒤 그 창의 첫 프레임이 곧 Edit 가 눌린 프레임일 수 있는데, 그 보기 → 편집 전이 프레임에서도 편집 갈래로 들어가기 전에 저장소와 한 번 대조하므로 편집 모드는 새 판으로 시작한다. 그 뒤의 편집 프레임은 따라가지 않는다. 저장소의 레이아웃이 그대로면 보기 모드 미리보기도 다시 짓지 않는다. 편집 모드의 미저장 draft 는 `surface_cfg` 에 따로 살아 캐시 교체와 무관하다 — 그 성질 자체를 재는 시험은 없고 이 기제로만 고정돼 있다([ADR-0564](../../adr/0564-the-preset-view-mode-follows-the-store-and-the-edit-mode-does-not.md)).
+##### 저장소 변경과 편집 충돌
+
+| 화면 상태 | 외부에서 같은 프리셋을 저장했을 때 |
+|---|---|
+| 보기 모드 | 다음 그리기 프레임에 레이아웃을 비교하고 달라졌으면 미리보기를 다시 만든다. |
+| 보기→편집 전환 | 편집에 들어가기 전 한 번 더 비교한다. 저장 뒤 첫 프레임이 Edit 클릭인 경우도 포함한다. |
+| 편집 중 | 캐시와 열린 초안을 유지한다. 저장 직전에만 저장소와 비교한다. |
+| 저장 충돌 | 이번 구조 변경 또는 설정 초안을 저장하지 않고 버린다. 저장소 내용을 다시 읽고 경고 토스트를 띄운다. 설정 화면을 닫고 leaf 선택을 해제한다. |
+| 일반 디스크 저장 실패 | 캐시·초안·설정 화면을 유지하고 오류를 알린다. 같은 초안으로 재시도할 수 있다. |
+
+충돌 비교는 `LayoutBase`의 레이아웃 부분에 한정한다. 이름·subtitle만 바뀐 경우에는 이를 덮어쓰지 않으므로 충돌로 보지 않는다. 저장이 성공하면 기준 레이아웃도 갱신한다. 저장소에서 프리셋이 삭제되었으면 다시 만들지 않는다.
+
+보기 갱신은 선택한 프리셋·모드·목록 스크롤을 바꾸거나 토스트를 띄우지 않는다. 레이아웃이 같으면 mini-tab 등 임시 보기 상태도 유지한다. 레이아웃이 바뀌면 mini-tab은 저장된 active 탭으로 돌아간다. 새 트리와 연결할 안정적인 pane ID가 없기 때문이다. IPC 저장은 메인 창에 다시 그리기를 요청하므로 프리셋 창이 즉시 새 프레임을 받는다고 가정하지 않는다.
+
+캐시와 이전 모드 기록은 `{kind}:{name}`별로 관리한다. 현재·직전 pass에서 사용한 프리셋만 남겨 방문한 만큼 무한히 쌓이지 않게 한다. 같은 프리셋을 한 프레임에서 보기와 편집 양쪽으로 그리는 조합은 아직 지원 대상으로 정하지 않았다. 같은 캐시가 저장소를 따르면서 편집 내용을 유지할 수는 없으며 현재 호출자도 없다. 설정 초안은 `surface_cfg`에 따로 저장한다.
+
+구조 편집 저장과 설정 확인은 모두 `persist_layout`을 거치고 `Persisted::Conflict`를 처리한다. 관련 테스트는 `persist_tests.rs`, `view_refresh_tests.rs`, `cache_slot_tests.rs`다. [선택 이유](../../adr/0638-preset-drafts-and-store-conflicts.md).
+
+
+##### 편집 조작과 surface 설정
 
 - **surface 선택**: 편집 모드에서는 모든 surface 가 1px hairline 윤곽을 얻고, 칸 가운데를 한 번 클릭하면 **선택만** 된다 — 2px accent inset 윤곽 + 우측 상단 핸들 **둘**: **설정(톱니)** · **remove(제거)**. 선택은 아래 표준 단축키의 대상이라 한 번 클릭으로는 미리보기를 떠나지 않는다. 톱니를 누르거나 칸을 **더블클릭**하면 그 surface 의 설정 화면이 열린다. split-right/split-down 핸들은 아래 **경계 hover-split 존**이 대체해 제거됐다. 마지막 한 장 남은 surface 제거는 무효(트리에 0-surface 탭을 쓰지 않음).
 - **경계 hover-split 존 (마우스)**: 선택되지 않은 surface 의 4변 바깥 30% 밴드를 hover 하면 accent 22% 밴드 + 안쪽 변 2px accent 55% 분할선 overlay 가 뜨고 커서가 crosshair 로 바뀐다. 클릭하면 그 변으로 split 된다 — **좌/우 존 = 좌우(row) split, 상/하 존 = 상하(column) split**, **좌·상 존은 새 surface 가 first(좌/상)**, 우·하는 second. 축 길이가 46px 미만이면 그 축 밴드는 소멸(중앙 선택은 항상 가능). 선택된 surface 에서는 존이 뜨지 않는다(배경 클릭으로 선택 해제 후 가능). 기존 surface id 는 보존되고 새 surface 만 새 id 를 받는다.
@@ -50,11 +69,11 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
   - **본문**: 유일하게 스크롤되는 상자. padding `preset-cfg-form-padding`(16), 한 열 폼(최대 폭 `preset-cfg-form-max-width` 460, 필드 간격 `preset-cfg-field-gap` 12). 순서는 **종류**(Select) → 그 kind 가 선언한 필드(라벨 위, 입력 전체 폭). `dir`/`file_path` 필드는 mono 입력과 **찾아보기** 버튼(secondary, folderOpen 아이콘)을 한 줄에 둔다. 칸 크기와 무관하게 모든 필드가 온전히 보인다.
   - **footer**: 높이 고정 `preset-cfg-footer-height`(52), 상단 1px separator, 오른쪽 정렬 `[취소 ghost] [확인 primary]`(`button.cancel` / `button.ok`). **변경이 없으면 확인은 비활성**이다 — 변경 판정은 kind 와 현재 kind 가 선언한 키만 본다.
   - **draft**: 값은 draft 에만 쓰이고 트리는 확인 전까지 바뀌지 않는다. draft 안에서 kind 를 바꾸면 필드 목록이 바로 바뀐다 — 값은 지우지 않으므로 두 kind 가 함께 선언한 키(예: `cwd`)는 이어지고, 원래 kind 로 돌아오면 원래 값이 다시 보인다. 새 kind 필드 중 비어 있고 `default` 가 있는 것은 그 값으로 채워 보인다.
-  - **확인**: surface 를 한 번에 교체하고 곧바로 저장한다. kind 가 원본과 같으면 선언 필드만 덮어써 **선언되지 않은 params 를 보존**하고, 다르면 kind 전환 정리 규칙(새 kind 가 안 쓰는 전용 컬럼·params 제거 + default 채움)을 **확인 시점에 한 번** 적용한다 — 중간에 거친 kind 때문에 원본 params 가 지워지지 않는다. 저장이 성공해야 미리보기로 돌아오고 그 칸은 **선택된 채** 남는다. **저장 실패** 시 설정 화면과 draft 를 그대로 두고 표준 에러 toast("프리셋 저장 실패")를 띄운다. 화면이 열린 사이 저장소의 레이아웃이 바뀌었으면 위 "다른 곳에서 바뀐 preset 은 덮지 않는다" 대로 저장하지 않는다.
+  - **확인**: surface 를 한 번에 교체하고 곧바로 저장한다. kind 가 원본과 같으면 선언 필드만 덮어써 **선언되지 않은 params 를 보존**하고, 다르면 kind 전환 정리 규칙(새 kind 가 안 쓰는 전용 컬럼·params 제거 + default 채움)을 **확인 시점에 한 번** 적용한다 — 중간에 거친 kind 때문에 원본 params 가 지워지지 않는다. 저장이 성공해야 미리보기로 돌아오고 그 칸은 **선택된 채** 남는다. **저장 실패** 시 설정 화면과 draft 를 그대로 두고 표준 에러 toast("프리셋 저장 실패")를 띄운다. 화면이 열린 사이 저장소의 레이아웃이 바뀌었으면 위 "저장소 변경과 편집 충돌" 규칙에 따라 저장하지 않는다.
   - **취소**: draft 를 버리고 미리보기로 돌아온다(칸 선택 유지, 디스크 무변경).
   - **키**: `Esc` = 취소(Kind 드롭다운이 열려 있으면 그 드롭다운만 닫는다), 한 줄 입력 안의 `Enter` = 확인(변경이 있을 때만). 다른 popup 과 같이 코드에서 직접 읽는 고정 대화상자 키다 — `KeybindingSettings` 항목이 아니다.
   - **열려 있는 동안**: 왼쪽 preset 리스트와 L1 scope 탭은 `preset-cfg-dim-opacity`(= disabled opacity)로 흐려지고 입력(클릭·hover·스크롤)을 받지 않는다. "자동 저장됨"·Done 은 툴바째 사라진다. 구조 편집 단축키는 동작하지 않는다(미리보기를 그리지 않는다). 창 밖에서 선택이 바뀌거나(컨텍스트 메뉴 "…프리셋으로 저장") 창을 닫으면 draft 는 취소와 똑같이 버리고 묻지 않는다.
-  - **kind 드롭다운은 `SurfaceKindRegistry` 를 진실 소스로 삼는다** — 편집기(`PresetView`)가 main engine 의 공유 `surface_registry` Arc 를 받아 프레임마다 스냅샷(`KindCatalog`)을 파생한다. 후보 목록은 런타임 등록 kind(플러그인 on/off)를 즉시 반영하고, 표시명은 registry 의 `display_name_i18n_key` 로 해석한다. `empty` 는 사용자가 직접 만들 수 없는 내부 kind 라 후보에서 제외한다. 설정 화면이 연 leaf 의 저장본 kind(와 draft 의 kind)가 목록에 없으면(비활성 플러그인 등) 유실 방지로 덧붙는다 — 꺼진 plugin kind 로도 되돌아갈 수 있다. registry 미주입(main window 부재 등)이면 정적 fallback 목록(`terminal`/`markdown`/`image`/`explorer`/`html`)으로 graceful 하게 떨어진다.
+  - **kind 드롭다운은 `SurfaceKindRegistry` 를 기준으로 삼는다** — 편집기(`PresetView`)가 main engine 의 공유 `surface_registry` Arc 를 받아 프레임마다 스냅샷(`KindCatalog`)을 파생한다. 후보 목록은 런타임 등록 kind(플러그인 on/off)를 즉시 반영하고, 표시명은 registry 의 `display_name_i18n_key` 로 해석한다. `empty` 는 사용자가 직접 만들 수 없는 내부 kind 라 후보에서 제외한다. 설정 화면이 연 leaf 의 저장본 kind(와 draft 의 kind)가 목록에 없으면(비활성 플러그인 등) 유실 방지로 덧붙는다 — 꺼진 plugin kind 로도 되돌아갈 수 있다. registry 미주입(main window 부재 등)이면 정적 fallback 목록(`terminal`/`markdown`/`image`/`explorer`/`html`)을 사용한다.
 - **이름/subtitle 인라인 편집**: 편집 모드에서 툴바의 preset 이름은 텍스트 입력으로, subtitle 은 (Workspace 한정 실제 필드일 때) 입력으로 바뀌어 포커스 해제 시 store 에 commit 된다.
 - **트리 변형**: 편집 모델(`DemoLayout`)은 3계층 전부를 변형한다 — surface split · surface 제거 · 탭 추가(+) · **탭 삭제(×)** · **pane split** · **pane 제거**. 마우스로는 경계 hover-split 존(surface split·4방향·before/after)·remove 핸들(surface 제거)·`+` 버튼(탭 추가)·`×`(탭 삭제)로 트리거되고, 전부(pane split·pane 제거 포함)는 아래 **표준 단축키**로도 발화한다. 모든 변형은 기존 leaf/pane id 를 보존하며 자동 저장된다. 무효 가드: 마지막 surface 제거·마지막 탭 삭제(pane 은 항상 탭 ≥1)·루트 단일 pane 제거는 no-op. pane split 은 **Workspace scope 에서만** 유효(Pane/Tab scope 는 pane 트리가 없어 no-op).
 - **표준 단축키 (focus 기반)**: 편집 모드에서 본체와 동일한 `KeybindingSettings` 단축키로 편집을 조작한다 — 코드에 키를 하드코딩하지 않고 설정 필드를 그대로 매칭한다(§단축키 정책). 대상은 **현재 선택된 surface(leaf)** 와 그 leaf 가 속한 pane 이다. 선택이 없으면 전부 no-op(임의 대상 조작 금지). 텍스트 입력(이름/subtitle) 포커스 중에는 문자 키가 입력으로 가도록 단축키 매칭을 차단한다. surface 설정 화면이 열린 동안에는 단축키가 동작하지 않는다.
@@ -78,6 +97,10 @@ mini-tab strip 은 `tab_bar.rs`, split 라인은 `divider.rs` 위젯을 재사�
 - **CLI/IPC `preset.apply` 는 항상 `focus: false`** — 포커스 독립 원칙. 단축키 호출만 포커스 이동.
 
 terminal 시작 명령어는 `cd <cwd>\r` 와 합쳐 `TerminalConfig.initial_input` 으로 PTY spawn 시점에 첫 입력으로 주입(`src/state/preset_apply.rs`).
+
+### 설정 화면의 입력 예외
+
+Kind Select는 현재 키보드로 열 수 없어 진입할 때 autofocus하지 않는다. 드롭다운이 열린 상태의 Esc는 드롭다운만 닫는다. 설정 화면 더블클릭 진입은 경계 split 영역 밖에서만 가능하며, split 영역의 연속 클릭은 기존 분할 조작을 유지한다. 설정 화면을 연 동안 초안의 dirty 여부는 현재 kind와 그 kind가 선언한 키만 비교한다.
 
 ## 인터페이스
 

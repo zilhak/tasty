@@ -1,4 +1,4 @@
-<!-- source-hash: c19ee76c74a9 -->
+<!-- source-hash: 0b0210f21364 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -330,23 +330,169 @@ The `file-handler reload` response has a `rejected` list. It holds the `id` and 
 
 The workspace count and active index in `list info` describe the queried window. The returned workspace IDs identify its scope. Use `list workspaces` for the global inventory and `list windows` for each window’s state.
 
-Use `list pressure` when responses feel slow and you need to tell why. The answer comes in twelve blocks that **count different things**: `queue_before_gate` is how long commands waited in the queue, so it also counts requests that were rejected afterwards, `handler_after_gate` counts only the ones that actually ran, `plugin_round_trip` is how long Tasty waited for a plugin to answer (counting only the requests that were answered), and `db` is how long it took for what was written to settle on disk. A large wait means the instance is backed up, a large handler time means the command itself is heavy, a large round trip means the time was spent inside the plugin, and a large db time means the disk is slow. Do not subtract one from the other to get a rejection count — it does not work that way (rejections are counted on their own in `gate_refusals` below). The numbers are totals since this instance started, and an average with nothing behind it comes back as `null`.
+### Response delays and connection status
 
-The fifth block, `connections`, counts **seats rather than time**. The other four all answer "how long did it take"; this one answers "is there room to connect". Nothing has to be slow for it to matter — once the number of simultaneous connections is full, a new one is refused before it ever gets an answer. `live` is how many are attached right now and is the only count or current value in this block that goes down (the accept wait mean is derived, so it can fall too); `live_max` is the highest it has been since startup, `limit` is the cap Tasty enforces, and `accepted` and `refused_saturated` are the running totals of connections let in and turned away at that cap. If `live` sits at `limit`, or `refused_saturated` is climbing, nothing is slow — **there is no room**, and the fix is to drop connections you are not using (a long-lived attach, for instance). What is counted here is connections, not requests, so a connection that never sends a request still takes a seat. This block also carries one time — `accept_wait_bound_us_max` and `accept_wait_bound_us_mean` (with their count `accept_waits`) are the **longest** a new connection may have waited before Tasty took it in. Tasty checks for new connections at most every 100 ms, so a tool that connects anew for every command (such as the `tasty` CLI) can wait that long before its request is read, and that time shows up in no other block. It is a bound that the real wait cannot exceed, not the exact wait, so the real wait is usually shorter.
+`tasty list pressure` shows request wait and processing times, connection counts, and refusal reasons.
+Each section measures different operations; do not subtract their request counts to calculate refusals.
+Totals accumulate from startup. An average is `null` when nothing has been measured.
+Current usage and configured limits are identified separately below.
 
-The three blocks that measure time also carry a **distribution** next to the mean and the max (`wait_us_hist`, `us_hist`). "Everything is a little slow" and "most calls are fast but a few spike" can produce the same mean and the same max, and they call for opposite work — the first is a capacity problem, the second is a hunt for what those few calls were. A distribution comes as the list of bucket upper bounds (`bounds_us`, eleven of them from 10 µs to 1 s) and the count in each bucket (`counts`). `counts` is one entry longer because **the last bucket holds everything past 1 s**; it has no upper bound, so how far past is answered by `us_max` in the same block. The buckets do not overlap, so adding them all up gives the number of observations. In `queue_before_gate` that number also comes as `waits` (the commands whose wait was measured), and the average wait is divided by it. The `commands` value in the same block goes up only when a batch of commands taken out together finishes, so at the moment you ask it can be smaller than `waits` by the batch being handled right now. No percentiles such as p99 are provided — that is a value only knowable to bucket resolution, and handing it over as a single number would claim precision that is not there. No other block carries a distribution.
+| Timing section | What it measures |
+|---|---|
+| `queue_before_gate` | Queue wait, including requests later rejected by permission checks |
+| `handler_after_gate` | Processing time for requests that passed those checks |
+| `plugin_round_trip` | Wait time for plugin requests that received a response |
+| `db` | Time spent on database commits and WAL checkpoints |
 
-The sixth block, `db_pragmas`, is **neither time nor seats — it is the settings of the two databases Tasty uses**. For each one it shows the setting that was requested when the database was opened (`requested`) next to the value that actually took (`effective`), because a request can be refused silently and asking for a setting does not mean it is in effect. `memory_db` and `state_db` get one entry each, and `degraded` is `true` when at least one setting did not take. The database is still in use; it may just be slower or less safe across a crash. A `null` `state_db` means that database is not open in this instance, which is always the case for an instance running without windows. This block is not a running total; it is fixed when the database opens. `init_failure` under `memory_db` carries the cause (`cause`) and the error text (`error`) when Tasty could not open its memory file at start and runs on temporary memory instead, and is `null` otherwise. In that case `degraded` is `true` even if every setting took.
+For long queue waits, check for a backlog. For long processing times, identify the commands involved.
+For long plugin waits, inspect the plugin’s log. Database timings help investigate storage work and
+contention; a high value alone does not prove a disk problem. Commit time is already included in
+handler time, so adding them double counts it. `checkpoints_busy` counts checkpoints that could not
+finish because another connection was using the database. Permission, usage-cap, and rate-limit
+refusals are counted separately in `gate_refusals` below.
 
-The seventh block, `stream_push`, counts **what Tasty pushed rather than requests it answered**: the pieces of screen data sent over long-lived connections such as a remote attach. `frames_dropped` is how many pieces were thrown away because the receiving side could not keep up while the connection stayed open, and `clients_lagged_out` is how many connections were cut for falling too far behind — both are totals since startup and only go up. `backlog` is how many pieces are waiting to be sent right now and can go down, and `sink_capacity` is how many one connection can hold. A climbing `frames_dropped` means some attach missed part of the screen; Tasty's attach clients re-attach on their own when told so and fetch the screen again.
+#### Connection counts and limits (`connections`)
 
-The eighth and ninth blocks, `queue_admission` and `queue_dispatch`, are **the two ends of the queue commands line up in**. `queue_admission` is what is in the queue right now (`queued_bytes` in bytes, `queued_commands`, and `queued_injected`, the ones Tasty put there itself), the highest byte count since startup (`peak_bytes`), and how many requests were **turned away before they got in** because the queue was full — `refused_bytes` at the byte cap, `refused_depth` at the cap on Tasty's own internal commands. The caps to read them against come along (`limit_bytes`, `limit_injected_depth`). A turned-away request never entered the queue, so it shows up in no other block; if requests come back with a "queue is full" error, look here. `queue_dispatch` is **the side that takes commands out**: how many times it did (`rounds`) and how many of those stopped because they used up their share of commands or time (`rounds_stopped_by_count`, `rounds_stopped_by_time`), commands not run because the wait the caller allowed ran out while they queued (`expired_before_run`), commands started (`started`), and the requests running right now whose caller is still waiting (`in_flight`, which can go down) with its highest value (`in_flight_max`). A climbing `rounds_stopped_by_time` or `expired_before_run` means the side taking commands out is falling behind.
+| Field | Meaning |
+|---|---|
+| `live` | Current connections; decreases as connections close |
+| `live_max` | Highest concurrent connection count since startup |
+| `limit` | Maximum allowed concurrent connections |
+| `accepted` | Total connections accepted |
+| `refused_saturated` | Total connections refused at the limit |
 
-The tenth block, `keyed_requests`, counts **only requests sent with an idempotency key (`idempotency_key`)**. Each slot is one way Tasty handled a request under a key: `executed` is a new key, so it ran; `replayed` is the same request again, answered with the earlier answer without running it; `conflicted` is different content under the same key, so nothing ran; `discarded` means it ran but its answer was thrown away; `in_flight` means the same request was still running and this one waited for its result. Each request is counted once. A `replayed` that is large next to `executed` means retries are piling up. This `in_flight` is a different value from the one in `queue_dispatch`.
+Connections count toward live even before sending a request. If live approaches limit or
+refused_saturated increases, close persistent connections you no longer use, such as unused attaches.
+These refusals happen before request processing and do not appear in request timings.
+Connection limits and processing delays can be problems at the same time.
 
-The eleventh block, `slow_requests`, shows **single slow requests instead of totals**. Each request whose time waiting in the queue, time being handled by Tasty and time waiting for a plugin add up to `threshold_us` (100 ms) or more gets one row, oldest first, up to `capacity` (32) rows — when it overflows the oldest rows are pushed out, and `admitted` counts every row kept since the instance started, so the difference from the rows shown is how many were pushed out. A row carries `request_seq` (a number Tasty gives every request — not the request's `id`), `host` (the command name `method`, the sender `caller`, the queue wait `queue_wait_us`, the handling time `host_us`, and the answer the caller got: `outcome` `ok`/`error` with the error code `error_code`, both `null` while no answer has gone out yet), `plugin_hops` when the request was forwarded to a plugin (the plugin, the request number that plugin received `host_request_id`, how long Tasty waited and the outcome `ok`/`error`/`expired`/`cancelled`), and the sum `total_us`. Where the distributions above tell you how many requests took over 100 ms, this block tells you **where the time of that one request went** — a large wait in `plugin_hops` means the request was inside the plugin, and the plugin's log has the same request id as `host_request_id`. Tasty's own log puts `id=` and `request_seq=` on the same line when a plugin answers with an error or never answers. Request contents and tokens are never kept, and the query for this answer is not kept itself. It lives in memory only, so it is empty after a restart and the numbers start again from 1.
+`accept_wait_bound_us_max` and `accept_wait_bound_us_mean` report the maximum and average upper
+bounds on connection acceptance waits. `accept_waits` is the observation count, and
+`accept_wait_bound_us_sum` is the sum of those bounds. These are not exact wait measurements.
+They start from when Tasty last found the connection queue empty, so the actual wait can be shorter.
+Tasty normally waits 100ms after finding an empty queue, but 100ms is not a strict cap on the total wait.
+This time is separate from request queue time. The average can decrease as observations accumulate.
 
-The twelfth block, `gate_refusals`, counts **why requests did not go through**. `judged` is every request Tasty checked for permission (requests from the CLI and calls plugins make into Tasty included), and each reason for turning a request away has its own slot — `permission_denied` (no permission, error code -32001), `cap_blocked` (a telemetry cap is in the way, -32007) and `throttled` (a rate limit is in the way, -32010). A request is counted in at most one slot. Each calls for a different fix — ask for the permission, lift the cap, or wait. `permission_denied` counts only what the permission check turns away. Every one of those comes back as error code -32001, but not every -32001 is one of them. Besides a missing permission, the check also turns away calls a plugin or agent makes to a command that does not exist or to a command it is not allowed to use. Asking for a permission does not fix those two; calling a different command does. Requests from the CLI without a session token are never turned away for permission, so they do not land in this slot even when the command does not exist. Two kinds of -32001 never land in this slot either. A rejected session token (malformed, unknown, expired or revoked, such as a stale `TASTY_SESSION_TOKEN`) is answered before the permission check, so it is not in `judged` either. And a -32001 that comes back after the request has passed the check (such as a refused permission grant) counts as a request that went through. The numbers are totals since this instance started and start again from 0 after a restart. The `throttled_count` shown by `tasty agent rate-limit-status` is a per-limit total that survives restarts, so it is not the same number.
+#### Timing distributions
+
+Only the first three timing sections include `wait_us_hist` or `us_hist`.
+`bounds_us` contains 11 bucket boundaries from 10µs to 1 second; `counts` contains each bucket’s count.
+The last bucket holds times above 1 second, so counts has one extra entry. Buckets do not overlap:
+their sum is the observation count. The section’s max field shows the largest time. Percentiles
+such as p99 are not provided.
+
+`queue_before_gate.waits` counts measured waits and is the average’s denominator.
+`commands` increases after a batch finishes, so it can trail waits by the batch currently running.
+Use the average and distribution together to distinguish widespread delays from a few slow requests.
+
+#### Database settings (`db_pragmas`)
+
+For memory_db and state_db, requested is the setting Tasty asked for and effective is what took effect.
+These values are checked when the database opens; they are not running totals.
+
+| Value | Meaning |
+|---|---|
+| `degraded: true` | Settings did not reach the expected state, or temporary memory replaced the file database |
+| `state_db: null` | The state database is not open in this instance; headless instances also use this value |
+| `memory_db.init_failure` | Cause and error text when a file database could not open and temporary memory was used; otherwise null |
+
+The database can remain usable with a settings mismatch. Compare requested and effective to investigate
+performance or recovery after a crash. Temporary memory makes degraded true even if all settings took
+effect, and values stored there are lost after restart.
+
+#### Screen delivery (`stream_push`)
+
+| Field | Meaning |
+|---|---|
+| `frames_dropped` | Total frames discarded because receivers could not keep up |
+| `clients_lagged_out` | Total receivers disconnected for falling too far behind |
+| `backlog` | Frames currently waiting to be sent; decreases as they are sent |
+| `sink_capacity` | Maximum queued frames for one connection |
+
+Increasing frames_dropped can mean an attach missed part of the screen.
+Tasty attach clients reconnect and fetch a fresh screen when instructed to reconnect.
+
+#### Request queues (`queue_admission`, `queue_dispatch`)
+
+queue_admission shows what is queued and what was refused before entering the queue.
+
+| Field | Meaning |
+|---|---|
+| `queued_bytes`, `queued_commands`, `queued_injected` | Current queued bytes, commands, and internal commands |
+| `peak_bytes` | Highest queued byte count since startup |
+| `limit_bytes`, `limit_injected_depth` | Limits on bytes and internal commands |
+| `refused_bytes`, `refused_depth` | Total requests refused at each limit |
+
+Check these fields for a queue-full error. Requests refused before admission do not contribute to
+queue wait or execution times.
+
+queue_dispatch describes taking commands out of the queue and running them.
+
+| Field | Meaning |
+|---|---|
+| `rounds` | Times commands were taken out for processing |
+| `rounds_stopped_by_count`, `rounds_stopped_by_time` | Rounds stopped after using their command or time allowance |
+| `expired_before_run` | Commands not started because the caller’s deadline passed while queued |
+| `started` | Commands whose execution started |
+| `in_flight`, `in_flight_max` | Current and peak running requests whose callers are still waiting |
+
+in_flight can decrease. Increasing time-limited rounds or expired_before_run can indicate that queue
+processing is not keeping up with incoming requests.
+
+#### Duplicate requests (`keyed_requests`)
+
+Only requests with an idempotency_key are counted, once per request.
+
+| Field | Result |
+|---|---|
+| `executed` | A request with a new key ran |
+| `replayed` | The same request received its earlier result without running again |
+| `conflicted` | Different content used the same key, so nothing ran |
+| `discarded` | The request ran but its response was discarded |
+| `in_flight` | The same request was already running, so this request waited for that result |
+
+If replayed grows faster than executed, check for repeated retries.
+This in_flight count differs from the current running count in queue_dispatch.
+
+#### Individual slow requests (`slow_requests`)
+
+Requests whose queue, host, and plugin times total at least threshold_us (100ms) appear oldest first,
+up to capacity (32) records. New records replace the oldest when full. admitted counts all records
+added since startup; subtract the current record count to find how many were removed.
+
+| Field | Contents |
+|---|---|
+| `request_seq` | A Tasty-assigned number, separate from the request’s id |
+| `host` | method, caller, queue_wait_us, host_us, outcome(ok/error), and error_code |
+| `plugin_hops` | Each plugin’s host_request_id, wait time, and ok/error/expired/cancelled result |
+| `total_us` | Sum of the measured times |
+
+Before a response is sent, host outcome and error_code are null. For a long plugin_hops wait, find
+host_request_id in the plugin’s log. Plugin error and missing-response logs include id and request_seq.
+Request bodies and tokens are not stored, and the pressure query itself is excluded.
+Restarting clears these records and starts numbering from 1 again.
+
+#### Refusal reasons (`gate_refusals`)
+
+judged counts requests checked for permission and other limits, including CLI and plugin calls.
+Each request appears in at most one refusal category.
+
+| Field | Reason and error code |
+|---|---|
+| `permission_denied` | Rejected by the permission check, -32001 |
+| `cap_blocked` | A telemetry usage cap was reached, -32007 |
+| `throttled` | A call rate limit was reached, -32010 |
+
+Check permissions and usage caps, or wait for the rate limit to clear.
+Permission refusals also include plugin or agent calls to unavailable or unknown commands.
+Asking for a permission does not fix those cases; check the command instead.
+Local CLI calls without a session token retain their permission exemption.
+
+Not every -32001 appears in permission_denied. Malformed, unknown, expired, or revoked session tokens
+are rejected before these checks and are excluded from judged too. A -32001 returned after the checks,
+such as a refused permission grant, is also excluded from this refusal counter.
+These totals reset on restart. The throttled_count from `tasty agent rate-limit-status` is a persistent
+per-limit total, so it is a different value.
 
 `list info` also answers what this Tasty can do, under `capabilities`. Each entry pairs a name with a version, and it tells you what the version string alone cannot — the same version can do different things depending on how it was built. Ignore any name you do not recognise.
 

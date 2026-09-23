@@ -40,7 +40,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 
 `IdleTimeout` 은 별도 타이머/watcher 가 아니라 기존 `Tick::Busy`(1Hz) tick 에 얹혀 동작한다. tick 마다 `Terminal::last_output_at()` 로 마지막 출력 시각과의 경과초를 계산해 임계값과 비교한다.
 
-- 최대 1초 지연: PTY 출력 정지 시점과 훅 발화 시점 사이에 최대 1초의 오차가 있다(Global hook 의 `file:` 조건과 동일한 해상도).
+- 최대 1 초 지연: PTY 출력 정지 시점과 훅 발화 시점 사이에 최대 1 초의 오차가 있다(Global hook 의 `file:` 조건과 동일한 해상도).
 - **epoch 기반 anti-spam**: 한 번 발화하면 그 시점의 `last_output_at` 값(epoch)을 기록해, 같은 epoch 동안은 재발화하지 않는다(persistent 훅이 매 tick 마다 스팸처럼 재발화하는 것을 막음). 새 출력이 들어와 `last_output_at` 이 갱신되면 자동으로 재무장된다.
 - `once` 훅은 발화 후 즉시 제거된다(Global hook 의 `once:SECS` 와 동일한 시맨틱).
 
@@ -62,7 +62,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 - 내장도 아니고 활성 플러그인이 선언하지도 않은 키(오타·미존재 이벤트)는 **등록 거부**(`invalid_params`, 에러 메시지에 내장 + 활성 선언 목록 안내). 죽은 hook 등록을 막는다.
 - 따라서 **플러그인이 비활성이면 그 플러그인의 이벤트 hook 등록도 거부**된다(예: claude plugin 비활성 시 `claude-idle` hook 등록 불가 — 의도된 dead-setting 방지). claude plugin 이 선언하는 키는 `crates/tasty-plugin-claude/tasty-plugin.toml` 의 `[[contributes.hook_events]]` 가 정본이다.
 
-- **once** 옵션: true 면 한 번 실행 후 자동 삭제. 기본은 persistent. 한 번의 판정에 맞는 사건이 여럿 들어와도 once 훅은 **한 번만** 발화한다 — 지속 훅은 맞는 사건마다 발화한다(이벤트 종류와 무관한 성질이다 — [ADR-0567](../../adr/0567-a-scanned-id-is-consumed-once-by-structure-or-by-a-replay-test.md)).
+- **once**는 첫 매칭 사건에서 한 번 실행한 뒤 등록을 제거한다. 한 번의 판정에 사건이 여러 개 들어와도 같은 once 등록을 다시 실행하지 않는다. 기본값인 persistent는 맞는 사건마다 실행한다. 검증 방법은 [guard-verification](../../dev-guide/guard-verification.md)을 따른다.
 - **비동기 실행**: 훅 동작은 백그라운드에서(메인 루프 블로킹 없음 — 셸은 자식 프로세스 스레드, `IpcSequence` 는 아래 "바인딩" 절의 실행기 스레드). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.
 - ProcessExit은 GUI/headless 모두에서 surface 자동 닫기까지 수행한다(surface→tab→pane→workspace 계층 정리, 마지막이면 새 셸 spawn). headless는 종료 hook의 binding을 먼저 모으고 surface를 닫은 뒤 실행한다.
 - surface가 닫히면 그 surface의 once·persistent hook 등록도 제거한다. 이미 발화해 복사한 binding은 실행을 마치며, 다른 surface의 hook은 유지한다.
@@ -74,7 +74,22 @@ surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
 - **`Handler(id)`** — 공유 훅 핸들러 레지스트리 핸들러 id 참조(`tasty set hook --handler <id>`). 등록 시 핸들러가 존재하고 `source` 가 hook 트리거를 수용(`hook` 또는 `any`)하는지 검증한다 — `webhook` 전용 핸들러는 거부된다.
 - **`InlineShell(cmd)`** — 하위호환 익명 셸(`tasty set hook --command "..."`). 레지스트리에 등록되지 않는 인라인 핸들러라 export/영속화 대상이 아니다.
 
-`tasty-hooks` 는 leaf 크레이트라 레지스트리를 볼 수 없어 `(surface, event)` 매칭만 하고 바인딩을 돌려준다(`FiredHook` 에 매칭된 등록 이벤트 포함). 실제 실행(레지스트리 조회 + `source` 게이트 + `ShellCommand`→셸 / `IpcSequence`→IPC 순차 실행)은 본체 `hook_handler::trigger::execute_binding` 이 담당한다. `IpcSequence` 실행에는 IPC injector 가 필요하다(없으면 건너뛰고 warn). `IpcSequence` 는 발화한 스레드에서 실행하지 않는다 — surface 훅은 호스트 명령 큐를 비우는 스레드(GUI 메인 스레드 · headless 루프)에서 발화하므로, 거기서 스텝의 답을 기다리면 스텝마다 대기 상한(10 s)까지 화면과 IPC 가 선다. 그래서 `hook_handler::exec::enqueue_sequence` 가 전용 `hook-sequence` 스레드 하나에 넘기고 바로 돌아온다. 그 스레드는 받은 순서대로 시퀀스를 하나씩, 스텝은 앞 스텝의 답을 받은 뒤 다음 스텝을 넣는다. `hook_handler.dispatch` 수동 발화도 같은 스레드에 줄 서므로, 수동 발화끼리 · 수동 발화와 surface 훅 사이에서도 시퀀스가 스텝 단위로 끼어들지 않는다(웹훅은 요청마다 제 스레드에서 실행하며 이 줄에 서지 않는다). 대기 시퀀스가 호스트 주입 큐 상한(`tasty_ipc::admission::INJECTED_DEPTH_LIMIT`, 현재 256)과 같은 수에 이르면 새 시퀀스는 실행하지 않고 `error!` 로 남긴다(다시 걸지 않는다) — 수동 발화는 그때 호출자에게 `-32603` `hook handler '<id>' not run — …` 로 답한다. 스텝 로그는 `<출처> IpcSequence step <i> (<method>) ok|failed …` 이고 출처는 `webhook` · `surface hook` · `hook_handler.dispatch` 중 하나다. 근거 [ADR-0498](../../adr/0498-a-surface-hook-sequence-runs-off-the-thread-that-drains-the-queue.md) · [ADR-0515](../../adr/0515-a-manually-dispatched-hook-sequence-joins-the-surface-hook-worker.md).
+`tasty-hooks`는 surface와 사건을 매칭해 `FiredHook`을 반환한다. 레지스트리 조회와 실제 실행은
+`hook_handler::trigger::execute_binding`이 담당한다.
+
+IpcSequence는 호스트 명령 큐를 처리하는 스레드에서 기다리지 않는다.
+지연 생성한 `hook-sequence` 워커 하나가 surface hook과 수동 `hook_handler.dispatch`를 접수 순서대로 실행한다.
+한 시퀀스의 step이 응답하거나 대기가 끝나면 다음 step으로 넘어가며 오류를 기록하고 계속한다.
+webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 않는다.
+
+대기 시퀀스 수는 `PENDING_SEQUENCE_LIMIT`로 제한하며 현재 `INJECTED_DEPTH_LIMIT`의 256 건을 사용한다.
+포화·워커 시작 실패·중단이면 실행하지 않고 로그를 남긴다. 메인 스레드에서 대신 실행하거나 자동 재시도하지 않는다.
+수동 dispatch는 이 경우 `-32603`으로 거절하고, 접수되면 기존 accepted 응답을 즉시 보낸다.
+`HookFired`와 accepted는 step 완료를 뜻하지 않는다. 스텝의 10 초 대기 종료 뒤에도 이미 주입된 요청은 실행될 수 있다.
+느린 시퀀스가 뒤 작업을 지연시키며 수동 요청과 surface hook은 같은 상한을 사용한다.
+
+로그의 출처는 `SequenceOrigin`에 따라 `webhook`, `surface hook`, `hook_handler.dispatch`로 구분한다.
+로컬 실행에 필요한 injector가 없으면 warning을 남기고 실행을 건너뛴다.
 
 #### 셸 핸들러 환경변수 (`TASTY_HOOK_*`)
 
@@ -115,9 +130,9 @@ surface hook 은 `HookBinding` 으로 무엇을 실행할지 표현한다:
 surface 무관 — `condition` 으로 트리거:
 
 - `interval:SECS` — 매 N초 반복
-- `once:SECS` — N초 후 1회 실행 후 자동 삭제
+- `once:SECS` — N초 후 1 회 실행 후 자동 삭제
 - `file:/path` — 파일 mtime 변경 감지 시(다른 조건과 동일한 1Hz 폴링 — 별도 watcher
-  없음, 파일 저장 즉시가 아니라 최대 1초 지연 후 감지). 등록 시점의 mtime을
+  없음, 파일 저장 즉시가 아니라 최대 1 초 지연 후 감지). 등록 시점의 mtime을
   기준선으로 기록하므로 등록 직후엔 발화하지 않는다. 파일이 없는 상태로 등록했다가
   나중에 생기면 그 시점에 발화. 파일이 삭제되면 "변경 없음"으로 취급해 훅이
   자동 삭제되지 않고, 다시 생기면 재감지한다. 파일 하나만 지원 — 디렉토리 경로도
@@ -126,11 +141,18 @@ surface 무관 — `condition` 으로 트리거:
 ## 인터페이스
 
 - **사용자/AI Agent/CLI**:
-  - `hook.set`/`hook.list`/`hook.unset` — `tasty set hook --event bell --command "..." [--once]` 또는 핸들러 참조 `tasty set hook --event bell --handler <id>` (`--command`/`--handler` 택1)
+  - `hook.set`/`hook.list`/`hook.unset` — `tasty set hook --event bell --command "..." [--once]` 또는 핸들러 참조 `tasty set hook --event bell --handler <id>` (`--command`/`--handler` 택 1)
   - `global_hook.set`/`list`/`unset` — `tasty set global-hook --condition interval:60 --command "..." [--label ...]`
   - 표 → [reference/api](../../reference/api.md#기타-호스트)
 
 ### 핸들러 레지스트리 (`hook_handler.*`)
+
+등록할 때 disabled 상태와 `source: hook|webhook|any`를 확인한다. source가 맞지 않으면 거절한다.
+웹훅에는 IpcSequence만 바인딩할 수 있다. Host·User의 ShellCommand도 source=hook만 허용하며,
+Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계에서 거절된다.
+레지스트리는 현재 process singleton으로 IPC와 listener가 공유한다.
+같은 ID의 기여는 Host→Plugin→User 순서로 병합하고 제공된 필드만 덮는다.
+조회 목록은 priority 오름차순, 같은 priority에서는 User·Plugin·Host 순서, 마지막으로 ID로 정렬한다.
 
 전부 **`local_only`** — plugin 은 호출할 수 없다. `IpcSequence` 는 Local 권한으로 실행되므로, plugin 이 시퀀스를 읽거나 고칠 수 있으면 자기 권한 집합을 넘어선 IPC escalation 이 된다(웹훅이 plugin 의 인라인 시퀀스를 거부하는 것과 같은 자리).
 
@@ -145,12 +167,12 @@ surface 무관 — `condition` 으로 트리거:
 
 - **`upsert` 는 patch 다** — 안 준 필드는 지우는 것이 아니라 그대로 둔다. id·우선순위·나머지가 유지되므로 그 id 를 참조하는 훅 바인딩(`HookBinding::Handler(id)`)은 계속 같은 것을 가리킨다. 지우고 다시 만드는 경로(`remove` 후 재등록)와 **관측 가능하게 다르다**: 후자는 사이에 들어온 트리거가 갈 곳이 없고, host/plugin 기본값이 잠시 드러나며, 안 적은 필드가 기본값으로 되돌아간다.
 - **최소 한 필드**는 있어야 한다. 아무 필드도 없는 upsert 는 아무것도 안 고친 채 성공으로 보고되므로 거부한다. 형식이 틀린 `action` 도 같은 이유로 조용히 무시하지 않는다.
-- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발화 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md) 의 모양이다.
+- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발화 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0632](../../adr/0632-webhook-admission.md) 의 모양이다.
 - **`remove` 는 user 기여분만** 지운다. host/plugin 이 같은 id 에 기본값을 심어 뒀으면 그것이 다시 드러나므로, 응답의 `still_present` 가 그 사실을 값으로 말한다.
-- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 로 접는다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값이 이긴다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0430](../../adr/0430-hook-handler-merge-applies-user-patches-last.md)).
-- 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 사라질 변경을 초록으로 덮지 않는다).
+- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 로 접는다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값이 이긴다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0627](../../adr/0627-lua-and-hook-execution.md)).
+- 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 유지되지 않을 수 있는 변경임을 알린다).
 
 ## 관련
 
-- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처는 [공유 훅 핸들러 레지스트리(ADR-0047)](../../adr/0047-shared-hook-handler-registry-source-gate.md)를 공유한다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 훅은 위 "바인딩" 절대로 `HookBinding::Handler(id)` 로 레지스트리 핸들러를 참조해 소비하며, 인라인 셸(`--command`)은 하위호환 익명 경로다.
+- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처는 [공유 훅 핸들러 레지스트리(ADR-0627)](../../adr/0627-lua-and-hook-execution.md)를 공유한다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 훅은 위 "바인딩" 절대로 `HookBinding::Handler(id)` 로 레지스트리 핸들러를 참조해 소비하며, 인라인 셸(`--command`)은 하위호환 익명 경로다.
 - [agent-collaboration](../agent-collaboration/index.md) · [notifications](../notifications/index.md) · [claude plugin](../../plugins/claude/index.md)(Claude hook 발화)

@@ -226,28 +226,39 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 
 ### dispatch 게이트 (lease → semaphore)
 
-`lease → semaphore` 순서로 점유. 한쪽 점유 후 다음이 Deferred/Err 면 점유 자원 즉시 release(idempotent). dead-lock 회피 — 두 자원 모두 가용일 때만 통과. permit/lease 는 task 가 Succeeded/Failed/Cancelled 로 종결되면 자동 release.
+러너는 lease를 먼저 획득하고 semaphore를 획득한다. 다음 자원을 얻지 못하면 먼저 얻은
+자원을 즉시 반납한다. task가 성공·실패·취소로 끝나면 점유한 자원도 반납한다.
 
-**`ttl_ms` 는 그 task 의 최대 소요보다 길어야 한다(호출자 책임).** runner 는 dispatch 시점에만 permit 을 잡고, 이미 `Running` 인 task 의 permit 을 **renew 하지 않는다** — 재dispatch 되지 않으므로 heartbeat 할 지점이 없다. 그래서 `metadata.semaphore.ttl_ms` 를 실제 소요보다 짧게 걸면 permit 이 실행 도중 만료되고, 다음 tick 에 대기하던 task 가 **같은 슬롯을 취득해 둘이 동시에 임계구역에 들어간다**(이중 dispatch). `ttl_ms` 를 아예 주지 않으면(기본) 만료가 없어 이 상태가 생기지 않는다 — TTL 은 "홀더가 죽어도 permit 이 돌아오게" 하는 opt-in 이지 소요시간 추정 장치가 아니다. 근거와 기각한 대안(runner 가 poll 마다 renew)은 [ADR-0119](../adr/0119-agent-semaphore-resize-and-holder-expiry.md).
+러너는 실행 중인 task의 세마포어 TTL을 자동 갱신하지 않는다.
+`metadata.semaphore.ttl_ms`를 지정한다면 task의 최대 소요시간보다 길게 잡는다.
+실행 중 만료되면 대기 task가 같은 permit을 얻어 두 작업이 동시에 자원을 사용할 수 있다.
+TTL을 생략하면 자동 만료하지 않는다.
 
-**`holder == task.id` 컨벤션(강제)**: holder 가 task.id 와 다르면 *외부 도구가 직접 acquire 한 것* 으로 간주, 호스트 재시작 정화 대상에서 제외. 외부 점유 회수는 외부 도구 책임 — 그 회수 수단이 아래 "죽은 홀더와 한도 조정" 이다.
+호스트 재시작 시에는 `holder == task.id`인 러너 소유 점유만 정리한다.
+다른 holder로 잡은 외부 도구의 점유는 그 도구나 운영자가 정리해야 한다.
 
 ### 죽은 홀더와 한도 조정
 
-세마포어 홀더는 `{ id, acquired_at?, expires_at? }` 객체다. `semaphore-list` 로 **누가 언제부터 잡고 있는지** 알 수 있고, 그게 "이 홀더가 죽었는가" 를 사람이 판정하는 근거다. `acquired_at` 이 없는 홀더는 시각 기록이 도입되기 전에 잡힌 것이다(0 이 아니라 부재로 표현한다).
+`semaphore-list`는 홀더의 `id`, `acquired_at`, `expires_at`을 보여준다.
+옛 형식으로 저장돼 획득 시각을 모르면 `acquired_at`을 생략하며 0으로 대신하지 않는다.
+저장된 옛 문자열 형식의 홀더도 계속 읽을 수 있다.
 
-**만료는 opt-in 이다.** `semaphore-acquire --ttl-ms <N>` 으로 잡은 permit 은 `now + N` 에 만료되고, 다음 `acquire` 또는 `semaphore-list` 시점에 lazy 하게 회수된다. 같은 holder 로 다시 acquire 하면 갱신된다(heartbeat) — lease 의 `ttl_ms` 와 같은 메커니즘·같은 의미다. `--ttl-ms` 를 주지 않은 permit 은 **회수되지 않는다**: 오래 걸리는 정당한 작업의 permit 이 도중에 만료돼 두 홀더가 동시에 임계구역에 들어가는 것이 교착보다 나쁘기 때문이다([ADR-0119](../adr/0119-agent-semaphore-resize-and-holder-expiry.md)).
+`semaphore-acquire --ttl-ms <N>`은 `now + N`에 만료된다. 만료된 점유는 다음 acquire나
+list에서 회수한다. 같은 holder의 재획득은 중복 permit을 쓰지 않고 시각을 갱신한다.
+TTL 없이 잡은 점유는 자동 만료하지 않으므로 운영자가 실제 작업 상태를 확인해야 한다.
 
-**한도는 `semaphore-set-permits` 로 제자리에서 바꾼다.** `semaphore-create` 는 이미 있는 이름을 거절하므로, delete → create 로 우회하면 세마포어가 존재하지 않는 틈이 생기고 그 사이 아무나 임계구역에 들어간다.
+한도를 바꿀 때는 삭제·재생성하지 않고 다음 명령을 쓴다. create는 기존 이름을 거절한다.
 
 ```sh
-tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 3   # 확대: 즉시 반영
-tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 1   # 축소: drain
+tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 3
+tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 1
 ```
 
-축소는 **drain** 이다 — 이미 점유 중인 홀더를 강제로 끌어내지 않는다. `holders.len() > permits_total` 인 초과 상태를 그대로 두고 새 acquire 만 거절하므로, 홀더가 하나씩 반납하며 새 한도로 수렴한다. 그동안 `permits_available` 은 0 이다(음수로 내려가지 않는다).
-
-교착이 이미 났다면(홀더가 반납 없이 사라졌고 그 permit 에 TTL 이 없다면) 회수 수단은 두 가지다 — 제3자가 `semaphore-release --holder <그 id>` 로 대신 반납하거나, `semaphore-set-permits` 로 한도를 늘려 대기자를 통과시킨다. 어느 쪽이든 `semaphore-list` 의 `acquired_at` 을 보고 판단한다.
+한도를 줄여 현재 홀더 수보다 작아져도 기존 작업은 그대로 둔다.
+새 획득만 제한하고 반납을 기다리며, 그동안 `permits_available`은 0이다.
+`is_over_subscribed()`로 한도 초과 여부를 구분할 수 있다.
+홀더가 종료돼 반납할 수 없다면 `semaphore-release --holder <id>`로 대신 반납하거나
+한도를 늘릴 수 있다. 획득 시각만으로 종료를 단정하지 말고 작업의 실제 상태도 확인한다.
 
 ### 동시성 제한 (concurrency limit)
 
@@ -433,3 +444,15 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 ## 관련
 
 - [telemetry › AgentId](../features/telemetry/index.md#agentid--agent-식별) — `AgentId` 도출 · [reference/api](../reference/api.md) — agent namespace
+
+## 저장 키에 사용하는 이름
+
+barrier·semaphore·rate-limit 이름과 task ID는 소문자 `a-z`, 숫자, `.`, `_`, `-`를 사용한다.
+저장 키 전체는 256바이트 이하이며, 각 종류의 내부 접두사 길이만큼 이름의 한도가 줄어든다.
+빈 값은 기존 규칙대로 허용한다. 생성뿐 아니라 조회·삭제·획득 등 이름을 받는 경로에 같은
+검사를 적용하고 위반은 `-32602` 입력 오류로 반환한다.
+
+공용 `tasty_agent::component_key`는 허용 문자와 전체 길이를 `tasty_memory`의 규칙으로
+확인한다. 오류에는 입력한 값 기준의 위치·문자·남은 바이트 한도를 싣는다.
+비ASCII 문자를 바이트로 잘라 잘못 표시하지 않는다. 새 저장소도 이 함수를 사용한다.
+lease의 resource는 키 구성요소를 인코딩하므로 임의 문자열을 받는 별도 규칙이다.

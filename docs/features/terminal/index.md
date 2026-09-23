@@ -16,38 +16,152 @@
 
 ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`). 윈도우 리사이즈 시 자식에 새 크기 전파 — rows 축소 시 커서 아래 빈 행 먼저 제거 후 부족분은 위쪽 행을 scrollback 으로 캡처(커서-콘텐츠 관계 보존), 확대 시 scrollback 에서 복원.
 
-**작업 디렉토리 상속**: 새 surface 생성 시 소스의 현재 cwd 를 상속(`general.inherit_cwd`, 기본 on). macOS/Linux 는 셸 PID 로 OS 직접 조회(`proc_pidinfo` / `/proc/<pid>/cwd`, OSC 7 캐시 우선), Windows 는 타 프로세스 cwd API 부재로 셸이 내보내는 OSC 7 캐시에만 의존(합성 rcfile 로 OSC 7 emit 강제). 합성 rcfile 은 OSC 0(cwd 기반 탭 제목, `__tasty_title`)도 함께 발화하며, 빌트인 블록에 버전 스탬프(`# tasty-bashrc-v<N>`)를 심어 스탬프가 다른 기존 `~/.tasty/bashrc`·`bashrc.default` 를 셸 spawn 시 자동 재생성한다(`ensure_compiled_bashrc_in` — 사용자 편집 영역 `bashrc.user` 는 보존). carry 규칙은 [surface-cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant).
+**작업 디렉토리 상속**: 새 surface 생성 시 소스의 현재 cwd 를 상속(`general.inherit_cwd`, 기본 on). macOS/Linux 는 셸 PID 로 OS 직접 조회(`proc_pidinfo` / `/proc/<pid>/cwd`, OSC 7 캐시 우선), Windows 는 타 프로세스 cwd API 부재로 셸이 내보내는 OSC 7 캐시에만 의존(합성 rcfile 로 OSC 7 emit 강제). 합성 rcfile 은 OSC 0(cwd 기반 탭 제목, `__tasty_title`)도 함께 보내며, 빌트인 블록에 버전 스탬프(`# tasty-bashrc-v<N>`)를 심어 스탬프가 다른 기존 `~/.tasty/bashrc`·`bashrc.default` 를 셸 spawn 시 자동 재생성한다(`ensure_compiled_bashrc_in` — 사용자 편집 영역 `bashrc.user` 는 보존). carry 규칙은 [surface-cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant).
 
 ### 프로세스 종료 / 절전 복귀
 
-자식 프로세스가 종료하면 `ProcessExited` 이벤트가 한 번 발화되고, cascade 가 해당 surface 를 자동 정리한다(hook 발화 → host event → surface close). 종료 판정은 호스트가 그 terminal 을 깨워 처리할 때 도는 `try_wait` 이고(`ALIVE_CHECK_INTERVAL` 500 ms 로 레이트 리밋, PTY EOF 뒤에는 리밋 없이 즉시), 깨우는 것은 파서 스레드다. PTY EOF 는 자식 종료보다 먼저 올 수 있어(커널이 자식의 fd 를 먼저 닫는다), 파서 스레드는 EOF 뒤 한 번 깨우고 끝나지 않고 종료가 판정되거나 terminal 이 닫힐 때까지 간격을 10 ms 부터 두 배씩 500 ms 까지 늘려 계속 깨운다 — 안 그러면 조용해진 PTY 의 종료를 영영 못 보고 죽은 surface 가 남는다([ADR-0523](../../adr/0523-pty-eof-keeps-waking-until-the-exit-is-settled.md)).
+자식 종료를 확인하면 ProcessExited를 한 번 발생시키고 훅 통지와 surface 정리를 수행한다.
+`try_wait`는 보통 Terminal을 깨워 처리할 때 실행하며 확인 간격은 500ms다. PTY EOF 뒤에는 즉시 확인한다.
 
-**Windows 절전(suspend/resume) 복구**(Windows 전용, [ADR-0017](../../adr/0017-windows-suspend-resume-pty-recovery.md)): ConPTY 는 `conhost.exe` + named pipe 기반이라, OS 절전(특히 modern standby/hibernate) 복귀 후 자식이 stdin 을 읽지 않고 멈출(hang) 수 있다. 메인 윈도우에 `WM_POWERBROADCAST` 서브클래스를 붙여 resume 를 감지하고 헬스 패스를 돈다 — (1) 죽은 자식은 즉시 `ProcessExited` cascade 로 정리, (2) 살아있는 자식은 현재 크기로 ConPTY resize 를 재발행해 wake nudge, (3) wake 로도 깨어나지 못할 수 있는(자식 TUI 가 도는) surface 는 알림으로 가시화. Unix PTY(macOS/Linux)는 sleep 이 프로세스를 freeze→thaw 하며 fd/파이프를 보존해 hang 이 생기지 않으므로 이 경로는 적용하지 않는다(`#[cfg(windows)]`). hang 은 idle 과 구분 불가해 자동 *완전* 복구는 보장하지 않으며, 최종 수단은 사용자 재시작이다.
+EOF와 자식 종료는 같은 사건이 아니다. EOF 직후 자식이 아직 실행 중이면 parser가 10ms부터
+간격을 두 배씩 늘려 최대 500ms마다 다시 깨운다. 종료가 확인되거나 take_child로 소유권을 넘기거나
+Terminal이 사라지면 멈춘다. 이 처리가 없으면 출력이 끝난 뒤 자식 종료를 확인할 기회가 사라질 수 있다.
+
+자식은 PTY를 소유한 host와 수명을 함께한다. Windows는 KILL_ON_JOB_CLOSE Job Object를 사용한다.
+Unix는 비정상 host 종료 때 PTY hangup과 SIGHUP에 의존하므로 HUP을 무시하는 자식이 남을 수 있다.
+정상 surface 닫기는 명시적인 종료와 회수를 수행한다. attach client만 끊는 것은 server의 자식을 종료하지 않는다.
+
+Windows 절전 복귀는 WM_POWERBROADCAST로 감지한다.
+종료한 자식을 정리하고, 살아 있는 ConPTY에는 현재 크기의 resize를 보내 처리를 재개하도록 유도한다.
+복구되지 않을 수 있는 surface는 사용자에게 알린다. 멈춤과 정상 대기를 구분할 수 없으므로
+자동 강제 종료·재생성은 하지 않으며 최종 재시작은 사용자가 결정한다.
+macOS·Linux에는 이 Windows 전용 처리를 적용하지 않는다.
 
 ### VTE 에뮬레이션
 
-termwiz `Parser`/`Surface` 로 VT 시퀀스를 파싱·grid 갱신. 지원: 텍스트·제어코드(LF/CR/BS/Bell · **HT** 는 탭스톱(기본 8칸, HTS `ESC H`/CTC `CSI W` 로 설정, TBC `CSI g`/`CSI 3 g` 로 해제, RIS·리사이즈 시 기본값 재구성)으로 전진하며 termwiz 의 1칸 리터럴 탭 동작을 대체) · SGR(intensity/underline/italic/blink/inverse/strikethrough + fg/bg, **SGR 2 dim** = bg 50:50 블렌딩) · 커서 이동(CUP/CHA/VPA/CNL/CPL/CHT `CSI I`/CBT `CSI Z`/save·restore) · 커서 모양(DECSCUSR `CSI Ps SP q` — 0/기본·블록·언더라인·바 + blink 플래그, `cursor_shape()` 로 노출하고 **렌더러가 실제로 블록/바(`▏`)/언더라인(`▁`)으로 그림** — blink 변형은 정적 모양으로 매핑(콘텐츠 애니메이션 0ms 정책), vim/vi-mode insert 바 커서 표시) · 화면 편집(ED/EL/SU/SD/DCH/ICH/DL/IL/ECH — DCH/ICH 는 전각 2셀 처리 · **REP `CSI b`** 마지막 출력 문자 n회 반복) · ESC(DECSC/DECRC/IND/RI/**NEL `ESC E`**/**HTS `ESC H`**/**DECALN `ESC#8`**(화면을 'E' 로 채워 정렬 테스트)/RIS) · **DEC 라인드로잉 charset**(`ESC(0`/`ESC)0` G0/G1 지정 + SO/SI 로 GL 전환 — 활성 시 출력 ASCII `0x60–0x7e` 를 박스드로잉 글리프(`┌─┐│` 등)로 치환, ncurses/dialog/mc 류 테두리 호환; UK charset 은 ASCII 취급; RIS 로 리셋) · **DECSTR**(소프트 리셋 `CSI !p` — 스크롤 마진·저장 커서·SGR·앱 커서 키·IRM 삽입모드·커서 가시성을 기본값으로 되돌리되 RIS 와 달리 화면 내용·대체 화면은 보존, 무응답) · 스크롤 리전(DECSTBM) · 디바이스 응답(DSR/CPR · DA1 `CSI c`→`CSI ?1;2c` · DA2 `CSI >c`→`CSI >0;10;0c` · DA3 `CSI =c`→`DCS !|54415354 ST` · XTVERSION `CSI >q`→`DCS >|tasty(<ver>) ST`, 이름 `tasty`·버전은 tasty-terminal 크레이트 버전 · **XtGetTcap** `DCS +q <hexcap> ST`→ 각 질의 cap 마다 `DCS 0+r <hexcap> ST`(status 0, 요청 hex 그대로 echo) — termcap/terminfo 능력 DB 가 아직 없어 **현재 미지원**임을 알려 앱이 침묵 timeout 에 빠지지 않게 한다(영구 비지원 아님; 추후 status 1 `DCS 1+r <cap>=<hexvalue> ST` 실제 응답 추가 가능)). **DECSET/DECRST 모드**: DECCKM(1, 앱 커서 키) · DECTCEM(25, 커서 가시성) · 대체 화면(47/1047/1049) · 마우스 트래킹(1000/1002/1003 — **버튼 press/release·드래그·휠을 앱에 보고**; 드래그 motion 은 **버튼별로** 보고한다 — 좌 `32`(`0|32`) / 미들 `33`(`1|32`) / 우 `34`(`2|32`) 로 cb 하위 비트에 실제 눌린 버튼이 실린다. 여러 버튼을 겹쳐 누르면 **가장 최근 press** 가 motion 의 주인이고, 그 버튼을 떼면 아직 눌려 있는 버튼이 다시 주인이 된다. motion 은 press 를 **실제로 앱에 보고한** 버튼만 내보내므로 Shift+우클릭(메뉴 우회)·Shift+좌클릭(로컬 선택 우회)·블랙리스트 격하로 press 가 로컬 처리된 드래그는 중간 motion 도 나가지 않고, 대상 surface 는 press 시점에 고정된다; **1003 은 버튼 없는 hover 도 보고한다** — 셀이 바뀔 때마다 `ESC[<35;col;rowM`(버튼 코드 3=버튼 없음 + motion 32), 단 **focused surface 한정**이고 divider 밴드·OS 리사이즈 가장자리·divider 드래그 중에는 보내지 않는다([ADR-0081](../../adr/0081-hover-motion-focused-surface-only.md)); 1002 는 hover 를 보내지 않는다(드래그 motion 은 1002·1003 동일); 세 모드는 xterm 과 같이 **서로 독립된 on/off 레지스터**라 하나를 꺼도 나머지는 그대로 살아 있고, 실효 동작은 켜진 것 중 가장 넓은 것(1003 ⊃ 1002 ⊃ 1000)으로 정해진다 — 앱이 `1003h` 뒤에 `1002l` 을 보내도 1003 트래킹이 유지된다. RIS 는 세 레지스터를 모두 지우고, DECSTR 은 xterm 과 마찬가지로 건드리지 않는다; 트래킹 ON 이면 로컬 텍스트 선택·우클릭 컨텍스트 메뉴 대신 마우스를 앱에 전면 위임 [ADR-0019](../../adr/0019-mouse-button-reporting-app-delegation.md); 단 **Shift+우클릭은 앱에 보고하지 않고 tasty 컨텍스트 메뉴로 우회**하고, 마찬가지로 **Shift+좌클릭 드래그는 앱에 보고하지 않고 로컬 텍스트 선택으로 우회**한다(앱 위임을 깨지 않는 opt-in modifier 우회, xterm/iTerm2 표준 관례 — Shift 여부는 press 시점 1회 판정해 release 까지 유지하므로 드래그 중 Shift 를 떼도 선택 유지, Shift+더블/트리플클릭은 word/line) [ADR-0022](../../adr/0022-shift-rightclick-context-menu-bypass.md); 트래킹 진입 후 첫 (일반) 좌/우 클릭 시 "마우스 캡처 중 — 텍스트 선택은 Shift+드래그, 메뉴는 Shift+우클릭" 안내 배너(banner, surface 스코프 persistent)를 **트래킹 세션당 1회** 표시(좌·우 보고 경로가 같은 무장 플래그를 공유해 먼저 발생한 상호작용만 띄움; 설정 `general.mouse_capture_hint`, 기본 ON; 트래킹 `None→ON` 엣지·RIS 에서 재무장/해제); **마우스 캡처 비활성화 블랙리스트**(설정 `general.mouse_capture_blacklist`, 기본 빈 목록): 등록된 프로세스 이름 패턴(`.exe` 제거·소문자화 후 substring 또는 `*` glob, 1Hz busy 폴이 resolve 한 surface 별 foreground 로 판정·캐시)에 매칭되는 프로세스가 foreground 인 surface 는 트래킹 ON 이어도 **클릭/드래그/버튼을 앱에 보고하지 않고 로컬 처리**(좌클릭 선택·우클릭 tasty 메뉴)한다 — 단 **휠은 예외로 계속 앱에 보고**(클릭만 끔), 클릭이 로컬로 빠지므로 캡처 안내 배너도 뜨지 않는다; 미들클릭 보고는 macOS 가시 동작 검증 미완); **마우스 캡처 안내 배너 억제 블랙리스트**(설정 `general.mouse_capture_banner_blacklist`, 기본 빈 목록, [ADR-0055](../../adr/0055-mouse-capture-banner-suppress-list.md)): 위 캡처 비활성화 블랙리스트와 완전히 독립된 별도 축 — 등록된 프로세스 이름 패턴(동일 매칭 규칙)에 매칭되는 프로세스가 foreground 인 surface 는 캡처(클릭/드래그 앱 위임)는 그대로 유지하되 "마우스 캡처 중..." 안내 배너만 표시하지 않는다. 억제 대상 surface 에서는 armed 플래그(`take_mouse_capture_hint`)도 소모하지 않아, 같은 트래킹 세션 도중 foreground 가 비억제 앱으로 바뀌면 그 시점에 배너를 정상적으로 띄울 수 있다; **"더보기"(⋯) 퀵 엔트리**([ADR-0061](../../adr/0061-mouse-capture-banner-more-menu-quick-entry.md)): 위 두 블랙리스트에 Settings 를 거치지 않고 배너에서 바로 진입하는 경로 — 배너 hover 시 X 왼쪽에 ⋯ 트리거가 나타나고(메뉴가 열려 있는 동안은 hover 와 무관하게 계속 표시), 클릭하면 트리거 아래에 headless 컨텍스트 메뉴가 열려 "{app}에 대해 이 알림 끄기"(배너 억제 블랙리스트에 추가 + 배너 즉시 닫힘)와 "{app}에 대해 마우스 캡처 비활성화"(캡처 블랙리스트에 추가, 배너는 유지) 두 항목을 제공한다 — 저장/매칭 로직은 Settings 경로와 완전히 동일(같은 두 필드를 공유); **안내 배너 자동 닫힘**: 배너를 띄운 시점의 surface 별 foreground "인스턴스" generation(이름이 바뀔 때마다 +1, `CoreState::foreground_generation`)을 배너가 함께 기억해두고(`BannerState::origin_generation`), 1Hz BusyPoll 마다 그 값이 현재 generation 과 달라지면(=그 TUI 가 종료돼 쉘로 돌아왔든, 쉘을 거치지 않고 곧바로 다른 TUI 로 넘어갔든) 최대 1 초 이내에 자동으로 닫는다(`App::poll_busy_states`) — X 버튼 수동 닫기는 그대로 유지되는 별도 경로. 같은 스코프에 다른 배너(예: 셸 통합 미설치 안내)가 떠 있어도 id 를 확인하는 안전 API(`BannerManager::close_shown_if_id`)로 닫으므로 오폭하지 않는다. 서로 다른 TUI 가 쉘 경유 없이 연이어 같은 surface 에서 마우스 트래킹을 켜는 경우에도 이전 TUI 가 유발한 배너를 재사용하지 않고 교체한다(`BannerManager::push` 가 같은 id 라도 origin generation 이 다르면 `Replaced`). generation 은 이름 기반이라 동일 이름 프로그램의 연속 재실행(vim 종료 직후 다시 vim)은 새 인스턴스로 구분하지 못하는 한계가 있다(ADR-0055 의 이름 기반 블랙리스트 매칭과 동일한 트레이드오프). mirror(원격 attach) surface 는 로컬 foreground 폴링이 없어 이 자동 닫힘 대상이 아니다 · SGR 마우스(1006, 인코딩) · legacy X10 마우스 인코딩(`ESC[M`, SGR 미협상 시) · 포커스 트래킹(1004) · bracketed paste(2004) · 동기화 출력(2026) · **DECSCNM(5, 화면 반전 — 렌더러가 뷰포트 기본 fg/bg 를 스왑, `screen_reverse()` 로 노출; 렌더 적용 여부는 설정 `general.reverse_screen_enabled`(기본 on)로 게이트 — off 면 모드 플래그는 계속 추적하되(프로그램 조회 응답 정상) 화면 반전을 그리지 않아, readline `bell-style visible`(terminfo `flash`=DECSCNM 토글)이 내는 전체 화면 플래시를 억제)** · **DECOM(6, 원점 모드 — 절대 커서 위치(CUP/VPA/HVP)를 스크롤 리전 상대로 해석·리전 하단 클램프, 설정/해제 시 home 이동; 상대 이동의 리전 가둠은 미모델)**. **표준 모드(SM/RM, `?` 없는 `CSI .. h/l`)**: IRM(4, 삽입/덮어쓰기 — on 이면 출력 글리프가 기존 셀을 우측으로 밀어 ICH 처럼 삽입) · ShowCursor(25, DECTCEM 과 동일 동작). 그 외 표준 모드(KAM/SRM/LNM 등)는 무시. **XTWINOPS(`CSI Ps t`)**: 셀 크기 리포트(`18 t`→`CSI 8;rows;cols t`, `19 t`→`CSI 9;rows;cols t`)와 타이틀 스택(`22/23 t` push/pop, 단일 타이틀·64 entry bound)만 응답. 창 조작(Move/Resize/Maximize/Iconify/FullScreen/Raise/Lower)·창 위치/상태/타이틀 탐침·픽셀 크기 리포트(`14/16 t`)는 미지원([ADR-0011](../../adr/0011-xtwinops-window-ops-unsupported.md)). **OSC 8 하이퍼링크**(`OSC 8 ; params ; URI ST`): 열림 이후 출력되는 셀에 URI 를 셀 속성(`CellAttributes::hyperlink`)으로 부착, 빈 URI(`OSC 8 ; ; ST`)로 해제 — surface pen 에 상태를 실어 자동 적용하며 별도 상태 필드 없이 DECSTR/RIS 의 속성 리셋으로 함께 비워진다(hover·클릭은 [terminal-link](../terminal-link/index.md)). **OSC 52 클립보드 읽기 질의**(`OSC 52 ; c ; ? ST`): 터미널 크레이트는 `TerminalEventKind::ClipboardQuery` 이벤트만 발화하고 응답은 host 가 설정 게이트(`general.allow_clipboard_read`, 기본 off → 무응답) 후 처리 — 상세 [clipboard](../clipboard/index.md). **OSC 색상 질의**(OSC 10/11/12 = fg/bg/커서, OSC 4 = ANSI 팔레트): 앱이 `?` 로 질의하면(`OSC 11;? ST` 등) 현재 테마색을 `rgb:RRRR/GGGG/BBBB`(ST 종결) 로 회신해 다크/라이트 감지를 돕는다. 응답값은 호스트가 현재 테마에서 plumbing 한 팔레트(`Terminal::set_color_palette`)에서 가져오며 — fg/bg 는 terminal surface 의 focused 색, 커서는 fg(렌더러가 커서를 fg 색으로 그림), ANSI 16 은 테마 팔레트 — 생성·테마 변경 시 갱신된다. 색 *설정* 시퀀스(`?` 아닌 색 지정)는 저장소가 없어 현재 무시(후속). 팔레트 미주입 시 무응답.
+termwiz가 VT 시퀀스를 파싱하고 셀 grid를 갱신한다. 주요 지원 범위는 다음과 같다.
 
-**스크롤 리전과 자동 줄바꿈**: DECSTBM 으로 지정한 부분 영역은 명시적 개행(LF/IND/NEL)뿐 아니라 **오른쪽 끝에서의 자동 줄바꿈** 에도 적용된다. 커서가 영역 하단 행에 있을 때 긴 줄이 접히면 화면 전체가 아니라 그 영역만 한 줄 위로 스크롤하고 커서는 영역 하단 열 0 에 남는다 — 하단에 입력창을 남기는 TUI(Codex 등)의 영역 밖 행은 덮이지 않고, 위로 밀린 이력도 사라지지 않는다. 밀려난 행의 scrollback 적재는 명시적 스크롤과 같은 정책이다: 영역 상단이 화면 0 행인 경우에만 밀려난 행이 순서대로 이력에 들어가고, 상단이 0 이 아닌 내부 영역은 화면 밖으로 나가는 행이 없으므로 이력에 섞지 않는다. 커서가 영역 **아래** 의 마지막 화면 행에 있을 때는 영역도 화면도 스크롤하지 않고 그 행에서 줄바꿈이 되풀이된다(VT 의 "마진 밖 index 는 클램프"). 이 계약은 대체 화면에서도 같고, 대체 화면 출력은 primary 이력에 적재되지 않는다 — 대체 화면은 보통 영역을 안 깔아 화면 전체가 밀리는데, 그 경로에서도 회수하지 않는다. 요청된 마진은 **저장 시점에** 그리드 안으로 정규화한다(xterm 과 같이 화면 밖 하단은 마지막 행으로 자르고, 상단이 하단보다 크거나 화면 밖이면 한 줄 영역으로 접는다) — 명시 개행·자동 줄바꿈·DECOM 이 같은 경계를 읽게 하려는 것이다. DECAWM(`?7`)에 의한 자동 줄바꿈 **끄기** 는 별개 축으로 현재 미지원이다 — 끄더라도 줄바꿈은 일어나며, 다만 위 영역 계약을 지킨다.
+| 종류 | 동작 |
+|---|---|
+| 텍스트와 제어코드 | LF, CR, BS, Bell. HT는 기본 8칸 간격의 탭 정지점을 사용한다. HTS/CTC로 설정하고 TBC로 해제한다. RIS와 리사이즈 때 기본값을 재구성한다. |
+| 문자 속성 | SGR intensity, underline, italic, blink, inverse, strikethrough, 전경·배경색. dim은 배경과 50:50으로 섞어 그린다. |
+| 커서 | CUP, CHA, VPA, CNL, CPL, CHT, CBT, 저장·복원. DECSCUSR의 블록·바·밑줄은 그리되 blink 변형도 정적으로 표시한다. |
+| 화면 편집 | ED, EL, SU, SD, DCH, ICH, DL, IL, ECH, REP. DCH/ICH는 전각 두 셀을 함께 처리한다. |
+| ESC | DECSC, DECRC, IND, RI, NEL, HTS, DECALN, RIS. DECALN은 화면을 E로 채운다. |
+| 문자 집합 | G0/G1 DEC line drawing과 SO/SI 전환. 활성 상태의 ASCII 0x60–0x7e를 박스 문자로 바꾼다. UK는 ASCII로 처리하고 RIS로 초기화한다. |
+| 소프트 리셋 | DECSTR은 마진·저장 커서·문자 속성·앱 커서 키·삽입 모드·커서 가시성을 초기화한다. 화면과 대체 화면은 유지한다. |
+| 표준 모드 | IRM(4) 삽입/덮어쓰기와 ShowCursor(25). KAM, SRM, LNM 등은 무시한다. |
 
-**소거 명령과 걸친 커서**: ED/EL 은 **커서를 움직이지 않는 소거 연산**이고, 지우는 범위는 커서가 올라앉은 칸을 **포함**한다. 자동 줄바꿈이 대기 중인 상태("행 끝에 걸친 커서")는 커서 열이 화면 폭과 같은 값으로 나타나지만 그 칸은 그리드에 없다 — 커서가 실제로 올라앉은 칸은 마지막 열이고 줄바꿈은 다음 글자를 찍을 때로 미뤄져 있다. 그래서 범위를 셀 때 걸친 커서는 **마지막 열로 친다**: EL1(`CSI 1K`)은 행 전체를 지우고 그보다 한 칸 더 지우지 않으며(한 칸이 더 찍히면 그것이 다음 행으로 넘어가 **소거 명령이 줄바꿈을 일으킨다** — 부분 영역에서는 영역 스크롤 한 번 + 빈 이력 한 줄로 드러난다), EL0(`CSI 0K`)은 그 마지막 한 칸을 지운다. 반대쪽 끝도 같은 규칙이다 — 0 열 커서에서 EL1 이 지우는 칸은 0 이 아니라 **하나**다. 걸친 상태는 **여섯 분기 모두에서** 소거 뒤에도 보존되어 다음 글자가 정상적으로 줄바꿈된다.
+지원하는 DEC 모드는 DECCKM(1), DECTCEM(25), 대체 화면(47/1047/1049),
+마우스(1000/1002/1003/1006), 포커스 추적(1004), bracketed paste(2004), 동기화 출력(2026)이다.
+DECSCNM(5)은 기본 전경·배경을 바꿔 그린다. `general.reverse_screen_enabled`를 끄면
+모드 상태와 질의 응답은 유지하면서 화면 반전만 표시하지 않는다. readline의 visible bell도 이 설정으로 억제할 수 있다.
+DECOM(6)은 절대 커서 위치를 스크롤 영역 기준으로 해석하고, 설정·해제 시 home으로 이동한다.
+상대 커서 이동을 영역 안에 가두는 동작은 아직 구현하지 않았다.
 
-| 명령 | 걸친 커서(`cx == cols`)에서 | 0 열에서 | 커서 |
-|---|---|---|---|
-| EL0 `CSI 0K` | 마지막 한 칸 | 해당 없음 | 보존(걸친 상태까지) |
-| EL1 `CSI 1K` | 행 전체 | 한 칸 | 보존(걸친 상태까지) |
-| EL2 `CSI 2K` | 행 전체 | 행 전체 | 보존(걸친 상태까지) |
-| ED0 `CSI 0J` | 커서 행의 마지막 한 칸 + 아래 행 전부 | 해당 없음 | 보존(걸친 상태까지) |
-| ED1 `CSI 1J` | 커서 행 전체 | 한 칸 | 보존(걸친 상태까지) |
-| ED2 `CSI 2J` | 화면 전체 | 화면 전체 | 보존(걸친 상태까지) |
+### 터미널 질의와 OSC
 
-걸친 자리는 커서 이동으로 가리킬 수 없고(폭과 같은 열은 마지막 열로 잘린다) 거기로 돌아가는 길은 마지막 열에 한 칸을 **찍는 것** 하나뿐이다. 그 한 칸의 pen 이 나머지와 달라지는 것이 한때 EL2·ED2 의 걸침 보존과 EL0·ED0 의 범위를 함께 막고 있었는데, 아래 소거 pen 이 하나로 정해지면서 그 칸도 같은 pen 이라 막을 이유가 없어졌다.
+| 시퀀스 | 응답·동작 |
+|---|---|
+| DSR/CPR | 상태·커서 위치 응답 |
+| DA1 / DA2 / DA3 | `CSI ?1;2c` / `CSI >0;10;0c` / `DCS !|54415354 ST` |
+| XTVERSION | `DCS >|tasty(<ver>) ST`; 버전은 tasty-terminal 크레이트 기준 |
+| XtGetTcap | 요청별로 `DCS 0+r <hexcap> ST`. 능력 DB가 없어 현재 미지원임을 알리고 요청 hex를 그대로 돌려준다. |
+| XTWINOPS | 셀 크기 `18 t`→`CSI 8;rows;cols t`, `19 t`→`CSI 9;rows;cols t`. 제목 push/pop `22/23 t`는 단일 제목과 최대 64개 항목을 사용한다. |
+| OSC 8 | 이후 출력 셀에 하이퍼링크 URI를 붙이고 빈 URI로 해제한다. DECSTR/RIS도 속성을 초기화한다. |
+| OSC 52 읽기 | host가 `general.allow_clipboard_read`를 확인한 뒤 응답한다. 기본 off이면 응답하지 않는다. [클립보드](../clipboard/index.md) 참조. |
+| OSC 10/11/12, OSC 4 질의 | 현재 테마의 전경·배경·커서·ANSI 색을 `rgb:RRRR/GGGG/BBBB`와 ST로 응답한다. host가 생성·테마 변경 시 팔레트를 전달한다. 커서는 전경색이며, 팔레트가 없으면 응답하지 않는다. 색 설정 시퀀스는 무시한다. |
 
-**소거가 남기는 pen**: 지운 칸은 **기본 속성 + 소거 시점의 배경색**을 갖고(back color erase), 소거가 끝난 뒤 **pen 은 소거 전 그대로**다. 옮겨지는 것은 배경색 하나뿐이라 밑줄·역상 같은 나머지 속성은 지운 칸에 남지 않는다. 두 값은 따로 어긋날 수 있어 — 앞은 지운 칸에서, 뒤는 소거 직후 찍는 글자에서 보인다(`SGR → EL0 → 텍스트` 는 ncurses 류가 흔히 내는 순서다) — 시험이 여섯 분기에서 둘을 따로 잰다. 배경색 축을 규격이 정하지 않으므로(ECMA-48 은 "erased state" 만 말한다) 이 저장소는 자식에게 주는 `TERM=xterm-256color` 가 선언하는 `bce` 를 따른다. 근거·대안·재검토 조건은 [ADR-0292](../../adr/0292-erase-fills-with-the-current-background.md).
+창 이동·크기 변경·최대화·최소화·전체화면·앞뒤 순서 변경은 지원하지 않는다.
+창 위치·상태·제목 조회와 픽셀 크기 조회(`14/16 t`)도 응답하지 않는다.
+지원 범위와 보류 이유는 [터미널 호환성 결정](../../adr/0614-terminal-compatibility-scope.md)을 참고한다.
 
-걸친 커서의 EL0·ED0 은 **다른 구현과 갈리는 자리다** — tmux 3.4 는 같은 `cx == cols` 인코딩을 쓰고 그 한 칸을 안 지운다(실측). 이 저장소는 규격 문언과 EL1·ED1 에서 이미 지키던 "걸친 커서는 마지막 열로 친다" 를 따라 지우는 쪽으로 정했다.
+### 마우스 입력
 
-> **파서 스레드 분리**: 터미널마다 파서 스레드가 PTY raw 바이트를 읽는 즉시 그 스레드에서 VTE 파싱·grid 갱신(`ingest`). 메인(winit) 루프는 파싱하지 않아 백그라운드 터미널 출력이 포그라운드 입력/IPC 를 막지 않는다. grid 는 `Arc<Mutex<_>>` 공유, 8KB 청크마다 락 잡고 즉시 해제. 근거·대안 [ADR-0002](../../adr/0002-vte-parsing-off-input-thread.md).
+트래킹 중 클릭·드래그·휠은 앱으로 보낸다. 1000/1002/1003은 각각 독립적으로 켜고 끄며,
+동시에 켜져 있으면 가장 넓은 모드(1003, 1002, 1000 순서)를 적용한다.
+RIS는 모두 끄고 DECSTR은 유지한다. SGR(1006)을 협상하지 않으면 X10으로 인코딩한다.
+SGR 버튼 코드는 왼쪽 0, 가운데 1, 오른쪽 2이며 motion은 32를 더한다.
+modifier는 Shift 4, Alt 8, Ctrl 16이다. 휠·버튼·debug 주입은 같은 인코더를 쓴다.
+
+- 1002와 1003은 눌린 버튼의 드래그를 보고한다. 여러 버튼을 누르면 최근에 누른 버튼이 기준이다.
+  그 버튼을 놓으면 아직 눌린 버튼을 사용한다. 앱에 press를 보낸 버튼만 motion을 보낸다.
+- 드래그 대상은 press 시점에 고정하고 좌표를 그 surface 안으로 제한한다.
+- 1003의 버튼 없는 hover는 `ESC[<35;col;rowM`이다. OS 창과 surface가 포커스된 경우에만 보내며
+  셀이 달라졌을 때 전송한다. 중복 제거 키에는 surface ID도 포함한다.
+  분할선·창 리사이즈 가장자리·분할선 드래그 중에는 보내지 않는다. 1002는 hover를 보내지 않는다.
+- Shift+우클릭은 로컬 메뉴를 열고 Shift+좌클릭 드래그는 로컬 텍스트를 선택한다.
+  Shift 여부는 press 때 결정해 release까지 유지하므로 도중에 Shift를 놓아도 선택이 이어진다.
+  더블클릭은 단어, 트리플클릭은 줄을 선택하며 release도 앱에 보내지 않는다.
+- 트래킹 중 Shift+좌클릭은 새 선택을 시작한다. 트래킹이 꺼졌을 때의 Shift+클릭은 기존 선택을 확장한다.
+- macOS 미들클릭 보고는 구현되어 있으나 대상 앱의 paste 동작은 확인되지 않았다.
+
+### 마우스 캡처 안내와 앱별 설정
+
+`general.mouse_capture_hint`는 안내 배너를 켜고 끈다(기본 on).
+옛 키 `right_click_capture_hint`도 설정 별칭으로 읽는다.
+좌·우 일반 클릭 중 처음 발생한 캡처 입력에서 Shift 선택·메뉴 방법을 안내한다.
+트래킹을 켤 때 표시 가능 상태가 되고, 한 번 표시하거나 트래킹을 끄거나 RIS를 받으면 해제한다.
+
+| 설정 | 효과 |
+|---|---|
+| `general.mouse_capture_blacklist` | 해당 앱의 클릭·버튼·드래그를 로컬에서 처리한다. 휠은 계속 앱에 보내고 안내 배너는 표시하지 않는다. |
+| `general.mouse_capture_banner_blacklist` | 앱의 마우스 입력은 유지하고 안내 배너만 숨긴다. |
+
+두 목록의 기본값은 비어 있다. 프로세스 이름에서 `.exe`를 제거하고 소문자로 바꾼 뒤
+substring 또는 `*` glob으로 비교한다. 1Hz foreground 조회 결과를 재사용한다.
+배너만 숨긴 경우에는 표시 가능 상태를 소비하지 않으므로, 같은 세션에서 다른 앱으로 바뀌면 안내가 나올 수 있다.
+원격 mirror는 로컬 foreground 프로세스가 없어 이 목록을 적용하지 않는다.
+
+배너의 더보기 메뉴는 Settings와 같은 목록을 수정한다. 알림 끄기는 배너를 즉시 닫고,
+캡처 비활성화는 배너를 남겨 사용자가 안내를 읽고 닫을 수 있게 한다.
+더보기 버튼은 hover 중 또는 메뉴가 열린 동안 표시한다. 메뉴는 `PopupDef`의 headless 컨텍스트 메뉴로
+트리거 아래에 우측 정렬하고, 공간이 없으면 위쪽에 연다. 프로그램 이름은 별도 텍스트 구간으로 그려
+긴 번역문 때문에 이름부터 잘리지 않게 한다. 되돌릴 수 있는 설정이므로 위험 동작 색을 쓰지 않는다.
+
+배너가 열린 때의 foreground generation을 저장하고, 프로그램 이름이 바뀌면 1Hz 조회에서 닫는다.
+다른 종류의 배너를 닫지 않도록 ID를 확인한다. 같은 배너 종류라도 generation이 다르면 교체한다.
+같은 이름의 프로그램이 연속 실행된 경우와 원격 mirror에서는 이 방법으로 종료를 구별할 수 없다.
+
+### 스크롤 영역과 소거
+
+DECSTBM 영역은 명시 개행과 오른쪽 끝의 자동 줄바꿈 모두에 적용한다.
+영역 하단에서 줄바꿈하면 그 영역만 위로 밀고 커서는 하단 열 0에 남는다.
+영역 밖에 둔 TUI 입력창은 덮지 않는다.
+
+- 영역 상단이 화면 0행이면 밀려난 행을 scrollback에 순서대로 보관한다.
+  내부 영역은 화면 밖으로 나가는 행이 없으므로 scrollback에 넣지 않는다.
+- 커서가 영역 아래의 마지막 화면 행에 있으면 화면과 영역을 스크롤하지 않고 같은 행에서 줄바꿈한다.
+- 대체 화면도 같은 영역 규칙을 쓰지만 primary scrollback에 기록하지 않는다.
+- 마진은 저장할 때 grid 안으로 정규화한다. 하단은 마지막 행까지 제한하고,
+  상단이 하단보다 크거나 화면 밖이면 한 줄 영역으로 정리한다.
+- DECAWM으로 자동 줄바꿈을 끄는 기능은 현재 미지원이다. 꺼 달라는 요청에도 위 줄바꿈은 일어난다.
+
+ED/EL은 커서 위치를 유지하며 현재 셀을 포함해 지운다.
+마지막 셀까지 출력한 뒤 줄바꿈을 기다리는 커서는 `cx == cols`로 표현되지만,
+지울 범위는 실제 마지막 셀에서 계산한다. 소거 뒤에도 줄바꿈 대기는 유지한다.
+
+| 명령 | 줄바꿈 대기 커서에서 지울 범위 | 0열의 경계 사례 |
+|---|---|---|
+| EL0 | 마지막 한 셀 | 커서부터 행 끝 |
+| EL1 | 현재 행 전체 | 한 셀 |
+| EL2 | 현재 행 전체 | 행 전체 |
+| ED0 | 마지막 셀과 아래 행 전체 | 커서부터 화면 끝 |
+| ED1 | 현재 행과 위 행 전체 | 커서 행 한 셀과 위 행 전체 |
+| ED2 | 화면 전체 | 화면 전체 |
+
+지운 셀은 기본 문자 속성과 소거 당시 배경색만 갖는다. 밑줄·역상·굵기 등은 복사하지 않는다.
+소거 뒤 pen은 이전 값으로 복원해 다음 문자가 원래 속성으로 출력되게 한다.
+이는 `TERM=xterm-256color`의 BCE 선언에 맞춘 동작이다.
+
+소거 구현은 `vte_handler/edit.rs`의 erase_attrs·erase_color·restore_pen을 사용한다.
+검증은 여섯 명령, 커서 행, 줄바꿈 대기 유무를 조합하고 지운 셀과 소거 직후 문자의 속성을 각각 확인한다.
+기본 배경과 밑줄을 함께 시험해야 배경만 복사한다는 조건을 확인할 수 있다.
+줄바꿈 대기의 EL0/ED0은 과거 tmux 3.4 비교와 다르다. Tasty는 마지막 셀을 지운다.
+
+파싱은 터미널별 reader 스레드에서 수행하고 main 루프는 렌더링과 이벤트만 처리한다.
+공유 grid는 8KB 청크 처리 후 락을 놓는다. 자세한 선택 이유는
+[PTY 처리 결정](../../adr/0613-terminal-io-and-process-lifetime.md)을 참고한다.
 
 ### 스크롤백
 
@@ -90,10 +204,37 @@ Windows 에서는 focused terminal cursor 를 프로그램 주도 화면 갱신 
 - **인라인 그래픽**(Sixel/Kitty/iTerm 이미지) — 보류([ADR-0008](../../adr/0008-inline-graphics-protocols-deferred.md)). 이미지는 [image surface](../../plugins/image/index.md).
 - **XTWINOPS 창 조작·창 탐침·픽셀 크기 리포트** — 미지원([ADR-0011](../../adr/0011-xtwinops-window-ops-unsupported.md), 사용자/에이전트 분리).
 - **tmux control mode(DCS)·DECRQSS** — 미지원([ADR-0012](../../adr/0012-tmux-dcs-decrqss-unsupported.md), 범위 밖/드묾).
-- **레거시·니치 입력 사설 모드**(Utf8Mouse 1005 · SGRPixels 1016 · Win32InputMode 9001 · DECCOLM 3 등) — 미지원([ADR-0013](../../adr/0013-niche-input-private-modes-unsupported.md), 표준 폴백으로 충분).
+- **일부 사설 입력 모드** — Utf8Mouse(1005), SGRPixels(1016), Win32InputMode(9001), DECCOLM(3), ReverseWraparound(45), Meta/AltSendsEscape(1036/1039), GraphemeClustering(2027)은 지원하지 않는다. 표준 입력 방식으로 대신할 수 있어 구현을 보류했다([ADR-0614](../../adr/0614-terminal-compatibility-scope.md)).
 - 렌더/폰트 atlas 내부 구현 — [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md).
 
 ## 관련
 
 - [terminal-search](../terminal-search/index.md) · [terminal-link](../terminal-link/index.md) · [clipboard](../clipboard/index.md)
 - [ADR-0002](../../adr/0002-vte-parsing-off-input-thread.md) · [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md)
+
+## 휠 스크롤 거리
+
+`general.wheel_line_scroll`은 휠 한 칸을 논리 포인트로 바꾸는 값이며 기본값은 50이다.
+설정은 egui `Options::line_scroll_speed`에 적용한다. host 위젯, modifier hint,
+plugin surface·popup·banner와 attach mesh가 모두 이 값을 읽는다.
+plugin에 보내는 Scroll도 논리 포인트이므로 재현 로그에서 50을 상수로 가정하지 않는다.
+터미널 앱으로 전달하는 휠 보고처럼 단위를 그대로 전달하는 경로는 이 포인트 환산과 구분한다.
+
+검증은 기본값이 아닌 값을 egui 컨텍스트에 넣고 host·와이어 변환·overlay에 동일하게 적용되는지 본다.
+새 LineDelta 처리 경로가 생기면 자체 상수를 추가하지 않았는지도 확인한다.
+실행 상태 표시는 [busy 정책](../../design/policies/busy-indicator.md)을 따른다.
+
+## 사용자 입력 기록
+
+키보드·IME·붙여넣기는 `CoreState::record_typing`으로 기록한다.
+`surface.is_typing`은 최근 5초의 입력 여부와 마지막 입력 후 `idle_seconds`를 반환하며,
+기록이 없으면 `idle_seconds`는 -1이다. 에이전트 send/tell은 기록하지 않는다.
+
+붙여넣기는 `MainView::run_paste` 시작에서 기록한다. 단축키·명령 팔레트·이미지·plugin 붙여넣기가
+같은 함수를 사용한다. 빈 클립보드나 붙여넣기 미지원 surface에서도 시도는 기록한다.
+원격 이미지 업로드 완료 시점에 다시 기록하지 않으므로 긴 업로드 뒤의 typing은 이미 만료될 수 있다.
+마우스 보고·휠·클릭 커서 이동과 새 탭을 여는 파일 드롭은 이 기록의 대상이 아니다.
+
+`--wait-idle` 전송과 자동 재개는 이 기록으로 사용자의 입력을 보호한다.
+새 붙여넣기 경로는 `run_paste`를 사용하며, 명령 팔레트 회귀 검증은
+`tests/gui_tests.rs`의 `test_palette_paste_records_user_typing`으로 수행한다.

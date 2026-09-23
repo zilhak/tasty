@@ -26,13 +26,18 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 
 ## Host ↔ Plugin popup z-order
 
-Plugin 이 egui-mesh 로 그리는 popup(예: markdown 파일열기, `src/plugin_bridge/popup_render.rs`)은 host `PopupManager` 소속이 아니지만 규칙 7 의 "나중에 열리거나 클릭된 것이 앞" 을 host popup 과 함께 지킨다. 양쪽 모두 자신의 open/click 시점에 공유 전역 시퀀스(`tasty_host_plugin::next_popup_z_seq()`)에서 번호를 받아 기록하고(host: `PopupState.z_seq`, plugin: `PopupInstance.z_seq`), 매 프레임 두 진영의 열린 popup 중 최댓값끼리 비교해 이긴 쪽을 위로 강제한다(`src/gfx/gpu/egui_bridge.rs::host_popup_should_render_on_top`).
+호스트와 플러그인 팝업은 `next_popup_z_seq()`에서 열기·클릭 순번을 받는다. 매 프레임 각 묶음의 가장 큰 순번을 비교해 앞에 그릴 묶음을 정한다.
 
-- **Shell(배경/테두리/제목)**: 둘 다 raw `ctx.layer_painter()` 로 그려 `Areas::order` 에 자연 등록되지 않는다([input-layer.md (c)](../../architecture/input-layer.md) 참고) — `enforce_host_plugin_popup_z_order` 가 진 쪽을 이긴 쪽의 `ctx.set_sublayer()` 자식으로 강제 편입해 순서를 고정한다.
-- **Content(plugin 전용 GPU mesh)**: plugin popup 콘텐츠는 별도 `wgpu::Renderer` pass(`render_egui_mesh_popups`)로 host egui pass(`render_egui_pass`)와 독립 합성된다 — `render_egui_pass_and_mesh_popups`(`src/gfx/gpu/render_pass.rs`)가 같은 승패 결과로 두 pass 의 호출 순서를 뒤바꾼다. plugin popup 은 콘텐츠가 shell 보다 먼저 그려지는 경우에도 자기 shell 이 자기 콘텐츠를 덮지 않도록, shell 배경을 콘텐츠 영역을 제외한 4분할 사각형으로 그린다(`paint_shell_background_excluding_content`).
-- **마우스 소유권(규칙 7 후반)**: "겹친 영역의 마우스 이벤트는 최상단 팝업만 받는다" 는 렌더 순서와 별개로 `src/adapters/ui/popup/occlusion.rs::point_ownership` 가 판정한다. 한 좌표에 대해 `Mine`(내 rect 안 + 위에 아무도 없음) / `OccludedByHigher`(나보다 z 가 높은 popup 이 덮음) / `OutsideAll`(어떤 popup 에도 안 속함) 3-상태를 내고, host/plugin 양쪽이 같은 함수를 쓴다 — click-to-front 는 `Mine` 일 때만, outside-click dismiss 는 `OutsideAll` 일 때만 일어난다. 그래서 위에 열린 popup 안을 클릭해도 아래 popup 이 "바깥 클릭" 으로 닫히거나 앞으로 튀어나오지 않는다. host popup 은 hover/close 버튼/리사이즈/드래그 히트테스트 전체가, plugin popup 은 focus-bump·dismiss·포인터 이벤트 forward 가 이 판정을 거친다. 아래 2-그룹 제약과 달리 이 판정은 **popup 쌍마다 z_seq 를 직접 비교**하므로 host↔plugin·plugin↔plugin 을 모두 정확히 가른다.
-- **판정 재료의 방향별 신선도**: plugin 판정이 보는 host rect 는 같은 프레임 값이다(`draw_popups` 가 `draw_plugin_popups` 보다 먼저 돈다). 반대로 host 판정이 보는 plugin 셸 rect(`AppState.plugin_popup_hittest`)는 **1 프레임 stale** 이다 — 방금 닫힌 plugin popup 이 바깥 클릭 한 번을 더 삼킬 수 있지만, 반대 방향 오판(가려진 popup 이 잘못 닫히는 것)보다 회복이 쉬운 쪽을 택한 결과다.
-- **범위**: host popup 묶음 대 plugin popup 묶음의 2-그룹 비교만 지원한다. plugin popup 이 여러 개 열려 있을 때 그들끼리의 상대 순서는 z_seq 로 정렬돼 콘텐츠(GPU mesh push 순서)에는 반영되지만, shell 레이어끼리는 `set_sublayer` 의 1단 들여쓰기 제약(아래 [input-layer.md (d)](../../architecture/input-layer.md)) 때문에 서로 엮이지 않는다 — host 묶음과의 상대 위치만 보정 대상이다.
+| 대상 | 순서 적용 방법 |
+|---|---|
+| 셸 배경·제목·테두리 | raw layer는 호출 순서만으로 정렬되지 않아 `enforce_host_plugin_popup_z_order`가 set_sublayer로 순서를 지정한다. |
+| 플러그인 GPU 콘텐츠 | `render_egui_pass_and_mesh_popups`가 같은 판정으로 host egui와 plugin mesh pass 순서를 정한다. |
+| 자기 콘텐츠 보호 | plugin 셸 배경을 콘텐츠를 제외한 네 사각형으로 그려, 먼저 그린 자기 콘텐츠를 덮지 않는다. |
+| 클릭·hover·드래그·닫힘 | `occlusion.rs::point_ownership`이 좌표마다 popup 쌍의 z_seq를 비교한다. |
+
+입력 판정의 `Mine`만 클릭 승격을 허용하고 `OutsideAll`만 바깥 클릭 닫힘을 허용한다. 위 팝업 안을 눌렀을 때 아래 팝업이 닫히거나 앞으로 나오지 않아야 한다. 플러그인이 보는 host rect는 같은 프레임 값이며, host가 보는 plugin rect는 이전 프레임 값이라 방금 닫힌 팝업이 클릭 하나를 더 차단할 수 있다.
+
+렌더링 보정은 host 묶음과 plugin 묶음의 비교다. 여러 plugin 콘텐츠는 z_seq 순서지만 셸끼리의 순서는 set_sublayer의 중첩 제한 때문에 완전히 보장하지 않는다. modifier hint 등 다른 레이어 관계와 중첩되는 경우도 별도 확인이 필요하다. 입력 소유 판정은 팝업별 비교이므로 이 두 묶음 렌더링 제한과 구분한다.
 
 ## 수명 계약 (open → close → 뒷정리)
 
@@ -57,11 +62,11 @@ plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host
 
 ## 발화 정책 (CRITICAL)
 
-**Popup 은 사용자 행동(키보드 단축키 / 마우스 / 메뉴)에서만 발사된다.** release 의 시스템·에이전트·도메인 cascade 어느 경로도 popup 을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [identity](../../identity.md) 원칙 1).
+팝업은 사용자 행동(키보드 단축키·마우스·메뉴)으로 연다. release의 시스템·에이전트 작업은 팝업을 자동으로 띄울 수 없다([toast.md](toast.md) 와 동일 원칙, [identity](../../identity.md) 원칙 1).
 
 - ✅ 단축키/마우스/메뉴 → `UiIntent::OpenPopup` 발화
 - ✅ popup A 의 *사용자 액션* cascade → popup B (origin 전파)
-- ❌ release 의 IPC/CLI/Plugin 에서 popup 발화
+- ❌ 사용자 조작 근거가 없는 release IPC/CLI/Plugin 요청으로 팝업 열기
 - ❌ 시스템 조건(PTY 종료·시간 경과)으로 자동 popup — 대신 *Domain Intent 로 데이터만 변경*(NotificationStore push 등)하고 UI 가 수동 표시
 - ✅ debug 의 `debug.popup.*` — *사용자 입력 재현* 한정 ([debug-ipc](../../dev-guide/debug-ipc.md))
 
@@ -73,9 +78,9 @@ plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host
 
 Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드만** 차단하고, 마우스는 [입력 계층](../../architecture/input-layer.md)에 따라 팝업이 소비한다.
 
-**plugin egui-mesh popup 도 같은 차단을 받는다.** 다만 그 popup 은 host `PopupManager` 소속이 아니라 `has_focused()` 로 잡히지 않으므로, 렌더 프레임이 `AppState.plugin_popup_open` 캐시를 채우고 게이트가 그것을 읽는다(키/IME 게이트가 있는 winit 핸들러는 `PluginManager` 에 접근할 수 없다). 판정은 `AppState::keyboard_overlay_open()` 하나로 모여 있다 — egui 로 키/IME 를 들여보내는 게이트와 터미널 포워딩을 막는 게이트가 같은 식을 각자 계산하면 이중 처리(양쪽 다 처리)나 입력 유실(양쪽 다 안 처리)이 생긴다. IME 라우팅과 plugin surface 단축키 게이트도 같은 술어를 쓴다. 예외는 `set_ime_allowed` 판정 하나로, plugin popup 은 host egui 위젯이 없어 IME 를 끄면 popup 안에서 조합 입력을 못 하게 되므로 제외한다. 그 조합을 popup 으로 나르는 것은 이 게이트가 아니라 `collect_mesh_popup_input` 이며(이벤트는 이미 host egui ctx 에 들어가 있다), 후보창 위치는 plugin 이 되돌려준 값으로 정한다 — 둘 다 [egui-mesh-channel](../../dev-guide/egui-mesh-channel.md).
+**plugin egui-mesh popup 도 같은 차단을 받는다.** 다만 그 popup 은 host `PopupManager` 소속이 아니라 `has_focused()` 로 잡히지 않으므로, 렌더 프레임이 `AppState.plugin_popup_open` 캐시를 채우고 게이트가 그것을 읽는다(키/IME 게이트가 있는 winit 핸들러는 `PluginManager` 에 접근할 수 없다). 판정은 `AppState::keyboard_overlay_open()` 하나로 모여 있다 — egui 로 키/IME 를 들여보내는 게이트와 터미널 포워딩을 막는 게이트가 같은 식을 각자 계산하면 이중 처리(양쪽 다 처리)나 입력 유실(양쪽 다 안 처리)이 생긴다. IME 라우팅과 plugin surface 단축키 게이트도 같은 판정을 쓴다. 예외는 `set_ime_allowed` 판정 하나로, plugin popup 은 host egui 위젯이 없어 IME 를 끄면 popup 안에서 조합 입력을 못 하게 되므로 제외한다. 그 조합을 popup 으로 나르는 것은 이 게이트가 아니라 `collect_mesh_popup_input` 이며(이벤트는 이미 host egui ctx 에 들어가 있다), 후보창 위치는 plugin 이 되돌려준 값으로 정한다 — 둘 다 [egui-mesh-channel](../../dev-guide/egui-mesh-channel.md).
 
-캐시는 렌더 프레임에 갱신되므로 popup 이 열린 **직후 최대 1 프레임** 늦게 반영된다 — 그 프레임에 사용자가 이미 키를 누르고 있을 수는 없어 실사용 영향은 없다.
+캐시는 렌더 프레임에 갱신되므로 popup 이 열린 **직후 최대 1 프레임** 늦게 반영된다 — 짧은 지연이므로, 이 캐시를 읽는 입력 경로에서는 열린 직후의 프레임 차이를 고려한다.
 
 ### sticky_focus
 

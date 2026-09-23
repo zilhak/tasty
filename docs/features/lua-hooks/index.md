@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (자기 머신의 자기 스크립트)
-- **ADR**: [0031](../../adr/0031-lua-host-api-only-worker-isolated.md) (설계 배경은 아래 [설계 경계](#설계-경계))
+- **ADR**: [ADR-0627](../../adr/0627-lua-and-hook-execution.md) (설계 배경은 아래 [설계 경계](#설계-경계))
 - **코드**: `tasty-lua` 크레이트(engine/host_api/sandbox/bridge), 스크립트 저장소 `tasty-settings`(`ScriptRegistry`), 단축키 바인딩 `KeybindingSettings.script_bindings`
 - **화면**: 설정 modal 단축키 탭 › Scripts (단축키 바인딩) + 기타(Misc) 탭 › Scripts (관리 + 자동실행 트리거 편집)
 
@@ -19,15 +19,24 @@
 설정에 스크립트를 등록하면 `{id, name, path, sha256, triggers}` 가 config(`~/.tasty/config.toml`)에 영속된다(`ScriptRegistry`). 트리거 채널은 둘:
 
 - **단축키** — 단축키 탭에서 combo 바인딩(`script_bindings`, `KeybindingSettings` 소유). 누르면 워커에서 실행.
-- **이벤트 자동실행** — 관리 창에서 lifecycle 이벤트를 트리거로 추가(`ScriptEntry.triggers`). host 가 그 이벤트를 fire 할 때 TOFU 재검 후 자동 실행된다. 등록 가능 이벤트는 host 가 실제 fire 하는 13종 화이트리스트(`AUTO_TRIGGER_EVENTS`): `tasty.startup.post` + window/workspace/tab/pane/surface 의 `create.post`/`delete.post` + workspace·tab 의 `change.post`. **release 는 사용자 키 입력에서만** 이 경로를 탄다(identity 원칙 1). 임의 Lua 주입은 debug 빌드 전용(`debug.lua.eval`).
+- **이벤트 자동실행** — 관리 창에서 lifecycle 이벤트를 트리거로 추가(`ScriptEntry.triggers`). host 가 그 이벤트를 fire 할 때 TOFU 재검 후 자동 실행된다. 등록 가능 이벤트는 host 가 실제 fire 하는 13 종 화이트리스트(`AUTO_TRIGGER_EVENTS`): `tasty.startup.post` + window/workspace/tab/pane/surface 의 `create.post`/`delete.post` + workspace·tab 의 `change.post`. release에서는 등록된 단축키와 이벤트 트리거로 실행한다. 임의 Lua 주입은 debug 빌드 전용(`debug.lua.eval`).
 
 **관리 창** — 설정 modal 기타(Misc) 탭 › **Scripts**(전 플랫폼·최상단, `src/view/settings/ui/tabs/misc.rs::draw_scripts_subtab`). 등록 스크립트를 행 목록으로 보여준다: script 글리프 · 표시 이름 · 중간생략 경로(디렉토리 tail 이 먼저 ellipsis, 파일명은 완전 표시) · 바운드 단축키 `Kbd` 또는 "Unbound". 행 액션은 **bind**(→ Keybindings › Scripts 진입만; 바인딩 편집은 단축키 탭 소유), **rename**(인라인), **remove**(인라인 확인 + 연결 단축키 자동 해제). 각 행 하단에 **자동실행 트리거** 행이 있다 — 등록된 트리거는 chip(이벤트명 + ✕, 클릭=제거)으로 표시하고, 화이트리스트 중 미등록 이벤트만 노출하는 콤보박스로 추가한다. 인라인 Add card(File + Browse… — OS 네이티브 다이얼로그가 아니라 설정 창 안의 로컬 파일 선택, `.lua` 필터 → [native-file-picker](../native-file-picker/index.md) "설정 창에서의 로컬 전용 재사용" / Display name)로 등록하며, 창을 열 때 디스크 해시를 저장 해시와 비교해 불일치 시 **changed** 배지 + 안내(TOFU 재확인 예고)를 표시한다. 등록이 없으면 빈 상태를 그린다.
 
 ### 실행 격리 · 안전 장치
 
-VM 은 전용 워커 스레드가 소유하고 job 을 직렬 처리한다. 메모리 32MB cap · 텍스트 청크만(bytecode 거부) · `debug`/`load*`/`dofile`/`package.loadlib` 제거 · 무한 루프/시간 초과는 instruction-count deadline 훅으로 abort(워커만 종료, 메인 무영향) — 자동실행 경로도 동일 `Run` job 이라 deadline 이 그대로 적용된다. `os.execute`/`io.*` 는 사용 가능 — 사용자 자신의 스크립트라 권한 격리 안 함.
+VM은 전용 워커가 소유하고 job을 순서대로 실행한다. 메모리 한도는 32MiB다.
+호스트가 읽은 스크립트는 텍스트 모드로 실행하고 `debug`, `load`, `loadstring`, `loadfile`, `dofile`,
+`package.loadlib`와 `package.searchers`를 제거하며 cpath를 비운다.
+`require` 이름 자체는 남지만 일반 모듈 검색 경로는 제거된다. `os.execute`와 `io`는 사용 가능하다.
+이 설정은 불신 코드의 OS 접근을 격리하는 샌드박스가 아니다.
 
-**자동실행 재진입 가드** — 자동실행 스크립트가 `tasty.run_cli` 로 자기 트리거 대상을 만들면(예: `surface.create.post` 바인딩 스크립트가 split 실행) 재발화 연쇄가 생긴다. deadline 은 1회 실행만 보므로, `AutofireGuard`(`src/host_api/hooks/autofire.rs`)가 자동실행 in-flight + 완료 직후 1 프레임 동안 신규 자동실행을 전역 억제해 연쇄를 유한하게 끊는다(억제 시 `tracing::warn`).
+Lua5.4의 instruction-count hook이 기한을 확인해 초과 job을 오류로 끝낸다. 워커는 살아 있어 다음 job을 처리한다.
+외부 OS 호출 안에 머무는 동안까지 강제로 취소하는 기능으로 해석하지 않는다.
+읽기는 메인 스냅샷, 변경 요청은 메인 명령 큐를 사용한다.
+
+자동실행은 `AutofireGuard`가 실행 중과 완료 직후 한 프레임 동안 새 자동실행을 억제한다.
+스크립트가 자기 trigger 대상을 만드는 연쇄를 막으며 억제는 warning으로 남긴다.
 
 ### 무결성 (TOFU)
 
@@ -54,21 +63,23 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 ## 설계 경계
 
-사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0031](../../adr/0031-lua-host-api-only-worker-isolated.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 발화 site · payload](#구현--발화-site--payload).
+사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0627](../../adr/0627-lua-and-hook-execution.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 발화 site · payload](#구현--발화-site--payload).
 
-### 위치 결정 (ADR-0031)
+<a id="위치-결정-adr-0031"></a>
+
+### 실행 모델
 
 | 항목 | 결정 |
 |------|------|
 | 사용 주체 | **호스트 전용.** plugin 은 Lua 미사용 |
-| 등록·트리거 | 설정에 스크립트를 **등록**하고(SHA256 TOFU) **단축키 또는 이벤트 트리거(자동실행)로 실행**. 부팅 시 `~/.tasty/init.lua` 자동로드는 폐기 — 자동실행도 임의 로드가 아니라 등록 목록의 명시 트리거에서 배선. `require` 모듈 import 차단 |
+| 등록·트리거 | 설정에 스크립트를 **등록**하고(SHA256 TOFU) **단축키 또는 이벤트 트리거(자동실행)로 실행**. 부팅 시 `~/.tasty/init.lua` 자동로드는 폐기 — 자동실행도 임의 로드가 아니라 등록 목록의 명시 트리거에서 배선. `require` 이름은 남지만 `package.searchers`·native 로더 제거로 일반 모듈 검색 제한 |
 | tasty 접근 | **열거된 고정 호스트 API 표면으로만.** state 직접 접근 불가, CRUD 전부 API. 첫 API 는 트리 조회 `tasty.tree()`(read) |
 | 실행 격리 | **전용 워커 스레드.** 읽기=메인 발행 스냅샷, 쓰기=메인 커맨드 큐. 무한 루프/시간 초과는 instruction-count deadline 훅으로 abort |
 | 무결성 | 등록 시 SHA256 기록 → **TOFU**. 수동 발화(단축키) 변경 시 확인 popup, 자동(이벤트) 발화 변경 시 **실행 차단 + `tracing::warn` + 관리창(Misc›Scripts) changed 배지**. 자동 경로는 popup/배너를 쓰지 않는다 — 발화에 사용자 계기가 없고, 배너는 사용자 직접 조작에서만 발사된다는 발화 정책과 충돌하기 때문. 해시 자동 갱신 금지(자동 승인은 TOFU 무의미) |
-| 권한 | 이벤트 hook 콜백은 **observe-only** — 보고 외부 동작만. 명시 API 호출을 통한 active CRUD 는 직교 채널(흐름 소유권은 호스트) |
-| 샌드박스 | 약 sandbox — `io`/`os.execute` 유지(자기 머신 자기 스크립트라 격리 무의미). 능력 제한 목적은 ① tasty 접근을 API 로 좁힘 ② 워커/메인 스레드 안전. DoS/무결성 보호(메모리 cap, `debug`/`loadlib`/`load*` 제거)만 |
+| 권한 | 콜백 반환값은 이벤트를 취소·변형하지 않는다. 명시 호스트 API 호출은 별도 기능이다 |
+| 샌드박스 | OS 격리 없음. `io`/`os.execute`는 유지한다. 메모리·VM 실행 제한과 위험한 로더 제거는 호스트 안정성을 위한 조치다 |
 
-> plugin 은 별 OS 프로세스로 격리돼 Rust 로 충분하므로 Lua 통로를 의도적으로 막았다. plugin 측 user-scripting 이 필요해지면 별도 채널을 새로 만든다(ADR-0009 와 함께 재검토).
+> plugin 은 별 OS 프로세스로 격리돼 Rust 로 충분하므로 Lua 통로를 의도적으로 막았다. plugin 측 user-scripting 이 필요해지면 별도 채널을 새로 만든다(ADR-0625 와 함께 재검토).
 
 ### 이벤트 매트릭스 — post-only
 
@@ -95,13 +106,13 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 `tasty.on(event, cb)`(동일 event 다중 등록, 순서대로). 인자는 단일 table(payload). 콜백 에러는 `tracing::warn!` 기록 후 다음 콜백 계속(한 ill-behaved hook 이 전체 dispatch 막지 않음). 리턴값 무시(observe-only). 호스트 API 표면(현재): `tasty.on`/`log`/`warn`/`run_cli`(커맨드 큐 경유)/`tree`(read).
 
-이벤트 hook `fire`/`tasty.on` 배관은 유지되지만, 부팅 자동로드(init.lua)가 폐기되어 **hook 을 부팅에 자동 등록하는 경로는 없다.** 이벤트-트리거 **자동실행은 별도(직교) 채널로 구현되어 있다** — 콜백을 깨우는 것이 아니라, 등록 목록(`ScriptEntry.triggers`)에 바인딩된 스크립트 **소스를 트리거 발화 시 TOFU 재검 후 실행**한다(ADR-0031 의 "등록 목록에서 배선" 요구 충족).
+이벤트 hook `fire`/`tasty.on` 배관은 유지되지만, 부팅 자동로드(init.lua)가 폐기되어 **hook 을 부팅에 자동 등록하는 경로는 없다.** 이벤트-트리거 **자동실행은 별도(직교) 채널로 구현되어 있다** — 콜백을 깨우는 것이 아니라, 등록 목록(`ScriptEntry.triggers`)에 바인딩된 스크립트 **소스를 트리거 발화 시 TOFU 재검 후 실행**한다(ADR-0627 의 "등록 목록에서 배선" 요구 충족).
 
 ### 자동실행 (autofire)
 
-- **트리거**: host 가 실제 fire 하는 lifecycle 이벤트 13종 화이트리스트(`AUTO_TRIGGER_EVENTS`, `crates/tasty-settings/src/scripts.rs`)만 등록 가능. 저장은 `ScriptEntry.triggers`(단축키 combo 는 계속 `KeybindingSettings` 소유 — 이벤트 트리거는 combo 충돌 개념이 없어 scripts 소유).
+- **트리거**: host 가 실제 fire 하는 lifecycle 이벤트 13 종 화이트리스트(`AUTO_TRIGGER_EVENTS`, `crates/tasty-settings/src/scripts.rs`)만 등록 가능. 저장은 `ScriptEntry.triggers`(단축키 combo 는 계속 `KeybindingSettings` 소유 — 이벤트 트리거는 combo 충돌 개념이 없어 scripts 소유).
 - **identity 정합**: 자동실행은 사용자가 config 에 직접 바인딩한 "사용자 설정 행동" — 에이전트 행동이 아니므로 release 에 존재한다(단축키 트리거와 동일 논리). 트리거 바인딩을 조작하는 IPC API 는 만들지 않는다(설정 UI/config 경유만).
-- **cascade 방어**: 자동실행 스크립트가 `run_cli` 로 자기 트리거 대상을 만들면 재발화 연쇄가 생긴다. per-job deadline 은 1회 실행만 보므로, **재진입 가드**(`AutofireGuard`, `src/host_api/hooks/autofire.rs`)가 in-flight + 완료 직후 1 프레임 동안 신규 자동실행을 전역 억제해 연쇄를 유한하게 끊는다. origin(user/agent) 게이트는 미배선 — create 계열 이벤트에 origin 판별자가 없어(아래 [이벤트 ↔ 발화 site](#이벤트--발화-site)) 게이트에 의존할 수 없다.
+- **cascade 방어**: 자동실행 스크립트가 `run_cli` 로 자기 트리거 대상을 만들면 재발화 연쇄가 생긴다. per-job deadline 은 1 회 실행만 보므로, **재진입 가드**(`AutofireGuard`, `src/host_api/hooks/autofire.rs`)가 in-flight + 완료 직후 1 프레임 동안 신규 자동실행을 전역 억제해 연쇄를 유한하게 끊는다. origin(user/agent) 게이트는 미배선 — create 계열 이벤트에 origin 판별자가 없어(아래 [이벤트 ↔ 발화 site](#이벤트--발화-site)) 게이트에 의존할 수 없다.
 
 ### 향후 확장
 
@@ -122,7 +133,7 @@ crates/tasty-lua/
   meta/tasty.lua   # EmmyLua stub (LuaLS 용)
 ```
 
-`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0031). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
+`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0627). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
 
 이벤트 발화는 `hooks::lua::fire` 헬퍼 한 곳을 거친다(`src/host_api/hooks/lua.rs`):
 
@@ -142,7 +153,7 @@ fn fire<T: Serialize>(
 `src/host_api/hooks/autofire.rs`:
 
 - `dispatch(lua, scripts, guard, event)` — `ScriptRegistry::entries_for_event` 매칭 → 소스 read → `hash_bytes` 재검 → 일치 시 `run_script_tracked`(완료 추적) / 불일치 시 차단 + `tracing::warn`(해시 자동 갱신 금지). 단축키 경로(`try_dispatch_script_shortcut`)와 동형 시퀀스.
-- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 재점화하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 큐 drop/abort 포함 어떤 경로로도 누락 없음).
+- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1 회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 재점화하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 큐 drop/abort 포함 어떤 경로로도 누락 없음).
 - 트리거 저장 = `ScriptEntry.triggers`(`Vec<AutoTrigger>`, serde default). 등록 가능 이벤트 화이트리스트 = `AUTO_TRIGGER_EVENTS`(`crates/tasty-settings/src/scripts.rs`) — 아래 표의 이벤트와 1:1.
 
 ### 이벤트 ↔ 발화 site
@@ -198,10 +209,10 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ### 에러 / 실행
 
 - 콜백 Lua 에러 → `tracing::warn!` + 같은 이벤트 다음 콜백 계속(dispatch 안 멈춤). payload 직렬화 실패 → warn + 이 이벤트 콜백 전부 skip.
-- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 워커만 종료, 메인·다음 job 무영향. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0031 에서 제거됨.
+- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0627 에서 제거됨.
 - 디버그: `TASTY_LOG=tasty_lua=debug` (본체가 읽는 변수는 `TASTY_LOG` 다 — [crash-diagnostics](../../dev-guide/crash-diagnostics.md)).
 
 ## 관련
 
 - [reference/event-catalog](../../reference/event-catalog.md) — plugin 용 Event Bus(별개 경로)
-- [ADR-0031](../../adr/0031-lua-host-api-only-worker-isolated.md) — 결정 근거
+- [ADR-0627](../../adr/0627-lua-and-hook-execution.md) — 결정 근거

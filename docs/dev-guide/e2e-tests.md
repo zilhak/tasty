@@ -82,7 +82,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 **번들을 복사해 쓰는 변형**(`cp -r target/debug/builtin-plugins <target>/debug/`)도 동작한다 — exe 옆에 번들이 있으면 역산 분기까지 가지 않는다. 다만 복사본은 **갱신되지 않는다**: 이후 plugin 을 고쳐 다시 빌드해도 그 복사본은 그대로라 §0 의 drift 를 한 겹 더 만든다. 레포 밖 target 을 반드시 써야 할 때의 대안으로만 쓴다.
 
-**첫 namespace 호출이 기동을 기다린다.** 헤드리스는 plugin **프로세스**를 지연 기동한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 소속을 매니페스트로 먼저 확인하고, 맞을 때만 공통 manager가 해당 owner와 필요한 활성 IPC hook extension을 준비한다([ADR-0282](../adr/0282-namespace-invocation-starts-only-its-owner-and-matching-extension.md)). 그래서 그 첫 호출은 기동 시간을 그대로 문다(실측 2026-09-05: 첫 호출 1272 ms, 기동 뒤 92 ms).
+**첫 namespace 호출이 기동을 기다린다.** 헤드리스는 plugin **프로세스**를 지연 기동한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 소속을 매니페스트로 먼저 확인하고, 맞을 때만 공통 manager가 해당 owner와 필요한 활성 IPC hook extension을 준비한다([ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)). 그래서 그 첫 호출은 기동 시간을 그대로 문다(실측 2026-09-05: 첫 호출 1272 ms, 기동 뒤 92 ms).
 
 소속 판정 자체는 더 이상 기동을 기다리지 않으므로, 예전에 이 자리에 적혀 있던 "첫 호출이 드물게 `Method not found` 로 답한다"(namespace 표가 hello 뒤에 채워져서 기동과 첫 조회가 겹치던 형태)는 그 원인이 사라졌다. 여전히 `-32601` 이 나오면 그건 이름이나 설치를 의심할 신호다 — 설치된 owner가 비활성·자동 비활성이거나 기동에 실패하면 `-32002 plugin '<id>' is not running` 이 온다.
 
@@ -148,7 +148,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 | 축 | 정책 | 이유 |
 |----|------|------|
-| 공유 범위 | test binary 당 1개 | §1 참조 |
+| 공유 범위 | test binary 당 1 개 | §1 참조 |
 | 직렬화 | **안 한다** — lock 없이 `&'static` 만 공유 | IPC 서버는 연결마다 별도 스레드로 받아 mpsc 로 큐잉하므로 동시 호출이 안전하다. (`gui_common::shared()` 가 `MutexGuard` 로 완전 직렬화하는 건 실제 데스크톱 마우스/포커스를 뺏는 입력 주입을 쓰기 때문이고, 이쪽은 IPC 전용이라 해당 없음) |
 | 테스트 격리 | `TastyInstance::create_workspace()` 로 테스트마다 자기 workspace | IPC 생성은 `IntentOrigin::Agent` 라 active 를 전환하지 않고(원칙 1·3), attach 점유도 workspace/surface 단위 lock 이라 서로 다른 workspace 는 병렬 공존한다 |
 | 정리 | `Drop` 이 아니라 `atexit` | 정적 저장이라 `Drop` 이 영원히 돌지 않는다. atexit 가 graceful `system.shutdown` → force kill → port file·격리 HOME 삭제를 수행한다. `Drop` 은 전용 인스턴스 경로로 그대로 남는다. 다만 Drop/atexit 둘 다 프로세스가 강제로 죽으면 실행되지 않는다 — 그 구멍은 §2-1 참조 |
@@ -221,7 +221,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 | `OH_MY_ZSH` / `ZSH` | 제거 | oh-my-zsh customization 누수 차단 |
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
 | `TASTY_DEBUG_OS_OPEN_LOG` | 격리 홈 아래 `os-open.log` 로 지정. 정의 자리는 `tests/spawn_diag` 의 `apply_os_open_record` 하나이고 세 하네스가 부른다. 범용 하네스는 `os_open_log()` 로 그 경로를 준다 | 자식의 OS 열기(브라우저 · 파일 관리자)가 **실행자의 이미 떠 있는 브라우저**로 URL 을 넘긴다 — 격리 HOME 도 `TASTY_E2E_DISPLAY` 도 그 채널을 못 막는다. 이 값 아래에서 자식은 띄우지 않고 기록만 한다([debug-ipc.md](debug-ipc.md), [ADR-0511](../adr/0511-os-open-is-recorded-not-launched-under-a-debug-switch.md)). debug 스위치라 release 로 지은 자식은 무시한다. `e2e_tests` 의 `directory_dispatch_is_recorded_instead_of_opened_under_the_harness`(gui 조합 · debug 빌드)가 기록을 단언한다 |
-| `BROWSER` (unix) | 격리 홈 아래 `os-open-browser.sh` — 받은 인자를 `os-open.log` 에 `BROWSER\t<인자>` 로 적기만 한다. 같은 `apply_os_open_record` 가 준다. 경로에 공백·`:` 가 있으면 `true`, 스크립트를 못 쓰면 하네스가 선다 | tasty 가 띄운 다른 프로세스(PTY 셸 · plugin)가 스스로 여는 것은 위 스위치 밖이다(번들 markdown 의 외부 링크는 host 를 거쳐 스위치 안이다 — [ADR-0527](../adr/0527-a-plugin-opens-external-links-through-the-host.md)). `webbrowser` 는 Linux·BSD 에서 `BROWSER` 를 먼저 보고 성공하면 멈춘다 — macOS·Windows 는 이것으로 안 막힌다. 빈 `BROWSER=` 는 xdg desktop entry 를 직접 실행하므로 쓰지 않는다([ADR-0511](../adr/0511-os-open-is-recorded-not-launched-under-a-debug-switch.md)). 빌드 프로필과 무관하게 준다 |
+| `BROWSER` (unix) | 격리 홈 아래 `os-open-browser.sh` — 받은 인자를 `os-open.log` 에 `BROWSER\t<인자>` 로 적기만 한다. 같은 `apply_os_open_record` 가 준다. 경로에 공백·`:` 가 있으면 `true`, 스크립트를 못 쓰면 하네스가 선다 | tasty 가 띄운 다른 프로세스(PTY 셸 · plugin)가 스스로 여는 것은 위 스위치 밖이다(번들 markdown 의 외부 링크는 host 를 거쳐 스위치 안이다 — [ADR-0630](../adr/0630-bundled-plugin-data.md)). `webbrowser` 는 Linux·BSD 에서 `BROWSER` 를 먼저 보고 성공하면 멈춘다 — macOS·Windows 는 이것으로 안 막힌다. 빈 `BROWSER=` 는 xdg desktop entry 를 직접 실행하므로 쓰지 않는다([ADR-0511](../adr/0511-os-open-is-recorded-not-launched-under-a-debug-switch.md)). 빌드 프로필과 무관하게 준다 |
 | `DISPLAY` / `WAYLAND_DISPLAY` | **격리하지 않는다 — 이름을 요구한다.** linux 의 gui 조합에서 `TASTY_E2E_DISPLAY` 를 읽어 자식 `DISPLAY` 로 명시 전달하고(그때 `WAYLAND_DISPLAY` 는 제거), 값이 없으면 spawn 을 세운다. 아래 "어느 디스플레이에 뜨는가" | gui 데몬은 창을 만들고 그 창이 어디 뜨는지는 이 값이 정한다. 지우면 winit 이 즉사해 부팅 자체가 없다 — 다른 축과 성질이 다르다 |
 | `TASTY_LOG` | 본체 기본 필터와 **같은 모양** (`warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off`, 웹훅 하네스는 뒤에 `,tasty::webhook::listener=info`). 정의 자리는 `tests/spawn_diag` 의 `LOG_ENV`/`LOG_FILTER` 하나다 | child stderr 폭주에 의한 OS pipe backpressure 회피 + host 의 `TASTY_LOG` 누수 차단. 본체가 읽는 변수는 `TASTY_LOG` 다 — `RUST_LOG` 는 무시된다([crash-diagnostics](crash-diagnostics.md)). **`warn` 한 단어만 주면 안 된다** — 지정하는 순간 본체 기본 필터가 통째로 대체돼 `wgpu_hal=error` 등 억제가 풀리고 로그가 오히려 늘어난다(실측: 미지정 7줄 · `warn` 12줄 · 이 값 7줄) |
 
@@ -265,79 +265,40 @@ Xvfb 를 직접 띄웠으면 **저장한 PID 로 회수한다** — `xvfb-run` �
 
 ### 번들 plugin 은 opt-in 이다
 
-격리 HOME 은 매번 빈 상태로 시작하므로, host 가 부팅할 때 번들 plugin 9 개를 통째로
-새로 복사한다 — debug 빌드에서 부팅당 약 1.1 GB 다. 그런데 인스턴스를 띄우는 스위트
-대부분은 plugin 을 한 번도 호출하지 않는다.
+통합 테스트는 기본적으로 빈 `TASTY_BUILTIN_PLUGINS_DIR`를 사용한다.
+플러그인 namespace를 호출하거나 플러그인이 제공하는 surface kind를 여는 테스트 바이너리만
+`tests/spawn_diag`의 `SUITES_THAT_CALL_BUNDLED_PLUGINS` 목록에 넣는다.
+`common`, `webhook_common`, `gui_common`을 포함한 부팅 harness는 `apply_bundle_opt_in`을 공유한다.
 
-그래서 하네스는 **기본적으로 빈 디렉터리를 번들 루트로 지정**하고
-(`TASTY_BUILTIN_PLUGINS_DIR`), plugin 을 실제로 호출하는 스위트만 명부에 올린다.
-명부는 `tests/spawn_diag` 에 하나로 두고 인스턴스를 띄우는 하네스 전부가 `apply_bundle_opt_in` 으로 거친다.
+대상은 테스트 이름으로 추측하지 않는다. Explorer는 호스트 builtin이며 `webhook.*`도 호스트가 처리한다.
+목록은 실제 호출·surface 종류를 기준으로 정한다.
+플러그인이 필요한 테스트를 빠뜨리면 해당 호출이 실패해야 하며 목록과 harness 사용은 기존 검사가 확인한다.
 
-- **명부에 무엇을 넣을지는 이름이 아니라 성질로 정한다** — plugin 네임스페이스를
-  호출하는가, plugin 이 뒷받침하는 surface 타입을 여는가. 이름 모양으로 고르면 샌다:
-  `explorer` 는 plugin 처럼 생겼지만 호스트 view 이고, `webhook.*` 는 메서드 메타에
-  `plugin` 권한 등급이 붙어 있지만 핸들러는 host 다.
-- **빠뜨리면 조용히 넘어가지 않는다** — 그 스위트의 plugin 호출이
-  `-32601 Method not found` 로 실패해 그 자리에서 빨개진다. 반대 극성(기본 스테이징 +
-  예외 명부)은 명부가 낡아도 초록이라 비용만 조용히 자란다.
-- 판정은 **테스트 바이너리 단위**다. 공유 인스턴스가 프로세스당 `OnceLock` 이라
-  (§2) 테스트 함수 안에서 정하면 먼저 도는 테스트가 초기화를 가져가 경합한다.
-
-실측(같은 스위트를 번들만 바꿔 잰 대조): 격리 홈 최대 **1148 MB → 4 MB**.
-★ 그 "같은 스위트" 가 **어느 스위트인지는 기록에 없고**, 바로 아래 1160 의 `e2e_tests` 와는
-**다른 스위트**다 — 두 수를 한 계열로 읽지 마라. 근거와 못 좁힌 이유는 [ADR-0182](../adr/0182-test-instances-do-not-stage-bundled-plugins-by-default.md)
-의 "격리 홈 최대라는 이름의 세 값" 이 정본이고 여기 복제하지 않는다.
-명부가 실제로 가르는지는 따로 본다 — 명부 밖 `attach_silent_disconnect` 4 MB,
-명부 안 `e2e_tests` 1160 MB. **초록만으로는 판정이 안 된다**: 명부 밖 스위트는
-지렛대가 걸리든 안 걸리든 통과하므로, 통과는 두 경우 모두와 양립한다.
-**벽시계는 74 s → 74 s 로 안 줄었다** — 이 조치가 지우는 것은 그 스위트의 시간이 아니라
-그 스위트가 만드는 dirty page 이고, 그 부담은 같은 박스에서 동시에 도는 다른 러너가 진다.
-동시 러너 수 대비 효과는 측정하지 않았다. 근거와 대안은
-[ADR-0182](../adr/0182-test-instances-do-not-stage-bundled-plugins-by-default.md).
+선택은 테스트 함수가 아닌 바이너리 단위다. 프로세스별 OnceLock 공유 인스턴스가 있으므로
+함수 안에서 결정하면 첫 실행 순서에 따라 번들 사용 여부가 달라진다.
+목적은 불필요한 디스크 쓰기와 메모리 압박을 줄이는 것이며 테스트 실행시간 단축을 보장하지 않는다.
 
 ### 명부 안 스위트는 번들을 hardlink 로 받는다
 
-명부에 오른 스위트(plugin 을 실제로 부르는 쪽)는 번들이 필요하다. 그 격리 홈에는 번들을
-**복사하지 않고 hardlink 로 미리 넣는다** — `apply_bundle_opt_in` 이 자식을 띄우기 전에
-`<TASTY_HOME>/plugins/<id>/` 를 채운다. host 는 이미 있는 builtin 을 같은 버전이면 **내용으로**
-대조하므로(ADR-0191) 같은 파일을 다시 쓰지 않는다. 제품의 설치 경로는 그대로다 — 사용자
-홈으로의 sync 는 지금도 복사다.
+번들이 필요한 테스트는 자식 프로세스를 띄우기 전에 격리 HOME의 `plugins/<id>/`를 hardlink로 채운다.
+원본은 개발 번들이 아닌 harness 소유 스냅숏이다. 사용자 HOME으로의 제품 설치는 기존 복사를 유지한다.
 
-- **원본은 번들이 아니라 하네스 소유 스냅숏이다** — `target/<profile>/test-bundle-links/<서명>/`.
-  hardlink 는 inode 를 공유하므로 번들(`builtin-plugins/`)에 직접 걸면 `just build-plugins` 의
-  제자리 `cp` 가 돌고 있는 시험의 plugin 을 바꾸거나 `Text file busy` 로 빌드가 실패한다.
-  스냅숏은 번들의 경로·크기·mtime 서명으로 이름을 붙여 **번들이 바뀔 때만 한 번** 복사하고,
-  서명이 다른 옛 스냅숏은 지운다.
-- **스냅숏의 원본은 자식이 고를 번들이다** — 하네스가 제품의 `bundle_root_from_exe_dir` 를
-  그대로 부른다(debug 에서는 그 안의 dev 스테이징도 돈다 — 자식이 부팅하며 할 쓰기를 먼저 할
-  뿐이고 자식 쪽은 no-op 이 된다). `TASTY_BUILTIN_PLUGINS_DIR` 이 걸려 있으면 그것이 이긴다.
-  `TASTY_E2E_BIN` override 중에는 자식의 프로필을 하네스가 모르므로 채우지 않는다.
-- **실패는 전부 변경 전 동작으로 물러난다** — 스냅숏 자리와 `temp_dir` 이 다른 파일시스템이면
-  (시작할 때 hardlink 한 번으로 잰다) 스냅숏을 안 만들고, 걸기가 중간에 멈추면 못 건 파일을
-  host 가 복사로 채운다. 스냅숏이 낡았어도 host 가 내용으로 대조해 다른 파일만 새로 쓴다 —
-  틀리는 것은 비용뿐이고 결과가 아니다. 사유는 `tracing::warn!` 으로 시험 출력에 남는다 —
-  구독자는 `apply_bundle_opt_in` 이 첫 줄에서 설치하므로(멱등) 어느 하네스를 거치든 spawn 전에
-  서 있다. 통과한 시험의 출력은 캡처되므로 `--nocapture` 로 본다.
-- **제자리 쓰기가 없다는 것이 전제다** — host 의 설치·갱신은 전부 임시 파일 + rename 이고
-  청소는 unlink 라 공유 inode 를 안 건드린다. plugin 프로세스의 영속 쓰기는 설치 폴더가 아니라
-  `TASTY_PLUGIN_DATA_DIR` 로 간다. 이 전제를 깨는 코드(설치 폴더 안 파일을 열어 고치는 것)를
-  더하면 스냅숏이 오염된다 — 그래도 다음 홈은 host 의 내용 대조가 바로잡지만 그 스냅숏에서 건
-  홈들은 오염된 채로 부팅한다. 전수 근거는 ADR-0525.
+- 스냅숏은 `target/<profile>/test-bundle-links/<서명>/`에 둔다. 경로·크기·mtime이 바뀌면 한 번 복사하고 이전 스냅숏을 정리한다.
+- 번들 위치는 제품의 `bundle_root_from_exe_dir`로 구한다. `TASTY_BUILTIN_PLUGINS_DIR` override를 존중한다.
+  `TASTY_E2E_BIN` override에서는 자식 프로필을 알 수 없어 미리 채우지 않는다.
+- 처음 hardlink를 시도해 파일시스템이 다른지 확인한다. 스냅숏 생성 실패나 일부 링크 실패는 warning을 남기고
+  나머지를 호스트의 기존 복사로 채운다. 통과한 테스트의 로그까지 보려면 `--nocapture`를 쓴다.
+- 정확성은 호스트가 번들과 설치본을 바이트로 비교해 확인한다. 경로·크기·mtime 서명은 스냅숏 재사용 최적화다.
+- 설치 파일을 제자리 수정하면 공유 inode가 바뀐다. 설치·갱신은 임시 파일+rename, 삭제는 unlink를 사용하고
+  플러그인 영속 쓰기는 `TASTY_PLUGIN_DATA_DIR`로 보낸다. 설치 폴더가 자식 cwd이므로 상대경로 쓰기에도 주의한다.
 
-실측(2026-09-23, 이 개발 박스, `e2e_tests` 한 번 = 인스턴스 2 개, 같은 계기로 전·후):
-host 프로세스(`tasty`)의 `/proc/<pid>/io` `write_bytes` 합 **2446 MB → 13.7 MB**, 격리 홈의
-hardlink 아닌 바이트 **1226 + 1221 MB → 10 + 4 MB**. 번들이 바뀐 뒤 첫 완주는 하네스가
-스냅숏을 한 번 쓴다(약 1.2 GB — 그 뒤 완주는 0). 근거·대안은
-[ADR-0525](../adr/0525-test-homes-hardlink-the-bundle-from-a-harness-owned-snapshot.md).
+개발 번들에 직접 링크하면 빌드의 덮어쓰기가 실행 중 테스트 파일을 바꾸거나 `Text file busy`를 만들 수 있다.
+스냅숏이 오염돼도 개발 번들과 사용자 HOME으로 번지지는 않지만, 호스트가 내용을 고쳐 복사하는 비용이 다시 발생한다.
+스냅숏은 빌드 트리에 남으며 `cargo clean`으로 정리된다. 쓰기 감소와 실행시간 변화는 별도로 측정한다.
 
-격리 HOME 에 사전 작성하는 파일:
-
-| 파일 | 내용 | 이유 |
-|------|------|------|
-| `.zshrc` / `.bashrc` | 빈 파일 | shell rc customization 차단 |
-| `.tasty/config.toml` | `shell="/bin/sh"`(POSIX) / Git Bash(Windows) + `restore_layout=false` | `is_shell_valid()` 즉시 true → `detect_bash()`(host `/etc/passwd` 의존) 미호출 → **shell_setup_mode 진입 차단** |
-
-`shell_setup_mode` 에 진입하면 port file 이 영구히 안 써져 spawn 이 timeout panic 한다. config.toml 사전 작성이 이 경로의 *결정적* 차단이다.
+격리 HOME에는 빈 `.zshrc`·`.bashrc`와 테스트용 config를 미리 쓴다.
+config는 유효한 테스트 셸과 `restore_layout=false`를 지정해 초기 셸 설정 화면을 피한다.
+초기 설정에 멈추면 discovery 파일이 만들어지지 않아 harness가 부팅 timeout으로 실패할 수 있다.
 
 ## 4. Timeout (2단계)
 

@@ -66,185 +66,96 @@ attach 스트림은 **프레임 하나 = 상호작용 하나**(키 입력 · 리
 
 ## 밀어내기 실패와 누적 손실
 
-`StreamHub::push` 는 막히지 않는다 — client 의 sink 가 차 있으면 그 프레임을 **버리고**
-돌아온다(`PushResult::Dropped`). 연속으로 버린 수가 한도를 넘으면 그 연결을 끊는다
-(`PushResult::Disconnected`). 끊는 갈래도 그 프레임을 못 보내므로, 그 한 장 역시 손실이다.
+`StreamHub::push`는 client 때문에 host를 멈추지 않는다. 큐가 가득 차면 프레임을 버리고
+Dropped를 반환하며, 연속 실패가 LAG_LIMIT을 넘으면 연결을 끊는다.
+호출자가 Dropped 뒤 다음 데이터를 계속 보낼 수 있으므로 연결이 살아 있어도 출력 중간이 빠질 수 있다.
 
-- **`StreamSink::lag` 은 연속 drop 수다 — 성공 한 번에 0 으로 돌아간다.** 그래서 단발 손실이
-  섞여 있어도 나중에 보면 0 이고, "조용히 한 장 잃었나" 를 그 값으로는 못 묻는다.
-- **`StreamHub::loss()` 는 누적이고 안 내려간다.** 두 칸이며 물음이 다르다:
-  `frames_dropped` 는 연결이 **살아 있는데** 사라진 프레임 수(소비자가 알 길이 없는 손실),
-  `clients_lagged_out` 은 한도를 넘겨 끊은 연결 수(소비자가 이미 아는 손실)다. 한 수로
-  합치면 앞의 물음이 사라진다.
-- **지금 이 값을 읽는 제품 경로는 없다.** 호출자 쪽에서도 손실이 안 보인다 — `push` 를 부르는
-  제품 코드 **37** 자리 중 31 이 결과를 `let _ =` 로 버리고, 결과를 보는 **여섯**도
-  `Dropped` 를 `Unknown`/`Disconnected` 와 함께 묶어 다룬다. 그 여섯 중 다섯
-  (`core/attach_runtime.rs` 의 출력 tap 루프 넷 · `plugin_bridge/mesh_forward.rs`)은
-  `Unknown`/`Disconnected` 에만 `break` 하고 `Dropped` 면 **남은 chunk 를 계속 보낸다** —
-  순서 있는 열에서 가운데 한 장이 빠진 채 나머지가 간다. 나머지 하나
-  (`core/attach_runtime.rs` 의 markdown 변경 신호)는 `Sent` 외 전부를 한 덩어리로 debug
-  로그한다. 즉 이 카운터는 **손실이 있었는지를 값으로 남기는 자리**이고, 밖으로는
-  `system.pressure` 의 `stream_push` 덩어리(CLI `tasty list pressure`)로 나간다
-  ([telemetry](../features/telemetry/index.md)) — **그 자리와 아래 "client 에게 공백을
-  알린다" 는 물음이 다르다.** 이 카운터는 *서버 전체*의 누적이고, 아래 통지는 *그 연결
-  하나*가 이번에 몇 장을 잃었는가다.
-- **`backlog` 은 지금의 적체다 — 누계와 다르고 `lag` 과도 다르다.** 연결마다
-  `StreamSink::queued` 가 push 성공에 +1, write 스레드가 `SinkReceiver` 로 꺼낼 때 −1 이다
-  (`SyncSender` 가 길이를 안 주므로 넣는 쪽과 꺼내는 쪽이 함께 센다 — 꺼내는 경로가 그 타입의
-  메서드뿐이라 −1 을 빠뜨릴 수 없다). `StreamHub::loss()` 는 **살아 있는 연결의 몫만** 더한다 —
-  끊긴 연결의 큐는 채널과 함께 사라지므로 전체 카운터 하나로 세면 그 몫이 영구히 떠오른다.
-  세 값의 구분은 [ADR-0400](../adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md).
-- **그 37 은 `#[cfg(test)]` 밖만 센 값이다.** 세는 법은 수신자에 숫자 접미사가 붙는 것
-  (`hub2` · `hub3`)까지 포함해야 한다 — 그것을 빼면 넷이 빠지고, 하필 그 넷이 결과를
-  **보는** 자리라 위 "여섯" 이 "둘" 로 줄어든다.
+| 값 | 의미 | 외부 조회 |
+|---|---|---|
+| `lag` | 연결별 연속 drop. 데이터 전송 성공 시 0 | 내부 연결 해제 판단 |
+| `frames_dropped` | 살아 있는 연결에서 버린 프레임 누계 | system.pressure.stream_push |
+| `clients_lagged_out` | 지연 한도로 끊은 연결 누계 | system.pressure.stream_push |
+| `backlog` | 살아 있는 연결의 큐에 아직 남은 프레임 합 | system.pressure.stream_push |
+
+backlog는 연결별 queued 카운터로 계산한다. push 성공에 증가하고 SinkReceiver가 꺼내면 감소한다.
+끊긴 연결은 합에서 제외한다. sink_capacity와 함께 읽으면 현재 적체를 해석할 수 있다.
+누계는 어느 client의 어느 출력이 빠졌는지를 알려주지 않으므로 별도 Loss 통지를 사용한다.
 
 ### client 에게 공백을 알린다 (`Loss` / `client_loss_notify`)
 
-버린 것을 client 가 **모르는 채로** 계속 그리면, 그 화면은 이전과 연속이 아닌데도 연속인
-것처럼 보인다. 그래서 버린 수를 그 연결에 되돌려 준다 — 단, **선언한 client 에게만**.
+서버는 `ipc.stream.loss-notify` capability를 알린다. client가 `ClientLossNotify {}`를 선언하면
+직전 통지 뒤 이 연결에서 버린 프레임 수를 `Loss { frames }`로 보낸다.
+GUI mirror와 CLI surface/workspace dump·raw bridge가 선언한다. attach가 아닌 debug echo 스트림은 선언하지 않는다.
+선언하지 않은 peer에는 Loss를 보내지 않는다. STREAM_PROTO는 정확히 같은 버전만 연결하므로
+기능 추가만으로 번호를 올려 구 peer를 거절하지 않는다.
 
-- **선언은 client→server 한 번**: `StreamControl::ClientLossNotify{}`. GUI mirror client 는
-  `attached_workspace` 핸드셰이크 직후 `src/app/attach_client.rs` 에서 보내고, CLI 는
-  `tasty remote attach` · `tasty debug attach` 의 attach 결과 프레임을 읽은 직후
-  `crates/tasty-cli/src/local/attach.rs` 의 `declare_loss_notify` 에서 보낸다.
-  `StreamHub::pump_inbound` 이 이것을 `StreamHub::enable_loss_notify` 로 분류해 그 client 의
-  sink 에 표시한다.
-  - **선언하지 않는 소비자는 debug 스트림 하나다**(`crates/tasty-cli/src/local/debug.rs` 의
-    `StreamConnection::open` — attach 가 아니라 echo 확인용이라 재생할 화면이 없다). 그 연결은
-    **종전 동작 그대로** 조용히 손실을 겪는다. 좌변: `grep -rn 'ClientLossNotify {}'` 의 송신
-    자리. **선언하지 않은 peer 의 바이트 열은 한 바이트도 안 바뀐다** — 옛 client 는
-  `Loss` 를 역직렬화 못 해 조용히 무시할 텐데, 그 무시가 곧 "손실이 없었다" 로 읽히기
-  때문이다(아래 "왜 판을 안 올리는가").
-- **통지는 server→client `StreamControl::Loss{frames}`**: 직전 `Loss` 이후(첫 통지면 연결을 연
-  이후) 이 연결에서 버린 프레임 수.
-- **통지 자체가 막힐 수 있다 — 그래서 빚으로 든다.** 버리는 순간은 정의상 sink 가 찬
-  순간이라 통지도 못 넣는다. `StreamSink::pending_loss` 에 수를 쌓아 두고, **sink 에 자리가 나는
-  첫 순간** — write 스레드가 큐에서 한 장을 꺼낸 직후(`SinkReceiver`) — 에 통지를 넣는다. 그
-  순간 큐에 든 것은 전부 버리기 전에 들어간 프레임이라, 통지는 **마지막 생존 프레임 바로 뒤**,
-  즉 공백 이후 첫 프레임 앞에 정확히 앉는다 — 위치가 곧 "여기서 끊겼다" 는 뜻이다. 넣기에
-  실패하면 빚을 **안 지운다**(다음 기회에 전액 갚는다). `push` 의 맨 앞(`StreamHub::repay_pending_loss`)
-  에서도 한 번 더 시도한다.
-  - **통지의 지연 상한 — 소비자가 공백 앞을 다 읽는 순간 통지는 큐의 맨 앞에 있다.** 뒤따르는
-    push 에도, 소비자의 inbound 에도 기대지 않는다. server→client push 는 전부 **변화 구동**이라
-    (1 Hz tick 에 올라타는 `Activity`·`Attention`·`Cwd` 도 diff 만 민다 —
-    `busy_activity_forwards_only_on_change`), 갚는 자리가 `push` · `pump_inbound` 뿐이면 폭주 직후
-    조용해진 연결에서 통지가 다음 사건이나 그 연결의 다음 inbound 를 기다린다. **첫 심장박동
-    (`HEARTBEAT_INTERVAL`) 전에 창이 끝나는 CLI mirror-dump**(기본 500 ms)는 그 사이에 창이 끝나 공백 앞까지의 화면을 경고 없이 찍었다
-    ([ADR-0450](../adr/0450-a-pending-loss-notice-is-queued-the-moment-the-sink-has-room.md)).
-    sink 가 계속 차 있으면(소비자가 안 읽으면) 여전히 안 나가고, 그 경우는 `LAG_LIMIT` 강제분리가
-    끝낸다. 시험 `a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss`.
-  - **`pump_inbound` 도 갚는다 — 선언이 손실보다 늦게 온 연결.** 소비자가 선언 전에 큐를 다
-    비웠으면 꺼낼 때는 갚을 것이 없었고 선언 뒤에는 꺼낼 것이 없다. `pump_inbound` 가 끝에서 모든
-    연결의 빚을 갚으므로(`repay_all_pending_loss`) 선언을 적은 그 배치에서 통지가 나간다. 시험
-    `a_declaration_that_arrives_after_the_loss_is_answered_in_the_same_inbound_batch`.
-  - **평상시 비용.** write 스레드는 연결마다 둔 원자 사본(`StreamSink::owes_notice` —
-    `loss_notify && pending_loss != 0`)만 읽고, 빚이 있을 때만 sink 맵 잠금을 잡는다. 선언이
-    손실 뒤·비우기 전에 오면 선언 자리가 사본을 켜서 꺼내는 순간 갚는다 — 시험
-    `a_declaration_between_the_loss_and_the_drain_is_repaid_by_the_write_thread`.
-- **통지 성공은 소비자가 따라잡은 것으로 안 센다.** `repay_pending_loss` 는 `StreamSink::lag`
-  을 건드리지 않는다 — 서버가 스스로 넣은 프레임이 `LAG_LIMIT` 강제분리 시계를 되돌리면,
-  영원히 안 읽는 소비자가 영원히 안 끊긴다.
-  - **★ 그 이면 — 선언한 연결은 회복 문턱이 한 칸에서 두 칸으로 올라간다.** 통지가 본 프레임보다
-    먼저 빈 칸을 가져가는데 `lag` 은 본 프레임이 들어가야 0 이 되므로, 소비자가 **push 한 번당
-    정확히 한 칸씩** 비우는 구간에서는 빚이 있는 선언 연결이 본 프레임을 한 장도 못 넣고
-    `LAG_LIMIT` 에서 끊긴다. 같은 속도의 안 선언한 연결은 매번 `Sent` 라 안 끊긴다. 실측
-    (`StreamHub` 단위, 264 회 상한, `(마지막 PushResult, Sent 수)`): 한 칸이면 미선언
-    `(Sent, 264)` · 선언 `(Disconnected, 0)`, 두 칸이면 둘 다 `(Sent, 264)`. 차이가 나는 구간은
-    **정확히 1:1 소비**뿐이다. 근거와 기각한 대안(`lag` 되돌리기)은
-    [ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
+큐가 가득 차 통지도 넣을 수 없으면 `pending_loss`에 수를 보관한다.
+`SinkReceiver`가 한 프레임을 꺼내는 즉시 통지를 넣어 마지막 보존 데이터 뒤에 도착하게 한다.
+성공한 때만 pending 수를 지운다. push 앞과 pump_inbound 끝에서도 시도하므로
+손실 뒤 늦게 선언한 client가 이미 큐를 비운 경우도 처리한다.
 
-**왜 `ipc.stream` 의 판을 안 올리는가.** `STREAM_PROTO` 는 서버가 핸드셰이크에서 **동등
-비교**하는 수다(`validate_stream_proto`). 올리면 기능이 좁아지는 것이 아니라 구 peer 의 연결이
-**거절**된다. 그래서 더해지는 스트림 기능은 판이 아니라 **이름**으로 선언한다 —
-`capability::CAPABILITIES` 의 `ipc.stream.loss-notify`(`system.info` 로 노출) 가 서버 쪽,
-위 `client_loss_notify` 프레임이 client 쪽이다. 결정은
-[ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
+평소 write 스레드는 원자 `owes_notice`만 읽으며 통지가 있을 때만 sink map을 잠근다.
+선언·drop·통지 성공 시 원자 사본을 갱신한다. 수신 측은 map의 Weak를 사용하며 sender를 소유하지 않는다.
+따라서 registry에서 연결을 지우면 write 스레드도 채널 종료를 알 수 있다.
+
+Loss를 보냈다고 lag를 초기화하지 않는다. 서버가 만든 통지 성공은 client가 데이터를 따라잡았다는 뜻이 아니다.
+이 때문에 push 한 번당 한 칸만 비우는 client는 통지가 그 공간을 차지해 데이터 전송에 계속 실패할 수 있다.
+두 칸 이상을 비우는 경우와 구분해 부하를 검증한다.
+
+알려진 경합도 있다. push가 통지를 넣지 못한 직후 write 스레드가 공간을 만들면 데이터 한 장이 Loss보다
+먼저 들어갈 가능성이 있다. 과거 실행 실험에서는 재현하지 못했다. 실제 앞지르기 관측이나 원자적 삽입 수단이
+생기면 이를 다시 검토한다. 손실 client는 아래 재attach로 화면을 다시 받는다.
 
 ### 통지를 받은 client 가 하는 일 (재동기화 계약)
 
-통지는 "몇 장 잃었다" 까지만 말하고 무엇을 잃었는지는 안 싣는다(연결 단위). 그래서 계약은
-**데이터 종류마다** 두고, 연결 하나에는 그 연결이 나르는 종류 중 **가장 강한** 것을 건다.
-근거·기각한 대안은 [ADR-0400](../adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md).
+Loss는 surface나 데이터 종류를 담지 않는다. 한 연결이 여러 종류를 운반하면 가장 강한 복구 방법을 적용한다.
 
-| 종류 | 계약 |
+| 종류 | 복구 |
 |---|---|
-| PTY byte delta | **snapshot 재요청** — 공백 뒤 바이트를 공백 앞 화면에 잇지 않는다 |
-| 상태 snapshot (`Resize`·`Activity`·`Attention`·`Cwd`·구조) | **낡음 표시** — 새 값이 올 때까지 최신이라고 말하지 않는다 |
-| mesh | **종료** — 공백을 건넌 조립·캐시를 잇지 않고, 처음부터(full texture) 다시 구독한다 |
-| bulk | **전송 중단** — 결과를 모르는 전송을 성공으로도 실패로도 확정하지 않는다 |
+| PTY delta | 새 snapshot을 받기 전에는 불연속 출력을 정상 화면으로 간주하지 않음 |
+| Resize·Activity·Attention·Cwd·구조 상태 | 새로운 값을 받을 때까지 오래된 상태로 표시 |
+| mesh | 조립기와 캐시를 버리고 full texture부터 다시 구독 |
+| bulk | 결과 불명인 중단으로 처리; 이미 commit됐을 수 있어 자동 재시도하지 않음 |
 
-- **snapshot 재요청의 수단은 재attach 다.** 서버가 PTY snapshot 을 만드는 자리는 attach 경로
-  하나뿐이다(`snapshot_as_vt()` 와 출력 tap 을 메인 루프의 한 턴에 함께 잡는다). 새 wire 가
-  없으므로 구 서버에서도 그대로 동작한다.
-- **순서: `Detach` → 옛 연결의 EOF → 새 연결.** 서버는 옛 연결의 `Disconnected` 를 inbound
-  채널에 넣은 **뒤에** 소켓을 닫는다(`finish_stream_connection`). 그래서 EOF 를 본 client 가
-  여는 새 연결의 attach 요청은 같은 FIFO 에서 반드시 점유 해제 뒤에 처리된다 — 점유가 옛
-  client 에 남아 새 attach 가 `already_attached` 로 거절되는 경합이 없다.
-- **GUI mirror**(PTY + 상태 + mesh 를 한 연결로): 리더 스레드가 `Loss` 를
-  `MirrorEvent::Desynced` 로 옮기고, 적용(`begin_resync`)이 셋을 한다 — 이 세션의 mirror
-  터미널마다 출력 stream 표지를 새로 만들고(아래), 옛 연결에 `Detach` 를 보내고, 경고 toast
-  (`attach.toast.mirror_desynced`)로 화면·상태가 낡았음을 알린다. 세션의 `resync_pending` 이 선
-  동안 EOF 가 오면 `apply_attach_client_output` 이 끊김 정리 대신 `resync_session` →
-  `reconnect_session` 으로 다시 붙는다 — anchor 유무와 무관하다. 성공하면 재연결 toast 가
-  뒤따르고, 실패하면 끊김과 같은 갈래다(anchor 가 있으면 `Reconnecting`, 없으면 정리). 세션마다
-  재attach 는 한 번에 하나이고, 기다리는 동안 온 통지는 수만 더한다. 끊김 판정 규칙은
-  `disconnect_disposition` 한 함수에 있다.
-- **창 없는(parked) engine 의 손실은 재attach 를 미룬다.** `begin_resync` 는 host 가 parked 면
-  표지만 갱신하고 `resync_awaiting_window` 를 세운다 — 옛 연결에 `Detach` 를 안 보낸다.
-  `reconnect_session` 은 mirror 를 담은 창을 `find_main_with_workspace` 로 찾으므로 parked 에서
-  걸면 실패하고, 실패 갈래는 anchor 없는 세션을 정리하기 때문이다. 그 engine 이 창에 다시
-  붙으면 `apply_attach_client_output` 의 창 갈래가 `resume_resync_in_window` 로 옛 연결을 놓고
-  낡음 toast 를 띄운다. 이 함수는 `AttachClientData` wake 와 `Tick::AttachView`(3 초 backstop)
-  둘 다에서 돌므로, 복원 뒤 원격이 조용해도 늦어도 한 주기 안에 시작한다. 미루는 동안 옛
-  연결이 따로 끊기면 `resync_released()` 가 거짓이라 손실과 무관한 끊김 갈래를 탄다.
-  - **이 재개 배선에는 시험 채널이 없다.** 단위 시험은 `resume_resync_in_window` 와
-    `disconnect_disposition` 을 직접 부른다 — 그 함수가 `apply_attach_client_output` 의 창 갈래에
-    이어져 있는지는 아무 시험도 안 본다. 그 호출을 `if false { … }` 로 무력화해도
-    `cargo test -p tasty --lib` 가 초록이다(실측 2026-09-21: 2543 passed). 창 갈래를 시험하려면
-    `App`(winit `EventLoopProxy` 필요)과 창 있는 `MainView` 를 조립해야 해서 붙이지 않았다. 배선이
-    빠지면 parked 손실은 창이 돌아와도 재attach 되지 않는다 — mirror 는 남지만 공백은 안 메워진다.
-    **재는 법**: 격리 `TASTY_HOME` 인스턴스 둘(A 서버, B GUI)을 띄우고 B 에서
-    `tasty remote attach --into-gui --target-port <A 포트> --workspace <N>` 으로 수동 mirror 를 연다.
-    B 의 마지막 창을 닫아 engine 을 parked 로 보낸 뒤, B 를 `SIGSTOP` 하고 A 의 그 터미널에 출력을
-    흘려 `tasty list pressure` 의 `stream_push.frames_dropped` 가 64 미만으로 오르면 `SIGCONT` 한다.
-    B 로그에 "재attach 를 창이 돌아올 때까지 미룬다" 가 찍혀야 한다. `tasty new window` 로 창을
-    되살리면 3 초 안에 "미뤄 둔 재attach 를 시작한다" 가 찍히고 A 로그에 새 client id 의 attach 가
-    나야 한다. 위 변이를 넣은 빌드에서는 두 번째 줄이 끝내 안 나온다.
-- **재연결은 mesh 를 처음부터 다시 구독한다.** 서버의 mesh 구독은 client id 에 묶여 옛 연결과
-  함께 사라진다. `reconnect_session` 이 그 세션의 mesh surface 마다 캐시된 frame
-  (`attach_mesh_frames`)과 구독 dedup 상태(`MainView::attach_mesh_input`)를 지워, 다음 렌더가
-  `MeshContext` 를 다시 보내게 한다. dedup 상태가 남으면 크기·테마가 안 바뀌는 한 구독이 다시
-  안 나간다. 이 정리는 손실 재attach 와 네트워크 재연결에 똑같이 걸린다.
-- **CLI**(`crates/tasty-cli/src/local/attach.rs`): 세 루프가 Control 을 `classify_control`
-  로 가른다. 손실이면 옛 연결에 `Detach` 를 쓰고 서버가 소켓을 닫을 때까지(dump 는 reader
-  스레드의 EOF, raw 브리지는 `ServerRecvErr`) 기다린 뒤 `run_attach_on_port` ·
-  `run_attach_workspace_on_port` 가 다시 붙는다. 재attach 는 호출자에게 안 보인다 —
-  반환 타입 `AttachExit` 에는 그 갈래가 없고 파일 안의 `SessionEnd` 에만 있다.
-  - **dump**(`--dump-after`): 화면을 찍지 않고 다시 붙어 처음부터 수집한다. 한 실행에
-    `DUMP_RESYNC_LIMIT`(3) 회까지이고, 넘으면 수집을 이어가 화면을 찍은 뒤 stderr 로 공백이
-    남았다고 알린다(`cli.attach.desync_unrecovered`). stdout 형식은 안 바뀐다.
-  - **raw 브리지**: 횟수 제한이 없다 — 대화형이라 사용자가 `Ctrl+\` 로 끝낼 수 있다. 새
-    snapshot 이 화면을 다시 그리고, 전환하는 동안 들어온 stdin 은 원격에 안 간다(재연결 때의
-    전환 창과 같다). 다만 그 창에서도 **끝내라는 신호는 살아 있다** — stdin EOF 와 detach 키
-    (`Ctrl+\`)를 만나면 다시 붙지 않고 정상 루프와 같이 끝난다. 이 창에서는 stdin 슬롯이 아직
-    옛 세션의 sender 를 들고 있어 EOF 가 latch 에 남지 않으므로, 삼키면 다음 세션이 EOF 를 영영
-    못 받는다. 서버가 `HEARTBEAT_TIMEOUT` 안에 소켓을 안 닫으면 기다림을 포기하고 붙는다.
-  - `--send` 입력은 첫 attach 에서만 보낸다 — 되풀이하면 원격에서 명령이 두 번 돈다.
-- **bulk 연결**(`open_bulk_connection`): 핸드셰이크 직후 선언하고, `await_bulk_result` 가
-  결과를 기다리는 중 `Loss` 를 받으면 `Detach` 후 **중단** 오류로 끝낸다 — 이 연결로 서버가
-  미는 것은 `BulkResult` 하나라, 그것이 버려졌을 수 있다. 자동 재시도는 없다(서버가 이미
-  저장했을 수 있다). 오류에 거부 접두(`BULK_REJECT_PREFIX`)를 달지 않으므로 이미지 붙여넣기
-  업로드의 오류 행에는 재시도가 열린다.
-- **mirror 출력의 stream 표지가 바뀐다.** mirror 터미널도 받은 바이트를 자기 출력 버퍼에
-  쌓고, 에이전트는 그것을 위치 커서로 읽는다([ADR-0341](../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md)).
-  `Desynced` 를 받을 때와 재연결로 snapshot 을 다시 받을 때 `Terminal::renew_output_stream` 이
-  표지를 새로 만든다 — 옛 표지를 들고 읽는 소비자는 공백을 건넌 바이트 대신 stream 불일치를
-  받는다. 위치 수는 이어서 세므로 표지를 안 싣는 소비자에게는 무변경이다.
+snapshot과 output tap을 같은 순간에 확보하는 경로가 attach이므로 재attach를 사용한다.
+Detach를 보낸 뒤 이전 연결의 EOF를 확인하고 새로 연결한다.
+서버는 Disconnected를 inbound에 넣은 뒤 소켓을 닫아 이전 점유 정리가 새 요청보다 먼저 처리되게 한다.
+raw bridge는 서버가 HEARTBEAT_TIMEOUT 안에 닫지 않으면 대기를 끝내고 연결을 다시 시도한다.
+
+- GUI mirror는 손실을 표시하고 한 세션에서 재attach를 한 번에 하나만 진행한다.
+  진행 중 추가 통지는 합산하며, 완료 뒤 다시 손실이 나면 재attach할 수 있다.
+  기존 reconnect_session이 survivor ID와 scrollback을 유지하며 mesh frame·구독 중복 방지 캐시는 초기화한다.
+  실패하면 anchor가 있는 세션은 Reconnecting, 나머지는 정리한다.
+- parked engine은 stream ID와 오래됨 표시만 갱신하고 연결은 유지한다. 창을 복원하면
+  `resume_resync_in_window`가 재attach를 시작한다. AttachClientData 또는 3초 AttachView가 이 처리를 실행한다.
+  이 호출 연결은 기존 단위 테스트만으로 검증되지 않는다. 실제로 park→손실→창 복원을 재현해야 한다.
+- 창에서 시작한 재attach가 EOF를 기다리는 사이 park되면 anchor 없는 세션이 정리될 수 있다.
+  소스에서 확인한 한계이며 실행 재현이 확인된 것은 아니다.
+- CLI dump는 최대 세 번 재attach하고 수집을 처음부터 시작한다. 그 뒤 손실은 결과를 출력하면서 stderr로 알린다.
+  `--send`는 첫 attach에서만 실행한다. raw bridge는 제한 없이 재attach하고 매번 stderr로 알린다.
+  전환 중 일반 stdin은 버릴 수 있지만 EOF와 Ctrl+\는 종료로 처리해야 한다.
+- bulk는 Loss를 받으면 Detach 후 중단 오류를 반환한다. 서버 거부를 뜻하는 BULK_REJECT_PREFIX는 붙이지 않으므로
+  이미지 업로드 UI의 수동 재시도는 가능하다.
+
+Loss와 재연결 snapshot에서 mirror Terminal의 output stream ID를 바꾼다.
+이전 ID를 가진 위치 읽기는 stream 불일치를 받으며, ID 없이 읽는 기존 소비자를 위해 위치 숫자는 이어 센다.
+재attach snapshot 때문에 scrollback에 화면 한 벌이 중복될 수 있다.
+
+parked 복구 검증은 두 격리 인스턴스에서 실제로 park 가능한 OS 경로를 사용한다.
+client 수신을 늦춰 LAG_LIMIT 미만의 drop을 만든 뒤 복원하고, 지연 복구 로그와 새로운 attach를 확인한다.
+Linux·Windows의 일반 최소화는 창을 유지하므로 macOS의 parked 동작을 확인한 것으로 보고하지 않는다.
 
 ## 갱신 cadence 분리
 
 - **서버측 readonly 뷰**(피점유 — 대상 부하 절약): **3초 polling**(`Tick::AttachView`, `src/app/attach_poll.rs`)으로 self-snapshot 적용.
 - **client mirror**(내가 다루는 대상): 원격 출력이 올 때마다 즉시 갱신, 3초 tick 은 backstop(누락 출력 적용·끊긴 세션 정리)으로만.
+
+hard 점유된 서버 surface의 드래그 선택과 복사는 허용한다.
+좌표 변환과 복사 문자열은 CoreState::visible_terminal이 반환하는 readonly mirror를 사용한다.
+live 터미널을 읽으면 사용자가 보고 선택한 내용과 달라질 수 있다.
+클릭 트래킹은 None으로 처리해 로컬 선택을 사용한다. 휠은 live scroll_offset이 바뀌는 문제 때문에 차단하고,
+링크 실행은 지연된 화면에서 외부 파일·URL을 여는 부수효과 때문에 차단한다.
+IME·vi 커서·링크·검색 하이라이트는 표시하지 않는다. soft 점유는 이 제한을 받지 않는다.
 
 ## 리사이즈 전파 (mirror geometry)
 
@@ -279,28 +190,27 @@ mirror 터미널은 로컬 PTY 가 없어 `Terminal::get_cwd` 의 pid 폴백이 
 
 ## 주의 환기(attention) 전파
 
-사이드바 워크스페이스 행의 kind 별 개수 배지, surface 테두리, 탭 제목 색([features/surface-highlight](../features/surface-highlight/index.md))은 `AttentionStore`(`CoreState.attention`, `src/core/state/attention.rs`)를 읽는다. 이 store 는 **인스턴스 로컬**이고 인스턴스 간 동기화 개념이 없다 — 그래서 busy 와 같은 이유로 **원격이 자기 surface 의 attention 을 client 로 forward** 한다(순수 **server→client** 단방향).
+attention의 생성·해제·표시 규칙은 [주의 환기 기능](../features/surface-highlight/index.md)에 모아 둔다.
+원격 전달은 다음 순서로 처리한다.
 
-- **진실 원천은 surface 를 소유한 인스턴스다.** 미러는 서버가 push 한 값을 반영만 하고 자기 판단으로 레코드를 만들지 않는다(아래 "미러의 로컬 발동은 억제된다"). 다만 그 이유가 producer 마다 같지는 않다 — `AttentionKind::NeedsInput` 은 Claude 훅에서만 나오고 그 훅은 PTY 가 있는 쪽에서만 발화하므로 mirror 가 로컬로 도출할 방법이 **원천적으로 없다**(push 가 유일한 물리적 경로). 반면 `Completion` 축의 OSC 133 명령 완료·Bell·OSC 9/777 은 서버 바이트를 파싱하는 미러에서도 **실제로 발화하므로**, 이쪽은 물리적 불가능이 아니라 진실 원천 단일화를 위한 **정책적 억제**다. busy 는 그래도 로컬 폴링을 시도라도 할 수 있다는 점에서 attention 의 조건이 더 강하다.
-- **서버측 계산·forward**: busy 와 **같은 1Hz `Tick::Busy`** 에서 `CoreState::forward_attention`(`core/attach_runtime.rs`)이 `attention_forwards`(`core/state/attention.rs`)의 계산 결과 — 점유 중 surface 의 attention 변화분 — 을 `StreamControl::Attention{surface_id, kind}` 로 holder client 에 push 한다. 배선 지점도 busy 와 동일한 3 곳(`src/app/busy.rs` 의 main window·parked engine, `src/boot.rs` 의 headless). `last_forwarded_attention` 캐시가 값이 실제로 바뀐 tick 에만 프레임을 내보내고(스팸 억제), 점유 해제 → 재점유(다른 client 일 수 있음) 시에는 캐시를 버려 값이 같아도 baseline 을 다시 1회 push 한다. 캐시가 (holder, 값) 을 기억하는 것도, 그래서 한 tick 창 안의 holder 교체에서도 새 holder 가 baseline 을 받는 것도 `last_forwarded_busy` 와 동형.
-- **해제는 별도 변형이 아니라 `kind: null`**: `Attention` 프레임 하나가 raise/clear 를 모두 표현한다. 프레임은 델타가 아니라 멱등 상태이고, 서버는 client ack 이 아니라 항상 자기 live store 에서 매 tick 재-diff 한다.
-- **수렴 보장 범위**: 위 재-diff 가 **보장하는 것은 wire 축의 유실뿐**이다 — 프레임이 드롭되거나 지연돼도 서버 값이 그대로면 다음 tick 에 같은 값이 다시 나가 미러가 서버 기준으로 수렴한다. 미러가 자기 store 를 로컬로 바꾸는 축은 이 재-diff 로 메워지지 않는다(서버는 자기 값이 바뀌지 않는 한 다시 push 하지 않는다) — 그래서 그 축은 자동 수렴이 아니라 전용 장치 둘로 맞춘다. **발동**은 미러에서 아예 일어나지 않게 막고(아래 "미러의 로컬 발동은 억제된다"), **해제**는 그 edge 를 서버로 되돌린다(아래 "미러의 해제는 서버로 전달된다"). 그래서 `src/gfx/gpu.rs` 의 매 프레임 포커스 해제가 mirror surface 를 지우는 것도 divergence 를 만들지 않는다 — 그 제거가 곧 서버로 전달되는 edge 이고, 서버 값이 실제로 내려간다.
-- **wire 표현**: `AttentionKindWire`(`crates/tasty-ipc/src/stream.rs`) — host 의 `AttentionKind` 는 `pub(crate)` 이고 `tasty-ipc` 는 host crate 를 의존하지 않으므로 wire 전용 enum 을 두고 경계에서 `AttentionKind::to_wire`/`from_wire` 로 변환한다. 직렬화 문자열(`"completion"`/`"needs_input"`)은 `surface.completion` IPC 의 `kind` 파라미터와 **같은 어휘**다.
-- **client 적용**: reader 스레드가 `MirrorEvent::Attention(remote_surface_id, kind)` 로 버퍼링하고, `apply_attach_client_output` 이 세션의 `remote_to_local` 매핑으로 로컬 mirror surface id 를 찾아 `CoreState::set_mirror_surface_attention` 을 호출한다. 값은 busy 와 달리 **별도 집합이 아니라 기존 `AttentionStore` 에 그대로** 들어간다 — busy 가 `mirror_busy_surfaces` 를 분리한 이유는 `refresh_busy_surfaces` 가 매 tick `busy_surfaces` 를 통째로 교체하기 때문인데, attention 에는 그런 wholesale 교체가 없어 분리할 이유가 없고, 같은 store 에 두어야 세 소비처가 코드 변경 없이 미러에서도 동작한다.
-- **미러의 로컬 발동은 억제된다 — push 가 유일한 소스**: 미러 터미널은 로컬 PTY 가 없어도 서버가 흘려준 바이트를 그대로 파싱하므로 OSC 133 D·Bell·OSC 9/777 이 미러에서도 발화하고, `surface.completion` IPC/CLI 도 미러 인스턴스에서 로컬 mirror surface id 를 대상으로 불릴 수 있다. 이들이 미러에 레코드를 만들면 같은 사건에 서버·미러가 각각 별개 레코드를 갖는 이중 상태가 되므로, `CoreState::raise_attention` 이 `is_mirror_surface` 로 걸러 **로컬 발동을 no-op** 으로 끝낸다(단일 진입점 집행 — producer 별 게이트가 아니다). 서버 쪽 동일 사건은 서버에서 발동해 push 로 내려오므로 정보는 사라지지 않는다. 억제 대상은 attention 레코드 하나뿐이라 같은 cascade 의 **알림 패널 아이템·토스트·훅 발화는 미러에서도 그대로** 동작한다. 근거·대안: [ADR-0098](../adr/0098-mirror-local-attention-raise-suppressed.md).
-- **미러의 해제는 서버로 전달된다 (client→server, 해제 edge 1 회)**: 해제 판정 경로 두 개(실 렌더 포커스 `gpu.rs`, 알림 읽음 `mark_notification_read`/`mark_all_notifications_read`)는 전부 **그 인스턴스의 로컬 GUI 사건**이라, 미러 사용자의 어떤 행동도 서버의 해제 경로를 발동시키지 못한다. 반대로 서버 로컬 사건은 점유 중 그 레코드를 지우지 못하도록 **게이트돼 있다**(아래 "점유 중 해제는 홀더만"). 그대로 두면 **해제 주체가 아예 없어** 서버 배지가 영구히 남는다. 그래서 `CoreState::clear_attention` 이 **실제로 레코드를 제거했는지**를 반환하고(그 `true` 가 곧 edge 다), mirror surface 에서 edge 가 나면 `CoreState::pending_attention_clear_forward` 에 넣는다. App 이 `about_to_wait`(`dispatch_pending_attention_clear_forwards`)에서 drain 해 로컬 id 를 세션 매핑으로 원격 id 로 치환하고 `StreamControl::ClientAttentionClear` 를 보낸다. 서버는 `pump_inbound` 가 `attention_clear_requests` 로 분류하고 GUI(`apply_attention_clear_requests_batch`)/headless(`boot`) 양쪽이 `CoreState::apply_attached_attention_clear` 로 적용한다 — **holder 검증**은 `apply_attached_workspace_resize` 와 같은 형태(anchor surface 의 워크스페이스 holder 여야 한다, ADR-0040). 결정 근거는 [ADR-0104](../adr/0104-mirror-attention-clear-forwarded-to-owner.md).
-  - **큐 push 는 호출부가 아니라 `clear_attention` 안에서 한다.** 세 호출부가 모두 미러에서 발생할 수 있고(미러 로컬 Bell/OSC 9 로 만들어진 알림을 미러 알림 패널에서 읽음 처리하는 경우 포함), 포커스 경로에만 큐잉하면 알림으로 확인한 경우가 전달되지 않아 다음 push 에서 배지가 되살아난다. 한 곳에 두면 세 경로가 균일하게 덮이고 해제 producer 가 늘어도 누락이 없다.
-  - **주기 전송 없음 — 제거 edge 1 회.** 레코드가 없는 상태의 clear 는 전부 no-op 이라 포커스를 유지해도 프레임이 반복되지 않는다. 별도 last-sent 추적이 필요 없다.
-  - **에코 루프 없음.** 미러 clear → 서버 clear → 다음 diff 가 `kind: null` 을 미러로 push → 미러엔 이미 레코드가 없어 edge 가 생기지 않는다(idempotent 수렴). 서버 push 적용(`set_mirror_surface_attention`)과 teardown(`forget_mirror_surface_attention`)이 `clear_attention` 을 타지 않는 것이 이 성질의 근거다.
-  - **알려진 엣지(의도된 동작).** 미러가 그 surface 를 **이미 포커스한 상태**에서 서버가 새 raise 를 push 하면, 미러는 레코드를 심자마자 다음 렌더 프레임에서 지우고 해제 edge 를 보내 배지가 사실상 뜨지 않는다. 단일 인스턴스 로컬 동작과 같은 규칙이라(포커스된 surface 에 raise 하면 지금도 다음 프레임에 지워진다) 그대로 둔다.
-- **점유 중 해제는 홀더만 — 서버 로컬 사건은 게이트된다 (client→server 의 대칭)**: 하드 점유된 surface 의 주체는 홀더이고 로컬 사용자는 readonly 이므로(ADR-0040), "확인했다" 는 판정도 홀더의 것이다. 위 해제 호출부 셋(실-포커스 `gpu.rs`, 알림 읽음 2종)은 **그 인스턴스의 로컬 사용자 사건**이라 전부 로컬 축 진입점 `CoreState::clear_attention_local` 을 지나고, 그 안에서 게이트 술어 `local_attention_clear_allowed`(= `!OccupancyRegistry::is_hard_occupied`)가 한 번 평가된다. 점유 중이면 제거 edge 자체가 만들어지지 않는다(→ 미러 forward 큐 적재도 없다). 근거·대안: [ADR-0109](../adr/0109-hard-occupancy-attention-clear-holder-only.md).
-  - **게이트는 primitive `clear_attention` 이 아니라 래퍼에 있다.** 홀더의 해제를 적용하는 서버측 경로(`apply_attached_attention_clear` → `clear_attention`)가 게이트를 지나면 자기 요청이 막혀 점유 중 해제 주체가 다시 0 이 된다. 그래서 primitive 는 게이트 없이 남고 로컬 축만 래퍼를 탄다 — ADR-0104 가 이 게이트에 걸어둔 제약이다.
-  - **알림 읽음 자체는 점유와 무관하게 처리된다.** 게이트가 걸리는 것은 attention 해제 하나뿐이라 `notifications.mark_read`/`mark_all_read` 는 그대로 실행된다. 읽음은 이 인스턴스 사용자의 알림 패널 상태이고, attention 은 홀더와 공유하는 상태다.
-  - **soft 점유·미러에는 걸리지 않는다.** 술어가 `is_hard_occupied` 하나라 soft 점유(ADR-0040, write 제한 없음)는 통과한다. 미러 인스턴스도 마찬가지다 — 점유는 surface 를 **소유한** 인스턴스의 `OccupancyRegistry` 에만 기록되므로 미러의 술어는 항상 false 이고, 위 해제 forward 경로가 그대로 성립한다.
-  - **데드락 없음.** 게이트는 상태를 저장하지 않고 매 호출 점유를 다시 묻는다 — detach / force-detach / 연결 끊김으로 lock 이 풀리면 서버 로컬 포커스가 자동으로 해제 주체로 복귀해 stale 레코드를 회수한다.
-- **적용 API 를 로컬 producer 와 분리한다**: `set_mirror_surface_attention` / `forget_mirror_surface_attention` 은 `raise_attention`/`clear_attention` 을 타지 않는다. 후자는 로컬 producer 축이다 — `raise_attention` 에는 위 "미러의 로컬 발동은 억제된다" 게이트가 있고, `clear_attention` 에는 위 해제 forward 의 큐 push 가 있다. 서버 push 의 적용이 같은 함수를 타면 서버 값이 그 억제 게이트에 막히고, 서버가 내려준 해제가 곧바로 서버로 되돌아가는 에코가 된다.
-- **구조 delta 로 갓 생긴 surface 의 baseline**: 서버가 새로 점유된 surface 의 `kind: null` baseline 을 push 하는 tick 이 client 의 `remote_to_local` 갱신보다 앞서면 그 프레임은 매핑 없음으로 버려지고, dedup 때문에 재-push 되지 않는다. 다만 갓 생긴 surface 는 서버에도 attention 레코드가 없어 양쪽이 "레코드 없음" 으로 이미 일치하므로 실질 무해하다. 신규 attach 경로는 애초에 이 경합이 없다 — `start_gui_attach` 가 핸드셰이크 디스크립터로 매핑을 **동기 구성한 뒤** reader 스레드를 띄운다.
-- **정리**: mirror surface 가 없어지면(`cleanup_mirror_workspace` 의 세션 정리, `apply_mirror_structural_delta` 의 removed 처리) `forget_mirror_surface_attention` 으로 레코드를 버린다 — 로컬 id 재사용 시 stale attention 이 새 surface 에 붙는 것을 막는다. **kind 변환(terminal → 다른 kind) 경로는 대상이 아니다**: 거기서는 local id 도 surface 도 계속 살아 있고 서버도 여전히 그 remote surface 의 레코드를 들고 있으므로, 미러만 지우면 diff 기반 push 가 값이 안 바뀌었다고 보고 다시 보내주지 않아 세션이 끝날 때까지 복구되지 않는 divergence 가 생긴다(같은 자리에서 busy·mesh 캐시는 지우는 것과 대비 — 그 둘은 새 kind 와 무관해진 로컬 리소스라 버리는 것이 맞다).
+1. 서버의 `forward_attention`이 1Hz `Tick::Busy`에서 `attention_forwards`의 변화분을 읽는다.
+   main·parked·headless 모두 실행한다. 캐시는 holder와 kind를 함께 비교한다.
+2. `Attention { surface_id, kind }`를 해당 holder에 보낸다. 원격 ID와 completion/needs_input 또는 null을 사용한다.
+   host 타입과 wire 타입은 `AttentionKind::to_wire`/`from_wire`로 변환한다.
+3. client reader가 MirrorEvent에 넣고, 적용할 engine을 찾은 뒤 원격 ID를 로컬 ID로 바꾼다.
+   `set_mirror_surface_attention`이 기존 AttentionStore에 적용하므로 같은 테두리·탭·배지가 사용된다.
+4. mirror의 실제 사용자 확인은 레코드를 제거한 경우에만 `pending_attention_clear_forward`에 넣는다.
+   `dispatch_pending_attention_clear_forwards`가 원격 ID로 바꾸어 ClientAttentionClear를 보낸다.
+5. server의 `apply_attached_attention_clear`는 surface의 workspace holder인지 검증하고 기본 clear 함수를 부른다.
+   서버 로컬 GUI에 적용되는 hard 점유 검사를 이 함수에 다시 넣지 않는다.
+
+서버 push와 mirror 삭제는 로컬 raise/clear 함수를 사용하지 않는다.
+raise에는 mirror 차단이 있고 clear에는 서버로 전달할 메시지 생성이 있기 때문이다.
+삭제 시에는 `forget_mirror_surface_attention`으로 정리한다. kind 변환은 같은 surface이므로 레코드를 유지한다.
+
+차분 전송은 같은 값의 재전송을 보장하지 않는다. send가 실패해도 다음 tick의 값이 같으면 다시 보내지 않는다.
+손실은 이 문서의 Loss·재attach 규칙으로 처리한다. 새 surface의 null 초기값이 매핑보다 먼저 도착해
+버려져도 양쪽에 레코드가 없으므로 결과는 같다. 신규 attach는 매핑을 동기 구성한 뒤 reader를 시작한다.
 
 ## mesh mirror 채널
 

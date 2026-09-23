@@ -4,7 +4,7 @@
 
 ## 번들 plugin 목록 (SoT)
 
-`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처다. 아래 표는 그 복제본이라 낡을 수 있다 — **수를 세지 말고 그 상수를 봐라**(실제로 `agent-stream` 이 빠진 채 "8 종" 으로 남아 있었다):
+`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처다. 아래 표는 탐색용이다. 추가·제거할 때는 실제 `BUILTINS` 목록과 패키징 설정을 함께 확인한다:
 
 | crate | plugin ID |
 |-------|-----------|
@@ -33,7 +33,7 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 | 알고리즘 | Ed25519 (`ed25519-dalek`) |
 | 서명 대상 | `<plugin-dir>/tasty-plugin.toml` 의 SHA-256 digest |
 | 서명 파일 | `tasty-plugin.toml.sig` (raw 64 byte) |
-| Trust store | `crates/tasty-host-plugin/keys/` 의 `release-pubkey.bin` + `dev-pubkey.bin` (2-slot 배열, `bundle_sig.rs::TRUSTED_PUBKEYS`) — 둘 다 추적 안 함, 매 빌드 로컬 자동생성. `release-pubkey.bin` 은 항상 placeholder 로 남고 실질 검증은 dev 슬롯이 담당 |
+| Trust store | `crates/tasty-host-plugin/keys/`의 `release-pubkey.bin`과 `dev-pubkey.bin` 두 슬롯. 추적하지 않는 로컬 파일이며, 없는 슬롯은 build.rs가 placeholder로 채운다. 실제 서명 키에 대응하는 공개키가 빌드에 포함돼야 한다 |
 | 검증 시점 | plugin 로드(`discovery.rs::trust_outcome`)와 `upgrade-builtins`(`builtin.rs::verify_builtin_bundle_trust`) — release/dist 는 실제 차단, debug 는 건너뛰거나 `debug!` 로그만(`#[cfg(debug_assertions)]`) |
 
 보호 범위는 **매니페스트 한 파일만** — 권한/contributes/kind 가 매니페스트 안이라 변조 시 confused-deputy 가 최대 위험. binary 는 OS codesign(macOS notarization/Windows Authenticode)에 위임, lang/ 등 부속은 검증 밖.
@@ -64,17 +64,28 @@ dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)와 
 
 ### Release CI 서명
 
-`.github/workflows/release.yml` 이 tag push(`v*`)/manual dispatch 시, self-hosted 빌드 러너(macOS/Windows/Linux x64/Linux ARM64)가 각자 `scripts/build-*.sh` 안에서 `scripts/ensure-sign-key.sh`(Windows 는 `build-windows.ps1` 의 자체 키 탐색) → `scripts/sign-bundle.sh --all-builtins` 를 호출해 서명한다. GitHub Secret 은 관여하지 않는다 — 각 러너는 `~/.tasty-keys/release.pem` 이 없으면(4대 전부 없음, 아래 "영구 release 키를 두지 않는 이유" 참고) `gen-dev-key.sh` 로 그 자리에서 새 키를 만들어 서명하고, 그 키는 해당 머신에만 남는다.
+release workflow는 각 빌드 러너에서 서명 스크립트를 실행한다. 키 선택은 다음 순서다.
 
-repo 의 `.sig` 는 *로컬 release/dev 검증용* — CI 정식 release 는 그 빌드 시점에 생성된 키로 재서명하므로 repo 와 다른 키로 덮어쓰는 게 정상.
+1. `SIGN_KEY_PATH`가 지정돼 있으면 그 경로를 사용한다.
+2. 없으면 기존 `~/.tasty-keys/release.pem`을 사용한다.
+3. 둘 다 없으면 `gen-dev-key.sh`로 `dev.pem`을 준비한다. 기존 키는 재사용하고 없을 때만 만든다.
+
+셸 빌드는 `ensure-sign-key.sh`, Windows 빌드는 PowerShell의 대응 로직을 사용한다.
+`gen-dev-key.sh`는 기존 개인키를 보존하면서 공개키를 다시 도출하고, 내용이 같으면 공개키 파일을 다시 쓰지 않는다.
+매 빌드마다 새 개인키를 만들거나 release.pem을 자동 생성하지 않는다.
+특정 러너에 키가 없다고 고정해서 가정하지 말고 빌드 로그에서 선택된 경로와 공개키 준비 단계를 확인한다.
+개인키 내용은 로그에 출력하지 않는다.
 
 ### 영구 release 키를 두지 않는 이유
 
-원래는 운영자가 Ed25519 keypair 를 1회 발급해 `tasty-host-plugin` 의 `keys/release-pubkey.bin` 에 영구 커밋하고, 개인키를 GitHub Secret `TASTY_RELEASE_SIGN_KEY` 로 등록해 모든 release 빌드가 공유하는 설계였다. 하지만 이 절차가 실제로 완료된 적이 없어(`release-pubkey.bin` 이 계속 all-zero placeholder) CI 가 매 release 마다 secret 부재로 실패했다.
+현재 번들 플러그인은 앱과 같은 설치 묶음에서 복사된다. 앱과 별도로 원격 업데이트하는 체계는 없다.
+따라서 모든 빌드가 하나의 장기 발급자 키를 공유해야 한다는 요구를 두지 않고, 위 우선순위로 준비된 키를 사용한다.
+이는 키를 매 빌드 교체한다는 뜻이 아니다. dev.pem도 재사용하므로 유출 영향을 한 빌드로 한정할 수 없다.
 
-`install_builtins_if_needed()`(`crates/tasty-host-plugin/src/builtin.rs`) 확인 결과, builtin plugin 은 항상 그 앱 바이너리와 **같은 설치 번들 안에서 로컬로 복사**된다 — 앱 버전과 독립적으로 원격에서 개별 업데이트되는 경로가 없다. 즉 "구버전 바이너리가 신버전 키로 서명된 plugin 을 검증해야 하는" 상황 자체가 없어, 릴리스마다 자기 안에서 완결되는 신뢰 단위다. 그래서 영구 신뢰 루트 대신 **매 빌드 로컬 자동생성 dev 키**로 통일했다 — 수동 키 배포 절차가 없어지고, 유출 리스크도 그 빌드 1 회로 국한된다. 대신 "이 서명이 특정 발급자가 발급했다"는 장기 정체성 보증은 포기하는데, 애초에 이 서명이 막으려는 건 발급자 신원 위조가 아니라 매니페스트 변조에 의한 confused-deputy(위 표 참고)라 이 트레이드오프가 맞는다. 배경·대안은 [ADR-0051](../adr/0051-ephemeral-release-signing-key.md) 참고.
-
-플러그인이 향후 앱 버전과 독립적으로 배포/업데이트되는 마켓플레이스 모델이 생기면 이 결정을 재검토해야 한다(그 경우 영구 신뢰 루트가 다시 필요).
+매니페스트 서명은 그 파일의 변조를 확인한다. 외부 생태계의 장기 발급자 신원이나 binary·lang 파일 전체를 보증하지 않는다.
+앱과 독립적으로 플러그인을 배포하거나 업데이트할 때는 신뢰 루트·키 회전·서명 범위를 함께 다시 정한다.
+구체적인 빌드·배포 절차는 [release](release.md), 보류 중인 생태계 결정은
+[플러그인 신뢰와 배포](../adr/0625-plugin-trust-and-distribution.md)를 따른다.
 
 ## staging 7 위치 동기화
 
@@ -106,18 +117,21 @@ plugin 시스템의 작성 형식·배포·신뢰·호환성·hot reload 정책�
 
 ### 정책 (현행)
 
-각 결정엔 사건 기반 재검토 trigger 가 있다. 수량 지표는 보조 신호로만 쓴다. 깊은 결정 근거·대안은 [ADR-0009](../adr/0009-plugin-sandbox-deferred.md)(sandbox) · [ADR-0010](../adr/0010-plugin-marketplace-deferred.md)(marketplace).
+| 영역 | 현재 지원 | 다시 결정할 조건 |
+|------|-----------|------------------|
+| 작성 형식 | 별도 OS 프로세스. Rust SDK 제공. WASM 실험은 보류 | 다른 언어·강제 격리가 필요한 실제 소비자 |
+| 배포 | 로컬 경로 설치와 앱 동봉 번들. 공개 마켓플레이스 미지원 | 외부 플러그인의 배포·독립 업데이트 요구 |
+| 신뢰 | 매니페스트 권한·사용자 승인·호스트 IPC 검사 | OS 접근까지 제한해야 하는 요구 |
+| 호환 | HOST_API_VERSION 메이저 일치. 추가 필드는 optional+default | 기존 필드의 의미나 필수 조건 변경 |
+| 재적재 | disable→enable 또는 아래 개발용 자동 reload | 상태를 잃지 않는 교체가 실제로 필요할 때 |
 
-| 영역 | 결정 | 재검토 trigger |
-|------|------|---------------|
-| **작성 형식** | Rust crate + Process entry. WASM·Lua 는 별도 layer | 비-Rust 작성 요청 2건+ / 권한 게이트 보안 이슈 1건 |
-| **배포** | 로컬 path install(`tasty plugin install <path>`) + 동봉 builtin. marketplace 는 RFC 대기 | 첫 외부 plugin 출시 / 외부 plugin 5+ 자생 |
-| **신뢰** | 매니페스트 `permissions[]` + 사용자 grant + IPC method_meta 게이트. 추가 sandbox(seccomp 등) 미지원 | 권한 오해 보안 이슈 1건 |
-| **api_version** | `HOST_API_VERSION` 메이저 매치 강제. schema 추가만(optional+default) | — |
-| **hot reload** | seamless 미지원. `disable`→`enable` 재시작 안내 | 재빌드 워크플로 비용 명백한 사례 |
-
-- WASM 의 가치는 "가벼움"이 아니라 **강제 가능한 sandbox** 다. 현 권한 모델은 *호스트 API 호출* 만 게이트하고 plugin 이 자기 프로세스에서 직접 fs/network 접근하는 것은 OS process privilege 에 의존한다. 이 한계를 false security 보다 투명하게 명시한다 — 매니페스트 `permissions` 는 "호스트 API 호출 권한"이지 "OS 자원 권한"이 아니다([plugin-permissions](plugin-permissions.md)).
-- Lua 는 plugin 과 책임이 다르다(plugin = 시스템 확장, Lua = 사용자 일상 커스터마이징) — 호스트 임베드 별 시스템([lua-hooks](../features/lua-hooks/index.md)).
+호스트 API 권한은 플러그인의 직접 파일·네트워크 접근을 제한하지 않는다.
+OS 샌드박스는 아직 제공하지 않으며 WASM도 지원 기능으로 안내하지 않는다.
+마켓플레이스를 도입할 때는 자동 권한 부여를 폐지하고 설치할 때마다 사용자 권한 승인을 받는다.
+마켓플레이스 출처 플러그인에는 OS 수준 샌드박스를 강제해야 한다.
+이 세 조건은 함께 충족해야 하는 도입 조건이며 현재 구현된 기능은 아니다.
+현재 선택의 근거는 [신뢰와 배포 ADR](../adr/0625-plugin-trust-and-distribution.md)에 있다.
+Lua는 호스트에 등록한 사용자 스크립트 실행 기능이며 플러그인 실행 형식과 별개다.
 
 ### 호환성 분류 (plugin-protocol)
 
@@ -130,14 +144,14 @@ plugin 시스템의 작성 형식·배포·신뢰·호환성·hot reload 정책�
 
 ### 번들 plugin 자동 upgrade
 
-호스트와 함께 배포되는 builtin 은 사용자 디렉토리에 1회 복사된 후에도 부팅 시 bundle 의 새 버전이 있으면 자동 갱신된다. 기준은 **매니페스트 `version`(semver)** — mtime 은 tarball 압축 해제 시 보존돼 1차 신호로 부적합.
+호스트와 함께 배포되는 builtin 은 사용자 디렉토리에 1 회 복사된 후에도 부팅 시 bundle 의 새 버전이 있으면 자동 갱신된다. 기준은 **매니페스트 `version`(semver)** — mtime 은 tarball 압축 해제 시 보존돼 1차 신호로 부적합.
 
 #### 동작 (`install_builtins_if_needed`)
 
 BUILTINS 각 항목에 대해 bundle vs 설치본 매니페스트 version 비교:
 
 - `bundle > installed` → mtime 무시 덮어쓰기 + 옛 잔존 파일 제거. 로그 `upgrading builtin '<id>' v<old> → v<new>`.
-- `bundle == installed` → 내용 기반 sync 만(내용이 다른 파일만 옮긴다, mtime 은 안 본다).
+- `bundle == installed` → 내용을 비교해 다른 파일만 옮긴다. 대상이 없거나 크기가 다르면 복사하고, 같은 크기는 64KiB씩 바이트를 비교해 첫 차이에서 멈춘다. mtime은 사용하지 않으며 서명용 해시와 이 로컬 비교는 별개다.
 - `bundle < installed` → skip(자동 다운그레이드 금지).
 - 매니페스트 파싱 실패: bundle corrupt → skip / installed corrupt + bundle ok → 내용 sync 복구.
 
@@ -163,7 +177,7 @@ plugin 작성자가 의미적 변경 시 `tasty-plugin.toml::version` 을 수동
 
 #### 개발용 자동 reload — `TASTY_PLUGIN_AUTO_RELOAD`
 
-dev workspace 에서 `cargo build -p tasty-plugin-X --release` 반복 시 수동 disable/enable 없이 새 binary 즉시 적용. env 가 빈 문자열/`"0"` 아니면 부팅 시 활성(production 기본 off — flag off 면 pump tick 부담 0). 신호: 실행 중 plugin 의 entry binary mtime 또는 매니페스트 version 변화. polling `AUTO_RELOAD_POLL_INTERVAL`(2초). swap 은 `--restart-running` 과 동일 helper(`plugins.toml::disabled` 미수정). respawn 실패 시 warn + baseline 갱신(무한 swap 차단), 옛 동작으로 graceful degrade.
+dev workspace 에서 `cargo build -p tasty-plugin-X --release` 반복 시 수동 disable/enable 없이 새 binary 즉시 적용. env 가 빈 문자열/`"0"` 아니면 부팅 시 활성(production 기본 off — flag off 면 pump tick 부담 0). 신호: 실행 중 plugin 의 entry binary mtime 또는 매니페스트 version 변화. polling `AUTO_RELOAD_POLL_INTERVAL`(2 초). swap 은 `--restart-running` 과 동일 helper(`plugins.toml::disabled` 미수정). respawn 실패 시 warn + baseline 갱신(무한 swap 차단), 옛 동작으로 graceful degrade.
 
 ### i18n 키 충돌
 

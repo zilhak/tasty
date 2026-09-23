@@ -2,9 +2,9 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent (여럿이 한 인스턴스 공유)
-- **ADR**: [ADR-0073](../../adr/0073-task-graph-view-unblock.md)(task-graph 화면 착수 — host builtin surface + workspace popup 두 표면). 선행 보류 결정 [ADR-0066](../../adr/0066-task-graph-view-deferred.md) 은 ADR-0073 로 supersede 됐다.
+- **ADR**: [에이전트 작업 조율과 DAG 화면](../../adr/0642-agent-coordination-and-task-views.md)
 - **코드**: `agent.*` 핸들러(`src/adapters/ipc/handler/agent.rs`), 영속 `tasty-memory`
-- **화면**: 둘 다 같은 데이터를 본다([ADR-0073](../../adr/0073-task-graph-view-unblock.md)) — [DAG 그래프 surface](screens/dag-graph-surface.md)(`tasty new tab --type dag_graph`)는 탭 하나를 점유하는 상주 관찰용, [DAG 목록 popup](screens/dag-list-popup.md)(도구 메뉴 · `KeybindingSettings.toggle_dag_list`)은 목록에서 하나를 골라 잠깐 확인하고 닫는 용도의 workspace 스코프 창이다. IPC/CLI 관측 수단(`agent.task_list`/`task_graph`/`task_get`/`dag_list`/`dag_get`)은 그대로 유효하다.
+- **화면**: 둘 다 호스트의 작업 조회 데이터를 사용한다 — [DAG 그래프 surface](screens/dag-graph-surface.md)(`tasty new tab --type dag_graph`)는 탭 하나를 점유하는 상주 관찰용, [DAG 목록 popup](screens/dag-list-popup.md)(도구 메뉴 · `KeybindingSettings.toggle_dag_list`)은 목록에서 하나를 골라 잠깐 확인하고 닫는 용도의 workspace 스코프 창이다. IPC/CLI 관측 수단(`agent.task_list`/`task_graph`/`task_get`/`dag_list`/`dag_get`)은 그대로 유효하다.
 - **메서드 목록**: [reference/api](../../reference/api.md#에이전트-협업-agent)
 
 ## 목적

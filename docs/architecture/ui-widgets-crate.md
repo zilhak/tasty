@@ -135,3 +135,9 @@ if let Some(new) = selected_new { *sub_tab = new; }
 - `crates/tasty-gallery/` — 호출 사이트 + 데모 카탈로그
 - [design/systems/theme](../design/systems/theme.md#ui-디자인-규칙-필수) — 4px 그리드·1px 보더 등 UI 디자인 규칙 — 위젯 내부 색·간격·상태 오버레이가 따르는 시각 규칙
 - [dev-guide/model-view-split](../dev-guide/model-view-split.md) — Model 에 `egui::*` 를 두지 않는 분리 원칙(위젯은 View 측 primitive).
+
+## 행 선택 표의 클릭과 복사
+
+`Table::selectable(true)`는 본문 셀에서 기본 라벨 텍스트 선택을 끈다. 파일 이름 글자 위에서도 행 선택·우클릭·더블클릭이 작동해야 하기 때문이다. 헤더의 명시적인 정렬 클릭은 유지한다. 행 선택을 사용하지 않는 `selectable(false)` 표는 기본 텍스트 선택을 유지한다.
+
+행 선택 표에서 복사가 필요하면 행 메뉴에 경로·주소 등 필요한 값의 복사 기능을 제공한다. 이 규칙은 본문 라벨의 기본 sense를 바꾸는 것이며, 셀에 명시적으로 넣은 버튼 등 다른 위젯의 입력까지 무효로 만들지는 않는다. 회귀 검사는 `crates/tasty-ui-widgets/tests/table_row_click.rs`에 있다.

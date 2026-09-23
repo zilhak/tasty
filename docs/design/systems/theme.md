@@ -15,7 +15,7 @@
                   │
 [ tasty-themes ] 전역 Theme 인스턴스 (1개, RwLock)
                   │
-              theme().crust / theme().spacing_sm / theme().is_light   ← UI 코드
+              theme().bg_app() / theme().spacing_sm / theme().is_light   ← UI 코드
 ```
 
 ### 두 레이어
@@ -85,19 +85,29 @@ is_light = false      # 선택. 없으면 이전 is_light 보존
 ## UI 코드의 색상 접근
 
 ```rust
-let th = crate::theme::theme();                       // = tasty_themes::theme()
-ui.painter().rect_filled(rect, CornerRadius::ZERO, th.accent_primary()); // HexColor → Color32
-let bg  = th.bg_panel().to_float();                   // GPU 셰이더
-let pad = th.spacing_sm;                               // sizing 동일 방식
-// ❌ egui::Color32::from_rgb(80,140,255)             // 하드코딩 금지 (clippy 차단)
+let th = crate::theme::theme();
+ui.painter().rect_filled(rect, CornerRadius::ZERO, th.accent_primary());
+let bg = th.bg_panel().to_float();
+let pad = th.spacing_sm;
 ```
 
-- **색 생성 경로 단일화**: GPU 버퍼 struct 는 newtype(`GpuRgba` 등)을 받아 `[f32;4]` 대입이 컴파일 에러. `from_rgb` 직접 호출은 clippy 차단. 상세는 아래 [색 생성 정책](#색-생성-정책).
-- **premultiplied 주의**: `hover_overlay`/`active_overlay`/`separator` 는 premultiplied 바이트라 `to_egui_premultiplied()` 를 써야 한다. `to_egui()` 를 쓰면 sRGB-aware premultiplication 이 한 번 더 적용돼 색이 어긋난다.
-- **Semantic 접근자 우선**: 평면 primitive(`th.blue`) 외에 의미 기반 접근자(`accent_primary()`/`surface_raised()`/`text_muted()`)를 제공. 신규/수정 UI 는 의미가 드러나는 접근자를 우선(같은 primitive 가 여러 role 로 갈리는 다의성 표현). **host UI 계층(`src/view`·`src/adapters/ui`·shell_setup) + 위젯 크레이트(`tasty-ui-widgets`)는 전수 이식 완료 → `crates/tasty-doc-guards/tests/design_token_adherence.rs` 가 `th.<primitive>`/`theme.<primitive>` 직접접근을 금지**한다(`doc-guards.yml` 이 main push · PR 마다 **경로 필터 없이** 자동으로 돌린다 — 그 크레이트로 옮겨 오면서 두 조합 모두에서 도는 자리가 됐다, [ci-gates](../../dev-guide/ci-gates.md))(semantic 접근자로 강제 유도). 위젯도 primitive 절대 불가 — 근거·제외 목록(테마 내부·픽커·ANSI·갤러리 팔레트 데모)·집행 채널(clippy 불가·가드 테스트 전담)은 [ADR-0033](../../adr/0033-ui-color-semantic-role-only.md). 대응 role 부재 use 는 primitive 로 되돌리지 말고 가장 가까운 role 로 alias + `// divergence:` 주석. 매핑·다의성 핫스팟은 [`design-token-mapping` 크로스워크 절](design-token-mapping.md#rust-필드--호출처-토큰-크로스워크).
-- **잉크 role 은 값이 아니라 의미로 고른다** (2026-09-17 결정): **disabled 는 고유 잉크**다 — 모든 disabled 라벨·글리프는 `text_disabled()`(neutral-700)를 읽고, `text_placeholder()`(입력 전 안내)도 border role 도 쓰지 않는다. **`glyph_dim()`**(neutral-600)은 *물러나야 하는 chrome* 전용이지 disabled 용이 아니다(사이드바 dim chevron·dim 아이콘·상태바 글리프). **`border_frame()`**(neutral-500)은 틀의 선이고 `surface_active()`(선택된 표면)와 값만 같다. **그 선은 넷이다** — popup 프레임·titlebar 아래 선·pane divider·GPU 비활성 보더. popup **내부** 구분선은 이 role 이 아니라 `border_strong()`(neutral-400)에 남는다 — 틀과 칸막이는 다른 역할이라, 한 role 로 묶으면 틀만 올리는 것이 불가능해진다. 단계는 **명도가 아니라 대비로** 고른다: latte 에서는 neutral-500 이 neutral-400 보다 *어두워서* 명도 부등호가 두 테마에서 뒤집힌다([ADR-0290](../../adr/0290-settled-role-gaps-close-the-divergence-and-off-scale-sets.md), 값은 `crates/tasty-design-tokens/tests/color_drift.rs` 의 `the_frame_line_outranks_the_strong_border_by_contrast_not_lightness` 가 고정한다). **`accent_decorative()`**(peach)는 헤더 장식이고 `accent_attention()`(주의 환기)과 값만 같다.
-- **tinted 채움/테두리는 한 짝이다**: accent 를 옅게 깔고 같은 accent 로 두르는 관용구는 **채움 `tint_fill_alpha()`(0.12) / 테두리 `tint_border_alpha()`(0.36)** 한 짝만 쓴다. 승인된 부분 사용 둘 — **채움만**(warning callout · misc/remote/script 배지)과 **테두리만**(chip remote 태그). 은퇴한 짝: 0.14/0.45 · 0.12/0.35 · 0.11/0.36.
-- **Semantic 색 접근자 생성**: bg-*/surface-*/text-*(placeholder 까지)/accent-*/border-* 의 **단순 primitive 필드 alias** semantic 색 접근자는 `crates/tasty-type-appearance/src/semantic_color_generated.rs` 의 **생성된 `&Theme` 메서드**(`tasty-design-tokens` 생성기 산출, `DO NOT EDIT`) 로 노출된다 — DTCG semantic 색 토큰이 SSoT. is_light 분기(`text_on_accent()`)·derive_overlays 도출(`overlay_hover()`/`overlay_active()`)·합성색(`scrim()`)·OS/brand 리터럴 접근자만 `theme.rs` 에 수기로 남는다. component 색 접근자(아래)가 이 semantic 접근자를 호출하므로 inherent method 이름은 불변.
+host UI와 공용 위젯은 semantic 접근자를 사용한다. 원시 팔레트 필드는 테마 내부·색상 픽커·터미널 ANSI 처리·갤러리의 원시 팔레트 전시에 한정한다. 직접 필드 접근 검사는 `design_token_adherence.rs`에 있다. 대응 역할이 없으면 원시 색으로 되돌리지 않고 가까운 역할의 임시 alias와 `divergence:` 사유를 남겨 디자인에 요청한다. 역할이 확정되면 임시 alias를 제거한다.
+
+| 표현할 역할 | 사용할 접근자 |
+|---|---|
+| 비활성 라벨·글리프 | `text_disabled()` |
+| 입력 전 안내 | `text_placeholder()` |
+| 약하게 표시하는 chrome 글리프 | `glyph_dim()` |
+| popup 프레임·pane divider·GPU 비활성 보더 | `border_frame()` |
+| popup 내부 구분선 | `border_strong()` |
+| 장식 accent | `accent_decorative()` |
+| 주의 환기 accent | `accent_attention()` |
+
+값이 같더라도 프레임 선과 선택 배경, 장식과 주의 환기를 같은 역할로 묶지 않는다. 선의 단계는 명도 순서가 아니라 배경과의 대비로 확인한다. Latte에서는 더 강한 선이 더 어두울 수 있다. 현재 타이틀바 아래 선은 `titlebar_border()`를 호출하며 이 접근자는 separator를 반환한다. 프레임 선 역할 설명과 실제 CSD 매핑을 혼동하지 않는다.
+
+단순 primitive alias인 semantic 색 메서드는 `semantic_color_generated.rs`에서 생성한다. 테마 밝기 분기·overlay 도출·합성색·OS 또는 브랜드 값은 수기 접근자로 남는다. component 접근자도 이 경로를 호출한다.
+
+`hover_overlay`·`active_overlay`·`separator`의 premultiplied 바이트는 `to_egui_premultiplied()`로 변환한다. 일반 `to_egui()`를 쓰면 premultiplication이 한 번 더 적용된다. GPU 버퍼는 GpuRgba 같은 타입을 받고, 직접 색 생성은 아래 정책을 따른다.
 
 ## 색 생성 정책
 
@@ -166,7 +176,7 @@ pub const BRAND: HexColor = hex!("#89b4fa");          // OK (alpha·3-digit shor
 2. **alpha 변형**: `theme().X.with_alpha(N).to_egui()`.
 3. **외부 입력**: `dangerously_force_from_array` + 주석 + `#[allow]`.
 
-UI 색 읽기는 primitive 직접접근(`theme().blue`)보다 **semantic 접근자**(`accent_primary()`/`text_muted()`…)를 우선한다(다의성 구분). additive 라 픽셀 동일, 전수 이식 전까지 clippy 강제는 보류 — 위 [UI 코드의 색상 접근](#ui-코드의-색상-접근) 의 "Semantic 접근자 우선" · [design-token-mapping.md 크로스워크 절](design-token-mapping.md#rust-필드--호출처-토큰-크로스워크).
+host UI와 공용 위젯은 semantic 색 접근자를 사용한다. 원시 팔레트 예외와 소스 검사는 위 [UI 코드의 색상 접근](#ui-코드의-색상-접근)을 따른다.
 
 ### 추가 가드
 
@@ -196,44 +206,82 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 ## UI 디자인 규칙 (필수)
 
-테마 위에 얹히는 **시각 정책**(=토큰 축). 새 UI 를 그릴 때 따른다. 디자인을 구현에 정합시키는
-작업이라면 이 토큰 축만으로 끝나지 않는다 — 레이아웃을 컴포넌트·소스 단위로 1:1 전사하는 **구조
-축**([design-parity-notes.md](design-parity-notes.md) · [design-gallery-mapping.md](design-gallery-mapping.md))을
-함께 충족한다(두 축은 독립적으로 어긋날 수 있다).
+새 UI는 아래 토큰과 역할을 따른다. 시안을 구현할 때는 값뿐 아니라 [컴포넌트 구조](design-parity-notes.md)와 [갤러리 매핑](design-gallery-mapping.md)도 확인한다. 같은 색을 썼다고 같은 레이아웃이 되는 것은 아니다.
 
-| 항목 | 규칙 |
-|------|------|
-| 기본 테마 | Mocha(fallback 보장) + Latte(first-run 자동) |
-| 색 팔레트 | Catppuccin Mocha 톤 기준 |
-| 간격 | **4px 그리드** — `spacing_xs/sm/md/lg/xl` 만 |
-| 간격 API | **`add_space`/`inner_margin`/`Margin::same\|symmetric` 에 숫자 리터럴 직접 전달 금지** — `tasty-ui-widgets` 의 typed 헬퍼(`vspace`/`hspace`/`margin_all`/`margin_sym`)에 `th.spacing_*`(LogicalPx)를 넘긴다. 그리드 밖 미세 구조 간격(1~4px)은 `tasty_ui_widgets::tokens::STRUCT_GAP_1/2/3/4` (DTCG `primitive.size-1/2/3/4` 대응). **`crates/tasty-doc-guards/tests/design_token_adherence.rs` 가드가 인라인 리터럴 재유입을 막는다**(`doc-guards.yml` 이 main push · PR 마다 **경로 필터 없이** 자동으로 돌린다 — 그 크레이트로 옮겨 오면서 두 조합 모두에서 도는 자리가 됐다, [ci-gates](../../dev-guide/ci-gates.md)). 명명 구조 상수(`const NAME: LogicalPx = LogicalPx(N)`, 예: 사이드바 폭·카드 크기·control nudge)는 스코프 밖(권장 해결책이라 금지 아님) |
-| UI 폰트 스케일 | **`font_size_micro`(10) · `caption`(11) · `body`(13) · `heading`(13) · `max`(14) 만.** 이 다섯이 UI 스케일 전부이고 `ui_scale` zoom 을 받는다. 역할이 이름에 있으면 component 접근자(`badge_font_size()` · `tag_font_size()` · `kbd_font_size()` 등)를 우선한다. `font_size_term*`/`prose_h1` 은 **콘텐츠** 폰트라 UI 에 쓰지 않는다 |
-| UI 폰트 최대 | **14px**(`font_size_max`). **범위는 UI 폰트다** — `font_size_term*`·`prose_h1` 은 위 행이 말하는 대로 **콘텐츠** 폰트라 이 상한의 대상이 아니다. **승인된 예외 하나**: 브랜드 워드마크(부트 락업 30 = `font_size_brand_display` · 사이드바 헤더 17 = `font-size-brand-wordmark`)는 브랜드 자산의 verbatim 전사라 UI 텍스트 스케일 밖이고, 그 승인은 [boot-sequence](../../architecture/boot-sequence.md) 에 적혀 있다. 2026-09-17 결정이 30 에 semantic 이름을 붙였고 **브랜딩 예외는 그 둘이 마지막**이다. **채널**: `src/design_token_guard.rs` 의 `no_named_font_const_exceeds_the_ui_font_size_cap` 이 폰트 자리의 명명 const 값을 본다 — 이 행의 가드는 `src/lib.rs` 아래의 **lib 유닛**이라 `--lib` 가 그것을 담는다(루트 패키지의 단위시험은 전부 lib 타깃에 살아서 `--bins` 만으로는 하나도 안 담긴다). 이 파일은 feature 게이트 뒤가 아니라 두 조합 모두에서 컴파일되므로 `--lib --bins` 잡들과 `check-headless` 의 전체 스위트 양쪽에서 돈다(채널은 [ci-gates](../../dev-guide/ci-gates.md)). 상한 값은 손으로 옮겨 적지 않고 `SIZING.font_size_max` 를 링크한다 — 복사본을 두면 토큰만 바뀌었을 때 가드가 옛 값을 계속 강제하면서 초록으로 남는다(실측).(위 리터럴 행들의 통합 테스트와 채널이 다르다.) 승인 없이 상한을 넘는 자리는 그 가드의 한시 목록이 갖는다 — 목록은 줄어들기만 하고, 정책 예외 목록과 섞지 않는다(사유가 달라 역방향 검사가 한쪽에만 성립한다) |
-| 폰트 크기 API | **`FontId::proportional`/`monospace`/`new` 와 `RichText::size` 에 숫자 리터럴 직접 전달 금지** — 위 토큰의 `.value()` 를 넘긴다. `proportional`/`monospace` 는 `FontId::new` 의 얇은 래퍼라 셋을 함께 막아야 한다(둘만 막으면 `new` 로 그대로 재유입된다). `egui::FontId { size: .. }` **구조체 리터럴 형태도 값과 무관하게 금지**다 — 필드명이 먼저 와서 숫자 인자 검사를 빠져나가기 때문이며, `Stroke {` 와 같은 이유·같은 규칙으로 막는다. 전역 폰트 치환 경로(`Style::text_styles.insert(..)`)는 결국 `FontId` 를 만들어야 하므로 위 넷을 막으면 함께 닫힌다. **`crates/tasty-doc-guards/tests/design_token_adherence.rs` 가드가 전부 막는다**(`doc-guards.yml` 이 main push · PR 마다 **경로 필터 없이** 자동으로 돌린다 — 그 크레이트로 옮겨 오면서 두 조합 모두에서 도는 자리가 됐다, [ci-gates](../../dev-guide/ci-gates.md)). `Spinner::size()` 는 이름이 같지만 위젯 지름이라 폰트 축이 아니다. 가드가 볼 수 없는 나머지(명명 const·변수·매크로를 거쳐 들어오는 값)는 그 파일 모듈 doc 의 "가드가 막지 못하는 것" 목록에 적혀 있다 |
-| 스케일 밖 폰트 값 | DTCG primitive 는 10·11·12·13·14·16·17·20·30 이고 그중 semantic 이 붙은 것만 `Theme` 필드가 된다. **어느 tier 에도 없는 값(13.5 · 12.5 · 11.5 · 10.5 · 9.5 등)은 토큰으로 조용히 반올림하지 않는다** — 픽셀이 실제로 바뀌기 때문이다. 사유를 적은 명명 const 로 올려 드리프트를 눈에 보이게 두고, 어느 토큰으로 스냅할지는 디자인 판단으로 넘긴다. UI semantic 이 없는 primitive(12·16 — semantic 은 콘텐츠용 `font-size-term-sm/lg` 뿐)를 UI 에 쓰는 자리도 같다 — const 이름에 primitive 임을 남긴다. **명명 const 는 `ui_scale` 줌을 타지 않는다**(토큰만 `zoomed()` 경로에 있다). **그래서 이 허용은 값이 스케일 *밖*일 때만이다** — 값이 UI 폰트 토큰과 같은 const 는 토큰의 복사본이라 zoom 1 에서만 같고 나머지 배율에서 갈라진다. 그 형태는 `src/design_token_guard.rs` 의 `no_named_const_copies_a_ui_font_token` 이 잡는다(판별 축은 이름이 아니라 **값 + 위치**) |
-| **`.5` 값은 토큰이 될 수 없다** | 위 규칙의 특수한 형태이지만 결론이 더 강해서 따로 적는다. 폰트 토큰은 `Theme::with_colors_and_zoom` 의 `zoomed = \|px\| LogicalPx((px.value() * ui_zoom).round())` 를 거치므로 **어떤 `ui_scale` 에서도 정수**다. 따라서 9.5 · 10.5 · 11.5 · 12.5 · 13.5 자리에 토큰을 넣는 것은 "zoom 1 에서만 0.5 다" 가 아니라 **전 배율에서 값이 다르다** — 값 보존 치환이 원리적으로 불가능하다. 그런 자리는 반드시 명명 const 로 두고, 스냅할지는 디자인이 정한다. 전제(폰트 토큰이 늘 정수)는 `crates/tasty-type-appearance/src/theme.rs` 의 `ui_font_size_tokens_are_integers_at_every_zoom` 가 잡는다. 이 행의 가드만 채널이 다르다 — 그것은 `src/` 안의 **lib 유닛 테스트**라 `cargo test --workspace --lib --bins`(`crossplatform-check.yml`, main push·PR)로 **자동으로 돈다**. 위 세 행의 `crates/tasty-doc-guards/tests/design_token_adherence.rs` 도 자동으로 돈다 — 채널이 다를 뿐이다: 그쪽은 `doc-guards.yml` 이 **경로 필터 없이** main push · PR 마다 그 크레이트를 통째로 돌린다([ci-gates](../../dev-guide/ci-gates.md)). 근거·대안·재검토 조건은 [ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) |
-| 보더 | 항상 **1px**(`border_width`) |
-| 지목 링 | 2px(`focus_ring_width`) — 키보드 포커스뿐 아니라 **대상을 감싸 지목하는 2px 링 전반**의 굵기 토큰이다(우클릭 대상 표시, 드롭 대상 표시, 튜토리얼 마커, 선택 카드 테두리). 색은 별개 축이라 `accent_success` 등 다른 semantic 색과 조합해도 이 토큰을 쓴다. **링이지 바가 아니다** — 대상을 *감싸는* 획에만 쓴다 |
-| accent 바 · 인디케이터 | 2px(`tab_indicator_width`) — 대상을 감싸지 않고 **한쪽 변에 붙는 띠**: 활성 행의 좌측 바, 탭 밑줄, 선택 리스트 행의 강조 바. 값은 `focus_ring_width` 와 같은 2 지만 **다른 토큰이고 zoom 거동이 다르다** — 링은 `zoomed()` 를 타고 이 토큰은 안 탄다. 값이 같다고 링 토큰을 바에 쓰지 않는다(그 오용이 갤러리 9자리에 있었다). 토스트 좌측 바만 3px(`toast_accent_width`)로 따로 있다 |
-| painter 전사 글리프 | 선 굵기는 **`icon_stroke_width`**(1.5px) — `Ui` 가 없어 SVG 아이콘 대신 `Painter::line_segment` 로 형상을 옮기는 구간(popup 타이틀바의 close X · 전체화면 브래킷 · chevron · tree 가지) 전용. `border_width`(1)/`focus_ring_width`(2) 어느 쪽도 아니라 별도 필드이고, DTCG dim 토큰에 대응은 없다 |
-| 선 굵기 API | **`Stroke::new` 에 숫자 리터럴 직접 전달 금지** — 위 세 필드의 `.value()` 를 넘긴다. `egui::Stroke { width: .. }` **구조체 리터럴 형태도 금지**다(값과 무관하게) — 필드명이 먼저 와서 숫자 인자 검사를 그대로 빠져나가기 때문이며, 같은 가드가 그 형태를 따로 막는다. 세 필드 어디에도 해당하지 않는 값(예: 체크마크 꺾은선, attached outline)은 명명 const 로 승격하고 사유를 주석에 남긴다 |
-| 코너 반경 | **`corner_radius_sm`(2) · `corner_radius`(4) · `corner_radius_lg`(8) 만.** DTCG 도 `radius-2/4/8/full` 뿐이라 이 셋이 스케일 전부다. 떠 있는 패널(배너·부팅 카드)은 `_lg`, 작은 inner element(키캡·배지)는 `_sm`, 나머지는 기본. 셋 다 `ui_scale` zoom 을 받는다 — **굵기 축(`border_width`·`icon_stroke_width`)이 zoom 을 안 받는 것과 반대다** |
-| 코너 반경 API | **`.corner_radius(<숫자>)` 와 `CornerRadius::same(<숫자>)` 둘 다 금지** — 위 토큰의 `.value()` 를 넘긴다. **접두 둘을 함께 막아야 한다**: 다수가 `.corner_radius(egui::CornerRadius::same(12))` 로 한 겹 감싸여 `.corner_radius(` 뒤에 숫자가 오지 않는다(`Margin::same(` 을 `inner_margin(` 과 따로 막는 것과 같은 이유). 반경이 없는 자리는 `0.0` 대신 **`CornerRadius::ZERO`** — 0 은 그리드의 원점이라 규칙 안에 있고, 전부 0 이면 이름을 쓴다(`Margin::ZERO` 와 같은 관례). 스케일 밖 값(3 · 6 · 12)은 스냅하지 말고 사유를 적은 명명 const 로 둔다 — 현재 `tasty_ui_widgets::tokens` 의 `BOOT_CHROME_CORNER_RADIUS`(6) · `BOOT_CARD_CORNER_RADIUS`(12) · `TAG_PILL_CORNER_RADIUS`(3) 셋이다. **폰트 축과 결론은 같고 대가는 더 크다**([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 의 논리): 명명 const 는 `zoomed()` 밖인데 반경 토큰은 zoom 을 타므로, 그 자리들만 배율 0.85 / 1.2 에서 고정 반경으로 남는다. 집행은 토큰 가드의 `no_inline_visual_token_literals` 가 두 접두를 함께 막고, 모수가 갈리지 않는지는 `the_two_sister_guards_scan_the_same_roots` 가 본다. **실행 채널은 [ci-gates](../../dev-guide/ci-gates.md) 가 정본이다** — 이 행이 위 세 행처럼 채널을 단정하지 않는 것은 의도다(위 세 행의 단정은 헤드리스 잡이 워크스페이스 전체를 돌게 된 뒤로 낡았고, 그 축은 별도로 정리 중이다) |
-| 상태 점 지름 | **점 가족은 셋이다** (2026-09-17 결정): 일반 `status_dot_size`(8, 배지·태그·리스트 행) · **compact `status_dot_size_compact`(6)** — 24px 크롬 안(pane 탭 strip · 상태바 · 접힌 rail) · 활성 탭 마커 4(위치 표시라 상태 점이 아닌 다른 role). `badge_dot_size`·`tag_dot_size` 는 일반 8 의 별칭이고 `tab_dot_size`·`statusbar_dot_size` 는 compact 6 의 별칭이다. attached ring 은 굵기 2(`status_dot_attached_ring_width`) + offset 2(`status_dot_attached_ring_offset`, **점 바깥 edge → ring 안쪽 edge** 기준)라 총 bbox 는 6 + 2×(2+2) = 14 로 24px 바 안에 남는다. 남은 스케일 밖 값은 둘이다 — Plugins Attention 의 severity 점 7(`src/view/plugins/ui/attention.rs`)과 색 override·튜토리얼 rail 의 5. 스냅하지 말고 사유를 적은 명명 const 로 둔다 ([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 의 점 치수 축 절) — **스냅이 배율 1 에서 이미 픽셀을 바꾸기 때문**이다. 이 축에서는 **수렴이 드리프트의 반대 증거**였다 — 무관한 크레이트·화면이 같은 수로 모였고(6 이 둘), 그것이 실수가 아니라 이름 없는 역할이었음을 compact role 이 확인했다. **4px 그리드는 이 축에 안 걸린다** — 그리드 행은 간격을 말하고 점 지름은 `primitive.size-*` 를 직접 가리키는 leaf 다. **채널 둘**: `src/design_token_guard.rs` 의 `no_dot_radius_is_an_anonymous_literal`(`circle_filled(`·`circle_stroke(`·`circle(` 의 반지름 리터럴 금지)과 `no_dot_named_const_copies_the_status_dot_token`(값 8 인 점 이름 const 금지). 둘 다 lib/bin 유닛이라 `--lib --bins` 잡들([ci-gates](../../dev-guide/ci-gates.md))에서 자동으로 돈다. **뒤쪽은 사거리가 좁다** — 이 축에는 `.size(`·`.corner_radius(` 같은 문법적 자리가 없어(점 const 는 `.value() * 0.5`·`vec2(` 로 소비된다) 자매 둘의 `값 × 자리` 를 쓸 수 없고, 이름 축으로 세웠다. 이름에 `DOT` 이 없는 상수를 점에 쓰면 통과한다. **갤러리는 모수 밖이다**(전역 zoom, ADR-0135) |
-| 컨테이너 길이 (폭·높이) | **`set_min_width`/`set_max_width`/`set_min_height`/`max_height`/`exact_width`/`exact_height`/`desired_width` 에 숫자 리터럴 직접 전달 금지** — `Theme` 접근자의 `.value()` 를 넘긴다. 대응 디자인 토큰이 있으면 그것(`field_width_xs/color/md/lg` · `input_height()` · `autocomplete_max_height()` …)을 쓰고, **없으면 접근자를 새로 만든다** — 값은 그대로 두고 본문만 `LogicalPx((N * self.ui_zoom).round())` 형태로 적는다(`modhint_*` · `multiselect_*` 와 같은 형태이고, 디자인 export 가 갱신되면 생성물로 넘어간다). **이 축에서 리터럴이 금지인 이유는 값 통일이 아니라 배율이다**: 본체는 egui `zoom_factor` 를 1.0 으로 고정하고 `ui_scale` 을 `zoomed()` 로만 적용하므로 호출부 리터럴은 배율을 안 탄다. 상자만 고정인데 안의 폰트·간격·글리프는 전부 토큰이라 커지므로 1.2 에서 내용이 잘리고 0.85 에서 빈 공간이 남는다 — 값 3~17 인 폰트 축과 달리 이 축의 값은 26~340 이라 대가가 크고 형태도 다르다. **갤러리는 예외다** — `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 리터럴도 함께 커진다. 그래서 갤러리의 같은 형태는 결함이 아니고, 이 축의 가드 모수에 넣지 않는다. 그 예외를 갤러리 쪽에서 읽는 자리는 [gallery-completeness](../policies/gallery-completeness.md) 의 무대 치수 절이다 — 액자에도 사유를 적은 명명 const 는 요구한다는 조건이 거기 있다. 스케일 밖 값은 폰트·반경 축과 같게 토큰으로 스냅하지 않는다. 접근자 쪽 집행은 `crates/tasty-type-appearance/src/zoom_coverage_guard.rs` 의 `every_literal_bearing_length_accessor_follows_ui_zoom`(lib 유닛이라 `--lib --bins` 잡들([ci-gates](../../dev-guide/ci-gates.md))에서 자동 실행)이 맡고, **호출부 리터럴을 막는 접두 가드는 아직 없다.** 근거·대안·재검토 조건은 [ADR-0135](../../adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md) |
-| 생성 토큰 상수 직접 소비 | **UI 계층(`src/`)은 `tasty_design_tokens::generated` 의 `LogicalPx` 상수를 직접 소비하지 않는다** — **그 토큰 자신의** `&Theme` 경로를 경유한다(semantic 은 `SEMANTIC_DIM_TO_THEME_FIELD` 가 잇는 `Theme` 필드, component 는 토큰 이름의 접근자 — `component.fp-crumb-max-width` → `th.fp_crumb_max_width()`). **값이 같은 다른 이름은 경로가 아니다** — 픽셀은 같고 다른 토큰에 묶인다. `Theme` 경로가 없는 길이 토큰은 가드의 `PATHLESS_LENGTH_TOKENS` 명부가 사유와 함께 들고, 그 토큰을 쓰려면 경로(표 항목 · `Theme` 필드 · `sizing_parity` arm)를 먼저 만든다. 실패문은 자리마다 그 경로 이름 또는 "경로 없음" 을 댄다([ADR-0556](../../adr/0556-the-generated-length-const-guard-prescribes-the-tokens-own-theme-path.md)). 규칙 원문은 그 크레이트의 `lib.rs` `zoom 우회 금지 (필수)` 에 있다: 생성 상수의 역할은 `SIZING` 초기값 공급과 정합 테스트까지다. 이유는 값이 아니라 **경로**다 — 생성 상수는 컴파일 타임 상수라 `with_colors_and_zoom` 의 `zoomed()` 밖이다. 어느 필드에 배율을 걸고 어느 필드에서 뺄지 — **zoom 적용·제외 정책은 `Theme` 가 소유한다**(`border_width` · `status_bar_height` 처럼 일부러 배율을 안 타는 필드도 있다) — 상수를 직접 읽으면 그 정책을 건너뛴다. 배율을 타는 토큰이면 zoom 1 에서만 같고 0.85 / 1.2 에서 갈라진다. **토큰을 썼으니 됐다고 믿게 만들어 리터럴보다 나쁘다.** 무차원 상수(`f32` — 불투명도·가중치·지속시간)는 배율 축이 아니라 대상이 아니다. 집행은 `src/design_token_guard.rs` 의 `ui_does_not_consume_generated_length_consts_directly`(lib/bin 유닛이라 `--lib --bins` 잡들([ci-gates](../../dev-guide/ci-gates.md))에서 자동 실행). 갤러리는 모수 밖이다 — egui 전역 zoom 을 쓰므로 상수도 함께 커진다([ADR-0135](../../adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md)) |
-| 호버 오버레이 | `hover_overlay`(라이트 검정 8% / 다크 흰색 8% 자동 도출) — 직접 값 금지 |
-| 활성 오버레이 | `active_overlay`(12%) — 선택/active 행, hover(8%)와 구분 |
-| 색 파생 계수 | **`.gamma_multiply(<숫자>)` · `.with_alpha(<숫자>)` 에 숫자 리터럴 직접 전달 금지** — 사유를 적은 명명 const 로 올린다. 값 공간은 다르지만(배율 0~1 · 알파 0~255) 의도가 같아 한 축으로 본다. **이 축은 "토큰을 써라" 가 아니다** — DTCG 의 opacity 는 `disabled`(0.5) · `recessed`(0.4) · `dimmed`(0.75) · `tint-fill`(0.12) · `tint-border`(0.36) 다섯뿐인데 실제 값은 0.09~0.92 로 훨씬 넓다. 값이 토큰과 같아도 **역할이 같을 때만** 토큰으로 보낸다(실측: 61 자리 중 역할까지 맞은 것은 `select` 의 disabled 디밍 하나뿐이었다 — chip 의 accent 테두리 0.4 는 `opacity_recessed` 의 "상위 스코프 배너 뒤 디밍" 이 아니다). **수렴은 이 규칙 밖이다** — 같은 idiom(채움+테두리 짝)이 한때 네 곳에 서로 다른 값으로 있었고(0.14/0.45 · 0.12/0.40 · 0.12/0.35 · 0.11/0.36), 어느 값으로 모을지는 픽셀이 바뀌는 디자인 결정이었다. 2026-09-17 결정이 그 짝에 `tint-fill-alpha`(0.12) · `tint-border-alpha`(0.36) 를 주어 **짝으로 쓰는 자리는 전부 그 둘을 읽는다** — 새로 계수를 짓지 않는다. 채움만 쓰거나 테두리 계수가 그 짝의 뜻이 아닌 자리(예: 경고 배지 테두리 0.4)는 여전히 명명 const 다. 이름을 붙이는 것과 값을 모으는 것을 가르는 근거는 [ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)(축 중립). **갤러리와 번들 plugin 도 모수 안이다** — 계수는 배율 축이 아니라 갤러리 예외([ADR-0135](../../adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md))가 걸리지 않고, specimen 의 값은 본체 값의 사본이라 빼면 그쪽이 조용히 갈린다. **채널**: `src/design_token_guard.rs` 의 `no_color_derivation_coefficient_is_an_anonymous_literal`(lib/bin 유닛이라 `--lib --bins` 잡들([ci-gates](../../dev-guide/ci-gates.md))에서 자동 실행). **면제 목록은 없다** — 오늘 위반 0 이라 필요가 없고, 첫 예외는 항목 추가가 아니라 부류의 창설이다 |
-| 텍스트 대비 | 최소 **4.5:1**. 위반 시 [`ai-verification/screenshot-methods` 시각 판정 체크리스트](../../ai-verification/screenshot-methods.md#시각-판정-체크리스트) 체크리스트 |
-| 터미널 콘텐츠 애니메이션 | **0ms** — 셀/스크롤엔 어떤 transition 도 금지(입력 응답성 우선) |
-| UI 위젯 애니메이션 | 짧게(보통 100–150ms), 입력 직후 피드백 한정 |
-| 스크롤 애니메이션 | **0ms** — 스크롤은 입력 직후 피드백이 아니라 콘텐츠 이송이라 위 "터미널 콘텐츠" 쪽 규칙을 따른다. **프로그램적 스크롤**(`scroll_to_*` / `scroll_to_me`)은 host egui 와 모든 egui-mesh Context 양쪽에서 `ScrollAnimation::none()` 으로 즉시 점프한다. **휠 델타를 도착 프레임에서 전량 반영하는 것은 egui-mesh(plugin SDK) 경로에 한한다** — plugin 은 별도 프로세스라 애니메이션 프레임 하나가 곧 프로세스 간 왕복이기 때문이다. host egui 의 휠은 egui-winit 이 `MouseWheelUnit::Line` 으로 넣고 egui 가 이를 항상 다중 프레임으로 소진하므로, 설정창·팔레트·host popup·갤러리의 `ScrollArea` 는 egui 기본 스무딩을 그대로 쓴다([ADR-0108](../../adr/0108-egui-mesh-scroll-delivered-in-one-pass.md)) |
-| 드래그 패닝 | **스크롤 영역은 드래그 패닝 여부를 선언한다.** 기본 정책은 **끈다**(`drag_to_scroll(false)`) — 데스크톱 마우스에서 누른 채 끄는 것은 텍스트 선택 · 행 선택 · 파일 드래그의 의도이고, 그때 내용이 포인터를 따라 미끄러지면 그 의도와 충돌한다(손을 뗀 뒤 관성까지 붙는다). `egui` 기본값이 `true` 라 **안 적으면 켜진 채로 태어난다.** 남기기로 한 자리는 `drag_to_scroll(true)` 를 **명시**하고 이유를 그 자리에 적는다 — 가드는 값이 아니라 **말했는가**를 본다. 진입점 셋: `egui::ScrollArea` · `egui_extras::TableBuilder`(자기 안에서 `ScrollArea` 를 만들어 넘긴다) · **축을 켠**(`.scroll(`/`.scroll2(`/`.hscroll(`/`.vscroll(`) `egui::Window`. 축을 안 켠 `Window` 는 내부가 `ScrollArea::neither()` 라 스크롤 자체가 없어 대상이 아니다. `egui::ComboBox` 의 드롭다운은 egui 가 내부에서 만들고 `drag_to_scroll` 을 호출부에 노출하지 않아 **레포 소스로는 못 닫는다** — 잔여로 세지 않는다. **채널**: `crates/tasty-doc-guards/tests/drag_to_scroll_is_declared.rs`(`doc-guards.yml` 이 main push · PR 마다 **경로 필터 없이** 돌린다 — [ci-gates](../../dev-guide/ci-gates.md)). 이 규칙은 on/off 정책이라 `Theme` 필드가 없다(아래 문단의 관례). 근거 · 대안 · 재검토 조건은 [ADR-0299](../../adr/0299-scroll-areas-declare-whether-they-pan-on-drag.md) |
+| 항목 | 기본 규칙 |
+|---|---|
+| 테마 | Mocha를 기본·폴백으로 제공하고 Latte는 처음 실행할 때 설치한다. |
+| 간격 | 4px 그리드의 `spacing_xs/sm/md/lg/xl`을 사용한다. |
+| UI 폰트 | micro 10, caption 11, body·heading 13, max 14. 역할이 있으면 component 접근자를 우선한다. |
+| 폰트 상한 | UI는 14px. 콘텐츠 폰트는 별도이며 브랜드 워드마크 17·부트 락업 30은 승인된 예외다. |
+| 보더 | `border_width` 1px. |
+| 지목 링 | 대상을 감싸는 획은 `focus_ring_width` 2px. 색은 용도에 맞는 semantic 색을 고른다. |
+| 한쪽 강조 바 | 활성 행 좌측·탭 밑줄은 `tab_indicator_width` 2px. 토스트 바는 `toast_accent_width` 3px. |
+| painter 아이콘 | close X·chevron·트리 가지 등의 선은 `icon_stroke_width` 1.5px. |
+| 반경 | `corner_radius_sm` 2, 기본 4, `_lg` 8. 반경이 없으면 `CornerRadius::ZERO`. |
+| hover·active | `hover_overlay` 8%, `active_overlay` 12%. 밝은 테마는 검정, 어두운 테마는 흰색에서 만든다. |
+| 텍스트 대비 | 최소 4.5:1. Latte의 기존 예외는 아래 대비 표를 따른다. |
 
-코드에 하드코딩이 보이면 `Theme` 필드로 옮긴다. 새 시각 규칙은 이 표에 추가 후 `Theme` 에 필드 신설 — 단 **on/off 정책은 제외한다.** 조절 가능한 수치가 아니라 "끈다"는 결정은 테마마다 달라지지 않는 정책 상수이므로 `Theme`/`ThemeWire` 를 넓히지 않고 이 표와 ADR 을 단일 출처로 둔다(위 애니메이션 3행이 그 예 — `crates/tasty-type-appearance` 에 대응 필드가 없다).
+이 표의 수치를 호출부에 복사하지 말고 해당 Theme 필드·접근자를 사용한다. 승인 없이 새 값을 정하거나 비슷한 값의 다른 토큰으로 바꾸지 않는다. 보편적인 표·버튼·선택 위젯은 [공용 위젯](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로)으로 구현한다.
 
-표·드롭다운·버튼처럼 이름이 곧 정체성인 보편 컴포넌트는 인라인으로 그리지 말고 공용 위젯으로 추출한다 — [공용 위젯 제작 정책](../../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로).
+### API별 값 전달
+
+| API | 전달할 값 |
+|---|---|
+| 간격·margin | `vspace`·`hspace`·`margin_all`·`margin_sym`에 LogicalPx를 전달한다. 미세 구조 간격은 `STRUCT_GAP_1/2/3/4`. |
+| FontId·RichText 크기 | 해당 폰트 토큰의 `.value()`. `FontId::proportional/monospace/new`의 숫자 리터럴과 FontId 구조체 리터럴은 금지한다. |
+| Stroke | 용도에 맞는 선 굵기 토큰. `Stroke::new` 숫자 리터럴과 Stroke 구조체 리터럴은 금지한다. |
+| 반경 | 반경 토큰. `.corner_radius`와 `CornerRadius::same` 모두 숫자를 직접 쓰지 않는다. |
+| 컨테이너 폭·높이 | Theme 접근자. set_min/max_width, set_min_height, max_height, exact_width/height, desired_width에도 같은 규칙을 적용한다. |
+| 색 파생 | 역할이 일치하는 opacity 토큰 또는 사유가 있는 명명 상수. gamma_multiply·with_alpha에 익명 숫자를 넣지 않는다. |
+
+명명 상수만으로 모든 규칙이 충족되지는 않는다. 토큰의 숫자를 복사한 상수는 배율·역할 연결을 끊는다. 단, `Spinner::size`는 폰트 크기가 아니라 위젯 지름이다.
+
+### 토큰에 없는 값과 배율
+
+값은 해당 용도의 스케일에서 비교한다. 구조 길이는 size, 폰트는 font-size, 반경은 radius, 아이콘은 icon_glyph_size를 본다. 다른 스케일에 같은 숫자가 있어도 대응 토큰으로 취급하지 않는다.
+
+대응 역할이 없는 폰트·반경·점 크기·색 계수는 사유가 있는 명명 상수로 남기고 디자인 결정으로 해결한다. 임의 반올림은 픽셀 변경이다. 폰트 토큰은 배율 적용 후 반올림되므로 `.5` 값과 같은 값을 유지할 수 없다. 이전에 승인된 폰트 조정은 해당 대상의 결정이며 새 값에 대한 포괄 승인으로 쓰지 않는다.
+
+반경 예외 `BOOT_CHROME_CORNER_RADIUS` 6, `BOOT_CARD_CORNER_RADIUS` 12, `TAG_PILL_CORNER_RADIUS` 3은 현재 공용 tokens 모듈에 있다. 이 상수는 배율을 따라 커지지 않는다. 4·8 반경 토큰은 지원 배율에서 변하지만 1·2 같은 작은 정수는 반올림 결과가 같을 수 있으므로, 배율 적용 경로와 실제 값 변화를 구분한다. 지원 배율이 바뀌면 다시 비교한다.
+
+본체 컨테이너는 내부 글꼴·간격과 함께 커져야 한다. 대응 토큰이 없으면 원래 값을 유지하는 `LogicalPx((N * self.ui_zoom).round())` 접근자를 두고, 디자인 토큰이 생기면 생성 접근자로 옮긴다. 값이 없는 이유로 상자만 고정하면 큰 배율에서 내용이 잘린다. 고정 크기 축소 그림과 그 아래 실제 폼은 같은 파일이어도 따로 판단한다.
+
+갤러리는 egui 전역 zoom을 사용해 리터럴도 함께 커진다. 따라서 본체의 배율 누락 검사에서 제외하지만, 전시 공간 치수에는 여전히 [이유가 있는 명명 상수](../policies/gallery-completeness.md)가 필요하다.
+
+### 생성 길이 상수의 Theme 경로
+
+본체 UI는 `tasty_design_tokens::generated`의 LogicalPx 상수를 직접 읽지 않는다. 생성 상수는 초기값과 정합 검사에 사용하고, 실제 UI는 그 토큰 자신의 Theme 경로를 사용한다. 예를 들어 `component.fp-crumb-max-width`는 `th.fp_crumb_max_width()`다.
+
+가드는 `SEMANTIC_DIM_TO_THEME_FIELD`에서 먼저 나오는 매핑을 확인하고 그 필드가 Theme에 실제로 있는지 본다. 매핑이 없으면 component 이름의 생성·수기 접근자를 찾는다. 경로 없는 토큰은 `PATHLESS_LENGTH_TOKENS`에 이유를 남긴다. 소비가 필요하면 매핑·Theme 필드·sizing_parity 검사를 먼저 만든다. 값이 같은 다른 이름은 대체 경로가 아니다.
+
+배율 적용·제외는 Theme가 정한다. border_width·status_bar_height처럼 일부러 고정한 필드도 이 경로를 거친다. 불투명도·가중치 같은 무차원 값과 지속시간은 길이 검사 대상이 아니다.
+
+### 상태 점과 tint
+
+| 역할 | 접근자·치수 |
+|---|---|
+| 일반 상태 점 | `status_dot_size` 8. badge·tag도 같은 일반 크기. |
+| 24px chrome 안의 점 | `status_dot_size_compact` 6. tab·statusbar 크기도 compact. |
+| 활성 탭 위치 마커 | 4. 상태 종류를 표시하는 점과 다른 역할. |
+| attached ring | 폭 2 + offset 2. offset은 점 바깥 경계부터 ring 안쪽 경계까지다. |
+
+compact 점과 ring의 전체 폭은 14로 24px chrome 안에 들어간다. Plugins Attention의 7, 색 override·튜토리얼의 5 같은 남은 별도 값은 임의로 맞추지 않는다. 4px 간격 그리드는 점 지름 규칙이 아니다.
+
+accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12와 `tint_border_alpha()` 0.36을 사용한다. 승인된 채움만 사용과 테두리만 사용도 같은 값을 쓴다. 다만 별도 역할의 경고 테두리처럼 이 조합이 아닌 값은 사유가 있는 상수다. 같은 숫자라도 역할이 다르면 opacity 토큰으로 바꾸지 않는다.
+
+### 애니메이션과 스크롤
+
+터미널 셀·스크롤에 추가 transition을 두지 않는다. UI 위젯의 입력 직후 피드백은 짧은 모션을 사용한다. 시간 단위와 모션 감소 설정은 아래 [모션 설정](#모션-설정과-시간-단위)을 따른다.
+
+프로그램으로 이동하는 `scroll_to_*`·`scroll_to_me`는 host와 egui-mesh 모두 `ScrollAnimation::none()`으로 즉시 이동한다. 휠 델타를 도착 프레임에 전량 반영하는 것은 별도 프로세스 왕복을 줄이기 위한 plugin SDK 경로다. host egui·갤러리의 휠은 기본 스무딩을 유지한다. 스크롤바·페이드와 드래그 패닝은 [스크롤 표시 규칙](#스크롤-여지를-보여-주는-방법)을 따른다.
+
+### 검사가 확인하는 범위
+
+- `design_token_adherence.rs`는 지정된 UI API의 원시 색·숫자 리터럴·일부 구조체 표현을 검사한다. 변수·매크로를 통한 값의 의미까지 추적하지 않는다.
+- `design_token_guard.rs`는 폰트·반경 토큰을 복사한 상수, UI 폰트 상한, 익명 점 반지름·색 계수, 생성 길이 상수 직접 소비 등을 검사한다. 점 상수 검사는 DOT 이름에 의존해 다른 이름을 놓칠 수 있다. 색 계수는 갤러리·번들 plugin도 대상이며 길이 zoom 예외를 적용하지 않는다.
+- `zoom_coverage_guard.rs`는 리터럴을 담은 Theme 길이 접근자의 배율 적용을 검사한다. 본체 호출부에 직접 적은 모든 컨테이너 길이를 검사하는 것은 아니다.
+- 검사 실행 범위는 [CI 가이드](../../dev-guide/ci-gates.md)를 따른다. 역할 선택과 디자인 변경의 타당성은 숫자 검사로 대신하지 않는다.
 
 ### latte 중성 램프 대비 — 알려진 예외
 
@@ -265,7 +313,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 - **zoom 받음**: `spacing_*` · `font_size_*` · `corner_radius`(`_sm`/`_lg` 포함) · `focus_ring_width` · `item_height_*` · 사이드바 sizing 토큰들.
 - **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다 · `tab_indicator_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
-  이 목록은 **요약이고 정본이 아니다** — 정본은 `crates/tasty-type-appearance` 의 zoom 면제 가드가 든 이름 집합이며, 소스와 이름 단위로 대조된다. 필드를 새로 면제하려면 그 목록에 사유 갈래와 함께 등록해야 하고, 등록 없이 `zoomed()` 를 빼면 그 가드가 이름을 대며 빨개진다. 각 필드의 사유는 필드 doc 에도 붙어 있다.
+  이 목록은 **요약이고 정본이 아니다** — 정본은 `crates/tasty-type-appearance` 의 zoom 면제 가드가 든 이름 집합이며, 소스와 이름 단위로 대조된다. 필드를 새로 면제하려면 그 목록에 사유 갈래와 함께 등록해야 하고, 등록 없이 `zoomed()` 를 빼면 그 검사가 해당 필드 이름을 표시하며 실패한다. 각 필드의 사유는 필드 doc 에도 붙어 있다.
 - **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 GPU 픽셀 정수 흡수.
 - **라이브 갱신**: settings save / IPC update 시 `UiIntent::AppearanceChanged` 발화 → `cascade_appearance_changed` 가 전 윈도우 GpuState 에 broadcast(polling 아님, 변경 시 1회).
 - **불변식 — `set_theme`/`install_global*` 은 렌더 밖에서만**: 전역 `THEME` 는 std `RwLock`(재진입 불가)이라, egui 렌더 클로저는 `theme()`(=`THEME.read()`) read guard 를 보유한다. 렌더 도중 `set_theme`(=`THEME.write()`)을 호출하면 자기 read guard 때문에 self-deadlock 으로 hang 한다. 따라서 테마 install 은 항상 인텐트 dispatch(`about_to_wait` / cascade) 단계에서만 수행하고, 렌더 핸들러(설정 모달 Save 등)는 `UpdateSettings` 인텐트만 큐잉한다(install 직접 호출 금지).
@@ -276,28 +324,51 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 - 전역/IO: `crates/tasty-themes/`(`theme()`, `apply_theme`, `resolve`, `install_global[_with_runtime]`, mocha/latte 임베드)
 - settings: `crates/tasty-settings/src/appearance.rs`
 - 부팅: `src/app/window_lifecycle.rs::boot_apply_theme`
-</content>
 
 ## 떠 있는 표면의 그림자
 
-떠 있는 표면의 lift 그림자는 정본 토큰 **둘**이다 — `SHADOW_POPOVER`(design `--tasty-shadow-popover`, `theme.shadow_popover()`)와 `SHADOW_MODAL`(design `--tasty-shadow-modal`, `theme.shadow_modal()`). 어느 표면이 어느 쪽을 쓰는지는 SCOPE RULE 이 정한다 — anchored + scrim-less 는 popover, 뷰포트를 점유하는(centered) 표면은 modal, 두 형태 어디에도 안 들어가는 표면은 그림자가 없다. **scrim 유무는 술어가 아니다** — modal 을 받는 표면 중 실제로 scrim 이 깔리는 것은 일부이고, scrim 은 그 값을 더 크게 잡은 근거일 뿐이다. 그 근거(scrim 은 바닥을 어둡게 하지만 엣지를 그리지 않는다)·대안·재검토 조건은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md).
+그림자는 표면의 형태에 따라 고른다. scrim 유무만으로 modal 그림자를 고르지 않는다. scrim은 배경을 어둡게 하지만 카드 경계를 그리지 않으므로, 화면 중앙의 카드에는 더 큰 modal 그림자를 사용한다.
 
-세 갈래의 현재 소비처:
+| 형태 | 토큰 | 현재 예 |
+|---|---|---|
+| 콘텐츠 위에 붙는 anchored·scrim 없는 표면 | `shadow_popover()` | 배너, tooltip, 자동완성·Select 메뉴, modifier hint, tutorial callout, tools menu·rail category·배너 더보기·search bar |
+| 화면 중앙을 차지하는 표면 | `shadow_modal()` | host·plugin popup 셸, 부팅 셸 설정, 부팅 오류 카드 |
+| 위 둘에 속하지 않음 | 없음 | 사용자가 옮기는 창 형태의 알림 패널 |
 
-- **popover** — 배너 셸, tooltip, autocomplete 드롭다운, MultiSelect/Select·ComboBox 메뉴(egui `Frame::popup` 경로 — 아래 참조), modifier-hint 오버레이, tutorial callout, 그리고 anchored popup(tools menu · rail category · 마우스 캡처 배너 더보기 메뉴 · search bar). 앞의 셋은 트리거 rect 로 좌표를 계산해 열고, `search bar` 만 scope 상단 가로중앙에 뜬다 — 좌표의 출처가 아니라 형태(scrim 없이 살아 있는 콘텐츠 위)가 갈래를 정한다.
-- **modal** — 호스트 popup 셸(`src/adapters/ui/popup/draw.rs`), plugin popup 셸(`src/plugin_bridge/popup_render.rs`), 부팅 셸 설정 다이얼로그(`src/gfx/gpu/shell_setup.rs`), 부팅 실패 카드(`src/gfx/gpu/boot_error.rs`).
-- **없음** — 알림 패널(타이틀바를 갖고 사용자가 옮기는 창처럼 동작해 두 형태 어디에도 안 들어간다).
+search bar는 범위 상단 중앙에 있어도 scrim 없이 콘텐츠 위에 놓이므로 popover에 속한다. 좌표를 계산한 방식만으로 종류를 정하지 않는다. 갤러리 공용 셸도 `frame_card`·`frame_card_popover`·`frame_card_flat`으로 같은 구분을 사용한다. Settings 창 셸, image surface의 pane 콘텐츠, 다른 표면 안의 섹션은 flat이다.
 
-갤러리도 같은 세 갈래를 노출한다 — 공유 셸 키트(`crates/tasty-gallery/src/catalog/widgets/dialog.rs`)의 `frame_card`(modal) / `frame_card_popover` / `frame_card_flat`(없음). 갈래는 셸이 아니라 **호출부가 본체에서 무엇인가**가 정하므로, 창 셸(Settings)·pane 콘텐츠(image surface)·다른 표면 안에 얹히는 섹션은 `frame_card_flat` 을 쓴다. 그래야 Foundations 의 elevation 전시("UI 표면의 깊이는 tint 로 읽는다")와 카드의 실제가 갈리지 않는다.
+셸을 직접 그리는 갤러리 예제도 확인한다. 공용 셸 호출만 검색하면 DAG·remote attach·transfer·file picker·popup frame 등이 빠질 수 있다. popup 대응 목록은 `gallery_specimen_parity.rs`, 앱의 선택 함수는 `popup_shadow`다.
 
-**그 키트가 갤러리의 전부는 아니다.** 셸을 직접 그리는 specimen 이 여럿 있고(예: `components/dag/window.rs`·`components/remote_attach.rs`·`components/transfer.rs`·`components/file_picker.rs`·`catalog/popup_frame.rs`), 그것들은 같은 판정을 **그 자리에서** 얹는다. 그래서 갈래를 감사할 때 키트 호출부만 훑으면 그 specimen 들이 모수 밖으로 빠진다 — popup specimen 의 모수는 `src/source_guards/gallery_specimen_parity.rs` 의 id↔specimen 표이고, 그 표의 각 id 를 `src/adapters/ui/popup/draw.rs::popup_shadow` 에 물어 대조한다.
+`Shadow {}` 생성은 `ShadowToken::to_egui()`로 모은다. 페이드가 필요하면 변환 결과의 color에만 opacity를 적용하고 offset·blur·spread는 바꾸지 않는다. egui 기본값도 `visuals.popup_shadow`는 popover, `visuals.window_shadow`는 modal에 연결한다. 직접 프레임을 넘긴 호출부는 자신의 shadow 설정을 사용한다.
 
-값을 새로 만들지 않고 이 둘만 쓴다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 접근자(`shadow_popover()` / `shadow_modal()`)의 `to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다.
+`ShadowToken.spread`는 음수를 표현하지만 egui의 u8 spread로 재현할 수 없다. 음수를 0으로 근사하지 않으며 해당 표면은 미구현으로 둔다. `to_egui()`는 debug에서 음수 spread를 단언으로 거부한다.
 
-`crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)의 검사는 이 정책보다 좁다. 인식하는 `Shadow` 리터럴의 생성 위치, 같은 줄의 `let mut` 와 접근자 이름으로 찾은 변수의 기하 재대입, 접근자 명부의 정합을 본다. 줄 단위 텍스트 검사라 별칭이나 다른 생성·대입 형태의 데이터 흐름까지 추적하지 않는다. **egui 기본 그림자 두 필드의 매핑 유지 여부와 표면별 토큰 선택은 검사하지 않는다.** 아래 매핑이 구현돼 있다는 사실과 이 가드가 그것을 검증한다는 주장은 구분한다.
+검사는 역할이 다르다. `shadow_policy_guard.rs`는 인식하는 리터럴 생성 위치, 같은 줄의 변수 선언에서 찾은 기하 재대입, 접근자 목록을 확인한다. 데이터 흐름 전체·egui 기본 매핑·표면별 선택은 확인하지 않는다. `shadow_parity.rs`는 수기로 옮긴 두 토큰의 값과 vendor JSON, raw·alias 목록, 그림자가 아닌 kbd-shadow-depth 구분을 대조한다. 음수 spread 사용 검사도 토큰 목록 완전성 검사와 함께 유지한다. 실행 범위는 [CI 가이드](../../dev-guide/ci-gates.md)를 따른다.
 
-두 상수가 디자인 정본을 제대로 옮겨 적었는지는 `crates/tasty-design-tokens/tests/shadow_parity.rs` 가 vendor json 과 필드 단위로 대조한다 — 그림자는 `$type: shadow` 라 생성기가 건너뛰고 값이 **손으로 옮겨지므로**, 이 대조가 없으면 전사 오차가 조용히 남는다(실제로 남아 있었다). 같은 파일이 정본 쪽 모수도 잠근다: raw 그림자 토큰 명부의 완전성, alias 토큰이 명부 안의 값으로 귀착하는지, `-shadow` 로 끝나는 이름이 떠 있는 그림자가 아닌 치수 축(`kbd-shadow-depth`)과 섞이지 않는지. 통합 테스트라 자동 실행은 헤드리스 잡뿐이다(`docs/dev-guide/ci-gates.md`).
+## 스크롤 여지를 보여 주는 방법
 
-`ShadowToken.spread` 는 음수를 **표현**하지만(CSS `box-shadow` 와 같은 의미) 그것을 쓰는 표면은 **미구현으로 둔다** — egui 가 음수를 못 담아 `to_egui()` 가 debug 단언으로 터진다. 근거·대안은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md).
+새로 만들거나 수정하는 영역은 스크롤바를 숨기고, 더 스크롤할 수 있는 가장자리에 배경색에서 투명으로 이어지는 페이드를 그린다. 기준 구현은 `remote_tool.rs`의 `scroll_list_with_fade`다. 기존 영역의 일괄 전환을 요구하지는 않는다.
 
-egui 가 스스로 그리는 그림자 둘(`visuals.popup_shadow` · `visuals.window_shadow`)도 같은 두 토큰으로 매핑한다(`crates/tasty-egui-theme/src/lib.rs`). 매핑하지 않으면 `Visuals::dark()`/`light()` 의 기본값이 남아 정본 아닌 **세 번째 그림자**가 뜨고, 그 기본값은 테마마다 알파가 갈려(dark α96 / light α25) 같은 화면의 tasty 그림자와 값이 달라진다. 갈래는 형태가 정한다 — `Frame::popup`(= `egui::popup_below_widget` · `ComboBox` · MultiSelect/Select 위젯 메뉴)은 트리거 아래 붙는 anchored 표면이라 popover, `egui::Window` 는 뷰포트를 점유하므로 modal 이다. 프레임을 직접 넘기는 호출부는 이 기본값 대신 자기 프레임의 `.shadow(...)` 를 쓴다.
+스크롤바 폭을 예약하는 예외는 두 조건을 모두 만족해야 한다. 그 폭이 콘텐츠 치수·가로 스크롤 판단에 쓰이고, 컨테이너가 바 표시 설정이나 뷰포트 rect를 제공하지 않아야 한다. 현재 port scanner는 Exact 열 너비를 가용폭에 맞추고 내부 `TableBuilder`의 세로 스크롤을 사용하므로 이 예외에 해당한다. 공용 Table API가 바뀌면 다시 판단한다.
+
+페이드에는 스크롤 위치와 전체 분량 정보가 없다. 긴 목록에서 그 정보가 필요해지면 별도 표시를 설계한다. 클릭이 통과하는 스크롤바나 임의 여백 추가로 대체하지 않는다.
+
+드래그 패닝은 별도 규칙이다. `ScrollArea`, `TableBuilder`, 스크롤 축을 켠 `egui::Window`에는 `drag_to_scroll`을 명시한다. 기본은 `false`이며 예외로 켤 때 이유를 코드에 남긴다. `ComboBox` 내부 스크롤은 호출부에 설정 API가 없어 현재 검사 대상이 아니다.
+
+`drag_to_scroll_is_declared.rs`는 생성 이후 40줄 안의 빌더 호출을 보는 소스 검사다. 데이터 흐름을 추적하지 않아 호출이 멀면 놓치거나 무관한 호출을 잘못 연결할 수 있다. 선언 여부를 검사하는 것이므로 true가 허용된다는 사실과 제품 기본값이 false라는 사실을 구분한다.
+
+## 모션 설정과 시간 단위
+
+모션 위젯은 기본적으로 `Theme.reduced_motion`을 따른다. 설정값은 `Settings::theme_runtime()`가 UI 배율과 함께 만들고, 전역 Theme 설치 경로는 그 결과를 통째로 전달한다. 개별 위젯 override는 갤러리에서 동작·정지 예제를 함께 보여 줄 때 사용한다.
+
+`Theme::with_colors*`로 직접 만든 Theme는 기본값이므로 호스트 설정이 자동으로 들어간다고 가정하지 않는다. 현재 `ThemeWire`는 `colors`·`is_light`·`ui_zoom`만 전달하며 `reduced_motion`은 전달하지 않는다. 따라서 플러그인의 egui-mesh 모션 위젯에 호스트의 모션 감소 설정이 자동 적용되지는 않는다. 해당 위젯을 추가할 때는 이 설정을 전달하는 방법도 함께 정해야 한다. OS의 모션 감소 설정은 현재 설정값을 대신하지 않는다.
+
+component duration 접근자는 `Millis`를 반환한다. egui에는 `to_secs_f32()` 또는 `to_secs_f64()`, 타이머에는 `to_duration()`을 사용한다. 원시 밀리초가 필요한 함수에는 `to_millis_f32()`로 전달한다. 단위가 없는 `value()` 접근자는 없으며, duration에는 UI 배율을 적용하지 않는다. semantic duration은 현재 별도의 Theme 필드로 저장하지 않는다.
+
+대응 토큰이 없는 시간값은 임의로 가까운 값에 맞추지 않는다. 원시 ms를 꺼내 계산하는 경로가 늘면 단위 오용 검사를 추가할 필요가 있는지 검토한다. 이 규칙은 디자인 모션의 Theme 경계에 적용하며 기존 Duration 기반 폴링·타임아웃을 바꾸지는 않는다.
+
+## 터미널 셀 강조색 합성
+
+선택·vi 커서·링크·검색 강조는 이 순서로 현재 셀 배경 위에 합성한다. `renderer/overlay.rs::composite_over`가 source-over 색을 계산하며 `fill_surface`와 `render_cell` 모두 이를 사용한다. 새 강조를 추가할 때 두 경로를 확인한다.
+
+불투명 강조색은 원래 값과 같고, 불투명 셀 배경 위에 반투명 강조를 합성해도 결과는 불투명하다. alpha는 창 아래를 비추는 값이 아니다. 셀 기본색·SGR 배경·block 커서는 이 강조 합성의 대상이 아니며, 별도 quad인 IME preedit도 포함하지 않는다. GPU 셀 배경 파이프라인은 REPLACE를 유지한다.

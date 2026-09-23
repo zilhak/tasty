@@ -99,21 +99,32 @@ mode = "key"
 value = ["F6"]
 ```
 
-번들은 액션 이름을 따로 열거하지 않고 `KeybindingSettings` 를 통째로 싣는다 — 번들에 있는 필드가 곧 그 타입에 있는 필드이므로, "모든 단축키는 `KeybindingSettings` 로 노출된다" 는 규칙이 번들 포맷에서도 그대로 성립한다.
+번들은 `KeybindingSettings`의 모든 필드와 `PluginsConfig::shortcut_overrides`를 담는다.
+화면의 command snapshot에는 비활성·미등록 plugin 설정이 빠질 수 있어 export 원본으로 쓰지 않는다.
+코덱은 두 타입을 함께 아는 `tasty-host-plugin::keybinding_bundle`에 있다.
 
-**export 원본은 `PluginsConfig.keybindings` 자체**(`PluginsConfig::shortcut_overrides`)다. 설정 창이 가진 `PluginShortcutSnapshot` 은 `command_registry.iter_all()` 로 만들어져 **등록된 command 만** 담으므로, 그것을 원본으로 쓰면 비활성·미등록 plugin 의 override 가 조용히 빠진다.
+| 입력 상태 | decode 결과 |
+|---|---|
+| 잘못된 TOML 또는 schema 없음·불일치 | Toml / NotABundle 오류 |
+| 모르는 키·필드, 잘못된 필드 모양, 읽을 수 없는 override, 더 높은 버전 | 읽을 수 있는 값을 복원하고 BundleWarning 반환 |
+| 미설치 plugin 또는 없는 스크립트 | 해당 항목을 버리고 경고 |
 
-import(`decode`)은 사용자가 고른 임의의 파일을 다루므로 세 갈래로 갈린다.
+설치 목록과 스크립트 목록은 DecodeEnv로 받는다. known_script_ids가 None이면 스크립트 존재 검사를 생략한다.
+keybindings는 기본값에서 필드를 하나씩 복원한다. 필드 하나의 역직렬화가 실패하면 그 필드만 기본값으로 남긴다.
+필드 이름과 배열 길이는 설정 타입에서 얻으며 코덱에 같은 목록을 따로 쓰지 않는다.
 
-- **거절** — 최상위 `schema` 가 없거나 다르면 `NotABundle`, TOML 자체가 깨졌으면 `Toml`. 값을 하나도 복원할 수 없는 경우만 에러다(`config.toml` 을 골라도 패닉하지 않는다).
-- **경고하고 계속** — 모르는 최상위 키·모르는 단축키 필드·값의 모양이 다른 필드(타입 불일치, 고정 배열 길이 차이)·읽히지 않는 override 항목·이 빌드보다 높은 버전. 전부 `BundleWarning` 목록으로 돌려준다.
-- **버리고 경고** — 이 환경에 **설치되지 않은 plugin** 의 override 전부, 대상이 없는 `script_bindings` 항목. 설치 여부와 script 존재 여부는 `DecodeEnv` 로 받고, `known_script_ids: None` 이면 script 판정을 건너뛴다(레지스트리를 못 보는 호출자가 전량을 잃지 않게).
+저장된 문자열의 문법은 `tasty_settings::keybindings::parse`가 소유한다.
+parse_binding·ParsedBinding·Combo를 실제 키 매칭과 도움말·번들 변환이 함께 쓴다.
+OS별 실제 키 대응은 매칭 계층에 남는다. 일반 바인딩 파서는 shift+shift 같은 modifier 더블탭 표기를 거절하며
+더블탭은 전용 처리에서 해석한다.
 
-`[keybindings]` 는 **필드 단위로** 복원한다 — 기본값에서 출발해 번들의 필드를 하나씩 얹고, 얹은 뒤 전체가 역직렬화되지 않으면 그 필드만 되돌린다. 그래서 구버전·신버전 번들의 배열 길이 차이가 그 필드 하나만 기본값으로 만들고 나머지는 그대로 복원된다. 코덱에는 필드 명부가 없다.
+TOML에는 null이 없다. 평범한 Option 필드는 생략으로 표현할 수 있지만,
+Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다시 설계해야 한다.
+맵의 None 값도 키가 사라져 같은 맵으로 복원되지 않는다.
+새 최상위 번들 필드는 BUNDLE_KEYS와 함께 수정하고 비호환 형식 변경은 BUNDLE_VERSION을 올린다.
 
-import 한 구성이 macOS 에서 만들어졌으면 `option` 바인딩이 이 환경에서 조용히 죽는다. 그 자리를 전수로 찾아 대체 값을 적용하는 계산이 같은 자리에 있다(`keybinding_bundle::option_migration`) — 찾는 다섯 자리·대체 값의 종류·충돌 검사 규칙은 [key-mapping](../../design/policies/key-mapping.md) "이식 시 `option` 처리" 가 정본이다.
-
-결정의 근거·대안·재검토 조건은 [ADR-0257](../../adr/0257-the-keybinding-bundle-is-a-toml-file-with-a-schema-tag.md).
+다른 OS에서 사용할 option 바인딩은 [키 매핑](../../design/policies/key-mapping.md)의 이식 절차를 따른다.
+선택 이유는 [단축키 설정 결정](../../adr/0619-keybinding-settings-and-hints.md)에 있다.
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
 
@@ -359,6 +370,11 @@ General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Ex
 **어느 서브탭에 두는가** — 그 동작의 *대상 엔티티* 이름을 가진 서브탭에 둔다. `new_tab`→Tab, `split_pane_*`→Pane, `close_surface`→Surface. 수식키도 대상 엔티티 서브탭(`tab_switch_modifier`→Tab, `workspace_switch_modifier`·`category_switch_modifier`→Workspace). cascade 인 `close_active` 는 가장 먼저 닫히는 대상이 탭이라 Tab. `open_markdown` 은 새 탭으로 열려 Tab.
 
 > explorer 는 host builtin kind 라 `open_explorer`(Tab)·`convert_to_explorer`(Surface) 호스트 키바인딩이 있다. 현재 Surface 의 convert 계열은 `convert_surface`·`convert_to_markdown`·`convert_to_explorer` 다.
+
+가져오기의 충돌 검사는 변환된 번들 안에서 수행한다.
+일부 행만 선택했을 때 현재 draft에 남은 바인딩과 생기는 충돌은 이 검사에 포함되지 않는다.
+새 대체 값끼리 충돌하면 어느 쪽을 비울지 정할 수 없어 충돌 확인을 수락해도 적용하지 않는다.
+번들과 완전히 같은 plugin override 집합으로 맞추려면 로컬에만 있는 항목은 Plugins 서브탭에서 따로 제거한다.
 
 ## 인터페이스
 

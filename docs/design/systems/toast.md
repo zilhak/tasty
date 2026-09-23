@@ -11,75 +11,47 @@
 | 입력 | 클릭/드래그/X | **소비 안 함**(마우스 통과) |
 | 타이틀바 | 있음 | 없음(본문만) |
 | 위치 | 자유 이동 | 스코프별 고정 스택 |
-| 트리거 | 사용자 또는(debug)에이전트 | **사용자 행동만** (예외: 원격 연결 상태 사건 — 아래 허용 부류) |
+| 트리거 | 사용자 또는(debug)에이전트 | 사용자 결과와 아래 허용·예외 상황 |
 
 Toast 는 Popup 의 변종이 *아니다* — 8대 규칙(타이틀바·X·드래그·z-order 승격·외부클릭닫기)이 토스트와 정면 충돌하므로 별도 매니저로 둔다. 단 스코프 정의와 스코프-rect 계산은 `LayoutContext` 를 재사용해 일관성을 유지한다.
 
 ## 트리거 정책 (CRITICAL)
 
-**Toast 는 사용자 행동(키보드 단축키 / 마우스)에서만 발사된다** — 예외는 아래 허용 부류 하나다. CLI/IPC 를 통한 에이전트 동작은 사용자 시각 상태에 영향을 주면 안 되므로 토스트를 띄우지 않는다([identity](../../identity.md) 원칙 1, [popup.md](popup.md) 발화 정책과 동일).
+토스트는 기본적으로 사용자 조작의 결과를 알린다. 에이전트의 CLI·IPC 요청 성공·실패는 사용자 토스트로 표시하지 않는다. [정체성 원칙](../../identity.md)의 사용자 상태 분리를 따른다.
 
-복사 예시:
-- 터미널 선택 후 `Ctrl+C` → ✅ · Explorer 경로 복사 → ✅ · 클립보드 뷰어에서 항목 클릭 복사 → ✅
-- IPC `clipboard.*` 쓰기 → ❌
-- OSC 52 쓰기(터미널 프로그램이 보낸 클립보드 시퀀스) → ✅ `toast.copied_osc52` — 프로그램이 **보이지 않게**
-  시스템 클립보드를 덮어쓰는 것을 사용자에게 보이게 하려는 것이다(`src/app/dispatch_domain.rs`
-  `cascade_terminal_clipboard_set`).
+| 상황 | 처리 |
+|---|---|
+| 사용자 복사·저장 | 토스트 표시 |
+| 에이전트 IPC 쓰기·intent 적용 실패 | IPC 응답 또는 경고 로그. 사용자 토스트 없음 |
+| mirror 연결 끊김·재연결·손실 | 연결 상태 토스트 허용. parked engine에서는 표시하지 않음 |
+| 사용자 구조 변경의 원격 적용 실패 | 실패 토스트 표시 |
+| agent origin 또는 직접 IPC 구조 요청의 원격 실패 | op_id로 origin을 기억해 토스트 대신 로그 |
+| 원격 markdown 잘림 | 최초 열기·실패 후 변경 재조회·사용자 새로고침에는 알려진 예외로 표시. markdown.reload IPC 재조회에는 로그만 기록 |
+| OSC 52 클립보드 쓰기 | 보이지 않는 클립보드 변경을 알리기 위해 표시. PTY 바이트만으로 사용자·에이전트를 구분할 수 없는 알려진 예외 |
 
-**OSC 52 는 이 정책의 알려진 예외다.** OSC 52 는 PTY 출력이라 그 바이트를 누가 나오게 했는지
-(origin)를 가를 수 없다 — 사용자가 친 명령이든, 에이전트가 `send text` 로 셸에 찍게 한
-명령이든 같은 바이트다. 그래서 에이전트가 셸에 OSC 52 를 찍게 해도 토스트가 뜬다. 원칙 1 과
-긴장이 있는 자리이고, 가시화(클립보드 무단 덮어쓰기 알림)를 택해 둔 상태다.
+연결 상태 알림은 사용자가 보는 원격 사본이 최신인지 알려 준다. 세션을 에이전트가 열었더라도 이후 네트워크 단절은 IPC 호출의 직접 결과와 구분한다. 반대로 에이전트가 요청한 구조 변경의 거절은 연결 상태 예외로 허용하지 않는다.
 
-**재는 법** — 이 정책을 보는 자동 채널(시험·가드)은 없다. 대신 IPC 가 들어오는 경로에서
-토스트 매니저로 닿는 이름을 센다. 결과가 **0 줄**이어야 한다.
+### origin이 적용되는 경로
+
+`report_apply_error`와 preset 적용·저장 실패는 사용자 origin에서만 토스트를 낸다. 에이전트의 forward 요청에는 `silent_failure`를 붙이고 attach client의 `AgentRequests`가 회신까지 op_id를 보관한다. 성공·실패 회신 뒤에는 항목을 지우고 재연결 때도 비운다. preset 저장 성공 알림은 이 실패 처리 규칙의 대상이 아니다.
+
+직접 `Core::apply`를 부르는 split·tab.create/close/move·pane.close·surface.close는 `structural_exec::apply_as_agent`에서, image.open은 `image::handle_open`에서 같은 표시를 붙인다. 원격 요청을 다시 전달하는 경우도 이 기계 앞 사용자의 조작이 아니므로 조용한 실패로 처리한다.
+
+`file_handler.dispatch`는 사용자가 조작한 플러그인 팝업을 검증할 수 있으면 사용자 origin이 된다. markdown 파일열기 팝업이 이 경로다. origin을 구분하지 못하는 기존 `Some(pane)` 직접 적용과 사용자 전용 `forward_mirror_structural`은 원격 실패 토스트를 유지한다. accepted 응답 뒤 적용한 실패 사유는 기존 응답에 소급해 넣을 수 없어 로그에 남는다.
+
+관련 검사는 `src/intent/apply_error_tests.rs`, `src/app/attach_client/agent_origin.rs`, markdown 원문 요청 테스트에 있다. 이 테스트들이 모든 토스트 생성 경로를 검사하는 것은 아니다.
+
+### 새 경로를 검토할 때
+
+직접 호출은 다음 검색으로 찾을 수 있다.
 
 ```bash
-grep -rnE --exclude='*_tests.rs' 'toasts|report_apply_error|push_toast' \
-  src/adapters/ipc/ src/app/ipc/ src/app/ipc.rs \
-  src/boot/headless_dispatch.rs src/boot/headless_plugins.rs
+rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/app/ipc.rs src/boot/headless_dispatch.rs src/boot/headless_plugins.rs -g '!**/*_tests.rs'
 ```
 
-- 이 명령이 잡는다는 것은 변이로 확인했다: IPC 핸들러 파일에 `state.toasts.push_info(...)`
-  한 줄을 넣으면 그 줄이 나온다(2026-09-21).
-- **못 보는 경로가 넷이다.** ① IPC 가 창 생성 같은 일을 winit 이벤트로 넘기고, 그 이벤트
-  핸들러가 실패를 토스트로 알리는 경로(예전 `window.create` 가 그랬다 — 지금은 완료
-  채널로 응답한다). ② IPC 가 만든 도메인 이벤트가 `src/app/dispatch_domain.rs` cascade
-  에서 토스트를 내는 경로. ③ 에이전트가 터미널에 보낸 텍스트가 프로그램을 거쳐 토스트를
-  내는 경로(OSC 52 등). ④ IPC 엔진 핸들러가 `out.push(... .from_agent_ipc())` 로
-  요청의 intent 출구에 넣고(진입점이 요청 끝에 창 큐로 옮긴다), 메인 루프가 그것을
-  `src/intent/*` 에서 처리하면서 토스트를 내는 경로. 이 넷은 호출 이름이 IPC 파일에 안 나타난다.
-- **경로 ④ 는 `src/intent/*` 가 origin 을 보아 막는다.** IPC 핸들러가 intent 를 agent origin
-  으로 넘기면, `src/intent/*` 의 적용 실패 신호는 **사용자 origin 에서만** 토스트가 된다 —
-  에이전트 origin 의 실패는 `warn` 로그로 끝난다. 두 자리가 있다.
-  - 동기 차단: `core.apply` 가 mirror 구조 op 를 forward 하지 못하면(`forwarded: false`)
-    `report_apply_error`(`src/intent.rs`)가 `attach.toast.mirror_structural_blocked` 를 사용자
-    origin 에서만 낸다. preset 적용·저장 실패 토스트(`src/intent/preset.rs`)도 같다(저장 성공
-    토스트는 origin 과 무관하다).
-  - 비동기 실패: forward 된 op 가 원격에서 실패하면 `attach.toast.mirror_structural_forward_failed`
-    가 난다. `report_apply_error` 가 에이전트 origin 의 forward op 에 `silent_failure` 를
-    표시하고, attach client 는 그 op_id 의 실패 회신을 토스트 대신 로그로 보낸다
-    (`src/app/attach_client/agent_origin.rs` `AgentRequests`).
-  이 경로의 실례: `markdown.navigate` 의 convert 와 `file_handler.dispatch`(`origin_surface_id`
-  없이)가 새 탭으로 떨어지는 경우(`Intent::NewTab`)는 mirror 워크스페이스에서 forward 되고, 원격이 그 op 를 적용하지
-  못하면(예: 원격에 없는 surface kind) 실패 회신이 온다. 뒤쪽이 에이전트 origin 인 것은 호출이
-  사용자가 만진 plugin popup 을 대지 않았을 때다 — 대면 사용자 origin 이라 표시가 없고 실패는
-  토스트가 된다(markdown 파일열기 팝업, [ADR-0526](../../adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md)). 시험:
-  `src/intent/apply_error_tests.rs` · `src/app/attach_client/agent_origin.rs` 의
-  `an_agent_forward_failure_does_not_toast`. 두 끝을 세는 명령(경로의 폭을 보는 것이다):
-  `grep -rn 'from_agent_ipc()' src --include='*.rs'` 로 agent origin intent 의 발화 자리 ·
-  `grep -rln 'report_apply_error\|toasts\.push' src/intent.rs src/intent/`(7 파일 — 시험 `apply_error_tests.rs` 포함).
-  intent 를 안 거치고 `Core::apply` 를 직접 부르는 IPC 구조 핸들러(split · tab.create/close/move ·
-  pane.close · surface.close · `image.open`)도 같은 표시를 붙인다 — `core::structural_exec` 의
-  `apply_as_agent` 와 `image::handle_open` 이 붙이고, 시험은 같은 파일의
-  `an_ipc_direct_structural_forward_is_marked_for_a_silent_failure` 다. 표시를 안 받는 것은 origin 을
-  가를 수 없는 자리(`src/file/dispatch.rs` 의 `Some(pane)` 갈래)와 사용자 전용 경로
-  (`AppState::forward_mirror_structural`)뿐이고, 그 forward op 의 원격 실패는 토스트가 난다.
-- 판정기를 짓지 않은 이유: 위 명령의 좌변(IPC 파일)에서는 결함이 난 적이 없다. 결함은 늘 그
-  밖에서 났다 — ① 과 ④ 둘 다 IPC 파일을 스캔하는 판정기로는 안 잡힌다. ④ 는 판정기가 아니라
-  `src/intent/*` 가 origin 을 보게 고친 것으로 막았고, 위 두 시험이 그 분기를 고정한다.
+검색 결과가 없더라도 IPC가 만든 winit 이벤트·도메인 이벤트·PTY 출력·intent를 따라 다른 파일에서 토스트가 발생할 수 있다. 직접 호출 검색을 정책 전체의 검증으로 보고하지 않는다. 새 실패 경로는 실제 origin을 확인하는 지점과 비동기 회신까지 함께 검사한다.
 
-**허용 부류 — 원격 연결 상태 사건.** attach mirror 의 연결 상태 사건(끊김 · 재연결 · 손실 · 구조 전달 실패)은 사용자 행동 없이도 토스트를 띄운다. 원인이 에이전트 IPC 가 아니라 네트워크·원격 처리·소비 속도이고, 알리지 않으면 사용자가 원격의 사본인 mirror 의 낡은 화면을 최신으로 읽는다. 현재 구성원은 `attach.toast.mirror_reconnecting` · `mirror_reconnected` · `mirror_reconnect_giveup` · `mirror_disconnected` · `mirror_desynced` · `mirror_structural_forward_failed` 여섯이다. `mirror_markdown_truncated`(원격 문서가 잘렸다)는 사용자 행동 없이 나지만 연결 사건이 아니라 이 부류 밖이다 — 알려진 예외로 ADR-0401 에 적혀 있다. 그 예외에서 에이전트의 `markdown.reload` 가 건 재조회는 빠졌다 — 그 회신의 잘림은 toast 없이 로그다([ADR-0503](../../adr/0503-an-agent-intents-apply-failure-goes-to-the-log-not-a-user-toast.md)). 창 없는(parked) engine 에서는 띄우지 않는다. 에이전트 IPC 호출이 직접 일으킨 결과는 이 부류가 아니다(위 원칙대로 ❌) — 에이전트 origin intent 나 IPC 구조 요청이 forward 한 op 의 원격 실패도 그렇다(`mirror_structural_forward_failed` 대신 로그, 위 경로 ④). 근거·대안은 [ADR-0401](../../adr/0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md) · 개정 [ADR-0503](../../adr/0503-an-agent-intents-apply-failure-goes-to-the-log-not-a-user-toast.md).
+손실 경고와 재연결 성공은 서로 다른 메시지라 반복해서 뜰 수 있다. 느린 연결에서 방해가 된다면 같은 창에서 일정 시간 발생 횟수를 세어 별도 상태 표시로 옮길지 판단한다. markdown 잘림도 문서 내 표지로 옮기는 결정은 아직 하지 않았다.
 
 ## 스코프
 
@@ -87,7 +59,7 @@ Popup 과 같은 enum 을 쓰지만 **위치 앵커 용도** 다(가시성 필�
 
 ## 시각 / 레이아웃
 
-모든 색·치수는 Theme 토큰([theme.md](theme.md)). 배경 `surface0` + 1px `surface1` 보더 + `corner_radius`, 본문 `font_size_body`, 스코프 우측 하단 정렬·스택. 종류 강조는 좌측 4px 컬러 바:
+모든 색·치수는 Theme 토큰([theme.md](theme.md)). 배경 `surface0` + 1px `surface1` 보더 + `corner_radius`, 본문 `font_size_body`, 스코프 우측 하단 정렬·스택. 종류 강조는 `toast_accent_width`의 좌측 컬러 바:
 
 | 종류 | 바 색 | 용도 |
 |------|-------|------|
@@ -117,7 +89,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 ## 구조 — 그리기와 상태가 다른 크레이트에 있다
 
 **그리기**는 `crates/tasty-ui-widgets/src/toast.rs` 가 소유한다. 본체와 갤러리 specimen 이
-같은 함수를 부르므로 카드 모양이 두 벌이 될 수 없다.
+같은 레이아웃·색·그리기 함수를 사용한다. 입력 폭·테마·배율이 같아야 같은 화면이 된다.
 
 - `ToastEntryView` / `ToastScopeView` / `ToastViewProps` — 그릴 준비가 끝난 입력. 시간도
   상태도 안 들어 있고 `alpha` 는 이미 계산돼 있다.

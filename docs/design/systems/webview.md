@@ -9,20 +9,12 @@ native webview 는 winit 창 **안**에 얹히는 별개의 OS 자식 창/뷰다
 
 ## 계약의 형태 — trait 이 아니라 이름이다
 
-`PlatformWebView` 는 **세 개의 서로 다른 타입**이고, `src/host_api/webview.rs` 의 `cfg` 가
-빌드마다 하나를 고른다. 공통 trait 은 없다. 세 타입은 같은 이름·같은 시그니처의 메서드
-열둘과 `Drop` 을 노출하고, 호출부는 어느 것이 골라졌는지 모른 채 그 이름으로 부른다.
+PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출부가 쓰는 메서드와 시그니처는
+해당 OS 컴파일이 검사한다. 같은 빌드에서 런타임 다형성을 쓰지 않으므로 별도 backend trait은 두지 않는다.
+선택 근거는 [Webview 통합 ADR](../../adr/0629-webview-host-integration.md)에 있다.
 
-**이름 수준의 일치는 강제된다** — 호출부가 셋 모두에 공유되므로, 한 백엔드에 메서드가
-없거나 시그니처가 다르면 그 OS 의 컴파일이 깨진다. 그 컴파일은 `crossplatform-check` 의
-`check-macos` · `check-windows` · `check-headless` 세 잡이 main push · PR 마다 본다.
-
-trait 을 두지 않기로 한 근거·대안·재검토 조건은 [ADR-0320](../../adr/0320-the-webview-backends-are-held-together-by-shared-call-sites-not-a-trait.md) 에 있다.
-
-**뜻 수준의 일치는 강제되지 않는다.** "`set_visible(false)` 가 무엇을 하는가" 가 백엔드마다
-갈라져도 셋 다 컴파일된다. 아래 표의 "백엔드 차이" 열이 지금 알려진 갈라짐 전부이고, 그
-열이 맞는지는 사람이 읽어서 판정한다 — 재는 법은 각 백엔드의 해당 메서드 본문을 셋 다 열어
-대조하는 것이고, 그것을 대신해 주는 채널은 없다.
+컴파일 성공은 실제 크기·focus·navigation·종료 행동이 같다는 증거가 아니다.
+백엔드 변경 때는 아래 계약으로 세 구현을 비교하고 해당 OS에서 동작을 확인한다.
 
 ## 표면 — 열둘 + `Drop`
 
@@ -39,27 +31,22 @@ trait 을 두지 않기로 한 근거·대안·재검토 조건은 [ADR-0320](..
 | `set_zoom` | `f64` | — | |
 | `set_javascript_enabled` | `bool` | — | |
 | `set_color_scheme` | `ColorScheme` | — | |
-| `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다([ADR-0250](../../adr/0250-linux-blocks-remote-subresources-with-a-webkit-content-filter.md)) |
+| `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다([ADR-0629](../../adr/0629-webview-host-integration.md)) |
 | `Drop` | — | — | 아래 "수명" |
-
-`src/host_api/webview.rs` 의 머리 주석이 한때 이 표면을 "6 operations" 라고 적었다. 그 수는
-lifecycle/geometry 만 센 것이고 키보드·탐색·페이지 설정 일곱이 빠져 있었다 — 그 자리는
-이 표를 가리키도록 고쳤다.
 
 ## 생성 — 부모 handle 과 실패 분류
 
-부모 창은 `raw-window-handle` 로 받는다. 백엔드마다 받아들이는 종류가 하나뿐이고, 다른
-종류가 오면 **영구 실패**다.
+부모 창은 raw-window-handle로 전달한다. Linux는 Xlib만, macOS는 AppKit ns_view,
+Windows는 Win32 hwnd를 받는다. 지원하지 않는 handle은 Permanent 오류이며 Linux Wayland는 미지원이다.
 
-- Linux: `RawWindowHandle::Xlib` 만. Wayland 는 지원하지 않는다.
-- macOS: `RawWindowHandle::AppKit` 의 `ns_view`.
-- Windows: `RawWindowHandle::Win32` 의 `hwnd`.
+Linux는 winit Xlib 연결에서 자식창을 만든 뒤 XSync로 서버 처리를 기다리고 별도 GDK 연결에서 조회한다.
+XFlush만으로는 연결 사이 순서가 보장되지 않는다.
+foreign_gdk_window가 FFI NULL을 Err로 반환하며 panic하는 foreign_new_for_display 바인딩은 직접 쓰지 않는다.
+실패하면 방금 만든 X 창을 정리한다. native menu의 XID 변환도 같은 helper를 사용한다.
 
-실패는 `WebViewCreateError` 가 **다시 시도할 가치가 있는가**로 가른다(`Transient` /
-`Permanent`). 이 구분은 취향이 아니라 필수다 — 실패 경로가 X 창을 만들었다 지우면 그 X
-이벤트가 이벤트 루프를 깨워 다음 시도를 스스로 부른다. 근거·실측은
-[ADR-0159](../../adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md) 와 그 타입에 붙은
-주석에 있다.
+WebViewCreateError의 Permanent는 즉시 중단하고 Transient는 최대 8 회 시도한다.
+창 생성·파괴 이벤트가 다음 시도를 깨울 수 있어 무한 재시도를 하지 않는다.
+소스 검사는 알려진 생성→동기화→조회 순서와 NULL 처리만 확인하며 모든 X 경합이나 자원 정리를 증명하지 않는다.
 
 ## 좌표 — 논리와 물리를 타입 이름에 남긴다
 
@@ -68,6 +55,19 @@ lifecycle/geometry 만 센 것이고 키보드·탐색·페이지 설정 일곱�
 `/ scale_factor` 를 손으로 적으면 한쪽만 고쳤을 때 조용히 어긋나기 때문이다. 두 타입이
 `f32` 가 아니라 `f64` 인 이유(플랫폼 API 와 `scale_factor` 가 `f64` · 소비자가 `as i32` 로
 절단)는 타입 정의에 붙어 있다. 왕복은 단위 시험이 세 OS 모두에서 고정한다.
+
+크기 변경은 container와 실제 렌더 target 양쪽에 도달해야 한다.
+
+| 플랫폼 | 크기 전달 |
+|--------|-----------|
+| macOS | WKWebView setFrame |
+| Windows | SetWindowPos와 controller.SetBounds |
+| Linux | XMoveResizeWindow와 gtk_window.size_allocate |
+
+Linux foreign GdkWindow 구성에서는 GTK resize·size request만으로 allocation이 갱신되지 않았다.
+foreign bind와 직접 size_allocate는 함께 유지하거나 함께 제거한다.
+활성·비활성 탭 생성, 전환, 확대·축소, 분할에서 부모와 렌더 자식 크기를 비교한다.
+원인을 ConfigureNotify 누락 하나로 확정하지 않는다.
 
 ## 스레드 — 셋 다 `!Send` 지만 강제의 세기가 다르다
 
@@ -85,129 +85,96 @@ release 에서 조용히 UB 가 난다.
 
 ## 수명 — 부모가 먼저 죽을 수 있다
 
-자식 창의 수명은 `PlatformWebView` 값의 수명이고, `Drop` 이 OS 자원을 푼다. 부모 winit
-창이 **먼저** 사라지는 경우가 실제로 있으므로 teardown 은 그 상태에서도 호스트가 더 할 일이
-없게 끝나야 한다.
+PlatformWebView의 Drop이 OS 자원을 정리하며 부모 winit 창이 먼저 사라진 경우도 처리한다.
 
-- Linux: GDK 에러 트랩을 걸고 정해진 순서로 푼다. 트랩은 abort 를 값으로 바꿔 X 에러를
-  로그로 남긴다 — **순서 수정 뒤의 마지막 그물이지 순서 대신이 아니다**.
-  [ADR-0248](../../adr/0248-webview-teardown-lets-gdk-finish-before-the-x-window-is-destroyed.md).
-- macOS: `removeFromSuperview()` 하나. 나머지는 ARC 가 푼다.
-- Windows: `controller.Close()` 후 `DestroyWindow`. 둘 다 이미 닫힌 경우를 `trace` 로만
-  남기고 넘어간다.
+- Linux: 정리 구간에 GDK error trap을 설치한다. webview.destroy → gtk_window.hide+GTK pump →
+  gtk_window.close+pump → XDestroyWindow+XSync+pump 순서다. hide·close는 예약형이므로 pump가 실제 순서를 완성한다.
+  남은 X 오류는 warning으로 기록한다. trap만 두고 순서를 생략하지 않는다.
+- macOS: removeFromSuperview 뒤 ARC가 자원을 정리한다.
+- Windows: controller.Close 뒤 DestroyWindow를 호출한다. 이미 닫힌 경우는 trace로 기록한다.
+
+종료 회귀를 재현할 때는 실제 native webview가 생성된 것을 먼저 확인하고 탭 닫기와 창 닫기를 구별한다.
 
 ## 탐색 상태 — 소유는 도메인 모델이다
 
-`NavState`(`Idle` / `Loading` / `Done` / `Failed`)는 `tasty-model` 이 정의하고
-(`tasty_model::NavState`), `host_api::webview` 가 재수출한다. 소비자가 셋이다 — 항상
-컴파일되는 `RemoteSurface`(비-gui 빌드에도 있다)가 mirror 로 담고, gui 뒤의 native 백엔드가
-쓰고, egui chrome 이 읽는다. 셋 중 어느 한쪽 파일에 두면 나머지가 그쪽 경로를 역참조하게
-되므로 셋 모두의 아래인 도메인 모델에 둔다. OS·webview·egui 타입을 담지 않는 네 값짜리
-enum 이다. `Copy` + `Default = Idle` 이라 native 백엔드의 `Rc<Cell<NavState>>` 에 그대로
-들어간다. 근거는 [ADR-0385](../../adr/0385-webview-backends-receive-their-host-contract-by-injection.md).
+NavState(Idle·Loading·Done·Failed)는 tasty-model의 OS 비의존 값이다.
+RemoteSurface·native backend·egui chrome이 이 값을 함께 사용한다.
+nav_state는 현재 상태를 읽고 take_pending_navigations는 쌓인 요청을 꺼내 비운다.
 
-호스트는 `nav_state()` 로 지금 상태를 읽고, `take_pending_navigations()` 로 페이지가
-요청한 이동을 **소비**한다(읽으면 비워진다).
-
-시도 하나(`PendingNavigation`)는 URL 과 **엔진이 그 시도를 사용자 제스처로 봤는가**
-(`user_gesture`)를 함께 싣는다. 호스트는 시도를 소유 plugin 에 `webview.navigation_attempt` 로
-통지하는 자리에서 시도마다 그 surface 의 기록을 다시 정한다 — 이 값이 참이고 그 surface 의 지금
-페이지를 소유 plugin 이 썼으면(`webview.set_url` 호출자를 surface 가 기억한다) 그 plugin 에 묶어
-기록하고, 아니면 그 surface 의 기록을 지운다. 작성자는 클릭 시점이 아니라 호스트가 시도를 drain 하는
-시점에 읽으므로, 직전 drain 이후 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀐 surface 는 그
-프레임의 기록을 버린다(`RemoteSurface::take_webview_owner_takeover`). plugin 이 그 URL 을 `file_handler.dispatch` 의
-`user_navigation_url` 로 되대면 그 호출 한 번이 사용자 행동이 된다 — 근거는 plugin 의 주장이 아니라
-host 가 본 두 사실(엔진의 보고 · 페이지 작성자)이다. `webview.set_url` 은 에이전트에게도 열려 있어,
-에이전트가 쓴 페이지 위의 클릭과 그 페이지의 스크립트가 낸 시도는 근거가 되지 않는다(재지 않은 예외
-하나: 그 클릭의 시도가 소유 plugin 이 되찾은 프레임의 drain 뒤에야 도착하는 순서 — ADR "잃은 것"). macOS 는 공개 API 에 같은
-뜻의 값이 없어 늘 `false` 이고, 그래서 macOS 의 webview 링크 클릭은 에이전트로 도착한다. 근거는
-[ADR-0568](../../adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md).
+PendingNavigation은 URL과 user_gesture를 포함한다. Linux는 WebKit is_user_gesture,
+Windows는 IsUserInitiated를 사용하며 실패 시 warning과 false로 처리한다. macOS는 항상 false다.
+이 값과 webview.set_url의 페이지 작성자를 이용한 파일 열기 판정은
+[파일 핸들러의 origin 규칙](../../features/file-handler/index.md#origin-소유권과-비동기-완료)을 따른다.
+그 절에 기록의 한 번 소비·작성자 전이·늦게 도착한 navigation 한계를 함께 둔다.
 
 ## 키보드 — 별도 계약
 
-자식 창이 OS 키보드 포커스를 잡으면 winit 은 `WindowEvent::KeyboardInput` 을 받지 못하고
-호스트 단축키 경로가 통째로 도달 불가능해진다. 그 구멍은 한 곳에서만 메운다 — 세 백엔드는
-자기 native 키 이벤트를 정규화해 `WebViewKeySink` 계약으로 올리고, 우선순위 판정은 그 호스트
-구현 `WebViewKeyBridge` 에서만 한다. 판정은 동기, 실행은 다음 프레임이다. 전체 규칙은 그
-모듈의 머리 주석과 [ADR-0102](../../adr/0102-webview-key-forwarding.md) 에 있다.
+native 자식 창의 키는 winit으로 자동 전달되지 않는다. 각 backend가 논리 키·PhysicalKey·modifier를
+WebViewKeySink에 보내고 공통 bridge가 소비 여부를 동기 반환한다. 소비한 키는 페이지로 보내지 않으며
+실제 host 액션은 다음 프레임에 큐를 비워 실행한다.
 
-백엔드가 호스트에 대해 아는 것은 **두 메서드뿐이다.**
+| 메서드 | 역할 |
+|--------|------|
+| capture_key | 키 소비 여부를 반환한다 |
+| note_focus | native 클릭·focus 획득을 알려 모델 focus를 맞춘다 |
 
-| 계약 | 입력 | 출력 | 누가 부르나 |
-|------|------|------|-------------|
-| `WebViewKeySink::capture_key` | `surface_id` · 레이아웃 문자 `Key` · 물리 위치 `PhysicalKey` · `ModifiersState` | `bool` — `true` 면 백엔드가 페이지 전파를 그 자리에서 막는다 | 백엔드, press·비repeat 에서만 |
-| `WebViewKeySink::note_focus` | `surface_id` | — | 백엔드, native 클릭/포커스 획득에서 |
+backend는 Rc<dyn WebViewKeySink>만 받는다. 정책 교체와 큐 관리는 구체 bridge가 맡는다.
+callback은 main thread에서 실행하므로 Rc·RefCell을 사용한다.
+HostShortcutPolicy는 ShortcutSources의 host·page_reserved·plugin 목록을 받는다.
+설정 field·quick-switch·사용자 script·활성 plugin의 effective binding 생성은 webview_claims가 맡는다.
 
-정책 교체(`set_policy`)와 큐 비우기(`take_pending` · `take_focus_requests`)는 브리지의 고유
-메서드라 백엔드가 볼 수 없다. 정책(`HostShortcutPolicy`)은 **콤보 목록을 주입받는다** —
-`ShortcutSources { host, page_reserved, plugin }` 셋이고, 키 모듈은 modifier 필터와 "페이지
-예약과 동등한 plugin 콤보 제외" 두 축만 판정한다. 어느 설정 필드가 host 액션이고 어느 것이
-페이지 예약인지는 단축키 계층(`adapters/ui/input/shortcuts/webview_claims.rs`)이
-`KeybindingSettings` 에서 도출한다. 근거는
-[ADR-0385](../../adr/0385-webview-backends-receive-their-host-contract-by-injection.md).
+modifier 없는 키와 Shift 전용 키는 페이지 입력에 남긴다.
+find·copy·cut·paste·select_all은 host 액션 field에서 제외하고 이 예약 조합과 동등한 plugin 조합도 제외한다.
+대소문자와 modifier 순서는 실제 binding parser로 비교한다.
+다른 host 액션에 사용자가 같은 조합을 준 경우까지 추가 제외하지는 않는다.
+plugin scope는 bridge에서 미리 거르지 않으므로 소비된 뒤 현재 host focus 규칙에 따라 실행되지 않는 키가 있을 수 있다.
+비활성 plugin은 제외한다.
+
+설정과 PluginCommandRegistry·PluginsConfig의 전역 revision이 바뀔 때만 정책 스냅숏을 다시 만든다.
+modifier가 있으면 winit과 같은 US physical-key 변환을 쓰고 표 밖 키는 논리 키로 돌아간다.
+key-up은 전달하지 않고 host의 modifier 저장값도 바꾸지 않는다.
+macOS·Windows는 repeat를 거르며 Linux/GDK는 정상 press 오판을 피하려고 반복을 허용한다.
+
+키 도착만으로 모델 focus를 바꾸지 않는다. X11에서는 포인터가 자식 위에 있다는 이유로 키가 올 수 있다.
+Linux만 보이는 webview와 활성 창이 있을 때 16ms GTK poll을 사용하고 숨김·비활성 때 취소한다.
+macOS의 performKeyEquivalent도 실제 first responder가 자기 뷰 안에 있을 때만 가로챈다.
 
 ## 포커스 — 회수는 **조건부**다
 
-`release_keyboard_focus` 는 host 가 egui overlay 를 열어 webview 를 가릴 때 부른다.
-숨기는 것과 키보드 포커스를 놓는 것은 세 OS 모두에서 **별개**라, 회수하지 않으면 방금 연
-popup 이 키를 못 받는다.
+overlay를 열어 webview를 가릴 때 host 창이 활성이고 실제 focus가 해당 자식 안에 있을 때만
+부모 winit 창으로 회수한다. overlay가 닫혀도 native 자식 focus를 자동 복원하지 않는다.
 
-**무조건 회수하지 않는다.** 세 백엔드가 같은 두 단계를 각자의 OS API 로 구현한다.
+| 플랫폼 | 자식 focus 확인 | 회수 대상 |
+|--------|----------------|-----------|
+| Linux | XGetInputFocus에서 부모 체인을 따라 자기 X 창인지 확인. None·PointerRoot 제외 | 부모 X 창 |
+| macOS | firstResponder가 자기 뷰 또는 하위 뷰인지 확인 | contentView(winit 뷰), nil 사용 금지 |
+| Windows | GetFocus가 자기 HWND 또는 IsChild인지 확인 | 부모 HWND |
 
-1. **지금 포커스가 이 webview(또는 그 하위 창) 안에 있는가**를 먼저 묻는다. 아니면 아무것도
-   안 하고 돌아온다.
-2. 있으면 **부모 winit 창으로** 되돌린다. 다른 곳으로 옮기지 않는다.
-
-| 백엔드 | 1 을 묻는 법 | 2 를 하는 법 |
-|--------|--------------|--------------|
-| Linux | `XGetInputFocus` — `None`(0)·`PointerRoot`(1) 은 특정 창이 아니라 회수 대상이 없다 | `XSetInputFocus(parent, RevertToParent)` + `XFlush` |
-| macOS | `view_holds_first_responder(webview)` | `window.makeFirstResponder(contentView)` — 실패는 `warn` |
-| Windows | `GetFocus()` 가 이 `HWND` 이거나 `IsChild` | `SetFocus(parent_hwnd)` — 실패는 창이 사라지는 중이라는 뜻이라 로그도 안 남긴다 |
-
-1 단계가 **정책이지 최적화가 아니다.** 빼면 IPC 로 popup 하나를 여는 것만으로 다른 앱이
-쥐고 있던 OS 키보드 포커스를 tasty 가 빼앗는다 — 에이전트 행동이 사용자 상태에 닿는 것이라
-[불가침 원칙 1](../../identity.md) 위반이다. 창 자체가 활성인지는 호출부(`sync_webviews`)가
-`base.focused` 로 한 번 더 건다. 즉 그물이 둘이고, 이 표의 1 단계가 안쪽 그물이다.
-
-**같은 규칙이 세 벌로 적혀 있다.** 공유할 수 있는 것이 규칙 문장뿐이고 코드가 아니어서다
-(AppKit first responder · X11 input focus · Win32 focus 는 서로 다른 API 다). 그래서 셋이
-조용히 갈라질 수 있고, 그것을 잡아 주는 자동 채널은 없다 — 이 절이 그 세 벌의 정본이다.
-재는 법: 세 백엔드의 `release_keyboard_focus` 와 그 짝인 포커스 조회 함수를 함께 열어
-위 표의 두 단계가 다 있는지 본다.
+호출부의 base.focused와 backend의 실제 focus 검사를 함께 유지한다.
+하나를 생략하면 IPC로 overlay를 여는 동안 다른 앱의 focus를 가져올 수 있다.
+컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
 
 ## 도메인 라이브러리로는 아무것도 새지 않는다
 
-`crates/` 의 어떤 크레이트도 webview 백엔드 의존(`wry` · `webkit2gtk` · `webview2-com`)을
-선언하지 않고, `WKWebView`·`ICoreWebView2`·`webkit2gtk` 라는 낱말이 `crates/` 안에 나오는
-자리는 전부 doc 주석 산문이다(2026-09-20 실측). 재는 법:
-
-```bash
-grep -lE '^(wry|webkit2gtk|webview2-com)' crates/*/Cargo.toml   # 빈 출력이어야 한다
-git grep -nE 'webkit2gtk|WKWebView|ICoreWebView2|wry::' -- crates/
-```
-
-두 번째 명령은 산문 언급까지 잡으므로 결과를 눈으로 갈라 읽는다 — 타입 사용이 하나라도
-있으면 계약이 깨진 것이다. 이 불변식을 지키는 자동 채널은 없다.
-
-**egui 와 OS 창 타입은 따로 재야 한다** — 위 두 명령은 webview 백엔드만 본다. 2026-09-20
-재측정:
-
-```bash
-grep -lE '^egui' crates/*/Cargo.toml                          # 13
-grep -lE '^(winit|raw-window-handle)' crates/*/Cargo.toml     # 3
-```
-
-egui 열셋은 전부 UI 크레이트이거나 그 뒤가 feature 다(본체는 `gui` feature 에서만 켠다).
-winit 셋은 `tasty-gallery`(GUI 바이너리) · `tasty-key-match` · `tasty-platform` 이다. 뒤엣것은 **winit 키
-이벤트를 바인딩 문자열과 맞추는 것이 그 크레이트의 일**이라 의존이 우연이 아니고, 소비자가
-전부 `gui` 뒤에 있어 본체가 optional 로 잡는다 — 헤드리스 그래프에 윈도잉 스택이 안 들어온다. `tasty-platform` 은 OS 경계 크레이트이고 winit 을 `gui` feature 뒤 optional 로만 켠다.
-그래서 이 셋 중 **도메인 라이브러리에 해당하는 크레이트는 하나도 없다.** 그 판정은 사람이
-한다. 세는 명령만 자동이고, "이 크레이트가 도메인 라이브러리인가" 를 답하는 채널은 없다.
+native WebKit·AppKit·WebView2 타입은 호스트 OS adapter에 둔다.
+도메인에서는 NavState 같은 OS 비의존 값만 사용한다.
+의존성은 crates/*/Cargo.toml과 webview 타입의 실제 사용처를 확인한다. 주석에 이름이 등장하는 것과 타입 의존은 구별한다.
+headless가 사용하지 않는 GUI 의존성은 [빌드 경계](../../dev-guide/headless-build-boundaries.md)를 따른다.
 
 ## 이 문서가 못 말하는 것
 
-- 세 백엔드의 **뜻**이 같은지. 위 표의 "백엔드 차이" 열은 소스를 읽어 채운 것이고, 셋이
-  조용히 갈라지는 것을 잡아 주는 채널은 없다.
-- macOS 백엔드의 동작. 이 레포의 Linux 개발 머신에서는 macOS 타깃이 컴파일되지 않으므로,
-  여기 적힌 macOS 서술은 전부 **소스를 읽어** 쓴 것이다. 그 조합을 실제로 컴파일·실행하는
-  것은 `crossplatform-check` 의 `check-macos` 잡이다.
+각 OS의 컴파일은 공유 호출부와 타입을 검사한다. 실제 클릭·단축키·IME·크기·종료·리소스 차단까지 검사한 것은 아니다.
+기존 근거에서 Linux/X11의 실행 확인과 macOS·Windows의 소스·컴파일 확인은 구별돼 있다.
+Windows의 fragment navigation과 사용자 제스처 전달, macOS 메뉴바와 키 중복 처리는 실제 환경에서 확인해야 하는 항목이다.
+이번 문서 재작성에서 플랫폼 실행 검증을 추가하지 않았다.
+
+## 원격 리소스 차단
+
+allow_remote_content=false는 navigation과 페이지 내부 HTTP·HTTPS 요청을 함께 제한한다.
+Linux는 `^https?://` WebKit content filter를 홈의 webkit-content-filters 저장소에 비동기 컴파일한다.
+완료 callback은 그때의 설정을 다시 읽고, 토글은 기존 필터를 제거한 뒤 필요하면 붙인다.
+macOS는 WKContentRuleList, Windows는 WebResourceRequested 거절을 사용한다. data URI는 원격 규칙에 해당하지 않는다.
+
+Linux의 필터 컴파일 전 공백과 실패 warning은 남는다. 첫 로드에서 원격 리소스가 차단되는지는 실제 화면·요청으로 확인한다.
+안전 바인딩에 없는 API만 FFI로 호출하고 boxed filter handle은 Drop에서 unref한다.
+상류가 해당 API를 제공하면 직접 FFI를 대체한다.

@@ -2,9 +2,9 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`webhook.*` — `register` 만 plugin 허용(`Network` 권한), 나머지 local-only)
-- **ADR**: [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)(신뢰 모델·불변식) · [ADR-0047](../../adr/0047-shared-hook-handler-registry-source-gate.md)(공유 핸들러 레지스트리)
+- **ADR**: [ADR-0632](../../adr/0632-webhook-admission.md)(신뢰 모델·불변식) · [ADR-0627](../../adr/0627-lua-and-hook-execution.md)(공유 핸들러 레지스트리)
 - **코드**: `src/webhook/`(리스너·레지스트리·lifetime·인증·남용차단·영속화) · `src/adapters/ipc/handler/webhook.rs`(IPC) · `crates/tasty-cli/src/commands/webhook.rs`(CLI)
-- **화면**: 없음 — headless 전용(경고는 기존 toast/`tracing::warn!` 재사용)
+- **화면**: 전용 화면 없음. GUI와 headless에서 동작하며 경고는 기존 toast 또는 로그로 알린다
 
 ## 목적
 
@@ -18,24 +18,27 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 
 프로세스당 리스너는 **단 하나**다. 다수의 웹훅 등록을 opaque path 로 멀티플렉싱하며, 개별 웹훅은 port/path 를 지정하지 못한다 — 리스너가 발급·은닉한다. 라우팅 키는 `(port, opaque path)` 로, 현재는 단일 포트만 실사용한다.
 
-- **opaque id**: 등록 시 랜덤 8바이트 → 16 hex 소문자(`gen_opaque_id`). **비순차**라 열거를 막고, keyspace 스캔은 남용차단으로 보완한다.
+- **opaque id**: 등록 시 랜덤 8 바이트 → 16 hex 소문자(`gen_opaque_id`). **비순차**라 열거를 막고, keyspace 스캔은 남용차단으로 보완한다.
 - **발급 URL**: `http://{host}:{port}/{id}`. `0.0.0.0`/빈 호스트는 표기상 `127.0.0.1` 로 치환.
 
 ### 요청 처리 흐름
 
-`tiny_http`([ADR-0048](../../adr/0048-webhook-http-tiny-http-blocking.md))가 bind + accept 하고, 요청마다 worker 스레드에서:
+`tiny_http`가 HTTP를 받고 요청별 worker가 다음 순서로 처리한다.
 
-1. **남용차단 선검사** — 출처 IP 가 쿨다운 중이면 즉시 `429`. 경로 파싱·헤더 수집·**JSON 입력 읽기보다 앞**이라, 차단된 출처의 body 를 `read_json_body` 의 입력 버퍼로 모으거나 JSON 으로 파싱하지 않는다. `413` 과 같이 잔여 body 를 읽지 않고 연결을 닫는다(아래 body 상한). HTTP 라이브러리의 작은 body 사전 버퍼링은 이 타입 경계 밖이다. 그 순서는 타입으로 강제된다(선검사를 통과한 요청만 JSON 입력 파서를 호출할 수 있다 — [ADR-0199](../../adr/0199-the-block-is-decided-before-the-body-is-read.md)).
-2. path/query 분리, 헤더 소문자 정규화, **JSON 입력을 요청당 상한으로 제한**해 파싱한다(실패 시 `null`). 선언된 `Content-Length` 가 상한을 넘으면 이 파서 함수에서 body 를 읽지 않고, 길이 선언이 없는 chunked 는 판정용 1바이트를 포함해 상한 + 1 바이트까지만 모은다. 어느 방식이든 상한 초과는 `413`([ADR-0200](../../adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
-3. **매칭 + 인증**(`match_request`) — path 없음 `404`, lifetime 만료 `410`(lazy 삭제), 메서드 불일치 `405`(카운트 미차감), 인증 불일치 `401`(**카운트 미차감**). 인증 검증은 호출자가 넘긴 술어로 **같은 lock 안에서** 차감보다 **먼저** 한다 — `CountLimit` 이 세는 단위가 "시퀀스를 돌린 횟수" 라서, 시퀀스를 0 번 돌린 요청이 통을 태우면 안 된다. 통의 키는 토큰이 아니라 **등록**이라(모든 발신자가 한 통을 공유한다) 그 차이는 인증을 통과하지 못한 발신자가 owner 의 예산을 태우는 것으로 나타난다.
-4. 매칭·인증을 모두 통과하면 카운트 1 차감(소진되면 삭제).
-5. **출처 실패 집계** — `404`/`405`/`401`/`413` 을 이 출처의 실패로 센다(`counts_as_failure` → `record_failure`). 통이 둘이고 답도 둘이다: 4 번의 예산(`CountLimit`)에서 401 은 **세면 안 되고**(세는 것이 소모다) 이 통에서는 **세야 한다**(제한이라 안 세는 것이 우회다) — [ADR-0195](../../adr/0195-abuse-counting-includes-rejected-tokens.md).
-6. **ACK 즉시 응답**(`build_ack`) — 여기까지 핸들러 실행과 무관. `413` 만은 응답에 `Connection: close` 를 싣고 잔여 body 를 읽지 않은 채 연결을 닫는다(아래 body 상한).
-7. **fire-and-forget** — `execute_sequence` 로 핸들러(IpcSequence)를 메인 루프에 전달. 결과는 응답으로 되돌리지 않는다.
+1. remote IP가 cooldown 중이면 429로 끝낸다. 선검사를 통과한 `Screened`만 application body를 읽는다.
+2. 경로·query·헤더를 정리하고 body 크기를 검사한다. 기본 1MiB를 넘으면 413이며, 상한 이내의 잘못된 UTF-8·JSON은 null로 취급한다.
+3. 등록 경로·lifetime·method·인증을 같은 registry 잠금 안에서 확인한다. 인증은 CountLimit 차감보다 먼저 한다.
+4. 매칭·인증에 성공하면 등록의 남은 횟수를 차감한다. 이 횟수는 접수된 시퀀스 수이며 내부 step 성공 횟수가 아니다.
+5. 401·404·405·413을 출처 실패에 집계한다.200·410·429는 세지 않는다.
+6. 고정 ACK를 보내고 별도 실행을 진행한다.413과 선차단 429는 `respond_and_close`로 연결을 닫는다.
+
+외부 값은 params의 문자열 leaf에 `${body.x}`·`${header.x}`·`${query.x}`로 치환한다.
+메서드명·객체 key·실행 순서는 owner가 고정한다. HTTP 응답에 시퀀스 결과를 넣지 않는다.
+직접 ShellCommand를 바인딩할 수 없지만 owner가 고른 IPC의 효과까지 자동으로 안전해지는 것은 아니다.
 
 ### 단방향 ACK (불변식)
 
-HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다([ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)).
+HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다([ADR-0632](../../adr/0632-webhook-admission.md)).
 
 그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — MVP 는 조건분기가 없다). 실패의 유일한 관측점은 `tracing::error!` 로그다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
 
@@ -64,34 +67,60 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 
 ### 선택적 인증 (가벼운 발신자 확인)
 
-**서명 검증은 구현돼 있지 않다.** 발신자를 가리는 수단은 비순차 opaque path 와, 걸었을 때만 동작하는 고정 공유 토큰 둘뿐이다 — 발신자가 HMAC 서명 헤더를 실어 보내도 읽는 코드가 없다. 그 부재는 의도된 결정이고(핸들러가 OS 를 못 건드리고 tasty IPC 만 조작한다는 위협모델, [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)), 리스너가 `0.0.0.0` 에 bind 한다는 사실과 함께 읽어야 한다 — 인증을 걸지 않은 웹훅은 그 URL 에 닿는 누구든 발화시킨다.
+인증은 등록별 선택 사항이다. 없으면 URL에 도달한 누구나 작업을 촉발할 수 있다.
+고정 공유 토큰을 확인하며 HMAC·서명 검증은 지원하지 않는다. TLS도 리스너가 직접 제공하지 않는다.
 
-인증 자체는 웹훅별 옵션이다 — 걸면 지정 위치의 고정 토큰이 일치해야 통과하고, **미설정이면 무인증 통과**한다. tasty 는 인증을 강제하지 않는다.
+| 위치 | 입력 |
+|------|------|
+| QueryKey | 지정 query key |
+| BearerHeader | Authorization: Bearer 토큰 |
+| BodyField | JSON 점 구분 경로의 문자열 값 |
+| HeaderKey | 지정 HTTP header |
 
-위치 4종(`AuthLocation`): `QueryKey`(`?key=<token>`) · `BearerHeader`(`Authorization: Bearer <token>`) · `BodyField`(바디 JSON 점구분 경로의 문자열 leaf) · `HeaderKey`(임의 헤더). 토큰 비교는 **상수시간**(`ct_eq`)이고, 조회 응답은 위치·키 이름만 노출하고 **토큰 값은 절대 반환하지 않는다**(`auth_summary`). 그 은닉은 **IPC 응답 경로에만** 걸린다 — `Persistent` 웹훅의 토큰은 `~/.tasty/webhooks.toml` 에 **평문**으로 들어간다. 파일 권한을 코드가 명시적으로 거는 자리는 없고, unix 에서 `0600` 이 되는 것은 `atomic_write` 가 쓰는 `tempfile` 의 기본 모드가 `persist` 를 넘어 그대로 남기 때문이다 — 의도해 건 것이 아니라 **부수효과**라, 쓰기 경로를 평범한 `fs::write` 로 바꾸면 umask 값으로 조용히 넓어진다.
+비교는 `ct_eq`를 사용한다. 조회 응답은 위치·key 이름만 보여주고 토큰 값은 반환하지 않는다.
+Persistent 토큰은 `webhooks.toml`에 평문으로 저장된다. Unix 파일 모드는 현재 atomic_write의 tempfile 생성 방식을 따른다.
+저장 경로를 바꾸면 권한도 함께 확인해야 하며 이 응답 은닉을 저장 암호화로 해석하지 않는다.
 
 ### body 상한 (요청당)
 
-JSON 처리에 허용하는 요청 body 는 **기본 1 MiB** 까지다. `read_json_body` 는 선언된 `Content-Length` 가 상한을 넘으면 입력을 읽지 않고 거부한다. 선언 길이가 없는 chunked 는 판정용 1바이트를 더해 최대 `상한 + 1`바이트를 모으며, UTF-8 변환 전에 길이를 검사한다. 무효 UTF-8도 초과하면 `413 payload too large`이고 시퀀스는 실행하지 않는다. 상한 이내의 무효 UTF-8·비-JSON은 기존대로 `null`이다. 초과 판정은 경로 매칭·인증보다 앞이다.
+JSON 입력은 기본 1MiB이며 `TASTY_WEBHOOK_MAX_BODY_BYTES`의 양수로 조정한다.0·파싱 실패는 기본값이다.
+유효 Content-Length가 상한을 넘으면 application body 읽기 전에 거절한다.
+chunked·길이 미상은 상한+1 바이트를 읽어 초과를 구별하며 UTF-8 변환 전에 판정한다.
+초과 요청은 시퀀스를 실행하지 않고 CountLimit도 차감하지 않는다.
 
-**body 를 읽지 않고 답하는 두 자리(`413`·남용차단 `429`)는 잔여 body 를 읽지 않고 연결을 닫는다.** 응답에 `Connection: close` 를 싣고, 상한을 넘긴 body 의 나머지는 HTTP 계층도 읽지 않는다 — 요청의 `Connection: close` · keep-alive · `Expect: 100-continue` 어느 경우든 같다. 상대가 나머지 body 나 FIN 을 보내지 않아도 요청 처리 스레드가 돌아오고 연결의 두 방향이 닫힌다. 잔여 선언 길이에 비례하는 임시 할당도 없다. 상류 `tiny_http` 0.12.0 의 `Content-Length` 리더는 요청을 정리할 때 미읽은 나머지를 끝까지 읽으므로(drain), 레포에 둔 `tiny_http` 사본의 최소 패치(`Request::respond_and_close`)로 이 경로를 연다 — [ADR-0516](../../adr/0516-the-webhook-413-closes-the-connection-through-a-vendored-tiny-http-patch.md). 그 결과 413 을 받은 keep-alive 연결은 재사용되지 않는다. 이미 body 를 보내던 중이면 연결 종료가 RST 로 나갈 수 있다.
+413과 선차단 429는 vendor/tiny_http의 `Request::respond_and_close`를 쓴다.
+Connection:close를 보내고 공유 종료 flag로 EqualReader Drop의 잔여 읽기와 길이 비례 allocation을 막는다.
+큰 미완료 body에서는 상대의 body·FIN 없이 worker와 소켓 양방향을 정리한다.
+거절 연결은 재사용하지 않는다. body가 전송 중이면 RST 때문에 client가 ACK를 받지 못할 수도 있다.
 
-**이 상한은 프로세스 전체 메모리 상한이 아니다.** 입력 버퍼에 저장하는 바이트 수와 JSON 표현의 부가 메모리는 다르고, 동시 요청 수·연결 수는 이 값으로 묶지 않는다. 선행 가정 오류의 기록은 [ADR-0281](../../adr/0281-webhook-parser-cap-and-connection-drain.md).
+이 값은 application 입력 버퍼 상한이며 전체 메모리·동시 요청·연결·JSON 표현·IPC 치환 후 크기의 상한은 아니다.
+Content-Length≤1024는 라이브러리가 요청 생성 전에 먼저 읽는다.
+이 작은 body에서 client가 close 헤더를 무시하면 이미 다음 헤더를 기다리던 연결은 기존 idle keep-alive처럼 남을 수 있다.
 
-- `TASTY_WEBHOOK_MAX_BODY_BYTES` 로 조정한다(0·파싱 실패는 기본값). 수십 MB 짜리 payload 를 보내는 발신자를 붙이려면 이 값을 올린다.
-- **요청당 JSON 입력 상한이다** — 동시 요청 수·연결 수·총 메모리는 이 값으로 제한하지 않는다.
-- `Content-Length` 가 1024 이하인 body 는 HTTP 라이브러리가 요청을 만드는 단계에서 먼저 읽으므로, 이 상한도 남용차단도 그 구간에는 닿지 않는다.
+vendor 업데이트는 응답 수신과 worker·수신 방향 종료를 별도로 확인한다.
+`listener_body_tests.rs`의 raw_oversize·raw_blocked_source 검사와 정상 keep-alive·chunked·SSE를 함께 본다.
+사본의 상류 보안 수정은 수동으로 추적하며 자동 advisory 검사가 모두 대조한다고 가정하지 않는다.
+패치 범위는 [PATCHES.md](../../../vendor/tiny_http/PATCHES.md)에 있다.
 
 ### 남용차단 (일시 거부)
 
-매칭·인증에 실패한 요청을 반복하는 출처를 일시 거부해, 짧은해시 keyspace 스캔·스팸과 **토큰 무차별 대입**을 막는다. 순수 코어 로직(`AbuseTracker`, 시각 주입)이라 결정론적으로 테스트된다.
+키는 소켓의 remote IP다. 포트는 제외하며 X-Forwarded-For를 출처로 그대로 사용하지 않는다.
+같은 NAT·proxy 뒤 발신자는 실패 수와 cooldown을 공유할 수 있다.
 
-- **무엇이 실패인가는 `counts_as_failure` 하나가 정한다** — 없는 path(`404`) · 메서드 불일치(`405`) · 인증 불일치(`401`) · body 상한 초과(`413`) 를 세고, 정상 매칭(`200`) · 만료(`410`) · 이미 쿨다운(`429`) 은 안 센다. 410 을 빼는 이유는 만료 URL 에 **추측할 공간이 없기** 때문이고(같은 URL 을 몇 번 두드려도 얻는 정보가 0), 401 을 넣는 이유가 정확히 그 반대다. 와일드카드 없는 전수 `match` 라 ACK 상태가 늘면 그 자리에서 컴파일이 멈춘다.
-- 한 출처가 `window`(기본 10초) 내 `threshold`(기본 20)회 이상 실패하면 `cooldown`(기본 60초) 동안 즉시 `429`. 정상 200 응답은 집계하지 않으므로 정상 웹훅 트래픽은 영향받지 않는다.
-- 임계치/윈도우/쿨다운은 환경변수 오버라이드(`TASTY_WEBHOOK_ABUSE_THRESHOLD` / `_WINDOW_SECS` / `_COOLDOWN_SECS`). 기본값의 근거와 출처 키 선택은 [ADR-0196](../../adr/0196-abuse-thresholds-and-source-key.md).
-- **차단은 정확히 `cooldown` 만큼이다** — 차단 중에 더 두드려도 만료가 밀리지 않고, 풀릴 때 카운터가 백지가 된다. 그래서 토큰·경로를 잘못 설정한 정상 발신자는 개입 없이 스스로 돌아온다. 카운팅 창은 슬라이딩이 아니라 고정이라, 창 경계에서는 짧은 순간 임계치의 두 배 가까이가 통과할 수 있다([ADR-0198](../../adr/0198-a-cooldown-is-fixed-at-entry.md)).
-- **출처 표에는 절대 상한이 없다.** `PRUNE_TRIGGER_SOURCES`(4096)는 상한이 아니라 **정리를 시도할 크기 문턱**이다 — 윈도우 안 엔트리는 보존되므로 그 수만큼 표가 자란다. 크기를 정하는 것은 유입률 × 윈도우이고, 유입이 멎으면 다음 실패 한 건이 표를 회수한다. 문턱을 넘은 뒤의 정리 순회는 윈도우당 한 번만 돈다([ADR-0197](../../adr/0197-the-source-table-cap-is-a-prune-trigger.md)).
-- **카운터는 in-memory 다 — 재시작하면 남은 쿨다운이 사라진다.** 디스크에 남기지 않으므로 tasty 를 다시 띄운 직후의 출처는 전부 백지에서 시작한다(`webhooks.toml` 에 저장되는 것은 `Persistent` 웹훅 등록이지 남용 상태가 아니다).
+- `counts_as_failure`는 401·404·405·413만 센다. 인증 실패는 이 제한에 포함되지만 등록의 CountLimit를 줄이지 않는다.
+- 기본 10 초 고정 창에서 실패 20 회가 되면 60 초 cooldown으로 들어가 이후 같은 IP 요청을 429로 거절한다.
+- `TASTY_WEBHOOK_ABUSE_THRESHOLD`, `TASTY_WEBHOOK_ABUSE_WINDOW_SECS`, `TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS`로 양수를 지정한다.
+  미설정·0·파싱 실패는 기본값이며 threshold는 u32 최댓값 이내로 제한한다.
+- 차단 중 재시도는 종료 시각을 연장하지 않는다. 만료 확인 때 카운터와 창 시작을 초기화한다.
+- 고정 창 경계에는 짧은 구간에 `2×threshold−1`회 실패가 처리될 수 있다.
+  창마다 threshold 미만으로 반복하면 cooldown에 들어가지 않으므로 모든 패턴의 일정 처리율 상한이나 짧은 토큰의 안전을 보장하지 않는다.
+- `PRUNE_TRIGGER_SOURCES=4096`은 표 크기 상한이 아니다. 기준을 넘으면 최대 창마다 한 번만 훑고
+  cooldown 중이거나 창 안의 항목을 보존한다. 많은 출처로 표가 커질 수 있다.
+  timer로 비우지 않고 다음 실패에서 정리 조건을 확인한다.
+- 상태는 메모리에만 있으며 재시작하면 없어진다. Persistent webhook 등록과 별개다.
+
+정상 200은 실패 수를 올리지 않지만 이미 같은 IP가 차단돼 있으면 정상 요청도 429를 받는다.
+IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 항목을 밀어내 우회하지 못하도록 함께 설계한다.
 
 ### 포트 설정 (설정값 only)
 
@@ -118,10 +147,10 @@ JSON 처리에 허용하는 요청 body 는 **기본 1 MiB** 까지다. `read_js
 | `webhook.sweep` | `tasty webhook sweep` | 만료 웹훅 일괄 정리 → 제거된 id 목록 |
 | `webhook.config` | `tasty webhook config [--port <N>]` | 포트 조회/설정(설정은 재시작 후 반영) |
 
-- **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0047](../../adr/0047-shared-hook-handler-registry-source-gate.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
+- **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0627](../../adr/0627-lua-and-hook-execution.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
 - **lifetime 파라미터**: `--persistent`(bool), `--ttl-secs` xor `--count`(둘 다 없으면 `Unlimited`).
 - **auth 파라미터**: `--auth-location <query|bearer|body|header>` + `--auth-token`(상호 requires), bearer 외에는 `--auth-key`.
-- **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0047)](../../adr/0047-shared-hook-handler-registry-source-gate.md) 참조.
+- **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0627)](../../adr/0627-lua-and-hook-execution.md) 참조.
 - **핸들러 레지스트리 GUI**: [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서 레지스트리(host 기본 + plugin 기여 + user 매핑)를 조회·편집한다(토글/셸 명령 인라인 편집/user 행 추가·제거, `~/.tasty/hook-handlers.toml` 영속). **제거는 user 행만** — host/plugin 행은 그 자리에 자물쇠 글리프가 오고, 지워도 finalize 가 되살린다. `IpcSequence` 행은 mono 한 줄 요약만 두고 GUI 편집 경로가 없다 — 시퀀스 본문은 [`tasty hook-handler get`/`upsert`](../hooks/index.md#핸들러-레지스트리-hook_handler) 로 고친다(TOML 손편집 + `reload` 도 그대로 된다). **고쳐도 이미 등록된 웹훅은 안 바뀐다** — 엔트리가 등록 시점 스냅샷을 소유하므로 다시 등록해야 한다. **리스너(bind/port/secret) 설정은 이 서브탭에 없다** — 위 CLI(`webhook.config`) 전용.
 
 ## 비-목표 (Out of scope)
@@ -141,11 +170,11 @@ JSON 처리에 허용하는 요청 body 는 **기본 1 MiB** 까지다. `read_js
 - Given `CountLimit` + 인증 설정된 웹훅 When 토큰 불일치 호출 Then `401` 이고 **remaining 은 그대로**.
 - Given `TimeLimit` deadline 경과 When 호출 또는 `webhook.sweep` Then `410` + 삭제.
 - Given 인증 설정된 웹훅 When 토큰 불일치 Then `401`; 미설정 웹훅은 무인증 통과.
-- Given 없는 path 를 임계치 초과 반복 When 같은 출처 재요청 Then 쿨다운 동안 `429`(정상 웹훅 무영향).
+- Given 없는 path 를 임계치 초과 반복 When 같은 출처 재요청 Then 쿨다운 동안 `429`(다른 출처의 정상 웹훅은 계속 처리).
 - Given 인증 설정된 웹훅 When 같은 출처가 틀린 토큰을 임계치 초과 반복 Then 쿨다운 동안 `429`.
 - Given `ShellCommand` 핸들러 When 웹훅 바인딩 시도 Then source 게이트로 거부.
 
 ## 관련
 
 - [hooks](../hooks/index.md) — 내부 이벤트 트리거(웹훅과 대칭인 trigger 출처) · [notifications](../notifications/index.md) · [file-handler](../file-handler/index.md)(레지스트리 정본 템플릿)
-- [api](../../reference/api.md#기타-호스트) · [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md) · [ADR-0047](../../adr/0047-shared-hook-handler-registry-source-gate.md) · [ADR-0048](../../adr/0048-webhook-http-tiny-http-blocking.md)
+- [API](../../reference/api.md#기타-호스트) · [웹훅 요청 처리와 제한](../../adr/0632-webhook-admission.md) · [Lua와 훅 실행](../../adr/0627-lua-and-hook-execution.md)

@@ -40,47 +40,15 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 ### 잘못된 인자는 거절한다 — 자르지도, 버리지도 않는다
 
-대상 식별자를 읽을 때 **값이 안 왔다 / 왔는데 못 읽는다** 를 가른다. 둘을 합치면 잘못된
-값이 조용히 폴백으로 넘어가고, 그 폴백은 대개 **호출자 자신**이거나 **유일한 후보**다.
+대상 인자가 없을 때와 잘못됐을 때를 구분한다. 잘못된 값을 None으로 바꾸면 기본 대상에 작업이 실행될 수 있다.
 
-- `as u32` 로 **자르지 않는다.** 자르기는 값을 거절하는 게 아니라 **다른 값으로 바꾼다**
-  — `4_294_967_297` 은 `1` 이 되고 `5_000_000_000` 은 `705_032_704` 가 된다. 그 결과가
-  실재하는 다른 surface 를 가리키면 명령이 남의 터미널로 간다. `u32::try_from` 을 쓴다.
-- **선택 인자도 버리지 않는다.** 잘못 온 값을 `None` 으로 만들면 "안 줬다" 와
-  구별되지 않아, 호출자가 지정한 대상 대신 기본값이 쓰인다.
-- **`null` 은 안 왔다로 읽는다.** 직렬화가 빈 슬롯을 `null` 로 채우는 경우가 있어, 이것을
-  오타로 취급하면 정상 경로가 막힌다.
-- **문구를 가른다.** 값이 왔는데 "missing" 이라고 답하면 호출자가 자기가 준 값을 안
-  의심한다. 잘못된 값은 그 값을 되비추며 거절한다.
+- 정수 변환은 범위를 확인한다. `4_294_967_297 as u32`는 `1`이 되므로 ID 변환에는 `u32::try_from`을 쓴다.
+- 선택 인자도 값이 왔으면 검증한다. `null`은 생략으로 처리한다.
+- 값이 잘못됐으면 해당 값과 이유를 알리고, 값이 없다는 `missing` 오류로 바꾸지 않는다.
 
-호스트 쪽 공용 판정은 `src/core/param_bag.rs` 에 있고, 핸들러는 그것을 재수출하며
-`invalid_params` 로 감싸는 `src/adapters/ipc/handler/params.rs` 를 통해 쓴다. 판정이 도메인
-계층에 있는 것은 원격 mirror 가 forward 한 구조 op 의 실행도 같은 규칙으로 파라미터를 읽어야
-하기 때문이다. 새 핸들러는 인라인으로
-다시 적지 말고 그것을 쓴다 — 같은 몸통이 세 벌로 흩어져 있던 동안 셋 다 같은 결함을 갖고
-있었고, 하나를 고쳐도 나머지 둘은 안 고쳐졌다.
+공용 스칼라 검사는 `src/core/param_bag.rs`에 있다. IPC 핸들러는 이를 재수출하고 오류를 감싸는 `handler/params.rs`를 사용한다. 원격 구조 변경도 같은 함수를 써야 같은 입력이 같은 결과를 받는다.
 
-**이것은 전수 가드로 강제된다.** `src/source_guards/params_chokepoint.rs` 가
-params 를 읽는 **두 계층**(`src/adapters/ipc/handler/` 과 짝인 `handler.rs`,
-그리고 `src/app/ipc/` — 관문 자신은 제외)에서 `params` 파생 값을 숫자로 읽는 자리를
-찾는다. 계층이 둘인 것이 요지다: 대부분의 메서드는 앞쪽에서, 창을 소유해야 하는 것과
-App 상태를 만지는 것은 뒤쪽에서 처리된다. **한쪽만 관문에 걸면 다른 쪽이 조용히 자르고
-버린다** — 실제로 뒤쪽에 16 곳이 남아 있었고 그중 `remote_workspace` 는 `as u32` 로
-잘랐다.
-
-가드를 **자르기**(`as u32`)에 걸지 않고 **읽는 자리**에 건 이유: 자르기 자체는 정당한
-곳이 많아(`clippy::cast_possible_truncation` 은 plugin 크레이트 둘에서만 69 건이 뜬다)
-값의 **출처**가 판별식인데, 출처는 `as` 캐스트의 성질이 아니다. 스칼라 읽기를 전부 위
-한 자리로 통과시키고 나서야 명제가 문법적이 된다 — "핸들러는 관문 밖에서 params 를
-숫자로 읽지 않는다" 는 소스 모양만으로 판정된다.
-
-초록의 뜻은 좁다. 잡는 것은 두 모양 — `params` 로 시작하는 식 안의 숫자 읽기와,
-`let` 으로 **한 홉** 갈라 둔 뒤의 읽기다(뒤쪽이 실제로 두 자리를 숨기고 있었다).
-params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있는 요청의
-`…request.params`)을 벗어나거나, 두 홉 이상을 거치거나, 두 계층 밖이면 술어 밖이다.
-한 글자 이름은 일부러 안 받는다 — `p` 는 클로저 인자로도 흔해서 이름으로 받으면
-관계없는 자리를 위반으로 센다. 대신 그 바인딩들을 `params` 로 통일했다. 그래서 0 은 "이 축이 지켜진다" 가 아니라 "이 모양으로는
-안 새고 있다" 로 읽는다. 자세한 범위 정의는 그 파일의 모듈 주석에 있다.
+`params_chokepoint` 검사는 IPC 핸들러와 App IPC 코드에서 이 공용 함수를 우회한 숫자 읽기를 찾는다. 다만 `params` 계열 이름에서 직접 읽거나 한 번의 let 바인딩을 거치는 형태만 확인한다. 이름을 바꾸거나 여러 단계로 전달하거나 검사 범위 밖에서 읽는 경우까지 증명하지는 않는다. 정확한 범위는 검사 모듈 주석을 따른다.
 
 ## CLI vs IPC
 
@@ -190,17 +158,7 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
     -32016  method '<name>' is plugin-only: only the plugin host-call path dispatches it,
             so CLI and network IPC callers have no entry point
 
-`-32601` 이면 호출자는 **이름을 의심한다** — 오타를 고치거나 표를 다시 읽는다. 사실은 이름이
-맞고 표에도 있으며 부를 수 있는 주체가 다를 뿐이라, 같은 코드로 답하면 호출자를 틀린 방향으로
-보낸다. 플랫폼 축에서 같은 거짓을 고친 [ADR-0154](../adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
-와 같은 형태이고, 이쪽은 caller 축이다([ADR-0163](../adr/0163-a-registered-name-answers-who-not-whether.md)). 표식과 인터셉트가 갈라지지 않는지는
-`src/source_guards/plugin_only_dispatch_parity.rs` 가 양방향으로 본다.
-
-실측(2026-09-05, gui debug 인스턴스 · plugin 설치된 세계 · 외부 프로브): `plugin_callable` 인
-**231** 개 중 외부 호출이 `-32601` 로 끝난 것이 이 **4** 개였다(나머지는 `-32602` 188 ·
-실행 성공 37 · `-32000` 2). 같은 집합을 "외부 라우터 소스에 이름이 안 보이는 것" 으로 세면
-**14** 개가 나온다 — `window.*` · `view.*` 처럼 match 팔이 아닌 명부로 라우팅되는 것이 섞여
-들어오기 때문이다. 이 부류는 소스 텍스트가 아니라 **실행**으로만 정해진다.
+`plugin_only_dispatch_parity`가 메타데이터 표식과 plugin 진입부 처리를 양방향으로 대조한다. 새 메서드는 표식과 실제 caller 제한을 함께 확인한다.
 
 **`-32016` 을 표식 없이 내는 메서드가 하나 있다 — `file_picker.trigger`.** 이 메서드는 외부
 arm(gui 창 라우터)이 있어 `plugin_only` 표식을 달지 않는다. 그러나 핸들러가 첫 판정으로
@@ -216,49 +174,23 @@ arm(gui 창 라우터)이 있어 `plugin_only` 표식을 달지 않는다. 그�
 
 ### 등재된 이름인데 이 바이너리에 arm 이 없을 때
 
-같은 거짓의 세 번째 얼굴이다. 이름이 표에 있고 구현도 있는데 **이 빌드 조합에서 그 `match`
-팔이 통째로 사라진** 경우 — `#[cfg(feature = "gui")]` 뒤에 있는 메서드를 헤드리스
-(`--no-default-features`) 데몬에서 부르는 것이 그것이다. 팔이 없으면 호출은 `_` 로 떨어져
-종단에 오고, 종단은 예전에 `-32601` 로 답했다.
+응답은 이름 오류와 실행 조건을 구분한다.
 
-그 답은 오타와 **바이트 단위로 같았다.** 실측(2026-09-05, 헤드리스 데몬):
+| 조건 | 코드 | 확인할 것 |
+|---|---|---|
+| 등록되지 않은 이름 | `-32601` | 오타와 메서드 이름 |
+| 플랫폼에서 지원하지 않음 | `-32015` | OS와 GUI 지원 조건 |
+| plugin만 호출할 수 있음 | `-32016` | 호출자 종류 |
+| 등록됐지만 현재 바이너리에 구현이 없음 | `-32017` | GUI·헤드리스·release 조합 |
+| 설치된 소유 plugin이 실행 중이지 않음 | `-32002` | plugin의 enable·실행 상태 |
 
-    window.creat    -32601 Method not found: window.creat      ← 오타
-    window.create   -32601 Method not found: window.create     ← 표에 있고 이 빌드엔 없다
+등록 여부는 `is_registered_name`으로 정확한 이름을 조회한다. namespace fallback까지 처리하는 `method_meta()`로 판정하면 plugin 고유 메서드나 오타까지 등록된 호스트 이름으로 잘못 취급한다. 플랫폼 전용 dispatch에는 반대 조건에서도 지원 불가 사유를 돌려주는 분기를 둔다. namespace 소유는 설치된 매니페스트에서 확인하며 실행 중인지와 구분한다.
 
-지금은 갈린다:
-
-    -32017  method '<name>' is registered but this binary has no dispatch arm for it:
-            it is gated out of this build combination (headless / release)
-
-호출자가 다음에 할 일이 다르기 때문이다 — `-32601` 은 이름을 고치게 하고, `-32017` 은
-**조합을 보게** 한다(gui 빌드로 부르거나, 그 표면이 헤드리스에 열려야 하는지를 묻는다).
-근거·대안·재검토 조건은 [ADR-0167](../adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md).
-
-**이 갈래의 술어는 표를 그 이름 그대로 조회하는 것**(`method_meta::is_registered_name`)이지
-`method_meta()` 가 아니다. 저 함수는 마지막 단계에서 **런타임 등록 plugin prefix** 까지
-해소하므로, 그것으로 갈래를 타면 설치된 plugin 의 이름과 그 아래 오타까지 host 가 삼킨다 —
-실측으로 `claude.children` · `agent_stream.list` · `markdown.no_such_thing` 이 전부 이 코드를
-받았고, plugin 으로 갈 호출이 안 갔다.
-
-세 코드의 관계:
-
-| 사실 | 코드 | 호출자가 다음에 할 일 |
-|------|------|----------------------|
-| 부를 수 있는 주체가 다르다 | `-32016` | 호출 주체를 본다 |
-| 이 플랫폼에서 안 된다 | `-32015` | 플랫폼을 본다 |
-| 이 바이너리에 안 들어 있다 | `-32017` | 빌드 조합을 본다 |
-| 소유 plugin 이 지금 안 떠 있다 | `-32002` | plugin 을 켠다 |
-| 이름이 틀렸다 | `-32601` | 이름을 고친다 |
-
-`-32002` 가 여기 있는 이유는 [ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)
-이다. namespace 소유는 **설치된 매니페스트**가 정하고 생존은 따로 물으므로, disable 된
-plugin 의 메서드는 "그런 메서드 없다"(거짓)가 아니라 "있는데 꺼져 있다"(참)로 답한다.
+근거: [IPC 지원 조건과 오류](../adr/0604-ipc-discovery-and-errors.md).
 
 ### 전송 계층이 직접 내는 코드 — `-32060..-32069`
 
-위 코드들은 전부 요청이 **handler 까지 갔다**는 전제 위에 있다. 그 전에 끝나는 거절이
-따로 있고, 그것은 구역을 갈라 쓴다.
+이 코드들은 수신·대기·멱등 처리에서 생긴다. 범위만 보고 실행 여부를 판단하지 말고 각 코드의 의미를 따른다.
 
 | 사실 | 코드 | 호출자가 다음에 할 일 |
 |------|------|----------------------|
@@ -271,210 +203,66 @@ plugin 의 메서드는 "그런 메서드 없다"(거짓)가 아니라 "있는�
 | 연결 뒤 첫 요청 줄이 기한 안에 안 왔다 | `-32066` | 연결 직후 바로 보낸다 (아무것도 실행 안 됐다 · 연결은 닫힌다) |
 | 호출자가 실은 응답 대기 상한이 요청이 **큐에서 기다리는 동안** 지났다 | `-32067` | 그대로 다시 건다 (아무것도 실행 안 됐다 · 연결은 유지된다) |
 
-가르는 이유는 **재시도 정책이 반대**이기 때문이다. 도메인 코드는 인자·주체·상태를 보게
-하고 고치지 않으면 다시 해도 같다. 이 구역은 요청의 모양이나 서버의 수용 여력을 보게
-한다 — 줄을 나누면 그대로 다시 된다.
+`-32061`은 이미 시작된 작업의 결과를 모른다는 뜻이며 취소를 뜻하지 않는다. 이 구분은 서버의 `ipc.response-timeout.not-run` capability로 확인한다. 구 서버는 시작 전 만료도 결과 불명으로 답할 수 있다.
 
-`-32061` 은 실패가 아니라 **결과 불명**이다. 호스트는 응답 통로를 놓았을 뿐이고 그 요청은
-계속 실행될 수 있다 — 부수효과가 남는 메서드(`Mutate`)를 그냥 재전송하면 두 번째 효과가
-남는다. 이 상한은 요청이 봉투에 실어 보낸다(`response_timeout_ms`, 밀리초). **안 실으면
-상한이 없다** — 사람의 결재를 기다리는 호출에 기본 상한을 둘 수 없기 때문이다. 서버가 그
-필드를 읽는지는 `system.info` 의 capability 목록에서 `ipc.response-timeout` 으로 확인한다
-(구 서버는 모르는 필드를 조용히 버린다). 근거는
-[ADR-0328](../adr/0328-the-response-wait-is-bounded-by-the-caller-and-expiry-means-the-outcome-is-unknown.md).
-CLI 는 루트 플래그 `tasty --response-timeout-ms <MS> <명령>` 으로 **요청 하나로 끝나는 명령**에만
-싣는다. 상대가 `ipc.response-timeout` 을 선언하지 않으면 보내지 않고(아래 "호환 협상" 의 구조화
-거절), 요청을 여럿 보내거나 IPC 를 안 타는 명령은 플래그를 받으면 종료 코드 2 로 거절한다.
-`0` 은 안 싣는다 — [ADR-0366](../adr/0366-the-cli-bounds-a-single-request-wait-with-a-root-flag.md).
-그 선언 확인(`system.info`)도 **같은 상한 안에서** 끝난다 — 확인 요청은 상한을 봉투와 소켓 읽기
-기한 둘로 싣고(구 서버는 봉투를 버리므로), 확인이 끝나면 본 요청은 **남은 시간**을 싣고 나간다.
-확인이 제시간에 안 끝나면 본 요청은 안 나가고 CLI 는 본 요청이 큐에서 만료됐을 때와 같은
-`-32067` 문구로 끝난다 — [ADR-0452](../adr/0452-the-cli-capability-check-spends-the-same-response-bound.md).
+`-32060`·`-32066`은 완전한 요청을 읽지 못했으므로 응답 ID가 `null`이다. 연결 포화 응답 `-32062`는 accept를 막지 않는 최선 노력 전송이어서 EOF로 보일 수 있다. stream client는 이 JSON을 프레임 오류로 해석할 수도 있다. 큐 포화 `-32065`는 정상 요청을 지금 수용하지 못한 것이며 연결은 유지한다.
 
-`-32062` 는 **최선 노력**이다. 거절이 일어나는 자리가 accept 스레드라 거기서 막히는 쓰기를
-할 수 없고(멈추면 자리가 나도 아무도 못 붙는다), 그래서 서버는 한 번만 시도하고 안 되면
-그냥 닫는다 — 받으면 믿어도 되지만, 못 받았다고 상한이 아니라고 결론지을 수는 없다.
+수신·쓰기 상한, 첫 줄 기한과 내부 주입 동작은 [IPC 서버](../architecture/ipc-server.md)에 정리한다.
 
-그리고 **이 줄을 오류 한 줄로 읽는 인구는 요청-응답 client 뿐이다.** 거절은 연결을 받은
-직후, 스트림 업그레이드 판별 **전**에 일어나므로 스트림 client 도 같은 바이트를 받는데
-그쪽의 첫 읽기는 줄이 아니라 프레임이라 사유 대신 `unknown stream tag` 로 끝난다. 스트림을
-여는 쪽에서 포화는 **여전히 사유 없는 실패**이고, 다만 그 실패의 이름이 바뀌었다.
+#### CLI 응답 대기 옵션
 
-`-32063`·`-32064` 는 **멱등 키**([아래](#변경-명령의-재시도는-키로-구별한다))가 있는 요청에만
-난다 — 근거는
-[ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md). 둘 다 handler 앞에서 끝나므로 이 구역이다 — 앞의 것은 아무것도 실행하지 않았고,
-뒤의 것은 **실행은 확실하고 답만 없다**. 그래서 뒤의 것에 대한 처방이 `-32061` 과 다르다:
-`-32061` 은 실행 여부부터 모르므로 상태를 읽어 확인하고, `-32064` 는 실행을 이미 알고
-있으므로 결과만 조회한다.
+CLI의 --response-timeout-ms는 서브커맨드 앞에 쓰는 루트 옵션이며 단발 RPC에만 적용한다. 0은 봉투에 싣지 않는다. 상대가 capability를 지원하지 않으면 sent:false 구조화 오류로 실행 전 거절한다. loop·stream·로컬 처리·SSH 조회·plugin 자동 대기 및 명령 없는 기동은 양의 값을 받으면 사용 오류 exit 2로 거절한다. 메서드 내부의 --timeout-ms와는 별개의 시간이다. 환경변수로 상속하거나 지원하지 않는 명령에서 조용히 무시하지 않는다.
 
-`-32065` 의 "밀렸다" 는 명령 **개수**가 아니라 큐에 든 요청 **바이트의 합**이다 — 한 줄 JSON
-텍스트의 바이트 수로 센다(개행·앞뒤 공백 제외). 한 건의 크기는 `-32060` 이 따로 자르므로 이
-코드는 "요청이 크다" 가 아니라 "지금 호스트가 밀려 있다" 를 뜻하고, 고칠 것이 없다. 큐가 비어
-있으면 어떤 크기의 요청도 받는다. 응답은 요청의 `id` 를 되돌려준다. 근거는
-[ADR-0391](../adr/0391-the-command-queue-admits-by-queued-bytes-and-injected-depth.md).
-
-`-32066` 의 기한은 **첫 줄에만** 걸린다(20 초). 한 번 요청을 보낸 연결은 요청 사이에 얼마나 쉬어도
-닫히지 않는다 — 오래 붙어 있는 client 를 끊지 않으려는 것이다. 기한은 줄 전체에 걸리므로 개행 없이
-바이트를 흘려 보내도 늘어나지 않는다. 응답의 `id` 는 `null` 이고, `-32062` 처럼 최선 노력이다. 근거는
-[ADR-0392](../adr/0392-only-the-first-request-line-has-an-idle-deadline.md).
-
-`-32061` 과 `-32067` 은 **같은 상한의 만료**에서 갈린다 — 가르는 것은 만료 순간 요청이
-시작됐는가다. 호스트는 명령을 실행하기 직전에 기한(큐 진입 + `response_timeout_ms`)을 보고,
-지났으면 실행하지 않고 `-32067` 로 답한다. 그 판정은 게이트(권한 · audit · rate limit) 앞이라
-실행되지 않은 요청은 토큰도 감사 행도 안 쓴다. 시작 뒤에 만료되면 `-32061` 이다 — **만료는 취소가
-아니다**: 시작된 요청은 끊기지 않고 계속 실행될 수 있으며, 호스트는 응답 통로를 놓을 뿐이다.
-서버가 이 갈래를 아는지는 `system.info` 의 capability 목록에서 `ipc.response-timeout.not-run` 으로
-확인한다(그 이름이 없는 서버는 두 경우 모두 `-32061` 로 답한다). 응답은 요청의 `id` 를 돌려준다.
-근거는 [ADR-0411](../adr/0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md).
-
-`-32060` 의 응답은 `id` 가 `null` 이다. 줄이 잘려 있어 요청의 `id` 를 신뢰할 수 없고,
-이는 parse error(`-32700`)가 이미 하던 처리다. 응답 문구에 상한 값이 실린다. 근거는
-[ADR-0327](../adr/0327-the-transport-answers-instead-of-going-silent-and-its-writes-are-bounded.md).
+CLI capability 확인과 본 요청은 하나의 응답 대기 예산을 나눠 쓴다. 확인에는 남은 시간의 socket read timeout과 올림한 봉투 ms를 함께 적용해 구 서버에서도 끝난다. 본 요청은 남은 ms를 내림하고 1ms 미만이면 보내지 않는다. 확인 만료는 본 요청 미실행이므로 -32067이며, 확인 timeout 뒤 연결은 늦은 응답이 남을 수 있어 재사용하지 않는다. 1ms 옵션에서는 확인은 보내도 본 요청은 나가지 않는다. 연결·쓰기 시간까지 포함한 전체 CLI 실행 시간 보장은 아니다.
 
 ### 변경 명령의 재시도는 키로 구별한다
 
-응답만 유실된 요청을 다시 보낼 때, 받는 쪽에는 그것이 **새 요청인지 재시도인지** 말해 주는
-것이 없다. `id` 는 응답 대응용이라 연결마다 다시 매겨지고, params 가 같다는 사실은 "같은
-일을 두 번 하려는 것" 과 구별되지 않는다. 구별을 만들 수 있는 것은 호출자뿐이고, 그 선언이
-봉투의 `idempotency_key`(1..=256 바이트 문자열)다.
+메서드 표는 두 번 전달됐을 때 결과를 기준으로 Read·Idempotent·Mutate를 필수 선언한다. message.read는 기본 소비 동작, screenshot은 파일 생성, set_mark는 시각·출력 위치 변화가 있어 이름만으로 읽기나 멱등으로 분류할 수 없다. 알 수 없는 plugin namespace는 재전달에 안전하다고 가정하지 않는다. 상태를 바꾸는 구현을 수정하면 같은 인자로 두 번 실행해 분류가 맞는지도 확인한다.
 
-- **보존소의 자리는 `(주체, 키)` 다.** 주체는 `local` · `plugin:<id>` · `agent:<id>` 셋이다.
-  키는 호출자가 고르는 임의의 문자열이라, 주체를 빼면 서로 모르는 두 호출자가 같은 문자열을
-  골랐을 때 한쪽이 다른 쪽의 답을 받는다. 연결 단위로는 가르지 않는다 — 재시도는 응답을
-  놓친 뒤 **다른 연결**로 오므로 그렇게 가르면 키가 한 번도 안 맞는다.
-- **뜻이 있을 수 있는 것은 `Mutate` 로 분류된 메서드뿐이다.** 읽기는 흔적을 안 남기고 멱등은
-  같은 끝 상태로 수렴하므로 보존할 이유가 없다 — 보존하면 오히려 조회가 낡은 답을 받는다.
-  분류는 `method_meta::MethodEffect` 하나가 답한다(목록을 따로 두지 않는다).
-- ★ **그러나 `Mutate` 는 상한이지 보장이 아니다 — 아래 "어느 경로에 걸리나" 를 읽어라.**
-- 봉투 검사(키 길이 1..=256)는 메서드와 **목적지** 모두와 무관하다 — 길이 밖 키는 `Read` 든
-  `Mutate` 든, App 층 · plugin namespace · engine 라우터 중 어디로 가든 실행 전에 `-32602` 다.
-  검사가 그 셋보다 앞인 진입 게이트(`check_request`)에 있다. 권한 게이트 **뒤**라 권한 없는
-  호출자는 여전히 `-32001` 을 먼저 받는다. 근거는
-  [ADR-0420](../adr/0420-the-idempotency-key-envelope-is-judged-at-the-admission-gate.md).
-- **처음 보는 키**면 실행하고 그 답을 키로 보관한다. **같은 키·같은 요청**이면 실행하지
-  않고 보관된 답을 낸다. 그 답에는 `idempotent_replay: true` 가 붙는다 — 이것이 없으면
-  호출자는 같은 답을 두 번 받고도 중복 실행과 재조회를 구별할 수 없다.
-- **같은 키·다른 요청**은 `-32063` 이고 아무것도 실행하지 않는다.
-- 보관되는 것은 **라우팅에 들어간 뒤 정해진 답**이다 — handler 의 답과, 라우터가 이름을 못
-  찾은 답(`-32601`/`-32017`) 둘 다 그 키에 대한 종결된 답이다. 권한·cap·rate 게이트의 거절은
-  라우팅 **전에** 끝나므로 보관하지 않는다 — 보관하면 권한이 생긴 뒤의 재시도까지 옛 거절을
-  받는다.
-- 동시에 같은 키가 둘 와도 **한 실행으로 수렴한다.** engine 라우터에서는 실행이 한
-  자리에서 직렬로 돌아 둘째가 볼 때 첫째가 이미 끝나 있다. App 층에는 답을 **나중에**
-  보내는 메서드가 있어(창 생성은 winit 핸들러가, 원격 attach 는 워커가 보낸다) 그 사이에
-  같은 키가 올 수 있다 — 그때 둘째는 첫 실행에 **합류**하고, 첫 결말이 나오면 그것을
-  `idempotent_replay: true` 와 자기 `id` 로 받는다. 첫 실행이 답 없이 통로를 버리면 합류자도
-  같은 결말(응답 없이 연결 종료)을 받는다.
+요청 봉투의 idempotency_key는 UTF-8 1~256바이트이며 요청 ID와 별개다.
+저장 키는 Local·plugin ID·agent ID로 구분한 주체와 키의 조합이다.
+연결이 바뀌어도 같은 주체의 재시도를 찾는다.
+같은 키·같은 요청은 저장 응답을 idempotent_replay:true로 반환하고, 다른 요청이면 -32063으로 실행을 막는다.
+권한·cap·rate 거절은 저장하지 않는다.
+보존 시간·개수·개별 응답 크기·키 길이는 system.info에서 상수로부터 선언하며 재시작을 넘는 보장은 없다.
+항목 퇴출 후에는 다시 실행될 수 있지만 큰 응답만 버릴 때는 키를 남겨 -32064로 실행 완료·응답 없음 상태를 알린다.
+응답 표지가 없는 것만으로 계약 밖이라고 판단하지 않는다.
+client는 부수효과 전에 capability를 확인한다.
+요청 비교용 digest는 전체 params 저장 비용을 줄이는 대신 충돌 가능성을 수용한다.
 
-**보장의 경계는 값으로 선언된다.** `system.info` 응답의 `idempotency` 키가 보존 시간 ·
-항목 수 · 보관하는 답의 최대 바이트 · 키 길이 상한 · 재시작 생존 여부를 그대로 싣는다.
-경계 밖의 두 경우는 답이 다르다:
-
-- 항목이 밀려났으면 그 키는 **처음 보는 키와 구별되지 않는다** → 다시 실행된다. 구별하려면
-  밀려난 키를 영원히 기억해야 하고, 그것은 상한이 있다는 말과 모순이다.
-- 답이 너무 커서 버렸으면 키는 남는다 → `-32064` 로 "실행은 됐고 답이 없다" 를 말한다.
-
-호스트가 재시작하면 전부 사라진다(`survives_restart: false`). crash 이후의 영속은 약속하지
-않는다.
+키 길이 검사는 공통 check_request와 창 없는 Local check_without_engine에서 수행한다. 권한·cap·rate 및 허용 관측 뒤, CheckedRequest를 만들기 전에 검사하여 기존 거절 순서를 유지한다. 목적지가 engine·App·plugin인지와 관계없이 잘못된 키는 -32602로 거절한다. 저장소 begin에서 같은 검사를 중복하지 않는다.
 
 #### 어느 경로에 걸리나 — 호스트가 아는 이름은 전부 안, plugin 고유 이름만 밖
 
-호스트가 키를 실은 요청을 끝내는 경로는 넷이고, 보존소는 경로마다 따로 배선된다.
+메서드별 KeyContract는 Kept{since}·Unneeded·Outside로 선언한다. Mutate 여부와 저장 보장 여부를 구분하며 Read·Idempotent는 Unneeded다. client는 Kept의 since 이상 capability를 요구하고 Unneeded도 최소 지원 버전을 확인한다. 서버 capability는 표가 요구하는 최대 버전에서 파생한다. 판 1은 engine, 판 2는 App 경로의 보장을 뜻한다. 새 라우팅 계층을 열 때 실제 저장소 경로와 선언을 양방향으로 검증한다.
 
-- **engine 라우터** — `handle_checked_request` 를 지나는 모든 요청.
-- **App 층** — `App` 이 직접 끝내는 메서드. `Mutate` 는 여섯이다: `window.create` ·
-  `view.create` · `ui.screenshot` · `remote.attach` · `plugin.install` ·
-  `plugin.request_permission`. GUI 의 app_methods step 과 헤드리스의 App 층 가로채기가 같은
-  함수(`idempotency::run_app_layer`)로 보존소를 먼저 지난다. 근거는
-  [ADR-0421](../adr/0421-the-app-layer-keeps-the-idempotency-contract-and-a-running-key-is-joined.md).
-- **GUI debug step** — app_methods step 뒤의 두 step(입력 주입 · `debug.lua.eval` 등 release 에
-  없는 표면). 두 step 을 한 묶음(`App::ipc_step_debug_layers`)으로 부르고 그 첫 줄에서 같은 함수로
-  보존소를 지난다. 헤드리스의 debug 이름은 App 층 가로채기 안에서 끝난다.
-- **plugin namespace forward** — plugin 이 점유한 prefix 아래의 이름. 두 무리다.
-  - **표에 있는 호스트 메서드**(prefix 를 번들 plugin 이 점유한 `image.*` · `markdown.*` — plugin 이
-    받아 호스트로 되부른다). `Mutate` 여섯(`image.open` · `image.export_png` · `image.next` ·
-    `image.prev` · `image.paste` · `markdown.navigate`)은 forward 전에 보존소를 지난다
-    (`idempotency::forward_keeping_the_key`, GUI 라우터와 헤드리스가 같은 함수를 부른다).
-  - **plugin 고유 이름**(표가 모른다). 호스트는 그 뜻을 모르고 넘길 뿐이라 **계약 밖**이다. client 는
-    보내기 전에 거절한다([ADR-0361](../adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md)).
+판 3은 호스트가 아는 Mutate 이름을 GUI debug와 namespace forward에서도 보호한다.
+image·markdown처럼 plugin으로 전달되는 호스트 이름은 forward_keeping_the_key가 Kept를 확인하고 공용 relay를 사용한다.
+plugin 고유 이름까지 같은 Mutate라는 이유로 저장하면 Outside 계약이 깨지므로 Kept 판정을 생략하지 않는다.
+GUI debug 두 단계도 공용 저장 경로로 묶는다.
+원 요청 대신 키를 뗀 relay 인자를 전달하고 forward 완료 전 재시도도 합류시킨다.
+host injector·plugin host-call·구조 stream op에는 호출자 멱등 키 자체가 없다.
+실제 GUI dispatch·plugin 왕복 및 루프 밖 조기 호출까지 검증됐다고 보장하지 않는다.
+텍스트 가드가 확인하는 호출 모양을 벗어난 우회는 별도 행동 검증 대상이다.
 
-뒤의 두 경로의 근거는
-[ADR-0566](../adr/0566-every-host-path-keeps-the-idempotency-key-and-only-a-plugin-name-is-outside.md).
+호스트 표가 모르는 plugin 고유 이름은 Outside다. send_idempotent는 이런 이름을 연결에 쓰기 전에 KeyOutsideContract로 거절한다. 구 client가 직접 키를 실어 보내면 plugin 고유 호출의 중복 실행을 호스트가 막아주지는 않는다. 플러그인이 정확히 한 번의 실행을 요구하면 자체 요청 ID 계약이 필요하다. 낡은 client가 새 호스트 이름을 모를 때도 안전하게 거절하므로 이 경우 client 업데이트가 필요하다.
 
-App 층 이름을 세는 명령:
+#### 진행 중 요청과 보장 한계
 
-```bash
-# App 층이 직접 끝내는 이름 (그 목록의 소유자는 src/app/ipc/app_methods.rs 다)
-grep -ohE '"[a-z_]+\.[a-z_.]+"' src/app/ipc/app_methods.rs src/app/ipc/app_methods/*.rs \
-  | tr -d '"' | sort -u
-# 그 이름들의 effect 는 crates/tasty-ipc/src/method_meta.rs 의 METHOD_TABLE 에서 읽는다
-```
+App·forward의 지연 응답은 relay가 저장을 완료한 뒤 원 호출자와 합류자에게 전달한다.
+진행 중인 같은 요청은 첫 실행에 합류하고 각자 ID로 replay 응답을 받는다.
+다르면 충돌이다.
+처리하지 않은 층은 항목과 실행 집계를 취소하고 다음 층으로 넘긴다.
+응답 없이 채널이 닫히면 항목을 잊으며 늦은 완료가 새 항목을 덮지 않도록 ticket을 확인한다.
+relay 생성 실패 시에는 warn을 남기고 키 없이 실행하는 현재 예외가 있어 중복 방지가 보장되지 않는다.
+relay는 완료까지 살아 있으므로 저장 항목 수가 곧 스레드 수 상한은 아니다.
+스레드 누적·재시작 보존 요구가 생기면 설계를 다시 검토한다.
 
-**메서드마다 무엇이 일어나는지는 보내기 전에 안다.** 이름 표(`method_meta`)의
-`key_contract` 가 메서드마다 셋 중 하나를 선언한다 — 근거는
-[ADR-0423](../adr/0423-each-method-declares-its-key-contract-and-the-version-that-keeps-it.md).
-
-| 선언 | 뜻 | 해당 |
-|------|----|------|
-| `Kept { since }` | 보존소가 받는다. 같은 키·같은 요청의 재시도는 재생이다. `since` 는 그것을 선언하는 `ipc.idempotency-key` 판 | engine 라우터로 가는 `Mutate`(판 1), App 층 `Mutate` 여섯(판 2), GUI debug step 의 `Mutate` 와 namespace forward 로 나가는 표의 `Mutate` 여섯(판 3) |
-| `Unneeded` | 재전달이 원래 안전하다. 키는 봉투 검사만 받고 재생 표지는 안 붙는다 | `Read` · `Idempotent` |
-| `Outside` | 계약 밖. 키를 싣지 마라 — client 가 보내기 전에 거절한다 | 표가 모르는 이름(plugin 고유 이름) |
-
-값은 대부분 `MethodEffect` 에서 유도되고, 판이 다른 이름(App 층 판 2 · debug step 과 forward 로 나가는
-표 이름 판 3)만 표에 손으로 적는다. 그 무리가 실제 dispatch 와 맞는지는 본체의 source guard
-(`key_contract_by_layer`)와 `tasty-ipc` 의 `method_meta` 시험(예약 밖 prefix 의 `Mutate` = 판 3 의 표
-이름)이 양방향으로 잰다.
-
-그래서 응답의 `idempotent_replay` 는 **"이 답이 재생인가" 하나만** 답한다. 계약 안인지는 선언으로
-이미 알므로, 표지의 부재를 "계약 밖" 으로 읽을 자리가 없다. `Kept` 메서드에서:
-
-- 표지 없는 성공은 **이번에 실행한 것**이다.
-- `-32063`(같은 키·다른 요청)은 계약이 **실행을 막은** 답이다. 표지는 없지만 키 없이 재전송하면
-  계약이 막아 준 두 번째 효과를 스스로 내는 일이다 — 새 요청이면 새 키를 쓴다.
-- `-32064`(실행은 됐고 답을 버림)는 실행이 확실하다는 답이다. 결과만 조회한다.
-- 보존 범위 밖으로 밀려난 키는 처음 보는 키와 구별되지 않아 다시 실행되고 표지 없이 성공을 낸다. 그
-  경계는 위 "보장의 경계는 값으로 선언된다" 가 값으로 내놓는다.
-
-**보내기 전에 상대가 그 계약을 아는지 묻는다.** 봉투에 `deny_unknown_fields` 가 없어 구 서버는
-이 키를 조용히 버리고 요청을 그대로 실행한다 — 그때 호출자는 계약이 걸린 줄 알고 재시도하므로
-두 번째 효과가 남는다. 그래서 기능 목록의 `ipc.idempotency-key` 를 확인하는 것이 필수이고,
-`IpcConnection::send_idempotent` 가 그 확인을 **먼저** 하고 없으면 요청을 아예 안 내보낸다.
-그 이름의 **판이 경로를 말한다** — 판 1 은 engine 라우터, 판 2 는 App 층까지, 판 3 은 GUI debug step
-과 namespace forward 로 나가는 표 이름까지 받는다. 그래서 `send_idempotent` 는 메서드 선언의 `since` 를
-요구 판으로 쓴다: App 층 메서드에 키를 실으려면 상대가 판 2 를, `image.open` 같은 이름에 실으려면 판 3 을
-선언해야 하고, 그보다 낮은 서버(그 경로에서 키를 무시한다)에는 요청이 안 나간다. `Unneeded` 메서드는
-판 1 이면 된다.
-그 거절은 호스트가 답한 실패와 다른 타입(`UnsupportedCapability`)으로 오는데, 그 차이가
-"아무것도 일어나지 않았다" 를 뜻한다. 결정 근거는
-[ADR-0338](../adr/0338-a-mutation-retry-is-told-apart-by-a-caller-key-and-the-peer-is-asked-before-the-effect.md).
-
-**plugin 고유 이름의 namespace forward 는 계약 밖이라고 선언돼 있다.** 이름 표(`method_meta`)의
-`key_contract` 가 그 이름에 `Outside` 를 내고, 표가 모르는 이름도 `Outside` 로 읽는다(client
-프로세스에는 namespace 소유 표가 없어 plugin 이름이 그렇게 보인다). `send_idempotent` 는
-capability 확인보다 **먼저** 그 값을 보고 `Outside` 면 `KeyOutsideContract` 로 끝낸다 — 연결을
-안 쓰고, 그 타입이 "아무것도 안 나갔다" 를 뜻한다. 서버는 키를 실은 forward 를 거절하지 않고
-예전처럼 키를 무시한 채 넘긴다(이미 키를 싣고 있는 구 client 를 깨지 않으려는 것이다). 그래서
-**호스트는 forward 가 정확히 한 번 실행된다고 약속하지 않는다** — 같은 호출이 두 번 오면 owner
-plugin 이 두 번 실행하고, 그것을 거를 수 있는 자리는 plugin 자신뿐이다. 결정 근거는
-[ADR-0361](../adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md).
+새 경로를 추가하면 키 저장, 진행 중 합류, 호출자 범위, 실제 capability 버전을 함께 확인한다. 단위 테스트가 공용 함수를 검사하는 것과 실제 GUI·plugin 경로가 그 함수를 호출하는 것은 다른 검증이다. 설계 이유는 [멱등 재시도 ADR](../adr/0605-idempotent-mutation-retries.md)을 따른다.
 
 ### plugin 을 거쳐 온 실패도 호스트가 준 코드를 그대로 낸다
 
-plugin namespace 의 메서드는 owner plugin 으로 forward 되고, plugin 은 자기 일을 하려고
-호스트 메서드를 되부른다(`claude.parent` → `terminal.parent`). 그 되부름이 거절되면 사유가
-plugin 을 거쳐 원래 호출자에게 돌아오는데, **코드는 그 왕복을 넘어 살아남는다.**
-
-    claude.parent {"surface_id": 999}
-    → -32602  host call 'call#4' failed: no live surface 999 (named by 'terminal.parent'); …
-
-문구는 한 겹 감싸진다(`host call '<call#N>' failed:` 접두). 그건 plugin 을 거쳤다는 사실
-그대로이고 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 정한
-바다. **코드는 안 감싼다** — `-32602`("인자를 고쳐라")가 `-32000`("서버 사정")이 되면
-호출자가 재시도 정책을 반대로 고른다. 근거는
-[ADR-0171](../adr/0171-a-host-error-code-survives-the-plugin-boundary.md).
-
-호스트가 코드를 안 준 실패(plugin 내부 오류, SDK 의 연결·인코딩 오류)는 종전대로
-`-32000` 이다.
+호스트 오류는 plugin을 왕복해도 error_code를 유지한다. ipc.result의 선택 필드는 구 SDK·구 호스트와 호환되며 코드가 없는 옛 응답만 -32000으로 해석한다. 호스트가 생성한 취소·만료·권한 오류와 post-hook을 거친 target plugin의 임의 코드도 전달한다. 기존 오류 표시 문구는 유지하고 문자열에 코드를 끼워 넣지 않는다. plugin 내부 버그의 인자가 외부 호출자가 고칠 수 없는 실패를 만드는 사례가 늘면 오류 책임을 구분하는 계약을 검토한다.
 
 ### debug 표에 있는데 CLI 가 없는 메서드
 
@@ -509,7 +297,10 @@ debug 표 기준 총 3개.
 
 미등재는 "닫혀 있음"으로 대충 넘어가지 않는다. `method_meta()` 가 `None` 이면 plugin/agent 호출자는 `UnknownMethod` 로 거부되긴 하지만, 그 거부가 **정책인지 등재 누락인지 표만 봐서는 구분되지 않는다** — 나중에 권한을 재검토하는 쪽이 "닫으려던 것"과 "잊은 것"을 판별할 수 없다. `local_only()` 등재는 그 판단을 코드에 남기는 선언이다(거부 자체는 `NotPluginCallable` 로 바뀔 뿐 동작은 같다).
 
-`tests/ipc_router_table_parity.rs` 가 라우터 소스를 훑어 강제한다. `"<method>" =>` 팔과 `… .method == "…"` 비교(`||` 로 이어진 다중 비교 포함, `src/app/ipc/app_methods.rs`·`window_required.rs` 가 그 형태다)를 **둘 다** 잡는다. 소스 목록은 고정 목록(`ROUTER_SOURCES`)에 더해 `src/app/ipc/` 를 **디렉토리째** 걷는다(`ROUTER_DIRS`) — dispatch 스텝이 몰려 있는 이 디렉토리에 새 파일을 만들어도 목록에 손으로 추가하는 걸 잊어 사각지대가 생기지 않게 한다(실제로 `window_required.rs` 가 그렇게 빠져 6 메서드가 통과했다). 등재 누락은 조용히 오래 남는 종류의 결함이라(형제 메서드가 전부 등재된 상태에서 한둘만 빠져도 아무 신호가 없다) 리뷰가 아니라 게이트로 잡는다. debug 빌드에서만 도는데, release 에서는 `DEBUG_METHODS` 가 설계상 비어 IPC 표면에서 사라지기 때문이다([debug-ipc](debug-ipc.md)). `src/app/ipc/` **밖**의 새 라우터 파일(예: `src/adapters/ipc/`)은 여전히 `ROUTER_SOURCES` 에 직접 추가한다.
+`tests/ipc_router_table_parity.rs` 가 라우터 소스를 훑어 강제한다.
+`"<method>" =>` 팔과 `… .method == "…"` 비교(`||` 로 이어진 다중 비교 포함, `src/app/ipc/app_methods.rs`·`window_required.rs` 가 그 형태다)를 **둘 다** 잡는다.
+소스 목록은 고정 목록(`ROUTER_SOURCES`)에 더해 `src/app/ipc/` 를 **디렉토리째** 걷는다(`ROUTER_DIRS`) — dispatch 스텝이 몰려 있는 이 디렉토리에 새 파일을 만들어도 목록에 손으로 추가하는 걸 잊어 사각지대가 생기지 않게 한다(실제로 `window_required.rs` 가 그렇게 빠져 6 메서드가 통과했다). 등재 누락은 조용히 오래 남는 종류의 결함이라(형제 메서드가 전부 등재된 상태에서 한둘만 빠져도 아무 신호가 없다) 리뷰가 아니라 게이트로 잡는다.
+debug 빌드에서만 도는데, release 에서는 `DEBUG_METHODS` 가 설계상 비어 IPC 표면에서 사라지기 때문이다([debug-ipc](debug-ipc.md)). `src/app/ipc/` **밖**의 새 라우터 파일(예: `src/adapters/ipc/`)은 여전히 `ROUTER_SOURCES` 에 직접 추가한다.
 
 ## plugin 점유 namespace
 
@@ -525,9 +316,14 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
 
 ### auto_wait chain
 
-일부 plugin 명령은 1차 IPC 응답 직후 wait IPC 를 자동 chain 해 대상이 terminal state(`idle`/`needs_input`/`exited`)에 도달할 때까지 block 할 수 있다. child terminal 의 파생 상태 `stale`([ADR-0072](../adr/0072-child-state-hook-observation-fusion.md))은 **기본 terminal state 집합에 넣지 않는다** — 무출력 임계값 기반 판정은 휴리스틱이라 오탐 시 아직 일하는 자식을 종결 처리하게 된다. 다만 hook 유실로 영구 대기하는 것보다 조기 탈출이 나은 소비자는 `terminal_states` 에 직접 `"stale"` 을 추가해 선택할 수 있다. 매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.
+일부 plugin 명령은 1차 IPC 응답 직후 wait IPC 를 자동 chain 해 대상이 terminal state(`idle`/`needs_input`/`exited`)에 도달할 때까지 block 할 수 있다.
+child terminal 의 파생 상태 `stale`([ADR-0072](../adr/0072-child-state-hook-observation-fusion.md))은 **기본 terminal state 집합에 넣지 않는다** — 무출력 임계값 기반 판정은 휴리스틱이라 오탐 시 아직 일하는 자식을 종결 처리하게 된다.
+다만 hook 유실로 영구 대기하는 것보다 조기 탈출이 나은 소비자는 `terminal_states` 에 직접 `"stale"` 을 추가해 선택할 수 있다.
+매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.
 
-**`claude spawn`/`tell`, `codex spawn`/`tell` 은 더 이상 이 메커니즘을 쓰지 않는다** — 동기 블로킹 대신 완료 시 caller surface 에 알림 훅을 주입하는 이벤트 기반 모델로 대체됐다. claude 는 `claude-idle`/`needs-input`/`process-exit` hook → `claude.notify_done`(`crates/tasty-plugin-claude/src/notifications.rs`의 `register_notify_hooks` 참조), codex 는 `codex-idle`/`needs-input`/`process-exit` hook → `codex notify-caller`([`docs/plugins/codex/index.md`](../plugins/codex/index.md) 참고)로 각각 구현. 두 핸들러 모두 hook 이 한 번 fire 되면 알림 후 `surface.locate` 로 target 생존을 확인해, 아직 살아있으면(process-exit 가 아니었으면) 형제 hook 을 재등록한다(자기재무장) — "spawn/tell 당 알림 1회"가 아니라 "child 가 exit 할 때까지 상태 전환마다 알림"이다. auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin 중 이를 실사용하는 소비자는 없으며(전수 grep 확인), 향후 외부/서드파티 plugin 소비자를 위해 스키마만 유지한다.
+**`claude spawn`/`tell`, `codex spawn`/`tell` 은 더 이상 이 메커니즘을 쓰지 않는다** — 동기 블로킹 대신 완료 시 caller surface 에 알림 훅을 주입하는 이벤트 기반 모델로 대체됐다.
+claude 는 `claude-idle`/`needs-input`/`process-exit` hook → `claude.notify_done`(`crates/tasty-plugin-claude/src/notifications.rs`의 `register_notify_hooks` 참조), codex 는 `codex-idle`/`needs-input`/`process-exit` hook → `codex notify-caller`([`docs/plugins/codex/index.md`](../plugins/codex/index.md) 참고)로 각각 구현. 두 핸들러 모두 hook 이 한 번 fire 되면 알림 후 `surface.locate` 로 target 생존을 확인해, 아직 살아있으면(process-exit 가 아니었으면) 형제 hook 을 재등록한다(자기재무장) — "spawn/tell 당 알림 1회"가 아니라 "child 가 exit 할 때까지 상태 전환마다 알림"이다.
+auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin 중 이를 실사용하는 소비자는 없으며(전수 grep 확인), 향후 외부/서드파티 plugin 소비자를 위해 스키마만 유지한다.
 
 ---
 
@@ -591,7 +387,7 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
 `method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /
 `AfterFrozenBaseline`)으로 답하고, 미등재 이름에는 `None` 을 준다. 그 값은 손으로 적지
 않는다(동결 파일이 유일한 모수다). 근거는
-[ADR-0312](../adr/0312-the-server-declares-what-it-can-negotiate-not-what-version-it-is.md).
+[ADR-0604](../adr/0604-ipc-discovery-and-errors.md).
 
 ### Deprecation 절차
 
@@ -604,7 +400,7 @@ deprecation 기간은 "한 minor 이상"이 원칙이다. 아래 셋은 유예 �
 
 - **보안**
 - **심각 버그**
-- **불가침 원칙 위반** — [`identity.md`](../identity.md) §2 의 원칙을 어기는 동작. 유예를 두면 그 기간 동안 위반이 그대로 출하된다. 세 조건이 붙는다: ① 유예를 건너뛰는 것은 위반을 이루는 부분뿐이고, 함께 가는 무관한 break 는 정상 절차를 따른다. ② 고치는 형태가 여럿이면 기존 호출자를 가장 적게 깨는 쪽을 고른다. ③ `(BREAK)` 항목에 어느 원칙을 어겼는지와, 유예를 건너뛴 사유가 이 예외라는 것을 적는다. 근거·대안은 [ADR-0557](../adr/0557-an-inviolable-principle-violation-is-fixed-without-a-deprecation-period.md).
+- **불가침 원칙 위반** — [`identity.md`](../identity.md) §2 의 원칙을 어기는 동작. 유예를 두면 그 기간 동안 위반이 그대로 출하된다. 세 조건이 붙는다: ① 유예를 건너뛰는 것은 위반을 이루는 부분뿐이고, 함께 가는 무관한 break 는 정상 절차를 따른다. ② 고치는 형태가 여럿이면 기존 호출자를 가장 적게 깨는 쪽을 고른다. ③ `(BREAK)` 항목에 어느 원칙을 어겼는지와, 유예를 건너뛴 사유가 이 예외라는 것을 적는다. 근거·대안은 [ADR-0604](../adr/0604-ipc-discovery-and-errors.md).
 
 ### plugin-protocol schema
 

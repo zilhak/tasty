@@ -1,4 +1,4 @@
-# headless-pty (Surface 없는 agent-native PTY primitive · `tasty pty`)
+# 화면 없는 PTY (`tasty pty`)
 
 - **Status**: Implemented
 - **주체**: AI Agent
@@ -8,18 +8,49 @@
 
 ## 목적
 
-에이전트가 **Surface(Tab) 없이** 백그라운드에서 1회성 명령/자동화를 돌리고 **진짜 exit-code** 를 회수하는 primitive 를 호스트 1급으로 제공한다. 자식 터미널([child-terminal](../child-terminal/index.md), `terminal.*`)이 GUI 에 보이는 장수명 child-agent *surface* 를 만드는 것과 달리, `pty.*` 는 Surface 트리를 전혀 건드리지 않는다. Surface 유무는 옵션이 아니라 별개 축이라 네임스페이스를 갈랐다(ADR-0050). 필요해지면 `pty.attach_surface` 로 상태 보존하며 실제 Tab 으로 승격할 수 있다.
+에이전트가 화면에 탭을 만들지 않고 명령을 실행하고 실제 종료 코드를 받게 한다.
+`tasty pty`는 Surface 트리를 바꾸지 않는다. 화면이 필요해지면 실행 중인 Terminal을
+`pty.attach_surface`로 기존 Pane의 탭에 연결할 수 있다. Surface를 처음부터 만드는
+[자식 터미널](../child-terminal/index.md)과 구분한다.
 
 ## 내부 동작 (headless-valid)
 
-- **두 store 정합**: 메타데이터·exit-code cell 은 `engine.pty_registry`(`PtyRegistry`), 실제 headless `Terminal` 은 `engine.terminals`(`TerminalStore`)에 **같은 pty id** 로 보관한다. pty id 는 `PTY_ID_BASE`(`0x8000_0000`) 이상에서, Surface id 는 그 미만(1부터 증가)에서 발급해 두 공간이 겹치지 않는다. 어느 한 쪽만 지우면 누수/좀비가 되므로 kill/sweep 은 **항상 두 store 를 함께** 정리한다.
-- **disjoint 집행 (ADR-0094)**: 이 disjoint 는 "surface id 가 2^31 까지 자라지 않는다" 는 가정이 아니라 세 방어의 결과다. ① OSC 133 명령 인덱싱(`command_index`)은 `TerminalStore` 키를 그대로 받으므로 headless PTY id 로 들어온 boundary 를 인덱싱하지 않는다 — 하면 `Scope::Surface(pty id)` 가 memory.db 에 심긴다. ② surface id 를 받는 IPC 경계(`surface_id` 파라미터, `memory.*` 의 `scope=surface:<id>`)가 `PTY_ID_BASE` 이상을 `invalid_params` 로 거부한다. ③ 부팅 시 surface 카운터 floor 시딩이 PTY 공간을 침범한 `Scope::Surface` 를 floor 산정에서 제외하고 `tracing::error!` 기록 후 purge 한다 — 이미 그런 scope 가 남아 있는 인스턴스도 부팅 한 번으로 정상 범위로 복귀한다. 판정 술어는 `pty_registry::is_surface_id_space` 하나를 공유하므로, surface id 를 받는 새 진입점은 이 술어를 통과시켜야 한다.
-- **명령 인덱스 없음**: 위 ①의 결과로 headless PTY 안에서 끝난 명령은 `tasty.commands.*` 에 남지 않는다. 종료코드는 `pty.wait` 가 registry 의 exit cell 로 직접 제공하므로 회수 경로가 따로 있다.
-- **좀비 방지 (동시 개수 상한 + idle TTL)**: GUI 안전망(닫기 버튼)이 없으므로 호스트가 스스로 회수한다. 동시 개수 기본 상한 8 — 초과 시 spawn 을 실패시킨다(panic 하지 않음). idle(무 IO 활동) TTL 기본 5분 — 만료 항목을 두 store 에서 함께 회수한다(`Terminal` drop → PTY master close → 자식 SIGHUP). read/write/wait 은 idle 타이머를 리셋하므로 활발히 폴링 중인 PTY 는 회수되지 않는다. 상한/TTL 은 기본값을 코드에 박되 override 가능(`rate_limit.rs` 철학).
-- **회수 시점 (두 경로)**: ① `pty.spawn`/`pty.list` **접근 시점 lazy sweep** — `spawn` 직전에 돌아 동시 개수 상한 판정을 정확하게 유지한다(죽은 항목을 먼저 치우고 상한을 본다). ② **주기 타이머** 30초(`Precision::Lax`, slack 60초) — 에이전트가 조용해져 아무도 `pty.*` 를 부르지 않는 사각을 메운다. lazy 만 있으면 "조용해진 순간이 곧 정리가 멈추는 순간" 이 되는데, 그때가 정확히 좀비가 가장 오래 남는 순간이다. 둘은 대체가 아니라 보완 관계이고 같은 함수(`CoreState::sweep_idle_ptys`)를 부르므로 후처리가 동일하다. **회수 지연 상한은 `TTL + 30s + 60s` = 최대 6.5분.**
-- **진짜 exit-code 캡처**: spawn 시 `Terminal` 에서 넘겨받은 `portable_pty::Child` 를 close-over 한 detached watcher 스레드가 `child.wait()` 로 실제 종료코드를 뽑아 entry 의 exit cell 에 채운다(`runner_host.rs` 패턴 이식). `pty.wait` 는 Surface 라이브 여부가 아니라 이 cell 로 판정한다.
-- **owner 귀속**: 각 PTY 는 spawn 한 caller 의 `owner_agent_id` 를 기록한다(cap/telemetry 귀속용, `TASTY_AGENT_ID` 기반 — 위조 가능한 잠정 모델).
-- **승격 (adopt)**: `pty.attach_surface` 는 `AdoptTerminal { pane_id, pty_id }` intent 로 실행한다. 새 surface_id 를 발급하고, headless `Terminal` 을 pty_id → surface_id 로 **re-key**(`TerminalStore` remove→insert)하며 새 surface_id 로 waker 를 재배선한 뒤, pane 트리에 background tab 으로 등록한다(포커스 독립 — active_tab 을 바꾸지 않음). `tab.create` 와 동형 cascade(`tab.created`/`surface.created` host event)를 발화해 GUI 가 렌더하게 한다. 승격 후 그 pty id 는 registry 에서 빠져 `pty.list` 에 더 이상 나타나지 않는다(같은 `Terminal` 인스턴스라 화면 상태 보존).
+### 저장과 종료 코드
+
+`PtyRegistry`는 메타데이터와 종료 코드를, `TerminalStore`는 실제 Terminal을 같은 PTY ID로 보관한다.
+`portable_pty::Child`를 받은 watcher가 wait로 실제 종료 코드를 기록한다.
+`pty.wait`는 이 값을 즉시 조회하며 블로킹 대기가 아니다.
+owner_agent_id는 호출자의 TASTY_AGENT_ID에서 오며 위조할 수 있어 강한 인증 정보로 취급하지 않는다.
+
+### ID 범위
+
+surface ID는 `[1, PTY_ID_BASE)`, PTY ID는 `0x8000_0000` 이상이다.
+`is_surface_id_space`를 명령 인덱싱·IPC surface 인자·memory surface scope 검증에서 공통으로 사용한다.
+큰 정수를 u32로 바꿀 때는 검사된 변환을 사용한다. headless PTY의 OSC 133은 surface 명령 인덱스에 넣지 않는다.
+
+레이아웃 복원 부팅에서는 surface 카운터의 시작값을 정할 때 PTY 범위의 오래된 scope를 제외하고
+오류 로그를 남긴 뒤 삭제한다. 복원을 하지 않는 headless나 restore_layout 비활성 실행에는 이 정리가 없다.
+그 경우 카운터가 1부터 시작하므로 잘못된 scope에서 시작값을 물려받지는 않는다.
+
+### 자원 회수
+
+동시 개수 기본 상한은 8, idle TTL은 5분이다. 상한 초과는 오류로 반환한다.
+read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 있다.
+
+- spawn/list 접근에서 만료 항목을 먼저 정리한다. 특히 spawn의 상한 판단보다 먼저 수행한다.
+- Tick::PtySweep는 30초 주기, Lax slack 60초로 정리한다. 아무 호출이 없어도 TTL 뒤 최대 90초 안에 회수한다.
+- GUI main·parked engine과 headless 모두 같은 CoreState::sweep_idle_ptys를 사용한다.
+  registry, TerminalStore, waker 중복 방지 등록을 함께 정리한다.
+
+자식은 PTY를 소유한 host 수명을 따른다. Windows의 Job Object와 Unix의 hangup 차이는
+[터미널 수명](../terminal/index.md#프로세스-종료--절전-복귀)을 참고한다.
+
+### 화면에 연결하기
+
+`AdoptTerminal { pane_id, pty_id }`는 새 surface ID를 만들고 TerminalStore의 키를 옮긴다.
+새 ID로 waker를 연결하고 기존 Pane에 background tab을 추가한다. 프로세스와 화면 내용은 유지한다.
+사용자의 활성 탭은 바꾸지 않으며 tab.created·surface.created를 보낸다.
+PTY registry에서 제거되어 이후에는 surface API로 다룬다. 옛 PTY ID의 waker 등록도 정리한다.
 
 ## 인터페이스
 

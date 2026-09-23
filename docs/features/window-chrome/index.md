@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (GUI 전용 — 윈도우 조작)
-- **ADR**: 없음 (CSD 데코 전략은 attach decision 과 무관, 원칙 4 크로스플랫폼)
+- **ADR**: [창의 OS 통합과 종료](../../adr/0616-window-platform-and-shutdown.md)
 - **코드**: `crates/tasty-platform/src/window_chrome.rs` (CSD 속성·`resize_direction_at`), `src/adapters/ui/titlebar/` (`mod.rs`/`view.rs`/`caption.rs`), `src/adapters/ui/sidebar/` (`view.rs`/`full.rs`/`collapsed.rs`, 리사이즈 위젯 우선권 적재), `src/view/main/mouse.rs` (통합 리사이즈 hit-test)
 - **화면**: [아래 절](#화면)
 
@@ -118,3 +118,33 @@ Windows:                    [ _ ] [ ▢ ] [ ✕ ]   (캡션 버튼 tasty, OS 캡
 - [architecture/boot-sequence.md](../../architecture/boot-sequence.md) "로딩 프레임" — 이 창이 표시되기 전, 부팅 상태 머신이 그리는 워드마크+스피너+phase 문구 로딩 화면.
 - [architecture/shutdown-sequence.md](../../architecture/shutdown-sequence.md) "종료 화면" — 창이 사라지기 전, 종료 상태 머신이 같은 락업을 문구만 바꿔 그리는 화면.
 </content>
+
+## 생성 실패 처리
+
+새 창이나 모달의 생성 실패로 기존 창과 터미널을 종료하지 않는다.
+사용자의 새 창·설정·plugin 창 요청 실패는 남아 있는 main 창에 해당 작업의 안내를 표시한다.
+에이전트 요청 실패는 IPC 오류로 요청자에게만 반환한다.
+
+부팅에서 창이나 GPU가 없으면 title/body/hint 진단을 로그에 남기고 exit(1)한다.
+창과 GPU가 준비된 뒤 engine 생성이 실패하면 실패 화면을 유지하며 종료 버튼·Esc·Enter로 exit(1)한다.
+예상 밖 GPU 내부 오류는 crash 진단 경로를 유지한다.
+종료 확인 모달 생성이 실패하면 확인을 생략하고 종료하며, 로그와 가능한 toast로 알린다.
+
+observer worker 생성 실패는 요청 오류로 반환하고 runner 생성 실패는 로그와 running:false로 알린다.
+별도 plugin 프로세스의 스레드 실패는 기존 panic과 host의 사망 감지·복구를 사용한다.
+
+## 에이전트 창의 OS 표시
+
+`WindowRequestOrigin`은 focus와 실패 안내를 함께 구분한다.
+에이전트 창은 숨김·비활성 상태로 생성한 뒤 `window_stacking::show_behind`로 표시한다.
+기준은 등록 직전 focused main 창이며 없으면 활성화 없이 표시한다.
+
+| OS | 구현과 한계 |
+|---|---|
+| macOS | NSWindowBelow와 기준 windowNumber로 표시한다. winit set_visible은 키 창으로 올리므로 직접 사용하지 않는다. 실기 결과는 확인되지 않았다. |
+| Windows | winit 비활성 show 앞뒤에 SetWindowPos(NOACTIVATE/NOMOVE/NOSIZE)를 사용한다. 네이티브 show만 하면 winit의 VISIBLE 상태와 달라질 수 있다. 실기 결과는 확인되지 않았다. |
+| X11 | map 전 _NET_WM_USER_TIME=0, map 후 _NET_RESTACK_WINDOW Below(source 2)를 요청한다. 첫 Focused 이벤트에서 초기 user-time 힌트를 제거한다. openbox에서는 focus 유지와 뒤쪽 배치가 확인됐지만 바로 아래 대신 맨 아래였다. |
+| Wayland | 활성화 요청을 하지 않는다. 최종 focus와 쌓임은 compositor가 정한다. |
+
+네이티브 호출 실패는 경고를 남기고 winit 기본 show로 복구한다.
+winit 버전을 바꿀 때 OS별 show·active 처리와 X11 지원 API를 다시 대조한다.

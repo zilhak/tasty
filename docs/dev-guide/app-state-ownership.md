@@ -10,7 +10,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 - **실행 자원** — 다른 소유자의 핸들 사본이나, 한 계층이 넣고 다른 계층이 비우는 큐.
 
 소유권을 struct 두 개로 가르지 않고 **컴파일 경계와 모듈 경계**로 가른 결정과 그 근거는
-[ADR-0355](../adr/0355-app-state-ownership-is-split-by-the-gui-boundary-not-by-a-second-struct.md).
+[ADR-0602](../adr/0602-domain-execution-and-ports.md).
 "어떤 정의를 gui 전용으로 가르는가" 의 판정 규칙 자체는 [헤드리스 정의 경계](headless-build-boundaries.md)
 가 정본이고, 이 문서는 그 규칙을 `AppState` 에 적용한 결과표다.
 
@@ -92,76 +92,35 @@ headless 빌드에 그 필드가 있는지를 적는다.
 
 ## 모듈 단위 예외 없이 가른다
 
-`state` 모듈에는 headless 진단을 덮는 모듈 단위 예외가 없다. 한때 `src/state.rs` 첫머리의
-`cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))` 가 `state` 와 하위 모듈 전체를
-덮었고, 그 아래에 headless 에 컴파일되지만 아무도 읽지 않는 필드 31 개가 있었다. 지금은
-[헤드리스 정의 경계](headless-build-boundaries.md) 의 세 갈래를 항목마다 적용한다.
-
-- **①** 필드 29 개와 그 필드만 쓰는 자료형(`PendingPopupOpen` · `DropHoverState`)은
-  `cfg(feature = "gui")` 다 — headless 에서 그 필드를 세우는 것은 생성자의 초깃값뿐이었다.
-  GUI 입력 경로만 부르는 하위 모듈(`detect` · `events` · `focus` · `search`)은 모듈 선언에,
-  일부만 GUI 전용인 모듈(`layout` · `mouse` · `pane` · `tab` · `workspace` · `accessors`)은
-  항목에 붙인다. `pending_handler_ipc` 도 ① 이다 — `file/dispatch.rs` 의 모듈 단위 예외가
-  그 필드에 넣는 자리를 덮고 있어 늦게 드러났다.
-- **②** headless 라이브러리에는 소비자가 없지만 **headless 테스트가 실제로 부르는** 정의
-  (탭·pane·워크스페이스 조작 메서드, `layout` 모듈, `tab_bar_height`)는
-  `cfg(any(feature = "gui", test))` 다. 그 시험들은 base 에서도 headless 구성에서 돌았고 지금도 돈다.
-- **③** `preset_store` 와 `ModalKind` 의 variant 는 `expect(dead_code)` 다 — 앞은 headless 도
-  `new` 로 사본을 받지만 읽는 자가 GUI 뿐이고, 뒤는 모달을 여는 자리가 GUI 뿐이라 headless 에서
-  variant 가 만들어지지 않는다(열거와 `active_modal_kind` 는 `ui.state` 덤프가 debug 빌드의 두
-  조합에서 읽는다 — release 헤드리스에는 `active_modal_kind` 필드도 덤프도 없다).
-  `CoreState` 에도 같은 가름을 쓴다 — `readonly_views`(점유 surface 의 readonly mirror, gui 의
-  render_pass 와 attach 폴링(`refresh_readonly_views`)만 읽는다)와 `input_simulation_enabled`(debug
-  빌드에만 있는 필드, 읽는 자가 gui 의 입력 시뮬레이션 IPC 뿐)가 headless 에서 `expect(dead_code)` 다.
-
-`state` 아래에는 모듈 단위 예외가 없다. 마지막이던 `state/command_palette.rs` 는 모듈 선언이
-②(매칭 로직을 headless 시험이 부른다)이고 그 안의 `CommandPaletteState` 가 ①(필드가 gui 전용)이다.
+AppState를 별도 도메인·GUI struct로 복제하지 않는다. DialogState처럼 생산자와 소비자가 GUI뿐인 상태는 모듈과 필드 모두 gui 조건으로 제외한다. 실제 승인 레코드는 Core에 있고 popup의 pending ID 목록은 화면 상태다. 창 상태가 필요한 진입점은 AppState를 소유할 수 있지만 도메인 실행과 IPC engine 핸들러에는 좁은 port만 전달한다. CoreState에도 사용자 포커스·선택·히스토리가 있으므로 AppState 제거만으로 사용자 상태 보호가 완성되지는 않는다. intent origin 검사를 함께 유지한다.
 
 ## `state` 가 아니라 `core` 에 두는 것
 
-`AppState` 필드를 읽지 않는 공용 동작은 `core` 에 둔다. `core` 가 부르는 동작이 `state` 에
-있으면 도메인 계층이 view 상태 모듈을 거꾸로 보게 된다.
+구조 변경은 도메인 결과로 반환하며 전송하지 않을 JSON-RPC 응답을 만들었다 다시 해석하지 않는다. 닫힌 surface 정리는 공용 `reclaim_closed_surfaces`가, MoveSurface 결과의 close 변환은 공용 생성자가 맡는다. 자원 정리를 Core::apply에 넣어 AppState 의존을 추가하지 않는다. must_use만으로 이벤트를 분해한 뒤 정리를 빠뜨리는 문제를 막을 수는 없다.
 
-| 정의 | 자리 | 하는 일 |
-|---|---|---|
-| `SurfaceMessage` | `src/core/state/message.rs` | `CoreState` 의 surface 간 메시지 큐 항목 |
-| `default_tab_name_for_kind` | `src/core/surface_registry.rs` | surface kind 선언과 params 로 탭 표시명을 도출 |
-| `collect_close_targets` | `src/core/impl_close.rs` | 닫히는 탭의 surface 와 scrollback persist id 를 모은다 |
-| `PendingHostEvent` · `PendingSurfaceClosed` | `src/core/host_event.rs` | 도메인 cascade 가 세우고 GUI 메인 루프가 비우는 호스트 이벤트 큐 항목. `crate::state` 가 재수출한다 |
+`core::structural_exec`가 split·tab 생성/이동/닫기·pane/surface 닫기의 검증과 적용을 맡는다.
+IPC와 원격 forward는 같은 실행 함수를 쓰며 `Rejected`, `MissingEvent`, `Apply` 실패를 각 전송 형식으로 변환한다.
+정수 범위 같은 공용 파라미터 판정은 core::param_bag에 둔다.
+권한·점유·자기 대상 제한은 진입점에 남고 anchor 해석·snapshot·즉시 tap 억제·delta 계산은 forward에 남는다.
+공용 cascade의 GUI 효과만 조건부로 실행한다.
+변환한 surface의 mesh 정리는 매니저를 소유한 호출자에게 결과값으로 알린다.
+두 경로의 실패 문구 일치와 기존 외부 문구 보존은 서로 다른 검증이다.
 
-`state` 쪽 호출자(탭·pane·preset 적용)도 같은 정의를 `core` 경로로 부른다.
+핸들러는 사용하는 상태만 인자로 받는다. 쓰지 않는 `_state: AppState` 인자를 공통 호출 모양에 맞추려고 남기지 않는다. memory와 대상 nickname 해석은 Core의 공유 핸들에서 읽고, 창과 무관한 출력 조회는 CoreState에서 수행한다. GUI·debug에서 창 상태 자체를 조작하는 핸들러는 창 전용 라우터에 둔다.
 
-`core` 는 `AppState` 를 이름으로 부르지 않는다. 구조 실행·cascade 가 필요로 하는 창 연산은
-도메인이 선언한 포트 `core::cascade_window::CascadeWindow` 로 닿고, `AppState` 가
-`src/state/cascade_window.rs` 에서 메서드마다 한 줄 위임으로 구현한다
-([ADR-0440](../adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md)).
-그 포트의 메서드 목록이 "도메인 실행이 `AppState` 에서 무엇을 쓰는가" 의 답이다.
+IPC engine 핸들러는 `IpcWindow`와 요청별 `IntentOutbox`로 필요한 창 연산과 intent 생성을 수행한다.
+진입점이 요청 완료 시 outbox를 창 큐 끝에 옮기며 게이트가 만든 intent가 핸들러 intent보다 앞선다.
+`EntryWindow`는 입구 본문에 창 전체를 꺼내는 접근자를 제공하지 않는다.
+창·debug 라우터는 별도 경로이며 각 창 메서드의 caller 정책을 선언·검증한다.
+포트가 상속한 활성 워크스페이스 변경까지 막는 것은 아니므로 origin과 대상 정책을 별도로 유지한다.
+헤드리스 pump는 응답 전 intent 적용이 AppState를 요구하는 동안 이를 소유한다.
+drain이 좁은 port로 실행 가능해질 때만 pump 인자를 줄인다.
 
-IPC 핸들러는 **창 상태를 읽을 때만** `AppState` 를 받는다
-([ADR-0470](../adr/0470-an-ipc-handler-takes-window-state-only-when-it-reads-it.md)). 그리고 **엔진
-핸들러는 창 상태를 받지 않는다** — 창에 닿아야 하는 일은 좁은 포트와 intent 출구로만 한다
-([ADR-0471](../adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md)).
+### 아직 남아 있는 동작 차이
 
-- **창 연산** — `IpcWindow`(`src/adapters/ipc/window_port.rs`)가 `CascadeWindow` 를 물려받아 엔진
-  핸들러가 쓰는 창 연산을 선언하고, `AppState` 가 `src/state/ipc_window.rs` 에서 한 줄 위임으로
-  구현한다. 대상 생략 시의 기본 워크스페이스(`active_workspace`)도 그 포트의
-  `active_workspace_index` 로 읽는다. 그 메서드 목록이 "IPC 엔진 핸들러가 `AppState` 에서 무엇을
-  쓰는가" 의 답이다.
-- **intent** — 핸들러는 `pending_intents` 에 직접 넣지 않고 요청 하나의 `IntentOutbox` 에 넣는다.
-  진입점(게이트 · 엔진 라우터 · `record_plugin_rss_samples`)이 요청 끝에 출구를 창 큐 끝으로 옮긴다.
-- **`AppState` 를 받는 자리** — 창을 쥔 진입점(`handle_checked_request` · 헤드리스 `pump_ipc`)과,
-  창 상태 자체가 대상인 GUI·debug 핸들러(파일 선택기 · popup · 배너 · 도구 메뉴 · debug 주입 ·
-  `ui.state`)와 그 라우터(`route_window_handler` · `route_debug_handler`)뿐이다.
-  `handle_checked_request` 는 받은 창을 곧바로 `EntryWindow`(`src/adapters/ipc/handler/entry_window.rs`)로
-  감싸고, 그 아래 입구 본문(`route_checked_request` · `dispatch_routed`)은 `EntryWindow` 만 받는다.
-  `EntryWindow` 의 필드는 모듈 밖에 안 보이고, 열린 문은 셋이다 — 엔진 라우터용 포트(`port`), gui
-  창 라우터(`route_window`), debug 라우터(`route_debug`, 파일 전체가 `#![cfg(debug_assertions)]` 인
-  `entry_window_debug.rs`). 그래서 입구 본문이 popup·`active_workspace` 를 이름으로 만지면 컴파일이
-  깨진다. 헤드리스 `pump_ipc` 는 응답 전에 intent 적용(`drain_pending_intents`)에 창 전체를 넘겨야
-  해서 이 봉인 밖이다(ADR-0471 Decision 5).
+헤드리스 close cascade는 workspace 전체 제거 때 memory scope 정리를 하지 않는다. GUI 통지와 같은 함수에 묶인 현재 한계이며, 공용 cascade를 만들었다고 이 단계까지 두 빌드에서 같아진 것은 아니다. [닫기 순서](../architecture/close-sequence.md#gui-와-headless-의-차이)를 따른다.
 
-`AppState` 가 든 Core memory 핸들 사본(`memory`)은 IPC 핸들러가 읽지 않는다 — 같은 Arc 를 `Core`
-로 읽는다.
+원격 pane split에서 전달된 params에 `target_pane`이 있고 서버가 `target_surface`도 채우면 두 대상 동시 지정 오류가 날 수 있다. 실행 함수 통합은 이 기존 동작을 바꾸지 않았다. 실패 문구의 경로 간 일치와 문구 자체의 호환은 별도로 검사한다.
 
 ## 재는 법
 

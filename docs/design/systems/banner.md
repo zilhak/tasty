@@ -6,18 +6,17 @@
 
 ## 정체성 — 왜 별도 개념인가
 
-배너는 세 축에서 기존 3종 어디에도 들어맞지 않는다.
+배너는 안내와 바로 할 수 있는 조치를 함께 보여 준다. 마우스 입력과 버튼을 지원하지만 키보드 포커스를 가져가지 않는다.
 
-| 축 | **Banner** | Toast | Popup |
-|----|-----------|-------|-------|
-| 마우스 입력 | **소비**(뒤로 전파 X) | 통과(소비 X) | 소비 |
-| 키보드 포커스 | **없음** — 클릭해도 포커스 이동 X | 없음 | 가짐(클릭→포커스) |
-| 내부 인터랙션(버튼) | **있음** | 없음(본문만) | 있음 |
-| 타이틀바 / 드래그 / 자유이동 | 없음 | 없음 | 있음(8대 규칙) |
-| 수명 | 사용자 닫기 또는 TTL | 자동소멸(고정) | 사용자 닫기 |
-| 위치 | parent **상단** 고정, floating | 스코프 우측 하단 스택 | 자유 이동 |
+| 동작 | Banner | Toast | Popup |
+|---|---|---|---|
+| 마우스 | 자기 카드 영역에서 소비 | 통과 | 소비 |
+| 키보드 포커스 | 없음 | 없음 | 있음 |
+| 내부 버튼 | 있음 | 없음 | 있음 |
+| 위치·이동 | 부모 상단 고정 | 범위별 고정 스택 | 이동 가능 |
+| 수명 | 닫기 또는 TTL | 자동 소멸 | 사용자가 닫음 |
 
-배너는 **포커스를 받지 않으면서도 자기 영역의 마우스를 소비하고 내부 버튼을 갖는다.** 이 조합은 Popup 의 8대 규칙([popup.md](popup.md))·포커스 모델과 충돌하고(타이틀바·X·드래그·z-order 승격·자유이동 모두 없음), Toast 의 휘발성·입력통과([toast.md](toast.md))와도 충돌한다(배너는 입력을 소비하고 사용자가 닫을 수 있다). → **별도 개념·별도 매니저** 로 둔다. Toast 가 Popup 의 변종이 아니라 별도 매니저로 분리된 것과 동일한 논리다.
+이 차이를 유지하려고 별도 BannerManager를 둔다. popup의 타이틀바·이동·포커스 기능을 여러 옵션으로 끄거나 입력이 통과하는 toast에 버튼을 넣지 않는다.
 
 ## 포지셔닝 — Popup / Banner / Toast
 
@@ -69,7 +68,7 @@
 - X 클릭 시 배너 닫힘(사용자 행동).
 - 닫기 affordance 는 갤러리 specimen `dismiss_x()` 와 동일하게 **Ghost/Sm `IconButton` + `icons::CLOSE`(SVG line-icon)** 로 그린다 — raw 유니코드 글리프(`"✕"`)는 UI 폰트에 글리프가 없어 tofu(□)로 렌더되므로 금지(gallery parity). 색은 IconButton 의 해소색(ghost: text-secondary → hover text-primary)을 따른다. 카운트다운 숫자는 `banner_countdown_fg()` 유지.
 
-(숫자 타이포·크기·정렬, 숫자↔X 전환 표현은 디자인 수령 후 보강.)
+
 
 ## "더보기"(⋯) 컨텍스트 메뉴 — mouse-capture 배너 전용
 
@@ -126,7 +125,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - **상위 요소 배너가 뜨면 하위 요소 배너는 60% 투명**(잘 안 보이게).
 - 높이 관계: 상위 배너가 더 크면 하위는 그 뒤에 가려져 안 보이고, **하위 배너가 더 커서 뒤로 삐져나온 부분만 60% 투명** 으로 비친다.
 
-(60% 투명의 정확한 표현 — 단순 알파 / 페이드 / 블러 여부 — 과 z 단차는 디자인 수령 후 보강.)
+하위 배너 디밍은 `opacity_recessed()`를 사용한다. 별도 페이드 모션은 적용하지 않는다.
 
 ## 종류(kind)
 
@@ -136,12 +135,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 ## 발화 정책 (불가침)
 
-**배너는 사용자 직접 조작에서만 발사된다.** IPC 로 발생하는 모든 동작은 배너를 표시하지 않는다.
-
-- ✅ 사용자 행동(키보드/마우스로 유발된 상태) → 배너 발화
-- ❌ release 의 IPC/CLI/Plugin/시스템 cascade 에서 배너 발화
-
-tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 상태에 닿지 않는다, [identity](../../identity.md))과 정합하며, [popup.md](popup.md)·[toast.md](toast.md) 의 "사용자 행동에서만 발사" 와 **동일한 규칙** 이다(toast 에만 원격 연결 상태 사건이라는 허용 부류가 하나 더 있다 — [ADR-0401](../../adr/0401-remote-connection-events-may-raise-a-toast-without-a-user-action.md). 배너는 그 예외를 갖지 않는다).
+배너는 사용자 직접 조작에 대한 안내로 표시한다. release의 IPC·CLI·플러그인·시스템 작업만으로는 표시하지 않는다. [사용자와 에이전트 행동 분리](../../identity.md)를 따른다. 토스트에 허용된 원격 연결 상태 알림은 배너의 예외가 아니다.
 
 ## IPC / debug
 
@@ -152,7 +146,7 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
     셸 rect 의 출처는 hover 판정이 쓰는 것과 같은 `card_rects` 라 **직전 프레임 실측**이고,
     그래서 뜬 직후 첫 프레임에는 없다 — 배너는 popup 과 달리 자기 좌표를 모델에 들고
     있지 않고 컨테이너가 매 프레임 배치한다.
-  - `debug.banner.show` (`show --banner-id <id> --scope <token>`) — 배너 발화. `outcome`(`Shown`/`Queued`/`ResetCountdown`/`Ignored`) 반환.
+  - `debug.banner.show` (`show --banner-id <id> --scope <token>`) — 배너 발생. `outcome`(`Shown`/`Queued`/`ResetCountdown`/`Ignored`) 반환.
   - `debug.banner.close` (`close --banner-id <id>`) — id 로 닫기(표시 중이면 큐 head 승격).
   - `debug.banner.set_countdown` (`set-countdown --scope <token> --seconds <n>`) — 표시 중 TTL 배너 남은 시간 강제 설정.
   - `scope` 토큰: `view` / `workspace:<i>` / `pane:<id>` / `tab:<pane>:<i>` / `surface:<id>` ([`BannerScope::from_token`]). 반환은 별도 구조 없이 "호출 함수 정보 + 인자값" 수준.
@@ -163,7 +157,7 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
 
 - **`BannerDef`** — 정적·데이터 지향 정의(고유 id, TTL 유무, 콘텐츠 draw 함수). id 가 곧 kind. `defs::all_defs()`/`defs::find(&str)` 로 조회.
 - **`BannerState`** — 큐/TTL 단위 인스턴스(id, scope, ttl_ms, remaining_ms, `content`). `persistent`/`with_ttl`/`plugin_mesh` 생성자. `content: BannerContentSource { Host, PluginMesh{..} }` 로 콘텐츠 원천만 분기하고(host 정의 `content_fn` vs plugin egui-mesh), 큐/TTL/z-order/위치 생명주기는 host 소유 단일 지점(`BannerManager`)이 공유한다. 동적 plugin 인스턴스는 `BannerKey`(`Host(id)`/`Plugin(instance_id)`)로 키잉해 정적 host 배너와 한 큐에서 공존한다. plugin egui-mesh 배너 채널 전체는 [egui-mesh-channel.md](../../dev-guide/egui-mesh-channel.md) 의 "banner 채널(A3)".
-- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `more_menu_open_for: Option<&BannerScope>`(현재 "더보기" 메뉴가 열려 있는 스코프 — 호출자가 popup 시스템에서 조립해 넘긴다, `BannerManager` 자신은 popup 을 모른다)를 받아 `BannerDrawResult { hovered, more_clicked }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 배선([input-layer](../../architecture/input-layer.md)). `more_clicked: Option<(BannerScope, egui::Rect)>` 는 "더보기" 트리거가 클릭된 스코프 + 버튼 rect — 호출자가 이를 받아 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다. **hover/소비 zone 은 scope 전체 rect 가 아니라 실제 그려진 카드 rect** 로 한정한다 — scope 전역을 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막히기 때문. 배치용 placeholder(`banner_zone`, scope rect)와 입력 zone(카드 rect)을 분리하며, egui immediate-mode 라 카드 rect 는 직전 프레임 실측값(`card_rects`)을 1프레임 지연으로 쓴다(persistent 배너는 정적이라 비가시).
+- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `more_menu_open_for: Option<&BannerScope>`(현재 "더보기" 메뉴가 열려 있는 스코프 — 호출자가 popup 시스템에서 조립해 넘긴다, `BannerManager` 자신은 popup 을 모른다)를 받아 `BannerDrawResult { hovered, more_clicked }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 연결([input-layer](../../architecture/input-layer.md)). `more_clicked: Option<(BannerScope, egui::Rect)>` 는 "더보기" 트리거가 클릭된 스코프 + 버튼 rect — 호출자가 이를 받아 타깃 필드를 채우고 컨텍스트 메뉴 popup 을 연다. **hover/소비 zone 은 scope 전체 rect 가 아니라 실제 그려진 카드 rect** 로 한정한다 — scope 전역을 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막히기 때문. 배치용 placeholder(`banner_zone`, scope rect)와 입력 zone(카드 rect)을 분리하며, egui immediate-mode 라 카드 rect 는 직전 프레임 실측값(`card_rects`)을 1프레임 지연으로 쓴다(persistent 배너는 정적이라 비가시).
 
 모든 배너 문자열은 `t("banner.*")` 키 — `lang/{en,ko,ja}.toml` 세 파일 동시 추가([i18n](../../dev-guide/i18n.md)). 모든 색·치수는 Theme 토큰([theme.md](theme.md)).
 
@@ -172,5 +166,5 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
 - [popup.md](popup.md) — 내부 팝업 시스템(독립 기능, 포커스 가짐)
 - [toast.md](toast.md) — 휘발성 알림(info 만, 입력 통과)
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Modal/Popup/Toast/Banner 구분
-- [identity](../../identity.md) — 사용자/에이전트 행동 분리(발화 정책 근거)
+- [identity](../../identity.md) — 사용자/에이전트 행동 분리(발생 정책 근거)
 - [adr/0024-banner-fourth-overlay-concept](../../adr/0024-banner-fourth-overlay-concept.md) — 배너를 별도 4번째 개념으로 둔 결정

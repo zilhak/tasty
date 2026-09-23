@@ -87,77 +87,116 @@ plugin 은 이를 **session id 로 키잉한 부착 기록**으로 해결한다 
 - **저장 위치** — 전부 `TASTY_PLUGIN_DATA_DIR`(`~/.tasty/plugin-data/com.tasty.claude/`) 하위. 호스트가 이 디렉토리를 미리 만들어 주므로 `fs.write` 권한 없이도 쓸 수 있다. 호스트가 이 env 를 주입하지 않은 비정상 기동(`data_dir = None`)이면 등록/부착 모두 명시적 에러로 거부한다 — `~/.claude/` 나 새 경로를 조용히 쓰지 않는다.
 - IPC: `claude.profile_register`/`claude.profile_unregister`/`claude.profile_list`/`claude.profile_show`/`claude.profile_current` — CLI 서브커맨드와 1:1 대응(원칙 2, 에이전트 조작 가능성).
 - spawn 시 parent 의 살아있는 child 수가 설정 임계치를 넘으면 응답에 `warning` 필드가 실린다 — Settings › Plugin › Claude Code 에서 임계치 조정. 재사용 후보는 근거가 다른 두 목록으로 나뉜다: **`idle`**(자식이 hook 으로 완료를 직접 보고) 과 **확정 `stale`**(`confidence: confirmed` — 보고는 없었지만 전경이 셸로 복귀해 에이전트 프로세스 종료가 관측됨, 즉 hook 유실). `confidence: heuristic` 인 `stale` 은 SIGSTOP·긴 추론과 구별되지 않아 세지 않는다 — 판정 축은 [child-terminal](../../features/child-terminal/index.md) "판정 응답 필드" 참조.
-- **승인 정책 (`--permission-mode`)** — `launch`/`spawn`/`respawn`/`reboot`/`child-profile` 다섯 경로가 `--permission-mode <acceptEdits|auto|bypassPermissions|manual|dontAsk|plan>` 를 받아 기동 명령에 그대로 실어 보낸다(IPC 쪽 params 이름은 `permission_mode`). **아무것도 안 주면 플래그가 아예 안 붙어** 자식은 사용자 자신의 Claude Code 설정(`~/.claude/settings.json` 의 `permissions.defaultMode` 등)대로 뜬다 — [codex](../codex/index.md) 가 미지정을 `never` 로 떨어뜨리는 것과 갈리며, 근거는 축의 개수다: codex 는 승인을 안 물어도 샌드박스 축이 남지만 Claude Code 에는 그 두 번째 축이 없어 "안 묻는다" 가 곧 봉쇄 없는 전권이 된다([ADR-0265](../../adr/0265-child-approval-policy-is-the-callers-choice.md)). 전역 기본값은 Settings › Plugin › Claude Code 의 **자식 세션 기본 권한 모드**(기본 `inherit` = 미부착)이고 호출별 플래그가 그 호출에 한해 이긴다. 모르는 값은 조용히 전달하지 않고 거부한다. `--profile`/`--profile-file` 이 가리키는 settings JSON 이 `permissions.defaultMode` 를 정하고 있으면 `--permission-mode` 와 **동시 지정이 거부**된다(둘이 같은 것을 정한다 — `permissions.allow`/`deny` 는 축이 달라 공존한다). `reboot`/`child-profile` 에서는 그 값이 **그 호출의 resume 명령에만** 실리고 `restore.command` meta 에는 안 들어간다 — 복원은 호출자가 없는 자리에서 일어나므로 한 번 고른 정책이 이후 모든 재부팅에 눌러앉지 않는다.
+
+### 승인 정책 (`--permission-mode`)
+
+`launch`, `spawn`, `respawn`, `reboot`, `child-profile`은 `permission_mode`를 받아
+Claude 기동 명령의 `--permission-mode`로 전달한다. 허용 값은 `acceptEdits`, `auto`,
+`bypassPermissions`, `manual`, `dontAsk`, `plan`이며 다른 값은 거절한다.
+이 플러그인은 값의 의미를 다시 정의하지 않는다.
+
+우선순위는 호출별 인자 → `default_permission_mode` 설정 → 플래그 미부착이다.
+설정 기본값 `inherit`도 미부착을 뜻한다. 이 경우 사용자 자신의 Claude 설정이 적용된다.
+모드를 지정하지 않은 무인 자식은 사용자 설정에 따라 승인을 기다릴 수 있다.
+관측과 알림은 대기를 알려줄 뿐, 승인을 대신하지 않는다.
+
+프로필의 `permissions.defaultMode`와 별도 permission mode가 함께 지정되면 거절한다.
+`permissions.allow`와 `deny` 목록은 모드와 함께 사용할 수 있다.
+`reboot`와 `child-profile`의 모드는 해당 재시작에만 적용하고 `restore.command`에 넣지 않는다.
+Codex와 옵션을 억지로 맞추지 않으며, 각각의 기본값은 해당 플러그인 문서를 따른다.
 
 ### Stop-훅 게이트 레지스트리
 
-세션 종료를 막고 체크리스트를 주입하는 **게이트를 이름으로 등록**하는 계층. 게이트는 3요소로 이뤄진다 — **본문**(block 될 때 `reason` 으로 주입되는 지시), **센티넬**(모델이 종료를 선언하는 문자열), **라운드 상한**(백스톱). 위 세션 프로필 레지스트리(`profile.rs`)의 형태를 미러링하되 타입은 공유하지 않는다(`crates/tasty-plugin-claude/src/gate.rs`). 결정 배경은 [ADR-0083](../../adr/0083-stop-gate-named-registry.md).
+Stop 게이트는 턴을 끝내기 전에 확인할 본문, 종료 표시 문자열(sentinel), 반복 상한을
+이름으로 등록한 것이다. 선택 이유는 [에이전트 작업 조율](../../adr/0642-agent-coordination-and-task-views.md)을 따른다.
 
-- **등록**: `tasty claude gate-register <이름> --body-file <경로> [--sentinel <문자열>] [--rounds <n>]` — 본문 파일을 **복사본**으로 저장한다(원본이 옮겨지거나 지워져도 게이트는 살아 있다). 이미 등록된 이름이면 정의와 본문을 둘 다 덮어쓴다. 이름 규칙은 프로필과 동일(소문자/숫자/`-`, 최대 32자).
-- **해제**: `tasty claude gate-unregister <이름>` — 정의와 본문 복사본을 **둘 다** 지운다(본문만 남으면 다음 등록이 옛 본문을 조용히 덮어쓰는 것처럼 보이는 orphan 이 된다). 그 게이트의 **런타임 상태**(`checklist/gates/<이름>/` 의 마커 + 라운드)도 함께 지운다 — 남겨 두면 같은 이름으로 재등록했을 때 과거의 켜짐 상태와 라운드 카운터가 부활해, "지웠다 새로 만든 게이트" 가 이전 상태를 물려받는다. 이 정리는 실패해도 해제 자체를 실패시키지 않는다(경고 로그만 — 레지스트리에서 사라지는 것이 주 목적이고, 남은 상태는 어차피 해석되지 않는다).
-- **목록**: `tasty claude gate-list` — 등록 게이트(`user/<이름>`)와 host 기본 게이트(`host/continue-checklist`)를 함께, 각각의 실효 `sentinel`/`round_limit`, 상한의 출처(`round_limit_source`: `gate` = 정의가 직접 지정 / `settings` = 미지정이라 plugin 설정으로 폴백), 그리고 **마커 on/off**(`enabled`)를 함께 보여준다 — 게이트별 on/off 를 한 번에 보는 경로는 여기다(`checklist-status` 는 게이트 하나씩 답한다). 사용자가 host 기본 게이트와 같은 이름으로 등록했으면 그 이름은 **user 항목으로만** 나온다 — 같은 이름이 두 줄로 보이면 어느 쪽이 실효인지 목록만 봐서는 알 수 없다.
-- **부착**: `tasty claude launch|spawn|respawn|reboot --profile <게이트이름>` — 게이트 이름은 프로필 이름과 같은 평면이라 `--profile` 로 그대로 부착된다. 부착 시 만들어지는 것은 그 게이트를 지목하는 `Stop` 훅 하나뿐이다:
+| 명령 | 동작 |
+|---|---|
+| `gate-register <이름> --body-file <경로> [--sentinel <문자열>] [--rounds <n>]` | 본문을 복사해 저장. 같은 이름은 정의와 본문을 갱신 |
+| `gate-unregister <이름>` | 정의·본문·마커·반복 상태 제거. 실행 상태 정리 실패는 경고 |
+| `gate-list` | 사용자 및 내장 게이트의 실효 sentinel·상한·상한 출처·enabled 표시 |
+| `gate-show <이름>` | 정의와 본문 조회. 사용자 정의가 없으면 내장 게이트 조회 |
 
-  ```
-  if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude checklist-hook --gate <이름> || true; fi
-  ```
+각 명령은 `tasty claude` 뒤에 붙이며 대응 IPC는 `claude.gate_*`다. 전용 GUI는 없다.
+이름은 소문자·숫자·`-`로 최대 32자다. 등록 본문에는 비어 있지 않은 실효 sentinel이
+있어야 하며 `--rounds`는 1 이상이다. 프로필과 게이트는 같은 이름을 사용할 수 없으며
+양쪽 등록 경로에서 충돌을 검사한다. 사용자 정의가 같은 이름의 내장 게이트를 대체하면
+목록에는 실효 사용자 항목만 표시한다.
 
-  게이트의 3요소(본문·센티넬·상한)는 이 명령에 담기지 않는다 — 훅이 발화할 때 `--gate` 로 레지스트리를 다시 읽으므로, 게이트를 재등록해 본문을 고치면 **재부착 없이** 다음 발화에 반영된다. 명령 문자열은 `install.rs::tasty_guarded_command` 한 곳에서만 만들어진다(형태가 두 경로로 갈리는 것을 구조로 막는다). 게이트 이름이 셸 명령에 그대로 들어가는데 안전한 이유는 short-name 규칙(소문자/숫자/`-`)이 셸 메타문자를 원천 배제하기 때문이다 — 이름 규칙을 느슨하게 바꾸려면 인용/이스케이프를 함께 손봐야 한다.
-- **조합**: `--profile gate-a,gate-b` 처럼 게이트 둘, 또는 `--profile mygate,myprofile` 처럼 게이트와 프로필을 섞어 부착하면 `profile_merge` 의 `hooks` concat 규칙에 따라 **Stop 훅이 각각 등록**된다(그래서 라운드 상태·마커가 게이트별이다).
-- **조회**: `tasty claude gate-show <이름>` — 정의(센티넬·상한)와 본문 텍스트를 함께. 사용자 등록이 없으면 host 기본 게이트로 폴백하고, 그때 `owner` 는 실제 출처를 그대로 반영한다(`host`).
-
-**등록 시점 검증**
-
-- **본문은 그 게이트의 실효 센티넬을 포함해야 한다.** 없으면 거부 — 센티넬이 본문에 없으면 모델이 종료를 선언할 방법을 안내받지 못해 라운드 상한까지 무조건 도달하고, 게이트가 "N턴 강제 연장" 장치로 변질된다. host 기본 본문에 대해서는 같은 불변식을 로케일별 컴파일 타임 테스트가 강제한다(사용자 본문에는 컴파일 타임 테스트를 걸 수 없어 등록 시점 런타임 검증으로 옮긴 것).
-- **빈 센티넬 거부** — 빈 문자열은 모든 메시지에 매칭되어(`str::contains("")` 는 항상 참) 게이트가 첫 라운드에 통과한다.
-- **`--rounds` 는 1 이상.**
-- **동명 세션 프로필과 충돌하면 거부** — 게이트를 등록하면 동명 프로필로 그대로 부착 가능해지므로 두 레지스트리는 **이름 공간을 공유**한다. 같은 이름이 양쪽에 생기면 조용히 한쪽이 가려지므로 등록 시점에 **양방향으로** 거부한다(`gate-register` 는 동명 registered 프로필을, `profile-register` 는 동명 게이트를).
-- `data_dir` 이 없는 비정상 기동이면 등록/해제는 명시적 에러. **조회(list/show)는 host 기본 게이트만 반환**한다 — 조회는 저장소를 요구하지 않는다.
-
-**저장 위치** — `TASTY_PLUGIN_DATA_DIR` 하위, 프로필 레지스트리와 같은 "사용자 원본 vs tasty 생성물" 분리 방침:
+데이터는 `TASTY_PLUGIN_DATA_DIR` 아래에 둔다.
 
 | 경로 | 내용 |
 |---|---|
-| `gates/registered/<이름>.json` | 게이트 정의 — `sentinel`(등록 시 미지정이면 기본 센티넬이 실체화된다: 정의만 보고도 실효값을 알 수 있어야 한다) · `round_limit`(미지정이면 키 자체가 없다) |
-| `gates/bodies/<이름>.md` | 본문 원본의 복사본 |
+| `gates/registered/<이름>.json` | 실효 sentinel, 선택한 round_limit |
+| `gates/bodies/<이름>.md` | 등록한 본문의 복사본 |
+| `checklist/gates/<이름>/enabled.marker` | 재시작 없이 바꾸는 활성 상태 |
+| `checklist/gates/<이름>/rounds/<session_id>.json` | 게이트·세션별 반복 수 |
 
-**host 기본 게이트는 파일이 아니라 코드다** — `continue-checklist` 는 데이터 디렉토리에 실체화되지 않고 조회 함수로만 존재한다(본문 = `claude.checklist.body` 번역 키, 센티넬 = 기본 센티넬, 상한 = 미지정 → 설정 폴백). 실체화하면 사용자가 지웠을 때 되살릴 경로가 없어진다(`install.rs::MANAGED_HOOKS` 와 같은 형태). 사용자가 같은 이름으로 등록하면 그쪽이 이긴다.
+내장 `continue-checklist`는 파일로 만들지 않고 코드와 번역 카탈로그에서 제공한다.
+데이터 디렉터리가 없으면 등록·해제는 실패하고 조회는 내장 게이트만 반환한다.
 
-- IPC: `claude.gate_register`/`claude.gate_unregister`/`claude.gate_list`/`claude.gate_show` — CLI 서브커맨드와 1:1 대응(원칙 2). GUI 노출은 없다.
+`launch`, `spawn`, `respawn`, `reboot`의 `--profile <게이트이름>`으로 부착한다.
+`--profile gate-a,gate-b`처럼 여러 게이트나 일반 프로필을 함께 사용할 수 있다.
+등록 프로필 → 등록 게이트 → 내장 게이트 → 내장 훅 토큰 순서로 이름을 해석한다.
+
+부착 명령에는 `checklist-hook --gate <이름>`만 넣고 본문·상한은 넣지 않는다.
+훅이 발화할 때 다시 읽으므로 재등록한 내용이 재부착 없이 반영된다.
+이름이 셸 명령에 들어가므로 허용 문자를 넓히면 인용·이스케이프도 함께 바꿔야 한다.
+명령 문자열은 `install.rs::tasty_guarded_command`를 공유한다.
 
 ### Stop-훅 게이트 판정
 
-등록된 게이트를 실제 `Stop` 훅 발화에서 집행하는 층(`crates/tasty-plugin-claude/src/checklist.rs`). 판정 자체는 4분기 그대로고(아래 continue-checklist 절), 3요소(본문·센티넬·상한)를 **게이트별로** 가져온다.
+`checklist-hook`은 선택한 게이트의 sentinel·본문·상한을 읽고 다음 순서로 판단한다.
 
-- **어느 게이트인지는 명령 인자로 온다** — `tasty claude checklist-hook --gate <이름>`. Stop payload(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)에는 게이트를 식별할 정보가 없어서, 부착 시점에 훅 명령 문자열에 박는 것이 유일한 경로다. `--gate` 는 optional 이고 기본값이 `continue-checklist` 라, `--gate` 없이 이미 설치돼 있는 훅 명령도 그대로 host 기본 게이트로 동작한다.
-- **라운드 상태 경로**: `TASTY_PLUGIN_DATA_DIR/checklist/gates/<게이트>/rounds/<session_id>.json`. 키가 (게이트 × 세션)인 이유는 **게이트를 둘 이상 동시에 부착할 수 있기 때문**이다 — `--profile a,b` 의 머지 규칙상 `hooks` 배열은 concat 이라 두 게이트의 Stop 훅이 각각 등록되고 각각 발화한다. 게이트를 구분하지 않으면 둘이 한 카운터를 읽고 써서 서로의 라운드를 깎는다(세션 축을 도입한 것과 같은 이유가 한 축 위로 올라온 것).
-- **라운드 상한 우선순위**: 게이트 정의(`--rounds`) **>** Settings(게이트 기본 라운드 상한) **>** 3. 명시 지정이 전역 기본값을 이기는 일반 원칙이다 — `--rounds 5` 로 등록한 게이트가 Settings 값에 조용히 덮이면 등록 인자가 무의미해진다. **이 폴백은 게이트 출처(host 기본 / 사용자 등록)를 구분하지 않는다** — 상한을 지정하지 않은 게이트는 어느 쪽이든 Settings 값으로 내려가고, `gate-list` 의 `round_limit_source` 가 그때 `settings` 로 나온다. Settings 항목의 storage key 이름(`continue_checklist_round_limit`)은 host 기본 게이트 전용처럼 보이지만 **의미는 전 게이트 공용 기본값으로 재정의됐다**(사용자에게 보이는 라벨이 "게이트가 자체 값을 지정하지 않았을 때의 기본값" 이라고 안내한다; 키 자체는 조정해 둔 값 유실 방지를 위해 그대로 뒀다). 키 이름대로 좁게 해석해 사용자 게이트를 곧장 3 으로 떨어뜨리면 매 게이트마다 `--rounds` 를 명시하지 않는 한 **사용자 게이트의 기본 상한을 조절할 수단이 없어지므로** 그렇게 하지 않는다. host 기본 게이트도 상한을 지정하지 않아 같은 폴백을 타므로 **기존 동작이 그대로 보존**된다.
-- **본문의 `{{goal}}` placeholder (opt-in)**: 본문에 `{{goal}}` 토큰이 있으면, 훅이 그 자리를 **발화 surface 의 goal 절**로 치환한 결과를 `reason` 으로 낸다. goal 은 훅이 직접 `memory.goal_get` 으로 읽는다 — 본문에 "goal 을 조회해라" 라고 적어 모델에게 맡기면 게이트의 핵심 판정 근거 획득이 모델의 성실성에 의존하게 되고, 게이트의 존재 이유(모델의 자기판단을 믿지 않는다)와 어긋난다. 3분기다: goal 있음 → 토큰 자리에 goal 절(`claude.checklist.goal_clause`, goal 텍스트 삽입) · goal 없음 → 토큰이 있던 **줄째** 제거(나머지 본문은 그대로 = 토큰 도입 전과 바이트 단위로 동일) · **토큰 미포함 본문 → 완전 무변화**(등록 게이트 하위호환 — 저자 본문에 예고 없이 남의 문장이 붙지 않는다). goal 조회 IPC 는 **block 이 확정되고 그 본문에 토큰이 있을 때만** 하므로, 통과하는 발화와 토큰 없는 게이트는 IPC 를 한 번도 하지 않는다. 조회가 실패하면(호스트 IPC 오류, surface id 부재 등) goal 없음과 동일하게 취급한다 — 이 모듈의 "불확실하면 통과/무시" 방침 그대로다. surface id 는 `checklist_hook_args` 의 `surface`(u32, optional) 인자로 오는데, CLI 층이 미지정 시 `TASTY_SURFACE_ID` env 로 채우므로 **`--surface` 없이 이미 설치돼 있는 훅 명령 문자열도 그대로 동작한다**(`--gate` 가 지킨 하위호환과 같은 성질). 결정 근거는 [ADR-0088](../../adr/0088-stop-gate-goal-aware-continuation.md).
-- **본문 해석**: 등록 게이트 본문은 **매 발화마다 파일에서 읽는다** — 재등록으로 갱신한 본문이 세션 재기동 없이 반영되어야 한다(마커를 매 발화마다 확인하는 것과 같은 취지). host 기본 게이트 본문만 기동 시 1회 해석해 둔 lang 문자열 캐시를 계속 쓴다.
-- **미등록 게이트는 조용히 통과** — 등록이 지워졌는데 훅 명령이 남아 있는 세션은 정상적인 상태다. 여기서 에러를 내면 그 세션이 종료 불가가 되므로, 이 모듈의 기존 "불확실하면 통과" 방침을 그대로 따른다. 상태 파일도 만들지 않고, Settings 조회 IPC 도 하지 않는다.
-- **SessionEnd 정리는 게이트 전체 순회** — 전역 `session-end` 훅은 `MANAGED_HOOKS` 로 항상 설치되고 게이트와 무관하게 발화해서 호출부가 게이트를 알 수 없다. 그래서 `checklist/gates/*/rounds/<session_id>.json` 을 전부 지운다(다른 세션 파일은 건드리지 않는다).
-- **legacy 경로** — 게이트 축 이전의 `checklist/rounds/<session_id>.json` 은 읽지도 쓰지도 않는다. 라운드 상태는 세션 수명과 함께 사라지는 휘발성 데이터라 마이그레이션하지 않지만, 구버전이 남긴 파일이 orphan 으로 남지 않도록 **session-end 정리는 이 경로도 함께 지운다**.
+1. 저장된 prompt ID가 다르거나 상태가 없으면 반복 수를 0으로 본다.
+2. 마지막 응답에 sentinel이 있으면 통과한다.
+3. 반복 상한에 도달했으면 통과한다.
+4. 나머지는 `decision: block`과 본문을 reason으로 반환하고 반복 수를 1 늘린다.
 
-**Stop 훅 여러 개가 동시에 block 할 때 (실측)** — 게이트 둘을 한 세션에 부착하는 시나리오의 체감이 여기 달려 있어 Claude Code 로 직접 재현했다(`Stop` 에 독립 훅 2개를 등록하고 각각 다른 `reason` 으로 block):
+상한은 게이트의 `--rounds` → `continue_checklist_round_limit` 설정 → 3 순서다.
+설정 키에 continue_checklist라는 이름이 남아 있지만, 상한을 지정하지 않은 사용자
+게이트에도 같은 기본값을 적용한다. `round_limit_source`는 gate 또는 settings로 출처를 표시한다.
+등록 본문은 매번 파일에서 읽고 내장 본문만 플러그인 기동 시 읽은 번역을 사용한다.
 
-- 두 훅은 **매 `Stop` 발화마다 둘 다 발화한다**(발화 횟수가 lockstep 으로 일치).
-- **두 `reason` 이 모두 모델에 전달된다** — 각 훅이 서로 다른 토큰을 최종 답변에 넣으라고 지시했을 때 두 토큰이 모두 답변에 나타났다. 한 훅만 채택되는 방식이 아니다.
-- **하나라도 block 이면 턴이 이어진다** — 상한이 다른 두 훅(1회 / 3회)을 걸면, 먼저 상한에 도달한 쪽이 통과(`{}`)로 돌아선 뒤에도 아직 block 하는 쪽 때문에 세션이 계속됐고, **둘 다 통과한 발화**에서 끝났다.
-- 두 번째 발화부터 두 훅 모두 `stop_hook_active=true` 를 받는다(플러그인은 이 값을 sanity check 로만 쓰고 판정에 쓰지 않는다).
+`--gate`를 생략하면 continue-checklist를 사용한다. 미등록 게이트, 꺼진 마커,
+세션·prompt ID 부재, stdin 파싱 실패에서는 차단하지 않는다.
+미등록 훅은 상태 파일을 만들거나 설정 조회를 보내지도 않는다.
+Stop payload에는 게이트 이름이 없으므로 이름은 명령 인자로 전달한다.
+`stop_hook_active`는 입력 부재와 false를 구분하기 위해 CLI 스키마에서 string으로 받고
+핸들러에서 해석한다. 판정 자체는 위 반복 수와 sentinel을 사용한다.
+
+게이트 여러 개가 붙으면 각각의 Stop 훅이 실행되고 각각의 reason이 전달될 수 있다.
+하나라도 block이면 계속되므로 한 게이트가 상한에 도달해도 다른 게이트는 계속 막을 수 있다.
+반복 수를 게이트·세션별로 분리하는 이유다.
+
+#### 본문에 goal 넣기
+
+본문에 `{{goal}}`이 있고 block을 반환할 때만 훅이 `memory.goal_get`을 호출한다.
+goal이 있으면 현재 언어의 goal 절로 바꾸고, 없거나 조회에 실패하면 토큰이 있는 줄을
+제거한다. 토큰이 없는 본문은 바꾸지 않는다. 번역에서도 토큰과 삽입 자리를 유지해야 한다.
+
+목표는 서피스 범위에 둔다. CLI가 쓰고 플러그인은 읽기만 하며 부모의 목표를 자동 상속하지 않는다.
+`surface` 인자를 생략하면 CLI가 `TASTY_SURFACE_ID`를 사용하므로 옛 훅 명령도 동작한다.
+이 지시는 목표 범위에서 사용자 판단 없이 진행할 수 있는 일을 계속하도록 안내한다.
+목표 충족 자체를 계산하거나 작업 성공을 보증하는 검사는 아니다.
 
 ### continue-checklist 세션 프로필
 
-**게이트 프리미티브 위의 host 기본 인스턴스 하나**다 — 고유명으로 특별 취급되는 기능이 아니라, 위 게이트 레지스트리가 host 출처로 내장한 게이트(`host/continue-checklist`) 이고 부착 경로도 등록 게이트와 완전히 같다. `--profile continue-checklist` 로 부착하면(사용자가 같은 이름으로 프로필을 직접 등록했으면 그쪽이 우선한다) `Stop` 훅으로 `tasty claude checklist-hook --gate continue-checklist` 를 심는다 — 전역 `install`(위 "Claude Code 훅 통합" 절의 9종)에는 포함되지 않으며, 부착된 세션에서만 발화한다. 아래 설명은 이 기본 인스턴스의 값(본문·센티넬·상한 폴백)을 기준으로 하며, 등록 게이트는 같은 자리에 자기 값을 쓴다.
+내장 게이트 `host/continue-checklist`를 `--profile continue-checklist`로 붙인다.
+전역 install에는 포함되지 않으며 부착한 세션에서만 동작한다.
+기본 sentinel은 `[[TASTY-CHECKLIST-DONE]]`이다.
+본문은 요청 충족 여부, 실제 검증 여부, 남은 작업을 확인하고 선택적으로 goal을 덧붙인다.
+goal이 없으면 범위를 넓혀 계속 진행하라는 지시는 하지 않는다.
 
-- **동작**: 매 `Stop` 훅 발화마다 stdin JSON(`session_id`/`prompt_id`/`stop_hook_active`/`last_assistant_message`)을 읽어 4분기로 판단한다: ① 저장된 `prompt_id` 와 다르면(또는 저장 상태 없음) 라운드 0 으로 취급 ② `last_assistant_message` 에 **이 게이트의** 센티넬(host 기본값 `[[TASTY-CHECKLIST-DONE]]`)이 포함되면 통과 ③ 라운드 수가 상한에 도달했으면 통과(백스톱) ④ 그 외엔 `{"decision":"block","reason":"<체크리스트 본문>"}` 을 반환하고 라운드 +1. `reason` 본문은 `t("claude.checklist.body")`(lang 파일, 3개 언어)로 활성 locale 로 해석된 문자열이며 3개 범용 항목(결과가 요청을 충족했는지 재검토 / 코드·설정 변경을 실제로 검증했는지 / 후속 작업 유무 명시) · `{{goal}}` placeholder 단락 · 센티넬 포함 지시로 구성된다. 3번 항목은 **공시 요구**지 완료 요구가 아니라서 "남은 작업 A, B 가 있습니다" 라고 밝히기만 해도 충족된다 — goal 절이 그 뒤에서 "밝힌 남은 작업을 goal 에 비추어 판정하고, 사용자 판단이 필요 없고 스스로 진행 가능한 것은 여기서 끝내지 말고 진행하라" 는 후속 지시를 준다(3번 항목 문구 자체는 바꾸지 않는다). **goal 이 설정돼 있지 않으면 그 단락이 통째로 사라져 기존 동작 그대로다** — goal 부재는 사용자가 자율 진행 범위를 선언하지 않았다는 뜻이므로 계속-진행을 지시할 근거가 없다. goal 은 `tasty memory goal set "<문장>" --surface <id>` 로 설정한다([memory](../../design/systems/memory.md)).
-- **라운드 상한 백스톱이 필요한 이유**: Claude Code 자체엔 `Stop` 훅의 block 을 무한 반복해도 막아주는 host 측 안전장치가 없다(실측 확인 — 모델이 루프에 갇혔음을 스스로 인지해도 탈출하지 못했다). 상한은 Settings › Plugin › Claude Code 의 게이트 기본 라운드 상한 항목(기본 3)으로 노출된다 — 게이트가 자체 `--rounds` 를 지정하면 그쪽이 이긴다.
-- **라운드 상태 저장**: `TASTY_PLUGIN_DATA_DIR/checklist/gates/continue-checklist/rounds/<session_id>.json` — (게이트 × 세션)으로 키잉한다(위 "Stop-훅 게이트 판정" 절). 해당 세션의 `SessionEnd` 훅(아래 "Claude Code 훅 통합" 절의 9종 중 하나, 이 프로필과 무관하게 항상 발화)이 오면 상태 파일을 정리한다.
-- **마커 파일 게이트 (게이트별)**: `TASTY_PLUGIN_DATA_DIR/checklist/gates/<게이트>/enabled.marker` — 존재 여부로 그 게이트의 발동을 켜고 끈다. 프로필 attach(=훅 등록)는 Claude Code 프로세스 기동 시점에 고정되지만, 마커는 매 훅 발화마다 파일 존재를 새로 확인하므로 재기동 없이 즉시 토글된다. 마커가 게이트별인 이유도 이 지점이다 — 게이트를 여럿 붙여 두고 마커가 하나면 즉시 토글이 전부-아니면-전무가 되어 게이트를 나눈 의미가 토글 축에서만 사라진다. 라운드 상태와 같은 `gates/<게이트>/` 아래 두어 게이트 하나의 런타임 상태가 한 디렉토리에 모인다.
-  - `checklist-enable [--gate <이름>]` / `checklist-disable [--gate <이름>]` / `checklist-status [--gate <이름>]` CLI(및 대응 IPC)가 마커를 만들고 지우고 조회하는 제어된 진입점이다 — raw `touch`/`rm` 로 직접 조작할 필요가 없다. **`--gate` 를 생략하면 `continue-checklist`** 라서 게이트 축이 생기기 전의 무인자 호출이 그대로 동작하고, `checklist-status` 응답도 기존과 같은 `{ "enabled": bool }` 이다.
-  - **enable/disable 은 미등록 게이트 이름을 거부한다**(오타로 만든 마커 디렉토리가 `gate-list` 에도 안 보이는 유령 상태로 쌓이는 것을 막는다). 반대로 **조회(`checklist-status`)와 발동(훅) 경로는 관대하다** — status 는 `enabled: false` + `registered: false` 로 답하고, 훅은 조용히 통과한다(등록이 지워졌는데 훅 명령이 남은 세션에서 에러를 내면 그 세션이 종료 불가가 된다).
-  - **legacy 마커 1회 이관**: 게이트 축 이전 경로(`checklist/enabled.marker`)에 마커가 있으면 `gates/continue-checklist/enabled.marker` 로 옮기고 원본을 지운다. enable/disable/status/훅 어느 진입점을 타도 수행되므로 명령을 한 번도 부르지 않고 훅만 도는 인스턴스에서도 이관된다. 라운드 상태와 달리 마커는 사용자가 명시적으로 켜 둔 설정이라, 업그레이드하면서 조용히 꺼지면 회귀로 보인다.
-- **안전한 통과 원칙**: 마커 부재, `session_id`/`prompt_id` 누락, stdin 파싱 실패 등 불확실한 조건은 전부 block 하지 않고 조용히 통과시킨다 — 판단 불가 상태에서 세션을 가두지 않는 것을 우선한다.
-- IPC: `claude.checklist_hook` — `hook_args` 와 별개 파라미터 스키마(`checklist_hook_args`). Stop payload 필드는 전부 stdin 자동 채움이고, `gate` 만 stdin 에 없어 명령 인자로 받는다(기본값 `continue-checklist`). `stop_hook_active` 는 `bool` 이 아니라 `string` 타입으로 선언돼 있다 — `CliArgType::Bool` 은 부재를 표현하지 못해(`extract_value` 가 항상 `Some(false)` 를 반환) `stdin_field` 매핑과 함께 쓰면 stdin 값이 절대 반영되지 않는다(핸들러가 `"true"`/`"false"` 문자열을 직접 비교). `claude.checklist_enable`/`claude.checklist_disable`/`claude.checklist_status` — `checklist_gate_args`(`--gate`, optional, 기본값 `continue-checklist`), 그 게이트의 마커 파일 생성/삭제/조회. status 응답은 `{ "enabled": bool, "registered": bool }` — `enabled` 는 기존 그대로이고, `registered`(그 이름의 게이트가 실재하는가 — host 기본 게이트도 `true`)는 조회가 오타를 거부하지 않는 대신 알아볼 수 있게 하는 필드다. `data_dir` 이 없는 비정상 기동이면 enable/disable 은 명시적 에러로 거부하고(profile.rs 결정 3과 동일 방침), status 는 `marker_present` 와 동일하게 `enabled: false` 로 안전 폴백한다(에러 아님 — 조회는 항상 응답 가능해야 한다).
+`checklist-enable`, `checklist-disable`, `checklist-status`에 `--gate <이름>`을 붙여
+마커를 제어한다. 생략하면 continue-checklist다. enable/disable은 미등록 이름을 거절하고,
+status는 `{ enabled: false, registered: false }`로 답한다. 데이터 디렉터리가 없을 때
+변경은 실패하고 status는 enabled false로 응답한다.
+
+마커는 매 훅마다 확인하므로 이미 실행 중인 세션에도 즉시 적용된다.
+옛 `checklist/enabled.marker`는 내장 게이트 위치로 한 번 옮긴다.
+SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고 옛 `checklist/rounds/`의
+같은 세션 파일도 정리한다. 옛 반복 수는 읽거나 이전하지 않는다.
 
 ### Claude Code 훅 통합
 
@@ -206,21 +245,46 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 
 ### API 에러 뒤 자동 재개 (`auto_resume.rs`)
 
-API 에러로 끝난 턴(위 `StopFailure`)을 설정된 지연 뒤에 재개 문구 하나로 이어 준다. **기본 꺼짐**이다 — 사용자 세션에 텍스트를 넣는 기능이라 opt-in 이다. 근거·대안·재검토 조건은 [ADR-0521](../../adr/0521-claude-auto-resume-after-an-api-error-is-opt-in-and-judged-at-send-time.md).
+`StopFailure`로 끝난 턴에 일정 시간 뒤 재개 문구를 보낸다. 기본은 꺼짐이다.
+선택 이유는 [에이전트 상태와 완료 전달](../../adr/0641-agent-state-and-completion.md)을 따른다.
 
-| 설정(`storage_key`) | 종류 | 기본 | 뜻 |
-|---|---|---|---|
-| `auto_resume_enabled` | toggle | `false` | 켜야 동작한다 |
-| `auto_resume_delay_secs` | number(최소 1, 최대 86400) | 10 | 턴이 끝난 뒤 재개까지 기다리는 초. 범위 밖 값은 코드가 다시 자른다(설정 파일을 손으로 고친 경우) |
-| `auto_resume_max_attempts` | number(최소 1) | 5 | 연속으로 보내는 재개 문구 수의 상한 |
+| 설정 키 | 기본값 | 범위와 의미 |
+|---|---|---|
+| `auto_resume_enabled` | `false` | 자동 재개 사용 여부 |
+| `auto_resume_delay_secs` | 10 | 1~86400초. UI와 코드 모두 범위를 제한 |
+| `auto_resume_max_attempts` | 5 | 연속 재개 횟수, 최소 1 |
 
-- **대상 에러**: `overloaded` · `server_error` 뿐이다. `rate_limit` 은 제외한다(해제가 분~시간 단위라 몇 초 뒤 재개는 다시 실패한다). 인증·과금·요청 형식·출력 한도 등은 다시 보내도 같아 제외한다. 서브에이전트(`agent_id` 가 실린)의 실패는 메인 턴이 계속되므로 예약하지 않는다.
-- **예약**: `stop-failure` 가 오면 설정을 읽어 켜짐 · 대상 에러일 때만 만기 시각을 적는다(같은 surface 의 예약은 덮어쓴다). 새 턴(`prompt-submit` · `session-start` · `active`) · 성공 `stop` · `session-end` 가 예약을 지운다 — 사람이 먼저 입력하면 그 입력의 `prompt-submit` 이 지운다. hook 핸들러는 잠들지 않고, 만기는 전용 스레드 `claude-auto-resume`(500 ms 주기)가 처리한다.
-- **보내기 직전 확인**(전부 참이어야 보낸다): 설정이 여전히 켜짐(예약 뒤 끄면 안 나간다) · `terminal.state` 가 `idle` · 전경이 `claude` 이고(대소문자 무시, 끝의 `.exe` 는 떼고 비교 — Windows 의 `claude.exe`) pid 가 예약 때와 같음 · **실패한 턴이 시작된 뒤 사용자 입력이 없음** · 연속 상한 미만. 마지막으로 예약 이후 턴 경계가 없었는지 한 번 더 본다.
-- **사용자 입력 가드**: `surface.is_typing` 의 `idle_seconds`(마지막 사용자 입력 뒤 경과)를 그 턴의 `prompt-submit` 이후 경과와 견준다 — 작으면 입력창에 초안이 있을 수 있으므로 취소한다. `typing`(최근 5 초)만 보면 초안을 쓰다 멈춘 사용자를 놓친다. 이 조건을 통과했는데 `typing` 이 참이면 5 초 미루고 시도 수를 쓰지 않는다. 사용자 입력은 GUI 의 키보드·IME·붙여넣기(단축키·명령 팔레트)만 기록하므로 에이전트의 `send`/`tell` 은 이 가드에 걸리지 않고, 붙여넣은 초안은 걸린다([ADR-0560](../../adr/0560-paste-is-user-input-and-is-recorded-where-both-paste-paths-meet.md)). 조회가 실패하면 입력이 있었던 것으로 본다.
-- **제출**: `terminal.tell`(본문 write 확인 → 정착 지연 → Enter, 원격 attach 점유 surface 거절). 거절되면 다시 걸지 않는다. 문구는 i18n 키 `claude.auto_resume.message` 고정이다.
-- **상한**: 연속으로 보낸 수가 상한에 닿으면 보내지 않고 `notification.create` 로 한 번 알린다(i18n `claude.auto_resume.limit_*`). 계수는 성공 `stop` 과 새 세션에서 0 이 되고, 재개 문구 자신의 `prompt-submit` 은 계수를 지우지 않는다. 가짜 서버처럼 매번 실패하면 요청은 처음 1 + 재개 상한만큼이다.
-- **흔적**: 보낼 때마다 `tracing::info!` 한 줄과 surface meta `claude-auto-resume-count`(연속 재개 수 — 성공 턴 · 새 세션 · 세션 종료가 지움)를 남긴다. 부모 완료 로그에는 실패한 턴마다 에러 종류가 붙은 완료 줄이 이미 가므로 따로 쓰지 않는다.
+`overloaded`와 `server_error`만 예약한다. rate limit·인증·과금·잘못된 요청·출력 한도
+오류는 자동 재개하지 않는다. `agent_id`가 있는 서브에이전트 실패도 예약하지 않는다.
+이 분기의 외부 payload 근거는 Claude Code 2.1.280 조립부의 정적 확인이며, 서브에이전트
+API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니다.
+
+같은 서피스의 새 예약은 이전 예약을 덮는다. 새 턴, 성공 Stop, 세션 종료는 예약을 지운다.
+전용 스레드가 500ms마다 만기를 확인하므로 훅 핸들러는 지연 시간 동안 기다리지 않는다.
+시계 범위를 넘는 예약은 만들지 않는다.
+
+보내기 직전에 다음을 다시 확인한다.
+
+1. 설정이 켜져 있고 `terminal.state`가 idle이다.
+2. 전경 이름이 Claude이고, 예약 때 PID를 얻었다면 지금도 같은 PID다.
+   이름은 대소문자를 무시하고 `.exe` 접미사를 제거한다.
+3. 실패한 턴 시작 이후 사용자 입력이 없었다. 턴 시작을 모르면 예약 시각부터 확인한다.
+4. 연속 시도 수가 상한보다 작고, 예약 후 새 턴으로 바뀌지 않았다.
+
+입력 확인은 `surface.is_typing`의 `idle_seconds`를 사용한다. 키보드·IME·붙여넣기
+입력을 포함하고 에이전트의 send/tell은 포함하지 않는다. 초안을 썼다가 지운 경우도
+취소한다. 조회에 실패해도 보내지 않는다. 이 조건을 통과했지만 지금 `typing`이면
+5초 미루며 시도 수를 쓰지 않는다.
+
+문구는 현재 언어의 `claude.auto_resume.message`로 고정한다. `terminal.tell`로 본문 쓰기를
+확인한 뒤 잠시 기다리고 Enter를 보낸다. attach 점유 등으로 거절되면 다시 예약하지 않는다.
+본문과 Enter 사이에 사용자가 입력할 가능성까지 없애는 원자적 제출은 아니다.
+
+상한에 닿으면 보내지 않고 `notification.create`로 한 번 알린다.
+성공 턴과 새 세션은 계수를 초기화하지만 자동 재개 자신의 `prompt-submit`은 초기화하지 않는다.
+전송 수는 `claude-auto-resume-count` meta와 로그에 남기며 성공·새 세션·세션 종료 때 meta를 지운다.
+부모에게는 실패 턴의 완료 로그가 이미 전달되므로 별도 자동 재개 로그를 더 쓰지 않는다.
+그 완료 문구의 '입력 대기' 표현은 재개가 예약됐어도 같으며 실제 성공을 뜻하지 않는다.
 
 ### PTY 에러 스캔 (`claude-error`) 범위
 
@@ -252,7 +316,7 @@ API 에러로 끝난 턴(위 `StopFailure`)을 설정된 지연 뒤에 재개 �
 | 조건 | 왜 |
 |---|---|
 | PTY 출력이 **문턱 이상 전혀 변하지 않음** — 화면에 에러 줄이 있으면 **30초**, 없으면 **120초** | 재시도 중에는 시도 횟수·백오프 카운트다운이 계속 그려져 출력이 흐른다. 응답 없이 매달리면 출력이 완전히 멈춘다. 에러가 없는 정적은 보강 증거가 없어(긴 추론과 관측상 구별되지 않는다) 더 긴 문턱을 요구하며, 그 값은 호스트가 자식을 조용하다고 부르기 시작하는 문턱(`CHILD_OUTPUT_SILENCE`, `src/core/state/child_liveness.rs`)에 맞췄다. 비교는 dedupe 스니펫(앞 200자)이 아니라 **텍스트 전체 지문**으로 한다 — 뒤에 출력이 붙어도 앞 200자는 그대로라, 스니펫으로 보면 재시도를 정지로 오판한다 |
-| `terminal.state`가 **`active` 또는 `stale`** | `idle`/`needs_input`/`exited`면 턴이 이미 끝났고 그 사건은 완료 알림 3형제(`claude-idle`/`needs-input`/`process-exit`)가 이미 부모에게 알렸다 — 같은 사건에 알림이 두 번 가지 않게 막는다. 반면 **`stale`에는 그런 완료 알림 경로가 없다**(그 값이 나온다는 것 자체가 훅이 유실됐다는 뜻이다) — `confidence`가 `confirmed`든 `heuristic`든 알린다: 승인 대기는 전경이 여전히 `claude`라 휴리스틱 쪽으로 판정되므로 확정만 알리면 정작 이 경로가 존재하는 이유인 사고를 못 잡는다 |
+| `terminal.state`가 **`active` 또는 `stale`** | `idle`/`needs_input`/`exited`면 턴이 이미 끝났고 그 사건은 완료 알림 3형제(`claude-idle`/`needs-input`/`process-exit`)가 이미 부모에게 알렸다 — 같은 사건에 알림이 두 번 가지 않게 막는다. 반면 **`stale`에는 그런 완료 알림 경로가 없다**(훅 유실이나 긴 무출력 구간에서 나올 수 있다) — `confidence`가 `confirmed`든 `heuristic`든 알린다: 승인 대기는 전경이 여전히 `claude`라 휴리스틱 쪽으로 판정되므로 확정만 알리면 정작 이 경로가 존재하는 이유인 사고를 못 잡는다 |
 
 노이즈 상한: 한 정적 구간당 1회(출력이 재개되면 해제), 그리고 surface당 최소 5분 간격. 오탐(긴 추론 중인 자식)은 이 문턱·상한으로 누르고 받아들인다 — 미탐은 부모가 영원히 기다리는 비용이라 대가가 비대칭이다. 새 턴 신호(`prompt-submit`/`session-start`/`active`)는 dedupe와 함께 정적 구간 측정도 리셋하지만 쿨다운은 유지한다(턴을 넘나드는 반복 에러의 빈도 상한이라 턴 경계에서 풀리면 무의미).
 

@@ -1,10 +1,14 @@
-# 헤드리스 IPC 표면 — 무엇이 답하고, 무엇이 왜 없는가
+# 헤드리스 IPC 지원 범위
 
-헤드리스는 **CLI 전용 실행 형태**다. [`docs/identity.md`](../identity.md) 원칙 2 는 에이전트
-기능이 IPC + CLI 양면으로 동작할 것을 요구하므로, 헤드리스에서 메서드가 없다는 것은
-성능이나 편의 문제가 아니라 **원칙의 문제**다. 다만 창이 없으면 답 자체가 정의되지 않는
-메서드도 있다. 이 문서는 그 둘을 메서드별로 가른다 — "이 표면은 GUI 가 필요하다" 같은
-뭉뚱그림을 두지 않는 것이 이 문서의 목적이다.
+헤드리스는 GUI 없이 IPC·CLI와 attach 서버를 실행한다. 창 없이 처리할 수 있는 기능은 두 빌드에서 같은 계약을 따른다. 다음 표는 현재 지원하는 메서드와 지원하지 않는 이유를 구분한다.
+
+## 조회와 개별 플러그인 실행
+
+플러그인 조회는 매니저 메타데이터와 디스크 목록만 읽는다. 설치 파일 복사, 권한 부여, 프로세스 기동을 조회의 부수효과로 실행하지 않는다. 설치된 항목이 없는 상태와 매니저를 사용할 수 없는 오류를 구분한다. GUI와 헤드리스는 읽기 메서드의 표와 핸들러를 공유하며 등록된 표에서 구현을 찾지 못하면 내부 오류로 보고한다. 매니페스트를 직접 읽는 방식은 더 얇은 조회 계층이 실제로 필요해질 때 검토한다.
+
+헤드리스도 명시된 호스트 대상 ID가 존재하는지 핸들러 실행 전에 확인한다. 검사는 호스트 예약 namespace에만 적용하고 GUI와 같은 대상 판정 함수를 쓴다. 플러그인 namespace의 ID 공간까지 호스트가 가정하지 않는다. 아직 설치되지 않은 플러그인 목록을 미리 읽어 전체 요청을 분류하는 방식은 깨끗한 홈에서 성립하지 않는다. 예약 namespace의 범위가 바뀌거나 헤드리스에 여러 engine이 생기면 대상 라우팅을 다시 검토한다.
+
+헤드리스의 `plugin.enable`과 `plugin.disable`은 GUI와 공용 핸들러를 사용한다. metadata 초기화 후 지정한 플러그인만 켜며 전체 플러그인 기동 함수를 사용하지 않는다. 헤드리스는 토글이 만드는 `PluginEnableToggled`와 `PluginUnloaded`만 처리한다. 다른 설치·삭제·권한 변경 기능은 이 지원에 포함되지 않는다. 새 이벤트가 생기면 소비자를 먼저 정한다. 창이 없는 GUI에서는 토글 이벤트가 발행되지 않지만 헤드리스에서는 발행되는 차이가 있다. 구독 플러그인의 실제 사용에서 이 차이가 문제가 되면 양쪽을 비교해 수정 범위를 정한다.
 
 ## 라우팅 구조
 
@@ -24,7 +28,7 @@ caller 인증 뒤 공통 `check_request`가 권한·cap·rate-limit을 검사하
 한 번 관측한다. App 인터셉트·plugin namespace·일반 handler 모두 그 뒤에 온다.
 통과한 `CheckedRequest`를 일반 handler에 전달하므로 예산과 관측을 중복 소비하지 않는다.
 GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
-[ADR-0277](../adr/0277-ipc-admission-and-observation-run-once.md).
+[ADR-0612](../adr/0612-request-admission-and-isolation.md).
 
 권한 부족의 Agent 거부는 기존 capability elevation을 한 번 발행하고
 `error.data`에 approval_id·permission·method를 싣는다. 거부된 요청 동작과 Allow 관측은
@@ -35,7 +39,7 @@ GUI 외부 IPC와 plugin host-call도 같은 경계를 사용한다.
 잘못 적은 요청이 그대로 실행된다(핸들러가 그 키를 안 읽으면 성공까지 돌아온다). gui 와
 같은 코드를 쓰고, **호스트 예약 prefix 에 한정한다** — 예약되지 않은 prefix 는 plugin 이
 답할 수 있어서 자르면 아래 forward 가 죽는다. 근거는
-[ADR-0143](../adr/0143-a-named-target-is-checked-before-the-engine-in-headless.md).
+[ADR-0603](../adr/0603-headless-behavior.md).
 
 두 가로채기 모두 **gui 와 같은 함수**를 부른다. 읽기 전용 plugin 조회의 라우팅 표는
 `crate::adapters::ipc::handler::plugin::READONLY_METHODS` 하나뿐이고, gui 라우터도 헤드리스
@@ -121,7 +125,7 @@ forward도 owner만 준비한다**: namespace에 매칭 IPC hook이 있으면 �
 키와 payload 자체(`plugin.enabled` / `plugin.disabled` / `plugin.unloaded`)는 두 경로가
 같은 함수를 부른다. hook 이벤트 등록 해제도 gui 의 `cascade_plugin_unloaded` 와 같다.
 
-근거·대안·재검토 조건은 [ADR-0253](../adr/0253-the-lifecycle-toggles-do-not-wait-for-the-app-split.md).
+근거·대안·재검토 조건은 [ADR-0603](../adr/0603-headless-behavior.md).
 
 **매니저는 메타데이터 층까지만 세운다** (`ensure_plugin_manager_metadata`). 번들 설치는
 부팅이 이미 했고(`src/boot.rs`), `PluginManager::enable` 은 그 package 표에서 **지목한
@@ -226,7 +230,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 |--------|-----|
 | `window.create` / `view.create` | winit 이벤트루프에 창 생성을 맡긴다. 헤드리스엔 그 루프가 없다 |
 | `window.close` / `view.close` | `App.view.views` 에서 창을 닫는다. 그 레지스트리가 없다 |
-| `window.focus` / `view.focus` | 포커스 전환이라 애초에 debug 격리(ADR-0115)이고, 대상도 창이다 |
+| `window.focus` / `view.focus` | 포커스 전환이라 애초에 debug 격리(ADR-0612)이고, 대상도 창이다 |
 | `window.list` / `view.list` | 빈 목록이 아니라 **개념이 없다** — `[]` 를 주면 "창이 0 개인 GUI" 로 읽혀 호출자가 `window.create` 를 시도한다 |
 | `ui.screenshot` | 창 표면을 읽어 파일로 쓴다. 그릴 창이 없으면 하는 일 자체가 없다 |
 | `remote.attach` | mirror workspace 를 띄울 창이 필요하다 |
@@ -249,7 +253,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 
 > **이 문서에서 헤드리스의 거부 코드로 적힌 `-32601` 은 지금 `-32017` 이다.** 표에 등재된
 > 이름이 이 빌드에 arm 이 없어 거절될 때의 코드를 오타(`-32601`)와 가른 것이
-> [ADR-0167](../adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md) 이다.
+> [ADR-0604](../adr/0604-ipc-discovery-and-errors.md) 이다.
 > 위 census 수치는 그 변경 **이전**에 잰 것이고, 무엇이 답하고 무엇이 안 답하는가라는
 > **판정 자체는 그대로다** — 바뀐 것은 안 답할 때 무슨 코드를 주느냐뿐이다. 두 표는 **겹치지 않는다** — 그 시점 교집합 0 이라 `+` 가 합집합과
 같다. 같은 모수를 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)
@@ -268,7 +272,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 
 `-32015` 는 "이 플랫폼에서 안 된다" 이고, 호출자를 **조합이 아니라 플랫폼을 보는 쪽**으로
 보낸다(코드 넷의 구분은 `crates/tasty-ipc/src/protocol.rs` 의 표와
-[ADR-0154](../adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)).
+[ADR-0604](../adr/0604-ipc-discovery-and-errors.md)).
 
 **★ 그런데 이 둘의 게이트는 축 하나가 아니다.** `src/adapters/ipc/handler.rs` 에서 실제 arm 은
 `#[cfg(all(target_os = "macos", feature = "gui"))]` 이고 그 짝이 `not(all(…))` 이다 — 즉
@@ -334,7 +338,7 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 | 메서드 | 왜 |
 |--------|-----|
 | `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0425](../adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
-| `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — `Core::apply` 가 거절한다([ADR-0538](../adr/0538-headless-refuses-mirror-structural-forward.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
+| `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — `Core::apply` 가 거절한다([ADR-0603](../adr/0603-headless-behavior.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
 
 ### `debug.*` 36 건
 
@@ -372,7 +376,7 @@ event bus 에 누가 붙었는가). 그래서 헤드리스에서만 사라지면
 | `debug.fullscreen.list` | `src/fullscreen_stages.rs` 의 gui 무관 무대 메타(id·제목 키). **조회만이다** — 같은 갈래의 `open`/`close`/`state` 는 창을 지목해야 해서 아래 표에 있다 |
 
 event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 — 조회가 plugin 프로세스를
-띄우면 관측이 자기 대상을 바꾼다([ADR-0136](../adr/0136-a-query-does-not-create-what-it-observes.md)).
+띄우면 관측이 자기 대상을 바꾼다([ADR-0603](../adr/0603-headless-behavior.md)).
 그래서 아무 plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의 사실이다.
 
 #### 없는 것이 정답 (30)

@@ -5,7 +5,7 @@
 
 도구 메뉴/IPC 로 뜨는 git status/log/diff 읽기 전용 popup. **egui-mesh** 로 그린다 — plugin 이
 자기 프로세스 egui Context 에서 콘텐츠를 직접 페인트하고, host 는 셸(scrim/border/Esc/outside-click)만
-소유한다(ADR-0028 / B3). Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 전달돼 host 와
+소유한다(ADR-0628 / B3). Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 전달돼 host 와
 동일 `Theme` 으로 재구성된다.
 
 ## 트리거
@@ -39,7 +39,7 @@
 
 리스트 4개(worktree rail · Changes · Commits · Diff)는 모두 **보이는 행만 레이아웃한다** —
 `ScrollArea::show_rows` 로 뷰포트에 걸치는 행 범위만 그린다(근거·대안:
-[ADR-0095](../../../adr/0095-plugin-list-virtualization-and-fixed-content-width.md)). 커밋 목록은
+[ADR-0628](../../../adr/0628-egui-mesh-rendering.md)). 커밋 목록은
 조회 상한 200 행, diff 는 파일 전체 라인이라 목록 길이와 무관하게 프레임당 비용이 뷰포트 높이에
 비례한다.
 
@@ -59,7 +59,7 @@
 
 로컬 모드는 **활성 worktree 의 `Repository` 핸들 하나만** 들고 재사용한다 — 조작마다 다시 열지
 않는다(근거·대안:
-[ADR-0099](../../../adr/0099-git-viewer-repo-handle-cache-and-canonical-dedup.md)). 그 결과 파일을
+[ADR-0630](../../../adr/0630-bundled-plugin-data.md)). 그 결과 파일을
 연달아 클릭할 때 repo open 이 일어나지 않는다. popup 최초 로드와 Refresh 는 **plugin 자체
 `discover` 기준 1 회**다 — 단 활성 worktree 가 popup cwd 의 worktree(`current`)일 때이고, 활성이
 다른 worktree 면 목록 수집용 1 회 + 대상 재바인딩용 1 회로 2 회다. 여기에 더해 **worktree 목록
@@ -80,6 +80,12 @@
 worktree 목록은 Refresh 마다 다시 수집한다(외부 add/remove 를 반영하는 유일한 경로). 커밋 목록의
 ref pill 도 조회마다 다시 읽는다 — ref 는 커밋/브랜치 조작 한 번으로 바뀌고, 조회 시점이 곧 최신
 상태를 요구하는 순간이라 캐시하지 않는다.
+
+Repository는 Send이지만 Sync가 아니므로 현재 SDK의 직렬 plugin worker를 전제로 한다.
+worktree 중복 검사는 항목별 canonical path를 한 번 구해 비교한다.
+경로 표기 차이는 cache miss만 만들며 다른 저장소의 핸들을 재사용하지 않는다.
+Windows에서는 popup 동안 packfile mmap을 잡아 외부 git gc·repack의 파일 삭제가 실패할 수 있다.
+popup을 닫으면 핸들을 해제한다. 다중 thread dispatch나 저장소 변경 기능을 추가하면 무효화 규칙을 다시 정한다.
 
 원격(attach) 모드는 로컬 repo 를 열지 않는다 — 조회는 host 가 요청마다 수행하고 plugin 은 wire JSON
 만 받으므로 이 캐시가 관여하지 않는다.
@@ -107,4 +113,4 @@ popup`. context strip · 섹션 strip · 2줄 worktree 행 · Changes · Commits
 ## 시각 소스
 
 디자인 `ui_kits/terminal/overlays/git_viewer.jsx`(+`.html` preview). popup 구현은 egui-mesh
-채널(ADR-0028) + `EguiMeshPopup` SDK 헬퍼.
+채널(ADR-0628) + `EguiMeshPopup` SDK 헬퍼.

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md) · [0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md) · [0365](../../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)
+- **ADR**: [0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md) · [ADR-0634](../../adr/0634-output-cursor-contract.md)
 - **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서) · `surface.read_since_mark`(마크 또는 소비자가 든 위치로 읽는 raw 진입점)
 - **화면**: 없음
 - **메서드/파서**: [reference/api](../../reference/api.md#surface-상호작용) · [reference/output-parsers](../../reference/output-parsers.md)
@@ -21,11 +21,11 @@
 | `surface.read_since_scan_mark` | 주기 폴링 | 전진하는 전용 커서로 **새로 온 것만** 읽는다 (파서를 안 거친 raw) |
 | `surface.read_since_mark` (`cursor`+`stream`) | 소비자별 이어 읽기 | 호출자가 든 위치부터 읽는다 — 서버는 그 소비자 상태를 안 든다 (파서를 안 거친 raw) |
 
-**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 뒤의 둘은 그 모수 밖이다 — 파서를 거치지 않고 raw 텍스트를 주므로 분해는 부르는 쪽이 한다(아래 "읽는 자리를 말하는 법은 셋이다").
+**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 뒤의 둘은 원문 텍스트를 주며 파싱은 호출자가 한다(아래 "읽는 자리를 말하는 법은 셋이다").
 
 ### parse_since_mark
 
-`set mark` → 명령 실행 → `parse-since-mark --parsers path,url,compile_error,test_result`. `--parsers` 생략 시 기본 4종(`path,url,prompt_boundary,exit_code`). 고급 6종은 명시 opt-in. 전체 block 을 받아 멀티라인 파서(`compile_error`/`stack_trace`)도 정확히 분해.
+`set mark` → 명령 실행 → `parse-since-mark --parsers path,url,compile_error,test_result`. `--parsers` 생략 시 기본 4종(`path,url,prompt_boundary,exit_code`). 고급 6 종은 명시 opt-in. 전체 block 을 받아 멀티라인 파서(`compile_error`/`stack_trace`)도 정확히 분해.
 
 ### 읽는 자리를 말하는 법은 셋이다
 
@@ -33,7 +33,23 @@
 
 출력을 **주기적으로 훑는** 소비자는 그 마크를 쓰지 않는다. `surface.read_since_scan_mark` 가 별도 커서를 읽고, 그 커서는 읽을 때마다 전진해 지난 호출 이후에 온 것만 준다. 두 커서는 서로를 밀지 않는다 — `set mark` 이 스캔 커서를 안 움직이고, 스캔 읽기가 마크를 안 움직인다. 그 커서는 소비자가 하나라는 전제 위에 있어 CLI 동사가 없다([ADR-0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md)).
 
-셋째는 **소비자가 드는 위치**다. `surface.read_since_mark` 에 `cursor`(절대 바이트 위치)와 `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, 서버는 그 소비자를 위해 아무것도 안 든다 — 그래서 소비자가 몇이든 서로를 안 민다. 같은 규율을 사건 피드가 먼저 쓰고([ADR-0323](../../adr/0323-the-feed-is-read-by-position-and-the-server-keeps-no-consumer-state.md)), 터미널 원문으로 가져온 것이 [ADR-0341](../../adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md) 이다.
+셋째는 **소비자가 드는 위치**다. `surface.read_since_mark` 에 `cursor`(절대 바이트 위치)와 `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, 서버는 그 소비자를 위해 아무것도 안 든다 — 그래서 소비자가 몇이든 서로를 안 민다. 같은 규율을 사건 피드가 먼저 쓰고([ADR-0633](../../adr/0633-event-feed-delivery.md)), 터미널 원문으로 가져온 것이 [ADR-0634](../../adr/0634-output-cursor-contract.md) 이다.
+
+### 출력 스캐너 전용 커서
+
+`surface.read_since_scan_mark`는 TerminalRead 권한으로 읽고 커서를 전진시킨다.
+`OutputBuffer::take_since_scan_mark`가 읽기와 전진을 한 번에 수행한다.
+둘을 나누면 읽은 뒤 전진하기 전에 도착한 출력이 처리되지 않고 넘어갈 수 있다.
+첫 호출은 현재 보관한 전체 출력을 받을 수 있고 이후부터 새 출력만 받는다.
+
+이 커서는 surface마다 하나다. 소비자가 여럿이면 서로의 데이터를 소비하므로 CLI 명령을 제공하지 않는다.
+다만 plugin_only 전용 dispatch는 아니며 일반 로컬 IPC 클라이언트도 메서드를 호출할 수 있다.
+응답을 받지 못해 재전송하면 이미 소비한 구간을 다시 받지 못하므로 메서드 효과는 Mutate다.
+`surface.read_since_mark`의 읽기 효과와 혼동하지 않는다.
+
+Claude plugin은 받은 델타를 자체 제한 버퍼에 모아 기존 에러 패턴·출력 지문·200자 중복 제거·정지 판단을 수행한다.
+host의 OUTPUT_RETENTION_MAX_BYTES와 plugin의 창 상한은 일치해야 한다.
+다른 스캐너를 추가하려면 같은 scan 커서를 공유하기 전에 소비자별 위치 읽기를 검토한다.
 
 ### 보존 밖으로 밀려난 것은 값으로 나온다
 
@@ -45,7 +61,7 @@
 
 CLI 로는 `tasty read since-mark --cursor <next_cursor> --stream <stream>` 이다. 첫 읽기는 위치 없이 하고(마크 또는 `--max-bytes` 만), 응답의 `next_cursor`·`stream` 을 다음 호출에 넘긴다. `--cursor` 는 `--stream` 없이 못 쓴다. `--max-bytes` 는 한 번에 받을 원문 바이트를 줄인다 — 1 부터 보존 크기(1 MiB)까지이고, `0` 은 한도 없음이 아니라 1 바이트로 올린다(0 이면 매번 빈 답이라 못 나아간다). 한도 없이 읽으려면 인자를 뺀다.
 
-**구 서버는 이 인자를 조용히 버린다** — 인자 객체에 모르는 키 거절이 없어 공유 마크에서 읽고 성공으로 답한다. 그래서 서버는 이 계약을 `system.info` 의 capability `ipc.output-cursor` 로 선언하고, CLI 는 위치 인자(셋 중 하나라도)를 실은 요청을 보내기 **전에** 그 이름을 묻는다. 없으면 요청을 내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability",…,"sent":false}}` 한 줄을 쓴 뒤 종료 코드 1 로 끝난다([ADR-0365](../../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)). 위치 인자 없는 호출은 묻지 않는다.
+**구 서버는 이 인자를 조용히 버린다** — 인자 객체에 모르는 키 거절이 없어 공유 마크에서 읽고 성공으로 답한다. 그래서 서버는 이 계약을 `system.info` 의 capability `ipc.output-cursor` 로 선언하고, CLI 는 위치 인자(셋 중 하나라도)를 실은 요청을 보내기 **전에** 그 이름을 묻는다. 없으면 요청을 내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability",…,"sent":false}}` 한 줄을 쓴 뒤 종료 코드 1 로 끝난다([ADR-0634](../../adr/0634-output-cursor-contract.md)). 위치 인자 없는 호출은 묻지 않는다.
 
 ### 명령 인덱싱 (OSC 133)
 
@@ -72,3 +88,18 @@ PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 �
 ## 관련
 
 - [reference/output-parsers](../../reference/output-parsers.md) — 파서 카탈로그 · [work-area](../work-area/index.md) — surface
+
+## 위치 조회의 세부 계약
+
+`error.data.reason`은 cursor_without_stream·stream_mismatch·cursor_ahead_of_stream·no_terminal로 구별한다.
+명시 cursor는 지정한 surface만 조회하고 focus fallback을 하지 않는다.
+stream은 버퍼 생성 시각과 counter를 함께 써 terminal 재생성과 교체를 구별한다.
+
+max_bytes가 UTF-8 문자 중간에서 끝나면 최대 3 바이트 물러선다.
+그 결과 0 바이트가 되면 읽기가 계속 멈추지 않도록 원래 범위를 읽는다. 음수·비정수 max_bytes는 인자 오류다.
+원문은 메모리만 보존하며 화면 스크롤·선택이나 입력 기록을 바꾸지 않는다.
+
+CLI는 --stream 단독도 허용한다. 기존 mark에서 읽으면서 stream 교체 여부를 확인하는 형태다.
+협상 실패의 JSON은 capability·required·found·sent:false를 포함한다. found가 없으면 null이다.
+인자 세 가지 중 하나라도 쓰는 외부 client는 CLI와 마찬가지로 ipc.output-cursor를 먼저 확인해야 한다.
+새 독립 인자는 별도 capability 이름으로, 기존 인자의 의미를 좁히는 변경은 해당 기능 버전으로 구별한다.

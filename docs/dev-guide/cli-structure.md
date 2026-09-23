@@ -107,32 +107,74 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 [ADR-0542](../adr/0542-the-cli-judges-request-arguments-before-connecting-and-exits-with-their-code.md)).
 시험은 `tests/cli_maps_args_before_connecting.rs`.
 
+인자 오류의 코드는 해당 검사에서 정한 1 또는 2이며 서버 부재 때문에 1로 덮지 않는다.
+`preset save --file -`는 연결 전에 stdin을 읽고, memory TTL의 expires_at도 요청 매핑
+시점에 계산한다. 매핑에서는 서버를 조회하지 않는다.
+
 ## stdout 출력 (`out.rs`)
 
-세 갈래 모두 stdout 에는 `crate::out` 의 `outln!` / `out!` 로만 쓴다 — `println!` /
-`print!` 금지. 쓰기는 `anyhow::Result<()>` 를 돌려주므로 출력 함수는 `-> Result<()>`
-이고 호출부는 `?` 로 올린다. 읽는 쪽이 파이프를 먼저 닫아 생기는 `BrokenPipe` 는
-`StdoutClosed` 로 올라와 진입점(`run.rs` 의 `run_client` / `try_run_plugin_cli`,
-`help.rs` 의 `print_augmented_help` / `print_command_tree`)에서 `quiet_if_stdout_closed`
-가 **종료 코드 0** 으로 접는다. 정책·근거는 [error-handling](error-handling.md) "stdout
-쓰기" 와 [ADR-0101](../adr/0101-cli-stdout-broken-pipe-exit-zero.md), 강제는
-`tests/cli_stdout_broken_pipe.rs`.
+일반 CLI 출력은 `outln!`·`out!`·`flush`·`from_io`를 사용하고 오류를 Result로 전달한다.
+`println!`·`print!`는 쓰기 실패를 panic으로 바꾸므로 사용하지 않는다.
+BrokenPipe는 `StdoutClosed`로 구분해 CLI 진입점의 `quiet_if_stdout_closed`가 종료 코드 0으로
+처리한다. 다른 I/O 오류는 오류 보고와 종료 코드 1로 끝낸다. 이 처리는 호스트에 적용하지 않는다.
 
-stderr 는 같은 모듈의 `errln!` 으로만 쓴다(`eprintln!` 금지). 쓰기 실패는 버리고 종료 코드는
-그대로 둔다 — [ADR-0513](../adr/0513-cli-stderr-broken-pipe-keeps-the-exit-code.md). 강제는 같은
-시험 파일이다.
+출력 도중 즉시 process::exit하지 않고 오류를 전파해야 SSH 터널 등 Drop 정리가 수행된다.
+폴링 명령은 다음 실제 출력 때 닫힌 파이프를 감지한다. 출력할 데이터가 없으면 빈 flush만으로
+닫힘을 알 수 없어 기다릴 수 있다. raw attach bridge는 best-effort로 화면을 미러하므로
+stdout 닫힘을 세션 detach로 승격하지 않는 별도 경로다.
+
+stderr에는 `errln!`을 사용한다. 쓰기 실패는 더 보고할 채널이 없으므로 무시하지만,
+원래 명령의 실패 1·파싱 오류 2 등 종료 코드는 유지한다. 실제 버그의 panic hook은 유지한다.
+관련 시험은 `tests/cli_stdout_broken_pipe.rs`다.
 
 ## 호스트 오류 출력 (`rpc_error.rs`)
 
-호스트가 JSON-RPC 오류로 답하면 단발 RPC 경로 · `auto_wait` · 폴링 · 계약 확인 실패가
-모두 `rpc_error::exit_with` 하나로 stderr 에 내고 종료 코드 1 로 끝난다. 첫 줄은
-`Error (<code>): <message>` 이고, 응답에 `error.data` 가 있으면(`null` 제외) 둘째 줄
-`data: <한 줄 JSON>` 이 원형 그대로 붙는다 — `reason` · `storage_failure` 같은 실패 분류를
-CLI 호출자도 IPC 와 같은 값으로 얻는다. 스트리밍 두 명령(`events follow` ·
-`plugin audit-follow`)은 호스트 오류를 `main` 까지 올려 std 가 찍으므로 첫 줄이
-`Error: Error (…)` 다 — 그 접두를 지키려고 `exit_with` 대신 `rpc_error::with_data_line` 으로
-올라가는 값의 문구만 같은 두 줄로 바꾼다. 근거는
-[ADR-0512](../adr/0512-the-cli-relays-ipc-error-data-on-a-second-stderr-line.md).
+단발 RPC·동적 plugin 명령·auto_wait·폴링·계약 확인 오류는 `rpc_error::exit_with`를 사용한다.
+첫 줄은 `Error (<code>): <message>`, 값이 있는 error.data는 둘째 줄
+`data: <한 줄 JSON>`으로 그대로 출력하고 종료 코드 1로 끝낸다.
+data가 없거나 null이면 둘째 줄을 출력하지 않는다. `data: ` 접두사는 번역하지 않는다.
+
+`events follow`와 `plugin audit-follow`는 오류를 main으로 전달하므로 첫 줄의
+`Error: Error (…)` 접두사를 유지한다. 이 경로에는 `with_data_line`을 사용해 둘째 줄을 더한다.
+`JsonRpcCallError::Display` 자체는 바꾸지 않아 다른 진단 문구의 형식을 유지한다.
+새 오류 경로도 직접 출력하는지 main으로 올리는지에 맞춰 두 함수를 선택한다.
+
+## CLI와 IPC의 접근성
+
+`METHOD_TABLE`과 `DEBUG_METHODS`의 각 메서드는 CLI 진입점이 있거나, 없는 이유가 있어야 한다.
+응답이 플러그인 자신의 신원·설정·이벤트 수신처를 요구하면 일반 셸 명령으로 재현할 수 없다.
+그 밖에 ID로 대상을 지정하거나 전역 상태를 읽는 기능은 CLI를 제공한다.
+사유 표는 [API 규약](api-conventions.md)에 한 번만 관리한다.
+
+`tests/cli_method_table_parity.rs`는 요청 매핑의 메서드, 명시적 method 필드,
+번들 plugin 매니페스트의 ipc_method를 읽어 표와 양방향 대조한다.
+플래그 뒤의 호출이나 통신하지 않는 클라이언트 명령도 있으므로 이름이나 네트워크 요청
+개수만으로 진입점 부재를 단정하지 않는다. 문자열 추출은 실제 실행의 완전한 증명이 아니며
+의심되는 항목은 요청 매핑과 실행 경로를 확인한다. 대안으로 안내한 CLI 명령도 실제 있어야 한다.
+
+## 호스트 로그와 CLI 진단
+
+공유 tracing 파일은 호스트로 확정된 뒤 `enable_host_file_log`에서 연다.
+GUI와 headless가 대상이며, CLI는 stderr만 사용해 호스트 파일을 건드리지 않는다.
+panic hook과 stderr tracing은 main 시작에 초기화해 동적 CLI 라우팅 중 오류도 남긴다.
+
+host 파일은 실행할 때마다 비우므로 재시작을 넘는 영구 기록이 아니다.
+CLI가 성공한 IPC 앞뒤에서 남긴 일반 warning은 hook-failures.log의 대상이 아닐 수 있다.
+예를 들어 stdin JSON 파싱 경고는 stderr에서 확인한다.
+파일 위치와 빌드별 필터는 [크래시 진단](crash-diagnostics.md)을 따른다.
+
+## 새 워크스페이스의 윈도우와 작업 경로
+
+`tasty new workspace --surface <숫자 ID>`는 그 서피스의 윈도우를 선택한다.
+없는 ID는 거절하고 다른 윈도우로 대체하지 않는다. nickname·this나 `--window`는 받지 않는다.
+생략하면 `TASTY_SURFACE_ID`를 적용하지 않고 기존의 대상 없는 요청 규칙을 따른다.
+여러 윈도우를 제어하는 에이전트는 명시적으로 서피스를 지정한다.
+
+terminal 워크스페이스의 cwd는 명시 `--cwd`가 우선이다. 생략하고 inherit_cwd가 켜져 있으면
+지정한 서피스의 로컬 cwd를 상속한다. 서피스까지 생략하면 선택된 윈도우의 포커스 서피스에서
+상속하는 기존 동작이다. 상속을 끄거나 원본이 mirror여서 로컬 cwd가 없으면 홈을 사용한다.
+IPC의 숫자가 아닌 surface_id는 invalid_params다. 윈도우 선택은 라우터가, cwd 선택은
+workspace 핸들러의 `resolve_create_cwd`·`inherit_cwd_for_create`가 맡는다.
 
 ## `debug` 갈래
 
@@ -145,3 +187,25 @@ CLI 호출자도 IPC 와 같은 값으로 얻는다. 스트리밍 두 명령(`ev
 - [api-conventions](api-conventions.md) — CLI/IPC 명명 + 안정성 정책
 - [build](build.md) — 크레이트 **경계**(이 문서는 크레이트 **내부**)
 - [attach-behavior](attach-behavior.md) — `local/attach.rs` 의 attach 세션 머신
+
+## 에이전트 훅 전달 실패 기록
+
+CLI는 포트 파일 부재, 연결 실패, JSON-RPC 오류를 접속 대상의
+`<tasty_home>/hook-failures.log`에 기록한다. `TASTY_PARENT_HOME`은 접속 대상 홈을
+정하지 않으므로 이 기록 위치에 사용하지 않는다. 마지막 메서드 이름이 `hook` 또는
+`_hook`으로 끝나는 요청만 기록한다. 일반 대화형 명령은 stderr로 오류를 알린다.
+
+레코드는 `<UTC> method=… event=… surface=… code=… reason=…` 한 줄이다.
+이벤트나 JSON-RPC 코드가 없으면 `-`를 쓰며, 공백을 담는 `reason`은 마지막에 둔다.
+실패 분류에는 앞의 필드를 사용한다. `reason`은 응답을 만든 쪽의 언어를 따르므로
+plugin이 번역한 메시지도 올 수 있다. `DiagnosticEnglish`와 관련 소스 검사는 CLI가
+직접 만드는 포트·연결 오류의 영어 진단만 보호하며 응답 메시지 전체를 보장하지 않는다.
+
+정상 호출은 기록하지 않는다. 파일이 256 KiB에 이르면 `.log.1` 한 개로 교체하며
+기록·로테이션 실패가 훅 실행을 추가로 실패시키지는 않는다. 따라서 크기는 엄격한 상한이
+아니며 파일 권한이나 디스크 문제로 기록이 누락될 수도 있다. loopback 연결에는 3초 상한을 둔다.
+
+설치 래퍼는 `TASTY_SURFACE_ID`가 없으면 호출하지 않는다. POSIX 래퍼의 `|| true`는
+전달 실패가 외부 에이전트 턴을 막지 않도록 한다. 실패 상태 자체는 로그로 확인한다.
+설치 명령을 바꾸면 기존 사용자 설정에도 다시 설치해야 하며, 같은 matcher 안의 사용자
+핸들러를 보존하면서 Tasty 항목만 갱신하는지 확인한다.

@@ -31,15 +31,12 @@
 
 ## 상태 판정 (hook + 관측 융합 — [ADR-0072](../../adr/0072-child-state-hook-observation-fusion.md))
 
-`terminal.children` / `terminal.state` 가 보고하는 `state` 는 registry 의 hook push
-캐시를 그대로 되읽은 값이 **아니다**. hook 축과 호스트 관측 축을 합성한 파생 값이며,
-두 IPC 경로가 같은 헬퍼(`CoreState::child_liveness{,_with_live}` —
-`src/core/state/child_liveness.rs`)를 공유한다.
-
-**왜 필요한가**: registry 의 `state_of` 는 `idle`/`needs_input` 두 bool 이 모두 false 면
-`"active"` 를 반환하는데, 그 의미는 "작업 중" 이 아니라 **"idle 이라는 증거가 없음"**
-이다. 상태를 바꾸는 유일한 경로가 hook push 단방향이라, hook 이 유실되거나 자식이
-멈추면 마지막으로 찍힌 `active` 가 영구히 남고 되돌리는 경로가 없다.
+`terminal.children`과 `terminal.state`는 훅으로 보고받은 상태와 호스트 관측을 함께 사용한다.
+두 경로는 `CoreState::child_liveness{,_with_live}`를 공유한다.
+registry의 `active`는 idle이나 입력 대기 보고가 없다는 뜻이므로 실제 실행의 증거가 부족할 수 있다.
+훅이 유실됐거나 프로그램이 멈춘 경우를 보완하기 위해 PTY·전경 프로세스·출력 시각을 확인한다.
+마지막 훅 보고 시각은 등록 시 초기화하고 각 보고 때 갱신하며, 재시작 후에도 해석할 수 있도록
+Unix epoch 밀리초로 저장한다. 관측 조합은 registry 밖의 순수 함수에서 판단한다.
 
 ### 판정 우선순위
 
@@ -58,8 +55,8 @@
 | 9 | 무출력 ≥ 임계값 && hook 침묵 < 임계값 | `active` | `heuristic` | `recent_hook_report` |
 | 10 | 무출력 ≥ 임계값 && hook 침묵 ≥ 임계값 | `stale` | `heuristic` | `output_and_hook_silent` |
 
-- **2·3 이 관측보다 위**인 것은 의도다 — hook 은 거짓 `idle` 을 만들지 않으므로 관측이
-  이 둘을 덮어쓰지 않는다.
+- **2·3 이 관측보다 위**인 것은 의도다 — 명시적으로 받은 보고를 무출력 추정으로
+  덮어쓰지 않기 때문이다.
 - **5 가 6~10 보다 위**인 것도 의도다 — deferred terminal 은 출력을 낸 적이 자체가
   없어, 게이트하지 않으면 spawn 직후 전부 `stale` 로 오판정된다.
 - 임계값: 무출력 `CHILD_OUTPUT_SILENCE` = 120s, hook 침묵 `CHILD_HOOK_SILENCE` = 300s.
@@ -84,10 +81,9 @@
 들어온 자식은 애초에 에이전트가 아닌 일반 셸일 수 있으므로 종료로 단정해선 안 된다.
 
 무출력 기반 정지 판정은 **원리적으로 휴리스틱**이다 — SIGSTOP 으로 멈춘 프로세스,
-긴 추론 중인 에이전트, 출력이 없는 긴 명령은 관측상 구별되지 않는다. 확정으로 취급
-가능한 관측은 **surface 부재**와 **전경 셸 복귀** 두 가지뿐이며, 나머지는
-`confidence: heuristic` 으로 표시된다. 소비자는 confidence 를 보고 확정 판정만 종결로
-다룰 수 있다.
+긴 추론 중인 에이전트, 출력이 없는 긴 명령은 관측상 구별되지 않는다. surface 부재와 전경 셸 복귀는 각각 확정 관측이며, 훅 보고·PTY busy·관측 불가도
+위 표처럼 별도 confidence를 갖는다. 특히 추정에 의한 `stale`만으로 작업 성공이나
+재시작 가능 여부를 결정하지 않는다.
 
 ### 출력 전용
 
@@ -97,22 +93,22 @@
 
 ### 조회만이 소비처가 아니다 — push 축
 
-판정된 값은 `terminal.children`/`terminal.state` 응답으로만 나가는 것이 아니다.
-claude plugin 의 정지 감시(`crates/tasty-plugin-claude/src/error_scan.rs`)가 자식 출력이
-문턱 이상 멎은 것을 보면 이 판정을 조회해 보고, 그 값이 **`active` 또는 `stale`** 이면
-부모의 완료 알림 로그에 한 줄을 싣는다(`claude-error-stalled` hook →
-`tasty claude notify-error` →
-[external-interaction 완료 알림](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)).
-`stale` 이 그 대상인 이유는 **그 값에 대응하는 완료 알림 경로가 없기 때문**이다 — `stale` 이
-나온다는 것 자체가 훅이 유실됐다는 뜻이라, 부모가 묻지 않으면 그 사실이 아무 데도 도달하지
-않는다. 결정과 오탐 대가는
-[ADR-0266](../../adr/0266-derived-stale-must-reach-the-push-channel.md).
+Claude 플러그인의 `error_scan`은 출력 정지가 일정 시간 이어지면 `terminal.state`를 조회한다.
+상태가 `active` 또는 `stale`이면 `claude-error-stalled` → `notify-error` 경로로 부모의
+[완료 알림 로그](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)에 남긴다.
+이 이벤트 이름은 기존 구독을 유지하기 위한 것이며 오류가 검출되지 않은 정지도 포함한다.
+알림 문구는 오류 뒤 정지와 오류 없이 정지한 경우를 구분한다.
 
-이 축은 위 "출력 전용" 과 어긋나지 않는다 — 알림은 판정을 **읽어서** 나가는 것이고,
-`terminal.set_state` 를 부르지 않으므로 파생 상태가 registry 로 되밀려 들어가지 않는다.
-조회 축(`spawn_census` 의 respawn 후보 집계)은 지금대로 **확정 `stale` 만** 센다: 두 축이
-묻는 것이 다르다 — 조회는 "이 자식을 재사용해도 되나", push 는 "부모가 더 기다려도
-소용없나" 다.
+오류 뒤 정지는 `STALL_QUIET`, 오류 없는 정지는 더 긴 `CHILD_OUTPUT_SILENCE`에 맞춰 확인한다.
+정지 시간·중복 여부·쿨다운을 먼저 확인하므로 매 tick마다 상태 조회를 보내지는 않는다.
+한 정지 구간에서는 한 번만 알리고 출력이 다시 시작되면 재알림을 허용한다.
+나중에 실제 `needs_input` 훅이 와도 그 알림은 별도로 전달한다.
+
+추정 `stale`도 알림 대상이다. 긴 추론과 실제 정지는 구별되지 않을 수 있으므로 부모가
+상태를 확인해야 하며 이 알림만으로 작업을 재시작하지 않는다. `stale` 자체도 훅 유실을
+증명하지 않는다. 재사용 후보를 세는 `spawn_census`는 확정 `stale`만 포함한다.
+이 감시는 `terminal.set_state`를 호출하지 않고 관측 결과를 읽기만 한다.
+Codex에는 이 출력 스캐너가 없으므로 같은 감시가 있다고 설명하지 않는다.
 
 ### 능동 프로빙 배제
 

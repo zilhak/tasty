@@ -38,107 +38,86 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 
 ## CLI/IPC 포커스 독립 원칙
 
-**focus 는 사용자의 시선·관심을 나타내는 독립 행위이며, IPC/CLI 명령의 대상을 결정하는 수단이 아니다.** focus 를 대상 결정에 쓰면 race condition 이 내재한다(명령 발행 후 실행 전 사용자가 focus 를 옮기면 엉뚱한 대상에 실행; 에이전트가 다른 작업으로 focus 를 옮기면 의도 붕괴).
+release IPC/CLI에는 사용자 포커스를 바꾸는 API가 없다.
+요청은 대상 ID가 가리키는 engine에서 실행하고, 대상을 지정했는데 찾지 못하면 오류를 반환한다.
+포커스된 창의 다른 대상으로 바꾸어 실행하지 않는다. 대상을 받지 않는 생성 요청이나 호환용 기본값은
+아래 예외를 따르며, 명시 ID를 주는 방법을 우선한다.
 
-따라서:
+### 목록 조회
 
-- **IPC/CLI 로 focus 를 변경할 수 없다.** focus 변경 API(`surface.focus` / `pane.focus` / `workspace.select` / `focus.direction`)는 release 에 없다(제거됨). focus 는 오직 사용자 행위(단축키·마우스)로만 바뀐다.
-- 모든 명령은 대상을 **ID 로 직접 지정**한다. `list` 는 **전 워크스페이스 순회**(활성 상태 비의존).
-  - 순회하는 `list` 는 호스트가 명시적으로 합산하는 것뿐이다(`src/app/dispatch/list_global.rs`). **그 집합의 소속은 이름이 아니라 성질로 판정한다**(핸들러가 창 소유 컬렉션을 순회하는가 · 대상 인자가 없는가 · 합산 집합에 없는가) — 이름 모양(`*.list`)으로 훑는 눈에는 `tree` 가 안 걸려 오래 빠져 있었다([ADR-0175](../../adr/0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md)). **그 목록에 없는 `list` 는 포커스된 창의 것만 답하고, 에러가 없다.** 그 목록 밖의 창 소유 자원은 **조작할 수 있는데 볼 수 없는** 상태가 된다. 창 소유 자원의 `list` 를 새로 만들면 거기에 등록한다.
-  - `notification.list`도 main/parked engine의 알림을 합산한다. ID는 공유
-    IdGenerator에서 발급하고 생성 순서 역순으로 전체 50개를 반환한다. 병합은 기존
-    ID와 생성 순서를 유지한다. UI 알림 패널과 읽음 처리는 각 engine 소유로 남는다.
-    소속 명부는 `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs`다.
-    - **`approval.list` 는 창별이 아니었다.** `CoreState` 생성자만 읽으면 engine 마다
-      `Arc::new` 라 창별로 보이는데, 두 번째 main window 를 세우는
-      `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의
-      `approval_store` Arc 로 덮어쓴다. **저장소가 어디 사는지는 생성자와 창 생성
-      경로를 함께 읽어야 정해진다** — 한쪽만 읽으면 공유를 창별로도, 창별을 공유로도
-      잘못 읽는다. 같은 경로가 `surface_registry` · `file_format` · `file_handler` ·
-      `identify_worker` · `telemetry_seq` · `anomaly_detector` · `agent_seq` ·
-      `next_ids` 도 함께 넘긴다.
-    - **`attach.list` 는 합산으로 갔다.** 점유 레지스트리는 engine 별이지만 두 배열의
-      키(`surface_id`·`workspace_id`)가 `IdGenerator` 공유라 이어 붙이면 그대로 키가
-      되고, 지목 축이 막혀 있지 않아 합산만으로 답이 닫힌다. 합치기 전에는 다른 창의
-      점유가 보이지 않아, 그 목록을 free 로 읽은 호출자가 **이미 점유된 surface 를
-      집으러** 갔다. 결과가 이름 붙은 배열 둘이라 합산은 engine 을 한 번만 돌며 둘을
-      함께 꺼낸다 — 필드마다 따로 돌면 한 응답의 두 배열이 서로 다른 시점의 스냅샷이
-      된다.
-    - **`hook.list` · `global_hook.list` 는 합산으로 갔다.** 선행 조건이던 id 공간이
-      닫혔기 때문이다 — `IdGenerator` 의 `hook`·`global_hook` 카운터가 공유 `Arc` 라
-      두 창의 훅이 같은 id 를 받지 않는다. 지목은 합산과 별개 축이고
-      `Kind::Hook`·`Kind::GlobalHook` 이 각각 푼다.
-  - **번들 plugin 이 점유한 namespace 아래의 host `list` 도 합산 대상이다.** `image.list` 가
-    그 형태다 — 외부 호출은 step 5 의 plugin namespace forward 가 먼저 집지만, plugin 이
-    그 메서드를 자기가 답하지 않고 trampoline 으로 host 에 되돌리고(`host.call`) 그
-    되돌림은 forward 단계가 없는 경로로 들어와 합산 지점을 지난다. **plugin 이 앞에
-    선다는 것은 합산 면제의 근거가 아니다** — 면제 여부는 그 host 핸들러가 창 소유
-    컬렉션을 순회하는가로만 정해진다. 실측(창 둘): 두 창에 이미지를 하나씩 열면
-    `image.list` 가 둘을 답하고(서로 다른 `surface_id`), 창 하나를 닫으면 다시 하나다.
-    합산 arm 을 지우고 같은 상태를 재면 **하나만** 답하며 그 하나는 요청을 받은 engine
-    의 것이다 — 그 둘이 합산이 만든 값이라는 뜻이다. 되돌림 경로가 실제로 도는지는
-    **실패 응답의 SDK 래퍼**(`host call '<call#N>' failed: …`)로 갈랐다. 성공 응답은
-    host 것이 그대로 통과해 래퍼가 없으므로 성공으로는 누가 답했는지 안 갈린다.
-  - **모든 창에 상수로 존재하는 예약 항목은 합산에서 한 줄로 접는다.** `workspace_category` 의 `normal`(id 0)이 그 형태다 — 창마다 하나씩 있어 합치면 같은 id 가 창 수만큼 나온다. 접은 줄은 "어느 창의 것인가" 에 답할 수 없지만(창을 안 적으면 지목이 안 되고, 하나를 고르면 거짓이다) **그 물음이 생기지 않는 항목일 때만** 접어도 된다: `normal` 은 rename·delete·move 가 전부 거부해 어떤 요청의 대상도 아니다. 대상이 될 수 있는 항목이라면 접지 말고 id 공간을 고쳐야 한다. 접은 줄의 집계 필드는 뜻을 명시한다 — 개수는 전 창 합, 위치는 고정 불변량, 접힘은 **모든** 창에서 접혀 있을 때만 참.
-  - **순서를 바꾸는 명령은 대상을 id 로 받는다 — index 는 목적지에만 쓴다.** index 는 창 안의 위치라 그것만으로는 창이 정해지지 않는다. `tab.move` 가 `pane_id` + `from_index`/`to_index` 로 주인을 먼저 짚는 형태이고, `workspace.move`·`workspace_category.move` 도 `id` + `to_index` 를 받는다. 주인이 정해진 뒤의 `to_index` 는 그 창 안의 자리라 뜻이 분명하다. 종전의 index-only 형태는 호환을 위해 남아 있고 그때는 포커스된 창에 떨어진다 — 둘을 함께 주면 거절한다(어긋났을 때 조용히 한쪽을 고르지 않는다).
-  - 합산이 옳으려면 그 자원의 **id 가 창을 건너 유일해야** 한다. 안 그러면 합친 목록에 같은 id 가 둘 들어가 호출자가 어느 쪽도 지목할 수 없다. 유일성은 `IdGenerator` 가 카운터를 engine 간에 공유해 보장한다 — 그 공유가 빠져 있던 동안 두 창의 pty 가 같은 id 를 받았고, **먼저 만든 쪽은 어떤 요청으로도 닿을 수 없었다**(라우팅이 먼저 찾힌 engine 을 고른다).
-- 활성 상태 *조회* 는 허용(`focused` 필드 등). 활성 상태에 *의존* 하는 동작은 금지.
-- target 미지정 명령은 **에러 + 사용법 안내**(silent fallback 금지). 호출자는 조회(`list surfaces` 등)로 ID 를 확인해 전달한다. 리소스 생성 명령은 응답에 생성된 ID 를 포함한다.
-  - `terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast` 는 `--surface`(parent) 를 생략하면 host 가 "현재 engine 에 등록된 parent 가 정확히 1개"일 때만 그 parent 로 폴백한다(단일 윈도우 세션의 하위 호환). main window 가 **2개 이상** 열려 있는데 이 4개 메서드가 `--surface` 없이 호출되면, 어느 window 를 봐야 하는지 자체가 정해지지 않으므로 focused window 로 조용히 새지 않고 명시적 에러로 거부한다(`src/app/request_owner.rs` `find_request_owner`/`ambiguous_parent_fallback_requires_surface`).
-- **요청은 자기가 실은 ID 가 가리키는 창으로 간다.** 창이 여럿일 때 요청의 주인 창을 못 찾으면 라우터는 마지막 수단으로 **포커스된 창**에 넘긴다. 그 폴백이 답이 되는 순간 그 메서드는 포커스 의존이 되고, 증상은 에러가 아니라 "다른 창에서 not found" 라 원인이 라우팅이라는 것이 드러나지 않는다. 그래서 요청이 실은 id 로 주인 창을 찾는 범위를 넓게 잡는다 — surface·workspace·pane·tab, headless PTY, surface hook, **global hook**, output observer, preset capture 의 source, `split` 의 `target_surface`/`target_pane` 까지. global hook 이 뒤늦게 들어온 이유는 그 이름이 "창에 안 매인다" 로 읽혔기 때문이다 — 실제로는 그 매니저가 engine 마다 하나라 창 소유이고, 그 오독이 라우팅을 비워 두는 동안 다른 창의 global hook 은 **존재하는데 어떤 요청으로도 닿지 않았다.** 자원이 창에 매이는지는 이름이 아니라 **그 저장소가 어디 사는지**로 판정한다 — 같은 원리를 합산 집합의 소속에 적용한 것이 위 [ADR-0175](../../adr/0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md) 이고, 두 자리에서 각각 나왔다는 것은 **이 저장소가 반복해서 밟는 형태**라는 뜻이다.
-  - **인식은 핸들러가 그 키를 읽는 형태까지 따라간다.** `split` 의 `target_surface` 가 그 예다: 인자가 id 와 nickname 을 함께 받는 자리라 CLI 는 값을 항상 **문자열로** 싣는다. 숫자만 보는 인식은 그래서 CLI 로 들어온 split 을 하나도 못 풀고, 라우팅이 아니라 핸들러가 답을 낸다 — 증상은 `"surface N not found"` 이고 그 surface 는 **다른 창에 멀쩡히 살아 있다.** 숫자로 안 읽히는 값(=nickname)은 memory store 를 봐야 풀리므로 순수 라우팅 밖에서(`App::find_request_owner`) 이어 푼다. nickname→surface 매핑은 창에 안 매여 있어 창을 건너 정확히 풀린다. **라우팅이 핸들러보다 더 관대하면 안 된다** — 핸들러가 숫자를 먼저 보므로 라우팅도 그 순서를 따른다.
-  - 대상이 아닌 id 는 라우팅에 쓰지 않는다. `from_surface_id`(발신자)로 보내면 큐가 받는 쪽 engine 에 안 쌓여 **읽는 쪽이 영영 못 본다** — 조용한 폴백보다 나쁜 오배송이다. `caller_surface_id`(호출자)와 stream 클라이언트 id 도 같은 이유로 대상이 아니다.
-  - **지목한 대상을 아무도 안 가졌으면 거절한다.** 예전에는 그 요청이 포커스된 창으로 갔고, 그래서 존재하지 않는 `workspace_id` 를 실은 `workspace.create` 가 포커스된 창에 워크스페이스를 만들고 **성공을 돌려줬다**. 호출자는 자기가 지목한 곳에 만들어진 줄 안다. 지금은 무엇을 못 찾았는지 말하는 에러가 나간다. 대상을 **지목하지 않은** 요청(생성 등)은 그대로 포커스된 창으로 간다 — 폴백을 통째로 없앤 것이 아니라 두 경우를 가른 것이다. 헤드리스도 **같은 판정**을 받는다 — engine 이 하나라 라우팅할 곳은 없지만 판정은 있어야 하고, 없으면 같은 요청이 조합에 따라 다르게 끝난다([ADR-0143](../../adr/0143-a-named-target-is-checked-before-the-engine-in-headless.md)). 다만 거기서는 호스트 **예약 prefix** 에 한정한다 — 예약되지 않은 prefix 는 plugin 이 답할 수 있어서, 자르면 forward 될 호출을 불러 보기도 전에 죽인다.
-  - 이 인식 목록은 주석의 "확인했다" 로 유지되다 새 키 일곱 개를 놓쳤다. 지금은 핸들러 소스에서 뽑은 키 집합과 **집합 동등**으로 맞물려 있고, 대상이 아닌 키는 사유와 함께 면제 목록에 남는다(`every_id_key_a_handler_reads_is_routed_or_exempt`).
-- 리소스 생성/삭제 명령이 내부적으로 focus 를 일시 이동해야 하면 작업 후 **원래 focus 를 복원**한다.
-- `TASTY_SURFACE_ID` 환경변수(= "내가 있는 surface")는 focus 와 다르다. CLI `--surface` 기본값으로 쓸 수 있다.
+창별 자원 목록은 모든 main·parked engine에서 모은다. `src/app/dispatch/list_global.rs`가 처리한다.
+새 목록을 추가할 때 메서드 이름이 list로 끝나는지만 보지 말고 실제로 읽는 컬렉션과 대상 인자를 확인한다.
+필터 인자는 대상 지정과 다르다. tree와 workspace.list는 같은 workspace 집합을 반환해야 한다.
+
+| 자원 | 조회 방식 |
+|---|---|
+| workspace, pane, tab, surface, tree | 전체 engine 합산 |
+| attach | 한 번의 engine 순회에서 surface·workspace 점유 배열을 함께 합산 |
+| hook, global hook | 공유 ID 카운터로 ID를 보장한 뒤 합산 |
+| notification | 전체 생성 ID 역순 최대 50개. 병합은 생성 ID 유지, UI·읽음·보존은 창별 |
+| approval | 창 생성 때 같은 approval_store Arc를 공유하므로 공유 목록 조회 |
+| image.list | plugin이 host-call로 반환한 요청도 host 합산 경로 사용 |
+
+합산한 active는 각 창의 활성 상태이므로 여러 개가 true일 수 있다.
+일반 자원 ID는 IdGenerator의 engine 간 공유 카운터로 유일하게 만든다.
+예외인 예약 카테고리 normal(ID 0)은 한 행으로 합친다. rename·delete·move 대상이 아니므로
+창을 별도로 지정할 필요가 없다. count는 전 창 합, 위치는 고정값, collapsed는 모든 창에서 접혔을 때만 true다.
+
+분류 명부는 `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs`다.
+명부는 기존 분류 누락을 검사하지만 새 종류의 목록을 자동 발견하지 않는다.
+공유 여부는 CoreState 생성자뿐 아니라 `App::ensure_engine_and_plugins`의 Arc 전달·교체도 읽어 판단한다.
+
+### 대상 해소
+
+라우터는 surface·workspace·pane·tab·PTY·hook·global hook·output observer·preset source·split 대상을 해소한다.
+같은 메서드의 핸들러와 같은 표현·우선순위로 읽는다. 예를 들어 split은 숫자 문자열을 먼저 해석하고
+nickname은 메모리 저장소에서 해소한다. nickname 매핑은 창에 종속되지 않는다.
+발신자 from_surface_id, 호출자 caller_surface_id, stream client ID는 대상 ID가 아니다.
+
+명시한 대상이 없으면 무엇을 찾지 못했는지 오류를 반환한다. headless도 같은 검사를 수행한다.
+headless의 사전 검사는 host 예약 prefix에 한정한다. plugin이 처리할 요청을 미리 거절하지 않기 위해서다.
+
+순서 변경은 대상 ID와 목적지 to_index로 표현한다. tab.move는 pane_id와 탭 인덱스로 pane을 먼저 지정한다.
+workspace.move·workspace_category.move의 옛 index-only 입력은 호환상 focused 창을 사용하지만,
+ID와 옛 index를 동시에 주면 거절한다.
+
+terminal.kill·release·respawn·broadcast의 parent 생략은 현재 engine에 parent가 정확히 하나일 때만 허용한다.
+main 창이 둘 이상이면 engine 자체가 불분명하므로 --surface를 요구한다.
+TASTY_SURFACE_ID는 호출자가 있는 surface이며 사용자 포커스와 다르다. CLI가 지원하는 --surface 기본값으로 사용할 수 있다.
+
+### 검토 기준
+
+활성 상태를 응답으로 조회하는 것은 허용한다. 요청 대상과 포커스는 별도로 취급한다.
+생성·삭제에 내부적인 임시 focus 변경이 필요하면 원래 focus를 복원해야 한다.
+새 대상 키는 `every_id_key_a_handler_reads_is_routed_or_exempt`의 대조 대상이며,
+대상이 아닌 키는 구체적인 사유와 함께 제외한다.
 
 ## 폴백으로 가는 메서드는 이름과 사유로 남는다
 
-위 폴백이 답이 되는 메서드가 **어느 것인지**를 값으로 든 자리가
-`src/source_guards/unrouted_dispatch_reasons.rs` 다. 모수는 "라우팅이 인식하는 키를
-하나도 안 읽는 dispatch arm" 이고 명부와 집합 동등이라, 새 메서드가 지목 없이 들어오는
-것과 명부가 낡는 것을 양방향으로 잡는다. 갈래와 사유의 근거는
-[ADR-0251](../../adr/0251-unrouted-dispatch-methods-carry-a-reason-not-a-predicate.md).
+`src/source_guards/unrouted_dispatch_reasons.rs`는 라우팅 대상 키가 드러나지 않는 메서드를 분류한다.
+명부에는 주인 창이 정해지지 않아도 답이 올바른 이유를 적는다.
 
-분류가 묻는 것은 하나다 — **주인 창이 안 정해져도 답이 옳은 이유가
-무엇인가.** 저장소가 창 밖이면 고칠 것이 없고(`NotWindowOwned`), 창 소유인데 합산이
-답하면 정본이 합산 명부이며(`AggregatedList`), 생성이면 실을 id 가 애초에
-없다(`CreatesWithoutATarget`). 창별 읽기 전용 관측은 응답에 소유 ID와 범위를
-명시한다(`ScopedObservation`). 기존 count/index를 전역값으로 바꾸지 않고 소속을
-밝히는 `system.info`가 여기에 해당한다. 열린 결함이면 축을 세워야 한다(`PerWindowOpenDefect`).
-남은 셋은 **이 스캔이 못 보는 자리**다: 대상 키를 serde 구조체로 읽어 안 보이는 것
-(`TargetReadByDeserializer`), `request_target` 밖에서 풀려 안 보이는 것
-(`RoutedOutsideRequestTarget`), 그리고 debug 표면(`DebugOnly`). 사각을 술어에서 지우는
-대신 명부의 행으로 만들어 검토받게 한다.
+| 분류 | 이유 |
+|---|---|
+| NotWindowOwned | 저장소가 창에 속하지 않음 |
+| AggregatedList | 모든 engine의 목록을 합산함 |
+| CreatesWithoutATarget | 새 대상을 생성함 |
+| ScopedObservation | 창별 관측이며 응답에 소유 ID와 scope를 표시함 |
+| TargetReadByDeserializer | serde 구조체가 대상을 읽어 단순 키 검사가 찾지 못함 |
+| RoutedOutsideRequestTarget | 다른 단계에서 대상 해소 |
+| DebugOnly | 사용자 조작 재현용 debug 기능 |
+| PerWindowOpenDefect | 아직 해결되지 않은 창별 처리 문제 |
 
-**현재 그 명부의 열린 항목은 없다.** 이는 명부에 분류한 대상의 판정이며,
-아래 별도 IPC 진입 게이트의 소비·관측 문제까지 해결했다는 뜻은 아니다.
-`system.info`는 기존 count/index를 engine 관측값으로 유지하되 `scope=engine`,
-`workspace_ids`, `active_workspace_id`, `layout_slot`으로 소속을 명시한다.
-`workspace_id` 등 기존 대상 키로 비포커스 engine도 조회할 수 있다. `window.list`는
-같은 관측 필드를 OS window ID와 함께 전 창에 대해 반환한다. 전역 workspace 목록과
-총수는 기존 `workspace.list`가 소유하며 parked engine도 포함한다. 버전은 프로세스 전역이다.
-`git_viewer.query`는 창별 큐를 전 main에서 수집한 뒤 전역 attach 세션에서
-`local_surface_id`를 해소한다. 큐 위치만으로 다른 창을 조회한다고 판단하지 않는다.
-parked 큐의 생명주기와 SSH 전송 성공은 이 대상 선택 판정과 별개다.
-`file_handler.dispatch`는 명시 origin으로 초기 요청과 비동기 완료를 같은 소유 engine에
-연결하고 picker 선택까지 유지한다. **에이전트** 요청이 명시 origin의 pane에 새 결과 탭을
-추가할 때는 기존 활성 탭·surface 선택을 유지한다(비터미널 kind 포함). origin이 사라지면 실행하지 않고, 다른 창의
-NewTab으로 폴백하지 않는다. origin 생략의 기존 사용자 경로는 유지한다
-([ADR-0279](../../adr/0279-file-dispatch-retains-origin-through-completion.md)).
-**이 선택 유지는 에이전트 경로에만 걸린다** — 사용자가 GUI 에서 직접 연 파일(explorer
-더블클릭 · 터미널 링크 클릭 · 드롭 · 파일 피커 확정 · 링크 우클릭 메뉴)은 그 결과 탭이
-**선택된다.** 라우팅은 양쪽이 같다(origin 의 pane 에 붙고, 다른 pane 이 포커스를 쥐고
-있어도 그리로 새지 않는다) — 갈리는 것은 선택뿐이다
-([ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md)). origin 을 생략한
-에이전트 요청도 새 탭을 뒤에 붙이기만 하고, 사용자가 plugin popup 에서 연 파일(markdown 파일열기
-팝업)은 선택된다([ADR-0526](../../adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md)). 사용자가 plugin
-webview 안의 링크로 연 파일(markdown 문서 안의 파일 링크)도 엔진이 그 클릭을 사용자 제스처로 보고하는
-Linux 에서 선택된다 — Windows 는 컴파일만 재어졌다(재는 법: Windows 에서 markdown 문서 안의 파일 링크를
-누르고 새 탭이 선택되는지 `tab.list` 로 본다)([ADR-0568](../../adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md)). `recent.query`는 state.db에 귀속된 공유 캐시를 조회하므로 어느 창에서 호출해도
-같은 종류의 최근 목록을 최신순 최대 10개 반환한다. 창이 열린 뒤 다른 창에서 기록한
-파일도 반영되며, 조회는 목록 순서나 사용자 포커스를 바꾸지 않는다.
+현재 명부의 PerWindowOpenDefect 항목은 없다. 이것이 모든 IPC 관측 문제의 해결을 뜻하지는 않는다.
+system.info는 engine count/index를 유지하고 scope=engine, workspace_ids, active_workspace_id,
+layout_slot을 함께 반환한다. window.list는 OS ID와 함께 이 값을 제공하고 전역 workspace 목록은 workspace.list가 담당한다.
+버전은 프로세스 전역 값이다.
+
+Git 조회는 창별 큐를 수집한 뒤 전역 attach 세션에서 local_surface_id를 찾는다.
+따라서 큐 위치만 보고 조회 대상 오류라고 판단하지 않는다.
+recent.query는 state.db의 공유 캐시에서 종류별 최근 항목 최대 10개를 읽으며 순서와 focus를 변경하지 않는다.
+파일 열기는 명시 origin의 engine·pane을 비동기 완료와 picker 선택까지 유지하고,
+대상이 사라졌으면 다른 창에 열지 않는다. 사용자 파일 열기와 에이전트 파일 열기의 선택 차이는 아래 절을 따른다.
 
 ## 라우팅 아래에도 층이 하나 더 있다 — 그 층은 대상을 안 고른다
 
@@ -184,6 +163,15 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 `focused_view_id` 는 핸들러 층에 **0** 이어야 한다 — 창을 고르는 것은 라우터의 일이고,
 핸들러는 이미 정해진 창 안에서만 산다. 그 값이 0 이 아니게 되면 층이 섞인 것이다.
 
+`approval.request`의 기록은 명시 workspace_id, 지정 surface의 workspace, 활성 workspace 순서로 귀속한다.
+외부 요청의 없는 surface는 라우터가 먼저 거절한다. 핸들러를 직접 부른 내부 경로는 같은 검사를 중복하지 않는다.
+telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspace를 사용하므로 재현 가능한 기록에는 값을 명시한다.
+
+비용 상한은 agent와 metric의 누적값이며 여러 workspace의 이벤트가 섞인다.
+마지막 이벤트가 전체 비용의 소속이라고 볼 수 없어 자동 승인과 알림은 현재 활성 workspace를 사용한다.
+영속 승인 기록까지 그 scope에 남는 한계가 있다. workspace별 상한 또는 신뢰할 수 있는 원인 surface가 생기면
+이 귀속을 다시 정한다. audit의 활성 workspace 태그와 IPC telemetry의 첫 workspace 태그 역시 요청 대상의 증거가 아니다.
+
 ## 삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다
 
 **시야가 움직이는 경우는 하나뿐 — 사용자가 보고 있던 대상 *자체* 가 사라졌을 때다.** 보고 있지 않은 워크스페이스/탭/pane 이 닫혔는데 화면이 바뀌면 결함이다. 근거 [ADR-0113](../../adr/0113-close-preserves-the-focused-target.md).
@@ -219,6 +207,12 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 - 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 축을 나타내는 값을 여럿 두면 그중 하나만 갈리는 사고가 난다.
 - 파일 열기도 같은 형태다 — `FileDispatchOrigin` **하나**가 사용자/에이전트를 가르고, 결과 탭을 선택하는지와 `None` 분기가 발화하는 intent 의 출처가 거기서 파생된다. **전송 채널이 아니라 행위의 성질로 정한다**: plugin 이 사용자의 클릭을 `file_handler.dispatch` 로 중계하는 경로가 있어(markdown 문서 안의 링크 · 파일열기 팝업) "IPC 로 들어왔는가" 는 좌변이 아니다. plugin 이 그 호출에 **자기 popup** 을 `owner_popup_instance` 로 실으면, host 는 호출자가 그 popup 의 소유 plugin 이고 그 popup 이 사용자의 확정형 입력(포인터 버튼 · 키 누름)을 받았을 때만 사용자로 친다 — 외부 IPC 호출자는 같은 키를 실어도 에이전트다([ADR-0526](../../adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md)). webview 에서 오는 중계(markdown 문서 안의 링크)는 plugin 이 통지받은 navigation 의 URL 을 `user_navigation_url` 로 되대고, host 는 native 엔진이 그 시도를 사용자 제스처로 보고했고 그 surface 의 지금 페이지를 소유 plugin 이 썼으며 그 plugin 에 통지한 마지막 시도일 때만 그 한 번을 사용자로 친다 — 근거는 plugin 의 자기 신고가 아니라 host 가 직접 본 두 사실(엔진의 보고 · 페이지 작성자)이다. `webview.set_url` 은 에이전트에게도 열려 있어, 에이전트가 쓴 페이지 위의 사람 클릭은 근거가 되지 않는다(재지 않은 예외 하나: 그 클릭의 시도가 소유 plugin 이 되찾은 프레임의 drain 뒤에야 도착하는 순서 — ADR-0568 "잃은 것"). macOS 는 엔진이 그 값을 주지 않아 에이전트로 도착한다 ([ADR-0568](../../adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md)). 그 값이 `IntentOrigin` 과 별개인 이유는 파일 식별이 워커 스레드를 왕복하면서 발화 당시 intent 를 잃기 때문이다 ([ADR-0302](../../adr/0302-a-user-file-open-selects-its-result-tab.md)).
 - `workspace.closed` host event 는 origin 과 무관하게 발화한다. 워크스페이스가 사라졌다는 사실 자체는 누가 닫았든 같기 때문이다. 워크스페이스를 제거하는 경로는 셋(GUI·IPC 닫기 · Core cascade · 인라인 cascade)이고, 발화는 각 경로가 아니라 그 셋이 공유하는 초크포인트 `AppState::after_workspace_removed`(`src/state.rs`)가 한다 — 경로마다 각자 쏘던 때 인라인 cascade 하나가 실제로 빠져 있었다. 워크스페이스를 제거하는 새 경로를 추가하면 그 초크포인트를 반드시 지나게 한다.
+
+workspace.close는 마지막 workspace, mirror workspace, hard 점유 surface가 포함된 workspace를 거절한다.
+호출자 자신을 포함한 대상도 자기 닫기 보호를 따른다. mirror는 attach 해제로 정리한다.
+GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 마지막 workspace를 닫을 수 없다.
+확인용 force 플래그는 요구하지 않지만 되돌릴 수 없는 동작임을 help와 사용자 문서에 표시한다.
+일부 점유 surface만 남기는 부분 workspace.close는 수행하지 않는다.
 
 ## 에이전트가 만든 창과 포커스
 
@@ -309,6 +303,10 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 재정렬했느냐에 따라 포커스가 달라진다.
 
 카테고리 quick-switch 착지점은 id 를 들어 이 축의 보정 대상이 아니다(위 참조).
+
+카테고리 안의 표시 순서는 입력 단계에서 전체 workspace 인덱스로 바꾼다.
+카테고리 CRUD나 소속 변경만으로 workspace 배열 순서와 활성 인덱스를 바꾸지 않는다.
+category_last_active는 ID를 저장해 삭제·이동 때 인덱스 보정이 필요하지 않다.
 
 ## 코드 위치
 

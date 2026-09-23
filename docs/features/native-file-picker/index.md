@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
-- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0162](../../adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
+- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0631](../../adr/0631-file-handler-routing.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
 - **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
@@ -10,7 +10,7 @@
 
 Tasty 자체 in-app "파일 열기" 다이얼로그. 로컬 파일시스템뿐 아니라 **attach mirror 워크스페이스가
 브라우징하고 있는 원격 파일시스템**도 같은 UI 로 탐색할 수 있게 한다 — native OS 다이얼로그
-(옛 `fs.pick_file`, ADR-0042 → ADR-0162 로 제거)는 host 프로세스 로컬 파일시스템만 알 뿐
+(현재 제거된 `fs.pick_file`, [파일 피커 선택의 근거](../../adr/0631-file-handler-routing.md))는 host 프로세스 로컬 파일시스템만 알 뿐
 원격이라는 개념이 없었다.
 
 ## 내부 동작 (headless-valid)
@@ -19,7 +19,7 @@ Tasty 자체 in-app "파일 열기" 다이얼로그. 로컬 파일시스템뿐 �
 
 Tools 메뉴에서 파일 피커 항목을 클릭하면(`src/adapters/ui/tools_menu.rs::open` 경유,
 `popup::file_picker::open`, 출발 surface = focus surface), 출발 surface 가 속한 workspace(없으면 활성
-workspace)의 `Workspace.mirror` 플래그를 1회 확인해 로컬/원격을 고정한다. `FilePickerData.mirror_ws_id: Option<u32>` 가 `Some`
+workspace)의 `Workspace.mirror` 플래그를 1 회 확인해 로컬/원격을 고정한다. `FilePickerData.mirror_ws_id: Option<u32>` 가 `Some`
 이면 원격, `None` 이면 로컬이다.
 
 ### 로컬 브라우징
@@ -150,18 +150,23 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 
 ### plugin 트리거(ADR-0058) — 즉시 ack + 이벤트 push
 
+CallerContext::Plugin 검사는 이미 열린 popup(-32000)이나 잘못된 인자(-32602)보다 먼저다.
+외부 CLI·Agent는 -32016으로 거절한다. FsRead 요구는 그대로다.
+이 메서드는 window router의 외부 arm을 사용하므로 method table의 plugin_only 표식을 붙이지 않는다.
+그 표식은 별도 host-call interception 경로를 뜻한다. 에이전트는 파일 경로를 직접 지정한다.
+
 markdown plugin 의 "파일 열기" 팝업 Browse 버튼처럼, host 소유 popup 을 열고 사용자가 몇 프레임
 뒤에나 확정/취소할지 모르는 인터랙션을 **plugin 이** 트리거해야 하는 경우의 IPC 경로다.
 옛 `fs.pick_file` 은 동기 inline dispatch 였고 "OS native 모달이 자기 run loop 를 돌리므로
 host 메인 스레드를 블로킹해도 안전" 하다고 적혀 있었다. 그 전제는 실측으로 뒤집혔고 그
-메서드는 제거됐다([ADR-0162](../../adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md)).
+메서드는 제거됐다([ADR-0631](../../adr/0631-file-handler-routing.md)).
 host 자체 egui popup 은 그와 별개로 OS 가 대신 블로킹해주지 않는다 —
 지연 회신 방식(`host.call` 자체를 확정 시점까지 붙잡아 둠)은 plugin 의 렌더/입력 루프를
 멈추고 60 초 `HostCallTimeout` 위험을 진다(ADR-0058 Alternatives Considered).
 
 1. plugin 이 `file_picker.trigger { filters?: string[] }` 를 호출한다(`FsRead` 권한,
    `gui` feature 전용). CLI·agent 호출자는 popup 을 열지 않고 `-32016` 을 받는다 — 결과를 받을
-   곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([ADR-0504](../../adr/0504-the-file-picker-trigger-answers-only-a-plugin-caller.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
+   곳이 없고 popup 이 사용자 입력 포커스를 가져가기 때문이다([ADR-0631](../../adr/0631-file-handler-routing.md)). host 는 popup 확정을 **기다리지 않고** `{ request_id }` 만 즉시
    회신한다(`src/adapters/ipc/handler/file_picker.rs::handle_trigger`).
 2. host 는 `(plugin_id, request_id)` 를 `FilePickerData.requester`(`FilePickerRequester`)
    에 기록하고 popup 을 연다 — 이후 로컬/원격 판별·엔트리 로드는 위 기존 경로(Tools 메뉴
@@ -238,7 +243,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   목록은 위 "로컬 브라우징" 과 같은 `read_dir_entries` + `sort_entries` 동기 호출로 채운다.
 - **블로킹의 성질**: 동기 I/O 라 느린 디스크에서는 그 프레임이 늘어지지만 유한하게 끝난다 — 메인
   피커의 로컬 경로와 같은 성질이다. OS 네이티브 다이얼로그는 쓰지 않는다(포털 없는 Linux 에서
-  끝나지 않는다, ADR-0162).
+  끝나지 않는다, ADR-0631).
 - **모드**: `Open`(기존 파일 하나) · `Save { default_name }`(디렉토리를 고르고 파일명을 정한다).
   view 는 `FilePickerMode` 로 두 모드를 함께 그린다. 저장 모드는 파일명을 정할 뿐 파일을 만들지 않는다.
 - **저장 모드의 확정 수단은 하나다**: footer 의 이름 칸이 편집 가능해지고 footer primary 버튼만이
@@ -395,7 +400,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 > `CallerContext::Local` 이다 — `-32016` 으로 거부되고, 호출 전후 `ui.state` 의
 > `gate_host_popup_focused` · `keyboard_shortcuts_gated` 가 둘 다 `false` 그대로다(2026-09-23 실측).
 > 이 거부 전에는 같은 호출이 popup 을 열어 두 값이 `true` 로 바뀌고 intent 감시 로그에
-> `origin=User { source: Menu("tools_menu") }` 가 찍혔다(2026-09-22 실측, ADR-0504 Context).
+> `origin=User { source: Menu("tools_menu") }` 가 찍혔다(2026-09-22 실측, ADR-0631 Context).
 > plugin 호출자의 성공·requester 기록·busy 거부(`-32000`)는 단위 시험
 > (`src/adapters/ipc/handler/file_picker.rs` 의 `tests`)이 본다. agent 토큰 호출자의 거부도 같은
 > 시험이 보고, 실제 인스턴스에서는 재지 않았다. plugin 프로세스(markdown)가 실제로
@@ -450,7 +455,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `matches_filters_*` 확장자 필터), `src/adapters/ipc/handler/file_picker.rs`(`tests` —
   trigger 성공/requester 기록/busy 거부/filters 전달, 실제 `AppState`/`CoreState` fixture),
   `crates/tasty-ipc/src/method_meta_tests.rs`(`file_picker_trigger_requires_fs_read`),
-  `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3종 — 성공/디렉토리
+  `tests/attach_list_dir_loopback.rs`(실제 서버 인스턴스 상대 loopback 왕복 3 종 — 성공/디렉토리
   없음 에러/attach 점유 없는 client 거부), `src/view/settings/ui/file_chooser.rs`(`tests` — 설정 창
   재사용의 확정·필터·이동·읽기 실패·저장 이름 검증·외부 닫힘 · 저장 모드의 단일 확정 대상·선택 해제·
   덮어쓰기 판정·더블클릭), `src/adapters/ui/popup/file_picker/layout_tests.rs`(헤드리스 렌더로 footer

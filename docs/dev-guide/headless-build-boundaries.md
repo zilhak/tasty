@@ -4,7 +4,7 @@ headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 �
 없다는 이유로 공유 Core·AppState·registry 를 통째로 숨기지 않는다. `dead_code` 진단이
 가리키는 정의의 생산자와 소비자를 따라가며 아래 기준으로 컴파일 대상을 나눈다.
 
-결정과 그 근거는 [ADR-0346](../adr/0346-headless-compiles-only-what-it-reaches.md).
+결정과 그 근거는 [ADR-0603](../adr/0603-headless-behavior.md).
 
 ## 세 갈래
 
@@ -31,17 +31,17 @@ dead_code 예외는 쓰지 않는다.
 (`tests/*/mod.rs`: test binary 마다 쓰는 부분집합이 달라 binary 별로 dead 가 생긴다)과 생성
 파일(`tasty-design-tokens` 의 `generated/primitive.rs` 와 그것을 쓰는 생성기: `pub(crate)` 스케일을
 미참조 엔트리까지 보존한다). 둘 다 자리에 사유가 붙어 있다. 그 밖에는 0 이고, 결정과 재검토
-조건은 [ADR-0530](../adr/0530-module-wide-dead-code-allows-stay-only-where-the-judge-cannot-see-the-use.md).
+조건은 [ADR-0603](../adr/0603-headless-behavior.md).
 세는 법: `git grep -nE '#!\[(cfg_attr\([^]]*)?allow\([^)]*dead_code' -- '*.rs'`.
 
 지금 ③ 에 해당하는 것은 열하나다.
 
 | 정의 | 왜 남는가 |
 |---|---|
-| 구조 op forward 큐의 원소(`PendingStructuralForward`, `core/impl_mirror.rs`) | headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다([ADR-0538](../adr/0538-headless-refuses-mirror-structural-forward.md)). 정의가 남는 것은 두 조합이 공유하는 `mark_last_forward_*` 가 큐의 마지막 원소를 표시하기 때문이고, op 를 읽어 보내는 쪽은 GUI 의 `about_to_wait` 뿐이다. 같은 줄에 있던 git query · markdown content · resize 의 forward 큐는 채우는 자리도 gui 전용이라 필드째 ① 이다 |
+| 구조 op forward 큐의 원소(`PendingStructuralForward`, `core/impl_mirror.rs`) | headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다([ADR-0603](../adr/0603-headless-behavior.md)). 정의가 남는 것은 두 조합이 공유하는 `mark_last_forward_*` 가 큐의 마지막 원소를 표시하기 때문이고, op 를 읽어 보내는 쪽은 GUI 의 `about_to_wait` 뿐이다. 같은 줄에 있던 git query · markdown content · resize 의 forward 큐는 채우는 자리도 gui 전용이라 필드째 ① 이다 |
 | `SurfaceKindDef` 의 입력·줌·복사 플래그와 변환 입력 popup id | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
 | CoreEvent 의 페이로드(터미널 이벤트 중 제목 · 알림 · 벨 · 명령 완료 · 셸 통합 힌트 · 클립보드, `RestoredKind` 의 인덱스) | variant 는 headless 에서도 발화하지만 그 빌드의 drain 이 `other` 갈래로 흘린다. OSC 7 cwd(`TerminalCwdChanged`)는 여기 없다 — headless PTY drain 이 읽는다(아래 "두 조합이 같게 하는 것") |
-| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | 세우는 코드(`AppState` 의 enqueue 메서드)가 headless 빌드에도 컴파일되지만 비우는 자는 GUI 메인 루프뿐이다. 그 메서드들이 headless 에서 어느 갈래인지는 [AppState 필드 소유권](app-state-ownership.md) 이 적는다 |
+| 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | enqueue 메서드는 두 빌드에서 컴파일된다. 헤드리스도 host event 큐를 비우지만 `HookFired`만 적용하고, 이 항목의 GUI 전용 payload는 읽지 않는다. 그 메서드들이 headless 에서 어느 갈래인지는 [AppState 필드 소유권](app-state-ownership.md) 이 적는다 |
 | 파일 열기 발화 주체(`FileDispatchOrigin`, `core/origin.rs`) | 도메인의 `DispatchFile` intent 가 headless 에도 컴파일되지만 값을 만드는 자리(explorer·링크·드롭·picker·`file_handler.dispatch` arm)가 전부 GUI 다. `file::dispatch` 모듈 자체는 headless 라이브러리에 없다(링크 해석·대상 판정을 시험이 부르므로 ②) |
 | workspace 생성 cascade 의 필드(`WorkspaceCreatedCascade`, headless 판 `app/dispatch_domain_stubs.rs`) | 만드는 자리(`workspace.create` IPC · workspace intent)는 두 빌드가 공유하지만 headless 의 cascade 는 no-op 이라 필드를 읽는 자가 gui 뿐이다. 그 파일 전체가 `not(feature = "gui")` 라 조건 없는 `expect` 로 적는다 |
 | `App` 의 필드(`src/app.rs`) | headless boot 도 `App` 을 세워 Core 를 쓰지만, 일부 필드를 읽는 자는 gui 이벤트 루프뿐이다 |
@@ -52,12 +52,9 @@ dead_code 예외는 쓰지 않는다.
 
 ## 판정은 바깥에서 안으로
 
-진단 목록은 평면이지만 사실은 그래프다. 어떤 정의가 dead 로 보이는 이유가 **그 호출자가
-같은 실행에서 함께 dead 로 잡혔기 때문**일 수 있다. 안쪽을 먼저 자르면 컴파일이 깨진다.
+헤드리스에 생산자나 호출자가 없는 GUI 정의는 해당 feature에서 제외한다. 두 빌드에서 생산되지만 GUI만 읽는 값은 항목별 expect와 이유를 남긴다. 테스트가 실제 호출하는 경우에만 test 조건을 포함한다. 진단은 호출자부터 안쪽 정의 순서로 해결한다. GUI/헤드리스, lib/all-targets, debug/release 조합을 모두 검사해야 debug 전용 호출자 때문에 가려진 미사용 정의를 찾을 수 있다. crate 전체의 dead_code 허용으로 경계를 숨기지 않는다.
 
-실측 2026-09-21: `NotificationStore` 의 읽음 처리 셋을 GUI 로 게이팅했더니 headless 라이브러리가
-`E0599` 로 깨졌다. 그 셋을 부르는 `CoreState::mark_notification_read` 가 그 빌드에서
-컴파일되는데, 그쪽도 같은 실행에서 dead 로 보고되고 있었다.
+모듈 전체 dead_code 허용은 각 test binary가 일부만 사용하는 통합 테스트 공용 모듈과, 미사용 primitive 항목 보존이 계약인 생성 코드에만 둔다. 그 외 정의는 호출자가 없으면 삭제하고 조건부 호출자는 같은 cfg로 제한하며 생산은 되지만 일부 조합에서만 읽히면 이유 있는 expect를 쓴다. 공유 테스트가 하나의 binary로 합쳐지거나 생성 항목이 pub이 되면 넓은 억제도 제거할 수 있다.
 
 ## 재는 법 — 여덟 칸
 
@@ -89,45 +86,16 @@ headless 쪽 호출자가 debug 전용 핸들러(`#[cfg(debug_assertions)]` 모�
 ([ci-gates](ci-gates.md)). release headless 두 칸과 release gui `--all-targets` 칸은 어떤 자동
 채널도 안 본다 — 직접 돌리지 않으면 아무도 안 돈다.
 
-## 이 경계가 드러낸 것
-
-경계를 그으면서 보인 사실 둘이다. 둘 다 기능을 뺀 것이 아니라 이미 그랬던 것이 보이게 된
-것이었고, 각각 한쪽으로 정했다 — 아래 두 절.
-
-- headless 는 레이아웃을 저장하지도 복원하지도 않는다. capture·restore·scrollback 경로
-  전체에 그 빌드의 호출자가 없다.
-- headless 의 OSC 7 cwd 변경은 탭 이름을 갱신하지 않았다. 터미널 이벤트에서 그 intent 로
-  가는 배선이 그 빌드에 없어, drain 의 처리 갈래가 도달 불가능했다.
-
 ## 두 조합이 같게 하는 것
 
-- **OSC 7 → 탭 이름.** 셸이 OSC 7 로 알린 cwd 가 그 탭의 이름이 되고(명시 이름·OSC 제목이
-  없을 때) 레이아웃 dirty 가 선다. gui 는 `TerminalCwdChanged` → `SurfaceCwdChanged` 두 단
-  cascade 가 하고, headless 는 PTY drain(`src/boot.rs` 의 `handle_terminal_output`)이
-  `intent::headless::apply_terminal_cwd_changed` 로 같은 engine 갱신을 직접 한다 — gui 의
-  둘째 단 intent 는 view redraw 를 함께 싣는 gui 전용이라 헤드리스에는 그 두 줄만 필요하다
-  ([ADR-0111](../adr/0111-headless-drains-the-intent-queue.md) 의 "engine 에 완결되는 부분만").
-  시험은 `tests/e2e_tests.rs` 의 `an_osc7_cwd_becomes_the_tab_name` 이 두 조합에서 같은 단언으로
-  재고, 배선이 빠지면 headless 라이브러리가 dead_code 로 먼저 깨진다.
+헤드리스는 Intent 큐를 IPC 응답 전, 플러그인 응답 전, 메인 루프 대기 전에 처리한다. 상태 변경을 완료한 뒤 성공을 돌려주므로 `set_mark` 직후 조회에서도 설정한 mark를 읽을 수 있다. 한 번의 처리는 최대 8라운드이며 남은 작업은 다음 호출에서 이어간다. 반복 상한에 닿으면 상한부터 올리지 말고 작업이 다시 생성되는 원인을 살핀다. OSC 7의 cwd 변경은 PTY 이벤트 처리에서 탭 이름과 레이아웃 변경 상태를 직접 갱신한다. 화면 갱신·메뉴·알림음처럼 GUI에만 있는 효과는 실행하지 않는다.
+
+host event 큐도 같은 세 처리 지점에서 비운다. `HookFired`는 대기 중인 agent task를 완료시키고 나머지는 제거한다. 헤드리스는 host event를 플러그인 event bus로 전달하지 않는다. 비-bus 소비자가 추가되거나 헤드리스 플러그인의 이벤트 구독을 지원하게 되면 종류별 적용 범위를 다시 정한다. 단위 테스트에서 훅 대기 해소와 큐 처리를 검증하더라도, 실제 플러그인이 등록한 hook ID와 전달한 ID가 일치하는지는 별도 종단간 검증 대상이다.
 
 ## 두 조합이 다르게 두는 것
 
-다르게 두는 것은 조용히 두지 않는다 — 요청이 오면 거절로, 요청이 없으면 알림으로 말한다.
+헤드리스는 mirror 구조 변경을 forward 큐에 넣지 않는다. `forwarded: false`와 기존 -32603 오류로 응답하며 attach client가 없어 전달할 수 없다는 사유를 설명한다. 같은 구조 메서드는 일반 헤드리스 workspace에서 동작하므로 메서드 미지원 -32017로 바꾸지 않는다. 아직 mirror 생성 경로가 GUI 전용이어도 core 자체에서 거절해 향후 조용한 성공과 큐 누적을 막는다. 헤드리스 attach client를 지원하게 되면 전송과 결과 반영을 구현한 뒤 이 제한을 재검토한다.
 
-- **레이아웃 영속.** headless 는 레이아웃을 저장도 복원도 하지 않는다. 워크스페이스는 프로세스 수명
-  동안만 산다. 헤드리스에 닿는 입력은 설정 `general.restore_layout` 하나뿐이라(저장·복원 IPC 는 없고
-  두 intent 는 gui 전용이다), 그 설정이 켜져 있으면 부팅이 warn 한 줄로 무시된다고 말하고
-  `system.info` 의 `layout_slot: null` 이 in-band 답이다. 근거·대안
-  [ADR-0539](../adr/0539-headless-does-not-persist-layouts.md). 시험은 `src/boot.rs` 의
-  `a_restore_layout_setting_is_announced_as_ignored`(문구)와 `tests/e2e_tests.rs` 의
-  `a_headless_daemon_warns_at_boot_that_restore_layout_is_ignored`(부팅이 warn 으로 내는가) ·
-  `a_headless_daemon_answers_that_it_holds_no_layout_slot`.
-- **attach mirror 로 나가는 forward 셋.** git 조회(`git_viewer.query`) · markdown 원문
-  (`markdown_mirror.content_request`) · mirror 구조 op. 큐를 비워 attach 채널로 보내는 쪽이 gui 에만
-  있어 headless 는 셋 다 즉시 거절한다. 앞의 둘은 `-32017` 문구가 메서드 이름을 싣고, 셋째는
-  `Core::apply` 가 `-32603` mirror 문구에 빌드 조합이 사유라고 덧붙인다
-  ([ADR-0538](../adr/0538-headless-refuses-mirror-structural-forward.md)).
+헤드리스 workspace는 프로세스 수명 동안만 유지되고 레이아웃을 저장·복원하지 않는다. restore_layout이 켜진 경우 부팅에서 warn으로 알리며 system.info의 layout_slot:null이 슬롯 미점유를 나타낸다. 레거시 layout 이관·scrollback 정리 부팅 훅은 공유 홈의 GUI 데이터를 위해 계속 실행한다. 자동 복원을 도입하면 예상 밖 셸 재기동, ID 변화, 프로세스 간 슬롯 충돌, lazy plugin 복원을 함께 해결해야 한다. 같은 설정을 GUI와 공유하므로 복원 설정 때문에 헤드리스 부팅을 실패시키지 않는다.
 
-관련 문서: [app-state-ownership](app-state-ownership.md)(이 규칙을 `AppState` 필드에 적용한 표) ·
-[build](build.md) · [model-view-split](model-view-split.md) ·
-[unit-test-isolation](unit-test-isolation.md) · [action-dispatch](../design/flows/action-dispatch.md)
+관련 문서: [IPC 지원 범위](headless-ipc-surface.md) · [AppState 소유권](app-state-ownership.md) · [빌드](build.md)

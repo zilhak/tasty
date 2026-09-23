@@ -1,41 +1,23 @@
 # 타입 있는 길이 (Typed length)
 
-tasty 내부 소스는 길이 값을 **`f32` 그대로 다루지 않는다.** DPI scale factor 가 개입하는 코드에서 *물리 픽셀* 과 *논리 픽셀* 을 헷갈리면 런타임에야 드러나는 위치/크기 버그가 난다. 그래서 길이는 두 newtype 으로 나뉜다.
+길이에는 `PhysicalPx` 또는 `LogicalPx`를 사용한다. 두 타입은 좌표계가 다른 값을 섞는 실수를 막는다. 원시 `f32`를 잘못 감싸거나 변환을 생략한 것까지 컴파일러가 확인해 주지는 않는다.
 
-**무엇을 무엇이 막는지 구분한다 — 이 정책은 강제 수단이 셋이다(셋째는 아래 [집행은 셋으로 나뉜다](#집행은-셋으로-나뉜다)).**
-
-| 실수 | 예 | 막는 것 |
-|---|---|---|
-| 두 좌표계를 **섞는다** | `PhysicalPx + LogicalPx` | **컴파일러** — 타입 에러다 |
-| 변환을 **빠뜨린다** | `PhysicalPx(x * ppp)` 에서 `* ppp` 누락 | **가드** — `src/dpi_conversion_guard.rs` 의 소스 스캔 |
-
-두 번째는 타입이 못 막는다. `PhysicalPx(pub f32)` 는 튜플 필드가 공개돼 있어 **단언이지 검증이 아니고**, 애초에 산술이 타입 밖에서 끝난 뒤 결과만 감싸는 형태(`r.x.value() / scale_factor` → egui `f32`)는 생성자를 거치지도 않는다. 그래서 수동 DPI 산술을 찾아내는 가드가 따로 있다.
-
-- 정의: `crates/tasty-type-geometry/src/length.rs`
-- 강제 정책(필수): [`../../CLAUDE.md`](../../CLAUDE.md) "길이 타입" 섹션 — 새 길이 값은 반드시 둘 중 하나.
+정의는 `crates/tasty-type-geometry/src/length.rs`, 프로젝트 규칙은 [CLAUDE.md](../../CLAUDE.md)의 길이 타입 절에 있다.
 
 ## 두 타입
 
-| 타입 | 의미 | 쓰는 곳 |
-|------|------|---------|
-| `PhysicalPx(pub f32)` | 실제 디바이스 픽셀 (scale factor 적용 후) | GPU/wgpu, winit 마우스 좌표, `PhysicalRect` 필드, GPU 뷰포트·시저 |
-| `LogicalPx(pub f32)` | DPI 독립 논리 픽셀 | egui UI, `Theme` 상수, 사이드바 너비, 모든 egui 좌표/크기 |
+| 타입 | 단위 | 사용하는 곳 |
+|---|---|---|
+| `PhysicalPx(pub f32)` | 실제 장치 픽셀 | winit 마우스 좌표, GPU 크기·뷰포트·시저, PhysicalRect |
+| `LogicalPx(pub f32)` | DPI와 독립된 논리 픽셀 | egui 좌표·크기, Theme 치수, UI 조작 영역 |
 
-둘 다 `#[repr(transparent)]` 이라 런타임 오버헤드가 없다 (제로 코스트). `Add`/`Sub`/`Mul<f32>`/`Div<f32>`/`Neg`/`*Assign` 과 `max`/`min`/`floor`/`abs` 가 **같은 타입끼리만** 정의돼 있어, `PhysicalPx + LogicalPx` 같은 식은 타입 에러다.
+두 타입은 `repr(transparent)`이며 내부 값은 f32다. 같은 타입끼리 더하고 빼거나, 무차원 배율로 곱하고 나눌 수 있다. `PhysicalPx + LogicalPx`는 컴파일 오류다. `max`·`min`·`floor`·`abs`와 대입 연산도 제공한다.
+
+타입은 값의 용도로 고른다. 조작 영역과 디자인 시스템 치수는 논리 픽셀을 쓰고, 의도적으로 1 device pixel을 유지하는 hairline은 물리 픽셀을 쓴다. 예를 들어 pane 보더는 `LogicalPx(2.0)`, surface 보더는 `PhysicalPx(1.0)`, divider 조작 영역은 논리값이다. 배율 2에서 앞의 두 보더는 각각 물리 4px·1px여야 한다. 배율 1만 확인하면 이 차이를 검사할 수 없다.
 
 ### `const` 문맥에서는 트레이트 연산을 못 쓴다
 
-위 연산자는 전부 트레이트 impl 이고 트레이트 impl 은 `const` 가 아니다. 그래서 상수 초기화식에서
-부르면 컴파일이 막힌다:
-
-```rust
-const BODY_H: LogicalPx = FRAME_H - HEADER_H;   // error[E0015]: cannot call non-const operator
-```
-
-`LogicalPx(FRAME_H.0 - HEADER_H.0)` 으로 필드를 벗기면 컴파일은 되지만 그 자리에서 타입이
-사라진다 — 위 표의 "단언이지 검증이 아니다" 로 되돌아가는 형태고, DPI 가드는 이걸 잡지 않는다
-(그 가드가 겨냥하는 것은 scale factor 산술이다). 그래서 벗기지 않는 통로를 인허런트
-`const fn` 으로 둔다. 두 타입 모두에 있다:
+현재 타입의 Add·Sub 등 구현은 const가 아니므로 상수 초기화식의 `FRAME_H - HEADER_H`는 컴파일되지 않는다. `.0`을 꺼내 계산하는 대신 두 타입이 제공하는 const 메서드를 쓴다.
 
 ```rust
 const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H);
@@ -43,69 +25,71 @@ const LIST_MIN: LogicalPx = ITEM_HEIGHT.scaled(4.0);
 const INDENT: LogicalPx = LABEL_COL_WIDTH.plus(LogicalPx(12.0));
 ```
 
-`plus`/`minus`/`scaled` 는 대응 트레이트 연산과 결과가 같다 — 이름이 다른 것은 인허런트 메서드가
-같은 이름의 트레이트 메서드를 조용히 가리는 것을 피하기 위해서다. 계수가 좌변인 형태
-(`4.0 * LEN`)는 `Mul<f32>` 도 `scaled` 도 지원하지 않으므로 `LEN.scaled(4.0)` 으로 쓴다 —
-곱셈 교환이라 값이 보존된다.
+`plus`·`minus`·`scaled`는 런타임 연산자와 결과가 같다. 이름을 다르게 두어 같은 이름의 트레이트 메서드를 가리지 않는다. 계수가 앞에 있는 `4.0 * LEN`은 `LEN.scaled(4.0)`으로 쓴다.
 
 ## 변환 — scale factor 를 명시적으로 통과
 
-두 타입 간 직접 대입은 불가능하다. 반드시 변환 함수를 거치고, 그때 scale factor 를 넘긴다:
+변환 메서드에 현재 DPI scale factor를 전달한다. UI 배율과 DPI 배율은 별개다. UI 배율의 적용 위치는 [테마 가이드](../design/systems/theme.md#host-ui-zoom)를 따른다.
 
 ```rust
-let physical: PhysicalPx = logical.to_physical(scale_factor); // 논리 → 물리 (× sf)
-let logical:  LogicalPx  = physical.to_logical(scale_factor); // 물리 → 논리 (÷ sf)
+let physical: PhysicalPx = logical.to_physical(scale_factor);
+let logical: LogicalPx = physical.to_logical(scale_factor);
+let rect: LogicalRect = physical_rect.to_logical(scale_factor);
 ```
 
-변환에 scale factor 가 *강제 인자* 라는 점이 핵심이다 — "어느 좌표계인지" 를 매번 의식하게 만든다.
+사각형은 네 필드를 각각 변환하지 않고 `PhysicalRect`·`LogicalRect`의 변환 메서드를 사용한다. `src/host_api/webview.rs`의 `WebViewBounds`·`PhysicalWebViewBounds`도 같은 방식이다. 짝 타입의 왕복 변환은 테스트로 확인한다.
 
-사각형은 네 변이 함께 넘어가므로 짝 타입으로 한 번에 변환한다. 변을 하나씩 나누면 **하나를 빠뜨려도 컴파일이 통과**한다:
-
-```rust
-let logical: LogicalRect = physical_rect.to_logical(scale_factor);
-let physical: PhysicalRect = logical.to_physical(scale_factor);
-```
-
-`src/host_api/webview.rs` 의 `WebViewBounds` / `PhysicalWebViewBounds` 도 같은 형태다 — 플랫폼 창 API 로 나가는 사각형이라 타입이 다를 뿐, 왕복이 상쇄된다는 것을 테스트로 고정하는 구조가 같다.
+튜플 생성자는 공개되어 있다. winit 좌표나 GPU 크기처럼 이미 물리 단위로 들어온 값과 상수를 만들 때 필요하다. `PhysicalPx(x)`는 x가 물리 단위라는 개발자의 표현이며, 그 단위를 검증하는 함수가 아니다. 생성자 이름만 `from_raw`로 바꾸어도 이 한계는 같다.
 
 ## 외부 API 경계에서만 `.value()`
 
-egui·wgpu 등 외부 라이브러리는 `f32` 를 받는다. 그 **경계에서만** `.value()` 로 raw `f32` 를 꺼낸다:
+외부 API가 f32를 요구할 때 마지막에 값을 꺼낸다.
 
 ```rust
 egui::FontId::proportional(th.font_size_body.value());
 ```
 
-내부 로직 중간에서 `.value()` 로 빠져나와 `f32` 산술을 하는 것은 안티패턴 — 타입 보호를 스스로 버리는 셈이다.
-
-**특히 `.value()` 로 벗긴 뒤 scale factor 를 곱하거나 나누는 것**은 위 표의 두 번째 실수 그 자체다. 그 형태는 `src/dpi_conversion_guard.rs` 가 잡는다. 산술이 정당한 자리(변환 API 본체, 길이 타입에 의존할 수 없는 plugin SDK 등)는 그 가드의 `ALLOWED` 에 **사유와 함께** 등재한다 — 파일 단위가 아니라 건수까지 고정하므로, 등재된 파일이 새 위반을 들이면 그것도 잡힌다.
+내부 계산에서는 길이 타입을 유지한다. `.value()`를 꺼낸 뒤 scale factor를 곱하거나 나누는 대신 변환 API를 먼저 호출한다. 수동 산술이 맞는 변환 함수 본체와 독립 SDK 등은 DPI 가드의 `ALLOWED`에 이유와 건수를 기록한다.
 
 ## 집행은 셋으로 나뉜다
 
-| 무엇을 막는가 | 누가 막는가 |
-|---|---|
-| 두 좌표계를 섞는 것 (`PhysicalPx + LogicalPx`) | 컴파일러 |
-| 변환을 빠뜨리는 것 (`.value()` 뒤의 수동 scale factor 산술) | `src/dpi_conversion_guard.rs` |
-| 애초에 타입을 안 쓰고 선언하는 것 (`const W: f32 = 96.0;`) | `src/source_guards/length_constant_frontier.rs` |
+| 검사 | 확인하는 것 | 확인하지 못하는 것 |
+|---|---|---|
+| 컴파일러 | 서로 다른 길이 타입의 혼합 | raw 값에 잘못 붙인 타입 |
+| `src/dpi_conversion_guard.rs` | 인식 가능한 scale factor 이름 주변의 수동 산술 | 모든 변환 누락, 여러 줄로 분리된 식, 생성된 코드의 의미 |
+| `src/source_guards/length_constant_frontier.rs` | 길이로 보이는 f32·f64 const 선언 | 모든 변수와 함수 인자의 실제 단위 |
 
-셋째가 따로 필요한 이유는 앞의 둘이 **이미 타입이 붙은 값**에만 걸리기 때문이다. 처음부터 `f32` 인 길이는 섞일 두 타입도 벗길 `.value()` 도 없어 둘 다 조용히 통과한다.
+DPI 가드는 `src`·`crates`를 검사한다. `ALLOWED`는 변환 API 본체, WebView bounds 변환, 폰트 배율 계산, 길이 타입에 의존하지 않는 plugin SDK의 산술을 사유·건수로 관리한다. `PENDING_PORT`는 아직 변환 API로 옮기지 못한 코드용이며 현재 비어 있다. 허용 파일 안에서 같은 건수를 유지한 채 식이 바뀌면 건수 검사만으로는 구분할 수 없다. 줄 번호 고정은 무관한 편집에도 실패하므로 쓰지 않으며, 정규화된 식 비교는 아직 도입하지 않았다.
 
-셋째 가드의 술어는 두 겹이다. **어디를 보는가**는 스캔 목록이 정하고(지금은 `src` · `crates/tasty-gallery` · `crates/tasty-platform`), 그 안에서 **"전환 전선 밖에 없다"** 를 요구한다. 본체 전환이 진행 중이라 아직 남은 영역이 있고, 그 영역은 면제 목록이 아니라 **경로 한 줄과 건수**로 이름 지어져 있다 — 건수가 상한이라 전선은 줄어들 수만 있다. 갤러리는 전환을 끝내 전선 없이 0 을 요구받는다. **목록에 없는 크레이트는 0 이 아니라 미측정이다** — 목록이 조용히 비는 것(접두사 오타 등)은 별도 테스트가 막는다. 그 가드가 설계상 못 잡는 형태(테스트 코드, 배율성 이름, 0~1 값, `static`·`let`)는 그 파일의 모듈 주석이 열거하고, 각 형태를 겨냥한 테스트가 사각의 모양을 못박는다.
+선언 가드의 검사 범위는 `src/`, `crates/tasty-gallery/`, `crates/tasty-platform/`이다. 갤러리는 잔여 0을 요구한다. 현재 예외로 남은 선언은 `src/app/modal/shake.rs`와 `crates/tasty-platform/src/window_chrome.rs`의 f64 경계 값 각 하나다. winit의 f64 좌표와 직접 계산하는 곳이며, 상세 이유와 건수는 가드의 `FRONTIERS`가 관리한다. 기존 UI 디렉터리 전체를 예외로 허용하는 규칙은 없다.
+
+잔여 건수는 증가할 수 없고 실제 건수와 기록도 같아야 한다. 검사 목록에 없는 크레이트는 아직 확인하지 않은 범위이며 위반 0으로 보고하지 않는다. 경로 오타로 검사할 파일이 없어지는 경우도 별도 테스트가 잡는다. 테스트 코드, 배율·시간처럼 보이는 이름, 0보다 크고 1보다 작은 값, static·let 선언은 이 검사의 한계로 남는다.
+
+검사 실행 범위는 [CI 가이드](../dev-guide/ci-gates.md)를 따른다. 테스트가 실행되지 않은 결과를 타입이 모든 DPI 오류를 막았다는 근거로 사용하지 않는다.
+
+### 디자인 길이 검사의 예외
+
+`on_scale_length_literal.rs`는 디자인 토큰이 바뀌면 함께 바뀌어야 하는 길이 리터럴을 검사한다. 다음 값은 다르게 취급한다.
+
+- 빈 사각형을 막는 1px 하한과 1 물리 픽셀 미만의 비교는 값·clamp 또는 비교 형태로 구분한다. 같은 max 표현이라도 24px 같은 실제 치수 하한은 제외하지 않는다.
+- UV의 0..1은 픽셀 길이가 아니다. `UNIT_SPACE_SITES`에 파일·호출 형태·건수·이유를 등록한다. 같은 pos2 호출이 화면 좌표에도 쓰이므로 숫자 1만 보고 일괄 제외하지 않는다.
+
+예외도 스캔 결과에 표시해 건수를 확인한다. 새 UV 항목을 등록할 때는 실제로 정규화 좌표인지 검토한다. 명부에 맞춘 숫자만으로 의미가 검증되지는 않는다.
 
 ## `f32` 로 남는 값
 
-길이가 아닌 값은 그대로 `f32` 다 — 비율(ratio/opacity/scale_factor), 색 채널, 외부 API 로 넘길 직전 추출값.
+비율·불투명도·scale factor·색 채널은 길이가 아니므로 f32로 둔다. 외부 API에 넘기기 직전 꺼낸 값도 해당한다.
 
 ## 새 코드 작성 시
 
-1. 길이를 나타내는 맨 `f32` 필드/변수를 만들지 않는다.
-2. **scale factor 에 따라 값이 달라지면 `PhysicalPx`, 아니면 `LogicalPx`.**
-3. 외부 API 경계에서만 `.value()` 로 `f32` 추출.
+1. 입력이 장치 픽셀인지 논리 UI 단위인지 확인해 타입을 고른다.
+2. 내부 필드·계산·함수 경계에서 타입을 유지한다.
+3. DPI 경계를 넘을 때 변환 메서드를 사용하고 외부 API 직전에만 값을 꺼낸다.
+
+기존 상수를 전환할 때는 파일 안에서 끝나는 변경, 산술을 함께 바꿔야 하는 변경, 함수 시그니처까지 바뀌는 변경을 나눈다. 이름 개수보다 실제 영향 범위를 확인하고 한 부류를 마친 뒤 잔여 명부를 줄인다.
 
 ## 관련
 
-- [`../adr/0509-length-constructor-sealing-clause-consolidated.md`](../adr/0509-length-constructor-sealing-clause-consolidated.md) — 왜 생성자를 봉인하지 않는지, 기각한 대안과 재검토 조건
-- [`../adr/0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md`](../adr/0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) — 봉인 대신 쓰는 집행 수단 셋(스캔 가드 · 짝 타입 · 왕복 상쇄 시험)
-- `src/dpi_conversion_guard.rs` — 수동 DPI 산술을 잡는 가드. 왜 `tests/` 가 아니라 크레이트 안에 있는지도 그 모듈 doc 에 적혀 있다
-- [`../design/systems/theme.md`](../design/systems/theme.md) — Theme 상수는 모두 `LogicalPx`
-- 색은 길이와 같은 newtype 정책을 따른다 (`GpuRgba` 등) — theme.md "색 생성 경로 단일화"
+- [좌표계와 변환 경계 결정](../adr/0639-typed-length-and-dpi-boundaries.md)
+- [테마와 UI 배율](../design/systems/theme.md)
+- [DPI 화면 검증](../ai-verification/dpi-scale-verification.md)
