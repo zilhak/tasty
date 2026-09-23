@@ -4,6 +4,7 @@ pub(crate) mod agent_events;
 pub(crate) mod file_picker;
 pub(crate) mod handler_ipc;
 pub(crate) mod host_events;
+pub(crate) mod info_modal;
 pub(crate) mod intents;
 pub(crate) mod list_global;
 pub(crate) mod lua_commands;

@@ -133,13 +133,16 @@ impl App {
         view.mark_dirty();
     }
 
-    /// 일반 Configure 요청과 debug가 지정한 초기 탭·하위 탭을 적용한다.
+    /// 일반 Configure·파일 핸들러·권한 진입 요청과 debug가 지정한 초기 탭·하위 탭을 적용한다.
     fn apply_pending_tab_overrides(&mut self, modal: &mut view::SettingsView) {
         if std::mem::take(&mut self.pending_settings_plugin_tab) {
             modal.focus_plugin_tab();
         }
         if std::mem::take(&mut self.pending_settings_file_handler_tab) {
             modal.focus_file_handler_tab();
+        }
+        if std::mem::take(&mut self.pending_settings_macos_permissions_tab) {
+            modal.focus_macos_permissions_tab();
         }
         #[cfg(debug_assertions)]
         if let Some(tab_key) = self.pending_settings_tab.take()

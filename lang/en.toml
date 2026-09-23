@@ -1874,7 +1874,7 @@ Screen recording — used by the screenshot feature. Turn it on in System Settin
 If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./scripts/macos-codesign-identity.sh --create). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.
 
 Once you grant them, this notice stops appearing. There is no setting to turn it off: recording that you dismissed it would leave no way to tell you when a permission is reset later."""
-open_settings = "Open settings"
+open_settings = "Open permission settings"
 
 # CLI 도움말. 영어 값은 소스에서 생성되는 clap 도움말과 정확히 같아야 한다.
 [cli.help._root]

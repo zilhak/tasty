@@ -111,7 +111,13 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 ### 부팅 권한 안내
 
-부팅 시 **확인 가능한 권한 중 하나라도 미승인으로 확인되면** InfoModal 을 띄운다(`should_show_permission_notice`). 판정 입력은 FDA 추정 3 상태와 화면 기록 승인 여부 둘이다. 모달에는 시스템 설정의 전체 디스크 접근 권한 패널을 여는 버튼(`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`, `open(1)` 로 실행)이 붙는다.
+부팅 시 **확인 가능한 권한 중 하나라도 미승인으로 확인되면** InfoModal 을 띄운다(`should_show_permission_notice`). 판정 입력은 FDA 추정 3 상태와 화면 기록 승인 여부 둘이다. 모달의 [권한 설정 열기] 는 **Tasty 의 권한 화면**(설정 > 일반 > 권한)을 연다 — OS 패널이 아니다. 권한 확인과 요청을 한자리에 모으는 것이 목적이고, 안내는 그 자리로 가는 입구다. FDA 는 결국 시스템 설정으로 가야 하지만 그 링크는 권한 화면 안에 이미 있다(아래 "설정 탭").
+
+**2 단계가 되는 것은 의도다.** 버튼은 popup draw 에서 곧장 창을 열지 않는다 — draw 는 `AppState` 만 들고 있어 winit `EventLoopProxy` 에 닿지 않기 때문이다. 대신 `dialogs.permission_settings_requested` 슬롯을 세우고, App 레이어의 `dispatch_pending_info_modal_requests` 가 프레임 시작에 드레인해 `AppEvent::OpenSettings` 를 보낸다(file handler picker 의 result 슬롯과 같은 형태). 진입 탭은 **L1 `General` + L2 `MacosPermissions` 를 함께** 세운다 — L1 만 맞추면 일반 탭 기본 화면이 열리고, 그 오답은 "설정 창이 열렸다" 로는 안 보인다.
+
+**설정 창이 이미 열려 있으면** 새 창을 요청하지 않고 그 창의 탭을 바꾸고 포커스를 준다. `open_settings_modal` 이 모달이 이미 있으면 즉시 return 하므로, 그 갈래에서 1 회성 플래그를 세우면 소비되지 않은 채 남아 **다음번에 설정 창을 열 때** 엉뚱하게 권한 탭으로 튄다.
+
+**버튼을 눌러도 안내는 닫히지 않는다.** 설정 창은 별도 winit 창이라 안내를 덮을 수 있고, 그 창을 닫고 나면 무엇을 왜 켜야 했는지 다시 읽을 자리가 필요하다. [확인] 을 눌러야 큐에서 빠진다.
 
 **FDA 만 보면 안 되는 이유** — FDA 를 이미 가진 사용자는 화면 기록이 미승인이어도 아무 안내를 못 받는다. 화면 기록은 한 번 거부하면 앱이 다시 물을 수 없고 시스템 설정에서만 되돌릴 수 있어, FDA 와 똑같은 발견성 문제를 갖는다.
 

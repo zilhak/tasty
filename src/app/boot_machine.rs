@@ -628,13 +628,12 @@ impl App {
     }
 }
 
+/// 권한 안내 모달의 추가 버튼 — 시스템 설정이 아니라 Tasty 의 권한 화면으로 보낸다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
 fn permission_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
     vec![crate::adapters::ui::info_modal::InfoModalButton {
         label: crate::i18n::t("macos_permissions.notice.open_settings").to_string(),
-        action: crate::adapters::ui::info_modal::InfoModalButtonAction::OpenExternal(
-            crate::macos_permissions::FULL_DISK_ACCESS_SETTINGS_URL.to_string(),
-        ),
+        action: crate::adapters::ui::info_modal::InfoModalButtonAction::OpenPermissionSettings,
     }]
 }
 

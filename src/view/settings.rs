@@ -76,6 +76,13 @@ impl SettingsView {
         self.settings_ui_state.select_file_handler_tab();
     }
 
+    /// 첫 진입을 일반 > 권한으로 설정 (부팅 권한 안내의 [권한 설정 열기] 진입점).
+    /// L1 만 정하는 위 둘과 달리 L2 까지 함께 정한다 — L1 만 맞추면 권한 화면이 아니라
+    /// 일반 탭 기본 화면이 열리고, 그 오답은 "설정 창이 열렸다" 로는 안 보인다.
+    pub fn focus_macos_permissions_tab(&mut self) {
+        self.settings_ui_state.select_macos_permissions_tab();
+    }
+
     /// debug 전용 — 첫 진입 탭을 키 문자열로 지정 (`debug.settings.open` 의 `tab` 인자).
     /// 알 수 없는 키면 `false` 를 반환하고 탭을 바꾸지 않는다.
     #[cfg(debug_assertions)]

@@ -113,6 +113,9 @@ pub struct DialogState {
     pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 안내 대기열. 확인 버튼으로 맨 앞 항목을 처리한다.
     pub(crate) info_modal_queue: VecDeque<InfoModal>,
+    /// 안내 모달의 [권한 설정 열기] 가 눌렸다. popup draw 에는 winit proxy 가 없어
+    /// 슬롯만 세우고 App 레이어가 프레임 시작에 드레인한다.
+    pub(crate) permission_settings_requested: bool,
     /// 응답 대기 중인 approval 큐. 맨 앞 요청을 표시한다.
     pub(crate) pending_approval_ids: VecDeque<tasty_approval::ApprovalId>,
     pub(crate) approval_comment_buffer: String,
@@ -185,6 +188,7 @@ impl DialogState {
             tab_drag: None,
             ws_drag: None,
             info_modal_queue: VecDeque::new(),
+            permission_settings_requested: false,
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
             file_handler_picker: None,

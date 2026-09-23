@@ -269,6 +269,17 @@ impl SettingsUiState {
         self.active_tab = SettingsTab::FileHandler;
     }
 
+    /// 부팅 권한 안내의 [권한 설정 열기] 에서 호출 — 첫 진입을 일반 > 권한으로 설정.
+    /// **L1 과 L2 를 함께** 세운다. 권한 L2 는 macOS 에서만 목록에 들어가므로
+    /// (`general_l2_sections`) 다른 OS 에서 이 값이 선택되면 본문이 빈 화면으로 그려지는데,
+    /// 생산자가 macOS 전용 안내 하나라 실제로는 그 조합이 만들어지지 않는다.
+    pub fn select_macos_permissions_tab(&mut self) {
+        self.active_tab = SettingsTab::General;
+        self.general_sub_tab = GeneralSubTab::MacosPermissions;
+        // 진입은 권한 상태 스냅샷의 갱신 트리거다(`apply_l2_select` 와 같은 이유).
+        crate::macos_permissions::refresh_permission_snapshot();
+    }
+
     /// debug 전용 — 탭 키 문자열로 `active_tab` 을 설정한다 (`debug.settings.open`).
     /// 알 수 없는 키면 `false` 를 반환하고 탭을 바꾸지 않는다.
     #[cfg(debug_assertions)]

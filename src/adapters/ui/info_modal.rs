@@ -18,10 +18,12 @@ pub enum InfoModalAction {
 
 #[derive(Debug, Clone)]
 pub enum InfoModalButtonAction {
-    /// OS 설정 등 외부 주소를 열되 안내는 계속 볼 수 있도록 팝업을 유지한다.
-    // 이유: 현재 생성처가 macOS의 Full Disk Access 안내뿐이라 다른 플랫폼에서는 사용되지 않는다.
+    /// Tasty 의 권한 화면(설정 > 일반 > 권한)을 연다. 모달은 열린 채 유지되며 [확인] 으로만 닫힌다.
+    /// popup draw 에는 winit proxy 가 없어 `dialogs.permission_settings_requested` 슬롯을
+    /// 세우고 App 레이어가 드레인한다.
+    // 이유: 유일한 생산자가 macOS 전용 안내라 다른 OS 빌드엔 생성처가 없다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    OpenExternal(String),
+    OpenPermissionSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +142,7 @@ pub fn draw_info_modal(
 
     let mut confirm =
         ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
+    let mut open_permission_settings = false;
 
     ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
         vspace(ui, th.spacing_xs);
@@ -150,12 +153,18 @@ pub fn draw_info_modal(
             for button in &current.extra_buttons {
                 if ui.button(&button.label).clicked() {
                     match &button.action {
-                        InfoModalButtonAction::OpenExternal(url) => open_external(url),
+                        InfoModalButtonAction::OpenPermissionSettings => {
+                            open_permission_settings = true
+                        }
                     }
                 }
             }
         });
     });
+
+    if open_permission_settings {
+        state.dialogs.permission_settings_requested = true;
+    }
 
     if !confirm {
         return PopupAction::None;
@@ -174,27 +183,5 @@ pub fn draw_info_modal(
         PopupAction::Close
     } else {
         PopupAction::None
-    }
-}
-
-/// 렌더를 막지 않도록 외부 URL/스킴을 열고 프로세스 완료는 기다리지 않는다.
-fn open_external(url: &str) {
-    #[cfg(debug_assertions)]
-    if crate::platform::debug_os_open::intercepted("open_external", url) {
-        return;
-    }
-    #[cfg(target_os = "macos")]
-    let mut cmd = std::process::Command::new("open");
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/c", "start", ""]);
-        c
-    };
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let mut cmd = std::process::Command::new("xdg-open");
-
-    if let Err(err) = cmd.arg(url).spawn() {
-        tracing::warn!(%err, url, "info modal: 외부 링크 열기 실패");
     }
 }

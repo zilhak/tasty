@@ -385,6 +385,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_popup_opens();
         self.dispatch_pending_handler_ipc();
         self.dispatch_pending_picker_results();
+        self.dispatch_pending_info_modal_requests();
         self.dispatch_pending_file_picker_results();
         self.dispatch_pending_script_confirm();
         self.dispatch_plugin_popup_events();
