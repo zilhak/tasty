@@ -41,7 +41,7 @@ use super::ack::AckStatus;
 /// 10,000). 표의 실제 크기를 정하는 것은 이 값이 아니라 **유입률 × 윈도우**이고,
 /// 유입이 멎으면 다음 실패 한 건이 전부 회수한다.
 ///
-/// 값의 근거와 그때의 비용 실측은
+/// 이 값을 메모리 상한으로 쓰지 않는 정책은
 /// [ADR-0632](../../docs/adr/0632-webhook-admission.md).
 const PRUNE_TRIGGER_SOURCES: usize = 4096;
 
