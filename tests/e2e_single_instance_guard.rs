@@ -99,6 +99,11 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/gui_tests.rs",
     "tests/hook_env_integration.rs",
     "tests/hooks_detection_e2e.rs",
+    // ADR-0534 의 surface kind 철회. plugin 을 끄고 켜는 것은 workspace 로 격리되지 않는
+    // 프로세스 전역 상태라, 기존 e2e 파일에 넣으면 같은 바이너리의 다른 시험이 꺼진
+    // markdown 을 본다(`attach_markdown_content_loopback` 은 그 plugin 의 surface 를 잰다).
+    // 그래서 별도 binary 이고, 인스턴스는 전용이 아니라 `common::shared()` 다.
+    "tests/plugin_disable_withdraws_surface_kinds.rs",
     "tests/shared_instance_harness.rs",
     "tests/soak_memory.rs",
     "tests/webhook_integration.rs",

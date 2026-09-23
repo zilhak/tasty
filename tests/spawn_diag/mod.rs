@@ -250,6 +250,7 @@ const HEADLESS_OK_SUITES: &[&str] = &[
     "attach_silent_disconnect",
     "hook_env_integration",
     "hooks_detection_e2e",
+    "plugin_disable_withdraws_surface_kinds",
     "shared_instance_harness",
     "soak_memory",
     "webhook_integration",

@@ -2,9 +2,13 @@
 //! ([ADR-0534](../docs/adr/0534-a-disabled-plugins-surface-kinds-are-withdrawn-not-erased.md)).
 //!
 //! 단위 시험이 못 보는 자리 — `plugin.disable` 이 registry 를 실제로 거두는 배선 — 을
-//! 실제 데몬 상대로 잰다. 헤드리스 조합 전용이다: 전용 인스턴스가 필요하고(plugin 을 켜고
-//! 끄므로 공유 인스턴스의 전제를 바꾼다), gui 조합의 전용 인스턴스는 창을 띄운다. 두 조합이
-//! 같은 `dispatch_lifecycle_toggle` 을 부르므로 배선의 모양은 같다.
+//! 실제 데몬 상대로 잰다. 헤드리스 조합 전용이다: gui 조합에서는 이 바이너리의 인스턴스가
+//! 창을 띄운다. 두 조합이 같은 `dispatch_lifecycle_toggle` 을 부르므로 배선의 모양은 같다.
+//!
+//! 인스턴스는 `common::shared()` 다. plugin 을 켜고 끄는 것은 workspace 로 격리되지 않는
+//! 프로세스 전역 상태라 **이 바이너리에 다른 시험을 넣지 않는다** — 넣으면 그 시험이 꺼진
+//! markdown 을 본다. 이 파일이 별도 test binary 인 이유가 그것이고, 시험이 하나뿐이라 공유
+//! 인스턴스가 곧 이 시험 하나의 인스턴스다(전용 spawn 이 더 주는 것이 없다 — ADR-0090).
 #![cfg(not(feature = "gui"))]
 
 mod common;
@@ -46,11 +50,12 @@ fn surface_ids(server: &TastyInstance) -> Vec<u64> {
 
 #[test]
 fn disabling_a_plugin_withdraws_its_surface_kinds_and_keeps_open_surfaces() {
-    let server = TastyInstance::spawn();
+    let server = common::shared();
     let dir = tempfile::tempdir().expect("tempdir");
     let file = dir.path().join("README.md");
     std::fs::write(&file, "# doc\n").expect("write doc");
-    let pane_id = server.first_pane_id();
+    let ws = server.create_workspace("plugin-disable-withdraws");
+    let pane_id = server.first_pane_id_in_workspace(ws.id);
 
     // 켜진 상태: kind 지목 생성이 소유자를 띄우고 kind 를 등록한다(ADR-0259).
     let opened = create_markdown_tab(&server, pane_id, &file);
