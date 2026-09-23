@@ -1,70 +1,13 @@
 #!/usr/bin/env bash
-# Tasty pre-commit hook.
-#
-# **여기에 검사 개수를 적지 않는다.** 한때 "빠른 검사 7종" 이라 적혀 있었고 실제로는
-# 열이었다 — 적힌 수는 검사를 더할 때 같이 안 움직인다. 수는 **돌 때 찍는다**(맨 아래
-# 통과줄). 목록은 아래 표가 정본이고, 표와 실제 호출이 어긋나면 훅이 스스로 실패한다.
-#
-# 설치: `git config core.hooksPath .githooks` 1회 실행.
-# bypass: `git commit --no-verify` (긴급 시).
-#
-# 정책: 모든 *diff 기반* 검사 (C.6/C.9/C.11/C.12) 는 **staged diff 의 추가 라인
-# (`+`) 만** 본다. 기존 코드의 위반은 잡지 않는다 — 신규 추가에만 적용
-# (changed-only policy). A.1/A.2 만 *파일 전체* 검사 (포맷·선언 순서는 컨텍스트
-# 전체가 필요).
-#
-# 검사 목록:
-#   A.1  mod/use 선언 순서 (mod 다 먼저, use 다 나중)  [staged .rs 의 파일 전체]
-#   A.2  cargo fmt --check (+ workspace exclude 크레이트는 manifest 별도) [staged .rs 의 파일 전체]
-#   A.3  셸 자산 정적 검사 (shellcheck, warning 이상)  [staged 중 셸 자산의 파일 전체]
-#   C.6  `let _ =` 주석 강제                            [추가된 줄 + **바로 윗줄**]
-#   C.8  UI 색상 하드코딩 — clippy 로 이관 (비활성)
-#   C.9  egui::Window 직접 사용                          [추가된 줄만]
-#   C.11 println! / eprintln! — tracing 강제             [추가된 줄만]
-#   C.12 dbg! — debug leak 방지                          [추가된 줄만]
-#   P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로 [파일 목록 — **지운 것까지**]
-#   T.1  커밋되지 않는 티켓을 가리키는 인용 (P1~P7)      [레포 전체 작업 트리]
-#   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [파일 목록 — **이름만 바뀐 것도**, 지운 것은 빼고]
-#   W.2  새 파일이 추가됐을 때 그것을 처음 보는 타깃 안내 (경고만) [파일 목록 — **새로 더한 것만**]
-#
-# ★ 대괄호는 **그 검사가 무엇을 보는가**다. 여섯 가지고, 서로 겹치지 않는다:
-#     ① staged .rs 의 파일 전체            A.1 · A.2   (A.3 은 staged 셸 자산)
-#     ② 추가된 줄만                        C.9 · C.11 · C.12
-#     ③ 추가된 줄 + 바로 윗줄              C.6   ← **안 고친 주석도 본다**
-#     ④ 파일 목록 — 새로 더한 것만         W.2
-#     ⑤ 파일 목록 — 이름 바뀜까지          W.1
-#     ⑥ 파일 목록 — 지운 것까지            P.1
-#     ⑦ 레포 전체 작업 트리                 T.1   ← **staged 밖도 본다**
-#   ⑦ 은 위 여섯과 성질이 다르다. 나머지는 전부 "이 커밋이 무엇을 더했나" 를 묻고
-#   changed-only 정책을 따르는데, T.1 이 부르는 가드는 순회가 좌변이라 **레포 전체**를
-#   본다. 그 성질을 라벨에 적어 두는 이유는, 이 검사가 빨개졌을 때 **내가 안 건드린
-#   파일이 범인일 수 있다**는 것을 읽는 사람이 알아야 하기 때문이다. 얻는 것은 그
-#   대가에 값한다 — staged 밖에 남아 있던 죽은 인용도 같이 막히고, 무엇보다 rebase 로
-#   남의 위반이 내 트리에 들어온 상태가 push 까지 가지 않는다.
-#   한때 이 자리에 `[파일 전체]`·`[diff 추가 라인]`·`[staged 파일 목록]` 셋만 있었다.
-#   ④⑤⑥ 이 **한 라벨을 나눠 쓰고 있었고**, 그래서 "이 훅이 무엇을 봤나" 를 라벨로 물으면
-#   셋이 하나로 보였다. 라벨에 필터 문자(ACM 류)를 박는 대신 **무엇이 달라지는지**를 적는다 —
-#   필터 문자는 읽는 사람이 git 문서를 한 번 더 봐야 뜻이 서고, 그 사이 뜻이 사라진다.
-#
-# 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서. T.1 은 그 선을 안 넘는다 —
-# 실측 2.0 s 로, 워크스페이스를 컴파일하는 clippy/check 와 두 자릿수 배 차이다.
+# 커밋 전 코드 형식, 추가된 코드, 플러그인 버전, 문서 참조를 검사한다.
+# 설치: git config core.hooksPath .githooks
+# 검사별 범위와 실행 방법: docs/dev-guide/git-hooks.md
 
 set -e
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# staged 된 파일 목록. `.rs` 목록은 여기서 갈라 낸다 — 두 값이 **같은 한 번의 조회**에서
-# 나와야 아래 통과 줄이 찍는 모수가 검사들이 실제로 순회한 것과 같다.
-#
-# ★ **`R`(이름 바뀜)이 들어가야 한다.** 없으면 **순수 rename 커밋의 모수가 0 이 되고**,
-#   이 값에서 조기 return 하는 검사 여섯(A.1 mod/use 순서 · A.2 `cargo fmt` · C.6 `let _`
-#   사유 · C.9 `egui::Window` · C.11 · C.12)이 **한 줄도 안 보고 초록을 낸다**(실측: 옮기기만
-#   한 커밋에서 `staged .rs 0 · staged 전체 0` 이 찍혔다). 옮긴 파일은 내용이 같아도 **자리가
-#   달라진다** — mod/use 순서와 크레이트 귀속은 자리가 정한다.
-# ★ **`D`(지움)는 일부러 뺀다.** 위 검사들은 전부 **파일을 연다** — 지워진 경로를 열면 없는
-#   파일이고, 그것을 실패로 셀지 통과로 셀지가 또 갈린다. 지움을 봐야 하는 것은 파일을 안
-#   여는 검사들(P.1·W.1)이고 그쪽은 자기 자리에서 `ACMRD`·`ACMR` 로 따로 묻는다.
 STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACMR || true)
 STAGED_RS=$(printf '%s\n' "$STAGED_ALL" | grep -E '\.rs$' || true)
 
@@ -73,26 +16,22 @@ yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 
 # ────────────────────────────────────────────────────────────
-# M.1  merge 커밋 차단 — branch 가 갈라지는 2-parent 머지 커밋 금지.
-#      pre-merge-commit 은 clean non-ff merge 만 잡는다. **충돌 merge** 는
-#      git merge 가 커밋을 안 만들고 멈춘 뒤 resolve → `git commit` 으로
-#      마무리되며, 그 커밋은 pre-merge-commit 이 아니라 이 훅을 탄다.
-#      여기서 잡지 않으면 충돌 merge 가 갈래 커밋으로 새어 들어온다.
-#      정책: 모든 통합은 rebase → ff-merge 로 선형 유지. rebase 로 다 된다.
+# M.1  merge 커밋 차단
 # ────────────────────────────────────────────────────────────
 if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-    red "✘ branch 가 갈라지는 merge 커밋이 차단되었습니다 (2-parent)."
+    red "✘ merge 커밋을 만들 수 없습니다. rebase와 fast-forward merge를 사용해 주세요."
     echo
-    yellow "▸ 정책: 모든 통합은 rebase 로 선형화한다. 충돌이 있어도 rebase 로 해결된다 —"
-    yellow "  merge 커밋(갈래)은 만들지 않는다."
+    yellow "▸ 프로젝트는 rebase로 변경을 반영해 커밋 이력을 일렬로 유지합니다."
+    yellow "  진행 중인 merge를 취소한 뒤 아래 순서로 다시 시도해 주세요."
     echo
-    yellow "▸ 지금 이 merge 를 되돌리고 rebase 로 재시도하라:"
+    yellow "▸ 실행할 명령:"
     yellow "    git merge --abort"
     yellow "    git rebase <대상-브랜치>       # 충돌나면 양쪽 의도를 확인 후 해결"
-    yellow "    git merge --ff-only <브랜치>"
+    yellow "    # 대상 브랜치로 전환한 뒤 실행"
+    yellow "    git merge --ff-only <작업-브랜치>"
     echo
-    yellow "▸ 충돌은 '마커만 지워서' 해결하지 마라 — 양쪽 변경의 의도를 파악하고"
-    yellow "  맞는 결과로 합쳐라. 애매하면 rebase --abort 후 원인부터 분석하라."
+    yellow "▸ 충돌이 발생하면 양쪽 변경이 필요한 이유를 확인하고 내용을 합쳐 주세요."
+    yellow "  해결 방법이 확실하지 않으면 git rebase --abort로 중단할 수 있습니다."
     echo
     exit 1
 fi
@@ -107,13 +46,8 @@ check_mod_use_order() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
-        # 상류 크레이트 사본은 상류의 선언 순서를 그대로 둔다 — 무엇이 tasty 패치인지가
-        # 상류와의 차이로 읽혀야 한다(docs/adr/0516-the-webhook-413-closes-the-connection-through-a-vendored-tiny-http-patch.md).
+        # vendor 코드는 원본과의 차이를 최소화하기 위해 선언 순서를 검사하지 않는다.
         case "$f" in vendor/*) continue ;; esac
-        # top-level "선언 영역" 안에서만 검사. 영역 = 빈 줄/주석/attribute/use/mod/
-        # extern crate 만 나오는 동안. 첫 코드 토큰 (fn/struct/impl/const/static/
-        # type/trait/enum/macro_rules) 이 나오면 영역 종료 — dispatcher 패턴
-        # (use → fn → 하단 mod tests) 은 정당하므로 통과.
         local violation
         violation=$(awk '
             /^[[:space:]]/ { next }
@@ -123,10 +57,6 @@ check_mod_use_order() {
             /^#!\[/ { next }
             /^(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]/ { if (!end_zone) saw_use = NR; next }
             /^(pub(\([^)]*\))?[[:space:]]+)?extern[[:space:]]+crate[[:space:]]/ { next }
-            # 선언형 `mod x;` 만 검사 대상이다. 인라인 `mod x { ... }` 는 선언이
-            # 아니라 **코드**라서 fn/struct 와 같이 영역을 끝낸다 — 그렇게 안 가르면
-            # `use` 뒤의 `#[cfg(unix)] mod unix { ... }`(테스트 파일의 흔한 형태)가
-            # 오탐으로 걸려, 그 파일을 건드리는 커밋이 전부 막힌다.
             /^(pub(\([^)]*\))?[[:space:]]+)?mod[[:space:]]/ {
                 if ($0 !~ /;[[:space:]]*$/) { end_zone = 1; next }
                 if (saw_use && !end_zone) { print NR; exit }
@@ -135,7 +65,7 @@ check_mod_use_order() {
             { end_zone = 1 }
         ' "$f")
         if [ -n "$violation" ]; then
-            fail "[A.1 mod/use 순서] $f:$violation — 선언 영역에서 mod 가 use 뒤에 나옴"
+            fail "[A.1 mod/use 순서] $f:$violation — mod 선언을 use 선언보다 앞에 배치해 주세요."
         fi
     done
 }
@@ -143,22 +73,17 @@ check_mod_use_order() {
 # ────────────────────────────────────────────────────────────
 # A.2  cargo fmt --check
 # ────────────────────────────────────────────────────────────
-# 루트 `cargo fmt` 는 workspace `exclude` 크레이트(site/, crates/tasty-plugin-sdk-wasm/)
-# 를 보지 않는다 — 그 디렉토리의 .rs 가 staged 됐을 때만 manifest 를 따로 지정해
-# 검사한다 (docs/dev-guide/site.md "왜 workspace 밖인가"). CI 에도 같은 게이트가
-# 있다(.github/workflows/format-check.yml, main push + PR) — 이 훅은 그것을 커밋
-# 시점으로 당겨 빠른 피드백을 주는 역할이고, 우회(`--no-verify`)해도 CI 가 잡는다.
 EXCLUDED_CRATES="site crates/tasty-plugin-sdk-wasm"
 
 check_cargo_fmt() {
     if [ -z "$STAGED_RS" ]; then return; fi
     if ! cargo fmt --check 2>/dev/null; then
-        fail "[A.2 cargo fmt] 포맷 위반. \`cargo fmt\` 실행 후 다시 staging."
+        fail "[A.2 cargo fmt] 코드 형식이 맞지 않습니다. \`cargo fmt\` 실행 후 다시 git add해 주세요."
     fi
     for crate in $EXCLUDED_CRATES; do
         if grep -q "^$crate/" <<<"$STAGED_RS"; then
             if ! cargo fmt --check --manifest-path "$crate/Cargo.toml" 2>/dev/null; then
-                fail "[A.2 cargo fmt] $crate/ 포맷 위반 (workspace exclude — 루트 cargo fmt 미검사). \`cargo fmt --manifest-path $crate/Cargo.toml\` 실행 후 다시 staging."
+                fail "[A.2 cargo fmt] $crate/ 코드 형식이 맞지 않습니다. 이 크레이트는 워크스페이스 검사에 포함되지 않습니다. \`cargo fmt --manifest-path $crate/Cargo.toml\` 실행 후 다시 git add해 주세요."
             fi
         fi
     done
@@ -167,20 +92,11 @@ check_cargo_fmt() {
 # ────────────────────────────────────────────────────────────
 # A.3  셸 자산 정적 검사
 # ────────────────────────────────────────────────────────────
-# 판정은 scripts/check-shell-assets.sh 하나가 한다 — 훅과 CI 가 같은 것을 불러야
-# 둘이 갈리지 않는다. 모수만 다르다: 여기서는 **staged 된 셸 자산**을, CI 는 추적되는
-# 자산 전부를 본다. 새 파일은 아직 추적 밖이라 전수 모수에 안 들어오므로, 커밋 시점에
-# 경로를 직접 넘기는 이 자리가 새 자산을 처음 보는 자리다.
-#
-# 검사기가 없으면 rc 2 로 멈춘다 — 통과가 아니다. 받는 법은 실패문이 찍는다.
-# ────────────────────────────────────────────────────────────
 check_shell_assets() {
     local rc
     if [ -z "$STAGED_ALL" ]; then return; fi
 
-    # **무엇이 셸 자산인가는 여기서 안 고른다.** 그 규칙은 게이트 안에 하나뿐이고
-    # (`is_shell_asset` — 확장자와 shebang 의 합집합), 여기서 한 번 더 쓰면 같은 물음에
-    # 답이 둘이 된다. staged 목록을 그대로 넘기고 거르는 것은 게이트가 한다.
+    # 셸 파일 선택 규칙을 중복하지 않도록 staged 목록 전체를 검사 스크립트에 넘긴다.
     set +e
     # 단어 분리가 목적이다 — 경로 목록을 가변 인자로 넘긴다.
     # shellcheck disable=SC2086
@@ -189,61 +105,20 @@ check_shell_assets() {
     set -e
     case "$rc" in
         0) ;;
-        1) fail "[A.3 shell-assets] 셸 자산에 정적 검사 위반이 있다 (위 목록)." ;;
-        *) fail "[A.3 shell-assets] 판정 불가 (종료코드 $rc) — 통과가 아니다. 위 줄이 받는 법을 찍는다." ;;
+        1) fail "[A.3 shell-assets] 셸 스크립트 검사에 실패했습니다. 위에 표시된 내용을 수정해 주세요." ;;
+        *) fail "[A.3 shell-assets] 검사 도구를 실행하지 못했습니다 (종료 코드 $rc). 위의 설치 안내를 확인해 주세요." ;;
     esac
 }
 
 # ────────────────────────────────────────────────────────────
-# C.6  `let _ =` 주석 강제
+# C.6  `let _ =`로 값을 무시하는 이유 확인
 # ────────────────────────────────────────────────────────────
-# staged diff 의 추가 line 만 검사. "의도 명시" 로 인정하는 조건 (OR):
-#   ① 같은 줄에 // 주석이 있음, 또는
-#   ② 위쪽 라인이 // 주석 — **빈 줄과 `#[..]` 속성 줄은 건너뛴다**, 또는
-#   ③ 바로 다음 라인 (새 파일 기준) 이 // 주석.
-# docs/dev-guide/error-handling.md 의 윗줄 주석 관례 + 멀티라인 write! 케이스를
-# 인정한다. ③ 은 rustfmt 가 trailing 주석이 달린 긴 라인을 포맷하며 주석을 다음
-# 줄로 분리하는 케이스 (`let _ = foo(Bar {` + 다음 줄 `// 이유`) 를 수용한다.
-# 주석이 같은 줄·윗줄·다음 줄 어디에도 없는 `let _ =` 는 여전히 거부.
-# -U1 로 뒤쪽 라인 컨텍스트를 확보하고, let 후보를 pending 으로 보류했다가 다음
-# (새 파일에 존재하는) 라인이 주석인지 보고 판정한다.
-#
-# -- ② 가 왜 diff 컨텍스트가 아니라 사본을 보나 -------------------------
-# 문서 표는 사유 주석과 문장 사이에 **빈 줄과 `#[..]` 속성**이 있어도 인정한다.
-# `#[cfg(windows)]` 가 주석과 문장 사이에 오는 것은 러스트 관용이라 실제로 쓰인다
-# (실측: 레포에 속성 낀 자리 1, 빈 줄 낀 자리 0 — 2026-09-07).
-# 그 자리는 CI(`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)는 받는데 훅만 막았다. 그러면
-# 그 줄을 손대는 커밋이 `--no-verify` 로 도망가고, **한 줄 때문에 훅 열 개가 꺼진다.**
-# 게이트가 자기를 우회하게 만드는 형태는 그 자체로 결함이라 넓혔다.
-#
-# 넓히려면 위로 여러 줄을 봐야 하는데 **diff 컨텍스트로는 원리적으로 부족하다** —
-# -U<n> 을 아무리 키워도 경계가 생기고, 그 경계 밖은 조용히 위반이 된다. 그래서
-# 위쪽 탐색은 **마스킹 사본을 줄 번호로** 읽는다(사본은 이미 만들어 놨다). 경계가 없다.
-# 사본이 없는 트리(갓 클론)에서는 바로 윗줄만 보고 물러난다 — **더 많이 잡는 방향**이라
-# 조용한 통과를 안 만든다. 물러났다는 것은 아래에서 말한다.
-#
-# -- 코드인지 문자열인지는 **판정기가 가른다** ---------------------------
-# 이 검사의 물음("이 줄의 **코드**에 `let _ =` 가 있나")은 문자열 리터럴을 코드와
-# 구분해야 답할 수 있다. 여기서 렉서를 다시 만들지 않는다 -- 러스트 층이 이미 갖고
-# 있고(`tasty-doc-guards` 의 `mask-source`), 셸이 자기 것을 만들면 같은 물음에 답이
-# 둘이 된다(실제로 그렇게 갈려 있었다).
-#
-# **줄 번호로 맞춘다.** staged 내용을 마스킹한 사본에서 같은 줄을 읽는다. 그래서
-# 여러 줄에 걸친 문자열 리터럴도 옳게 갈린다 -- 한 줄 정규식으로는 원리적으로 못 하던
-# 것이고, 가드의 회귀 픽스처가 실제로 그것 때문에 막혀 문구를 바꿔 우회했다.
-#
-# 판정기가 없으면(갓 클론한 트리) **한 줄 정규식으로 물러난다.** 그쪽은 더 많이 잡는
-# 방향이라 조용한 통과를 안 만든다. 물러났다는 것을 말한다.
 check_let_underscore() {
     if [ -z "$STAGED_RS" ]; then return; fi
 
     local mask_bin="" masked="" staged_dir=""
     if [ -r "$REPO_ROOT/scripts/lib/judge-bin.sh" ]; then
         . "$REPO_ROOT/scripts/lib/judge-bin.sh"
-        # `resolve_judge` 는 경로를 **`JUDGE_BIN` 변수로** 돌려준다. 표준출력으로 받으면
-        # 항상 빈 문자열이라 아래 분기가 늘 정규식 쪽으로 떨어진다 — 그래도 이 게이트는
-        # 초록이라(정규식은 더 많이 잡는 방향이다) 격하됐다는 사실이 값으로 안 남는다.
-        # 사유는 그 함수 doc 에 있다: 표준출력 반환은 판정기가 한 줄만 찍어도 깨진다.
         resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$REPO_ROOT"
         mask_bin="$JUDGE_BIN"
     fi
@@ -262,22 +137,21 @@ check_let_underscore() {
         rm -rf "$staged_dir"
     fi
     if [ -z "$masked" ]; then
-        echo "  [C.6] mask-source 가 없거나 낡아 한 줄 정규식으로 판정한다 (여러 줄 문자열 안의 let _ 를 코드로 볼 수 있다). 위 [judge] 줄이 어느 쪽인지 말한다." >&2
+        echo "  [C.6] mask-source를 사용할 수 없어 간단한 정규식으로 검사합니다. 여러 줄 문자열에서 오탐이 발생할 수 있습니다. 위 [judge] 안내를 확인해 주세요." >&2
     fi
 
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
-        # 상류 크레이트 사본의 `let _` 은 상류가 쓴 그대로 둔다(A.1 과 같은 이유). 전수
-        # 가드 `let_underscore_documented.rs` 는 그 줄들을 줄 단위 ALLOWLIST 로 면제한다.
+        # vendor 코드에는 원본 주석을 유지한다. 전체 검사에서는 별도 예외 목록을 사용한다.
         case "$f" in vendor/*) continue ;; esac
         local violation masked_file=""
         if [ -n "$masked" ] && [ -f "$masked/$f" ]; then masked_file="$masked/$f"; fi
         violation=$(git diff --cached -U1 -- "$f" | awk -v maskfile="$masked_file" '
-            # 마스킹 사본을 줄 번호로 읽어 둔다. 없으면 한 줄 정규식으로 물러난다.
+            # 문자열을 제거한 소스를 줄 번호로 읽는다. 없으면 한 줄 정규식으로 검사한다.
             BEGIN { if (maskfile != "") { while ((getline ml < maskfile) > 0) MASK[++mn] = ml } }
             function flush() { if (pending != "") { print pending; pending = "" } }
             # ② 위쪽 사유 주석 찾기. 빈 줄과 `#[..]` 속성 줄은 건너뛴다(문서 표와 같은 규칙).
-            # 사본이 있으면 경계 없이 올라가고, 없으면 바로 윗줄 하나만 보고 물러난다.
+            # 소스 사본이 없으면 바로 윗줄만 확인한다.
             function comment_above(ln,   i, l) {
                 if (mn == 0) return (prev ~ /^[[:space:]]*\/\//)
                 for (i = ln - 1; i >= 1; i--) {
@@ -289,7 +163,7 @@ check_let_underscore() {
                 }
                 return 0
             }
-            # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋 + **새 파일 줄 번호** 잡기.
+            # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋 + 새 파일 줄 번호 잡기.
             # 줄 번호가 있어야 마스킹 사본의 같은 줄을 읽을 수 있다.
             /^@@/ {
                 flush(); prev = ""
@@ -304,13 +178,11 @@ check_let_underscore() {
                 if (prefix == "-") next     # 제거 라인: 새 파일에 없음 → 무시 (다음 줄 후보 아님)
                 if (prefix != "+" && prefix != " ") next
                 nl++
-                # 판정에 쓰는 사본. 있으면 판정기가 만든 것(문자열·문자 리터럴만 덮고
-                # 주석은 남긴다), 없으면 한 줄 정규식으로 물러난다 — 그쪽은 여러 줄에
-                # 걸친 문자열을 못 다루고, 그게 이 검사의 알려진 근사였다.
+                # 문자열을 제거한 사본을 우선 사용한다. 정규식은 여러 줄 문자열을 처리하지 못한다.
                 if (mn > 0 && nl in MASK) { mline = MASK[nl] }
                 else { mline = content; gsub(/"([^"\\]|\\.)*"/, "", mline) }
                 code = mline; sub(/\/\/.*/, "", code)   # 주석을 뺀 코드 부분
-                # 직전 let 후보의 "다음 줄" 이 이 라인. 주석이면 사면, 아니면 위반 확정.
+                # 이전 줄의 let 구문에 이어지는 주석이 있으면 허용한다.
                 if (pending != "") {
                     if (mline ~ /^[[:space:]]*\/\//) {
                         pending = ""        # ③ 다음 줄 주석 — OK
@@ -333,27 +205,23 @@ check_let_underscore() {
             END { flush() }                 # 마지막 보류 후보 확정
         ')
         if [ -n "$violation" ]; then
-            fail "[C.6 let _] $f — 주석 없는 \`let _ =\` 추가됨 (왜 무시하는지 주석 필요):"
+            fail "[C.6 let _] $f — \`let _ =\`로 값을 무시하는 이유를 주석으로 적어 주세요:"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done
 }
 
 # ────────────────────────────────────────────────────────────
-# C.8  UI 색상 하드코딩 — clippy::disallowed_methods 로 대체됨
+# C.8  UI 색상 하드코딩
 # ────────────────────────────────────────────────────────────
-# clippy.toml 의 disallowed-methods 가 정확히 같은 검사를 #[allow] 인식 + path
-# resolution 포함해 수행한다. grep 기반 검사는 우리 의도된 외부 입력 사이트
-# (settings 픽커, 이미지 픽셀 추출 등) 의 #[allow] 도 잡아 false positive 가 많음.
-# pre-push 에서 cargo clippy 가 돈다 — 무거운 색 검사는 거기서 처리.
 check_color_hardcode() {
+    # 실제 검사는 Clippy로 이전했다. 기존 검사 ID와 실행 목록을 유지한다.
     return 0
 }
 
 # ────────────────────────────────────────────────────────────
-# C.9  egui::Window 직접 사용 (PopupManager 강제)
+# C.9  egui::Window 대신 PopupManager 사용
 # ────────────────────────────────────────────────────────────
-# staged diff 의 추가 line 만 검사.
 check_egui_window() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -361,9 +229,7 @@ check_egui_window() {
         case "$f" in
             src/ui/popup/*) continue ;;
             src/ui/popup_defs.rs) continue ;;
-            # 부팅 시점 렌더러 — PopupManager/AppState 가 살아있기 전 단계라
-            # egui::Window 를 직접 쓸 수밖에 없다(docs/dev-guide/popup-implementation.md
-            # 의 예외 항목). 앱 내부 다이얼로그는 여기 없다.
+            # PopupManager 초기화 전의 부팅 화면은 egui::Window 직접 사용을 허용한다.
             src/gfx/gpu/shell_setup.rs) continue ;;
             src/gfx/gpu/boot_error.rs) continue ;;
         esac
@@ -373,61 +239,15 @@ check_egui_window() {
             | grep -E 'egui::Window::|egui::Window[[:space:]]*<' \
             || true)
         if [ -n "$violation" ]; then
-            fail "[C.9 egui::Window] $f — PopupManager/PopupDef 시스템 사용 (docs/dev-guide/popup-implementation.md):"
+            fail "[C.9 egui::Window] $f — egui::Window 대신 PopupManager/PopupDef를 사용해 주세요 (docs/dev-guide/popup-implementation.md):"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done
 }
 
 # ────────────────────────────────────────────────────────────
-# C.11 println! / eprintln! (tracing 강제)
+# C.11 println! / eprintln! 대신 tracing 사용
 # ────────────────────────────────────────────────────────────
-# 정책: staged diff 의 추가 라인만 검사 (changed-only).
-# 예외 path — *CLI 응답 출력* 은 println 정당:
-#   - src/main.rs                     : boot 진입점
-#   - src/boot/cli_routing.rs         : clap 라우팅 (잠재적 println)
-#   - crates/tasty-cli/*              : CLI 응답 출력 (tree, JSON, 에러 메시지 등
-#                                       — caller 가 stdout/stderr 로 수신)
-#   - crates/tasty-tui-simulator/*    : 테스트용 TUI simulator
-#   - site/*                          : GitHub Pages 정적 사이트 생성기 (workspace
-#                                       exclude 된 CLI 빌드 도구 — 생성 로그·경고를
-#                                       stdout/stderr 로 내는 것이 정확한 동작)
-#   - **/build.rs                     : cargo build script — `cargo:warning=` /
-#                                       `cargo:rerun-if-changed=` 같은 directive 가
-#                                       println 으로만 가능 (build.rs 에선 tracing
-#                                       사용 불가)
-#   - crates/tasty-latency-control/*  : 지연 단정의 대조군(ADR-0181). 이 크레이트가 값을 내는
-#                                       자리는 **패닉 되감기 중**이고, 그 값을 남기는 것이
-#                                       크레이트의 존재 이유다. `spawn_diag` 의 우회로
-#                                       (`tracing` + `with_test_writer`)는 여기 못 쓴다 —
-#                                       subscriber 를 안 깐 바이너리(본체 bin 의 unit test 등)
-#                                       에서 조용히 사라지고, 그 조용한 소실이 정확히 이
-#                                       크레이트가 막으려는 실패다. `eprintln!` 은 libtest 가
-#                                       설정 없이 포획해 실패한 테스트의 출력 블록에 싣는다.
-#   - src/source_guards/*             : 이 디렉토리 전체가 `#[cfg(test)] mod source_guards;`
-#                                       뒤에 있어 **출하 바이너리에 없다** — 라이브러리가
-#                                       출력하지 않는다는 이 규칙의 대상이 아니다. 여기서
-#                                       찍는 것은 가드가 **초록일 때 무엇을 집었는지**이고
-#                                       (`-- --nocapture`), 그것이 없으면 양성 대조가
-#                                       "통과했다" 만 남기고 무엇을 통과시켰는지는 안 남긴다.
-#                                       `tracing` 은 여기서 못 쓴다 — bin 의 유닛 테스트에는
-#                                       subscriber 가 없어 조용히 사라지고, 그 조용한 소실이
-#                                       정확히 막으려는 것이다(latency-control 예외와 같은 사유).
-#   - crates/tasty-doc-guards/src/bin/* : 게이트 스크립트가 부르는 CLI 판정기. 이 크레이트는
-#                                       의존이 0 인 것이 존재 이유라(ADR-0138) tracing 을
-#                                       들일 수 없고, 진단은 stdout/stderr 가 인터페이스다.
-#                                       (`src/` 의 나머지는 예외가 아니다 — 라이브러리는
-#                                       아무것도 출력하지 않는다)
-#   - crates/tasty-doc-guards/tests/* : 같은 크레이트의 통합 테스트 타깃 — 출하 바이너리에
-#                                       없으니 위 규칙의 술어("라이브러리는 아무것도
-#                                       출력하지 않는다")가 애초에 안 닿는다. tracing 을
-#                                       못 들이는 것은 **크레이트 속성**이라 bins 와 같은
-#                                       사유가 글자 그대로 성립한다. 여기서 찍는 것은
-#                                       가드가 센 **모수**이고, 그것이 없으면 하한 단정만
-#                                       남아 "0" 이 안 봐서 0 인지 정말 없어서 0 인지가
-#                                       안 갈린다. bins 만 면제하고 tests 를 뺀 것은 의도가
-#                                       아니라 누락이었다.
-# 그 외 .rs 파일은 tracing::info!/warn!/error! 사용.
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -452,16 +272,15 @@ check_println() {
             | grep -vE '^\+[[:space:]]*//' \
             || true)
         if [ -n "$violation" ]; then
-            fail "[C.11 println] $f — \`tracing::info!\` / \`tracing::warn!\` 등 사용:"
+            fail "[C.11 println] $f — \`tracing::info!\` / \`tracing::warn!\` 등을 사용해 주세요:"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done
 }
 
 # ────────────────────────────────────────────────────────────
-# C.12 dbg! 매크로 (debug leak 방지)
+# C.12 출시 코드에 남은 dbg! 매크로 확인
 # ────────────────────────────────────────────────────────────
-# staged diff 의 추가 line 만 검사.
 check_dbg() {
     if [ -z "$STAGED_RS" ]; then return; fi
     for f in $STAGED_RS; do
@@ -473,23 +292,15 @@ check_dbg() {
             | grep -vE '^\+[[:space:]]*//' \
             || true)
         if [ -n "$violation" ]; then
-            fail "[C.12 dbg!] $f — \`dbg!\` 매크로 추가됨 (release 에 leak 금지):"
+            fail "[C.12 dbg!] $f — 출시 빌드에 디버그 출력이 남지 않도록 \`dbg!\`를 제거해 주세요:"
             echo "$violation" | sed 's/^/      /' >&2
         fi
     done
 }
 
 # ────────────────────────────────────────────────────────────
-# W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만, 커밋은 통과)
+# W.1  사용자 기능 변경 시 CHANGELOG 작성 안내 (경고만)
 # ────────────────────────────────────────────────────────────
-# CHANGELOG.md 는 "사용자가 의존하는 표면" 의 변경을 기록한다(CHANGELOG.md 머리말).
-# 그 표면이 선언되는 파일이 staged 인데 CHANGELOG.md 는 staged 가 아니면 상기시킨다.
-#   - crates/tasty-ipc/src/method_meta.rs   : IPC 메서드 표
-#   - crates/tasty-cli/src/commands/        : CLI 서브커맨드
-#   - crates/tasty-plugin-*/tasty-plugin.toml : plugin 매니페스트(권한·인자)
-# **경고만 한다** — 그 파일을 만졌다고 반드시 표면이 바뀌는 것은 아니다(내부 refactor,
-# 오타 수정, 버전 bump 만인 매니페스트). 하드 실패로 만들면 무해한 커밋마다
-# --no-verify 를 쓰게 되고 훅 전체가 무력화된다. 판단은 사람이 한다.
 check_changelog_reminder() {
     local staged surface
     staged=$(git diff --cached --name-only --diff-filter=ACMR)
@@ -500,38 +311,26 @@ check_changelog_reminder() {
         -e '^crates/tasty-plugin-[^/]+/tasty-plugin\.toml$' \
         || true)
     if [ -z "$surface" ]; then return; fi
-    yellow "▸ [W.1] 사용자 표면 선언 파일이 staged 인데 CHANGELOG.md 는 아니다:"
+    yellow "▸ [W.1] 명령이나 플러그인 설정 파일이 변경됐지만 CHANGELOG.md는 변경되지 않았습니다:"
     echo "$surface" | sed 's/^/      /' >&2
-    yellow "  표면이 실제로 바뀌었으면 CHANGELOG.md \`[Unreleased]\` 에 넣어라"
-    yellow "  (내부 refactor·버전 bump 뿐이면 무시해도 된다 — 경고일 뿐 커밋은 진행된다)."
+    yellow "  사용자가 쓰는 기능이 달라졌다면 CHANGELOG.md의 \`[Unreleased]\`에 적어 주세요."
+    yellow "  (내부 리팩터링이나 버전 변경만 있다면 생략할 수 있습니다. 이 안내는 커밋을 막지 않습니다.)"
 }
 
 # ────────────────────────────────────────────────────────────
-# W.2  새 파일이 추가됐을 때 그것을 처음 보는 타깃 안내 (경고만)
-#
-# 새로 만든 것을 판정하는 타깃이 **다른 패키지에 있어서** 놓치는 일이 반복됐다.
-# `cargo test -p <크레이트>` 는 루트 패키지의 통합 타깃을 안 돌리고, 그 반대도
-# 마찬가지다. 판정자는 있었고 자동 채널도 있었는데 커밋하는 사람이 안 돌렸다.
-#
-# 정확한 매핑("이 파일을 무엇이 판정하는가")은 순회 범위를 소스에서 읽어야 하고
-# 그것은 임의의 코드라 근사밖에 안 된다. 그래서 여기서는 **새것의 종류**로만
-# 안내한다 — 종류는 경로 모양으로 정해지므로 근사가 아니다.
-#
-# 경고일 뿐이라 목록이 낡아도 커밋을 막지 않는다. 다만 낡은 안내는 죽은 인용이
-# 되므로, 안내하기 전에 그 타깃 파일이 실재하는지 확인하고 없으면 그렇게 말한다.
+# W.2  새 파일에 필요한 테스트 명령 안내 (경고만)
 # ────────────────────────────────────────────────────────────
 suggest_target() {
-    # $1 = 타깃 소스 경로, $2 = 돌리는 명령, $3 = 왜 이것이 먼저 보는가
+    # $1 = 테스트 파일 경로, $2 = 실행 명령, $3 = 검사 내용
     if [ -f "$1" ]; then
         yellow "      $2"
         yellow "        ↳ $3"
     else
-        yellow "      (안내가 낡았다: $1 가 없다 — 이 훅의 W.2 목록을 고쳐라)"
+        yellow "      (테스트 파일 $1을 찾을 수 없습니다. 이 훅의 W.2 안내 목록을 갱신해 주세요.)"
     fi
 }
 
-# 알려진 종류의 경로 모양. **분류와 미분류가 같은 목록을 봐야** 둘이 갈리지 않는다 —
-# 목록이 둘이면 하나만 움직이고, 움직이지 않은 쪽이 조용해진다.
+# 검사 안내가 등록된 파일 경로 패턴. 분류되지 않은 파일을 찾을 때도 사용한다.
 KNOWN_KIND_RE='^(tests/[^/]+\.rs|crates/[^/]+/tests/[^/]+\.rs|crates/[^/]+/Cargo\.toml|src/.*\.rs|crates/[^/]+/src/.*\.rs|docs/.*\.md|scripts/.*\.sh|\.githooks/[^/]+|site/.*)$'
 
 check_new_file_judges() {
@@ -549,107 +348,69 @@ check_new_file_judges() {
 
     if [ -z "$new_int_test$new_crate$new_src$new_doc$new_shell$new_site$unknown" ]; then return; fi
 
-    yellow "▸ [W.2] 새 파일이 추가됐다. 그것을 처음 보는 타깃은 이 커밋을 만든 명령에"
-    yellow "  안 들어갔을 수 있다 (-p <크레이트> 는 루트 패키지 타깃을 안 돌린다)."
+    yellow "▸ [W.2] 새 파일에 필요한 검사 명령을 안내합니다."
+    yellow "  -p <크레이트>로 실행한 테스트에는 루트 패키지의 테스트가 포함되지 않습니다."
 
     if [ -n "$new_int_test" ]; then
         yellow "  새 통합 테스트 타깃:"
         echo "$new_int_test" | sed 's/^/      /' >&2
         suggest_target "crates/tasty-doc-guards/tests/let_underscore_documented.rs" \
             "cargo test --locked -p tasty-doc-guards --test let_underscore_documented" \
-            "테스트 타깃이 프로덕션 lint 명부에 섞이는 것을 여기서 처음 본다 (파일 머리 allow 한 줄이 필요하다)"
-        # ★ 위 머리말이 말한 그 함정이 **이 갈래에서** 난다. `crates/*/tests/` 에 새 파일을
-        #   만든 사람은 그 크레이트를 `-p` 로 돌려 초록을 보고 끝낸다. 그런데 그 파일을
-        #   판정하는 가드 일부는 루트 패키지 **라이브러리 안**(src/source_guards/)에 살고,
-        #   `-p <크레이트>` 도 셸 게이트도 그 타깃에 닿지 않는다. 실측 2026-09-08:
-        #   새 통합 타깃 하나가 -p tasty-doc-guards 533 passed · 셸 게이트 6 종 전부 초록인
-        #   채로 repo_relative_paths 가드에 빨갛게 잡혔다 — 같은 형태가 하루에 세 번 났다.
+            "통합 테스트 파일에 필요한 lint 예외 선언을 검사합니다."
         suggest_target "src/source_guards/repo_relative_paths.rs" \
             "cargo test --locked -p tasty --lib" \
-            "루트 패키지 라이브러리 안(src/source_guards/)에 사는 가드들이 이 파일을 여기서 처음 본다 — 바로 위 -p tasty-doc-guards 는 그 타깃에 안 닿는다"
+            "src/source_guards/의 소스 검사를 실행합니다. tasty-doc-guards 테스트와 별도로 실행해 주세요."
     fi
     if [ -n "$new_crate" ]; then
         yellow "  새 크레이트:"
         echo "$new_crate" | sed 's/^/      /' >&2
         suggest_target "crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs" \
             "cargo test --locked -p tasty-doc-guards --test architecture_crate_list_complete" \
-            "크레이트 명부와 문서의 정합을 여기서 처음 본다"
+            "크레이트 목록과 문서가 일치하는지 검사합니다."
         yellow "      cargo deny check licenses"
-        yellow "        ↳ license 필드가 없으면 여기서만 걸린다 (로컬에 있는데 안 부르면 CI 에서 처음 본다)"
+        yellow "        ↳ Cargo.toml의 license 선언을 검사합니다."
     fi
     if [ -n "$new_src" ]; then
         yellow "  새 소스 파일:"
         echo "$new_src" | sed 's/^/      /' >&2
         suggest_target "crates/tasty-doc-guards/tests/no_emoji_in_source.rs" \
             "cargo test --locked -p tasty-doc-guards --test no_emoji_in_source --test no_hardcoded_ui_strings" \
-            "새 소스의 이모지·하드코딩 문자열을 여기서 처음 본다"
+            "소스의 이모지와 번역되지 않은 UI 문자열을 검사합니다."
     fi
     if [ -n "$new_doc" ]; then
         yellow "  새 문서:"
         echo "$new_doc" | sed 's/^/      /' >&2
         suggest_target "crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs" \
             "cargo test --locked -p tasty-doc-guards" \
-            "체크박스·표 정합·인용 좌표를 이 크레이트가 처음 본다"
+            "문서의 체크박스, 표, 파일 참조를 검사합니다."
     fi
     if [ -n "$new_shell" ]; then
         yellow "  새 셸 스크립트:"
         echo "$new_shell" | sed 's/^/      /' >&2
         suggest_target "crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs" \
             "cargo test --locked -p tasty-doc-guards --test no_early_exit_consumer_in_shell_pipes" \
-            "셸은 루트의 통합 타깃이 본다 — 그 타깃은 확장자가 아니라 shebang 으로 고르므로 확장자 없는 훅도 대상이다"
+            "셸 파이프라인의 오류 처리를 검사합니다. 확장자가 없는 Git 훅도 포함됩니다."
     fi
     if [ -n "$new_site" ]; then
         yellow "  새 사이트 파일:"
         echo "$new_site" | sed 's/^/      /' >&2
-        # ★ 이 갈래는 **cargo 타깃을 안 댄다** — 대 줄 것이 없기 때문이다. `site/` 는
-        #   Rust 가 아니라 Astro 앱이고, `site/src/` 아래를 순회하는 가드는 레포에 하나도
-        #   없다(실측). 그래서 여기 적는 것은 "무엇이 이것을 처음 보는가" 의 사실대로
-        #   npm 쪽 명령이다. 이 갈래가 없던 동안 `site/` 의 새 파일은 "종류를 모르는
-        #   파일" 로 나갔는데, 종류는 알려져 있고 채널도 있다 — 없는 것은 **cargo 채널**뿐이다.
         yellow "      (cd site && npm run build)"
-        yellow "        ↳ Astro 빌드가 임포트·문법을 여기서 처음 본다. 자동 채널은 pages.yml (main push · site/** 등)"
+        yellow "        ↳ Astro의 import와 문법을 검사합니다. pages.yml에서도 실행합니다."
         yellow "      (cd site && npm run check-links)"
-        yellow "        ↳ site/content/ 의 링크를 본다 — 컴포넌트·스타일은 그 대상이 아니다"
-        yellow "        ↳ ★ site/src/ 아래를 순회하는 러스트 가드는 없다 — 토큰·raw px 류는 아무도 안 본다"
+        yellow "        ↳ site/content/ 문서의 링크를 검사합니다."
+        yellow "        ↳ site/src/의 스타일 규칙은 Rust 테스트로 검사하지 않으므로 별도로 확인해 주세요."
     fi
     if [ -n "$unknown" ]; then
-        yellow "  ▸ 이 훅이 **종류를 모르는** 새 파일:"
+        yellow "  ▸ 추천 검사 명령이 등록되지 않은 새 파일:"
         echo "$unknown" | sed 's/^/      /' >&2
-        yellow "        ↳ 위 목록에 행이 없는 경로 모양이다. 이것을 보는 타깃이 있는지"
-        yellow "          확인하고, 있으면 이 훅에 행을 더해라. 자산 파일이면 무시해도 된다."
+        yellow "        ↳ 이 파일을 검사하는 테스트가 있다면 W.2 안내 목록에 추가해 주세요."
+        yellow "          이미지 등 별도 검사가 필요 없는 파일은 생략할 수 있습니다."
     fi
-    yellow "  (경고일 뿐 커밋은 진행된다 — 이미 돌렸으면 무시해라.)"
+    yellow "  (이 안내는 커밋을 막지 않습니다. 이미 실행한 검사는 다시 실행하지 않아도 됩니다.)"
 }
 
 # ────────────────────────────────────────────────────────────
-# P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로
-#
-# 판정은 scripts/check-plugin-version-bump.sh 하나가 한다 — 훅과 CI 가 같은 것을
-# 불러야 둘이 갈리지 않는다. 판별식(파일 수 문턱이 아니라 rustfmt 정규화 후 내용)의
-# 근거·측정·대안은 docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md.
-#
-# **비교 기준은 HEAD 가 아니라 main 과의 merge-base 다.** HEAD 와 비교하면 `--amend`
-# 로 고쳐 커밋할 때 "이미 올린 그 커밋" 이 기준이 되어 두 번째 bump 를 요구하게 된다.
-# merge-base 기준이면 "이 lane 이 main 대비 한 번 올렸는가" 를 묻게 되어 amend·rebase
-# 어느 쪽에도 흔들리지 않고, 목적(반영 시점에 올라 있는가)과도 일치한다.
-# main 이 없거나(단독 clone) merge-base 를 못 구하면 HEAD 로 떨어진다.
-# ────────────────────────────────────────────────────────────
-#
-# **선필터는 plugin 디렉토리가 아니었다 — `^crates/` 였다.** 판정 대상은 plugin 디렉토리가
-# 아니라 워크스페이스 내부 의존 폐포이므로(ADR-0166), 이름이 `tasty-plugin-` 으로
-# 시작하지 않는 크레이트(`tasty-utils`·`tasty-shm` 등)만 담은 커밋도 9 개 전부의 bump 를
-# 요구할 수 있다. 좁은 필터는 그런 커밋에서 스크립트를 **부르지도 않아** 초록이 된다 —
-# 실측으로 그 형태가 났다(`crates/tasty-utils/src/notify.rs` 한 파일만 담은 커밋에서
-# 선필터 0 건, 같은 내용에 스크립트를 직접 돌리면 위반 9 / 대상 9). 같은 스크립트를 부르는
-# 다른 두 자리(pre-push B.9 · plugin-version-check.yml)는 이미 넓고, 로컬 훅만 좁게
-# 남아 있었다.
-#
-# **그리고 `^crates/` 선필터도 없앴다.** 좌변이 `crates/` 밖으로 넓어졌기 때문이다 —
-# `[patch]` 로 끼운 상류 사본(`vendor/tiny_http`)처럼 워크스페이스 밖 path 의존도 plugin
-# 산출물을 바꾼다(ADR-0537). 어느 경로가 그 좌변인지는 cargo 폐포가 정하고, 그것을 여기서
-# 경로 목록으로 다시 적으면 새 사본이 생길 때 이 자리만 옛 목록에 남는다. 그래서 staged 가
-# 있으면 늘 부르고, 거를 것은 스크립트가 거른다(산출물 모양의 변경이 없으면 cargo 를
-# 안 부르고 0.1 s 안에 끝난다).
+# P.1  플러그인 변경에 따른 버전 갱신 확인
 # ────────────────────────────────────────────────────────────
 check_plugin_version_bump() {
     local staged_any base rc
@@ -665,54 +426,32 @@ check_plugin_version_bump() {
     set -e
     case "$rc" in
         0) ;;
-        1) red "▸ [P.1] plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로다 (위 목록)."
+        1) red "▸ [P.1] 플러그인 코드가 변경됐지만 버전이 그대로입니다. 위 목록의 플러그인 버전을 올려 주세요."
            FAIL=1 ;;
-        *) # **판정 불가를 통과로 세지 않는다.** 이유는 스크립트가 이미 출력했다.
-           red "▸ [P.1] 판정 불가 (exit $rc) — 위 사유를 해소하거나 --no-verify 로 우회해라."
+        *) # 검사 도구 오류도 커밋을 중단한다.
+           red "▸ [P.1] 버전을 검사하지 못했습니다 (종료 코드 $rc). 위에 표시된 원인을 해결해 주세요."
            FAIL=1 ;;
     esac
 }
 
 # ────────────────────────────────────────────────────────────
-# T.1  커밋되지 않는 티켓을 가리키는 인용 — `no_todo_file_citation` 가드.
-#
-# **이 검사만 staged diff 가 아니라 레포 전체 작업 트리를 본다.** 그 가드의 좌변이
-# 순회라 그렇다(위 ⑦ 축). 그래서 내가 안 건드린 파일이 범인일 수 있고, 그것이
-# 이 선택의 내용이다 — staged 밖에 남은 죽은 인용도 같이 막는다.
-#
-# **여기 둘 만큼 싸다.** 실측 2.0 s 이고, 무관한 소스를 `touch` 한 뒤에도 같다 —
-# `tasty-doc-guards` 는 의존이 0 이라(ADR-0138) 워크스페이스가 바뀌어도 재빌드하지
-# 않는다. 머리말의 "무거운 검사는 pre-push 에서" 가 겨냥하는 것은 워크스페이스를
-# 컴파일하는 clippy/check 이고, 이 검사는 그 선 아래다.
-#
-# **pre-push `B.7`(`cargo test -p tasty-doc-guards`)과 겹치는 것은 의도다.** 두 훅은
-# 서로 다른 자리를 막는다 — 여기는 커밋이 만들어지는 것을, 거기는 push 되는 것을.
-# 겹친다고 한쪽을 지우면 그 자리의 채널이 사라진다(rebase 로 남의 위반이 들어온
-# 트리에서는 pre-commit 만이 그 자리에서 답한다).
+# T.1  로컬 전용 문서 참조 확인
 # ────────────────────────────────────────────────────────────
 check_todo_citation() {
     local out rc
-    # **파이프로 `tail` 에 바로 넘기지 않는다.** 그러면 rc 가 `tail` 의 것이 되어
-    # 위반이 있어도 0 이 돌아온다 — 잡으라고 둔 검사가 조용히 통과한다.
+    # 출력과 종료 코드를 따로 저장해 cargo 실패가 로그 출력 결과에 가려지지 않게 한다.
     set +e
     out=$(cargo test -q -p tasty-doc-guards --test no_todo_file_citation 2>&1)
     rc=$?
     set -e
     if [ "$rc" -ne 0 ]; then
         printf '%s\n' "$out" | tail -40 >&2
-        red "▸ [T.1] 커밋되지 않는 로컬 티켓·문서를 가리키는 인용이 있다 (위 목록)."
-        red "    이 가드는 **레포 전체**를 본다 — staged 밖 파일이 범인일 수 있다."
+        red "▸ [T.1] 다른 개발자가 열 수 없는 로컬 문서 참조가 있습니다. 위 목록의 참조를 수정해 주세요."
+        red "    이 검사는 저장소 전체를 확인하므로 커밋 대상이 아닌 파일에서도 실패할 수 있습니다."
         FAIL=1
     fi
 }
 
-# ────────────────────────────────────────────────────────────
-# 실행
-# ────────────────────────────────────────────────────────────
-# 검사 목록을 **배열**로 둔다. 문자열 하나에 담아 셸 분할에 맡기면, 부르는 셸이 달라질 때
-# 루프가 **조용히 0 회** 돌 수 있다(조립 하네스에서 실제로 났다: zsh 전용 `${=VAR}` 분할을
-# bash 로 부르자 게이트 루프가 0 회 돌고 판정줄은 "게이트빨강=0" 으로 찍혔다 —
-# **안 돈 것이 다 통과한 것과 같은 모양이었다**).
 CHECKS=(
     check_mod_use_order
     check_cargo_fmt
@@ -728,34 +467,21 @@ CHECKS=(
     check_new_file_judges
 )
 
-# 그리고 **정의된 것과 부르는 것이 같은가**를 훅이 자기에게 묻는다.
-#
-# 새 `check_*` 를 정의하고 위 배열에 안 넣으면, 지금까지는 훅이 **초록이었고 통과줄이 글자
-# 하나 안 달라졌다.** 그 상태와 "그 검사가 다 통과했다" 가 출력으로 구분이 안 된다.
-# 여기서 세어 두면 어긋남이 그 자리에서 빨개진다. 값이 아니라 **판정의 일부**다.
 defined=$(grep -cE '^check_[a-z_]+\(\) \{' "$0" || true)
 
-# ★ 붕괴를 먼저 막는다. 아래 등호 검사만으로는 **0 == 0 이 통과한다** — 배열이 비고
-# 세는 술어도 안 맞으면 "검사 0/0 돌았다" 를 찍고 rc=0 이 된다. 실측으로 재현했다.
-# 그 초록은 "다 통과했다" 가 아니라 **"아무것도 안 봤다"** 이고, 둘은 출력이 같다.
-# (조립 하네스의 `${=GATES}` 가 정확히 이 모양이었다. 등호만 걸면 그 교훈의 절반만 든다.)
-#
-# 하한을 실측값(예: 10)으로 두지 않는다 — 아래 등호가 이미 수를 정확히 못 박으므로,
-# 여기 또 수를 두면 **같은 물음에 답이 둘**이 되고 검사를 더할 때마다 둘 다 고쳐야 한다.
-# 이 조건의 일은 붕괴를 거절하는 것 하나다.
 if [ "${#CHECKS[@]}" -eq 0 ] || [ "$defined" -eq 0 ]; then
-    red "▸ [훅] 검사가 0 개다 (정의 $defined · 실행 목록 ${#CHECKS[@]}) — **아무것도 안 돌았다.**"
-    red "    배열이 비었거나, 정의를 세는 술어가 함수 선언 모양과 안 맞는다."
-    red "    이 상태에서 초록을 내면 '안 봤다' 가 '다 통과했다' 로 찍힌다."
+    red "▸ [훅] 등록된 검사가 없습니다 (함수 $defined개, 실행 목록 ${#CHECKS[@]}개)."
+    red "    CHECKS 배열과 check_* 함수 선언을 확인해 주세요."
+    red "    검사를 실행할 수 없어 커밋을 중단합니다."
     exit 1
 fi
 
 if [ "$defined" -ne "${#CHECKS[@]}" ]; then
-    red "▸ [훅] 정의된 검사 $defined 개 · 실행 목록 ${#CHECKS[@]} 개 — 어긋난다."
+    red "▸ [훅] 검사 함수 수($defined)와 실행 목록 수(${#CHECKS[@]})가 다릅니다."
     if [ "$defined" -gt "${#CHECKS[@]}" ]; then
-        red "    정의만 있고 목록에 없는 것이 있다 — 그 검사는 **조용히 안 돈다.** CHECKS 에 넣어라."
+        red "    실행 목록에 빠진 검사 함수를 CHECKS에 추가해 주세요."
     else
-        red "    목록에만 있고 정의가 없는 것이 있다 — 이름을 고쳤거나 지웠다. CHECKS 에서 빼라."
+        red "    CHECKS에 적힌 함수 이름이 올바른지 확인해 주세요."
     fi
     exit 1
 fi
@@ -768,50 +494,24 @@ done
 
 if [ "$FAIL" -ne 0 ]; then
     echo >&2
-    red "✘ pre-commit 검사 실패. 위 항목을 수정하거나 \`git commit --no-verify\` 로 우회."
+    red "✘ 커밋 전 검사에 실패했습니다. 위 항목을 수정한 뒤 다시 커밋해 주세요."
     exit 1
 fi
 
-# ────────────────────────────────────────────────────────────
-# 통과 줄에 **모수**를 붙인다.
-#
-# 이 훅의 각 구역은 자기 모수를 머리 주석에 적어 뒀다(`[파일 전체]` · `[diff 추가 라인]`
-# · `[staged]`). 그런데 그 표기는 판정의 **정의** 옆에 있고, 커밋하는 사람이 보는 것은
-# 판정의 **출력** — 모수가 없는 한 줄이었다. 그래서 초록이 "staged 범위가 깨끗하다" 가
-# 아니라 "트리가 깨끗하다" 로 읽혔다. 실제로 그렇게 읽혀서, 추적 안 되는 쓰레기 파일이
-# 훅을 초록으로 통과한 채 남았다(레포 전체를 훑는 doc-guards 가드가 나중에 잡았다).
-#
-# 값은 **새로 세지 않는다.** 위에서 검사들에게 넘긴 바로 그 목록의 길이를 쓴다 — 여기서
-# git 을 다시 부르면 그 계수기가 판정과 다른 모수를 갖게 되고, 그러면 이 줄이 고치려던
-# 병을 이 줄이 다시 만든다.
-#
-# ★ P.1 · W.1 은 아래 수보다 **넓게** 본다(이름 바뀜 · 지움까지). 전에는 "안 가진 값을
-# 찍느니 안 찍는 것이 낫다" 고 적고 대신 "ACM 기준" 이라는 필터 문자를 달았다. 둘 다 틀렸다 —
-# 그 값은 git 한 번으로 가질 수 있고, 필터 문자는 뜻을 옮기지 않는다. 넓은 쪽이 **더 본 것이
-# 있을 때만** 아래에 한 줄 더 찍는다. 늘 찍으면 문장이 안 변해 다시 벽지가 된다.
-# ────────────────────────────────────────────────────────────
 count() { [ -z "$1" ] && echo 0 || printf '%s\n' "$1" | wc -l | tr -d ' '; }
 
-green "✓ pre-commit 검사 통과 (검사 $RAN/$defined 돌았다 · 모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — 더해지거나 고쳐지거나 이름이 바뀐 것)"
+green "✓ pre-commit 검사 통과 (검사 $RAN/$defined 실행 · 커밋 대상 Rust 파일 $(count "$STAGED_RS") · 전체 파일 $(count "$STAGED_ALL") — 추가·수정·이름 변경 포함)"
 
-# 넓은 쪽과의 차이. 0 이면 안 찍는다 — 이 줄이 **상황에 반응해야** 뜻이 산다.
+# 삭제된 파일이 있을 때만 추가로 안내한다.
 STAGED_WIDE=$(git diff --cached --name-only --diff-filter=ACMRD || true)
 wide_extra=$(( $(count "$STAGED_WIDE") - $(count "$STAGED_ALL") ))
 if [ "$wide_extra" -gt 0 ]; then
-    yellow "  ↳ 지워진 것 $wide_extra 개는 **위 수 밖**이다 — 파일을 여는 검사는 그것을 못 본다. P.1 이 본다."
+    yellow "  ↳ 삭제된 파일 $wide_extra개는 위 파일 수에 포함되지 않습니다. P.1 버전 검사에서는 확인합니다."
 fi
 
-# 그리고 **여집합**을 한 줄 더 찍는다 — 있을 때만.
-#
-# 위 수만으로는 부족했다(실측): 추적 안 되는 쓰레기 파일을 놓아도 통과 줄이 **글자 하나
-# 안 바뀐다.** 범위를 말해 주기는 하지만 그 문장이 늘 같아서 벽지가 된다. 초록을 "트리가
-# 깨끗하다" 로 읽는 것을 막으려면 출력이 **그 상황에 반응**해야 한다.
-#
-# ★ 이 수는 **어느 검사의 모수도 아니다.** 모든 모수의 **밖**이다 — 그래서 위의 수들과
-#   달라도 어긋난 것이 아니다. 라벨에 그 사실을 적는다.
 untracked=$(git status --porcelain --untracked-files=normal 2>/dev/null | grep -c '^??' || true)
 if [ "$untracked" -gt 0 ]; then
-    yellow "  ↳ 추적 안 되는 파일 $untracked 개는 **위 모수 밖**이다 — 이 초록이 말하지 않는 것이다."
-    yellow "     의도한 것이 아니면 \`git status --porcelain\` 로 봐라. 트리 전체는 \`cargo test -p tasty-doc-guards\`."
+    yellow "  ↳ 아직 git add하지 않은 새 파일 $untracked개가 있습니다. 위 파일 수에는 포함되지 않습니다."
+    yellow "     \`git status --porcelain\`로 파일 목록을 확인해 주세요. 전체 문서 검사는 \`cargo test -p tasty-doc-guards\`로 실행합니다."
 fi
 exit 0

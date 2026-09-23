@@ -302,3 +302,163 @@ fn the_pre_commit_run_list_and_its_definitions_still_agree() {
          이 줄이 그 방향을 막는다."
     );
 }
+
+// Run the real hook with fake Git/Cargo commands so failures do not build or push anything.
+fn run_pre_push_fixture(
+    refs: &str,
+    version_rc: i32,
+    population_rc: i32,
+    cargo_rc: i32,
+) -> (bool, String, String, String) {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    use tasty_doc_guards::temp_scratch::Scratch;
+
+    let scratch = Scratch::new("pre-push-hook");
+    // Include a space to verify that log and command paths remain quoted.
+    let root = scratch.path().join("hook fixture");
+    std::fs::create_dir(&root).unwrap();
+    let env_file = root.join("commands.sh");
+    std::fs::write(
+        &env_file,
+        r#"
+git() {
+    case "$*" in
+        'rev-parse --show-toplevel') printf '%s\n' "$HOOK_FIXTURE" ;;
+        'rev-parse --git-path hook-logs') printf '%s/logs\n' "$HOOK_FIXTURE" ;;
+        cat-file*) return 0 ;;
+        *) return 99 ;;
+    esac
+}
+bash() {
+    printf '%s\n' "$*" >> "$HOOK_FIXTURE/calls"
+    case "$1" in
+        *check-plugin-version-bump.sh) return "$HOOK_VERSION_RC" ;;
+        *check-population-freshness.sh) return "$HOOK_POPULATION_RC" ;;
+        *) return 99 ;;
+    esac
+}
+cargo() {
+    printf 'cargo %s\n' "$*" >> "$HOOK_FIXTURE/calls"
+    printf 'first diagnostic\n'
+    for ((i=0; i<70; i++)); do printf 'detail %s\n' "$i"; done
+    return "$HOOK_CARGO_RC"
+}
+"#,
+    )
+    .unwrap();
+    let slash = |path: &std::path::Path| {
+        tasty_doc_guards::floored_walk::normalized_rel(path, std::path::Path::new(""))
+    };
+    // On Windows, the system bash.exe may be a WSL launcher without a distribution.
+    // Use the Bash installed alongside Git's hook shell instead.
+    let bash = if cfg!(windows) {
+        let shell = Command::new("git")
+            .args(["var", "GIT_SHELL_PATH"])
+            .output()
+            .unwrap();
+        assert!(shell.status.success());
+        std::path::Path::new(String::from_utf8_lossy(&shell.stdout).trim())
+            .parent()
+            .unwrap()
+            .join("bash.exe")
+    } else {
+        std::path::PathBuf::from("bash")
+    };
+    let mut child = Command::new(bash)
+        .arg(slash(&repo_root().join(".githooks/pre-push")))
+        .args(["origin", "unused"])
+        .env("BASH_ENV", slash(&env_file))
+        .env("HOOK_FIXTURE", slash(&root))
+        .env("HOOK_VERSION_RC", version_rc.to_string())
+        .env("HOOK_POPULATION_RC", population_rc.to_string())
+        .env("HOOK_CARGO_RC", cargo_rc.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Git hooks require Bash");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(refs.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        root.join("logs").is_dir(),
+        "hook did not create logs: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut logs = String::new();
+    for run in std::fs::read_dir(root.join("logs")).unwrap() {
+        for entry in std::fs::read_dir(run.unwrap().path()).unwrap() {
+            logs.push_str(&std::fs::read_to_string(entry.unwrap().path()).unwrap());
+        }
+    }
+    (
+        output.status.success(),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        std::fs::read_to_string(root.join("calls")).unwrap_or_default(),
+        logs,
+    )
+}
+
+#[test]
+fn pre_push_reports_failures_and_retains_complete_logs() {
+    let refs = "refs/heads/main aaaaaaaa refs/heads/main bbbbbbbb\n";
+    let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 0);
+    assert!(success, "{output}");
+    assert_eq!(calls.lines().count(), 7, "{calls}");
+    assert!(calls.contains("--range bbbbbbbb aaaaaaaa"));
+    assert!(calls.contains("--rev aaaaaaaa"));
+    for id in ["B.9", "B.10", "B.5", "B.8", "B.6", "B.4", "B.7"] {
+        assert!(logs.contains(&format!("{id} 통과")), "{logs}");
+    }
+    let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 101);
+    assert!(!success, "{output}");
+    assert_eq!(calls.lines().count(), 7, "later checks must still run");
+    assert!(output.contains("101"));
+    assert!(
+        !output.contains("first diagnostic"),
+        "screen output is shortened"
+    );
+    assert!(
+        logs.contains("first diagnostic"),
+        "full diagnostics must remain in the logs"
+    );
+    assert!(logs.contains("B.7 실패"));
+}
+
+#[test]
+fn pre_push_stops_before_builds_when_commit_checks_fail() {
+    let refs = "refs/heads/main aaaaaaaa refs/heads/main bbbbbbbb\n";
+    for (version, population) in [(1, 0), (0, 1), (2, 0), (0, 2)] {
+        let (success, output, calls, _) = run_pre_push_fixture(refs, version, population, 0);
+        assert!(!success, "{output}");
+        assert_eq!(calls.lines().count(), 2, "{calls}");
+        assert!(!calls.contains("cargo"), "{calls}");
+    }
+}
+
+#[test]
+fn pre_push_handles_new_deleted_multiple_and_empty_refs() {
+    let null = "0000000000000000000000000000000000000000";
+    let refs = format!(
+        "refs/heads/new aaaaaaaa refs/heads/new {null}\n(delete) {null} refs/heads/old bbbbbbbb\nrefs/heads/main cccccccc refs/heads/main dddddddd\n"
+    );
+    let (success, output, calls, _) = run_pre_push_fixture(&refs, 0, 0, 0);
+    assert!(success, "{output}");
+    assert_eq!(calls.matches("--range").count(), 1);
+    assert!(calls.contains("--range dddddddd cccccccc"));
+    assert_eq!(calls.matches("--rev").count(), 2);
+    assert!(!calls.contains("bbbbbbbb"));
+    let (success, output, calls, _) = run_pre_push_fixture("", 1, 1, 101);
+    assert!(success, "{output}");
+    assert!(calls.is_empty(), "{calls}");
+}

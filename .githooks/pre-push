@@ -1,301 +1,176 @@
 #!/usr/bin/env bash
-# Tasty pre-push hook — 검사 7종 (B.4~B.10).
-#
-# B.9 와 B.10 만 초 단위이고 나머지 다섯은 컴파일이라 분 단위다. 그래서 그 둘이 맨 앞이다.
-#
-# 설치: `git config core.hooksPath .githooks` 1회 실행.
-# bypass: `git push --no-verify` (긴급 시).
-#
-# 검사 목록:
-#   B.9  plugin version 이 **발행된 값과 짝이 맞는가** (초 단위 — 그래서 맨 앞이다)
-#   B.10 공용 모수 선언이 **밀려는 트리**와 맞는가 (초 단위)
-#   B.4  cargo clippy --workspace --all-targets -- -D clippy::correctness
-#   B.5  cargo check --workspace --all-targets
-#   B.6  cargo check --no-default-features (headless 빌드)
-#   B.7  cargo test -p tasty-doc-guards (문서 정합 통합테스트)
-#   B.8  cargo check --workspace --release --locked (debug_assertions 반대편)
-#
-# 이 훅은 push 하는 머신에서만 돈다 — worker 머신엔 이 채널이 없다.
-# "worker 가 로컬에서 돌려 왔다" 는 관행은 채널이 아니다(사람마다·회차마다
-# 다르고 강제되지 않는다). doc-guards 의 자동 채널은 doc-guards.yml(main
-# push · PR) 과 통합 회차뿐이다. pre-push 는 그 앞단의 조기 발견용이다.
-
-# `pipefail` 이 없으면 아래 `cmd 2>&1 | tail -N` 들의 종료코드가 tail 의 것이 된다
-# — cargo 가 rc=101 로 죽어도 `if !` 가 안 걸려 실패가 통과로 샌다. 이 훅의 파이프는
-# 전부 "명령의 rc 가 판정한다" 는 같은 의도라, pipefail 이 바꾸는 판정은 그것들뿐이고
-# 넷 다 바뀌는 것이 옳다.
+# push할 커밋의 플러그인 버전과 파일 수를 확인한 뒤 빌드·문서를 검사한다.
+# 설치: git config core.hooksPath .githooks
+# 검사별 실행 방법: docs/dev-guide/git-hooks.md
 set -e -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
-
 red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 
 FAIL=0
+STARTED=$SECONDS
+LOG_ROOT="$(git rev-parse --git-path hook-logs)"
+mkdir -p "$LOG_ROOT"
+LOG_DIR="$(mktemp -d "$LOG_ROOT/pre-push.XXXXXX")"
+SUMMARY="$LOG_DIR/summary.log"
+printf 'push 전 검사를 시작합니다. 전체 로그: %s\n' "$LOG_DIR"
 
-# ────────────────────────────────────────────────────────────
-# B.9  plugin version 이 **발행된 값과 짝이 맞는가**
-#
-# ★ 이 훅이 이 판정의 **유일하게 올바른 자리**인 이유: git 이 pre-push 의 stdin 으로
-#   `<local ref> <local sha> <remote ref> <remote sha>` 를 준다 — 그 넷째 값이 바로
-#   **직전 push 지점**이고, 이 게이트가 필요로 하는 모수가 그것이다. 다른 자리에는
-#   그 값이 없다:
-#     · pre-commit 은 `--staged --base $(git merge-base main HEAD)` 로 부른다. 그 base 는
-#       **lane 의 갈린 지점**이라 amend·rebase 에 안 흔들리는데, 같은 이유로 "남이 이 값을
-#       이미 썼다" 에도 안 흔들린다. 그 검사가 답하는 물음은 "내 커밋이 올렸나" 다.
-#     · CI(plugin-version-check.yml)는 올바른 모수(github.event.before)를 쓰지만 **push 뒤**다.
-#       그때 빨개지면 그 값은 이미 공유 이력에 얹혀 있다.
-#   결정은 이미 내려져 있다 — ADR-0192 가 같은 구조를 다루며 "발행 버전 문자열" 을 이름으로
-#   지목하고 "여유 0 인 래칫은 그 실행이 push 전에 끝나 있어야 한다" 고 적는다. 래칫 축은
-#   그 구현(scripts/gate-delta.sh)을 받았고 이 축만 못 받았다. 여기가 그 누락을 닫는 자리다.
-#
-# ★ 맨 앞에 두는 것은 의도다. 이 검사는 컴파일이 없어 초 단위인데 아래 넷은 분 단위다.
-#   뒤에 두면 한 줄 고치면 되는 것을 알기까지 몇 분을 기다린다.
-#
-# ★ 판정은 scripts/check-plugin-version-bump.sh 가 한다 — 여기서 술어를 다시 구현하지
-#   않는다. 이 자리가 하는 일은 **모수를 정하는 것**뿐이다.
-#
-# ☆ scripts/gate-delta.sh 를 재사용하지 않는 이유는 실측이다(둘 다 독립적으로 막는다):
-#     · 그 도구는 게이트를 **인자 없이** 부르는데 이 게이트는 `--staged`/`--range` 중 하나를
-#       요구한다 → rc=2(판정 불가).
-#     · 그 도구의 값 파서는 `… : <수>건 (상한 <수>)` 한 형식만 읽는데 이 게이트는
-#       `판정 대상 <수> 건 (변경된 crates 파일 <수> 개 중)` 을 찍는다 → 빈 값.
-#   구조적으로도 옮길 것이 없다. gate-delta 는 **절대값만 찍는** 래칫에 두 지점 비교를
-#   합성해 주는 도구인데, 이 게이트는 이미 `--range` 로 두 지점을 직접 견준다. 합성할
-#   것이 없고 모자란 것은 **부르는 자리**뿐이다.
-# ────────────────────────────────────────────────────────────
+# 명령의 종료 코드를 직접 확인한다. 출력은 검사별로 저장하고 실패 시 마지막 60줄을 보여 준다.
+run_check() {
+    local id="$1" title="$2" started=$SECONDS rc=0
+    shift 2
+    yellow "[$id] 시작: $title"
+    if "$@" > "$LOG_DIR/$id.log" 2>&1; then
+        green "[$id] 통과 ($((SECONDS - started))초)"
+        printf '%s 통과 %s초 — %s\n' "$id" "$((SECONDS - started))" "$title" >> "$SUMMARY"
+    else
+        rc=$?
+        tail -60 "$LOG_DIR/$id.log" >&2
+        red "[$id] 실패 ($((SECONDS - started))초, 종료 코드 $rc). 전체 로그: $LOG_DIR/$id.log"
+        printf '%s 실패 %s초 — %s\n' "$id" "$((SECONDS - started))" "$title" >> "$SUMMARY"
+        FAIL=1
+    fi
+}
+
+finish() {
+    printf '\npush 전 검사 결과 (총 %s초)\n' "$((SECONDS - STARTED))"
+    cat "$SUMMARY"
+    if [ "$FAIL" -ne 0 ]; then
+        red "push를 중단했습니다. 실패한 항목을 수정하고 커밋한 뒤 다시 push해 주세요."
+        return 1
+    fi
+    green "실행한 push 전 검사를 모두 통과했습니다."
+}
+
 GIT_NULL_SHA=0000000000000000000000000000000000000000
-PUSH_REMOTE="${1:-}"
-
-# stdin 은 한 번 읽으면 사라진다. 소비 지점을 여기 하나로 고정한다 — 아래 cargo 스텝은
-# stdin 을 안 쓰지만, 나중에 쓰는 것이 생겨도 이 값은 이미 변수에 있다.
-#
-# **git 이 부른 것이 아니면 읽지 않는다.** 손으로 실행하면 `cat` 이 터미널에서 멈춘다.
-# git 은 remote 이름과 URL 을 인자로 주므로 그 유무가 판별식이다.
+PUSH_REMOTE="${1:-origin}"
 PUSH_REFS=""
 PUSH_INVOKED_BY_GIT=0
+# Git이 전달하는 ref 목록은 두 검사에서 함께 사용한다. 직접 실행할 때는 stdin을 기다리지 않는다.
 if [ "$#" -ge 1 ] && [ ! -t 0 ]; then
     PUSH_INVOKED_BY_GIT=1
     PUSH_REFS="$(cat)"
 fi
 
+# ────────────────────────────────────────────────────────────
+# B.9  원격에 게시된 버전과 push할 플러그인 버전 비교
+# ────────────────────────────────────────────────────────────
 check_published_plugin_version() {
-    local considered=0 judged=0 rc
+    local considered=0 judged=0 failed=0 rc
     local local_ref local_sha remote_ref remote_sha
-
-    if [ "$PUSH_INVOKED_BY_GIT" -eq 0 ]; then
-        # **조용히 통과시키지 않는다.** 모수를 못 정했다는 사실을 값으로 남긴다.
-        yellow "▸ [B.9] plugin version 발행 판정 — 건너뜀: git 이 준 ref 목록이 없다"
-        yellow "  (이 훅을 손으로 실행했다. git 이 부르면 stdin 으로 ref 가 들어온다.)"
-        yellow "  직접 재려면: bash scripts/check-plugin-version-bump.sh --range <원격 tip> HEAD"
-        return 0
-    fi
-
-    yellow "▸ [B.9] plugin version 이 발행된 값과 짝이 맞는가"
-
     while read -r local_ref local_sha remote_ref remote_sha; do
         [ -n "${local_ref:-}" ] || continue
         considered=$((considered + 1))
-
-        # 삭제 push — 발행되는 내용이 없다.
         if [ "$local_sha" = "$GIT_NULL_SHA" ]; then
-            yellow "  · $remote_ref — 삭제 push. 발행되는 내용이 없어 판정 대상이 아니다."
+            echo "$remote_ref: 삭제할 ref이므로 버전 검사를 생략합니다."
             continue
         fi
-
-        # 원격에 대응 ref 가 없다(최초 생성) — 견줄 **발행된 값** 자체가 없다.
-        # plugin-version-check.yml 이 같은 경우를 같은 방식으로 다룬다(찍고 통과).
         if [ "$remote_sha" = "$GIT_NULL_SHA" ]; then
-            yellow "  · $remote_ref — 원격에 이 ref 가 없다(최초 생성). 견줄 발행 값이 없다."
+            echo "$remote_ref: 새 ref이므로 비교할 원격 버전이 없습니다."
             continue
         fi
-
-        # 원격 tip 이 로컬 객체 DB 에 없다 — fetch 가 낡았거나 얕은 clone 이다.
-        # **모수를 못 정한다. 조용히 넘기지 않고 실패시킨다.**
         if ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
-            red "  ✘ $remote_ref — 원격 tip ${remote_sha} 이 로컬에 없다. 모수를 정할 수 없다."
-            red "    고쳐라: git fetch ${PUSH_REMOTE:-origin}"
-            red "    (얕은 clone 이면 git fetch --unshallow)"
-            FAIL=1
+            red "$remote_ref: 원격 커밋 $remote_sha를 로컬에서 찾을 수 없습니다."
+            red "git fetch $PUSH_REMOTE 후 다시 시도해 주세요. 얕은 복제라면 git fetch --unshallow가 필요합니다."
+            failed=1
             continue
         fi
-
         judged=$((judged + 1))
         rc=0
         bash scripts/check-plugin-version-bump.sh --range "$remote_sha" "$local_sha" || rc=$?
-        case "$rc" in
-            0) ;;
-            1)
-                red "  ✘ $remote_ref — 발행된 값과 지금 내용이 안 맞는다."
-                red "    ★ 이 판정의 모수는 **원격 tip ${remote_sha}** 이다. 네 lane 의 갈린"
-                red "      지점이 아니다 — 그래서 pre-commit 은 통과했는데 여기서 걸린다."
-                red "    흔한 원인: 다른 lane 이 **같은 값으로** 이미 올려 먼저 push 했다."
-                red "      git 은 같은 줄에 같은 값이라 충돌을 안 낸다(rebase 도 조용하다)."
-                red "    고쳐라: 위 게이트가 이름을 댄 plugin 의 Cargo.toml 과 tasty-plugin.toml 을"
-                red "      **한 번 더** 같은 값으로 patch +1 하고, cargo metadata 를 한 번 돌려"
-                red "      Cargo.lock 을 갱신한 뒤 그 커밋을 포함해 다시 push 하라."
-                FAIL=1
-                ;;
-            *)
-                red "  ✘ $remote_ref — 게이트가 판정을 거부했다(rc=$rc)."
-                red "    이 계열에서 rc=2 는 **판정 불가**다. 통과로 읽지 않는다 — 위 사유를 읽어라."
-                FAIL=1
-                ;;
-        esac
+        if [ "$rc" -eq 1 ]; then
+            red "$remote_ref: 변경된 플러그인의 버전이 원격에 게시된 버전보다 높아야 합니다."
+            red "위 목록의 Cargo.toml과 tasty-plugin.toml 버전을 함께 올려 주세요."
+            red "cargo check로 Cargo.lock도 갱신하고 세 파일을 함께 커밋해 주세요."
+            failed=1
+        elif [ "$rc" -ne 0 ]; then
+            red "$remote_ref: 버전을 검사하지 못했습니다 (종료 코드 $rc). 위 오류를 확인해 주세요."
+            failed=1
+        fi
     done <<EOF
 $PUSH_REFS
 EOF
-
-    # ★ **무엇을 봤는지 값으로 남긴다.** 안 찍으면 "하나도 안 봤다" 와 "다 통과했다" 가
-    #   같은 줄이 된다 — 빈 모수는 언제나 초록이기 때문이다(ADR-0183).
-    echo "[B.9] ref $considered · 판정 $judged · 건너뜀 $((considered - judged))"
-    if [ "$considered" -ge 1 ] && [ "$judged" -eq 0 ]; then
-        yellow "  (판정한 ref 가 0 이다 — 위 건너뜀 사유를 읽어라. 통과가 아니다.)"
-    fi
+    echo "ref $considered개: 검사 $judged개, 생략 $((considered - judged))개"
+    return "$failed"
 }
 
-check_published_plugin_version
-
 # ────────────────────────────────────────────────────────────
-# B.10  공용 모수 선언이 **밀려는 트리**와 맞는가
-#
-# ★ B.9 와 같은 자리에 있는 이유는 같은 것이 모자라서다 — 술어가 아니라 **모수**다.
-#   `populations::*` 의 `measured` 는 lane 안에서 아무리 정확히 재도 병합된 트리에서
-#   거짓이 될 수 있다: 두 lane 이 각자 파일을 하나씩 더하면 둘 다 자기 base 기준으로
-#   같은 +1 값을 적고, 값이 같아 git 이 충돌을 안 낸다. 실측으로 재현했다 — lane 둘의
-#   트리에서 각각 통과하고 병합한 트리에서만 위반이 나온다.
-#   그 병합된 트리가 처음 실재하는 자리가 push 이고, git 이 그 tip 을 stdin 으로 준다.
-#
-# ☆ 판정은 scripts/check-population-freshness.sh 가 한다 — 여기서 술어를 다시 구현하지
-#   않는다. 이 자리가 하는 일은 **모수를 정하는 것**뿐이다(B.9 와 같은 분업).
+# B.10  push할 커밋의 실제 파일 수와 검사 기준 비교
 # ────────────────────────────────────────────────────────────
 check_published_populations() {
-    local considered=0 judged=0 rc
+    local considered=0 judged=0 failed=0 rc
     local local_ref local_sha remote_ref remote_sha
-
-    if [ "$PUSH_INVOKED_BY_GIT" -eq 0 ]; then
-        yellow "▸ [B.10] 공용 모수 판정 — 건너뜀: git 이 준 ref 목록이 없다"
-        yellow "  직접 재려면: bash scripts/check-population-freshness.sh --rev HEAD"
-        return 0
-    fi
-
-    yellow "▸ [B.10] 공용 모수 선언이 밀려는 트리와 맞는가"
-
     while read -r local_ref local_sha remote_ref remote_sha; do
         [ -n "${local_ref:-}" ] || continue
         considered=$((considered + 1))
-
-        # 삭제 push — 밀리는 트리가 없다.
         if [ "$local_sha" = "$GIT_NULL_SHA" ]; then
-            yellow "  · $remote_ref — 삭제 push. 밀리는 트리가 없어 판정 대상이 아니다."
+            echo "$remote_ref: 삭제할 ref이므로 파일 수 검사를 생략합니다."
             continue
         fi
-
         judged=$((judged + 1))
         rc=0
         bash scripts/check-population-freshness.sh --rev "$local_sha" || rc=$?
-        case "$rc" in
-            0) ;;
-            1)
-                red "  ✘ $remote_ref — 공용 모수 선언이 밀려는 트리와 안 맞는다."
-                red "    ★ 이 판정의 모수는 **밀려는 tip ${local_sha}** 이다. 네 lane 의 트리가"
-                red "      아니라 병합된 결과다 — 그래서 lane 안의 검사는 다 통과했는데 여기서 걸린다."
-                red "    흔한 원인: 다른 lane 이 같은 모수에 파일을 하나 더했다."
-                red "      두 lane 이 각자 base 에서 **같은 값**을 적으므로 git 은 충돌을 안 낸다."
-                FAIL=1
-                ;;
-            *)
-                red "  ✘ $remote_ref — 게이트가 판정을 거부했다(rc=$rc)."
-                red "    이 계열에서 rc=2 는 **판정 불가**다. 통과로 읽지 않는다 — 위 사유를 읽어라."
-                FAIL=1
-                ;;
-        esac
+        if [ "$rc" -eq 1 ]; then
+            red "$remote_ref: 실제 파일 수와 검사 기준이 다릅니다."
+            red "crates/tasty-doc-guards/src/floored_walk.rs의 해당 measured, measured_on, counted_on을 갱신해 주세요."
+            red "이 검사는 커밋을 확인합니다. 수정 사항을 커밋한 뒤 다시 push해 주세요."
+            failed=1
+        elif [ "$rc" -ne 0 ]; then
+            red "$remote_ref: 파일 수를 검사하지 못했습니다 (종료 코드 $rc). 위 오류를 확인해 주세요."
+            failed=1
+        fi
     done <<EOF
 $PUSH_REFS
 EOF
-
-    echo "[B.10] ref $considered · 판정 $judged · 건너뜀 $((considered - judged))"
-    if [ "$considered" -ge 1 ] && [ "$judged" -eq 0 ]; then
-        yellow "  (판정한 ref 가 0 이다 — 위 건너뜀 사유를 읽어라. 통과가 아니다.)"
-    fi
+    echo "ref $considered개: 검사 $judged개, 생략 $((considered - judged))개"
+    return "$failed"
 }
 
-check_published_populations
-
-# ────────────────────────────────────────────────────────────
-# B.5  cargo check
-# ────────────────────────────────────────────────────────────
-yellow "▸ cargo check --workspace --all-targets"
-if ! cargo check --workspace --all-targets 2>&1 | tail -5; then
-    red "✘ cargo check 실패"
-    FAIL=1
+if [ "$PUSH_INVOKED_BY_GIT" -eq 1 ]; then
+    if [ -z "$PUSH_REFS" ]; then
+        green "push할 변경 사항이 없어 검사를 생략합니다."
+        exit 0
+    fi
+    run_check B.9 '플러그인 버전' check_published_plugin_version
+    run_check B.10 '파일 수 검사 기준' check_published_populations
+    if [ "$FAIL" -ne 0 ]; then
+        yellow '커밋 검사에 실패해 빌드 검사는 실행하지 않습니다.'
+        finish
+        exit 1
+    fi
+else
+    yellow '[B.9] 생략: 직접 실행했으므로 Git의 원격 ref 정보가 없습니다.'
+    yellow '직접 검사: bash scripts/check-plugin-version-bump.sh --range <원격 커밋> HEAD'
+    yellow '[B.10] 생략: 직접 검사하려면 bash scripts/check-population-freshness.sh --rev HEAD'
+    printf 'B.9 생략 — Git의 ref 정보 없음\nB.10 생략 — Git의 ref 정보 없음\n' >> "$SUMMARY"
 fi
 
 # ────────────────────────────────────────────────────────────
-# B.8  cargo check --workspace --release — B.5 와 상보적이다.
-#      두 조합은 `debug_assertions` 이 반대라 서로가 못 보는 것을 본다:
-#      소비자가 debug 쪽에만 있는 항목은 release 에서만 `dead_code` 가 물고,
-#      이 크레이트에서 그 lint 는 error 라 컴파일이 죽는다. 실측으로 한 번
-#      그렇게 났다(`ModalKind::as_str` — 고친 커밋 c3e78aaa8).
-#
-#      조합이 `--bin tasty` 가 아니라 `--workspace --release` 인 이유: 전자는
-#      CI `check-release` 가 보는 것의 진부분집합이라, 훅이 초록인데 CI 가
-#      빨간 상태가 남는다. 비용 차는 실측상 없다.
-#
-#      로그 파일로 받는다. `pipefail` 이 생긴 지금은 다른 스텝처럼 파이프로 써도
-#      판정은 같지만, release 의 error 는 좌표를 봐야 해서 `tail -5` 보다 넓게
-#      (-20) 보여 준다. 판정과 표시를 분리한 것이지 판정을 다르게 한 것이 아니다.
+# B.5  워크스페이스의 개발 빌드와 테스트 코드 컴파일
 # ────────────────────────────────────────────────────────────
-yellow "▸ cargo check --workspace --release --locked"
-REL_LOG="$(mktemp)"
-if ! cargo check --workspace --release --locked > "$REL_LOG" 2>&1; then
-    tail -20 "$REL_LOG" >&2
-    red "✘ cargo check --workspace --release 실패"
-    red "  error: 좌표가 네 차분 안인지 먼저 봐라. 남의 회귀면 여기서 멈추지 말고"
-    red "  -p <자기 크레이트> 로 좁혀 다시 물어라 — 그 값이 네가 보고할 값이고,"
-    red "  --bin tasty 나 워크스페이스 전체는 '미측정' 으로 적는다."
-    FAIL=1
-fi
-rm -f "$REL_LOG"
+run_check B.5 'cargo check --workspace --all-targets' cargo check --workspace --all-targets
 
 # ────────────────────────────────────────────────────────────
-# B.6  cargo check headless — gui feature 제외 컴파일 설정.
-#      워커/기본 빌드는 default(gui)만 컴파일하므로 cfg 게이트
-#      누락·비망라 match 가 이 설정에서만 드러난다.
+# B.8  release 설정으로 워크스페이스 컴파일
 # ────────────────────────────────────────────────────────────
-yellow "▸ cargo check --no-default-features"
-if ! cargo check --no-default-features 2>&1 | tail -5; then
-    red "✘ cargo check --no-default-features 실패 (headless 빌드 깨짐)"
-    FAIL=1
-fi
+run_check B.8 'cargo check --workspace --release --locked' cargo check --workspace --release --locked
 
 # ────────────────────────────────────────────────────────────
-# B.4  cargo clippy — correctness 그룹만 error 로
+# B.6  GUI 기능을 제외한 headless 빌드 컴파일
 # ────────────────────────────────────────────────────────────
-yellow "▸ cargo clippy --workspace --all-targets -- -D clippy::correctness"
-if ! cargo clippy --workspace --all-targets -- -D clippy::correctness 2>&1 | tail -5; then
-    red "✘ cargo clippy 실패 (correctness 그룹)"
-    FAIL=1
-fi
+run_check B.6 'cargo check --no-default-features' cargo check --no-default-features
 
 # ────────────────────────────────────────────────────────────
-# B.7  cargo test -p tasty-doc-guards — 문서·매니페스트·인덱스 정합
-#      통합테스트. adr_index_parity / readme_badge_parity /
-#      ci_channel_claims_match_workflows 등은 pre-commit(fmt only)에는
-#      없어 여기가 로컬 조기 채널이다. 자동 채널은 doc-guards.yml.
+# B.4  Clippy 검사: correctness 경고는 오류로 처리
 # ────────────────────────────────────────────────────────────
-yellow "▸ cargo test -p tasty-doc-guards"
-if ! cargo test -p tasty-doc-guards 2>&1 | tail -8; then
-    red "✘ cargo test -p tasty-doc-guards 실패 (문서 정합 깨짐)"
-    FAIL=1
-fi
+run_check B.4 'cargo clippy --workspace --all-targets -- -D clippy::correctness' cargo clippy --workspace --all-targets -- -D clippy::correctness
 
-if [ "$FAIL" -ne 0 ]; then
-    red "✘ pre-push 검사 실패. 위 항목을 수정하거나 \`git push --no-verify\` 로 우회."
-    exit 1
-fi
+# ────────────────────────────────────────────────────────────
+# B.7  문서, 매니페스트, 인덱스 검사
+# ────────────────────────────────────────────────────────────
+run_check B.7 'cargo test -p tasty-doc-guards' cargo test -p tasty-doc-guards
 
-green "✓ pre-push 검사 통과"
-exit 0
+finish

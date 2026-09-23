@@ -273,6 +273,7 @@ max_mb = 500
 new_tab = ["alt+t"]              # 나머지는 keybindings.md
 ```
 
+- `[terminal_input]`에는 앱별 Shift+Enter 동작이 저장됩니다. **터미널 → 입력**에서 설정하세요. 예를 들어 `[[terminal_input.rules]]`에 `app = "claude"`, `shift_enter_newline = true`를 지정하면 Claude Code에 줄바꿈 문자를 보냅니다. `initialized_defaults`는 플러그인 기본값 적용 기록이므로 직접 수정하지 않아도 됩니다.
 - `[appearance]` 아래에는 이 밖에도 테마 색 전체(`theme_base`)와 색상 탭에서 덮어쓴 값(`theme_overrides`)이 저장됩니다. 손으로 고치기보다 설정 윈도우를 쓰는 편이 안전합니다.
 - `[plugin_settings."com.tasty.html"]` 처럼 플러그인 설정 페이지의 값은 플러그인 id 를 키로 한 절에 들어갑니다.
 - Tasty 는 실행 중에 이 파일을 감시하지 않습니다. 손으로 고친 값은 다음 시작 때 읽히고, 그 전에 설정 윈도우에서 저장하면 파일 전체가 다시 쓰여 손편집이 사라집니다. 파일을 직접 편집할 때는 Tasty 를 종료한 뒤 합니다.

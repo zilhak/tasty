@@ -193,10 +193,13 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 651,
+        measured: 653,
         measured_on: "2026-09-24",
         counted_on: super::CountedOn::Tree(
-            "d5a894e04 — 프리셋 캐시 분리 뒤 main 트리에서 다시 셌다. 649 -> 651 이고 \
+            "8d5d7a28f — Shift+Enter 설정 구현 후 Rust 파일 653개를 확인했다. \
+             src/adapters/ipc/handler/terminal_input.rs와 src/view/settings/ui/tabs/terminal_input.rs가 추가됐다. \
+             깊이 4 이하 428개, 깊이 5 이상 225개, 최대 깊이 7이다. \
+             이전 측정: d5a894e04 — 프리셋 캐시 분리 뒤 main 트리에서 다시 셌다. 649 -> 651 이고 \
              `src/adapters/ui/preset/cache_slot_tests.rs` 와 `src/adapters/ui/preset/demo_cache.rs` 가 \
              더해졌다. 삭제는 없다. 두 파일 모두 깊이 5 라 깊이 4 이하의 428 개는 그대로다. \
              이전 회차: cc2e5e72e — 세 lane(명세 정정 · 비-ADR 문서 통폐합 · ADR 번호 이동 도구)이 착지한 \
@@ -260,7 +263,7 @@ pub mod populations {
         how: "`src/` 를 뿌리로 `SkipBuildCaches` 순회하고 `rel` 이 `.rs` 로 끝나는 것 전부. \
               재는 법: `git ls-tree -r --name-only <rev>` 에서 `src/` 로 시작하고 `.rs` 로 \
               끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-24 재확인: 작업 \
-              트리를 센 651 과 추적 트리 계수 651 이 같았다. 607 · 623 · \
+              트리를 센 653 과 추적 트리 계수 653 이 같았다. 607 · 623 · \
               632 · 633 · 645 · 646 · 649 이었을 \
               때도, 2026-09-08 에도 같았다). \
               같은 좌변을 `scripts/check-intent-discipline.sh` 가 자기 실패문에 \

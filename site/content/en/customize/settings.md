@@ -1,4 +1,4 @@
-<!-- source-hash: 4819180445d3 -->
+<!-- source-hash: 645f89928560 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -283,6 +283,7 @@ max_mb = 500
 new_tab = ["alt+t"]              # the rest is in keybindings.md
 ```
 
+- `[terminal_input]` stores per-app Shift+Enter behavior. Configure it under **Terminal → Input**. For example, a `[[terminal_input.rules]]` entry with `app = "claude"` and `shift_enter_newline = true` sends a newline to Claude Code. `initialized_defaults` records which plugin defaults have been applied and does not need manual editing.
 - `[appearance]` also stores the full set of theme colours (`theme_base`) and the values overridden in the Colors tab (`theme_overrides`). Using the settings window is safer than editing these by hand.
 - Values from plugin settings pages go into a section keyed by the plugin id, such as `[plugin_settings."com.tasty.html"]`.
 - Tasty does not watch this file while running. Hand-edited values are read on the next start, and if you save from the settings window before then, the whole file is rewritten and your hand edits are lost. Quit Tasty before editing the file directly.
