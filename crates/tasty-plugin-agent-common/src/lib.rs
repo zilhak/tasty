@@ -109,7 +109,7 @@
 //! **버전 정책 주의**: 이 crate 만 고쳐도 두 plugin 의 patch 를 함께 올려야 한다.
 //! 산출물이 실제로 달라지기 때문이다 —
 //! `scripts/check-plugin-version-bump.sh` 는 그것을 자동으로 잡는다(워크스페이스 내부
-//! 의존 폐포를 판정 대상에 넣는다: `docs/adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md`).
+//! 의존 폐포를 판정 대상에 넣는다: `docs/dev-guide/release.md#플러그인-버전-비교`).
 //! 실측: 이 crate 한 줄만 바꾸면 게이트가 `tasty-plugin-claude` · `tasty-plugin-codex`
 //! 둘을 위반으로 낸다. `tasty-plugin-sdk` · `tasty-utils` 도 같다.
 

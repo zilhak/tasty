@@ -166,7 +166,7 @@ impl PluginManager {
 
     /// `PopupInvalidated` 누적을 드레인한다. `App::event_handler` 가
     /// `pump()` 직후 호출해, self-repaint 를 요청한 egui-mesh popup instance 에
-    /// 무입력 재-forward 를 예약한다(ADR-0056 `plugin_mesh_popup_pending_repaint`
+    /// 무입력 재-forward 를 예약한다(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 `plugin_mesh_popup_pending_repaint`
     /// 재사용, `mark_invalidated_popups_dirty` 참조).
     pub fn take_invalidated_popups(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.invalidated_popups)
@@ -507,7 +507,7 @@ impl PluginManager {
     /// **어느 쪽도 막지 않는다 — 소리만 낸다.** 어긋난 id 를 거부할지, 매니페스트를
     /// 이기게 할지, 지금처럼 경고만 할지는 "plugin 이 자기 정체를 주장할 수 있는가" 에
     /// 대한 신뢰 모델 결정이라 이 자리가 정할 것이 아니다. 대조가 존재하는 것과
-    /// 막는 것은 다르다(ADR-0190).
+    /// 막는 것은 다르다(docs/dev-guide/guard-verification.md#목록-항목과-검사-효과).
     ///
     /// 매니페스트 조회는 **채널 키**로 한다. 주장한 id 로 찾으면 id 가 어긋난 바로 그
     /// 경우에 조회가 `None` 이 되어 버전 대조까지 함께 조용해진다.
@@ -675,7 +675,7 @@ impl PluginManager {
                 None => false,
             };
             // ipc namespace 유지 — 재시작 중에 오는 호출은 "없는 메서드" 가 아니라
-            // "지금 안 뜬 plugin" 이다(ADR-0173). 정리는 disable · swap 과 같은 한
+            // "지금 안 뜬 plugin" 이다(docs/dev-guide/plugin-development.md#cli--ipc-namespace). 정리는 disable · swap 과 같은 한
             // 함수를 거친다 — 따로 적었을 때 여기만 등록 게이트를 안 풀었다.
             self.forget_plugin_runtime(&id, "plugin restarting");
             // egui-mesh: 죽은 plugin 의 buffer 를 가리키는 stale frame 메타 제거 (A1-S3 / A2 / A3).

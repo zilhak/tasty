@@ -12,7 +12,7 @@
 //! [`build_augmented_cli`] 가 등록 시점에 정적 명령 집합과 대조해 겹치는 이름을
 //! 등록하지 않고 경고한다. 막히는 것은 release 에서 이미 도달 불가였던 이름뿐이라
 //! 서드파티가 잃는 기능은 없다. 근거와 대안은
-//! `docs/adr/0158-cli-name-collisions-are-judged-at-registration-not-in-the-manifest.md`.
+//! `docs/dev-guide/plugin-development.md#cli--ipc-namespace`.
 
 mod build;
 mod request;

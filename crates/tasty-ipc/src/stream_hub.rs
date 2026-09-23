@@ -13,7 +13,7 @@
 //! 이 모듈은 전송 수단(TCP)을 모른다 — sink 는 `std::sync::mpsc` 채널이고, 소켓에
 //! 쓰고 읽는 쪽(accept 스레드)은 본체 adapter(`src/adapters/production/tcp_ipc_server.rs`)
 //! 에 있다. 그래서 본체 core 가 adapter 를 거치지 않고 이 허브를 쓸 수 있다
-//! (docs/adr/0350-the-stream-hub-lives-in-the-ipc-crate.md).
+//! (docs/architecture/index.md#크레이트를-나누는-기준).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -150,10 +150,10 @@ pub struct PumpOutcome {
     /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
     /// `(client_id, msg)` — 원격 attach mirror 세션의 markdown 원문 조회 요청
-    /// (ADR-0255). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
+    /// (docs/dev-guide/attach-behavior.md#markdown-content-채널). `list_dir_requests`/`git_query_requests` 와 동일한 이유로
     /// `StreamControl` 밖의 raw JSON "event" 태그로 온다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
-    /// `(client_id, event)` — native bulk 파일 전송(ADR-0054)의 begin/chunk/commit 을
+    /// `(client_id, event)` — native bulk 파일 전송(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)의 begin/chunk/commit 을
     /// **도착 순서 그대로** 담는 단일 벡터. begin(Control)·chunk(Data)·commit(Control)이
     /// 서로 다른 프레임 태그로 오지만 같은 배치에 섞여 drain 될 수 있으므로, 분리된
     /// 두 벡터로 담으면 라우팅이 chunk 를 begin 보다 먼저 처리해(별도 pass) 미등록
@@ -213,7 +213,7 @@ pub enum CaptureUploadMsg {
 /// doc for why this lives outside `StreamControl`. Trust model matches the screenshot
 /// capture-upload channel: "attach occupancy = trust", no separate `FsRead`-style
 /// permission gate (a local plugin IPC method's gate does not apply here
-/// — see ADR-0042/0046).
+/// — see docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그).
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum ListDirRequestMsg {
@@ -245,7 +245,7 @@ pub enum GitQueryRequestMsg {
     },
 }
 
-/// markdown mirror(ADR-0255) mid-session control messages — mirror client 가
+/// markdown mirror(docs/dev-guide/attach-behavior.md#markdown-content-채널) mid-session control messages — mirror client 가
 /// 원격/holder 쪽에 그 markdown surface 가 열고 있는 문서의 **원문**을 요청한다.
 /// [`ListDirRequestMsg`] 과 같은 "outside `StreamControl`" 근거와 신뢰 모델
 /// (attach 점유 = 신뢰, `client_holds_workspace`).
@@ -335,7 +335,7 @@ impl SinkReceiver {
     ///
     /// 이 자리가 없으면 통지는 **다음 push 나 다음 inbound** 를 기다린다. 버린 프레임이 그
     /// 연결의 마지막 출력이었고 소비자가 아무것도 안 보내면(CLI mirror-dump 는 심장박동이
-    /// 없다) 소비자는 공백 앞을 다 읽고도 공백을 모른 채 끝난다(ADR-0450).
+    /// 없다) 소비자는 공백 앞을 다 읽고도 공백을 모른 채 끝난다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실).
     fn took(&self, frame: StreamFrame) -> StreamFrame {
         self.queued.fetch_sub(1, Ordering::Relaxed);
         if self.owes_notice.load(Ordering::Acquire) {
@@ -402,7 +402,7 @@ struct StreamLoss {
 
 /// [`StreamHub::loss`] 가 돌려주는 한 시점의 값.
 ///
-/// 세 수가 서로 다른 것을 잰다(`docs/adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md`).
+/// 세 수가 서로 다른 것을 잰다(`docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실`).
 /// 앞의 둘은 프로세스 수명 **누계**라 안 내려가고, `backlog` 만 **지금** 의 값이라 내려간다.
 /// 셋 다 연결별 연속 drop 수(`StreamSink::lag`)와 다르다 — 그것은 성공 한 번에 0 이 되는
 /// 강제분리의 좌변이고 밖에 안 나간다.
@@ -436,7 +436,7 @@ pub struct StreamContext {
 pub struct StreamHub {
     sinks: Arc<Mutex<HashMap<StreamClientId, StreamSink>>>,
     next_id: Arc<AtomicU32>,
-    /// bulk 파일 전송 전용 연결(ADR-0054): `client_id → 결속 workspace_id`. 이 맵에
+    /// bulk 파일 전송 전용 연결(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그): `client_id → 결속 workspace_id`. 이 맵에
     /// 든 연결의 `Data` 프레임은 PTY 입력이 아니라 파일 청크로 분류되고(연결-단위
     /// 태깅 — [`pump_inbound`](Self::pump_inbound)), begin/commit 인가 시 서버가 그
     /// workspace 의 holder 존재를 검증하는 결속 근거가 된다(조사 §6). 핸드셰이크에서
@@ -536,7 +536,7 @@ impl StreamHub {
             .remove(&id);
     }
 
-    /// bulk 전송 전용 연결(ADR-0054)로 태깅한다. 핸드셰이크의 `bulk_workspace` 를
+    /// bulk 전송 전용 연결(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)로 태깅한다. 핸드셰이크의 `bulk_workspace` 를
     /// 결속 workspace 로 기록하며, 이 등록은 [`register`](Self::register)와 read 루프
     /// 시작 사이(같은 accept 스레드)에서 이뤄지므로 이후 pump 되는 모든 프레임에서
     /// [`bulk_workspace`](Self::bulk_workspace)로 조회된다.
@@ -721,7 +721,7 @@ impl StreamHub {
                 StreamInbound::Frame { client_id, frame } => {
                     // 연결-단위 bulk 태깅: bulk 전용 연결이면 그 Data 는 PTY 입력이
                     // 아니라 파일 청크다(같은 `StreamTag::Data` 를 두 의미로 쓰므로
-                    // 연결 단위로 구분해야 한다 — ADR-0054, 전용 연결이 필수인 이유).
+                    // 연결 단위로 구분해야 한다 — docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그, 전용 연결이 필수인 이유).
                     let bulk_ws = self.bulk_workspace(client_id);
                     match frame.tag {
                         crate::stream::StreamTag::Data if bulk_ws.is_some() => {
@@ -1287,7 +1287,7 @@ mod tests {
     /// ★ 통지는 **소비자가 공백 앞을 다 읽는 즉시** 뒤따른다 — 그 연결에 다음 push 도, 어떤
     /// inbound 도 없어도. 버린 프레임이 그 연결의 마지막 출력이고 소비자가 아무것도 안 보내면
     /// (CLI mirror-dump) 예전에는 통지가 다음 push 나 다음 inbound 까지 밀려, 소비자는 공백
-    /// 앞을 다 읽고도 공백을 모른 채 끝났다(ADR-0450). 통지가 공백 앞 마지막 프레임 **바로
+    /// 앞을 다 읽고도 공백을 모른 채 끝났다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실). 통지가 공백 앞 마지막 프레임 **바로
     /// 뒤**에 있어야 하므로 위치까지 본다.
     #[test]
     fn a_notice_follows_the_last_survivor_with_nothing_pushed_and_nothing_sent_after_the_loss() {

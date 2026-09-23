@@ -4,8 +4,8 @@
 //! 이 크레이트는 **OS 를 부르는 코드만** 담는다. 그 신호가 App 에서 무엇이 되는지는
 //! 부르는 쪽이 정한다 — 그래서 여기에는 `AppEvent` 도 `AppState` 도 없고, 콜백
 //! (`power_windows::OnResume` · `macos_delegate::DelegateActions`)을 받아 부를 뿐이다.
-//! 그 경계의 근거는 `docs/adr/0331-the-platform-folder-holds-the-os-call-not-the-app-meaning.md`,
-//! 폴더가 크레이트가 된 근거는 `docs/adr/0343-the-os-boundary-is-a-crate.md`.
+//! 그 경계의 근거는 `docs/architecture/index.md#크레이트를-나누는-기준`,
+//! 폴더가 크레이트가 된 근거는 `docs/architecture/index.md#크레이트를-나누는-기준`.
 //!
 //! **본체와 잇는 이름은 그대로다** — 본 바이너리가 `use tasty_platform as platform;` 로
 //! 별칭을 걸어서, 호출부의 `crate::platform::…` 는 한 줄도 안 바뀌었다.
@@ -16,7 +16,7 @@
 #[cfg(feature = "gui")]
 pub mod app_icon;
 pub mod crash_report;
-/// debug 격리 — OS 열기를 띄우지 않고 기록만 한다(`TASTY_DEBUG_OS_OPEN_LOG`, ADR-0511).
+/// debug 격리 — OS 열기를 띄우지 않고 기록만 한다(`TASTY_DEBUG_OS_OPEN_LOG`, docs/dev-guide/self-verification.md#os-열기와-지연-주입).
 #[cfg(debug_assertions)]
 pub mod debug_os_open;
 #[cfg(all(windows, feature = "gui"))]
@@ -44,7 +44,7 @@ pub mod stall_watchdog;
 pub mod system_tray;
 #[cfg(feature = "gui")]
 pub mod window_chrome;
-/// 에이전트가 만든 창을 사용자 창 뒤에, 키 포커스 없이 보인다(ADR-0497).
+/// 에이전트가 만든 창을 사용자 창 뒤에, 키 포커스 없이 보인다(docs/features/window-chrome/index.md#에이전트-창의-os-표시).
 #[cfg(feature = "gui")]
 pub mod window_stacking;
 /// X11 XID → `GdkWindow` 변환. GTK 백엔드가 X11 인 Linux 에서만 쓴다.

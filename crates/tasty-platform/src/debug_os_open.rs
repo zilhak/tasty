@@ -12,7 +12,7 @@
 //! 사용자 브라우저를 다시 연다.
 //!
 //! 모듈 선언에 `#[cfg(debug_assertions)]` 가 붙어 release 에는 없다. 절차와 근거는
-//! `docs/dev-guide/debug-ipc.md` 와 `docs/adr/0511-os-open-is-recorded-not-launched-under-a-debug-switch.md`.
+//! `docs/dev-guide/debug-ipc.md` 와 `docs/dev-guide/self-verification.md#os-열기와-지연-주입`.
 
 use std::ffi::OsString;
 use std::io::Write;

@@ -5,7 +5,7 @@
 #
 # 고지 세트를 배포 트리에 스테이징하고, 산출물에 그 세트가 다 들어갔는지 본다. 세트가
 # 무엇인지는 THIRD_PARTY_LICENSES.md 의 "고지 세트" 절이 정본이고, 생성하지 않고 저장소의
-# 파일을 그대로 나르는 근거는 docs/adr/0317-the-notice-set-is-staged-not-generated.md 에
+# 파일을 그대로 나르는 근거는 docs/dev-guide/release.md#배포물의-고지-파일 에
 # 있다.
 #
 # 세트의 셋째 항목은 파일 이름이 아니라 `LICENSES/` 디렉토리다 — 본문이 하나 늘 때 이 파일을

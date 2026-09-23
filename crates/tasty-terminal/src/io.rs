@@ -3,7 +3,7 @@
 //! 입력 송신(`write_input`/`send_terminal_response`)과 change apply 는 락 안에서
 //! 도는 `TerminalState` 에 둔다 — VTE 핸들러가 파서 스레드에서 DSR/DA 응답을
 //! PTY 로 되쓰기 때문이다. 사용자 입력 API(`send_key`/`send_bytes`)는 핸들
-//! (`Terminal`) 이 락을 잡아 위임한다 (ADR-0002).
+//! (`Terminal`) 이 락을 잡아 위임한다 (docs/features/terminal/index.md#vte-에뮬레이션).
 
 use std::sync::mpsc;
 use std::time::Duration;

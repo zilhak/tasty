@@ -5,7 +5,7 @@
 //! 돌아오고, 그 panic 이 종료 코드 101 + 가짜 crash report 로 이어진다. Rust 런타임이
 //! SIGPIPE 를 `SIG_IGN` 으로 두므로 프로세스가 스스로 처리해야 하고, Windows 에는
 //! SIGPIPE 자체가 없어 `ErrorKind::BrokenPipe` 만 온다 — 그래서 쓰기를 `Result` 로
-//! 받는다(근거: `docs/adr/0101-cli-stdout-broken-pipe-exit-zero.md`).
+//! 받는다(근거: `docs/dev-guide/cli-structure.md#stdout-출력-outrs`).
 //!
 //! - tasty-cli 는 stdout 에 [`outln!`] / [`out!`] 로만 쓴다(정책은
 //!   `docs/dev-guide/error-handling.md` "stdout 쓰기", 집행은
@@ -17,7 +17,7 @@
 //! - 그 외 stdout 오류(EIO / ENOSPC 등)는 일반 에러로 전파돼 `Error: …` + 종료 코드 1.
 //! - stderr 도 같은 이유로 `eprintln!` 을 쓰지 않는다 — [`errln!`] 을 쓴다. stderr 는 CLI 의
 //!   마지막 보고 채널이라 그 쓰기의 실패는 알릴 곳이 없으므로 **버리고**, 명령의 종료 코드는
-//!   그대로 둔다(`docs/adr/0513-cli-stderr-broken-pipe-keeps-the-exit-code.md`).
+//!   그대로 둔다(`docs/dev-guide/cli-structure.md#stdout-출력-outrs`).
 //! - host(GUI / headless) 는 stdout 에 쓰지 않으므로 이 모듈과 무관하다 — `Routed::Gui`
 //!   갈래의 동작은 바뀌지 않는다.
 

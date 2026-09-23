@@ -6,7 +6,7 @@
 //! 그래서 대체 저장소는 자기가 대체라는 사실과 원인을 들고 태어난다([`InitFallback`]).
 //! 호스트는 그것을 진단 응답(`db_pragmas.memory_db`)과 쓰기 응답(`durable: false`)으로
 //! 내보낸다. 근거·대안·재검토 조건은
-//! `docs/adr/0485-a-memory-db-that-failed-to-open-falls-back-in-memory-and-says-so.md`.
+//! `docs/design/systems/storage.md#memorydb--in-memory-대체로-계속-뜨고-degraded-로-말한다`.
 
 use crate::{MemoryInitError, MemoryStore};
 

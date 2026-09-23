@@ -220,7 +220,7 @@ fn error_line(ui: &mut egui::Ui, theme: &Theme, err: &str) {
         );
 }
 
-/// (ADR-0056) mirror popup 의 최초 원격 스냅샷 왕복이 아직 안 왔을 때.
+/// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) mirror popup 의 최초 원격 스냅샷 왕복이 아직 안 왔을 때.
 fn loading(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
     let h = ui.available_height().max(1.0);
     ui.allocate_ui_with_layout(
@@ -681,7 +681,7 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
 }
 
 /// 커밋 summary 표시 문자열. `tasty-git-core` 는 값이 없으면 빈 문자열을 주고 자연어를
-/// 만들지 않는다(호출자 주입, ADR-0106 결정 4) — 빈 값의 문구는 여기서 plugin 자기
+/// 만들지 않는다(호출자 주입, docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입) — 빈 값의 문구는 여기서 plugin 자기
 /// lang 으로 고른다. 원격 mirror 조회도 같은 wire 라 로컬 언어로 표시된다.
 fn summary_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
     if entry.summary.is_empty() {

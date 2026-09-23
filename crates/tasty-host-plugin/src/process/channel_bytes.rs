@@ -2,16 +2,16 @@
 //! 채널을 더한 합계.
 //!
 //! 세 채널(요청 · 응답 · 이벤트)의 용량은 메시지 **개수**로만 걸려 있었다
-//! (`REQUEST_QUEUE_CAPACITY` 등, ADR-0315). 개수 상한이 메모리 상한이 되려면 메시지 크기에
-//! 상한이 있어야 하는데 그런 것은 없다 — ADR-0315 의 "곱이 수십 MB" 는 메시지가 수 KB 라는
+//! (`REQUEST_QUEUE_CAPACITY` 등, docs/architecture/ipc-server.md#플러그인-채널의-상한). 개수 상한이 메모리 상한이 되려면 메시지 크기에
+//! 상한이 있어야 하는데 그런 것은 없다 — 메시지 수만 제한하던 당시의 메모리 추정은 메시지가 수 KB 라는
 //! **가정**이었다. 그리고 plugin 수도 번들 아홉으로 고정이 아니다. 그래서 두 축을 더한다:
 //! 큐 하나의 누적 바이트([`QUEUE_BYTES_LIMIT`])와 프로세스 전체의 합계([`TOTAL_BYTES_LIMIT`]).
-//! 근거·대안·재는 법은 ADR-0360.
+//! 근거·대안·재는 법은 docs/architecture/ipc-server.md#플러그인-채널의-상한.
 //!
 //! **상한은 누적에 걸리고, 빈 큐는 한 건을 늘 받는다.** 한 건이 상한보다 큰 메시지를
 //! 영영 못 들이면 기다리는 방향(plugin → 호스트)이 교착한다 — 그 메시지 뒤로 소켓 읽기가
 //! 서고, 그 앞에는 비울 것이 없다. 그래서 실제 상한은 `상한 + 큐마다 한 건` 이다. 그 한
-//! 건의 크기를 묶는 것은 이 모듈이 아니다(프로토콜에 줄 길이 상한이 없다 — ADR-0360
+//! 건의 크기를 묶는 것은 이 모듈이 아니다(프로토콜에 줄 길이 상한이 없다 — docs/architecture/ipc-server.md#플러그인-채널의-상한
 //! 재검토 조건).
 //!
 //! 판정은 채널 **밖**의 장부 하나가 한다([`ChannelLedger`]). 채널마다 원자값을 두면 합계를
@@ -23,9 +23,9 @@ use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-/// 큐 하나에 쌓여 있을 수 있는 바이트. **파생이 아니다** — 근거는 ADR-0360.
+/// 큐 하나에 쌓여 있을 수 있는 바이트. **파생이 아니다** — 근거는 docs/architecture/ipc-server.md#플러그인-채널의-상한.
 pub const QUEUE_BYTES_LIMIT: usize = 16 * 1024 * 1024;
-/// 모든 plugin 의 모든 채널을 더한 바이트. **파생이 아니다** — 근거는 ADR-0360.
+/// 모든 plugin 의 모든 채널을 더한 바이트. **파생이 아니다** — 근거는 docs/architecture/ipc-server.md#플러그인-채널의-상한.
 ///
 /// [`QUEUE_BYTES_LIMIT`] × 큐 수보다 작게 둔다. 그래야 plugin 하나가 밀릴 때는 큐 상한이,
 /// 여럿이 한꺼번에 밀릴 때는 합계 상한이 먼저 걸린다 — 두 수가 같은 것을 재면 하나는 죽은
@@ -49,7 +49,7 @@ const LEDGER_WHAT: &str = "plugin channel byte ledger";
 /// ping 을 못 받아 무응답으로 재시작되거나 shutdown 을 못 받아 graceful 없이 kill 된다 —
 /// 포화가 **다른 plugin 과 종료 진행**을 막게 된다. 큐 상한은 그대로 본다: 그 큐를 채운
 /// 것은 그 plugin 자신이고, 제어 한 건은 작아서 큐가 빌 때까지 기다리지 않는다(빈 큐는
-/// 늘 받는다). 면제된 한 건도 합계에 **센다** — 장부는 실제로 쥔 양을 적는다. ADR-0360
+/// 늘 받는다). 면제된 한 건도 합계에 **센다** — 장부는 실제로 쥔 양을 적는다. docs/architecture/ipc-server.md#플러그인-채널의-상한
 /// 2026-09-21 보강.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Admission {
@@ -75,7 +75,7 @@ impl Default for ChannelLimits {
     }
 }
 
-/// 큐의 방향. 포화의 답이 방향마다 다르다(ADR-0315) — 요청은 거절, 응답·이벤트는 대기.
+/// 큐의 방향. 포화의 답이 방향마다 다르다(docs/architecture/ipc-server.md#플러그인-채널의-상한) — 요청은 거절, 응답·이벤트는 대기.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
@@ -207,7 +207,7 @@ impl ChannelLedger {
         }
     }
 
-    /// 지금 장부. 진단용 — 이 값을 IPC 로 내보내는 자리는 아직 없다(ADR-0360).
+    /// 지금 장부. 진단용 — 이 값을 IPC 로 내보내는 자리는 아직 없다(docs/architecture/ipc-server.md#플러그인-채널의-상한).
     pub fn snapshot(&self) -> ChannelBytesSnapshot {
         let st = self.lock();
         let mut queues: Vec<QueueBytesSnapshot> = st
@@ -474,7 +474,7 @@ pub struct ChannelBytesSnapshot {
     pub limits: ChannelLimits,
     /// 지금 모든 채널에 쌓인 바이트.
     pub total_bytes: usize,
-    /// 프로세스 수명 중 합계의 최댓값 — 상한이 정상 사용에 닿는지 재는 값(ADR-0360).
+    /// 프로세스 수명 중 합계의 최댓값 — 상한이 정상 사용에 닿는지 재는 값(docs/architecture/ipc-server.md#플러그인-채널의-상한).
     pub peak_total_bytes: usize,
     /// 요청 방향에서 큐 상한으로 거절한 수.
     pub refused_over_queue: u64,

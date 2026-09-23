@@ -1,4 +1,4 @@
-//! plugin 으로 넘긴 요청이 **원 IPC 요청의 호스트 번호**를 대기 표에 싣는가(ADR-0436).
+//! plugin 으로 넘긴 요청이 **원 IPC 요청의 호스트 번호**를 대기 표에 싣는가(docs/architecture/ipc-server.md#느린-요청-추적).
 //!
 //! plugin 에게 가는 것은 hop 마다 새로 받는 호스트 req_id 뿐이다. 그 req_id 를 원 요청으로
 //! 되짚는 대응표가 대기 표의 `origin` 칸이고, pre/post hook 사슬은 hop 마다 새 req_id 를
@@ -107,7 +107,7 @@ fn a_forward_puts_the_original_request_seq_on_its_pending_entry() {
     assert_eq!(
         keys,
         ["caller_plugin_id", "method", "params"],
-        "원 요청 번호는 plugin wire 에 싣지 않는다(ADR-0436)"
+        "원 요청 번호는 plugin wire 에 싣지 않는다(docs/architecture/ipc-server.md#느린-요청-추적)"
     );
 
     let (tx, _rx) = mpsc::sync_channel(1);

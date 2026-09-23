@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Host-only Lua scripting layer for Tasty (ADR-0031).
+//! Host-only Lua scripting layer for Tasty (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
 //!
 //! 사용자가 등록한 Lua 스크립트를 **명시 트리거**(1차: 단축키)로 실행한다. 부팅 시
 //! 임의 Lua 자동로드(`init.lua`)는 폐기됐다 — 스크립트는 등록 목록에서 배선된다.

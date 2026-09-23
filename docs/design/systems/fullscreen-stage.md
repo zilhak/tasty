@@ -3,7 +3,7 @@
 무대는 **창 전체를 독점하는 독립 표면**이다. 기존 Workspace/Pane/Tab/Surface 트리와
 **병렬로** 존재하며, 기존 요소를 확대한 것이 아니다. 용어 구분은
 [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md), 결정의 근거·대안은
-[ADR-0082](../../adr/0082-fullscreen-independent-stage.md). 이 문서는 시스템 *동작 모델* 이고, 끝의 [기능 명세](#기능-명세--상태--인터페이스--acceptance-criteria) 절이 상태 · 인터페이스 · Acceptance Criteria 를 담는다.
+[ADR-0618](../../adr/0618-explicit-capture-and-fullscreen-stage.md). 이 문서는 시스템 *동작 모델* 이고, 끝의 [기능 명세](#기능-명세--상태--인터페이스--acceptance-criteria) 절이 상태 · 인터페이스 · Acceptance Criteria 를 담는다.
 
 구현: `src/adapters/ui/fullscreen.rs`(무대 셸·닫힘 훅 drain) + `.../fullscreen/defs.rs`(정적
 테이블) + `src/fullscreen_stages.rs`(gui 무관 메타) + `AppState`(상태) + `Gpu::render`(렌더 분기).
@@ -89,7 +89,7 @@
   올라와 있으면 **그 무대를 닫고**(훅 경유) 교체한다. 같은 id 재진입은 no-op(콘텐츠 상태가
   날아가지 않게).
 - 종료 `AppState::close_fullscreen_stage()` — **닫는 경로 전부가 지나는 유일한 지점**
-  ([ADR-0063](../../adr/0063-popup-close-hook-single-choke-point.md) 과 같은 패턴). 닫힌 id 를
+  ([ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md) 과 같은 패턴). 닫힌 id 를
   훅 대기열에 넣고, draw 경로가 `on_close` 를 정확히 1 회 발화한다.
 - 훅 drain 은 **무대 프레임과 일반 프레임 양쪽**에서 돈다. 무대를 나오면 다음 프레임은 일반
   프레임이라 무대 draw 경로가 아예 돌지 않기 때문이다.
@@ -195,7 +195,7 @@ grid 로 돌아온다.
 `set_fullscreen` 은 사용자가 보는 창을 바꾸므로 `docs/identity.md` 원칙 1 의 사용자 상태다.
 release IPC/CLI 에 창 전환 API 를 노출하지 않는다 — 전환은 무대 상태를 따라갈 뿐이고, 무대
 진입 경로(사용자 버튼 / debug 전용 `debug.fullscreen.open`)만이 그 전환을 부른다. 터미널 이스케이프로 창을 조작하는
-경로도 없다([ADR-0011](../../adr/0011-xtwinops-window-ops-unsupported.md) 의 거부 결정 그대로).
+경로도 없다([ADR-0614](../../adr/0614-terminal-compatibility-scope.md) 의 거부 결정 그대로).
 
 ### 플랫폼별 확인 결과
 
@@ -377,7 +377,7 @@ API 는 `#[cfg(feature = "gui")]` 안에 있고, `AppState::fullscreen_stage_act
 
 - **Status**: Partial — 무대 코어(상태 · 정의 테이블 · 렌더 파이프라인 게이트) + OS 창 전체화면 전환 + 첫 콘텐츠(알림 무대) + 사용자 진입 경로(popup 타이틀바 전체화면 버튼) + 셸 종료 버튼 + 입력 라우팅 게이트 + 설정 가능한 종료 단축키(`fullscreen_stage_exit`, 기본 ESC) + 에이전트 진입/조회(debug 전용 IPC/CLI)까지 있다. release 표면은 없다.
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0082](../../adr/0082-fullscreen-independent-stage.md)
+- **ADR**: [ADR-0618](../../adr/0618-explicit-capture-and-fullscreen-stage.md)
 - **코드**: `src/adapters/ui/fullscreen.rs` · `src/adapters/ui/fullscreen/defs.rs` · `src/adapters/ui/fullscreen/notifications.rs` · `src/adapters/ui/popup/draw.rs`(진입 버튼) · `src/state.rs` · `src/gfx/gpu.rs` · `src/view/main/redraw.rs` · `src/view/main/keyboard.rs` · `src/view/main/mouse.rs` · `src/view/main/fullscreen_window.rs`(OS 창 전환 + 상태 덤프) · `src/app/ipc/debug_methods.rs`(debug IPC) · `crates/tasty-settings/src/keybindings.rs`(종료 바인딩)
 - **화면**: 없음 — 무대 자체가 화면이다. 동작 모델은 이 문서 위 절들
 
@@ -386,7 +386,7 @@ API 는 `#[cfg(feature = "gui")]` 안에 있고, `AppState::fullscreen_stage_act
 무언가를 창 전체로 크게 보여주기 위한 기반. tasty 에는 이 개념이 아예 없었다(winit
 `set_fullscreen` 호출 0 건, View 안에서 요소가 작업영역을 독점하는 상태도 없음). 무대는 기존
 레이아웃을 확대하는 대신 **창 전체를 쓰는 독립 표면**을 띄우고 뒤는 손대지 않는다 — 그래서
-화면 rect 를 계산하는 기존 경로를 하나도 고치지 않는다(근거는 ADR-0082).
+화면 rect 를 계산하는 기존 경로를 하나도 고치지 않는다(근거는 ADR-0618).
 
 ### 내부 동작
 

@@ -1,4 +1,4 @@
-//! [`LuaEngine`] — Lua VM 을 소유하는 **워커 스레드** 핸들 (ADR-0031).
+//! [`LuaEngine`] — Lua VM 을 소유하는 **워커 스레드** 핸들 (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
 //!
 //! VM 은 전용 워커 스레드에서만 접근한다. 메인 스레드는 이 핸들을 통해
 //! 실행 job 을 보내고(직렬 처리), 워커가 쌓은 [`HostCommand`] 를 drain 하며,
@@ -45,7 +45,7 @@ const JOB_QUEUE_CAP: usize = 256;
 pub(crate) const COMMAND_QUEUE_CAP: usize = 256;
 
 /// 스크립트 1회 실행 wall-clock deadline 기본값. 초과 시 `set_interrupt` 가 abort.
-/// 무한 루프/폭주 스크립트가 워커 스레드를 영원히 점유하는 것을 막는다 (ADR-0031).
+/// 무한 루프/폭주 스크립트가 워커 스레드를 영원히 점유하는 것을 막는다 (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
 /// 정상 스크립트 오탐을 피하려 넉넉히 잡는다 (초과 시 ADR Reconsideration 대상).
 const SCRIPT_DEADLINE: Duration = Duration::from_secs(5);
 
@@ -595,7 +595,7 @@ mod tests {
         engine.eval("assert(_G.fired == false)").unwrap();
     }
 
-    // --- 워커 인프라 (ADR-0031) ---
+    // --- 워커 인프라 (docs/features/lua-hooks/index.md#실행-격리--안전-장치) ---
 
     #[test]
     fn run_script_is_serialized_with_eval() {
@@ -766,7 +766,7 @@ mod tests {
         );
     }
 
-    // --- deadline / 무한루프 방어 (ADR-0031) ---
+    // --- deadline / 무한루프 방어 (docs/features/lua-hooks/index.md#실행-격리--안전-장치) ---
 
     #[test]
     fn infinite_loop_aborts_within_deadline() {

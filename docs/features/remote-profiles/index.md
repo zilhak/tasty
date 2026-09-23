@@ -1,7 +1,7 @@
 # 원격 접속 프로필 + Passkey (remote_tool)
 
 > Status: Implemented. 도구 메뉴 > **Remote connections**. 화면: [remote-tool](screens/remote-tool.md).
-> 설계 근거: [ADR-0032](../../adr/0032-remote-attach-two-layer-split.md)(ssh/tasty-attach 2-레이어) · [ADR-0015](../../adr/0015-remote-profiles-typed-registry.md)(범용 레지스트리 봉투, 부분 superseded) · [ADR-0016](../../adr/0016-passkey-store-path-convergence.md).
+> 설계 근거: [ADR-0620](../../adr/0620-remote-connection-profiles.md)의 연결 프로필 구조와 [ADR-0611](../../adr/0611-secrets-and-local-trust.md)의 비밀 저장 규칙.
 
 타입 무관 **원격 연결 디스크립터**와 **자격증명(Passkey) 저장소** 두 개를 GUI/CLI/IPC 3표면에서 같은 저장 로직으로 CRUD 한다. 프로필은 비밀을 담지 않고 passkey 를 이름으로 참조만 한다.
 
@@ -10,7 +10,7 @@
 - **원격 접속 프로필** — `~/.tasty/remote-profiles.toml`. `{ name, label?, kind, passkey_ref?, fields }`.
   - `kind` 는 **열린 string**. known = core 내장(`ssh`/`tasty-attach`/`smb`) ∪ 설치 플러그인 선언 타입. 미등록 타입도 저장되며 노란 "미등록 타입" 배지로만 경고.
   - `fields` 는 타입별 자유 키-값(`FieldValue = Str | List`, TOML 스칼라/배열). typed 접근은 kind 별 view.
-  - **2-레이어**(ADR-0032):
+  - **2-레이어**(ADR-0620):
     - **`ssh`** = 순수 연결 정보. `host`/`user`/`port`/`extra_options` + `shell`/`detect_failed`(셸 감지 상태). `SshView` 로 접근. **attach 전용 필드(`remote_tasty`/`port_mode`)는 여기 없다.**
     - **`tasty-attach`** = attach 스펙. 연결은 `ssh_ref = <ssh 프로필 name>`(참조 — resolve 시점 재로드, 라이브 팔로우) **또는** 인라인(자기 fields 의 ssh 정보). attach 전용: `remote_tasty`(기본 `tasty`)/`port_mode`(기본 `auto`)/`port_file`(원격 port 파일 명시 경로, 관례보다 최우선). `AttachView` 로 접근. attach 동작이 소비한다(→ [remote-attach](../remote-attach/index.md)).
 - **Passkey** — `~/.tasty/passkeys.toml`(0600). `{ name, kind, path }`. `kind = path`(사용자 소유 파일 참조) | `inline`(입력값을 `~/.tasty/passkeys/<name>` 0600 파일로 materialize). **toml 엔 비밀 값이 없다**(경로뿐). 이름은 `[A-Za-z0-9_-]` 만 허용(파일명·traversal 차단).
@@ -27,7 +27,7 @@
   - **가져오기(CLI/IPC)는 셸을 감지하지 않는다.** 감지는 실제 SSH 접속이라 목록에서 여러 건을 가져오면 접속이 연쇄로 일어난다 — 가져온 뒤 `tasty tool remote-profile detect --name <n>` 로 사용자가 돌린다(`add-ssh` 와 다른 점). **GUI 는 다르다** — 가져오기가 alias 프리필 폼을 여는 방식이라, 그 폼을 사용자가 저장하는 시점에 `shell="auto"` 인 프로필은 다른 저장과 똑같이 1회 감지 프로브를 탄다(연쇄가 아니라 사용자가 한 건씩 확인하며 저장하는 경로라 문제되지 않는다).
   - 이름이 겹치면 **거부**한다(덮어쓰기 없음). 없는 alias 를 가리켜도 거부한다.
   - **GUI** 는 같은 목록을 Remote profiles 탭의 프로필 목록 **아래 같은 스크롤의 별도 섹션**으로 보여준다(읽기 전용 — 행 액션은 ghost `프로필 추가` 하나, 이미 등록된 호스트는 `등록됨` Tag). 섹션 헤더에 새로고침 아이콘은 없다 — 다시 읽으려면 popup 을 다시 연다. 프로토콜 필터는 이 섹션에 적용되지 않고(ssh config 항목엔 `kind` 가 없다), 프로필이 0건이어도 섹션은 그대로 뜬다. 가져오기는 프로필 폼을 alias 프리필로 여는 방식이라 이름 변경·중복 검증이 기존 폼 그대로다. 상세: [remote-tool 화면](screens/remote-tool.md).
-- **소비자 분리** — attach 는 **tasty-attach kind** 프로필을 읽는 소비자(ADR-0032). tasty-attach 는 ssh 프로필을 `ssh_ref` 로 참조하거나 인라인 연결을 갖는다. "주소 저장(ssh)"과 "attach 스펙(tasty-attach)"이 분리됐다(→ [remote-attach](../remote-attach/index.md)).
+- **소비자 분리** — attach 는 **tasty-attach kind** 프로필을 읽는 소비자(ADR-0620). tasty-attach 는 ssh 프로필을 `ssh_ref` 로 참조하거나 인라인 연결을 갖는다. "주소 저장(ssh)"과 "attach 스펙(tasty-attach)"이 분리됐다(→ [remote-attach](../remote-attach/index.md)).
 - **입력 격리** — 팝업이 터미널 위에 떠 있어도 팝업 위 클릭/스크롤은 팝업이 소비하며, 뒤 터미널의 포커스·선택·스크롤을 건드리지 않는다. remote_tool 고유 규칙이 아니라 모든 팝업에 적용되는 입력 레이어 계약(Layer 3 = Popup, "팝업 위면 터미널 무시")을 따른 것이다(→ [input-layer](../../architecture/input-layer.md)).
 
 ## 인터페이스
@@ -53,4 +53,4 @@
 
 ## 마이그레이션
 
-없음. 구 `ssh-profiles.toml → remote-profiles.toml` 자동 마이그레이션은 [ADR-0032](../../adr/0032-remote-attach-two-layer-split.md)(하위호환 제거)로 삭제됐다. 기존 프로필에 남은 `remote_tasty`/`port_mode` 필드는 열린 스키마라 무시되며 크래시하지 않는다 — attach 하려면 `tool remote-profile add-attach` 로 tasty-attach 프로필을 새로 만든다.
+없음. 구 `ssh-profiles.toml → remote-profiles.toml` 자동 마이그레이션은 [ADR-0620](../../adr/0620-remote-connection-profiles.md)(하위호환 제거)로 삭제됐다. 기존 프로필에 남은 `remote_tasty`/`port_mode` 필드는 열린 스키마라 무시되며 크래시하지 않는다 — attach 하려면 `tool remote-profile add-attach` 로 tasty-attach 프로필을 새로 만든다.

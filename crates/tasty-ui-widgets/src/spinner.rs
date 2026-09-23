@@ -12,7 +12,7 @@
 //! `Theme` 에 실어 나른다 — 스피너는 **기본으로 `theme.reduced_motion` 을 읽는다.**
 //! 종전에는 호출부가 명시적으로 넘겨야 했고, 실제로 넘기는 자리가 레포 전체에
 //! 하나도 없어서 설정을 켜도 스피너가 계속 돌았다. 결정은
-//! `docs/adr/0174-theme-carries-reduced-motion.md`. 색은 호출부 지정이 없으면
+//! `docs/design/systems/theme.md#모션-설정과-시간-단위`. 색은 호출부 지정이 없으면
 //! `theme.text_muted()` 를 쓴다.
 
 use tasty_type_appearance::theme::Theme;
@@ -74,7 +74,7 @@ impl Spinner {
 
     /// 그리고 hover 응답을 반환한다.
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
-        // 스피너 지름은 폰트 스케일이 아니라 **아이콘 가족**이다(ADR-0290).
+        // 스피너 지름은 폰트 스케일이 아니라 **아이콘 가족**이다(docs/design/systems/theme.md#ui-코드의-색상-접근).
         let size = self
             .size
             .unwrap_or_else(|| theme.icon_glyph_size_md.value());

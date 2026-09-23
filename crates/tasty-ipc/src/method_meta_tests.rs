@@ -174,7 +174,7 @@ fn surface_list_requires_surface_read() {
     assert!(m.required.contains(&Permission::SurfaceRead));
 }
 
-/// ADR-0058: `file_picker.trigger` 는 `git_viewer.query` 와
+/// docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때: `file_picker.trigger` 는 `git_viewer.query` 와
 /// 동일 근거(파일을 고르는 read 관심사)로 FsRead 권한이 필요하고, plugin 이 직접
 /// host.call 로 호출 가능해야 한다.
 #[test]
@@ -190,7 +190,7 @@ fn file_picker_trigger_requires_fs_read() {
 /// 매니페스트를 함께 고치지 않은 설치본에서 스캔이 `permission_denied` 로 **조용히**
 /// 멎는다 — 에러 감지가 통째로 사라지는데 아무 신호도 없다. 그래서 같은 출력을 읽는
 /// `surface.read_since_mark` 과 같은 버킷(`terminal.read`)인지 여기서 못 박는다
-/// (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
+/// (`docs/features/terminal-output/index.md#출력-스캐너-전용-커서`).
 #[test]
 fn the_output_scan_cursor_is_callable_with_the_permission_its_only_caller_holds() {
     let m = method_meta("surface.read_since_scan_mark").expect("registered");
@@ -657,7 +657,7 @@ fn a_poisoned_prefix_registry_still_blocks_the_owner_bypass() {
 /// `unrouted_for_external_caller` 의 갈래를 태우면 설치된 plugin 의 이름과 그 아래 오타까지
 /// host 가 삼킨다 — 실측 2026-09-05 로 `claude.children` · `agent_stream.list` ·
 /// `markdown.no_such_thing` 이 전부 `-32017` 이 되고, plugin 으로 갈 호출이 안 갔다.
-/// 근거는 [ADR-0167](../../../docs/adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md).
+/// 근거는 [등재된 이름인데 이 바이너리에 arm 이 없을 때](../../../docs/dev-guide/api-conventions.md#등재된-이름인데-이-바이너리에-arm-이-없을-때).
 ///
 /// 이 테스트가 `method_meta_tests.rs` 에 사는 이유는 **런타임 prefix 레지스트리를 만지기
 /// 때문**이다. 그 전역을 만지는 테스트는 이 파일의 `TEST_LOCK` 을 잡아야 한다.
@@ -795,7 +795,7 @@ fn a_forwarded_namespace_name_is_assumed_unsafe_to_redeliver() {
 }
 
 /// plugin namespace forward 는 멱등 키 계약 **밖**이라고 선언된다 — 호스트 프로세스(소유
-/// 표가 설치된 쪽)에서도, 표가 없는 client 프로세스에서도 같은 답이 나와야 한다. ADR-0361.
+/// 표가 설치된 쪽)에서도, 표가 없는 client 프로세스에서도 같은 답이 나와야 한다. docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖.
 #[test]
 fn a_forwarded_namespace_name_is_declared_outside_the_key_contract() {
     use crate::method_meta::{KeyContract, key_contract};
@@ -816,8 +816,8 @@ fn a_forwarded_namespace_name_is_declared_outside_the_key_contract() {
 /// 재전달이 원래 안전한 것은 `Unneeded`, `Mutate` 는 `Kept`(판 1 = engine 라우터, 판 2 = App
 /// 층, 판 3 = GUI debug step · namespace forward 로 나가는 표 이름). **`Mutate` 가 아닌데 `Kept`
 /// 인 이름은 없고, 표의 이름이 `Outside` 인 경우도 없다** — 보존소는 `Mutate` 만 받고, 호스트가
-/// 아는 `Mutate` 이름은 어느 경로로 가든 보존소를 지난다(ADR-0566). 어느 이름이 판 2 · 3 인지가 실제
-/// 배선과 맞는지는 본체의 `source_guards::key_contract_by_layer` 가 잰다. ADR-0423.
+/// 아는 `Mutate` 이름은 어느 경로로 가든 보존소를 지난다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖). 어느 이름이 판 2 · 3 인지가 실제
+/// 배선과 맞는지는 본체의 `source_guards::key_contract_by_layer` 가 잰다. docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖.
 #[test]
 fn a_host_method_declaration_follows_its_effect() {
     use crate::method_meta::{
@@ -864,7 +864,7 @@ fn a_host_method_declaration_follows_its_effect() {
 /// 그 이름들은 prefix 를 점유한 plugin 이 켜져 있으면 engine 라우터가 아니라 namespace forward 로
 /// 먼저 나간다 — 판 2 서버는 거기서 키를 무시했다. 좌변을 예약 목록에서 유도하는 이유는 "지금
 /// 어느 plugin 이 무엇을 점유했나" 가 설치마다 달라서다: 예약 밖이면 **점유될 수 있고**, 점유되면
-/// forward 로 간다. ADR-0566.
+/// forward 로 간다. docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖.
 #[test]
 fn a_host_mutation_under_a_claimable_prefix_is_kept_from_version_three() {
     use crate::method_meta::{

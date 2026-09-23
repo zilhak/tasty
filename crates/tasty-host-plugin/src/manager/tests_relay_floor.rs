@@ -1,5 +1,5 @@
 //! 재발화 hop 하한의 **manager 배선** — `event.dispatch` 를 보낸 순간 기록하고, 그 응답이
-//! 오면 지우고, plugin publish 가 도착한 순간 하한을 건다(ADR-0406). 규칙 자체는
+//! 오면 지우고, plugin publish 가 도착한 순간 하한을 건다(docs/reference/event-catalog.md#재발행과-응답). 규칙 자체는
 //! `event_bus_relay_tests.rs` 가 고정하고, 여기는 세 자리가 실제로 이어졌는지만 본다.
 
 use std::sync::Arc;
@@ -110,7 +110,7 @@ fn manifest(
 
 /// pre-event hook 을 거치는 publish 는 fan-out 이 hook 응답 뒤로 밀린다. 그 사이에
 /// dispatch 응답이 오면 하한을 걸 기록이 사라지므로, 하한은 **도착한 순간**에 걸려
-/// 있어야 한다 — hook 응답 뒤에 판정하면 hop 0 이 그대로 나간다(ADR-0406 "판정 시점").
+/// 있어야 한다 — hook 응답 뒤에 판정하면 hop 0 이 그대로 나간다(docs/reference/event-catalog.md#재발행과-응답).
 #[test]
 fn a_publish_held_by_a_pre_event_hook_keeps_the_floor_it_arrived_with() {
     let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));

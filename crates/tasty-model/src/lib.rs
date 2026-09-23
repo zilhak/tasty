@@ -46,7 +46,7 @@ pub use tasty_utils::id::{
 /// 배율 2 화면에서 4 물리 px 로 그려진다. 물리로 두면 고해상도에서 선이 절반
 /// 두께로 보이는데, 그것은 "얇은 선" 이 아니라 **디자인이 정한 두께가 안 지켜지는
 /// 것**이다. 근거·대안·재검토 조건:
-/// `docs/adr/0148-physical-px-constants-are-split-by-what-they-are-for.md`.
+/// `docs/concepts/typed-length.md#두-타입`.
 ///
 /// 비교 좌표계(물리)로 내리는 것은 `BinaryTree::border_width` 한 곳이다.
 pub const PANE_BORDER_WIDTH: LogicalPx = LogicalPx(2.0);
@@ -56,7 +56,7 @@ pub const PANE_BORDER_WIDTH: LogicalPx = LogicalPx(2.0);
 /// **물리 길이다 — 그리고 그것이 의도다.** 이 선은 hairline 이다: 화면 밀도와
 /// 무관하게 **언제나 1 device px** 로 남아야 하는 구획선이라, 배율을 따라 커지면
 /// 안 된다. 그래서 `PANE_BORDER_WIDTH` 와 값의 성격이 다르고, 둘을 한 덩어리로
-/// 다루지 않는다(같은 ADR-0148).
+/// 다루지 않는다(같은 docs/concepts/typed-length.md#두-타입).
 ///
 /// ★ **hairline 이라는 판단은 추론이다.** 이 값이 물리 1 px 인 것이 hairline
 /// 의도인지 단순 누락인지를 말해 주는 디자인 문서를 찾지 못했다. 추론의 근거는

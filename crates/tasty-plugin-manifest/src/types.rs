@@ -526,7 +526,7 @@ pub enum SurfaceKindRendering {
     /// host 는 어떤 컨텐츠 (html/svg/...) 인지 모름 — webview 토대만 제공.
     Webview,
     /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
-    /// (ADR-0028). bundled 전용 화이트리스트 + api_version 게이트로 제한된다.
+    /// (docs/dev-guide/egui-mesh-channel.md#데이터-흐름). bundled 전용 화이트리스트 + api_version 게이트로 제한된다.
     ///
     /// 와이어 키는 하이픈 포함 `"egui-mesh"` — `rename_all = "lowercase"` 가 만드는
     /// `"eguimesh"` 를 variant 단위 rename 으로 덮어쓴다. 이 rename 을 빠뜨리면
@@ -873,7 +873,7 @@ pub struct PopupContribute {
     pub dismiss_on_outside_click: bool,
     /// popup 콘텐츠 렌더링 방식. `egui-mesh`(기본이자 유일) — plugin 이 자기
     /// 프로세스에서 egui mesh 를 tessellate 하고 host 가 popup 영역에 합성한다
-    /// (ADR-0028, A2). 셸(scrim/border/outside-click/Esc)은 host 소유.
+    /// (docs/dev-guide/egui-mesh-channel.md#데이터-흐름). 셸(scrim/border/outside-click/Esc)은 host 소유.
     #[serde(default)]
     pub rendering: PopupRendering,
 }
@@ -884,7 +884,7 @@ pub struct PopupContribute {
 #[serde(rename_all = "kebab-case")]
 pub enum PopupRendering {
     /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
-    /// (ADR-0028). bundled 전용 — host 화이트리스트 매칭이 필요하다.
+    /// (docs/dev-guide/egui-mesh-channel.md#데이터-흐름). bundled 전용 — host 화이트리스트 매칭이 필요하다.
     ///
     /// 와이어 키는 하이픈 포함 `"egui-mesh"` — `rename_all = "kebab-case"` 가 만드는
     /// `"egui-mesh"` 와 일치하지만, surface 쪽 [`SurfaceKindRendering`] 과 표기를
@@ -926,7 +926,7 @@ pub struct PopupSizeHint {
 /// 선언은 **종류**만 정한다. 대상 surface 는 런타임에야 알 수 있으므로 popup 을 여는
 /// host 진입점이 바인딩한다(host `PopupDef` 의 `OpenPopupMode::WithScope` 와 같은 분담).
 /// 바인딩된 대상이 없으면(plugin 이 스스로 연 popup 등) host 는 `window` 로 다룬다.
-/// 근거는 `docs/adr/0273-plugin-popup-declares-a-scope-kind-and-the-host-binds-the-target.md`.
+/// 근거는 `docs/design/systems/popup.md#plugin-popup-의-스코프`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PopupScopeDecl {
@@ -979,7 +979,7 @@ pub struct BannerContribute {
 #[serde(rename_all = "kebab-case")]
 pub enum BannerRendering {
     /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
-    /// (ADR-0028, A3). bundled 전용 — host api_version 게이트가 필요하다.
+    /// (docs/dev-guide/egui-mesh-channel.md#데이터-흐름). bundled 전용 — host api_version 게이트가 필요하다.
     #[default]
     #[serde(rename = "egui-mesh")]
     EguiMesh,

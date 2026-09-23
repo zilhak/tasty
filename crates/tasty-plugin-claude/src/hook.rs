@@ -664,7 +664,7 @@ pub(crate) fn apply_session_start_profile(
 /// 연속 뜬 plugin 로그의 session-end 70 건 중 host 호출 실패는 0 건이었다. 그런데도
 /// 최선노력인 것은 대가가 비대칭이기 때문이다: 전파해도 훅 명령이 `|| true` 로 감싸여
 /// 있어([`crate::install::hook_command`]) 호출자에게 닿지 않는데, 대신 위 로컬 정리가
-/// 통째로 안 돈다. 수와 재는 명령은 ADR-0172.
+/// 통째로 안 돈다. 실패 후 로컬 정리 규칙은 docs/dev-guide/plugin-development.md#실패-후-로컬-정리.
 ///
 /// codex 의 `handle_hook` 이 `terminal.set_state` 실패를 전파하는 것은 표류가 아니라
 /// 같은 규칙의 반대편이다 — 거기엔 호출 뒤에 지킬 로컬 상태가 없다. 규칙 전문은

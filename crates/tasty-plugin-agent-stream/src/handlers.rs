@@ -244,7 +244,7 @@ fn require_request_id(params: &Value, tr: &Translator) -> Result<String, IpcMeth
 /// `execute_sequence` 가 스텝을 **순차** 실행하므로 순서가 보장된다(`src/hook_handler/exec.rs`).
 ///
 /// 턴은 그 surface 의 다음 `turn_end`(정상 종료·취소·오류·해제·세션 소멸) 가 닫는다.
-/// claude-idle 훅을 구독하지 않는 이유: transcript 가 이미 그 신호를 만들고(ADR-0093),
+/// claude-idle 훅을 구독하지 않는 이유: transcript 가 이미 그 신호를 만들고(docs/plugins/agent-stream/index.md#내부-동작),
 /// 훅 구독은 claude plugin 이 활성일 때만 성립하는 의존을 새로 만들기 때문이다.
 pub(crate) fn handle_turn_start<H: HostCall>(
     host: &H,
@@ -371,7 +371,7 @@ pub(crate) fn handle_poll(
 /// 실제로 떠 있는(혹은 떠 있지 않은) 엔드포인트를 그대로** 기술한다. 어긋나면 다음 강제
 /// 재시작 때 plugin 기동 시의 `restore_endpoint` 가 사용자가 닫혔다고 믿는
 /// 주소를 열거나, 열려 있다고 믿는 주소를 열지 않는다 — 대화 전문이 나가는 채널에서
-/// 그것은 ADR-0100 결정 1(명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
+/// 그것은 docs/plugins/agent-stream/index.md#sse-엔드포인트 의 명시적 실행 규칙(명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
 ///
 /// 불변을 지키는 규칙은 둘이다.
 ///
@@ -414,7 +414,7 @@ fn handle_serve_with(
             // 옛 리스너는 이미 내려갔고 새 bind 는 실패했다 — 런타임 상태는 "닫힘" 이다.
             // 스냅샷에 옛 설정을 남겨두면 다음 강제 재시작/`enable` 때
             // `restore_endpoint` 가 사용자가 닫혔다고 믿는 엔드포인트를 조용히 다시 연다.
-            // 대화 전문이 나가는 채널에서 "닫힌 줄 알았는데 열림" 은 ADR-0100 결정 1
+            // 대화 전문이 나가는 채널에서 "닫힌 줄 알았는데 열림" 은 docs/plugins/agent-stream/index.md#sse-엔드포인트 의 실행 규칙
             // (명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
             persist_serve_config(registry, None);
             return Err(bind_failed_message(tr, &config, &e));
@@ -453,7 +453,7 @@ fn bind_failed_message(tr: &Translator, config: &ServeConfig, detail: &str) -> I
 /// 오염된 데이터를 쓰게 되지 않는가 — 여기서 바꾸는 `serve` 절은 **요청 파라미터에서
 /// 검증을 마치고 온 값**이라 패닉한 스레드가 만지던 것과 무관하다. 함께 직렬화되는
 /// 나머지(watch 목록·offset·`next_seq`)는 패닉으로 찢어지지 않는 Rust 값이고, 최악이라야
-/// 한 tick 낡은 offset 이나 앞선 `seq` 인데 둘 다 tail 의 at-least-once 재개(ADR-0093)가
+/// 한 tick 낡은 offset 이나 앞선 `seq` 인데 둘 다 tail 의 at-least-once 재개(docs/plugins/agent-stream/index.md#내부-동작)가
 /// 이미 감당하는 범위다. 반면 기록을 건너뛰면 손실이 확정적이다.
 fn persist_serve_config(registry: &Shared, config: Option<ServeConfig>) {
     let mut reg = match registry.lock() {

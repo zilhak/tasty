@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.127"
+version = "0.1.128"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -28,7 +28,7 @@ type = "process"
 command = "tasty-plugin-markdown"
 
 # webview: host 가 native OS WebView overlay 를 생성해 이 kind 의 surface 를 덮는다
-# (Stage B, ADR-0028 B1 을 대체). plugin 은 markdown → sanitize 된 HTML 문서를 만들어
+# (docs/plugins/markdown/index.md#내부-동작, 본문 렌더를 webview로 전환). plugin 은 markdown → sanitize 된 HTML 문서를 만들어
 # `webview.set_url` 로 전달할 뿐, 실제 픽셀은 host WebView 가 그린다. 대용량 파일/파일열기
 # 확인 팝업만 여전히 egui-mesh 로 자가 렌더(아래 `[[contributes.popup]]`).
 [[surface_kinds]]
@@ -83,7 +83,7 @@ description_i18n_key = "markdown.namespace.desc"
 # 대용량 파일 확인 팝업. plugin 이 크기 초과를 in-process 로 감지해 발행한
 # `com.tasty.markdown.large_file_confirm` 이벤트로 열린다(event trigger). 콘텐츠
 # (파일명·크기 태그·[취소]/[열기])는 plugin 이 egui-mesh 로 자가 렌더하고, 셸(scrim/
-# border/outside-click/Esc)은 host 소유(ADR-0028). [열기] 시 plugin 이 read 를 재개한다.
+# border/outside-click/Esc)은 host 소유(docs/dev-guide/egui-mesh-channel.md#데이터-흐름). [열기] 시 plugin 이 read 를 재개한다.
 [[contributes.popup]]
 id = "large-file-confirm"
 trigger = { kind = "event", event_key = "com.tasty.markdown.large_file_confirm" }

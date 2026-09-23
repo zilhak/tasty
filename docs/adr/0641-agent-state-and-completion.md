@@ -23,7 +23,8 @@ Claude 플러그인은 출력 정지를 감시하고 `active` 또는 `stale`인 
 
 Codex의 도구 실행 승인 대기는 `PermissionRequest` 훅으로 관측한다.
 `PostToolUse`는 active로, `Interrupt`는 idle로 돌린다. 입력 대기는 작업 성공이 아니므로
-Codex 작업의 성공 종료 상태에 넣지 않는다. idle 전이는 이전 입력 대기 표시를 해제한다.
+Codex 작업의 성공 종료 상태에 넣지 않는다. idle 전이는 `terminal.state`의 `needs_input` 상태를 해제한다.
+화면의 attention 알림은 별도 상태이며 [사용자 확인·clear 규칙](0624-attention-ownership-and-clear.md)을 따른다.
 
 Claude의 승인 모드는 호출 인자, 플러그인 기본 설정, 사용자 Claude 설정 순으로 정한다.
 호출과 기본 설정에 값이 없으면 플래그를 붙이지 않는다. 프로필이 같은 모드를 정하면서
@@ -50,7 +51,7 @@ API 오류 뒤 Claude 자동 재개는 사용자가 켜야 동작한다. 지정�
 부모는 상태의 근거와 확실성을 보고 다음 행동을 정할 수 있다.
 출력 정지 알림은 긴 추론에도 발생할 수 있어 부모의 확인이 필요하다.
 아무 알림 없이 기다리는 위험을 줄이는 대신, 일부 알림의 오탐을 감수한다.
-승인 표시의 해제는 도구 종료까지 늦어질 수 있고, 자동 재개는 사용자 입력 흔적만 있어도
+`terminal.state`의 `needs_input` 해제는 도구 종료까지 늦어질 수 있고, 자동 재개는 사용자 입력 흔적만 있어도
 보수적으로 취소한다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered

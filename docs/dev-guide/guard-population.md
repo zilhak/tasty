@@ -175,7 +175,7 @@
 
 **이것은 편의지 채널이 아니다.** 조사 스크립트는 커밋되지 않으므로 그것이 마스킹을 썼는지
 강제할 수 있는 가드는 없다. 강제가 걸리는 지점은 그 수를 **문서에 적을 때**뿐이다
-([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) 의 계보
+([ADR-0648](../adr/0648-documentation-structure-and-evidence.md) 의 계보
 분류) — 그래서 마스킹 없이 얻은 수는 적기 전에 다시 재라.
 
 ## 판정은 변이로만 한다
@@ -183,7 +183,7 @@
 "이 가드가 모수를 지키는가" 를 소스 패턴으로 분류하면 **양방향으로 틀린다.** 무관한
 `is_empty()` 단언이 매칭돼 안 지키는 것을 "지킨다" 로 분류하고, 반대로 하한이 명명
 상수가 아니라 **없는 파일을 읽다 나는 panic** 인 것을 "안 지킨다" 로 분류한다. 실측으로
-양쪽 다 나왔다. 답하는 것은 모수를 비우고 돌리는 변이뿐이며, 이 판단은 ADR-0133 과
+양쪽 다 나왔다. 답하는 것은 모수를 비우고 돌리는 변이뿐이며, 이 판단은 ADR-0647 과
 같다.
 
 정적 모수의 변이는 동적 모수와 다르다 — 루트를 옮기는 것이 아니라 `const` 배열을 `&[]`
@@ -459,7 +459,7 @@
 모든 파일에 걸리지만, 만졌다는 그 바이너리 안 어느 파일이 만졌는지는 안 가른다.
 (2) 좌변은 오늘 다시 세면 **57**(공용 11 · 직접 46)이다. 53/9/44 와 다른 것은 회귀가
 아니라 그 사이에 트리가 자란 것이다 — 절대 수가 아니라 **갈래의 구조**를 읽어라
-([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
 
 #### "빨개졌나" 와 "봤나" 는 다른 수다 — 뒤엣것을 따로 쟀다
 
@@ -530,7 +530,7 @@ A 는 그 술어가 실제로 답했다는 뜻이라 다음 회차에도 같은 
 만들 뻔했다.
 
 **절대 수는 여기 안 적는다** — 커밋마다 바뀌므로 적는 순간 낡는다
-([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
 적는 것은 **구조**, 즉 어느 자리를 건드리면 어느 수가 움직이는가다. 그것은 좌변의
 술어가 바뀌지 않는 한 안 변한다.
 
@@ -601,7 +601,7 @@ ls crates/*/tests/*.rs | wc -l             # CRATE_TESTS_FLOOR 의 실측
 
 ## 관련 문서
 
-- [ADR-0133](../adr/0133-guard-scan-population-is-pinned-not-enumerated.md) — 모수 고정의 정본
+- [ADR-0647](../adr/0647-source-guards-and-exemptions.md) — 모수 고정의 정본
 - [self-verification](self-verification.md) — 커밋 전 직접 검증
 - [ci-gates](ci-gates.md) — 어느 가드가 어느 채널에서 자동으로 도는가
 

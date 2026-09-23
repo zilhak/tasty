@@ -23,7 +23,7 @@
 //! 확인하는 곳이 `crash-reports/` 다. (2) 공유 로그는 프로세스 시작마다 truncate 되므로
 //! 행 상태에서 `tasty` CLI 가 한 번이라도 실행되면 지워진다 — 리포트 파일은 살아남는다.
 //!
-//! 결정 근거·대안·재검토 조건: [`docs/adr/0091-render-stall-watchdog-observation-only.md`].
+//! 결정 근거·대안·재검토 조건: [`docs/dev-guide/crash-diagnostics.md#이벤트-루프-stall--hang-log-모든-빌드-자동`].
 
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};

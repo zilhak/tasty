@@ -58,7 +58,7 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 **한때 여기 "헤드리스에서 그 답이 GUI 와 다르다는 것이 이 조회의 값" 이라고 적혀
 있었다 — 그 서술은 더 이상 사실이 아니다.** 그때 헤드리스는 `webview`/`remote` 선언을
 등록하지 않았고, 그래서 같은 매니페스트가 조합에 따라 다른 kind 집합을 냈다. 그 차이는
-[ADR-0255](../adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md) 로
+[ADR-0622](../adr/0622-remote-mirror-content-and-queries.md) 로
 근거가 사라졌다 — markdown mirror 가 나르는 것은 픽셀이 아니라 원문이고 그리는 것은
 client 라, 서버는 창 없이도 그 kind 의 surface 를 가질 수 있다. 지금
 `register_one_surface_kind`(`boot/headless_plugins.rs`)는 **세 rendering 을 전부**
@@ -77,7 +77,7 @@ host 내장 넷만 나온다. 실측(2026-09-09, 갓 만든 격리
 선언한 kind 를 지목한 생성 요청(`tab.create`·`pane.split`·`workspace.create` 의 `type`)이
 오면, 소속을 먼저 묻고 맞을 때만 **그 kind 의 소유자 하나**를 기동한다
 (`headless_plugins::ensure_plugin_for_surface_kind`, namespace forward 와 같은 두 층 —
-[ADR-0259](../adr/0259-a-kind-request-starts-the-owner-that-declares-it.md)).
+[ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)).
 
 소속은 **매니페스트 ∩ `plugins.toml`** 이다. 두 갈래가 거기서 끝난다(실측 2026-09-10,
 갓 만든 격리 홈): 없는 이름(`--type nosuchkind`)은 0.09 s 에 예전과 같은
@@ -89,7 +89,7 @@ host 내장 넷만 나온다. 실측(2026-09-09, 갓 만든 격리
 
 소속이 맞으면 그 하나만 뜬다 — `--type markdown` 첫 호출 0.14 s 뒤 `running` 이
 `['com.tasty.markdown']` 이고, 이어서 `--type image` 를 부르면 둘이 된다. **namespace
-forward도 owner만 준비한다**: namespace에 매칭 IPC hook이 있으면 해당 active extension을 함께 준비한다(ADR-0282).
+forward도 owner만 준비한다**: namespace에 매칭 IPC hook이 있으면 해당 active extension을 함께 준비한다(ADR-0626).
 
 ## `plugin.*` — 19 개 메서드의 판정
 
@@ -146,8 +146,8 @@ forward도 owner만 준비한다**: namespace에 매칭 IPC hook이 있으면 �
 헤드리스 스텁(`dispatch_domain_stubs.rs`)에 대응물이 없다. 위 토글 둘은 그 cascade 중
 자기 이벤트 둘만 헤드리스 형태로 대체해 열었지만, 나머지는 파일을 복사·삭제하거나
 권한을 바꾸는 일이라 각각이 별도 결정이다. 이 경계를 여는 것은
-[ADR-0127](../adr/0127-e2e-harness-binary-selection.md) 이 "`App` 이분이 선행" 이라고
-적어 둔 그 자리다.
+[ADR-0603](../adr/0603-headless-behavior.md)의 GUI와 headless 역할 분리에 관한
+기준에 따라 검토해야 한다.
 
 `plugin.install` · `plugin.remove` · `plugin.grant` · `plugin.revoke` ·
 `plugin.upgrade_builtins` · `plugin.audit_follow`
@@ -256,7 +256,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 > [ADR-0604](../adr/0604-ipc-discovery-and-errors.md) 이다.
 > 위 census 수치는 그 변경 **이전**에 잰 것이고, 무엇이 답하고 무엇이 안 답하는가라는
 > **판정 자체는 그대로다** — 바뀐 것은 안 답할 때 무슨 코드를 주느냐뿐이다. 두 표는 **겹치지 않는다** — 그 시점 교집합 0 이라 `+` 가 합집합과
-같다. 같은 모수를 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)
+같다. 같은 모수를 [ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)
 이 같은 말로 부른다(그쪽은 거기에 핸들러 트리 리터럴을 합집합해 361 로 넓힌다).
 
 ### 갈리는 축이 조합 하나가 아니다 — 플랫폼도 같은 자리에서 자른다
@@ -317,7 +317,7 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 
 | 메서드 | 왜 |
 |--------|-----|
-| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `AppState` 만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 세 세계를 실제로 호출해 이 이름을 갈랐고, 그 재검토 트리거가 **"`App` 이분이 착수되면 headless 에서 이 host arm 이 열릴 수 있다"** 고 적는다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
+| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `AppState` 만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. [ADR-0603](../adr/0603-headless-behavior.md)의 역할 분리에 따라 GUI와 core의 책임을 나누면 headless에서 이 host arm을 제공할 여지가 있다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
 
 헤드리스에서 부르면 응답이 한 겹 감싸여 온다 — `-32017 host call 'call#N' failed: method
 'markdown.navigate' is registered but this binary has no dispatch arm for it`. 번들
@@ -337,7 +337,7 @@ markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이�
 
 | 메서드 | 왜 |
 |--------|-----|
-| `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0425](../adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
+| `file_handler.dispatch` | 요청을 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. arm 이 헤드리스에 있던 동안은 `{"accepted": true}` 로 답하고 요청을 버렸다 — `git_viewer.query` 와 같은 모양이다. 근거 [ADR-0631](../adr/0631-file-handler-routing.md). 같은 namespace 의 `file_handler.reload` · `file_handler.detectors` 는 헤드리스에서도 답한다 |
 | `git_viewer.query` · `markdown_mirror.content_request` | 요청을 큐에 넣고 `request_id` 만 답한 뒤 결과를 attach 채널로 받아 오는 비동기 accept 다. 큐를 비워 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, arm 이 헤드리스에 있던 동안은 수락해 놓고 결과가 영영 안 왔다. `-32017` 문구가 메서드 이름을 실어 두 거절이 갈린다. 같은 줄의 셋째 forward(mirror 구조 op)는 메서드가 아니라 대상이 mirror 인지로 갈려 arm 을 못 뺀다 — `Core::apply` 가 거절한다([ADR-0603](../adr/0603-headless-behavior.md)). 시험 `tests/e2e_tests.rs` 의 `mirror_forward_requests_are_refused_by_name_in_a_headless_daemon` |
 
 ### `debug.*` 36 건
@@ -392,7 +392,7 @@ event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 —
 | `debug.plugin_banner.*` (2) | 소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 — `open` 도 `close` 도 `self.view.views` 를 순회한다. **재 봤고 갈래 안에서 판정이 안 갈린다**, 그래서 한 줄이 맞다 |
 | `debug.inject_mouse` · `debug.inject_key` · `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` · `debug.inject_egui_text` (6) | 사용자 입력 재현이다. 앞 둘은 대상 surface 의 PTY 로, 뒤 넷은 winit·egui 입력 큐로 들어간다 — 그 큐가 창에 딸려 있다 |
 | `debug.popup.open` | 매니저만 읽어 **답은 정의된다.** 그런데 헤드리스에는 그 인스턴스를 **닫는 경로가 하나도 없다** — debug close 도, plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch` 에 산다. 여는 것만 열면 그 빌드에서 닫을 수 없는 상태가 남는다 |
-| `debug.popup.close` | 렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돈다([ADR-0084](../adr/0084-plugin-triggered-host-popup-ownership.md)). 그 glue 가 gui 게이트 안이다 |
+| `debug.popup.close` | 렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돈다([ADR-0636](../adr/0636-overlay-scope-and-lifetime.md)). 그 glue 가 gui 게이트 안이다 |
 
 `src/source_guards/headless_app_layer_coverage.rs` 가 이 표와 두 라우터의 정합을 강제한다 —
 app 층 step 과 debug step 두 쌍을 같은 규약으로 본다.
@@ -424,7 +424,7 @@ dispatch 에 새 헬퍼를 만들어 거기서 메서드 이름에 답하려면 
 `debug.*` 36 건의 판정은 위 "`debug.*` 36 건" 절에 있다.
 
 `image.open` · `image.list` 는 **닿는 자리가 같은 것이지 답이 같은 것이 아니다.**
-[ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 잰 대로 번들 plugin 이
+[ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md) 이 잰 대로 번들 plugin 이
 그 namespace 를 점유하고 self-call trampoline 로 host 에 돌려주므로 세 세계 모두 host arm 에
 **닿는다.** 그러나 그 host arm 은 `src/adapters/ipc/handler.rs` 에서 `#[cfg(feature = "gui")]`
 다 — 헤드리스에서 부르면 `-32017 host call 'call#N' failed: … gated out of this build

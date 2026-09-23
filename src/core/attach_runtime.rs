@@ -426,7 +426,7 @@ impl CoreState {
         }
         // 로컬 경로로 생긴 멤버다 — holder 의 mirror 에는 아직 그 자리가 없다. tap 보다
         // **먼저** 구조를 보내야 client 가 매핑을 만든 뒤 스냅샷을 받는다(forward 경로의
-        // "delta → tap" 순서와 같다, ADR-0481).
+        // "delta → tap" 순서와 같다, docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
         self.attach.mark_structure_changed(workspace_id);
         self.push_structure_changes();
         if !is_terminal {
@@ -463,7 +463,7 @@ impl CoreState {
         }
     }
 
-    /// client-driven mirror geometry(ADR-0045): mirror client 가 보낸
+    /// client-driven mirror geometry(docs/dev-guide/attach-behavior.md#리사이즈-전파-mirror-geometry): mirror client 가 보낸
     /// [`StreamControl::ClientResize`](tasty_ipc::stream::StreamControl) 를 지정
     /// remote surface 의 **실제 PTY** 에 적용한다. `feed_attached_workspace_input`
     /// 과 동형으로 holder 를 검증해(그 workspace 를 점유한 client 만) 타 workspace 의
@@ -499,7 +499,7 @@ impl CoreState {
     ///
     /// 해제 판정 자체는 미러 인스턴스의 사용자 행동(실 렌더 포커스 / 알림 읽음)이고,
     /// 이 함수는 그 판정을 surface 를 소유한 쪽에 적용할 뿐이다. 인가는 기존 모델
-    /// 그대로 "attach 하드 점유 = 그 워크스페이스의 주체"(ADR-0040) — 요청한 client
+    /// 그대로 "attach 하드 점유 = 그 워크스페이스의 주체"(docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry) — 요청한 client
     /// 가 anchor surface 워크스페이스의 holder 가 아니면 무시한다.
     ///
     /// 반환: 실제로 적용했는지(호출자가 소유 engine 을 찾을 때 쓴다).
@@ -535,7 +535,7 @@ impl CoreState {
                 StreamTag::Control,
                 serde_json::to_vec(&msg).unwrap_or_default(),
             );
-            let _ = hub.push(client_id, frame); // best-effort activity 통지 — client 끊김 시 무해, 다음 tick 이 재수렴.
+            let _ = hub.push(client_id, frame); // best-effort activity 통지 — 변화분 캐시는 이미 갱신됐으므로 같은 값은 재전송하지 않는다.
         }
     }
 
@@ -556,7 +556,7 @@ impl CoreState {
                 StreamTag::Control,
                 serde_json::to_vec(&msg).unwrap_or_default(),
             );
-            let _ = hub.push(client_id, frame); // best-effort attention 통지 — client 끊김 시 무해, 다음 tick 이 재수렴.
+            let _ = hub.push(client_id, frame); // best-effort attention 통지 — 변화분 캐시는 이미 갱신됐으므로 같은 값은 재전송하지 않는다.
         }
     }
 
@@ -565,7 +565,7 @@ impl CoreState {
     ///
     /// mirror terminal 은 로컬 PTY 가 없어 원격 셸이 OSC 7 을 방출할 때만 cwd 를 알 수
     /// 있다. 서버는 PTY 를 소유하므로 OSC 7 이 없어도 OS 조회로 안다 — 아는 쪽이 모르는
-    /// 쪽으로 보내는 채널이다(ADR-0267).
+    /// 쪽으로 보내는 채널이다(docs/dev-guide/attach-behavior.md#surface-cwd-전파).
     pub fn forward_surface_cwd(&mut self, hub: &StreamHub) {
         for (client_id, surface_id, cwd) in self.surface_cwd_forwards() {
             let msg = StreamControl::Cwd { surface_id, cwd };
@@ -573,7 +573,7 @@ impl CoreState {
                 StreamTag::Control,
                 serde_json::to_vec(&msg).unwrap_or_default(),
             );
-            let _ = hub.push(client_id, frame); // best-effort cwd 통지 — client 끊김 시 무해, 다음 tick 이 재수렴.
+            let _ = hub.push(client_id, frame); // best-effort cwd 통지 — 변화분 캐시는 이미 갱신됐으므로 같은 값은 재전송하지 않는다.
         }
     }
 
@@ -624,7 +624,7 @@ impl CoreState {
         // mesh 후보를 bundled 화이트리스트로 재검증. 통과 못한 후보는
         // non_terminals 와 동일하게 placeholder 로 내려간다.
         let (mesh_whitelisted, mesh_rejected) = mesh_mirror_candidates(class);
-        // content 후보(ADR-0255)도 같은 두 단 — 통과 못한 후보(html 등 다른 webview
+        // content 후보(docs/dev-guide/attach-behavior.md#markdown-content-채널)도 같은 두 단 — 통과 못한 후보(html 등 다른 webview
         // kind)는 placeholder 로 내려간다.
         let (content_whitelisted, content_rejected) = content_mirror_candidates(class);
 
@@ -655,7 +655,7 @@ impl CoreState {
                 "display_name": display_name,
             }));
         }
-        // ADR-0059 — explorer 는 placeholder 가 아니라 전용 role. root(활성
+        // docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 — explorer 는 placeholder 가 아니라 전용 role. root(활성
         // 탭의 현재 디렉토리)만 실어보낸다(cwd 는 별도 필드로 보내지 않고 client 가
         // `ExplorerPanel::new(id, root)` 로 cwd == root 단순화 — ADR 이 위임한 좁은
         // 구현 디테일).
@@ -666,7 +666,7 @@ impl CoreState {
                 "root": root.to_string_lossy(),
             }));
         }
-        // ADR-0255 — markdown 은 placeholder 가 아니라 전용 role. 내용은 여기 싣지
+        // docs/dev-guide/attach-behavior.md#markdown-content-채널 — markdown 은 placeholder 가 아니라 전용 role. 내용은 여기 싣지
         // 않고(트리 디스크립터가 문서 크기만큼 부풀지 않게) client 가
         // `markdown_content_request` 로 따로 가져온다. `file` 은 **표시·제목 전용의
         // opaque 문자열**이다 — client 는 이 값으로 자기 로컬 파일을 열지 않는다
@@ -718,7 +718,7 @@ pub(crate) struct ForwardedDelta {
     /// 돌려주고 호출자가 투영한다 — 로컬(비-forward) 변환 경로의 동일 처리
     /// (`app/dispatch_domain.rs` 의 `SurfaceConverted` 분기)와 짝을 맞춘다. 이 모양을
     /// 유지하는 근거와 대안은
-    /// `docs/adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md`.
+    /// `docs/dev-guide/app-state-ownership.md#state-가-아니라-core-에-두는-것`.
     pub converted_surface: Option<SurfaceId>,
 }
 
@@ -754,7 +754,7 @@ pub(crate) struct ForwardedDelta {
 ///
 /// `origin` 은 client 가 그 op 를 누구의 요청으로 보냈는가다(wire 에 칸이 없으면 이미
 /// `User` 로 풀려 온다). close 계열만 읽는다 — `User` 면 서버 복원 스택에 남기고,
-/// `Agent` 면 남기지 않는다(`docs/identity.md` 원칙 1, ADR-0480).
+/// `Agent` 면 남기지 않는다(`docs/identity.md` 원칙 1, docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
 pub(crate) fn execute_forwarded_structural_op(
     core: &mut crate::core::Core,
     state: &mut dyn crate::core::cascade_window::CascadeWindow,
@@ -864,7 +864,7 @@ pub(crate) fn execute_forwarded_structural_op(
             let p = structural_params(params, json!({ "pane_id": pane_id, "type": surface_kind }));
             engine.attach.set_auto_tap_suppressed(true);
             // 원격 사용자의 손 조작이면 선택하고, 원격 에이전트면 서버 앞 사용자의 탭을
-            // 바꾸지 않는다(ADR-0502) — 복원 스택을 가르는 `restorable` 과 같은 축이다.
+            // 바꾸지 않는다(docs/design/policies/focus.md#에이전트가-만든-탭과-선택) — 복원 스택을 가르는 `restorable` 과 같은 축이다.
             let activate = origin == tasty_ipc::stream::ForwardOrigin::User;
             let result = exec::create_tab(core, state, engine, pane_id, &p, activate);
             engine.attach.set_auto_tap_suppressed(false);
@@ -874,8 +874,8 @@ pub(crate) fn execute_forwarded_structural_op(
             // holder 자신이 보낸 close 라 IPC 진입점의 하드 점유 검사를 지나지 않고 도메인
             // 실행을 직접 부른다 — 면제를 params 플래그로 두면 아무 에이전트나 같은 키를 실어
             // 우회한다. save_snapshot 은 op 의 origin 이 정한다: 원격 **사용자**의 손
-            // 조작이면 되돌릴 수 있어야 하고(ADR-0264 결정 4), 원격 에이전트의 close 면
-            // 사용자 복원 스택에 닿지 않는다(ADR-0480).
+            // 조작이면 되돌릴 수 있어야 하고(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward), 원격 에이전트의 close 면
+            // 사용자 복원 스택에 닿지 않는다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
             forward_result(exec::close_surface(
                 core,
                 state,
@@ -888,10 +888,10 @@ pub(crate) fn execute_forwarded_structural_op(
             let tab_id = engine
                 .find_tab_for_surface(*anchor_surface_id)
                 .ok_or_else(|| format!("anchor surface {anchor_surface_id} tab not found"))?;
-            // 원격 **사용자**가 손으로 닫은 것은 되돌릴 수 있어야 한다(ADR-0264 결정 4).
+            // 원격 **사용자**가 손으로 닫은 것은 되돌릴 수 있어야 한다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
             // `CloseSurface` 는 holder 진입점이 save_snapshot 인자로 갈라 들어가지만
             // `apply_close_tab` 에는 그 축이 없으므로, 여기서 핸들러가 트리를 건드리기
-            // **전에** 직접 캡처한다. 원격 에이전트의 close 는 캡처하지 않는다(ADR-0480).
+            // **전에** 직접 캡처한다. 원격 에이전트의 close 는 캡처하지 않는다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
             if let Some(item) = restorable
                 .then(|| engine.find_pane_for_tab(tab_id))
                 .flatten()
@@ -1012,7 +1012,7 @@ pub(crate) fn execute_forwarded_structural_op(
                 .ok_or_else(|| format!("pane {pane_id} workspace not found"))?;
             let intent = crate::core::intent::DomainIntent::RestoreClosedItem {
                 target_pane_id: Some(pane_id),
-                // 그 워크스페이스에서 닫힌 항목만 후보다(ADR-0264 결정 3) — 서버 앞에
+                // 그 워크스페이스에서 닫힌 항목만 후보다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward) — 서버 앞에
                 // 앉은 사용자의 히스토리를 가져가지 않고, 복원 결과가 anchor 워크스페이스
                 // 안에 떨어져 아래 before/after diff 가 그것을 delta 로 싣는다.
                 scope: crate::core::intent::RestoreScope::Workspace(ws_id),
@@ -1097,7 +1097,7 @@ pub(crate) fn execute_forwarded_structural_op(
 
     // 이 op 가 anchor 워크스페이스에 낸 구조 변경은 아래 delta(또는 강제 detach)가 전부
     // 싣는다 — 실행 중 닫힌 멤버가 남긴 "forward 아닌 변경" 표시를 지워 같은 트리가 두 번
-    // 나가지 않게 한다(ADR-0481).
+    // 나가지 않게 한다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
     if let Some(ws_id) = ws_id {
         engine.attach.clear_structure_changed(ws_id);
     }
@@ -1137,7 +1137,7 @@ pub(crate) fn execute_forwarded_structural_op(
         .copied()
         .filter(|sid| !before.contains(sid))
         .collect();
-    // 점유 상속(ADR-0040 "workspace 전체가 remote" 불변식): forward 로 원격에 새로 생긴
+    // 점유 상속(docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry "workspace 전체가 remote" 불변식): forward 로 원격에 새로 생긴
     // 터미널을 이 workspace 의 hard 점유에 편입한다. 등록하지 않으면 새 surface 가
     // 비점유로 남아 (1) host 창 sweep 이 자기 grid 로 되돌리고(레터박스) (2) is_hard_occupied
     // 미표시 (3) `feed_attached_workspace_input`/`apply_attached_workspace_resize` 의
@@ -1189,7 +1189,7 @@ fn forward_result<T>(
 /// forward 된 convert 가 실패했는데 도메인이 사유를 안 실었을 때의 회신 문구. 원인을
 /// 짐작해 적지 않는다 — "not found" 같은 원인 문구는 그것이 원인일 때만 참이고, 원인을
 /// 모르는 자리에서 쓰면 원격에서 난 실제 사유를 가린다. 지금 도메인은 모든 실패 자리에
-/// 사유를 실으므로 이 문구는 새 실패 자리가 사유를 빠뜨렸을 때만 나간다(ADR-0543).
+/// 사유를 실으므로 이 문구는 새 실패 자리가 사유를 빠뜨렸을 때만 나간다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
 fn convert_failure_fallback(surface_id: SurfaceId) -> String {
     format!("surface {surface_id} was not converted")
 }
@@ -1386,13 +1386,13 @@ pub(crate) fn begin_bulk_transfer(
 }
 
 /// bulk 전송 commit 처리: 인가 검증 → 누적 바이트 저장 → 원격 경로 회신
-/// (ADR-0054). `finalize_capture_upload` 와 동형의 일반화 버전이다.
+/// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그). `finalize_capture_upload` 와 동형의 일반화 버전이다.
 ///
 /// **인가(조사 §6/E)**: 전용 bulk 연결은 workspace holder 가 아니므로
 /// (`client_holds_workspace(bulk_client)==false`) capture 의 holder 검증을 그대로 쓸 수
 /// 없다. 대신 이 연결이 핸드셰이크에서 결속한 `bulk_workspace` 에 **활성 holder 가
 /// 존재하는가**(누군가 그 워크스페이스를 attach 중인가)를 검증한다. 같은 SSH 경계·
-/// 같은 터널을 통과했다는 사실이 이미 SSH 위임 인가의 증거이며(ADR-0054 decision#5),
+/// 같은 터널을 통과했다는 사실이 이미 SSH 위임 인가의 증거이며(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그),
 /// holder 존재 확인은 "이 워크스페이스가 실제 attach 중"이라는 타겟 유효성 검증이다.
 ///
 /// `dir` 은 저장 폴더(호출자가 `resolve_bulk_transfer_dir` 로 주입, `None` 이면 홈 미확인). 클립보드 기록 같은
@@ -1568,14 +1568,14 @@ fn list_dir_entry_wire(e: &crate::core::fs_list::DirEntryInfo) -> serde_json::Va
     })
 }
 
-/// git-viewer(ADR-0056) — mirror client 가 attach 채널로 보낸 `git_query_request`
+/// git-viewer(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) — mirror client 가 attach 채널로 보낸 `git_query_request`
 /// 하나를 처리한다(status/log/worktrees snapshot, 또는 단일 파일 diff).
 /// `client_id` 가 이 engine 이 호스팅하는 어떤 workspace 든 점유(holder)해야
 /// 신뢰한다(`handle_list_dir_request`/`finalize_capture_upload` 와 동일한 "attach
 /// 점유 = 권한" 원칙). `worktree_path` 가 없으면 `surface_id` 의 **실제 원격
 /// PTY**(`Terminal::get_cwd` — OSC 7 캐시 우선, 없으면 `/proc`(Linux)·`proc_pidinfo`
 /// (macOS) 폴백)로 cwd 를 직접 resolve 한다 — mirror 클라이언트의 OSC 7 재생에
-/// 의존하지 않으므로, ADR-0056 Context 절에서 설명한 "원격 셸이 OSC 7 을 방출하지
+/// 의존하지 않으므로, docs/dev-guide/attach-behavior.md#surface-cwd-전파 에 설명한 "원격 셸이 OSC 7 을 방출하지
 /// 않는 경우"도 커버한다(client 가 forward 하는 `cwd` 문자열을 신뢰하는 대신 서버가
 /// 직접 판정).
 /// 조회는 `tasty-git-core`(plugin 과 공유하는 순수 로직 crate)로 수행하고,
@@ -1842,7 +1842,7 @@ fn cap_diff_hunks(
     (out, false)
 }
 
-/// markdown mirror(ADR-0255) — mirror client 가 attach 채널로 보낸
+/// markdown mirror(docs/dev-guide/attach-behavior.md#markdown-content-채널) — mirror client 가 attach 채널로 보낸
 /// `markdown_content_request` 하나를 처리한다. `client_id` 가 이 engine 이 호스팅하는
 /// 어떤 workspace 든 점유(holder)해야 신뢰한다(`handle_list_dir_request`/
 /// `handle_git_query_request` 와 동일한 "attach 점유 = 권한" 원칙 — 이 채널이 나르는
@@ -1853,7 +1853,7 @@ fn cap_diff_hunks(
 /// (`handle_git_query_request` 가 `tasty-git-core` 를 host 에서 직접 부르는 것과 같은
 /// 형태). 그 결과로, 서버측 plugin 이 대용량 확인 대기 중이라 서버 화면에는 아무것도
 /// 안 띄운 파일이라도 여기서는 예산 안에서 읽어 보낸다 — 그 게이트는 그리는 쪽의
-/// 물음이지 읽기 권한의 경계가 아니다(ADR-0255 항목 4).
+/// 물음이지 읽기 권한의 경계가 아니다(docs/dev-guide/attach-behavior.md#markdown-content-채널).
 ///
 /// 회신은 `markdown_content_result` 이벤트(`StreamControl` enum 밖의 raw JSON "event"
 /// 태그, list_dir/git_query 와 동일 패턴).
@@ -1895,7 +1895,7 @@ pub(crate) fn handle_markdown_content_request(
     let _ = hub.push(client_id, frame); // best-effort 회신 — client 끊김 시 무해.
 }
 
-/// markdown 원문 채널의 변경 신호(ADR-0255 항목 5) — 서버가 알리기만 하고 client 는 다시
+/// markdown 원문 채널의 변경 신호(docs/dev-guide/attach-behavior.md#markdown-content-채널) — 서버가 알리기만 하고 client 는 다시
 /// 받지 않는다.
 #[cfg(feature = "gui")]
 const MARKDOWN_CHANGED_EVENT: &str = "markdown_changed";
@@ -1955,7 +1955,7 @@ pub(crate) fn notify_markdown_changed(
 ///
 /// **파일 없이 열린 markdown surface 는 에러가 아니다** — 서버에서도 빈 문서가 보이므로
 /// 그 상태의 충실한 mirror 는 빈 `file`/`source` 다. `ok:false` 로 답하면 mirror 가
-/// 서버에 없는 에러를 만들어낸다(ADR-0255 항목 2).
+/// 서버에 없는 에러를 만들어낸다(docs/dev-guide/attach-behavior.md#markdown-content-채널).
 fn markdown_content_for_request(
     engine: &CoreState,
     surface_id: u32,
@@ -2365,12 +2365,12 @@ pub(crate) fn mesh_mirror_candidates(
     (whitelisted, rejected)
 }
 
-/// content mirror(ADR-0255) 를 실제로 타는 `(kind, plugin_id)` 조합.
+/// content mirror(docs/dev-guide/attach-behavior.md#markdown-content-채널) 를 실제로 타는 `(kind, plugin_id)` 조합.
 ///
 /// **markdown 하나로 좁힌다.** `Surface::attach_content_info()` 는 `RemoteSurface`
 /// 전체에 붙으므로 이 게이트가 없으면 같은 webview kind 인 html surface 까지 새 role
 /// 로 나가는데, html 의 URL 은 파일 경로라는 보장이 없어 "그 경로의 원문" 이라는 이
-/// 채널의 의미가 성립하지 않는다(ADR-0255 항목 1).
+/// 채널의 의미가 성립하지 않는다(docs/dev-guide/attach-behavior.md#markdown-content-채널).
 pub(crate) fn is_attach_content_allowed(kind: &str, plugin_id: &str) -> bool {
     matches!((kind, plugin_id), ("markdown", "com.tasty.markdown"))
 }
@@ -2404,7 +2404,7 @@ pub(crate) fn content_mirror_candidates(class: &AttachSurfaceClass) -> ContentMi
 
 #[cfg(test)]
 mod content_mirror_candidate_tests {
-    //! ADR-0255 화이트리스트가 markdown 만 통과시키는지. html(같은 webview kind)과
+    //! docs/dev-guide/attach-behavior.md#markdown-content-채널 화이트리스트가 markdown 만 통과시키는지. html(같은 webview kind)과
     //! 서드파티 markdown 사칭(`kind` 는 같고 `plugin_id` 가 다른 조합)은 rejected
     //! (= placeholder 유지)로 떨어져야 한다.
     use super::content_mirror_candidates;
@@ -2502,7 +2502,7 @@ mod mesh_descriptor_display_name_tests {
     //! `Surface::display_name()`(예: image 파일명)을 `display_name` 필드로
     //! 실어보내는지. 이전엔 이 필드 자체가 없어 client 가 kind 문자열("image")로
     //! 대체 표시했다. markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서
-    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(ADR-0255 의 전용
+    //! 빠져 더 이상 이 mesh 디스크립터 경로를 타지 않으므로(docs/dev-guide/attach-behavior.md#markdown-content-채널 의 전용
     //! `role:"markdown"` 으로 분류) 여기 fixture 로 쓰지 않는다.
     use crate::core::egui_mesh_surface::EguiMeshSurface;
 
@@ -2684,7 +2684,7 @@ mod forward_exec_tests {
     /// 남긴다.
     ///
     /// forward 된 close 의 `save_snapshot` 은 op 의 origin 이 정한다(User=true · Agent=false,
-    /// ADR-0480) — 이 시험은 User 쪽이다. 이 앞단이 없으면 복원 forward 를 아무리 정확히 붙여도 원격에
+    /// docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward) — 이 시험은 User 쪽이다. 이 앞단이 없으면 복원 forward 를 아무리 정확히 붙여도 원격에
     /// 꺼낼 항목이 존재하지 않는다.
     #[test]
     fn a_forwarded_close_surface_leaves_a_restorable_snapshot() {
@@ -2798,7 +2798,7 @@ mod forward_exec_tests {
         .expect("forwarded new tab must succeed");
     }
 
-    /// 원격 **에이전트**가 연 비터미널 탭은 서버 앞 사용자의 선택을 안 바꾼다(ADR-0502).
+    /// 원격 **에이전트**가 연 비터미널 탭은 서버 앞 사용자의 선택을 안 바꾼다(docs/design/policies/focus.md#에이전트가-만든-탭과-선택).
     #[test]
     fn a_forwarded_agent_new_tab_keeps_the_selected_tab() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
@@ -2890,7 +2890,7 @@ mod forward_exec_tests {
     /// 원격 **에이전트**가 보낸 close 는 서버 복원 스택에 아무것도 남기지 않는다 — 세
     /// close 모두. 복원 스택은 사용자 상태라 에이전트 행동의 부수효과가 닿으면 안 되고
     /// (`docs/identity.md` 원칙 1), 남기면 서버 앞 사용자의 Ctrl+Shift+T 가 에이전트가
-    /// 닫은 것을 자기 워크스페이스에 되살린다(ADR-0480). 같은 모양의 op 를 `User` 로
+    /// 닫은 것을 자기 워크스페이스에 되살린다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward). 같은 모양의 op 를 `User` 로
     /// 보내면 남는다는 것은 위 세 시험이 본다 — 둘을 가르는 것이 origin 하나뿐이다.
     #[test]
     fn a_forwarded_agent_close_leaves_no_snapshot() {
@@ -3145,7 +3145,7 @@ mod forward_exec_tests {
     }
 
     /// 다른 워크스페이스에서 닫힌 항목은 **후보가 아니다** — 스택 top 이 그것이어도
-    /// anchor 워크스페이스 스코프는 자기 것만 본다(ADR-0264 결정 3).
+    /// anchor 워크스페이스 스코프는 자기 것만 본다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
     #[test]
     fn a_forwarded_restore_never_takes_another_workspaces_item() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
@@ -3219,7 +3219,7 @@ mod forward_exec_tests {
     }
 
     /// forward 된 split 으로 원격에 새로 생긴 surface 는 점유된 workspace 의 hard 점유를
-    /// **상속**한다(ADR-0040 "workspace 전체가 remote"). 등록이 빠지면 새 surface 가
+    /// **상속**한다(docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry "workspace 전체가 remote"). 등록이 빠지면 새 surface 가
     /// 비점유로 남아 (host 창 sweep 이 grid 를 되돌리는) 레터박스·(holder 검증 실패로)
     /// client 입력 거부를 유발한다. surface_locks(is_hard_occupied) + surface_to_workspace
     /// (입력 라우팅) 양쪽에 등록돼야 한다.
@@ -3375,7 +3375,7 @@ mod forward_exec_tests {
     }
 
     /// 서버에서 PTY 가 끝나 닫힌 멤버는 forward 가 아닌 원인의 구조 변경이다 — holder 가
-    /// 닫힌 뒤의 트리를 `StructuralDelta` 로 정확히 한 번 받는다(ADR-0481). 이 경로가 없던
+    /// 닫힌 뒤의 트리를 `StructuralDelta` 로 정확히 한 번 받는다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward). 이 경로가 없던
     /// 동안 mirror 는 서버에서 이미 사라진 탭을 다음 forward 까지 계속 보였다.
     #[test]
     fn a_pty_exit_in_an_attached_workspace_reaches_the_holder_as_a_delta() {
@@ -3493,7 +3493,7 @@ mod forward_exec_tests {
     }
 
     /// anchor 가 점유 워크스페이스 밖이라도 **살아 있으면** "no live surface" 는 거짓이다 —
-    /// 사유는 종전 문구로 남는다. 정말 없는 id 에만 IPC 와 같은 문구가 붙는다(ADR-0482).
+    /// 사유는 종전 문구로 남는다. 정말 없는 id 에만 IPC 와 같은 문구가 붙는다(docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward).
     #[test]
     fn an_anchor_alive_in_another_workspace_is_not_called_gone() {
         let (mut core, mut state, mut engine, _home) = make_core_state();
@@ -3811,7 +3811,7 @@ mod forward_exec_tests {
     /// **기준 문구의 고정**을 잰다. forward 회신 사유는 client toast 에 그대로 나가고 IPC
     /// 에러 메시지는 에이전트가 읽으므로, 실행을 도메인 함수로 옮긴 뒤에도 문구는
     /// `331baf491`(forward 가 핸들러를 재사용하던 때)과 byte 단위로 같아야 한다
-    /// (ADR-0395). 기대값은 그 커밋의 리터럴을 옮겨 적은 것이라, 문구를 바꾸는 변경은
+    /// (docs/dev-guide/app-state-ownership.md#state-가-아니라-core-에-두는-것). 기대값은 그 커밋의 리터럴을 옮겨 적은 것이라, 문구를 바꾸는 변경은
     /// 여기서 빨개진다 — 의도한 변경이면 이 표와 ADR 을 함께 고친다.
     #[test]
     fn failure_reasons_keep_the_base_literals() {
@@ -4532,7 +4532,7 @@ mod forward_exec_tests {
         );
     }
 
-    /// 비-holder 경로(ADR-0060): `terminal.spawn`(`tasty claude/codex spawn` 이 호출하는
+    /// 비-holder 경로(docs/dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단): `terminal.spawn`(`tasty claude/codex spawn` 이 호출하는
     /// IPC)도 hard-occupied 워크스페이스에 대해서는 거부되고 tab/surface 가 전혀
     /// 생성되지 않아야 한다 — spawn 이 성공 응답을 준 직후 `tap_new_workspace_member`
     /// 로 새 surface 가 hard lock 을 상속받아, spawn 을 호출한 쪽조차 자기 결과물에
@@ -4627,7 +4627,7 @@ mod forward_exec_tests {
 
     // ─── mirror(원격 attach client) 워크스페이스 spawn 가드 ──────────────
     //
-    // ADR-0086. mirror 워크스페이스 안의 구조 변경은 원격으로 forward 되는 것이
+    // docs/dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단. mirror 워크스페이스 안의 구조 변경은 원격으로 forward 되는 것이
     // 정상 설계지만, `terminal.spawn` 만은 그 응답에서 생성된 surface 를 **동기로**
     // 꺼내 써야 해서 forward 위에 얹힐 수 없다. 막지 않으면 로컬은 에러를 돌려주는데
     // 원격에는 탭이 남는 고아가 생긴다.
@@ -4717,7 +4717,7 @@ mod forward_exec_tests {
         );
     }
 
-    /// headless 는 같은 요청을 **거절한다**(docs/adr/0538-headless-refuses-mirror-structural-forward.md).
+    /// headless 는 같은 요청을 **거절한다**(docs/dev-guide/headless-build-boundaries.md#두-조합이-다르게-두는-것).
     /// forward 큐를 비워 attach 채널로 보내는 쪽이 gui 의 `about_to_wait` 에만 있어, 큐에
     /// 넣고 `{forwarded: true}` 로 답하면 호출자는 성공을 받고 op 는 영영 안 나간다. 응답은
     /// 오류여야 하고, 사유가 mirror 이면서 빌드 조합임을 말해야 하며, 큐는 비어 있어야 한다.
@@ -4762,7 +4762,7 @@ mod forward_exec_tests {
     /// `--pane` 오버라이드가 `workspace` 파라미터와 **다른** 워크스페이스를 가리키는
     /// 경로도 막힌다. 대상 판정을 최종 pane 기준으로 옮기기 전에는 `workspace` 만
     /// 봤기 때문에, 무해한 워크스페이스를 `workspace` 로 주고 차단 대상 pane 을
-    /// `pane` 으로 주면 mirror 도 hard-occupied(ADR-0060)도 그대로 새어 나갔다.
+    /// `pane` 으로 주면 mirror 도 hard-occupied(docs/dev-guide/attach-behavior.md#서버-로컬비-holder-구조-변경-차단)도 그대로 새어 나갔다.
     #[test]
     fn dispatch_denies_terminal_spawn_when_pane_override_targets_blocked_workspace() {
         for blocked in ["mirror", "hard-occupied"] {

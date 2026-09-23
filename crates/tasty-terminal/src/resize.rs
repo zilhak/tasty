@@ -1,5 +1,5 @@
 //! Resize 처리 — grid 크기 변경(`TerminalState`)과 PTY 크기 알림 throttle
-//! (`Terminal` 핸들)로 분리 (ADR-0002).
+//! (`Terminal` 핸들)로 분리 (docs/features/terminal/index.md#vte-에뮬레이션).
 
 use portable_pty::PtySize;
 use termwiz::cell::CellAttributes;
@@ -330,7 +330,7 @@ impl Terminal {
     /// fires even though the dimensions are unchanged. Caller decides when (the
     /// resume health pass); the crate stays platform-neutral and only no-ops when
     /// there is no PTY. The nudge is not guaranteed to revive a fully hung child
-    /// (see ADR-0017).
+    /// (see docs/features/terminal/index.md#프로세스-종료--절전-복귀).
     pub fn wake_nudge(&mut self) {
         let (cols, rows) = self.cached_dims;
         if let Some(pty) = self.pty.as_ref()

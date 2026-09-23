@@ -3,7 +3,7 @@
 - **부모 기획**: [../index.md](../index.md)
 - **시각 소스**: plugin 이 생성한 sanitize HTML 문서 — host native OS WebView 가 렌더. `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
 
-[작업 영역](../../../features/work-area/index.md#화면) 타일 안에 열리는 마크다운 렌더 surface. plugin 이 `pulldown-cmark`+`ammonia` 로 만든 HTML 문서를 host 의 native OS WebView overlay(WebKitGTK/WKWebView/WebView2)에 올려 렌더한다(webview, [ADR-0065](../../../adr/0065-markdown-webview-render-channel.md)) — host 는 문서의 픽셀에 관여하지 않는다.
+[작업 영역](../../../features/work-area/index.md#화면) 타일 안에 열리는 마크다운 렌더 surface. plugin 이 `pulldown-cmark`+`ammonia` 로 만든 HTML 문서를 host 의 native OS WebView overlay(WebKitGTK/WKWebView/WebView2)에 올려 렌더한다(webview, [ADR-0629](../../../adr/0629-webview-host-integration.md)) — host 는 문서의 픽셀에 관여하지 않는다.
 
 ## 트리거
 
@@ -61,7 +61,7 @@ class="math math-display">`(원본 LaTeX 소스가 HTML-escape된 텍스트)로 
   self-contained되어 있다 — 런타임에 상대 폰트 URL이 참조할 수 있는 "plugin assets 디렉토리"가
   디스크에 따로 존재하지 않는다(`include_str!`/`include_bytes!`가 바이너리에 굽고, 아무것도
   디스크에 다시 써지지 않는다). 문서에는 `<base href>`가 아예 없어서(문서 안 앵커가 다른
-  URL로 풀리기 때문 — [ADR-0289](../../../adr/0289-the-markdown-document-carries-no-base-href.md))
+  URL로 풀리기 때문 — [ADR-0630](../../../adr/0630-bundled-plugin-data.md))
   상대 폰트 URL을 풀어 줄 기준 자체가 없다. 그래서
   `render.rs::katex_css_with_embedded_fonts`가 `katex.min.css`의 각 `@font-face`
   `src:`(원래 `woff2`/`woff`/`ttf` 3-format 상대경로 리스트)를 vendored `woff2` bytes를
@@ -419,7 +419,7 @@ CSS/스크롤 동기화 복잡도를 늘리지 않기 위한 설계 결정). 각
 연달아 눌러도 매번 이동하고(같은 hash 재대입은 엔진에게 무동작이다), 세 백엔드가 fragment navigation
 을 어떻게 다루든 결과가 같다. `#tasty-nav:` 로 시작하는 href 는 이 리스너가 건드리지 않는다 — 그쪽은
 host 신호 채널이라 `decide-policy` 까지 가야 한다. 문서에 `<base href>` 가 없는 것도 같은 이유다
-([ADR-0289](../../../adr/0289-the-markdown-document-carries-no-base-href.md)). 레벨별 들여쓰기는 `.tasty-toc-l1`..`l6`
+([ADR-0630](../../../adr/0630-bundled-plugin-data.md)). 레벨별 들여쓰기는 `.tasty-toc-l1`..`l6`
 CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_script`(트러스트 스크립트, 사용자
 콘텐츠 아님)의 최소 JS 가 `#tasty-toc-toggle` 클릭 시 `#tasty-toc` 에 `tasty-toc-collapsed` 클래스를
 토글하는 것으로 구현되며, 목록은 `max-height:280px;overflow-y:auto` 로 heading 이 많은 문서에서도
@@ -573,7 +573,7 @@ kind 를 가리지 않고 `search_bar` egui popup 을 열었었다 — 그 popup
 
 **host 키 포워딩과의 관계**: webview 자식 창이 키보드 입력을 받는 동안에도 tasty 전역
 단축키는 동작한다 — 세 백엔드가 native 키를 가로채 host 로 올린다
-([ADR-0102](../../../adr/0102-webview-key-forwarding.md),
+([ADR-0629](../../../adr/0629-webview-host-integration.md),
 [features/keybindings](../../../features/keybindings/index.md)). 그 포워딩은 **`find` 를
 포함한 페이지 예약 액션(`find`·`copy`·`cut`·`paste`·`select_all`)을 애초에 가져가지
 않으므로**, `Ctrl+F` 는 위 kind 게이트 이전에 이미 페이지로 간다 — 이 절의 문서-내 검색과

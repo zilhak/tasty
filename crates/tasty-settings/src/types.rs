@@ -118,8 +118,8 @@ impl Default for NotificationSettings {
     }
 }
 
-/// 원격 전송(bulk 파일 전송 채널, ADR-0054) 수신측 저장 정책. 전송받은 파일을 저장할 폴더와
-/// 그 폴더의 최대 용량 상한을 둔다(ADR-0054 "원격이 경로를 소유"). `begin.total_size`
+/// 원격 전송(bulk 파일 전송 채널, docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) 수신측 저장 정책. 전송받은 파일을 저장할 폴더와
+/// 그 폴더의 최대 용량 상한을 둔다(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 "원격이 경로를 소유"). `begin.total_size`
 /// 기반 사전 용량 판정이 `dir` 사용량 + 전송 크기가 상한을 넘으면 전송을 시작 전
 /// 거부한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]

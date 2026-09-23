@@ -8,7 +8,7 @@ pub const WORKSPACE_SWITCH_SLOT_COUNT: usize = 9;
 /// 카테고리 quick-switch 슬롯 수(1~9 후 0 = 10번째).
 pub const CATEGORY_SWITCH_SLOT_COUNT: usize = 10;
 
-/// 사용자 스크립트↔단축키 동적 바인딩 (ADR-0031).
+/// 사용자 스크립트↔단축키 동적 바인딩 (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
 ///
 /// 고정 액션 필드(`Vec<String>`)와 달리 스크립트는 N 개 동적이라 별도 표현이 필요하다.
 /// 스크립트당 combo 하나(관리 창 디자인: 행마다 Kbd 1개). `script_id` 는 `ScriptRegistry` 참조.
@@ -164,7 +164,7 @@ pub struct KeybindingSettings {
     pub maximize_window: Vec<String>,
     /// Close the current window.
     pub close_window: Vec<String>,
-    /// 사용자 스크립트↔단축키 동적 바인딩 (ADR-0031). 고정 필드와 별개 표현.
+    /// 사용자 스크립트↔단축키 동적 바인딩 (docs/features/lua-hooks/index.md#실행-격리--안전-장치). 고정 필드와 별개 표현.
     /// `#[serde(default)]` 로 기존 config 마이그레이션 안전(누락 시 빈 목록).
     #[serde(default)]
     pub script_bindings: Vec<ScriptBinding>,

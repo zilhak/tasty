@@ -5,7 +5,7 @@
 //! - plugin 또는 호스트가 발화한 [`EventEnvelope`]를 구독 패턴에 매칭되는 모든 대상에 fan-out
 //! - 호스트 본문은 `publish()`로 직접 발화, plugin은 [`PluginEvent::EventPublish`] 경로로 위임
 //! - hop count(`MAX_HOP=16`) 초과 envelope는 폐기하고 경고 로그. plugin 이 적은 hop 은
-//!   믿지 않고, 응답 전인 dispatch 가 있으면 재발화 하한으로 올린다(ADR-0406)
+//!   믿지 않고, 응답 전인 dispatch 가 있으면 재발화 하한으로 올린다(docs/reference/event-catalog.md#재발행과-응답)
 //! - 호스트 listener와 plugin listener를 통합된 [`Subscriber`] 인터페이스로 다룬다
 //! - 지나간 envelope 를 [`EVENT_RING_CAPACITY`] 개와 [`EVENT_RING_BYTES_LIMIT`] 바이트 중
 //!   먼저 닿는 쪽까지 들고 있다 — 구독자가 없던 동안의 사건을 나중에 붙은 소비자가
@@ -70,7 +70,7 @@ struct Inner {
     next_offset: u64,
     /// plugin 별로 **보냈지만 아직 응답이 안 온** `event.dispatch` 의 (request id, hop).
     /// 그 plugin 이 이 목록이 비지 않은 동안 publish 하면 그것은 받은 사건에 대한
-    /// 반응(재발화)이고, hop 에 하한이 걸린다 — [`Inner::relay_floor`]. 근거는 ADR-0406.
+    /// 반응(재발화)이고, hop 에 하한이 걸린다 — [`Inner::relay_floor`]. 근거는 docs/reference/event-catalog.md#재발행과-응답.
     inflight_dispatches: HashMap<String, VecDeque<(u64, u8)>>,
 }
 
@@ -112,7 +112,7 @@ pub const EVENT_RING_CAPACITY: usize = 1024;
 /// 없다 — plugin 하나가 1 MB 사건 1100 건을 발행하자 호스트 RSS 가 약 1 GB 늘었다.
 /// 값은 **파생이 아니다.** plugin 채널 큐 하나의 바이트 상한(`QUEUE_BYTES_LIMIT`)과 같게
 /// 둬, 빠른 발행자 하나가 링을 통해 호스트에 붙잡아 둘 수 있는 양이 채널 큐 하나가
-/// 붙잡는 양을 넘지 않게 했다. 근거·대안은 ADR-0456.
+/// 붙잡는 양을 넘지 않게 했다. 근거·대안은 docs/reference/event-catalog.md#지나간-사건--위치로-읽는다.
 ///
 /// **가장 새 사건 하나는 크기와 무관하게 남긴다** — 상한보다 큰 사건을 받자마자 버리면
 /// 그 사건은 위치만 받고 아무도 못 읽는다. 그래서 실제 상한은 `상한 + 사건 한 건` 이다.
@@ -130,7 +130,7 @@ struct RingSlot {
 
 /// envelope 을 JSON 으로 직렬화했을 때의 바이트 수. 버퍼를 만들지 않고 센다.
 ///
-/// 링이 재는 단위가 이것인 이유는 plugin 채널 장부(ADR-0360)와 같은 단위 — 소켓에 실리는
+/// 링이 재는 단위가 이것인 이유는 plugin 채널 장부(docs/architecture/ipc-server.md#플러그인-채널의-상한)와 같은 단위 — 소켓에 실리는
 /// 줄의 바이트 — 를 쓰기 위해서다. 메모리 안의 `serde_json::Value` 크기와 같지는 않지만
 /// 그것에 비례한다.
 fn serialized_len(envelope: &EventEnvelope) -> usize {
@@ -172,7 +172,7 @@ pub struct EventFetch {
     /// 보다 뒤다. 이 세대에 그 위치는 없다. 흔한 원인은 재시작 전 세대의 위치를 들고
     /// 온 것이다. 그래도 답의 나머지(`events`·`next_offset`)는 이 필드가 없던 때와
     /// 같다 — 이 필드를 모르는 소비자는 예전처럼 기다리고, 아는 소비자는 **조용히
-    /// 기다리지 않는다**. 근거는 ADR-0405.
+    /// 기다리지 않는다**. 근거는 docs/reference/event-catalog.md#지나간-사건--위치로-읽는다.
     pub ahead_of_stream: bool,
     /// 다음 발화가 받을 위치 — 지금 링의 끝. 모든 답에 실린다.
     pub stream_end: u64,
@@ -330,7 +330,7 @@ impl EventBus {
     /// plugin 이 서로의 사건에 hop 0 · 새 trace 로 반응하면 `MAX_HOP` 에 영영 안 닿는다
     /// (SDK 의 `publish_fresh` 가 바로 그 모양이다). 반응인지는 plugin 이 아니라 **호스트가
     /// 본 순서**로 판정한다: SDK 는 `on_event` 를 마친 뒤에 dispatch 에 응답하므로 그
-    /// 안에서 한 publish 는 응답보다 먼저 도착한다. 근거·한계·대안은 ADR-0406.
+    /// 안에서 한 publish 는 응답보다 먼저 도착한다. 근거·한계·대안은 docs/reference/event-catalog.md#재발행과-응답.
     ///
     /// 호출 시점이 판정 시점이다 — publish 가 도착한 순간에 불러야 한다. hook 을 거쳐
     /// 나중에 fan-out 되는 publish 는 그 사이에 응답이 와 하한이 사라질 수 있다.

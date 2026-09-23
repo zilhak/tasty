@@ -396,7 +396,7 @@ impl Manifest {
             // 담은 채 늙어 있었고, 목록 밖 이름은 debug 빌드에서 CLI 전체를 패닉시켰다.
             // 지금은 등록 시점(`tasty-cli` 의 `build_augmented_cli`)이 실제 명령 집합에서
             // 도출해 겹치는 이름을 등록하지 않고 경고한다 — 판정이 한 자리에만 있다.
-            // 근거: docs/adr/0158-cli-name-collisions-are-judged-at-registration-not-in-the-manifest.md
+            // 근거: docs/dev-guide/plugin-development.md#cli--ipc-namespace
             if !seen_cli_names.insert(cli.name.clone()) {
                 anyhow::bail!("cli name '{}' declared twice in this manifest", cli.name);
             }

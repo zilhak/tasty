@@ -7,7 +7,7 @@
 //! (`refresh_packages` 가 채운다). "지금 살아 있는가" 는 다른 물음이며 같은 자리에서
 //! `processes` 검사가 따로 답한다(`validate_namespace_call` → `-32002`). 두 물음을 이
 //! 표 하나에 겹쳐 두면 꺼진 plugin 의 메서드가 "그런 메서드 없다" 로 답해 거짓이 된다
-//! — 근거는 [ADR-0173](../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
+//! — 근거는 [CLI + IPC namespace](../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace).
 
 use std::collections::HashMap;
 

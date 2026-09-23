@@ -79,7 +79,7 @@ impl PluginManager {
 
     /// 매니페스트에서 contribute 를 찾고 egui-mesh api_version 게이트까지 통과해야 `Some`.
     /// egui-mesh banner 는 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
-    /// api_version 일치를 게이트한다(surface/popup egui-mesh 등록 정책 미러, ADR-0028).
+    /// api_version 일치를 게이트한다(surface/popup egui-mesh 등록 정책 미러, docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
     fn resolve_open_banner_contribute(
         &self,
         plugin_id: &str,

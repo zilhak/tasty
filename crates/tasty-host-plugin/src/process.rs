@@ -4,7 +4,7 @@
 //! 1. 토큰 생성
 //! 2. 자식 프로세스 spawn (env로 host port + token + plugin id 전달, stdout/stderr는 로그 파일)
 //! 3. 연결 대기(timeout 10s)와 송신/수신 스레드 가동을 `plugin-connect-<id>` 스레드에 맡기고
-//!    **즉시 돌아온다** — 그 사이의 요청은 송신 큐에 쌓였다가 연결 뒤 나간다(`connect`, ADR-0505)
+//!    **즉시 돌아온다** — 그 사이의 요청은 송신 큐에 쌓였다가 연결 뒤 나간다(`connect`, docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화)
 //! 4. 채널은 mpsc 로 호스트 메인 루프에 노출
 //!
 //! plugin이 응답할 때마다 `last_pong`이 갱신된다. 헬스체크는 `since_last_pong()` 비교.
@@ -81,7 +81,7 @@ enum HandleStreamState {
 /// 두 가지뿐이다 — (1) 호스트 pump 는 매 프레임 세 큐를 **끝까지** 비우므로 한 프레임
 /// 분량의 버스트를 여러 번 담을 수 있으면 정상 사용은 절대 상한에 안 닿는다,
 /// (2) 셋의 곱이 작다: 채널 3 × 1024 × 번들 plugin 9 = 27,648 개의 메시지 슬롯이고
-/// 메시지 하나가 수 KB 라도 수십 MB 다. 상한에 닿는지 재는 법은 ADR-0315 에 있다.
+/// 메시지 하나가 수 KB 라도 수십 MB 다. 상한에 닿는지 재는 법은 docs/architecture/ipc-server.md#플러그인-채널의-상한 에 있다.
 pub(crate) const REQUEST_QUEUE_CAPACITY: usize = 1024;
 /// plugin → 호스트 응답 큐 용량. 근거는 [`REQUEST_QUEUE_CAPACITY`] 와 같다.
 pub(crate) const RESPONSE_QUEUE_CAPACITY: usize = 1024;
@@ -98,7 +98,7 @@ pub enum RequestSendError {
     /// 큐가 찼다 — writer 스레드가 소켓에 못 밀어 넣고 있다. 요청은 버려진다.
     Full,
     /// 바이트 상한 — 이 큐의 누적이나 모든 plugin 채널의 합계가 넘친다
-    /// ([`channel_bytes`], ADR-0360). 요청은 버려진다. 개수 포화(`Full`)와 가르는 이유는
+    /// ([`channel_bytes`], docs/architecture/ipc-server.md#플러그인-채널의-상한). 요청은 버려진다. 개수 포화(`Full`)와 가르는 이유는
     /// 처방이 다르기 때문이다 — 개수는 plugin 이 안 읽는 것이고, 합계는 **다른** plugin
     /// 이 자리를 먹은 것일 수 있다.
     OverBytes(Refusal),
@@ -180,7 +180,7 @@ pub struct PluginProcess {
     connect: Arc<connect::ConnectSlot>,
     /// 매니저가 거둔 연결 성사 시각. `None` 이면 아직 연결 중이다 — 연결에 실패한 프로세스는
     /// `processes` 에서 빠지므로 여기 남지 않는다. 요청의 시한을 연결 성사부터 세는 데
-    /// 쓴다(ADR-0505).
+    /// 쓴다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
     connected_at: Option<Instant>,
 }
 
@@ -571,7 +571,7 @@ impl PluginProcess {
     /// ([`PluginRequest::dropped_requests`]). 실린 만큼만 빼므로, load 와 send 사이에
     /// 늘어난 몫은 그 다음 요청이 싣는다 — 누락도 중복도 없다.
     ///
-    /// 바이트 상한도 여기서 판정한다([`channel_bytes`], ADR-0360) — 그래서 직렬화도
+    /// 바이트 상한도 여기서 판정한다([`channel_bytes`], docs/architecture/ipc-server.md#플러그인-채널의-상한) — 그래서 직렬화도
     /// 여기서 한다. 바이트로 버린 것도 개수로 버린 것과 같이 plugin 에게 알린다: plugin
     /// 입장에서는 둘 다 "오던 요청이 사라졌다" 다.
     pub fn try_send_request(&self, req: PluginRequest) -> Result<(), RequestSendError> {
@@ -945,7 +945,7 @@ fn build_plugin_command(
 /// propagate 한다. `Command` 는 host env 를 상속하므로 두 값은 명시하지 않아도
 /// 흘러가지만, 계약을 코드에 드러내고(host 본 바이너리 밖 — 테스트 · 다른 호스트 — 에서
 /// 쓰일 때의 `en` 폴백) 빈 폰트 값이 자식에 남지 않게 여기서 확정한다. 값은 spawn 시점에
-/// 고정된다 — 근거 `docs/adr/0103-plugin-locale-via-host-process-env.md`.
+/// 고정된다 — 근거 `docs/dev-guide/i18n.md#plugin-네임스페이스`.
 fn inject_locale_env(cmd: &mut Command) {
     let (locale, font) = locale_env_for_child(
         std::env::var_os("TASTY_LOCALE"),
@@ -1505,7 +1505,7 @@ mod tests {
     }
 
     // plugin → 호스트 방향은 **거절이 아니라 대기**다. 응답을 버리면 그 요청이 영영
-    // 답을 못 받고(호스트는 deadline 으로만 회수한다 — ADR-0311), 이벤트를 버리면
+    // 답을 못 받고(호스트는 deadline 으로만 회수한다 — docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화), 이벤트를 버리면
     // 등록·수명 전이가 조용히 빠진다. 여기 sender 는 reader 스레드 하나뿐이라 블록해도
     // 호스트 프레임이 안 멈추고, 멈추는 것은 소켓 읽기 — 그것이 plugin 에 거는
     // backpressure 다.

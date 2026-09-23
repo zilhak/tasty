@@ -1,7 +1,7 @@
-//! `tasty pty` subcommand — headless PTY primitive (ADR-0050).
+//! `tasty pty` subcommand — headless PTY primitive (docs/features/headless-pty/index.md#내부-동작-headless-valid).
 //!
 //! 에이전트가 **Surface 없이** 백그라운드에서 굴리는 1 회성 PTY 를 다룬다. 자식
-//! 터미널 *surface* 를 만드는 `tasty terminal`(ADR-0040) 과는 **별개 네임스페이스** 다 —
+//! 터미널 *surface* 를 만드는 `tasty terminal`(docs/features/child-terminal/index.md) 과는 **별개 네임스페이스** 다 —
 //! 이쪽은 GUI 에 아무것도 노출하지 않고, pty id 로만 조작한다(포커스 독립).
 
 use clap::Subcommand;

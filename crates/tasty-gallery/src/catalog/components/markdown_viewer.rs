@@ -1,6 +1,6 @@
 //! `markdown_viewer` specimen — Markdown surface 문서 디자인의 egui 근사 (Layouts).
 //!
-//! 본체 렌더 경로(`docs/plugins/markdown/screens/markdown.md`, [ADR-0065](../../../../../docs/adr/0065-markdown-webview-render-channel.md)
+//! 본체 렌더 경로(`docs/plugins/markdown/screens/markdown.md`, [내부 동작](../../../../../docs/plugins/markdown/index.md#내부-동작)
 //! 참고): `crates/tasty-plugin-markdown` 은 Stage B 부터 **native OS webview**(host 가 만드는
 //! overlay — WebKitGTK/WKWebView/WebView2)에 sanitize 된 HTML 문서를 올려 그린다. plugin 이
 //! `pulldown-cmark` 로 HTML 을 생성하고, Theme 에서 캡처한 색·크기·간격을 CSS custom property
@@ -246,7 +246,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "A read-only Markdown surface — the plugin renders sanitized HTML in a native OS \
-         webview (Stage B, ADR-0065), injecting Theme tokens as CSS custom properties so the \
+         webview (native WebView), injecting Theme tokens as CSS custom properties so the \
          colors and type scale follow the design. The heading ladder is a 5-step linear \
          interpolation between the Heading anchor (prose-h1 20) and Body (13), fully \
          controlled by the plugin's own CSS generator (no library constraint left) — h2/h3 \

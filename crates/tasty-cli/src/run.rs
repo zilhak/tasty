@@ -111,7 +111,7 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
         envelope.refuse_if_set();
     }
     envelope.apply(&mut request);
-    // stdout 파이프 조기 종료(EPIPE)는 조용한 종료 코드 0 — ADR-0101.
+    // stdout 파이프 조기 종료(EPIPE)는 조용한 종료 코드 0 — docs/dev-guide/cli-structure.md#stdout-출력-outrs.
     Some(crate::out::quiet_if_stdout_closed(
         match (polling, auto_wait) {
             (Some(p), _) => run_dynamic_client_polling(request, p, port_file.as_deref()),
@@ -139,7 +139,7 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
 /// exit code 를 버리므로, 기록하지 않으면 그중 무엇이 일어났는지 사후에 알 방법이 없다.
 ///
 /// 기록하지 **않는** 갈래는 하나다 — 응답을 받아 놓고 stdout 쓰기가 실패하는 것
-/// (`outln!`). 그것은 전달 실패가 아니라 출력 실패이고, 파이프 조기 종료는 ADR-0101 이
+/// (`outln!`). 그것은 전달 실패가 아니라 출력 실패이고, 파이프 조기 종료는 docs/dev-guide/cli-structure.md#stdout-출력-outrs 이
 /// 조용한 종료 코드 0 으로 접는다.
 fn run_dynamic_client(
     mut request: tasty_ipc::protocol::JsonRpcRequest,
@@ -464,7 +464,7 @@ fn run_dynamic_client_polling(
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 ///
-/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
+/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(docs/dev-guide/cli-structure.md#stdout-출력-outrs).
 /// 출력 경로 전체가 [`crate::out`] 을 거치므로 `StdoutClosed` 가 여기까지 `?` 로 올라온다.
 pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     run_client_with(command, port_file, Envelope::default())

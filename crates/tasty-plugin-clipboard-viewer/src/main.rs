@@ -6,9 +6,9 @@
 //! `open_viewer`)가 `action = open_popup` 을 통해 host 로 하여금 popup 인스턴스를
 //! 직접 열게 한다 — 호스트가 plugin 전용 이벤트를 발행하는 구식 경로는 없다. 클립보드는
 //! plugin process 내에서 arboard 로 **직접** 읽으며 호스트 IPC 를 경유하지 않는다
-//! (ADR-0009 상 first-party 직접 read).
+//! (docs/dev-guide/plugin-packaging.md#정책-현행 상 first-party 직접 read).
 //!
-//! 렌더 경로는 **egui-mesh popup**(ADR-0028 / B4): plugin 이 자기 프로세스에서 popup
+//! 렌더 경로는 **egui-mesh popup**(docs/dev-guide/egui-mesh-channel.md#데이터-흐름): plugin 이 자기 프로세스에서 popup
 //! 콘텐츠(header/type-bar/body/footer)를 egui 로 tessellate 한 mesh 를 host 가
 //! content 영역에 합성한다. host 는 Theme 스냅샷을 `popup.set_context` 에 실어 매 frame
 //! 보내고, plugin 은 그것을 `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로

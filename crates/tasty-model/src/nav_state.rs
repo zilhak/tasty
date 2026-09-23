@@ -10,7 +10,7 @@
 /// 모듈 경로를 역참조하게 된다(한때 백엔드가 `plugin_bridge` 경로로 이 타입을 불렀다).
 /// OS·webview·egui 타입을 하나도 담지 않는 네 값짜리 enum 이라 도메인 경계에 둬도 아무것도
 /// 새지 않는다. 근거·대안·재검토 조건:
-/// `docs/adr/0385-webview-backends-receive-their-host-contract-by-injection.md`.
+/// `docs/design/systems/webview.md#키보드--별도-계약`.
 ///
 /// `Default = Idle` + `Copy` 라 native backend 의 `Rc<Cell<NavState>>` 에 그대로 들어간다
 /// (실패 사유 문자열은 담지 않음 — backend 콜백이 `tracing::warn!` 로그로만 남기고 화면엔

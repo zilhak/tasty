@@ -76,7 +76,7 @@ pub struct Settings {
     /// Modifier 키 홀드 안내 오버레이의 표시 토글 + 위치·크기 영속 슬롯.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 enabled=true, pos/size=None).
     pub modifier_hint: ModifierHintSettings,
-    /// 원격 전송(bulk 파일 전송 채널, ADR-0054) 수신측 저장 폴더 + 용량 상한.
+    /// 원격 전송(bulk 파일 전송 채널, docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) 수신측 저장 폴더 + 용량 상한.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 dir="", max_mb=500).
     pub remote_transfer: RemoteTransferSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.
@@ -86,7 +86,7 @@ pub struct Settings {
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 빈 맵).
     pub plugin_settings:
         std::collections::BTreeMap<String, std::collections::BTreeMap<String, PluginSettingValue>>,
-    /// 사용자 등록 Lua 스크립트 목록 (ADR-0031). 단축키 트리거·관리 창·TOFU 게이트의 기반.
+    /// 사용자 등록 Lua 스크립트 목록 (docs/features/lua-hooks/index.md#실행-격리--안전-장치). 단축키 트리거·관리 창·TOFU 게이트의 기반.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 빈 목록).
     pub scripts: ScriptRegistry,
     /// 이 값의 출처 — 원본 파일을 덮어써도 되는지. 디스크에 나가지 않는 런타임 상태라
@@ -103,7 +103,7 @@ impl Settings {
     /// 빠뜨린 install 이 전역 Theme 을 배율 1.0 으로 되돌렸고, `reduced_motion` 은
     /// 위젯 인자로만 존재해 넘기는 자리가 레포 전체에 하나도 없었다(설정을 켜도
     /// 스피너가 계속 돌았다). 값을 늘릴 때 호출부를 안 건드려도 되게 하려고 묶는다.
-    /// 결정과 대안은 `docs/adr/0174-theme-carries-reduced-motion.md`.
+    /// 결정과 대안은 `docs/design/systems/theme.md#모션-설정과-시간-단위`.
     pub fn theme_runtime(&self) -> tasty_themes::ThemeRuntime {
         tasty_themes::ThemeRuntime {
             ui_zoom: self.appearance.ui_scale_factor(),

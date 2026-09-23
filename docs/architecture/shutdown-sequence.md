@@ -3,7 +3,7 @@
 사용자 종료(Cmd/Ctrl+Q, quit 모달, 창 닫기)는 부팅과 대칭으로 **상태 머신
 (`ShutdownPhase`)이 프레임 단위로 전개**한다. 대기가 남아 있는 프레임마다 부팅과
 같은 로딩 화면(워드마크 + 회전 스피너 + 단계 문구)을 present 하므로, 종료 대기
-동안 창이 얼어붙지 않는다 — 근거는 [ADR-0077](../adr/0077-shutdown-loading-screen.md).
+동안 창이 얼어붙지 않는다 — 근거는 [ADR-0616](../adr/0616-window-platform-and-shutdown.md).
 
 종료 비용은 두 구간으로 나뉜다. **`event_loop.exit()` 까지**(종료 cascade)와
 **그 이후**(Drop tail)다. 후자는 창이 이미 사라진 뒤에 도는 destructor 구간이라
@@ -88,9 +88,9 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   같은 `req_tx` 에 이미 넣어 둔 `surface.closed` 뒤에 놓인다. plugin 이 cleanup
   대상 surface 를 모르는 채 종료되면 안 되므로 S3 → S4 순서는 고정이다.
 - **요청이 큐에 못 들어갈 수 있다** — 그 큐는 개수로도 바이트로도 유한하고(바이트는 큐마다와
-  모든 plugin 채널의 합계로 — [ADR-0360](../adr/0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md)),
+  모든 plugin 채널의 합계로 — [ADR-0606](../adr/0606-bounded-ipc-transport.md)),
   호스트→plugin 방향의 포화는
-  대기가 아니라 **거절**이다([ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)).
+  대기가 아니라 **거절**이다([ADR-0606](../adr/0606-bounded-ipc-transport.md)).
   writer 스레드가 소켓에서 막혀 큐가 차 있으면 shutdown 요청이 거절되고, 그 plugin 은
   graceful 기회 없이 deadline 뒤 kill 로 회수된다. **그 사후 판별을 S4a 의 `killed` 로
   하지 마라** — `killed` 는 "요청이 거절됐다" 와 "요청은 갔는데 plugin 이 2s 안에 안
@@ -99,7 +99,7 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   `plugin '<id>' shutdown send failed: ...` 한 줄이고(사유는 `request queue full` ·
   `request queue over its byte budget` 둘 중 하나 — shutdown 은 제어 요청이라 합계 바이트
   판정을 면제받으므로 `plugin channels over their total byte budget` 로는 거절되지 않는다,
-  ADR-0360 2026-09-21 보강), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
+  ADR-0606의 전송 거절 처리), 그 줄이 있으면 거절이다. 그 줄은 `warn` 이라 기본 필터(stderr `warn` · 파일 dev `debug`/release `warn`)
   에 남는다.
 - **타임아웃 의미론** — 겹치는 것은 대기 구간뿐이고, plugin 하나가 받는 graceful
   기회는 여전히 2s 다. S4a 는 개별 소요와 `graceful|killed` 사유를 그대로 남긴다.
@@ -124,7 +124,7 @@ plugin 은 서로 독립 프로세스라 graceful 대기가 직렬일 이유가 
   같은 버전인데 바뀐 내용이 있을 때). 설치본이 더 높아 건너뛰거나 같은 버전에 바뀐 것이
   없으면 기다리지 않는다 — 회수와 재기동 예약은 뒤에서 그대로 이어진다. 기다린 자리는
   회수 뒤의 재기동 예약을 함께 가져오므로 쓰기를 마친 뒤 다시 띄운다. 근거·대안은
-  [ADR-0457](../adr/0457-a-single-plugin-shutdown-is-reaped-off-the-main-thread.md).
+  [ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md).
 
 ## 종료 화면
 
@@ -173,7 +173,7 @@ present 한다. **부팅과 같은 렌더 경로·같은 락업**이고 다른 �
   구간의 요청은 아무도 읽지 않는다. 그냥 드롭하면 클라이언트(우리 자신의 `tasty`
   CLI 포함)는 무한정 기다린다. 그래서 매 프레임과 `exit()` 직전에 큐를 drain 해
   핸들러를 태우지 않고 `-32000 "host is shutting down"` 으로 회신한다
-  ([ADR-0078](../adr/0078-shutdown-rejects-pending-ipc.md)). 창 없는 블로킹 경로도
+  ([ADR-0616](../adr/0616-window-platform-and-shutdown.md)). 창 없는 블로킹 경로도
   같은 루프를 쓰므로 함께 덮인다.
 
 갤러리 specimen 은 Chrome 카테고리의 "Shutdown loading screen" — 부팅 specimen 과
@@ -205,7 +205,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
 | shutdown_total | 종료 진입 → `event_loop.exit()` 직전 | — |
 | S5d ipc_server_drop | `TcpIpcServer::drop` (accept stop + port 파일 제거) | — |
 | S5a lua_join | `LuaEngine::drop` (Shutdown send + 워커 join) | — |
-| S5b pty_drop | `PtyBackend::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — [ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)) | `ptys` = drop 된 PTY 수 |
+| S5b pty_drop | `PtyBackend::drop` 합계 (자식 종료 **대기는 포함하지 않는다** — [ADR-0616](../adr/0616-window-platform-and-shutdown.md)) | `ptys` = drop 된 PTY 수 |
 | S5c ssh_tunnel_drop | `SshTunnel::drop` 합계 | `tunnels` = drop 된 터널 수 |
 | S5 drop_tail | `run_app` 반환 → `App` drop 완료 | — |
 | shutdown_total_with_drop | 종료 진입 → Drop tail 완료 (**체감 종료 시간**) | — |
@@ -224,7 +224,7 @@ stderr 기본 필터가 warn 이라 콘솔 노이즈는 없다. release 검증�
   plugin 이 6개면 S4a 가 각각 ≈2000ms 여도 S4 는 ≈2000ms 다. S4 가 plugin 수에
   비례해 커졌다면 대기가 다시 직렬화된 것이다.
 - **S3b 는 정상 경로에서 0 에 가깝다.** surface close 는 sink 워커를 join 하지 않고
-  모아두기만 하므로([ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)),
+  모아두기만 하므로([ADR-0616](../adr/0616-window-platform-and-shutdown.md)),
   여기서 한 번에 회수한다. 워커들이 그동안 병렬로 이미 배수를 끝냈기 때문에 실제
   대기는 거의 없다. observer 를 쓰지 않으면 항상 0 이다.
   **이 단계는 정확성 요건이 아니라 최적화다** — `ObserverRouter::drop` 이 같은
@@ -341,4 +341,4 @@ S4a 는 세 회 모두 plugin 마다 1.6~3.8 ms 였다.
 - [boot-sequence](boot-sequence.md) — 대칭 구조인 부팅 상태 머신 + 부팅 계측(T1~T7)
 - [`docs/dev-guide/error-handling.md`](../dev-guide/error-handling.md) — 로그 레벨 선택 기준
 - [`docs/dev-guide/self-verification.md`](../dev-guide/self-verification.md) — debug 인스턴스로 시나리오 재현
-- [ADR-0077](../adr/0077-shutdown-loading-screen.md) — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정
+- [ADR-0616](../adr/0616-window-platform-and-shutdown.md) — 종료를 프레임 구동으로 전개하고 로딩 화면을 씌운 결정

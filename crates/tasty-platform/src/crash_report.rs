@@ -17,7 +17,7 @@ use tasty_utils::path::tasty_home;
 ///
 /// 이 크레이트에서 `env!("CARGO_PKG_VERSION")` 를 쓰면 이 크레이트(`tasty-platform`)의
 /// 버전으로 풀린다 — 보고서를 받는 사람이 가를 값은 tasty 바이너리의 버전이므로,
-/// 그 값은 본체가 자기 크레이트에서 풀어 넘긴다(ADR-0331: 의미는 부르는 쪽이 정한다).
+/// 그 값은 본체가 자기 크레이트에서 풀어 넘긴다(docs/architecture/index.md#크레이트를-나누는-기준: 의미는 부르는 쪽이 정한다).
 static APP_VERSION: OnceLock<&'static str> = OnceLock::new();
 
 /// 보고서에 찍을 버전. [`init`] 전이면 `unknown` 이다 — 틀린 값보다 모른다는 값이 낫다.
@@ -166,7 +166,7 @@ pub fn write_hang_report(site: &str, phase: &str, stuck_ms: u64) -> Option<PathB
 ///
 /// 파일 레이어는 여기서 *설치*만 되고 파일은 열지 않는다. 실제 파일을 여는 것은 host
 /// 프로세스(GUI / headless)가 부르는 [`enable_host_file_log`] 뿐이다 — 근거는
-/// [ADR-0092](../../docs/adr/0092-file-log-host-process-only.md).
+/// [호스트 로그와 CLI 진단](../../../docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단).
 ///
 /// **한계**: 그래서 이 함수와 [`enable_host_file_log`] 사이의 구간
 /// (`boot::run()` 의 `attach_windows_console_if_needed()` + `cli_routing::parse_or_route()`)
@@ -307,7 +307,7 @@ fn init_tracing() {
 
 /// 공유 로그 파일(`$TASTY_HOME/debug{-dev}.log`)을 열어 파일 레이어를 활성화한다.
 /// **host 프로세스(GUI / headless)만** 부른다 — CLI 클라이언트도 같은 바이너리라
-/// 무조건 열면 실행할 때마다 host 가 쌓아둔 로그를 truncate 한다([ADR-0092]).
+/// 무조건 열면 실행할 때마다 host 가 쌓아둔 로그를 truncate 한다([docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단]).
 ///
 /// host 는 데이터 루트당 하나이므로 시작 시 truncate 를 유지한다(rotation 불필요).
 /// 실패하면 stderr-only 로 자연스럽게 폴백한다.
@@ -317,7 +317,7 @@ fn init_tracing() {
 /// 설치된 핸들이 원래 오프셋에 계속 쓰면서 파일 앞부분이 NUL 구멍이 되는, 본 ADR 이
 /// 고친 바로 그 손상이 축소판으로 재현된다.
 ///
-/// [ADR-0092]: ../../docs/adr/0092-file-log-host-process-only.md
+/// [docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단]: ../../../docs/dev-guide/cli-structure.md#호스트-로그와-cli-진단
 pub fn enable_host_file_log() {
     if let Some(reason) = install_host_log_file() {
         tracing::warn!("{reason}");

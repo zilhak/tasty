@@ -122,7 +122,7 @@ fn resolve_command_path() -> (clap::Command, String) {
 /// 자체 CARGO_PKG_VERSION 이 루트 바이너리 버전과 어긋나기 때문 (cli_routing 의
 /// `--version` override 와 같은 이유).
 ///
-/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
+/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(docs/dev-guide/cli-structure.md#stdout-출력-outrs).
 pub fn print_command_tree(version: &str) -> Result<()> {
     crate::out::quiet_if_stdout_closed(print_command_tree_inner(version))
 }
@@ -249,7 +249,7 @@ pub fn format_parse_error(err: clap::Error) {
 /// plugin contributes.cli가 합쳐진 도움말 출력. plugin 디스커버리에 실패해도
 /// 정적 CLI 도움말은 항상 보장한다.
 ///
-/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
+/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(docs/dev-guide/cli-structure.md#stdout-출력-outrs).
 /// clap `print_help` 는 `io::Result` 를 돌려주므로 [`crate::out::from_io`] 로 같은
 /// 규칙에 태운다.
 pub fn print_augmented_help() -> Result<()> {

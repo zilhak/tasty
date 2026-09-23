@@ -1,4 +1,4 @@
-<!-- source-hash: 0b0210f21364 -->
+<!-- source-hash: 40dfca36208b -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -434,9 +434,9 @@ queue_dispatch describes taking commands out of the queue and running them.
 | `rounds_stopped_by_count`, `rounds_stopped_by_time` | Rounds stopped after using their command or time allowance |
 | `expired_before_run` | Commands not started because the caller’s deadline passed while queued |
 | `started` | Commands whose execution started |
-| `in_flight`, `in_flight_max` | Current and peak running requests whose callers are still waiting |
+| `in_flight`, `in_flight_max` | Current and peak requests that have started and whose command or response wait has not ended |
 
-in_flight can decrease. Increasing time-limited rounds or expired_before_run can indicate that queue
+in_flight can decrease. A command that is still running remains counted after its caller stops waiting. Increasing time-limited rounds or expired_before_run can indicate that queue
 processing is not keeping up with incoming requests.
 
 #### Duplicate requests (`keyed_requests`)

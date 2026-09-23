@@ -5,7 +5,7 @@
 //! tasty 는 자체 원격 프로토콜/암호화를 만들지 않고 **시스템 ssh 에 위임**한다.
 //! 이 크레이트는 attach **client 측**에만 존재한다 — CLI 와 본체 GUI 가 함께 쓰고,
 //! IPC 서버는 SSH 를 전혀 모르고 loopback(`127.0.0.1`) 만 안다. "원격성" 은 전부
-//! client 가 흡수한다 (`docs/adr/0007-attach-targets-remote.md`).
+//! client 가 흡수한다 (`docs/dev-guide/attach-behavior.md#서버--클라이언트-계층-가장-먼저-읽을-것`).
 //!
 //! SSH *프로토콜* 을 구현하지 않는다 — 시스템 `ssh` 바이너리를 프로세스로 띄우고
 //! 그 수명·터널·포트 발견·취소를 관리하는 위임 계층이다.
@@ -28,7 +28,7 @@
 //! | [`SshTunnel`] · [`SshCancel`] ([`SshCancelScope`] 는 그 반환형) | 본체 · CLI |
 //! | [`resolve_ssh_path`] · [`resolve_attach_target`] · [`discover_remote_port`] | 본체 · CLI |
 //! | [`detect_and_persist`] · [`tunnel_drop_totals`] | 본체 |
-//! | [`SSH_CONNECT_TIMEOUT`] · [`PORT_DISCOVERY_STEP_TIMEOUT`] · [`PORT_DISCOVERY_TOTAL_TIMEOUT`] | 소비자가 진행 표시·문구를 같은 값에 맞추도록 노출(`docs/adr/0070-port-discovery-timeout.md`) |
+//! | [`SSH_CONNECT_TIMEOUT`] · [`PORT_DISCOVERY_STEP_TIMEOUT`] · [`PORT_DISCOVERY_TOTAL_TIMEOUT`] | 소비자가 진행 표시·문구를 같은 값에 맞추도록 노출(`docs/dev-guide/attach-behavior.md#ssh-터널-원격-client-공통`) |
 //! | [`PortDiscoveryError`] · [`PortDiscoveryFailureKind`] | 실패 원인으로 분기하려는 소비자 |
 //!
 //! Windows 는 반드시 시스템 OpenSSH 풀경로를 쓴다 — git 번들 ssh 는 윈도우
@@ -183,7 +183,7 @@ pub fn resolve_attach_target(
 
     // 유효 ssh 소스에서 (SshTarget, 비활성, 셸) 을 얻는다. 셸은 port_mode 도출용
     // (detect-split: 셸 감지는 ssh 레이어, port_mode 도출은 attach 레이어 —
-    // `docs/adr/0032-remote-attach-two-layer-split.md`).
+    // `docs/features/remote-profiles/index.md#데이터-모델`).
     let (target, disabled, shell) = match v.ssh_ref() {
         Some(ref_name) => {
             let ssh_profile = profiles.get(ref_name).ok_or_else(|| {
@@ -1092,7 +1092,7 @@ fn discover_single_mode(
 
 /// 자동감지: 프로브 체인([`AUTO_FALLBACK_CHAIN`])을 순서대로 시도해 **첫 성공 모드**를
 /// 돌려준다(셸 종류를 묻는 단일 명령이 없으므로 프로브 성패가 곧 감지 결과 —
-/// `docs/adr/0032-remote-attach-two-layer-split.md`).
+/// `docs/features/remote-profiles/index.md#데이터-모델`).
 /// 전 프로브 실패 시 마지막 에러를 반환한다.
 ///
 /// `try_mode` 는 단일 모드를 시도해 포트를 내는 클로저 — 실제 SSH 실행([`detect_port_mode`])
@@ -1570,7 +1570,7 @@ mod tests {
     /// 만드는 데 쓴다 — 띄웠으면 `spawn` 이 실패해 `SshConnectionFailed` 가 나오고,
     /// 안 띄웠으면 조기 반환의 사유(`TimedOut`/`Cancelled`)가 그대로 나온다. 두 값이
     /// 다르므로 분류 하나로 갈린다. 경과 상한은 같은 것을 훨씬 약하게 물으면서
-    /// 굶은 러너에서 빨개지기까지 했다(ADR-0181).
+    /// 굶은 러너에서 빨개지기까지 했다(docs/dev-guide/self-verification.md#시간-측정과-실패-진단).
     fn unspawnable_command() -> Command {
         Command::new("/tasty-ssh-test/this-path-must-not-exist")
     }
@@ -1596,10 +1596,10 @@ mod tests {
     fn port_discovery_times_out_instead_of_hanging() {
         const CEILING: Duration = Duration::from_secs(10);
         // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
-        // 그 계열이 ADR-0181 의 규칙 3(값이 싸고 변동이 작다)을 못 지킨다 — 부하도
+        // 그 계열이 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 의 측정 비용·안정성 기준을 못 지킨다 — 부하도
         // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
         // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
-        // 말하게 되고, 그것이 그 ADR 이 지금 상태보다 나쁘다고 못 박은 거짓 음성이다.
+        // 말하게 되고, 그것이 검사 대상 코드의 회귀를 놓치는 거짓 음성이다.
         let started = Instant::now();
         let r = run_capture_with_budget(
             never_returns_command(),
@@ -2064,10 +2064,10 @@ mod tests {
 
         const CEILING: Duration = Duration::from_secs(10);
         // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
-        // 그 계열이 ADR-0181 의 규칙 3(값이 싸고 변동이 작다)을 못 지킨다 — 부하도
+        // 그 계열이 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 의 측정 비용·안정성 기준을 못 지킨다 — 부하도
         // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
         // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
-        // 말하게 되고, 그것이 그 ADR 이 지금 상태보다 나쁘다고 못 박은 거짓 음성이다.
+        // 말하게 되고, 그것이 검사 대상 코드의 회귀를 놓치는 거짓 음성이다.
         let t0 = Instant::now();
         handle.cancel();
         let elapsed = t0.elapsed();
@@ -2125,10 +2125,10 @@ mod tests {
         });
         const CEILING: Duration = Duration::from_secs(5);
         // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
-        // 그 계열이 ADR-0181 의 규칙 3(값이 싸고 변동이 작다)을 못 지킨다 — 부하도
+        // 그 계열이 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 의 측정 비용·안정성 기준을 못 지킨다 — 부하도
         // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
         // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
-        // 말하게 되고, 그것이 그 ADR 이 지금 상태보다 나쁘다고 못 박은 거짓 음성이다.
+        // 말하게 되고, 그것이 검사 대상 코드의 회귀를 놓치는 거짓 음성이다.
         let started = Instant::now();
         // 예산 10초, 자식은 60초 — 취소가 없으면 10초를 다 쓴다.
         let err = run_capture_with_budget(

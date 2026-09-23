@@ -6,7 +6,7 @@
 //! CLI 세트를 제공한다.
 //!
 //! 자식 terminal 관리(registry·spawn·wait·kill·reconcile·soft 점유)는 호스트가
-//! 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 위임한다 — 이 plugin 은
+//! 내재화한 `terminal.*` IPC(docs/features/child-terminal/index.md)로 위임한다 — 이 plugin 은
 //! 자체 child registry 를 보유하지 않는다(호스트 registry 가 단일 SoT). claude
 //! 특화(session token 기동, hook fan-out, PTY error scan, install, 텔레메트리)만
 //! 여기 남는다.

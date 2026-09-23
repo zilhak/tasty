@@ -8,7 +8,7 @@
 //! 동기 대기 대신 완료 시 1 회성 알림 훅(`notify-caller`)으로 caller 에게 알린다.
 //!
 //! 자식 terminal 관리(registry·spawn·wait·kill·reconcile·soft 점유)는 호스트가
-//! 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 위임한다 — 이 plugin 은
+//! 내재화한 `terminal.*` IPC(docs/features/child-terminal/index.md)로 위임한다 — 이 plugin 은
 //! 자체 child registry 를 보유하지 않는다(호스트 registry 가 단일 SoT). codex
 //! 특화(command 빌더, hook/trust, install)만 여기 남는다.
 //!

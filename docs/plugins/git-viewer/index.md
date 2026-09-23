@@ -21,7 +21,7 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
 - **tool** `open-viewer` — [도구 메뉴](../../features/tools-menu/index.md)에 항목 추가(`ui.tool_item`), action `open_popup{com.tasty.git-viewer/viewer}`.
 - **command** `open_viewer` — 단축키로도 뷰어를 연다(`scope = "global"`, `default_keybinding` 미지정 — 설정 > 단축키 > 플러그인에서 사용자가 직접 지정). action 은 tool 항목과 동일한 `open_popup{com.tasty.git-viewer/viewer}`.
 - **popup** `viewer` — trigger `ipc`(IPC 로도 열림), `rendering = egui-mesh`. status/log/diff 를 `fs.read` 로 읽어 표시. **읽기 전용**(커밋/스테이징 등 변경 없음).
-- **렌더링** — 팝업 콘텐츠를 **egui-mesh** 로 그린다(ADR-0028 / B3): plugin 이 자기 egui Context 에서
+- **렌더링** — 팝업 콘텐츠를 **egui-mesh** 로 그린다(ADR-0628): plugin 이 자기 egui Context 에서
   디자인(`overlays/git_viewer.jsx`)을 직접 페인트하고 host 는 셸(scrim/border/Esc/outside-click)만
   소유한다. Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 받아 재구성한다.
 - **worktree 종합 목록** — libgit2 `worktrees()` 는 linked 만 주므로 main working tree 는
@@ -32,10 +32,10 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
 - **repo 핸들** — 로컬 모드는 활성 worktree 의 `Repository` 핸들 하나를 들고 재사용해 조작마다
   다시 열지 않는다. 무효화는 worktree 전환 · Refresh · repo 소실 셋뿐이며 Refresh 는 캐시를
   무조건 버린다(외부 편집·worktree add/remove·외부 커밋이 항상 반영된다).
-  [ADR-0099](../../adr/0099-git-viewer-repo-handle-cache-and-canonical-dedup.md).
+  [ADR-0630](../../adr/0630-bundled-plugin-data.md).
 - **빈 summary/author** — `tasty-git-core` 는 git 에 값이 없으면 `LogEntry.summary`/`author` 를 **빈 문자열**로
-  주고 자연어 폴백을 만들지 않는다(호출자 주입, [ADR-0106](../../adr/0106-non-widget-user-strings-go-through-i18n.md)
-  결정 4). plugin 이 빈 값을 자기 lang 의 `git_viewer.no_message` / `git_viewer.unknown_author` 로 그리므로
+  주고 자연어 폴백을 만들지 않는다(호출자 주입, [공용 위젯의 문자열](../../dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입)
+  가이드 참조). plugin 이 빈 값을 자기 lang 의 `git_viewer.no_message` / `git_viewer.unknown_author` 로 그리므로
   로컬·원격(mirror) 조회 모두 plugin 로케일(`TASTY_LOCALE`)을 따른다.
 - **fs 접근** — git2 가 파일을 직접 읽어(host fs 포트 우회) worktree 가 cwd 밖에 있어도 읽는다.
   권한 선언은 `fs.read` 유지.
@@ -47,7 +47,7 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
   refresh·worktree 전환·파일→diff 클릭 각각 별도 왕복을 트리거한다. 서버는 client 가 forward한
   cwd 문자열이 아니라 자신의 실제 원격 PTY(`surface_id` 로 찾은 `Terminal::get_cwd()`)로 저장소를
   discover 한다. 응답이 크면(700KiB 예산) status/log/diff 순으로 잘라 보낸다. 설계 근거·wire
-  포맷 상세는 [ADR-0056](../../adr/0056-git-viewer-remote-attach-git-query-channel.md).
+  포맷 상세는 [ADR-0622](../../adr/0622-remote-mirror-content-and-queries.md).
 
 ## 인터페이스
 

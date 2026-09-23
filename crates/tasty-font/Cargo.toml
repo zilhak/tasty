@@ -23,7 +23,7 @@ rustc-hash = "2"
 [features]
 # Empty on purpose. A default that is on means a new consumer never has to ask,
 # and the whole point of this split is that asking is what keeps wgpu out of the
-# headless graph. Consumers that draw glyphs turn it on by name. See ADR-0336.
+# headless graph. Consumers that draw glyphs turn it on by name. See docs/architecture/index.md#크레이트를-나누는-기준.
 default = []
 # The GPU glyph atlas (src/atlas.rs). Everything else in this crate is
 # device-free and compiles without it.

@@ -97,7 +97,7 @@ pub(crate) fn session_id_for_surface<H: HostCall>(
 /// 떨어진다(살아 있다고 답한다) — 좁게 틀리는 방향이라 안전하다.
 ///
 /// [`tasty_plugin_sdk::PluginError::HostCall`] 은 이제 호스트가 준 코드도 함께 싣는다
-/// (ADR-0171). 다만 그 코드로는 **이 판정을 못 한다** — `-32602` 는 "인자가 틀렸다" 이지
+/// (docs/dev-guide/api-conventions.md#plugin-을-거쳐-온-실패도-호스트가-준-코드를-그대로-낸다). 다만 그 코드로는 **이 판정을 못 한다** — `-32602` 는 "인자가 틀렸다" 이지
 /// "그 대상이 없다" 가 아니고, 여기서 갈라야 하는 것은 "없다는 답" 과 "모름" 이다.
 /// 코드가 그 구분을 실으려면 대상 부재 전용 코드가 있어야 하고, 그건 별개 결정이다.
 pub(crate) fn surface_exists<H: HostCall>(host: &H, surface_id: u32) -> bool {

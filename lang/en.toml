@@ -1497,7 +1497,7 @@ auto_detect_ok = "Auto-detection succeeded: remote environment -> port_mode={} (
 auto_detect_failed = "Auto-detection failed: {}\n  '{}' was saved as disabled — retry with 'tasty tool remote-profile detect {}'."
 
 # `tasty tool passkey` — local CRUD for credentials. Values are never printed
-# (ADR-0016) — list/show expose name + kind only.
+# (docs/design/systems/memory.md#passkey-저장과-열람) — list/show expose name + kind only.
 # `list_header` carries its own column padding: CJK glyphs are twice as wide in a
 # terminal, so each language pads its own header line.
 [cli.passkey]
@@ -1512,7 +1512,7 @@ not_found = "passkey '{}' not found."
 value_masked = "(masked — reveal it from the GUI only)"
 removed = "Removed: passkey '{}'."
 
-# `tasty terminal` — host-internalized child-terminal management (ADR-0040).
+# `tasty terminal` — host-internalized child-terminal management (docs/features/child-terminal/index.md).
 [cli.terminal]
 desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."
 spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
@@ -2690,7 +2690,7 @@ help = "The token string to revoke (required)"
 about = "List the session tokens this instance currently holds"
 
 [cli.help._root.terminal]
-about = "Manage child terminals (spawn/tell/children/kill/…) — host-internalized agent child-terminal management (ADR-0040)"
+about = "Manage child terminals (spawn/tell/children/kill/…) — host-internalized agent child-terminal management"
 
 [cli.help._root.terminal.spawn]
 about = "Spawn a child terminal in a workspace and run a command in it"
@@ -2825,7 +2825,7 @@ help = "Parent surface ID (defaults to the single known parent)"
 help = "Child index to release"
 
 [cli.help._root.pty]
-about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal` (ADR-0050 pty primitive)"
+about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal`"
 
 [cli.help._root.pty.spawn]
 about = "Spawn a headless PTY (no Surface/tab). Returns a pty id"
@@ -3225,10 +3225,10 @@ about = "Active-modal close **request** (debug builds only). Reproduces the user
 about = "Send a close request to the active modal (no-op when none is up; the response distinguishes the two via `closed`)"
 
 [cli.help._root.debug.lua]
-about = "Arbitrary Lua injection into the host worker (debug builds only). Runs source in the isolated Lua worker (deadline-guarded, ADR-0031). Release builds have no such path — the user-input-only rule applies there"
+about = "Arbitrary Lua injection into the host worker (debug builds only). Runs source in the isolated Lua worker (deadline-guarded). Release builds have no such path — the user-input-only rule applies there"
 
 [cli.help._root.debug.lua.eval]
-about = "Inject arbitrary Lua source and run it in the host worker (fire-and-forget). Effects are observable via logs (e.g. `tasty.log`); deadline-exceeding sources are aborted by the worker (ADR-0031)"
+about = "Inject arbitrary Lua source and run it in the host worker (fire-and-forget). Effects are observable via logs (e.g. `tasty.log`); deadline-exceeding sources are aborted by the worker"
 
 [cli.help._root.debug.lua.eval.arg.source]
 help = "Lua source to execute. e.g. 'tasty.log(\"hi from debug\")'"

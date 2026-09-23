@@ -2,7 +2,7 @@
 //!
 //! `tasty.log` / `tasty.warn` 는 워커 스레드에서 직접 tracing 에 쓴다 (메인 무관).
 //! `tasty.run_cli` 는 프로세스 spawn 이 부수효과이므로 워커에서 직접 하지 않고
-//! [`HostCommand`] 로 메인 커맨드 큐에 넣는다 (ADR-0031). 메인이 [`run_tasty_cli`] 로 적용.
+//! [`HostCommand`] 로 메인 커맨드 큐에 넣는다 (docs/features/lua-hooks/index.md#실행-격리--안전-장치). 메인이 [`run_tasty_cli`] 로 적용.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -26,7 +26,7 @@ pub(crate) fn install(
     let tasty: Table = lua.globals().get("tasty").map_err(LuaEngineError::Init)?;
 
     // tasty.tree() — 메인이 발행한 최신 스냅샷의 워크스페이스 트리를 Lua table 로 반환.
-    // 값 복사(스냅샷 핸들을 Lua 가 쥐지 않음) → read-only. (ADR-0031 읽기 = 스냅샷)
+    // 값 복사(스냅샷 핸들을 Lua 가 쥐지 않음) → read-only. (docs/features/lua-hooks/index.md#실행-격리--안전-장치 읽기 = 스냅샷)
     let tree = lua
         .create_function(move |lua, ()| {
             let snap = match snapshot.lock() {

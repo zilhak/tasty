@@ -917,7 +917,7 @@ fn workspace_classify_attach_surfaces_puts_plugin_deferred_in_non_terminals() {
     );
 }
 
-/// ADR-0059 — explorer 는 `non_terminals` 가 아니라 전용 `explorers` 버킷으로
+/// docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 — explorer 는 `non_terminals` 가 아니라 전용 `explorers` 버킷으로
 /// 분류되고, 활성 탭의 **현재(root)** 경로(고정 cwd 가 아니라)가 실려야 한다.
 #[test]
 fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_active_root() {
@@ -935,7 +935,7 @@ fn workspace_classify_attach_surfaces_puts_explorer_in_dedicated_bucket_with_act
     assert_eq!(class.explorers, vec![(200, PathBuf::from("/proj/sub"))]);
 }
 
-/// content mirror 후보(ADR-0255)를 답하는 테스트용 surface. 본체 크레이트의
+/// content mirror 후보(docs/dev-guide/attach-behavior.md#markdown-content-채널)를 답하는 테스트용 surface. 본체 크레이트의
 /// `RemoteSurface` 가 이 자리를 채우지만 그 타입은 여기서 볼 수 없다 — 계약만 흉내낸다.
 struct ContentSurface {
     id: SurfaceId,
@@ -968,7 +968,7 @@ impl super::Surface for ContentSurface {
     }
 }
 
-/// ADR-0255 — content mirror 를 답하는 surface 는 `non_terminals` 가 아니라 전용
+/// docs/dev-guide/attach-behavior.md#markdown-content-채널 — content mirror 를 답하는 surface 는 `non_terminals` 가 아니라 전용
 /// `content_candidates` 버킷으로 분류되고, kind·plugin_id·파일 경로가 함께 실려야 한다.
 /// 화이트리스트 판정은 이 crate 가 하지 않는다(앱 계층) — 여기서는 후보를 모으는 것까지다.
 #[test]
@@ -1152,7 +1152,7 @@ fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
     );
 }
 
-// ---- 보더 상수의 좌표계 (ADR-0148) ----
+// ---- 보더 상수의 좌표계 (docs/concepts/typed-length.md#두-타입) ----
 
 /// 두 보더 상수가 **다른 좌표계**라는 것을 배율 2 에서 고정한다.
 ///
@@ -1163,7 +1163,7 @@ fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
 ///
 /// 이 단언이 깨지는 경우는 둘이다 — `PANE_BORDER_WIDTH` 를 물리로 되돌렸거나
 /// (그러면 4 가 2 가 된다), `SURFACE_BORDER_WIDTH` 를 논리로 바꿨거나
-/// (그러면 1 이 2 가 된다). 어느 쪽이든 ADR-0148 을 supersede 해야 하는 변경이다.
+/// (그러면 1 이 2 가 된다). 어느 쪽이든 docs/concepts/typed-length.md#두-타입 의 좌표계 규칙을 다시 검토해야 하는 변경이다.
 #[test]
 fn border_constants_diverge_only_at_scale_two() {
     // 배율 1: 두 상수의 좌표계가 달라도 관측값이 같다 — 판별 불가 구간.

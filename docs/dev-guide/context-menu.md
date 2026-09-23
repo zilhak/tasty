@@ -8,7 +8,7 @@
 
 surface 우클릭 컨텍스트 메뉴는 surface 종류에 따라 생산 경로가 갈린다:
 
-- **terminal**: winit 경로(`src/view/main/mouse.rs` `handle_right_button`)가 생산한다. mouse-tracking 위임(ADR-0019/0022) 판정이 여기 있어 winit-level 이어야 한다. 큐잉 트리거 시점은 플랫폼별로 다르다(`terminal_menu_open_state` 의 `cfg!(target_os = "linux")` 분기): **Linux 는 release**, **macOS/Windows 는 press** 그대로. Linux 전용인 이유 — 버튼이 아직 눌려 있는 상태에서 GTK `popup_at_rect()` 를 부르면 팝업을 realize/map 하지 않고 조용히 no-op 한다(실측 확인: `has_window`/`realized`/`mapped` 가 영원히 false 로 고정, X11 이벤트 큐에 CreateWindow/MapWindow 요청 자체가 안 나감). macOS/Windows 는 `show_context_menu` 가 항상 `MenuOutcome::Ready` 로 동기 처리돼 이 제약 자체가 없어 기존 press 시점 동작을 그대로 둔다(불필요한 플랫폼 공통 동작 변경 방지). 비-terminal 이 egui `secondary_clicked()`(release 시점)로 이 GTK 문제를 애초에 안 겪는 것과 같은 이유로 Linux 만 맞춘 것 — layer 는 winit 그대로 유지하되 트리거 시점만 플랫폼별로 갈린다.
+- **terminal**: winit 경로(`src/view/main/mouse.rs` `handle_right_button`)가 생산한다. mouse-tracking 위임(ADR-0615) 판정이 여기 있어 winit-level 이어야 한다. 큐잉 트리거 시점은 플랫폼별로 다르다(`terminal_menu_open_state` 의 `cfg!(target_os = "linux")` 분기): **Linux 는 release**, **macOS/Windows 는 press** 그대로. Linux 전용인 이유 — 버튼이 아직 눌려 있는 상태에서 GTK `popup_at_rect()` 를 부르면 팝업을 realize/map 하지 않고 조용히 no-op 한다(실측 확인: `has_window`/`realized`/`mapped` 가 영원히 false 로 고정, X11 이벤트 큐에 CreateWindow/MapWindow 요청 자체가 안 나감). macOS/Windows 는 `show_context_menu` 가 항상 `MenuOutcome::Ready` 로 동기 처리돼 이 제약 자체가 없어 기존 press 시점 동작을 그대로 둔다(불필요한 플랫폼 공통 동작 변경 방지). 비-terminal 이 egui `secondary_clicked()`(release 시점)로 이 GTK 문제를 애초에 안 겪는 것과 같은 이유로 Linux 만 맞춘 것 — layer 는 winit 그대로 유지하되 트리거 시점만 플랫폼별로 갈린다.
 - **terminal 링크 위**: 같은 `handle_right_button` 이 mouse-tracking 위임 판정 **앞**에서 hover 링크를 먼저 본다. 링크면 `PendingNativeMenu::TerminalLink` 를 세우고(`src/view/main/link_menu.rs`) press·release 둘 다 로컬 소비한다 — 좌클릭 링크가 위임보다 먼저인 것과 대칭이다. 메뉴를 세우는 버튼 상태는 위와 같지만 링크 스냅샷은 press 에서 찍는다(Linux 는 release 까지 hover 가 바뀔 수 있다). 명세는 [terminal-link](../features/terminal-link/index.md).
 - **비-terminal**(explorer/empty/markdown/image/webview/remote): winit 은 메뉴를 만들지 않고(`return`) **egui 프레임이 단일 생산자**다. `emit_surface_menu_fallback`(`src/adapters/ui/egui_panels.rs`)이 release 시점 `secondary_clicked()` 로 발화해 `PendingNativeMenu::Surface` 를 세팅한다. explorer 는 같은 프레임 안에서 `apply_explorer_action` 이 위치별 메뉴를 먼저 선점하고, fallback 은 `is_none()` 가드로 이를 존중한다.
 - **explorer 표면 전체 커버리지**: explorer 는 위치별 메뉴(그리드 파일 셀 → 파일 메뉴, content 빈 영역 → Empty 메뉴, 트리 노드/즐겨찾기 → 각 메뉴)에 더해, `draw_explorer` 끝에서 **표면 전체 rect catch-all** 로 나머지 chrome(툴바/주소창/내부 탭바/상태줄/빈 사이드바)의 우클릭도 Empty 메뉴로 선점한다. 이로써 generic Surface fallback("터미널 ID 복사")이 explorer 위 어디에서도 뜨지 않는다(불가침 원칙 §1·§2 — 파일 브라우저에 무관한 surface-op 메뉴 노출 금지). 권한 거부 루트(`LoadState::NoPermission`)만 예외로, 붙여넣기가 무의미하므로 catch-all 을 건너뛴다.
@@ -79,7 +79,9 @@ PendingNativeMenu::MyMenu { data, x, y } => {
 
 `macos.rs` / `windows.rs` / `linux.rs` 가 플랫폼 구현.
 
-### 해소 타이밍은 플랫폼별로 다르다 (ADR-0071)
+<a id="해소-타이밍은-플랫폼별로-다르다-adr-0071"></a>
+
+### 메뉴 선택을 처리하는 시점은 플랫폼별로 다르다
 
 API 형태는 세 OS 가 같지만 **언제 결과가 나오는지**는 다르다:
 
@@ -92,7 +94,7 @@ API 형태는 세 OS 가 같지만 **언제 결과가 나오는지**는 다르�
 
 호출부(`MainView::pending_menu` + `poll_pending_native_menu`)가 두 경로를 모두 다루므로 새
 메뉴를 추가할 때 플랫폼 분기를 쓸 일은 없다. 결정 근거·대안은
-[`docs/adr/0071-native-context-menu-async-contract.md`](../adr/0071-native-context-menu-async-contract.md).
+[docs/adr/0636-overlay-scope-and-lifetime.md](../adr/0636-overlay-scope-and-lifetime.md).
 
 ### Linux 구현 (GTK 3, X11 only)
 

@@ -75,7 +75,7 @@ impl TastyHomeGuard {
 /// [`TastyHomeGuard`] 와 목적은 같고 수단이 다르다. 그쪽은 `TASTY_HOME` env 를 갈아끼우므로
 /// 프로세스 전역이라 전용 락으로 직렬화해야 한다. 이쪽은
 /// [`tasty_utils::path::push_home_override`] 의 **스레드 로컬** 스택을 쓴다 — env 를 읽기도
-/// 전에 이기고, 락이 없어 병렬 실행을 막지 않는다(ADR-0155 의 처방 등급 ⓒ).
+/// 전에 이기고, 락이 없어 병렬 실행을 막지 않는다(docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 의 테스트 전용 경로 주입).
 ///
 /// # 왜 `CoreState` 가 이것을 들고 있는가
 ///

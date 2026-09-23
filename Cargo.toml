@@ -4,12 +4,12 @@ members = ["crates/*"]
 # 빌드에 새지 않도록 main workspace 에서 완전 제외. 자체 Cargo.lock 사용.
 # `cargo build` / `cargo build --workspace` 모두 이 crate 를 미인식.
 # 본 격리가 없으면 wasmtime 의존성 해석으로 cold build time 이 분 단위 증가.
-# POC 측정과 채택 보류 결정 = docs/adr/0009-plugin-sandbox-deferred.md.
+# WASM 정식 지원을 보류한 이유: docs/adr/0625-plugin-trust-and-distribution.md.
 # `site/` 는 더 이상 크레이트가 아니다 — GitHub Pages 정적 사이트는 Astro 로
 # 빌드한다(docs/dev-guide/site.md). 그 안에 .rs 가 없으므로 exclude 대상도 아니다.
 # `vendor/tiny_http` 는 [patch.crates-io] 로 끼운 상류 크레이트 사본이다 — 워크스페이스
 # 루트 아래의 path 의존은 기본으로 멤버가 되므로 명시적으로 뺀다(lint·fmt·clippy 대상 밖).
-# 근거: docs/adr/0516-the-webhook-413-closes-the-connection-through-a-vendored-tiny-http-patch.md
+# 근거: docs/features/webhook/index.md#body-상한-요청당
 exclude = ["crates/tasty-plugin-sdk-wasm", "vendor/tiny_http"]
 resolver = "2"
 
@@ -40,7 +40,7 @@ undocumented_unsafe_blocks = "deny"
 # 기존 초과 함수는 위치 단위 #[allow(clippy::cognitive_complexity)] // complexity-exempt: …
 # 로 동결(grandfather). 신규 초과 함수는 CI(Windows clippy 잡)에서 자동 차단된다.
 # `-D warnings` 없이도 deny 라 그 자체로 에러가 되므로 별도 플래그 불요.
-# 상세: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
+# 상세: docs/dev-guide/complexity-gate.md#무엇을도구임계값
 cognitive_complexity = "deny"
 multiple_unsafe_ops_per_block = "deny"
 # 도메인 Error enum 이 IPC fault path / preset mutation 등과 1:1 매핑이라
@@ -410,11 +410,8 @@ rand = "0.9"
 # Date/time — known-plugins.toml trusted_at RFC3339 timestamp.
 # default-features=false 로 tzdata 의존 제거; UTC + std clock 만 사용.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-# NOTE: 이 host-level dep 는 현재 `src/` 어디에서도 참조되지 않는다(grep 로 확인) — markdown
-# 렌더는 `crates/tasty-plugin-markdown`(plugin 프로세스, 자체 pulldown-cmark 의존)가 전담한다
-# ([ADR-0065](docs/adr/0065-markdown-webview-render-channel.md), Stage B webview 전환). 이
-# entry 는 host 가 markdown 을 직접 그리던 더 이전 세대(egui_commonmark 이전, ADR-0065 §Context
-# "과거 렌더러 교체 이력" 참고)의 잔재로 보인다 — 제거 검토 대상(이번 변경 스코프 밖).
+# Markdown 문서 렌더링은 tasty-plugin-markdown이 자신의 pulldown-cmark 의존성으로 처리한다.
+# 현재 렌더링 구조: docs/plugins/markdown/index.md#내부-동작
 pulldown-cmark = { version = "0.12", default-features = false, optional = true }
 # System tray (cross-platform: Windows=Shell_NotifyIcon, macOS=NSStatusItem, Linux=SNI/AppIndicator via GTK)
 tray-icon = { version = "0.22", optional = true }
@@ -523,18 +520,18 @@ serde_json = "1"
 # `#[cfg(any(test, feature = "test-support"))]` 로 게이트돼 있고, `tasty-utils` 는 이 크레이트의
 # **의존**이라 본 크레이트의 `cfg(test)` 로는 켜지지 않는다. dev-dependency 라 제품 빌드에는
 # 들어가지 않는다. 쓰는 곳은 `crates/tasty-test-support/src/lib.rs` 의 `IsolatedHome` 하나이고, 근거는
-# `docs/adr/0096-unit-tests-isolated-from-user-environment.md`.
+# `docs/dev-guide/unit-test-isolation.md#1-설정-테스트-생성자는-settingsdefault-를-쓴다`.
 tasty-utils = { path = "crates/tasty-utils", features = ["test-support"] }
 tasty-test-support = { path = "crates/tasty-test-support" }
 # popup 렌더 루프 시험이 plugin 프로세스 없이 popup 인스턴스를 세우는 훅
 # (`PluginManager::insert_popup_instance_for_test`)을 켠다. dev-dependency 라 제품 빌드에는
-# 그 함수가 없다(`docs/adr/0526-a-plugin-popup-the-user-touched-makes-its-file-dispatch-a-user-action.md`
-# 의 조건 3 을 기록하는 자리가 그 루프 안에 있다).
+# 그 함수가 없다. 팝업의 실제 사용자 입력을 기록하는 경로는
+# docs/features/file-handler/index.md#origin-소유권과-비동기-완료 를 따른다.
 tasty-host-plugin = { path = "crates/tasty-host-plugin", features = ["test-support"] }
 # 스캔 가드가 공유하는 판정(레포 루트, 빌드 캐시 디렉토리 식별). 이 크레이트는 의존이
-# 0 이라(ADR-0138) 여기에 dev-dep 로 들여도 루트 테스트 빌드가 무거워지지 않는다.
+# 0 이라(docs/dev-guide/guard-relocation.md#문서-검사를-옮길-위치) 여기에 dev-dep 로 들여도 루트 테스트 빌드가 무거워지지 않는다.
 tasty-doc-guards = { path = "crates/tasty-doc-guards" }
-# 지연 단정의 대조군(ADR-0181). 의존 0 이라 테스트 빌드가 무거워지지 않고,
+# 지연 단정의 대조군(docs/dev-guide/self-verification.md#시간-측정과-실패-진단). 의존 0 이라 테스트 빌드가 무거워지지 않고,
 # dev-dep 이라 제품 산출물에 들어가지 않는다.
 tasty-latency-control = { path = "crates/tasty-latency-control" }
 enigo = "0.6"
@@ -561,7 +558,7 @@ required-features = ["gui"]
 winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5bf55bfbca274a7cf56e5fae0d20c1f5" }
 # 웹훅 413 이 잔여 body 를 읽지 않고 연결을 닫게 하는 최소 패치를 얹은 tiny_http 0.12.0 사본.
 # 패치 범위·탈출 조건(상류가 같은 수정을 내면 걷는다): vendor/tiny_http/PATCHES.md,
-# docs/adr/0516-the-webhook-413-closes-the-connection-through-a-vendored-tiny-http-patch.md
+# docs/features/webhook/index.md#body-상한-요청당
 tiny_http = { path = "vendor/tiny_http" }
 
 [lints]
@@ -672,7 +669,7 @@ opt-level = 3
 #   terminal-link 링크 판정 covers           0.41 ms → 0.18 ms / 프레임 · 한 줄 검출 84 µs → 5 µs / hover
 #                                            수정 후 재컴파일 +1.4 s
 #   selection     선택 판정 is_selected      0.23 ms → 0.17 ms / 프레임 · 수정 후 재컴파일 +0.6 s
-# 재는 법·고른 이유·재검토 조건: docs/adr/0381-the-cell-renderer-leaf-crates-are-optimized-in-dev.md
+# dev 최적화의 적용 범위: docs/architecture/index.md#크레이트를-나누는-기준
 [profile.dev.package.tasty-cell-width]
 opt-level = 3
 [profile.dev.package.tasty-terminal-link]

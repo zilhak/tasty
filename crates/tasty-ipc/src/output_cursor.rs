@@ -14,9 +14,9 @@
 //! [`crate::stream::STREAM_PROTO`] 를 그대로 싣는 것과 같은 모양이다.
 //!
 //! 계약 본문(위치의 단위 · gap · 다른 스트림 거절)은
-//! `docs/adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md`,
+//! `docs/features/terminal-output/index.md#보존-밖으로-밀려난-것은-값으로-나온다`,
 //! 이 이름을 협상 목록에 올린 결정은
-//! `docs/adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md`.
+//! `docs/features/terminal-output/index.md#보존-밖으로-밀려난-것은-값으로-나온다`.
 
 /// 협상 목록에 오르는 이름.
 pub const CAPABILITY: &str = "ipc.output-cursor";

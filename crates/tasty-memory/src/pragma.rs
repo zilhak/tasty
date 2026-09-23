@@ -72,7 +72,7 @@ pub struct PragmaReading {
 /// 열린 채로 쓰인다 — 열기 자체의 실패(`DbInitError` 는 안내 후 종료, `MemoryInitError` 는
 /// in-memory 대체 — `crate::InitFallback`)와 다른 축이고, pragma 가 안 선 DB 는 느리거나
 /// 덜 내구적일 뿐 동작은 한다.
-/// 그 선택의 근거는 `docs/adr/0376-a-database-that-opened-with-pragmas-that-did-not-take-is-degraded-not-fatal.md`.
+/// 그 선택의 근거는 `docs/design/systems/storage.md#적용된-sqlite-설정`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedPragmas {
     /// 이 연결이 in-memory DB 인가. 허용 결과표의 열을 고른다.

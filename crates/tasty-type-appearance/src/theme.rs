@@ -158,7 +158,7 @@ pub const MOTION_HOLD_REVEAL_SHIFT_MS: Millis = Millis(1200.0);
 /// `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
 ///
 /// 값은 둘이다([`SHADOW_POPOVER`] / [`SHADOW_MODAL`]) — 어느 표면이 어느 쪽을 쓰는지는
-/// `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE 이 정한다.
+/// `docs/design/systems/theme.md#떠-있는-표면의-그림자` 의 그림자 선택 규칙 이 정한다.
 /// `alpha` 는 0~255 straight 검정 알파.
 ///
 /// # `spread` 는 음수를 담는다 (CSS `box-shadow` 네 번째 길이와 같은 의미)
@@ -208,7 +208,7 @@ impl ShadowToken {
 /// `--tasty-shadow-popover` 값(`0 6px 18px rgba(0,0,0,0.4)`). 트리거 옆에 붙어 살아
 /// 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)의 단차 — 배너·tooltip·드롭다운·
 /// anchored popup 이 쓴다. 어느 표면이 어느 쪽을 쓰는지는
-/// `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE.
+/// `docs/design/systems/theme.md#떠-있는-표면의-그림자` 의 그림자 선택 규칙.
 ///
 /// `alpha` 는 디자인 `rgba(0,0,0,0.4)` 의 0.4 를 0~255 로 옮긴 값이다:
 /// 0.4 × 255 = 102.0 → **102**. ([`SHADOW_MODAL`] 의 140 이 같은 규칙의 결과다.)
@@ -225,7 +225,7 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
 /// scrim 이 깔리는 것은 일부다). scrim 은 값을 더 크게 잡은 **근거**로만 등장한다 —
 /// 바닥을 어둡게 하지만 엣지를 그리지 않아, 어두운 테마에서 어두운 모달이 어두워진
 /// 바닥 위에 놓이면 1px 보더만으로는 실루엣이 사라진다.
-/// 근거·대안·재검토 조건은 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
+/// 근거·대안·재검토 조건은 `docs/design/systems/theme.md#떠-있는-표면의-그림자`.
 ///
 /// `alpha` 는 디자인 `rgba(0,0,0,0.55)` 의 0.55 를 0~255 로 옮긴 값이다:
 /// 0.55 × 255 = 140.25 → 최근접 정수 **140**. ([`SHADOW_POPOVER`] 의 102 가 같은 규칙의
@@ -261,7 +261,7 @@ pub const DAG_MIX_45_ALPHA: u8 = 115;
 pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 
 /// design `--tasty-tint-fill-alpha` → `--tasty-opacity-tint-fill`. "accent 로 옅게
-/// 채우고 같은 accent 로 테두리를 두르는" 관용구의 **채움** 계수. ADR-0290 이
+/// 채우고 같은 accent 로 테두리를 두르는" 관용구의 **채움** 계수. docs/design/systems/theme.md#ui-코드의-색상-접근 이
 /// 흩어져 있던 네 짝(0.14/0.45 · 0.12/0.35 · 0.11/0.36 · 0.12/—)을 이 한 짝으로
 /// 모았다. 알파가 아니라 계수라 `u8` 이 아닌 `f32` 다 — 소비처가
 /// `gamma_multiply()` / `mix_srgb()` 의 비율 자리에 그대로 넣는다.
@@ -1067,7 +1067,7 @@ pub struct Theme {
     /// 종전에는 위젯이 이 값을 호출부 인자로 받았고, 그 인자를 실제로 넘기는 자리가
     /// 레포 전체에 0 이었다 — 설정을 켜도 스피너가 계속 돌았다. 그리는 코드는 `Theme`
     /// 없이는 그릴 수 없으므로, 여기 실으면 새 자리가 생겨도 빠뜨릴 수 없다.
-    /// 결정과 대안은 ADR-0174.
+    /// 결정과 대안은 docs/design/systems/theme.md#모션-설정과-시간-단위.
     ///
     /// 기본은 `false` — `with_colors*` 로 직접 만든 `Theme`(테스트·갤러리·plugin 프로세스)
     /// 은 이 설정을 모른다. host 는 전역 설치 경로가 값을 실어 나른다.
@@ -1324,7 +1324,7 @@ impl Theme {
     /// 평면 색 필드를 다시 [`ThemeColors`] 로 모은다 (`apply_colors`/`with_colors`
     /// 의 역방향). resolved Theme 을 (zoom 독립적인) 색 집합으로 직렬화해 프로세스
     /// 경계 너머로 보내고 [`Theme::with_colors_and_zoom`] 으로 재구성할 때 쓴다
-    /// (egui-mesh plugin 의 Theme parity — ADR-0028).
+    /// (egui-mesh plugin 의 Theme parity — docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
     pub fn to_colors(&self) -> ThemeColors {
         ThemeColors {
             crust: self.crust,
@@ -1705,7 +1705,7 @@ impl Theme {
     /// **뷰포트를 점유하는** centered 표면(모달) 그림자. `--tasty-shadow-modal`.
     /// scrim 유무는 갈래를 가르는 술어가 아니다 — 이 값을 받는 표면 중 scrim 이
     /// 깔리는 것은 일부다.
-    /// 어느 표면이 이 값을 쓰는지는 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
+    /// 어느 표면이 이 값을 쓰는지는 `docs/design/systems/theme.md#떠-있는-표면의-그림자`.
     #[inline]
     pub fn shadow_modal(&self) -> ShadowToken {
         SHADOW_MODAL
@@ -1728,7 +1728,7 @@ impl Theme {
     /// 컬럼 자체를 자기 레이아웃으로 대체하므로 예외다. 본문 산문은 이것과 **다른 축**인
     /// `measure_md`(읽는 줄 길이, 이것보다 좁다)를 그대로 쓴다.
     ///
-    /// 디자인 export 에 이 이름이 아직 없어 ADR-0135 대로 접근자로 든다.
+    /// 디자인 export 에 이 이름이 아직 없어 docs/design/systems/theme.md#토큰에-없는-값과-배율 대로 접근자로 든다.
     #[inline]
     pub fn settings_content_max_width(&self) -> LogicalPx {
         LogicalPx((620.0 * self.ui_zoom).round())
@@ -1878,7 +1878,7 @@ impl Theme {
     }
     /// remote tool 헤더 최소 높이 (26px). 디자인 헤더 콘텐츠 높이 24 에, popup border 가
     /// stroke Outside 라 콘텐츠가 1px 아래에서 시작하는 것을 +2 로 보정한 값이다.
-    /// 스케일 위의 값이 아니므로 토큰으로 스냅하지 않는다(ADR-0126).
+    /// 스케일 위의 값이 아니므로 토큰으로 스냅하지 않는다(docs/design/systems/theme.md#토큰에-없는-값과-배율).
     #[inline]
     pub fn remote_tool_header_min_height(&self) -> LogicalPx {
         LogicalPx((26.0 * self.ui_zoom).round())
@@ -2166,7 +2166,7 @@ mod tests {
     /// corner_radius_lg  8.0 → 7 / 8 / 10
     /// ```
     ///
-    /// 그래서 `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 의
+    /// 그래서 `docs/design/systems/theme.md#토큰에-없는-값과-배율` 의
     /// "축 확장" 절이 드는 근거는 **경유 여부가 아니라 값의 배율 가변성**이다 — 명명
     /// const 로 빼는 대가는 값이 배율에 따라 변하는 자리에서만 실재한다. 반경 기본·lg 는
     /// 변하고, 1px 보더는 어차피 안 변한다.
@@ -2562,7 +2562,7 @@ mod tests {
                 "{name} zoom 1.2"
             );
             // 배율 셋이 실제로 갈라지는지 — 이 축의 값은 전부 16 이상이라 반올림이
-            // 셋을 뭉개지 않는다(폰트·굵기 축과 다른 점이다, ADR-0126 의 표).
+            // 셋을 뭉개지 않는다(폰트·굵기 축과 다른 점이다, docs/design/systems/theme.md#토큰에-없는-값과-배율).
             // 하한이 16 인 것은 로딩 화면 phase 슬롯이다: 0.85→14 · 1.0→16 · 1.2→19.
             assert!(
                 f(&large).value() > f(&base).value() && f(&base).value() > f(&small).value(),
@@ -2833,7 +2833,7 @@ mod tests {
     /// 토큰을 **안 보고** 초록이 된다 — 그 조용한 절반 실행을 막으려고 명부를
     /// 정본(이 파일의 소스)에서 다시 읽는다.
     ///
-    /// ADR-0254 의 "출하되는 그림자 토큰 중 하나가 음수 `spread` 를 갖게 된다" 재검토
+    /// docs/design/systems/theme.md#떠-있는-표면의-그림자 의 "출하되는 그림자 토큰 중 하나가 음수 `spread` 를 갖게 된다" 재검토
     /// 트리거가 채널로 성립하는 근거가 이 대조다.
     #[test]
     fn shipped_shadow_token_roster_is_complete() {

@@ -110,7 +110,7 @@ pub fn draw_new_row(ui: &mut egui::Ui, theme: &Theme) {
 /// 같이 깔아 두 행의 좌측 정렬선이 픽셀 동일한지 눈으로 확인할 수 있게 한다.
 ///
 /// 이 스트립은 popup **안**의 목록 한 조각을 떼어 보이는 것이라 떠 있는 표면이 아니다
-/// — SCOPE RULE(ADR-0254)의 세 번째 갈래로 lift 를 얹지 않는다(`ra_card` 와 다르다).
+/// — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 세 번째 갈래로 lift 를 얹지 않는다(`ra_card` 와 다르다).
 fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
     let peek = &WORKSPACES[0];
     egui::Frame::new()

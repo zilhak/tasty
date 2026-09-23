@@ -1,4 +1,4 @@
-//! Markdown → sanitized HTML document generation for the **webview** surface (ADR-0028,
+//! Markdown → sanitized HTML document generation for the **webview** surface (docs/plugins/markdown/index.md#내부-동작,
 //! Stage B — replaces the former `egui_commonmark` mesh renderer).
 //!
 //! [`render_document`] is the single entry point: it turns the markdown source into a
@@ -32,7 +32,7 @@
 //!    heading ladder or override body line-height; real CSS does both trivially).
 //! 4. The document carries **no `<base href>` tag**, and nothing this pipeline emits needs one:
 //!    every local `<img src>` is replaced by an inlined `data:` URI (or dropped) by
-//!    [`inline_local_images`] (ADR-0249), and every *markdown* link destination that isn't
+//!    [`inline_local_images`] (docs/plugins/markdown/index.md#내부-동작), and every *markdown* link destination that isn't
 //!    anchor-only is already rewritten to a `#tasty-nav:` fragment (point 1). A relative URL can
 //!    still reach the output one way — raw HTML the author wrote themselves (`<a href="x.md">`)
 //!    passes through pulldown-cmark as `Event::Html` and survives `sanitize_html` (ammonia's
@@ -46,7 +46,7 @@
 //!    the base URL too, so `<base href="file:///dir/">` turns `#slug` into `file:///dir/#slug` —
 //!    a different document, so clicking a TOC entry navigates away instead of scrolling
 //!    (measured 2026-09-19, Linux/WebKitGTK 2.50: with the base tag a TOC click left `scrollY`
-//!    at 0; without it the same click reached the heading). ADR-0289 records the removal.
+//!    at 0; without it the same click reached the heading). docs/plugins/markdown/index.md#내부-동작 records the removal.
 //! 5. In-page anchors (the TOC, `[text](#slug)` body links, footnote reference/backlinks) are
 //!    additionally scrolled **by the trusted script itself** ([`nav_script`]), which cancels the
 //!    click's default navigation and calls `scrollIntoView` on the target id. This is what makes
@@ -149,7 +149,7 @@ pub struct DocumentInput<'a> {
     /// bridge exists for a webview surface, see module doc).
     pub recent: &'a [String],
     /// attach mirror 문서면 `Some` — 원문이 로컬 파일이 아니라 원격에서 주입된 것이다
-    /// (`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`). 주소창은
+    /// (`docs/dev-guide/attach-behavior.md#markdown-content-채널`). 주소창은
     /// 읽기 전용이 되고 우측 상단에 새로고침 버튼이 붙는다.
     pub remote: Option<RemoteView>,
 }
@@ -554,7 +554,7 @@ fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
 /// ([`figurize_solo_image_paragraphs`]) — every other image (mixed into running text, wrapped in
 /// a link, alt-less) passes through untouched, same as before that pass existed. A relative
 /// `src` is not resolved here at all — [`inline_local_images`] later reads the file and replaces
-/// the attribute with a `data:` URI (ADR-0249), which is why the document needs no `<base href>`
+/// the attribute with a `data:` URI (docs/plugins/markdown/index.md#내부-동작), which is why the document needs no `<base href>`
 /// (module doc point 4). Headings get a GitHub-compatible `id` via the
 /// [`collect_headings`]/[`assign_heading_ids`] two-pass pipeline (module doc "heading ids + TOC"
 /// section) — this recomputes the heading list itself (a cheap, HTML-free text-only walk) rather

@@ -3,7 +3,7 @@
 //! 기동은 자식을 띄우자마자 `processes` 에 넣는다. 그래서 이 모듈이 할 일은 셋이다 —
 //! 연결이 성사되면 연속 실패 기록을 지우고, 끝내 안 오면 예전 spawn 실패와 같은 갈래
 //! (`plugin.error` · 연속 실패 누적 · 자동 비활성, 그 extension 에 보낸 hook 은 hook 없이
-//! 진행)로 보내고, 연결 전에 보낸 요청의 시한을 연결 성사부터 세게 한다. 근거·대안은 ADR-0505.
+//! 진행)로 보내고, 연결 전에 보낸 요청의 시한을 연결 성사부터 세게 한다. 근거·대안은 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화.
 
 #[cfg(test)]
 mod tests;
@@ -93,7 +93,7 @@ impl PluginManager {
     /// 지금은 기동이 곧바로 돌아오므로 그대로 두면 짧은 시한(pre-hook 의 `timeout_ms`)이
     /// 연결 시간까지 떠안는다. 그래서 연결 전에 보낸 요청은 연결까지 기다린 만큼 시한을
     /// 민다 — 시한의 **길이**는 그대로다. 연결에 끝내 실패하면 그 요청은 시한이 아니라
-    /// 연결 실패 갈래([`Self::on_connect_failure`])에서 끝난다. 근거는 ADR-0505.
+    /// 연결 실패 갈래([`Self::on_connect_failure`])에서 끝난다. 근거는 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화.
     pub(super) fn deadline_from_connection(
         &self,
         to: &str,

@@ -1,6 +1,6 @@
 //! `image_viewer` specimen — Image surface(viewer / canvas) 의 egui chrome (Layouts).
 //!
-//! 본체 렌더 경로(ADR-0028/0030, B2): image 는 egui-mesh plugin 이다 —
+//! 본체 렌더 경로(docs/dev-guide/egui-mesh-channel.md#데이터-흐름): image 는 egui-mesh plugin 이다 —
 //! `crates/tasty-plugin-image/src/render.rs::draw` 가 상단 control bar + 그 아래 이미지
 //! 영역(배경 `bg_sidebar`)을 자기 egui `Context` 에서 그려 mesh 로 host 가 합성한다. control bar
 //! viewer 모드 버튼은 chevron-left/right(prev/next) · refresh · edit · plus(new) — 본체는
@@ -92,7 +92,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 /// surface = control bar + canvas. `loaded`=true 면 그림, false 면 fallback.
 fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
     // image surface 는 pane 안에 사는 콘텐츠지 떠 있는 표면이 아니다 — 본체
-    // (`tasty-plugin-image`)도 셸 그림자를 그리지 않는다. SCOPE RULE(ADR-0254)의
+    // (`tasty-plugin-image`)도 셸 그림자를 그리지 않는다. 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의
     // 세 번째 갈래.
     kit::frame_card_flat(ui, theme, PANE_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();

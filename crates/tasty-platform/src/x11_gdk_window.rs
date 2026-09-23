@@ -21,7 +21,7 @@
 //! [`tests::panicking_binding_has_no_call_site`] 가 그것을 검사한다.
 //!
 //! 결정 근거·대안·재검토 조건, 그리고 **이 가드들이 무엇을 안 지키는지**는
-//! `docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md`.
+//! `docs/design/systems/webview.md#생성--부모-handle-과-실패-분류`.
 
 use gtk::glib::translate::ToGlibPtr;
 
@@ -173,7 +173,7 @@ mod tests {
         assert!(!mask_non_code(ffi).contains("::foreign_new_for_display"));
     }
 
-    /// ADR-0159 의 **전제**를 검사한다. 결정이 아니라 전제라, 이게 깨지면
+    /// docs/design/systems/webview.md#생성--부모-handle-과-실패-분류 의 **전제**를 검사한다. 결정이 아니라 전제라, 이게 깨지면
     /// "고쳐라" 가 아니라 **"ADR 을 다시 열어라"** 다.
     ///
     /// 전제 둘:
@@ -198,8 +198,8 @@ mod tests {
         let at = |needle: &str| code.iter().position(|l| l.contains(needle));
 
         let reopen = concat!(
-            "— ADR-0159 의 전제가 바뀌었다. 고치지 말고 ",
-            "docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md 를 다시 열어라"
+            "— docs/design/systems/webview.md#생성--부모-handle-과-실패-분류 의 전제가 바뀌었다. 고치지 말고 ",
+            "docs/design/systems/webview.md#생성--부모-handle-과-실패-분류 를 다시 열어라"
         );
 
         // ① 연결이 둘이다.
@@ -222,7 +222,7 @@ mod tests {
         );
     }
 
-    /// foreign bind 와 명시적 allocation 은 한 쌍이다 — ADR-0301.
+    /// foreign bind 와 명시적 allocation 은 한 쌍이다 — docs/design/systems/webview.md#좌표--논리와-물리를-타입-이름에-남긴다.
     ///
     /// `connect_realize` 의 `set_window` 가 GTK 의 GdkWindow 를 우리 X11 자식창으로
     /// 갈아끼운 상태에서는 GTK 가 그 창의 크기 변화를 **스스로 알아내지 못한다**(실측).
@@ -231,7 +231,7 @@ mod tests {
     /// allocation 과 싸운다.
     ///
     /// 그래서 **한쪽만 사라지는 것**을 막는다. 양쪽이 함께 사라지는 것은 통과다 —
-    /// 그것이 bind 를 걷어낸 상태이고, 그 판단은 ADR-0159 를 다시 여는 일이다.
+    /// 그것이 bind 를 걷어낸 상태이고, 그 판단은 docs/design/systems/webview.md#생성--부모-handle-과-실패-분류 를 다시 여는 일이다.
     #[test]
     fn adr_0301_foreign_bind_and_explicit_allocation_move_together() {
         // 이 시험은 `crates/tasty-platform` 에 살지만 대상은 루트 패키지의 파일이다 —
@@ -258,7 +258,7 @@ mod tests {
             concat!(
                 "foreign bind(set_window)와 명시적 allocation(size_allocate)이 따로 움직였다 ",
                 "(bind={}, alloc={}) — 둘은 한 쌍이다. ",
-                "docs/adr/0301-three-webview-backends-propagate-size-by-different-means.md 를 읽어라"
+                "docs/design/systems/webview.md#좌표--논리와-물리를-타입-이름에-남긴다 를 읽어라"
             ),
             bind, alloc
         );

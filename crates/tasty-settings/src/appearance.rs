@@ -324,7 +324,7 @@ mod tests {
     use super::*;
 
     /// **지원 배율 집합을 못박는다.** 이 셋이 움직이면 `border_width`(1) 가 배율
-    /// 가변이 되는지 여부가 바뀌고, 그 위에 선 ADR-0126 의 "굵기 축엔 대가가 없다"
+    /// 가변이 되는지 여부가 바뀌고, 그 위에 선 docs/design/systems/theme.md#토큰에-없는-값과-배율 의 고정 테두리 배율
     /// 가 조건부가 된다.
     ///
     /// 이 핀이 필요한 이유는 **소비자가 여기를 읽을 수 없기 때문**이다.
@@ -348,7 +348,7 @@ mod tests {
             vec![0.85, 1.0, 1.2],
             "지원 배율 집합이 바뀌었다. 같이 고칠 자리가 둘이다:\n\
              · `crates/tasty-type-appearance/src/theme.rs` 의 `SUPPORTED_ZOOMS` 사본\n\
-             · ADR-0126 의 굵기 축 서술 — 새 배율에서 `border_width`(1) 가 \
+             · docs/design/systems/theme.md#토큰에-없는-값과-배율 의 굵기 축 서술 — 새 배율에서 `border_width`(1) 가 \
              `(1 * z).round() != 1` 이 되면 그 축에도 대가가 생긴다"
         );
 

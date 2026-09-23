@@ -2,7 +2,7 @@
 //!
 //! Grid/VTE 상태를 읽는 접근자는 `impl TerminalState` (락 안에서 동작), child/PTY
 //! 를 만지는 접근자는 `impl Terminal` (핸들). 핸들 쪽 메서드는 필요 시 짧게 락을
-//! 잡아 상태 필드를 읽는다 (ADR-0002).
+//! 잡아 상태 필드를 읽는다 (docs/features/terminal/index.md#vte-에뮬레이션).
 
 use std::sync::atomic::Ordering;
 
@@ -108,7 +108,7 @@ impl Terminal {
     /// foreground program is running AND the PTY produced output within the last
     /// `BUSY_OUTPUT_WINDOW`. Output within `INPUT_ECHO_WINDOW` after the last
     /// keystroke is treated as echo, but only blocks *entering* busy; a terminal
-    /// that was already busy stays busy while the user types (ADR-0261).
+    /// that was already busy stays busy while the user types (docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나).
     pub fn is_busy(&self) -> bool {
         let Some(shell_pid) = self.process_id() else {
             return false;
@@ -124,7 +124,7 @@ impl Terminal {
     /// snapshot into one snapshot per tick. `shell_pid` must be this terminal's
     /// own child PID and `foreground` the result of resolving it.
     ///
-    /// The decision carries state (`busy_latch`), in the order ADR-0261 fixes:
+    /// The decision carries state (`busy_latch`), in the order docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나 fixes:
     /// the shell holding the foreground and the output going quiet release first
     /// and clear the latch; input echo is consulted last and only when the latch
     /// does not name the current foreground. Asking twice in a row returns the
@@ -144,10 +144,10 @@ impl Terminal {
         }
         // Non-blocking: `refresh_busy_surfaces` polls every terminal at 1Hz, and a
         // blocking lock here would wait on each busy parser thread mid-ingest,
-        // spiking the input thread's tail latency (ADR-0002). A contended lock
+        // spiking the input thread's tail latency (docs/features/terminal/index.md#vte-에뮬레이션). A contended lock
         // means the parser is actively ingesting output → that is "busy". That
         // `true` is a guess, not an observation, so it neither sets nor clears
-        // the latch (ADR-0261).
+        // the latch (docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나).
         let st = match self.state.try_lock() {
             Ok(st) => st,
             Err(std::sync::TryLockError::WouldBlock) => return true,
@@ -181,7 +181,7 @@ impl Terminal {
     }
 
     /// PTY 가 마지막으로 non-empty 출력을 낸 시각. `IdleTimeout` 훅의 idle
-    /// 경과시간 계산에 쓰인다. 논블로킹(ADR-0002) — 락이 막혀 있으면 파서가
+    /// 경과시간 계산에 쓰인다. 논블로킹(docs/features/terminal/index.md#vte-에뮬레이션) — 락이 막혀 있으면 파서가
     /// 한창 ingest 중이라는 뜻이므로 "지금 막 활동 중"으로 간주해
     /// `Instant::now()` 를 반환한다(`busy_with_foreground` 의 WouldBlock=busy
     /// 처리와 동형).
@@ -272,7 +272,7 @@ impl Terminal {
     }
 
     /// Hand off ownership of the waitable child process so an external owner (the
-    /// headless `pty_registry` exit-watcher, ADR-0050) can call `child.wait()` for a
+    /// headless `pty_registry` exit-watcher, docs/features/headless-pty/index.md#내부-동작-headless-valid) can call `child.wait()` for a
     /// real exit code. After this the terminal's own exit-detection
     /// ([`check_process_alive`](Self::check_process_alive)) and Drop-time kill/reap
     /// no longer apply to that child — the new owner is responsible for kill/reap.
@@ -296,7 +296,7 @@ impl Terminal {
     /// thread currently holds the state lock (mid-chunk ingest), returns `None`
     /// and leaves the events buffered for a later poll. The host's per-wake event
     /// drain iterates *every* terminal, so a blocking take would re-serialize the
-    /// input thread against all busy parser threads — defeating ADR-0002. Events
+    /// input thread against all busy parser threads — defeating docs/features/terminal/index.md#vte-에뮬레이션. Events
     /// are never lost: the parser wakes the loop again after each ingest.
     pub fn try_take_events(&mut self) -> Option<Vec<TerminalEvent>> {
         match self.state.try_lock() {

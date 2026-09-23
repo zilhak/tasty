@@ -15,7 +15,7 @@ use tasty_utils::path::tasty_home;
 /// 이 크레이트는 wire framing/전송 계층이라 `tasty-i18n` 을 의존하지 않는다.
 /// 사용자에게 보일 문구는 그 실패를 화면에 내보내는 소비자(CLI)가 자기 로케일로
 /// 만든다 — leaf 크레이트가 문구를 소유하지 않는다는 원칙의 적용이다
-/// (`docs/adr/0106-non-widget-user-strings-go-through-i18n.md` 결정 4,
+/// (`docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입`,
 /// `docs/dev-guide/i18n.md` "호출자 주입").
 ///
 /// 아래 `Display` 는 그 경로를 타지 않는 소비자를 위한 **영어 기본 렌더링**이며

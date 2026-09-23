@@ -27,7 +27,7 @@ use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 ///
 /// `data` 는 응답의 `error.data` 를 **원형 그대로** 든다(`reason` · `storage_failure` 처럼
 /// 호출자가 분기할 구조화 필드). `Display` 에는 싣지 않는다 — 그 문자열을 첫 줄로 파싱하는
-/// 쪽이 있고, `data` 를 보여 줄지는 출력하는 쪽이 정한다(CLI 는 둘째 줄, ADR-0512).
+/// 쪽이 있고, `data` 를 보여 줄지는 출력하는 쪽이 정한다(CLI 는 둘째 줄, docs/dev-guide/cli-structure.md#호스트-오류-출력-rpc_errorrs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonRpcCallError {
     pub code: i32,
@@ -104,8 +104,8 @@ impl std::error::Error for CapabilityProbeExpired {}
 /// 이쪽은 "서버가 키를 읽어도 **이 메서드에서는** 안 지킨다" 다. 어느 쪽이든 키를 실어
 /// 보내면 호출자는 계약이 걸린 줄 알고 재시도하고, 그 재시도는 두 번째 실행이 된다.
 /// 판정은 [`crate::method_meta::key_contract`] 가 한다 — 이 값을 내는 것은 표가 모르는 이름,
-/// 곧 plugin namespace 로 forward 되는 plugin 고유 이름뿐이다(ADR-0361). 호스트가 아는
-/// `Mutate` 이름은 어느 경로로 끝나든 보존소를 지나 판(1·2·3)만 다르다(ADR-0566). `Read` ·
+/// 곧 plugin namespace 로 forward 되는 plugin 고유 이름뿐이다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖). 호스트가 아는
+/// `Mutate` 이름은 어느 경로로 끝나든 보존소를 지나 판(1·2·3)만 다르다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖). `Read` ·
 /// `Idempotent` 이름은 보존소에 안 들어가고 `Unneeded` 로 선언된다 — 재전달이 원래 안전하다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyOutsideContract {
@@ -573,7 +573,7 @@ mod tests {
     }
 
     /// 오류 응답의 `error.data` 는 원형 그대로 호출자에게 간다 — 버리면 IPC 가 싣는 실패
-    /// 분류(`storage_failure` · `reason`)를 CLI 가 볼 길이 없다(ADR-0512). `Display` 는 종전 한
+    /// 분류(`storage_failure` · `reason`)를 CLI 가 볼 길이 없다(docs/dev-guide/cli-structure.md#호스트-오류-출력-rpc_errorrs). `Display` 는 종전 한
     /// 줄 그대로다.
     #[test]
     fn an_error_answer_keeps_its_data() {

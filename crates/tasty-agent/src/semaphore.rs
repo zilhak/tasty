@@ -23,7 +23,7 @@
 //! **기본값은 만료 없음**이다(`ttl_ms: None`). 만료를 기본으로 켜면 오래 걸리는
 //! 정당한 작업의 permit 이 도중에 회수되어 두 홀더가 동시에 임계구역에 들어가는데,
 //! 그건 교착보다 나쁘다 — 근거·대안·재검토 조건은
-//! [ADR-0119](../../../docs/adr/0119-agent-semaphore-resize-and-holder-expiry.md).
+//! [죽은 홀더와 한도 조정](../../../docs/dev-guide/agent-runner.md#죽은-홀더와-한도-조정).
 //!
 //! ## 리사이즈 (`set_permits`)
 //!
@@ -484,7 +484,7 @@ mod tests {
     /// 없이 사라지면(모델 사용 한도로 응답 불능) 대기자는 시간이 아무리 지나도
     /// 들어가지 못한다. `ttl_ms` 를 주지 않은 permit 이 **영구히** 묶인다는 사실
     /// 자체를 고정하는 음성 방향 테스트다 — 나중에 누가 "정리 좀 하자" 며 전역
-    /// 기본 만료를 넣으면 여기서 잡힌다. 근거는 ADR-0119.
+    /// 기본 만료를 넣으면 여기서 잡힌다. 근거는 docs/dev-guide/agent-runner.md#죽은-홀더와-한도-조정.
     #[test]
     fn a_permit_taken_without_a_ttl_is_never_reclaimed() {
         let (_td, mut mem) = fresh();

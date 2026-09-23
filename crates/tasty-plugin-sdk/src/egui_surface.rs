@@ -103,7 +103,7 @@ struct EguiMeshCore {
     /// 직전 `render()` 의 `platform_output.commands` 중 `OutputCommand::CopyText` —
     /// `Event::Copy` 를 처리한 frame 에서 plugin 자신의 텍스트 선택(selectable label /
     /// `TextEdit`)이 있었을 때만 채워진다. 클립보드 기록은 plugin 이 직접 한다
-    /// (ADR-0009) — 이 필드는 그 값을 host round-trip 없이 plugin 코드로 넘겨주는
+    /// (docs/dev-guide/plugin-packaging.md#정책-현행) — 이 필드는 그 값을 host round-trip 없이 plugin 코드로 넘겨주는
     /// 통로일 뿐이다.
     last_copied_text: Option<String>,
     /// 직전 `render()` 의 `platform_output.ime` — IME 를 원하는 위젯(`TextEdit`)이 그
@@ -151,7 +151,7 @@ impl EguiMeshCore {
         // 프로그램적 스크롤(`scroll_to_cursor`/`scroll_to_rect`/`scroll_with_delta`)의
         // 애니메이션을 끈다. egui 기본값은 최대 300ms 인데(`ScrollAnimation::default`),
         // `docs/design/systems/theme.md` "UI 디자인 규칙" 의 애니메이션 상한은 150ms 이고,
-        // egui-mesh 는 애니메이션 프레임 하나가 곧 프로세스 간 왕복 한 번이다(ADR-0108).
+        // egui-mesh 는 애니메이션 프레임 하나가 곧 프로세스 간 왕복 한 번이다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계).
         // dark/light 두 style 에 모두 박아 테마가 바뀌어도 유지된다.
         ctx.all_styles_mut(|s| s.scroll_animation = egui::style::ScrollAnimation::none());
         Self {
@@ -786,7 +786,7 @@ impl EguiMeshSurface {
     /// 직전 `run_frame`/`paint` 가 처리한 `RawInputEventWire::Copy` 로 텍스트 선택이
     /// 복사됐다면 그 문자열을 1회 소비해 반환한다(egui `Event::Copy` → 내장
     /// selectable-label/`TextEdit` 복사 로직). plugin 은 이 값을 OS 클립보드에 직접
-    /// 쓴다(ADR-0009 — 비-샌드박스 프로세스라 host round-trip 이 필요 없다).
+    /// 쓴다(docs/dev-guide/plugin-packaging.md#정책-현행 — 비-샌드박스 프로세스라 host round-trip 이 필요 없다).
     pub fn take_copied_text(&mut self) -> Option<String> {
         self.core.take_copied_text()
     }
@@ -989,7 +989,7 @@ impl EguiMeshPopup {
 
     /// [`EguiMeshSurface::schedule_self_repaint`] 의 popup 대응 —
     /// [`PluginEvent::PopupInvalidated`] 로 host 의 popup pending-repaint 경로
-    /// (ADR-0056 `plugin_mesh_popup_pending_repaint`)에 편승한다.
+    /// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그 `plugin_mesh_popup_pending_repaint`)에 편승한다.
     #[cfg(any(unix, windows))]
     fn schedule_self_repaint(&self, host: &HostHandle) {
         let Some(delay) = self.core.pending_self_repaint() else {
@@ -1239,7 +1239,7 @@ fn expand_events(events: &[RawInputEventWire]) -> Vec<Event> {
 ///
 /// 쪼개지 않으면 host 가 보낸 휠 한 번(예: 50pt)이 egui 의 다중 프레임 스무딩을 타고,
 /// egui-mesh 는 그 프레임 하나하나가 self-repaint 알림 → `set_context` → 전체 egui pass
-/// 라는 **프로세스 간 왕복**이 된다(ADR-0108). 조각의 합은 원본과 같으므로 스크롤 이동량은
+/// 라는 **프로세스 간 왕복**이 된다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계). 조각의 합은 원본과 같으므로 스크롤 이동량은
 /// 보존되고, 잔여 델타가 남지 않으므로 "입력이 멈춘 뒤 델타가 남아 뒤늦게 반영되는"
 /// 회귀([`EguiMeshSurface::schedule_self_repaint`] 가 막는 상황)도 생기지 않는다.
 fn push_scroll_events(out: &mut Vec<Event>, delta: Vec2) {
@@ -2023,7 +2023,7 @@ mod tests {
         });
     }
 
-    /// 이 작업의 본체 계약(ADR-0108): 큰 휠 델타(물리 notch 가 `mouse.rs` 에서 `*50.0`
+    /// 이 작업의 본체 계약(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계): 큰 휠 델타(물리 notch 가 `mouse.rs` 에서 `*50.0`
     /// 스케일된 값)를 쪼개 넣으면, 쪼개지 않고 한 건으로 넣을 때보다 **뒤따르는 왕복 수가
     /// 뚜렷하게 줄어든다.**
     ///
@@ -2200,7 +2200,7 @@ mod tests {
 
     /// `EguiMeshCore` 는 생성 시점에 프로그램적 스크롤 애니메이션을 꺼 둔다 — dark/light
     /// 양쪽 style 모두(테마 전환에도 유지). egui-mesh 는 애니메이션 프레임 하나가 곧
-    /// 프로세스 간 왕복 한 번이다(ADR-0108).
+    /// 프로세스 간 왕복 한 번이다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계).
     #[test]
     fn mesh_context_disables_scroll_animation() {
         let core = EguiMeshCore::new();

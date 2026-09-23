@@ -66,11 +66,10 @@ pub enum MethodEffect {
 ///
 /// `Outside` 는 표가 쓰지 않는다 — 표가 모르는 이름(plugin 고유 이름)에만 나온다.
 ///
-/// 근거·대안은 [ADR-0423] · [ADR-0566], plugin namespace forward 의 `Outside` 는 [ADR-0361].
+/// 호스트 메서드와 plugin 고유 이름의 차이는 [멱등 키 적용 범위]를 따른다.
 ///
-/// [ADR-0361]: ../../../docs/adr/0361-a-plugin-namespace-forward-is-declared-outside-the-idempotency-contract.md
-/// [ADR-0423]: ../../../docs/adr/0423-each-method-declares-its-key-contract-and-the-version-that-keeps-it.md
-/// [ADR-0566]: ../../../docs/adr/0566-every-host-path-keeps-the-idempotency-key-and-only-a-plugin-name-is-outside.md
+/// [멱등 키 적용 범위]: ../../../docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyContract {
     /// **호스트 보존소가 키를 받는다.** 같은 키·같은 요청의 재시도는 실행되지 않고 보관된 답을
@@ -125,7 +124,7 @@ pub struct MethodMeta {
     /// 한쪽 방향은 이미 말할 수 있었다 — `local_only()` 가 "plugin 은 못 부른다" 다.
     /// 반대 방향을 말할 수단이 없어서, plugin 전용 메서드가 `plugin(&[…])` 로 적히고
     /// 외부 호출자는 `-32601`("그런 메서드 없다")을 받았다. 이름은 맞고 표에도 있는데
-    /// 없다고 답한 것이라, 플랫폼 축에서 같은 거짓을 고친 ADR-0154 와 같은 형태다(ADR-0163).
+    /// 없다고 답하면 원인을 잘못 안내한다. 플랫폼·빌드·호출자 제한을 구분한다(ADR-0604).
     pub plugin_only: bool,
     /// plugin이 호출하려면 매니페스트에 이 권한들이 모두 선언돼 있어야 함.
     pub required: &'static [Permission],
@@ -136,7 +135,7 @@ pub struct MethodMeta {
     /// (`CallerContext::ensure_allowed`)가 이 표시를 보고 그 토큰을 직접 요구한다.
     /// 이 칸이 없던 때에는 이 갈래가 `required: []` 로만 답해, 권한을 하나도 안 가진
     /// agent 토큰이 설치된 plugin 의 namespace 전체를 부를 수 있었다
-    /// ([ADR-0271](../../../docs/adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md)).
+    /// ([Agent caller — session token + temp grants](../../../docs/dev-guide/plugin-permissions.md#agent-caller--session-token--temp-grants)).
     pub namespace_forward: bool,
     /// 이 메서드를 두 번 전달했을 때 무엇이 남는가. [`MethodEffect`] 참조.
     pub effect: MethodEffect,
@@ -229,7 +228,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         //
         // `local_only` 인 이유는 `system.gpu_stats` 와 같다 — 순수 조회지만 **호스트
         // 내부의 스케줄링 상태**를 노출하는 진단 표면이다. 그리고 여기 값은
-        // ADR-0305 대로 caller 로 나누지 않는 프로세스 게이지라, plugin 에게 주면
+        // docs/architecture/ipc-server.md#요청-압력-게이지 대로 caller 로 나누지 않는 프로세스 게이지라, plugin 에게 주면
         // 자기 몫이 아닌 다른 caller 의 부하까지 읽는 것이 된다. plugin 이 자기
         // 사용량을 보는 축은 `telemetry.*`(caller 별)이고 그쪽은 그대로 열려 있다.
         ("system.pressure", local_only(Read)),
@@ -241,7 +240,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         //
         // 지금 요구하는 토큰이 없는 것은 **결정이 아니라 미결**이다. 어떤 권한을
         // 요구할지(그리고 개수·총량 상한을 함께 둘지)는 매니페스트 호환성이 걸린
-        // 별도 결정이고, ADR-0152 의 "이 ADR 이 안 정한 것" 에 열린 질문으로 있다.
+        // 별도 결정이고, docs/dev-guide/plugin-permissions.md#토큰-없이도-열려-있는-메서드 의 shared_buffer 항목에 미결정 사항으로 남아 있다.
         // 그때까지는 현재 동작 그대로 등재해 최소한 cap·rate·audit 는 걸리게 한다.
         ("host.shared_buffer.create", plugin_only(Mutate, &[])),
         // ── 타이머 관측 ───────────────────────────────────────────────
@@ -306,7 +305,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("webview.set_url", plugin(Idempotent, &[SurfaceWrite])),
         // theme.query — 현재 resolved 전역 Theme 스냅샷 조회. webview-kind surface(예:
         // markdown)는 `set_context` 를 받지 않아 Theme 이 자동 push 되지 않으므로, 문서를
-        // (재)생성할 때마다 이 read-only 조회로 대신한다(ADR-0065). surface 별 데이터가
+        // (재)생성할 때마다 이 read-only 조회로 대신한다(docs/plugins/markdown/index.md#내부-동작). surface 별 데이터가
         // 아닌 전역 정보라 별도 권한 없이 노출(`system.info` 와 같은 근거).
         ("theme.query", plugin(Read, &[])),
         // surface.set_cwd — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
@@ -339,13 +338,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 출력 스캐너 전용 커서 — 읽으면 커서가 전진한다. 같은 출력을 읽으므로
         // read_since_mark 과 같은 권한 버킷이고, CLI 진입점은 없다(파괴적 읽기라
         // 사용자가 한 줄로 스캐너의 바이트를 가로챌 수 있게 열지 않는다 —
-        // ADR-0307).
+        // docs/features/terminal-output/index.md#출력-스캐너-전용-커서).
         //
         // effect 가 위 read_since_mark(`Read`)와 갈리는 이유: 이 읽기는 커서를
         // 전진시켜 **읽은 구간을 소비한다.** 재전달은 그때까지 새로 온 두 번째
         // 구간을 먹고, 첫 응답이 나른 바이트는 어디에서도 다시 못 읽는다. 응답을
         // 못 받은 호출자가 다시 보내면 안 되는 형태라 `message.read`(peek 기본값
-        // false)와 같은 `Mutate` 다 — ADR-0306 의 축이 "읽기인가" 가 아니라
+        // false)와 같은 `Mutate` 다 — docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다 의 축이 "읽기인가" 가 아니라
         // "두 번 전달하면 관측 가능한 차이가 남는가" 인 것이 여기서 갈린다.
         (
             "surface.read_since_scan_mark",
@@ -367,7 +366,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.locate", plugin(Read, &[SurfaceRead])),
         ("surface.respawn_terminal", plugin(Mutate, &[TerminalSpawn])),
         ("surface.is_typing", plugin(Read, &[TerminalRead])),
-        // ── child-terminal 관리 (ADR-0040 / occupancy-04) ─────────────
+        // ── child-terminal 관리 (docs/features/child-terminal/index.md) ─────────────
         // 호스트가 내재화한 자식 터미널 registry. codex/claude plugin 이
         // 자체 registry 를 걷어내고 이 method 들로 위임한다. 권한은 각 method 가
         // 내부에서 조합하는 sibling 핸들러(tab.create=SurfaceWrite, surface.send=
@@ -402,7 +401,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 순수 in-process core 함수(remove_child/release_soft_occupancy)만 쓰므로
         // SurfaceWrite 단독.
         ("terminal.release", plugin(Idempotent, &[SurfaceWrite])),
-        // ── headless PTY primitive (docs/adr/0050-headless-pty-primitive.md /
+        // ── headless PTY primitive (docs/features/headless-pty/index.md#내부-동작-headless-valid /
         // pty_registry) ────────────────────────────────────────────────
         // Surface 가 없는 백그라운드 PTY. child-terminal 과 달리 Surface 트리를
         // 전혀 건드리지 않으므로 Surface* 토큰이 섞이지 않는다 — 기존 Terminal* 3종만
@@ -587,7 +586,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         //
         // 읽으면서 서버 쪽 커서가 전진하지 **않는다** — 커서는 소비자가 들고 매번
         // 가져온다. 그래서 같은 인자로 두 번 불러도 같은 답이 오고, 두 번째 전달이
-        // 남기는 관측 가능한 차이가 없다(ADR-0306 의 축). 이 점이
+        // 남기는 관측 가능한 차이가 없다(docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다 의 축). 이 점이
         // `surface.read_since_scan_mark` 와 갈리는 자리다 — 그쪽은 읽으면서 서버
         // 커서를 밀어 같은 구간을 다시 못 읽는다.
         //
@@ -709,11 +708,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // remote.* 조회와 달리 연결경계 위임만으로 plugin 에 열 근거가 서지 않는다 —
         // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
         // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
-        // 트리거는 ADR-0121(docs/adr/0121-attach-trust-boundary-covers-remote-queries-not-local-structural-ops.md).
+        // 트리거는 ADR-0621(docs/adr/0621-occupancy-and-attach-admission.md).
         ("remote.attach", local_only(Mutate).kept_by_app_layer()),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
-        // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).
+        // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(docs/design/systems/memory.md#passkey-저장과-열람).
         ("remote.passkey.list", plugin(Read, &[])),
         ("remote.passkey.get", plugin(Read, &[])),
         ("remote.passkey.add", plugin(Idempotent, &[])),
@@ -792,7 +791,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
         ("recent.query", plugin(Read, &[SurfaceRead])),
         // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
-        // ── git_viewer.* (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md
+        // ── git_viewer.* (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그
         // — 원격 attach mirror git 조회 트리거) ─
         // git-viewer plugin 이 mirror workspace 에서 status/log/worktrees snapshot
         // 또는 diff 를 요청. host 는 즉시 request_id 만 회신하고(비동기 accept), 실제
@@ -800,7 +799,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
         // 없음). 임의 원격 경로 read 라 FsRead(파일을 고르는 read 관심사, `file_picker.trigger` 와 동일 근거).
         ("git_viewer.query", plugin(Read, &[FsRead])),
-        // ── markdown_mirror.* (docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md
+        // ── markdown_mirror.* (docs/dev-guide/attach-behavior.md#markdown-content-채널
         // — 원격 attach mirror markdown 원문 조회 트리거) ─
         // markdown plugin 이 mirror 문서의 원격 원문을 요청한다. host 는 즉시 request_id 만
         // 회신하고(비동기 accept), 원문은 attach Control 채널 왕복 후 `event.dispatch`
@@ -808,13 +807,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 동일 근거).
         ("markdown_mirror.content_request", plugin(Mutate, &[FsRead])),
         // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
-        // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(ADR-0053)을
+        // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)을
         // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
-        // ADR-0058), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast
+        // docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast
         // `"file_picker.result"` 로 plugin 에 push 된다. 파일을 고르는 read 관심사라
         // FsRead(`git_viewer.query` 와 동일 근거). 비-plugin 호출자(CLI·agent)는 이 표가
         // 아니라 핸들러가 `-32016` 으로 거부한다 — 외부 arm 이 있어 `plugin_only` 를 못 단다
-        // (docs/adr/0504-the-file-picker-trigger-answers-only-a-plugin-caller.md).
+        // (docs/features/native-file-picker/index.md#plugin-트리거adr-0058--즉시-ack--이벤트-push).
         ("file_picker.trigger", plugin(Mutate, &[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
@@ -828,7 +827,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("banner.close", plugin_only(Idempotent, &[UiBanner])),
         // ── webview 외부 열기 (plugin → host) ──────────────────────────
         // 자기 webview surface 안의 외부 링크를 OS 기본 핸들러로 연다. plugin 프로세스가
-        // OS 열기를 직접 하지 않게 host 한 자리로 모은다(ADR-0527). 소유권(자기 surface)
+        // OS 열기를 직접 하지 않게 host 한 자리로 모은다(docs/plugins/markdown/index.md#내부-동작). 소유권(자기 surface)
         // 검증은 App. 외부 IPC 호출자에게는 arm 이 없다 — 사용자 브라우저를 여는 것은
         // 에이전트가 자기 작업에 쓰는 능력이 아니다(원칙 1).
         (
@@ -884,7 +883,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("view.list", local_only(Read)),
         // window.focus / view.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
         // CLAUDE.md: 포커스 전환은 사용자 단축키/마우스 입력 영역.
-        // script.reload (init.lua 재로드) 는 ADR-0031 에서 제거됨 — 스크립트는
+        // script.reload (init.lua 재로드)는 제공하지 않는다(docs/features/lua-hooks/index.md#실행-격리--안전-장치) — 스크립트는
         // 등록 목록 + 명시 트리거(단축키)로만 실행되고 부팅 자동로드가 폐기됐다.
     ]
 };
@@ -937,7 +936,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.inject_egui_text",
         local_only(MethodEffect::Mutate).kept_on_every_host_path(),
     ),
-    // 임의 Lua 주입(ADR-0031) — release 에는 이 경로가 없다(원칙 1). local 전용.
+    // 임의 Lua 주입(docs/features/lua-hooks/index.md#실행-격리--안전-장치) — release 에는 이 경로가 없다(원칙 1). local 전용.
     (
         "debug.lua.eval",
         local_only(MethodEffect::Mutate).kept_on_every_host_path(),
@@ -1076,7 +1075,7 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 /// 받는다. 쓰는 쪽은 하나뿐이고 여기는 읽기만 한다.
 ///
 /// 결정·대안·경계는
-/// [ADR-0179](../../../docs/adr/0179-the-resolver-is-handed-the-table-not-a-callback.md).
+/// [CLI + IPC namespace](../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace).
 ///
 /// 설치 전에는 "등록된 prefix 가 없다" 로 답한다 — 옛 미러가 그 시점에 비어 있던 것과
 /// 같은 답이다. 부팅 전 의미를 바꾸지 않는다.
@@ -1194,7 +1193,7 @@ fn frozen_baseline_names() -> &'static std::collections::HashSet<&'static str> {
 ///
 /// 값은 손으로 안 적는다. `METHOD_TABLE` 옆의 동결 파일이 유일한 모수이고, 이 함수는
 /// 그것을 읽을 뿐이다 — 표에 이름을 더하면 이 답이 **자동으로** 따라온다. 둘째 사본을
-/// 두면 표에 더하면서 이쪽을 빠뜨리는 것이 기본 동작이 된다([ADR-0306] 이 같은 이유로
+/// 두면 표에 더하면서 이쪽을 빠뜨리는 것이 기본 동작이 된다([docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다] 이 같은 이유로
 /// `effect` 를 별도 테이블로 두지 않았다).
 ///
 /// **답이 빌드 조합에 따라 갈리는 이름이 있다.** `DEBUG_METHODS` 는 debug 빌드에만 있으므로
@@ -1203,7 +1202,7 @@ fn frozen_baseline_names() -> &'static std::collections::HashSet<&'static str> {
 /// baseline 에 그 접두사가 하나도 없어 **분류 자체는 안 흔들린다.** 다만 이 답을 내보내는
 /// capability 선언은 조합과 무관하므로, client 가 이 값으로 분기하면 그때 갈린다.
 ///
-/// [ADR-0306]: ../../../docs/adr/0306-a-method-declares-what-a-second-delivery-leaves-behind.md
+/// [docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다]: ../../../docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다
 pub fn method_since(method: &str) -> Option<MethodSince> {
     if !is_registered_name(method) {
         return None;
@@ -1248,7 +1247,7 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
             // `Read` 로 두면 소비자가 마음대로 다시 보내도 된다고 읽는다.
             effect: MethodEffect::Mutate,
             // forward 는 engine 라우터의 보존소 앞에서 plugin 으로 나간다 — 키를 실어도
-            // 재생되지 않는다(ADR-0361).
+            // 재생되지 않는다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖).
             key_contract: KeyContract::Outside,
         });
     }

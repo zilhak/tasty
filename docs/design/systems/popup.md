@@ -20,7 +20,7 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 - **`PopupDef`** — 정적·데이터 지향 정의(id, title_key/title_fn, default_size/sizer, default_scope, close_on_outside_click, headless, sticky_focus, drag_handle, resizable, min_size, fullscreen_stage, draw_fn). 전부 `src/adapters/ui/popup/defs.rs::all_defs()` 에 모은다. 필드 상세 → [popup-implementation](../../dev-guide/popup-implementation.md).
 - **`PopupManager`** — 공통 동작(z-order, 드래그, 리사이즈, 타이틀바, clamp, 포커스) 중앙 관리. `register_def` / `open*` / `close` / `draw`.
 - **`PopupState`** — 개별 인스턴스 상태(id, title, pos, size, open, focused, scope, dragging/resizing, size_user_overridden).
-- **범용 render 루프** — `src/adapters/ui/popup/frame.rs::draw_popup_layer`(등록된 모든 `PopupDef` 순회 + close 경로별 `on_close` 훅 drain). toast/banner/modifier-hint/tutorial 오버레이 체인은 개념이 다르므로(ADR-0024) `src/adapters/ui/overlay.rs` 로 분리돼 있다. 진입점 `src/adapters/ui.rs::draw_popups` 가 둘을 z-order 순서로 호출한다.
+- **범용 render 루프** — `src/adapters/ui/popup/frame.rs::draw_popup_layer`(등록된 모든 `PopupDef` 순회 + close 경로별 `on_close` 훅 drain). toast/banner/modifier-hint/tutorial 오버레이 체인은 개념이 다르므로(ADR-0636) `src/adapters/ui/overlay.rs` 로 분리돼 있다. 진입점 `src/adapters/ui.rs::draw_popups` 가 둘을 z-order 순서로 호출한다.
 
 등록된 팝업은 `all_defs()` 가 단일 출처다(예: `notifications`, `convert_surface`, `rename`, `search_bar`, `tools_menu` …). 새 팝업 = 테이블 항목 1개 + draw 함수 하나. 단, plugin 이 소유하는 팝업(예: markdown 파일열기·large-file 확인)은 host `PopupDef` 가 아니라 plugin 매니페스트 `[[contributes.popup]]`(egui-mesh) 로 등록된다.
 
@@ -49,11 +49,11 @@ Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존�
 
 ### plugin popup ↔ host popup 부모-자식
 
-plugin 이 `file_picker.trigger`([ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md))로 host popup 을 열 때 `owner_popup_instance` 로 **자기 popup instance_id 를 자진 신고**하면, host 는 그 값을 자식 쪽 요청자 기록에 보관해 두 popup 을 스택으로 다룬다([ADR-0084](../../adr/0084-plugin-triggered-host-popup-ownership.md)). 신고하지 않으면(예: popup 밖 surface 위젯에서의 호출, Tools 메뉴 진입) 지금까지처럼 관계 없는 단독 popup 이다.
+plugin 이 `file_picker.trigger`로 host popup 을 열 때 `owner_popup_instance` 로 **자기 popup instance_id 를 자진 신고**하면, host 는 그 값을 자식 쪽 요청자 기록에 보관해 두 popup 을 스택으로 다룬다([ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md)). 신고하지 않으면(예: popup 밖 surface 위젯에서의 호출, Tools 메뉴 진입) 지금까지처럼 관계 없는 단독 popup 이다.
 
 관계가 성립하면:
 
-- **범위 상속·숨김 보존** — host는 요청자와 부모 instance를 대조해 선언 종류+target의 유효 범위를 자식 파일 피커에 적용한다([ADR-0278](../../adr/0278-child-file-picker-inherits-parent-scope-and-preserves-hidden-work.md)). 부모가 숨으면 자식도 paint/hit/Esc/키 게이트에서 빠지고, 돌아오면 draft·선택·pending 요청을 그대로 이어간다. 숨김은 close를 발화하지 않는다. Window 부모와 owner 없는 피커는 창 범위다.
+- **범위 상속·숨김 보존** — host는 요청자와 부모 instance를 대조해 선언 종류+target의 유효 범위를 자식 파일 피커에 적용한다([ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md)). 부모가 숨으면 자식도 paint/hit/Esc/키 게이트에서 빠지고, 돌아오면 draft·선택·pending 요청을 그대로 이어간다. 숨김은 close를 발화하지 않는다. Window 부모와 owner 없는 피커는 창 범위다.
 - **스택 유지** — 자식이 열려 있는 동안 부모는 outside-click dismiss 대상에서 빠진다. 부모를 모달로 잠그는 것이 아니라 dismiss 목록에서만 제외한다(popup 은 포커스를 독점하지 않으므로).
 - **Esc 소유권** — host/plugin 통틀어 그 프레임 최상단 popup **하나만** Esc 를 소비한다. Esc 를 한 번 누르면 스택이 한 단계 벗겨진다. host 쪽 판정은 `AppState.popup_escape_owner`(`popup::frame` 이 매 프레임 결정), plugin 쪽은 `popup_render` 가 같은 z 축으로 비교한다. **host popup 끼리의 Esc 중재는 범위 밖** — 각 view 가 자기 Esc 를 직접 소비하며, 현재 스택에 참여하는 `file_picker` 에만 게이트가 붙어 있다.
 - **연쇄 정리** — 부모가 어떤 경로로 닫히든 자식 피커에 취소 결과가 채워져, 평소 result 경로 그대로 plugin 에 `cancelled: true` 가 전달되고 피커도 닫힌다. 고아 피커와 조용한 결과 유실이 생기지 않는다. 사용자가 이미 확정한 결과는 덮지 않는다.
@@ -122,7 +122,7 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 
 ### scrim 의 범위
 
-scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](../../adr/0300-the-scrim-covers-the-popups-scope-not-always-the-window.md)).
+scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md)).
 `Surface` 범위면 그 칸 하나이고, 경계는 그 surface 의 **보더를 포함**하며 인접 surface ·
 사이드바 · pane 탭바 · 상태바는 **제외**한다. `Pane`·`Tab` 범위면 그 pane 의 rect 다 — 현재
 동작이다: `src/adapters/ui/popup/draw.rs::PopupManager::scope_rect` 가 두 범위 모두
@@ -138,7 +138,7 @@ scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](
 이긴다. 알파가 한 벌이라 두 번 칠하면 그 자리만 두 배로 어두워지기 때문이다.
 
 **어느 팝업이 scrim 을 까는가는 범위가 아니라 id 로 정한다.** `search_bar` 는 `Surface`
-범위를 쓰지만 anchored + scrim-less 갈래이므로 scrim 이 없다([ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md)).
+범위를 쓰지만 anchored + scrim-less 갈래이므로 scrim 이 없다([ADR-0637](../../adr/0637-ui-input-motion-and-elevation.md)).
 현재 scrim 을 까는 host 팝업: `remote_tool` · `remote_attach` · `command_palette` ·
 `port_scanner` · `convert_surface` · 전송 진행/오류. plugin 팝업은 예외 없이 깐다.
 
@@ -149,7 +149,7 @@ scrim 이 덮는 rect 는 그 팝업이 소속된 범위의 rect 다([ADR-0300](
 
 plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 **종류**만 선언한다 —
 `window`(기본) 또는 `surface`. 대상 surface 는 popup 을 여는 host 진입점이 인스턴스에
-바인딩한다([ADR-0273](../../adr/0273-plugin-popup-declares-a-scope-kind-and-the-host-binds-the-target.md)).
+바인딩한다([ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md)).
 가시성·경계는 위 표와 같은 판정 함수로 같은 frame 의 `LayoutContext` 에서 정한다.
 
 | 진입점 | 바인딩되는 대상 |

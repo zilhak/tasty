@@ -555,7 +555,7 @@ fn the_count_limit_still_applies_to_small_events() {
     assert!(bytes < crate::event_bus::EVENT_RING_BYTES_LIMIT);
 }
 
-// ── 등급은 구독 조건이 아니다 (ADR-0501) ─────────────────────────────────────
+// ── 등급은 구독 조건이 아니다 (docs/reference/event-catalog.md#안정성-등급) ─────────────────────────────────────
 
 /// 카탈로그가 적은 구독 조건 — 매니페스트 `event_subscribe` 가 덮는가 하나 — 이 코드의
 /// 판정과 같다는 것을 고정한다. Experimental 키도 `experimental_events` 유무와 무관하게

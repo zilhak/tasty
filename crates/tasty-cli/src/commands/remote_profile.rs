@@ -2,7 +2,7 @@
 //!
 //! 실행은 [`crate::local::remote_profile`] 이 한다(로컬 파일, IPC 미경유).
 //!
-//! 2-레이어 모델(ADR-0032): **ssh** = 순수 연결 정보(host/user/port/identity/options/
+//! 2-레이어 모델(docs/features/remote-profiles/index.md#데이터-모델): **ssh** = 순수 연결 정보(host/user/port/identity/options/
 //! shell), **tasty-attach** = attach 스펙(ssh_ref 참조 또는 인라인 연결 + remote_tasty/
 //! port_mode/port_file). attach 동작 자체는 `tasty tool attach` 에서 tasty-attach
 //! 프로필을 소비한다.

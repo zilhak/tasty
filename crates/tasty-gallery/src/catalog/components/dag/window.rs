@@ -37,7 +37,7 @@ fn chrome(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, title: &str) -> eg
     let radius = theme.corner_radius.value();
     // 배경보다 **먼저** — lift 그림자는 셸 아래에 깔린다(본체 `popup/draw.rs` 와 같은
     // 순서). 본체 `dag_list` 는 anchored 명부에도 shadowless 명부에도 없어 뷰포트를
-    // 점유하는 centered 표면으로 판정된다 = SCOPE RULE(ADR-0254)의 modal 갈래
+    // 점유하는 centered 표면으로 판정된다 = 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 modal 갈래
     // (`popup/draw.rs::popup_shadow`). 이 specimen 은 공유 셸 키트를 안 쓰고 창 껍데기를
     // 직접 그리므로 갈래도 여기서 직접 얹는다.
     ui.painter()

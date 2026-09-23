@@ -9,7 +9,7 @@
 //! owns, so they always answer `Ready` before returning. Linux drives a GTK
 //! event loop of its own that must not be spun from inside winit's callback,
 //! so it answers `Pending` and the caller pumps the returned handle once per
-//! frame. Rationale: `docs/adr/0071-native-context-menu-async-contract.md`.
+//! frame. Rationale: `docs/dev-guide/context-menu.md#네이티브-메뉴-api-cratestasty-platformsrcnative_menu`.
 
 #[cfg(target_os = "linux")]
 mod linux;

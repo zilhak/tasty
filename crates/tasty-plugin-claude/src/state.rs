@@ -1,8 +1,8 @@
 //! Claude plugin 특화 상태 — 세션 wall-time 타이밍만.
 //!
 //! child registry(children/parent_of/last_index/closed_parents/idle/needs_input)와
-//! 그 영속화·reconcile 은 호스트가 내재화한 `terminal.*` registry(ADR-0040 /
-//! occupancy-04)로 이관됐다(occupancy-05). 이 plugin 은 더 이상 자식 매핑을 보유하지
+//! 그 영속화·reconcile 은 호스트가 내재화한 `terminal.*` registry(docs/features/child-terminal/index.md
+//! 참조)가 맡는다. 이 plugin은 자식 매핑을 보유하지
 //! 않는다 — 호스트 registry 가 단일 SoT.
 //!
 //! 여기 남는 것은 claude hook 텔레메트리 전용 상태뿐: `session-start` 시각을 기록해

@@ -342,7 +342,7 @@ fn bundle_root_exe_relative() -> Option<PathBuf> {
 /// `pub` 인 이유는 통합 테스트 하네스 하나다: 번들을 부르는 스위트는 격리 홈에 번들을 hardlink
 /// 로 미리 넣는데, 그 원본이 **자식 인스턴스가 부팅하며 고를 번들과 같아야** host 의 내용 판정이
 /// "이미 같다" 로 떨어진다. 같은 답을 하네스에 따로 적으면 사본이 갈린다
-/// (`docs/adr/0525-test-homes-hardlink-the-bundle-from-a-harness-owned-snapshot.md`).
+/// (`docs/dev-guide/e2e-tests.md#명부-안-스위트는-번들을-hardlink-로-받는다`).
 pub fn bundle_root_from_exe_dir(exe_dir: &Path) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
@@ -1255,7 +1255,7 @@ fn apply_builtin_upgrade_decision(
     // 있다 — 둘 다 회수를 기다리지 않는다. 그 디렉토리에 **실제로 쓰는 갈래만** 그 회수를
     // 끝까지 기다린다(실행 중인 파일은 Windows 에서 덮어쓰거나 지울 수 없고 Linux 에서는
     // `ETXTBSY` 가 난다). 쓰지 않는 갈래가 기다리면 메인 스레드가 이유 없이 최대 2 s 선다 —
-    // 그때 회수는 뒤에서 이어지고 재기동 예약도 회수 기록과 함께 남는다(ADR-0457).
+    // 그때 회수는 뒤에서 이어지고 재기동 예약도 회수 기록과 함께 남는다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
     let mut respawn = false;
     let upgrade = match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
         BuiltinUpgradeDecision::Skip => SpecUpgrade {
@@ -1640,7 +1640,7 @@ mod tests {
 
     #[test]
     fn claude_design_is_not_builtin_plugin() {
-        // docs/adr/0510-design-work-flows-from-claude-design-through-gallery-app-and-site.md: 별도 프로젝트로 분리하며
+        // docs/dev-guide/gallery-first.md#순서-필수: 별도 프로젝트로 분리하며
         // tasty 본체 번들에서 완전히 제거됨.
         assert!(!is_builtin_plugin("com.tasty.claude-design"));
     }

@@ -9,25 +9,23 @@
 //! 이렇게 분리하는 이유: `dev-pubkey.bin` / `release-pubkey.bin` 둘 다 로컬
 //! 전용 키라 추적하지 않는다(`.gitignore`). 추적되지 않으니 새 클론·CI 에는
 //! 파일이 없을 수 있는데, `include_bytes!` 가 소스 경로를 직접 가리키면 그
-//! 순간 컴파일이 깨진다. build.rs 가 "있으면 복사, 없으면 all-zero placeholder
+//! 순간 컴파일이 깨진다. build.rs가 "길이가 맞으면 복사, 없거나 길이가 틀리면 placeholder
 //! 생성" 으로 `OUT_DIR` 슬롯을 항상 채우므로 어떤 빌드 경로(cargo / 스크립트 /
 //! CI)에서도 안전하다.
 //!
-//! `dev-pubkey.bin` 은 `scripts/gen-dev-key.sh`(release/dist 빌드에서는
-//! `scripts/ensure-sign-key.sh` 가 호출)가 매 빌드 재도출한다. `release-pubkey.bin`
-//! 은 영구 신뢰 루트가 아니다 — 이 슬롯은 항상 placeholder 로 남고, 실제 서명
-//! 검증은 dev 슬롯이 담당한다(자세한 배경은 `docs/dev-guide/plugin-packaging.md`,
-//! `docs/adr/0051-ephemeral-release-signing-key.md` 참고).
+//! 서명 스크립트는 선택한 개인키에서 공개키를 도출한다. 개발용 개인키는 기존 파일이
+//! 있으면 재사용한다. release 슬롯도 파일이 있고 길이가 맞으면 그대로 포함한다.
+//! 키 선택과 준비 절차는 `docs/dev-guide/plugin-packaging.md` 및
+//! `docs/dev-guide/release.md#배포-범위와-번들-서명`을 따른다.
 //!
-//! ## 2. misconfig 경고
+//! ## 2. 키 준비 경고
 //!
-//! release / dist 빌드에서 **두 임베드 슬롯이 전부** zero placeholder 인 채로
-//! 산출물이 만들어지지 않도록 `cargo:warning` 으로 안내한다 — dev 슬롯 하나만
-//! 유효해도 검증은 정상 동작하므로, release 슬롯 단독 placeholder 는 경고 대상이
-//! 아니다(이제 항상 그런 상태이므로). 두 슬롯 다 zero 면 `verify_bundle_signature`
-//! 가 `NoValidTrustedKeys` 로 떨어져 builtin plugin 서명 검증이 전부 실패한다.
-//! release 빌드에서만 경고 — debug 빌드는 dev workspace bundle 이 unsigned 라
-//! placeholder 도 정상.
+//! release / dist 빌드에서 두 슬롯이 모두 없거나, 길이가 틀리거나, 전부 zero이면
+//! `cargo:warning`을 낸다. 두 슬롯 중 하나라도 32바이트의 nonzero 값을 가지면
+//! 이 경고는 내지 않는다. 경고는 빌드를 중단하지 않는다.
+//! 두 슬롯이 모두 placeholder이면 `verify_bundle_signature`가
+//! `NoValidTrustedKeys`를 반환해 번들 서명을 검증하지 못한다.
+//! debug 빌드는 서명 없는 개발용 번들을 사용할 수 있어 이 경고를 내지 않는다.
 //!
 //! `PROFILE` 환경변수는 cargo 가 build.rs 에 주입하는 것으로, dev 파생 프로필
 //! ("dev") 은 "debug", release 파생 ("release", "dist") 은 "release" 가 된다.
@@ -40,8 +38,8 @@ fn main() {
     let release_key = Path::new("keys/release-pubkey.bin");
     let dev_key = Path::new("keys/dev-pubkey.bin");
 
-    // 파일이 아니라 **디렉토리**를 건다. `keys/release-pubkey.bin` 은 **없는 것이 정상
-    // 상태**이고(ADR-0051 — 영구 신뢰 루트를 두지 않는다), 없는 경로에 걸린
+    // 파일이 아니라 디렉토리를 감시한다. 공개키 파일은 로컬에서 준비하므로 없을 수 있다.
+    // 없는 경로에 걸린
     // `rerun-if-changed` 는 cargo 가 이 build script 를 **언제나 stale 로** 본다.
     // 그러면 무변화 cargo 호출마다 host-plugin → cli → tasty 가 다시 컴파일되고 전 타깃이
     // relink 된다. 디렉토리는 실재하고 cargo 가 그 아래를 훑으므로, 두 키의 **내용 변경도
@@ -61,10 +59,8 @@ fn main() {
         return;
     }
 
-    // release-pubkey.bin 슬롯은 항상 placeholder 로 남는 게 정상 상태다(영구
-    // 신뢰 루트를 두지 않기로 한 정책). 실질적인 검증은 dev 슬롯이 담당하므로,
-    // dev 슬롯이 zero 인 경우에만 경고한다 — 이 경우 두 슬롯이 전부 zero 가 되어
-    // verify_bundle_signature 가 NoValidTrustedKeys 로 떨어진다.
+    // 두 슬롯 모두 검증에 쓸 키가 없는 경우만 경고한다. release 또는 dev 어느 슬롯이든
+    // 길이가 맞고 zero가 아닌 키가 있으면 아래 조건은 false다.
     let release_is_zero = read_key(release_key)
         .map(|b| b.iter().all(|x| *x == 0))
         .unwrap_or(true);

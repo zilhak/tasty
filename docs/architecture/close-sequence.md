@@ -45,8 +45,8 @@ kill · 스크롤백 파일 삭제 · per-surface 인덱스 해제 · memory sco
 GUI dispatcher · IPC 핸들러 · 원격 forward 실행이 함께 부른다. 두 빌드(gui / headless)가 같은
 파일을 컴파일하므로 함수 하나에 본문 하나이고, 빌드 형태의 차이는 그 본문 안의
 `#[cfg(feature = "gui")]` 블록으로만 존재한다. 근거는
-[ADR-0337](../adr/0337-structural-execution-answers-with-domain-values.md) 과 그것을 부분 개정한
-[ADR-0395](../adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).
+[ADR-0602](../adr/0602-domain-execution-and-ports.md)에 정리되어 있다.
+
 
 ### gui 와 headless 의 차이
 
@@ -91,7 +91,7 @@ tab.create / tab.close / tab.move / pane.close / surface.close 는 IPC 핸들러
 (`forward_and_ipc_fail_with_the_same_reason_for_the_same_input`), 문구가 옛 기준과 같은지
 (`failure_reasons_keep_the_base_literals` — 리터럴로 단정). convert / restore / move-surface 는 `Core::apply` 를
 직접 부른다. 호출자가 회신하는 것은 `StreamControl::StructuralResult` 다. 근거는
-[ADR-0395](../adr/0395-structural-execution-and-its-cascades-live-in-the-domain-layer.md).
+[ADR-0602](../adr/0602-domain-execution-and-ports.md).
 
 ## 단계
 
@@ -156,7 +156,7 @@ close_total
   `Option` 으로 두고 drop 본문 안에서 `take()` 한다 — 필드 자연 해제에 맡기면 그
   비용이 계측 구간 밖으로 새어나간다. 종료 계측 S5b 도 같은 누적기를 쓴다.
 - **C5b 는 자식이 죽기를 기다리지 않는다** — unix 는 SIGHUP 만 보내고 유예 폴링과
-  SIGKILL escalation 을 detached reap 스레드에 넘긴다([ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)).
+  SIGKILL escalation 을 detached reap 스레드에 넘긴다([ADR-0616](../adr/0616-window-platform-and-shutdown.md)).
   그래서 C5b 는 "종료 신호 발사 + master 해제" 비용이지 "자식 종료 확인" 비용이
   아니다. 자식이 실제로 회수됐는지는 이 마커로 판정할 수 없다.
 - **C5c 는 observer 워커를 join 하지 않는다** — surface close 로 인한 자동 해제는
@@ -179,7 +179,7 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 절대값이 아니라 구간 비율과 N 에 대한 기울기로 읽는다. 단위 ms.
 
 아래는 **벌크 캡처(C1) · surface purge 중복 제거(C5) ·
-[ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md)(C5b) 이 모두
+[ADR-0616](../adr/0616-window-platform-and-shutdown.md)(C5b) 이 모두
 적용된 현재 상태** 측정이다.
 
 | 탭 수 | 스크롤백 | close_total | C1 snapshot | C2b sb_persist | C3 collect | C4 ws_purge | C5 cleanup | (C5b terminal_drop) |
@@ -191,7 +191,9 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 | 30 | 없음 | **33** | 20 | 0.0004 | 0.036 | 0.094 | 12 | 7.1 |
 | 30 | 만재(300k) | **403** | 97 | 234 | 0.038 | 0.12 | 71 | 53 |
 
-#### ADR-0076 전후 (같은 조건, 스크롤백 없음)
+<a id="adr-0076-전후-같은-조건-스크롤백-없음"></a>
+
+#### 자식 종료 대기 분리 전후 (같은 조건, 스크롤백 없음)
 
 | 탭 수 | close_total (전 → 후) | C5 cleanup (전 → 후) | C5b terminal_drop (전 → 후) |
 |-------|-----------------------|----------------------|------------------------------|
@@ -203,7 +205,7 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
 
 - **C3/C4 는 어느 조건에서도 0.2ms 미만**이라 최적화 대상이 아니다.
 - `close_total` − 단계 합은 어느 행에서도 1ms 미만이라 미계측 구간은 없다.
-- **C5b 의 큰 상수 항은 사라졌다.** ADR-0076 이전에는 surface 당 약 50ms 로,
+- **C5b 의 큰 상수 항은 사라졌다.** 자식 종료 대기를 별도 스레드로 옮기기 전에는 surface 당 약 50ms 로,
   탭 수에만 붙는 이 상수가 close 전체를 지배했다(탭 30개면 그 자체로 1.5 초). 그
   50ms 는 전부 `portable-pty` 의 unix `ChildKiller::kill` 안에 있는
   `thread::sleep(50ms)` 유예 폴링이었다. 지금은 SIGHUP 만 보내고 유예를 detached
@@ -217,16 +219,16 @@ surface 마다 `seq 1 20000`(기본 상한 10000 줄까지 채워짐). 각 조�
   저장 표현(`ScrollbackLine`)을 그대로 벌크로 가져오기 때문이다(아래 "캡처 비용"
   참조). 같은 데이터를 다루는 C2b 보다 2 배 이상 싸다.
 - **스크롤백이 없으면 close 는 전 구간이 수십 ms 다** — 탭 30개·스크롤백 없음에서
-  close_total 33ms 로, ADR-0076 이전의 1.5 초에서 46 배 줄었다. 이 조건에서 남은
+  close_total 33ms 로, 종료 대기 분리 전의 1.5 초에서 46 배 줄었다. 이 조건에서 남은
   최대 항은 C1(20ms, 화면 rows x cols 복제)이다.
 - **C5b 는 스크롤백이 있으면 다시 커지지만 성격이 다르다** — 만재 30탭에서 53ms
   (surface 당 1.8ms)로, 스크롤백 없음(surface 당 0.24ms)의 7 배다. 이건 자식을
   기다리는 시간이 아니라 `Terminal` 이 들고 있던 인메모리 스크롤백 30 만 라인을
-  해제하는 비용이다 — ADR-0076 이 걷어낸 대기 항과 무관하게 데이터 양에 붙는다.
+  해제하는 비용이다 — 이미 분리한 자식 종료 대기와 달리 데이터 양에 붙는다.
 - **C5a(`fs::remove_file`)는 스크롤백 유무로 두 자릿수 배 갈린다** — 스크롤백
   없음에서는 지울 파일이 없어 surface 당 약 5µs(탭 30개 1.6ms)지만, 만재에서는
   실제 파일 삭제라 surface 당 약 0.5ms(탭 30개 15ms)다. 후자도 close_total 의
-  4% 수준이라 비동기화 대상은 아니다(ADR-0076 기각 근거). 삭제 실패는 다음 시작의
+  4% 수준이라 비동기화 대상은 아니다. 삭제 실패는 다음 시작의
   `scrollback_store::gc_orphans` 가 회수한다.
 - **C5c(인덱스 해제)는 observer 워커를 join 하지 않으므로 observer 수에 거의
   무관하다** — 파일 sink 12 개 기준 8.9ms → 0.39ms. 어느 행에서도 0.35ms 미만이다.
@@ -245,7 +247,7 @@ C1 은 surface 마다 화면(rows x cols)과 스크롤백 전량을 `ClosedItem`
 라인당 경로(`scrollback_line_full`)도 남아 있지만 selection / search / link 처럼
 소수 라인만 만지는 소비자용이다. 벌크 캡처에 쓰면 두 가지가 겹쳐 비싸진다:
 
-- 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(ADR-0002)
+- 라인마다 state mutex — 파서 스레드가 `ingest` 로 잡는 것과 같은 lock(ADR-0613)
   이라, 만재 스크롤백 캡처가 파서와 수만 회 경합한다.
 - 디스크 영역 라인은 `line_owned` / `line_wrapped` 가 같은 인덱스를 독립적으로
   읽어 `File::open` 이 라인당 2회가 된다(현재는 `line_full` 단일 조회로 1회).
@@ -280,7 +282,7 @@ memory.db 를 24276 엔트리(3.6MB)까지 채우고 탭 10개·스크롤백 없
   20ms 가 사라진다. 위 표는 재측정한 값이 아니라 중복 제거 **전** 측정이므로,
   현재 값을 알려면 같은 조건으로 다시 재야 한다.
 - **C5b 가 사라진 지금은 이 관계가 뒤집힌다** — 위 비교의 기준이던 C5b(505ms)가
-  [ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md) 으로 한 자릿수
+  자식 종료 대기를 별도 스레드로 옮긴 뒤 한 자릿수
   ms 가 됐으므로, purge 계열은 더 이상 "C5b 대비 한 자릿수 %" 가 아니라 **C5 안의
   지배 항**이다. db 가 클수록 close 지연에 직접 드러난다.
 
@@ -296,7 +298,7 @@ memory.db 를 24276 엔트리(3.6MB)까지 채우고 탭 10개·스크롤백 없
 | on | 279622 | 1445 | 544 | 246 | 547 |
 
 > 이 표의 `close_total` / `C5b` 열은
-> **[ADR-0076](../adr/0076-close-path-per-surface-blocking-removal.md) 이전** 측정이라
+> **자식 종료 대기를 별도 스레드로 옮기기 전** 측정이라
 > surface 당 50ms 상수를 포함한다(탭 10개 = 약 500ms). 지금 같은 조건을 다시 재면
 > 두 열에서 그만큼이 빠진다 — 이 절의 논점인 C1 의 라인당 단가는 영향받지 않는다.
 

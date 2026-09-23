@@ -1,4 +1,4 @@
-//! 사용자 등록 Lua 스크립트 목록 저장소 + SHA256 (ADR-0031).
+//! 사용자 등록 Lua 스크립트 목록 저장소 + SHA256 (docs/features/lua-hooks/index.md#실행-격리--안전-장치).
 //!
 //! 단축키 트리거·관리 창·TOFU 게이트가 모두 이 "등록 목록" 을 전제로 한다.
 //! `Settings.scripts` 로 `~/.tasty/config.toml` 에 영속된다.
@@ -58,7 +58,7 @@ pub struct ScriptEntry {
     /// 스크립트 파일 절대 경로.
     pub path: PathBuf,
     /// 등록/승인 시점의 **엔트리 파일** SHA256(hex). TOFU 기준값.
-    /// transitive `require` 의존 파일은 커버하지 않는다(ADR-0031 한계).
+    /// transitive `require` 의존 파일은 커버하지 않는다(docs/features/lua-hooks/index.md#실행-격리--안전-장치 한계).
     pub sha256: String,
     /// 자동실행 트리거 목록 (N개 허용). 기존 config 에 키가 없으면 빈 vec
     /// (serde default — 마이그레이션 안전). 엔트리 제거 시 함께 사라진다.

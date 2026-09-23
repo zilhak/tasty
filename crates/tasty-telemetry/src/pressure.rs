@@ -26,7 +26,7 @@ use std::time::Duration;
 /// 지연 버킷의 상한(마이크로초, `le` — 상한과 같은 값은 그 버킷에 든다).
 ///
 /// **이 경계는 파생되지 않는다** — 고른 값이다. 고른 근거는 두 가지다. ① 실측:
-/// ADR-0333 이 격리 인스턴스에서 잰 값이 큐 대기 max 25.4 ms · handler max 0.48 ms
+/// 당시 격리 인스턴스에서 잰 값이 큐 대기 max 25.4 ms · handler max 0.48 ms
 /// 였고, plugin 왕복은 초 단위까지 간다. ② 해상도: 반-십진(√10 ≈ 3.16 배) 간격이라
 /// 10 µs 부터 1 s 까지 열한 칸으로 덮는다. 이 간격은 "밀렸다" 와 "안 밀렸다" 를 가르기에
 /// 충분하고, 그보다 촘촘하게 하면 게이지가 갖고 있지도 않은 정밀도를 말하게 된다.
@@ -214,7 +214,7 @@ impl PressureSnapshot {
     ///
     /// 분모는 대기를 기록한 명령 수(`queue_waits`)다 — 합과 같은 자리에서 오르는 수라야
     /// 평균이 최댓값을 넘지 않는다. `queue_commands` 는 회차가 끝날 때 오르므로 한 스냅샷
-    /// 안에서 분자보다 늦다(ADR-0466).
+    /// 안에서 분자보다 늦다(docs/architecture/ipc-server.md#연결-수와-시간-분포).
     pub fn queue_wait_us_mean(&self) -> Option<u64> {
         (self.queue_waits > 0).then(|| self.queue_wait_us_sum / self.queue_waits)
     }

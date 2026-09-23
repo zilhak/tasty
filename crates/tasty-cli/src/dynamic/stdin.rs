@@ -80,7 +80,7 @@ fn try_read_stdin_json() -> Result<Value, StdinSkipReason> {
 ///
 /// **선언 타입은 여기서도 강제한다.** 이 경로는 `extract_value`(=`--flag` 경로)를
 /// 지나지 않으므로, 강제를 그쪽에만 두면 같은 `CliArg` 선언이 **들어온 문으로만**
-/// 참인 보증이 된다(ADR-0132). 매니페스트가 `u32` 라고 적어둔 인자에 stdin JSON 이
+/// 참인 보증이 된다(docs/dev-guide/plugin-development.md#cli--ipc-namespace). 매니페스트가 `u32` 라고 적어둔 인자에 stdin JSON 이
 /// 객체나 문자열을 실어 보내면 그대로 params 에 들어가 하류가 그것을 받는다.
 pub(super) fn merge_stdin_params(
     params: &mut Map<String, Value>,

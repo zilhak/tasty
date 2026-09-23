@@ -857,7 +857,7 @@ fn lang_dir_custom() {
 }
 
 /// 번들된 com.tasty.image plugin의 실제 매니페스트가 파서를 통과하고
-/// surface_kind가 egui-mesh로 인식되는지 확인 (B2/ADR-0030: image 는 host-rendered →
+/// surface_kind가 egui-mesh로 인식되는지 확인 (docs/dev-guide/egui-mesh-channel.md#이미지-텍스처의-전송: image 는 host-rendered →
 /// egui-mesh mesh-only 로 전환됨).
 #[test]
 fn bundled_image_plugin_manifest_validates() {
@@ -951,7 +951,7 @@ fn surface_kind_rendering_host_rejected() {
 #[test]
 fn surface_kind_rendering_egui_mesh_parses_hyphenated_wire_key() {
     // 와이어 키는 하이픈 포함 "egui-mesh" (variant rename). rename_all="lowercase"
-    // 가 만드는 "eguimesh" 가 아니라 이 키로만 파싱돼야 한다 (ADR-0028 / §2-2).
+    // 가 만드는 "eguimesh" 가 아니라 이 키로만 파싱돼야 한다 (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
     let s = r#"
         manifest_version = 1
         id = "com.tasty.markdown"

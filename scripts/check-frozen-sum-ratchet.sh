@@ -7,7 +7,7 @@
 # 실측(2026-07-06 → 09-05): 도입 시 동결 18 중 **15 가 자라 +2406 줄**이고, 그중
 # `crates/tasty-plugin-markdown/src/render.rs` 는 1002 → 1997 로 거의 두 배가 됐는데
 # 게이트는 한 번도 울지 않았다. 이 스크립트가 그 방향을 본다.
-# 근거·측정·대안: docs/adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md
+# 근거·측정·대안: docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
 #
 # 판정. **좌변이 셋이고, 순서가 있다** — 뒤엣것의 뜻이 앞엣것에 달려 있다.
 #   1. 오독 형태 프로브 != 1     → 위반(1). 계측기가 어제와 다르게 센다. 이 아래 값들의
@@ -36,7 +36,7 @@
 # 그만큼 줄면 이 게이트는 아무 말도 안 한다(실측: 도입 3 일에 항목 11 개가 움직여 이동량
 # 224 줄인데 총합 축이 본 값은 -14). 그래도 항목마다 저울을 두지 않는 이유는, 안 보는
 # 구간이 **띠 x 저울 수**라 같은 발화율에서 24 배가 되기 때문이다. 표와 재검토 조건:
-# docs/adr/0205-the-frozen-sum-stays-one-scale.md
+# docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
 #
 # 정책 근거: docs/dev-guide/complexity-gate.md
 # 선례: scripts/check-allow-reason.sh (늘어도 줄어도 실패하는 상한 래칫)
@@ -132,7 +132,7 @@ trap 'rm -rf "$STRIPPED"' EXIT
 # 둘째 계측기를 안 들인다. 필요한 답은 "두 계측기가 갈리는가" 가 아니라 "이 파일의 계측
 # 편향이 **움직였는가**" 이고, 그것은 **같은 tokei 로 두 번** 재면 나온다. 손으로 짠
 # 렉서를 좌변에 두면 그 렉서의 결함이 tokei 의 결함과 구별되지 않는다(실측으로 밟았다 —
-# docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md 의 대안 D·G).
+# docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정 참조).
 #
 # 뺄 대상은 목록에 오른 파일뿐이다 — 좌변이 그 합이므로 트리 전체를 두 번 잴 이유가 없다.
 while IFS= read -r p; do
@@ -229,10 +229,10 @@ if [ "$PROBE_CODE" != "1" ]; then
     echo
     echo "  2 가 나왔으면 계측기가 이 오독을 **고쳤다.** 그러면 편향이 0 으로 가고 합이"
     echo "  그만큼 올라간다 — 그 상승은 성장이 아니다. 아래 편향 줄과 예산 줄을 같은"
-    echo "  폭으로 함께 옮기고, ADR-0258 의 재검토 트리거를 연다."
+    echo "  폭으로 함께 옮기고, 아래 가이드에 따라 보정 방식을 다시 검토한다."
     echo "  1 도 2 도 아니면 오독이 **다른 형태로 바뀐** 것이다. 그때는 편향의 수를"
-    echo "  갱신하기 전에 형태부터 다시 지목해야 한다(같은 ADR 의 대안 B 를 다시 연다)."
-    echo "  근거: docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md"
+    echo "  갱신하기 전에 새 오독을 최소 예제로 재현하고 보정 방식을 다시 검토한다."
+    echo "  근거: docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정"
     exit 1
 fi
 
@@ -261,7 +261,7 @@ if [ "$BIAS" -ne "$BIAS_PINNED" ]; then
         [ "$b" = "0" ] || printf '    %6s  %s\n' "$b" "$q"
     done <<<"$BREAKDOWN"
     echo
-    echo "  근거·재검토 트리거: docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md"
+    echo "  보정 방식: docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정"
     exit 1
 fi
 
@@ -339,7 +339,7 @@ fi
 # 재측정 뒤에도 상시 대조를 안 두는 이유는 남는다: 대조표는 "갈린다" 만 말하고 "누가
 # 옳은가" 는 안 말한다 — 이번 판별을 지은 것도 대조표가 아니라 위 doc 제거 실험이다.
 # 근거·대안(합 래칫 · 진단 열 포함)·재검토 조건:
-# docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md
+# docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정
 if [ "$SUM" -lt "$BUDGET" ]; then
     echo "동결 총합 래칫: 합이 예산 아래로 내려갔다."
     echo "  합 $SUM  <  예산 $BUDGET"

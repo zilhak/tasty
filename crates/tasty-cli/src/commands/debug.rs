@@ -169,7 +169,7 @@ pub enum DebugCommands {
     #[command(subcommand)]
     Modal(ModalDebugCommands),
     /// Arbitrary Lua injection into the host worker (debug builds only).
-    /// Runs source in the isolated Lua worker (deadline-guarded, ADR-0031).
+    /// Runs source in the isolated Lua worker (deadline-guarded).
     /// Release builds have no such path — the user-input-only rule applies there.
     #[command(subcommand)]
     Lua(LuaDebugCommands),
@@ -404,7 +404,7 @@ pub enum BannerDebugCommands {
 pub enum LuaDebugCommands {
     /// Inject arbitrary Lua source and run it in the host worker (fire-and-forget).
     /// Effects are observable via logs (e.g. `tasty.log`); deadline-exceeding
-    /// sources are aborted by the worker (ADR-0031).
+    /// sources are aborted by the worker.
     Eval {
         /// Lua source to execute. e.g. 'tasty.log("hi from debug")'
         #[arg()]

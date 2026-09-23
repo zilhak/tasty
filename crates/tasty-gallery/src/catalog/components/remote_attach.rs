@@ -295,7 +295,7 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
         ))
         .corner_radius(theme.corner_radius.value())
         // 본체 `remote_attach` popup 은 anchored 명부에도 shadowless 명부에도 없어
-        // 뷰포트를 점유하는 centered 표면으로 판정된다 = SCOPE RULE(ADR-0254)의 modal
+        // 뷰포트를 점유하는 centered 표면으로 판정된다 = 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 modal
         // 갈래(`popup/draw.rs::popup_shadow`). def 도 중앙 고정 · 이동/리사이즈 없음이다.
         // 이 specimen 은 공유 셸 키트를 안 쓰고 프레임을 직접 그리므로 갈래도 여기서
         // 직접 얹는다.

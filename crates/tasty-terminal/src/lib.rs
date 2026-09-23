@@ -124,7 +124,7 @@ pub struct CellInfo {
 /// (`Some`) or fully detached (`None`). Detached mirror terminals own no PTY,
 /// no child process, and no reader/writer threads.
 ///
-/// 파싱은 `_parser_thread` 가 수행한다(ADR-0002). reader 스레드와 파서를 합쳐,
+/// 파싱은 `_parser_thread` 가 수행한다(docs/features/terminal/index.md#vte-에뮬레이션). reader 스레드와 파서를 합쳐,
 /// PTY raw 바이트를 읽는 즉시 그 스레드에서 `TerminalState::ingest` 로 grid 를
 /// 갱신한다 — 메인(winit) 스레드는 파싱을 하지 않는다.
 struct PtyBackend {
@@ -137,7 +137,7 @@ struct PtyBackend {
     pty_master: Option<Box<dyn portable_pty::MasterPty + Send>>,
     /// `Some` for a normally-owned PTY (Surface 터미널). `None` only after
     /// [`Terminal::take_child`] hands the waitable child off to an external owner
-    /// (headless `pty_registry` exit-watcher, ADR-0050) — Surface 터미널은 절대
+    /// (headless `pty_registry` exit-watcher, docs/features/headless-pty/index.md#내부-동작-headless-valid) — Surface 터미널은 절대
     /// take_child 를 호출하지 않으므로 항상 `Some` 이고 kill/reap 경로가 그대로 산다.
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// PTY reader + VTE parser thread. Reads raw chunks and ingests them into the
@@ -266,7 +266,7 @@ const RESIZE_TAP_CAP: usize = 8;
 
 /// VTE 상태 머신 — surface grid · parser · modes · scrollback · output buffer ·
 /// events. **파서 스레드와 메인 스레드가 `Arc<Mutex<TerminalState>>` 로 공유** 한다
-/// (ADR-0002). 파서 스레드는 raw 청크마다 락을 잡아 [`TerminalState::ingest`] 를
+/// (docs/features/terminal/index.md#vte-에뮬레이션). 파서 스레드는 raw 청크마다 락을 잡아 [`TerminalState::ingest`] 를
 /// 수행하고 즉시 해제하므로, 메인 스레드의 렌더/IPC/이벤트 수집은 최대 1 청크
 /// 파싱 시간만 대기한다.
 ///
@@ -330,7 +330,7 @@ pub(crate) struct TerminalState {
     pub(crate) mouse_tracking: modes::MouseTrackingRegisters,
     /// 트래킹 `None → ON` 엣지에서 무장되는 "첫 마우스 캡처 안내 toast" 플래그. 호스트가
     /// `take_mouse_capture_hint()` 로 1회 소비(읽고 disarm)한다. 좌·우 클릭 중 먼저 발생한
-    /// 캡처 상호작용이 소비해 세션당 1회만 안내된다 (ADR-0022 ②).
+    /// 캡처 상호작용이 소비해 세션당 1회만 안내된다 (docs/features/terminal/index.md#마우스-입력).
     pub(crate) mouse_capture_hint_armed: bool,
     /// SGR mouse encoding (mode 1006).
     pub(crate) sgr_mouse: bool,
@@ -416,7 +416,7 @@ pub(crate) struct TerminalState {
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
 /// parser thread, and shares the VTE state machine ([`TerminalState`]) with that
 /// thread via `Arc<Mutex<_>>`. All grid/mode/scrollback accessors lock the shared
-/// state; the input (winit) thread never parses (ADR-0002).
+/// state; the input (winit) thread never parses (docs/features/terminal/index.md#vte-에뮬레이션).
 pub struct Terminal {
     /// Shared VTE state. The parser thread locks this per raw chunk to ingest;
     /// the main thread locks it for render/IPC/resize/event-drain.
@@ -437,13 +437,13 @@ pub struct Terminal {
     /// Last known grid dimensions `(cols, rows)`, mirrored on the handle so
     /// `cols()`/`rows()` and the no-op `resize()` fast path avoid locking the
     /// shared state. The per-frame `resize_all` sweep would otherwise lock every
-    /// terminal (including busy background ones) on each redraw (ADR-0002).
+    /// terminal (including busy background ones) on each redraw (docs/features/terminal/index.md#vte-에뮬레이션).
     cached_dims: (usize, usize),
     /// Handle-side mirror of `TerminalState::emit_output_events`, so the host's
     /// per-wake `set_output_events_enabled` (called on every targeted poll) is a
     /// lock-free no-op when the gate is unchanged — otherwise it would wait on a
     /// busy background terminal's parser lock every wake, re-serializing the input
-    /// thread against parsing (ADR-0002).
+    /// thread against parsing (docs/features/terminal/index.md#vte-에뮬레이션).
     cached_emit_events: bool,
     /// Pending PTY resize: surface is updated immediately, but PTY notification
     /// is throttled to avoid SIGWINCH storms during continuous window drag.
@@ -457,14 +457,14 @@ pub struct Terminal {
     /// The parser thread's wake callback, held behind a mutex so it can be
     /// re-targeted after construction. A headless PTY's Terminal is created with
     /// a waker targeting its pty id; when it is promoted to a real Surface
-    /// (`pty.attach_surface`, `docs/features/headless-pty/index.md`, ADR-0050) its
+    /// (`pty.attach_surface`, docs/features/headless-pty/index.md#내부-동작-headless-valid) its
     /// store key changes to the new surface_id, so the waker must be
     /// [rewired](Terminal::rewire_waker) to that id — otherwise targeted PTY polling
     /// would keep draining the stale key and the promoted terminal would appear
     /// frozen. `None` for a detached mirror.
     waker: Arc<Mutex<Waker>>,
     /// Foreground PID that the last *observed* busy decision was made for, or
-    /// [`BUSY_LATCH_NONE`]. It is the "was busy a moment ago" state of ADR-0261:
+    /// [`BUSY_LATCH_NONE`]. It is the "was busy a moment ago" state of docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나:
     /// while it names the current foreground, user input can no longer push the
     /// terminal back to idle — only the shell regaining the foreground or the
     /// output going quiet can. Keying it by PID means a newly started program
@@ -905,7 +905,7 @@ impl Terminal {
         // 를 폴링 없이 확인하는 데 쓴다.
         let (write_tx, writer_thread, write_progress) = spawn_pty_writer(pty_writer);
 
-        // Shared VTE state + signalling flags (ADR-0002). The writer-thread sender
+        // Shared VTE state + signalling flags (docs/features/terminal/index.md#vte-에뮬레이션). The writer-thread sender
         // is wired into the state so VTE responses (DSR/DA), emitted from the
         // parser thread during ingest, reach the PTY.
         let mut initial_state = TerminalState::new(cols, rows);
@@ -1027,7 +1027,7 @@ impl Terminal {
 
     /// Re-target the parser thread's wake callback. Used when a headless PTY's
     /// Terminal is re-keyed to a new `surface_id` during promotion to a real
-    /// Surface (`pty.attach_surface`, `docs/features/headless-pty/index.md`, ADR-0050):
+    /// Surface (`pty.attach_surface`, docs/features/headless-pty/index.md#내부-동작-headless-valid):
     /// the host installs a waker for
     /// the new id so targeted PTY polling drains the terminal at its new store
     /// key. Detached mirrors have no parser thread, so this is inert for them.
@@ -1083,7 +1083,7 @@ impl Terminal {
     }
 
     /// Process pending terminal state. Parsing now happens on the parser thread
-    /// (ADR-0002), so this only: (1) flushes a deferred PTY resize, (2) reports
+    /// (docs/features/terminal/index.md#vte-에뮬레이션), so this only: (1) flushes a deferred PTY resize, (2) reports
     /// whether the parser ingested anything since the last call, (3) detects child
     /// exit (emitting `ProcessExited` once). Returns true if the surface changed.
     pub fn process(&mut self) -> bool {

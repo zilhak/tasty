@@ -20,7 +20,7 @@
 //! - **8px inset** — popup 은 scope rect 에서 `spacing_sm` 만큼 안쪽으로 눌린다.
 //!
 //! 이 Spec 이 **바꾸지 않는 것**: 입력 차단(dim ≠ block) · Esc/바깥클릭 순서 · draft
-//! 수명과 부모/자식 숨김-복원 정책 · 그림자 두 값과 그 3-갈래 규칙(ADR-0254).
+//! 수명과 부모/자식 숨김-복원 정책 · 그림자 두 값과 그 3-갈래 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -201,7 +201,7 @@ fn paint_chrome(
 }
 
 /// popup 카드 한 장 — fill + 1px border-strong + modal shadow + 가운데 라벨.
-/// 그림자 갈래는 이 Spec 이 안 바꾼다(ADR-0254) — 뷰포트를 점유하는 표면이라 modal.
+/// 그림자 갈래는 이 Spec 이 안 바꾼다(docs/design/systems/theme.md#떠-있는-표면의-그림자) — 뷰포트를 점유하는 표면이라 modal.
 fn paint_card(
     p: &egui::Painter,
     theme: &Theme,

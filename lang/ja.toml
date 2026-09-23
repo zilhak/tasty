@@ -1474,7 +1474,7 @@ auto_detect_ok = "自動検出成功: リモート環境 → port_mode={} (有�
 auto_detect_failed = "自動検出失敗: {}\n  '{}' は無効状態で保存されました — 'tasty tool remote-profile detect {}' で再試行してください。"
 
 # `tasty tool passkey` — 資格情報のローカル CRUD。値は決して出力しない
-# (ADR-0016) — list/show は name + kind のみ公開する。
+# (docs/design/systems/memory.md#passkey-저장과-열람) — list/show は name + kind のみ公開する。
 # `list_header` は列パディングを値に含める — CJK 文字は端末上の表示幅が
 # 2 倍なので、ヘッダ行は言語ごとに揃える必要がある。
 [cli.passkey]
@@ -1489,7 +1489,7 @@ not_found = "passkey '{}' が見つかりません。"
 value_masked = "(マスク済み — GUI の Reveal でのみ確認)"
 removed = "削除: passkey '{}'。"
 
-# `tasty terminal` — ホスト内蔵の子ターミナル管理 (ADR-0040).
+# `tasty terminal` — ホスト内蔵の子ターミナル管理 (docs/features/child-terminal/index.md).
 [cli.terminal]
 desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/kill/…)."
 spawn_no_parent = "エラー: 親サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
@@ -2660,7 +2660,7 @@ help = "失効させるトークン文字列（必須）"
 about = "このインスタンスが現在保持するセッショントークンを一覧表示"
 
 [cli.help._root.terminal]
-about = "子ターミナルを管理する（spawn/tell/children/kill など） — ホストに内在化されたエージェント子ターミナル管理（ADR-0040）"
+about = "子ターミナルを管理する（spawn/tell/children/kill など） — ホストに内在化されたエージェント子ターミナル管理"
 
 [cli.help._root.terminal.spawn]
 about = "ワークスペースに子ターミナルを作成してコマンドを実行"
@@ -2795,7 +2795,7 @@ help = "親サーフェスID（既定値：既知の親が一つならその親�
 help = "解除する子インデックス"
 
 [cli.help._root.pty]
-about = "ヘッドレス PTY を管理する（spawn/write/read/wait/kill/list） — サーフェス・タブを持たないバックグラウンド PTY。`terminal` とは別の名前空間（ADR-0050 pty primitive）"
+about = "ヘッドレス PTY を管理する（spawn/write/read/wait/kill/list） — サーフェス・タブを持たないバックグラウンド PTY。`terminal` とは別の名前空間"
 
 [cli.help._root.pty.spawn]
 about = "サーフェス/タブのないheadless PTYを作成。PTY IDを返す"
@@ -3195,10 +3195,10 @@ about = "アクティブモーダルの終了要求（debugビルド専用）。
 about = "アクティブモーダルへ終了要求を送信（なければ何もしません。応答の `closed` で区別）"
 
 [cli.help._root.debug.lua]
-about = "host workerへ任意のLuaを注入（debugビルド専用）。期限付きの隔離Lua workerでソースを実行（ADR-0031）。releaseにはこの経路はなく、ユーザー入力専用の規則を適用"
+about = "host workerへ任意のLuaを注入（debugビルド専用）。期限付きの隔離Lua workerでソースを実行。releaseにはこの経路はなく、ユーザー入力専用の規則を適用"
 
 [cli.help._root.debug.lua.eval]
-about = "任意のLuaソースをhost workerに注入して実行（完了は待機しません）。効果はtasty.logなどのログで確認し、期限超過時はworkerが中断（ADR-0031）"
+about = "任意のLuaソースをhost workerに注入して実行（完了は待機しません）。効果はtasty.logなどのログで確認し、期限超過時はworkerが中断"
 
 [cli.help._root.debug.lua.eval.arg.source]
 help = "実行するLuaソース。例：'tasty.log(\"hi from debug\")'"

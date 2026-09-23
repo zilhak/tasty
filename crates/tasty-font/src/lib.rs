@@ -328,7 +328,7 @@ impl FrameClock {
 
 /// GPU 아틀라스는 `gpu` feature 뒤에 있다 — 이 모듈만 `wgpu` 를 본다. 헤드리스 소비자는
 /// `FontConfig` 만 쓰므로 그 feature 를 안 켜고, 그러면 wgpu 스택이 의존 그래프에 아예
-/// 안 들어온다. 근거와 재는 법: ADR-0336.
+/// 안 들어온다. 근거와 재는 법: docs/architecture/index.md#크레이트를-나누는-기준.
 #[cfg(feature = "gpu")]
 mod atlas;
 #[cfg(feature = "gpu")]
@@ -534,7 +534,7 @@ mod tests {
     /// 이 좌변이 무너지는 형태는 조용하다 — `optional = true` 를 지우거나 `default` 에
     /// `gpu` 를 넣으면 빌드도 시험도 전부 초록인 채로 헤드리스 의존 그래프에 wgpu 스택
     /// 27 개가 돌아온다. 그것을 보는 시험은 레포에 이것 하나뿐이고, 그래프 자체를 보는
-    /// 채널은 없다(재는 법은 ADR-0336 에 값과 함께 적혀 있다).
+    /// 채널은 없다(크레이트 경계 기준은 docs/architecture/index.md#크레이트를-나누는-기준 참조).
     ///
     /// 매니페스트를 문자열로 읽는 것은 `optional` 이 **선언**이라 타입으로 안 보이기
     /// 때문이다. `cfg!(feature = "gpu")` 로는 못 묻는다 — 그 값은 이 시험을 어느 조합에서
@@ -555,7 +555,7 @@ mod tests {
             "`wgpu` 가 비-optional 로 돌아갔다: {wgpu_line}\n\
              그러면 이 크레이트를 드는 모든 소비자가 wgpu 스택을 함께 든다 — 헤드리스 \
              포함이다. GPU 아틀라스는 `gpu` feature 뒤에 있고 device 없는 타입들은 그 \
-             밖에 있다(ADR-0336)."
+             밖에 있다(docs/architecture/index.md#크레이트를-나누는-기준)."
         );
         assert!(
             manifest.contains("\ngpu = [\"dep:wgpu\"]"),

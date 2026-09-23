@@ -610,7 +610,7 @@ pub fn snapshot_extent(item: &ClosedItem) -> SnapshotExtent {
 /// 사용자가 같은 스택을 본다. 출처가 없으면 mirror 사용자의 복원이 다른 워크스페이스
 /// 항목을 가져가고, 그 복원 결과는 anchor 워크스페이스 밖이라 되반영 delta 에도 안
 /// 잡힌다("서버에는 생겼는데 client 에는 아무 일도 없는" 상태). 결정·대안은
-/// `docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md` 결정 3.
+/// `docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward`.
 pub struct ClosedEntry {
     /// 닫힐 당시 이 항목이 속해 있던 워크스페이스. [`ClosedItem::Workspace`] 는
     /// 자기가 워크스페이스라 어디에도 속하지 않으므로 `None` 이고, 그래서 워크스페이스

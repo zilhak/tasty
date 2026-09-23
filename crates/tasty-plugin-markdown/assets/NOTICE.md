@@ -87,7 +87,7 @@
   on-disk "plugin assets directory" the running document could resolve a relative font URL
   against at runtime (`include_str!`/`include_bytes!` bake the bytes into the compiled binary;
   nothing is written back out to disk). The document carries no `<base href>` for a relative URL
-  to resolve against either — it was removed once local images stopped needing it (ADR-0289).
+  to resolve against either — it was removed once local images stopped needing it (ADR-0630).
   So `render.rs::katex_css_with_embedded_fonts` rewrites each `@font-face`'s
   `src:` list (originally `url(fonts/<name>.woff2) format("woff2"),url(fonts/<name>.woff)
   format("woff"),url(fonts/<name>.ttf) format("truetype")`) down to a single

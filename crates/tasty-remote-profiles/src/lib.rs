@@ -3,7 +3,7 @@
 //! 원격 접속 프로필 + Passkey 저장소.
 //!
 //! 두 개의 deps-free 저장소를 제공한다
-//! (설계: `docs/adr/0032-remote-attach-two-layer-split.md`):
+//! (설계: `docs/features/remote-profiles/index.md#데이터-모델`):
 //!
 //! - [`RemoteProfiles`] (`~/.tasty/remote-profiles.toml`) — 타입 태그(열린 string)가
 //!   붙은 **범용 연결 디스크립터**. 비밀을 담지 않고 [`Passkey`] 를 이름으로 참조만 한다.
@@ -16,7 +16,7 @@
 //! Host alias 를 **읽기 전용**으로 열거한다 — tasty 프로필로 가져올 후보 목록용이며,
 //! 프로세스를 띄우지 않는 순수 파싱이다.
 //!
-//! 보호는 **암호화가 아니라 OS 파일권한 위임**이다(ADR-0004/0005 와 일관) — 같은 OS
+//! 보호는 **암호화가 아니라 OS 파일권한 위임**이다(docs/architecture/ipc-server.md#연결과-신뢰-범위 의 연결 경계와 같은 기준) — 같은 OS
 //! 유저 FS read 는 신뢰모델상 범위 밖. 이 크레이트는 디스크 저장/해석만 하고 SSH 실행·
 //! IPC 표면은 상위(host/CLI)가 맡는다.
 

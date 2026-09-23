@@ -116,7 +116,7 @@ pub struct StreamOpenParams {
     /// `target` 와 상호배타 — 둘 다 지정되면 서버가 거부한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_workspace: Option<u32>,
-    /// bulk 파일 전송 전용 연결(ADR-0054). `Some(ws)` 이면 이 연결은 대화형 attach 를
+    /// bulk 파일 전송 전용 연결(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그). `Some(ws)` 이면 이 연결은 대화형 attach 를
     /// 하지 않고(= workspace holder 가 되지 않음), 그 `Data` 프레임을 PTY 입력이 아니라
     /// **파일 청크**(`decode_bulk_chunk`)로 분류하도록 서버가 이 연결을 bulk 로 태깅한다.
     /// 결속 workspace(`ws`)는 저장·인가의 대상: 서버는 이 ws 에 활성 holder 가 존재할
@@ -145,7 +145,7 @@ pub fn decode_mux(buf: &[u8]) -> Option<(u32, &[u8])> {
     Some((sid, &buf[4..]))
 }
 
-/// bulk 파일 전송(ADR-0054)의 `Data` 프레임 sub-header 길이 = `[transfer_id: u64 BE][seq: u32 BE]`.
+/// bulk 파일 전송(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)의 `Data` 프레임 sub-header 길이 = `[transfer_id: u64 BE][seq: u32 BE]`.
 pub const BULK_CHUNK_HEADER_LEN: usize = 12;
 
 /// bulk 파일 청크 `Data` 프레임 인코딩. 페이로드 앞에 12바이트 binary sub-header
@@ -256,7 +256,7 @@ pub enum StreamControl {
     /// echo, not optimistically. Anchored on the **remote surface id** (mapped
     /// from the local mirror id before send). The occupying stream connection is
     /// the workspace's attach holder, so the connection itself proves the
-    /// authority to drive geometry (ADR-0040 hard occupancy, ADR-0045).
+    /// authority to drive geometry (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry hard occupancy, docs/dev-guide/attach-behavior.md#리사이즈-전파-mirror-geometry).
     ///
     /// Direction: **client→server**. No explicit reply — the resulting
     /// [`StreamControl::Resize`] echo (present only when the grid actually
@@ -282,7 +282,7 @@ pub enum StreamControl {
     /// produces exactly one frame, and a clear on a surface with no record emits
     /// nothing. Anchored on the **remote surface id** (mapped from the local
     /// mirror id before send). The occupying stream connection is the workspace's
-    /// attach holder, so the connection itself proves the authority (ADR-0040
+    /// attach holder, so the connection itself proves the authority (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry
     /// hard occupancy) — the same model as [`StreamControl::ClientResize`].
     ///
     /// No echo loop: the remote's clear makes its next attention diff push a
@@ -302,7 +302,7 @@ pub enum StreamControl {
     /// the mirror. Anchored on **remote surface ids** (the only ids the client
     /// maps back to the remote): the server resolves pane/tab/workspace from its
     /// own tree. The occupying stream connection *is* the attach holder, so the
-    /// connection itself proves the authority to mutate the workspace (ADR-0040
+    /// connection itself proves the authority to mutate the workspace (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry
     /// hard occupancy).
     ///
     /// Direction: **client→server**. The server replies with a
@@ -322,7 +322,7 @@ pub enum StreamControl {
         /// before this field never send it, and every close they forwarded was
         /// kept restorable — reading absence as `User` keeps exactly that. A new
         /// client always sends it. See
-        /// `docs/adr/0480-a-forwarded-close-carries-who-asked-for-it.md`.
+        /// `docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         origin: Option<ForwardOrigin>,
     },
@@ -371,7 +371,7 @@ pub enum StreamControl {
         /// `{remote_id, role, kind}` for placeholders).
         surfaces: Vec<serde_json::Value>,
     },
-    /// bulk 파일 전송(ADR-0054)의 control-plane 시작 메시지. 전용 bulk 연결에서
+    /// bulk 파일 전송(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그)의 control-plane 시작 메시지. 전용 bulk 연결에서
     /// 실제 파일 바이트(`Data` 프레임, [`encode_bulk_chunk`])에 앞서 파일명·총 크기를
     /// 알린다. 서버는 `total_size` 를 사전 용량 승인의 입력으로 쓰고, `transfer_id`
     /// 단위로 청크를 누적한다. 저장 dir 결정·경로 회신은 `commit` 에서 확정.
@@ -494,7 +494,7 @@ pub enum StreamControl {
     /// [`StreamControl::Activity`], this push is the *only* source that works for
     /// every shell. The client stores it as a **remote-origin** path: the two
     /// instances' filesystems differ, so it is never used for a local filesystem
-    /// operation (ADR-0267).
+    /// operation (docs/dev-guide/attach-behavior.md#surface-cwd-전파).
     ///
     /// Not gated by the remote's `inherit_cwd` setting — this is an observation, not
     /// an execution; the consumer applies that gate.
@@ -661,7 +661,7 @@ pub enum StructuralOp {
     /// that workspace. Expressing this as a `NewTab` would mean the client
     /// inventing a kind and params, which is not a restore: the scrollback lives
     /// on the server's disk and the PTY has to be spawned there.
-    /// See `docs/adr/0264-mirror-restore-closed-item-runs-on-the-remote.md`.
+    /// See `docs/dev-guide/attach-behavior.md#mirror-구조-변경-forward`.
     RestoreClosedItem { anchor_surface_id: u32 },
 }
 

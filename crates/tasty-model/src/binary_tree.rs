@@ -15,7 +15,7 @@ pub trait BinaryTree: Sized {
     /// pane 보더는 논리라 배율을 받아야 물리가 나오고(`PANE_BORDER_WIDTH`),
     /// surface 보더는 hairline 이라 배율을 **무시하는 것이 정답**이다
     /// (`SURFACE_BORDER_WIDTH`). 두 경우를 한 상수로 표현할 수 없다.
-    /// 근거: `docs/adr/0148-physical-px-constants-are-split-by-what-they-are-for.md`.
+    /// 근거: `docs/concepts/typed-length.md#두-타입`.
     fn border_width(scale_factor: f32) -> PhysicalPx;
 
     /// `Split` 일 때 (direction, ratio, &first, &second). `Leaf` 면 None.

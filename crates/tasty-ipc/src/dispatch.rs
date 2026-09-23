@@ -7,10 +7,10 @@
 //! 있다" 는 신호다. **"못 비웠다" 는 아니다** — 예산에 닿은 순간 큐를 더 들여다보지 않으므로 큐가
 //! 마침 비어 있었는지는 모른다. 남은 것이 있었는지는 입장 장부의 `queued_commands` 가 답한다.
 //!
-//! 원자값 일곱이고 호출 수와 무관하게 자라지 않는다. 저장소를 거치지 않는다([ADR-0305] 와 같은
+//! 원자값 일곱이고 호출 수와 무관하게 자라지 않는다. 저장소를 거치지 않는다([docs/architecture/ipc-server.md#요청-압력-게이지] 와 같은
 //! 축이다 — caller 로 나누지 않는 프로세스 게이지).
 //!
-//! [ADR-0305]: ../../../docs/adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md
+//! [docs/architecture/ipc-server.md#요청-압력-게이지]: ../../../docs/architecture/ipc-server.md#요청-압력-게이지
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -123,16 +123,17 @@ pub struct DispatchSnapshot {
     pub rounds_stopped_by_time: u64,
     /// 기한이 큐에서 지나 실행하지 않은 명령 수. 소켓 요청은 `-32067` 로 답한 것이고, 호스트 주입
     /// 명령도 센다 — 주입 명령은 `-32067` 로 답해지지 않고 호출자 스레드에서
-    /// [`crate::host_call::InjectError::Expired`] 로 끝난다(ADR-0451).
+    /// [`crate::host_call::InjectError::Expired`] 로 끝난다(docs/architecture/ipc-server.md#기한).
     pub expired_before_run: u64,
     /// 실행을 시작한 명령 수의 누계.
     pub started: u64,
-    /// 지금 실행 중인 요청 수 — **실행을 시작했고, 그 응답을 기다리는 쪽이 아직 기다리는** 요청.
+    /// 실행을 시작한 뒤 명령 또는 응답 대기자가 lifecycle을 보유한 요청 수.
     ///
     /// 메인 스레드의 동기 handler 는 한 번에 하나라, 이 값이 1 을 넘는 것은 응답을 워커로 넘긴
     /// 요청(`approval.await` · `agent.task_await` · plugin namespace 호출 등)이 기다리는 동안이다.
-    /// 기다리던 쪽이 상한에서 돌아가면 그 요청은 여기서 빠진다 — 실행이 계속되더라도 받을 사람이
-    /// 없는 일은 세지 않는다. 연결 수(`connections.live`)와 다르다: 연결은 요청 없이도 살아 있다.
+    /// 명령과 응답 대기자가 공유한 lifecycle을 모두 놓을 때 빠진다. 호출자가 기다리기를
+    /// 멈춰도 실행 중인 명령이 lifecycle을 보유하면 계속 센다. lifecycle 없이 계속되는
+    /// 백그라운드 작업 전체를 세는 값은 아니다. 연결 수(`connections.live`)와도 구분한다.
     pub in_flight: u64,
     /// 지금까지 본 `in_flight` 의 최댓값.
     pub in_flight_max: u64,

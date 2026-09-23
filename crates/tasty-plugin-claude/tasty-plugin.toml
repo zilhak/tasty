@@ -405,7 +405,7 @@ min = 1.0
 # `--permission-mode` 를 아예 안 붙여, 사용자 자신의 Claude Code 설정이 그대로
 # 정한다 — codex 쪽과 달리 비대화형 값으로 떨어뜨리지 않는 이유는 Claude Code 에
 # 샌드박스 축이 따로 없어 "안 묻는다" 가 곧 봉쇄 없는 전권이 되기 때문이다
-# (docs/adr/0265-child-approval-policy-is-the-callers-choice.md 결정 2·3).
+# (docs/plugins/claude/index.md#승인-정책---permission-mode).
 # 호출별 `--permission-mode` 가 이 값을 그 호출에 한해 덮는다.
 [[contributes.settings_pages.items]]
 kind = "select"
@@ -427,7 +427,7 @@ options = [
 # 세션에 텍스트를 넣는 기능이라 기본 꺼짐(opt-in). 켜짐·상한은 만기 시점에 다시
 # 읽는다(지연은 예약 때 정해진다) — 예약 뒤에 꺼도 보내지 않는다. 상한은 연속 실패의 백스톱이다
 # (`continue_checklist_round_limit` 와 같은 성격). 근거는
-# docs/adr/0521-claude-auto-resume-after-an-api-error-is-opt-in-and-judged-at-send-time.md.
+# docs/plugins/claude/index.md#api-에러-뒤-자동-재개-auto_resumers.
 [[contributes.settings_pages.items]]
 kind = "toggle"
 id = "auto_resume_enabled"

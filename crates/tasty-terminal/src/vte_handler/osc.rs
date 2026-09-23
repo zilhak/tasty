@@ -296,8 +296,8 @@ impl TerminalState {
     /// position/state/title probes are deliberately ignored — an agent-driven
     /// escape must not manipulate or probe the user's window (identity: user vs
     /// agent separation). Pixel size reports (14t/16t) are also unanswered:
-    /// tasty has no pixel/image model (ADR-0008) and cell pixel metrics live in
-    /// the renderer, not the terminal model. See ADR-0011.
+    /// tasty has no pixel/image model (docs/features/terminal/index.md#비-목표) and cell pixel metrics live in
+    /// the renderer, not the terminal model. See docs/features/terminal/index.md#비-목표.
     pub(crate) fn handle_window(&mut self, window: Window) {
         match window {
             // Text area / screen size in character cells: `CSI 8 ; rows ; cols t`

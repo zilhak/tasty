@@ -5,7 +5,7 @@
 //! jsx:910-964) + `HookHandlers`/`HookRow` 컴포넌트(jsx:442-545).
 //!
 //! `settings` specimen(창 셸)은 L2 를 탐색할 수 없어 이 서브탭 콘텐츠들이
-//! 카탈로그에서 누락돼 있었다(ADR-0510 갤러리 완전성 갭) — 여기서 서브탭별
+//! 카탈로그에서 누락돼 있었다(docs/dev-guide/gallery-first.md#순서-필수 갤러리 완전성 갭) — 여기서 서브탭별
 //! Spec 으로 노출한다. 갤러리는 본체 registry 에 의존할 수 없으므로 jsx 의
 //! seed 데이터를 그대로 쓴다. 본체 대응: `src/view/settings/ui/file_handler_tab/`.
 
@@ -73,7 +73,7 @@ thread_local! {
 pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 // 헤더 행 — Mono 헤드 좌 + "Add mapping" ghost sm 우 (jsx:914-917).
@@ -177,7 +177,7 @@ thread_local! {
 pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 mono_head(ui, theme, "Detection passes (priority order)");
@@ -257,7 +257,7 @@ thread_local! {
 pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 mono_head(ui, theme, "Registered file handlers");
@@ -400,7 +400,7 @@ fn origin_variant(origin: &str) -> TagVariant {
 pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings 창 안의 L2 서브탭 **콘텐츠**다 — 떠 있는 표면이 아니라 창 셸에
-        // 얹힌 패널이므로 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 얹힌 패널이므로 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 HOOK_STATE.with(|s| {

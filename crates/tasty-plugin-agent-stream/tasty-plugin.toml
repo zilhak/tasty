@@ -1,11 +1,11 @@
 manifest_version = 1
 id = "com.tasty.agent-stream"
 name = "Agent Stream"
-version = "0.1.46"
+version = "0.1.47"
 description = "Tails AI agent session transcripts and normalizes them into structured stream events"
 api_version = "1"
 # 배포 패키징(DMG / AppImage / MSIX / deb)에서는 아직 제외한다. 이유:
-#  - 배포 대상이 되는 것은 ADR-0100 의 재검토 트리거다 — "tasty 를 설치하면 딸려오는
+#  - 배포 대상이 되는 것은 ADR-0651의 재검토 조건이다 — "tasty 를 설치하면 딸려오는
 #    것이 대화 전문을 네트워크로 내보낼 수 있다" 는 의미가 되므로, 기본 비활성만으로
 #    충분한지 다시 판단한 뒤에 켠다.
 # 인바운드 웹훅 배선은 이제 성립한다(`agent_stream.turn_start` correlation + 본체 웹훅
@@ -26,7 +26,7 @@ permissions = [
     # 매니페스트에 정직하게 선언한다.
     "fs.write",
     # SSE 엔드포인트가 TCP 포트를 연다(`agent_stream.serve`). 기본 bind 는 loopback 이고,
-    # 그보다 넓은 주소는 토큰 없이는 거부한다 — ADR-0100.
+    # 그보다 넓은 주소는 토큰 없이는 거부한다 — docs/plugins/agent-stream/index.md#sse-엔드포인트.
     "network",
 ]
 lang_dir = "lang"

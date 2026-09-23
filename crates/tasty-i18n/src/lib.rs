@@ -1856,7 +1856,7 @@ mod tests {
     /// plugin 네임스페이스의 빈 값도 **번역 없음**이다 — 아래 층인 그 plugin 의 영어
     /// 문자열이 보인다.
     ///
-    /// 팩과 내장 오버라이드는 이미 이 규칙을 따른다(ADR-0124). 네임스페이스만 빠져
+    /// 팩과 내장 오버라이드는 이미 이 규칙을 따른다(docs/dev-guide/i18n.md#언어팩-tastylangcodepacktoml). 네임스페이스만 빠져
     /// 있으면 같은 실수가 plugin 에서만 라벨 없는 버튼이 되고, 규칙을 한 줄로 적을 수
     /// 없어 다음 사람은 먼저 읽은 쪽을 믿는다.
     #[test]
@@ -1892,7 +1892,7 @@ mod tests {
         std::fs::remove_dir_all(&tmp).ok();
     }
 
-    /// 폭 0 문자는 빈 값이 아니다 — 일부러 비운 텍스트의 탈출구(ADR-0124)가
+    /// 폭 0 문자는 빈 값이 아니다 — 일부러 비운 텍스트의 탈출구(docs/dev-guide/i18n.md#언어팩-tastylangcodepacktoml)가
     /// 네임스페이스에서도 같아야 한다.
     #[test]
     fn zero_width_namespace_values_survive_the_blank_rule() {

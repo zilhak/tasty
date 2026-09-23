@@ -851,7 +851,7 @@ fn feed_bytes_reports_change() {
     assert!(t.feed_bytes(b"x"), "text feed changes the surface");
 }
 
-/// `try_take_events` 는 **상태 락을 못 잡으면 건너뛴다** — 그 성질이 ADR-0002 의 근거이고
+/// `try_take_events` 는 **상태 락을 못 잡으면 건너뛴다** — 그 성질이 docs/features/terminal/index.md#vte-에뮬레이션 의 근거이고
 /// 호스트의 이벤트 배수(`CoreState::collect_events`)가 그 위에 서 있다. 성질 자체를 재는
 /// 대조가 여태 없었다.
 ///
@@ -869,7 +869,7 @@ fn try_take_events_skips_while_the_state_lock_is_held_but_take_events_waits() {
     assert!(
         t.try_take_events().is_none(),
         "락을 쥐고 있는 동안 `try_take_events` 는 건너뛴다 — 이 성질이 없으면 입력 스레드가 \
-         바쁜 파서 스레드들과 직렬화된다(ADR-0002)"
+         바쁜 파서 스레드들과 직렬화된다(docs/features/terminal/index.md#vte-에뮬레이션)"
     );
     drop(guard);
 
@@ -1317,7 +1317,7 @@ fn alive_check_throttled_within_window() {
     // 이 자리가 재는 것은 "`process()` 가 도장을 다시 찍었나" 다. 그것을 벽시계 예산으로
     // 물으면(`first.elapsed() < ALIVE_CHECK_INTERVAL`) 굶은 러너에서 빨개지고, 그 빨강이
     // 코드를 지목한다. 도장 자체를 비교하면 예산이 아예 없어진다 — 대조군보다 나은
-    // 처방이라 여기는 ADR-0181 의 (B) 가 아니다.
+    // 처방이라 여기는 docs/dev-guide/self-verification.md#시간-측정과-실패-진단 에서 말하는 외부 부하 가 아니다.
     let before = t.last_alive_check;
     t.process();
     let first = t.last_alive_check;
@@ -1350,7 +1350,7 @@ fn process_exited_eventually_emitted() {
     // spawn 보다 뒤에 쓰는 `initial_input` 이 그 셸의 첫 입력으로 들어가는 것.
     // 실측(2026-09-08, 리눅스): 자식이 안 죽게 두면 이 루프는 예산을 다 쓰고 그동안
     // try_wait 폴백은 61 회 돌았다 — 폴백은 멀쩡했고 자식이 안 죽었을 뿐이다.
-    // 그래서 실패문이 그 둘을 갈라 적는다(아래). 근거·재검토 조건은 ADR-0211.
+    // 그래서 실패문이 그 둘을 갈라 적는다(아래). 근거·재검토 조건은 docs/dev-guide/self-verification.md#시간-측정과-실패-진단.
     //
     // **이 빨강을 재현하는 법**(이 시험이 macOS 에서만 깨져 붙을 수 없을 때 쓴다).
     // 자식이 안 죽는 조건을 손으로 만들면 리눅스에서 같은 실패가 그대로 난다 —
@@ -1381,7 +1381,7 @@ fn process_exited_eventually_emitted() {
     )
     .expect("terminal creation");
 
-    // 예산은 경주 예산이 아니라 안전망이다 — 근거와 재검토 조건은 ADR-0211.
+    // 예산은 경주 예산이 아니라 안전망이다 — 근거와 재검토 조건은 docs/dev-guide/self-verification.md#시간-측정과-실패-진단.
     const BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
     let started = std::time::Instant::now();
     let deadline = started + BUDGET;
@@ -1433,7 +1433,7 @@ fn process_exited_eventually_emitted() {
              봐야 하고, false 면 죽었는데 process() 가 못 본 것이다. \
              화면 꼬리=\"{tail}\" — 이 글자가 우리가 보낸 \"exit\\r\" 의 에코일 수 있다. \
              에코는 자식이 아니라 라인 디시플린이 내므로 자식이 떴다는 증거가 아니다. \
-             예산 인상은 이 사건의 처방이 아니다(ADR-0211).",
+             예산 인상은 이 사건의 처방이 아니다(docs/dev-guide/self-verification.md#시간-측정과-실패-진단).",
             elapsed = started.elapsed(),
             tail = tail.escape_default(),
         );
@@ -1511,7 +1511,7 @@ fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
 
 /// 위 시험의 반대쪽 — 재-wake 가 **멈추는** 조건을 고정한다. `ProcessExited` 를 낸 뒤에는
 /// `exit_settled` 가 서서 parser 스레드의 EOF 꼬리가 끝나야 한다. 그 플래그를 안 세우면 꼬리는
-/// 핸들이 drop 될 때까지 500 ms 마다 깨운다(ADR-0523) — 이 시험이 아니면 그 회귀는 아무
+/// 핸들이 drop 될 때까지 500 ms 마다 깨운다(docs/features/terminal/index.md#프로세스-종료--절전-복귀) — 이 시험이 아니면 그 회귀는 아무
 /// 결과도 안 바꿔 조용히 남는다.
 ///
 /// 종료 판정 뒤에 합법적으로 올 수 있는 wake 는 최대 한 번이다: 판정이 EOF 보다 먼저 났으면
@@ -2322,7 +2322,7 @@ fn terminal_query_response_still_reaches_pty() {
     assert_eq!(terminal.lock_state().enqueued_count, 1);
 }
 
-// ---- busy 판정: 입력은 진입만 막고 유지는 못 끊는다 (ADR-0261) ----
+// ---- busy 판정: 입력은 진입만 막고 유지는 못 끊는다 (docs/design/policies/busy-indicator.md#판정--해제-두-조건--진입-조건-하나) ----
 
 const FAKE_SHELL_PID: u32 = 1;
 

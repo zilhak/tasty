@@ -10,21 +10,20 @@ name: Plugin Version Check
 # 로컬 tip 과, 이 잡은 밀려 들어온 범위의 두 끝점을 본다.
 #
 # 판별식이 파일 수 문턱이 아니라 **rustfmt 정규화 후 내용**인 근거·측정·대안:
-# docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md
+# docs/dev-guide/release.md#플러그인-버전-비교
 #
 # self-hosted Linux X64 근거: 컴파일이 없는 git+rustfmt 게이트라 초 단위로 끝난다.
 # complexity-check.yml / supply-chain-check.yml 과 같은 관행.
 
 on:
-  # 이 저장소는 PR 을 열지 않고 main 에 직접 push 한다 — main push 가 실질적 유일
-  # 채널이다(complexity-check.yml 이 같은 이유를 ADR-0131 근거로 적어 두었다).
+  # main에 직접 push하는 작업도 검사한다. 실행 조건은 docs/dev-guide/ci-gates.md 를 따른다.
   # PR 트리거도 함께 둬서 PR 을 쓰기 시작하면 그때부터 자동으로 걸리게 한다.
   # 필터를 경로 목록으로 두지 않는 이유: 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스
-  # 내부 의존 폐포**다(ADR-0166). `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로
+  # 내부 의존 폐포**다(docs/dev-guide/release.md#플러그인-버전-비교). `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로
   # 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라지므로, 좁은 필터로는 그 push 에서
   # 잡 자체가 안 돈다 — 스크립트를 고쳐도 자동 채널이 안 따라온다.
   # 그리고 좌변은 `crates/` 에서도 끝나지 않는다 — `[patch]` 로 끼운 상류 사본
-  # (`vendor/tiny_http`)처럼 워크스페이스 밖 path 의존도 plugin 산출물을 바꾼다(ADR-0537).
+  # (`vendor/tiny_http`)처럼 워크스페이스 밖 path 의존도 plugin 산출물을 바꾼다(docs/dev-guide/release.md#플러그인-버전-비교).
   # 그 경로를 여기 목록으로 적으면 새 사본이 생길 때 이 자리만 옛 목록에 남아 조용히 안
   # 돈다. 그래서 거꾸로 **문서만 담은 push 만** 뺀다.
   # 단 `paths-ignore` 로는 못 뺀다 — `**/*.md` 가 스크립트의 판정 대상인 `.md` 까지 뺀다.
@@ -32,7 +31,7 @@ on:
   # 산출물로 보므로 `crates/tasty-plugin-markdown/assets/NOTICE.md` 가 판정 대상이고, 그 파일만
   # 담은 push 에서 잡이 안 돌면 필터가 판정 대상의 상위집합이 아니게 된다. 오늘 `.md` 가 산출물에
   # 안 실린다는 것은 참이지만 그 0 은 바뀌어도 아무도 모른다. 그래서 `paths` 에 부정 패턴을 쓰고
-  # 그 세 디렉토리 모양을 되살린다(ADR-0537).
+  # 그 세 디렉토리 모양을 되살린다(docs/dev-guide/release.md#플러그인-버전-비교).
   # ★ **순서가 의미를 정한다.** GitHub Actions 는 `paths` 의 패턴을 위에서 아래로 평가하고,
   # 한 파일에 여러 패턴이 맞으면 **뒤에 오는 패턴이 이긴다**(`!` 로 시작하면 제외, 아니면 포함).
   # - 맨 앞 `'**'` 가 없으면 세 디렉토리 밖 산출물 경로(`Cargo.toml` · `tasty-plugin.toml` ·
@@ -95,7 +94,7 @@ jobs:
 
       # 출하 범위 판정기. 없으면 스크립트가 **더 넓게** 보므로 죽지는 않지만, CI 와 로컬
       # pre-commit 이 서로 다른 술어로 판정하게 된다 — 같은 커밋이 한쪽에서만 빨개진다.
-      # 의존 0 크레이트(ADR-0138)의 bin 하나라 빌드가 싸다. complexity-check.yml 이 같은
+      # 의존 0 크레이트(docs/dev-guide/guard-relocation.md#문서-검사를-옮길-위치)의 bin 하나라 빌드가 싸다. complexity-check.yml 이 같은
       # 이유로 같은 스텝을 둔다.
       - name: Build the shipping-scope judge
         run: cargo build --locked -p tasty-doc-guards --bin strip-cfg-test

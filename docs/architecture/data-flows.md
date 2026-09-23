@@ -20,7 +20,7 @@ winit KeyEvent / Ime
               → set_context.raw_input forward → plugin egui TextEdit (egui-mesh-channel)
 ```
 
-셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 터미널 키스트로크는 PTY 로 직접, egui-mesh surface 키/IME 는 plugin 으로 forward 된다. (`markdown` 은 [ADR-0065](../adr/0065-markdown-webview-render-channel.md) 로 webview 전환됨 — 본문은 `set_context`/`paint` 를 아예 받지 않고, 네이티브 WebView 가 자체적으로 입력을 처리한다. 위 경로는 markdown 의 대용량/파일열기 확인 팝업 2개에만 해당.)
+셸 출력은 비동기로 돌아온다(흐름 2). 키 입력 중 *단축키* 만 Intent 큐를 타고, 터미널 키스트로크는 PTY 로 직접, egui-mesh surface 키/IME 는 plugin 으로 forward 된다. (`markdown` 은 [ADR-0629](../adr/0629-webview-host-integration.md) 로 webview 전환됨 — 본문은 `set_context`/`paint` 를 아예 받지 않고, 네이티브 WebView 가 자체적으로 입력을 처리한다. 위 경로는 markdown 의 대용량/파일열기 확인 팝업 2개에만 해당.)
 
 ---
 
@@ -61,36 +61,36 @@ tasty-cli (또는 외부 프로그램)
 **한 회차에는 두 예산이 있다.** gui 의 `process_ipc` 와 headless 의 `pump_ipc` 가 같은 규칙
 (`app::ipc_round::IpcRound`)을 쓴다 — 큐에서 명령을 **하나 꺼내 끝까지 처리하고 다음 것을
 꺼내며**, 명령 수가 `DRAIN_BUDGET_PER_ROUND`(동시 연결 상한에서 파생,
-[ADR-0313](../adr/0313-the-dispatch-round-budget-is-the-connection-bound.md))에 닿거나 경과 시간이
-`ROUND_TIME_BUDGET`(16 ms, [ADR-0410](../adr/0410-a-dispatch-round-also-stops-at-a-time-budget-and-callers-are-served-in-arrival-order.md))에
+[ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md))에 닿거나 경과 시간이
+`ROUND_TIME_BUDGET`(16 ms, [ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md))에
 닿으면 멈춘다. 첫 명령은 시간과 무관하게 늘 처리한다. 남은 것은 **큐에 그대로** 있다가 다음
 회차가 집는다. headless 는 이벤트 채널에 `IpcReady` 를 하나만 둔다(생산자 쪽 게이트) — 루프가 회차를
 열기 전에 게이트를 풀고, 회차가 끝났을 때 큐에 명령이 남았으면 루프를 한 번 더 깨운다. 명령마다 wake 를
 두면 지속 부하에서 채널에 적체가 쌓여 같은 채널의 plugin·PTY wake 가 그 뒤에서 굶는다
-([ADR-0465](../adr/0465-headless-keeps-one-ipc-wake-in-its-channel-and-a-cut-round-wakes-it-again.md)). 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
+([ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md)). 예산은 명령 사이에서만 보므로 **이미 실행 중인 handler 는 끊지 못한다.**
 
 gui 에서는 회차가 `about_to_wait`(iteration 마다 한 번)와 `IpcReady` 사용자 이벤트 두 자리에서 돈다.
 winit 은 사용자 이벤트를 큐가 빌 때까지 처리한 뒤에야 `about_to_wait` 로 넘어가므로, 사용자 이벤트가
 늘 회차를 열면 지속 부하에서 타이머·입력·렌더가 굶는다. 그래서 사용자 이벤트는 직전 회차가 끝난 뒤
 한 회차 예산이 지났을 때만 회차를 열고(`app::ipc::IpcPacer`), 예산에서 멈춘 회차는 루프를 스스로 한
 번 더 깨운다 — 건너뛴 wake 가 남은 명령의 몫이었을 수 있어서다. 그 재깨움은 양보 규칙을
-`about_to_wait` 한 번 사이에 한 번 건너뛴다([ADR-0413](../adr/0413-in-gui-an-ipc-wake-yields-to-the-rest-of-the-loop-and-a-cut-round-wakes-it-again.md)).
+`about_to_wait` 한 번 사이에 한 번 건너뛴다([ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md)).
 
 순서는 도착 순이다. 연결 하나는 응답을 받을 때까지 다음 요청을 안 보내므로 큐에 한 번에 하나만
 올리고, 그래서 어떤 요청 앞에 설 수 있는 명령 수는 연결 상한과 주입 깊이 상한으로 유한하다.
-호출자별 스케줄링은 없다(ADR-0410).
+호출자별 스케줄링은 없다(ADR-0607).
 
 호출자가 봉투에 응답 대기 상한을 실었으면 명령은 **기한**(큐 진입 + 상한)을 든다. 회차는 명령을
 꺼낸 직후, 게이트보다 앞에서 기한을 보고 지났으면 실행하지 않고 `-32067` 로 답한다. 응답을
 기다리는 연결 스레드와 "시작했는가" 를 상태 칸 하나로 정하므로, 시작 뒤의 만료만 `-32061`(결과
-불명)이다([ADR-0411](../adr/0411-a-request-whose-deadline-passed-in-the-queue-is-answered-as-not-run.md)).
+불명)이다([ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md)).
 
 큐에서 **꺼낸** 쪽의 누계 — 회차가 멈춘 이유 · 실행 전 만료 수 · 지금 실행 중인(in-flight) 요청
 수 — 는 `tasty_ipc::dispatch::DispatchStats`(`Core::dispatch`)에 있고, 큐에 **든** 쪽(입장 장부)과
-함께 `CommandQueueSnapshot::read` 한 자리에서 읽는다. in-flight 는 "시작했고 호출자가 아직
-기다리는" 요청이다([ADR-0412](../adr/0412-in-flight-counts-a-started-request-while-its-caller-still-waits.md)).
+함께 `CommandQueueSnapshot::read` 한 자리에서 읽는다. in-flight는 실행을 시작했고
+명령 처리 또는 응답 대기가 끝나지 않은 요청이다([ADR-0608](../adr/0608-ipc-pressure-observability.md)). 응답 대기가 먼저 끝나도 명령을 처리 중이면 집계에 남는다.
 두 값은 `system.pressure`(CLI `tasty list pressure`)의 `queue_admission` · `queue_dispatch` 덩어리로
-나간다([ADR-0435](../adr/0435-the-queue-and-retry-counts-join-the-pressure-answer-as-three-blocks.md)).
+나간다([ADR-0608](../adr/0608-ipc-pressure-observability.md)).
 
 종료 중의 drain 은 이 정책을 따르지 않는다 — 남은 요청을 거절하며 비워야 한다
 ([shutdown-sequence](shutdown-sequence.md)).

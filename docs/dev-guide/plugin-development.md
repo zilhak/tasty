@@ -243,7 +243,7 @@ canonical 아이콘을 쓴다. plugin `build.rs` 가 `[build-dependencies] tasty
 + usvg 로 `Icon.svg` 를 평탄화해 점배열을 `OUT_DIR` 에 베이크하고, 런타임엔
 `tasty_plugin_sdk::baked_icon::draw(painter, icon, center, size, color)` 로 텍스처 없이
 DPI 독립·theme tint 벡터 stroke 로 그린다. 새 아이콘 = `tasty-icons` 에 const 추가 +
-plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](../adr/0036-plugin-icon-buildtime-bake-tasty-icons-single-source.md).
+plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0635](../adr/0635-shared-design-and-theme.md).
 
 ## 5. 호스트 IPC 호출
 
@@ -337,7 +337,7 @@ CLI도 설치 영어 → 선택 언어 → host 홈의 사용자 plugin 파일 �
 | `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1 회용) |
 | `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 |
 | `TASTY_PLUGIN_HANDLE_ENDPOINT` | handle 채널 엔드포인트(있을 때) |
-| `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([ADR-0103](../adr/0103-plugin-locale-via-host-process-env.md)) |
+| `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([ADR-0640](../adr/0640-locale-catalogs-and-display-text.md)) |
 | `TASTY_LOCALE_FONT` | 언어팩이 제공하는 폰트 파일의 절대경로 — **언어팩 폰트가 resolve 됐을 때만** 주입(내장 폰트 · 미제공이면 미설정, 셸에서 상속된 값도 자식에서 제거). 출처와 고정 시점은 `TASTY_LOCALE` 과 같다 |
 | `TASTY_HOST_PID` | 호스트 프로세스 PID (**macOS 만** — SDK watchdog 가 부모 사망 감지에 사용) |
 
@@ -448,9 +448,9 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 
 | 상한 | 값 | 무엇을 묶나 | 근거 |
 |---|---|---|---|
-| 개수 | 채널마다 1024 건 | 큐에 쌓인 메시지 수 | [ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md) |
-| 큐 바이트 | 큐마다 16 MiB | 큐 하나에 쌓인 줄의 바이트 | [ADR-0360](../adr/0360-plugin-channels-are-bounded-in-bytes-per-queue-and-in-total.md) |
-| 합계 바이트 | 프로세스 전체 64 MiB | 모든 plugin · 모든 채널을 더한 바이트 | ADR-0360 |
+| 개수 | 채널마다 1024 건 | 큐에 쌓인 메시지 수 | [ADR-0606](../adr/0606-bounded-ipc-transport.md) |
+| 큐 바이트 | 큐마다 16 MiB | 큐 하나에 쌓인 줄의 바이트 | [ADR-0606](../adr/0606-bounded-ipc-transport.md) |
+| 합계 바이트 | 프로세스 전체 64 MiB | 모든 plugin · 모든 채널을 더한 바이트 | ADR-0606 |
 
 - **포화의 답은 방향이 정한다** — 호스트 → plugin 요청은 **거절**(호스트 프레임이 서지 않게),
   plugin → 호스트 응답·이벤트는 **대기**(plugin 의 소켓 읽기가 선다 = backpressure). 세 상한 모두
@@ -461,27 +461,27 @@ disable·remove는 registry 정의를 삭제하지 않고 철회한다. 기존 s
 - **바이트는 소켓의 줄 길이로 잰다**(개행 포함). 추정하지 않는다.
 - **제어(ping · shutdown)는 합계 상한을 면제한다** — 개수와 큐 바이트 상한은 그대로 받는다. 합계는
   다른 plugin 이 채울 수 있어서, 거기에 제어를 걸면 건강한 plugin 이 남의 포화로 무응답 재시작되거나
-  graceful 없이 kill 된다(ADR-0360 2026-09-21 보강).
+  graceful 없이 kill 된다(ADR-0606의 전송 거절 처리).
 - **합계는 plugin 을 가로지른다.** 합계가 찬 동안에는 **다른** plugin 의 요청도 거절되고 다른
   plugin 의 reader 도 기다린다. 큐 상한이 합계보다 작아 plugin 하나가 혼자서는 합계를 못 채운다.
 - 호스트 로그에서 구분된다 — `request queue full`(개수) · `request queue over its byte budget`
   (큐 바이트) · `plugin channels over their total byte budget`(합계).
 - 렌더 데이터(egui-mesh 기하·텍스처)는 이 채널을 안 탄다 — 공유 메모리 버퍼 한 칸을 덮어쓰고
-  host 는 surface 마다 마지막 프레임만 든다. 쌓이는 큐가 없다(ADR-0315 2026-09-21 보강).
+  host 는 surface 마다 마지막 프레임만 든다. 쌓이는 큐가 없다(ADR-0606의 공유 메모리 예외).
 - 현재 누적은 `PluginManager::channel_bytes`(큐별 바이트·최댓값·거절·대기 누계)가 낸다. **이
   값을 읽는 IPC/CLI 는 아직 없다.**
 
 ### 큐 포화 통지 (호스트가 버린 요청을 plugin 이 안다)
 
 호스트 → plugin 요청 큐는 유한하고, 차면(개수든 바이트든 — 위 "채널 상한") **기다리지 않고 거절**한다 — 그 방향에서
-기다리면 호스트 프레임이 통째로 선다([ADR-0315](../adr/0315-the-two-directions-of-a-plugin-channel-answer-saturation-differently.md)).
+기다리면 호스트 프레임이 통째로 선다([ADR-0606](../adr/0606-bounded-ipc-transport.md)).
 거절된 요청은 소켓에 안 나가므로 plugin 은 그것이 있었다는 사실 자체를 모른다.
 
 그래서 버린 수를 **다음으로 실제 큐에 들어가는 요청**에 얹는다 —
 `PluginRequest.dropped_requests`. 별도 통지 메시지를 만들면 그 통지도 같은(찬) 큐를
 써야 해서 자기모순이고, 자리가 났다는 것은 plugin 이 하나라도 소비했다는 뜻이므로
 살아서 밀리는 plugin 은 반드시 이 값을 본다. 근거는
-[ADR-0339](../adr/0339-the-host-tells-a-plugin-what-saturation-dropped.md).
+[ADR-0606](../adr/0606-bounded-ipc-transport.md).
 
 SDK 가 셋으로 노출한다.
 
@@ -513,7 +513,7 @@ SDK 가 셋으로 노출한다.
 - **Windows**: 터미널 셸을 전역 호스트 Job Object 에 결박한다 (공용 primitive `tasty-reaper`, `Terminal::new` 이 spawn 직후 `adopt_pid`, 부팅 시 `boot.rs` 에서 `init_host_reaper` 1 회). ConPTY 는 "pseudoconsole 종료 ⇒ 자식 종료" 를 보장하지 않아, 결박이 없으면 tasty 비정상 종료 시 화면 없는 좀비 셸 트리가 누적된다(개발 중 디버거 stop 마다 수십 개씩). 플러그인 job(위 표, `PluginManager` 소유)과 터미널 job(전역)은 별개 인스턴스지만 둘 다 `KILL_ON_JOB_CLOSE` 라 프로세스 사망 시 동일하게 정리된다.
 - **Unix**: tasty 종료 시 커널이 PTY master fd 를 닫으며 발생하는 SIGHUP 이 셸 foreground 프로세스 그룹을 정리하므로 별도 결박 없이 같은 결과가 난다(portable-pty `CommandBuilder` 가 `pre_exec` 를 노출하지 않아 셸에는 PDEATHSIG 설치 불가 — 대신 SIGHUP 이 그 역할을 한다).
 
-정상 종료 경로(surface 닫기/quit)에서는 `PtyBackend::Drop` 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0034](../adr/0034-terminal-shell-host-lifetime-binding.md).
+정상 종료 경로(surface 닫기/quit)에서는 `PtyBackend::Drop` 이 셸을 명시적으로 kill 해 PTY master HUP 에만 의존하지 않는다. 결정 배경·대안·재검토 조건은 [ADR-0613](../adr/0613-terminal-io-and-process-lifetime.md).
 
 ### 토큰 핸드셰이크 (보안)
 
@@ -524,7 +524,7 @@ SDK 가 셋으로 노출한다.
 - **이름**: crate `tasty-plugin-<name>` = binary 이름, id `com.x.<name>`(다어절 hyphen), IPC prefix = id 마지막 segment 의 `_` 변환, i18n key root = prefix.
 - **i18n**: 매니페스트 `*_i18n_key` 는 host 가 lookup. 플러그인이 직접 그리는 텍스트는 `tasty_plugin_sdk::i18n::Translator`(`TASTY_LOCALE` 주입 — host 가 부팅 시 `general.language` 에서 set, §7 표). 키는 자기 prefix 안에만(`surface.kind.<own>` 만 예외).
 - **권한 표기**: 실제 필요한 것만. 자기 namespace `ipc.invoke:<self>` 는 적지 않는다 — 자기 호출에는 필요 없고, 자식 agent 토큰에 넘길 때도 소유자라 쥐지 않고 넘긴다([plugin-permissions](plugin-permissions.md#agent-caller--session-token--temp-grants)).
-- **모듈 분리**: `main.rs` 가 ~300 줄을 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리한다(`crates/tasty-plugin-claude/src/` · `crates/tasty-plugin-codex/src/` 가 reference). 커지면 실제로 가른다 — `crates/tasty-plugin-image/src/` 가 그 예로, 렌더와 문서 처리를 `crates/tasty-plugin-image/src/render.rs` · `crates/tasty-plugin-image/src/doc.rs` 로 냈다. 아직 단일 `main.rs` 인 것도 있다(`crates/tasty-plugin-html/src/main.rs`). **줄 수는 적지 않는다** — 커밋마다 바뀌는 값이라 적는 순간 낡고, 예시가 낡으면 규칙이 자기 반대를 가르친다(ADR-0139).
+- **모듈 분리**: `main.rs` 가 ~300 줄을 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리한다(`crates/tasty-plugin-claude/src/` · `crates/tasty-plugin-codex/src/` 가 reference). 커지면 실제로 가른다 — `crates/tasty-plugin-image/src/` 가 그 예로, 렌더와 문서 처리를 `crates/tasty-plugin-image/src/render.rs` · `crates/tasty-plugin-image/src/doc.rs` 로 냈다. 아직 단일 `main.rs` 인 것도 있다(`crates/tasty-plugin-html/src/main.rs`). **줄 수는 적지 않는다** — 커밋마다 바뀌는 값이라 적는 순간 낡고, 예시가 낡으면 규칙이 자기 반대를 가르친다(ADR-0648).
 - **Cargo**: `tasty-plugin-protocol` 직접 의존 금지 — SDK 가 re-export. `[lints] workspace = true`.
 
 ## 9. 빌드 & 설치
@@ -563,7 +563,7 @@ cp crates/tasty-plugin-<name>/tasty-plugin.toml.sig target/release/builtin-plugi
 **3) 정지 → 재동기화 → 재기동 (순서 중요)**
 ```bash
 tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .exe 를 잠가 upgrade 가 'os error 5(액세스 거부)'
-#   ※ disable 은 프로세스가 빠지기를 기다리지 않고 곧바로 돌아온다(ADR-0457). 옛 프로세스가 아직
+#   ※ disable 은 프로세스가 빠지기를 기다리지 않고 곧바로 돌아온다(ADR-0626). 옛 프로세스가 아직
 #      빠지는 중이면 다음 줄의 upgrade-builtins 가 그 회수(최대 2 s)를 기다린 뒤 쓴다 — 쓸 것이
 #      있을 때만. 건너뛰는 plugin 과 바뀐 내용이 없는 plugin 은 기다리지 않는다.
 tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
@@ -573,7 +573,7 @@ tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재s
 #      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **설치본 버전이 번들보다 높아** 건너뛰는 갈래에만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 #   ※ 옛 프로세스가 아직 빠지는 중이면 enable 이 그 회수(최대 2 s)를 기다린 뒤 그 자리에서 띄운다 —
-#      enable 이 돌아오면 plugin 은 이미 떠 있다(ADR-0457).
+#      enable 이 돌아오면 plugin 은 이미 떠 있다(ADR-0626).
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은

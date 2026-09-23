@@ -16,7 +16,7 @@
 //!
 //! 그래서 **raw event 보존량이 곧 조회 가능 범위**다. 호스트가 개수 상한(최근 2만
 //! 이벤트)으로 잘라내므로, 그보다 오래된 구간은 조회되지 않는다. 근거와 대안(롤업
-//! 신설)은 `docs/adr/0085-ipc-log-retention-bounded.md`.
+//! 신설)은 `docs/design/systems/storage.md#관측-로그-보존`.
 //!
 //! ## 비-책임 (호스트가 처리)
 //!
@@ -314,7 +314,7 @@ pub use gate::{GateRefusal, GateSnapshot, GateStats};
 // - `LatencyHistogram` 은 `PressureStats`·`PluginWaitStats` 의 **비공개 필드 타입**이라
 //   밖에서 세울 일이 없다.
 // - `LATENCY_BUCKET_BOUNDS_US` 를 루트에 두면 소비자가 경계를 상수로 직접 끌어다 쓰게 되고,
-//   그 순간 "경계는 값과 같은 자리에서 나간다"(ADR-0340)가 무너진다. 경계를 얻는 길은
+//   그 순간 "경계는 값과 같은 자리에서 나간다"(docs/architecture/ipc-server.md#연결-수와-시간-분포)가 무너진다. 경계를 얻는 길은
 //   [`HistogramSnapshot::bounds_us`] 하나여야 한다.
 //
 // 둘 다 `pressure` 모듈이 `pub` 이라 `tasty_telemetry::pressure::…` 로 여전히 닿는다 —

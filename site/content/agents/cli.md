@@ -449,9 +449,9 @@ queue_dispatch는 큐에서 꺼내 처리하는 과정을 보여 줍니다.
 | `rounds_stopped_by_count`, `rounds_stopped_by_time` | 한 번에 처리할 개수·시간을 다 써서 멈춘 횟수 |
 | `expired_before_run` | 큐에서 기다리다 요청자의 제한시간이 지나 실행하지 않은 수 |
 | `started` | 실행을 시작한 명령 수 |
-| `in_flight`, `in_flight_max` | 호출자가 기다리는 실행 중 요청의 현재 수와 최댓값 |
+| `in_flight`, `in_flight_max` | 실행을 시작한 뒤 명령이나 응답 대기가 아직 끝나지 않은 요청의 현재 수와 최댓값 |
 
-in_flight는 감소할 수 있습니다. 시간 제한으로 멈춘 횟수나 expired_before_run이 늘면
+in_flight는 감소할 수 있습니다. 호출자가 기다리기를 멈춰도 명령이 실행 중이면 계속 집계합니다. 시간 제한으로 멈춘 횟수나 expired_before_run이 늘면
 큐 처리가 요청을 따라가지 못하는지 확인하세요.
 
 #### 중복 요청 처리 (`keyed_requests`)

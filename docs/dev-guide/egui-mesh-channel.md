@@ -138,7 +138,7 @@ variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준�
    `main_windows_iter_mut()` 로 순회하며 broadcast 한다(`attach_client.rs` 의 기존
    `plugin_mesh_popup_pending_repaint` 예약 패턴과 동형).
 3. 새 set_context 트리거가 아니라, popup 이 이미 갖고 있던
-   `AppState::plugin_mesh_popup_pending_repaint`(ADR-0056 — 비동기 host→plugin push 후 강제
+   `AppState::plugin_mesh_popup_pending_repaint`(ADR-0622 — 비동기 host→plugin push 후 강제
    repaint 예약)에 그대로 얹는다. `popup_render.rs` 의 forward 게이트(`need_repaint`)가 다음
    프레임에 무입력 `popup.set_context` 를 1 회 통과시킨다 — surface 의 `invalidated` 플래그와
    동일 역할을 이미 있던 필드가 겸한다(별도 상태 필드 신설 불필요).
@@ -316,7 +316,7 @@ Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_
 그것을 읽으므로 값이 갈리지 않는다. host 는 그 옵션을 사용자 설정
 (`GeneralSettings::wheel_line_scroll`, 기본 50pt)으로 채운다. 같은 옵션을 host egui 의
 `ScrollArea` 전반도 쓰므로 **plugin 표면과 host UI 가 한 값을 공유한다**
-([ADR-0130](../adr/0130-wheel-notch-distance-is-uniform-and-user-set.md)).
+([ADR-0615](../adr/0615-terminal-user-input-routing.md)).
 
 | 수집 지점 | 입력 소스 | 환산 |
 |-----------|-----------|------|

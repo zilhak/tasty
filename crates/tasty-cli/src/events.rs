@@ -11,7 +11,7 @@
 //! 연결도 끊는다. 그래서 세대를 한 연결 안에서만 견주면 그 비교가 실제 재시작에서는
 //! 한 번도 참이 되지 않는다. 옛 세대는 재부착 인자(`--epoch`)나 `--reconnect` 가
 //! 넘겨 주고, 그것도 없으면 호스트가 다는 앞섬 표지(`ahead_of_stream`)로 안다
-//! (ADR-0405 · ADR-0407).
+//! (docs/reference/event-catalog.md#지나간-사건--위치로-읽는다 · docs/reference/event-catalog.md#cli-follow와-재연결).
 
 use std::net::TcpStream;
 use std::time::Duration;
@@ -183,7 +183,7 @@ pub fn run_follow(args: FollowArgs<'_>, port_file: Option<&str>) -> Result<()> {
         let resp = match conn.send(&req) {
             Ok(resp) => resp,
             // 호스트가 답한 오류는 연결 문제가 아니다 — 다시 붙어도 같은 답이 온다.
-            // 그 오류는 `main` 까지 올라가 std 가 찍는다 — `data` 는 둘째 줄로 싣는다(ADR-0512).
+            // 그 오류는 `main` 까지 올라가 std 가 찍는다 — `data` 는 둘째 줄로 싣는다(docs/dev-guide/cli-structure.md#호스트-오류-출력-rpc_errorrs).
             Err(e) if e.is::<tasty_ipc::client::JsonRpcCallError>() => {
                 return Err(crate::rpc_error::with_data_line(e));
             }

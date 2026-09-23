@@ -26,7 +26,7 @@ impl PluginManager {
         // 실패를 조용히 삼키면 popup 이 안 열리는 사유가 어디에도 안 남는다. 무제한
         // 채널일 때는 여기서 실패한다는 것이 곧 "plugin 이 죽었다" 였지만, 유한해진
         // 뒤로는 **일시적 포화**도 같은 갈래로 떨어진다 — 둘을 가르는 문장이
-        // `RequestSendError` 의 `Display` 에 있고, 그것이 로그에 닿아야 ADR-0315 의
+        // `RequestSendError` 의 `Display` 에 있고, 그것이 로그에 닿아야 docs/architecture/ipc-server.md#플러그인-채널의-상한 의
         // 재검토 조건("정상 사용이 용량에 닿는가")을 잴 수 있다.
         match proc.try_send_request(req) {
             Ok(()) => {
@@ -114,7 +114,7 @@ impl PluginManager {
 
     /// 매니페스트에서 contribute 를 찾고 egui-mesh api_version 게이트까지 통과해야 `Some`.
     /// egui-mesh popup 은 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
-    /// api_version 일치를 게이트한다(surface egui-mesh 등록 정책 미러, ADR-0028).
+    /// api_version 일치를 게이트한다(surface egui-mesh 등록 정책 미러, docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
     fn resolve_open_popup_contribute(
         &self,
         plugin_id: &str,

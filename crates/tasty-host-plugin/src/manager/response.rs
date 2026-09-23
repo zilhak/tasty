@@ -64,7 +64,7 @@ impl PluginManager {
         self.plugin_wait = Some(stats);
     }
 
-    /// plugin 채널에 지금 쌓인 바이트와 상한·거절·대기 누계(ADR-0360).
+    /// plugin 채널에 지금 쌓인 바이트와 상한·거절·대기 누계(docs/architecture/ipc-server.md#플러그인-채널의-상한).
     ///
     /// 값을 만드는 데까지다 — IPC/CLI 로 내보내는 자리(`system.pressure`)는 아직 이 값을
     /// 안 읽는다. 장부가 프로세스 하나라서 어느 매니저에서 불러도 같은 값이 나온다.
@@ -72,7 +72,7 @@ impl PluginManager {
         self.channel_ledger.snapshot()
     }
 
-    /// 느린 요청 링을 주입한다(ADR-0436). `set_plugin_wait` 과 같이 프로세스의 한 인스턴스를
+    /// 느린 요청 링을 주입한다(docs/architecture/ipc-server.md#느린-요청-추적). `set_plugin_wait` 과 같이 프로세스의 한 인스턴스를
     /// 호스트 dispatch 루프와 나눠 든다 — 호스트 몫과 plugin hop 이 같은 줄에 이어지려면 둘이
     /// 같은 링을 봐야 한다.
     pub fn set_slow_requests(&mut self, log: Arc<tasty_telemetry::SlowRequestLog>) {
@@ -146,7 +146,7 @@ impl PluginManager {
         }
         if let Some(err) = &resp.error {
             // 원 IPC 요청 번호를 같은 줄에 싣는다 — plugin 로그의 id(= 호스트 req_id)에서 호스트
-            // 쪽 원 요청으로 되짚는 열쇠다(ADR-0436). 새 줄을 만들지 않는다.
+            // 쪽 원 요청으로 되짚는 열쇠다(docs/architecture/ipc-server.md#느린-요청-추적). 새 줄을 만들지 않는다.
             tracing::warn!(
                 "plugin '{plugin_id}' response error (id={}, request_seq={}): {err}",
                 resp.id,
@@ -158,7 +158,7 @@ impl PluginManager {
             None => {
                 // `event.dispatch` 의 응답은 pending 을 안 만든다(호스트가 기다리지 않는다) —
                 // 대신 버스가 재발화 hop 하한을 위해 따로 기록하고, plugin 은 응답해야 한다
-                // (ADR-0406). 그 기록이면 여기서 끝난다.
+                // (docs/reference/event-catalog.md#재발행과-응답). 그 기록이면 여기서 끝난다.
                 if self.event_bus.note_dispatch_answered(plugin_id, resp.id) {
                     return;
                 }
@@ -689,7 +689,7 @@ impl PluginManager {
     ///
     /// caller 종류(local `response_tx` · plugin `ipc.result` · post-hook 이 걸린
     /// `send_final_error`)만 다르고 싣는 코드는 셋 다 `-32004` 로 같다
-    /// (`docs/adr/0311-a-namespace-call-expires-into-an-error-not-a-fail-open.md`).
+    /// (`docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화`).
     fn expire_pending_answer(
         &mut self,
         id: u64,
@@ -758,7 +758,7 @@ impl PluginManager {
     /// 쓰므로 그 셋을 여기 한 자리로 모은다.
     ///
     /// 경고에는 호스트 req_id 와 원 IPC 요청 번호를 **같은 줄에** 더한다 — caller 에 가는 문구
-    /// (`msg`)는 그대로다. 둘은 plugin 쪽 로그(req_id)와 호스트 쪽 원 요청을 잇는 열쇠다(ADR-0436).
+    /// (`msg`)는 그대로다. 둘은 plugin 쪽 로그(req_id)와 호스트 쪽 원 요청을 잇는 열쇠다(docs/architecture/ipc-server.md#느린-요청-추적).
     fn note_namespace_expiry(
         &mut self,
         plugin_id: &str,
@@ -808,9 +808,9 @@ impl PluginManager {
     /// - **hook 실패 계수를 되돌리지 않는다.** 만료가 이미 실패로 셌고, backoff 가 묻는
     ///   것은 "제때 답하는가" 라 늦은 답은 여전히 실패다.
     ///
-    /// 남는 일은 하나다 — namespace 호출의 늦은 답은 연속 만료 계수를 지운다(ADR-0311
-    /// 2026-09-20 보강: 늦어도 답한 것은 답한 것이다). 이 정책의 근거와 대안은
-    /// ADR-0311 의 2026-09-21 보강에 있다.
+    /// 남는 일은 하나다 — namespace 호출의 늦은 답은 연속 만료 계수를 지운다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화
+    /// 참조: 늦어도 답한 것은 답한 것이다). 이 정책의 근거와 대안은
+    /// docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화 에 정리되어 있다.
     ///
     /// ★ **이 자리에 오는 것이 늦은 응답만은 아니다.** pending 에 애초에 안 들어가는
     /// 요청(ping · `event.dispatch` 같은 알림성 요청)에도 plugin 은 답하고, 그 답도 id 가

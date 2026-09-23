@@ -21,11 +21,11 @@
 //! 요청의 봉투 상한과 같은 자리(`JsonRpcRequest::response_timeout_ms`)다. 그래서 호출자가 상한에서
 //! 물러난 명령은 큐에 남아도 꺼내질 때 실행되지 않고, 호출자는 그 사실을
 //! [`InjectError::Expired`](실행 안 됨)로 받는다. 이미 시작된 명령은 끊을 수 없으므로 그때는
-//! 종전대로 [`InjectError::Timeout`](결과 불명)이다 — 만료는 취소가 아니다(ADR-0411).
+//! 종전대로 [`InjectError::Timeout`](결과 불명)이다 — 만료는 취소가 아니다(docs/architecture/ipc-server.md#기한).
 //!
 //! 호출자가 물러나도 **실행돼야 하는** 명령(밖에서 온 사건을 반영하는 훅 스텝)은
 //! [`HostIpcInjector::dispatch_even_if_abandoned`] 로 기한 없이 넣는다. 근거는
-//! `docs/adr/0451-a-host-injection-carries-its-wait-as-a-deadline.md`.
+//! `docs/architecture/ipc-server.md#기한`.
 
 use std::fmt;
 use std::sync::{Arc, mpsc};
@@ -196,7 +196,7 @@ impl HostIpcInjector {
             .map_err(|e| InjectError::Send(e.to_string()))?;
         (self.waker)();
         // 느린 요청 링의 결과 칸은 소켓 경로와 같은 코드로 적는다 — 받은 답은 그 답으로, 상한에서
-        // 물러난 갈래는 소켓 경로가 그 자리에서 보냈을 코드로(ADR-0468). 기한 없이 끝난 대기는
+        // 물러난 갈래는 소켓 경로가 그 자리에서 보냈을 코드로(docs/architecture/ipc-server.md#느린-요청-추적). 기한 없이 끝난 대기는
         // 명령이 큐에 남아 뒤에 실행될 수 있으므로 적지 않는다.
         match resp_rx.recv_timeout(timeout) {
             Ok(resp) => {

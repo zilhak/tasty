@@ -51,7 +51,7 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | control-height-tree | 22 | |
 | font-size body / caption / heading | 13 / 11 / 13(weight 600) | `font_size_body/caption/heading` |
 | font-size micro | 10 | `font_size_micro` — Badge/Tag/Kbd·command_palette footer 힌트 |
-| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 사다리의 h1 앵커(`render.rs::heading_sizes_px` 가 h1↔`font-size-body`(h6) 사이를 CSS 로 5단계 선형보간, UI cap 면제). `prose-h2`·`line-height-prose` 는 [ADR-0065](../../adr/0065-markdown-webview-render-channel.md) 이전 egui_commonmark 시절 라이브러리 제약으로 은퇴한 토큰이며, webview 전환(CSS) 이후로도 부활하지 않았다 — 헤딩 사다리는 이제 `--md-h1`..`--md-h6` CSS custom property 로 직접 표현되므로 별도 semantic 토큰이 필요 없다. 정본은 여전히 tokens/·vendor json·생성 const 모두에서 제거된 상태 |
+| font-size prose-h1 | 20 | `font_size_prose_h1` — markdown 헤딩 사다리의 h1 앵커(`render.rs::heading_sizes_px` 가 h1↔`font-size-body`(h6) 사이를 CSS 로 5단계 선형보간, UI cap 면제). `prose-h2`·`line-height-prose` 는 [ADR-0629](../../adr/0629-webview-host-integration.md) 이전 egui_commonmark 시절 라이브러리 제약으로 은퇴한 토큰이며, webview 전환(CSS) 이후로도 부활하지 않았다 — 헤딩 사다리는 이제 `--md-h1`..`--md-h6` CSS custom property 로 직접 표현되므로 별도 semantic 토큰이 필요 없다. 정본은 여전히 tokens/·vendor json·생성 const 모두에서 제거된 상태 |
 | font-size term-sm / term / term-lg | 12 / 14 / 16 | `font_size_term_sm` / `font_size_term` / `font_size_term_lg` — 터미널 스케일 |
 | icon-size xs | 12 | `icon_glyph_size_xs` |
 | icon-size md | 16 | `icon_glyph_size_md` (기존) — Button leading/trailing·MenuItem 글리프, **spinner 지름**(폰트가 아니라 아이콘 가족) |
@@ -157,7 +157,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-banner-fg` | → `text-primary` | `text_primary()` | 〃 |
 | `--tasty-banner-border` | → `border-strong` | `border_strong()` | 〃 |
 | `--tasty-banner-radius` | → `radius-8` (8px) | `corner_radius_lg`(8) | 기존 토큰 — 본체 배너 셸도 `corner_radius_lg` 를 쓴다(시스템 기본 4px 의 의도적 2배) |
-| `--tasty-banner-shadow` | → `shadow-popover` | `shadow_popover()` | 기존 토큰 — 본체 배너 셸도 같은 접근자를 쓴다([ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md) SCOPE RULE 의 popover 갈래) |
+| `--tasty-banner-shadow` | → `shadow-popover` | `shadow_popover()` | 기존 토큰 — 본체 배너 셸도 같은 접근자를 쓴다([ADR-0637](../../adr/0637-ui-input-motion-and-elevation.md) 그림자 선택 기준 중 popover) |
 | `--tasty-banner-margin` | → `space-sm` → size-8 (8px) | `spacing_sm` | 기존 토큰 |
 | `--tasty-banner-padding-x` | → `space-md` (12) | `spacing_md` | 기존 토큰 |
 | `--tasty-banner-padding-y` | → `space-sm` (8) | `spacing_sm` | 기존 토큰 |
@@ -189,7 +189,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
 | `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `modhint_hold_delay()` (생성, `Millis`) | 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
-| (대응 토큰 없음) | 1200ms | `motion_hold_reveal_shift()` = `MOTION_HOLD_REVEAL_SHIFT_MS` (수기, [ADR-0035](../../adr/0035-modifier-hint-combo-narrowing-and-shift-delay.md)) | **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
+| (대응 토큰 없음) | 1200ms | `motion_hold_reveal_shift()` = `MOTION_HOLD_REVEAL_SHIFT_MS` (수기, [ADR-0619](../../adr/0619-keybinding-settings-and-hints.md)) | **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
 | `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `modhint_fade()` (생성, `Millis`) | 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
 | `--tasty-modhint-width` | → `size-180` (180px) | `modhint_width()` | 열린 사이드바 폭(기본 180)과 정렬 |
 | `--tasty-modhint-height` | → 400px | `modhint_height()` | 기본 세로 높이 |
@@ -205,7 +205,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
 | `--tasty-modhint-radius` | → `radius` (4) | `corner_radius` | 셸 코너 |
-| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | anchored + scrim-less lift(banner 와 공유). 디자인 체인이 한때 `shadow-modal` 을 가리켜 구현과 갈려 있었으나, [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md) 의 SCOPE RULE 이 확정되면서 디자인이 `components.css` 의 이 토큰을 `shadow-popover` 로 재타깃했다 — 발산은 남아 있지 않다 |
+| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | anchored + scrim-less lift(banner 와 공유). 디자인 체인이 한때 `shadow-modal` 을 가리켜 구현과 갈려 있었으나, [ADR-0637](../../adr/0637-ui-input-motion-and-elevation.md) 의 그림자 선택 기준에 맞춰 디자인이 `components.css` 의 이 토큰을 `shadow-popover` 로 재타깃했다 — 발산은 남아 있지 않다 |
 | `--tasty-modhint-strip-bg` | → `bg-sidebar` | `modhint_strip_bg()` | 드래그 스트립 배경 |
 | `--tasty-modhint-separator` | → `separator` | `modhint_separator()` | 스트립/헤더 하단 구분선 |
 | `--tasty-modhint-held-fg` | → `text-muted` | `modhint_held_fg()` | 스트립 "held" 라벨 |
@@ -239,10 +239,10 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 
 ### duration 접근자에서 값을 벗기는 자리 — 감시 대상
 
-`Millis` 는 `Theme` 경계까지다([ADR-0176](../../adr/0176-motion-durations-cross-the-theme-boundary-as-millis.md)).
+`Millis` 는 `Theme` 경계까지다([ADR-0637](../../adr/0637-ui-input-motion-and-elevation.md)).
 경계 밖의 단위 없는 ms 산술(순수 함수·표시 문자열)에는 `to_millis_f32()` 로 벗겨
 넘긴다. **그 자리가 늘어나면** 벗기는 것이 일상이 됐다는 뜻이고, 길이 축처럼 두 번째
-가드가 필요해진다(그 조건이 ADR-0176 의 재검토 트리거다).
+가드가 필요해진다(그 조건이 ADR-0637 의 재검토 트리거다).
 
 ```bash
 # 분자 = 벗기는 자리 / 모수 = duration 접근자를 쓰는 자리 전체
@@ -326,7 +326,9 @@ switch-overlay/preset-leaf 와 동일하게 **전부 기존 semantic 접근자·
 > reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
 > painter 인라인(track `bg_app` + fill `accent_primary`).
 
-## attention kind — NeedsInput/Completion (surface-highlight, ADR-0062)
+<a id="attention-kind--needsinputcompletion-surface-highlight-adr-0062"></a>
+
+## Attention kind — NeedsInput/Completion (surface-highlight)
 
 디자인 `tokens/semantic.css` + `tokens/components.css` + `components/core/Badge.jsx` +
 `components/feedback/StatusDot.jsx`(원본: Claude Design "attention-visuals", 2026-08-10
@@ -506,7 +508,7 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 
 **같은 형태를 이 레포는 이미 한 번 겪었다** — 폰트 축에서 "값이 바뀌는 치환은 하나도
 없다" 는 주장과 함께 올라온 묶음에 실제로는 ±0.5~1.0 변경이 10 자리 섞여 있었고,
-그 결과가 [ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 이다.
+그 결과가 [ADR-0635](../../adr/0635-shared-design-and-theme.md) 이다.
 그 ADR 의 결론(스케일 밖 값은 스냅하지 않고 사유를 적은 명명 const 로 둔다)은 폰트 ·
 코너 반경 · 점 치수 세 축에 적용돼 있다.
 
@@ -533,7 +535,7 @@ base 필드 이름으로 이미 불리고 있을 수 있고(예: `titlebar-capti
 뜻이다. 아래 "미측정" 문단이 그 차이를 든다. 새로 확인되면 그 자리의 상수 doc 이 같은
 사실을 적어야 한다: 값이 그리드 스케일 밖이라는 것과, 겨냥하는 토큰이 실재하되 값이
 어긋난다는 것은 다른 물음이라 갈라 적는다. 어느 쪽이 맞는지는 디자인이 정하고, 그때까지
-상수는 값을 지키고 이름만 남긴다(ADR-0126).
+상수는 값을 지키고 이름만 남긴다(ADR-0635).
 
 나머지는 **미측정**이다 — 0 이 아니라 안 잰 것이다. 이름이 같은 const 를 기계로 대조해
 봤지만 `GAP` · `POPUP_WIDTH` · `MIN_HEIGHT` 같은 흔한 이름이 무관한 토큰에 무더기로 걸려

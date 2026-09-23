@@ -4,7 +4,7 @@
 //! (S3/S0/hibernate)과 매핑되지 않으므로, 메인 윈도우 HWND 에 `SetWindowSubclass`
 //! 로 서브클래스를 붙여 `WM_POWERBROADCAST` 를 가로챈다. resume 신호를 받으면
 //! 호출부가 맡긴 콜백을 부르고, 원 메시지는 `DefSubclassProc` 로 winit 의 WndProc 에
-//! 그대로 넘긴다 (ADR-0017).
+//! 그대로 넘긴다 (docs/features/terminal/index.md#프로세스-종료--절전-복귀).
 //!
 //! **이 모듈은 그 신호가 App 에서 무엇이 되는지 모른다.** OS 메시지를 가로채는 것이
 //! 이 자리의 일이고, 그것을 `AppEvent` 로 바꾸는 것은 후크를 설치하는 쪽의 일이다.

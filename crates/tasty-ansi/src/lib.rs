@@ -16,7 +16,7 @@
 //! 퍼진다(두 수는 `crates/*/Cargo.toml` 에서 `^tasty-utils\s*=` 와 `^regex\s*=` 를 `git grep -l`
 //! 로 센다). 그래서
 //! 크기가 아니라 의존 방향으로 판정해 별도 크레이트로 세웠다 —
-//! 근거는 `docs/adr/0089-crate-split-follows-dependency-direction.md`.
+//! 근거는 `docs/architecture/index.md#크레이트를-나누는-기준`.
 
 use std::sync::LazyLock;
 

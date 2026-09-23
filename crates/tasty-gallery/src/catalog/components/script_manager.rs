@@ -92,7 +92,7 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         // Settings › Misc › Scripts 의 **콘텐츠 프레임**이다(본체
         // `view/settings/ui/tabs/misc.rs`) — 떠 있는 표면이 아니라 창 셸에 얹힌
-        // 패널이라 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 패널이라 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, width, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
@@ -279,7 +279,7 @@ fn changed_badge(ui: &mut egui::Ui, theme: &Theme) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius_sm.value();
     // 채움은 `tint-fill-alpha`. 테두리 계수는 디자인이 "채움만" 으로 한정한
-    // 부분 사용이라(ADR-0290) 이 자리 고유 값으로 남는다.
+    // 부분 사용이라(docs/design/systems/theme.md#ui-코드의-색상-접근) 이 자리 고유 값으로 남는다.
     const BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
         .rect_filled(rect, radius, warn.gamma_multiply(theme.tint_fill_alpha()));

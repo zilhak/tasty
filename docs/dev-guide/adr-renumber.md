@@ -8,7 +8,7 @@
 `crates/tasty-doc-guards/src/bin/adr-renumber.rs`, 합성 레포 시험은
 `crates/tasty-doc-guards/tests/adr_renumber_bin.rs` 에 있다.
 
-> **돌리기 전에**: 재번호는 [ADR-0239](../adr/0239-an-unused-adr-number-is-retired-not-recycled.md)
+> **돌리기 전에**: 재번호는 [ADR-0649](../adr/0649-architecture-decision-records.md)
 > (안 쓴 번호도 재사용하지 않는다)와 정면으로 부딪친다 — 그 ADR 이 막으려는 것이 바로 "옛 번호를
 > 부르는 인용이 다른 문서를 가리키게 되는 것" 이다. 재번호를 하려면 그 결정을 먼저 대체한다.
 

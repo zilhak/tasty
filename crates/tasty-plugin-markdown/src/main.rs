@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! Tasty markdown plugin — **webview** markdown viewer surface (ADR-0028, Stage B).
+//! Tasty markdown plugin — **webview** markdown viewer surface (docs/plugins/markdown/index.md#내부-동작).
 //!
 //! The plugin owns the markdown document (reads the `.md` file delivered via `surface.create`,
 //! watches it for external changes) and renders it by generating a complete, sanitized HTML
 //! document (`render::render_document`) that the host's native OS WebView displays — the
 //! plugin no longer tessellates its own egui mesh for the document body (that was the former
-//! `rendering = "egui-mesh"` design, ADR-0028 / B1). Address-bar navigation and content link
+//! `rendering = "egui-mesh"` design, docs/dev-guide/egui-mesh-channel.md#데이터-흐름). Address-bar navigation and content link
 //! clicks are captured via the host's `webview.navigation_attempt` event (Stage A) and routed
 //! back through `file_handler.dispatch` (files) or `webview.open_external` (external URLs, opened
 //! by the host — this plugin never calls an OS opener itself) — see `render.rs`'s
@@ -75,12 +75,12 @@ const THEME_CHANGED_EVENT: &str = "theme.changed";
 
 /// attach mirror 문서의 원문 조회를 host 에 거는 메서드. host 는 `request_id` 만 즉시
 /// 돌려주고 원문은 [`MIRROR_CONTENT_RESULT_EVENT`] 로 나중에 온다
-/// (`docs/adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md`).
+/// (`docs/dev-guide/attach-behavior.md#markdown-content-채널`).
 const MIRROR_CONTENT_REQUEST_METHOD: &str = "markdown_mirror.content_request";
 
 /// 원격 원문 요청을 누가 일으켰나. host 는 에이전트가 일으킨 요청의 회신에서 사용자
 /// toast(원문 잘림)를 띄우지 않는다 — 에이전트 행동의 부수효과가 사용자 시각 상태에 닿지
-/// 않게 하는 것이다(identity 원칙 1, ADR-0503).
+/// 않게 하는 것이다(identity 원칙 1, docs/design/systems/toast.md#origin이-적용되는-경로).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RemoteRequester {
     /// 최초 열기 · 원격 변경 신호 재조회 · 새로고침 버튼 — 이 plugin 이 스스로 또는 사용자
@@ -236,7 +236,7 @@ impl MdDoc {
     /// 원격 파일 변경 신호에 어떻게 반응할지 정한다.
     ///
     /// 원문을 보여 주고 있는 문서는 다시 받지 않고 stale 표시만 켠다 — 사용자가 읽던 자리를
-    /// 말없이 갈아치우지 않기 위해서다(ADR-0255 항목 5). 이미 stale 이면 다시 그리지 않는다
+    /// 말없이 갈아치우지 않기 위해서다(docs/dev-guide/attach-behavior.md#markdown-content-채널). 이미 stale 이면 다시 그리지 않는다
     /// (같은 파일이 연달아 저장될 때 문서를 매번 통째로 다시 싣지 않게).
     ///
     /// 원문 대신 끊김·실패를 보여 주는 문서는 **다시 받는다** — 지킬 읽던 자리가 없고, 그
@@ -331,7 +331,7 @@ struct MarkdownPlugin {
     confirm: HashMap<u64, LargeFileConfirm>,
     /// popup instance_id → 파일열기 팝업 상태(경로 입력 버퍼).
     file_open: HashMap<u64, FileOpenState>,
-    /// `file_picker.trigger`(ADR-0058) 로 보낸 요청의 `request_id` → 그
+    /// `file_picker.trigger`(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때) 로 보낸 요청의 `request_id` → 그
     /// 요청을 낸 파일열기 팝업 instance_id. `"file_picker.result"` 이벤트 수신 시
     /// 이 맵으로 상관관계를 맞춰 `path_input` 을 채운다.
     pending_file_picker: HashMap<u64, u64>,
@@ -543,7 +543,7 @@ impl Plugin for MarkdownPlugin {
         self.pending_file_picker.retain(|_, v| *v != iid);
     }
 
-    /// host 가 push 하는 이벤트: `"file_picker.result"`(ADR-0058)와 `"theme.changed"`.
+    /// host 가 push 하는 이벤트: `"file_picker.result"`(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때)와 `"theme.changed"`.
     fn on_event(&mut self, ctx: EventDispatchCtx) {
         match ctx.envelope.key.as_str() {
             FILE_PICKER_RESULT_EVENT => {
@@ -1000,7 +1000,7 @@ fn dispatch_file_link(host: &HostHandle, sid: u32, nav_url: &str, path: &std::pa
 /// `user_navigation_url` 은 이 호출이 링크 클릭에서 왔다는 표지다 — host 는 엔진이 그 시도를
 /// 사용자 제스처로 보고했고 그 페이지를 이 plugin 이 썼을 때만 그 한 번을 사용자 행동으로 쳐 새 탭을 선택하고, 아니면(사람의 입력
 /// 없이 스크립트만으로 낸 시도 · 이 plugin 이 쓰지 않은 페이지 · macOS 처럼 엔진이 그 값을 안 주는
-/// 곳) 에이전트로 받아 사용자가 보던 탭을 그대로 둔다(ADR-0568). 이 plugin 이 판정하지 않는다 —
+/// 곳) 에이전트로 받아 사용자가 보던 탭을 그대로 둔다(docs/features/file-handler/index.md#origin-소유권과-비동기-완료). 이 plugin 이 판정하지 않는다 —
 /// 받은 URL 을 그대로 되댈 뿐이다.
 fn file_link_params(sid: u32, nav_url: &str, path: &std::path::Path) -> Value {
     json!({
@@ -1011,8 +1011,8 @@ fn file_link_params(sid: u32, nav_url: &str, path: &std::path::Path) -> Value {
     })
 }
 
-/// 외부 URL 을 host 의 OS 열기 자리로 보낸다(ADR-0527). host 가 거기서 열기를 한 곳으로 모아
-/// debug 스위치(ADR-0511)도 이 열기를 기록한다. `sid` 는 링크가 클릭된 이 plugin 의 surface 다
+/// 외부 URL 을 host 의 OS 열기 자리로 보낸다(docs/plugins/markdown/index.md#내부-동작). host 가 거기서 열기를 한 곳으로 모아
+/// debug 스위치(docs/dev-guide/self-verification.md#os-열기와-지연-주입)도 이 열기를 기록한다. `sid` 는 링크가 클릭된 이 plugin 의 surface 다
 /// — host 는 자기 surface 에서 온 요청만 연다.
 fn dispatch_external_link(host: &HostHandle, sid: u32, url: &str) {
     match host.call("webview.open_external", external_link_params(sid, url)) {

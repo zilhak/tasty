@@ -3,7 +3,7 @@
 //! 떠 있는 표면의 정본 토큰은 `SHADOW_POPOVER` 와 `SHADOW_MODAL` 둘이다.
 //! `Theme::shadow_popover()` / `shadow_modal()` 이 값을 내고 `ShadowToken::to_egui()` 가
 //! egui 그림자로 변환한다. 어느 표면이 어느 쪽을 쓰는지는
-//! `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE 이 정한다.
+//! `docs/design/systems/theme.md#떠-있는-표면의-그림자` 의 그림자 선택 규칙 이 정한다.
 //!
 //! # 왜 lib 유닛 테스트인가 (관례 예외 — `tests/` 로 되돌리지 마라)
 //! 소스를 런타임에 스캔하므로 컴파일만으로는 판정하지 않는다. lib 유닛 테스트는
@@ -34,7 +34,7 @@
 //!
 //! **어느 표면이 어느 토큰을 쓰는가**도 이 가드의 검사 밖이다. SCOPE RULE 의
 //! 갈래는 표면의 형태(트리거에 앵커되는가 · 뷰포트를 점유하는가)로 정해지는데 —
-//! **scrim 유무는 갈래를 가르는 술어가 아니다**(ADR-0254 Decision: modal 을 받는 표면
+//! **scrim 유무는 갈래를 가르는 술어가 아니다**(docs/design/systems/theme.md#떠-있는-표면의-그림자: modal 을 받는 표면
 //! 중 실제로 scrim 이 깔리는 것은 일부다) — 그 형태를 소스에서 읽을 방법이 없어(위치는
 //! 여는 시점의 `OpenPopupMode` 가 정한다) 이 텍스트 검사는 갈래를 판정하지 않는다.
 //! 그 축은 리뷰가 지킨다.

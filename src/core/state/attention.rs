@@ -108,7 +108,7 @@ pub(crate) fn effects_of(kind: AttentionKind) -> AttentionEffects {
         AttentionKind::NeedsInput => AttentionEffects {
             level: AttentionLevel::NeedsInput,
             // Completion 과 동일 정책 — 이 리포에 panel_item/os_notify/sound 의
-            // 실제 소비처가 아직 없다(ADR-0062). 값이 생기면 그때 분기한다.
+            // 실제 소비처가 아직 없다(docs/features/surface-highlight/index.md#내부-동작-headless-valid). 값이 생기면 그때 분기한다.
             panel_item: false,
             os_notify: false,
             sound: false,
@@ -243,13 +243,13 @@ impl CoreState {
 
     /// 로컬 사용자 사건이 이 surface 의 attention 을 해제할 수 있는가 — 하드 점유
     /// 게이트의 술어. **하드 점유(attach) 중이면 그 surface 의 주체는 홀더이고 로컬
-    /// 사용자는 readonly 이므로**(ADR-0040), "확인했다" 는 판정도 홀더의 것이다.
+    /// 사용자는 readonly 이므로**(docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry), "확인했다" 는 판정도 홀더의 것이다.
     /// 홀더의 확인은 `ClientAttentionClear` 로 들어와
     /// [`apply_attached_attention_clear`](crate::core::CoreState::apply_attached_attention_clear)
-    /// 가 적용한다(ADR-0104).
+    /// 가 적용한다(docs/features/surface-highlight/index.md#내부-동작-headless-valid).
     ///
     /// **soft 점유는 대상이 아니다** — soft 는 로컬 사용자를 배제하지 않으므로
-    /// (ADR-0040 "write 제한 없음") 술어가 `is_hard_occupied` 하나뿐이다.
+    /// (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry "write 제한 없음") 술어가 `is_hard_occupied` 하나뿐이다.
     ///
     /// 렌더 경로(`gpu.rs`)는 GPU 없이 실행할 수 없어, 게이트 판정만 이렇게 떼어
     /// 단위 테스트가 직접 검증한다(`effects_of` 와 같은 형태).
@@ -268,12 +268,12 @@ impl CoreState {
     /// (`apply_attached_attention_clear` → `clear_attention`)까지 막히면 점유 중
     /// 해제 주체가 다시 0 이 된다(그 요청자는 이미 holder 로 검증된 뒤다).
     /// 그래서 `clear_attention` 은 게이트 없는 primitive 로 남고, 로컬 축만 이
-    /// 래퍼를 지난다. 근거: `docs/adr/0109-hard-occupancy-attention-clear-holder-only.md`.
+    /// 래퍼를 지난다. 근거: `docs/features/surface-highlight/index.md#내부-동작-headless-valid`.
     ///
     /// 미러 인스턴스에서는 이 게이트가 걸리지 않는다 — 미러 surface 는 그 인스턴스의
     /// `OccupancyRegistry` 에 lock 이 없다(점유는 surface 를 **소유한** 인스턴스가
     /// 기록한다). 미러 사용자의 확인은 그대로 `clear_attention` 의 제거 edge 를 만들어
-    /// 서버로 forward 된다(ADR-0104).
+    /// 서버로 forward 된다(docs/features/surface-highlight/index.md#내부-동작-headless-valid).
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn clear_attention_local(&mut self, surface_id: u32) -> bool {
         if !self.local_attention_clear_allowed(surface_id) {
@@ -337,21 +337,19 @@ impl CoreState {
     /// surface, kind)` 튜플. `kind == None` 은 해제. `busy_activity_forwards`
     /// (`state/busy.rs`) 와 동형이며 같은 1Hz tick 에 편승한다.
     ///
-    /// `last_forwarded_attention` 캐시와 비교해 **값이 실제로 바뀐 것만** 내보낸다
-    /// (스팸 억제). 캐시가 아니라 항상 live store 에서 재-diff 하므로, 프레임이
-    /// 유실되거나 지연돼도 다음 tick 에 자동 수렴한다(client ack 에 의존하지 않는다).
-    /// 이 수렴은 **wire 유실 축에만** 유효하다 — client 가 자기 store 를 로컬로 바꾸면
-    /// 서버 값은 그대로라 재-push 가 없다. 그 축은 이 diff 가 아니라 전용 장치 둘이
-    /// 맞춘다: 미러의 **발동**은 [`raise_attention`](Self::raise_attention) 게이트가 막고,
-    /// **해제**는 [`clear_attention`](Self::clear_attention) 의 제거 edge 가 서버로
-    /// forward 된다. 상세는 `docs/dev-guide/attach-behavior.md` "주의 환기(attention) 전파".
+    /// `last_forwarded_attention`과 비교해 holder 또는 kind가 바뀔 때만 내보낸다.
+    /// 목록을 만들 때 캐시를 먼저 갱신하므로 전송 실패 뒤에도 같은 값은 재전송하지 않는다.
+    /// 수신 확인이나 다음 tick이 유실을 자동 복구한다고 보장하지 않는다.
+    /// 미러의 로컬 생성은 [`raise_attention`](Self::raise_attention)이 막고,
+    /// 사용자 해제는 [`clear_attention`](Self::clear_attention)이 서버로 전달한다.
+    /// 운영 규칙은 `docs/dev-guide/attach-behavior.md`의 attention 전파 절을 따른다.
     /// 점유가 풀린 surface 의 엔트리는 매 호출 정리해, 나중에 재attach(다른 client 일
     /// 수 있음) 하면 값이 이전과 같아도 baseline push 를 다시 받는다.
     ///
     /// 캐시는 **(holder, kind)** 를 함께 기억한다. 위 정리는 점유 공백이 tick 경계를 넘을
     /// 때만 성립한다 — 해제와 다른 client 의 획득이 한 tick 창 안에 끝나면 엔트리가
     /// `retain` 을 살아남고, 값만 기억하면 새 holder 가 baseline 을 못 받는다
-    /// (`surface_cwd_forwards` 와 같은 edge, ADR-0267 결정 4).
+    /// (`surface_cwd_forwards` 와 같은 edge, docs/dev-guide/attach-behavior.md#surface-cwd-전파).
     ///
     /// 첫 호출은 attention 이 없는 surface 에 대해서도 `None` baseline 을 1회
     /// 내보낸다 — busy 가 초기 `false` 를 내보내는 것과 같은 성질이고, mirror 쪽
@@ -404,7 +402,7 @@ impl CoreState {
         self.attention.dominant_kind(surface_ids)
     }
 
-    /// 알림 읽음 처리(ADR-0039 Reconsideration Triggers 참고) — 두 번째 clear producer.
+    /// 알림 읽음 처리(docs/features/surface-highlight/index.md#내부-동작-headless-valid 의 attention 해제 규칙 참조) — 두 번째 clear producer.
     /// 특정 알림을 읽음 처리하고,
     /// 그 알림의 source surface 를 source 로 하는 다른 안읽음 알림이 남아있지 않은
     /// 경우에만 attention 을 지운다. 같은 surface 의 다른 알림이 아직 안읽음이면
@@ -430,7 +428,7 @@ impl CoreState {
         }
     }
 
-    /// 모든 알림 읽음 처리(ADR-0039 Reconsideration Triggers 참고). 전부 읽음
+    /// 모든 알림 읽음 처리(docs/features/surface-highlight/index.md#내부-동작-headless-valid 의 attention 해제 규칙 참조). 전부 읽음
     /// 처리되므로 엣지 케이스 없이, 읽음
     /// 처리 전 안읽음이었던 모든 알림의 source surface attention 을 지운다.
     ///
@@ -521,7 +519,7 @@ mod tests {
     }
 
     /// 개별 읽음 처리 시 그 surface 에 다른 안읽음 알림이 남아있지 않으면
-    /// attention 이 지워진다(ADR-0039 Reconsideration Triggers 참고).
+    /// attention 이 지워진다(docs/features/surface-highlight/index.md#내부-동작-headless-valid 의 attention 해제 규칙 참조).
     #[test]
     fn mark_notification_read_clears_attention_when_no_unread_left() {
         let mut s = state();
@@ -534,7 +532,7 @@ mod tests {
         assert!(!s.attention_dominant_kind(&[100]).is_some());
     }
 
-    /// 핵심 엣지 케이스(ADR-0039 Reconsideration Triggers 참고) — 같은 surface 에서
+    /// 핵심 엣지 케이스(docs/features/surface-highlight/index.md#내부-동작-headless-valid 의 attention 해제 규칙 참조) — 같은 surface 에서
     /// 온 다른 알림이 아직 안읽음이면 하나만 읽음 처리해도 attention 이 지워지면
     /// 안 된다.
     #[test]
@@ -979,7 +977,7 @@ mod tests {
         );
     }
 
-    // ───── 하드 점유 중 해제는 홀더만 (ADR-0109) ─────
+    // ───── 하드 점유 중 해제는 홀더만 (docs/features/surface-highlight/index.md#내부-동작-headless-valid) ─────
 
     /// 게이트 술어 자체 — 렌더 경로(`gpu.rs`)는 GPU 없이 실행할 수 없으므로 그
     /// 호출부가 묻는 판정만 떼어 직접 검증한다. hard lock 이 걸린 동안 로컬 해제가
@@ -1009,7 +1007,7 @@ mod tests {
         );
     }
 
-    /// soft 점유(child-terminal)는 로컬 사용자를 배제하지 않으므로(ADR-0040
+    /// soft 점유(child-terminal)는 로컬 사용자를 배제하지 않으므로(docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry
     /// "write 제한 없음") 이 게이트의 대상이 아니다.
     #[test]
     fn soft_occupancy_does_not_gate_the_local_clear() {
@@ -1050,7 +1048,7 @@ mod tests {
         assert_eq!(s.attention_kind(42), None);
     }
 
-    /// 홀더의 해제(서버측 적용 경로)는 게이트를 타지 않는다 — ADR-0104 가 이 작업에
+    /// 홀더의 해제(서버측 적용 경로)는 게이트를 타지 않는다 — docs/features/surface-highlight/index.md#내부-동작-headless-valid 가 이 작업에
     /// 걸어둔 제약의 회귀 테스트다. 게이트가 `clear_attention` 안에 들어갔다면
     /// 점유된 surface 의 해제 주체가 0 이 되어 이 assert 가 깨진다.
     #[test]
@@ -1172,7 +1170,7 @@ mod tests {
 
     /// 미러 인스턴스에는 이 게이트가 걸리지 않는다 — 점유는 surface 를 **소유한**
     /// 인스턴스가 기록하므로 미러의 `OccupancyRegistry` 는 비어 있다. 그래서 미러
-    /// 사용자의 확인은 그대로 제거 edge 를 만들어 서버로 forward 된다(ADR-0104).
+    /// 사용자의 확인은 그대로 제거 edge 를 만들어 서버로 forward 된다(docs/features/surface-highlight/index.md#내부-동작-headless-valid).
     #[test]
     fn the_gate_does_not_block_the_mirror_users_clear() {
         let (mut s, sid) = mirror_state();
@@ -1188,7 +1186,7 @@ mod tests {
         );
         assert!(
             s.pending_attention_clear_forward.contains(&sid),
-            "그 edge 는 소유 인스턴스로 forward 되어야 한다(ADR-0104)"
+            "그 edge 는 소유 인스턴스로 forward 되어야 한다(docs/features/surface-highlight/index.md#내부-동작-headless-valid)"
         );
     }
 

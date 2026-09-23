@@ -48,14 +48,14 @@ pub fn tasty_home() -> Option<PathBuf> {
 /// 이 스레드에서 [`push_home_override`] 로 세운 값이 있으면 `tasty_home()` 이 `TASTY_HOME`
 /// env 를 **읽기도 전에** 그것을 돌려준다. env 를 만지지 않으므로 병렬 테스트·다른 git
 /// worktree 완주와 경합하지 않는다(그게 이 훅의 존재 이유다 — 처방 등급 ⓒ 계열, 근거는
-/// `docs/adr/0155-global-state-race-prescription-by-parameterization.md`).
+/// `docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때`).
 ///
 /// **구멍: 자식 스레드에는 상속되지 않는다.** 프로덕션이 `std::thread::spawn` 등으로 만든
 /// 스레드 본문에서 `tasty_home()` 을 읽으면 이 override 를 보지 못하고 실제 홈/env 로
 /// 폴백한다. 그 구멍이 host-plugin 스위트에서 실제로 걸리는 자리가 0 이라는 측정 위에서
 /// 이 처방을 골랐고, 그 전제는 host-plugin 의
 /// `tests::spawned_thread_bodies_do_not_read_tasty_home` 소스 스캔 가드가 지킨다(전제가
-/// 깨지면 ADR-0155 를 다시 연다).
+/// 깨지면 docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 를 다시 연다).
 #[cfg(any(test, feature = "test-support"))]
 mod home_override {
     use std::cell::RefCell;

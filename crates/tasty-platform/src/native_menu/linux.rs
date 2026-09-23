@@ -9,7 +9,7 @@
 //! no rendering), so this backend **returns immediately** with
 //! `MenuOutcome::Pending` and hands back a [`GtkMenuHandle`] the caller pumps
 //! once per frame until it reports a result. See
-//! `docs/adr/0071-native-context-menu-async-contract.md`.
+//! `docs/dev-guide/context-menu.md#네이티브-메뉴-api-cratestasty-platformsrcnative_menu`.
 //!
 //! `popup_at_rect` (rather than `popup_at_pointer(None)`) needs a real
 //! `GdkWindow` to anchor the menu to — tasty's window is owned by winit, not

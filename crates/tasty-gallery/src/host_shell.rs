@@ -65,8 +65,7 @@ pub(crate) fn latte_theme() -> Theme {
 /// (`tasty-settings`)에 달린 핀(`the_supported_ui_scale_set_is_pinned`)은 자기를 읽지
 /// **못하는** 소비자(`tasty-type-appearance`)의 사본만 겨냥해 두었고, 갤러리는 그 소비자가
 /// 아니다 — `tasty-settings` 를 이미 의존하므로 부르면 된다. 이름이 있고 부를 수도 있는데
-/// 그 자리만 안 부른 형태이고, 드리프트가 그 대가였다(ADR-0126 "이름이 있는데 그 자리만
-/// 안 부른다").
+/// 그 자리만 안 부른 형태이고, 값이 달라지는 원인이었다. 규칙: docs/design/systems/theme.md#토큰에-없는-값과-배율.
 fn ui_scale_stops() -> Vec<(String, f32)> {
     tasty_settings::UI_SCALE_CHOICES
         .iter()

@@ -17,7 +17,7 @@
 //! 세 루프 모두 attach 직후 손실 통지를 받겠다고 선언한다(`ClientLossNotify`). 서버가
 //! `Loss` 를 보내면 그 연결의 화면은 이어지지 않으므로 옛 연결을 놓고 **다시 attach** 해
 //! 새 snapshot 을 받는다 — 서버가 snapshot 을 만드는 자리는 attach 하나뿐이다
-//! (`docs/adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md`).
+//! (`docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실`).
 //! 구 서버는 선언을 모르는 변종으로 무시하고 `Loss` 도 안 보내므로 종전 동작 그대로다.
 
 use std::io::{Read, Write};
@@ -54,7 +54,7 @@ enum SessionEnd {
 }
 
 /// mirror-dump 한 번의 실행에서 손실로 다시 attach 하는 최대 횟수. 넘으면 수집을 이어가
-/// 결과를 찍고 stderr 로 공백이 있다고 알린다(ADR-0400). raw 브리지에는 걸지 않는다 —
+/// 결과를 찍고 stderr 로 공백이 있다고 알린다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실). raw 브리지에는 걸지 않는다 —
 /// 대화형이라 사용자가 `Ctrl+\` 로 끝낼 수 있다.
 const DUMP_RESYNC_LIMIT: u32 = 3;
 
@@ -63,7 +63,7 @@ const DUMP_RESYNC_LIMIT: u32 = 3;
 /// 끊긴 연결로 보고 점유를 푼다. dump 는 `--send` 한 번 뒤로 아무것도 안 보내므로 이것이
 /// 없으면 그 시한보다 긴 `--dump-after` 가 오류 없이 도중에 풀린다 — 그래서 raw 브리지와
 /// 같은 주기로 `Ping` 을 보낸다. 첫 Ping 은 시작 후 한 주기 뒤라 그보다 짧은 dump 의
-/// 송신 프레임은 종전과 같다(`docs/adr/0529-a-mirror-dump-longer-than-the-heartbeat-timeout-sends-heartbeats.md`).
+/// 송신 프레임은 종전과 같다(`docs/dev-guide/attach-behavior.md#연결-생존-확인-read-timeout--heartbeat`).
 struct DumpHeartbeat {
     every: Duration,
     next: Instant,
@@ -151,7 +151,7 @@ fn classify_control(payload: &[u8]) -> ControlSignal {
 /// 로컬(loopback)과 SSH(터널 localport) 양쪽이 공유한다 — SSH 경로는 이 함수에
 /// **터널의 localport** 를 넘기기만 한다(O7: `--port` 공개 플래그 불필요).
 ///
-/// 손실 통지로 끝난 연결은 여기서 다시 붙는다(ADR-0400). `send` 입력은 첫 attach 에서만
+/// 손실 통지로 끝난 연결은 여기서 다시 붙는다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실). `send` 입력은 첫 attach 에서만
 /// 보낸다 — 재attach 가 입력을 되풀이하면 원격에서 명령이 두 번 돈다.
 pub(crate) fn run_attach_on_port(
     port: u16,
@@ -1121,7 +1121,7 @@ fn raw_bridge_main_loop(
                         return done(Completed);
                     }
                     // 화면이 이어지지 않는다 — 옛 연결을 놓고 다시 붙는다. 새 snapshot 이
-                    // 화면을 처음부터 다시 그린다(ADR-0400).
+                    // 화면을 처음부터 다시 그린다(docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실).
                     ControlSignal::Loss(frames) => {
                         return Ok(release_raw_for_resync(&rx, &writer, frames));
                     }
@@ -1332,7 +1332,7 @@ mod raw_bridge_tests {
         assert!(matches!(exit, SessionEnd::Exit(AttachExit::Completed)));
     }
 
-    /// (ADR-0400) 손실 통지를 받은 raw 브리지는 옛 연결에 `Detach` 를 쓰고, 서버가
+    /// (docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실) 손실 통지를 받은 raw 브리지는 옛 연결에 `Detach` 를 쓰고, 서버가
     /// 소켓을 닫았다는 신호를 기다린 뒤 재attach 를 요청한다. 그 사이의 stdin 은 원격에
     /// 안 간다.
     #[test]

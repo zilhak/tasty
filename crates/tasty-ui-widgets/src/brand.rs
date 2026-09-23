@@ -32,7 +32,7 @@ pub const LOGO_URI: &str = "bytes://tasty_brand_logo_256.png";
 // 로딩 화면 락업의 네 치수(마크 64 · 워드마크 38 · 스피너 32 · phase 슬롯 16)는
 // 여기 있었으나 `Theme` 접근자 `loading_screen_*` 로 옮겼다. 값은 그대로다 — 옮긴
 // 이유는 토큰 부재가 아니라 **배율**이다: 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
-// UI 배율을 `Theme::with_colors_and_zoom` 안에서만 적용하므로(ADR-0135), const 로 두면
+// UI 배율을 `Theme::with_colors_and_zoom` 안에서만 적용하므로(docs/design/systems/theme.md#토큰에-없는-값과-배율), const 로 두면
 // 같은 스택의 간격·문구만 커지고 이 넷은 고정된다. 소비처는 `&Theme` 를 이미 쥐고 있다.
 
 /// 워드마크 락업 그리기 — 수박 마크 + `tasty.` mono(`.` 는 `MELON_FLESH`). 가로

@@ -3,7 +3,7 @@
 //! 전사 원본: `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` +
 //! `gallery/overlays-windows.jsx` "Settings · General › Remote transfer" spec.
 //! 본체: `src/view/settings/ui/tabs/remote_transfer.rs::draw_remote_transfer_tab`
-//! (`RemoteTransferSettings{dir, max_mb}` 편집 — 백엔드는 bulk 파일 전송(ADR-0054) 수신측 저장 정책).
+//! (`RemoteTransferSettings{dir, max_mb}` 편집 — 백엔드는 bulk 파일 전송(docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) 수신측 저장 정책).
 //!
 //! 콘텐츠 컬럼 = mono uppercase 섹션 헤딩("Received files") + 150px 라벨 grid 2행
 //! (Save folder = mono path Input + Browse… secondary/folder / Maximum size =
@@ -48,7 +48,7 @@ struct State {
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings › General › Remote transfer 서브탭 **콘텐츠** — 창 셸에 얹힌
-        // 패널이라 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 패널이라 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();

@@ -65,7 +65,7 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 실제 표시는 `help_i18n::command`로 얻은 번역 트리와 `help_frame` 템플릿을 사용한다.
 `help_error`는 clap의 구조화된 파싱 오류를 표시하며, plugin 동적 파싱도 같은 경로로
 들어간다. plugin 번역은 discovery에서 공용 카탈로그를 읽는다.
-상세: [국제화](i18n.md#cli-도움말-clap-about--help), [ADR-0280](../adr/0280-cli-help-localizes-presentation-not-protocol.md).
+상세: [국제화](i18n.md#cli-도움말-clap-about--help), [ADR-0640](../adr/0640-locale-catalogs-and-display-text.md).
 
 ### 빈 설명 칸은 없다
 
@@ -104,7 +104,7 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 안 보낸 빈 연결이 생기지 않는다. 서버의 값이 있어야 하는 확인(계약 확인 `contract::ensure`)만
 연결 뒤에 남는다. plugin 동적 명령(`try_run_plugin_cli`)도 같은 순서다. 그래서 인스턴스가 없을
 때의 종료 코드도 그 인자 오류의 값이다(근거·대안은
-[ADR-0542](../adr/0542-the-cli-judges-request-arguments-before-connecting-and-exits-with-their-code.md)).
+[ADR-0643](../adr/0643-cli-errors-and-diagnostic-logs.md)).
 시험은 `tests/cli_maps_args_before_connecting.rs`.
 
 인자 오류의 코드는 해당 검사에서 정한 1 또는 2이며 서버 부재 때문에 1로 덮지 않는다.

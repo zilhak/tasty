@@ -7,7 +7,7 @@
 //!
 //! 여기 없는 것도 경계다 — `GlyphKey` · `AtlasEntry` · `AtlasPage` · `pick_lru_victim` ·
 //! `FrameClock` 은 device 가 없어도 성립하는 상태 기계라 크레이트 루트에 남는다. 그래서
-//! 그 다섯의 단위시험은 `gpu` 를 꺼도 그대로 돈다. 근거: ADR-0336.
+//! 그 다섯의 단위시험은 `gpu` 를 꺼도 그대로 돈다. 근거: docs/architecture/index.md#크레이트를-나누는-기준.
 
 use cosmic_text::{Attrs, Buffer, Metrics, Shaping, SwashContent};
 use rustc_hash::FxHashMap;

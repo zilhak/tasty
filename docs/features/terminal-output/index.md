@@ -2,14 +2,14 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md) · [ADR-0634](../../adr/0634-output-cursor-contract.md)
-- **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서) · `surface.read_since_mark`(마크 또는 소비자가 든 위치로 읽는 raw 진입점)
+- **ADR**: [출력 스캐너 규칙](#출력-스캐너-전용-커서) · [ADR-0634](../../adr/0634-output-cursor-contract.md)
+- **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서) · `surface.read_since_mark`(마크 또는 호출자가 지정한 cursor로 읽는 원문 조회)
 - **화면**: 없음
 - **메서드/파서**: [reference/api](../../reference/api.md#surface-상호작용) · [reference/output-parsers](../../reference/output-parsers.md)
 
 ## 목적
 
-터미널 출력을 **의미 단위**로 분해해 에이전트가 다루기 쉬운 JSON 으로 제공한다. 같은 `terminal.read` 권한 아래 **분해하지 않는** 진입점이 둘 더 있다 — 주기적으로 훑는 소비자를 위한 raw 커서와, 소비자가 자기 위치를 들고 읽는 raw 진입점이다(아래 표의 넷째·다섯째 행).
+터미널 출력을 파싱해 에이전트가 사용할 JSON으로 제공한다. 파싱하지 않은 원문도 같은 `terminal.read` 권한으로 읽을 수 있다. 원문 조회에는 스캐너 전용 커서와 호출자가 직접 관리하는 cursor가 있다.
 
 ## 내부 동작 — 다섯 진입점
 
@@ -19,21 +19,28 @@
 | `surface.commands` (+`last_command`,`command_at`) | 일회성 batch | OSC 133 인덱싱된 **명령 단위** 메타데이터 |
 | `output.observe_start` | 스트리밍 | PTY 라인마다 파서 → sink fan-out |
 | `surface.read_since_scan_mark` | 주기 폴링 | 전진하는 전용 커서로 **새로 온 것만** 읽는다 (파서를 안 거친 raw) |
-| `surface.read_since_mark` (`cursor`+`stream`) | 소비자별 이어 읽기 | 호출자가 든 위치부터 읽는다 — 서버는 그 소비자 상태를 안 든다 (파서를 안 거친 raw) |
+| `surface.read_since_mark` (`cursor`+`stream`) | 소비자별 이어 읽기 | 호출자가 지정한 위치부터 원문을 읽음. 소비자별 cursor는 서버에 저장하지 않음 |
 
-**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 뒤의 둘은 원문 텍스트를 주며 파싱은 호출자가 한다(아래 "읽는 자리를 말하는 법은 셋이다").
+**앞의 셋**이 같은 [파서 카탈로그](../../reference/output-parsers.md)를 공유한다. 뒤의 둘은 원문 텍스트를 주며 파싱은 호출자가 한다(아래 "출력 읽기 위치를 정하는 세 방식").
 
 ### parse_since_mark
 
 `set mark` → 명령 실행 → `parse-since-mark --parsers path,url,compile_error,test_result`. `--parsers` 생략 시 기본 4종(`path,url,prompt_boundary,exit_code`). 고급 6 종은 명시 opt-in. 전체 block 을 받아 멀티라인 파서(`compile_error`/`stack_trace`)도 정확히 분해.
 
-### 읽는 자리를 말하는 법은 셋이다
+<a id="읽는-자리를-말하는-법은-셋이다"></a>
 
-`parse_since_mark` 가 읽는 마크는 `surface.set_mark` 이 세우고 `surface.read_since_mark` 도 함께 읽는 **하나의** 마크다 — surface 당 하나이지 소비자당 하나가 아니다. 에이전트 셋이 그 마크를 쓰면 셋이 같은 창을 보고, `set mark` 하는 쪽이 안 하는 쪽을 민다.
+### 출력 읽기 위치를 정하는 세 방식
 
-출력을 **주기적으로 훑는** 소비자는 그 마크를 쓰지 않는다. `surface.read_since_scan_mark` 가 별도 커서를 읽고, 그 커서는 읽을 때마다 전진해 지난 호출 이후에 온 것만 준다. 두 커서는 서로를 밀지 않는다 — `set mark` 이 스캔 커서를 안 움직이고, 스캔 읽기가 마크를 안 움직인다. 그 커서는 소비자가 하나라는 전제 위에 있어 CLI 동사가 없다([ADR-0307](../../adr/0307-the-output-scanner-reads-its-own-cursor.md)).
+- **공유 마크**: `surface.set_mark`가 정하며 `parse_since_mark`와 cursor 없는 `read_since_mark`가 읽는다.
+  surface마다 하나이므로 한 소비자가 마크를 바꾸면 다른 소비자의 다음 조회 범위도 바뀐다.
+- **스캐너 커서**: `surface.read_since_scan_mark`가 읽을 때마다 전진한다.
+  공유 마크와는 독립적이지만 surface마다 하나여서 스캐너 소비자 하나를 전제로 한다.
+- **소비자별 cursor**: `surface.read_since_mark`에 `cursor`와 `stream`을 함께 보낸다.
+  각 소비자가 자기 위치를 보관하므로 다른 소비자의 조회 범위를 바꾸지 않는다.
+  서버에는 소비자별 cursor 상태를 저장하지 않는다.
 
-셋째는 **소비자가 드는 위치**다. `surface.read_since_mark` 에 `cursor`(절대 바이트 위치)와 `stream`(스트림 표지)을 주면 마크 대신 그 위치부터 읽고, 서버는 그 소비자를 위해 아무것도 안 든다 — 그래서 소비자가 몇이든 서로를 안 민다. 같은 규율을 사건 피드가 먼저 쓰고([ADR-0633](../../adr/0633-event-feed-delivery.md)), 터미널 원문으로 가져온 것이 [ADR-0634](../../adr/0634-output-cursor-contract.md) 이다.
+독립적인 이어 읽기의 선택 근거는 [출력 위치 조회](../../adr/0634-output-cursor-contract.md),
+사건에 같은 방식을 적용한 근거는 [이벤트 피드](../../adr/0633-event-feed-delivery.md)에 있다.
 
 ### 출력 스캐너 전용 커서
 
@@ -48,26 +55,38 @@
 `surface.read_since_mark`의 읽기 효과와 혼동하지 않는다.
 
 Claude plugin은 받은 델타를 자체 제한 버퍼에 모아 기존 에러 패턴·출력 지문·200자 중복 제거·정지 판단을 수행한다.
-host의 OUTPUT_RETENTION_MAX_BYTES와 plugin의 창 상한은 일치해야 한다.
+host의 OUTPUT_RETENTION_MAX_BYTES와 plugin의 수집 버퍼 상한은 일치해야 한다.
 다른 스캐너를 추가하려면 같은 scan 커서를 공유하기 전에 소비자별 위치 읽기를 검토한다.
 
-### 보존 밖으로 밀려난 것은 값으로 나온다
+<a id="보존-밖으로-밀려난-것은-값으로-나온다"></a>
 
-출력 버퍼는 1 MiB 를 넘으면 앞에서 버린다. 위치는 절대값이라 버리는 것은 보존 구간의 앞끝(`retention_start`)뿐이고 마크·커서는 제자리에 있다. 그래서 **밀려난 자리에서 읽으면 응답의 `skipped` 가 잃은 바이트 수를 말한다** — 마크 형태도 같다. 한때는 마크가 그 구간에 들면 무효가 되고 다음 읽기가 조용히 버퍼 처음부터 돌아갔다.
+### 보존 범위와 유실 확인
 
-응답에는 `retention_start`·`retention_end`·`cursor`·`next_cursor`·`raw_bytes`·`stream` 도 함께 실린다. **이어 읽기는 `next_cursor` 로 한다** — `text` 의 길이는 읽은 원문 구간의 길이가 아니다(손실 디코딩이 U+FFFD 를 넣고 `strip_ansi` 가 바이트를 뺀다).
+출력 버퍼는 1 MiB를 넘으면 오래된 바이트부터 지운다. 절대 위치인 마크와 cursor는 그대로 두고
+`retention_start`만 앞으로 이동한다. 지워진 위치에서 읽으면 `skipped`가 잃은 바이트 수를 알려준다.
+공유 마크로 읽을 때도 같다.
 
-표지가 안 맞는 위치(재사용된 surface id·respawn 된 터미널)·스트림 끝을 넘은 위치·터미널이 없는 surface 는 빈 답이 아니라 **거절**이고, 사유가 `error.data.reason` 으로 갈린다.
+응답에는 `retention_start`, `retention_end`, `cursor`, `next_cursor`, `raw_bytes`, `stream`이 있다.
+다음 조회에는 `next_cursor`를 사용한다. 손실 디코딩과 ANSI 제거 때문에 `text` 길이는 원문 길이와 다르다.
+stream이 다르거나 cursor가 현재 끝보다 크거나 대상에 터미널이 없으면 오류로 거절한다.
+사유는 `error.data.reason`으로 구별한다.
 
-CLI 로는 `tasty read since-mark --cursor <next_cursor> --stream <stream>` 이다. 첫 읽기는 위치 없이 하고(마크 또는 `--max-bytes` 만), 응답의 `next_cursor`·`stream` 을 다음 호출에 넘긴다. `--cursor` 는 `--stream` 없이 못 쓴다. `--max-bytes` 는 한 번에 받을 원문 바이트를 줄인다 — 1 부터 보존 크기(1 MiB)까지이고, `0` 은 한도 없음이 아니라 1 바이트로 올린다(0 이면 매번 빈 답이라 못 나아간다). 한도 없이 읽으려면 인자를 뺀다.
+CLI의 첫 조회는 cursor 없이 실행한다. 응답에서 받은 값으로
+`tasty read since-mark --cursor <next_cursor> --stream <stream>`을 호출해 이어 읽는다.
+`--cursor`에는 `--stream`이 필요하다. `--max-bytes`는 응답할 원문을 1바이트부터 보존 크기까지 제한한다.
+0도 1바이트로 처리하며, 보존된 전체 범위를 읽으려면 이 인자를 생략한다.
 
-**구 서버는 이 인자를 조용히 버린다** — 인자 객체에 모르는 키 거절이 없어 공유 마크에서 읽고 성공으로 답한다. 그래서 서버는 이 계약을 `system.info` 의 capability `ipc.output-cursor` 로 선언하고, CLI 는 위치 인자(셋 중 하나라도)를 실은 요청을 보내기 **전에** 그 이름을 묻는다. 없으면 요청을 내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability",…,"sent":false}}` 한 줄을 쓴 뒤 종료 코드 1 로 끝난다([ADR-0634](../../adr/0634-output-cursor-contract.md)). 위치 인자 없는 호출은 묻지 않는다.
+옛 서버는 새 인자를 무시하고 공유 마크 범위로 답할 수 있다. CLI는 cursor·stream·max_bytes 중
+하나라도 보내기 전에 `ipc.output-cursor` capability와 버전을 확인한다.
+지원하지 않으면 요청을 보내지 않고 `unsupported_capability`와 `sent:false`를 포함한 JSON 한 줄을
+stderr에 쓴 뒤 종료 코드 1로 끝난다. 새 인자가 없는 기존 호출에는 이 확인을 추가하지 않는다.
+자세한 호환 이유는 [출력 조회 ADR](../../adr/0634-output-cursor-contract.md)을 따른다.
 
 ### 명령 인덱싱 (OSC 133)
 
 셸 통합이 OSC 133 을 보내면 각 명령의 prompt 시작/명령 시작/종료/exit code/명령 문자열을 `tasty-memory`(`surface:<id>` scope, `tasty.commands.<ms>`)에 기록. OSC 133 미지원 셸은 빈 배열.
 
-**headless PTY 는 인덱싱 대상이 아니다.** 인덱서는 `TerminalStore` 키를 그대로 scope id 로 쓰는데 headless PTY([headless-pty](../headless-pty/index.md))의 `Terminal` 은 그 store 에 **pty id**(`>= 0x8000_0000`)로 등록돼 있다 — 그대로 기록하면 surface id 공간을 침범한 `Scope::Surface` 가 생겨 다음 부팅의 surface 카운터를 PTY 공간으로 밀어 올린다([ADR-0094](../../adr/0094-surface-id-space-bounded-below-pty-base.md)). headless PTY 의 종료코드는 `pty.wait` 가 별도로 제공한다.
+**headless PTY 는 인덱싱 대상이 아니다.** 인덱서는 `TerminalStore` 키를 그대로 scope id 로 쓰는데 headless PTY([headless-pty](../headless-pty/index.md))의 `Terminal` 은 그 store 에 **pty id**(`>= 0x8000_0000`)로 등록돼 있다 — 그대로 기록하면 surface id 공간을 침범한 `Scope::Surface` 가 생겨 다음 부팅의 surface 카운터를 PTY 공간으로 밀어 올린다([ADR-0617](../../adr/0617-workspace-identity-and-focus.md)). headless PTY 의 종료코드는 `pty.wait` 가 별도로 제공한다.
 
 **셸 통합 자동 주입(bash/zsh)**: 사용자가 `.bashrc`/`.zshrc`를 전혀 건드리지 않아도, tasty 가 셸 spawn 시점에 OSC 133 A(prompt 시작)/C(명령 실행 직전)/D(명령 종료+exit code) 훅을 자동으로 주입한다 — "사용자가 알아서 셸 통합 스크립트를 설치"해야 했던 이전 사전조건이 사라졌다.
 
@@ -77,7 +96,7 @@ CLI 로는 `tasty read since-mark --cursor <next_cursor> --stream <stream>` 이�
 
 ### 스트리밍 옵저버
 
-PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 재시작 시 소멸). sink: `memory`(ring buffer, `memory.list`/`query` 로 회수) / `file`(JSONL append). 필터: `parsers`(활성 파서) + `kinds`(출력 후 kind 필터) + `surface_id`(생략 시 전체 surface wildcard). **백압**: 옵저버별 bounded channel(256), 채워지면 drop + `info.dropped` 증가(PTY 스레드 절대 block 안 함). surface 닫히면 매인 옵저버 자동 정리, wildcard 는 유지. **자동 정리는 sink 워커를 그 자리에서 join 하지 않는다** — 워크스페이스 close 가 surface 수만큼 이 경로를 렌더 스레드에서 반복하기 때문이다([ADR-0076](../../adr/0076-close-path-per-surface-blocking-removal.md)). channel 에 수락된 항목은 워커가 스스로 다 비우고 끝나므로 유실은 없고, 남은 워커는 앱 종료 시퀀스(S3b)가 회수한다. 다만 **sink 파일에 마지막 항목이 도달하는 시점은 close 응답 이후로 밀릴 수 있다.** 명시 해제(`output.observe_stop`)는 종전대로 호출 복귀 시점에 sink 가 닫혀 있음을 보장한다.
+PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 재시작 시 소멸). sink: `memory`(ring buffer, `memory.list`/`query` 로 회수) / `file`(JSONL append). 필터: `parsers`(활성 파서) + `kinds`(출력 후 kind 필터) + `surface_id`(생략 시 전체 surface wildcard). **백압**: 옵저버별 bounded channel(256), 채워지면 drop + `info.dropped` 증가(PTY 스레드 절대 block 안 함). surface 닫히면 매인 옵저버 자동 정리, wildcard 는 유지. **자동 정리는 sink 워커를 그 자리에서 join 하지 않는다** — 워크스페이스 close 가 surface 수만큼 이 경로를 렌더 스레드에서 반복하기 때문이다([ADR-0616](../../adr/0616-window-platform-and-shutdown.md)). channel 에 수락된 항목은 워커가 스스로 다 비우고 끝나므로 유실은 없고, 남은 워커는 앱 종료 시퀀스(S3b)가 회수한다. 다만 **sink 파일에 마지막 항목이 도달하는 시점은 close 응답 이후로 밀릴 수 있다.** 명시 해제(`output.observe_stop`)는 종전대로 호출 복귀 시점에 sink 가 닫혀 있음을 보장한다.
 
 > **멀티라인 파서는 옵저버에서 발화하지 않는다**(라인별 dispatch). 컴파일 에러 수집은 `prompt_boundary` 옵저버로 종료 감지 후 `parse_since_mark` batch.
 

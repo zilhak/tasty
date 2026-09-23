@@ -27,7 +27,7 @@
 
 ## 렌더 경로
 
-popup 은 **egui-mesh**(ADR-0028 / B4)로 그린다. plugin 이 자기 프로세스에서 popup 콘텐츠를
+popup 은 **egui-mesh**(ADR-0628)로 그린다. plugin 이 자기 프로세스에서 popup 콘텐츠를
 egui 로 tessellate 한 mesh 를 host 가 content 영역에 합성한다. host 는 `popup.set_context` 에
 Theme 스냅샷(`ThemeWire`)을 실어 보내고, plugin 은 `Theme::with_colors_and_zoom` 으로 재구성해
 디자인 토큰대로 그린다. chrome(scrim/border/outside-click/Esc/단일 인스턴스 셸)은 host 소유 —
@@ -106,4 +106,4 @@ Claude Design 프로젝트 `Tasty Design System`(projectId `41fd3f5a-4bb9-4877-9
 `ui_kits/terminal/overlays/clipboard_viewer.jsx`(구조 전사 소스) ·
 `clipboard_viewer.html`(standalone 프리뷰) · `shared.jsx`(`Scrim`/`Icon`/`Spinner` 공용
 프리미티브). popup 은 egui-mesh 채널로 plugin 이 자가 렌더한다
-([popup-implementation.md](../../../dev-guide/popup-implementation.md), ADR-0028).
+([popup-implementation.md](../../../dev-guide/popup-implementation.md), ADR-0628).

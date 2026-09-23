@@ -58,7 +58,7 @@
 #
 # 형제 `check-frozen-sum-ratchet.sh` 는 같은 물음에 이미 답을 갖고 있다 — 그쪽은 상쇄가
 # 안 보이는 것을 알고도 저울을 하나로 두며, 이유와 재검토 조건이
-# docs/adr/0205-the-frozen-sum-stays-one-scale.md 에 있다. 여기는 아직 그 답이 없다.
+# docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때 에 있다. 여기는 아직 그 답이 없다.
 #
 # 채널: .github/workflows/script-gates.yml (main push · PR)
 # 사용: scripts/check-allow-reason.sh
@@ -201,11 +201,9 @@ fi
 #   (`shared_buffer.rs` · `input_source.rs` · `foreground_process.rs`) 세 블록 다 그
 #   위에 `SAFETY:` 나 `이유:` 를 이미 갖고 있어 그대로 통과한다.
 #
-#   ★ 이 요구는 새 규칙이 아니다. `docs/adr/0037-complexity-gate.md` 가 이미
-#     **"예외 사유 필수 … 빈 사유·"TODO" 금지"** 라고 적어 두었고, **그것을 지키는
-#     채널이 없었다.** 규칙은 문서에 있고 게이트는 마커만 봤다 — 이 커밋이 그 둘을
-#     맞춘다. 그래서 새로 걸리는 자리가 0 인 것이 이상하지 않다: 사람들은 그 규칙을
-#     지키고 있었고, 안 지켜도 아무도 안 봤을 뿐이다.
+#   예외 사유의 작성 규칙은 docs/dev-guide/complexity-gate.md#무엇을도구임계값 참조.
+#   빈 사유와 TODO만 적은 사유는 허용하지 않는다. 그래서 마커의 존재뿐 아니라
+#   마커 뒤에 실제 설명이 있는지도 검사한다.
 #
 #   이 확인이 필수인 이유: 이 게이트에서 **더 많이 잡는 것은 안전하지 않다.** 오탐이
 #   하나라도 생기면 실패문이 "상한을 올려서 통과시키지 마라" 로 나가고, 그것은 실재하지

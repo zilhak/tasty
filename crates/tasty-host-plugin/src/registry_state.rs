@@ -211,7 +211,7 @@ impl PluginsConfig {
 
     /// 사용자 override 가 마지막으로 바뀐 시점의 전역 epoch. 값이 그대로면 override
     /// 내용도 그대로다 — plugin 단축키에서 파생된 스냅샷의 캐시 무효화 키로 쓴다
-    /// (webview 키 포워딩 정책, `docs/adr/0102-webview-key-forwarding.md`).
+    /// (webview 키 포워딩 정책, `docs/design/systems/webview.md#키보드--별도-계약`).
     /// 디스크에서 갓 읽어온 config 는 0 이며, 소비자는 "이전 값과 다른가" 만 보므로
     /// 첫 조회에서 자연히 한 번 계산된다.
     pub fn shortcut_revision(&self) -> u64 {

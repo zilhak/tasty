@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [ADR-0050](../../adr/0050-headless-pty-primitive.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0094](../../adr/0094-surface-id-space-bounded-below-pty-base.md) (surface/PTY id 공간 disjoint 집행)
+- **ADR**: [ADR-0613](../../adr/0613-terminal-io-and-process-lifetime.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0617](../../adr/0617-workspace-identity-and-focus.md) (surface/PTY id 공간 disjoint 집행)
 - **코드**: `src/core/pty_registry.rs` (registry+exit-code) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/core/impl_attach.rs` `apply_adopt_terminal` (승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
 - **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 
@@ -72,7 +72,7 @@ PTY registry에서 제거되어 이후에는 surface API로 다룬다. 옛 PTY I
 
 ## 비-목표 (Out of scope)
 
-- **GUI 상시 가시화** — headless PTY 실행 중임을 상태바/점유 계약(ADR-0040)으로 노출하는 것은 이번 범위 밖(후속 선택). 승격 전까지는 `pty.list` 로만 보인다.
+- **GUI 상시 가시화** — headless PTY 실행 중임을 상태바/점유 계약(ADR-0621)으로 노출하는 것은 이번 범위 밖(후속 선택). 승격 전까지는 `pty.list` 로만 보인다.
 - **`agent.task` Run 의 pty backend 전환** — DAG 러너 subprocess(`runner_host.rs` 의 `shell_children`) 를 이 primitive 위로 옮기는 것은 범위 밖이다. `Run` 은 bare subprocess + `Stdio::piped()` 캡처로 대응한다(argv 의미·exit code 주체·재시작 수명을 그대로 유지하는 게 우선이라 tty 지원은 필요해질 때 재검토) — [dev-guide/agent-runner](../../dev-guide/agent-runner.md#run-출력-캡처).
 - **blocking wait** — `pty.wait` 는 즉시 반환 폴링이다(다른 poll-based 모델과 동일). 호출자가 반복 폴링한다.
 

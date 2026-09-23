@@ -1,5 +1,5 @@
 //! 연결 전에 보낸 요청의 시한은 연결 성사부터 센다는 것, 그리고 연결하지 못한 extension 에
-//! 보낸 hook 은 보낸 적 없는 것으로 진행된다는 것(ADR-0505).
+//! 보낸 hook 은 보낸 적 없는 것으로 진행된다는 것(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
 //!
 //! 프로세스는 stub 이다 — 연결 상태만 손으로 바꾸고, 시각은 sweep 에 주입한다.
 

@@ -41,17 +41,17 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// 큐에 쌓여 있을 수 있는 요청 바이트의 합. **파생이 아니다** — 근거는 ADR-0391.
+/// 큐에 쌓여 있을 수 있는 요청 바이트의 합. **파생이 아니다** — 근거는 docs/architecture/ipc-server.md#입장-상한.
 ///
 /// 관계만 고정한다(본체 `tcp_ipc_server` 가 컴파일 시점에 단정한다): 줄 상한 두 건이 동시에
 /// 들어갈 만큼 크고, 연결 상한 × 줄 상한(지금까지의 이론상 상한)보다 충분히 작다.
 pub const QUEUED_BYTES_LIMIT: usize = 64 * 1024 * 1024;
 
-/// 큐에 들어 있을 수 있는 **호스트 주입** 명령의 수. **파생이 아니다** — 근거는 ADR-0391.
+/// 큐에 들어 있을 수 있는 **호스트 주입** 명령의 수. **파생이 아니다** — 근거는 docs/architecture/ipc-server.md#입장-상한.
 ///
 /// 관계만 고정한다: 한 dispatch 회차의 예산(`DRAIN_BUDGET_PER_ROUND`)을 넘지 않는다. 그래야
 /// 주입 몫만으로는 한 회차가 못 비우는 적체가 생기지 않는다 — **명령 수로는.** 회차는 시간
-/// 예산에서도 멈추므로(ADR-0410) 무거운 주입 명령은 여러 회차에 나뉘어 비워지고, 그동안 남은
+/// 예산에서도 멈추므로(docs/architecture/ipc-server.md#dispatch-회차-예산) 무거운 주입 명령은 여러 회차에 나뉘어 비워지고, 그동안 남은
 /// 것은 큐에 그대로 있어 이 장부가 센다.
 pub const INJECTED_DEPTH_LIMIT: usize = 256;
 
@@ -129,8 +129,8 @@ impl fmt::Display for Refusal {
     }
 }
 
-/// 한 시점의 장부 값. 읽는 자리는 [`crate::dispatch::CommandQueueSnapshot::read`] 다(ADR-0412) —
-/// `system.pressure` 의 `queue_admission` 덩어리가 이 값을 필드 이름 그대로 싣는다(ADR-0435).
+/// 한 시점의 장부 값. 읽는 자리는 [`crate::dispatch::CommandQueueSnapshot::read`] 다(docs/architecture/ipc-server.md#큐와-재시도-집계) —
+/// `system.pressure` 의 `queue_admission` 덩어리가 이 값을 필드 이름 그대로 싣는다(docs/architecture/ipc-server.md#큐와-재시도-집계).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AdmissionSnapshot {
     /// 지금 큐에 든 요청 바이트 합.

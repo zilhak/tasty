@@ -172,7 +172,7 @@ impl PluginManager {
                         "caller_plugin_id": caller_plugin_id,
                     });
                     // 막 띄운 extension 이면 아직 연결 중이다 — 이 시한은 sweep 이 연결
-                    // 성사부터 센다(`deadline_from_connection`, ADR-0505).
+                    // 성사부터 센다(`deadline_from_connection`, docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
                     let deadline = Instant::now() + Duration::from_millis(pre.timeout_ms as u64);
                     let origin = final_caller.origin();
                     match self.send_extension_invoke_hook(
@@ -429,10 +429,9 @@ impl PluginManager {
     /// **두 갈래가 같은 `code` 를 싣는다.** 한동안 plugin 갈래만 코드를 버렸는데,
     /// 그러면 같은 사건(예: target 이 안 돌려줬다 `-32004`)이 caller 가 CLI 냐 다른
     /// plugin 이냐에 따라 `-32004` 와 `-32000` 으로 갈렸다 — 코드가 사건이 아니라
-    /// **누가 물었는가**를 보고했다. `docs/adr/0171-a-host-error-code-survives-the-plugin-boundary.md`
-    /// 이 정한 축(호스트가 준 코드는 plugin 경계를 넘어 살아남는다)과 같고, 그 ADR
-    /// 이 센 일곱 자리는 호스트가 *되받은* 코드였다. 여기 것은 호스트가 *스스로 내는*
-    /// 코드다.
+    /// **누가 물었는가**를 보고했다. `docs/dev-guide/api-conventions.md#plugin-을-거쳐-온-실패도-호스트가-준-코드를-그대로-낸다`
+    /// 의 기준처럼 호스트 오류 코드는 plugin 경계를 넘어 유지한다. 이 함수는 다른
+    /// 호출에서 받은 오류를 전달하는 경우뿐 아니라 호스트가 직접 만든 오류도 다룬다.
     pub(super) fn send_final_error(
         &mut self,
         final_caller: FinalCaller,

@@ -8,7 +8,7 @@
 //! 무엇을 요구하는지는 명령이 아니라 **요청 자체**에서 판정한다. 같은 판정을 정적 CLI 와
 //! plugin CLI 가 함께 쓰려면 둘이 공유하는 것이 요청뿐이다.
 //!
-//! 근거: `docs/adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md`.
+//! 근거: `docs/features/terminal-output/index.md#보존-밖으로-밀려난-것은-값으로-나온다`.
 
 use std::time::{Duration, Instant};
 
@@ -27,7 +27,7 @@ use tasty_ipc::protocol::JsonRpcRequest;
 /// 따라가기 · 감사 따라가기 · plugin 의 폴링과 자동 대기)과 스트림·SSH 경유 명령은 싣지
 /// 않고, 플래그를 받으면 **거절한다** — 조용히 무시하면 이 모듈이 막으려는 결함을 CLI 가
 /// 스스로 만든다. 근거:
-/// `docs/adr/0366-the-cli-bounds-a-single-request-wait-with-a-root-flag.md`.
+/// `docs/dev-guide/api-conventions.md#cli-응답-대기-옵션`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Envelope {
     /// `--response-timeout-ms`. `Some(0)` 은 봉투 규약상 "상한 없음" 이라 없는 것과 같다.
@@ -84,10 +84,10 @@ pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
 /// 나눠 쓴다. 확인 요청은 확인을 시작하는 순간 남은 상한을 기한으로 받고
 /// (`IpcConnection::capabilities_within` — 소켓 기한은 그 시간 그대로, 봉투는 밀리초 올림이다),
 /// 끝나면 요청의 봉투를 **남은 시간**으로 줄여 싣는다. 그래서 굳은 호스트에서도 CLI 는 상한
-/// 뒤에 돌아온다(ADR-0366 이 약속한 것). 확인이 상한 안에 안 끝났거나 남은 시간이 1 ms 도
+/// 뒤에 돌아온다(docs/dev-guide/api-conventions.md#cli-응답-대기-옵션 이 약속한 것). 확인이 상한 안에 안 끝났거나 남은 시간이 1 ms 도
 /// 안 되면 요청은 안 나가고, 그 답은 요청이 큐에서 만료됐을 때와 같은 `-32067`(실행 안 됨)
 /// 이다 — 문구도 같다. 근거:
-/// `docs/adr/0452-the-cli-capability-check-spends-the-same-response-bound.md`.
+/// `docs/dev-guide/api-conventions.md#cli-응답-대기-옵션`.
 pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> Result<()> {
     let needed = required(request);
     if needed.is_empty() {
@@ -125,7 +125,7 @@ pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> 
 /// [`ensure`] 실패를 기록할 때 **이 요청의** JSON-RPC 코드 칸에 실을 값.
 ///
 /// 확인이 상한 안에 안 끝난 갈래([`not_run`])는 이 요청에 대한 답이다 — 서버가 이 요청을 큐에서
-/// 만료시켰을 때와 같은 `-32067` 이므로 같은 코드를 싣는다(같은 사실에는 같은 답, ADR-0452). 그
+/// 만료시켰을 때와 같은 `-32067` 이므로 같은 코드를 싣는다(같은 사실에는 같은 답, docs/dev-guide/api-conventions.md#cli-응답-대기-옵션). 그
 /// 밖의 실패는 싣지 않는다: 선언 없음 · 전송 실패에는 코드가 없고, 확인 요청 자체가 받은 다른
 /// JSON-RPC 오류는 이 요청이 아니라 **확인 요청의** 코드다.
 pub(crate) fn failure_code(e: &anyhow::Error) -> Option<i32> {
@@ -433,7 +433,7 @@ mod tests {
     /// 상한 1 ms 에서도 확인 요청은 **나간다** — 봉투는 올림이라 1 을 싣는다. 내림이면 확인을
     /// 시작하는 순간 남은 시간(1 ms 미만)이 0 이 되어 아무것도 안 보내고 끝났다. 본 요청은 남은 시간을
     /// 내림으로 싣고 합계가 상한을 넘지 않아야 하므로, 확인 왕복 뒤에는 늘 1 ms 미만이 남아 안 나간다 —
-    /// 답은 "실행 안 됨"(ADR-0452).
+    /// 답은 "실행 안 됨"(docs/dev-guide/api-conventions.md#cli-응답-대기-옵션).
     #[test]
     fn a_one_millisecond_bound_still_sends_the_check() {
         let (addr, seen, h) = fake_host(vec![Some((Duration::ZERO, capabilities_answer()))]);

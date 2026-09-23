@@ -42,7 +42,7 @@
 //! 두 물음의 답이 같다 — **마지막 열에 한 칸을 찍는다.** 그러면 그 칸이 소거되고
 //! 커서가 스스로 다시 걸친다. 한때 이 길을 막은 것은 그 한 칸의 pen 이 나머지와
 //! 달라진다는 것이었는데, 소거 pen 이 하나로 정해진 뒤로는 그 칸도 같은 pen 이다
-//! ([`park_on_erased_last_cell`] · `docs/adr/0292-erase-fills-with-the-current-background.md`).
+//! ([`park_on_erased_last_cell`] · `docs/features/terminal/index.md#스크롤-영역과-소거`).
 //! 그래서 걸친 상태는 **여섯 갈래 모두에서** 보존된다.
 //!
 //! ## 소거가 남기는 pen
@@ -110,7 +110,7 @@ impl TerminalState {
     /// 배경색 하나만 옮긴다. 밑줄·역상 등 나머지 속성은 지워진 칸에 안 남는다 —
     /// 그것이 `bce` 가 뜻하는 동작이고, 독립 구현(tmux 3.4)에서 실측으로 확인했다:
     /// `CSI 4;41m` 을 켜고 `CSI 1K` 를 먹이면 지워진 칸은 빨강 배경만 갖고 밑줄이
-    /// 없다. 근거·대안은 `docs/adr/0292-erase-fills-with-the-current-background.md`.
+    /// 없다. 근거·대안은 `docs/features/terminal/index.md#스크롤-영역과-소거`.
     fn erase_attrs(&self) -> CellAttributes {
         CellAttributes::default()
             .set_background(self.current_pen.background())

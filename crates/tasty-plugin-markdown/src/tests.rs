@@ -476,7 +476,7 @@ fn trigger_params_carry_start_dir_and_origin() {
 }
 
 /// 파일열기 팝업 [열기] 는 자기 팝업을 실어 보낸다 — host 가 이것으로 사용자 조작을 알아본다.
-/// 빠지면 사용자가 연 탭이 에이전트 요청으로 분류된다(ADR-0526).
+/// 빠지면 사용자가 연 탭이 에이전트 요청으로 분류된다(docs/features/file-handler/index.md#origin-소유권과-비동기-완료).
 #[cfg(any(unix, windows))]
 #[test]
 fn file_open_dispatch_params_carry_the_owner_popup() {
@@ -488,7 +488,7 @@ fn file_open_dispatch_params_carry_the_owner_popup() {
 }
 
 /// 문서 안 파일 링크는 host 가 통지한 시도의 URL 을 `user_navigation_url` 로 그대로 되댄다 —
-/// host 가 그 클릭을 사용자 행동으로 칠 근거를 찾는 열쇠다(ADR-0568). 새 탭은 링크가 눌린 surface
+/// host 가 그 클릭을 사용자 행동으로 칠 근거를 찾는 열쇠다(docs/features/file-handler/index.md#origin-소유권과-비동기-완료). 새 탭은 링크가 눌린 surface
 /// 의 pane 에 붙는다.
 #[test]
 fn a_file_link_echoes_the_navigation_it_came_from() {
@@ -506,7 +506,7 @@ fn a_file_link_echoes_the_navigation_it_came_from() {
 }
 
 /// 외부 링크는 host `webview.open_external` 로 간다 — host 가 읽는 두 키(`surface_id` · `url`)를
-/// 싣는다. 이 plugin 은 OS 열기를 직접 하지 않는다(ADR-0527).
+/// 싣는다. 이 plugin 은 OS 열기를 직접 하지 않는다(docs/plugins/markdown/index.md#내부-동작).
 #[test]
 fn external_link_params_name_the_clicked_surface_and_the_url() {
     let params = external_link_params(7, "https://example.com/a?b=1");
@@ -515,7 +515,7 @@ fn external_link_params_name_the_clicked_surface_and_the_url() {
 }
 
 /// 원격 원문 요청은 에이전트가 건 것에만 `agent_origin` 을 싣는다 — host 는 그 회신의 잘림
-/// toast 를 사용자에게 띄우지 않는다(ADR-0503). plugin 이 건 요청은 종전 모양 그대로다.
+/// toast 를 사용자에게 띄우지 않는다(docs/design/systems/toast.md#origin이-적용되는-경로). plugin 이 건 요청은 종전 모양 그대로다.
 #[test]
 fn only_an_agent_content_request_carries_the_agent_origin() {
     assert_eq!(

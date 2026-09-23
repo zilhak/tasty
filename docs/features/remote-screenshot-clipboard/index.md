@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (단축키 트리거)
-- **ADR**: 없음 (기존 [ADR-0032](../../adr/0032-remote-attach-two-layer-split.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
+- **ADR**: 없음 (기존 [ADR-0620](../../adr/0620-remote-connection-profiles.md) attach 채널을 그대로 재사용, 신규 프로토콜/enum 없음)
 - **코드**: `crates/tasty-platform/src/screen_capture.rs`(OS 캡처 + `CaptureError`), `crates/tasty-platform/src/macos_permissions.rs`(화면 기록 권한 preflight), `src/app/screenshot_capture.rs`(폴링/스레드), `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard`), `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`), `src/app/attach_client.rs`(원격 전송), `src/core/capture_upload.rs` + `src/core/attach_runtime.rs`(`finalize_capture_upload`, 서버측 수신), `crates/tasty-ipc/src/stream_hub.rs`(`CaptureUploadMsg`), `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`)
 - **화면**: 없음 — 트리거는 단축키, 피드백은 성공/실패 토스트(mirror 케이스만; [remote-attach 토스트](../remote-attach/index.md) 채널 재사용)
 

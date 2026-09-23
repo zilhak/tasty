@@ -1,5 +1,5 @@
 //! 만료로 이미 끝난 요청에 **늦게** 도착한 응답은 아무것도 다시 진행시키지 않는다
-//! (`PluginManager::settle_late_response`, ADR-0311 2026-09-21 보강).
+//! (`PluginManager::settle_late_response`, docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
 //!
 //! 세 시험 모두 "만료가 한 번 끝을 냈다" 를 먼저 관측하고 나서 늦은 응답을 넣는다. 만료
 //! 쪽 관측이 없으면 늦은 응답이 아무 일도 안 한 것인지 애초에 할 일이 없었던 것인지

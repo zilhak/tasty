@@ -19,7 +19,7 @@ use tasty_telemetry::slow_requests::{HostOutcome, HostOutcomeCell};
 /// 단발 · 호스트 주입이 전부 `1` 을 싣는다) — 동시에 떠 있는 요청 대부분이 같은 `id` 를 갖는다.
 /// 그래서 진단이 요청 하나를 가리키는 값은 호출자가 아니라 호스트가 정한다. **Event Bus 의
 /// `trace_id` 와도 다른 값이다** — 그것은 사건의 사슬을 잇고, plugin 이 보낸 값을 그대로 싣는다.
-/// 이름에 `trace` 를 안 쓰는 이유가 그 구분이다(ADR-0436).
+/// 이름에 `trace` 를 안 쓰는 이유가 그 구분이다(docs/architecture/ipc-server.md#느린-요청-추적).
 ///
 /// 만드는 길은 [`RequestSeq::next`] 하나다. 필드가 비공개라 다른 크레이트가 임의의 번호를
 /// 지어낼 수 없고, 가진 번호는 복사해 넘길 수만 있다.
@@ -270,7 +270,7 @@ pub struct CommandLifecycle {
     /// 버려진다.
     flight: OnceLock<FlightTicket>,
     /// 호출자에게 나간 답이 끝난 방식. 기다리는 쪽이 답을 받거나 스스로 만든 순간 채우고, 느린
-    /// 요청 링의 호스트 줄이 같은 칸을 들어 읽는다(ADR-0468).
+    /// 요청 링의 호스트 줄이 같은 칸을 들어 읽는다(docs/architecture/ipc-server.md#느린-요청-추적).
     outcome: HostOutcomeCell,
 }
 

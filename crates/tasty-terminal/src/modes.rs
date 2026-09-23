@@ -259,7 +259,7 @@ impl TerminalState {
     ///
     /// 무장/해제는 **실효 레벨의 엣지**로 판정한다 — `None → ON` 에서만 무장하고
     /// (ON→ON 전환, 예 1000→1002 는 재무장 안 함), `ON → None` 에서 disarm 한다
-    /// (세션당 1회, ADR-0022 ②). 실효 레벨이 안 바뀌는 갱신(예 1003 이 켜진 채
+    /// (세션당 1회, docs/features/terminal/index.md#마우스-입력). 실효 레벨이 안 바뀌는 갱신(예 1003 이 켜진 채
     /// `1002l`)은 무장 상태도 건드리지 않는다 — 예전엔 이런 갱신이 트래킹과 함께
     /// 무장까지 날려서, 트래킹이 살아 있는데 안내가 다시 안 뜨는 상태가 됐다.
     fn update_mouse_tracking(&mut self, f: impl FnOnce(&mut MouseTrackingRegisters)) {

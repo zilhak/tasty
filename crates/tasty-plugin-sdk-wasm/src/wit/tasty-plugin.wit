@@ -4,7 +4,7 @@
 // - JSON-string marshal: ctx/result 타입의 WIT record 변환을 회피하고 모두 string
 //   으로 직렬화 (POC 단순화). 비용은 wasm-poc.md §3 에서 측정 후 평가.
 //   주의: UiNode/UiEvent DSL 은 C1 에서 native protocol 에서 제거됨 — wasm plugin 의
-//   UI 저작 경로는 현재 없다 (user plugin 개방은 1.0 이후, ADR-0028). 아래
+//   UI 저작 경로는 현재 없다 (user plugin 개방은 1.0 이후, docs/dev-guide/egui-mesh-channel.md#데이터-흐름). 아래
 //   handle-popup-event / handle-surface-event 시그니처는 POC 잔존물로, native
 //   호스트에는 대응 wire 메서드(popup.event / surface.event)가 더 이상 없다.
 // - exports = Plugin trait 의 callback 7 종 (init / open-popup / handle-popup-event

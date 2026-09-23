@@ -1,5 +1,5 @@
 //! `EventBus` 재발화 hop 하한 단위 테스트 — plugin 이 적어 보낸 hop 을 믿지 않고,
-//! 응답 전인 dispatch 가 있으면 hop 을 올린다(ADR-0406).
+//! 응답 전인 dispatch 가 있으면 hop 을 올린다(docs/reference/event-catalog.md#재발행과-응답).
 
 use std::collections::VecDeque;
 

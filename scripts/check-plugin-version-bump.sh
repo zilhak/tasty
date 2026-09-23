@@ -37,7 +37,7 @@
 # `docs:` 류가 여기 걸린다. 주석까지 제거하면 배제가 14 로 늘지만, 줄 단위 정규식
 # 주석 제거는 raw string 안의 `//` 를 잘못 지워 **거짓 음성**을 만든다. 오탐(불필요한
 # bump 하나)과 거짓 음성(같은 버전 아래 두 산출물이 조용히 발행됨)의 대가가 비대칭이므로 여기서는
-# 오탐 쪽을 감수한다. 재검토 조건은 ADR-0137.
+# 오탐 쪽을 감수한다. 재검토 조건은 docs/dev-guide/release.md#플러그인-버전-비교.
 #
 # ── 무엇을 그 plugin 의 산출물로 세는가 ────────────────────────────────
 #
@@ -67,12 +67,12 @@
 #     근거 주석 포함). 범위가 다르다 — `cfg_attr` 은 붙는 속성만 조건부라 **항목은 출하된다.**
 #
 # 셋 다 `strip-cfg-test --blank-test-only-files` 가 지운다 — 파일 SLOC 게이트가 이미 쓰는
-# 판정기다(ADR-0165). 여기서 술어를 다시 구현하지 않는다. 실측에서 이 축이 147 요구 중
+# 판정기다(docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정). 여기서 판정 로직을 다시 구현하지 않는다. 실측에서 이 구분은 147 요구 중
 # 36 을 없앴고, 그 36 은 전부 전체-테스트 파일이었다.
 #
 # 셋째 형태는 처음에 빠져 있었고, 이 게이트의 실회차 첫 발화가 그 때문에 거짓 양성이었다
 # (공유 크레이트 둘의 크레이트 루트 `#![cfg_attr(test, …)]` 한 줄씩이 plugin 6 개에 bump 를
-# 요구했다 — 출하 산출물은 비트 단위로 동일). 경위와 재검토 조건은 ADR-0166.
+# 요구했다 — 출하 산출물은 비트 단위로 동일). 경위와 재검토 조건은 docs/dev-guide/release.md#플러그인-버전-비교.
 #
 # **빈 줄을 접는 이유**: 그 판정기는 줄 번호 보존용으로 지운 자리를 빈 줄로 남긴다. 안 접으면
 # `#[cfg(test)] mod x;` 두 줄이 는 것이 "내용이 달라졌다" 로 읽힌다(실측으로 밟았다).
@@ -109,8 +109,8 @@ resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT"
 STRIP_BIN="$JUDGE_BIN"
 # 없거나 낡았으면 **더 넓게** 본다. 여기서 판정 불가로 죽이지 않는 이유는, 이 스크립트가 갓
 # 클론한 트리의 pre-commit 에서도 불리기 때문이다. 넓게 보는 방향은 조용한 통과를 안 만든다 —
-# 출하 밖 변경(테스트 전용)이 bump 를 요구하는 오탐이 될 뿐이고, ADR-0137 이 적은 비대칭
-# (오탐 하나 vs 같은 버전 아래 두 산출물이 조용히 발행됨)에서 감수하는 쪽이다. 사유는 헬퍼가 말한다.
+# 출하 밖 변경(테스트 전용)까지 bump를 요구할 수 있다. 같은 버전으로 다른 산출물을 배포하는 것보다
+# 불필요한 버전 증가를 감수한다. 근거: docs/dev-guide/release.md#플러그인-버전-비교.
 if [ -z "$STRIP_BIN" ]; then
     echo "[plugin-version] 출하 범위를 못 좁힌다 — 테스트 전용 변경까지 bump 를 요구한다." >&2
 fi
@@ -371,7 +371,7 @@ fi
 # `src/`·`lang/`·`assets/` 아래는 확장자와 무관하게 산출물로 본다(`crates/tasty-plugin-markdown/assets/NOTICE.md` 포함).
 # ★ 이 디렉토리 모양 목록은 `.github/workflows/plugin-version-check.yml` 의 `paths` 가 복제한다
 # (`.md` 를 빼고 되살리는 줄들). 여기에 모양을 더하면 그쪽도 더해야 필터가 판정 대상의
-# 상위집합으로 남는다(ADR-0537).
+# 상위집합으로 남는다(docs/dev-guide/release.md#플러그인-버전-비교).
 build_affecting() {
     case "$1" in
         */src/*|*/lang/*|*/assets/*|*/Cargo.toml|*/tasty-plugin.toml|*/build.rs) return 0 ;;
@@ -385,7 +385,7 @@ build_affecting() {
 # plugin 이 링크하는 path 의존은 `$SCAN_ROOT` 밖에 산다. 좌변을 `$SCAN_ROOT` 로만 두면
 # 그 사본만 고친 커밋이 세 채널(P.1 · B.9 · CI) 모두에서 판정 대상 0 건으로 통과한다 —
 # plugin 산출물은 달라졌는데. 근거·대안·재검토 조건:
-# docs/adr/0537-the-plugin-version-gate-follows-path-dependencies-outside-the-workspace.md
+# docs/dev-guide/release.md#플러그인-버전-비교
 #
 # 좌변은 **plugin 폐포에 실제로 든 path 의존** 중 워크스페이스 멤버가 아니고 `$SCAN_ROOT`
 # 밖인 디렉토리다. 멤버를 빼는 이유: `$SCAN_ROOT` 밖의 멤버는 이 게이트의 좌변이 아니다 —

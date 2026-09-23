@@ -190,7 +190,7 @@ pub(crate) fn handle_notify_done<H: HostCall>(
 /// 완료 알림(`notify-done`)과 달리 **형제 정리도 재무장도 하지 않는다** — 상시 hook 이라
 /// 그대로 남아 다음 정지도 받는다. 상태 축도 건드리지 않는다(`terminal.set_state` 미호출):
 /// 에러는 재시도로 복구될 수 있어 상태로 승격하면 오탐이 되고, 파생 상태는 관측 융합의
-/// 출력 전용 계약이다(`docs/adr/0072-child-state-hook-observation-fusion.md`).
+/// 출력 전용 계약이다(`docs/features/child-terminal/index.md#판정-우선순위`).
 pub(crate) fn handle_notify_error<H: HostCall>(
     host: &H,
     params: &Value,
@@ -237,7 +237,7 @@ pub(crate) fn notify_error_message<H: HostCall>(
     // **원인을 문구가 가른다.** 발사 이벤트 키는 하나라(개명하면 부모가 이미 등록해
     // 둔 훅이 전부 깨진다) 에러 뒤 정지와 에러 없는 정지가 같은 키로 온다 — 부모는
     // 둘에 다르게 대응하므로 한 줄 안에서 구별돼야 한다.
-    // `docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 2.
+    // `docs/features/child-terminal/index.md#조회만이-소비처가-아니다--push-축`.
     let key = if error_line.is_some() {
         "claude.notify.stalled_message"
     } else {

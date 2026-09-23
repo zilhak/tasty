@@ -1,5 +1,5 @@
-//! `tasty terminal` subcommand — 호스트 내재화된 child-terminal 관리 (ADR-0040 /
-//! occupancy-04). 에이전트가 자식 터미널을 spawn/tell/kill 하는 범용 명령.
+//! `tasty terminal` subcommand — child-terminal 관리. docs/features/child-terminal/index.md 참조.
+//! 에이전트가 자식 터미널을 spawn/tell/kill 하는 범용 명령.
 //!
 //! codex/claude 플러그인 CLI 와 달리 특정 에이전트 바이너리에 묶이지 않는다 —
 //! `--command` 로 임의 명령을 띄운다. spawn 성공 시 자식은 soft 점유로 표시된다.

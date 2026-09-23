@@ -217,7 +217,7 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     // accent-attention: plugin/occupancy "needs-attention" notice role. accent-warning
     // (yellow) 과 별도 — peach 로 분리해 경고(yellow)와 주의환기(peach)를 구분한다.
     ("semantic.accent-attention", "accent_attention", "peach"),
-    // accent-occupied-soft/hard: surface 점유(occupancy) 테두리 role (ADR-0040).
+    // accent-occupied-soft/hard: surface 점유(occupancy) 테두리 role (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry).
     // soft=green(협조 신호, write 제한 없음), hard=peach(readonly + force-detach).
     // accent-success(green)·accent-
     // attention(peach) 와 primitive 는 공유하나 의미가 겹치지 않도록 독립 role 로

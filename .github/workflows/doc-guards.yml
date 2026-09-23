@@ -1,7 +1,7 @@
 name: Doc Guards
 
 # 문서를 읽는 가드를 **경로 필터 없이** 매 push 돌리는 잡. 이 워크플로의 존재 이유가
-# 곧 `paths-ignore` 의 부재다 — 상세는 ADR-0138.
+# 곧 `paths-ignore` 의 부재다 — 상세는 docs/dev-guide/guard-relocation.md#문서-검사를-옮길-위치.
 #
 # crossplatform-check.yml 의 `check-headless` 는 전체 스위트를 돌지만
 # `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서 꺼진다.**

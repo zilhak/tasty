@@ -2,7 +2,7 @@
 //! (design §3.5).
 //!
 //! 본체는 `rename` popup 의 한 target(`RenameTarget::ExplorerEntry`)으로 연다 —
-//! `OpenPopupMode::WithScope`(스코프 중앙)라 SCOPE RULE(ADR-0254) 상 modal 그림자다.
+//! `OpenPopupMode::WithScope`(스코프 중앙)라 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 상 modal 그림자다.
 //!
 //! Add-favorite 팝업과 동일 골격(title / path caption / input / Cancel·primary
 //! footer) — 타이틀·초기값(현재 파일명)·primary 라벨만 다르다. 완전성을 위해

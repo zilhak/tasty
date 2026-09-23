@@ -13,7 +13,7 @@
 //! 한다([`PluginManager::poll_retiring`]). 명시적 `enable` 은 미루지 않고 그 자리에서 회수를
 //! 기다린 뒤 띄운다([`PluginManager::wait_retired`]).
 //!
-//! plugin 이 보는 순서(shutdown 요청 → 종료)는 그대로다. 근거·대안은 ADR-0457.
+//! plugin 이 보는 순서(shutdown 요청 → 종료)는 그대로다. 근거·대안은 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -233,7 +233,7 @@ impl PluginManager {
     /// `upgrade-builtins` 의 **쓰기 갈래**(디렉토리에 실제로 쓸 때만. 건너뛰는 갈래와 바뀐
     /// 내용이 없는 같은 버전 갈래는 안 부른다) · 명시적 `enable`(그 자리에서 띄우려고).
     /// 헬스체크 재시작과 `disable` 은 부르지 않는다. 이 목록은 `shutdown-sequence.md` 의
-    /// "단건 경로" 항과 ADR-0457 에 같은 말로 적혀 있다.
+    /// "단건 경로" 항과 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화 에 같은 말로 적혀 있다.
     ///
     /// 돌려주는 값은 **회수 뒤에 다시 띄우기로 예약돼 있었는가**다(무응답 재시작 · 회수 중에
     /// 온 전체 기동). 예약은 회수 기록과 함께 여기서 사라지므로, 그 값을 버리면 enabled 인

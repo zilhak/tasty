@@ -6,7 +6,7 @@
 #   기존 초과 함수는 위치 단위 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: …`
 #   로 동결(grandfather). 20 은 rca cognitive ≈ 50 등가로, egui 즉시모드 draw 는
 #   clippy 가 자동 배제하므로 실 로직 hotspot 만 표면화한다.
-#   상세: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
+#   상세: docs/dev-guide/complexity-gate.md#무엇을도구임계값
 cognitive-complexity-threshold = 20
 
 # disallowed-methods: 색을 "디자인" 하는 함수의 우연한 호출을 차단.

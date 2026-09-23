@@ -57,7 +57,7 @@ fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Optio
         h,
         ContentInset::INSET,
         TitleButtons::CLOSE,
-        // 뷰포트를 점유하는 centered 표면 → modal 그림자(ADR-0254).
+        // 뷰포트를 점유하는 centered 표면 → modal 그림자(docs/design/systems/theme.md#떠-있는-표면의-그림자).
         Some(theme.shadow_modal()),
         |ui| {
             // 본체와 같은 규칙 — 본문이 넘치면 스크롤하고 버튼 행은 자리를 지킨다.

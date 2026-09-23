@@ -1,4 +1,4 @@
-//! Per-surface image document state, owned by the plugin process (ADR-0028 / B2).
+//! Per-surface image document state, owned by the plugin process (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
 //!
 //! Mirrors the former host `ImageView` + `ImagePanel` navigation fields, now living in the
 //! plugin: the loaded pixel buffer, edit-mode state machine (drawing / floating selection),

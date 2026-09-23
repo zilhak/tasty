@@ -6,7 +6,7 @@
 //!
 //! 배너는 Modal / Popup / Toast 에 이은 4번째 오버레이 개념이다. 설계 문서는
 //! `docs/design/systems/banner.md`, 결정 근거는
-//! `docs/adr/0024-banner-fourth-overlay-concept.md`.
+//! `docs/design/systems/banner.md#정체성--왜-별도-개념인가`.
 
 /// Banner 인스턴스의 고유 식별자. 정의 시점에 고정되는 static 문자열.
 ///

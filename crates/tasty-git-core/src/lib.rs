@@ -38,7 +38,7 @@ pub struct StatusEntry {
 /// 데이터 crate 라 그 자리에 보여줄 자연어를 만들지 않는다 — 표시 문구는 소비자가
 /// 고른다(git-viewer plugin 은 자기 `Translator`, host 는 `t()`). 원격 attach 조회도
 /// 같은 wire(`attach_runtime::log_entry_wire`)를 타므로 빈 값은 빈 값 그대로 건너간다.
-/// 근거: `docs/adr/0106-non-widget-user-strings-go-through-i18n.md` 결정 4.
+/// 근거: `docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogEntry {
     pub oid_short: String,
@@ -178,7 +178,7 @@ fn main_workdir_via_path(git_dir: &Path) -> Option<PathBuf> {
 ///
 /// 부분 실패(개별 worktree head 못 읽음 등)는 그 항목만 degrade 하고 전체는 Ok. 항목별
 /// 조립은 `main_worktree_entry`/`linked_worktree_entry` 로 분리돼 있다(clippy 복잡도 게이트 —
-/// `docs/adr/0037-complexity-gate.md`).
+/// `docs/dev-guide/complexity-gate.md#무엇을도구임계값`).
 pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Vec<WorktreeEntry>> {
     let current_canon = canon(current_workdir);
     let mut out: Vec<WorktreeEntry> = Vec::new();
@@ -491,7 +491,7 @@ mod tests {
     use super::*;
 
     /// 메시지 없는 커밋·이름 없는 작성자는 **빈 문자열**로 전달된다 — 이 crate 는 자연어
-    /// 폴백을 만들지 않는다(표시 문구는 소비자 몫, ADR-0106 결정 4).
+    /// 폴백을 만들지 않는다(표시 문구는 소비자 몫, docs/dev-guide/i18n.md#공용-위젯의-문자열--호출자-주입).
     #[test]
     fn collect_log_leaves_missing_summary_and_author_empty() {
         let tmp = tempfile::tempdir().unwrap();

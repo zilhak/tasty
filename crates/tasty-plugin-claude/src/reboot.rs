@@ -152,7 +152,7 @@ pub(crate) fn reboot_surface(
     // 승인 정책은 **이 호출에 한해서만** 산다 — 복원이 셸에 그대로 타이핑하는
     // `restore.command` meta 에는 싣지 않는다(`hook.rs` 가 그 문자열을 쓸 때
     // `permission_mode` 를 `None` 으로 고정한다). 근거는
-    // `docs/adr/0265-child-approval-policy-is-the-callers-choice.md` 결정 6.
+    // `docs/plugins/claude/index.md#승인-정책---permission-mode`.
     let permission_mode =
         crate::handlers::resolve_permission_mode(host, params, profile_file.as_deref(), tr)?;
 
@@ -556,7 +556,7 @@ pub(crate) fn resume_command(
 /// **승인 정책(`--permission-mode`)은 여기 들어오지 않는다.** 그 값은 한 번의 호출에
 /// 한해 사는 것이고, 복원은 호출자가 없는 자리에서 일어난다 — meta 에 실으면 그 뒤
 /// 모든 재부팅이 조용히 그 정책을 이어받는다
-/// (`docs/adr/0265-child-approval-policy-is-the-callers-choice.md` 결정 6). 그래서
+/// (`docs/plugins/claude/index.md#승인-정책---permission-mode`). 그래서
 /// 플래그는 [`resume_command`] 가 전송 직전에만 덧붙인다.
 pub(crate) fn resume_command_line(session_id: &str, profile_file: Option<&str>) -> String {
     match profile_file {

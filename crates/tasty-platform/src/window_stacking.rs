@@ -34,7 +34,7 @@
 //! (창 생성을 실패시키지 않는다). `Err` 는 창을 보이기 **전**의 실패이거나, 이미 보인 뒤의
 //! 실패라도 winit 의 `set_visible(true)` 가 멱등인 경로에서만 난다.
 //!
-//! 결정 근거와 OS 별 결과는 `docs/adr/0497-an-agent-created-window-does-not-take-the-users-focus.md`.
+//! 결정 근거와 OS 별 결과는 `docs/features/window-chrome/index.md#에이전트-창의-os-표시`.
 
 use winit::window::Window;
 
@@ -167,7 +167,7 @@ mod imp {
     const RESTACK_BELOW: std::os::raw::c_long = 1;
     /// EWMH source indication. 스펙상 응용의 값은 1 이지만 openbox 3.6.1 은 1 을
     /// "invalid source indication" 으로 버린다(실측). 다른 창 관리자는 미측정이다.
-    /// 그래서 직접 사용자 조작을 뜻하는 2 를 쓴다(ADR-0497).
+    /// 그래서 직접 사용자 조작을 뜻하는 2 를 쓴다(docs/features/window-chrome/index.md#에이전트-창의-os-표시).
     const SOURCE_DIRECT: std::os::raw::c_long = 2;
 
     fn xlib_window(window: &Window) -> Result<Option<c_ulong>, String> {

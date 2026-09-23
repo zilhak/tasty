@@ -8,7 +8,7 @@
   트리에는 없어서 좌표를 실재로 판정하는 가드가 CI 에서만 빨개진다)
 - 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동) — `npm run build`
   다음에 `npm run check-links` 로 산출물의 내부 링크·앵커를 전수 판정하고 나서 올린다.
-  그 스텝은 `site/content/` 의 앵커를 보는 **유일한** 판사다([ADR-0247](../adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md))
+  그 스텝은 `site/content/` 의 앵커를 보는 **유일한** 판사다([링크와 표](../documentation-model.md#링크와-표))
 
 **`docs/` 는 발행하지 않는다.** `docs/` 는 코드를 고치는 사람과 에이전트를 위한 명세·설계·ADR 이고,
 사이트는 Tasty 를 받아서 쓰는 사람을 위한 것이라 독자가 다르다. 사이트가 실을 내용은 전부
@@ -82,7 +82,7 @@ site/
 [`site/vendor/README.md`](../../site/vendor/README.md) 의 "vendor 갱신 절차" 에 있고,
 정합 루프에서 이 단계가 차지하는 자리는
 [design-change-workflow](design-change-workflow.md#정합-대상--사이트-사본-필수) 에 있다. 결정 근거는
-[ADR-0510](../adr/0510-design-work-flows-from-claude-design-through-gallery-app-and-site.md).
+[ADR-0635](../adr/0635-shared-design-and-theme.md).
 
 따라오지 않아도 **사이트는 정상 빌드된다** — 낡은 사본을 성실히 렌더할 뿐이다. 그 침묵을
 깨는 판정기가 둘 있고 둘 다 **레포 안의 두 사본만** 본다:

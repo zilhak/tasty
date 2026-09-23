@@ -153,7 +153,7 @@ impl MarkdownPlugin {
 
         match action {
             FileOpenAction::Browse => {
-                // host 소유 file_picker popup 을 트리거(ADR-0058) — attach
+                // host 소유 file_picker popup 을 트리거(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때) — attach
                 // (원격) workspace 에서도 동작한다(native rfd 다이얼로그와 달리 원격
                 // 개념이 있다). 즉시 request_id 만 돌아오고, 실제 선택 결과는 나중에
                 // `on_event` 의 `"file_picker.result"` 로 비동기 도착한다.
@@ -319,13 +319,13 @@ enum FileOpenAction {
     Cancel,
 }
 
-/// host → 이 plugin unicast 이벤트 key(ADR-0058). host 측 대응값은
+/// host → 이 plugin unicast 이벤트 key(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때). host 측 대응값은
 /// `src/app/dispatch/file_picker.rs::FILE_PICKER_RESULT_EVENT` — 공유 crate 가
 /// 없어 리터럴을 양쪽에 중복 정의한다(git-viewer 의 `GIT_VIEWER_QUERY_RESULT_EVENT`
 /// 와 동일 근거).
 pub(crate) const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
 
-/// `"file_picker.result"` 이벤트 payload wire — ADR-0058 Decision 4 의 최소 필드
+/// `"file_picker.result"` 이벤트 payload wire — docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때 에 정의된 결과 의 최소 필드
 /// (`request_id`/`paths`/`cancelled`) 그대로.
 #[derive(serde::Deserialize)]
 pub(crate) struct FilePickerResultWire {
@@ -337,15 +337,15 @@ pub(crate) struct FilePickerResultWire {
 }
 
 /// browse — host 소유 `file_picker` popup 을 트리거한다(`file_picker.trigger`,
-/// ADR-0058). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
+/// docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
 /// popup 도 직접 못 열기 때문에 host 에 위임한다. markdown 확장자로 필터. 반환값은
 /// **선택 경로가 아니라** 이 요청의 `request_id` — 실제 경로는 나중에 `on_event`
-/// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push,
+/// 의 `"file_picker.result"` 로 비동기 도착한다(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때 의 즉시 ack + 이벤트 push,
 /// 옛 `fs.pick_file`/rfd 동기 모달과 달리 이 호출 자체는 popup 확정을 기다리지 않고
 /// 곧장 반환된다).
 ///
 /// `owner_popup_instance` 로 자기 popup instance 를 함께 신고한다 — host 가 두 팝업을
-/// 부모-자식 스택으로 다루는 근거다(ADR-0084). `start` 는 피커의 출발 폴더와 출발 surface
+/// 부모-자식 스택으로 다루는 근거다(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때). `start` 는 피커의 출발 폴더와 출발 surface
 /// 다 — 없으면 host 가 홈에서 연다.
 #[cfg(any(unix, windows))]
 fn trigger_file_picker(
@@ -371,7 +371,7 @@ pub(crate) fn file_picker_trigger_params(owner_popup_instance: u64, start: &Pick
     json!({
         "filters": ["md", "markdown"],
         // 부모-자식 스택을 host 가 세울 수 있게 자기 popup instance 를 신고한다
-        // (ADR-0084). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
+        // (docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때). 이게 없으면 이 팝업이 피커보다 먼저 닫혀 고아가 생기고,
         // 고른 파일이 조용히 버려진다.
         "owner_popup_instance": owner_popup_instance,
         "start_dir": start.dir,
@@ -396,7 +396,7 @@ fn open_markdown_file(host: &HostHandle, owner_popup_instance: u64, path: &str) 
 ///
 /// `owner_popup_instance` 는 이 호출이 사용자가 만진 이 팝업에서 왔다는 표지다 — host 는 그
 /// 팝업이 이 plugin 소유이고 사용자의 입력을 받았을 때만 사용자 행동으로 친다. 빠지면 에이전트
-/// 요청이 되어, 사용자가 연 새 탭이 선택되지 않고 적용 실패도 사용자에게 안 보인다(ADR-0526).
+/// 요청이 되어, 사용자가 연 새 탭이 선택되지 않고 적용 실패도 사용자에게 안 보인다(docs/features/file-handler/index.md#origin-소유권과-비동기-완료).
 #[cfg(any(unix, windows))]
 pub(crate) fn file_open_dispatch_params(owner_popup_instance: u64, path: &str) -> Value {
     json!({

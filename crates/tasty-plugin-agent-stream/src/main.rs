@@ -18,7 +18,7 @@
 //!
 //! **이 crate 는 수집과 SSE 방출까지 한다**(`sse` 모듈, `GET /events`). 외부 요청으로
 //! 에이전트를 실행시키는 **인바운드 웹훅 배선은 별개**다 — 그 방향은 호스트 리스너가
-//! 담당한다. SSE 노출 정책의 근거는 `docs/adr/0100-agent-stream-sse-endpoint-exposure.md`.
+//! 담당한다. SSE 노출 정책의 근거는 `docs/plugins/agent-stream/index.md#sse-엔드포인트`.
 //!
 //! 호스트 코드에 의존하지 않으며 `tasty-plugin-sdk` 만 사용한다. surface → 세션 id 매핑도
 //! claude plugin 이 남긴 surface meta 를 host IPC 로 읽어 얻으므로 plugin 간 코드 의존이

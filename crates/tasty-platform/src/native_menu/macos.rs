@@ -13,7 +13,7 @@ use super::{MenuItem, MenuOutcome};
 /// the run loop the window already owns, so `popUpMenuPositioningItem…`
 /// returns only once the user has selected or dismissed. The `Pending` arm of
 /// the shared contract exists for the Linux/GTK backend and is never taken
-/// here (`docs/adr/0071-native-context-menu-async-contract.md`).
+/// here (`docs/dev-guide/context-menu.md#네이티브-메뉴-api-cratestasty-platformsrcnative_menu`).
 pub fn show_context_menu(
     window: &impl HasWindowHandle,
     x: f64,

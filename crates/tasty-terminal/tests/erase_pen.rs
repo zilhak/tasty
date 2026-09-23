@@ -13,7 +13,7 @@
 //! **지운 칸의 배경**과 **소거 직후 찍은 글자의 배경**을 따로 단언한다.
 //!
 //! 결정과 그 근거(왜 BCE 인가, 어느 구현을 따랐는가)는
-//! `docs/adr/0292-erase-fills-with-the-current-background.md`.
+//! `docs/features/terminal/index.md#스크롤-영역과-소거`.
 //!
 //! ## 측정 장치
 //!

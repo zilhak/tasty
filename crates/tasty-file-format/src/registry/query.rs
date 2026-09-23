@@ -26,7 +26,7 @@ impl FileFormatRegistry {
     /// Settings 의 "user 항목 삭제"(`remove_user_detector`)가 지울 것이 있는지를 이것으로 정한다.
     /// finalize 된 rule 의 origin 으로 추론하면 안 된다: 같은 rule 을 여러 출처가 적으면 dedupe 가
     /// 병합 순서상 앞선 출처(host · plugin)만 남겨 user 가 안 보이고, rule 없는 patch 는 애초에
-    /// rule 이 없다(ADR-0520).
+    /// rule 이 없다(docs/features/file-handler/index.md#contribution-머지--부팅-자동-등록).
     pub fn has_user_contribution(&self, id: &DetectorId) -> bool {
         let inner = self.lock_read();
         inner

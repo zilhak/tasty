@@ -124,7 +124,7 @@ function ColorOverridePicker() {
 }
 
 // ── Scripts (Misc › Scripts) ───────────────────────────────────────────
-// Lua scripts registered for shortcut-triggered execution (ADR-0031). Each row:
+// Lua scripts registered for shortcut-triggered execution (docs/features/lua-hooks/index.md). Each row:
 // display name, absolute path (middle-elided), bound shortcut (or Unbound), a
 // "Changed" badge when the on-disk file no longer matches the SHA recorded at
 // registration (TOFU — a re-confirm is required on next run), and an Auto-run
@@ -143,7 +143,7 @@ const SD = {
   caret: "chevronDown",
 };
 
-// Host-lifecycle event whitelist a script can auto-run on (ADR-0031). Named
+// Host-lifecycle event whitelist a script can auto-run on (docs/features/lua-hooks/index.md). Named
 // `<noun>.<action>.<phase>`; `.pre` fires before the action, `.post` after.
 // The add control only offers events not already bound to that script.
 const LIFECYCLE_EVENTS = [

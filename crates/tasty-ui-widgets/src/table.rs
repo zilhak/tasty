@@ -12,7 +12,7 @@
 //!   `cell` 클로저로 `(ui, theme, row, col_index)` 를 받아 직접 렌더한다.
 //! - `selectable(true)` 인 표의 본문 셀 서브트리는 `interaction.selectable_labels = false`
 //!   로 고정된다 — 행 전체가 클릭 타겟이라는 계약을 지키기 위해 셀 텍스트의 드래그
-//!   선택/복사를 포기한다 (`docs/adr/0069-table-row-click-over-cell-text-selection.md`).
+//!   선택/복사를 포기한다 (`docs/architecture/ui-widgets-crate.md#행-선택-표의-클릭과-복사`).
 //!   헤더 셀은 영향을 받지 않으며, 정렬 클릭은 명시 `Sense::click()` 으로 유지된다.
 //!   `selectable(false)` 인 표는 egui 기본값 그대로라 셀 텍스트를 선택할 수 있다.
 //!

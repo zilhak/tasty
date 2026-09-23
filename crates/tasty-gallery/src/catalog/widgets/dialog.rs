@@ -7,7 +7,7 @@
 //! 보여주고(`draw`), 동시에 14 Spec 전부가 호출하는 frame/region/field 헬퍼를
 //! `pub` 으로 노출한다 (research §2.4 공통).
 //!
-//! **셸의 lift 그림자는 세 갈래다** — SCOPE RULE(ADR-0254). 같은 셸을 쓰는 호출부라도
+//! **셸의 lift 그림자는 세 갈래다** — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자). 같은 셸을 쓰는 호출부라도
 //! *본체에서 그 표면이 무엇인가* 에 따라 갈래가 갈리므로, 셸을 부르는 쪽이 셋 중
 //! 하나를 고른다: 뷰포트를 점유하면 [`frame_card`](modal), 트리거 옆에 붙어 살아 있는
 //! 콘텐츠 위에 뜨면 [`frame_card_popover`], **떠 있는 표면이 아니면**(창 셸 · pane
@@ -43,7 +43,7 @@ const TOP_ANCHOR_DEMO_INSET: LogicalPx = LogicalPx(28.0);
 /// 내부 콘텐츠는 region/hsep/field 로 채운다. item_spacing 은 0 으로 둔다
 /// (각 region 이 자체 패딩을 가짐).
 ///
-/// **뷰포트를 점유하는** 표면만 이것을 쓴다 — SCOPE RULE(ADR-0254). anchored +
+/// **뷰포트를 점유하는** 표면만 이것을 쓴다 — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자). anchored +
 /// scrim-less 표면(tools menu · search bar · rail category · 드롭다운)은
 /// [`frame_card_popover`], 떠 있는 표면이 아닌 것(창 셸 · pane 콘텐츠 · 다른 표면
 /// 안에 얹히는 섹션)은 [`frame_card_flat`].
@@ -58,7 +58,7 @@ pub fn frame_card(
 }
 
 /// [`frame_card`] 의 popover 변형 — 같은 셸에 **popover** shadow. 트리거 옆에 붙어
-/// 살아 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)이 쓴다(ADR-0254).
+/// 살아 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)이 쓴다(docs/design/systems/theme.md#떠-있는-표면의-그림자).
 pub fn frame_card_popover(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -70,7 +70,7 @@ pub fn frame_card_popover(
 }
 
 /// [`frame_card`] 의 **그림자 없는** 변형 — 같은 셸(fill + 1px border-strong + radius)에
-/// lift 를 안 얹는다. SCOPE RULE(ADR-0254)의 세 번째 갈래로, 본체에서 **떠 있는 표면이
+/// lift 를 안 얹는다. 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 세 번째 갈래로, 본체에서 **떠 있는 표면이
 /// 아닌 것**이 쓴다: 별도 창의 셸(Settings), pane 콘텐츠(image surface), 그리고 다른
 /// 표면 안에 얹혀 있는 것을 갤러리가 따로 떼어 보이는 섹션·서브탭 콘텐츠.
 ///

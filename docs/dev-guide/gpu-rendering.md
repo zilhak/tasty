@@ -23,7 +23,7 @@ wgpu 24 기준으로 호출별 상한은 다음과 같다:
 | `queue.submit(...)` | **없음** |
 | `SurfaceTexture::present()` | **없음** |
 
-상한이 없는 두 호출에는 wgpu 가 취소·타임아웃 API 를 제공하지 않는다. 그래서 tasty 는 이 상황을 *막지* 못하고 **관측만** 한다 — 아래 "진단" 의 stall 워치독. 렌더 스레드 분리를 채택하지 않은 근거와 재검토 조건은 [ADR-0091](../adr/0091-render-stall-watchdog-observation-only.md).
+상한이 없는 두 호출에는 wgpu 가 취소·타임아웃 API 를 제공하지 않는다. 그래서 tasty 는 이 상황을 *막지* 못하고 **관측만** 한다 — 아래 "진단" 의 stall 워치독. 렌더 스레드 분리를 채택하지 않은 근거와 재검토 조건은 [ADR-0616](../adr/0616-window-platform-and-shutdown.md).
 
 `redraw.rs` 의 `SurfaceError` 분기(`Lost`/`Outdated` 재시도 등)는 전부 **호출이 반환됐을 때만** 도는 경로다. 반환하지 않는 상황은 그 분기가 다루지 못한다.
 
@@ -53,7 +53,7 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 
 한 surface 의 셀들을 `BgInstance`/`GlyphInstance` 로 만들어 accumulator Vec 에 push 한다. 동시에 그 surface 의 `(scissor rect, bg range, glyph range)` 를 `surface_ranges` 에 기록한다. **viewport offset 은 per-instance 로 각 인스턴스에 baked** 되므로(전역 uniform 을 surface 마다 다시 쓰지 않는다), surface 마다 uniform 갱신/submit 이 필요 없다. theme lock(`ansi` 팔레트)은 호출자가 **프레임당 1회** 잡아 넘긴다(surface 마다 잠그지 않음).
 
-셀 하나는 bg 인스턴스 하나다. 강조(선택 → vi 커서 → 링크 → 검색)는 별도 인스턴스가 아니라 **그 셀의 bg 색을 바꾸고**, bg 파이프라인은 `BlendState::REPLACE` 로 쓴다. 그래서 강조색의 alpha 는 GPU 가 아니라 CPU 에서 반영한다 — `renderer/overlay.rs` 의 `composite_over` 가 강조색을 그 셀의 현재 bg 위에 source-over 로 합성한다(불투명 강조색은 그대로 통과). 셀 기본 bg · 셀 속성 bg · Block 커서는 합성하지 않는다. 근거: [ADR-0460](../adr/0460-cell-highlight-alpha-is-composited-on-the-cpu-over-the-cell-bg.md).
+셀 하나는 bg 인스턴스 하나다. 강조(선택 → vi 커서 → 링크 → 검색)는 별도 인스턴스가 아니라 **그 셀의 bg 색을 바꾸고**, bg 파이프라인은 `BlendState::REPLACE` 로 쓴다. 그래서 강조색의 alpha 는 GPU 가 아니라 CPU 에서 반영한다 — `renderer/overlay.rs` 의 `composite_over` 가 강조색을 그 셀의 현재 bg 위에 source-over 로 합성한다(불투명 강조색은 그대로 통과). 셀 기본 bg · 셀 속성 bg · Block 커서는 합성하지 않는다. 근거: [ADR-0635](../adr/0635-shared-design-and-theme.md).
 
 ### ③ `flush_buffers(device, queue)`
 
@@ -78,7 +78,7 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 `state::selection`, `crate::terminal_link` = `adapters::ui::terminal_link`) 렌더러는
 그것을 쓰지 않는다. 거치면 타입이 이미 크레이트에 있는데도 **렌더러가 앱 상태와 UI
 어댑터를 보는 모양이 표기에 남기** 때문이다. 근거·대안·재검토 조건은
-[ADR-0342](../adr/0342-the-cell-renderer-names-the-crates-not-the-host-re-exports.md).
+[ADR-0601](../adr/0601-crate-dependency-boundaries.md).
 
 그래서 렌더러가 부르는 본체 경로는 **`crate::cell_palette` 하나**다. 그것은 남겨 둔
 것이다 — 셀 색 해석은 `gui` 게이트 밖에 있어야 하고(헤드리스 `debug.glyph_color`

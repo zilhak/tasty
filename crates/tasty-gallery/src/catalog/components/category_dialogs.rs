@@ -84,7 +84,7 @@ fn delete_confirm(ui: &mut egui::Ui, theme: &Theme) {
 /// 레일 카테고리 팝업 (비클릭 이름 헤더 + 액션 행). `danger` 행은 accent-danger.
 fn rail_popup(ui: &mut egui::Ui, theme: &Theme) {
     // 레일 카테고리 팝업은 `---` 버튼 rect 로 좌표를 계산해 여는 anchored + scrim-less
-    // 표면이다(`sidebar/collapsed.rs`) — SCOPE RULE(ADR-0254) 상 popover 그림자.
+    // 표면이다(`sidebar/collapsed.rs`) — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 상 popover 그림자.
     kit::frame_card_popover(ui, theme, POPUP_WIDTH, kit::raised_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
             // 비클릭 이름 헤더 (라벨만 — count 표기 없음).

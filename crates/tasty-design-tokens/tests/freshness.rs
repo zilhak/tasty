@@ -46,7 +46,7 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
 /// (`statusbar-glyph-size`)이 늘었다 — 상태바 인라인 글리프에 **색 role 은 있었고
 /// 크기 role 이 없던** 자리를 닫은 결정이다(`icon-size-xs` 경유).
 /// 그 앞 회차: 817 (121/143/553). 이전 791(115/137/539) 에서 26종이 늘었다:
-/// ADR-0290 의 결정(색 role 공백 · 스케일 밖 폰트 · tint 계수 짝 · 이름 없는 치수)이
+/// docs/design/systems/theme.md#ui-코드의-색상-접근 의 결정(색 role 공백 · 스케일 밖 폰트 · tint 계수 짝 · 이름 없는 치수)이
 /// primitive 6종(`size-6`/`size-64`/`size-96`/`font-size-30`/`opacity-tint-fill`/
 /// `opacity-tint-border`) · semantic 6종(`border-frame`/`glyph-dim`/
 /// `accent-decorative`/`tint-fill-alpha`/`tint-border-alpha`/`font-size-brand-display`) ·

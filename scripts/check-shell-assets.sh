@@ -16,7 +16,7 @@
 # 되고, 일괄 억제하면 같은 코드의 진짜 위반까지 같이 덮인다. warning 위는 도입 시점에
 # 12 였고 전부 고쳤다 — 그 12 가 실물 결함이었다는 것이 이 문턱의 근거다.
 #
-# 근거·대안·재검토 조건: docs/adr/0295-shell-assets-are-judged-at-warning-and-above.md
+# 근거·대안·재검토 조건: docs/dev-guide/ci-gates.md#셸-검사와-커밋-범위
 #
 # 사용법:
 #   bash scripts/check-shell-assets.sh              # 레포의 셸 자산 전부

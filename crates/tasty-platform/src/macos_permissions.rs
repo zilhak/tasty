@@ -275,7 +275,7 @@ pub fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
 ///
 /// **debug 빌드 전용.** 이 권한을 소비하는 표면(`surface.raw_key` — `CGEventPost` 로
 /// OS 이벤트 스트림에 키 주입)이 debug 로 격리돼 있어
-/// ([ADR-0115](../../docs/adr/0115-input-reproduction-ipc-debug-isolation.md)),
+/// ([사용자 입력 재현](../../../docs/dev-guide/plugin-permissions.md#사용자-입력-재현)),
 /// release 빌드에는 이 권한을 쓰는 코드가 하나도 없다. 소비자가 0 인데 첫 실행에
 /// "이 앱이 내 모든 입력을 볼 수 있게 해달라" 로 읽히는 프롬프트를 띄우는 것은
 /// 최소권한 원칙에 어긋난다. 그래서 요청 자체를 debug 로 내린다 — release 사용자는

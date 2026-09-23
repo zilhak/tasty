@@ -1,5 +1,5 @@
 //! `Terminal` 핸들의 grid/VTE 상태 접근자 — 공유 `TerminalState` 락을 잡아
-//! 위임하는 thin wrapper 들 (ADR-0002). 외부(`src/`)의 `terminal.X()` 호출처가
+//! 위임하는 thin wrapper 들 (docs/features/terminal/index.md#vte-에뮬레이션). 외부(`src/`)의 `terminal.X()` 호출처가
 //! 그대로 동작하도록 기존 `Terminal` API 시그니처를 보존한다.
 
 use termwiz::cell::CellAttributes;
@@ -174,7 +174,7 @@ impl Terminal {
     ///
     /// `0..scrollback_len()` 을 돌며 [`scrollback_line_full`](Self::scrollback_line_full)
     /// 을 부르는 것과 결과는 같지만, 라인마다 잡히던 state mutex 가 1회로 준다.
-    /// 그 mutex 는 파서 스레드가 `ingest` 로 잡는 것과 동일해(ADR-0002), 만재
+    /// 그 mutex 는 파서 스레드가 `ingest` 로 잡는 것과 동일해(docs/features/terminal/index.md#vte-에뮬레이션), 만재
     /// 스크롤백을 라인당 lock 으로 캡처하면 파서와 수만 회 경합한다.
     pub fn scrollback_lines_all(&self) -> Vec<ScrollbackLine> {
         self.lock_state().scrollback_lines_all()

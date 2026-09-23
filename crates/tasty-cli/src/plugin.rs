@@ -79,7 +79,7 @@ pub fn run_audit_follow(
             session_token: session_token.clone(),
         };
         next_id += 1;
-        // 호스트 오류는 `main` 까지 올라가 std 가 찍는다 — `data` 는 둘째 줄로 싣는다(ADR-0512).
+        // 호스트 오류는 `main` 까지 올라가 std 가 찍는다 — `data` 는 둘째 줄로 싣는다(docs/dev-guide/cli-structure.md#호스트-오류-출력-rpc_errorrs).
         let resp = conn.send(&req).map_err(crate::rpc_error::with_data_line)?;
         if let Some(ts) = resp.get("next_after_ts_ms").and_then(|v| v.as_u64()) {
             after_ts = Some(ts);
@@ -95,7 +95,7 @@ pub fn run_audit_follow(
             // 레코드는 `outln!` 로 개행과 함께 이미 write 됐으므로 여기서 버퍼는 비어 있고,
             // 빈 버퍼 flush 는 write(2) 를 내지 않아 EPIPE 를 감지하지 못한다. 읽는 쪽이
             // 닫혔을 때 이 무한 루프를 실제로 빠져나가는 지점은 **다음 레코드의 `outln!`**
-            // (`StdoutClosed` → 종료 코드 0, ADR-0101)이고, 레코드가 더 없으면
+            // (`StdoutClosed` → 종료 코드 0, docs/dev-guide/cli-structure.md#stdout-출력-outrs)이고, 레코드가 더 없으면
             // `tail -f | head -1` 처럼 계속 대기한다(종전과 같다).
             crate::out::flush()?;
         }

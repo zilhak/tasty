@@ -13,7 +13,7 @@
 //! `surface.read_since_mark` 를 불렀는데, 그것은 에이전트가 `surface.set_mark` 으로
 //! 움직이는 커서라 ① 아무도 mark 를 안 세운 surface 에서는 폴링마다 버퍼 전체(최대
 //! 1 MiB)를 다시 받았고 ② 에이전트가 mark 를 세우면 관측 창이 조용히 점프했다
-//! (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
+//! (`docs/features/terminal-output/index.md#출력-스캐너-전용-커서`).
 //!
 //! 호출자는 plugin의 background thread에서 [`ErrorScanner::scan_one`]을 일정
 //! 간격으로 호출. 짧은 polling 간격(800ms 권장)으로 호스트 메모리 스캔과의
@@ -52,7 +52,7 @@ const CLAUDE_ERROR_PATTERN: &str = r"(?i)(\bAPI Error\b|Output blocked by conten
 /// 값을 맞춰 두는 이유는 이 창이 호스트가 주던 것과 같은 길이를 보게 하기 위해서다.
 /// 짧으면 에러 문자열을 호스트보다 일찍 잃고, 길면 호스트가 이미 버린 것을 계속 들고
 /// 있으면서 메모리만 쓴다. 갈렸을 때의 증상과 재는 법은
-/// `docs/adr/0307-the-output-scanner-reads-its-own-cursor.md` 의 재검토 조건.
+/// `docs/features/terminal-output/index.md#출력-스캐너-전용-커서` 의 재검토 조건.
 const SCAN_WINDOW_MAX: usize = 1_048_576;
 
 /// dedupe 스니펫 길이 — 창의 앞에서 이만큼을 잘라 "같은 에러를 이미 발사했나" 의 키로
@@ -85,7 +85,7 @@ const STALL_QUIET: Duration = Duration::from_secs(30);
 /// 값은 호스트가 자식을 조용하다고 부르기 시작하는 문턱(`CHILD_OUTPUT_SILENCE`,
 /// 같은 파일)에 맞췄다 — plugin 은 호스트 크레이트를 링크하지 않아 두 값은 **따로
 /// 적힌 사본**이다. 갈리면 "호스트는 조용하다는데 plugin 은 아직 아니다" 같은 상태가
-/// 생긴다. 결정은 `docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 5.
+/// 생긴다. 결정은 `docs/features/child-terminal/index.md#조회만이-소비처가-아니다--push-축`.
 const STALL_QUIET_NO_ERROR: Duration = Duration::from_secs(120);
 
 /// 같은 surface 에 정지 알림을 다시 보내기까지의 최소 간격 — 에러가 반복되는
@@ -101,7 +101,7 @@ const STALL_NOTIFY_COOLDOWN: Duration = Duration::from_secs(300);
 /// `hook.set` 으로 이미 등록해 둔 배선 식별자라 개명하면 등록된 훅이 전부 깨지고
 /// 기능적으로 얻는 것이 없다 — 그래서 그대로 두고 범위만 넓혔다. 원인은 알림 문구가
 /// 가른다(`handlers::notify_error_message`).
-/// 근거: `docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 2.
+/// 근거: `docs/features/child-terminal/index.md#조회만이-소비처가-아니다--push-축`.
 pub(crate) const STALLED_EVENT: &str = "claude-error-stalled";
 
 /// `text`(ANSI-stripped 권장)에 알려진 Claude 에러 패턴이 포함됐는지.
@@ -250,7 +250,7 @@ fn stall_pre_gate(
 ///   뜻이기 때문이다. 확정(`confirmed`)이든 휴리스틱이든 알린다: 승인 대기는 전경이
 ///   여전히 `claude` 라 휴리스틱 쪽으로 판정되므로, 확정만 알리면 정작 이 경로가
 ///   존재하는 이유인 사고를 못 잡는다
-///   (`docs/adr/0266-derived-stale-must-reach-the-push-channel.md` 결정 3).
+///   (`docs/features/child-terminal/index.md#조회만이-소비처가-아니다--push-축`).
 fn state_allows_stall_notice(child_state: &str) -> bool {
     matches!(child_state, "active" | "stale")
 }
@@ -402,7 +402,7 @@ impl ErrorScanner {
         // **에러 매치와 무관하게** 정지 판정을 돈다. 한때 이 호출이 "에러가 없으면
         // 빠져나가는" return 뒤에 있었고, 그래서 승인 프롬프트처럼 에러 문자열이 없는
         // 정지는 판정에 도달조차 못 했다
-        // (`docs/adr/0266-derived-stale-must-reach-the-push-channel.md`).
+        // (`docs/features/child-terminal/index.md#조회만이-소비처가-아니다--push-축`).
         // dedupe 로 `claude-error` 재발사가 눌린 tick 에서도 마찬가지로 돈다 — "같은
         // 에러 텍스트가 그대로 멈춰 있다" 가 바로 정지의 모습이다. 조회 비용은
         // `stall_pre_gate` 가 앞에서 막는다(값싼 조건을 다 통과한 tick 에서만
@@ -446,7 +446,7 @@ impl ErrorScanner {
     ///
     /// 상태 축은 건드리지 않는다 — `terminal.set_state` 를 호출하지 않으므로
     /// `claude children` 의 `state` 는 이 경로로 변하지 않는다(파생 상태 출력 전용
-    /// 계약, `docs/adr/0072-child-state-hook-observation-fusion.md`).
+    /// 계약, `docs/features/child-terminal/index.md#판정-우선순위`).
     fn maybe_notify_stall<H: HostCall>(&mut self, host: &H, surface_id: u32, now: Instant) {
         let Some(w) = self.watch.get(&surface_id) else {
             return;

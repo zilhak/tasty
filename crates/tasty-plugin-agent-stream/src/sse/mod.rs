@@ -3,7 +3,7 @@
 //! 방향이 "plugin 이 서버, 소비자가 구독하러 온다" 인 이유는 인바운드(웹훅)가 이미
 //! **소비자 → tasty** 방향이기 때문이다. 소비자가 tasty 에 도달 가능하다는 것이 이미
 //! 전제이므로, 아웃바운드도 같은 방향으로 두면 방화벽/NAT 요구가 새로 생기지 않는다.
-//! 근거·대안·재검토 조건은 `docs/adr/0100-agent-stream-sse-endpoint-exposure.md`.
+//! 근거·대안·재검토 조건은 `docs/plugins/agent-stream/index.md#sse-엔드포인트`.
 //!
 //! 구성:
 //!

@@ -7,13 +7,13 @@
 //! 링은 느린 요청 **한 건**을 한 줄로 남긴다: 호스트가 발급한 요청 번호 · 메서드 · 큐 대기 ·
 //! 호스트 처리 시간, 그리고 plugin 으로 넘겼으면 hop 마다의 plugin · 호스트 req_id · 대기 ·
 //! 결과. 호스트 req_id 는 plugin 이 받은 JSON-RPC id 와 같은 값이라 plugin 로그를 원 요청으로
-//! 되짚는 열쇠가 된다(근거 ADR-0436).
+//! 되짚는 열쇠가 된다(근거 docs/architecture/ipc-server.md#느린-요청-추적).
 //!
 //! **전 요청을 넣지 않는다.** 넣는 것은 [`SLOW_REQUEST_THRESHOLD`] 를 넘은 요청뿐이다. 전부
 //! 넣으면 정상 요청이 링을 곧바로 밀어내 원인 요청이 안 남는다.
 //!
 //! **영구 기록이 아니다.** 메모리 안의 고정 용량이고 호출당 저장소 행이 0 이다 — 진단이
-//! 호출당 기록 폭주를 다시 만들지 않는다(ADR-0085 · ADR-0246 · ADR-0277 과 같은 축).
+//! 호출당 기록 폭주를 다시 만들지 않는다(docs/design/systems/storage.md#관측-로그-보존 · docs/dev-guide/plugin-permissions.md#텔레메트리-기록-정책 · docs/dev-guide/plugin-permissions.md#요청-진입-검사 과 같은 축).
 //!
 //! **싣지 않는 것**: params 원문 · session token · 멱등 키 · JSON-RPC `id` 값. 메서드는
 //! canonical 이름이지만 **유한 집합이 아니다** — alias 해석은 모르는 이름을 받은 그대로
@@ -35,8 +35,8 @@ use std::time::Duration;
 
 /// 링에 넣는 문턱 — 큐 대기 · 호스트 처리 · plugin 대기의 합이 이 값 **이상**이면 넣는다.
 ///
-/// **파생값이 아니다** — 고른 값이다(근거 ADR-0436). 두 가지로 골랐다. ① 실측: ADR-0333 이
-/// 격리 인스턴스에서 잰 정상 부하의 최댓값이 큐 대기 25.4 ms · handler 0.48 ms 였다 — 문턱이
+/// **파생값이 아니다** — 고른 값이다(근거 docs/architecture/ipc-server.md#느린-요청-추적). 두 가지로 골랐다. ① 당시 격리 인스턴스에서
+/// 잰 정상 부하의 최댓값이 큐 대기 25.4 ms · handler 0.48 ms 였다 — 문턱이
 /// 그보다 네 배 위라 정상 요청은 링에 안 든다. ② 대조: 분포의 버킷 경계
 /// ([`crate::pressure::LATENCY_BUCKET_BOUNDS_US`])의 한 칸(100 ms)과 같은 값이라, 운영자가 분포에서
 /// "100 ms 를 넘은 것이 몇 건" 을 읽은 자리에서 그 건들의 줄을 여기서 찾을 수 있다.
@@ -44,14 +44,14 @@ pub const SLOW_REQUEST_THRESHOLD: Duration = Duration::from_millis(100);
 
 /// 링의 줄 수. 넘치면 가장 오래 전에 들어온 줄이 밀려난다.
 ///
-/// **파생값이 아니다**(ADR-0436). 한 번의 조회로 "최근의 느린 요청들" 을 훑기에 충분하고,
+/// **파생값이 아니다**(docs/architecture/ipc-server.md#느린-요청-추적). 한 번의 조회로 "최근의 느린 요청들" 을 훑기에 충분하고,
 /// 한 줄이 수백 바이트라 상한에서 수십 KB 다. 밀려난 수는 `admitted` 누계와 줄 수의 차로
 /// 읽힌다.
 pub const SLOW_REQUEST_CAPACITY: usize = 32;
 
 /// 열린 표(아직 끝나지 않은 forward)의 상한.
 ///
-/// 동시 IPC 연결 상한(ADR-0313 의 256)과 같은 값이다 — 소켓 연결 하나는 한 번에 요청 하나를
+/// 동시 IPC 연결 상한(docs/architecture/ipc-server.md#dispatch-회차-예산 의 256)과 같은 값이다 — 소켓 연결 하나는 한 번에 요청 하나를
 /// 기다리므로, 동시에 plugin 을 기다리는 IPC 요청 수가 대개 이 안에 든다. 넘치면 가장 오래
 /// 열린 것이 버려진다(그때까지 문턱을 안 넘었으므로 링에 들 줄이 아니었다). 버려진 줄의 hop
 /// 이 나중에 오면 호스트 몫 없이 그 hop 만으로 판정한다.
@@ -64,7 +64,7 @@ pub const MAX_PLUGIN_HOPS: usize = 3;
 ///
 /// 메서드 칸은 호출자가 보낸 문자열이다(모르는 이름은 alias 해석을 그대로 통과한다). 자르지
 /// 않으면 한 호출자가 긴 이름으로 링 32 줄을 각각 임의 길이로 채울 수 있다. **파생값이 아니다**
-/// (ADR-0436) — 실측 2026-09-21 에 등록 메서드 표(286 개)의 가장 긴 이름이 31 바이트, debug 표
+/// (docs/architecture/ipc-server.md#느린-요청-추적) — 실측 2026-09-21 에 등록 메서드 표(286 개)의 가장 긴 이름이 31 바이트, debug 표
 /// (52 개)의 가장 긴 이름이 32 바이트였고, 그 네 배라 정상 이름은 잘리지 않는다.
 pub const MAX_METHOD_BYTES: usize = 128;
 
@@ -111,7 +111,7 @@ impl HopOutcome {
 
 /// 호스트가 호출자에게 준 답이 끝난 방식 — hop 의 [`HopOutcome`] 과 같은 표기(`ok` · `error`)에
 /// 오류면 그 JSON-RPC 코드를 함께 든다. 같은 느린 줄이라도 `-32067`(실행 전 만료) · `-32001`(거절) ·
-/// 정상 답은 처방이 다르다(ADR-0468).
+/// 정상 답은 처방이 다르다(docs/architecture/ipc-server.md#느린-요청-추적).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostOutcome {
     /// 성공으로 답했다.

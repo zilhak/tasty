@@ -1472,7 +1472,7 @@ auto_detect_ok = "자동감지 성공: 원격 환경 → port_mode={} (활성)."
 auto_detect_failed = "자동감지 실패: {}\n  '{}' 은 비활성 상태로 저장되었습니다 — 'tasty tool remote-profile detect {}' 로 재시도하세요."
 
 # `tasty tool passkey` — 자격증명 로컬 CRUD. 값은 절대 출력하지 않는다
-# (ADR-0016) — list/show 는 name + kind 만 노출.
+# (docs/design/systems/memory.md#passkey-저장과-열람) — list/show 는 name + kind 만 노출.
 # `list_header` 는 컬럼 패딩을 값 안에 담는다 — CJK 글자는 터미널 표시 폭이
 # 2 배라 언어마다 헤더 한 줄을 각자 맞춰야 정렬이 유지된다.
 [cli.passkey]
@@ -1487,7 +1487,7 @@ not_found = "passkey '{}' 을 찾을 수 없습니다."
 value_masked = "(마스킹 — GUI Reveal 로만 확인)"
 removed = "제거: passkey '{}'."
 
-# `tasty terminal` — 호스트 내재화된 child-terminal 관리 (ADR-0040).
+# `tasty terminal` — 호스트 내재화된 child-terminal 관리 (docs/features/child-terminal/index.md).
 [cli.terminal]
 desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/children/kill/…)."
 spawn_no_parent = "오류: parent surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
@@ -2658,7 +2658,7 @@ help = "폐기할 토큰 문자열(필수)"
 about = "이 인스턴스가 현재 보유한 세션 토큰 나열"
 
 [cli.help._root.terminal]
-about = "자식 터미널 관리 (spawn/tell/children/kill 등) — 호스트에 내재화된 에이전트 자식 터미널 관리 (ADR-0040)"
+about = "자식 터미널 관리 (spawn/tell/children/kill 등) — 호스트에 내재화된 에이전트 자식 터미널 관리"
 
 [cli.help._root.terminal.spawn]
 about = "워크스페이스에 자식 터미널을 생성하고 명령 실행"
@@ -2793,7 +2793,7 @@ help = "부모 서피스 ID(기본값: 알려진 부모가 하나이면 그 부�
 help = "해제할 자식 인덱스"
 
 [cli.help._root.pty]
-about = "헤드리스 PTY 관리 (spawn/write/read/wait/kill/list) — 서피스·탭 없는 백그라운드 PTY. `terminal` 과는 별개 네임스페이스다 (ADR-0050 pty primitive)"
+about = "헤드리스 PTY 관리 (spawn/write/read/wait/kill/list) — 서피스·탭 없는 백그라운드 PTY. `terminal` 과는 별개 네임스페이스다"
 
 [cli.help._root.pty.spawn]
 about = "서피스/탭 없는 headless PTY 생성. PTY ID 반환"
@@ -3193,10 +3193,10 @@ about = "활성 모달 닫기 요청(debug 빌드 전용). 열린 모달의 닫�
 about = "활성 모달에 닫기 요청 전송(없으면 아무 작업 없음. 응답의 `closed`로 구분)"
 
 [cli.help._root.debug.lua]
-about = "host worker에 임의 Lua 주입(debug 빌드 전용). 제한 시간이 있는 격리 Lua worker에서 소스 실행(ADR-0031). release에는 이 경로가 없으며 사용자 입력 전용 규칙 적용"
+about = "host worker에 임의 Lua 주입(debug 빌드 전용). 제한 시간이 있는 격리 Lua worker에서 소스 실행. release에는 이 경로가 없으며 사용자 입력 전용 규칙 적용"
 
 [cli.help._root.debug.lua.eval]
-about = "임의 Lua 소스를 host worker에 주입하여 실행(완료를 기다리지 않음). 효과는 tasty.log 등의 로그로 확인하며 제한 시간을 넘기면 worker가 중단(ADR-0031)"
+about = "임의 Lua 소스를 host worker에 주입하여 실행(완료를 기다리지 않음). 효과는 tasty.log 등의 로그로 확인하며 제한 시간을 넘기면 worker가 중단"
 
 [cli.help._root.debug.lua.eval.arg.source]
 help = "실행할 Lua 소스. 예: 'tasty.log(\"hi from debug\")'"

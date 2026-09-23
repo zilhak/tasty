@@ -180,10 +180,10 @@ fn read_is_shared_across_callers() {
 /// 않는다. 심은 행은 호스트 자신의 prefix 조회에 그대로 섞인다.
 ///
 /// 이것을 막는 것은 store 가 아니라 IPC 핸들러의 예약 namespace 정책이다
-/// (`memory::HOST_KEY_NAMESPACE`, [ADR-0141]). 그 전제를 여기 박아 둔다 — store 가
+/// (`memory::HOST_KEY_NAMESPACE`, [docs/dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다]). 그 전제를 여기 박아 둔다 — store 가
 /// 언젠가 namespace 를 직접 지키게 되면 이 테스트가 먼저 깨진다.
 ///
-/// [ADR-0141]: ../../../docs/adr/0141-host-key-namespace-is-reserved-in-raw-memory-kv.md
+/// [docs/dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다]: ../../../docs/dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다
 #[test]
 fn ownership_does_not_reserve_a_key_namespace() {
     let mut s = store();

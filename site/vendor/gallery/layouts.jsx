@@ -850,7 +850,7 @@ function Layouts() {
         </Spec>
 
         <Spec title="Tab title & surface border — the priority ladder"
-          when={<>The pane tab strip tints the <b>title color</b> and the surface tints its <b>border</b>. Both are single channels shared with non-attention states, so both resolve by rank. Tab title: <b>NeedsInput → Completion → active → rest</b>. Surface border: <b>NeedsInput (2px yellow) → occupancy (1px green/peach) → Completion (2px blue)</b> — NeedsInput steps <i>above</i> occupancy, the one place it changes an existing ADR-0040 order.</>}>
+          when={<>The pane tab strip tints the <b>title color</b> and the surface tints its <b>border</b>. Both are single channels shared with non-attention states, so both resolve by rank. Tab title: <b>NeedsInput → Completion → active → rest</b>. Surface border: <b>NeedsInput (2px yellow) → occupancy (1px green/peach) → Completion (2px blue)</b> — NeedsInput appears <i>above</i> occupancy; Completion stays below it.</>}>
           <Stage variant="tight" grid>
             <div style={{ display: "flex", background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
               <AttTab label="build.log" kind="needs-input" />
@@ -869,7 +869,7 @@ function Layouts() {
           <Meta
             specs={[["tab — needs-input", <span className="tok">--tasty-tab-fg-needs-input</span>], ["tab — completion", <span className="tok">--tasty-tab-fg-completion</span>], ["tab — active", <span className="tok">--tasty-tab-fg-active</span>], ["tab — rest", <span className="tok">--tasty-tab-fg</span>], ["border — needs-input", "2px, inside"], ["border priority", "needs-input > occupancy > completion"]]}
             tokens={[{ tok: "--tasty-tab-fg-needs-input", use: "blocked tab title", color: "var(--tasty-tab-fg-needs-input)" }, { tok: "--tasty-tab-fg-completion", use: "finished tab title", color: "var(--tasty-tab-fg-completion)" }, { tok: "--tasty-surface-highlight-input-border", use: "blocked surface edge", color: "var(--tasty-surface-highlight-input-border)" }, { tok: "--tasty-surface-highlight-input-width", use: "2px — matches completion" }]} />
-          <Note><b>Why NeedsInput outranks occupancy.</b> Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. A session that has stopped to ask you something must not look like a session that is busy. Completion stays below occupancy, unchanged from ADR-0040. Because attention clears on focus, an <i>active</i> tab or a <i>focused</i> surface never renders an attention tint; the ordering above only settles the unfocused cases.</Note>
+          <Note><b>Why NeedsInput outranks occupancy.</b> Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. A session that has stopped to ask you something must not look like a session that is busy. Completion stays below occupancy. Because attention clears on focus, an <i>active</i> tab or a <i>focused</i> surface never renders an attention tint; the ordering above only settles the unfocused cases.</Note>
           <Dont><b>Don't</b> stack the two edges (a 1px occupancy line inside a 2px NeedsInput line). One channel, one color — stacked edges read as a rendering bug at these widths.</Dont>
         </Spec>
       </Section>

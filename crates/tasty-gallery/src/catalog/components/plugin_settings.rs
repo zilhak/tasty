@@ -66,7 +66,7 @@ thread_local! {
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings › Appearance 안의 plugin 기여 설정 **페이지**다 — 창 셸에 얹힌
-        // 콘텐츠라 lift 가 없다(ADR-0254 세 번째 갈래).
+        // 콘텐츠라 lift 가 없다(docs/design/systems/theme.md#떠-있는-표면의-그림자 세 번째 갈래).
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
                 // 페이지 헤더 — Mono "HTML viewer".

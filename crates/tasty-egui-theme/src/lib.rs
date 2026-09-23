@@ -61,7 +61,7 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     visuals.window_fill = theme.base.into();
     visuals.window_stroke = stroke1(theme, theme.surface0);
 
-    // ── 떠 있는 표면의 그림자 (SCOPE RULE — ADR-0254) ──
+    // ── 떠 있는 표면의 그림자 (그림자 선택 규칙 — docs/design/systems/theme.md#떠-있는-표면의-그림자) ──
     // egui 가 스스로 그리는 그림자는 둘이다. `popup_shadow` 는 `Frame::popup` 이 쓰고
     // (`egui::popup_below_widget` · `ComboBox` 가 그 경로다), `window_shadow` 는
     // `egui::Window` 의 기본 프레임이 쓴다. 이 둘을 매핑하지 않으면 `Visuals::dark()`
@@ -165,7 +165,7 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // 프로그램적 스크롤(`scroll_to_cursor`/`scroll_to_rect`/`scroll_with_delta`)의
     // 애니메이션을 끈다. egui 기본값은 최대 300ms 로 `docs/design/systems/theme.md`
     // "UI 디자인 규칙" 의 애니메이션 상한(150ms)을 넘고, 스크롤은 입력 직후 피드백이
-    // 아니라 콘텐츠 이송이라 같은 표의 "스크롤엔 transition 금지" 쪽에 선다(ADR-0108).
+    // 아니라 콘텐츠 이송이라 같은 표의 "스크롤엔 transition 금지" 쪽에 선다(docs/dev-guide/egui-mesh-channel.md#입력-forward--identity-경계).
     style.scroll_animation = egui::style::ScrollAnimation::none();
     ctx.set_style(style);
 }

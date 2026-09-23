@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거 · 설정 창 안의 파일 선택) + plugin(`file_picker.trigger` IPC — plugin 호출자 전용, CLI·agent 는 `-32016`)
-- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0631](../../adr/0631-file-handler-routing.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
+- **ADR**: [ADR-0622](../../adr/0622-remote-mirror-content-and-queries.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0631](../../adr/0631-file-handler-routing.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
 - **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `crates/tasty-ipc/src/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/popup.rs`(Browse 버튼 caller), `src/view/settings/ui/file_chooser.rs`(설정 창 안의 로컬 전용 재사용)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
@@ -148,7 +148,9 @@ forward/tap 도 동반 — file picker 뿐 아니라 mirror 연결 자체가 끊
 서버가 돌려준 경로 문자열 자체에 `\` 가 있는지로 Windows 스타일(`C:\Users\alice`, 드라이브 루트
 보존)과 POSIX(`/`)를 구분한다(`is_windows_style_remote_path`).
 
-### plugin 트리거(ADR-0058) — 즉시 ack + 이벤트 push
+<a id="plugin-트리거adr-0058--즉시-ack--이벤트-push"></a>
+
+### 플러그인의 피커 요청 — 즉시 접수하고 결과는 이벤트로 전달
 
 CallerContext::Plugin 검사는 이미 열린 popup(-32000)이나 잘못된 인자(-32602)보다 먼저다.
 외부 CLI·Agent는 -32016으로 거절한다. FsRead 요구는 그대로다.
@@ -162,7 +164,7 @@ host 메인 스레드를 블로킹해도 안전" 하다고 적혀 있었다. 그
 메서드는 제거됐다([ADR-0631](../../adr/0631-file-handler-routing.md)).
 host 자체 egui popup 은 그와 별개로 OS 가 대신 블로킹해주지 않는다 —
 지연 회신 방식(`host.call` 자체를 확정 시점까지 붙잡아 둠)은 plugin 의 렌더/입력 루프를
-멈추고 60 초 `HostCallTimeout` 위험을 진다(ADR-0058 Alternatives Considered).
+멈추고 60 초 `HostCallTimeout` 위험을 진다(ADR-0636의 비동기 결과 전달).
 
 1. plugin 이 `file_picker.trigger { filters?: string[] }` 를 호출한다(`FsRead` 권한,
    `gui` feature 전용). CLI·agent 호출자는 popup 을 열지 않고 `-32016` 을 받는다 — 결과를 받을
@@ -196,28 +198,28 @@ host 자체 egui popup 은 그와 별개로 OS 가 대신 블로킹해주지 않
   stat 할 수 없으므로 그대로 `list_dir_request` 에 싣고 서버의 에러 회신에 맡긴다. 둘 다 없으면
   종전대로 로컬 홈 / 원격 홈(빈 `dir`)이다.
 - **`inherit_cwd` 설정과 무관하다** — 그 설정은 "새 surface 가 cwd 를 상속하는가" 이고 피커는 새
-  surface 를 만들지 않는다([ADR-0267](../../adr/0267-mirror-surface-cwd-is-pushed-by-the-server.md)
-  결정 5). Tools 메뉴·단축키로 연 피커도 focus surface 의 폴더에서 출발한다.
+  surface 를 만들지 않는다([ADR-0622](../../adr/0622-remote-mirror-content-and-queries.md)
+  참조). Tools 메뉴·단축키로 연 피커도 focus surface 의 폴더에서 출발한다.
 - plugin 은 popup context 의 `observed_cwd`(로컬) / `remote_cwd`(mirror) 와 `origin_surface_id` 를
   그대로 실어 보내면 된다(키 의미는 `AppState::popup_surface_context`). 게이트가 걸린 `cwd` 키를
   쓰면 설정을 끈 사용자에게서 시작 위치가 사라진다.
 - `path_input` 등 plugin 팝업에 사용자가 이미 적어 둔 경로를 시작점으로 삼는 것은 다루지 않는다.
 
 **부모 범위와 숨김**: `owner_popup_instance`가 요청자 plugin의 부모 popup을 가리키면 host가
-선언 종류와 target으로 유효 scope를 해석해 첫 paint 전에 적용한다([ADR-0278](../../adr/0278-child-file-picker-inherits-parent-scope-and-preserves-hidden-work.md)).
+선언 종류와 target으로 유효 scope를 해석해 첫 paint 전에 적용한다([ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md)).
 Surface 부모가 보이지 않으면 자식도 paint/hit/Esc/키 게이트에서 빠진다. 숨김은 close가 아니며
 부모·자식 draft, 선택, 요청 ID를 보존한다. 돌아오면 같은 작업을 계속한다. Window 부모와
 owner 없는 단독 피커는 창 범위다. surface가 작으면 기존 clamp가 피커 크기를 제한한다.
 부모 close는 기존 cancel/settled 규약을 따른다. 확정 이벤트를 받은 markdown은 경로 입력만
 채우며, 부모 Open에서 최초 context의 대상을 실행한다. host의 별도 로컬 DispatchFile은 유지한다.
 
-**동시성 정책(ADR-0058 이 이 구현에 위임한 결정)**: `file_picker` popup 은 단일 인스턴스만
+**동시성 정책(ADR-0636의 파일 피커 결과 전달)**: `file_picker` popup 은 단일 인스턴스만
 존재한다. 이미 열려 있는 상태에서 두 번째 `file_picker.trigger` 가 오면 **거부**한다(즉시
 `-32000` JSON-RPC 에러) — "이전 요청을 대체" 는 채택하지 않았다. 트리거 핸들러는 `CoreState`
 에만 접근하고 `PluginManager`(이벤트 emit 에 필요)에 접근권이 없어(이 코드베이스의 확립된
 관례 — IPC 핸들러는 pending 을 큐잉하고 App 레벨 dispatch 가 실제 emit), "대체" 를 택하면
 밀려난 요청의 plugin 에게 즉시 취소를 통지할 방법이 없어 그 plugin 의 pending-map 항목이
-응답을 영영 못 받는다(ADR-0058 이 세운 "모든 트리거는 정확히 하나의 결과를 받는다" 계약
+응답을 영영 못 받는다(파일 피커 요청마다 성공·취소·실패 중 하나로 완료하는 규칙
 위반). 거부는 두 번째 plugin 의 `host.call` 이 그 자리에서 에러로 끝나 재시도 여부를
 판단하게 하므로 이 계약을 지킨다. 근거 전문: `src/adapters/ipc/handler/file_picker.rs` 모듈
 doc.
@@ -287,7 +289,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   편집이 더해진다.
 - **AI Agent (IPC/CLI)**: 없음 — popup 조작(선택/확정/취소) 자체는 순수 로컬 사용자 입력
   UI 다(release 의 사용자 입력 재현 금지 원칙). 단, **popup 을 여는 트리거**는
-  `file_picker.trigger` IPC 로 plugin 에 열려 있다(ADR-0058) — markdown Browse
+  `file_picker.trigger` IPC 로 plugin 에 열려 있다(ADR-0636) — markdown Browse
   버튼이 실사용처. 이건 "에이전트가 사용자 대신 파일을 고른다"가 아니라 "plugin 이 host 소유
   UI 를 사용자에게 대신 띄워준다" 는 위임이라 원칙과 상충하지 않는다(뒤이은 선택/확정은
   여전히 사용자 몫).
@@ -309,7 +311,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **대형 원격 디렉토리의 페이지네이션** — 700KiB 예산을 넘는 나머지는 truncation 으로만
   처리한다(toast 통지). "다음 페이지 로드" 는 이번 스코프 밖.
 - **다중 plugin 트리거 큐잉/대체** — 동시성 정책은 "거부" 뿐이다. 대체/큐잉을 원하는
-  케이스가 실사용에서 반복되면 ADR-0058 의 Reconsideration Triggers 대상이다.
+  케이스가 실사용에서 반복되면 동시 피커 요청 처리 방식을 다시 검토한다.
 
 ## Acceptance Criteria
 
@@ -420,7 +422,7 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   `format_modified`) — `src/adapters/ui/surface/explorer/view.rs`(Explorer surface)와 공유.
 - 트리거: `src/adapters/ui/tools_menu.rs`(`BuiltinAction::OpenFilePicker`, `popup::file_picker::open`,
   `requester: None`), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin
-  트리거, ADR-0058), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
+  트리거, ADR-0636), `crates/tasty-ipc/src/method_meta.rs`(`file_picker.trigger` →
   `FsRead`).
 - Result drain: `src/app/dispatch/file_picker.rs`(`dispatch_pending_file_picker_results`,
   `apply_remote_confirm`, `emit_file_picker_result` — `requester` 가 `Some` 이면

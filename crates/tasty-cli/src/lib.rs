@@ -205,13 +205,13 @@ pub enum Commands {
         command: SessionCommands,
     },
     /// Manage child terminals (spawn/tell/children/kill/…) — host-internalized
-    /// agent child-terminal management (ADR-0040).
+    /// agent child-terminal management.
     Terminal {
         #[command(subcommand)]
         command: TerminalCommands,
     },
     /// Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with
-    /// no Surface/tab. Separate namespace from `terminal` (ADR-0050 pty primitive).
+    /// no Surface/tab. Separate namespace from `terminal`.
     Pty {
         #[command(subcommand)]
         command: PtyCommands,

@@ -397,7 +397,7 @@ impl FileHandlerRegistry {
     /// 검증). 파일이 없으면 user contribution 만 제거.
     ///
     /// 돌려주는 것은 **이 reload 가 적용하지 않은 user 항목**이다 — 경고 로그와 같은 사실을 호출자가
-    /// 응답에 실을 수 있게 한다(docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
+    /// 응답에 실을 수 있게 한다(docs/features/file-handler/index.md#인터페이스).
     /// read/parse 실패로 reload 자체가 멈춘 경우는 항목을 모르므로 빈 목록이다.
     pub fn reload_user_config(&self, path: &std::path::Path) -> Vec<RejectedUserHandler> {
         let Some(decls) = Self::load_user_handler_decls(path) else {
@@ -698,7 +698,7 @@ fn install_user_decls(
 ///
 /// `user/` 가 아닌 id 에 user contribution 만 있으면 patch 대상이 아직 없는 것이다 — 항목은
 /// 남아 있다가 대상이 contribute 되면 적용되므로 "버렸다" 가 아니다
-/// (docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
+/// (docs/features/file-handler/index.md#인터페이스).
 fn incomplete_reason(
     id: &HandlerId,
     contribs: &[HandlerContribution],

@@ -412,7 +412,7 @@
        needs-input (2px yellow) > occupancy (1px green/peach) > completion (2px blue)
      NeedsInput outranks occupancy because occupancy means "held, working, as
      expected" — exactly the reading that would hide a session that has STOPPED
-     to ask the human something. Completion stays below occupancy (ADR-0040). */
+     to ask the human something. Completion stays below occupancy. */
   --tasty-surface-highlight-input-border: var(--tasty-attention-needs-input);
   --tasty-surface-highlight-input-width:  var(--tasty-focus-ring-width);  /* 2px */
   --tasty-surface-highlight-done-width:  var(--tasty-focus-ring-width);  /* 2px */

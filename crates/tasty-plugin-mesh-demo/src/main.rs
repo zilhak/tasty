@@ -2,7 +2,7 @@
 
 //! Tasty egui-mesh PoC plugin (A1).
 //!
-//! egui-mesh 채널(ADR-0028)이 동작함을 증명하는 최소 소비자다. plugin 이 자기
+//! egui-mesh 채널(docs/dev-guide/egui-mesh-channel.md#데이터-흐름)이 동작함을 증명하는 최소 소비자다. plugin 이 자기
 //! 프로세스에서 egui 를 구동·tessellate 해 mesh 를 host 에 commit 하면, host 가
 //! 전용 `egui_wgpu::Renderer` 로 surface 영역에 벡터 합성한다.
 //!
@@ -110,7 +110,7 @@ impl MeshDemoPlugin {
             .entry(sid)
             .or_insert_with(|| EguiMeshSurface::new(sid));
         let clicks = self.clicks.entry(sid).or_insert(0);
-        // tessellate+encode+commit 지연 측정 (ADR-0028 reconsideration trigger 점검용).
+        // tessellate+encode+commit 지연 측정 (docs/dev-guide/egui-mesh-channel.md#데이터-흐름 성능 확인).
         let t0 = std::time::Instant::now();
         let result = surface.paint(&ctx.host, &ctx.params, |egui_ctx| {
             draw_demo(egui_ctx, clicks);

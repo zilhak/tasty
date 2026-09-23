@@ -15,7 +15,7 @@ App  (1 프로세스, 메인 스레드, winit ApplicationHandler)
     └── focused_view_id: Option<WindowId>
 ```
 
-`focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0497](../adr/0497-an-agent-created-window-does-not-take-the-users-focus.md)).
+`focused_view_id` 는 대상 없는 IPC 요청이 떨어지는 main 창이다. 창을 등록할 때는 그 창을 사용자가 만들었을 때만 옮긴다 — 에이전트가 만든 창은 옮기지 않는다([포커스 정책](../design/policies/focus.md#에이전트가-만든-창과-포커스), [ADR-0617](../adr/0617-workspace-identity-and-focus.md)).
 
 모든 윈도우(모달 포함)는 단일 `views` 맵에 저장된다. 모달은 별개 엔티티가 아니라 `active_modal_id: Option<WindowId>` 로 식별되는 View 상태이며, 활성 모달은 이 필드로 식별한다. (옛 `Engine` struct 는 삭제됐고 그 역할이 Core/Hub/ViewRegistry 로 분산됐다.)
 
@@ -52,7 +52,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 
 파킹은 engine 을 살려 두는 것이므로 아래 레이아웃 슬롯 점유도 함께 유지된다 — 창은 없지만 슬롯은 여전히 그 engine 것이다.
 
-**"engine 이 살아 있는가"를 묻는 판정은 `views` 와 `parked_states` 를 함께 봐야 한다.** 창 유무로 대신 판정하면 파킹이 곧 소멸로 오인된다. 원격 attach 세션의 고아 판정이 그 사례다 — mirror 워크스페이스를 들고 있는 engine 이 parked 라는 이유로 세션을 끊으면 사용자가 창을 최소화했을 뿐인데 원격 점유가 풀린다([remote-attach — 창 없는 상태(parked)에서의 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)). 그 세션에 도착하는 mirror 이벤트의 적용 대상 탐색도 같은 범위를 돈다 — parked engine 의 mirror 터미널에 즉시 적용되고, 창 복원 시 그대로 그려진다([ADR-0110](../adr/0110-mirror-events-apply-to-parked-engines.md)).
+**"engine 이 살아 있는가"를 묻는 판정은 `views` 와 `parked_states` 를 함께 봐야 한다.** 창 유무로 대신 판정하면 파킹이 곧 소멸로 오인된다. 원격 attach 세션의 고아 판정이 그 사례다 — mirror 워크스페이스를 들고 있는 engine 이 parked 라는 이유로 세션을 끊으면 사용자가 창을 최소화했을 뿐인데 원격 점유가 풀린다([remote-attach — 창 없는 상태(parked)에서의 세션 수명](../features/remote-attach/index.md#창-없는-상태parked에서의-세션-수명)). 그 세션에 도착하는 mirror 이벤트의 적용 대상 탐색도 같은 범위를 돈다 — parked engine 의 mirror 터미널에 즉시 적용되고, 창 복원 시 그대로 그려진다([ADR-0623](../adr/0623-attach-state-sync-and-forwarding.md)).
 
 ### 창이 스스로 닫히는 자리 — `close_requested`
 
@@ -73,7 +73,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 - **parked engine 은 슬롯을 계속 쥔다.** 창이 없어도 engine 이 살아 있으므로 점유에 포함되고, 다시 창을 열 때 그 engine 이 같은 슬롯을 이어쓴다. 재배정했다면 남의 슬롯 파일을 덮어썼을 것이다.
 - 프로세스가 죽으면 점유는 전부 사라진다 — 크래시가 슬롯을 영구 점유로 남기지 않는다.
 
-결정의 근거·대안·재검토 조건은 [ADR-0087](../adr/0087-layout-slot-occupancy-model.md), 배정 규칙과 창 닫힘 정책의 현재 동작은 [layout-persistence](../features/layout-persistence/index.md).
+결정의 근거·대안·재검토 조건은 [ADR-0617](../adr/0617-workspace-identity-and-focus.md), 배정 규칙과 창 닫힘 정책의 현재 동작은 [layout-persistence](../features/layout-persistence/index.md).
 
 ## 윈도우 간 GPU·통신
 
@@ -97,5 +97,5 @@ Chrome 의 멀티 프로세스 사유(신뢰 불가 웹 코드 보안 격리)는
 - [아키텍처 개요](index.md) — headless `gui` feature 분리
 - [input-layer](input-layer.md) — 윈도우 내부 마우스 입력 계층
 - [concepts/hierarchy](../concepts/hierarchy.md) — 도메인 Window/Workspace/Pane/Tab/Surface
-- [ADR-0087](../adr/0087-layout-slot-occupancy-model.md) — 레이아웃 슬롯 점유 모델의 근거·대안
+- [ADR-0617](../adr/0617-workspace-identity-and-focus.md) — 레이아웃 슬롯 점유 모델의 근거·대안
 - [features/layout-persistence](../features/layout-persistence/index.md) — 슬롯 배정·저장·복원의 현재 동작

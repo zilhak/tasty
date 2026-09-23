@@ -14,7 +14,7 @@
 //!
 //! 판정은 **보내는 순간의 사실**로 한다 — 예약 뒤에 설정이 꺼졌거나, 사람이 먼저
 //! 입력했거나, Claude 가 종료됐거나, 사용자가 입력창에 초안을 쓰고 있으면 보내지 않는다.
-//! 근거·대안·재검토 조건은 `docs/adr/0521-claude-auto-resume-after-an-api-error-is-opt-in-and-judged-at-send-time.md`.
+//! 근거·대안·재검토 조건은 `docs/plugins/claude/index.md#api-에러-뒤-자동-재개-auto_resumers`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -112,7 +112,7 @@ pub(crate) struct Pending {
     /// 예약 시점의 전경 pid — 그 사이 Claude 가 다시 떴으면 다른 세션이다.
     pub foreground_pid: Option<u64>,
     /// 이 시각 이후의 사용자 입력(키보드 · IME · 붙여넣기 — 본체가 `record_typing` 으로
-    /// 기록하는 것, docs/adr/0560-paste-is-user-input-and-is-recorded-where-both-paste-paths-meet.md)은
+    /// 기록하는 것, docs/features/terminal/index.md#사용자-입력-기록)은
     /// "사람이 개입했다" 로 본다. 실패한 턴이 시작된 시각(`prompt-submit`)이고, 그것을
     /// 모르면 예약 시각이다. 턴 시작부터 보는 이유:
     /// Claude 가 일하는 동안 입력창에 쓴 미제출 초안도 재개 문구 앞에 붙어 함께 제출된다.

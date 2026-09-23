@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Tasty Image plugin — **egui-mesh + bitmap-texture** image surface (ADR-0028 / B2).
+//! Tasty Image plugin — **egui-mesh + bitmap-texture** image surface (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
 //!
 //! The plugin owns the image content and renders it in its own process (mirroring B1
 //! markdown): it loads the bitmap (delivered via `surface.create`), uploads it to its own

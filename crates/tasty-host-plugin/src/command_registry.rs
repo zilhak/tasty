@@ -65,7 +65,7 @@ impl PluginCommandEntry {
 /// plugin 단축키에 영향을 주는 변경마다 새로 뽑는 **프로세스 전역 단조 증가** 값.
 ///
 /// 소비자는 "지난번에 본 값과 같은가" 만 보고 자기 파생 스냅샷의 재계산 여부를 정한다
-/// (webview 키 포워딩 정책 스냅샷 — `docs/adr/0102-webview-key-forwarding.md`). 전역
+/// (webview 키 포워딩 정책 스냅샷 — `docs/design/systems/webview.md#키보드--별도-계약`). 전역
 /// 단조라서 registry 를 통째로 새로 만들어도(`PluginCommandRegistry::new`) 값이 겹치지
 /// 않는다 — 인스턴스 지역 카운터였다면 재생성 시 0 으로 되돌아가 stale 스냅샷이 남는다.
 pub(crate) fn next_shortcut_epoch() -> u64 {

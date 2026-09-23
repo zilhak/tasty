@@ -60,7 +60,7 @@ pub const CAPABILITIES: &[Capability] = &[
     // 서버의 `-32061` 은 "요청이 이미 시작됐다" 까지 말한다. `ipc.response-timeout` 의 판을
     // 올리지 않고 이름을 더한 이유: 그 판은 client 가 **최소 판으로 요구**하는 수라(CLI 의
     // `--response-timeout-ms`), 올리면 새 client 가 구 서버에 상한을 못 싣는다. 더해지는 뜻은
-    // 이름으로 선언한다(`ipc.stream.loss-notify` 와 같은 형태). 근거: ADR-0411.
+    // 이름으로 선언한다(`ipc.stream.loss-notify` 와 같은 형태). 근거: docs/architecture/ipc-server.md#기한.
     Capability {
         name: RESPONSE_TIMEOUT_NOT_RUN,
         version: 1,
@@ -74,9 +74,9 @@ pub const CAPABILITIES: &[Capability] = &[
     //
     //
     // 판이 **어느 층까지 받는가** 를 말한다 — 판 1 은 engine 라우터, 판 2 는 App 층까지
-    // (ADR-0421), 판 3 은 그 뒤의 GUI debug step 과 plugin namespace forward 로 나가는 표
-    // 이름까지(ADR-0566). 메서드마다 어느 판이 필요한지는 이름 표의 `KeyContract::Kept { since }`
-    // 가 답하고, plugin 고유 이름처럼 계약 밖인 이름은 판과 무관하게 `Outside` 다(ADR-0423).
+    // (docs/dev-guide/api-conventions.md#진행-중-요청과-보장-한계), 판 3 은 그 뒤의 GUI debug step 과 plugin namespace forward 로 나가는 표
+    // 이름까지(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖). 메서드마다 어느 판이 필요한지는 이름 표의 `KeyContract::Kept { since }`
+    // 가 답하고, plugin 고유 이름처럼 계약 밖인 이름은 판과 무관하게 `Outside` 다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖).
     // 판을 리터럴로 안 적는다 — 표가 요구하는 가장 높은 판이 곧 이 서버가 선언하는 판이다.
     Capability {
         name: "ipc.idempotency-key",

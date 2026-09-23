@@ -159,7 +159,7 @@ fn about_holes(cmd: &clap::Command, path: &str, seen: &mut usize, out: &mut Vec<
     }
 }
 
-/// 모수 고정 — 걷기가 깨져 0 자리를 보면 이 술어는 공짜로 초록이다(ADR-0133).
+/// 모수 고정 — 걷기가 깨져 0 자리를 보면 이 술어는 공짜로 초록이다(docs/dev-guide/guard-population.md#검사-범위와-예외를-정하는-순서).
 /// 하한이다: 명령은 늘 수 있고, 줄면 그때 이 줄이 먼저 말한다.
 const MIN_SUBCOMMANDS: usize = 200;
 
@@ -185,7 +185,7 @@ fn every_subcommand_carries_an_about() {
     );
 }
 
-/// 인자 모수 고정 — 서브커맨드 쪽과 같은 이유(ADR-0133). 하한이다.
+/// 인자 모수 고정 — 서브커맨드 쪽과 같은 이유(docs/dev-guide/guard-population.md#검사-범위와-예외를-정하는-순서). 하한이다.
 const MIN_ARGS: usize = 400;
 
 /// 설명이 없는 인자의 **상한**. 지금은 **0** — 잔여 0 이다. 처음 쟀을 때 204 였고

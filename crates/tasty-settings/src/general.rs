@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// 50 인 이유는 egui 기본값(native 40 / web 8)과 견주어 고른 것이 아니라 이 코드베이스가
 /// plugin 표면에 이미 쓰던 값을 보존하는 것이다. egui 는 그 두 값이 왜 달라야 하는지
-/// 자기 소스에 미결 표시로 남겨 두었으므로 기준이 될 수 없다. 근거 전문은 ADR-0130.
+/// 자기 소스에 미결 표시로 남겨 두었으므로 기준이 될 수 없다. 근거 전문은 docs/features/terminal/index.md#휠-스크롤-거리.
 pub const DEFAULT_WHEEL_LINE_SCROLL: f32 = 50.0;
 
 /// 빌트인 bashrc 의 *전반부* — LANG/LC_ALL, MSYS PATH, `__tasty_osc7` 함수 정의.
@@ -166,7 +166,7 @@ pub struct GeneralSettings {
     /// 휠 1노치(= 데스크톱 마우스 휠 한 칸)가 스크롤하는 논리 포인트. 이 값 하나가
     /// host UI 위젯과 plugin 표면 **양쪽**에 걸린다 — egui `Options::line_scroll_speed`
     /// 로 밀어 넣으면 host 의 `ScrollArea` 가 그것으로 스크롤하고, 휠을 포인트로 바꾸는
-    /// plugin 경로도 같은 옵션을 읽는다(ADR-0130). 기본값
+    /// plugin 경로도 같은 옵션을 읽는다(docs/features/terminal/index.md#휠-스크롤-거리). 기본값
     /// [`DEFAULT_WHEEL_LINE_SCROLL`]. 스크롤 속도가 접근성 축의 조정 요구가 잦은 값이라
     /// 노출하지만, 접근성 전용이 아니라 마우스 동작 설정이므로 이 절에 둔다.
     pub wheel_line_scroll: f32,
@@ -197,7 +197,7 @@ pub struct GeneralSettings {
     pub bell_notification: bool,
     /// 마우스 트래킹 앱(vim/htop 등) 위에서 처음 좌/우 클릭할 때, 마우스가 앱에 캡처
     /// 중이며 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭으로 띄울 수 있음을
-    /// 안내하는 toast 를 트래킹 세션당 1회 표시한다(발견성, ADR-0022 ②). off 면 안내하지
+    /// 안내하는 toast 를 트래킹 세션당 1회 표시한다(발견성, docs/features/terminal/index.md#마우스-입력). off 면 안내하지
     /// 않는다. `alias`: 구버전 settings.toml 의 `right_click_capture_hint` 키를 계속 읽는다.
     #[serde(alias = "right_click_capture_hint")]
     pub mouse_capture_hint: bool,

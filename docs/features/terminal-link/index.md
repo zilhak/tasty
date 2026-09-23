@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 전용 (마우스 + 수식키 — CLI/IPC 비노출)
-- **ADR**: [URL 대상은 picker·실행 계층에만](../../adr/0272-url-targets-enter-the-handler-picker-not-identify.md) (원칙은 [identity](../../identity.md) §1)
+- **ADR**: [URL 대상은 picker·실행 계층에만](../../adr/0631-file-handler-routing.md) (원칙은 [identity](../../identity.md) §1)
 - **코드**: 검출·하이라이트 타입 `crates/tasty-terminal-link/` · 링크 열기 `src/adapters/ui/terminal_link.rs`(`open_uri` — OS 부수효과라 `gui` 뒤에 남는다) · 클릭 `src/view/main/mouse.rs` · `LinkModifier`(settings) · 링크 우클릭 메뉴 `src/view/main/link_menu.rs` · 드래그선택 우클릭 메뉴 `src/view/main/redraw.rs`(`handle_terminal_surface_native_menu`)
 - **화면**: 링크 hover 하이라이트 (GPU)
 
@@ -29,7 +29,7 @@
 
 hover 가 판정해 둔 링크(`hovered_link`) 위에서 우클릭하면 기존 터미널 메뉴 대신 링크 전용 네이티브 메뉴가 뜬다. 대상은 드래그로 확정한 selection 문자열이 아니라 hover 의 `LinkSpan` 이다(아래 "드래그/더블클릭 선택 → 우클릭 메뉴" 와 다른 입력 경로).
 
-- **게이트**: hover 링크가 우클릭한 surface 의 것이고, 그 surface 가 hard 점유 mirror 가 아닐 것(좌클릭과 같은 배제 — ADR-0049). `LinkModifier::None` 이어도 뜬다 — `hovered_link` 자체가 수식키 게이트를 통과한 결과이고, 좌클릭이 `None` 을 배제하는 이유("수식키 없는 클릭이 링크를 열어버리는 사고")가 우클릭 → 메뉴 → 항목 선택에는 성립하지 않는다.
+- **게이트**: hover 링크가 우클릭한 surface 의 것이고, 그 surface 가 hard 점유 mirror 가 아닐 것(좌클릭과 같은 배제 — ADR-0621). `LinkModifier::None` 이어도 뜬다 — `hovered_link` 자체가 수식키 게이트를 통과한 결과이고, 좌클릭이 `None` 을 배제하는 이유("수식키 없는 클릭이 링크를 열어버리는 사고")가 우클릭 → 메뉴 → 항목 선택에는 성립하지 않는다.
 - **mouse tracking 보다 먼저**: 링크 판정이 `right_click_delegates_to_app` 앞에 있어, tracking 앱(vim/tmux) 안에서도 링크 위 우클릭은 앱으로 가지 않는다(좌클릭 링크와 대칭). press 와 release 모두 로컬 소비된다. Shift+우클릭도 링크 위면 링크 메뉴다.
 - **스냅샷**: press 시점에 링크 범위(첫 세그먼트 시작 ~ 마지막 세그먼트 끝)와 그 범위의 화면 텍스트를 찍어 둔다. Linux 는 메뉴를 release 에 열므로 그 사이 수식키를 떼거나 포인터가 움직여도 press 때의 링크로 뜬다.
 - **포커스 불변**: 좌클릭 링크와 달리 포커스를 옮기지 않는다(컨텍스트 메뉴 관례).

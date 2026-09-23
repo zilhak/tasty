@@ -161,7 +161,7 @@ pub struct TailCheckout {
 /// (`EVENT_BUFFER_CAP`) plugin 재시작 시 비므로, 오래 끊겨 있던 소비자의 커서가 버퍼보다
 /// 뒤처지는 일이 실제로 생긴다. 그때 남은 것만 조용히 흘려보내면 소비자는 **자기가 무엇을
 /// 놓쳤는지도 모른 채** 이어붙인다 — 이 파이프라인이 세운 "침묵하는 누락보다 중복"
-/// (ADR-0093)과 정면으로 어긋난다. 그래서 재전송에 앞서 갭 구간을 먼저 알린다.
+/// (docs/plugins/agent-stream/index.md#내부-동작)과 정면으로 어긋난다. 그래서 재전송에 앞서 갭 구간을 먼저 알린다.
 #[derive(Debug, Default)]
 pub struct Replay {
     /// 재전송할 수 없는 `(첫 seq, 마지막 seq)` 구간. 없으면 `None`.

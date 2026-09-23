@@ -145,7 +145,7 @@ pub(super) enum FinalCaller {
 
 impl FinalCaller {
     /// 이 회신처를 낳은 IPC 요청의 호스트 번호. plugin 이 부른 호출은 호스트 IPC 큐를 안
-    /// 지나 번호가 없다(ADR-0436).
+    /// 지나 번호가 없다(docs/architecture/ipc-server.md#느린-요청-추적).
     pub(super) fn origin(&self) -> Option<tasty_ipc::server::RequestSeq> {
         match self {
             FinalCaller::Local { origin, .. } => *origin,
@@ -177,11 +177,11 @@ pub(super) struct PendingRequest {
     /// hop 도 같은 값이다 — 사슬이 들고 가는 [`FinalCaller::origin`] 에서 복사하므로 사슬 전체가
     /// 원 요청 하나를 가리킨다. 번호를 모르는 plugin 요청은 `None` 이다 — IPC 요청에서 오지 않은
     /// 것(event.dispatch · surface · plugin 이 부른 namespace 등)과, IPC `file_handler.dispatch` 가
-    /// 파일 핸들러 큐를 거쳐 넘긴 것(큐에 옮겨지는 사이 번호가 떨어진다, ADR-0436).
+    /// 파일 핸들러 큐를 거쳐 넘긴 것(큐에 옮겨지는 사이 번호가 떨어진다, docs/architecture/ipc-server.md#느린-요청-추적).
     ///
     /// `to` 와 같은 이유로 변종이 아니라 여기 칸 하나다 — 어느 변종이 이 값을 가질 수 있는지는
     /// 넘기는 쪽이 정하고, 응답·만료·취소는 변종과 무관하게 이 칸을 읽는다. plugin 에게는 안
-    /// 간다(ADR-0436): 호스트 쪽 대응표이고, 그 대응을 잇는 것이 호스트 req_id 다.
+    /// 간다(docs/architecture/ipc-server.md#느린-요청-추적): 호스트 쪽 대응표이고, 그 대응을 잇는 것이 호스트 req_id 다.
     pub(super) origin: Option<tasty_ipc::server::RequestSeq>,
 }
 
@@ -456,7 +456,7 @@ pub struct PluginManager {
     /// 세운다). 그때 `None` 이면 **아무것도 안 센다** — 0 을 쌓지 않으므로 읽는 쪽이
     /// "안 쟀다" 와 "기다림이 없었다" 를 그대로 가른다.
     plugin_wait: Option<Arc<tasty_telemetry::PluginWaitStats>>,
-    /// 느린 요청 링(ADR-0436). 원 IPC 요청 번호를 든 대기 항목이 끝날 때(응답 · 만료 · 취소)
+    /// 느린 요청 링(docs/architecture/ipc-server.md#느린-요청-추적). 원 IPC 요청 번호를 든 대기 항목이 끝날 때(응답 · 만료 · 취소)
     /// 그 hop 을 원 요청의 줄에 붙인다. `plugin_wait` 과 같은 이유로 `Option` 이고, `None` 이면
     /// 아무것도 안 남긴다.
     slow_requests: Option<Arc<tasty_telemetry::SlowRequestLog>>,
@@ -478,7 +478,7 @@ pub struct PluginManager {
     /// 설정 모달의 sub-tab 합성은 본 registry 를 순회 (Step 5).
     pub settings_pages: crate::settings_registry::SettingsPageRegistry,
     /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. **설치된 매니페스트에서
-    /// 유도되며**(ADR-0173) 실행 여부와 무관하다 — 호스트 IPC dispatcher가 namespace
+    /// 유도되며**(docs/dev-guide/plugin-development.md#cli--ipc-namespace) 실행 여부와 무관하다 — 호스트 IPC dispatcher가 namespace
     /// 메서드를 어느 plugin에 forward할지 해결할 때 조회한다. "누가 그 이름의 주인인가"
     /// 와 "지금 떠 있는가" 는 다른 물음이고, 뒤엣것은 `processes` 가 답한다(안 떠 있으면
     /// `-32002`). 이 표는 `packages` 에서 유도되므로 `packages` 를 바꾸는 자리는
@@ -670,13 +670,13 @@ mod tests_lifecycle_toggle;
 // 만료·취소로 이미 끝난 요청의 늦은 응답이 아무것도 다시 진행시키지 않는가.
 #[cfg(test)]
 mod tests_late_response;
-// 재발화 hop 하한이 dispatch 송신 · 응답 · publish 도착 세 자리에 이어졌는가(ADR-0406).
+// 재발화 hop 하한이 dispatch 송신 · 응답 · publish 도착 세 자리에 이어졌는가(docs/reference/event-catalog.md#재발행과-응답).
 #[cfg(test)]
 mod tests_relay_floor;
-// namespace forward 가 정확히 한 번을 약속하지 않는다는 사실의 고정(ADR-0361).
+// namespace forward 가 정확히 한 번을 약속하지 않는다는 사실의 고정(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖).
 #[cfg(test)]
 mod tests_forward_idempotency;
-// plugin 으로 넘긴 요청의 대기 항목이 hop 마다 원 IPC 요청의 번호를 드는가(ADR-0436).
+// plugin 으로 넘긴 요청의 대기 항목이 hop 마다 원 IPC 요청의 번호를 드는가(docs/architecture/ipc-server.md#느린-요청-추적).
 #[cfg(test)]
 mod tests_request_origin;
 
@@ -701,7 +701,7 @@ mod tests {
     /// process는 spawn하지 않는다.
     ///
     /// 소유 표를 손으로 채우지 않고 **매니페스트를 놓고 유도를 돌린다** — 그것이
-    /// 운영에서 소유가 생기는 유일한 경로이기 때문이다(ADR-0173). 표를 직접 쓰면
+    /// 운영에서 소유가 생기는 유일한 경로이기 때문이다(docs/dev-guide/plugin-development.md#cli--ipc-namespace). 표를 직접 쓰면
     /// 픽스처가 운영에 없는 상태를 만들 수 있고, 그러면 이 테스트가 지키는 것이
     /// 실제 경로와 어긋난다.
     fn mgr_with_namespace_owner(owner: &str, prefix: &str) -> PluginManager {

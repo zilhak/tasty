@@ -8,7 +8,7 @@
 //! - macOS: menu bar status item (`NSStatusItem`)
 //! - Linux: StatusNotifierItem / AppIndicator (via GTK)
 //!
-//! Per ADR-0001 this is best-effort: when the platform has no usable tray
+//! Per docs/design/policies/system-tray.md#백그라운드-진입--복귀-os별 this is best-effort: when the platform has no usable tray
 //! (minimal WM, missing AppIndicator host, etc.), [`create_tray_icon`] returns
 //! `None` and the caller falls back to taskbar/dock minimize. Creation never
 //! aborts the app.

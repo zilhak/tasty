@@ -43,7 +43,7 @@
 //!   되읽을 방법은 없다. 그 삭제가 데이터 루트 단위라는 점이 곧 전제다 — **한 데이터
 //!   루트에 호스트 하나.** 둘이 같은 루트로 뜨면 나중 것이 먼저 것의 살아 있는 로그를
 //!   지운다. 단 포트 파일을 데이터 루트 **밖**으로 옮긴 호스트는 지우지 않는다 — 그
-//!   판정은 호스트 쪽 `TcpIpcServer::notify_dir_to_clear` 에 있다(ADR-0416). 메타 파일도
+//!   판정은 호스트 쪽 `TcpIpcServer::notify_dir_to_clear` 에 있다(docs/dev-guide/external-interaction.md#보존-범위유실인스턴스-정체성--한-자리). 메타 파일도
 //!   같은 디렉토리라 함께 지워지고, 새 세대의 `retention_start` 는 0 부터 다시 센다.
 //! - **크기** — 축은 **바이트 하나**다(`NOTIFY_LOG_CAP_BYTES`). 시간 상한도, 파일 수
 //!   상한도 없다. 닫힌 surface 의 파일은 그 세대가 끝날 때까지 남는다(회수는 다음 부팅
@@ -52,8 +52,8 @@
 //!
 //! 버리는 쪽은 **숨기지 않는다.** 비울 때마다 버린 바이트 수를 로그(`tracing`)로
 //! 남긴다 — 이 파일 자신에는 안 쓴다. 읽는 쪽 계약이 "한 줄 = 완료 통지" 라 메타 줄을
-//! 끼우면 그것이 완료로 읽히기 때문이다(ADR-0330 이 그 대안을 기각한 자리). 근거·측정·
-//! 재검토 조건은 `docs/adr/0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md`.
+//! 끼우면 그것이 완료로 읽히기 때문이다(docs/dev-guide/external-interaction.md#child-완료-알림--completion-log 이 그 대안을 기각한 자리). 근거·측정·
+//! 재검토 조건은 `docs/dev-guide/external-interaction.md#보존-범위유실인스턴스-정체성--한-자리`.
 //!
 //! # 독자 복구 — 줄 밖 메타 `<caller_surface>.log.meta`
 //!
@@ -71,7 +71,7 @@
 //! (`truncated`), `retention_start - next_offset` 바이트를 못 읽고 잃었다(`skipped`). 그때는
 //! 파일 처음부터 읽는다. 어휘는 `events.fetch` · `surface.read_since_mark` 의 것을 빌렸고
 //! 저장소는 공유하지 않는다. 계약 전문·잠금 규약·대안은
-//! `docs/adr/0415-a-resuming-completion-log-reader-learns-what-it-lost-from-a-sidecar.md`.
+//! `docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta`.
 //!
 //! 이 수가 **정확**하려면 비우기가 append 와 겹치면 안 된다. 그래서 메타 파일에 advisory
 //! 잠금을 건다 — append 는 공유, 비우기(크기 재기 · 비우기 · 누계 갱신)는 배타. 배타는
@@ -225,7 +225,7 @@ fn append_line_to(path: &Path, line: &str, cap: u64) -> io::Result<()> {
 /// 메타 파일을 연다(없으면 빈 파일로 만든다). 못 열면 잠금·누계 없이 진행한다 — 완료
 /// 통지를 메타 때문에 잃지도, **기다리지도** 않는 것이 우선이다. 같은 이유로 비우기는
 /// 배타 잠금을 유한 시간만 시도한다([`MetaLock::exclusive`]). 그 대가는 이번 비우기가
-/// 누계에 안 잡히는 것이고, 재개하는 reader 는 그것을 "계약 밖 비우기" 로 알아챈다(ADR-0415).
+/// 누계에 안 잡히는 것이고, 재개하는 reader 는 그것을 "계약 밖 비우기" 로 알아챈다(docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta).
 fn open_meta(meta_path: &Path) -> Option<std::fs::File> {
     match std::fs::OpenOptions::new()
         .create(true)
@@ -247,7 +247,7 @@ fn open_meta(meta_path: &Path) -> Option<std::fs::File> {
 }
 
 /// 비우기가 배타 잠금을 기다리는 상한. 이 값은 **파생되지 않는다** — 근거로 고른 값이다
-/// (ADR-0415 "잠금 대기 상한").
+/// (docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta).
 ///
 /// - 아래로 누르는 쪽: append 가 공유 잠금을 쥐는 구간은 한 줄 write 한 번이라 µs 단위다
 ///   (Gate 4 리뷰 실측: cap 아래 append 전체가 11.6 µs). writer 끼리의 경합으로는 이 상한에 닿지 않아야 한다 —
@@ -287,7 +287,7 @@ impl<'a> MetaLock<'a> {
     /// 계속 잡혀 있고, 블로킹 `lock()` 이면 cap 에 닿은 writer — 곧 plugin 의 완료 통지
     /// 경로 — 가 그 reader 가 풀 때까지 선다. 통지 지연의 상한을 reader 가 정하게 두지
     /// 않는다. 못 잡으면 호출자가 잠금 없이 비우고 누계를 올리지 않는다(재개 reader 에게는
-    /// 계약의 "모른다" 갈래다 — ADR-0415).
+    /// 계약의 "모른다" 갈래다 — docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta).
     fn exclusive(file: &'a std::fs::File, meta_path: &Path) -> Option<Self> {
         let deadline = std::time::Instant::now() + EXCLUSIVE_LOCK_BUDGET;
         loop {
@@ -327,7 +327,7 @@ impl Drop for MetaLock<'_> {
 
 /// 배타 잠금 아래에서 비우고, 버린 양을 누계에 더하고, 로그에 남긴다.
 ///
-/// 잠금을 못 잡아도 비우기는 한다 — 크기 축(ADR-0344)이 먼저다. 그때는 누계를 **올리지
+/// 잠금을 못 잡아도 비우기는 한다 — 크기 축(docs/dev-guide/external-interaction.md#보존-범위유실인스턴스-정체성--한-자리)이 먼저다. 그때는 누계를 **올리지
 /// 않는다**: 잠금 없이 잰 크기는 버린 양과 다를 수 있고, 틀린 수보다 "모른다" 가 낫다.
 /// 재개 reader 는 그 비우기를 계약의 "모른다" 갈래로 본다. 그 사실이 warn 로 남는다.
 fn truncate_and_account(path: &Path, cap: u64, meta: Option<&std::fs::File>, meta_path: &Path) {
@@ -341,7 +341,7 @@ fn truncate_and_account(path: &Path, cap: u64, meta: Option<&std::fs::File>, met
     };
     // 버린 양을 **로그에** 남긴다 — 이 파일 자신에는 안 쓴다. 읽는 쪽 계약은
     // "한 줄 = 완료 통지" 이므로 여기에 메타 줄을 끼우면 그 줄이 완료로 읽힌다
-    // (ADR-0330 이 그 대안을 기각한 이유). 재개하는 reader 에게는 옆 메타 파일의
+    // (docs/dev-guide/external-interaction.md#child-완료-알림--completion-log 이 그 대안을 기각한 이유). 재개하는 reader 에게는 옆 메타 파일의
     // 누계가 같은 사실을 값으로 준다.
     match retention_start {
         Some(start) => tracing::warn!(
@@ -602,7 +602,7 @@ mod tests {
         );
     }
 
-    // ── 독자 복구 계약(ADR-0415) ───────────────────────────────────────────────
+    // ── 독자 복구 계약(docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta) ───────────────────────────────────────────────
     //
     // 아래 `resume` 은 ADR 이 적은 reader 절차의 **참조 구현**이다. 제품 코드에는 reader
     // 가 없고(소비자는 `tail -F` 와 셸이다) 계약만 있으므로, 그 계약이 writer 와 맞물리는지를
@@ -761,7 +761,7 @@ mod tests {
         let small = format_retention_start(7);
         let big = format_retention_start(u64::MAX);
         assert_eq!(small.len(), big.len());
-        // ADR-0415 이 이 폭(키 16 + 값 20 + 개행 1)을 바이트 수로 적는다 — 그 사본의 판정기.
+        // docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta 이 이 폭(키 16 + 값 20 + 개행 1)을 바이트 수로 적는다 — 그 사본의 판정기.
         assert_eq!(small.len(), 37);
         assert!(small.starts_with("retention_start=7 "), "{small:?}");
         assert!(small.ends_with('\n'));
@@ -822,8 +822,8 @@ mod tests {
         assert_eq!(after.lines, ["after-cap"]);
     }
 
-    // 세 값의 사본 자리: 200 ms 는 ADR-0415 · dev-guide(external-interaction 의 완료 알림 절) · CHANGELOG,
-    // 5 ms 는 ADR-0415, 40 번은 위 `EXCLUSIVE_LOCK_RETRY` 의 doc 이다. 이 시험이 그 사본들의
+    // 세 값의 사본 자리: 200 ms 는 docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta · dev-guide(external-interaction 의 완료 알림 절) · CHANGELOG,
+    // 5 ms 는 docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta, 40 번은 위 `EXCLUSIVE_LOCK_RETRY` 의 doc 이다. 이 시험이 그 사본들의
     // 판정기다 — 값을 바꾸면 여기가 빨개지고, 그때 그 자리들을 같이 고친다.
     #[test]
     fn the_exclusive_lock_budget_matches_the_documented_values() {
@@ -885,7 +885,7 @@ mod tests {
                 }
                 // 재개 사이에 잠금 밖에서 쉰다. 쉬지 않고 다시 잡으면 공유 잠금이 사실상 계속
                 // 잡혀 있어(읽기가 느린 러너일수록) 비우는 writer 가 배타 잠금 상한을 넘기고,
-                // 그 비우기는 계약대로 "모른다" 가 된다 — ADR-0415 "잃은 것" 이 reader 에게
+                // 그 비우기는 계약대로 "모른다" 가 된다 — docs/dev-guide/external-interaction.md#재개하는-reader--caller_surfacelogmeta 의 유실 판단 기준이 reader에게
                 // 공유 구간을 짧게 하라고 요구하는 그 경우다. 이 시험이 재는 것은 writer 끼리의
                 // 경합이지 reader 의 잠금 점유가 아니다.
                 std::thread::sleep(EXCLUSIVE_LOCK_RETRY);

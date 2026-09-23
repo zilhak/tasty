@@ -65,7 +65,7 @@ tasty screenshot --path /abs/win.png --window 2
 어느 캡처로 보이느냐를 정한다").
 
 경계는 **창의 종류가 아니라 두 가지 다른 축**에 있다 (근거·기각 대안·재검토 조건:
-[ADR-0118](../adr/0118-screenshot-reads-any-window-explicit-id-only.md)).
+[ADR-0618](../adr/0618-explicit-capture-and-fullscreen-stage.md)).
 
 1. **명시 지정만 넓어진다.** `--window` 를 생략했을 때의 자동 선택은 종전대로 **main 창이
    정확히 하나일 때뿐**이고, 모달로 폴백하지도 포커스를 보지도 않는다(불가침 원칙 3).
@@ -102,7 +102,7 @@ readback 이 그 자리에서 읽는 것은 overlay 아래에 host 가 그려 �
 "WebView region" + **URL 문자열**이 담긴다.
 
 그래서 markdown 을 찍으면 **HTML 소스가 통째로 보인다** — markdown plugin 은 sanitize 한
-HTML 문서 전체를 URL 자리에 싣기 때문이고([ADR-0065](../adr/0065-markdown-webview-render-channel.md)),
+HTML 문서 전체를 URL 자리에 싣기 때문이고([ADR-0629](../adr/0629-webview-host-integration.md)),
 그것은 webview 가 렌더에 실패한 것도 소프트웨어 GL 탓도 아니다. **backdrop 이 제 일을 한
 결과다.** (이 절은 한때 그 관측을 "Xvfb 에서 webview 가 소스로 나올 수 있다" 로 적었는데,
 관측은 맞고 원인이 틀렸다 — 처방까지 바뀌므로 갈아둔다.)

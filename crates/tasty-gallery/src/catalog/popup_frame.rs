@@ -144,7 +144,7 @@ impl ContentInset {
 /// `paint` 는 콘텐츠 영역에 묶인 child Ui 를 받는다.
 ///
 /// `shadow` 는 셸 **아래** 깔리는 lift 그림자다. 호출부가 넘기는 이유는 SCOPE RULE
-/// (ADR-0254)의 갈래가 popup 마다 다르기 때문이다 — 본체 `PopupManager` 도 같은 자리를
+/// (docs/design/systems/theme.md#떠-있는-표면의-그림자)의 갈래가 popup 마다 다르기 때문이다 — 본체 `PopupManager` 도 같은 자리를
 /// popup id 로 갈라(`adapters/ui/popup/draw.rs::popup_shadow`) 알림 패널에는 그림자를
 /// 안 그린다. 여기서 modal 을 못 박으면 그 세 번째 갈래를 전시하는 specimen 이 본체와
 /// 어긋난다.

@@ -12,17 +12,17 @@
 # 선언된 **파일 전체**(cargo 통합 타깃 포함)다. 뒤쪽이 빠져 있던 동안 이 게이트는 한 줄도
 # 안 나가는 파일을 출하 줄로 세었고, 그 값으로 임계를 판정했다 — 아무것도 안 깨지고
 # **값만 틀렸다**. 근거·모수:
-# docs/adr/0345-the-file-sloc-gate-erases-whole-test-only-files.md
+# docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정
 #
 # **이것은 신규 파일 필터가 아니라 성장 래칫이다.** 실측(2026-07-06 → 09-05): 새로 생긴
 # .rs 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던
 # 파일이 자란 것이었다. 재는 사건은 "큰 파일이 생겼다" 가 아니라 "파일이 자라 임계를
-# 넘었다" 다. 임계 1000 의 유도와 그 근거: docs/adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md
+# 넘었다" 다. 임계 1000 의 유도와 그 근거: docs/dev-guide/complexity-gate.md#임계값과-예외-예산을-바꿀-때
 #
 # 예외 등록: 정당하게 큰 파일은 .complexity-file-allowlist 에 레포 상대경로(슬래시)를 추가.
 # skip(게이트 미적용): 테스트 모듈·생성/전사 코드는 아래 skip() 에서 제외.
 #
-# 정책 근거: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
+# 정책 근거: docs/dev-guide/complexity-gate.md
 # 선례: scripts/check-intent-discipline.sh (소스 파싱 게이트 + 위치 단위 예외)
 
 set -euo pipefail

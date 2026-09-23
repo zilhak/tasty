@@ -2,7 +2,7 @@
 //! footer popup (egui-mesh popup 전사, Overlays).
 //!
 //! 본체 렌더 경로: plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs` 가
-//! **egui-mesh popup**(ADR-0028 / B4)으로 popup 콘텐츠를 자기 프로세스에서 egui 로
+//! **egui-mesh popup**(docs/dev-guide/egui-mesh-channel.md#데이터-흐름)으로 popup 콘텐츠를 자기 프로세스에서 egui 로
 //! 그린다 — rail(세로 타입 목록)은 폐기됐다. header(아이콘+타이틀+snapshot 뱃지+
 //! close) → type-bar(1개면 아이콘+뱃지, 2개 이상이면 가로 세그먼트 스위치) →
 //! body(well: border+radius+bg-app 스크롤) → footer(mime+Close) 4단 수직 스택.
@@ -575,7 +575,7 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
         egui::StrokeKind::Inside,
     );
 
-    // image body 글리프는 아이콘 가족 — CenterState 와 같은 28(ADR-0290 · 인벤토리는
+    // image body 글리프는 아이콘 가족 — CenterState 와 같은 28(docs/design/systems/theme.md#ui-코드의-색상-접근 · 인벤토리는
     // docs/plugins/clipboard-viewer/screens/clipboard-viewer.md).
     let gap = theme.spacing_sm.value();
     let icon_h = CENTER_ICON_SIZE;

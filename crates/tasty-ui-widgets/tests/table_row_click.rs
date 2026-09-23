@@ -6,7 +6,7 @@
 //! 나중에 등록되므로 hit-test 동률에서 앞선다 → `tr.response()` 가 클릭을 못 받고
 //! `clicked_row` 가 `None` 으로 떨어진다(글자 위 hover 커서도 I-beam 이 됐다).
 //!
-//! 근거·트레이드오프: `docs/adr/0069-table-row-click-over-cell-text-selection.md`.
+//! 근거·트레이드오프: `docs/architecture/ui-widgets-crate.md#행-선택-표의-클릭과-복사`.
 
 use std::cell::RefCell;
 

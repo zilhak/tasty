@@ -1,7 +1,7 @@
 //! `tasty tool passkey ...` 실행 — Passkey(자격증명) CRUD (로컬 파일, IPC 미경유).
 //!
 //! `~/.tasty/passkeys.toml`(0600) 를 직접 읽고 쓴다. 프로필이 이름으로 참조한다.
-//! **값 비노출 정책(ADR-0016)**: list/show 는 name + kind 만 출력하고 경로/내용을
+//! **값 비노출 정책(docs/design/systems/memory.md#passkey-저장과-열람)**: list/show 는 name + kind 만 출력하고 경로/내용을
 //! 절대 보이지 않는다(실제 값은 GUI Reveal 로만 확인). add 는 쓰기라 허용 — inline 은
 //! `~/.tasty/passkeys/<name>` 0600 파일로 materialize 된다.
 //!

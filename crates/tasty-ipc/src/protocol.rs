@@ -19,7 +19,7 @@ pub const ERR_REQUEST_LINE_TOO_LONG: i32 = -32060;
 ///
 /// 이 코드가 오면 요청은 **이미 시작됐다.** 큐에서 기다리다 만료된 요청은 실행되지 않고
 /// [`ERR_EXPIRED_BEFORE_RUN`] 으로 답한다. 시작된 요청을 끊는 수단은 없다 — 만료는 취소가
-/// 아니다(ADR-0411).
+/// 아니다(docs/architecture/ipc-server.md#기한).
 ///
 /// 이 구분이 코드 하나를 따로 쓸 만한 이유: 호출자가 다음에 할 일이 그 값에 달렸다.
 /// 부수효과가 남는 메서드(`MethodEffect::Mutate`)를 그냥 재전송하면 **두 번째 효과**가
@@ -82,7 +82,7 @@ pub const ERR_COMMAND_QUEUE_FULL: i32 = -32065;
 ///
 /// 이 한도는 **첫 줄에만** 걸린다. 한 번이라도 요청을 보낸 연결은 요청 사이에 얼마나
 /// 쉬어도 닫히지 않는다(오래 붙어 있는 client 의 호환). 이 답은 최선 노력이다 — 쓰기에도
-/// 시간 상한이 있어 client 는 이 줄 대신 EOF 를 볼 수 있다. 근거는 ADR-0392.
+/// 시간 상한이 있어 client 는 이 줄 대신 EOF 를 볼 수 있다. 근거는 docs/architecture/ipc-server.md#첫-요청과-응답-쓰기.
 pub const ERR_FIRST_LINE_IDLE: i32 = -32066;
 
 /// 호출자가 실은 응답 대기 상한이 **요청이 큐에서 기다리는 동안** 지났다. **요청이 실행되지
@@ -91,7 +91,7 @@ pub const ERR_FIRST_LINE_IDLE: i32 = -32066;
 ///
 /// 두 코드는 **같은 상한의 만료**에서 갈린다 — 가르는 것은 만료 순간 요청이 시작됐는가다.
 /// 시작 전이면 이 코드, 시작 뒤면 `-32061` 이다. 그 판정은 명령마다 한 번, 비교-교환 하나로
-/// 한다(`crate::server::CommandLifecycle`). 연결은 닫히지 않는다. 근거는 ADR-0411.
+/// 한다(`crate::server::CommandLifecycle`). 연결은 닫히지 않는다. 근거는 docs/architecture/ipc-server.md#기한.
 pub const ERR_EXPIRED_BEFORE_RUN: i32 = -32067;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,14 +138,14 @@ pub struct JsonRpcRequest {
     ///
     /// **봉투 검사는 목적지와 무관하다.** 길이 밖 키(빈 문자열, 상한 초과)는 요청이 App 층 ·
     /// plugin namespace forward · engine 라우터 중 어디로 가든 `-32602` 다. 검사 자리가 그
-    /// 셋보다 앞인 진입 게이트(`check_request`)이기 때문이다 — ADR-0420.
+    /// 셋보다 앞인 진입 게이트(`check_request`)이기 때문이다 — docs/dev-guide/api-conventions.md#변경-명령의-재시도는-키로-구별한다.
     ///
     /// ★ **`Mutate` 는 상한이지 보장이 아니다.** 호스트의 보존소는 호스트가 아는 이름이
     /// 끝나는 경로마다 배선돼 있다 — engine 라우터, App 층(창 · plugin 설치 · 스크린샷 ·
-    /// 원격 attach 처럼 `App` 이 끝내는 메서드, ADR-0421), 그리고 그 뒤의 GUI debug step 과
-    /// plugin namespace 로 forward 되는 **표의** 이름(`image.open` 등, ADR-0566). 계약
+    /// 원격 attach 처럼 `App` 이 끝내는 메서드, docs/dev-guide/api-conventions.md#진행-중-요청과-보장-한계), 그리고 그 뒤의 GUI debug step 과
+    /// plugin namespace 로 forward 되는 **표의** 이름(`image.open` 등, docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖). 계약
     /// **밖**은 표가 모르는 plugin 고유 이름뿐이다 — 키를 실어도 호스트가 보존소를 안
-    /// 거친다(ADR-0361).
+    /// 거친다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖).
     ///
     /// 그 차이는 **보내기 전에** 안다 — 메서드마다 이름 표가 선언한다
     /// ([`crate::method_meta::key_contract`]: 보존소가 받는다 · 원래 안전하다 · 계약 밖).
@@ -154,7 +154,7 @@ pub struct JsonRpcRequest {
     /// 없는 성공은 **이번에 실행한 것**이고, [`ERR_IDEMPOTENCY_KEY_CONFLICT`](같은 키·다른
     /// 요청 — 실행을 막았다)와 [`ERR_IDEMPOTENT_RESULT_DISCARDED`](실행은 됐고 답을 버림)는
     /// 계약이 개입한 답이다. 보존 범위 밖으로 밀려난 키는 처음 보는 키와 구별되지 않아 다시
-    /// 실행되고 표지 없이 성공을 낸다 — 그 경계가 아래 선언이다(ADR-0423).
+    /// 실행되고 표지 없이 성공을 낸다 — 그 경계가 아래 선언이다(docs/dev-guide/api-conventions.md#어느-경로에-걸리나--호스트가-아는-이름은-전부-안-plugin-고유-이름만-밖).
     ///
     /// 보장의 범위는 호스트가 `system.info` 의 `idempotency` 로 선언한다(보존 시간 ·
     /// 항목 수 · 재시작 생존 여부). 그 범위를 벗어난 키는 처음 보는 키와 구별되지
@@ -243,9 +243,8 @@ impl JsonRpcResponse {
     /// | 이 바이너리에 안 들어 있다 | `-32017` | 조합(헤드리스/release)을 본다 |
     /// | 이름이 틀렸다 | `-32601` | 이름을 고친다 |
     ///
-    /// 앞의 둘은 [ADR-0163](../../../docs/adr/0163-a-registered-name-answers-who-not-whether.md)
-    /// 과 [ADR-0154](../../../docs/adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
-    /// 가 결정했고, 셋째가 이 함수의 마지막 갈래다.
+    /// [IPC 오류 구분](../../../docs/adr/0604-ipc-discovery-and-errors.md)에 따라
+    /// 셋째 제한을 이 함수의 마지막 갈래에서 판정한다.
     ///
     /// ## 셋째 갈래의 술어가 왜 [`is_registered_name`] 인가
     ///

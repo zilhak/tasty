@@ -53,7 +53,7 @@ jobs:
       # 배포 전 판정 — 산출된 HTML 의 내부 링크와 `#앵커` 를 전수로 푼다. 옛 러스트
       # 생성기의 `--strict` 를 잇는 자리이고, `site/content/` 안의 앵커를 보는 유일한
       # 판사다: crates/tasty-doc-guards 의 앵커 가드는 그 트리를 여기에 넘긴다
-      # (docs/adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md).
+      # (docs/documentation-model.md#링크와-표).
       # 이 스텝을 지우면 그 트리의 앵커에는 판사가 하나도 안 남는다.
       - run: npm run check-links
 

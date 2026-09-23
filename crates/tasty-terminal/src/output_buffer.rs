@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 ///
 /// The value lives here only. A copy in the IPC layer would be a second place
 /// to change and the two would drift silently — the event ring names the same
-/// hazard (`docs/adr/0322-the-event-ring-keeps-positions-and-says-what-it-dropped.md`).
+/// hazard (`docs/reference/event-catalog.md#지나간-사건--위치로-읽는다`).
 pub const OUTPUT_RETENTION_MAX_BYTES: usize = 1_048_576;
 
 /// Disambiguates two streams created inside the same nanosecond.
@@ -132,14 +132,14 @@ pub enum OutputReadError {
 /// window. A scanner sharing `read_mark` was measured to re-read up to the
 /// whole buffer on every poll and to jump silently whenever an agent called
 /// `surface.set_mark`
-/// (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
+/// (`docs/features/terminal-output/index.md#출력-스캐너-전용-커서`).
 ///
 /// **Positions are absolute and never go backwards.** They count raw bytes
 /// this terminal has produced since it started, so trimming the front moves
 /// `base` and leaves every mark where it was. A mark that trimming has passed
 /// is still a number the buffer can compare against, which is how a read can
 /// say how much it lost instead of quietly starting over
-/// (`docs/adr/0341-a-terminal-output-read-answers-from-a-position-the-consumer-holds.md`).
+/// (`docs/features/terminal-output/index.md#보존-밖으로-밀려난-것은-값으로-나온다`).
 pub(crate) struct OutputBuffer {
     buffer: Vec<u8>,
     /// Absolute position of `buffer[0]`.
@@ -183,7 +183,7 @@ impl OutputBuffer {
     /// terminal. Positions keep counting and the retained bytes stay, so a
     /// reader that never sends the token sees nothing change; one that does
     /// gets a stream mismatch instead of bytes across the gap
-    /// (`docs/adr/0400-attach-loss-is-resynced-per-connection-with-the-strongest-contract-it-carries.md`).
+    /// (`docs/dev-guide/attach-behavior.md#밀어내기-실패와-누적-손실`).
     pub fn renew_stream(&mut self) {
         self.stream = mint_stream_id();
     }

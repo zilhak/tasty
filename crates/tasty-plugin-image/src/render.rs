@@ -1,5 +1,5 @@
 //! egui closure for the image surface — control bar / paint bar chrome + canvas, drawn
-//! in the plugin process and tessellated to a mesh the host composites (ADR-0028 / B2).
+//! in the plugin process and tessellated to a mesh the host composites (docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
 //!
 //! Structure transcribes the design (`gallery/plugins.jsx` Image viewer / the
 //! `image_viewer` gallery specimen): a control bar (viewer = ◀ ▶ ↻ ✏ + · filename ·

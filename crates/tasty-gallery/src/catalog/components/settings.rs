@@ -15,7 +15,7 @@
 //! 정적 specimen 은 L2 를 탐색할 수 없으므로, content 영역은 선택된 Theme 섹션
 //! (스와치 그리드)을 1차로 보이고, 그 아래 구분선 뒤에 Appearance 의 나머지
 //! 컨트롤 어휘(General 의 switch 행 + Colors 의 checkbox 행)를 **카탈로그**로 함께
-//! 노출한다 — 본체 설정창이 쓰는 컨트롤을 cut 하지 않는다(ADR-0510 갤러리 완전성).
+//! 노출한다 — 본체 설정창이 쓰는 컨트롤을 cut 하지 않는다(docs/dev-guide/gallery-first.md#순서-필수 갤러리 완전성).
 //! General(L1) › General 의 **언어 콤보**(`language_select`)도 같은 카탈로그에 있다 —
 //! 내장 3 + 사용자 언어팩 N, `[meta] name` 이 없는 팩의 코드 폴백, 설정값이 목록에
 //! 없을 때의 `<code> (not found)` 행(값을 덮어쓰지 않는다)까지 세 케이스를 한 번에 보인다.
@@ -142,7 +142,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // Settings 는 별도 창(`SettingsView`)이라 살아 있는 콘텐츠 위에 뜨지도,
         // 터미널 뷰포트를 점유하지도 않는다 — 본체 `src/view/settings/` 도 그림자를
-        // 그리지 않는다. SCOPE RULE(ADR-0254)의 세 번째 갈래.
+        // 그리지 않는다. 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 세 번째 갈래.
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);

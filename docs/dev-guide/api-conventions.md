@@ -61,7 +61,7 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 [`docs/identity.md`](../identity.md) 원칙 2 는 에이전트 기능이 **IPC 와 CLI 양면**으로
 동작해야 한다고 못 박는다. 이 문서는 그 대조를 **어떻게 판정하고 어떻게 세는지**를 적는다.
 결정의 근거·대안·재검토 조건은
-[ADR-0160](../adr/0160-every-ipc-method-is-cli-reachable-or-carries-a-reason.md).
+[ADR-0643](../adr/0643-cli-errors-and-diagnostic-logs.md).
 
 **어느 메서드가 CLI 없이 남아 있고 그 사유가 무엇인지의 정본은
 이 절 아래의 두 표**다([release 절반](#release-ipc-에-있는데-cli-가-없는-메서드) · [debug 절반](#debug-표에-있는데-cli-가-없는-메서드)).
@@ -81,7 +81,7 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 **이 판별식은 "전형적 호출자가 plugin 인가" 와 다르다.** 뒤엣것은 *관행*이고 앞엣것은
 *불가능성*이다. 관행으로 가르면 `surface_id` 를 인자로 받아 셸도 부를 수 있는 메서드가
 "plugin 이 자기 surface 를 위해 부른다" 는 이유로 진입점 없이 남는다 — 실제로 그렇게
-남아 있던 것이 여섯이었다(ADR-0160 의 "판별식이 이전 기준을 대체한다").
+남아 있던 것이 여섯이었다([ADR-0643](../adr/0643-cli-errors-and-diagnostic-logs.md)의 CLI 진입점 기준).
 
 #### 어떻게 세는가
 
@@ -107,13 +107,13 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 #### 선행 작업이 필요해 미룬 것
 
 - **`markdown.navigate` 의 CLI 진입점** — namespace 를 번들 plugin 이 점유해 외부 호출이
-  plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)).
+  plugin 으로 forward 된다([ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)).
   host 잎을 만들면 plugin 설치 여부에 따라 흔들리므로, 진입점은 plugin 의 매니페스트
   `ipc_method` 기여로 가야 한다 — plugin 크레이트 수정 + 매니페스트/Cargo 버전 bump.
 
 #### 관련 문서
 
-- [ADR-0160](../adr/0160-every-ipc-method-is-cli-reachable-or-carries-a-reason.md) — 이 규칙의 결정
+- [ADR-0643](../adr/0643-cli-errors-and-diagnostic-logs.md) — 이 규칙의 결정
 - [headless-ipc-surface](headless-ipc-surface.md) — 같은 표를 조합(gui/headless) 축으로 가른 대조
 - [debug-ipc](debug-ipc.md) — debug 격리 정책과 CLI 의 debug 트리
 
@@ -128,12 +128,12 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 | 이유 | 메서드 | 왜 CLI 가 없나 |
 |---|---|---|
 | plugin → host 서비스 †plugin-only | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
-| plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다. 외부 arm 은 있지만 CLI·agent 호출은 popup 을 안 열고 `-32016` 을 받는다(아래 †plugin-only 절 끝, [ADR-0504](../adr/0504-the-file-picker-trigger-answers-only-a-plugin-caller.md)) |
-| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)) |
-| plugin → host 서비스 | `markdown_mirror.content_request` | markdown plugin 이 attach mirror 문서의 원격 원문을 요청한다. `git_viewer.query` 와 같은 비동기 accept 라 `request_id` 만 회신하고 원문은 그 plugin 에 unicast push 되므로 셸이 결과를 받을 수 없다([ADR-0255](../adr/0255-markdown-attach-mirror-forwards-content-not-pixels.md)) |
-| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI 동사를 열면 사용자가 한 줄로 스캐너의 바이트를 가져가 에러 감시에 구멍을 낼 수 있고, 그 구멍은 조용하다 — 에이전트가 출력을 읽는 표면은 커서를 안 움직이는 `tasty read since-mark` 쪽이다([ADR-0307](../adr/0307-the-output-scanner-reads-its-own-cursor.md)) |
+| plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다. 외부 arm 은 있지만 CLI·agent 호출은 popup 을 안 열고 `-32016` 을 받는다(아래 †plugin-only 절 끝, [ADR-0631](../adr/0631-file-handler-routing.md)) |
+| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)) |
+| plugin → host 서비스 | `markdown_mirror.content_request` | markdown plugin 이 attach mirror 문서의 원격 원문을 요청한다. `git_viewer.query` 와 같은 비동기 accept 라 `request_id` 만 회신하고 원문은 그 plugin 에 unicast push 되므로 셸이 결과를 받을 수 없다([ADR-0622](../adr/0622-remote-mirror-content-and-queries.md)) |
+| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI 동사를 열면 사용자가 한 줄로 스캐너의 바이트를 가져가 에러 감시에 구멍을 낼 수 있고, 그 구멍은 조용하다 — 에이전트가 출력을 읽는 표면은 커서를 안 움직이는 `tasty read since-mark` 쪽이다([ADR-0613](../adr/0613-terminal-io-and-process-lifetime.md)) |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
-| plugin → host 서비스 †plugin-only | `webview.open_external` | plugin 이 **자기** webview surface 안에서 클릭된 외부 링크를 host 의 OS 열기 자리로 넘긴다. 대상이 caller plugin 소유 surface 여야 하고, 사용자 브라우저를 여는 것은 에이전트가 자기 작업에 쓰는 능력이 아니다([ADR-0527](../adr/0527-a-plugin-opens-external-links-through-the-host.md)) |
+| plugin → host 서비스 †plugin-only | `webview.open_external` | plugin 이 **자기** webview surface 안에서 클릭된 외부 링크를 host 의 OS 열기 자리로 넘긴다. 대상이 caller plugin 소유 surface 여야 하고, 사용자 브라우저를 여는 것은 에이전트가 자기 작업에 쓰는 능력이 아니다([ADR-0630](../adr/0630-bundled-plugin-data.md)) |
 | plugin → host 서비스 †plugin-only | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.profile.add` · `remote.profile.get` · `remote.profile.list` · `remote.profile.list_local` · `remote.profile.detect` · `remote.profile.import` · `remote.profile.remove` | `tasty tool remote-profile …` 이 로컬 프로필 파일을 직접 다룬다(IPC 없음). 인스턴스가 떠 있지 않아도 되어야 하는 명령이라 그쪽이 옳다 |
@@ -170,7 +170,7 @@ arm(gui 창 라우터)이 있어 `plugin_only` 표식을 달지 않는다. 그�
 
 고른 경로는 호출한 plugin 에게만 push 되므로 CLI·agent 호출에는 받을 곳이 없고, popup 은 사용자
 입력 포커스를 가져간다(원칙 2.1 ① · 2.3). 코드가 같은 것은 뜻이 같아서다 — 부를 수 있는 주체가
-다르다. 근거 [ADR-0504](../adr/0504-the-file-picker-trigger-answers-only-a-plugin-caller.md).
+다르다. 근거 [ADR-0631](../adr/0631-file-handler-routing.md).
 
 ### 등재된 이름인데 이 바이너리에 arm 이 없을 때
 
@@ -289,7 +289,7 @@ debug 표 기준 총 3개.
 
 즉 **생성된 id(surface/tab/pane)를 담지 않는다.** 원격 실행은 비동기라 응답 시점에 아직 아무것도 만들어지지 않았기 때문이다. 결과는 나중에 `StructuralDelta` 역반영으로 mirror 트리에 반영된다.
 
-따라서 **구조 op 의 응답에서 생성된 id 를 동기로 꺼내 쓰는 호출자를 새로 만들지 않는다.** 그런 호출자는 mirror 워크스페이스에서 조용히 깨지고(응답에 필드가 없다), 게다가 forward 큐는 IPC 응답과 무관하게 드레인되므로 **로컬은 실페인데 원격에는 리소스가 남는** 고아를 만든다. 그 id 가 반드시 필요한 method 는 mirror 워크스페이스를 대상으로 **거부**해야 한다 — 실제 선례가 `terminal.spawn` 이며, 그 결정과 배경은 [ADR-0086](../adr/0086-reject-terminal-spawn-into-mirror-workspace.md).
+따라서 **구조 op 의 응답에서 생성된 id 를 동기로 꺼내 쓰는 호출자를 새로 만들지 않는다.** 그런 호출자는 mirror 워크스페이스에서 조용히 깨지고(응답에 필드가 없다), 게다가 forward 큐는 IPC 응답과 무관하게 드레인되므로 **로컬은 실페인데 원격에는 리소스가 남는** 고아를 만든다. 그 id 가 반드시 필요한 method 는 mirror 워크스페이스를 대상으로 **거부**해야 한다 — 실제 선례가 `terminal.spawn` 이며, 그 결정과 배경은 [ADR-0621](../adr/0621-occupancy-and-attach-admission.md).
 
 ## 권한 표 등재 (라우터 ↔ METHOD_TABLE)
 
@@ -317,7 +317,7 @@ CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 
 ### auto_wait chain
 
 일부 plugin 명령은 1차 IPC 응답 직후 wait IPC 를 자동 chain 해 대상이 terminal state(`idle`/`needs_input`/`exited`)에 도달할 때까지 block 할 수 있다.
-child terminal 의 파생 상태 `stale`([ADR-0072](../adr/0072-child-state-hook-observation-fusion.md))은 **기본 terminal state 집합에 넣지 않는다** — 무출력 임계값 기반 판정은 휴리스틱이라 오탐 시 아직 일하는 자식을 종결 처리하게 된다.
+child terminal 의 파생 상태 `stale`([ADR-0641](../adr/0641-agent-state-and-completion.md))은 **기본 terminal state 집합에 넣지 않는다** — 무출력 임계값 기반 판정은 휴리스틱이라 오탐 시 아직 일하는 자식을 종결 처리하게 된다.
 다만 hook 유실로 영구 대기하는 것보다 조기 탈출이 나은 소비자는 `terminal_states` 에 직접 `"stale"` 을 추가해 선택할 수 있다.
 매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.
 
@@ -369,7 +369,7 @@ auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin �
   없어 구 서버는 새 인자를 조용히 버리고 성공으로 답한다. `surface.read_since_mark` 의 위치 인자가
   `ipc.output-cursor` 를 받은 것이 그 형태이고, 이름·판·인자 이름을 한 모듈(`tasty-ipc` 의
   `output_cursor`)에 둬 서버 파서·선언·CLI 가 같은 값을 쓴다
-  ([ADR-0365](../adr/0365-the-output-cursor-contract-is-negotiated-by-name-before-the-cli-sends-it.md)).
+  ([ADR-0634](../adr/0634-output-cursor-contract.md)).
 - **CLI 는 요청이 요구하는 이름을 보내기 전에 묻는다**(`tasty-cli` 의 `contract` 모듈). 요구
   여부는 명령이 아니라 요청에서 판정하고, 새 계약을 안 쓰는 요청은 묻지 않는다. 없으면 요청을
   내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability","capability":…,"required":…,"found":…,"sent":false,"message":…}}`
@@ -381,7 +381,7 @@ auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin �
   기능을 좁히는 것이 아니라 **구 peer 의 attach 를 통째로 막는 것**이다. 판은 프레임의
   *기존* 뜻이 바뀔 때만 움직이고, 더해지는 기능은 `ipc.stream.<기능>` 처럼 이름으로
   선언한다. 그 이름을 본 client 만 그 기능을 쓰고, 못 본 client 는 종전 동작을 받는다.
-  본보기와 결정 근거는 [ADR-0334](../adr/0334-a-dropped-stream-frame-is-told-to-the-clients-that-asked-for-it.md).
+  본보기와 결정 근거는 [ADR-0623](../adr/0623-attach-state-sync-and-forwarding.md).
 
 메서드 **이름**이 구 서버에 있는지는 별도 물음이고 표가 답한다 —
 `method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /

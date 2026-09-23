@@ -133,4 +133,4 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 - [popup.md](popup.md) — 내부 팝업 시스템
 - [banner.md](banner.md) — parent 상단 info+action 오버레이 (내용 적으면 Toast 권장)
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리
-- [ADR-0380](../../adr/0380-the-toast-card-geometry-and-color-have-one-derivation.md) — 카드 치수·색 도출이 하나인 이유, 발화 금지 정책에 판정기를 안 지은 이유
+- [ADR-0635](../../adr/0635-shared-design-and-theme.md) — 카드 치수와 색 계산을 공용 구현으로 모은 이유

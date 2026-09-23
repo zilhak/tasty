@@ -140,7 +140,7 @@ mod tests {
     fn write_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         // 유니크 tempdir 로 격리한다 — 고정 이름은 같은 머신의 다른 완주와 충돌해 확률적 red 가
-        // 난다(ADR-0129 형태 B 고정 경로). tempdir 의 Drop 이 정리하므로 수동 remove 는 불필요.
+        // 난다(docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 의 고정 경로 충돌). tempdir 의 Drop 이 정리하므로 수동 remove 는 불필요.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("prompt.txt");
         write(&path, "secret").unwrap();

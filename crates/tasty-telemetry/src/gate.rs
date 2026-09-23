@@ -16,7 +16,7 @@
 //! 모든 값은 **이 프로세스가 뜬 뒤의 누계**다. 내려가지 않고, 창 단위로 비워지지 않으며, 재시작하면
 //! 0 에서 다시 센다. 영속되는 `RateLimit.throttled_count`(`tasty-agent`)와 이 점이 다르다 — 그쪽은
 //! 버킷 하나의 수명(재설정 전까지) 동안 재시작을 넘어 쌓이고, 게이트 밖의 직접 `try_consume` 거절도
-//! 센다. 근거와 대안은 ADR-0548.
+//! 센다. 근거와 대안은 docs/architecture/ipc-server.md#진입-검사-거절-집계.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

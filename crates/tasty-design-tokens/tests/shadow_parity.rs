@@ -12,7 +12,7 @@
 //! (그 crate 는 vendor json 을 못 읽는다). 여기서 그 남은 축을 닫는다.
 //!
 //! 어느 표면이 어느 값을 쓰는가는 이 시험의 물음이 아니다 — 그것은 SCOPE RULE
-//! (`docs/adr/0254-floating-surface-shadow-scope-rule.md`)이고 소스에서 읽을 판정기가
+//! (`docs/design/systems/theme.md#떠-있는-표면의-그림자`)이고 소스에서 읽을 판정기가
 //! 없다(ADR Consequences).
 
 use tasty_design_tokens::DTCG_JSON;
@@ -23,7 +23,7 @@ use tasty_type_appearance::theme::{SHADOW_MODAL, SHADOW_POPOVER, ShadowToken};
 /// (alias 토큰은 가리키는 쪽이 검사되면 함께 지켜진다 — `resolve` 가 그 체인을 탄다).
 ///
 /// `Rust` 가 `None` 인 항목은 **의도적 미구현**이다. 값을 근사해 넣지 않는 것이 디자인
-/// 지시이고, 근거는 ADR-0254 — 사유를 함께 적어 둔다.
+/// 지시이고, 근거는 docs/design/systems/theme.md#떠-있는-표면의-그림자 — 사유를 함께 적어 둔다.
 const RAW_SHADOW_TOKENS: &[(&str, Option<ShadowToken>, &str)] = &[
     ("semantic.shadow-popover", Some(SHADOW_POPOVER), ""),
     ("semantic.shadow-modal", Some(SHADOW_MODAL), ""),
@@ -32,7 +32,7 @@ const RAW_SHADOW_TOKENS: &[(&str, Option<ShadowToken>, &str)] = &[
         None,
         "음수 spread(-8px) — egui `epaint::Shadow::spread` 가 u8 이라 담지 못한다. \
          근사하면 falloff 가 8px 리사이즈 엣지 밴드를 넘어 번지므로 미구현으로 둔다 \
-         (ADR-0254). 그리려면 egui 밖 렌더 경로가 먼저 필요하다",
+         (docs/design/systems/theme.md#떠-있는-표면의-그림자). 그리려면 egui 밖 렌더 경로가 먼저 필요하다",
     ),
 ];
 
@@ -119,7 +119,7 @@ fn shadow_constants_transcribe_the_design_values() {
 ///
 /// 명부를 안 늘린 채 새 raw 그림자가 들어오면 위 대조가 그것을 **안 보고** 초록이
 /// 된다. 세 번째 값이 끼어드는 자리가 바로 거기라, 들어오는 순간 여기서 멈춰야 한다 —
-/// 새 값은 SCOPE RULE 의 재검토 트리거다(ADR-0254).
+/// 새 값은 그림자 선택 규칙 의 재검토 트리거다(docs/design/systems/theme.md#떠-있는-표면의-그림자).
 #[test]
 fn raw_shadow_token_roster_is_complete() {
     let set = dtcg::parse(DTCG_JSON).expect("vendor json must parse");
@@ -168,7 +168,7 @@ fn alias_shadow_tokens_land_on_a_listed_raw_value() {
         assert!(
             listed.contains(&target),
             "{} 가 명부 밖 raw 값 `{target}` 을 가리킨다 — 그림자 값은 둘뿐이고, \
-             세 번째가 필요하면 SCOPE RULE(ADR-0254) 재검토가 먼저다",
+             세 번째가 필요하면 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 재검토가 먼저다",
             token.path()
         );
     }

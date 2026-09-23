@@ -124,7 +124,7 @@ impl CoreState {
     /// Name-based, so back-to-back runs of the *same* program (`vim` exits,
     /// `vim` starts again before the next poll) are not distinguished as a new
     /// incarnation — a known limitation shared with the mouse-capture blacklist
-    /// matching (ADR-0055), which is also name-based rather than pid-based.
+    /// matching (docs/features/terminal/index.md#마우스-캡처-안내와-앱별-설정), which is also name-based rather than pid-based.
     #[cfg(any(feature = "gui", test))]
     pub fn foreground_generation(&self, surface_id: u32) -> u64 {
         self.foreground_generation
@@ -184,9 +184,9 @@ impl CoreState {
     /// Occupied-surface busy transitions ready to forward over the attach
     /// stream, as `(holder client, surface, busy)` triples. Diffs against
     /// `last_forwarded_busy` so a client only gets a push when the value
-    /// actually flips — dropped/lagged frames self-heal on the next 1Hz tick
-    /// since this always re-diffs from the live `busy_surfaces` set, never from
-    /// a client ack. Entries for surfaces no longer hard-occupied are dropped
+    /// actually flips. The cache advances before transmission, so a failed push
+    /// is not retried while the holder and value remain unchanged. Entries for
+    /// surfaces no longer hard-occupied are dropped
     /// from the cache on every call, so a later re-attach (possibly by a
     /// different client) always gets a fresh initial push.
     ///
@@ -195,7 +195,7 @@ impl CoreState {
     /// release and another client's acquire both land inside one tick window,
     /// the entry survives the `retain`, and a value-only cache would leave the
     /// new holder without a baseline (same edge as `surface_cwd_forwards`,
-    /// ADR-0267 decision 4).
+    /// docs/dev-guide/attach-behavior.md#surface-cwd-전파).
     ///
     /// Only ever considers `busy_surfaces` (this instance's own local
     /// foreground-process polling) — the attach lock registry only ever holds

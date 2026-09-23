@@ -274,7 +274,7 @@ impl PluginManager {
     /// 채우면 헤드리스는 "이 이름이 plugin 소속인가" 를 **묻기 위해 먼저 plugin 을
     /// 띄워야** 한다. 실측(2026-09-05)에서 그 대가는 오타 한 번당 프로세스 9 개와
     /// 1.2 초였고, 그 프로세스는 데몬 수명 내내 남았다. 근거·수·대안은
-    /// [ADR-0173](../../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
+    /// [CLI + IPC namespace](../../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace).
     fn sync_ipc_namespaces_from_packages(&mut self) {
         let fresh = self.freshly_computed_namespaces();
         // **계산은 락 밖에서 끝났다.** 임계구역은 대입 한 줄뿐이라 그 안에서 도는
@@ -288,7 +288,7 @@ impl PluginManager {
     ///
     /// 낡은 것을 골라 지우고 새 것을 더하는 대신 통째로 다시 만드는 이유는 그것이
     /// 유도의 정의이기 때문이다 — 이 표는 `packages` 의 함수이고 그 밖의 재료가 없다
-    /// (ADR-0173). 차분으로 만들면 "어디서 왔는지 모르는 항목" 이 남을 수 있고, 그것이
+    /// (docs/dev-guide/plugin-development.md#cli--ipc-namespace). 차분으로 만들면 "어디서 왔는지 모르는 항목" 이 남을 수 있고, 그것이
     /// 바로 제거된 plugin 의 prefix 가 표에 남아 있던 결함의 형태였다.
     fn freshly_computed_namespaces(&self) -> IpcNamespaceRegistry {
         let mut fresh = IpcNamespaceRegistry::new();
@@ -402,7 +402,7 @@ impl PluginManager {
     ///
     /// 대안은 `discover_and_start` 였고, 그것은 **설치된 것을 전부** 띄운다. 요청
     /// 하나가 지목한 것 말고 여덟을 더 띄우는 것은 관측 대상을 요청이 만들어내는
-    /// 형태라(ADR-0136 과 같은 축) 이 창구를 따로 낸다.
+    /// 형태라(docs/dev-guide/headless-ipc-surface.md#조회와-개별-플러그인-실행 과 같은 축) 이 창구를 따로 낸다.
     pub fn start_one_enabled(&mut self, plugin_id: &str) -> bool {
         if self.config.is_disabled(plugin_id) || self.is_auto_disabled(plugin_id) {
             return false;
@@ -690,7 +690,7 @@ impl PluginManager {
         // 자리에서** 띄운다 — 사용자·에이전트가 명시적으로 부른 조작이라, "disable → enable →
         // 곧바로 호출" 이 예전처럼 성공해야 한다. 미뤄 두면 그 사이의 호출이 `not running`
         // 을 받는다. 그 대가로 메인 스레드가 최대 2 s 선다(remove · swap 과 같은 논리,
-        // ADR-0457). 기다리며 가져온 재기동 예약은 바로 아래 기동이 대신하므로 따로 잇지 않는다.
+        // docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화). 기다리며 가져온 재기동 예약은 바로 아래 기동이 대신하므로 따로 잇지 않는다.
         if self.wait_retired(plugin_id) {
             tracing::debug!(
                 plugin_id,
@@ -730,7 +730,7 @@ impl PluginManager {
         // 기동을 끄는 것이고, 소유는 설치 사실이다. 해제하면 그 plugin 의 메서드가
         // "그런 메서드 없다"(거짓)로 답한다 — 지금은 소유가 남아 forward 로 가고
         // `validate_namespace_call` 이 `-32002 plugin '…' is not running`(참)으로
-        // 답한다([ADR-0173](../../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)).
+        // 답한다([CLI + IPC namespace](../../../../docs/dev-guide/plugin-development.md#cli--ipc-namespace)).
         //
         // completion_strategy 의 owner id 는 install 시점과 동일 유도 규칙
         // (`completion_strategy_owner_id`)으로 계산해둔다 — install 은 ipc_namespace
@@ -766,7 +766,7 @@ impl PluginManager {
     /// 막혀 `register_new_hellos` 가 안 돌기 때문이다. 재시작된 plugin 은 떠 있는데
     /// `event.subscribe` 가 전부 거절되고 설정 탭이 사라진 채로 남았다.
     ///
-    /// 여기 **안** 들어가는 것: ipc namespace 소유(설치 사실이라 유지 — ADR-0173),
+    /// 여기 **안** 들어가는 것: ipc namespace 소유(설치 사실이라 유지 — docs/dev-guide/plugin-development.md#cli--ipc-namespace),
     /// registry contribute(disable 만 지운다 — 설정을 끄는 일이다), mesh 프레임(재시작만
     /// 지운다 — 호출자 쪽 사정이 갈린다).
     pub(super) fn forget_plugin_runtime(&mut self, plugin_id: &str, reason: &str) {
@@ -819,7 +819,7 @@ impl PluginManager {
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }
         // ipc namespace 유지 — swap 중에 오는 호출은 "없는 메서드" 가 아니라
-        // "지금 안 뜬 plugin" 이다(ADR-0173).
+        // "지금 안 뜬 plugin" 이다(docs/dev-guide/plugin-development.md#cli--ipc-namespace).
         self.forget_plugin_runtime(plugin_id, "plugin swap restart");
         Ok(())
     }

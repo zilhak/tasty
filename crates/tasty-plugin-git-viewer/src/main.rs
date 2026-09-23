@@ -34,7 +34,7 @@ const PLUGIN_ID: &str = "com.tasty.git-viewer";
 // Cargo.toml 이 SoT — 하드코딩 드리프트(0.1.8 vs 0.1.10 실재했음)를 컴파일 타임에 차단.
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOG_LIMIT: usize = 200;
-/// (ADR-0056) host → 이 plugin unicast 이벤트 key. host 측 대응값은
+/// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) host → 이 plugin unicast 이벤트 key. host 측 대응값은
 /// `src/app/attach_client.rs::GIT_VIEWER_QUERY_RESULT_EVENT` — 공유 crate 가 없어
 /// 리터럴을 양쪽에 중복 정의한다(둘 다 바꿀 때 동기화 필요).
 const GIT_VIEWER_QUERY_RESULT_EVENT: &str = "git_viewer.query_result";
@@ -59,7 +59,7 @@ pub(crate) struct ViewerState {
     /// 재 담아두지 않으면 스크롤 위치마다 가로 폭이 출렁인다. render 가 캐시 미스일 때
     /// 채우고, [`ViewerState::set_diff`] 가 diff 를 바꿀 때 비운다.
     diff_width: Option<(f32, f32)>,
-    /// (ADR-0056) mirror(attach) surface 에서 열렸으면 Some — 로컬 `git2::Repository`
+    /// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) mirror(attach) surface 에서 열렸으면 Some — 로컬 `git2::Repository`
     /// discover 대신 host 왕복(`git_viewer.query` IPC → `git_viewer.query_result`
     /// event)으로 조회한다. None 이면 기존 로컬 경로(변경 없음).
     remote: Option<RemoteCtx>,
@@ -525,7 +525,7 @@ struct GitViewerPlugin {
     /// CJK fallback 폰트를 이미 설치한 popup instance_id.
     fonts_installed: HashSet<u64>,
     tr: Translator,
-    /// (ADR-0056) `on_start` 에서 1 회 수신 — mirror popup 이 원격 git 조회를 트리거할 때
+    /// (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) `on_start` 에서 1 회 수신 — mirror popup 이 원격 git 조회를 트리거할 때
     /// `ViewerState::new_remote` 에 clone 해 넘긴다.
     host: Option<HostHandle>,
 }
@@ -605,7 +605,7 @@ impl Plugin for GitViewerPlugin {
         // primary 로 삼는다. 이후 인스턴스는 paint_popup 에서 "이미 열림" 을 그린다.
         if self.primary.is_none() {
             self.primary = Some(ctx.instance_id);
-            // (ADR-0056) mirror workspace 면 로컬 discover 대신 host 왕복으로 조회한다
+            // (docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) mirror workspace 면 로컬 discover 대신 host 왕복으로 조회한다
             // (`tools_menu.rs` 가 context 에 `mirror`/`local_surface_id` 를 실어 보냄).
             let is_mirror = ctx
                 .context

@@ -90,7 +90,7 @@ impl ClientCommand for ToolPasskey<'_> {
 /// `tasty tool attach ...` — tasty-attach 프로필로 attach 실행 또는 `--list` 목록만.
 ///
 /// `--list` 면 tasty-attach kind 목록만 출력하고 종료. name 이 있으면 그 프로필을
-/// resolve(ADR-0032 ref/inline)해 기존 attach 엔진을 재사용한다.
+/// resolve(docs/features/remote-profiles/index.md#데이터-모델 ref/inline)해 기존 attach 엔진을 재사용한다.
 pub struct ToolAttach<'a> {
     pub name: &'a Option<String>,
     pub surface: Option<u32>,

@@ -23,12 +23,12 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **로컬 사용자** — 이 머신에서 GUI 를 직접 쓰는 사람. 포커스의 주인. 점유 불필요. 점유를 끊을 수 있는 유일한 주체.
 - **AI Agent** — IPC/CLI 로 tasty 를 조작하는 AI. 대상은 ID 직접 지정. **기본은 점유 없이** 동작하되 필요하면 점유(soft/hard)를 걸 수 있다(예: `terminal` child-terminal 의 soft 점유). **격리 계약**(부수효과가 사용자 상태에 안 닿음)을 따른다.
 - **원격 접속 사용자** — SSH 너머에서 attach 로 접속하는 사람. 행동은 AI Agent 에 가깝고(연결 기반), **점유**라는 관문을 반드시 통과한다.
-- **점유(occupation)** — 주체(원격 사용자 | AI Agent)가 surface/workspace 에 대해 선언하는 지속·가시 관계. **약한(soft: advisory 마커, write 허용) / 강한(hard: 배타 + 다른 주체 readonly; 원격 attach 가 사례)** 2계층(ADR-0040). 계층과 무관하게 대상→점유자는 1:1(배타), 주체→대상은 1:N. self-release 또는 로컬 사용자 force-detach 로만 해제.
+- **점유(occupation)** — 주체(원격 사용자 | AI Agent)가 surface/workspace 에 대해 선언하는 지속·가시 관계. **약한(soft: advisory 마커, write 허용) / 강한(hard: 배타 + 다른 주체 readonly; 원격 attach 가 사례)** 2계층(ADR-0621). 계층과 무관하게 대상→점유자는 1:1(배타), 주체→대상은 1:N. self-release 또는 로컬 사용자 force-detach 로만 해제.
 
 ### 원격 연결 (→ [features/remote-profiles](../features/remote-profiles/index.md))
 
-- **원격 접속 프로필(Remote profile)** — 타입(`kind`, 열린 string) 태그가 붙은 범용 연결 디스크립터. 비밀을 담지 않고 Passkey 를 이름으로 참조만 한다. 2-레이어(ADR-0032): **`ssh`** = 순수 연결 정보, **`tasty-attach`** = attach 스펙(ssh 를 `ssh_ref` 로 참조하거나 인라인 + remote_tasty/port_mode/port_file). attach 는 tasty-attach kind 를 읽는 **소비자** — "주소 저장(ssh) ≠ attach 스펙(tasty-attach)".
-- **Passkey** — 별도 named 자격증명 저장소. `kind = path`(파일 참조) | `inline`(0600 파일로 materialize). at-rest 는 항상 파일 경로(toml 에 비밀 0). 값은 로컬 GUI Reveal 로만 열람, IPC/agent 엔 영구 마스킹([ADR-0016](../adr/0016-passkey-store-path-convergence.md)).
+- **원격 접속 프로필(Remote profile)** — 타입(`kind`, 열린 string) 태그가 붙은 범용 연결 디스크립터. 비밀을 담지 않고 Passkey 를 이름으로 참조만 한다. 2-레이어(ADR-0620): **`ssh`** = 순수 연결 정보, **`tasty-attach`** = attach 스펙(ssh 를 `ssh_ref` 로 참조하거나 인라인 + remote_tasty/port_mode/port_file). attach 는 tasty-attach kind 를 읽는 **소비자** — "주소 저장(ssh) ≠ attach 스펙(tasty-attach)".
+- **Passkey** — 별도 named 자격증명 저장소. `kind = path`(파일 참조) | `inline`(0600 파일로 materialize). at-rest 는 항상 파일 경로(toml 에 비밀 0). 값은 로컬 GUI Reveal 로만 열람, IPC/agent 엔 영구 마스킹([ADR-0611](../adr/0611-secrets-and-local-trust.md)).
 - **미등록 타입** — core 내장(ssh/smb)도 설치 플러그인도 claim 하지 않는 `kind`. 등록은 허용하되 노란 배지로 경고.
 
 ### 구조 (→ [hierarchy.md](hierarchy.md))
@@ -89,7 +89,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **Banner** — parent 스코프 상단에 떠서 **info + 조치(action)** 를 제공하는 지속·인터랙티브 오버레이. 포커스는 안 받지만 **마우스를 소비하고 내부 버튼을 가짐**(Toast/Popup 어디에도 안 맞는 4번째 개념). TTL·큐(스코프당 1+최대 5 대기)·계층 z-index. **사용자 행동에서만** 발사(에이전트 IPC 는 발사 안 함). 상세 [`design/systems/banner.md`](../design/systems/banner.md).
 - **Modifier-hint 오버레이** — modifier 를 홀드하면(기본 **500ms**, **Shift 단독만 1200ms**) 200ms 페이드로 떠서 눌린 **조합을 포함하는(부분집합)** 조합의 단축키 목록을 보여주고 **키를 떼면 즉시 소멸**하는 오버레이. 조합을 좁혀 누르면 목록도 즉시 좁혀진다(Ctrl→Ctrl+Shift). **키보드 포커스를 절대 안 받고**(입력은 그대로 터미널로), **마우스만 소비**(드래그 이동·테두리/코너 리사이즈·X 닫기). Popup(포커스/타이틀바/z-order)도 Toast(비인터랙티브 TTL)도 Banner(상단 고정 action)도 아닌 **홀드 수명 + 마우스 인터랙티브 + focus-less** 의 5번째 개념. 홀드 상태는 winit `ModifiersChanged`(실사용자 입력)만 반영 — IPC/CLI 로 강제 표시 불가(원칙1). `enabled` 설정 off 면 전혀 안 뜸. 지오메트리(pos/size)는 사용자가 이동/리사이즈하면 `Settings::modifier_hint` 에 영속. 상세 [`design/systems/design-token-mapping.md`](../design/systems/design-token-mapping.md) 의 modifier-hint 절 · 콘텐츠 모델은 `src/adapters/ui/input/shortcuts/modifier_hint.rs`, 본체는 `src/adapters/ui/modifier_hint_overlay.rs`.
 - **마커 오버레이(Marker overlay)** — 대상 위젯의 테두리를 건드리지 않고 **좌표(rect) 위에 독립된 floating 도형(링/glow)을 최상위 z 로 얹는** 오버레이. Modal/Popup/Toast/Banner/Modifier-hint 와 결정적으로 다른 점: **메시지·심각도 모델이 전혀 없는 순수 기하 마커**(Banner=info+action, Toast=message 와 대비) — 외부 로직(튜토리얼 런타임)이 좌표를 주입하면 그 위치를 링으로 그릴 뿐 의미를 담지 않는 **6번째 개념**. `pointer-events:none`(마커/scrim 은 클릭을 하위로 통과), 상호작용은 옆의 **안내 말풍선(callout)** 만 담당. 좌표는 매 프레임 `LayoutContext`/`terminal_rect`/`tab_bar_height` 로 재해석한다(정적 stale 없음). **사용자 행동에서만** 발사(도구 메뉴 → 튜토리얼 진입, Next 클릭 진행 — 에이전트 IPC/CLI 발화 API 없음, Toast/Banner/Modifier-hint 계열 · 원칙1). 현재 유일한 producer 는 튜토리얼. 상세 [`features/tutorial`](../features/tutorial/index.md) · 본체 `src/adapters/ui/tutorial/`.
-- **전체화면 무대(Fullscreen stage)** — 창 전체를 독점하는 **독립 표면**. 기존 요소를 확대한 것이 아니라 Workspace/Pane/Tab/Surface 트리와 **병렬로** 존재하며, 뒤의 개체와 내부 로직상 연관이 없는 **별개 데이터**를 담는다("이 popup 을 전체화면으로" = 같은 형상의 별개 인스턴스를 무대에 구성). 무대가 유지되는 동안 뒤는 가려져 있으므로 redraw 하지 않고, 나올 때 다시 그린다. **창당 최대 1 개**(창이 여럿이면 창마다 독립), 정적 테이블(`StageDef`)에 선언된 것만 올라갈 수 있으며, 영속화하지 않는다. **사용자 행동에서만** 발사(진입은 popup 타이틀바 버튼 — 에이전트 표면은 debug 전용 `debug.fullscreen.*` 뿐이고 release 에는 없다, Toast/Banner/마커 계열 · 원칙1). Modal(입력 차단 View) / Popup(가상 창) 어디에도 안 맞는 7 번째 개념 — 포커스나 z-order 를 다투는 것이 아니라 프레임 자체를 갈아끼운다. 상세 [`design/systems/fullscreen-stage.md`](../design/systems/fullscreen-stage.md) · 근거 [ADR-0082](../adr/0082-fullscreen-independent-stage.md).
+- **전체화면 무대(Fullscreen stage)** — 창 전체를 독점하는 **독립 표면**. 기존 요소를 확대한 것이 아니라 Workspace/Pane/Tab/Surface 트리와 **병렬로** 존재하며, 뒤의 개체와 내부 로직상 연관이 없는 **별개 데이터**를 담는다("이 popup 을 전체화면으로" = 같은 형상의 별개 인스턴스를 무대에 구성). 무대가 유지되는 동안 뒤는 가려져 있으므로 redraw 하지 않고, 나올 때 다시 그린다. **창당 최대 1 개**(창이 여럿이면 창마다 독립), 정적 테이블(`StageDef`)에 선언된 것만 올라갈 수 있으며, 영속화하지 않는다. **사용자 행동에서만** 발사(진입은 popup 타이틀바 버튼 — 에이전트 표면은 debug 전용 `debug.fullscreen.*` 뿐이고 release 에는 없다, Toast/Banner/마커 계열 · 원칙1). Modal(입력 차단 View) / Popup(가상 창) 어디에도 안 맞는 7 번째 개념 — 포커스나 z-order 를 다투는 것이 아니라 프레임 자체를 갈아끼운다. 상세 [`design/systems/fullscreen-stage.md`](../design/systems/fullscreen-stage.md) · 근거 [ADR-0618](../adr/0618-explicit-capture-and-fullscreen-stage.md).
   - **Zoom 과 혼동 금지** — tasty 에서 `Zoom` 은 **UI 배율**(설정 › 단축키 › Zoom)로 이미 선점된 용어다. tmux 식 "pane zoom" 명칭을 쓰지 않고 **전체화면 / 무대(stage)** 로 통일한다.
 - **상태바(Workspace status bar)** — 작업 영역 하단을 항상 차지하는 고정 strip(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). focus surface 컨텍스트 표시 + 우측 빠른 액션(팔레트·테마). GUI 전용 표시 위젯(에이전트 표면 없음). 정본 [`features/workspace-status-bar`](../features/workspace-status-bar/index.md).
 
@@ -103,7 +103,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 
 - **host 내장** — `terminal`(PTY+GPU 셰이더) / `empty` / `dag_graph` / `explorer`(plugin 에서 host-native 로 역이전).
 - **egui-mesh plugin** — `image` (plugin 이 `rendering=egui-mesh` 선언, plugin 프로세스가 tessellate 한 mesh 를 host 가 합성).
-- **webview plugin** — `html` / `markdown`([ADR-0065](../adr/0065-markdown-webview-render-channel.md), Stage B 부터) — `rendering=webview`, host 의 네이티브 WebView 오버레이로 그림.
+- **webview plugin** — `html` / `markdown`([ADR-0629](../adr/0629-webview-host-integration.md)) — `rendering=webview`, host 의 네이티브 WebView 오버레이로 그림.
 
 ### Claude plugin (→ [plugins/claude](../plugins/claude/index.md))
 
@@ -117,7 +117,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 
 - **server / client** — 점유당하는 쪽(PTY 권위 owner, 항상 loopback 으로만 받음) / 점유하는 쪽(원격성을 흡수). "로컬/원격" 은 **client 측 개념**.
 - **mirror** — client 가 받은 출력으로 PTY 없이 재구성한 복제 화면. GUI mirror = 원격 워크스페이스를 로컬 GUI 에 일반 워크스페이스로 띄운 것.
-- **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [ADR-0007](../adr/0007-attach-targets-remote.md).)
+- **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [ADR-0620](../adr/0620-remote-connection-profiles.md).)
 - **SSH 위임(SSH delegation)** — 원격성을 흡수하는 client 측 계층 전체를 가리키는 말. tasty 어휘에서 **"SSH" 는 프로토콜 구현이 아니라 시스템 `ssh` 바이너리에 위임하는 행위**를 뜻한다 — 프로세스 spawn · 터널 수명 · 원격 포트 발견 · 백오프 · 취소가 여기 속한다. 그 계층의 거처가 `tasty-ssh` 크레이트(`crates/tasty-ssh/`)이고, 소비자는 CLI 와 본체 GUI 둘 다다. 터널은 이 계층의 **일부**이지 전부가 아니다(포트 발견·프로필 재감지·대화형 접속은 터널이 아니다).
 - **원격 인스턴스 능력(remote capability)** — SSH 위임 *위에* 얹혀 원격 tasty 인스턴스에 실제로 말을 거는 층 — 워크스페이스 **조회(browse)** 와 **생성(create)**. 거처는 `tasty-remote` 크레이트다. 이름이 비슷한 셋을 구분한다: `tasty-ssh`(어떻게 닿는가) → `tasty-remote`(닿아서 무엇을 하는가) → `tasty-remote-profiles`(어디에 닿을지를 이름으로 저장해 둔 레지스트리, 위 "원격 접속 프로필" 항목).
 

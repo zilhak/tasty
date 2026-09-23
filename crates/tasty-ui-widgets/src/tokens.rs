@@ -92,7 +92,7 @@ pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
 
 /// 토스트 사이 세로 간격. = `component.toast-gap` → `{semantic.space-sm}` = 8.
-/// ADR-0290 이 그리드 밖 6 을 8 로 올렸다(의도된 시각 변화).
+/// 토큰 정합 과정에서(docs/design/systems/theme.md#ui-코드의-색상-접근) 그리드 밖 6 을 8 로 올렸다(의도된 시각 변화).
 pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
 
 /// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
@@ -145,11 +145,11 @@ pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
 /// `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
 pub const TRANSFER_CARD_PAD_X: i8 = 10;
 
-// ── 스케일 밖 코너 반경 — DTCG radius 스케일에 대응이 없는 값 (ADR-0126) ──
+// ── 스케일 밖 코너 반경 — DTCG radius 스케일에 대응이 없는 값 (docs/design/systems/theme.md#토큰에-없는-값과-배율) ──
 //
 // DTCG radius 스케일은 `radius-2` · `radius-4` · `radius-8` · `radius-full` 뿐이고
 // `Theme` 의 `corner_radius_sm`(2) · `corner_radius`(4) · `corner_radius_lg`(8) 가 그
-// 셋을 그대로 노출한다. 아래 값들은 어디에도 없다. ADR-0126 대로 **가까운 토큰으로
+// 셋을 그대로 노출한다. 아래 값들은 어디에도 없다. docs/design/systems/theme.md#토큰에-없는-값과-배율 대로 **가까운 토큰으로
 // 스냅하지 않는다** — 스냅은 픽셀을 바꾸는 디자인 결정이고, 리터럴 정리가 곁다리로
 // 할 일이 아니다. 이름과 사유를 붙여 드리프트를 눈에 보이게 두고, 수렴 여부는 디자인
 // 판단으로 넘긴다.
@@ -189,15 +189,15 @@ pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;
 /// popup 타이틀바 우측 버튼(close · 전체화면) 한 변. **size 스케일 밖 20px.**
 ///
 /// DTCG 의 `primitive.size-*` 에 20 이 없다(`font-size-20` 은 있으나 폰트 가족이라
-/// 길이로 쓸 값이 아니다). ADR-0126 대로 가까운 토큰(16 · 22)으로 스냅하지 않는다 —
+/// 길이로 쓸 값이 아니다). docs/design/systems/theme.md#토큰에-없는-값과-배율 대로 가까운 토큰(16 · 22)으로 스냅하지 않는다 —
 /// 스냅은 픽셀을 바꾸는 디자인 결정이다. 이름과 사유를 붙여 두고 값은 디자인 판단으로
 /// 넘긴다.
 ///
 /// **배율**: 이 상수 자체는 `zoomed()` 밖이지만, 본체는 이 값을 그대로 쓰지 않고
 /// UI 배율을 먹여 쓴다. 이 버튼이 앉는 타이틀바 높이가 `item_height_interactive`(배율을
 /// 탄다)에서 오고 옆 간격도 `spacing_xs`(탄다)라, 버튼만 고정이면 1.2 배에서 커진 띠
-/// 안에 작은 버튼이 남는다 — ADR-0126 "그릇과 내용은 배율에 대해 같은 편이어야 한다".
-/// 갤러리는 egui 전역 zoom 을 쓰므로(ADR-0135) 이 값을 그대로 읽는다.
+/// 안에 작은 버튼이 남는다 — docs/design/systems/theme.md#토큰에-없는-값과-배율 의 컨테이너와 콘텐츠 배율 정합.
+/// 갤러리는 egui 전역 zoom 을 쓰므로(docs/design/systems/theme.md#토큰에-없는-값과-배율) 이 값을 그대로 읽는다.
 pub const POPUP_TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
 
 // ── PluginAvatar — 디자인 전사 치수 (본체 · 갤러리 공용) ──────────────────────

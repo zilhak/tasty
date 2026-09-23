@@ -1,7 +1,7 @@
 //! 테스트 전용 공용 유틸리티 — 홈 경로 env 격리.
 //!
 //! 규칙·근거: `docs/dev-guide/unit-test-isolation.md` ·
-//! `docs/adr/0096-unit-tests-isolated-from-user-environment.md`.
+//! `docs/dev-guide/unit-test-isolation.md#1-설정-테스트-생성자는-settingsdefault-를-쓴다`.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -23,7 +23,7 @@ static HOME_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// 홈 경로를 임시 디렉토리로 갈아끼우는 RAII 가드. 두 진입점이 **다른 메커니즘**을 쓴다
 /// — 그 자리에서 홈이 도구인가 피험자인가에 따라(처방 등급·근거는
-/// `docs/adr/0155-global-state-race-prescription-by-parameterization.md`):
+/// `docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때`):
 ///
 /// - [`Self::tasty_home`] — 홈이 **도구**(임시 격리 루트일 뿐, 검증 대상은 다른 것)인
 ///   다수. `tasty_utils::path` 의 스레드 로컬 override 로 격리하고 **env 를 만지지
@@ -168,7 +168,7 @@ mod tests {
             // 사라진다. **그래서 이 한 자리는 override 로 못 옮긴다.** 다만 규칙의 SoT 가
             // tasty-utils 이므로, tasty-utils 가 자체 테스트 격리를 갖추면 이 단언은 그리로
             // 옮겨야 한다(여기 있는 것은 임시). 근거·재검토 트리거는
-            // `docs/adr/0155-global-state-race-prescription-by-parameterization.md`.
+            // `docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때`.
             #[cfg(unix)]
             {
                 let expected = g.path().join(if cfg!(debug_assertions) {
@@ -191,7 +191,7 @@ mod tests {
     /// 그쪽은 [`HOME_ENV_LOCK`] 을 잡지 않는 별개 경로가 되어, 동시에 도는 다른 테스트의
     /// 임시 루트를 지우거나 덮어쓴다(→ 사용자 실제 홈에 쓰게 된다). 그래서 이 crate 는
     /// **이 모듈 한 곳에서만** 두 키를 만진다는 것을 소스 스캔으로 고정한다.
-    /// 스캔 하한 — ADR-0133 의 두 용도 중 **연기 검사**다("경로가 틀렸거나 읽기에
+    /// 스캔 하한 — docs/dev-guide/guard-population.md#검사-범위와-예외를-정하는-순서 의 두 용도 중 **연기 검사**다("경로가 틀렸거나 읽기에
     /// 실패했다" 를 잡는 용도). **모수 고정**("이만큼 봤으니 다 봤다")으로 쓰지 않는다.
     ///
     /// 위반 0 이 **정말 없어서인지 아무것도 안 봐서인지**를 가른다. [`visit`] 는 디렉토리를
@@ -267,13 +267,13 @@ mod tests {
     /// `tasty_home()` 을 읽으면 override 를 못 보고 실제 홈/env 로 폴백한다. 그런 자리가
     /// 하나도 없다("구멍 0")는 측정 위에서 이 처방을 골랐다 — 이 가드가 그 전제를 지킨다.
     ///
-    /// 위반이 생기면 실패 메시지는 "고치지 마라" 가 아니라 **ADR-0155 를 다시 열라**고
+    /// 위반이 생기면 실패 메시지는 "고치지 마라" 가 아니라 **docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 를 다시 열라**고
     /// 말한다: 자식 스레드가 홈을 읽기 시작하면 처방 선택(왜 (C) 인가) 자체가 재검토
     /// 대상이기 때문이다(705 식 전제-가드).
     ///
-    /// 근사다(ADR-0133 의 연기 검사): `spawn(` 뒤 클로저 블록 안의 `tasty_home` **직접**
+    /// 근사다(docs/dev-guide/guard-population.md#검사-범위와-예외를-정하는-순서 의 연기 검사): `spawn(` 뒤 클로저 블록 안의 `tasty_home` **직접**
     /// 호출만 잡는다. 경유 함수(discovery/known_plugins 등)를 통한 **간접** 호출은 못
-    /// 잡으며, 그 갈래는 ADR-0155 에 문장 트리거로 남긴다.
+    /// 잡으며, 그 갈래는 docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때 에 문장 트리거로 남긴다.
     #[test]
     fn spawned_thread_bodies_do_not_read_tasty_home() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -288,8 +288,8 @@ mod tests {
         assert!(
             offenders.is_empty(),
             "자식 스레드 본문에서 tasty_home() 을 직접 읽는 자리가 생겼다. thread-local \
-             override 는 자식 스레드에 상속되지 않아 ADR-0155 의 (C) 전제(구멍 0)가 깨진다 \
-             — 처방 선택을 다시 열어라(docs/adr/0155-global-state-race-prescription-by-parameterization.md). \
+             override 는 자식 스레드에 상속되지 않아 자식 스레드에서 사용자 홈을 읽을 수 있다 \
+             — 처방 선택을 다시 열어라(docs/dev-guide/unit-test-isolation.md#실패가-실행-순서와-부하에-따라-달라질-때). \
              위반: {offenders:#?}"
         );
     }

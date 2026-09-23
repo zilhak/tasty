@@ -180,7 +180,7 @@ fn contrast_ratio(a: HexColor, b: HexColor) -> f64 {
 /// 명도 부등호가 **반대임까지** 고정한다 — 그것이 뒤집히는 날 "대비로 고른다" 는
 /// 근거 자체가 사라지고, 그때는 role 배치를 다시 판단해야 한다.
 ///
-/// 두 role 이 **값이 다르다**는 것도 함께 고정한다. [ADR-0290](../../../docs/adr/0290-settled-role-gaps-close-the-divergence-and-off-scale-sets.md)
+/// 두 role 이 **값이 다르다**는 것도 함께 고정한다. [UI 코드의 색상 접근](../../../docs/design/systems/theme.md#ui-코드의-색상-접근)
 /// 은 새 role 넷이 기존 role 과 값이 겹쳐 "값이 같은 두 role 을 갈라 읽는 가드는
 /// 원리적으로 세울 수 없다" 고 적었다. 그 문장은 `border-frame` ↔ `surface-active`
 /// 짝에 대해 여전히 참이지만, `border-frame` ↔ `border-strong` 짝에 대해서는 이 정정

@@ -1,4 +1,4 @@
-//! `surfaces` specimen — Occupancy & attention borders (ADR-0040, ADR-0062).
+//! `surfaces` specimen — Occupancy & attention borders (docs/dev-guide/attach-behavior.md#점유-레지스트리-occupancyregistry, docs/features/surface-highlight/index.md#내부-동작-headless-valid).
 //!
 //! surface 테두리 = **하나의 시각 채널**. 네 상태가 색으로만 구분된다:
 //! - **occupied · soft**: green 1px(`accent-occupied-soft`). 주체(원격 사용자/AI 에이전트)

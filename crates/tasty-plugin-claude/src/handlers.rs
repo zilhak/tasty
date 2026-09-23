@@ -1,7 +1,7 @@
 //! `tasty-claude` 의 IPC handler fn 들 — 외부 plugin SDK 진입점.
 //!
 //! 자식 terminal 관리(spawn/tell/wait/children/parent/kill/respawn/broadcast)는
-//! 호스트가 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 **위임**한다. 이
+//! 호스트가 내재화한 `terminal.*` IPC(docs/features/child-terminal/index.md)로 **위임**한다. 이
 //! plugin 은 더 이상 자체 child registry 를 보유하지 않는다(호스트 registry 가 단일
 //! SoT). claude **특화**만 여기 남는다:
 //! - `start_claude_in_surface` / `issue_session_token` — session token + agent id +
@@ -63,8 +63,8 @@ pub(crate) fn resolve_profile_file_param(
 /// Claude Code `--permission-mode` 가 받는 값 집합. 외부 도구의 계약이라 실측으로
 /// 얻었다(`claude --help`, 2026-09-12). 각 값이 무엇을 뜻하는지는 Claude Code 가
 /// 정하며 이 plugin 은 해석하지 않고 전달만 한다 — 여기서 하는 일은 **모르는 값을
-/// 조용히 흘려보내지 않는 것**뿐이다(`docs/adr/0265-child-approval-policy-is-the-callers-choice.md`
-/// 결정 7).
+/// 조용히 흘려보내지 않는 것**뿐이다(`docs/plugins/claude/index.md#승인-정책---permission-mode`
+/// 참조).
 pub(crate) const VALID_PERMISSION_MODES: &[&str] = &[
     "acceptEdits",
     "auto",
@@ -133,7 +133,7 @@ fn default_permission_mode<H: HostCall>(host: &H) -> Option<String> {
 /// `permission_mode` param → 기동 명령에 실릴 값. 우선순위는 **호출별 params >
 /// 전역 설정 > 미부착**이고, 아무도 안 고르면 플래그 자체가 안 붙어 자식은 사용자
 /// 자신의 Claude Code 설정대로 뜬다
-/// (`docs/adr/0265-child-approval-policy-is-the-callers-choice.md` 결정 2·4).
+/// (`docs/plugins/claude/index.md#승인-정책---permission-mode`).
 ///
 /// `profile_file` 이 정하는 settings JSON 에 `permissions.defaultMode` 가 있고
 /// `permission_mode` 도 함께 오면 **거부**한다 — 어느 쪽이 이기는지 조용히 정하지
@@ -360,7 +360,7 @@ pub(crate) fn handle_children<H: HostCall>(
                 "state": c.get("state").cloned().unwrap_or(Value::Null),
                 // remap 이 화이트리스트라 호스트가 실어 보낸 판정 근거 3 축 중
                 // `state` 만 옮기면 나머지 둘이 여기서 잘린다 — `confidence` 가
-                // 없으면 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(ADR-0072).
+                // 없으면 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(docs/features/child-terminal/index.md#판정-우선순위).
                 "evidence": c.get("evidence").cloned().unwrap_or(Value::Null),
                 "confidence": c.get("confidence").cloned().unwrap_or(Value::Null),
             })
@@ -778,7 +778,7 @@ fn claude_launch_command_with_prompt(
 /// 알림, 손자 spawn·tell)의 자격이다 — 호스트는 권한 셋을 가진 caller 가 plugin
 /// namespace 를 부를 때 그 토큰을 요구하고, 자기 namespace 토큰은 소유 plugin 이 쥐지
 /// 않고도 넘길 수 있다. `ipc.invoke:codex` 는 자식이 Codex 교차 검증을 띄우는 자격이라
-/// 매니페스트에 선언해 쥔 것을 넘긴다(docs/adr/0271-a-plugin-namespace-is-invoked-with-its-token-from-every-gated-caller.md).
+/// 매니페스트에 선언해 쥔 것을 넘긴다(docs/dev-guide/plugin-permissions.md#agent-caller--session-token--temp-grants).
 pub(crate) fn issue_session_token(host: &HostHandle, agent_id: &str) -> Option<String> {
     let resp = match host.call(
         "session.issue",
@@ -903,7 +903,7 @@ fn compute_spawn_warning(
 /// 재사용 후보를 **두 목록으로 나눈다.** 둘 다 respawn 대상이지만 근거가 다르다:
 /// `idle` 은 자식이 hook 으로 완료를 직접 보고한 값이고, 확정 `stale` 은 보고가 오지
 /// 않은 채 호스트 관측이 "전경이 셸로 돌아왔다" 를 잡아낸 값이다(hook 유실 —
-/// ADR-0072 가 겨냥한 시나리오). 후자에 "이미 작업을 끝냈다" 는 문구를 쓰면 자식이
+/// docs/features/child-terminal/index.md#판정-우선순위 가 겨냥한 시나리오). 후자에 "이미 작업을 끝냈다" 는 문구를 쓰면 자식이
 /// 그렇게 보고한 적 없는데 보고한 것처럼 읽히므로 문구를 분리한다.
 fn build_spawn_warning(
     tr: &Translator,
@@ -1157,7 +1157,7 @@ mod tests {
     }
 
     /// 확정 stale 자식만 있어도 respawn 을 권해야 한다 — hook 유실로 idle 보고가
-    /// 영영 오지 않는 자식이 정확히 이 경우다(ADR-0072 가 겨냥한 시나리오).
+    /// 영영 오지 않는 자식이 정확히 이 경우다(docs/features/child-terminal/index.md#판정-우선순위 가 겨냥한 시나리오).
     #[test]
     fn build_spawn_warning_lists_stale_children_as_respawn_candidates() {
         let tr = test_translator();
@@ -1275,7 +1275,7 @@ mod tests {
 
     #[test]
     fn resolve_permission_mode_defaults_to_no_flag() {
-        // ADR-0265 결정 2 — params 도 설정도 없으면 플래그를 안 붙인다(사용자 자신의
+        // docs/plugins/claude/index.md#승인-정책---permission-mode — params 도 설정도 없으면 플래그를 안 붙인다(사용자 자신의
         // Claude Code 설정이 그대로 정한다). codex 와 달리 비대화형 값으로 떨어뜨리지
         // 않는다.
         let host = SettingHost(None);
@@ -1309,7 +1309,7 @@ mod tests {
         );
     }
 
-    /// 호출별 params 가 설정 기본값을 이 호출에 한해 덮는다(ADR-0265 결정 4).
+    /// 호출별 params 가 설정 기본값을 이 호출에 한해 덮는다(docs/plugins/claude/index.md#승인-정책---permission-mode).
     #[test]
     fn explicit_param_overrides_the_plugin_setting() {
         let host = SettingHost(Some("acceptEdits"));
@@ -1360,7 +1360,7 @@ mod tests {
 
     #[test]
     fn resolve_permission_mode_rejects_a_profile_that_sets_the_same_axis() {
-        // ADR-0265 결정 5 — 어느 쪽이 이기는지 조용히 정하지 않는다.
+        // docs/plugins/claude/index.md#승인-정책---permission-mode — 어느 쪽이 이기는지 조용히 정하지 않는다.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("p.json");
         std::fs::write(&path, r#"{"permissions":{"defaultMode":"plan"}}"#).unwrap();
@@ -1987,7 +1987,7 @@ mod tests {
             e.get("surface_id").is_none(),
             "호스트 필드명이 그대로 남았다: {e}"
         );
-        // 화이트리스트가 판정 근거 3 축을 다 옮기는지(ADR-0072).
+        // 화이트리스트가 판정 근거 3 축을 다 옮기는지(docs/features/child-terminal/index.md#판정-우선순위).
         assert_eq!(e["state"], json!("idle"));
         assert_eq!(e["evidence"], json!("prompt"));
         assert_eq!(e["confidence"], json!("certain"));

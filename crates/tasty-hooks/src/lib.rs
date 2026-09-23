@@ -258,7 +258,7 @@ impl HookManager {
     /// **once 훅은 한 호출 안에서도 한 번만 발사한다.** `events` 에 그 훅과 맞는 사건이
     /// 여럿 있어도 첫 사건에서 멈춘다 — 제거가 훑기가 끝난 뒤에 일어나므로, 멈추지 않으면
     /// 같은 once 훅이 사건 수만큼 돌려진다. 지속 훅은 맞는 사건마다 발사한다. 근거는
-    /// `docs/adr/0567-a-scanned-id-is-consumed-once-by-structure-or-by-a-replay-test.md`.
+    /// `docs/dev-guide/guard-verification.md#한-번만-일어나야-하는-효과`.
     pub fn check_and_fire(&mut self, surface_id: u32, events: &[HookEvent]) -> Vec<FiredHook> {
         let mut fired = Vec::new();
 

@@ -861,7 +861,7 @@ fullscreen_stage_exit = []
 ///
 /// - `*_switch_slot_keys` 셋은 문자열 배열이지만 콤보가 아니라 raw 키다(이유는 아래
 ///   `quick_switch_fields_not_in_general_bindings` 와 같다).
-/// - `script_bindings` 는 `Vec<ScriptBinding>` 이라 형태부터 다르다(ADR-0031: 스크립트는
+/// - `script_bindings` 는 `Vec<ScriptBinding>` 이라 형태부터 다르다(docs/features/lua-hooks/index.md#실행-격리--안전-장치: 스크립트는
 ///   N 개 동적이라 고정 액션 필드와 별개 표현이다). 기본값이 비어 있으면 "문자열 배열"
 ///   판정을 공허하게 통과하므로 형태로는 안 갈리고 이름으로 뺀다.
 ///

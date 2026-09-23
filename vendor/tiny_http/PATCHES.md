@@ -4,7 +4,7 @@ crates.io 의 `tiny_http` 0.12.0(상류 커밋 `212b1c45852fef2093dc1374875a9393
 아래 패치 하나만 얹은 사본이다. 루트 `Cargo.toml` 의 `[patch.crates-io]` 가 이 디렉토리를
 가리키므로 워크스페이스의 모든 `tiny_http` 소비자(본체 웹훅 리스너 · agent-stream plugin 의
 SSE 서버)가 이 사본으로 빌드된다. 결정·근거·대안·탈출 조건은
-[ADR-0516](../../docs/adr/0516-the-webhook-413-closes-the-connection-through-a-vendored-tiny-http-patch.md).
+[ADR-0632](../../docs/adr/0632-webhook-admission.md).
 
 ## 옮긴 것과 뺀 것
 
@@ -46,4 +46,4 @@ SSE 서버)가 이 사본으로 빌드된다. 결정·근거·대안·탈출 조
 ## 걷는 조건
 
 상류가 요청 단위로 잔여 body 를 읽지 않고 연결을 닫는 공개 API 를 내면 이 사본을 걷고
-`[patch.crates-io]` 줄을 지운다. 조건의 전문은 ADR-0516 의 재검토 트리거에 있다.
+`[patch.crates-io]` 줄을 지운다. 검증 조건은 [웹훅 body 제한](../../docs/features/webhook/index.md#body-상한-요청당)을 따른다.

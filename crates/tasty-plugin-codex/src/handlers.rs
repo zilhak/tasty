@@ -1,7 +1,7 @@
 //! `handle_ipc_method` 내부에서 각 codex.* 메서드를 처리한다.
 //!
 //! 자식 terminal 관리(spawn/tell/children/parent/kill/respawn/broadcast)는
-//! 호스트가 내재화한 `terminal.*` IPC(ADR-0040 / occupancy-04)로 **위임**한다.
+//! 호스트가 내재화한 `terminal.*` IPC(docs/features/child-terminal/index.md)로 **위임**한다.
 //! 이 plugin 은 더 이상 자체 child registry 를 보유하지 않는다(호스트 registry 가
 //! 단일 SoT). 여기 남는 것은 codex **특화**뿐:
 //! - `make_codex_command` — codex 바이너리 기동 명령 빌더(`--dangerously-bypass-hook-trust`
@@ -660,7 +660,7 @@ fn compute_spawn_warning(
 /// 재사용 후보를 **두 목록으로 나눈다.** 둘 다 respawn 대상이지만 근거가 다르다:
 /// `idle` 은 자식이 hook 으로 완료를 직접 보고한 값이고, 확정 `stale` 은 보고가 오지
 /// 않은 채 호스트 관측이 "전경이 셸로 돌아왔다" 를 잡아낸 값이다(hook 유실 —
-/// ADR-0072 가 겨냥한 시나리오). 후자에 "have already finished their work" 를 쓰면
+/// docs/features/child-terminal/index.md#판정-우선순위 가 겨냥한 시나리오). 후자에 "have already finished their work" 를 쓰면
 /// 자식이 그렇게 보고한 적 없는데 보고한 것처럼 읽히므로 문구를 분리한다.
 ///
 /// 문구 자체는 `lang/{en,ko,ja}.toml` 의 `codex.spawn_warning.*` 에 있다 — 이 문자열은
@@ -950,7 +950,7 @@ fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, Ipc
 /// - 승인 대기(`permission-request`)는 `needs-input` surface hook(같은 알림 경로)과
 ///   공용 attention(`surface.completion` kind=needs_input) 둘 다. 후자가 없으면
 ///   registry 상태만 바뀌고 탭·워크스페이스 표시는 그대로다
-///   ([ADR-0062](../../../docs/adr/0062-attention-store-kind-aware-primitive.md)).
+///   ([내부 동작 (headless-valid)](../../../docs/features/surface-highlight/index.md#내부-동작-headless-valid)).
 fn hook_side_effects(event: &str) -> Vec<(&'static str, fn(u32) -> Value)> {
     match event {
         "stop" | "interrupt" => vec![(
@@ -1651,7 +1651,7 @@ mod tests {
     }
 
     /// 확정 stale 자식만 있어도 respawn 을 권해야 한다 — hook 유실로 idle 보고가
-    /// 영영 오지 않는 자식이 정확히 이 경우다(ADR-0072 가 겨냥한 시나리오).
+    /// 영영 오지 않는 자식이 정확히 이 경우다(docs/features/child-terminal/index.md#판정-우선순위 가 겨냥한 시나리오).
     #[test]
     fn build_spawn_warning_lists_stale_children_as_respawn_candidates() {
         let w = build_spawn_warning(&test_translator(), 7, &[], &[3], 6.0).unwrap();

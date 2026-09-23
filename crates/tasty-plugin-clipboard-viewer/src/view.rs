@@ -31,7 +31,7 @@ use crate::html_format::prettify;
 /// `SEG_COMPACT_AT`).
 const SEG_COMPACT_AT: usize = 5;
 
-/// 헤더/타입바/푸터 공통 좌우 인셋 = `space-md`(12). ADR-0290 이 시안의 14 를 12 로
+/// 헤더/타입바/푸터 공통 좌우 인셋 = `space-md`(12). 토큰 정합 과정에서(docs/design/systems/theme.md#ui-코드의-색상-접근) 시안의 14 를 12 로
 /// 내렸다 — 14 전용 semantic 은 열지 않고 4px 그리드가 이긴다. 화면 인벤토리는
 /// docs/plugins/clipboard-viewer/screens/clipboard-viewer.md.
 fn row_pad_x(theme: &Theme) -> f32 {

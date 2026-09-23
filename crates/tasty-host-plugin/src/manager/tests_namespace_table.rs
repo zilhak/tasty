@@ -5,7 +5,7 @@
 //! 다만 그때 함께 묻고 있던 것 — 매니페스트가 소유를 만들고, 설치가 사라지면 소유도
 //! 사라진다 — 는 그대로 남는다. 그래서 삭제가 아니라 이 자리로 옮겼다.
 //!
-//! 옛 이름 하나는 **틀린 이름이었다**: `disable_path_unregisters_prefix`. ADR-0173 이후
+//! 옛 이름 하나는 **틀린 이름이었다**: `disable_path_unregisters_prefix`. docs/dev-guide/plugin-development.md#cli--ipc-namespace 이후
 //! disable 은 소유를 건드리지 않는다(꺼진 plugin 도 자기 이름의 주인이고, 라우터가
 //! `-32002` 로 따로 답한다). 소유를 잃는 것은 **제거**다. 아래 이름이 그것을 반영한다.
 //!
@@ -78,7 +78,7 @@ fn a_manifest_prefix_becomes_owned() {
     );
 }
 
-/// **제거**가 소유를 거둔다 — disable 이 아니다(ADR-0173).
+/// **제거**가 소유를 거둔다 — disable 이 아니다(docs/dev-guide/plugin-development.md#cli--ipc-namespace).
 #[test]
 fn removing_the_package_takes_the_ownership_back() {
     let mut mgr = manager_with(vec![fake_package()]);
