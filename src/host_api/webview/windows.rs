@@ -267,11 +267,22 @@ impl PlatformWebView {
                         // 한다(WebResourceRequested 핸들러와 동일 컨벤션).
                         CoTaskMemFree(Some(uri.0 as *const c_void));
                         // 엔진이 이 시도를 사용자 제스처로 봤는가(`PendingNavigation` 문서).
+                        // 값을 못 읽으면 제스처 아님으로 싣고 통지는 그대로 한다 — 여기서 `?` 로
+                        // 빠지면 plugin 에 가던 링크 클릭 통지까지 사라진다.
                         let mut user_initiated = BOOL(0);
-                        args.IsUserInitiated(&mut user_initiated)?;
+                        let user_gesture = match args.IsUserInitiated(&mut user_initiated) {
+                            Ok(()) => user_initiated.as_bool(),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "WebView surface {surface_id}: IsUserInitiated failed ({e}); \
+                                     the navigation is reported as not user-initiated"
+                                );
+                                false
+                            }
+                        };
                         pending_nav.borrow_mut().push(PendingNavigation {
                             url: uri_str,
-                            user_gesture: user_initiated.as_bool(),
+                            user_gesture,
                         });
                     }
                     Ok(())
