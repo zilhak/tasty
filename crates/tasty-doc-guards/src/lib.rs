@@ -8,10 +8,10 @@
 //!
 //! 경로 필터를 그냥 떼면 문서 한 줄 고칠 때마다 본체 컴파일(수백 크레이트)이 붙는다.
 //! 그래서 필터를 떼는 대신 **잡을 싸게 만들었다** — 의존 0 이면 콜드 빌드가 1 초 미만이라
-//! 필터가 필요 없다. 배경·대안·재검토 트리거는 ADR-0138.
+//! 필터가 필요 없다. 배경·대안·재검토 트리거는 ADR-0647.
 //!
 //! 여기에 의존을 하나라도 더하면 그 결정의 전제가 사라진다. `Cargo.toml` 의
-//! `[dependencies]` 는 비어 있어야 한다. 그것을 재는 시험은 없다(채널 없음 — ADR-0565).
+//! `[dependencies]` 는 비어 있어야 한다. 전용 의존성 검사는 없으므로 manifest 변경 때 리뷰한다.
 
 // 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
 // `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
@@ -53,11 +53,11 @@ pub mod shipping_scope;
 /// 락 poison 을 보고 없이 복구하는 자리를 집는다.
 pub mod poison_recovery;
 
-/// 공유 temp 아래 고정 이름 임시 경로를 집는다(ADR-0129 형태 B).
+/// 공유 temp 아래 고정 이름 임시 경로를 집는다(ADR-0644, 공유 임시 경로 격리).
 pub mod temp_path;
 pub mod temp_scratch;
 
-/// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(ADR-0129 형태 A).
+/// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(ADR-0644, 프로세스 환경 격리).
 pub mod env_isolation;
 
 /// 워크플로의 `on:` 트리거를 구조로 읽는다 — 주석과 트리거 키를 가른다.
@@ -76,7 +76,7 @@ use std::path::{Path, PathBuf};
 /// `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다 — 두 칸 올라간다.
 ///
 /// **틀린 루트로 조용히 진행하지 않는다.** 스캔 가드에서 경로가 틀어지면 예외가 아니라
-/// **조용한 0** 이 나오고, 0 인 모수는 언제나 초록이다(ADR-0133). 그래서 올라간 자리가
+/// **조용한 0** 이 나오고, 0 인 모수는 언제나 초록이다(ADR-0647). 그래서 올라간 자리가
 /// 레포 루트가 맞는지 표지 파일로 확인하고, 아니면 panic 한다. 여기 사는 타깃이
 /// 전부 이 함수를 쓰므로 확인 지점은 하나면 된다.
 ///
@@ -123,7 +123,9 @@ use std::path::{Path, PathBuf};
 /// `changelog_unreleased`(cwd 상대경로). 훅을 그 셋에도 심고 나서야 셋 다 c 로
 /// 내려왔다. 계측기가 못 닿은 자리를 **초록으로 세는 방향**이라 조용했다.
 ///
-/// ### 판정기는 안 짓는다 — ADR-0243 의 **(ㄹ) 사본** + **(ㄴ) 판정문**
+/// ### 별도 검사를 만들지 않은 이유
+///
+/// `docs/dev-guide/guard-verification.md`의 "새 검사가 필요한지 판단하기"를 따른다.
 ///
 /// 좌변 41(ㄴ 없는 가드)은 이미 전부 좌변 하한을 든다 — ㄴ 이 답하는 것은 "좌변이
 /// 0 인가" 가 아니라 "판독기가 옳은가" 이고, 판독기가 파일 하나 읽어 문자열을 비교하는
@@ -221,7 +223,7 @@ pub fn is_dependency_tree_dir(dir: &Path) -> bool {
 /// `cited_coordinates_exist` 와 `no_todo_file_citation` 이 각자 `SKIP_EXTS` 사본을 두고
 /// 있었다(전자는 후자를 베끼며 그 사실을 주석에 적었다). 같은 물음이라 정본을 하나 둔다.
 /// 가드가 더 뺄 형식(예: 좌표 인용을 안 담는 `.svg`·`.lock`)은 이 위에 얹는다 — 판정은
-/// 하나, 모수는 각자다(ADR-0180: 정본은 판정, 스캔 범위는 소비자별).
+/// 하나, 모수는 각자다(ADR-0647: 정본은 판정, 스캔 범위는 소비자별).
 pub fn is_binary_artifact_ext(ext: &str) -> bool {
     BINARY_ARTIFACT_EXTS.contains(&ext.to_ascii_lowercase().as_str())
 }
@@ -237,7 +239,7 @@ pub const BINARY_ARTIFACT_EXTS: &[&str] = &[
 ///
 /// **이 판정의 초록이 뜻하는 것은 "면제가 아직 필요하다" 가 아니다.** 가리키는 것이
 /// 실재한다는 것뿐이다. 가리키는 파일이 있어도 그 면제가 아무것도 안 덮고 있을 수 있고,
-/// 그것은 결함이 아니다(ADR-0150). 두 축을 섞으면 "안 덮으면 지워라" 라는 틀린 처방이
+/// 그것은 결함이 아니다(docs/dev-guide/guard-population.md). 두 축을 섞으면 "안 덮으면 지워라" 라는 틀린 처방이
 /// 참조 무결성의 옷을 입고 되살아난다.
 ///
 /// **왜 필요한가**: 경로가 썩으면 그 면제는 조용히 아무 일도 안 하게 된다. 면제가 덮던
@@ -270,7 +272,7 @@ mod tests {
     use super::*;
 
     /// 표식이 있는 임시 디렉토리를 만든다. `tempfile` 을 쓰지 않는 이유는 이 크레이트의
-    /// **의존이 0 이어야 하기 때문**이다(ADR-0138) — dev-dependency 도 이 크레이트의
+    /// **의존이 0 이어야 하기 때문**이다(ADR-0647) — dev-dependency 도 이 크레이트의
     /// 잡을 비싸게 만든다.
     fn temp_dir_named(suffix: &str) -> PathBuf {
         let dir =
@@ -316,7 +318,7 @@ mod tests {
     }
 
     /// 정본 denylist teeth — 바이너리는 막고 텍스트·무확장자는 통과시킨다. 이 판정을
-    /// `cited_coordinates_exist`·`no_todo_file_citation` 이 위임받는다(ADR-0180).
+    /// `cited_coordinates_exist`·`no_todo_file_citation` 이 위임받는다(ADR-0647).
     #[test]
     fn binary_exts_are_denied_and_text_is_scanned() {
         assert!(is_binary_artifact_ext("png"));

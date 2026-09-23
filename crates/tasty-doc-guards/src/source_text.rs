@@ -311,7 +311,7 @@ pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf
 ///
 /// 경계를 안 보면 `eprintln!` 이 `println` 을 담아 **stderr 를 stdout 으로 센다.**
 /// 실측 2026-09-08: `git grep 'println!' -- src/` 가 17 을 냈는데 그중 3 이 `eprintln!`
-/// 이었고, 그 17 을 근거로 ADR-0101 의 "현재는 없음" 이 낡았다고 의심했다 — 실제 값은
+/// 이었고, 그 17 을 근거로 호스트 stdout 출력이 없다는 설명이 낡았다고 의심했다 — 실제 값은
 /// 0 이었다. 부분문자열로 세면 방향이 한쪽으로만 틀린다(더 많이 잡는다).
 ///
 /// 입력은 **주석·문자열이 지워진 코드**여야 한다 — 이 함수는 그것을 안 한다.

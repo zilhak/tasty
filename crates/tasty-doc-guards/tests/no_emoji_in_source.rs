@@ -42,7 +42,7 @@ const ALLOWLIST_FILES: &[&str] = &[
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// (`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
 /// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
@@ -123,7 +123,7 @@ fn rel_of(file: &Path, root: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// 스캔 하한 — [ADR-0133] 의 두 용도 중 **연기 검사**다("경로가 틀렸거나 읽기에 실패했다"
+/// 스캔 하한 — [ADR-0647]의 빈 순회 방지 규칙이다("경로가 틀렸거나 읽기에 실패했다"
 /// 를 잡는 용도). **모수 고정**("이만큼 봤으니 다 봤다")으로 쓰지 않는다 — 실제 모수가
 /// 하한보다 크면 그 차이만큼 사각을 갖고도 초록이기 때문이다.
 ///
@@ -137,7 +137,7 @@ fn rel_of(file: &Path, root: &Path) -> String {
 /// 순회가 통째로 깨진 경우를 결정적으로 잡는 것이 목적이고, 몇 퍼센트의 누락까지 조이면
 /// 레포가 줄어드는 날 거짓 빨강이 된다.
 ///
-/// [ADR-0133]: ../docs/adr/0133-guard-scan-population-is-pinned-not-enumerated.md
+/// [ADR-0647]: ../docs/adr/0647-source-guards-and-exemptions.md
 const MIN_SCANNED_FILES: usize = 700;
 
 /// 스캔이 믿을 만한가.
@@ -208,7 +208,7 @@ fn no_emoji_in_source() {
 
 /// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
 ///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md). 가리키는 것이 실재한다는
 /// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
 /// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
 ///

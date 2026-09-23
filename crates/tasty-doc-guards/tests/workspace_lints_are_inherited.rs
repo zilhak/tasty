@@ -101,7 +101,7 @@ fn inherits_workspace(line: &str) -> bool {
 /// `--offline` 은 네트워크가 없는 러너에서 이 가드가 대기하지 않게 한다.
 ///
 /// JSON 을 파싱하지 않고 `"manifest_path"` 값만 뽑는다 — 이 크레이트는 의존이 0 인
-/// 것이 존재 이유라(ADR-0138) serde 를 들일 수 없다. `--no-deps` 에서 그 키는
+/// 것이 존재 이유라(ADR-0647) serde 를 들일 수 없다. `--no-deps` 에서 그 키는
 /// 패키지마다 정확히 한 번 나오므로 출현 수가 곧 멤버 수다.
 fn member_manifests() -> Result<Vec<String>, String> {
     let cargo = std::env::var("CARGO").map_err(|_| {

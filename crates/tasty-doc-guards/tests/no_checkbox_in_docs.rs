@@ -38,41 +38,13 @@ const ALLOWLIST_FILES: &[&str] = &[];
 /// 순회가 실제로 `docs/` 를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
 /// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
 const DOCS_FLOOR: Floor = Floor {
-    min: 338,
-    // 좌변의 사실은 `populations::DOCS_MD` 하나가 갖는다 — 같은 모수를 재는 자리가
-    // `every_docs_category_is_reachable_from_the_index` 에 하나 더 있다.
+    min: 162,
     measured: tasty_doc_guards::floored_walk::populations::DOCS_MD.measured,
     measured_on: tasty_doc_guards::floored_walk::populations::DOCS_MD.measured_on,
     counted_on: tasty_doc_guards::floored_walk::populations::DOCS_MD.counted_on,
-    why_this_gap: "도달 가능한 창에서 다시 실측(`fdca139c0`..`91ca7d37d`, 558 커밋, \
-                   직선): 이 모수는 285..448 로 움직였고 **감소가 여전히 한 번도 없다** — \
-                   51 개 커밋에서 다 늘기만 했다(앞선 창 `8bdbf1bdb` 직전 1215 커밋에서도 \
-                   354..402 · 감소 0 이었다. 그 좌표는 지금 main 에서 도달 불가라 다시 쟀고, \
-                   결론은 같다). 그 창 밖에서는 감소가 두 번 관측됐다 — `0f37f8565`(502 -> 500, \
-                   −2 — 중복 ADR 사본 둘을 지운 정리)와 `e1e80e2b8`(567 -> 562, −5 — 중복 ADR \
-                   여섯을 하나로 흡수한 정리)다(`65bcd1988`..`4bace058e` 를 first-parent 로 커밋마다 \
-                   셌다, 2026-09-23). 그 뒤 문서 통폐합 창(`e9d03a24a`..`396084ce4`)에서는 감소가 22 번이고 \
-                   한 커밋 최대 −13(`b7349f9f7`)·창 전체 −36(605 -> 569)이었다 — ★ 그 좌표 셋은 이력 \
-                   재작성(squash)으로 죽었고, 지금 main 에서 그 창은 `f9d06ddb9`..`cc2e5e72e` 두 커밋 \
-                   (`36d5e3e58` 은 `.md` 수를 안 움직인다)이라 한 커밋 감소가 −36 으로 보인다. 관측된 한 커밋 감소 진폭(옛 이력에서 최대 13 · \
-                   지금 main 에서 36)은 아래 사건 크기 52 보다 작아 \
-                   '진폭 × 몇 배' 의 곱수 근거로 안 쓰고, 대신 아직 안 일어난 사건의 크기에 건다: \
-                   문서 카테고리 하나가 접히면 그 아래 `.md` 가 통째로 빠지고, 지금 트리에서 그 \
-                   크기의 최대는 `docs/features` 의 52 다(2026-09-23 `cc2e5e72e` 재측정 — 문서 \
-                   통폐합이 단일 화면 명세를 기능 문서에 흡수해 64 에서 줄었다). 이 문단은 한때 '감소 진폭이 관측되지 않았다' 와 '그 창 밖에서 첫 \
-                   감소가 났다(`e1e80e2b8`)' 를 적고 있었다 — `0f37f8565` 의 −2 는 그때 이미 \
-                   `DOCS_MD` 의 이력에 적혀 있었다. ★ 여유 231(좌변 569) 은 그 사건 \
-                   하나(52)를 넘어 179 가 더 남는다 — 좌변이 자란 만큼 벌어진 것이고, 하한을 \
-                   그대로 두는 한 이 폭은 계속 벌어진다. 이 문장은 좌변이 448 이던 판에서 \
-                   110 이라고, 좌변이 502 이던 판까지도 117 이라고, 좌변이 559 이던 판에서는 157 이라고, 좌변이 591 이던 판에서는 189 라고, 좌변이 605 이던 판에서는 267(사건 64) 이라고 \
-                   적혀 있었다: 모수가 파생이라 **수는 따라왔는데 그 수를 설명하는 \
-                   이 문장만 안 따라왔다.** `docs/adr` 408(2026-09-23) 는 곱수에 안 넣는다 — 그것이 \
-                   접히는 것은 카테고리 하나가 접히는 사건이 아니라 결정 기록 방식이 바뀌는 \
-                   일이고, 그때 할 일은 하한을 견디는 것이 아니라 이 수를 다시 재는 것이다. 이 \
-                   가드는 체크박스를 담은 문서를 찾으므로, 순회가 절반만 모으면 못 본 문서의 \
-                   체크박스가 **위반 0 으로 승인된다**. 앞선 판은 계보(1215 커밋에서 354→399)는 \
-                   적었지만 폭 102 를 그 수에서 뽑지는 않았다 — 계보는 값이 어디서 왔는지를 \
-                   말하고, 폭은 그것만으로 안 정해진다",
+    why_this_gap: "실측 214개에서 가장 큰 비-ADR 분류인 docs/features의 52개만큼 여유를 둔다. \
+                   한 분류를 통합하는 작업은 허용하되 더 큰 수집 누락은 실패시킨다. \
+                   ADR 구성 방식이나 검사 범위를 바꾸면 모수와 하한을 함께 다시 검토한다.",
 };
 
 /// 행이 마크다운 체크박스 목록 항목으로 시작하는지.
@@ -100,7 +72,7 @@ fn is_checkbox_item(line: &str) -> bool {
 ///
 /// 이름을 물음으로 적는다: 다른 가드의 같은 이름 `is_scan_target` 들과 grep 에서 뭉쳐
 /// 보이지만, 이 가드의 물음은 "체크박스 검사 대상 문서인가" 로 그들과 다르다 — 다른
-/// 물음이라 위임할 정본이 없다(ADR-0180: 같은 이름 다른 물음은 이름을 갈라 세운다).
+/// 물음이라 위임할 정본이 없다(ADR-0647: 같은 이름 다른 물음은 이름을 갈라 세운다).
 fn is_checkbox_doc(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
@@ -199,7 +171,7 @@ fn checkbox_matcher_hits_only_line_start_list_items() {
 const PRUNABLE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 작업 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조
-/// 금지(`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// 금지(`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
 /// 아니라 판정 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";

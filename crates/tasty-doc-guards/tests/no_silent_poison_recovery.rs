@@ -7,12 +7,12 @@
 //! 이 판정은 소스 텍스트만 읽는다(컴파일 불필요). 본체 패키지에 두면 그 유일한 자동
 //! 채널은 `check-headless` 인데, 소스만 바뀐 push 에서도 수백 크레이트를 컴파일해야
 //! 돈다. 의존 0 인 여기 두면 콜드 빌드가 1 초 미만이라 경로 필터 없이 매 push 에 돈다
-//! (`doc-guards.yml`). 배경은 `crate::lib` 주석과 ADR-0138.
+//! (`doc-guards.yml`). 배경은 `crate::lib` 주석과 ADR-0647.
 //!
 //! ## 0 을 통과로 만들지 않는다
 //!
 //! 스캔이 조용히 죽으면(경로 오타·순회 중단) 모수가 0 이 되고 0 은 언제나 초록이다
-//! (ADR-0133). 그래서 위반 목록이 비었다는 단언 **앞에** 훑은 파일 수·집은 복구 자리
+//! (ADR-0647). 그래서 위반 목록이 비었다는 단언 **앞에** 훑은 파일 수·집은 복구 자리
 //! 수·cfg 로 뺀 수·test-only 로 뺀 수·보고로 통과한 수의 **하한**을 둔다. 어느 하나가
 //! 무너지면 검출기의 한 축이 죽은 것이라 실패한다.
 //!
@@ -92,7 +92,7 @@ fn no_shipping_lock_is_recovered_without_a_report() {
         "test-only 파일로 뺀 자리가 {} 곳뿐이다(하한 {MIN_TEST_ONLY}) — 선언 기반 판정이 \
          죽었을 수 있다.\n  \
          [판별식] 이 축은 이 파일이 아니라 **공용 판정기**가 답한다 \
-         (`tasty_doc_guards::shipping_scope::test_only_files`, ADR-0180 이 그것을 정본으로 \
+         (`tasty_doc_guards::shipping_scope::test_only_files`, ADR-0647 이 그것을 정본으로 \
          박았다). 그러니 여기서 흉내 내지 말고 그 판정기의 유닛을 부른다: \
          `cargo test -p tasty-doc-guards --lib shipping_scope`. 그것이 초록인데 이 수가 \
          줄었으면 판정은 살아 있고 test-only 선언이 정말 줄어든 것이다. 그것이 빨가면 \

@@ -45,7 +45,7 @@
 //! **락은 루트 크레이트에 있지 않다.** `TASTY_HOME_ENV_LOCK` 은
 //! `crates/tasty-test-support/src/lib.rs` 의 **가시성 수식어 없는 `static`** 이라 그
 //! 크레이트 밖으로 안 나간다 — 루트에 `lib` 타깃이 생기고 말고가 이 사실을 안 바꾼다
-//! (ADR-0325 로 생겼다). 그 형태가 유지되는지는
+//! (ADR-0601 로 생겼다). 그 형태가 유지되는지는
 //! `src/source_guards/test_serialization_locks.rs` 가 직렬화 락 전부에 대해 본다 —
 //! 가시성이 넓어지면 거기서 빨개진다.
 //! 그래서 통합 테스트(`tests/`)는 그 락을 아예 못 잡고,
@@ -83,7 +83,7 @@ use tasty_doc_guards::source_text::mask_non_code;
 /// 두 키를 만져도 되는 **유일한** 자리(레포 상대 경로).
 const OWNER: &str = "crates/tasty-test-support/src/lib.rs";
 
-/// 스캔 하한 — ADR-0133 의 두 용도 중 **연기 검사**다("경로가 틀렸거나 읽기에 실패했다"
+/// 스캔 하한 — ADR-0647의 빈 순회 방지 규칙이다("경로가 틀렸거나 읽기에 실패했다"
 /// 를 잡는 용도). 모수 고정으로 쓰지 않는다.
 ///
 /// 값의 근거: 2026-09-06 실측으로 `src/` 아래 `.rs` 가 592 개이고 `OWNER` 를 빼면 591 개다.

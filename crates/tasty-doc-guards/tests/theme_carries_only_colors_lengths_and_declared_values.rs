@@ -1,9 +1,9 @@
 //! `Theme` 이 나르는 **색도 치수도 아닌 값**에 이름표를 요구한다.
 //!
-//! [ADR-0174](../../../docs/adr/0174-theme-carries-reduced-motion.md) 는 `reduced_motion`
+//! [ADR-0637](../../../docs/adr/0637-ui-input-motion-and-elevation.md) 는 `reduced_motion`
 //! 을 `Theme` 에 실으면서 재검토 조건을 하나 달았다 — **"`Theme` 이 실어야 하는 색·치수가
 //! 아닌 값이 셋 이상으로 늘어난다"**. 그 조건의 주어는 판정 시점에 레포가 읽을 수 있는
-//! 사실이라 채널을 지을 수 있는데(ADR-0220 의 (가2)) 지금까지 없었다. 이 파일이 그 자리다.
+//! 사실이라 채널을 지을 수 있는데(`docs/adr/template.md`의 재검토 조건) 지금까지 없었다. 이 파일이 그 자리다.
 //!
 //! # 이 트리거는 좌변을 스스로 정하지 않는다
 //!
@@ -58,7 +58,7 @@ const NON_VISUAL_ROSTER: &[(&str, &str)] = &[
     ),
     (
         "reduced_motion",
-        "접근성 모션 감소. 설정에서 오고 `ThemeRuntime` 이 나른다 — ADR-0174 가 실은 값이다",
+        "접근성 모션 감소. 설정에서 오고 `ThemeRuntime` 이 나른다 — ADR-0637이 실은 값이다",
     ),
     (
         "is_light",
@@ -70,7 +70,7 @@ const NON_VISUAL_ROSTER: &[(&str, &str)] = &[
     ),
 ];
 
-/// `ThemeRuntime` 이 나르는 설정 값의 명부 — ADR-0174 가 "값이 하나 더 늘어도 호출부
+/// `ThemeRuntime` 이 나르는 설정 값의 명부 — ADR-0637이 "값이 하나 더 늘어도 호출부
 /// 모양은 안 변한다" 고 말한 그 덩이다. 셋이 되는 순간이 그 ADR 의 재검토 시점이다.
 const RUNTIME_ROSTER: &[&str] = &["ui_zoom", "reduced_motion"];
 
@@ -158,7 +158,7 @@ fn is_visual(ty: &str) -> bool {
 
 /// `Theme` 에 색도 치수도 아닌 값이 들어오면 명부에 이름과 사유가 있어야 한다.
 ///
-/// ADR-0174 의 재검토 조건("셋 이상")이 발화하는 자리다. 대칭으로 비교하므로 **사라진
+/// ADR-0637 의 재검토 조건("셋 이상")이 발화하는 자리다. 대칭으로 비교하므로 **사라진
 /// 것도** 잡는다 — 명부에만 남은 이름은 그 값이 `Theme` 을 떠났다는 뜻이고, 그때도
 /// ADR 을 다시 봐야 한다.
 #[test]
@@ -193,15 +193,14 @@ fn every_non_visual_theme_field_is_on_the_declared_roster() {
          새로 들어온 것: {added:?}\n  명부에만 남은 것: {gone:?}\n\n  \
          처방: {THEME_SRC} 를 되돌리는 것이 아니라 **명부에 줄을 더해라** — 이름과 \
          `왜 그것이 색도 치수도 아닌지`를 함께 적는다.\n  \
-         ★ 그리고 그 수가 셋을 넘으면 ADR-0174 의 재검토 조건이 발화한 것이다: \
+         ★ 그리고 그 수가 셋 이상이면 ADR-0637 의 재검토 조건이 발화한 것이다: \
          `Theme` 이 색·치수 밖의 값을 계속 실을지, 별도 자리로 가를지를 그 ADR 에서 다시 정해라."
     );
 }
 
 /// `ThemeRuntime` 이 나르는 설정 값의 이름이 명부와 같다.
 ///
-/// ADR-0174 의 저자가 실제로 센 덩이가 이것이다 — Decision 절이 `Settings::theme_runtime()`
-/// 을 지목한다. 위 시험과 **다른 물음**이라 시험을 가른다: 저쪽은 `Theme` 이 무엇을 싣는가,
+/// 설정 전달 경로는 `docs/design/systems/theme.md`의 모션 설정 절을 따른다. 위 시험과 **다른 물음**이라 시험을 가른다: 저쪽은 `Theme` 이 무엇을 싣는가,
 /// 이쪽은 **설정에서 오는 값이 몇인가**다. 한 시험에 넣으면 실패문이 어느 쪽인지 못 말한다.
 #[test]
 fn the_runtime_bundle_still_carries_only_the_declared_settings_values() {
@@ -220,7 +219,7 @@ fn the_runtime_bundle_still_carries_only_the_declared_settings_values() {
     assert_eq!(
         actual, declared,
         "설정에서 오는 값의 이름이 명부와 다르다.\n  \
-         처방: 명부를 실물에 맞춘 뒤, **그 수가 셋이 됐는지 세라** — 셋이면 ADR-0174 의 \
+         처방: 명부를 실물에 맞춘 뒤, **그 수가 셋이 됐는지 세라** — 셋이면 ADR-0637 의 \
          재검토 조건이 발화한 것이고, 그 ADR 은 그때 `Theme` 대신 별도 자리를 보라고 적어 뒀다."
     );
 }

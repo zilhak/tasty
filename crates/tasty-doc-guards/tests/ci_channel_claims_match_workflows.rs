@@ -329,7 +329,7 @@
 //!   목록을 넓히는 것이 처방이다 — 이 방향의 오류는 조용하지 않다.
 //!
 //! 부류 지목(`tests/*.rs`)도 이름 지목과 같은 자격으로 판정하는 결정의 근거·대안:
-//! `docs/adr/0149-a-class-citation-is-a-citation.md`.
+//! `docs/dev-guide/guard-population.md`.
 
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
 // (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
@@ -368,7 +368,7 @@ use tasty_doc_guards::temp_scratch::Scratch;
 use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
 
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
-/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
+/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0647).
 fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }
@@ -966,7 +966,7 @@ const COMBO_QUALIFIED_MARKERS: &[&str] = &[
     // 채널이 하나라고 **세어서** 적은 형태. "…에서만" 과 뜻이 같은데 문자열이 다르다.
     // 성질로 가르는 쪽(구체적 조합 선택자를 부르는가)은 실측에서 기각됐다 — 낡은 서술도
     // 같은 서술 안에 `--lib --bins` 를 담고 있어서, 성질로 가르면 **낡은 것을 면제한다.**
-    // 한정자가 어느 주장에 붙는지를 못 가르는 문제라 [ADR-0144] 와 같은 벽이다. 목록이
+    // 한정자가 어느 주장에 붙는지를 못 가르는 문제라 `docs/dev-guide/guard-population.md` 와 같은 벽이다. 목록이
     // 자라는 대가는 그 ADR 의 재검토 조건이 받는다.
     "조합 하나",
 ];
@@ -2445,7 +2445,7 @@ fn gui_amplifiers_live(src: &str) -> Option<(bool, bool)> {
 /// 층 3 — `--ignored` 를 줘도 나오는 수에는 **단일 값이 없다.** 값 대신 그 단정을 지킨다.
 ///
 /// 이 칸에는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
-/// 나쁘다(ADR-0139). 실제로 계기마다 답이 다르고 **서로 반대 방향으로** 흔들린다:
+/// 나쁘다(docs/documentation-model.md). 실제로 계기마다 답이 다르고 **서로 반대 방향으로** 흔들린다:
 /// 한 프로세스로 돌리면 한 panic 이 공유 인스턴스를 오염시켜 뒤를 다 죽이고, 프로세스를
 /// 가르면 그 오염은 사라지지만 순서·상태에 기대던 것들이 대신 죽는다.
 ///
@@ -3977,7 +3977,7 @@ fn the_gate_script_index_dies_when_extraction_dies() {
 /// ## 그 좌변이 지금 몇 곳인가 — **여기 안 적는다, 테스트가 센다**
 ///
 /// 깔때기(이름을 든 자리 → 하나라도 든 자리 → 실제 판정)의 수는 문서가 하나 늘 때마다
-/// 바뀐다. 적는 순간 낡는 부류라([ADR-0139](docs/adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md))
+/// 바뀐다. 적는 순간 낡는 부류라([수치 기록 원칙](../../../docs/documentation-model.md))
 /// 이 테스트가 셋을 직접 세어 `FUNNEL` 한 줄로 찍고, 모수 assert 도 그 셋을 함께 든다.
 /// 지금 값을 보려면:
 ///

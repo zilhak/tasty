@@ -1,121 +1,13 @@
-//! 마크다운이 인용한 **앵커가 실제로 풀리는가** 를 본다. 축 둘이다.
+//! Markdown 링크의 문서 내·문서 간 앵커를 검사한다.
 //!
-//! ㄱ **문서내 축** — `](#슬러그)` 는 그 문서 자신의 헤딩에서 나온 슬러그여야 한다.
-//! ㄴ **크로스파일 축** — `](다른.md#슬러그)` 는 그 파일의 헤딩에서 나온 슬러그여야 한다.
+//! 제목에서 만든 슬러그와 본문의 명시 HTML 앵커를 대상 집합으로 사용한다.
+//! 코드 블록과 인라인 코드에 든 앵커 예시는 대상이 아니다.
+//! `site/content/`를 가리키는 링크는 사이트의 실제 HTML 링크 검사에 맡긴다.
+//! 그 검사가 CI에 연결되어 있는지도 별도로 확인한다.
 //!
-//! ## 왜 필요한가 — 이 축에는 채널이 없었다
-//!
-//! 죽은 앵커는 죽은 경로보다 조용하다. 경로가 틀리면 링크가 404 로 눈에 띄지만, 앵커가
-//! 틀린 링크는 **문서를 열어 주고 엉뚱한 자리(대개 맨 위)에 세운다** — 읽는 사람은
-//! 자기가 스크롤을 놓친 줄 안다. 그리고 이 저장소는 절을 옮기고 헤딩을 다듬는 변경이
-//! 잦아 앵커가 깨지는 경로가 상시로 열려 있다.
-//!
-//! 이 크레이트에 이미 사는 [`cited_coordinates_exist`](cited_coordinates_exist.rs) 의
-//! 링크 축은 이 물음에 **의도적으로 답하지 않는다** — 그 `scan_links` 는 대상에서
-//! `#` 뒤를 잘라 내고 순수 앵커(`#` 로 시작하는 대상)는 external 로 건너뛴다. 그쪽은
-//! "파일이 실재하는가" 를 묻고 여기는 "그 파일 안에 그 자리가 있는가" 를 묻는다.
-//!
-//! ## 좌변 — 판정 대상은 **소스가 아니라 대상 트리**로 정한다
-//!
-//! 훑는 것은 레포 전체 `.md` 다. 판정에서 빼는 것은 **`site/content/` 를 가리키는 앵커**
-//! 이고, 그 링크가 어디에서 출발했는지는 안 본다. 이유는 소비자다: 그 트리의 슬러그는
-//! 발행된 사이트가 소비하고, `site/scripts/check-links.mjs` 가 **산출된 HTML 에서 실제로
-//! 나온 `id="…"`** 로 판정한다. 같은 자리를 두 판사가 보면 답이 둘이 될 수 있고, 그중
-//! 하나(이 파일)는 규칙의 **사본**이라 언제나 더 나쁜 판사다.
-//!
-//! **한때 이 절은 소스 기준(`site/content/` 발 링크를 통째로 제외)이었다. 그것이 구멍을
-//! 하나 남겼다** — 그 트리에서 출발해 트리 **밖**(`docs/` 등)을 가리키는 앵커다. 그
-//! 링크는 사이트 렌더러가 `Fragment` 로 기록하지 않고(`rewrite_link` 는 content 트리
-//! 안의 `.md` 일 때만 기록한다) GitHub blob URL 로 바꿔 내보낸다 — 즉 **그 앵커를 푸는
-//! 것은 GitHub 이고, 그러면 이쪽 규칙이 옳은 판사다.** 대상 기준으로 바꾸면 그 갈래가
-//! 저절로 이쪽에 들어오고 겹침은 여전히 0 이다. 실측(2026-09-08) 그런 링크는 0 건이라
-//! 지금 잡히는 것은 없다 — 비어 있는 갈래를 여는 것이 이 규칙의 값이다.
-//!
-//! ## 규칙은 하나다 — 그런데도 왜 넘기나
-//!
-//! 한때 규칙이 둘이었다. 사이트를 손으로 쓴 러스트 생성기가 렌더했고 그 `slugify` 는
-//! `_` 를 `-` 로 접고 양끝 `-` 를 뗐다 — GitHub 은 둘 다 안 한다. 사이트가 Astro 로
-//! 옮겨 가면서 그 생성기가 사라졌고, 지금 렌더러는 GitHub 과 같은 답을 낸다(실측은 ADR
-//! 에 있다). **그래서 이 파일에는 사이트 규칙의 사본이 없다.**
-//!
-//! 그래도 `site/content/` 를 넘기는 것은 규칙이 갈려서가 아니라 **판사의 질** 때문이다.
-//! 이 파일의 [`slug`] 는 GitHub 규칙을 옮겨 적은 사본이고, 사이트 판사는 렌더된 HTML 의
-//! `id` 를 그대로 읽는다. 사본은 원본이 바뀌면 조용히 낡지만 실측은 안 낡는다. 그리고
-//! 지금 렌더러는 이 레포가 아니라 의존 라이브러리(Astro 의 마크다운 처리기)라 그 변경이
-//! 이 레포의 커밋으로는 안 보인다 — 사본으로 따라갈 수 있는 대상이 아니다.
-//!
-//! 결정과 실측값은 `docs/adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md`
-//! 한 곳에 있다. **여기 옮겨 적지 마라** — 같은 수를 두 곳에 적으면 한쪽만 갱신되는 날이
-//! 오고, 그날 어느 쪽이 맞는지 아무도 모른다. 지금 값이 궁금하면 이 시험이 찍는 인구조사
-//! 줄을 봐라(`앵커 좌변: 문서 N 개 · 판정 M 건`).
-//!
-//! 이 넘김의 수명은 [`the_site_anchor_judge_is_still_wired`] 가 지킨다 — 넘긴 쪽 판사가
-//! 사라지면 그 시험이 ADR 을 가리키며 죽는다.
-//!
-//! ## 넘긴 쪽 판사는 실재하나
-//!
-//! 배선만 보고 넘기지 않는다. 판사는 `site/scripts/check-links.mjs` 이고 `pages.yml` 의
-//! `npm run check-links` 스텝이 부른다 — 산출된 모든 HTML 에서 `id="…"` 를 모은 뒤 내부
-//! 링크의 `#조각`을 그 집합과 맞춘다. 축도 둘 다 본다: 같은 페이지 안의 `#x` 와 다른
-//! 페이지를 가리키는 `그.html#x` 가 각각 별개 갈래다.
-//!
-//! **이 배선은 한 번 끊긴 적이 있다.** 사이트가 Astro 로 옮겨 가면서 옛 생성기의
-//! `--strict` 가 사라졌고, `check-links` 는 스크립트로만 남아 아무도 안 불렀다. 그동안
-//! `site/content/` 의 앵커에는 판사가 **하나도** 없었다 — 이 가드는 넘겼고 넘긴 쪽은
-//! 비어 있었다. [`the_site_anchor_judge_is_still_wired`] 가 그 상태를 빨강으로 만든다.
-//!
-//! 그 잡은 경로 필터 뒤에 있어 main push 마다 돌지는 않는다. **그래도 이 축에는 사각이
-//! 안 생긴다**: 그 트리의 앵커가 깨지는 길은 링크를 고치는 것과 헤딩을 고치는 것 둘뿐이고,
-//! 둘 다 `site/**` 변경이라 정확히 그때 잡이 돈다.
-//!
-//! ## 이 가드가 **안 보는** 앵커 (실측 2026-09-08, 레포 `.md` 전체)
-//!
-//! - HTML 앵커(`<div id="...">` · `<a name=...>`) — 3 건. 전부 plugin 문서가 산출 HTML 을
-//!   **설명하는** 산문이고 마크다운 링크의 대상이 아니다. 마크다운 헤딩만 슬러그의
-//!   출처로 본다.
-//! - 외부 URL 프래그먼트(`](https://...#x)`) — 0 건. 우리 레포가 답할 수 있는 물음이
-//!   아니다.
-//! - 참조식 링크(`[a]: b.md#x`) — 0 건. 인라인 형태만 훑는다.
-//! - `.md` 아닌 대상의 프래그먼트 — 0 건.
-//! - 대상 파일이 아예 없는 경우 — [`cited_coordinates_exist`] 의 경로 축 몫이라 여기서는
-//!   건너뛴다. 한 결함에 빨강을 둘 내지 않는다.
-//!
-//! ## Windows 에서 같은 답이 나오나 — 경로를 문자열로 다루는 자리 전수 (2026-09-08)
-//!
-//! 이 가드는 경로를 많이 만지므로 컴파일 통과와 판정 일치를 따로 본다. 문자열로 경로를
-//! 다루는 자리는 **일곱**이고, **OS 경로와 링크 경로를 섞는 자리는 0** 이다.
-//!
-//! | 자리 | 어느 공간인가 | Windows 에서 |
-//! |---|---|---|
-//! | `found.rel.ends_with(".md")` | `floored_walk` 가 정규화한 rel — 구분자가 언제나 `/` | 같다 |
-//! | `anchors_by_rel` · `contents_by_rel` 의 키 (`found.rel`) | 같은 rel 공간 | 같다 |
-//! | `read_to_string(&found.path)` | OS `Path` — **열기만 하고 쪼개지 않는다** | 같다 |
-//! | `target.starts_with('/')` · `head.ends_with(".md")` | 링크 문자열 — 마크다운에서 `/` 는 언제나 `/` | 같다 |
-//! | `resolve_rel` 의 `from_rel.split('/')` | rel 공간 | 같다 |
-//! | `resolve_rel` 의 `head.split('/')` · `parts.join("/")` | 링크 공간 → rel 공간 | 같다 |
-//! | `target_rel.starts_with("site/content/")` | rel 공간 | 같다 |
-//!
-//! 핵심은 **크로스파일 링크를 파일 시스템 경로로 바꾸지 않는다**는 것이다.
-//! `../../docs/dev-guide/build.md#x` 는 `/` 공간에서 접혀 `/` 로 이어 붙인 rel 이 되고,
-//! 그 rel 로 rel-키 맵을 조회한다 — `Path::join` 도 `strip_prefix` 도 안 거친다. 그래서
-//! 백슬래시가 끼어들 자리가 없다. 섞였다면 조용히 어긋났을 것이다(예외가 아니라 조회
-//! 전멸 → "위반 0"). 유일한 OS 경로인 `found.path` 는 여는 데만 쓴다.
-//!
-//! 확인은 `cargo clippy -p tasty-doc-guards --all-targets --locked --target
-//! x86_64-pc-windows-gnu` 로 한다 — **msvc 타깃은 쓰지 마라.** `mlua-sys`·`libsqlite3-sys`
-//! 가 Windows C 툴체인을 요구해 중간에 죽고, 그때 계수는 0 이 나온다. 그 0 은 "위반이
-//! 없다" 가 아니라 **"못 봤다"** 다.
-//!
-//! ## 판정기의 성질 — grep 으로 헤딩을 찾지 마라
-//!
-//! 슬러그는 헤딩 **텍스트**만의 함수다. 레벨(`###` 인지 `####` 인지)도 문서 안 위치도
-//! 안 들어간다. 그래서 **절을 통째로 옮겨도 앵커는 안 바뀐다** — 위치가 끼어드는 것은
-//! 같은 텍스트의 헤딩이 둘 이상일 때 `-1`·`-2` 접미사가 문서 순서로 붙는 경우뿐이다.
-//!
-//! ★ 그리고 이 판정을 `grep '^#.*텍스트'` 로 대신하려 하지 마라. 헤딩은 강조 표시를
-//! 품는다(`### 훅이 **어느 OS 에서** 도는가`) — 그 패턴은 그런 헤딩을 **0 건**으로 내고,
-//! 0 건은 "그 헤딩이 없다" 와 모양이 같아서 멀쩡한 앵커가 깨진 것으로 보고된다. 실제로
-//! 이 가드를 짓기 직전에 그 오판이 한 번 났다. 슬러그는 세지 말고 **재생성해서** 맞춘다.
+//! 외부 URL, 참조식 링크, Markdown이 아닌 대상은 여기서 검사하지 않는다.
+//! 없는 파일은 `cited_coordinates_exist`가 검사한다.
+//! 경로는 슬래시로 정규화하며 앵커 규칙은 `docs/documentation-model.md`를 따른다.
 
 // 이유: 이 파일은 합성 트리를 만들어 순회를 재는 양성 대조를 갖는다. 그 정리
 // 코드(`let _ = remove_dir_all`)는 실패해도 할 일이 없다 — 이전 실행 잔여물이 없으면
@@ -129,29 +21,16 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 
-/// 순회가 실제로 레포의 `.md` 를 봤음을 보장하는 하한.
-///
-/// 모수는 **레포 전체 `.md`** 다 — 점으로 시작하는 디렉토리 아래만 뺀다. 한때 이 주석이
-/// "`site/content/` 를 뺀 수" 라고 적고 바로 아래 `why_this_gap` 은 "레포 전체" 라고
-/// 적었다. 같은 선언 안에서 두 문장이 서로 다른 술어를 말했고, 순회의 필터에는 그 뺄셈이
-/// 없었다 — 수를 지키는 것은 수가 아니라 그 수를 낳는 정의다.
+/// 저장소 Markdown 순회가 빈 목록이나 크게 누락된 목록으로 통과하지 않게 한다.
+/// 점 디렉터리, 빌드 캐시, 의존성 디렉터리와 심볼릭 링크는 순회에서 제외한다.
 const MD_FLOOR: Floor = Floor {
-    min: 384,
-    measured: 448,
-    measured_on: "2026-09-08",
-    counted_on: tasty_doc_guards::floored_walk::CountedOn::LaneTip("8bdbf1bdb"),
-    why_this_gap: "실측(`8bdbf1bdb` 직전 1215 커밋): 이 모수는 400..448 로 \
-                   움직였고 **감소가 한 번도 없었다** — 47 개 커밋에서 다 늘기만 했고 최대 \
-                   증가가 2 다. 감소 진폭이 관측되지 않았으므로 '진폭 × 몇 배' 를 쓸 근거가 \
-                   없고, 대신 아직 안 일어난 사건의 크기에 건다: 문서 카테고리 하나가 접히면 그 \
-                   아래 `.md` 가 통째로 빠지고, 지금 트리에서 그 크기의 최대는 `docs/features` \
-                   의 64 다. 여유 64 = 사건 하나. `docs/adr` 211 은 곱수에 안 넣는다 — 그것이 \
-                   접히는 것은 카테고리 하나가 접히는 사건이 아니라 결정 기록 방식이 바뀌는 \
-                   일이고, 그때 할 일은 하한을 견디는 것이 아니라 이 수를 다시 재는 것이다. 앞선 \
-                   판은 이 자리에 계보(레포 전체를 세고 `site/content/` 를 안 뺀다)만 적고 폭은 \
-                   '넓게·좁게' 로만 말했다 — 그 말은 어떤 실측으로도 거짓이 되지 않아 118 이라는 \
-                   폭을 아무것도 안 정했다. 좌변은 레포 전체의 `.md` 이고 그중 402 가 `docs/` \
-                   아래다",
+    min: 215,
+    measured: 267,
+    measured_on: "2026-09-24",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::Tree("e87dcea71"),
+    why_this_gap: "추적 Markdown은 267개다. 로컬 전용 문서를 포함한 실제 순회는 268개였다. \
+                   하한은 로컬 파일에 의존하지 않으며 가장 큰 비-ADR 문서 분류인 \
+                   docs/features의 52개만큼 여유를 둔다. 검사 범위가 바뀌면 다시 측정한다.",
 };
 
 /// 이 축에서 판정한 앵커 참조가 이보다 적으면 검출기가 죽은 것으로 본다.
@@ -207,31 +86,49 @@ fn link_text_only(text: &str) -> String {
 }
 
 /// 인라인 코드 스팬을 지운다 — 백틱 안의 `](#x)` 는 링크가 아니라 예시다.
-fn without_inline_code(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut in_code = false;
-    for c in line.chars() {
-        if c == '`' {
-            in_code = !in_code;
-            continue;
+fn without_inline_code(mut line: &str) -> String {
+    let mut out = String::new();
+    while let Some(at) = line.find('`') {
+        out.push_str(&line[..at]);
+        let run = line[at..].bytes().take_while(|b| *b == b'`').count();
+        let after = &line[at + run..];
+        let mut scan = after;
+        let mut closed = false;
+        while let Some(next) = scan.find('`') {
+            let closing = scan[next..].bytes().take_while(|b| *b == b'`').count();
+            scan = &scan[next + closing..];
+            if closing == run {
+                line = scan;
+                closed = true;
+                break;
+            }
         }
-        if !in_code {
-            out.push(c);
+        if !closed {
+            out.push_str(&line[at..at + run]);
+            line = after;
         }
     }
+    out.push_str(line);
     out
 }
 
 /// 코드펜스 밖의 줄만 (1-based 줄번호와 함께) 낸다.
 fn prose_lines(contents: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
-    let mut in_fence = false;
+    let mut fence: Option<(u8, usize)> = None;
     for (i, line) in contents.lines().enumerate() {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
+        let text = line.trim_start();
+        let marker = text.as_bytes().first().copied().unwrap_or_default();
+        let count = text.bytes().take_while(|b| *b == marker).count();
+        if let Some((opened, width)) = fence {
+            if marker == opened && count >= width && text[count..].trim().is_empty() {
+                fence = None;
+            }
             continue;
         }
-        if !in_fence {
+        if matches!(marker, b'`' | b'~') && count >= 3 {
+            fence = Some((marker, count));
+        } else {
             out.push((i + 1, line));
         }
     }
@@ -247,7 +144,7 @@ fn anchors_of(contents: &str) -> HashSet<String> {
 /// **문서 순서로** 붙는다 — 두 규칙 모두 같은 방식이라 접미사는 갈림의 원인이 아니다.
 fn anchors_with(contents: &str, rule: fn(&str) -> String) -> HashSet<String> {
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
-    let mut out = HashSet::new();
+    let mut out = explicit_html_anchors(contents);
     for (_, line) in prose_lines(contents) {
         let Some(rest) = line.strip_prefix('#') else {
             continue;
@@ -270,6 +167,150 @@ fn anchors_with(contents: &str, rule: fn(&str) -> String) -> HashSet<String> {
         out.insert(id);
     }
     out
+}
+
+/// 코드 예시와 HTML 주석 밖의 시작 태그에서 id와 a의 name을 읽는다.
+/// 저장소에서 쓰는 한 줄 태그를 지원한다. 여러 줄 태그와 HTML entity 해석은 하지 않는다.
+fn explicit_html_anchors(contents: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    let mut in_comment = false;
+    for (_, line) in prose_lines(contents) {
+        if line.starts_with("    ") || line.starts_with('\t') {
+            continue;
+        }
+        let line = without_inline_code(line);
+        let mut rest = line.as_str();
+        while !rest.is_empty() {
+            if in_comment {
+                let Some((_, after)) = rest.split_once("-->") else {
+                    break;
+                };
+                rest = after;
+                in_comment = false;
+                continue;
+            }
+            let Some((before, after)) = rest.split_once('<') else {
+                break;
+            };
+            if before.bytes().rev().take_while(|b| *b == b'\\').count() % 2 == 1 {
+                rest = after;
+                continue;
+            }
+            if let Some(after) = after.strip_prefix("!--") {
+                in_comment = true;
+                rest = after;
+                continue;
+            }
+            let Some(end) = html_tag_end(after) else {
+                break;
+            };
+            let tag = &after[..end];
+            rest = &after[end + 1..];
+            let name_end = tag.find(char::is_whitespace).unwrap_or(tag.len());
+            let name = &tag[..name_end];
+            if !name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+                continue;
+            }
+            for (key, value) in html_attributes(&tag[name_end..]) {
+                if (key.eq_ignore_ascii_case("id")
+                    || (name.eq_ignore_ascii_case("a") && key.eq_ignore_ascii_case("name")))
+                    && !value.is_empty()
+                {
+                    out.insert(value.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 따옴표로 감싼 속성값 안의 >는 태그를 닫지 않는다.
+fn html_tag_end(text: &str) -> Option<usize> {
+    let mut quote = None;
+    for (at, c) in text.char_indices() {
+        match (quote, c) {
+            (Some(open), c) if open == c => quote = None,
+            (None, '\'' | '"') => quote = Some(c),
+            (None, '>') => return Some(at),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 속성값 전체를 먼저 소비하므로 title 안에 든 id= 예시를 앵커로 오해하지 않는다.
+fn html_attributes(mut rest: &str) -> Vec<(&str, &str)> {
+    let mut out = Vec::new();
+    loop {
+        rest = rest.trim_start();
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '=')
+            .unwrap_or(rest.len());
+        let key = &rest[..end];
+        if key.is_empty() {
+            break;
+        }
+        rest = rest[end..].trim_start();
+        let Some(after) = rest.strip_prefix('=') else {
+            continue;
+        };
+        rest = after.trim_start();
+        let Some(first) = rest.chars().next() else {
+            break;
+        };
+        let value;
+        if first == '\'' || first == '"' {
+            let Some((quoted, after)) = rest[1..].split_once(first) else {
+                break;
+            };
+            value = quoted;
+            rest = after;
+        } else {
+            let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            value = &rest[..end];
+            rest = &rest[end..];
+        }
+        out.push((key, value));
+    }
+    out
+}
+
+#[test]
+fn explicit_anchors_resolve_but_examples_and_unrelated_attributes_do_not() {
+    let body = r##"<a id="old-heading"></a>
+<a name = 'legacy'></a><div id=section></div>
+<a title="id='pretend'" data-id="wrong"></a>
+<a title='><a id="inside-string">'></a>
+\<a id="escaped"></a>
+    <a id="indented-code"></a>
+`<a id="inline"></a>`
+``example ` <a id="long-inline"></a>``
+~~~html
+<a id="tilde-fenced"></a>
+~~~
+````html
+```
+<a id="long-fenced"></a>
+````
+<!-- <a id="comment"></a>
+<a id="comment-next-line"></a> -->
+```html
+<a id="fenced"></a>
+```
+# Heading
+[valid](#old-heading) [legacy](#legacy) [missing](#absent)
+"##;
+    assert_eq!(
+        anchors_of(body),
+        HashSet::from_iter(["old-heading", "legacy", "section", "heading"].map(str::to_string))
+    );
+    let corpus = Corpus::from_pairs(&[
+        ("docs/a.md", body),
+        ("docs/b.md", "[cross](a.md#old-heading)"),
+    ]);
+    let checked = audit(&corpus, RENDERER_OWNED_PREFIX);
+    assert_eq!(checked.violations.len(), 1, "{:?}", checked.violations);
+    assert!(checked.violations[0].contains("absent"));
 }
 
 /// 그 문서가 **인용하는** 링크 대상 전부 — `(줄번호, 대상)`.
@@ -597,8 +638,8 @@ fn the_site_anchor_judge_is_still_wired() {
         "`site/content/` 의 앵커를 볼 판사가 없어졌다.\n\
          판정기({JUDGE}) 에서 사라진 결정: {missing:?}\n\
          배선({WORKFLOW}) 이 `npm run check-links` 를 부르는가: {wired}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0247 의 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md).\n\
+         ★ 이것은 회귀가 아니라 **docs/documentation-model.md 의 재검토 조건이 발동한 것**이다 \
+         (docs/documentation-model.md).\n\
          이 가드는 그 트리를 가리키는 앵커를 판정에서 **뺀다** — 뺀 근거가 \"그쪽에 더 \
          정확한 판사가 있다\" 이므로, 그 판사가 없으면 뺀 자리는 아무도 안 보는 구멍이다. \
          빨강이 뜻하는 것은 링크가 깨졌다가 아니라 **깨졌는지 아무도 안 본다**이다.\n\
@@ -618,6 +659,7 @@ fn the_site_anchor_judge_is_still_wired() {
 ///  - 보고 갈래(`out.violations.push`)를 통째로 비우면 **rc=0 · 5 passed**.
 ///  - 건너뛰기 조건을 `&&` -> `||` 로 넓혀 한 끝만 content 여도 건너뛰게 하면 **rc=0**.
 ///  - 그 조건을 아예 꺼도(`false &&`) **rc=0**.
+///
 /// 생산 좌변에서 위반이 0 이고 판정 수가 하한(120)보다 훨씬 커서, 셋 다 조용하다.
 /// (`resolve_rel` 의 `..` 접기만은 생산 트리가 이미 잡는다 — rc=1.)
 ///
@@ -720,7 +762,7 @@ fn the_walk_skips_dot_directories_and_takes_only_markdown() {
     // 점 디렉토리 안 — 커밋되지 않는 로컬 작업 폴더의 형태다. 좌변에 들어오면 안 된다.
     write(".hidden-work/note.md", "[깨진 것](#없는-제목)\n");
 
-    // 하한은 이 합성 트리의 성질이다. `MD_FLOOR`(min 330) 를 그대로 쓰면 걸린다.
+    // 하한은 이 합성 트리의 성질이다. 실제 저장소의 `MD_FLOOR` 를 그대로 쓰면 걸린다.
     let floor = Floor {
         min: 2,
         measured: 3,

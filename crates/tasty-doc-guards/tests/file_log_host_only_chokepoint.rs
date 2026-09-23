@@ -3,7 +3,7 @@
 //! 배경: `tasty` 바이너리는 GUI(host)와 CLI 클라이언트를 겸한다. 파일 tracing 레이어를
 //! 만들면서 로그 파일까지 함께 열면, 역할 판정(`cli_routing::parse_or_route`)이 그
 //! **뒤에** 오기 때문에 CLI 서브커맨드 한 번이 실행 중인 host 의 로그를 truncate 한다
-//! (실제로 그랬다 — [ADR-0092](../docs/adr/0092-file-log-host-process-only.md)).
+//! (실제로 그랬다 — [ADR-0643](../docs/adr/0643-cli-errors-and-diagnostic-logs.md)).
 //!
 //! 회귀는 조용하다: 컴파일도 되고 테스트도 통과하지만, 진단이 필요한 순간에 로그가
 //! 비어 있는 것으로만 드러난다. 그래서 "파일을 여는 지점은 host 확정 이후 한 곳뿐" 을
@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 const IMPL_FILE: &str = "crates/tasty-platform/src/crash_report.rs";
 /// 얇은 boot 래퍼. 여기도 위임 래퍼 함수 본문 안만 허용한다 — 파일 통째로 스킵하면
 /// 모든 프로세스가 타는 `init_crash_report()` 안에 호출 한 줄을 넣는 것만으로
-/// ADR-0092 이전 버그가 부활하는데 가드가 초록으로 남는다.
+/// ADR-0643 이전 버그가 부활하는데 가드가 초록으로 남는다.
 const WRAPPER_FILE: &str = "src/boot/os.rs";
 /// 유일한 호출처 — host 확정(`Routed::Gui`) 이후. 이 파일은
 /// [`the_call_site_sits_inside_the_host_arm`] 가 **분기 블록 내부인지**로 따로 검사한다.
@@ -145,7 +145,7 @@ fn log_file_is_opened_from_the_host_path_only() {
         offenders.is_empty(),
         "`{OPEN_FN}` 은 host 확정 이후의 `{CALL_SITE_FILE}` 에서만 부른다 — \
          CLI 클라이언트도 같은 바이너리라, 다른 경로에서 부르면 CLI 실행마다 실행 중인 \
-         host 의 로그가 truncate 된다(ADR-0092):\n{}",
+         host 의 로그가 truncate 된다(ADR-0643):\n{}",
         offenders.join("\n")
     );
 }
@@ -179,7 +179,7 @@ fn the_call_site_sits_inside_the_host_arm() {
         "`{OPEN_FN}()` 이 `Routed::Gui` 분기 블록({}~{} 줄) 밖의 {} 줄에 있다 — \
          `run()` 아래 아무 함수(CLI 경로인 `run_subcommand` 포함)로 옮겨도 단순 위치 \
          비교는 통과하므로, 블록 내부인지로 본다. 밖에서 부르면 CLI 프로세스도 파일을 \
-         열게 되어 ADR-0092 의 결정이 무너진다",
+         열게 되어 ADR-0643 의 결정이 무너진다",
         arm_start + 1,
         arm_end + 1,
         call + 1
@@ -205,7 +205,7 @@ fn tracing_init_does_not_open_the_log_file() {
         assert!(
             offset > open_fn_at,
             "`{IMPL_FILE}` 에서 로그 파일명을 `{OPEN_FN}` 밖(= 역할 판정 이전에 도는 \
-             초기화 경로)에서 쓰고 있다 — CLI 프로세스가 다시 파일을 열게 된다(ADR-0092)"
+             초기화 경로)에서 쓰고 있다 — CLI 프로세스가 다시 파일을 열게 된다(ADR-0643)"
         );
     }
 }

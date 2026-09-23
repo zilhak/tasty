@@ -1,4 +1,4 @@
-//! 휠 1노치 거리의 **런타임 출처가 하나로 남아 있는가** — ADR-0130 의 집행.
+//! 휠 1노치 거리의 **런타임 출처가 하나로 남아 있는가** — ADR-0615 의 집행.
 //!
 //! 그 ADR 의 결정 ② 는 "휠을 포인트로 환산하는 모든 지점이 egui
 //! `Options::line_scroll_speed` 를 읽는다" 다. 값을 한 번 맞추는 것과 맞은 채로 있는
@@ -168,7 +168,7 @@ fn every_conversion_site_reads_the_runtime_option() {
         bad.is_empty(),
         "휠 Line 을 다루면서 런타임 노치(egui `Options::line_scroll_speed`)를 안 읽는 \
          자리가 있다. 노치를 자기 값으로 정하면 그 표면만 설정을 안 따라오고, 같은 창에서 \
-         휠 한 칸이 표면마다 다른 거리를 움직인다(ADR-0130). Line 을 환산하지 않고 \
+         휠 한 칸이 표면마다 다른 거리를 움직인다(ADR-0615). Line 을 환산하지 않고 \
          넘기기만 하는 자리라면 사유와 함께 ALLOWLIST 에 넣어라:\n{}",
         bad.join("\n")
     );
@@ -185,7 +185,7 @@ fn no_conversion_site_freezes_the_notch_at_its_default() {
         bad.is_empty(),
         "환산 자리가 `{FROZEN_DEFAULT}` 를 직접 읽는다. 그것은 설정의 **기본값**이지 \
          지금 값이 아니다 — 사용자가 슬라이더를 옮겨도 이 자리만 옛 거리로 스크롤한다. \
-         런타임 값은 egui 컨텍스트에서 읽어라(ADR-0130):\n{}",
+         런타임 값은 egui 컨텍스트에서 읽어라(ADR-0615):\n{}",
         bad.join("\n")
     );
 }

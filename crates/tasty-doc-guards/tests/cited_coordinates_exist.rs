@@ -71,7 +71,7 @@
 //! `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(레포 전체 스캔).
 //!
 //! 판정을 리터럴 좌표로 좁히고 오탐을 예외 목록이 아니라 인용 형태로 없애는 결정의 근거·대안:
-//! `docs/adr/0151-cited-coordinates-are-judged-as-literals-not-by-context.md`.
+//! `docs/documentation-model.md`.
 
 // 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
 // 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
@@ -126,7 +126,7 @@ const PRUNE_DIRS: &[&str] = &[
 ];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다.
+/// (`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
@@ -295,7 +295,7 @@ fn scan_pairs(line: &str) -> Vec<(String, Vec<String>)> {
 /// 이 가드가 좌표 인용을 안 찾아 공용 denylist 위에 **더** 빼는 형식. `.svg`·`.lock` 은
 /// 우리 소스 경로 좌표를 담지 않는다 — 바이너리 판정은 정본
 /// [`tasty_doc_guards::is_binary_artifact_ext`] 가 하고, 이 목록은 그 위에 얹는 이 가드의
-/// 모수 축소다(ADR-0180: 판정은 하나, 스캔 범위는 소비자별).
+/// 모수 축소다(ADR-0647: 판정은 하나, 스캔 범위는 소비자별).
 const EXTRA_SKIP_EXTS: &[&str] = &["lock", "svg"];
 
 /// 파일 하나가 스캔 대상인가 — 공용 바이너리 denylist 위에 [`EXTRA_SKIP_EXTS`] 를 더
@@ -402,19 +402,6 @@ const ALLOWLIST: &[(&str, &str)] = &[
     (
         "crates/tasty-terminal-link/src/lib.rs",
         "crates/x/Cargo.toml",
-    ),
-    // ③ ADR 본문의 **결정 시점 좌표.** ADR 템플릿의 "좌표 예외" 는 Context·Decision 의
-    //    코드 인용을 결정 시점 기준으로 규정하고 **낡았다는 이유로 고치는 것을 금지한다**
-    //    — 그 부재가 결정이 실행됐다는 증거라서다. 그러니 이 부류는 형태를 고쳐 닫을 수
-    //    없다. 아래 둘은 사이트가 Astro 로 옮겨 가며 사라진 러스트 생성기이고, 그 ADR 은
-    //    ADR-0247 이 대체했다.
-    (
-        "docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md",
-        "site/src/md.rs",
-    ),
-    (
-        "docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md",
-        "site/src/main.rs",
     ),
 ];
 
@@ -923,16 +910,13 @@ fn cited_markdown_links_resolve_from_their_own_document() {
 }
 
 /// 본 판정이 보는 링크 수의 하한 — **연기 검사**다. 스캐너가 깨져 0 을 내면 위 단정이
-/// 언제나 초록이 된다(ADR-0133).
+/// 언제나 초록이 된다(ADR-0647).
 ///
 /// 값은 실측의 절반 아래로 잡았다 — 문서가 늘고 주는 것으로는 안 깨지고 스캐너가
 /// 무너질 때만 걸리게. **이 하한을 고를 때 실측은 3154 였다**(2026-09-05).
 ///
-/// 그 수는 **지금 값을 주장하지 않는다** — 하한을 왜 1500 으로 잡았는지에 대한
-/// 과거형 사실이라 실제 링크 수가 달라져도 안 낡는다. ADR-0139 가 칸 1 을 바꾸라고
-/// 준 세 형태 중 ②(과거형 사실)이고, 하한 자신은 칸 3(결정된 임계값)이라 그냥 적는다.
-/// 이 주석은 전에 그 ADR 을 "수를 적지 마라" 로 읽고 근거를 지웠었다 — 그 ADR 은
-/// 금지가 아니라 변환 규칙이다.
+/// 이 값은 현재 링크 수가 아니라 하한을 고른 당시의 측정이다.
+/// `docs/documentation-model.md`의 수치 기록 원칙에 따라 현재 값과 구분한다.
 ///
 /// **판별식** — 종전에 이 자리가 적어 둔 재는 법은 "지금 몇인지 알아야 하면 이 상수를
 /// 크게 올려 실패 메시지로 읽는다" 였다. 답은 나오지만 **재려고 트리를 건드려야 한다.**

@@ -18,7 +18,7 @@
 //! - N  OS 네이티브 — `NSString::from_str(` / `MenuItem::new(` / `.with_tooltip(` / `w!(`.
 //!   `UTF-8` · `about:blank` 같은 식별자는 두고, 대문자로 시작하는 영단어 하나
 //!   (`Quit` / `File`)나 문장을 위반으로 본다.
-//! - P  `PushNotification { … title: "…" }` — 알림 제목 리터럴(ADR-0106).
+//! - P  `PushNotification { … title: "…" }` — 알림 제목 리터럴(ADR-0640).
 //! - F  `unwrap_or("…")` / `unwrap_or_else(|| "…")` 폴백 — 대문자 시작 영단어·문장·CJK
 //!   (`"Unknown"` / `"Shell"`). 소문자 단일 단어(`"unknown"`)는 식별자일 수 있어 두지만,
 //!   그런 값이 화면에 간다면 그것도 `t()` 다(i18n.md "위젯 호출이 아닌 경로").
@@ -80,7 +80,7 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     (
         "crates/tasty-doc-guards/src/bin/",
         "게이트 스크립트가 부르는 개발 도구 — 사용자 배포 표면이 아니고, 이 크레이트는 \
-         의존이 0 인 것이 존재 이유라(ADR-0138) 번역 테이블을 들일 수도 없다. 진단은 \
+         의존이 0 인 것이 존재 이유라(ADR-0647) 번역 테이블을 들일 수도 없다. 진단은 \
          게이트 로그로 나가 개발자만 읽는다 (`crates/tasty-tui-simulator/` 와 같은 근거). \
          **`src/bin/` 만이다** — 이 크레이트의 라이브러리는 아무것도 출력하지 않는다",
     ),
@@ -192,7 +192,7 @@ const CLAP_DOC_ROOTS: &[(&str, Option<usize>)] = &[
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// (`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
 /// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
@@ -716,7 +716,7 @@ fn clap_help_text_is_english_only() {
 
 /// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
 ///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md). 가리키는 것이 실재한다는
 /// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
 /// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
 ///

@@ -3,7 +3,7 @@
 //! 배경: 창을 여는 모든 경로가 실패를 `expect` 로 처리하던 시절, 사용자 `config.toml`
 //! 의 셸 경로 오타 하나가 **실행 중인 모든 창의 세션**을 함께 날렸다. 이미 터미널이 떠
 //! 있는 상태에서 패닉하기 때문이다. 그 결함은 실패를 `Result` 로 돌려 창만 취소하도록
-//! 고쳤다(`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+//! 고쳤다(`docs/adr/0616-window-platform-and-shutdown.md`).
 //!
 //! 그런데 "고쳤다" 와 "고쳐진 채로 유지된다" 는 다른 문제다. 이 경로들은 winit
 //! `ActiveEventLoop` 와 GPU 상태가 있어야 돌아가 단위 테스트로 감쌀 수 없고, 실제로
@@ -80,7 +80,7 @@ fn window_and_modal_creation_paths_contain_no_panics() {
     assert!(
         hits.is_empty(),
         "창·모달 생성 경로에 패닉이 들어왔다. 창 생성 실패는 그 창만 취소하고 나머지 창의 \
-         세션을 살려야 한다(ADR-0117). 실패를 `Result` 로 돌리고 \
+         세션을 살려야 한다(ADR-0616). 실패를 `Result` 로 돌리고 \
          `notify_window_creation_failed` 로 알려라. 정말 불변식이라면 \
          `INVARIANT_ALLOWLIST` 에 근거와 함께 등록한다.\n{}",
         hits.join("\n")

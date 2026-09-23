@@ -170,7 +170,7 @@ fn the_palette_slot_has_only_the_registered_writers() {
 
 /// 액션 이름은 **도출한다 — 손으로 안 쓴다.**
 ///
-/// 명부에 71 을 적으면 필드가 늘 때마다 낡는다(ADR-0139). 이름은 `KeybindingSettings`
+/// 명부에 71 을 적으면 필드가 늘 때마다 낡는다(docs/documentation-model.md). 이름은 `KeybindingSettings`
 /// 에서 읽고, 여기서 단정하는 것은 **관계**뿐이다: 문의 arm 은 전부 실재하는 액션 필드다.
 ///
 /// 반대 방향(`fields ⊆ arms`)은 **단정하지 않는다.** 29 개 필드가 다른 자리에서 처리되고

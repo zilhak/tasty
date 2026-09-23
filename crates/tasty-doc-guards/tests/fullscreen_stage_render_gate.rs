@@ -25,7 +25,7 @@
 //! 2 와 4 가 이미 그 본문과 `render_if_dirty` 를 읽고 있어서, 따로 파일을 내면 같은 함수
 //! 본문에 판정기가 둘이 된다. 파일 이름을 넓히는 쪽은 재 보고 접었다: 이 파일 이름을
 //! 인용하는 자리가 넷인데(`docs/design/systems/fullscreen-stage.md` ·
-//! `docs/adr/0082-fullscreen-independent-stage.md` · `src/state/fullscreen_stage_tests.rs` ·
+//! `docs/adr/0618-explicit-capture-and-fullscreen-stage.md` · `src/state/fullscreen_stage_tests.rs` ·
 //! `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs`) 넷 다 무대 문맥이라,
 //! 이름을 넓히면 그 넷이 잃는 신호가 6 이 얻는 것보다 크다. 같은 형태의 선례도 있다 —
 //! `fullscreen_stage_input_gate.rs` 는 무대 가드인데 `settings_open_requested` 가 든 식을

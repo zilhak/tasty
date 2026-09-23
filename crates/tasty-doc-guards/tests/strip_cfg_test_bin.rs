@@ -28,7 +28,7 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_strip-cfg-test");
 
-/// 임시 디렉토리. **이 크레이트는 의존이 0 이다**(ADR-0138) — `tempfile` 을 dev-의존으로
+/// 임시 디렉토리. **이 크레이트는 의존이 0 이다**(ADR-0647) — `tempfile` 을 dev-의존으로
 /// 들이면 doc-guards 잡이 그만큼 더 컴파일한다. 같은 크레이트의 다른 통합 테스트가 쓰는
 /// 형태를 그대로 쓴다: pid 로 다른 완주와 갈리고, 태그로 같은 완주 안에서 갈린다.
 struct Tmp(PathBuf);

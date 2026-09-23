@@ -223,8 +223,8 @@ fn the_detector_separates_a_hand_rolled_normalization_from_using_the_shared_one(
 ///
 /// ★ **이 시험이 답하지 않는 것.** "넘어간다" 는 겨냥이 맞다는 필요조건이지 충분조건이
 /// 아니다. 넘어가되 그 결과의 일부만 판정하는 자리는 여전히 하한 쪽이 넓을 수 있고,
-/// 그것은 자리마다 배타적 변이로만 갈린다. 그 판정은 여기서 **안 한다** — ADR-0243 의
-/// (ㄷ) 채널 칸이고, 되돌아올 조건은 그 변이를 자동으로 만드는 자리가 생길 때다.
+/// 그것은 자리마다 배타적 변이로만 갈린다. 그 판정은 여기서 **안 한다** — 필요한 변이를 자동으로 만들 수 있을 때 다시 검토한다.
+/// 검사 도입 기준은 `docs/dev-guide/guard-verification.md`를 따른다.
 #[test]
 fn every_floor_declaration_reaches_a_walk() {
     let root = &tasty_doc_guards::repo_root();

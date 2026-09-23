@@ -1,4 +1,4 @@
-//! ADR-0101 의 재검토 조건 하나에 **발화 자리**를 준다 —
+//! ADR-0643 의 재검토 조건 하나에 **발화 자리**를 준다 —
 //! "host 프로세스가 stdout 에 쓰는 경로가 생긴다(현재는 없음)".
 //!
 //! 그 ADR 은 EPIPE 처리를 **CLI 클라이언트 갈래에만** 격리했다. host 는 자식 stdin 을
@@ -89,7 +89,7 @@ fn the_shipped_host_has_no_direct_stdout_write() {
     }
 
     println!(
-        "[ADR-0101 좌변] 루트 패키지 `.rs` {} 개 · 출하 밖 {} 개 · 판정 {judged_files} 개",
+        "[ADR-0643 좌변] 루트 패키지 `.rs` {} 개 · 출하 밖 {} 개 · 판정 {judged_files} 개",
         sources.len(),
         not_shipped.len()
     );
@@ -97,8 +97,8 @@ fn the_shipped_host_has_no_direct_stdout_write() {
     assert!(
         offenders.is_empty(),
         "host 가 출하되는 코드에서 stdout 에 직접 쓴다:\n{}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0101 의 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0101-cli-stdout-broken-pipe-exit-zero.md).\n\
+         ★ 이것은 회귀가 아니라 **ADR-0643 의 재검토 조건이 발동한 것**이다 \
+         (docs/adr/0643-cli-errors-and-diagnostic-logs.md).\n\
          그 ADR 은 EPIPE 를 종료 코드 0 으로 접는 처방을 **CLI 클라이언트 갈래에만** \
          격리했고, 그 격리의 근거가 \"host 는 stdout 에 안 쓴다\" 는 실측이다. \
          host 에서 쓰기 시작하면 그 경계가 host 를 안 덮는다.\n\
@@ -138,7 +138,7 @@ fn the_predicate_tells_stdout_macros_from_stderr_ones() {
         wrong.is_empty(),
         "매크로 술어가 stdout 과 stderr 를 못 가른다:\n{}\n\
          ★ 못 가르면 이 가드는 **더 많이 잡는 쪽으로** 틀리고, 그 계수를 근거로 \
-         ADR-0101 이 낡았다는 판정이 나온다. 실측 2026-09-08 에 실제로 그랬다.",
+         stdout 정책이 낡았다는 잘못된 판정이 나온다.",
         wrong.join("\n")
     );
 }
@@ -151,7 +151,7 @@ fn the_predicate_tells_stdout_macros_from_stderr_ones() {
 /// 입력으로 양성 대조를 만든다(`shipping_scope` 가 bench·example 절을 두지 않은 것과 같은 이유).
 ///
 /// 필터를 지우지 않는 이유: 지우면 출하 안 되는 인라인 test 코드가 위반으로 나가고,
-/// 그 실패문의 처방("ADR-0101 의 경계를 다시 써라")이 **실재하지 않는 조건에 대한
+/// 그 실패문의 처방("ADR-0643 의 경계를 다시 써라")이 **실재하지 않는 조건에 대한
 /// 처방**이 된다.
 #[test]
 fn inline_cfg_test_blocks_are_not_shipped_lines() {

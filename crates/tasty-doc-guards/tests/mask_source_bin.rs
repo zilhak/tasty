@@ -15,7 +15,7 @@ use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_mask-source");
 
-/// 임시 디렉토리. 이 크레이트는 의존이 0 이라(ADR-0138) `tempfile` 을 안 들인다 —
+/// 임시 디렉토리. 이 크레이트는 의존이 0 이라(ADR-0647) `tempfile` 을 안 들인다 —
 /// 같은 크레이트의 다른 통합 테스트와 같은 형태를 쓴다.
 struct Tmp(PathBuf);
 impl Tmp {

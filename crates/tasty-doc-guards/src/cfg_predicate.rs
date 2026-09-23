@@ -332,7 +332,7 @@ pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
 /// 회차가 앞의 두 게이트만 다시 재고 plugin 버전 게이트를 안 셌는데, 그쪽 좌변은
 /// 움직였다(`crates/tasty-plugin-agent-stream/src/record.rs` 의 증거 사본 351 → 240,
 /// 테스트 블록만 고친 변경의 판정이 "bump 요구" → "판정 대상 0" 으로 뒤집힌다 — 방향은
-/// 안전). 실측은 `docs/adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md`.
+/// 안전). 플러그인 버전 비교 규칙은 `docs/dev-guide/release.md`.
 ///
 /// 소비자가 자기 사본을 만들면 같은 물음에 답이 둘이 되고, 갈린 답은 조용하다. 두
 /// 형태를 실측으로 밟았다 — 앞의 갈림은 **출하되지도 않는 코드에 대한 영구 면제**라는

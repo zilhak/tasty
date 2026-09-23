@@ -38,7 +38,7 @@
 //!
 //! 현재 검사 대상은 선언 위치가 아니라 획득 형태다. 선언을 `spawn_diag` 안으로
 //! 제한하지 않는 근거·대안·재검토 조건은
-//! `docs/adr/0274-harness-locks-are-checked-at-acquisition.md` 에 있다.
+//! `docs/dev-guide/unit-test-isolation.md` 에 있다.
 //! [`MIN_ACQUISITIONS`] 는 획득 자리 수의 **하한**만 검사한다. 획득이 늘어도
 //! 그 자체로 실패하지 않으며, 새 비면제 생 `.unwrap()` 은 별도 위반 검사로 잡는다.
 //!

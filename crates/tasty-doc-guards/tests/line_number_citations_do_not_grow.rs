@@ -1,4 +1,4 @@
-//! 코드를 `경로:숫자` 로 가리키는 인용이 **늘지 않는지** 본다 (ADR-0194 3 단계).
+//! 코드를 `경로:숫자` 로 가리키는 인용이 **늘지 않는지** 본다 (docs/documentation-model.md의 경로와 코드 인용).
 //!
 //! ## 왜 수를 세나 — 정합을 못 보기 때문이다
 //!
@@ -43,9 +43,9 @@
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
-/// 실측 2026-09-07 의 값. 늘면 실패하고, 이 값보다 [`BAND`] 넘게 줄어도 실패한다
+/// ADR 통폐합 뒤 2026-09-24에 측정한 값이다. 늘거나 [`BAND`] 넘게 줄면 실패한다
 /// (그때는 상한을 내리라는 뜻이다 — 모듈 doc "왜 여유에 띠가 있나" 참조).
-const CAP: usize = 60;
+const CAP: usize = 21;
 
 /// 상한과 실제값 사이에 허용하는 폭. 한 파일이 담는 인용의 최대치에서 왔다.
 const BAND: usize = 15;
@@ -213,7 +213,7 @@ fn line_number_citations_do_not_grow() {
     assert!(
         total <= CAP,
         "`경로:숫자` 인용이 늘었다 — {total} 건 (상한 {CAP}).\n\
-         새 인용은 줄 번호가 아니라 **심볼 이름**으로 적는다 (ADR-0194): 경로와 함께 \
+         새 인용은 줄 번호가 아니라 **심볼 이름**으로 적는다 (docs/documentation-model.md): 경로와 함께 \
          함수·타입 이름을 쓰면 그 인용은 이동을 견디고, 가리키던 것이 사라지면 \
          검색 결과 0 으로 드러난다.\n\
          지금 세어진 자리:{listing}"

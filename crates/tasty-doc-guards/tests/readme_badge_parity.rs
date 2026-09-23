@@ -49,13 +49,13 @@ const WORKSPACE_SUFFIX: &str = "%20crates-";
 ///
 /// 여기에도 지금 값을 적지 않는다. 이 파일이 고치는 결함이 바로 "같은 수가 두 자리에
 /// 적히고 한쪽만 갱신된 것" 이라, 예시로라도 값을 박으면 그 자리가 다음 복제본이 된다
-/// (ADR-0139: 커밋마다 바뀌는 값은 적는 순간 낡는다).
+/// (docs/documentation-model.md: 커밋마다 바뀌는 값은 적는 순간 낡는다).
 const BODY_SUFFIX: &str = "-crate workspace";
 
 const READMES: [&str; 2] = ["README.md", "README.ko.md"];
 
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
-/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
+/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0647).
 fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }

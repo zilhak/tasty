@@ -103,8 +103,8 @@ fn skips_from_workflow() -> Vec<String> {
         "`{STEP_ANCHOR}` 블록에서 `--skip` 을 하나도 못 읽었다. 읽기가 둘이고 **둘 다 \
          실패로 다룬다**:\n\
          (1) 파서가 죽었다 — 스텝 이름이나 인자 표기가 바뀌었다. 그때는 위 앵커를 고친다.\n\
-         (2) 진짜 0 건이다 — 그것은 결함이 아니라 **ADR-0127 의 재검토 조건이 줄어드는 \
-         쪽으로 발화한 것**이다(docs/adr/0127-e2e-harness-binary-selection.md). 헤드리스가 \
+         (2) 진짜 0 건이다 — 그것은 결함이 아니라 **ADR-0644 의 재검토 조건이 줄어드는 \
+         쪽으로 발화한 것**이다(docs/adr/0644-test-isolation-and-harness.md). 헤드리스가 \
          전 스위트를 돌게 됐다는 뜻이라 그 ADR 의 대안 A 를 다시 본다.\n\
          둘을 가르는 법: 워크플로에서 그 스텝을 눈으로 본다. 앵커는 찾았는데 인자만 \
          없으면 (2) 다."
@@ -492,11 +492,8 @@ fn the_fixtures_in_this_file_are_not_counted_as_tests() {
     );
 }
 
-/// ADR-0127 의 재검토 조건에 **판정 자리**를 준다 — 명명 skip 이 1 건에서 움직이면 죽는다.
-///
-/// 그 ADR 은 조건을 이렇게 적었다: "`check-headless` 의 명명 skip 이 1 건에서 늘면 —
-/// 판정: `.github/workflows/crossplatform-check.yml` 의 `--skip` 인자 개수." 판정 방법까지
-/// 적혀 있었는데 그것을 **사람이 기억해야** 발동했다. 여기가 그 자리다.
+/// 헤드리스 워크플로의 명명 skip이 늘면 검사 범위를 다시 검토하게 한다.
+/// E2E 바이너리 선택과 헤드리스 예외는 `docs/dev-guide/e2e-tests.md`를 따른다.
 ///
 /// # 좌변은 조건의 주어다
 ///
@@ -539,8 +536,8 @@ fn the_named_skip_count_is_still_one() {
         skips.len(),
         1,
         "`check-headless` 의 명명 `--skip` 이 {} 건이다: {:?}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0127 의 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0127-e2e-harness-binary-selection.md).\n\
+         ★ 이것은 회귀가 아니라 **ADR-0644 의 재검토 조건이 발동한 것**이다 \
+         (docs/adr/0644-test-isolation-and-harness.md).\n\
          순서가 있다. (1) 늘어난 건이 **\"GUI 를 정말 요구한다\"** 인지 **\"배선 결함\"** \
          인지 가른다 — 그 ADR 이 닫은 두 건은 둘 다 후자였다(헤드리스에 훅이 배선되지 \
          않았거나, 핸들러가 `gui` feature 에 묶여 있었다). (2) 배선 결함이면 skip 이 \

@@ -5,7 +5,7 @@
 //! # 왜 컴파일러가 아니라 이 가드인가
 //!
 //! 도메인은 본체와 **같은 크레이트**에 산다(크레이트를 떼지 않은 이유와 대안은
-//! [ADR-0440](../../../docs/adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md)).
+//! [ADR-0602](../../../docs/adr/0602-domain-execution-and-ports.md)).
 //! 같은 크레이트 안에서는 `crate::app::…` 이 언제나 이름 해석된다 — 도메인이 창 조립부를
 //! 거꾸로 불러도 컴파일은 통과한다. 크레이트 경계가 해 주었을 일을 이 가드가 대신한다.
 //!
@@ -22,7 +22,7 @@
 //!    webkit2gtk · gtk · objc2 계열 · webview2-com 등 — 목록은 매니페스트에서 읽는다,
 //!    [`gui_crates`])나 `windows` 의 창·그리기 하위 경로·창 핸들을 부르는가. 2 번의 수는 **새 게이트**만
 //!    센다 — 이미 있는 게이트 뒤 import 에 `egui::Context` 를 끼워 넣으면 수가 그대로라 안
-//!    보였다([ADR-0490](../../../docs/adr/0490-boundary-guards-close-three-holes-found-by-mutation.md)).
+//!    보였다([ADR-0602](../../../docs/adr/0602-domain-execution-and-ports.md)).
 //!    그래서 이 물음은 게이트를 안 빼고 읽고, 기존 자리를 **(파일, 경로) 목록**으로
 //!    고정한다([`GUI_CRATE_PATHS_IN_DOMAIN`] — 오늘 비어 있다).
 //!
@@ -31,7 +31,7 @@
 //! `src/core/**` · `src/ports/**` 의 `.rs` 중 **출하되는 것** — 파일 단위 test-only
 //! ([`test_only_files`])를 빼고, 인라인 `#[cfg(test)]` 줄([`cfg_gated_lines`])을 뺀다.
 //! 테스트는 픽스처(`adapters::test`, `state::tests`)를 부르는 것이 정상이고 출하 산출물에
-//! 안 들어간다(layering 가드가 같은 이유로 테스트를 뺀다 — ADR-0123).
+//! 안 들어간다(layering 가드가 같은 이유로 테스트를 뺀다 — ADR-0647).
 //!
 //! 주석과 문자열은 [`mask_non_code`] 로 지운다. 도메인의 문서 주석은 "이 일은 창 쪽
 //! `AppState` 가 한다" 처럼 상위 모듈을 **설명으로** 말하는 것이 정상이다.
@@ -45,7 +45,7 @@
 //!
 //! - **전이 의존.** 도메인이 부르는 형제 모듈(`file`·`store`·`hook_handler` 등)이 다시 상위
 //!   모듈을 부르는 경로는 안 센다. 형제 모듈이 상위 항목을 **재수출**하면 그 이름으로 우회된다.
-//!   크레이트를 떼는 날 그 경로가 경계를 넘는다 — ADR-0440 의 재검토 조건이 그 값을 잰다.
+//!   크레이트를 떼는 날 그 경로가 경계를 넘는다 — ADR-0602 의 재검토 조건이 그 값을 잰다.
 //! - **GUI 갈래를 가진 워크스페이스 크레이트.** `tasty-platform/gui` · `tasty-icons/egui` 처럼
 //!   `gui` 가 **다른 크레이트의 feature** 를 켜는 것은 그 크레이트가 headless 에도 링크되어,
 //!   `tasty_platform::…` 이 GUI 갈래를 부르는지 이름으로 안 갈린다.
@@ -150,7 +150,7 @@ const UPPER: &[(&str, &str)] = &[
 /// 의존이 아니라 **이미 있던 게이트가 도메인 쪽 선언에 옮겨 적힌 것**이다 — 그 메서드들은 GUI
 /// 타입을 하나도 안 부른다.
 ///
-/// 그 뒤 `src/state.rs` 의 모듈 단위 `allow(dead_code)` 를 지운 것(ADR-0355 잔여 ②·③)이 5 를
+/// 그 뒤 `src/state.rs` 의 모듈 단위 `allow(dead_code)` 를 지운 것(`docs/dev-guide/app-state-ownership.md`의 모듈 단위 예외 정리)이 5 를
 /// 더 올렸다. 그 `allow` 는 dead 판정의 뿌리 노릇도 해서, 지우자 `core` 다섯 자리가 headless 에
 /// 소비자 없는 정의로 드러났다 — `set_category_collapsed` · `reify_plugin_surface` ·
 /// `SurfaceCwd` 재수출과 그 `as_str`(①·②) · `SurfaceKindDef::convert_input_popup`(③).
@@ -167,7 +167,7 @@ const UPPER: &[(&str, &str)] = &[
 /// 주체(`IntentOrigin::User` · `UserSource`)가 headless 라이브러리에서 만들어지지 않는 variant 로
 /// 드러났다(③ +2). `adapters/ipc.rs` 의 것을 지우자 도메인 `core/session.rs` 의 agent 권한
 /// 임시 grant·revoke 둘이 드러났다(① +2 — headless IPC 표면이 그 두 메서드를 받지 않는다).
-/// 그 뒤 headless 가 mirror 구조 op 를 forward 큐에 넣지 않고 거절하게 했다(ADR-0538, +6).
+/// 그 뒤 headless 가 mirror 구조 op 를 forward 큐에 넣지 않고 거절하게 했다(ADR-0603, +6).
 /// `core/impl_mirror.rs` +5 — op 를 만드는 `build_mirror_forward_op` · 큐에 넣는
 /// `queue_mirror_forward` 의 두 갈래 · 그 원소 생성자 `PendingStructuralForward::agent` 는
 /// headless 에 소비자가 없고(① 네 자리), 차단 문구의 headless 꼬리 한 줄이 다섯째다. `core/state.rs`
@@ -179,7 +179,7 @@ const UPPER: &[(&str, &str)] = &[
 /// 그래서 지금 262 이다. 레포에 `cfg_attr(not(feature = "gui"), allow(dead_code))` 모듈 속성은 없다.
 ///
 /// 이 수는 **목표가 아니라 현재 상태의 못**이다. 도메인이 GUI 전용 항목을 갖는 이유는
-/// 대부분 "headless 에 소비자가 없다"(ADR-0346)이고 그 판정 자체는 정당하다. 이 못이 막는
+/// 대부분 "headless 에 소비자가 없다"(ADR-0603)이고 그 판정 자체는 정당하다. 이 못이 막는
 /// 것은 **새 게이트가 조용히 들어오는 것**이다 — 들어올 때 이 수를 올리는 커밋이 그
 /// 판단을 드러낸다.
 const GUI_GATES_IN_DOMAIN: usize = 262;
@@ -278,7 +278,7 @@ fn the_domain_does_not_name_an_upper_layer() {
     assert!(
         offenders.is_empty(),
         "도메인(`src/core` · `src/ports`) 출하 코드가 상위 계층을 이름으로 부른다:\n{}\n\
-         도메인은 조립·어댑터·GUI 를 모른다(ADR-0440). 처방은 방향을 뒤집는 것이다:\n\
+         도메인은 조립·어댑터·GUI 를 모른다(ADR-0602). 처방은 방향을 뒤집는 것이다:\n\
          - 도메인이 쓰는 타입이 상위 모듈에 정의돼 있으면 **정의를 도메인으로 옮기고** \
            상위 모듈이 재수출한다(`core::origin` · `core::host_event` 가 그렇게 왔다).\n\
          - 도메인이 창 쪽 연산이 필요하면 **도메인이 trait 을 선언하고** 창 쪽이 구현한다 \
@@ -316,7 +316,7 @@ fn gui_gates_in_the_domain_are_pinned() {
          {GUI_GATES_IN_DOMAIN}).\n{listing}\n\
          도메인에 GUI 전용 항목을 cfg 로 숨기면 상위 참조 가드가 못 본다 — 그 항목이 \
          창 상태나 GUI 부품을 부르지 않아도 **도메인이 GUI 를 안다**.\n\
-         먼저 물어라: 이 항목은 headless 에 소비자가 없어서 가리는가(ADR-0346 ① — 정당), \
+         먼저 물어라: 이 항목은 headless 에 소비자가 없어서 가리는가(ADR-0603 — GUI 전용 정의 제외), \
          아니면 GUI 동작이 도메인에 들어와서 가리는가(그러면 GUI 쪽으로 옮겨라).\n\
          앞쪽이면 이 상수를 {total} 으로 올리고 그 커밋 본문에 판정을 적어라.",
     );
@@ -444,7 +444,7 @@ fn the_domain_names_no_gui_crate_beyond_the_pinned_list() {
     assert!(
         new.is_empty(),
         "도메인(`src/core` · `src/ports`) 출하 코드가 GUI 크레이트를 부른다:\n{}\n\
-         도메인에 WebView·egui·OS 창 타입이 들어오면 안 된다(ADR-0440 · ADR-0490). gui 게이트 \
+         도메인에 WebView·egui·OS 창 타입이 들어오면 안 된다(ADR-0602). gui 게이트 \
          뒤에 두어도 마찬가지다 — 게이트는 headless 컴파일만 가릴 뿐 도메인이 GUI 를 아는 \
          사실은 그대로다. 처방은 상위 참조와 같다: 그 타입을 쓰는 동작을 GUI 쪽으로 옮기거나, \
          도메인이 trait 을 선언하고 창 쪽이 구현한다(`core::cascade_window`).\n\

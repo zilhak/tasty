@@ -1,8 +1,8 @@
-//! ADR-0146 의 재검토 조건 하나에 **발화 자리**를 준다 —
-//! "워크스페이스에 `walkdir` 류 순회 크레이트가 들어온다".
+//! 새로운 파일 순회 크레이트가 들어오면 기존 순회 검사의 범위를 다시 검토하게 한다.
 //!
-//! 그 ADR 은 "순회 수단이 `std::fs::read_dir` 뿐" 이라는 실측 위에 서 있다. 그 전제가
-//! 깨지는 날을 사람이 알아채야 발동하는 상태였다.
+//! 현재 검사는 std::fs::read_dir 중심으로 수집 경로를 확인한다.
+//! 다른 순회 라이브러리가 추가되면 기존 검색이 그 호출을 놓칠 수 있다.
+//! 캐시 제외 규칙은 `docs/dev-guide/guard-population.md`를 따른다.
 //!
 //! # 좌변
 //!
@@ -50,7 +50,7 @@ use tasty_doc_guards::source_text::repo_relative;
 /// `crates/` 아래 매니페스트 수집의 하한. 수집이 죽으면 위반 0 이 언제나 참이 된다.
 /// 공용 순회를 쓴다 — 직접 `read_dir` 는 `scripts/check-shared-walk-ratchet.sh` 의
 /// 상한에 앉고, 그 래칫은 **여유를 0 으로 유지한다**(건수가 줄면 상한도 같이 내린다).
-/// 값을 여기 안 적는 것은 그 수가 커밋마다 움직여 사본이 낡기 때문이다(ADR-0139) —
+/// 값을 여기 안 적는 것은 그 수가 커밋마다 움직여 사본이 낡기 때문이다(docs/documentation-model.md) —
 /// 지금 값은 그 스크립트를 돌리면 마지막 줄에 나온다.
 const CRATE_MANIFEST_FLOOR: Floor = Floor {
     min: 40,
@@ -242,7 +242,7 @@ fn the_workspace_still_depends_on_no_walk_crate() {
     );
 
     println!(
-        "[ADR-0146 좌변] 멤버 매니페스트 {} 개 · 의존 항목 {entries} 개 · 순회 크레이트 이름 {:?}",
+        "[순회 크레이트 검사] 멤버 매니페스트 {} 개 · 의존 항목 {entries} 개 · 순회 크레이트 이름 {:?}",
         manifests.len(),
         walk_crates
     );
@@ -250,8 +250,8 @@ fn the_workspace_still_depends_on_no_walk_crate() {
     assert!(
         hits.is_empty(),
         "워크스페이스가 순회 크레이트를 직접 의존한다:\n{}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0146 의 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0146-build-dirs-are-pruned-by-their-tag-not-by-their-name.md).\n\
+         ★ 이것은 회귀가 아니라 **기존 순회 검사의 범위를 다시 검토해야 한다는 뜻**이다 \
+         (docs/dev-guide/guard-population.md).\n\
          그 ADR 은 순회 수단이 `std::fs::read_dir` 뿐이라는 실측 위에 서 있다. 순서가 있다. \
          (1) 그 크레이트의 **자체 필터**가 그 ADR 의 가지치기 판정과 어긋나는지 본다 — \
          `ignore` 는 gitignore 를 읽으므로 표식 기반 판정과 다른 답을 낸다. \
@@ -291,7 +291,9 @@ fn the_excluded_tree_is_reported_but_not_judged() {
         "`exclude` 로 지목된 디렉토리에서 매니페스트를 하나도 못 읽었다 — 경계 진단이 \
          빈 채로 통과하면 \"밖에도 없다\" 와 \"안 봤다\" 가 같은 모양이 된다"
     );
-    println!("[ADR-0146 경계] exclude 매니페스트 {looked} 개 · 순회 크레이트 {outside:?}");
+    println!(
+        "[순회 크레이트 제외 범위] exclude 매니페스트 {looked} 개 · 순회 크레이트 {outside:?}"
+    );
 }
 
 /// 의존 절 파서가 **형태**를 읽는지. 이 픽스처는 이 파일의 상수에서 파생하지 않는다 —
