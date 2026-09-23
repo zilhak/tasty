@@ -433,7 +433,7 @@ fn daemon_kind_roster_matches_instance_test_roster() {
     // 조합마다 다른 호출측을 잰다 — forward 회신을 gui 데몬은 `apply_forwarded_structural_op`,
     // 헤드리스 데몬은 `apply_structural_ops` 가 만든다(ADR-0623). 헤드리스 데몬을 받으면 gui
     // 완주가 헤드리스 호출측을 한 번 더 잴 뿐이다. 실측 2026-09-23: gui 호출측을 끊는 변이가
-    // SameCombo 에서는 빨갛고, HeadlessOk + override 에서는 초록이었다(ADR-0644 보강).
+    // SameCombo 에서는 빨갛고, HeadlessOk + override 에서는 초록이었다(ADR-0644).
     let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests", "attach_structure_sync_loopback"]
         .iter()
         .map(|s| (*s).to_string())
@@ -611,6 +611,8 @@ const BOOTING_HARNESS_MIN: usize = 3;
 /// 복사가 성공하면 일반 단정은 이 추가 비용을 발견하지 못한다.
 /// [번들 테스트 준비](../docs/dev-guide/e2e-tests.md)의 선택 목록을 `tests/spawn_diag`가 적용한다.
 /// 새 부팅 하네스도 같은 절차를 사용하도록 검사한다.
+/// 파일 단위 검사이므로 같은 파일의 spawn 각각이 opt-in을 거치는지는 확인하지 않는다.
+/// 파일에 표지가 하나라도 있으면 통과하며, 호출별 구문 분석은 하지 않는다.
 
 #[test]
 fn every_booting_harness_goes_through_the_bundle_opt_in() {

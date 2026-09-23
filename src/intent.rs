@@ -134,7 +134,7 @@ pub struct DispatchedIntent {
     ///
     /// 이름이 같지만 **Event Bus envelope 의 `trace_id` 와 무관하고**, IPC 요청을 가리키는 값도
     /// 아니다 — IPC 요청 하나를 가리키는 값은 호스트가 발급하는
-    /// [`tasty_ipc::server::RequestSeq`] 다(ADR-0608). 칸을 지우지 않고 남긴 이유도 그 ADR 에 있다.
+    /// [`tasty_ipc::server::RequestSeq`] 다(ADR-0608).
     pub trace_id: Option<String>,
 }
 

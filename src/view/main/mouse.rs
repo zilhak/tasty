@@ -1083,7 +1083,7 @@ impl MainView {
     /// 버튼 없는 hover motion 보고(DECSET 1003). 셀이 바뀔 때만 `ESC[<35;col;rowM`
     /// 한 줄이 나간다.
     ///
-    /// **focused surface 한정이다**(ADR-0624). 커서 아래 surface 가 focused 가 아니거나
+    /// **focused surface 한정이다**(ADR-0615). 커서 아래 surface 가 focused 가 아니거나
     /// tasty 창 자체가 비포커스면 아무것도 보내지 않고 포커스도 옮기지 않는다 — 마우스가
     /// 지나가기만 해도 배경 TUI 들에 입력 바이트가 흘러드는 것을 원천 차단한다.
     /// divider 밴드·OS 리사이즈 가장자리 위에서도 보고하지 않는다(입력 z-order 상
@@ -2181,7 +2181,7 @@ mod hover_motion_tests {
     }
 
     /// 확정 정책: 비포커스 대상에는 어떤 hover 도 보내지 않는다 — 배경 TUI 로 마우스
-    /// 입력이 새지 않게 한다(포커스 전환도 하지 않는다, ADR-0624).
+    /// 입력이 새지 않게 한다(포커스 전환도 하지 않는다, ADR-0615).
     #[test]
     fn never_reports_to_a_non_focused_target() {
         assert!(!should_report_hover_motion(HoverReportInput {

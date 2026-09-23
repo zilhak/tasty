@@ -64,8 +64,8 @@
 //! 두 곳에 살게 되고, 값이 두 곳에 있는데 하나만 움직이는 사고가 이 레포에서 반복된
 //! 형태다. 보고에 총합이 필요하면 그 자리에서 더해라.
 //!
-//! [ADR-0635]: docs/adr/0635-shared-design-and-theme.md
-//! [ADR-0639]: docs/adr/0639-typed-length-and-dpi-boundaries.md
+//! [ADR-0635]: ../../docs/adr/0635-shared-design-and-theme.md
+//! [ADR-0639]: ../../docs/adr/0639-typed-length-and-dpi-boundaries.md
 
 use super::test_gate::blank_test_modules;
 use super::{mask_non_code, repo_root, rust_sources};
@@ -150,7 +150,7 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
 /// 항목은 (파일, 호출 머리, 자리 수, 사유)이고 수는 상한이자 하한이다 —
 /// [`the_blind_spots_are_still_the_size_they_say`] 가 실측으로 든다.
 ///
-/// [ADR-0639]: docs/adr/0639-typed-length-and-dpi-boundaries.md
+/// [ADR-0639]: ../../docs/adr/0639-typed-length-and-dpi-boundaries.md
 const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
     "crates/tasty-plugin-image/src/render.rs",
     "pos2",
@@ -536,7 +536,7 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
 /// 짓는 자리라 처방이 다르고([`declares_a_named_dimension`]), `=` 하나로 그것까지
 /// 걷어내면 이 축에서 제일 고칠 만한 자리(헤어라인)가 통째로 사라진다.
 ///
-/// [ADR-0639]: docs/adr/0639-typed-length-and-dpi-boundaries.md
+/// [ADR-0639]: ../../docs/adr/0639-typed-length-and-dpi-boundaries.md
 fn is_the_degenerate_floor(text: &[char], at: usize, value: f32) -> bool {
     if value != 1.0 {
         return false;

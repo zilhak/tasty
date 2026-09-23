@@ -38,7 +38,7 @@
 //! 대신 면제가 커진 만큼 판정 모수는 줄었다(본 파일 1173 → 1083). **면제는 언제나
 //! 초록 방향**이라 그 값에 하한을 둔다 — 발견 수가 아니라 **면제 뒤 실제로 본 수**에.
 //!
-//! [ADR-0647]: docs/adr/0647-source-guards-and-exemptions.md
+//! [ADR-0647]: ../../docs/adr/0647-source-guards-and-exemptions.md
 //!
 //! 그 술어로 host 의 plugin 상태를 훑으면 캐시된 유도 상태는 다섯이고, 그중 넷이
 //! **공개 필드**라 밖에서 직접 바꿀 수 있다(아래 명부). 다섯째
@@ -137,7 +137,7 @@
 //! 반면 "유도를 안 거치고 원본을 바꾼 자리가 있는가" 는 소스로 답이 난다. 실제로 이
 //! 결함은 두 조합의 유닛 스위트를 통과했고 실행 확인에서만 드러났다.
 //!
-//! [ADR-0626]: docs/adr/0626-plugin-registration-and-lifecycle.md
+//! [ADR-0626]: ../../docs/adr/0626-plugin-registration-and-lifecycle.md
 
 use std::path::PathBuf;
 
@@ -407,7 +407,7 @@ fn the_shared_table_type_is_named_only_where_it_is_owned() {
 /// cfg 판정이라 [ADR-0647] 의 판정기를 **부른다** — 속성 문자열을 눈으로 세면
 /// `not(test)` 와 `any(test, …)` 두 방향으로 틀린다.
 ///
-/// [ADR-0647]: docs/adr/0647-source-guards-and-exemptions.md
+/// [ADR-0647]: ../../docs/adr/0647-source-guards-and-exemptions.md
 #[test]
 fn the_custody_crate_does_not_hand_the_handle_back_out_in_release() {
     let src = std::fs::read_to_string(repo_root().join(TABLE_CUSTODY_FILE))
