@@ -1,6 +1,6 @@
 //! e2e 단일 인스턴스 원칙 가드 — 테스트가 tasty GUI 프로세스를 필요 이상으로 띄우면 fail 한다.
 //!
-//! 원칙(ADR-0090, `docs/dev-guide/e2e-tests.md` §1): **격리 단위는 프로세스가 아니라
+//! 원칙(ADR-0644, `docs/dev-guide/e2e-tests.md` §1): **격리 단위는 프로세스가 아니라
 //! workspace 다.** tasty 인스턴스는 test binary 당 1 개를 `common::shared()` 로 공유하고,
 //! 테스트별 격리는 `create_workspace()` 로 확보한다. GUI 창은 뜰 때마다 OS 포커스를
 //! 훔치고 기동 비용도 크므로, 인스턴스 수는 그 자체로 관리 대상이다.
@@ -28,7 +28,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 /// 문서 경로 — 위반 메시지에 실어 다음 작업자가 원칙을 찾아갈 수 있게 한다.
-const DOC: &str = "docs/dev-guide/e2e-tests.md (원칙 근거: docs/adr/0090-test-isolation-by-workspace-not-process.md)";
+const DOC: &str =
+    "docs/dev-guide/e2e-tests.md (원칙 근거: docs/adr/0644-test-isolation-and-harness.md)";
 
 /// 이 가드 자신 — 아래 마커 문자열을 상수로 담고 있어 스캔하면 자기 자신을 잡는다.
 const SELF_FILE: &str = "e2e_single_instance_guard.rs";
@@ -84,14 +85,14 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/attach_git_query_loopback.rs",
     "tests/attach_list_dir_loopback.rs",
     "tests/attach_local_creation_tap.rs",
-    // ADR-0255 의 markdown 원문 채널. 앞의 두 채널(list_dir · git_query)과 같은 가족의
+    // ADR-0622의 markdown 원문 채널. 앞의 두 채널(list_dir · git_query)과 같은 가족의
     // 세 번째 타깃이라 같은 자리에 둔다. **이 스위트만 번들 plugin 스테이징을 켠다**
     // (`spawn_diag::SUITES_THAT_CALL_BUNDLED_PLUGINS`) — 검증 대상이 실제 markdown
     // plugin 이 만든 surface 라 빈 번들 루트로는 `unknown surface kind: markdown` 이
     // 된다. 그 대가로 격리 홈이 커진다.
     "tests/attach_markdown_content_loopback.rs",
     "tests/attach_silent_disconnect.rs",
-    // forward 가 아닌 원인의 구조 변경 역반영(ADR-0481)과 사라진 anchor 의 회신(ADR-0482).
+    // forward 가 아닌 원인의 구조 변경 역반영(ADR-0623)과 사라진 anchor 의 회신(ADR-0623).
     // 검증 대상이 서버와 holder 사이의 **실제 attach 스트림**이라 루프백 attach 로 두
     // 끝(서버 인스턴스 + 붙는 client)이 필요하다 — 위 attach 가족과 같은 이유로 별도 binary 다.
     "tests/attach_structure_sync_loopback.rs",
@@ -99,7 +100,7 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/gui_tests.rs",
     "tests/hook_env_integration.rs",
     "tests/hooks_detection_e2e.rs",
-    // ADR-0534 의 surface kind 철회. plugin 을 끄고 켜는 것은 workspace 로 격리되지 않는
+    // ADR-0626의 surface kind 철회. plugin 을 끄고 켜는 것은 workspace 로 격리되지 않는
     // 프로세스 전역 상태라, 기존 e2e 파일에 넣으면 같은 바이너리의 다른 시험이 꺼진
     // markdown 을 본다(`attach_markdown_content_loopback` 은 그 plugin 의 surface 를 잰다).
     // 그래서 별도 binary 이고, 인스턴스는 전용이 아니라 `common::shared()` 다.
@@ -113,7 +114,7 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
 ///
 /// 인스턴스를 띄우는 하네스는 `spawn_diag::instance_bin()` 하나를 거쳐야 한다 —
 /// 그래야 "무엇을 띄우는가" 를 한 곳에서 바꿀 수 있고, 하네스마다 다른 바이너리를
-/// 고르는 상태로 갈리지 않는다(근거: `docs/adr/0127-e2e-harness-binary-selection.md`).
+/// 고르는 상태로 갈리지 않는다(근거: `docs/adr/0644-test-isolation-and-harness.md`).
 /// 아래 둘은 그 규칙 밖이다.
 ///
 /// - `tests/gui_common/mod.rs`: **GUI 바이너리 자체가 검증 대상**이다(실제 데스크톱
@@ -376,7 +377,7 @@ fn instance_spawning_test_files_match_snapshot() {
 
 /// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
 ///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md#초록의-뜻). 가리키는 것이 실재한다는
 /// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
 /// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
 ///
@@ -430,9 +431,9 @@ fn daemon_kind_roster_matches_instance_test_roster() {
     // (BIN_SELECTION_ALLOWLIST) 데몬이 gui 여야 하는 것은 같다.
     // `attach_structure_sync_loopback` 은 테스트 쪽 `cfg(feature` 가 0 이지만 **데몬 쪽**이
     // 조합마다 다른 호출측을 잰다 — forward 회신을 gui 데몬은 `apply_forwarded_structural_op`,
-    // 헤드리스 데몬은 `apply_structural_ops` 가 만든다(ADR-0482). 헤드리스 데몬을 받으면 gui
+    // 헤드리스 데몬은 `apply_structural_ops` 가 만든다(ADR-0623). 헤드리스 데몬을 받으면 gui
     // 완주가 헤드리스 호출측을 한 번 더 잴 뿐이다. 실측 2026-09-23: gui 호출측을 끊는 변이가
-    // SameCombo 에서는 빨갛고, HeadlessOk + override 에서는 초록이었다(ADR-0170 보강).
+    // SameCombo 에서는 빨갛고, HeadlessOk + override 에서는 초록이었다(ADR-0644 보강).
     let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests", "attach_structure_sync_loopback"]
         .iter()
         .map(|s| (*s).to_string())
@@ -606,20 +607,11 @@ const BOOTING_HARNESS_MIN: usize = 3;
 ///
 /// ## 왜 이 축이 따로 필요한가
 ///
-/// 안 거치면 그 하네스가 띄우는 인스턴스는 부팅마다 격리 홈에 번들 전량을 복사한다
-/// (debug 45 파일 ≈ 1.1 GB). 그 비용은 **초록이라 안 보인다** — 복사는 성공하고 단정은
-/// 아무것도 안 건드린다. 결정과 명부는 [ADR-0182](docs/adr/0182-test-instances-do-not-stage-bundled-plugins-by-default.md),
-/// 판정은 `tests/spawn_diag` 한 곳이다.
-///
-/// **이 가드가 생긴 이유가 실측이다.** 결정이 내려질 때 손에 있던 하네스가 둘이었고
-/// (`tests/common` · `tests/webhook_common`) 셋째(`tests/gui_common`)는 그 문장 밖에
-/// 남았다. 셋째는 자동 채널에서 한 번도 안 도는 스위트라(전수 `#[ignore]`) 아무도 그
-/// 1.1 GB 를 안 봤다. 넷째 하네스가 생기면 같은 일이 다시 나는데, 그것을 사람이 기억으로
-/// 막게 두지 않는다.
-///
-/// **이 가드가 답하지 않는 것**: 판정 단위가 **파일**이다. 한 파일에 부팅 spawn 이 둘인데
-/// 그중 하나만 opt-in 을 거치면 통과한다. 자리 단위로 묶으려면 구문 분석이 필요하고, 이
-/// 축이 잡으려는 결함(하네스가 통째로 안 거치는 것)에 비해 그 비용이 크다.
+/// 준비 절차를 거치지 않으면 테스트에 필요하지 않은 번들까지 격리 홈에 복사할 수 있다.
+/// 복사가 성공하면 일반 단정은 이 추가 비용을 발견하지 못한다.
+/// [번들 테스트 준비](../docs/dev-guide/e2e-tests.md)의 선택 목록을 `tests/spawn_diag`가 적용한다.
+/// 새 부팅 하네스도 같은 절차를 사용하도록 검사한다.
+
 #[test]
 fn every_booting_harness_goes_through_the_bundle_opt_in() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

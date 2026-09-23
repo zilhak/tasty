@@ -198,7 +198,7 @@ pub(crate) struct GuiAttachUserReq {
 
 /// mirror 터미널에 클립보드 이미지를 붙여넣을 때의 원격 업로드 요청. paste 시점에
 /// mirror 판정을 끝내 두고(포커스가 업로드 완료 전에 바뀌어도 삽입 대상이 흔들리지
-/// 않게), 실제 bulk 업로드(블로킹, ADR-0054)는 `App::poll_image_uploads` 가 백그라운드
+/// 않게), 실제 bulk 업로드(블로킹, ADR-0622)는 `App::poll_image_uploads` 가 백그라운드
 /// 스레드에서 수행한다. 완료 시 원격 절대경로를 `surface_id`(=paste 시점 mirror surface)
 /// 입력에 삽입한다 — mirror surface 입력은 forwarder 로 원격에 투명 전달된다.
 #[cfg(feature = "gui")]
@@ -340,7 +340,7 @@ pub struct CoreState {
     /// conversion to a local `Path`), because the two instances' filesystems differ.
     /// Kept per surface id for every kind, not only terminals (explorer root and
     /// markdown file parent are cwds too), and cleared on teardown and on any kind
-    /// change. `surface_cwd` prefers it over the mirror's own derivation (ADR-0267).
+    /// change. `surface_cwd` prefers it over the mirror's own derivation (ADR-0622).
     pub(crate) mirror_surface_cwd: std::collections::HashMap<u32, RemoteCwd>,
 
     /// Server-side dedup cache for `surface_cwd_forwards`: last `(holder, cwd)` pushed
@@ -464,14 +464,14 @@ pub struct CoreState {
     #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore,
 
-    /// child-terminal registry (ADR-0040 / occupancy-04). 에이전트가 `terminal.spawn`
+    /// child-terminal registry (ADR-0621). 에이전트가 `terminal.spawn`
     /// 으로 만든 자식 터미널 surface 의 parent/index/idle/needs_input 매핑. 부팅 시
     /// `~/.tasty/child-terminals.json` 에서 로드, 등록/제거마다 즉시 save. soft 점유
     /// (`occupy_soft`) 소비자와 짝. session.rs 의 SessionToken / runner_host 의
     /// shell_children 과는 다른 서브시스템이다(파편화 방지 — child_terminal.rs 참조).
     pub(crate) child_terminals: crate::core::child_terminal::ChildTerminalRegistry,
 
-    /// headless PTY registry (`pty.*` primitive — ADR-0050 · features/headless-pty
+    /// headless PTY registry (`pty.*` primitive — ADR-0613 · features/headless-pty
     /// 참고). 에이전트가 Surface 없이
     /// 백그라운드에서 굴리는 PTY 의 메타데이터 + 진짜 exit-code 를 보관하고, 동시 개수
     /// 상한·idle TTL 로 좀비 누적을 막는다. child_terminals(자식 터미널 surface) 와는
@@ -526,7 +526,7 @@ pub struct CoreState {
     /// 양쪽 `StreamReady` 처리부가 공유한다(attach 서버는 어느 빌드든 될 수 있음).
     pub(crate) capture_uploads: crate::core::capture_upload::CaptureUploadRegistry,
 
-    /// bulk 파일 전송의 attach 서버측 — 전용 bulk 연결(ADR-0054)이 나른 파일 청크를
+    /// bulk 파일 전송의 attach 서버측 — 전용 bulk 연결(ADR-0622)이 나른 파일 청크를
     /// `(client_id, transfer_id)` 단위로 누적한다. 캡처(`capture_uploads`)의 일반화
     /// 병렬 신설이며, begin 에서 파일명·총 크기를 먼저 받고 이후 `Data` 프레임
     /// (`decode_bulk_chunk`)의 청크를 append 한 뒤 commit 에서 저장 확정한다.
@@ -545,7 +545,7 @@ pub struct CoreState {
     /// [`crate::core::PendingStructuralForward`] 참고.
     pub(crate) pending_structural_forward: Vec<crate::core::PendingStructuralForward>,
 
-    /// client-driven mirror geometry(ADR-0045) forward 큐. `Core::resize_all_terminals`
+    /// client-driven mirror geometry(ADR-0622) forward 큐. `Core::resize_all_terminals`
     /// 의 로컬 레이아웃 스윕이 mirror(detached) 터미널의 목표 grid `(cols, rows)` 를
     /// 로컬에 적용하는 대신(로컬 grid 는 server `Resize` echo 로만 갱신 → desync 방지)
     /// 여기에 **로컬 mirror surface id → (cols, rows)** 로 넣는다. HashMap 이라 한
@@ -586,7 +586,7 @@ pub struct CoreState {
     /// 되돌아온다(`pending_list_dir_forward` 와 동형).
     #[cfg(feature = "gui")]
     pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
-    /// markdown mirror(ADR-0255) 원문 조회 forward 큐. `markdown_mirror.content_request`
+    /// markdown mirror(ADR-0622) 원문 조회 forward 큐. `markdown_mirror.content_request`
     /// IPC 핸들러가 push 하고, App 이 `about_to_wait`
     /// (`dispatch_pending_markdown_content_forwards`)에서 drain 해 세션의 attach 채널로
     /// `markdown_content_request` 를 전송한다. 응답은 `MirrorEvent::MarkdownContentResult`
@@ -765,7 +765,7 @@ impl CoreState {
     /// 사라진다(설정 하나로 무관한 테스트가 깨지고, CI 와 개발자 머신 결과가 갈린다).
     /// 파일 로드 자체의 검증은 `Settings` 쪽 테스트가 담당한다. 규칙·가드 사용법은
     /// `docs/dev-guide/unit-test-isolation.md`, 근거는
-    /// `docs/adr/0096-unit-tests-isolated-from-user-environment.md`.
+    /// `docs/adr/0644-test-isolation-and-harness.md`.
     // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — 과거 engine.rs → core/ 재배치로
     // core 가 pub(crate) 로 캡슐화되며 드러남.
     #[allow(dead_code)]
@@ -1118,7 +1118,7 @@ impl CoreState {
     /// 된 close 를 실행하는 경로(`attach_runtime::execute_forwarded_structural_op`)는
     /// `AppState` 의 close 함수를 타지 않고 도메인 실행 함수(`core::structural_exec`)를
     /// 부르므로, 캡처를 공유하려면
-    /// engine 쪽에 있어야 한다(ADR-0264 결정 4).
+    /// engine 쪽에 있어야 한다(ADR-0623).
     ///
     /// **트리에서 탭을 제거하기 전에 불러야 한다** — 제거 후엔 읽을 것이 없다.
     pub(crate) fn capture_closed_tab(
@@ -1164,7 +1164,7 @@ impl CoreState {
     }
 
     /// 복원 스택 엔트리의 **출처 워크스페이스** 를 항목 자신의 구조 id 로 판정한다
-    /// (ADR-0264 결정 3). 워크스페이스 통째 항목은 어디에도 속하지 않으므로 `None`.
+    /// (ADR-0623). 워크스페이스 통째 항목은 어디에도 속하지 않으므로 `None`.
     ///
     /// 호출 시점 전제: [`Self::push_closed_item`] 의 호출부는 모두 스냅샷을 트리 재배치
     /// **전**에 만들어 넘긴다(그래야 pane 의 split context 가 남는다 —
@@ -1244,7 +1244,7 @@ impl CoreState {
     /// (`src/view/main/keyboard.rs`) · IME(`src/view/main/ime.rs`) · 붙여넣기(`run_paste`).
     /// 마우스 보고·휠·클릭 커서 이동은 내용을 넣지 않고, 파일 드롭은 탭을 열 뿐 입력창에
     /// 쓰지 않아 뺀다. 에이전트의 `send`/`tell` 은 부르지 않는다. 근거는
-    /// docs/adr/0560-paste-is-user-input-and-is-recorded-where-both-paste-paths-meet.md.
+    /// docs/adr/0615-terminal-user-input-routing.md.
     #[cfg(feature = "gui")]
     pub fn record_typing(&mut self, surface_id: u32) {
         self.last_key_input
@@ -1299,7 +1299,7 @@ impl CoreState {
         params: &serde_json::Value,
     ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
         // 철회된 kind(그것을 제공하던 plugin 이 꺼졌거나 다시 켠 뒤 아직 연결되지 않았다)는 `unknown` 과 다른 사유로 거절한다 —
-        // 사용자가 할 일이 다르다(ADR-0534). 정의가 남아 있어도 새로 만들지 않는다.
+        // 사용자가 할 일이 다르다(ADR-0626). 정의가 남아 있어도 새로 만들지 않는다.
         if let Some(plugin_id) = self.surface_registry.withdrawn_by(kind) {
             return Err(crate::core::surface_registry::SurfaceKindWithdrawn {
                 kind: kind.to_string(),
@@ -1645,7 +1645,7 @@ mod default_params_tests {
 /// 창 생성 경로(`window_lifecycle::create_new_window`)는 이 `Err` 를 받아 창만 취소하고
 /// 나머지 창의 세션을 살린다. 여기가 패닉하면 그 위의 graceful 처리가 전부 무의미해지고,
 /// 사용자 `config.toml` 의 셸 경로 오타 하나가 실행 중인 모든 세션을 날린다
-/// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+/// (`docs/adr/0616-window-platform-and-shutdown.md`).
 #[cfg(test)]
 mod engine_creation_failure_tests {
     use super::*;

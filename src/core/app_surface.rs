@@ -13,7 +13,7 @@
 //! ## 왜 한 벌인가
 //!
 //! 같은 메서드를 두 라우터가 각자 구현하면 한쪽만 고쳐지는 순간 갈라진다. 이
-//! 저장소는 그 형태를 이미 겪었고([ADR-0136](../../docs/adr/0136-a-query-does-not-create-what-it-observes.md)
+//! 저장소는 그 형태를 이미 겪었고([ADR-0603](../../docs/adr/0603-headless-behavior.md)
 //! 의 `handle_list`), 그래서 읽기 전용 `plugin.*` 는 표와 dispatch 를 한 벌만 둔다.
 //! 이 모듈은 같은 규약을 app 층에 적용한 것이다 — gui 쪽 `impl App` 메서드는 여기
 //! 함수를 부르는 얇은 껍데기로 남는다.

@@ -1,5 +1,5 @@
-//! Toast → banner → modifier-hint → tutorial 오버레이 체인. ADR-0024 가 이 4개를
-//! Modal/Popup 과 다른 개념(마우스 소비·포커스·인터랙션 3축이 다름)으로 분리했으므로
+//! Toast → banner → modifier-hint → tutorial 오버레이 체인.
+//! Modal/Popup과 마우스 입력 소비·포커스·상호작용 방식이 달라(ADR-0636)
 //! `popup/` 아래가 아니라 여기 독립 모듈에 둔다. `draw_ctx`(`LayoutContext`)는
 //! `popup::frame::draw_popup_layer` 와 이 체인이 같은 프레임에 공유하므로 호출자
 //! (`ui::draw_popups`)가 한 번만 만들어 양쪽에 넘긴다.

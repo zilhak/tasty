@@ -43,10 +43,10 @@
 //!
 //! 자매 가드는 인라인 리터럴(`.size(13.0)`)만 막고 **명명 const 경유는 설계상 허용**
 //! 한다 — 그게 스케일 **밖** 값(9.5 · 10.5 · 12.5 …)의 권장 해결책이기 때문이다
-//! ([ADR-0126](../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)).
+//! ([ADR-0635](../docs/adr/0635-shared-design-and-theme.md)).
 //! 그런데 그 허용은 **값이 스케일 밖일 때만** 정당하다. 값이 토큰과 같으면 그 const 는
 //! 토큰의 복사본이고, 복사본은 `ui_zoom` 을 타지 않아 zoom≠1 에서 조용히 갈라진다.
-//! ADR-0126 이 그 세 자리를 우연히 감싸고 있었고, 이 가드가 그 틈을 닫는다.
+//! ADR-0635가 그 세 자리를 우연히 감싸고 있었고, 이 가드가 그 틈을 닫는다.
 //!
 //! # 한계 (자매 가드의 "가드가 막지 못하는 것" 과 같은 성격)
 //!
@@ -69,7 +69,7 @@ use tasty_type_geometry::length::LogicalPx;
 ///
 /// 개별 `.rs` 파일을 루트로 등재하지 않는다 — 그 디렉토리에 나중에 생기는 파일이 기본
 /// 제외가 되고, 그 누락은 아무 신호도 내지 않는다
-/// (`docs/adr/0133-guard-scan-population-is-pinned-not-enumerated.md`).
+/// (`docs/adr/0647-source-guards-and-exemptions.md`).
 const SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
@@ -132,7 +132,7 @@ fn sister_scan_roots(src: &str) -> Vec<String> {
 /// 어느 쪽 의도든 **토큰을 쓰라**가 답이고, 어느 토큰인지는 고치는 사람이 정한다.
 const UI_FONT_TOKEN_VALUES: &[f32] = &[10.0, 11.0, 13.0, 14.0];
 
-/// **UI semantic 이 배정되지 않은 DTCG primitive 폰트 값.** ADR-0126 은 이 자리를
+/// **UI semantic 이 배정되지 않은 DTCG primitive 폰트 값.** ADR-0635는 이 자리를
 /// 명명 const 로 두는 것을 허용하되 **이름에 primitive 임을 남기라**고 요구한다 —
 /// 호출 자리에서 "토큰인가 미배정 primitive 인가" 가 이름만으로 갈리게 하려는 것이다.
 ///
@@ -347,7 +347,7 @@ fn const_font_violations(
 
 /// 미배정 primitive 값을 가진 폰트 const 가 **이름에 그 사실을 담고 있는가**.
 ///
-/// 이 축만은 판별이 **이름**이다 — 규칙 자체가 이름에 대한 것이기 때문이다(ADR-0126).
+/// 이 축만은 판별이 **이름**이다 — 규칙 자체가 이름에 대한 것이기 때문이다(ADR-0635).
 /// 다른 곳에서 "면제는 이름이 아니라 구조로" 를 지키는 것과 모순이 아니다: 저긴 *무엇을
 /// 빼줄지*를 이름으로 정하지 말라는 것이고, 여긴 *이름이 규칙의 대상*이다.
 ///
@@ -489,7 +489,7 @@ fn const_radius_violations(
 /// 이 축의 스캔 모수는 `SCAN_ROOTS` 중 **갤러리를 뺀 전부**다.
 ///
 /// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 생성 const 값도
-/// 함께 커지므로 거기서는 결함이 아니다(`docs/adr/0135-…`). 넣으면 결함 아닌 자리가
+/// 함께 커지므로 거기서는 결함이 아니다(ADR-0639). 넣으면 결함 아닌 자리가
 /// 위반이 되어 allowlist 만 불어난다.
 ///
 /// **제외를 빼는 쪽으로 적는 이유**: 한때 이 자리는 `"src/"` 로 **남기는 쪽**을 적었는데,
@@ -1212,8 +1212,7 @@ fn group_imports_expand_to_one_path_per_item() {
 /// 반경 축의 **명명 const 우회로**를 닫는다. 자매 가드는 리터럴만 막으므로,
 /// `const FOO: f32 = 8.0;` 를 만들어 `.corner_radius(FOO)` 로 쓰면 둘 다 통과했다.
 ///
-/// ADR-0126 이 이 자리를 "자동 채널이 없는 유일한 트리거" 로 적어 뒀고, 그 트리거가
-/// 사람 리뷰에서 실제로 발화해 이 판정이 생겼다.
+/// 이름을 붙인 상수라도 기존 토큰 값을 복제하지 않는다는 규칙을 검사한다(ADR-0635).
 #[test]
 fn no_named_const_copies_a_radius_token() {
     let (sources, consts) = scan_sources();
@@ -1230,7 +1229,7 @@ fn no_named_const_copies_a_radius_token() {
          · const 는 `ui_zoom` 을 타지 않는데 `corner_radius*` 토큰은 **탄다**. \
          배율 0.85 / 1.2 에서 사본만 고정돼 다른 픽셀로 그려진다\n\
          · 스케일 **밖** 값(3 · 6 · 12 …)의 명명 const 는 그대로 허용된다 — \
-         금지되는 것은 토큰 값(2 · 4 · 8)의 **복사본**뿐이다(ADR-0126)\n{}",
+         금지되는 것은 토큰 값(2 · 4 · 8)의 **복사본**뿐이다(ADR-0635)\n{}",
         violations.join("\n")
     );
 }
@@ -1251,7 +1250,7 @@ fn no_named_const_copies_a_ui_font_token() {
          `badge_font_size()` 등):\n\
          · const 는 `ui_zoom` 을 타지 않는다. 토큰은 탄다. zoom≠1 에서 갈라진다\n\
          · 스케일 **밖** 값(9.5 · 10.5 · 12.5 …)의 명명 const 는 그대로 허용된다 — \
-         금지되는 것은 토큰 값의 **복사본**뿐이다(ADR-0126)\n{}",
+         금지되는 것은 토큰 값의 **복사본**뿐이다(ADR-0635)\n{}",
         violations.join("\n")
     );
 }
@@ -1312,7 +1311,7 @@ fn unmapped_primitive_font_consts_say_so_in_their_name() {
     assert!(
         violations.is_empty(),
         "semantic 이 없는 DTCG primitive 폰트 값을 쓰는 const 가 이름에 그 사실을 담고 \
-         있지 않다 — ADR-0126 이 요구하는 형태다:\n\
+         있지 않다 — ADR-0635가 요구하는 형태다:\n\
          · 호출 자리에서 `.size(FOO_SIZE)` 만 보고는 그게 토큰인지 미배정 primitive 인지 \
          알 수 없다. 이름이 그걸 말해야 한다\n\
          · 선례: `ATTN_PRIMITIVE_12`\n\
@@ -1372,7 +1371,7 @@ const SCAN_ROOTS: &[&str] = &[
         );
         // ③ 다른 생성자 형태
         assert_eq!(check(&["    CornerRadius::same(SMALL_R)"]).len(), 1);
-        // ④ 스케일 밖 값은 허용 — ADR-0126 이 명시한 형태다
+        // ④ 스케일 밖 값은 허용 — ADR-0635가 명시한 형태다
         assert_eq!(
             check(&["    .corner_radius(BOOT_CARD_CORNER_RADIUS)"]).len(),
             0
@@ -1405,7 +1404,7 @@ const SCAN_ROOTS: &[&str] = &[
         // 값이 토큰과 같다 → 이름이 무엇이든 잡힌다.
         assert_eq!(check(&["    .size(BODY_FONT_SIZE),"]).len(), 1);
         assert_eq!(check(&["    .size(SOMETHING_ELSE),"]).len(), 1);
-        // 값이 스케일 밖이다 → 이름에 FONT 가 있어도 잡지 않는다(ADR-0126 이 허용).
+        // 값이 스케일 밖이다 → 이름에 FONT 가 있어도 잡지 않는다(ADR-0635가 허용).
         assert_eq!(check(&["    .size(OFF_SCALE_FONT_SIZE),"]).len(), 0);
         // 폰트 자리가 아니다(스피너 지름) → 값이 토큰과 같아도 축 밖이다.
         assert_eq!(
@@ -1570,7 +1569,7 @@ const SCAN_ROOTS: &[&str] = &[
 /// ── UI 폰트 상한(14px)을 넘는 명명 const 의 **정책 면제** — 범위 밖이라 남는다.
 ///
 /// 사유의 형태가 "이 자리는 규칙 범위 밖이다" 라, 덮을 것이 지금 없어도 지우지 않는다
-/// (ADR-0150). 아래 [`OVER_CAP_PENDING`] 과 **성격이 달라 합치지 않는다.**
+/// (docs/dev-guide/guard-population.md#차집합이-0-이어도-지우지-않는다). 아래 [`OVER_CAP_PENDING`] 과 **성격이 달라 합치지 않는다.**
 const OVER_CAP_SANCTIONED: &[(&str, &str)] = &[(
     // 브랜드 락업 — `docs/architecture/boot-sequence.md` 가 "14px UI 폰트 상한의
     // sanctioned 예외" 라고 명시한다. 워드마크는 브랜드 자산의 verbatim 전사라
@@ -1629,7 +1628,7 @@ const MIN_SCANNED_CONSTS: usize = 100;
 /// 토큰 복사본만 보고 있었고, 크기는 아무도 안 봤다.
 ///
 /// 면제를 **사유별로 두 목록으로** 나눈다. 섞으면 역방향 검사를 못 건다 — 정책 면제는
-/// 덮을 것이 없어도 남아야 하고(ADR-0150) 한시 부채는 사라지면 지워져야 하는데, 한
+/// 덮을 것이 없어도 남아야 하고(docs/dev-guide/guard-population.md#차집합이-0-이어도-지우지-않는다) 한시 부채는 사라지면 지워져야 하는데, 한
 /// 목록에서는 두 규칙이 동시에 성립할 수 없다. `crates/tasty-doc-guards/tests/layering.rs` 가 같은 이유로
 /// `ALLOWED_PATHS` 와 `BASELINE_FILES` 를 갈라 둔다.
 #[test]
@@ -1717,7 +1716,7 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
     );
 
     // 역방향 — 한시 목록은 줄어들기만 한다. 정책 목록(`OVER_CAP_SANCTIONED`)에는 이
-    // 검사를 걸지 않는다: 그쪽 사유는 "범위 밖" 이라 덮을 것이 없어도 유효하다(ADR-0150).
+    // 검사를 걸지 않는다: 그쪽 사유는 "범위 밖" 이라 덮을 것이 없어도 유효하다(docs/dev-guide/guard-population.md#차집합이-0-이어도-지우지-않는다).
     let gone: Vec<String> = OVER_CAP_PENDING
         .iter()
         .filter(|(r, n, _)| !pending_seen.iter().any(|(sr, sn)| sr == r && sn == n))
@@ -1786,9 +1785,8 @@ fn color_coeff_literals(line: &str) -> Vec<(&'static str, String)> {
 /// **대응 토큰이 없는 축이다.** DTCG 에 있는 opacity 는 `disabled`(0.5) ·
 /// `recessed`(0.4) · `dimmed`(0.75) 셋뿐이고, 실제 쓰이는 값은 0.09~0.92 로 훨씬 넓다.
 /// 그래서 이 가드는 "토큰을 써라" 가 아니라 **"값에 이름과 사유를 붙여라"** 를 요구한다 —
-/// [ADR-0126](../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 이
-/// 폰트·반경 축에서 내린 것과 같은 결정이고, 그 ADR 본문이 결정을 **축 중립**이라고
-/// 적는다.
+/// [ADR-0635](../docs/adr/0635-shared-design-and-theme.md)의 토큰 없는 값에 이름과 이유를
+/// 남기는 규칙을 색 파생 계수에도 적용한다.
 ///
 /// **면제 목록이 없다.** 오늘 위반 0 이라 필요가 없고, 첫 예외를 넣는 것은 항목 추가가
 /// 아니라 **부류의 창설**이다(같은 판단을 이 파일의 `OVER_CAP_SANCTIONED` 가 이미
@@ -1895,7 +1893,7 @@ const DOT_RADIUS_CALLS: &[&str] = &["circle_filled(", "circle_stroke(", "circle(
 /// (자매 둘이 실제로 그렇게 갈렸고 갈린 동안 양쪽 다 초록이었다).
 ///
 /// 갤러리를 빼는 사유는 하나다: 갤러리는 egui 전역 zoom 을 쓰므로 리터럴도 함께 커진다
-/// ([ADR-0135](../docs/adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md)).
+/// ([ADR-0639](../docs/adr/0639-typed-length-and-dpi-boundaries.md)).
 /// 점 지름은 **길이**라 그 예외가 그대로 걸린다 — 같은 파일의 색 계수 축이 갤러리를
 /// 모수에 넣는 것과 반대이고, 가르는 것은 경로가 아니라 **무차원이냐 길이냐**다.
 fn dot_scan_roots() -> Vec<&'static str> {
@@ -2004,7 +2002,7 @@ fn no_dot_radius_is_an_anonymous_literal() {
     assert!(
         violations.is_empty(),
         "점 반지름이 익명 리터럴이다 ({} 자리). 토큰(`th.status_dot_size`)이 맞으면 \
-         그것을, 스케일 밖 값이면 사유를 적은 명명 const 를 써라(ADR-0126):\n  {}",
+         그것을, 스케일 밖 값이면 사유를 적은 명명 const 를 써라(ADR-0635):\n  {}",
         violations.len(),
         violations.join("\n  ")
     );
@@ -2065,7 +2063,7 @@ fn no_dot_named_const_copies_the_status_dot_token() {
          토큰을 직접 써라(`th.status_dot_size`):\n\
          · const 는 `ui_zoom` 을 안 타는데 `status_dot_size` 는 **탄다**(0.85/1.0/1.2 에서 \
          7/8/10). 사본만 고정돼 다른 픽셀로 그려진다\n\
-         · 스케일 **밖** 값(4 · 5 · 6 · 7)의 명명 const 는 그대로 허용된다(ADR-0126)\n{}",
+         · 스케일 **밖** 값(4 · 5 · 6 · 7)의 명명 const 는 그대로 허용된다(ADR-0635)\n{}",
         DOT_SIZE_TOKEN_VALUE.value(),
         violations.join("\n")
     );

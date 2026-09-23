@@ -354,7 +354,7 @@ fn run_due_timers(
             }
             // TTL 정리 3종 — gui `app/sweeps.rs` 와 동형(엔진 1 개라 순회 불필요).
             // 접근 시점 lazy 경로를 대체하지 않고 보완한다
-            // (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
+            // (`docs/adr/0613-terminal-io-and-process-lifetime.md`).
             // headless 야말로 이 보완이 가장 필요한 실행 형태다 — GUI 조작이
             // 아예 없어 lazy 를 굴릴 사용자 접근 자체가 없다.
             crate::app::timers::Tick::PtySweep => {
@@ -561,7 +561,7 @@ fn bootstrap_engine(
     }
     let mut engine =
         // 슬롯 `None` — headless 는 레이아웃을 영속하지 않으므로 어떤 슬롯도 점유하지 않고
-        // 로드·저장 모두 하지 않는다(docs/adr/0539-headless-does-not-persist-layouts.md).
+        // 로드·저장 모두 하지 않는다(docs/adr/0603-headless-behavior.md).
         // 에이전트는 `system.info` 의 `layout_slot: null` 로 이것을 본다.
         crate::core::CoreState::new_with_ids(80, 24, base_waker, None, None, app.core.memory_arc())?;
     engine.waker_factory = Some(factory);
@@ -577,7 +577,7 @@ fn bootstrap_engine(
 
 /// `general.restore_layout` 을 켠 설정으로 헤드리스를 띄우면 그 설정이 이 빌드에서 아무 일도
 /// 안 한다는 것을 부팅 때 한 번 알린다. headless 는 레이아웃을 저장도 복원도 하지 않는다 —
-/// 워크스페이스는 프로세스 수명 동안만 산다(docs/adr/0539-headless-does-not-persist-layouts.md).
+/// 워크스페이스는 프로세스 수명 동안만 산다(docs/adr/0603-headless-behavior.md).
 /// 설정의 기본값이 켜짐이라 알리지 않으면 "재시작하면 돌아온다" 로 읽힌다.
 #[cfg(not(feature = "gui"))]
 fn layout_persistence_notice(restore_layout: bool) -> Option<&'static str> {
@@ -726,7 +726,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     //
     // 예전에는 이 설치가 "호스트가 모르는 이름을 처음 부를 때" 딸려 왔다 — 즉
     // **오타 하나가 plugin 을 설치·기동**했다. 소속 판정을 매니페스트로 옮기면서
-    // (ADR-0173) 그 우연한 트리거가 사라졌으므로, 설치는 제 자리인 부팅으로 온다.
+    // (ADR-0626) 그 우연한 트리거가 사라졌으므로, 설치는 제 자리인 부팅으로 온다.
     // 기동은 여전히 지연이다: 여기서 프로세스는 하나도 안 뜬다.
     headless_plugins::ensure_plugin_manager_metadata(&mut app, &engine);
     if let Some(mgr) = app.plugin_manager.as_mut() {
@@ -745,7 +745,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 블로킹 대기에 들어가기 전에 Intent 큐를 비운다. 정상 경로에서는 발화 지점
         // (IPC / plugin 호출)이 이미 응답 전에 drain 하므로 여기서는 비어 있지만,
         // 앞으로 다른 발화점이 생겨도 큐가 프로세스 수명 동안 쌓이지 않게 하는
-        // 최종 방어선이다 — `docs/adr/0111-headless-drains-the-intent-queue.md`.
+        // 최종 방어선이다 — `docs/adr/0603-headless-behavior.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
         crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine);
         // agent 사건 큐도 같은 자리에서 비운다. 이것이 없으면 `events.fetch` 는

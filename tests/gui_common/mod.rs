@@ -3,7 +3,7 @@
 //! Launches a single shared tasty GUI instance for all tests.
 //! Each test creates its own workspace for isolation — no state reset needed.
 //! 이 "인스턴스 1 개 + workspace 격리" 원칙 전체는 `docs/dev-guide/e2e-tests.md` §1
-//! (근거는 ADR-0090). IPC 전용 e2e 는 `tests/common/mod.rs` 의 `shared()` 를 쓴다 —
+//! (근거는 ADR-0644). IPC 전용 e2e 는 `tests/common/mod.rs` 의 `shared()` 를 쓴다 —
 //! 이쪽이 `MutexGuard` 로 테스트를 직렬화하는 건 실제 데스크톱 입력을 주입하기 때문이다.
 
 // 시험 하네스라 unsafe 는 시험을 세우는 데만 쓴다. `cfg_attr(test, ..)` 형태를 쓰는 것은

@@ -2,12 +2,12 @@ use winit::window::Window;
 
 // ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
 //
-// 브랜드 타이틀 30 은 ADR-0290 으로 `font-size-brand-display` semantic 이
+// 브랜드 타이틀 30 은 ADR-0635로 `font-size-brand-display` semantic 이
 // 생겨 `Theme` 필드(`font_size_brand_display`)로 옮겼고, 경고 본문 12.5 는 12 로
 // 스냅됐다. 남은 것은 semantic role 이 없는 primitive 12 하나다.
 
 /// 입력 라벨·경고 본문. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
-/// `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**. 호출 자리에서
+/// `Theme` 필드가 없다 — ADR-0635 대로 **이름에 primitive 임을 남긴다**. 호출 자리에서
 /// "토큰인가 미배정 primitive 인가" 가 이름만으로 갈리도록 하는 것이 규칙의 목적이다.
 const SETUP_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
@@ -88,7 +88,7 @@ impl GpuState {
                         .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)
                         .inner_margin(margin_all(th.spacing_xl))
                         // 부팅 셸 설정은 화면 전체를 덮는 `CentralPanel` 위에 중앙
-                        // 정렬로 뜬다 = SCOPE RULE 의 modal 갈래(ADR-0254). 트리거
+                        // 정렬로 뜬다 = 그림자 적용 기준의 modal 갈래(ADR-0637). 트리거
                         // 위젯에 붙지 않고 뷰포트를 점유하므로 anchored popover 가
                         // 아니다.
                         .shadow(th.shadow_modal().to_egui()),

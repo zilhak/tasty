@@ -4,7 +4,7 @@
 //! 세 정리 모두 원래 "누가 건드릴 때 같이 치우는"(접근 시점 lazy) 방식으로만 돌았다.
 //! 그래서 접근이 멈추면 정리도 멈췄고, 그 순간이 정확히 정리가 가장 필요한 순간이다
 //! (에이전트가 조용해진 뒤 남는 headless PTY 좀비가 대표적 —
-//! `docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
+//! `docs/adr/0613-terminal-io-and-process-lifetime.md`).
 //!
 //! **lazy 경로는 그대로 남는다.** 이 모듈은 대체가 아니라 보완이다. 특히 `pty` 쪽
 //! lazy 는 `pty.spawn` 직전에 돌아 동시 개수 상한 판정을 정확하게 유지하는 별개

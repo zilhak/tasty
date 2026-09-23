@@ -1,6 +1,6 @@
 //! `system.pressure` — 요청 압력 게이지 조회.
 //!
-//! 재는 자리는 [ADR-0305](../../../../docs/adr/0305-request-pressure-is-a-process-gauge-not-a-per-caller-observation.md)
+//! 재는 자리는 [ADR-0608](../../../../docs/adr/0608-ipc-pressure-observability.md)
 //! 가 정했고 이 모듈은 그것을 **밖에서 읽을 수 있게** 한다. 그 ADR 이 "잃은 것" 으로
 //! 적어 둔 것이 바로 노출 경로의 부재였다 — 값은 프로세스 안에만 있었고 읽는 것은
 //! 시험뿐이었다.
@@ -68,7 +68,7 @@
 //! 본 뒤 지난 시간). 모수가 자리 계수와 같아서(루프가 꺼낸 TCP 연결 전부 = `accepted +
 //! refused_saturated`) 여기 둔다. 그 대기는 요청 줄을 읽기 전이라 큐 대기(`queue_before_gate`)에 안
 //! 잡히고, 루프가 빈 큐에서 100 ms 자므로 호출마다 연결을 여는 client 에게는 그만큼이 된다
-//! ([ADR-0467](../../../../docs/adr/0467-the-accept-wait-is-reported-as-a-bound-in-the-connection-block.md)).
+//! ([ADR-0608](../../../../docs/adr/0608-ipc-pressure-observability.md)).
 //!
 //! ## `db_pragmas` — **누계가 아니라 열 때 한 번 되읽은 설정**이다
 //!
@@ -81,7 +81,7 @@
 //! 요청값을 같이 싣는 이유는 소스의 `"WAL"` 이 runtime 보장이 아니어서다(in-memory DB
 //! 는 요청을 조용히 거절한다 — `tasty_memory::pragma` 의 doc). `degraded` 는 하나라도
 //! 그 DB 모드의 허용 결과로 안 섰다는 뜻이고, 오류가 아니라 **열린 채로 쓰이는 상태**다
-//! (ADR-0376).
+//! (ADR-0610).
 //!
 //! `state_db` 가 `null` 이면 "그 DB 가 이 프로세스에 열려 있지 않다" 이다 — 헤드리스는
 //! 늘 그렇고 GUI 도 열기에 실패한 창의 안내 구간에서는 그렇다(`crate::db` 머리말). 두
@@ -94,7 +94,7 @@
 //! 요청 하나 없이도 자란다. 그래서 `connections` 와 겹치지 않는다: 그 덩어리는 자리를
 //! 세고, 이것은 그 자리 중 스트림 연결에 무엇이 쌓이고 무엇이 버려졌는가를 센다.
 //!
-//! 안의 세 수는 성질이 둘로 갈린다(ADR-0400). `frames_dropped` · `clients_lagged_out` 는
+//! 안의 세 수는 성질이 둘로 갈린다(ADR-0623). `frames_dropped` · `clients_lagged_out` 는
 //! **누계**라 안 내려가고, `backlog` 만 지금 살아 있는 연결들의 sink 에 쌓인 양이라
 //! 내려간다. `sink_capacity` 는 연결 **하나**의 sink 상한이다 — `connections.limit` 과 같은
 //! 이유로(서버가 집행하는 상수) 게이지 밖에서 와서, `backlog` 이 얼마나 찼는지가 한
@@ -106,7 +106,7 @@
 //! ## `queue_admission` / `queue_dispatch` — 큐에 **든** 쪽과 **꺼낸** 쪽
 //!
 //! `queue_before_gate` 는 큐에서 나온 명령이 얼마나 기다렸는가다. 이 둘은 그 큐의 양 끝을
-//! 잰다(ADR-0435). `queue_admission` 은 입장 장부(ADR-0391)다 — 지금 든 바이트·명령 수·주입
+//! 잰다(ADR-0608). `queue_admission` 은 입장 장부(ADR-0606)다 — 지금 든 바이트·명령 수·주입
 //! 명령 수는 **내려가는 값**이고, `peak_bytes` 와 거절 누계 둘(`refused_bytes` ·
 //! `refused_depth`)은 안 내려간다. 모수는 큐에 **들어오려던** 요청이라 거절된 것도 센다 —
 //! 거절은 큐에 한 번도 안 들어가므로 뒤의 어느 덩어리에도 안 남는다. 상한 둘(`limit_bytes` ·
@@ -114,7 +114,7 @@
 //! 집행하는 값으로 온다. 장부는 IPC 서버가 만들고 주입기가 들어서, 서버가 안 뜬 조립(단위
 //! 시험)이면 이 덩어리가 `null` 이다.
 //!
-//! `queue_dispatch` 는 큐에서 **꺼낸** 쪽의 누계다(ADR-0412) — 꺼낸 회차와 그 회차가 예산
+//! `queue_dispatch` 는 큐에서 **꺼낸** 쪽의 누계다(ADR-0608) — 꺼낸 회차와 그 회차가 예산
 //! (명령 수 · 시간)에 닿아 멈춘 수, 기한이 큐에서 지나 실행하지 않은 수, 실행을 시작한 수,
 //! 그리고 `in_flight`(지금 실행 중이고 응답을 기다리는 쪽이 아직 기다리는 요청)와 그 최댓값.
 //! `in_flight` 만 내려간다. 둘을 한 덩어리로 묶지 않는 이유는 모수가 달라서다 —
@@ -123,7 +123,7 @@
 //!
 //! ## `keyed_requests` — **키를 실은 요청만** 센다
 //!
-//! 멱등 키를 실은 요청이 보존소에서 받은 판정이 갈래마다 한 칸이다(ADR-0422) — `executed`
+//! 멱등 키를 실은 요청이 보존소에서 받은 판정이 갈래마다 한 칸이다(ADR-0608) — `executed`
 //! (처음 보는 키, 실행했다) · `replayed`(같은 요청, 보관된 답을 냈다) · `conflicted`(다른 요청,
 //! 아무것도 안 했다) · `discarded`(실행은 됐고 답은 버려졌다) · `in_flight`(같은 요청이 진행
 //! 중이었다 — 합류했다). 한 요청은 자기를 맡은 층의 판정으로 **한 번**만 세진다. 전부 누계다.
@@ -135,12 +135,12 @@
 //!
 //! 앞의 덩어리들은 전부 집계다. 집계는 "100 ms 를 넘은 것이 몇 건" 까지 말하고, **그 한 건의
 //! 시간이 어느 단계에 있었나** · **그 plugin 대기가 어느 요청의 것이었나** 는 못 말한다
-//! (ADR-0436). 이 덩어리는 문턱(`threshold_us`)을 넘은 요청을 한 줄씩 싣는다 — 호스트가 발급한
+//! (ADR-0608). 이 덩어리는 문턱(`threshold_us`)을 넘은 요청을 한 줄씩 싣는다 — 호스트가 발급한
 //! `request_seq`(JSON-RPC `id` 도 Event Bus `trace_id` 도 아니다) · `method`(canonical 이름, 모르는 이름은 받은 그대로 —
 //! `MAX_METHOD_BYTES` 에서 자른다) ·
 //! `caller`(봉투가 말한 local/agent) · `queue_wait_us` · `host_us`(꺼낸 뒤 호스트가 다 다루기까지,
 //! 게이트 포함 — `handler_after_gate` 와 모수가 다르다) · `outcome` · `error_code`(호출자가 실제로
-//! 받은 답 — 읽는 순간 아직 안 나갔으면 둘 다 `null`, ADR-0468) · plugin 으로 넘겼으면 `plugin_hops`(hop
+//! 받은 답 — 읽는 순간 아직 안 나갔으면 둘 다 `null`, ADR-0608) · plugin 으로 넘겼으면 `plugin_hops`(hop
 //! 마다 `plugin_id` · `host_request_id` · `wait_us` · `outcome`) · `total_us`.
 //!
 //! 모수는 **호스트 IPC 큐를 지난 요청 중 문턱을 넘은 것**이다. plugin 이 부른 host-call 은 큐를
@@ -153,7 +153,7 @@
 //! ## `gate_refusals` — 게이트가 **돌려보낸** 요청이다
 //!
 //! 진입 게이트(`handler/checked.rs` 의 `check_request`)에 든 요청의 판정 누계다
-//! (ADR-0548). `judged` 가 모수 — 게이트에 든 요청 전부(Local 도, 큐를 안 지나는 plugin
+//! (ADR-0608). `judged` 가 모수 — 게이트에 든 요청 전부(Local 도, 큐를 안 지나는 plugin
 //! host-call 도 센다) — 이고, 거절이 게이트마다 한 칸이다: `permission_denied`(권한, `-32001`) · `cap_blocked`(텔레메트리 cap, `-32007`) ·
 //! `throttled`(rate limit, `-32010`). 게이트는 이 차례로 보고 앞에서 돌려보낸 요청은 뒤를 안 지나므로
 //! 한 요청은 많아야 한 칸이다. 셋을 합치지 않는 이유는 처방이 달라서다(권한을 청한다 · cap 을 푼다 ·
@@ -237,7 +237,7 @@ pub(super) fn handle_system_pressure(
         state_db.as_ref(),
     );
     body["stream_push"] = stream_push_json(engine.attach.notifier().map(|hub| hub.loss()));
-    // 입장 장부는 서버가 만들고 주입기가 같은 것을 든다(ADR-0391) — `Core` 가 닿는 길은 그
+    // 입장 장부는 서버가 만들고 주입기가 같은 것을 든다(ADR-0606) — `Core` 가 닿는 길은 그
     // 주입기뿐이다. 서버가 안 뜬 조립이면 주입기나 장부가 없고, 그때 `queue_admission` 은 `null`.
     let ledger = core
         .host_ipc_injector
@@ -259,7 +259,7 @@ pub(super) fn handle_system_pressure(
 ///
 /// 아래 세 함수는 원천 구조체를 **`..` 없이** 분해한다. 원천에 필드가 더해지면 여기서
 /// E0027 로 빌드가 멈춘다 — 필드를 이름으로 옮기는 응답이 새 필드를 조용히 빠뜨리지 않게
-/// 하는 채널이다(ADR-0435).
+/// 하는 채널이다(ADR-0608).
 pub(super) fn queue_admission_json(
     ledger: Option<(
         tasty_ipc::admission::AdmissionSnapshot,
@@ -292,7 +292,7 @@ pub(super) fn queue_admission_json(
 }
 
 /// 명령 큐에서 **꺼낸** 쪽 — 꺼낸 회차와 그 끝, 실행 전 만료, 시작한 요청과 지금 실행 중인
-/// 요청(ADR-0412). 누계는 `Core` 가 늘 들고 있어 `null` 이 되지 않는다.
+/// 요청(ADR-0608). 누계는 `Core` 가 늘 들고 있어 `null` 이 되지 않는다.
 pub(super) fn queue_dispatch_json(d: &tasty_ipc::dispatch::DispatchSnapshot) -> serde_json::Value {
     let tasty_ipc::dispatch::DispatchSnapshot {
         rounds,
@@ -314,7 +314,7 @@ pub(super) fn queue_dispatch_json(d: &tasty_ipc::dispatch::DispatchSnapshot) -> 
     })
 }
 
-/// 멱등 키를 실은 요청이 보존소에서 받은 판정 — 칸마다 한 갈래(ADR-0422). 보존소는 프로세스에
+/// 멱등 키를 실은 요청이 보존소에서 받은 판정 — 칸마다 한 갈래(ADR-0608). 보존소는 프로세스에
 /// 하나라 `null` 이 되지 않는다.
 pub(super) fn keyed_requests_json(r: &super::idempotency::RetryCounts) -> serde_json::Value {
     let super::idempotency::RetryCounts {
@@ -333,7 +333,7 @@ pub(super) fn keyed_requests_json(r: &super::idempotency::RetryCounts) -> serde_
     })
 }
 
-/// 진입 게이트의 판정 누계 — 판정한 수와 게이트마다의 거절 수(ADR-0548). 누계는 `Core` 가 늘 들고
+/// 진입 게이트의 판정 누계 — 판정한 수와 게이트마다의 거절 수(ADR-0608). 누계는 `Core` 가 늘 들고
 /// 있어 `null` 이 되지 않는다. **`..` 없이** 분해하는 것은 위 세 함수와 같은 이유다.
 pub(super) fn gate_refusals_json(g: &tasty_telemetry::GateSnapshot) -> serde_json::Value {
     let tasty_telemetry::GateSnapshot {
@@ -350,7 +350,7 @@ pub(super) fn gate_refusals_json(g: &tasty_telemetry::GateSnapshot) -> serde_jso
     })
 }
 
-/// 느린 요청 링(ADR-0436) — 문턱을 넘은 요청 한 건씩. 링은 `Core` 가 늘 들고 있어 `null` 이 되지
+/// 느린 요청 링(ADR-0608) — 문턱을 넘은 요청 한 건씩. 링은 `Core` 가 늘 들고 있어 `null` 이 되지
 /// 않는다. 줄과 hop 을 **`..` 없이** 분해하는 것은 위 세 함수와 같은 이유다.
 pub(super) fn slow_requests_json(
     s: &tasty_telemetry::slow_requests::SlowRequestsSnapshot,
@@ -442,7 +442,7 @@ pub(super) fn stream_push_json(
 /// `memory_db` 에는 `init_failure` 가 하나 더 붙는다 — `memory.db` 를 못 열어 in-memory
 /// 대체로 떴으면 `{cause, error}`, 아니면 `null`. 대체면 pragma 가 다 섰어도 `degraded`
 /// 가 `true` 다: 파일을 못 연 저장소는 정상 상태가 아니고, `in_memory: true` 만으로는
-/// "원래 in-memory" 와 "파일을 못 열어 in-memory" 가 안 갈린다(ADR-0485). `state_db`
+/// "원래 in-memory" 와 "파일을 못 열어 in-memory" 가 안 갈린다(ADR-0610). `state_db`
 /// 에는 이 칸이 없다 — `state.db` 초기화 실패는 대체 없이 안내 후 종료다.
 pub(super) fn db_pragmas_json(
     memory_db: Option<&tasty_memory::pragma::AppliedPragmas>,
@@ -1017,7 +1017,7 @@ mod tests {
             }
         }
         // 루프가 하는 일을 그대로 한다 — 꺼낸 명령을 실행 직전에 집는다. 명령과 기다리는
-        // 쪽을 둘 다 들고 있는 동안 그 요청은 실행 중이다(ADR-0412).
+        // 쪽을 둘 다 들고 있는 동안 그 요청은 실행 중이다(ADR-0608).
         let (reply_tx, _reply_rx) = std::sync::mpsc::sync_channel(1);
         let running = tasty_ipc::server::IpcCommand::new(
             tasty_ipc::protocol::JsonRpcRequest {
@@ -1256,7 +1256,7 @@ mod tests {
     }
 
     /// 첫 조회는 자기 회차 안에서 답한다 — 명령을 꺼내 대기는 기록했지만 회차는 아직 안 끝났다.
-    /// 그 답에서도 평균은 최댓값을 안 넘고, 분포의 합이 `waits` 와 같다(ADR-0466).
+    /// 그 답에서도 평균은 최댓값을 안 넘고, 분포의 합이 `waits` 와 같다(ADR-0608).
     #[test]
     fn a_query_inside_an_open_round_keeps_the_mean_under_the_max() {
         let p = PressureStats::default();

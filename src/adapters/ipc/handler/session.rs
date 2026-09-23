@@ -46,7 +46,7 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
 /// 넘길 수 있다. 자기 namespace 호출은 게이트가 토큰 없이 통과시키므로 그 토큰은 plugin
 /// 자신에게 쓸모가 없고, 그렇다고 넘기지 못하면 자식 agent 가 발급자에게 돌아오는 호출
 /// (예: `claude.hook`)이 막힌다. 이 면제는 plugin 프로세스 caller 에만 선다 — agent 는
-/// 이미 받은 토큰 안에서만 넘긴다(ADR-0271).
+/// 이미 받은 토큰 안에서만 넘긴다(ADR-0612).
 ///
 /// `owns_prefix(plugin_id, prefix)` 는 운영에서 `tasty_ipc::method_meta::plugin_owns_prefix`
 /// 다. 인자로 받는 것은 소유 표가 프로세스 전역이라 테스트가 그것을 바꿔 끼울 수 없어서다.

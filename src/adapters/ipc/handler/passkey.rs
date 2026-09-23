@@ -1,6 +1,6 @@
 //! `remote.passkey.*` IPC — Passkey(자격증명) CRUD.
 //!
-//! **값 마스킹 정책(ADR-0016 / decision 7)**: AI agent/원격은 passkey 의 **값(경로/내용)을
+//! **값 마스킹 정책(ADR-0611)**: AI agent/원격은 passkey 의 **값(경로/내용)을
 //! 읽을 수 없다.** list/get 은 name + kind 만 반환하고 path 는 절대 싣지 않으며, 파일 내용은
 //! 어떤 응답에도 포함되지 않는다. 등록(add)은 허용 — 쓰기는 비밀을 *받는* 것이지 노출이
 //! 아니다. inline 값은 `~/.tasty/passkeys/<name>` 0600 파일로 materialize 된다.

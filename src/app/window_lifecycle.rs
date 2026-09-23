@@ -209,7 +209,7 @@ fn build_plugin_manager(
 ///
 /// 지점마다 문구가 달라야 한다: 설정 창이 안 열렸는데 "새 창을 열 수 없습니다" 가 뜨면
 /// 그냥 틀린 안내다. 종료 확인 모달은 여기 없다 — 그 실패는 안내가 아니라
-/// `begin_shutdown` 폴백으로 처리한다(ADR-0117).
+/// `begin_shutdown` 폴백으로 처리한다(ADR-0616).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WindowCreationTarget {
     NewWindow,
@@ -605,7 +605,7 @@ impl App {
     /// Create a new window with its own terminal.
     /// 새 창을 만든다. 성공하면 새 창의 `WindowId`, 실패하면 사람이 읽을 원인 문자열을
     /// 돌려준다 — IPC 요청자(`AppEvent::CreateWindow` 의 완료 채널)가 이 결과를 그대로
-    /// 응답에 싣는다(ADR-0122). 사용자 경로(menu/tray)는 완료 채널이 없어 반환값을 쓰지
+    /// 응답에 싣는다(ADR-0607). 사용자 경로(menu/tray)는 완료 채널이 없어 반환값을 쓰지
     /// 않고, 실패 안내는 `notify_window_creation_failed` 가 모달로 띄운다.
     pub(crate) fn create_new_window(
         &mut self,
@@ -629,7 +629,7 @@ impl App {
         // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
         attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
         // 에이전트가 만든 창은 숨긴 채 만들어 등록 뒤 사용자 창 뒤에 보인다(원칙 1·3,
-        // ADR-0497). 사용자 창은 지금까지와 같다.
+        // ADR-0617). 사용자 창은 지금까지와 같다.
         attrs = origin_window_attributes(attrs, origin);
 
         // 새 창 생성 실패는 패닉이 아니다 — 이미 떠 있는 창들의 세션을 죽이지 않도록,
@@ -648,7 +648,7 @@ impl App {
         window.set_ime_allowed(true);
 
         // Windows 절전(suspend/resume) 감지 — WM_POWERBROADCAST 후킹. resume 시
-        // 죽은 ConPTY 자식 정리 + 살아있는 자식 wake nudge (ADR-0017). power
+        // 죽은 ConPTY 자식 정리 + 살아있는 자식 wake nudge (ADR-0613). power
         // broadcast 는 시스템 전역이라 어느 윈도우든 받으므로, 창마다 설치해 두면
         // ≥1 개 창이 살아있는 한 동작한다 (resume 헬스 패스는 idempotent).
         #[cfg(windows)]
@@ -716,7 +716,7 @@ impl App {
         }
 
         // register_window 가 window 을 consume 하므로 id 를 먼저 캡처 — IPC 요청자에게
-        // 돌려줄 window_id 다(ADR-0122). window.list 와 동일한 u64 변환을 쓴다.
+        // 돌려줄 window_id 다(ADR-0607). window.list 와 동일한 u64 변환을 쓴다.
         let window_id = window.id();
         // 에이전트 창을 둘 자리 — 사용자가 보던 창. register_window 전에 잡는다.
         let behind = matches!(origin, WindowRequestOrigin::Agent)
@@ -742,7 +742,7 @@ impl App {
     /// 실패는 화면을 건드리지 않는다 — 반환한 문자열이 완료 채널로 요청자에게 간다.
     /// 예전엔 Agent 도 toast 로 알렸으나, 사용자가 요청하지도 않은 일의 실패 통지가
     /// 화면에 뜨는 것 자체가 원칙 1 위반이고 동기 응답이 생긴 지금은 불필요하다
-    /// (ADR-0117 재검토, ADR-0122).
+    /// (ADR-0616 재검토, ADR-0607).
     pub(super) fn notify_window_creation_failed(
         &mut self,
         target: WindowCreationTarget,
@@ -923,7 +923,7 @@ fn build_theme_fallback_modal(
 ///
 /// 사용자 발화(메뉴 · 단축키 · dock · tray · 부팅)는 방금 그 조작의 결과이므로 새 창으로
 /// 옮긴다. 에이전트 발화(`window.create` / `view.create`)는 옮기지 않는다 — 대상 없는 IPC
-/// 요청이 떨어지는 자리가 사용자가 보던 창에서 바뀌면 안 된다(원칙 1·3, ADR-0497).
+/// 요청이 떨어지는 자리가 사용자가 보던 창에서 바뀌면 안 된다(원칙 1·3, ADR-0617).
 /// 에이전트 창도 가리키던 창이 없을 때(main 창이 하나도 없던 상태)는 새 창을 잡는다 —
 /// 그때는 빼앗을 사용자 포커스가 없다. 사용자가 그 창을 직접 고르면
 /// `WindowEvent::Focused(true)` 경로가 옮긴다.
@@ -940,7 +940,7 @@ pub(crate) fn focus_after_register(
 
 /// 창 생성 속성의 발화 주체 갈래. 사용자 창은 활성화된 채 보이게 만든다(winit 기본값과
 /// 같다). 에이전트 창은 활성화하지 않고 **숨긴 채** 만든다 — 보이는 것은 등록 뒤
-/// [`show_agent_window`] 가 사용자 창 뒤에 한다(ADR-0497).
+/// [`show_agent_window`] 가 사용자 창 뒤에 한다(ADR-0617).
 pub(crate) fn origin_window_attributes(
     attrs: winit::window::WindowAttributes,
     origin: WindowRequestOrigin,

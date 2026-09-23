@@ -18,7 +18,7 @@
 //!
 //! # 왜 † 만 지우는 것이 맞았나 (2026-09-05 판정)
 //!
-//! [ADR-0115](../../docs/adr/0115-input-reproduction-ipc-debug-isolation.md) 가 게이트의
+//! [ADR-0612](../../docs/adr/0612-request-admission-and-isolation.md) 가 게이트의
 //! 기준을 적는다 — 대상은 **tasty 프로세스 밖으로 나가는** 입력 조작(OS 이벤트 스트림·
 //! 시스템 입력 소스)과 대상 surface 의 **PTY 에 쓰는** 주입이고, 창 내부 상태만 바꾸는
 //! in-process 시뮬레이션(`surface.ime_*` · `debug.selection` 계열)에는 걸지 않는다.
@@ -29,7 +29,7 @@
 //! # 사거리
 //!
 //! 게이트가 **걸렸는지**만 본다. 게이트가 **옳게 동작하는지**는 안 본다 — 그건
-//! `tests/ipc_release_table_excludes_input_reproduction.rs` 와 ADR-0115 의 몫이다.
+//! `tests/ipc_release_table_excludes_input_reproduction.rs` 와 ADR-0612의 몫이다.
 //! 그리고 dispatch 팔을 텍스트로 읽으므로, 팔의 이름이 리터럴이 아니게 되면(매크로가
 //! 만들거나 상수와 맞대면) 그 팔은 지도에 안 들어온다. 그러면 **게이트가 걸렸는데 † 가
 //! 없는 메서드**가 아무 집합에도 안 나타나 세 집합이 사이좋게 일치한다 — 조용한 초록이다.
@@ -124,7 +124,7 @@ fn footnote_enumerated(doc: &str) -> BTreeSet<String> {
 }
 
 /// 응답만 만드는 팔의 호출 대상. 이 팔들은 **아무것도 실행하지 않는다** — 왜 못 하는지를
-/// 답할 뿐이다(예: 플랫폼 게이트의 상보 팔, ADR-0154). 게이트가 걸렸는지를 물을 대상이
+/// 답할 뿐이다(예: 플랫폼 게이트의 상보 팔, ADR-0604). 게이트가 걸렸는지를 물을 대상이
 /// 아니므로 지도에서 뺀다. 안 빼면 한 메서드에 팔이 둘일 때 뒤엣것이 앞엣것을 덮어,
 /// **게이트된 실제 핸들러가 사라진 것처럼** 보인다(2026-09-05 실측: `surface.raw_key` 가
 /// 그렇게 게이트 없음으로 판정됐다).
@@ -288,7 +288,7 @@ fn the_dagger_the_footnote_and_the_gate_name_the_same_methods() {
         "† 가 붙은 메서드와 런타임 게이트가 실제로 걸린 메서드가 다르다.\n  \
          † 만 있고 게이트 없음: {:?}\n  게이트만 있고 † 없음: {:?}\n\
          † 는 게이트의 존재를 주장하는 표식이다 — 주장과 성질이 갈리면 문서가 거짓말을 \
-         하거나 구현이 빠진 것이다. 어느 쪽인지는 ADR-0115 의 기준(프로세스 밖으로 나가는 \
+         하거나 구현이 빠진 것이다. 어느 쪽인지는 ADR-0612의 기준(프로세스 밖으로 나가는 \
          입력 조작인가)으로 판단해라.",
         marked.difference(&gated).collect::<Vec<_>>(),
         gated.difference(&marked).collect::<Vec<_>>()

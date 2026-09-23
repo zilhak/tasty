@@ -5,9 +5,9 @@
 //! 고정한다.
 //!
 //! - `a_shell_exit_on_the_server_reaches_the_holder_as_a_delta` — 서버에서 셸이 끝나 닫힌
-//!   surface 가 `structural_delta` 로 holder 에게 간다(ADR-0481).
+//!   surface 가 `structural_delta` 로 holder 에게 간다(ADR-0623).
 //! - `a_forward_naming_a_gone_surface_is_answered_like_ipc` — 워크스페이스는 살아 있는데
-//!   anchor surface 가 사라졌으면 IPC 와 같은 `no live surface N` 사유로 거절된다(ADR-0482).
+//!   anchor surface 가 사라졌으면 IPC 와 같은 `no live surface N` 사유로 거절된다(ADR-0623).
 
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
 // (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는

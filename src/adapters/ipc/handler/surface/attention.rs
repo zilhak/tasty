@@ -53,11 +53,11 @@ pub(crate) fn handle_attention_get(
 /// - **하드 점유(원격 attach) 중인 surface 는 거절**한다. 점유 중에는 그 surface 의
 ///   상태를 holder 세션이 소유하므로, 로컬 IPC 해제를 허용하면 서버 값만 지워져
 ///   holder 미러와 갈라진다.
-/// - **mirror surface 도 거절**한다(ADR-0104 가 이 IPC 를 도입하는 트랙에 맡긴 집행).
-///   미러의 attention 은 서버 push 만을 소스로 갖고(ADR-0098), 해제 forward 자격은
+/// - **mirror surface도 거절**한다(ADR-0624).
+///   미러의 attention 은 서버 push 만을 소스로 갖고(ADR-0624), 해제 forward 자격은
 ///   "그 화면을 실제로 본 주체"(실 렌더 포커스 · 미러 로컬 알림 읽음)에게만 있다 —
 ///   미러 인스턴스의 에이전트는 원격 surface 를 소유하지도, 그것을 보고 있지도 않다.
-///   발동 축의 억제(ADR-0098)와 대칭이다.
+///   발동 축의 억제(ADR-0624)와 대칭이다.
 pub(crate) fn handle_attention_clear(
     out: &mut crate::ipc::window_port::IntentOutbox,
     engine: &mut crate::core::CoreState,
@@ -168,8 +168,8 @@ mod tests {
 
     use super::*;
 
-    /// mirror 워크스페이스의 surface 에 대한 IPC 해제는 거절된다(ADR-0104 가 이 IPC 를
-    /// 도입하는 트랙에 맡긴 집행). 거절이 조용한 no-op 이 아니라 사유를 담은 에러여야
+    /// mirror 워크스페이스의 surface에 대한 IPC 해제는 거절된다(ADR-0624).
+    /// 거절할 때는 아무 일도 하지 않고 성공을 답하지 말고 사유를 담은 오류를 반환해야
     /// 에이전트가 "지웠다" 고 오인하지 않는다.
     #[test]
     fn clear_is_rejected_for_a_mirror_surface() {

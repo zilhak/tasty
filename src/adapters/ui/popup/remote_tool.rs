@@ -6,7 +6,7 @@
 //! 프로필은 비밀을 담지 않고 passkey 를 이름으로 참조만 한다. 한 탭 안에서 List/Form/
 //! ConfirmDelete 를 라우팅한다(세 탭이 동일 패턴으로 인스턴스화). headless PopupDef.
 //!
-//! Attach 탭(가운데)은 같은 레지스트리의 `tasty-attach` kind 프로필(ADR-0032)을
+//! Attach 탭(가운데)은 같은 레지스트리의 `tasty-attach` kind 프로필(ADR-0620)을
 //! 다룬다 — ssh 프로필 **참조(ref)** 또는 **인라인** 연결정보 + 원격 tasty 실행파일/
 //! 포트 발견 모드. tasty-attach kind 는 Profiles 탭 목록·프로토콜 필터에서 제외된다
 //! (Attach 탭이 전담).
@@ -63,7 +63,7 @@ const FILTER_MEMORY_ID: &str = "remote_tool.filter";
 /// 프로토콜 필터 드롭다운 egui popup id. Escape/바깥클릭 닫힘 판정에 사용.
 const FILTER_POPUP_ID: &str = "remote_tool.filter_popup";
 
-/// attach 레코드의 kind (같은 레지스트리 안의 예약 kind, ADR-0032).
+/// attach 레코드의 kind (같은 레지스트리 안의 예약 kind, ADR-0620).
 const ATTACH_KIND: &str = "tasty-attach";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -492,7 +492,7 @@ pub fn draw_remote_tool_popup(
 /// 숨긴 대신 "더 있다" 는 정보는 가장자리 페이드로 보존한다. 스크롤(휠·드래그·키보드)은
 /// 그대로 동작한다 — 숨긴 것은 표시뿐이다.
 ///
-/// 이 방식이 tasty 의 스크롤 어포던스 표준이다 — `docs/adr/0079-scroll-affordance-standard.md`.
+/// 이 방식이 tasty 의 스크롤 어포던스 표준이다 — `docs/adr/0637-ui-input-motion-and-elevation.md`.
 fn scroll_list_with_fade<R>(
     ui: &mut egui::Ui,
     th: &Theme,

@@ -9,7 +9,7 @@
 //! 포워딩 같은 앞뒤 단계는 여기 없다. 여기서 맞추는 것은 두 가지다: 소비 **순서**
 //! (plugin 명령 단축키 → host 단축키)와 소비 직후 **후처리**(`after_shortcut_consumed`
 //! 를 그대로 공유 — vi copy-mode 진입, modifier-hint 타이머, IME preedit flush/clear).
-//! 결정 배경: `docs/adr/0102-webview-key-forwarding.md`.
+//! 결정 배경: `docs/adr/0629-webview-host-integration.md`.
 
 use crate::app::App;
 use crate::view::ui::View;

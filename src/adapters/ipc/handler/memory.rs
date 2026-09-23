@@ -34,7 +34,7 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
 /// 포커스 독립성(`docs/design/policies/focus.md`).
 ///
 /// `>= PTY_ID_BASE` 는 headless PTY id 공간이라 실재 surface 가 가질 수 없다 — 거부한다
-/// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
+/// (`docs/adr/0617-workspace-identity-and-focus.md`).
 pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     params::opt_int::<u64>(params, "surface_id", id)?
         .and_then(|n| u32::try_from(n).ok())
@@ -79,7 +79,7 @@ fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
 /// `surface:<id>` scope 의 id 가 headless PTY id 공간이면 거부한다. `memory.*` 는 임의
 /// scope 토큰을 받으므로 `surface_id` 파라미터 검증만으로는 오염을 막지 못한다 — 여기서
 /// 같은 경계를 적용해야 `Scope::Surface(pty id)` 가 memory.db 에 심기지 않는다
-/// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
+/// (`docs/adr/0617-workspace-identity-and-focus.md`).
 fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonRpcResponse> {
     match scope {
         Scope::Surface(sid) if !crate::core::pty_registry::is_surface_id_space(*sid) => {
@@ -104,7 +104,7 @@ fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonR
 ///
 /// 접두 하나로 예약하는 이유: 하위 namespace 를 목록으로 들면 그 목록이 또 하나의
 /// 손목록이 되어 새 호스트 namespace 가 생길 때마다 조용히 새는 자리가 늘어난다.
-/// 근거·대안·재검토 조건은 [ADR-0141](../../../../docs/adr/0141-host-key-namespace-is-reserved-in-raw-memory-kv.md).
+/// 근거·대안·재검토 조건은 [ADR-0612](../../../../docs/adr/0612-request-admission-and-isolation.md).
 pub(super) const HOST_KEY_NAMESPACE: &str = "tasty.";
 
 /// 권한 게이트를 받는 caller(plugin / agent)인가. `Local`(CLI·사용자)은 `ensure_allowed`
@@ -409,7 +409,7 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
 
 /// 쓰기 성공 응답. 저장소가 `memory.db` 초기화 실패의 in-memory 대체면 `durable: false`
 /// 를 더한다 — 그 쓰기는 프로세스와 함께 사라진다. `ok` 는 그대로 두고(기존 호출자는
-/// 그것만 본다), 정상 저장소에서는 칸을 싣지 않아 응답이 종전과 같다(ADR-0485).
+/// 그것만 본다), 정상 저장소에서는 칸을 싣지 않아 응답이 종전과 같다(ADR-0610).
 ///
 /// `memory.*` 밖에서 같은 `memory.db` 에 쓰는 메서드(`agent.*` · `approval.*` ·
 /// `surface.meta.*` · `telemetry.*` · `session.*`)도 이것이나 [`mark_durability`] 로

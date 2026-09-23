@@ -179,7 +179,7 @@ mod attach_block_tests {
 
     #[test]
     fn soft_occupied_surface_allows_server_send() {
-        // ADR-0040: soft 점유는 hard 술어(is_hard_occupied)를 세우지 않으므로 서버 로컬
+        // ADR-0621: soft 점유는 hard 술어(is_hard_occupied)를 세우지 않으므로 서버 로컬
         // 입력이 계속 도달한다(sent: true). hard 만 차단(위 테스트와 대비).
         let mut engine = test_engine();
         let sid = 9998;

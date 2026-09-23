@@ -4,7 +4,7 @@
 //! 주입해 잰다. 그 시험은 입구가 무엇을 싣는지 안 본다 — 입구가 사용자 popup 을 못 알아보거나
 //! 외부 호출자의 주장을 믿으면 그 시험은 초록인 채로 사용자 상태가 움직인다. 그래서 여기서는
 //! 요청을 `handle_dispatch` 에 넣고, 그 intent 를 identify 완료 적용과 새 탭 핸들러까지 실제로
-//! 흘린 뒤 사용자가 보던 탭을 본다(ADR-0526).
+//! 흘린 뒤 사용자가 보던 탭을 본다(ADR-0631).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -225,7 +225,7 @@ fn an_origin_surface_without_a_popup_keeps_the_users_tab() {
 
 /// mirror 워크스페이스에서 사용자 popup 으로 연 새 탭은 원격으로 forward 되고, 그 op 는 원격 거절이
 /// **toast 로 가도록**(표시 없음) 남는다. 같은 요청이 popup 근거 없이 오면 로그로 가도록 표시된다
-/// (ADR-0503 의 `silent_failure`). 입구가 사용자 popup 을 못 알아보면 앞쪽 단언이 깨진다.
+/// (ADR-0636의 `silent_failure`). 입구가 사용자 popup 을 못 알아보면 앞쪽 단언이 깨진다.
 #[test]
 fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     let (origin, _, state, engine, _) = dispatch_through(
@@ -262,7 +262,7 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     );
 }
 
-// ── webview 근거 (ADR-0568) ────────────────────────────────────────────────────────────────
+// ── webview 근거 (ADR-0631) ────────────────────────────────────────────────────────────────
 
 const NAV_URL: &str = "about:blank#tasty-nav:link:%2Ftmp%2Fa.md";
 

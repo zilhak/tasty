@@ -328,7 +328,7 @@ impl MainView {
         // modifier 는 surface 무관 — 루프 전에 1회 계산(차용 충돌 회피).
         let modifiers = self.mesh_modifiers();
         // 현재 resolved Theme 스냅샷을 1회 만든다(surface 무관). plugin 이 host 와 동일
-        // Theme 으로 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(ADR-0028 parity).
+        // Theme 으로 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(ADR-0628 parity).
         let current_theme = self.mesh_theme_snapshot();
 
         // 대상 수집 (surface_id, plugin_id, 물리 rect, kind, file, display_name).

@@ -9,7 +9,7 @@
 //!   dispatcher 가 `handle_core_event` 로 한다 — App 의 필드가 필요하기 때문이다.
 //!
 //! 도메인이 이 모듈을 거꾸로 부르지 않는 경계는
-//! [ADR-0440](../../docs/adr/0440-the-domain-boundary-is-a-module-boundary-with-a-guard-not-a-crate.md).
+//! [ADR-0602](../../docs/adr/0602-domain-execution-and-ports.md).
 
 use tasty_settings::Settings;
 use winit::window::WindowId;

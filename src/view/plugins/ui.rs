@@ -15,7 +15,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 /// 모달 헤더의 plug 글리프. 아이콘 스케일 밖(17) — 스케일은 12 · 14 · 15 · 16 이고
 /// 17 은 어디에도 없다. 인접 tier(16)로 맞추는 것은 값이 바뀌는 디자인 변경이라
-/// [ADR-0126](../../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)
+/// [ADR-0635](../../../docs/adr/0635-shared-design-and-theme.md)
 /// 과 같게 다룬다 — 스냅하지 않고 이름을 붙여 드리프트를 보이게 둔다.
 /// 토큰이 아니므로 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
 const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
@@ -23,8 +23,8 @@ const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
 // ── semantic role 없는 폰트 크기 ────────────────────────────────────────────
 //
 // `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에
-// 없는 값은 primitive 임을 이름에 남긴다. ADR-0290 이 이 파일의 `.5` 세 값을
-// 12 / 10 / 10 으로 스냅했고, 남은 12 만 semantic role 이 없다.
+// 없는 값은 primitive임을 이름에 남긴다(ADR-0635).
+// 여기서 쓰는 12 / 10 / 10 중 12만 semantic role이 없다.
 
 /// segment 탭 라벨. DTCG primitive `font-size-12` 를 직접 쓰는 자리 — 12px 는
 /// primitive 에는 있지만 **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다.

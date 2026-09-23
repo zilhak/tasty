@@ -74,7 +74,7 @@ pub fn init_test_tracing() {
 /// 바이너리**다. 그래서 기본(gui) 조합에서는 창과 GPU 디바이스를 만드는 바이너리가
 /// 뜨고, `--no-default-features` 조합에서는 같은 경로가 곧 headless 데몬이 된다.
 /// IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 여기에 있다
-/// (`docs/adr/0127-e2e-harness-binary-selection.md`).
+/// (`docs/adr/0644-test-isolation-and-harness.md`).
 ///
 /// `TASTY_E2E_BIN` 이 설정돼 있으면 그 경로를 대신 띄운다. 용도는 **미리 빌드해 둔
 /// headless 바이너리를 가리키는 것** — 워크트리 여러 개가 같은 GPU 를 다투는 상황에서
@@ -179,7 +179,7 @@ fn repo_roots() -> Vec<std::path::PathBuf> {
 /// 실측: 소스와 바이너리를 같은 값으로 찍으면 `>` 는 못 봤다 —
 /// [`tests::a_source_stamped_to_the_same_tick_is_still_seen`] 가 그 자리를 잡는다.
 /// 반대 방향의 비용은 **다시 빌드 한 번**이고, 아래 패닉이 끄는 법까지 알려 준다.
-/// 판정 불가를 실패 방향으로 보내는 같은 극성 선택이 ADR-0182 의 명부에도 있다.
+/// 번들 opt-in 목록도 판정할 수 없으면 실패하도록 정한다. `docs/dev-guide/e2e-tests.md`를 따른다.
 ///
 /// **mtime 을 못 읽는 경로는 "새것 아님" 으로 넘긴다.** 판정 불가를 빨강으로 만들면
 /// 권한·심볼릭 링크 같은 환경 차이가 곧바로 거짓 빨강이 되는데, 이 판정의 목적은
@@ -267,9 +267,9 @@ const HEADLESS_OK_SUITES: &[&str] = &[
 ///   `docs/dev-guide/e2e-tests.md` §0-1 이 gui 테스트 바이너리 + 헤드리스 데몬으로 그
 ///   11 스위트를 돌려 `e2e_tests` 만 깨진 것을 기록해 두었다.
 /// * 단언은 하나인데 **데몬 쪽**이 조합마다 다른 호출측을 잰다 —
-///   `attach_structure_sync_loopback`(ADR-0482 의 forward 회신: gui 데몬과 헤드리스 데몬이
+///   `attach_structure_sync_loopback`(ADR-0623의 forward 회신: gui 데몬과 헤드리스 데몬이
 ///   서로 다른 함수로 만든다). `cfg(feature` 를 세는 것으로는 안 보인다. 헤드리스 데몬을
-///   받으면 초록은 그대로인데 gui 호출측을 안 잰다(실측 2026-09-23, ADR-0170 보강).
+///   받으면 초록은 그대로인데 gui 호출측을 안 잰다(실측 2026-09-23, ADR-0644 보강).
 ///
 /// `gui_tests` 는 애초에 이 경로를 안 쓴다(`BIN_SELECTION_ALLOWLIST`).
 pub fn daemon_kind() -> DaemonKind {
@@ -1863,7 +1863,7 @@ fn suite_calls_bundled_plugins() -> bool {
 /// (`--workspace`)라, 이 사각이 실물이 되는 경로는 손으로 지운 경우뿐이다.
 ///
 /// 검증의 전제를 산문이 아니라 실패 문구에 싣는 결정의 근거·대안:
-/// `docs/adr/0217-a-precondition-lives-in-the-failure-text-not-in-prose.md`.
+/// `docs/adr/0645-verification-evidence-and-diagnostics.md`.
 fn staged_bundle_note(exe_dir: &std::path::Path, opted_in: bool) -> Option<String> {
     if !opted_in {
         return None;
@@ -1919,11 +1919,11 @@ pub const OS_OPEN_LOG_FILE: &str = "os-open.log";
 ///
 /// 격리 홈도 전용 디스플레이도 이 축을 못 막는다 — 브라우저는 이미 떠 있는 자기 인스턴스에
 /// URL 을 넘기는 원격 제어 채널을 가져서, 시험 인스턴스가 연 것이 **실행자의 브라우저 탭**
-/// 으로 나타난다(ADR-0511). 스위치는 제품의 debug 격리라 release 로 지은 자식은 무시한다
+/// 으로 나타난다(ADR-0644). 스위치는 제품의 debug 격리라 release 로 지은 자식은 무시한다
 /// — 그래서 이름을 문자열로 옮겨 적지 않고 제품 상수를 그대로 쓴다.
 ///
 /// 스위치는 host 프로세스 안의 OS 열기만 덮는다(번들 markdown 의 외부 링크는 host
-/// `webview.open_external` 을 거쳐 그 안이다 — ADR-0527). 자식이 띄운 다른 프로세스(PTY 셸 · 스스로
+/// `webview.open_external` 을 거쳐 그 안이다 — ADR-0630). 자식이 띄운 다른 프로세스(PTY 셸 · 스스로
 /// 여는 plugin)의 열기는 가짜 `BROWSER`([`apply_fake_browser`])가 막는다 — 같은 기록 파일에
 /// `BROWSER\t<인자>` 로 남는다.
 pub fn apply_os_open_record(
@@ -1945,7 +1945,7 @@ pub const FAKE_BROWSER_FILE: &str = "os-open-browser.sh";
 ///
 /// `webbrowser` 는 unix(macOS 제외)에서 `BROWSER` 를 먼저 보고, 그 명령이 성공하면 거기서
 /// 멈춘다 — 그래서 여기서 막히는 것은 **Linux·BSD 의 `webbrowser` 경로뿐**이다. macOS·Windows
-/// 의 자식 프로세스 쪽 열기는 이것으로 안 막힌다(ADR-0511). 빌드 프로필과 무관하게 준다 — 제품
+/// 의 자식 프로세스 쪽 열기는 이것으로 안 막힌다(ADR-0644). 빌드 프로필과 무관하게 준다 — 제품
 /// 스위치가 없는 release 자식도 Linux 에서는 이것으로 막힌다.
 ///
 /// 빈 `BROWSER=` 는 막지 않는다 — `webbrowser` 가 빈 항목을 건너뛰고 xdg desktop entry 를
@@ -1986,10 +1986,10 @@ fn write_fake_browser(home: &std::path::Path) -> std::io::Result<std::path::Path
 ///
 /// - **안 부르는 스위트**: 빈 디렉터리를 번들 루트로 지정한다. 제품의 `bundle_root()` 는
 ///   `TASTY_BUILTIN_PLUGINS_DIR` 를 **최우선**으로 보므로, 이 한 줄이 workspace 스테이징
-///   탐색과 격리 홈 복사를 **둘 다** 건너뛰게 한다(ADR-0182).
+///   탐색과 격리 홈 복사를 **둘 다** 건너뛰게 한다(docs/dev-guide/e2e-tests.md#번들-plugin-은-opt-in-이다).
 /// - **부르는 스위트**: 번들을 `tasty_home/plugins/` 에 **hardlink 로 미리 넣는다**
 ///   ([`prefill_bundle_links`]). host 는 같은 버전 갈래에서 내용으로 판정하므로 이미 같은
-///   파일을 다시 쓰지 않는다 — 부팅마다 약 1.1 GB 이던 복사가 사라진다(ADR-0525).
+///   파일을 다시 쓰지 않는다. 번들 준비 방식은 `docs/dev-guide/e2e-tests.md`를 따른다.
 ///
 /// 어느 갈래든 제품 코드의 설치 경로는 그대로다 — 서명·업그레이드 판정이 얹혀 있는 자리를
 /// 테스트 사정으로 바꾸지 않는다. `tasty_home` 은 자식에게 주는 `TASTY_HOME` 이다.
@@ -2016,7 +2016,7 @@ pub fn apply_bundle_opt_in(command: &mut std::process::Command, tasty_home: &std
     }
 }
 
-// ───── 번들 hardlink 미리 채우기 (ADR-0525) ─────
+// ───── 번들 hardlink 미리 채우기 (docs/dev-guide/e2e-tests.md#명부-안-스위트는-번들을-hardlink-로-받는다) ─────
 
 /// 하네스 소유 스냅숏을 두는 디렉터리 이름. 자식 바이너리 옆(`target/<profile>/`)에 둔다 —
 /// 빌드 트리와 수명이 같고(`cargo clean` 이 지운다) 청소 범위가 그 트리 안으로 닫힌다.

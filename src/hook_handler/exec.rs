@@ -148,7 +148,7 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
 /// bell · output-match · command-completed · process-exit · idle 훅 · 수동 발화)가 그렇다. 그 사건은
 /// 다시 오지 않는다 — 웹훅은 밖에서 이미 ACK 됐고, surface 훅의 사건은 한 번 일어나고 끝난다. 그래서
 /// 늦게라도 반영되는 쪽이 안 반영되는 쪽보다 낫다(`agent.task_set_result` 스텝이 버려지면 그 task 는
-/// 끝나지 않는다). 근거: `docs/adr/0451-a-host-injection-carries-its-wait-as-a-deadline.md`.
+/// 끝나지 않는다). 근거: `docs/adr/0607-ipc-scheduling-and-deadlines.md`.
 ///
 /// 스텝 로그는 `origin` 을 머리에 단다 — 같은 함수를 세 출처가 부르므로, 없으면 실패한 스텝이 어느
 /// 경로에서 왔는지 로그만으로 가를 수 없다.
@@ -195,7 +195,7 @@ impl std::fmt::Display for SequenceOrigin {
 /// ([`tasty_ipc::admission::INJECTED_DEPTH_LIMIT`])에 묶는다 — 그것이 바뀌면 이 값도 따라 바뀐다.
 /// 한 시퀀스는 스텝이 하나 이상이므로, 이 값이 그 상한 이상이면 호스트 큐가 받아 줬을 만큼의 폭주를
 /// 이 자리에서 먼저 거절하지 않는다.
-/// 근거: `docs/adr/0498-a-surface-hook-sequence-runs-off-the-thread-that-drains-the-queue.md`.
+/// 근거: `docs/adr/0627-lua-and-hook-execution.md`.
 const PENDING_SEQUENCE_LIMIT: usize = tasty_ipc::admission::INJECTED_DEPTH_LIMIT;
 
 /// 실행기 스레드로 넘기는 시퀀스 한 건 — 제 injector 사본을 들고 간다.
@@ -247,8 +247,8 @@ fn sequence_worker() -> Option<&'static SyncSender<SequenceJob>> {
 /// 실행기에 이미 [`PENDING_SEQUENCE_LIMIT`] 건이 쌓여 있으면 이 시퀀스는 **실행하지 않고** `Err` 를
 /// 돌려준다 — 호스트 큐의 입장 거절과 같은 성질이다(스텝이 아니라 적체가 원인이고, 다시 걸지 않는다).
 /// 호출자가 `error!` 로 남기고, 답할 호출자가 있는 자리(수동 발화)는 "실행하지 않았다" 로 답한다.
-/// 근거: `docs/adr/0498-a-surface-hook-sequence-runs-off-the-thread-that-drains-the-queue.md`,
-/// `docs/adr/0515-a-manually-dispatched-hook-sequence-joins-the-surface-hook-worker.md`.
+/// 근거: `docs/adr/0627-lua-and-hook-execution.md`,
+/// `docs/adr/0627-lua-and-hook-execution.md`.
 pub fn enqueue_sequence(
     origin: SequenceOrigin,
     handler_id: &str,
@@ -556,7 +556,7 @@ mod tests {
     fn agent_stream_turn_correlation_sequence_substitutes_only_value_slots() {
         // agent-stream 턴 correlation 웹훅이 거는 시퀀스(문서 등록 예시와 같은 형태):
         // turn_start 의 request_id 와 claude.tell 의 message 만 body 에서 채워지고,
-        // method·surface 같은 owner 고정 리터럴은 치환 대상이 아니다(ADR-0046 불변식 1).
+        // method·surface 같은 owner 고정 리터럴은 치환 대상이 아니다(ADR-0632 불변식).
         let ctx = SubstitutionContext {
             body: json!({"request_id": "req-8f3a", "prompt": "summarize the build log"}),
             ..Default::default()

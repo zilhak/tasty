@@ -6,7 +6,7 @@ impl CoreState {
     ///
     /// The focused-surface fallback that used to sit on `AppState` had no
     /// caller and was removed
-    /// (`docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md`);
+    /// (`docs/adr/0602-domain-execution-and-ports.md`);
     /// every caller names the surface.
     pub fn read_since_mark_of(&mut self, surface_id: u32, strip_ansi: bool) -> String {
         self.terminals
@@ -21,7 +21,7 @@ impl CoreState {
     /// Unlike `surface.read_since_mark` there is no focused-surface fallback:
     /// the caller is a scanner polling a surface it named, and a cursor that
     /// silently follows the focus would hand it another surface's output
-    /// (`docs/adr/0307-the-output-scanner-reads-its-own-cursor.md`).
+    /// (`docs/adr/0613-terminal-io-and-process-lifetime.md`).
     pub fn take_since_output_scan_mark(&mut self, surface_id: u32, strip_ansi: bool) -> String {
         self.terminals
             .get_mut(surface_id)

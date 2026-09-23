@@ -197,7 +197,7 @@ pub fn paint_keycap(
 ///
 /// 접근성 "모션 감소"(`theme.reduced_motion`)면 지속시간이 0 이 되어 페이드 없이
 /// 즉시 나타났다 사라진다 — 설정 설명이 약속하는 "모든 UI 페이드/슬라이드를 즉시
-/// 끝낸다" 가 이 자리에도 걸린다. 값을 `Theme` 에서 읽는 이유는 ADR-0174.
+/// 끝낸다" 가 이 자리에도 걸린다. 값을 `Theme` 에서 읽는 이유는 ADR-0637.
 pub fn appear_fade(
     ctx: &egui::Context,
     theme: &Theme,

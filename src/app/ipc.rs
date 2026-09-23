@@ -53,11 +53,11 @@ pub(crate) enum IpcStep {
 /// 예산에서 잘린 회차는 루프를 한 번 깨우고, 그 재깨움은 양보 규칙을 **한 번** 건너뛴다 —
 /// `about_to_wait` 한 번 사이에 한 회차까지. 재깨움이 연 회차가 또 잘리면 다음 재깨움은 규칙을
 /// 따른다. 한도를 없애면 잘림과 재깨움이 사용자 이벤트 루프 안에서 사슬을 이뤄 기아가 되살아난다
-/// (x11 실측, ADR-0413).
+/// (x11 실측, ADR-0607).
 ///
 /// 사용자 이벤트 쪽 회차를 아예 없애지 않는 이유 — 플랫폼 모달 루프(창 크기 조절 · 메뉴 추적
 /// 등)가 `about_to_wait` 없이 사용자 이벤트만 전하는 구간이 있으면, 그 구간에서 IPC 를 살리는
-/// 것이 이 경로다. 그 구간이 실제로 있는지는 이 머신(x11)에서 잴 수 없다(ADR-0413).
+/// 것이 이 경로다. 그 구간이 실제로 있는지는 이 머신(x11)에서 잴 수 없다(ADR-0607).
 pub(crate) struct IpcPacer {
     last_round_end: Option<std::time::Instant>,
     /// 직전 회차가 예산에서 잘렸고, 그 몫의 재깨움이 아직 회차를 열지 않았다.
@@ -159,7 +159,7 @@ impl App {
     fn ipc_dispatch_command(&mut self, cmd: crate::ipc::server::IpcCommand) -> IpcStep {
         // 큐 체류 시간은 꺼낸 자리(`CommandObservation::begin`)가 이미 쟀다 — handler 실행
         // 시간과 **따로** 잰다. 합쳐 두면 느린 응답을 보고도 적체인지 handler 비용인지 고를 수 없다.
-        // 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(ADR-0411).
+        // 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(ADR-0607).
         if !crate::app::ipc_round::claim_or_answer(&cmd, self.core.dispatch()) {
             return IpcStep::Handled;
         }
@@ -194,7 +194,7 @@ impl App {
     ///
     /// 멱등 키를 실은 `Mutate` 는 보존소를 먼저 지난다 — app_methods step 과 같은 함수다. 이
     /// step 들은 app_methods step **뒤**라 거기서 연 자리가 닫힌 뒤에 오므로, 여기서 다시 열지
-    /// 않으면 입력 주입 · `debug.lua.eval` 이 보존소 없이 실행된다(ADR-0566). 두 step 을 한
+    /// 않으면 입력 주입 · `debug.lua.eval` 이 보존소 없이 실행된다(ADR-0605). 두 step 을 한
     /// 함수로 묶는 이유는 보존소를 한 번 여는 것이다 — 따로 감싸면 첫 step 이 안 맡은 이름을
     /// 둘째가 또 연다.
     #[cfg(debug_assertions)]

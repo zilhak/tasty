@@ -174,7 +174,7 @@ impl MainView {
     pub(crate) fn run_paste(&mut self) -> bool {
         // 붙여넣기는 사용자 입력이다 — `surface.is_typing` 이 사람 있음을 말하게 기록한다.
         // 키 경로는 수식키 키다운이 이미 기록하지만 명령 팔레트 경로는 키가 surface 에
-        // 닿지 않아, 여기가 두 경로가 만나는 유일한 자리다(docs/adr/0560-paste-is-user-input-and-is-recorded-where-both-paste-paths-meet.md).
+        // 닿지 않아, 여기가 두 경로가 만나는 유일한 자리다(docs/adr/0615-terminal-user-input-routing.md).
         if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
             self.core_state.record_typing(sid);
         }

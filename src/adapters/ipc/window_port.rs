@@ -17,7 +17,7 @@
 //! · debug 주입 · `ui.state`)는 이 포트의 대상이 아니다 — 그것들은 라우터 진입점
 //! (`handle_checked_request`)이 쥔 `AppState` 를 `EntryWindow` 를 거쳐 창 핸들러 라우터(`route_window_handler`)로
 //! 그대로 받는다. 근거와 경계는
-//! [ADR-0471](../../../docs/adr/0471-ipc-engine-handlers-reach-the-window-through-a-port.md).
+//! [ADR-0602](../../../docs/adr/0602-domain-execution-and-ports.md).
 
 use std::path::PathBuf;
 
@@ -34,7 +34,7 @@ pub(crate) trait IpcWindow: CascadeWindow {
     /// 대상을 생략한 요청의 기본 워크스페이스 · 응답의 "활성" 표시 · 기록의 기본 귀속이
     /// 이 값을 읽는다. 포커스 독립성(원칙 3)과의 경계에 있는 읽기다 — 호출 자리마다 이 값을
     /// 남길지(명시 수단이 있거나 좌변이 없는 자리) 요청이 댄 대상에서 끌어낼지를
-    /// [ADR-0533](../../../docs/adr/0533-an-omitted-target-keeps-its-focus-default-only-where-nothing-names-one.md)
+    /// [ADR-0617](../../../docs/adr/0617-workspace-identity-and-focus.md)
     /// 이 자리별로 정했다(`approval.request` 는 `surface_id` 가 있으면 그 워크스페이스로 간다).
     fn active_workspace_index(&self) -> usize;
 
@@ -95,13 +95,13 @@ pub(crate) trait IpcWindow: CascadeWindow {
 
     /// `plugin_id` 가 소유한 popup 인스턴스 `instance_id` 가 이 창에 열려 있고 사용자의
     /// 확정형 입력을 받았는가. plugin 이 자기 popup 안의 사용자 조작으로 host 를 부를 때
-    /// 그 호출을 사용자 행동으로 칠지 정한다(ADR-0526).
+    /// 그 호출을 사용자 행동으로 칠지 정한다(ADR-0631).
     #[cfg(feature = "gui")]
     fn plugin_popup_user_activated(&self, plugin_id: &str, instance_id: u64) -> bool;
 
     /// `plugin_id` 가 소유한 webview surface `surface_id` 의 기록된 사용자 navigation(가장 최근
     /// 시도가 근거일 때만 있다)이 `url` 인가. 맞으면 그 기록을 **쓴다**(한 번만 참이다). plugin 이 자기
-    /// webview 안의 사용자 클릭으로 host 를 부를 때 그 호출을 사용자 행동으로 칠지 정한다(ADR-0568).
+    /// webview 안의 사용자 클릭으로 host 를 부를 때 그 호출을 사용자 행동으로 칠지 정한다(ADR-0631).
     #[cfg(feature = "gui")]
     fn take_webview_user_navigation(&mut self, plugin_id: &str, surface_id: u32, url: &str)
     -> bool;

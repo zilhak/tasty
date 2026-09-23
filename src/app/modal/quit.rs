@@ -78,7 +78,7 @@ impl App {
     ///
     /// 확인 절차가 생략됐다는 사실을 toast 로 알리고 `tracing::error!` 로도 남긴다.
     /// toast 는 종료 화면이 곧바로 덮으므로 best-effort 이고, 사후 진단의 실체는
-    /// 파일 로그에 남는 error 라인이다 (ADR-0117).
+    /// 파일 로그에 남는 error 라인이다 (ADR-0616).
     fn quit_without_confirmation(
         &mut self,
         context: &str,
@@ -115,7 +115,7 @@ impl App {
         // **앱을 끌 수 없는 상태**에 갇힌다(창 생성이 실패하는 환경은 이미 degraded 라
         // 남는 수단이 프로세스 강제 종료뿐이다). 사용자가 표명한 의도는 이미 "종료"이고
         // 확인 모달은 그 의도를 되묻는 장치일 뿐 종료를 막는 장치가 아니므로, 확인을
-        // 건너뛰고 종료로 폴백한다. 생략됐다는 사실은 반드시 알린다 (ADR-0117).
+        // 건너뛰고 종료로 폴백한다. 생략됐다는 사실은 반드시 알린다 (ADR-0616).
         let window = match event_loop.create_window(attrs) {
             Ok(w) => std::sync::Arc::new(w),
             Err(e) => {

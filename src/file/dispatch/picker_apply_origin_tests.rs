@@ -240,9 +240,9 @@ fn identify_and_picker_keep_origin_and_cancel_or_disappearance_do_not_dispatch()
     assert_eq!(engine.file_handler_recent.list().len(), recent_before);
 }
 
-/// ADR-0279 의 축 — **에이전트** 가 명시 origin 으로 연 결과는 선택하지 않는다. 비동기
+/// ADR-0631의 축 — **에이전트** 가 명시 origin 으로 연 결과는 선택하지 않는다. 비동기
 /// 완료가 사용자가 보고 있던 탭을 갈아치우면 안 되기 때문이다. 사용자 경로는 반대이고
-/// 그것은 [`a_user_origin_selects_its_result_tab`] 이 고정한다(ADR-0302).
+/// 그것은 [`a_user_origin_selects_its_result_tab`] 이 고정한다(ADR-0631).
 #[test]
 fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     let (mut core, _) = build_test_core();
@@ -287,8 +287,8 @@ fn agent_origin_preserves_the_selected_tab_even_when_origin_is_inactive() {
     }
 }
 
-/// ADR-0302 — 사용자가 자기 손으로 연 결과는 **선택된다.** explorer 더블클릭이 이 경로이고,
-/// 같은 pane 에 붙는다는 라우팅 계약(ADR-0279)은 그대로다. 두 단정이 함께 있어야 한다 —
+/// ADR-0631 — 사용자가 자기 손으로 연 결과는 **선택된다.** explorer 더블클릭이 이 경로이고,
+/// 같은 pane 에 붙는다는 라우팅 계약(ADR-0631)은 그대로다. 두 단정이 함께 있어야 한다 —
 /// 선택만 보면 후보 B(origin 을 버려 focused pane 으로 보내기)도 통과한다.
 #[test]
 fn a_user_origin_selects_its_result_tab() {

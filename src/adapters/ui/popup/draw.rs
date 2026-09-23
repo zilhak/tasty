@@ -11,7 +11,7 @@ use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
 const RESIZE_BAND: LogicalPx = LogicalPx(6.0);
 
 /// **anchored + scrim-less** popup — 살아 있는 콘텐츠 위에 뜨고 뷰포트를 점유하지
-/// 않는다. SCOPE RULE(ADR-0254) 상 `shadow_popover()`.
+/// 않는다. 그림자 적용 기준(ADR-0637) 상 `shadow_popover()`.
 ///
 /// 앵커의 형태는 둘로 갈린다 — **셋은 트리거 rect 로 좌표를 계산해**
 /// `OpenPopupMode::AtFocused` 로 열고(`tools_menu` ← `sidebar/tools.rs`,
@@ -31,20 +31,19 @@ const ANCHORED_POPUPS: &[PopupId] = &[
     crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID,
 ];
 
-/// 두 갈래 **어디에도** 안 들어가는 떠 있는 표면 — 그림자를 그리지 않는다(ADR-0254 의
-/// 세 번째 갈래). 알림 패널은 타이틀바를 갖고 사용자가 옮기는 창처럼 동작한다:
+/// 앵커형과 중앙 모달 어느 쪽에도 속하지 않는 표면에는 그림자를 그리지 않는다(ADR-0637). 알림 패널은 타이틀바를 갖고 사용자가 옮기는 창처럼 동작한다:
 /// 트리거에 붙지도(anchored) 뷰포트를 점유하지도(centered) 않아 둘 중 하나를 고를
 /// 근거가 없다.
 const SHADOWLESS_POPUPS: &[PopupId] = &["notifications"];
 
-/// 이 popup 이 그릴 lift 그림자. SCOPE RULE(ADR-0254)의 세 갈래를 popup id 로 판정한다.
+/// 이 popup 이 그릴 lift 그림자. 그림자 적용 기준(ADR-0637)의 세 갈래를 popup id 로 판정한다.
 ///
 /// 술어는 **명부 두 개의 여집합**이다 — shadowless 도 anchored 도 아니면 modal. 즉
 /// modal 갈래의 판정 기준은 "뷰포트를 점유한다(centered)" 이고, **scrim 유무가 아니다**:
 /// `PopupManager` 가 실제로 scrim 을 까는 것은 이 파일 아래쪽의 id 세트뿐이라 modal
 /// 그림자를 받는 표면 중 다수는 scrim 이 없다. scrim 은 값을 popover 보다 **크게 잡은
 /// 근거**(scrim 이 지운 대비를 그림자가 되돌린다)이지 갈래를 가르는 술어가 아니다 —
-/// ADR-0254 Decision.
+/// ADR-0637 Decision.
 fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::ShadowToken> {
     let th = theme::theme();
     if SHADOWLESS_POPUPS.contains(&popup_id) {
@@ -501,7 +500,7 @@ impl PopupManager {
             // 있지만 그림자는 셸 밖으로 번진다 — 칸 경계에 붙은 popup 의 modal 그림자가
             // 이웃 칸 위로 10 여 픽셀 흘러, 어둡게 한 자리가 그 칸뿐이라는 말이 깨진다
             // (실측: 인접 칸 좌측 12px 띠가 약 10% 어두워졌다). 그림자 값은 그대로다
-            // (ADR-0254) — 닿는 자리만 범위 안으로 막는다.
+            // (ADR-0637) — 닿는 자리만 범위 안으로 막는다.
             let painter = ctx.layer_painter(layer_id).with_clip_rect(scope_clip);
 
             // Scrim — [`Self::popup_has_scrim`] 이 고른 popup 뒤를 반투명 검정으로 딤
@@ -517,7 +516,7 @@ impl PopupManager {
             let bg_fill: egui::Color32 = popup_bg_fill(popup_id, &th);
             // 배경보다 먼저 — 그림자는 셸 **아래**에 깔린다. scrim 이 이미 그려졌다면
             // 그 위에 온다: scrim 은 바닥을 균일하게 어둡게 할 뿐 엣지를 안 그려서,
-            // 어두운 테마에서 모달 실루엣을 세우는 것은 이 단차다(ADR-0254).
+            // 어두운 테마에서 모달 실루엣을 세우는 것은 이 단차다(ADR-0637).
             if let Some(shadow) = popup_shadow(popup_id) {
                 painter.add(
                     shadow
@@ -736,7 +735,7 @@ impl PopupManager {
 
     /// Check if a popup's scope is currently visible.
     /// 이번 프레임에 실제로 그려질(open + scope 가시) popup 중 z 가 가장 높은 것.
-    /// Esc 소유권 판정용(ADR-0084) — `draw` 안의 `open_indices` 와 같은 필터다.
+    /// Esc 소유권 판정용(ADR-0636) — `draw` 안의 `open_indices` 와 같은 필터다.
     pub fn topmost_visible_open(&self, draw_ctx: Option<&LayoutContext>) -> Option<(PopupId, u64)> {
         self.popups
             .iter()
@@ -851,7 +850,7 @@ impl PopupManager {
     ///
     /// **범위가 아니라 id 로 정한다.** surface 범위를 쓰면서도 scrim 을 안 까는 표면이
     /// 있다 — `search_bar` 는 트리거 옆에 붙는 anchored + scrim-less 갈래이고, 그 구분은
-    /// `docs/adr/0254-floating-surface-shadow-scope-rule.md` 가 정한다. 범위로 판정하면
+    /// `docs/adr/0637-ui-input-motion-and-elevation.md` 가 정한다. 범위로 판정하면
     /// 그 한 줄이 조용히 뒤집힌다.
     pub(crate) fn popup_has_scrim(id: PopupId) -> bool {
         matches!(
@@ -1072,7 +1071,7 @@ mod tests {
     }
 
     /// scrim 여부는 범위가 아니라 id 로 정한다 — `search_bar` 는 surface 범위를 쓰지만
-    /// anchored + scrim-less 갈래다(ADR-0254).
+    /// anchored + scrim-less 갈래다(ADR-0637).
     #[test]
     fn the_anchored_search_bar_takes_no_scrim_although_it_is_surface_scoped() {
         assert!(!PopupManager::popup_has_scrim("search_bar"));
@@ -1084,7 +1083,7 @@ mod tests {
         );
     }
 
-    /// ADR-0254 가 **anchored + scrim-less** 라고 부르는 갈래는 이름 그대로여야 한다.
+    /// ADR-0637이 **anchored + scrim-less** 라고 부르는 갈래는 이름 그대로여야 한다.
     ///
     /// 그 ADR 은 그림자 명부만 들고 scrim 명부는 안 든다("scrim 유무는 갈래를 가르는
     /// 술어가 아니다"). 그래서 두 명부가 어긋나도 그 문장 자체는 안 깨지고, 깨지는 것은
@@ -1096,7 +1095,7 @@ mod tests {
             assert!(
                 !PopupManager::popup_has_scrim(id),
                 "`{id}` 는 anchored + scrim-less 갈래인데 scrim 명부에 있다 — 둘 중 \
-                 하나가 틀렸다(ADR-0254)"
+                 하나가 틀렸다(ADR-0637)"
             );
         }
     }

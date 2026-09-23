@@ -1,6 +1,6 @@
 //! child-terminal 상태의 **관측 축 합성** — hook push 캐시(`ChildTerminalRegistry`)
 //! 단독 판정을 라이브 surface 트리 · PTY busy · 무출력 경과시간 · 전경 프로그램과
-//! 융합해 파생 상태를 만든다 (ADR-0072).
+//! 융합해 파생 상태를 만든다 (ADR-0641).
 //!
 //! # 왜 필요한가
 //!

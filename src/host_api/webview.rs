@@ -16,7 +16,7 @@
 //! 도달하지 못한다 — 세 백엔드는 자기 native 키 이벤트를 [`WebViewKeyEvent`] 로
 //! 정규화해 [`keys::WebViewKeySink`] 계약으로 올리고, 우선순위 판정은 그 host 구현
 //! [`WebViewKeyBridge`] 한 곳에서만 한다. 백엔드가 받는 것은 구체 브리지가 아니라 그 계약이다.
-//! 배경·대안은 `docs/adr/0102-webview-key-forwarding.md`.
+//! 배경·대안은 `docs/adr/0629-webview-host-integration.md`.
 
 pub mod keys;
 
@@ -44,7 +44,7 @@ pub use self::windows::PlatformWebView;
 ///
 /// `String` 하나로는 그 정책을 나눌 수 없다. 두 처방이 다르기 때문이다:
 /// 영구 실패는 **즉시 포기**해야 하고, 일시 실패는 **몇 번 더** 해 볼 값어치가 있다.
-/// 근거·재검토 조건: `docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md`
+/// 근거·재검토 조건: `docs/adr/0629-webview-host-integration.md`
 /// (실패 경로가 반복 가능해지는 것이 그 결정의 직접적 결과다).
 #[derive(Debug, Clone)]
 pub enum WebViewCreateError {
@@ -98,7 +98,7 @@ pub use keys::{HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKey
 /// 입력 없이 스크립트만으로 낸 navigation 은 참이 아니라서, 사람의 입력 없이는 이 값을 만들 수
 /// 없다. 사람의 제스처 **안에서** 페이지 스크립트가 낸 navigation 은 엔진이 참으로 본다(그래서
 /// 페이지를 쓴 쪽이 눌린 클릭을 다른 목적지로 바꿀 수 있다 — host 는 소유 plugin 이 쓴 페이지 위의
-/// 시도만 기록한다)(`docs/adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md`).
+/// 시도만 기록한다)(`docs/adr/0631-file-handler-routing.md`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingNavigation {
     pub url: String,

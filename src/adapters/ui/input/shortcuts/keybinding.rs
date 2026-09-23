@@ -282,7 +282,7 @@ impl MainView {
             // 이 popup을 연다; 그 외 kind는 자기 자신의 find-in-page(있다면, 예: markdown
             // plugin의 트러스트 JS 문서-내 검색)로 넘긴다 — 여기서 소비하지 않고 false 반환.
             //
-            // webview 키 포워딩(`docs/adr/0102-webview-key-forwarding.md`)이 생긴 뒤에도
+            // webview 키 포워딩(`docs/adr/0629-webview-host-integration.md`)이 생긴 뒤에도
             // 이 분기는 유지한다. 포워딩은 `find` 를 **페이지 예약 액션**으로 두어 애초에
             // 가져가지 않으므로 webview 포커스 시에는 여기까지 오지도 않지만, webview 가
             // 아닌 비-터미널 kind(explorer 등)가 포커스일 때의 빈 0/0 오버레이는 여전히
@@ -838,7 +838,7 @@ impl MainView {
     /// `convert_input_popup` 이 없고(host builtin), 경로 미지정이면 홈에서 연다
     /// (`core/surface_registry/builtins.rs` 의 `resolve_root`). `Intent::NewTab` 은 CLI 의
     /// `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 —
-    /// 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다(ADR-0502).
+    /// 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다(ADR-0617).
     pub(crate) fn open_explorer_tab(state: &mut crate::state::AppState) {
         state.dispatch_intent(
             crate::intent::Intent::NewTab {

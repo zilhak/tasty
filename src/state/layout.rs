@@ -246,7 +246,7 @@ impl AppState {
     /// 한 곳으로 통일한다(attach 의미론 — detached mirror 는 원격 forward, hard-점유
     /// surface 는 skip — 을 정본 한 벌만 보유). 과거 이 메서드가 자체 sweep 을 갖고
     /// 있었으나 정본과 갈라져(occupancy 가드 누락) GUI-hosted 서버에서 점유 surface 를
-    /// 매 프레임 창 grid 로 되돌리는 레터박스를 유발했다(ADR-0045). 렌더/입력 경로의
+    /// 매 프레임 창 grid 로 되돌리는 레터박스를 유발했다(ADR-0622). 렌더/입력 경로의
     /// 진입점만 유지하고 구현은 위임한다.
     ///
     /// PTY resize 는 Terminal 내부에서 deferred(`pending_pty_resize`) — 호출자는

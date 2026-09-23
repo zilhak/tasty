@@ -33,7 +33,7 @@ impl App {
     /// 포커스된 뷰가 모달(설정 · 플러그인 · 종료 확인)이면 [`Self::focused_window_mut`]
     /// 은 `None` 을 준다 — 그때도 메인 창이 남아 있으면 그 중 하나로 폴백한다. 안내가
     /// "포커스가 마침 모달에 있었다" 는 이유로 조용히 사라지지 않게 하는 것이 요점이다
-    /// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+    /// (`docs/adr/0616-window-platform-and-shutdown.md`).
     pub(crate) fn notice_window_mut(&mut self) -> Option<&mut view::main::MainView> {
         let id = match self.focused_window() {
             Some(_) => self.view.focused_view_id,
@@ -155,7 +155,7 @@ impl App {
     /// `find_main_with_workspace` 를 쓰지 않는 이유: 그 헬퍼는 *창(WindowId)* 을
     /// 찾는 것이 본질이라 `self.view.views` 만 본다. 하지만 마지막 창을 닫거나
     /// (macOS 는 최소화도) engine 은 사라지지 않고 `parked_states` 로 옮겨가 그대로
-    /// 살아 있다(ADR-0087 — parked engine 은 레이아웃 슬롯 점유를 유지한다). 창
+    /// 살아 있다(ADR-0617 — parked engine 은 레이아웃 슬롯 점유를 유지한다). 창
     /// 유무로 고아를 판정하면 사용자가 창을 최소화했을 뿐인데 원격 attach 점유가
     /// 조용히 풀린다. 여기서 묻는 것은 "창이 있는가"가 아니라 "그 워크스페이스를
     /// 들고 있는 engine 이 살아 있는가"다.
@@ -164,52 +164,26 @@ impl App {
     /// `attach_client::mirror_output_host`(mirror 이벤트 적용 대상 탐색)와 **같아야**
     /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 mirror 워크스페이스가
     /// 잔류하고, 적용이 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다
-    /// ([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
+    /// ([ADR-0623](../../docs/adr/0623-attach-state-sync-and-forwarding.md)).
     ///
-    /// ★ **그 "같아야 한다" 의 절반은 근거가 이 주석뿐이다 — 사다리 ④.** (아래 `App.core_state`
-    /// 문단의 ①②는 이유 열거지 사다리 칸이 아니다. 사다리 쪽은 늘 "사다리 N" 으로 적는다.)
-    /// 어느 칸인지를
-    /// 여기서 밝혀 둔다([ADR-0194](../../docs/adr/0194-code-citations-name-symbols-not-line-numbers.md)
-    /// 의 물음: 주장이 자기 근거의 종류를 밝히는가). 온전한 서술은 여기 한 벌만 두고
-    /// `attach_client::cleanup_mirror_workspace` 는 이 문단을 심볼 이름으로 가리킨다 —
-    /// 문단을 복사하면 그 사본이 갈린다.
+    /// parked engine은 세 경로가 `attach_client::find_parked_with_workspace`를 함께 써서
+    /// 같은 범위를 조회한다. 창이 있는 engine은 각각 `view.views`, `main_windows_iter_mut`,
+    /// `find_main_with_workspace`로 순회한다. 불변 조회·가변 조회·WindowId 반환이라는
+    /// 사용 방식이 달라 하나의 함수로 묶지 않았다. 현재 범위는 같지만 자동 검사는 없다.
     ///
-    /// - **parked 절반은 사다리 ④가 아니다 — 구조가 든다.** 셋 다 직접 훑지 않고
-    ///   `attach_client::find_parked_with_workspace` 하나를 부른다(이쪽 호출은 아래
-    ///   `any_engine_has_workspace` 안에 있다). 어긋나려면 누군가 그 호출을 리터럴 순회로
-    ///   풀어야 한다.
-    /// - **창 있는 engine 절반이 사다리 ④다.** 셋이 각자 다른 표현으로 훑는다 — 판정은
-    ///   `view.views` 를 직접, 정리는 `main_windows_iter_mut`, 적용은
-    ///   `find_main_with_workspace`. 셋 다 `view.views` 의 MainView 전량이라 **지금은 범위가
-    ///   같다**(실측 2026-09-08). 같게 유지하는 것은 없다. borrow 모양이 셋 다 달라(불변
-    ///   순회 · 가변 순회 · `WindowId` 반환) 같은 헬퍼로 못 묶는다.
+    /// 2026-09-08에는 정리 쪽의 창 있는 순회를 비워도 관련 시험이 실패하지 않았다.
+    /// 이 변경으로 실제 실행에서 무엇이 남는지는 재현하지 않았으므로, 위의 잔류·유실 위험은
+    /// 코드 경로에서 추론한 것이다. 과거에는 parked engine을 적용 대상에서 빠뜨려 출력이
+    /// 폐기된 사례가 있었다. 창 있는 engine의 같은 결함을 관측했다는 뜻은 아니다.
     ///
-    /// **어긋나면 무엇이 깨지는가 — 잰 것과 못 잰 것을 갈라 적는다.**
-    /// *잰 것*: 정리의 창 있는 순회를 비워 판정과 완전히 어긋낸 채(`main_windows_iter_mut`
-    /// 뒤에 `.skip(usize::MAX)`) 돌리면 `--bin tasty` 2444 · `attach_silent_disconnect` 29 ·
-    /// `attach_local_creation_tap` 24 · `attach_attention_loopback` 30 이 **변이 전과 한 건도
-    /// 안 달라진다**(2026-09-08). 이 어긋남을 잡는 자동 시험은 하나도 없다.
-    /// *못 잰 것*: 어긋난 채로 **런타임에 실제로 무엇이 남는가.** 지금 어긋나 있지 않아
-    /// 재려면 일부러 어긋낸 채 창 있는 engine 과 원격 세션을 함께 세워야 한다. 그러니 위
-    /// 첫 문단의 "잔류"·"유실" 은 코드에서 따라 읽은 것이지 관측한 값이 아니다 — 다만
-    /// *그 형태*가 실제로 난 기록은 있다: ADR-0110 이 고친 것이 적용 쪽만 parked 를 안 보던
-    /// 어긋남이고, 그때 창 없는 구간의 출력이 전부 폐기됐다. 그쪽(parked)이 지금 구조가 드는
-    /// 절반이고, 창 있는 절반에서 같은 일이 난 기록은 없다.
+    /// 공유 필터 도입은 mirror 제외 조건과 런타임 동작까지 함께 검토해야 한다.
+    /// 별도 집합 비교 시험도 아직 없다. 이 한계는 여기 한 곳에 설명하고 정리 함수는
+    /// 이 심볼을 가리킨다. 근거 기록 방식은 `docs/documentation-model.md`를 따른다.
     ///
-    /// **왜 사다리 ②(공유 필터)도 ③(집합 동일성 시험)도 아닌가.** ②는 필터가 mirror
-    /// 워크스페이스 제외 조건을 품어 런타임 동작에 닿는다. ③은 판정기를 하나 더 짓는 일인데, 그것이
-    /// 없어서 통과한 실제 결함이 아직 없다.
-    ///
-    /// **`App.core_state` 는 의도적으로 제외한다.** 바로 위 `occupied_layout_slots`
-    /// 는 `views`/`parked_states` 에 더해 그 자리(첫 MainView 등록 전 engine 이 임시로
-    /// 머무는 곳)까지 보지만, 여기서는 보지 않는다. 이유는 두 가지다 — ① mirror
-    /// 워크스페이스는 `attach_client::start_gui_attach` 가 `focused_window_mut()` 의
-    /// engine 에만 push 하므로 그 임시 engine 에는 애초에 들어갈 수 없다(= 지금 이
-    /// 판정으로 도달 가능한 상태가 아니다). ② 그 자리에는 짝이 되는 `AppState` 가
-    /// 없어 정리 쪽의 `active_workspace` 클램프를 대칭으로 맞출 수 없다. 판정과 정리의
-    /// 순회 범위는 같아야 하므로 양쪽에서 함께 뺀다. mirror 워크스페이스가 그 임시
-    /// engine 에도 만들어질 수 있게 바뀐다면 이 제외와 정리 쪽 순회를 함께 손봐야 한다 —
-    /// **그 "함께" 도 위 ★ 문단이 말한 사다리 ④다.** 한쪽에서만 제외를 풀어도 드는 것이 없다.
+    /// `App.core_state`는 첫 MainView 등록 전 engine의 임시 위치이며 이 순회에서 제외한다.
+    /// mirror workspace는 `attach_client::start_gui_attach`가 실제 창의 engine에만 만들고,
+    /// 임시 engine에는 정리 후 active_workspace를 맞출 AppState도 없다.
+    /// 임시 engine에도 mirror를 만들 수 있게 되면 이 판정과 정리의 제외 조건을 함께 바꿔야 한다.
     pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
         any_engine_has_workspace(
             self.view

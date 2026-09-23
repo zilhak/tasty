@@ -1,5 +1,5 @@
 //! `pty.*` IPC 핸들러 — headless PTY primitive 의 IPC/CLI 표면
-//! (`docs/adr/0050-headless-pty-primitive.md`, `docs/features/headless-pty/index.md`).
+//! (`docs/adr/0613-terminal-io-and-process-lifetime.md`, `docs/features/headless-pty/index.md`).
 //!
 //! 에이전트가 **Surface(Tab) 없이** 백그라운드에서 굴리는 1 회성 PTY 를 spawn/write/
 //! read/wait/kill/list 한다. 상위 `child_terminal`(`terminal.*`) 은 자식 터미널
@@ -63,7 +63,7 @@ fn parse_command(params: &Value) -> Vec<String> {
 /// 항목을 먼저 치우고 나서 상한을 본다. 주기 타이머로 *대체*하면 "실제로는 idle 인
 /// PTY 때문에 spawn 이 상한 초과로 실패" 하는 회귀가 생긴다. 두 경로가 같은
 /// [`CoreState::sweep_idle_ptys`] 를 부르므로 idempotent 하고 후처리도 동일하다
-/// (`docs/adr/0050-headless-pty-primitive.md`).
+/// (`docs/adr/0613-terminal-io-and-process-lifetime.md`).
 fn lazy_sweep(engine: &mut CoreState) {
     // 반환 id 는 여기서 쓰지 않는다 — 회수 후처리는 공용 함수가 이미 끝냈다.
     let _ = engine.sweep_idle_ptys(Instant::now());
@@ -456,7 +456,7 @@ mod tests {
     }
 
     /// 종료 대기의 상한. **경주 예산이 아니라 안전망**이다 — 올려서 통과시키지 마라.
-    /// 근거(정상 구간과 이 값 사이에 표본이 없다)와 재검토 조건은 ADR-0211.
+    /// 종료 대기와 실패 진단 원칙은 `docs/dev-guide/self-verification.md`를 따른다.
     ///
     /// **실패 갈래를 재현하는 법**: 이 상수를 잠깐 2 초로 줄이고, 아래 e2e 의 write 를
     /// 종료를 부르지 않는 것(`echo hi` 등)으로 바꿔 그 시험 하나만 돌린다. 예산을 다 쓰고
@@ -505,7 +505,7 @@ mod tests {
     }
 
     /// exit-watcher 의 종료 신호를 기다려 종료 정보를 반환한다 — 고정 간격 폴링이 아니라
-    /// `Condvar` 대기라, 러너 부하로 스케줄이 밀려도 종료 즉시 반환한다(ADR-0129 형태 C 근본).
+    /// Condvar로 종료 통지를 기다리므로 고정 sleep의 완료 시점에 의존하지 않는다(ADR-0644).
     /// 상한은 신호가 영영 안 올 때만 걸리는 안전망이라 넉넉히 둔다(정상 경로는 수 ms).
     /// `sent` 는 그 pty 로 우리가 보낸 글자 — 실패 갈래에서 화면의 에코를 빼는 데 쓴다.
     fn wait_for_exit(engine: &mut CoreState, pty_id: u32, sent: &str) -> Value {
@@ -549,7 +549,7 @@ mod tests {
     /// **깨우기가 통째로 없어도 안 놓친다**(`crate::core::pty_registry` 의
     /// `a_fill_is_never_lost_even_if_the_wakeup_never_comes` 가 100 회에 유실 0 을 잰다).
     /// 그래서 이 갈래는 대기가 아니라 **늦은 자식**을 가리킨다 —
-    /// ADR-0211 이 "느려서 못 잡았다" 가 사실이 되는 경우로 예상한 그것이다.
+    /// 상한 뒤에 자식이 종료되어 이번 대기에서 결과를 보지 못한 경우다.
     fn watch_phase_note(phase: WatchPhase) -> &'static str {
         match phase {
             WatchPhase::NotAttached => {
@@ -562,7 +562,7 @@ mod tests {
             WatchPhase::Reaped => {
                 "watcher 가 결과를 채웠다 — 자식이 끝나긴 했고 상한을 막 넘겨 늦게 끝났다\
                  (채우는 것과 깨는 것이 같은 락 안이라 대기가 놓친 것이 아니다). \
-                 '느려서 못 잡았다' 가 사실이 되는 유일한 갈래다 — 상한을 다시 재라(ADR-0211)"
+                 '느려서 못 잡았다' 가 사실이 되는 유일한 갈래다 — 상한을 다시 재라(ADR-0645)"
             }
         }
     }
@@ -653,14 +653,14 @@ mod tests {
 
         // `Reaped` 의 처방은 측정으로 한 번 뒤집혔다. 도달 경로가 "늦은 자식" 하나뿐이고
         // 대기가 놓치는 경로는 없다는 것을 `pty_registry` 의 두 시험이 잰다 — 그래서 이
-        // 문장은 대기를 지목하면 안 되고, ADR-0211 의 재검토 조건으로 보내야 한다.
+        // 진단은 대기 구현이 아니라 자식 종료 시점과 상한을 다시 측정하도록 안내해야 한다.
         let reaped = watch_phase_note(WatchPhase::Reaped);
         assert!(
             !reaped.contains("대기 쪽"),
             "표본 0 이던 옛 처방(대기 쪽)이 되살아났다: {reaped}"
         );
         assert!(reaped.contains("늦게 끝났다"), "{reaped}");
-        assert!(reaped.contains("ADR-0211"), "{reaped}");
+        assert!(reaped.contains("ADR-0645"), "{reaped}");
 
         // 네 위상이 서로 다른 문장을 낸다 — 하나로 뭉치면 가르는 값이 아니다.
         let all = [
@@ -924,7 +924,7 @@ mod tests {
         );
     }
 
-    // ───── 주기 sweep 경로 (ADR-0050 "좀비 회수 시점") ─────
+    // ───── 주기 sweep 경로 (ADR-0613) ─────
 
     /// `forget_surface` 호출을 기록하는 waker factory — 회수 시 waker dedup 게이트가
     /// 실제로 해제되는지 관측한다(미해제 시 sweep 마다 게이트 영구 누적 = 누수).
@@ -957,7 +957,7 @@ mod tests {
 
     /// 주기 경로(`Tick::PtySweep` 실행부)가 부르는 [`CoreState::sweep_idle_ptys`] 가
     /// **lazy 와 동일한 후처리**를 한다 — 세 가지를 한 묶음으로 정리해야 두 store 정합이
-    /// 깨지지 않는다(ADR-0050: "어느 한 쪽만 지우면 누수/좀비").
+    /// 깨지지 않는다(ADR-0613: "어느 한 쪽만 지우면 누수/좀비").
     ///
     /// 두 경로가 같은 함수를 부르므로 후처리가 갈라질 수 없다는 것이 이 구조의 핵심이고,
     /// 이 테스트는 그 함수가 실제로 세 가지를 다 하는지를 고정한다.

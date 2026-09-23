@@ -82,7 +82,7 @@ pub fn draw_plugin_banners(
     let ppp = ctx.pixels_per_point().max(f32::EPSILON);
     let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
     // 현재 resolved Theme 스냅샷 1회 (배너 무관). plugin 이 host 와 동일 Theme 으로
-    // 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(popup forward 와 동형, ADR-0028).
+    // 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(popup forward 와 동형, ADR-0628).
     let current_theme = {
         let th = crate::theme::theme();
         ThemeWire {

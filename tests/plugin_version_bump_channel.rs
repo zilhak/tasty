@@ -9,7 +9,7 @@
 //! 통과한다. 그래서 최소 네 극성을 본다 — 부채(FAIL) · bump(PASS) · 포맷만(PASS) ·
 //! 판정 불가(exit 2, 통과 아님).
 //!
-//! 판별식의 근거·측정·대안은 `docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md`.
+//! 판별식의 근거·측정·대안은 `docs/adr/0650-release-artifacts-and-versioning.md`.
 //!
 //! **왜 `#![cfg(unix)]` 인가**: 이 테스트는 `bash` 로 셸 게이트를 직접 부른다. 셸이
 //! 없는 플랫폼에서는 게이트의 판정이 아니라 셸의 부재가 결과를 정한다 — 그 자리에서
@@ -750,7 +750,7 @@ fn a_change_in_an_unlinked_workspace_crate_does_not() {
 // 안 요구한다. 사본의 테스트 전용 변경이 출하 판정기를 거쳐 빠지는 갈래는 여기서 못 잰다
 // — 합성 저장소에는 판정기 바이너리가 없다(위 "판정기의 신선도" 절). 그 갈래는 ADR 이
 // 실저장소 변이로 잰 값을 적는다. 근거:
-// docs/adr/0537-the-plugin-version-gate-follows-path-dependencies-outside-the-workspace.md
+// docs/dev-guide/release.md#플러그인-버전-비교
 
 /// plugin 하나가 워크스페이스 밖 path 의존 `vendor/upstream` 을 링크하고, `vendor/orphan`
 /// 은 아무도 안 링크하는 cargo 워크스페이스. 둘 다 `exclude` 에 있다 — 루트 아래 path
@@ -1004,7 +1004,7 @@ fn without_the_stripper_a_test_only_change_is_told_to_bump_and_that_is_deliberat
     // 왜 예외가 옳은가: 여섯 중 **pre-commit 이 부르는 것은 이것 하나뿐**이다. 갓 클론한
     // 트리에는 판정기가 정상적으로 없고, 거기서 2 로 죽으면 커밋이 막힌다. 넓게 본 결과는
     // 조용한 통과가 아니라 오탐(출하 밖 변경이 bump 를 요구)이고, 그 처방인 patch +1 은
-    // 아무것도 헐겁게 만들지 않는다 — 다음 커밋이 덮는다. ADR-0137 의 비대칭이 그것이다.
+    // 아무것도 헐겁게 만들지 않는다 — 다음 커밋이 덮는다. ADR-0650의 비대칭이 그것이다.
     //
     // 그래서 **양쪽으로 못박는다.** 2 로 "일관성 있게" 고치면 훅이 갓 클론에서 막히고,
     // 0 으로 흘리면 출하 내용이 바뀐 커밋이 조용히 지나간다. 답은 정확히 1 이다.

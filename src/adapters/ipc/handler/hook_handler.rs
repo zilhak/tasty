@@ -21,7 +21,7 @@
 //! `sequence` 를 거부하는 것과 **같은 이유로** 이 둘도 local 전용이다. 그 게이트는
 //! `crates/tasty-ipc/src/method_meta.rs` 의 `local_only()` 가 건다.
 //!
-//! 데이터/흐름 분리(ADR-0046)와 충돌하지 않는다 — 그 불변식이 막는 것은 **페이로드가
+//! 데이터/흐름 분리(ADR-0632)와 충돌하지 않는다 — 그 불변식이 막는 것은 **페이로드가
 //! `method` 자리에 닿는 것**이고, 여기서 `method` 를 정하는 것은 owner 자신이다.
 //! 웹훅 발신자는 이 경로에 도달할 수 없다.
 //!
@@ -33,7 +33,7 @@
 //! 핸들러를 다시 조회하지 않는다. 인라인 `sequence` 로 등록한 것뿐 아니라
 //! `--handler <id>` 로 바인딩한 것도 등록 시점에 복사된다. 그래서 upsert 가 바꾸는 것은
 //! `hook_handler.dispatch` 와 **앞으로의** 바인딩이고, 이미 발급된 URL 이 무엇을 하는지는
-//! 그대로다. 그것이 owner 가 등록 시 흐름을 고정한다는 ADR-0046 의 모양이다.
+//! 그대로다. 그것이 owner 가 등록 시 흐름을 고정한다는 ADR-0632의 모양이다.
 
 use serde_json::json;
 
@@ -80,7 +80,7 @@ pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
 ///
 /// host embedded 기본값 + plugin contribution 은 영향받지 않는다(user 출처만 교체).
 /// 파일 핸들러 `file_handler.reload` 응답의 `{path, exists}` 를 미러링한다. 그쪽이 더한 `rejected`
-/// (적용되지 않은 user 항목 보고, docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md)는
+/// (적용되지 않은 user 항목 보고, docs/adr/0631-file-handler-routing.md)는
 /// 아직 없다.
 pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
     let Some(path) = hook_handler::user_config_path() else {
@@ -175,7 +175,7 @@ pub fn handle_dispatch(
 
 /// 수동 발화한 IpcSequence 를 surface 훅과 **같은 실행기**에 줄 세운다 — 잇달아 발화한 시퀀스와
 /// surface 훅의 시퀀스가 스텝 단위로 끼어들지 않고 넘겨받은 순서대로 하나씩 실행된다.
-/// 근거: `docs/adr/0515-a-manually-dispatched-hook-sequence-joins-the-surface-hook-worker.md`.
+/// 근거: `docs/adr/0627-lua-and-hook-execution.md`.
 fn start_dispatched_sequence(
     handler_id: &str,
     injector: &HostIpcInjector,
@@ -449,7 +449,7 @@ mod tests {
 
     /// 수동 발화 시퀀스는 surface 훅과 같은 실행기에 줄 선다 — 잇달아 발화한 두 수동 시퀀스와 그
     /// 사이에 발화한 surface 훅 시퀀스가 스텝 단위로 끼어들지 않고 넘겨받은 순서대로 하나씩 돈다.
-    /// 수동 발화마다 스레드를 띄우면(ADR-0498 대안 A) 뒤 시퀀스의 첫 스텝이 앞 시퀀스의 첫 스텝
+    /// 수동 발화마다 스레드를 띄우면(ADR-0627) 뒤 시퀀스의 첫 스텝이 앞 시퀀스의 첫 스텝
     /// 답을 기다리지 않고 들어온다.
     #[test]
     fn dispatched_sequences_do_not_interleave_with_each_other_or_with_surface_hooks() {

@@ -10,7 +10,7 @@
 //!   측정해야 할 때(soak) 쓴다.
 //!
 //! 인스턴스 공유 원칙(binary 당 1 개 · workspace 격리)·격리 전략·timeout 정책은
-//! [`docs/dev-guide/e2e-tests.md`], 그 결정 근거는 ADR-0090. 원칙 위반은
+//! [`docs/dev-guide/e2e-tests.md`], 그 결정 근거는 ADR-0644. 원칙 위반은
 //! `tests/e2e_single_instance_guard.rs` 가 잡는다 — 그 가드는 **헤드리스 조합에서만**
 //! 자동으로 돈다(`check-headless` 가 전체 스위트를 돌리고 그 잡의 `--skip` 목록에
 //! 없다). 기본 조합에는 컴파일 채널뿐이다. 정본은 `docs/dev-guide/ci-gates.md`.

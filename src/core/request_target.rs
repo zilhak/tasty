@@ -295,7 +295,7 @@ pub(crate) fn request_resource_id(method: &str, params: &serde_json::Value) -> O
 /// 이 메서드의 prefix 를 plugin 이 점유할 수 있는가 — **없으면** 호스트 전용이다.
 ///
 /// 예약 목록은 매니페스트 검증이 `[[contributes.ipc_namespace]]` 를 거절하는 데 쓰는
-/// 그것이고([ADR-0140](../../docs/adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md)),
+/// 그것이고([ADR-0626](../../docs/adr/0626-plugin-registration-and-lifecycle.md)),
 /// 그래서 예약된 prefix 의 메서드는 **어떤 plugin 에게도 forward 되지 않는다.**
 /// 그 사실이 헤드리스에서 소유 검사를 engine handler **앞**에 둘 수 있게 한다 —
 /// forward 될 수 있는 메서드였다면 검사가 그 경로를 먼저 잘라 버렸을 것이다.

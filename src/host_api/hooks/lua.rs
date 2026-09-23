@@ -30,7 +30,7 @@ pub(crate) fn fire<T: serde::Serialize>(
     super::autofire::dispatch(lua, autofire.scripts, autofire.guard, event);
 }
 
-/// Lua 워커 엔진 부트스트랩 (ADR-0031). VM 을 전용 워커 스레드에서 기동한다.
+/// Lua 워커 엔진 부트스트랩 (ADR-0627). VM 을 전용 워커 스레드에서 기동한다.
 ///
 /// 부팅 시 임의 Lua 자동로드(`init.lua`)는 폐기됐다 — 스크립트는 등록 목록에서
 /// 명시 트리거(단축키)로만 실행된다. 초기화 실패는 warn 로만 남기고 None 반환

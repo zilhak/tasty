@@ -36,7 +36,7 @@ pub(crate) fn init_crash_report() {
 ///
 /// **host(GUI / headless) 경로에서만** 부른다. CLI 클라이언트도 같은 바이너리라,
 /// 역할 판정 전에 열면 CLI 를 한 번 돌릴 때마다 실행 중인 host 의 로그가 truncate 된다
-/// (`docs/adr/0092-file-log-host-process-only.md`).
+/// (`docs/adr/0643-cli-errors-and-diagnostic-logs.md`).
 pub(crate) fn enable_host_file_log() {
     crate::crash_report::enable_host_file_log();
 }

@@ -14,7 +14,7 @@
 //! (`crates/tasty-plugin-sdk/src/env.rs`) ② 가 빠지면 plugin UI 는 영어로 고정된다.
 //! host-plugin 크레이트는 `tasty-i18n` 에 의존하지 않고 이 env 를 그대로 자식에
 //! propagate 한다(`crates/tasty-host-plugin/src/process.rs`). 근거·대안:
-//! `docs/adr/0103-plugin-locale-via-host-process-env.md`.
+//! `docs/adr/0640-locale-catalogs-and-display-text.md`.
 
 use std::ffi::OsString;
 use std::path::PathBuf;

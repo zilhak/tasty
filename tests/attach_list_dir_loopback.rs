@@ -1,4 +1,4 @@
-//! Native file picker(ADR-0053) — 원격 attach 채널의 `list_dir_request`/`list_dir_result`
+//! Native file picker(ADR-0622) — 원격 attach 채널의 `list_dir_request`/`list_dir_result`
 //! 왕복을 loopback `TcpStream` 으로 실제 실행 중인 서버 인스턴스에 대해 검증한다.
 //!
 //! frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 를 공유한다 — attach client 는
@@ -113,7 +113,7 @@ fn list_dir_request_reports_permission_error_for_missing_dir() {
 
 #[test]
 fn list_dir_request_rejected_without_workspace_occupancy() {
-    // 하이브리드 신뢰 모델(ADR-0053 결정 3): attach 점유가 유일한 인가 조건이다.
+    // 하이브리드 신뢰 모델(ADR-0622): attach 점유가 유일한 인가 조건이다.
     // 이 client 는 stream 을 upgrade 했을 뿐 어떤 workspace 도 점유하지 않았으므로
     // `client_holds_workspace` 가 false 여야 하고, 서버는 실제 파일시스템을 읽지
     // 않은 채 즉시 거부해야 한다. 점유가 없다는 것 자체가 조건이므로 workspace 를

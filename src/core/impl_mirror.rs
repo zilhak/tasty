@@ -31,7 +31,7 @@ impl std::fmt::Display for MirrorStructuralBlocked {
              the operation must be performed on the remote instance"
         )?;
         // headless 의 거절은 op 종류가 아니라 빌드가 사유다 — 같은 문구로 두면 호출자가
-        // "이 op 만 안 된다" 로 읽는다(docs/adr/0538-headless-refuses-mirror-structural-forward.md).
+        // "이 op 만 안 된다" 로 읽는다(docs/adr/0603-headless-behavior.md).
         #[cfg(not(feature = "gui"))]
         write!(
             f,
@@ -62,7 +62,7 @@ impl std::error::Error for MirrorStructuralBlocked {}
     all(not(feature = "gui"), not(test)),
     expect(
         dead_code,
-        reason = "headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다(ADR-0538). \
+        reason = "headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다(ADR-0603). \
                   정의가 남는 것은 두 조합이 공유하는 `mark_last_forward_*` 가 큐의 \
                   마지막 원소를 표시하기 때문이고, op 를 읽어 보내는 쪽은 GUI 의 \
                   about_to_wait 뿐이다. 시험은 칸을 읽으므로 test 구성은 뺀다"
@@ -221,7 +221,7 @@ fn build_mirror_forward_op(
             anchor_surface_id: pane_anchor(*pane_id)?,
         }),
         // 복원은 "무엇을 만들지" 를 클라이언트가 정하지 않는다 — 무엇이 복원될지는
-        // 원격 스택이 정하므로 op 에는 anchor 밖에 없다(ADR-0264 결정 2).
+        // 원격 스택이 정하므로 op 에는 anchor 밖에 없다(ADR-0623).
         D::RestoreClosedItem { target_pane_id, .. } => Some(StructuralOp::RestoreClosedItem {
             anchor_surface_id: pane_anchor((*target_pane_id)?)?,
         }),
@@ -297,7 +297,7 @@ fn queue_mirror_forward(engine: &mut crate::core::CoreState, intent: &DomainInte
 /// headless 는 mirror 구조 op 를 forward 하지 않는다 — 큐를 비워 attach 채널로 보내는
 /// 주체(`App::dispatch_pending_structural_forwards`)가 GUI 의 `about_to_wait` 에만 있다.
 /// 넣으면 IPC 핸들러가 `{forwarded: true}` 로 성공을 답하고 op 는 영영 안 나간다.
-/// 그래서 넣지 않고 차단으로 답한다(docs/adr/0538-headless-refuses-mirror-structural-forward.md).
+/// 그래서 넣지 않고 차단으로 답한다(docs/adr/0603-headless-behavior.md).
 /// headless 에는 mirror workspace 를 만드는 자리(`app::attach_client`)도 없어 오늘은
 /// 도달하지 않는 갈래지만, 도달하는 날에도 거짓 성공이 아니라 거절이 나가게 한다.
 #[cfg(not(feature = "gui"))]
@@ -518,7 +518,7 @@ impl Core {
             }
             // 이 intent 를 적용할 identify worker 가 gui 에만 있고, 만드는 자리도 전부 gui 에만
             // 있다 — 에이전트 경로 `file_handler.dispatch` 는 headless 에서 arm 이 없어 `-32017`
-            // 로 거절된다(docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md).
+            // 로 거절된다(docs/adr/0631-file-handler-routing.md).
             #[cfg(feature = "gui")]
             DomainIntent::DispatchFile {
                 target,
@@ -1193,7 +1193,7 @@ mod mirror_structural_guard_tests {
 
     /// 2단계 client 측: mirror split 은 로컬 실행이 차단되면서 forward 큐에 op 를 쌓는다.
     /// op 의 anchor 는 아직 **로컬** surface id(App drain 이 원격으로 치환), forwarded=true.
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_split_enqueues_forward_with_local_anchor() {
@@ -1234,7 +1234,7 @@ mod mirror_structural_guard_tests {
     }
 
     /// SplitPane/NewTab 는 pane 의 대표 surface(활성 탭 focused)를 anchor 로 큐잉한다.
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_split_pane_anchors_on_pane_surface() {
@@ -1263,8 +1263,8 @@ mod mirror_structural_guard_tests {
 
     /// mirror 에서 누른 복원은 로컬 실행이 막히고 forward 큐에 op 하나가 쌓인다.
     /// **로컬 복원 스택은 손대지 않는다** — 로컬 pop 은 게이트가 `apply_restore_closed_item`
-    /// 호출 전에 돌려주므로 자동으로 막힌다(ADR-0264 결정 2). 그 사실을 고정한다.
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    /// 호출 전에 돌려주므로 자동으로 막힌다(ADR-0623). 그 사실을 고정한다.
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_restore_enqueues_forward_and_leaves_the_local_stack_alone() {
@@ -1323,7 +1323,7 @@ mod mirror_structural_guard_tests {
 
     /// convert 는 이제 forward 대상이다 — `StructuralOp::ConvertSurface` 로 큐잉되고
     /// (surface_kind/params 전달), forwarded=true(로컬 차단 유지, 원격에 위임).
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_convert_enqueues_forward_with_local_anchor() {
@@ -1370,7 +1370,7 @@ mod mirror_structural_guard_tests {
 
     /// intent handler 가 source surface 에서 carry 한 cwd 는 forward op 에 그대로
     /// 실린다 — mirror 경로에서 cwd 가 유실되면 explorer root 가 상대경로가 된다.
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_convert_forwards_cwd() {
@@ -1406,7 +1406,7 @@ mod mirror_structural_guard_tests {
 
     /// 터미널로 되돌리는 변환(`ConvertSurfaceTarget::Terminal`)도 같은 불변식 대상 —
     /// 원격 PTY 가 홈이 아니라 source cwd 에서 뜨도록 cwd 를 실어보낸다.
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_convert_to_terminal_forwards_cwd() {
@@ -1437,7 +1437,7 @@ mod mirror_structural_guard_tests {
 
     /// MoveSurface 는 source/target 이 같은 mirror workspace 안에 있을 때만
     /// forward 된다(결정됨 — cross-workspace 는 로컬 전용 id 유출 위험이라 계속 차단).
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mirror_move_surface_enqueues_forward_when_same_workspace() {
@@ -1540,7 +1540,7 @@ mod mirror_structural_guard_tests {
 
     /// `mark_last_forward_user_triggered` 는 `forwarded=true` + user origin 일
     /// 때만 마지막 pending forward 를 `user_triggered=true` 로 뒤집는다.
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mark_last_forward_user_triggered_flips_on_user_origin() {
@@ -1578,7 +1578,7 @@ mod mirror_structural_guard_tests {
 
     /// agent/IPC origin 이면 forwarded=true 여도 그대로 false 로 남는다(기존 동작
     /// 유지, IPC 경로는 focus 를 옮기지 않아야 하므로).
-    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0538).
+    // forward 큐에 넣는 것은 gui 뿐이다 — headless 는 거절한다(ADR-0603).
     #[cfg(feature = "gui")]
     #[test]
     fn mark_last_forward_user_triggered_stays_false_on_agent_origin() {

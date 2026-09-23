@@ -99,7 +99,7 @@ pub fn match_global_shortcut(
 /// **활성** plugin command 의 effective binding 을 합쳐 돌려준다(중복 제거 없음).
 ///
 /// 용도는 native webview 키 포워딩 정책 스냅샷 하나뿐이다
-/// (`docs/adr/0102-webview-key-forwarding.md`). 백엔드는 "host 가 가져갈 수 있는 키인가"
+/// (`docs/adr/0629-webview-host-integration.md`). 백엔드는 "host 가 가져갈 수 있는 키인가"
 /// 만 동기 판정하면 되고, 실제로 어떤 커맨드가 발화하는지는 host 가 큐를 비울 때
 /// `dispatch_plugin_shortcut_key` 가 focused surface 기준으로 다시 좁힌다 — 그래서 여기서
 /// 만드는 것은 (scope 기준으로는) **상위집합**이다. scope 로 미리 걸러내면 안 된다:

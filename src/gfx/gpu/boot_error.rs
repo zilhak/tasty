@@ -4,7 +4,7 @@
 //! 것이 전부였다. `enter_shell_setup_mode` 가 부팅 시점에 egui 첫 프레임을 직접 그리는
 //! 선례를 그대로 따라, 진단을 창에 그리고 사용자가 "종료" 를 누를 때까지 유지한다.
 //! GPU 가 아예 없거나 창 자체를 못 만든 경우는 그릴 수단이 없어 이 경로가 아니다
-//! (그쪽은 진단 후 exit — `docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+//! (그쪽은 진단 후 exit — `docs/adr/0616-window-platform-and-shutdown.md`).
 
 use winit::window::Window;
 
@@ -57,7 +57,7 @@ impl GpuState {
                         .corner_radius(th.corner_radius_lg.value())
                         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg))
                         // 부팅 실패 카드는 화면 전체를 덮는 `CentralPanel` 위에 중앙
-                        // 정렬로 뜬다 = SCOPE RULE 의 modal 갈래(ADR-0254). 부팅 셸
+                        // 정렬로 뜬다 = 그림자 적용 기준의 modal 갈래(ADR-0637). 부팅 셸
                         // 설정 다이얼로그와 같은 형태다.
                         .shadow(th.shadow_modal().to_egui()),
                 )
@@ -115,7 +115,7 @@ impl GpuState {
                                 // 금지 접두에 걸리고, 1px 굵기를 주는 토큰은 이것뿐이다.
                                 // 대가는 적어 둔다 — `border_width` 가 1 을 벗어나면
                                 // 프레임 테두리는 의도대로 굵어지지만 **이 버튼은 크기가
-                                // 변한다.** 그때 다시 볼 자리다(ADR-0126 재검토 조건).
+                                // 변한다.** 그때 다시 볼 자리다(ADR-0635 재검토 조건).
                                 .stroke(egui::Stroke::new(th.border_width.value(), danger))
                                 .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
                             )

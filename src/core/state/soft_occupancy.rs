@@ -1,8 +1,8 @@
-//! soft 점유(ADR-0040)의 호스트 내부 core 결선.
+//! soft 점유(ADR-0621)의 호스트 내부 core 결선.
 //!
 //! soft acquire/release 는 `occupancy.*` **IPC method 로 노출하지 않는다** — 소비자가
 //! 호스트 내부(terminal.spawn/kill in-process, 로컬 UI force-detach, focus 지연 청소)
-//! 뿐이라 전부 in-process 호출이다(ADR-0040 §주체·범위: 살아있는 임의 surface 를
+//! 뿐이라 전부 in-process 호출이다(ADR-0621: 살아있는 임의 surface 를
 //! 직접 점유하는 CLI/IPC 는 두지 않는다). hard 의 [`attach_runtime`](crate::core::attach_runtime)
 //! 가 stream 바이트를 결선하는 자리와 대칭이되, soft 는 StreamHub/gui 비의존이라
 //! headless 에서도 컴파일된다. acquire/release 는 headless 에서도 `terminal.spawn`/`kill`
@@ -12,7 +12,7 @@ use super::CoreState;
 use crate::core::attach::OccupancyError;
 
 impl CoreState {
-    /// soft 점유 획득(표시만, write 차단 없음 — ADR-0040). 주체 = `parent` surface.
+    /// soft 점유 획득(표시만, write 차단 없음 — ADR-0621). 주체 = `parent` surface.
     /// in-process 전용(IPC method 아님) — `terminal.spawn`/`terminal.adopt` 이 child 를
     /// soft 점유할 때 호출한다. 대상 surface_id 는 **필수**(포커스 독립, 원칙1) — ID 로 직접
     /// 지정. 같은 주체 재-acquire 는 멱등(라벨만 갱신), 다른 주체면 `AlreadyOccupied`.
@@ -25,7 +25,7 @@ impl CoreState {
         self.attach.acquire_soft(surface_id, parent, label)
     }
 
-    /// soft 점유 self-release(ADR-0040: 주체 본인 해제). 주체(`parent`) 불일치 →
+    /// soft 점유 self-release(ADR-0621: 주체 본인 해제). 주체(`parent`) 불일치 →
     /// `NotHolder`, 엔트리 없음 → `NotOccupied`(hard `release` 와 동형). `terminal.release`
     /// IPC 가 in-process 호출한다.
     pub fn release_soft_occupancy(
@@ -36,7 +36,7 @@ impl CoreState {
         self.attach.release_soft(surface_id, parent)
     }
 
-    /// surface 의 점유를 tier 무관 강제 해제(로컬 사용자 force-detach 공용, ADR-0040).
+    /// surface 의 점유를 tier 무관 강제 해제(로컬 사용자 force-detach 공용, ADR-0621).
     /// hard(workspace/surface)면 force_detach 경로(holder 종료 통지 포함)를, soft 면 주체
     /// 검증 없이 엔트리 제거(soft holder 는 stream client 아님 → StreamHub 통지 불필요)를
     /// 탄다. 반환: 실제로 뭔가 해제됐는지. `egui_panels` 의 force-detach 버튼이 호출한다.
@@ -53,7 +53,7 @@ impl CoreState {
         self.attach.clear_soft(surface_id)
     }
 
-    /// focus 지연 청소(ADR-0040 §점유 해제·수명): **실 사용자 포커스**를 얻은 surface 가
+    /// focus 지연 청소(ADR-0621 해제·수명): **실 사용자 포커스**를 얻은 surface 가
     /// soft 점유 중이고 그 주체(`parent`) surface 가 더 이상 live set 에 없으면 그 시점에
     /// 점유 없음으로 청소한다. soft 주체는 연결 기반이 아닐 수 있어 죽음을 즉시 인지하지
     /// 못하므로, parent 를 기록만 해두고 이 지연 청소로 회수한다. surface attention 의

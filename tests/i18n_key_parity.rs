@@ -258,7 +258,7 @@ const PENDING_FIX_MISSING_KEYS: &[(&str, &str)] = &[
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// (`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
 /// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
@@ -1112,7 +1112,7 @@ fn literal_translation_keys_exist_in_catalog() {
 /// 이 겹은 카탈로그를 묻는다 — `tasty_doc_guards::missing_referents` 로 덮을 수 없는
 /// 자리다. 한 검사로 뭉개면 어느 쪽도 제대로 안 본다.
 ///
-/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 키가 실재해도 그 번역이
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(docs/dev-guide/guard-population.md#초록의-뜻). 키가 실재해도 그 번역이
 /// 더 이상 영어와 같지 않아 면제가 놀고 있을 수 있고, 그것은 결함이 아니다.
 ///
 /// 키가 썩으면(오탈자·키 개명) 면제가 조용히 아무것도 안 가리키게 되고, 정작 그 키의

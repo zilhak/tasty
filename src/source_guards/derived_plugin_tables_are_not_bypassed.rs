@@ -2,7 +2,7 @@
 //!
 //! ## 무엇이 실제로 났나
 //!
-//! `ipc_namespaces`(어느 prefix 를 어느 plugin 이 갖는가)는 [ADR-0173] 이후
+//! `ipc_namespaces`(어느 prefix 를 어느 plugin 이 갖는가)는 [ADR-0626] 이후
 //! **설치된 매니페스트에서 유도되는 표**다. 유도는 `PluginManager::refresh_packages`
 //! 안에서만 돈다. 그런데 `plugin.remove` 는 그 함수를 안 거치고 `packages` 를 손으로
 //! `retain` 했다. 그래서 **지운 plugin 의 prefix 가 표에 남았고**, 그 이름의 호출이
@@ -24,7 +24,7 @@
 //! **면제도 같은 규칙을 받는다.** 테스트 픽스처는 상태를 손으로 세우는 것이 정상이라
 //! 안 보는데, 그 "테스트 전용인가" 를 파일 **이름**(`tests*.rs` · `*_tests.rs`)으로
 //! 물었었다. 이름은 성질이 아니다 — 출하되는 파일에 `tests_` 를 붙이면 그 파일은
-//! **조용히** 판정에서 사라진다. 지금은 [ADR-0180] 의 판정기 하나
+//! **조용히** 판정에서 사라진다. 지금은 [ADR-0647] 의 판정기 하나
 //! (`shipping_scope::test_only_files`: `#[cfg(test)] mod x;` 전이 폐쇄 + cargo 통합
 //! 테스트 타깃)를 **부른다**. 같은 물음에 답을 둘로 만들지 않는다.
 //!
@@ -38,7 +38,7 @@
 //! 대신 면제가 커진 만큼 판정 모수는 줄었다(본 파일 1173 → 1083). **면제는 언제나
 //! 초록 방향**이라 그 값에 하한을 둔다 — 발견 수가 아니라 **면제 뒤 실제로 본 수**에.
 //!
-//! [ADR-0180]: ../../docs/adr/0180-test-only-files-is-the-canonical-shipping-judge.md
+//! [ADR-0647]: docs/adr/0647-source-guards-and-exemptions.md
 //!
 //! 그 술어로 host 의 plugin 상태를 훑으면 캐시된 유도 상태는 다섯이고, 그중 넷이
 //! **공개 필드**라 밖에서 직접 바꿀 수 있다(아래 명부). 다섯째
@@ -70,7 +70,7 @@
 //! 주입할 것을 **함수(resolver 클로저)가 아니라 데이터(표 핸들)** 로 고른 것이 핵심이다.
 //! 함수를 주입하면 `method_meta()` 안에서 host 코드가 돌아 유도 자리의 `&mut self` 와
 //! 겹칠 수 있다(재진입). 데이터면 `method_meta()` 안에서 도는 host 코드가 없다.
-//! 결정·대안·경계는 [ADR-0179](../../docs/adr/0179-the-resolver-is-handed-the-table-not-a-callback.md).
+//! 결정·대안·경계는 [ADR-0626](../../docs/adr/0626-plugin-registration-and-lifecycle.md).
 //!
 //! ## 무엇을 사본으로 세는가 — "조용히 낡는가" 로 가른다
 //!
@@ -103,7 +103,7 @@
 //! being_private` 가 매번 읽는다.
 //!
 //! namespace 항목은 사정이 다르다 — 바늘이 필드가 아니라 **창구 함수**
-//! (`namespaces_write`)이고, [ADR-0179] 로 표의 `Arc` 가 `tasty-ipc` 로 건너간다.
+//! (`namespaces_write`)이고, [ADR-0626] 로 표의 `Arc` 가 `tasty-ipc` 로 건너간다.
 //! 그래서 이 항목이 지금 안 새는 조건은 셋이고, **그중 둘은 아직 못박혀 있지 않다**:
 //!
 //! - (가) `PluginManager.ipc_namespaces` 가 private
@@ -137,7 +137,7 @@
 //! 반면 "유도를 안 거치고 원본을 바꾼 자리가 있는가" 는 소스로 답이 난다. 실제로 이
 //! 결함은 두 조합의 유닛 스위트를 통과했고 실행 확인에서만 드러났다.
 //!
-//! [ADR-0173]: ../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md
+//! [ADR-0626]: docs/adr/0626-plugin-registration-and-lifecycle.md
 
 use std::path::PathBuf;
 
@@ -404,10 +404,10 @@ fn the_shared_table_type_is_named_only_where_it_is_owned() {
 /// 크레이트를 링크한 누구나 손잡이를 쥐고, 쓰기가 창구를 안 거치게 된다.
 ///
 /// 지금 꺼내는 함수는 하나뿐이고 `#[cfg(test)]` 뒤에 있다. "뒤에 있는가" 는 줄 단위
-/// cfg 판정이라 [ADR-0180] 의 판정기를 **부른다** — 속성 문자열을 눈으로 세면
+/// cfg 판정이라 [ADR-0647] 의 판정기를 **부른다** — 속성 문자열을 눈으로 세면
 /// `not(test)` 와 `any(test, …)` 두 방향으로 틀린다.
 ///
-/// [ADR-0180]: ../../docs/adr/0180-test-only-files-is-the-canonical-shipping-judge.md
+/// [ADR-0647]: docs/adr/0647-source-guards-and-exemptions.md
 #[test]
 fn the_custody_crate_does_not_hand_the_handle_back_out_in_release() {
     let src = std::fs::read_to_string(repo_root().join(TABLE_CUSTODY_FILE))

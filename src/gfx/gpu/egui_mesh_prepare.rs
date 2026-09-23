@@ -1,7 +1,7 @@
 //! egui-mesh surface 의 host 측 합성 (A1-S5).
 //!
 //! plugin 이 자기 프로세스에서 egui 를 tessellate 한 paint 출력을 POD 바이트로
-//! SharedBuffer 에 commit 하면(ADR-0028), host 가 그 바이트를 [`mesh_wire::decode_paint`]
+//! SharedBuffer 에 commit 하면(ADR-0628), host 가 그 바이트를 [`mesh_wire::decode_paint`]
 //! 로 `(Vec<ClippedPrimitive>, TexturesDelta, ppp)` 로 복원해 **전용 `egui_wgpu::Renderer`**
 //! 로 surface 영역에 합성한다.
 //!

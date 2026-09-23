@@ -154,7 +154,7 @@ pub(crate) struct App {
     // Boot error mode (엔진 생성 실페인데 GPU·창은 살아있을 때). shell setup 과 같은
     // 구조로 실패 화면을 그린 채 유지하다 사용자가 종료를 누르면 exit(1) 한다.
     // GPU 부재·창 생성 실패는 그릴 수단이 없어 이 경로가 아니다(진단 후 즉시 exit).
-    // 근거: ADR-0117 재검토 트리거.
+    // 근거: ADR-0616 재검토 트리거.
     #[cfg(feature = "gui")]
     pub(crate) boot_error_mode: bool,
     #[cfg(feature = "gui")]
@@ -166,7 +166,7 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) boot_error_info: Option<crate::gpu::BootErrorInfo>,
     /// System tray / status item. Must be kept alive for the tray to remain visible.
-    /// `None` when the platform tray is unavailable (graceful degradation, ADR-0001).
+    /// `None` when the platform tray is unavailable (graceful degradation, ADR-0616).
     #[cfg(all(
         any(windows, target_os = "macos", target_os = "linux"),
         feature = "gui"
@@ -203,7 +203,7 @@ pub(crate) struct App {
     /// Sessionwide engine state — workspaces, settings, hooks, registries.
     /// None until the first MainView lifecycle initializes it; Some after.
     pub(crate) core_state: Option<crate::core::CoreState>,
-    /// Lua 워커 엔진 (ADR-0031). 부팅 시 1회 생성, VM 은 전용 워커 스레드 소유.
+    /// Lua 워커 엔진 (ADR-0627). 부팅 시 1회 생성, VM 은 전용 워커 스레드 소유.
     /// 스크립트는 등록 목록에서 명시 트리거(단축키/자동실행)로만 실행. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// Lua 자동실행 재진입 가드 — 자동실행 스크립트가 유발한 이벤트의 cascade 재점화
@@ -228,7 +228,7 @@ pub(crate) struct App {
     #[cfg(feature = "gui")]
     pub(crate) preset_view_id: Option<WindowId>,
     /// map 뒤에 초기 포커스 힌트(X11 `_NET_WM_USER_TIME = 0`)를 지워야 하는 에이전트 창.
-    /// winit 이 map 을 알리는 첫 `WindowEvent::Focused(_)` 에서 비운다(ADR-0497). 그 전에 창이
+    /// winit 이 map 을 알리는 첫 `WindowEvent::Focused(_)` 에서 비운다(ADR-0617). 그 전에 창이
     /// 닫히면 닫힘 경로(`close_main_window` · `close_self_requesting_window`)가 뺀다.
     #[cfg(feature = "gui")]
     pub(crate) pending_focus_hint_clear: std::collections::HashSet<WindowId>,
@@ -510,7 +510,7 @@ impl App {
     ) -> anyhow::Result<GpuState> {
         let instance = Arc::clone(&self.gpu_instance);
         // 창마다 만들어지는 egui 컨텍스트가 처음부터 같은 노치 거리를 갖게 한다 —
-        // 모달은 열릴 때 새로 만들어지므로 이 한 지점이 전부를 덮는다(ADR-0130).
+        // 모달은 열릴 때 새로 만들어지므로 이 한 지점이 전부를 덮는다(ADR-0615).
         // 첫 창은 CoreState 보다 먼저 만들어질 수 있어 `core_state()`(없으면 panic)를
         // 쓰지 않는다 — 그때는 기본값이고, 이후 프레임이 설정값으로 덮는다.
         let wheel_line_scroll = self

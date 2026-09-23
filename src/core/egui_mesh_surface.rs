@@ -1,7 +1,7 @@
 //! egui-mesh surface 의 host 측 자리표.
 //!
 //! plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성하는
-//! 채널(ADR-0028)의 surface 측 모델. taxonomy/화이트리스트 등록과 layout
+//! 채널(ADR-0628)의 surface 측 모델. taxonomy/화이트리스트 등록과 layout
 //! 라우팅(생성·식별·영속화)을 담당하고, 실제 mesh 수신·합성(buffer_id/
 //! generation/ppp 추적, raw_input forward, 전용 `egui_wgpu::Renderer`)은
 //! `gfx/gpu/egui_mesh_prepare.rs`/`view/main/egui_mesh.rs` 가 이 타입을 받아

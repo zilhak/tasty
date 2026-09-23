@@ -3,12 +3,12 @@
 use crate::app::App;
 use crate::state::{AppState, FilePickerResult};
 
-/// 닫히는 plugin popup 이 부모인 host `file_picker`(자식)를 함께 정리한다(ADR-0084).
+/// 닫히는 plugin popup 이 부모인 host `file_picker`(자식)를 함께 정리한다(ADR-0636).
 ///
 /// 그냥 `dialogs.file_picker = None` 으로 지우지 않고 **취소 결과를 채운다** — 그러면
 /// 기존 result drain(`app::dispatch::file_picker`)이 평소 경로 그대로 돌아 plugin 에
-/// `file_picker.result { cancelled: true }` 를 보낸다. ADR-0058 의 "모든 트리거는
-/// 정확히 하나의 결과를 받는다" 계약이 이 정리 경로에서도 깨지지 않는다.
+/// `file_picker.result { cancelled: true }`를 보낸다. 접수한 요청에 결과를 돌려주는
+/// 규칙을 이 정리 경로에서도 지킨다(ADR-0636).
 ///
 /// host 는 plugin id/kind 를 보지 않는다 — 자식이 스스로 기록한 부모 instance_id 만
 /// 대조하는 generic 판정이다(핵심 원칙 2).
@@ -29,8 +29,8 @@ pub(crate) fn cancel_child_file_picker(
     if data.result.is_none() {
         data.result = Some(FilePickerResult::Cancelled);
         // 우리가 정리를 마쳤으니 부모-자식 관계는 여기서 끝난다. 링크를 남겨두면 다음
-        // tick 의 result push 가 "소유 popup 이 사라진 채 결과가 도착했다"(ADR-0084
-        // Decision 4)로 오인해 경고를 낸다 — 그 경고는 연쇄 정리가 **실패**했을 때만
+        // tick 의 result push 가 "소유 popup 이 사라진 채 결과가 도착했다"(ADR-0636
+        // 의 늦은 결과 경고)로 오인해 경고를 낸다 — 그 경고는 연쇄 정리가 **실패**했을 때만
         // 나와야 진단 가치가 있다. plugin_id/request_id 는 그대로라 결과는 평소 경로로
         // 정확히 한 번 간다.
         //
@@ -53,7 +53,7 @@ impl App {
     /// plugin 이 `popup.close` 로 자기 popup 을 닫는 경로와 debug 강제 close 는 원래
     /// `PluginManager::close_popup_instance` 를 직접 쳤다. 그러면 아래 drain 이 태우는
     /// `cancel_child_file_picker` 연쇄 정리를 건너뛰어, 자식 host `file_picker` 가
-    /// 부모 없이 떠 있는 고아가 된다 — ADR-0084 Decision 3 이 "부모가 어떤 경로로
+    /// 부모 없이 떠 있는 고아가 된다 — ADR-0636이 "부모가 어떤 경로로
     /// 닫히든" 이라고 못박은 계약이 그 경로에서만 깨졌다. 큐로 합류시켜 close 처리
     /// 초크포인트를 하나로 유지한다.
     ///

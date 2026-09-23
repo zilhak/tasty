@@ -14,19 +14,10 @@
 //! 모든 시각 판정은 `now: Instant` 를 인자로 받는 순수 코어(`AbuseTracker`)에
 //! 모아 테스트가 시간을 통제할 수 있게 한다. 전역 진입점은 `Instant::now()` 를 쓴다.
 //!
-//! 이 모듈이 담은 명부 열하나 중 **아홉이 결정으로 적혀 있다** — 집계 대상
-//! ([ADR-0195](../../docs/adr/0195-abuse-counting-includes-rejected-tokens.md)),
-//! 문턱값과 출처 키
-//! ([ADR-0196](../../docs/adr/0196-abuse-thresholds-and-source-key.md)), 표의 크기 문턱과
-//! 순회 간격([ADR-0197](../../docs/adr/0197-the-source-table-cap-is-a-prune-trigger.md)),
-//! 쿨다운의 시간 의미론 셋
-//! ([ADR-0198](../../docs/adr/0198-a-cooldown-is-fixed-at-entry.md)), 차단 판정이 body
-//! 읽기보다 앞이라는 것
-//! ([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)),
-//! 락 poison 복구([ADR-0177](../../docs/adr/0177-recovery-forbidden-locks-are-judged-by-frame-boundary-type.md)).
+//! 집계 대상, 출처 키, 차단과 정리 시점은 [Webhook 접수 정책](../../docs/adr/0632-webhook-admission.md)을 따른다.
+//! 락 poison 복구는 [오류 처리 가이드](../../docs/dev-guide/error-handling.md#락-poison-mutex--rwlock)를 따른다.
 //!
-//! **관찰로 남은 것은 둘**이고, 값이 아니라 표면의 *존재*라 바뀔 때 판단이 갈리지
-//! 않는다. 다만 언제 다시 보는지는 적어 둔다.
+//! 아래 두 사항도 변경 때 함께 확인한다.
 //!
 //! - **env 오버라이드 3 종의 이름** — 이름을 바꾸거나 없애면 사용자가 걸어 둔 설정이
 //!   조용히 무시된다(파싱 실패와 미설정이 같은 값으로 떨어진다). 그 표면이 설정 파일
@@ -34,7 +25,7 @@
 //! - **카운터가 in-memory 라 재시작하면 쿨다운이 사라지는 것** — 지금은 그것이
 //!   `webhooks.toml` 에 남는 등록과 대비되는 사실로 문서에만 있다. 차단 상태를 재시작
 //!   너머로 잇자는 요구가 나오면(또는 그 소멸이 운영에서 문제로 관측되면) 그때 올린다 —
-//!   영속화는 표 크기·회수 규칙(ADR-0197)과 함께 봐야 하는 변경이다.
+//!   영속화는 표 크기·회수 규칙(ADR-0632)과 함께 봐야 하는 변경이다.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -51,14 +42,14 @@ use super::ack::AckStatus;
 /// 유입이 멎으면 다음 실패 한 건이 전부 회수한다.
 ///
 /// 값의 근거와 그때의 비용 실측은
-/// [ADR-0197](../../docs/adr/0197-the-source-table-cap-is-a-prune-trigger.md).
+/// [ADR-0632](../../docs/adr/0632-webhook-admission.md).
 const PRUNE_TRIGGER_SOURCES: usize = 4096;
 
 /// `prune` 순회의 **최소 간격**. 문턱을 넘은 뒤에도 순회는 윈도우당 한 번만 돈다.
 ///
 /// 없으면 문턱 초과 구간에서 실패 한 건마다 표 전체를 훑는다 — 그리고 그 순회는
 /// **아무것도 못 지우면서** 반복된다(위 참조). 그 비용이 전역 락 안에서 나므로 웹훅
-/// 처리량 상한이 된다(실측 ADR-0197). 간격을 윈도우로 잡는 이유는 지울 자격이 생기는
+/// 처리량 상한이 된다(ADR-0632의 출처 표 정리 정책). 간격을 윈도우로 잡는 이유는 지울 자격이 생기는
 /// 단위가 윈도우이기 때문이다 — 그보다 자주 훑어도 새로 지울 것이 없다.
 ///
 /// 회수가 최대 윈도우 하나만큼 늦어진다. 표가 그 시간 동안 유입률 × 윈도우 규모로
@@ -79,7 +70,7 @@ pub struct AbuseConfig {
 }
 
 /// 기본값의 근거와 그 값이 지키는 것(짧은 토큰의 무차별 대입)은
-/// [ADR-0196](../../docs/adr/0196-abuse-thresholds-and-source-key.md). **같은 값이
+/// [ADR-0632](../../docs/adr/0632-webhook-admission.md). **같은 값이
 /// 사용자 문서 세 자리에 그대로 박혀 있다** — 바꾸면 거기까지 같은 커밋에서 고친다.
 impl Default for AbuseConfig {
     fn default() -> Self {
@@ -268,11 +259,11 @@ pub fn record_failure(source: &str) {
 /// 통의 키가 토큰이 아니라 등록이라 세면 익명 발신자가 owner 의 예산을 태운다. 이
 /// 통은 반대다. 제한이라 **안 세는 것이 우회**이고, 401 은 opaque path 를 이미 맞춘
 /// 발신자가 비밀을 무차별 대입하는 자리다 — 통 A 도 안 태우므로 여기서 세지 않으면
-/// 그 대입에 붙는 비용이 어디에도 없다([ADR-0195](../../docs/adr/0195-abuse-counting-includes-rejected-tokens.md)).
+/// 그 대입에 붙는 비용이 어디에도 없다([ADR-0632](../../docs/adr/0632-webhook-admission.md)).
 ///
 /// `PayloadTooLarge`(413)도 센다 — 상한을 넘는 body 를 반복해 보내는 것은 그 자체가
 /// 자원을 겨눈 요청이고, 그 요청도 아무것도 얻지 못하고 끝난다. 상한은 한 건의 JSON 입력을
-/// 제한하지만 연결 정리 비용이나 반복 횟수를 제한하지 않는다([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
+/// 제한하지만 연결 정리 비용이나 반복 횟수를 제한하지 않는다([ADR-0632](../../docs/adr/0632-webhook-admission.md)).
 ///
 /// 나머지 셋은 그 물음에 답이 다르다.
 /// - `Received`(200) — 정상 트래픽. 세면 남용차단이 정상 발신자를 막는다.
@@ -341,7 +332,7 @@ mod tests {
     /// **문턱은 상한이 아니다.** 서로 다른 출처가 윈도우 안에서 실패하면 `prune` 이
     /// 보존 조건(쿨다운 중 · 윈도우 안)을 모두 만족시켜 하나도 못 지우고, 표는 문턱을
     /// 넘어 계속 자란다. 이름이 상한처럼 읽혀 온 자리라 값으로 못박는다 — 표 크기를
-    /// 정하는 것은 이 문턱이 아니라 유입률 × 윈도우다(ADR-0197).
+    /// 정하는 것은 이 문턱이 아니라 유입률 × 윈도우다(ADR-0632).
     #[test]
     fn the_table_grows_past_the_prune_trigger() {
         let mut t = AbuseTracker::new(cfg(20));
@@ -402,7 +393,7 @@ mod tests {
     }
 
     /// 문턱을 넘은 뒤에도 순회는 **윈도우당 한 번**만 돈다. 없으면 실패 한 건마다 표
-    /// 전체를 훑고, 그 순회는 지울 것이 없는 동안에도 반복된다(비용 실측은 ADR-0197).
+    /// 전체를 훑고, 그 순회는 지울 것이 없는 동안에도 반복된다(정리 기준은 ADR-0632).
     #[test]
     fn the_walk_runs_at_most_once_per_window() {
         let mut t = AbuseTracker::new(cfg(20));
@@ -455,7 +446,7 @@ mod tests {
 
     /// **쿨다운은 연장되지 않는다** — 차단 중에 더 두드려도 만료 시각은 진입 때 정해진
     /// 값 그대로다. 연장하면 계속 두드리는 발신자가 사실상 영구 차단되고, 그 발신자가
-    /// 토큰을 잘못 설정한 정상 발신자일 때 스스로 빠져나올 길이 사라진다(ADR-0198).
+    /// 토큰을 잘못 설정한 정상 발신자일 때 스스로 빠져나올 길이 사라진다(ADR-0632).
     #[test]
     fn a_cooldown_is_not_extended_by_more_failures() {
         let base = Instant::now();
@@ -474,7 +465,7 @@ mod tests {
     }
 
     /// 쿨다운이 풀리면 **카운터도 백지**가 된다. 안 그러면 해제 직후 실패 한 건이 곧장
-    /// 임계치를 다시 채워, 연장을 막아 둔 것이 의미를 잃는다(ADR-0198).
+    /// 임계치를 다시 채워, 연장을 막아 둔 것이 의미를 잃는다(ADR-0632).
     #[test]
     fn an_expired_cooldown_starts_from_a_clean_count() {
         let base = Instant::now();

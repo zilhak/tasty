@@ -1,6 +1,6 @@
 //! e2e 시나리오 — **시나리오 하나에 `#[test]` 하나**.
 //!
-//! 인스턴스는 여전히 test binary 당 1 개다(`common::shared()`, ADR-0090). 격리
+//! 인스턴스는 여전히 test binary 당 1 개다(`common::shared()`, ADR-0644). 격리
 //! 단위는 프로세스가 아니라 workspace 이므로 각 시나리오는 [`scenario`] 로 자기
 //! workspace 를 잡고 그 안의 surface/pane 만 건드린다 — 그래서 전역 목록
 //! (`pane.list` / `workspace.list` / `hook.list` / `pty.list` / notification) 위에서는
@@ -27,7 +27,7 @@ use std::time::Duration;
 /// **왜 생겼나 — 실측(기본 gui 조합, Xvfb).** `multi_window_owner_routing` 이 두
 /// 번째 창을 만들면 그 창이 포커스를 가져가는데, **owner 를 params 에서 못 찾는
 /// 메서드는 포커스된 창으로 라우팅된다**. (그 앞쪽 전제 — IPC 로 만든 창이 포커스를
-/// 가져간다 — 는 ADR-0497 로 사라졌다: 에이전트 창은 focused 를 옮기지 않는다.) 그때 근거로 든 것은 `Kind` 가
+/// 가져간다 — 는 ADR-0617로 사라졌다: 에이전트 창은 focused 를 옮기지 않는다.) 그때 근거로 든 것은 `Kind` 가
 /// surface / workspace / pane 셋뿐이라 `tab.close {tab_id}` 와 `pty.*` 의 headless
 /// pty id 가 owner 를 못 찾고 `focused_view_id` 로 떨어진다는 것이었다(3 건 실패).
 ///
@@ -303,7 +303,7 @@ fn terminal_echo_and_mark_read() {
 /// 인파일 단위시험(`crates/tasty-terminal/src/output_buffer.rs`)이 같은 두 성질을 버퍼
 /// 수준에서 재지만, 그것만으로는 **라우터 팔과 권한 표 등재가 살아 있는지** 알 수 없다 —
 /// 이름이 등재되지 않았거나 팔이 없으면 요청은 `-32601` 로 돌아오고 버퍼는 그 사실을
-/// 모른다. 여기서는 그 왕복을 지난다(ADR-0307).
+/// 모른다. 여기서는 그 왕복을 지난다(ADR-0613).
 ///
 /// 세 단계가 다 **순서에 의존한다.** 어느 단계든 출력과 커서 조작의 순서를 뒤집으면 잃을
 /// 것이 없어져, 재려던 회귀에서도 통과한다. 각 단계의 ★ 주석이 그 순서를 적는다.
@@ -405,7 +405,7 @@ fn terminal_scan_cursor_is_separate_from_the_agent_mark() {
 /// 인파일 단위시험(`crates/tasty-terminal/src/output_buffer.rs`)이 버퍼 수준의 성질을
 /// 재고 핸들러 단위시험이 인자 규칙을 재지만, **응답의 칸들이 실제로 wire 에 실리는지**
 /// 와 **두 소비자가 IPC 경계를 건너서도 서로를 안 미는지** 는 그 둘 어디에도 없다.
-/// 여기서 그 왕복을 지난다(ADR-0341).
+/// 여기서 그 왕복을 지난다(ADR-0634).
 #[test]
 fn terminal_output_reads_from_a_consumer_held_position() {
     let (tasty, _ws, sid, _pid, _lane) = scenario("e2e-output-cursor");
@@ -1264,7 +1264,7 @@ fn headless_pty_attach_surface_promotes_to_a_tab() {
 // ========== Multi-window: owner-based routing + list 전체 순회 ==========
 
 /// X11 창이 화면에 보이는가(map state 가 `IsViewable`). 에이전트 창은 숨긴 채 만들어 등록
-/// 뒤에 보이는데(ADR-0497) `window.list` 에는 보임 필드가 없어, 보이게 하는 호출이 빠지는
+/// 뒤에 보이는데(ADR-0617) `window.list` 에는 보임 필드가 없어, 보이게 하는 호출이 빠지는
 /// 회귀가 IPC 로는 안 보인다 — 그래서 X 서버에 직접 묻는다.
 ///
 /// 하네스가 자식에게 준 디스플레이(`TASTY_E2E_DISPLAY`, `inherit` 이면 `DISPLAY`)를 연다.
@@ -1335,7 +1335,7 @@ fn wait_x11_window_viewable(xid: u64) {
 fn multi_window_owner_routing() {
     // 두 번째 main window 를 IPC 로 생성하고, 두 윈도우의 surface 가 모두 IPC 로
     // 접근 가능한지 검증. CLAUDE.md "포커스 독립". 에이전트 창은 focused 를 옮기지
-    // 않으므로(ADR-0497) focused 는 첫 윈도우에 남는다 — 그래서 owner 라우팅을
+    // 않으므로(ADR-0617) focused 는 첫 윈도우에 남는다 — 그래서 owner 라우팅을
     // 실제로 재는 것은 focused 가 아닌 새 윈도우 surface 로의 send 다.
     let _lane = exclusive_lane();
     let tasty = common::shared();
@@ -1368,7 +1368,7 @@ fn multi_window_owner_routing() {
     let create_resp = tasty.call("window.create", json!({}));
     // window.create 는 더 이상 fire-and-forget(`{"scheduled": true}`)이 아니라 완료
     // 채널로 생성 성공/실패를 왕복시킨다 — 성공은 `{"created": true, "window_id": …}`
-    // (ADR-0122). 옛 `scheduled` 계약을 보면 Null 이 잡힌다.
+    // (ADR-0607). 옛 `scheduled` 계약을 보면 Null 이 잡힌다.
     assert_eq!(
         create_resp["created"], true,
         "window.create 성공 응답이 created=true 를 실어야 한다: {create_resp:?}"
@@ -1377,13 +1377,13 @@ fn multi_window_owner_routing() {
         create_resp["window_id"].as_u64().is_some(),
         "window.create 성공 응답에 window_id 가 있어야 한다: {create_resp:?}"
     );
-    // 에이전트가 만든 창은 사용자가 보던 창의 focused 를 가져가지 않는다(ADR-0497).
+    // 에이전트가 만든 창은 사용자가 보던 창의 focused 를 가져가지 않는다(ADR-0617).
     assert_eq!(
         focused_window(tasty),
         focused_before,
         "window.create 뒤 window.list 의 focused 는 원래 창이어야 한다: {create_resp:?}"
     );
-    // 에이전트 창은 숨긴 채 만들어 등록 뒤에 보인다(ADR-0497) — 결국 화면에 보여야 한다.
+    // 에이전트 창은 숨긴 채 만들어 등록 뒤에 보인다(ADR-0617) — 결국 화면에 보여야 한다.
     #[cfg(all(target_os = "linux", feature = "gui"))]
     wait_x11_window_viewable(
         create_resp["window_id"]
@@ -1464,7 +1464,7 @@ fn multi_window_owner_routing() {
     );
 
     // owner-based routing: focused 는 첫 윈도우다(에이전트 창은 focused 를 옮기지
-    // 않는다, ADR-0497). 첫 윈도우 surface 로의 send 는 focused 폴백과 owner 가 같은
+    // 않는다, ADR-0617). 첫 윈도우 surface 로의 send 는 focused 폴백과 owner 가 같은
     // 창이고, 아래 두 번째 윈도우 surface 로의 send 가 owner 라우팅을 잰다.
     tasty.set_mark(sid);
     let send_first = tasty.call(
@@ -1666,7 +1666,7 @@ fn the_remaining_lifecycle_methods_are_still_absent_in_a_headless_daemon() {
 ///
 /// 그 intent 를 적용할 identify worker 와 결과를 여는 창이 gui 에만 있다. 예전에는 arm 이
 /// 헤드리스에도 있어 `{"accepted": true}` 로 답하고 요청을 로그 한 줄과 함께 버렸다 —
-/// 에이전트는 성공으로 읽었다(docs/adr/0425-headless-file-dispatch-answers-that-this-build-cannot-open-files.md).
+/// 에이전트는 성공으로 읽었다(docs/adr/0631-file-handler-routing.md).
 #[cfg(not(feature = "gui"))]
 #[test]
 fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
@@ -1739,7 +1739,7 @@ fn mirror_forward_requests_are_refused_by_name_in_a_headless_daemon() {
 }
 
 /// 헤드리스는 레이아웃을 영속하지 않는다 — 슬롯을 점유하지 않고, 그 사실을 `system.info` 의
-/// `layout_slot: null` 로 답한다(docs/adr/0539-headless-does-not-persist-layouts.md). 에이전트가
+/// `layout_slot: null` 로 답한다(docs/adr/0603-headless-behavior.md). 에이전트가
 /// "재시작하면 워크스페이스가 돌아오는가" 를 이 값 하나로 판정하므로, 슬롯을 잡기 시작하면(저장·
 /// 복원 배선이 생기면) 이 시험이 먼저 알린다.
 #[cfg(not(feature = "gui"))]
@@ -1761,7 +1761,7 @@ fn a_headless_daemon_answers_that_it_holds_no_layout_slot() {
 }
 
 /// `general.restore_layout` 을 켠 헤드리스는 그 설정이 이 빌드에서 아무 일도 안 한다는 것을
-/// 부팅 때 **경고로** 말한다(docs/adr/0539-headless-does-not-persist-layouts.md 결정 ①). 문구는
+/// 부팅 때 **경고로** 말한다(docs/adr/0603-headless-behavior.md). 문구는
 /// `src/boot.rs` 의 단위 시험이 재지만, 그 시험은 함수의 반환값만 본다 — 부팅이 그것을 어느
 /// 레벨로 내보내는지는 이 시험만 본다. stderr 기본 필터가 warn 이라, 레벨이 info 이하로 내려가면
 /// 사람은 아무것도 못 보는데 단위 시험은 초록으로 남는다. 그래서 자식의 stderr 를 **제품 기본
@@ -1826,7 +1826,7 @@ fn a_headless_daemon_warns_at_boot_that_restore_layout_is_ignored() {
 /// `TASTY_DEBUG_OS_OPEN_LOG` 아래에서는 그것이 **띄워지지 않고 기록된다.**
 ///
 /// 이 스위치가 없으면 시험 인스턴스의 OS 열기가 실행자의 이미 떠 있는 브라우저로 URL 을
-/// 넘긴다 — 격리 홈도 전용 디스플레이도 그 채널을 못 막는다(ADR-0511). 기록 줄이 안 생기면
+/// 넘긴다 — 격리 홈도 전용 디스플레이도 그 채널을 못 막는다(ADR-0644). 기록 줄이 안 생기면
 /// 그 열기는 실제로 실행됐다는 뜻이다.
 ///
 /// `debug_assertions` 로 막는다 — 스위치는 debug 격리라 release 로 지은 자식에는 없고, 그때 이
@@ -1869,7 +1869,7 @@ fn directory_dispatch_is_recorded_instead_of_opened_under_the_harness() {
 
 /// `file_handler.reload` 는 적용하지 않은 user 항목을 `rejected` 에 사유와 함께 싣는다 — 기존 필드는
 /// 그대로다. 예전에는 `{path, exists}` 뿐이라 설정이 무시된 것이 로그에만 남았다
-/// (docs/adr/0426-file-handler-reload-reports-the-entries-it-dropped.md).
+/// (docs/adr/0631-file-handler-routing.md).
 ///
 /// 공유 인스턴스의 user 설정을 바꾸므로 단독 차선에서 돌고, 끝에 파일을 지우고 다시
 /// reload 해 원래 상태(user 설정 없음)로 돌려 놓는다. 두 조합 모두에서 돈다.
@@ -2153,7 +2153,7 @@ fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
 ///
 /// 소스 짝 맞춤은 `src/source_guards/platform_gated_dispatch_complement.rs` 가 본다.
 /// 여기서는 그 짝이 실제로 **응답을 바꾸는지**를 실행으로 못 박는다 — 소스에 arm 이
-/// 있다는 것과 그것이 라우터에 닿는다는 것은 다른 사실이다. 근거는 ADR-0154.
+/// 있다는 것과 그것이 라우터에 닿는다는 것은 다른 사실이다. 근거는 ADR-0604.
 #[test]
 fn a_platform_gated_debug_method_says_why_not_that_it_is_missing() {
     let _lane = lane();
@@ -2236,7 +2236,7 @@ fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
 /// **한 키**로만 고정했다. 그런데 판정기가 보는 키는 열하나이고 부류는 일곱이다
 /// (`core::request_target::params_resource_id`) — 한 키만 박아 두면 나머지 열이 조용히
 /// 빠져도 초록이다. 실제로 이 저장소에서 같은 형태가 났다: 같은 판정을 워크스페이스
-/// 단위에서는 하고 surface 단위에서는 안 하던 자리가 있었다(ADR-0156).
+/// 단위에서는 하고 surface 단위에서는 안 하던 자리가 있었다(ADR-0621).
 ///
 /// **두 방향을 짝으로 본다.** 거절만 세면 "전부 거절" 과 구별이 안 되므로, 같은 메서드에
 /// **살아 있는** id 를 실었을 때 이 검사가 걸리지 않는 것을 같은 회차에서 확인한다.
@@ -2441,8 +2441,8 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
 ///
 /// `tcp_ipc_server::DRAIN_BUDGET_PER_ROUND`(= `MAX_CONCURRENT_CONNECTIONS`) 가 한 회차에 집어 드는 명령 수를
 /// 막는다. 남은 것이 다음 회차에 다시 불리는 근거는 headless 에서는 **게이트가 wake 를
-/// 하나로 접고, 잘린 회차가 입장 장부를 보고 루프를 다시 깨우는 것**(ADR-0465)이고, gui
-/// 에서는 잘린 회차의 재깨움(ADR-0413)이다. 그 성질이 깨지면 예산을 넘긴 요청이 응답 없이
+/// 하나로 접고, 잘린 회차가 입장 장부를 보고 루프를 다시 깨우는 것**(ADR-0607)이고, gui
+/// 에서는 잘린 회차의 재깨움(ADR-0607)이다. 그 성질이 깨지면 예산을 넘긴 요청이 응답 없이
 /// 남는다. 클라이언트가 응답을 기다리며 블록하므로 그 사고는 **행이 아니라 멈춤**
 /// 으로 나타난다.
 ///
@@ -2480,7 +2480,7 @@ fn concurrent_requests_are_all_answered() {
 }
 
 /// 회차가 **매번** 잘려도 동시 요청이 전부 답을 받는다 — 잘린 회차가 루프를 다시 깨우는
-/// 갈래(headless ADR-0465 · gui ADR-0413)를 실제로 지나는 시험이다.
+/// GUI·headless 경로(ADR-0607)를 실제로 지나는 시험이다.
 ///
 /// 위 시험은 기본 예산에서 회차를 안 자르므로 그 갈래를 안 지난다. 여기서는 debug 전용
 /// `TASTY_DEBUG_IPC_ROUND_TIME_BUDGET_MS=0` 으로 따로 띄워 회차마다 첫 명령 하나만 꺼내게

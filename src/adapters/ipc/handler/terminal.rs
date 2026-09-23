@@ -1,4 +1,4 @@
-//! `terminal.*` IPC 핸들러 — 호스트 내재화된 child-terminal 관리 (ADR-0040 / occupancy-04).
+//! `terminal.*` IPC 핸들러 — 호스트 내재화된 child-terminal 관리 (ADR-0621).
 //!
 //! 에이전트가 자식 터미널 surface 를 spawn/tell/wait/kill 하는 **범용 기계**. 지금까지
 //! codex/claude 플러그인에 중복 구현돼 있던 부분을 호스트 1급으로 끌어올린다. 에이전트
@@ -9,7 +9,7 @@
 //! `surface.locate` / `surface.respawn_terminal`)를 **in-process 재사용** 한다 — 플러그인이
 //! `host.call(...)` 로 조합하던 것과 byte-for-byte 동형이되 IPC 왕복이 없다.
 //!
-//! **soft 점유 (ADR-0040 soft tier 소비)**: spawn 성공 시 child 를 `occupy_soft(child, parent)` 로 등록,
+//! **soft 점유 (ADR-0621 soft tier 소비)**: spawn 성공 시 child 를 `occupy_soft(child, parent)` 로 등록,
 //! kill 시 `release_occupancy(child)` 로 해제 — 둘 다 in-process core 함수 호출이다
 //! (`occupancy.*` IPC method 는 만들지 않는다 — soft 점유의 경계는 core 함수다).
 
@@ -539,7 +539,7 @@ pub(crate) fn handle_children(
 /// 파생 판정 3 축(`state`/`evidence`/`confidence`)을 응답 필드로 펴는 **단일 지점**.
 ///
 /// `terminal.children` 항목과 `terminal.state` 단건이 둘 다 여기를 거쳐 객체를 만들기
-/// 때문에 키 집합과 값이 구조적으로 일치한다 — ADR-0072 가 판정을 한 헬퍼
+/// 때문에 키 집합과 값이 구조적으로 일치한다 — ADR-0641이 판정을 한 헬퍼
 /// (`CoreState::child_liveness*`)로 통일해 둔 것을 직렬화 단계에서 되돌리지 않는다.
 /// 각 필드가 가질 수 있는 값과 조합은 `docs/features/child-terminal/index.md` 의
 /// 판정 우선순위표가 SoT 다.
@@ -555,7 +555,7 @@ fn liveness_fields(liveness: ChildLiveness) -> serde_json::Map<String, Value> {
 /// 와 동형으로 대상 child surface 를 `surface` 파라미터로 직접 지정한다(포커스
 /// 독립 — CLAUDE.md 원칙 3).
 ///
-/// **결정 4**: `ChildTerminalRegistry::state_of` 자신은 미등록 surface 에
+/// 미등록 surface 처리: `ChildTerminalRegistry::state_of` 자신은 미등록 surface 에
 /// `"active"` fallback 계약을 그대로 유지한다(`src/core/child_terminal.rs` 의
 /// `state_of` 와 그 테스트는 불변). 파생 판정은 그 위에서 라이브 surface 트리 ·
 /// PTY 관측과 합성해 만들어진다 — registry 자체의 self-heal
@@ -618,7 +618,7 @@ pub(crate) fn handle_kill(
     };
     engine.child_terminals.save();
 
-    // soft 점유 해제(ADR-0040): surface.close 이전에 명시적 release. tier 무관 강제
+    // soft 점유 해제(ADR-0621): surface.close 이전에 명시적 release. tier 무관 강제
     // 해제(soft 이면 주체 검증 없이 clear). in-process 호출.
     engine.release_occupancy(removed.child_surface_id);
 
@@ -1387,7 +1387,7 @@ mod tests {
     }
 
     /// `children` 항목은 `state` 뿐 아니라 판정 근거 2 축을 함께 싣는다 — 이게 없으면
-    /// 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(ADR-0072 가 분리해 둔 축이
+    /// 소비자가 확정 판정과 휴리스틱을 구분할 수 없다(ADR-0641이 분리해 둔 축이
     /// 응답 단계에서 사라진다).
     #[test]
     fn children_item_carries_evidence_and_confidence() {
@@ -1411,7 +1411,7 @@ mod tests {
         }
     }
 
-    /// 목록과 단건이 **같은 판정 3 축**을 보고해야 한다. ADR-0072 가 판정 헬퍼를
+    /// 목록과 단건이 **같은 판정 3 축**을 보고해야 한다. ADR-0641이 판정 헬퍼를
     /// 하나로 합쳤어도 직렬화를 각자 하면 다시 갈릴 수 있어, 두 응답을 직접 대조해
     /// 고정한다.
     #[test]

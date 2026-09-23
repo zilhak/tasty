@@ -92,7 +92,7 @@ pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// `process_ipc`, `src/boot/headless_dispatch.rs` 의 `pump_ipc`)는 큐가 빌 때까지 꺼내므로,
 /// 보내는 쪽이 계속 밀어 넣으면 같은 회차가 끝나지 않고 타이머·터미널 출력·창 이벤트가
 /// 그만큼 밀린다. 회차의 **시간**은 따로 자른다(`crate::app::ipc_round::ROUND_TIME_BUDGET`,
-/// ADR-0410).
+/// ADR-0607).
 ///
 /// **값을 고르지 않고 [`MAX_CONCURRENT_CONNECTIONS`] 에서 파생한다.** 요청을 넣는
 /// 쪽은 둘 다 **응답을 받을 때까지 블록한다**(`dispatch_and_await` 와
@@ -100,13 +100,13 @@ pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// 큐에 동시에 올려 둘 수 있는 명령은 최대 하나이고, 연결 수는 저 상한이 자른다 —
 /// 즉 이 값이 그 상한과 같으면 **TCP 쪽만으로는 이 수 예산에 닿지 않는다.** 닿을 수 있는
 /// 것은 호스트 자신이 주입한 몫뿐이고, 그것은 정상적으로 회수된다(아래). 회차는 시간
-/// 예산(ADR-0410)으로도 잘리므로, TCP 쪽만으로도 회차가 잘리는 일은 있다.
+/// 예산(ADR-0607)으로도 잘리므로, TCP 쪽만으로도 회차가 잘리는 일은 있다.
 ///
 /// **남은 것은 다음 회차가 집는다.** 두 생산자 모두 `send` 직후 waker 를 부르지만, 그 wake
 /// 가 명령마다 하나씩 남는다고 기대하면 안 된다. headless 는 게이트가 wake 를 채널에 하나로
-/// 접고, 잘린 회차가 입장 장부(`queued_commands`)를 보고 루프를 다시 깨운다(ADR-0465,
+/// 접고, 잘린 회차가 입장 장부(`queued_commands`)를 보고 루프를 다시 깨운다(ADR-0607,
 /// `src/boot.rs` 의 `rewake_if_left`). gui 는 wake 를 회차 없이 건너뛸 수 있어서, 잘린 회차가
-/// 루프를 스스로 한 번 더 깨운다(ADR-0413 의 재깨움, `crate::app::ipc::IpcPacer`).
+/// 루프를 스스로 한 번 더 깨운다(ADR-0607의 재깨움, `crate::app::ipc::IpcPacer`).
 /// `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered` 가 여는 연결은 이 상한보다
 /// 적어 이 수 예산에는 닿지 않는다. 재깨움 갈래는 시간 예산을 줄여 띄운 인스턴스로 잰다
 /// (`concurrent_requests_are_all_answered_when_every_round_is_cut`).
@@ -129,7 +129,7 @@ pub(crate) const DRAIN_BUDGET_PER_ROUND: usize = MAX_CONCURRENT_CONNECTIONS;
 /// 그때 가른다.
 const RESPONSE_WRITE_TIMEOUT: Duration = stream::HEARTBEAT_TIMEOUT;
 
-// 명령 큐 입장 상한과 이 파일의 상한들 사이의 관계(ADR-0391). 값은 파생이 아니고 관계만
+// 명령 큐 입장 상한과 이 파일의 상한들 사이의 관계(ADR-0606). 값은 파생이 아니고 관계만
 // 고정한다 — 누가 한쪽을 옮겨 관계가 깨지면 컴파일이 멈춘다.
 //
 // 바이트: 최대 크기 요청 두 건이 동시에 대기할 수 있어야 하고(아니면 큰 요청 하나 뒤에 다른
@@ -280,7 +280,7 @@ impl TcpIpcServer {
 
         // 큐 자체는 무제한 채널이다. 상한은 채널이 아니라 그 앞의 입장 장부가 건다 —
         // `sync_channel` 의 칸 수는 명령 **개수**만 자르고 바이트를 못 보며, 가득 찬 칸에서
-        // 송신이 막히면 거절 대신 대기가 된다(ADR-0391).
+        // 송신이 막히면 거절 대신 대기가 된다(ADR-0606).
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let admission = CommandAdmission::new(queue_limits());
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -392,10 +392,10 @@ impl TcpIpcServer {
     ///
     /// `--port-file` 이 포트 파일을 **다른 디렉토리로** 옮기면 이 호스트는 그 데이터 루트의
     /// 주인임을 알리지 않는 것이다 — 같은 루트에 기본 포트 파일로 뜬 호스트가 따로 있을 수
-    /// 있고, 그 호스트의 **살아 있는** 완료 로그를 지우게 된다(ADR-0344 가 실측한 사고).
+    /// 있고, 그 호스트의 **살아 있는** 완료 로그를 지우게 된다(ADR-0641의 호스트 세대별 로그 보존 규칙).
     /// 그래서 그때는 `None`(청소 안 함)을 준다. 뿌리를 포트 파일 쪽 `notify/` 로 옮기지
     /// 않는 이유는 writer 가 그곳에 안 쓰기 때문이다 — 아무도 안 쓰는 디렉토리를 지우는
-    /// 것은 청소가 아니다. 근거·대안: `docs/adr/0416-the-boot-cleanup-follows-the-port-file-root.md`.
+    /// 것은 청소가 아니다. 근거·대안: `docs/adr/0641-agent-state-and-completion.md`.
     ///
     /// 같은 디렉토리인지는 정규화한 경로로 가린다. 어느 한쪽이 아직 없으면(첫 부팅) 정규화가
     /// 실패하므로 적힌 그대로 견준다.
@@ -739,7 +739,7 @@ impl TcpIpcServer {
     /// 20 초) 그 workspace 를 붙잡아 정상 attach 를 `already_attached` 로 거절한다.
     /// 버전 불일치는 원격 attach 의 흔한 실패 경로라, 실패가 확정된 시점에 점유를
     /// 아예 잡지 않는 것이 유일하게 확실한 처리다. 근거:
-    /// `docs/adr/0116-attach-handshake-validated-before-occupancy.md`.
+    /// `docs/adr/0621-occupancy-and-attach-admission.md`.
     ///
     /// 거절은 프로토콜에 이미 있는 모양을 쓴다 — `StreamAck{ok:false, error}` 는
     /// client(`StreamConnection::open_with`)가 이미 검사해 그 `error` 문구로
@@ -814,7 +814,7 @@ impl TcpIpcServer {
     }
 
     /// attach 대상을 핸드셰이크 params 에서 추출. surface(단계 4) 또는 workspace
-    /// (단계 6) 둘 중 하나. bulk 전용 연결(ADR-0054)이면 hub 에 결속을 등록한다 —
+    /// (단계 6) 둘 중 하나. bulk 전용 연결(ADR-0622)이면 hub 에 결속을 등록한다 —
     /// 이 연결은 mirror/attach 를 하지 않고(= holder 가 되지 않고) 파일 청크만
     /// 나른다. 여기서 hub 에 bulk 로 태깅하면 read 루프가 프레임을 보내기 전에
     /// 결속이 서므로, 이후 pump_inbound 가 이 연결의 Data 를 파일 청크로
@@ -1012,7 +1012,7 @@ impl TcpIpcServer {
     /// `unknown stream tag` 를 본다. 즉 "못 나가면 EOF" 뿐 아니라 **나갔는데 못 읽는**
     /// 갈래가 있고, 거기서 이 줄은 EOF 를 대체하지 못한다. 그래도 여기서 줄을 안 읽는
     /// 것이 이 거절의 값이라 바꾸지 않는다 — 근거는 `ERR_CONNECTION_LIMIT_REACHED` 의
-    /// doc 과 ADR-0327.
+    /// doc 과 ADR-0606.
     ///
     /// 로그가 `debug` 인 이유: 거절은 상대가 재시도 루프를 돌면 몰려 오고, 포화로
     /// **들어가는 순간**의 `warn` 은 [`ConnectionSlot::try_acquire`] 이 이미 낸다.
@@ -1051,7 +1051,7 @@ impl TcpIpcServer {
 
     /// 줄 상한 초과를 **응답으로** 알린다. 쓰고 나면 호출자가 연결을 끝낸다.
     ///
-    /// 예전에는 이 자리가 무응답 종료였다(ADR-0304). client 는 닫힌 소켓만 보았고, 자기
+    /// 예전에는 이 자리가 무응답 종료였다(ADR-0606). client 는 닫힌 소켓만 보았고, 자기
     /// 줄이 길어서인지 네트워크가 끊겨서인지 고를 수 없었다 — 두 사건의 처방이 정반대다
     /// (앞은 요청을 줄이거나 나눠 보내고, 뒤는 그대로 다시 건다). 이제 코드로 답한다.
     ///
@@ -1197,7 +1197,7 @@ impl TcpIpcServer {
         peer: Option<std::net::SocketAddr>,
     ) -> bool {
         // 호출자에게 나갈 답을 먼저 정하고, 느린 요청 링이 읽을 결과 칸에 적은 뒤 쓴다 — 받은
-        // 답이든 상한에서 스스로 만든 답이든 호출자가 본 것이 적힌다(ADR-0468).
+        // 답이든 상한에서 스스로 만든 답이든 호출자가 본 것이 적힌다(ADR-0608).
         let response = match wait_bound {
             None => resp_rx
                 .recv()
@@ -1205,7 +1205,7 @@ impl TcpIpcServer {
             Some(bound) => match resp_rx.recv_timeout(bound) {
                 Ok(response) => Ok(response),
                 // 만료 순간 명령이 아직 큐에 있었으면 실행되지 않게 막고 "실행 안 됨" 으로
-                // 답한다(ADR-0411). 이미 시작됐으면 종전 그대로 결과 불명이다.
+                // 답한다(ADR-0607). 이미 시작됐으면 종전 그대로 결과 불명이다.
                 Err(mpsc::RecvTimeoutError::Timeout) => Ok(match lifecycle.withdraw() {
                     tasty_ipc::server::Withdraw::NotRun => {
                         tasty_ipc::server::expired_before_run_response(rpc_id, bound)
@@ -1434,7 +1434,7 @@ mod admission_tests {
     // 명령을 꺼내 실행을 시작한 채(`claim`) 답하지 않고 쥐고 있는 것이 이 시험의 장치다 —
     // 그러면 `response_tx` 가 **살아 있어** 기다림이 `Disconnected` 로 일찍 끝나지 않는다.
     // 그 갈래가 바로 이 상한이 없으면 영원히 안 끝나는 자리다. 아무도 명령을 안 집으면
-    // 만료 순간 요청은 시작 전이라 답이 "실행 안 됨" 으로 갈린다(ADR-0411).
+    // 만료 순간 요청은 시작 전이라 답이 "실행 안 됨" 으로 갈린다(ADR-0607).
     fn test_queue(tx: mpsc::Sender<IpcCommand>, limits: QueueLimits) -> CommandQueue {
         CommandQueue {
             tx,
@@ -1499,7 +1499,7 @@ mod admission_tests {
             Some(tasty_telemetry::slow_requests::HostOutcome::Error {
                 code: crate::ipc::protocol::ERR_RESPONSE_TIMEOUT_OUTCOME_UNKNOWN
             }),
-            "the slow-request row reads the answer the waiter sent (ADR-0468)"
+            "the slow-request row reads the answer the waiter sent (ADR-0608)"
         );
 
         let mut got = String::new();
@@ -1523,7 +1523,7 @@ mod admission_tests {
     }
 
     // 같은 상한이 **요청이 큐에서 기다리는 동안** 지나면 답은 "실행 안 됨" 이고, 그 뒤에
-    // 명령을 꺼내도 실행되지 않는다 — 기다리는 쪽이 물러나며 막았기 때문이다(ADR-0411).
+    // 명령을 꺼내도 실행되지 않는다 — 기다리는 쪽이 물러나며 막았기 때문이다(ADR-0607).
     #[test]
     fn a_wait_that_ends_while_queued_answers_not_run_and_the_command_is_not_run_later() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -1559,7 +1559,7 @@ mod admission_tests {
             Some(tasty_telemetry::slow_requests::HostOutcome::Error {
                 code: crate::ipc::protocol::ERR_EXPIRED_BEFORE_RUN
             }),
-            "the slow-request row reads the answer the waiter sent (ADR-0468)"
+            "the slow-request row reads the answer the waiter sent (ADR-0608)"
         );
 
         drop(server_side);
@@ -1575,7 +1575,7 @@ mod admission_tests {
     }
 
     // 장부의 몫은 **큐에서 꺼내는 순간** 돌아온다 — 꺼낸 명령을 아직 쥐고 있어도 그렇다.
-    // 장부가 재는 것은 대기열이지 처리 중인 일이 아니다(ADR-0391). 지금은 소비자가 꺼낸
+    // 장부가 재는 것은 대기열이지 처리 중인 일이 아니다(ADR-0606). 지금은 소비자가 꺼낸
     // 명령을 한 회차 안에서 버리므로 표의 Drop 만으로도 곧 반납되지만, 명령을 회차 밖에
     // 보관하도록 바뀌면 그 차이가 조용한 과계수가 된다. 그래서 반납을 Drop 이 아니라
     // `try_recv` 에 묶은 것을 여기서 고정한다.
@@ -2053,7 +2053,7 @@ mod notify_cleanup_tests {
         );
     }
 
-    // ADR-0344 가 실측한 사고의 회귀 시험. 같은 데이터 루트에 기본 포트 파일로 뜬 호스트 A
+    // 완료 로그가 다른 호스트의 로그를 지우지 않는지 검사한다(ADR-0641). 같은 데이터 루트에 기본 포트 파일로 뜬 호스트 A
     // 가 있고, 호스트 B 가 `--port-file` 만 다른 디렉토리로 주고 뜬다. B 는 A 의 살아 있는
     // `notify/` 를 지우면 안 된다 — 청소 대상 자체가 없어야 한다.
     #[test]

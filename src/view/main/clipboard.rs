@@ -96,7 +96,7 @@ impl MainView {
 
         match mirror_ws_id {
             Some(ws_id) => {
-                // mirror: PNG 바이트를 메모리에서 확보해 bulk 파일 전송 채널(ADR-0054) 업로드 트리거 큐에
+                // mirror: PNG 바이트를 메모리에서 확보해 bulk 파일 전송 채널(ADR-0622) 업로드 트리거 큐에
                 // 넣는다. 실제 업로드(블로킹)와 원격 경로 삽입은 App 이 백그라운드에서 처리.
                 match encode_clipboard_image_as_png(&image) {
                     Ok(png_bytes) => {

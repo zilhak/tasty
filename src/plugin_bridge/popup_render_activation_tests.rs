@@ -5,7 +5,7 @@
 //! 기록을 안 세우면 사용자가 popup 에서 연 파일이 에이전트로 떨어지고, 닫힌 popup 의 기록을 안
 //! 걷으면 plugin 이 사람이 더는 보지 않는 popup 으로 사용자 행동을 주장한다. 그래서 여기서는
 //! `draw_plugin_popups` 를 egui frame 으로 돌려 `AppState::plugin_popup_user_activated` 를 본다
-//! (ADR-0526).
+//! (ADR-0631).
 //!
 //! 이 모듈은 gui feature 뒤라 헤드리스 조합(`--no-default-features`)에는 없고, 자동 실행은
 //! 기본 조합의 `cargo test --workspace --lib --bins` 스텝이 맡는다. 손으로 돌리는 명령:

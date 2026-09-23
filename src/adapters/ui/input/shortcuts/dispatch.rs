@@ -590,7 +590,7 @@ impl MainView {
         false
     }
 
-    /// 사용자 스크립트 단축키 매칭 → Lua 워커 실행 요청 (ADR-0031).
+    /// 사용자 스크립트 단축키 매칭 → Lua 워커 실행 요청 (ADR-0627).
     ///
     /// combo 가 매칭되면 등록 스크립트를 조회해 소스를 읽고 `AppEvent::RunLuaScript` 로
     /// App(lua_engine 소유)에 넘긴다. 매칭됐으나 스크립트/파일이 없으면 이벤트는 소비하되
@@ -628,7 +628,7 @@ impl MainView {
                 return true;
             }
         };
-        // TOFU 게이트(ADR-0031): 등록 해시와 현재 파일 해시 비교. 같으면 조용히 실행,
+        // TOFU 게이트(ADR-0627): 등록 해시와 현재 파일 해시 비교. 같으면 조용히 실행,
         // 다르면 실행 보류 + 변경 확인 팝업(수동 발화 = popup).
         let current_hash = tasty_settings::hash_bytes(source.as_bytes());
         if current_hash == stored_hash {
@@ -711,7 +711,7 @@ impl MainView {
             return true;
         }
 
-        // 사용자 스크립트 단축키 (ADR-0031) — 사용자 키 입력 경로에서만 발화.
+        // 사용자 스크립트 단축키 (ADR-0627) — 사용자 키 입력 경로에서만 발화.
         if self.try_dispatch_script_shortcut(key, mods) {
             self.base.dirty = true;
             return true;

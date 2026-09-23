@@ -214,7 +214,7 @@ fn build_add_detector_decl(form: &AddDetectorForm) -> Result<DetectorDecl, Strin
 
 /// 한 행의 출처 칸 문구와 "user 항목 삭제" 버튼을 보일지. 둘 다 finalize 된 rule 의 origin 이
 /// 아니라 출처별 contribution 을 읽는다 — 같은 rule 을 plugin 도 적으면 dedupe 가 user origin 을
-/// 지우고, rule 없는 user patch 는 애초에 rule 이 없다(ADR-0520).
+/// 지우고, rule 없는 user patch 는 애초에 rule 이 없다(ADR-0631).
 fn detector_row_origin(file_format: &FileFormatRegistry, id: &DetectorId) -> (String, bool) {
     (
         detector_origins_summary(&file_format.rule_origins(id)),

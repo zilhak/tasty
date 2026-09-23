@@ -38,7 +38,7 @@ impl App {
             // 원 요청 번호를 넘기지 않는다. 이 큐는 사용자 조작(ctrl+click · drag&drop)뿐 아니라
             // IPC `file_handler.dispatch` 로도 차는데, 그 IPC 명령의 번호는 intent →
             // `pending_handler_ipc` 로 옮겨지는 사이에 떨어진다(튜플에 칸이 없다). 그래서 그
-            // 경로의 plugin 대기는 링에서 원 요청과 이어지지 않는다(ADR-0436 "잃은 것").
+            // 경로의 plugin 대기는 링에서 원 요청과 이어지지 않는다(ADR-0608).
             mgr.forward_namespace_call(&method, params, None, serde_json::Value::Null, tx, None);
         }
     }

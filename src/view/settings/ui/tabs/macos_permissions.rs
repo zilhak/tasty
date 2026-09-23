@@ -7,7 +7,7 @@
 //!
 //! **손쉬운 사용 행은 debug 빌드에만 있다.** 이 권한을 쓰는 표면(`surface.raw_key`)이
 //! debug 로 격리돼 release 에는 소비자가 없고, 프롬프트도 띄우지 않는다
-//! ([ADR-0115](../../../../../docs/adr/0115-input-reproduction-ipc-debug-isolation.md)).
+//! ([ADR-0612](../../../../../docs/adr/0612-request-admission-and-isolation.md)).
 //! 소비자가 없는 권한을 release 화면에 남기면 사용자에게 영구히 "미승인" 으로만 보이는,
 //! 켤 이유도 끌 이유도 없는 행이 된다. debug 빌드에서는 자기검증 시 승인 상태를 볼
 //! 자리가 필요하므로 그대로 둔다.

@@ -98,7 +98,7 @@ pub fn draw_plugin_popups(
         .retain(|k, _| live_mesh.contains(k));
     // 활성화 기록은 여기서, popup 이 닫힐 때만 걷힌다 — `dispatch_origin_of` 는 조회만 하고
     // 소비하지 않으므로 사용자가 한 번 누른 popup 이 열려 있는 동안 그 plugin 은 몇 번이든
-    // 사용자 발화를 얻는다. plugin 코드는 이미 사용자 입력을 받는 쪽이라 이 창은 ADR-0526 이
+    // 사용자 발화를 얻는다. plugin 코드는 이미 사용자 입력을 받는 쪽이라 이 창은 ADR-0631이
     // 수용했다.
     state
         .plugin_popup_user_activated
@@ -160,7 +160,7 @@ pub fn draw_plugin_popups(
     state.plugin_popup_open = true;
 
     // Esc 소유권 — 규칙 7 의 키보드 판("최상단 하나만 받는다"). host/plugin 통틀어
-    // 이번 프레임 최상단인 popup 하나만 Esc 를 소비한다(ADR-0084). host 쪽 대응은
+    // 이번 프레임 최상단인 popup 하나만 Esc 를 소비한다(ADR-0636). host 쪽 대응은
     // `adapters/ui/popup/frame.rs` 가 `AppState.popup_escape_owner` 로 정한다.
     let top_z = occluders.iter().map(|o| o.z_seq).max();
 
@@ -171,7 +171,7 @@ pub fn draw_plugin_popups(
     // ── egui-mesh popups (A2) ──
     let ppp = ctx.pixels_per_point().max(f32::EPSILON);
     // 현재 resolved Theme 스냅샷을 1회 만든다(popup 무관). plugin 이 host 와 동일 Theme 으로
-    // 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(surface forward 와 동형, ADR-0028 parity).
+    // 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(surface forward 와 동형, ADR-0628 parity).
     let current_theme = {
         let th = crate::theme::theme();
         ThemeWire {
@@ -218,7 +218,7 @@ pub fn draw_plugin_popups(
             painter.rect_filled(scope_rect, 0.0, th.scrim().to_egui());
         }
         // plugin popup 은 예외 없이 scrim 을 깔고 뷰포트를 점유한다 = SCOPE RULE 의
-        // modal 갈래(ADR-0254). scrim 은 바닥을 어둡게 할 뿐 엣지를 안 그려서, 이 단차가
+        // modal 갈래(ADR-0637). scrim 은 바닥을 어둡게 할 뿐 엣지를 안 그려서, 이 단차가
         // 없으면 어두운 테마에서 셸 실루엣이 어두워진 바닥에 묻힌다. 배경보다 먼저 —
         // 그림자는 셸 아래에 깔린다.
         painter.add(
@@ -240,7 +240,7 @@ pub fn draw_plugin_popups(
             egui::StrokeKind::Outside,
         );
 
-        // 키보드는 최상단 popup 하나만 갖는다(규칙 7, ADR-0084). 이 게이트가 없으면
+        // 키보드는 최상단 popup 하나만 갖는다(ADR-0636). 이 게이트가 없으면
         // 아래 깔린 popup 도 Esc·문자를 받아 자기 UI 로 처리한다 — 실제로 plugin 이
         // 자체 Esc 처리로 스스로 닫아서, host 쪽 Esc 중재만으로는 "한 번의 Esc 로
         // 스택 전체가 닫히는" 현상을 못 막는다.
@@ -290,14 +290,14 @@ pub fn draw_plugin_popups(
         // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
         // need_full_textures 를 실어 보낸다(다른 트리거가 없어도 송신).
         let need_full = fwd.take_pending_full();
-        // (ADR-0056) 비동기 host→plugin push(예: 원격 git 조회 결과) 도착 후 강제
+        // (ADR-0622) 비동기 host→plugin push(예: 원격 git 조회 결과) 도착 후 강제
         // repaint — geom/input/theme 변경 없이도 plugin 이 새 내부 상태로 다시
         // 그리도록 이번 frame 에 set_context 를 보낸다.
         //
         // 이 칸에는 plugin 의 무입력 self-repaint 요청(`PopupInvalidated` →
         // `App::mark_invalidated_popups_dirty`)도 **편승한다** — 요구하는 것이 같은
         // "무입력 재forward" 라 별도 칸을 만들지 않았다. banner 는 편승분만 갖는다
-        // (위 ADR-0056 경로는 git-viewer 전용이고 그 plugin 은 banner 를 안 낸다).
+        // (위 ADR-0622 경로는 git-viewer 전용이고 그 plugin 은 banner 를 안 낸다).
         let need_repaint = state
             .plugin_mesh_popup_pending_repaint
             .remove(&snap.instance_id);
@@ -352,7 +352,7 @@ pub fn draw_plugin_popups(
         // 것은 이 popup 의 바깥이긴 해도 "바깥 클릭" 이 아니다 — 그 클릭은 상위 popup
         // 의 것이다.
         // 자식 host popup 이 열려 있는 동안에는 부모가 바깥 클릭으로 닫히지 않는다
-        // (스택 유지, ADR-0084) — 부모가 먼저 사라지면 자식이 고아가 되고 그 결과가
+        // (스택 유지, ADR-0636) — 부모가 먼저 사라지면 자식이 고아가 되고 그 결과가
         // 조용히 버려진다. popup 은 모달이 아니므로 "부모를 잠그는" 것이 아니라
         // dismiss 대상에서만 빼는 최소 개입이다.
         let has_open_child = state.plugin_popup_has_open_child(snap.instance_id);
@@ -457,7 +457,7 @@ fn place_visible(
 ///
 /// 포인터 이동·휠·`PointerGone` 은 세지 않는다 — 창 위를 지나가기만 해도 생기고, 무엇을
 /// 고른 것이 아니다. 이 판정이 참인 인스턴스만 plugin 이 그 popup 을 근거로 사용자 행동을
-/// 주장할 수 있다([`crate::state::AppState::plugin_popup_user_activated`], ADR-0526).
+/// 주장할 수 있다([`crate::state::AppState::plugin_popup_user_activated`], ADR-0631).
 fn is_user_activation(raw: &RawInputWire) -> bool {
     raw.events.iter().any(|ev| {
         matches!(
@@ -739,7 +739,7 @@ mod tests {
         }
     }
 
-    /// 누름만 사용자 활성화다 — 지나가는 포인터 · 휠 · 떼기는 무엇을 고른 것이 아니다(ADR-0526).
+    /// 누름만 사용자 활성화다 — 지나가는 포인터 · 휠 · 떼기는 무엇을 고른 것이 아니다(ADR-0631).
     #[test]
     fn only_a_press_is_a_user_activation() {
         use tasty_plugin_protocol::PointerButtonWire;
@@ -1104,7 +1104,7 @@ mod tests {
 }
 
 // 렌더 루프가 사용자 활성화를 기록하고 걷는지 — plugin 프로세스 없이 인스턴스를 세워 루프를
-// 실제로 돌린다(ADR-0526 조건 3).
+// 실제로 돌린다(ADR-0631).
 #[cfg(test)]
 #[path = "popup_render_activation_tests.rs"]
 mod activation_tests;

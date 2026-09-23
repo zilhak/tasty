@@ -51,7 +51,7 @@
 //! `/` 로 폈다.
 //!
 //! 거절을 종료 코드가 아니라 자기 문구로 가르고 래칫으로 드는 결정의 근거·대안:
-//! `docs/adr/0206-a-refusal-is-told-apart-by-its-own-words.md`.
+//! `docs/dev-guide/guard-verification.md#거절한-이유를-검사한다`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

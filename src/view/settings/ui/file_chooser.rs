@@ -8,7 +8,7 @@
 //! - **로컬 전용**: 원격(attach mirror) 조회 경로는 메인 창 App 루프가 소유한다. 설정은
 //!   이 인스턴스 자신의 구성이라 로컬 파일시스템만 본다.
 //! - **OS 네이티브 다이얼로그를 쓰지 않는 이유**: 포털 없는 Linux 에서 끝나지 않는다
-//!   (`docs/adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md`). 여기서
+//!   (`docs/adr/0631-file-handler-routing.md`). 여기서
 //!   쓰는 `read_dir_entries` 는 프레임 안의 동기 I/O 라 느린 디스크에서는 그 프레임이
 //!   늘어지지만 **유한하게 끝난다** — 메인 창 파일 피커의 로컬 경로와 같은 성질이다.
 //! - **저장 모드**: view 의 footer 이름 칸이 편집 가능해지고 footer primary 버튼이 **유일한

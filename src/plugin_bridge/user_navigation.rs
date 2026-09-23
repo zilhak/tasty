@@ -15,7 +15,7 @@
 //! 그 프레임의 기록도 버린다([`settle_frame`]). plugin 이
 //! 사용자 행동을 주장하려면 그 시도의 URL 을 그대로 되대야 한다 — 그 surface 를 소유한 plugin 만,
 //! 그 한 번만. 근거·대안은
-//! `docs/adr/0568-a-user-gesture-on-a-page-the-owning-plugin-wrote-makes-its-webview-file-dispatch-a-user-action.md`.
+//! `docs/adr/0631-file-handler-routing.md`.
 
 use std::collections::HashMap;
 

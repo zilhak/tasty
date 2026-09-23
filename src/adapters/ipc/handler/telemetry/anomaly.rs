@@ -3,7 +3,7 @@
 //! 보존은 관측 로그 3종 공통 정책(`store::log_retention`)을 따른다. 과거
 //! 이 로그만 TTL 도 부팅 정리 목록도 없어 **재시작해도 영원히 남는** 유일한 유입원
 //! 이었다(18시간 실행 21,102건). 근거는
-//! [ADR-0085](../../../../../docs/adr/0085-ipc-log-retention-bounded.md).
+//! [ADR-0609](../../../../../docs/adr/0609-state-storage-and-retention.md).
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};

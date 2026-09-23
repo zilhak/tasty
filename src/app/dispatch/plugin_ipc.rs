@@ -10,7 +10,7 @@ impl App {
     /// plugin process가 보낸 IPC 호출들을 라우터로 디스패치하고 결과를 plugin에 회신.
     ///
     /// 게이트 3종(권한 / telemetry cap / rate limit)은 **갈래 분기보다 먼저** 돈다
-    /// (ADR-0152). 인터셉트 갈래들이 각자 `ensure_allowed` 만 부르던 때에는 권한 한
+    /// (ADR-0612). 인터셉트 갈래들이 각자 `ensure_allowed` 만 부르던 때에는 권한 한
     /// 축만 걸리고 cap·rate·audit 가 통째로 빠졌다 — 거부가 기록되지도 않았다.
     ///
     /// 호출 메서드가 다른 plugin이 점유한 namespace prefix와 매칭되면
@@ -128,7 +128,7 @@ impl App {
                         Some(true) => {
                             // 매니저를 직접 치지 않는다 — 렌더가 수집하는 close 큐로
                             // 합류시켜야 `cancel_child_file_picker` 연쇄 정리가 이
-                            // 경로에서도 돈다(ADR-0084 Decision 3). 큐는 같은 tick 의
+                            // 경로에서도 돈다(ADR-0636). 큐는 같은 tick 의
                             // `dispatch_plugin_popup_events` 가 drain 하므로 지연 없다.
                             self.enqueue_plugin_popup_close(
                                 id,
@@ -287,7 +287,7 @@ mod tests {
     }
 
     /// 게이트는 갈래 분기보다 **먼저** 돈다. 어느 한 갈래라도 게이트 위로 올라오면
-    /// 그 갈래는 권한·cap·rate·audit 를 통째로 건너뛴다 — 그게 ADR-0152 가 고친 것이다.
+    /// 그 갈래는 권한·cap·rate·audit 를 통째로 건너뛴다 — 그게 ADR-0612가 고친 것이다.
     #[test]
     fn the_entry_gates_before_it_branches() {
         let src = source();

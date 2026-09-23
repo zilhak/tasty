@@ -145,7 +145,7 @@ pub fn handle_workspace_list(
 /// 뒤라 이 창(engine)에 있다. 지목이 없을 때만 이 창의 포커스 surface 로 떨어진다(기존 동작).
 /// 지목했는데 창의 포커스를 보면 결과가 사용자가 그 창에서 무엇을 보고 있는지에 좌우된다
 /// (원칙 3). 같은 키가 창과 원본을 함께 정하는 이유는
-/// `docs/adr/0532-workspace-create-inherits-cwd-from-the-surface-that-names-its-window.md`.
+/// `docs/adr/0643-cli-errors-and-diagnostic-logs.md`.
 fn inherit_cwd_for_create(
     window: &dyn crate::ipc::window_port::IpcWindow,
     engine: &crate::core::CoreState,
@@ -461,7 +461,7 @@ pub fn handle_workspace_update(
 ///
 /// 거절은 넷이다(대상 해석 실패 제외) — caller 자신의 surface 가 든 워크스페이스 ·
 /// mirror 워크스페이스 · **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스** ·
-/// 마지막 하나 남은 워크스페이스. 근거는 [ADR-0120](../../../../docs/adr/0120-agent-workspace-close-boundaries.md).
+/// 마지막 하나 남은 워크스페이스. 근거는 [ADR-0617](../../../../docs/adr/0617-workspace-identity-and-focus.md).
 ///
 /// 마지막 워크스페이스는 거부한다. GUI 는 그 경우 창까지 닫지만, 창을 없애는 것은
 /// 별개의 결정이라 에이전트에게는 `window.close` 라는 명시적 수단을 따로 준다 —
@@ -531,7 +531,7 @@ pub fn handle_workspace_close(
     // 원격 attach 가 **하드 점유** 중인 surface 가 하나라도 들어 있으면 거절한다.
     // 점유 중에는 그 surface 를 holder 세션이 소유하고 원격 사용자가 지금 그
     // 터미널을 쓰고 있다 — 여기서 닫으면 남의 작업이 예고 없이 죽는다. 같은 이유로
-    // `surface.attention.clear` 도 하드 점유 surface 를 거절한다(ADR-0120 ④).
+    // `surface.attention.clear` 도 하드 점유 surface 를 거절한다(ADR-0617).
     // mirror 검사와 별개다: mirror 는 "이 인스턴스가 원격을 비추는 그림자", 하드
     // 점유는 "이 인스턴스의 surface 를 원격 클라이언트가 잡고 있는 상태" 다.
     if let Some(occupied) = engine.workspaces[ws_idx]
@@ -696,7 +696,7 @@ mod close_tests {
     ///
     /// 점유 중에는 그 터미널을 원격 사용자가 실제로 쓰고 있다. 이 검사가 없으면
     /// 에이전트가 id 를 훑다가 남의 작업 세션을 예고 없이 죽인다 — 되돌릴 수도 없다.
-    /// (ADR-0120 ④. 같은 판단의 선례는 `surface.attention.clear`.)
+    /// (ADR-0617. 같은 판단의 선례는 `surface.attention.clear`.)
     #[test]
     fn closing_a_workspace_a_remote_session_occupies_is_refused() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -767,7 +767,7 @@ mod close_tests {
     /// 성공 경로 — 이 lane 이 주장하는 것 전부를 한 자리에서 고정한다.
     ///
     /// 거절 테스트만 있으면 `close_workspace_at` 호출 줄에 **도달조차 하지 않아**,
-    /// 대상 해석(원칙 3) · 활성 포인터 보정(ADR-0113) · 되돌리기 스택 미기록
+    /// 대상 해석(원칙 3) · 활성 포인터 보정(ADR-0617) · 되돌리기 스택 미기록
     /// (원칙 1) · 응답 계약이 전부 무방비로 남는다. 실제로 그 네 축의 변이가
     /// 전부 생존했다.
     #[test]
@@ -809,7 +809,7 @@ mod close_tests {
             "대상이 아직 남아 있다"
         );
 
-        // ADR-0113 — 사용자가 보던 워크스페이스가 그대로여야 한다. 앞쪽이 빠지면
+        // ADR-0617 — 사용자가 보던 워크스페이스가 그대로여야 한다. 앞쪽이 빠지면
         // 뒤가 한 칸 당겨지므로 인덱스는 2 에서 1 로 내려가되 **가리키는 대상은
         // 같아야** 한다.
         assert_eq!(

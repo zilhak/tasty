@@ -1,4 +1,4 @@
-//! git-viewer 원격(attach mirror) 조회(ADR-0056) — attach 채널의 `git_query_request`/
+//! git-viewer 원격(attach mirror) 조회(ADR-0622) — attach 채널의 `git_query_request`/
 //! `git_query_result` 왕복을 loopback `TcpStream` 으로 실제 실행 중인 서버 인스턴스에
 //! 대해 검증한다.
 //!
@@ -257,7 +257,7 @@ fn git_query_reports_error_for_non_repo_path() {
 
 #[test]
 fn git_query_rejected_without_workspace_occupancy() {
-    // 하이브리드 신뢰 모델(ADR-0053 결정 3 과 동일 원칙, ADR-0056): attach 점유가
+    // 하이브리드 신뢰 모델(ADR-0622): attach 점유가
     // 유일한 인가 조건이다. 이 client 는 stream 을 upgrade 했을 뿐 어떤 workspace 도
     // 점유하지 않았으므로 서버는 실제 git 조회를 하지 않은 채 즉시 거부해야 한다.
     // 점유가 없다는 것 자체가 조건이므로 workspace 를 만들지 않는다.

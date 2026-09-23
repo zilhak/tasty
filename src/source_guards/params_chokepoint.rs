@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 
 use super::{mask_non_code, repo_root};
 
-/// IPC 요청의 params 를 읽는 계층 전부. 개별 파일이 아니라 디렉터리다(ADR-0133 ①).
+/// IPC 요청의 params 를 읽는 계층 전부. 개별 파일이 아니라 디렉터리다(ADR-0647).
 ///
 /// 둘인 이유: 대부분의 메서드는 `adapters/ipc/handler` 에서 처리되지만, 창을 소유해야
 /// 하는 것과 App 상태를 만지는 것은 `app/ipc` 에서 처리된다. **두 계층이 같은 명제를

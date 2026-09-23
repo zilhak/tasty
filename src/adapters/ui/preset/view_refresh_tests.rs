@@ -1,5 +1,5 @@
 //! 보기 모드 미리보기는 저장소를 따라가고, 편집 모드의 캐시는 따라가지 않는다
-//! (`docs/adr/0564-the-preset-view-mode-follows-the-store-and-the-edit-mode-does-not.md`).
+//! (`docs/adr/0638-preset-drafts-and-store-conflicts.md`).
 //! 두 성질을 [`draw_preview`] 를 헤드리스 egui 프레임으로 돌려 캐시 칸에서 잰다 —
 //! 새로고침을 부르는 자리가 어느 모드 갈래에 있는지가 곧 시험 대상이다.
 
@@ -119,7 +119,7 @@ fn view_mode_shows_an_agent_save_on_the_next_frame() {
 }
 
 /// 편집 모드: 에이전트가 저장해도 캐시(사용자가 고치고 있는 트리)와 선택은 그대로다 —
-/// 대조는 ADR-0531 대로 저장 직전에만 한다.
+/// 대조는 ADR-0638 대로 저장 직전에만 한다.
 #[test]
 fn edit_mode_keeps_its_cache_through_an_agent_save() {
     let (_tmp, mut store) = seeded();
@@ -193,7 +193,7 @@ fn edit_mode_entered_on_the_first_frame_after_an_agent_save_starts_from_the_new_
         "기준 판이 옛것이면 첫 편집이 경합으로 버려진다"
     );
 
-    // 전이 뒤의 편집 프레임은 ADR-0531 그대로 따라가지 않는다.
+    // 전이 뒤의 편집 프레임은 ADR-0638 그대로 따라가지 않는다.
     store
         .save_workspace_overwrite(ws("dev", 3))
         .expect("agent save");

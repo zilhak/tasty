@@ -35,7 +35,7 @@ const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 //
 // 아래 셋은 **[`zoomed`] 를 거쳐서만 쓴다.** `Theme` 필드는 생성 시점에 배율을 한 번
 // 타지만 파일 안 const 는 그 경로 밖이라, 한 식에 섞으면 그릇만 고정되고 안의 글자가
-// 커진다(`adapters/ui.rs` 의 `zoomed_px` 주석, ADR-0126). 카드 높이는 이제 sizer 가
+// 커진다(`adapters/ui.rs` 의 `zoomed_px` 주석, ADR-0635). 카드 높이는 이제 sizer 가
 // 매 프레임 이 식으로 다시 정하므로, 그 섞임이 곧 배율별 잘림이 된다.
 //
 // 행 높이는 여기 없다 — `Theme.item_height_interactive`(= `size-28`,
@@ -348,8 +348,7 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            // footer kbd 힌트 — 스케일 밖 10.5 였던 자리. ADR-0290 이 11 로
-            // 스냅했고 11 은 `font-size-caption` 이라 토큰을 그대로 읽는다.
+            // footer 키 힌트는 caption 토큰을 그대로 읽는다(ADR-0635).
             let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = PALETTE_HINT_GAP_X.value();

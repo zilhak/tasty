@@ -5,7 +5,7 @@
 //! 있는 메서드를 적을 자리가 없었고, 그런 메서드도 `plugin(&[…])` 으로 적혀 외부
 //! 호출자에게는 `-32601`("그런 메서드 없다")로 답했다. 이름은 맞고 표에도 있는데
 //! 없다고 답한 것이라, 플랫폼 축에서 같은 거짓을 고친
-//! [ADR-0154](../../docs/adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
+//! [ADR-0604](../../docs/adr/0604-ipc-discovery-and-errors.md)
 //! 와 같은 형태다.
 //!
 //! 실측(2026-09-05, gui debug 인스턴스에 plugin 설치된 세계에서 외부 프로브):

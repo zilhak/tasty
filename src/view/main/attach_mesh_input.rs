@@ -23,7 +23,7 @@
 //!   (`attach_client.rs::dispatch_pending_mesh_context_forwards`/
 //!   `dispatch_pending_mesh_input_forwards`)가 다음 tick 에 drain 해 실제 네트워크
 //!   전송을 한다(`pending_resize_forward`/`dispatch_pending_resize_forwards` 와 동형 —
-//!   ADR-0045 패턴).
+//!   ADR-0622 패턴).
 
 use winit::event::MouseButton;
 

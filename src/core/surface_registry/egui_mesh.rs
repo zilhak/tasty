@@ -1,11 +1,11 @@
-//! egui-mesh surface kind 화이트리스트 + 등록 (ADR-0028).
+//! egui-mesh surface kind 화이트리스트 + 등록 (ADR-0628).
 //!
 //! plugin 매니페스트의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하면
 //! plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
 //! (실제 합성 경로는 A1-S5). bundled 전용 개방 정책이다 —
 //! 임의 plugin 이 채널을 가로채지 못하도록 `(kind, plugin_id)` 화이트리스트로 매칭하고,
 //! 추가로 plugin 의 `api_version` 이 호스트와 일치하는지 게이트한다 (epaint 와이어가
-//! host·plugin 동일 컴파일을 강제하는 동안의 보호 — ADR-0028 개방 정책).
+//! host·plugin 동일 컴파일을 강제하는 동안의 보호 — ADR-0628 개방 정책).
 //!
 //! 매칭/게이트 실패 시 등록을 거부하고 warn 로그를 남긴다.
 
@@ -44,8 +44,8 @@ fn extract_display_name_and_file(
 
 /// `(kind, plugin_id)` 쌍이 egui-mesh 채널로 허용된 bundled 조합인지 확인.
 ///
-/// ADR-0028 scope 에 따라 image(B2 하이브리드 — 비트맵을 plugin egui 텍스처로 올려 mesh 로
-/// 렌더)를 소비자로 둔다. markdown(B1) 은 Stage B 에서 `rendering = "webview"` 로 이관돼
+/// image는 비트맵을 plugin egui 텍스처로 올려 mesh로 그린다(ADR-0628).
+/// markdown은 `rendering = "webview"`를 사용하므로
 /// 더 이상 이 화이트리스트에 없다 — `[[contributes.popup]]` 확인 팝업(large-file/file-open)
 /// 은 여전히 egui-mesh 지만, popup 채널은 이 kind 화이트리스트와 무관한 별도 경로다.
 pub(crate) fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {

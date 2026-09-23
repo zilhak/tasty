@@ -1,6 +1,6 @@
 //! CLI 클라이언트가 stdout 파이프 조기 종료(EPIPE)를 만나도 panic(종료 코드 101)·
 //! 가짜 crash report 없이 **종료 코드 0** 으로 조용히 끝나는지 검증한다.
-//! 정책 근거 `docs/adr/0101-cli-stdout-broken-pipe-exit-zero.md`, 구현
+//! 정책 근거 `docs/adr/0643-cli-errors-and-diagnostic-logs.md`, 구현
 //! `crates/tasty-cli/src/out.rs`.
 //!
 //! host 없이 출력이 나오는 로컬 명령만 써서 CLI 클라이언트 갈래를 각각 덮는다:
@@ -15,7 +15,7 @@
 //!
 //! stderr 도 같은 모양으로 잰다 — 읽는 쪽이 stderr 를 먼저 닫아도(`2>&1 | head`) panic ·
 //! crash report 가 없고, 종료 코드는 stderr 를 열어 둔 대조군과 **같다**(stderr 가 닫혔다고
-//! 실패가 성공이 되지 않는다 — `docs/adr/0513-cli-stderr-broken-pipe-keeps-the-exit-code.md`).
+//! 실패가 성공이 되지 않는다 — `docs/adr/0643-cli-errors-and-diagnostic-logs.md`).
 //!
 //! 소스 스캔 둘: tasty-cli 가 `println!`/`print!` 나 `eprintln!` 으로 되돌아가면 같은 panic
 //! 이 재발하므로, 쓰기는 `out.rs` 의 `outln!`/`out!`/`errln!` 로만 하도록 여기서 강제한다.

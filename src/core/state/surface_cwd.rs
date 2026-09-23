@@ -5,7 +5,7 @@
 //! preset 같은 **로컬에서 실행되는** 자리에 들어가면 안 된다. 그 구분을 호출 규약이 아니라
 //! 타입으로 둔다 — [`RemoteCwd`] 에는 `Path` 로 가는 변환이 없어서, 원격 값을 로컬 경로
 //! 자리에 넣으려면 안의 문자열을 꺼내 손으로 감싸야 하고 그 순간이 코드에
-//! 드러난다. 결정 근거: `docs/adr/0267-mirror-surface-cwd-is-pushed-by-the-server.md`.
+//! 드러난다. 결정 근거: `docs/adr/0622-remote-mirror-content-and-queries.md`.
 
 use std::path::PathBuf;
 
@@ -122,7 +122,7 @@ impl CoreState {
     /// 점유 surface 의 cwd 변화분을 `(holder, surface, cwd)` 로 돌려준다 — attach stream 으로
     /// push 할 목록이다. 서버 **자기 트리** 기준으로 계산하고(`surface_cwd` — terminal 은
     /// OSC 7 이 없어도 pid 폴백이 돈다), `inherit_cwd` 설정은 보지 않는다(관측이지 실행이
-    /// 아니다, ADR-0267 결정 5).
+    /// 아니다, ADR-0622).
     ///
     /// diff 캐시 `last_forwarded_cwd` 는 **(holder, 값)** 을 함께 기억한다. 값만 기억하면
     /// 같은 tick 창 안에서 점유가 풀리고 다른 client 가 잡았을 때 엔트리가 `retain` 을

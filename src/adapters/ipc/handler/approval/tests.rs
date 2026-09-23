@@ -135,7 +135,7 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
 }
 
 /// 원칙 3 — 호출자가 surface 를 댔으면 귀속은 그 surface 의 워크스페이스다. 사용자가 어느
-/// 워크스페이스를 보고 있든 같은 답이어야 한다(ADR-0533).
+/// 워크스페이스를 보고 있든 같은 답이어야 한다(ADR-0617).
 #[test]
 fn a_named_surface_decides_the_workspace_whatever_the_user_is_viewing() {
     for active in [0, 1] {

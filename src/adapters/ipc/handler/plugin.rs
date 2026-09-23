@@ -500,7 +500,7 @@ pub fn enable(
 /// `PluginUnloaded` 를 함께 낼지 가른다(끄기 전부터 안 돌던 plugin 은 "내려갔다" 가
 /// 아니다). 결정 §7.2: reason 은 항상 `User`.
 ///
-/// 그 plugin 이 등록한 surface kind 도 여기서 철회한다(ADR-0534) — 두 조합의 disable 과
+/// 그 plugin 이 등록한 surface kind 도 여기서 철회한다(ADR-0626) — 두 조합의 disable 과
 /// 설정 모달이 모두 이 함수를 거치므로 한 자리다. remove 는 매니저의 `disable` 을 직접
 /// 부르므로 `App::plugin_remove` 가 같은 철회를 따로 한다.
 pub fn disable(

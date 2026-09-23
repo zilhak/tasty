@@ -1,6 +1,6 @@
 //! 원격 파일 전송 피드백 팝업 2종 — 진행(progress) + 실패(error).
 //!
-//! bulk 파일 전송(ADR-0054) + mirror 터미널의 이미지 붙여넣기 업로드(`app::image_upload`)가
+//! bulk 파일 전송(ADR-0622) + mirror 터미널의 이미지 붙여넣기 업로드(`app::image_upload`)가
 //! 실제 전송을 담당하고, 이 모듈은
 //! 그 전송에 대한 사용자 피드백 UI 를 PopupDef 로 제공한다(egui::Window 직접 사용 금지).
 //! 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs` 의 본체 대응이다

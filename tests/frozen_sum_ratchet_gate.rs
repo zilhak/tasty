@@ -3,7 +3,7 @@
 //! 이 게이트가 보는 것은 `.complexity-file-allowlist` 에 오른 파일들의 출하 SLOC **합**
 //! 하나다. 자매 게이트 `check-file-size.sh` 는 파일이 임계를 넘는 *순간* 만 보므로, 일단
 //! 목록에 오른 파일이 자라는 것은 아무도 안 본다 — 실측으로 도입 시 동결 18 중 15 가
-//! 자라 +2406 줄이었다. 근거는 `docs/adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md`.
+//! 자라 +2406 줄이었다. 근거는 `docs/adr/0646-ci-and-complexity-checks.md`.
 //!
 //! **판정 방식**: 진짜 레포를 보지 않는다. 임시 루트에 스크립트 둘과 합성 allowlist 를
 //! 깔고, PATH 앞의 스텁 `tokei` 로 합을 주입한다. 그래서 레포 내용이 바뀌어도 여기 값이
@@ -754,7 +754,7 @@ fn a_tokei_that_fails_is_shadowed_by_the_parser() {
 /// 통행증이 되는데, ㄷ(술어가 깨져 덜 센다)과 ㄹ 은 관측이 같고 예산은 되돌아 올라가지
 /// 않는다 — 틀린 한 번이 영구적이다. 요건 둘 중 둘째(내려감이 한 형태에 갇혔는가)는
 /// 파일별 내역이 있어야 볼 수 있으므로 그 표가 찍히는지도 함께 건다.
-/// 근거·기각한 대안: `docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md`
+/// 근거·기각한 대안: `docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정`
 #[test]
 fn the_under_budget_branch_does_not_name_a_cause() {
     let d = root_with(Some(BUDGET), &[P]);
@@ -842,7 +842,7 @@ fn the_under_budget_branch_does_not_name_a_cause() {
 // 움직인다. 방향에 따라 나타나는 곳이 다르다: 편향이 늘면 합이 내려가 미달 갈래로
 // 위장하고, 줄면 합이 올라가 **띠 안에 통째로 들어간다** — 뒤엣것은 아무 데서도 안
 // 울린다. 그래서 여기가 저울 하나를 더 둔다. 근거·기각한 대안(상시 독립 계측 대조 ·
-// 차이의 상한 래칫): `docs/adr/0258-the-measured-copy-is-neutralized-for-the-counter.md`
+// 차이의 상한 래칫): `docs/dev-guide/complexity-gate.md#계측용-사본과-측정값-보정`
 
 /// 대조군 — 편향이 고정값과 같으면 통과다.
 ///

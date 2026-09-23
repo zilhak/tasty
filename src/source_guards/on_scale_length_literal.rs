@@ -7,7 +7,7 @@
 //!
 //! # 판정: 자리가 가족을 정하고, 값이 그 가족 안인지를 본다
 //!
-//! [ADR-0126] 의 "판정은 가족별로 한다" 를 그대로 집행한다. 여기서 보는 자리는
+//! [ADR-0635]의 유형별 토큰 적용 규칙을 그대로 집행한다. 여기서 보는 자리는
 //! **`size-*` 가족을 재는 자리** 하나뿐이다 — 길이 타입 생성자([`LEN_CTOR`])와 egui
 //! 기하 인자([`EGUI_LENGTH_HEADS`]). `.corner_radius(`(→`radius-*`)나 `FontId`
 //! (→`font-size-*`)는 **여기서 안 본다.** 여러 가족을 합집합으로 재면 부류 하나가
@@ -34,7 +34,7 @@
 //!   (파일, 호출 머리)만 빠지고, 그 자리의 수는 상한이자 하한이다.
 //!
 //! 이 둘이 왜 이 축의 값이 아닌지, 그리고 왜 하나는 부류이고 하나는 자리 명부인지는
-//! [ADR-0252] 에 있다 — 여기서는 되풀이하지 않는다.
+//! [ADR-0639] 에 있다 — 여기서는 되풀이하지 않는다.
 //! - **테스트 게이트 안** — 화면에 안 나가는 코드다. 판정은 [`super::test_gate`].
 //! - **값을 선언하는 자리**([`DECLARATION_SITES`]) — 다른 자리가 참조해야 할 이름이
 //!   사는 곳이라, 여기를 판정하면 선언에게 자기 자신을 참조하라고 요구하게 된다.
@@ -64,8 +64,8 @@
 //! 두 곳에 살게 되고, 값이 두 곳에 있는데 하나만 움직이는 사고가 이 레포에서 반복된
 //! 형태다. 보고에 총합이 필요하면 그 자리에서 더해라.
 //!
-//! [ADR-0126]: ../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md
-//! [ADR-0252]: ../../docs/adr/0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md
+//! [ADR-0635]: docs/adr/0635-shared-design-and-theme.md
+//! [ADR-0639]: docs/adr/0639-typed-length-and-dpi-boundaries.md
 
 use super::test_gate::blank_test_modules;
 use super::{mask_non_code, repo_root, rust_sources};
@@ -145,12 +145,12 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
 )];
 
 /// **정규화 좌표 자리 명부** — `DISPLAY_SPECIMENS` 와 같이 자리 단위다. 부류가 아닌
-/// 이유는 [ADR-0252].
+/// 이유는 [ADR-0639].
 ///
 /// 항목은 (파일, 호출 머리, 자리 수, 사유)이고 수는 상한이자 하한이다 —
 /// [`the_blind_spots_are_still_the_size_they_say`] 가 실측으로 든다.
 ///
-/// [ADR-0252]: ../../docs/adr/0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md
+/// [ADR-0639]: docs/adr/0639-typed-length-and-dpi-boundaries.md
 const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
     "crates/tasty-plugin-image/src/render.rs",
     "pos2",
@@ -270,7 +270,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 29 -> 33 중 셋은 위 `src/adapters/ui/` 와 같은 원인이다 — `size-*` 에 6 · 64 · 96
         // 이 들어오면서 전부터 있던 자리가 보이게 됐다. 남은 하나는 이 회차가 만든 것이다:
         // `plugins/ui.rs` 의 세그먼트 탭 라벨이 off-scale 12.5 를 버리고 12 를 이름 붙여
-        // 받는다(ADR-0126 의 off-scale 집합이 닫힌 결과라 되돌릴 값이 아니다).
+        // 받는다(ADR-0635의 off-scale 집합이 닫힌 결과라 되돌릴 값이 아니다).
         // 33 -> 34 도 `size-*` 가 44 · 52 를 얻어 바늘이 넓어진 몫이다 — 전부터 있던
         // `settings/ui.rs` 의 `SETTINGS_HEADER_HEIGHT`(44)가 보이게 됐다. 설정 L1 헤더
         // 높이라는 역할의 이름이 토큰에 없어 못 고친다(사유는 그 자리 주석에 있다).
@@ -314,7 +314,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 치수가 아니라 디자인 `SettingsDemo` 의 배치값이라 옮길 `Theme` 이름이 없다 —
         // 사유는 그 자리 주석에 있다.
         100,
-        "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
+        "갤러리 specimen — 배율에는 면제지만(ADR-0639) 스케일에는 아니다. \
          한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
          갈래는 `the_gallery_share_splits_into_four_kinds` 가 든다",
     ),
@@ -527,7 +527,7 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
 /// 참이 되는 자리는 둘이다 — clamp 계열(`.max` · `.min` · `.clamp`)의 인자와 비교 문턱
 /// (`.abs() < PhysicalPx(1.0)`)의 오른쪽. **어느 쪽이든 값이 1 일 때만** 참이므로
 /// `.max(LogicalPx(200.0))` 의 200 은 그대로 세어진다. 왜 이 둘이 이 축의 값이 아닌지와
-/// 왜 자리 명부가 아니라 부류인지는 [ADR-0252].
+/// 왜 자리 명부가 아니라 부류인지는 [ADR-0639].
 ///
 /// # 이 술어가 일부러 안 잡는 것
 ///
@@ -536,7 +536,7 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
 /// 짓는 자리라 처방이 다르고([`declares_a_named_dimension`]), `=` 하나로 그것까지
 /// 걷어내면 이 축에서 제일 고칠 만한 자리(헤어라인)가 통째로 사라진다.
 ///
-/// [ADR-0252]: ../../docs/adr/0252-a-degenerate-floor-is-a-class-and-unit-space-is-a-roster.md
+/// [ADR-0639]: docs/adr/0639-typed-length-and-dpi-boundaries.md
 fn is_the_degenerate_floor(text: &[char], at: usize, value: f32) -> bool {
     if value != 1.0 {
         return false;
@@ -1252,7 +1252,7 @@ mod detector {
         );
     }
 
-    /// 스케일 밖의 값은 이 가드의 대상이 아니다. 그쪽은 ADR-0126 이 다루는 축이고,
+    /// 스케일 밖의 값은 이 가드의 대상이 아니다. 그쪽은 ADR-0635가 다루는 축이고,
     /// 처방이 반대다(토큰으로 스냅하지 **않는다**).
     #[test]
     fn a_value_off_the_scale_is_not_this_guards_business() {

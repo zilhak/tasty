@@ -6,7 +6,7 @@
 //! 경로가 "5만 건" 이라는 **720배 차이 나는 두 값**을 따로 들고 있었고, 그래서
 //! 어느 쪽도 실효가 없었다(런타임은 30일 미만이라 0건 삭제, 부팅은 재시작 전까지
 //! 미집행). 정책과 집행을 이 모듈 한 곳에 모아 그 재발을 막는다. 근거는
-//! [ADR-0085](../../docs/adr/0085-ipc-log-retention-bounded.md).
+//! [ADR-0609](../../docs/adr/0609-state-storage-and-retention.md).
 //!
 //! ## 이 표의 범위는 `memory.db` 다 — 파일 로그는 각자의 자리에 있다
 //!
@@ -25,9 +25,9 @@
 //! - **완료 알림 로그**(`<parent_home>/notify/<surface>.log`) — 바이트 상한 하나이고,
 //!   도달하면 그 파일을 **전량** 버린다. 시간 상한도 파일 수 상한도 없고, 회수는 호스트
 //!   부팅의 디렉토리 삭제뿐이다. 버린 바이트 누계는 옆 `<surface>.log.meta` 에 남는다
-//!   (ADR-0415). 보존 범위·유실·인스턴스 정체성의 정본은
+//!   (ADR-0641). 보존 범위·유실·인스턴스 정체성의 정본은
 //!   `crates/tasty-utils/src/notify.rs` 의 모듈 문서와
-//!   [ADR-0344](../../docs/adr/0344-the-completion-log-keeps-one-host-generation-and-says-what-it-threw-away.md).
+//!   [ADR-0641](../../docs/adr/0641-agent-state-and-completion.md).
 //! - **hook 전달 실패 로그**(`<tasty_home>/hook-failures.log`) — 같은 바이트 값(256 KiB)
 //!   에서 `.log.1` 로 **1 단 로테이션**한다(보존 상한은 그 2 배).
 //!   `crates/tasty-cli/src/hook_failure.rs`.
@@ -45,7 +45,7 @@
 //!   truncate 하나**뿐이라, 다시 안 뜨는 plugin 의 로그는 영구히 남는다(실측 2026-09-21:
 //!   `~/.tasty-debug/plugins-logs` 에 번들 plugin 이 아닌 시험 fixture id
 //!   `com.example.autoreload_test.log` 가 남아 있다). 위 `debug.log` 와 같은 성질이고,
-//!   **완료 알림 로그가 비우면서 내는 `warn` 줄이 닿는 곳이 바로 여기다**(ADR-0344 의
+//!   **완료 알림 로그가 비우면서 내는 `warn` 줄이 닿는 곳이 바로 여기다**(ADR-0641의
 //!   재검토 조건이 이 경로를 재는 법으로 지목한다).
 //!
 //! 즉 임계값이 같은 둘도 **버리는 방식이 다르고**, 아예 임계값이 없는 것도 있다. 여기에

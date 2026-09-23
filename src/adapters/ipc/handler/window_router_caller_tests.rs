@@ -5,7 +5,7 @@
 //! `plugin_callable` 은 agent 토큰도 막지 않는다. 그래서 이 문을 지나는 CLI·agent 호출이
 //! 사용자 상태에 닿지 않는다는 것(원칙 2.1 ① · 2.3)은 핸들러가 직접 판정해야 하고, 판정을
 //! 빠뜨려도 조용하다 — `file_picker.trigger` 가 그랬다
-//! (`docs/adr/0504-the-file-picker-trigger-answers-only-a-plugin-caller.md`).
+//! (`docs/adr/0631-file-handler-routing.md`).
 //!
 //! 두 시험이 짝이다. 하나는 라우터의 팔과 명부가 같은 집합인지 본다 — 새 팔은 명부에 호출자
 //! 정책을 적어야 들어온다(아래 "한계" 의 자리는 제외). 다른 하나는 `PluginOnly` 인 팔을
@@ -78,7 +78,7 @@ enum WindowCallers {
 const WINDOW_ROUTER_CALLERS: &[(&str, WindowCallers, &str)] = &[(
     "file_picker.trigger",
     WindowCallers::PluginOnly,
-    "고른 경로는 호출한 plugin 에만 push 된다 — CLI·agent 호출은 사용자 포커스만 가져간다(ADR-0504)",
+    "고른 경로는 호출한 plugin 에만 push 된다 — CLI·agent 호출은 사용자 포커스만 가져간다(ADR-0631)",
 )];
 
 /// `route_window_handler` 정의 **전부**에서 팔 이름을 뽑는다.

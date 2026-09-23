@@ -3,7 +3,7 @@
 //! 무대는 기존 Workspace/Pane/Tab/Surface 트리와 **병렬로** 존재한다. 기존 요소를
 //! 확대하는 것이 아니라, 창 전체 rect 를 자기 것으로 쓰는 별개의 표면이다. 그래서
 //! 이 모듈은 레이아웃 계산(`surface_regions` / `compute_rects` / pane rect)을 하나도
-//! 건드리지 않는다 — 근거는 `docs/adr/0082-fullscreen-independent-stage.md`.
+//! 건드리지 않는다 — 근거는 `docs/adr/0618-explicit-capture-and-fullscreen-stage.md`.
 //!
 //! 구조는 popup 시스템과 대칭이다:
 //!
@@ -47,7 +47,7 @@ pub struct StageDef {
     /// [`draw_fullscreen_stage`] 가 이미 그린 뒤이고, 이 함수는 그 안쪽만 채운다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> StageAction,
     /// 닫힘 뒷정리 훅. 어떤 경로로 닫히든 정확히 1 회 발화한다
-    /// ([`drain_on_close_hooks`], ADR-0063 과 같은 단일 수렴점 패턴).
+    /// ([`drain_on_close_hooks`], ADR-0636과 같은 단일 수렴점 패턴).
     /// 그리는 게 없으므로 `&mut Ui` 가 아니라 `&egui::Context` 를 받는다 — 무대
     /// 콘텐츠 상태가 egui temp memory 에 있으면 여기서만 지울 수 있다.
     pub on_close: Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,

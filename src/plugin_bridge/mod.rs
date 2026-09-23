@@ -120,7 +120,7 @@ pub(crate) fn mesh_ime_cursor_area(
 ///   그 칸이 어디에 사는가다.
 /// - **추가 진입로도 채널마다 다르다.** surface 는 파일 변경 통지가 같은
 ///   `SurfaceInvalidated` 를 타고 와 `mark_surface_invalidated` 로 그 칸을 세우고,
-///   popup 은 ADR-0056 의 비동기 host→plugin push 결과가 같은 칸을 세우며
+///   popup 은 ADR-0622의 비동기 host→plugin push 결과가 같은 칸을 세우며
 ///   (git-viewer 원격 조회 결과 뒤의 강제 repaint, `src/app/attach_client.rs` 두
 ///   자리), banner 는 self-repaint 하나뿐이다.
 #[cfg(feature = "gui")]

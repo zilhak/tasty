@@ -12,7 +12,7 @@
 //! 최대 유입원이 됐기 때문이다(18시간 실행에서 371,936행, deny 는 0건).
 //! 그 대가로 "agent 가 무엇을 호출했나" 를 사후에 되짚는 용도는 사라졌다.
 //! 결정의 근거·대안·재검토 조건은
-//! [ADR-0085](../../../docs/adr/0085-ipc-log-retention-bounded.md).
+//! [ADR-0609](../../docs/adr/0609-state-storage-and-retention.md).
 //!
 //! 남은 용도는 권한 거부 사고 추적이다. capability elevation 은 이 로그에 의존하지
 //! 않는다 — 승인 자체는 `tasty.approval.*`(`handler::approval::ApprovalRecord`)로

@@ -6,7 +6,7 @@
 //! **부팅과 종료가 같은 락업을 쓴다.** 다른 것은 phase 문구 하나뿐이라
 //! [`GpuState::render_loading`] 은 phase 타입이 아니라 **i18n 키**를 받는다 — 두
 //! 상태 머신이 각자의 phase → 키 매핑을 소유하고, 렌더 스택은 한 벌로 남는다.
-//! 근거는 [`docs/adr/0077-shutdown-loading-screen.md`].
+//! 근거는 [`docs/adr/0616-window-platform-and-shutdown.md`].
 
 use winit::window::Window;
 
@@ -14,7 +14,7 @@ use super::GpuState;
 use crate::app::boot_machine::BootPhase;
 // 워드마크 락업 렌더는 위젯 크레이트가 단일 출처다(갤러리 specimen 과 공유).
 // 락업 치수는 `Theme` 의 `loading_screen_*` 에서 온다 — 여기 리터럴로 적으면 같은
-// 스택의 간격·문구만 배율을 타서 어긋난다(ADR-0135).
+// 스택의 간격·문구만 배율을 타서 어긋난다(ADR-0639).
 
 /// 부팅 phase → i18n 문구 키. `WaitingEngine`(S-7 추가) 은 별도 확정 문구가 없어
 /// 선행 단계 `GpuInit` 과 같은 문구로 묶는다(디자인 확정값 부재 시 가장 가까운

@@ -4,7 +4,7 @@
 //! invoke, 프로그래밍적 포커스 전환은 release IPC/CLI 표면에 존재하지 않고
 //! `#[cfg(debug_assertions)]` 격리로만 제공된다. 정책·판단 기준은
 //! [`docs/dev-guide/debug-ipc.md`], 이 가드가 생긴 결정은
-//! [`docs/adr/0115-input-reproduction-ipc-debug-isolation.md`].
+//! [`docs/adr/0612-request-admission-and-isolation.md`].
 //!
 //! # 판정 기준을 왜 이렇게 기계화했나
 //!

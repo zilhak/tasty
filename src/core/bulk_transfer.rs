@@ -1,5 +1,5 @@
 //! native bulk 파일 전송 서버측 — 전용 bulk 연결이 나른 파일 청크를
-//! `(client_id, transfer_id)` 단위로 누적하는 버퍼(ADR-0054).
+//! `(client_id, transfer_id)` 단위로 누적하는 버퍼(ADR-0622).
 //!
 //! 스크린샷 캡처 업로드([`CaptureUploadRegistry`](crate::core::capture_upload))의 일반화
 //! 버전이며 **병렬 신설**이다(캡처 경로는 그대로 유지). 차이:
@@ -163,7 +163,7 @@ mod tests {
         //
         // 허브(`tasty_ipc::stream_hub`)와 이 레지스트리를 **함께** 재는 시험이라 두 계층 중
         // 위쪽인 여기에 둔다 — 허브 크레이트가 본체 core 를 역참조할 수는 없다
-        // (docs/adr/0350-the-stream-hub-lives-in-the-ipc-crate.md).
+        // (docs/adr/0601-crate-dependency-boundaries.md).
         use std::sync::mpsc;
 
         use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag, encode_bulk_chunk};

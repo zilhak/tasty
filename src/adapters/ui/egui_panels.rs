@@ -278,7 +278,7 @@ pub fn draw_egui_panels(
     state.explorer_views = explorer_views;
     state.dag_graph_views = dag_views;
 
-    // (ADR-0059) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
+    // (ADR-0622) 렌더 루프 중 쌓인 explorer mirror list_dir 요청을 engine 큐로
     // 옮긴다 — 루프 안에서는 `engine` 이 이미 `ws`/`pane`/`tab`/`surface` 로 배타 차용
     // 중이라 직접 push 할 수 없다(outbox 패턴, `pending_explorer_action` 과 동형).
     for (sid, req) in state.explorer_views.drain_outbox() {
@@ -394,7 +394,7 @@ pub(crate) fn apply_explorer_action(
     use crate::explorer_ui::ExplorerAction as A;
     match &act {
         A::OpenFile(path) => {
-            // (ADR-0059 Decision 3) 원격 mirror explorer 는 browse-only — 파일 내용
+            // (ADR-0622) 원격 mirror explorer 는 browse-only — 파일 내용
             // fetch(더블클릭 열기)는 스코프 밖이라 트리거하지 않고 toast 로 안내한다.
             // 로컬 surface 는 기존과 동일하게 동작한다.
             if engine.is_mirror_surface(sid) {
@@ -624,7 +624,7 @@ where
         });
 }
 
-/// 점유된 surface 의 **tier 별 테두리 + force-detach 오버레이**(ADR-0040).
+/// 점유된 surface 의 **tier 별 테두리 + force-detach 오버레이**(ADR-0621).
 ///
 /// 점유 tier 를 색으로 구분해 1px 테두리로 표시한다(하나의 시각 채널 = surface 테두리):
 /// - **soft**(협조 신호, write 제한 없음) → green(`accent-occupied-soft`), force-detach 없음.
@@ -673,7 +673,7 @@ fn draw_occupied_overlays(
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
             for r in tab.layout().surface_regions(content_rect) {
-                // content-hidden(workspace 점유 멤버)은 ADR-0040 상 hard 계열이라 lock
+                // content-hidden(workspace 점유 멤버)은 ADR-0621 상 hard 계열이라 lock
                 // 유무와 무관하게 hard(peach)로 표시한다. 그 외에는 occupancy_of 의 tier
                 // 로 분기: hard=peach, soft=green(협조 마커). 점유 아니면 skip.
                 let hard = if engine.attach.is_content_hidden(r.id) {
@@ -757,7 +757,7 @@ fn draw_occupied_overlays(
     }
 
     if let Some(sid) = pending_force_detach {
-        // tier 공용 해제(ADR-0040): hard(workspace 멤버·surface lock) 든 soft 든 로컬
+        // tier 공용 해제(ADR-0621): hard(workspace 멤버·surface lock) 든 soft 든 로컬
         // 사용자가 끊는다. workspace 점유면 멤버 일괄(D6), soft 는 holder 통지 없이 제거.
         engine.release_occupancy(sid);
     }

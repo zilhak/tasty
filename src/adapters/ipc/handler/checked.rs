@@ -32,7 +32,7 @@ pub(crate) fn check_request<'a>(
         .workspaces
         .get(window.active_workspace_index())
         .map(|w| w.id);
-    // 거절은 게이트마다 따로 센다 — 처방이 셋 다 다르다(ADR-0548). 앞 게이트가 돌려보내면 뒤
+    // 거절은 게이트마다 따로 센다 — 처방이 셋 다 다르다(ADR-0608). 앞 게이트가 돌려보내면 뒤
     // 게이트는 안 돌므로 한 요청은 많아야 한 칸에 세진다.
     use tasty_telemetry::GateRefusal;
     core.gate().record_judged();
@@ -54,7 +54,7 @@ pub(crate) fn check_request<'a>(
     // 봉투 검사는 **모든 층의 앞**이다 — App 층·namespace forward·engine 라우터 중 어디로
     // 가든 같은 봉투는 같은 판정을 받는다. 게이트 **뒤**인 것은 옛 자리(engine 라우터의
     // 보존소 입구)가 게이트 뒤였기 때문이다: 권한 없는 호출자는 여전히 `-32001` 을 먼저
-    // 받고, 허용 관측도 예전처럼 한 번 남는다(ADR-0420).
+    // 받고, 허용 관측도 예전처럼 한 번 남는다(ADR-0605).
     super::idempotency::check_envelope(request, &id)?;
     Ok(CheckedRequest { request, caller })
 }

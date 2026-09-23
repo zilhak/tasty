@@ -272,7 +272,7 @@ pub struct AppState {
     pub(crate) fullscreen_stage: Option<crate::adapters::ui::fullscreen::StageState>,
     /// 닫힌 무대의 `on_close` 대기열. 닫는 경로가 무엇이든
     /// [`AppState::close_fullscreen_stage`] 한 곳을 지나 여기 쌓이고, draw 경로의
-    /// `fullscreen::drain_on_close_hooks` 가 정확히 1 회 발화시킨다(ADR-0063 패턴).
+    /// `fullscreen::drain_on_close_hooks` 가 정확히 1 회 발화시킨다(ADR-0636 패턴).
     #[cfg(feature = "gui")]
     pub(crate) stage_closed_queue: Vec<crate::adapters::ui::fullscreen::StageId>,
     /// 무대 중 DPI/모니터 전환으로 **보류된** 기본 grid 갱신이 있는지.
@@ -366,7 +366,7 @@ pub struct AppState {
     /// 이 방향은 stale 이 아니다.
     #[cfg(feature = "gui")]
     pub(crate) host_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
-    /// 이번 프레임 Esc 를 소비할 자격이 있는 host popup(규칙 7 의 키보드 판, ADR-0084).
+    /// 이번 프레임 Esc 를 소비할 자격이 있는 host popup(ADR-0636).
     /// host/plugin 통틀어 최상단이 host popup 일 때만 `Some` — plugin popup 이 위면
     /// `None` 이고, 그 프레임의 Esc 는 plugin 쪽이 가져간다. popup 의 view 가 Esc 를
     /// 소비하기 전에 이 값을 확인한다.
@@ -558,7 +558,7 @@ pub struct AppState {
     ///
     /// plugin 이 자기 popup 안의 사용자 조작으로 host 를 부를 때, host 가 그 호출을 **사용자
     /// 행동**으로 칠 수 있는 유일한 근거다 — release 에는 입력 주입이 없으므로 이 칸에 오른
-    /// 인스턴스는 사람이 만졌다(ADR-0526).
+    /// 인스턴스는 사람이 만졌다(ADR-0631).
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_user_activated: std::collections::HashMap<u64, String>,
 
@@ -567,7 +567,7 @@ pub struct AppState {
     /// `sync_webviews` 가 시도를 plugin 에 통지하는 자리에서 정하고(근거가 못 되는 시도와, 작성자가
     /// 소유 plugin 으로 바뀐 프레임은 그 surface 의 기록을 지운다), webview 가 사라진 surface 의 기록은 같은 자리에서 걷힌다. plugin 이 그 시도의 URL 을 되대면 한 번
     /// 쓰이고 사라진다 — webview 안의 사용자 클릭을 host 가 사용자 행동으로 칠 유일한 근거다
-    /// (ADR-0568, [`crate::plugin_bridge::user_navigation`]).
+    /// (ADR-0631, [`crate::plugin_bridge::user_navigation`]).
     #[cfg(feature = "gui")]
     pub(crate) webview_user_navigations: crate::plugin_bridge::user_navigation::UserNavigations,
 
@@ -597,7 +597,7 @@ pub struct AppState {
     /// 아래 `plugin_mesh_banner_pending_repaint` 와 **평행한 칸**이다 — 같은 타입·같은
     /// 목적이고, 두 칸 다 plugin 의 self-repaint 요청(`mark_invalidated_popups_dirty`·
     /// `mark_invalidated_banners_dirty`)이 채운다. 다른 것은 **추가 진입로**뿐이다:
-    /// popup 은 그 위에 ADR-0056 의 비동기 host→plugin push 결과(git-viewer 원격 조회
+    /// popup 은 그 위에 ADR-0622의 비동기 host→plugin push 결과(git-viewer 원격 조회
     /// 결과, `attach_client.rs` 두 자리)가 같은 칸을 쓰고, banner 는 self-repaint 하나
     /// 뿐이다. 두 칸을 `MeshForwardCommon` 으로 합치지 않은 이유는
     /// [`crate::plugin_bridge::MeshForwardCommon`] 의 doc 에 있다.
@@ -905,12 +905,12 @@ impl AppState {
     /// - `cwd` — `inherit_cwd` 게이트를 건 **로컬** cwd(없으면 `null`). 새 surface 를 만드는
     ///   소비자용이다. mirror surface 면 원격 경로라 `null` 이다.
     /// - `observed_cwd` — 게이트 없는 로컬 cwd. "지금 어느 폴더를 보고 있나" 를 알려 주는
-    ///   소비자(파일 피커 시작 위치)용이다(ADR-0267 결정 5).
+    ///   소비자(파일 피커 시작 위치)용이다(ADR-0622).
     /// - `remote_cwd` — mirror surface 의 원격 cwd 문자열. `cwd` 키에는 절대 싣지 않는다 —
-    ///   이 구분을 모르는 plugin 이 원격 경로를 로컬 경로로 쓰지 못하게 한다(ADR-0267 결정 3).
+    ///   이 구분을 모르는 plugin 이 원격 경로를 로컬 경로로 쓰지 못하게 한다(ADR-0622).
     /// - `origin_surface_id` — 이 컨텍스트가 유래한 로컬 surface id.
     /// - `mirror: true` · `local_surface_id` — mirror workspace 판별
-    ///   (`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`). `inherit_cwd` 와
+    ///   (`docs/adr/0622-remote-mirror-content-and-queries.md`). `inherit_cwd` 와
     ///   무관하게 항상 판정한다 — "원격 인지" 는 그 설정이 꺼져 있어도 필요한 정보다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn popup_surface_context(
@@ -980,7 +980,7 @@ impl AppState {
         )
     }
 
-    /// 이 plugin popup instance 가 연 host popup(자식)이 아직 살아 있는가 (ADR-0084).
+    /// 이 plugin popup instance 가 연 host popup(자식)이 아직 살아 있는가 (ADR-0636).
     ///
     /// 소유 관계는 자식 쪽(`FilePickerRequester.owner_popup_instance`)에만 기록되므로
     /// 이 조회가 곧 단일 진실이다 — 부모 쪽에 사본을 두지 않아 둘이 어긋날 수 없다.
@@ -1058,7 +1058,7 @@ impl AppState {
         true
     }
 
-    /// 전체화면 무대 종료 — **닫는 경로 전부가 지나는 유일한 지점**(ADR-0063 패턴).
+    /// 전체화면 무대 종료 — **닫는 경로 전부가 지나는 유일한 지점**(ADR-0636 패턴).
     /// 닫힌 무대 id 를 훅 대기열에 넣고, draw 경로가 `on_close` 를 1 회 발화한다.
     /// 활성 무대가 없었으면 `false`.
     #[cfg(feature = "gui")]

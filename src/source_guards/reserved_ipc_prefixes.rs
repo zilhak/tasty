@@ -8,8 +8,8 @@
 //! 나중에 이름이 겹칠 때 나므로, 목록을 눈으로 유지하는 것으로는 못 막는다.
 //!
 //! 지금은 호스트 prefix 46 개 중 **번들 plugin 이 점유한 둘을 뺀 전부**가 예약돼 있다.
-//! 그 결정과 감수한 비용은
-//! [ADR-0140](../../docs/adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md).
+//! 현재 예약 규칙은
+//! [플러그인 namespace 가이드](../../docs/dev-guide/plugin-development.md#cli--ipc-namespace)를 따른다.
 //!
 //! ## 왜 A5 와 추출 방식이 다른가
 //!
@@ -62,9 +62,9 @@ const RESERVED_AHEAD_OF_ANY_METHOD: &[(&str, &str)] = &[
     ),
     (
         "fs",
-        "`fs.pick_file` 이 ADR-0162 로 빠져 그 아래 호스트 메서드가 0 개가 됐다. \
+        "`fs.pick_file` 이 ADR-0631로 빠져 그 아래 호스트 메서드가 0 개가 됐다. \
          이름은 계속 막는다 — 비었다고 내주면 `fs.*` 가 호스트 파일시스템 표면처럼 \
-         읽히는 자리를 plugin 이 갖는다(ADR-0140 의 '뺏는 것보다 막는 쪽이 싸다')",
+         읽히는 자리를 plugin이 갖게 된다(예약 규칙: docs/dev-guide/plugin-development.md)",
     ),
     (
         "ipc",
@@ -237,7 +237,7 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 /// - plugin 실행중 · `image.list` → `{"entries":[]}` (host 값이 그대로 나온다)
 /// - plugin **미실행**(`plugin.disable`) · `image.list` → `-32002 plugin
 ///   'com.tasty.image' is not running` — 소유는 매니페스트에서 오므로 유지되고
-///   실행만 거절된다(ADR-0173)
+///   실행만 거절된다(ADR-0626)
 /// - plugin **제거**(`plugin.remove`) · `image.open {}` → `-32602 missing
 ///   'surface_id'` — **래퍼가 없다.** 소유가 풀려 host 가 직접 답한다
 ///
@@ -246,8 +246,8 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 /// - 실행중 · `image.open {}` → `-32017 host call 'call#1' failed: … it is gated out
 ///   of this build combination (headless / release)` — **래퍼가 있다.** 세 arm 이 전부
 ///   `#[cfg(feature = "gui")]` 라 trampoline 이 되던진 곳에 구현이 없고, host 가 그
-///   사실을 자기 이름을 가진 코드로 답한다(ADR-0167). 즉 조합 차이는 **arm 의 유무**이지
-///   라우팅 순서가 아니다 — ADR-0173 이후 두 조합 모두 forward 가 먼저다
+///   사실을 자기 이름을 가진 코드로 답한다(ADR-0604). 즉 조합 차이는 **arm 의 유무**이지
+///   라우팅 순서가 아니다 — ADR-0626 이후 두 조합 모두 forward 가 먼저다
 /// - 설치+비활성 · `image.list` → `-32002 plugin 'com.tasty.image' is not running` —
 ///   gui 와 **같은 문구, 같은 자리**
 /// - `image.bogus` → `-32601 method 'image.bogus' not found` (plugin 문구) — 두 조합 동일

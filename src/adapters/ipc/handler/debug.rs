@@ -143,7 +143,7 @@ pub(super) fn handle_debug_host_popup_open(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     // `surface_scope` 는 같은 이유의 surface 판이다 — scrim 범위·경계 inset 은 범위가
-    // `Surface` 일 때만 발동하므로(ADR-0296), 기본값으로 열면 그 갈래를 볼 수 없다.
+    // `Surface` 일 때만 발동하므로(docs/design/systems/popup.md#scrim-의-범위), 기본값으로 열면 그 갈래를 볼 수 없다.
     // 포커스 surface 가 없으면(빈 워크스페이스) 주입할 대상이 없어 창 범위로 남는다.
     let surface_scope = params
         .get("surface_scope")

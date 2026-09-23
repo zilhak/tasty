@@ -169,7 +169,7 @@ impl AppState {
     /// [`move_workspace`](Self::move_workspace), 그리고 `CoreEvent::WorkspaceMoved`
     /// 의 `cascade_workspace_moved`). 같은 보정 규칙을 두 곳이 각자 인라인으로
     /// 복제하고 있었고, 그 형태가 실제로 한쪽만 갱신되는 결함의 모양이다
-    /// (ADR-0113 이 제거 축에서 같은 진단을 했다). 규칙은 여기 하나뿐이어야 한다.
+    /// (ADR-0617이 제거 축에서 같은 진단을 했다). 규칙은 여기 하나뿐이어야 한다.
     ///
     /// 호출자는 `workspaces` 재배열 **직후**에 부른다.
     pub(crate) fn fix_workspace_pointers_after_move(&mut self, from: usize, to: usize) {
@@ -580,7 +580,7 @@ mod workspace_pointer_tests {
     /// `debug.switch_workspace` 는 gui 게이트) 올바른 보정과 옛 범위 초과 clamp 의 **결과가
     /// 같다**. 그래서 headless 쪽만 옛 clamp 로 남아도 어떤 실행 테스트도 실패하지 않는다 —
     /// 실제로 그렇게 한 번 놓쳤고, 그때 잡은 것도 (기본 빌드에서 도는) 이 소스 가드였다.
-    /// 근거 [ADR-0113](../../docs/adr/0113-close-preserves-the-focused-target.md).
+    /// 근거 [ADR-0617](../../docs/adr/0617-workspace-identity-and-focus.md).
     #[test]
     fn both_close_cascades_route_through_the_pointer_helper() {
         let src = include_str!("../core/structural_cascade.rs");

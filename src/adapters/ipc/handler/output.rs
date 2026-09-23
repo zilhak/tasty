@@ -173,7 +173,7 @@ fn observer_error_to_response(id: Value, e: ObserverError) -> JsonRpcResponse {
 /// sink 스레드 spawn 실패는 한때 `.expect` 로 호스트 전체를 죽였다. 이제는
 /// `ObserverError::ThreadSpawn` 으로 올라오며, 그 값이 응답으로 매핑되지 않으면
 /// 에이전트는 실패를 영영 모른다
-/// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+/// (`docs/adr/0616-window-platform-and-shutdown.md`).
 #[cfg(test)]
 mod observer_error_mapping_tests {
     use super::*;

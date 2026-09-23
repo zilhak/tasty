@@ -17,7 +17,7 @@ impl App {
         // `plugin_manager.handle_plugin_response` 가 client 에 회신.
         //
         // 멱등 키를 실은 **표의** `Mutate`(`image.open` 등)는 보존소를 먼저 지난다 — 헤드리스와
-        // 같은 함수다(ADR-0566). plugin 고유 이름은 거기서 개입하지 않는다(ADR-0361).
+        // 같은 함수다(ADR-0605). plugin 고유 이름은 거기서 개입하지 않는다(ADR-0605).
         if let Some(mgr) = self.plugin_manager.as_mut()
             && mgr.owns_namespace(&cmd.request.method)
         {

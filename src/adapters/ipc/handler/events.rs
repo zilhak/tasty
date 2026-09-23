@@ -164,7 +164,7 @@ mod tests {
     }
 
     /// wire 에 앞섬 표지와 끝 위치가 실린다. 예전 다섯 필드는 이름도 값도 그대로다 —
-    /// 그 필드만 읽는 소비자의 동작은 바뀌지 않는다(ADR-0405).
+    /// 그 필드만 읽는 소비자의 동작은 바뀌지 않는다(ADR-0633).
     #[test]
     fn the_answer_carries_the_ahead_marker_next_to_the_old_fields() {
         let bus = EventBus::new();

@@ -70,7 +70,7 @@ pub(crate) enum Tick {
     #[cfg(feature = "gui")]
     Reconnect(u32),
     /// 30초. idle TTL 을 넘긴 headless PTY 를 회수한다
-    /// (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
+    /// (`docs/adr/0613-terminal-io-and-process-lifetime.md`).
     ///
     /// 접근 시점 lazy sweep 을 **대체하지 않고 보완한다** — lazy 는 `pty.spawn` 직전에
     /// 돌아 동시 개수 상한 판정을 정확하게 유지하는 별개 역할이 있다. 이 tick 은
@@ -80,7 +80,7 @@ pub(crate) enum Tick {
     /// 같은 이유의 보완 — 다음 청크가 와야 이전 stale 이 정리되는 구조라, 업로드가
     /// 멈춘 순간(= 정리가 가장 필요한 순간) 정리도 멈춘다.
     CaptureSweep,
-    /// 10분. IPC 관측 로그 3종의 보존 정책을 집행한다(`ADR-0085`). 실제 집행 주기는
+    /// 10분. IPC 관측 로그 3종의 보존 정책을 집행한다(`ADR-0609`). 실제 집행 주기는
     /// `log_retention::PRUNE_INTERVAL_MS`(1시간) 게이트가 정하므로 이 tick 이 자주
     /// 와도 무해하다 — tick 은 "append 가 전혀 없는 인스턴스에서도 게이트를 볼
     /// 기회를 만든다" 는 역할만 한다.
