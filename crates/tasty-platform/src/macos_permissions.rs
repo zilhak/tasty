@@ -283,10 +283,16 @@ fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAcc
     }
 }
 
-/// Denied로 추정될 때만 부팅 안내를 표시한다. 과거 표시 여부 대신 매번 현재 상태를 사용한다.
+/// 확인 가능한 권한 중 하나라도 미승인으로 확인되면 부팅 안내를 표시한다.
+/// 과거 표시 여부 대신 매번 현재 상태를 사용한다.
+/// FDA 와 화면 기록만 본다. 파일 폴더 권한은 상태를 묻는 API 가 없고 재는 것 자체가
+/// 프롬프트라 판정에 넣지 않으며, 그래서 둘 다 허용한 사용자에게는 안내가 뜨지 않는
+/// 사각이 남는다. 손쉬운 사용은 release 에 소비자가 없어 제외한다.
+/// Unknown 은 미승인으로 세지 않는다. 근거가 사라졌을 뿐이며 승인을 가진 사용자에게
+/// 매 부팅 오탐을 띄우게 된다.
 #[cfg(any(test, all(target_os = "macos", feature = "gui")))]
-fn should_show_fda_notice(access: FullDiskAccess) -> bool {
-    matches!(access, FullDiskAccess::Denied)
+fn should_show_permission_notice(full_disk_access: FullDiskAccess, screen_recording: bool) -> bool {
+    matches!(full_disk_access, FullDiskAccess::Denied) || !screen_recording
 }
 
 /// 보호 경로를 열어 FDA 상태를 추정한다.
@@ -299,11 +305,12 @@ pub fn full_disk_access_state() -> FullDiskAccess {
     decide_full_disk_access(&probes)
 }
 
-/// 부팅 시 FDA 안내를 띄워야 하는가. **이때 표시용 스냅샷을 새로 재서 보관한다** —
+/// 부팅 시 권한 안내를 띄워야 하는가. **이때 표시용 스냅샷을 새로 재서 보관한다** —
 /// 부팅 판정과 권한 화면이 같은 측정 1 회를 공유한다. 비-macOS / headless 에서는
-/// 스냅샷이 `Unknown` 이라 안내하지 않는다.
-pub fn wants_full_disk_access_notice() -> bool {
-    should_show_fda_notice(refresh_permission_snapshot().full_disk_access)
+/// 스냅샷이 `Unknown` + 화면 기록 승인이라 안내하지 않는다.
+pub fn wants_permission_notice() -> bool {
+    let snapshot = refresh_permission_snapshot();
+    should_show_permission_notice(snapshot.full_disk_access, snapshot.screen_recording)
 }
 
 // ── 표시용 권한 상태 스냅샷 ────────────────────────────────────────────────────
@@ -504,8 +511,9 @@ mod tests {
         assert_eq!(permission_snapshot(), refreshed);
     }
 
+    /// 프로브 결과 → 3 상태 매핑. 안내 판정과 분리돼 있어 따로 고정한다.
     #[test]
-    fn fda_notice_shows_only_when_access_is_denied() {
+    fn full_disk_access_is_denied_only_on_a_confirmed_refusal() {
         use std::io::ErrorKind;
 
         // 하나라도 열리면 보유다 — 앞쪽 경로가 없어도 뒤쪽이 열리면 보유.
@@ -524,11 +532,22 @@ mod tests {
             decide_full_disk_access(&[Some(ErrorKind::NotFound), Some(ErrorKind::NotFound)]),
             FullDiskAccess::Unknown
         );
+    }
 
-        // 안내는 확인된 거부에만 뜬다.
-        assert!(should_show_fda_notice(FullDiskAccess::Denied));
-        assert!(!should_show_fda_notice(FullDiskAccess::Granted));
-        assert!(!should_show_fda_notice(FullDiskAccess::Unknown));
+    /// 안내 판정의 6 갈래를 전부 고정한다. `Granted` + 화면 기록 미승인이 이 규칙의
+    /// 핵심 갈래다 — FDA 만 보던 때에는 그 사용자에게 아무 안내도 뜨지 않았다.
+    #[test]
+    fn notice_shows_when_any_checkable_permission_is_missing() {
+        use FullDiskAccess::*;
+        assert!(should_show_permission_notice(Denied, false));
+        assert!(should_show_permission_notice(Denied, true));
+        // FDA 를 이미 가진 사용자도 화면 기록이 없으면 알아야 한다.
+        assert!(should_show_permission_notice(Granted, false));
+        assert!(!should_show_permission_notice(Granted, true));
+        // 판정 근거가 없는 것을 미승인으로 접지 않는다.
+        assert!(!should_show_permission_notice(Unknown, true));
+        // 다만 화면 기록 쪽 근거는 확실하므로 그것만으로 띄운다.
+        assert!(should_show_permission_notice(Unknown, false));
     }
 
     #[test]

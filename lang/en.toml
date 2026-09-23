@@ -1861,17 +1861,19 @@ detection_note = "macOS offers no API to ask whether an app has Full Disk Access
 open_full_disk_access = "Open Full Disk Access settings"
 
 # 전체 디스크 접근은 Automation·화면 기록·손쉬운 사용 권한과 별개다.
-[macos_permissions.fda]
-title = "Grant Tasty Full Disk Access"
-body = """Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without Full Disk Access you keep hitting "Tasty would like to access data from other apps" in the middle of your work, once per app folder.
+[macos_permissions.notice]
+title = "Some permissions are not granted"
+body = """Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without the permission a prompt interrupts you mid-task, or a feature quietly does nothing.
 
-Granting Full Disk Access removes the file-access prompts — including other apps' data, Downloads, Documents, Desktop and mounted volumes. It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
+Some permissions currently look like they are not granted. Settings > General > Permissions shows which ones and what state they are in.
 
-macOS has no way for an app to ask for this, so add Tasty yourself in System Settings > Privacy & Security > Full Disk Access.
+Full Disk Access — macOS has no way for an app to ask for this, so add Tasty yourself in System Settings > Privacy & Security > Full Disk Access. Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.
+
+Screen recording — used by the screenshot feature. Turn it on in System Settings > Privacy & Security > Screen & System Audio Recording. Once you deny it, the app cannot ask again and only System Settings can turn it back on.
 
 If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./scripts/macos-codesign-identity.sh --create). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.
 
-Once you grant it, this notice stops appearing."""
+Once you grant them, this notice stops appearing. There is no setting to turn it off: recording that you dismissed it would leave no way to tell you when a permission is reset later."""
 open_settings = "Open settings"
 
 # CLI 도움말. 영어 값은 소스에서 생성되는 clap 도움말과 정확히 같아야 한다.

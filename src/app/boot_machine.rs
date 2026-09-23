@@ -410,7 +410,7 @@ impl App {
         // 첫 창을 노출하기 전에 이전 실행의 에이전트 작업 상태를 정리하며 자동 실행은 하지 않는다.
         self.core.purge_stale_agent_state_on_boot(&core_state);
         self.core.inject_agent_runner_registry(&core_state);
-        Self::report_missing_full_disk_access(&mut state);
+        Self::report_missing_permissions(&mut state);
         self.register_window(
             gpu,
             state,
@@ -500,20 +500,21 @@ impl App {
         }
     }
 
-    /// macOS 전체 디스크 접근 권한이 거부된 것으로 추정되면 안내한다.
+    /// macOS 에서 확인 가능한 권한 중 하나라도 미승인이면 안내한다.
     /// 권한이 회수될 수 있어 부팅마다 다시 확인하며 안내 여부를 영구 저장하지 않는다.
-    /// 휴리스틱 결과가 Unknown이면 안내하지 않고 기능도 차단하지 않는다.
-    fn report_missing_full_disk_access(state: &mut crate::state::AppState) {
-        if !crate::macos_permissions::wants_full_disk_access_notice() {
+    /// 판정 규칙과 그 한계는 `crates/tasty-platform/src/macos_permissions.rs` 의
+    /// `should_show_permission_notice`. macOS 외에서는 no-op.
+    fn report_missing_permissions(state: &mut crate::state::AppState) {
+        if !crate::macos_permissions::wants_permission_notice() {
             return;
         }
         crate::adapters::ui::info_modal::show_info_modal(
             state,
             crate::adapters::ui::info_modal::InfoModal {
-                title: crate::i18n::t("macos_permissions.fda.title").to_string(),
-                body: crate::i18n::t("macos_permissions.fda.body").to_string(),
+                title: crate::i18n::t("macos_permissions.notice.title").to_string(),
+                body: crate::i18n::t("macos_permissions.notice.body").to_string(),
                 on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
-                extra_buttons: full_disk_access_notice_buttons(),
+                extra_buttons: permission_notice_buttons(),
             },
         );
     }
@@ -628,9 +629,9 @@ impl App {
 }
 
 #[cfg(all(target_os = "macos", feature = "gui"))]
-fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
+fn permission_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
     vec![crate::adapters::ui::info_modal::InfoModalButton {
-        label: crate::i18n::t("macos_permissions.fda.open_settings").to_string(),
+        label: crate::i18n::t("macos_permissions.notice.open_settings").to_string(),
         action: crate::adapters::ui::info_modal::InfoModalButtonAction::OpenExternal(
             crate::macos_permissions::FULL_DISK_ACCESS_SETTINGS_URL.to_string(),
         ),
@@ -638,7 +639,7 @@ fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::Inf
 }
 
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
+fn permission_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
     Vec::new()
 }
 

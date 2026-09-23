@@ -90,9 +90,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             modal(
                 ui,
                 theme,
-                "Full Disk Access required",
-                "Tasty needs Full Disk Access to read this folder. Open System Settings, grant \
-                 access, then reopen the folder.",
+                "Some permissions are not granted",
+                "Full Disk Access and screen recording are not granted. Settings › General › \
+                 Permissions shows the current state of each; Full Disk Access has to be added \
+                 in System Settings because no app can request it.",
                 Some("Open System Settings"),
             )
         });
