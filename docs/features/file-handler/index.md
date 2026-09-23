@@ -88,13 +88,16 @@ IPC 경로는 기본이 에이전트다. 예외는 둘이고, 둘 다 plugin 호
   받았을 때만 사용자로 친다. markdown 파일열기 팝업의 [열기] 가 이 경로다.
 - **자기 webview 의 사용자 navigation** — `user_navigation_url` 에 `origin_surface_id` 의 webview 에서
   통지받은 `webview.navigation_attempt` 의 URL 을 그대로 실은 경우. host 는 native 엔진이 그 시도를
-  사용자 제스처로 보고했고(Linux `is_user_gesture` · Windows `IsUserInitiated`), 그 시도를 바로 호출
-  plugin 에 통지했으며, 그 surface 의 마지막 사용자 navigation 이 그 URL 일 때만 사용자로 치고, 그
-  기록을 한 번 쓰고 지운다. macOS 는 엔진이 그 값을 주지 않아 늘 에이전트다. markdown 문서 안의 파일
+  사용자 제스처로 보고했고(Linux `is_user_gesture` · Windows `IsUserInitiated`), 그 surface 의 지금
+  페이지를 쓴 `webview.set_url` 호출자가 호출 plugin 이며, 그 시도를 바로 호출 plugin 에 통지했고, 그
+  시도가 그 surface 의 가장 최근 시도이며 그 URL 일 때만 사용자로 치고, 그 기록을 한 번 쓰고 지운다.
+  근거가 못 되는 시도(제스처가 아님 · 에이전트가 쓴 페이지)가 그 surface 에 오면 앞선 기록은
+  지워진다 — 에이전트는 `webview.set_url` 로 페이지를 쓸 수 있지만 그 페이지 위의 클릭이나 스크립트로
+  plugin 이 이 키를 싣게 만들어도 사용자 행동을 얻지 못한다. macOS 는 엔진이 그 값을 주지 않아 늘 에이전트다. markdown 문서 안의 파일
   링크가 이 경로다.
 
 외부 IPC 호출자가 같은 키를 실어도, 남의 popup · 닫힌 popup · 입력을 안 받은 popup · 통지받은 적
-없거나 이미 쓴 navigation · 사용자 제스처가 아닌 navigation 을 대도 에이전트로 떨어진다(거절하지
+없거나 이미 쓴 navigation · 사용자 제스처가 아닌 navigation · 소유 plugin 이 쓰지 않은 페이지의 navigation 을 대도 에이전트로 떨어진다(거절하지
 않는다).
 origin 을 생략한 요청도 같은 축으로 갈린다 — 에이전트면 focused pane 에 새 탭을 뒤에 붙이기만
 하고, 사용자면 선택한다.

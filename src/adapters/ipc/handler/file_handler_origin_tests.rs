@@ -42,7 +42,7 @@ fn dispatch_through(
     with_origin_surface: bool,
     mirror: bool,
 ) -> DispatchOutcome {
-    dispatch_through_with(caller, activated, None, params, with_origin_surface, mirror)
+    dispatch_through_with(caller, activated, &[], params, with_origin_surface, mirror)
 }
 
 type DispatchOutcome = (
@@ -53,14 +53,14 @@ type DispatchOutcome = (
     u32,
 );
 
-/// [`dispatch_through`] 에 webview 근거를 더한 것. `navigated` 가 `Some(nav)` 면 host 가 focused
-/// pane 의 첫 surface 에서 난 시도 `nav` 를 plugin [`PLUGIN`] 에 통지한 상태로 시작한다 — 통지
-/// 자리가 부르는 기록 함수를 그대로 부른다. 엔진이 그 시도를 사용자 제스처로 봤는지는 `nav` 가
-/// 정한다.
+/// [`dispatch_through`] 에 webview 근거를 더한 것. `navigated` 의 시도마다 host 가 focused pane 의
+/// 첫 surface 에서 난 그 시도를 plugin [`PLUGIN`] 에 통지한 상태로 시작한다 — 통지 자리가 부르는
+/// 기록 함수를 순서대로 그대로 부른다. 엔진이 그 시도를 사용자 제스처로 봤는지와 그 surface 의
+/// 페이지를 소유 plugin 이 썼는지는 [`Attempt`] 가 정한다.
 fn dispatch_through_with(
     caller: &CallerContext,
     activated: Option<(&str, u64)>,
-    navigated: Option<crate::webview::PendingNavigation>,
+    navigated: &[Attempt],
     mut params: serde_json::Value,
     with_origin_surface: bool,
     mirror: bool,
@@ -81,14 +81,9 @@ fn dispatch_through_with(
     }
     let pane_id = state.active_workspace(&engine).focused_pane;
     assert_eq!(engine.find_pane_by_id(pane_id).expect("pane").active_tab, 0);
-    if let Some(nav) = navigated {
+    for attempt in navigated {
         let sid = engine.workspaces[0].all_surface_ids()[0];
-        crate::plugin_bridge::user_navigation::record(
-            &mut state.webview_user_navigations,
-            sid,
-            Some(PLUGIN),
-            &nav,
-        );
+        attempt.record(&mut state, sid);
     }
     if with_origin_surface {
         let sid = engine.workspaces[0].all_surface_ids()[0];
@@ -271,10 +266,36 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
 
 const NAV_URL: &str = "about:blank#tasty-nav:link:%2Ftmp%2Fa.md";
 
-fn gesture(user_gesture: bool) -> crate::webview::PendingNavigation {
-    crate::webview::PendingNavigation {
-        url: NAV_URL.to_string(),
+/// host 가 plugin [`PLUGIN`] 에 통지한 navigation 시도 하나.
+struct Attempt {
+    /// 엔진이 그 시도를 사용자 제스처로 봤는가.
+    user_gesture: bool,
+    /// 그 surface 의 지금 페이지를 쓴 `webview.set_url` 호출자가 [`PLUGIN`] 이었는가.
+    owner_wrote_page: bool,
+}
+
+impl Attempt {
+    fn record(&self, state: &mut crate::state::AppState, sid: u32) {
+        crate::plugin_bridge::user_navigation::record(
+            &mut state.webview_user_navigations,
+            sid,
+            Some(&crate::plugin_bridge::user_navigation::NavigationOwner {
+                plugin_id: PLUGIN.to_string(),
+                wrote_page: self.owner_wrote_page,
+            }),
+            &crate::webview::PendingNavigation {
+                url: NAV_URL.to_string(),
+                user_gesture: self.user_gesture,
+            },
+        );
+    }
+}
+
+/// 소유 plugin 이 쓴 페이지 위에서 엔진이 `user_gesture` 로 본 시도.
+fn gesture(user_gesture: bool) -> Attempt {
+    Attempt {
         user_gesture,
+        owner_wrote_page: true,
     }
 }
 
@@ -285,7 +306,7 @@ fn link_params() -> serde_json::Value {
 /// [`dispatch_through_with`] 를 origin surface 와 함께 돌리고 focused pane 의 `(탭 수, 활성 탭)` 을 본다.
 fn link_then_selection(
     caller: &CallerContext,
-    navigated: Option<crate::webview::PendingNavigation>,
+    navigated: &[Attempt],
     params: serde_json::Value,
 ) -> (FileDispatchOrigin, bool, (usize, usize)) {
     let (origin, intent_is_user, _state, engine, pane_id) =
@@ -297,29 +318,60 @@ fn link_then_selection(
 /// 사용자가 plugin webview 안의 링크를 눌러 연 파일은 사용자 행동이다 — 새 탭이 선택된다.
 #[test]
 fn a_link_the_user_clicked_in_the_plugins_webview_selects_the_new_tab() {
-    let got = link_then_selection(&plugin_caller(PLUGIN), Some(gesture(true)), link_params());
+    let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(true)], link_params());
     assert_eq!(got, (FileDispatchOrigin::User, true, (2, 1)));
 }
 
-/// plugin 이 자기 페이지 스크립트로 낸 navigation(엔진이 사용자 제스처로 안 본 것)을 근거로
-/// 대도 에이전트다 — plugin 은 이 근거를 스스로 만들 수 없다.
+/// 사람의 입력 없이 스크립트만으로 낸 navigation(엔진이 사용자 제스처로 안 본 것)을 근거로 대도
+/// 에이전트다.
 #[test]
 fn a_navigation_the_engine_did_not_see_as_a_gesture_is_not_a_user_action() {
-    let got = link_then_selection(&plugin_caller(PLUGIN), Some(gesture(false)), link_params());
+    let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(false)], link_params());
+    assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+}
+
+/// 사용자의 클릭이 기록만 남기고 쓰이지 않은 뒤(예: 링크 대상 파일이 없었다), 같은 surface 에서
+/// 제스처가 아닌 시도가 오면 그 기록은 사라진다. 에이전트가 `webview.set_url` 로 쓴 스크립트가 같은
+/// URL 의 navigation 을 내고 plugin 이 그것을 되대도 사용자 행동이 되지 않는다.
+#[test]
+fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_an_agent_request() {
+    let agents_script = Attempt {
+        user_gesture: false,
+        owner_wrote_page: false,
+    };
+    for later in [gesture(false), agents_script] {
+        let got = link_then_selection(
+            &plugin_caller(PLUGIN),
+            &[gesture(true), later],
+            link_params(),
+        );
+        assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
+    }
+}
+
+/// 소유 plugin 이 아닌 호출자가 `webview.set_url` 로 쓴 페이지 위에서 사람이 누른 클릭은 사용자
+/// 행동이 아니다 — 무엇을 열지는 그 페이지를 쓴 쪽이 정했다.
+#[test]
+fn a_click_on_a_page_the_owner_did_not_write_is_not_a_user_action() {
+    let on_agents_page = Attempt {
+        user_gesture: true,
+        owner_wrote_page: false,
+    };
+    let got = link_then_selection(&plugin_caller(PLUGIN), &[on_agents_page], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
 /// host 가 통지한 적 없는 URL 을 대도 에이전트다 — 요청 값만으로는 모자란다.
 #[test]
 fn a_plugin_cannot_claim_a_navigation_that_never_happened() {
-    let got = link_then_selection(&plugin_caller(PLUGIN), None, link_params());
+    let got = link_then_selection(&plugin_caller(PLUGIN), &[], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
 /// 외부 IPC 호출자는 실재하는 사용자 navigation 의 URL 을 실어도 사용자가 아니다.
 #[test]
 fn an_external_caller_cannot_claim_a_webview_navigation() {
-    let got = link_then_selection(&CallerContext::Local, Some(gesture(true)), link_params());
+    let got = link_then_selection(&CallerContext::Local, &[gesture(true)], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
@@ -328,7 +380,7 @@ fn an_external_caller_cannot_claim_a_webview_navigation() {
 fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
     let got = link_then_selection(
         &plugin_caller("com.example.other"),
-        Some(gesture(true)),
+        &[gesture(true)],
         link_params(),
     );
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
@@ -339,12 +391,7 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
 fn a_webview_navigation_backs_only_one_dispatch() {
     let (mut state, engine) = crate::state::tests::test_state();
     let sid = engine.workspaces[0].all_surface_ids()[0];
-    crate::plugin_bridge::user_navigation::record(
-        &mut state.webview_user_navigations,
-        sid,
-        Some(PLUGIN),
-        &gesture(true),
-    );
+    gesture(true).record(&mut state, sid);
     let mut params = link_params();
     params["origin_surface_id"] = json!(sid);
     let mut origins = Vec::new();

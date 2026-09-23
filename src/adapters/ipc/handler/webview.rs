@@ -26,11 +26,17 @@ fn notify_content_changed(
 
 /// `webview.set_url(surface_id, url)` — webview-enabled kind 의 RemoteSurface 에 URL 설정.
 ///
-/// 시그니처는 *read-only* (`&AppState + &CoreState`) — `_state` 는 미사용,
-/// `engine` 도 `&engine.workspaces` 순회 + `RemoteSurface::set_webview_url`
-/// (interior-mut `&self` 메서드) 만 호출. `handle_tree` 와 동일 패턴이다.
+/// 시그니처는 *read-only* (`&CoreState`) — `&engine.workspaces` 순회 +
+/// `RemoteSurface::set_webview_url`(interior-mut `&self` 메서드) 만 호출. `handle_tree` 와
+/// 동일 패턴이다.
+///
+/// 이 메서드는 외부 호출자(에이전트)에게도 열려 있다. 그래서 `caller` 가 그 surface 의 소유
+/// plugin 인지를 페이지와 함께 적는다 — host 는 소유 plugin 이 쓴 페이지 위의 사용자 클릭만
+/// 사용자 행동의 근거로 기록한다(ADR-0568). 에이전트는 페이지를 계속 쓸 수 있지만, 그 페이지
+/// 위의 사용자 클릭을 파일 열기의 사용자 행동으로 바꾸지는 못한다.
 pub fn handle_set_url(
     engine: &crate::core::CoreState,
+    caller: &tasty_ipc::caller::CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -60,7 +66,12 @@ pub fn handle_set_url(
                         .as_any()
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
                     ) {
-                        rs.set_webview_url(Some(url));
+                        let by_owner = matches!(
+                            caller,
+                            tasty_ipc::caller::CallerContext::Plugin { plugin_id, .. }
+                                if *plugin_id == rs.plugin_id
+                        );
+                        rs.set_webview_url(Some(url), by_owner);
                         notify_content_changed(engine, rs, sid);
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
@@ -90,14 +101,15 @@ pub fn handle_set_url(
 /// surface_id 에 대응하는 webview-enabled `RemoteSurface` 가 없으면 조용히 no-op —
 /// 네비게이션 캡처와 surface 제거 사이에 프레임 경계가 끼어드는 정상적인 레이스다.
 ///
-/// 통지한 plugin(그 surface 의 소유자)의 id 를 돌려준다 — 통지하지 않았으면 `None`. 호출부는
-/// 사용자 제스처 시도를 **바로 이 plugin 에** 묶어 기록한다(ADR-0568).
+/// 통지한 plugin(그 surface 의 소유자)과 그 plugin 이 지금 페이지를 썼는가를 돌려준다 —
+/// 통지하지 않았으면 `None`. 호출부는 사용자 제스처 시도를 **바로 이 plugin 에** 묶어
+/// 기록하고, 근거가 못 되는 시도면 그 surface 의 기록을 지운다(ADR-0568).
 pub fn notify_navigation_attempt(
     mgr: &PluginManager,
     engine: &crate::core::CoreState,
     surface_id: u32,
     url: &str,
-) -> Option<String> {
+) -> Option<crate::plugin_bridge::user_navigation::NavigationOwner> {
     // `handle_set_url` 과 동일하게 레이아웃 트리 전체를 조회한다(split 비포커스 leaf 포함).
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
@@ -120,7 +132,10 @@ pub fn notify_navigation_attempt(
                                 url: url.to_string(),
                             },
                         );
-                        return Some(rs.plugin_id.clone());
+                        return Some(crate::plugin_bridge::user_navigation::NavigationOwner {
+                            plugin_id: rs.plugin_id.clone(),
+                            wrote_page: rs.webview_page_by_owner(),
+                        });
                     }
                     return None;
                 }
@@ -170,11 +185,76 @@ mod tests {
     }
 
     fn set_url(engine: &crate::core::CoreState, sid: u32) -> JsonRpcResponse {
+        set_url_as(engine, &tasty_ipc::caller::CallerContext::Local, sid)
+    }
+
+    fn set_url_as(
+        engine: &crate::core::CoreState,
+        caller: &tasty_ipc::caller::CallerContext,
+        sid: u32,
+    ) -> JsonRpcResponse {
         handle_set_url(
             engine,
+            caller,
             json!(1),
             &json!({ "surface_id": sid, "url": "file:///tmp/doc.html" }),
         )
+    }
+
+    fn plugin_caller(plugin_id: &str) -> tasty_ipc::caller::CallerContext {
+        tasty_ipc::caller::CallerContext::Plugin {
+            plugin_id: plugin_id.to_string(),
+            permissions: std::sync::Arc::new(std::collections::HashSet::new()),
+        }
+    }
+
+    fn remote_surface(
+        engine: &crate::core::CoreState,
+        sid: u32,
+    ) -> &crate::plugin_bridge::remote_surface::RemoteSurface {
+        for ws in &engine.workspaces {
+            for pid in ws.pane_layout().all_pane_ids() {
+                let Some(pane) = ws.pane_layout().find_pane(pid) else {
+                    continue;
+                };
+                for tab in &pane.tabs {
+                    if let Some(rs) = tab
+                        .layout_if_initialized()
+                        .and_then(|l| l.find_surface(sid))
+                        .and_then(|s| {
+                            s.as_any()
+                                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+                        })
+                    {
+                        return rs;
+                    }
+                }
+            }
+        }
+        panic!("remote surface {sid} not found");
+    }
+
+    /// 페이지를 누가 썼는지가 surface 에 남는다 — 소유 plugin 이 쓰면 참, 외부 호출자(에이전트)나
+    /// 다른 plugin 이 쓰면 거짓이다. host 는 참인 페이지 위의 사용자 클릭만 사용자 행동의 근거로
+    /// 기록한다(ADR-0568). 쓴 적이 없는 surface 는 거짓에서 시작한다.
+    #[test]
+    fn set_url_remembers_whether_the_owning_plugin_wrote_the_page() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        state
+            .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
+            .unwrap();
+        let md_sid = focused_surface_id(&state, &engine);
+        let owner = remote_surface(&engine, md_sid).plugin_id.clone();
+        assert!(!remote_surface(&engine, md_sid).webview_page_by_owner());
+
+        let written_by = |caller: &tasty_ipc::caller::CallerContext| {
+            assert!(set_url_as(&engine, caller, md_sid).error.is_none());
+            remote_surface(&engine, md_sid).webview_page_by_owner()
+        };
+        assert!(written_by(&plugin_caller(&owner)));
+        assert!(!written_by(&tasty_ipc::caller::CallerContext::Local));
+        assert!(written_by(&plugin_caller(&owner)));
+        assert!(!written_by(&plugin_caller("com.example.other")));
     }
 
     /// split 탭의 **비포커스** leaf 도 `webview.set_url` 로 도달해야 한다.

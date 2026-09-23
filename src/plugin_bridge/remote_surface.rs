@@ -33,6 +33,12 @@ pub struct RemoteSurface {
     /// webview-enabled kind 인 경우 plugin 이 `webview.set_url` 로 전달한 URL.
     /// host 의 sync_webviews 가 매 프레임 이 값을 읽어 native webview 동기화.
     pub webview_url: Arc<Mutex<Option<String>>>,
+    /// 지금 `webview_url` 을 쓴 `webview.set_url` 호출자가 이 surface 를 소유한 plugin
+    /// 이었는가. `webview.set_url` 은 외부 호출자(에이전트)에게도 열려 있어 그 페이지를 누가
+    /// 만들었는지가 갈린다 — host 는 소유 plugin 이 쓴 페이지 위의 사용자 클릭만 사용자 행동의
+    /// 근거로 기록한다(`crate::plugin_bridge::user_navigation`). 쓴 적이 없으면 거짓이다.
+    #[cfg(feature = "gui")]
+    pub webview_page_by_owner: Arc<AtomicBool>,
     /// webview-enabled kind 의 navigation 생명주기 상태 mirror. host 의 sync_webviews 가
     /// 매 프레임 native `PlatformWebView.nav_state()` 를 이 값에 복사하고, egui 렌더 경로
     /// (egui_panels → webview_chrome)가 여기서 읽어 loading/error chrome 을 그린다.
@@ -84,6 +90,8 @@ impl RemoteSurface {
             snapshot_cache: Arc::new(Mutex::new(None)),
             display_name: Arc::new(Mutex::new(initial_name)),
             webview_url: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "gui")]
+            webview_page_by_owner: Arc::new(AtomicBool::new(false)),
             #[cfg(any(feature = "gui", test))]
             nav_state: Arc::new(Mutex::new(NavState::Idle)),
             cwd: Arc::new(Mutex::new(None)),
@@ -104,19 +112,33 @@ impl RemoteSurface {
             snapshot_cache: Arc::clone(&self.snapshot_cache),
             display_name: Arc::clone(&self.display_name),
             webview_url: Arc::clone(&self.webview_url),
+            webview_page_by_owner: Arc::clone(&self.webview_page_by_owner),
             nav_state: Arc::clone(&self.nav_state),
             cwd: Arc::clone(&self.cwd),
         }
     }
 
     /// `webview.set_url` IPC 가 호출 — webview-enabled kind 의 surface 만 의미 있음.
+    /// `by_owner` 는 그 호출자가 이 surface 를 소유한 plugin 인가다
+    /// ([`Self::webview_page_by_owner`]).
     #[cfg(feature = "gui")]
-    pub fn set_webview_url(&self, url: Option<String>) {
-        *crate::poison::recover_mutex(
+    pub fn set_webview_url(&self, url: Option<String>, by_owner: bool) {
+        let mut slot = crate::poison::recover_mutex(
             self.webview_url.lock(),
             WEBVIEW_URL_WHAT,
             &WEBVIEW_URL_POISON_REPORTED,
-        ) = url;
+        );
+        *slot = url;
+        // URL 과 같은 임계구역 안에서 적는다 — 둘이 다른 호출자의 값으로 섞이지 않게.
+        self.webview_page_by_owner
+            .store(by_owner, std::sync::atomic::Ordering::Release);
+    }
+
+    /// 지금 이 surface 의 페이지를 쓴 호출자가 소유 plugin 이었는가.
+    #[cfg(feature = "gui")]
+    pub fn webview_page_by_owner(&self) -> bool {
+        self.webview_page_by_owner
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// sync_webviews 가 매 프레임 native nav_state 를 mirror 할 때 호출.

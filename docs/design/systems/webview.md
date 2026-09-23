@@ -111,9 +111,12 @@ enum 이다. `Copy` + `Default = Idle` 이라 native 백엔드의 `Rc<Cell<NavSt
 
 시도 하나(`PendingNavigation`)는 URL 과 **엔진이 그 시도를 사용자 제스처로 봤는가**
 (`user_gesture`)를 함께 싣는다. 호스트는 시도를 소유 plugin 에 `webview.navigation_attempt` 로
-통지하는 자리에서, 이 값이 참인 시도를 그 plugin 에 묶어 surface 마다 마지막 한 건 기록한다.
-plugin 이 그 URL 을 `file_handler.dispatch` 의 `user_navigation_url` 로 되대면 그 호출 한 번이
-사용자 행동이 된다 — 근거는 plugin 의 주장이 아니라 엔진의 보고다. macOS 는 공개 API 에 같은
+통지하는 자리에서 시도마다 그 surface 의 기록을 다시 정한다 — 이 값이 참이고 그 surface 의 지금
+페이지를 소유 plugin 이 썼으면(`webview.set_url` 호출자를 surface 가 기억한다) 그 plugin 에 묶어
+기록하고, 아니면 그 surface 의 기록을 지운다. plugin 이 그 URL 을 `file_handler.dispatch` 의
+`user_navigation_url` 로 되대면 그 호출 한 번이 사용자 행동이 된다 — 근거는 plugin 의 주장이 아니라
+host 가 본 두 사실(엔진의 보고 · 페이지 작성자)이다. `webview.set_url` 은 에이전트에게도 열려 있어,
+에이전트가 쓴 페이지 위의 클릭과 그 페이지의 스크립트가 낸 시도는 근거가 되지 않는다. macOS 는 공개 API 에 같은
 뜻의 값이 없어 늘 `false` 이고, 그래서 macOS 의 webview 링크 클릭은 에이전트로 도착한다. 근거는
 [ADR-0568](../../adr/0568-a-user-gesture-navigation-in-a-plugin-webview-makes-its-file-dispatch-a-user-action.md).
 

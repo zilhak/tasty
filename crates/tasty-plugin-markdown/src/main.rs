@@ -998,9 +998,10 @@ fn dispatch_file_link(host: &HostHandle, sid: u32, nav_url: &str, path: &std::pa
 /// 테스트가 wire 모양을 본다.
 ///
 /// `user_navigation_url` 은 이 호출이 링크 클릭에서 왔다는 표지다 — host 는 엔진이 그 시도를
-/// 사용자 제스처로 보고했을 때만 그 한 번을 사용자 행동으로 쳐 새 탭을 선택하고, 아니면(스크립트가
-/// 낸 시도 · macOS 처럼 엔진이 그 값을 안 주는 곳) 에이전트로 받아 사용자가 보던 탭을 그대로 둔다
-/// (ADR-0568). 이 plugin 이 판정하지 않는다 — 받은 URL 을 그대로 되댈 뿐이다.
+/// 사용자 제스처로 보고했을 때만 그 한 번을 사용자 행동으로 쳐 새 탭을 선택하고, 아니면(사람의 입력
+/// 없이 스크립트만으로 낸 시도 · 이 plugin 이 쓰지 않은 페이지 · macOS 처럼 엔진이 그 값을 안 주는
+/// 곳) 에이전트로 받아 사용자가 보던 탭을 그대로 둔다(ADR-0568). 이 plugin 이 판정하지 않는다 —
+/// 받은 URL 을 그대로 되댈 뿐이다.
 fn file_link_params(sid: u32, nav_url: &str, path: &std::path::Path) -> Value {
     json!({
         "path": path.to_string_lossy(),
