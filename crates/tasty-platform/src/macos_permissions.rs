@@ -1,6 +1,9 @@
 //! macOS 보호 폴더·화면 기록·손쉬운 사용의 권한 요청과 Full Disk Access 추정.
-//! 부팅 워커에서 리소스에 접근해 필요한 시스템 안내를 미리 유도한다.
+//! 요청은 사용자가 설정 > 일반 > 권한 의 [모든 권한 요청하기] 를 눌렀을 때만 워커에서
+//! 돈다. 부팅 직후 자동 발화는 하지 않는다 — 결정의 근거·대안·재검토 조건은
+//! `docs/adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md`.
 //! 매 부팅 현재 상태를 확인하며 승인·표시 여부 자체는 OS가 결정한다.
+//! 이미 허용/거부가 결정된 항목에는 프롬프트가 뜨지 않으므로 몇 번을 눌러도 무해하다.
 //! 경로 목록과 상태 분류는 OS 접근과 분리해 다른 플랫폼에서도 시험한다.
 
 #[cfg(any(target_os = "macos", test))]
@@ -421,20 +424,38 @@ fn home_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
 }
 
+/// 요청 시퀀스가 도는 중인가. 버튼 재진입을 막고 진행 표시를 켜는 좌변이다.
+static REQUEST_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 요청 시퀀스가 지금 도는 중인가. draw 경로가 매 프레임 읽어도 되는 원자 로드다.
+pub fn permission_request_running() -> bool {
+    REQUEST_RUNNING.load(std::sync::atomic::Ordering::Acquire)
+}
+
 /// 워커를 시작해 목록의 폴더, 화면 기록, debug 손쉬운 사용 순으로 요청한다.
 /// 파일 접근과 시스템 요청이 사용자 응답이나 네트워크를 기다릴 수 있어 메인 루프에서 실행하지 않는다.
-/// 호출자는 워커 완료를 기다리지 않는다.
+/// 하나씩 순차로 요청한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다.
+/// 이미 돌고 있으면 아무것도 하지 않고 `false` 를 돌려준다.
+/// 끝나면 표시용 스냅샷을 갱신하고 `on_finished` 로 호출자를 깨운다.
 #[cfg(all(target_os = "macos", feature = "gui"))]
-pub fn spawn_prewarm() {
-    std::thread::spawn(|| {
+pub fn request_all_permissions(on_finished: impl FnOnce() + Send + 'static) -> bool {
+    use std::sync::atomic::Ordering;
+    if REQUEST_RUNNING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        tracing::debug!("권한 요청: 이미 도는 중이라 무시한다");
+        return false;
+    }
+    std::thread::spawn(move || {
         let targets = prewarm_targets(home_dir().as_deref(), &RealFs);
-        tracing::debug!(count = targets.len(), "prewarm: 파일 TCC 대상 결정");
+        tracing::debug!(count = targets.len(), "권한 요청: 파일 TCC 대상 결정");
         for path in targets {
             // 접근 시도가 목적이다. 반환된 항목은 쓰지 않으며 거부도 오류 로그 대신 진단으로 남긴다.
             match std::fs::read_dir(&path) {
-                Ok(_) => tracing::debug!(path = %path.display(), "prewarm: 접근 허용"),
+                Ok(_) => tracing::debug!(path = %path.display(), "권한 요청: 접근 허용"),
                 Err(err) => {
-                    tracing::debug!(path = %path.display(), %err, "prewarm: 접근 불가(거부 또는 부재)")
+                    tracing::debug!(path = %path.display(), %err, "권한 요청: 접근 불가(거부 또는 부재)")
                 }
             }
         }
@@ -442,13 +463,22 @@ pub fn spawn_prewarm() {
         // 손쉬운 사용은 debug 빌드에서만 요청한다 — release 에는 소비자가 없다.
         #[cfg(debug_assertions)]
         prewarm_accessibility();
+        // 표시용 상태를 먼저 갱신하고 나서 깃발을 내린다 — 반대로 하면 호출자가
+        // "끝났다" 를 보고 낡은 스냅샷을 읽을 수 있다.
+        refresh_permission_snapshot();
+        REQUEST_RUNNING.store(false, Ordering::Release);
+        on_finished();
     });
+    true
 }
 
-/// 비-macOS / headless 는 no-op — 호출부에 `#[cfg]` 를 흩뿌리지 않기 위한 짝.
-/// headless 에는 프롬프트를 띄울 GUI 주체가 없으므로 macOS 여도 돌지 않는다.
+/// 비-macOS / headless — 요청할 권한이라는 개념이 없다. 호출부에 `#[cfg]` 를 흩뿌리지
+/// 않기 위한 짝이고, 시퀀스를 시작하지 않았으므로 `false` 다. headless 에는 프롬프트를
+/// 띄울 GUI 주체가 없으므로 macOS 여도 돌지 않는다.
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
-pub fn spawn_prewarm() {}
+pub fn request_all_permissions(_on_finished: impl FnOnce() + Send + 'static) -> bool {
+    false
+}
 
 #[cfg(test)]
 mod tests {
@@ -502,6 +532,49 @@ mod tests {
         assert_eq!(raw_key_decision(true), RawKeyDecision::Inject);
         // 미승인 상태에서 주입하면 CGEventPost 가 조용히 무시된다 — 성공으로 답하면 안 된다.
         assert_eq!(raw_key_decision(false), RawKeyDecision::PermissionDenied);
+    }
+
+    /// 요청 시퀀스가 끝까지 돌고, 끝나면 깃발을 내리고 호출자를 깨우는가.
+    ///
+    /// **실제 TCC 를 건드리므로 `#[ignore]` 다.** 미결정 항목이 있으면 프롬프트가 떠서
+    /// 사용자 응답까지 멈추는데, 헤드리스 러너에는 누를 사람이 없다 — 모듈 최상단의
+    /// `FsProbe` 주석이 테스트에 실 IO 를 들이지 않는 이유로 적어 둔 바로 그 함정이다.
+    /// 어느 워크플로도 `--ignored` 를 쓰지 않으므로 이 시험은 사람이 부를 때만 돈다.
+    /// 재는 법: `cargo test -p tasty-platform --features gui -- --ignored request_sequence`
+    ///
+    /// 재진입 거부(두 번째 호출이 `false`)는 여기서 재지 않는다 — 워커가 언제 끝나는지에
+    /// 달려 있어 결정적이지 않다. 그 규칙은 `REQUEST_RUNNING` 의 원자 교환 한 줄이다.
+    #[cfg(all(target_os = "macos", feature = "gui"))]
+    #[test]
+    #[ignore]
+    fn request_sequence_finishes_and_clears_the_running_flag() {
+        use std::time::Duration;
+        let (tx, rx) = std::sync::mpsc::channel();
+        assert!(
+            request_all_permissions(move || {
+                tx.send(())
+                    .expect("완료 통지를 기다리는 수신자가 있어야 한다");
+            }),
+            "도는 시퀀스가 없으면 요청은 시작돼야 한다"
+        );
+        rx.recv_timeout(Duration::from_secs(120))
+            .expect("시퀀스가 끝나면 완료 통지가 와야 한다");
+        assert!(
+            !permission_request_running(),
+            "완료 통지 시점에는 깃발이 이미 내려가 있어야 한다"
+        );
+
+        // 끝난 뒤에는 다시 시작할 수 있다 — 깃발이 걸린 채 남지 않는다.
+        let (tx2, rx2) = std::sync::mpsc::channel();
+        assert!(
+            request_all_permissions(move || {
+                tx2.send(())
+                    .expect("완료 통지를 기다리는 수신자가 있어야 한다");
+            }),
+            "앞 시퀀스가 끝났으면 다시 시작할 수 있어야 한다"
+        );
+        rx2.recv_timeout(Duration::from_secs(120))
+            .expect("두 번째 시퀀스도 끝나야 한다");
     }
 
     /// 읽기는 보관된 값을 그대로 돌려준다 — draw 가 매번 재지 않아도 되는 근거.

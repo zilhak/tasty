@@ -24,6 +24,7 @@
 | 0010 | [저장소는 적용된 설정과 저장 실패를 구분해 알린다](0010-storage-failure-reporting.md) | Accepted | 2026-09-24 | storage, sqlite, durability |
 | 0011 | [비밀 데이터의 보호 범위를 IPC와 파일 권한으로 구분한다](0011-secrets-and-local-trust.md) | Accepted | 2026-09-24 | security, secrets, passkey |
 | 0012 | [요청은 라우팅 전에 권한을 확인하고 사용자 입력과 분리한다](0012-request-admission-and-isolation.md) | Accepted | 2026-09-24 | security, permissions, ipc |
+| 0052 | [macOS 권한 프롬프트는 부팅이 아니라 사용자가 요청할 때 띄운다](0052-permission-prompts-are-raised-on-request-not-at-boot.md) | Accepted | 2026-09-24 | macos, permissions, tcc, boot, settings, discoverability, adr-0012 |
 <!-- adr-rows:end foundation -->
 
 ## 터미널과 원격 연결

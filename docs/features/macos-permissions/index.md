@@ -1,16 +1,21 @@
 # macOS 권한 (TCC)
 
-- **Status**: Partial — 파일 계열 + 화면 기록 pre-warm(+ debug 빌드 한정 손쉬운 사용 pre-warm), Full Disk Access 추정·안내 구현
+- **Status**: Partial — 사용자가 요청할 때 파일 계열 + 화면 기록 일괄 발화(+ debug 빌드 한정 손쉬운 사용), Full Disk Access 추정, 미승인 권한 부팅 안내 구현
 - **주체**: 로컬 사용자 (에이전트 작업 중 권한 요청으로 멈추는 상황도 줄인다)
-- **ADR**: 없음
-- **코드**: `crates/tasty-platform/src/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `crates/tasty-platform/src/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
+- **ADR**: [0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md) (요청 시점) · [0012](../../adr/0012-request-admission-and-isolation.md) (손쉬운 사용 debug 격리)
+- **코드**: `crates/tasty-platform/src/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정 + 표시용 스냅샷), 요청 호출부와 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 안내 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `crates/tasty-platform/src/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
 - **화면**: 프롬프트는 OS 가 그린다. tasty 쪽 UI 는 부팅 안내 InfoModal + [설정 창](../settings/screens/settings.md) 일반 > 권한 탭
 
 ## 목적
 
 macOS의 파일 접근 권한 요청은 보호된 경로에 처음 접근할 때 나타난다. 에이전트가 명령을
-실행하는 중에도 사용자 응답을 기다릴 수 있으므로, 자주 사용하는 경로의 권한을 부팅 직후
+실행하는 중에도 사용자 응답을 기다릴 수 있으므로, 자주 사용하는 경로의 권한을 한 번에
 미리 요청한다. 모든 권한 요청을 없애는 기능은 아니며 아래에 나열한 대상만 처리한다.
+
+요청 시점은 **설정 > 일반 > 권한 의 [모든 권한 요청하기] 를 누른 때**다. 부팅 직후 자동
+발화는 하지 않는다 — 앱을 처음 켠 사람에게 이유 없는 프롬프트가 줄줄이 뜨고 끄는 방법이
+없었다([ADR-0052](../../adr/0052-permission-prompts-are-raised-on-request-not-at-boot.md)).
+그 대신 미승인이 남아 있으면 부팅 안내로 알린다(아래 "부팅 권한 안내").
 
 ## 내부 동작
 
@@ -38,6 +43,14 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 - **존재하지 않는 경로는 건너뛴다** — 없는 폴더를 읽어봐야 프롬프트가 뜨지 않는다.
 - 볼륨 목록은 **경로로 정렬**한다. `read_dir` 순서는 파일시스템에 따라 달라서 정렬하지 않으면 프롬프트 순서가 실행마다 달라진다.
 
+### 발화 시점 — 사용자의 요청 1 회
+
+`request_all_permissions` 은 설정 > 일반 > 권한 의 [모든 권한 요청하기] 에서만 불린다. 부팅 경로에는 호출이 없다.
+
+요청 중 재진입은 원자 플래그(`REQUEST_RUNNING`)로 막는다. 이미 도는 중이면 아무것도 하지 않고 `false` 를 돌려주고, 화면도 그동안 버튼을 비활성으로 그린다. 시퀀스가 겹치면 아래 "순차 발화" 전제가 깨져 프롬프트가 포개져 뜬다.
+
+끝나면 표시용 스냅샷을 갱신하고 `on_finished` 로 호출자를 깨운다. 요청이 끝나는 시점에는 사용자 입력이 없어 repaint 가 저절로 안 난다. 순서는 갱신 → 플래그 해제 → 통지다 — 반대로 하면 호출자가 낡은 스냅샷을 읽는다.
+
 <a id="워커-스레드--순차-발화"></a>
 
 ### 워커 스레드에서 순서대로 요청
@@ -47,16 +60,16 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 - **단일 워커 스레드**로 분리한다. 메인 스레드(winit 이벤트 루프)에서 부르면 프롬프트가 떠 있는 내내 UI가 멈추고, `boot_total` 계측도 사용자 응답 시간만큼 부풀려진다.
 - 그 **한 스레드에서 경로를 하나씩 순차로** 처리한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다 — 순차면 앞의 것을 닫아야 다음이 뜬다.
 
-호출 지점은 `finish_boot` 의 `emit_startup_complete_event()` 직후다. 첫 윈도우가 등록돼 앱이 foreground 로 활성화된 뒤라야 프롬프트가 사용자에게 보인다 — 윈도우 생성 전에 부르면 백그라운드로 밀릴 수 있다.
+워커 스레드는 egui draw 안에서 시작된다. draw 에서 시퀀스를 **직접** 돌리면 프롬프트가 떠 있는 내내 설정 창이 통째로 언다 — 그래서 버튼은 스레드를 띄우고 즉시 반환한다.
 
-### 매 부팅 반복 (첫 실행 플래그 없음)
+### 몇 번을 눌러도 무해하다 (요청 이력 플래그 없음)
 
 이미 허용/거부가 결정된 항목에는 프롬프트가 뜨지 않으므로 반복 비용은 `read_dir` 몇 번뿐이다. 오히려 반복이 정확하다:
 
-- 새 마운트(이동식/네트워크 볼륨)는 실행할 때마다 달라져 첫 실행 1 회로는 못 덮는다
-- "첫 실행 여부" 플래그를 설정에 두면, 플래그만 남고 TCC 는 초기화된 상태(재설치·`tccutil reset` 이후)에서 권한을 미리 요청하지 못할 수 있다
+- 새 마운트(이동식/네트워크 볼륨)는 실행할 때마다 달라져 1 회로는 못 덮는다
+- "이미 요청했다" 플래그를 설정에 두면, 플래그만 남고 TCC 는 초기화된 상태(재설치·`tccutil reset`·ad-hoc 재빌드로 앱 식별 변경 이후)에서 요청이 영영 안 도는 어긋남이 생긴다
 
-따라서 상태 플래그도, 끄는 토글도 두지 않는다. 이 기능은 프롬프트를 없애는 게 아니라 시점을 앞당기는 것이라 끄면 원래의 산발적 프롬프트로 돌아갈 뿐이다.
+따라서 요청 이력 플래그를 두지 않는다. 버튼은 언제 눌러도 같은 일을 한다.
 
 ### 화면 기록 (Screen Recording)
 
@@ -91,7 +104,7 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 ### Full Disk Access — 추정과 안내
 
-FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한 **파일 접근 계열 전부**가 프롬프트 없이 통과한다. 대상 앱 디렉터리 단위로 갈라져 pre-warm 이 불가능한 AppData 계열을 없앨 수 있는 유일한 수단이다.
+FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터" 를 포함한 **파일 접근 계열 전부**가 프롬프트 없이 통과한다. 대상 앱 디렉터리 단위로 갈라져 사전 발화가 불가능한 AppData 계열을 없앨 수 있는 유일한 수단이다.
 
 **앱이 요청할 수 없다.** 요청 API 가 없고 `tccutil`/TCC.db 조작은 SIP 가 막는다. tasty 가 할 수 있는 것은 (a) 보유 추정과 (b) 해당 패널로 보내는 안내뿐이다.
 
@@ -105,7 +118,8 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 안내를 표시했다는 기록이나 끄는 토글은 두지 않고 매 부팅마다 다시 판정한다. 사용자가
 권한을 취소하거나 `tccutil reset`, ad-hoc 재빌드로 앱 식별이 바뀐 경우도 반영하기 위해서다.
-권한이 확인되면 다음 부팅부터 안내하지 않는다.
+권한이 확인되면 다음 부팅부터 안내하지 않는다. 파일 권한 요청이 "이미 요청했다" 플래그를
+두지 않는 것과 같은 규율이다.
 
 **안내 문구가 지켜야 할 것** — FDA 는 파일 접근 프롬프트만 없앤다. **Automation(다른 앱 제어) · 화면 기록 · 손쉬운 사용은 FDA 와 별개 TCC 서비스라 그대로 남는다.** 문구가 "모든 프롬프트가 사라진다" 로 읽히면 안 된다. 또 ad-hoc 서명 빌드는 재빌드마다 다른 앱으로 인식돼 FDA 가 초기화되므로, 직접 빌드하는 사용자에게 `Tasty Dev` 인증서 서명이 선행 조건임을 함께 알린다([build.md](../../dev-guide/build.md) 참조).
 
@@ -133,7 +147,13 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 ### 설정 탭 (일반 > 권한)
 
-macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기를 담는다. 부팅 안내를 지나쳤어도 여기서 현재 상태를 볼 수 있다. FDA 행은 3 상태를 그대로 보여준다 — 허용됨 / 허용 안 됨 / **확인 불가**. 판정 근거가 없는 상태를 "허용 안 됨" 으로 적으면 이미 허용된 사용자에게도 잘못 안내할 수 있다.
+macOS 에서만 노출된다. **권한 요청이 시작되는 유일한 자리다.** 담는 것은 상태 행(FDA 추정 · 화면 기록 · 파일 폴더 · debug 의 손쉬운 사용), FDA 가 추정임을 밝히는 주석, 버튼 둘([모든 권한 요청하기] · [전체 디스크 접근 권한 설정 열기]), 그리고 그 아래 설명 줄이다. 부팅 안내를 지나쳤어도 여기서 현재 상태를 볼 수 있다.
+
+FDA 행은 3 상태를 그대로 보여준다 — 허용됨 / 허용 안 됨 / **확인 불가**. 판정 근거가 없는 상태를 "허용 안 됨" 으로 적으면 이미 허용된 사용자에게도 잘못 안내할 수 있다.
+
+파일 폴더 행은 상태를 못 적는다 — 조회 수단 자체가 없어 "조회 수단 없음" 을 적는다. 빈칸으로 두면 승인된 것으로 읽힌다.
+
+요청 중에는 [모든 권한 요청하기] 가 비활성이고 아래 설명 줄이 진행 문구로 바뀐다. 비활성은 플랫폼 쪽 원자 교환 거부를 눈에 보이게 하는 것이지 유일한 방어가 아니다.
 
 **상태는 이 화면이 재지 않는다 — 스냅샷을 읽는다.** 측정(FDA 프로브의 `File::open`, `CGPreflightScreenCaptureAccess`, debug 의 `AXIsProcessTrusted`)은 `refresh_permission_snapshot()` 안에서만 일어나고, draw 는 `permission_snapshot()` 으로 보관된 값을 읽기만 한다. 측정을 draw 에 두면 TCC 데몬 IPC 가 프레임마다 반복되고(설정 창은 dirty 구동이라 가만히 두면 안 돌지만, 마우스 이동·호버처럼 repaint 를 요구하는 입력이 있는 동안에는 그 횟수만큼 돈다), tccd 응답이 늦는 만큼 창이 멈춘다.
 
@@ -145,15 +165,15 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA �
 
 ### 프롬프트 본문 설명 문구
 
-번들 `Info.plist` 의 `NS*UsageDescription` 키가 프롬프트 본문에 그대로 표시된다. 키가 없으면 이유 없는 프롬프트가 뜨고, pre-warm 처럼 여러 개를 연달아 띄우면 그 문제가 커진다. 키 목록과 문구 정책은 [build.md](../../dev-guide/build.md) 의 배포 패키징 절 참조.
+번들 `Info.plist` 의 `NS*UsageDescription` 키가 프롬프트 본문에 그대로 표시된다. 키가 없으면 이유 없는 프롬프트가 뜨고, 일괄 요청처럼 여러 개를 연달아 띄우면 그 문제가 커진다. 키 목록과 문구 정책은 [build.md](../../dev-guide/build.md) 의 배포 패키징 절 참조.
 
 ### 플랫폼 격리
 
-목록 결정 로직(`prewarm_targets`)은 파일시스템 조회를 `FsProbe` 로 추상화한 **순수 함수**라 전 플랫폼에서 컴파일·유닛테스트된다. 실제 파일 접근부(`RealFs`·`spawn_prewarm`)만 `#[cfg(all(target_os = "macos", feature = "gui"))]` 로 좁힌다. cfg 로 잘린 코드는 rustc 가 타입체크 전에 걷어내므로, 로직을 순수부에 몰아둘수록 다른 플랫폼에서도 더 많은 로직을 검증할 수 있다. headless 는 프롬프트를 띄울 GUI 주체가 없으므로 macOS 여도 돌지 않는다. 비-macOS/headless 에는 같은 이름의 no-op 이 노출돼 호출부에 `#[cfg]` 가 흩어지지 않는다.
+목록 결정 로직(`prewarm_targets`)은 파일시스템 조회를 `FsProbe` 로 추상화한 **순수 함수**라 전 플랫폼에서 컴파일·유닛테스트된다. 실제 파일 접근부(`RealFs`·`request_all_permissions`)만 `#[cfg(all(target_os = "macos", feature = "gui"))]` 로 좁힌다. cfg 로 잘린 코드는 rustc 가 타입체크 전에 걷어내므로, 로직을 순수부에 몰아둘수록 다른 플랫폼에서도 더 많은 로직을 검증할 수 있다. headless 는 프롬프트를 띄울 GUI 주체가 없으므로 macOS 여도 돌지 않는다. 비-macOS/headless 에는 같은 이름의 no-op 이 노출돼 호출부에 `#[cfg]` 가 흩어지지 않는다.
 
 ## 비-목표 (Out of scope)
 
-**pre-warm 이 원천적으로 불가능한 것** — 대상별로 프롬프트가 갈라져 사전 열거가 안 된다:
+**사전 발화가 원천적으로 불가능한 것** — 대상별로 프롬프트가 갈라져 사전 열거가 안 된다:
 
 - **다른 앱의 데이터** (`kTCCServiceSystemPolicyAppData`, macOS 14+) — `~/Library/Application Support/<앱>`, `~/Library/Containers/<번들ID>` 처럼 **대상 앱 디렉터리 단위로 개별 프롬프트**가 뜬다. 존재하는 디렉터리를 전부 순회하면 프롬프트가 수십 개 뜨므로 현실적 선택지가 아니다. Full Disk Access 로 덮이며, 그 안내는 위 "Full Disk Access" 절이 담당한다.
 - **다른 앱 제어** (Automation / Apple Events) — 대상 앱 단위. 셸에서 `osascript` 를 쓸 때 발생하며 사전 열거 불가. **FDA 로도 덮이지 않는다** — FDA 는 파일 접근 서비스이고 Automation 은 완전히 별개 서비스라, FDA 를 줘도 대상 앱별 승인은 계속 요구된다. tasty는 이를 미리 일괄 요청하지 않는다. tasty 자신은 Apple Events 를 보내지 않는다.
@@ -162,13 +182,17 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA �
 
 ## Acceptance Criteria
 
-- Given `~/Documents` 가 없는 홈 When pre-warm 목록을 결정 Then 그 경로가 목록에서 빠진다
+- Given `~/Documents` 가 없는 홈 When 요청 목록을 결정 Then 그 경로가 목록에서 빠진다
 - Given `/Volumes` 에 마운트 2 개 When 목록을 결정 Then 홈 폴더 뒤에, 경로 정렬 순으로 붙는다
 - Given 마운트가 하나도 없음 When 목록을 결정 Then 볼륨 항목이 하나도 없다
-- Given macOS 에서 TCC 승인을 초기화 When Tasty 실행 Then 부팅 직후 프롬프트가 순차로 뜨고, 떠 있는 동안에도 창이 그려지고 클릭·스크롤이 반응한다
+- Given macOS 에서 TCC 승인을 초기화 When Tasty 실행 Then 권한 프롬프트가 하나도 뜨지 않는다
+- Given 같은 상태 When 설정 > 일반 > 권한 의 [모든 권한 요청하기] 클릭 Then 프롬프트가 순차로 뜨고, 떠 있는 동안에도 설정 창이 그려지고 클릭·스크롤이 반응한다
+- Given 요청이 도는 중 When 버튼을 다시 누름 Then 두 번째 시퀀스가 시작되지 않는다
+- Given 요청이 끝남 When 화면을 봄 Then 상태 표시가 갱신돼 있다
 - Given 프롬프트를 모두 허용 When 터미널에서 `ls ~/Downloads; ls ~/Documents; ls ~/Desktop` Then 추가 프롬프트가 뜨지 않는다
-- Given 화면 기록 권한 미결정 When Tasty 실행 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
-- Given 화면 기록 권한을 거부한 뒤 재실행 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)
+- Given 화면 기록 권한 미결정 When 요청 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
+- Given 화면 기록 권한을 거부한 뒤 다시 요청 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)
+- Given release 빌드 When 요청 Then 손쉬운 사용 프롬프트는 뜨지 않는다
 - Given FDA 프로브 경로가 열리고 화면 기록도 승인됨 When 부팅 Then 안내를 띄우지 않는다
 - Given FDA 프로브가 `PermissionDenied` 로 거부됨 When 부팅 Then 안내를 띄운다 — 몇 번째 부팅인지는 보지 않는다
 - Given FDA 는 허용됐지만 화면 기록이 미승인 When 부팅 Then 안내를 띄운다

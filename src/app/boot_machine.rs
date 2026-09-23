@@ -420,10 +420,6 @@ impl App {
         );
         self.emit_startup_complete_event();
 
-        // macOS 권한 안내가 사용자에게 보이도록 첫 창을 등록한 뒤 요청한다.
-        // 파일 접근 준비는 워커에서 하므로 첫 UI 프레임을 기다리게 하지 않는다.
-        crate::macos_permissions::spawn_prewarm();
-
         tracing::info!(
             target: "tasty::boot",
             ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
@@ -501,6 +497,7 @@ impl App {
     }
 
     /// macOS 에서 확인 가능한 권한 중 하나라도 미승인이면 안내한다.
+    /// 부팅 직후 자동 요청이 없으므로 이 안내가 권한 화면으로 가는 발견 채널이다.
     /// 권한이 회수될 수 있어 부팅마다 다시 확인하며 안내 여부를 영구 저장하지 않는다.
     /// 판정 규칙과 그 한계는 `crates/tasty-platform/src/macos_permissions.rs` 의
     /// `should_show_permission_notice`. macOS 외에서는 no-op.

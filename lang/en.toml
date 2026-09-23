@@ -1857,7 +1857,12 @@ accessibility_label = "Accessibility (key injection)"
 status_granted = "Granted"
 status_missing = "Not granted"
 status_unknown = "Unknown"
-detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears — nothing in Tasty is blocked by it."
+detection_note = "macOS offers no API to ask whether an app has Full Disk Access, so this state is inferred and can be wrong. It only decides whether the startup notice appears — nothing in Tasty is blocked by it. File folders have no way to be asked about at all: asking is the prompt, so their state is unknown until you request them."
+file_access_label = "File folders (Downloads · Documents · Desktop · volumes)"
+status_not_observable = "Cannot be observed"
+request_all = "Request all permissions"
+requesting = "Requesting permissions. Answer each prompt as it appears — the next one only shows once you answer the previous."
+request_note = "This requests the file folder and screen recording permissions one at a time. Items you already allowed or denied do not prompt again; a denied item can only be restored in System Settings. Full Disk Access cannot be requested by an app, so add Tasty yourself through the button above."
 open_full_disk_access = "Open Full Disk Access settings"
 
 # 전체 디스크 접근은 Automation·화면 기록·손쉬운 사용 권한과 별개다.
