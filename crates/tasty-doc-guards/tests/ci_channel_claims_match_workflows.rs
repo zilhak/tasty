@@ -2611,18 +2611,6 @@ fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
     }
 }
 
-/// 회귀 케이스 — **한 표 안에서 채널이 갈리는 행들.**
-///
-/// `docs/design/systems/theme.md` 의 토큰 규칙 표는 네 자리에서 가드를 인용하는데, 셋은
-/// 통합 테스트(`crates/tasty-doc-guards/tests/design_token_adherence.rs`)이고 하나는 lib 유닛 테스트다. 문자열만
-/// 보고 일괄 처리하면 넷이 같아 보여서 **맞게 적힌 행까지 함께 지워진다.** 이 테스트는
-/// 그 표가 대상별로 갈린 상태를 유지하는지 고정한다.
-///
-/// 갈리는 **지점**은 바뀌었다. 통합 테스트 행이 요구하던 것은 한때 부재 표지였는데,
-/// 헤드리스 잡이 전체 스위트로 넓어지면서 그 서술이 거짓이 됐다 — 즉 이 테스트가 거짓인
-/// 문장을 요구하고 있었다. 이제 요구하는 것은 **조합 한정 표지**다. 두 행의 차이는
-/// 여전히 남는다: lib 유닛 테스트는 두 조합 모두에서 돌고, 통합 테스트는 헤드리스
-/// 조합에서만 돈다.
 /// ★ **축이 스스로 잠잠해졌다면, 그 근거가 실재하는지 묻는다** — 초록의 이유를 묻는 것이다.
 ///
 /// 이 파일의 판정 다섯 중 둘은 [`integration_tests_run_automatically`] 가 `None` 이면
@@ -2682,69 +2670,182 @@ fn the_self_silencing_axis_names_what_silenced_it() {
     );
 }
 
-/// `theme.md` 의 표가 **채널이 다른 두 가드를 섞어 적지 않는지** 본다.
-///
-/// ★ 이 시험의 전제가 2026-09-07 에 바뀌었다. 예전에는 대비가 "통합 테스트 = 조합 하나 ·
-/// lib 유닛 테스트 = 자동" 이었다. `design_token_adherence` 가 `crates/tasty-doc-guards`
-/// 로 옮겨 가면서 **그쪽도 자동으로 돈다** — `doc-guards.yml` 이 경로 필터 없이 그
-/// 크레이트를 통째로 돌린다. 그래서 지금의 대비는 조합이 아니라 **어느 워크플로냐**다.
-///
-/// 술어를 그만큼만 넓힌다: 통합 테스트 쪽은 (가) 도는 조합을 한정하거나 (나) **그 자동
-/// 채널을 이름으로 대고** 자동 실행을 서술해야 한다. 둘 다 채널을 말하는 문장이라, 넓힌
-/// 것이 아니라 **참인 형태가 둘이 된 것**이다. 막연한 "돈다" 는 여전히 안 통과한다 —
-/// (나)는 `doc-guards` 라는 이름과 서술어를 **함께** 요구한다.
-///
-/// **이 타깃이 또 옮겨지면 이 술어도 같이 옮겨라.** 여기 박힌 `doc-guards` 는 지금 그
-/// 타깃이 사는 자리이지 영구 사실이 아니다.
+/// 실행을 말하는 항목만 검사한다. 검사 대상·한계 설명에는 채널명을 반복하지 않는다.
+/// 문단·목록 항목·표 행의 경계는 다른 CI 검사와 같은 `claim_scope`를 사용한다.
+/// 실행 표현의 문자열 목록만 인식하므로 모든 자연어 주장을 판독하는 것은 아니다.
+fn theme_channel_claims(text: &str, target: &str, channels: &[String]) -> (usize, Vec<usize>) {
+    let mut claims = 0;
+    let mut violations = Vec::new();
+    for at in word_offsets(text, target) {
+        let scope = claim_scope(text, at);
+        if !["자동", "CI", "실행", "돈다", "돌린다", "--lib --bins"]
+            .iter()
+            .any(|marker| scope.contains(marker))
+        {
+            continue;
+        }
+        claims += 1;
+        let named: Vec<&str> = scope
+            .split(|ch: char| !(ch.is_ascii_alphanumeric() || "-_.".contains(ch)))
+            .filter(|word| word.ends_with(".yml") || word.ends_with(".yaml"))
+            .collect();
+        if named.is_empty() || named.iter().any(|name| !channels.iter().any(|c| c == name)) {
+            violations.push(at);
+        }
+    }
+    (claims, violations)
+}
+
+/// 워크플로 이름별로 자동 호출을 읽고 기존 타깃·패키지·조합 판정에 넘긴다.
+/// 문서에 적힌 이름이나 특정 워크플로 파일명을 정답 목록으로 복사하지 않는다.
+fn theme_target_workflows(root: &Path, target: &str) -> Vec<String> {
+    let features = test_target_features(root);
+    let mut channels = Vec::new();
+    for workflow in workflow_files(&root.join(".github/workflows"), &WORKFLOW_FLOOR) {
+        let text = std::fs::read_to_string(&workflow.path).expect("워크플로를 읽지 못했다");
+        let head: String = text
+            .lines()
+            .take_while(|line| !line.starts_with("jobs:"))
+            .collect();
+        if !["push:", "pull_request:", "schedule:"]
+            .iter()
+            .any(|trigger| head.contains(trigger))
+        {
+            continue;
+        }
+        let invocations: Vec<_> = automatic_job_bodies(&text)
+            .iter()
+            .flat_map(|body| cargo_test_tails(body))
+            .map(|tail| {
+                let combo = if tail.contains("--no-default-features") {
+                    Combo::Headless
+                } else {
+                    Combo::Default
+                };
+                (combo, tail)
+            })
+            .collect();
+        if !integration_target_channels(root, target, &invocations, &features).is_empty() {
+            channels.push(
+                workflow
+                    .path
+                    .file_name()
+                    .expect("워크플로 파일명")
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    channels
+}
+
 #[test]
 fn the_theme_table_keeps_the_two_channels_apart() {
-    let path = repo_root().join("docs/design/systems/theme.md");
+    let root = repo_root();
+    let path = root.join("docs/design/systems/theme.md");
     let text = std::fs::read_to_string(&path).expect("theme.md 를 읽지 못했다");
-
-    let integration = word_offsets(&text, "design_token_adherence");
+    let target = "design_token_adherence";
     assert!(
-        !integration.is_empty(),
-        "표가 통합 테스트 가드를 더 이상 인용하지 않는다 — 회귀 케이스가 사라졌다"
+        !word_offsets(&text, target).is_empty(),
+        "theme 가드 인용을 하나도 읽지 못했다"
     );
-    for at in integration {
-        let window = claim_scope(&text, at);
-        let combo_qualified = COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m));
-        // 자동 채널을 **이름으로 대고** 자동 실행을 서술한 형태. 이름만 있거나 서술어만
-        // 있으면 안 된다 — 둘을 함께 요구해야 "어느 채널이" 라는 물음에 답이 된다.
-        //
-        // ★ 이름은 **워크플로 파일 이름**으로 묻는다. `"doc-guards"` 로 물으면 같은 항목에
-        // 적힌 **좌표**(`crates/tasty-doc-guards/tests/…`)가 그 조건을 충족해 버린다 —
-        // 변이로 실측했다(2026-09-07): 채널 이름을 "그 자동 잡" 으로 지워도 초록이었다.
-        // 가드가 묻는 것은 "그 타깃이 어디 사는가" 가 아니라 **"무엇이 그것을 돌리는가"** 다.
-        let channel_named = window.contains("doc-guards.yml")
-            && AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m));
-        assert!(
-            combo_qualified || channel_named,
-            "{}:{} — 통합 테스트인데 어느 조합에서 도는지도, 어느 자동 채널이 돌리는지도 \
-             함께 적혀 있지 않다.\n  \
-             ★ 이 판정기가 보는 것은 **표지가 있는가**뿐이고 그 표지가 **맞는가**는 \
-             안 본다. 그러니 아무 표지나 붙이면 빨강은 사라지지만 그 행은 이제 \
-             **틀린 조합을 단언한다** — 없던 것보다 나쁘다. 그 타깃이 실제로 도는 \
-             조합을 `docs/dev-guide/ci-gates.md` 에서 확인하고 그것을 적어라.{SCOPE_NOTE}",
-            path.display(),
-            line_of(&text, at)
+    let channels = theme_target_workflows(&root, target);
+    let (claims, violations) = theme_channel_claims(&text, target, &channels);
+    assert!(
+        claims > 0,
+        "theme의 실제 실행 설명을 하나도 검사하지 못했다"
+    );
+    assert!(
+        violations.is_empty(),
+        "{} — 실행을 주장한 항목에 해당 타깃을 돌리는 워크플로를 적어야 한다. 실제 채널: {channels:?}, 위반 행: {:?}{SCOPE_NOTE}",
+        path.display(),
+        violations
+            .iter()
+            .map(|at| line_of(&text, *at))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn theme_scope_descriptions_do_not_need_repeated_channels() {
+    let text =
+        "- `design_token_adherence.rs`는 색 리터럴을 검사한다. 변수 의미는 추적하지 않는다.\n";
+    assert_eq!(
+        theme_channel_claims(text, "design_token_adherence", &[]),
+        (0, vec![])
+    );
+}
+
+#[test]
+fn theme_run_claims_require_the_right_channel_even_beside_limits() {
+    let channels = vec!["doc-guards.yml".to_string()];
+    for claim in [
+        "CI가 항상 실행한다",
+        "자동으로 돈다",
+        "헤드리스 조합에서만 실행한다",
+        "`wrong.yml`이 자동으로 돌린다",
+    ] {
+        let text =
+            format!("`design_token_adherence.rs`는 변수 의미를 추적하지 못하지만 {claim}.\n");
+        let (checked, violations) =
+            theme_channel_claims(&text, "design_token_adherence", &channels);
+        assert_eq!(checked, 1, "{claim}");
+        assert_eq!(violations.len(), 1, "{claim}");
+    }
+    let text = "`design_token_adherence.rs`는 `doc-guards.yml`이 실행한다.\n";
+    assert_eq!(
+        theme_channel_claims(text, "design_token_adherence", &channels),
+        (1, vec![])
+    );
+    assert_eq!(
+        theme_channel_claims(text, "design_token_adherence", &[])
+            .1
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn theme_claims_do_not_borrow_channels_from_other_paragraphs_or_rows() {
+    let channels = vec!["doc-guards.yml".to_string()];
+    for text in [
+        "`doc-guards.yml`이 자동으로 돌린다.\n\n`design_token_adherence.rs`는 CI가 실행한다.\n",
+        "- `doc-guards.yml`이 자동으로 돌린다.\n- `design_token_adherence.rs`는 CI가 실행한다.\n",
+        "| 다른 검사 | `doc-guards.yml`이 자동으로 돌린다 |\n| `design_token_adherence.rs` | CI가 실행한다 |\n",
+    ] {
+        assert_eq!(
+            theme_channel_claims(text, "design_token_adherence", &channels)
+                .1
+                .len(),
+            1
         );
     }
-
-    let lib = word_offsets(&text, "ui_font_size_tokens_are_integers_at_every_zoom");
-    assert!(
-        !lib.is_empty(),
-        "표가 lib 유닛 테스트 행을 더 이상 인용하지 않는다 — 양방향성의 증거가 사라졌다"
+    let text = "`doc-guards.yml`이 자동으로 돌린다.\n\n`design_token_adherence.rs`는 원시 색을 검사한다.\n";
+    assert_eq!(
+        theme_channel_claims(text, "design_token_adherence", &channels),
+        (0, vec![])
     );
-    for at in lib {
-        let window = claim_scope(&text, at);
-        assert!(
-            AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — lib 유닛 테스트인데 자동 채널이 적혀 있지 않다(사실보다 약하다){SCOPE_NOTE}",
-            path.display(),
-            line_of(&text, at)
-        );
-    }
+}
+
+#[test]
+fn theme_former_lib_row_is_a_fixture_not_a_required_doc_row() {
+    let lib = "ui_font_size_tokens_are_integers_at_every_zoom";
+    let text = format!(
+        "| `design_token_adherence.rs` | `doc-guards.yml`이 자동으로 돌린다 |\n| `{lib}` | `crossplatform-check.yml`이 자동으로 돌린다 |\n"
+    );
+    let integration_channels = vec!["doc-guards.yml".to_string()];
+    let lib_channels = vec!["crossplatform-check.yml".to_string()];
+    assert_eq!(
+        theme_channel_claims(&text, "design_token_adherence", &integration_channels),
+        (1, vec![])
+    );
+    assert_eq!(theme_channel_claims(&text, lib, &lib_channels), (1, vec![]));
+    assert_eq!(
+        theme_channel_claims(&text, lib, &integration_channels)
+            .1
+            .len(),
+        1
+    );
 }
 
 // ─── 면제를 겨냥한 변이 (합성 입력) ───────────────────────────────────────────
