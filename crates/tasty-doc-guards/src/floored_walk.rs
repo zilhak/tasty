@@ -50,9 +50,9 @@ pub enum CountedOn {
     /// 실측 2026-09-08: 그때 하한 문장에 적힌 lane tip 다섯이 전부 이 상태였다.
     /// 다음에 그 좌변을 재는 사람이 `Tree` 로 바꾼다.
     ///
-    /// ★ 단 지금 선언에 남은 `LaneTip` 넷(`8bdbf1bdb` 둘 · `671aa69b2` · `ee7a32349`)은
+    /// ★ 단 지금 선언에 남은 `LaneTip` 셋(`8bdbf1bdb` · `671aa69b2` · `ee7a32349`)은
     /// 그 길이 닫혔다 — 위 이력 재작성으로 버려진 갈래의 커밋이라 `main` 에 들어올 일이
-    /// 없다. 그 넷은 `Tree` 로 **바꾸는** 것이 아니라 다시 재서 새 좌표를 적는다. 이
+    /// 없다. 그 셋은 `Tree` 로 **바꾸는** 것이 아니라 다시 재서 새 좌표를 적는다. 이
     /// 갈래는 그 자체로 "좌표로 못 간다" 를 뜻하므로 자리마다 덧붙이지 않는다.
     LaneTip(&'static str),
     /// 픽스처가 **자기가 방금 만든 합성 트리**를 잰다. 레포 좌변이 아니라 "어느 커밋에서
@@ -196,7 +196,15 @@ pub mod populations {
         measured: 649,
         measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 646 -> 649 이고 \
+            "cc2e5e72e — 세 lane(명세 정정 · 비-ADR 문서 통폐합 · ADR 번호 이동 도구)이 착지한 \
+             main 트리에서 다시 셌다. 649 그대로이고 더해진 것도 빠진 것도 없다 — 세 lane 이 \
+             고친 `src/` 의 `.rs` 는 11 이고(명세 정정 2 — `src/app/event_handler.rs` · \
+             `src/app/window_lifecycle.rs` — · 비-ADR 통폐합 9 · 번호 도구 0) 전부 기존 파일의 \
+             주석 줄만 바꿨다. 그 수는 `1a776dbdd`..`396084ce4` 에서 셌고 그 좌표는 이력 \
+             재작성(squash)으로 죽었다. 지금 main 의 짝 `f9d06ddb9`..`cc2e5e72e` 에서는 40 인데, \
+             squash 커밋 `cc2e5e72e` 가 세 lane 앞의 작업(`00e90bfce` 뒤, `src/` 의 `.rs` 32)까지 \
+             담아서다 — 세 lane 의 몫만 가르는 살아 있는 좌표는 없다. 같은 창에서 `CRATE_TEST_TARGETS` · `DOCS_MD` 는 움직였다. \
+             이전 회차: 00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 646 -> 649 이고 \
              더해진 것 4 · 빠진 것 1 이다. 더해진 넷은 `src/adapters/ui/preset/view_refresh_tests.rs` · \
              `src/namespace_table_for_tests.rs` · `src/plugin_bridge/popup_render_activation_tests.rs` · \
              `src/plugin_bridge/user_navigation.rs` 이고, 빠진 하나는 `src/file/picker_caps.rs` 다. \
@@ -262,7 +270,9 @@ pub mod populations {
         measured: 46,
         measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 46 그대로이고 \
+            "cc2e5e72e — 세 lane(명세 정정 · 비-ADR 문서 통폐합 · ADR 번호 이동 도구)이 착지한 \
+             main 트리에서 다시 셌다. 46 그대로이고 더해진 것도 빠진 것도 없다. \
+             이전 회차: 00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 46 그대로이고 \
              더해진 것도 빠진 것도 없다 — 같은 창에서 `SRC_RS` · `DOCS_MD` 는 움직였다. \
              이전 회차: 4bace058e — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 43 -> 46 이고 \
              삭제는 0 이다. 더해진 셋은 `tests/cli_maps_args_before_connecting.rs` · \
@@ -289,10 +299,14 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 125,
+        measured: 126,
         measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "f5c9893c4 + lane — 마지막 워크스페이스 닫기 레이스 lane 이 \
+            "cc2e5e72e — **착지 트리에서 잰 값이다.** 125 -> 126 이고 더해진 것은 \
+             `tasty-doc-guards/tests/adr_renumber_bin.rs` 하나, 삭제는 0 이다. 그 lane 은 이 항을 \
+             안 건드린 채 착지했고, 그 lane 의 base 에서도 착지 트리에서도 +1 이라 값은 같다 — \
+             `DOCS_MD` 와 달리 이 모수는 같은 창의 다른 lane 이 안 움직였기 때문이다. \
+             이전 회차: f5c9893c4 + lane — 마지막 워크스페이스 닫기 레이스 lane 이 \
              `tasty-doc-guards/tests/close_request_consumed_in_place.rs` 하나를 더해 124 -> 125 \
              다. 삭제는 0 이다. **lane 트리에서 잰 값이라 구조적으로 낮다** — 같은 회차의 다른 \
              lane 이 통합 타깃을 더했으면 통합 트리에서는 더 크고, 최종 값은 병합하는 쪽이 거기서 \
@@ -355,10 +369,20 @@ pub mod populations {
 
     /// `docs/` 아래 `.md` 전부.
     pub const DOCS_MD: Population = Population {
-        measured: 605,
+        measured: 569,
         measured_on: "2026-09-23",
         counted_on: super::CountedOn::Tree(
-            "00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 591 -> 605 이고 \
+            "cc2e5e72e — 세 lane 이 착지한 main 트리에서 다시 셌다. 605 -> 569(−36)이고 \
+             **이 모수의 가장 큰 감소다.** 비-ADR 문서 통폐합 lane 이 문서 40 개를 지우고(전부 \
+             다른 문서로 흡수 — 하나 더는 이름만 옮겼다) 흡수처 셋을 더해 605 -> 568(−37)이 됐고, ADR 번호 이동 도구 lane \
+             이 `docs/dev-guide/adr-renumber.md` 하나를 더해 569 다. 이 분해는 lane 기여로 \
+             참이지만 중간 상태 568 은 squash 뒤 main 에서 관측되지 않는다 — 지금 main 에서는 \
+             `36d5e3e58`..`cc2e5e72e` 한 걸음이 삭제 40 · 추가 4 · 이름 이동 1 로 605 -> 569 다. 명세 정정 lane 은 `.md` 를 \
+             고치기만 하고 수는 안 움직였다. ★ **같은 모수가 세 트리에서 세 값이었다**: 통폐합 \
+             lane 의 tip 568, 번호 도구 lane 의 tip 606(그 base 605 + 1 — 통폐합 전 트리다), 착지 \
+             트리 569. 두 lane 이 각자 옳게 재도 둘 다 착지 값과 달랐다 — 이 모수를 착지가 재는 \
+             이유가 그것이다. \
+             이전 회차: 00e90bfce — 다음 회차 lane 들이 착지한 main 트리에서 다시 셌다. 591 -> 605 이고 \
              삭제는 0 이다. 더해진 14 중 13 이 `docs/adr/`(0538~0568 사이)이고 하나가 \
              `docs/dev-guide/adr-index.md` 다. 아래 이력의 형태가 열두 번째로 났다 — lane 마다 \
              문서를 더하면서 아무도 자기 base 에서 이 항을 안 건드렸고, pre-push B.10 이 병합된 \
@@ -424,7 +448,14 @@ pub mod populations {
               `65bcd1988`..`4bace058e` 를 first-parent 로 커밋마다 세면 **감소가 두 번** \
               관측된다 — `0f37f8565`(502 -> 500, −2, 중복 결정 사본 둘을 지운 정리)와 \
               `e1e80e2b8`(567 -> 562, −5, 중복 결정 여섯을 하나로 흡수한 정리)다. 둘 다 \
-              카테고리가 접힌 사건보다 훨씬 작다. 이 자리는 한때 뒤엣것을 '첫 감소' 라고 \
+              카테고리가 접힌 사건보다 훨씬 작다. 그 뒤 `e9d03a24a`..`396084ce4` 를 \
+              first-parent 로 세면 **감소가 22 번**이고 한 커밋 최대 감소가 −13(`b7349f9f7`, \
+              단일 화면 명세 열셋을 기능 문서에 흡수)이며 창 전체로 605 -> 569 였다 — 문서 \
+              통폐합이 커밋마다 한두 개씩 지운 창이다. ★ 그 좌표 셋은 이력 재작성(squash)으로 \
+              죽었다 — 지금 main 에서 그 창의 몫은 `36d5e3e58`(번호 도구, `.md` 는 안 움직인다)과 \
+              `cc2e5e72e`(나머지 전부와 번호 도구의 문서) 두 커밋으로 갈렸고, \
+              `f9d06ddb9`..`cc2e5e72e` 를 first-parent 로 세면 감소 1 번 · −36 으로 보인다. 어느 쪽으로 세도 카테고리 하나가 접힌 크기보다는 \
+              작다(지금 가장 큰 비-ADR 카테고리 `docs/features` 가 52). 이 자리는 한때 뒤엣것을 '첫 감소' 라고 \
               적었다 — 앞엣것은 그때 이미 `counted_on` 이력에 있었다. 앞선 창(1215 커밋, \
               2026-09-05~09-08)에서 354 에서 399 로 단조 증가했고 한 커밋 최대 이동이 1 \
               이었는데, 그 창의 좌표는 지금 도달 불가라 **도달 가능한 창에서 다시 쟀다**: \
