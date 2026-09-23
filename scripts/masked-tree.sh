@@ -9,7 +9,7 @@
 #
 # 이건 **채널이 아니라 편의**다. 조사 스크립트는 커밋되지 않으므로 아무 게이트도 그것이
 # 마스킹을 썼는지 강제할 수 없다. 강제할 수 있는 것은 그 수를 문서에 적을 때뿐이다
-# (docs/adr/0139-… 의 계보 분류).
+# (docs/documentation-model.md#수치와-근거).
 #
 # 사용:
 #   dir=$(bash scripts/masked-tree.sh)                 # src crates, 주석까지 덮음

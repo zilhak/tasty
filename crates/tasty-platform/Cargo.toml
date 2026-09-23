@@ -8,7 +8,7 @@ repository = "https://github.com/zilhak/tasty"
 
 [dependencies]
 # 워크스페이스 크레이트 — 이 셋이 이 크레이트가 아는 tasty 의 전부다. App/View 는 안
-# 본다(docs/adr/0331-...): OS 신호가 App 에서 무엇이 되는지는 부르는 쪽이 정한다.
+# 본다(docs/adr/0601-crate-dependency-boundaries.md): OS 신호가 App 에서 무엇이 되는지는 부르는 쪽이 정한다.
 tasty-i18n = { path = "../tasty-i18n" }
 tasty-settings = { path = "../tasty-settings" }
 tasty-utils = { path = "../tasty-utils" }

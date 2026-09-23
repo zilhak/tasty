@@ -869,7 +869,7 @@ impl ShutdownOutcome {
     /// ★ 그 짝은 **저장소 전역 관례가 아니다.** 같은 이름의 필드가 여러 곳에 있고 값의
     /// 모양이 서로 다르다 — `agent-stream` 은 `stream:` 을 앞에 붙인 이름공간 토큰
     /// (`turn_end{reason=stream:turn_timeout}`)을 쓰고, `hook-failures.log` 의 `reason`
-    /// 은 애초에 **산문**이라 언어까지 갈린다(`docs/adr/0164-…`). 그래서 "reason 은 늘
+    /// 은 애초에 **산문**이라 언어까지 갈린다(`docs/dev-guide/cli-structure.md#에이전트-훅-전달-실패-기록`). 그래서 "reason 은 늘
     /// 맨 토큰" 으로 일반화한 관측자는 그런 자리에서 조용히 0 을 센다.
     ///
     /// ★ 위는 **본보기이지 명부가 아니다** — 수를 안 적는 이유가 그것이다. 갈래를 세어

@@ -64,8 +64,8 @@ DECOM(6)은 절대 커서 위치를 스크롤 영역 기준으로 해석하고, 
 | 시퀀스 | 응답·동작 |
 |---|---|
 | DSR/CPR | 상태·커서 위치 응답 |
-| DA1 / DA2 / DA3 | `CSI ?1;2c` / `CSI >0;10;0c` / `DCS !|54415354 ST` |
-| XTVERSION | `DCS >|tasty(<ver>) ST`; 버전은 tasty-terminal 크레이트 기준 |
+| DA1 / DA2 / DA3 | `CSI ?1;2c` / `CSI >0;10;0c` / `DCS !\|54415354 ST` |
+| XTVERSION | `DCS >\|tasty(<ver>) ST`; 버전은 tasty-terminal 크레이트 기준 |
 | XtGetTcap | 요청별로 `DCS 0+r <hexcap> ST`. 능력 DB가 없어 현재 미지원임을 알리고 요청 hex를 그대로 돌려준다. |
 | XTWINOPS | 셀 크기 `18 t`→`CSI 8;rows;cols t`, `19 t`→`CSI 9;rows;cols t`. 제목 push/pop `22/23 t`는 단일 제목과 최대 64개 항목을 사용한다. |
 | OSC 8 | 이후 출력 셀에 하이퍼링크 URI를 붙이고 빈 URI로 해제한다. DECSTR/RIS도 속성을 초기화한다. |
