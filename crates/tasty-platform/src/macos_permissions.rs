@@ -370,6 +370,7 @@ pub enum FullDiskAccess {
 
 /// 경로별 프로브 결과에서 판정을 뽑는 **순수** 규칙. `None` 이 열림, `Some(kind)` 가
 /// 그 오류로 실패했다는 뜻이다.
+#[cfg(any(test, all(target_os = "macos", feature = "gui")))]
 fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAccess {
     if probes.iter().any(Option::is_none) {
         FullDiskAccess::Granted
@@ -387,6 +388,7 @@ fn decide_full_disk_access(probes: &[Option<std::io::ErrorKind>]) -> FullDiskAcc
 /// 앱 identity 가 바뀌거나, 사용자가 회수하거나, `tccutil reset`) 영영 조용해진다 —
 /// 파일 pre-warm 이 "첫 실행" 플래그를 두지 않는 것과 같은 이유다(모듈 최상단 참고).
 /// 대신 매 부팅 상태를 다시 재고, 승인이 있으면 저절로 안 뜬다.
+#[cfg(any(test, all(target_os = "macos", feature = "gui")))]
 fn should_show_fda_notice(access: FullDiskAccess) -> bool {
     matches!(access, FullDiskAccess::Denied)
 }

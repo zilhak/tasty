@@ -312,7 +312,6 @@ impl Default for GeneralSettings {
             explorer_view_mode: "detail".to_string(),
             #[cfg(target_os = "macos")]
             option_as_meta: false,
-            #[cfg(target_os = "macos")]
             alt_display_style: "alt".to_string(),
             option_display_style: "option".to_string(),
             shift_display_style: "shift".to_string(),
