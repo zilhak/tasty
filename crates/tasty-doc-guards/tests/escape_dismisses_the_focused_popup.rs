@@ -1,28 +1,9 @@
-//! Escape 가 **포커스된 host popup** 을 푸는 경로의 순서와 위치를 고정한다.
-//!
-//! 왜 순서를 고정하나: `try_consume_escape_key` 안에 소비자가 셋이고 앞의 둘
-//! (`settings_open_requested` · `notifications`)은 **포커스와 무관하게** 먹는다. 셋째
-//! (포커스된 popup 일반)를 앞으로 올리면 그 둘의 동작이 바뀐다 — 다른 popup 이 포커스를
-//! 가진 동안 Escape 가 그리로 가버려, 대기 중인 설정 열기 요청도 열려 있는 notifications 도
-//! Escape 를 못 받는다. 순서가 곧 의미라 여기에 박아 둔다.
-//!
-//! ★ 첫째를 "Escape 가 설정 창을 닫는다" 로 읽지 마라. 그 조건은 **열기 요청 래치**이고
-//! (`src/view/main/redraw.rs` 가 같은 프레임에 소비해 false 로 되돌린다), 설정 모달이 실제로
-//! 떠 있는 동안은 false 다 — 그 사이 메인 창은 `KeyboardInput` 자체를 안 받는다
-//! (`src/view/main.rs` 의 모달 분기). 즉 Escape 로 설정 **모달**을 닫는 경로는 어디에도
-//! 배선돼 있지 않다. 이 문단은 한때 그 래치를 "열려만 있으면 먹는다" 라고 적어 두었고,
-//! 그래서 없는 배선을 있다고 읽게 만든 적이 있다 — 판정기의 근거문이 다음 사람의 좌변이
-//! 된다.
-//!
-//! 왜 위치를 고정하나: 이 경로가 **오버레이 게이트보다 앞**에 있어야만 탈출구가 된다.
-//! 게이트 뒤로 내려가면 포커스된 popup 이 자기 자신을 푸는 키까지 막는다.
-//!
-//! 동작 자체(무엇이 대상인가 · 무엇이 대상이 아닌가)는 `adapters::ui::popup` 의 단위
-//! 테스트가 잡는다. 여기는 그 함수가 **어디서 어떤 순서로 불리는가**만 본다.
+//! Escape 처리에서 설정 열기 요청·알림·포커스된 팝업의 순서를 확인한다.
+//! 앞의 두 분기는 포커스와 무관하게 처리하므로 일반 팝업 처리보다 먼저 있어야 한다.
+//! settings_open_requested는 열기 요청 상태다. 이미 열린 설정 모달을 Escape로 닫는 경로를 뜻하지 않는다.
+//! 팝업이 키 입력을 막기 전에 Escape를 처리하도록 오버레이 검사보다 앞에 있어야 한다.
+//! 여기서는 호출 위치·순서만 확인하며 대상 선택 동작은 adapters::ui::popup의 단위 테스트가 확인한다.
 
-/// 뿌리는 `tasty_doc_guards::repo_root()` 로 얻는다. `CARGO_MANIFEST_DIR` 은 이 타깃이 사는
-/// 패키지를 가리키므로, 그대로 쓰면 **읽을 파일의 뿌리가 이 파일과 함께 움직인다** — 여기서는
-/// 대조 대상(`src/view/main/keyboard.rs`)을 통째로 못 찾는 형태가 된다.
 fn read(rel: &str) -> String {
     let p = tasty_doc_guards::repo_root().join(rel);
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
@@ -34,7 +15,6 @@ fn only_at(hay: &str, needle: &str, what: &str) -> usize {
     hay.find(needle).unwrap()
 }
 
-/// 두 유일한 표지 사이를 자른다 — 함수 몸통으로 범위를 좁히는 데 쓴다.
 fn between<'a>(hay: &'a str, start: &str, end: &str) -> &'a str {
     let a = only_at(hay, start, "범위 시작 표지");
     let b = only_at(hay, end, "범위 끝 표지");
@@ -47,17 +27,10 @@ fn between<'a>(hay: &'a str, start: &str, end: &str) -> &'a str {
 
 const KEYBOARD: &str = "src/view/main/keyboard.rs";
 
-/// 세 소비자의 순서 — settings → notifications → 포커스된 popup 일반.
 #[test]
 fn the_three_escape_consumers_keep_their_order() {
     let src = read(KEYBOARD);
-    // ★ 파일 전체에서 찾지 않고 먼저 그 함수의 몸통으로 좁힌다. 두 경계는 각각 유일하다.
-    //
-    // 한때 이 조건문이 이 파일에 **두 곳** 있었다(다른 하나는 double-tap 경로의 삼킴이었고,
-    // 근거가 없어 지웠다 — `src/view/main/keyboard.rs`). 지금은 한 곳뿐이다. 그래도 좁히는
-    // 것을 유지한다: **개수는 이 좁힘의 근거가 아니다.** 근거는 이 시험이 재는 것이
-    // "Escape 소비자 **셋의 순서**" 라는 것이고, 그 순서는 그 함수 몸통 안에서만 뜻이 있다.
-    // 개수를 근거로 삼으면 다시 둘이 될 때 사람이 좁힘을 걷어낸다.
+    // 다른 함수의 같은 조건문을 섞지 않도록 Escape 처리 함수 범위에서 순서를 비교한다.
     let body = between(
         &src,
         "fn try_consume_escape_key(",
@@ -86,12 +59,10 @@ fn the_three_escape_consumers_keep_their_order() {
     );
     assert!(
         notifications < general,
-        "포커스된 popup 일반 분기가 특례 둘보다 앞에 있다. 그러면 설정 창이 떠 있는 채로 \
-         다른 popup 이 포커스를 가질 때 Escape 가 설정을 안 닫는다 — 일반형은 **마지막**이다."
+        "일반 팝업 처리가 설정 열기 요청·알림 특례보다 앞에 있다. 두 특례가 포커스와 무관하게 먼저 처리되도록 순서를 유지한다."
     );
 }
 
-/// 그리고 그 셋 전부가 오버레이 게이트보다 **앞**에서 돈다.
 #[test]
 fn the_escape_path_runs_before_the_overlay_gate() {
     let src = read(KEYBOARD);
@@ -107,16 +78,11 @@ fn the_escape_path_runs_before_the_overlay_gate() {
     );
     assert!(
         escape_call < gate,
-        "Escape 소비가 오버레이 게이트 뒤로 내려갔다. 그러면 포커스된 popup 이 **자기를 푸는 \
-         키까지** 막아, 키보드만 쓰는 사용자에게 탈출구가 사라진다."
+        "Escape 처리가 오버레이 검사 뒤에 있어 팝업의 키 입력 차단에 걸릴 수 있다."
     );
 }
 
-/// 닫는 것은 `close_on_outside_click` 인 것뿐이다 — 바깥 클릭과 같은 의미여야 한다.
-///
-/// 이 단정이 지키는 것: Escape 가 popup 마다 새 정책을 만들지 않는다는 것. 조건 없이
-/// 닫으면 "바깥 클릭엔 안 닫히는데 Escape 엔 닫히는" popup 이 생기고, 그때부터 각
-/// popup 의 Escape 동작을 따로 판단해야 한다.
+/// 팝업의 닫기 여부를 바깥 클릭 정책과 맞춘다. 닫지 않는 팝업도 포커스는 해제해야 한다.
 #[test]
 fn escape_closes_only_what_an_outside_click_would_close() {
     let src = read(KEYBOARD);
@@ -128,11 +94,10 @@ fn escape_closes_only_what_an_outside_click_would_close() {
     let body = &src[start..start + 400];
     assert!(
         body.contains("set_focused(id, false)"),
-        "포커스를 놓지 않는다 — 그러면 게이트가 안 열려 탈출구가 아니다: {body}"
+        "팝업 포커스 해제가 없어 오버레이 입력 차단에서 벗어날 수 없다: {body}"
     );
     assert!(
         body.contains("if closes {"),
-        "닫기가 `close_on_outside_click` 로 갈리지 않는다. 조건 없이 닫으면 바깥 클릭과 \
-         의미가 갈라지고, 그때부터 popup 마다 Escape 정책을 따로 정해야 한다: {body}"
+        "팝업 닫기가 close_on_outside_click 조건을 따르지 않는다: {body}"
     );
 }

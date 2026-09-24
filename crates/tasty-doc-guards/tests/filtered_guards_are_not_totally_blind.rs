@@ -1,219 +1,36 @@
-//! `crossplatform-check.yml` 의 `paths-ignore` 뒤에 사는 스캔 가드 중, **읽는 경로가 전부
-//! 무시 대상인 것**이 없는지 본다.
+//! crossplatform-check의 경로 필터가 입력 전체를 제외하는 소스 검사를 찾는다.
+//! 별도의 필터 없는 호출이 해당 타깃·패키지를 포함하면 제외되지 않는 것으로 본다.
+//! 입력 일부만 필터에 걸리는 검사와 워크스페이스 의존 때문에 이동이 어려운 검사는 이유를 등록한다.
+//! 독립된 소스 검사 크레이트를 사용하는 이유는 ADR-0048에서 설명한다.
 //!
-//! ADR-0048 이 가른 것이 이 구분이다. 읽는 것이 전부 `docs/**` 인 가드는 **문서만 담은
-//! push 가 위반의 유일한 경로**라, 그 push 에서 워크플로가 안 뜨면 그 가드는 자기가
-//! 깨지는 그 순간에만 정확히 안 도는 형태가 된다(총체적 사각). 그런 가드 셋을
-//! `crates/tasty-doc-guards/tests/`(경로 필터 없는 `doc-guards.yml`)로 옮긴 것이 그
-//! 결정이고, 이 테스트는 **그 결정이 새 가드에도 계속 적용되는지**를 본다.
-//!
-//! 일부만 무시 대상인 것은 다르다 — 코드 쪽 위반이 여전히 잡히고 문서 쪽 위반도 다음
-//! 소스 push 에서 잡힌다. 그래서 옮기지 않고 [`PARTIALLY_FILTERED`] 에 사유와 함께
-//! 적어 둔다. 그 명부는 **양방향으로** 고정된다: 새로 생기면 실패하고, 사라졌는데
-//! 명부에 남아 있어도 실패한다.
-//!
-//! **덮는 채널이 있으면 사각이 아니다.** 읽는 것이 전부 무시 대상이어도, 경로 필터 없는
-//! 다른 워크플로가 그 타깃을 `--test <이름>` 으로 부르거나 `-p <패키지>` 로 그 패키지를
-//! 좁힘 없이 돌리면 그 push 에서 돈다. `tasty_doc_guards::workflow_triggers` 의
-//! `filter_free_coverage` 가 그 명부를 워크플로 파일에서 읽는다 — 손으로 든 명부는 낡는
-//! 순간 거짓 양성(이미 덮인 것을 옮기라고 한다)이 된다.
-//!
-//! ## 사각은 채널 층에만 있는 것이 아니다 — 순회 층에도 있다
-//!
-//! **잰 트리**: 기점 `12bc0f4b2` **+ 이 lane 의 커밋 1 개**(세 가이드 리더의 `read_dir` 를
-//! `panic` 으로 바꾼 것). 그 커밋의 lane tip 해시는 **임시 좌표**라 안 적는다 — 회차가
-//! 체리픽으로 착지하므로 lane tip 은 `main` 의 조상이 안 되고, 워크트리가 옮겨 가면
-//! 어느 ref 로도 안 잡힌다. 기점에서 그대로 잰 값은 아래 표에 따로 적었다. 2026-09-08.
-//!
-//! 위는 **그 push 에서 가드가 도는가**를 묻는다. 도는데도 못 보는 층이 하나 더 있다:
-//! 순회가 **한 갈래를 조용히 건너뛰는 것**. `let Ok(entries) = read_dir(..) else { return }`
-//! 은 권한·경합으로 한 디렉토리를 못 읽으면 그 하위를 통째로 뺀 채 초록을 낸다.
-//!
-//! 공용 순회 래칫(`scripts/check-shared-walk-ratchet.sh`)이 **그 기점에서 세던 직접
-//! `read_dir(` 56 건**을 실패 처리로 갈랐다(지금 값이 아니다 — 그 뒤로 그 래칫의
-//! 상한은 내려갔다):
-//!
-//! | 처리 | 기점 `12bc0f4b2` | + 내 커밋 1 |
-//! |---|---|---|
-//! | 삼킨다 (`else` 본문이 계속 진행) | 32 | 29 |
-//! | 안 삼킨다 (`unwrap`/`expect`/`panic!` — `else { panic!(..) }` 포함) | 23 | 26 |
-//! | 전파 (`?`) | 1 | 1 |
-//!
-//! ★ 이 표의 첫 판은 **38/17/1 → 35/20/1** 이었고 틀렸다. `let Ok(..) = .. else` 라는
-//! **철자**로 삼킴을 판정했는데, `else` 절이 `panic!` 인 자리가 여섯 있다. 지금 값은
-//! `else` 의 본문을 보는 판정기(`direct_walks_do_not_swallow_failure`)가 낸 것이고,
-//! 기점 열은 이 lane 이 옮긴 세 자리를 빼서 **산술로 유도했다 — 그 트리에서 다시 재지
-//! 않았다.**
-//!
-//! 그 표의 총합 56 은 안 움직인다 — 그 래칫은 **철자**를 세지 실패 처리를 안 본다. 셋이 옮겨간
-//! 것이 값으로 안 나오는 것이 이 절의 요점이다.
-//!
-//! 삼키는 29 는 22 개 타깃에 흩어져 있다. 그중 **12 개**를 부분 소실 변이
-//! (`entries.flatten()` → `entries.flatten().skip(1)` — 디렉토리마다 항목 하나가 조용히
-//! 빠진다)로 재니 **6 이 초록**이었다:
-//!
-//! - `headless_skip_names_are_exact` · `file_log_host_only_chokepoint` ·
-//!   `hook_failure_reason_stays_english` · `no_early_exit_consumer_in_shell_pipes` ·
-//!   `plugin_popup_close_chokepoint` — 하한도 갈래 확인도 없다
-//! - `no_emoji_in_source` — **`MIN_` 상수가 있는데도 못 잡는다.** 그 하한이 이 순회를
-//!   안 지킨다(다른 축의 모수다)
-//!
-//! 나머지 6 은 죽었고, 그중 둘(`no_hardcoded_ui_strings` · `cli_method_table_parity`)은
-//! 하한이 없는데도 다른 축이 잡았다. **정적으로 "짝이 있나" 를 보는 것은 근사고, 양쪽
-//! 방향으로 틀린다.**
-//!
-//! ★ 실패 처리와 부분 소실은 **다른 축이다.** 위 여섯 중 `hook_failure_reason_stays_english`
-//! 와 `no_early_exit_consumer_in_shell_pipes` 는 `else { panic!(..) }` 라 실패를 안 삼키는데도
-//! 부분 소실에는 조용했다 — `read_dir` 이 성공한 뒤 항목이 빠지는 것은 그 `panic` 이 볼 수
-//! 있는 사건이 아니다. 한 축을 닫아도 다른 축은 열려 있다.
-//!
-//! ### 여섯을 두 무리로
-//!
-//! **무리 A (5) — 짝이 아예 없다.** `headless_skip_names_are_exact` ·
-//! `file_log_host_only_chokepoint` · `hook_failure_reason_stays_english` ·
-//! `no_early_exit_consumer_in_shell_pipes` · `plugin_popup_close_chokepoint`.
-//! 처방은 **짝을 새로 붙이는 것** — 갈래 확인이 먼저다(갈래가 여럿이면 여유가 필요 없다).
-//!
-//! **무리 B (1) — 짝이 있는데 여유가 흡수한다.** `no_emoji_in_source` 는 하한 700 에
-//! 실측 **1294**, 여유 594(46%). `.skip(1)` 변이로 **1294 → 847**, 447 개(35%)가 사라져도
-//! 초록이었다. 모수가 다른 것이 아니라(둘 다 스캔 파일 수다) **여유가 삼킨 것**이다.
-//! 처방은 새 판정이 아니라 **그 상수의 값** — CLAUDE.md 의 "남는 여유가 곧 안 보는
-//! 구간이다" 의 실물이 이 자리다. 하한 여유의 정당화는 이 회차에 818 축이라 좌표만 남긴다:
-//! `no_emoji_in_source.rs` 의 `MIN_SCANNED_FILES`(= 700), 실측 1294.
-//!
-//! ★ 그래서 그 래칫의 상한은 **"여기까지는 봐준다" 가 아니라 "여기까지는 조용히
-//! 안 본다"** 다. 그 수를 내리는 길은 자리를 지우는 것만이 아니라 **삼키는 자리에 짝을
-//! 붙이는 것**이기도 하다 — 짝이 붙으면 그 자리는 세어져도 조용하지 않다.
-//!
-//! **안 쟀다**: 삼키는 25 타깃 중 **13**. `entries.flatten()` 형태가 아니라 이 변이가
-//! 안 붙는 자리와, 실행 시험 둘(`soak_memory` · `cli_stdout_broken_pipe`)이다.
-//!
-//! **면제를 디렉토리 이름으로 하지 않는다.** 한때 `crates/tasty-doc-guards/tests/` 를
-//! 상수로 건너뛰었는데, 그러면 그 자리의 채널이 사라져도 여기가 침묵한다 — 실측으로
-//! 확인했다(2026-09-05): 그 잡의 호출을 `--test` 하나로 좁히는 변이에서 그 디렉토리의
-//! 17 개가 실제로 눈멀었는데 이 판정은 초록이었다. 성질(덮이는가)로 물으면 그 변이에서
-//! 바로 갈린다. 채널 자체가 남아 있는지는 `filter_free_channel_still_exists` 가 따로 본다.
-//! 그래서 **여기서 옮기라는 요구가 나오면 그것은 옮길 자리다**: 그 타깃을 이름으로 부르는
-//! 필터 없는 잡이 하나도 없다는 뜻이다.
-//!
-//! **이 테스트가 답하지 못하는 것**: "그 창이 실제로 열렸나", 그리고 "0 이 깨졌나".
-//! push 단위 노출은 레포
-//! 안에서 셀 수 없다(어느 push 가 어떤 커밋을 묶었는지가 git 에 없다). 그 수는 필터
-//! 없는 워크플로의 run 목록으로만 재고, 재는 법과 실측은
-//! `docs/dev-guide/ci-gates.md` 의 인구조사 절에 있다. 여기서 보는 것은 **옮김을
-//! 강제하는 조건** — 읽는 경로가 전부 무시 대상이 되는 순간 — 하나다.
-//!
-//! 그 경계가 중요하다. 아래 [`PARTIALLY_FILTERED`] 를 "옮기지 않아도 된다" 로 만든 근거는
-//! **push 가 문서와 소스를 함께 묶어 왔다**는 관찰이고, 그것은 구조가 아니라 습관이다.
-//! 습관이 바뀌면 아무도 안 알리고 그 근거가 깨지는데 **이 가드는 그것을 못 본다** — 어느
-//! 커밋들이 한 push 였는지가 git 에 없기 때문이다. 그 축을 재는 법은 위 문서에 명령으로
-//! 적어 뒀고, 자동 채널은 없다.
+//! 판정은 소스의 읽기·프로세스 실행 표지와 경로 리터럴, use문을 바탕으로 한다.
+//! 실제 호출 그래프·동적 경로·링크 의존을 모두 알아내지는 못한다.
+//! 워크플로 실행 여부도 공유 파서의 모델에 따른다. 실제 push 묶음과 실행 기록은 검사하지 않는다.
+//! 경로 일부만 제외된 검사는 문서만 바꾼 push에서 실행되지 않을 수 있다.
+//! 디렉터리 읽기 실패와 성공 뒤의 일부 수집 누락은 별개 문제이며 이 검사가 둘을 보장하지는 않는다.
 
-// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
-//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
-//       `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+// 이유: 테스트의 반환값 무시는 제품 코드의 lint 예외 명부에 포함하지 않는다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::workflow_triggers::filter_free_coverage;
 
-/// 필터 뒤에 남는 것이 승인된 가드와 그 사유. **일부만** 무시 대상인 것만 온다.
+/// 입력 일부가 경로 필터에 걸리지만 현재 위치를 유지하는 검사와 근거.
 const PARTIALLY_FILTERED: &[(&str, &str)] = &[(
     "tests/cli_method_table_parity.rs",
-    "입력의 대부분이 crates/tasty-cli/src/** 라 코드 push 마다 돈다. \
-     문서 쪽(api-conventions.md) 위반도 다음 소스 push 에서 잡힌다.",
+    "코드 입력과 문서를 함께 대조한다. 문서만 바꾼 push에서는 생략될 수 있고 다음 소스 push에서 문서 오류를 검출한다.",
 )];
 
-/// 스캔 가드 모수의 하한. 스캔이 깨져 목록이 비면 "위반 0 건" 이 조용히 참이 된다.
-///
-/// 실측 51 (2026-09-05). 이 값이 34 였을 때는 `crates/tasty-doc-guards/tests/` 를
-/// 디렉토리 이름으로 건너뛰고 있었다 — 그 면제가 계산으로 바뀌면서 그 17 개도 모수에
-/// 들어왔다. 여유를 6 만 둔다: 하한이 실제보다 한참 낮으면 술어가 절반 죽어도 통과한다.
-///
-/// **판별식** — 이 수가 지금도 옳은지는 이 시험 자신이 답한다. 단정 앞에서 실측값을 찍게
-/// 해 뒀으므로 그 줄이 곧 계기다:
-///
-/// ```text
-/// cargo test -p tasty-doc-guards --test filtered_guards_are_not_totally_blind -- --nocapture
-///   → [필터 뒤 스캔 가드] <실측> · 하한 45
-/// cargo test -p tasty-doc-guards --test filter_free_channel_still_exists -- --nocapture
-///   → [필터 없는 채널] 순수 스캔 가드 <실측> · 하한 12
-/// ```
-///
-/// ★ **두 수는 산술로 묶여 있다.** 이 모수는 위 09-05 서술대로
-/// `crates/tasty-doc-guards/tests/` 의 가드를 포함하고, 그 부분집합의 크기가 형제 가드의
-/// `MIN_GUARDED` 실측이다. 09-05 에는 51 = 34 + 17 이었다.
-/// **두 수를 나란히 읽어야 어느 쪽이 움직였는지 갈린다** — 이 수만 보면 doc-guards 안이
-/// 늘었는지 밖이 늘었는지 구별되지 않는다.
-///
-/// 실측 2026-09-07(base `4d5af2e05`): 이 수 **72** ·
-/// 형제 **53** ⇒ 밖 19. 직전 기록은 72 · 51 ⇒ 밖 21 이었다.
-/// 이 수(합)는 **이동으로 안 움직인다** — 가드가 다른 디렉토리로 옮겨져도 여전히
-/// 스캔 가드이기 때문이다. 그래서 이 수가 움직였으면 원인은 이동이 아니라 신설·삭제다.
-///
-/// ★★ 그래서 지금 **여유가 17 이고, 이 주석이 스스로 정한 6 을 넘는다.** 위 문장이
-/// "하한이 실제보다 한참 낮으면 술어가 절반 죽어도 통과한다" 고 적은 바로 그 상태다.
-/// 값을 올릴지는 이 자리의 결정이 아니라 하한 조이기라는 별개 축이므로 **여기서는 실측만
-/// 남긴다** — 고칠 사람은 위 두 명령을 그대로 돌려 두 수를 함께 보고 정해라.
-///
-/// **이 수를 내려서 초록을 만들지 마라.** 내리면 아래 `blind.is_empty()` 가 모수가 줄어든
-/// 만큼 조용히 약해진다 — 색은 그대로인데 지키는 범위가 준다.
-///
-/// 정당한 수선: 가드를 실제로 지웠거나 필터 밖으로 옮겼으면 이 수를 함께 내려라. 그때
-/// **형제 수도 같이 재라** — 한쪽만 움직였으면 옮긴 것이고, 둘 다 줄었으면 지운 것이다.
+/// 2026-09-05 실측51개를 기준으로 둔 하한45다. 이후 검사 추가로 여유가 커졌다.
+/// 일부 누락은 통과할 수 있으므로 미달 시 실제 파일 감소와 분류 오류를 구별한다.
 const MIN_SCANNED: usize = 45;
 
-/// 필터 뒤에서 문서를 읽으면서 **워크스페이스 크레이트를 링크하는** 가드와 그 사유.
-///
-/// 이 부류가 따로 있는 이유는 이동 비용이 다르기 때문이다. 의존 0 인 가드는 그냥
-/// [`FILTER_FREE_DIR`] 로 옮기면 되지만, 크레이트 상수를 **런타임 값으로** 읽는 가드는
-/// 그 크레이트를 링크해야 해서 의존 0 인 그 자리에 못 들어간다(ADR-0048 이 그 크레이트를
-/// 의존 0 으로 유지하는 것이 결정의 전제다).
-///
-/// **그 의존 0 에 값이 붙은 사례가 있다 (2026-09-07, `de0572359`).** 그날까지
-/// `crates/tasty-host-plugin/build.rs` 가 **없는 것이 정상 상태인 파일**에
-/// `rerun-if-changed` 를 걸어 두어, cargo 가 그 build script 를 언제나 stale 로 보고
-/// 무변화 `cargo build` 마다 host-plugin → cli → 본체를 다시 컴파일하고 전 타깃을
-/// relink 했다(무변화 빌드 실측 37~44 초 → 수리 뒤 0.24 초). 이 크레이트는 의존이 0 이라
-/// 그 사정거리 **밖**이었다 — 같은 기간에 판정기 재빌드는 계속 0.1 초대였다.
-/// 즉 여기서 지키는 성질은 채널 배치만이 아니라 **재빌드 비용의 격리**이기도 하다.
-/// 수치는 낡는다(docs/documentation-model.md) — 요지는 값이 아니라 그 격리가 관측됐다는 사실이다.
-///
-/// **그 부류는 비어 가는 중이다.** 한때 셋이었고(`cli_method_table_parity` ·
-/// `permission_free_methods_docs_parity` · `contributes_gate_docs_parity`) 지금 하나다 —
-/// 나머지 둘은 상수를 **소스 텍스트로 읽고** 판독이 진짜 값과 갈리는 위험을 본체 패키지의
-/// 교차 대조 가드가 받는 길로 옮겨졌다. 이 명부는 그 방향이 **되감기지 않게** 하는 래칫이다:
-/// 새로 생기면 실패하고, 없어졌는데 남아 있어도 실패한다.
-///
-/// [`PARTIALLY_FILTERED`] 와 겹칠 수 있지만 묻는 것이 다르다 — 저쪽은 "필터에 얼마나
-/// 노출됐나", 이쪽은 "옮기려면 무엇을 먼저 해야 하나" 다.
-///
-/// ★ **이동 가능의 정의 — 이 명부가 쓰는 판별식이다.**
-///
-/// ```text
-/// 이동 가능 = 컴파일 가능 ∧ 그 타깃을 이름으로 부르는 채널이 없다
-/// ```
-///
-/// 앞의 연언지만 보고 명부를 만들면 **틀린다.** 실측으로 그렇게 됐다: 이 명부를 처음
-/// 낼 때 나는 "이동 가능" 을 컴파일 가능성 하나로 정의했고, 그래서 `changelog_unreleased`
-/// 를 옮길 수 있는 것으로 셌다. 그 타깃은 새 자리에서 **컴파일도 되고 초록도 난다** —
-/// 그런데 `test.yml` 의 `semver-guards` 잡이 그 이름을 `--test` 로 부르므로, 옮기는
-/// 순간 그 잡이 없는 타깃을 부르며 죽는다. 그래서 ADR-0048 이 그 자리를 "안 옮긴다" 로
-/// 이미 판정해 뒀고, 지금은 **영구 제외**다.
-///
-/// 뒤의 연언지가 묻는 것은 두 층이다:
-///
-/// - **이름이 불리는가** — `.github/workflows/**` 와 `.githooks/pre-commit` 을 전부
-///   훑어 `--test <이름>` 을 찾는다. 필터 있는 채널도 센다: 필터는 그 잡이 **언제**
-///   도는지를 정할 뿐, 돌 때 없는 타깃을 부르면 똑같이 죽는다.
-/// - **짝이 맞는가** — 부르는 자리는 `--test <이름>` 만이 아니라 `(패키지, 타깃)` **짝**
-///   이다. 옮기면 패키지가 바뀌므로 `-p` 도 같은 자리에서 함께 고쳐야 한다. 이름만 고치고
-///   `-p` 를 두면 그 채널은 조용히가 아니라 시끄럽게 깨지지만, 깨지는 자리가 이동
-///   커밋에서 멀어진다.
-///
-/// 이 정의는 **컴파일해 보는 것으로 답이 안 나온다.** 컴파일은 첫째 연언지만 답하고,
-/// 둘째 연언지는 워크플로·훅이라는 다른 파일에 산다.
+/// 문서를 읽으며 워크스페이스 크레이트를 use하는 검사와 이동 제약.
+/// 제품 크레이트를 링크하면 의존 없는 doc-guards로 그대로 옮길 수 없다.
+/// 소스 판독으로 대체할 경우 실제 런타임 값과 별도 대조가 필요하다.
+/// 이동 전 워크플로·훅의 (패키지, 테스트 타깃) 호출도 함께 확인한다.
+/// 명부는 실제 분류와 양방향으로 대조한다.
 const DEP_BEARING: &[(&str, &str)] = &[(
     "tests/cli_method_table_parity.rs",
     "tasty_ipc 의 METHOD_TABLE·method_meta·DEBUG_METHODS 를 런타임 값으로 읽는다. \
@@ -223,11 +40,10 @@ const DEP_BEARING: &[(&str, &str)] = &[(
 
 const WORKFLOW: &str = ".github/workflows/crossplatform-check.yml";
 
-/// 필터 없는 채널을 가진 자리 — 여기 사는 가드는 이 판정의 대상이 아니다.
+/// 필터 없는 실행을 확보할 이동 대상. 이 경로 자체를 검사에서 면제하지는 않는다.
 const FILTER_FREE_DIR: &str = "crates/tasty-doc-guards/tests";
 
-/// 워크플로의 `paths-ignore` 목록을 읽는다. 못 읽으면 **실패한다** — 목록을 못 읽은 채
-/// "무시 대상이 없다" 로 진행하면 모든 가드가 통과로 분류된다.
+/// 필터를 읽지 못한 경우와 빈 필터를 같게 취급하지 않도록 실패시킨다.
 fn ignore_globs(root: &Path) -> Vec<String> {
     let text = std::fs::read_to_string(root.join(WORKFLOW))
         .unwrap_or_else(|e| panic!("read {WORKFLOW}: {e}"));
@@ -249,22 +65,12 @@ fn ignore_globs(root: &Path) -> Vec<String> {
     }
     assert!(
         !out.is_empty(),
-        "{WORKFLOW} 에서 paths-ignore 를 읽지 못했다 — 형식이 바뀌었거나 필터가 사라졌다. \
-         둘 다 이 테스트의 전제가 무너진 것이라 통과로 읽지 않는다"
+        "{WORKFLOW}에서 paths-ignore를 읽지 못했다. 필터 삭제와 형식 변경을 구별해 검사 전제를 확인한다."
     );
     out
 }
 
-/// 경로 필터 **없이** push 마다 도는 워크플로가 `--test <이름>` 으로 지목하는 타깃.
-///
-/// 이런 타깃은 읽는 것이 전부 무시 대상이어도 사각이 아니다 — `crossplatform-check` 가
-/// 안 떠도 그 워크플로가 뜬다. `changelog_unreleased` 가 그 형태이고, ADR-0048 이 그
-/// 이유로 옮기지 않기로 한 자리다. 명부를 손으로 들지 않는 이유는 명부가 낡으면
-/// 그 순간 거짓 양성(옮기라는 요구)이나 거짓 음성(덮인 줄 아는 사각)이 되기 때문이다 —
-/// 워크플로 파일이 답을 갖고 있으므로 거기서 읽는다.
-///
-/// **`workflow_dispatch` 전용 잡은 세지 않는다.** 사람이 눌러야만 도는 것은 채널이
-/// 아니다. 잡 경계는 두 칸 들여쓴 `<이름>:` 으로 가른다.
+/// 이 검사에서 쓰는 경로 접두어·확장자 glob 형태만 판독한다.
 fn is_ignored(path: &str, globs: &[String]) -> bool {
     globs.iter().any(|g| match g.strip_suffix("/**") {
         Some(prefix) => path.starts_with(prefix) && path[prefix.len()..].starts_with('/'),
@@ -275,8 +81,7 @@ fn is_ignored(path: &str, globs: &[String]) -> bool {
     })
 }
 
-/// 레포 상대 경로처럼 보이는 문자열 리터럴만 뽑는다. 최상위 디렉토리 이름으로 시작하는
-/// 것만 세므로, 메시지 안의 산문이나 메서드 이름은 걸리지 않는다.
+/// 경로 리터럴로 읽을 저장소 최상위 접두어.
 const TOP_DIRS: &[&str] = &[
     "docs/", "site/", "src/", "crates/", "scripts/", ".github/", "tests/", "assets/", "lang/",
 ];
@@ -291,11 +96,7 @@ fn path_literals(root: &Path, src: &str) -> BTreeSet<String> {
             out.insert(part.to_string());
             continue;
         }
-        // 레포 **최상위** 파일은 앞에 디렉토리가 없어 위 판정에 안 걸린다 — `CHANGELOG.md`
-        // 가 그 형태이고 `**/*.md` 무시 대상이다. 아직 실현된 사각은 아니다(지금 그 가드는
-        // `crates/…/CHANGELOG.md` 도 함께 읽어 위 판정에 걸린다). 다만 루트 파일 **하나만**
-        // 읽는 가드가 생기면 그때는 조용히 통과한다 — 변이로 확인했다.
-        // 픽스처 이름("charlie.md")과 가르는 것은 **레포에 실재하는가** 하나다.
+        // 디렉터리 접두어가 없는 루트 파일은 실제로 존재할 때만 포함해 가상 예시와 구별한다.
         if !part.contains('/') && part.contains('.') && root.join(part).is_file() {
             out.insert(part.to_string());
         }
@@ -303,12 +104,8 @@ fn path_literals(root: &Path, src: &str) -> BTreeSet<String> {
     out
 }
 
-/// 레포 파일을 런타임에 읽고 프로세스는 안 띄우는 통합 타깃 — `ci-gates.md` 의 인구조사와
-/// 같은 판별식이다.
+/// 파일 읽기 표지가 있고 프로세스 실행 표지가 없는 소스를 분류한다. 실제 호출을 분석하지는 않는다.
 fn is_pure_source_scan(src: &str) -> bool {
-    // 루트를 어떻게 얻는지로 세지 않는다 — `changelog_unreleased` 는 상대 경로로 읽어
-    // 이 술어의 옛 형태(`CARGO_MANIFEST_DIR || repo_root()`)에서 **모수 자체에 없었다.**
-    // 모수 밖은 위반 0 으로도 안 보이고 아예 안 보인다. 읽는 **행위**로 센다.
     let reads = src.contains("CARGO_MANIFEST_DIR")
         || src.contains("repo_root()")
         || src.contains("read_to_string")
@@ -324,9 +121,7 @@ fn is_pure_source_scan(src: &str) -> bool {
     reads && !spawns
 }
 
-/// `crates/` 의 디렉토리 이름에서 워크스페이스 크레이트의 **crate 이름**을 만든다
-/// (하이픈이 언더스코어가 된다). 손 명부를 두지 않으려는 것이다 — 크레이트가 늘면
-/// 이 목록도 같이 는다.
+/// 매니페스트가 있는 디렉터리 이름의 하이픈을 밑줄로 바꿔 크레이트 식별자로 사용한다.
 fn workspace_crate_idents(root: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let Ok(entries) = std::fs::read_dir(root.join("crates")) else {
@@ -340,8 +135,7 @@ fn workspace_crate_idents(root: &Path) -> BTreeSet<String> {
     out
 }
 
-/// 이 타깃이 링크하는 워크스페이스 크레이트. `tasty_doc_guards` 자신은 세지 않는다 —
-/// 그것이 의존 0 인 자리라 이동을 막지 않는다.
+/// use문에서 찾은 워크스페이스 크레이트. doc-guards 자체는 이동을 막는 의존으로 세지 않는다.
 fn linked_crates(src: &str, idents: &BTreeSet<String>) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for line in src.lines() {
@@ -383,9 +177,7 @@ fn integration_targets(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// 이 통합 타깃이 속한 패키지 이름. 커버리지 판정이 `-p <패키지>` 를 보기 때문에
-/// 필요하다. 디렉토리 이름이 아니라 **매니페스트의 `name`** 을 읽는다 — 둘이 같은 것은
-/// 이 레포의 관례일 뿐 규칙이 아니고, 갈리면 덮인 타깃을 안 덮인 것으로 센다.
+/// 상위 매니페스트에서 패키지 이름을 읽는다. 디렉터리명이 패키지명과 같다고 가정하지 않는다.
 fn package_of(root: &Path, target: &Path) -> String {
     let mut dir = target.parent();
     while let Some(d) = dir {
@@ -424,11 +216,10 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
     let covered = filter_free_coverage(&root.join(".github/workflows")).unwrap_or_else(|bad| {
         panic!("`on:` 을 못 읽은 워크플로가 있다 — 판정 불가는 통과가 아니다: {bad:?}")
     });
-    // 한쪽만 비는 것은 정상 설정일 수 있다 — 통째로 비는 것만 판독 고장으로 본다.
+    // 타깃 목록이나 패키지 목록 중 한쪽만 비는 구성도 가능하다.
     assert!(
         !covered.named.is_empty() || !covered.packages.is_empty() || covered.whole_workspace,
-        "필터 없는 채널을 하나도 못 읽었다 — 판독이 깨졌다. 그대로 두면 이미 덮인 가드를 \
-         '옮겨라' 로 잡는다"
+        "필터 없는 실행 경로를 읽지 못했다. 실제 호출과 파서를 확인한 뒤 이동 여부를 판단한다."
     );
 
     let idents = workspace_crate_idents(&root);
@@ -448,7 +239,6 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
         if paths.is_empty() {
             continue;
         }
-        // 문서를 읽으면서 크레이트를 링크하면 의존 0 인 자리로 그냥 못 옮긴다.
         if paths
             .iter()
             .any(|p| p.starts_with("docs/") || p.ends_with(".md"))
@@ -460,12 +250,7 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
         if ignored.is_empty() {
             continue;
         }
-        // 필터 없는 채널이 이 타깃을 덮으면 이 필터 뒤에 있어도 사각이 아니다.
-        // **이름으로 면제하지 않는다.** 한때 `crates/tasty-doc-guards/tests/` 를 상수로
-        // 건너뛰었는데, 그러면 그 디렉토리의 채널이 사라져도 여기가 침묵한다 — 실측으로
-        // 확인했다(2026-09-05): 그 잡의 호출을 `--test` 하나로 좁히는 변이에서 그 17 개가
-        // 실제로 눈멀었는데 이 판정은 초록이었다. 지금은 `--test <이름>` 과
-        // `-p <패키지>` 를 함께 읽어 덮임을 **계산**한다.
+        // 디렉터리 위치로 면제하지 않고 필터 없는 타깃·패키지 호출이 있는지 확인한다.
         let stem = file
             .file_stem()
             .map(|x| x.to_string_lossy().to_string())
@@ -488,24 +273,15 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
         }
     }
 
-    // 측정값은 단정보다 **앞에**. 이 수는 형제 가드
-    // (`filter_free_channel_still_exists` 의 `MIN_GUARDED`)와 산술로 묶여 있어서,
-    // 둘을 나란히 읽을 수 있어야 어느 쪽이 움직였는지 갈린다.
     println!("[필터 뒤 스캔 가드] {scanned} · 하한 {MIN_SCANNED}");
     assert!(
         scanned >= MIN_SCANNED,
-        "필터 뒤 순수 스캔 가드를 {scanned} 개밖에 못 셌다 — 스캔이 깨졌다. \
-         모수가 줄면 '위반 0 건' 은 언제나 참이다"
+        "소스 검사를 {scanned}개만 수집했다. 수집 범위와 분류를 확인한다."
     );
 
     assert!(
         blind.is_empty(),
-        "아래 가드는 읽는 경로가 **전부** `{WORKFLOW}` 의 paths-ignore 안이라, 자기가 \
-         깨질 수 있는 유일한 종류의 push(문서만 담은 push)에서 워크플로가 뜨지 않는다. \
-         `{FILTER_FREE_DIR}` 로 옮겨라 — 그 자리의 doc-guards.yml 은 경로 필터가 없다 \
-         (ADR-0048). 크레이트 상수를 링크해야 해서 못 옮기겠으면, 그 상수를 소스 텍스트로 \
-         읽는 길이 이미 있다(`tasty_doc_guards::method_table` 와 그 판독을 런타임 열거와 \
-         대조하는 `tests/method_table_readings_agree.rs`):\n{}",
+        "다음 검사의 경로 리터럴은 모두 {WORKFLOW}의 paths-ignore에 속하고 별도 실행도 찾지 못했다:\n{}\n입력만 바꾼 push에서도 검사하도록 {FILTER_FREE_DIR}로 옮기거나 필터 없는 호출을 구성한다(ADR-0048). 런타임 상수를 소스 판독으로 대체한다면 실제 값과의 대조 검사도 필요하다.",
         blind.join("\n")
     );
 
@@ -531,11 +307,7 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
     let dep_stale: Vec<&String> = dep_declared.difference(&dep_bearing).collect();
     assert!(
         dep_added.is_empty(),
-        "필터 뒤에서 문서를 읽으면서 워크스페이스 크레이트를 링크하는 가드가 새로 생겼다. \
-         그 형태는 의존 0 인 `{FILTER_FREE_DIR}` 로 옮길 수 없어 필터 뒤에 갇힌다. \
-         상수를 **소스 텍스트로 읽고** 판독을 런타임 열거와 대조하는 길이 이미 있다 \
-         (`tasty_doc_guards::method_table` + `tests/method_table_readings_agree.rs`) — \
-         그 길로 가거나, 못 가는 이유를 `DEP_BEARING` 에 사유와 함께 등재해라:\n  {}",
+        "문서를 읽고 워크스페이스 크레이트를 사용하는 검사가 추가됐다:\n  {}\n의존 없는 {FILTER_FREE_DIR}로 옮기려면 소스 판독과 런타임 값 대조로 분리하거나, 현재 위치가 필요한 이유를 DEP_BEARING에 등록한다.",
         dep_added
             .iter()
             .map(|s| s.as_str())
@@ -544,9 +316,7 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
     );
     assert!(
         dep_stale.is_empty(),
-        "`DEP_BEARING` 에 있는데 실제로는 그 형태가 아니다 — 링크를 끊었으면 명부에서 \
-         지워라. 이 명부는 그 부류가 다시 커지는 것을 막는 래칫이라, 실제보다 넓으면 \
-         다음에 진짜가 생겨도 이미 등재된 것으로 읽힌다:\n  {}",
+        "DEP_BEARING의 분류와 실제 소스가 다르다. 의존을 제거했다면 항목도 지운다:\n  {}",
         dep_stale
             .iter()
             .map(|s| s.as_str())
@@ -556,9 +326,7 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
 
     assert!(
         stale.is_empty(),
-        "`PARTIALLY_FILTERED` 에 있는데 실제로는 그 형태가 아니다 — 옮겼거나 입력이 \
-         바뀌었으면 명부에서 지워라. 명부가 실제보다 넓으면 다음에 진짜가 생겨도 \
-         이미 등재된 것으로 읽힌다:\n  {}",
+        "PARTIALLY_FILTERED의 분류와 실제 입력이 다르다. 이동하거나 입력을 바꿨다면 명부를 갱신한다:\n  {}",
         stale
             .iter()
             .map(|s| s.as_str())
@@ -567,19 +335,9 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
     );
 }
 
-/// [`MIN_SCANNED`] 의 **양성 대조** — 이 수가 죽는 경로 **둘 다**를 건다.
-///
-/// 이 수는 누적 변수처럼 보이지만 실은 두 함수의 합성이다:
-/// `integration_targets(root)` 가 모수를 뽑고 `is_pure_source_scan(src)` 가 그중 셀 것을
-/// 고른다. **둘 다 이미 인자를 받으므로 꺼낼 것이 없다** — 처음에 이 자리를 "루프 누적이라
-/// 인위 축소 지점이 없다" 로 분류했는데, 그것은 누적 변수의 **선언 자리**를 보고 값이
-/// **어디서 오는지**를 안 본 것이었다.
-///
-/// 순회가 죽으면 수가 떨어지고(하한이 본다), 술어가 느슨해지면 수가 **는다**(하한이 못 본다).
-/// 그래서 아래 둘째 묶음이 필요하다 — 하한만으로는 그 방향을 영영 못 본다.
+/// 수집 누락은 수를 줄이고 잘못된 분류는 수를 늘릴 수도 있어 두 방향을 각각 검증한다.
 #[test]
 fn the_scanned_floor_sees_both_ways_it_can_die() {
-    // ① 순회 — 빈 뿌리에서 0 이어야 한다.
     let root = std::env::temp_dir().join(format!(
         "tasty-scannedfloor-{}-{}",
         std::process::id(),
@@ -594,23 +352,20 @@ fn the_scanned_floor_sees_both_ways_it_can_die() {
         "빈 뿌리에서 0 이 아니면 이 순회는 입력을 안 보는 것이다"
     );
 
-    // 비영 대조 — 이 순회가 언제나 0 을 내는 것은 아니다.
     std::fs::write(root.join("tests/a.rs"), "").expect("쓰기 실패");
     assert_eq!(
         integration_targets(&root).len(),
         1,
-        "타깃을 못 세면 위 0 은 순회가 늘 죽어 있다는 뜻이라 아무것도 안 지킨다"
+        "합성 타깃을 수집하지 못했다"
     );
 
-    // ② 술어 — 굳으면 수가 **늘어서** 하한을 더 여유롭게 통과한다.
     assert!(
         is_pure_source_scan("let s = std::fs::read_to_string(p);"),
         "레포를 읽는 소스를 놓치면 이 수가 실제보다 작아진다"
     );
     assert!(
         !is_pure_source_scan("Command::new(\"tasty\"); read_to_string(p);"),
-        "인스턴스를 띄우는 소스까지 세면 이 수가 부풀고, 부푼 만큼 하한이 무뎌진다 — \
-         하한은 늘어나는 방향을 보지 않으므로 이 칸이 유일한 방어다"
+        "프로세스 실행 표지가 있는 소스를 순수 소스 검사로 분류했다"
     );
     assert!(
         !is_pure_source_scan("fn main() {}"),

@@ -1,44 +1,29 @@
-//! 공유 로그 파일 개방을 host 경로 하나로 묶어두는 가드.
-//!
-//! 배경: `tasty` 바이너리는 GUI(host)와 CLI 클라이언트를 겸한다. 파일 tracing 레이어를
-//! 만들면서 로그 파일까지 함께 열면, 역할 판정(`cli_routing::parse_or_route`)이 그
-//! **뒤에** 오기 때문에 CLI 서브커맨드 한 번이 실행 중인 host 의 로그를 truncate 한다
-//! (실제로 그랬다 — [ADR-0043](../docs/adr/0043-cli-errors-and-diagnostic-logs.md)).
-//!
-//! 회귀는 조용하다: 컴파일도 되고 테스트도 통과하지만, 진단이 필요한 순간에 로그가
-//! 비어 있는 것으로만 드러난다. 그래서 "파일을 여는 지점은 host 확정 이후 한 곳뿐" 을
-//! 소스 수준에서 고정한다.
-//!
-//! 선례: `crates/tasty-doc-guards/tests/plugin_popup_close_chokepoint.rs`.
+//! 공유 로그 파일은 host로 역할을 결정한 뒤에만 열어야 한다.
+//! CLI도 같은 바이너리를 사용하므로 공통 초기화에서 열면 실행 중인 host의 로그를 덮어쓸 수 있다.
+//! 호출 위치와 분기를 소스에서 검사한다([ADR-0043](../../../docs/adr/0043-cli-errors-and-diagnostic-logs.md)).
 
 use std::path::{Path, PathBuf};
 
-/// 파일을 실제로 여는 함수의 정의 위치. 이 파일에서도 **정의 함수 본문 안** 만 허용한다
-/// — 파일 통째로 봐주면 `init()`(= 모든 프로세스가 탄다) 에서 부르는 것을 못 잡는다.
+/// 구현 파일 전체가 아니라 파일을 여는 함수 본문만 허용한다.
 const IMPL_FILE: &str = "crates/tasty-platform/src/crash_report.rs";
-/// 얇은 boot 래퍼. 여기도 위임 래퍼 함수 본문 안만 허용한다 — 파일 통째로 스킵하면
-/// 모든 프로세스가 타는 `init_crash_report()` 안에 호출 한 줄을 넣는 것만으로
-/// ADR-0043 이전 버그가 부활하는데 가드가 초록으로 남는다.
+/// boot 위임 래퍼도 해당 함수 본문만 허용한다.
 const WRAPPER_FILE: &str = "src/boot/os.rs";
-/// 유일한 호출처 — host 확정(`Routed::Gui`) 이후. 이 파일은
-/// [`the_call_site_sits_inside_the_host_arm`] 가 **분기 블록 내부인지**로 따로 검사한다.
+/// host 분기 안에 있는지 별도로 확인할 호출 파일.
 const CALL_SITE_FILE: &str = "src/boot.rs";
 
 const OPEN_FN: &str = "enable_host_file_log";
 
 fn repo_root() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
-    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
     tasty_doc_guards::repo_root()
 }
 
-/// 주석 줄인가 — 문서에서 이름을 언급하는 것은 호출이 아니므로 스캔에서 뺀다.
+/// 줄 시작의 주석 표지를 찾는다. 전체 Rust 문법은 해석하지 않는다.
 fn is_comment_line(line: &str) -> bool {
     let t = line.trim_start();
     t.starts_with("//") || t.starts_with('*')
 }
 
-/// 줄 끝 `//` 주석을 잘라낸다 — 중괄호 세기가 주석 속 괄호에 흔들리지 않게.
+/// 첫 // 뒤를 제거한다. 문자열 안의 //도 구별하지 않는다.
 fn strip_line_comment(line: &str) -> &str {
     match line.find("//") {
         Some(i) => &line[..i],
@@ -46,10 +31,7 @@ fn strip_line_comment(line: &str) -> &str {
     }
 }
 
-/// `header` 를 포함하는 첫 코드 줄부터 중괄호가 균형을 이루는 줄까지의 포함 범위.
-///
-/// 텍스트 위치 비교(`call > gui_arm`) 대신 이걸 쓴다 — 위치 비교는 `run()` 아래에
-/// 정의된 **어떤** 함수(CLI 경로인 `run_subcommand` 포함)에 호출을 옮겨도 통과한다.
+/// 헤더 이후 중괄호 깊이로 범위를 구한다. 단순한 텍스트 순서만 비교하면 뒤의 무관한 함수도 통과할 수 있다.
 fn span_of(lines: &[&str], header: &str) -> Option<(usize, usize)> {
     let start = lines
         .iter()
@@ -73,7 +55,6 @@ fn span_of(lines: &[&str], header: &str) -> Option<(usize, usize)> {
     None
 }
 
-/// `fn <name>(` 의 정의 본문 범위.
 fn fn_span(lines: &[&str], name: &str) -> Option<(usize, usize)> {
     span_of(lines, &format!("fn {name}("))
 }
@@ -97,12 +78,11 @@ fn log_file_is_opened_from_the_host_path_only() {
     let root = repo_root();
     let mut files = Vec::new();
     collect_rs_files(&root.join("src"), &mut files);
-    // 정의 파일이 본체를 떠나 `tasty-platform` 크레이트로 갔다 — 순회가 `src/` 에서
-    // 멈추면 `IMPL_FILE` 자체를 못 읽고, 이 가드의 "위반 0" 이 "안 봤다" 가 된다.
+    // 로그 구현이 있는 플랫폼 크레이트도 함께 수집한다.
     collect_rs_files(&root.join("crates/tasty-platform/src"), &mut files);
     assert!(
         !files.is_empty(),
-        "src/ 와 crates/tasty-platform/src/ 아래 .rs 파일을 하나도 못 찾았다 — 가드가 헛돈다"
+        "src와 tasty-platform/src에서 Rust 파일을 수집하지 못했다"
     );
 
     let mut offenders: Vec<String> = Vec::new();
@@ -112,8 +92,7 @@ fn log_file_is_opened_from_the_host_path_only() {
             .unwrap_or(file)
             .to_string_lossy()
             .replace('\\', "/");
-        // 호출처 파일은 `the_call_site_sits_inside_the_host_arm` 이 더 강한 조건
-        // (분기 블록 내부)으로 따로 본다.
+        // 호출 파일은 host 분기 검사를 따로 적용한다.
         if rel == CALL_SITE_FILE {
             continue;
         }
@@ -121,8 +100,6 @@ fn log_file_is_opened_from_the_host_path_only() {
             continue;
         };
         let lines: Vec<&str> = text.lines().collect();
-        // 정의 파일 / 래퍼 파일은 **정의 함수 본문 안** 만 봐준다. 나머지 파일은 어떤
-        // 등장도 허용하지 않는다.
         let allowed = if rel == IMPL_FILE || rel == WRAPPER_FILE {
             Some(fn_span(&lines, OPEN_FN).unwrap_or_else(|| {
                 panic!("`{rel}` 에서 `fn {OPEN_FN}` 정의 범위를 못 찾았다 — 가드를 갱신한다")
@@ -143,9 +120,7 @@ fn log_file_is_opened_from_the_host_path_only() {
 
     assert!(
         offenders.is_empty(),
-        "`{OPEN_FN}` 은 host 확정 이후의 `{CALL_SITE_FILE}` 에서만 부른다 — \
-         CLI 클라이언트도 같은 바이너리라, 다른 경로에서 부르면 CLI 실행마다 실행 중인 \
-         host 의 로그가 truncate 된다(ADR-0043):\n{}",
+        "{OPEN_FN} 호출이 허용 범위 밖에 있다:\n{}\nCLI가 host 로그를 열지 않도록 {CALL_SITE_FILE}에서 host 역할을 결정한 뒤 호출한다(ADR-0043).",
         offenders.join("\n")
     );
 }
@@ -176,18 +151,15 @@ fn the_call_site_sits_inside_the_host_arm() {
     let call = calls[0];
     assert!(
         call > arm_start && call <= arm_end,
-        "`{OPEN_FN}()` 이 `Routed::Gui` 분기 블록({}~{} 줄) 밖의 {} 줄에 있다 — \
-         `run()` 아래 아무 함수(CLI 경로인 `run_subcommand` 포함)로 옮겨도 단순 위치 \
-         비교는 통과하므로, 블록 내부인지로 본다. 밖에서 부르면 CLI 프로세스도 파일을 \
-         열게 되어 ADR-0043 의 결정이 무너진다",
+        "{OPEN_FN} 호출이 host 분기({}~{}행) 밖의 {}행에 있다. CLI가 로그 파일을 열지 않도록 Routed::Gui 안에서 호출한다.",
         arm_start + 1,
         arm_end + 1,
         call + 1
     );
 }
 
-/// 파일을 여는 코드가 `init_tracing`(= 역할을 모르는 시점) 으로 되돌아가지 않았는지.
-/// 로그 파일명은 `enable_host_file_log` 안에서만 소비돼야 한다.
+/// 로그 파일명 사용이 파일 열기 함수의 정의보다 앞에 나오지 않는지 확인한다.
+/// 이 검사는 텍스트 순서만 보므로 그 함수 본문 안에 있는지까지 보장하지 않는다.
 #[test]
 fn tracing_init_does_not_open_the_log_file() {
     let text = std::fs::read_to_string(repo_root().join(IMPL_FILE))
@@ -197,15 +169,13 @@ fn tracing_init_does_not_open_the_log_file() {
         .unwrap_or_else(|| panic!("`{OPEN_FN}` 정의를 못 찾았다"));
 
     for (offset, _) in text.match_indices("log_file_name()") {
-        // 정의 자체(`fn log_file_name() -> …`)는 소비가 아니다.
         let line_start = text[..offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
         if text[line_start..offset].contains("fn ") {
             continue;
         }
         assert!(
             offset > open_fn_at,
-            "`{IMPL_FILE}` 에서 로그 파일명을 `{OPEN_FN}` 밖(= 역할 판정 이전에 도는 \
-             초기화 경로)에서 쓰고 있다 — CLI 프로세스가 다시 파일을 열게 된다(ADR-0043)"
+            "{IMPL_FILE}에서 로그 파일명을 {OPEN_FN} 정의보다 앞에서 사용한다. 역할 판정 전 초기화에서 파일을 열지 않는지 확인한다(ADR-0043)."
         );
     }
 }

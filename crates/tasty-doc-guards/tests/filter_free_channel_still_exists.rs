@@ -1,92 +1,29 @@
-//! 이 디렉토리의 가드들이 **매 push 도는 채널**을 실제로 갖고 있는지 본다.
-//!
-//! ADR-0048 의 결정은 "읽는 것이 전부 `docs/**` 인 가드를 의존 0 크레이트로 옮긴다" 였고,
-//! 그 결정이 값을 갖는 근거는 **옮긴 자리에 경로 필터가 없다**는 것 하나다. 그런데 그
-//! 근거를 확인하는 것이 아무 데도 없었다 — 실측으로 확인했다(2026-09-05):
-//!
-//! - `filtered_guards_are_not_totally_blind` 는 이 디렉토리를 이름으로 **건너뛴다**
-//!   (`FILTER_FREE_DIR`). 채널이 있다고 **가정**하는 것이지 재는 것이 아니다.
-//! - `ci_channel_claims_match_workflows` 의 `automatic_job_bodies` 는 경로 필터를
-//!   모델하지 않는다. `push:` 만 있으면 자동으로 세므로, 필터가 생겨도 그 잡은 여전히
-//!   "자동" 이다.
-//! - `src/source_guards` 의 `EXPECTED_TEST_INVOCATIONS` 는 파일별 **호출 건수**를
-//!   고정한다. 필터가 붙어도 건수는 그대로고, 호출을 한 타깃으로 좁혀도 그대로다.
-//!
-//! 변이 둘로 그 셋을 동시에 확인했다 — ① `push:` 에 `paths:` 를 달기 ② 호출을
-//! `--test <이름>` 하나로 좁히기. **두 변이 모두 세 판정기 전부에서 살아남았다.**
-//! 그 상태가 되면 이 디렉토리의 가드들은 자기가 깨질 수 있는 유일한 종류의 push
-//! (문서만 담은 push)에서 안 도는 자리로 조용히 돌아간다 — ADR-0048 이 벗어나려던
-//! 바로 그 상태이고, 되돌아간 것을 아무도 못 본다.
-//!
-//! **이름이 아니라 성질로 판정한다**. 물음은 "`doc-guards.yml`
-//! 이 있는가" 가 아니라 "경로 필터 없는 잡 중 이 패키지를 **좁히지 않고** 돌리는 것이
-//! 있는가" 다. 워크플로 이름이 바뀌거나 잡이 다른 파일로 옮겨가도 채널이 남아 있으면
-//! 통과해야 한다 — 이름으로 박으면 옮기는 것 자체가 거짓 실패가 된다.
-//!
-//! **이 가드 자신의 채널**: 여기서 잡는 변경은 `.github/workflows/**` 를 건드린다.
-//! 그 경로는 `crossplatform-check.yml` 의 `paths-ignore`(`docs/**` · `site/**` ·
-//! `**/*.md`) 밖이라, 필터가 붙는 그 push 에서 `check-headless` 가 전체 스위트를 돌며
-//! 이 타깃을 실행한다. 즉 자기 채널이 사라지는 변경은 다른 채널이 본다.
+//! 이 디렉터리의 소스 검사에 경로 필터 없는 push 실행 경로가 있는지 확인한다(ADR-0048).
+//! 워크플로 이름 대신 패키지 전체 호출이나 개별 테스트 선택을 읽는다.
+//! 다른 검사가 이동 대상으로 안내하는 디렉터리와도 일치해야 한다.
+//! 워크플로 조건식의 실제 실행 가능성은 계산하지 않고 workflow_triggers의 분류를 사용한다.
 
-// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
-//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
-//       `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+// 이유: 테스트의 반환값 무시는 제품 코드의 lint 예외 명부에 포함하지 않는다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::workflow_triggers::filter_free_coverage;
 
-/// 채널이 지켜 주는 대상이 사는 곳. `filtered_guards_are_not_totally_blind` 의
-/// `FILTER_FREE_DIR` 과 **같은 값이어야 한다** — 아래에서 그 정합을 함께 본다.
+/// 필터 없는 실행을 확인할 디렉터리. 다른 검사의 FILTER_FREE_DIR와 일치해야 한다.
 const GUARD_DIR: &str = "crates/tasty-doc-guards/tests";
 
-/// 그 디렉토리의 패키지 이름. 채널 판정은 이 이름을 좁히지 않고 부르는가로 한다.
 const PACKAGE: &str = "tasty-doc-guards";
 
-/// 채널이 지켜 주는 순수 스캔 가드 수의 하한. 실측 17 (2026-09-05).
-/// 모수가 비면 "채널이 있다" 는 아무것도 안 지키는 참이 된다.
-///
-/// **판별식** — 단정 앞에서 실측값을 찍게 해 뒀으므로 그 줄이 계기다:
-///
-/// ```text
-/// cargo test -p tasty-doc-guards --test filter_free_channel_still_exists -- --nocapture
-///   → [필터 없는 채널] 순수 스캔 가드 <실측> · 하한 12
-/// ```
-///
-/// ★ 이 수는 **형제 가드의 부분집합 크기**다. `filtered_guards_are_not_totally_blind` 의
-/// `MIN_SCANNED` 가 세는 "필터 뒤 스캔 가드" 안에 이 디렉토리의 가드가 들어 있고, 그
-/// 부분이 이 수다. 그래서 **한쪽만 보면 판정이 안 선다** — 이 수가 줄었을 때 원인은
-/// 둘이다: 가드가 사라졌거나(형제도 같이 준다), 다른 디렉토리로 옮겨졌거나(형제는 그대로).
-/// **두 수를 함께 재야 갈린다.**
-///
-/// 실측 2026-09-07(base `4d5af2e05`): 이 수 **53** ·
-/// 형제 **72** ⇒ 이 디렉토리 밖 19. 직전 기록은 51 · 72 ⇒ 밖 21 이었다.
-/// **안이 늘고 밖이 준 것이 이동의 서명이다** — 합(형제)이 안 움직였으면 사라진 것이
-/// 아니라 옮겨진 것이다. 여기서는 형제가 62→72 로 늘었는데 그 +10 은 앞 회차가
-/// 더한 새 가드들이고, 이동분은 밖 31→25 와 안 41→47 의 짝으로 나타난다.
-/// 09-05 의 17/51 에서 안이 +10, 밖이 +1 움직였다.
-///
-/// ★★ 여유가 **41** 이다(53 대 12). 형제 쪽 주석이 "여유를 6 만 둔다" 는 규율을 적어 두었고
-/// 이 자리는 그 여섯 배 넘게 벌어져 있다 — 벌어진 만큼이 곧 술어가 죽어도 안 보이는 구간이다.
-/// **이동이 이 간극을 계속 벌린다**: 옮길 때마다 이 수만 오르고 하한은 안 움직인다.
-/// 값을 올릴지는 하한 조이기라는 별개 축이라 **여기서는 실측만 남긴다.**
-///
-/// **이 수를 내려서 초록을 만들지 마라.** 내리면 아래 `uncovered` 판정이 모수가 준 만큼
-/// 약해진다 — "채널이 있다" 는 명제가 더 적은 가드에 대해서만 참이 되는데 색은 그대로다.
-///
-/// 정당한 수선: 이 디렉토리에서 가드를 실제로 지웠으면 이 수도 함께 내려라. 옮긴 것이라면
-/// **형제 수가 안 움직였는지 먼저 확인해라** — 안 움직였으면 지운 것이 아니라 옮긴 것이고,
-/// 그때는 형제 쪽 명부도 함께 봐야 한다.
+/// 2026-09-05 실측17개를 기준으로 둔 하한12다. 2026-09-07에는53개로 늘어 여유가 커졌다.
+/// 여유 안의 일부 누락은 검출하지 못한다. 실제 삭제·이동과 수집 실패를 구별해 기준을 갱신한다.
 const MIN_GUARDED: usize = 12;
 
 fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }
 
-/// 이 디렉토리에 사는 **순수 소스 스캔** 타깃. 술어는
-/// `filtered_guards_are_not_totally_blind::is_pure_source_scan` 과 같은 성질이다 —
-/// 읽는 **행위**로 세고, 프로세스를 띄우는 것은 뺀다.
+/// 파일 읽기 표지는 있고 프로세스 실행 표지는 없는 소스를 분류한다. 실제 동작을 추적하지는 않는다.
 fn guarded_targets(root: &Path) -> BTreeSet<String> {
     let dir = root.join(GUARD_DIR);
     let mut out = BTreeSet::new();
@@ -130,25 +67,20 @@ fn a_filter_free_job_runs_this_package_whole() {
         )
     });
 
-    // 양성 대조: 판독이 통째로 비면 아래 단언은 아무것도 안 본다. **한쪽만 비는 것은
-    // 고장이 아니다** — 워크플로가 `--test` 를 안 쓰는 것은 정상 설정이라, 그 자리를
-    // 고장으로 말하면 설정 변화에 틀린 진단이 붙는다.
+    // 개별 타깃 선택 없이 패키지 전체만 실행하는 구성도 허용하므로 합친 결과가 비었는지 확인한다.
     assert!(
         !coverage.named.is_empty() || !coverage.packages.is_empty() || coverage.whole_workspace,
         "필터 없는 채널을 하나도 못 읽었다 — 판독이 깨졌거나 채널이 전부 사라졌다"
     );
 
     let guarded = guarded_targets(&root);
-    // 측정값은 단정보다 **앞에** 찍는다. 단정이 죽으면 뒤의 출력은 안 돌고,
-    // 그러면 다음 사람이 하한을 검사하려고 술어를 손으로 흉내 내게 된다.
     println!(
         "[필터 없는 채널] 순수 스캔 가드 {} · 하한 {MIN_GUARDED}",
         guarded.len()
     );
     assert!(
         guarded.len() >= MIN_GUARDED,
-        "`{GUARD_DIR}` 의 순수 스캔 가드를 {}개밖에 못 셌다(하한 {MIN_GUARDED}) — \
-         모수가 줄면 '채널이 있다' 는 아무것도 안 지킨다",
+        "{GUARD_DIR}의 소스 검사를 {}개만 수집했다(하한 {MIN_GUARDED}). 실제 파일과 분류 조건을 확인한다.",
         guarded.len()
     );
 
@@ -158,11 +90,7 @@ fn a_filter_free_job_runs_this_package_whole() {
         .collect();
     assert!(
         uncovered.is_empty(),
-        "`{GUARD_DIR}` 의 아래 가드가 경로 필터 없는 채널에 안 덮인다. 그러면 자기가 \
-         깨질 수 있는 유일한 종류의 push(문서만 담은 push)에서 안 도는 자리로 돌아간다 \
-         — ADR-0048 이 벗어나려던 그 상태다. 필터를 떼거나, `{PACKAGE}` 를 좁히지 않고 \
-         돌리는 잡을 경로 필터 없는 워크플로에 두어라. 본 것: 이름으로 지목된 타깃 \
-         {:?} · 좁힘 없이 불린 패키지 {:?}:\n  {}",
+        "{GUARD_DIR}의 다음 검사를 포함하는 필터 없는 push 호출을 찾지 못했다. {PACKAGE} 전체나 해당 타깃을 경로 필터 없는 워크플로에서 실행하도록 구성한다.\n읽은 타깃 {:?}·패키지 {:?}:\n  {}",
         coverage.named,
         coverage.packages,
         uncovered
@@ -173,12 +101,7 @@ fn a_filter_free_job_runs_this_package_whole() {
     );
 }
 
-/// 채널이 지키는 자리와, **"여기로 옮겨라" 가 가리키는 자리**가 같은 값인가.
-///
-/// `filtered_guards_are_not_totally_blind` 는 사각인 가드에게 `FILTER_FREE_DIR` 로
-/// 옮기라고 요구한다. 그 요구가 값을 가지려면 **그 자리에 채널이 실제로 있어야** 하고,
-/// 그것을 지키는 것이 이 파일이다. 두 값이 갈라지면 옮기라는 자리와 채널이 지켜지는
-/// 자리가 달라져, 요구를 따른 가드가 아무 채널도 없는 곳에 착지한다.
+/// 이동 안내의 대상과 필터 없는 실행을 검증하는 대상이 다르면 안내를 따라도 검사되지 않을 수 있다.
 #[test]
 fn the_move_target_and_the_guarded_channel_are_the_same_directory() {
     let root = repo_root();
@@ -187,27 +110,18 @@ fn the_move_target_and_the_guarded_channel_are_the_same_directory() {
         .join("filtered_guards_are_not_totally_blind.rs");
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "read {}: {e} — 옮기라고 요구하는 판정기가 사라졌으면 이 가드의 전제도 \
-             사라진 것이다. 함께 다시 판단해라",
+            "이동 안내가 있는 검사 파일을 읽지 못했다: {} — {e}. 두 검사의 역할과 대상을 함께 확인한다.",
             path.display()
         )
     });
     let decl = format!("const FILTER_FREE_DIR: &str = \"{GUARD_DIR}\";");
     assert!(
         src.contains(&decl),
-        "`filtered_guards_are_not_totally_blind` 의 `FILTER_FREE_DIR` 이 `{GUARD_DIR}` 가 \
-         아니다. 그 상수는 사각인 가드에게 '여기로 옮겨라' 라고 가리키는 자리이고, 이 \
-         가드가 지키는 것이 바로 그 자리의 채널이다 — 두 값이 갈라지면 요구를 따른 가드가 \
-         아무 채널도 없는 곳에 착지한다"
+        "filtered_guards_are_not_totally_blind의 FILTER_FREE_DIR가 {GUARD_DIR}와 다르다. 이동 안내와 실행 검사의 대상을 맞춘다."
     );
 }
 
-/// [`MIN_GUARDED`] 의 **양성 대조** — 수집이 죽으면 이 수가 하한 밑으로 떨어지나.
-///
-/// 그리고 이 수집기는 하나가 아니라 **두 술어의 곱**이라(읽는가 AND spawn 안 하는가),
-/// 어느 한쪽이 굳어도 수가 틀어진다. 그래서 칸을 넷 둔다 — 빈 입력 · 읽지 않는 파일 ·
-/// 읽으면서 spawn 하는 파일 · 세는 파일. 마지막 칸이 비영 대조다: 앞 셋만 있으면
-/// "이 수집기는 언제나 0 을 낸다" 와 구별되지 않는다.
+/// 수집 누락과 잘못된 분류를 구별하도록 읽기·프로세스 실행 표지 조합을 따로 확인한다.
 #[test]
 fn the_guarded_floor_sees_a_collapsed_collection() {
     let root = std::env::temp_dir().join(format!(
@@ -226,15 +140,13 @@ fn the_guarded_floor_sees_a_collapsed_collection() {
         "빈 디렉토리에서 0 이 아니면 이 수집기는 입력을 안 보는 것이다"
     );
 
-    // 읽지 않는 파일 — 세면 안 된다.
     std::fs::write(dir.join("inert.rs"), "fn main() {}\n").expect("쓰기 실패");
     assert_eq!(
         guarded_targets(&root).len(),
         0,
-        "레포를 읽지 않는 파일을 세면 이 수가 실제보다 커지고, 하한은 그것을 못 본다"
+        "읽기 표지가 없는 소스를 검사 대상으로 분류했다"
     );
 
-    // 읽지만 인스턴스를 띄우는 파일 — 이 축의 대상이 아니다.
     std::fs::write(
         dir.join("spawner.rs"),
         "fn main() { let _ = read_to_string(\"x\"); Command::new(\"y\"); }\n",
@@ -243,10 +155,9 @@ fn the_guarded_floor_sees_a_collapsed_collection() {
     assert_eq!(
         guarded_targets(&root).len(),
         0,
-        "spawn 하는 파일까지 세면 '순수 스캔 가드' 라는 모수의 뜻이 달라진다"
+        "프로세스 실행 표지가 있는 소스를 순수 소스 검사로 분류했다"
     );
 
-    // 비영 대조 — 읽고 spawn 하지 않는 파일은 세어져야 한다.
     std::fs::write(
         dir.join("pure.rs"),
         "fn main() { let _ = read_to_string(\"x\"); }\n",
@@ -255,7 +166,7 @@ fn the_guarded_floor_sees_a_collapsed_collection() {
     assert_eq!(
         guarded_targets(&root).len(),
         1,
-        "순수 스캔 가드를 못 세면 위 세 칸은 수집기가 늘 0 이라는 뜻이라 아무것도 안 지킨다"
+        "파일 읽기 표지만 있는 소스를 검사 대상으로 분류하지 못했다"
     );
 
     // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서

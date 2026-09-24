@@ -1,68 +1,27 @@
-//! **사용자가 타이핑하는 훅 이벤트 이름이 늘면 사용자 가이드가 그것을 알아야 한다.**
-//!
-//! `CLAUDE.md` 의 "문서 갱신 (필수)" 가 묶은 축 중 CLI 쪽 갈래다. `tasty set hook --event
-//! <이름>` 의 `<이름>` 은 사용자가 **손으로 치는** 문자열이라, 가이드가 그 이름을 안 적으면
-//! 그 기능은 문서에 있으나 못 쓰는 상태가 된다.
-//!
-//! # 왜 이 축은 대조가 서는가
-//!
-//! 두 쪽이 같은 어휘를 쓴다 — 소스의 파서가 받는 문자열과 가이드가 적는 문자열이 **글자
-//! 그대로 같다.** 그럴 수밖에 없다: 가이드가 다른 낱말로 쓰면 그대로 따라 친 사용자의
-//! 명령이 실패한다. 표기 변형이 낄 자리가 없다.
-//!
-//! 같은 이유로 **안 서는 축**들과 대비된다(`docs/dev-guide/ci-gates.md` 의 축 표) — 단축키는
-//! 설정 표기(`alt+up`)와 화면 표기(`Alt+↑`)가 애초에 둘이라 인용할 원본이 없다.
-//!
-//! # 모수
-//!
-//! [`crates/tasty-hooks/src/lib.rs`] 의 `HookEvent::to_display_string` 이 내는 이름 전부.
-//! **`parse` 가 아니라 `to_display_string` 에서 뽑는다** — `parse` 는 `if/else` 사슬이라
-//! 판독이 무르고, 무엇보다 사용자가 보는 정본 표기는 직렬화 쪽이다. 실측(2026-09-06) **6**.
-//!
-//! 인자를 받는 것(`output-match:` · `idle-timeout:` · `command-completed:`)은 **접두사까지**
-//! 가 이름이고 뒤는 사용자 값이라, 콜론 앞만 본다.
-//!
-//! # 이 가드가 단정하지 않는 것
-//!
-//! - **가이드가 그 이벤트를 제대로 설명하는지.** 이름이 한 번 나오면 통과다.
-//! - **`HookEvent::Custom`.** 고정된 이름이 없다(plugin 이 정한다) — 적을 이름 자체가 없다.
-//! - **영어 번역(`site/content/en/`).** 원본이 정본이라 여기서 안 본다.
-//!
-//! # 채널
-//!
-//! `doc-guards.yml` — main push · PR 마다 경로 필터 없이 돈다. 이 축을 재는 채널은 그 하나다.
+//! HookEvent::to_display_string이 내는 고정 이벤트 이름이 한국어 사용자 가이드에 있는지 확인한다.
+//! 인자가 있는 이벤트는 콜론 앞 이름만 대조한다. parse 대신 사용자에게 표시되는 이름을 읽는다.
+//! 가이드의 설명 품질·영어 번역·플러그인이 정하는 Custom 이름은 검사하지 않는다.
+//! doc-guards.yml의 경로 필터 없는 main push·PR에서 실행된다.
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
 use tasty_doc_guards::temp_scratch::Scratch;
 
-/// 가이드에 **일부러 없는** 이벤트와 그 사유. 자리로 적는다 — 부류로 적으면 도망길이 된다.
-///
-/// 지금 비어 있다. 오늘 실측이 **6/6** 이라 부채가 없다.
+/// 가이드에 싣지 않는 이벤트와 사유.
 const NOT_IN_THE_GUIDE: &[(&str, &str)] = &[];
 
-/// 훑어야 할 최소 이벤트 수 — **모수가 살아 있다는 증거**. 실측 6(2026-09-06).
-///
-/// ★ 이 수를 내려서 통과시키지 마라. 먼저 가른다 — `HookEvent` 의 변이가 정말 줄었나,
-/// 아니면 `to_display_string` 의 모양이 바뀌어 판독이 못 읽나. 뒤쪽이면 하한을 내리는 것은
-/// 고장을 초록으로 만드는 것이다.
+/// 2026-09-06 실측6개를 기준으로 둔다. 미달하면 실제 이벤트 감소와 판독 실패를 구별한다.
 const MIN_EVENTS: usize = 4;
 
 fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }
 
-/// `HookEvent::to_display_string` 이 내는 이름.
-///
-/// 두 형태를 읽는다 — `"<이름>".to_string()` 과 `format!("<이름>:{}", …)`. 뒤쪽은 콜론
-/// 앞까지가 이름이다.
+/// 표시 함수의 문자열에서 콜론 앞 고정 이름을 추출한다.
 fn event_names(root: &Path) -> Vec<String> {
     let src = std::fs::read_to_string(root.join("crates/tasty-hooks/src/lib.rs"))
         .expect("tasty-hooks/src/lib.rs 를 읽지 못했다");
-    // ★ 이름만으로 찾으면 안 된다 — 같은 파일에 `HookBinding::to_display_string` 이
-    // **먼저** 있어서, 이름으로 잡으면 그쪽 본문을 읽고 이벤트 이름을 하나도 못 낸다
-    // (첫 실행에서 실제로 그랬고 독자 단정이 그것을 잡았다). 그래서 impl 블록으로 먼저
-    // 좁힌다 — 바늘을 이름이 아니라 **소속**으로 든다.
+    // HookBinding에도 같은 메서드가 있어 먼저 HookEvent의 impl 범위로 좁힌다.
     let impl_at = src
         .find("impl HookEvent {")
         .expect("`impl HookEvent` 를 못 찾았다 — 타입 이름이 바뀌었나");
@@ -82,7 +41,6 @@ fn event_names(root: &Path) -> Vec<String> {
             continue;
         };
         let literal = &rest[..close];
-        // 이름은 `a-z` 와 `-` 로 되어 있다. `{}` 가 낀 형식 문자열은 콜론 앞만 쓴다.
         let name = literal.split(':').next().unwrap_or(literal);
         if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
             continue;
@@ -94,42 +52,29 @@ fn event_names(root: &Path) -> Vec<String> {
     out
 }
 
-/// 가이드 원본 순회의 하한. 이 아래로 모이면 순회가 죽은 것으로 본다 — 그리고 그때
-/// "미스 0" 은 일치했다는 뜻이 아니라 **모수가 비었다**는 뜻이다.
+/// 한국어 Markdown 가이드 수집의 하한.
 const GUIDE_FLOOR: Floor = Floor {
     min: 12,
     measured: 18,
     measured_on: "2026-09-07",
     counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
-    why_this_gap: "이 모수는 `site/content` 의 한국어 원본 `.md` 수다(번역 `en/` 제외). \
-                   가이드 장은 합쳐지고 갈리므로 몇 개는 움직이지만, 12 아래는 장이 줄어든 \
-                   게 아니라 순회 루트나 `en/` 가지치기가 어긋난 것이다.",
+    why_this_gap: "site/content의 한국어 Markdown만 세고 en 번역은 제외한다. 문서 분할·통합에 여유를 주되 하한12 미달이면 실제 감소와 순회 오류를 확인한다.",
 };
 
-/// 한국어 가이드 원본 전체를 한 덩어리로.
 fn guide_text(root: &Path) -> String {
     guide_text_under(&root.join("site/content"), &GUIDE_FLOOR)
 }
 
-/// 위 판독의 알맹이 — **순회 뿌리와 하한을 인자로 받는다.**
-///
-/// 하한을 함수 안에 박아 두면 이 판독을 합성 트리로 잴 길이 없다. 하한은 모수의
-/// 성질이라 자리마다 다르고(레포의 가이드 장 수와 합성 트리의 파일 수는 애초에 다른
-/// 모수다), 그래서 상수가 아니라 인자여야 한다. 뿌리도 같은 이유로 인자다.
+/// 작은 합성 트리도 같은 순회로 검증하도록 경로·하한을 인자로 받는다.
 fn guide_text_under(dir: &Path, floor: &Floor) -> String {
-    // 공용 순회를 쓴다. 손으로 재귀하면 `read_dir` 실패가 **조용한 빈손**이 되고, 그러면
-    // "가이드에 그 이름이 다 있다" 가 아니라 "가이드를 한 글자도 안 읽었다" 가 초록이 된다.
     let walked = walk_with_floor(dir, dir, floor, Descend::Everything, &|w| {
-        // 번역은 별도 절차다 — 원본만 본다.
         w.rel.ends_with(".md") && !w.rel.starts_with("en/")
     })
     .unwrap_or_else(|why| panic!("{why}"));
 
     let mut out = String::new();
     for w in walked {
-        // 읽기 실패를 건너뛰면 순회 하한을 통과한 채로 본문만 비는 길이 남는다 — 하한이
-        // 세는 것은 **찾은** 파일이지 **읽은** 파일이 아니다. 그 상태의 "미스 0" 은 순회가
-        // 죽었을 때와 같은 거짓 초록이라, 여기서 시끄럽게 죽는다.
+        // 수집 하한은 파일 수만 보므로 본문 읽기 실패도 별도로 보고해야 한다.
         let text = std::fs::read_to_string(&w.path)
             .unwrap_or_else(|e| panic!("가이드 원본을 읽지 못했다: {} — {e}", w.path.display()));
         out.push_str(&text);
@@ -144,8 +89,7 @@ fn every_hook_event_name_is_in_the_guide_or_registered_with_a_reason() {
     let events = event_names(&root);
     assert!(
         events.len() >= MIN_EVENTS,
-        "훅 이벤트 이름을 {}개밖에 못 찾았다(하한 {MIN_EVENTS}) — 판독이 깨졌다.\n\
-         ★ 이 수를 내려서 통과시키지 마라. `HookEvent` 의 변이를 먼저 세라.",
+        "훅 이벤트를 {}개만 읽었다(하한 {MIN_EVENTS}). HookEvent의 정의와 표시 함수 판독을 확인한다.",
         events.len()
     );
 
@@ -158,13 +102,7 @@ fn every_hook_event_name_is_in_the_guide_or_registered_with_a_reason() {
 
     assert!(
         missing.is_empty(),
-        "사용자가 `tasty set hook --event <이름>` 으로 **직접 치는** 이름인데 가이드가 한 번도 \
-         안 적는다:\n  {}\n\n\
-         이 이름은 표기 변형이 낄 자리가 없다 — 가이드가 다른 낱말로 쓰면 그대로 따라 친 \
-         명령이 실패한다. 고치는 길 둘:\n\
-           (가) 훅 장에 그 이름을 적는다.\n\
-           (나) 사용자가 칠 이름이 **아니면** 이 파일의 `NOT_IN_THE_GUIDE` 에 사유와 함께 \
-         등록해라. ★ 사유가 '아직 안 썼다' 면 그것은 예외가 아니라 부채다.",
+        "사용자가 입력하는 훅 이벤트 이름이 가이드에 없다:\n  {}\n훅 가이드에 정확한 이름을 적거나 사용자용이 아닌 이유를 NOT_IN_THE_GUIDE에 등록한다. 아직 작성하지 못한 경우는 정책 예외와 구별해 부채로 기록한다.",
         missing
             .iter()
             .map(|s| s.as_str())
@@ -184,8 +122,7 @@ fn no_registered_event_is_already_in_the_guide() {
         .collect();
     assert!(
         stale.is_empty(),
-        "가이드가 이 이름을 이미 적는데 명부에 남아 있다: {stale:?} — 부채를 갚았으면 그 줄을 \
-         지워라."
+        "가이드에 설명한 이벤트가 제외 목록에 남았다: {stale:?}. 완료한 항목을 제거한다."
     );
 }
 
@@ -200,7 +137,7 @@ fn every_registered_event_still_exists() {
         .collect();
     assert!(
         dead.is_empty(),
-        "명부가 이제 없는 이벤트를 붙들고 있다: {dead:?}"
+        "정의에서 사라진 이벤트가 제외 목록에 남았다: {dead:?}"
     );
 }
 
@@ -231,24 +168,12 @@ fn the_reader_answers_both_yes_and_no() {
     );
 }
 
-/// **양성 대조 — 두 판독을 합성 입력으로 건다.**
-///
-/// 이 가드의 하한(`MIN_EVENTS` · `GUIDE_FLOOR`)은 **하한이라 좁아지는 쪽만 본다.**
-/// 판독이 넓어지는 변이 — 소속으로 좁히는 것을 그만두거나, 번역을 원본에 섞거나 —
-/// 는 수를 늘리므로 하한이 조용하다. 그 방향은 이 대조만 본다.
-///
-/// ★ 여기 쓰는 이름은 전부 **합성**이다. 진짜 이벤트 이름으로 지으면 이
-/// 대조는 판독의 *메커니즘*이 아니라 그 이름의 *현재 값*을 재게 되고, 이름이 정당하게
-/// 바뀌는 날 함께 죽는다 — 그때 무엇이 깨졌는지 못 가린다.
+/// 잘못된 impl이나 영어 번역이 섞이면 수가 늘어 하한을 통과할 수 있으므로 합성 입력에서 구별한다.
 #[test]
 fn both_readers_answer_on_a_substituted_tree() {
     let probe = Scratch::new("hook-event-reader");
     let dir = probe.path();
 
-    // ── 판독 1: 이벤트 이름 ──────────────────────────────────────────────
-    //
-    // 진짜 파일과 **같은 함정**을 심는다: 같은 이름의 함수가 다른 impl 에 **먼저** 있다.
-    // 소속으로 안 좁히면 판독은 그 미끼를 읽고 이벤트를 하나도 못 낸다.
     let src = dir.join("crates/tasty-hooks/src");
     std::fs::create_dir_all(&src).expect("합성 소스 트리를 만들지 못했다");
     std::fs::write(
@@ -276,8 +201,6 @@ fn both_readers_answer_on_a_substituted_tree() {
         vec!["omega-probe".to_string(), "zeta-signal".to_string()],
         "판독이 합성 트리에서 다른 답을 냈다"
     );
-    // 셋을 따로 못박는다 — 위 `assert_eq!` 하나로도 죽지만, 죽었을 때 **무엇이** 깨졌는지
-    // 가려 주는 것은 아래 세 줄이다.
     assert!(
         !names.iter().any(|n| n == "decoy-alpha"),
         "소속으로 안 좁혔다 — 앞선 다른 impl 의 같은 이름 함수를 읽었다"
@@ -291,10 +214,6 @@ fn both_readers_answer_on_a_substituted_tree() {
         "이름 자리가 아닌 리터럴이 새어 들어왔다"
     );
 
-    // ── 판독 2: 가이드 본문 ──────────────────────────────────────────────
-    //
-    // 여기가 하한이 못 보는 방향이다. `en/` 가지치기를 지우면 본문이 **늘고**, 늘어난
-    // 본문은 "이름이 다 있다" 를 더 쉽게 참으로 만든다 — 순회 하한은 그것을 못 본다.
     let content = dir.join("content");
     std::fs::create_dir_all(content.join("en")).expect("합성 가이드 트리를 만들지 못했다");
     std::fs::write(content.join("hooks.md"), "본문에 zeta-signal 이 있다\n")
@@ -322,10 +241,10 @@ fn both_readers_answer_on_a_substituted_tree() {
     );
     assert!(
         !text.contains("translated"),
-        "번역(`en/`)이 원본에 섞였다 — 이 방향은 순회 하한이 못 본다(늘어나는 쪽이다)"
+        "영어 번역이 한국어 가이드 수집에 섞였다"
     );
     assert!(
         !text.contains("sigma-decoy"),
-        "`.md` 가 아닌 파일을 읽었다 — 같은 이유로 하한이 못 보는 방향이다"
+        "Markdown이 아닌 파일이 가이드에 포함됐다"
     );
 }
