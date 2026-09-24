@@ -1,9 +1,8 @@
-//! View-independent PTY execution termination, shared by GUI and headless drains.
+//! GUI와 헤드리스가 공유하는 PTY 종료 처리. 창이 없다는 이유로 호출하지 않는다.
 use crate::core::{Core, CoreState};
 use crate::state::AppState;
 
 pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreState, surface: u32) {
-    // Only an explicit PTY exit reaches this path; local window absence is not an exit.
     let fired = engine
         .hook_manager
         .check_and_fire(surface, &[tasty_hooks::HookEvent::ProcessExit]);
@@ -16,7 +15,7 @@ pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreSta
             &hook.received,
             surface,
         );
-        // Both hosts resolve task waiters from HookFired; GUI also broadcasts it.
+        // 두 호스트 모두 HookFired로 작업 대기자를 깨우며 GUI는 이벤트도 방송한다.
         state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
             hook_id: hook.hook_id,
             event_kind: "process-exit".into(),
@@ -28,11 +27,9 @@ pub(crate) fn handle(core: &mut Core, state: &mut AppState, engine: &mut CoreSta
     state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited {
         surface_id: surface,
     });
-    // The established PTY-exit close policy removes topology/PTY/soft occupancy,
-    // runs standard lifecycle cleanup and preserves the no-snapshot contract.
+    // 종료한 프로세스는 복원 스냅샷에 남기지 않는다.
     // intent-exempt: explicit PTY exit cascade, not a new user or agent command
     state.close_surface_by_id_no_snapshot(engine, surface, true);
-    // A closed member of an attached workspace leaves its holder's mirror stale; the
-    // close above only marked it. Send the post-close tree now (ADR-0023).
+    // 닫기 처리가 표시해 둔 구조 변경을 mirror에도 전달한다.
     engine.push_structure_changes();
 }

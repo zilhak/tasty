@@ -1,30 +1,14 @@
-//! Shutdown 직전 살아있는 surface 들에 대한 close cascade.
-//!
-//! 일반 close 경로 (사용자 탭 X / `tasty close surface` 등) 는 각 cascade 가
-//! `enqueue_surface_closed` 를 호출하지만, host shutdown 은 event_loop 가 즉시
-//! 빠지므로 `pending_lifecycle_events` 도, plugin 측 cleanup 기회도 없다.
-//! 본 모듈은 그 gap 을 메운다.
-//!
-//! 각 단계의 **본문**이 여기 있고, 호출 순서와 대기는 종료 상태 머신
-//! ([`crate::app::shutdown_machine`])이 프레임 단위로 전개한다 — 종료 대기 동안
-//! 로딩 프레임을 계속 그리기 위해서다. 그래서 이 모듈의 함수들은 모두 **논블로킹**
-//! 이어야 한다(대기가 필요한 단계는 begin/poll 로 갈라져 있다).
-//!
-//! 단계별 계측(S1~S4, `shutdown_total`)은 `target: "tasty::shutdown"` 으로 상시
-//! 발화한다 — 마커 표는 [`docs/architecture/shutdown-sequence.md`].
+//! 종료 전에 surface 닫힘을 알리고 observer·플러그인 정리를 진행한다.
+//! 호출 순서와 폴링 대기는 shutdown_machine이 담당한다.
+//! 계측 마커: docs/architecture/shutdown-sequence.md.
 
 use std::time::Instant;
 
 use crate::app::{App, shutdown_trace};
 
 impl App {
-    /// 모든 main view + parked state 의 살아있는 surface 에 대해
-    /// `enqueue_surface_closed(sid, kind, is_user_close=true)` 호출.
-    ///
-    /// drain 은 별도 호출 (`dispatch_pending_surface_lifecycle`). 본 메서드는
-    /// state 큐에 push 만 한다 — borrow / 순회 순서 단순화 목적.
-    ///
-    /// 반환: 큐에 push 한 surface 수 (S3 계측의 `surfaces` 필드).
+    /// 창과 parked engine의 닫힘 알림을 큐에 넣는다. 반환값은 추가한 surface 수다.
+    /// 실제 이벤트 전달은 dispatch_pending_surface_lifecycle을 별도로 호출한다.
     pub(crate) fn cascade_shutdown_close_all_surfaces(&mut self) -> usize {
         let mut closed = 0usize;
         for w in self.view.views.values_mut() {
@@ -42,9 +26,6 @@ impl App {
         state: &mut crate::state::AppState,
         engine: &crate::core::CoreState,
     ) -> usize {
-        // 모든 workspace → pane → tab → leaf surface 순회.
-        // `Tab::for_each_surface` 가 layout 안의 leaf surface 만 visit 하므로
-        // `cascade_surface_closed` 의 `cleanup_targets` walk 와 동일한 단위.
         let mut targets: Vec<(u32, Option<&'static str>)> = Vec::new();
         for ws in &engine.workspaces {
             for pid in ws.pane_layout().all_pane_ids() {
@@ -61,14 +42,12 @@ impl App {
         }
         let count = targets.len();
         for (sid, kind) in targets {
-            // is_user_close=true — Cmd-Q / quit modal 은 사용자 의지 종료.
+            // 앱 종료는 사용자 닫기로 알린다.
             state.enqueue_surface_closed(sid, kind, true);
         }
         count
     }
 
-    /// 단계 1 — `system.shutdown_initiated` 발화. 계측 없음(채널 send 뿐이라
-    /// 저비용이며, 실측이 이를 뒤집으면 그때 마커를 붙인다).
     pub(super) fn emit_shutdown_initiated(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
@@ -83,13 +62,7 @@ impl App {
         }
     }
 
-    /// 단계 2+3 — 살아있는 surface 들에 close cascade 큐 push 후 즉시 drain.
-    ///
-    /// 단계 2 는 plugin (예: claude / codex) 이 child registry 등 자기 state 를
-    /// 정리할 마지막 기회이고, 단계 3 은 그 pending 이벤트를 plugin 으로
-    /// broadcast 한다 — event_loop 가 곧 빠져 다음 `about_to_wait` 가 없으므로
-    /// 명시 호출이 필요하다. 두 단계는 "surface 를 닫아 plugin 에 알린다" 는 한
-    /// 덩어리라 S3 하나로 잰다.
+    /// 정상 이벤트 처리를 다시 돌지 않으므로 종료 단계에서 닫힘 알림을 직접 전달한다.
     pub(super) fn shutdown_close_surfaces(&mut self) {
         let t_cascade = Instant::now();
         let surfaces = self.cascade_shutdown_close_all_surfaces();
@@ -102,15 +75,10 @@ impl App {
         );
     }
 
-    /// 단계 3.5 — close 경로가 미뤄둔 observer sink 워커를 회수한다.
-    ///
-    /// surface close 는 워크스페이스 close 시 leaf surface 수만큼 반복되므로 그
-    /// 자리에서 join 하지 않는다(`ObserverRouter::drop_surface`). 미뤄진 join 을
-    /// 프로세스 종료 전에 소화하는 곳이 여기다 — 안 걸면 아직 배수 중인 워커가
-    /// 프로세스와 함께 죽어 sink 의 마지막 항목이 잘린다.
+    /// surface마다 기다리지 않고 미뤄 둔 observer 워커 회수를 종료 전에 마친다.
+    /// join_retired는 동기적으로 기다리므로 이 단계의 렌더가 지연될 수 있다.
     pub(super) fn shutdown_join_observer_sinks(&mut self) {
         let t = Instant::now();
-        // close cascade 와 같은 범위를 돈다 — 창별 engine + parked engine 전부.
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 main.core_state.observer_router.join_retired();
@@ -126,22 +94,13 @@ impl App {
         );
     }
 
-    /// 단계 4 전반 — 전 plugin 에 shutdown 요청을 **뿌리기만** 하고 즉시 반환한다.
-    /// 실제 자식 회수는 종료 상태 머신의 `StoppingPlugins` phase 가 폴링한다
-    /// (`poll_shutdown_all`) — 그래야 대기 중에도 종료 프레임이 계속 돈다.
-    ///
-    /// 이 호출이 `req_tx` 에 넣는 것이 **`surface.closed` 뒤여야 한다**는 채널 순서
-    /// 계약이 있다. 그 계약의 자리는 여기가 아니라 호출부인
-    /// `App::shutdown_step_closing_surfaces` 다 — 순서를 정하는 것이 이 함수가 아니라 그
-    /// 함수 안의 호출 배치이기 때문이다. 계약 본문과 무엇이 그것을 지키는지는 거기에
-    /// 있고, `source_guards::shutdown_channel_order` 가 값으로 문다.
-    /// S4 / S4a 마커는 `PluginManager::poll_shutdown_all` 안에서 발화한다.
+    /// shutdown_step_closing_surfaces에서 surface.closed를 보낸 뒤 호출한다.
+    /// 종료 요청을 보내고 자식 회수는 StoppingPlugins 단계에서 폴링한다.
     pub(super) fn begin_plugin_shutdown(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             mgr.begin_shutdown_all();
         } else {
-            // manager 자체가 없는 경우도 남긴다 — "안 걸렸다" 와 "계측이 안 붙었다"
-            // 를 로그만 보고 구분할 수 있어야 한다.
+            // 매니저가 없는 경우도 기록해 계측 누락과 구별한다.
             tracing::info!(
                 target: "tasty::shutdown",
                 ms = 0.0,

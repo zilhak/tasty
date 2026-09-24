@@ -17,7 +17,7 @@ struct SettingsInitData {
 impl App {
     pub(crate) fn open_settings_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.view.is_modal_active() {
-            return; // Another modal is already open
+            return;
         }
 
         use winit::window::WindowAttributes;

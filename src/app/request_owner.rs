@@ -1,33 +1,12 @@
-//! 요청의 **주인 창**을 찾는다 — 창 순회가 필요한 부분(gui 전용).
-//!
-//! 요청이 무엇을 지목했는지 자체를 푸는 순수 부분은
-//! [`crate::core::request_target`] 에 있다. 헤드리스도 같은 판정을 써야 해서
-//! 거기로 옮겼다 — 한쪽만 거절하면 같은 요청이 조합에 따라 다르게 끝난다.
+//! GUI 요청의 대상 자원을 가진 창을 찾는다. 자원 ID 해석은 core::request_target을 공유한다.
 
 use crate::app::App;
 use crate::core::request_target::request_resource_id;
 use winit::window::WindowId;
 
-/// `terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast` 가
-/// `--surface`(parent) 생략 시 기대는 host `single_parent()` 폴백은 **호출이 실제로
-/// 라우팅된 그 window 안에서만** 유일성을 본다 — 다중 윈도우 세션에서는 애초에 어느
-/// window 를 봐야 하는지가 정해지지 않는다. 이 4개 메서드가 리소스 id 없이(= 이
-/// 함수 호출 시점에 `params_resource_id`/`method_scoped_resource_id` 어느 쪽으로도
-/// **대상을 지목하지 않은 채**) 호출됐는데 main window 가 2개 이상 열려 있으면,
-/// `find_request_owner` 가
-/// focused window 로 조용히 새지 않고 명시적 `--surface` 를 요구한다(호출자가
-/// 명시하지 않는 한 대상 window 를 추론할 근거가 없다). window 가 1개뿐이면 기존
-/// 동작 그대로(하위 호환) — `single_parent()` 가 그 안에서 0/2+ parent 를 여전히 스스로 거부한다.
-///
-/// **`target_named` 가 참이면 이 판정은 걸리지 않는다.** 대상을 지목했는데 그것이
-/// 아무 window 에도 없는 경우가 그렇다 — 그때 "`--surface` 를 줘라" 는 **거짓
-/// 안내**다. 호출자는 이미 대상을 줬고, 다른 대상을 하나 더 줘도 달라지지 않는다.
-/// 그 요청의 참인 거절은 "그 id 가 없다" 이고, 그것은 라우팅 하류가 이미
-/// 낸다(`app/ipc/routing.rs` 의 `unowned_target_message` 갈래). 여기서 먼저
-/// 가로채면 **틀린 수리로 보내는 답**이 참인 답을 덮는다.
-///
-/// 순수 함수로 분리해 `App`/`winit` 없이 단위 테스트한다(`find_workspace_by_name`
-/// 와 동일 패턴, `window_access.rs` 참고).
+/// 아래 메서드의 single_parent 폴백은 한 창 안에서만 유일성을 확인한다.
+/// 대상 ID 없이 여러 창 중 하나를 골라야 하면 --surface를 요구한다.
+/// 이미 ID가 지정됐다면 이 오류로 가로채지 않고 라우터가 대상 부재를 알리게 한다.
 fn ambiguous_parent_fallback_requires_surface(
     method: &str,
     main_window_count: usize,
@@ -41,12 +20,7 @@ fn ambiguous_parent_fallback_requires_surface(
         )
 }
 
-/// `split` 의 `target_surface` 중 **nickname 으로만 풀리는 값**.
-///
-/// 숫자와 숫자로 읽히는 문자열은 [`request_resource_id`] 가 이미 봤다 — 여기서
-/// nickname 으로 다시 찾으면 핸들러와 우선순위가 어긋난다(`pane::resolve_surface_target`
-/// 도 숫자를 먼저 본다). `App`/`winit` 없이 단위 테스트하려고 순수 함수로 뗀다
-/// (`ambiguous_parent_fallback_requires_surface` 와 같은 패턴).
+/// 숫자·숫자 문자열은 request_resource_id가 먼저 해석하므로 여기서는 nickname만 다룬다.
 fn surface_nickname_target<'p>(method: &str, params: &'p serde_json::Value) -> Option<&'p str> {
     if method != "split" {
         return None;
@@ -56,17 +30,7 @@ fn surface_nickname_target<'p>(method: &str, params: &'p serde_json::Value) -> O
 }
 
 impl App {
-    /// `split` 의 `target_surface` 가 **nickname** 일 때 그 surface 를 가진 창.
-    ///
-    /// [`request_resource_id`] 는 `App` 없이 도는 순수 함수라 memory store 를 못 본다 —
-    /// 그래서 숫자(또는 숫자로 읽히는 문자열)까지만 거기서 풀고, nickname 은 여기서 푼다.
-    /// nickname→surface 매핑은 `Core` 의 memory 에 있어 **창에 안 매이므로** 창을 건너
-    /// 정확히 풀린다.
-    ///
-    /// 안 풀면 요청이 포커스된 창으로 가고, 핸들러가 **같은 nickname 을 풀어** 얻은
-    /// surface 가 그 창에 없어 "surface N not found" 로 끝난다 — 실측(2026-09-05):
-    /// 비포커스 창의 surface 에 nickname 을 달고 그 이름으로 split 하면 실패했고,
-    /// 포커스를 옮기면 같은 요청이 성공했다.
+    /// nickname은 창별 상태가 아닌 공용 메모리에서 찾아 실제 소유 창으로 보낸다.
     fn find_main_by_surface_nickname(
         &self,
         method: &str,
@@ -82,21 +46,8 @@ impl App {
         })
     }
 
-    /// request.params 에 resource id 가 있으면 그 리소스를 가진 MainView 의 id 반환.
-    ///
-    /// 숫자 키(`params_resource_id`)로 못 찾으면 `terminal.spawn` 의 `"workspace"`
-    /// (문자열, id 또는 표시 이름)를 마지막으로 시도한다 — 이건 u64 전용 추출
-    /// 루프로는 못 뽑는다(이름일 수 있어서). `"parent"`/`"surface"` 가 같은
-    /// request 에 있으면 이미 그쪽에서 찾아졌을 것이므로, 이 폴백은 사실상
-    /// 순수 `terminal.spawn` 직접 호출(parent 없이 workspace 만 지정)에만 닿는다.
-    ///
-    /// `Err`은 두 경우에 반환된다 — 호출자는 어느 쪽이든 focused window 로 조용히
-    /// 폴백하지 말고 명확한 에러를 클라이언트에 돌려줘야 한다:
-    /// - workspace 이름이 2개 이상 window 에 걸쳐 모호하게 일치할 때
-    ///   (`find_main_with_workspace_target` 참고)
-    /// - `method` 가 [`ambiguous_parent_fallback_requires_surface`] 에 해당하고
-    ///   (`terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast`)
-    ///   리소스 id 를 전혀 못 찾은 채 main window 가 2개 이상 열려 있을 때
+    /// 자원 ID, surface nickname, 문자열 workspace 순서로 소유 창을 찾는다.
+    /// 모호한 workspace 이름이나 대상 없는 다중 창 요청의 오류를 포커스 폴백으로 덮지 않는다.
     pub(crate) fn find_request_owner(
         &self,
         method: &str,
@@ -133,16 +84,10 @@ impl App {
 mod tests {
     use super::*;
 
-    /// main window 가 1개뿐이면(단일 윈도우 세션) `--surface` 생략을 그대로
-    /// 허용한다 — host `single_parent()` 폴백이 여전히 그 안에서 유일성을
-    /// 판단하므로 하위 호환을 깨지 않는다.
-    /// nickname 갈래만 이 경로로 온다 — 숫자·숫자문자열은 순수 라우팅이 이미 풀었고,
-    /// 여기서 또 풀면 핸들러와 우선순위가 갈린다.
     #[test]
     fn only_a_non_numeric_target_surface_needs_the_nickname_lookup() {
         let j = serde_json::json!({ "target_surface": "faraway" });
         assert_eq!(surface_nickname_target("split", &j), Some("faraway"));
-        // 숫자 · 숫자문자열 · 빈 문자열 · 다른 메서드는 여기 안 온다.
         for p in [
             serde_json::json!({ "target_surface": 7 }),
             serde_json::json!({ "target_surface": "7" }),
@@ -164,7 +109,7 @@ mod tests {
         ] {
             assert!(
                 !ambiguous_parent_fallback_requires_surface(method, 1, false),
-                "{method} 는 window 1개일 때 생략을 허용해야 함"
+                "{method}: 창이 하나이면 --surface 생략을 허용해야 한다"
             );
         }
         assert!(!ambiguous_parent_fallback_requires_surface(
@@ -174,9 +119,6 @@ mod tests {
         ));
     }
 
-    /// main window 가 2개 이상이면 kill/release/respawn/broadcast 는 `--surface`
-    /// 생략을 거부해야 한다 — focused window 로 조용히 새면 안 보이는 다른
-    /// window 의 데이터를 조작할 수 있다.
     #[test]
     fn multiple_windows_reject_omitted_surface_for_ambiguous_methods() {
         for method in [
@@ -187,19 +129,12 @@ mod tests {
         ] {
             assert!(
                 ambiguous_parent_fallback_requires_surface(method, 2, false),
-                "{method} 는 window 2개일 때 --surface 를 요구해야 함"
+                "{method}: 창이 둘이면 --surface를 요구해야 한다"
             );
         }
     }
 
-    /// **대상을 지목한 요청은 이 판정에 안 걸린다** — 지목했는데 없는 경우다.
-    ///
-    /// 그때 두 거절이 다 참이지만 순서가 있다. "창이 여럿이라 못 고른다" 는
-    /// 호출자에게 `--surface` 를 주라고 하는데, 호출자는 **이미 대상을 줬다** —
-    /// 하나 더 줘도 안 달라지므로 틀린 수리로 보낸다. 참인 답은 "그 id 가 없다"
-    /// 이고 라우팅 하류가 그것을 낸다. 그래서 여기서 가로채면 안 된다.
-    ///
-    /// **양방향으로 본다** — 안 걸리는 쪽만 보면 "전부 안 걸림" 도 통과한다.
+    /// 명시한 ID가 없다는 오류를 --surface 생략 오류로 덮지 않아야 한다.
     #[test]
     fn a_named_target_is_not_answered_with_the_ambiguity_error() {
         for method in [
@@ -210,19 +145,15 @@ mod tests {
         ] {
             assert!(
                 !ambiguous_parent_fallback_requires_surface(method, 2, true),
-                "{method} 가 대상을 지목했는데 '창이 여럿이라 못 고른다' 로 답하면 \
-                 호출자를 틀린 수리로 보낸다 — 참인 거절은 '그 id 가 없다' 다"
+                "{method}: 이미 지정한 ID의 부재를 --surface 생략 오류로 덮으면 안 된다"
             );
             assert!(
                 ambiguous_parent_fallback_requires_surface(method, 2, false),
-                "{method} 가 아무것도 안 지목했으면 그때는 이 판정이 걸려야 한다 — \
-                 안 걸리면 포커스된 창으로 조용히 샌다"
+                "{method}: 대상이 없으면 다중 창 폴백을 거절해야 한다"
             );
         }
     }
 
-    /// 이 4개 메서드 밖의 다른 메서드는 이 판정에 걸리지 않는다 — 다중 윈도우여도
-    /// 기존 focused-window 폴백을 그대로 유지한다(범위 밖 메서드의 동작 변경 금지).
     #[test]
     fn unrelated_methods_are_unaffected_even_with_multiple_windows() {
         assert!(!ambiguous_parent_fallback_requires_surface(

@@ -1,13 +1,5 @@
-//! `timer.list` 응답 조립 — 등록된 모든 타이머의 read-only 스냅샷.
-//!
-//! "이 인스턴스가 idle 인데 왜 계속 깨어나는가" 를 재빌드 없이 실행 중 인스턴스에
-//! 물어보기 위한 관측 표면이다. 조회 전용 — 등록/취소/강제발화 경로는 열지 않는다.
-//! 외부가 내부 스케줄을 흔들면 회수 지연 상한 같은 계약이 무너진다.
-//!
-//! 허브가 여러 개라는 사실(본체 + plugin manager)은 응답에서 `hub` 필드로만 드러난다.
-//! 대기 계산이 `min_deadline` 으로 하나로 접히는 것과 같은 이유로, 관측도 하나의
-//! 목록으로 합쳐야 "무엇이 깨우고 있는가" 에 답할 수 있다
-//! (`docs/dev-guide/timer-hub.md`).
+//! timer.list로 본체·플러그인 허브의 등록 상태를 조회한다. 타이머를 변경하지 않는다.
+//! 예약한 깨우기 목표 시각이며 실제 깨움 원인이나 실행 완료 시각은 아니다.
 
 use std::time::Duration;
 use std::time::Instant;
@@ -17,13 +9,10 @@ use tasty_timer::TimerSnapshot;
 
 use crate::app::App;
 
-/// 본체 허브 항목의 `hub` 라벨.
 pub(crate) const HUB_APP: &str = "app";
-/// plugin manager 자체 허브 항목의 `hub` 라벨.
 pub(crate) const HUB_PLUGIN: &str = "plugin";
 
-/// 허브 소속을 붙인 스냅샷 1건. 키만 표시용 문자열로 옮겨 두어 서로 다른 키 타입의
-/// 허브들을 한 목록으로 합칠 수 있다.
+/// 서로 다른 허브의 키를 문자열로 바꾸고 소속을 붙인 조회 행.
 pub(crate) struct TimerRow {
     pub(crate) key: String,
     pub(crate) hub: &'static str,
@@ -34,9 +23,7 @@ pub(crate) struct TimerRow {
 }
 
 impl TimerRow {
-    /// 이 타이머가 이벤트 루프를 깨우기를 요구하는 시각.
-    /// `TimerHub::next_deadline` 이 min 을 취하는 값과 같은 정의여야 한다 —
-    /// 어긋나면 요약 라인이 실제 wakeup 원인과 다른 항목을 지목한다.
+    /// TimerHub::next_deadline과 같은 계산식. 실제 작업 시작·완료 시각을 보장하지 않는다.
     fn hard_deadline(&self) -> Instant {
         match self.precision {
             Precision::Strict => self.next_due,
@@ -45,8 +32,6 @@ impl TimerRow {
     }
 }
 
-/// 스냅샷을 허브 라벨과 함께 행으로 옮긴다. 키 타입마다 표시 방법이 달라
-/// (본체는 `Debug`, plugin 은 이미 문자열) 라벨링은 호출자가 넘긴다.
 pub(crate) fn rows_from<K>(
     snapshot: &[TimerSnapshot<K>],
     hub: &'static str,
@@ -65,9 +50,7 @@ pub(crate) fn rows_from<K>(
         .collect()
 }
 
-/// `Instant` 는 프로세스 밖에서 의미가 없으므로 호출 시각 기준 상대 밀리초로 낸다.
-/// 이미 지난 시각은 음수가 되어 "밀려 있다" 는 사실이 그대로 보인다 — 여기서
-/// 0 으로 접으면 stale 데드라인(과거 시각 재등록으로 인한 스핀)이 관측에서 사라진다.
+/// 프로세스 밖에서 해석할 수 있도록 현재 시각 기준 밀리초로 바꾸며 지난 시각은 음수로 남긴다.
 fn rel_ms(at: Instant, now: Instant) -> i64 {
     if at >= now {
         i64::try_from(at.duration_since(now).as_millis()).unwrap_or(i64::MAX)
@@ -95,15 +78,13 @@ fn row_json(row: &TimerRow, now: Instant) -> serde_json::Value {
         "precision": precision,
         "slack_ms": slack_ms,
         "hard_deadline_ms": rel_ms(row.hard_deadline(), now),
-        // 양수 = "이만큼 전에 발화했다". 한 번도 발화하지 않았으면 null.
+        // 마지막 drain_due가 이 키를 반환한 이후의 시간. 실행 완료 시각은 아니다.
         "last_fired_ms_ago": row.last_fired.map(|t| rel_ms(now, t)),
     })
 }
 
-/// 행 목록을 `timer.list` 응답으로 직렬화한다.
-///
-/// `hard_deadline` 이 이 응답의 요점이다 — 지금 무엇이 인스턴스를 깨우고 있는지에
-/// 직접 답한다. 등록된 타이머가 없으면 `null` 이고, 그건 "무기한 자도 된다" 를 뜻한다.
+/// 가장 이른 깨우기 목표도 함께 반환한다. None은 등록된 타이머가 없다는 뜻일 뿐,
+/// IPC·입력 등 다른 이유로 이벤트 루프가 깨어날 가능성을 배제하지 않는다.
 pub(crate) fn to_json(rows: &[TimerRow], now: Instant) -> serde_json::Value {
     let hard = rows.iter().min_by_key(|r| r.hard_deadline());
     serde_json::json!({
@@ -117,10 +98,7 @@ pub(crate) fn to_json(rows: &[TimerRow], now: Instant) -> serde_json::Value {
 }
 
 impl App {
-    /// 본체 허브 + plugin manager 허브를 합친 `timer.list` 응답.
-    ///
-    /// gui 는 `app_methods` step 에서, headless 는 dispatch pump 에서 호출한다 —
-    /// 허브가 `App` 필드라 `CoreState` 만 받는 일반 IPC 핸들러에서는 닿지 않는다.
+    /// App이 가진 두 허브를 합친다. CoreState만 받는 IPC 핸들러에서는 직접 조회할 수 없다.
     pub(crate) fn timer_list_json(&self, now: Instant) -> serde_json::Value {
         let app_snapshot = self.timers.snapshot();
         let mut rows = rows_from(&app_snapshot, HUB_APP, |k| format!("{k:?}"));
@@ -156,8 +134,7 @@ mod tests {
     #[test]
     fn lax_timers_do_not_claim_the_hard_deadline_before_their_slack() {
         let now = Instant::now();
-        // Lax 가 더 이르게 due 해도 slack 만큼은 깨움을 요구하지 않는다 —
-        // 요약 라인이 Strict 쪽을 지목해야 한다.
+        // 더 이른 next_due보다 slack을 더한 깨우기 목표가 요약 선택을 결정한다.
         let rows = vec![
             row("Lax", now + ms(100), Precision::Lax { slack: ms(60_000) }),
             row("Strict", now + ms(500), Precision::Strict),
