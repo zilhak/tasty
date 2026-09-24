@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# Phase J.C — WASM vs process plugin 비교 벤치마크.
-#
-# 본 스크립트는 *POC harness* 의 측정값을 csv 로 export 한다. process baseline
-# 측정은 별 작업 — `tasty` 의 full plugin lifecycle 을 거치므로 통합 환경 필요.
-# POC 단계는 wasm 측정값만 수집.
-#
-# 결과: ${BENCH_OUT_DIR:-${TMPDIR:-/tmp}/tasty-bench}/bench-wasm-poc.csv
+# WASM POC 실행 시간만 CSV로 수집한다. 별도 프로세스 plugin과의 비교 측정은 하지 않는다.
 
 set -euo pipefail
 

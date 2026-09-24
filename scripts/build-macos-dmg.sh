@@ -19,10 +19,7 @@ fi
 
 cd "$(dirname "$0")/.."
 
-# Apple Silicon 전용. 과거엔 x86_64 도 빌드해 lipo 로 universal 을 만들었지만,
-# dist 는 full LTO 라 타깃 하나가 통째로 빌드 시간을 배로 늘린다. Intel Mac 은
-# macOS 26 이 마지막 지원 릴리스라 배포 대상에서 뺀다 — Intel 에서 쓰려면
-# `--target x86_64-apple-darwin` 으로 직접 빌드하면 된다.
+# 이 배포 스크립트는 Apple Silicon 타깃만 만든다.
 TARGET=aarch64-apple-darwin
 installed_targets=$(rustup target list --installed 2>/dev/null || true)
 if ! grep -qx "$TARGET" <<<"$installed_targets"; then
@@ -34,9 +31,6 @@ command -v codesign &>/dev/null || {
     exit 1
 }
 
-# Parse arguments
-# 기본은 dist 프로필 (full LTO)을 써서 가장 빠른 바이너리를 배포한다.
-# 개발 중 빠르게 .app만 만들고 싶을 땐 --release(thin LTO) 또는 --debug 사용.
 PROFILE="dist"
 CARGO_FLAGS="--profile dist"
 if [[ "${1:-}" == "--debug" ]]; then
@@ -54,10 +48,7 @@ DIST_DIR="dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 DMG_NAME="$APP_NAME-$VERSION-macos-arm64.dmg"
 
-# Discover signing key BEFORE cargo build — so that the matching dev-pubkey.bin
-# is (re)derived and embedded into the host-plugin binary at compile time.
-# release/dist builds require a signing key; debug skips entirely.
-# Key-discovery rule is shared with the Justfile via scripts/ensure-sign-key.sh.
+# 빌드 전에 서명 키를 준비해 대응 공개키가 바이너리에 포함되게 한다.
 if [[ "$PROFILE" != "debug" ]]; then
     SIGN_KEY_PATH="$(./scripts/ensure-sign-key.sh)"
     export SIGN_KEY_PATH
@@ -66,10 +57,7 @@ fi
 echo "==> Building tasty ($PROFILE) for $TARGET..."
 cargo build $CARGO_FLAGS --target "$TARGET"
 
-# Discover bundled plugin crates (any `crates/tasty-plugin-*` with a manifest).
-# Matches build-linux.sh / build-windows.ps1 — keep in sync. A manifest with
-# `bundle = false` (demo/PoC plugins) is skipped from distribution; dev staging
-# (`just build-plugins`/`link-plugins`) still includes it.
+# 매니페스트가 있고 bundle=false가 아닌 plugin을 배포에 포함한다.
 PLUGIN_CRATES=()
 for d in crates/tasty-plugin-*; do
     [ -f "$d/tasty-plugin.toml" ] || continue
@@ -103,8 +91,6 @@ stage_binary() {
     cp "$src" "$out"
 }
 
-# release/dist builds: sign all plugin manifests (Ed25519) with the key
-# discovered (or auto-generated) before cargo build.
 if [[ "$PROFILE" != "debug" ]]; then
     echo "==> Signing plugin manifests with $SIGN_KEY_PATH..."
     ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
@@ -117,16 +103,7 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 stage_binary tasty "$APP_DIR/Contents/MacOS/tasty"
 
-# Stage plugins under Contents/Resources/. `bundle_root()`
-# (`crates/tasty-host-plugin/src/builtin.rs`) discovers `Contents/Resources/plugins/`
-# for .app bundles and syncs
-# each `<plugin-id>/` into `~/.tasty/plugins/<id>/` on first launch.
-#
-# NOT Contents/MacOS/ — codesign treats any directory holding an executable under
-# Contents/MacOS/ as nested code and tries to parse it as a bundle. These plugin
-# directories have no Contents/Info.plist, so signing fails outright with
-# "bundle format unrecognized, invalid, or unsuitable". Under Contents/Resources/
-# they are sealed as ordinary resources and the bundle signs cleanly.
+# plugin 디렉터리를 별도 코드 번들로 해석하지 않도록 Contents/MacOS 대신 Resources에 둔다.
 PLUGINS_DIR="$APP_DIR/Contents/Resources/plugins"
 mkdir -p "$PLUGINS_DIR"
 for c in "${PLUGIN_CRATES[@]}"; do
@@ -140,8 +117,6 @@ for c in "${PLUGIN_CRATES[@]}"; do
     mkdir -p "$dest"
     stage_binary "$c" "$dest/$c"
     cp "$manifest" "$dest/tasty-plugin.toml"
-    # .sig sidecar — produced by sign-bundle.sh above; required for non-debug
-    # builds, optional otherwise (debug runtime warns instead of rejecting).
     if [[ -f "crates/$c/tasty-plugin.toml.sig" ]]; then
         cp "crates/$c/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
     elif [[ "$PROFILE" != "debug" ]]; then
@@ -155,19 +130,13 @@ for c in "${PLUGIN_CRATES[@]}"; do
     echo "  staged $id"
 done
 
-# Copy icon
 cp "assets/icons/icon.icns" "$APP_DIR/Contents/Resources/icon.icns"
 
-# Stage the notice set (LICENSE, THIRD_PARTY_LICENSES.md, every file under
-# LICENSES/) under Contents/Resources/ — the bundle's place for non-code files,
-# and the one the codesign seal below covers as plain resources. Must happen
-# before codesign: changing the bundle afterwards breaks the signature. The
-# function is shared with build-linux.sh, so both read the set the same way.
+# 서명 후 내용을 바꾸면 서명이 깨지므로 notice 파일도 먼저 배치한다.
 # shellcheck source=scripts/lib/notice-set.sh
 . "scripts/lib/notice-set.sh"
 stage_notice "$APP_DIR/Contents/Resources"
 
-# Generate Info.plist
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -215,26 +184,12 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-# 코드 서명. Apple Silicon 의 "damaged/can't open" 하드 블록을 완화한다. 바이너리
-# staging·Info.plist 생성 *이후*, DMG 생성 이전 — 서명 뒤에 번들 내용을
-# 바꾸면 서명이 깨진다. Gatekeeper "미확인 개발자" 경고는 이것으로 없어지지
-# 않는다(공증 기각은 정책 결정 — docs 에서 우회 안내).
-#
-# 기본은 ad-hoc(`-`, 무료·Apple 계정 불요). $TASTY_CODESIGN_IDENTITY 가 설정돼
-# 있으면 그 identity 로 서명한다. ad-hoc 서명은 designated requirement 가 cdhash
-# 뿐이라 재빌드할 때마다 macOS 가 전혀 다른 앱으로 보고, TCC(개인정보 보호) 승인이
-# 매번 초기화된다 — "다른 앱의 데이터에 접근하려고 합니다" 가 무한 반복되는 원인.
-# 인증서로 서명하면 DR 에 certificate leaf 가 들어가 재빌드해도 승인이 유지된다.
-# 인증서 발급/조회: ./scripts/macos-codesign-identity.sh
-#
-# --deep 은 쓰지 않는다 (Apple 이 deprecate 했고, 여기선 불필요) — plugin 은
-# Contents/Resources/ 아래의 일반 리소스로 봉인된다.
+# 번들을 완성한 뒤 서명한다. 이 작업은 공증을 포함하지 않는다.
+# 명시한 TASTY_CODESIGN_IDENTITY가 없으면 아래 조건에 따라 개발 인증서 또는 ad-hoc을 선택한다.
 DEV_IDENTITY_NAME="Tasty Dev"
 SIGN_IDENTITY="${TASTY_CODESIGN_IDENTITY:-}"
 if [[ -z "$SIGN_IDENTITY" ]]; then
-    # 로컬 설치 빌드(NO_DMG=1)에서만 개발 인증서를 자동으로 집는다. DMG 는 이
-    # 인증서를 신뢰하지 않는 남의 머신으로 가므로 ad-hoc 을 유지해야 한다 —
-    # self-hosted 러너의 키체인에 개발 인증서가 있어도 배포본이 오염되지 않는다.
+    # 로컬 설치(NO_DMG=1)에만 개발 인증서를 자동 선택한다. 배포 DMG에 로컬 인증서를 넣지 않기 위해서다.
     codesign_identities=$(security find-identity -v -p codesigning 2>/dev/null || true)
     if [[ "${NO_DMG:-}" == "1" ]] &&
         grep -q "\"$DEV_IDENTITY_NAME\"" <<<"$codesign_identities"; then
@@ -253,7 +208,6 @@ else
 fi
 codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"
 
-# Verify the assembled .app (both install and DMG paths share this).
 echo "==> Verifying $APP_NAME.app..."
 "$APP_DIR/Contents/MacOS/tasty" --version >/dev/null || {
     echo "Error: binary failed to invoke --version" >&2
@@ -264,15 +218,11 @@ ARCH_LINE=$(file "$APP_DIR/Contents/MacOS/tasty")
     echo "Error: not an arm64 Mach-O binary: $ARCH_LINE" >&2
     exit 1
 }
-# 서명 검증. `codesign -dv | grep Signature=adhoc` 만으로는 부족하다 — 링커가
-# 자동으로 붙이는 서명(linker-signed)도 "Signature=adhoc" 를 출력하므로, codesign
-# 이 아예 실행되지 않은 번들도 통과한다. 실제로 서명됐는지는 _CodeSignature/ 봉인,
-# Identifier 가 번들 ID 로 잡혔는지, linker-signed 플래그가 사라졌는지로 판별한다.
+# linker의 자동 서명과 구별하려고 bundle 봉인·Identifier·linker-signed 여부를 함께 확인한다.
 if [[ ! -d "$APP_DIR/Contents/_CodeSignature" ]]; then
     echo "Error: $APP_NAME.app has no _CodeSignature (codesign did not run)" >&2
     exit 1
 fi
-# `|| true` — codesign -dv 자체가 실패해도 아래 검사에서 진단 메시지를 내고 죽도록.
 CODESIGN_INFO=$(codesign -dv "$APP_DIR" 2>&1 || true)
 if ! grep -Fxq "Identifier=$BUNDLE_ID" <<<"$CODESIGN_INFO"; then
     echo "Error: signing identifier is not $BUNDLE_ID:" >&2
@@ -294,8 +244,7 @@ PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
     exit 1
 }
 
-# Install path (NO_DMG=1, used by install-macos.sh): stop after assembling the
-# .app; skip DMG packaging. The caller copies dist/Tasty.app to /Applications.
+# NO_DMG=1이면 완성된 app까지만 만들고 복사·설치는 호출자에게 맡긴다.
 if [[ "${NO_DMG:-}" == "1" ]]; then
     echo "==> NO_DMG set — skipping DMG packaging."
     echo "  App:  $APP_DIR"
@@ -305,14 +254,11 @@ fi
 echo "==> Creating $DMG_NAME..."
 rm -f "$DIST_DIR/$DMG_NAME"
 
-# Stage DMG contents: app + Applications symlink for drag-install
 DMG_STAGE="$DIST_DIR/dmg-stage"
 rm -rf "$DMG_STAGE"
 mkdir -p "$DMG_STAGE"
 cp -R "$APP_DIR" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
-# The tree hdiutil packs, checked before it is packed — the same shape as the
-# AppDir check in build-linux.sh.
 verify_notice_tree "$DMG_STAGE/$APP_NAME.app/Contents/Resources" "$DMG_STAGE" || exit 1
 
 hdiutil create -volname "$APP_NAME" \
@@ -327,8 +273,7 @@ echo "==> Verifying DMG..."
     echo "Error: DMG missing: $DIST_DIR/$DMG_NAME" >&2
     exit 1
 }
-# Open the image read-only and look at the notice set where a user would find
-# it. The stage check above sees the input; this one sees the artifact.
+# 입력 디렉터리뿐 아니라 완성 DMG를 읽기 전용으로 열어 notice 파일을 대조한다.
 DMG_MOUNT=$(mktemp -d)
 hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$DMG_MOUNT" "$DIST_DIR/$DMG_NAME" >/dev/null
 dmg_notice_rc=0

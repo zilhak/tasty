@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-#
-# 10-surface 시나리오 기반 perf 측정.
-# 사전: tasty release 빌드 + `tasty` CLI 가 PATH 에 있어야 함.
-# 출력: ${PERF_LOG_DIR:-${TMPDIR:-/tmp}/tasty-bench}/perf-{platform}-{profile}.log 의 마지막 12 `perf` 라인.
-#
-# 측정 segment 정의 / window 크기 등은 docs/dev-guide/gpu-rendering.md#성능-측정 참조.
+# surface를 분할하고 출력을 발생시켜 마지막 perf 로그를 보여준다.
+# tasty CLI와 jq가 필요하며 기존 CLI 연결 대상과 새 cargo run 인스턴스를 별도로 구분하지 않는다.
 
 set -euo pipefail
 
@@ -32,7 +28,6 @@ fi
 
 echo "[perf-10-surfaces] platform=$PLATFORM profile=$PROFILE duration=${DURATION}s log=$LOG"
 
-# 1) tasty 실행 (perf 로그만 노출, 일반 noise 억제)
 RUST_LOG="tasty::gfx::perf=info,tasty=warn" \
     cargo run "${CARGO_FLAGS[@]}" > "$LOG" 2>&1 &
 TASTY_PID=$!
@@ -42,14 +37,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 2) tasty ready 대기 (`tasty list info` 가 0 종료할 때까지)
 for _ in $(seq 1 60); do
     if tasty list info >/dev/null 2>&1; then break; fi
     sleep 0.5
 done
 tasty list info >/dev/null
 
-# 3) 첫 surface 의 ID 확보 후 surface 분할 × 9
 FIRST_SID="$(tasty list surfaces | jq -r '.[0].id')"
 if [ -z "$FIRST_SID" ] || [ "$FIRST_SID" = "null" ]; then
     echo "error: could not determine first surface id" >&2
@@ -59,20 +52,16 @@ for _ in $(seq 1 9); do
     tasty split --level surface --target-surface "$FIRST_SID" --direction vertical >/dev/null
 done
 
-# 4) 각 surface 에 5000 줄 출력 트리거
 CR="$(printf '\r')"
 for sid in $(tasty list surfaces | jq -r '.[].id'); do
     tasty send text "for i in \$(seq 1 5000); do echo bench_\$i; done${CR}" \
         --surface "$sid" >/dev/null
 done
 
-# 5) 측정 (DURATION 초)
 sleep "$DURATION"
 
-# 6) 종료
 cleanup
 trap - EXIT
 
-# 7) 마지막 12 perf 라인 추출 (≈60s @ 5s/dump)
 echo "--- last 12 perf samples ---"
 grep "tasty::gfx::perf" "$LOG" | tail -12

@@ -29,7 +29,6 @@ fi
 
 cd "$(dirname "$0")/.."
 
-# Parse arguments
 PROFILE="dist"
 CARGO_FLAGS="--profile dist"
 if [[ "${1:-}" == "--debug" ]]; then
@@ -52,7 +51,6 @@ DIST_DIR="dist"
 PKG_DIR="tasty-linux-${ARCH}"
 ARCHIVE_NAME="tasty-${VERSION}-linux-${ARCH}.tar.gz"
 
-# Check build dependencies
 echo "==> Checking build dependencies..."
 MISSING_DEPS=()
 for dep in cmake pkg-config; do
@@ -65,17 +63,12 @@ for lib in freetype2 fontconfig; do
         MISSING_DEPS+=("$lib")
     fi
 done
-# libxdo (tray-icon → muda) has no reliable .pc file and ships only the runtime
-# .so.N without the dev symlink unless the dev package is installed. Probe the
-# linker directly so this works on any arch (the -L search path differs per
-# arch, but `cc -lxdo` resolves it the same way the real build link step does).
+# libxdo 개발 패키지의 링크 가능 여부는 .pc 파일 대신 실제 링커로 확인한다.
 if ! echo 'int main(void){return 0;}' | cc -xc - -lxdo -o /dev/null 2>/dev/null; then
     MISSING_DEPS+=("libxdo")
 fi
 
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
-    # Detect the distro package manager. Package names differ across distros
-    # (e.g. libxdo-dev / libxdo-devel / xdotool), so map each dep per manager.
     PKG_MGR=""
     for m in apt-get dnf pacman zypper; do
         if command -v "$m" &>/dev/null; then PKG_MGR="$m"; break; fi
@@ -110,13 +103,11 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
 
     echo "Error: Missing build dependencies: ${MISSING_DEPS[*]}" >&2
 
-    # Resolve privilege escalation (root needs none; non-root needs sudo).
     SUDO=""
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         command -v sudo &>/dev/null && SUDO="sudo"
     fi
 
-    # Build the install command for the detected manager.
     INSTALL_ARGS=()
     case "$PKG_MGR" in
         apt-get) INSTALL_ARGS=(apt-get install -y "${PKGS[@]}") ;;
@@ -126,9 +117,6 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
     esac
     SHOW="${SUDO:+sudo }${INSTALL_ARGS[*]}"
 
-    # Offer to install only with a known manager, a fully mapped package set, an
-    # interactive TTY, and a usable privilege path. Otherwise (CI / unknown
-    # distro / no sudo) print a manual hint and exit.
     if [[ -n "$PKG_MGR" && ${#UNMAPPED[@]} -eq 0 && -t 0 \
           && ( -n "$SUDO" || "${EUID:-$(id -u)}" -eq 0 ) ]]; then
         printf "  Install now? [%s] [y/N] " "$SHOW" >&2
@@ -148,9 +136,7 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
     fi
 fi
 
-# Discover signing key BEFORE cargo build — so that the matching dev-pubkey.bin
-# is (re)derived and embedded into the host-plugin binary at compile time.
-# Key-discovery rule is shared with the Justfile via scripts/ensure-sign-key.sh.
+# 빌드 전에 서명 키를 준비해야 대응 공개키가 바이너리에 포함된다.
 if [[ "$PROFILE" != "debug" ]]; then
     SIGN_KEY_PATH="$(./scripts/ensure-sign-key.sh)"
     export SIGN_KEY_PATH
@@ -159,10 +145,7 @@ fi
 echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
-# Discover bundled plugin crates (any `crates/tasty-plugin-*` with a manifest).
-# Matches build-macos-dmg.sh / build-windows.ps1 — keep in sync. A manifest with
-# `bundle = false` (demo/PoC plugins) is skipped from distribution; dev staging
-# (`just build-plugins`/`link-plugins`) still includes it.
+# 매니페스트가 있고 bundle=false가 아닌 plugin을 배포에 포함한다.
 PLUGIN_CRATES=()
 for d in crates/tasty-plugin-*; do
     [ -f "$d/tasty-plugin.toml" ] || continue
@@ -185,17 +168,12 @@ for c in "${PLUGIN_CRATES[@]}"; do
 done
 cargo build $CARGO_FLAGS "${PLUGIN_CARGO_ARGS[@]}"
 
-# release/dist builds: sign all plugin manifests (Ed25519) with the key
-# discovered (or auto-generated) before cargo build.
 if [[ "$PROFILE" != "debug" ]]; then
     echo "==> Signing plugin manifests with $SIGN_KEY_PATH..."
     ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
 fi
 
-# Stage plugins under <dest>/<id>/. Mirrors macOS build-macos-dmg.sh staging.
-# `bundle_root()` (crates/tasty-host-plugin/src/builtin.rs) discovers
-# `<exe_dir>/plugins/` and syncs each `<plugin-id>/` into `~/.tasty/plugins/<id>/`
-# on first launch.
+# 실행 파일 옆의 plugins/<id>에 배치한다. 번들 탐색 경로와 맞아야 한다.
 stage_plugins() {
     local plugins_dir="$1"
     mkdir -p "$plugins_dir"
@@ -216,8 +194,6 @@ stage_plugins() {
         mkdir -p "$dest"
         cp "$src_bin" "$dest/$c"
         cp "$manifest" "$dest/tasty-plugin.toml"
-        # .sig sidecar — produced by sign-bundle.sh above; required for non-debug
-        # builds, optional otherwise (debug runtime warns instead of rejecting).
         if [[ -f "crates/$c/tasty-plugin.toml.sig" ]]; then
             cp "crates/$c/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
         elif [[ "$PROFILE" != "debug" ]]; then
@@ -232,8 +208,7 @@ stage_plugins() {
     done
 }
 
-# Stage the notice set into a distribution tree — `stage_notice` lives in a
-# library shared with build-macos-dmg.sh so the two cannot disagree on the set.
+# 공용 notice 목록을 읽어 Linux와 macOS가 같은 파일을 배포한다.
 # shellcheck source=scripts/lib/notice-set.sh
 . "scripts/lib/notice-set.sh"
 
@@ -241,17 +216,11 @@ echo "==> Assembling archive..."
 rm -rf "${DIST_DIR:?}/${PKG_DIR:?}"
 mkdir -p "$DIST_DIR/$PKG_DIR"
 
-# 패키지 매니저 없는 배포(tar.gz) 는 `$auto`/apt 의존성 해석이 없다 — 링크타임 so 가
-# 하나라도 없으면 동적 링커가 main() 진입 전에 프로세스를 죽여, 바이너리 자신은 어떤
-# 메시지도 낼 기회가 없다. 실제 바이너리를 tasty.bin 으로 옮기고, 그 자리에 실행 전
-# `ldd` 로 누락 so 를 감지해 안내 후 종료하는 얇은 wrapper 를 대신 배치한다.
+# main 진입 전 공유 라이브러리가 없을 때 안내할 launcher를 함께 배포한다.
 cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty.bin"
 cat > "$DIST_DIR/$PKG_DIR/tasty" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
-# Tasty launcher wrapper — 실행 전 필수 공유 라이브러리(so) 존재를 확인한다.
-# 링크타임 so 부족은 동적 링커가 실제 바이너리를 exec 하는 즉시(= main() 진입 전)
-# 프로세스를 죽이므로, 바이너리 자신은 진단 메시지를 낼 수 없다. 이 wrapper 가
-# `ldd` 로 먼저 확인해 사람이 읽을 수 있는 안내를 낸 뒤 대체 경로를 제공한다.
+# 실행 전에 ldd에서 누락된 공유 라이브러리를 찾는다. ldd가 없거나 검사 실패 시에도 실행을 시도한다.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="$HERE/tasty.bin"
@@ -307,14 +276,7 @@ if [[ "$PROFILE" != "debug" ]]; then
         exit 1
     fi
 
-    # .deb and .rpm ship plugins via Cargo.toml metadata assets
-    # (`[package.metadata.deb]` and `[package.metadata.generate-rpm]`).
-    # Plugins land in /usr/lib/tasty/plugins/<id>/ — the runtime
-    # `bundle_root()` (crates/tasty-host-plugin/src/builtin.rs) picks this up
-    # as the linux FHS fallback after the exe-relative `plugins/` lookup
-    # fails. cargo-deb / cargo-generate-rpm read those metadata blocks before
-    # this script runs `--no-build`, so the binaries must exist in
-    # `target/<profile>/` (built above).
+    # deb/rpm의 plugin 파일 목록은 Cargo.toml 패키징 설정에 있다. --no-build 전에 바이너리가 필요하다.
 
     echo "==> Building .deb package..."
     cargo deb --no-build --profile "$PROFILE"
@@ -335,8 +297,6 @@ if [[ "$PROFILE" != "debug" ]]; then
     APPDIR="target/AppDir"
     rm -rf "$APPDIR"
     mkdir -p "$APPDIR/usr/bin"
-    # linuxdeploy doesn't clean AppDir — pre-stage plugins next to where it will
-    # place tasty (AppDir/usr/bin/), so current_exe() sees `<exe_dir>/plugins/`.
     stage_plugins "$APPDIR/usr/bin/plugins"
     stage_notice "$APPDIR/usr/share/licenses/tasty"
     VERSION="$VERSION" OUTPUT="$APPIMAGE_NAME" linuxdeploy \
@@ -351,17 +311,7 @@ if [[ "$PROFILE" != "debug" ]]; then
 fi
 
 echo "==> Verifying artifacts..."
-# tar.gz: 내부에 tasty 존재 + 풀어서 --version 호출 가능
-# **이 파일 전체의 규칙**: 조기에 끝나는 소비자(`grep -q` · `head` · `sed …q` ·
-# `awk …exit`)를 파이프의 오른쪽에 두지 않는다. 소비자가 먼저 파이프를 닫으면 아직 쓰던
-# producer 가 SIGPIPE 로 죽고, `set -o pipefail` 이 그 141 을 파이프라인 rc 로 올린다 —
-# 소비자가 원하는 것을 찾았는데도 실패로 판정된다. 여기서는 `set -e` 까지 켜져 있어
-# 대입문·단독 파이프라인이면 스크립트가 그 자리에서 죽고, `if`/`||` 자리면 조건이
-# 뒤집힌다. 실현 여부는 grep 이 끝난 시점의 잔여 출력량에 달려 있어 자리마다 다르고,
-# 큰 출력에서는 비결정이 아니라 **결정적으로** 매번 난다.
-#
-# 처방은 둘 중 하나이고 비용이 0 이다: producer 를 변수로 완전히 받은 뒤 히어스트링으로
-# 넘기거나(`grep -q PAT <<<"$out"`), 애초에 파이프를 만들지 않는다(`grep -m1 PAT FILE`).
+# 조기 종료하는 grep/head에 producer를 직접 연결하면 pipefail에서 SIGPIPE로 실패할 수 있어 출력을 먼저 받는다.
 TAR_LISTING=$(tar -tzf "$DIST_DIR/$ARCHIVE_NAME")
 grep -q "$PKG_DIR/tasty" <<<"$TAR_LISTING" || {
     echo "Error: tasty not in $ARCHIVE_NAME" >&2
@@ -392,7 +342,7 @@ if [[ -n "$RPM_FILE" ]] && command -v rpm &>/dev/null; then
     RPM_LISTING=$(rpm -qpl "$RPM_FILE" 2>/dev/null)
     verify_notice_listing "$RPM_LISTING" "/usr/share/licenses/tasty/" "$RPM_FILE" flat || exit 1
 fi
-# AppImage: GUI 초기화 hang 회피 — 실행 없이 파일 존재 + ELF 헤더만 확인
+# AppImage는 실행하지 않고 파일 종류와 패키징 입력 AppDir만 확인한다.
 if [[ -n "$APPIMAGE_FILE" ]]; then
     [[ -f "$APPIMAGE_FILE" ]] || {
         echo "Error: AppImage missing: $APPIMAGE_FILE" >&2
@@ -403,9 +353,7 @@ if [[ -n "$APPIMAGE_FILE" ]]; then
         echo "Error: AppImage is not an ELF binary: $APPIMAGE_FILE" >&2
         exit 1
     }
-    # The AppImage itself is a squashfs image; listing it would need an extract
-    # run. What is checked instead is the AppDir linuxdeploy packed, which is
-    # still on disk and is the same tree.
+    # 완성 AppImage 내부가 아니라 linuxdeploy에 넘긴 AppDir의 notice 파일을 검사한다.
     verify_notice_tree "$APPDIR/usr/share/licenses/tasty" "$APPDIR" || exit 1
 fi
 

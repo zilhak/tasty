@@ -27,9 +27,7 @@ if ($env:OS -ne "Windows_NT") {
 Push-Location (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 try {
 
-# Parse profile
-# NOTE: $Profile is a PowerShell automatic variable (user profile script path).
-# Use $BuildProfile to avoid the name collision.
+# $Profile은 PowerShell 자동 변수이므로 빌드 프로필에는 $BuildProfile을 사용한다.
 $BuildProfile = "dist"
 $CargoFlags = @("--profile", "dist")
 if ($Debug) {
@@ -40,7 +38,6 @@ if ($Debug) {
     $CargoFlags = @("--release")
 }
 
-# Extract version from Cargo.toml
 $CargoContent = Get-Content "Cargo.toml" -Raw
 if ($CargoContent -match '(?m)^version\s*=\s*"([^"]+)"') {
     $Version = $Matches[1]
@@ -53,14 +50,11 @@ $DistDir = "dist"
 $ArchiveName = "tasty-${Version}-windows-x64.zip"
 $StageDir = Join-Path $DistDir "tasty-windows"
 
-# Resolve a usable bash for the POSIX helper scripts. Prefer **Git Bash** — on
-# Windows a bare `bash` frequently resolves to WSL's bash, which fails for these
-# scripts (no distro installed / relay error: "execvpe(/bin/bash) failed").
+# WSL bash가 선택되는 일을 줄이기 위해 Git Bash를 우선 찾는다.
 function Resolve-Bash {
     $candidates = @()
     $gitCmd = Get-Command git -ErrorAction SilentlyContinue
     if ($gitCmd) {
-        # .../Git/cmd/git.exe -> .../Git
         $gitRoot = Split-Path (Split-Path $gitCmd.Source -Parent) -Parent
         $candidates += (Join-Path $gitRoot 'bin\bash.exe')
         $candidates += (Join-Path $gitRoot 'usr\bin\bash.exe')
@@ -73,14 +67,12 @@ function Resolve-Bash {
     foreach ($c in $candidates) {
         if ($c -and (Test-Path $c)) { return $c }
     }
-    # Last resort: bare bash from PATH (may be WSL, but better than nothing).
     $b = Get-Command bash -ErrorAction SilentlyContinue
     if ($b) { return $b.Source }
     return $null
 }
 
-# Discover signing key BEFORE cargo build — so that the matching dev-pubkey.bin
-# is (re)derived and embedded into the host-plugin binary at compile time.
+# 빌드 전에 서명 키를 준비해 대응 공개키가 바이너리에 포함되게 한다.
 if ($BuildProfile -ne "debug") {
     $SignKeyPath = $env:SIGN_KEY_PATH
     if (-not $SignKeyPath) {
@@ -89,10 +81,7 @@ if ($BuildProfile -ne "debug") {
         if (Test-Path $ReleaseKey) {
             $SignKeyPath = $ReleaseKey
         } else {
-            # dev 키 경로: 없으면 생성, 있으면 추적되지 않는 dev-pubkey.bin 을
-            # dev.pem 에서 재도출한다. gen-dev-key.sh 가 두 경우 모두 처리
-            # (idempotent) → 빌드가 all-zero placeholder 대신 서명 키와 일치하는
-            # trust 키를 임베드한다.
+            # 개발 키가 없으면 만들고 기존 키가 있으면 공개키를 다시 추출한다.
             Write-Host "==> Ensuring dev signing key + embedded pubkey..."
             $Bash = Resolve-Bash
             if (-not $Bash) {
@@ -117,10 +106,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Discover bundled plugin crates (any `crates\tasty-plugin-*` with a manifest).
-# Matches build-linux.sh / build-macos-dmg.sh — keep in sync. A manifest with
-# `bundle = false` (demo/PoC plugins) is skipped from distribution; dev staging
-# (`just build-plugins`/`link-plugins`) still includes it.
+# 매니페스트가 있고 bundle=false가 아닌 plugin을 배포에 포함한다.
 $PluginCrates = @()
 foreach ($d in (Get-ChildItem -Path "crates" -Filter "tasty-plugin-*" -Directory)) {
     $manifest = Join-Path $d.FullName "tasty-plugin.toml"
@@ -149,8 +135,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# release/dist builds: sign all plugin manifests (Ed25519) with the key
-# discovered (or auto-generated) before cargo build.
 if ($BuildProfile -ne "debug") {
     $SignKeyPath = $env:SIGN_KEY_PATH
     $Bash = Resolve-Bash
@@ -166,10 +150,6 @@ if ($BuildProfile -ne "debug") {
     }
 }
 
-# Stage plugins under <dest>\<id>\. Mirrors macOS build-macos-dmg.sh staging.
-# `bundle_root()` (crates\tasty-host-plugin\src\builtin.rs) discovers
-# `<exe_dir>\plugins\` and syncs each `<plugin-id>\` into
-# `%USERPROFILE%\.tasty\plugins\<id>\` on first launch.
 function Stage-Plugins {
     param([string]$PluginsDir)
     New-Item -ItemType Directory -Force -Path $PluginsDir | Out-Null
@@ -190,8 +170,6 @@ function Stage-Plugins {
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
         Copy-Item $srcBin -Destination (Join-Path $dest "$c.exe")
         Copy-Item $manifest -Destination (Join-Path $dest "tasty-plugin.toml")
-        # .sig sidecar — produced by sign-bundle.sh above; required for non-debug
-        # builds, optional otherwise (debug runtime warns instead of rejecting).
         $sigPath = Join-Path "crates" (Join-Path $c "tasty-plugin.toml.sig")
         if (Test-Path $sigPath) {
             Copy-Item $sigPath -Destination (Join-Path $dest "tasty-plugin.toml.sig")
@@ -209,11 +187,7 @@ function Stage-Plugins {
     }
 }
 
-# The notice set — LICENSE, THIRD_PARTY_LICENSES.md and every file directly
-# under LICENSES\ — as repo-relative paths. THIRD_PARTY_LICENSES.md's "notice
-# set" section is the definition; scripts/lib/notice-set.sh reads the directory
-# the same way for the Linux and macOS artifacts. The set is read from the
-# directory, not listed here, so a new licence text needs no edit to this file.
+# notice 파일은 LICENSE·THIRD_PARTY_LICENSES.md·LICENSES 바로 아래 파일이다. Linux/macOS와 같은 목록을 사용한다.
 function Get-NoticeSetFiles {
     $files = @("LICENSE", "THIRD_PARTY_LICENSES.md")
     $texts = @(Get-ChildItem -Path "LICENSES" -File | Sort-Object Name)
@@ -225,8 +199,7 @@ function Get-NoticeSetFiles {
     return $files
 }
 
-# Copy the notice set into a distribution tree. LICENSES\ keeps its
-# subdirectory so the relative links inside THIRD_PARTY_LICENSES.md resolve.
+# notice 문서의 상대 링크가 맞도록 LICENSES 디렉터리를 유지한다.
 function Stage-Notice([string]$Dest) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Dest "LICENSES") | Out-Null
     foreach ($f in Get-NoticeSetFiles) {
@@ -234,7 +207,7 @@ function Stage-Notice([string]$Dest) {
     }
 }
 
-# Compare a staged or extracted tree with the repo copy, byte for byte.
+# SHA256으로 배포 사본을 원본과 대조한다.
 function Test-NoticeTree([string]$Root, [string]$Label) {
     foreach ($f in Get-NoticeSetFiles) {
         $staged = Join-Path $Root $f
@@ -262,15 +235,12 @@ if (-not (Test-Path $ExePath)) {
 }
 Copy-Item $ExePath -Destination $StageDir
 
-# Collect any DLLs from the build output directory
 $BuildDir = Join-Path "target" $BuildProfile
 Get-ChildItem -Path $BuildDir -Filter "*.dll" | ForEach-Object {
     Copy-Item $_.FullName -Destination $StageDir
 }
 
 Stage-Plugins (Join-Path $StageDir "plugins")
-# Notice set at the archive's top level, next to tasty.exe — the same place the
-# Linux tar.gz puts it.
 Stage-Notice $StageDir
 
 Write-Host "==> Creating $ArchiveName..."
@@ -283,22 +253,14 @@ Remove-Item -Recurse -Force $StageDir
 Write-Host ""
 Write-Host "Portable archive: $DistDir\$ArchiveName"
 
-# === MSI installer (cargo-wix) ===
-# The .msi ships plugins via explicit Component / File entries in
-# wix\main.wxs (one per binary, manifest, and lang file). They install
-# to `<APPLICATIONFOLDER>\bin\plugins\<id>\` next to tasty.exe so the
-# runtime `bundle_root()` finds them via the exe-relative `plugins/`
-# lookup. Keep the wxs plugin list in sync with BUILTINS in
-# crates\tasty-host-plugin\src\builtin.rs.
+# MSI의 plugin 파일 목록은 wix/main.wxs가 별도로 관리한다.
 if (-not $SkipMsi) {
     Write-Host ""
     Write-Host "==> Building MSI installer..."
 
-    # cargo-wix는 release/dist 프로필만 지원 (debug는 의미 없음)
     if ($BuildProfile -eq "debug") {
         Write-Host "  (skipping MSI for debug build)"
     } else {
-        # --- Ensure cargo-wix is installed (zero-touch, mirrors signing-key auto-gen) ---
         $cargoWix = Get-Command cargo-wix -ErrorAction SilentlyContinue
         if (-not $cargoWix) {
             Write-Host "==> cargo-wix not found — installing via 'cargo install cargo-wix'..."
@@ -314,10 +276,7 @@ if (-not $SkipMsi) {
             }
         }
 
-        # --- Ensure WiX 3.x is installed and discoverable ---
-        # WiX 3.x (winget package WiXToolset.WiXToolset) registers the WIX
-        # environment variable but does NOT add WIX\bin to PATH, so cargo-wix
-        # can't find candle.exe / light.exe. Prepend it for this process.
+        # cargo-wix가 candle/light를 찾도록 WiX 설치 위치의 bin을 PATH에 추가한다.
         if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
             $wixRoot = $env:WIX
             if (-not $wixRoot) {
@@ -325,11 +284,7 @@ if (-not $SkipMsi) {
             }
             $wixBin = if ($wixRoot) { Join-Path $wixRoot "bin" } else { $null }
 
-            # Not installed yet — install via winget. WiX 3.14 REQUIRES admin:
-            # it enables the NetFx3 Windows feature (DISM) and installs at machine
-            # scope, neither of which a non-elevated shell can do. Self-elevate
-            # just the install via UAC, then return here. A single UAC click is
-            # the minimum Windows allows — there is no silent/no-prompt path.
+            # WiX 설치는 관리자 자식 PowerShell에서 요청하며 UAC 승인이 필요할 수 있다.
             if (-not ($wixBin -and (Test-Path (Join-Path $wixBin "candle.exe")))) {
                 Write-Host "==> WiX Toolset not found — installing via winget (a UAC admin prompt will appear)..."
                 $winget = Get-Command winget -ErrorAction SilentlyContinue
@@ -337,7 +292,6 @@ if (-not $SkipMsi) {
                     Write-Error "winget not found. Install WiX 3.x manually: winget install -e --id WiXToolset.WiXToolset"
                     exit 1
                 }
-                # Elevated child: enable NetFx3 (WiX 3.x dependency) then install WiX.
                 $elevCmd = 'Enable-WindowsOptionalFeature -Online -FeatureName NetFx3 -All -NoRestart -ErrorAction SilentlyContinue | Out-Null; winget install -e --id WiXToolset.WiXToolset --accept-source-agreements --accept-package-agreements; exit $LASTEXITCODE'
                 try {
                     $proc = Start-Process -FilePath "powershell.exe" -Verb RunAs -Wait -PassThru `
@@ -346,13 +300,10 @@ if (-not $SkipMsi) {
                     Write-Error "Could not elevate to install WiX (UAC declined or unavailable): $($_.Exception.Message). Install manually: winget install -e --id WiXToolset.WiXToolset"
                     exit 1
                 }
-                # Don't hard-fail on the child's exit code (e.g. 'already installed'
-                # returns non-zero); the candle.exe check below is the real gate.
+                # 설치 종료 코드만으로 중단하지 않고 아래에서 candle.exe를 다시 확인한다.
                 if ($proc.ExitCode -ne 0) {
                     Write-Warning "Elevated WiX install returned exit code $($proc.ExitCode) — verifying candle.exe anyway..."
                 }
-                # winget registers WIX at Machine scope but not in this process —
-                # re-read it live from the registry.
                 $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "Machine")
                 if (-not $wixRoot) {
                     $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "User")
@@ -369,10 +320,7 @@ if (-not $SkipMsi) {
             }
         }
 
-        # wix\main.wxs has to name each notice file (WiX has no directory glob
-        # here), so the set read from LICENSES\ is checked against it before the
-        # MSI is built — a licence text added to the directory but not to the
-        # installer fails here instead of shipping an MSI without it.
+        # WiX는 파일을 명시하므로 notice 목록의 Source 항목이 선언됐는지 먼저 확인한다.
         $WxsContent = Get-Content (Join-Path "wix" "main.wxs") -Raw
         foreach ($f in Get-NoticeSetFiles) {
             if (-not $WxsContent.Contains("Source='$f'")) {
@@ -401,7 +349,6 @@ if (-not $SkipMsi) {
 }
 
 Write-Host "==> Verifying artifacts..."
-# ZIP: 풀어서 tasty.exe --version
 $VerifyDir = Join-Path $env:TEMP "tasty-verify-$([guid]::NewGuid())"
 Expand-Archive -Path $ArchivePath -DestinationPath $VerifyDir
 $VerifyExe = Join-Path $VerifyDir "tasty.exe"
@@ -418,17 +365,13 @@ if ($VersionExit -ne 0) {
     Write-Error "tasty.exe --version failed with exit code $VersionExit"
     exit 1
 }
-# MSI: 권한 필요한 메타 검증은 skip — 파일 존재만 확인
 if (-not $SkipMsi -and $BuildProfile -ne "debug") {
     $MsiPath = Join-Path $DistDir "tasty-${Version}-windows-x64.msi"
     if (-not (Test-Path $MsiPath)) {
         Write-Error "MSI missing: $MsiPath"
         exit 1
     }
-    # Notice set: an administrative install (msiexec /a) unpacks the MSI's file
-    # table into a folder without installing anything or needing elevation. The
-    # install tree is found by the inventory file rather than a hard-coded
-    # directory name, then compared with the repo copy.
+    # MSI를 별도 디렉터리에 풀어 notice 파일을 원본과 대조한다.
     $MsiExtract = Join-Path $env:TEMP "tasty-msi-$([guid]::NewGuid())"
     $msiProc = Start-Process -FilePath "msiexec.exe" -Wait -PassThru `
         -ArgumentList @("/a", "`"$((Resolve-Path $MsiPath).Path)`"", "/qn", "TARGETDIR=`"$MsiExtract`"")

@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# Phase J.C — clipboard-history WASM plugin POC 빌드.
-#
-# 산출물:
-#   target/wasm32-wasip2/release/tasty_plugin_clipboard_history.wasm    (raw module)
-#   target/poc/clipboard-history.component.wasm                          (component, embedded WIT)
-#
-# 요구사항:
-#   rustup target add wasm32-wasip2
-#   cargo install wasm-tools
+# clipboard-history WASM POC 빌드용 스크립트. 현재 workspace에는 해당 crate가 없다.
+# 요구 도구: wasm32-wasip2 Rust 타깃과 wasm-tools. 실행 명령은 보관된 POC 구성을 따른다.
 
 set -euo pipefail
 
