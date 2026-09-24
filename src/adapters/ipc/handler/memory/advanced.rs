@@ -1,4 +1,4 @@
-//! 메모리 도메인 IPC 핸들러의 advanced 그룹: gc / query / export / import.
+//! 만료 항목 정리와 메모리 조회·내보내기·가져오기.
 
 use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
@@ -13,9 +13,7 @@ use super::{
     require_scope,
 };
 
-/// `memory.gc` — local_only. 만료 entry 일괄 DELETE (regular + secret).
-/// 응답: `{ regular: N, secret: M }`. read 경로는 항상 만료 필터를 거치므로
-/// 사용자에게 보이는 동작은 변하지 않고, 디스크 정리 + quota 회복만 일어난다.
+/// 만료 항목은 읽기에서 이미 제외된다. gc는 디스크를 정리하고 quota를 회복하며 Local만 허용한다.
 pub fn handle_gc(
     core: &Core,
     _engine: &mut crate::core::CoreState,
@@ -187,7 +185,3 @@ fn parse_export_entry(ev: &Value) -> Result<MemoryEntry, String> {
         owner: None,
     })
 }
-
-// ============================================================
-// Secret `memory.secret.*` — owner 자동 분기, 응답에 owner 미포함
-// ============================================================

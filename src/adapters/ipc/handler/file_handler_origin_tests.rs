@@ -1,10 +1,5 @@
-//! `file_handler.dispatch` **입구**가 발화 주체를 새 탭의 선택까지 그대로 나르는지 고정한다.
-//!
-//! 새 탭 핸들러의 판정(사용자면 선택, 아니면 그대로)은 `intent::headless` 시험이 origin 을 직접
-//! 주입해 잰다. 그 시험은 입구가 무엇을 싣는지 안 본다 — 입구가 사용자 popup 을 못 알아보거나
-//! 외부 호출자의 주장을 믿으면 그 시험은 초록인 채로 사용자 상태가 움직인다. 그래서 여기서는
-//! 요청을 `handle_dispatch` 에 넣고, 그 intent 를 identify 완료 적용과 새 탭 핸들러까지 실제로
-//! 흘린 뒤 사용자가 보던 탭을 본다(ADR-0031).
+//! 요청 입구에서 판정한 출처가 파일 식별과 새 탭 선택까지 유지되는지 확인한다.
+//! origin을 시험에서 직접 지정하면 입구의 잘못된 사용자 판정을 잡을 수 없다.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -28,13 +23,8 @@ fn plugin_caller(plugin_id: &str) -> CallerContext {
     }
 }
 
-/// `params` 로 `file_handler.dispatch` 를 부르고, 그 결과를 identify 완료 적용 → 새 탭 핸들러까지
-/// 흘린다. 돌려주는 값은 입구가 정한 발화 주체 · 발화 intent 가 사용자인가 · 그 뒤의 상태다.
-///
-/// `activated` 가 `Some((plugin, instance))` 면 그 popup 이 사용자의 확정형 입력을 받은 상태로
-/// 시작한다. `with_origin_surface` 면 focused pane 의 surface 를 `origin_surface_id` 로 더 싣는다 —
-/// 그때 새 탭은 `Intent::NewTab` 이 아니라 명시 origin 갈래(`open_surface_tab` 의 `Some(pane)`)로 선다.
-/// `mirror` 면 그 워크스페이스를 mirror 로 두고 시작한다 — 새 탭은 원격으로 forward 된다.
+/// dispatch 요청을 파일 식별 완료와 새 탭 생성까지 적용한다.
+/// activated는 확정 입력을 받은 팝업, with_origin_surface는 명시적 대상 pane, mirror는 원격 전달을 준비한다.
 fn dispatch_through(
     caller: &CallerContext,
     activated: Option<(&str, u64)>,
@@ -53,10 +43,7 @@ type DispatchOutcome = (
     u32,
 );
 
-/// [`dispatch_through`] 에 webview 근거를 더한 것. `navigated` 의 시도마다 host 가 focused pane 의
-/// 첫 surface 에서 난 그 시도를 plugin [`PLUGIN`] 에 통지한 상태로 시작한다 — 통지 자리가 부르는
-/// 기록 함수를 순서대로 그대로 부른다. 엔진이 그 시도를 사용자 제스처로 봤는지와 그 surface 의
-/// 페이지를 소유 plugin 이 썼는지는 [`Attempt`] 가 정한다.
+/// webview의 navigation 기록도 준비한다. 제스처 여부와 페이지 소유자는 Attempt로 지정한다.
 fn dispatch_through_with(
     caller: &CallerContext,
     activated: Option<(&str, u64)>,
@@ -110,7 +97,6 @@ fn dispatch_through_with(
         panic!("file_handler.dispatch 가 DispatchFile 외 intent 를 냈다");
     };
 
-    // `App::handle_identify_done` 이 워커 결과로 부르는 적용 — detector 는 위 핸들러의 것이다.
     crate::file::dispatch::apply_identify_result(
         &mut core,
         &mut state,
@@ -128,7 +114,6 @@ fn dispatch_through_with(
     (dispatch_origin, intent_is_user, state, engine, pane_id)
 }
 
-/// [`dispatch_through`] 를 로컬 워크스페이스에서 돌리고 focused pane 의 `(탭 수, 활성 탭)` 을 본다.
 fn dispatch_then_selection(
     caller: &CallerContext,
     activated: Option<(&str, u64)>,
@@ -167,7 +152,6 @@ fn a_dispatch_without_a_popup_keeps_the_users_tab() {
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 외부 IPC 호출자는 같은 키를 실어도 사용자가 될 수 없다 — 요청 값만으로는 모자란다.
 #[test]
 fn an_external_caller_cannot_claim_a_popup() {
     let got = dispatch_then_selection(
@@ -179,7 +163,6 @@ fn an_external_caller_cannot_claim_a_popup() {
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 다른 plugin 의 popup 을 대도 사용자가 아니다.
 #[test]
 fn a_plugin_cannot_claim_another_plugins_popup() {
     let got = dispatch_then_selection(
@@ -191,15 +174,13 @@ fn a_plugin_cannot_claim_another_plugins_popup() {
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 사용자가 만지지 않은(확정형 입력을 안 받은 · 닫혀 걷힌) popup 은 근거가 못 된다.
 #[test]
 fn an_untouched_popup_is_not_a_user_action() {
     let got = dispatch_then_selection(&plugin_caller(PLUGIN), None, popup_params(), false);
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 사용자 popup 이 열 pane 을 `origin_surface_id` 로 함께 대도 사용자다 — 발화 주체는 그 키가
-/// 아니라 popup 판정이 정하므로, 명시 origin 갈래에서도 새 탭이 선택된다.
+// 대상 pane을 명시해도 사용자 여부는 팝업 입력으로 판정한다.
 #[test]
 fn a_users_popup_that_names_an_origin_surface_still_selects_the_new_tab() {
     let got = dispatch_then_selection(
@@ -211,7 +192,6 @@ fn a_users_popup_that_names_an_origin_surface_still_selects_the_new_tab() {
     assert_eq!(got, (FileDispatchOrigin::User, true, (2, 1)));
 }
 
-/// `origin_surface_id` 만으로는 사용자가 아니다 — popup 근거 없이 pane 을 대면 에이전트다.
 #[test]
 fn an_origin_surface_without_a_popup_keeps_the_users_tab() {
     let got = dispatch_then_selection(
@@ -223,9 +203,7 @@ fn an_origin_surface_without_a_popup_keeps_the_users_tab() {
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// mirror 워크스페이스에서 사용자 popup 으로 연 새 탭은 원격으로 forward 되고, 그 op 는 원격 거절이
-/// **toast 로 가도록**(표시 없음) 남는다. 같은 요청이 popup 근거 없이 오면 로그로 가도록 표시된다
-/// (ADR-0036의 `silent_failure`). 입구가 사용자 popup 을 못 알아보면 앞쪽 단언이 깨진다.
+/// 원격 실패는 사용자 요청이면 toast, 에이전트 요청이면 로그로 남겨야 한다.
 #[test]
 fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
     let (origin, _, state, engine, _) = dispatch_through(
@@ -261,8 +239,6 @@ fn a_mirror_tab_from_the_users_popup_keeps_its_remote_failure_toast() {
         "에이전트 발화 op 의 원격 거절은 로그로 간다"
     );
 }
-
-// ── webview 근거 (ADR-0031) ────────────────────────────────────────────────────────────────
 
 const NAV_URL: &str = "about:blank#tasty-nav:link:%2Ftmp%2Fa.md";
 
@@ -303,7 +279,6 @@ fn link_params() -> serde_json::Value {
     json!({ "path": "/tmp/a.md", "user_navigation_url": NAV_URL })
 }
 
-/// [`dispatch_through_with`] 를 origin surface 와 함께 돌리고 focused pane 의 `(탭 수, 활성 탭)` 을 본다.
 fn link_then_selection(
     caller: &CallerContext,
     navigated: &[Attempt],
@@ -315,25 +290,19 @@ fn link_then_selection(
     (origin, intent_is_user, (pane.tabs.len(), pane.active_tab))
 }
 
-/// 사용자가 plugin webview 안, 그 plugin 이 쓴 페이지의 링크를 눌러 연 파일은 사용자 행동이다 — 새 탭이
-/// 선택된다.
 #[test]
 fn a_link_the_user_clicked_in_the_plugins_webview_selects_the_new_tab() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(true)], link_params());
     assert_eq!(got, (FileDispatchOrigin::User, true, (2, 1)));
 }
 
-/// 사람의 입력 없이 스크립트만으로 낸 navigation(엔진이 사용자 제스처로 안 본 것)을 근거로 대도
-/// 에이전트다.
 #[test]
 fn a_navigation_the_engine_did_not_see_as_a_gesture_is_not_a_user_action() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[gesture(false)], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 사용자의 클릭이 기록만 남기고 쓰이지 않은 뒤(예: 링크 대상 파일이 없었다), 같은 surface 에서
-/// 제스처가 아닌 시도가 오면 그 기록은 사라진다. 에이전트가 `webview.set_url` 로 쓴 스크립트가 같은
-/// URL 의 navigation 을 내고 plugin 이 그것을 되대도 사용자 행동이 되지 않는다.
+/// 뒤따른 비사용자 navigation이 이전 클릭 기록을 지워야 한다.
 #[test]
 fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_an_agent_request() {
     let agents_script = Attempt {
@@ -350,8 +319,7 @@ fn a_non_gesture_attempt_after_an_unused_click_leaves_the_dispatch_an_agent_requ
     }
 }
 
-/// 소유 plugin 이 아닌 호출자가 `webview.set_url` 로 쓴 페이지 위에서 사람이 누른 클릭은 사용자
-/// 행동이 아니다 — 무엇을 열지는 그 페이지를 쓴 쪽이 정했다.
+/// 다른 호출자가 쓴 페이지의 클릭은 소유 플러그인의 사용자 행동으로 인정하지 않는다.
 #[test]
 fn a_click_on_a_page_the_owner_did_not_write_is_not_a_user_action() {
     let on_agents_page = Attempt {
@@ -362,21 +330,18 @@ fn a_click_on_a_page_the_owner_did_not_write_is_not_a_user_action() {
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// host 가 통지한 적 없는 URL 을 대도 에이전트다 — 요청 값만으로는 모자란다.
 #[test]
 fn a_plugin_cannot_claim_a_navigation_that_never_happened() {
     let got = link_then_selection(&plugin_caller(PLUGIN), &[], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 외부 IPC 호출자는 실재하는 사용자 navigation 의 URL 을 실어도 사용자가 아니다.
 #[test]
 fn an_external_caller_cannot_claim_a_webview_navigation() {
     let got = link_then_selection(&CallerContext::Local, &[gesture(true)], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 다른 plugin 의 webview 에서 난 사용자 navigation 은 근거가 못 된다.
 #[test]
 fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
     let got = link_then_selection(
@@ -387,9 +352,7 @@ fn a_plugin_cannot_claim_another_plugins_webview_navigation() {
     assert_eq!(got, (FileDispatchOrigin::Agent, false, (2, 0)));
 }
 
-/// 에이전트가 쓴 페이지 위의 클릭이 drain 전에 소유 plugin 의 재작성으로 덮이면 그 시도는 소유
-/// 페이지 위의 제스처로 보인다 — host 는 그 프레임에 작성자 전이가 있었으면 기록을 버린다. 대가는
-/// 그 한 프레임이다: 다음 프레임의 소유 페이지 위 클릭은 사용자 행동이다.
+/// 같은 프레임에 페이지 작성자가 바뀌면 navigation 기록을 버린다. 다음 프레임의 클릭은 허용한다.
 #[test]
 fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_action() {
     let (mut state, engine) = crate::state::tests::test_state();
@@ -421,7 +384,6 @@ fn a_click_drained_in_the_frame_the_owner_took_the_page_back_is_not_a_user_actio
     assert_eq!(origins, vec![false, true]);
 }
 
-/// 근거는 한 번 쓰면 사라진다 — 같은 클릭을 두 번 대면 두 번째는 에이전트다.
 #[test]
 fn a_webview_navigation_backs_only_one_dispatch() {
     let (mut state, engine) = crate::state::tests::test_state();

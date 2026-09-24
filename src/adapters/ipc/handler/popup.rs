@@ -1,5 +1,4 @@
-//! Debug 전용 plugin popup IPC. 사용자 클릭 자동화 및 popup 디버깅용이라
-//! release 빌드에는 노출되지 않는다.
+//! 사용자 입력을 재현하는 플러그인 팝업 IPC. 디버그 빌드에서만 제공한다.
 
 #![cfg(debug_assertions)]
 
@@ -8,7 +7,6 @@ use serde_json::json;
 use crate::plugin::PluginManager;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// `debug.popup.list` — 매니페스트로 contribute된 popup 목록 + 현재 열린 인스턴스.
 pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRpcResponse {
     let Some(mgr) = mgr else {
         return JsonRpcResponse::success(id, json!({ "contributes": [], "instances": [] }));
@@ -37,12 +35,9 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRp
                 "instance_id": inst_id,
                 "plugin_id": inst.plugin_id,
                 "popup_id": inst.popup_id,
-                // z_seq 는 host popup 과 공유하는 전역 시퀀스라 `debug.host_popup.list`
-                // 의 값과 직접 비교할 수 있다 — 겹친 popup 의 상하 관계 관찰면.
+                // 호스트 팝업과 같은 순번을 써 겹침 순서를 비교할 수 있다.
                 "z_seq": inst.z_seq,
-                // 소속 범위 관찰면 — 선언(`scope`)과 host 진입점이 바인딩한 대상
-                // (`scope_surface`)을 따로 낸다. 선언이 `surface` 인데 대상이 `null` 이면
-                // 렌더는 창 범위다(`popup_scope::popup_scope`).
+                // surface 선언이어도 연결된 대상이 없으면 창 범위로 표시된다.
                 "scope": match inst.contribute.scope {
                     crate::plugin::manifest::PopupScopeDecl::Window => "window",
                     crate::plugin::manifest::PopupScopeDecl::Surface => "surface",
@@ -87,12 +82,5 @@ pub fn handle_open(
     }
 }
 
-// `debug.popup.close` 는 여기 없다 — 매니저 직접 close 가 아니라 렌더가 수집하는
-// close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돌기 때문에(ADR-0036)
-// `App::enqueue_plugin_popup_close` 를 거치는 App-level glue 로 옮겼다
-// (`src/app/ipc/debug_methods.rs`, `debug.plugin_banner.*` 와 같은 이유·같은 위치).
-//
-// 위 둘 중 헤드리스가 답하는 것은 `handle_list` 뿐이다. `handle_open` 은 컴파일은
-// 되지만 열지 않았다 — 헤드리스에는 plugin popup 을 **닫는 경로가 하나도 없다**
-// (debug close 도, plugin 자신의 release `popup.close` 도 gui 게이트 안의
-// `app::dispatch` 에 산다). open 만 열면 그 빌드에서 닫을 수 없는 인스턴스가 남는다.
+// 닫기는 App::enqueue_plugin_popup_close를 통해 렌더의 닫기 큐에 넣어야 자식 피커도 정리된다.
+// 헤드리스는 목록 조회만 제공한다. 닫기 경로가 없어 열기를 허용하지 않는다.

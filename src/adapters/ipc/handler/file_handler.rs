@@ -1,18 +1,6 @@
-//! `file_handler.*` IPC 메서드 — reload + detectors + dispatch.
-//!
-//! - `file_handler.reload`: user TOML 재로드. host/plugin 영향 없음.
-//!   Method call wrapper (`Core::reload_file_handlers`) 직접 호출. 응답의 `rejected` 는
-//!   이번 reload 가 적용하지 않은 user 항목과 사유다.
-//! - `file_handler.detectors`: finalize 된 file format detector 전체와 각자의 출처별
-//!   contribution 을 돌려준다. 조회 전용 — registry 를 finalize 하는 것 말고는 아무것도
-//!   바꾸지 않는다(finalize 는 identify 가 어차피 하는 lazy 캐시 갱신이다).
-//! - `file_handler.dispatch`: 임의 경로를 file_handler 시스템에 진입시킴.
-//!   `DomainIntent::DispatchFile` 발화 — Core::apply 가 worker spawn,
-//!   결과는 `AppEvent::IdentifyDone` 경로로 비동기 적용. **gui 빌드에만 있다** — 그 intent
-//!   를 적용할 identify worker 와 결과를 여는 창이 headless 에 없어, headless 에서 받으면
-//!   요청을 버리고도 수락했다고 답하게 된다. 그래서 headless 에서는 arm 이 없고 라우터
-//!   끝이 `-32017` 로 답한다
-//!   ([ADR-0031](../../../../docs/adr/0031-file-handler-routing.md)).
+//! 파일 핸들러 설정 재로드, detector 조회, 파일 열기 요청.
+//! reload는 사용자 설정만 바꾸고 적용하지 못한 항목과 사유를 반환한다.
+//! dispatch는 GUI 전용이다. 헤드리스에는 결과를 적용할 창과 worker가 없어 -32017로 거절한다.
 
 #[cfg(feature = "gui")]
 use std::path::PathBuf;
@@ -42,12 +30,8 @@ pub fn handle_reload(
     )
 }
 
-/// `file_handler.detectors` — finalize 된 detector 목록(id 순).
-///
-/// 각 항목은 병합 결과(`display_name_i18n_key` · `icon` · `disabled` · `rules`)와 그것을
-/// 만든 출처별 원본(`contributions`)을 함께 싣는다. 병합 결과만으로는 어느 출처가 이겼는지
-/// 밖에서 재현할 수 없어서다. `contributions` 는 설치 순서이고 병합 순서가 아니다.
-/// rule 은 user 설정 파일의 `[[detector.rule]]` 과 같은 키로 적는다.
+/// detector를 ID 순으로 반환한다. 병합 결과와 출처별 원본을 함께 보여준다.
+/// contributions는 설치 순서이며 병합 우선순위가 아니다. rules는 사용자 설정과 같은 키를 쓴다.
 pub fn handle_detectors(engine: &crate::core::CoreState, id: serde_json::Value) -> JsonRpcResponse {
     let detectors: Vec<serde_json::Value> = engine
         .file_format
@@ -99,16 +83,13 @@ fn rule_json(kind: &crate::file::format::DetectorRuleKind) -> serde_json::Value 
     match serde_json::to_value(kind.to_config_table()) {
         Ok(v) => v,
         Err(e) => {
-            // 문자열 키 표라 지금 실패할 값은 없다. 그래도 rule 하나 때문에 목록 전체를
-            // 잃지 않게 그 rule 자리에만 이유를 싣는다.
+            // 규칙 하나의 직렬화 실패로 목록 전체를 잃지 않도록 해당 항목만 오류로 표시한다.
             tracing::warn!(error = %e, "file_handler.detectors: rule 을 JSON 으로 옮기지 못했다");
             json!({ "error": e.to_string() })
         }
     }
 }
 
-/// reload 가 적용하지 않은 user 항목을 `[{ "id", "reason" }]` 로 싣는다. 없으면 빈 배열이다
-/// (docs/adr/0031-file-handler-routing.md).
 fn rejected_json(rejected: &[tasty_file_handler::RejectedUserHandler]) -> serde_json::Value {
     rejected
         .iter()
@@ -122,26 +103,18 @@ struct DispatchReq {
     path: String,
     #[serde(default = "default_depth")]
     depth: String,
-    /// 결과 surface 를 이 surface 가 속한 *Pane* 에 새 tab 으로 추가한다.
-    /// None 이면 기존 동작 (focused pane 의 새 탭).
+    /// 결과를 이 surface의 pane에 새 탭으로 연다. 생략하면 포커스된 pane을 쓴다.
     #[serde(default)]
     origin_surface_id: Option<u32>,
-    /// true 면 대용량 markdown 확인 팝업을 건너뛰고 즉시 연다(에이전트 강제 열기).
-    /// 기본 false — 1MB 초과 markdown 은 확인 팝업이 뜬다.
+    /// 대용량 markdown 확인을 건너뛴다. 기본 false이며 1MB 초과 시 확인한다.
     #[serde(default)]
     ignore_size_limit: bool,
-    /// 이 호출을 낸 plugin 의 **자기 popup instance_id**. plugin 이 자기 popup 안의 사용자
-    /// 조작(예: markdown 파일열기 팝업의 [열기])으로 부를 때 싣는다. host 는 호출자가 그
-    /// popup 의 소유 plugin 이고 그 popup 이 사용자의 확정형 입력을 받았을 때만 이 호출을
-    /// 사용자 행동으로 친다 — 그 밖에는(외부 IPC 호출자 · 남의 popup · 닫힌 popup · 입력을
-    /// 안 받은 popup) 값이 없는 것과 같다(ADR-0031).
+    /// 호출 플러그인이 소유하고 사용자의 확정 입력을 받은 팝업 인스턴스.
+    /// 사용자 요청 판정에 쓰며 외부 IPC·다른 소유자·닫힌 팝업·입력 없는 팝업은 인정하지 않는다.
     #[serde(default)]
     owner_popup_instance: Option<u64>,
-    /// 이 호출을 낸 plugin 이 `origin_surface_id` 의 자기 webview 에서 받은
-    /// `webview.navigation_attempt` 의 **URL 그대로**. plugin 이 자기 webview 안의 사용자
-    /// 클릭(예: markdown 문서 안의 파일 링크)으로 부를 때 싣는다. host 는 엔진이 그 시도를 사용자
-    /// 제스처로 보고했고, 그 surface 의 소유와 지금 페이지를 쓴 호출자가 호출 plugin 일 때만, 그
-    /// 한 번을 사용자 행동으로 친다 — 그 밖에는 값이 없는 것과 같다(ADR-0031).
+    /// origin_surface_id의 webview에서 통지받은 navigation URL.
+    /// 엔진이 사용자 제스처로 보고하고 호출 플러그인이 surface와 페이지를 소유한 경우만 인정한다.
     #[serde(default)]
     user_navigation_url: Option<String>,
 }
@@ -151,17 +124,10 @@ fn default_depth() -> String {
     "deep".to_string()
 }
 
-/// 임의 경로를 file_handler 디스패치 흐름에 진입시킨다. ctrl+click / drag&drop 과
-/// 동일 흐름이지만 plugin / CLI 가 프로그래밍으로 호출하는 진입점.
-///
-/// - `params.path`: 절대 경로 권장. 상대 경로는 caller cwd 기준이라 비결정적.
-/// - `params.depth`: `"cheap"` (확장자/glob 만) 또는 `"deep"` (magic/MIME 포함).
-///   기본 `"deep"`. 두 경우 모두 worker thread 경유 (통일된 경로) — 응답은
-///   즉시 돌아오고 handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
-///
-/// 발화 주체는 [`dispatch_origin_of`] 가 정한다 — 기본은 에이전트고, plugin 이 사용자가 만진
-/// 자기 popup 을 `owner_popup_instance` 로 대거나 자기 webview 의 사용자 navigation 을
-/// `user_navigation_url` 로 되대면 사용자다.
+/// 파일 식별을 worker에 맡기고 즉시 응답한다. 결과는 IdentifyDone으로 적용한다.
+/// depth는 확장자/glob만 보는 cheap 또는 magic/MIME도 보는 deep이며 기본값은 deep이다.
+/// 상대 경로는 실행 환경에 따라 달라질 수 있어 절대 경로를 권장한다.
+/// 사용자 요청 여부는 dispatch_origin_of가 호스트에 기록된 입력으로 판정한다.
 #[cfg(feature = "gui")]
 pub fn handle_dispatch(
     out: &mut crate::ipc::window_port::IntentOutbox,
@@ -193,8 +159,7 @@ pub fn handle_dispatch(
             );
         }
     };
-    // 이 IPC 는 파일 경로만 받는다. URL 을 여는 것은 이 메서드의 권한 토큰(`FsRead`)이
-    // 덮는 능력이 아니고, 경로 자리에 담긴 URL 은 확장자로 오식별된다 — 거절한다.
+    // FsRead 권한은 URL 열기를 허용하지 않는다. 확장자로 파일처럼 식별되기 전에 거절한다.
     if crate::file::format::looks_like_url(&req.path) {
         return JsonRpcResponse::error(
             id,
@@ -220,8 +185,7 @@ pub fn handle_dispatch(
         dispatch_origin,
         ignore_size_limit: req.ignore_size_limit,
     };
-    // 발화 intent 의 origin 도 같은 값에서 나온다 — identify 뒤의 `Intent::NewTab` 과 적용
-    // 실패 보고가 이 축으로 갈린다.
+    // 새 탭 선택과 실패 알림도 같은 요청 출처를 사용한다.
     out.push(match dispatch_origin {
         crate::file::dispatch::FileDispatchOrigin::User => intent.from_user_menu("plugin_popup"),
         crate::file::dispatch::FileDispatchOrigin::Agent => intent.from_agent_ipc(),
@@ -236,21 +200,11 @@ pub fn handle_dispatch(
     )
 }
 
-/// 이 호출을 누가 냈는가. 채널이 아니라 행위의 성질로 정한다 — plugin 이 사용자의 조작을 받아
-/// 이 메서드를 부르는 경우가 있다(markdown 파일열기 팝업 · markdown 문서 안의 파일 링크).
-///
-/// 사용자로 치는 근거는 둘이고, 둘 다 **host 가 직접 관측한 입력**이다 — 요청 값은 그 관측을
-/// 가리키는 열쇠일 뿐이라, 요청 값만으로는 사용자가 될 수 없다. 외부 IPC 호출자는 어느 키를
-/// 실어도 에이전트다.
-///
-/// - popup: 호출자가 plugin 이고, 그 plugin 이 댄 `owner_popup_instance` 가 그 plugin 소유로 이
-///   창에 열려 있으며, 그 popup 이 사용자의 확정형 입력을 받았다(ADR-0031).
-/// - webview: 호출자가 plugin 이고, `origin_surface_id` 의 webview 에서 난 가장 최근 시도가
-///   엔진이 사용자 제스처로 보고한 것이며 그 plugin 이 쓴 페이지 위에서 났고, host 가 그 시도를
-///   **바로 그 plugin 에** 통지했으며, plugin 이 댄 `user_navigation_url` 이 그 URL 이다. 이 근거는
-///   한 번 쓰면 사라진다(ADR-0031).
-///
-/// 어느 것도 안 맞으면 포커스를 안 옮기는 쪽(에이전트)으로 떨어진다.
+/// 플러그인 호출도 실제 사용자 조작에서 시작됐는지 확인한다. 요청 필드만으로는 인정하지 않는다.
+/// 팝업은 호출 플러그인 소유로 열려 있고 확정 입력을 받은 상태여야 한다.
+/// webview는 소유 플러그인이 쓴 페이지의 사용자 제스처를 host가 같은 플러그인에 통지했어야 한다.
+/// 통지된 URL과 요청 URL이 같아야 하며 이 기록은 한 번만 쓸 수 있다.
+/// 어느 조건에도 맞지 않거나 외부 IPC 호출이면 에이전트 요청으로 처리한다(ADR-0031).
 #[cfg(feature = "gui")]
 fn dispatch_origin_of(
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -308,8 +262,6 @@ mod tests {
         assert!(req.ignore_size_limit);
     }
 
-    /// 경로 자리에 URL 이 오면 dispatch 인텐트를 세우지 않고 거절한다 — 세우면
-    /// `https://example.com/a.md` 가 확장자로 markdown 핸들러에 걸린다.
     #[test]
     fn dispatch_rejects_a_url_in_the_path_param() {
         let (mut state, engine) = crate::state::tests::test_state();
@@ -354,7 +306,6 @@ mod tests {
     }
 }
 
-// 입구 → identify 적용 → 새 탭 선택까지. arm 이 gui 에만 있으므로 gui 조합에서만 잰다.
 #[cfg(all(test, feature = "gui"))]
 #[path = "file_handler_origin_tests.rs"]
 mod origin_tests;

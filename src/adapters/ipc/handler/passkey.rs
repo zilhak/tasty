@@ -1,28 +1,21 @@
-//! `remote.passkey.*` IPC — Passkey(자격증명) CRUD.
-//!
-//! **값 마스킹 정책(ADR-0011)**: AI agent/원격은 passkey 의 **값(경로/내용)을
-//! 읽을 수 없다.** list/get 은 name + kind 만 반환하고 path 는 절대 싣지 않으며, 파일 내용은
-//! 어떤 응답에도 포함되지 않는다. 등록(add)은 허용 — 쓰기는 비밀을 *받는* 것이지 노출이
-//! 아니다. inline 값은 `~/.tasty/passkeys/<name>` 0600 파일로 materialize 된다.
+//! 원격 자격증명 관리. 응답에는 name과 kind만 포함하고 경로·내용은 공개하지 않는다.
+//! inline 값은 ~/.tasty/passkeys/<name>에 0600 권한으로 저장한다(ADR-0011).
 
 use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_remote_profiles::Passkeys;
 
-/// 값 마스킹된 passkey 메타(name + kind 만). path/내용은 절대 싣지 않는다.
 fn passkey_meta(p: &tasty_remote_profiles::Passkey) -> Value {
     json!({ "name": p.name, "kind": p.kind })
 }
 
-/// `remote.passkey.list` → name + kind 목록(값 마스킹).
 pub(crate) fn handle_list(id: Value) -> JsonRpcResponse {
     let passkeys = Passkeys::load();
     let arr: Vec<_> = passkeys.passkeys.iter().map(passkey_meta).collect();
     JsonRpcResponse::success(id, json!({ "passkeys": arr }))
 }
 
-/// `remote.passkey.get` { name } → name + kind(값 마스킹).
 pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
@@ -34,11 +27,7 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
     }
 }
 
-/// `remote.passkey.add` { name, kind, value } → upsert.
-/// - kind=path: value = 사용자 소유 파일 경로(참조만).
-/// - kind=inline: value = 비밀 — `~/.tasty/passkeys/<name>` 0600 파일로 materialize.
-///
-/// 응답에 value 를 절대 포함하지 않는다(쓰기 전용).
+/// path는 사용자 파일을 참조하고 inline은 관리 파일에 저장한다. 값은 응답하지 않는다.
 pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
@@ -77,7 +66,7 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     }
 }
 
-/// `remote.passkey.remove` { name } → 제거(inline 이면 관리 파일도 삭제).
+/// inline 자격증명이면 관리 파일도 삭제한다.
 pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");

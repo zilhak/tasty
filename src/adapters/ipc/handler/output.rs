@@ -1,5 +1,4 @@
-//! `output.observe_*` IPC 핸들러. 모든 mutate / read 는 `Core` wrapper 를 거친다
-//! (`core.observer_*`) — handler 는 *engine 직접 mutate 금지* (`core` 모듈 문서의 단일 mutate 진입점).
+//! 출력 관찰의 조회·변경은 Core의 observer_* 함수를 통해 수행한다.
 
 use super::params::{self, p_try};
 use std::path::PathBuf;
@@ -168,12 +167,7 @@ fn observer_error_to_response(id: Value, e: ObserverError) -> JsonRpcResponse {
     }
 }
 
-/// `observe.start` 의 실패가 **에이전트에게 도달**하는지 고정한다.
-///
-/// sink 스레드 spawn 실패는 한때 `.expect` 로 호스트 전체를 죽였다. 이제는
-/// `ObserverError::ThreadSpawn` 으로 올라오며, 그 값이 응답으로 매핑되지 않으면
-/// 에이전트는 실패를 영영 모른다
-/// (`docs/adr/0016-window-platform-and-shutdown.md`).
+// 스레드 생성 실패도 패닉 대신 IPC 오류로 전달되어야 한다.
 #[cfg(test)]
 mod observer_error_mapping_tests {
     use super::*;
@@ -192,8 +186,6 @@ mod observer_error_mapping_tests {
 
     #[test]
     fn thread_spawn_and_file_open_are_both_server_side_failures() {
-        // 같은 함수 안에서 갈리던 비대칭(파일 열기는 에러 반환, spawn 은 패닉)이
-        // 해소됐다 — 둘 다 같은 등급으로 보고된다.
         assert_eq!(
             code_of(ObserverError::ThreadSpawn("EAGAIN".into())),
             code_of(ObserverError::FileOpen("EACCES".into())),

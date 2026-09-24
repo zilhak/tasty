@@ -63,11 +63,7 @@ pub fn handle_pane_close(
     }
 }
 
-/// Resolve a surface target from params.
-/// Supports numeric ID and nickname string.
-///
-/// `pub(super)`: hard-occupied dispatch 가드(`handler.rs`)가 `split` 의 대상
-/// workspace 를 판별할 때 이 해석 로직을 그대로 재사용한다(nickname 해석 중복 방지).
+/// 숫자 ID나 별칭으로 surface를 찾는다. 점유 검사도 같은 해석을 사용한다.
 pub(super) fn resolve_surface_target(
     core: &crate::core::Core,
     params: &serde_json::Value,
@@ -77,9 +73,7 @@ pub(super) fn resolve_surface_target(
     if val.is_null() {
         return None;
     }
-    // 자르지 않는다 — 잘린 값은 실재하는 다른 surface 를 가리킨다. 이 함수는 `Option`
-    // 을 반환해 "대상 미지정" 과 합쳐지지만, 자르기만은 여기서 막는다(호출부가 대상
-    // 없음으로 이어서 거절한다).
+    // 범위 초과 값을 자르면 다른 surface를 가리킬 수 있으므로 거절한다.
     if val.is_number() {
         return crate::adapters::ipc::handler::params::read_int::<u32>(params, "target_surface")
             .ok()
@@ -92,7 +86,6 @@ pub(super) fn resolve_surface_target(
         if let Ok(n) = s.parse::<u32>() {
             return Some(n);
         }
-        // Try nickname lookup
         return core.with_memory(|m| {
             crate::surface_meta::SurfaceMetaStore::find_by_value(m, "nickname", s)
         });
@@ -157,5 +150,3 @@ pub fn handle_split(
         Err(f) => super::structural_failure_response(id, f),
     }
 }
-
-// focus.direction removed: focus is user-only (shortcuts/clicks).

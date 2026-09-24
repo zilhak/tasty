@@ -1,16 +1,6 @@
-//! `markdown.*` IPC 메서드 — 제자리 이동(in-place navigation).
-//!
-//! `markdown.navigate`: 주어진 surface 를 **그 자리에서** 다른 파일의 markdown 으로
-//! 교체한다(새 탭 아님). markdown plugin 의 주소창이 자기 surface_id + 새 경로로 호출한다.
-//! 확장자 무관하게 markdown 으로 연다.
-//!
-//! 교체는 `ConvertSurface`(kind="markdown", params={file}) 재사용 — 같은 surface_id.
-//! egui-mesh re-bootstrap(stale frame drop)은 `SurfaceConverted` cascade 가 처리한다.
-//! 대용량 파일 확인은 **plugin 소유**다: 변환으로 새 `surface.create` 가 plugin 에
-//! 전달되면 plugin 이 in-process 로 크기를 감지해 확인 팝업을 띄운다. host 는 파일
-//! 크기를 stat 하지 않으므로 navigate 는 크기게이트 없이 즉시 변환만 한다.
-//!
-//! 최근목록 조회는 generic `recent.query {kind}`(handler/recent.rs)로 이관됐다.
+//! 같은 surface를 새 파일의 markdown으로 바꾼다. 확장자는 제한하지 않는다.
+//! 대용량 확인은 변환 후 플러그인이 처리하므로 호스트는 크기 확인 없이 변환한다.
+//! SurfaceConverted 후속 처리가 기존 mesh 프레임을 제거한다.
 
 use serde::Deserialize;
 use serde_json::json;
@@ -25,8 +15,6 @@ struct NavigateReq {
     path: String,
 }
 
-/// `markdown.navigate { surface_id, path }`. 크기게이트 없이 즉시 제자리 변환한다
-/// (대용량 확인은 변환 후 plugin 이 소유).
 pub fn handle_navigate(
     out: &mut crate::ipc::window_port::IntentOutbox,
     id: serde_json::Value,
@@ -45,7 +33,6 @@ pub fn handle_navigate(
     JsonRpcResponse::success(id, json!({ "accepted": true }))
 }
 
-/// 같은 surface 를 markdown + 새 file 로 제자리 변환한다.
 pub(crate) fn navigate_now(
     out: &mut crate::ipc::window_port::IntentOutbox,
     surface_id: u32,

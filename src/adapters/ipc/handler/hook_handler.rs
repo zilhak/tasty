@@ -1,39 +1,12 @@
-//! `hook_handler.*` IPC 핸들러 — 공유 훅 핸들러 레지스트리 조회/재로드/수동 발화.
+//! 공유 훅 핸들러의 조회·수정·재로드·수동 실행.
+//! 메서드 이름은 등록한 정의에 고정하고, 요청 payload는 params 값에만 치환한다.
+//! 실행 결과는 응답에 포함하지 않으며 접수 여부만 반환한다.
 //!
-//! 파일 핸들러(`file_handler.*`)를 선례로 미러링한다. 상태는 `crate::hook_handler`
-//! 전역 싱글턴 레지스트리라 engine/state 를 받지 않는다(단 dispatch 는 IpcSequence
-//! 실행에 host injector 가 필요해 `core` 를 받는다).
+//! 시퀀스는 Local 권한으로 실행되므로 get/upsert는 local_only로 제한한다.
+//! 플러그인이 임의 시퀀스를 등록해 자신의 권한을 넘지 못하게 하기 위해서다.
 //!
-//! **불가침 원칙 2·3**: 핸들러 조회/발화는 에이전트 작업이라 IPC+CLI 양면 노출.
-//! 대상은 id 로 직접 지정하고 list 는 전 범위(비활성 포함) 조회 — 사용자 포커스/
-//! 상태에 부수효과 없음.
-//!
-//! ## 불변식
-//! - **데이터/흐름 분리**: 발화되는 `IpcCall.method` 는 owner 가 등록 시 고정한
-//!   리터럴이며 dispatch 페이로드는 `params` 값 슬롯에만 치환된다([`crate::hook_handler::exec`]).
-//! - **단방향(fire-and-forget)**: dispatch 실행 결과는 시퀀스 실행기 스레드 안에 갇히고
-//!   JSON 응답에 실행 결과가 실리지 않는다(응답은 "수리됨" ACK 만).
-//!
-//! ## `get` · `upsert` 가 왜 `local_only` 인가
-//!
-//! 시퀀스는 **Local 권한으로 실행된다.** plugin 이 임의 시퀀스를 쓸 수 있으면 자기
-//! 권한 집합을 넘어선 IPC escalation 이 되므로, `webhook.register` 가 plugin 의 인라인
-//! `sequence` 를 거부하는 것과 **같은 이유로** 이 둘도 local 전용이다. 그 게이트는
-//! `crates/tasty-ipc/src/method_meta.rs` 의 `local_only()` 가 건다.
-//!
-//! 데이터/흐름 분리(ADR-0032)와 충돌하지 않는다 — 그 불변식이 막는 것은 **페이로드가
-//! `method` 자리에 닿는 것**이고, 여기서 `method` 를 정하는 것은 owner 자신이다.
-//! 웹훅 발신자는 이 경로에 도달할 수 없다.
-//!
-//! ## `upsert` 가 닿지 않는 자리 (실측)
-//!
-//! **이미 등록된 웹훅은 안 바뀐다.** 웹훅 엔트리는 등록 시점에 `calls` 스냅샷을 직접
-//! 소유하고(`src/webhook/persist.rs` 의 `PersistedWebhook::calls`), 발화 시 그 스냅샷을
-//! 실행한다(`src/webhook/registry.rs` 의 매칭이 `entry.calls` 를 복제해 넘긴다) —
-//! 핸들러를 다시 조회하지 않는다. 인라인 `sequence` 로 등록한 것뿐 아니라
-//! `--handler <id>` 로 바인딩한 것도 등록 시점에 복사된다. 그래서 upsert 가 바꾸는 것은
-//! `hook_handler.dispatch` 와 **앞으로의** 바인딩이고, 이미 발급된 URL 이 무엇을 하는지는
-//! 그대로다. 그것이 owner 가 등록 시 흐름을 고정한다는 ADR-0032의 모양이다.
+//! 등록된 웹훅은 calls 사본을 보관하므로 upsert로 바뀌지 않는다.
+//! 변경은 이후의 바인딩과 hook_handler.dispatch에 적용된다(ADR-0032).
 
 use serde_json::json;
 
@@ -46,11 +19,7 @@ use crate::hook_handler::{
 use tasty_ipc::host_call::HostIpcInjector;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// `hook_handler.list` — 등록된 모든 훅 핸들러(비활성 포함, 포커스 독립·전 범위).
-///
-/// 각 항목: id / source / priority / owner / action kind(+steps) / disabled /
-/// display_name_i18n_key / webhook_bindable. action 의 실제 IPC 호출 목록·셸 명령은
-/// 노출하지 않는다(요약만).
+/// 비활성 항목도 모두 조회한다. 실제 호출 목록과 셸 명령은 공개하지 않고 종류와 단계 수만 요약한다.
 pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
     let items: Vec<_> = hook_handler::global()
         .all_handlers_including_disabled()
@@ -76,12 +45,7 @@ pub fn handle_list(id: serde_json::Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!({ "handlers": items }))
 }
 
-/// `hook_handler.reload` — `~/.tasty/hook-handlers.toml`(user 출처) 재로드.
-///
-/// host embedded 기본값 + plugin contribution 은 영향받지 않는다(user 출처만 교체).
-/// 파일 핸들러 `file_handler.reload` 응답의 `{path, exists}` 를 미러링한다. 그쪽이 더한 `rejected`
-/// (적용되지 않은 user 항목 보고, docs/adr/0031-file-handler-routing.md)는
-/// 아직 없다.
+/// 사용자 설정만 다시 읽는다. host/plugin 기본값은 유지하며 적용 거절 항목의 별도 보고는 없다.
 pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
     let Some(path) = hook_handler::user_config_path() else {
         return JsonRpcResponse::internal_error(
@@ -100,19 +64,9 @@ pub fn handle_reload(id: serde_json::Value) -> JsonRpcResponse {
     )
 }
 
-/// `hook_handler.dispatch` — 등록된 핸들러를 id 로 **수동 발화**한다.
-///
-/// 파일 핸들러 `file_handler.dispatch`(임의 경로를 dispatch 흐름에 진입)의 훅 핸들러
-/// 대응물 — 에이전트/CLI 가 트리거 없이 핸들러를 즉시 실행하는 진입점(테스트·자동화).
-///
-/// params:
-/// - `id`: 발화할 핸들러 id (필수).
-/// - `body` / `headers` / `query`: 치환 컨텍스트(선택). IpcSequence 핸들러의 `params`
-///   값 슬롯(`${body.x}`/`${header.x}`/`${query.x}`)에 채워진다.
-///
-/// 응답은 "수리됨(accepted)" ACK 만 담는다 — 실행은 surface 훅과 같은 시퀀스 실행기 스레드에서
-/// fire-and-forget 되고 결과가 응답에 실리지 않는다(단방향 불변식). 실행기에 넘기지 못했으면(대기
-/// 시퀀스가 상한에 이름 · 실행기 스레드 없음) "실행하지 않았다" 오류로 답한다. 비활성 핸들러는 거부한다.
+/// 등록된 핸들러를 ID로 실행한다. body/headers/query는 params의 값에만 치환한다.
+/// 응답은 접수 여부만 나타낸다. 대기 한도 초과나 실행기 부재로 넘기지 못하면 오류로 답한다.
+/// 비활성 핸들러는 거절한다.
 pub fn handle_dispatch(
     core: &Core,
     id: serde_json::Value,
@@ -131,8 +85,7 @@ pub fn handle_dispatch(
 
     match handler.action {
         HookHandlerAction::IpcSequence { calls } => {
-            // injector 를 얻어 surface 훅과 같은 실행기 스레드에 넘긴다. 이 핸들러는 호스트 명령
-            // 큐를 비우는 스레드에서 돌므로 여기서 스텝의 답을 기다릴 수 없다.
+            // 이 스레드가 호스트 명령 큐를 처리하므로 단계별 응답 대기는 실행기에 맡긴다.
             let Some(injector) = core.host_ipc_injector_arc().get().cloned() else {
                 return JsonRpcResponse::internal_error(
                     id,
@@ -153,8 +106,6 @@ pub fn handle_dispatch(
             )
         }
         HookHandlerAction::ShellCommand { command, args } => {
-            // 수동 발화 컨텍스트를 env 로 노출 — IpcSequence 가 `${body.*}` 치환으로
-            // 받는 payload 를 셸은 `TASTY_HOOK_<KEY>` env 로 받는다(의미 대칭).
             let env = build_env(&HookShellEnv {
                 event: hid.0.clone(),
                 source: "dispatch",
@@ -173,9 +124,7 @@ pub fn handle_dispatch(
     }
 }
 
-/// 수동 발화한 IpcSequence 를 surface 훅과 **같은 실행기**에 줄 세운다 — 잇달아 발화한 시퀀스와
-/// surface 훅의 시퀀스가 스텝 단위로 끼어들지 않고 넘겨받은 순서대로 하나씩 실행된다.
-/// 근거: `docs/adr/0027-lua-and-hook-execution.md`.
+/// surface 훅과 같은 실행기에 넣어 시퀀스의 각 단계가 서로 끼어들지 않도록 한다(ADR-0027).
 fn start_dispatched_sequence(
     handler_id: &str,
     injector: &HostIpcInjector,
@@ -188,14 +137,8 @@ fn start_dispatched_sequence(
     })
 }
 
-/// `hook_handler.get` — 핸들러 한 건을 id 로 조회한다. **action 본문까지** 싣는다.
-///
-/// `list` 는 `steps` 수만 요약하므로 시퀀스를 고치려면 지금 무엇이 들었는지 읽을 길이
-/// 있어야 한다 — 그 자리다. 응답의 `action` 은 [`handle_upsert`] 의 `action` 파라미터와
-/// **같은 모양**이라 읽은 것을 그대로 고쳐 되돌려 보낼 수 있다(round-trip).
-///
-/// 돌려주는 것은 **병합된 유효 핸들러**다(host/plugin 기본 + user override). user
-/// 기여분만 따로 보고 싶으면 `~/.tasty/hook-handlers.toml` 이 그 자리다.
+/// 병합된 핸들러를 action 본문까지 반환한다. action 형식은 upsert 입력과 같다.
+/// 사용자 설정만 보려면 hook-handlers.toml을 읽는다.
 pub fn handle_get(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let Some(hid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
@@ -225,11 +168,7 @@ pub fn handle_get(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcR
     )
 }
 
-/// `hook_handler.upsert` — user 출처 핸들러를 **제자리 수정**하거나 새로 만든다.
-///
-/// 지우고 다시 만드는 것과 다르다 — id·우선순위·나머지 필드가 그대로 남고, 준 필드만
-/// 덮인다(patch semantics). 그래서 이미 그 id 를 참조하는 훅 바인딩은 계속 같은 것을
-/// 가리킨다. 안 준 필드는 **없애는 것이 아니라 그대로 둔다.**
+/// 지정한 필드만 수정하며 생략한 필드는 유지한다. 같은 ID의 바인딩도 유지된다.
 ///
 /// params (`id` 외 전부 선택, 단 최소 하나는 있어야 한다):
 /// - `id`: `<owner>/<short-name>` 형식 (필수).
@@ -240,9 +179,7 @@ pub fn handle_get(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcR
 /// - `action`: `{"kind":"ipc_sequence","calls":[{"method":…,"params":…}]}` 또는
 ///   `{"kind":"shell_command","command":…,"args":[…]}` — `get` 응답과 같은 모양.
 ///
-/// 성공 시 `~/.tasty/hook-handlers.toml` 에 즉시 atomic write 한다. 파일 쓰기가
-/// 실패하면 **성공으로 보고하지 않는다** — 메모리 레지스트리는 이미 바뀌었고 그 사실을
-/// 오류문에 적는다(다음 부팅에 사라지는 변경을 초록으로 덮지 않는다).
+/// 파일 쓰기 실패는 오류로 보고하되 메모리 레지스트리는 이미 바뀌었음을 알린다.
 pub fn handle_upsert(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let decl = match parse_upsert(params) {
         Ok(d) => d,
@@ -266,12 +203,7 @@ pub fn handle_upsert(id: serde_json::Value, params: &serde_json::Value) -> JsonR
     }
 }
 
-/// `hook_handler.remove` — user 출처 기여분만 제거한다. host/plugin 기본값은 보존된다.
-///
-/// `upsert` 로 만들 수 있는 것을 지울 길이 없으면 같은 결함을 새 표면에 다시 만드는
-/// 셈이라 짝으로 낸다. host/plugin 이 같은 id 에 기본값을 심어 뒀다면 그 기본값이
-/// 다시 드러나므로, 응답의 `still_present` 가 그 사실을 값으로 말한다 — "지웠는데
-/// 아직 보인다" 를 버그로 오인하지 않게.
+/// 사용자 설정만 제거한다. host/plugin 기본값이 남으면 still_present로 알린다.
 pub fn handle_remove(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     let Some(hid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
@@ -279,9 +211,6 @@ pub fn handle_remove(id: serde_json::Value, params: &serde_json::Value) -> JsonR
     let hid = HookHandlerId::new(hid);
     let existed = hook_handler::global().get(&hid).is_some();
     if !existed {
-        // 기여분이 하나도 없으면 지울 것이 없다 — 파일을 다시 쓰지 않는다.
-        // (user 기여분이 있으면 `get` 이 반드시 그것을 돌려주므로 이 갈래는
-        // "어느 출처에도 그 id 가 없다" 와 같다.)
         return JsonRpcResponse::success(
             id,
             json!({ "id": hid.0, "existed": false, "still_present": false }),
@@ -322,9 +251,7 @@ fn persist_user_config() -> Result<String, String> {
     }
 }
 
-/// upsert params → [`UserHookHandlerUpsertDecl`]. 빠진 필드는 "패치 안 함" 이고,
-/// **형식이 틀린 필드는 조용히 빠뜨리지 않는다** — 빠뜨리면 아무것도 안 고친 upsert 가
-/// 성공으로 보고된다. CLI 는 미지정 필드를 JSON null 로 보내므로 null 을 부재로 읽는다.
+/// 생략한 필드는 유지하고 잘못된 타입은 거절한다. CLI가 보내는 null은 생략으로 처리한다.
 fn parse_upsert(params: &serde_json::Value) -> Result<UserHookHandlerUpsertDecl, String> {
     let id = params
         .get("id")
@@ -403,7 +330,6 @@ fn parse_upsert(params: &serde_json::Value) -> Result<UserHookHandlerUpsertDecl,
     })
 }
 
-/// dispatch 치환 컨텍스트 조립. body 는 JSON 값 그대로, headers/query 는 문자열 맵.
 fn build_context(params: &serde_json::Value) -> SubstitutionContext {
     let body = params
         .get("body")
@@ -418,8 +344,7 @@ fn build_context(params: &serde_json::Value) -> SubstitutionContext {
     }
 }
 
-/// JSON object → `BTreeMap<String,String>`. `lowercase_keys` 면 헤더처럼 키를 소문자
-/// 정규화한다(exec 의 헤더 조회 규약과 일치). 값이 문자열이 아니면 JSON 표현으로.
+/// 헤더 키는 소문자로 정규화한다. 문자열이 아닌 값은 JSON 표현을 쓴다.
 fn string_map(
     v: Option<&serde_json::Value>,
     lowercase_keys: bool,
@@ -447,10 +372,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 수동 발화 시퀀스는 surface 훅과 같은 실행기에 줄 선다 — 잇달아 발화한 두 수동 시퀀스와 그
-    /// 사이에 발화한 surface 훅 시퀀스가 스텝 단위로 끼어들지 않고 넘겨받은 순서대로 하나씩 돈다.
-    /// 수동 발화마다 스레드를 띄우면(ADR-0027) 뒤 시퀀스의 첫 스텝이 앞 시퀀스의 첫 스텝
-    /// 답을 기다리지 않고 들어온다.
+    // 수동 실행과 surface 훅 사이에도 시퀀스의 단계가 섞이지 않아야 한다.
     #[test]
     fn dispatched_sequences_do_not_interleave_with_each_other_or_with_surface_hooks() {
         use std::sync::{Arc, mpsc};
@@ -529,7 +451,6 @@ mod tests {
 
     #[test]
     fn parse_upsert_rejects_a_patch_with_no_fields() {
-        // 아무것도 안 고치는 upsert 가 성공으로 보고되면 "고쳤는데 그대로" 가 된다.
         let e = parse_upsert(&json!({"id": "user/x"})).unwrap_err();
         assert!(e.contains("nothing to patch"), "{e}");
     }
@@ -547,7 +468,6 @@ mod tests {
 
     #[test]
     fn parse_upsert_refuses_a_malformed_action_instead_of_dropping_it() {
-        // 조용히 떨어뜨리면 "시퀀스를 바꿨다" 는 응답이 아무것도 안 바꾼 채 나간다.
         let e = parse_upsert(&json!({"id": "user/x", "action": {"kind": "nope"}})).unwrap_err();
         assert!(e.contains("ipc_sequence"), "{e}");
     }
@@ -570,8 +490,6 @@ mod tests {
 
     #[test]
     fn get_response_action_round_trips_into_upsert() {
-        // `get` 이 내는 action 모양을 `upsert` 가 그대로 먹는가 — 읽고 고쳐서 되돌려
-        // 보내는 것이 이 기능의 전부라, 두 모양이 어긋나면 기능이 성립하지 않는다.
         let action = HookHandlerAction::IpcSequence {
             calls: vec![crate::hook_handler::IpcCall {
                 method: "notification.send".into(),

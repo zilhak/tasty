@@ -1,14 +1,5 @@
-//! `git_viewer.*` IPC — git-viewer plugin이 mirror(attach) workspace에서 원격 git
-//! 조회를 트리거하는 진입점(`docs/adr/0022-remote-mirror-content-and-queries.md`).
-//!
-//! 이 호출은 **동기로 결과를 내지 않는다** — 실제
-//! 조회가 attach Control 채널 왕복(다른 프로세스·다른 머신일 수 있는 원격 tasty)을
-//! 거쳐야 하므로, 이 핸들러는 요청을 `CoreState::pending_git_query_forward` 에 큐잉하고
-//! `request_id` 만 즉시 회신한다(accept). 실제 결과는 attach 응답 도착 후
-//! `PluginManager::emit_host_event_to_plugin` 으로 `git_viewer.query_result` 이벤트를
-//! plugin 에 unicast 한다(`src/app/attach_client.rs::apply_attach_client_output` 의
-//! `MirrorEvent::GitQueryResult` 처리, `event.dispatch` 재사용 — `popup.set_context` 는
-//! 임의 `context` 필드가 없어 이 용도로 쓸 수 없다).
+//! mirror workspace의 원격 git 조회. request_id를 즉시 반환하고
+//! attach 응답이 오면 git_viewer.query_result 이벤트를 요청 플러그인에게만 보낸다(ADR-0022).
 
 use serde::Deserialize;
 use serde_json::json;
@@ -23,11 +14,9 @@ use tasty_ipc::stream_hub::GitQueryKind;
 struct GitViewerQueryReq {
     /// `"snapshot"` | `"diff"`.
     kind: String,
-    /// popup 이 anchor 된 **로컬** mirror surface id — `popup.open` context 로 받은
-    /// 값을 그대로 echo(host 가 attach 세션 매핑으로 원격 id 로 치환한다).
+    /// 팝업을 연 로컬 mirror surface ID. 호스트가 원격 ID로 바꿔 전달한다.
     local_surface_id: u32,
-    /// worktree 전환/새로고침 — 이전 `git_viewer.query_result` 가 돌려준 opaque 서버
-    /// 경로 echo. 없으면 서버가 `local_surface_id` 의 원격 cwd 로 새로 discover.
+    /// 이전 응답에서 받은 서버 경로. 없으면 원격 surface의 cwd에서 저장소를 찾는다.
     #[serde(default)]
     worktree_path: Option<String>,
     /// `kind = "diff"` 전용 — 대상 파일의 repo-relative 경로.
@@ -35,8 +24,6 @@ struct GitViewerQueryReq {
     diff_path: Option<String>,
 }
 
-/// `git_viewer.query` — 원격 git 조회를 큐잉하고 `request_id` 만 즉시 회신한다
-/// (비동기 accept, 위 모듈 doc 참고).
 pub fn handle_query(
     engine: &mut CoreState,
     id: serde_json::Value,

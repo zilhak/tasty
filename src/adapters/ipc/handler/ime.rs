@@ -6,9 +6,7 @@ use crate::view::main::ime as window_ime;
 use crate::view::ui::View as _;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// Handle IME simulation IPC methods.
-/// These require window-local state (ime_active, ime_preedit) so they are
-/// dispatched from App::process_ipc() rather than the AppState-level handler.
+/// IME 상태는 창마다 다르므로 MainView를 직접 받아 입력을 재현한다.
 pub fn handle_ime_method(
     w: &mut MainView,
     method: &str,

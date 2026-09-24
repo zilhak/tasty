@@ -9,10 +9,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// 내장 surface hook 이벤트 안내 문자열 (검증 실패 메시지용).
 const BUILTIN_HOOK_EVENTS: &str = "process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, command-completed, command-completed:EXIT_CODE";
 
-/// `HookEvent::parse` 는 미인식 문자열을 `Custom(_)` 으로 무조건 수용하므로,
-/// 여기서 (내장 ∪ 활성 plugin 선언) 집합으로 검증한다. 내장 이벤트는 parse 단계에서
-/// 이미 비-Custom 변형으로 해석되므로 항상 허용된다. `Custom(key)` 만 plugin 선언
-/// 카탈로그 멤버십을 확인하고, 미선언이면 동적 안내 메시지와 함께 거부한다.
+/// parse가 Custom으로 받은 이름은 활성 플러그인이 선언한 이벤트인지 추가 확인한다.
 fn validate_hook_event(
     engine: &crate::core::CoreState,
     event: &HookEvent,
@@ -71,12 +68,8 @@ pub(crate) fn handle_hook_set(
         return resp;
     }
 
-    // `command-completed` 는 OSC 133 셸 통합이 로드된 셸에서만
-    // 발화한다(전제). 그 surface 가 boundary 를 한 번도 못 받았다면 이 훅은
-    // 영원히 발사되지 않을 수 있다 — 거부는 아니다(시간 기반 추정이라 이제 막
-    // 뜬 surface 를 오탐할 수 있음, `shell_integration_hint.rs` 참고), 경고만
-    // 남겨 가시화한다. 등록 주체(사용자 `hook.set` 든 push 완료 전략의 내부
-    // dispatch 든) 무관하게 이 지점 하나에서 검사한다.
+    // command-completed는 OSC 133 셸 통합이 필요하다. 아직 prompt boundary가 없으면 경고한다.
+    // 막 시작한 셸일 수도 있으므로 훅 등록 자체는 거절하지 않는다.
     if matches!(event, HookEvent::CommandCompleted(_))
         && !engine.shell_integration_boundary_seen.contains(&surface_id)
     {
@@ -88,9 +81,7 @@ pub(crate) fn handle_hook_set(
         );
     }
 
-    // S9: hook 은 공유 훅 핸들러 레지스트리를 참조한다. `handler` 파라미터가 있으면
-    // 핸들러 id 참조(레지스트리 조회 + hook 트리거 source 게이트 검증), 없으면 옛
-    // `command` 를 인라인 셸(익명 hook 핸들러)로 감싼다(하위호환 어댑터).
+    // handler는 등록된 정의를 참조하고, 기존 command 입력은 인라인 셸로 감싼다.
     let binding = if let Some(handler_id) = params.get("handler").and_then(|v| v.as_str()) {
         let hid = crate::hook_handler::HookHandlerId::new(handler_id);
         match crate::hook_handler::registry::global().get(&hid) {
@@ -143,8 +134,7 @@ pub(crate) fn handle_hook_list(
         .list_hooks(surface_id)
         .iter()
         .map(|h| {
-            // `binding` = 구조적 표현(`handler:<id>` 또는 인라인 셸 명령).
-            // `command` 는 하위호환 별칭 — 인라인 셸이면 옛 응답과 동일한 명령 문자열.
+            // command는 binding의 호환 별칭이다.
             json!({
                 "id": h.id,
                 "surface_id": h.surface_id,
@@ -280,9 +270,7 @@ pub(crate) fn handle_surface_fire_hook(
 
     let fired = core.fire_surface_hooks(engine, surface_id, std::slice::from_ref(&event));
     let event_kind = event.to_display_string();
-    // 수동 발화도 CommandCompleted 라면 실제 exit code 를 실어
-    // 보낸다 — `tasty surface fire-hook --event command-completed:1` 로 push
-    // 전략 대기 task 를 테스트/시뮬레이션할 수 있어야 한다.
+    // 수동 command-completed도 종료 코드를 전달해 push 전략의 성공·실패를 시험할 수 있게 한다.
     let exit_code = match &event {
         HookEvent::CommandCompleted(code) => *code,
         _ => None,

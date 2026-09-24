@@ -1,8 +1,5 @@
-//! `memory.*` / `memory.secret.*` / `memory.bb.*` / `memory.plan.*` / `memory.cache.*` /
-//! `memory.goal.*` IPC 핸들러. 도메인별로 sub-module (bb / plan / cache / goal /
-//! secret) 로 분리. 본 `mod.rs` 는 basic `memory.*` 와 공용 helpers 만 포함.
-//!
-//! `owner` 는 [`CallerContext`] 에서 도출하며 plugin 이 인자로 명시할 수 없다.
+//! memory IPC와 공용 처리. 확장 기능은 하위 모듈에 둔다.
+//! owner는 CallerContext에서 정하며 플러그인이 요청 인자로 바꿀 수 없다.
 
 mod advanced;
 
@@ -30,11 +27,7 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
         })
 }
 
-/// surface 스코프 오버레이용 명시 인자. 활성 surface 로 폴백하지 않는다 —
-/// 포커스 독립성(`docs/design/policies/focus.md`).
-///
-/// `>= PTY_ID_BASE` 는 headless PTY id 공간이라 실재 surface 가 가질 수 없다 — 거부한다
-/// (`docs/adr/0017-workspace-identity-and-focus.md`).
+/// 활성 surface로 대체하지 않고 명시한 ID를 검사한다. headless PTY ID 공간은 거절한다.
 pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     params::opt_int::<u64>(params, "surface_id", id)?
         .and_then(|n| u32::try_from(n).ok())
@@ -76,10 +69,7 @@ fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
     Ok(scope)
 }
 
-/// `surface:<id>` scope 의 id 가 headless PTY id 공간이면 거부한다. `memory.*` 는 임의
-/// scope 토큰을 받으므로 `surface_id` 파라미터 검증만으로는 오염을 막지 못한다 — 여기서
-/// 같은 경계를 적용해야 `Scope::Surface(pty id)` 가 memory.db 에 심기지 않는다
-/// (`docs/adr/0017-workspace-identity-and-focus.md`).
+/// scope 문자열로 들어온 surface ID도 검사해 PTY ID가 surface scope로 저장되지 않게 한다.
 fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonRpcResponse> {
     match scope {
         Scope::Surface(sid) if !crate::core::pty_registry::is_surface_id_space(*sid) => {
@@ -92,28 +82,12 @@ fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonR
     }
 }
 
-/// 호스트가 소유한 키 namespace. `tasty.audit.` · `tasty.telemetry.` · `tasty.agent.` 등
-/// 11 개 하위 namespace 가 여기 산다.
-///
-/// **raw `memory.*` kv 표면에서 이 namespace 는 권한 caller 에게 존재하지 않는다.**
-/// regular memory 는 설계상 "모든 caller 가 읽는" 공유 네임스페이스인데(`tasty_memory`
-/// 모듈 doc), 호스트가 자기 상태를 거기 두면서 전용 메서드로만 잠갔다 — 예컨대 감사
-/// 로그의 `plugin.audit_*` 는 넷 다 `local_only()` 인데 같은 행이 `tasty.audit.` 키로
-/// 앉아 있어 `memory.list` 로 읽히고 `memory.put` 으로 위조됐다. 잠근 문 옆에 잠기지
-/// 않은 문이 있었던 것이고, 사용자가 승인 화면에서 본 것은 "메모리 읽기/쓰기" 다.
-///
-/// 접두 하나로 예약하는 이유: 하위 namespace 를 목록으로 들면 그 목록이 또 하나의
-/// 손목록이 되어 새 호스트 namespace 가 생길 때마다 조용히 새는 자리가 늘어난다.
-/// 근거·대안·재검토 조건은 [ADR-0012](../../../../docs/adr/0012-request-admission-and-isolation.md).
+/// 호스트 전용 키 접두어. 플러그인·에이전트는 일반 memory API로 읽거나 바꿀 수 없다.
+/// 전용 메서드의 권한 검사를 일반 KV API로 우회하지 못하도록 한다(ADR-0012).
+/// 개별 하위 namespace를 나열하지 않아 새 호스트 키도 같은 제한을 받는다.
 pub(super) const HOST_KEY_NAMESPACE: &str = "tasty.";
 
-/// 권한 게이트를 받는 caller(plugin / agent)인가. `Local`(CLI·사용자)은 `ensure_allowed`
-/// 가 무조건 통과시키는 신뢰 caller 라 여기서도 제한하지 않는다 — CLI 의
-/// `memory list --prefix tasty.audit.` 은 그대로 동작해야 한다.
-///
-/// `is_plugin()` 이 아니라 권한 셋의 유무로 가른다. agent caller 도 같은 권한 모델을
-/// 받으므로 함께 막혀야 하고, 이렇게 두면 권한을 받는 caller 종류가 새로 생겨도
-/// 자동으로 덮인다.
+/// 권한 집합이 있는 플러그인·에이전트를 제한한다. 신뢰하는 Local 호출은 제외한다.
 fn is_permissioned(caller: &CallerContext) -> bool {
     caller.permissions().is_some()
 }
@@ -122,8 +96,7 @@ fn is_host_key(key: &str) -> bool {
     key.starts_with(HOST_KEY_NAMESPACE)
 }
 
-/// 이 prefix 로 센 수에 호스트 키가 섞일 수 있는가. prefix 가 없거나 호스트
-/// namespace 의 앞토막(`"ta"`)이면 섞인다.
+/// 지정 prefix의 결과에 호스트 키가 섞일 수 있는지 확인한다. 생략하거나 ta처럼 짧아도 해당된다.
 fn prefix_may_include_host(prefix: Option<&str>) -> bool {
     prefix.is_none_or(|p| HOST_KEY_NAMESPACE.starts_with(p))
 }
@@ -145,9 +118,7 @@ pub(super) fn reject_host_key(
     Ok(())
 }
 
-/// 열거 경로(list / query / export)의 결과에서 호스트 키를 제거한다. 여기서는 거부가
-/// 아니라 필터인 이유는, 이 메서드들이 prefix 없이도 불릴 수 있어 "지목했는가" 로
-/// 가를 수 없기 때문이다 — 호스트 키가 **애초에 없는 것처럼** 보여야 한다.
+/// 목록 조회는 prefix를 지정하지 않을 수도 있으므로 호스트 키만 결과에서 제외한다.
 pub(super) fn hide_host_keys(
     caller: &CallerContext,
     entries: Vec<MemoryEntry>,
@@ -308,7 +279,6 @@ fn value_to_json(v: &MemoryValue) -> Value {
     }
 }
 
-/// Regular entry — `owner` 가 응답에 포함된다.
 fn entry_to_json(entry: &MemoryEntry) -> Value {
     let mut obj = serde_json::Map::new();
     obj.insert("scope".into(), json!(entry.scope));
@@ -328,7 +298,7 @@ fn entry_to_json(entry: &MemoryEntry) -> Value {
     Value::Object(obj)
 }
 
-/// Secret entry — plugin 에게 `owner` 차원을 노출하지 않으므로 무조건 생략.
+/// Secret 응답은 owner를 공개하지 않는다.
 fn secret_entry_to_json(entry: &MemoryEntry) -> Value {
     let mut obj = serde_json::Map::new();
     obj.insert("scope".into(), json!(entry.scope));
@@ -392,9 +362,7 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
             -32007,
             format!("value_too_large: {actual} bytes > {max}"),
         ),
-        // 코드와 문장은 원인 분류가 생기기 전 그대로다 — 소비자가 이미 그것으로
-        // 분기한다. 원인 갈래는 `data` 에 **덧붙인다**: 잠김·용량·I/O·손상은 처방이
-        // 달라 문장 파싱 없이 갈려야 한다(`tasty_memory::StorageFailure`).
+        // 기존 오류 코드와 메시지는 유지하고, 원인별 처리를 위한 storage_failure를 추가한다.
         Db(e) => {
             let failure = tasty_memory::StorageFailure::classify(&e);
             JsonRpcResponse::error_with_data(
@@ -407,21 +375,13 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
     }
 }
 
-/// 쓰기 성공 응답. 저장소가 `memory.db` 초기화 실패의 in-memory 대체면 `durable: false`
-/// 를 더한다 — 그 쓰기는 프로세스와 함께 사라진다. `ok` 는 그대로 두고(기존 호출자는
-/// 그것만 본다), 정상 저장소에서는 칸을 싣지 않아 응답이 종전과 같다(ADR-0010).
-///
-/// `memory.*` 밖에서 같은 `memory.db` 에 쓰는 메서드(`agent.*` · `approval.*` ·
-/// `surface.meta.*` · `telemetry.*` · `session.*`)도 이것이나 [`mark_durability`] 로
-/// 답한다 — 어느 이름이 쓰기 계열인지는 `tasty_ipc::method_meta` 의 효과 분류가 정하고,
-/// 시험 `every_memory_write_reports_a_fallback_store_as_not_durable` 가 그 표로 잰다.
+/// 대체 메모리 저장소의 쓰기에는 durable:false를 붙인다. 정상 저장소에서는 생략한다.
+/// 같은 저장소를 쓰는 agent/approval/meta/telemetry/session도 이 규칙을 따른다(ADR-0010).
 pub(crate) fn written(core: &Core, id: Value, body: Value) -> JsonRpcResponse {
     mark_durability(core, JsonRpcResponse::success(id, body))
 }
 
-/// 이미 만든 응답에 [`written`] 과 같은 칸을 단다. 성공 응답의 **객체** 결과에만 붙고,
-/// 오류 응답은 그대로다 — 실패한 쓰기는 남은 것이 없어 durable 을 말할 대상이 없다.
-/// 성공 경로가 여럿인 핸들러가 반환값 하나를 감싸는 데 쓴다.
+/// 성공 응답의 객체에만 durable 표시를 더한다. 오류 응답은 그대로 둔다.
 pub(crate) fn mark_durability(core: &Core, mut resp: JsonRpcResponse) -> JsonRpcResponse {
     if core.memory_init_fallback().is_some()
         && let Some(Value::Object(obj)) = resp.result.as_mut()
@@ -430,10 +390,6 @@ pub(crate) fn mark_durability(core: &Core, mut resp: JsonRpcResponse) -> JsonRpc
     }
     resp
 }
-
-// ============================================================
-// Regular `memory.*`
-// ============================================================
 
 pub fn handle_put(
     core: &Core,
@@ -593,9 +549,7 @@ pub fn handle_count(
             Err(e) => map_error(id, e),
         };
     }
-    // 권한 caller 에게 호스트 키는 없는 것이다 — 세는 수에서도 빠져야 한다.
-    // prefix 가 호스트 namespace 안이면 셀 것이 없고, namespace 를 걸치거나
-    // 없으면 전체에서 호스트 키 수를 뺀다.
+    // 개수에서도 호스트 키를 제외한다. prefix가 일부만 겹치면 전체에서 호스트 키 수를 뺀다.
     match prefix {
         Some(p) if is_host_key(p) => JsonRpcResponse::success(id, json!({ "count": 0 })),
         _ => {
@@ -685,8 +639,6 @@ mod tests {
         }
     }
 
-    /// 감사 로그는 `plugin.audit_*` 가 넷 다 `local_only()` 라 전용 문이 닫혀 있는데,
-    /// 같은 행이 `tasty.audit.` 키로 공유 kv 에 앉아 있었다. 그 옆문을 막는다.
     #[test]
     fn the_audit_key_space_is_closed_to_permissioned_callers() {
         let id = json!(1);
@@ -698,8 +650,6 @@ mod tests {
         }
     }
 
-    /// CLI·사용자는 `ensure_allowed` 가 무조건 통과시키는 신뢰 caller 다. 여기서
-    /// 막으면 `tasty memory list --prefix tasty.audit.` 이 깨진다.
     #[test]
     fn the_local_caller_still_reaches_host_keys() {
         let id = json!(1);
@@ -712,8 +662,7 @@ mod tests {
         );
     }
 
-    /// 디렉토리 순회. 실패를 삼키지 않는다 — 못 읽은 디렉토리는 위반이 없는 디렉토리와
-    /// 구분되지 않으므로, 조용히 건너뛰면 가드가 초록인 채로 눈이 먼다.
+    // 읽지 못한 디렉터리를 위반이 없는 것으로 처리하지 않도록 실패를 전파한다.
     fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         let entries = std::fs::read_dir(dir)
             .unwrap_or_else(|e| panic!("스캔 디렉토리 `{}` 를 열지 못했다: {e}", dir.display()));
@@ -732,9 +681,7 @@ mod tests {
         }
     }
 
-    /// plugin 자기 키는 예약에 걸리지 않는다. `tasty-` 는 점이 없어 namespace 가 아니고,
-    /// `tastyx.` 도 마찬가지다 — 예약은 `tasty` 로 시작하는 이름이 아니라 `tasty.`
-    /// namespace 다.
+    // tasty-와 tastyx.는 예약된 tasty. 접두어에 속하지 않는다.
     #[test]
     fn the_reservation_does_not_catch_plugin_keys() {
         for key in ["my.state", "tasty-thing.state", "tastyx.y", "", "tast"] {
@@ -742,19 +689,12 @@ mod tests {
         }
     }
 
-    /// 접두 하나로 예약하는 것의 값은 **호스트 키 공간을 목록으로 들지 않아도 된다**
-    /// 는 데 있다. 그 값이 실제로 있는지 손목록 대신 레포에서 직접 센다 — 선언된
-    /// 키 상수를 전부 긁어, `tasty.` 로 시작하는 것이 하나도 빠짐없이 예약에 걸리는지
-    /// 본다.
-    ///
-    /// 개수를 함께 고정하는 이유: 스캐너가 조용히 0 건을 세면 이 테스트는 초록인 채로
-    /// 눈이 먼다. 호스트 키 공간이 늘거나 줄면 그 자리에서 걸리고, 그때 사람이
-    /// "새로 생긴 것이 정말 `tasty.` 안인가" 를 한 번 본다.
+    // 실제 키 상수를 수집해 예약 접두어에 포함되는지 검사한다.
+    // 수집 누락이나 새 namespace를 놓치지 않도록 개수도 확인한다.
     #[test]
     fn every_declared_host_key_space_is_inside_the_reservation() {
         const EXPECTED: usize = 20;
-        /// `tasty` 로 시작하지만 memory store 키가 아닌 상수. 이름만 보고는 가를 수 없어
-        /// (스캐너에 그 오라클이 없다) 여기 이유와 함께 적는다.
+        // 이름만으로 구별할 수 없는 memory 외 저장소 키.
         const NOT_MEMORY_KEYS: &[(&str, &str)] = &[(
             "HOOKS_REGISTRY_KEY",
             "mlua 의 named registry 키 — memory store 가 아니다",
@@ -823,8 +763,6 @@ mod tests {
         }
     }
 
-    /// 열거 경로는 거부가 아니라 필터다 — prefix 없이도 불리므로 "지목했는가" 로
-    /// 가를 수 없다.
     #[test]
     fn enumerating_paths_hide_host_keys_instead_of_failing() {
         let visible = hide_host_keys(
@@ -841,19 +779,11 @@ mod tests {
         );
     }
 
-    /// raw kv 표면의 핸들러는 **전부** 예약 정책을 거쳐야 한다. 이 결함의 형태가
-    /// 바로 "한 경로에만 문을 달았다" 였다 — `plugin.audit_*` 는 잠갔는데 같은
-    /// 데이터로 가는 `memory.*` 는 안 잠갔다. 새 핸들러가 문 없이 추가되면 같은
-    /// 형태가 다시 생기므로, 정책을 안 거치는 핸들러는 여기 이름으로 적혀야 한다.
-    ///
-    /// 면제된 셋은 **키 이름도 값도 내보내지 않는다**: `scopes` 는 scope 토큰만,
-    /// `stats` 는 집계 개수·바이트만 돌려주고, `gc` 는 `local_only()` 라 권한
-    /// caller 가 애초에 못 부른다.
+    // 모든 일반 KV 핸들러가 예약 키를 제한하는지 확인한다.
+    // scopes/stats는 키와 값을 반환하지 않고 gc는 local_only이므로 제외한다.
     #[test]
     fn every_raw_kv_handler_consults_the_reserved_namespace() {
         const EXEMPT: &[&str] = &["handle_scopes", "handle_stats", "handle_gc"];
-        // 정책 진입점은 경로의 모양마다 하나씩 셋이다: 키를 지목하면 거부,
-        // 열거하면 필터, 세면 보정.
         const ENTRY_POINTS: &[&str] = &[
             "reject_host_key",
             "hide_host_keys",
@@ -905,8 +835,7 @@ mod tests {
         }
     }
 
-    /// 세는 수에서도 빠져야 한다 — 내용을 못 봐도 개수는 감사 기록의 존재와 규모를
-    /// 드러낸다.
+    // 키를 숨겨도 개수로 감사 기록의 규모가 드러나지 않아야 한다.
     #[test]
     fn counting_needs_correction_exactly_when_the_prefix_can_include_host_keys() {
         assert!(prefix_may_include_host(None));
@@ -932,10 +861,7 @@ mod tests {
         assert!(decode_b64("ab*=").is_err());
     }
 
-    /// 저장소 실패는 원인 갈래를 `data` 로 싣고, 코드와 문장은 전과 같다.
-    ///
-    /// 문장·코드가 바뀌면 이미 그것으로 분기하는 소비자가 깨지고, `data` 가 빠지면
-    /// 잠김과 용량 부족이 다시 같은 오류로 보인다 — 두 방향을 다 본다.
+    // 원인은 data에 추가하고 기존 코드·메시지 및 일반 거부 응답은 유지한다.
     #[test]
     fn a_storage_failure_keeps_its_message_and_adds_its_cause() {
         let busy = rusqlite::Error::SqliteFailure(

@@ -1,5 +1,4 @@
-//! 쓰기 응답의 `durable: false` — `memory.db` 를 못 열어 in-memory 대체로 뜬 호스트가
-//! 쓰기를 정상과 똑같은 `ok` 로만 확인하던 결함의 회귀 시험(ADR-0010).
+//! 대체 메모리 저장소의 쓰기 응답이 durable:false를 알리는지 확인한다(ADR-0010).
 
 use serde_json::{Value, json};
 
@@ -96,8 +95,6 @@ fn writes_outside_memory() -> Vec<(&'static str, Value)> {
     ]
 }
 
-/// 대체 저장소에서는 쓰기가 성공해도 `durable: false` 가 붙고, `ok` 등 기존 칸은 그대로다.
-/// 응답 모양이 다른 넷(`ok`+`version` · `ok` · `applied`/`skipped` · `regular`/`secret`)을 본다.
 #[test]
 fn a_write_to_a_fallback_store_says_it_is_not_durable() {
     let mut core = core_with(Some(fallback()));
@@ -127,7 +124,6 @@ fn a_write_to_a_fallback_store_says_it_is_not_durable() {
     );
 }
 
-/// 정상 저장소에서는 칸을 싣지 않는다 — 응답이 이 칸이 생기기 전과 같다.
 #[test]
 fn a_write_to_a_durable_store_answers_as_before() {
     let mut core = core_with(None);
@@ -140,13 +136,9 @@ fn a_write_to_a_durable_store_answers_as_before() {
     }
 }
 
-/// `memory.db` 에 쓰는 메서드는 **전부** [`super::written`] 이나 [`super::mark_durability`]
-/// 로 답한다 — `memory.*` 만이 아니라 같은 저장소에 쓰는 이웃 이름공간도 그렇다.
-///
-/// 쓰기 계열은 메서드 표의 효과 분류(`MethodEffect::Read` 가 아닌 것)로 정한다 — 목록을
-/// 여기 따로 두면 표와 갈린다. 표가 쓰기로 적지만 핸들러가 저장소에 쓰지 않는 것만
-/// 사유와 함께 뺀다. 이름 → 핸들러 함수는 라우터 본문의 arm 에서, 함수 본문은 아래
-/// 소스들에서 읽는다(함수 이름이 두 소스에 있으면 어느 본문인지 모르므로 실패한다).
+// 메서드 효과 표와 라우터에서 저장소 쓰기 핸들러를 찾아 durable 표시 여부를 검사한다.
+// 쓰기로 분류됐어도 실제로 저장하지 않는 메서드는 이유와 함께 제외한다.
+// 함수 이름이 여러 파일에 있으면 검사 대상을 확정할 수 없으므로 실패한다.
 #[test]
 fn every_memory_write_reports_a_fallback_store_as_not_durable() {
     /// 이 저장소(`memory.db`)에 쓰는 이름공간. 여기 없는 이름공간은 다른 저장소

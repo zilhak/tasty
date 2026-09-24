@@ -55,8 +55,7 @@ pub fn handle_notification_create(
         Err(e) => return e,
     };
 
-    // workspace_id 결정 — CLAUDE.md "포커스 독립성" 원칙: IPC는 사용자 포커스에
-    // 의존하지 않아야 한다. workspace_id를 명시하지 않으면 다음 순으로 결정.
+    // 사용자 포커스 대신 명시 ID의 소속으로 대상을 정한다.
     let ws_param = match super::params::optional_u32(params, "workspace_id", &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -64,7 +63,6 @@ pub fn handle_notification_create(
     let ws_id = match ws_param {
         Some(v) => v,
         None => {
-            // 1. surface_id가 주어지면 그 surface가 속한 워크스페이스로 라우팅
             if surface_id > 0 {
                 if let Some((idx, _)) = engine.find_workspace_index_for_surface(surface_id) {
                     engine.workspaces[idx].id
@@ -77,12 +75,11 @@ pub fn handle_notification_create(
                         ),
                     );
                 }
-            // 2. 워크스페이스가 정확히 1개면 자동 사용 (호환성 폴백, 1버전 유지 예정)
+            // workspace가 하나뿐이면 호환 동작으로 그 대상을 쓴다.
             } else if engine.workspaces.len() == 1 {
                 tracing::warn!(
                     "notification.create called without 'workspace_id' or 'surface_id'; \
-                     auto-routing to the only workspace. \
-                     This fallback will be removed in a future version."
+                     auto-routing to the only workspace."
                 );
                 engine.workspaces[0].id
             } else {
@@ -95,9 +92,7 @@ pub fn handle_notification_create(
             }
         }
     };
-    // mutate 는 Core::apply 단일 진입점 — handler 는 read 후 enqueue.
-    // cascade (notifications.add + host event enqueue) 는
-    // App.cascade_notification_pushed 가 처리.
+    // 저장과 이벤트 통지는 후속 intent 처리에 맡긴다.
     out.push(
         crate::core::intent::DomainIntent::PushNotification {
             ws_id,

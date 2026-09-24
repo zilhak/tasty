@@ -193,10 +193,3 @@ pub fn handle_secret_stats(
         Err(e) => map_error(id, e),
     }
 }
-
-// ============================================================
-// Blackboard `memory.bb_*`
-// ============================================================
-//
-// 워크스페이스 단위 키-값 컬렉션. `Scope::Workspace(workspace_id)` 한정.
-// 키 컨벤션: `tasty.bb.<name>._meta` / `tasty.bb.<name>.fields.<field>`.

@@ -1,10 +1,6 @@
-//! `preset.*` IPC 핸들러 — layout preset CRUD + apply.
-//!
-//! 모든 mutation 은 `crate::intent::preset` 의 공유 inner 함수를 호출한다.
-//! Intent 큐를 거치지 않는 이유는 IPC 응답이 sync contract (성공/실패 + 결과 data)
-//! 이기 때문 — 두 경로 모두 같은 inner 를 호출해 동작 일관성을 보장한다.
-//!
-//! CLI/IPC 경로는 포커스 독립 — `preset.apply` 는 항상 `ApplyOptions { focus: false }`.
+//! 프리셋 저장·변경·적용은 intent와 같은 공용 함수를 호출한다.
+//! IPC는 성공/실패를 동기로 응답해야 하므로 intent 큐를 거치지 않는다.
+//! 적용할 때 focus:false로 사용자 포커스를 유지한다.
 
 use serde_json::json;
 use tasty_presets::{PanePreset, PresetKind, TabPreset, WorkspacePreset};
@@ -17,7 +13,6 @@ use crate::intent::preset::{
 use crate::state::preset_apply::ApplyOptions;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// kind 문자열 → PresetKind. 잘못된 값이면 invalid_params 응답을 반환.
 fn parse_kind(
     params: &serde_json::Value,
     id: &serde_json::Value,
@@ -49,7 +44,6 @@ fn require_str<'a>(
 
 use super::params::require_u32;
 
-/// Core.preset_store 잠금 후 클로저 실행. Core 가 항상 보유하므로 실패 분기 없음.
 fn with_store<R>(core: &crate::core::Core, f: impl FnOnce(&tasty_presets::PresetStore) -> R) -> R {
     let guard = crate::poison::recover_mutex(
         core.preset_store.lock(),
@@ -59,7 +53,6 @@ fn with_store<R>(core: &crate::core::Core, f: impl FnOnce(&tasty_presets::Preset
     f(&guard)
 }
 
-/// PresetMutationError → JsonRpcResponse 매핑.
 fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
         PresetMutationError::NotFound { .. }
@@ -67,8 +60,6 @@ fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcRespo
         | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
     }
 }
-
-// ── handlers ──────────────────────────────────────────────────────────
 
 pub fn handle_list(
     core: &crate::core::Core,
@@ -149,7 +140,6 @@ pub fn handle_save(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // 1. data → ClonedPreset 변환.
     let cloned = match kind {
         PresetKind::Workspace => match serde_json::from_value::<WorkspacePreset>(data) {
             Ok(p) => ClonedPreset::Workspace(p),
@@ -174,7 +164,6 @@ pub fn handle_save(
         },
     };
 
-    // 2. 공유 save_inner 호출.
     match save_inner(core, "", Some(&name), overwrite, cloned) {
         Ok(SaveOutcome::Saved(saved_name)) => {
             JsonRpcResponse::success(id, json!({ "name": saved_name }))
@@ -250,13 +239,11 @@ pub fn handle_capture(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    // 1. capture (read-only on engine).
     let (cloned, base_name) = match capture_inner(engine, kind, source_id) {
         Ok(v) => v,
         Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
-    // 2. save (overwrite=false; explicit_name=Some 이면 충돌 시 SkippedExists).
     match save_inner(core, &base_name, explicit_name.as_deref(), false, cloned) {
         Ok(SaveOutcome::Saved(name)) => JsonRpcResponse::success(id, json!({ "name": name })),
         Ok(SaveOutcome::SkippedExists) => JsonRpcResponse::invalid_params(
@@ -292,7 +279,6 @@ pub fn handle_apply(
         Err(e) => return e,
     };
 
-    // CLI/IPC 포커스 독립 원칙 — focus 항상 false.
     let opts = ApplyOptions { focus: false };
     match window.apply_preset(
         core,
@@ -302,8 +288,7 @@ pub fn handle_apply(
             name: &name,
             target_pane_id,
             target_workspace_id,
-            // 카테고리 지정은 UI 로컬 임시 상태(카테고리 헤더 메뉴 진입)에만 필요 —
-            // IPC/CLI 공개 계약에는 없음(workspace.create 의 category 파라미터로 이미 커버).
+            // 카테고리는 UI 메뉴의 임시 상태이며 이 API에서는 지정하지 않는다.
             category: None,
         },
         opts,

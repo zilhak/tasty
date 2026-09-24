@@ -227,8 +227,6 @@ pub fn handle_bb_exists(
     }
 }
 
-// ---- blackboard snapshot ----
-
 pub fn handle_bb_snapshot(
     core: &Core,
     _engine: &mut crate::core::CoreState,
@@ -362,10 +360,3 @@ pub fn handle_bb_snapshot_restore(
         Err(e) => map_error(id, e),
     }
 }
-
-// ============================================================
-// Plan `memory.plan_*`
-// ============================================================
-//
-// 워크스페이스 단위 선언적 work breakdown. 한 plan = `tasty.plan.<plan_id>`
-// JSON entry 한 개. step state 변경마다 전체 plan put 1 회.

@@ -1,16 +1,5 @@
-//! macOS 입력기 조작 — **debug 전용**.
-//!
-//! 두 핸들러 모두 tasty 프로세스 밖 **OS 전역 입력 상태** 를 건드린다
-//! (`CGEventPost` 로 이벤트 스트림에 키 주입 / `TISSelectInputSource` 로 시스템
-//! 입력 소스 전환). 대상 surface 를 받을 수단이 없어 "그 순간 OS 포커스를 가진
-//! 무엇" 이 결과를 받으며, 이는 사용자가 키보드·입력기 메뉴로 하는 조작의
-//! 재현이다. 따라서 identity 원칙 1 ②에 따라 release 표면에 두지 않고,
-//! `debug.inject_key` 와 같은 `--enable-input-simulation` 런타임 게이트를 함께
-//! 건다. 결정 근거는
-//! [`docs/adr/0012-request-admission-and-isolation.md`].
-//!
-//! 이 모듈 선언(`handler.rs`)은 `#[cfg(all(debug_assertions, target_os = "macos",
-//! feature = "gui"))]` 이라 release·비-macOS·headless 빌드에서 통째로 사라진다.
+//! macOS 전역 입력기 전환과 키 주입. 특정 surface가 아니라 OS 포커스 대상에 영향을 준다.
+//! macOS GUI 디버그 빌드와 --enable-input-simulation에서만 허용한다(ADR-0012).
 
 use super::params::{self, p_try};
 use serde_json::json;
@@ -48,14 +37,8 @@ pub fn handle_switch_input_source(
     }
 }
 
-/// Send a raw physical key code via CGEvent. This goes through the full
-/// macOS IME pipeline (interpretKeyEvents → setMarkedText/insertText).
-///
-/// **손쉬운 사용(Accessibility) 권한이 필요하다.** 승인 없이 `CGEventPost` 를 부르면
-/// 이벤트가 조용히 무시돼, 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을
-/// 본다. 그래서 주입 전에 권한을 확인하고 미승인이면 에러로 답한다. 확인은 **호출
-/// 시점마다** 한다 — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼 경우를 잘못
-/// 판정하고, 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있다.
+/// CGEvent로 키를 보내 macOS IME 처리를 거친다.
+/// 손쉬운 사용 권한은 호출마다 확인한다. 미승인 시 이벤트가 무시되므로 먼저 오류로 답한다.
 pub fn handle_raw_key(
     _state: &AppState,
     engine: &crate::core::CoreState,
@@ -97,8 +80,6 @@ pub fn handle_raw_key(
 
     JsonRpcResponse::success(id, json!({ "sent": true, "keycode": keycode }))
 }
-
-// ---- macOS FFI ----
 
 use std::ffi::c_void;
 
@@ -159,10 +140,7 @@ fn switch_input_source(source_id: &str) -> Result<(), String> {
     if source_id.contains('\0') {
         return Err("input source id must not contain NUL bytes".to_string());
     }
-    // 이 시점 이후 cf_string("TISPropertyInputSourceID")/cf_string(source_id)의 내부
-    // unwrap은 둘 다 패닉 불가능이 증명된다: key는 컴파일타임 literal, val=source_id는
-    // 방금 NUL 부재를 확인했다.
-    //
+    // 고정 키와 NUL 검사를 마친 source_id만 CString으로 바꾼다.
     // SAFETY: 전체 시퀀스는 TIS(Text Input Source) 표준 사용 패턴.
     // - cf_string으로 만든 key/val은 CFDictionaryCreate에 넘기면 dict가 retain.
     // - TISCreateInputSourceList는 CFArrayRef를 +1 retain count로 반환 → CFRelease로 정리.
@@ -222,12 +200,7 @@ fn post_key_event(keycode: u16, key_down: bool) {
 
 #[cfg(test)]
 mod tests {
-    // `switch_input_source`/`handle_switch_input_source` 둘 다 실제 TIS/CoreFoundation
-    // FFI 호출을 포함해 macOS 실기 없이는 호출 불가 — 이 모듈 자체가 이 파일과 함께
-    // `#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]` 로 게이트돼
-    // 있다(선언부는 `handler.rs`). 두 함수가 공유하는 NUL 가드
-    // 판정(`source_id.contains('\0')`)만 순수 로직이라 여기서 pin — 실제 크래시
-    // 재현/복구 확인은 macOS 실기 수동 검증이 필요하다.
+    // 여기서는 NUL 거절 조건만 검사한다. 실제 입력기 전환은 macOS FFI 검증이 별도로 필요하다.
     #[test]
     fn nul_byte_source_id_is_rejected() {
         assert!("abc\0def".contains('\0'));

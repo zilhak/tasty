@@ -1,11 +1,5 @@
-//! `image.*` IPC 핸들러 — host 가 소유한 표면만 담당하는 "얇은 어댑터".
-//!
-//! `image.open`(ConvertSurface) / `image.list`(surface 순회) 만 host 가 처리한다.
-//! 픽셀 편집 계열(`image.save`/`export_png`/`paste`/`next`/`prev`)은 com.tasty.image
-//! plugin 이 자기 `image` namespace 에서 직접 처리한다 (namespace forward 가 host
-//! 라우터보다 먼저 매칭) — 옛 host `ImagePanel`/`ImageView` 위임 핸들러는 제거됐다.
-//!
-//! 모든 메서드는 `surface_id`를 명시적으로 받는다 (포커스 독립성 원칙).
+//! image.open과 image.list는 호스트에서 처리한다. 픽셀 편집은 image 플러그인으로 전달한다.
+//! open은 surface_id를 명시하고 list는 모든 이미지 surface를 조회한다.
 
 use serde_json::{Value, json};
 
@@ -38,12 +32,8 @@ pub fn handle_open(
     };
     let events = match core.apply(engine, intent) {
         Ok(e) => e,
-        // mirror surface 대상이면 convert 도 forward 되어 `MirrorStructuralBlocked
-        // {forwarded:true}` 로 돌아온다 — 이걸 그냥 `internal_error` 로 뭉개면 실제로는
-        // 원격에 정상 큐잉된 요청을 호출자가 실패로 오인한다. 다른 재사용 핸들러(split
-        // 등)와 동일하게 `structural_apply_error` 로 `forwarded:true` 를 성공 응답으로
-        // 변환한다. 에이전트 요청이므로 그 forward op 의 원격 실패는 사용자 toast 가 아니라
-        // 로그로 간다(`docs/adr/0036-overlay-scope-and-lifetime.md`).
+        // mirror 변환도 원격 전달 접수는 성공으로 답한다. 원격 실행 완료를 뜻하지는 않는다.
+        // 에이전트 요청의 원격 실패는 사용자 toast 대신 로그로 남긴다.
         Err(e) => {
             crate::core::mark_last_forward_agent_origin(
                 engine,
@@ -65,7 +55,6 @@ pub fn handle_open(
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": sid, "path": path }))
 }
 
-/// `image.list` — 열린 모든 image surface 목록.
 pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
     for workspace in &engine.workspaces {
@@ -83,9 +72,7 @@ pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcRespons
 fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Value>) {
     match layout {
         crate::model::SurfaceLayout::Leaf(surface) => {
-            // image 는 ADR-0028에 따라 egui-mesh 로 전환돼 host 측 stand-in 은
-            // `EguiMeshSurface`(kind=="image")다. dir_count/current_index 는 plugin 이
-            // 소유하므로 host list 는 surface_id/path 만 노출한다.
+            // dir_count/current_index는 플러그인이 관리하므로 여기서는 surface_id/path만 반환한다.
             if let Some(ms) = surface
                 .as_any()
                 .downcast_ref::<crate::core::egui_mesh_surface::EguiMeshSurface>()
@@ -109,10 +96,8 @@ mod tests {
     use super::*;
     use crate::state::AppState;
 
-    /// `handle_open` 처럼 `Core::apply` 를 호출하는 test 용 4-tuple fixture.
-    /// `TempDir` 은 호출자가 명명된 binding 으로 받아 즉시 drop 되지 않게 한다.
-    /// image kind 는 본래 com.tasty.image plugin 이 hello 시 등록 — 단위 test 는
-    /// plugin 을 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
+    // TempDir을 유지해야 시험 도중 파일이 사라지지 않는다.
+    // 플러그인을 실행하지 않으므로 image kind는 시험에서 직접 등록한다.
     fn make_test_core_state() -> (
         crate::core::Core,
         AppState,
@@ -141,8 +126,6 @@ mod tests {
         let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
 
         let state = AppState::new(&mut engine, preset_store.clone(), memory.clone());
-        // 런타임과 동형으로 "image" kind 를 egui-mesh stand-in(EguiMeshSurface) 으로
-        // 등록한다 (com.tasty.image plugin 이 hello 시 하는 등록의 test 재현).
         let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(json!({
             "kind": "image",
             "display_name_i18n_key": "surface.kind.image",
@@ -219,7 +202,6 @@ mod tests {
             &json!({ "surface_id": sid, "path": path.clone() }),
         );
         assert!(resp.result.is_some(), "open failed: {resp:?}");
-        // 변환 결과는 egui-mesh stand-in — list 로 kind/path 반영을 확인한다.
         let resp = handle_list(&engine, Value::Null);
         let v = resp.result.expect("list ok");
         let entries = v["entries"].as_array().unwrap();
@@ -257,7 +239,6 @@ mod tests {
     fn list_finds_image_surfaces() {
         let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
-        // Convert to image (blank canvas — no file).
         assert!(state.test_convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 
         let resp = handle_list(&engine, Value::Null);

@@ -1,7 +1,4 @@
-//! `memory.goal_*` IPC handlers — surface 스코프 goal 오버레이.
-//!
-//! surface id 는 **명시 params 필수**다(`require_surface_id`). 활성 surface 로
-//! 폴백하지 않는다 — 포커스 독립성(`docs/design/policies/focus.md`).
+//! surface별 목표. 대상 ID를 명시해야 하며 활성 surface로 대체하지 않는다.
 
 use serde_json::{Value, json};
 use tasty_memory::goal as goal_mod;
@@ -87,11 +84,8 @@ mod tests {
     #[test]
     fn require_surface_id_rejects_missing_or_out_of_range() {
         let id = json!(1);
-        // 누락
         assert!(require_surface_id(&json!({}), &id).is_err());
-        // 타입 불일치
         assert!(require_surface_id(&json!({ "surface_id": "3" }), &id).is_err());
-        // 음수 / u32 범위 초과
         assert!(require_surface_id(&json!({ "surface_id": -1 }), &id).is_err());
         assert!(
             require_surface_id(&json!({ "surface_id": u64::from(u32::MAX) + 1 }), &id).is_err()
@@ -122,7 +116,6 @@ mod tests {
         let ok = json!({ "scope": "surface:7" });
         assert!(require_scope(&ok, &id).is_ok());
         assert!(optional_scope(&ok, &id).unwrap().is_some());
-        // scope 미지정은 여전히 None.
         assert!(optional_scope(&json!({}), &id).unwrap().is_none());
     }
 }
