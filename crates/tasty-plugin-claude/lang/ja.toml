@@ -2,7 +2,7 @@
 desc = "Claude Code CLI連携（launch、spawn、killなど）"
 
 [claude]
-"settings.spawn_child_warn_threshold" = "Spawn child 警告しきい値"
+"settings.spawn_child_warn_threshold" = "子の数の警告しきい値"
 "settings.continue_checklist_round_limit" = "ゲートの既定ラウンド上限（ゲートが独自の値を指定しない場合）"
 "settings.default_permission_mode" = "子セッションの既定パーミッションモード"
 "settings.auto_resume_enabled" = "一時的な API エラー（サーバー過負荷）の後に自動で再開する"
@@ -35,10 +35,10 @@ io_error = "checklist marker ファイルの入出力に失敗しました: {}"
 [claude.params]
 missing_surface_id = "必須パラメータ 'surface'(または 'surface_id')がありません"
 missing_surface_no_env = "必須パラメータ 'surface'(または 'surface_id')がありません(環境変数 TASTY_SURFACE_ID も未設定です)"
-target_surface_not_a_number = "対象 surface に {} が渡された — 32 ビットに収まる整数である必要がある。切り捨てずに拒否する: 切り捨てられた id は実在しうる別の surface を指す"
-surface_conflict = "'surface' と 'surface_id' が異なる対象を指している ({}) — どちらか一方、または同じ値を送ること"
+target_surface_not_a_number = "対象 surface の値 {} は無効です。符号なし32ビット整数を指定してください。別の対象に変わらないよう、大きすぎる値は切り捨てずに拒否します。"
+surface_conflict = "'surface' と 'surface_id' が異なる対象を指定しています（{}）。片方だけを指定するか、両方に同じ値を指定してください。"
 missing_child_index = "必須パラメータ 'child'(または 'child_index')がありません"
-child_index_not_a_number = "'child' に {} が渡された — 32 ビットに収まる整数である必要がある。切り捨てずに拒否する: 切り捨てられた index は別の子を指す"
+child_index_not_a_number = "'child' の値 {} は無効です。符号なし32ビット整数を指定してください。別の子に変わらないよう、大きすぎる値は切り捨てずに拒否します。"
 missing_text = "必須パラメータ 'text' がありません"
 missing_message = "必須パラメータ 'message' がありません"
 missing_caller_surface = "必須パラメータ 'caller_surface' がありません"
@@ -48,7 +48,7 @@ missing_name = "必須パラメータ 'name' がありません"
 missing_file = "必須パラメータ 'file' がありません"
 missing_body_file = "必須パラメータ 'body_file' がありません"
 invalid_permission_mode = "'permission_mode' の値が不正です: {}"
-permission_mode_conflicts_with_profile = "--permission-mode と permissions.defaultMode を設定するプロファイルは同時に指定できません — 同じものを決めるため、どちらか一方のみ指定してください"
+permission_mode_conflicts_with_profile = "--permission-mode と permissions.defaultMode を設定するプロファイルは併用できません。権限モードの指定元を一つにしてください。"
 
 [claude.hook]
 missing_event = "必須パラメータ 'event' がありません"
@@ -95,7 +95,7 @@ invalid_short_name = "'{}' は有効なプロファイル名ではありませ�
 empty_names = "プロファイル名が指定されていません"
 unknown_profile = "'{}' という名前で登録されたプロファイルはありません"
 not_attachable = "'{}' は参照専用の内蔵項目のため、名前でアタッチできません"
-gate_name_conflict = "'{}' は既に Stop フックゲートとして登録されています — ゲートも名前でアタッチされるため、別の名前を使うか 'claude gate-unregister {}' で先に解除してください"
+gate_name_conflict = "'{}' は Stop フックゲート名として登録済みです。別の名前を使うか、'claude gate-unregister {}' で先に削除してください。"
 source_not_readable = "プロファイル元 '{}' を読み込めません: {}"
 source_not_json_object = "プロファイル元 '{}' が JSON object ではありません"
 io_error = "'{}': {}"
@@ -110,10 +110,10 @@ no_data_dir = "plugin data directory を利用できません(ホストが TASTY
 invalid_short_name = "'{}' は有効なゲート名ではありません(小文字・数字・'-' のみ、最大32文字)"
 unknown_gate = "'{}' という名前で登録されたゲートはありません"
 body_not_readable = "ゲート本文 '{}' を読めません: {}"
-body_missing_sentinel = "ゲート本文にセンチネル '{}' が含まれていません — センチネルがないとモデルは完了を宣言する方法を知らされず、ゲートはラウンド上限まで強制的に延長するだけの仕組みになります"
-empty_sentinel = "センチネルを空にはできません — 空のセンチネルは全てのメッセージに一致するため、ゲートは最初のラウンドで通過します"
+body_missing_sentinel = "ゲート本文に完了マーカー '{}' がありません。完了時の出力をモデルに伝えるため本文に含めてください。なければ回数上限まで延長されます。"
+empty_sentinel = "完了マーカーは空にできません。空値は全メッセージに一致し、最初の回で通過してしまいます。"
 rounds_below_one = "--rounds は 1 以上でなければなりません"
-profile_name_conflict = "'{}' は既にセッションプロファイルとして登録されています — ゲートも名前でアタッチされるため、別の名前を使うか 'claude profile-unregister {}' で先に解除してください"
+profile_name_conflict = "'{}' はセッションプロファイル名として登録済みです。別の名前を使うか、'claude profile-unregister {}' で先に削除してください。"
 io_error = "'{}': {}"
 error_prefix = "gate: {}"
 
@@ -238,7 +238,7 @@ help = "claude起動時に --settings で渡すセッションプロファイル
 help = "適用する登録済みセッションプロファイルまたはStopフックゲート名。複数はカンマ区切りで一つのファイルに統合（'claude profile-register'、'claude gate-register' 参照）。--profile-fileと併用不可"
 
 [claude.cli.arg.launch_args.permission_mode]
-help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+help = "子の権限モード：acceptEdits|auto|bypassPermissions|manual|dontAsk|plan。--permission-mode で渡し、今回だけ default_permission_mode より優先します。省略時はその設定を使用し、inherit または未設定ならフラグを付けず Claude Code の設定に従います。明示したモードは permissions.defaultMode を設定する --profile/--profile-file と併用できません。"
 
 [claude.cli.arg.spawn_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
@@ -268,7 +268,7 @@ help = "子の起動時に --settings で渡すClaudeセッションプロファ
 help = "適用する登録済みセッションプロファイルまたはStopフックゲート名。複数はカンマ区切りで一つのファイルに統合（'claude profile-register'、'claude gate-register' 参照）。--profile-fileと併用不可"
 
 [claude.cli.arg.spawn_args.permission_mode]
-help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+help = "子の権限モード：acceptEdits|auto|bypassPermissions|manual|dontAsk|plan。--permission-mode で渡し、今回だけ default_permission_mode より優先します。省略時はその設定を使用し、inherit または未設定ならフラグを付けず Claude Code の設定に従います。明示したモードは permissions.defaultMode を設定する --profile/--profile-file と併用できません。"
 
 [claude.cli.arg.children_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
@@ -343,7 +343,7 @@ help = "子の再起動時に --settings で渡すClaudeセッションプロフ
 help = "適用する登録済みセッションプロファイルまたはStopフックゲート名。複数はカンマ区切りで一つのファイルに統合（'claude profile-register'、'claude gate-register' 参照）。--profile-fileと併用不可"
 
 [claude.cli.arg.respawn_args.permission_mode]
-help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+help = "子の権限モード：acceptEdits|auto|bypassPermissions|manual|dontAsk|plan。--permission-mode で渡し、今回だけ default_permission_mode より優先します。省略時はその設定を使用し、inherit または未設定ならフラグを付けず Claude Code の設定に従います。明示したモードは permissions.defaultMode を設定する --profile/--profile-file と併用できません。"
 
 [claude.cli.arg.reboot_args.surface]
 help = "対象ClaudeサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
@@ -364,7 +364,7 @@ help = "適用する登録済みセッションプロファイル/Stopフック�
 help = "再開前に既存のセッションプロファイルを解除（パスまたは名前指定）"
 
 [claude.cli.arg.reboot_args.permission_mode]
-help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+help = "子の権限モード：acceptEdits|auto|bypassPermissions|manual|dontAsk|plan。--permission-mode で渡し、今回だけ default_permission_mode より優先します。省略時はその設定を使用し、inherit または未設定ならフラグを付けず Claude Code の設定に従います。明示したモードは permissions.defaultMode を設定する --profile/--profile-file と併用できません。"
 
 [claude.cli.arg.child_profile_args.surface]
 help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
@@ -388,7 +388,7 @@ help = "子に適用する登録済みセッションプロファイル/Stopフ�
 help = "再開前に子の既存セッションプロファイルを解除（パスまたは名前指定）"
 
 [claude.cli.arg.child_profile_args.permission_mode]
-help = "子セッションの権限モード（acceptEdits|auto|bypassPermissions|manual|dontAsk|plan）。--permission-modeで渡し、今回の呼び出しだけdefault_permission_modeを上書きします。未指定ならフラグを送らずユーザーのClaude Code設定に従います。permissions.defaultModeを設定する --profile/--profile-fileとの併用は拒否します。"
+help = "子の権限モード：acceptEdits|auto|bypassPermissions|manual|dontAsk|plan。--permission-mode で渡し、今回だけ default_permission_mode より優先します。省略時はその設定を使用し、inherit または未設定ならフラグを付けず Claude Code の設定に従います。明示したモードは permissions.defaultMode を設定する --profile/--profile-file と併用できません。"
 
 [claude.cli.arg.hook_args.event]
 help = "フックイベント名（例：stop、stop-failure、notification、session-end、prompt-submit、session-start、subagent-stop、pre-tool-use、post-tool-use）"

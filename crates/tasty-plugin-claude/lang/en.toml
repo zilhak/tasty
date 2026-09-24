@@ -2,7 +2,7 @@
 desc = "Claude Code CLI integration (launch, spawn, kill, etc.)"
 
 [claude]
-"settings.spawn_child_warn_threshold" = "Spawn child warning threshold"
+"settings.spawn_child_warn_threshold" = "Child count warning threshold"
 "settings.continue_checklist_round_limit" = "Default gate round limit (used when a gate sets none)"
 "settings.default_permission_mode" = "Default permission mode for child sessions"
 "settings.auto_resume_enabled" = "Resume automatically after a temporary API error (server overload)"
@@ -35,10 +35,10 @@ io_error = "checklist marker I/O failed: {}"
 [claude.params]
 missing_surface_id = "Missing required 'surface' (or 'surface_id') parameter"
 missing_surface_no_env = "Missing required 'surface' (or 'surface_id') parameter (and TASTY_SURFACE_ID is not set in the environment)"
-target_surface_not_a_number = "the target surface was given as {} — it must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated id names a different, possibly real, surface"
-surface_conflict = "'surface' and 'surface_id' name different targets ({}) — send one of them, or the same value in both"
+target_surface_not_a_number = "Invalid target surface value: {}. Use an unsigned integer that fits in 32 bits. Larger values are rejected to avoid selecting a different surface."
+surface_conflict = "'surface' and 'surface_id' select different targets ({}). Specify one field, or use the same value in both."
 missing_child_index = "Missing required 'child' (or 'child_index') parameter"
-child_index_not_a_number = "'child' was given as {} — it must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated index names a different child"
+child_index_not_a_number = "Invalid 'child' value: {}. Use an unsigned integer that fits in 32 bits. Larger values are rejected to avoid selecting a different child."
 missing_text = "Missing required 'text' parameter"
 missing_message = "Missing required 'message' parameter"
 missing_caller_surface = "Missing required 'caller_surface' parameter"
@@ -48,7 +48,7 @@ missing_name = "Missing required 'name' parameter"
 missing_file = "Missing required 'file' parameter"
 missing_body_file = "Missing required 'body_file' parameter"
 invalid_permission_mode = "invalid 'permission_mode': {}"
-permission_mode_conflicts_with_profile = "--permission-mode and a profile whose settings JSON sets permissions.defaultMode are mutually exclusive — the two decide the same thing, so pick one"
+permission_mode_conflicts_with_profile = "--permission-mode cannot be combined with a profile that sets permissions.defaultMode. Choose one source for the permission mode."
 
 [claude.hook]
 missing_event = "Missing required 'event' parameter"
@@ -95,7 +95,7 @@ invalid_short_name = "'{}' is not a valid profile name (lowercase letters, digit
 empty_names = "no profile name given"
 unknown_profile = "no registered profile named '{}'"
 not_attachable = "'{}' is a built-in listing entry and cannot be attached by name"
-gate_name_conflict = "'{}' is already registered as a Stop-hook gate — gates attach by name too, so pick a different name (or 'claude gate-unregister {}' first)"
+gate_name_conflict = "'{}' is already a Stop-hook gate name. Choose another name, or remove it with 'claude gate-unregister {}'."
 source_not_readable = "cannot read profile source '{}': {}"
 source_not_json_object = "profile source '{}' is not a JSON object"
 io_error = "'{}': {}"
@@ -110,10 +110,10 @@ no_data_dir = "plugin data directory not available (host did not inject TASTY_PL
 invalid_short_name = "'{}' is not a valid gate name (lowercase letters, digits, '-' only, max 32 chars)"
 unknown_gate = "no registered gate named '{}'"
 body_not_readable = "cannot read gate body '{}': {}"
-body_missing_sentinel = "the gate body does not contain its sentinel '{}' — without it the model is never told how to declare completion, so the gate degrades into a fixed number of forced extra rounds"
-empty_sentinel = "the sentinel cannot be empty — an empty sentinel matches every message, so the gate would pass on its first round"
+body_missing_sentinel = "The gate body is missing the completion sentinel '{}'. Include it so the model knows what to output when finished; otherwise the gate can only stop at its round limit."
+empty_sentinel = "The completion sentinel cannot be empty: an empty value matches every message and passes the first round."
 rounds_below_one = "--rounds must be 1 or greater"
-profile_name_conflict = "'{}' is already registered as a session profile — gates attach by name too, so pick a different name (or 'claude profile-unregister {}' first)"
+profile_name_conflict = "'{}' is already a session profile name. Choose another name, or remove it with 'claude profile-unregister {}'."
 io_error = "'{}': {}"
 error_prefix = "gate: {}"
 
@@ -238,7 +238,7 @@ help = "Claude session profile (settings JSON) injected via --settings when laun
 help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file"
 
 [claude.cli.arg.launch_args.permission_mode]
-help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode."
 
 [claude.cli.arg.spawn_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
@@ -268,7 +268,7 @@ help = "Claude session profile (settings JSON) injected via --settings when laun
 help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file"
 
 [claude.cli.arg.spawn_args.permission_mode]
-help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode."
 
 [claude.cli.arg.children_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
@@ -343,7 +343,7 @@ help = "Claude session profile (settings JSON) injected via --settings when rela
 help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file"
 
 [claude.cli.arg.respawn_args.permission_mode]
-help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode."
 
 [claude.cli.arg.reboot_args.surface]
 help = "Target Claude surface ID (defaults to caller's TASTY_SURFACE_ID)"
@@ -364,7 +364,7 @@ help = "Registered Claude session profile or Stop-hook gate name(s) to attach, c
 help = "Detach a previously attached session profile (path- or name-based) before resuming"
 
 [claude.cli.arg.reboot_args.permission_mode]
-help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode."
 
 [claude.cli.arg.child_profile_args.surface]
 help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
@@ -388,7 +388,7 @@ help = "Registered Claude session profile or Stop-hook gate name(s) to attach to
 help = "Detach the child's previously attached session profile (path- or name-based) before resuming"
 
 [claude.cli.arg.child_profile_args.permission_mode]
-help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode"
+help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode."
 
 [claude.cli.arg.hook_args.event]
 help = "Hook event name (e.g. stop, stop-failure, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)"

@@ -14,19 +14,15 @@ permissions = [
     "fs.write",
     "notification",
     "telemetry",
-    # Phase 6.2: 자식 Claude 인스턴스에 session token 을 발급한다.
-    # 자식이 호스트에 IPC 호출 시 envelope.session_token 으로 신원을 증명.
+    # 자식의 호스트 IPC 인증에 사용할 세션 토큰을 발급한다.
     "agent",
     "ui.settings_page",
     # `claude.spawn`/`claude.tell` 기본 완료 전략 선언에 필요.
     "completion_strategy.define",
-    # Stop-훅 게이트가 발화 surface 의 goal(`memory.goal_get`)을 읽어 본문에
-    # 주입한다. 읽기 전용 — goal 은 CLI(`_host`)가 쓰고 이 plugin 은 읽기만 한다.
+    # Stop 훅 게이트의 본문에 넣을 세션 목표를 조회한다.
     "memory.read",
-    # 자식 Claude 가 `tasty codex spawn`/`tell` 로 교차 검증을 띄울 수 있게 자식 토큰에
-    # 넘긴다 — 넘기려면 쥐고 있어야 한다. 권한 셋을 가진 caller 는 plugin namespace 를
-    # 부를 때 그 namespace 의 이 토큰이 필요하다. 자기 namespace(`ipc.invoke:claude`)는
-    # 소유자라 쥐지 않고도 넘긴다.
+    # 자식 토큰으로 Codex namespace를 호출할 수 있도록 전달할 권한이다.
+    # 자기 namespace인 claude의 호출 권한은 소유자이므로 별도 선언 없이 전달한다.
     "ipc.invoke:codex",
 ]
 lang_dir = "lang"
@@ -38,9 +34,7 @@ command = "tasty-plugin-claude"
 [[contributes.ipc_namespace]]
 prefix = "claude"
 
-# 이 plugin 이 `surface.fire_hook` 로 발사하는 surface hook 이벤트 카탈로그.
-# host 가 `hook.set` / `surface.fire_hook` 등록을 (내장 ∪ 활성 plugin 선언) 으로
-# 검증하므로, 여기 선언되지 않은 키는 plugin 활성 상태여도 거부된다.
+# 등록·실행할 훅 이벤트는 이 목록에 선언해야 한다.
 [[contributes.hook_events]]
 key = "claude-idle"
 description = "Claude instance became idle (Stop hook)"
@@ -76,38 +70,27 @@ subcommands = [
     { name = "kill",      ipc_method = "claude.kill",      args = "kill_args",      description = "Kill a child Claude instance by child index", description_i18n_key = "claude.cli.sub.kill.description" },
     { name = "respawn",   ipc_method = "claude.respawn",   args = "respawn_args",   description = "Respawn a child Claude instance", description_i18n_key = "claude.cli.sub.respawn.description" },
     { name = "reboot",    ipc_method = "claude.reboot",    args = "reboot_args",    description = "Restart the Claude instance in a surface and resume the same session (delayed kill + claude -r). Call this as the LAST action of a turn — anything after the delay is cut off.", description_i18n_key = "claude.cli.sub.reboot.description" },
-    # 부모가 자식에게 지속 프로필을 붙이는 전용 창구. 처리는 자식 surface 에 대한
-    # reboot 과 동일 경로다(부착 메커니즘을 새로 만들지 않는다). `--child` 필수 —
-    # 자기 자신 지목은 `reboot --profile` 의 몫이라 여기서 겹치지 않게 막는다.
+    # 자식에게 프로필을 적용한다. --child가 필요하며 해당 자식의 reboot 경로를 사용한다.
     { name = "child-profile", ipc_method = "claude.child_profile", args = "child_profile_args", description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits.", description_i18n_key = "claude.cli.sub.child-profile.description" },
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.install.description" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.uninstall.description" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, message, notification_type, error, agent_id) when invoked by Claude Code's hook system.", description_i18n_key = "claude.cli.sub.hook.description" },
-    # Stop-훅 게이트 판정 — `install::MANAGED_HOOKS` 에는 넣지 않는다(전역 미설치,
-    # 게이트가 부착된 세션에서만 등록됨). `hook` subcommand 와 별개 IPC/파라미터
-    # 스키마를 쓴다 — Claude Code Stop 훅 payload 필드
-    # (session_id/prompt_id/stop_hook_active/last_assistant_message)를 그대로 받고,
-    # 어느 게이트로 판정할지는 `--gate` 로 받는다(stdin 에 없는 유일한 값).
+    # 전역 훅에 넣지 않고 게이트를 적용한 세션에서만 등록한다.
+    # Stop payload와 --gate를 별도 인자로 받아 판정한다.
     { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist).", description_i18n_key = "claude.cli.sub.checklist-hook.description" },
-    # 마커는 게이트별이다 — `--gate` 를 생략하면 host 기본 게이트를 가리키므로
-    # 게이트 축이 생기기 전의 무인자 호출이 그대로 동작한다.
+    # gate를 생략하면 기본 게이트를 켜거나 끈다.
     { name = "checklist-enable",  ipc_method = "claude.checklist_enable",  args = "checklist_gate_args", description = "Turn on a Stop-hook gate (creates its enabled marker). Defaults to the built-in continue-checklist gate.", description_i18n_key = "claude.cli.sub.checklist-enable.description" },
     { name = "checklist-disable", ipc_method = "claude.checklist_disable", args = "checklist_gate_args", description = "Turn off a Stop-hook gate (removes its enabled marker). Succeeds even if it was already off.", description_i18n_key = "claude.cli.sub.checklist-disable.description" },
     { name = "checklist-status",  ipc_method = "claude.checklist_status",  args = "checklist_gate_args", description = "Show whether a Stop-hook gate is currently on. Use 'claude gate-list' to see every gate's on/off at once.", description_i18n_key = "claude.cli.sub.checklist-status.description" },
     { name = "notify-error", ipc_method = "claude.notify_error", args = "notify_error_args", description = "Internal: deliver a 'child stalled after an error' notification to the caller surface (invoked as the hook.set command for claude-error-stalled). Does not touch child state, and does not clean up or re-arm the completion hooks.", description_i18n_key = "claude.cli.sub.notify-error.description" },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: deliver a spawn/tell state-transition notification to the caller surface, clean up sibling once-hooks, and — if the target surface still exists (i.e. this fire wasn't process-exit) — re-arm all three sibling hooks so future transitions keep notifying until the child actually exits (invoked as the hook.set command for claude-idle/needs-input/process-exit).", description_i18n_key = "claude.cli.sub.notify-done.description" },
-    # Claude 세션 프로필 레지스트리 (등록 → 이름으로 launch/spawn/respawn/reboot 의
-    # --profile 에 부착). CLI 스키마가 subcommand 1단계만 지원해 `tasty claude profile
-    # <sub>` 형태 대신 `profile-*` 평면 이름을 쓴다(기존 `notify-done` 과 동일 관례).
+    # CLI가 한 단계의 하위 명령을 지원하므로 profile-* 이름을 사용한다.
     { name = "profile-register",   ipc_method = "claude.profile_register",   args = "profile_register_args",   description = "Register a Claude session profile under a name (copies the file into plugin-private storage; re-registering the same name updates its content)", description_i18n_key = "claude.cli.sub.profile-register.description" },
     { name = "profile-unregister", ipc_method = "claude.profile_unregister", args = "profile_name_args",       description = "Remove a registered Claude session profile", description_i18n_key = "claude.cli.sub.profile-unregister.description" },
     { name = "profile-list",       ipc_method = "claude.profile_list",       args = "no_args",                 description = "List everything attachable by name — registered Claude session profiles and Stop-hook gates — plus the always-installed built-in hooks", description_i18n_key = "claude.cli.sub.profile-list.description" },
     { name = "profile-show",       ipc_method = "claude.profile_show",       args = "profile_name_args",       description = "Show what a name attaches — the raw settings JSON of a registered Claude session profile, or the generated Stop-hook fragment of a gate", description_i18n_key = "claude.cli.sub.profile-show.description" },
     { name = "profile-current",    ipc_method = "claude.profile_current",    args = "profile_current_args",    description = "Show which Claude session profile (if any) is attached to a surface, plus the always-installed built-in hooks", description_i18n_key = "claude.cli.sub.profile-current.description" },
-    # Stop-훅 게이트 레지스트리 — (본문, 센티넬, 라운드 상한) 3요소를 이름으로
-    # 등록한다. 프로필과 마찬가지로 CLI 스키마가 subcommand 1단계만 지원해
-    # `gate-*` 평면 이름을 쓴다. 게이트 이름은 프로필 이름과 **같은 평면**이라
-    # (게이트도 이름으로 부착된다) 양방향 동명 등록은 거부된다.
+    # 게이트도 프로필처럼 이름으로 적용한다. 같은 이름을 두 종류에 등록할 수 없다.
     { name = "gate-register",   ipc_method = "claude.gate_register",   args = "gate_register_args", description = "Register a Stop-hook gate under a name (copies the body file into plugin-private storage; re-registering the same name replaces both the body and the definition)", description_i18n_key = "claude.cli.sub.gate-register.description" },
     { name = "gate-unregister", ipc_method = "claude.gate_unregister", args = "gate_name_args",     description = "Remove a registered Stop-hook gate (deletes both its definition and its body copy)", description_i18n_key = "claude.cli.sub.gate-unregister.description" },
     { name = "gate-list",       ipc_method = "claude.gate_list",       args = "no_args",            description = "List registered Stop-hook gates plus the built-in ones, with each gate's effective sentinel, round limit and on/off state", description_i18n_key = "claude.cli.sub.gate-list.description" },
@@ -121,7 +104,7 @@ flags = [
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to claude as --task <text>", help_i18n_key = "claude.cli.arg.launch_args.task.help" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching claude. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.launch_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.launch_args.profile.help" },
-    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode", help_i18n_key = "claude.cli.arg.launch_args.permission_mode.help" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.launch_args.permission_mode.help" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -135,7 +118,7 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn", help_i18n_key = "claude.cli.arg.spawn_args.prompt.help" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when launching the child. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.spawn_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.spawn_args.profile.help" },
-    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode", help_i18n_key = "claude.cli.arg.spawn_args.permission_mode.help" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.spawn_args.permission_mode.help" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -200,7 +183,7 @@ flags = [
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child", help_i18n_key = "claude.cli.arg.respawn_args.prompt.help" },
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) injected via --settings when relaunching the child. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.respawn_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.respawn_args.profile.help" },
-    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode", help_i18n_key = "claude.cli.arg.respawn_args.permission_mode.help" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.respawn_args.permission_mode.help" },
 ]
 
 [contributes.cli.arg_groups.reboot_args]
@@ -211,7 +194,7 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach via --settings on resume. Persists on the surface and is inherited by future reboots until cleared with --clear-profile. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.reboot_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the surface (re-resolved from the registry on each future reboot, so edits to the profile or gate are picked up) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.reboot_args.profile.help" },
     { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach a previously attached session profile (path- or name-based) before resuming", help_i18n_key = "claude.cli.arg.reboot_args.clear_profile.help" },
-    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode", help_i18n_key = "claude.cli.arg.reboot_args.permission_mode.help" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.reboot_args.permission_mode.help" },
 ]
 
 [contributes.cli.arg_groups.child_profile_args]
@@ -223,7 +206,7 @@ flags = [
     { name = "profile_file", type = "string", flag = "--profile-file", required = false, path_kind = "file", reject_repeat = true, help = "Claude session profile (settings JSON) to attach to the child via --settings on resume. Persists on the child surface and is inherited by its future reboots until cleared with --clear-profile. Mutually exclusive with --profile", help_i18n_key = "claude.cli.arg.child_profile_args.profile_file.help" },
     { name = "profile", type = "string", flag = "--profile", required = false, help = "Registered Claude session profile or Stop-hook gate name(s) to attach to the child, comma-separated for multiple (merged into one file — see 'claude profile-register' and 'claude gate-register'). Persists on the child surface (re-resolved from the registry on each future reboot) and is inherited until cleared with --clear-profile. Mutually exclusive with --profile-file", help_i18n_key = "claude.cli.arg.child_profile_args.profile.help" },
     { name = "clear_profile", type = "bool", flag = "--clear-profile", required = false, help = "Detach the child's previously attached session profile (path- or name-based) before resuming", help_i18n_key = "claude.cli.arg.child_profile_args.clear_profile.help" },
-    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Permission mode for the child session (acceptEdits|auto|bypassPermissions|manual|dontAsk|plan), passed through as --permission-mode. Overrides the default_permission_mode setting for this call only. Unset means no flag at all — the user's own Claude Code settings decide. Rejected together with a --profile/--profile-file whose settings JSON sets permissions.defaultMode", help_i18n_key = "claude.cli.arg.child_profile_args.permission_mode.help" },
+    { name = "permission_mode", type = "string", flag = "--permission-mode", required = false, help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode.", help_i18n_key = "claude.cli.arg.child_profile_args.permission_mode.help" },
 ]
 
 [contributes.cli.arg_groups.hook_args]
@@ -241,29 +224,18 @@ flags = [
 
 [contributes.cli.arg_groups.checklist_hook_args]
 flags = [
-    # Stop payload 에는 surface 가 없지만, CLI 층이 `surface`(u32) 인자를 보면
-    # 미지정 시 `TASTY_SURFACE_ID` env 로 채워 준다(`surface`/`surface_id` 두 키
-    # 모두 주입). 덕분에 `--surface` 없이 이미 설치돼 있는 훅 명령 문자열을
-    # 바꾸지 않고도 goal 조회에 쓸 surface id 가 들어온다.
+    # CLI가 TASTY_SURFACE_ID로 두 대상 키를 채우므로 기존 훅 명령도 목표를 조회할 수 있다.
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID.", help_i18n_key = "claude.cli.arg.checklist_hook_args.surface.help" },
     { name = "session_id", type = "string", flag = "--session-id", required = false, help = "Claude Code session ID. Auto-populated from stdin JSON 'session_id'.", help_i18n_key = "claude.cli.arg.checklist_hook_args.session_id.help" },
     { name = "prompt_id", type = "string", flag = "--prompt-id", required = false, help = "Claude Code prompt/turn ID — changes on each new user turn, stays fixed within a blocked extension chain. Auto-populated from stdin JSON 'prompt_id'.", help_i18n_key = "claude.cli.arg.checklist_hook_args.prompt_id.help" },
-    # `bool` 이 아닌 `string` 인 이유: `CliArgType::Bool` 은 `extract_value` 가
-    # 항상 `Some(Value::Bool(get_flag 결과))` 를 반환해(부재를 표현할 방법이
-    # 없음) `merge_stdin_params` 의 "params 에 이미 키가 있으면 skip" 규칙과
-    # 만나면 stdin JSON 값이 절대 반영되지 않는다(항상 CLI 쪽 기본값 false 로
-    # 덮임). string 으로 받아 핸들러가 "true"/"false" 문자열을 직접 비교한다.
+    # bool은 미지정에도 false가 채워져 stdin 값을 가리므로 문자열로 받는다.
     { name = "stop_hook_active", type = "string", flag = "--stop-hook-active", required = false, help = "Whether Claude Code's own stop-hook-active flag was set (sanity-check only, not the primary decision signal). Auto-populated from stdin JSON 'stop_hook_active' (\"true\"/\"false\").", help_i18n_key = "claude.cli.arg.checklist_hook_args.stop_hook_active.help" },
     { name = "last_assistant_message", type = "string", flag = "--last-assistant-message", required = false, help = "The assistant's last message text, searched for the completion sentinel. Auto-populated from stdin JSON 'last_assistant_message'.", help_i18n_key = "claude.cli.arg.checklist_hook_args.last_assistant_message.help" },
-    # Stop payload 에는 게이트를 식별할 정보가 없으므로, 부착 시점에 훅 명령
-    # 문자열에 박아 전달하는 것이 유일한 경로다. optional + 기본값이라 `--gate`
-    # 없이 이미 설치돼 있는 훅 명령은 host 기본 게이트로 그대로 동작한다.
+    # Stop payload에는 게이트 이름이 없어 등록한 명령의 인자로 전달한다. 생략하면 기본 게이트다.
     { name = "gate", type = "string", flag = "--gate", required = false, default = "continue-checklist", help = "Name of the Stop-hook gate whose body, sentinel and round limit this hook decides with (see 'claude gate-register'). Defaults to the built-in continue-checklist gate.", help_i18n_key = "claude.cli.arg.checklist_hook_args.gate.help" },
 ]
 
-# enable/disable/status 3종이 공유하는 게이트 선택 인자. 훅 쪽
-# (`checklist_hook_args`)의 `--gate` 와 이름·기본값을 맞춘다 — 같은 게이트를
-# 가리키는 두 축(발동/토글)이 서로 다른 이름이면 헷갈린다.
+# 판정과 토글에서 같은 게이트 이름·기본값을 사용한다.
 [contributes.cli.arg_groups.checklist_gate_args]
 flags = [
     { name = "gate", type = "string", flag = "--gate", required = false, default = "continue-checklist", help = "Name of the Stop-hook gate to turn on/off/query (see 'claude gate-register'). Defaults to the built-in continue-checklist gate.", help_i18n_key = "claude.cli.arg.checklist_gate_args.gate.help" },
@@ -304,14 +276,8 @@ positional = [
 
 [contributes.cli.arg_groups.no_args]
 
-# 완료 판정 전략 — `claude.spawn` 의 기본 완료 판정(결정 6).
-# poll_method 는 owner 자기 namespace 로만 제한되므로(결정 2) 호스트
-# `terminal.state`(결정 3, terminal namespace 소유)를 직접 참조할 수 없다 —
-# 그래서 이 plugin 자신의 `claude.state`(그 위에 얇게 위임하는 wrapper,
-# handlers.rs 참고)를 poll_method 로 둔다. idle/needs_input 을 둘 다 terminal
-# 로 두는 것은 기존 spawn/tell 훅 알림이 이미 이 둘을 "자식이 작업을 멈췄다"로
-# 취급하는 것과 같은 기준이다(위 spawn/tell subcommand 설명 참고). 결정 4 로
-# 신설된 exited 는 terminal 이 아니라 failure_states 로 간다(아래 참고).
+# 완료 조회는 자기 namespace의 메서드만 사용할 수 있어 claude.state를 사용한다.
+# idle·needs_input은 작업이 멈춘 상태로, exited는 실패로 처리한다.
 [[contributes.completion_strategy]]
 id = "spawn-wait"
 priority = 100
@@ -320,37 +286,16 @@ default_for_methods = ["claude.spawn"]
 [contributes.completion_strategy.spec]
 kind = "poll"
 poll_method = "claude.state"
-# `claude.spawn` 응답의 `child_surface_id` 를 poll 호출(`claude.state`) 의
-# 필수 파라미터 `surface_id` 로 옮긴다 — 이 매핑이 없으면 poll params 가
-# 비어 `claude.state` 가 "Missing required 'surface' (or 'surface_id')
-# parameter" 로 매 tick 실패한다(handlers.rs 의 `require_target_surface`).
-# 이름이 `require_surface_id` 가 아닌 것은 그 판정이 `surface` 와 `surface_id`
-# **두 키를 한 필드로** 읽기 때문이고, 그 이름은 이 레포에서 이미 호스트의
-# 한 키짜리 헬퍼를 가리킨다(그 함수의 doc 참고). 문구는 앱 언어를 따르므로
-# 위 영문은 en 카탈로그의 값이다 — 대조가 필요하면 JSON-RPC code 로 한다.
+# spawn 결과의 자식 surface id를 상태 조회의 대상 인자로 넘긴다.
 map_from_response = { child_surface_id = "surface_id" }
 state_field = "state"
 terminal_states = ["idle", "needs_input"]
-# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
-# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
-# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
-#
-# `needs_input` 은 성공 쪽에 남긴다. 사람이 승인해주면 이어서 끝나는 상태라 영구
-# 실패가 아니고, 이 plugin 의 spawn/tell 완료 알림도 이미 idle 과 needs_input 을
-# 둘 다 "자식이 작업을 멈췄다" 로 동일 취급한다(위 subcommand 설명 참고) — 그
-# 계약을 깨지 않는다. 실패로 볼지는 사용자가 별도로 결정할 사안이다.
+# 자식 프로세스·surface 종료는 실패로 판정해 on_failure를 적용한다.
+# 승인 대기인 needs_input은 기존 완료 알림과 같은 기준으로 terminal_states에 둔다.
 failure_states = ["exited"]
 
-# 완료 판정 전략 — `claude.tell` 의 기본 완료 판정(결정 6).
-# 이게 없으면 `tell` 노드는 dispatch 응답만 보고 즉시 성공한다 — 자식이 메시지를
-# 받기만 하면 끝난 것으로 처리돼, 일을 시작하기도 전에 downstream 이 출발한다.
-# spawn-wait 와 같은 이유로 poll_method 는 자기 namespace 의 `claude.state` 다.
-#
-# spawn 과 달리 tell 은 **이미 존재하는** 자식을 대상으로 하므로 시작 시점의
-# registry 상태가 직전 턴의 `idle` 로 오염돼 있을 수 있다. 호스트 `terminal.tell`
-# 이 본문 주입 성공 직후 그 플래그를 내리므로(`clear_idle_for_new_prompt`,
-# `src/adapters/ipc/handler/terminal.rs`) 첫 tick 이 stale idle 을 읽지 않는다 —
-# 그 호스트 동작이 이 전략의 전제다.
+# tell 응답은 메시지 전달까지만 뜻하므로 claude.state로 이후 상태를 확인한다.
+# 호스트 terminal.tell이 새 입력 후 기존 idle 상태를 지우는 동작에 의존한다.
 [[contributes.completion_strategy]]
 id = "tell-wait"
 priority = 100
@@ -359,21 +304,11 @@ default_for_methods = ["claude.tell"]
 [contributes.completion_strategy.spec]
 kind = "poll"
 poll_method = "claude.state"
-# `claude.tell` 은 호스트 `terminal.tell` 의 응답을 그대로 돌려주고, 그 응답은
-# `{"sent": true, "surface_id": <n>}` 이다 — spawn 과 달리 `child_surface_id` 가
-# 아니라 `surface_id` 가 소스 키다. `map_from_request` 는 불필요하다(응답이 이미
-# 대상 surface 를 싣는다).
+# tell 응답은 대상 surface_id를 포함하므로 응답에서 조회 인자를 가져온다.
 map_from_response = { surface_id = "surface_id" }
 state_field = "state"
 terminal_states = ["idle", "needs_input"]
-# `exited` 는 성공이 아니다 — 자식 프로세스가 죽었거나 surface 가 사라진 것이라,
-# 그 산출물을 전제로 downstream 이 진행하면 틀린다. 실패로 종결시켜야 그 노드의
-# `on_failure`(abort / continue_downstream / fallback)가 비로소 동작한다.
-#
-# `needs_input` 은 성공 쪽에 남긴다. 사람이 승인해주면 이어서 끝나는 상태라 영구
-# 실패가 아니고, 이 plugin 의 spawn/tell 완료 알림도 이미 idle 과 needs_input 을
-# 둘 다 "자식이 작업을 멈췄다" 로 동일 취급한다(위 subcommand 설명 참고) — 그
-# 계약을 깨지 않는다. 실패로 볼지는 사용자가 별도로 결정할 사안이다.
+# spawn과 같은 완료·실패 기준을 사용한다.
 failure_states = ["exited"]
 
 [[contributes.settings_pages]]
@@ -389,10 +324,7 @@ storage_key = "spawn_child_warn_threshold"
 default = 6.0
 min = 1.0
 
-# `continue-checklist` 라운드 상한(백스톱). Claude Code 자체엔 Stop 훅 block
-# 무한루프를 막는 호스트측 안전장치가 없음이 실측으로 확인됨 — 이 값이 없으면
-# 센티넬을 못 뱉는 세션이 영원히 block 될 수 있다. 기본값 3 은 "마무리 몇 스텝
-# 더 허용"과 "그래도 반드시 끊는다" 사이 절충.
+# 완료 표식이 없어도 계속 연장되지 않도록 회차를 제한한다. 자체 상한이 없는 모든 게이트에 적용한다.
 [[contributes.settings_pages.items]]
 kind = "number"
 id = "continue_checklist_round_limit"
@@ -401,12 +333,8 @@ storage_key = "continue_checklist_round_limit"
 default = 3.0
 min = 1.0
 
-# 자식 Claude 의 승인 정책 기본값. `inherit`(기본)이면 기동 명령에
-# `--permission-mode` 를 아예 안 붙여, 사용자 자신의 Claude Code 설정이 그대로
-# 정한다 — codex 쪽과 달리 비대화형 값으로 떨어뜨리지 않는 이유는 Claude Code 에
-# 샌드박스 축이 따로 없어 "안 묻는다" 가 곧 봉쇄 없는 전권이 되기 때문이다
-# (docs/plugins/claude/index.md#승인-정책---permission-mode).
-# 호출별 `--permission-mode` 가 이 값을 그 호출에 한해 덮는다.
+# inherit는 플래그를 붙이지 않아 Claude Code의 설정을 따른다.
+# 호출별 --permission-mode를 지정하면 이 기본값보다 우선한다.
 [[contributes.settings_pages.items]]
 kind = "select"
 id = "default_permission_mode"
@@ -423,11 +351,9 @@ options = [
     { value = "bypassPermissions", label_key = "claude.settings.permission_mode.bypass" },
 ]
 
-# API 에러(서버 과부하 등)로 끝난 턴의 자동 재개(`src/auto_resume.rs`). 사용자
-# 세션에 텍스트를 넣는 기능이라 기본 꺼짐(opt-in). 켜짐·상한은 만기 시점에 다시
-# 읽는다(지연은 예약 때 정해진다) — 예약 뒤에 꺼도 보내지 않는다. 상한은 연속 실패의 백스톱이다
-# (`continue_checklist_round_limit` 와 같은 성격). 근거는
-# docs/plugins/claude/index.md#api-에러-뒤-자동-재개-auto_resumers.
+# 사용자 세션에 문구를 보내므로 자동 재개는 기본적으로 꺼져 있다.
+# 지연은 예약 때, 활성 여부와 횟수 상한은 전송을 판단할 때 읽는다.
+# docs/plugins/claude/index.md#api-에러-뒤-자동-재개-auto_resumers 참고.
 [[contributes.settings_pages.items]]
 kind = "toggle"
 id = "auto_resume_enabled"

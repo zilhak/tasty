@@ -2,7 +2,7 @@
 desc = "Claude Code CLI 연동(launch, spawn, kill 등)"
 
 [claude]
-"settings.spawn_child_warn_threshold" = "Spawn child 경고 임계치"
+"settings.spawn_child_warn_threshold" = "자식 수 경고 기준"
 "settings.continue_checklist_round_limit" = "게이트 기본 라운드 상한 (게이트가 자체 값을 지정하지 않았을 때)"
 "settings.default_permission_mode" = "자식 세션 기본 권한 모드"
 "settings.auto_resume_enabled" = "일시적인 API 에러(서버 과부하) 뒤 자동으로 이어서 진행"
@@ -29,16 +29,16 @@ body = """
 goal_clause = """이 세션에 설정된 goal: {}
 위에서 밝힌 남은 작업을 이 goal 에 비추어 판정해라. 남은 작업 중 사용자 판단이 필요하지 않고 스스로 진행할 수 있는 것이 있다면, 여기서 끝내지 말고 그것을 진행해라. 남은 작업이 전부 사용자 판단을 필요로 하거나 goal 범위 밖이라면 그대로 끝내도 된다.
 """
-no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — checklist 를 켜거나 끌 수 없다"
-io_error = "checklist marker 파일 입출력 실패: {}"
+no_data_dir = "호스트가 TASTY_PLUGIN_DATA_DIR을 제공하지 않아 플러그인 데이터 디렉터리를 사용할 수 없습니다. 체크리스트를 켜거나 끌 수 없습니다."
+io_error = "체크리스트 활성 파일 읽기·쓰기 실패: {}"
 
 [claude.params]
 missing_surface_id = "필수 파라미터 'surface'(또는 'surface_id') 누락"
 missing_surface_no_env = "필수 파라미터 'surface'(또는 'surface_id') 누락(환경변수 TASTY_SURFACE_ID 도 설정돼 있지 않음)"
-target_surface_not_a_number = "대상 surface 에 {} 가 왔다 — 32 비트에 들어가는 정수여야 한다. 자르지 않고 거부한다: 잘린 id 는 실재할 수 있는 다른 surface 를 가리킨다"
-surface_conflict = "'surface' 와 'surface_id' 가 서로 다른 대상을 가리킨다 ({}) — 하나만 보내거나 같은 값을 보내라"
+target_surface_not_a_number = "대상 surface 값 {}가 올바르지 않습니다. u32 범위의 정수를 입력하세요. 다른 대상을 가리키지 않도록 범위를 넘는 값은 자르지 않고 거부합니다."
+surface_conflict = "'surface'와 'surface_id'가 서로 다른 대상을 가리킵니다({}). 하나만 지정하거나 두 값이 같도록 입력하세요."
 missing_child_index = "필수 파라미터 'child'(또는 'child_index') 누락"
-child_index_not_a_number = "'child' 에 {} 가 왔다 — 32 비트에 들어가는 정수여야 한다. 자르지 않고 거부한다: 잘린 index 는 다른 자식을 가리킨다"
+child_index_not_a_number = "'child' 값 {}가 올바르지 않습니다. u32 범위의 정수를 입력하세요. 다른 자식을 가리키지 않도록 범위를 넘는 값은 자르지 않고 거부합니다."
 missing_text = "필수 파라미터 'text' 누락"
 missing_message = "필수 파라미터 'message' 누락"
 missing_caller_surface = "필수 파라미터 'caller_surface' 누락"
@@ -46,9 +46,9 @@ missing_target_surface = "필수 파라미터 'target_surface' 누락"
 missing_command = "필수 파라미터 'command' 누락"
 missing_name = "필수 파라미터 'name' 누락"
 missing_file = "필수 파라미터 'file' 누락"
-missing_body_file = "필수 파라미터 'body_file' 이 없다"
+missing_body_file = "필수 파라미터 'body_file'이 없습니다"
 invalid_permission_mode = "잘못된 'permission_mode' 값: {}"
-permission_mode_conflicts_with_profile = "--permission-mode 와 permissions.defaultMode 를 정하는 프로필은 동시에 줄 수 없다 — 둘이 같은 것을 정하므로 하나만 지정해라"
+permission_mode_conflicts_with_profile = "--permission-mode와 permissions.defaultMode를 설정한 프로필은 함께 사용할 수 없습니다. 권한 모드를 정할 방법을 하나만 선택하세요."
 
 [claude.hook]
 missing_event = "필수 파라미터 'event' 누락"
@@ -62,75 +62,75 @@ limit_body = "surface {}: API 에러가 {}번 연달아 나서({}) 자동 재개
 [claude.notify]
 done_message = "surface {}: 작업 완료 (호출: {})"
 stop_failure_hint = " — API 에러({})로 턴이 끝나 입력을 기다리는 중"
-stalled_message = "surface {}: 에러 이후 출력이 멈췄다 — 자식이 정지한 것으로 보인다 (여전히 active, 완료 신호 없음)"
-stalled_no_error_message = "surface {}: 오랫동안 출력도 완료 신호도 없다 — 자식이 멈춘 것으로 보인다 (훅이 오지 않은 프롬프트에서 대기 중일 수 있다)"
-stalled_hint = " 마지막 에러: {}"
+stalled_message = "surface {}: 오류 뒤 출력이 멈췄습니다. 자식은 아직 active 상태이며 완료 신호가 없어 작업이 멈췄을 수 있습니다."
+stalled_no_error_message = "surface {}: 오랫동안 출력과 완료 신호가 없습니다. 작업이 멈췄거나 훅이 전달되지 않은 입력창에서 기다리는 중일 수 있습니다."
+stalled_hint = " 마지막 오류: {}"
 
 [claude.launch]
-workspace_create_missing_id = "호스트 workspace.create 응답에 'id' 가 없다"
+workspace_create_missing_id = "호스트 workspace.create 응답에 'id'가 없습니다"
 
 [claude.child]
-unknown_index = "index {} 인 자식이 없다 — 부모 surface {} 기준 (사용 가능한 index: {})"
+unknown_index = "인덱스 {}인 자식이 부모 surface {} 아래에 없습니다(사용 가능한 인덱스: {})."
 
 [claude.respawn]
-missing_child_surface_id = "호스트 terminal.respawn 응답에 'child_surface_id' 가 없다: {}"
+missing_child_surface_id = "호스트 terminal.respawn 응답에 'child_surface_id'가 없습니다: {}"
 
 [claude.spawn]
-missing_child_surface_id = "호스트 terminal.spawn 응답에 'child_surface_id' 가 없다: {}"
-warning_threshold = "이 parent 의 자식이 이제 {}개로, 경고 임계치({})를 넘었다."
-warning_idle_children = " index {} 의 idle 자식은 새로 spawn 하는 대신 respawn 으로 재사용할 수 있다."
-warning_stale_children = " index {} 의 자식은 에이전트 프로세스가 더 이상 돌지 않는데 완료 보고가 오지 않았다(hook 유실) — 이들도 respawn 대상이다."
+missing_child_surface_id = "호스트 terminal.spawn 응답에 'child_surface_id'가 없습니다: {}"
+warning_threshold = "이 부모의 자식이 {}개로 경고 기준({})을 넘었습니다."
+warning_idle_children = " 인덱스 {}의 idle 자식은 새로 만들지 않고 respawn으로 다시 사용할 수 있습니다."
+warning_stale_children = " 인덱스 {}의 자식은 에이전트 프로세스가 끝났지만 완료 보고가 없습니다(훅 유실). respawn으로 다시 사용할 수 있습니다."
 
 [claude.install]
-no_home_dir = "홈 디렉터리를 확인할 수 없다"
-settings_root_not_object = "~/.claude/settings.json 최상위 값이 JSON object 가 아니다"
-hooks_not_object = "~/.claude/settings.json 의 'hooks' 키가 JSON object 가 아니다"
-hooks_event_not_array = "~/.claude/settings.json 의 'hooks.{}' 가 JSON array 가 아니다"
-install_failed = "install 실패: {}"
-uninstall_failed = "uninstall 실패: {}"
+no_home_dir = "홈 디렉터리를 확인할 수 없습니다"
+settings_root_not_object = "~/.claude/settings.json의 최상위 값이 JSON 객체가 아닙니다"
+hooks_not_object = "~/.claude/settings.json의 'hooks' 값이 JSON 객체가 아닙니다"
+hooks_event_not_array = "~/.claude/settings.json의 'hooks.{}' 값이 JSON 배열이 아닙니다"
+install_failed = "설치 실패: {}"
+uninstall_failed = "제거 실패: {}"
 
 [claude.profile]
-no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — 프로필을 등록하거나 부착할 수 없다"
-invalid_short_name = "'{}' 는 유효한 프로필 이름이 아니다(소문자, 숫자, '-' 만, 최대 32자)"
-empty_names = "프로필 이름이 주어지지 않았다"
-unknown_profile = "'{}' 라는 이름으로 등록된 프로필이 없다"
-not_attachable = "'{}' 는 조회 전용 내장 항목이라 이름으로 부착할 수 없다"
-gate_name_conflict = "'{}' 는 이미 Stop-훅 게이트로 등록돼 있다 — 게이트도 이름으로 부착되므로 다른 이름을 쓰거나 'claude gate-unregister {}' 로 먼저 해제해라"
-source_not_readable = "프로필 원본 '{}' 을 읽을 수 없다: {}"
-source_not_json_object = "프로필 원본 '{}' 이 JSON object 가 아니다"
+no_data_dir = "호스트가 TASTY_PLUGIN_DATA_DIR을 제공하지 않아 플러그인 데이터 디렉터리를 사용할 수 없습니다. 프로필을 등록하거나 적용할 수 없습니다."
+invalid_short_name = "'{}'는 올바른 프로필 이름이 아닙니다. 영문 소문자·숫자·'-'만 사용해 32자 이내로 입력하세요."
+empty_names = "프로필 이름을 지정하지 않았습니다"
+unknown_profile = "'{}'라는 이름으로 등록된 프로필이 없습니다"
+not_attachable = "'{}'는 조회 전용 내장 항목이라 이름으로 적용할 수 없습니다"
+gate_name_conflict = "'{}'는 이미 Stop 훅 게이트 이름으로 등록돼 있습니다. 다른 이름을 쓰거나 'claude gate-unregister {}'로 먼저 제거하세요."
+source_not_readable = "프로필 원본 '{}'을 읽을 수 없습니다: {}"
+source_not_json_object = "프로필 원본 '{}'의 내용이 JSON 객체가 아닙니다"
 io_error = "'{}': {}"
 error_prefix = "profile: {}"
-mutually_exclusive_file_and_profile = "--profile-file 와 --profile 은 동시에 줄 수 없다 — 하나만 지정해라"
+mutually_exclusive_file_and_profile = "--profile-file과 --profile은 함께 사용할 수 없습니다. 하나만 지정하세요."
 builtin_always_installed = "내장 — 항상 설치됨 (Claude Code 이벤트: {})"
 builtin_always_installed_with_matcher = "내장 — 항상 설치됨 (Claude Code 이벤트: {}, matcher: {})"
-gate_attachable = "Stop-훅 게이트 — 등록된 프로필처럼 이름으로 부착 가능 ('claude gate-show <이름>' 으로 정의 확인)"
+gate_attachable = "Stop 훅 게이트: 등록한 프로필처럼 이름으로 적용할 수 있습니다('claude gate-show <이름>'으로 정의 확인)."
 
 [claude.gate]
-no_data_dir = "plugin data directory 를 사용할 수 없다(호스트가 TASTY_PLUGIN_DATA_DIR 를 주입하지 않음) — 게이트를 등록하거나 해제할 수 없다"
-invalid_short_name = "'{}' 는 유효한 게이트 이름이 아니다(소문자, 숫자, '-' 만, 최대 32자)"
-unknown_gate = "'{}' 라는 이름으로 등록된 게이트가 없다"
-body_not_readable = "게이트 본문 '{}' 을 읽을 수 없다: {}"
-body_missing_sentinel = "게이트 본문에 센티넬 '{}' 이 없다 — 센티넬이 없으면 모델이 종료를 선언할 방법을 안내받지 못해, 게이트가 라운드 상한만큼 무조건 연장하는 장치로 변질된다"
-empty_sentinel = "센티넬은 비워둘 수 없다 — 빈 센티넬은 모든 메시지에 매칭되어 게이트가 첫 라운드에 통과한다"
-rounds_below_one = "--rounds 는 1 이상이어야 한다"
-profile_name_conflict = "'{}' 는 이미 세션 프로필로 등록돼 있다 — 게이트도 이름으로 부착되므로 다른 이름을 쓰거나 'claude profile-unregister {}' 로 먼저 해제해라"
+no_data_dir = "호스트가 TASTY_PLUGIN_DATA_DIR을 제공하지 않아 플러그인 데이터 디렉터리를 사용할 수 없습니다. 게이트를 등록하거나 제거할 수 없습니다."
+invalid_short_name = "'{}'는 올바른 게이트 이름이 아닙니다. 영문 소문자·숫자·'-'만 사용해 32자 이내로 입력하세요."
+unknown_gate = "'{}'라는 이름으로 등록된 게이트가 없습니다"
+body_not_readable = "게이트 본문 '{}'을 읽을 수 없습니다: {}"
+body_missing_sentinel = "게이트 본문에 완료 표식 '{}'이 없습니다. 모델이 완료 시 출력할 내용을 알 수 있도록 본문에 넣으세요. 표식이 없으면 회차 상한까지 계속 연장됩니다."
+empty_sentinel = "완료 표식은 비워둘 수 없습니다. 빈 값은 모든 메시지에 일치해 첫 회차에 통과하게 됩니다."
+rounds_below_one = "--rounds는 1 이상이어야 합니다"
+profile_name_conflict = "'{}'는 이미 세션 프로필 이름으로 등록돼 있습니다. 다른 이름을 쓰거나 'claude profile-unregister {}'로 먼저 제거하세요."
 io_error = "'{}': {}"
 error_prefix = "gate: {}"
 
 [claude.profile_merge]
-not_an_object = "프로필 '{}' 의 최상위 값이 JSON object 가 아니다"
-scalar_conflict = "'{}' 에서 프로필 머지 충돌: {} vs {} — 권한이 조용히 약해지는 것을 막기 위해 거부한다"
+not_an_object = "프로필 '{}'의 최상위 값이 JSON 객체가 아닙니다"
+scalar_conflict = "'{}'에서 프로필 값이 충돌합니다: {} / {}. 권한을 임의로 완화하지 않도록 병합을 거부합니다."
 
 [claude.reboot]
-notice = "tasty claude reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (claude -r 로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요."
-malformed_session_id = "surface {} 의 claude-session-id meta 형식이 잘못됐다: {}"
-no_foreground_process = "surface {} 의 foreground 프로세스를 확인할 수 없다"
-lock_poisoned = "reboot in-flight lock 이 poison 됐다: {}"
-already_in_progress = "surface {} 는 이미 reboot 진행 중이다"
-spawn_thread_failed = "reboot 스레드 생성 실패: {}"
-profile_file_not_readable = "프로필 파일 '{}' 을 읽을 수 없다: {}"
-profile_file_not_json = "프로필 파일 '{}' 이 유효한 JSON 이 아니다: {}"
-no_active_session = "surface {} 에 활성 claude 세션이 없다 (claude-session-id meta 미설정 — tasty 훅이 설치돼 있는가? `tasty claude install` 실행 필요)"
+notice = "tasty claude reboot: 이 세션은 tasty의 재시작 기능으로 다시 실행됐습니다(claude -r로 같은 세션 재개). 직전 턴이 중단됐을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요."
+malformed_session_id = "surface {}의 claude-session-id 메타데이터 형식이 올바르지 않습니다: {}"
+no_foreground_process = "surface {}의 전경 프로세스를 확인할 수 없습니다"
+lock_poisoned = "재시작 상태를 보호하는 잠금에서 패닉이 발생했습니다: {}"
+already_in_progress = "surface {}는 이미 재시작 중입니다"
+spawn_thread_failed = "재시작 스레드를 만들지 못했습니다: {}"
+profile_file_not_readable = "프로필 파일 '{}'을 읽을 수 없습니다: {}"
+profile_file_not_json = "프로필 파일 '{}'이 올바른 JSON이 아닙니다: {}"
+no_active_session = "surface {}에 활성 Claude 세션이 없습니다(claude-session-id 메타데이터 미설정). 훅 설치 상태를 확인하고 `tasty claude install`을 실행하세요."
 
 [settings.subtab]
 claude = "Claude Code"
@@ -238,7 +238,7 @@ help = "claude 시작 시 --settings로 주입할 세션 프로필(settings JSON
 help = "부착할 등록 세션 프로필 또는 Stop 훅 게이트 이름. 여러 개는 쉼표로 구분하여 한 파일로 병합('claude profile-register', 'claude gate-register' 참조). --profile-file과 함께 사용 불가"
 
 [claude.cli.arg.launch_args.permission_mode]
-help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+help = "자식 권한 모드: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. --permission-mode로 전달하며 이번 호출에는 default_permission_mode보다 우선합니다. 생략하면 해당 설정을 사용하고, inherit 또는 미설정일 때는 플래그 없이 Claude Code 설정을 따릅니다. 명시한 모드는 permissions.defaultMode를 정하는 --profile/--profile-file과 함께 쓸 수 없습니다."
 
 [claude.cli.arg.spawn_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
@@ -268,7 +268,7 @@ help = "자식 시작 시 --settings로 주입할 Claude 세션 프로필(settin
 help = "부착할 등록 세션 프로필 또는 Stop 훅 게이트 이름. 여러 개는 쉼표로 구분하여 한 파일로 병합('claude profile-register', 'claude gate-register' 참조). --profile-file과 함께 사용 불가"
 
 [claude.cli.arg.spawn_args.permission_mode]
-help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+help = "자식 권한 모드: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. --permission-mode로 전달하며 이번 호출에는 default_permission_mode보다 우선합니다. 생략하면 해당 설정을 사용하고, inherit 또는 미설정일 때는 플래그 없이 Claude Code 설정을 따릅니다. 명시한 모드는 permissions.defaultMode를 정하는 --profile/--profile-file과 함께 쓸 수 없습니다."
 
 [claude.cli.arg.children_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
@@ -343,7 +343,7 @@ help = "자식 재시작 시 --settings로 주입할 Claude 세션 프로필(set
 help = "부착할 등록 세션 프로필 또는 Stop 훅 게이트 이름. 여러 개는 쉼표로 구분하여 한 파일로 병합('claude profile-register', 'claude gate-register' 참조). --profile-file과 함께 사용 불가"
 
 [claude.cli.arg.respawn_args.permission_mode]
-help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+help = "자식 권한 모드: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. --permission-mode로 전달하며 이번 호출에는 default_permission_mode보다 우선합니다. 생략하면 해당 설정을 사용하고, inherit 또는 미설정일 때는 플래그 없이 Claude Code 설정을 따릅니다. 명시한 모드는 permissions.defaultMode를 정하는 --profile/--profile-file과 함께 쓸 수 없습니다."
 
 [claude.cli.arg.reboot_args.surface]
 help = "대상 Claude 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
@@ -364,7 +364,7 @@ help = "부착할 등록 세션 프로필/Stop 훅 게이트 이름(복수는 �
 help = "재개 전에 기존 세션 프로필 부착 해제(경로 또는 이름 기반)"
 
 [claude.cli.arg.reboot_args.permission_mode]
-help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+help = "자식 권한 모드: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. --permission-mode로 전달하며 이번 호출에는 default_permission_mode보다 우선합니다. 생략하면 해당 설정을 사용하고, inherit 또는 미설정일 때는 플래그 없이 Claude Code 설정을 따릅니다. 명시한 모드는 permissions.defaultMode를 정하는 --profile/--profile-file과 함께 쓸 수 없습니다."
 
 [claude.cli.arg.child_profile_args.surface]
 help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
@@ -388,7 +388,7 @@ help = "자식에게 부착할 등록 세션 프로필/Stop 훅 게이트 이름
 help = "재개 전에 자식의 기존 세션 프로필 부착 해제(경로 또는 이름 기반)"
 
 [claude.cli.arg.child_profile_args.permission_mode]
-help = "자식 세션 권한 모드(acceptEdits|auto|bypassPermissions|manual|dontAsk|plan). --permission-mode로 전달하며 이번 호출에만 default_permission_mode를 재정의합니다. 미지정이면 플래그를 보내지 않아 사용자 Claude Code 설정을 따릅니다. permissions.defaultMode를 설정한 --profile/--profile-file과 함께 쓰면 거부됩니다."
+help = "자식 권한 모드: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. --permission-mode로 전달하며 이번 호출에는 default_permission_mode보다 우선합니다. 생략하면 해당 설정을 사용하고, inherit 또는 미설정일 때는 플래그 없이 Claude Code 설정을 따릅니다. 명시한 모드는 permissions.defaultMode를 정하는 --profile/--profile-file과 함께 쓸 수 없습니다."
 
 [claude.cli.arg.hook_args.event]
 help = "훅 이벤트 이름(예: stop, stop-failure, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)"
@@ -409,7 +409,7 @@ help = "Claude Code 알림 하위 종류(예: permission_prompt, idle_prompt). s
 help = "턴을 끝낸 API 에러 종류(예: overloaded, rate_limit, server_error, authentication_failed). StopFailure 훅에서 stdin JSON의 'error'로 자동 입력"
 
 [claude.cli.arg.hook_args.agent_id]
-help = "훅이 서브에이전트 안에서 발화할 때의 서브에이전트 ID(메인 스레드에서는 없음). stdin JSON의 'agent_id'에서 자동 입력. 이 값이 있는 stop-failure는 서브에이전트의 API 에러라 메인 턴이 계속되므로 무시"
+help = "서브에이전트에서 발생한 훅의 agent_id입니다(메인 스레드에서는 없음). stdin JSON의 'agent_id'에서 자동 입력합니다. 이 값이 있는 stop-failure는 서브에이전트의 API 오류이므로 메인 턴을 중단한 것으로 처리하지 않습니다."
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "게이트 대상 서피스 ID. 해당 세션의 목표 조회에 사용. 기본값은 호출자의 TASTY_SURFACE_ID"
@@ -445,7 +445,7 @@ help = "등록된 프로필 이름"
 help = "조회할 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
 
 [claude.cli.arg.gate_register_args.name]
-help = "게이트 등록 이름(영문 소문자·숫자·'-', 최대 32자). 세션 프로필과 이름 공간을 공유하므로 반대편에 같은 이름이 있으면 가리지 않고 등록 거부"
+help = "게이트 등록 이름(영문 소문자·숫자·'-', 최대 32자). 세션 프로필도 같은 이름 목록을 사용하므로 이미 등록된 프로필 이름은 사용할 수 없습니다."
 
 [claude.cli.arg.gate_register_args.body_file]
 help = "등록할 체크리스트 본문 마크다운 경로(plugin 전용 저장소에 복사). 모델에 완료 선언법을 알려주도록 이 게이트의 유효 완료 표식이 반드시 포함되어야 합니다."

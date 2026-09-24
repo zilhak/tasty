@@ -1,20 +1,7 @@
-//! API 에러로 끝난 턴의 자동 재개.
-//!
-//! Claude Code 는 내장 재시도를 다 쓴 뒤 API 에러(`529 Overloaded` 등)로 턴을 끝내면
-//! 입력을 기다리며 멈춘다. 사람이 없는 세션(무인 conductor · 자식 Claude)은 그대로
-//! 방치된다. 이 모듈은 `StopFailure` 신호(`hook.rs` 의 `stop-failure`)를 받아 설정된
-//! 지연 뒤에 재개 문구를 그 surface 에 한 번 제출한다. 설정 기본값은 **꺼짐**이다 —
-//! 사용자 세션에 텍스트를 넣는 기능이라 opt-in 이다.
-//!
-//! 흐름은 둘로 갈린다:
-//! - **예약**(hook 핸들러 스레드): [`observe_hook`] 이 이벤트마다 [`ResumeTable`] 을
-//!   갱신한다. 여기서는 잠들지 않는다 — IPC 핸들러 스레드라 sleep 하면 다른 요청이 선다.
-//! - **만기 처리**(전용 스레드 `claude-auto-resume`): [`run_loop`] 가 짧은 주기로 만기된
-//!   예약을 꺼내, 보내기 직전의 사실을 모아 [`judge`] 에 묻고 그 답대로 한다.
-//!
-//! 판정은 **보내는 순간의 사실**로 한다 — 예약 뒤에 설정이 꺼졌거나, 사람이 먼저
-//! 입력했거나, Claude 가 종료됐거나, 사용자가 입력창에 초안을 쓰고 있으면 보내지 않는다.
-//! 근거·대안·재검토 조건은 `docs/plugins/claude/index.md#api-에러-뒤-자동-재개-auto_resumers`.
+//! 일시적인 API 오류 뒤 설정한 시간이 지나면 재개 문구를 제출한다. 기본값은 꺼짐이다.
+//! hook 처리에서는 예약만 갱신하고 전용 스레드가 시간이 된 예약을 처리한다.
+//! 전송 전 설정·턴·전경 프로세스·사용자 입력을 다시 확인하지만, 조회와 전송은 원자적이지 않다.
+//! 정책은 docs/plugins/claude/index.md#api-에러-뒤-자동-재개-auto_resumers 참고.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -28,33 +15,24 @@ pub(crate) const ENABLED_KEY: &str = "auto_resume_enabled";
 pub(crate) const DELAY_KEY: &str = "auto_resume_delay_secs";
 pub(crate) const MAX_ATTEMPTS_KEY: &str = "auto_resume_max_attempts";
 
-/// 설정이 비어 있을 때 쓰는 값 — 매니페스트의 `default` 와 짝을 맞춘다(host 는 키가
-/// 없으면 `null` 을 돌려주고 기본값을 채워 주지 않는다).
+/// 미설정 시 적용할 기본값. 호스트는 없는 설정에 null을 반환하므로 여기서 채운다.
 const DEFAULT_DELAY_SECS: f64 = 10.0;
-/// 지연의 상한(하루) — 매니페스트의 `max` 와 짝이다. 설정 파일을 손으로 고치면 매니페스트
-/// 검증을 안 거치므로 코드도 따로 자른다: 자르지 않으면 `Duration::from_secs_f64` 가
-/// 표현 범위를 넘는 값에서, `Instant + Duration` 이 넘침에서 패닉한다.
+/// 지연 상한. 직접 수정한 설정도 Duration과 Instant의 표현 범위를 넘지 않도록 제한한다.
 const MAX_DELAY_SECS: f64 = 86_400.0;
 const DEFAULT_MAX_ATTEMPTS: u32 = 5;
 
-/// 재개 문구를 보낸 횟수(연속 실패 중)를 남기는 surface meta — 사용자가 "왜 혼자
-/// 진행됐나" 를 추적하는 자리다. 계수가 0 이 되는 자리(성공 턴 · 새 세션 · 세션 종료)가 지운다.
+/// 자동 재개 횟수를 표시할 surface 메타데이터. 성공 턴·새 세션·종료 시 지운다.
 pub(crate) const COUNT_META_KEY: &str = "claude-auto-resume-count";
 
-/// 만기 확인 주기. 지연의 해상도가 이것이다(설정 최소 1 초보다 충분히 짧다).
+/// 재개 예약을 확인하는 주기. 실제 전송까지의 총 대기 시간 상한은 아니다.
 const TICK: Duration = Duration::from_millis(500);
 
 /// 만기 시점에 사용자가 타이핑 중이면 이만큼 미룬다. 호스트의 타이핑 창(5 초)과 같다.
 const TYPING_DEFER: Duration = Duration::from_secs(5);
 
-/// 재개해도 되는 에러 종류 — 일시적인 서버 측 에러만. Claude Code 가 `StopFailure`
-/// matcher 로 선언한 값 중에서 고른다.
-///
-/// `rate_limit` 은 넣지 않는다: 한도가 풀리는 시각은 분~시간 단위라 몇 초 뒤의 재개는
-/// 다시 실패할 뿐이고, 실패마다 요청 한 건을 더 쓴다. `authentication_failed` ·
-/// `billing_error` · `invalid_request` · `max_output_tokens` · `model_not_found` 등은
-/// 다시 보내도 같은 결과라 사람이 고쳐야 한다. 실측(2026-09-23, Claude Code 2.1.280):
-/// 로컬 게이트웨이가 돌려준 `529 overloaded_error` 는 `server_error` 로 분류돼 왔다.
+/// 일시적인 서버 오류인 overloaded·server_error만 재개한다.
+/// rate_limit은 수초 만에 해소되지 않을 수 있고, 인증·청구·요청 오류 등은 사용자 조치가 필요하다.
+/// 2026-09-23의 Claude Code 2.1.280에서는 게이트웨이의 529 overloaded_error가 server_error로 전달됐다.
 pub(crate) fn is_resumable_error(error: &str) -> bool {
     matches!(error, "overloaded" | "server_error")
 }
@@ -77,8 +55,7 @@ impl Default for Settings {
     }
 }
 
-/// plugin 설정을 읽는다. 읽기 실패·미설정은 그 항목의 기본값이다 — 기본값이 꺼짐이라
-/// 조회 실패가 전송으로 이어지지 않는다.
+/// 설정을 읽는다. 조회 실패·미설정은 기본값을 적용하며 활성 여부의 기본값은 false다.
 pub(crate) fn read_settings<H: HostCall>(host: &H) -> Settings {
     let get = |key: &str| {
         host.call("settings.get_plugin_setting", json!({ "storage_key": key }))
@@ -111,11 +88,8 @@ pub(crate) struct Pending {
     pub turn: u64,
     /// 예약 시점의 전경 pid — 그 사이 Claude 가 다시 떴으면 다른 세션이다.
     pub foreground_pid: Option<u64>,
-    /// 이 시각 이후의 사용자 입력(키보드 · IME · 붙여넣기 — 본체가 `record_typing` 으로
-    /// 기록하는 것, docs/features/terminal/index.md#사용자-입력-기록)은
-    /// "사람이 개입했다" 로 본다. 실패한 턴이 시작된 시각(`prompt-submit`)이고, 그것을
-    /// 모르면 예약 시각이다. 턴 시작부터 보는 이유:
-    /// Claude 가 일하는 동안 입력창에 쓴 미제출 초안도 재개 문구 앞에 붙어 함께 제출된다.
+    /// 이 시각 이후의 사용자 입력은 미제출 초안이 있을 수 있어 자동 재개를 취소하는 기준이다.
+    /// 실패한 턴 시작 시각을 사용하고, 모르면 예약 시각을 쓴다.
     pub input_since: Instant,
 }
 
@@ -182,8 +156,7 @@ impl ResumeTable {
     ) {
         let e = self.surfaces.entry(surface).or_default();
         e.turn += 1;
-        // 설정은 [`read_settings`] 가 자르지만, 이 표는 그것을 모른다 — 넘치면 예약하지
-        // 않는다(턴 번호는 올렸으므로 앞선 예약은 이미 무효다).
+        // 지연이 시계 표현 범위를 넘으면 새 예약을 만들지 않는다. 이전 예약도 무효화돼 있다.
         let Some(due) = now.checked_add(delay) else {
             e.pending = None;
             tracing::warn!(
@@ -262,8 +235,7 @@ impl ResumeTable {
     }
 }
 
-/// poison 이어도 표를 버리지 않는다 — 지키는 자료구조가 복구 가능하다
-/// (`error_scan::lock_scanner` 와 같은 이유).
+/// poison을 알리고 기존 표를 재사용한다. 패닉 전 부분 갱신을 되돌리지는 않는다.
 pub(crate) fn lock_table(table: &Mutex<ResumeTable>) -> std::sync::MutexGuard<'_, ResumeTable> {
     const WHAT: &str = "the claude auto-resume table";
     static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -282,9 +254,7 @@ pub(crate) fn observe_hook<H: HostCall>(
 ) {
     match event {
         "prompt-submit" | "active" => lock_table(table).on_new_turn(surface_id, now),
-        // 새 세션·세션 종료는 연속 계수를 0 으로 되돌리므로 계수 기록도 함께 지운다 —
-        // 남겨 두면 새 세션에서 지난 세션의 연속 수가 현재 값으로 읽힌다. 표가 비어 있어도
-        // (plugin 재시작 뒤) 지운다: 세션마다 한 번이라 싸고, 표와 기록이 어긋날 틈을 없앤다.
+        // 새 세션·종료 때는 plugin 재시작 전의 메타데이터도 지우도록 표가 비어 있어도 호출한다.
         "session-start" => {
             lock_table(table).on_session_start(surface_id, now);
             clear_count_meta(host, surface_id);
@@ -361,9 +331,8 @@ pub(crate) enum Verdict {
     LimitReached,
 }
 
-/// 보낼지 판정한다. 순서가 곧 우선순위다 — 취소 사유가 상한보다 앞서는 것은, 사람이
-/// 개입했거나 Claude 가 사라진 surface 에 "자동 재개를 멈췄다" 를 알리면 거짓이 되기
-/// 때문이다.
+/// 취소 조건을 상한보다 먼저 확인한다. 이미 사용자가 개입했거나 Claude가 종료됐으면
+/// 재개 횟수 상한 알림을 보내지 않는다.
 pub(crate) fn judge(f: &DueFacts) -> Verdict {
     if !f.settings.enabled {
         return Verdict::Cancel("disabled");
@@ -381,9 +350,7 @@ pub(crate) fn judge(f: &DueFacts) -> Verdict {
     if f.expected_pid.is_some() && f.foreground_pid != f.expected_pid {
         return Verdict::Cancel("claude was restarted");
     }
-    // 창 안에 사용자 입력(키보드 · IME · 붙여넣기)이 한 번이라도 있었으면 사람이 개입했다 —
-    // 입력창에 초안이 있을 수 있다. `is_typing` 은 최근 5 초만 보므로 초안을 쓰다 멈춘
-    // 사용자를 놓친다. 그래서 마지막 입력 시각(`idle_seconds`)을 창과 견준다.
+    // 최근 타이핑 여부뿐 아니라 턴 시작 뒤의 마지막 입력도 확인해 남아 있을 초안을 보호한다.
     if f.key_idle.is_some_and(|idle| idle < f.since_input_window) {
         return Verdict::Cancel("the user gave input after the turn began");
     }
@@ -396,10 +363,7 @@ pub(crate) fn judge(f: &DueFacts) -> Verdict {
     Verdict::Send
 }
 
-/// 전경 프로세스 이름이 Claude Code 인가. 호스트는 OS 가 준 이름을 그대로 넘기므로
-/// Windows 에서는 `claude.exe` 이고 대소문자도 보장되지 않는다 — 소문자로 바꾸고
-/// `.exe` 를 떼어 비교한다(`tasty_terminal::foreground_process::is_known_shell_name` 과
-/// 같은 형태).
+/// Windows의 .exe 접미사와 대소문자 차이를 무시하고 claude 프로세스 이름인지 확인한다.
 fn is_claude_process_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.strip_suffix(".exe").unwrap_or(&lower) == "claude"
@@ -513,14 +477,12 @@ fn send<H: HostCall>(
     surface_id: u32,
     pending: &Pending,
 ) {
-    // 사실을 모으는 동안 새 턴이 시작됐을 수 있다 — 마지막으로 한 번 더 본다. 여기서
-    // 제출까지 사이의 창은 `terminal.tell` 의 본문→Enter 사이 창과 같은 크기다.
+    // 조회 중 새 턴이 시작됐는지 다시 확인한다. 이 확인과 실제 전송 사이에도 상태가 바뀔 수 있다.
     if !lock_table(table).still_current(surface_id, pending.turn) {
         tracing::info!("claude auto-resume s{surface_id}: a new turn began, not resuming");
         return;
     }
-    // `terminal.tell` 은 본문 write 확인 → 정착 지연 → Enter 를 나눠 보내고, 원격 attach 가
-    // 점유한 surface 는 거절한다. 거절되면 다시 걸지 않는다(다른 곳에서 조작 중이다).
+    // terminal.tell은 본문과 Enter를 나눠 보내며 원격 점유 대상은 거절한다. 실패하면 재예약하지 않는다.
     if let Err(e) = host.call(
         "terminal.tell",
         json!({ "surface": surface_id, "text": texts.message }),
@@ -579,7 +541,7 @@ mod tests {
         }
     }
 
-    /// 보낼 조건이 전부 갖춰진 사실 — 각 테스트가 한 칸만 바꿔 그 칸의 효과를 본다.
+    /// 전송 가능한 기본 상태. 각 시험에서 한 조건씩 바꾼다.
     fn sendable() -> DueFacts {
         DueFacts {
             settings: on(),
@@ -646,7 +608,7 @@ mod tests {
         assert_eq!(judge(&f), Verdict::Cancel("claude was restarted"));
     }
 
-    /// Windows 의 전경 이름은 `claude.exe` 다 — 그것을 못 맞추면 재개가 한 번도 안 나간다.
+    /// Windows의 claude.exe 이름과 대소문자 차이도 허용한다.
     #[test]
     fn the_foreground_name_matches_claude_on_every_platform() {
         for name in ["claude", "claude.exe", "Claude.exe", "CLAUDE.EXE"] {
@@ -672,7 +634,7 @@ mod tests {
         }
     }
 
-    /// 초안을 쓰다 5 초 넘게 멈춘 사용자 — `typing` 은 false 지만 창 안에 입력이 있었다.
+    /// 최근 타이핑은 멈췄어도 턴 시작 뒤 입력한 초안이 있을 수 있다.
     #[test]
     fn a_draft_left_for_more_than_five_seconds_still_cancels() {
         let mut f = sendable();
@@ -685,7 +647,7 @@ mod tests {
         );
     }
 
-    /// 창이 열리기 전의 입력(실패한 턴을 제출한 Enter 등)은 개입이 아니다.
+    /// 확인 기간보다 앞선 입력은 개입으로 보지 않는다.
     #[test]
     fn input_before_the_turn_began_does_not_cancel() {
         let mut f = sendable();
@@ -808,7 +770,7 @@ mod tests {
 
     #[test]
     fn a_new_turn_does_not_reset_the_consecutive_count() {
-        // 재개 문구 자신이 `prompt-submit` 을 부른다 — 그것이 계수를 지우면 상한이 영영 안 온다.
+        // 자동 재개도 prompt-submit을 발생시키므로 이때 시도 수를 지우면 상한에 도달하지 않는다.
         let mut t = ResumeTable::default();
         t.record_attempt(7);
         t.on_new_turn(7, Instant::now());
@@ -837,8 +799,7 @@ mod tests {
         assert!(!t.limit_reached(7, 1));
     }
 
-    /// 번역기는 없는 키를 키 문자열 그대로 돌려준다 — 그러면 키 이름이 사용자 세션에
-    /// 제출된다. 세 locale 모두 실제 문장이 있고, 상한 문구가 자리 셋을 갖는지 본다.
+    /// 번역 키가 세 언어에 있고 횟수 안내에 placeholder 세 개가 있는지 확인한다.
     #[test]
     fn every_locale_has_the_resume_texts() {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
@@ -862,7 +823,7 @@ mod tests {
         }
     }
 
-    // ── observe_hook 배선 — mock host 로 설정·에러 종류에 따른 예약 여부 ──
+    // 설정과 오류 종류에 따른 예약 처리.
 
     struct SettingsHost {
         enabled: Option<bool>,
@@ -1005,7 +966,7 @@ mod tests {
         assert!(unsets(&host).is_empty());
     }
 
-    // ── 재개 전송 경로(send → record_resume) — 호출 순서·조기 return·기록 값 ──
+    // 전송과 횟수 기록의 순서 및 실패 처리.
 
     /// host 호출을 순서대로 적는다. 호출마다 그 순간 표의 시도 수를 함께 적어, 표 갱신이
     /// 어느 호출 앞뒤에 일어났는지 본다. `fail` 에 든 메서드는 에러를 돌려준다.
