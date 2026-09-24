@@ -1,30 +1,6 @@
-//! `ports` — Hexagonal architecture 의 *port (trait)* 정의.
-//!
-//! Core 가 의존하는 *외부 자원 trait* 들. Adapter (production / test / 다른 plugin
-//! impl) 가 trait 을 구현해 Core 에 주입된다.
-//!
-//! **Inbound port** — 외부 어댑터 (IPC / UI / CLI / Plugin) 가 Core 를 호출하는 진입점.
-//! **Outbound port** — Core 가 외부 자원 (PTY / FileSystem / Clock / ...) 에 접근하는 trait.
-//!
-//! ## 위치 분기
-//!
-//! - **External crate 의존** — 본 모듈 (`src/ports/`).
-//!   FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory,
-//!   NotificationSoundPlayer.
-//!
-//! ## Hub 의 외부 통신
-//!
-//! TCP IPC server 는 `src/adapters/production/tcp_ipc_server.rs` 의 `TcpIpcServer`
-//! 가 자체 완결. port 화 의미 작아 Hub 가 *직접 보유* — Core 외부 영역.
-//!
-//! - **Internal crate trait (4 port)** — 각 워크스페이스 crate 안.
-//!   `tasty_memory::MemoryStorage`, `tasty_presets::PresetStorage`,
-//!   `tasty_settings::SettingsStorage`, `tasty_themes::ThemeStorage`.
-//!
-//! ## 구현 위치
-//!
-//! 본 모듈은 *trait 정의 만*. production adapter / test mock 은 `src/adapters/`
-//! 에 구현돼 있고, Core 는 그 구현들을 trait object 로 보유해 실제로 호출한다.
+//! Core와 Hub가 외부 자원에 접근하는 인터페이스.
+//! 제품 어댑터와 시험용 구현은 src/adapters에 두고 생성 시 주입한다.
+//! 메모리·프리셋·설정·테마 저장소의 인터페이스는 각 workspace 크레이트에 있다.
 
 pub mod clipboard;
 pub mod clock;

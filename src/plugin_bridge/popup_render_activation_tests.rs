@@ -1,15 +1,5 @@
-//! popup 입력 forward 자리가 사용자 활성화를 **기록하고 걷는지** 고정한다.
-//!
-//! `file_handler.dispatch` 입구 시험은 활성화 기록을 직접 채워 시작하고, `is_user_activation`
-//! 시험은 판정 함수만 본다. 둘 다 그 판정을 렌더 루프가 실제로 부르는지는 안 본다 — 루프가
-//! 기록을 안 세우면 사용자가 popup 에서 연 파일이 에이전트로 떨어지고, 닫힌 popup 의 기록을 안
-//! 걷으면 plugin 이 사람이 더는 보지 않는 popup 으로 사용자 행동을 주장한다. 그래서 여기서는
-//! `draw_plugin_popups` 를 egui frame 으로 돌려 `AppState::plugin_popup_user_activated` 를 본다
-//! (ADR-0031).
-//!
-//! 이 모듈은 gui feature 뒤라 헤드리스 조합(`--no-default-features`)에는 없고, 자동 실행은
-//! 기본 조합의 `cargo test --workspace --lib --bins` 스텝이 맡는다. 손으로 돌리는 명령:
-//! `cargo test -p tasty --lib --locked -- popup_render::activation_tests`.
+//! egui 프레임을 실행해 사용자 활성화 기록이 생기고 닫힌 팝업의 기록이 지워지는지 검사한다.
+//! 등록·판정 함수만 직접 검사하는 시험과 달리 draw_plugin_popups를 거친다.
 
 use std::sync::Arc;
 
@@ -24,7 +14,6 @@ const PLUGIN: &str = "com.example.popup";
 const POPUP: u64 = 7;
 
 fn manager() -> PluginManager {
-    // `PluginManager::new` 는 그 크레이트 안 전용(`#[cfg(test)]`)이라 공개 생성자를 쓴다.
     PluginManager::with_registries(
         Arc::new(tasty_terminal::waker_factory::NoopWakerFactory),
         Arc::new(crate::file::format::FileFormatRegistry::new()),
@@ -58,7 +47,6 @@ fn manager_with_popup() -> PluginManager {
     mgr
 }
 
-/// 한 frame 을 돌린다. 돌려주는 값은 그 frame 에 놓인 popup 셸 rect 다(없으면 `None`).
 fn frame(
     ctx: &Context,
     state: &mut crate::state::AppState,
@@ -86,7 +74,6 @@ fn press(pos: Pos2) -> Event {
     }
 }
 
-/// 포인터가 지나가기만 하면 기록이 안 서고, popup 안을 누르면 그 popup 의 소유 plugin 으로 선다.
 #[test]
 fn a_press_inside_the_popup_records_it_and_a_hover_does_not() {
     let (mut state, mut engine) = crate::state::tests::test_state();
@@ -122,11 +109,10 @@ fn a_press_inside_the_popup_records_it_and_a_hover_does_not() {
             .get(&POPUP)
             .map(String::as_str),
         Some(PLUGIN),
-        "popup 안의 누름이 기록되지 않았다"
+        "팝업 내부의 버튼 누름이 활성화로 기록되지 않았다"
     );
 }
 
-/// 닫힌 popup 의 기록은 다음 frame 에 걷힌다 — 남으면 사람이 안 보는 popup 이 근거가 된다.
 #[test]
 fn a_closed_popup_loses_its_record() {
     let (mut state, mut engine) = crate::state::tests::test_state();
@@ -144,13 +130,12 @@ fn a_closed_popup_loses_its_record() {
     );
     assert!(state.plugin_popup_user_activated.contains_key(&POPUP));
 
-    // 닫힘은 인스턴스가 매니저에서 사라진 상태로 표현한다. 실제 닫기(`close_popup_instance`)는
-    // 앱의 drain 한 곳에서만 부르게 가드가 막고 있고, 렌더 루프가 보는 것은 그 결과뿐이다.
+    // 실제 닫기 처리 대신 인스턴스를 지워 다음 렌더 프레임이 보는 상태를 만든다.
     let mgr = manager();
     frame(&ctx, &mut state, &mut engine, &mgr, Vec::new());
     assert!(
         state.plugin_popup_user_activated.is_empty(),
-        "닫힌 popup 의 기록이 남았다: {:?}",
+        "닫힌 팝업의 활성화 기록이 남았다: {:?}",
         state.plugin_popup_user_activated
     );
 }

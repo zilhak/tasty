@@ -1,28 +1,20 @@
-//! NotificationSoundPlayer port — OS level beep 재생.
-//!
-//! `settings.notification.sound == true` 시 cascade 가 호출. headless / 테스트
-//! 빌드는 NoopPlayer 로 fallback — `feature = "gui"` 와 무관하게 port 자체는
-//! 항상 존재.
+//! 알림음 재생 인터페이스. 재생 여부는 호출자가 정한다.
+//! 헤드리스에서는 NoopPlayer를 주입한다.
 
 pub trait NotificationSoundPlayer: Send + Sync {
-    /// 시스템 기본 알림음을 1 회 재생. 사운드 재생 실패는 notification 발화
-    /// 자체를 막아서는 안 되므로, 구현체는 에러를 자체 로그 후 무시한다.
+    /// 기본 알림음을 한 번 재생한다. 실패는 구현체가 기록하며 알림 저장을 막지 않는다.
     #[cfg_attr(
         not(feature = "gui"),
         expect(
             dead_code,
-            reason = "주입되는 port 의 호출 계약이다. headless wiring 은 NoopPlayer 를 넣으므로                       직접 호출자가 없지만, 계약을 지우면 주입 지점의 타입이 무너진다"
+            reason = "헤드리스도 같은 trait으로 NoopPlayer를 주입하지만 play를 호출하지 않는다"
         )
     )]
     fn play(&self);
 }
 
-/// Headless / 테스트 / 기본 fallback. 호출은 받지만 아무것도 하지 않음.
-///
-/// macOS gui 빌드에서는 `MacBeepPlayer` 가 주입되어 NoopPlayer 직접 사용
-/// 경로 0. 그러나 BSD / Linux 미지원 OS / headless / 테스트 (e.g. ipc handler
-/// image with_sound_player) 에서 fallback 으로 *cfg-분기* 사용 — 다른 환경
-/// 기준 dead code 가 아님.
+/// 알림음을 재생하지 않는 기본·시험용 구현.
+// reason: 플랫폼과 빌드 조합에 따라 실제 사운드 어댑터로 대체된다.
 #[allow(dead_code)]
 pub struct NoopPlayer;
 

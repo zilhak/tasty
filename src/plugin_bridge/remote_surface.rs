@@ -1,16 +1,7 @@
-//! Plugin이 제공하는 surface를 본체 layout에 끼울 수 있는 stand-in.
-//!
-//! webview-kind(html) surface 의 실 vehicle — host 는 URL/navigation chrome 만
-//! 그리고 콘텐츠는 native WebView overlay 가 담당한다. (UiNode tree 렌더 경로는
-//! 제거됨.)
-//!
-//! `Surface` trait의 `kind() -> &'static str` 제약 때문에 plugin manifest의
-//! 동적 kind 문자열은 `register_remote_kind`에서 `Box::leak`으로 한 번 정적화한다
-//! (plugin 등록 시 1회, 메모리 누수는 plugin 종류 수만큼이라 무시 가능).
-//!
-//! 이름·snapshot 은 host 가 `SurfaceHandles` 의 `Arc` 로 직접 갱신한다(pump). webview URL ·
-//! navigation mirror · attach 재구성용 핸들 공유는 GUI 만 쓰므로 `cfg(feature = "gui")` 다 —
-//! 경계 기준은 `docs/dev-guide/headless-build-boundaries.md`.
+//! 플러그인 surface를 호스트 레이아웃에 보관한다.
+//! WebView 콘텐츠는 네이티브 오버레이가 그리고 호스트는 주소·탐색 UI를 표시한다.
+//! 이름과 snapshot은 매니저가 공유 핸들로 갱신한다.
+//! GUI별 접근 범위는 docs/dev-guide/headless-build-boundaries.md를 따른다.
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -23,52 +14,33 @@ use serde_json::Value;
 
 pub struct RemoteSurface {
     pub id: SurfaceId,
-    /// `Box::leak` 으로 정적화된 plugin kind. registry에 등록 시 한 번만 leak.
+    /// 등록 시 프로세스 수명으로 할당한 kind 문자열.
     pub kind_static: &'static str,
     pub plugin_id: String,
-    /// snapshot 데이터 캐시 — plugin이 미리 보낸 값. 영속화 시 사용.
+    /// 플러그인에서 받은 snapshot. 저장·복원에 사용한다.
     pub snapshot_cache: Arc<Mutex<Option<Value>>>,
-    /// 탭 제목 등에 표시되는 이름. plugin이 surface.create / event 응답에서 갱신 가능.
+    /// 플러그인 응답으로 갱신하는 표시 이름.
     pub display_name: Arc<Mutex<String>>,
-    /// webview-enabled kind 인 경우 plugin 이 `webview.set_url` 로 전달한 URL.
-    /// host 의 sync_webviews 가 매 프레임 이 값을 읽어 native webview 동기화.
+    /// webview.set_url로 받은 URL. sync_webviews가 네이티브 WebView에 반영한다.
     pub webview_url: Arc<Mutex<Option<String>>>,
-    /// 지금 `webview_url` 을 쓴 `webview.set_url` 호출자가 이 surface 를 소유한 plugin
-    /// 이었는가. `webview.set_url` 은 외부 호출자(에이전트)에게도 열려 있어 그 페이지를 누가
-    /// 만들었는지가 갈린다 — host 는 소유 plugin 이 쓴 페이지 위의 사용자 클릭만 사용자 행동의
-    /// 근거로 기록한다(`crate::plugin_bridge::user_navigation`). 쓴 적이 없으면 거짓이다.
+    /// 현재 URL을 설정한 호출자가 surface 소유 플러그인인지 표시한다.
+    /// 사용자 navigation 판정은 소유 플러그인이 설정한 페이지에서만 허용한다.
     #[cfg(feature = "gui")]
     pub webview_page_by_owner: Arc<AtomicBool>,
-    /// host 가 이 surface 의 시도를 마지막으로 drain 한 뒤 페이지 작성자가 소유 plugin 이 아닌
-    /// 쪽에서 소유 plugin 으로 바뀌었는가. host 는 시도의 작성자를 클릭 시점이 아니라 drain
-    /// 시점의 [`Self::webview_page_by_owner`] 로 읽으므로, 에이전트 페이지 위의 클릭이 drain
-    /// 전에 소유 plugin 의 재작성으로 덮이면 소유 페이지 위 제스처로 보인다. 그 프레임의 기록은
-    /// 이 표지로 지운다(`crate::plugin_bridge::user_navigation::settle_frame`).
+    /// 마지막 조회 뒤 URL 작성자가 외부 호출자에서 소유 플러그인으로 바뀌었는지 표시한다.
+    /// 클릭 이후 페이지가 바뀌면 작성자를 잘못 판단할 수 있어 해당 프레임의 기록을 버린다.
     #[cfg(feature = "gui")]
     pub webview_owner_took_over: Arc<AtomicBool>,
-    /// webview-enabled kind 의 navigation 생명주기 상태 mirror. host 의 sync_webviews 가
-    /// 매 프레임 native `PlatformWebView.nav_state()` 를 이 값에 복사하고, egui 렌더 경로
-    /// (egui_panels → webview_chrome)가 여기서 읽어 loading/error chrome 을 그린다.
-    /// 쓰는 자도 읽는 자도 GUI 뿐이다 — headless 에는 webview 가 없다.
+    /// 네이티브 WebView의 탐색 상태 사본. 호스트 UI가 로딩·오류를 표시할 때 쓴다.
     #[cfg(any(feature = "gui", test))]
     pub nav_state: Arc<Mutex<NavState>>,
-    /// plugin 이 `surface.set_cwd` 로 통보한 현재 cwd. `source_cwd()` 가 이 값을
-    /// 반환하여 다음 surface 의 carry 후보 cwd 로 사용된다 (예: explorer 가 root
-    /// 변경 시 갱신). 초기값 None — host 가 SurfaceCreateCtx.cwd 로 받은 carry cwd
-    /// 를 생성 직후 `set_cwd` 로 채워 넣는다.
+    /// 호스트가 보관하는 cwd. 생성 시 선언된 파일 경로나 상속 cwd로 채우고,
+    /// surface.set_cwd로 갱신할 수 있다.
     pub cwd: Arc<Mutex<Option<PathBuf>>>,
 }
 
-/// mirror 필드별 poison 보고 플래그(각각 첫 1 회만).
-///
-/// 다섯 필드 모두 임계구역이 값 한 칸이라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
-/// 반대로 여기서 패닉하면 읽기 쪽이 **egui 렌더 경로**(`nav_state` · `display_name` 은
-/// 매 프레임 돈다)라 모든 창이 죽는다. 조용히 버리면 plugin 이 IPC 로 바꾼 상태가
-/// 반영되지 않는데 에러도 없다 — 탭 이름이 kind 이름으로 되돌아가거나 loading chrome
-/// 이 영영 안 걷히는 형태로만 보인다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
-///
-/// 필드를 나눠 두는 이유: 어느 mirror 가 굳었는지가 곧 증상의 이름이라, 하나로 묶으면
-/// 첫 필드만 보고되고 나머지는 침묵한다.
+// 필드별로 poison을 처음 한 번 기록한다. 값 하나를 교체하는 락이므로 기존 값을 복구한다.
+// 정책: docs/dev-guide/error-handling.md.
 pub(crate) static SNAPSHOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static DISPLAY_NAME_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static WEBVIEW_URL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -107,11 +79,8 @@ impl RemoteSurface {
         }
     }
 
-    /// 같은 surface 를 가리키는 두 번째 값 — 모든 공유 상태(snapshot·이름·webview URL·
-    /// navigation 상태·cwd)의 `Arc` 를 그대로 나눠 갖는다. plugin 에는 아무것도 보내지
-    /// 않는다. attach mirror 가 트리를 통째로 다시 지을 때 survivor surface 를 새 트리에
-    /// 옮겨 싣는 데 쓴다(`src/app/attach_client.rs` 의 markdown mirror 재구성) — 새로
-    /// 만들면 plugin 이 `surface.create` 를 다시 받아 문서를 처음부터 연다.
+    /// 상태 Arc를 공유해 같은 surface의 새 래퍼를 만든다. 플러그인에 생성 요청은 보내지 않는다.
+    /// attach 트리를 다시 만들 때 기존 문서의 상태를 유지하는 데 사용한다.
     #[cfg(feature = "gui")]
     pub fn share_handles(&self) -> Self {
         Self {
@@ -128,9 +97,7 @@ impl RemoteSurface {
         }
     }
 
-    /// `webview.set_url` IPC 가 호출 — webview-enabled kind 의 surface 만 의미 있음.
-    /// `by_owner` 는 그 호출자가 이 surface 를 소유한 plugin 인가다
-    /// ([`Self::webview_page_by_owner`]).
+    /// URL과 작성자를 갱신한다. by_owner는 호출자가 이 surface의 소유 플러그인인지 나타낸다.
     #[cfg(feature = "gui")]
     pub fn set_webview_url(&self, url: Option<String>, by_owner: bool) {
         let mut slot = crate::poison::recover_mutex(
@@ -139,9 +106,7 @@ impl RemoteSurface {
             &WEBVIEW_URL_POISON_REPORTED,
         );
         *slot = url;
-        // URL 과 같은 임계구역 안에서 적는다 — 둘이 다른 호출자의 값으로 섞이지 않게.
-        // 전이 표지를 작성자보다 **먼저** 적는다: 읽는 쪽은 작성자를 읽은 뒤 표지를 가져가므로,
-        // 새 작성자(참)를 본 프레임은 이 표지도 반드시 본다.
+        // URL 변경과 함께 작성자를 기록하고, 작성자보다 전이 표지를 먼저 저장한다.
         let was_owner = self
             .webview_page_by_owner
             .load(std::sync::atomic::Ordering::Acquire);
@@ -153,23 +118,20 @@ impl RemoteSurface {
             .store(by_owner, std::sync::atomic::Ordering::Release);
     }
 
-    /// 마지막으로 가져간 뒤 페이지 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀌었는가를
-    /// 돌려주고 표지를 내린다. `sync_webviews` 가 매 프레임, 그 프레임의 시도를 다 반영한 **뒤**
-    /// 부른다([`Self::webview_owner_took_over`]).
+    /// 외부 작성자에서 소유 플러그인으로 바뀐 표지를 반환하고 지운다.
+    /// sync_webviews가 해당 프레임의 navigation을 반영한 뒤 호출한다.
     #[cfg(feature = "gui")]
     pub fn take_webview_owner_takeover(&self) -> bool {
         self.webview_owner_took_over
             .swap(false, std::sync::atomic::Ordering::AcqRel)
     }
 
-    /// 지금 이 surface 의 페이지를 쓴 호출자가 소유 plugin 이었는가.
     #[cfg(feature = "gui")]
     pub fn webview_page_by_owner(&self) -> bool {
         self.webview_page_by_owner
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// sync_webviews 가 매 프레임 native nav_state 를 mirror 할 때 호출.
     #[cfg(any(feature = "gui", test))]
     pub fn set_nav_state(&self, s: NavState) {
         *crate::poison::recover_mutex(
@@ -179,7 +141,6 @@ impl RemoteSurface {
         ) = s;
     }
 
-    /// 현재 mirror 된 navigation 상태. egui 렌더 경로가 chrome 분기에 읽는다.
     #[cfg(any(feature = "gui", test))]
     pub fn nav_state(&self) -> NavState {
         *crate::poison::recover_mutex(
@@ -189,14 +150,10 @@ impl RemoteSurface {
         )
     }
 
-    /// `surface.set_cwd` IPC 가 호출. plugin 측 root/working dir 변경을 host 에 통보.
-    /// `Surface::source_cwd()` 가 다음 surface 의 carry 후보로 이 값을 노출.
     pub fn set_cwd(&self, cwd: Option<PathBuf>) {
         *crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED) = cwd;
     }
 
-    /// 제품 경로는 이름을 `SurfaceHandles` 로 직접 쓴다 — 이 setter 는 시험이 mirror 를
-    /// 바꾸는 손잡이다.
     #[cfg(test)]
     pub fn set_display_name(&self, name: String) {
         *crate::poison::recover_mutex(
@@ -214,7 +171,6 @@ impl RemoteSurface {
         ) = Some(data);
     }
 
-    /// manager가 surface와 동기화하기 위해 필요한 핸들 묶음을 클론하여 반환.
     pub fn handles(&self) -> crate::plugin_bridge::host_cmd::SurfaceHandles {
         crate::plugin_bridge::host_cmd::SurfaceHandles {
             display_name: self.display_name.clone(),
@@ -238,11 +194,7 @@ impl Surface for RemoteSurface {
         Some(self.id)
     }
 
-    /// RemoteSurface 는 `cwd` 필드 (plugin 이 `surface.set_cwd` 로 갱신) 의 현재
-    /// 값을 반환. 초기값은 host 가 생성 시점에 `set_cwd(SurfaceCreateCtx.cwd)` 로
-    /// 채워둔 carry cwd. explorer 같이 root 가 *현재 폴더* 의 의미를 갖는 surface 는
-    /// root 변경마다 `surface.set_cwd` 를 발사하여 이 값을 갱신한다. cwd 의미가
-    /// 없는 다른 RemoteSurface kind 는 None 유지.
+    /// 호스트에 보관된 cwd를 반환한다. 로컬 실행에 사용하기 전에는 출처를 확인해야 한다.
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED).clone()
     }
@@ -265,15 +217,8 @@ impl Surface for RemoteSurface {
         .clone()
     }
 
-    /// ADR-0022 — 이 surface 는 렌더 결과가 아니라 **원문**을 attach 채널로 나를 수
-    /// 있는 후보다. 경로는 plugin 이 `surface.create`/`restore` 응답에 실어 올린
-    /// snapshot(`{"file": ...}`)에서 꺼낸다 — markdown plugin 의 `open_file_surface`
-    /// 가 그 형태로 올리고 host 가 [`Self::snapshot_cache`] 에 캐시한다.
-    ///
-    /// **여기서 kind 를 좁히지 않는다.** 어떤 `(kind, plugin_id)` 조합이 실제로 이
-    /// 채널을 타는지는 앱 계층의 화이트리스트(`attach_runtime::content_mirror_candidates`)
-    /// 가 정한다 — `attach_mesh_info` 와 같은 두 단 구조이고, 그래서 이 override 는
-    /// `RemoteSurface` 전체에 붙는다.
+    /// attach 원문 전달 후보의 kind·소유 플러그인·snapshot의 file 경로를 반환한다.
+    /// 실제 허용 여부는 attach_runtime::content_mirror_candidates가 별도로 판단한다.
     fn attach_content_info(&self) -> Option<(&str, &str, Option<PathBuf>)> {
         let file = crate::poison::recover_mutex(
             self.snapshot_cache.lock(),
@@ -299,8 +244,7 @@ impl Surface for RemoteSurface {
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// reason: 시험 코드의 Result 무시는 사유 주석 대상에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
@@ -313,25 +257,21 @@ mod tests {
         assert_eq!(s.display_name(), "Files");
     }
 
-    /// mirror 가 poison 돼도 값이 그대로 읽힌다.
-    ///
-    /// 조용히 버리는 구현이면 탭 이름이 kind 이름("explorer")으로 되돌아가고,
-    /// nav_state 는 `Idle` 로 굳어 loading chrome 이 영영 안 걷힌다 — 둘 다 원인이
-    /// 화면에 남지 않는 형태라 한 테스트로 같이 고정한다.
+    // poison 뒤에도 기존 이름과 탐색 상태를 읽고 갱신할 수 있어야 한다.
     #[test]
     fn poisoned_mirrors_still_read_their_values() {
         let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
         s.set_nav_state(NavState::Loading);
 
         let name_lock = Arc::clone(&s.display_name);
-        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        // 이유: poison을 만들기 위해 발생시킨 패닉이므로 join 오류를 무시한다.
         let _ = std::thread::spawn(move || {
             let _guard = name_lock.lock().expect("fresh lock");
             panic!("poison the display name mirror on purpose");
         })
         .join();
         let nav_lock = Arc::clone(&s.nav_state);
-        // 이유: 위와 같다.
+        // 이유: 같은 방식으로 탐색 상태 락의 poison을 만든다.
         let _ = std::thread::spawn(move || {
             let _guard = nav_lock.lock().expect("fresh lock");
             panic!("poison the nav state mirror on purpose");

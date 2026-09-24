@@ -1,6 +1,4 @@
-//! ClipboardSystem port — 시스템 clipboard (arboard wrap).
-//!
-//! Headless 시 NoOp adapter.
+//! 시스템 클립보드 접근. 헤드리스에서는 동작하지 않는 어댑터를 주입한다.
 
 pub trait ClipboardSystem: Send + Sync {
     fn read_text(&self) -> anyhow::Result<String>;

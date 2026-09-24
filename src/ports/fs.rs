@@ -1,10 +1,8 @@
-//! FileSystem port — disk I/O 통합 인터페이스.
-//!
-//! `std::fs` 의 분산 함수들을 한 trait 으로. test 시 in-memory mock 으로 swap.
+//! 파일 I/O 인터페이스. 시험에서는 메모리 어댑터로 바꿀 수 있다.
 
 use std::path::{Path, PathBuf};
 
-#[allow(dead_code)] // 이유: FileSystem port — DI 빌더 배선·test mock 존재, 호출 경로 배선 대기
+#[allow(dead_code)] // 이유: 빌더와 시험용 구현은 있지만 제품 코드의 호출부는 없다
 pub trait FileSystem: Send + Sync {
     fn read_to_string(&self, path: &Path) -> anyhow::Result<String>;
     fn read_bytes(&self, path: &Path) -> anyhow::Result<Vec<u8>>;
@@ -18,7 +16,7 @@ pub trait FileSystem: Send + Sync {
     fn read_dir(&self, path: &Path) -> anyhow::Result<Vec<PathBuf>>;
 }
 
-#[allow(dead_code)] // 이유: FileSystem port — DI 빌더 배선·test mock 존재, 호출 경로 배선 대기
+#[allow(dead_code)] // 이유: 빌더와 시험용 구현은 있지만 제품 코드의 호출부는 없다
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     pub size: u64,

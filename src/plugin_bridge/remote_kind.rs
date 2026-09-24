@@ -1,10 +1,5 @@
-//! Plugin이 제공하는 surface kind를 SurfaceKindRegistry에 등록.
-//!
-//! `Surface` trait의 `kind() -> &'static str` 제약 때문에 plugin 매니페스트의
-//! 동적 kind 문자열은 여기서 한 번 `Box::leak`으로 정적화한다 (plugin 종류당 1회).
-//!
-//! 등록된 kind의 `create`/`restore`는 빈 `RemoteSurface`를 반환한다. 실제 트리는
-//! plugin이 비동기로 보내오는 `surface.create` 응답에서 set된다.
+//! 플러그인 surface kind를 등록하고 RemoteSurface 생성·복원 요청을 매니저에 전달한다.
+//! 이름과 snapshot은 플러그인 응답을 받은 뒤 공유 핸들로 갱신한다.
 
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
@@ -18,8 +13,7 @@ use crate::plugin::manifest::SurfaceKindDecl;
 use crate::plugin_bridge::host_cmd::HostCmd;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 
-/// kind 문자열을 정적화하여 반환. 같은 입력에 대해 leak이 반복되지 않도록
-/// caller가 한 번만 호출하도록 보장해야 한다 (PluginManager가 hello 1회당 호출).
+// Surface::kind가 static 문자열을 요구한다. 같은 kind를 다시 등록해도 추가 할당하며 해제하지 않는다.
 fn leak_kind(s: &str) -> &'static str {
     Box::leak(s.to_string().into_boxed_str())
 }
@@ -28,10 +22,7 @@ fn leak_str(s: &str) -> &'static str {
     Box::leak(s.to_string().into_boxed_str())
 }
 
-/// remote 경로가 등록한 kind 의 **사실** 렌더링. 이 경로는 매니페스트의 `remote` 와
-/// `webview` 둘 다를 받는다 — `webview` 는 여기에 더해
-/// `surface_registry::webview_kind` 에 overlay 플래그가 하나 더 붙는다. 선언 두 값이
-/// 같은 함수로 들어오므로, 등록된 사실도 그 둘을 갈라 적는다.
+// 같은 등록 함수를 쓰는 remote와 webview를 실제 렌더링 정보에서는 구분한다.
 fn registered_rendering(decl: &SurfaceKindDecl) -> RegisteredRendering {
     match decl.rendering {
         crate::plugin::manifest::SurfaceKindRendering::Webview => RegisteredRendering::Webview,
@@ -39,20 +30,13 @@ fn registered_rendering(decl: &SurfaceKindDecl) -> RegisteredRendering {
     }
 }
 
-/// plugin manager가 hello를 받은 직후 호출. registry에 plugin kind를 등록.
-/// 이미 같은 kind가 등록돼 있으면 덮어쓰며 warn 로그.
-///
-/// `host_cmd_tx`는 새 surface가 만들어질 때마다 manager에 등록 요청을 보내는 채널.
+/// kind를 등록한다. host_cmd_tx는 surface 생성·복원 요청을 매니저에 전달한다.
 pub fn register_remote_kind(
     registry: &SurfaceKindRegistry,
     plugin_id: &str,
     decl: &SurfaceKindDecl,
     host_cmd_tx: Sender<HostCmd>,
 ) {
-    // 호스트 내장 kind 보호: plugin(또는 사용자 dir 에 남은 옛 builtin)이 host 가
-    // 직접 렌더하는 kind 를 remote 로 가로채지 못하게 한다. 예: T11 에서 explorer 가
-    // host builtin 으로 승격된 뒤에도 `~/.tasty/plugins/com.tasty.explorer` 가 남아
-    // remote "explorer" 를 재선언하면 native 렌더가 깨진다 — 여기서 차단한다.
     if crate::core::surface_registry::builtins::is_host_builtin_kind(&decl.kind) {
         tracing::warn!(
             "plugin '{}' declared remote kind '{}' which is a host builtin; ignoring \
@@ -89,13 +73,8 @@ pub fn register_remote_kind(
                 .unwrap_or_else(|| kind_static.to_string());
             let surface =
                 RemoteSurface::new(sid, kind_static, plugin_id_for_create.clone(), initial_name);
-            // host 가 carry 한 cwd 보다, kind 가 `derive_cwd` 로 선언한 file_path 필드
-            // (예: markdown 의 `file`)가 params 에 있으면 그 파일의 부모 디렉토리를
-            // 우선한다 — `EguiMeshSurface::source_cwd()`(옛 markdown 등)가 자체 file
-            // 필드에서 직접 파생하던 것과 동일한 "새 터미널 split 시 파일이 있는
-            // 폴더로 cwd 상속" 동작을 remote/webview kind 에도 유지하기 위함
-            // (plugin 에 forward 하는 `HostCmd::RemoteSurfaceCreated.cwd` 는 원래
-            // 값 그대로 — 이 파생은 host 측 `source_cwd()` 북키핑 전용).
+            // 선언한 파일 경로에서 얻은 cwd를 상속 cwd보다 우선한다.
+            // 이 값은 호스트 source_cwd용이며 플러그인에 보내는 cwd는 원래 인자를 유지한다.
             let surface_cwd = crate::core::surface_registry::PresetFieldSpec::derive_cwd(
                 &preset_fields_for_create,
                 params,
@@ -122,9 +101,7 @@ pub fn register_remote_kind(
                 plugin_id_for_restore.clone(),
                 kind_static.to_string(),
             );
-            // 옛 snapshot 을 cache 의 초기값으로 carry. plugin 의 surface.restore
-            // 응답이 늦거나 영영 안 와도 capture 시 옛 data 로 정상 저장됨 →
-            // layout.json 이 kind="empty" 로 오염되는 race 차단.
+            // 복원 응답을 받기 전에 다시 저장해도 기존 snapshot을 유지한다.
             surface.cache_snapshot(data.clone());
             let handles = surface.handles();
             if let Err(e) = tx_restore.send(HostCmd::RemoteSurfaceRestored {
@@ -141,8 +118,7 @@ pub fn register_remote_kind(
         snapshot: Arc::new(|s: &dyn Surface| {
             let any = s.as_any();
             let rs = any.downcast_ref::<RemoteSurface>()?;
-            // snapshot 은 세션 복원의 입력이라 조용히 `None` 이 되면 그 surface 가
-            // 다음 실행에서 빈 채로 살아난다 — 복구하고 한 번 보고한다.
+            // poison 복구로 snapshot을 유지하고 최초 오류를 기록한다.
             crate::poison::recover_mutex(
                 rs.snapshot_cache.lock(),
                 super::remote_surface::SNAPSHOT_WHAT,
@@ -161,7 +137,6 @@ pub fn register_remote_kind(
         name_from_param: decl.name_from_param.clone(),
         records_recent: decl.records_recent,
         convert_requires_input: decl.convert_requires_input,
-        // local popup id → `<plugin>/<popup>` qualify (egui_mesh.rs 와 동일 규약).
         convert_input_popup: decl
             .convert_input_popup
             .as_ref()
