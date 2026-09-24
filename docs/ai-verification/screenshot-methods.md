@@ -143,42 +143,46 @@ CLI 없이 raw JSON-RPC(개행 구분)를 포트로 직접 보낼 수도 있다.
 격리 표 [self-verification 독립 검증](../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다), 구현
 `crates/tasty-ipc/src/port_file.rs`).
 
+검증 인스턴스의 홈을 TASTY_HOME으로 지정한 뒤 실행한다. TCP 응답은 여러 번에 나뉘어
+도착할 수 있으므로 개행까지 읽는다. 서버가 연결을 유지해도 EOF를 기다리지 않는다.
+
 ```python
-import socket, json
-port = int(open("/Users/<you>/.tasty-debug/tasty.port").read().strip())  # debug 빌드 루트
-req = {"jsonrpc":"2.0","id":1,"method":"ui.screenshot","params":{"path":"/abs/out.png","surface_id":5}}
-s = socket.socket(); s.settimeout(8); s.connect(("127.0.0.1", port))
-s.sendall((json.dumps(req)+"\n").encode())
-print(s.recv(8192).decode().strip())   # {"result":{"path":..,"surface_id":5,"scheduled":true},..}
+import json
+import os
+import socket
+from pathlib import Path
+
+port_file = Path(os.environ["TASTY_HOME"]) / "tasty.port"
+port = int(port_file.read_text().strip())
+req = {"jsonrpc": "2.0", "id": 1, "method": "ui.screenshot",
+       "params": {"path": "/abs/out.png", "surface_id": 5}}
+with socket.create_connection(("127.0.0.1", port), timeout=8) as sock:
+    sock.sendall((json.dumps(req) + "\n").encode())
+    with sock.makefile("rb") as response:
+        line = response.readline()
+    if not line.endswith(b"\n"):
+        raise EOFError("IPC response ended before the newline")
+    print(json.loads(line))
 ```
 
 ### 사용자 세션을 건드리지 않고 격리 실행
 
-debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자동 분리되므로, 보통은 그냥 `./target/debug/tasty --launch` 로 띄우고 `~/.tasty-debug/tasty.port` 로 접속하면 사용자 release 세션과 충돌하지 않는다(격리 표·상세: [self-verification 독립 검증](../dev-guide/self-verification.md#독립-검증--개발도-agent-가-스스로-확인할-수-있어야-한다)).
+검증할 때는 고유한 TASTY_HOME과 전용 디스플레이를 사용한다. debug와 release의 기본
+데이터 경로는 다르지만, 다른 debug 인스턴스까지 자동으로 분리되지는 않는다.
+TASTY_HOME은 빌드별 기본 경로보다 우선한다.
 
-루트를 명시적으로 분리하고 싶으면(병렬 debug 인스턴스 등) `TASTY_HOME` env 로 루트를 강제한다 — `tasty_home()` 이 `TASTY_HOME` 을 debug/release 자동 분기보다 우선한다(`crates/tasty-utils/src/path.rs`).
+실행·PID 기록·준비 대기·회수는
+[직접 검증 절차](../dev-guide/self-verification.md#tasty-에서-직접-검증)를 따른다.
+그 절차는 자식 생존 여부를 확인하며 준비 조회를 최대 40회 시도한다. 준비를 확인하지
+못하면 캡처 단계로 진행하지 않고 로그를 확인한다.
 
-```bash
-TH=$(mktemp -d); cp ~/.tasty/config.toml "$TH/"    # config 는 루트 바로 아래
-env -u TASTY_SESSION_TOKEN -u TASTY_SURFACE_ID -u TASTY_PARENT_HOME \
-  TASTY_HOME="$TH" TASTY_DEBUG_OS_OPEN_LOG="$TH/os-open.log" \
-  ./target/debug/tasty --launch &                  # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
-                                                   # OS 열기는 띄우지 않고 기록만 — 격리 홈은 사용자 브라우저를 못 막는다
-MY_APP=$!                                          # 띄운 즉시 PID 를 잡는다
-until env -u TASTY_SESSION_TOKEN -u TASTY_SURFACE_ID -u TASTY_PARENT_HOME \
-      TASTY_HOME="$TH" ./target/debug/tasty list info >/dev/null 2>&1; do   # IPC 대기
-  kill -0 "$MY_APP" 2>/dev/null || { echo "기동 실패 — 로그를 본다"; break; }  # 죽은 프로세스를 무한정 기다리지 않는다
-  sleep 1
-done
-# "$TH/tasty.port" 로 ui.screenshot 호출 (TASTY_HOME 루트라 -debug 접미사 없음)
-kill "$MY_APP"; rm -rf "${TH:?}"                   # 정리 — 저장한 PID 로만
-```
+격리 홈과 전용 디스플레이는 OS 열기를 격리하지 않는다. TASTY_DEBUG_OS_OPEN_LOG와
+가짜 브라우저 PATH/BROWSER 설정도 같은 문서에 따라 적용한다.
+캡처 IPC는 그 검증 홈의 tasty.port로 보낸다.
 
-**격리 홈은 OS 열기(브라우저 · 파일 관리자)를 격리하지 않는다** — 위 `TASTY_DEBUG_OS_OPEN_LOG` 가 tasty 자신의 열기를 기록으로 바꾸고, PTY 셸·plugin 이 스스로 여는 것은 가짜 브라우저 `PATH`/`BROWSER` 로 막는다. 절차 전체는 [self-verification](../dev-guide/self-verification.md) "격리 홈도 전용 디스플레이도 OS 열기를 격리하지 않는다".
+격리 CLI는 바깥의 `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`을 제거하고 실행한다. 외부 토큰은 격리 인스턴스에 등록되지 않아 permission_denied가 발생하며, readiness 검사에서는 기동 실패처럼 보일 수 있다. 연결한 절차처럼 launcher와 CLI 모두 환경을 분리한다. 세션 토큰이 없는 로컬 CLI는 local caller로 접속한다.
 
-격리 CLI는 바깥의 `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`을 제거하고 실행한다. 외부 토큰은 격리 인스턴스에 등록되지 않아 permission_denied가 발생하며, readiness 검사에서는 기동 실패처럼 보일 수 있다. 위 예제처럼 launcher와 CLI 모두 환경을 분리한다. 세션 토큰이 없는 로컬 CLI는 local caller로 접속한다.
-
-직접 시작하면서 저장한 PID만 종료한다. 이름이나 명령줄 패턴으로 찾은 프로세스를 한꺼번에 종료하지 않는다. 정리할 디렉터리도 이번 검증에서 만든 경로인지 확인하고 `${TH:?}`처럼 빈 값이 전달되지 않게 한다.
+직접 시작하면서 저장한 PID만 종료한다. 이름이나 명령줄 패턴으로 찾은 프로세스를 한꺼번에 종료하지 않는다. 정리할 디렉터리도 이번 검증에서 만든 경로인지 확인하고 `${VERIFY_HOME:?}`처럼 빈 값이 전달되지 않게 한다.
 
 PID는 실행 직후 기록한다. 기록을 놓쳤다면 이번 실행 로그에서 PID를 확인한 뒤 Linux의 `/proc/<pid>/environ`에서 `TASTY_HOME` 값만 읽어 격리 홈과 대조한다. 환경 전체를 출력하지 않는다. 실행 파일과 실행 기록까지 확인해 이번 세션이 직접 시작한 인스턴스임을 알 수 있을 때만 종료 대상으로 삼는다.
 
