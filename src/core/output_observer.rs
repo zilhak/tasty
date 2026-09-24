@@ -908,7 +908,7 @@ mod tests {
         );
     }
 
-    /// 삭제가 성공하는 저장소에서 최근 N건을 남기는지 본다. 같은 밀리초의 키 충돌도 검출한다.
+    /// 삭제가 성공하는 저장소에서 최근 N건을 남기는지 본다.
     #[test]
     fn the_sink_keeps_the_latest_records_even_within_one_millisecond() {
         let memory = mem_store();

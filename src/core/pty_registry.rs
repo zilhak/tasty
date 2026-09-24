@@ -1,27 +1,6 @@
-//! 호스트 headless PTY registry (`pty.*` primitive — Registry + IO. ADR-0013 ·
-//! features/headless-pty 참고).
-//!
-//! 에이전트가 Surface(Tab) 없이 백그라운드에서 굴리는 **headless PTY** 의 메타데이터와
-//! 실제 종료코드(exit-code)를 호스트가 단일 SoT 로 보관한다. `child_terminal.rs` 의
-//! [`ChildTerminalRegistry`](crate::core::child_terminal::ChildTerminalRegistry) 와
-//! 병렬 구조지만 역할이 다르다:
-//!
-//! - `child_terminal`: `terminal.spawn` 으로 만든 **자식 터미널 surface** 의 parent/index/
-//!   idle 매핑 (ADR-0021 occupancy, GUI 에 보이는 장수명 child-agent). Surface 가 있다.
-//! - `pty_registry`(본 모듈): Surface 가 아예 없는 1 회성 자동화 PTY. `child.wait()` 로
-//!   **진짜 exit-code** 를 잡고, GUI 안전망(닫기 버튼)이 없으므로 **동시 개수 상한 +
-//!   idle TTL** 로 좀비 누적을 스스로 막는다.
-//!
-//! **경계 (레지스트리 파편화 방지)**: `session.rs` 의 `SessionStore`(권한 토큰),
-//! `runner_host.rs` 의 `shell_children`(DAG 러너 subprocess), `child_terminal.rs`(자식
-//! 터미널 surface) 와 모두 다른 서브시스템이며 통합 대상이 아니다.
-//!
-//! host-IPC-free — 단위 테스트 가능. 시간 의존 연산([`register`](PtyRegistry::register)/
-//! [`touch`](PtyRegistry::touch)/[`sweep_idle`](PtyRegistry::sweep_idle))은 `now: Instant`
-//! 를 주입받아 테스트가 5 분 경과를 sleep 없이 재현한다.
-//!
-//! **비영속**: headless PTY 자식 프로세스는 호스트와 수명을 같이하므로(재부팅 후 살아있는
-//! PTY 는 없다) `child_terminal` 과 달리 JSON 영속화하지 않는다.
+//! surface가 없는 headless PTY의 메타데이터와 watcher가 보고한 결과를 보관한다.
+//! 실제 Terminal은 TerminalStore에 있으며 등록 개수 제한과 유휴 정리는 이 레지스트리가 맡는다.
+//! 세션 권한·task runner·자식 surface 목록과는 별개이며 재시작 뒤 복원하지 않는다.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
@@ -29,53 +8,25 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-/// 동시 headless PTY 개수 기본 상한 (사용자 확정, 2026-07-14). `rate_limit.rs` 철학대로
-/// 코드에 기본값을 박아두되 [`PtyRegistry::with_limits`] 로 override 가능하다.
 pub const DEFAULT_MAX_CONCURRENT: usize = 8;
 
-/// idle(무 IO 활동) 상태가 이 시간을 넘으면 [`sweep_idle`](PtyRegistry::sweep_idle) 이
-/// 정리 대상으로 반환한다. 기본 5 분 (사용자 확정, 2026-07-14).
+/// 마지막 활동에서 이 시간 이상 지난 항목을 sweep_idle이 반환한다.
 pub const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(300);
 
-/// PTY id 시작값. u32 키스페이스를 둘로 가르는 경계다 — `[1, PTY_ID_BASE)` 는 surface id
-/// 공간, `[PTY_ID_BASE, u32::MAX]` 는 PTY id 공간. headless `Terminal` 이 surface id 와 같은
-/// `TerminalStore` 에 재사용 등록돼도 실 surface id 와 겹치지 않게 하는 근거다.
-///
-/// **이 disjoint 는 상수 하나로 저절로 성립하지 않는다 — 세 방어가 강제한다**
-/// (`docs/adr/0017-workspace-identity-and-focus.md`):
-///
-/// 1. **호스트 내부 쓰기 방어** — OSC 133 명령 인덱싱
-///    ([`CommandIndex::on_boundary`](crate::core::command_index::CommandIndex::on_boundary))은
-///    `TerminalStore` 키를 그대로 surface id 로 받는데, headless PTY 의 `Terminal` 은 그
-///    store 에 pty id 로 등록돼 있다. 이 값 이상으로 들어온 boundary 는 인덱싱하지 않는다 —
-///    하면 `Scope::Surface(pty id)` 가 memory.db 에 심긴다.
-/// 2. **floor 시딩 방어** — 복원 직전 surface 카운터 floor 를 memory.db 에서 시딩할 때
-///    ([`seed_surface_id_floor`](crate::core::impl_workspace::seed_surface_id_floor)) PTY
-///    공간을 침범한 `Scope::Surface` 는 floor 산정에서 제외하고 그 자리에서 purge 한다.
-///    이것이 없으면 오염된 scope 하나가 카운터를 영구히 PTY 공간으로 밀어 올린다(비가역
-///    래칫).
-/// 3. **입력 방어** — IPC 가 `surface_id` 파라미터 / `scope=surface:<id>` 로 이 값 이상을
-///    받으면 거부한다([`is_surface_id_space`]).
-///
-/// 방어가 없던 시절 실사용 인스턴스의 surface id 가 실제로 2^31 을 넘긴 사례가 있으므로,
-/// "surface id 가 2^31 까지 자랄 일은 없다" 는 가정이 아니라 위 세 방어의 **결과** 다.
+/// surface와 PTY가 같은 TerminalStore를 쓰므로 PTY 카운터를 이 경계에서 시작한다.
+/// IPC 입력·메타데이터·복원 floor도 같은 경계를 사용한다. 카운터 overflow나 surface 범위 소진을 막는 상수는 아니다.
 pub const PTY_ID_BASE: u32 = 0x8000_0000;
 
-/// `id` 가 surface id 공간(`< PTY_ID_BASE`)에 속하는가. surface id 를 받는 모든 경계
-/// (IPC 파라미터 검증, memory scope 검증, 카운터 floor 시딩)가 이 술어 하나를 공유해
-/// 경계값 해석이 갈리지 않게 한다.
+/// ID가 PTY 경계 아래인지 본다. 0이나 실제 존재 여부는 별도로 확인해야 한다.
 pub const fn is_surface_id_space(id: u32) -> bool {
     id < PTY_ID_BASE
 }
 
-/// headless PTY 자식의 실제 종료 결과. `runner_host.rs` 의
-/// `shell_outcome_from_status(pid, code, success)` 와 동형(pid 는 registry 가 이미 id 로
-/// 귀속하므로 생략).
+/// watcher의 wait_fn이 반환한 결과. 실제 child.wait 오류도 호출자가 None·false로 전달할 수 있다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PtyExit {
-    /// OS exit code. 시그널 종료 등 code 가 없는 경우 `None`.
+    /// 종료 코드를 얻지 못했으면 None이다.
     pub code: Option<i32>,
-    /// `ExitStatus::success()` — code == 0.
     pub success: bool,
 }
 
@@ -85,10 +36,8 @@ impl PtyExit {
     }
 }
 
-/// [`PtyRegistry::register`] 실패 사유.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PtySpawnError {
-    /// 동시 개수 상한 초과. spawn 요청을 실패시켜야 하며 panic 하지 않는다.
     LimitReached { current: usize, max: usize },
 }
 
@@ -105,27 +54,18 @@ impl std::fmt::Display for PtySpawnError {
 
 impl std::error::Error for PtySpawnError {}
 
-/// exit-watcher 가 어디까지 갔는지. **cell 이 안 찬 이유를 가르는 값**이다.
-///
-/// 왜 필요한가: 대기가 상한을 다 쓰면 `exit` 는 `None` 하나만 낸다. 그 `None` 은 두 개의
-/// 다른 사건을 같은 얼굴로 낸다 — 자식이 안 죽어서 `wait()` 가 아직 안 돌아온 것과,
-/// 자식은 죽었는데 우리 쪽이 그것을 잡을 자리에 애초에 못 간 것(스레드 생성 실패,
-/// 스케줄 못 받음). 뒤쪽은 지금까지 **어디에도 안 보였다**. 위상은 그 둘을 가른다.
-///
-/// **테스트 전용**(`#[cfg(test)]`) — 이 값을 읽는 자리가 실패 갈래 진단뿐이라 그렇다.
-/// 같은 파일의 [`PtyRegistry::wait_for_exit`] 와 같은 정책이다: 프로덕션 소비자가 생기면
-/// 그때 게이트를 벗긴다. **찍는 쪽은 게이트하지 않는다** — 두 빌드가 다른 코드를 돌면
-/// 재현이 갈린다. 원자적 store 한 번이라 비용도 그 자리에서 끝난다.
+/// watcher가 마지막으로 기록한 진행 상태. 검사 진단용이며 자식 프로세스의 생사를 직접 측정하지 않는다.
+/// 상태 기록은 제품 빌드에서도 하고 읽는 API만 test 전용이다.
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WatchPhase {
-    /// watcher 를 못 걸었다 — cell 은 영영 안 찬다. 자식의 생사와 무관하게 우리 쪽 사건이다.
+    /// 아직 등록하지 않았거나 마지막 스레드 생성 시도가 실패했다.
     NotAttached,
-    /// 스레드는 떴는데 아직 `wait_fn` 에 들어가지 않았다(스케줄 못 받음).
+    /// 스레드 생성 시도를 시작했으며 wait_fn 진입 표시는 아직 관측하지 못했다.
     Spawned,
-    /// `wait_fn` 에 들어가 아직 안 돌아왔다 — **자식이 안 죽었다**는 뜻이다.
+    /// wait_fn 호출 직전 기록한다. 결과 게시를 위한 락 대기 중에도 이 상태일 수 있다.
     Waiting,
-    /// `wait_fn` 이 돌아와 결과를 채웠다.
+    /// wait_fn 결과를 게시하고 대기자에게 알린 뒤 기록한다.
     Reaped,
 }
 
@@ -141,51 +81,37 @@ impl WatchPhase {
     }
 }
 
-/// [`WatchPhase`] 의 원시 표현 — watcher 스레드와 공유하는 칸에 담기는 값.
 const PHASE_NOT_ATTACHED: u8 = 0;
 const PHASE_SPAWNED: u8 = 1;
 const PHASE_WAITING: u8 = 2;
 const PHASE_REAPED: u8 = 3;
 
-/// headless PTY 하나의 메타데이터 + exit-code 캡처 cell. `Terminal` 인스턴스 자체는
-/// 담지 않는다 — 18-b 에서 동일 id 로 `engine.terminals`(`TerminalStore`)가 보관한다.
+/// PTY 메타데이터와 결과 저장 공간. Terminal 인스턴스는 같은 ID로 별도 store가 보관한다.
 pub struct PtyEntry {
     pub id: u32,
-    /// AgentId — cap/telemetry 귀속용(위조 가능한 잠정 모델, docs/features/telemetry/index.md 의 "AgentId — agent 식별").
+    /// 통계에 사용할 요청자의 AgentId. 이 문자열 자체가 인증된 신원을 증명하지는 않는다.
     pub owner_agent_id: String,
     pub cwd: Option<String>,
     pub command: Vec<String>,
-    /// 생성 시각(monotonic). age 계산·정렬용.
     created_at: Instant,
-    /// 마지막 IO 활동 시각(monotonic). idle TTL 판정 기준 — read/write 시 `touch`.
+    /// touch가 기록한 마지막 활동 시각. idle TTL의 기준이다.
     last_activity: Instant,
-    /// watcher-thread 가 `child.wait()` 완료 시 채우는 cell(`runner_host.rs` 패턴 이식).
-    /// `Condvar` 를 짝지어, cell 을 채운 watcher 가 대기자를 깨운다 — 대기자는 고정 간격
-    /// 폴링(부하에 비례해 깨지는 형태 C) 대신 종료 즉시 반환한다([`wait_for_exit`]).
+    /// watcher가 결과를 저장하고 Condvar로 알린다. 제품 IPC는 대기하지 않고 snapshot을 읽는다.
     exit_result: Arc<(Mutex<Option<PtyExit>>, Condvar)>,
-    /// exit watcher 스레드 핸들. 살려두기만 하면 되므로 join 하지 않는다(detached).
+    /// 엔트리를 제거해 핸들이 drop돼도 watcher 스레드는 계속 실행된다. 여기서는 join하지 않는다.
     _watcher: Option<JoinHandle<()>>,
-    /// watcher 가 남기는 마지막 관측([`WatchPhase`]). 스레드와 공유한다.
     watch_phase: Arc<AtomicU8>,
 }
 
-/// exit cell 의 poison 을 보고했는가(첫 1 회만).
-///
-/// cell 은 PTY 엔트리마다 하나씩이지만 보고는 클래스 단위로 한 번이면 된다 — poison 은
-/// sticky 라 한 번 걸린 프로세스에서는 이후 모든 엔트리가 같은 경로를 탄다.
+/// 모든 exit cell이 최초 poison 보고 플래그를 공유한다. 개별 cell의 poison 상태까지 공유하는 것은 아니다.
 static EXIT_CELL_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// exit cell 락 이름(로그에 나가는 값).
 const EXIT_CELL_WHAT: &str = "pty exit cell";
 
 impl PtyEntry {
-    /// 캡처된 종료 결과(있으면). watcher 가 아직 안 채웠으면 `None`(=실행 중).
-    ///
-    /// poison 은 복구한다. 임계구역은 `Option<PtyExit>` 한 칸을 읽고 쓰는 것뿐이라
-    /// 패닉이 나도 불변식이 성립하고, 여기서 `None` 으로 조용히 빠지면 **이미 죽은 자식이
-    /// 영원히 실행 중으로 보인다**(`has_exited` 가 계속 false) — 관측 지점 없이 상태가
-    /// 굳는다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
+    /// 게시된 결과를 읽는다. None은 결과 미관측이며 자식이 실행 중이라는 보장은 아니다.
+    /// 임계구역은 Option<PtyExit> 읽기·쓰기라 poison 뒤에도 값을 복구한다. 기본 None으로 덮지 않는다.
     pub fn exit(&self) -> Option<PtyExit> {
         crate::poison::recover_mutex(
             self.exit_result.0.lock(),
@@ -195,19 +121,17 @@ impl PtyEntry {
         .clone()
     }
 
-    /// 자식이 종료돼 exit-code 가 잡혔는가.
+    /// 결과가 게시됐는지 확인한다. 호출자의 wait 오류 결과도 포함될 수 있다.
     pub fn has_exited(&self) -> bool {
         self.exit().is_some()
     }
 
-    /// exit-watcher 의 마지막 관측. 실패 갈래 진단에서 `exit() == None` 의 이유를 가른다.
     #[cfg(test)]
     pub fn watch_phase(&self) -> WatchPhase {
         WatchPhase::from_raw(self.watch_phase.load(Ordering::Acquire))
     }
 
-    // 이유: 상태바/진단 노출용 introspection getter — 18-b/18-c 소비 시점까지 production
-    // 호출자가 없다(현재는 단위 테스트에서만 사용).
+    // 이유: 생성 시각을 확인하는 검사용 접근자다.
     #[allow(dead_code)]
     pub fn created_at(&self) -> Instant {
         self.created_at
@@ -219,7 +143,6 @@ impl PtyEntry {
     }
 }
 
-/// headless PTY spawn 시 registry 에 넘기는 메타데이터.
 #[derive(Debug, Clone)]
 pub struct PtySpawnSpec {
     pub owner_agent_id: String,
@@ -227,14 +150,10 @@ pub struct PtySpawnSpec {
     pub command: Vec<String>,
 }
 
-/// headless PTY 메타데이터 registry. 동시 개수 상한 + idle TTL 로 좀비 누적을 막는다.
+/// 등록된 PTY 항목을 관리한다. 실제 프로세스 종료와 Terminal store 정리는 호출자가 맡는다.
 pub struct PtyRegistry {
     entries: HashMap<u32, PtyEntry>,
-    /// Surface id 와 disjoint 한 별도 카운터([`PTY_ID_BASE`] 부터).
-    ///
-    /// **engine 들이 이 Arc 를 공유한다.** registry 마다 따로 세면 두 창이 같은 pty id 를
-    /// 발급하고, 라우팅은 그 id 를 가진 engine 을 **먼저 찾히는 순서로** 고르므로 나중
-    /// 것은 어떤 요청으로도 못 닿는다(`IdGenerator` doc 의 "글로벌 유니크").
+    /// engine이 같은 발급기를 사용해 PTY ID가 중복되지 않게 한다.
     next_id: std::sync::Arc<AtomicU32>,
     max_concurrent: usize,
     idle_ttl: Duration,
@@ -252,14 +171,12 @@ impl Default for PtyRegistry {
 }
 
 impl PtyRegistry {
-    /// 카운터를 공유하지 않는 독립 registry — **단위 테스트 전용**이다.
-    /// production 은 항상 [`PtyRegistry::with_counter`] 로 engine 간 공유 카운터를 든다.
+    /// 검사에서 사용할 독립 카운터. 제품 engine은 with_counter로 공유 카운터를 넘긴다.
     #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
     pub fn with_counter(next_id: std::sync::Arc<AtomicU32>) -> Self {
         Self {
             next_id,
@@ -267,10 +184,7 @@ impl PtyRegistry {
         }
     }
 
-    /// 상한/TTL override 생성자 — `rate_limit.rs` 철학(기본값은 박되 호출자 지정 가능).
-    // 이유: production 은 항상 `new()`(=`default()`)만 쓴다(`state.rs`) — override 는
-    // 현재 단위 테스트 전용(limit/TTL 경계 시나리오 재현). 설정 노출(18-b/18-c) 전까지
-    // dead_code.
+    /// 검사에서 등록 한도와 TTL 경계를 바꾸기 위한 생성자.
     #[allow(dead_code)]
     pub fn with_limits(max_concurrent: usize, idle_ttl: Duration) -> Self {
         Self {
@@ -280,8 +194,7 @@ impl PtyRegistry {
         }
     }
 
-    // 이유: 상태바/진단 노출용 introspection getter — 18-b/18-c 소비 시점까지 production
-    // 호출자가 없다(현재는 단위 테스트에서만 사용).
+    // 이유: 한도·TTL을 확인하는 검사용 접근자다.
     #[allow(dead_code)]
     pub fn max_concurrent(&self) -> usize {
         self.max_concurrent
@@ -292,8 +205,7 @@ impl PtyRegistry {
         self.idle_ttl
     }
 
-    /// 새 headless PTY 를 등록하고 발급된 id 를 반환한다. 동시 개수가 상한에 도달했으면
-    /// [`PtySpawnError::LimitReached`] 로 **실패**시킨다(panic 하지 않는다).
+    /// 등록 항목 수가 상한이면 거절한다. 이미 결과가 있는 항목도 제거 전까지 이 수에 포함된다.
     pub fn register(&mut self, spec: PtySpawnSpec, now: Instant) -> Result<u32, PtySpawnError> {
         if self.entries.len() >= self.max_concurrent {
             return Err(PtySpawnError::LimitReached {
@@ -319,11 +231,8 @@ impl PtyRegistry {
         Ok(id)
     }
 
-    /// `id` 의 PTY 자식이 종료될 때까지 기다리는 watcher-thread 를 건다. `wait_fn` 은
-    /// 소유한 `portable_pty::Child`(또는 임의의 waitable)를 close-over 해 `child.wait()`
-    /// 로 실제 종료코드를 뽑아 [`PtyExit`] 로 돌려주면 된다 — registry 는 `portable_pty`
-    /// 타입에 직접 의존하지 않는다(closure 로 decouple). 완료 시 결과를 entry 의 cell 에
-    /// 채운다(`runner_host.rs:429-451` 와 동형). 미존재 id 면 `false`.
+    /// wait_fn을 별도 스레드에서 실행하고 반환값을 게시한다. 대상 부재나 스레드 생성 실패면 false다.
+    /// 같은 ID의 중복 watcher 등록이나 wait_fn의 panic은 이 함수에서 막지 않는다.
     pub fn attach_exit_watcher<F>(&mut self, id: u32, wait_fn: F) -> bool
     where
         F: FnOnce() -> PtyExit + Send + 'static,
@@ -333,31 +242,21 @@ impl PtyRegistry {
         };
         let cell = entry.exit_result.clone();
         let phase = entry.watch_phase.clone();
-        // 스레드가 뜨기 **전에** 찍는다 — spawn 이 실패하면 아래에서 되돌린다. 반대로 두면
-        // 스레드가 먼저 달려 위상을 올린 뒤 이 줄이 덮어써 관측이 뒤로 간다.
+        // worker가 먼저 기록한 상태를 덮지 않도록 spawn 시도 전에 표시한다.
         phase.store(PHASE_SPAWNED, Ordering::Release);
         let thread_phase = phase.clone();
         let handle = thread::Builder::new()
             .name(format!("pty-exit-watcher-{id}"))
             .spawn(move || {
-                // wait 에 들어가기 직전에 찍는다 — 이 위상에서 cell 이 비어 있으면
-                // `wait_fn` 이 아직 안 돌아왔다는 뜻이고, 그것이 곧 자식이 안 죽었다는 관측이다.
                 thread_phase.store(PHASE_WAITING, Ordering::Release);
                 let outcome = wait_fn();
-                // 여기서 조용히 버리면 종료 결과가 영영 안 채워져 자식이 계속 실행 중으로
-                // 보인다 — 위 `exit` 와 같은 이유로 복구한다.
+                // poison 때문에 이미 받은 결과를 버리지 않도록 같은 복구 정책을 사용한다.
                 *crate::poison::recover_mutex(
                     cell.0.lock(),
                     EXIT_CELL_WHAT,
                     &EXIT_CELL_POISON_REPORTED,
                 ) = Some(outcome);
-                // cell 을 채운 직후 대기자(`wait_for_exit`)를 깨운다. 깨우는 이 쪽은
-                // 프로덕션 경로(exit-code 캡처 watcher 라 항상 돈다)인데 기다리는 쪽은
-                // `#[cfg(test)]` 뿐이라 비대칭이다 — 의도한 것이다: notify 는 받을 대기자가
-                // 없으면 아무 일도 안 하는 무비용 신호라, non-test 빌드에서 죽은 코드가 아니라
-                // 그냥 아무도 받지 않는 신호일 뿐이다. 대기자가 아직 wait 에 들어가지 않았어도
-                // 신호가 유실되지 않는다 — 대기자는 wait 전에 cell 을 먼저 검사하고, wait 는
-                // 반드시 그 락을 쥔 채 시작하기 때문이다.
+                // 대기자는 락 안에서 값을 확인한 뒤 기다리므로 확인과 wait 사이의 통지 누락을 피한다.
                 cell.1.notify_all();
                 thread_phase.store(PHASE_REAPED, Ordering::Release);
             });
@@ -367,8 +266,6 @@ impl PtyRegistry {
                 true
             }
             Err(e) => {
-                // 위상을 되돌린다 — 스레드가 없으므로 cell 은 영영 안 찬다. 그 사실이
-                // 진단에 남아야 한다(로그만으로는 실패문이 못 본다).
                 phase.store(PHASE_NOT_ATTACHED, Ordering::Release);
                 tracing::warn!("pty exit watcher spawn failed for {id}: {e}");
                 false
@@ -376,21 +273,9 @@ impl PtyRegistry {
         }
     }
 
-    /// `id` 의 자식이 종료될 때까지 블록 대기하고 종료 결과를 반환한다(상한 `timeout`).
-    ///
-    /// exit-watcher 가 cell 을 채우며 보내는 `Condvar` 신호로 깨어나므로, 고정 간격 폴링과
-    /// 달리 러너 부하와 무관하게 **종료 즉시** 반환한다. 이 테스트류가 보증하려는 계약은
-    /// "종료가 온다(그리고 코드가 정확하다)" 이지 "종료가 N 초 안에 온다" 가 아니므로, 시간은
-    /// 사고다 — 고정 마감시각 단정은 부하가 높은 회차에서 확률적으로 깨진다(ADR-0045 고정 시간 대기의 취약성).
-    /// 상한은 그래서 신호가 영영 오지 않을 때만 걸리는 안전망이고, 넉넉히 준다. 상한 안에
-    /// 종료가 안 오면 `None`, 미존재 id 도 `None`.
-    ///
-    /// **테스트 전용**(`#[cfg(test)]`). `pty.wait` IPC 핸들러는 이걸 쓰지 않는다 — 그쪽은
-    /// 즉시 반환해야 IPC 스레드가 막히지 않으므로 [`PtyEntry::exit`] 스냅샷을 읽는다. 즉
-    /// 프로덕션에는 블로킹 대기 소비자가 없다. 이 메서드는 e2e 테스트가 폴링+마감시각 단정
-    /// 대신 종료 이벤트를 기다리게 하려고만 존재하므로 non-test 빌드에서 노출하지 않는다
-    /// (노출하면 dead code 라 이 레포는 error 로 잡는다). 프로덕션 소비자가 생기면 그때
-    /// 게이트를 벗긴다 — "나중에 쓸 것"은 미리 노출할 근거가 아니다.
+    /// 검사에서 결과를 기다린다. IPC pty.wait는 이 함수 대신 exit snapshot을 읽는다.
+    /// 통지나 timeout 뒤 값을 다시 확인한다. None은 미존재 또는 확인 시점까지 결과가 없었다는 뜻이다.
+    /// mutex 획득·재획득과 스케줄 지연까지 timeout으로 제한하지는 않는다.
     #[cfg(test)]
     pub fn wait_for_exit(&self, id: u32, timeout: std::time::Duration) -> Option<PtyExit> {
         let pair = self.entries.get(&id)?.exit_result.clone();
@@ -403,12 +288,10 @@ impl PtyRegistry {
             if remaining.is_zero() {
                 break;
             }
-            // 락을 쥔 채 wait 에 들어간다 — attach 스레드의 notify 가 이 사이에 끼어들어도
-            // 유실되지 않는다. poison 은 값을 잃지 않고 그대로 복구한다(exit cell 은 한 칸뿐).
+            // Condvar가 같은 락을 놓고 기다렸다가 다시 잡은 뒤 값을 확인한다.
             guard = match cvar.wait_timeout(guard, remaining) {
                 Ok((g, _)) => g,
-                // 이 락은 헬퍼 밖(`Condvar::wait_timeout` 재획득)에서 poison 을 만난다 —
-                // `recover_poisoned` 로 같은 exit cell 좌표에 첫-1 회 보고를 모은다.
+                // Condvar 재획득에서 만난 poison도 공용 exit cell 보고 플래그를 쓴다.
                 Err(p) => {
                     crate::poison::recover_poisoned(p, EXIT_CELL_WHAT, &EXIT_CELL_POISON_REPORTED).0
                 }
@@ -417,7 +300,6 @@ impl PtyRegistry {
         guard.clone()
     }
 
-    /// IO 활동(read/write) 발생 시 idle 타이머를 리셋한다. 미존재 id 면 `false`.
     pub fn touch(&mut self, id: u32, now: Instant) -> bool {
         match self.entries.get_mut(&id) {
             Some(e) => {
@@ -436,8 +318,7 @@ impl PtyRegistry {
         self.entries.contains_key(&id)
     }
 
-    // 이유: 단위 테스트 전용 편의 getter — `pty.list`(handle_list, 18-b)는 실제로는
-    // `iter()`를 쓰고 있어 production 호출자가 없다.
+    // 이유: 제품 목록 조회는 iter를 쓰며 이 개수 접근자는 검사에서 사용한다.
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -448,9 +329,7 @@ impl PtyRegistry {
         self.entries.is_empty()
     }
 
-    /// 살아있는 headless PTY id 목록. 순서 미보장.
-    // 이유: 단위 테스트 전용(kill 대상 id 순회) — production 은 `iter()`로 entry 전체를
-    // 순회한다(`handle_list`).
+    /// 등록된 ID 목록. 결과가 게시된 항목도 포함하며 순서는 보장하지 않는다.
     #[allow(dead_code)]
     pub fn ids(&self) -> Vec<u32> {
         self.entries.keys().copied().collect()
@@ -460,22 +339,13 @@ impl PtyRegistry {
         self.entries.values()
     }
 
-    /// 명시적 제거(`pty.kill`/`attach_surface` 승격, 18-b·18-c). 반환된 entry 의 watcher
-    /// 핸들은 drop 되지만 스레드는 detached 라 자식 wait 를 계속 수행한다.
+    /// 메타데이터만 제거한다. 반환된 핸들이 drop돼도 watcher는 wait_fn을 계속 실행한다.
     pub fn remove(&mut self, id: u32) -> Option<PtyEntry> {
         self.entries.remove(&id)
     }
 
-    /// idle 이 TTL 을 초과한 항목을 제거하고 그 id 들을 반환한다(정리된 순서 미보장).
-    /// GUI 안전망이 없는 headless PTY 의 좀비 누적 방지 — 에이전트가 `pty.kill`/`pty.wait`
-    /// 를 잊어도 호스트가 스스로 회수한다. 반환 id 로 호출자가 `TerminalStore` 제거 등
-    /// 나머지 회수를 이어서 처리한다(`CoreState::sweep_idle_ptys`).
-    ///
-    /// **접근 시점 lazy sweep + 주기 타이머 양쪽에서 호출된다.** lazy 만으로는 에이전트가
-    /// 조용해진 순간 — 즉 좀비가 가장 오래 남는 순간 — 에 회수도 함께 멈춘다. 주기
-    /// 경로가 그 사각을 메우고, lazy 는 spawn 상한 판정을 정확히 유지하려고 남는다
-    /// (`docs/adr/0013-terminal-io-and-process-lifetime.md`). 시각을 주입받고
-    /// idempotent 하므로 두 경로가 겹쳐 돌아도 안전하다.
+    /// 마지막 활동에서 TTL 이상 지난 항목을 제거하고 ID를 반환한다. Terminal·waker 정리는 호출자가 맡는다.
+    /// GUI는 주기 타이머에서도 호출한다. 헤드리스에는 이 주기 호출이 없어 새 spawn 때의 정리에 의존한다.
     pub fn sweep_idle(&mut self, now: Instant) -> Vec<u32> {
         let ttl = self.idle_ttl;
         let expired: Vec<u32> = self
@@ -492,8 +362,7 @@ impl PtyRegistry {
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 검사에서 종료 신호·정리의 반환값을 의도적으로 무시하는 경로가 있다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
@@ -520,13 +389,6 @@ mod tests {
         assert!(!e.has_exited());
     }
 
-    /// 카운터를 공유한 두 registry 는 **같은 id 를 두 번 발급하지 않는다.**
-    ///
-    /// 창마다 registry 가 따로이므로 카운터가 registry 소유였을 때는 둘 다
-    /// `PTY_ID_BASE` 부터 셌다. 그러면 두 pty 가 같은 id 를 갖고, 라우팅은 그 id 를 가진
-    /// engine 을 먼저 찾히는 순서로 고르므로 **나중 것은 어떤 요청으로도 못 닿는다** —
-    /// 실측(2026-09-05, 창 둘): 두 창의 pty 가 둘 다 `0x8000_0000` 이었고,
-    /// `output.observe_info {observer_id:1}` 은 포커스와 무관하게 **같은 하나**만 돌려줬다.
     #[test]
     fn registries_sharing_a_counter_never_issue_the_same_id() {
         let shared = std::sync::Arc::new(AtomicU32::new(PTY_ID_BASE));
@@ -541,21 +403,18 @@ mod tests {
         assert_eq!(seen.len(), 6, "공유 카운터인데 id 가 겹쳤다: {seen:?}");
         assert!(seen.iter().all(|id| *id >= PTY_ID_BASE));
 
-        // 대조군 — 카운터를 안 나누면 겹친다. 이 축이 실제로 무엇을 막는지 고정한다.
+        // 독립 카운터는 같은 시작값을 발급하므로 공유 카운터 검사의 반례가 된다.
         let mut c = PtyRegistry::new();
         let mut d = PtyRegistry::new();
         assert_eq!(
             c.register(spec(&["c"]), now).unwrap(),
             d.register(spec(&["d"]), now).unwrap(),
-            "독립 카운터는 같은 값에서 시작한다 — 공유가 필요한 이유가 이것이다"
+            "독립 카운터는 같은 시작 ID를 발급한다"
         );
     }
 
     #[test]
     fn ids_are_disjoint_from_surface_space() {
-        // 발급된 pty id 는 전부 PTY 공간에 있어야 한다. 카운터의 *시작값* 만 보면
-        // "갓 만든 registry" 가정에 기대게 되므로, 연속 발급분 전체를 경계 술어
-        // (`is_surface_id_space`)로 판정한다 — surface 쪽 경계 방어와 같은 술어다.
         let mut reg = PtyRegistry::new();
         let now = Instant::now();
         let a = reg.register(spec(&["a"]), now).unwrap();
@@ -568,14 +427,10 @@ mod tests {
                 "pty id {id} 가 surface id 공간을 침범했다"
             );
         }
-        // 경계값 자체의 소속: PTY_ID_BASE 는 PTY 공간, 그 직전은 surface 공간.
         assert!(!is_surface_id_space(PTY_ID_BASE));
         assert!(is_surface_id_space(PTY_ID_BASE - 1));
     }
 
-    /// surface 카운터 쪽 반대 방향 보장(오염된 memory.db 로도 PTY 공간에 진입하지
-    /// 않는다)은 `impl_workspace.rs` 의 `surface_id_floor_tests` 가 담당한다 —
-    /// 이 disjoint 는 두 테스트가 함께 지킨다.
     #[test]
     fn surface_counter_starts_inside_surface_space() {
         let ids = crate::core::state::IdGenerator::new();
@@ -613,12 +468,10 @@ mod tests {
         let base = Instant::now();
         let id = reg.register(spec(&["sleep"]), base).unwrap();
 
-        // TTL 이내: 정리 안 됨.
         let within = base + Duration::from_secs(299);
         assert!(reg.sweep_idle(within).is_empty());
         assert!(reg.contains(id));
 
-        // TTL 초과: 정리됨.
         let beyond = base + Duration::from_secs(301);
         let removed = reg.sweep_idle(beyond);
         assert_eq!(removed, vec![id]);
@@ -633,16 +486,13 @@ mod tests {
         let base = Instant::now();
         let id = reg.register(spec(&["a"]), base).unwrap();
 
-        // 활동 발생: idle 타이머 리셋.
         let activity = base + Duration::from_secs(250);
         assert!(reg.touch(id, activity));
 
-        // 최초 등록으로부터 301s 지났지만 활동으로부터는 51s 뿐 — 정리 안 됨.
         let now = base + Duration::from_secs(301);
         assert!(reg.sweep_idle(now).is_empty());
         assert!(reg.contains(id));
 
-        // 활동으로부터 TTL 초과 — 정리됨.
         let later = activity + Duration::from_secs(301);
         assert_eq!(reg.sweep_idle(later), vec![id]);
     }
@@ -654,9 +504,7 @@ mod tests {
         let id = reg.register(spec(&["exit-3"]), now).unwrap();
         assert!(!reg.get(id).unwrap().has_exited());
 
-        // 실 프로세스를 spawn 해 non-zero 종료코드를 watcher 스레드가 잡는지 검증한다.
-        // (portable_pty::Child 대신 std::process::Child 로 동일 wait() 계약을 확인 —
-        // registry 는 waitable 종류에 무관하다.)
+        // std::process 자식으로 watcher의 wait 결과 전달을 확인한다. 실제 PTY 생성 검사는 아니다.
         let ok = reg.attach_exit_watcher(id, || {
             #[cfg(windows)]
             let mut child = std::process::Command::new("cmd")
@@ -673,7 +521,6 @@ mod tests {
         });
         assert!(ok);
 
-        // watcher 스레드가 cell 을 채울 때까지 bounded poll(최대 ~3s).
         let mut captured = None;
         for _ in 0..600 {
             if let Some(e) = reg.get(id).unwrap().exit() {
@@ -690,25 +537,19 @@ mod tests {
 
     #[test]
     fn the_watcher_phase_says_why_the_cell_is_still_empty() {
-        // `exit() == None` 은 두 사건을 같은 얼굴로 낸다 — 자식이 안 죽어서 `wait` 가 아직
-        // 안 돌아온 것과, 우리가 잡을 자리에 애초에 못 간 것. 위상이 그 둘을 가르는지 잰다.
         let mut reg = PtyRegistry::new();
         let id = reg.register(spec(&["blocks"]), Instant::now()).unwrap();
 
-        // ① watcher 를 걸기 전 — 안 걸었다.
         assert_eq!(reg.get(id).unwrap().watch_phase(), WatchPhase::NotAttached);
 
-        // ② wait 안에서 신호를 기다리는 watcher. 종료를 흉내내는 것이 아니라 **안 돌아오는
-        //    wait** 를 만든다 — 그것이 macOS 에서 관측된 모양이다.
+        // 신호를 기다리는 wait_fn으로 결과가 아직 게시되지 않은 상태를 만든다.
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         assert!(reg.attach_exit_watcher(id, move || {
-            // 이유: 이 recv 는 신호를 받는 것 자체가 목적이라 결과가 필요 없다. 송신 측이
-            // 먼저 drop 돼 Err 가 와도 wait 를 끝내는 동작은 같다(위상만 재는 자리다).
+            // 이유: 값이 아니라 대기 해제가 목적이므로 채널 종료 오류도 무시한다.
             let _ = release_rx.recv();
             PtyExit::from_status(Some(0), true)
         }));
 
-        // 스레드가 wait 에 들어갈 때까지 bounded poll(최대 ~3s).
         let mut reached = false;
         for _ in 0..600 {
             if reg.get(id).unwrap().watch_phase() == WatchPhase::Waiting {
@@ -717,11 +558,9 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(reached, "watcher 가 wait 에 들어간 것이 위상에 안 남았다");
-        // 그리고 이 위상에서 cell 은 아직 비어 있다 — 이 조합이 "자식이 안 죽었다" 다.
+        assert!(reached, "watcher의 Waiting 상태를 관측하지 못했다");
         assert!(reg.get(id).unwrap().exit().is_none());
 
-        // ③ 풀어 주면 결과가 채워지고 위상이 마지막까지 간다.
         release_tx.send(()).expect("release");
         let mut done = false;
         for _ in 0..600 {
@@ -731,32 +570,25 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(done, "결과를 채운 뒤에도 위상이 안 올라갔다");
+        assert!(done, "결과 게시 뒤 Reaped 상태를 관측하지 못했다");
         assert!(reg.get(id).unwrap().has_exited());
     }
 
-    /// `Reaped` 인데 대기가 `None` 을 낸 조합이 **실제로 날 수 있는가**, 그리고 그때
-    /// 무엇을 봐야 하는가.
-    ///
-    /// 이 갈래는 오래 문장만 있고 표본이 0 이었다. 재 보면 도달 가능하다 — 그런데 그
-    /// 도달 경로가 하나뿐이다: 대기가 상한을 다 써서 마지막 검사를 마친 **뒤에** 자식이
-    /// 끝나는 것. 대기 쪽 결함이 아니다. 아래 [`a_fill_is_never_lost_even_if_the_wakeup_never_comes`]
-    /// 가 그 반대편(대기가 놓치는 경로)이 없다는 것을 같은 크레이트에서 잰다.
+    /// 대기 결과 None을 받은 뒤에도 나중에 결과가 게시될 수 있음을 재현한다.
+    /// 이 한 시나리오가 모든 timeout의 원인을 판별하는 것은 아니다.
     #[test]
     fn the_reaped_but_unseen_branch_is_a_late_child_not_a_missed_wakeup() {
         let mut reg = PtyRegistry::new();
         let id = reg.register(spec(&["late"]), Instant::now()).unwrap();
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         assert!(reg.attach_exit_watcher(id, move || {
-            // 이유: 신호를 받는 것 자체가 목적이라 결과가 필요 없다(위 위상 시험과 같다).
+            // 이유: 값이 아니라 대기 해제가 목적이다.
             let _ = release_rx.recv();
             PtyExit::from_status(Some(0), true)
         }));
 
-        // ① 자식이 아직 안 끝난 채로 예산을 다 쓴다 — 대기는 None 을 낸다.
         assert!(reg.wait_for_exit(id, Duration::from_millis(50)).is_none());
 
-        // ② 예산이 끝난 **뒤에** 자식이 끝난다.
         release_tx.send(()).expect("release");
         let mut done = false;
         for _ in 0..600 {
@@ -766,27 +598,14 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(done, "자식이 끝났는데 위상이 안 올라갔다");
+        assert!(done, "대기 해제 뒤 Reaped 상태를 관측하지 못했다");
 
-        // ③ 그래서 진단이 보는 순간의 상태가 바로 그 조합이다 — 위상 Reaped + cell 참 +
-        //    그런데 대기는 이미 None 을 냈다. 이 조합이 가리키는 것은 늦은 자식이지
-        //    고장난 대기가 아니다.
         assert_eq!(reg.get(id).unwrap().watch_phase(), WatchPhase::Reaped);
         assert!(reg.get(id).unwrap().exit().is_some());
     }
 
-    /// 대기가 park 에 든 사이 cell 이 차면 그것을 놓치는가 — 놓치면 위 갈래의 옛 처방
-    /// ("대기 쪽을 봐라")이 맞는 말이 된다. 안 놓치면 그 처방은 틀린 것이다.
-    ///
-    /// **깨우기가 아예 없어도 안 놓친다** — 이 시험의 이름이 그렇게 적혀 있는 이유다.
-    /// 변이로 쟀다(2026-09-09): watcher 의 `notify_all()` 을 지우고 표본을 3 으로 줄여
-    /// 돌리면 **여전히 초록**이고 벽시계만 15.01 s 로 는다(정상은 0.13 s). 대기가 상한
-    /// 만료로 깬 뒤 cell 을 다시 검사하기 때문이다. 즉 `notify_all` 이 사는 것은 정확성이
-    /// 아니라 **지연**이고, 이 시험이 지키는 것은 그 재검사다.
-    ///
-    /// 통지로 깨어나든 만료로 깨어나든 반환값이 같아, 값 비교만으로 지연 차이를 검사할 수 없다.
-    /// 시간을 검사하려면 부하를 구분할 대조군이 필요하다(ADR-0046). 다만 `wait_for_exit`은
-    /// 테스트 전용이고 이 지연에 의존하는 제품 코드가 없어 별도 시간 검사는 추가하지 않았다.
+    /// 게시된 결과를 반환하는지 반복 확인한다. 통지 지연 자체는 측정하지 않는다.
+    /// 고정 대기 시간 안에 실행될지는 스케줄에 따라 달라지므로 실패만으로 결과 유실을 확정할 수 없다.
     #[test]
     fn a_fill_is_never_lost_even_if_the_wakeup_never_comes() {
         const TRIALS: usize = 100;
@@ -796,16 +615,13 @@ mod tests {
             let id = reg.register(spec(&["parked"]), Instant::now()).unwrap();
             let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
             assert!(reg.attach_exit_watcher(id, move || {
-                // 이유: 위와 같다 — 신호 수신 자체가 목적이다.
+                // 이유: 값이 아니라 대기 해제가 목적이다.
                 let _ = release_rx.recv();
                 PtyExit::from_status(Some(0), true)
             }));
-            // 대기가 park 에 들어갈 즈음 채운다. 예산은 넉넉해, None 이 나오면 그것은
-            // 상한이 아니라 유실이다.
             let releaser = thread::spawn(move || {
                 thread::sleep(Duration::from_millis(1));
-                // 이유: 대기가 이미 끝나 수신 측이 drop 됐으면 Err 가 정상이다 — 이 스레드가
-                // 하려는 일(자식을 끝내는 신호)은 그 경우 이미 필요 없다.
+                // 이유: 대기가 끝나 수신자가 사라졌으면 더 깨울 필요가 없다.
                 let _ = release_tx.send(());
             });
             if reg.wait_for_exit(id, Duration::from_secs(5)).is_none() {
@@ -813,7 +629,10 @@ mod tests {
             }
             releaser.join().expect("releaser");
         }
-        assert_eq!(missed, 0, "{TRIALS} 회 중 {missed} 회를 놓쳤다");
+        assert_eq!(
+            missed, 0,
+            "{TRIALS}회 중 {missed}회에서 대기 시간 안에 결과를 받지 못했다"
+        );
     }
 
     #[test]
@@ -822,11 +641,6 @@ mod tests {
         assert!(!reg.attach_exit_watcher(12345, || PtyExit::from_status(Some(0), true)));
     }
 
-    /// exit cell 이 poison 돼도 읽기·쓰기가 모두 살아남는가.
-    ///
-    /// 조용히 빠지는 구현(`lock().ok()` / `if let Ok`)이면 두 방향 중 하나가 깨진다 —
-    /// 읽기를 버리면 여기서 패닉하고, 쓰기를 버리면 값이 영영 안 채워져 아래 poll 이
-    /// 타임아웃한다. 즉 이 테스트 하나가 두 지점을 같이 고정한다.
     #[test]
     fn exit_cell_survives_a_poisoned_lock() {
         let mut reg = PtyRegistry::new();
@@ -836,7 +650,7 @@ mod tests {
 
         let cell = reg.get(id).expect("entry").exit_result.clone();
         let poisoner = cell.clone();
-        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        // 이유: poison을 만들기 위해 panic한 스레드의 join 오류를 무시한다.
         let _ = thread::spawn(move || {
             let _guard = poisoner.0.lock().expect("fresh lock");
             panic!("poison the exit cell on purpose");
@@ -844,14 +658,12 @@ mod tests {
         .join();
         assert!(
             cell.0.is_poisoned(),
-            "락이 실제로 poison 됐어야 전제가 성립한다"
+            "검사할 exit cell 락이 poison 상태여야 한다"
         );
 
-        // 읽기: 패닉 없이 "아직 안 끝났다" 를 그대로 답한다.
         assert!(reg.get(id).expect("entry").exit().is_none());
         assert!(!reg.get(id).expect("entry").has_exited());
 
-        // 쓰기: watcher 스레드가 poison 된 cell 에도 결과를 채운다.
         assert!(reg.attach_exit_watcher(id, || PtyExit::from_status(Some(7), false)));
         let mut captured = None;
         for _ in 0..600 {

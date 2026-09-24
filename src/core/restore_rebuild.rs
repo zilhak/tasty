@@ -1,12 +1,5 @@
-//! Closed item 복원의 *순수 engine* helper.
-//!
-//! `AppState::restore_closed_item` 의 rebuild_* helper 들이 본 모듈로 모인다.
-//! 모두 `&mut CoreState` 만 받음 (AppState 의존 없음) — Core 도메인의 일부.
-//!
-//! 본 모듈의 함수들은 새 surface_id / tab_id / workspace_id / pane_id 를
-//! `engine.next_ids` 에서 발급받고, PTY 를 spawn 하며, 새 surface tree 를
-//! 구성한다. 호출 측 (state.rs 또는 Core::apply) 은 결과를 받아 적절한
-//! 위치 (pane.tabs / engine.workspaces 등) 에 attach 한다.
+//! 닫힌 항목의 surface·pane을 새 ID로 다시 만든다. 필요한 PTY도 생성한다.
+//! 결과를 트리에 붙이는 일은 호출자가 맡으며 부분 생성 뒤 실패를 되돌리지는 않는다.
 
 use crate::core::CoreState;
 use crate::model::closed_item::*;
@@ -14,16 +7,12 @@ use crate::model::{
     DeferredPlugin, EmptySurface, Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface,
 };
 
-/// rebuild_surface 의 반환 — 단일 surface 인지 layout 인지.
 pub(crate) enum RebuildResult {
-    /// A single surface (Terminal, Markdown, Explorer, etc.)
     Single(Box<dyn Surface>),
-    /// A full layout tree with focused_surface id
     Layout(SurfaceLayout, u32),
 }
 
 impl RebuildResult {
-    /// Convert into a Tab.
     pub(crate) fn into_tab(self, tab_id: u32, name: String) -> Tab {
         match self {
             RebuildResult::Single(surface) => Tab::new_with_surface(tab_id, name, surface),
@@ -59,11 +48,7 @@ pub(crate) fn rebuild_surface(
         }
         ClosedPanel::Generic { kind, snapshot } => {
             let id = engine.next_ids.next_surface();
-            // kind 가 아직 registry 에 없으면(plugin 이 hello 전인 부팅 창) 여기서
-            // None 을 반환해선 안 된다 — 호출자 `rebuild_pane` 의 tab 루프가 `?` 로
-            // 그 pane 의 형제 tab(무고한 terminal 포함)까지 통째로 버린다. 대신
-            // kind/snapshot 을 보존한 deferred placeholder 로 남겨 형제를 살리고,
-            // reify(`reify_displayed_surfaces`)가 kind 등록 후 실제화한다.
+            // 미등록 kind는 원래 정보의 placeholder로 남긴다. None을 반환하면 ? 전파로 형제 tab·pane까지 버릴 수 있다.
             match engine.surface_registry.get_live(&kind) {
                 None => {
                     let ph =
@@ -103,9 +88,7 @@ pub(crate) fn rebuild_surface_node(
         .collect();
     let waker = engine.make_waker(surface_id);
 
-    // PTY 의 첫 입력으로 cd + restore_command 를 합쳐 한 번에 주입한다. shell 이
-    // stdin 을 처음 read 하는 순간 이 바이트가 들어가므로, GUI redraw / busy tick
-    // 등 추가 트리거 없이 spawn 과 동시에 실행된다.
+    // cd와 복원 명령을 초기 입력으로 넘긴다. 자식의 첫 read나 명령 실행 성공을 보장하지는 않는다.
     let mut initial = String::new();
     if let Some(dir) = closed.cwd.as_deref() {
         initial.push_str(&format!("cd {}\r", shell_escape(dir)));
@@ -134,14 +117,7 @@ pub(crate) fn rebuild_surface_node(
     )
     .ok()?;
 
-    // Scrollback is persisted to disk at close time (see `push_closed_item`),
-    // so read it back by reference here. A restore consumes the closed item, so
-    // the backing file is deleted after the one-time read to avoid orphans.
-    //
-    // 삭제는 **읽기에 성공했을 때만** 한다. 예전에는 실패를 빈 값으로 폴백한 뒤 곧바로
-    // 지워서, 일시적 IO 오류나 손상 파일 하나가 사용자 scrollback 의 영구 소실이 됐다.
-    // 못 읽은 파일을 남기면 orphan 이 될 수는 있으나, 그건 부팅 GC 가 정리하는 반면
-    // 지워진 내용은 되돌릴 방법이 없다.
+    // 저장된 scrollback은 읽기에 성공한 뒤에만 삭제한다. 읽지 못한 원본은 이 경로에서 남겨 둔다.
     let scrollback_lines: Vec<tasty_terminal::ScrollbackLine> = match closed.scrollback {
         ClosedScrollback::Persisted(id) => match crate::scrollback_store::read(&id) {
             crate::scrollback_store::ScrollbackRead::Loaded(lines) => {
@@ -151,8 +127,7 @@ pub(crate) fn rebuild_surface_node(
             crate::scrollback_store::ScrollbackRead::Absent => Vec::new(),
             crate::scrollback_store::ScrollbackRead::Unreadable => {
                 tracing::warn!(
-                    "restore: scrollback {id} could not be read — restoring the surface empty \
-                     and keeping the file for recovery"
+                    "restore: scrollback {id} could not be read; continuing without it and leaving the file in place"
                 );
                 Vec::new()
             }
@@ -162,8 +137,6 @@ pub(crate) fn rebuild_surface_node(
     };
     if !scrollback_lines.is_empty() {
         terminal.inject_scrollback(scrollback_lines);
-        // 새 prompt 가 화면 중간부터 시작하도록 visible 상단 절반에 옛
-        // 라인을 미리 그려둔다.
         let prefill = terminal.rows() / 2;
         terminal.prefill_visible_from_scrollback(prefill);
     }
@@ -250,7 +223,7 @@ pub(crate) fn rebuild_pane(engine: &mut CoreState, closed: ClosedPane) -> Option
     })
 }
 
-/// Escape a path for shell use.
+/// 공백·따옴표가 있는 경로를 작은따옴표로 감싼다. 그 밖의 셸 특수문자를 모두 처리하는 함수는 아니다.
 fn shell_escape(path: &std::path::Path) -> String {
     let s = path.to_string_lossy();
     if s.contains(' ') || s.contains('\'') || s.contains('"') {
@@ -265,27 +238,8 @@ mod deferred_plugin_tests {
     use super::*;
     use crate::model::closed_item::{ClosedPane, ClosedPaneNode, ClosedPanel, ClosedTab};
 
-    // ── (2) deadline=0 관점: hello 를 하나도 기다리지 않고(=registry 미충족 시점)
-    // apply 해도 유실이 없다 ──
-    //
-    // deadline(`PLUGIN_WAIT_DEADLINE`)은 App 부팅의 타이밍값이라 그 자체를 test 에
-    // 값으로 주입하려면 App boot 상태 머신 전체를 fixture 로 세워야 한다("fixture
-    // 안 만든다" 와 충돌). deadline 의 유일한 관측 효과는 "apply 시점에 registry 가
-    // 아직 비어 있는가"이고, deadline=0 은 그 극단(hello 를 하나도 안 기다림)이다.
-    // 그래서 registry 미충족 상태에서 apply 경로(`rebuild_pane_node` 중첩)를 직접
-    // 태우는 것이 deadline=0 주입과 동치다 — 아래 테스트의 `engine()` 은 plugin
-    // kind 를 등록하지 않은 채라 그 자체가 "hello 전" 상태다.
-    //
-    // "유실이 없다" 를 세 술어로 나눠 단언한다(어느 전파 홉이 살아있는지 뭉개지
-    // 않게):
-    //   ① 그 노드가 placeholder 로 남는다(kind 보존)
-    //        → missing_plugin_kind_rebuilds_as_deferred_placeholder
-    //   ② 같은 pane 의 다른 tab 이 산다(1차 전파 = rebuild_pane 의 tab 루프 `?`)
-    //        → missing_plugin_kind_preserves_sibling_tabs
-    //   ③ 형제 pane 이 산다(2차 전파 = rebuild_pane_node::Split 의 `?`)
-    //        → deadline_zero_apply_preserves_sibling_panes
-    // 양성 대조: kind 가 등록돼 있으면(=hello 후) 같은 경로가 placeholder 가
-    // 아니라 실제 surface 를 낸다 → registered_kind_restores_real_surface_not_placeholder.
+    // plugin kind가 등록되지 않은 상태에서 placeholder와 형제 보존을 확인한다.
+    // 실제 부팅 deadline이나 plugin 준비 대기 전체를 실행하는 검사는 아니다.
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -304,9 +258,6 @@ mod deferred_plugin_tests {
         }
     }
 
-    // 부팅 창(plugin hello 전이라 registry 에 kind 없음)에서 Generic surface 를
-    // 복원하면 None 이 아니라 kind/snapshot 을 보존한 deferred placeholder 여야 한다.
-    // None 이면 호출자 rebuild_pane 의 `?` 가 형제 tab 을 통째로 버린다.
     #[test]
     fn missing_plugin_kind_rebuilds_as_deferred_placeholder() {
         let mut e = engine();
@@ -329,10 +280,7 @@ mod deferred_plugin_tests {
         }
     }
 
-    // 핵심 회귀(결함 1): 한 pane 에 plugin tab(kind miss)과 다른 tab 이 함께 있을 때,
-    // miss 가 `?` 로 pane 전체를 죽이지 않고 형제 tab 이 보존돼야 한다. 형제가
-    // terminal 이어도 동일 — `?` 는 rebuild_pane 의 tab 루프 하나라 형제 종류와
-    // 무관하다(여기선 PTY spawn 을 피하려 형제도 Generic 으로 둔다).
+    // 실제 PTY 생성 없이 형제 보존을 확인하려고 두 탭 모두 Generic으로 만든다.
     #[test]
     fn missing_plugin_kind_preserves_sibling_tabs() {
         let mut e = engine();
@@ -348,13 +296,10 @@ mod deferred_plugin_tests {
         assert_eq!(
             rebuilt.tabs.len(),
             2,
-            "형제 tab 이 보존되어야 한다 (? 전파가 끊겼는지의 명제)"
+            "미등록 plugin 종류가 있어도 형제 tab을 유지해야 한다"
         );
     }
 
-    // ③ 2차 전파: rebuild_pane_node::Split 에서 한 leaf pane 의 kind miss 가 `?` 로
-    // Split 을 죽이면 형제 pane 이 통째로 사라진다. deadline=0(hello 전) 상태에서도
-    // 형제 pane 이 살아야 한다.
     #[test]
     fn deadline_zero_apply_preserves_sibling_panes() {
         let mut e = engine();
@@ -382,15 +327,14 @@ mod deferred_plugin_tests {
                 );
                 assert!(
                     matches!(*second, PaneNode::Leaf(_)),
-                    "형제 pane 이 보존되어야 한다 (rebuild_pane_node::Split 의 ? 전파가 끊겼는지)"
+                    "미등록 plugin 종류가 있어도 형제 pane을 유지해야 한다"
                 );
             }
             _ => panic!("expected a split node"),
         }
     }
 
-    // 양성 대조용 등록 kind — restore 가 성공(Ok)해 placeholder 가 아닌 실제 surface 를
-    // 낸다(여기선 관측을 위해 deferred 가 아닌 EmptySurface 를 돌려준다).
+    // 등록된 종류는 placeholder가 아닌 생성기 결과를 사용하는지 확인할 대조군이다.
     fn register_ok_kind(e: &mut CoreState, kind: &'static str) {
         use crate::core::surface_registry::{KindSource, RegisteredRendering, SurfaceKindDef};
         use std::collections::HashMap;
@@ -419,9 +363,6 @@ mod deferred_plugin_tests {
         });
     }
 
-    // 양성 대조: kind 가 registry 에 등록돼 있으면(=hello 도착 후) 같은 miss
-    // 경로가 placeholder 가 아니라 restore 가 만든 실제 surface 를 낸다. 이게 없으면
-    // "무조건 placeholder 가 나오는 것 아니냐" 를 배제하지 못한다.
     #[test]
     fn registered_kind_restores_real_surface_not_placeholder() {
         let mut e = engine();
