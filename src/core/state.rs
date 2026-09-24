@@ -448,6 +448,7 @@ pub struct CoreState {
 
 impl CoreState {
     /// 기본 Settings와 in-memory 저장소로 생성한다. 사용자 config.toml의 설정을 읽지 않는다.
+    // 이유: 현재 호출처가 모두 #[cfg(test)]에 있다.
     #[allow(dead_code)]
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =

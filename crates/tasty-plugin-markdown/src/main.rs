@@ -5,7 +5,7 @@
 //! 대용량 파일 확인과 파일 열기 팝업은 egui-mesh로 그린다.
 //! 상세: docs/plugins/markdown/index.md#내부-동작.
 
-// 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
+// 이유: 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod popup;

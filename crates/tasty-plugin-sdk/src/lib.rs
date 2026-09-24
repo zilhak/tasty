@@ -3,7 +3,7 @@
 //! 작성자는 [`Plugin`] trait를 구현하고 [`run`]을 호출하면 된다. SDK가
 //! 호스트와의 핸드셰이크/메시지 루프/JSON 직렬화를 처리한다.
 
-// 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
+// 이유: 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 /// 빌드타임 베이크된 벡터 아이콘을 egui painter 로 그리는 helper. `egui-mesh` feature 를

@@ -1,6 +1,6 @@
 //! 미선택 안내는 placeholder 색, 선택한 값은 select_fg 색으로 그리는지 비교한다.
 
-// 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
+// 이유: 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
 #![allow(clippy::let_underscore_must_use)]
 use egui::{Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;

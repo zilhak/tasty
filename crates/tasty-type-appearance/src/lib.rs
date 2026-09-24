@@ -9,7 +9,7 @@
 //! dangerously_force_*는 외부 픽셀·복원 데이터·테스트 값에만 사용한다.
 //! 자세한 허용 범위는 docs/design/systems/theme.md#색-생성-정책을 따른다.
 
-// 테스트에서 사용하지 않는 반환값을 버리는 것은 허용한다.
+// 이유: 테스트에서 사용하지 않는 반환값을 버리는 것은 허용한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod color;

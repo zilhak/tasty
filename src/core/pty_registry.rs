@@ -185,6 +185,7 @@ impl PtyRegistry {
     }
 
     /// 검사에서 등록 한도와 TTL 경계를 바꾸기 위한 생성자.
+    // 이유: 단위 테스트에서 등록 한도와 TTL 경계를 바꾸는 생성자다.
     #[allow(dead_code)]
     pub fn with_limits(max_concurrent: usize, idle_ttl: Duration) -> Self {
         Self {
@@ -330,6 +331,7 @@ impl PtyRegistry {
     }
 
     /// 등록된 ID 목록. 결과가 게시된 항목도 포함하며 순서는 보장하지 않는다.
+    // 이유: 단위 테스트에서 사용하며 제품 코드는 iter()로 항목을 순회한다.
     #[allow(dead_code)]
     pub fn ids(&self) -> Vec<u32> {
         self.entries.keys().copied().collect()

@@ -14,7 +14,7 @@
 //! 변수의 실제 값은 모르므로 다른 이름으로 홈을 표현하면 오탐할 수 있다.
 //! 필요하면 이름을 HOME_NEARBY에 등록하되, 같은 줄의 다른 로컬 참조까지 면제하지 않도록 한다.
 
-// 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
+// 이유: 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 use std::path::{Path, PathBuf};
 

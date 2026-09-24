@@ -141,10 +141,10 @@ fn widen_and_cap(root: &Path, cap: usize) {
 fn set_cap(root: &Path, cap: usize) {
     let p = root.join("scripts/check-allow-reason.sh");
     let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
-    let capped = text.replace("CAP=173", &format!("CAP={cap}"));
+    let capped = text.replace("CAP=142", &format!("CAP={cap}"));
     assert_ne!(
         capped, text,
-        "게이트에서 CAP=173을 찾지 못했다. 합성 입력에 맞춰 기록값을 바꾸려면 현재 상수 형식을 확인해야 한다."
+        "게이트에서 CAP=142을 찾지 못했다. 합성 입력에 맞춰 기록값을 바꾸려면 현재 상수 형식을 확인해야 한다."
     );
     fs::write(&p, capped).expect("게이트 사본 쓰기");
 }

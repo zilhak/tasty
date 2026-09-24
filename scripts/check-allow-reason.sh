@@ -74,7 +74,7 @@ fi
 REASON_MARKERS='reason:;이유:;complexity-exempt:;SAFETY[[:space:]]*:'
 
 # 실제 잔여 수와 같아야 한다. 감소 시에도 수집 누락인지 확인한 뒤 CAP을 조정한다.
-CAP=173
+CAP=142
 
 # 마스킹 도구가 없거나 실패했으면 원문 수를 CAP과 비교하지 않는다.
 if [ "$DET_ROOT" = "$ROOT" ]; then

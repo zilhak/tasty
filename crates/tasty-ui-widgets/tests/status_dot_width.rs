@@ -1,7 +1,7 @@
 //! 라벨이 없으면 점 크기만, 라벨이 있으면 간격과 글자 폭까지 할당하는지 검사한다.
 //! 배율을 바꿨을 때 점의 크기도 달라지는지 확인한다.
 
-// 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
+// 이유: 테스트에서는 사용하지 않는 반환값을 버리는 것을 허용한다.
 #![allow(clippy::let_underscore_must_use)]
 use egui::{Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;

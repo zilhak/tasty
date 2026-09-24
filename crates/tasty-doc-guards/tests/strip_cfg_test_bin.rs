@@ -3,7 +3,7 @@
 //! SLOC 검사는 문자 중화를 쓰지만 내용 변경을 보는 플러그인 버전 검사는 쓰면 안 된다.
 //! cfg_attr의 test 전용 속성 제거도 실제 바이너리 출력으로 확인한다.
 
-// 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
+// 이유: 테스트의 값 무시를 제품 코드의 lint 목록에서 제외한다.
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::{Path, PathBuf};

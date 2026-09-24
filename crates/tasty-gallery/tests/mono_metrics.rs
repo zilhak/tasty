@@ -1,4 +1,4 @@
-// let _는 글꼴 설치용 egui pass의 FullOutput을 버린다. 이 검사는 렌더링 결과 대신 측정값을 사용한다.
+// 이유: let _는 글꼴 설치용 egui pass의 FullOutput을 버린다. 이 검사는 렌더링 결과 대신 측정값을 사용한다.
 #![allow(clippy::let_underscore_must_use)]
 
 //! 갤러리의 실제 폰트 구성과 배율 1에서 파일 핸들러의 글자 수·시간 열 폭을 검증한다.

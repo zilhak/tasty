@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// 테스트의 임시 파일 정리 실패는 무시한다.
+// 이유: 테스트의 임시 파일 정리 실패는 무시한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 //! 본체와 갤러리에서 공유하는 Theme ↔ egui 어댑터.

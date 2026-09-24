@@ -3,7 +3,7 @@
 //! Codex 기동·훅·설정 설치를 제공한다. 자식 관리는 호스트의 terminal.* IPC에 맡긴다.
 //! spawn/tell은 호스트 응답을 기다리며 이후 상태 변화는 별도 알림 훅으로 받는다.
 
-// 시험의 let _는 제품 코드에서 반환값을 버리는 목록에 포함하지 않는다.
+// 이유: 시험의 let _는 제품 코드에서 반환값을 버리는 목록에 포함하지 않는다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 // New-session commands already use POSIX environment/prompt syntax, including

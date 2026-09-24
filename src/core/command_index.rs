@@ -19,14 +19,14 @@ const COMMAND_HARD_CAP: u64 = 100_000;
 pub enum CommandCapEvent {
     /// 경고 후에도 기록을 계속한다.
     SoftWarn {
-        // 호출자가 surface ID를 이미 알고 있어 현재 읽지 않는다.
+        // 이유: 호출자가 surface ID를 이미 알고 있어 현재 읽지 않는다.
         #[allow(dead_code)]
         surface_id: u32,
         count: u64,
     },
     /// 이후 기록을 중단한다.
     HardBlocked {
-        // 호출자가 surface ID를 이미 알고 있어 현재 읽지 않는다.
+        // 이유: 호출자가 surface ID를 이미 알고 있어 현재 읽지 않는다.
         #[allow(dead_code)]
         surface_id: u32,
     },
