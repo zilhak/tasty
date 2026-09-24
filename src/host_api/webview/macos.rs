@@ -22,16 +22,10 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use super::keys::WebViewKeySink;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
-/// `NavDelegate` 의 ivar — host 와 공유하는 navigation 상태 셀.
 struct NavDelegateIvars {
-    /// 진단 로그가 어느 surface 의 navigation 인지 밝히기 위한 소유 surface ID.
     surface_id: u32,
     nav_state: Rc<Cell<NavState>>,
-    /// decidePolicyForNavigationAction 이 캡처한, 아직 host 에 통지되지 않은 navigation
-    /// 시도 URL 큐(도착 순서 보존). host `sync_webviews` 가 매 프레임
-    /// `take_pending_navigations` 로 비우고 plugin 에 forward — "원격 http(s) 차단"
-    /// (WKContentRuleList, 이 delegate 와 무관하게 독립 동작)과는 별개로 차단 여부와
-    /// 무관하게 모든 navigation 시도마다 쌓인다.
+    /// 차단 여부와 별도로 기록한 탐색 시도 큐.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
 }
 
@@ -48,7 +42,6 @@ define_class!(
 
     unsafe impl NSObjectProtocol for NavDelegate {}
 
-    // WKNavigationDelegate: navigation 생명주기 콜백. start/finish/fail* 만 구현(나머지 optional).
     unsafe impl WKNavigationDelegate for NavDelegate {
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
         fn did_start_provisional(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
@@ -71,7 +64,6 @@ define_class!(
             _navigation: Option<&WKNavigation>,
             error: &NSError,
         ) {
-            // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
             tracing::warn!(
                 "WebView surface {}: WKWebView navigation failed: {}",
                 self.ivars().surface_id,
@@ -95,10 +87,7 @@ define_class!(
             self.ivars().nav_state.set(NavState::Failed);
         }
 
-        /// navigation 시도(사용자 클릭·페이지 이동) URL 캡처용. 차단 여부 판정에는 관여하지
-        /// 않는다 — 원격(http/https) 차단은 `WKContentRuleList`(이 메서드와 완전히 독립,
-        /// `apply_block_state` 참조)가 서브리소스 레벨에서 이미 처리하므로, 여기서는 항상
-        /// `.Allow` 를 돌려준다.
+        /// 탐색 시도를 기록하고 Allow로 응답한다. 원격 차단은 별도 content rule에 맡긴다.
         #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
         fn decide_policy(
             &self,
@@ -116,7 +105,6 @@ define_class!(
                     .and_then(|u| u.absoluteString())
             };
             if let Some(url) = url {
-                // 공개 API 에 사용자 제스처 여부가 없어 늘 false 다(`PendingNavigation` 문서).
                 self.ivars()
                     .pending_navigations
                     .borrow_mut()
@@ -131,8 +119,6 @@ define_class!(
 );
 
 impl NavDelegate {
-    /// main thread 에서 ivar(nav_state 공유 셀 + pending_navigations 큐)를 담아 delegate
-    /// 인스턴스를 만든다.
     fn new(
         mtm: MainThreadMarker,
         surface_id: u32,
@@ -149,7 +135,6 @@ impl NavDelegate {
     }
 }
 
-/// `KeyWebView` 의 ivar — 어느 surface 의 webview 인지 + host 키 브리지.
 struct KeyWebViewIvars {
     surface_id: u32,
     key_bridge: Rc<dyn WebViewKeySink>,
@@ -172,25 +157,8 @@ define_class!(
     unsafe impl NSObjectProtocol for KeyWebView {}
 
     impl KeyWebView {
-        /// Command 조합(= 바인딩 토큰 `alt`)은 AppKit 이 responder chain 을 타고
-        /// key equivalent 로 먼저 묻는다. host 가 가져가면 `true` 를 돌려 페이지가
-        /// 그 키를 보지 못하게 한다.
-        ///
-        /// `performKeyEquivalent:` 는 first responder 와 무관하게 창 전체 뷰 트리로
-        /// 내려오므로, **이 webview 가 실제로 키보드를 쥐고 있을 때만** 가로챈다.
-        /// 그렇지 않으면 터미널 입력 중의 Command 조합까지 이 경로가 먼저 집어가
-        /// winit 경로와 이중으로 디스패치된다. 쥐고 있지 않을 때는 키가 winit 뷰로
-        /// 정상 도달하므로 포워딩이 필요하지도 않다.
-        ///
-        /// **이 본문에서 값을 돌려주는 `return` 을 쓰면 안 된다** — `define_class!` 는
-        /// 본문을 `let __objc2_result = { ...본문... };` 로 감싸 자기가 만든
-        /// `extern "C-unwind"` shim 안에 심고, 그 shim 의 반환 타입은 여기 적힌
-        /// `bool` 이 아니라 변환된 `<bool as ConvertReturn<_>>::Inner` =
-        /// `objc2::runtime::Bool` 이다. 그래서 `return` 은 이 함수가 아니라 shim 을
-        /// 빠져나가며 `Bool` 로 타입 검사돼 macOS 에서만 컴파일이 깨진다(꼬리
-        /// 표현식은 `__objc2_result` 에 묶여 `bool` 로 추론되므로 멀쩡하다 — 한
-        /// 함수 안에서 두 경로의 기대 타입이 다르다). 값은 전부 표현식으로 흘린다.
-        /// `src/source_guards/define_class_return.rs` 의 가드가 이 형태를 전 플랫폼에서 막는다.
+        /// key equivalent는 뷰 전체에 전달될 수 있어 이 WebView가 포커스를 가진 경우만 처리한다.
+        /// define_class가 Bool 반환 shim을 만들므로 return 대신 마지막 bool 표현식으로 값을 돌려준다.
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
             if view_holds_first_responder(self) && self.forward_key_to_host(event) {
@@ -201,7 +169,6 @@ define_class!(
             }
         }
 
-        /// Control/Option 조합은 key equivalent 가 아니라 일반 keyDown 으로 온다.
         #[unsafe(method(keyDown:))]
         fn key_down(&self, event: &NSEvent) {
             if self.forward_key_to_host(event) {
@@ -211,8 +178,7 @@ define_class!(
             unsafe { msg_send![super(self), keyDown: event] }
         }
 
-        /// 클릭은 winit 에 도달하지 않아 `try_click_to_activate` 가 돌지 않는다 —
-        /// 모델 포커스를 여기서 대신 알려준다. 이벤트 자체는 super 로 그대로 넘긴다.
+        /// native 클릭을 host에 알리고 원래 이벤트 처리는 super에 맡긴다.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             let ivars = self.ivars();
@@ -221,9 +187,7 @@ define_class!(
             unsafe { msg_send![super(self), mouseDown: event] }
         }
 
-        /// WKWebView 는 클릭 시 내부 content view 를 first responder 로 만들 수 있어
-        /// `mouseDown:` 가 이 클래스까지 오지 않을 수 있다. 두 경로 모두에서 알리고,
-        /// 연속 중복은 브리지가 접는다.
+        /// 내부 content view가 first responder가 되면 mouseDown이 여기 오지 않을 수 있어 포커스 경로도 알린다.
         #[unsafe(method(becomeFirstResponder))]
         fn become_first_responder(&self) -> bool {
             let ivars = self.ivars();
@@ -235,7 +199,6 @@ define_class!(
 );
 
 impl KeyWebView {
-    /// main thread 에서 ivar 를 담아 WKWebView 지정 초기화자로 인스턴스를 만든다.
     fn new(
         mtm: MainThreadMarker,
         frame: NSRect,
@@ -251,7 +214,6 @@ impl KeyWebView {
         unsafe { msg_send![super(this), initWithFrame: frame, configuration: config] }
     }
 
-    /// 이 키를 host 가 가져갔으면 `true`. press·비repeat 만 올린다.
     fn forward_key_to_host(&self, event: &NSEvent) -> bool {
         if event.isARepeat() {
             return false;
@@ -269,20 +231,13 @@ impl KeyWebView {
     }
 }
 
-/// macOS virtual key code → winit `PhysicalKey`.
-///
-/// `NSEvent.keyCode` 는 레이아웃과 무관한 하드웨어 위치 코드(`kVK_ANSI_*`)이고, winit 의
-/// macOS 경로가 `PhysicalKeyExtScancode::from_scancode` 에 그대로 넣는 값과 같다 —
-/// 그래서 이 백엔드는 winit 키 경로와 같은 `KeyCode` 를 얻는다. 비라틴 레이아웃에서
-/// `charactersIgnoringModifiers` 가 키캡과 다른 문자를 낼 때의 폴백 근거다.
+/// macOS의 레이아웃 독립 keyCode를 winit 물리 키로 변환한다.
 fn macos_keycode_to_physical(key_code: u16) -> winit::keyboard::PhysicalKey {
     use winit::platform::scancode::PhysicalKeyExtScancode;
     winit::keyboard::PhysicalKey::from_scancode(key_code as u32)
 }
 
-/// `view` 자신 또는 그 하위 뷰가 창의 first responder 인지. webview 가 키보드를 실제로
-/// 쥐고 있는지 판정하는 단일 기준 — 키 가로채기 게이트와 포커스 회수 게이트가 같은
-/// 조건을 쓴다.
+/// 자기 뷰 또는 자손이 first responder인지 확인한다. 키 처리와 포커스 반환에 같은 조건을 쓴다.
 fn view_holds_first_responder(view: &NSView) -> bool {
     let Some(window) = view.window() else {
         return false;
@@ -290,43 +245,31 @@ fn view_holds_first_responder(view: &NSView) -> bool {
     let Some(responder) = window.firstResponder() else {
         return false;
     };
-    // WKWebView 는 클릭 시 내부 content view 를 first responder 로 만들므로 자신뿐
-    // 아니라 하위 뷰도 "쥐고 있다" 로 본다(`isDescendantOf:` 는 자기 자신도 true).
     responder
         .downcast_ref::<NSView>()
         .is_some_and(|v| v.isDescendantOf(view))
 }
 
-/// 원격(http/https) 서브리소스 전체를 차단하는 WKContentRuleList JSON. 로컬 file:// 는 통과.
+/// http(s) content-blocker 규칙. 컴파일·설치 전 요청은 이 규칙으로 막지 못한다.
 const REMOTE_BLOCK_RULE_JSON: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
 pub struct PlatformWebView {
     webview: Retained<KeyWebView>,
-    /// 비동기 컴파일된 원격-차단 룰 캐시(완료 전 None). handler 와 공유.
     content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>>,
-    /// 현재 원하는 차단 상태(true=원격 차단, allow_remote=false 대응. 기본 true).
     block_remote: Rc<Cell<bool>>,
-    /// navigation 생명주기 상태(기본 Idle). NavDelegate 콜백이 갱신, host sync_webviews 가
-    /// `nav_state()` 로 read. 콜백이 전부 main thread 발화라 `Rc<Cell>` 로 충분(block_remote 동일).
     nav_state: Rc<Cell<NavState>>,
-    /// decidePolicyForNavigationAction 이 캡처한 navigation 시도 URL 큐. NavDelegate 와
-    /// 공유(Rc) — `take_pending_navigations` 로 host 가 매 프레임 비운다.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
-    /// WKWebView 는 navigationDelegate 를 weak 참조하므로 delegate 를 여기 보관해 생명주기 유지.
+    /// WKWebView의 delegate 참조가 weak이므로 여기서 수명을 유지한다.
     _nav_delegate: Retained<NavDelegate>,
 }
 
-/// 이 백엔드의 실패를 두 종류로 나누는 자리. 기준은
-/// [`super::WebViewCreateError`] 와 같다 — **다음 시도에 달라질 수 있는 입력이 있는가.**
-/// 이 백엔드는 셋 다 `Permanent` 다 — main thread 여부·창 종류는 프로세스가
-/// 사는 동안 안 바뀐다. 그래서 `transient` 헬퍼가 없다.
+/// 이 backend의 생성 실패는 Permanent로 분류해 같은 생성 요청을 재시도하지 않는다.
 fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
     super::WebViewCreateError::Permanent(msg.to_string())
 }
 
 impl PlatformWebView {
-    /// Create a WKWebView as a child of the given window, positioned at `bounds`.
     pub fn new(
         window: &impl HasWindowHandle,
         bounds: WebViewBounds,
@@ -351,7 +294,6 @@ impl PlatformWebView {
         unsafe {
             let config = WKWebViewConfiguration::new(mtm);
 
-            // Set default text encoding to UTF-8 (matches browser behavior for charset-less HTML)
             let prefs = config.preferences();
             let key = NSString::from_str("defaultTextEncodingName");
             let value = NSString::from_str("UTF-8");
@@ -359,13 +301,11 @@ impl PlatformWebView {
 
             let frame = logical_to_nsrect(ns_view, bounds, scale_factor);
 
-            // 키 포워딩·포커스 통지를 위해 WKWebView 서브클래스를 쓴다(위 `KeyWebView`).
             let webview = KeyWebView::new(mtm, frame, &config, surface_id, key_bridge);
 
             ns_view.addSubview(&webview);
 
-            // navigation 생명주기 delegate. start→Loading / finish→Done / fail*→Failed.
-            // WKWebView 가 weak 참조하므로 Retained 를 struct 필드(_nav_delegate)로 보관.
+            // WebKit의 delegate는 weak 참조이므로 struct에도 보관한다.
             let nav_state = Rc::new(Cell::new(NavState::Idle));
             let pending_navigations: Rc<RefCell<Vec<PendingNavigation>>> =
                 Rc::new(RefCell::new(Vec::new()));
@@ -378,8 +318,7 @@ impl PlatformWebView {
             let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
             webview.setNavigationDelegate(Some(nav_proto));
 
-            // 원격-차단 룰을 비동기 컴파일. 기본 차단(block_remote=true) — completion handler 가
-            // 컴파일 완료 시 캐시에 저장하고 현재 상태를 적용한다.
+            // 컴파일 완료 전에는 차단 규칙이 없다. 콜백이 현재 설정에 맞춰 설치한다.
             let content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>> =
                 Rc::new(RefCell::new(None));
             let block_remote = Rc::new(Cell::new(true));
@@ -387,7 +326,6 @@ impl PlatformWebView {
                 let webview_cb = webview.clone();
                 let rule_cb = content_rule_list.clone();
                 let block_cb = block_remote.clone();
-                // completion handler: main thread 에서 컴파일 완료 시 호출(WebKit 보장).
                 let handler =
                     RcBlock::new(move |list: *mut WKContentRuleList, err: *mut NSError| {
                         // SAFETY(외부 unsafe 블록 상속): WebKit 이 main thread 에서 컴파일 완료를
@@ -430,7 +368,6 @@ impl PlatformWebView {
         }
     }
 
-    /// Update the webview position and size.
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
         // SAFETY: main thread에서만 호출 — PlatformWebView는 main thread 객체
         // (Retained<WKWebView>이므로 !Send/!Sync 기본). logical_to_nsrect도 main thread.
@@ -444,21 +381,8 @@ impl PlatformWebView {
         }
     }
 
-    /// 키보드 포커스를 host(winit 뷰)로 되돌린다(overlay 개시 시). 숨기는 것과
-    /// first responder 를 놓는 것은 AppKit 에서도 별개라, 회수하지 않으면 방금 연
-    /// popup 이 키를 못 받는다.
-    ///
-    /// **현재 first responder 가 이 webview(또는 그 하위 뷰)일 때만** 회수하고, 대상은
-    /// `nil` 이 아니라 창의 contentView(= winit 뷰)다. `nil` 을 넘기면 창 자신이 first
-    /// responder 가 되어 winit 뷰가 응답자 체인에서 빠지고 키보드가 통째로 죽는다.
-    /// 조건 게이트가 없으면 다른 뷰가 쥔 포커스까지 빼앗는다 — Linux/Windows 백엔드와
-    /// 같은 규칙이다.
-    ///
-    /// **부를 상대가 없다.** 세 백엔드가 같은 규칙을 각자의 OS API(AppKit first
-    /// responder · GTK · Win32)로 구현하며, 공유할 수 있는 것은 규칙 문장뿐이고
-    /// 코드가 아니다. 세 벌이 조용히 갈라지는 것을 잡는 채널은 없으므로 규칙의
-    /// 정본은 `docs/design/systems/webview.md` 의 "포커스" 절에 둔다 — 여기를 고치면
-    /// 거기도 고친다.
+    /// 이 WebView나 자손이 first responder일 때만 부모 contentView로 돌린다.
+    /// nil로 바꾸면 winit 뷰가 응답자에서 빠질 수 있어 contentView를 명시한다.
     pub fn release_keyboard_focus(&self) {
         let Some(window) = self.webview.window() else {
             return;
@@ -469,45 +393,35 @@ impl PlatformWebView {
         let Some(content) = window.contentView() else {
             return;
         };
-        // `Option<&Retained<NSView>>` 은 `Option<&NSResponder>` 로 자동 강제되지 않는다
-        // (Option 안쪽은 coercion site 가 아니다) — 먼저 참조로 풀어 타입을 맞춘다.
         let content_responder: &NSResponder = &content;
         if !window.makeFirstResponder(Some(content_responder)) {
             tracing::warn!("webview: winit content view 로 first responder 복구 실패");
         }
     }
 
-    /// Show or hide the webview.
     pub fn set_visible(&self, visible: bool) {
         self.webview.setHidden(!visible);
     }
 
-    /// Navigate to a URL (supports file:// for local files).
-    /// For file:// URLs, uses `loadFileURL:allowingReadAccessToURL:` with the
-    /// parent directory as the access scope, so relative resources (CSS, JS,
-    /// images, iframes) in the same directory tree are accessible.
-    /// 현재 navigation 생명주기 상태(NavDelegate 콜백이 갱신).
+    /// delegate 콜백이 기록한 navigation 상태.
     pub fn nav_state(&self) -> NavState {
         self.nav_state.get()
     }
 
-    /// decidePolicyForNavigationAction 이 캡처한 navigation 시도 URL 을 도착 순서대로
-    /// 비워서 반환한다. host `sync_webviews` 가 매 프레임 호출해 plugin 에 forward.
     pub fn take_pending_navigations(&self) -> Vec<PendingNavigation> {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
     pub fn load_url(&self, url: &str) {
-        // 콜백이 늦게 와도 즉시 spinner 가 뜨도록 Loading 선반영.
         self.nav_state.set(NavState::Loading);
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         // URL loading 시퀀스는 한 단위라 분할 시 가독성 저하.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             if let Some(path) = url.strip_prefix("file://") {
-                // Use fileURLWithPath for proper percent-encoding of CJK paths
+                // URL 문자열이 아닌 파일 경로 API로 비ASCII 경로를 전달한다.
                 let file_url = NSURL::fileURLWithPath(&NSString::from_str(path));
-                // Allow read access to parent directory for relative resources
+                // 상대 리소스가 같은 디렉터리 아래를 읽을 수 있도록 부모 경로를 허용한다.
                 let dir_path = std::path::Path::new(path)
                     .parent()
                     .map(|p| p.to_string_lossy().to_string())
@@ -526,7 +440,6 @@ impl PlatformWebView {
         }
     }
 
-    /// Content zoom (1.0 = 100%). WKWebView `pageZoom` 은 텍스트+이미지 전체를 배율 적용한다.
     pub fn set_zoom(&self, factor: f64) {
         // SAFETY: main thread WKWebView property. self 는 main thread 객체(Retained<WKWebView>).
         unsafe {
@@ -534,8 +447,6 @@ impl PlatformWebView {
         }
     }
 
-    /// JavaScript 실행 허용 여부. WKPreferences `javaScriptEnabled` — 다음 네비게이션부터 적용.
-    /// host 는 "Sandbox scripts" on(기본) → `enabled=false`(스크립트 격리), off → `true` 로 건다.
     pub fn set_javascript_enabled(&self, enabled: bool) {
         // SAFETY: main thread. configuration().preferences() 는 main thread KVC 대상.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -546,10 +457,7 @@ impl PlatformWebView {
         }
     }
 
-    /// `prefers-color-scheme` 강제. WKWebView 는 NSView 라 `setAppearance:`
-    /// (NSAppearanceCustomization) 로 effective appearance 를 고정할 수 있고, 웹 콘텐츠의
-    /// `prefers-color-scheme` 미디어쿼리가 이를 따른다. Follow=상속(nil), Light=Aqua,
-    /// Dark=DarkAqua. 적용은 즉시(렌더 갱신).
+    /// Follow는 상속, Light/Dark는 AppKit appearance를 지정한다.
     pub fn set_color_scheme(&self, scheme: super::ColorScheme) {
         // SAFETY: main thread AppKit. self 는 main thread 객체(Retained<WKWebView>),
         // WKWebView : NSView 가 setAppearance: 에 응답한다. appearanceNamed: 와
@@ -565,9 +473,7 @@ impl PlatformWebView {
         }
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. `false`(기본)면 `^https?://` 서브리소스를
-    /// `WKContentRuleList` 로 차단, `true`면 차단 해제. 룰이 아직 비동기 컴파일 중이면
-    /// (`content_rule_list` None) 상태만 기록하고 컴파일 완료 handler 가 적용한다.
+    /// 비동기 규칙이 준비되면 http(s) 차단 여부를 반영한다. 미준비·컴파일 실패 동안의 차단을 보장하지 않는다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
         self.block_remote.set(!allowed);
         apply_block_state(
@@ -577,9 +483,7 @@ impl PlatformWebView {
         );
     }
 
-    /// Load HTML string directly.
     pub fn load_html(&self, html: &str) {
-        // Loading 선반영(load_url 과 동일 — 콜백 지연 대비).
         self.nav_state.set(NavState::Loading);
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         unsafe {
@@ -597,9 +501,7 @@ impl Drop for PlatformWebView {
     }
 }
 
-/// 차단 상태를 webview 의 `userContentController` 에 idempotent 하게 반영한다.
-/// 항상 기존 룰을 모두 제거한 뒤, 차단이면 룰을 다시 추가(중복 add 방지). 룰이 아직
-/// 컴파일되지 않았으면(None) 추가는 생략(완료 handler 가 재적용).
+/// 기존 content rule을 모두 지우고 차단이 켜졌으며 규칙이 준비된 경우 다시 넣는다.
 fn apply_block_state(
     webview: &WKWebView,
     block_remote: bool,
@@ -649,11 +551,7 @@ unsafe fn logical_to_nsrect(parent: &NSView, bounds: WebViewBounds, _scale_facto
     }
 }
 
-/// NSEvent modifier flags → winit `ModifiersState`.
-///
-/// macOS 는 Command 를 winit `SUPER`, Option 을 winit `ALT` 로 싣는다 — 바인딩 토큰
-/// 매핑(`alt`→Command, `option`→Option)은 `binding.rs` 가 그 위에서 처리한다
-/// (`docs/design/policies/key-mapping.md` 의 위치 기반 추상화).
+/// Command는 SUPER, Option은 ALT로 전달한다. 바인딩 토큰의 해석은 공통 matcher가 맡는다.
 fn nsevent_mods_to_winit(
     flags: objc2_app_kit::NSEventModifierFlags,
 ) -> winit::keyboard::ModifiersState {
@@ -679,11 +577,7 @@ fn nsevent_mods_to_winit(
     mods
 }
 
-/// `charactersIgnoringModifiers` 문자열 → winit `Key`.
-///
-/// AppKit 은 화살표·기능키를 유니코드 private-use 영역(`NSUpArrowFunctionKey` 등)으로
-/// 싣는다. `binding.rs` 가 이름으로 아는 named key 집합만 매핑하고 나머지 문자는
-/// `Key::Character` 로 올린다. 매핑 불가면 `None`(페이지가 그대로 갖는다).
+/// AppKit의 private-use named key와 문자를 winit 키로 바꾼다. 빈 문자열은 None이다.
 fn ns_chars_to_winit_key(chars: &str) -> Option<winit::keyboard::Key> {
     use winit::keyboard::{Key, NamedKey};
     let c = chars.chars().next()?;

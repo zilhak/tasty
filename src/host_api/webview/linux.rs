@@ -1,14 +1,7 @@
 //! Linux WebKitGTK wrapper (X11 only).
 //! Reference: wry/src/webkitgtk/mod.rs (MIT license, Tauri)
-//!
-//! Creates an X11 child window inside the parent, then hosts a GTK window
-//! with a WebKitGTK WebView inside it.
 
-// 이유: 이 파일 전체가 FFI 경계라 unsafe op 이 한 블록에 묶이는 것이 구조다 —
-//       raw 포인터·핸들을 넘기는 호출은 그 사이에 안전한 문장을 끼울 자리가 없다.
-//       그래서 자리마다 같은 사유를 반복하는 대신 파일 단위로 면제한다.
-//       ★ 이 파일이 FFI 묶음이 아니게 되면(래퍼가 안전한 타입을 노출하게 되면)
-//         이 줄을 지워라 — 파일 단위 면제는 그 안의 새 위반도 함께 가린다.
+// 이유: native 포인터·핸들 호출을 묶는 FFI 모듈이다. 파일 단위 면제는 새 코드에도 적용되므로 안전 래퍼로 옮기면 범위를 줄여야 한다.
 #![allow(clippy::multiple_unsafe_ops_per_block)]
 
 use std::cell::{Cell, RefCell};
@@ -34,45 +27,21 @@ pub struct PlatformWebView {
     x11_window: std::os::raw::c_ulong,
     xlib: x11_dl::xlib::Xlib,
     x11_display: *mut std::os::raw::c_void,
-    /// `new()`가 이 값을 만든 스레드의 `ThreadId`를 캡처해둔다. raw Xlib 핸들
-    /// (x11_display/x11_window)에 실제로 접근하는 모든 메서드는 진입부에서
-    /// `assert_origin_thread`로 이 값과 현재 스레드를 비교한다. 자연 `!Send`
-    /// (아래 Drop 주석 참조)만으로는 "호출측이 실제로 옮기지 않았다"는 주장을
-    /// 타입 시스템이 강제하지 못하므로, 이 필드가 그 불변식의 런타임 강제 지점이다.
+    /// Xlib 핸들은 생성 스레드에서만 사용한다. 메서드 진입에서 이 ID를 확인한다.
     origin_thread: std::thread::ThreadId,
-    /// 원격(http/https) 차단 여부(기본 true=차단). decide-policy 핸들러가 read.
     block_remote: Rc<Cell<bool>>,
-    /// navigation 생명주기 상태(기본 Idle). load-changed/load-failed 시그널이 갱신,
-    /// host sync_webviews 가 `nav_state()` 로 read. GTK 시그널은 GTK main loop
-    /// (=winit main thread) 발화라 `Rc<Cell>` 로 충분(block_remote 동일).
     nav_state: Rc<Cell<NavState>>,
-    /// decide-policy 가 캡처한, 아직 host 에 통지되지 않은 navigation 시도 URL 큐
-    /// (도착 순서 보존). host `sync_webviews` 가 매 프레임 `take_pending_navigations`
-    /// 로 비우고 plugin 에 `webview.navigation_attempt` 로 forward — "원격 http(s)
-    /// 차단" 판정과 독립적으로 차단 여부와 무관하게 쌓인다.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
-    /// 부모 winit X11 창. `release_keyboard_focus` 가 키보드 포커스를 여기로
-    /// 되돌린다(overlay 가 열려 webview 를 숨길 때).
     parent_x11_window: std::os::raw::c_ulong,
-    /// `x11_window` 을 감싼 foreign GDK 창. `Drop` 이 이 창의 GDK 디스플레이를 꺼내
-    /// 에러 트랩을 걸 때만 쓴다(그 이유는 `Drop` 주석).
-    ///
-    /// **`destroy_notify()` 를 부르지 마라.** "네이티브 창을 남이 파괴했다" 라는 뜻이라
-    /// 여기에 맞아 보이지만, 실측(2026-09-08, 격리 홈)에서는 그 호출이 오히려 죽는 쪽을
-    /// 늘렸다 — webview 탭 둘인 창 닫기가 4 회 중 1 회 사망에서 6 회 중 5 회 사망이 됐다.
+    /// X11 foreign 창의 GDK 참조. Drop 중 GDK 연결의 오류 트랩에도 사용한다.
     gdk_window: gtk::gdk::Window,
-    /// 이 webview 의 user content manager. 원격 서브리소스 차단 필터를 여기에
-    /// 붙였다 뗀다. WebKitGTK 가 안 주면 `None` — 그때는 서브리소스 차단이 없다.
+    /// 없으면 content filter를 붙이지 못한다.
     ucm: Option<UserContentManager>,
-    /// 컴파일이 끝난 원격 차단 필터. 저장이 비동기라 `new()` 직후에는 비어 있고,
-    /// 완료 콜백이 채운다(macOS 의 `content_rule_list` 와 같은 형태).
+    /// 비동기 컴파일 완료 전에는 필터가 없다.
     content_filter: Rc<RefCell<Option<ContentFilter>>>,
 }
 
-/// 컴파일된 content filter 의 소유권. `WebKitUserContentFilter` 는 GObject 가 아니라
-/// ref-count 되는 boxed 타입이고 webkit2gtk 2.0.2 의 안전한 바인딩이 이 타입을
-/// 통째로 건너뛰었다(`user_content_manager.rs` 의 `add_filter` 는 주석 처리돼 있다).
-/// 그래서 소유권을 여기서 직접 진다 — Drop 이 unref 한다.
+/// GObject가 아닌 ref-counted filter의 소유권. 안전 바인딩이 없어 Drop에서 직접 unref한다.
 struct ContentFilter(*mut webkit2gtk::ffi::WebKitUserContentFilter);
 
 impl Drop for ContentFilter {
@@ -83,18 +52,13 @@ impl Drop for ContentFilter {
     }
 }
 
-/// 원격 서브리소스를 막는 content-blocker 규칙. 이 JSON 스키마는 macOS 백엔드가
-/// `WKContentRuleList` 에 넣는 것과 **같다** — 두 플랫폼이 같은 문장을 쓴다.
-/// 근거·대안(왜 `send-request` 도 프록시도 아닌지)·재검토 조건은
-/// `docs/adr/0029-webview-host-integration.md`.
+/// http(s) 리소스를 막는 WebKit content-blocker 규칙.
 const REMOTE_BLOCK_RULES: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
-/// 저장소 안에서 위 규칙을 부르는 이름. `remove_filter_by_id` 가 이 값을 쓴다.
 const REMOTE_BLOCK_FILTER_ID: &str = "tasty-block-remote";
 
-/// 비동기 저장 콜백까지 살아 있어야 하는 것들. `Box::into_raw` 로 넘기고 콜백이
-/// `Box::from_raw` 로 되찾아 떨군다.
+/// 비동기 콜백까지 Box로 보관하고 콜백이 소유권을 회수한다.
 struct FilterSaveState {
     store: *mut webkit2gtk::ffi::WebKitUserContentFilterStore,
     ucm: UserContentManager,
@@ -102,8 +66,6 @@ struct FilterSaveState {
     slot: Rc<RefCell<Option<ContentFilter>>>,
 }
 
-/// content filter 저장소 디렉토리를 만들고 그 경로를 낸다. 못 만들면 사유를 남기고
-/// `None` — 부르는 쪽은 그때 차단 없이 진행한다.
 fn content_filter_store_dir() -> Option<String> {
     let Some(dir) = tasty_utils::path::tasty_home().map(|h| h.join("webkit-content-filters"))
     else {
@@ -120,11 +82,7 @@ fn content_filter_store_dir() -> Option<String> {
     Some(dir.to_string_lossy().into_owned())
 }
 
-/// 원격 차단 필터를 컴파일해 저장하고, 끝나면 차단이 켜져 있을 때 붙인다.
-///
-/// WebKit 은 content filter 를 **디스크 저장소에 컴파일해 두고** 쓴다 — 그래서 이
-/// 경로가 비동기다. 저장소는 tasty 홈 아래에 둔다(같은 규칙을 매번 다시 컴파일하지
-/// 않도록 WebKit 이 알아서 재사용한다).
+/// 디스크 필터 저장소에 비동기 컴파일한다. 완료 전이나 실패 시 서브리소스 차단은 적용되지 않는다.
 fn compile_remote_block_filter(
     ucm: Option<UserContentManager>,
     block_remote: Rc<Cell<bool>>,
@@ -221,14 +179,7 @@ unsafe extern "C" fn remote_block_filter_saved(
     *state.slot.borrow_mut() = Some(filter);
 }
 
-/// 이 백엔드의 실패를 두 종류로 나누는 자리. **분류 근거를 한곳에 모아 둔다** —
-/// 분기마다 흩어 두면 새 분기를 더할 때 무엇을 기준으로 골랐는지가 사라진다.
-///
-/// 기준: **다음 시도에 달라질 수 있는 입력이 있는가.**
-/// - 창 종류(X11/Wayland) · GTK 초기화 · Xlib 적재 · 디스플레이 열기·종류 —
-///   프로세스가 사는 동안 안 바뀐다 ⇒ `Permanent`.
-/// - `XCreateSimpleWindow` 실패(서버 자원 고갈) · GDK 조회가 창을 못 찾음 —
-///   서버 상태라 달라질 수 있다 ⇒ `Transient`.
+/// 창·디스플레이 종류와 라이브러리 초기화는 Permanent, X 창 생성·조회 실패는 Transient로 분류한다.
 fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
     super::WebViewCreateError::Permanent(msg.to_string())
 }
@@ -258,7 +209,6 @@ impl PlatformWebView {
             _ => std::ptr::null_mut(),
         };
 
-        // Initialize GTK if not already initialized
         if !gtk::is_initialized() {
             gtk::init().map_err(|e| perm(format!("GTK init failed: {e}")))?;
         }
@@ -272,7 +222,6 @@ impl PlatformWebView {
         let w = physical.width as u32;
         let h = physical.height as u32;
 
-        // Get X11 display
         let display = if x11_display_ptr.is_null() {
             // SAFETY: XOpenDisplay(null)는 DISPLAY env에서 기본 디스플레이를 연다.
             // 호출 실패 시 null 반환 — 아래 is_null 체크로 처리.
@@ -298,38 +247,25 @@ impl PlatformWebView {
             return Err(transient("XCreateSimpleWindow failed"));
         }
 
-        // SAFETY: 방금 만든 x11_window를 같은 display에 map → sync. 단일 thread, 같은 호출.
-        //
-        // 근거·재검토 조건: docs/adr/0029-webview-host-integration.md
-        // `XFlush` 가 아니라 `XSync` 인 것이 핵심이다 — 아래에서 이 창을 조회하는
-        // 것은 **GDK 자기 연결**이고, 창을 만든 것은 winit 의 연결이다. `XFlush` 는
-        // 소켓에 쓰기만 하고 서버가 처리했는지는 안 기다리므로, 두 연결 사이에
-        // 순서 보장이 없어 GDK 쪽 조회가 생성보다 먼저 처리될 수 있다. 그러면
-        // 서버는 "그런 창 없다" 로 답한다. `XSync` 는 왕복이라 반환 시점에 생성이
-        // **처리 완료**돼 있고, 그 뒤에는 어느 연결이 물어도 창이 보인다.
+        // SAFETY: 같은 생성 스레드에서 유효한 display와 방금 만든 창을 사용한다.
+        // GDK는 다른 연결로 창을 조회하므로 XFlush만으로 부족하다. XSync로 서버의 생성 처리를 기다린다.
         unsafe {
             (xlib.XMapWindow)(display, x11_window);
             (xlib.XSync)(display, 0 /* discard = False */);
         }
 
-        // Create GDK window from X11 window
         let gdk_display = gtk::gdk::Display::default().ok_or_else(|| perm("No GDK display"))?;
 
         let x11_gdk_display: gdkx11::X11Display = gdk_display
             .downcast()
             .map_err(|_| perm("GDK display is not X11"))?;
 
-        // 창이 없으면 NULL 이 온다. 바인딩은 그것을 패닉으로 바꾸므로 쓰지 않는다.
         let gdk_window =
             match crate::platform::x11_gdk_window::foreign_gdk_window(&x11_gdk_display, x11_window)
             {
                 Ok(w) => w,
                 Err(e) => {
-                    // 여기서 그냥 돌아가면 방금 만든 X 창이 주인 없이 남는다. 호출부
-                    // (`create_missing_webviews`)는 webview 가 없는 surface 를 **매 프레임**
-                    // 다시 시도하므로, 정리하지 않으면 실패가 이어지는 동안 창이 쌓인다.
-                    // SAFETY: 이 함수가 방금 같은 display 에 만든 창이고, 아직 누구에게도
-                    // 넘기지 않았다(GDK 래핑이 실패한 자리다). 단일 thread.
+                    // SAFETY: 방금 만든 창의 GDK 래핑이 실패했으므로 넘기지 않은 X 창을 여기서 지운다.
                     unsafe { (xlib.XDestroyWindow)(display, x11_window) };
                     // SAFETY: 위와 같은 유효한 display. 파괴 요청을 서버로 내보낸다 —
                     // 여기서는 왕복이 필요 없다(뒤에서 이 창을 조회하지 않는다).
@@ -338,15 +274,10 @@ impl PlatformWebView {
                 }
             };
 
-        // Create GTK window and bind to the GDK window
         let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);
         let gdk_win_clone = gdk_window.clone();
         gtk_window.connect_realize(move |w| {
-            // realize 됐는데 GDK 창이 없으면 부모 안의 foreign 창으로 바꿔칠 자리가
-            // 없다. 그냥 건너뛰면 WebKit 은 GTK 가 스스로 만든 **별개 toplevel** 에
-            // 그리고, 부모 안에 만들어 map 해둔 X 자식 창은 배경 픽셀(검정)만 남긴다.
-            // navigation 은 그래도 정상 완료하므로 다른 어떤 진단 줄도 남지 않는다 —
-            // 화면만 비어 보이는 상태의 유일한 흔적이 이 줄이다.
+            // foreign 창 연결에 실패하면 별도 GTK 창에 그려질 수 있어 로그로 남긴다.
             if w.window().is_none() {
                 tracing::warn!(
                     "WebView surface {surface_id}: GTK window realized without a GDK window; \
@@ -360,16 +291,10 @@ impl PlatformWebView {
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
         gtk_window.add(&vbox);
 
-        // Create WebView
         let webview = WebView::new();
         vbox.pack_start(&webview, true, true, 0);
 
-        // 원격 콘텐츠 차단(기본 ON). 두 자리에서 막는다 — decide-policy 가 네비게이션을,
-        // content filter 가 페이지 안의 서브리소스를 막는다. 두 자리가 필요한 이유는
-        // decide-policy 가 최상위/프레임 네비게이션과 정책 협의 대상 응답에만 발화하기
-        // 때문이다(실측 2026-09-08: `allow_remote_content=false` 인데 문서 안의 원격
-        // `<img>` 가 그대로 떴다 — macOS 는 `WKContentRuleList`, Windows 는
-        // `WebResourceRequested` 로 이미 서브리소스까지 막고 있어 결론이 갈렸다).
+        // 탐색 정책만으로 서브리소스를 막을 수 없어 content filter도 별도로 설치한다.
         let block_remote = Rc::new(Cell::new(true));
         let pending_navigations = Rc::new(RefCell::new(Vec::new()));
         {
@@ -389,16 +314,12 @@ impl PlatformWebView {
                     }
                     _ => None,
                 };
-                // navigation 시도(사용자 클릭·페이지 이동) 캡처 — Response(서브리소스 정책)
-                // 는 제외, NavigationAction/NewWindowAction 만. 아래 차단 판정과 무관하게
-                // 항상 기록한다("원격 http(s) 차단"과 통지는 독립).
+                // 탐색 시도는 차단 여부와 별개로 기록한다. 응답 정책 이벤트는 제외한다.
                 if matches!(
                     decision_type,
                     PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction
                 ) && let Some(uri) = &uri
                 {
-                    // 엔진이 이 시도를 사용자 제스처로 봤는가 — plugin 이 사용자 조작의 근거로
-                    // 댈 수 있는 유일한 값이다(`PendingNavigation` 문서).
                     let user_gesture = decision
                         .downcast_ref::<NavigationPolicyDecision>()
                         .and_then(|d| d.navigation_action())
@@ -422,9 +343,7 @@ impl PlatformWebView {
             });
         }
 
-        // navigation 생명주기 시그널. load-changed(Started→Loading / Finished→Done) +
-        // load-failed(→Failed). webkit2gtk 는 실패 시 load-failed 다음 load-changed(Finished)
-        // 를 쏠 수 있어, Finished 에서 `!= Failed` 가드로 Failed 를 Done 으로 되돌리지 않는다.
+        // 실패 후 Finished가 와도 Failed를 Done으로 덮지 않는다.
         let nav_state = Rc::new(Cell::new(NavState::Idle));
         {
             let nav = nav_state.clone();
@@ -443,8 +362,7 @@ impl PlatformWebView {
             });
         }
         {
-            // web process 가 죽으면 load-failed 도 load-changed 도 오지 않는다 — nav 는
-            // Loading 에 굳고 reveal 게이트가 영영 안 열린다. 그 사실이 남는 유일한 줄이다.
+            // web process 종료 때는 load-failed가 오지 않을 수 있어 따로 기록한다.
             let nav = nav_state.clone();
             webview.connect_web_process_terminated(move |_wv, reason| {
                 tracing::warn!(
@@ -456,7 +374,6 @@ impl PlatformWebView {
         {
             let nav = nav_state.clone();
             webview.connect_load_failed(move |_wv, _event, failing_uri, error| {
-                // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
                 tracing::warn!(
                     "WebView surface {surface_id}: WebKitGTK load-failed \
                      uri={failing_uri} err={error}"
@@ -466,17 +383,11 @@ impl PlatformWebView {
             });
         }
 
-        // 키 포워딩 + 모델 포커스 동기화. 두 시그널 모두 WebView 위젯에 `after` 없이
-        // 연결하므로 WebKitGTK 의 클래스 핸들러보다 **먼저** 실행된다 — 키는 여기서
-        // 소비 여부가 그 자리에서 정해지고(`Propagation::Stop` 이면 페이지가 못 본다),
-        // 클릭은 항상 `Proceed` 로 흘려 페이지 동작을 건드리지 않는다.
+        // 키는 WebKit 기본 처리 전에 host 정책에 묻고 클릭은 페이지에도 전달한다.
         {
             let bridge = key_bridge.clone();
             webview.connect_key_press_event(move |_wv, ev| {
-                // press 만 온다(release 는 별도 시그널). GDK 는 auto-repeat 도 같은
-                // 시그널로 보내지만 press 이벤트에 repeat 플래그가 없다 — host 단축키는
-                // 모두 edge 동작이라 반복 발화해도 사용자가 키를 누르고 있는 동안의
-                // 의도와 일치한다(터미널 winit 경로도 repeat 를 걸러내지 않는다).
+                // 이 press 신호에는 repeat 플래그가 없어 반복 입력도 host로 전달한다.
                 if ev.is_modifier() {
                     return gtk::glib::Propagation::Proceed;
                 }
@@ -498,16 +409,12 @@ impl PlatformWebView {
         {
             let bridge = key_bridge.clone();
             webview.connect_button_press_event(move |_wv, _ev| {
-                // 클릭은 winit 에 도달하지 않으므로(`try_click_to_activate` 미실행)
-                // host 모델 포커스를 여기서 대신 알려준다. 페이지 동작은 그대로.
                 bridge.note_focus(surface_id);
                 gtk::glib::Propagation::Proceed
             });
         }
 
-        // 서브리소스 차단 필터는 디스크 컴파일이라 비동기다 — 지금 시작하고 완료
-        // 콜백이 붙인다. 그 전에 도착하는 원격 요청은 못 막지만, 문서 로드 자체가
-        // 이 뒤라 실사용에서 열리는 창은 없다(있으면 위 warn 이 남는다).
+        // 필터는 비동기로 붙는다. 그전에 온 원격 요청까지 막는다고 보장하지 않는다.
         let ucm = WebViewExt::user_content_manager(&webview);
         let content_filter: Rc<RefCell<Option<ContentFilter>>> = Rc::new(RefCell::new(None));
         compile_remote_block_filter(ucm.clone(), block_remote.clone(), content_filter.clone());
@@ -531,11 +438,7 @@ impl PlatformWebView {
         })
     }
 
-    /// raw Xlib 핸들(x11_display/x11_window)에 접근하는 모든 메서드가 진입부에서
-    /// 호출한다. `new()`가 캡처한 생성 스레드와 다르면 즉시 panic한다 —
-    /// `XInitThreads` 없이 다른 스레드에서 이 핸들을 건드리면 UB이므로, debug에서만
-    /// 잡으면 release 에서 조용히 UB가 난다. 따라서 `debug_assert!`가 아니라
-    /// `assert!`로 release 빌드에서도 유지한다.
+    /// Xlib 핸들 접근은 생성 스레드에 한정한다. release 빌드에서도 확인한다.
     fn assert_origin_thread(&self) {
         assert_eq!(
             std::thread::current().id(),
@@ -571,15 +474,7 @@ impl PlatformWebView {
 
         self.gtk_window.resize(w.max(1), h.max(1));
 
-        // 위 두 문장은 **담는 창**만 움직인다. 그리는 것은 GTK 의 allocation 이고,
-        // 이 gtk_window 의 GdkWindow 는 realize 때 우리가 만든 X11 자식창으로
-        // 갈아끼운 foreign window 라 GTK 가 그 크기 변화를 스스로 알아내지 못한다 —
-        // allocation 이 realize 시점 값에 얼어붙고 WebKit 이 그 값으로 계속 그린다.
-        // resize() 는 WM 에게 보내는 요청인데 이 자식창은 WM 이 관리하지 않는다.
-        // 그래서 allocation 을 직접 준다. 다른 수단은 측정으로 갈라냈다 —
-        // set_size_request · GdkWindow::resize · register_window + STRUCTURE_MASK 는
-        // 이 상태에서 allocation 을 바꾸지 못했다
-        // (docs/adr/0029-webview-host-integration.md).
+        // foreign X 창의 크기 변경을 GTK가 자동 반영하지 못하므로 allocation도 직접 갱신한다.
         self.gtk_window
             .size_allocate(&gtk::Allocation::new(0, 0, w.max(1), h.max(1)));
     }
@@ -603,18 +498,8 @@ impl PlatformWebView {
         }
     }
 
-    /// 키보드 포커스를 부모 winit 창으로 되돌린다. host 가 egui overlay 를 열어
-    /// webview 를 숨길 때 호출한다 — 숨기는 것(`XUnmapWindow`)과 키보드 포커스를
-    /// 놓는 것은 X11 에서 별개라, 회수하지 않으면 방금 연 popup 이 키를 못 받는다.
-    ///
-    /// **X 입력 포커스가 실제로 이 webview 창 안에 있을 때만** 회수한다. 무조건
-    /// `XSetInputFocus` 를 부르면 IPC 로 popup 을 여는 것만으로 다른 앱이 쥐고 있던
-    /// OS 키보드 포커스를 tasty 가 뺏는다 — 에이전트 행동이 사용자 포커스에 닿는
-    /// 것이라 불가침 원칙 1 위반이다(`docs/identity.md`). 창 자체가 활성인지는
-    /// 호출부(`sync_webviews`)가 `base.focused` 로 한 번 더 건다.
-    ///
-    /// 같은 규칙이 macOS·Windows 백엔드에도 각자의 OS API 로 한 벌씩 있다. 세 벌의
-    /// 정본은 `docs/design/systems/webview.md` 의 "포커스" 절이다.
+    /// 이 WebView 내부에 포커스가 있을 때만 부모 창으로 돌린다.
+    /// 숨기기와 포커스 반환은 별개이며 다른 앱의 포커스를 가져오면 안 된다.
     pub fn release_keyboard_focus(&self) {
         self.assert_origin_thread();
         if !self.x11_focus_is_inside() {
@@ -636,7 +521,6 @@ impl PlatformWebView {
         }
     }
 
-    /// 현재 X 입력 포커스가 이 webview 창 자신이거나 그 하위 창인지.
     fn x11_focus_is_inside(&self) -> bool {
         let mut focus: std::os::raw::c_ulong = 0;
         let mut revert: std::os::raw::c_int = 0;
@@ -645,14 +529,11 @@ impl PlatformWebView {
         unsafe {
             (self.xlib.XGetInputFocus)(self.x11_display as _, &mut focus, &mut revert);
         }
-        // None(0)/PointerRoot(1) 은 특정 창이 아니다 — 회수할 대상이 없다.
         if focus <= 1 {
             return false;
         }
         let mut w = focus;
-        // 부모 체인을 거슬러 올라가며 이 창을 만나는지 본다. WebKit 이 만드는 내부
-        // 창까지 쳐도 깊이는 얕아 상한 32 로 충분하고, 상한이 있어야 서버 상태가
-        // 깨져도 무한 루프가 되지 않는다.
+        // 손상된 부모 관계에서 무한 순회하지 않도록 깊이를 제한한다. 더 깊은 자손은 확인하지 못한다.
         for _ in 0..32 {
             if w == self.x11_window {
                 return true;
@@ -668,7 +549,6 @@ impl PlatformWebView {
         false
     }
 
-    /// `XQueryTree` 로 창의 부모 xid 를 얻는다(실패 시 `None`).
     fn x11_parent_of(&self, window: std::os::raw::c_ulong) -> Option<std::os::raw::c_ulong> {
         let mut root: std::os::raw::c_ulong = 0;
         let mut parent: std::os::raw::c_ulong = 0;
@@ -695,19 +575,15 @@ impl PlatformWebView {
         (ok != 0).then_some(parent)
     }
 
-    /// 현재 navigation 생명주기 상태(load-changed/load-failed 시그널이 갱신).
     pub fn nav_state(&self) -> NavState {
         self.nav_state.get()
     }
 
-    /// decide-policy 가 캡처한 navigation 시도 URL 을 도착 순서대로 비워서 반환한다.
-    /// host `sync_webviews` 가 매 프레임 호출해 plugin 에 forward.
     pub fn take_pending_navigations(&self) -> Vec<PendingNavigation> {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
     pub fn load_url(&self, url: &str) {
-        // 콜백이 늦게 와도 즉시 spinner 가 뜨도록 Loading 선반영.
         self.nav_state.set(NavState::Loading);
         self.webview.load_uri(url);
     }
@@ -717,38 +593,30 @@ impl PlatformWebView {
         self.webview.load_html(html, None);
     }
 
-    /// Content zoom (1.0 = 100%). WebKitGTK `WebView::zoom_level`.
     pub fn set_zoom(&self, factor: f64) {
         self.webview.set_zoom_level(factor);
     }
 
-    /// JavaScript 실행 허용 여부. WebKitGTK `WebKitSettings::enable_javascript` — 다음
-    /// 네비게이션부터 적용. host 는 "Sandbox scripts" on(기본) → `enabled=false`.
     pub fn set_javascript_enabled(&self, enabled: bool) {
         if let Some(settings) = WebViewExt::settings(&self.webview) {
             settings.set_enable_javascript(enabled);
         }
     }
 
-    /// `prefers-color-scheme` 강제. WebKitGTK 는 깔끔한 단일 toggle 이 없어 현재 no-op —
-    /// 후속. `scheme` 만 로깅.
+    /// 현재 Linux에서는 적용하지 않고 로그만 남긴다.
     pub fn set_color_scheme(&self, scheme: super::ColorScheme) {
-        tracing::debug!("set_color_scheme({scheme:?}) — Linux WebKitGTK no-op (후속)");
+        tracing::debug!("set_color_scheme({scheme:?}) is not implemented for Linux WebKitGTK");
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. `new()` 가 건 두 핸들러가 이 플래그를 read 한다 —
-    /// decide-policy 는 원격 URI navigation/response 를 무시하고, `send-request` 는 원격
-    /// 서브리소스 요청을 취소한다. 여기서는 플래그만 갱신(다음 요청부터 반영).
+    /// 탐색 정책과 content filter에 차단 상태를 적용한다. 필터 준비 전·준비 실패 시 적용 범위가 다르다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
         self.block_remote.set(!allowed);
         self.apply_remote_block_filter();
         tracing::debug!("Linux WebKitGTK set_remote_content_allowed({allowed})");
     }
 
-    /// 차단 상태를 user content manager 에 idempotent 하게 반영한다. 항상 먼저 지운
-    /// 뒤 차단이면 다시 붙인다(중복 add 방지) — macOS 의 `apply_block_state` 와 같은
-    /// 형태다. 필터가 아직 컴파일 중이면(`None`) 붙일 것이 없고, 완료 콜백이 그때의
-    /// 플래그를 다시 읽어 적용한다.
+    /// 중복 설치를 피하려고 기존 ID의 필터를 제거한 뒤 필요하면 다시 붙인다.
+    /// 컴파일 중이면 완료 콜백이 그때의 상태를 확인한다.
     fn apply_remote_block_filter(&self) {
         use gtk::glib::translate::ToGlibPtr;
 
@@ -771,59 +639,28 @@ impl PlatformWebView {
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
         self.assert_origin_thread();
-        // 아래 순서를 지켜도 GDK 가 자기 연결에서 내는 요청까지 우리가 다 통제하지는
-        // 못한다 — 소유자가 둘인 창이라 남는 경합이 있다. 그래서 정리하는 동안만
-        // GDK 의 에러 트랩을 건다. 트랩은 abort 를 **값으로 바꾼다**: 트랩이 걸린
-        // 동안 이 디스플레이에서 난 X 에러는 전역 핸들러(=abort)로 안 가고
-        // `error_trap_pop` 의 반환값이 된다. 삼키지 않고 그 코드를 로그로 남긴다.
-        //
-        // **순서 수정 뒤의 마지막 그물이지, 순서 대신이 아니다.** 이것만 걸고 순서를
-        // 그대로 두면 근본 경합이 남는다.
+        // GDK 연결의 지연 요청이 이미 지운 X 창을 참조할 수 있어 정리 중 오류 트랩으로 기록한다.
         let trap: Option<gdkx11::X11Display> = self.gdk_window.display().downcast().ok();
         if let Some(d) = &trap {
             d.error_trap_push();
         }
-        // SAFETY: Drop은 self가 마지막으로 살아있는 시점. webview.destroy()와
-        // (아래의) XDestroyWindow는 같은 display 인스턴스에서 한 번씩 호출. 호출은
-        // PlatformWebView가 생성된 main thread에서만 일어난다.
-        //
-        // 이 불변식은 두 겹으로 강제된다: (1) 본 타입은 x11_display(raw pointer)와
-        // Rc<Cell<_>> 필드로 인해 auto-trait 상 자연 `!Send`이며(macOS/Windows
-        // 백엔드와 동일 패턴) 의도적으로 Send를 부여하지 않아 안전한 Rust 코드로는
-        // 애초에 다른 스레드로 옮길 수 없다. (2) 그럼에도 unsafe 코드나 향후 회귀로
-        // 이 불변식이 깨질 경우를 대비해, 위 `assert_origin_thread` 가 생성 스레드와
-        // 현재 스레드를 런타임으로 비교해 release 빌드에서도 즉시 panic 시킨다
-        // (X11 핸들 오용은 UB라 debug에서만 잡으면 release 에서 조용히 UB가 난다).
+        // SAFETY: 생성 스레드 확인 뒤 이 객체가 소유한 WebView를 정리한다. Rc/raw pointer 필드로 Send를 구현하지 않는다.
         unsafe {
             self.webview.destroy();
         }
-        // ── 여기부터 순서가 곧 내용이다 (아래 함수 주석 참조) ──
-        // 1. GDK 가 이 창을 unmap 하는 것을 **창이 아직 있을 때** 시키고 그 요청이
-        //    실제로 나갈 때까지 GTK 를 돌린다. 죽은 창에 나가던 `UnmapWindow` 가
-        //    바로 이것이었다.
+        // X 창을 지우기 전에 GTK의 숨기기·닫기 요청을 처리한다.
         self.gtk_window.hide();
         pump_gtk();
-        // 2. toplevel 위젯을 놓는다. `destroy()` 는 쓸 수 없다 — 이 toplevel 의
-        //    GdkWindow 는 우리가 `set_window` 으로 끼워 넣은 foreign 창이라
-        //    `gtk_widget_unregister_window` 의 `user_data == widget` 단정이 깨지고
-        //    GTK 가 `Bail out!` 으로 프로세스를 죽인다(실측 2026-09-08).
+        // foreign GdkWindow는 GTK 위젯 소유 창이 아니므로 widget destroy 대신 close를 사용한다.
         self.gtk_window.close();
         pump_gtk();
-        // 3. 이제야 X 창을 지운다. foreign 창은 GDK 가 파괴하지 않으므로 이 호출이
-        //    필요하고, `XSync` + 마지막 펌프로 GDK 가 `DestroyNotify` 를 받아 자기
-        //    상태를 맞추게 한다. **그것만으로 한 창에 webview 가 둘인 경우가 다 닫히지는
-        //    않았다** — 뒤에 오는 `Drop` 이 앞 창의 낡은 상태를 건드려 4 회 중 1 회 죽었고,
-        //    그 남은 자리를 위의 에러 트랩이 받는다(실측 2026-09-08).
-        //
-        // SAFETY: 위 블록과 같은 근거. GDK 가 이 창을 다 놓은 뒤라 이것이 마지막 파괴다.
+        // SAFETY: 이 객체가 생성한 X 창을 생성 스레드에서 지운다. GDK의 후속 오류는 위 트랩으로 기록한다.
         unsafe {
             (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
             (self.xlib.XSync)(self.x11_display as _, 0 /* discard = False */);
         }
         pump_gtk();
         if let Some(d) = &trap {
-            // `error_trap_pop` 은 서버와 왕복해 이 시점까지의 에러를 확정한 뒤 코드를
-            // 돌려준다. 0 이 아니면 위 순서가 못 막은 자리가 남아 있다는 뜻이다.
             let code = d.error_trap_pop();
             if code != 0 {
                 tracing::warn!(
@@ -836,34 +673,15 @@ impl Drop for PlatformWebView {
     }
 }
 
-/// 대기 중인 GTK 이벤트를 지금 처리한다. 이 레포가 GTK 를 winit 루프 안에서 돌릴 때
-/// 쓰는 형태 그대로다(`platform::native_menu::linux` · `platform::system_tray`).
-///
-/// `PlatformWebView::drop` 이 이것을 쓰는 이유는 GDK 가 창을 **바로** 놓지 않기
-/// 때문이다. `hide()`·`close()` 는 요청을 걸어 두고 돌아오고, 실제 X 요청은 다음
-/// 메인 루프 반복에서 나간다. 그 사이에 X 창을 지우면 GDK 는 자기가 아는 살아 있는
-/// ID 로 요청을 내고 그것이 `BadWindow` 가 된다 — GDK 는 Xlib 에러 핸들러를
-/// **프로세스 전역**으로 걸어 두므로(`XSetErrorHandler` 는 연결별이 아니다) 그 자리에서
-/// 프로세스가 통째로 abort 한다. 실측(2026-09-08, 격리 홈, debug 빌드): webview 탭이
-/// 있는 창을 닫으면 `BadWindow ... request_code 10`(=`UnmapWindow`) 으로 죽었고,
-/// 탭만 닫는 경로(부모가 살아 있는 경우)는 살아남았다.
-///
-/// 여기서 도는 것은 이 백엔드가 등록한 GTK 시그널(decide-policy · load-changed ·
-/// 키 브리지)뿐이고 그것들은 `Rc<Cell>`/`Rc<RefCell>` 만 만지므로 `Drop` 으로
-/// 재진입하지 않는다.
+/// GTK의 대기 이벤트를 처리한다. 창을 먼저 지운 뒤 지연된 unmap 요청이 나가는 일을 줄인다.
+/// 전역 GTK 큐를 처리하므로 이 WebView의 콜백만 실행한다고 볼 수는 없다.
 fn pump_gtk() {
     while gtk::events_pending() {
         gtk::main_iteration_do(false);
     }
 }
 
-/// X11 hardware keycode → winit `PhysicalKey`.
-///
-/// X11/Wayland 는 linux evdev scancode 에 `+8` 한 값을 keycode 로 쓴다 — winit 의
-/// `PhysicalKeyExtScancode::from_scancode` 가 요구하는 것은 그 offset 을 뺀 evdev 값이다
-/// (winit 문서: "A 32-bit linux scancode, which is X11/Wayland keycode subtracted by 8").
-/// 그래서 이 백엔드는 winit X11 경로와 **같은 표**를 타고, 같은 물리 키에 대해 같은
-/// `KeyCode` 를 낸다 — 비라틴 레이아웃 폴백이 두 경로에서 갈라지지 않는 근거다.
+/// X11 keycode에서 8을 빼 winit이 사용하는 evdev scancode로 변환한다.
 fn x11_keycode_to_physical(hardware_keycode: u16) -> winit::keyboard::PhysicalKey {
     use winit::platform::scancode::PhysicalKeyExtScancode;
     let Some(evdev) = (hardware_keycode as u32).checked_sub(8) else {
@@ -874,12 +692,7 @@ fn x11_keycode_to_physical(hardware_keycode: u16) -> winit::keyboard::PhysicalKe
     winit::keyboard::PhysicalKey::from_scancode(evdev)
 }
 
-/// GDK modifier 상태 → winit `ModifiersState`.
-///
-/// `matches_binding` 이 winit 규칙으로 판정하므로 여기서 표현을 맞춘다. Linux 에서
-/// 바인딩 토큰 `alt` 는 winit `ALT`(GDK `MOD1_MASK`)에 대응하고 `option` 은 쓰이지
-/// 않는다(`docs/design/policies/key-mapping.md` 의 위치 기반 추상화 — macOS 에서만
-/// Command/Option 로 갈라진다).
+/// GDK modifier를 winit 값으로 변환한다. Linux의 alt는 MOD1/ALT다.
 fn gdk_state_to_winit_mods(state: gtk::gdk::ModifierType) -> winit::keyboard::ModifiersState {
     use gtk::gdk::ModifierType;
     use winit::keyboard::ModifiersState;
@@ -900,10 +713,7 @@ fn gdk_state_to_winit_mods(state: gtk::gdk::ModifierType) -> winit::keyboard::Mo
     mods
 }
 
-/// GDK keyval → winit `Key`. 바인딩 매칭에 쓰이는 표현만 만들면 되므로 named key 는
-/// `binding.rs` 가 이름으로 아는 집합(기능키·편집키·화살표)만 다루고, 나머지는
-/// keyval 의 유니코드 표현을 `Key::Character` 로 올린다. 매핑되지 않는 keyval 은
-/// `None` — 백엔드는 그런 키를 그대로 페이지에 흘린다.
+/// 알려진 named key와 Unicode 문자를 변환한다. 매핑할 수 없으면 페이지에 남긴다.
 fn gdk_keyval_to_winit_key(keyval: gtk::gdk::keys::Key) -> Option<winit::keyboard::Key> {
     use gtk::gdk::keys::constants as k;
     use winit::keyboard::{Key, NamedKey};
@@ -967,8 +777,6 @@ mod tests {
             gdk_keyval_to_winit_key(k::Escape),
             Some(Key::Named(NamedKey::Escape))
         );
-        // modifier 자체는 유니코드가 없어 매핑되지 않는다(백엔드는 `is_modifier`
-        // 로 먼저 거르지만, 변환 단계도 독립적으로 안전하다).
         assert_eq!(gdk_keyval_to_winit_key(k::Control_L), None);
     }
 

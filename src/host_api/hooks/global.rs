@@ -4,25 +4,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Condition that triggers a global hook.
 #[derive(Debug, Clone)]
 pub enum HookCondition {
-    /// Fires repeatedly every `Duration`.
+    /// tick에서 경과 시간을 확인해 반복한다. 정확한 시각의 실행을 예약하는 OS 타이머는 아니다.
     Interval(Duration),
-    /// Fires once after `Duration` has elapsed since the hook was added.
     Once(Duration),
-    /// Fires whenever the file at this path changes mtime (1Hz poll,
-    /// `GlobalHookManager::tick` 편승 — 별도 watcher 불필요).
+    /// tick에서 파일 mtime 변경을 확인한다.
     File(PathBuf),
 }
 
 impl HookCondition {
-    /// Parse a condition string of the form:
-    /// - `"interval:SECS"` → Interval
-    /// - `"once:SECS"` → Once
-    /// - `"file:PATH"` → File. `file:` 뒤 나머지 전체를 경로로 그대로 받는다 —
-    ///   추가로 `:` 를 기준 분리하지 않으므로 Windows 드라이브 문자
-    ///   (`file:C:\Users\...`)도 별도 처리 없이 올바르게 `C:\Users\...` 로 파싱된다.
+    /// interval:SECS, once:SECS, file:PATH를 해석한다. file: 뒤의 추가 콜론은 경로에 남긴다.
     pub fn parse(s: &str) -> Option<Self> {
         if let Some(rest) = s.strip_prefix("interval:") {
             let secs: f64 = rest.parse().ok()?;
@@ -41,7 +33,6 @@ impl HookCondition {
         }
     }
 
-    /// Human-readable description of the condition.
     pub fn to_display_string(&self) -> String {
         match self {
             HookCondition::Interval(d) => format!("interval:{}", d.as_secs_f64()),
@@ -51,7 +42,6 @@ impl HookCondition {
     }
 }
 
-/// A single global hook entry.
 #[derive(Debug, Clone)]
 pub struct GlobalHook {
     pub id: u32,
@@ -60,36 +50,25 @@ pub struct GlobalHook {
     pub label: Option<String>,
 }
 
-/// Manages global (non-surface-bound) hooks driven by timers.
 pub struct GlobalHookManager {
     hooks: HashMap<u32, GlobalHook>,
-    /// id 카운터. **engine 사이에서 공유한다** — `HookManager` 와 같은 이유이고, 여기는
-    /// 한 겹 더 나쁘다: global hook 은 라우팅이 창을 건너 풀지도 않아(`Kind` 에 없다)
-    /// 포커스된 창의 것만 답한다. 카운터까지 engine 마다면 비포커스 창의 훅은 **존재하는데
-    /// 어떤 요청으로도 닿지 않는다**(실측: `unset global-hook --hook 1` 이 두 번째 호출에서
-    /// `removed: false` 를 내고 창1 의 것은 그대로 남는다).
+    /// 여러 engine이 같은 카운터를 사용해 hook ID 충돌을 피한다.
     next_id: Arc<AtomicU32>,
-    /// When each Interval/Once hook last fired (or was created).
     last_fired: HashMap<u32, Instant>,
-    /// Creation time for Once hooks, to measure elapsed time.
     created_at: HashMap<u32, Instant>,
-    /// Set of Once hook IDs that have already fired and should be removed.
     fired_once: Vec<u32>,
-    /// Last observed mtime of each File hook's target path. `None` 이면 마지막
-    /// 관찰 시점에 파일이 존재하지 않았음(등록 시 미존재 포함) — 이후 파일이
-    /// 나타나면 "변경"으로 간주해 발화한다.
+    /// 마지막 mtime. None은 부재뿐 아니라 metadata·수정 시각 조회 실패도 포함한다.
     last_mtime: HashMap<u32, Option<SystemTime>>,
 }
 
 impl GlobalHookManager {
-    /// 자기 카운터로 만든다 — **테스트 전용**이다. production 경로에 이것이 남아 있으면
-    /// engine 마다 1 부터 도는 카운터가 되살아나므로 cfg 로 못 박는다.
+    /// 검사 전용 독립 카운터. 제품 생성 경로는 공유 발급기를 받는다.
     #[cfg(test)]
     pub fn new() -> Self {
         Self::with_counter(Arc::new(AtomicU32::new(0)))
     }
 
-    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    /// 다른 engine과 공유할 ID 카운터를 받는다.
     pub fn with_counter(next_id: Arc<AtomicU32>) -> Self {
         Self {
             hooks: HashMap::new(),
@@ -101,7 +80,6 @@ impl GlobalHookManager {
         }
     }
 
-    /// Add a new hook. Returns the assigned hook ID.
     pub fn add(&mut self, condition: HookCondition, command: String, label: Option<String>) -> u32 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let now = Instant::now();
@@ -114,7 +92,6 @@ impl GlobalHookManager {
                 self.created_at.insert(id, now);
             }
             HookCondition::File(path) => {
-                // 등록 시점의 mtime 을 기준선으로만 기록 — 즉시 발화하지 않는다.
                 self.last_mtime.insert(id, file_mtime(path));
             }
         }
@@ -131,7 +108,6 @@ impl GlobalHookManager {
         id
     }
 
-    /// Remove a hook by ID. Returns `true` if it existed.
     pub fn remove(&mut self, id: u32) -> bool {
         self.last_fired.remove(&id);
         self.created_at.remove(&id);
@@ -139,23 +115,17 @@ impl GlobalHookManager {
         self.hooks.remove(&id).is_some()
     }
 
-    /// List all registered hooks.
     pub fn list(&self) -> Vec<&GlobalHook> {
         self.hooks.values().collect()
     }
 
-    /// Get a single hook by ID.
-    ///
-    /// IPC handler 가 hook 메타 조회 통합 후 사용 예정. 현재는 add/remove 만
-    /// 사용 — 공개 API 유지.
     #[allow(dead_code)]
     pub fn get(&self, id: u32) -> Option<&GlobalHook> {
         self.hooks.get(&id)
     }
 
-    /// Check all hooks and return `(hook_id, command)` pairs that should be
-    /// executed right now. `CoreState::poll_global_hooks` 가 `Tick::Busy`
-    /// 1Hz cadence 에 편승해 호출한다.
+    /// 지금 조건을 만족한 요청 목록을 만든다. 실행 전에 시간·once·mtime 기록을 갱신한다.
+    /// 실제 명령 실행 실패를 자동 재시도하지는 않는다.
     pub fn tick(&mut self) -> Vec<(u32, String)> {
         let now = Instant::now();
         let mut to_fire: Vec<(u32, String)> = Vec::new();
@@ -177,20 +147,10 @@ impl GlobalHookManager {
                     }
                 }
                 HookCondition::File(path) => {
-                    // **여기는 시계가 맞다.** 형제 자리(`tasty-plugin-markdown` 의 감시자)는
-                    // 같은 모양인데 내용 지문으로 바꿨다 — 그쪽을 보고 여기도 바꾸려 들지
-                    // 마라. 갈리는 이유는 "누락이 아픈가" 가 아니라 **읽을 것의 크기에
-                    // 상한이 있는가** 다. 저쪽 대상은 문서라 유계(중앙 8 KB, 폴당 ~11 us)이고,
-                    // 여기 대상은 **사용자가 지정하는 아무 파일**이라 상한이 없다 — 실제로
-                    // 자라는 로그를 감시한다. 지문으로 물으려면 변화가 없을 때에도 매 폴
-                    // 전량을 읽어야 하므로 **정상 상태가 곧 최악**이 된다(100 MB 로그면
-                    // 초당 ~90 ms). 그래서 남는 사각은 알고 두는 것이다: 두 쓰기 사이에
-                    // 폴이 끼고 그 둘의 mtime 이 같은 값으로 찍히면 뒤엣것을 놓친다.
-                    // 그 창은 파일시스템 눈금 크기이고 ext4·NTFS·APFS 에서는 사실상 0 이다.
+                    // 크기 제한 없는 파일을 매번 전부 읽지 않도록 mtime만 본다.
+                    // 같은 mtime으로 내용이 바뀌거나 시각이 복원되면 변경을 놓칠 수 있다.
                     let current = file_mtime(path);
-                    // 파일이 사라진 경우(metadata 에러)는 "변경 없음"으로 취급 —
-                    // interval/once 와의 일관성(외부 요인으로 훅이 조용히 사라지지
-                    // 않음) 유지. 마지막 관찰값도 갱신하지 않고 그대로 둔다.
+                    // 조회 실패는 기존 mtime을 유지한다. 같은 mtime으로 다시 생긴 파일도 구분하지 못한다.
                     if let Some(mtime) = current {
                         let last = self.last_mtime.get(id).copied().unwrap_or(None);
                         if last != Some(mtime) {
@@ -202,7 +162,6 @@ impl GlobalHookManager {
             }
         }
 
-        // Update last_fired for interval hooks that just fired.
         for (id, _) in &to_fire {
             if let Some(hook) = self.hooks.get(id)
                 && matches!(hook.condition, HookCondition::Interval(_))
@@ -211,13 +170,11 @@ impl GlobalHookManager {
             }
         }
 
-        // Remove once-hooks that fired.
         let to_remove: Vec<u32> = self.fired_once.drain(..).collect();
         for id in to_remove {
             self.remove(id);
         }
 
-        // Record newly observed mtimes for File hooks that fired.
         for (id, mtime) in file_mtime_updates {
             self.last_mtime.insert(id, mtime);
         }
@@ -225,9 +182,7 @@ impl GlobalHookManager {
         to_fire
     }
 
-    /// Execute a shell command in a fire-and-forget fashion.
-    /// Spawn 실패는 사용자 hook이 발동했다고 보이지만 실제로는 자식이 안 뜬 상태라
-    /// 디버깅이 어렵다. warn으로 흔적을 남긴다.
+    /// 셸 프로세스 생성을 요청한다. 실패는 로그에 남기며 자식 완료·종료 코드는 기다리지 않는다.
     pub fn execute_command(command: &str) {
         #[cfg(windows)]
         let mut cmd = {
@@ -248,12 +203,8 @@ impl GlobalHookManager {
     }
 }
 
-/// 파일 mtime 조회. 심볼릭 링크는 `std::fs::metadata`(링크를 따라감)로 대상
-/// 파일의 mtime을 관찰한다 — 별도 처리 없이 자연스럽게 동작. 디렉토리 경로도
-/// `metadata`가 그대로 mtime을 반환하므로 디렉토리 자체의 변경(항목 추가/삭제
-/// 등으로 갱신되는 디렉토리 엔트리의 mtime)을 감지하는 용도로도 동작하지만,
-/// 파일 하나만 공식 지원 범위다(디렉토리 감지는 스코프 밖 — 문서 참고).
-/// 조회 실패(파일 없음 등)는 `None`.
+/// 심볼릭 링크를 따라 metadata의 수정 시각을 읽는다. 실패는 None이다.
+/// 디렉터리 경로도 읽을 수 있지만 내부 파일 내용의 변경까지 재귀 추적하지는 않는다.
 fn file_mtime(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
@@ -296,7 +247,6 @@ mod tests {
         );
         std::thread::sleep(Duration::from_millis(15));
         assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
-        // Interval 훅은 발화 후에도 남아 있어야 다음 주기에 다시 발화한다.
         assert_eq!(mgr.list().len(), 1);
         std::thread::sleep(Duration::from_millis(15));
         assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
@@ -313,7 +263,6 @@ mod tests {
         std::thread::sleep(Duration::from_millis(15));
         assert_eq!(mgr.tick(), vec![(id, "echo once".to_string())]);
         assert!(mgr.list().is_empty(), "once 훅은 발화 후 제거되어야 한다");
-        // 이미 제거됐으니 이후 tick 에서 다시 발화하면 안 된다.
         assert!(mgr.tick().is_empty());
     }
 
@@ -323,8 +272,6 @@ mod tests {
             HookCondition::parse("file:/tmp/foo.txt"),
             Some(HookCondition::File(p)) if p == std::path::PathBuf::from("/tmp/foo.txt")
         ));
-        // Windows 드라이브 문자 — "file:" 뒤 나머지 전체를 그대로 경로로 받으므로
-        // 추가 콜론 분리 없이 올바르게 파싱된다.
         assert!(matches!(
             HookCondition::parse(r"file:C:\Users\foo\bar.txt"),
             Some(HookCondition::File(p)) if p == std::path::PathBuf::from(r"C:\Users\foo\bar.txt")
@@ -367,7 +314,6 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(10));
         std::fs::write(&path, "v3").unwrap();
-        // interval 처럼 반복 발화, 훅 자체는 사라지지 않는다.
         assert_eq!(mgr.tick(), vec![(id, "echo x".to_string())]);
         assert_eq!(mgr.list().len(), 1);
     }
@@ -382,7 +328,6 @@ mod tests {
             "echo x".to_string(),
             None,
         );
-        // 파일이 아직 없으므로 발화하지 않는다.
         assert!(mgr.tick().is_empty());
 
         std::fs::write(&path, "v1").unwrap();

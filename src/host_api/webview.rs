@@ -1,22 +1,5 @@
-//! Cross-platform WebView wrapper.
-//!
-//! Provides a minimal native webview that can be embedded as a child view
-//! inside a winit/wgpu window.
-//!
-//! 표면은 **열둘 + `Drop`** 이다 — lifecycle/geometry(`new` · `set_bounds` ·
-//! `set_visible` · `load_url` · `load_html` · `Drop`) 에 키보드(`release_keyboard_focus`) ·
-//! 탐색(`nav_state` · `take_pending_navigations`) · 페이지 설정(`set_zoom` ·
-//! `set_javascript_enabled` · `set_color_scheme` · `set_remote_content_allowed`) 이
-//! 붙는다. 셋을 잇는 trait 은 없다 — 세 백엔드가 같은 이름을 노출하고 `cfg` 가 하나를
-//! 고르며, 이름 수준의 일치만 세 OS 컴파일이 강제한다. 표면 전량·백엔드 차이·스레드
-//! 친화성·수명 계약은 `docs/design/systems/webview.md` 가 한 자리에 적는다.
-//!
-//! 거기에 **키보드 계약**이 하나 더 붙는다([`keys`]). native webview 는 winit 창과
-//! 별개의 OS 자식 창/뷰라 자기가 키보드 포커스를 잡으면 host 단축키가 통째로
-//! 도달하지 못한다 — 세 백엔드는 자기 native 키 이벤트를 [`WebViewKeyEvent`] 로
-//! 정규화해 [`keys::WebViewKeySink`] 계약으로 올리고, 우선순위 판정은 그 host 구현
-//! [`WebViewKeyBridge`] 한 곳에서만 한다. 백엔드가 받는 것은 구체 브리지가 아니라 그 계약이다.
-//! 배경·대안은 `docs/adr/0029-webview-host-integration.md`.
+//! 플랫폼별 native WebView와 공통 키 전달 계약.
+//! 백엔드는 같은 이름의 메서드를 제공하고 cfg로 선택한다. 차이는 docs/design/systems/webview.md를 따른다.
 
 pub mod keys;
 
@@ -35,32 +18,14 @@ pub use macos::PlatformWebView;
 #[cfg(windows)]
 pub use self::windows::PlatformWebView;
 
-/// webview 생성 실패. **다시 시도할 가치가 있는가**를 타입으로 가른다.
-///
-/// 호출부(`create_missing_webviews`)는 webview 가 없는 html surface 를 다시 시도한다.
-/// 그런데 실패 경로가 X 창을 만들었다 지우면 그 X 이벤트가 이벤트 루프를 깨워
-/// **다음 시도를 스스로 부른다** — 실측으로 10 초에 27477 회, X 서버 CPU 는 코어의
-/// 27%, 로그는 8.2 MB 였다. 그래서 "몇 번까지 시도하는가" 가 정책이 아니라 필수다.
-///
-/// `String` 하나로는 그 정책을 나눌 수 없다. 두 처방이 다르기 때문이다:
-/// 영구 실패는 **즉시 포기**해야 하고, 일시 실패는 **몇 번 더** 해 볼 값어치가 있다.
-/// 근거·재검토 조건: `docs/adr/0029-webview-host-integration.md`
-/// (실패 경로가 반복 가능해지는 것이 그 결정의 직접적 결과다).
+/// 생성 실패를 재시도 정책에 맞게 분류한다. native 창 생성·삭제가 다음 시도를 유발할 수 있어 상한이 필요하다.
 #[derive(Debug, Clone)]
 pub enum WebViewCreateError {
-    /// 다음 시도에 달라질 수 있는 입력이 있다 — 자원 고갈, 서버·런타임 경합.
-    ///
-    /// macOS 백엔드는 실패 셋을 전부 `Permanent` 로 분류한다(`macos.rs` 의 `perm` —
-    /// main thread 여부·창 종류는 그 프로세스에서 안 바뀐다). 리눅스·Windows 는 이
-    /// variant 를 만든다.
-    // 분류를 린트에 맞춰 바꾸지 않는다 — macOS 에서 그 셋은 실제로 영구 실패이고,
-    // 되돌리면 호출부가 영구 실패를 무한 재시도한다. 다른 조합에는 안 붙여서, 그쪽에서
-    // 생성처가 사라지면 그때는 깨지게 둔다.
-    // reason: macOS 조합에서만 생성처가 없고 워크스페이스가 `dead_code = "deny"` 다.
+    /// 다음 시도를 허용하는 분류. 성공 가능성을 보장하지 않는다.
+    // 이유: macOS 생성 경로는 이 분류를 사용하지 않는다.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     Transient(String),
-    /// 이 프로세스에서는 달라지지 않는다 — 창 종류, 라이브러리 부재, 디스플레이 종류.
-    /// **호출부는 이것을 보면 그 surface 를 더 시도하지 않는다.**
+    /// 현재 생성 요청에서 재시도하지 않을 실패로 분류한 값.
     Permanent(String),
 }
 
@@ -79,45 +44,20 @@ impl WebViewCreateError {
     }
 }
 
-/// 탐색 상태는 도메인 모델(`tasty-model`)이 소유한다 — 비-gui 의 `RemoteSurface` 도 같은
-/// 값을 담기 때문이다. backend 들은 `super::NavState`, host gui 코드는
-/// `crate::webview::NavState` 로 참조한다(어느 쪽도 `plugin_bridge` 경로를 안 거친다).
 pub use crate::model::NavState;
 
 pub use keys::{HostShortcutPolicy, ShortcutSources, WebViewKeyBridge, WebViewKeyEvent};
 
-/// 네이티브 backend 가 캡처한 navigation 시도 하나. [`PlatformWebView::take_pending_navigations`]
-/// 가 도착 순서대로 낸다.
-///
-/// `user_gesture` 는 **엔진 자신이** 이 navigation 을 사용자의 제스처(클릭 · 키)에서 났다고
-/// 보고했는가다 — Linux 는 `webkit_navigation_action_is_user_gesture`, Windows 는
-/// `NavigationStarting` 의 `IsUserInitiated` 를 그대로 옮긴다. macOS 는 공개 API 에 같은 뜻의
-/// 값이 없어 늘 `false` 다 — `WKNavigationType::LinkActivated` 가 스크립트의 `a.click()` 과
-/// 사람의 클릭을 가르는지는 재지 않았고, 못 가르면 plugin 이 제 스크립트로 근거를 만든다.
-/// host 는 이 값이 참인 시도만 plugin 이 사용자 조작의 근거로 댈 수 있게 기록한다 — 사람의
-/// 입력 없이 스크립트만으로 낸 navigation 은 참이 아니라서, 사람의 입력 없이는 이 값을 만들 수
-/// 없다. 사람의 제스처 **안에서** 페이지 스크립트가 낸 navigation 은 엔진이 참으로 본다(그래서
-/// 페이지를 쓴 쪽이 눌린 클릭을 다른 목적지로 바꿀 수 있다 — host 는 소유 plugin 이 쓴 페이지 위의
-/// 시도만 기록한다)(`docs/adr/0031-file-handler-routing.md`).
+/// backend가 기록한 탐색 시도. user_gesture는 Linux·Windows 엔진의 보고값이며 macOS는 false다.
+/// 제스처 안에서 페이지 스크립트가 바꾼 목적지도 포함될 수 있어 목적지에 대한 별도 사용자 동의는 아니다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingNavigation {
     pub url: String,
     pub user_gesture: bool,
 }
 
-/// Logical bounds for a webview (in logical pixels, origin at top-left).
-///
-/// 이 타입과 [`PhysicalWebViewBounds`] 는 한 쌍이다 — 좌표계가 필드 주석이 아니라
-/// **타입 이름**에 남고, 둘 사이는 [`WebViewBounds::to_physical`] /
-/// [`WebViewBounds::from_physical`] 로만 오간다. 생산자(레이아웃)와 소비자(플랫폼 창
-/// API)는 서로 다른 파일에 있고 그 둘의 나눗셈·곱셈이 정확히 상쇄해야 창이 제자리에
-/// 온다 — 각자 `/ scale_factor` · `* scale_factor` 를 손으로 적으면 한쪽만 고쳤을 때
-/// 조용히 어긋나므로, 변환은 이 두 함수 밖에 두지 않는다.
-///
-/// `f32`([`tasty_type_geometry::length::LogicalPx`])가 아니라 `f64` 인 이유는 두
-/// 가지다. ① 플랫폼 창 API(GTK/Win32/Cocoa)와 winit `scale_factor` 가 `f64` 다.
-/// ② 소비자가 `as i32` 로 **절단**하므로, 정밀도를 바꾸면 정수 경계에 걸친 값의
-/// 절단 방향이 뒤집혀 창이 1px 움직일 수 있다.
+/// 논리 좌표의 사각형. 물리 좌표 변환은 to_physical/from_physical로 모은다.
+/// 플랫폼 호출 전 정수 절단의 경계가 바뀌지 않도록 f64를 유지한다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WebViewBounds {
     pub x: f64,
@@ -126,10 +66,7 @@ pub struct WebViewBounds {
     pub height: f64,
 }
 
-/// 플랫폼 창 API 에 그대로 넘길 **물리(device) 픽셀** 사각형 — [`WebViewBounds`] 의 짝.
-///
-/// 최종 정수 캐스팅(`as i32` / `as u32`)은 플랫폼 API 가 요구하는 형이 달라 호출부에
-/// 남긴다. 이 타입이 보장하는 것은 "여기 담긴 값은 이미 물리 픽셀" 이라는 사실이다.
+/// 물리 픽셀 사각형. 플랫폼별 정수 변환은 호출자가 수행한다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhysicalWebViewBounds {
     pub x: f64,
@@ -139,7 +76,6 @@ pub struct PhysicalWebViewBounds {
 }
 
 impl WebViewBounds {
-    /// 물리 사각형을 논리 좌표로 내린다. 산술은 종전 호출부가 하던 것과 같다.
     pub fn from_physical(physical: PhysicalWebViewBounds, scale_factor: f64) -> Self {
         Self {
             x: physical.x / scale_factor,
@@ -149,16 +85,8 @@ impl WebViewBounds {
         }
     }
 
-    /// 논리 좌표를 플랫폼 창 API 용 물리 사각형으로 올린다.
-    ///
-    /// macOS 는 Cocoa 가 논리 좌표(point)를 그대로 받으므로 이 변환을 쓰지 않는다 —
-    /// 물리로 올리는 쪽은 X11(GTK)·Win32 다.
-    ///
-    /// 그래서 macOS 빌드에서는 호출부가 없다. `-D dead-code` 아래서 그것이 컴파일
-    /// 에러가 되므로 그 플랫폼에서만 면제한다 — 지우거나 `#[cfg]` 로 빼지 않는 이유는
-    /// 아래 왕복 테스트가 세 OS 모두에서 이 함수를 `from_physical` 의 역으로 고정하기
-    /// 때문이다. macOS 에서만 그 고정이 사라지면 한쪽만 바뀌는 것을 못 잡는다.
-    // 이유: 논리→물리 변환을 부르는 것이 X11(GTK)·Win32 경로뿐이라 macOS 빌드엔 호출부가 없다(위).
+    /// 논리 좌표를 물리 픽셀로 바꾼다. Cocoa는 point를 사용하므로 이 변환을 쓰지 않는다.
+    // 이유: macOS에도 왕복 검사를 남기기 위해 함수를 유지한다.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn to_physical(self, scale_factor: f64) -> PhysicalWebViewBounds {
         PhysicalWebViewBounds {
@@ -174,8 +102,6 @@ impl WebViewBounds {
 mod bounds_tests {
     use super::{PhysicalWebViewBounds, WebViewBounds};
 
-    /// 생산자(`from_physical`)와 소비자(`to_physical`)가 서로를 상쇄하는지 고정한다.
-    /// 둘은 서로 다른 파일에서 불리므로, 한쪽만 바뀌면 웹뷰가 조용히 어긋난다.
     #[test]
     fn the_physical_round_trip_returns_the_original_rect() {
         let physical = PhysicalWebViewBounds {
@@ -201,7 +127,6 @@ mod bounds_tests {
         }
     }
 
-    /// `from_physical` 이 실제로 논리 좌표(=물리 ÷ scale_factor)를 만든다.
     #[test]
     fn from_physical_divides_by_the_scale_factor() {
         let logical = WebViewBounds::from_physical(
@@ -225,21 +150,15 @@ mod bounds_tests {
     }
 }
 
-/// `prefers-color-scheme` override applied to an HTML webview (host-driven from
-/// the `com.tasty.html` plugin's `color_scheme` setting).
+/// 페이지 색상 모드 요청. 실제 적용 지원은 backend마다 다르다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorScheme {
-    /// Follow the system / app appearance (no override).
     Follow,
     Light,
     Dark,
 }
 
-/// Host 가 webview 에 적용하는 해석된 HTML viewer 설정. `com.tasty.html` 의
-/// `plugin_settings` 슬롯(또는 부재 시 manifest default)에서 도출한다.
-///
-/// `javascript_enabled` = `!sandbox_scripts` — "Sandbox scripts" 토글이 on(기본)이면
-/// 스크립트를 보수적으로 격리(JS off)하고, off 면 실행을 허용한다.
+/// plugin 설정에서 해석한 페이지 설정. sandbox_scripts는 JS 비활성화 요청이며 별도 격리 엔진이 아니다.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HtmlWebViewSettings {
     pub zoom_percent: f64,
@@ -250,7 +169,6 @@ pub struct HtmlWebViewSettings {
 
 impl Default for HtmlWebViewSettings {
     fn default() -> Self {
-        // manifest default: zoom 100 / sandbox true(→JS off) / remote false / scheme follow.
         Self {
             zoom_percent: 100.0,
             javascript_enabled: false,
@@ -260,11 +178,7 @@ impl Default for HtmlWebViewSettings {
     }
 }
 
-/// webview surface kind 문자열 → 그 kind 가 소비하는 generic `plugin_settings` 슬롯의
-/// plugin_id. 현재는 html(`com.tasty.html`) 만 generic 설정을 갖는다(다른 kind 는 `None` —
-/// 호출자는 default 로 안전 fallback). read 경로(`resolve_webview_settings`)와 write 경로
-/// (zoom 단축키 재배선, `adapters/ui/input/shortcuts/zoom.rs`)가 이 매핑을 공유해 두
-/// 슬롯이 어긋나지 않게 한다.
+/// 같은 plugin 설정을 읽고 수정하도록 surface 종류를 설정 소유 plugin에 연결한다.
 pub fn webview_settings_plugin_id(kind: &str) -> Option<&'static str> {
     match kind {
         "html" => Some("com.tasty.html"),
@@ -274,9 +188,7 @@ pub fn webview_settings_plugin_id(kind: &str) -> Option<&'static str> {
 }
 
 impl HtmlWebViewSettings {
-    /// 4개 backend 제어 메서드에 적용한다. zoom·JS 는 3 OS 실효. remote 는 3 OS 모두
-    /// 실효(macOS=WKContentRuleList / Windows=WebResourceRequested / Linux=decide-policy,
-    /// 단 Win/Linux 는 이 세션 미검증·Linux 는 서브리소스 한계). color_scheme 은 macOS 만 실효.
+    /// backend에 설정을 요청한다. 비동기 필터 준비·플랫폼의 미지원 항목 때문에 즉시 적용을 보장하지 않는다.
     pub fn apply(&self, wv: &PlatformWebView) {
         wv.set_zoom(self.zoom_percent / 100.0);
         wv.set_javascript_enabled(self.javascript_enabled);
