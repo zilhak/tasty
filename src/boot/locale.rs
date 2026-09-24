@@ -1,45 +1,22 @@
-//! 부팅 시 1회 settings 로드 + i18n 초기화 + 활성 로케일의 프로세스 env 반영.
-//!
-//! 활성 언어의 단일 출처는 `general.language` 다. 여기서 확정한 값을
-//! ① 본 프로세스의 i18n 테이블(`crate::i18n::init`)과
-//! ② 자식 프로세스가 상속할 env(`TASTY_LOCALE` / `TASTY_LOCALE_FONT`)에 함께 반영한다.
-//!
-//! 설정값이 내장 언어(`en`/`ko`/`ja`)가 아니면 `tasty-i18n` 이 `~/.tasty/lang/<code>/pack.toml`
-//! 언어팩을 찾는다. 팩이 없거나 형상이 틀리면(`[font]` 부재 등) **영어로 폴백**하고
-//! `LoadReport` 로 알린다 — 그 경우 ②의 `TASTY_LOCALE` 도 실제 적용 언어(`en`)를 싣는다.
-//! 설정값 자체는 어느 경로에서도 고쳐 쓰지 않는다(GUI 는 부팅 후 경고 토스트 1회 —
-//! `app::boot_machine::report_locale_fallback`, headless/CLI 는 로드 시점의 `tracing::warn!`).
-//!
-//! plugin 프로세스는 host i18n 카탈로그에 접근하지 못하고 env 로만 언어를 받으므로
-//! (`crates/tasty-plugin-sdk/src/env.rs`) ② 가 빠지면 plugin UI 는 영어로 고정된다.
-//! host-plugin 크레이트는 `tasty-i18n` 에 의존하지 않고 이 env 를 그대로 자식에
-//! propagate 한다(`crates/tasty-host-plugin/src/process.rs`). 근거·대안:
-//! `docs/adr/0040-locale-catalogs-and-display-text.md`.
+//! 설정 언어로 i18n을 초기화하고 실제 적용 언어·폰트를 자식 프로세스의 환경변수에 반영한다.
+//! 언어팩 로드 실패 시 영어로 돌아가지만 설정값은 바꾸지 않는다.
+//! 폰트 파일 검증 실패는 문자열 언어를 유지하고 경고한다.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// 자식 plugin 프로세스가 읽는 활성 언어 코드 env 이름.
 pub(crate) const LOCALE_ENV: &str = "TASTY_LOCALE";
-/// 언어팩이 폰트 파일을 제공할 때 그 절대경로를 싣는 env 이름. 폰트가 없으면 unset.
 pub(crate) const LOCALE_FONT_ENV: &str = "TASTY_LOCALE_FONT";
 
-/// 부팅 시 확정된 로케일 — 본 프로세스 i18n 과 자식 env 의 단일 출처.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedLocale {
-    /// 실제 적용된 언어 코드(`en` / `ko` / `ja` / 언어팩 코드 …). 요청 언어의 팩이 없어
-    /// 영어로 폴백했으면 `en` — 설정값이 아니라 i18n 테이블이 실제로 담은 언어다.
+    /// 요청값이 아니라 폴백을 반영한 실제 i18n 언어 코드.
     pub code: String,
-    /// 언어팩이 제공하는 폰트 파일의 절대경로. 언어팩이 폰트를 제공하지 않거나
-    /// (`builtin = true`) 내장 언어를 쓰면 `None` — 이때 `TASTY_LOCALE_FONT` 는
-    /// 설정하지 않는다(unset). 언어팩 `[font]` 선언을 실제 파일로 resolve·검증하는
-    /// 단계는 `init` 에서 `locale_font::resolve` 로 수행한다 — resolve 에 실패하면
-    /// (`Failed`) 경고만 하고 `None` 으로 둔다(문자열 자체는 폴백 없이 그대로 로드).
+    /// 언어팩에서 검증한 파일 경로. 없거나 검증 실패면 환경변수에서도 지운다.
     pub font_file: Option<PathBuf>,
 }
 
 impl ResolvedLocale {
-    /// i18n 로드 결과에서 로케일을 확정한다 — `effective` 가 곧 코드다(폴백 반영).
     pub fn from_report(report: &crate::i18n::LoadReport) -> Self {
         Self {
             code: report.effective.clone(),
@@ -47,8 +24,7 @@ impl ResolvedLocale {
         }
     }
 
-    /// 자식 프로세스가 상속할 env 항목. `Some` 은 set, `None` 은 unset — 셸에서
-    /// export 된 stale 값이 자식에 흘러가지 않도록 두 경우를 모두 명시한다.
+    /// 폰트가 없으면 이전 셸에서 상속한 값을 지워 자식에 잘못 전달하지 않는다.
     pub fn env_entries(&self) -> [(&'static str, Option<OsString>); 2] {
         [
             (LOCALE_ENV, Some(OsString::from(&self.code))),
@@ -60,10 +36,7 @@ impl ResolvedLocale {
     }
 }
 
-/// 부팅 때 export 한 `TASTY_LOCALE_FONT` 를 되읽어 언어팩 폰트 경로를 돌려준다 —
-/// 없으면 `None`. host 의 두 egui 폰트 셋업 경로(`src/gfx/gpu/fonts.rs` ·
-/// `src/adapters/ui/font_registry.rs`)가 같은 값을 읽어 체인 뒤에 붙이는 단일 출처다.
-/// plugin 프로세스도 같은 env 를 상속받아 자기 미러에서 읽는다.
+/// 호스트와 플러그인이 부팅 때 정한 같은 폰트 경로를 사용한다.
 #[cfg(feature = "gui")]
 pub(crate) fn font_env_path() -> Option<PathBuf> {
     std::env::var_os(LOCALE_FONT_ENV)
@@ -71,9 +44,7 @@ pub(crate) fn font_env_path() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// 설정 문자열을 요청 코드로 정규화한다. 공백/빈 값은 `en` — 빈 코드는 host i18n 과
-/// plugin SDK 양쪽에서 "언어 파일 없음" 으로 영어와 같게 동작하지만, env 로 빈 문자열이
-/// 흘러가면 소비처마다 해석이 갈린다.
+/// 빈 코드를 소비자마다 다르게 해석하지 않도록 en으로 정규화한다.
 pub(crate) fn normalize_code(language: &str) -> String {
     let code = language.trim();
     if code.is_empty() {
@@ -87,31 +58,21 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
-/// 부팅 때 `[font]` resolve 가 실패했으면 그 사유(진단 문자열)를 담는다 — GUI 가
-/// 부팅 후 경고 토스트를 한 번 띄우는 데 쓴다(`app::boot_machine::report_locale_fallback`).
-/// resolve 가 성공했거나 폰트 선언이 없으면 비어 있다. headless/CLI 는 이 값을 읽지
-/// 않는다 — 그쪽은 `init` 이 남긴 `tracing::warn!` 한 줄이 전부다.
+/// 폰트 검증 실패 사유를 보관해 GUI가 부팅 후 알릴 수 있게 한다. 헤드리스·CLI는 로그만 사용한다.
 static FONT_WARNING: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-/// 부팅 시 실패한 `[font]` resolve 의 사유. 실패가 없었으면 `None`.
 #[cfg(feature = "gui")]
 pub(crate) fn font_warning() -> Option<String> {
     FONT_WARNING.get().cloned()
 }
 
-/// settings 를 읽어 i18n 테이블을 올린다. `cli_routing::parse_or_route` 진입부와 각
-/// mode helper 가 모두 부르므로 `Once` 로 1회만 실행한다 — 두 번째 호출부터는 settings
-/// 파일을 다시 읽지 않아 config 파싱 경고가 중복으로 찍히지 않는다(`tasty_i18n::init`
-/// 자체도 `OnceLock` 이라 재호출은 무해하지만, 그 앞의 `Settings::load` 는 아니다).
+/// 재호출 때 설정 파일 읽기·경고까지 반복하지 않도록 한 번만 초기화한다.
 pub(crate) fn init() {
     INIT.call_once(|| {
         let lang_settings = crate::settings::Settings::load();
         let requested = normalize_code(&lang_settings.general.language);
         let report = crate::i18n::init(&requested);
         let mut locale = ResolvedLocale::from_report(&report);
-        // `[font]` 선언을 실제 파일로 resolve·검증한다(egui 가 보기 전에 깨진 폰트를
-        // 거른다). 실패는 폴백 없이 경고만 — 문자열은 그대로 뜨고 UI 폰트만 안 붙는다.
-        // GUI 의 사용자 향 경고 토스트는 부팅 후 `app::boot_machine` 이 별도로 낸다.
         match crate::boot::locale_font::resolve(&report.outcome) {
             crate::boot::locale_font::FontResolution::Resolved(path) => {
                 locale.font_file = Some(path);
@@ -121,8 +82,7 @@ pub(crate) fn init() {
                     "locale '{}' declares a [font] that could not be resolved: {detail}",
                     locale.code
                 );
-                // GUI 는 부팅 후 이 사유를 경고 토스트로 한 번 띄운다. `init` 은 부팅 1회만
-                // 도므로 이미 set 됐을 일이 없다 — 중복 set 실패는 무해하다.
+                // 첫 사유만 보관한다. 이미 값이 있으면 새 사유는 버린다.
                 let _ = FONT_WARNING.set(detail);
             }
             crate::boot::locale_font::FontResolution::None => {}
@@ -131,26 +91,18 @@ pub(crate) fn init() {
     });
 }
 
-/// 확정된 로케일을 본 프로세스 env 에 반영한다 — 이후 spawn 되는 모든 자식(plugin
-/// 프로세스, PTY 셸 — `Command` 의 env 상속)이 이 값을 본다.
-///
-/// `std::env::set_var` / `remove_var` 는 edition 2024 에서 `unsafe` 다: 다른 스레드가
-/// 동시에 env 를 읽는 중이면 data race 가 된다. 이 함수는 부팅 시퀀스에서 이벤트 루프 ·
-/// IPC accept 스레드 · plugin spawner 스레드 · PTY reader 가 하나도 생기기 전, 즉
-/// 프로세스가 아직 **단일 스레드**인 구간에서만 호출된다(`boot::run_gui` /
-/// `run_headless` / `run_subcommand` 의 첫 단계 `locale::init`). 부팅 이후 언어 변경은
-/// 재시작 전까지 반영하지 않는다 — 스레드가 살아 있는 시점의 env 변경은 이 안전 조건을
-/// 깨므로, 이 함수를 부팅 밖에서 다시 부르면 안 된다.
+/// 자식이 상속할 환경을 정한다. 다른 스레드가 환경에 접근하지 않는 부팅 구간에서만 호출해야 한다.
+/// 현재 첫 호출은 CLI 라우팅 시작점이며 이벤트 루프·IPC·플러그인·PTY 워커 생성보다 앞이다.
+/// 실행 중 언어 변경은 재시작 전까지 반영하지 않는다.
 fn export_to_process_env(locale: &ResolvedLocale) {
     for (key, value) in locale.env_entries() {
         match value {
             Some(value) => {
-                // SAFETY: 부팅 단일 스레드 구간 — 다른 스레드가 없으므로 env 를 동시에
-                // 읽거나 쓰는 주체가 없다(위 doc 의 호출 위치 제약).
+                // SAFETY: 다른 스레드가 환경에 접근하기 전의 부팅 구간에서만 호출한다.
                 unsafe { std::env::set_var(key, &value) };
             }
             None => {
-                // SAFETY: 위와 동일 — 부팅 단일 스레드 구간.
+                // SAFETY: set_var와 같은 부팅 구간이며 환경에 동시에 접근하는 스레드가 없어야 한다.
                 unsafe { std::env::remove_var(key) };
             }
         }

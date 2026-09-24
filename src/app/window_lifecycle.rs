@@ -480,7 +480,7 @@ impl App {
         view.as_main().map(|_| view.base().winit.clone())
     }
 
-    /// 창 생성 결과를 IPC에 돌려준다. 사용자 요청 실패는 기존 창에도 안내하며 다른 창은 종료하지 않는다.
+    /// 창 생성 결과를 IPC에 돌려준다. 창·GPU·engine 생성 실패는 새 창만 취소하고 사용자 요청이면 기존 창에 알린다.
     pub(crate) fn create_new_window(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,

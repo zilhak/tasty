@@ -1,13 +1,10 @@
-//! winit EventLoop + proxy 빌드.
+//! winit 이벤트 루프와 proxy를 만든다.
 
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
 use crate::AppEvent;
 
-/// `EventLoop<AppEvent>` + proxy 생성. winit 빌드 실패는 그대로 상위 전파.
-///
-/// macOS 에서는 winit 의 자동 메뉴(⌘Q→terminate: 포함)를 끄고 tasty 가 직접 menubar 를
-/// 등록한다 (`crates/tasty-platform/src/macos_delegate.rs::setup_main_menu`).
+/// macOS 기본 메뉴를 끄고 Tasty가 직접 종료·새 창 동작을 등록한다.
 pub(crate) fn build() -> anyhow::Result<(EventLoop<AppEvent>, EventLoopProxy<AppEvent>)> {
     let mut builder = EventLoop::<AppEvent>::with_user_event();
     #[cfg(target_os = "macos")]
