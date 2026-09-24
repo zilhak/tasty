@@ -408,7 +408,7 @@ pub struct CoreState {
     pub(crate) restored_active_workspace: Option<usize>,
     /// deferred Terminal 생성 뒤 적용할 scrollback. 읽지 못했거나 비어 있으면 등록하지 않는다.
     pub(crate) pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
-    /// plugin 종류가 준비된 뒤 적용할 레이아웃. 준비 대기는 App이 맡는다.
+    /// plugin 준비 대기 후 적용할 레이아웃. 대기와 제한 시간 처리는 App이 맡는다.
     pub(crate) pending_layout_restore: Option<crate::core::layout_persistence::SavedLayout>,
     /// 이 engine의 레이아웃 슬롯. 프로세스 내 engine들의 이 필드로 점유를 확인한다.
     /// 디스크 잠금은 아니며 헤드리스는 None이다.
@@ -672,7 +672,7 @@ impl CoreState {
             next_ids.notification_counter(),
         );
 
-        // plugin 준비 후 복원하도록 데이터만 읽는다. 이 슬롯만으로 GC하면 다른 창의 scrollback을 지울 수 있다.
+        // 대기를 마친 뒤 복원하도록 데이터만 읽는다. 이 슬롯만으로 GC하면 다른 창의 scrollback을 지울 수 있다.
         if restore_layout && let Some(slot) = layout_slot {
             engine.accept_slot_load(crate::core::layout_persistence::load_slot(slot), slot);
         }

@@ -1,13 +1,7 @@
 use super::CoreState;
 
 impl CoreState {
-    /// Read a specific surface's output since its mark (`surface.set_mark`).
-    /// Empty when that surface has no terminal.
-    ///
-    /// The focused-surface fallback that used to sit on `AppState` had no
-    /// caller and was removed
-    /// (`docs/adr/0002-domain-execution-and-ports.md`);
-    /// every caller names the surface.
+    /// 지정한 surface의 사용자 mark 이후 출력. 로컬 Terminal이 없으면 빈 문자열이다.
     pub fn read_since_mark_of(&mut self, surface_id: u32, strip_ansi: bool) -> String {
         self.terminals
             .get_mut(surface_id)
@@ -15,13 +9,7 @@ impl CoreState {
             .unwrap_or_default()
     }
 
-    /// Read what the output scanner has not seen yet on a specific surface and
-    /// advance its cursor past it. Serves `surface.read_since_scan_mark`.
-    ///
-    /// Unlike `surface.read_since_mark` there is no focused-surface fallback:
-    /// the caller is a scanner polling a surface it named, and a cursor that
-    /// silently follows the focus would hand it another surface's output
-    /// (`docs/adr/0013-terminal-io-and-process-lifetime.md`).
+    /// scanner mark 이후 출력을 읽고 커서를 옮긴다. 다른 surface나 포커스로 대체하지 않는다.
     pub fn take_since_output_scan_mark(&mut self, surface_id: u32, strip_ansi: bool) -> String {
         self.terminals
             .get_mut(surface_id)
@@ -29,13 +17,7 @@ impl CoreState {
             .unwrap_or_default()
     }
 
-    /// Answer a read of a specific surface's raw output from a position the
-    /// caller holds. `None` means that surface has no terminal.
-    ///
-    /// There is no focused-surface fallback, for the same reason
-    /// [`Self::take_since_output_scan_mark`] has none: the caller named a
-    /// surface and a read that silently followed the focus would hand it
-    /// another surface's output.
+    /// 호출자의 커서로 지정 surface의 출력을 읽는다. Terminal 부재(None)와 읽기 실패(Err)를 구분한다.
     pub fn read_output(
         &mut self,
         surface_id: u32,

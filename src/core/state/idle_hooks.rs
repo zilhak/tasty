@@ -1,20 +1,11 @@
-//! IdleTimeout 훅(`tasty set hook --event idle-timeout:SECS`) 폴링.
-//! 중앙 타이머 허브의 `Tick::Busy` 1Hz cadence 에 편승해 호출된다 — `global_hooks.rs`/
-//! `GlobalHookManager::tick()` 와 동일한 이유로 전용 ticker 스레드를 새로 두지
-//! 않는다.
+//! 공용 busy 타이머에서 IdleTimeout 훅을 확인한다.
 
 use std::collections::HashSet;
 
 use super::CoreState;
 
 impl CoreState {
-    /// `IdleTimeout` 훅이 걸린 surface 들을 순회해 idle 경과시간을 확인하고
-    /// 발사된 훅을 `(surface_id, FiredHook)` 쌍으로 반환한다.
-    ///
-    /// 이 레이어는 `HostIpcInjector`/`AppState` 를 모르는 순수 engine 레이어라
-    /// 바인딩 실행 + host event enqueue 는 하지 않는다 — 호출자
-    /// (`App::poll_idle_timeout_hooks`)가 담당한다(`cascade_terminal_bell_ring`
-    /// 과 동일한 책임 분리).
+    /// 마지막 출력 후 경과로 실행할 훅을 고른다. 바인딩 실행과 host 이벤트 등록은 호출자가 맡는다.
     pub(crate) fn poll_idle_timeout_hooks(&mut self) -> Vec<(u32, tasty_hooks::FiredHook)> {
         let surface_ids: HashSet<u32> = self
             .hook_manager
