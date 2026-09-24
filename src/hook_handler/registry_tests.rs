@@ -1,20 +1,13 @@
-//! `HookHandlerRegistry` 단위 테스트 (파일 핸들러 `registry_tests.rs` 미러).
-//!
-//! 3출처 병합(host embedded TOML + plugin + user config) · patch semantics ·
-//! owner tie-break · lazy finalize · source 게이트 · 셸 불변식 · user config
-//! export/save/reload 를 커버한다.
+//! 훅 핸들러 병합·정렬·바인딩 제한·사용자 설정 저장과 재로딩 검사.
 
 use super::*;
 use crate::hook_handler::types::{HookHandlerId, IpcCall, validate_binding};
 
-/// host embedded default 를 install 한다. 기본 핸들러 = `host/webhook-notify`
-/// (source=webhook, ipc_sequence).
 fn load_host(reg: &HookHandlerRegistry) {
     reg.install_host_defaults(include_str!("defaults/default-hook-handlers.toml"));
 }
 
 const HOST_NOTIFY_ID: &str = "host/webhook-notify";
-/// `host/command-completed` 완료 판정 전략의 `notify_via` 대상.
 const HOST_COMMAND_COMPLETED_ID: &str = "host/command-completed";
 
 fn plugin_ipc(
@@ -44,8 +37,6 @@ fn write_user_toml(dir: &tempfile::TempDir, body: &str) -> std::path::PathBuf {
     p
 }
 
-// ── host defaults ────────────────────────────────────────────────────────
-
 #[test]
 fn host_defaults_load() {
     let reg = HookHandlerRegistry::new();
@@ -63,8 +54,6 @@ fn host_defaults_load() {
 fn all_handlers_returns_every_enabled() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
-    // host default 2개(webhook-notify, command-completed) — 둘 다 priority=100
-    // 이라 id 알파벳순(tie-break) → command-completed 가 먼저.
     assert_eq!(reg.all_handlers().len(), 2);
     assert_eq!(
         reg.list_handlers(),
@@ -79,12 +68,9 @@ fn all_handlers_returns_every_enabled() {
 fn all_handlers_including_disabled_shows_disabled() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
-    // user override 로 host 핸들러 둘 다 비활성화.
     reg.set_user_handler_disabled(&HookHandlerId::new(HOST_NOTIFY_ID), true);
     reg.set_user_handler_disabled(&HookHandlerId::new(HOST_COMMAND_COMPLETED_ID), true);
-    // 활성 목록엔 없다.
     assert!(reg.all_handlers().is_empty());
-    // 비활성 포함 목록엔 남아 있고 disabled=true 로 노출된다(재활성 대상 가시화).
     let full = reg.all_handlers_including_disabled();
     assert_eq!(full.len(), 2);
     assert!(full.iter().all(|h| h.disabled));
@@ -97,8 +83,6 @@ fn all_handlers_including_disabled_shows_disabled() {
             .any(|h| h.id == HookHandlerId::new(HOST_COMMAND_COMPLETED_ID))
     );
 }
-
-// ── plugin install / 정렬 ─────────────────────────────────────────────────
 
 #[test]
 fn plugin_install_and_lower_priority_sorts_first() {
@@ -115,7 +99,6 @@ fn plugin_install_and_lower_priority_sorts_first() {
     );
     let v = reg.handlers_for_source(TriggerSource::Webhook);
     assert_eq!(v.len(), 2);
-    // priority 10 < 100 → plugin 먼저.
     assert_eq!(v[0].id.as_str(), "com.example.hook/relay");
     assert_eq!(v[1].id.as_str(), HOST_NOTIFY_ID);
 }
@@ -153,16 +136,12 @@ fn plugin_reinstall_is_idempotent() {
     )];
     reg.install_plugin_handlers("com.example.hook", &decls);
     reg.install_plugin_handlers("com.example.hook", &decls);
-    // 같은 owner 재install → retain 으로 교체, 중복 누적 없음.
     assert_eq!(reg.all_handlers().len(), 3);
 }
-
-// ── owner tie-break (user > plugin > host) ────────────────────────────────
 
 #[test]
 fn owner_tiebreak_user_gt_plugin_gt_host() {
     let reg = HookHandlerRegistry::new();
-    // host handler priority 를 50 으로 맞추기 위해 별도 host toml 로 install.
     reg.install_host_defaults(
         r#"
         [[handler]]
@@ -200,16 +179,12 @@ fn owner_tiebreak_user_gt_plugin_gt_host() {
 
     let v = reg.handlers_for_source(TriggerSource::Hook);
     let ids: Vec<&str> = v.iter().map(|h| h.id.as_str()).collect();
-    // priority 모두 50 → tie-break user > plugin > host.
     assert_eq!(ids[0], "user/same");
     assert_eq!(ids[1], "com.example.hook/same");
     assert_eq!(ids[2], "host/same");
 }
 
-// ── user override (patch semantics) ───────────────────────────────────────
-
-/// plugin hook handler 를 patch 하는 user 설정. 부팅이 user 설정을 plugin 보다 먼저 읽는 경우와
-/// plugin 을 껐다 켠 경우 모두 이 값이 이겨야 한다(ADR-0027).
+/// plugin 설치 순서나 재시작과 무관하게 사용자 설정이 우선해야 한다.
 const PLUGIN_PATCH_ID: &str = "com.example.hookp/notify";
 
 fn user_patch_for_plugin(dir: &tempfile::TempDir) -> std::path::PathBuf {
@@ -237,14 +212,12 @@ fn a_user_patch_wins_over_a_plugin_installed_after_the_boot_load() {
     let reg = HookHandlerRegistry::new();
     load_host(&reg);
     let dir = tempfile::tempdir().unwrap();
-    // headless 부팅 순서: host 기본값 + user 설정을 먼저 읽고, plugin 은 나중에 contribute 한다.
     reg.install_user_config(&user_patch_for_plugin(&dir));
     reg.install_plugin_handlers("com.example.hookp", &[plugin_notify()]);
     let h = reg.get(&HookHandlerId::new(PLUGIN_PATCH_ID)).unwrap();
     assert_eq!(h.priority, 10);
     assert_eq!(h.display_name_i18n_key.as_deref(), Some("user.key"));
     assert_eq!(h.owner, HookHandlerOwner::User);
-    // user 가 안 건드린 필드는 plugin 것이 base 로 남는다.
     assert_eq!(h.source, HookSource::Webhook);
 }
 
@@ -261,7 +234,6 @@ fn a_user_patch_wins_over_a_plugin_that_contributes_later_without_a_reload() {
             .priority,
         10
     );
-    // plugin 을 껐다 켠다 — contribution 이 user 것 뒤에 다시 붙는다. reload 는 없다.
     reg.uninstall_plugin("com.example.hookp");
     reg.install_plugin_handlers("com.example.hookp", &[plugin_notify()]);
     let h = reg.get(&HookHandlerId::new(PLUGIN_PATCH_ID)).unwrap();
@@ -286,15 +258,10 @@ fn user_can_disable_host_handler() {
         ),
     );
     reg.install_user_config(&p);
-    // 활성 목록에서 사라진다.
     assert!(reg.handlers_for_source(TriggerSource::Webhook).is_empty());
-    // 하지만 get() 은 여전히 (disabled=true) 반환.
     let h = reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).unwrap();
     assert!(h.disabled);
-    // patch semantics: 마지막 출처(user)가 owner 를 이긴다(파일 핸들러
-    // registry.rs 선례와 동일 — user override 시 owner=User → tie-break 우선).
     assert_eq!(h.owner, HookHandlerOwner::User);
-    // 원 action 은 host 것이 보존된다(patch 로 덮이지 않음).
     assert!(matches!(h.action, HookHandlerAction::IpcSequence { .. }));
 }
 
@@ -316,7 +283,6 @@ fn user_patch_overrides_priority_only() {
     reg.install_user_config(&p);
     let h = reg.get(&HookHandlerId::new(HOST_NOTIFY_ID)).unwrap();
     assert_eq!(h.priority, 5);
-    // action 은 host 것 보존.
     assert!(matches!(h.action, HookHandlerAction::IpcSequence { .. }));
 }
 
@@ -343,12 +309,7 @@ fn upsert_user_handler_adds_user_origin() {
     assert_eq!(h.priority, 15);
 }
 
-/// 한 필드만 고치는 편집이 나머지를 안 지운다.
-///
-/// 이 자리는 실측으로 났다 — `source` 를 주고 만든 핸들러에 `action` 만 주는 편집을
-/// 하면 user 기여분이 통째로 갈리면서 `source` 가 사라졌고, `source` 없는 핸들러는
-/// `merge_contribution` 이 drop 하므로 **고친 핸들러가 조회에서 없어졌다.** 재시작해도
-/// 없었다(디스크의 TOML 에도 `source` 가 안 적혔다).
+/// 일부 필드 편집이 나머지 사용자 값을 지우지 않는지 확인한다.
 #[test]
 fn upsert_user_handler_keeps_fields_the_patch_did_not_mention() {
     let reg = HookHandlerRegistry::new();
@@ -367,7 +328,6 @@ fn upsert_user_handler_keeps_fields_the_patch_did_not_mention() {
     })
     .expect("create ok");
 
-    // action 만 준다 — 나머지는 "지운다" 가 아니라 "그대로 둔다" 여야 한다.
     reg.upsert_user_handler(UserHookHandlerUpsertDecl {
         id: "user/keep".into(),
         source: None,
@@ -397,12 +357,11 @@ fn upsert_user_handler_keeps_fields_the_patch_did_not_mention() {
     assert_eq!(h.display_name_i18n_key.as_deref(), Some("k"));
     match &h.action {
         HookHandlerAction::IpcSequence { calls } => {
-            assert_eq!(calls.len(), 2, "준 action 은 덮였어야")
+            assert_eq!(calls.len(), 2, "새 action이 반영돼야 한다")
         }
         other => panic!("expected ipc_sequence, got {other:?}"),
     }
 
-    // 영속 텍스트에도 남아야 한다 — 재시작이 읽는 것이 이 문자열이다.
     let toml = reg.export_user_config();
     assert!(
         toml.contains("webhook"),
@@ -414,8 +373,7 @@ fn upsert_user_handler_keeps_fields_the_patch_did_not_mention() {
     );
 }
 
-/// 셸 불변식은 **접고 난 결과**로 판정한다 — `source = hook` 으로 만든 셸 핸들러의
-/// 명령만 고치는 정상 편집이 거부되면 안 된다.
+/// 기존 source를 유지한 채 셸 명령만 수정할 수 있어야 한다.
 #[test]
 fn upsert_user_handler_shell_edit_keeps_its_hook_source() {
     let reg = HookHandlerRegistry::new();
@@ -447,7 +405,7 @@ fn upsert_user_handler_shell_edit_keeps_its_hook_source() {
 
     let h = reg
         .get(&HookHandlerId::new("user/shell"))
-        .expect("살아 있어야");
+        .expect("수정한 핸들러가 조회돼야 한다");
     assert_eq!(h.source, HookSource::Hook);
 }
 
@@ -477,7 +435,6 @@ fn remove_and_clear_user_override() {
             .unwrap()
             .disabled
     );
-    // clear override → host 기본(enabled) 로 복귀.
     reg.clear_user_handler_override(&HookHandlerId::new(HOST_NOTIFY_ID));
     assert!(
         !reg.get(&HookHandlerId::new(HOST_NOTIFY_ID))
@@ -485,8 +442,6 @@ fn remove_and_clear_user_override() {
             .disabled
     );
 }
-
-// ── reload ────────────────────────────────────────────────────────────────
 
 #[test]
 fn reload_user_config_replaces_user_keeps_host() {
@@ -511,7 +466,6 @@ fn reload_user_config_replaces_user_keeps_host() {
         5
     );
 
-    // 2차: user override 제거하고 새 user 핸들러 추가 → reload.
     std::fs::write(
         &p,
         r#"
@@ -527,14 +481,12 @@ fn reload_user_config_replaces_user_keeps_host() {
     .unwrap();
     reg.reload_user_config(&p);
 
-    // host 는 default priority (=100) 로 복귀.
     assert_eq!(
         reg.get(&HookHandlerId::new(HOST_NOTIFY_ID))
             .unwrap()
             .priority,
         100
     );
-    // user/fresh 등장.
     assert!(reg.contains(&HookHandlerId::new("user/fresh")));
 }
 
@@ -560,11 +512,8 @@ fn reload_parse_error_keeps_previous_state() {
 
     std::fs::write(&p, "[[handler\n id = broken").unwrap();
     reg.reload_user_config(&p);
-    // 파싱 실패 → 기존 user 항목 보존.
     assert!(reg.contains(&HookHandlerId::new("user/fresh")));
 }
-
-// ── source 게이트 ──────────────────────────────────────────────────────────
 
 #[test]
 fn handlers_for_source_gates_by_source() {
@@ -615,8 +564,6 @@ fn handlers_for_source_gates_by_source() {
     assert!(!wh_ids.contains(&"host/hook-only".to_string()));
 }
 
-// ── 셸 불변식 (구조적 강제) ────────────────────────────────────────────────
-
 #[test]
 fn shell_handler_bindable_to_hook_not_webhook() {
     let reg = HookHandlerRegistry::new();
@@ -634,7 +581,6 @@ fn shell_handler_bindable_to_hook_not_webhook() {
     );
     let h = reg.get(&HookHandlerId::new("host/sh")).unwrap();
     assert!(matches!(h.action, HookHandlerAction::ShellCommand { .. }));
-    // hook 트리거엔 잡히고, webhook 트리거엔 안 잡힌다.
     assert!(
         reg.handlers_for_source(TriggerSource::Hook)
             .iter()
@@ -647,7 +593,6 @@ fn shell_handler_bindable_to_hook_not_webhook() {
 fn user_shell_with_non_hook_source_dropped_in_finalize() {
     let reg = HookHandlerRegistry::new();
     let dir = tempfile::tempdir().unwrap();
-    // user config 는 parse 단계에서 셸 게이트가 없다 → finalize 가 구조적으로 drop.
     let p = write_user_toml(
         &dir,
         r#"
@@ -662,7 +607,6 @@ fn user_shell_with_non_hook_source_dropped_in_finalize() {
         "#,
     );
     reg.install_user_config(&p);
-    // 셸 + non-hook source → finalize 에서 drop → 조회 불가.
     assert!(reg.get(&HookHandlerId::new("user/bad-shell")).is_none());
 }
 
@@ -708,8 +652,6 @@ fn upsert_user_handler_shell_must_be_hook_source() {
     ));
 }
 
-// ── validate_binding (types) ───────────────────────────────────────────────
-
 #[test]
 fn validate_binding_rejects_source_mismatch_and_shell_webhook() {
     let reg = HookHandlerRegistry::new();
@@ -725,13 +667,9 @@ fn validate_binding_rejects_source_mismatch_and_shell_webhook() {
         "#,
     );
     let sh = reg.get(&HookHandlerId::new("host/sh")).unwrap();
-    // hook 전용 → webhook 바인딩 거부(source mismatch).
     assert!(validate_binding(&sh, TriggerSource::Webhook).is_err());
-    // hook 트리거엔 OK.
     assert!(validate_binding(&sh, TriggerSource::Hook).is_ok());
 }
-
-// ── export / save ──────────────────────────────────────────────────────────
 
 #[test]
 fn export_emits_only_user_origin() {
@@ -761,8 +699,6 @@ fn export_emits_only_user_origin() {
     assert!(exported.contains(HOST_NOTIFY_ID));
     assert!(exported.contains("disabled = true"));
     assert!(exported.contains("user/my-hook"));
-    // host handler 의 원 action(host default) 은 user 가 손대지 않았으므로
-    // export 의 host 엔트리엔 action 이 없어야 한다(action leak 금지).
     let sections: Vec<&str> = exported.split("[[handler]]").collect();
     let host_section = sections
         .iter()
@@ -840,17 +776,13 @@ fn export_empty_when_no_user_contributions() {
     assert_eq!(reg.export_user_config(), "");
 }
 
-// ── HostHookHandlerPort (S11: opaque JSON → PluginHookHandlerActionDecl) ───────
-//
-// 전역 싱글턴 `global()` 을 쓰므로 다른 테스트와 충돌하지 않도록 고유 plugin id 를
-// 쓰고 그 id 범위만 검증한다.
+// 전역 등록부를 사용하므로 다른 검사와 겹치지 않는 plugin ID만 조작한다.
 
 #[test]
 fn host_port_decodes_and_installs_plugin_hook_handlers() {
     use tasty_plugin_protocol::host_port::HookHandlerRegistryPort;
     let port = HostHookHandlerPort;
     let pid = "com.test.s11-port-ok";
-    // manifest 의 opaque `[[contributes.hook_handler]]` 항목과 동형의 JSON.
     let handlers = vec![
         serde_json::json!({
             "id": "notify",
@@ -861,7 +793,6 @@ fn host_port_decodes_and_installs_plugin_hook_handlers() {
                 "calls": [{ "method": "notification.create", "params": { "body": "hi" } }]
             }
         }),
-        // 잘못된 short-name → 디코드는 되지만 validate 에서 drop(전체 install 은 계속).
         serde_json::json!({
             "id": "Bad_Name",
             "source": "hook",
@@ -879,7 +810,6 @@ fn host_port_decodes_and_installs_plugin_hook_handlers() {
         "invalid short-name must be dropped, not installed"
     );
 
-    // 정리 — 전역 오염 방지.
     port.uninstall_plugin(pid);
     assert!(!global().contains(&good));
 }
@@ -889,7 +819,6 @@ fn host_port_shell_command_json_is_rejected_by_type() {
     use tasty_plugin_protocol::host_port::HookHandlerRegistryPort;
     let port = HostHookHandlerPort;
     let pid = "com.test.s11-port-shell";
-    // plugin decl 은 shell_command variant 가 없으므로 디코드 실패 → skip(install 안 됨).
     let handlers = vec![serde_json::json!({
         "id": "sh",
         "source": "hook",
@@ -903,12 +832,6 @@ fn host_port_shell_command_json_is_rejected_by_type() {
     );
 }
 
-/// poison 된 레지스트리가 **조용히 아무것도 안 하는** 대신 계속 동작한다.
-///
-/// 이전에는 락 획득 19 곳이 전부 무음이었다 — 그중 둘은 더 나빴다.
-/// `upsert_full_handler` 는 등록하지 못한 채 `Ok(())` 를 돌려줬고,
-/// `upsert_user_handler` 는 `InvalidShortName("lock poisoned")` 로 사용자에게 id 가
-/// 틀렸다고 말했다. 어느 쪽도 진짜 원인을 남기지 않았다.
 #[test]
 fn a_poisoned_registry_still_installs_and_lists() {
     let reg = std::sync::Arc::new(HookHandlerRegistry::new());

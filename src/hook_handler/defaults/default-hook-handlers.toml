@@ -1,19 +1,6 @@
-# 호스트 default 훅 핸들러 정의 (파일 핸들러 `default-file-handlers.toml` 미러).
-#
-# 각 핸들러는 트리거 출처 게이트 `source`(hook / webhook / any)와 action 을 갖는다.
-# action 종류:
-#   - ipc_sequence : owner 가 고정한 tasty IPC 호출들을 페이로드 값으로 채워 순차 실행.
-#                    외부 HTTP(webhook)에 바인딩 가능(`is_webhook_bindable`).
-#   - shell_command: OS 프로세스 실행. **`source = hook` 만 허용**(웹훅→셸 경로는
-#                    finalize 단계에서 구조적으로 차단됨). host/user 만 선언 가능.
-#
-# priority 는 낮을수록 우선(파일 핸들러 규약과 동일). plugin 권장 ≥100, user 임의.
-#
-# 여기 등록된 핸들러는 "바인딩 가능한 후보"일 뿐 — 실제 웹훅/훅 트리거에 연결되기
-# 전까지는 아무 동작도 하지 않는다.
+# 등록만으로 실행하지 않으며 실제 훅·웹훅 바인딩이 필요하다.
+# command-completed의 알림 action과 task 완료 통지는 별도 처리다.
 
-# 웹훅 → OS 알림. 외부 HTTP 요청 바디의 `message` 를 알림 본문으로 노출하는 기본
-# 편의 핸들러. `webhook.register --handler host/webhook-notify` 로 즉시 바인딩 가능.
 [[handler]]
 id = "webhook-notify"
 source = "webhook"
@@ -23,15 +10,6 @@ priority = 100
 kind = "ipc_sequence"
 calls = [{ method = "notification.create", params = { title = "Webhook", body = "${body.message}" } }]
 
-# `host/command-completed` 완료 판정 전략(`../../completion_strategy/
-# defaults/default-completion-strategies.toml`)의 `notify_via` 대상. 훅 자체의
-# 완료 판정 배선은 이 액션과 무관하다 — 러너(`HostExecutor::dispatch_push_strategy`)
-# 가 이 핸들러를 `hook.set --event command-completed --handler host/command-completed
-# --once` 로 대상 surface 에 1 회성 바인딩하면, 발화 시 host event 큐(`HookFired`)
-# 가 `hook_id → task_id` 매핑을 조회해 task 를 마감한다(`Core::resolve_hook_task_wait`)
-# — 이 IpcSequence 실행은 순수 부가 효과(가시성용 알림)일 뿐이다. 사용자가
-# `hook.set --event command-completed --handler host/command-completed` 로 직접
-# 걸어도 같은 알림을 받을 수 있다.
 [[handler]]
 id = "command-completed"
 source = "hook"

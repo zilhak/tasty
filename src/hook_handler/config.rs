@@ -1,14 +1,5 @@
-//! Hook handler TOML/manifest schema. Actor 별 action variant 차이를 schema 에서
-//! 강제한다 (파일 핸들러 `crates/tasty-file-handler/src/config.rs` 미러).
-//!
-//! - `HostHookHandlerActionDecl`: `IpcSequence` / `ShellCommand`
-//! - `PluginHookHandlerActionDecl`: `IpcSequence` (**ShellCommand 없음** — manifest reject)
-//! - `UserHookHandlerActionDecl`: `IpcSequence` / `ShellCommand`
-//!
-//! 셸(`ShellCommand`)은 OS 프로세스를 띄우는 위험 action 이라 파일 핸들러의 `System`
-//! 과 같은 지위 — host/user 만 선언할 수 있고 plugin 은 타입 레벨에서 배제한다.
-//! 추가로 `ShellCommand` 는 `source = hook` 만 허용하며, 이 불변식은 레지스트리
-//! finalize 단계에서 구조적으로 강제된다(`registry.rs`).
+//! host·사용자 선언은 IPC 시퀀스와 셸 명령을, plugin 선언은 IPC 시퀀스만 받는다.
+//! 셸 명령의 source=hook 제한은 별도 검증 함수와 registry 병합에서 확인한다.
 
 use std::fmt;
 
@@ -16,13 +7,10 @@ use serde::Deserialize;
 
 use super::types::{HookHandlerAction, HookSource, IpcCall, is_valid_hook_handler_short_name};
 
-/// Hook handler 정의의 actor-agnostic 표면. 파일 핸들러 `HandlerDecl<A>` 미러이되
-/// `detector` 대신 트리거 출처 게이트 `source` 를 갖는다.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HookHandlerDecl<A> {
-    /// short-name. 전역 id 로 합쳐질 때 `<owner_prefix>/<short-name>` 이 된다.
+    /// owner 접두사와 합쳐 전역 ID를 만든다.
     pub id: String,
-    /// 이 핸들러가 바인딩 가능한 트리거 출처(hook / webhook / any).
     pub source: HookSource,
     pub priority: i32,
     #[serde(default)]
@@ -32,7 +20,6 @@ pub struct HookHandlerDecl<A> {
     pub action: A,
 }
 
-/// Host default 가 사용 가능한 action set (IpcSequence + ShellCommand).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HostHookHandlerActionDecl {
@@ -46,16 +33,13 @@ pub enum HostHookHandlerActionDecl {
     },
 }
 
-/// Plugin manifest 가 사용 가능한 action set. **`ShellCommand` variant 없음** —
-/// manifest 에 `kind = "shell_command"` 적으면 serde unknown variant 로 reject.
-/// (파일 핸들러 plugin 이 `System` 을 못 쓰는 것과 동일한 지위.)
+/// plugin 선언에는 셸 명령 variant가 없어 역직렬화에서 거부된다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PluginHookHandlerActionDecl {
     IpcSequence { calls: Vec<IpcCall> },
 }
 
-/// User config 가 사용 가능한 action set (IpcSequence + ShellCommand).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UserHookHandlerActionDecl {
@@ -105,14 +89,10 @@ impl From<UserHookHandlerActionDecl> for HookHandlerAction {
     }
 }
 
-/// Hook handler decl schema 검증 실패 사유.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookHandlerDeclError {
     InvalidShortName(String),
-    /// 셸 action 을 `source != hook` 으로 선언(불변식 위반).
-    ShellMustBeHookSource {
-        handler: String,
-    },
+    ShellMustBeHookSource { handler: String },
 }
 
 impl fmt::Display for HookHandlerDeclError {
@@ -132,8 +112,6 @@ impl fmt::Display for HookHandlerDeclError {
 
 impl std::error::Error for HookHandlerDeclError {}
 
-/// Plugin decl 단독 schema 검증. plugin 은 `ShellCommand` 를 타입상 못 쓰므로 셸
-/// 게이트는 불필요하고 short-name 만 확인한다.
 pub fn validate_plugin_hook_handler_decl(
     decl: &HookHandlerDecl<PluginHookHandlerActionDecl>,
 ) -> Result<(), HookHandlerDeclError> {
@@ -143,7 +121,6 @@ pub fn validate_plugin_hook_handler_decl(
     Ok(())
 }
 
-/// Host decl 검증. short-name + 셸 불변식(`ShellCommand` ⇒ `source == hook`).
 pub fn validate_host_hook_handler_decl(
     decl: &HookHandlerDecl<HostHookHandlerActionDecl>,
 ) -> Result<(), HookHandlerDeclError> {

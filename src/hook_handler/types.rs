@@ -1,21 +1,7 @@
-//! 공유 훅 핸들러 레지스트리의 도메인 타입 (webhook/hook 트리거가 공유).
-//!
-//! 파일 핸들러(`crates/tasty-file-handler/src/types.rs`) 구조를 미러링하되, 트리거 출처를
-//! 게이트하는 `HookSource` 를 추가한다. MVP 는 `IpcSequence` / `ShellCommand`
-//! 두 action 만 정의한다.
-//!
-//! ## 불변식 (타입으로 강제)
-//! - **데이터/흐름 분리**: [`IpcCall::method`] 는 owner 가 등록 시 고정한 리터럴이며,
-//!   치환 엔진(`super::exec`)은 이 타입의 `method` 를 인자로 받지 않는다 — 페이로드가
-//!   method 자리에 도달할 코드 경로가 없다.
-//! - **셸 웹훅 거부**: [`HookHandlerAction::ShellCommand`] 는 `is_webhook_bindable()`
-//!   가 항상 `false` 이고, 레지스트리 등록 시 `source == Hook` 을 강제한다 →
-//!   웹훅(외부 HTTP) 바인딩이 구조적으로 불가능.
+//! 훅·웹훅 핸들러 타입. payload는 params 값에만 치환한다.
+//! ShellCommand의 웹훅 거부는 바인딩 검증과 등록부의 source 검사로 적용한다.
 
-/// 훅 핸들러의 전역 유일 식별자.
-///
-/// 형식은 파일 핸들러와 동일: `host/<short>` · `<plugin_id>/<short>` · `user/<short>`.
-/// `<short>` 패턴: `[a-z0-9-]{1,32}`.
+/// host/short, plugin_id/short 또는 user/short 형식의 ID. 생성자 자체가 문법을 검증하지는 않는다.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
@@ -37,7 +23,6 @@ impl std::fmt::Display for HookHandlerId {
     }
 }
 
-/// short-name 패턴 검증 — `[a-z0-9-]{1,32}` (파일 핸들러와 동일 규약).
 pub fn is_valid_hook_handler_short_name(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;
@@ -46,7 +31,6 @@ pub fn is_valid_hook_handler_short_name(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// 핸들러의 출처(누가 등록했나).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HookHandlerOwner {
     Host,
@@ -55,7 +39,6 @@ pub enum HookHandlerOwner {
 }
 
 impl HookHandlerOwner {
-    /// HookHandlerId prefix segment (`host` · `<plugin_id>` · `user`).
     pub fn prefix(&self) -> &str {
         match self {
             Self::Host => "host",
@@ -65,22 +48,15 @@ impl HookHandlerOwner {
     }
 }
 
-/// 핸들러가 바인딩 가능한 **트리거 출처** (내부 이벤트 / 외부 HTTP / 둘 다).
-///
-/// 네트워크 방향(inbound/outbound)이 아니라 트리거 출처로 명명한다 — hook 은
-/// 내부 이벤트 + 로컬 동작이라 "outbound" 가 아니기 때문(명세 "네이밍 주의").
+/// 네트워크 방향이 아닌 트리거 출처. 내부 훅·외부 HTTP·양쪽 중 하나다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookSource {
-    /// 내부 이벤트(기존 `tasty-hooks`)에만 바인딩.
     Hook,
-    /// 외부 HTTP(웹훅)에만 바인딩.
     Webhook,
-    /// 양쪽 모두.
     Any,
 }
 
-/// 실제 트리거가 발생한 출처 — 바인딩 게이트 검증의 입력.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerSource {
     Hook,
@@ -88,7 +64,6 @@ pub enum TriggerSource {
 }
 
 impl HookSource {
-    /// 이 핸들러를 주어진 트리거 출처에 바인딩할 수 있는가.
     pub fn accepts(self, trigger: TriggerSource) -> bool {
         matches!(
             (self, trigger),
@@ -99,30 +74,20 @@ impl HookSource {
     }
 }
 
-/// IpcSequence 의 한 스텝.
-///
-/// **불변식(데이터/흐름 분리)**: `method` 는 owner 가 등록 시 고정한 리터럴이다.
-/// 페이로드는 `params` 의 값 노드(leaf string)에만 `${...}` 로 치환되며,
-/// `method` 자리에는 어떤 경로로도 도달하지 못한다(치환 엔진이 `method` 를 아예
-/// 인자로 받지 않는다 — `super::exec::substitute_params` 참조).
+/// 등록된 method와 치환할 params. 실행기는 method를 payload로 바꾸지 않는다.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct IpcCall {
-    /// owner 가 고정한 IPC 메서드 리터럴. 페이로드에서 오지 못한다.
     pub method: String,
-    /// 값 슬롯에만 페이로드가 치환되는 params 템플릿.
     #[serde(default)]
     pub params: serde_json::Value,
 }
 
-/// 핸들러가 트리거됐을 때 수행할 동작 (데이터). 실제 실행은 `super::exec` layer.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HookHandlerAction {
-    /// **코어 기본, 웹훅용.** owner 가 등록 시 고정한 IPC 호출들의 순차 실행.
-    /// tasty 내부 IPC 만 조작(OS 셸 아님). `source: webhook | any`.
+    /// 등록된 IPC 요청의 순서대로 실행한다. hook과 webhook에 사용할 수 있다.
     IpcSequence { calls: Vec<IpcCall> },
-    /// **기존 `tasty-hooks` legacy** (OS 프로세스). `source: hook` 로만 게이트되어
-    /// 웹훅에는 바인딩 불가([`is_webhook_bindable`](HookHandlerAction::is_webhook_bindable)).
+    /// source=hook에서만 허용하는 OS 명령.
     ShellCommand {
         command: String,
         #[serde(default)]
@@ -131,16 +96,12 @@ pub enum HookHandlerAction {
 }
 
 impl HookHandlerAction {
-    /// 이 action 이 외부 HTTP(웹훅) 출처에 바인딩 가능한가.
-    ///
-    /// 셸(`ShellCommand`)은 **구조적으로 항상 `false`** — 웹훅→셸 경로를 타입
-    /// 레벨에서 차단한다(불변식: 셸 웹훅 거부).
+    /// 웹훅에 연결할 수 있는 action인지 반환한다. 호출자가 이 검사를 적용해야 한다.
     pub fn is_webhook_bindable(&self) -> bool {
         matches!(self, HookHandlerAction::IpcSequence { .. })
     }
 }
 
-/// 등록된 훅 핸들러.
 #[derive(Debug, Clone)]
 pub struct HookHandler {
     pub id: HookHandlerId,
@@ -152,19 +113,19 @@ pub struct HookHandler {
     pub disabled: bool,
 }
 
-/// 핸들러를 특정 트리거 출처에 바인딩할 때의 거부 사유.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindingError {
-    /// 핸들러 `source` 가 이 트리거 출처를 허용하지 않음.
     SourceMismatch {
         handler: String,
         declared: HookSource,
         trigger: TriggerSource,
     },
-    /// 셸 action 을 웹훅에 바인딩하려 함(구조적으로 불가).
-    ShellNotWebhookBindable { handler: String },
-    /// 비활성화된 핸들러.
-    Disabled { handler: String },
+    ShellNotWebhookBindable {
+        handler: String,
+    },
+    Disabled {
+        handler: String,
+    },
 }
 
 impl std::fmt::Display for BindingError {
@@ -187,10 +148,6 @@ impl std::fmt::Display for BindingError {
     }
 }
 
-/// 바인딩 게이트: 핸들러를 트리거 출처에 연결할 수 있는지 검증한다.
-///
-/// **불변식(셸 웹훅 거부)**: `Webhook` 트리거는 `is_webhook_bindable()` 가 참인
-/// action 만 허용 → `ShellCommand` 는 여기서 거부된다.
 pub fn validate_binding(handler: &HookHandler, trigger: TriggerSource) -> Result<(), BindingError> {
     if handler.disabled {
         return Err(BindingError::Disabled {

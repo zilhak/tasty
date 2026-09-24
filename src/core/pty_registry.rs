@@ -345,7 +345,7 @@ impl PtyRegistry {
     }
 
     /// 마지막 활동에서 TTL 이상 지난 항목을 제거하고 ID를 반환한다. Terminal·waker 정리는 호출자가 맡는다.
-    /// GUI는 주기 타이머에서도 호출한다. 헤드리스에는 이 주기 호출이 없어 새 spawn 때의 정리에 의존한다.
+    /// GUI는 주기 타이머에서도 호출한다. 헤드리스에는 이 주기 호출이 없어 spawn·list 요청 때의 정리에 의존한다.
     pub fn sweep_idle(&mut self, now: Instant) -> Vec<u32> {
         let ttl = self.idle_ttl;
         let expired: Vec<u32> = self

@@ -1,53 +1,26 @@
-//! 셸 핸들러 `TASTY_HOOK_*` 환경변수 조립 (순수 함수).
-//!
-//! 훅 트리거/수동 발화 컨텍스트를 `ShellCommand` 자식 프로세스의 환경변수로
-//! 변환한다. IpcSequence 가 `${body.*}` 치환(값슬롯)으로 받는 payload 값을 셸은
-//! env 로 받는다 — 두 action 의 의미 대칭.
-//!
-//! ## 불변식 준수
-//! - **데이터/흐름 분리**: env 는 **값 전달 전용**이다. 실행할 명령(command/args)은
-//!   레지스트리 owner 가 등록 시 고정하므로 payload 가 실행 대상을 바꿀 수 없다.
-//! - **플랫폼 env 제약**: NUL 문자는 양 플랫폼 모두 env 값에 올 수 없어 제거한다
-//!   (Unix 는 `CString` 변환 실패로 spawn 자체가 죽고, Windows env 블록은
-//!   NUL-구분이라 값이 잘린다). 값당 [`MAX_ENV_VALUE_BYTES`] 초과분은 절단 —
-//!   Windows 프로세스 env 블록 전체 상한(~32KiB)을 한 payload 값이 잠식해 spawn 이
-//!   깨지는 것을 막는다.
+//! 셸 명령에 전달할 TASTY_HOOK_* 값을 만든다. command·args 자체는 치환하지 않는다.
+//! 값별 NUL 제거·길이 제한은 있지만 변수 개수나 전체 환경 크기를 제한하지는 않는다.
 
 use serde_json::Value;
 
-/// env 한 값의 상한(바이트). 초과분은 char 경계에서 절단하고 warn.
+/// 각 값의 바이트 상한. UTF-8 문자 경계에서 자른다.
 const MAX_ENV_VALUE_BYTES: usize = 4096;
 
-/// 셸 핸들러 spawn 에 노출할 트리거 컨텍스트.
 #[derive(Debug, Clone)]
 pub struct HookShellEnv {
-    /// `TASTY_HOOK_EVENT` — 훅 트리거는 등록 이벤트 표시 문자열(`bell` /
-    /// `process-exit` / `output-match:<pattern>` / 플러그인 커스텀 키 등),
-    /// `hook_handler.dispatch` 수동 발화는 핸들러 id.
+    /// 등록 이벤트의 표시 문자열 또는 수동 실행의 핸들러 ID.
     pub event: String,
-    /// `TASTY_HOOK_SOURCE` — `"hook"`(내부 이벤트 트리거) | `"dispatch"`
-    /// (`hook_handler.dispatch` 수동 발화). 셸은 webhook 바인딩이 구조적으로
-    /// 불가하므로 `"webhook"` 은 존재하지 않는다.
+    /// hook 또는 수동 dispatch. 이 함수 자체는 문자열 값을 검증하지 않는다.
     pub source: &'static str,
-    /// `TASTY_HOOK_SURFACE_ID` — 훅 트리거의 발생 surface. 수동 발화는
-    /// surface 무관이라 `None`(변수 미설정).
+    /// Some이면 예약 TASTY_HOOK_SURFACE_ID를 먼저 만든다.
     pub surface_id: Option<u32>,
-    /// payload — object 면 최상위 key 각각이 `TASTY_HOOK_<UPPER_SNAKE_KEY>` 로
-    /// 노출된다(IpcSequence `${body.<key>}` 의 셸 대칭). object 외 값은 무시.
+    /// 객체의 최상위 키만 환경변수로 만든다. 다른 JSON 타입은 무시한다.
     pub payload: Value,
 }
 
-/// 컨텍스트를 `(이름, 값)` env 목록으로 조립한다.
-///
-/// key 정규화: ASCII 영숫자는 대문자로, 그 외 문자는 `_` 로. 정규화 결과가 이미
-/// 있는 변수(예약 3종 포함)와 겹치면 **먼저 온 값이 이기고** 나머지는 무시한다
-/// (정규화 접힘 충돌 방침). **예약 변수와의 충돌은 조용히**(warn 없이) 무시한다 —
-/// 트리거 payload(`trigger_payload`)는 IpcSequence `${body.surface_id}` 대칭을
-/// 위해 `surface_id` 를 payload 에도 항상 담으므로, `TASTY_HOOK_SURFACE_ID` 와의
-/// 충돌은 **모든 훅 발화마다 발생하는 정상 경로**이지 이례적 상황이 아니다(같은
-/// 값의 중복이라 첫 값 유지가 곧 정답). 반대로 **payload 안에서 서로 다른 원본
-/// key 가 정규화 후 충돌**하는 경우(예: `"pr-id"` vs `"pr_id"`)는 저자가 모를 수
-/// 있는 이례적 상황이라 그대로 warn 한다. 영숫자가 하나도 없는 key 는 건너뛴다.
+/// ASCII 영숫자를 대문자, 다른 문자를 _로 바꿔 이름을 만든다. 영숫자가 없으면 제외한다.
+/// 충돌 시 먼저 넣은 값을 유지한다. 예약값과 충돌은 조용히, payload끼리 충돌은 로그로 처리한다.
+/// surface_id가 None이면 예약 변수가 없어 payload의 surface_id가 그 이름을 사용할 수 있다.
 pub fn build_env(ctx: &HookShellEnv) -> Vec<(String, String)> {
     let mut vars: Vec<(String, String)> = vec![
         ("TASTY_HOOK_EVENT".into(), sanitize_value(ctx.event.clone())),
@@ -80,7 +53,6 @@ pub fn build_env(ctx: &HookShellEnv) -> Vec<(String, String)> {
     vars
 }
 
-/// payload key → env 이름 조각. 영숫자는 대문자, 그 외는 `_`. 영숫자 0개면 `None`.
 fn env_key_fragment(key: &str) -> Option<String> {
     let mut out = String::with_capacity(key.len());
     let mut has_alnum = false;
@@ -95,8 +67,7 @@ fn env_key_fragment(key: &str) -> Option<String> {
     has_alnum.then_some(out)
 }
 
-/// payload 값을 env 문자열로 렌더. 문자열은 그대로, 그 외 JSON 은 compact 표현
-/// (IpcSequence 치환의 `render_embedded` 와 동일 규약).
+/// 문자열은 그대로, 나머지는 JSON 문자열로 바꾼다.
 fn render_value(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
@@ -104,7 +75,6 @@ fn render_value(v: &Value) -> String {
     }
 }
 
-/// env 값 정화 — NUL 제거 + [`MAX_ENV_VALUE_BYTES`] 절단(char 경계).
 fn sanitize_value(mut s: String) -> String {
     if s.contains('\0') {
         tracing::warn!("hook shell env: NUL characters stripped from value");
@@ -163,7 +133,6 @@ mod tests {
     fn payload_top_level_keys_become_vars() {
         let vars = build_env(&ctx(None, json!({"repo": "tasty", "count": 3})));
         assert_eq!(get(&vars, "TASTY_HOOK_REPO"), Some("tasty"));
-        // 비문자열 값은 compact JSON 표현.
         assert_eq!(get(&vars, "TASTY_HOOK_COUNT"), Some("3"));
     }
 
@@ -177,13 +146,12 @@ mod tests {
     fn key_normalization_upper_snake() {
         let vars = build_env(&ctx(None, json!({"pr-id": "42", "리poß3": "x"})));
         assert_eq!(get(&vars, "TASTY_HOOK_PR_ID"), Some("42"));
-        // 비ASCII 는 `_`, ASCII 영숫자만 승격.
         assert_eq!(get(&vars, "TASTY_HOOK__PO_3"), Some("x"));
     }
 
     #[test]
     fn colliding_normalized_keys_first_wins() {
-        // BTreeMap 순서상 "pr-id" < "pr_id" — 먼저 온 값 유지, 뒤는 무시.
+        // 이 검사 구성의 JSON 맵 순서에서 pr-id가 먼저 온다.
         let vars = build_env(&ctx(None, json!({"pr-id": "a", "pr_id": "b"})));
         let hits: Vec<_> = vars
             .iter()
@@ -200,10 +168,6 @@ mod tests {
         assert_eq!(get(&vars, "TASTY_HOOK_SURFACE_ID"), Some("1"));
     }
 
-    /// `trigger_payload`는 IpcSequence `${body.surface_id}` 대칭을 위해 payload
-    /// 에 `surface_id` 를 **항상** 담는다 — 즉 이 충돌은 매 훅 발화마다
-    /// 발생하는 정상 경로다. 값이 일치(동일 출처)하므로 결과가 흔들리지 않고,
-    /// 중복 항목도 생기지 않아야 한다(vars 개수가 payload 유무와 무관하게 동일).
     #[test]
     fn payload_surface_id_matches_reserved_is_routine_not_exceptional() {
         let without_payload = build_env(&ctx(Some(7), Value::Null));
@@ -240,7 +204,6 @@ mod tests {
 
     #[test]
     fn truncation_respects_char_boundary() {
-        // 경계에 멀티바이트 문자가 걸리면 그 문자 전에서 자른다(패닉 없음).
         let s = format!("{}한", "a".repeat(MAX_ENV_VALUE_BYTES - 1));
         let vars = build_env(&ctx(None, json!({"k": s})));
         assert_eq!(

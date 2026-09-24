@@ -1,18 +1,6 @@
-//! 공유 훅 핸들러 레지스트리 — **S1b: 파일 핸들러 풀미러(정식화)**.
-//!
-//! 파일 핸들러(`crates/tasty-file-handler/src/registry.rs`)를 정본 템플릿으로 3출처 병합을 갖춘다:
-//! host embedded TOML + plugin manifest + user config(`~/.tasty/hook-handlers.toml`).
-//! 같은 handler id 가 여러 출처에 등장하면 **patch semantics**(Host → Plugin → User
-//! 순서로 `Some` 필드만 덮어씀), 정렬은 priority↑ → owner tie-break(user>plugin>host)
-//! → id.
-//!
-//! 파일 핸들러와의 차이:
-//! - `detector` 대신 트리거 출처 게이트 `source`(`HookSource`).
-//! - `System` 대신 셸 action `ShellCommand` — plugin 은 못 쓰고(타입 배제), host/user 만.
-//! - **셸 불변식**: `ShellCommand` 는 `source == Hook` 만 허용 → finalize 에서 구조적으로
-//!   강제한다(위반 시 drop + warn). 웹훅(외부 HTTP)→셸 경로가 어떤 출처로도 성립 불가.
-//! - 인스턴스가 아니라 **프로세스 전역 싱글턴**(`global()`) — 웹훅 리스너(off-main
-//!   thread)와 IPC 핸들러(main thread)가 같은 레지스트리를 봐야 하므로.
+//! host·plugin·사용자 선언을 병합한다. 지정된 필드만 덮고 사용자 설정을 마지막에 적용한다.
+//! 조회 정렬은 priority 오름차순, 같은 값은 사용자·plugin·host, ID 순서다.
+//! 셸 action은 source=hook만 허용한다. 웹훅과 IPC가 같은 전역 등록부를 사용한다.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -30,10 +18,8 @@ use super::types::{
     is_valid_hook_handler_short_name,
 };
 
-/// 런타임 등록(익명 웹훅 핸들러 등) 실패 사유.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
-    /// 셸 action 은 `source = Hook` 만 허용(불변식 강제).
     ShellMustBeHookSource { id: String },
 }
 
@@ -59,27 +45,18 @@ struct HookHandlerContribution {
 }
 
 struct Inner {
-    /// handler id → 출처별 contribution. install 순서 보존 (host → plugin → user).
     contributions: BTreeMap<HookHandlerId, Vec<HookHandlerContribution>>,
     finalized: BTreeMap<HookHandlerId, HookHandler>,
     dirty: bool,
 }
 
-/// 공유 훅 핸들러 레지스트리 (3출처 병합 + patch semantics + lazy finalize).
 pub struct HookHandlerRegistry {
     inner: RwLock<Inner>,
-    /// poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
     poison_reported: std::sync::atomic::AtomicBool,
 }
 
 impl HookHandlerRegistry {
-    /// Poison 을 복구해 read guard 를 잡는다.
-    ///
-    /// 이전에는 락 획득 19 곳이 전부 `read().ok()?` / `Err(_) => return` 으로 **조용히**
-    /// 빠져나갔다. 그 결과는 "등록한 hook handler 가 안 불린다" 인데 관측 지점이 0 이라
-    /// 원인을 찾을 방법이 없었다. `Inner` 는 `BTreeMap` 들과 `bool` 하나뿐이고 임계구역은
-    /// 자료구조 조작만 하므로 패닉이 나도 불변식은 성립한다 — 복구가 맞다
-    /// ([`error-handling.md`](../../docs/dev-guide/error-handling.md) "락 poison").
+    /// poison을 로그로 알리고 기존 상태를 사용한다. 부분 갱신을 되돌리거나 정합을 재검증하지는 않는다.
     fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
         crate::poison::recover_read(
             self.inner.read(),
@@ -88,7 +65,6 @@ impl HookHandlerRegistry {
         )
     }
 
-    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
     fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
         crate::poison::recover_write(
             self.inner.write(),
@@ -108,40 +84,32 @@ impl HookHandlerRegistry {
         }
     }
 
-    // ── 조회 ────────────────────────────────────────────────────────────
-
-    /// id 로 단건 lookup (owned). 없으면 `None`.
     pub fn get(&self, id: &HookHandlerId) -> Option<HookHandler> {
         self.ensure_finalized();
         let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
-    /// `get` 별칭 (파일 핸들러 `handler()` 미러).
-    // 아래 조회 API 군(handler/contains/list_handlers/all_handlers/
-    // handlers_for_source/clear_user_handler_override)은 현재 registry_tests 만
-    // 사용한다 — 파일 핸들러 레지스트리와의 API 대칭 유지 목적으로 남긴다.
+    // 이유: 아래 조회 API는 현재 검사에서 사용하며 공통 등록부 인터페이스를 유지한다.
     #[allow(dead_code)]
     pub fn handler(&self, id: &HookHandlerId) -> Option<HookHandler> {
         self.get(id)
     }
 
-    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
+    #[allow(dead_code)] // 이유: 현재 검사에서만 사용한다.
     pub fn contains(&self, id: &HookHandlerId) -> bool {
         self.ensure_finalized();
         self.lock_read().finalized.contains_key(id)
     }
 
-    /// 전체 핸들러 id (정렬순). 포커스 독립 — 전 범위 조회.
-    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
+    #[allow(dead_code)] // 이유: 현재 검사에서만 사용한다.
     pub fn list_handlers(&self) -> Vec<HookHandlerId> {
         self.ensure_finalized();
         let inner = self.lock_read();
         inner.finalized.keys().cloned().collect()
     }
 
-    /// 활성 핸들러 전체 (priority↑ → owner tie-break → id).
-    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
+    #[allow(dead_code)] // 이유: 현재 검사에서만 사용한다.
     pub fn all_handlers(&self) -> Vec<HookHandler> {
         self.ensure_finalized();
         let inner = self.lock_read();
@@ -155,8 +123,7 @@ impl HookHandlerRegistry {
         v
     }
 
-    /// **비활성 포함** 전체 핸들러 (priority↑ → owner tie-break → id). 관리·조회
-    /// 표면(`hook_handler.list`)이 disabled 핸들러도 보여줘 재활성 대상을 노출한다.
+    /// 비활성 항목도 포함한다. 관리 화면에서 다시 활성화할 대상을 보여준다.
     pub fn all_handlers_including_disabled(&self) -> Vec<HookHandler> {
         self.ensure_finalized();
         let inner = self.lock_read();
@@ -165,10 +132,7 @@ impl HookHandlerRegistry {
         v
     }
 
-    /// 주어진 트리거 출처에 바인딩 가능한 활성 핸들러들 (파일 핸들러 `handlers_for`
-    /// 미러). `source.accepts(trigger)` + 웹훅이면 `is_webhook_bindable()` 통과.
-    /// priority↑ → owner tie-break → id.
-    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
+    #[allow(dead_code)] // 이유: 현재 검사에서만 사용한다.
     pub fn handlers_for_source(&self, trigger: TriggerSource) -> Vec<HookHandler> {
         self.ensure_finalized();
         let inner = self.lock_read();
@@ -182,8 +146,6 @@ impl HookHandlerRegistry {
         sort_handlers(&mut v);
         v
     }
-
-    // ── install (3출처) ─────────────────────────────────────────────────
 
     pub fn install_host_defaults(&self, toml_text: &str) {
         let decls = match parse_host_handler_section(toml_text) {
@@ -250,13 +212,7 @@ impl HookHandlerRegistry {
         inner.dirty = true;
     }
 
-    // ── 런타임 등록(익명 웹훅 핸들러) ──────────────────────────────────
-
-    /// 완전 지정된 핸들러를 런타임 등록/갱신한다(익명 웹훅 핸들러 등). 같은
-    /// id·owner 는 덮어쓴다. 셸 불변식(`ShellCommand` ⇒ `source == Hook`) 적용.
-    ///
-    /// 파일 핸들러엔 없는 hook 전용 경로 — 인라인 `sequence` 로 등록된 웹훅 핸들러가
-    /// 조회 일관성을 위해 레지스트리에 반영될 때 쓴다.
+    /// 같은 ID·owner의 등록을 교체한다. 셸 action이면 source=hook이어야 한다.
     pub fn upsert_full_handler(&self, handler: HookHandler) -> Result<(), RegistryError> {
         if matches!(handler.action, HookHandlerAction::ShellCommand { .. })
             && handler.source != HookSource::Hook
@@ -265,8 +221,6 @@ impl HookHandlerRegistry {
                 id: handler.id.0.clone(),
             });
         }
-        // poison 을 `Ok(())` 로 보고하던 자리다 — 등록이 안 됐는데 호출자에게는
-        // 성공이라고 답했다. 이제 복구하고 실제 등록을 수행한다.
         let mut inner = self.lock_write();
         push_contribution(
             &mut inner,
@@ -284,9 +238,6 @@ impl HookHandlerRegistry {
         Ok(())
     }
 
-    // ── user config 편집 (Settings UI, S13) ─────────────────────────────
-
-    /// user 출처 contribution 만 모아 TOML 문자열로 직렬화. Settings UI 변경 저장에 사용.
     pub fn export_user_config(&self) -> String {
         let inner = self.lock_read();
         let mut handlers = Vec::<toml::Value>::new();
@@ -346,7 +297,7 @@ impl HookHandlerRegistry {
         toml::to_string(&doc).unwrap_or_default()
     }
 
-    /// `export_user_config` 결과를 `path` 에 atomic write.
+    /// 같은 디렉터리의 임시 파일을 쓴 뒤 대상 경로로 교체한다. fsync 내구성까지 보장하지는 않는다.
     pub fn save_user_config(&self, path: &Path) -> std::io::Result<()> {
         use std::io::Write;
         let text = self.export_user_config();
@@ -361,7 +312,6 @@ impl HookHandlerRegistry {
         Ok(())
     }
 
-    /// host/plugin/user handler 를 user-origin override 로 disable/enable.
     #[cfg(any(feature = "gui", test))]
     pub fn set_user_handler_disabled(&self, id: &HookHandlerId, disabled: bool) {
         let mut inner = self.lock_write();
@@ -390,8 +340,7 @@ impl HookHandlerRegistry {
         inner.dirty = true;
     }
 
-    /// User-origin contribution 의 `disabled_override` 만 비운다. 다른 user 필드 보존.
-    #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
+    #[allow(dead_code)] // 이유: 현재 검사에서만 사용한다.
     pub fn clear_user_handler_override(&self, id: &HookHandlerId) {
         let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
@@ -417,7 +366,6 @@ impl HookHandlerRegistry {
         inner.dirty = true;
     }
 
-    /// user-origin contribution 전체 제거. host/plugin 은 보존.
     pub fn remove_user_handler(&self, id: &HookHandlerId) {
         let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
@@ -430,15 +378,8 @@ impl HookHandlerRegistry {
         inner.dirty = true;
     }
 
-    /// user-origin handler 를 추가/갱신 (patch). 기존 host/plugin 이 있으면 그 위에
-    /// 덮는다. id 는 `<owner>/<short>` 형식이어야 한다.
-    ///
-    /// **접는 대상은 둘이다.** 하나는 host/plugin 기본값(그 위에 user 기여분이 얹힌다),
-    /// 다른 하나는 **직전 user 기여분**이다 — 안 준 필드는 지우는 것이 아니라 그대로
-    /// 둔다. 뒤엣것이 없으면 한 필드만 고치는 편집이 나머지를 전부 지우고, `source` 가
-    /// 지워진 핸들러는 [`merge_contribution`] 이 "필수 필드 누락" 으로 **drop 하므로
-    /// 고친 핸들러가 통째로 사라진다**(실측으로 그렇게 났다: `source` 를 준 생성 뒤
-    /// `action` 만 준 편집을 하면 그 id 가 조회에서 없어졌고, 재시작 후에도 없었다).
+    /// 이전 사용자 값과 host·plugin 값 위에 지정한 필드만 덮는다. None은 삭제가 아니다.
+    /// ID는 슬래시 유무만 확인하며 전체 prefix·short-name 문법 검사는 하지 않는다.
     pub fn upsert_user_handler(
         &self,
         decl: UserHookHandlerUpsertDecl,
@@ -447,8 +388,6 @@ impl HookHandlerRegistry {
             return Err(HookHandlerDeclError::InvalidShortName(decl.id.clone()));
         }
         let id = HookHandlerId(decl.id.clone());
-        // poison 을 `InvalidShortName("lock poisoned")` 으로 보고하던 자리다 —
-        // 사용자에게 id 형식이 틀렸다고 말하면서 진짜 원인은 남기지 않았다.
         let mut inner = self.lock_write();
         let prev = inner
             .contributions
@@ -469,9 +408,7 @@ impl HookHandlerRegistry {
                 .map(Into::into)
                 .or_else(|| prev.and_then(|c| c.action.clone())),
         };
-        // 셸 불변식: user 가 ShellCommand 를 non-hook source 로 두려 하면 거부.
-        // **접고 난 결과로** 판정한다 — 접기 전 인자만 보면 앞서 `source = hook` 으로
-        // 적어 둔 핸들러의 명령만 고치는 정상 편집이 거부된다.
+        // 이전 사용자 값과 합친 결과로 검사해야 명령만 수정할 때 기존 source를 유지할 수 있다.
         if matches!(merged.action, Some(HookHandlerAction::ShellCommand { .. }))
             && merged.source != Some(HookSource::Hook)
         {
@@ -482,9 +419,8 @@ impl HookHandlerRegistry {
         Ok(())
     }
 
-    /// 사용자 설정 파일을 다시 읽어 user owner contribution 만 교체. host + plugin 은 그대로.
-    ///
-    /// **Transactional**: read/parse 실패 시 기존 user contribution 보존.
+    /// 읽기·TOML 파싱에 성공하면 사용자 설정을 교체한다. 파일 부재는 빈 설정이다.
+    /// 개별 선언 검증 실패는 그 항목만 제외하므로 기존 설정 전체를 보존하는 경우와 구별한다.
     pub fn reload_user_config(&self, path: &Path) {
         let Some(decls) = read_user_decls(path) else {
             return;
@@ -526,9 +462,7 @@ impl HookHandlerRegistry {
     }
 }
 
-/// 사용자 설정 파일을 읽고 파싱한다. read/parse 실패는 `None`(호출자는 기존
-/// user contribution 을 그대로 보존해야 함) — 실패 사유는 여기서 warn 로그로
-/// 남긴다. 파일 부재(`NotFound`)는 실패가 아니라 "빈 설정"으로 취급한다.
+/// 읽기·파싱 실패는 None으로 돌려 기존 설정을 보존하게 한다. 파일 부재는 빈 목록이다.
 fn read_user_decls(path: &Path) -> Option<Vec<UserHookHandlerSettingsDecl>> {
     match std::fs::read_to_string(path) {
         Ok(text) => match parse_user_handler_section(&text) {
@@ -554,8 +488,6 @@ fn read_user_decls(path: &Path) -> Option<Vec<UserHookHandlerSettingsDecl>> {
     }
 }
 
-/// [`merge_contribution`] 의 patch-fold 누산기 — Host → Plugin → User 순서로
-/// 순회하며 `Some`/override 필드만 덮어쓴 중간 상태.
 struct MergeAcc {
     source: Option<HookSource>,
     priority: Option<i32>,
@@ -565,7 +497,6 @@ struct MergeAcc {
     owner: HookHandlerOwner,
 }
 
-/// `acc` 에 `c` 의 override 필드를 patch semantics(설정된 필드만 덮어씀)로 접는다.
 fn apply_contribution(acc: &mut MergeAcc, c: &HookHandlerContribution) {
     if c.source.is_some() {
         acc.source = c.source;
@@ -585,10 +516,7 @@ fn apply_contribution(acc: &mut MergeAcc, c: &HookHandlerContribution) {
     acc.owner = c.owner.clone();
 }
 
-/// 한 handler id 의 3출처 contribution 을 patch semantics(Host → Plugin → User
-/// 순서로 `Some` 필드만 덮어씀)로 병합해 최종 `HookHandler` 를 만든다. 순서는 설치
-/// 순서가 아니라 [`merge_order`] 가 정한다. 필수 필드(source/action) 누락이나 셸
-/// 불변식 위반이면 `None`(호출자는 drop) — 사유는 여기서 warn 로그로 남긴다.
+/// host·plugin·사용자 순서로 지정된 필드를 덮는다. source·action 누락이나 셸 제한 위반은 제외한다.
 fn merge_contribution(
     id: &HookHandlerId,
     contribs: &[HookHandlerContribution],
@@ -607,7 +535,6 @@ fn merge_contribution(
         apply_contribution(&mut acc, c);
     }
 
-    // source + action 둘 다 있어야 등록.
     let (Some(source), Some(action)) = (acc.source, acc.action) else {
         warn!(
             handler_id = id.as_str(),
@@ -615,7 +542,6 @@ fn merge_contribution(
         );
         return None;
     };
-    // 셸 불변식(구조적 강제): ShellCommand 는 source == Hook 만 산다.
     if matches!(action, HookHandlerAction::ShellCommand { .. }) && source != HookSource::Hook {
         warn!(
             handler_id = id.as_str(),
@@ -650,22 +576,13 @@ fn sort_handlers(v: &mut [HookHandler]) {
     });
 }
 
-/// finalize 가 contribution 을 병합하는 순서 — Host → Plugin → User. 같은 owner 안에서는 설치
-/// 순서를 그대로 둔다(안정 정렬).
-///
-/// 병합은 "마지막 non-None 이 이긴다" 라서 순서가 곧 우선순위다. 설치 순서로 병합하면 user
-/// 설정을 plugin 보다 먼저 읽는 부팅(headless 는 plugin 을 필요할 때 띄운다)이나 plugin 을
-/// 껐다 켠 경우 plugin 의 값이 user patch 를 덮는다. user patch 는 host · plugin 의 값을
-/// 덮어쓰는 것이 뜻이므로([`UserHookHandlerUpsertDecl`]) 늘 마지막에 둔다. host 와 plugin 은
-/// 한 id 에 함께 오지 않는다 — id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈린다
-/// ([`install_host`] · [`install_plugin`]). 그래서 둘 사이 순서는 결과를 바꾸지 않는다.
+/// 설치 시점에 상관없이 사용자 설정을 마지막에 적용한다. 같은 owner 안에서는 기존 순서를 유지한다.
 fn merge_order(contribs: &[HookHandlerContribution]) -> Vec<&HookHandlerContribution> {
     let mut ordered: Vec<&HookHandlerContribution> = contribs.iter().collect();
     ordered.sort_by_key(|c| std::cmp::Reverse(owner_rank(&c.owner)));
     ordered
 }
 
-/// tie-break 시 owner 우선순위 — 작을수록 우선. `user > plugin > host`.
 fn owner_rank(owner: &HookHandlerOwner) -> u8 {
     match owner {
         HookHandlerOwner::User => 0,
@@ -719,9 +636,6 @@ fn install_plugin(
 }
 
 fn install_user(inner: &mut Inner, decl: UserHookHandlerSettingsDecl) {
-    // user TOML 의 id 는 전역 id 형태(`host/<short>` · `<plugin>/<short>` · `user/<short>`).
-    // 어느 경우든 contribution owner 는 항상 `User`(= 출처가 사용자 TOML). base
-    // contribution(원 출처)은 retain-by-owner 로 보존되고 finalize 가 patch 로 덮는다.
     let id_str = decl.id.clone();
     if !id_str.contains('/') {
         warn!(
@@ -755,7 +669,6 @@ fn install_user(inner: &mut Inner, decl: UserHookHandlerSettingsDecl) {
 
 fn push_contribution(inner: &mut Inner, id: HookHandlerId, contrib: HookHandlerContribution) {
     let entry = inner.contributions.entry(id).or_default();
-    // 같은 origin 으로 재install 시 기존 동일 origin 제거 후 push.
     entry.retain(|c| !same_owner(&c.owner, &contrib.owner));
     entry.push(contrib);
 }
@@ -769,9 +682,7 @@ fn same_owner(a: &HookHandlerOwner, b: &HookHandlerOwner) -> bool {
     }
 }
 
-/// `upsert_user_handler` 의 입력(Settings UI · `hook_handler.upsert` IPC). 모든 필드
-/// optional 이고, `None` 은 "지운다" 가 아니라 **"그대로 둔다"** 이다 — 직전 user
-/// 기여분 위에 접힌다.
+/// None 필드는 이전 사용자 값을 유지한다. 필드를 지우는 요청 형식은 아니다.
 #[derive(Debug, Clone)]
 pub struct UserHookHandlerUpsertDecl {
     pub id: String,
@@ -782,7 +693,6 @@ pub struct UserHookHandlerUpsertDecl {
     pub action: Option<UserHookHandlerActionDecl>,
 }
 
-/// User TOML schema. 모든 필드 optional 로 patch 가능.
 #[derive(Debug, Clone, Deserialize)]
 struct UserHookHandlerSettingsDecl {
     id: String,
@@ -822,26 +732,18 @@ fn parse_user_handler_section(
     Ok(w.handlers)
 }
 
-// ── 프로세스 전역 싱글턴 ────────────────────────────────────────────────
-
 static REGISTRY: OnceLock<HookHandlerRegistry> = OnceLock::new();
 
-/// 전역 훅 핸들러 레지스트리. 웹훅 리스너 thread 와 IPC 핸들러 thread 가 공유한다
-/// (`&'static` — 내부 `RwLock` 로 동기화).
 pub fn global() -> &'static HookHandlerRegistry {
     REGISTRY.get_or_init(HookHandlerRegistry::new)
 }
 
-/// `~/.tasty/hook-handlers.toml` — 사용자 훅 핸들러 설정. 홈 결정 실패 시 임시 경로.
+/// 사용자 설정 경로. 홈을 못 찾으면 None이다.
 pub fn user_config_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("hook-handlers.toml"))
 }
 
-/// Plugin manager 가 `HookHandlerRegistryPort` 로 훅 핸들러 contribute 를 등록/해제할
-/// 때 쓰는 호스트 어댑터. 레지스트리가 프로세스 전역 싱글턴(`global()`)이라 상태를
-/// 갖지 않는 zero-sized 어댑터로 충분하다 — 파일 핸들러(`FileHandlerRegistry` 가
-/// 직접 impl)와 달리 여기서는 opaque JSON 을 concrete plugin decl 로 디코드해
-/// `global()` 에 위임한다.
+/// plugin 선언 JSON을 검증하고 전역 등록부에 전달하는 host 어댑터.
 pub struct HostHookHandlerPort;
 
 impl tasty_plugin_protocol::host_port::HookHandlerRegistryPort for HostHookHandlerPort {
@@ -852,8 +754,6 @@ impl tasty_plugin_protocol::host_port::HookHandlerRegistryPort for HostHookHandl
             match serde_json::from_value::<HookHandlerDecl<PluginHookHandlerActionDecl>>(v.clone())
             {
                 Ok(d) => {
-                    // schema 검증(short-name). plugin 은 `ShellCommand` 를 타입상 못
-                    // 쓰므로 셸 게이트는 불필요하다(config::validate_plugin_hook_handler_decl).
                     if let Err(e) = validate_plugin_hook_handler_decl(&d) {
                         warn!(plugin = plugin_id, error = %e, "plugin hook handler decl rejected");
                         continue;
@@ -875,9 +775,6 @@ impl tasty_plugin_protocol::host_port::HookHandlerRegistryPort for HostHookHandl
     }
 }
 
-/// 부팅 공용 헬퍼 — host embedded 기본값 + user config 를 전역 레지스트리에 install.
-/// GUI/headless 부팅에서 웹훅 리스너 init 직전에 호출한다. 중복 호출은 owner 기준
-/// retain 으로 idempotent.
 pub fn install_default_sources() {
     let reg = global();
     reg.install_host_defaults(include_str!("defaults/default-hook-handlers.toml"));

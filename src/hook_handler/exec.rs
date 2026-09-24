@@ -1,14 +1,5 @@
-//! IpcSequence 실행 코어 — owner 가 고정한 IPC 호출들을 페이로드 값으로 채워
-//! 순차 실행한다.
-//!
-//! ## 불변식 강제
-//! - **데이터/흐름 분리**: 치환은 [`substitute_params`] 로 **params 값 노드에만**
-//!   적용된다. `IpcCall::method` 는 이 모듈의 어떤 함수에도 인자로 넘어가지 않으므로
-//!   페이로드가 method 자리에 도달할 코드 경로가 없다. 객체 key 위치도 치환하지
-//!   않는다(값 leaf string 만).
-//! - **단방향(fire-and-forget)**: [`execute_sequence`] 는 `()` 를 반환한다. 각 IPC
-//!   호출 결과는 내부 로깅에만 쓰이고 호출자(웹훅 ACK 빌더)로 되돌아가지 않는다 —
-//!   시그니처상 실행 결과가 ACK 경로로 샐 수 없다.
+//! 등록된 IPC method는 그대로 두고 params 값의 자리표시자만 채워 순서대로 요청한다.
+//! 스텝 결과는 로그에 남기며 호출자에게 반환하지 않는다.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -21,13 +12,10 @@ use serde_json::Value;
 use super::types::IpcCall;
 use tasty_ipc::host_call::{HostIpcInjector, InjectError};
 
-/// IpcSequence 한 스텝의 응답 대기 상한. 메인루프 tick + 핸들러 처리 시간 포함.
+/// 한 스텝 응답을 기다릴 시간. 명령 실행을 취소하는 기한은 아니다.
 const STEP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 치환 컨텍스트 — HTTP 요청(또는 이벤트)에서 추출한 값들.
-///
-/// `body` 는 파싱된 JSON(파싱 실패/비-JSON 이면 `Null`), `headers` 는 소문자 정규화
-/// 이름→값, `query` 는 쿼리 파라미터 이름→값.
+/// 호출자가 준비한 body·소문자 헤더·query 값. 여기서는 HTTP 파싱을 하지 않는다.
 #[derive(Debug, Clone, Default)]
 pub struct SubstitutionContext {
     pub body: Value,
@@ -35,23 +23,20 @@ pub struct SubstitutionContext {
     pub query: BTreeMap<String, String>,
 }
 
-/// `${scope.path}` 플레이스홀더 매처. `scope` ∈ {body, header, query}.
 fn placeholder_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\$\{([^}]+)\}").expect("valid placeholder regex"))
 }
 
-/// 문자열 전체가 정확히 하나의 `${...}` 인 경우 내부 참조를 반환.
+/// 문자열 전체가 하나의 자리표시자일 때만 내부 참조를 반환한다.
 fn whole_placeholder(s: &str) -> Option<&str> {
     let inner = s.strip_prefix("${")?.strip_suffix('}')?;
-    // 내부에 추가 `${` 나 `}` 가 있으면 "전체가 단일 플레이스홀더" 가 아니다.
     if inner.contains("${") || inner.contains('}') {
         return None;
     }
     Some(inner)
 }
 
-/// JSON path (`a.b.0.c`) 를 따라 값을 찾는다. 객체 key + 배열 인덱스 지원.
 fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
     let mut cur = root;
     for seg in path.split('.') {
@@ -67,12 +52,10 @@ fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
     Some(cur)
 }
 
-/// `${scope.path}` 참조를 해소한다. 미해소 시 `None`.
 fn resolve_ref(reference: &str, ctx: &SubstitutionContext) -> Option<Value> {
     let (scope, path) = reference.split_once('.')?;
     match scope {
         "body" => resolve_json_path(&ctx.body, path).cloned(),
-        // HTTP 헤더 이름은 대소문자 무시 — 소문자 정규화 후 조회.
         "header" => ctx
             .headers
             .get(&path.to_ascii_lowercase())
@@ -82,7 +65,6 @@ fn resolve_ref(reference: &str, ctx: &SubstitutionContext) -> Option<Value> {
     }
 }
 
-/// 해소된 값을 문자열 임베드용으로 렌더. 문자열이면 그대로, 그 외는 JSON 표현.
 fn render_embedded(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
@@ -90,8 +72,8 @@ fn render_embedded(v: &Value) -> String {
     }
 }
 
-/// 문자열 leaf 치환. 전체가 단일 `${...}` 이면 해소된 **JSON 타입을 보존**하고,
-/// 임베드(`"hello ${body.name}"`)면 텍스트로 치환한다.
+/// 전체가 자리표시자이면 JSON 타입을 유지하고 없으면 Null이다.
+/// 문장 안의 자리표시자는 문자열로 바꾸며 찾지 못한 값은 빈 문자열이다.
 fn substitute_string(s: &str, ctx: &SubstitutionContext) -> Value {
     if let Some(inner) = whole_placeholder(s) {
         return resolve_ref(inner, ctx).unwrap_or(Value::Null);
@@ -105,10 +87,7 @@ fn substitute_string(s: &str, ctx: &SubstitutionContext) -> Value {
     Value::String(replaced.into_owned())
 }
 
-/// params 템플릿에 페이로드를 치환한다.
-///
-/// **값 노드(leaf string)에만** `${...}` 를 해석한다. 객체 key 는 절대 건드리지
-/// 않으며, method 는 이 함수에 인자로 넘어오지 않는다(데이터/흐름 분리 불변식).
+/// params의 문자열 값만 치환한다. 객체 키나 method는 바꾸지 않는다.
 pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
     match template {
         Value::String(s) => substitute_string(s, ctx),
@@ -122,36 +101,9 @@ pub fn substitute_params(template: &Value, ctx: &SubstitutionContext) -> Value {
     }
 }
 
-/// IpcSequence 를 **fire-and-forget** 로 실행한다.
-///
-/// 각 스텝의 `method` 는 owner 가 고정한 리터럴(치환 대상 아님)이고, `params` 만
-/// 페이로드로 치환한다. IPC 응답은 내부 로깅에만 쓰이고 반환하지 않는다 — 이
-/// 함수가 `()` 를 반환하므로 실행 결과가 웹훅 ACK 로 샐 수 없다(단방향 불변식,
-/// 이 불변식은 유지한다 — 반환값 추가는 하지 않는다).
-///
-/// MVP: 한 스텝이 실패해도 다음 스텝을 계속 진행한다(관측만). 조건분기는 후속.
-///
-/// 실패 로그는 `error!` — 예를 들어 이 스텝이 `agent.task_set_result`
-/// 라면, 실패는 곧 "그 task 가 조용히 영원히 끝나지 않는다"는 뜻이다. 반환값이 없어
-/// 호출자가 이 실패를 감지할 방법이 없으므로(단방향 불변식), 로그가 유일한 관측
-/// 지점이다 — 일상적 경고(`warn!`)로는 운영 중 놓치기 쉽다. push 완료 전략의
-/// 필수 timeout(§C-3, 레지스트리 쪽 트랙)이 이 실패로 인한 task 영구 hang 자체의
-/// 안전망이고, 이 로그 레벨 변경은 그 안전망이 왜 발동했는지 진단 가능하게 한다.
-///
-/// 큐 입장 거절(호스트 명령 큐가 밀려 주입을 받지 않음)은 다른 실패와 **다른 문구**로
-/// 남긴다 — 그 스텝은 실행되지 않았고(시간 초과와 달리 결과 불명이 아니다), 원인은 스텝이
-/// 아니라 호스트의 적체다. 다시 걸지 않는다: 훅 스텝(웹훅 · surface 훅 · idle 훅)은 계속 오는 사건이라
-/// 재시도가 곧 적체를 키우는 부하다. 다음 스텝은 그대로 진행한다(위 MVP 정책).
-///
-/// 스텝은 **기한 없이** 넣는다(`dispatch_even_if_abandoned`) — 스텝 상한에서 물러나도 명령은
-/// 큐에 남아 나중에 실행된다. 이 함수를 지나는 훅 스텝 전부(웹훅 · surface 훅 — notification ·
-/// bell · output-match · command-completed · process-exit · idle 훅 · 수동 발화)가 그렇다. 그 사건은
-/// 다시 오지 않는다 — 웹훅은 밖에서 이미 ACK 됐고, surface 훅의 사건은 한 번 일어나고 끝난다. 그래서
-/// 늦게라도 반영되는 쪽이 안 반영되는 쪽보다 낫다(`agent.task_set_result` 스텝이 버려지면 그 task 는
-/// 끝나지 않는다). 근거: `docs/adr/0007-ipc-scheduling-and-deadlines.md`.
-///
-/// 스텝 로그는 `origin` 을 머리에 단다 — 같은 함수를 세 출처가 부르므로, 없으면 실패한 스텝이 어느
-/// 경로에서 왔는지 로그만으로 가를 수 없다.
+/// 앞 스텝의 응답 또는 대기 종료 뒤 다음 요청을 보낸다. 실패해도 계속하며 재시도하지 않는다.
+/// 응답을 기다리다 포기해도 이미 들어간 명령은 나중에 실행될 수 있다.
+/// 따라서 요청 순서는 유지하지만 이전 명령의 완료를 기다린다고 보장하지는 않는다.
 pub fn execute_sequence(
     origin: SequenceOrigin,
     injector: &HostIpcInjector,
@@ -169,15 +121,11 @@ pub fn execute_sequence(
     }
 }
 
-/// IpcSequence 를 누가 발화했는가 — 스텝 로그의 머리말이다. 바인딩 게이트의 입력인
-/// [`super::types::TriggerSource`] 와 다르다: 수동 발화는 게이트를 거치지 않는다.
+/// 로그에 남길 호출 출처. 바인딩 허용 여부를 판단하는 TriggerSource와는 별개다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SequenceOrigin {
-    /// 웹훅 리스너 — HTTP 요청마다 제 스레드에서 실행한다.
     Webhook,
-    /// surface 훅(notification · bell · output-match · command-completed · process-exit · idle 훅).
     SurfaceHook,
-    /// `hook_handler.dispatch` 수동 발화.
     Dispatch,
 }
 
@@ -191,14 +139,9 @@ impl std::fmt::Display for SequenceOrigin {
     }
 }
 
-/// 스텝 실행기 스레드에 쌓여 있을 수 있는 시퀀스 수. 호스트 명령 큐가 받는 주입 명령 수의 상한
-/// ([`tasty_ipc::admission::INJECTED_DEPTH_LIMIT`])에 묶는다 — 그것이 바뀌면 이 값도 따라 바뀐다.
-/// 한 시퀀스는 스텝이 하나 이상이므로, 이 값이 그 상한 이상이면 호스트 큐가 받아 줬을 만큼의 폭주를
-/// 이 자리에서 먼저 거절하지 않는다.
-/// 근거: `docs/adr/0027-lua-and-hook-execution.md`.
+/// 실행 중인 한 건 외에 대기할 시퀀스 수. host 명령 큐와 같은 수를 쓰지만 단위는 시퀀스다.
 const PENDING_SEQUENCE_LIMIT: usize = tasty_ipc::admission::INJECTED_DEPTH_LIMIT;
 
-/// 실행기 스레드로 넘기는 시퀀스 한 건 — 제 injector 사본을 들고 간다.
 struct SequenceJob {
     origin: SequenceOrigin,
     handler_id: String,
@@ -207,7 +150,7 @@ struct SequenceJob {
     ctx: SubstitutionContext,
 }
 
-/// 스텝 실행기 스레드의 입구. 처음 부를 때 스레드를 하나 띄운다. 못 띄웠으면 `None` 이다.
+/// 최초 스레드 생성 실패도 OnceLock에 남겨 이후 자동 재시도하지 않는다.
 fn sequence_worker() -> Option<&'static SyncSender<SequenceJob>> {
     static WORKER: OnceLock<Option<SyncSender<SequenceJob>>> = OnceLock::new();
     WORKER
@@ -232,23 +175,9 @@ fn sequence_worker() -> Option<&'static SyncSender<SequenceJob>> {
         .as_ref()
 }
 
-/// IpcSequence 를 **호스트 명령 큐를 비우는 스레드 밖에서** 실행하도록 넘기고 곧바로 돌아온다.
-///
-/// surface 훅(notification · bell · output-match · command-completed · process-exit · idle 훅)은
-/// 호스트 명령 큐를 비우는 바로 그 스레드(GUI 메인 스레드 · headless 루프)에서 발화한다. 거기서
-/// [`execute_sequence`] 를 부르면 스텝이 넣은 명령을 꺼낼 스레드가 자기 자신이라 스텝마다 대기
-/// 상한([`STEP_TIMEOUT`])까지 서고, 그동안 화면과 모든 IPC 응답이 선다.
-///
-/// 실행은 전용 스레드 하나가 **넘겨받은 순서대로** 한다 — 한 시퀀스의 스텝은 앞 스텝의 답을 받은 뒤
-/// 다음 스텝을 넣고, 먼저 넘겨받은 시퀀스가 먼저 끝난다. surface 훅과 `hook_handler.dispatch` 수동
-/// 발화가 이 한 줄을 함께 쓰므로 두 출처의 시퀀스도 스텝 단위로 끼어들지 않는다. 스텝 결과의 기록은
-/// [`execute_sequence`] 그대로다(실패는 `error!`, 반환값 없음).
-///
-/// 실행기에 이미 [`PENDING_SEQUENCE_LIMIT`] 건이 쌓여 있으면 이 시퀀스는 **실행하지 않고** `Err` 를
-/// 돌려준다 — 호스트 큐의 입장 거절과 같은 성질이다(스텝이 아니라 적체가 원인이고, 다시 걸지 않는다).
-/// 호출자가 `error!` 로 남기고, 답할 호출자가 있는 자리(수동 발화)는 "실행하지 않았다" 로 답한다.
-/// 근거: `docs/adr/0027-lua-and-hook-execution.md`,
-/// `docs/adr/0027-lua-and-hook-execution.md`.
+/// 명령 큐를 처리하는 스레드에서 응답을 기다리지 않도록 전용 실행기에 넘긴다.
+/// 수락 순서로 시퀀스를 처리하며 가득 찼거나 worker가 없으면 실행 전에 오류를 반환한다.
+/// 개별 스텝의 대기 종료 뒤 실제 명령은 여전히 실행 중일 수 있다.
 pub fn enqueue_sequence(
     origin: SequenceOrigin,
     handler_id: &str,
@@ -270,14 +199,10 @@ pub fn enqueue_sequence(
     })
 }
 
-/// 실행기에 못 넘긴 시퀀스의 사유 — 그 시퀀스는 실행되지 않았다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SequenceNotQueued {
-    /// 대기 시퀀스가 [`PENDING_SEQUENCE_LIMIT`] 에 이르렀다.
     Full,
-    /// 실행기 스레드를 못 띄웠다.
     WorkerUnavailable,
-    /// 실행기 스레드가 멈췄다.
     WorkerStopped,
 }
 
@@ -291,8 +216,7 @@ impl std::fmt::Display for SequenceNotQueued {
     }
 }
 
-/// 실패한 스텝 하나를 남긴다. 실행되지 않은 실패(큐 입장 거절 · 큐 송신 실패)는 문구를 갈라
-/// 시간 초과·handler 거절과 구별되게 한다 — 앞의 것은 스텝이 아니라 호스트의 적체가 원인이다.
+/// 큐에 넣지 못한 오류와 요청 이후 오류를 구분해 기록한다. 재시도는 하지 않는다.
 fn log_step_failure(origin: SequenceOrigin, i: usize, method: &str, e: &InjectError) {
     if e.nothing_ran() {
         tracing::error!(
@@ -303,14 +227,8 @@ fn log_step_failure(origin: SequenceOrigin, i: usize, method: &str, e: &InjectEr
     }
 }
 
-/// `ShellCommand` action 을 **fire-and-forget** 로 실행한다(worker thread spawn).
-///
-/// `hook_handler.dispatch` 가 셸 핸들러를 수동 발화할 때 쓴다. `tasty-hooks` 의
-/// background spawn 을 미러링하되, 구조화된 `command` + `args` 를 셸 경유 없이 직접
-/// exec 한다(인젝션 표면 축소). `env` 는 트리거 컨텍스트(`TASTY_HOOK_*`,
-/// [`super::env::build_env`]) — 값 전달 전용이며 실행 대상(command)은 owner 소유라
-/// 바꾸지 못한다. 실행 결과는 로깅에만 쓰이고 반환하지 않는다 — 응답 경로
-/// (ACK/JSON)로 실행 결과가 새지 않는다(단방향 불변식).
+/// command·args로 직접 프로세스를 실행하고 작업 스레드에서 output을 기다린다.
+/// 셸을 자동으로 거치지 않는다. 비정상 exit status는 별도로 검사하지 않고 결과도 반환하지 않는다.
 pub fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
     if let Err(e) = std::thread::Builder::new()
         .name("hook-shell".into())
@@ -332,7 +250,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 이 스코프 동안 이 스레드에서 나가는 tracing 이벤트를 문자열로 모은다.
     fn capture_logs(f: impl FnOnce()) -> String {
         use std::sync::{Arc, Mutex};
         #[derive(Clone)]
@@ -353,9 +270,7 @@ mod tests {
             .with_ansi(false)
             .with_writer(move || sink.clone())
             .finish();
-        // 다른 스레드(다른 시험의 실행기 · 수동 발화)가 이 콜사이트를 구독자 없이 먼저 등록하면
-        // interest 가 "never" 로 캐시되어 여기서 켠 구독자가 줄을 못 받는다(변이 실행 중 한 번 관측).
-        // 구독자를 켠 뒤 캐시를 다시 짓는다.
+        // 다른 검사가 먼저 등록한 tracing 콜사이트도 현재 구독자로 수집하도록 캐시를 갱신한다.
         tracing::subscriber::with_default(sub, || {
             tracing::callsite::rebuild_interest_cache();
             f()
@@ -364,8 +279,6 @@ mod tests {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    /// 스텝 로그는 시퀀스를 발화한 출처를 찍는다 — 성공한 스텝과 실패한 스텝 둘 다. 예전에는 세
-    /// 출처가 모두 `webhook` 으로 찍혀 수동 발화 · surface 훅의 실패를 웹훅 실패로 읽게 했다.
     #[test]
     fn step_logs_name_the_origin_that_fired_the_sequence() {
         use std::sync::{Arc, mpsc};
@@ -378,7 +291,6 @@ mod tests {
         ] {
             let (tx, rx) = mpsc::channel::<IpcCommand>();
             let injector = HostIpcInjector::new(tx, Arc::new(|| {}));
-            // 첫 스텝은 성공, 둘째 스텝은 handler 거절로 답한다.
             let answerer = std::thread::spawn(move || {
                 for ok in [true, false] {
                     let cmd = rx
@@ -437,7 +349,6 @@ mod tests {
 
     #[test]
     fn whole_placeholder_preserves_type() {
-        // 전체가 단일 플레이스홀더 → JSON 타입 보존(숫자는 숫자로).
         let out = substitute_params(&json!("${body.nested.n}"), &ctx());
         assert_eq!(out, json!(42));
     }
@@ -483,20 +394,17 @@ mod tests {
 
     #[test]
     fn object_keys_are_never_substituted() {
-        // key 위치의 `${...}` 는 치환하지 않는다(데이터/흐름 분리).
         let out = substitute_params(&json!({"${body.message}": "v"}), &ctx());
         assert_eq!(out, json!({"${body.message}": "v"}));
     }
 
-    /// 직접 exec 경로(`spawn_shell`)가 env 를 자식에 실제로 노출하는지 실 프로세스로
-    /// 증명한다 — `hook_handler.dispatch` 셸 발화의 `TASTY_HOOK_*` 회귀 방어.
+    /// 직접 프로세스 실행 경로에서 환경변수가 전달되는지 확인한다.
     #[test]
     fn spawn_shell_exposes_env_to_child() {
         use std::time::{Duration, Instant};
         let dir = tempfile::tempdir().expect("tempdir");
         let marker = dir.path().join("env.txt");
-        // 직접 exec 은 셸 확장이 없으므로 셸 자체를 command 로 준다(공백 없는
-        // temp 경로 — trigger.rs 인라인 테스트와 동일 근거로 인용부호 없음).
+        // 셸 확장을 검사하려고 셸 자체를 실행한다. 임시 경로에 공백이 없다는 전제가 있다.
         let (command, args) = if cfg!(windows) {
             (
                 "cmd".to_string(),
@@ -519,11 +427,7 @@ mod tests {
             args,
             vec![("TASTY_HOOK_EVENT".to_string(), "user/envtest".to_string())],
         );
-        // **존재가 아니라 내용을 기다린다.** 리다이렉트(`> file`)는 파일을 먼저 만들고
-        // 나중에 쓴다 — `exists()` 로 깨면 빈 파일을 읽는 창이 열린다. Windows 의 cmd 는
-        // 그 창이 넓어 CI 에서 빈 문자열을 읽고 실패했다. 환경변수가 정말 안 넘어갔다면
-        // 빈 값이 아니라 cmd 가 확장하지 못한 `%TASTY_HOOK_EVENT%` 원문이 남는다.
-        // `trigger.rs` 의 `shell_binding_receives_command_completed_exit_code_env` 와 같은 대기다.
+        // 리다이렉트는 쓰기 전에 파일을 만들 수 있으므로 존재가 아닌 내용을 기다린다.
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut content = String::new();
         while Instant::now() < deadline {
@@ -533,12 +437,10 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(25));
         }
-        // 빈 값 하나로는 원인이 셋으로 갈린다 — 마커 존재 여부와 원문 여부를 함께 찍는다.
         assert_eq!(
             content.trim(),
             "user/envtest",
-            "marker exists={} — false 면 셸이 안 떴다, 값이 %TASTY_HOOK_EVENT% 원문이면 \
-             env 가 안 넘어갔다, true 인데 비어 있으면 5 초 안에 안 쓰였다",
+            "5초 안에 기대한 환경변수 출력을 읽지 못했다; marker exists={}",
             marker.exists()
         );
     }
@@ -554,9 +456,7 @@ mod tests {
 
     #[test]
     fn agent_stream_turn_correlation_sequence_substitutes_only_value_slots() {
-        // agent-stream 턴 correlation 웹훅이 거는 시퀀스(문서 등록 예시와 같은 형태):
-        // turn_start 의 request_id 와 claude.tell 의 message 만 body 에서 채워지고,
-        // method·surface 같은 owner 고정 리터럴은 치환 대상이 아니다(ADR-0032 불변식).
+        // request_id와 message만 치환하고 등록된 surface 값은 유지하는 입력이다.
         let ctx = SubstitutionContext {
             body: json!({"request_id": "req-8f3a", "prompt": "summarize the build log"}),
             ..Default::default()
@@ -576,7 +476,6 @@ mod tests {
             tell_params,
             json!({"message": "summarize the build log", "surface": 42})
         );
-        // 객체 key 위치의 `${...}` 는 치환되지 않는다(값 leaf 만).
         let key_shaped = substitute_params(&json!({"${body.request_id}": "x"}), &ctx);
         assert_eq!(
             key_shaped,
