@@ -1,8 +1,7 @@
 # AppState 필드 소유권
 
-`AppState`(`src/state.rs`)는 창 하나의 상태다. 한 struct 안에 성질이 다른 세 가지가 함께
-산다. 이 문서는 필드마다 그중 무엇인지, 얼마나 사는지, 누가 세우고 누가 비우는지, 그리고
-headless 빌드에 그 필드가 있는지를 적는다.
+`AppState`(`src/state.rs`)는 창 하나의 상태다. 필드를 다음 세 종류로 나누고,
+수명·값을 쓰고 읽는 주체·헤드리스 빌드 포함 여부를 기록한다.
 
 - **도메인 사실** — 에이전트가 IPC 로 묻고 바꾸는 구조의 일부. 창이 없어도 뜻이 있다.
 - **사용자 view 상태** — 로컬 사용자가 지금 무엇을 보고 어디를 누르는지. 포커스·선택·
@@ -17,16 +16,16 @@ headless 빌드에 그 필드가 있는지를 적는다.
 ## 열 읽는 법
 
 - **수명**: `프레임`(매 egui 프레임 다시 채운다) · `열림`(popup·메뉴·드래그가 열려 있는 동안) ·
-  `요청`(세운 쪽 다음 소비 한 번에 비워진다) · `세션`(창이 사는 동안) · `영속`(디스크에서
+  `요청`(설정한 쪽 다음 소비 한 번에 비워진다) · `세션`(창이 유지되는 동안) · `영속`(디스크에서
   로드된다).
 - **headless**: `없음` 은 `cfg(feature = "gui")` 로 그 빌드에서 필드가 사라진 것이다.
   `읽힘` 은 headless 라이브러리 안에 그 필드를 읽는 자리가 있는 것이다. `③` 은 필드가
-  headless 에도 컴파일되고 그 빌드가 값을 세우지만 읽는 자가 GUI 뿐이라 항목 단위
+  headless 에도 컴파일되고 그 빌드가 값을 쓰지만 읽는 자가 GUI 뿐이라 항목 단위
   `expect(dead_code)` 를 단 것이다. `②` 는 headless 라이브러리에는 없고 테스트 구성에만 있는 것이다.
   `debug 헤드리스만 읽힘` 은 게이트가 `cfg(any(feature = "gui", debug_assertions[, test]))` 라 debug
   헤드리스에서만 컴파일되고 읽히는(주로 debug `ui.state` 덤프) 것이다 — release 헤드리스에는 필드가 없다.
 
-이 칸은 소스를 읽어 정한 값이 아니라 진단으로 잰 값이다. 재는 법은 아래 "재는 법".
+빌드별 포함·사용 여부는 아래 "재는 법"의 컴파일 진단으로 확인한다.
 
 ## `dialogs` — GUI 소유 한 덩어리
 
@@ -34,17 +33,17 @@ headless 빌드에 그 필드가 있는지를 적는다.
 있다. 자료형은 전부 `src/state/dialogs.rs` 한 파일에 있고, 그 모듈과 `dialogs` 필드는
 `cfg(feature = "gui")` 다. **headless 빌드에는 이 상태가 아예 없다.**
 
-전부 같은 칸에 든다: 사용자 view 상태 · 수명 `열림` 또는 `요청` · 세우는 쪽과 비우는 쪽이
+모두 다음 분류를 따른다: 사용자 view 상태 · 수명 `열림` 또는 `요청` · 설정하는 쪽과 비우는 쪽이
 모두 GUI(popup `draw_fn`·`on_close`, 사이드바·탭바, 메인 루프). 에이전트가 세우는 것처럼 보이는
 자리도 비우는 쪽은 GUI 다:
 
-| 필드 | 에이전트 쪽 입구 | 실제 도메인 사실이 사는 곳 |
+| 필드 | 에이전트 쪽 입구 | 실제 도메인 데이터의 저장 위치 |
 |---|---|---|
 | `pending_approval_ids` | `approval.request` · capability elevation 이 `enqueue_approval` 로 push | approval 레코드는 `Core` 의 approval 저장소가 갖는다. 이 큐는 그중 **popup 이 보여줄 순서**다 |
 | `file_picker` | `file_picker.trigger`(그 핸들러 모듈이 gui 전용) | 결과는 plugin 에 이벤트로 나간다(ADR-0036) |
 | `pending_open_preset_window` · `pending_preset_window_selection` | 사용자 origin 의 preset 저장만 세운다 | 저장된 preset 은 `PresetStore` 에 있다 |
 
-그래서 headless 가 이 덩어리를 잃어도 도메인 사실은 하나도 안 잃는다. approval 을 묻는 IPC
+그래서 headless 가 이 상태를 제외해도 승인 등 도메인 데이터는 유지된다. approval 을 묻는 IPC
 (`approval.list` 류)는 저장소를 읽는다.
 
 두 판정은 dialog 가 없어도 debug 빌드의 두 조합에 남는다(release 헤드리스에는 없다) —
@@ -53,7 +52,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 
 ## 나머지 필드
 
-| 필드 | 분류 | 수명 | 세우는 쪽 → 비우는 쪽 | headless |
+| 필드 | 분류 | 수명 | 설정하는 쪽 → 비우는 쪽 | headless |
 |---|---|---|---|---|
 | `active_workspace` | 사용자 view 상태 | 세션 | 사용자 전환 → — | 읽힘 (대상 생략 시 기본값) |
 | `category_last_active` | 사용자 view 상태 | 세션 | 사용자 전환 → — | debug 헤드리스만 읽힘(release 에는 필드 없음) |
@@ -74,7 +73,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | `popup_layers` · `plugin_popup_layers` · `host_popup_hittest` · `popup_escape_owner` · `plugin_popup_hittest` · `banner_layer` · `modifier_hint_layer` | 사용자 view 상태 | 프레임 | egui 패스 → 입력 라우팅 | 없음 |
 | `preset_store` · `memory` | 실행 자원 (Core 소유 Arc 의 사본) | 세션 | Core → — | `memory` 는 읽힘, `preset_store` 는 ③(사본을 받지만 읽는 자가 GUI 뿐 — `expect`) |
 | `pending_lifecycle_events` | 실행 자원 (큐) | 요청 | close cascade → 메인 루프가 plugin 에 통지 | 읽힘 |
-| `pending_host_events` | 실행 자원 (큐) | 요청 | `enqueue_host_event` → Event Bus 발화 | 읽힘 (headless drain) |
+| `pending_host_events` | 실행 자원 (큐) | 요청 | `enqueue_host_event` → Event Bus 이벤트 발행 | 읽힘 (headless drain) |
 | `last_focused_surface_id` · `last_active_workspace_id` · `last_focused_tab` · `last_tab_locations` | 실행 자원 (변화 감지 기준값) | 세션 | GUI tick 의 감지 → 같은 자리 | 없음 |
 | `explorer_views` · `dag_graph_views` | 사용자 view 상태 | 열림 (surface 수명) | surface 그리기 → surface 닫힘 | 없음 |
 | `tool_registry` · `palette_plugin_commands` | 도메인 사실의 사본 (plugin 기여 목록) | 세션 | plugin 활성 → 재계산 | 없음 |
@@ -124,9 +123,9 @@ drain이 좁은 port로 실행 가능해질 때만 pump 인자를 줄인다.
 
 ## 재는 법
 
-`없음`·`②`·`③` 칸은 headless 두 칸 검사로 닫혀 있다. 아래는 debug 프로필이고, release 두 칸
+`없음`·`②`·`③` 칸은 headless 두 가지 검사로 확인한다. 아래는 debug 프로필이고, release 두 조합
 (`--release` 를 더한 것)도 함께 돌린다 — debug 핸들러만 읽는 필드는 release headless 에서만
-dead 가 된다. 여덟 칸 전체는 [헤드리스 정의 경계](headless-build-boundaries.md) "재는 법":
+dead 가 된다. 여덟 조합 전체는 [헤드리스 정의 경계](headless-build-boundaries.md) "재는 법":
 
 ```bash
 cargo check -p tasty --no-default-features --lib
@@ -135,7 +134,7 @@ cargo check -p tasty --no-default-features --all-targets
 
 `dead_code` 는 이 크레이트에서 error 라, 새 필드가 headless 에 컴파일되고 아무도 안 읽으면 앞
 검사가 그 필드를 이름으로 찍고 실패한다. `③` 의 `expect` 는 거꾸로 — headless 에 읽는 자가 생겨
-진단이 사라지면 `unfulfilled_lint_expectations` 가 그 자리를 **경고로** 가리킨다. 빌드·CI 를 막지는
+진단이 사라지면 `unfulfilled_lint_expectations` 가 해당 항목을 **경고로** 알린다. 빌드·CI 를 막지는
 않는다 — 그 lint 는 warn 이고 `Cargo.toml` 의 `[workspace.lints.rust]` deny 목록 밖이며, CI 는 `-D warnings` 를
 안 쓴다. 그래서 이 칸의 변화는 경고 수로만 보인다. `②` 를 `cfg(feature =
 "gui")` 로 좁히면 뒤 검사가 그 정의를 부르는 시험에서 실패한다.

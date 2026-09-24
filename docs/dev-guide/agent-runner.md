@@ -1,6 +1,9 @@
 # Agent task runner
 
-workspace 단위 thread 1개가 `Ready` task 를 자동 dispatch 하고 `Running` task 완료를 polling 으로 감지해 state 머신을 진행시키는 *task DAG executor*. 상태 머신·영속과 custom reducer 의 기본 셸 runner(`run_custom_shell`)는 [`tasty-agent`](../../crates/tasty-agent/) 가, task *실행* 은 host 가 위임받는다. IPC/CLI 표면 명세는 [reference/api](../reference/api.md)("agent" namespace).
+workspace마다 스레드 하나가 준비된 task를 실행하고 완료 여부를 확인해 DAG를 진행한다.
+상태 전이·영속 저장·custom reducer의 기본 셸 runner(`run_custom_shell`)는
+[`tasty-agent`](../../crates/tasty-agent/)가 맡고 실제 task 실행은 host가 맡는다.
+IPC/CLI 명세는 [API의 agent namespace](../reference/api.md)를 따른다.
 
 ## 구성
 
@@ -9,7 +12,7 @@ workspace 단위 thread 1개가 `Ready` task 를 자동 dispatch 하고 `Running
 | `crates/tasty-agent/src/runner.rs` | `TaskExecutor` trait + `RunnerLoop::tick`(순수 로직) |
 | `crates/tasty-agent/src/platform/` | cross-platform pid liveness probe(`process_alive`) |
 | `src/core/agent/runner_host.rs` | `HostExecutor` — `TaskExecutor` host 구현 + `RunnerContext`(memory + agent_seq + host_ipc injector) |
-| `src/core/agent/runner_thread.rs` | `RunnerRegistry` — workspace 별 thread start/stop/status + 재시작 정화 |
+| `src/core/agent/runner_thread.rs` | `RunnerRegistry` — workspace 별 thread start/stop/status + 재시작 후 정리 |
 | `crates/tasty-ipc/src/host_call.rs` | `HostIpcInjector` — runner thread 가 plugin IPC 를 동기 호출하는 통로 |
 | `src/adapters/ipc/handler/agent/` | `task`/`barrier`/`semaphore`/`lease`/`ratelimit` IPC 핸들러 |
 
@@ -32,14 +35,14 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 
 ### DispatchHandle
 
-`PolledDispatch { workspace_id, poll_method, poll_params, state_field, terminal_states, failure_states, interval_ms, deadline_ms }`(범용 폴링 — dispatch 시점에 완성된 `poll_params` 로 terminal 상태 도달까지 `poll_method` 반복 호출; `failure_states` 적중은 성공이 아니라 실패로 종결) · `ShellProcess { pid }`(`Run` task 자식; `Child` 객체는 Clone 불가라 executor 의 `shell_children` map 에 별도 보관) · `BarrierPoll { workspace_id, name }` · `ReduceImmediate`/`CustomImmediate`/`ImmediateFail`(dispatch 시점 즉시 결정) · `AwaitExternal { wait_key, deadline_ms }`(push-kind 완료 전략, 아래 참조 — `poll` 은 계약대로 **항상 Active**, 종결은 외부에서 store 를 직접 전이시킨다). `deadline_ms` 는 dispatch 시점 `now + timeout_ms` — handle 자체에 실려 영속되므로, 이 handle 을 만든 `hook_task_waits` 매핑(비영속)이 재시작으로 사라져도 재시작 후 reload 가 독자적으로 만료 판정을 할 수 있다(아래 "호스트 재시작 정화 + 핸들 영속" 참조). 이 필드 도입 이전에 영속된 구 포맷은 `#[serde(default)]` 로 `0`(=즉시 만료)이 된다.
+`PolledDispatch { workspace_id, poll_method, poll_params, state_field, terminal_states, failure_states, interval_ms, deadline_ms }`(범용 폴링 — dispatch 시점에 완성된 `poll_params` 로 terminal 상태 도달까지 `poll_method` 반복 호출; `failure_states` 적중은 성공이 아니라 실패로 종결) · `ShellProcess { pid }`(`Run` task 자식; `Child` 객체는 Clone 불가라 executor 의 `shell_children` map 에 별도 보관) · `BarrierPoll { workspace_id, name }` · `ReduceImmediate`/`CustomImmediate`/`ImmediateFail`(dispatch 시점 즉시 결정) · `AwaitExternal { wait_key, deadline_ms }`(push-kind 완료 전략, 아래 참조 — `poll` 은 계약대로 **항상 Active**, 종결은 외부에서 store 를 직접 전이시킨다). `deadline_ms` 는 dispatch 시점 `now + timeout_ms` — handle 자체에 실려 영속되므로, 이 handle 을 만든 `hook_task_waits` 매핑(비영속)이 재시작으로 사라져도 재시작 후 reload 가 독자적으로 만료 판정을 할 수 있다(아래 "호스트 재시작 후 정리 + 핸들 영속" 참조). 이 필드 도입 이전에 영속된 구 포맷은 `#[serde(default)]` 로 `0`(=즉시 만료)이 된다.
 
 ### HostExecutor 매핑
 
 | TaskCommand | dispatch | poll |
 |-------------|----------|------|
 | `Run { command, cwd }` | `Command::spawn`(stdout/stderr `Stdio::piped()`) → pid → `ShellProcess`. 빈 command Err. stdout/stderr 를 각각 별도 드레인 스레드로 즉시 읽기 시작(파이프 교착 방지 — 아래 "출력 캡처" 참조) | watcher thread 의 `child.wait()` 결과 cell 조회 → exit 0 이면 두 드레인 스레드를 join 해 캡처 결과를 실은 Done / 아니면 Failed(캡처 결과를 에러 메시지에 포함) |
-| `Custom { ipc_method, params, poll: None }` | host IPC dispatch(timeout 5s) → 등록된 완료 판정 전략 중 `ipc_method` 를 `default_for_methods` 로 지목한 전략이 있으면 그 kind 를 채택(아래 "완료 판정 전략 레지스트리" 결정 6 — poll 이면 `PolledDispatch`, push 면 아래 push 행과 동일), 없으면 `CustomImmediate` | 매칭된 kind 에 따라 poll/push 행과 동일 / 아니면 즉시 Done |
+| `Custom { ipc_method, params, poll: None }` | host IPC dispatch(timeout 5s) → 등록된 완료 판정 전략 중 `ipc_method` 를 `default_for_methods` 로 지목한 전략이 있으면 그 kind 를 채택(아래 "완료 판정 전략 레지스트리" 기본 전략 선택 — poll 이면 `PolledDispatch`, push 면 아래 push 행과 동일), 없으면 `CustomImmediate` | 매칭된 kind 에 따라 poll/push 행과 동일 / 아니면 즉시 Done |
 | `Custom { ipc_method, params, poll: Some(PollSpecRef::Inline(spec)) }` | host IPC dispatch → `map_from_request`/`map_from_response` 로 `poll_params` 완성 → `PolledDispatch` | `poll_method` 호출 → `state_field` 가 `failure_states` 중 하나면 **Failed**(상태값 + 응답 요약을 에러 메시지에) / `terminal_states` 중 하나면 Done(응답 전체가 산출물) / 아니면 Active(`deadline_ms` 초과 시 Failed) |
 | `Custom { ipc_method, params, poll: Some(PollSpecRef::Named{strategy}) }`, poll-kind | 완료 판정 전략 레지스트리에서 `strategy` 를 이름 해석(`resolve_strategy`) → 얻은 `PollSpec` 으로 위 Inline 행과 동일 처리. 미등록/비활성이면 해석 실패 → dispatch 자체가 `PermanentFail`(Running 진입 전에 드러남) | 위와 동일 |
 | `Custom { ipc_method, params, poll: Some(PollSpecRef::Named{strategy}) }`, push-kind | `dispatch_push_strategy` — 원 dispatch `params.surface_id` 대상 surface 에 `notify_via` 훅 핸들러를 `hook.set(..., once: true)` 로 1 회성 등록해 `hook_id` 획득 → `RunnerContext.hook_task_waits` 에 `(workspace_id, task_id, deadline)` 등록 → `AwaitExternal`. `surface_id` param 이 없으면 `PermanentFail` | 항상 Active(계약) — 종결은 `PendingHostEvent::HookFired` 소비부(`Core::resolve_hook_task_wait`, exit code 로 성공/실패 분기)와 timeout 안전망(`runner_thread::expire_overdue_hook_waits`)이 담당 |
@@ -153,7 +156,7 @@ tasty agent task-create --workspace-id 1 --name tell-child --depends-on "$T_A" \
 
 ## 완료 판정 전략 레지스트리 (`src/completion_strategy/`)
 
-`Custom.poll` 이름 참조(`PollSpecRef::Named`)와 결정 6(`default_for_methods`) 이 가리키는 대상 — "임의 IPC dispatch 가 끝났는지"를 이름으로 등록해두는 독립 레지스트리다. `src/hook_handler/`(공유 훅 핸들러 레지스트리) 를 정본 템플릿으로 **형태만** 미러링한다 — 3출처 병합(host 내장 TOML + plugin manifest + user config `~/.tasty/completion-strategies.toml`), patch semantics(Host→Plugin→User, `Some` 필드만 override), id 규약(`<owner>/<short>`, `host`/`<plugin_id>`/`user`), 전역 싱글턴 `global()`. `HookHandlerId`(push 형이 참조) 외에는 훅 핸들러의 타입을 import 하지 않는다.
+`Custom.poll` 이름 참조(`PollSpecRef::Named`)와 기본 전략 선언(`default_for_methods`) 이 가리키는 대상 — "임의 IPC dispatch 가 끝났는지"를 이름으로 등록해두는 독립 레지스트리다. `src/hook_handler/`(공유 훅 핸들러 레지스트리) 를 정본 템플릿으로 **형태만** 미러링한다 — 3출처 병합(host 내장 TOML + plugin manifest + user config `~/.tasty/completion-strategies.toml`), patch semantics(Host→Plugin→User, `Some` 필드만 override), id 규약(`<owner>/<short>`, `host`/`<plugin_id>`/`user`), 전역 싱글턴 `global()`. `HookHandlerId`(push 형이 참조) 외에는 훅 핸들러의 타입을 import 하지 않는다.
 
 전략 종류(`CompletionStrategyKind`):
 - **poll**: `tasty-agent::PollSpec` 그대로 재사용.
@@ -161,21 +164,21 @@ tasty agent task-create --workspace-id 1 --name tell-child --depends-on "$T_A" \
 
 `resolve_poll_spec(id)` 은 poll-kind 만 반환(push 는 `NotPollKind` 에러) — poll spec 만 필요한 소비자용. `resolve_strategy(id)` 는 kind-agnostic — `Custom` dispatch(runner_host.rs)처럼 poll/push 를 모두 다뤄야 하는 호출부가 쓴다.
 
-**push 완료 신호 소비 배선**: push-kind dispatch 는 `notify_via` 가 가리키는 훅 핸들러를 원 dispatch `params.surface_id` 대상 surface 에 `hook.set(event: "command-completed", once: true)` 로 1 회성 등록해 `hook_id` 를 얻고, `RunnerContext.hook_task_waits`(`Arc<HookTaskWaits>` — runner thread 가 `Core` 를 거치지 않고 `task_waker_hub` 와 동형으로 직접 공유)에 `(workspace_id, task_id, deadline)` 로 등록한 뒤 `AwaitExternal` 로 전이한다. 실제 종결은 두 경로:
-- **정상 보고**: 그 훅이 실제로 발화하면 `PendingHostEvent::HookFired` 소비부(`app/dispatch/host_events.rs::resolve_hook_fired_task_waits` → `Core::resolve_hook_task_wait`)가 hook_id 로 대기 task 를 찾아 마감한다 — 실제 관측된 exit code(`CommandCompleted` 만 보유)가 있으면 `0`/없음 → Succeeded, 비-0 → Failed(그 코드를 실은 error 메시지). exit code 개념이 없는 push 신호는 Succeeded.
+**push 완료 신호 처리**: push-kind dispatch 는 `notify_via` 가 가리키는 훅 핸들러를 원 dispatch `params.surface_id` 대상 surface 에 `hook.set(event: "command-completed", once: true)` 로 1 회성 등록해 `hook_id` 를 얻고, `RunnerContext.hook_task_waits`(`Arc<HookTaskWaits>` — runner thread 가 `Core` 를 거치지 않고 `task_waker_hub` 와 동형으로 직접 공유)에 `(workspace_id, task_id, deadline)` 로 등록한 뒤 `AwaitExternal` 로 전이한다. 실제 종결은 두 경로:
+- **정상 보고**: 그 훅이 실제로 발화하면 `PendingHostEvent::HookFired` 소비부(`app/dispatch/host_events.rs::resolve_hook_fired_task_waits` → `Core::resolve_hook_task_wait`)가 hook_id 로 대기 task 를 찾아 마감한다 — 실제 관측된 exit code(`CommandCompleted` 만 보유)가 있으면 `0`/없음 → Succeeded, 0이 아닌 → Failed(그 코드를 실은 error 메시지). exit code 개념이 없는 push 신호는 Succeeded.
 - **timeout 안전망**: `runner_thread::expire_overdue_hook_waits` 가 매 tick `HookTaskWaits::sweep_expired` 로 deadline 지난 항목을 강제 Failed 마감한다(워크스페이스 무관 전역 sweep — 어느 runner thread 든 편승 가능).
 
-이 기전으로 등록되는 오늘 유일한 push 전략이 `host/command-completed`(아래 참조)다. `notify_via` 훅 핸들러의 실제 action(현재: `notification.create` 알림)은 task 완료 판정과 무관한 부가 효과일 뿐 — 판정은 hook_id 매칭만으로 이뤄진다.
+이 기전으로 등록되는 현재 유일한 push 전략이 `host/command-completed`(아래 참조)다. `notify_via` 훅 핸들러의 실제 action(현재: `notification.create` 알림)은 task 완료 판정과 무관한 부가 효과일 뿐 — 판정은 hook_id 매칭만으로 이뤄진다.
 
-네임스페이스 제한(결정 2): plugin 소유 전략의 `poll_method`/`default_for_methods` 는 자기 IPC namespace(`<plugin_id>.*`) 만 가리킬 수 있고, host/user 소유는 어떤 plugin namespace 도 가리킬 수 없다(`_host` 권한 우회 방지) — `tasty_ipc::method_meta::is_registered_plugin_prefix` 로 검증.
+네임스페이스 제한: plugin 소유 전략의 `poll_method`/`default_for_methods` 는 자기 IPC namespace(`<plugin_id>.*`) 만 가리킬 수 있고, host/user 소유는 어떤 plugin namespace 도 가리킬 수 없다(`_host` 권한 우회 방지) — `tasty_ipc::method_meta::is_registered_plugin_prefix` 로 검증.
 
-결정 6(`default_for_methods`, 역방향 소유): 매니페스트에 메서드 단위 선언 축이 없어 전략이 자기가 기본이 될 IPC 메서드 목록을 든다. 여러 활성 전략이 같은 메서드를 지목하면 정렬 승자(priority↑ → owner tie-break user>plugin>host → id)가 채택되고 패자는 warn.
+결정 6(`default_for_methods`, 역방향 소유): 매니페스트에 메서드 단위 선언 축이 없어 전략이 자기가 기본이 될 IPC 메서드 목록을 든다. 여러 활성 전략이 같은 메서드를 지목하면 priority↑ → owner 동률 해소(user>plugin>host) → id 순으로 선택하고, 선택되지 않은 전략은 warn으로 알린다.
 
-실패 축(`failure_states`): poll 형 전략은 `terminal_states` 와 별개로 **실패로 종결할** 상태값 목록을 든다. 이 목록에 적중하면 task 가 `Succeeded` 가 아니라 `Failed` 로 전이하므로 그 노드의 `OnFailure`(abort / continue_downstream / fallback)가 비로소 동작한다 — 목록이 비면(생략 시 기본) 종전대로 terminal 도달을 전부 성공으로 읽는다. 두 목록에 같은 값이 들어간 선언은 거부하지 않고 **실패를 우선**한다(실패를 성공으로 읽는 쪽이 그 반대보다 위험하다). 번들 claude/codex 전략은 `exited`(자식 프로세스 사망 / surface 소멸)를 여기에 둔다. claude 의 `needs_input` 은 성공 쪽에 남는다 — 사람이 승인하면 이어서 끝나는 상태라 영구 실패가 아니고, spawn/tell 완료 알림이 이미 `idle` 과 동일 취급한다. 이 축은 **DAG 러너 전용**이다: CLI auto_wait(`PollingDecl`)로는 넘기지 않는다(`CompletionStrategyDecl::to_polling_decl` 주석 참조) — CLI 폴링은 terminal 도달 시 block 만 풀고 exit code 를 가르지 않으므로, 실패 축을 흘리면 `tasty claude spawn` 같은 기존 명령이 자식 사망 시 비-0 으로 죽는 계약 변경이 된다.
+실패 축(`failure_states`): poll 형 전략은 `terminal_states` 와 별개로 **실패로 종결할** 상태값 목록을 든다. 이 목록에 적중하면 task 가 `Succeeded` 가 아니라 `Failed` 로 전이하므로 그 노드의 `OnFailure`(abort / continue_downstream / fallback)가 비로소 동작한다 — 목록이 비면(생략 시 기본) 종전대로 terminal 도달을 전부 성공으로 읽는다. 두 목록에 같은 값이 들어간 선언은 거부하지 않고 **실패를 우선**한다(실패를 성공으로 읽는 쪽이 그 반대보다 위험하다). 번들 claude/codex 전략은 `exited`(자식 프로세스 사망 / surface 소멸)를 여기에 둔다. claude 의 `needs_input` 은 성공 쪽에 남는다 — 사람이 승인하면 이어서 끝나는 상태라 영구 실패가 아니고, spawn/tell 완료 알림이 이미 `idle` 과 동일 취급한다. 이 축은 **DAG 러너 전용**이다: CLI auto_wait(`PollingDecl`)로는 넘기지 않는다(`CompletionStrategyDecl::to_polling_decl` 주석 참조) — CLI 폴링은 terminal 도달 시 block 만 풀고 exit code 를 가르지 않으므로, 실패 축을 흘리면 `tasty claude spawn` 같은 기존 명령이 자식 사망 시 0이 아닌 으로 죽는 계약 변경이 된다.
 
-IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tasty completion-strategy list`. reload/dispatch 대응물은 없다(user config 재로드 미노출, "발화" 개념 없음). 내장 host 기본값은 `src/completion_strategy/defaults/default-completion-strategies.toml`:
+IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tasty completion-strategy list`. reload/dispatch 대응물은 없다(user config 재로드 미노출, 수동 실행 기능 없음). 내장 host 기본값은 `src/completion_strategy/defaults/default-completion-strategies.toml`:
 
-- `host/command-completed`(결정 7) — OSC 133 셸 통합 기반 push 전략. `notify_via = "host/command-completed"` 는 `src/hook_handler/defaults/default-hook-handlers.toml` 에 등록된 훅 핸들러를 가리킨다(둘 다 host defaults 로 함께 설치되므로 항상 존재). `timeout_ms = 300000`(5분). 전제: 대상 surface 가 OSC 133(셸 통합 스크립트)을 로드하고 있어야 발화한다 — 미로드 surface 를 대상으로 `hook.set --event command-completed`(이 전략의 내부 dispatch 경로 포함)를 걸면 거부는 아니고 warn 로그만 남는다(`shell_integration_boundary_seen`, 시간 기반 추정이라 오탐 가능). `Custom` task 의 dispatch `params` 는 `surface_id` 를 포함해야 한다(예: `surface.send`).
+- `host/command-completed` — OSC 133 셸 통합 기반 push 전략. `notify_via = "host/command-completed"` 는 `src/hook_handler/defaults/default-hook-handlers.toml` 에 등록된 훅 핸들러를 가리킨다(둘 다 host defaults 로 함께 설치되므로 항상 존재). `timeout_ms = 300000`(5분). 전제: 대상 surface 가 OSC 133(셸 통합 스크립트)을 로드하고 있어야 발화한다 — 미로드 surface 를 대상으로 `hook.set --event command-completed`(이 전략의 내부 dispatch 경로 포함)를 걸면 거부는 아니고 warn 로그만 남는다(`shell_integration_boundary_seen`, 시간 기반 추정이라 오탐 가능). `Custom` task 의 dispatch `params` 는 `surface_id` 를 포함해야 한다(예: `surface.send`).
 
 ## RunnerRegistry
 
@@ -195,7 +198,7 @@ tick 머리의 `TaskStore::list` 가 실패하면 **빈 목록으로 흡수하�
 
 **자동 시작은 하지 않는다.** 호스트 재시작 후 어떤 workspace 의 runner thread 도 자동으로 켜지지 않는다 — `agent.task_run --action start` 로 수동(또는 plugin) 재개해야 한다. 대신 다음 두 가지를 보장한다:
 
-1. **재시작 정화는 부팅 시 1회, runner 없이도 수행한다.** `purge_stale_agent_state_on_boot`(`Core`, `src/core/mod.rs`)가 headless(`src/boot.rs`, host IPC injector 등록 + `CoreState` 확보 직후)와 GUI(`src/app/boot_machine.rs::finish_boot`, 첫 윈도우 등록 직전) 양쪽 부팅 경로에서 호출된다. 라이브 `CoreState.workspaces` 전부에 대해 아래 "호스트 재시작 정화 + 핸들 영속" 절의 3종 세트(`purge_stale_semaphore_holders`/`purge_stale_lease_holders`/`reload_persistent_handles`)를 수행하고, `reload_persistent_handles` 가 되살린 handle 목록은 버린다(이 시점엔 그걸 넘겨받아 poll 할 runner 가 없다 — 다음 수동 start 가 다시 reload 한다). task 가 없는 workspace 는 각 정화 함수가 candidates 없음으로 조기 반환하므로 실질적으로 no-op — "라이브 workspace ∩ task 보유 workspace" 교집합과 동치. 여러 번 호출해도 안전(idempotent): `alive` 분류는 부수효과가 없고, `dead`/`stale`/`precise` 분류는 이미 정리된 뒤엔 대상이 남지 않는다.
+1. **재시작 후 정리는 부팅 시 1회, runner 없이도 수행한다.** `purge_stale_agent_state_on_boot`(`Core`, `src/core/mod.rs`)가 headless(`src/boot.rs`, host IPC injector 등록 + `CoreState` 확보 직후)와 GUI(`src/app/boot_machine.rs::finish_boot`, 첫 윈도우 등록 직전) 양쪽 부팅 경로에서 호출된다. 라이브 `CoreState.workspaces` 전부에 대해 아래 "호스트 재시작 후 정리 + 핸들 영속" 절의 3종 세트(`purge_stale_semaphore_holders`/`purge_stale_lease_holders`/`reload_persistent_handles`)를 수행하고, `reload_persistent_handles` 가 되살린 handle 목록은 버린다(이 시점엔 그걸 넘겨받아 poll 할 runner 가 없다 — 다음 수동 start 가 다시 reload 한다). task 가 없는 workspace 는 각 정화 함수가 candidates 없음으로 조기 반환하므로 실질적으로 no-op — "라이브 workspace ∩ task 보유 workspace" 교집합과 동치. 여러 번 호출해도 안전(idempotent): `alive` 분류는 부수효과가 없고, `dead`/`stale`/`precise` 분류는 이미 정리된 뒤엔 대상이 남지 않는다.
 2. **정지 상태는 조회로 드러난다.** `task_run --action status` 뿐 아니라 `task_list`/`task_graph` 응답에도 `runner: { running, crashed, ready_count, running_count, store_error, list_failures }` 를 동반한다 — runner 가 꺼져 있어도(`running: false`) `ready_count`/`running_count` 는 store 를 직접 조회한 실제 값이라, "비-terminal task 는 있는데 아무도 안 돌리고 있다"가 이 응답만으로 드러난다. **그 조회 자체가 실패하면 두 카운트는 `null`** 이고 `store_error` 가 이유를 싣는다 — 0 을 돌려주면 "task 가 없다" 와 값이 같아져 이 계약이 거짓이 된다. 러너는 살아 있는데 계속 못 읽는 상태는 `list_failures`(연속 실패 횟수)로 드러난다: `running: true` 이면서 이 값이 크면 DAG 는 정지 상태다. `task_get` 응답은 task 가 `AwaitExternal` handle 로 외부 신호를 기다리는 중이면 `awaiting_external: { wait_key, deadline_ms }` 를 함께 실어 "그냥 running" 과 구분한다(`AwaitExternal` 의 poll 은 계약상 항상 Active 라 state 만으로는 대기 이유를 알 수 없다). CLI(`tasty agent task-{list,get,run}`)는 이 값들을 사람이 바로 읽는 텍스트로 렌더한다(`crates/tasty-cli/src/format.rs`) — runner 가 멈춰 있고 대기 중인 task 가 있으면 재개 커맨드까지 안내 문구로 보여준다.
 
 `hook_task_waits`(hook_id → task_id 매핑)는 여전히 **비영속**(프로세스 메모리 전용)이다 — 재시작하면 사라진다. 그래서 재시작 후 `AwaitExternal` task 는 **훅으로는 깨어날 수 없고**, 그 handle 에 실린 `deadline_ms`(위 참조)로만 마감된다: reload 시점에 이미 만료된 handle 은 즉시 `Failed`, 아직이면 그대로 복원되지만 이후 그 프로세스가 계속 살아있는 동안은(`AwaitExternal` poll 이 항상 Active 라 tick 이 deadline 을 검사하지 않음) 다음 재시작의 reload 가 다시 판정할 때까지 마감되지 않는다 — "재시작을 한 번 더 거쳐야 완전히 청소된다"는 절충이다.
@@ -213,7 +216,7 @@ tick 머리의 `TaskStore::list` 가 실패하면 **빈 목록으로 흡수하�
 
 runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)를 직접 못 부른다. injector 경유: `IpcCommand`+`sync_channel(1)` 을 App IPC 큐에 push → waker 로 App 깨움 → tick 의 routing 이 plugin 에 forward → 응답이 sync_channel 회신 → runner 의 `recv_timeout(5s)`. `Core::set_host_ipc_injector` 가 IPC 시작 직후 1회 등록(boot.rs headless + app/boot_machine.rs gui 양쪽).
 
-주입은 IPC 서버와 **같은 큐 입장 장부**를 거친다. 큐에 든 호스트 주입 명령이 이미 상한만큼이거나(메인 루프가 서 있는 동안 시간 초과로 돌아간 호출이 남긴 명령이 쌓인 경우) 큐의 바이트 합이 넘치면, 명령은 큐에 들어가지 않고 `InjectError::Refused` 로 즉시 돌아온다 — `InjectError::nothing_ran()` 이 참이라 "안 됐다" 가 확실하고, 시간 초과(결과 불명)와 갈린다. runner 의 `dispatch_plugin` 은 그 오류를 문자열(문구에 "nothing ran")로 task 결과에 올리고 다시 걸지 않는다. 상한 값과 근거는 [ADR-0006](../adr/0006-bounded-ipc-transport.md). 주입은 제 대기 상한(5 s)을 명령의 기한으로도 싣는다 — 상한까지 큐에서 못 나간 명령은 나중에도 실행되지 않고 `InjectError::Expired`(문구 `… while still queued (nothing ran)`)로 돌아오며, 상한 전에 시작된 명령만 `InjectError::Timeout`(결과 불명)이다. 근거는 [ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md).
+주입은 IPC 서버와 **같은 큐 개수·바이트 제한**를 거친다. 큐에 든 호스트 주입 명령이 이미 상한만큼이거나(메인 루프가 서 있는 동안 시간 초과로 돌아간 호출이 남긴 명령이 쌓인 경우) 큐의 바이트 합이 넘치면, 명령은 큐에 들어가지 않고 `InjectError::Refused` 로 즉시 돌아온다 — `InjectError::nothing_ran()` 이 참이라 실행되지 않았음을 알 수 있고, 시간 초과(결과 불명)와 갈린다. runner 의 `dispatch_plugin` 은 그 오류를 문자열(문구에 "nothing ran")로 task 결과에 올리고 다시 걸지 않는다. 상한 값과 근거는 [ADR-0006](../adr/0006-bounded-ipc-transport.md). 주입은 제 대기 상한(5 s)을 명령의 기한으로도 싣는다 — 상한까지 큐에서 못 나간 명령은 나중에도 실행되지 않고 `InjectError::Expired`(문구 `… while still queued (nothing ran)`)로 돌아오며, 상한 전에 시작된 명령만 `InjectError::Timeout`(결과 불명)이다. 근거는 [ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md).
 
 ## 동기화 primitive 통합
 
@@ -262,7 +265,7 @@ tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 1
 
 ### 동시성 제한 (concurrency limit)
 
-Semaphore 를 이 용도로 쓴다. 로컬 오케스트레이터(예: conductor 처럼 여러 task 를 동시에 굴리는 상위 도구)가 리소스가 약한 환경에서 "동시 실행 개수"에 상한을 두고 싶을 때 쓰는 패턴이다. `agent.rate_limit_*`(IPC dispatcher 미들웨어, 위 "rate_limit 미들웨어" 참조)는 *호출 빈도* 제한이고 `Local` caller 를 면제 대상에서 빼므로 이 목적에 맞지 않는다 — 여기서 쓰는 건 위 표의 `Semaphore` 통합이다.
+Semaphore 를 이 용도로 쓴다. 로컬 오케스트레이터(예: conductor 처럼 여러 task 를 동시에 굴리는 상위 도구)가 리소스가 약한 환경에서 "동시 실행 개수"에 상한을 두고 싶을 때 쓰는 패턴이다. `agent.rate_limit_*`(IPC dispatcher 미들웨어, 위 "rate_limit 미들웨어" 참조)는 *호출 빈도* 제한이고 `Local` caller를 면제하므로 이 목적에 맞지 않는다 — 여기서 쓰는 건 위 표의 `Semaphore` 통합이다.
 
 절차:
 
@@ -304,14 +307,16 @@ tasty agent semaphore-list --workspace-id 1
 }
 ```
 
-`resource: "x"` 는 `candidates: ["x"]` 의 sugar 다 — 둘 다 store 안에서 같은 `lease_key`(`crates/tasty-agent/src/lease.rs`) 위치에 쓰기 때문에 관측적으로 동일하다(같은 자원을 가리키면 서로 충돌 판정된다). 별도 코드 경로 통합은 하지 않는다 — `resource` 단일 경로(`LeaseStore::acquire`)는 `agent.lease_acquire` IPC 등 기존 호출자의 `LeaseConflict` 에러 계약을 그대로 유지하려고 독립 구현을 보존한다.
+`resource: "x"` 는 `candidates: ["x"]` 의 단일 후보 표현이다 — 둘 다 store 안에서 같은 `lease_key`(`crates/tasty-agent/src/lease.rs`) 위치에 쓰기 때문에 같은 자원을 점유한 것으로 판정한다(같은 자원을 가리키면 서로 충돌 판정된다). 별도 코드 경로 통합은 하지 않는다 — `resource` 단일 경로(`LeaseStore::acquire`)는 `agent.lease_acquire` IPC 등 기존 호출자의 `LeaseConflict` 에러 계약을 그대로 유지하려고 독립 구현을 보존한다.
 
 **두 서브모드 — `elastic` 은 반드시 명시적 opt-in, 기본은 fixed다:**
 
 - **fixed**(`elastic` 생략, 기본): `candidates` 안에서만 순회한다. 전부 점유 중이면 `mode` 에 따라 실패(`fail`) 또는 대기(`block` → Deferred, 다음 tick 재시도).
 - **elastic**(`elastic: {...}` — 빈 객체 `{}` 도 opt-in으로 인정): candidates 가 전부 소진되면 `overflow_prefix + N` 형태의 새 후보 이름을 store 가 원자적으로 합성해 즉시 배정한다. `max_candidates` 를 주면 그 상한(고정 candidates 개수 + 합성된 개수)까지만 증설하고, 넘으면 fixed 와 동일하게 대기한다.
 
-elastic 이 기본이 아닌 이유: fixed 의 자원 배정은 순수 마킹(store 안 카운터/키 하나)이지만, elastic 의 증설은 **워크트리 같은 실물 자원을 자동으로 만들어내는 부수효과**를 동반한다. 실행 환경이 강한 서버인지 약한 노트북인지 tasty 는 알 방법이 없으므로, 부수효과를 동반하는 자동 증설을 기본값으로 깔지 않는다 — pool 을 선언하는 쪽(오케스트레이터/사용자)이 매번 명시적으로 켠다.
+elastic은 store에서 새 자원 이름을 배정한다. 실제 워크트리나 디렉터리는 만들지 않는다.
+다만 호출자가 그 이름을 받아 자원을 생성하면 추가 비용이 생기므로 자동 증설은 명시적으로
+선택해야 한다. 기본 fixed 모드는 선언한 후보 안에서만 배정한다.
 
 **원자성**: 새 candidate 이름 합성은 `LeaseStore::acquire_any` 한 호출 안에서(카운터 읽기 → 스캔 → 필요시 카운터 +1 → 새 이름으로 acquire) 순차 수행된다. 이 호출 전체가 `RunnerContext::with_memory` 클로저 하나 안에서 실행되므로(기존 `try_acquire_lease` 관례와 동일), 그 클로저가 프로세스 전역 `Mutex`(`Core::memory`)를 처음부터 끝까지 쥔 채 진행된다 — 워크스페이스마다 runner thread 가 정확히 하나뿐이라 워크스페이스 내부 경쟁이 없고, 워크스페이스 간 경쟁은 그 전역 락 하나로 직렬화된다. 별도 CAS/락 primitive 를 새로 만들지 않는다.
 
@@ -322,13 +327,13 @@ elastic 이 기본이 아닌 이유: fixed 의 자원 배정은 순수 마킹(st
 - `TaskCommand::Run`: `cwd` 가 `None` 이면 곧장 그 resource 경로로 채운다(가장 흔한 용법 — "이 후보에서 실행해라"). `cwd`/`command` 인자 안에 `${lease.resource}` placeholder 가 있으면 그 부분만 실제 resource 로 치환한다(원래 값을 통째로 덮지 않음).
 - `TaskCommand::Custom.params`: JSON 트리 전체를 재귀적으로 훑어 문자열 값 안의 `${lease.resource}` 를 치환한다(예: `claude.spawn` 의 `cwd` 파라미터).
 - `${lease.resource}` 는 두 placeholder 중 하나다 — 선행 task 의 출력을 파라미터로 넘기는 `${task.<id>.output<pointer>}` 는 위 "선행 task 출력을 파라미터로 넘기기" 참조. 둘은 같은 dispatch 지점에서 lease → 출력 순으로 적용된다.
-- elastic 으로 새로 합성된 이름이 가리키는 실제 워크트리를 만드는 건(예: `git worktree add`) task 의 Run 커맨드 쪽 자가 프로비저닝 책임이다 — lease primitive 는 포트/임시디렉토리/GPU 슬롯 등에도 쓰이는 범용 도구라 워크트리 특화 side-effect 를 store 안에 넣지 않는다.
+- elastic 으로 새로 합성된 이름이 가리키는 실제 워크트리를 만드는 건(예: `git worktree add`) task 의 Run 커맨드 쪽 자원 생성 책임이다 — lease primitive 는 포트/임시디렉토리/GPU 슬롯 등에도 쓰이는 범용 도구라 워크트리 특화 side-effect 를 store 안에 넣지 않는다.
 
-**주의 — `cwd` 를 배정된 resource 로 직접 채우는 방식은 elastic 자가 프로비저닝과 함께 쓸 수 없다.** `cwd` 는 프로세스 spawn(`chdir`)이 그 경로로 실제로 이동을 시도하는 시점에 적용되는데, 이 chdir 은 커맨드가 실행되기 **이전에** OS 레벨에서 일어난다 — 아직 디스크에 없는 합성 경로를 `cwd` 로 주면 `Run spawn 'sh': No such file or directory` 로 spawn 자체가 즉시 실패하고, `command` 안에 `mkdir -p` 를 아무리 앞세워도 그 스크립트조차 실행되지 못한다(라이브로 재현 확인). 자가 프로비저닝이 필요하면 `cwd` 는 항상 존재하는 고정 경로(예: `/tmp`, 부모 워크트리 루트)로 지정해 두고, `${lease.resource}` 는 **`command` 인자 쪽**에서 받아 그 안에서 `mkdir -p`/`cd` 를 수행한다(아래 elastic 라이브 검증 예 참조).
+**주의 — `cwd` 를 배정된 resource 로 직접 채우는 방식은 elastic 자원 생성과 함께 쓸 수 없다.** `cwd` 는 프로세스 spawn(`chdir`)이 그 경로로 실제로 이동을 시도하는 시점에 적용되는데, 이 chdir 은 커맨드가 실행되기 **이전에** OS 레벨에서 일어난다 — 아직 디스크에 없는 합성 경로를 `cwd` 로 주면 `Run spawn 'sh': No such file or directory` 로 spawn 자체가 즉시 실패하고, `command` 안에 `mkdir -p` 를 아무리 앞세워도 그 스크립트도 실행되지 못한다. 자원 생성이 필요하면 `cwd` 는 항상 존재하는 고정 경로(예: `/tmp`, 부모 워크트리 루트)로 지정해 두고, `${lease.resource}` 는 **`command` 인자 쪽**에서 받아 그 안에서 `mkdir -p`/`cd` 를 수행한다(아래 elastic 라이브 검증 예 참조).
 
 **release**: pool 모드로 얻은 자원도 일반 lease 와 동일하게 `release_lease`(task 종결 시 자동 호출)로 반환된다 — `held_leases` 가 이미 "실제로 받은 resource 문자열"만 저장하므로 pool 여부와 무관하게 그대로 동작한다(재설계 불필요).
 
-CLI 편의 플래그(`--concurrency-limit` 대구)는 만들지 않았다 — `--metadata '{"lease":{"candidates":[...],"elastic":{...}}}'` 를 직접 쓰는 것으로 충분하다고 판단(부차적 스코프).
+lease pool 전용 CLI 플래그는 없다. `--metadata '{"lease":{"candidates":[...],"elastic":{...}}}'`로 지정한다.
 
 라이브 검증 예(3개 candidates 에 5개 task, fixed):
 
@@ -358,14 +363,16 @@ tasty agent task-list --workspace-id 1   # 5개 모두 즉시 running, 대기 �
 tasty agent lease-list --workspace-id 1  # 3개 원본 + wt-3-overflow-1/-2 총 5개 holder
 ```
 
-`cwd:"/tmp"` 는 항상 존재하므로 spawn 은 무조건 성공하고, `sh -c '...' _ ${lease.resource}` 에서 `$1` 로 실제 배정된(원본 또는 합성) 경로를 받아 그 안에서 직접 생성·이동한다 — `${lease.resource}` 를 `cwd` 자체에 두는 방식(위 "주의")과 달리 이 패턴은 elastic 로 새로 합성된, 아직 존재하지 않는 경로에도 그대로 쓸 수 있다.
+`cwd:"/tmp"`는 이미 존재하는 경로이므로 미생성 lease 경로 때문에 spawn이 실패하는 문제를 피한다., `sh -c '...' _ ${lease.resource}` 에서 `$1` 로 실제 배정된(원본 또는 합성) 경로를 받아 그 안에서 직접 생성·이동한다 — `${lease.resource}` 를 `cwd` 자체에 두는 방식(위 "주의")과 달리 이 패턴은 elastic 로 새로 합성된, 아직 존재하지 않는 경로에도 그대로 쓸 수 있다.
 
-### 호스트 재시작 정화 + 핸들 영속
+<a id="호스트-재시작-정화--핸들-영속"></a>
+
+### 호스트 재시작 후 정리 + 핸들 영속
 
 `held_permits`/`held_handles` 는 in-memory only이라 재시작 시 비지만, store 의 holders/handle 은 영속이라 leak 가능. `purge_and_reload_on_restart`(`src/core/agent/runner_thread.rs`)로 묶여 있고, **runner thread 없이도** 호출 가능하다 — 부팅 경로(위 "재시작 계약")와 `run_loop` 진입부(수동/plugin start) 양쪽이 이 함수 하나를 공유한다:
 
 - `purge_stale_{semaphore,lease}_holders` — Running task 중 `metadata.*.holder == task.id` 만 release + task=Failed("host restart").
-- `reload_persistent_handles`(key `tasty.agent.handle.<task_id>`, workspace scope) — `ShellProcess` 는 `process_alive::is_alive(pid)` 검사(alive 복원 / dead 는 영속 `run_result` 로 정확한 exit_code 마감 또는 Failed). `PolledDispatch`/`BarrierPoll` 은 insert-only 복원(다음 tick poll). PolledDispatch 첫 poll 이 injector 미준비면 `INJECTOR_GRACE_MS=30s` 안에서 Active 유지. `AwaitExternal { deadline_ms, .. }` 은 `deadline_ms` 가 이미 지났으면 즉시 `Failed`(구 포맷도 `deadline_ms` 기본값 0 이라 이 분기), 아직이면 insert-only 복원 — 단 poll 이 절대 관여하지 않는 계약이라 다음 재시작 전까지는 deadline 이 재판정되지 않는다(위 "재시작 계약" 참조).
+- `reload_persistent_handles`(key `tasty.agent.handle.<task_id>`, workspace scope) — `ShellProcess` 는 `process_alive::is_alive(pid)` 검사(alive 복원 / dead 는 영속 `run_result`로 저장된 exit_code를 반영 또는 Failed). `PolledDispatch`/`BarrierPoll` 은 insert-only 복원(다음 tick poll). PolledDispatch 첫 poll 이 injector 미준비면 `INJECTOR_GRACE_MS=30s` 안에서 Active 유지. `AwaitExternal { deadline_ms, .. }` 은 `deadline_ms` 가 이미 지났으면 즉시 `Failed`(구 포맷도 `deadline_ms` 기본값 0 이라 이 분기), 아직이면 insert-only 복원 — 단 poll 이 절대 관여하지 않는 계약이라 다음 재시작 전까지는 deadline 이 재판정되지 않는다(위 "재시작 계약" 참조).
 
 `ReduceImmediate`/`CustomImmediate`/`ImmediateFail` 은 영속 안 함(다음 tick 즉시 흡수 + reload 시 재dispatch side-effect 위험).
 

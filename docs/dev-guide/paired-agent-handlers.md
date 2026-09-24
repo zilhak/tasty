@@ -2,7 +2,7 @@
 
 두 plugin은 서로 다른 CLI를 실행한다. 공용 판정은 `tasty-plugin-agent-common`에서
 공유하고, 이미 공개된 응답과 각 CLI의 기동·종료 계약은 유지한다. 함수 이름이나
-본문이 비슷하다는 이유만으로 응답 형상·번역 키·CLI 플래그를 통일하지 않는다.
+본문이 비슷하다는 이유만으로 응답 형식·번역 키·CLI 플래그를 통일하지 않는다.
 
 ## 공개 응답과 번역 형식
 
@@ -28,7 +28,7 @@ placeholder의 형태를 유지하는 것은 정보 손실을 허용하는 뜻�
 ## 완료 알림의 대칭과 의도된 차이
 
 두 plugin의 spawn/tell은 caller와 target에 대한 완료 hook을 등록한다. 각각
-idle·needs-input·process-exit의 once hook을 사용하며, 발화 후 같은 target과
+idle·needs-input·process-exit의 once hook을 사용하며, 실행 후 같은 target과
 command를 가진 형제를 정리한다. target이 살아 있으면 다시 등록한다.
 
 | 관심사 | Claude | Codex |
@@ -39,7 +39,7 @@ command를 가진 형제를 정리한다. target이 살아 있으면 다시 등�
 | 알림 수신 경로 | completion-log append | completion-log append |
 | 추가 관측 | 별도 상시 `claude-error-stalled` hook과 scanner | notify 때 샌드박스 실패 화면 힌트 조회 |
 
-완료 알림은 caller의 PTY에 새 발화를 주입하지 않는다. 일반 `tell`이 대상 PTY에
+완료 알림은 caller의 PTY에 새 입력을 보내지 않는다. 일반 `tell`이 대상 PTY에
 메시지를 보내는 것과 구분한다. 경로·로그 소비 계약은
 [child 완료 알림](external-interaction.md#child-완료-알림--completion-log)을 따른다.
 
@@ -64,6 +64,4 @@ completion hook의 셸 명령과 로그를 연결해 spawn/tell/respawn/reboot/k
 실제 CLI의 API·승인 UI·버전별 화면 동작 검증을 대신하지 않는다.
 
 공용 크레이트 변경도 plugin 버전 검사의 workspace 의존 폐포에 포함된다. 같은 버전의
-파일 동기화와 발행 버전의 정합은 별개다. 현재 규칙은 [빌드](build.md)와
-[plugin 제작](plugin-development.md)을 따르며, 과거의 “공용 변경은 게이트가 못 본다”는
-설명을 재사용하지 않는다.
+파일 동기화와 발행 버전의 정합은 별개다. 현재 규칙은 [빌드](build.md)와 [plugin 제작](plugin-development.md)을 따른다.

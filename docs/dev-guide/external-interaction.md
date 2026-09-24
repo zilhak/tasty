@@ -1,12 +1,8 @@
 # 외부 프로그램 구동 함정 (external-interaction)
 
-tasty 가 PTY 로 **외부 프로그램**(child Claude Code / codex CLI / 기타 TUI)을 구동하고 입력을
-주입·제어할 때, **외부 프로그램 측 동작**(bracketed-paste 감지, 입력 모드, read 타이밍 등)
-때문에 생기는 **구조적 함정**을 검증된 사실로 모은다.
-
-[`docs/design/systems/design-parity-notes.md`](../design/systems/design-parity-notes.md) 의
-dev-guide 판이다 — 대상이 "디자인 렌더와 egui 의 구조 차이" 가 아니라 "tasty 가 구동하는
-외부 프로그램의 동작" 이라는 점만 다르다.
+Tasty가 PTY로 Claude Code·Codex CLI 등 외부 프로그램을 실행할 때 생기는
+입력·완료 알림 문제와 확인한 대응 방법을 정리한다. 외부 프로그램의 버전과 실행 환경에
+영향을 받는 결과는 측정 조건 안에서 해석한다.
 
 ## 기록 원칙
 
@@ -34,8 +30,8 @@ bracketed-paste 휴리스틱이 끝의 `\r` 을 제출이 아닌 paste 본문으
   텍스트만 남는다. **62자 이하는 정상 제출.**
 - **멀티라인(개행 포함) 은 길이 무관 제출**된다.
 - 임계는 byte 도 표시폭도 아니라 **code point 수** 다 — 영문 63B 와 한글 189B 가 **같은 63자**
-  에서 끊긴다(한글은 2배폭인데도 char 기준). 콘텐츠(영문/한글/공백/슬래시/경로/특수문자)·
-  타이밍(즉시/지연 read) 모두 무관, 결정적.
+  에서 끊긴다(한글은 2배폭인데도 char 기준). 측정한 콘텐츠(영문/한글/공백/슬래시/경로/특수문자)와
+  read 타이밍(즉시/지연)에서는 같은 결과였다.
 
 ### 원인
 
@@ -87,10 +83,9 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
 - **적용 범위 밖(주의)**: `claude`/`codex` 플러그인이 자기 프로세스를 처음 띄우는
   `start_claude_in_surface`류 launch 경로는 별도 `surface.send`(쉘 커맨드라인 + `\r` 한 덩어리)
   라 같은 사각지대다 — 다만 이쪽은 대상이 TUI 가 아니라 아직 아무것도 안 뜬 shell 프롬프트라
-  bracketed-paste 휴리스틱이 걸릴 대상 자체가 없어 실질 위험은 없다.
+  bracketed-paste 휴리스틱이 걸릴 대상 자체가 없어 이 절에서 측정한 TUI paste 문제와는 구분한다.
 
-결과: `tell`/`terminal.spawn`/`terminal.broadcast` 경로 모두 메시지 길이·콘텐츠와 무관하게
-결정적으로 동작한다. 단위 테스트가 본문 payload 에 제출 `\r` 이 섞이지 않음(63자+ 회귀 가드
+이 분리 방식은 `tell`·`terminal.spawn`·`terminal.broadcast`에서 사용한다. 단위 테스트가 본문 payload 에 제출 `\r` 이 섞이지 않음(63자+ 회귀 가드
 `broadcast_payload_splits_trailing_cr_for_submit`)과 멀티라인 본문 분리(`broadcast_payload_multiline_wraps_bracketed_and_submits`)를 검증한다.
 
 ### 일반 교훈
@@ -211,9 +206,9 @@ Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.lo
 - Monitor tool 은 Amazon Bedrock / Google Cloud Agent Platform / Microsoft Foundry 에서
   미제공이고, `DISABLE_TELEMETRY` 또는 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` 가
   설정되면 비활성이다. 이 경우 completion-log 는 여전히 append 되지만 자동 전달은 안 되므로
-  수동 확인(로그 파일 직접 조회)에 의존한다 — `terminal.tell` fallback 은 위장 발화 부작용
+  수동 확인(로그 파일 직접 조회)에 의존한다 — `terminal.tell` fallback 은 사용자 입력과 섞이는 문제
   때문에 제거됐으므로 더는 대안 채널이 아니다.
-- 간헐적 전달 지연(수십 초)이 보고돼 있다(아래 근거). 손실이 아니라 지연이다.
+- 간헐적 전달 지연(수십 초)이 보고돼 있다(아래 근거). 기록이 없어진 경우와 전달이 늦는 경우를 구분한다.
 
 ### 근거
 
@@ -242,8 +237,7 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
 - **dev 에서 안 보이는 이유**: `cargo run` / 터미널에서 직접 띄운 바이너리는 그 터미널의 풍부한 PATH를
   상속하므로 재현되지 않는다. LaunchServices 로 띄운 `.app` 에서만 드러난다.
 - **처방**: `spawn_shell` 이 자식 프로세스의 PATH 를 보강한다 — `std::env::current_exe()` 의 부모
-  디렉토리(=실행 중인 `tasty` 바이너리가 있는 곳)를 PATH 맨 앞에 붙여, 자기 자신 재호출은 최소 PATH
-  환경에서도 항상 해결된다. `current_exe()` 실패는 상속 PATH 그대로 두는 fallback(패닉 없음).
+  디렉토리(=실행 중인 `tasty` 바이너리가 있는 곳)를 PATH 맨 앞에 붙여, 최소 PATH 환경에서도 자기 바이너리를 찾을 수 있게 한다. `current_exe()` 실패는 상속 PATH 그대로 두는 fallback(패닉 없음).
   이 보강은 `InlineShell`/`ShellCommand`(레지스트리) 양쪽이 공유하는 `spawn_shell` 한 곳에서 처리돼
   모든 hook 셸 커맨드에 적용된다. **스코프**: self-binary 디렉토리 하나만 추가하며, 로그인쉘(`$SHELL -lc`)
   이나 사용자 커스텀 PATH(nvm/rbenv/cargo bin 등)를 복제하지는 않는다.
@@ -259,17 +253,17 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
 ### 일반 교훈
 
 - 수신 세션 상태(busy/idle)에 의존하는 PTY 입력 주입은 완료 알림의 **단일 경로로 부적합**하다.
-  파일 append + 에이전트가 능동적으로 arm 하는 감시(Monitor tail)가 상태 독립적이다.
-- writer(plugin)와 reader(conductor)가 같은 파일을 가리키려면 경로 SoT 를 하나로 통일하고,
+  파일 append + 에이전트가 직접 시작한 감시(Monitor tail)가 상태 독립적이다.
+- writer(plugin)와 reader(conductor)가 같은 파일을 가리키려면 기준 경로를 하나로 정하고,
   호스트가 **양쪽 프로세스 모두**에 부모 루트를 env 로 내려줘야 한다 — plugin spawn
-  (`tasty-host-plugin`)뿐 아니라 conductor 가 사는 터미널 PTY spawn
+  (`tasty-host-plugin`)뿐 아니라 conductor를 실행한 터미널 PTY spawn
   (`tasty-terminal` `Terminal::new`)에도. 한쪽만 전파하면 다른 쪽이 debug/release 루트를
   판별하지 못해 경로가 어긋난다.
-- **정보성 broadcast 값은 self-determination 용 env(`TASTY_HOME`)와 이름을 겹치면 안 된다.**
+- **부모 경로를 알리는 변수와 자식 데이터 루트를 지정하는 `TASTY_HOME`을 구분한다.**
   부모가 자기 루트를 자식에 알려주는 값을 `TASTY_HOME` 으로 주입하면, 그 자식이 다시 tasty
   바이너리(특히 다른 프로파일: release 안에서 debug)를 실행할 때 부모 루트를 자기 데이터
   루트 override 로 오인해 프로파일 격리가 깨진다. 그래서 broadcast 는 `TASTY_PARENT_HOME`
-  으로 분리했다(위 "왜 `TASTY_HOME` 이 아니라" 참조).
+  으로 분리했다(위 경로 규칙 참조).
 
 ### 날짜
 
@@ -281,9 +275,10 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
 
 **증상.** ConPTY resize(레이아웃 변경 — split/unsplit, 창 크기 변경)가 일어난 surface 의 bash 프롬프트에 다음 입력을 주입하면, 첫 1바이트가 소리 없이 사라진다 — `surface.send "seq 1 5000\n"` 이 `eq 1 5000` 으로 도착해 `bash: eq: command not found`. 재현율 resize+입력 쌍당 ~25–33%.
 
-**원인 (셸 측 — tasty 무죄).** bash 는 SIGWINCH 핸들러를 `SA_RESTART` 로 설치하고, readline 은 플래그만 세워뒀다가 **다음 입력이 read 를 깨울 때** 보류된 WINCH 를 처리한다(bash 5 동작, [fff#48](https://github.com/dylanaraps/fff/issues/48)). MSYS/Cygwin 의 시그널 에뮬레이션이 ConPTY 위에서 이 "read 를 깨운 바이트"를 소모한다.
+**원인.** bash 는 SIGWINCH 핸들러를 `SA_RESTART` 로 설치하고, readline 은 플래그만 세워뒀다가 **다음 입력이 read 를 깨울 때** 보류된 WINCH 를 처리한다(bash 5 동작, [fff#48](https://github.com/dylanaraps/fff/issues/48)). MSYS/Cygwin 의 시그널 에뮬레이션이 ConPTY 위에서 이 "read 를 깨운 바이트"를 소모한다.
 
-**상태: 알려진 상류(msys2-runtime) 버그로 기록만 한다 — 상류 제보는 하지 않기로 결정(2026-07-12).** 상류 이슈 트래커에 기존 리포트 없음(당시 검색 기준). tasty 는 아래 처방으로 방어하고, 향후 마음이 바뀌면 아래 실측 표·원인 분석을 근거로 제보할 수 있다.
+**상태:** MSYS/ConPTY 조합에서 확인된 제약으로 기록한다. 아래 표는 2026-07-12의
+측정이며 모든 버전의 동작이나 현재 상류 이슈 상태를 뜻하지 않는다. 대응은 아래와 같다.
 
 **임계·근거 (2026-07-12 실측, 격리 debug 인스턴스).**
 
@@ -293,7 +288,7 @@ Monitor의 전달은 외부 도구 동작에 의존한다. 기존 관측에는 i
 | settle 0.1 s / 0.6 s / 2 s 후 send | 모두 ~25–33% — **시간 무관**, "다음 입력"에 앵커 |
 | 희생 개행(`\n`) 프리픽스 | 유실 0/15 — 정확히 첫 1바이트만 소모, `\n` 이 대신 먹힘 |
 | 셸을 cmd.exe 로 교체 | 유실 0/27 — bash(MSYS) 전용 |
-| **tasty 무관 단독 재현기** (portable-pty 단독, 단일 스레드) | **셸 기동 후 첫 resize 의 다음 입력에서 결정적 재현** (3회 연속 1/20, 항상 iter 0) — tasty 최종 무죄 확정 |
+| **tasty 무관 단독 재현기** (portable-pty 단독, 단일 스레드) | **셸 기동 후 첫 resize 의 다음 입력에서 결정적 재현** (3회 연속 1/20, 항상 iter 0) — Tasty 앱 없이도 재현됨 |
 
 **처방 (현재 상태).**
 

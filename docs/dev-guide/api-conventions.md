@@ -1,6 +1,7 @@
 # CLI / IPC API 규약 — 명명 + 안정성
 
-IPC 메서드·CLI 명령의 **명명 규칙**과 **호환성/버전 정책**. 단일 진실 원천은 `crates/tasty-ipc/src/method_meta.rs::METHOD_TABLE`(release 표면) — 본 문서는 그 위의 규칙·예외·진화 절차다. 전체 메서드 카탈로그는 [reference/api](../reference/api.md).
+IPC 메서드와 CLI 명령의 이름, 호환성, 버전 정책을 설명한다. release 메서드 목록은
+`crates/tasty-ipc/src/method_meta.rs::METHOD_TABLE`에서 관리한다. 전체 메서드 카탈로그는 [reference/api](../reference/api.md).
 
 ## 형식
 
@@ -12,14 +13,14 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 예: `surface.list` ↔ `tasty surface list`, `claude.spawn` ↔ `tasty claude spawn`.
 
 - **namespace 단수형** (`surface`, NOT `surfaces`). list 반환 키는 복수 (`surfaces: [...]`).
-- **root 예외**: `split`(pane 분할) · `tree`(surface tree)만 namespace 없이 root 에 등록(자주 쓰는 짧은 명령). 새 메서드는 이 예외에 동참 금지.
+- **root 예외**: `split`(pane 분할) · `tree`(surface tree)만 namespace 없이 root 에 등록(자주 쓰는 짧은 명령). 새 메서드는 namespace를 생략하지 않는다.
 - **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `remote.profile.*`, `surface.meta.*` 점 표기).
 
-namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요), **제거는 SemVer 위반**(major bump 필요). 카운트 snapshot 은 테스트가 SoT 라 본 문서에 박지 않는다.
+namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요), **제거는 SemVer 위반**(major bump 필요). 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
 
 ## verb 화이트리스트
 
-새 메서드는 적합한 카테고리의 verb 를 고르고, 밖이면 PR description 에서 정당화한다(가벼운 ADR — 별도 파일 불필요).
+새 메서드는 적합한 카테고리의 verb 를 고르고, 밖이면 PR description 에서 이유를 설명한다(별도 ADR 파일은 필요 없다).
 
 | 카테고리 | verb |
 |----------|------|
@@ -78,29 +79,22 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 수신처도 없다. 매여 있지 않으면(전역 스냅샷 조회든 id 로 대상을 지정하는 쓰기든)
 진입점이 있어야 한다.
 
-**이 판별식은 "전형적 호출자가 plugin 인가" 와 다르다.** 뒤엣것은 *관행*이고 앞엣것은
-*불가능성*이다. 관행으로 가르면 `surface_id` 를 인자로 받아 셸도 부를 수 있는 메서드가
-"plugin 이 자기 surface 를 위해 부른다" 는 이유로 진입점 없이 남는다 — 실제로 그렇게
-남아 있던 것이 여섯이었다([ADR-0043](../adr/0043-cli-errors-and-diagnostic-logs.md)의 CLI 진입점 기준).
+호출자가 주로 plugin이라는 이유만으로 CLI를 생략하지 않는다. `surface_id`를 받아
+처리하고 결과를 응답으로 돌려주는 메서드라면 셸에서도 호출할 수 있는지 확인한다.
 
 #### 어떻게 세는가
 
-**실행으로 센다.** 이름이 비슷한 잎을 찾는 방식은 두 방향으로 틀린다.
+CLI 하위 명령을 실제 실행하고 프록시에서 전송한 메서드를 확인한다. 이름만 비교하면
+`message.clear`를 보내는 `tasty read queue --clear`와 `surface.send_wait_idle`을 보내는
+`tasty send text --wait-idle`처럼 옵션으로 선택하는 요청을 놓친다.
 
-- 플래그 뒤에 숨은 진입점을 못 본다. `message.clear` 는 `tasty read queue --clear` 가,
-  `surface.send_wait_idle` 은 `tasty send text --wait-idle` 이 보낸다 — 서브커맨드
-  이름에는 그 메서드가 없다.
-- **와이어 침묵을 진입점 부재로 오해한다.** `tasty tool remote-profile add-ssh` 는 rc=0
-  인데 IPC 를 한 번도 안 탄다 — `crates/tasty-cli/src/local/` 이 그 자리에서 실행한다.
-  그런 명령은 진입점이 **있는** 것이다.
-
-세는 절차는 살아 있는 인스턴스 앞에 프록시를 세워 각 CLI 잎이 실제로 실은 메서드를
-관측하는 것이다. 인자를 못 맞춰 실행이 안 된 잎은 **미측정**이지 부재가 아니다 — 그
-편향은 한쪽으로만 작용하므로(부재 집합은 줄어들 수만 있다) 상한으로만 쓴다. 실제로
-재확인하니 "잎은 있는데 인자를 못 맞춘 것" 22 건이 전부 진입점 있음으로 바뀌었다.
+IPC를 보내지 않는 명령도 있다. `tasty tool remote-profile add-ssh`는
+`crates/tasty-cli/src/local/`에서 직접 처리한다. 요청이 관측되지 않았다는 이유만으로
+CLI 진입점이 없다고 판단하지 않는다. 인자를 맞추지 못해 실행하지 못한 명령도 미측정으로
+남긴다. 이런 명령이 포함된 미지원 개수는 확정값이 아니라 상한이다.
 
 가드가 소스에서 판정할 때 쓰는 "CLI 로 닿는다" 의 정의는 세 갈래다
-(`cli_reachable_methods`): CLI 의 요청 조립 자리에 있는 값 위치 리터럴, 크레이트 전체의
+(`cli_reachable_methods`): CLI 의 요청 조립 자리에 있는 인자 값의 문자열 리터럴, 크레이트 전체의
 `method: "…"` 필드, 그리고 **번들 plugin 매니페스트의 `ipc_method`**. 마지막 것이 없으면
 `tasty image open` 처럼 plugin 이 기여하는 명령이 전부 "진입점 없음" 으로 잘못 잡힌다.
 
@@ -108,7 +102,7 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 - **`markdown.navigate` 의 CLI 진입점** — namespace 를 번들 plugin 이 점유해 외부 호출이
   plugin 으로 forward 된다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)).
-  host 잎을 만들면 plugin 설치 여부에 따라 흔들리므로, 진입점은 plugin 의 매니페스트
+  host CLI 명령을 만들면 plugin 설치 여부에 따라 흔들리므로, 진입점은 plugin 의 매니페스트
   `ipc_method` 기여로 가야 한다 — plugin 크레이트 수정 + 매니페스트/Cargo 버전 bump.
 
 #### 관련 문서
@@ -131,11 +125,11 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 | plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다. 외부 arm 은 있지만 CLI·agent 호출은 popup 을 안 열고 `-32016` 을 받는다(아래 †plugin-only 절 끝, [ADR-0031](../adr/0031-file-handler-routing.md)) |
 | plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)) |
 | plugin → host 서비스 | `markdown_mirror.content_request` | markdown plugin 이 attach mirror 문서의 원격 원문을 요청한다. `git_viewer.query` 와 같은 비동기 accept 라 `request_id` 만 회신하고 원문은 그 plugin 에 unicast push 되므로 셸이 결과를 받을 수 없다([ADR-0022](../adr/0022-remote-mirror-content-and-queries.md)) |
-| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI 동사를 열면 사용자가 한 줄로 스캐너의 바이트를 가져가 에러 감시에 구멍을 낼 수 있고, 그 구멍은 조용하다 — 에이전트가 출력을 읽는 표면은 커서를 안 움직이는 `tasty read since-mark` 쪽이다([ADR-0013](../adr/0013-terminal-io-and-process-lifetime.md)) |
-| plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
+| 열면 그 능력이 깨진다 | `surface.read_since_scan_mark` | 출력 스캐너 전용 커서라 **읽으면 커서가 전진한다.** CLI로 읽으면 스캐너보다 먼저 커서가 전진해 감시할 출력을 놓칠 수 있다 — 에이전트가 출력을 읽는 표면은 커서를 안 움직이는 `tasty read since-mark` 쪽이다([ADR-0013](../adr/0013-terminal-io-and-process-lifetime.md)) |
+| plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 호출할 수 없다 |
 | plugin → host 서비스 †plugin-only | `webview.open_external` | plugin 이 **자기** webview surface 안에서 클릭된 외부 링크를 host 의 OS 열기 자리로 넘긴다. 대상이 caller plugin 소유 surface 여야 하고, 사용자 브라우저를 여는 것은 에이전트가 자기 작업에 쓰는 능력이 아니다([ADR-0030](../adr/0030-bundled-plugin-data.md)) |
 | plugin → host 서비스 †plugin-only | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
-| CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
+| CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 작업을 원격 호출자나 에이전트가 요청할 때 사용한다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.profile.add` · `remote.profile.get` · `remote.profile.list` · `remote.profile.list_local` · `remote.profile.detect` · `remote.profile.import` · `remote.profile.remove` | `tasty tool remote-profile …` 이 로컬 프로필 파일을 직접 다룬다(IPC 없음). 인스턴스가 떠 있지 않아도 되어야 하는 명령이라 그쪽이 옳다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.passkey.add` · `remote.passkey.get` · `remote.passkey.list` · `remote.passkey.remove` | `tasty tool passkey …` 가 같은 이유로 로컬 처리한다 |
 | 다른 이름으로 이미 있다 | `view.create` · `view.close` · `view.list` | `window.*` 의 어휘 통일 alias 로 동작이 동등하다. CLI 는 `tasty new window` · `tasty close window` · `tasty list windows` 쪽 한 벌만 노출한다 |
@@ -146,11 +140,11 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 #### † plugin-only — 외부 호출자는 무엇을 받는가
 
 위 표에서 †plugin-only 로 표시한 다섯(`banner.open` · `banner.close` · `popup.close` ·
-`webview.open_external` · `host.shared_buffer.create`)은 **CLI 잎이 없는 것에 그치지 않고 외부 dispatch arm 자체가
+`webview.open_external` · `host.shared_buffer.create`)은 **CLI 명령뿐 아니라 외부 dispatch arm도
 없다.** plugin host-call 진입부가 직접 인터셉트하기 때문이다. 나머지 행들은 사정이 다르다 —
 `git_viewer.query` · `markdown.navigate` · `settings.get_plugin_setting` 같은 것은 외부에서
-쏘면 실제로 라우팅되어 인자 오류나 plugin 의 답이 돌아온다. 두 부류가 같은 표에 있는 것은 이
-표의 축이 **CLI 진입점**이지 라우팅이 아니기 때문이다.
+호출하면 실제로 라우팅되어 인자 오류나 plugin 의 답이 돌아온다. 두 부류가 같은 표에 있는 것은 이
+표가 **CLI 진입점 유무**를 분류하기 때문이다.
 
 이 다섯은 `METHOD_TABLE` 에 `plugin_only(&[…])` 로 등재되고, 외부 호출자는 `-32601`("그런
 메서드 없다")이 아니라 다음을 받는다:
@@ -211,15 +205,15 @@ arm(gui 창 라우터)이 있어 `plugin_only` 표식을 달지 않는다. 그�
 
 #### CLI 응답 대기 옵션
 
-CLI의 --response-timeout-ms는 서브커맨드 앞에 쓰는 루트 옵션이며 단발 RPC에만 적용한다. 0은 봉투에 싣지 않는다. 상대가 capability를 지원하지 않으면 sent:false 구조화 오류로 실행 전 거절한다. loop·stream·로컬 처리·SSH 조회·plugin 자동 대기 및 명령 없는 기동은 양의 값을 받으면 사용 오류 exit 2로 거절한다. 메서드 내부의 --timeout-ms와는 별개의 시간이다. 환경변수로 상속하거나 지원하지 않는 명령에서 조용히 무시하지 않는다.
+CLI의 --response-timeout-ms는 서브커맨드 앞에 쓰는 루트 옵션이며 단발 RPC에만 적용한다. 0은 요청에 포함하지 않는다. 상대가 capability를 지원하지 않으면 sent:false 구조화 오류로 실행 전 거절한다. loop·stream·로컬 처리·SSH 조회·plugin 자동 대기 및 명령 없는 기동은 양의 값을 받으면 사용 오류 exit 2로 거절한다. 메서드 내부의 --timeout-ms와는 별개의 시간이다. 환경변수로 상속하거나 지원하지 않는 명령에서 조용히 무시하지 않는다.
 
-CLI capability 확인과 본 요청은 하나의 응답 대기 예산을 나눠 쓴다. 확인에는 남은 시간의 socket read timeout과 올림한 봉투 ms를 함께 적용해 구 서버에서도 끝난다. 본 요청은 남은 ms를 내림하고 1ms 미만이면 보내지 않는다. 확인 만료는 본 요청 미실행이므로 -32067이며, 확인 timeout 뒤 연결은 늦은 응답이 남을 수 있어 재사용하지 않는다. 1ms 옵션에서는 확인은 보내도 본 요청은 나가지 않는다. 연결·쓰기 시간까지 포함한 전체 CLI 실행 시간 보장은 아니다.
+CLI capability 확인과 본 요청은 하나의 응답 대기 예산을 나눠 쓴다. 확인에는 남은 시간의 socket read timeout과 올림한 요청 제한시간(ms)를 함께 적용해 구 서버에서도 끝난다. 본 요청은 남은 ms를 내림하고 1ms 미만이면 보내지 않는다. 확인 만료는 본 요청 미실행이므로 -32067이며, 확인 timeout 뒤 연결은 늦은 응답이 남을 수 있어 재사용하지 않는다. 1ms 옵션에서는 확인은 보내도 본 요청은 나가지 않는다. 연결·쓰기 시간까지 포함한 전체 CLI 실행 시간 보장은 아니다.
 
 ### 변경 명령의 재시도는 키로 구별한다
 
 메서드 표는 두 번 전달됐을 때 결과를 기준으로 Read·Idempotent·Mutate를 필수 선언한다. message.read는 기본 소비 동작, screenshot은 파일 생성, set_mark는 시각·출력 위치 변화가 있어 이름만으로 읽기나 멱등으로 분류할 수 없다. 알 수 없는 plugin namespace는 재전달에 안전하다고 가정하지 않는다. 상태를 바꾸는 구현을 수정하면 같은 인자로 두 번 실행해 분류가 맞는지도 확인한다.
 
-요청 봉투의 idempotency_key는 UTF-8 1~256바이트이며 요청 ID와 별개다.
+요청의 `idempotency_key`는 UTF-8 1~256바이트이며 요청 ID와 별개다.
 저장 키는 Local·plugin ID·agent ID로 구분한 주체와 키의 조합이다.
 연결이 바뀌어도 같은 주체의 재시도를 찾는다.
 같은 키·같은 요청은 저장 응답을 idempotent_replay:true로 반환하고, 다른 요청이면 -32063으로 실행을 막는다.
@@ -230,13 +224,13 @@ CLI capability 확인과 본 요청은 하나의 응답 대기 예산을 나눠 
 client는 부수효과 전에 capability를 확인한다.
 요청 비교용 digest는 전체 params 저장 비용을 줄이는 대신 충돌 가능성을 수용한다.
 
-키 길이 검사는 공통 check_request와 창 없는 Local check_without_engine에서 수행한다. 권한·cap·rate 및 허용 관측 뒤, CheckedRequest를 만들기 전에 검사하여 기존 거절 순서를 유지한다. 목적지가 engine·App·plugin인지와 관계없이 잘못된 키는 -32602로 거절한다. 저장소 begin에서 같은 검사를 중복하지 않는다.
+키 길이 검사는 공통 check_request와 창 없는 Local check_without_engine에서 수행한다. 권한·cap·rate 검사와 허용된 요청의 사용량 집계 뒤, CheckedRequest를 만들기 전에 검사하여 기존 거절 순서를 유지한다. 목적지가 engine·App·plugin인지와 관계없이 잘못된 키는 -32602로 거절한다. 저장소 begin에서 같은 검사를 중복하지 않는다.
 
 #### 어느 경로에 걸리나 — 호스트가 아는 이름은 전부 안, plugin 고유 이름만 밖
 
-메서드별 KeyContract는 Kept{since}·Unneeded·Outside로 선언한다. Mutate 여부와 저장 보장 여부를 구분하며 Read·Idempotent는 Unneeded다. client는 Kept의 since 이상 capability를 요구하고 Unneeded도 최소 지원 버전을 확인한다. 서버 capability는 표가 요구하는 최대 버전에서 파생한다. 판 1은 engine, 판 2는 App 경로의 보장을 뜻한다. 새 라우팅 계층을 열 때 실제 저장소 경로와 선언을 양방향으로 검증한다.
+메서드별 KeyContract는 Kept{since}·Unneeded·Outside로 선언한다. Mutate 여부와 저장 보장 여부를 구분하며 Read·Idempotent는 Unneeded다. client는 Kept의 since 이상 capability를 요구하고 Unneeded도 최소 지원 버전을 확인한다. 서버 capability는 표가 요구하는 최대 버전에서 파생한다. 멱등 키 기능 버전 1은 engine, 버전 2는 App 경로의 보장을 뜻한다. 새 라우팅 계층을 열 때 실제 저장소 경로와 선언을 양방향으로 검증한다.
 
-판 3은 호스트가 아는 Mutate 이름을 GUI debug와 namespace forward에서도 보호한다.
+멱등 키 기능 버전 3은 호스트가 아는 Mutate 이름을 GUI debug와 namespace forward에서도 보호한다.
 image·markdown처럼 plugin으로 전달되는 호스트 이름은 forward_keeping_the_key가 Kept를 확인하고 공용 relay를 사용한다.
 plugin 고유 이름까지 같은 Mutate라는 이유로 저장하면 Outside 계약이 깨지므로 Kept 판정을 생략하지 않는다.
 GUI debug 두 단계도 공용 저장 경로로 묶는다.
@@ -289,7 +283,7 @@ debug 표 기준 총 3개.
 
 즉 **생성된 id(surface/tab/pane)를 담지 않는다.** 원격 실행은 비동기라 응답 시점에 아직 아무것도 만들어지지 않았기 때문이다. 결과는 나중에 `StructuralDelta` 역반영으로 mirror 트리에 반영된다.
 
-따라서 **구조 op 의 응답에서 생성된 id 를 동기로 꺼내 쓰는 호출자를 새로 만들지 않는다.** 그런 호출자는 mirror 워크스페이스에서 조용히 깨지고(응답에 필드가 없다), 게다가 forward 큐는 IPC 응답과 무관하게 드레인되므로 **로컬은 실페인데 원격에는 리소스가 남는** 고아를 만든다. 그 id 가 반드시 필요한 method 는 mirror 워크스페이스를 대상으로 **거부**해야 한다 — 실제 선례가 `terminal.spawn` 이며, 그 결정과 배경은 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
+따라서 **구조 op 의 응답에서 생성된 id 를 동기로 꺼내 쓰는 호출자를 새로 만들지 않는다.** 그런 호출자는 mirror 워크스페이스에서 조용히 깨지고(응답에 필드가 없다), 게다가 forward 큐는 IPC 응답과 무관하게 드레인되므로 **로컬은 실패인데 원격에는 리소스가 남는** 고아를 만든다. 그 id 가 반드시 필요한 method 는 mirror 워크스페이스를 대상으로 **거부**해야 한다 — 실제 선례가 `terminal.spawn` 이며, 그 결정과 배경은 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
 
 ## 권한 표 등재 (라우터 ↔ METHOD_TABLE)
 
@@ -299,8 +293,11 @@ debug 표 기준 총 3개.
 
 `tests/ipc_router_table_parity.rs` 가 라우터 소스를 훑어 강제한다.
 `"<method>" =>` 팔과 `… .method == "…"` 비교(`||` 로 이어진 다중 비교 포함, `src/app/ipc/app_methods.rs`·`window_required.rs` 가 그 형태다)를 **둘 다** 잡는다.
-소스 목록은 고정 목록(`ROUTER_SOURCES`)에 더해 `src/app/ipc/` 를 **디렉토리째** 걷는다(`ROUTER_DIRS`) — dispatch 스텝이 몰려 있는 이 디렉토리에 새 파일을 만들어도 목록에 손으로 추가하는 걸 잊어 사각지대가 생기지 않게 한다(실제로 `window_required.rs` 가 그렇게 빠져 6 메서드가 통과했다). 등재 누락은 조용히 오래 남는 종류의 결함이라(형제 메서드가 전부 등재된 상태에서 한둘만 빠져도 아무 신호가 없다) 리뷰가 아니라 게이트로 잡는다.
-debug 빌드에서만 도는데, release 에서는 `DEBUG_METHODS` 가 설계상 비어 IPC 표면에서 사라지기 때문이다([debug-ipc](debug-ipc.md)). `src/app/ipc/` **밖**의 새 라우터 파일(예: `src/adapters/ipc/`)은 여전히 `ROUTER_SOURCES` 에 직접 추가한다.
+검사는 고정 목록(`ROUTER_SOURCES`)과 `src/app/ipc/` 디렉터리 전체(`ROUTER_DIRS`)를
+읽는다. 그 디렉터리 밖에 새 라우터를 만들면 `ROUTER_SOURCES`에 추가한다.
+검사는 debug 빌드에서 실행한다. release에서는 `DEBUG_METHODS`가 비어 있으므로
+debug 메서드까지 대조할 수 없다([debug-ipc](debug-ipc.md)).
+
 
 ## plugin 점유 namespace
 
@@ -321,9 +318,15 @@ child terminal 의 파생 상태 `stale`([ADR-0041](../adr/0041-agent-state-and-
 다만 hook 유실로 영구 대기하는 것보다 조기 탈출이 나은 소비자는 `terminal_states` 에 직접 `"stale"` 을 추가해 선택할 수 있다.
 매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.
 
-**`claude spawn`/`tell`, `codex spawn`/`tell` 은 더 이상 이 메커니즘을 쓰지 않는다** — 동기 블로킹 대신 완료 시 caller surface 에 알림 훅을 주입하는 이벤트 기반 모델로 대체됐다.
-claude 는 `claude-idle`/`needs-input`/`process-exit` hook → `claude.notify_done`(`crates/tasty-plugin-claude/src/notifications.rs`의 `register_notify_hooks` 참조), codex 는 `codex-idle`/`needs-input`/`process-exit` hook → `codex notify-caller`([`docs/plugins/codex/index.md`](../plugins/codex/index.md) 참고)로 각각 구현. 두 핸들러 모두 hook 이 한 번 fire 되면 알림 후 `surface.locate` 로 target 생존을 확인해, 아직 살아있으면(process-exit 가 아니었으면) 형제 hook 을 재등록한다(자기재무장) — "spawn/tell 당 알림 1회"가 아니라 "child 가 exit 할 때까지 상태 전환마다 알림"이다.
-auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin 중 이를 실사용하는 소비자는 없으며(전수 grep 확인), 향후 외부/서드파티 plugin 소비자를 위해 스키마만 유지한다.
+`claude spawn`/`tell`과 `codex spawn`/`tell`은 auto_wait 대신 완료 알림 훅을 쓴다.
+Claude는 `claude-idle`/`needs-input`/`process-exit` 훅에서 `claude.notify_done`을 호출한다
+(`crates/tasty-plugin-claude/src/notifications.rs`의 `register_notify_hooks`).
+Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugins/codex/index.md)).
+두 핸들러는 알림 뒤 `surface.locate`로 대상 생존을 확인하고, 살아 있으면 형제 훅을
+다시 등록한다. 따라서 spawn/tell마다 한 번만 알리는 것이 아니라 자식이 종료할 때까지
+상태가 바뀔 때마다 알린다.
+
+현재 번들 plugin은 auto_wait/polling을 사용하지 않는다. 스키마는 외부 plugin을 위해 유지한다.
 
 ---
 
@@ -350,7 +353,7 @@ auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin �
 | fallback 없는 enum variant 추가 · 컬렉션 정렬/페이지네이션 의미 변화 | **major** |
 | 비동기 이벤트(`command.invoke`/`ipc.result`/`event.dispatch`) 의미 변화 · handshake/env(`TASTY_HOST_API_VERSION`/auth token) 계약 변경 · 예약 namespace·권한 토큰 정책 변경 | **major** |
 
-이 표는 출발선이다. 새 분류가 필요하면 PR 에 명시하고 표에 추가한다.
+이 표를 기본 분류로 사용한다. 새 분류가 필요하면 PR 에 명시하고 표에 추가한다.
 
 ### 호환 협상 — 무엇을 할 줄 아는지 묻는 자리
 
@@ -361,24 +364,23 @@ auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin �
 - 선언 자리는 `system.info` 응답의 `capabilities` 키이고, 모양은 `{name, version}` 배열이다.
   목록은 `crates/tasty-ipc` 의 `capability::CAPABILITIES` 하나다.
 - **이름을 더하는 것은 추가**(위 표의 minor)다. 구 client 는 모르는 키·모르는 이름을 무시한다.
-- **착지한 것만 적는다.** 선언이 "곧 할 것" 을 담으면 그 목록으로 분기한 client 가 깨진다.
-- 판은 가능하면 **근거에서 유도한다** — `ipc.stream` 의 판은 리터럴이 아니라 서버가
+- **구현된 기능만 선언한다.** 선언이 "곧 할 것" 을 담으면 그 목록으로 분기한 client 가 깨진다.
+- 기능 버전은 가능하면 **구현 상수에서 가져온다** — `ipc.stream`의 버전은 리터럴이 아니라 서버가
   handshake 에서 비교하는 `stream::STREAM_PROTO` 다.
 - 뜻이 바뀌면 배열에서 빼지 말고 그 이름의 `version` 을 올린다.
 - **메서드 인자도 이름이 필요하다.** 봉투 필드와 같은 이유로 — 인자 객체에도 모르는 키 거절이
   없어 구 서버는 새 인자를 조용히 버리고 성공으로 답한다. `surface.read_since_mark` 의 위치 인자가
-  `ipc.output-cursor` 를 받은 것이 그 형태이고, 이름·판·인자 이름을 한 모듈(`tasty-ipc` 의
+  `ipc.output-cursor` 를 받은 것이 그 형태이고, 기능 이름·버전·인자 이름을 한 모듈(`tasty-ipc` 의
   `output_cursor`)에 둬 서버 파서·선언·CLI 가 같은 값을 쓴다
   ([ADR-0034](../adr/0034-output-cursor-contract.md)).
 - **CLI 는 요청이 요구하는 이름을 보내기 전에 묻는다**(`tasty-cli` 의 `contract` 모듈). 요구
   여부는 명령이 아니라 요청에서 판정하고, 새 계약을 안 쓰는 요청은 묻지 않는다. 없으면 요청을
   내보내지 않고 stderr 에 `{"error":{"kind":"unsupported_capability","capability":…,"required":…,"found":…,"sent":false,"message":…}}`
-  한 줄을 쓴 뒤 종료 코드 1 로 끝난다. `found` 가 `null` 이면 이름이 없는 것이고, 수면 다른 판으로
+  한 줄을 쓴 뒤 종료 코드 1 로 끝난다. `found` 가 `null` 이면 이름이 없는 것이고, 수면 다른 버전으로
   선언된 것이다.
-- ★ **스트림에 기능을 더할 때 `ipc.stream` 의 판을 올리지 마라 — 새 이름을 더해라.**
-  바로 위 줄이 말하듯 그 판은 `STREAM_PROTO` 이고, 서버는 그것을 handshake 에서 **동등
-  비교**해 다르면 연결을 거절한다(`validate_stream_proto`). 그래서 그 수를 올리는 것은
-  기능을 좁히는 것이 아니라 **구 peer 의 attach 를 통째로 막는 것**이다. 판은 프레임의
+- ★ **스트림에 기능을 더할 때 `ipc.stream` 버전 대신 별도 capability를 추가한다.**
+  바로 위 줄이 말하듯 그 버전은 `STREAM_PROTO` 이고, 서버는 그것을 handshake 에서 **동등
+  비교**해 다르면 연결을 거절한다(`validate_stream_proto`). 그래서 그 값을 올리면 **구 peer의 attach 연결이 거절된다**. 버전은 프레임의
   *기존* 뜻이 바뀔 때만 움직이고, 더해지는 기능은 `ipc.stream.<기능>` 처럼 이름으로
   선언한다. 그 이름을 본 client 만 그 기능을 쓰고, 못 본 client 는 종전 동작을 받는다.
   본보기와 결정 근거는 [ADR-0023](../adr/0023-attach-state-sync-and-forwarding.md).
@@ -386,7 +388,7 @@ auto_wait/polling 스키마 자체는 삭제되지 않았다 — 번들 plugin �
 메서드 **이름**이 구 서버에 있는지는 별도 물음이고 표가 답한다 —
 `method_meta::method_since` 가 0.7.0 동결 파일을 읽어 두 값(`FrozenBaseline` /
 `AfterFrozenBaseline`)으로 답하고, 미등재 이름에는 `None` 을 준다. 그 값은 손으로 적지
-않는다(동결 파일이 유일한 모수다). 근거는
+않는다(동결 파일에서 대상 목록을 관리한다). 근거는
 [ADR-0004](../adr/0004-ipc-discovery-and-errors.md).
 
 ### Deprecation 절차

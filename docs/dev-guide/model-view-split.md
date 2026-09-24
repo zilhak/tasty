@@ -1,6 +1,6 @@
 # Model + Host View 분리 패턴
 
-`tasty-model` 의 surface 모델은 **GUI-free** 다 (egui/wgpu 직접 사용 금지). 휘발성 GUI 상태(텍스처·캐시·편집 세션·스크롤·팝업 버퍼)는 호스트 측 **View** 구조체에 둔다. host 가 egui 로 직접 그리는 내장 surface 에 뷰 상태를 더할 때 이 패턴을 따른다.
+`tasty-model` 의 surface 모델은 GUI에 의존하지 않는다(egui/wgpu 직접 사용 금지). 휘발성 GUI 상태(텍스처·캐시·편집 세션·스크롤·팝업 버퍼)는 호스트 측 **View** 구조체에 둔다. host 가 egui 로 직접 그리는 내장 surface 에 뷰 상태를 더할 때 이 패턴을 따른다.
 
 `tasty-model` 이 의존하는 type-\* crate 는 `tasty-type-geometry`(LogicalPx/PhysicalPx)와 `tasty-type-appearance` 다 — 둘 다 GUI 타입을 들이지 않는다.
 
@@ -26,7 +26,9 @@
 
 ## 패턴
 
-### 1. Model — 슬림 식별·탐색 정보 (`crates/tasty-model/src/`)
+<a id="1-model--슬림-식별탐색-정보-cratestasty-modelsrc"></a>
+
+### 1. Model — 식별·탐색 정보 (`crates/tasty-model/src/`)
 
 ```rust
 pub struct FooPanel { pub id: u32, pub file_path: String, last_mtime: Option<SystemTime> }
@@ -49,7 +51,7 @@ pub struct FooViewStore { views: HashMap<SurfaceId, FooView> }
 impl FooViewStore {
     pub fn get_or_init(&mut self, panel: &mut FooPanel) -> &mut FooView {
         let view = self.views.entry(panel.id).or_insert_with(|| FooView::new(panel));
-        if let Some(c) = panel.poll_reload() { view.replace_content(c); } // 첫 접근/변경 자동 반영
+        if let Some(c) = panel.poll_reload() { view.replace_content(c); }
         view
     }
     pub fn drop_view(&mut self, sid: SurfaceId) { self.views.remove(&sid); }
@@ -69,7 +71,7 @@ pub(crate) fn cleanup_surface(&mut self, surface_id: u32) {
 
 ### 4. 렌더 호출 — `mem::take` 패턴
 
-디스패치 루프에서 `&mut FooPanel`(engine.workspaces 경로)와 `&mut FooView`(state.foo_views 경로)를 동시에 mutable 보유하려면 borrow checker 가 막는다. 루프 진입 직전 store 를 일시 추출:
+디스패치 루프에서 `&mut FooPanel`(engine.workspaces 경로)와 `&mut FooView`(state.foo_views 경로)를 같은 상위 상태를 통해 동시에 빌리기 어려운 경우, 루프 직전에 store를 잠시 꺼낸다:
 
 ```rust
 let mut foo_views = std::mem::take(&mut state.foo_views);

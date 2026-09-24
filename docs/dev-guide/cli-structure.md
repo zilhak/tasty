@@ -16,7 +16,7 @@
 ```rust
 pub enum Dispatch<'a> {
     Rpc,                                    // 단발 JSON-RPC — 보내고 응답 출력하면 끝
-    ClientDriven(Box<dyn ClientCommand + 'a>),  // client 가 흐름을 쥔다
+    ClientDriven(Box<dyn ClientCommand + 'a>),  // client가 실행 순서를 관리한다
 }
 ```
 
@@ -36,31 +36,28 @@ SSH 터널 경유 조회(`remote workspaces`)가 여기 속한다. 용어 정의
 ## 새 명령 추가 절차
 
 1. `commands/` 에 clap 선언을 추가한다.
-2. 단발 RPC 면 `request/` 에 변환을 추가한다. **끝** — 진입점(`run.rs`)은 열지 않는다.
+2. 단발 RPC 면 `request/` 에 변환을 추가한다. 진입점(`run.rs`) 수정은 필요 없다.
 3. 클라이언트 주도면 `local/` 에 실행 모듈 + `ClientCommand` 구현을 추가하고,
-   `dispatch.rs` 의 `classify` 에 arm 하나를 더한다. 여기서도 `run.rs` 는 열지 않는다.
+   `dispatch.rs` 의 `classify` 에 arm 하나를 더한다. 여기서도 `run.rs`는 수정하지 않는다.
 
 인자 조합 검증(`--ssh` + `--profile` 상호배타 등)은 `classify` 에서 끝낸다 —
 검증 실패는 통신을 시작하기 전에 나야 한다.
 
 ## 도움말 문구
 
-`commands/` 의 `///` doc comment 는 코드 주석이 아니라 **사용자 표면 문자열**이다 —
+`commands/` 의 `///` doc comment 는 코드 주석이 아니라 **사용자에게 표시되는 도움말**이다 —
 clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대로 노출한다.
 따라서 clap 항목(variant · `#[arg]` 필드) 의 `///` 는 영어로만 쓴다
 ([i18n.md](i18n.md) "하드코딩 허용 예외"). 값 허용 범위·상호배타 같은 사용자에게
 필요한 상세는 긴 help 에 남기고, 설계 근거(불가침 원칙 번호, 내부 단계명 등)는
 `//` 주석이나 `docs/` 로 내린다.
 
-★ **면제는 "clap 항목이 아니다" 가 아니라 `#[cfg(test)]` 다.** 이것을 강제하는
-`clap_help_text_is_english_only`(`crates/tasty-doc-guards/tests/no_hardcoded_ui_strings.rs`)는 스캔 뿌리 안의
-`///` 줄에 CJK 가 있으면 **그 주석이 무엇에 붙었는지 보지 않고** 문다 — 걷어내는 것은
-`#[cfg(test)]` 아래(속성 앞의 doc 주석까지)뿐이다. 뿌리는 `commands/` 만이 아니라
-`crates/tasty-cli/src/lib.rs` 도 포함한다. 실측으로 확인했다: clap 항목이 아닌 `use`
-선언 위에 한국어 `///` 를 얹으면 그 자리에서 빨개진다.
-모듈 헤더 `//!` 는 접두가 달라 실제로 대상 밖이다.
-
-⇒ clap 과 무관한 배경 설명이라도 이 파일들에서는 `///` 가 아니라 `//` 로 쓴다.
+`clap_help_text_is_english_only`
+(`crates/tasty-doc-guards/tests/no_hardcoded_ui_strings.rs`)는 `commands/`와
+`crates/tasty-cli/src/lib.rs`의 `///`에 CJK 문자가 있는지 검사한다. clap 항목인지까지
+구분하지 않으며, `#[cfg(test)]` 안의 코드와 그 앞 doc 주석만 제외한다.
+모듈 설명인 `//!`는 대상이 아니다. 이 파일들의 clap과 무관한 설명은 필요할 때만
+`//`로 짧게 남긴다.
 
 실제 표시는 `help_i18n::command`로 얻은 번역 트리와 `help_frame` 템플릿을 사용한다.
 `help_error`는 clap의 구조화된 파싱 오류를 표시하며, plugin 동적 파싱도 같은 경로로
@@ -69,29 +66,18 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 
 ### 빈 설명 칸은 없다
 
-명령 축과 옵션 축 둘 다 **잔여 0** 이다 — `--help` 의 모든 서브커맨드가 about 을,
-모든 인자가 help 줄을 갖는다. 강제는 `crates/tasty-cli/tests/help_i18n_slots.rs` 의
-`every_subcommand_carries_an_about` 과 `arguments_without_help_do_not_increase` 이고,
-둘 다 clap 트리를 걸어 세므로 선언이 어느 파일·어느 크레이트에 있든 잡힌다
-(`debug sim` 처럼 `tasty-tui-simulator` 에 있는 것도 포함).
+모든 하위 명령에 about, 모든 인자에 help를 작성한다.
+`crates/tasty-cli/tests/help_i18n_slots.rs`의 `every_subcommand_carries_an_about`와
+`arguments_without_help_do_not_increase`가 clap 트리를 검사하므로 다른 크레이트의
+명령(`tasty-tui-simulator`의 `debug sim` 등)도 포함한다.
 
-인자 쪽은 **양방향 래칫**이다: 빈칸이 늘어도 실패하고 **줄어도 실패한다**(줄였으면
-상한을 같이 내려야 남는 여유가 안 보는 구간으로 안 남는다). 상한이 지금 0 이라
-아래쪽 갈래는 터질 일이 없지만 그대로 둔다 — 값이 다시 올라가면 돌아올 자리이고,
-비교를 `Ordering` 하나로 모은 것도 상한 0 에서 `n <= 0` / `n >= 0` 을 clippy 가
-막기 때문이지 갈래가 필요 없어서가 아니다.
+현재 빈 설명의 허용 개수는 0이다. 검사는 허용 개수보다 많거나 적어도 실패하도록
+작성돼 있어, 예외를 줄였을 때 허용값도 함께 줄여야 한다.
 
-두 함정이 이 축에 붙어 있다.
-
-- **doc 주석은 바로 아래 항목에 붙는다.** 항목 사이에 새 항목을 끼워 넣으면 위
-  항목의 설명이 아래로 밀려, 한쪽은 남의 설명을 내보내고 다른 쪽은 빈다. 화면에는
-  두 자리가 동시에 틀린 채로 나오는데 **컴파일도 테스트도 조용하다** — 이 술어가
-  유일한 채널이다.
-- **술어가 세는 것은 빈칸이지 정확도가 아니다.** 그럴듯하지만 틀린 문구를 넣으면
-  상한은 내려가고 화면은 채워지며 게이트는 초록이다. 그래서 동작을 단정하는 문구
-  (기본값·교체인지 누적인지·플랫폼별 차이 등)는 그 자리에서 실행부를 읽고 적는다.
-  같은 이유로 문구는 **필드명이 아니라 자리**를 따른다 — `--name` 하나가 barrier
-  이름이기도 semaphore 이름이기도 하다.
+`///`는 바로 아래 항목에 붙으므로 선언을 끼워 넣을 때 설명의 대상이 바뀌지 않는지
+확인한다. 검사는 설명이 비었는지만 확인하며 내용의 정확성은 판단하지 않는다.
+기본값·누적/교체 방식·플랫폼 차이는 실행 코드를 읽고 설명하고, 같은 이름의 옵션도
+각 명령에서 실제로 무엇을 뜻하는지 적는다.
 
 ## 진입점 (`run.rs`)
 
@@ -99,7 +85,7 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 (요청 매핑 → 포트 파일 읽기 → 연결 → 계약 확인 → 전송 → 출력, `auto_wait` 폴링 포함)만 직접 수행한다.
 
 **요청 매핑(`request/`)은 연결보다 먼저다.** 매핑은 서버 없이 끝나는 검증(깨진 JSON 인자 ·
-없는 `--cwd` 등)이라, 실패하면 그 자리에서 원인을 stderr 에 내고 종료한다 — 인스턴스가 없어도
+없는 `--cwd` 등)이라, 실패하면 그 자리에서 원인을 stderr에 출력하고 종료한다 — 인스턴스가 없어도
 사용자는 "실행 중인 인스턴스가 없다" 가 아니라 자기 인자의 잘못을 받고, 호스트에는 아무것도
 안 보낸 빈 연결이 생기지 않는다. 서버의 값이 있어야 하는 확인(계약 확인 `contract::ensure`)만
 연결 뒤에 남는다. plugin 동적 명령(`try_run_plugin_cli`)도 같은 순서다. 그래서 인스턴스가 없을

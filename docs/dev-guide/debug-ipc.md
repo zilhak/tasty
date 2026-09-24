@@ -9,13 +9,13 @@
 
 ## 라우팅
 
-JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate·관측을 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘기고, 핸들러 탐색은 그 안의 `dispatch_routed` 가 한다:
+JSON-RPC 라우터는 공통 `check_request`의 권한·cap·rate 검사와 사용량 집계를 마친 요청만 `src/adapters/ipc/handler.rs::handle_checked_request`에 넘기고, 핸들러 탐색은 그 안의 `dispatch_routed` 가 한다:
 
 ```rust
 // window: &mut EntryWindow — handle_checked_request 가 쥔 AppState 를 감싼 것
-let mut out = IntentOutbox::default();   // 요청 하나의 intent 출구
+let mut out = IntentOutbox::default();   // 요청별 intent 수집
 let routed = route_engine_handler(core, window.port(), &mut out, engine, caller, request, id.clone());
-window.port().enqueue_intents(out);      // 출구를 이 창의 큐 끝으로
+window.port().enqueue_intents(out);      // 수집한 intent를 창 큐에 추가
 if let Some(resp) = routed {
     return resp;                         // release+debug 공통 엔진 핸들러
 }
@@ -30,10 +30,10 @@ if let Some(resp) = window.route_debug(engine, request, id.clone()) {
 JsonRpcResponse::unrouted_for_external_caller(id, &request.method)
 ```
 
-`EntryWindow` 의 debug 문(`route_debug`)은 별도 파일 `src/adapters/ipc/handler/entry_window_debug.rs`
+`EntryWindow` 의 debug 진입점(`route_debug`)은 별도 파일 `src/adapters/ipc/handler/entry_window_debug.rs`
 에 있다. 그 파일은 `EntryWindow` 의 비공개 필드에 닿아야 해서 `entry_window` 의 자식 모듈이고, 그래서
 cfg 를 선언이 아니라 파일 머리의 `#![cfg(debug_assertions)]` 로 건다 — 아래 격리 정책의 가드가 그 형태를
-파일 단위 격리로 인정한다. release 에는 문 자체가 없다.
+파일 단위 격리로 인정한다. release에는 이 진입점이 없다.
 
 `route_debug_handler` 함수 자체가 `#[cfg(debug_assertions)]` 라 release 바이너리엔 분기 한 줄과 함수가 모두 사라진다. release 에서 debug 메서드를 부르면 `-32601`(`method_not_found`)로 떨어진다 — 위 블록 끝의 `unrouted_for_external_caller` 는 **등록된 이름**이면 `-32017`(이 빌드 조합에 dispatch 팔이 없음)을, plugin 전용이면 `-32016` 을 답하지만, debug 메서드 표(`DEBUG_METHODS`)가 release 에서는 빈 표라 debug 메서드는 등록된 이름이 아니다. 그래서 모르는 이름과 같은 답이 된다(release 헤드리스 인스턴스에서 `debug.info` · `debug.popup.open` · `surface.raw_key` 가 전부 `-32601`, 2026-09-22 실측). `-32017` 은 release 에도 등록된 이름이 이 조합에서 빠진 경우(gui 전용 메서드를 헤드리스에 부른 것 등)의 답이다.
 
@@ -43,7 +43,7 @@ cfg 를 선언이 아니라 파일 머리의 `#![cfg(debug_assertions)]` 로 건
 
 `debug.fullscreen.*` 도 같은 곳에서 처리되지만 이유는 또 다르다 — **창을 골라야 하기 때문**이다. `route_debug_handler` 는 `AppState`(=`MainView` 하나)만 받아 다른 창을 볼 수 없는데, 전체화면 무대는 창 단위 상태라([fullscreen-stage](../design/systems/fullscreen-stage.md)) `window_id` 로 대상을 지목하지 못하면 "창 2 개에 각각 무대를 띄운 뒤 한쪽만 닫는다" 같은 시나리오 자체가 구동 불가다. `self.view.views` 순회는 App 레벨에서만 가능하다. `window_id` 해석은 `ui.screenshot` 과 동형 — 지정하면 그 창, 미지정이고 창이 하나면 그 창, 여럿이면 `-32000` 에러다. 포커스된 창으로 조용히 폴백하지 않는다([focus](../design/policies/focus.md)).
 
-`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 또 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `AppState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 정상 모달 동작과 100% 동일하다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
+`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 또 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `AppState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 모달 생성 이후에는 일반 동작과 같은 경로를 따른다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
 
 ## 메서드 목록
 
@@ -80,25 +80,25 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
 | `debug.modifier_hint.hold` | `ctrl?`, `alt?`, `option?`, `shift?`, `elapsed_ms?` | modifier-hint 오버레이의 홀드 조합을 직접 세팅(생략 축=false, 모두 false 면 홀드 해제). `elapsed_ms` 는 홀드 타이머를 그만큼 과거로 백데이트해 표시 지연(500/1200ms) 게이트를 즉시 통과. 실 modifier 홀드 우회 force-state(사용자 홀드 경로 우회). 응답은 `state` 와 동일한 렌더 상태 덤프 |
 | `debug.modifier_hint.state` | `{}` | 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 덤프: `held{ctrl,alt,option,shift}\|null` · `hold_elapsed_ms` · `dismissed` · `reveal_delay_ms`(Shift 단독 2000, 그 외 500) · `visible` · `alpha` · `header_combo`(전체 조합 키캡) · `sections[{combo,rows,roles,empty}]`(눌린 조합으로 좁혀진 섹션 — `combo`=섹션 헤더의 조합 전체 키캡, `rows`=각 행의 **leaf 키캡만**(`Ctrl+K` 가 아니라 `K` — modifier 는 섹션 헤더가 담당), `roles`=역할 설명 키, `empty`=바인딩·역할 모두 없는 조합(draw 가 "바인딩 없음" 플레이스홀더로 렌더, ADR-0019)). 스크린샷 없이 좁힘·즉시갱신·지연·빈-플레이스홀더 자동 단정용 |
-| `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
-| `debug.modal.close_request` | `{}` | 활성 모달에 **창 닫기 요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현. 응답 `closed` 는 실제로 닫은 모달이 있었는지(없었으면 `false`). release `window.close` 가 main view 만 대상으로 두고 모달을 명시적으로 뺀 것과 같은 선이다. **WM 없는 Xvfb 에서는 이 경로가 유일하다** — 창은 `WM_DELETE_WINDOW` 를 광고하지만 `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러 winit 이 `GetGeometry` 에서 패닉하고, `wmctrl -i -c` 가 보내는 `_NET_CLOSE_WINDOW` 는 WM 이 없으면 아무도 처리하지 않는다(rc 0, 무효과) |
+| `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발행 → 별도 모달 윈도우 생성 |
+| `debug.modal.close_request` | `{}` | 활성 모달에 **창 닫기 요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현. 응답 `closed` 는 실제로 닫은 모달이 있었는지(없었으면 `false`). release `window.close` 가 main view 만 대상으로 두고 모달을 명시적으로 뺀 것과 같은 범위를 따른다. **WM 없는 Xvfb 에서는 이 경로가 유일하다** — 창은 `WM_DELETE_WINDOW` 를 광고하지만 `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러 winit 이 `GetGeometry` 에서 패닉하고, `wmctrl -i -c` 가 보내는 `_NET_CLOSE_WINDOW` 는 WM 이 없으면 아무도 처리하지 않는다(rc 0, 무효과) |
 | `debug.settings.apply` | `settings` (object) | 부분(또는 전체) 설정 patch 를 **라이브 settings 직렬화 복사본** 위에 재귀 deep-merge 한 뒤 완성된 전체 `Settings` 로 `UpdateSettings` 를 dispatch — 설정 모달 저장과 **동일 경로**라 collapse·theme·`config.toml` save 까지 cascade 가 처리한다(모달/proxy 불요). 라이브를 pre-mutate 하지 않으므로 cascade 의 prev≠new 비교가 살아 collapse 분기가 정상 발화. **알 수 없는 키는 조용히 무시(no-op)** — `Settings` 가 `deny_unknown_fields` 가 아니라 `#[serde(default)]` 이므로 오타 키는 변화 없이 통과한다(검증자 혼동 주의). 타입 불일치/비-object 는 `-32602` 로 거부되고 라이브는 불변. gui 게이트 없이 headless 에서도 동작 |
 | `debug.banner.list` | `{}` | 빌트인 배너 정의 + 현재 표시 중/큐 배너(스코프 token·남은초·`total_queued`) + **기하** — `shown[].rect`(셸, **논리**, `host_popup.list` 와 같은 키 모양) · `shown[].content_rect`(plugin egui-mesh 콘텐츠, **물리**, host 배너는 `null`) · 좌표계를 응답이 스스로 싣는 `coords`. `rect` 는 **한 프레임 늦다** — 배너는 popup 과 달리 좌표를 모델에 안 들고 있어 그린 뒤에야 확정되므로 뜬 직후엔 `null` |
-| `debug.banner.show` | `banner_id, scope` | 배너 강제 발화 (def 의 ttl 따라 ttl/persistent, 응답에 push `outcome`) — 사용자 조작 우회, 시각 검증용 |
+| `debug.banner.show` | `banner_id, scope` | 배너 강제 표시 (def 의 ttl 따라 ttl/persistent, 응답에 push `outcome`) — 사용자 조작 우회, 시각 검증용 |
 | `debug.banner.close` | `banner_id` | 표시 중/큐 배너 강제 close (표시 중이면 큐 head 승격) |
 | `debug.banner.set_countdown` | `scope, seconds` | 표시 중 TTL 배너의 카운트다운 조절 |
 | `debug.event_bus.list_subscribers` | `key` | 해당 키 구독 plugin 목록 |
-| `debug.event_bus.publish` | `key, payload, scope` | 임의 키로 host envelope 발화 |
-| `debug.event_bus.trace` | `trace_id` | 같은 trace_id envelope 들을 발화 순서로 |
+| `debug.event_bus.publish` | `key, payload, scope` | 임의 키로 host 이벤트 발행 |
+| `debug.event_bus.trace` | `trace_id` | 같은 trace_id envelope 들을 발행 순서로 |
 | `debug.extension.invoke_hook` | `extension_id, kind, phase, mode, target, payload` | 매니페스트 매칭 우회로 extension hook 직접 호출 (fail-open/backoff 우회). 응답 상한은 매니페스트 hook 의 `timeout_ms` 상한(`HOOK_TIMEOUT_MS_MAX`, 1 s)과 같고, 넘기면 `-32004` 로 회신한다 — 선언이 없는 경로라 값이 어디선가 와야 하는데, 같은 extension 이 정상 경로에서 받는 상한과 같게 두는 것이 유일한 파생이다 |
 | `debug.fullscreen.list` | `{}` | 등록된 전체화면 무대 정의 전체 — `{"stages":[{id,title_key}]}`. 제목은 i18n **키** 그대로라 로케일에 무관하게 단정 가능 |
-| `debug.fullscreen.open` | `stage_id`, `window_id?` | 무대를 창에 강제로 올린다(popup 타이틀바 전체화면 버튼 우회, 시각 검증용). 창당 하나 계약 그대로 — 다른 무대가 올라와 있으면 **교체**(닫힘 훅 발화), 같은 id 면 no-op. 정의 테이블에 없는 `stage_id` 는 창을 고르기 전에 `-32602` 로 **거부**(조용한 no-op 아님). 응답: `window_id`·`stage_id`·`previous_stage_id`·`replaced` |
+| `debug.fullscreen.open` | `stage_id`, `window_id?` | 무대를 창에 강제로 올린다(popup 타이틀바 전체화면 버튼 우회, 시각 검증용). 창당 하나 계약 그대로 — 다른 무대가 올라와 있으면 **교체**(닫힘 훅 실행), 같은 id 면 no-op. 정의 테이블에 없는 `stage_id` 는 창을 고르기 전에 `-32602` 로 **거부**(조용한 no-op 아님). 응답: `window_id`·`stage_id`·`previous_stage_id`·`replaced` |
 | `debug.fullscreen.close` | `window_id?` | 그 창의 활성 무대를 내린다. 응답 `closed` 는 실제로 내린 무대가 있었는지(없었으면 `false`), `stage_id` 는 내려간 무대 id |
 | `debug.fullscreen.state` | `window_id?` | 활성 무대 id(없으면 `null`) + 창 상태 덤프: `stage_active`·`os_fullscreen`·`maximized`·`inner_size{width,height}`·`monitor{name,position,size,scale_factor}`. **무대 상태와 OS 창 전환은 별개** — `open` 직후 `stage_id` 는 즉시 서지만 `os_fullscreen` 은 다음 프레임의 `sync_window_fullscreen` 이 반영한다 |
 | `debug.lua.eval` | `source` | Lua 스크립트를 워커에서 실행한다 — fire-and-forget 이라 응답은 `scheduled` 뿐이고 결과·부수효과는 로그로 관측한다. 임의 코드 실행이라 debug 격리가 유일한 경계다 |
 | `debug.plugin_banner.open` | `banner_id`, `surface_id` | plugin 이 기여한 배너를 강제로 띄운다 (응답 `instance_id`). 위 `debug.banner.*` 는 빌트인 배너 쪽이다 |
 | `debug.plugin_banner.close` | `instance_id` | plugin 배너 인스턴스 강제 close (응답 `closed`) |
-| `system.shutdown` | `{}` | 프로세스 종료를 요청한다 — 응답 `shutdown` 을 먼저 보내고 `AppEvent::Shutdown` 을 발사한다. 사용자만 내리던 것을 에이전트가 내리므로 debug 전용이다 |
+| `system.shutdown` | `{}` | 프로세스 종료를 요청한다 — 응답 `shutdown`을 먼저 보내고 `AppEvent::Shutdown`을 발행한다. 사용자만 내리던 것을 에이전트가 내리므로 debug 전용이다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
 | `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS gui 빌드 전용** (다른 조합은 `-32015` ‡). `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |
 | `surface.switch_input_source` | `source_id` | **macOS gui 빌드 전용** (다른 조합은 `-32015` ‡). `TISSelectInputSource` 로 시스템 입력 소스(키보드 레이아웃·입력기)를 바꾼다 — 사용자가 입력기 메뉴로 하는 조작의 재현. 위 `raw_key` 로 한글/CJK 경로를 검증하기 전 입력기를 맞추는 데 쓴다 † |
@@ -116,11 +116,10 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `misc` | `scripts` · `tastyrc` (Windows 전용) |
 | `plugins` | — (L2 가 plugin contribute page 라 정적 키 없음; 무시) |
 
-> **이 표에는 자동 채널이 없다.** `DEBUG_METHODS` 와 이 표가 어긋나도 어떤 잡도 안 터진다 —
-> 실제로 일곱 건이 빠져 있었고 손으로 채웠다. 판정기를 안 만든 이유는 이 표가 사이에 낀
-> 다른 표에 끊겨 있고 한 칸에 메서드가 여럿인 행이 있어, 그것을 다루는 파서가 판정하려는
-> 명제보다 커지기 때문이다. 메서드를 더하면 **여기도 같이 고쳐야 한다.** 판정 기준은
-> [duplicated-sets](duplicated-sets.md).
+> 이 메서드 표와 `DEBUG_METHODS`의 일치를 확인하는 자동 검사는 없다.
+> 새 메서드를 추가하면 이 표도 직접 갱신한다. 여러 메서드를 한 칸에 묶거나 중간에
+> 다른 표를 넣는 형식까지 검사하려면 별도 파서가 필요하다. 검사 도입 기준은
+> [duplicated-sets](duplicated-sets.md)를 따른다.
 
 † **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 **게이트 없이 cfg 격리만 받는 입력 재현이 다섯 있다** — `surface.ime_*` 와 `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` · `debug.inject_egui_text`. 다섯 다 tasty 프로세스 **안**의 창 상태(IME 조합 / winit·egui 입력 큐)만 바꾸는 in-process 시뮬레이션이라, 인스턴스를 debug 로 띄운 사람 밖으로 효과가 나가지 않는다. 위 넷과 갈리는 기준이 PTY·OS 전역이냐 in-process 냐이므로 이쪽은 cfg 격리로 충분하다. 근거는 [ADR-0012](../adr/0012-request-admission-and-isolation.md).
 
@@ -150,11 +149,10 @@ IPC dispatch 한 회차의 시간 예산(제품값 16 ms)을 밀리초로 **줄�
 
 ### 문자 주입은 키 주입과 다른 채널이다
 
-egui 가 **문자**를 받는 경로는 `Event::Text(String)` 하나뿐이고, `Event::Key` 는 그 문자를
-만들지 않는다. 그래서 `debug.inject_egui_key` 로는 `TextEdit` 에 글자가 한 자도 안 들어간다 —
-키 주입만 있던 동안 WM 없는 Xvfb 에서 **쿼리를 넣어 목록이 줄어든 화면**을 잴 방법이 없었고,
-`xdotool type` 은 그 환경에서 키보드 포커스가 없어(`XGetInputFocus` 가 `PointerRoot` 를
-돌려준다) 대신이 안 된다. `debug.inject_egui_text` 가 그 칸이다.
+egui의 `Event::Text(String)`은 문자를 입력하고 `Event::Key`는 키 동작을 전달한다.
+`debug.inject_egui_key`만으로는 `TextEdit`에 문자가 들어가지 않으므로
+`debug.inject_egui_text`를 사용한다. WM 없는 Xvfb에서는 `xdotool type`도 키보드
+포커스(`XGetInputFocus`가 `PointerRoot`) 문제로 이 경로를 대신하지 못한다.
 
 - **문자열 전체가 한 이벤트로** 들어간다. winit 의 `text` 필드가 `char` 가 아니라 문자열이라
   죽은키 조합 같은 실입력도 여러 문자를 한 이벤트로 나른다 — 문자마다 쪼개면 실입력이 만들지
@@ -201,7 +199,24 @@ tasty screenshot --window <id> --path /tmp/palette-filtered.png
 
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug.rs`)가 모듈째 `#![cfg(debug_assertions)]` — 실행부는 `crates/tasty-cli/src/local/debug.rs`(같은 cfg). 서브커맨드(일부 — 전체는 `tasty debug --help`): `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key`(주입에 macOS 손쉬운 사용 권한 필요 — 미승인이면 `surface.raw_key` 가 `permission_denied` 에러를 돌려준다. **두 서브커맨드는 모든 플랫폼에서 도움말에 뜨고 요청을 받는다** — 숨기면 "그런 명령 없음" 이 되어 이름을 의심하게 만드는데 이름은 맞다. 대신 도움말 첫 줄이 macOS GUI 전용임을 말하고, 다른 조합에서는 위 `-32015` 가 사유와 함께 즉시 돌아온다(CLI 가 그 메시지를 그대로 출력하고 exit 1 이다 — 실측). CLI 층에 플랫폼 조건을 넣지 않는 것이 그 결정이며 `src/source_guards/platform_gated_dispatch_complement.rs` 가 그 전제를 지킨다. [macOS 권한](../features/macos-permissions/index.md). `ime-*`/`switch-input-source`/`raw-key` 는 IPC 쪽도 debug 전용이다 — [ADR-0012](../adr/0012-request-admission-and-isolation.md)) · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `modifier-hint` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
+CLI 선언(`crates/tasty-cli/src/commands/debug.rs`)과 실행
+(`crates/tasty-cli/src/local/debug.rs`)은 모두 모듈 단위 `#![cfg(debug_assertions)]`로
+제한한다. 전체 하위 명령은 `tasty debug --help`로 확인한다.
+
+`raw-key`와 `switch-input-source`는 모든 플랫폼의 도움말에 표시한다. 실제 실행에는
+macOS GUI가 필요하며 다른 조합에서는 `-32015`와 사유를 돌려준다. `raw-key`는
+[손쉬운 사용 권한](../features/macos-permissions/index.md)도 필요하다. CLI에 플랫폼 조건을
+넣지 않는 규칙은 `src/source_guards/platform_gated_dispatch_complement.rs`가 검사한다.
+
+설정 예:
+
+```bash
+tasty debug settings open --tab general --subtab general
+tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'
+```
+
+`settings apply`는 `--file <path>`도 받는다. JSON·파일 오류는 CLI가 먼저 거절하고,
+서버는 `settings`가 object인지 확인한다.
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 
@@ -228,7 +243,7 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 ## 디버그 코드 격리 정책 (필수)
 
-기준 한 줄: *"이 코드를 통째로 지우고 컴파일 에러 몇 줄만 정리하면 디버그 기능이 깨끗이 사라지는가?"* 그게 되면 격리 OK.
+기준 한 줄: *"이 코드를 통째로 지우고 컴파일 에러 몇 줄만 정리하면 디버그 기능이 깨끗이 사라지는가?"* 이를 만족해야 격리된 것으로 본다.
 
 - **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(inject/host-popup/modifier-hint/banner 등 gui 상태) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` · `input_source.rs`(macOS raw_key/switch_input_source) · `ime.rs`(surface.ime_*) 가 각각 `#[cfg(...)]` 로 모듈 선언된다. **파일 이름에 `debug` 가 들어갈 필요는 없다** — 기준은 "그 파일이 debug 핸들러만 담고 모듈 선언에 cfg 가 붙어 있는가" 다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
   - **예외 — gui 게이트 없는 debug 핸들러**: `debug.rs` 모듈은 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 선언돼 headless 빌드에서 통째로 사라진다(그 모듈의 핸들러 다수가 `state.popups` / `state.banners` / `state.modifier_hint` 처럼 gui 에만 존재하는 필드를 만진다). 따라서 **gui 무관하게 headless 에서도 동작해야 하는 비-gui debug 핸들러**는 `debug.rs` 에 두지 않는다 — `#[cfg(debug_assertions)]` 만 건 형제 모듈로 뺀다 — 지금 셋이다: `debug_state.rs`(`ui.state` 의 `handle_ui_state`, `debug.settings.apply` 의 `handle_debug_settings_apply`) · `debug_nav.rs`(워크스페이스/탭 전환 3 종) · `debug_terminal.rs`(터미널 그리드 4 종 — `cell_info` / `screen_attrs` / `feed_bytes` / `glyph_color`). **판정 기준은 핸들러 본체가 gui 게이트된 심볼을 실제로 만지는가**이지, 그 메서드가 사용자 조작 재현인가가 아니다 — 사용자 조작 재현 여부는 debug/release 축이고 이미 `debug_assertions` 가 가른다. 그리고 "만진다" 의 판정은 **심볼이 하는 일**이지 심볼이 놓인 자리가 아니다: `debug.glyph_color` 가 부르는 색 해석 함수는 `CellAttributes` 와 색 타입만 쓰는 순수 함수인데 한동안 `#[cfg(feature = "gui")] mod gfx;` 아래 있었을 뿐이라, 함수를 복제하지 않고 그 파일을 게이트 밖(`src/cell_palette.rs`)으로 올렸다 — 렌더러와 **같은 함수**를 부르는 것이 그 메서드의 정의라 복제는 답이 아니다. 삭제 가능성(핸들러 fn + route 한 줄 + `DEBUG_METHODS` 한 줄 + CLI variant)은 그대로 유지된다.
@@ -244,14 +259,12 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 에이전트는 마우스 시퀀스를 보낼지 텍스트를 보낼지 정할 수 없고, 드래그 선택이 왜 안 먹는지도
 가릴 수 없다. `surface.foreground_process`(셸이 유휴인가)와 같은 자리다.
 
-★ 그리고 **그 release 표면은 두 값을 낸다.** 터미널 레지스터가 무엇인지(`terminal_mode`)와
-마우스 핸들러가 그것을 존중하는지(`effective_click_mode`)는 다른 물음이고, 사이에 격하가
-하나 있다 — hard 점유이거나 전경 프로세스가 마우스 캡처 블랙리스트에 걸리면 핸들러는 실제
-모드와 무관하게 `None` 으로 취급한다(`crate::state::mouse::effective_click_tracking_decision`).
-한 값으로 뭉개면 **낱말 하나가 두 축을 덮고**, 두 축이 어긋나는 기계에서 관측면이 거꾸로
-읽힌다("터미널이 all_motion 인데 보고 0" 을 제품 결함으로 읽지만 사실은 격하가 정상 동작한
-것이다). 그 격하 판정은 소비자가 둘(라우팅·관측면)이라 gui 게이트 밖(`src/state/mouse.rs`)에
-두고 **같은 함수를 부른다** — 복제하지 않는 것은 위 `debug.glyph_color`/`cell_palette` 와 같은 처방이다.
+`surface.mouse_tracking`은 터미널의 `terminal_mode`와 실제 마우스 처리 모드인
+`effective_click_mode`를 구분한다. hard 점유 중이거나 전경 프로세스가 캡처 블랙리스트에
+있으면 실제 처리 모드는 `None`으로 내려간다. 따라서 terminal_mode가 all_motion인데도
+마우스 보고가 없는 상태가 정상일 수 있다.
+입력 라우팅과 조회는 GUI 조건 밖의 같은 함수
+`crate::state::mouse::effective_click_tracking_decision`을 사용한다.
 
 **이 판정은 자동으로 안 난다.** `tests/ipc_release_table_excludes_input_reproduction.rs` 의
 이름 규칙(`inject`·`raw_key`·`switch_input_source`·`ime_`·`simulate`)은 이 이름을 안 잡는다 —
@@ -260,7 +273,7 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 ### 예외: 데이터 구조의 dev-only 필드
 
-매니페스트나 빌트인 spec 처럼 **데이터 구조의 필드 하나만 dev 전용**인 경우는 분리 대상이 아니다. *디버그 동작* 이 아니라 *dev 빌드 데이터 차이* 라 같은 룰을 적용하면 구조가 찢어진다.
+매니페스트나 빌트인 spec 처럼 **데이터 구조의 필드 하나만 dev 전용**인 경우는 분리 대상이 아니다. *디버그 동작* 이 아니라 *dev 빌드 데이터 차이* 라 같은 룰을 적용하면 불필요하게 데이터 구조를 나누게 된다.
 
 ## 관련
 
