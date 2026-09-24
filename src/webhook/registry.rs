@@ -1,9 +1,5 @@
-//! 웹훅 등록 상태 — 프로세스 전역 싱글턴.
-//!
-//! 리스너 thread(요청 매칭)와 IPC 핸들러 thread(register/list/info/unregister)가
-//! 같은 상태를 공유하므로 `OnceLock<Mutex<..>>` 로 둔다. lifetime 6종
-//! ([`super::lifetime`])·영속화([`super::persist`])는 S5 에서 정식화됐다 — 만료는
-//! 타이머 없이 lazy(호출 시)·재시작 필터·명시 sweep 세 시점에만 확정된다.
+//! 리스너와 IPC 핸들러가 공유하는 웹훅 등록 목록.
+//! Mutex로 접근을 직렬화하며 만료는 요청·복원·sweep에서 확인한다.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -13,24 +9,21 @@ use super::lifetime::{Lifetime, now_unix};
 use crate::hook_handler::{HookHandlerId, IpcCall};
 use tasty_ipc::host_call::HostIpcInjector;
 
-/// 등록된 웹훅 엔트리.
 #[derive(Debug, Clone)]
 pub struct WebhookEntry {
-    /// opaque 짧은해시 path (비순차).
+    /// URL 경로로 쓰는 랜덤 16자리 hex ID.
     pub id: String,
     /// 허용 HTTP 메서드(대문자 정규화).
     pub methods: Vec<String>,
     /// 레지스트리 핸들러 참조(핸들러 id 로 등록한 경우). 인라인 시퀀스면 익명 id.
     pub handler_id: Option<HookHandlerId>,
-    /// 실행할 IpcSequence 스냅샷 (등록 시점 확정 — owner 가 고정).
+    /// 등록할 때 확정한 실행 시퀀스.
     pub calls: Vec<IpcCall>,
-    /// lifetime — 영속성 + 자동 소멸 제한(6종).
     pub lifetime: Lifetime,
     /// 선택적 인증 설정. `None` 이면 무인증 통과(인증은 opt-in).
     pub auth: Option<WebhookAuth>,
 }
 
-/// 웹훅 리스너 전역 상태.
 #[derive(Default)]
 struct WebhookState {
     /// bind 주소(예: `0.0.0.0`).
@@ -55,15 +48,8 @@ const STATE_WHAT: &str = "the webhook registry";
 static STATE_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 웹훅 레지스트리 락. 이 모듈의 모든 접근자가 이 한 곳을 지난다.
-///
-/// poison 이면 복구한다. ① 임계구역은 `entries` 조작과 그 직렬화(`persist_locked`)뿐이라
-/// 최악의 손상이 "반쯤 반영된 항목 하나" 로 갇힌다. ② 패닉하면 IPC 핸들러(메인 스레드)와
-/// 리스너 스레드가 죽는다 — 메인 스레드 패닉은 정책상 금지고, 리스너가 죽으면 발급된
-/// 모든 URL 이 조용히 죽은 주소가 된다.
-///
-/// 락을 인자로 받는 이유는 전역이 [`OnceLock`] 이라서다 — 테스트가 전역을 poison 하면
-/// 같은 바이너리의 뒤 테스트가 그 상태를 물려받는다. 회귀 테스트는 지역 뮤텍스를 겨냥한다.
+/// poison을 보고하고 등록 목록을 복구한다. 부분 갱신 상태까지 되돌리지는 않는다.
+/// 시험은 지역 Mutex를 주입해 전역 등록 상태에 영향을 주지 않는다.
 fn lock_state(state: &Mutex<WebhookState>) -> MutexGuard<'_, WebhookState> {
     tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED)
 }
@@ -72,10 +58,7 @@ fn lock() -> MutexGuard<'static, WebhookState> {
     lock_state(state())
 }
 
-/// 리스너 runtime 설정 주입(부팅 헬퍼가 bind 전에 호출).
-///
-/// `port` 는 **설정값**(자동 폴백 없음). `None` = 포트 미설정 → bind 하지 않으며
-/// 발급 URL 에도 포트가 빠진다([`build_url`]).
+/// bind 전에 주소·포트·injector를 설정한다. port가 None이면 URL에도 포트가 빠진다.
 pub(super) fn set_runtime(injector: HostIpcInjector, bind_addr: &str, port: Option<u16>) {
     let mut s = lock();
     s.injector = Some(injector);
@@ -83,7 +66,6 @@ pub(super) fn set_runtime(injector: HostIpcInjector, bind_addr: &str, port: Opti
     s.port = port;
 }
 
-/// 이미 bind 되었는지(부팅 헬퍼 중복 호출 가드).
 pub(super) fn is_bound() -> bool {
     lock().bound
 }
@@ -93,17 +75,15 @@ pub fn configured_port() -> Option<u16> {
     lock().port
 }
 
-/// 리스너가 실제로 bind 되었는지(`webhook.config` get 용).
 pub fn is_listener_bound() -> bool {
     lock().bound
 }
 
-/// bind 성공 표시.
 pub(super) fn mark_bound() {
     lock().bound = true;
 }
 
-/// opaque 짧은해시 id 발급 — 비순차(랜덤 8바이트 → 16 hex). 충돌 시 재시도.
+/// 8바이트 난수로 16자리 hex ID를 만들고 현재 등록 목록과 충돌하면 다시 시도한다.
 fn gen_opaque_id(entries: &BTreeMap<String, WebhookEntry>) -> String {
     use rand::Rng;
     let mut rng = rand::rng();
@@ -125,7 +105,6 @@ fn display_host(bind_addr: &str) -> &str {
     }
 }
 
-/// 발급 URL 을 구성한다.
 fn build_url(s: &WebhookState, id: &str) -> String {
     let host = display_host(&s.bind_addr);
     match s.port {
@@ -134,16 +113,13 @@ fn build_url(s: &WebhookState, id: &str) -> String {
     }
 }
 
-/// 등록 결과.
 #[derive(Debug, Clone)]
 pub struct RegisterOutcome {
     pub id: String,
     pub url: String,
 }
 
-/// lock 을 잡은 채 현재 **영속 엔트리들**을 config 에 기록한다. 상태를 mutate 하는
-/// 경로(register/unregister/sweep/match count 차감)에서 영속 엔트리가 바뀌었을 때만
-/// 호출한다 — `Temporary` 만 있으면 파일에서 빈 배열로 정리된다.
+/// 락 안에서 Persistent 항목의 저장을 시도한다. Temporary만 남았으면 webhook 키를 지운다.
 fn persist_locked(s: &WebhookState) {
     let persistent: Vec<_> = s
         .entries
@@ -160,8 +136,7 @@ pub(super) fn persist_now() {
     persist_locked(&s);
 }
 
-/// 웹훅 등록. opaque id 를 발급하고 (id, 메서드, 핸들러, 시퀀스, lifetime) 을
-/// 저장한다. `Persistent` lifetime 이면 config 로도 영속화한다. 발급 URL 을 반환.
+/// ID를 발급해 등록하고 URL을 반환한다. Persistent면 저장도 시도한다.
 pub fn register(
     methods: Vec<String>,
     handler_id: Option<HookHandlerId>,
@@ -196,7 +171,7 @@ pub(super) fn restore_entry(entry: WebhookEntry) {
     s.entries.entry(entry.id.clone()).or_insert(entry);
 }
 
-/// 전체 웹훅 목록 (포커스 독립 — 전 범위). 각 엔트리에 발급 URL 포함해 반환.
+/// 모든 등록과 표시용 URL을 반환한다. 만료 여부를 여기서 검사하지는 않는다.
 pub fn list() -> Vec<(WebhookEntry, String)> {
     let s = lock();
     s.entries
@@ -211,7 +186,7 @@ pub fn info(id: &str) -> Option<(WebhookEntry, String)> {
     s.entries.get(id).map(|e| (e.clone(), build_url(&s, &e.id)))
 }
 
-/// 웹훅 해제. 존재했으면 `true`. 영속 엔트리를 지웠으면 config 도 갱신한다.
+/// 항목이 있었으면 제거하고 true를 반환한다. Persistent면 파일 갱신도 시도한다.
 pub fn unregister(id: &str) -> bool {
     let mut s = lock();
     match s.entries.remove(id) {
@@ -225,8 +200,7 @@ pub fn unregister(id: &str) -> bool {
     }
 }
 
-/// 만료된(시간 초과 / 횟수 소진) 웹훅을 일괄 정리한다(`webhook.sweep`). 제거된
-/// id 목록을 반환. 영속 엔트리가 하나라도 지워졌으면 config 를 갱신한다.
+/// 만료된 항목을 제거하고 ID 목록을 반환한다. Persistent를 제거하면 파일도 갱신하려고 시도한다.
 pub fn sweep() -> Vec<String> {
     let now = now_unix();
     let mut s = lock();
@@ -256,7 +230,7 @@ pub(super) enum MatchResult {
     MethodNotAllowed,
     /// lifetime 만료(시간 초과 / 횟수 소진) — 410 Gone. 매칭 시 lazy 삭제됨.
     Expired,
-    /// 인증이 걸린 웹훅인데 토큰이 안 맞았다 — 401. 통은 태우지 않는다.
+    /// 인증 실패. 등록 횟수는 차감하지 않는다.
     Unauthorized,
     Matched {
         calls: Vec<IpcCall>,
@@ -264,21 +238,10 @@ pub(super) enum MatchResult {
     },
 }
 
-/// (path, method) 로 매칭해 실행할 시퀀스 스냅샷 + injector 를 반환한다.
-///
-/// **lazy 만료**: path 가 불릴 때 시간제한 만료를 먼저 확인해 만료면 삭제 후
-/// `Expired`(410) 를 돌린다.
-///
-/// **인증은 이 lock 안에서 본다.** `authorized` 는 엔트리의 인증 설정을 받아
-/// 통과 여부만 답하는 술어이고(요청 데이터는 호출자가 붙잡는다 — 레지스트리는
-/// HTTP 를 모른다), 통과하지 못하면 [`MatchResult::Unauthorized`] 로 끝난다.
-/// 검증을 lock 밖으로 내면 차감이 인증보다 앞서고, 그러면 `CountLimit` 이
-/// **시퀀스를 돌린 횟수**가 아니라 **path·method 가 맞은 횟수**를 세게 된다 —
-/// 통의 키는 토큰이 아니라 등록이므로, 그 차이는 인증을 통과하지 못한 발신자가
-/// owner 의 예산을 태우는 것으로 나타난다.
-///
-/// 매칭·인증을 모두 통과한 횟수제한 웹훅은 카운트를 1 차감하고, 소진되면 그
-/// 자리에서 삭제한다(다음 호출은 404). 실행만 lock 밖에서 한다.
+/// 만료·메서드·인증을 확인하고 실행 시퀀스와 injector를 반환한다.
+/// 인증과 횟수 차감을 같은 락 안에서 처리한다. 거부된 요청은 횟수를 차감하지 않는다.
+/// 통과한 요청은 실제 실행 전에 차감하며 소진되면 등록을 지워 다음 요청은 404가 된다.
+/// injector가 없거나 이후 실행에 실패해도 차감을 되돌리지 않는다.
 pub(super) fn match_request(
     path: &str,
     method: &str,
@@ -290,7 +253,6 @@ pub(super) fn match_request(
         return MatchResult::NotFound;
     };
 
-    // ① lazy 시간 만료 — 메서드 무관하게 먼저 확정(호출 시 삭제 + 410).
     if entry.lifetime.is_time_expired(now) || entry.lifetime.is_exhausted() {
         let persistent = entry.lifetime.is_persistent();
         s.entries.remove(path);
@@ -300,19 +262,16 @@ pub(super) fn match_request(
         return MatchResult::Expired;
     }
 
-    // ② 메서드 매칭.
     if !entry.methods.iter().any(|m| m == method) {
         return MatchResult::MethodNotAllowed;
     }
 
-    // ③ 인증 — 차감보다 먼저다. 막힌 요청은 시퀀스를 0 번 돌렸으므로 통을 안 태운다.
     if let Some(a) = &entry.auth
         && !authorized(a)
     {
         return MatchResult::Unauthorized;
     }
 
-    // ④ 매칭·인증 통과 — 횟수 차감 후 소진되면 삭제.
     let injector = s.injector.clone();
     let entry = s.entries.get_mut(path).expect("entry present under lock");
     let calls = entry.calls.clone();
@@ -332,17 +291,14 @@ mod tests {
     use super::*;
     use crate::webhook::lifetime::{Limit, Persistence};
 
-    /// 이 테스트들은 프로세스 전역 싱글턴(STATE)을 공유하고 `sweep()` 은 전역
-    /// 만료 엔트리를 모두 제거하므로, 병렬 실행 시 서로의 엔트리에 간섭할 수 있다
-    /// (예: 한 테스트의 sweep 이 다른 테스트의 만료 엔트리를 먼저 제거 → 기대 결과
-    /// 어긋남). 테스트-로컬 mutex 로 직렬화해 flaky 를 방지한다.
+    // sweep이 전역 목록을 정리하므로 다른 시험의 항목에 간섭하지 않게 직렬화한다.
     static TEST_SERIAL: Mutex<()> = Mutex::new(());
 
     fn serial() -> MutexGuard<'static, ()> {
         TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// 테스트용 임시 lifetime — 파일 영속화를 건드리지 않도록 항상 Temporary.
+    // 실제 설정 파일을 쓰지 않도록 Temporary를 사용한다.
     fn temp(limit: Limit) -> Lifetime {
         Lifetime {
             persistence: Persistence::Temporary,
@@ -350,10 +306,7 @@ mod tests {
         }
     }
 
-    /// poison 이 걸린 뒤에도 레지스트리가 읽고 쓰이는가.
-    ///
-    /// 전역([`STATE`])이 아니라 지역 뮤텍스를 겨냥한다 — 전역을 poison 하면 같은 테스트
-    /// 바이너리의 뒤 테스트가 그 상태를 물려받는다.
+    // 전역 목록 대신 지역 Mutex를 poison해 시험 간 영향을 막는다.
     #[test]
     fn a_poisoned_registry_still_reads_and_writes() {
         let shared = std::sync::Arc::new(Mutex::new(WebhookState::default()));
@@ -376,7 +329,7 @@ mod tests {
 
         assert!(
             STATE_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
-            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+            "poison 복구 사실을 한 번은 보고해야 한다"
         );
     }
 
@@ -400,7 +353,6 @@ mod tests {
         assert!(info(&out.id).is_some());
         assert!(list().iter().any(|(e, _)| e.id == out.id));
 
-        // 매칭: 올바른 메서드 → Matched, 틀린 메서드 → MethodNotAllowed.
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
@@ -416,7 +368,6 @@ mod tests {
 
         assert!(unregister(&out.id));
         assert!(info(&out.id).is_none());
-        // 해제 후 404.
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
             MatchResult::NotFound
@@ -441,7 +392,6 @@ mod tests {
             None,
         );
         assert_ne!(a.id, b.id);
-        // 순차 카운터가 아님(랜덤) — 인접 등록이 인접 id 를 주지 않는다.
         unregister(&a.id);
         unregister(&b.id);
     }
@@ -449,7 +399,6 @@ mod tests {
     #[test]
     fn count_limit_consumes_and_self_destructs() {
         let _g = serial();
-        // 횟수제한 N=2 → 2 호출 성공, 3번째는 소멸(404).
         let out = register(
             vec!["POST".to_string()],
             None,
@@ -461,7 +410,6 @@ mod tests {
             match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
         ));
-        // 1회 소비 후에도 info 로 남은 카운트 확인.
         assert!(matches!(
             info(&out.id).unwrap().0.lifetime.limit,
             Limit::CountLimit { remaining: 1 }
@@ -470,7 +418,6 @@ mod tests {
             match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
         ));
-        // 2회 소진 → 엔트리 삭제 → 3번째는 NotFound(404).
         assert!(info(&out.id).is_none());
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
@@ -481,7 +428,6 @@ mod tests {
     #[test]
     fn time_limit_lazy_expires_with_410() {
         let _g = serial();
-        // 이미 지난 deadline → 첫 호출에서 Expired(410) + 삭제.
         let out = register(
             vec!["POST".to_string()],
             None,
@@ -493,7 +439,6 @@ mod tests {
             match_request(&out.id, "POST", |_| true),
             MatchResult::Expired
         ));
-        // 만료 응답과 함께 삭제됨 → 이후 404.
         assert!(info(&out.id).is_none());
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
@@ -504,7 +449,6 @@ mod tests {
     #[test]
     fn method_mismatch_does_not_consume_count() {
         let _g = serial();
-        // 매칭 실패(405)는 카운트를 차감하지 않는다("매칭 성공 시" 규칙).
         let out = register(
             vec!["POST".to_string()],
             None,
@@ -516,7 +460,6 @@ mod tests {
             match_request(&out.id, "GET", |_| true),
             MatchResult::MethodNotAllowed
         ));
-        // 여전히 remaining=1.
         assert!(matches!(
             info(&out.id).unwrap().0.lifetime.limit,
             Limit::CountLimit { remaining: 1 }

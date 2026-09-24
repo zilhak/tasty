@@ -1,31 +1,20 @@
-//! 웹훅 리스너 설정 영속화 — `~/.tasty/webhooks.toml`.
+//! 데이터 루트의 webhooks.toml에서 리스너 포트를 읽고 쓴다.
+//! 파일이 없으면 SEED_PORT를 저장하려고 시도하고 이번 실행에서도 그 값을 사용한다.
+//! 기존 파일에 유효한 port가 없으면 리스너를 시작하지 않으며 다른 포트로 재시도하지 않는다.
 //!
-//! **포트는 설정값 only**(자동 폴백 bind 없음). 파일이 처음 없으면 시드
-//! [`SEED_PORT`] 한 개를 기록하고, 이후엔 파일의 `port` 값만 신뢰한다. 사용자가
-//! `port` 를 비우면 리스너를 띄우지 않고 경고한다(caller 가 UI/로그로 노출).
-//!
-//! ## S5(영속화)와 파일 공유 — 라운드트립 보존
-//! 이 파일은 S5 가 `Persistent` 웹훅 엔트리를 추가로 쓸 동일 파일이다. 그래서
-//! read/write 를 [`toml::Table`] 통째로 다뤄 **`port` 이외의 키를 절대 건드리지
-//! 않는다**(S5 가 추가할 `[[webhook]]` 등을 set 이 날려먹지 않도록). serde 구조체로
-//! 역직렬화하지 않는 이유가 이 순방향/역방향 호환성이다.
+//! TOML 테이블에서 port만 바꿔 읽어 온 다른 키를 보존한다.
+//! 읽기·파싱 실패 시에는 빈 테이블로 처리하므로 기존 키 보존을 보장하지 못한다.
 
 use std::path::PathBuf;
 
-/// 설정 파일이 처음 생성될 때 시드로 넣는 기본 포트.
-///
-/// 임의값 — IANA 등록/알려진 서비스 기본 포트가 아니며 User Ports(1024–49151)
-/// 범위. 사용자가 그대로 쓰거나 바꾸면 된다.
+/// 설정 파일이 없을 때 사용할 초기 포트.
 pub const SEED_PORT: u16 = 28429;
 
-/// `~/.tasty/webhooks.toml`. 홈 결정 실패 시 임시 경로(그 경우 seed 후에도 재기동
-/// 시 새로 seed 되지만, 홈이 없는 환경은 예외적 — 파일핸들러 `user_config_path`
-/// 선례와 동일한 fallback).
+/// 데이터 루트가 없으면 임시 디렉터리의 공유 경로를 사용한다.
 pub fn config_path() -> PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("webhooks.toml"))
-        // 이유: 홈 미해결에서만 쓰는 공유 폴백. 인스턴스별 격리가 목적이 아니라 사용자
-        // config 라 의도된 공유다(홈 없는 환경은 예외적, 파일핸들러 선례와 동일).
+        // 이유: 홈이 없을 때도 포트 설정과 영속 등록이 같은 사용자 설정 파일을 공유한다.
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-webhooks.toml"))
 }
 
@@ -44,7 +33,7 @@ fn read_table(path: &std::path::Path) -> toml::Table {
     }
 }
 
-/// 테이블을 atomic write(파일핸들러 `save_user_config` 선례).
+/// 같은 디렉터리의 임시 파일을 쓴 뒤 대상 경로로 교체한다.
 fn write_table(path: &std::path::Path, table: &toml::Table) -> std::io::Result<()> {
     use std::io::Write;
     let text = toml::to_string(table)
@@ -73,10 +62,7 @@ fn port_from_table(table: &toml::Table) -> Option<u16> {
     }
 }
 
-/// 부팅 시 포트 결정 — 파일이 없으면 시드 [`SEED_PORT`] 를 **처음 생성**하고
-/// 반환한다. 파일이 있으면 그 `port` 값만 신뢰(비었으면 `None` → 리스너 미기동).
-///
-/// 반환 `None` = "포트 미설정" → caller 가 경고를 노출하고 bind 하지 않는다.
+/// 파일이 없으면 초기 포트를 반환한다. 기존 파일의 유효하지 않은 port는 None이다.
 pub fn load_or_seed() -> Option<u16> {
     let path = config_path();
     if !path.exists() {
@@ -96,8 +82,7 @@ pub fn read_port() -> Option<u16> {
     port_from_table(&read_table(&config_path()))
 }
 
-/// `port` 를 파일에 기록한다. **다른 키는 보존**(S5 호환). 리스너 재바인드는
-/// 하지 않으므로 실제 반영은 재시작 시점이다(caller 가 안내).
+/// port를 저장한다. 읽어 온 다른 키는 보존하며 리스너에는 재시작 후 적용된다.
 pub fn set_port(port: u16) -> std::io::Result<()> {
     let path = config_path();
     let mut table = read_table(&path);
@@ -109,17 +94,14 @@ pub fn set_port(port: u16) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    /// 테스트마다 격리된 TASTY_HOME 를 잡는다(seed/read/set 이 실파일을 건드리므로).
-    /// 공유 락 획득·원값 복원까지 가드가 맡는다 — `crate::test_support` 참조.
+    // 공유 락과 TestHome으로 실제 설정 경로를 시험용 홈에 격리한다.
     use crate::test_support::TastyHomeGuard as HomeGuard;
 
     #[test]
     fn seeds_default_port_when_absent() {
         let _home = HomeGuard::new();
-        // 파일 부재 → 시드값 반환 + 파일 생성.
         assert_eq!(load_or_seed(), Some(SEED_PORT));
         assert!(config_path().exists());
-        // 두 번째 호출은 방금 쓴 파일을 읽어 동일값.
         assert_eq!(load_or_seed(), Some(SEED_PORT));
         assert_eq!(read_port(), Some(SEED_PORT));
     }
@@ -127,7 +109,6 @@ mod tests {
     #[test]
     fn empty_port_yields_none() {
         let _home = HomeGuard::new();
-        // port 없는 파일을 직접 써 둔다(S5 가 다른 키만 쓴 상태를 흉내).
         std::fs::write(config_path(), "other_key = 1\n").unwrap();
         assert_eq!(load_or_seed(), None);
         assert_eq!(read_port(), None);
@@ -136,7 +117,6 @@ mod tests {
     #[test]
     fn set_port_preserves_other_keys() {
         let _home = HomeGuard::new();
-        // S5 소유 키를 미리 심어 두고 set_port 가 보존하는지 확인.
         std::fs::write(config_path(), "keep_me = \"s5\"\nport = 100\n").unwrap();
         set_port(40000).unwrap();
         let table = read_table(&config_path());
@@ -144,7 +124,7 @@ mod tests {
         assert_eq!(
             table.get("keep_me").and_then(|v| v.as_str()),
             Some("s5"),
-            "S5 소유 키가 set_port 후에도 보존돼야 한다"
+            "set_port가 다른 설정 키를 보존해야 한다"
         );
     }
 

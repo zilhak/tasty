@@ -96,10 +96,8 @@ fn raw_content_length_preserves_json_and_invalid_utf8_policy() {
     );
 }
 
-/// The real `Screened` path over one connection: reject with 413 when the body is over
-/// [`LIMIT`], read it and answer 200 otherwise. The handler reports each request once
-/// `respond` returns — that return includes destroying the request, which is where an
-/// unread `Content-Length` body used to be drained.
+/// 실제 Screened 경로로 413 또는 200을 응답한다.
+/// respond가 반환한 뒤 완료를 알리므로 Request 정리 중 body를 읽으며 막히는 경우도 검사한다.
 fn serve(requests: usize) -> (std::net::SocketAddr, std::sync::mpsc::Receiver<()>) {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let addr = server.server_addr().to_ip().unwrap();
@@ -123,9 +121,7 @@ fn serve(requests: usize) -> (std::net::SocketAddr, std::sync::mpsc::Receiver<()
     (addr, done_rx)
 }
 
-/// One connection answered by the abuse screen, which rejects a source in cooldown
-/// with 429 before the body is read. The source is passed in, so this never touches
-/// the tracker entry of the loopback address the other tests come from.
+/// 차단된 요청에 429로 응답한다. 별도 출처 키를 써 다른 loopback 시험과 집계를 분리한다.
 fn serve_blocked() -> (std::net::SocketAddr, std::sync::mpsc::Receiver<()>) {
     const SOURCE: &str = "198.51.100.9";
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
@@ -183,8 +179,7 @@ fn assert_rejection_closes(
     )
     .unwrap();
 
-    // Response EOF alone is not the completion signal (a close request got it even
-    // while the body was still being drained), but it must come without our help.
+    // 응답 EOF만으로 핸들러 완료를 판단하지 않고 아래 완료 채널도 확인한다.
     let mut response = Vec::new();
     client.read_to_end(&mut response).expect(
         "the server must close the connection after rejecting without waiting for the body",
@@ -198,8 +193,7 @@ fn assert_rejection_closes(
     done.recv_timeout(Duration::from_secs(5))
         .expect("the handler must return without reading the rest of the body");
 
-    // The receive side is gone when the peer's kernel refuses further body bytes. A
-    // server still draining would accept every one of them.
+    // 수신 측이 닫혀 추가 body를 더는 받지 않는지도 확인한다.
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         if client.write(b"x").is_err() {
@@ -228,15 +222,12 @@ fn raw_oversize_expect_continue_is_closed_without_draining() {
     assert_rejected_without_draining("Expect: 100-continue\r\n", LIMIT + 1);
 }
 
-/// The drain used to allocate the whole remaining declared length at once, so a
-/// declared terabyte is the allocation probe: it can only pass if nothing is drained.
+// 큰 선언 길이로 잔여 body에 비례한 할당·읽기가 없는지 검사한다.
 #[test]
 fn raw_oversize_huge_declared_length_allocates_nothing_for_the_rest() {
     assert_rejected_without_draining("", 1 << 40);
 }
 
-/// The abuse screen answers 429 before the body is read, so it closes the same way.
-/// Without that, a declared length too large to allocate ends the process in the drain.
 #[test]
 fn raw_blocked_source_is_closed_without_draining() {
     assert_rejection_closes(
@@ -248,7 +239,6 @@ fn raw_blocked_source_is_closed_without_draining() {
     );
 }
 
-/// Requests that are not rejected keep the keep-alive connection as before.
 #[test]
 fn raw_accepted_bodies_keep_the_connection_alive() {
     let (addr, done) = serve(2);

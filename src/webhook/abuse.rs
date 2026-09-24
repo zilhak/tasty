@@ -1,31 +1,11 @@
-//! 웹훅 남용 차단 — 매칭·인증 실패 반복 출처 임계치 초과 시 일시 거부(429).
+//! 웹훅 매칭·인증 실패를 IP별로 세고 일정 시간 차단한다.
+//! 404·405·401·413을 세며 200·410·429는 세지 않는다. 같은 IP의 실패가
+//! window 안에서 threshold에 도달하면 cooldown 동안 매칭 전에 429로 거부한다.
+//! 이때 같은 IP의 정상 요청도 차단되며 재시작하면 카운터와 차단 상태가 사라진다.
 //!
-//! opaque 짧은해시 URL 은 keyspace 스캔에 대한 1차 방어지만, 무차별 요청이
-//! 리스너/실행 경로를 소모하지 못하도록 **출처(IP)별 실패 카운터 + 쿨다운**을 둔다.
-//!
-//! ## 정책
-//! - 무엇이 실패인가는 [`counts_as_failure`] 하나가 정한다 — 404·405·401·413 을 세고
-//!   200·410·429 는 안 센다. 정상 매칭(200)은 집계 대상이 아니므로 **정상 웹훅
-//!   트래픽은 영향받지 않는다.**
-//! - 한 출처가 `window` 안에 `threshold` 회 이상 실패하면 `cooldown` 동안 쿨다운
-//!   상태가 되고, 이후 그 출처의 요청은 **매칭 전에 즉시 429** 로 거부된다.
-//! - 임계치/윈도우/쿨다운은 설정값이며 env 로 오버라이드한다.
-//!
-//! 모든 시각 판정은 `now: Instant` 를 인자로 받는 순수 코어(`AbuseTracker`)에
-//! 모아 테스트가 시간을 통제할 수 있게 한다. 전역 진입점은 `Instant::now()` 를 쓴다.
-//!
-//! 집계 대상, 출처 키, 차단과 정리 시점은 [Webhook 접수 정책](../../docs/adr/0032-webhook-admission.md)을 따른다.
-//! 락 poison 복구는 [오류 처리 가이드](../../docs/dev-guide/error-handling.md#락-poison-mutex--rwlock)를 따른다.
-//!
-//! 아래 두 사항도 변경 때 함께 확인한다.
-//!
-//! - **env 오버라이드 3 종의 이름** — 이름을 바꾸거나 없애면 사용자가 걸어 둔 설정이
-//!   조용히 무시된다(파싱 실패와 미설정이 같은 값으로 떨어진다). 그 표면이 설정 파일
-//!   같은 다른 채널로 옮겨가면 그때 결정으로 올린다.
-//! - **카운터가 in-memory 라 재시작하면 쿨다운이 사라지는 것** — 지금은 그것이
-//!   `webhooks.toml` 에 남는 등록과 대비되는 사실로 문서에만 있다. 차단 상태를 재시작
-//!   너머로 잇자는 요구가 나오면(또는 그 소멸이 운영에서 문제로 관측되면) 그때 올린다 —
-//!   영속화는 표 크기·회수 규칙(ADR-0032)과 함께 봐야 하는 변경이다.
+//! 시간은 인자로 받아 시험에서 통제한다. 전역 진입점은 Instant::now()를 사용한다.
+//! [Webhook 접수 정책](../../docs/adr/0032-webhook-admission.md)과
+//! [락 poison 처리](../../docs/dev-guide/error-handling.md#락-poison-mutex--rwlock)를 따른다.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -51,20 +31,17 @@ fn prune_interval(cfg: AbuseConfig) -> Duration {
     cfg.window
 }
 
-/// 남용 차단 설정값.
 #[derive(Debug, Clone, Copy)]
 pub struct AbuseConfig {
     /// `window` 안에서 이 횟수 이상 실패하면 쿨다운으로 전환.
     pub threshold: u32,
-    /// 실패 카운팅 윈도우. 이 시간이 지나면 카운터가 리셋된다.
+    /// 실패를 셀 시간 범위. 이후 실패를 기록할 때 지난 범위의 카운터를 초기화한다.
     pub window: Duration,
-    /// 임계치 초과 시 즉시 거부(429)를 유지하는 시간.
+    /// 임계치 도달 후 429 거부를 유지하는 시간.
     pub cooldown: Duration,
 }
 
-/// 기본값의 근거와 그 값이 지키는 것(짧은 토큰의 무차별 대입)은
-/// [ADR-0032](../../docs/adr/0032-webhook-admission.md). **같은 값이
-/// 사용자 문서 세 자리에 그대로 박혀 있다** — 바꾸면 거기까지 같은 커밋에서 고친다.
+/// 기본값의 근거는 [ADR-0032](../../docs/adr/0032-webhook-admission.md)를 참고한다.
 impl Default for AbuseConfig {
     fn default() -> Self {
         Self {
@@ -106,7 +83,6 @@ impl AbuseConfig {
     }
 }
 
-/// 한 출처의 실패 추적 상태.
 #[derive(Debug)]
 struct SourceState {
     /// 현재 카운팅 윈도우 시작 시각.
@@ -117,13 +93,11 @@ struct SourceState {
     cooldown_until: Option<Instant>,
 }
 
-/// 출처별 남용 추적기(순수 코어 — 시각은 인자로 주입).
 #[derive(Debug)]
 pub struct AbuseTracker {
     config: AbuseConfig,
     sources: HashMap<String, SourceState>,
-    /// 마지막으로 `prune` 순회를 **실제로 돈** 시각. `None` 이면 아직 한 번도 안 돌았다
-    /// — 시각은 주입받는 값이라 생성자가 `Instant::now()` 를 부르지 않는다.
+    /// 마지막 실제 정리 시각. 생성 시에는 시계를 읽지 않는다.
     last_prune: Option<Instant>,
 }
 
@@ -144,7 +118,6 @@ impl AbuseTracker {
             if now < until {
                 return true;
             }
-            // 쿨다운 만료 → 초기화하고 통과시킨다.
             st.cooldown_until = None;
             st.fail_count = 0;
             st.window_start = now;
@@ -164,7 +137,7 @@ impl AbuseTracker {
                 fail_count: 0,
                 cooldown_until: None,
             });
-        // 이미 쿨다운 중이면 카운터를 더 굴리지 않는다(연장 방지).
+        // 이미 차단 중이면 실패로 종료 시각을 연장하지 않는다.
         if let Some(until) = st.cooldown_until {
             if now < until {
                 return;
@@ -173,7 +146,6 @@ impl AbuseTracker {
             st.fail_count = 0;
             st.window_start = now;
         }
-        // 윈도우 만료 시 카운터 리셋.
         if now.duration_since(st.window_start) > cfg.window {
             st.window_start = now;
             st.fail_count = 0;
@@ -218,14 +190,8 @@ const TRACKER_WHAT: &str = "the webhook abuse tracker";
 static TRACKER_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 남용 추적기 락. 두 전역 진입점이 이 한 곳을 지난다.
-///
-/// poison 이면 복구한다. ① 임계구역은 `sources` 맵 조작과 saturating 산술뿐이라 최악의
-/// 손상이 "한 출처의 실패 카운트가 어긋난 것" 으로 갇힌다. ② 패닉하면 그 요청을 처리하던
-/// 리스너 스레드가 죽는다. 조용한 복구도 답이 아니다 — 여기는 차단 판정 경로라, 카운트가
-/// 어긋나 차단이 안 걸리거나 과하게 걸려도 그 사실이 어디에도 안 남는다.
-///
-/// 락을 인자로 받는 이유는 [`registry::lock_state`](super::registry) 와 같다.
+/// poison을 보고하고 추적기를 복구한다. 카운터의 정확성까지 보장하지는 않는다.
+/// 락을 인자로 받아 시험이 전역 추적기를 poison하지 않도록 한다.
 fn lock_tracker(tracker: &Mutex<AbuseTracker>) -> MutexGuard<'_, AbuseTracker> {
     tasty_utils::poison::recover_mutex(tracker.lock(), TRACKER_WHAT, &TRACKER_POISON_REPORTED)
 }
@@ -244,30 +210,11 @@ pub fn record_failure(source: &str) {
     lock().record_failure(source, Instant::now());
 }
 
-/// 이 ACK 상태를 **출처 실패로 집계하는가**. 무엇이 남용인가는 남용차단의 정책이라
-/// 리스너의 인라인 조건이 아니라 여기 하나가 정한다.
-///
-/// **통이 둘이면 답도 둘이다.** 등록별 호출 예산(`CountLimit`)에서 401 은 세면 안
-/// 된다 — 그 통이 세는 단위는 "시퀀스를 돌린 횟수" 이고 401 은 그것을 0 번 돌리며,
-/// 통의 키가 토큰이 아니라 등록이라 세면 익명 발신자가 owner 의 예산을 태운다. 이
-/// 통은 반대다. 제한이라 **안 세는 것이 우회**이고, 401 은 opaque path 를 이미 맞춘
-/// 발신자가 비밀을 무차별 대입하는 자리다 — 통 A 도 안 태우므로 여기서 세지 않으면
-/// 그 대입에 붙는 비용이 어디에도 없다([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
-///
-/// `PayloadTooLarge`(413)도 센다 — 상한을 넘는 body 를 반복해 보내는 것은 그 자체가
-/// 자원을 겨눈 요청이고, 그 요청도 아무것도 얻지 못하고 끝난다. 상한은 한 건의 JSON 입력을
-/// 제한하지만 연결 정리 비용이나 반복 횟수를 제한하지 않는다([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
-///
-/// 나머지 셋은 그 물음에 답이 다르다.
-/// - `Received`(200) — 정상 트래픽. 세면 남용차단이 정상 발신자를 막는다.
-/// - `Gone`(410) — 만료된 등록. path 를 맞춰야 나오지만 **추측할 공간이 없다**(같은
-///   URL 을 몇 번 두드려도 얻는 정보가 0). 레이트 제한의 대상은 시도가 정보를 주는
-///   자리다.
-/// - `TooManyRequests`(429) — 이미 쿨다운 중이라 매칭 전에 거부돼 이 자리에 닿지도
-///   않고, 센다면 쿨다운이 스스로 연장된다.
-///
-/// 와일드카드를 쓰지 않는다 — 새 ACK 상태가 생기면 그 자리에서 컴파일이 멈춰야
-/// 한다. 이 게이트가 조용히 빠뜨리는 것이 곧 우회다.
+/// 출처별 실패 집계 대상. 등록별 횟수 제한과는 다르다.
+/// 인증 실패(401)는 등록 횟수를 차감하지 않지만 반복 토큰 추측은 여기서 센다.
+/// 큰 body(413)도 반복 요청 비용을 제한하기 위해 센다.
+/// 정상 접수·만료된 등록·이미 차단된 출처의 응답은 제외한다.
+/// 새 ACK가 생기면 집계 여부를 검토하도록 match를 모두 열거한다.
 pub fn counts_as_failure(status: AckStatus) -> bool {
     match status {
         AckStatus::NotFound
@@ -282,25 +229,18 @@ pub fn counts_as_failure(status: AckStatus) -> bool {
 mod tests {
     use super::*;
 
-    /// 어떤 ACK 가 이 통을 세는지 **전수로** 못박는다. 게이트가 조용히 빠뜨리는 것이
-    /// 곧 우회이고, 그 빠짐은 variant 를 하나 더할 때 가장 쉽게 생긴다.
     #[test]
     fn every_ack_status_has_a_stated_answer() {
-        // 센다 — 셋 다 "요청이 아무것도 못 얻고 끝난" 자리이고, 반복이 곧 탐색이다.
         assert!(counts_as_failure(AckStatus::NotFound));
         assert!(counts_as_failure(AckStatus::MethodNotAllowed));
         assert!(counts_as_failure(AckStatus::Unauthorized));
         assert!(counts_as_failure(AckStatus::PayloadTooLarge));
-        // 안 센다 — 정상 트래픽 / 추측 공간 없음 / 이미 쿨다운(세면 자기 연장).
         assert!(!counts_as_failure(AckStatus::Received));
         assert!(!counts_as_failure(AckStatus::Gone));
         assert!(!counts_as_failure(AckStatus::TooManyRequests));
     }
 
-    /// 401 은 통 A(등록별 예산)를 안 태우고 통 B(이 통)는 태운다. 두 술어가 401 에
-    /// 대해 **반대 답**을 준다는 것이 이 설계의 요지라, 한쪽만 보면 다음 사람이
-    /// "401 은 아무 데도 안 센다" 로 읽는다 — 통 A 쪽 짝은
-    /// `listener::tests::unauthorized_does_not_consume_count` 다.
+    // 등록 횟수를 보존하는 listener::tests::unauthorized_does_not_consume_count와 짝을 이룬다.
     #[test]
     fn rejected_tokens_reach_the_cooldown() {
         let mut t = AbuseTracker::new(cfg(3));
@@ -339,7 +279,7 @@ mod tests {
         assert_eq!(
             t.sources.len(),
             n,
-            "윈도우 안 엔트리는 문턱을 넘어도 안 밀린다"
+            "시간 범위 안의 항목은 정리 기준 개수를 넘어도 유지한다"
         );
     }
 
@@ -359,12 +299,10 @@ mod tests {
         assert_eq!(
             t.sources.len(),
             1,
-            "윈도우 밖 엔트리는 다음 실패 한 건이 회수한다"
+            "크기·간격 조건을 충족한 순회에서 만료 항목을 제거해야 한다"
         );
     }
 
-    /// 쿨다운 중인 엔트리는 순회를 견딘다 — 새 출처를 뿌려 자기 차단을 밀어낼 수 없다.
-    /// 이것이 없으면 표를 넘치게 하는 것 자체가 차단 해제 수단이 된다.
     #[test]
     fn a_cooling_entry_survives_a_prune() {
         let mut t = AbuseTracker::new(cfg(2));
@@ -380,12 +318,10 @@ mod tests {
         }
         assert!(
             t.is_blocked("cool", later),
-            "쿨다운 엔트리가 축출되면 안 된다"
+            "차단 중인 항목을 제거하면 안 된다"
         );
     }
 
-    /// 문턱을 넘은 뒤에도 순회는 **윈도우당 한 번**만 돈다. 없으면 실패 한 건마다 표
-    /// 전체를 훑고, 그 순회는 지울 것이 없는 동안에도 반복된다(정리 기준은 ADR-0032).
     #[test]
     fn the_walk_runs_at_most_once_per_window() {
         let mut t = AbuseTracker::new(cfg(20));
@@ -399,15 +335,23 @@ mod tests {
         assert_eq!(
             t.last_prune,
             Some(base),
-            "문턱을 넘은 그 자리에서 한 번은 돈다"
+            "크기 조건을 충족하면 첫 정리를 수행해야 한다"
         );
 
         t.record_failure("172.16.0.1", base + Duration::from_secs(5));
-        assert_eq!(t.last_prune, Some(base), "간격 안에서는 다시 안 돈다");
+        assert_eq!(
+            t.last_prune,
+            Some(base),
+            "정리 간격 안에서는 다시 순회하지 않는다"
+        );
 
         let after = base + Duration::from_secs(11);
         t.record_failure("172.16.0.2", after);
-        assert_eq!(t.last_prune, Some(after), "간격이 지나면 다시 돈다");
+        assert_eq!(
+            t.last_prune,
+            Some(after),
+            "정리 간격이 지나면 다시 순회한다"
+        );
     }
 
     #[test]
@@ -418,7 +362,6 @@ mod tests {
 
         t.record_failure("1.2.3.4", base);
         t.record_failure("1.2.3.4", base);
-        // 임계치 미만 → 아직 통과.
         assert!(!t.is_blocked("1.2.3.4", base));
 
         t.record_failure("1.2.3.4", base); // 3회째 → 임계치 도달, 쿨다운.
@@ -432,13 +375,9 @@ mod tests {
         t.record_failure("9.9.9.9", base);
         t.record_failure("9.9.9.9", base);
         assert!(t.is_blocked("9.9.9.9", base));
-        // 쿨다운(60s) 경과 후 해제.
         assert!(!t.is_blocked("9.9.9.9", base + Duration::from_secs(61)));
     }
 
-    /// **쿨다운은 연장되지 않는다** — 차단 중에 더 두드려도 만료 시각은 진입 때 정해진
-    /// 값 그대로다. 연장하면 계속 두드리는 발신자가 사실상 영구 차단되고, 그 발신자가
-    /// 토큰을 잘못 설정한 정상 발신자일 때 스스로 빠져나올 길이 사라진다(ADR-0032).
     #[test]
     fn a_cooldown_is_not_extended_by_more_failures() {
         let base = Instant::now();
@@ -446,18 +385,15 @@ mod tests {
         t.record_failure("loud", base);
         t.record_failure("loud", base);
         assert!(t.is_blocked("loud", base));
-        // 차단 중 재실패 — 만료 시각을 밀지 못한다.
         for i in 1..=5 {
             t.record_failure("loud", base + Duration::from_secs(30 + i));
         }
         assert!(
             !t.is_blocked("loud", base + Duration::from_secs(61)),
-            "쿨다운 60s 는 진입 시각이 정한다 — 재실패가 밀지 않는다"
+            "추가 실패가 60s 차단 시간을 연장하면 안 된다"
         );
     }
 
-    /// 쿨다운이 풀리면 **카운터도 백지**가 된다. 안 그러면 해제 직후 실패 한 건이 곧장
-    /// 임계치를 다시 채워, 연장을 막아 둔 것이 의미를 잃는다(ADR-0032).
     #[test]
     fn an_expired_cooldown_starts_from_a_clean_count() {
         let base = Instant::now();
@@ -466,7 +402,7 @@ mod tests {
             t.record_failure("back", base);
         }
         let after = base + Duration::from_secs(61);
-        // 실제 경로와 같은 순서 — 리스너는 매 요청 `is_blocked` 를 먼저 묻는다.
+        // 실제 리스너처럼 차단 여부를 먼저 조회해 만료 상태를 해제한다.
         assert!(!t.is_blocked("back", after));
         t.record_failure("back", after);
         assert!(
@@ -477,7 +413,6 @@ mod tests {
 
     #[test]
     fn normal_source_never_blocked() {
-        // 실패를 낸 적 없는 출처는 절대 차단되지 않는다(정상 웹훅 무영향).
         let base = Instant::now();
         let mut t = AbuseTracker::new(cfg(3));
         t.record_failure("bad", base);
@@ -492,17 +427,12 @@ mod tests {
         let base = Instant::now();
         let mut t = AbuseTracker::new(cfg(3));
         t.record_failure("slow", base); // count=1
-        // 윈도우(10s) 밖 → 카운터 리셋되어 count=1 로 재시작.
         t.record_failure("slow", base + Duration::from_secs(11));
         t.record_failure("slow", base + Duration::from_secs(12));
-        // 리셋 이후 2회뿐이라 임계치(3) 미달 → 차단 안 됨.
         assert!(!t.is_blocked("slow", base + Duration::from_secs(12)));
     }
 
-    /// poison 이 걸린 뒤에도 차단 판정이 계속 돌고, 그 사실이 한 번은 남는가.
-    ///
-    /// 전역이 아니라 지역 뮤텍스를 겨냥한다 — 전역을 poison 하면 같은 테스트
-    /// 바이너리의 뒤 테스트가 그 상태를 물려받는다.
+    // 다른 시험에 영향을 주지 않도록 전역 대신 지역 Mutex를 poison한다.
     #[test]
     fn a_poisoned_tracker_keeps_judging_and_says_so_once() {
         let shared = std::sync::Arc::new(Mutex::new(AbuseTracker::new(cfg(2))));
@@ -516,24 +446,23 @@ mod tests {
         .expect_err("패닉한 스레드는 Err 로 join 된다");
         assert!(shared.lock().is_err(), "poison 이 실제로 걸려야 한다");
 
-        // 판정이 계속 돈다 — 임계치까지 집계하고 차단으로 넘어간다.
         let base = Instant::now();
         lock_tracker(&shared).record_failure("9.9.9.9", base);
         lock_tracker(&shared).record_failure("9.9.9.9", base);
         assert!(
             lock_tracker(&shared).is_blocked("9.9.9.9", base),
-            "poison 뒤에도 임계치를 넘으면 차단해야 한다"
+            "poison 뒤에도 임계치에 도달하면 차단해야 한다"
         );
 
         assert!(
             TRACKER_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
-            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 오판과 구분되지 않는다"
+            "poison 복구 사실을 한 번은 보고해야 한다"
         );
     }
 
     #[test]
     fn from_env_defaults_when_unset() {
-        // env 미설정 기본값 확인(격리를 위해 값 비교만).
+        // 프로세스 환경을 바꾸지 않고 기본값만 대조한다.
         let d = AbuseConfig::default();
         assert_eq!(d.threshold, 20);
         assert_eq!(d.window, Duration::from_secs(10));

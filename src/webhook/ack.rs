@@ -1,18 +1,12 @@
-//! 웹훅 HTTP 응답 = **단방향 ACK 전용** (CRITICAL 불변식).
-//!
-//! [`build_ack`] 는 **IpcSequence 실행 결과에 접근하는 인자를 갖지 않는다.** 응답은
-//! 고정 상태코드 + 최소 바디뿐이며, 어떤 params/치환 조합에서도 tasty 내부 데이터가
-//! 응답으로 샐 수 없다 — "안 담는다" 가 아니라 담을 수 있는 코드 경로 자체를 두지
-//! 않는다(응답 빌더 시그니처가 실행 경로와 분리).
+//! 실행 결과를 받지 않고 고정 HTTP 상태·문자열로 접수 결과를 응답한다.
 
 use std::io::Cursor;
 
 use tiny_http::Response;
 
-/// 웹훅 응답 상태 — 고정 enum. 인증(401)·만료(410)·body 상한(413)·남용차단(429) 반영.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AckStatus {
-    /// 200 — 매칭 성공, 핸들러에 전달됨.
+    /// 200 — 매칭·인증을 통과했다. 시퀀스 실행 성공을 뜻하지 않는다.
     Received,
     /// 401 — 웹훅에 인증이 설정됐으나 토큰 미제시/불일치.
     Unauthorized,
@@ -43,8 +37,7 @@ impl AckStatus {
     }
 }
 
-/// 단방향 ACK 빌더. **실행 결과 인자를 받지 않는다** — 이 시그니처가 단방향
-/// 불변식의 타입 강제선이다. 바디는 고정 문자열뿐.
+/// 실행 결과 인자 없이 ACK 상태에 맞는 고정 응답을 만든다.
 pub fn build_ack(status: AckStatus) -> Response<Cursor<Vec<u8>>> {
     let (code, body) = status.parts();
     Response::from_string(body).with_status_code(code)
@@ -56,7 +49,6 @@ mod tests {
 
     #[test]
     fn ack_bodies_are_fixed_strings() {
-        // 어떤 상태든 바디는 고정 문자열 — 내부 데이터가 섞일 여지 없음.
         assert_eq!(build_ack(AckStatus::Received).status_code().0, 200);
         assert_eq!(build_ack(AckStatus::Unauthorized).status_code().0, 401);
         assert_eq!(build_ack(AckStatus::NotFound).status_code().0, 404);
