@@ -1,8 +1,4 @@
-//! Session token store wrapper. handler 의 `core.with_memory + SessionStore::new`
-//! 조립을 본 모듈로 흡수.
-//!
-//! 모든 메서드가 **Method call 패턴** (응답 데이터 반환). Intent 가 아님 — 호출자가
-//! 즉시 응답을 받아야 한다. agent/ratelimit, agent/semaphore 와 같은 패턴.
+//! Core의 공유 저장소로 세션을 조회·변경하고 결과를 즉시 반환한다.
 
 use tasty_memory::HOST_OWNER;
 
@@ -12,8 +8,7 @@ use tasty_ipc::session::{AgentSession, SessionError, SessionStore};
 use tasty_plugin_manifest::Permission;
 
 impl Core {
-    /// 새 SessionToken 발급. `parent` 는 부모 caller (Plugin/Agent id 또는
-    /// `None`=Local). escalation 검사는 *호출자 책임* — 본 wrapper 는 store 만 만짐.
+    /// parent가 None이면 Local 요청이다. 허용된 권한보다 더 부여하는지 검사는 호출자가 해야 한다.
     pub(crate) fn session_issue(
         &self,
         agent_id: String,
@@ -28,7 +23,6 @@ impl Core {
         })
     }
 
-    /// 토큰 무효화. 반환: 실제 revoke 여부.
     pub(crate) fn session_revoke(&self, token: &SessionToken) -> Result<bool, SessionError> {
         self.with_memory(|mem| {
             let mut store = SessionStore::new(mem, HOST_OWNER);
@@ -36,7 +30,7 @@ impl Core {
         })
     }
 
-    /// 활성 세션 목록 (만료/revoked 제외).
+    /// 만료·폐기된 세션을 제외한 목록.
     pub(crate) fn session_list(&self, now_ms: u64) -> Result<Vec<AgentSession>, SessionError> {
         self.with_memory(|mem| {
             let mut store = SessionStore::new(mem, HOST_OWNER);
@@ -44,7 +38,7 @@ impl Core {
         })
     }
 
-    /// 들어오는 요청의 token resolve — caller_gate 가 호출. 만료/revoked 면 `Ok(None)`.
+    /// 만료·폐기된 token은 Ok(None)이다.
     pub(crate) fn session_resolve(
         &self,
         token: &SessionToken,
@@ -56,8 +50,8 @@ impl Core {
         })
     }
 
-    /// agent_id 기반 임시 권한 grant. 반환: `None` 이면 agent_id 의 활성 세션이
-    /// 없음. `Some((added, expires_at_ms))` — added=false 이면 base 에 이미 있음.
+    /// 활성 세션이 없으면 None, 기본 권한에 이미 있으면 added=false다.
+    /// 반환 만료 시각은 요청 TTL로 계산한 값이며 기존 grant와 합친 최종 만료값과 다를 수 있다.
     #[cfg(feature = "gui")]
     pub(crate) fn session_grant_permission_for_agent(
         &self,
@@ -77,7 +71,7 @@ impl Core {
         })
     }
 
-    /// agent_id 기반 임시 권한 revoke. agent 없으면 `Ok(false)`.
+    /// 해당 agent의 활성 세션이 없으면 Ok(false)다.
     #[cfg(feature = "gui")]
     pub(crate) fn session_revoke_permission_for_agent(
         &self,
