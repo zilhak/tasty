@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-Tasty는 본 바이너리(`src/`)와 60개 크레이트(`crates/*`)로 구성된 Cargo workspace다. 도메인 로직은 GUI 없이 동작하고, GUI·IPC·OS 연동은 port와 adapter로 연결한다.
+Tasty는 본 바이너리(`src/`)와 60 개 크레이트(`crates/*`)로 구성된 Cargo workspace다. 도메인 로직은 GUI 없이 동작하고, GUI·IPC·OS 연동은 port와 adapter로 연결한다.
 
 ## 기술 스택
 
@@ -15,7 +15,6 @@ Tasty는 본 바이너리(`src/`)와 60개 크레이트(`crates/*`)로 구성된
 | IPC | TCP (127.0.0.1, 동적 포트, `~/.tasty/tasty.port`) + JSON-RPC 2.0 (serde_json) |
 | CLI | clap |
 | 설정 | toml + directories |
-| OS 알림 | notify-rust |
 | 공유 메모리 | `tasty-shm`(자체) — POSIX shm + SCM_RIGHTS / Windows DuplicateHandle |
 
 ## headless 분리 — `gui` feature

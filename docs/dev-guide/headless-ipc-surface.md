@@ -169,7 +169,7 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 
 ## app 층 메서드 — 무엇이 답하고 무엇이 왜 없는가
 
-다음 표는 GUI의 `app_methods`(`src/app/ipc/app_methods.rs`)와 헤드리스의 지원 차이다.
+다음 표는 GUI의 `src/app/ipc/app_methods.rs`에 있는 메서드와 헤드리스의 지원 차이다.
 `src/source_guards/headless_app_layer_coverage.rs`가 표와 소스를 대조한다.
 검사 통과는 두 빌드가 같은 기능을 제공한다는 뜻이 아니라, 차이가 빠짐없이 사유와 함께
 기록됐다는 뜻이다.
