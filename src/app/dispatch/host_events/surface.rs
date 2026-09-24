@@ -1,8 +1,4 @@
-//! `surface.focused / resized / title_changed / created` 발화.
-//!
-//! 본 모듈은 호스트 자동 감지 (`detect_*`) 후 큐에 push 된 이벤트만 다룬다. surface 의
-//! 라이프사이클 close (`surface.closed`) 은 별도 `dispatch_pending_surface_lifecycle`
-//! 에서 처리.
+//! surface 상태 변경 이벤트를 전달한다. 닫기는 dispatch_pending_surface_lifecycle에서 처리한다.
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::events::payloads::{

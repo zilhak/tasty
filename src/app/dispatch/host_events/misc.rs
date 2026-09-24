@@ -1,4 +1,4 @@
-//! 도메인별로 묶기 애매한 잡종 — process / notification / hook / raw + plugin lifecycle.
+//! 프로세스·알림·훅·플러그인의 호스트 이벤트를 전달한다.
 
 use serde_json::json;
 use tasty_plugin_protocol::EventScope;
@@ -57,16 +57,12 @@ pub(super) fn emit_hook_fired(
     mgr.emit_host_event("hook.fired", &payload, scope);
 }
 
-// ─── Plugin lifecycle ───
-
 pub(super) fn emit_plugin_loaded(mgr: &mut PluginManager, plugin_id: String, version: String) {
     let payload = PluginLoaded { plugin_id, version };
     mgr.emit_host_event("plugin.loaded", &payload, EventScope::System);
 }
 
-/// 발화 자체는 `crate::ipc::handler::plugin` 에 있다 — 헤드리스가 창 큐를 안 거치고
-/// 같은 이벤트를 내야 해서, 키와 payload 는 그쪽 한 벌만 존재한다. 여기 남는 것은
-/// 큐가 실어 온 값을 그 함수의 인자 모양으로 맞추는 일뿐이다.
+/// 헤드리스와 같은 이벤트 정의를 사용하도록 IPC 핸들러의 공통 함수를 부른다.
 pub(super) fn emit_plugin_enable_toggled(
     mgr: &mut PluginManager,
     plugin_id: String,
@@ -75,8 +71,6 @@ pub(super) fn emit_plugin_enable_toggled(
     crate::ipc::handler::plugin::emit_enable_toggled(mgr, plugin_id, enabled);
 }
 
-/// 위와 같다. `reason` 은 큐에 문자열로 실려 오므로(`PendingHostEvent` 가 protocol
-/// 타입을 안 들고 다닌다) 되읽는 것이 이 함수의 일이다.
 pub(super) fn emit_plugin_unloaded(mgr: &mut PluginManager, plugin_id: String, reason: String) {
     let lr = match reason.as_str() {
         "ipc" => LifecycleReason::Ipc,
@@ -100,9 +94,6 @@ pub(super) fn emit_plugin_error(
     mgr.emit_host_event("plugin.error", &payload, EventScope::System);
 }
 
-/// install / remove / grant / revoke 4종을 단일 helper 로. `change_kind` 가
-/// raw event key 결정. 옛 lifecycle.rs 에는 대응 호출 없었음 — 본 substep 의
-/// 신규 가시성.
 pub(super) fn emit_plugin_registry_changed(
     mgr: &mut PluginManager,
     plugin_id: String,
@@ -144,8 +135,7 @@ pub(super) fn emit_plugin_surface_kind_registered(
     );
 }
 
-/// `[[contributes.window]]` 항목이 hello 시점에 등록되었음을 알리는 stub
-/// 이벤트. 1.0 에서는 실제 spawn 동작이 없고 가시성만 제공한다.
+/// window 기여 선언을 알린다. 이 함수가 실제 창을 생성하지는 않는다.
 pub(super) fn emit_plugin_window_declared(
     mgr: &mut PluginManager,
     plugin_id: String,

@@ -1,4 +1,4 @@
-//! `tab.focused / renamed / created / closed / moved` 발화.
+//! tab의 상태·구조 변경 이벤트를 전달한다.
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::LifecycleReason;

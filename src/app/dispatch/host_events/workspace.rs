@@ -1,4 +1,4 @@
-//! `workspace.activated / renamed / created / closed` 발화.
+//! workspace 상태·구조 변경 이벤트를 전달한다.
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::LifecycleReason;
@@ -21,13 +21,12 @@ pub(super) fn emit_activated(
     mgr.emit_host_event("workspace.activated", &payload, EventScope::System);
 }
 
-/// `emit_renamed` 인자 묶음 — rename payload 필드 + Lua hook 발화 라우팅 플래그.
 pub(super) struct RenameEvent {
     pub workspace_id: u32,
     pub name: Option<String>,
     pub subtitle: Option<String>,
     pub description: Option<String>,
-    /// 사용자 직접 변경(GUI rename dialog)이면 `true` — IPC 경유는 `false`.
+    /// GUI에서 직접 이름을 바꾼 경우다. IPC 변경은 포함하지 않는다.
     pub user_direct: bool,
 }
 
@@ -51,7 +50,6 @@ pub(super) fn emit_renamed(
         description,
     };
     mgr.emit_host_event("workspace.renamed", &payload, EventScope::System);
-    // 사용자 직접 변경(GUI rename dialog)만 Lua hook 발화 — IPC 경유는 제외.
     if user_direct {
         crate::hooks::lua::fire(lua, autofire, "workspace.change.post", &payload);
     }

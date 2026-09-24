@@ -1,4 +1,4 @@
-//! `pane.created / closed / split` 발화.
+//! pane 생성·닫기·분할 이벤트를 전달한다.
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::LifecycleReason;

@@ -1,6 +1,4 @@
-//! `about_to_wait` 에서 호출되는 각 dispatch_pending_* 메서드들.
-//!
-//! 한 프레임에 한 번씩 호출되어 직전 프레임에 쌓인 도메인별 큐를 drain → emit.
+//! about_to_wait에서 대기 중인 요청과 이벤트 큐를 처리한다.
 
 pub(crate) mod agent_events;
 pub(crate) mod file_picker;

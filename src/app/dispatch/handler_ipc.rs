@@ -1,12 +1,9 @@
-//! file handler 가 enqueue 한 IPC action 을 plugin namespace 메서드로 forward.
+//! 파일 핸들러가 요청한 IPC를 플러그인으로 전달한다.
 
 use crate::app::App;
 
 impl App {
-    /// file handler IPC action 큐 drain. user TOML 등에서 `type="ipc"` 인 핸들러가
-    /// 매칭되면 `(method, target)` 이 enqueue 되어 여기서 plugin namespace 메서드로
-    /// forward 된다. 응답은 무시 (fire-and-forget) — 핸들러 실행 결과는 plugin 자체
-    /// 로그/이벤트로 관찰.
+    /// 응답은 기다리지 않는다. 처리 결과는 플러그인의 로그·이벤트로 확인한다.
     pub(crate) fn dispatch_pending_handler_ipc(&mut self) {
         let mut drained: Vec<(String, crate::file::format::FileTarget)> = Vec::new();
         for w in self.view.views.values_mut() {
@@ -35,10 +32,7 @@ impl App {
                 "path": target.as_path().to_string_lossy(),
             });
             let (tx, _rx) = std::sync::mpsc::sync_channel(1);
-            // 원 요청 번호를 넘기지 않는다. 이 큐는 사용자 조작(ctrl+click · drag&drop)뿐 아니라
-            // IPC `file_handler.dispatch` 로도 차는데, 그 IPC 명령의 번호는 intent →
-            // `pending_handler_ipc` 로 옮겨지는 사이에 떨어진다(튜플에 칸이 없다). 그래서 그
-            // 경로의 plugin 대기는 링에서 원 요청과 이어지지 않는다(ADR-0008).
+            // 큐가 원 요청 번호를 보존하지 않아 IPC 처리 이력의 원 요청과 연결하지 못한다.
             mgr.forward_namespace_call(&method, params, None, serde_json::Value::Null, tx, None);
         }
     }

@@ -1,31 +1,16 @@
-//! Native file picker popup 의 result 슬롯 드레인.
-//!
-//! popup draw_fn(`crate::adapters::ui::popup::file_picker`)이
-//! `state.dialogs.file_picker.result` 에 채워둔 `FilePickerResult` 를 본
-//! dispatcher 가 매 frame begin 에 검사. 로컬 확정은 기존 `DomainIntent::DispatchFile`
-//! 로(explorer/markdown 오픈과 동일 경로), 원격 확정은 컨텐츠 fetch 가 스코프 밖이라
-//! 경로를 클립보드에 복사 + toast 로 알린다(트리거 지점 결정과 함께 신규 ADR에 근거
-//! 기록).
-//!
-//! `FilePickerData.requester` 가 `Some` 이면(ADR-0036 — `file_picker.trigger`
-//! 로 이 popup 을 연 plugin) 위 기존 동작에 **더해** `"file_picker.result"` 이벤트를
-//! 그 plugin 에 unicast 한다 — `emit_host_event_to_plugin` 은 `PluginManager`(`App`
-//! 소유) 접근이 필요해, `file_picker.trigger` IPC 핸들러(`CoreState` 큐잉만 가능)가
-//! 아니라 이 App 레벨 drain 이 담당한다(`git_viewer.query_result` 와 동형 위치).
+//! 파일 선택 결과를 처리한다. 로컬 파일은 열고 원격 경로는 클립보드에 복사한다.
+//! 요청한 플러그인이 있으면 확정·취소 결과도 전달한다.
 
 use crate::app::App;
 use crate::core::intent::DomainIntent;
 use crate::state::{FilePickerRequester, FilePickerResult};
 use crate::view::ui::View;
 
-/// `file_picker.result` 이벤트 payload — ADR-0036이 고정한 최소 wire
-/// 필드(`request_id`/`paths`/`cancelled`). 확정도 취소도 항상 세 필드 전부를 채워
-/// plugin 이 하나의 구조체로 역직렬화할 수 있게 한다(확정 시 `cancelled: false`).
+/// 확정과 취소 모두 request_id·paths·cancelled를 포함한다.
 const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
 
 impl App {
-    /// 모든 main window 의 file_picker result 슬롯 drain. parked state 는 *focused
-    /// 윈도우가 아니므로 popup 미오픈* 가정 — main window 만 순회.
+    /// 현재 MainView의 결과만 처리하며 parked 상태는 순회하지 않는다.
     pub(crate) fn dispatch_pending_file_picker_results(&mut self) {
         let pending: Vec<winit::window::WindowId> = self
             .view
@@ -50,7 +35,6 @@ impl App {
                 continue;
             };
             let requester = data.requester.clone();
-            // 데이터 슬롯 즉시 해제 — 빠른 popup 재오픈 시에도 중복 처리 방지.
             main.state.dialogs.file_picker = None;
             match result {
                 FilePickerResult::Cancelled => {
@@ -86,15 +70,8 @@ impl App {
     }
 }
 
-/// `requester` 에게 `"file_picker.result"` 를 owner-unicast 로 push. plugin 이 이미
-/// 종료됐으면 `emit_host_event_to_plugin` 이 조용히 폐기한다(정상 — 결과를 받을
-/// 대상이 없을 뿐 에러 아님).
-///
-/// 소유 popup(ADR-0036)이 명시됐는데 그 인스턴스가 이미 사라졌다면 결과가 버려질
-/// 가능성이 높다 — 연쇄 정리(`app::dispatch::plugin_popup_events`)가 제대로 돌았다면
-/// 나오지 않아야 하는 조합이라 **조용히 넘기지 않고 경고를 남긴다.** 이벤트 자체는
-/// 그대로 보낸다 — ADR-0036의 접수한 요청에 결과를 돌려주는 규칙은 popup
-/// 생사와 무관한 계약이고, plugin 이 popup 밖에서 상관관계를 유지하고 있을 수도 있다.
+/// 소유 popup이 사라져도 요청한 플러그인에 결과를 보낸다.
+/// 플러그인이 popup 밖에서 요청 상태를 관리할 수도 있기 때문이다.
 fn emit_file_picker_result(
     plugin_manager: Option<&mut crate::plugin::PluginManager>,
     requester: &FilePickerRequester,
@@ -108,7 +85,7 @@ fn emit_file_picker_result(
         && !mgr.popup_instances().any(|(id, _)| id == owner)
     {
         tracing::warn!(
-            "file_picker result for request {} arrives after its owner popup instance {}              is gone — the requesting plugin ({}) may drop it",
+            "file_picker request {} completed after owner popup {} closed; plugin {} may ignore the result",
             requester.request_id,
             owner,
             requester.plugin_id
@@ -126,8 +103,7 @@ fn emit_file_picker_result(
     );
 }
 
-/// 원격 확정 — 컨텐츠를 이 세션으로 가져오는 것은 이번 구현 스코프 밖(디렉토리
-/// 나열만 설계됨)이라, 선택 경로를 클립보드에 복사하고 toast 로 알린다.
+/// 원격 파일을 내려받지 않고 선택한 경로만 복사한다.
 fn apply_remote_confirm(
     core: &crate::core::Core,
     state: &mut crate::state::AppState,

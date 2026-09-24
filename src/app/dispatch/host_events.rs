@@ -1,7 +1,4 @@
-//! 호스트 자동 발화 큐(`PendingHostEvent`)를 Event Bus 1.0 wire payload 로 변환·발화.
-//!
-//! 변환·발화 로직은 도메인별 sub-module 의 free fn 으로 분리. 본 모듈은 drain +
-//! match dispatch.
+//! 대기 중인 호스트 이벤트를 프로토콜 payload로 바꿔 전달한다.
 
 mod misc;
 mod pane;
@@ -29,7 +26,6 @@ impl App {
                 drained.extend(events);
             }
         }
-        // parked (AppState, CoreState) 쌍은 자기 짝의 engine 으로 detect.
         for (s, engine) in self.parked_states.iter_mut() {
             s.detect_focus_change(engine);
             s.detect_workspace_activation(engine);
@@ -43,8 +39,6 @@ impl App {
         if drained.is_empty() {
             return;
         }
-        // 자동실행(autofire) 컨텍스트 — 레지스트리는 프레임 스냅샷(clone), 가드는
-        // App 필드 직접 대여(아래 mgr 와 disjoint field borrow).
         let scripts = self.autofire_scripts();
         macro_rules! af {
             () => {
@@ -166,7 +160,6 @@ impl App {
                     surface_id,
                     exit_code: _,
                 } => misc::emit_hook_fired(mgr, hook_id, event_kind, surface_id),
-                // ─── Plugin lifecycle ───
                 PendingHostEvent::PluginLoaded { plugin_id, version } => {
                     misc::emit_plugin_loaded(mgr, plugin_id, version)
                 }
@@ -200,13 +193,8 @@ impl App {
     }
 }
 
-/// 앱-전역 포커스 전환마다 새 focused surface 의 최신 title 을 그 탭의 `osc_title`
-/// 로 재투영한다. `SurfaceFocused` 이벤트의 `surface_id` 는 새 focused surface 이며,
-/// 이는 자기 탭의 `focused_surface` 와 일치하므로 `refresh_tab_osc_title` 가 그
-/// 값을 읽어 반영한다 (unfocused 상태에서 발화했던 title 이라도 포커스를 받으면
-/// 반영, title 없으면 clear → fallback). 배경 탭(IPC close/move)의 focused_surface
-/// 변경은 여기 폴링에 안 잡히므로 apply_close_surface / apply_move_surface 가 직접
-/// 재투영한다.
+/// 포커스가 옮겨온 surface의 제목을 탭에 반영한다.
+/// 배경 탭의 포커스 변경은 여기서 감지하지 않아 닫기·이동 경로가 직접 반영한다.
 fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEvent]) {
     for ev in events {
         if let PendingHostEvent::SurfaceFocused { surface_id, .. } = ev {
@@ -215,12 +203,8 @@ fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEve
     }
 }
 
-/// 이 drain 배치의 `HookFired` 마다 hook_id→task_id 매핑을 조회해, 대기 중인
-/// push 완료 전략 task 가 있으면 마감한다. flatten(`drained`)
-/// 되기 전, 이 배치가 나온 그 window/parked-state 의 `engine` 이 아직 유효할 때
-/// 호출해야 한다 — `resolve_hook_task_wait` 이 waker 발화(`task_waker_hub`)에
-/// 그 engine 을 그대로 쓰므로, 틀린 engine 을 넘기면 `agent.task_await` 대기자가
-/// 엉뚱한 hub 에서 깨어나길 기다리게 된다.
+/// 이벤트를 다른 창의 이벤트와 합치기 전에 해당 engine으로 대기 작업을 완료한다.
+/// 다른 engine을 넘기면 대기자를 깨울 waker hub가 달라진다.
 fn resolve_hook_fired_task_waits(
     core: &crate::core::Core,
     engine: &CoreState,

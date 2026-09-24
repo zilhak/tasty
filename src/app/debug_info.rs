@@ -1,25 +1,10 @@
-//! Developer-local debug info collector.
-//!
-//! OS 를 한 번도 부르지 않는다 — 읽는 것은 `AppState` · `CoreState` · `GpuState` 뿐이고
-//! 그것을 IPC 응답용 JSON 으로 바꾼다. 그래서 자리가 `crates/tasty-platform/src/` 이 아니라 여기다:
-//! 플랫폼 크레이트에 남는 것은 OS 를 부르는 코드이고, 그 결과를 App 상태로 바꾸는 코드는
-//! App 쪽에 산다.
-//!
-//! This file is meant to be freely modified by each developer for their own
-//! debugging needs. After the initial commit, run:
-//!
-//!   git update-index --skip-worktree src/app/debug_info.rs
-//!
-//! to prevent local changes from appearing in `git status` or being committed.
-//! To undo: `git update-index --no-skip-worktree src/app/debug_info.rs`
+//! AppState·CoreState·GpuState에서 디버그 조회용 JSON을 만든다.
 
 use serde_json::{Value, json};
 
 use crate::gpu::GpuState;
 use crate::state::AppState;
 
-/// Collect debug information from the running tasty instance.
-/// Modify this function freely — add whatever you need to diagnose issues.
 pub fn collect(
     state: &AppState,
     engine: &crate::core::CoreState,
@@ -28,11 +13,9 @@ pub fn collect(
 ) -> Value {
     let mut info = serde_json::Map::new();
 
-    // -- Basic state --
     info.insert("workspace_count".into(), json!(engine.workspaces.len()));
     info.insert("active_workspace".into(), json!(state.active_workspace));
 
-    // -- GPU / scale factor --
     if let Some(gpu) = gpu {
         info.insert("scale_factor".into(), json!(gpu.scale_factor()));
         info.insert("cell_width".into(), json!(gpu.cell_width()));
@@ -42,7 +25,6 @@ pub fn collect(
         info.insert("viewport_height".into(), json!(size.height));
     }
 
-    // -- Font settings (per-surface effective values) --
     let appearance = &engine.settings.appearance;
     let term_eff = appearance.effective_terminal_font();
     let md_eff = appearance.effective_font_for_kind("markdown");
@@ -59,15 +41,12 @@ pub fn collect(
     info.insert("markdown_font_size".into(), json!(md_eff.font_size));
     info.insert("markdown_font_family".into(), json!(md_eff.font_family));
 
-    // -- IME state --
     info.insert("ime_active".into(), json!(ime_active));
     if let Some(gpu) = gpu {
         info.insert("egui_ime_allowed".into(), json!(gpu.egui_ime_allowed()));
     }
 
-    // -- Add your own debug info below this line --
-
-    // -- egui actual rendering state (may differ from gpu.scale_factor) --
+    // egui의 실제 배율은 GPU scale_factor와 다를 수 있다.
     if let Some(gpu) = gpu {
         info.insert(
             "egui_pixels_per_point".into(),
@@ -79,7 +58,6 @@ pub fn collect(
         info.insert("surface_config_height".into(), json!(cfg_h));
     }
 
-    // -- tab bar height (physical px, measured by egui) --
     info.insert("tab_bar_height".into(), json!(state.tab_bar_height));
     info.insert("sidebar_width".into(), json!(state.sidebar_width));
 
