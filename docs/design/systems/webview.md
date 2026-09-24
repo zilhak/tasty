@@ -1,13 +1,12 @@
 # WebView 호스트 계약
 
-native webview 는 winit 창 **안**에 얹히는 별개의 OS 자식 창/뷰다 — X11 child window ·
-`WKWebView` subview · child `HWND`. 그래서 tasty 의 다른 UI 와 달리 **우리가 그리지 않는
-픽셀**이 창 안에 있고, 그 픽셀의 위치·가시성·수명·키보드를 호스트가 밖에서 조종한다.
+WebView는 winit 창 안에 놓이는 별도의 OS 자식 창이나 뷰다. Linux는 X11 child window, macOS는 WKWebView subview, Windows는 child HWND를 사용한다. 콘텐츠는 OS의 웹 엔진이 그리고 호스트는 위치·표시·수명·키보드 입력을 관리한다.
 
-이 문서는 그 조종의 **입출력 계약**을 한 자리에 적는다. 결정의 근거는 ADR 에 있고 여기는
-현재 운영 상태만 기술한다.
+이 문서는 세 백엔드가 공통으로 제공할 동작을 설명한다. 선택 이유는 [ADR-0029](../../adr/0029-webview-host-integration.md)에 있다.
 
-## 계약의 형태 — trait 이 아니라 이름이다
+<a id="계약의-형태--trait-이-아니라-이름이다"></a>
+
+## 공통 API와 플랫폼별 구현
 
 PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출부가 쓰는 메서드와 시그니처는
 해당 OS 컴파일이 검사한다. 같은 빌드에서 런타임 다형성을 쓰지 않으므로 별도 backend trait은 두지 않는다.
@@ -16,7 +15,9 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 컴파일 성공은 실제 크기·focus·navigation·종료 행동이 같다는 증거가 아니다.
 백엔드 변경 때는 아래 계약으로 세 구현을 비교하고 해당 OS에서 동작을 확인한다.
 
-## 표면 — 열둘 + `Drop`
+<a id="표면--열둘--drop"></a>
+
+## 제공하는 연산
 
 | 연산 | 입력 | 출력 | 백엔드 차이 |
 |------|------|------|-------------|
@@ -51,7 +52,7 @@ WebViewCreateError의 Permanent는 즉시 중단하고 Transient는 최대 8 회
 ## 좌표 — 논리와 물리를 타입 이름에 남긴다
 
 `WebViewBounds`(논리) 와 `PhysicalWebViewBounds`(물리)는 `to_physical` / `from_physical`
-로만 오간다. 생산자(레이아웃)와 소비자(플랫폼 창 API)가 각자 `* scale_factor` ·
+로만 오간다. 레이아웃과 플랫폼 창 API가 각자 `* scale_factor` ·
 `/ scale_factor` 를 손으로 적으면 한쪽만 고쳤을 때 조용히 어긋나기 때문이다. 두 타입이
 `f32` 가 아니라 `f64` 인 이유(플랫폼 API 와 `scale_factor` 가 `f64` · 소비자가 `as i32` 로
 절단)는 타입 정의에 붙어 있다. 왕복은 단위 시험이 세 OS 모두에서 고정한다.
@@ -69,10 +70,12 @@ foreign bind와 직접 size_allocate는 함께 유지하거나 함께 제거한�
 활성·비활성 탭 생성, 전환, 확대·축소, 분할에서 부모와 렌더 자식 크기를 비교한다.
 원인을 ConfigureNotify 누락 하나로 확정하지 않는다.
 
-## 스레드 — 셋 다 `!Send` 지만 강제의 세기가 다르다
+<a id="스레드--셋-다-send-지만-강제의-세기가-다르다"></a>
+
+## 스레드 제약과 추가 검사
 
 세 타입 모두 `Rc` · raw pointer · COM 객체를 필드로 가져 **auto-trait 상 자연 `!Send`** 다.
-안전한 Rust 로는 다른 스레드로 옮길 수 없다. 그 위에 얹힌 것이 백엔드마다 다르다.
+안전한 Rust 로는 다른 스레드로 옮길 수 없다. 추가 검사는 백엔드마다 다르다.
 
 | 백엔드 | 컴파일 시점 | 실행 시점 |
 |--------|-------------|-----------|
@@ -80,10 +83,11 @@ foreign bind와 직접 size_allocate는 함께 유지하거나 함께 제거한�
 | macOS | `!Send` + `MainThreadMarker::new()` 가 생성 자체를 main thread 로 제한 | 없음(생성이 이미 막는다) |
 | Windows | `!Send` | 없음. `CoInitializeEx(COINIT_APARTMENTTHREADED)` 가 같은 스레드 가정을 세운다 |
 
-Linux 만 실행 시점 그물을 더 가진 이유는 X11 핸들 오용이 UB 라서다 — debug 에서만 잡으면
-release 에서 조용히 UB 가 난다.
+Linux는 X11 핸들을 잘못된 스레드에서 쓰면 정의되지 않은 동작(UB)이 생길 수 있어 release에서도 생성 스레드를 검사한다.
 
-## 수명 — 부모가 먼저 죽을 수 있다
+<a id="수명--부모가-먼저-죽을-수-있다"></a>
+
+## 수명 — 부모 창이 먼저 닫히는 경우
 
 PlatformWebView의 Drop이 OS 자원을 정리하며 부모 winit 창이 먼저 사라진 경우도 처리한다.
 
@@ -154,19 +158,23 @@ overlay를 열어 webview를 가릴 때 host 창이 활성이고 실제 focus가
 하나를 생략하면 IPC로 overlay를 여는 동안 다른 앱의 focus를 가져올 수 있다.
 컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
 
-## 도메인 라이브러리로는 아무것도 새지 않는다
+<a id="도메인-라이브러리로는-아무것도-새지-않는다"></a>
+
+## 도메인과 OS 구현의 경계
 
 native WebKit·AppKit·WebView2 타입은 호스트 OS adapter에 둔다.
 도메인에서는 NavState 같은 OS 비의존 값만 사용한다.
 의존성은 crates/*/Cargo.toml과 webview 타입의 실제 사용처를 확인한다. 주석에 이름이 등장하는 것과 타입 의존은 구별한다.
 headless가 사용하지 않는 GUI 의존성은 [빌드 경계](../../dev-guide/headless-build-boundaries.md)를 따른다.
 
-## 이 문서가 못 말하는 것
+<a id="이-문서가-못-말하는-것"></a>
+
+## 플랫폼별 검증 한계
 
 각 OS의 컴파일은 공유 호출부와 타입을 검사한다. 실제 클릭·단축키·IME·크기·종료·리소스 차단까지 검사한 것은 아니다.
 기존 근거에서 Linux/X11의 실행 확인과 macOS·Windows의 소스·컴파일 확인은 구별돼 있다.
 Windows의 fragment navigation과 사용자 제스처 전달, macOS 메뉴바와 키 중복 처리는 실제 환경에서 확인해야 하는 항목이다.
-이번 문서 재작성에서 플랫폼 실행 검증을 추가하지 않았다.
+이 문서의 소스 설명만으로 해당 플랫폼의 실행 검증을 대신하지 않는다.
 
 ## 원격 리소스 차단
 
@@ -175,6 +183,6 @@ Linux는 `^https?://` WebKit content filter를 홈의 webkit-content-filters 저
 완료 callback은 그때의 설정을 다시 읽고, 토글은 기존 필터를 제거한 뒤 필요하면 붙인다.
 macOS는 WKContentRuleList, Windows는 WebResourceRequested 거절을 사용한다. data URI는 원격 규칙에 해당하지 않는다.
 
-Linux의 필터 컴파일 전 공백과 실패 warning은 남는다. 첫 로드에서 원격 리소스가 차단되는지는 실제 화면·요청으로 확인한다.
+Linux는 필터 컴파일이 끝나기 전까지 차단하지 못하는 시간이 있으며 실패하면 경고를 남긴다. 첫 로드에서 원격 리소스가 차단되는지는 실제 화면·요청으로 확인한다.
 안전 바인딩에 없는 API만 FFI로 호출하고 boxed filter handle은 Drop에서 unref한다.
 상류가 해당 API를 제공하면 직접 FFI를 대체한다.

@@ -1,6 +1,6 @@
 # 테마 시스템 (운영 상세)
 
-색상·타이포·간격의 단일 출처인 `Theme` 와 그 위의 **UI 디자인 규칙**. 모든 UI 는 색/크기/간격을 `Theme` 에서 가져온다(하드코딩 금지).
+UI의 색·글꼴 크기·간격은 `Theme`에서 읽는다. 이 문서는 테마 저장·적용 방식과 토큰 사용 규칙을 설명한다.
 
 ## 핵심 모델
 
@@ -29,9 +29,9 @@
 
 #### 커스터마이징 모델 (불변)
 
-- **`theme_base` 는 앱 소유다.** 테마 파일(`<id>.toml`)의 내용은 앱이 관리하며, 사용자가 직접 편집하는 경로가 아니다(빌트인은 부팅 시 임베드 정본으로 동기화됨 → "빌트인 테마 정책" 참고).
+- **`theme_base` 는 앱 소유다.** 빌트인 테마 파일은 앱이 관리하고 부팅 때 임베드 원본과 동기화한다. 사용자 테마 파일은 별도 ID로 만들 수 있다. 선택한 테마 위에서 색을 조절할 때는 아래 override를 사용한다.
 - **사용자 색 변경은 오직 `theme_overrides` 로만 들어간다.** settings 가 보관하는 partial 레이어로, base 위에 resolve 시점에 얹힌다. base(파일)를 어떻게 바꾸거나 동기화해도 사용자 override 는 보존된다 — 두 레이어가 분리돼 충돌이 없다.
-- **override 를 기록하는 정식 경로 = Settings › Appearance › Colors picker.** 픽커는 flat `PartialColors` 46색(Surfaces·Overlays·Text·Accents·Terminal-specific·ANSI 16) 을 그룹별 collapsible 로 노출한다. 각 행의 "Default" 체크 = 그 필드 `None`(프리셋 base 추종), 해제 = `Some(hex)`. base 값은 resolved `theme_base` 에서 읽어 시드한다(하드코딩 없음). 행/그룹/전체 3단계 reset 으로 `None` 복귀. 저장 시 `theme_overrides` 변화가 감지되면 `AppearanceChanged` 가 발화돼 전 윈도우에 라이브 반영된다. `surface_themes`(맵 구조)는 이 flat 픽커에서 분리돼 `Tasty`/`Terminal` 섹션의 curated shortcut 으로 남되 같은 `theme_overrides` 에 기록된다.
+- **override 를 기록하는 정식 경로 = Settings › Appearance › Colors picker.** 픽커는 flat `PartialColors` 46색(Surfaces·Overlays·Text·Accents·Terminal-specific·ANSI 16) 을 그룹별 collapsible 로 노출한다. 각 행의 "Default" 체크 = 그 필드 `None`(프리셋 base 추종), 해제 = `Some(hex)`. base 값은 resolved `theme_base` 에서 읽어 시드한다(하드코딩 없음). 행/그룹/전체 3단계 reset 으로 `None` 복귀. 저장 시 `theme_overrides`가 바뀌면 `AppearanceChanged`로 모든 창에 즉시 반영한다. `surface_themes`(맵 구조)는 이 flat 픽커에서 분리돼 `Tasty`/`Terminal` 섹션의 curated shortcut 으로 남되 같은 `theme_overrides` 에 기록된다.
 - **테마를 바꾸면 `theme_overrides` 를 비운다(설계).** `apply_theme` 의 `theme_overrides.clear()` 는 부수효과가 아니라 의도다 — 테마 전환 = 그 테마의 색을 깨끗하게 적용하고 이전 테마에 얹어둔 사용자 변경분은 폐기한다. 픽커가 채운 override 도 함께 비워진다.
 
 ### Crate 책임
@@ -44,7 +44,7 @@
 | `tasty-settings::appearance` | `AppearanceSettings.{theme,theme_base,theme_overrides,theme_is_light,ui_scale}` | settings IO |
 | `tasty-design-tokens` | 디자인 DTCG export vendor(`dtcg/tasty.tokens.json`, 832 토큰 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정) + 치수 const 생성(`crates/tasty-design-tokens/src/generated/` — primitive 는 `pub(crate)` 로 3-tier 규율 강제) + **component tier 접근자 생성**(`tasty-type-appearance/src/generated_component.rs` 로 산출 — `&Theme` 경유 치수·색 접근자, 아래 "Component tier 접근자") + freshness/`SIZING` 정합/mocha·latte 색 드리프트 가드 테스트. 생성 const 는 초기값·정합용 — 런타임 소비는 `&Theme` 경유(zoom 우회 금지). vendor 갱신 절차는 crate README | 없음 |
 
-의존: `type-geometry ← type-appearance ← tasty-themes ← tasty-settings`. 순환 없음 — `tasty-core` 는 시각 schema 를 모른다(GUI-free). `tasty-design-tokens` 는 `type-geometry` 만 런타임 의존(정합 테스트만 dev-deps 로 type-appearance/themes 참조) — 본체·egui 미의존.
+의존 방향은 `type-geometry ← type-appearance ← tasty-themes ← tasty-settings`다. `tasty-design-tokens` 는 `type-geometry` 만 런타임 의존(정합 테스트만 dev-deps 로 type-appearance/themes 참조) — 본체·egui 미의존.
 
 ## 빌트인 테마 정책
 
@@ -125,7 +125,7 @@ tasty 의 색 데이터는 **단 두 출처**(테마 파일 + 빌트인 fallback
 
 **외부 입력(예외, 명시 호출 필요)**: termwiz ANSI true-color escape, 디스크 이미지/클립보드 픽셀, 직렬화 scrollback, 테스트 더미. 이들은 `dangerously_force_from_array` + 사유 주석 + `#[allow]` 필수.
 
-> settings UI 의 surface 색 picker 는 제거됐다 — surface 색은 theme TOML 의 `[surfaces.<id>]` 직접 편집.
+설정 › Appearance › Terminal에는 포커스·비포커스 배경 픽커가 있다. `draw_terminal_surface_colors`가 `theme_overrides.surface_themes["terminal"]`에 기록한다. 다른 surface 종류의 기본색은 사용자 테마 TOML의 `[surfaces.<id>]`로 정의할 수 있다.
 
 ### 컴파일 강제 — newtype
 
@@ -289,7 +289,7 @@ accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12�
 
 ### latte 중성 램프 대비 — 알려진 예외
 
-위 "텍스트 대비" 4.5:1 규칙에 대해 **latte 는 어두운 배경 토큰 위에서 구조적으로 미달**한다. 같은 계산을 반복하지 않도록 WCAG 상대휘도 공식(sRGB→선형, 0.2126/0.7152/0.0722 가중, `(L_hi+0.05)/(L_lo+0.05)`)으로 구한 전 조합을 박아 둔다. `*` 가 통과.
+Latte의 일부 어두운 배경과 글자 조합은 4.5:1 대비를 충족하지 못한다. 아래 표는 WCAG 상대휘도 공식(sRGB→선형, 0.2126/0.7152/0.0722 가중, `(L_hi+0.05)/(L_lo+0.05)`)으로 계산한 값이며 `*`는 통과를 뜻한다.
 
 | 전경 \ 배경 | crust `#dce0e8` | mantle `#e6e9ef` | base `#eff1f5` | surface0 `#ccd0da` | surface1 `#bcc0cc` | surface2 `#acb0be` | `#ffffff` |
 |---|---|---|---|---|---|---|---|
@@ -302,25 +302,25 @@ accent 채움과 테두리를 함께 쓰는 표현은 `tint_fill_alpha()` 0.12�
 - **상태바** — `bg_app`(=crust) 위 `text_muted` = **4.26:1**.
 - **탭바** — 포커스된 pane 의 탭 스트립이 `surface_raised`(=surface0), 비활성 탭 제목이 `text_muted` = **3.65:1**.
 
-**팔레트로는 고칠 수 없다.** 두 경로 모두 막혀 있다.
+text-muted 하나만 어둡게 조정하면 다음 문제가 생긴다.
 
-- `subtext0` 을 crust 통과선(`#5f6279`, 4.52:1)까지 더 내리면 `subtext1`(`#5c5f77`)과의 차가 `(3,3,2)` 로 줄어 text-muted 와 text-secondary 가 사실상 같은 색이 된다 — 3단 텍스트 위계가 latte 에서만 2단으로 붕괴한다. 그러고도 surface0 는 여전히 미달(3.88)이다.
+- `subtext0` 을 crust 통과선(`#5f6279`, 4.52:1)까지 더 내리면 `subtext1`(`#5c5f77`)과의 차가 `(3,3,2)` 로 줄어 text-muted 와 text-secondary 가 사실상 같은 색이 된다 — Latte에서 3단계 텍스트 구분이 2단계로 줄어든다. 그러고도 surface0 는 여전히 미달(3.88)이다.
 - surface0 를 통과시키려면 `subtext0` 이 `#555870` 근처여야 하는데 이는 `subtext1` 보다 **어둡다** — 램프 순서가 뒤집힌다.
 
-즉 surface0 위에서 AA 를 넘는 중성 전경은 `text` 하나뿐이고, surface1/surface2 는 `text` 조차 미달이다. 이는 catppuccin latte 의 raised/hover 배경단이 라이트 테마치고 어둡기 때문이며, 고치려면 팔레트 중성 램프 전체를 다시 뜨는 디자인 결정이 필요하다(vendored 팔레트 정체성 + DTCG export 를 함께 갈아야 한다). 컴포넌트별 회피(해당 화면만 `text_secondary`/`text_primary` 로 승격)는 가능하지만 상태바·탭바의 확정 시안을 바꾸는 일이라 디자인 요청 없이 진행하지 않는다.
+즉 surface0 위에서 AA 를 넘는 중성 전경은 `text` 하나뿐이고, surface1/surface2 는 `text` 조차 미달이다. 이는 catppuccin latte 의 raised/hover 배경단이 라이트 테마치고 어둡기 때문이며, 고치려면 중성색 팔레트 전체를 다시 설계하고 저장소의 팔레트 사본과 DTCG export를 함께 갱신해야 한다. 컴포넌트별 회피(해당 화면만 `text_secondary`/`text_primary` 로 승격)는 가능하지만 상태바·탭바의 확정 시안을 바꾸는 일이라 디자인 요청 없이 진행하지 않는다.
 
 **새 UI 를 그릴 때는 이 표를 근거로 배경을 고른다** — muted 캡션을 얹을 배경은 `base`/`mantle`/`#ffffff` 로 한정하고, `surface0` 이상 어두운 배경 위에는 `text_primary` 를 쓴다.
 
 ### Host UI zoom
 
-`AppearanceSettings.ui_scale`(`small/medium/large` = `0.85/1.0/1.2`). `install_global_with_runtime`(`ThemeRuntime.ui_zoom`) 이 `Theme::with_colors_and_zoom` 으로 sizing 토큰 자체에 배율을 곱해 전역 `Theme` 재빌드 — UI 코드는 곱셈 무지(`theme().spacing_*` 가 이미 zoomed).
+`AppearanceSettings.ui_scale`(`small/medium/large` = `0.85/1.0/1.2`). `install_global_with_runtime`(`ThemeRuntime.ui_zoom`) 이 `Theme::with_colors_and_zoom` 으로 sizing 토큰 자체에 배율을 곱해 전역 `Theme` 재빌드 — UI 호출부에서는 다시 배율을 곱하지 않는다(`theme().spacing_*`에 이미 적용됨).
 
 - **zoom 받음**: `spacing_*` · `font_size_*` · `corner_radius`(`_sm`/`_lg` 포함) · `focus_ring_width` · `item_height_*` · 사이드바 sizing 토큰들.
-- **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다 · `tab_indicator_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
+- **zoom 제외**: hairline(`border_width` 1px 정책 · `icon_stroke_width` — 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프 형태가 달라진다 · `tab_indicator_width`) · 탭바 토큰(`tab_width`/`tab_bar_*`) · 상태바 토큰(`status_bar_height`) · CSD 타이틀바 토큰 · 렌더 콘텐츠 폰트(터미널 `font_size_term_*` 는 별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달, markdown `font_size_prose_h1`).
   이 목록은 **요약이고 정본이 아니다** — 정본은 `crates/tasty-type-appearance` 의 zoom 면제 가드가 든 이름 집합이며, 소스와 이름 단위로 대조된다. 필드를 새로 면제하려면 그 목록에 사유 갈래와 함께 등록해야 하고, 등록 없이 `zoomed()` 를 빼면 그 검사가 해당 필드 이름을 표시하며 실패한다. 각 필드의 사유는 필드 doc 에도 붙어 있다.
-- **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 GPU 픽셀 정수 흡수.
-- **라이브 갱신**: settings save / IPC update 시 `UiIntent::AppearanceChanged` 발화 → `cascade_appearance_changed` 가 전 윈도우 GpuState 에 broadcast(polling 아님, 변경 시 1회).
-- **불변식 — `set_theme`/`install_global*` 은 렌더 밖에서만**: 전역 `THEME` 는 std `RwLock`(재진입 불가)이라, egui 렌더 클로저는 `theme()`(=`THEME.read()`) read guard 를 보유한다. 렌더 도중 `set_theme`(=`THEME.write()`)을 호출하면 자기 read guard 때문에 self-deadlock 으로 hang 한다. 따라서 테마 install 은 항상 인텐트 dispatch(`about_to_wait` / cascade) 단계에서만 수행하고, 렌더 핸들러(설정 모달 Save 등)는 `UpdateSettings` 인텐트만 큐잉한다(install 직접 호출 금지).
+- **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 정수 픽셀로 반올림.
+- **라이브 갱신**: settings save / IPC update 시 `UiIntent::AppearanceChanged` 발생 → `cascade_appearance_changed` 가 전 윈도우 GpuState 에 broadcast(polling 아님, 변경 시 1회).
+- **불변식 — `set_theme`/`install_global*` 은 렌더 밖에서만**: 전역 `THEME` 는 std `RwLock`(재진입 불가)이라, egui 렌더 클로저는 `theme()`(=`THEME.read()`) read guard 를 보유한다. 렌더 도중 `set_theme`(=`THEME.write()`)을 호출하면 자기 read guard 때문에 자기 읽기 잠금을 기다리는 교착 상태가 된다. 따라서 테마 install 은 항상 인텐트 dispatch(`about_to_wait` / cascade) 단계에서만 수행하고, 렌더 핸들러(설정 모달 Save 등)는 `UpdateSettings` 인텐트만 큐잉한다(install 직접 호출 금지).
 
 ## 코드 위치
 

@@ -1,12 +1,12 @@
 # 에이전트 메모리 시스템
 
-`~/.tasty/memory.db` (SQLite WAL 단일 파일)에 저장되는 영속 키-값 스토어. AI 에이전트·plugin 이 작업 도중 누적·검색·공유하는 데이터의 backing store 다.
-본 바이너리는 `init_with_config` 로 연 store 를 `Arc<Mutex<dyn MemoryStorage>>` 로 Core 에 주입해 동기 접근한다(`crates/tasty-memory/`). 이 문서는 **가시성·소유권 모델**을 정의한다.
-암호화 안 하는 결정의 근거는 [ADR-0011](../../adr/0011-secrets-and-local-trust.md), IPC trust boundary 는 [ADR-0006](../../adr/0006-bounded-ipc-transport.md).
+`~/.tasty/memory.db`는 AI 에이전트와 plugin의 작업 데이터를 저장하는 SQLite WAL 기반 키-값 저장소다. 본체는 `init_with_config`로 열고 `Arc<Mutex<dyn MemoryStorage>>`로 Core에 전달해 동기 접근한다(`crates/tasty-memory/`).
+
+이 문서는 조회 범위와 소유권을 설명한다. 저장 암호화를 제공하지 않는 이유는 [ADR-0011](../../adr/0011-secrets-and-local-trust.md), IPC의 신뢰 범위는 [ADR-0006](../../adr/0006-bounded-ipc-transport.md)을 따른다.
 
 ## 책임 범위
 
-에이전트·plugin 작업 데이터의 1차 저장소다. 수 KB(토큰)부터 수백 KB~1 MiB(캐시된 JSON, 누적 상태)까지 자연스럽게 다루지만 **만능 저장소는 아니다.** cap 을 넘는 데이터는 **파일로 분리하고 그 경로를 memory entry 로** 저장한다(memory.db 비대 방지, 명시적 lifecycle, OS 도구 호환).
+수 KB의 토큰부터 수백 KB~1 MiB의 캐시·JSON·누적 상태를 저장한다. 용량 상한을 넘는 데이터는 파일로 분리하고 메모리에는 경로를 저장한다. 큰 파일의 수명을 따로 관리하고 OS 도구로도 사용할 수 있다.
 
 | 책임진다 | 책임지지 않는다 |
 |---|---|
@@ -39,13 +39,13 @@ CallerContext::Local      → owner = "_host"    (HOST_OWNER, CLI·사용자)
 
 ## Regular — 공유 네임스페이스 + owner enforcement
 
-`(scope, key)` 가 **전역 unique**. 신규 `put` 시 owner 를 host 가 도장찍고(caller 가 명시 불가), 갱신·삭제 시 owner check:
+`(scope, key)` 가 **전역 unique**. 신규 `put` 시 owner 를 호스트가 지정하고(호출자가 지정할 수 없음), 갱신·삭제 시 owner check:
 
 | Caller | Entry owner | 결과 |
 |--------|-------------|------|
-| Plugin A | Plugin A | OK |
+| Plugin A | Plugin A | 허용 |
 | Plugin A | Plugin B / `_host` | `OwnedByOther` (`-32006`) |
-| `_host` | anything | OK (root) |
+| `_host` | 모든 소유자 | 허용(관리자) |
 
 regular 읽기는 공유 데이터를 조회하되, 권한을 받는 caller의 raw KV 요청에서는 `tasty.` 호스트 예약 키를 숨긴다([권한 규칙](../../dev-guide/plugin-permissions.md#호스트-키-namespace-는-memory-권한으로-열리지-않는다)). 응답에 `owner` 가 포함된다("누가 만들었나"). 권한 토큰(`memory.read`/`write`)은 *메서드 호출 가능 여부*, owner check 는 *그 entry 권한* — 둘 다 통과해야 쓰기 성공.
 
@@ -64,15 +64,9 @@ tasty memory goal {set|get|clear} [--surface <id>]                        # surf
 
 `--owner` 플래그는 없다. 특정 plugin 의 regular entry 만 보려면 응답의 owner 를 grep/jq 로 사후 필터.
 
-regular 와 secret 은 **짝마다 같은 params 를 받는다** — 핸들러가 같은 키를 읽고, secret 쪽은
-owner 자동 부착과 응답의 owner 생략만 다르다. 그래서 **CLI 플래그도 짝마다 같게 유지한다.**
-한쪽에만 플래그를 더하면 서버는 받는데 CLI 로는 닿을 길이 없는 자리가 생기고, 그 어긋남은
-두 `--help` 를 나란히 놓고 읽기 전에는 보이지 않는다.
+regular와 secret의 대응 메서드는 같은 인자를 받는다. secret의 소유자 조건과 응답에서 owner를 생략하는 점만 다르므로 CLI 플래그도 같게 유지한다.
 
-scope 선택자(`--scope` 와 alias 다섯)는 두 계열의 모든 자리가 **한 벌을 공유한다**. 자리마다
-따로 적으면 설명·충돌 규칙이 자리 수만큼 갈린다 — `crates/tasty-cli/src/commands/memory.rs`
-의 `ScopeArgs` 가 그 한 벌이고, 같은 파일의 테스트가 모든 자리에서 여섯이 온전한지·설명이
-있는지·서로 배타인지를 clap 명령 트리에서 직접 확인한다.
+범위 선택은 `crates/tasty-cli/src/commands/memory.rs`의 `ScopeArgs`를 공유한다. `--scope`와 별칭 다섯 개를 각 명령에서 반복 정의하지 않는다. 같은 파일의 테스트가 clap 명령 트리에서 여섯 선택자의 존재·도움말·상호 배타 여부를 확인한다.
 
 ## 스코프 확장 구조
 
@@ -99,13 +93,13 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
 | Plugin secret quota | plugin 별 secret 합 | 10 MiB | `QuotaExceeded { scope: "secret" }` |
 | Regular global quota | regular 전체 합 | 1 GiB | `QuotaExceeded { scope: "regular" }` |
 
-`~/.tasty/config.toml` `[memory]` 의 `entry_max_mb`/`secret_quota_mb_per_plugin`/`regular_quota_mb_total` 로 재정의. **eviction 안 함** — 초과 시 명시적 에러(데이터가 말없이 사라지는 surprise 방지). `_host` 도 quota 를 받는다(root 는 owner check 에만 적용, 비대 방지는 동일).
+`~/.tasty/config.toml` `[memory]` 의 `entry_max_mb`/`secret_quota_mb_per_plugin`/`regular_quota_mb_total` 로 재정의. 초과하면 기존 데이터를 자동 삭제하지 않고 오류를 반환한다. `_host` 도 quota 를 받는다(root 는 owner check 에만 적용, 비대 방지는 동일).
 
 ## 파일 위생 — WAL 크기와 부팅 정리
 
-`memory.db` 는 WAL 모드라 `memory.db-wal`(로그) · `memory.db-shm`(WAL-index) 을 함께 갖는다. 이 두 파일은 **가만히 두면 줄지 않는다** — SQLite 는 체크포인트 후에도 재사용을 위해 WAL 파일 크기를 유지하기 때문이다.
+`memory.db` 는 WAL 모드라 `memory.db-wal`(로그) · `memory.db-shm`(WAL-index) 을 함께 갖는다. SQLite는 체크포인트 뒤에도 재사용을 위해 WAL 파일 크기를 유지하므로 체크포인트 성공이 곧 파일 축소를 뜻하지는 않는다.
 
-- **되감기 한도**: `prepare()` 가 `journal_size_limit` 을 `WAL_SIZE_LIMIT_BYTES`(= `wal_autocheckpoint` 임계와 정확히 같은 1000 페이지 × 4096B)로 건다. 한도를 넘긴 WAL 은 다음 되감기에서 잘려 나간다. **이 값은 활성 WAL 의 상한이 아니다** — 되감기가 일어날 때 남길 크기일 뿐이라, 읽는 쪽이 오래된 스냅샷을 쥐고 있어 되감기가 막힌 동안이나 큰 트랜잭션 도중에는 WAL 이 이 값을 넘어 계속 자란다(실측 2026-09-22, 격리 홈의 headless debug 인스턴스: 다른 연결이 읽기 트랜잭션을 쥔 채 900 000 B 값 6 건을 쓰면 활성 WAL 이 16 512 → 5 582 632 B 까지 컸고, 읽기를 푼 뒤의 다음 쓰기에서 정확히 4 096 000 B 로 잘렸다). 이 pragma 가 없으면 큰 트랜잭션이나 VACUUM 으로 한 번 부푼 WAL 이 프로세스 수명 내내 고착되고, `wal_autocheckpoint` 임계를 영구 초과한 상태가 되어 **커밋마다 그 크기만큼 WAL-index 를 훑는다**(실측: 169MB WAL 이 메인 스레드 CPU 를 상시 점유).
+- **되감기 한도**: `prepare()`는 `journal_size_limit`을 `WAL_SIZE_LIMIT_BYTES`로 설정한다. 값은 `wal_autocheckpoint` 기준과 같은 1000페이지 × 4096B다. 이보다 큰 WAL은 다음 되감기에서 줄어든다. **활성 WAL의 크기 상한은 아니다.** 오래된 읽기 스냅샷이 되감기를 막거나 큰 트랜잭션을 처리하는 동안에는 더 커질 수 있다. 한도를 두지 않으면 커진 WAL이 계속 남아 커밋마다 WAL-index를 확인하는 비용이 커질 수 있다.
 - **회수**: 한도는 되감기 때만 작동하므로, 이미 커진 WAL 은 `MemoryStore::checkpoint_truncate()` 로 되감기를 한 번 강제해야 줄어든다. 부팅 위생 정리(`src/boot.rs::maintain_memory_at_boot`)가 이것을 **VACUUM 뒤에** 1 회 수행한다 — VACUUM 은 DB 를 통째로 다시 쓰므로 그 자체로 WAL 을 크게 부풀린다.
 - 같은 상한이 `state.db` 에도 적용된다 — 두 DB 가 **같은 함수**(`tasty_memory::pragma::apply_connection_pragmas`)를 부른다([storage](storage.md)).
 - **위 문단의 WAL 은 파일 DB 일 때의 이야기다.** `MemoryStore::open_in_memory` 로 연 DB 는
@@ -113,13 +107,13 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   남는다(반환값은 성공이다). 그 모드에는 `-wal`·`-shm` 도, 여기 적은 위생 문제도 없다.
   그래서 그 값은 실패가 아니라 정상 결과로 규정하고 경고하지 않는다 —
   [ADR-0010](../../adr/0010-storage-failure-reporting.md).
-  반대로 **파일 DB 가 `memory` 로 서면 정상이 아니다** — 허용 결과는 모드별이다. 열린
+  반대로 **파일 DB가 `memory` 모드로 열리면 정상이 아니다** — 허용 결과는 모드별이다. 열린
   스토어는 되읽은 결과를 `MemoryStore::applied_pragmas()` 로 들고 있고, 실행 중에는
   `system.pressure` 의 `db_pragmas.memory_db`(CLI `tasty list pressure`)로 조회한다
   ([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
 - **내구성 범위**(`synchronous=NORMAL` — 프로세스 kill 은 견디고 전원 장애는 최신 commit 을
   약속하지 않는다)와 **저장 실패의 의미**(원인 분류 · 실패한 쓰기는 quota 카운터와 변경
-  버퍼를 안 옮긴다)는 [storage](storage.md) 의 두 절이 정본이다.
+  알림 버퍼를 갱신하지 않는다)는 [storage](storage.md) 의 두 절이 정본이다.
 - **부팅이 `memory.db` 를 못 열면 앱은 in-memory 대체로 계속 뜬다** — `state.db` 와 달리 종료하지
   않는다. 그 상태의 쓰기는 재시작에 사라지므로 `db_pragmas.memory_db` 가 `degraded: true` 와
   `init_failure` 로, 쓰기 응답이 `durable: false` 로 그 사실을 말한다. 정본은 [storage](storage.md)
@@ -134,7 +128,7 @@ Local TCP 연결의 신뢰 범위는 [IPC 서버](../../architecture/ipc-server.
 
 ### Passkey 저장과 열람
 
-Passkey는 프로필에서 이름으로 참조하며 passkeys.toml에는 name·kind·path만 저장한다. path는 사용자 파일을 참조하고 inline은 Tasty 소유 파일로 만들어 삭제 시 함께 지운다. Unix 파일 0600·디렉터리 0700으로 보호하고 대화형 이름은 허용 문자 밖을 거절하되 migration 이름은 치환한다. IPC·CLI는 내용을 반환하지 않고 마스킹한다. 로컬 GUI와 승인된 plugin의 선언 타입 열람은 설치 신뢰에 기반한 편의이며 OS 수준 격리를 뜻하지 않는다. 암호화·master passphrase는 headless 자동 접속과 플랫폼 비용 때문에 현재 보류다.
+Passkey는 프로필에서 이름으로 참조하며 passkeys.toml에는 name·kind·path만 저장한다. path는 사용자 파일을 참조하고 inline은 Tasty 소유 파일로 만들어 삭제 시 함께 지운다. Unix 파일 0600·디렉터리 0700으로 보호하고 대화형 이름은 허용 문자 밖을 거절하되 migration 이름은 치환한다. IPC·CLI는 내용을 반환하지 않고 마스킹한다. 로컬 GUI와 승인된 plugin의 선언 타입 열람은 설치 신뢰에 기반한 편의이며 OS 수준 격리를 뜻하지 않는다. 저장 암호화·마스터 암호는 headless 자동 접속과 플랫폼 비용 때문에 현재 보류다.
 
 ## 관련
 
