@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
 
     writeln!(out)?;
     writeln!(out, "=== StubBridge logs (host_call / log) ===")?;
-    // 로그 잠금이 poison되면 저장된 로그 출력을 건너뛴다.
+    // 이유: 로그 잠금이 poison되면 저장된 로그 출력을 건너뛴다.
     if let Ok(g) = bridge.logs.lock() {
         for (i, (lvl, msg)) in g.iter().take(10).enumerate() {
             writeln!(out, "  [{i}] {lvl} {msg}")?;

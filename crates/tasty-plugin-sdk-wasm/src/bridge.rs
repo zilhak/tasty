@@ -37,7 +37,7 @@ impl HostBridge for StubBridge {
     }
 
     fn log(&self, level: &str, msg: &str) {
-        // 로그 잠금이 poison되면 이 실험 실행기는 해당 로그를 저장하지 않는다.
+        // 이유: 로그 잠금이 poison되면 이 실험 실행기는 해당 로그를 저장하지 않는다.
         if let Ok(mut g) = self.logs.lock() {
             g.push((level.into(), msg.into()));
         }
