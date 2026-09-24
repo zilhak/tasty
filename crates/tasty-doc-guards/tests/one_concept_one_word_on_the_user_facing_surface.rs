@@ -95,7 +95,7 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
         path: "site/content/using/files.md",
         phrase: "주소창",
-        count: 3,
+        count: 4,
         evidence: "낱말이 다르다 — 탐색기의 address bar 다. Window 를 가리키지 않는다",
     },
     NotAWindow {

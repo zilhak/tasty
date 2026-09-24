@@ -1,4 +1,4 @@
-<!-- source-hash: ac04c8db714f -->
+<!-- source-hash: c59cfc311632 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -57,6 +57,14 @@ Click the address bar to type a path directly; recently visited folders appear a
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
 
 Click to select, `Ctrl+click` to add, `Shift+click` to select a range.
+
+### Type to find
+
+With the list focused, type the first letters of a file name and the first item starting with those letters is selected and scrolled into view. This works the same in Grid, List and Detail view. Press the same letter again to step through the candidates (after the last one it wraps to the first); type different letters in a row and it becomes a prefix search such as `co` then `con`. Case is ignored, and pausing for about a second starts a new search. If no name matches, the selection stays where it was.
+
+While you are editing the address bar or a popup is open, the letters go there instead. If you have several Explorers open, only the focused one moves.
+
+If you have bound a shortcut to a single letter with no modifier (the default settings have none), that letter acts only as the shortcut and is not used here.
 
 ### Right-click menu
 

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use tasty_model::{ExplorerPanel, SortColumn, SortDir, SurfaceId};
 
+use super::type_ahead::TypeAhead;
 pub(crate) use crate::core::fs_list::{DirEntryInfo, human_size};
 use crate::core::fs_list::{read_dir_entries, sort_entries};
 use crate::i18n::t;
@@ -76,6 +77,11 @@ pub struct ExplorerView {
     remote_state: HashMap<PathBuf, RemoteLoadState>,
     /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
     outbox: Vec<ExplorerListRequest>,
+    /// 타입어헤드 입력 버퍼(영숫자로 항목 선택). 규칙은 `type_ahead` 모듈에 있다.
+    pub type_ahead: TypeAhead,
+    /// 이번 프레임에 보이도록 스크롤할 항목 경로. **쓰고 나면 비운다** — 남겨두면
+    /// 매 프레임 재스크롤이 되어 사용자가 휠로 다른 곳을 볼 때 끌려간다.
+    pub scroll_to: Option<PathBuf>,
 }
 
 impl ExplorerView {
@@ -95,7 +101,17 @@ impl ExplorerView {
             mirror_ws_id: None,
             remote_state: HashMap::new(),
             outbox: Vec::new(),
+            type_ahead: TypeAhead::default(),
+            scroll_to: None,
         }
+    }
+
+    /// 타입어헤드 입력을 버린다. 내부 탭 전환/추가/닫기처럼 목록이 통째로 바뀌는
+    /// 자리에서 호출한다 — 이전 탭에서 치던 접두사가 새 목록에 이어지면 안 된다.
+    /// (디렉토리·정렬 변경은 `sync()` 가 스스로 처리한다.)
+    pub fn reset_type_ahead(&mut self) {
+        self.type_ahead.reset();
+        self.scroll_to = None;
     }
 
     /// 주소창 편집을 취소한다. 내부 탭 전환/nav 로 cwd 가 바뀔 때 호출해 편집 버퍼가
@@ -163,6 +179,9 @@ impl ExplorerView {
             return;
         }
         self.reload_requested = false;
+        // 목록이 바뀌는 것이 확정된 자리다. 정렬만 바뀌어도 인덱스 의미가 달라지므로
+        // 디렉토리 변경(`dir_changed`)보다 넓은 이 조건에서 버퍼를 비운다.
+        self.reset_type_ahead();
         if dir_changed {
             self.selected.clear();
             self.anchor = None;
@@ -514,6 +533,29 @@ mod tests {
             .navigate_to(PathBuf::from("/tmp/beta"));
         view.sync(&panel, None);
         assert_eq!(view.addr_buffer, "/tmp/typed");
+    }
+
+    /// 목록이 다시 적재되면 타입어헤드 버퍼가 비워진다 — 새 디렉토리에서 옛 접두사가
+    /// 이어지면 사용자가 치지 않은 글자로 검색하는 것이 된다.
+    ///
+    /// 버퍼는 사적이라 값으로 못 보고, 다음 입력이 무엇으로 검색되는지로 잰다:
+    /// 비워지지 않았으면 "ab" 로 찾아 `None`, 비워졌으면 "b" 로 찾아 `bravo`.
+    #[test]
+    fn reloading_the_listing_clears_the_type_ahead_buffer() {
+        let names = vec!["alpha".to_string(), "bravo".to_string()];
+        let panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
+        let mut view = ExplorerView::new();
+        view.sync(&panel, None);
+
+        let now = std::time::Instant::now();
+        assert_eq!(view.type_ahead.feed('a', now, &names, None), Some(0));
+
+        // 정렬만 바꿔도 인덱스 의미가 달라지므로 같은 자리에서 비워져야 한다.
+        let mut panel = panel;
+        panel.active_tab_mut().sort_dir = SortDir::Desc;
+        view.sync(&panel, None);
+
+        assert_eq!(view.type_ahead.feed('b', now, &names, None), Some(1));
     }
 
     /// cancel_addr_edit 후 sync 가 새 cwd 로 재동기화(내부 탭 전환/nav 누수 방지).

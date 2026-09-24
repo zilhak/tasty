@@ -122,6 +122,18 @@ pub fn draw_egui_panels(
         .unwrap_or_default();
     // 렌더 중 state를 빌리기 전에 최근 폴더를 한 번 읽어 둔다.
     let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND);
+    // 타입어헤드 게이트 — 셋 다 `state`/`engine` 을 읽어야 해서 가변 차용 루프에
+    // 들어가기 전에 값으로 뽑아 둔다(위 스냅샷들과 같은 이유).
+    let focused_surface_id = state.focused_surface_id(engine);
+    // 전체화면 무대도 함께 본다 — 무대가 떠 있는 동안 그 뒤 세계로 입력이 새면 안 된다.
+    let overlay_open = state.keyboard_overlay_open() || state.fullscreen_stage_active();
+    // 바인딩 61 개를 훑어 파싱하므로, explorer 패널이 하나도 없는 프레임에는 짓지 않는다
+    // (`explorer_cwd` 는 `ExplorerPanel` 일 때만 채워진다).
+    let explorer_shortcut_chars = if infos.iter().any(|i| i.explorer_cwd.is_some()) {
+        crate::explorer_ui::type_ahead::unmodified_binding_chars(&engine.settings.keybindings)
+    } else {
+        std::collections::HashSet::new()
+    };
 
     for info in &infos {
         let id_suffix = info
@@ -181,6 +193,12 @@ pub fn draw_egui_panels(
                         &explorer_cut_pending,
                         &explorer_recent_dirs,
                         mirror_ws_id,
+                        &crate::explorer_ui::ExplorerInput {
+                            focused: info.surface_id.is_some()
+                                && info.surface_id == focused_surface_id,
+                            overlay_open,
+                            shortcut_chars: &explorer_shortcut_chars,
+                        },
                     )
                 },
             );
@@ -404,6 +422,9 @@ pub(crate) fn apply_explorer_action(
             ) && let Some(v) = state.explorer_views.get_mut(sid)
             {
                 v.cancel_addr_edit();
+                // 타입어헤드 버퍼도 같은 이유로 버린다. `sync` 의 재적재 경로만으로는
+                // cwd 가 같은 내부 탭 사이 전환이 안 잡힌다.
+                v.reset_type_ahead();
             }
         }
     }

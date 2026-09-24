@@ -2,6 +2,7 @@
 //! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
 pub mod ops;
+pub mod type_ahead;
 pub mod view;
 
 use std::collections::HashSet;
@@ -83,6 +84,22 @@ pub enum ExplorerMenuTarget {
     Favorite { path: PathBuf },
 }
 
+/// 타입어헤드가 키를 소비해도 되는지 판정하는 데 필요한, explorer 밖에서 오는 값들.
+/// 렌더 루프 안에서는 `state`/`engine` 이 배타 차용돼 읽을 수 없어 프레임당 1 회 계산해
+/// 넘긴다(`egui_panels` 의 favorites·cut_pending 스냅샷과 같은 이유).
+pub struct ExplorerInput<'a> {
+    /// 이 surface 가 포커스된 surface 인가. **egui 이벤트 큐는 전역이라** 이 게이트가
+    /// 없으면 한 번의 타이핑이 열려 있는 모든 explorer 의 선택을 동시에 움직인다.
+    pub focused: bool,
+    /// 팝업·모달·입력 다이얼로그가 떠 있는가. 그때도 키는 egui 로 들어오므로
+    /// (`view::main` 의 feed 조건이 `overlay_open || egui_surface`) 여기서 따로 막지
+    /// 않으면 뒤에 있는 explorer 의 선택이 조용히 움직인다.
+    pub overlay_open: bool,
+    /// 수식 없이 바인딩된 영숫자 — 그 글자는 단축키 쪽에 양보한다
+    /// (`type_ahead::unmodified_binding_chars`).
+    pub shortcut_chars: &'a HashSet<char>,
+}
+
 /// 한 explorer surface 를 그린다. 사용자 조작이 있었으면 첫 액션을 반환.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_explorer(
@@ -95,10 +112,13 @@ pub fn draw_explorer(
     cut_pending: &HashSet<PathBuf>,
     recent_dirs: &[String],
     mirror_ws_id: Option<u32>,
+    input: &ExplorerInput<'_>,
 ) -> Option<ExplorerAction> {
     let th = theme::theme();
     let theme: &Theme = &th;
     let mut action: Option<ExplorerAction> = None;
+
+    apply_type_ahead(ui, view, input);
 
     ui.set_min_size(ui.available_size());
     // 하위 위젯이 처리하지 않은 우클릭은 탐색기 전체 영역에서 받는다.
@@ -1092,6 +1112,66 @@ fn entry_icon(theme: &Theme, e: &DirEntryInfo) -> (Icon, egui::Color32) {
     }
 }
 
+/// 이번 프레임의 문자 입력을 타입어헤드로 소비해 선택과 스크롤 대상을 정한다.
+///
+/// 이벤트를 큐에서 **빼지 않는다.** 주소창 `TextEdit` 도 같은 큐를 읽는데, 그쪽이
+/// 활성일 때는 아래 `addr_editing` 게이트가 이미 이 함수를 통째로 막으므로 이중 입력이
+/// 생기지 않는다. 큐를 건드리면 오히려 다른 위젯의 입력을 삼킬 위험이 생긴다.
+fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInput<'_>) {
+    // 스크롤 대상은 한 프레임만 산다 — 남겨두면 매 프레임 재스크롤이 되어 사용자가
+    // 휠로 다른 곳을 보는 동안 끌려간다.
+    view.scroll_to = None;
+
+    if !input.focused
+        || input.overlay_open
+        || view.addr_editing
+        || !matches!(view.state, LoadState::Ok)
+        || view.entries.is_empty()
+    {
+        // 게이트가 거짓인 프레임에는 버퍼도 버린다 — 돌아왔을 때 옛 접두사가 이어지면
+        // 사용자가 치지 않은 글자로 검색하는 것이 된다.
+        view.type_ahead.reset();
+        return;
+    }
+
+    let typed: Vec<char> = ui.input(|i| {
+        i.events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Text(text) => type_ahead::type_ahead_char(text),
+                _ => None,
+            })
+            .collect()
+    });
+    if typed.is_empty() {
+        return;
+    }
+
+    let names: Vec<String> = view.entries.iter().map(|e| e.name.clone()).collect();
+    let now = std::time::Instant::now();
+    for ch in typed {
+        if input.shortcut_chars.contains(&ch.to_ascii_lowercase()) {
+            continue;
+        }
+        let selected = single_selection_index(view);
+        if let Some(i) = view.type_ahead.feed(ch, now, &names, selected) {
+            let path = view.entries[i].path.clone();
+            view.select_only(&path);
+            view.scroll_to = Some(path);
+        }
+    }
+}
+
+/// 검색 시작점이 되는 선택 인덱스. 선택이 없거나 여럿이면 `None` — 어느 항목 다음부터
+/// 돌지 정할 수 없으므로 목록 처음부터 찾는다.
+fn single_selection_index(view: &ExplorerView) -> Option<usize> {
+    if view.selected.len() != 1 {
+        return None;
+    }
+    let sel = view.selected.iter().next()?;
+    view.entries.iter().position(|e| &e.path == sel)
+}
+
 /// 합성 `..` 엔트리. **렌더 전용** — `view.entries`/선택/상태줄/컨텍스트 메뉴에는 절대
 /// 넣지 않는다. 각 뷰가 목록 앞에 특수 행으로 그리고 `Navigate(parent)` 만 emit 한다.
 fn dotdot_entry(parent: PathBuf) -> DirEntryInfo {
@@ -1131,6 +1211,9 @@ fn grid_view(
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
             let resp = grid_cell(ui, theme, e, selected, cut, font);
+            if view.scroll_to.as_deref() == Some(e.path.as_path()) {
+                resp.scroll_to_me(Some(egui::Align::Center));
+            }
             if !handle_entry_context(view, e, &resp, root, action) {
                 handle_entry_interaction(ui, view, e, &resp, action);
             }
@@ -1284,6 +1367,9 @@ fn list_view(
                 )
             })
             .inner;
+        if view.scroll_to.as_deref() == Some(e.path.as_path()) {
+            resp.scroll_to_me(Some(egui::Align::Center));
+        }
         if !handle_entry_context(view, e, &resp, root, action) {
             handle_entry_interaction(ui, view, e, &resp, action);
         }
@@ -1352,6 +1438,9 @@ fn detail_view(
     rows.extend(view.entries.iter().cloned());
     let selected: HashSet<PathBuf> = view.selected.clone();
     let cut: HashSet<PathBuf> = cut_pending.clone();
+    // `Table` 은 행 `Response` 를 돌려주지 않고 가상 스크롤도 하지 않으므로, 대상 행이
+    // 그려지는 자리에서 직접 스크롤을 요청한다. 위젯 쪽은 고치지 않는다.
+    let scroll_to: Option<PathBuf> = view.scroll_to.clone();
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
         .header_fill(theme.bg_sidebar().to_egui())
@@ -1375,6 +1464,11 @@ fn detail_view(
                 };
                 match col {
                     0 => {
+                        // `..` 는 렌더 전용 행이라 타입어헤드 대상이 아니다. 경로만 보면
+                        // 부모 디렉토리와 겹칠 수 있어 이름으로 함께 거른다.
+                        if row.name != ".." && scroll_to.as_deref() == Some(row.path.as_path()) {
+                            ui.scroll_to_rect(ui.max_rect(), Some(egui::Align::Center));
+                        }
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                             let sz = th.icon_glyph_size_md.value();
