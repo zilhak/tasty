@@ -1,15 +1,8 @@
-//! 문자 하나가 터미널 셀을 몇 칸 차지하는가.
-//!
-//! 렌더러 · 선택 모델 · 링크 스캐너가 **같은 답**을 써야 열과 화면이 어긋나지 않는다.
-//! 종전에는 이 함수가 GPU 렌더러 모듈 안에 있어서, 셀 열을 세야 하는 도메인·입력 쪽
-//! 코드가 렌더러를 거꾸로 들여다봤다. 답을 잎으로 내려 그 방향을 없앤다.
-//!
-//! 판정은 코드포인트 구간표다 — 외부 `unicode-width` 크레이트와 결과가 같다는 보장은
-//! 없고, 여기서는 **옮기기 전과 같은 답**을 내는 것이 계약이다.
+//! 렌더러·선택·링크 검색이 공유하는 코드포인트별 셀 폭.
+//! 자체 구간표를 사용하며 unicode-width와 같은 결과를 보장하지 않는다.
 
 /// Check if a character is a wide (2-cell) character (CJK, fullwidth, etc.)
 pub fn unicode_width(ch: char) -> usize {
-    // CJK Unified Ideographs, Hangul, Fullwidth forms, etc.
     let cp = ch as u32;
     if (0x1100..=0x115F).contains(&cp)     // Hangul Jamo
         || (0x2E80..=0x303E).contains(&cp) // CJK Radicals, Kangxi, CJK Symbols

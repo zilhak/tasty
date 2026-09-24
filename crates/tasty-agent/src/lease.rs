@@ -1,9 +1,6 @@
 //! Lease primitive — 임의 resource 에 대한 협조적 점유 마커.
 //!
-//! 본 단계(Phase 5.3)는 **poll-based + 협조적 (advisory)** 모델이다. OS 락이
-//! 아니므로 lease 를 무시한 채 resource 를 만지는 행위 자체는 막지 못한다.
-//! 다중 에이전트가 자발적으로 점유 상태를 조회하고, 충돌이면 우회하거나
-//! 재시도하기로 약속할 때 의미가 있다.
+//! OS 락이 아닌 협조적 점유다. 호출자가 lease를 확인하고 충돌 시 재시도해야 한다.
 //!
 //! 영속: `tasty.agent.lease.<resource>` (workspace scope).
 //!
@@ -22,13 +19,9 @@
 //!
 //! ## Pool 모드 (`acquire_any`)
 //!
-//! `acquire`(단일 resource)와 별도로, "N개 후보 중 아무거나 하나"를 배정받는
-//! `acquire_any` 를 제공한다. `resource: String` 하나만 쓰는 기존 `acquire` 는
-//! `candidates: [resource]` 의 퇴화형과 관측적으로 동일하다 — 두 경로 모두
-//! 같은 `lease_key(resource)` 위치에 쓰기 때문에 store 상에서 자연히 충돌
-//! 판정이 일치한다. 별도 코드 경로 통합(rewrite)은 하지 않는다 — `acquire` 는
-//! 기존 호출자(`agent.lease_acquire` IPC, purge 정화 루틴)가 기대하는
-//! `LeaseConflict` 에러 형태를 그대로 유지해야 하므로 독립 구현을 보존한다.
+//! acquire_any는 후보 중 하나를 배정한다. 단일 acquire와 같은 lease 키를 사용한다.
+//! 단일 충돌의 LeaseConflict와 후보 소진 오류는 서로 다른 응답이므로 두 API를 유지한다.
+//! 이름을 배정할 뿐 실제 파일이나 Git 워크트리를 만들지는 않는다.
 //!
 //! 두 서브모드:
 //! - **fixed** (기본, `elastic` 생략): 주어진 `candidates` 안에서만 순회.
@@ -39,26 +32,10 @@
 //!   합성해 즉시 점유한다. `max_candidates` 가 있으면 그 상한(고정 candidates
 //!   개수 + 합성된 개수)까지만 증설하고, 넘으면 fixed 와 동일하게 대기/실패.
 //!
-//! 합성된 이름의 원자성: pool 별로 카운터를 하나 영속(`pool_counter_key`)
-//! 해 두고, "현재 카운터 읽기 → 후보 스캔 → (소진 시) 카운터 +1 → 새 이름으로
-//! acquire" 전체를 **`acquire_any` 한 호출 안에서, 같은 `&mut dyn
-//! MemoryStorage` 로 순차 수행**한다. 호출자(`HostExecutor::try_acquire_lease`)
-//! 가 이 호출 전체를 `RunnerContext::with_memory` 클로저 하나 안에서 실행하는
-//! 한(기존 관례와 동일), 그 클로저가 프로세스 전역 `Mutex` 를 처음부터 끝까지
-//! 쥐고 있으므로 다른 스레드(다른 workspace runner, IPC 핸들러 등)가 같은
-//! pool 카운터 키를 동시에 읽고 쓸 수 없다 — 별도 CAS/락 primitive 없이 기존
-//! `with_memory` 관례만으로 충분하다 (`crates/tasty-agent/src/lease.rs`
-//! 밖의 근거: `RunnerRegistry` 가 workspace 당 runner thread 를 정확히 하나만
-//! 허용해 워크스페이스 내부 경쟁도 없고, `Core::memory` 는 모든 workspace가
-//! 공유하는 단일 `Arc<Mutex<dyn MemoryStorage>>` 라 워크스페이스 간 경쟁은 그
-//! 전역 락 하나로 직렬화된다).
-//!
-//! 합성된 candidate 의 재사용: 카운터는 "지금까지 합성된 개수의 상한"일 뿐,
-//! 현재 점유 개수가 아니다. `acquire_any` 는 매번 `candidates ++
-//! (1..=counter 로 합성된 이름들)` 전체를 다시 스캔하므로, 합성됐다가
-//! `release` 된 이름은 다음 `acquire_any` 호출에서 빈 자리로 재발견되어
-//! 재사용된다 — 카운터가 증가하는 건 오직 "그 스캔에서도 빈 자리가 전혀
-//! 없었을 때"뿐이다.
+//! 호출자는 acquire_any 전체를 같은 memory 락 안에서 실행해야 한다.
+//! 호스트의 RunnerContext::with_memory가 카운터 조회·후보 선택·점유를 직렬화한다.
+//! 카운터는 합성한 이름 수이며 현재 점유 수가 아니다. 반환된 이름을 먼저 재사용하고,
+//! 기존 후보와 합성 후보가 모두 점유됐을 때만 카운터를 늘린다.
 
 use serde::{Deserialize, Serialize};
 use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
@@ -72,10 +49,7 @@ pub const LEASE_KEY_PREFIX: &str = "tasty.agent.lease.";
 /// [`pool_counter_key`] 가 pool 을 식별하는 `candidates` 배열로부터 만든다.
 pub const LEASE_POOL_COUNTER_KEY_PREFIX: &str = "tasty.agent.lease_pool_counter.";
 
-/// 임의 바이트열을 memory 키 허용 문자(`[a-z0-9._-]`)만 쓰는 stable 토큰으로
-/// 변환. 디코딩이 필요 없으므로(원본은 JSON value 에 같이 저장됨) 안전한 단방향
-/// 인코딩이면 충분. `_` 는 escape sentinel 이라 `__` 로 더블링하고, 그 외
-/// 비허용 바이트는 `_<hex>` 로 치환한다 — 두 형식이 충돌하지 않음.
+/// memory 키의 허용 문자로 인코딩한다. `_`는 `__`, 나머지 비허용 바이트는 `_xx`로 쓴다.
 fn encode_key_component(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
@@ -95,14 +69,8 @@ fn lease_key(resource: &str) -> String {
     format!("{LEASE_KEY_PREFIX}{}", encode_key_component(resource))
 }
 
-/// pool 카운터 key. `_-` 를 구분자로 각 candidate 를 이어붙여 pool 정체성을
-/// 만든다 — memory key 허용 문자(`[a-z0-9._-]`)만 써야 해서 `~` 같은 별도
-/// 구분자 문자를 못 쓴다. `_-` 는 [`encode_key_component`] 가 절대 만들어내지
-/// 않는 2바이트 시퀀스라 구분자로 안전하다: 그 함수가 내는 이스케이프는
-/// `__`(리터럴 `_`) 아니면 `_` + 소문자 hex 2자리뿐이고 `-` 는 hex 자릿수가
-/// 아니므로 `_-` 는 이스케이프 출력에 결코 나타나지 않는다(raw `-` 는 애초에
-/// 이스케이프 없이 그대로 통과한다). pool 정체성은 candidates 배열(순서 포함)
-/// 그 자체다 — 같은 배열을 선언하는 모든 호출이 같은 pool 카운터를 공유한다.
+/// 인코딩한 후보를 순서대로 연결하는 구분자. 후보 배열의 순서도 pool 식별에 포함한다.
+/// `_`를 이중화한 인코딩과 함께 사용한다.
 const POOL_KEY_SEPARATOR: &str = "_-";
 
 fn pool_counter_key(candidates: &[String]) -> String {
@@ -295,7 +263,6 @@ impl<'a> LeaseStore<'a> {
         let existing = self.get(workspace_id, resource)?;
         if let Some(cur) = existing {
             if cur.holder == holder {
-                // idempotent 재acquire — TTL 갱신.
                 let lease = Lease {
                     workspace_id,
                     resource: resource.to_string(),
@@ -321,7 +288,6 @@ impl<'a> LeaseStore<'a> {
                     }),
                 };
             }
-            // 만료 — evict 후 새로 점유.
         }
 
         let lease = Lease {
@@ -368,9 +334,7 @@ impl<'a> LeaseStore<'a> {
         Ok(())
     }
 
-    /// pool 카운터를 읽고 +1 해서 즉시 다시 쓴다. 호출자(`acquire_any`)가 이미
-    /// `RunnerContext::with_memory` 같은 단일 락 구간 안에서 호출하는 한 다른
-    /// 스레드가 그 사이에 끼어들 수 없다 — 모듈 문서 "합성된 이름의 원자성" 참조.
+    /// 카운터를 증가시켜 저장한다. acquire_any와 같은 memory 락 안에서 호출해야 한다.
     fn bump_pool_counter(
         &mut self,
         workspace_id: WorkspaceId,
@@ -396,8 +360,7 @@ impl<'a> LeaseStore<'a> {
     /// 3. 전부 점유 중이고 elastic 이면(+ 상한 이내면) 새 이름을 합성해 점유.
     /// 4. 그래도 못 받으면 `mode` 에 따라 실패(`Fail`) 또는 `acquired=false`
     ///    (`Block`).
-    // 7개 파라미터 전부 서로 독립적인 원시값(struct로 묶어도 호출부 가독성만
-    // 나빠짐) — `acquire`(단일 resource, 6개)와 같은 스타일을 유지한다.
+    // reason: 단일 acquire와 인자 순서를 맞추고 독립 옵션을 직접 전달한다.
     #[allow(clippy::too_many_arguments)]
     pub fn acquire_any(
         &mut self,
@@ -425,7 +388,6 @@ impl<'a> LeaseStore<'a> {
             .and_then(|e| e.overflow_prefix.clone())
             .unwrap_or_else(default_prefix);
 
-        // fixed candidates ++ 이미 합성된 이름들 (elastic 일 때만).
         let mut scan_list: Vec<String> = candidates.to_vec();
         if elastic.is_some() {
             let synthesized_so_far = self.get_pool_counter(workspace_id, candidates)?;
@@ -434,7 +396,6 @@ impl<'a> LeaseStore<'a> {
             }
         }
 
-        // 1. idempotent: holder 가 이미 이 pool 의 뭔가를 쥐고 있으면 그걸 갱신.
         for r in &scan_list {
             if let Some(cur) = self.get(workspace_id, r)?
                 && cur.holder == holder
@@ -451,7 +412,6 @@ impl<'a> LeaseStore<'a> {
             }
         }
 
-        // 2. 빈 자리 스캔 (block 모드로 시도 — 충돌은 그냥 다음 candidate 로).
         for r in &scan_list {
             let outcome =
                 self.acquire(workspace_id, r, holder, ttl_ms, LeaseMode::Block, now_ms)?;
@@ -465,7 +425,6 @@ impl<'a> LeaseStore<'a> {
             }
         }
 
-        // 3. elastic — 상한 이내면 새 이름을 합성해 즉시 점유.
         if let Some(spec) = elastic {
             let cap_ok = match spec.max_candidates {
                 Some(max) => (scan_list.len() as u32) < max,
@@ -490,12 +449,10 @@ impl<'a> LeaseStore<'a> {
                         synthesized: true,
                     });
                 }
-                // 극히 드문 이름 충돌(사용자가 정적 candidate 로 같은 이름을 이미
-                // 씀) — 아래 소진 처리로 폴백.
+                // 정적 후보와 합성 이름이 충돌하면 후보 소진으로 처리한다.
             }
         }
 
-        // 4. 소진.
         match mode {
             LeaseMode::Fail => Err(AgentError::LeasePoolExhausted {
                 candidates: scan_list,

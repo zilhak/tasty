@@ -1,5 +1,3 @@
-//! `task` 단위 테스트.
-
 use super::*;
 use crate::AgentError;
 use std::sync::atomic::AtomicU64;
@@ -91,10 +89,8 @@ fn linear_dag_transitions_downstream() {
     let (_, cascaded) = store
         .set_state(1, &a.id, TaskState::Succeeded, 3000)
         .unwrap();
-    // B should be Ready now
     let b_after = store.get(1, &b.id).unwrap().unwrap();
     assert_eq!(b_after.state, TaskState::Ready);
-    // C still Waiting
     let c_after = store.get(1, &c.id).unwrap().unwrap();
     assert_eq!(c_after.state, TaskState::Waiting);
     assert!(cascaded.iter().any(|t| t.id == b.id));
@@ -166,7 +162,6 @@ fn diamond_dag_parallel_then_join() {
         TaskState::Waiting
     );
 
-    // B done
     store.set_state(1, &b.id, TaskState::Running, 4000).unwrap();
     store
         .set_state(1, &b.id, TaskState::Succeeded, 5000)
@@ -176,7 +171,6 @@ fn diamond_dag_parallel_then_join() {
         TaskState::Waiting
     );
 
-    // C done → D ready
     store.set_state(1, &c.id, TaskState::Running, 6000).unwrap();
     store
         .set_state(1, &c.id, TaskState::Succeeded, 7000)
@@ -290,7 +284,6 @@ fn cycle_detected() {
             now_ms: 1001,
         })
         .unwrap();
-    // create 시 unknown dep는 거부
     let err = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -388,21 +381,16 @@ fn retry_with_reset_downstream() {
     store
         .set_state(1, &a.id, TaskState::Failed { error: "e".into() }, 3000)
         .unwrap();
-    // B는 Skipped
     assert_eq!(
         store.get(1, &b.id).unwrap().unwrap().state,
         TaskState::Skipped
     );
 
     store.retry(1, &a.id, true, 4000).unwrap();
-    // B는 Waiting으로 돌아오고 cascade 후 A가 Ready라서 B는 Waiting 유지 (A 미완료)
     let b_after = store.get(1, &b.id).unwrap().unwrap();
     assert_eq!(b_after.state, TaskState::Waiting);
 }
 
-/// cascade 로 `Skipped` 전이된 downstream 도 `set_state`의 terminal 타임스탬프 기록과
-/// 동일하게 `finished_at`을 받아야 한다 — cascade 는 `set_state`를 거치지 않는 별도
-/// 직접-put 경로이기 때문에 별도로 채워야 한다.
 #[test]
 fn cascade_skip_sets_finished_at() {
     let (_td, mut mem, seq) = fresh_store();
@@ -450,9 +438,6 @@ fn cascade_skip_sets_finished_at() {
     assert!(b_after.started_at.is_none());
 }
 
-/// `task-retry --reset-downstream` 로 되돌린 뒤(finished_at 이 지워짐) upstream 이 다시
-/// 실패해 downstream 이 재-skip 되면, `finished_at` 이 새 시각으로 갱신되어야 한다 — 과거
-/// skip 시각이 그대로 남아 있으면 안 된다.
 #[test]
 fn retry_reset_downstream_then_reskip_refreshes_finished_at() {
     let (_td, mut mem, seq) = fresh_store();
@@ -487,13 +472,11 @@ fn retry_reset_downstream_then_reskip_refreshes_finished_at() {
     assert_eq!(b_first_skip.state, TaskState::Skipped);
     assert_eq!(b_first_skip.finished_at, Some(3000));
 
-    // reset — B 는 Waiting 으로, finished_at 도 지워진다.
     store.retry(1, &a.id, true, 4000).unwrap();
     let b_reset = store.get(1, &b.id).unwrap().unwrap();
     assert_eq!(b_reset.state, TaskState::Waiting);
     assert!(b_reset.finished_at.is_none());
 
-    // A 다시 실패 → B 재-skip, finished_at 이 새 시각(6000)으로 갱신되어야 함(3000 이 아니라).
     store.set_state(1, &a.id, TaskState::Running, 5000).unwrap();
     store
         .set_state(1, &a.id, TaskState::Failed { error: "e2".into() }, 6000)
@@ -503,9 +486,6 @@ fn retry_reset_downstream_then_reskip_refreshes_finished_at() {
     assert_eq!(b_reskip.finished_at, Some(6000));
 }
 
-/// `plan_sweep`(→ `task-purge --older-than-ms`)의 나이 판정은 skip 시각(`finished_at`)
-/// 기준이어야 한다 — 오래전에 생성됐지만 방금 skip 된 task 가 생성 시각 기준으로 오판돼
-/// 즉시 지워지면 안 된다.
 #[test]
 fn plan_sweep_ages_skipped_task_from_finish_time_not_creation_time() {
     let (_td, mut mem, seq) = fresh_store();
@@ -521,7 +501,6 @@ fn plan_sweep_ages_skipped_task_from_finish_time_not_creation_time() {
             now_ms: 1000,
         })
         .unwrap();
-    // B 는 생성된 지 오래(now_ms=1000)지만, A 가 한참 뒤(50_000)에야 실패해 그때 skip된다.
     let b = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -563,8 +542,6 @@ fn plan_sweep_ages_skipped_task_from_finish_time_not_creation_time() {
     );
 }
 
-/// `succeeded`/`failed` 는 원래부터 `set_state` 를 거쳐 `finished_at` 이 채워지던 경로다 —
-/// cascade/retry 쪽을 고치면서 이 기존 동작에 회귀가 없는지 락인.
 #[test]
 fn succeeded_and_failed_still_set_finished_at_via_set_state() {
     let (_td, mut mem, seq) = fresh_store();
@@ -613,7 +590,6 @@ fn succeeded_and_failed_still_set_finished_at_via_set_state() {
 
 #[test]
 fn fallback_triggers_when_main_fails() {
-    // A -> C (dep). A.on_failure = Fallback{A'}. A 실패 시 A' 가 자동 Ready.
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a_prime = store
@@ -652,11 +628,8 @@ fn fallback_triggers_when_main_fails() {
             now_ms: 1002,
         })
         .unwrap();
-    // A_prime 은 A 가 아직 실패하기 전까지 dormant — depends_on 이 비어 있어도
-    // Ready 로 뜨지 않는다.
     let a_prime_dormant = store.get(1, &a_prime.id).unwrap().unwrap();
     assert_eq!(a_prime_dormant.state, TaskState::Waiting);
-    // A 실패 시 A_prime 이 비로소 Ready 로 승격, C 는 Waiting 유지 (fallback 대기).
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     store
         .set_state(
@@ -676,7 +649,6 @@ fn fallback_triggers_when_main_fails() {
 
 #[test]
 fn fallback_success_propagates_to_main_downstream() {
-    // A.on_failure=Fallback{A'}, C depends on A. A 실패 → A' Succeed → C Ready.
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a_prime = store
@@ -738,7 +710,6 @@ fn fallback_success_propagates_to_main_downstream() {
 
 #[test]
 fn fallback_failure_also_skips_main_downstream() {
-    // A.on_failure=Fallback{A'}, C depends on A. A 실패 → A' 도 실패 → C Skipped.
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a_prime = store
@@ -809,10 +780,6 @@ fn fallback_failure_also_skips_main_downstream() {
     );
 }
 
-/// main 이 성공하면 그 fallback(existing task 참조)은 한 번도 dispatch 대상
-/// (`Ready`)이 되지 않아야 한다 — "실패했을 때만 도는 대체 경로" 계약. 성공
-/// 직후 fallback 은 `Waiting` 에 영구 잔류하지 않고 `Skipped` 로 마감된다
-/// (다시는 main 이 Failed 될 일이 없으므로).
 #[test]
 fn fallback_task_never_runs_when_main_succeeds() {
     let (_td, mut mem, seq) = fresh_store();
@@ -828,10 +795,6 @@ fn fallback_task_never_runs_when_main_succeeds() {
             now_ms: 1000,
         })
         .unwrap();
-    // fallback 자신을 만드는 시점엔 아직 아무 main 도 이걸 참조하지 않으므로
-    // (Fallback{task} 대상은 반드시 main 보다 먼저 존재해야 한다), 의존성이
-    // 없으면 이 시점엔 정상적으로 Ready 다 — dormant 판정은 참조하는 main 이
-    // 생긴 "다음" 부터 걸린다.
     assert_eq!(fb.state, TaskState::Ready);
     let main = store
         .create(TaskCreateOpts {
@@ -847,7 +810,6 @@ fn fallback_task_never_runs_when_main_succeeds() {
             now_ms: 1001,
         })
         .unwrap();
-    // main 을 참조하는 순간에도(생성 시점 소급 정정 포함) fallback 은 그대로 dormant.
     let fb_after_main_create = store.get(1, &fb.id).unwrap().unwrap();
     assert_eq!(fb_after_main_create.state, TaskState::Waiting);
 
@@ -867,9 +829,6 @@ fn fallback_task_never_runs_when_main_succeeds() {
     );
 }
 
-/// main 이 실패하면 fallback 이 dormant(`Waiting`) → `Ready` → (러너가 dispatch
-/// 해) `Running` → `Succeeded` 로 진행하고, main 에 의존하던 downstream 도 그
-/// 결과를 받아 정상 진행해야 한다.
 #[test]
 fn fallback_ready_then_run_succeeded_and_downstream_proceeds() {
     let (_td, mut mem, seq) = fresh_store();
@@ -952,9 +911,6 @@ fn fallback_ready_then_run_succeeded_and_downstream_proceeds() {
     );
 }
 
-/// main 이 사용자에 의해 `Cancelled` 로 끝나면(실행 한번 못 해보고 취소되는
-/// 경우 포함) 다시는 `Failed` 로 전이할 일이 없다 — 그 fallback 을 `Waiting`
-/// 에 방치하면 안 된다.
 #[test]
 fn fallback_finalized_skipped_when_main_cancelled() {
     let (_td, mut mem, seq) = fresh_store();
@@ -996,7 +952,6 @@ fn fallback_finalized_skipped_when_main_cancelled() {
     );
 }
 
-/// main 자신이 `Skipped` 로 끝나는 경우도 마찬가지로 그 fallback 이 waiting 에
 /// 영구 잔류하면 안 된다. `Fallback` 이 설정된 task 는 자기 의존성이 실패해도
 /// (기존 설계상) 직접 Skipped 로 떨어지지 않으므로(`apply_on_failure` 가
 /// `Fallback` 에는 `None` 을 반환 — downstream 쪽 설정 오용 케이스), 이 상태를
@@ -1007,8 +962,6 @@ fn fallback_finalized_skipped_when_main_cancelled() {
 fn fallback_finalized_skipped_when_main_ends_skipped_via_chained_fallback() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
-    // grandparent 가 성공하면 main(= grandparent 의 fallback 대상) 은 다시는
-    // 깨어나지 않으므로 Skipped 로 마감된다.
     let leaf_fb = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1116,8 +1069,6 @@ fn list_returns_all_tasks() {
 
 #[test]
 fn fallback_inline_materializes_on_failed_transition() {
-    // A.on_failure=Fallback{inline:{A_prime}}, C depends on A.
-    // A 실패 → A_prime task 자동 생성 (metadata.fallback_of=A.id) + Ready.
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
@@ -1164,7 +1115,6 @@ fn fallback_inline_materializes_on_failed_transition() {
         )
         .unwrap();
 
-    // A_prime 가 생성되었고 Ready 인지 확인.
     let all = store.list(1).unwrap();
     let a_prime = all
         .iter()
@@ -1172,11 +1122,9 @@ fn fallback_inline_materializes_on_failed_transition() {
         .expect("inline fallback materialized");
     assert_eq!(a_prime.name, "A_prime");
     assert_eq!(a_prime.state, TaskState::Ready);
-    // C 는 여전히 Waiting — A_prime 의 결과 대기.
     let c_after = store.get(1, &c.id).unwrap().unwrap();
     assert_eq!(c_after.state, TaskState::Waiting);
 
-    // A_prime Succeed → C Ready.
     let a_prime_id = a_prime.id.clone();
     store
         .set_state(1, &a_prime_id, TaskState::Running, 3500)
@@ -1190,7 +1138,6 @@ fn fallback_inline_materializes_on_failed_transition() {
 
 #[test]
 fn fallback_inline_idempotent_on_repeated_failed_calls() {
-    // 같은 main 의 Failed 분기를 *여러 번* 호출해도 inline fallback task 는 1개만.
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let a = store
@@ -1234,9 +1181,6 @@ fn fallback_inline_idempotent_on_repeated_failed_calls() {
         .count();
     assert_eq!(count_first, 1);
 
-    // retry 후 다시 Failed — fallback 이 중복 생성되면 안 됨.
-    // 단 retry 는 task state 를 Waiting → Ready 로 보내므로, Failed 후 retry → Failed
-    // 사이클을 시뮬레이션.
     store.retry(1, &a.id, false, 3100).unwrap();
     store.set_state(1, &a.id, TaskState::Running, 3200).unwrap();
     store
@@ -1262,7 +1206,6 @@ fn fallback_inline_idempotent_on_repeated_failed_calls() {
 fn fallback_validation_rejects_both_task_and_inline() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
-    // 먼저 어떤 task 라도 만들어 task id 확보.
     let helper = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1324,10 +1267,6 @@ fn fallback_validation_rejects_neither_task_nor_inline() {
     );
 }
 
-// ============================================================
-// 회귀: Fallback.task / Reduce.inputs 참조 검증
-// ============================================================
-
 #[test]
 fn create_rejects_unknown_reduce_input() {
     let (_td, mut mem, seq) = fresh_store();
@@ -1375,8 +1314,6 @@ fn create_rejects_unknown_fallback_task() {
 
 #[test]
 fn fallback_inline_is_not_rejected_as_unknown_target() {
-    // inline fallback 은 생성 시점엔 아직 존재하지 않는 게 정상 — task 존재
-    // 검증 대상이 아니어야 한다 (fallback_validation_rejects_* 와는 다른 축).
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let t = store
@@ -1402,10 +1339,6 @@ fn fallback_inline_is_not_rejected_as_unknown_target() {
     assert_eq!(t.state, TaskState::Ready);
 }
 
-/// 결정 1 (가장 중요): `Reduce.inputs` 가 암묵적 의존성으로 승격되어, 입력이
-/// 전부 종결되기 전에는 Reduce 가 `Ready` 로 올라가지 않는다. 승격 이전에는
-/// `depends_on` 없는 Reduce 가 생성 즉시 `Ready` → dispatch 되어 미완 입력을
-/// `Null` 로 조용히 수집하고 `Succeeded` 로 마감했다 (현상 §3, 조용한 오답).
 #[test]
 fn reduce_waits_for_inputs_to_terminate_before_ready() {
     let (_td, mut mem, seq) = fresh_store();
@@ -1421,7 +1354,6 @@ fn reduce_waits_for_inputs_to_terminate_before_ready() {
             now_ms: 1000,
         })
         .unwrap();
-    // depends_on 을 일부러 비워둔다 — 승격 전에는 이 경로가 즉시 Ready 였다.
     let r = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1439,12 +1371,10 @@ fn reduce_waits_for_inputs_to_terminate_before_ready() {
         "A 가 아직 미완이므로 R 은 생성 즉시 Ready 가 되면 안 된다"
     );
 
-    // A 가 여전히 실행 중이어도 R 은 계속 Waiting.
     store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
     let r_mid = store.get(1, &r.id).unwrap().unwrap();
     assert_eq!(r_mid.state, TaskState::Waiting);
 
-    // A 가 종결(Succeeded)되어야 R 이 Ready.
     let (_, cascaded) = store
         .set_state(1, &a.id, TaskState::Succeeded, 3000)
         .unwrap();
@@ -1453,10 +1383,6 @@ fn reduce_waits_for_inputs_to_terminate_before_ready() {
     assert!(cascaded.iter().any(|t| t.id == r.id));
 }
 
-/// Reducer(특히 `all`)는 실패한 입력도 의도적으로 수집하는 계약이므로, 입력이
-/// 실패했다고 Reduce 를 `depends_on` 처럼 `Skipped` 로 몰면 안 된다 — 종결
-/// 되었으면 (성공이든 실패든) `Ready` 로 진행되어야 dispatch 가 실제로
-/// 그 실패 결과를 합성할 수 있다.
 #[test]
 fn reduce_becomes_ready_after_failed_input_not_skipped() {
     let (_td, mut mem, seq) = fresh_store();
@@ -1540,9 +1466,6 @@ fn reduce_input_cycle_via_implicit_edge_is_detected() {
     assert!(matches!(err, AgentError::DependencyCycle(_)));
 }
 
-/// 결정 3: 본 검증 도입 이전에 저장된 dangling `Fallback.task` 참조는
-/// 마이그레이션하지 않는다 — `create()` 우회로 그 상태를 재현하고, main 이
-/// 실패해도 패닉하지 않고 downstream 이 영구 `Waiting` 으로 남는지 확인한다.
 #[test]
 fn legacy_dangling_fallback_target_leaves_downstream_waiting() {
     let (_td, mut mem, seq) = fresh_store();
@@ -1598,10 +1521,6 @@ fn legacy_dangling_fallback_target_leaves_downstream_waiting() {
     );
 }
 
-// ============================================================
-// delete_checked / plan_sweep / apply_sweep_plan
-// ============================================================
-
 #[test]
 fn delete_checked_rejects_when_referenced_by_depends_on() {
     let (_td, mut mem, seq) = fresh_store();
@@ -1642,7 +1561,6 @@ fn delete_checked_rejects_when_referenced_by_depends_on() {
         }
         other => panic!("expected TaskReferenced, got {other:?}"),
     }
-    // 거부됐으니 A 는 여전히 존재해야 한다.
     assert!(store.get(1, &a.id).unwrap().is_some());
 }
 
@@ -1733,11 +1651,6 @@ fn delete_checked_rejects_when_referenced_by_reduce_inputs() {
     }
 }
 
-/// 가장 중요한 시나리오: 참조 있는 task 를 cascade 삭제하면 참조자까지 함께
-/// 지워지고, 그 뒤 같은 workspace 에 새 task 를 만드는 게 여전히 성공한다 —
-/// raw `delete()` 를 그대로 노출했다면 dangling
-/// `depends_on` 이 남아 이후 모든 `create()` 가 `detect_cycles` 의
-/// `UnknownDependency` 로 깨졌을 것.
 #[test]
 fn cascade_delete_removes_referencers_and_workspace_stays_creatable() {
     let (_td, mut mem, seq) = fresh_store();
@@ -1781,8 +1694,6 @@ fn cascade_delete_removes_referencers_and_workspace_stays_creatable() {
     assert!(store.get(1, &a.id).unwrap().is_none());
     assert!(store.get(1, &b.id).unwrap().is_none());
 
-    // scenario 2: B 가 영구 Waiting 으로 남지 않는다 — 아예 존재하지 않는다.
-    // scenario 1 뒷부분: 이후 create() 가 여전히 정상 동작.
     let c = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1886,7 +1797,6 @@ fn delete_checked_allows_waiting_ready_and_terminal_states() {
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
 
-    // Ready (no deps, no referencers).
     let ready = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1903,7 +1813,6 @@ fn delete_checked_allows_waiting_ready_and_terminal_states() {
         .delete_checked(1, &ready.id, TaskDeleteOpts::default())
         .unwrap();
 
-    // Waiting (Reduce 대기 중 — 아직 input 이 terminal 아님).
     let input = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1931,7 +1840,6 @@ fn delete_checked_allows_waiting_ready_and_terminal_states() {
         .delete_checked(1, &waiting.id, TaskDeleteOpts::default())
         .unwrap();
 
-    // Succeeded (terminal).
     let term = store
         .create(TaskCreateOpts {
             workspace_id: 1,
@@ -1958,10 +1866,6 @@ fn delete_checked_allows_waiting_ready_and_terminal_states() {
     assert!(store.get(1, &term.id).unwrap().is_none());
 }
 
-/// 자동 GC 가 완전히 얽힌 `Waiting` 그래프를
-/// 실제로 드레인하는지 — 방치된 `Reduce` (X) 가 그 input(Y) 을 참조로 붙잡고
-/// 있어도, `Waiting` 은 금지 상태가 아니므로(결정 2) 후보 집합 안에서 둘 다
-/// 함께 지워져야 한다(terminal 로 제한했다면 영원히 못 지웠을 그래프).
 #[test]
 fn plan_sweep_drains_entangled_waiting_reduce_graph() {
     let (_td, mut mem, seq) = fresh_store();
@@ -2095,11 +1999,6 @@ fn plan_sweep_filters_by_state_name() {
     assert!(!plan.deleted.contains(&ready.id));
 }
 
-// ============================================================
-// DAG 그룹핑 (`task/dag.rs`)
-// ============================================================
-
-/// 그룹핑은 순수 함수라 store 를 거치지 않는다 — `Task` 를 직접 조립한다.
 fn dag_task(id: &str, depends_on: &[&str], created_at: u64) -> Task {
     Task {
         id: id.to_string(),
@@ -2134,10 +2033,8 @@ fn groups_disconnected_graphs_into_separate_dags() {
     assert!(dags.iter().all(|d| d.task_count == 2));
     assert!(dags.iter().all(|d| d.source == "derived"));
     assert!(dags.iter().all(|d| !d.has_cycle));
-    // derived id 는 그룹 내 `(created_at, id)` 최소 task 에서 나온다.
     let ids: Vec<&str> = dags.iter().map(|d| d.id.as_str()).collect();
     assert_eq!(ids, vec!["c:t-a", "c:t-c"]);
-    // root 는 그룹 내 다른 task 를 참조하지 않는 쪽.
     assert_eq!(dags[0].root_task_ids, vec!["t-a".to_string()]);
     assert_eq!(dags[1].root_task_ids, vec!["t-c".to_string()]);
 }
@@ -2155,8 +2052,6 @@ fn dag_id_is_deterministic_across_calls() {
         .collect();
     assert_eq!(a, b);
 
-    // 입력 순서가 뒤집혀도 같은 id 집합/순서가 나와야 한다 — store 가 돌려주는
-    // 순서에 화면 선택 상태가 흔들리면 안 된다.
     let mut reversed = tasks.clone();
     reversed.reverse();
     let c: Vec<String> = group_tasks_into_dags(&reversed)
@@ -2197,8 +2092,6 @@ fn derived_dag_name_falls_back_to_root_task_name() {
 
 #[test]
 fn reduce_fallback_and_fallback_of_edges_join_one_dag() {
-    // p -> (reduce r) 로만 이어진 쌍, f 는 m 의 사전 존재 fallback,
-    // i 는 m2 의 inline fallback 으로 동적 생성된 것(metadata.fallback_of).
     let p = dag_task("t-p", &[], 1000);
     let mut r = dag_task("t-r", &[], 1001);
     r.command = reduce_cmd(vec!["t-p".to_string()]);
@@ -2230,7 +2123,6 @@ fn rollup_state_precedence_running_over_failed_over_terminal() {
             .iter()
             .enumerate()
             .map(|(i, s)| {
-                // 서로 무관한 task 들이지만 explicit 키로 한 DAG 에 묶어 rollup 만 본다.
                 let mut t = dag_task(&format!("t-{i}"), &[], 1000 + i as u64);
                 t.state = s.clone();
                 t.metadata = serde_json::json!({ "dag": "g" });
@@ -2245,30 +2137,23 @@ fn rollup_state_precedence_running_over_failed_over_terminal() {
         error: "x".to_string(),
     };
 
-    // running 이 가장 우선 — failed 가 섞여 있어도 running.
     assert_eq!(
         states(&[TaskState::Running, failed(), TaskState::Ready]),
         "running"
     );
-    // running 이 없으면 failed.
     assert_eq!(states(&[failed(), TaskState::Ready]), "failed");
-    // 전부 terminal + 전부 succeeded → succeeded.
     assert_eq!(
         states(&[TaskState::Succeeded, TaskState::Succeeded]),
         "succeeded"
     );
-    // 전부 terminal 인데 cancelled/skipped 가 섞임 → skipped.
     assert_eq!(
         states(&[TaskState::Succeeded, TaskState::Cancelled]),
         "skipped"
     );
     assert_eq!(states(&[TaskState::Skipped]), "skipped");
-    // 미완이 남았고 ready 가 있으면 ready.
     assert_eq!(states(&[TaskState::Waiting, TaskState::Ready]), "ready");
-    // 그 외는 waiting (unknown 도 미완으로 취급).
     assert_eq!(states(&[TaskState::Waiting, TaskState::Unknown]), "waiting");
 
-    // state_counts 는 8종 전부를 센다.
     let tasks: Vec<Task> = [TaskState::Running, TaskState::Running, TaskState::Waiting]
         .iter()
         .enumerate()
@@ -2310,14 +2195,11 @@ fn dags_do_not_span_workspaces() {
     assert_eq!(dags.len(), 2);
     assert_eq!(dags[0].workspace_id, 1);
     assert_eq!(dags[1].workspace_id, 2);
-    // 같은 explicit 키라 id 는 같다 — 신원은 (workspace_id, id) 쌍이다.
     assert_eq!(dags[0].id, dags[1].id);
 }
 
 #[test]
 fn has_cycle_is_scoped_to_the_group() {
-    // t-a <-> t-b 사이클(스토어를 안 거치므로 생성 검증에 막히지 않는다) +
-    // 무관한 정상 그룹 하나.
     let a = dag_task("t-a", &["t-b"], 1000);
     let b = dag_task("t-b", &["t-a"], 1001);
     let c = dag_task("t-c", &[], 1002);
@@ -2328,7 +2210,6 @@ fn has_cycle_is_scoped_to_the_group() {
         dags.iter().map(|d| (d.id.as_str(), d)).collect();
     assert!(by_id["c:t-a"].has_cycle);
     assert!(!by_id["c:t-c"].has_cycle);
-    // 사이클이면 그룹 내 모든 task 가 서로를 참조하므로 root 는 없다.
     assert!(by_id["c:t-a"].root_task_ids.is_empty());
 }
 
@@ -2346,10 +2227,6 @@ fn explicit_group_with_outside_dependency_is_not_a_cycle() {
     assert_eq!(g.task_count, 1);
 }
 
-// `list` 는 손상된 task 엔트리를 **빈 목록으로 흡수하지 않는다.** 호스트 러너가
-// "조회 실패" 와 "task 없음" 을 구분해 로그를 남길 수 있어야 하고(빈 목록으로
-// 흡수되면 러너가 무음으로 정지한 것처럼 보인다), 그 구분의 전제가 여기서
-// Err 이 실제로 나온다는 사실이다.
 #[test]
 fn list_reports_error_on_corrupt_task_entry() {
     let (_td, mut mem, seq) = fresh_store();
@@ -2367,7 +2244,6 @@ fn list_reports_error_on_corrupt_task_entry() {
             })
             .expect("create");
     }
-    // task 접두사 아래에 Task 로 역직렬화되지 않는 값을 심는다.
     mem.put(
         "_host",
         &tasty_memory::Scope::Workspace(1),

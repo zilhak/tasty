@@ -1,11 +1,11 @@
-//! Rate limit primitive — token bucket 기반 시간당 비율 제한.
+//! 토큰 버킷 기반 호출 비율 제한.
 //!
 //! `telemetry.cap` 과 구분되는 점:
 //!
 //! | 시스템 | 의미 |
 //! |---|---|
 //! | telemetry.cap | 누적 임계 (예: input_tokens 총합 ≥ 100000 → 차단) |
-//! | agent.rate_limit | 시간당 비율 (예: ipc_calls 100/분 → 101번째 throttle) |
+//! | agent.rate_limit | 시간에 따라 토큰을 보충하고, 잔량이 부족하면 제한 |
 //!
 //! 영속: `tasty.agent.rate_limit.<id>` (Global scope — agent/workspace 무관).
 //!
@@ -217,7 +217,6 @@ impl<'a> RateLimitStore<'a> {
         now_ms: u64,
     ) -> Result<ConsumeOutcome> {
         let Some(mut rl) = self.find_by_agent_metric(agent, metric)? else {
-            // 등록 안 된 (agent, metric) 은 throttle 대상 아님 → 항상 허용.
             return Ok(ConsumeOutcome {
                 allowed: true,
                 tokens_left: f64::INFINITY,

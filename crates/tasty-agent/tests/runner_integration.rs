@@ -1,5 +1,3 @@
-//! Runner 통합 테스트 — Real TaskStore + Mock executor 로 ready → running →
-//! succeeded → downstream ready 까지 검증.
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
 // (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
 // `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
@@ -36,15 +34,10 @@ fn run_cmd() -> TaskCommand {
     }
 }
 
-/// 시나리오별 poll outcome 큐 — task_id → VecDeque<PollOutcome>.
 struct ScriptedExec {
     polls: HashMap<String, std::collections::VecDeque<PollOutcome>>,
-    /// dispatch 시점에 핸들을 task_id 와 매핑 (poll 에서 어느 task 의 outcome 인지 알기 위함).
     handle_to_task: HashMap<u32, String>,
     next_pid: u32,
-    /// dispatch 가 실제로 호출된 task_id 를 호출 순서대로 기록 — "이 task 가
-    /// 한 번도 dispatch 되지 않았다"/"이 순서로만 dispatch 됐다" 를 검증하는
-    /// TOCTOU 회귀 테스트가 참조한다.
     dispatched: Vec<String>,
 }
 
@@ -92,7 +85,6 @@ impl TaskExecutor for ScriptedExec {
 fn two_task_chain_propagates_to_downstream() {
     let (_td, mut mem, seq) = fresh_store();
 
-    // ── 1. 2-task DAG 생성: t-a → t-b ──
     let (a_id, b_id) = {
         let mut store = TaskStore::new(&mut mem, "_host", &seq);
         let a = store
@@ -123,7 +115,6 @@ fn two_task_chain_propagates_to_downstream() {
     };
 
     let mut exec = ScriptedExec::new();
-    // t-a: dispatch → 1 tick active → Done. t-b: dispatch → Done 즉시.
     exec.script(
         &a_id,
         vec![
@@ -146,7 +137,6 @@ fn two_task_chain_propagates_to_downstream() {
 
     let mut runner = RunnerLoop::new(exec);
 
-    // ── 2. tick 1: t-a dispatch → Running. t-b 는 여전히 Waiting. ──
     tick_with_store(&mut runner, &mut mem, &seq, 2000);
     {
         let store = TaskStore::new(&mut mem, "_host", &seq);
@@ -157,7 +147,6 @@ fn two_task_chain_propagates_to_downstream() {
         assert_eq!(b.state, TaskState::Waiting);
     }
 
-    // ── 3. tick 2: t-a poll active. 상태 변화 없음. ──
     tick_with_store(&mut runner, &mut mem, &seq, 2500);
     {
         let store = TaskStore::new(&mut mem, "_host", &seq);
@@ -168,7 +157,6 @@ fn two_task_chain_propagates_to_downstream() {
         );
     }
 
-    // ── 4. tick 3: t-a poll Done → Succeeded → cascade downstream b → Ready. ──
     tick_with_store(&mut runner, &mut mem, &seq, 3000);
     {
         let store = TaskStore::new(&mut mem, "_host", &seq);
@@ -179,7 +167,6 @@ fn two_task_chain_propagates_to_downstream() {
         assert_eq!(b.state, TaskState::Ready);
     }
 
-    // ── 5. tick 4: t-b dispatch → Running. ──
     tick_with_store(&mut runner, &mut mem, &seq, 3500);
     {
         let store = TaskStore::new(&mut mem, "_host", &seq);
@@ -190,7 +177,6 @@ fn two_task_chain_propagates_to_downstream() {
         );
     }
 
-    // ── 6. tick 5: t-b poll Done → Succeeded. ──
     tick_with_store(&mut runner, &mut mem, &seq, 4000);
     {
         let store = TaskStore::new(&mut mem, "_host", &seq);
@@ -202,16 +188,6 @@ fn two_task_chain_propagates_to_downstream() {
     }
 }
 
-/// fallback 생성 순서 TOCTOU 재현 + 회귀 방지
-/// (`docs/features/agent-collaboration/index.md` "생성 순서 TOCTOU 방지"):
-/// `TaskStore::create_reserved_for_fallback`
-/// 로 만든 fallback 후보는 그걸 참조할 main 이 아직 존재하지 않는 동안 러너가
-/// 몇 번을 tick 해도(두 `task-create` 호출 사이의 임의 지연을 시뮬레이션)
-/// `Ready` 를 거친 적이 없으므로 dispatch 대상이 아니다 — main 이 실제로
-/// `Failed` 로 전이한 뒤에야 비로소 승격 → dispatch → 완료한다. 수정 전에는
-/// (예약 없이 평범한 `create()` 로 fallback 을 만들면) 아직 아무도 참조하지
-/// 않는 시점의 fallback 이 곧장 `Ready` 로 확정돼, 그 사이 tick 이 끼면
-/// main 의 성공/실패와 무관하게 그대로 dispatch 돼 실행됐다.
 #[test]
 fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
     let (_td, mut mem, seq) = fresh_store();
@@ -248,7 +224,6 @@ fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
     );
     let mut runner = RunnerLoop::new(exec);
 
-    // main 생성 *전에* 러너가 여러 번 tick 해도 fallback 은 여전히 Waiting.
     for now in [1500, 2000, 2500] {
         tick_with_store(&mut runner, &mut mem, &seq, now);
     }
@@ -262,7 +237,6 @@ fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
         assert_eq!(fb.state, TaskState::Waiting);
     }
 
-    // 이제 main 을 생성 — fallback 을 참조(예약 해제 + 정상 dormant 로 전환).
     let main_id = {
         let mut store = TaskStore::new(&mut mem, "_host", &seq);
         let main = store
@@ -285,9 +259,7 @@ fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
         .executor
         .script(&main_id, vec![PollOutcome::Failed("boom".into())]);
 
-    // main dispatch → Running.
     tick_with_store(&mut runner, &mut mem, &seq, 3500);
-    // main poll → Failed → fallback 이 비로소 승격(Ready).
     tick_with_store(&mut runner, &mut mem, &seq, 4000);
     {
         let store = TaskStore::new(&mut mem, "_host", &seq);
@@ -303,7 +275,6 @@ fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
         "fallback 은 main 이 실패하기 전까지 dispatch 되면 안 된다"
     );
 
-    // fallback dispatch → Running → poll Done → Succeeded.
     tick_with_store(&mut runner, &mut mem, &seq, 4500);
     tick_with_store(&mut runner, &mut mem, &seq, 5000);
     {
@@ -323,13 +294,6 @@ fn fallback_dispatched_between_the_two_creates_still_runs_eagerly() {
     );
 }
 
-/// 위 테스트의 변형 — 예약된 fallback 이 *자기 자신의* depends_on 을 갖고
-/// 있으면, 그 의존성이 main 생성 전에 먼저 완료돼 `cascade_downstream` 이
-/// fallback 의 readiness 를 재평가할 기회가 생긴다. 예약이 생성 시점 1회성
-/// 오버라이드에 불과했다면 이 재평가가 dormant 판정을 무시하고 fallback 을
-/// Ready 로 올려버렸을 것 — `Task::reserved_for_fallback` 이 영속 필드라
-/// `TaskGraph::dormant_as_pending_fallback` 이 매 평가마다 이를 존중해야
-/// 막힌다.
 #[test]
 fn fallback_reservation_survives_own_dependency_completing_before_main_exists() {
     let (_td, mut mem, seq) = fresh_store();
@@ -381,8 +345,6 @@ fn fallback_reservation_survives_own_dependency_completing_before_main_exists() 
     );
     let mut runner = RunnerLoop::new(exec);
 
-    // x dispatch → Running → poll Done → Succeeded → cascade_downstream(x)
-    // 가 fb 의 readiness 를 재평가한다. main 은 아직 없다.
     tick_with_store(&mut runner, &mut mem, &seq, 1500);
     tick_with_store(&mut runner, &mut mem, &seq, 2000);
     {
@@ -396,14 +358,12 @@ fn fallback_reservation_survives_own_dependency_completing_before_main_exists() 
             "x 가 끝나도 예약된 fallback 은 main 없이는 Ready 로 새지 않는다"
         );
     }
-    // 혹시 새어나갔다면 이 tick 에서 dispatch 됐을 것.
     tick_with_store(&mut runner, &mut mem, &seq, 2500);
     assert!(
         !runner.executor.dispatched.contains(&fb_id),
         "x 완료로 fallback 이 조기 dispatch 됐다 — 예약이 1회성으로 새고 있다"
     );
 
-    // main 생성 → 실패 → fallback 승격 → 정상 실행.
     let main_id = {
         let mut store = TaskStore::new(&mut mem, "_host", &seq);
         store
@@ -488,19 +448,14 @@ fn tick_with_store<E: TaskExecutor>(
     }
 }
 
-// =====================================================================
 // semaphore-gated dispatch + WaitBarrier 통합 시나리오.
 // HostExecutor 가 본 crate 외부에 있으므로, *test-local* SemaphoreAwareExec /
 // BarrierAwareExec 가 동일한 규약 (metadata.semaphore 컨벤션, BarrierPoll handle)
 // 을 사용해 runner 와 store 의 상호작용을 검증한다.
-// =====================================================================
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// metadata.semaphore 를 읽어 SemaphoreStore::acquire/release 를 호출하는 executor.
-/// 점유 부족 시 Deferred, 점유 성공 후 ShellProcess handle 로 dispatch 시뮬레이션.
-/// poll 은 미리 스크립트된 outcome 큐를 따른다.
 struct SemaphoreAwareExec {
     mem: Rc<RefCell<MemoryStore>>,
     polls: HashMap<String, std::collections::VecDeque<PollOutcome>>,
@@ -580,7 +535,6 @@ impl TaskExecutor for SemaphoreAwareExec {
     }
 }
 
-/// SemaphoreAwareExec 용 한 tick helper — Rc<RefCell<MemoryStore>> 기반.
 fn tick_semaphore_exec(
     runner: &mut RunnerLoop<SemaphoreAwareExec>,
     mem: &Rc<RefCell<MemoryStore>>,
@@ -635,14 +589,12 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
     let mem = Rc::new(RefCell::new(mem));
     let seq = AtomicU64::new(0);
 
-    // semaphore permits=1.
     {
         let mut m = mem.borrow_mut();
         let mut s = SemaphoreStore::new(&mut *m, "_host");
         s.create(1, "g", 1, 1000).unwrap();
     }
 
-    // 2 task: t-1, t-2 모두 semaphore=g, holder=task.id.
     let (id1, id2) = {
         let mut m = mem.borrow_mut();
         let mut store = TaskStore::new(&mut *m, "_host", &seq);
@@ -673,7 +625,6 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
         (t1.id, t2.id)
     };
 
-    // holder 컨벤션을 task.id 로 set — TaskCreateOpts 에 미리 못 박으므로 update.
     {
         let mut m = mem.borrow_mut();
         let mut store = TaskStore::new(&mut *m, "_host", &seq);
@@ -685,7 +636,6 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
     }
 
     let mut exec = SemaphoreAwareExec::new(mem.clone());
-    // t-1 의 poll: 1 tick Active, 그다음 Done.
     exec.script(
         &id1,
         vec![PollOutcome::Done(TaskResult {
@@ -705,7 +655,6 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
 
     let mut runner = RunnerLoop::new(exec);
 
-    // tick 1: t-1 acquire 성공 → Running. t-2 는 acquire 실패 → Ready 유지 (Deferred).
     tick_semaphore_exec(&mut runner, &mem, &seq, 2000);
     {
         let mut m = mem.borrow_mut();
@@ -716,8 +665,6 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
         assert_eq!(t2.state, TaskState::Ready, "t2 deferred");
     }
 
-    // tick 2: t-1 poll → Done → Succeeded → release_permit (Running arm). 같은 tick 의
-    // Ready arm 에서 t-2 가 새로 release 된 permit 을 acquire → Started → Running.
     tick_semaphore_exec(&mut runner, &mem, &seq, 2500);
     {
         let mut m = mem.borrow_mut();
@@ -728,7 +675,6 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
         assert_eq!(t2.state, TaskState::Running, "t2 acquired after release");
     }
 
-    // tick 3: t-2 poll → Done → Succeeded.
     tick_semaphore_exec(&mut runner, &mem, &seq, 3000);
     {
         let mut m = mem.borrow_mut();
@@ -738,7 +684,6 @@ fn semaphore_gated_dispatch_serializes_two_tasks() {
     }
 }
 
-/// BarrierPoll handle 을 처리하는 test-local executor — WaitBarrier task 검증.
 struct BarrierAwareExec {
     mem: Rc<RefCell<MemoryStore>>,
 }
@@ -834,7 +779,6 @@ fn wait_barrier_task_succeeds_after_signals() {
     let mem = Rc::new(RefCell::new(mem));
     let seq = AtomicU64::new(0);
 
-    // barrier(b, count_required=2) 생성.
     {
         let mut m = mem.borrow_mut();
         let mut s = BarrierStore::new(&mut *m, "_host");
@@ -861,7 +805,6 @@ fn wait_barrier_task_succeeds_after_signals() {
     let exec = BarrierAwareExec { mem: mem.clone() };
     let mut runner = RunnerLoop::new(exec);
 
-    // tick 1: dispatch → BarrierPoll handle, state Open → Running.
     tick_barrier_exec(&mut runner, &mem, &seq, 2000);
     {
         let mut m = mem.borrow_mut();
@@ -872,7 +815,6 @@ fn wait_barrier_task_succeeds_after_signals() {
         );
     }
 
-    // tick 2: 아직 signal 안 됨 → Open → Active → Running 유지.
     tick_barrier_exec(&mut runner, &mem, &seq, 2500);
     {
         let mut m = mem.borrow_mut();
@@ -883,7 +825,6 @@ fn wait_barrier_task_succeeds_after_signals() {
         );
     }
 
-    // signal 2회 — barrier 가 Closed 로.
     {
         let mut m = mem.borrow_mut();
         let mut s = BarrierStore::new(&mut *m, "_host");
@@ -891,7 +832,6 @@ fn wait_barrier_task_succeeds_after_signals() {
         s.signal(1, "b", 2601).unwrap();
     }
 
-    // tick 3: poll → Closed → Done → Succeeded.
     tick_barrier_exec(&mut runner, &mem, &seq, 3000);
     {
         let mut m = mem.borrow_mut();
@@ -902,12 +842,6 @@ fn wait_barrier_task_succeeds_after_signals() {
         );
     }
 }
-
-// =====================================================================
-// lease-gated dispatch 통합 시나리오.
-// SemaphoreAwareExec 의 lease 변형. dispatch 시 metadata.lease 의
-// resource/holder 로 LeaseStore::acquire 호출. block 모드 + 점유 충돌 시 Deferred.
-// =====================================================================
 
 struct LeaseAwareExec {
     mem: Rc<RefCell<MemoryStore>>,
@@ -1048,7 +982,6 @@ fn lease_gated_dispatch_serializes_two_tasks() {
     let mem = Rc::new(RefCell::new(mem));
     let seq = AtomicU64::new(0);
 
-    // 2 task: t-1, t-2 모두 lease=file:/shared, holder=task.id.
     let (id1, id2) = {
         let mut m = mem.borrow_mut();
         let mut store = TaskStore::new(&mut *m, "_host", &seq);
@@ -1079,7 +1012,6 @@ fn lease_gated_dispatch_serializes_two_tasks() {
         (t1.id, t2.id)
     };
 
-    // holder 컨벤션을 task.id 로 set.
     {
         let mut m = mem.borrow_mut();
         let mut store = TaskStore::new(&mut *m, "_host", &seq);
@@ -1112,7 +1044,6 @@ fn lease_gated_dispatch_serializes_two_tasks() {
 
     let mut runner = RunnerLoop::new(exec);
 
-    // tick 1: t-1 acquire 성공 → Running. t-2 는 Block 모드 → acquired=false → Deferred.
     tick_lease_exec(&mut runner, &mem, &seq, 2000);
     {
         let mut m = mem.borrow_mut();
@@ -1123,8 +1054,6 @@ fn lease_gated_dispatch_serializes_two_tasks() {
         assert_eq!(t2.state, TaskState::Ready, "t2 deferred");
     }
 
-    // tick 2: t-1 poll → Done → Succeeded → release_lease. 같은 tick 의 Ready arm 에서
-    // t-2 가 새로 release 된 lease 를 acquire → Running.
     tick_lease_exec(&mut runner, &mem, &seq, 2500);
     {
         let mut m = mem.borrow_mut();
@@ -1135,7 +1064,6 @@ fn lease_gated_dispatch_serializes_two_tasks() {
         assert_eq!(t2.state, TaskState::Running, "t2 acquired after release");
     }
 
-    // tick 3: t-2 poll → Done → Succeeded.
     tick_lease_exec(&mut runner, &mem, &seq, 3000);
     {
         let mut m = mem.borrow_mut();
@@ -1145,12 +1073,10 @@ fn lease_gated_dispatch_serializes_two_tasks() {
     }
 }
 
-// =====================================================================
 // DispatchHandle 영속 round-trip 통합 시나리오.
 // runner_host / runner_thread 는 src/ (host adapter) 에 있으므로 여기서는
 // pure tasty-agent 측에서 DispatchHandle::serde 의 forward/backward-compat 와
 // 모든 variant 의 영속/복원 의미를 검증한다.
-// =====================================================================
 
 #[test]
 fn dispatch_handle_persistence_round_trip_all_variants() {

@@ -50,13 +50,8 @@ impl<'a> TaskGraph<'a> {
                     .ok_or_else(|| AgentError::UnknownDependency(dep.clone()))?;
                 self.visit_cycle_edge(dep_ref, color, stack)?;
             }
-            // `Reduce.inputs` 는 암묵적 의존성 엣지 (결정 1) — 사이클 검출 대상에
-            // 포함한다. `depends_on` 과 달리 미존재 참조를 에러로 만들지 않는다:
-            // 본 검증(`TaskStore::create`)이 도입되기 전에 저장된 dangling 참조가
-            // 있으면(마이그레이션 안 함, 결정 3) 그 워크스페이스의 모든 후속
-            // `create()` 호출이 이 순회를 거치므로 하드 에러는 무관한 task 생성
-            // 까지 깨뜨린다. 신규 생성 시점 검증은 `TaskStore::create` 가 별도로
-            // 수행하므로, 여기서는 존재하는 참조만 순회하면 충분하다.
+            // 옛 Reduce 레코드의 없는 참조가 무관한 작업 생성까지 막지 않도록
+            // 존재하는 입력만 순회한다. 신규 참조 검증은 TaskStore::create가 담당한다.
             if let TaskCommand::Reduce { inputs, .. } = &task.command {
                 for dep in inputs {
                     let Some((dep_ref, _)) = self.tasks.get_key_value(dep) else {
@@ -80,7 +75,6 @@ impl<'a> TaskGraph<'a> {
         match color.get(dep_ref).copied().unwrap_or(0) {
             0 => self.dfs_cycle(dep_ref, color, stack)?,
             1 => {
-                // cycle: stack의 dep_ref 이후 부분을 반환
                 let from = stack.iter().position(|t| *t == dep_ref).unwrap_or(0);
                 let cycle: Vec<TaskId> = stack[from..].iter().map(|t| (*t).clone()).collect();
                 return Err(AgentError::DependencyCycle(cycle));
@@ -91,7 +85,7 @@ impl<'a> TaskGraph<'a> {
     }
 
     /// `task_id`의 직접 downstream (이 task에 의존하는 task들).
-    /// `depends_on` 뿐 아니라 `Reduce.inputs` 도 암묵적 의존성으로 취급한다(결정 1).
+    /// `depends_on` 뿐 아니라 `Reduce.inputs` 도 암묵적 의존성으로 취급한다.
     pub fn downstream_of(&self, task_id: &TaskId) -> Vec<TaskId> {
         let mut out = Vec::new();
         for (id, t) in &self.tasks {
@@ -127,13 +121,7 @@ impl<'a> TaskGraph<'a> {
     /// main 이 Failed 로 전이하는 순간의 `advance_existing_fallback` 승격 경로가
     /// 유일한 정식 진입로다.
     ///
-    /// `task.reserved_for_fallback` 이 서 있으면 아직 참조하는 main 이 *존재도
-    /// 하기 전*이라도 dormant 로 취급한다 — `TaskStore::create_reserved_for_fallback`
-    /// 로 만든 fallback 후보가 자기 자신을 참조할 main 이 생기기 전까지 결코
-    /// `Ready` 로 노출되지 않게 하는 것이 이 필드의 존재 이유다(TOCTOU 레이스:
-    /// "fallback 생성" → "main 생성(그 fallback 참조)" 두 `create()` 호출
-    /// 사이에 러너가 tick 해 아직 아무도 참조하지 않는 `Ready` fallback 을
-    /// dispatch 해버리면, main 생성 시점의 소급 정정이 무력화된다).
+    /// 예약된 fallback은 main 생성 전에도 대기시켜 두 생성 호출 사이의 조기 실행을 막는다.
     fn dormant_as_pending_fallback(&self, task_id: &TaskId) -> bool {
         if self
             .tasks
@@ -162,12 +150,7 @@ impl<'a> TaskGraph<'a> {
             return None;
         }
 
-        // `Reduce.inputs` 는 암묵적 의존성이지만 `depends_on` 과 의미가 다르다:
-        // reducer(특히 `all`)는 실패한 입력도 의도적으로 수집하는 것이 계약이므로
-        // (`reducer.rs` 의 `all_collects_outputs_in_order_regardless_of_status`),
-        // 입력 하나가 실패했다고 이 task 를 Skipped 로 몰지 않는다. 대신 입력
-        // 전부가 종결(terminal) 상태에 도달할 때까지만 대기시켜, 미완 입력 위에서
-        // 조용히 `[null, ...]` 을 만들어내는 결함(결정 1)을 막는다.
+        // Reduce는 실패 결과도 합성하므로 성공 여부와 무관하게 모든 입력의 종결을 기다린다.
         if let TaskCommand::Reduce { inputs, .. } = &task.command {
             for input_id in inputs {
                 let input = self.tasks.get(input_id)?;
@@ -186,8 +169,7 @@ impl<'a> TaskGraph<'a> {
             match &dep.state {
                 TaskState::Succeeded => {}
                 TaskState::Failed { .. } | TaskState::Cancelled | TaskState::Skipped => {
-                    // dep 가 Fallback 정책이면 fallback task 의 상태를 본다 — 성공 시 dep 충족.
-                    // S4: existing(task) + inline(metadata.fallback_of == dep.id) 두 경로 모두 지원.
+                    // main 실패 시 기존 또는 inline fallback의 결과를 대신 본다.
                     if let OnFailure::Fallback {
                         task: fb_id,
                         inline,
@@ -231,14 +213,6 @@ impl<'a> TaskGraph<'a> {
         }
     }
 }
-
-// ============================================================
-// 참조 수집 — 삭제(TaskStore::delete_checked)와 생성(TaskStore::create) 양쪽이
-// 공유하는 정방향/역방향 헬퍼. `TaskGraph`(readiness 용 그래프, `depends_on` ∪
-// `Reduce.inputs` 만 엣지)와 달리, 여기서는 `Fallback.task` 도 포함한 3종
-// 전부를 "참조"로 다룬다 — 삭제 시 dangling 참조를 만들 수 있는 참조는 이
-// 3종이 전부이기 때문(생성 검증도 같은 3종을 본다, `store.rs::create`).
-// ============================================================
 
 /// `task` 하나가 참조하는 다른 task id 전체 — `depends_on` ∪
 /// `OnFailure::Fallback.task` ∪ `TaskCommand::Reduce.inputs`. `Fallback.inline`

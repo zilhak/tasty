@@ -3,7 +3,7 @@ name = "tasty-agent"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Agent collaboration primitives: tasks (DAG), barrier, semaphore, lease, reducer, rate-limit (Phase 5)"
+description = "Agent collaboration primitives: tasks (DAG), barrier, semaphore, lease, reducer, rate-limit"
 
 [dependencies]
 tasty-memory = { path = "../tasty-memory" }

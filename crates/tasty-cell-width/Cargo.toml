@@ -3,7 +3,7 @@ name = "tasty-cell-width"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "How many terminal cells a character occupies. Leaf crate with no dependencies — the renderer, the selection model, and the link scanner must agree on this, and none of them should have to reach into the others to ask."
+description = "Terminal cell widths shared by rendering, selection, and link scanning"
 
 [lints]
 workspace = true

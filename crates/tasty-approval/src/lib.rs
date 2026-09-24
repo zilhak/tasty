@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! 휴먼 핸드오프 — 에이전트 ↔ 휴먼 동기 결정 게이트.
+//! 에이전트의 승인 요청과 사용자·다른 호출자의 응답을 관리한다.
 //!
 //! 에이전트가 [`ApprovalStore::request`] 로 결정 요청을 만들고,
 //! [`ApprovalStore::await_response`] 로 응답을 기다린다 (blocking + timeout).
@@ -14,7 +14,7 @@
 //! - 상태 전이 검증 (이미 응답된 요청에 재응답 거부, self-response 거부 등)
 //! - 짧은 ID 생성 (`req_<12자>`)
 //!
-//! ## 비-책임 (호스트가 처리)
+//! ## 호스트가 처리하는 일
 //!
 //! - **영속**: 호스트가 상태 전이마다 `tasty-memory` 에 write.
 //! - **CallerContext 매핑**: `Requester` / `Responder` 의 식별자는 호스트가
@@ -36,10 +36,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-// ============================================================
-// ID
-// ============================================================
 
 /// Approval 요청 식별자. `req_` + base32 (Crockford) 12자.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -79,8 +75,7 @@ impl std::fmt::Display for ApprovalId {
     }
 }
 
-/// Crockford base32 (`0-9A-Z` 제외 I/L/O/U). 0-padding 없는 가변 길이지만,
-/// `u64` 인 입력은 항상 13자 이내라서 안전.
+/// 13자리 Crockford base32. 앞쪽 빈 자리는 0으로 채운다.
 fn encode_crockford(mut n: u64) -> String {
     const ALPHA: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     if n == 0 {
@@ -93,10 +88,6 @@ fn encode_crockford(mut n: u64) -> String {
     }
     String::from_utf8(buf.to_vec()).expect("alphabet ascii")
 }
-
-// ============================================================
-// 도메인 타입
-// ============================================================
 
 /// 요청자. CLI/사용자 = `User`, plugin = `Plugin(prefix)`, child agent = `Agent(id)`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -269,10 +260,6 @@ impl ApprovalRecord {
     }
 }
 
-// ============================================================
-// 에러
-// ============================================================
-
 #[derive(Debug, Error)]
 pub enum ApprovalError {
     #[error("approval not found: {0}")]
@@ -296,16 +283,11 @@ pub enum ApprovalError {
     StorePoisoned,
 }
 
-// ============================================================
-// Store
-// ============================================================
-
 /// Approval 들을 담는 메인 컨테이너. 호스트는 단일 인스턴스를 `CoreState::approval_store` 에
 /// 들고 모든 IPC handler 가 공유한다. 내부 `Mutex` 로 thread-safe.
 pub struct ApprovalStore {
     inner: Arc<Mutex<Inner>>,
-    /// poison 을 이미 보고했는가. poison 은 sticky 라 이후 모든 호출이 같은 로그를
-    /// 내게 되므로 첫 1 회만 남긴다(`approval.list` 를 폴링하는 에이전트가 있다).
+    /// 반복 호출에서 같은 poison 오류를 첫 한 번만 기록한다.
     poison_reported: Arc<AtomicBool>,
 }
 
@@ -364,16 +346,8 @@ impl Default for ApprovalStore {
 }
 
 impl ApprovalStore {
-    /// 상태를 **바꾸는** 연산의 락 획득. poison 이면 [`ApprovalError::StorePoisoned`].
-    ///
-    /// `respond`/`cancel` 의 임계구역은 `record.state` → `record.history` →
-    /// `waiters` 를 **순서대로** 갱신한다. 중간에 패닉이 나면 "응답됨으로 표시됐지만
-    /// 대기자에게 통지되지 않은" 기록이 남을 수 있다 — 승인은 에이전트 행동을 막는
-    /// 관문이라 그 중간 상태를 신뢰하고 진행하면 안 된다. 그래서 복구하지 않고 거절한다.
-    ///
-    /// 반대로 **패닉하지도** 않는다: 이 store 는 승인 popup(메인 스레드)에서도
-    /// 호출되므로 패닉은 모든 창의 터미널 세션을 함께 죽인다
-    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    /// 상태·이력·대기자를 함께 바꾸므로 poison 이후의 중간 상태는 신뢰하지 않는다.
+    /// GUI 메인 스레드도 호출하므로 패닉 대신 StorePoisoned를 반환한다.
     fn lock_for_write(&self) -> Result<MutexGuard<'_, Inner>, ApprovalError> {
         self.inner.lock().map_err(|_| {
             self.report_poison("refusing the state change");
@@ -581,11 +555,7 @@ impl ApprovalStore {
         match rx.recv_timeout(timeout) {
             Ok(r) => r,
             Err(RecvTimeoutError::Timeout) => {
-                // store 상태 전이. 이미 누군가 응답했으면 (race) 그 결과를 받아 사용.
-                //
-                // poison 이면 `Cancelled` 로 접는다 — 이 함수는 `WaitResult` 만 돌려줄 수
-                // 있고, record 가 사라졌을 때와 같은 처리다. 여기서 타임아웃 전이를 강행하면
-                // 신뢰할 수 없는 중간 상태 위에 또 한 번 상태를 얹게 된다.
+                // 이미 응답됐으면 그 결과를 쓴다. poison이면 상태를 더 바꾸지 않고 취소한다.
                 let Ok(mut g) = self.inner.lock() else {
                     self.report_poison("cancelling the wait instead of applying the timeout");
                     return WaitResult::Cancelled;

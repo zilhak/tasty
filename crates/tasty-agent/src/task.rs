@@ -31,7 +31,7 @@ pub type TaskId = String;
 /// - `Unknown → Ready` (사용자 명시 retry)
 /// - `Unknown → Cancelled`
 ///
-/// 재시작 후 `Running` 상태였던 task는 호스트가 `Unknown`으로 표시한다.
+/// 재시작 후 핸들 복원과 상태 정리는 호스트가 담당한다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskState {
@@ -72,23 +72,10 @@ impl TaskState {
 
 /// Task가 실패했을 때 downstream 처리 정책.
 ///
-/// **어느 쪽 task에 설정하느냐에 따라 의미가 반대로 갈린다** — 같은 필드가
-/// 방향이 다른 두 관계를 표현하기 때문이다:
-/// - `Abort`/`ContinueDownstream`은 **의존하는 쪽(downstream)** 자신에 설정해야
-///   한다. `apply_on_failure`가 평가하는 건 실패한 upstream이 아니라, 그
-///   upstream에 의존해 지금 `Skipped`로 전이하려는 downstream 자신의
-///   `on_failure`다(`task/store.rs`의 `cascade_downstream`이
-///   `apply_on_failure(&d_task, ...)`로 downstream을 넘긴다). 실패할 upstream
-///   쪽에 설정하면 아무 효과가 없다.
-/// - `Fallback`은 **실패할 수 있는 쪽(upstream)** 자신에 설정해야 한다.
-///   `set_state`가 그 task 자신이 `Failed`로 전이하는 순간 자기 `on_failure`를
-///   보고 fallback을 승격시킨다. downstream 쪽에 설정하면, downstream이
-///   의존성 실패로 `Skipped`행 판정을 받아도 `apply_on_failure`는 `None`을
-///   반환할 뿐이라(아래) 아무 전이도 일어나지 않고 `Waiting`에 영구히 멈춘다 —
-///   경고 로그조차 남지 않는다.
-///
-/// 정리: Abort/ContinueDownstream → downstream에 설정. Fallback → upstream에
-/// 설정.
+/// Abort/ContinueDownstream은 의존하는 downstream 작업에 설정한다.
+/// Fallback은 실패할 수 있는 upstream 작업에 설정한다.
+/// downstream의 의존성 실패는 그 작업의 정책으로 평가한다. 이때 Fallback을
+/// 잘못 설정하면 None을 반환해 Waiting에 남을 수 있다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[derive(Default)]
@@ -161,11 +148,8 @@ pub enum TaskCommand {
         ipc_method: String,
         #[serde(default)]
         params: serde_json::Value,
-        /// 인라인 `PollSpec` 또는 등록된 완료 판정 전략 이름 — PollSpec 이 이름
-        /// 참조를 받도록 확장한 형태다. `None` 이면 결정 6(기본 전략)이
-        /// 적용될 수 있다 — host 가 `ipc_method` 에 매칭되는 `default_for_methods`
-        /// 전략을 찾아 대신 사용한다. 매칭되는 기본 전략도 없으면 기존 동작
-        /// (dispatch 응답 즉시 `Succeeded`, `CustomImmediate`) 을 유지한다.
+        /// 인라인 PollSpec 또는 등록 전략 이름. None이면 호스트가 기본 전략을 찾고,
+        /// 기본 전략도 없으면 dispatch 응답으로 즉시 완료한다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         poll: Option<PollSpecRef>,
     },
@@ -179,17 +163,8 @@ pub enum TaskCommand {
     WaitBarrier { name: String },
 }
 
-/// 범용 폴링 사양 — `TaskCommand::Custom { poll: Some(..) }` 에서 사용.
-///
-/// dispatch IPC 호출 후, 응답의 `state_field` 가 `terminal_states` 중 하나에 도달할
-/// 때까지 `poll_method` 를 반복 호출한다. 필드 의미는 plugin manifest 의
-/// `CompletionStrategyDecl`/`AutoWaitDecl`/`PollingDecl`(CLI auto_wait 경로)와
-/// 동형으로 맞춘다 — 폴링 semantics 를 CLI/agent 양쪽에서 통일하기 위함. 두 곳의
-/// 필드 대응은 (본 크레이트가 `tasty-plugin-manifest` 를 의존할 수 없어) 주석만으로
-/// 지켜지는 불변식이 아니라, host 측 변환 함수
-/// `completion_strategy_to_poll_spec()`(`src/core/agent/completion_strategy.rs`)
-/// 와 그 옆의 단위테스트가 필드 대응을 컴파일/테스트 타임에 강제한다 — 필드가
-/// 갈라지면 그 변환 함수/테스트가 깨진다.
+/// dispatch 후 state_field가 terminal_states에 도달할 때까지 poll_method를 호출한다.
+/// 플러그인 완료 전략과의 필드 대응은 호스트 completion_strategy_to_poll_spec이 담당한다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PollSpec {
     /// 폴링 시 호출할 IPC method (예: `"<plugin>.wait"`).
@@ -206,22 +181,11 @@ pub struct PollSpec {
     /// terminal 로 간주할 상태값 목록 (예: `["idle","needs_input"]`).
     /// 비-terminal 상태는 모두 계속 폴링(Active)으로 취급한다.
     pub terminal_states: Vec<String>,
-    /// **실패**로 간주할 상태값 목록 (예: `["exited"]`). 적중하면 task 가
-    /// `Succeeded` 가 아니라 `Failed` 로 종결되어 `OnFailure`(abort /
-    /// continue_downstream / fallback)가 비로소 동작한다 — 이 목록이 비어 있으면
-    /// 폴링 완료 판정은 terminal 도달을 전부 성공으로 읽는다.
-    ///
-    /// `terminal_states` 와 같은 값이 양쪽에 들어가면 **이쪽이 이긴다**(판정은
-    /// `src/core/agent/runner_host.rs`) — 실패를 성공으로 읽는 쪽이 그 반대보다
-    /// 위험하기 때문이다.
-    ///
-    /// 생략 가능하다. 이 필드 도입 이전에 영속된 DAG JSON(`TaskCommand::Custom.poll`
-    /// 의 인라인 `PollSpec`)이 그대로 역직렬화돼야 하므로 필수 필드로 만들지
-    /// 않는다.
+    /// 실패로 종결할 상태. terminal_states와 겹치면 실패가 우선한다.
+    /// 옛 DAG JSON도 읽을 수 있도록 생략 시 빈 목록을 사용한다.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub failure_states: Vec<String>,
-    /// 폴링 간격 (ms). 핸들에 보존된다. 기본 500ms — 생략해도 역직렬화가 실패하지
-    /// 않는다(이전에는 필수 필드였다).
+    /// 폴링 간격(ms). 생략 시 500ms.
     #[serde(default = "default_poll_interval_ms")]
     pub interval_ms: u64,
     /// 전체 폴링 timeout (ms). `None` 이면 무한 대기.
@@ -233,13 +197,7 @@ fn default_poll_interval_ms() -> u64 {
     500
 }
 
-/// `TaskCommand::Custom.poll` 이 받아들이는 두 형태 — 인라인 사양 또는 이름 참조
-/// (PollSpec 이 이름 참조를 받도록 확장, 인라인 형태 하위호환 유지).
-///
-/// `#[serde(untagged)]`: `{"strategy": "<이름>"}` 형태(다른 필드 없음)는 `Named` 로,
-/// 그 외(기존 인라인 `PollSpec` 의 필수 필드들 — `poll_method`/`state_field`/
-/// `terminal_states` 등)는 `Inline` 으로 해석된다. `PollSpec` 에는 `strategy` 라는
-/// 필드가 없으므로 두 형태는 구조적으로 겹치지 않는다.
+/// 완료 전략의 이름 참조 또는 인라인 PollSpec. 호스트가 이름을 해석한다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PollSpecRef {
@@ -305,15 +263,9 @@ pub struct Task {
     pub on_failure: OnFailure,
     #[serde(default)]
     pub metadata: serde_json::Value,
-    /// `TaskStore::create_reserved_for_fallback`로 생성된 task 가 아직 어떤
-    /// main 의 `OnFailure::Fallback{task}` 로도 연결되지 않은 동안 `true`.
-    /// `TaskGraph::dormant_as_pending_fallback` 이 이 값을 최우선으로 존중해
-    /// readiness 평가 자체를 보류시킨다 — `Ready` 로 단 한 번도 노출되지
-    /// 않으므로 러너가 dispatch 할 수 없다. main 이 이 task 를 `Fallback{task}`
-    /// 로 참조하는 `create()` 호출의 소급 정정 블록이 그 순간 `false` 로
-    /// 해제하고, 그 뒤로는 (참조하는 main 이 실제로 존재/미종결) 이라는 정상
-    /// dormant 판정이 이어받는다. `#[serde(default)]` 는 이 필드 도입 이전에
-    /// 영속된 task 를 `false`(비예약, 기존 동작 그대로)로 채운다.
+    /// fallback 예약 상태. 참조할 main을 만들기 전에는 readiness 평가를 보류한다.
+    /// main 생성 시 예약을 해제하고 일반 fallback 대기 규칙을 적용한다.
+    /// 필드가 없는 옛 작업은 false로 읽는다.
     #[serde(default)]
     pub reserved_for_fallback: bool,
 }

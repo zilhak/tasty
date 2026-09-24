@@ -9,9 +9,8 @@
 //!    + set_state(Succeeded/Failed) 로 종결.
 //! 2. Ready task 에 대해 `executor.dispatch(task)` — handle 보관 + set_state(Running).
 //!
-//! 호출자는 polling interval (500ms 권장) 마다 tick 을 호출. 호스트 재시작 시
-//! handle 은 유실 (R3 의 in-memory 정책) — 재시작 후 Running 잔여 task 는
-//! Unknown 으로 처리되어 사용자 retry 가 필요.
+//! tick 호출 주기와 핸들 저장·복원은 호스트가 관리한다.
+//! 이 루프는 전달받은 running 핸들만 poll하며 없는 핸들을 복원하지 않는다.
 
 use std::collections::HashMap;
 
@@ -44,8 +43,7 @@ pub enum DispatchHandle {
         poll_params: serde_json::Value,
         state_field: String,
         terminal_states: Vec<String>,
-        /// 실패로 종결할 상태값 목록(`PollSpec::failure_states`). 이 필드 도입
-        /// 이전에 영속된 handle 은 빈 목록으로 로드되어 종전과 동일하게 동작한다.
+        /// 생략된 기존 영속 레코드는 빈 실패 상태 목록으로 읽는다.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         failure_states: Vec<String>,
         interval_ms: u64,
@@ -63,30 +61,14 @@ pub enum DispatchHandle {
         workspace_id: u32,
         name: String,
     },
-    /// 외부 push 신호(예: 훅 완료)를 기다리는 핸들. `poll` 은
-    /// host executor 구현에서 **항상** [`PollOutcome::Active`] 를 반환해야 한다 —
-    /// 이 handle 의 진짜 종결은 poll 이 아니라 host 가 외부에서(예: `HookFired`
-    /// 소비 경로) `task_set_result`/`task_set_state` 를 직접 호출해 이뤄진다.
-    /// `wait_key` 는 이 크레이트가 의미를 해석하지 않는 host-opaque 식별자(예:
-    /// hook_id 의 문자열화) — host 가 자신의 `wait_key → task_id` 매핑에서 이
-    /// task 를 다시 찾을 때 쓴다. 다른 영속 handle 과 동일하게
-    /// `tasty.agent.handle.<id>` 로 영속되므로 호스트 재시작도 버틴다 — 외부
-    /// 완료는 `self.running`(runner in-memory)과 무관하게 store 를 직접
-    /// 전이시키므로, 재시작 후에도 handle 을 `PolledDispatch`/`BarrierPoll` 과
-    /// 동형으로 **복원**해야 한다(host reload 경로). 복원하지 않으면 0단계
-    /// terminal 흡수가 이 task 를 찾지 못해 `release_permit` 이 누락된다 — 그
-    /// permit 누수를 막는 것이 이 variant 를 도입한 목적이므로, 재시작
-    /// 시나리오에서도 지켜야 한다.
+    /// 외부 완료 신호를 기다린다. executor의 poll은 Active를 반환하고 호스트가
+    /// 결과와 종결 상태를 직접 저장한다. 다음 tick이 핸들과 permit을 정리한다.
+    /// wait_key는 호스트가 해석하며 이 크레이트는 의미를 알지 못한다.
     ///
-    /// `deadline_ms` 는 unix epoch ms 절대 시각 — dispatch 시점에 push 전략의
-    /// `timeout_ms` 로부터 host 가 계산해 채운다. `hook_id → task_id` 매핑
-    /// (host 의 `hook_wait` 모듈)은 비영속이라 재시작하면 사라지지만, 이
-    /// `deadline_ms` 는 handle 자체에 실려 함께 영속되므로 재시작 후에도 만료
-    /// 판정이 가능하다 — 훅으로 깨어날 수는 없어도 deadline 으로는 마감된다.
-    /// `#[serde(default)]` 는 이 필드 도입 이전에 영속된 구 포맷(필드 없음)을
-    /// `0`으로 채운다 — 즉 **즉시 만료** 로 취급한다(무한 대기로 잔존하는 것이
-    /// 바로 이 variant 가 없애려는 상태이므로, 정보 없는 구 handle 을 무한으로
-    /// 보는 선택지는 배제한다).
+    /// 핸들은 영속되지만 호스트의 hook_wait 매핑은 영속되지 않는다. 재시작 시
+    /// 미만료 핸들도 복원해야 이후 외부 상태 전이에서 permit을 정리할 수 있다.
+    /// deadline_ms는 Unix epoch 밀리초다. 호스트의 reload가 만료를 검사하며,
+    /// 누락된 옛 필드는 0으로 읽어 만료 처리한다. poll 자체는 기한을 검사하지 않는다.
     AwaitExternal {
         wait_key: String,
         #[serde(default)]
@@ -161,18 +143,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
         FR: FnMut(u32, &TaskId, TaskResult) -> Result<()>,
     {
-        // 0. 외부 terminal 전이 흡수(누수 수정) — `agent.task_cancel` /
-        //    `agent.task_set_result` 가 외부에서 store 의 Running 을 어느
-        //    terminal 상태로든(Succeeded/Failed/Cancelled/Skipped,
-        //    `TaskState::is_terminal()`) 직접 전이시켰을 수 있다. **이전엔
-        //    `Cancelled` 만 흡수했다** — `task_set_result` 로 Succeeded/Failed 로
-        //    전이된 task 는 이 0단계를 통과해 버려 handle 이 `self.running` 에
-        //    영구 잔존하고 `release_permit` 이 결코 호출되지 않았다(semaphore
-        //    permit·lease 누수). 이번 tick 시작 시점에 이미 Running 이 아니라면
-        //    (즉 이 tick 의 1단계 poll 로 방금 종결된 게 아니라 그 이전에 이미
-        //    외부에서 종결됐다면) handle 정리 + permit 해제를 이 자리에서
-        //    선제 흡수한다. handle 이 없으면(에초에 dispatch 이력이 없는 task)
-        //    `remove` 가 no-op 이라 안전하다.
+        // 외부에서 종결된 작업도 poll 전에 정리해야 permit이 남지 않는다.
         for task in tasks {
             if !task.state.is_terminal() {
                 continue;
@@ -182,7 +153,6 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             }
         }
 
-        // 1. Running 처리.
         for task in tasks {
             if !matches!(task.state, TaskState::Running) {
                 continue;
@@ -190,8 +160,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             let handle = match self.running.get(&task.id) {
                 Some(h) => h.clone(),
                 None => {
-                    // handle 유실 — 호스트 재시작 후 Running 잔여 task 의 경우.
-                    // R3 정책: 그대로 둠. 사용자가 retry 로 정리.
+                    // 호스트가 복원하지 않은 핸들은 이 루프에서 처리할 수 없다.
                     continue;
                 }
             };
@@ -234,14 +203,10 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             }
         }
 
-        // 2. Ready 처리 — dispatch + Ready → Running 전이.
-        //    Deferred 는 state 전이 없이 다음 tick 으로 미룬다 (semaphore 미점유 등).
-        //    PermanentFail 은 ImmediateFail 핸들로 wrapping → 다음 tick poll 에서 Failed 흡수.
         for task in tasks {
             if !matches!(task.state, TaskState::Ready) {
                 continue;
             }
-            // 이미 dispatch 한 적이 있는지 (예: 같은 tick 안에 이전 루프) — 방지.
             if self.running.contains_key(&task.id) {
                 continue;
             }
@@ -269,11 +234,7 @@ fn log_err<T>(r: Result<T>, task_id: &str) {
     }
 }
 
-// ImmediateFail / Immediate handle 의 poll 결과는 host 측 executor 가 매핑하지만,
-// pure 로직 테스트 편의를 위해 본 모듈은 trait 만 노출하고 매핑은 위임한다.
-// 대신 ImmediateFail 가 어떻게 처리돼야 하는지는 host executor 의 의무로 — 본
-// trait 의 `poll` 이 ImmediateFail handle 을 받으면 PollOutcome::Failed 를 반환
-// 해야 한다 (host 측 구현 명세).
+// ImmediateFail은 호스트 executor의 poll이 Failed로 반환해야 한다.
 fn _agent_error_link(_e: AgentError) {}
 
 #[cfg(test)]
@@ -489,7 +450,6 @@ mod tests {
         assert!(!runner.running.contains_key("t-1"));
     }
 
-    /// I.A.S6: Deferred 반환 시 task 는 Ready 유지, 다음 tick 재dispatch.
     #[test]
     fn deferred_dispatch_keeps_task_ready_for_retry() {
         struct ToggleExec {
@@ -538,7 +498,6 @@ mod tests {
         assert!(runner.running.contains_key("t-1"));
     }
 
-    /// J.A.S2: DispatchHandle 의 serde round-trip — 영속 후 reload 시 의미 보존 확인.
     #[test]
     fn dispatch_handle_serde_roundtrip_all_variants() {
         let cases = vec![
@@ -583,10 +542,7 @@ mod tests {
         }
     }
 
-    /// 구 포맷(deadline_ms 도입 전 영속된 `AwaitExternal` — `wait_key` 만 있음)의
-    /// 하위호환. `#[serde(default)]` 가 누락 필드를 `0`으로 채우고, 이는
-    /// (실사용 시각이 항상 0 보다 큰 이상) 항상 만료로 판정된다 — 무한 대기로
-    /// 남는 것을 막으려는 의도적 설계.
+    /// deadline이 없는 옛 핸들은 0으로 읽어 호스트에서 만료 처리한다.
     #[test]
     fn await_external_old_format_without_deadline_defaults_to_immediately_expired() {
         let old_format = serde_json::json!({
@@ -607,12 +563,7 @@ mod tests {
         }
     }
 
-    /// `AwaitExternal` 핸들의 의도된 전체 생애주기 — dispatch 로
-    /// 생성된 뒤 여러 tick 동안 poll 이 항상 `Active` 라 Running 이 유지되고
-    /// (executor 는 이 핸들에 절대 관여하지 않는다), 외부(hook 완료 등)가 store 를
-    /// 직접 Succeeded 로 전이시키면 **다음 tick 의 0단계**가 handle 제거 +
-    /// release_permit 을 흡수한다 — 0단계가 `Cancelled` 만 흡수하던 예전 버전이면
-    /// 이 시나리오에서 handle 이 영구 잔존해 이 테스트가 실패했을 것이다.
+    /// 외부 완료 뒤 다음 tick에서 핸들과 permit이 정리되는지 확인한다.
     #[test]
     fn await_external_stays_active_until_externally_resolved_then_absorbed() {
         struct AwaitExec {
@@ -707,7 +658,6 @@ mod tests {
         );
     }
 
-    /// I.A.S6: Cancelled task — running map 에서 제거 + release_permit 호출.
     #[test]
     fn cancelled_running_task_is_purged_and_permit_released() {
         struct TrackReleases {
@@ -766,9 +716,6 @@ mod tests {
         }
     }
 
-    /// 누수 회귀 방지 — `agent.task_set_result` 로 외부에서 Running 을
-    /// 곧장 Succeeded 로 전이시킨 task(0단계가 예전엔 `Cancelled` 만 흡수해
-    /// 이 경우를 놓쳤다)도 handle 제거 + release_permit 이 일어나야 한다.
     #[test]
     fn externally_succeeded_running_task_is_purged_and_permit_released() {
         let exec = TrackReleases {
@@ -799,7 +746,6 @@ mod tests {
         );
     }
 
-    /// 위와 동형 — `Failed`. 두 상태 모두 `TaskState::is_terminal()` 로 흡수된다.
     #[test]
     fn externally_failed_running_task_is_purged_and_permit_released() {
         let exec = TrackReleases {
@@ -832,8 +778,6 @@ mod tests {
         );
     }
 
-    /// 0단계는 handle 이 없는(dispatch 이력 없는) terminal task 에는 no-op —
-    /// release_permit 을 호출하지 않는다(과호출 방지).
     #[test]
     fn terminal_task_without_handle_does_not_call_release_permit() {
         let exec = TrackReleases {

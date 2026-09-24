@@ -1,8 +1,7 @@
 //! Reducer — 여러 task 의 결과를 단일 값으로 합성.
 //!
-//! 본 모듈은 합성 로직만 책임진다. task lookup 과 권한 검사는 호출 측의 일이며,
-//! `Custom { command }` 의 실제 shell 실행도 호출자(호스트)가 closure 로 주입한다
-//! (테스트가 쉽고, tasty-agent 가 shell-free 유지).
+//! task 조회와 권한 검사는 호출자가 담당한다. custom 전략은 주입한 함수를 실행하며,
+//! 기본 셸 실행 함수로 run_custom_shell을 제공한다.
 //!
 //! 4종 in-process 전략:
 //! - `first_success`: 첫 `Succeeded` task 의 `output` (없으면 `error: "no_success"`)
@@ -15,12 +14,8 @@
 //! - `custom { command }`: 호출 측이 제공한 closure 로 명령 실행. closure 는
 //!   stdin 에 `[result1, result2, ...]` JSON 배열을 받고 stdout 을 결과로 반환.
 //!
-//! 선택적 전처리: [`extract_paths`] — 전략 실행 전에 각 input 의 `output` 에서
-//! JSON Pointer 경로 하나만 뽑아낸다. `Run` task 의 `{pid,stdout,stderr}` 같은
-//! 중첩 구조를 그대로 합성하면(특히 `concat_text`/`merge_json`) 결과가 유효한
-//! JSON 도 아니고 사람이 읽을 텍스트만 뽑히지도 않는다 — 호출자가 이 단계를
-//! 강제하는 게 아니라 opt-in 으로 둔 이유는 `all`/`merge_json` 처럼 구조 자체가
-//! 필요한 용도도 있기 때문.
+//! extract_paths는 선택한 JSON Pointer의 값만 합성하도록 입력을 추출한다.
+//! 구조 전체가 필요한 전략도 있으므로 명시적으로 요청한 경우에만 적용한다.
 
 use serde_json::{Map, Value};
 
@@ -41,16 +36,8 @@ pub struct ReducerInput {
     pub output: Value,
 }
 
-/// `extract_path`(RFC 6901 JSON Pointer, 예: `/stdout/text`)가 지정되면 각
-/// input 의 `output` 에서 그 경로만 뽑아낸 새 `ReducerInput` 목록을 만든다 —
-/// `Run` task 의 `{pid,stdout,stderr}` 구조를 모른 채 통째로 합성하는 대신,
-/// 사람이 읽을 stdout 텍스트 같은 leaf 값만 reducer 전략에 넘기기 위한 전처리
-/// 단계. `extract_path` 가 `None` 이면 입력을 그대로 통과시킨다(하위 호환).
-///
-/// 경로가 없는 input(예: `Run` 이 아닌 다른 kind 의 결과라 구조 자체가 다름)은
-/// reduce 전체를 실패시키지 않는다 — 그 input 만 `output: Null` 로 대체하고,
-/// 조용히 누락되지 않도록 두 번째 반환값(`warnings`)에 사유를 남긴다. 호출자는
-/// 이 경고를 응답에 그대로 실어야 한다.
+/// JSON Pointer가 있으면 해당 값만 추출한다. None이면 원래 입력을 반환한다.
+/// 경로가 없는 입력은 Null로 바꾸고 경고를 반환한다. 호출자는 경고를 응답에 포함해야 한다.
 pub fn extract_paths(
     inputs: &[ReducerInput],
     extract_path: Option<&str>,
@@ -176,7 +163,6 @@ where
             let stdout = runner(command, &stdin_json).map_err(|e| {
                 AgentError::InvalidArgument(format!("custom reducer command failed: {e}"))
             })?;
-            // stdout 을 JSON 으로 시도 → 실패하면 string value.
             match serde_json::from_str::<Value>(stdout.trim()) {
                 Ok(v) => Ok(v),
                 Err(_) => Ok(Value::String(stdout)),
@@ -186,11 +172,7 @@ where
     }
 }
 
-/// `reduce_with_custom` 에 넘기는 기본 `runner` — `Custom { command }` 를 OS 셸로
-/// 실행하고 stdout 을 돌려준다. stdin 으로 입력 JSON 을 그대로 흘려보낸다.
-///
-/// 호출자가 직접 프로세스를 띄우고 싶으면 `reduce_with_custom` 에 자기 함수를
-/// 넘기면 된다 — 이 함수는 그 자리의 기본값이지 유일한 선택지가 아니다.
+/// custom 전략의 기본 셸 실행기. 입력 JSON을 stdin으로 보내고 stdout을 반환한다.
 pub fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
@@ -234,9 +216,6 @@ mod tests {
     use serde_json::json;
 
     fn input(succeeded: bool, output: Value) -> ReducerInput {
-        // 대부분의 테스트는 task_id 를 들여다보지 않으므로 고정값으로 충분.
-        // 값 자체를 검증해야 하는 케이스(`extract_paths` 경고 메시지)는
-        // `input_with_id` 를 쓴다.
         input_with_id(succeeded, "t", output)
     }
 
@@ -337,7 +316,6 @@ mod tests {
             command: "doubled".into(),
         };
         let out = reduce_with_custom(&strategy, &inputs, |_cmd, stdin| {
-            // 검증: stdin 이 정확한 배열로 들어왔는지.
             let v: Value = serde_json::from_str(stdin).unwrap();
             assert_eq!(v, json!([1, 2]));
             Ok("[2, 4]".to_string())
@@ -400,7 +378,6 @@ mod tests {
             warnings,
             vec!["input #1(task t-custom)에 경로 '/stdout/text'가 없어 null로 처리했습니다"]
         );
-        // 나머지 input 들의 reduce 는 정상 진행 — missing input 은 null 로만 반영.
         let out = reduce_in_process(&ReducerStrategy::ConcatText, &extracted).unwrap();
         assert_eq!(out, json!("out1\n"));
     }

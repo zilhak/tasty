@@ -1,15 +1,7 @@
-//! Tasty Agent — 다중 에이전트 협업 primitive.
+//! 작업 DAG와 barrier·semaphore·lease·reducer·rate limit을 제공한다.
 //!
-//! 1차 시민으로 다음을 제공:
-//! - **Task DAG**: 의존성을 가진 task 그래프. state 머신과 사이클 검출.
-//! - (후속) Barrier / Semaphore / Lease / Reducer / Rate Limit.
-//!
-//! 영속은 `tasty-memory` 위에 얹는다 (scope = workspace, key prefix =
-//! `tasty.agent.task.<id>`). 본 크레이트는 GUI/IPC와 독립적이며 상태 머신 + 영속
-//! 헬퍼 + `reduce_with_custom` 의 기본 runner(`run_custom_shell` — 이 크레이트가
-//! 프로세스를 띄우는 유일한 자리이고, 호출자가 자기 함수로 갈아끼울 수 있는
-//! 기본값이다)를 담당한다. IPC dispatcher와 task 실행 엔진(run, 옵션 폴링)은
-//! 호스트가 본 크레이트의 API를 호출해 조율한다.
+//! 상태와 영속 처리는 tasty-memory를 사용하며 GUI·IPC 실행은 호스트가 담당한다.
+//! custom reducer에는 셸 실행 함수를 주입할 수 있고, run_custom_shell을 기본값으로 제공한다.
 #![allow(clippy::result_large_err)]
 
 pub mod barrier;
@@ -82,23 +74,14 @@ pub enum AgentError {
 
 pub type Result<T> = std::result::Result<T, AgentError>;
 
-/// 호출자가 준 값(`value`)을 `prefix` 뒤에 붙여 memory 키를 만든다.
-///
-/// 키 규칙 위반을 memory 층에 맡기면 `MemoryError::InvalidKey` 가 되어 IPC 에서
-/// internal(`-32603`)로 나가고, 메시지의 좌표도 접두사를 붙인 **내부 키** 기준이라
-/// 호출자는 자기 값의 어디가 틀렸는지 못 읽는다. 그래서 여기서 먼저 재고
-/// 입력 오류(`InvalidArgument`)로, 호출자가 준 값 기준 좌표로 돌려준다.
-/// 판정과 허용 문자 문구는 `tasty_memory` 의 것을 그대로 쓴다 — 집합을 여기
-/// 다시 적지 않는다. 빈 값은 종전대로 통과한다(키가 접두사만으로 유효하다).
+/// 호출자 값으로 memory 키를 만들고 입력 오류를 InvalidArgument로 반환한다.
+/// 접두사가 붙은 내부 키 대신 호출자 값의 문자 위치를 오류에 표시한다.
+/// 허용 문자 검사는 tasty_memory를 사용한다. 빈 값도 접두사만으로 키가 유효하면 허용한다.
 pub(crate) fn component_key(prefix: &str, label: &str, value: &str) -> Result<String> {
     let key = format!("{prefix}{value}");
     if let Err(full) = tasty_memory::validate_key(&key) {
         let budget = tasty_memory::MAX_KEY_LEN.saturating_sub(prefix.len());
-        // 접두사는 허용 문자만 쓰므로 실패 원인은 값 쪽이다. 문자 위반이면 값을 문자
-        // 단위로 다시 재서 값 기준 좌표와 **그 문자 자체**를 싣는다 — `validate_key` 는
-        // 바이트를 세고 첫 바이트를 문자로 찍어서 `é` 가 `'Ã'` 로 나온다. 한 문자가
-        // 허용되는지는 `validate_key` 에 그 문자만 넘겨 묻는다(집합을 여기 다시 적지 않는다).
-        // 문자가 다 허용되면 길이 초과다.
+        // validate_key의 바이트 위치 대신 입력 문자의 위치를 보고한다.
         let mut buf = [0u8; 4];
         let bad = value
             .chars()
@@ -127,8 +110,6 @@ mod component_key_tests {
         MemoryStore::open_in_memory().unwrap()
     }
 
-    /// 호출자 값 기준 좌표로, 입력 오류로 돌아와야 한다 — 내부 키 좌표(접두사 길이
-    /// 만큼 밀린 값)나 `Memory` 오류로 새면 IPC 가 `-32603` 을 낸다.
     fn assert_caller_error(err: AgentError, label: &str) {
         let AgentError::InvalidArgument(msg) = &err else {
             panic!("expected InvalidArgument, got {err:?}");
@@ -174,8 +155,6 @@ mod component_key_tests {
         );
     }
 
-    /// 다바이트 문자는 입력한 그 문자와 문자 단위 좌표로 나온다 — 바이트 좌표 · 첫 바이트를
-    /// 문자로 찍은 값(`'Ã'`)이 새면 호출자가 자기 이름에서 그 글자를 못 찾는다.
     #[test]
     fn a_multibyte_char_is_named_as_typed_and_counted_in_chars() {
         let mut m = mem();

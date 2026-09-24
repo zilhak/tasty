@@ -1,16 +1,13 @@
 //! Barrier primitive — N개 신호가 모일 때까지 기다리는 동기화 게이트.
 //!
-//! 본 단계(Phase 5.2)에서는 **poll-based** 모델만 제공한다. `barrier_await` 은
-//! 즉시 현 상태를 반환하고, 호출자가 다시 호출해 폴링한다. 실제 long-poll/wakeup
-//! 은 scheduler 도입 후 추가.
+//! 상태 조회는 즉시 반환하며, 대기는 호출자가 반복 조회해 구현한다.
 //!
 //! 영속: `tasty.agent.barrier.<name>` (workspace scope).
 //!
 //! 상태 전이:
 //! - `Open`: 신호 누적 중. `signal` 으로 count_signaled++.
 //! - `Open → Closed`: count_signaled >= count_required 도달.
-//! - `Open → TimedOut`: timeout_ms 가 있고 (created_at + timeout_ms) < now 인 채로
-//!   `signal`/`await`/`state` 가 호출되는 시점.
+//! - `Open → TimedOut`: 만료 시각 이상에서 `signal`/`await`/`state`를 호출했을 때.
 //! - `Closed/TimedOut`: 종착 상태. signal 거부.
 
 use serde::{Deserialize, Serialize};
@@ -62,7 +59,7 @@ impl Barrier {
         }
     }
 
-    /// Open 상태인데 timeout 이 지났으면 TimedOut 으로 도장 찍는다. 변경 여부 반환.
+    /// Open 상태에서 기한이 지났으면 TimedOut으로 바꾸고 변경 여부를 반환한다.
     fn maybe_timeout(&mut self, now_ms: u64) -> bool {
         if matches!(self.state, BarrierState::Open) && self.is_expired(now_ms) {
             self.state = BarrierState::TimedOut;
@@ -114,8 +111,7 @@ impl<'a> BarrierStore<'a> {
         }
     }
 
-    /// 워크스페이스의 모든 barrier 목록. `now_ms` 가 있으면 조회 시점에 timeout
-    /// 도장도 함께 찍어 영속한다.
+    /// 모든 barrier를 조회한다. now_ms가 있으면 만료 상태도 저장한다.
     pub fn list(&mut self, workspace_id: WorkspaceId, now_ms: Option<u64>) -> Result<Vec<Barrier>> {
         let scope = Scope::Workspace(workspace_id);
         let opts = ListOpts {
@@ -205,7 +201,7 @@ impl<'a> BarrierStore<'a> {
         Ok(b)
     }
 
-    /// 현 상태 조회 (timeout 도장 포함).
+    /// 만료 상태를 반영한 뒤 조회한다.
     pub fn state(&mut self, workspace_id: WorkspaceId, name: &str, now_ms: u64) -> Result<Barrier> {
         let mut b = self
             .get(workspace_id, name)?
@@ -216,7 +212,6 @@ impl<'a> BarrierStore<'a> {
         Ok(b)
     }
 
-    /// 삭제 (드물게 사용).
     pub fn delete(&mut self, workspace_id: WorkspaceId, name: &str) -> Result<()> {
         let scope = Scope::Workspace(workspace_id);
         self.mem

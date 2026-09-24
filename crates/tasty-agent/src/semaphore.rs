@@ -1,8 +1,7 @@
 //! Semaphore primitive — N개 permit 까지 동시 점유 허용.
 //!
-//! 본 단계(Phase 5.2)에서는 **poll-based acquire** 만 제공한다. 가용 permit 이
-//! 없으면 `acquire` 가 `acquired=false` 로 즉시 응답하고, 호출자가 다시 시도한다.
-//! 실제 blocking + queue/fairness 는 scheduler 도입 후 추가.
+//! acquire는 즉시 반환하며 permit이 없으면 호출자가 재시도한다.
+//! 차단 대기·대기열·공정성은 제공하지 않는다.
 //!
 //! 영속: `tasty.agent.semaphore.<name>` (workspace scope).
 //!
@@ -15,15 +14,10 @@
 //!
 //! ## 만료 (opt-in)
 //!
-//! [`Lease`](crate::lease) 와 **같은 메커니즘**을 쓴다 — 두 primitive 가 각자
-//! 다른 만료 개념을 갖지 않게 의도적으로 맞췄다: `acquire` 에 `ttl_ms` 를 주면
-//! `expires_at = now + ttl_ms` 가 기록되고, 만료된 홀더는 다음 `acquire`/`list`
-//! 시점에 lazy 하게 evict 된다. 같은 holder 의 재acquire 가 갱신(heartbeat)이다.
-//!
-//! **기본값은 만료 없음**이다(`ttl_ms: None`). 만료를 기본으로 켜면 오래 걸리는
-//! 정당한 작업의 permit 이 도중에 회수되어 두 홀더가 동시에 임계구역에 들어가는데,
-//! 그건 교착보다 나쁘다 — 근거·대안·재검토 조건은
-//! [죽은 홀더와 한도 조정](../../../docs/dev-guide/agent-runner.md#죽은-홀더와-한도-조정).
+//! ttl_ms를 지정하면 now + ttl_ms를 저장하고 다음 acquire/list에서 만료된 holder를
+//! 회수한다. 같은 holder의 재획득은 기한을 갱신한다. 기본은 만료 없음이다.
+//! 자동 만료는 아직 실행 중인 작업의 permit을 회수할 수 있으므로 명시적으로 요청한다.
+//! [운영 기준](../../../docs/dev-guide/agent-runner.md#죽은-홀더와-한도-조정).
 //!
 //! ## 리사이즈 (`set_permits`)
 //!
@@ -45,12 +39,7 @@ fn semaphore_key(name: &str) -> Result<String> {
     crate::component_key(SEMAPHORE_KEY_PREFIX, "semaphore name", name)
 }
 
-/// permit 하나를 점유 중인 홀더.
-///
-/// `acquired_at` 이 `Option` 인 이유는 **모르는 것을 0 으로 뭉개지 않기 위해서**다
-/// — holders 가 문자열 배열이던 시절에 잡힌 permit 은 획득 시각이 기록되지 않았고,
-/// 그걸 epoch 로 적으면 "56년째 점유 중" 이라는 거짓말이 된다. `None` 은 "이
-/// 홀더는 시각 기록 이전에 잡았다" 는 뜻이다.
+/// permit 하나의 점유 정보. 획득 시각이 없던 옛 레코드는 acquired_at=None으로 읽는다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SemaphoreHolder {
     pub id: String,
@@ -71,9 +60,7 @@ impl SemaphoreHolder {
     }
 }
 
-/// 구 형식(`holders: ["h1", "h2"]`)으로 영속된 세마포어를 그대로 읽는다. 이미
-/// 실행 중인 인스턴스의 memory db 에 그 형식이 남아 있으므로 새 코드가 그것을
-/// 못 읽으면 부팅 시 세마포어가 통째로 사라진다.
+/// 문자열 holder 목록으로 저장한 옛 형식도 읽는다.
 impl<'de> Deserialize<'de> for SemaphoreHolder {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -480,11 +467,7 @@ mod tests {
 
     // ── 만료 ────────────────────────────────────────────────────────────
 
-    /// 2026-09-04 실측 사고의 재현. permits 1 짜리 세마포어를 잡은 홀더가 반납
-    /// 없이 사라지면(모델 사용 한도로 응답 불능) 대기자는 시간이 아무리 지나도
-    /// 들어가지 못한다. `ttl_ms` 를 주지 않은 permit 이 **영구히** 묶인다는 사실
-    /// 자체를 고정하는 음성 방향 테스트다 — 나중에 누가 "정리 좀 하자" 며 전역
-    /// 기본 만료를 넣으면 여기서 잡힌다. 근거는 docs/dev-guide/agent-runner.md#죽은-홀더와-한도-조정.
+    /// TTL 생략 시 시간이 지나도 자동 회수하지 않는다.
     #[test]
     fn a_permit_taken_without_a_ttl_is_never_reclaimed() {
         let (_td, mut mem) = fresh();
@@ -662,8 +645,6 @@ mod tests {
 
     // ── 구 형식 호환 ────────────────────────────────────────────────────
 
-    /// `holders` 가 문자열 배열이던 시절의 레코드를 그대로 읽는다. 못 읽으면
-    /// 실행 중 인스턴스의 세마포어가 부팅 시 통째로 사라진다.
     #[test]
     fn legacy_string_holders_still_load() {
         let (_td, mut mem) = fresh();

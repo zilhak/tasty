@@ -1,25 +1,8 @@
-//! DAG 그룹 — 한 workspace 의 flat 한 task 목록을 "서로 무관한 그래프" 단위로 쪼갠 뷰.
+//! 워크스페이스의 작업을 DAG별로 묶은 조회 결과. 별도 DAG 레코드는 저장하지 않는다.
 //!
-//! Tasty 의 영속 모델에는 DAG 라는 1급 레코드가 없다. `Task` 는 workspace 에만 속하고,
-//! `TaskStore::list(workspace_id)` 는 그 workspace 의 task 를 통째로 돌려준다. 그런데
-//! 한 workspace 안에서 서로 무관한 그래프를 여럿 돌리는 사용(conductor 류 다중 에이전트)
-//! 이 정상이라, "workspace = DAG" 로 간주하면 곧바로 어긋난다.
-//!
-//! 그래서 DAG 를 **영속 스키마를 바꾸지 않고 도출(derive)** 한다 — `Task` 에 필드를
-//! 추가하면 이미 저장된 task 가 전부 "DAG 없음" 으로 떨어져 기존 그래프가 목록에서
-//! 사라지지만, 도출은 기존 task 를 자동으로 편입시켜 마이그레이션이 필요 없다.
-//!
-//! 도출 규칙(우선순위 순):
-//! 1. `task.metadata.dag` 가 문자열이면 그 값이 그룹 키 (**explicit**). 연결성과 무관하게
-//!    같은 키끼리 한 DAG 로 묶인다.
-//! 2. 나머지는 **약연결 컴포넌트**로 자동 그룹핑 (**derived**). 엣지는 무방향으로 보며,
-//!    [`referenced_task_ids`] 3종(`depends_on` ∪ `Fallback.task` ∪ `Reduce.inputs`) 에
-//!    `metadata.fallback_of` 역참조를 더한 4종이다 — inline fallback 으로 동적 생성된
-//!    task 가 원래 DAG 에서 떨어져 나가지 않게 하려면 역참조가 필요하다. 이 4종은
-//!    `collect_graph_edges`(호스트의 `agent.task_graph` 렌더)가 그리는 엣지와 같다.
-//!
-//! `metadata` 는 이미 `semaphore`/`lease`/`fallback_of` 가 쓰는 확장 지점이라 같은 관례를
-//! 따른다.
+//! metadata.dag가 있으면 같은 키로 묶고, 나머지는 약연결 컴포넌트로 나눈다.
+//! depends_on·Fallback.task·Reduce.inputs와 metadata.fallback_of 관계를 사용한다.
+//! fallback_of도 읽어 동적으로 만든 fallback이 원래 그룹에 포함되게 한다.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -66,10 +49,7 @@ impl DagStateCounts {
     /// 전부 terminal 이면 `succeeded`(전부 succeeded) 또는 `skipped`(cancelled/skipped
     /// 섞임) → `ready` 하나라도 있으면 `ready` → 그 외 `waiting`.
     ///
-    /// **반환 어휘는 위 여섯 문자열이 전부다** — `"cancelled"` 나 `"unknown"` 을 내는
-    /// 분기가 없다. 화면의 상태 필터가 이 어휘에 맞춘 목록을 따로 들고 있고, 그
-    /// 정합을 테스트가 양방향으로 고정하므로 여기에 분기를 더하면 그 테스트가 먼저
-    /// 깨진다. 공개인 이유가 그 테스트다.
+    /// 반환 가능한 상태는 위 여섯 가지이며 cancelled와 unknown은 직접 반환하지 않는다.
     pub fn rollup(&self) -> &'static str {
         if self.running > 0 {
             return "running";
@@ -148,7 +128,6 @@ pub fn group_tasks_into_dags(tasks: &[Task]) -> Vec<DagSummary> {
 }
 
 fn group_within_workspace(workspace_id: WorkspaceId, tasks: &[&Task]) -> Vec<DagSummary> {
-    // 1) explicit: metadata.dag 가 문자열인 task 는 연결성과 무관하게 그 키로 묶는다.
     let mut explicit: BTreeMap<&str, Vec<&Task>> = BTreeMap::new();
     let mut derived_pool: Vec<&Task> = Vec::new();
     for t in tasks {
@@ -171,7 +150,6 @@ fn group_within_workspace(workspace_id: WorkspaceId, tasks: &[&Task]) -> Vec<Dag
         })
         .collect();
 
-    // 2) derived: 나머지를 약연결 컴포넌트로 union-find.
     for group in weakly_connected_components(&derived_pool) {
         // derived id 의 root 는 그룹 내 `(created_at, id)` 사전순 최소 task —
         // 같은 task 집합이면 호출 때마다 같은 id 가 나와야 한다.
@@ -331,7 +309,6 @@ impl UnionFind {
     fn union(&mut self, a: usize, b: usize) {
         let (ra, rb) = (self.find(a), self.find(b));
         if ra != rb {
-            // 작은 인덱스를 root 로 고정 — rank 균형보다 결정론이 중요하다.
             let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
             self.parent[hi] = lo;
         }
