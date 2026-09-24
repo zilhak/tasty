@@ -1,10 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! `tasty-gallery` 바이너리 진입점.
-//!
-//! winit + wgpu + egui_wgpu 부트스트랩. 본체 `tasty` 의 GPU 파이프라인과
-//! 별개로 가장 단순한 형태만 갖춘다 — 본 phase 의 목적은 egui 위젯 카탈로그를
-//! 시각화하는 것뿐이라 터미널 렌더러 / shm / plugin 등은 끌어오지 않는다.
+//! winit·wgpu·egui로 갤러리를 실행한다. 본체의 터미널·플러그인 실행은 포함하지 않는다.
 
 use std::sync::Arc;
 
@@ -33,13 +29,8 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 배치 스크린샷 계획 — `TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]`.
-/// 지정 카탈로그 항목들을 **한 인스턴스에서** 순차로 선택→settle→캡처하고
-/// 마지막에 종료한다(콜드스타트 1회). 갤러리는 IPC 가 없어 격리 자동 시각검증을
-/// 이 경로로 한다.
-///
-/// `@<y>` 는 본문 스크롤 오프셋(px)이다. 한 페이지에 여러 섹션이 쌓이면 상단
-/// 뷰포트만으로는 아래쪽 specimen 을 찍을 수 없어, 그 자리로 강제 스크롤한다.
+/// TASTY_GALLERY_SHOT=<idx>[@<y>]:<png>[,...]로 페이지별 캡처를 지정한다.
+/// 한 인스턴스에서 페이지 선택·대기·캡처를 반복한 뒤 종료한다. y는 본문 스크롤 위치다.
 struct ShotPlan {
     /// (catalog index, 스크롤 오프셋, png 경로) 목록.
     items: Vec<(usize, f32, std::path::PathBuf)>,
@@ -73,10 +64,7 @@ fn parse_shot_env() -> Option<ShotPlan> {
     })
 }
 
-/// 창 크기 — `TASTY_GALLERY_SIZE=<w>x<h>` 로 덮어쓸 수 있다.
-///
-/// 문서 컬럼은 최대 1080 이라 기본 1100 창에서는 우측이 잘린다. 배치 스크린샷으로
-/// specimen 전폭을 담으려면 창을 넓혀야 해서 열어 둔 손잡이다.
+/// TASTY_GALLERY_SIZE=<w>x<h>로 창 크기를 지정한다. 넓은 예제의 캡처에 사용한다.
 fn window_size() -> (f64, f64) {
     const DEFAULT: (f64, f64) = (1100.0, 720.0);
     let Ok(raw) = std::env::var("TASTY_GALLERY_SIZE") else {
@@ -121,7 +109,6 @@ impl ApplicationHandler for App {
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let mut rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
-        // 스크린샷 모드: 첫 페이지를 선택해 둔다 (idx = 페이지 index).
         if let Some(plan) = &self.shot
             && let Some(&(idx, y, _)) = plan.items.first()
         {
@@ -136,7 +123,6 @@ impl ApplicationHandler for App {
             return;
         };
 
-        // egui 입력 처리.
         let response = rt.egui_state.on_window_event(&rt.window, &event);
         if response.repaint {
             rt.window.request_redraw();
@@ -156,7 +142,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                // 배치 스크린샷: 현재 항목을 4프레임 settle 후 캡처.
+                // 배치 캡처는 페이지를 선택한 뒤 4프레임 기다린다.
                 let capture_path = if let Some(plan) = self.shot.as_mut() {
                     plan.frame += 1;
                     (plan.frame >= 4)
@@ -168,7 +154,6 @@ impl ApplicationHandler for App {
                 if let Err(err) = render_frame(rt, capture_path.as_deref()) {
                     tracing::error!("render error: {err:?}");
                 }
-                // 캡처했으면 다음 항목으로 진행, 끝났으면 종료.
                 if capture_path.is_some()
                     && let Some(plan) = self.shot.as_mut()
                 {
@@ -256,7 +241,6 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
         opts.zoom_with_keyboard = false;
     });
     tasty_gallery::fonts::install(&egui_ctx);
-    // SVG icon (chevron) loaders.
     egui_extras::install_image_loaders(&egui_ctx);
 
     let egui_state = egui_winit::State::new(
@@ -359,7 +343,7 @@ fn render_frame(rt: &mut Runtime, capture: Option<&std::path::Path>) -> anyhow::
 
     rt.queue.submit(std::iter::once(encoder.finish()));
 
-    // 스크린샷 모드: present 전에 surface 텍스처를 PNG 로 떨군다.
+    // present 전에 텍스처를 읽어 PNG로 저장한다.
     if let Some(path) = capture {
         capture_to_png(
             &rt.device,
@@ -375,8 +359,7 @@ fn render_frame(rt: &mut Runtime, capture: Option<&std::path::Path>) -> anyhow::
     Ok(())
 }
 
-/// surface 텍스처(BGRA)를 RGB PNG 로 저장. 본체 `gpu/screenshot.rs` 의 readback
-/// 로직과 동일(256B row 정렬, BGRA→RGB, map_async + Wait poll).
+/// BGRA 텍스처를 읽어 RGB PNG로 저장한다. 행은 GPU 복사 조건에 맞춰 256바이트로 정렬한다.
 fn capture_to_png(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -423,9 +406,9 @@ fn capture_to_png(
     let slice = buffer.slice(..);
     let (tx, rx) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |r| {
-        let _ = tx.send(r); // rx 는 같은 스코프 — 송신 실패 시 결과만 유실(스크린샷 skip), 안전
+        let _ = tx.send(r); // 수신자가 사라지면 캡처 결과를 전달할 곳이 없으므로 무시한다.
     });
-    let _ = device.poll(wgpu::Maintain::Wait); // map 콜백 구동용 동기 poll — 반환(queue 상태) 불필요
+    let _ = device.poll(wgpu::Maintain::Wait); // map 콜백 완료를 기다린다. 반환된 큐 상태는 사용하지 않는다.
     if !matches!(rx.recv(), Ok(Ok(()))) {
         tracing::warn!("gallery screenshot capture failed");
         return;

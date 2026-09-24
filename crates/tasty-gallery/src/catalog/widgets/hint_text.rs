@@ -1,8 +1,5 @@
-//! `Hint text` specimen — 디자인(4) `components/text/Hint text` 카드.
-//!
-//! 입력/컨트롤 *아래* 에 붙는 보조 설명 텍스트. 작은 크기(caption) · text-muted ·
-//! sentence case · 줄높이 1.5 · 대상 바로 아래. 본체의 placeholder 도 같은 muted
-//! 색을 쓴다(`tasty_egui_theme::hint_text`).
+//! 컨트롤 아래의 보조 설명과 키보드 힌트 예제.
+//! 보조 설명은 text-muted를 사용하며 입력 필드 안의 placeholder와 구분한다.
 
 use std::cell::RefCell;
 
@@ -40,7 +37,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.set_max_width(theme.measure_md.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
 
-            // 1) 라벨 + mono 입력 + 힌트 (Remote tasty path).
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                 field_label(ui, theme, "Remote tasty path");
@@ -52,7 +48,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 hint_line(ui, theme, "Leave empty to auto-detect on first connect.");
             });
 
-            // 2) 라벨 + 힌트 (Reduced motion, 입력 없음).
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                 field_label(ui, theme, "Reduced motion");
@@ -63,7 +58,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
 
-            // 3) 인라인 Kbd 가 섞인 다이얼로그 힌트 한 줄.
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                 hint_line(ui, theme, "Press");

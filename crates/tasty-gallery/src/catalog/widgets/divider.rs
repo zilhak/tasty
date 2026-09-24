@@ -1,11 +1,5 @@
-//! `divider` specimen — Pane divider (research §2.5 Layouts).
-//!
-//! 분할된 pane 사이의 리사이즈 핸들. 1px `separator` 선 + 그 위에 얹힌
-//! ~7px hit-band(드래그 잡는 영역). 포인터가 band 위에 오면 선이 accent-primary 로
-//! 바뀌고 커서가 col/row-resize 로 전환된다. 가로·세로 양축 동일.
-//!
-//! 본체 `src/adapters/ui/divider.rs::draw_pane_dividers` 의 시각 패턴을 Theme
-//! 토큰만으로 재현 (binary 미의존).
+//! 분할선의 가로·세로·호버 상태를 정적으로 비교한다.
+//! 가는 선보다 넓은 드래그 영역을 색으로 보여주며 실제 크기 조절은 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -15,7 +9,6 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// `vertical=true` 면 좌우 분할(col-resize), false 면 상하 분할(row-resize).
 /// `hover=true` 면 선을 accent-primary 로, 아니면 separator 로 그린다.
 fn split(ui: &mut egui::Ui, theme: &Theme, vertical: bool, hover: bool) {
-    // 캔버스: 폭 field_width_lg(200), 높이 spacing_xl×5(120) — 디자인 데모 비율.
     let w = theme.field_width_lg.value();
     let h = theme.spacing_xl.value() * 5.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
@@ -27,7 +20,6 @@ fn split(ui: &mut egui::Ui, theme: &Theme, vertical: bool, hover: bool) {
     } else {
         egui::Color32::from(theme.separator)
     };
-    // hit-band: accent-primary 저알파 tint (드래그 영역 가시화).
     const HIT_BAND_ALPHA: u8 = 36;
     let band = theme.accent_primary().with_alpha(HIT_BAND_ALPHA).to_egui();
     let band_w = theme.spacing_sm.value(); // ~8 hit-band

@@ -1,10 +1,5 @@
-//! Toast 데모 — 디자인(4) `components/feedback/Toast` + `Toast stack` 두 카드.
-//!
-//! 카드 **한 장**만 보여주는 데모라 스택 함수를 안 부르고 단일 카드 함수
-//! (`toast_card::draw_single_card` = `tasty_ui_widgets::draw_toast_single_card`)를 부른다.
-//! 그 함수의 치수(galley · 폭 · 높이)와 색(fill · border · accent · alpha 곱)은 본체
-//! 스택이 쓰는 `toast_layout_card` · `toast_card_colors` 에서 온다 — 여기서 다시 계산하지
-//! 않는다. coalesce / fade / lifetime 등 시간 의존 상태는 본 데모 범위 밖이다.
+//! 본체와 같은 단일 카드 그리기 함수로 토스트 종류와 쌓이는 순서를 비교한다.
+//! 치수·색 계산을 공유하며 수명·페이드·중복 합치기는 실행하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -16,12 +11,10 @@ struct ToastCardProps {
     message: &'static str,
 }
 
-/// 본체 스택의 카드 1장과 같은 시각 — 치수·색 계산까지 위젯 크레이트의 같은 함수다.
 fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps, alpha: f32) {
     toast_card::draw_single_card(ui, theme, props.kind, props.message, alpha);
 }
 
-/// Toast — 단일 카드 variant (info/success/warning/error).
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let cards = [
         ToastCardProps {
@@ -78,12 +71,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// Toast stack — 우측 하단 앵커 스택. 본체 계약(`docs/design/systems/toast.md` 의 스코프 ·
-/// 합치기/제한 절)대로 **아래에서 위로 쌓아 가장 새것이 맨 아래**이고, 스코프당 5 장을 넘으면
-/// 가장 오래된 것이 즉시 사라진다 — "+N more" 행은 없다.
+/// 가장 새 토스트가 아래에 오도록 배치한다. 본체는 스코프당 다섯 개를 넘으면 가장 오래된 것을 지운다.
+/// 나이에 따라 색이 흐려지지 않으므로 모든 예제의 불투명도는 1로 둔다.
 pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
-    // 위에서부터 오래된 순 → 맨 아래가 가장 최근. 본체는 떠 있는 동안 alpha 1 이고
-    // 등장/소멸 페이드만 있으므로(나이에 따른 그라데이션 없음) 전부 1.0 으로 그린다.
     let stack = [
         ToastCardProps {
             kind: ToastKind::Warning,
@@ -100,7 +90,6 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
     ];
 
     stage(ui, theme, StageVariant::Solo, |ui| {
-        // bg-app 영역 위에서 우측 하단 앵커를 흉내내기 위해 우측 정렬.
         egui::Frame::new()
             .fill(egui::Color32::from(theme.bg_app()))
             .inner_margin(egui::Margin::same(theme.spacing_xl.value() as i8))

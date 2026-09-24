@@ -2,7 +2,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
-/// Stage 레이아웃 변형 (research §1.3 `.stage` variants).
+/// 예제 영역의 레이아웃 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StageVariant {
     /// flex wrap, padding 26 — 기본 무대.
@@ -37,7 +37,7 @@ fn col(h: impl Into<egui::Color32>) -> egui::Color32 {
     h.into()
 }
 
-/// 카탈로그 구역 헤딩 — mono 12 uppercase muted + 하단 separator (research `.g-section > h2`).
+/// 구역 제목과 아래 구분선을 그린다.
 pub fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
     // margin-top 46 ≈ spacing_xl(24) + spacing_lg(16).
     ui.add_space(theme.spacing_xl.value() + theme.spacing_lg.value());
@@ -51,7 +51,7 @@ pub fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
     ui.add_space(theme.spacing_sm.value());
 }
 
-/// 카탈로그 한 항목의 헤딩 — h3 16 600 + when 13 secondary (research `.spec-head`).
+/// 예제 제목과 사용 상황 설명을 그린다.
 pub fn spec(ui: &mut egui::Ui, theme: &Theme, title: &str, when: Option<&str>) {
     // margin-top 26 ≈ spacing_xl(24).
     ui.add_space(theme.spacing_xl.value());
@@ -72,7 +72,7 @@ pub fn spec(ui: &mut egui::Ui, theme: &Theme, title: &str, when: Option<&str>) {
     ui.add_space(theme.spacing_md.value());
 }
 
-/// 라이브 데모 무대 — border + radius + bg-panel, 변형별 패딩/레이아웃 (research `.stage`).
+/// 예제 영역의 테두리·배경과 종류별 여백·레이아웃을 적용한다.
 pub fn stage(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -116,7 +116,7 @@ pub fn stage(
         });
 }
 
-/// 라벨 붙은 데모 묶음 — mono 10 uppercase muted 라벨 + 가로 행 (research `.cluster`).
+/// 라벨과 예제들을 한 묶음으로 배치한다.
 pub fn cluster(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -137,7 +137,7 @@ pub fn cluster(
     });
 }
 
-/// 치수표 + 토큰칩 — 좌 "Layout spec" dl / 우 "Tokens used" 칩 (research `.meta`).
+/// 왼쪽에는 치수 설명을, 오른쪽에는 사용한 토큰을 표시한다.
 /// `tokens` 가 비면 1컬럼(Layout spec)만 그린다.
 pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[TokenChip]) {
     body_column(ui, |ui| {
@@ -228,7 +228,7 @@ fn body_column<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R 
     .inner
 }
 
-/// 보조 산문 — muted 작은 문단 (research `.note`).
+/// 보조 설명을 작은 글씨로 표시한다.
 pub fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.add_space(theme.spacing_md.value());
     body_column(ui, |ui| {
@@ -243,12 +243,12 @@ pub fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     });
 }
 
-/// 권장(Do) — success 좌측바 + tint 배경 (research `.do`).
+/// 권장 사항을 success 색으로 표시한다.
 pub fn do_(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     accent_bar(ui, theme, text, col(theme.accent_success()));
 }
 
-/// 금지(Dont) — danger 좌측바 + tint 배경 (research `.dont`).
+/// 피할 사항을 danger 색으로 표시한다.
 pub fn dont(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     accent_bar(ui, theme, text, col(theme.accent_danger()));
 }

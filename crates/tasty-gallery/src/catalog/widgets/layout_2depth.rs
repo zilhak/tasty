@@ -1,21 +1,5 @@
-//! `twodepth` specimen — 2-depth 레이아웃 idiom (L1 탭 → L2 섹션 → content).
-//! Layouts 페이지 "List → detail" 섹션의 **일반(general) 2-depth 셸** 데모다.
-//!
-//! 상단 L1 탭 바(`item_height_interactive + spacing_md` = 40, bg-sidebar, 활성 2px accent
-//! underline) + 좌측 L2 섹션 리스트(`field_width_md + spacing_sm` = 168, filter + 섹션,
-//! selected surface-active) + 우측 content(flex, padding `spacing_lg`, Theme preset grid).
-//!
-//! **Settings 창의 미러가 아니다.** 그 미러는 별도 `settings` specimen
-//! (`components/settings.rs`)이고, 그쪽 L2 200 · L1 44 는 본체 Settings 창의
-//! `SETTINGS_SIDEBAR_WIDTH`(200) · `SETTINGS_HEADER_HEIGHT`(44) **값과 일치**한다 — 다만
-//! 갤러리 크레이트는 본체 bin 의 그 상수(비공개)를 참조할 수 없어, 값을 갤러리 로컬로
-//! 들고(`L2_WIDTH` 리터럴 · `titlebar_height + spacing_sm` 도출) **관례로 맞춘다**(컴파일
-//! 연동이 아니라 값 일치). 이쪽 twodepth 는 특정 창에 매이지 않는 일반 idiom 이라 치수를
-//! 어느 창 상수도 아닌 토큰에서 직접 도출한다(168/40). (예전 모듈 문서가 "Settings 창
-//! idiom" 이라 적어 두 specimen 이 같은 것을 다른 값[168/40 vs 200/44]으로 그리는 것처럼
-//! 보였다 — 실제로는 서로 다른 대상이다.)
-//!
-//! Theme 토큰만으로 정적 재현 (binary 미의존).
+//! 상단 탭·왼쪽 섹션 목록·오른쪽 콘텐츠로 나뉜 일반적인 레이아웃 예제.
+//! 실제 Settings 창은 components/settings.rs에서 별도 치수로 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -46,8 +30,6 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
         theme.corner_radius.value(),
         egui::Color32::from(theme.bg_panel()),
     );
-
-    // ── L1 bar (bg-sidebar, 활성 2px accent underline) ──
     let l1 = egui::Rect::from_min_size(rect.min, egui::vec2(w, l1_h));
     p.rect_filled(l1, 0.0, egui::Color32::from(theme.bg_sidebar()));
     let pad = theme.spacing_md.value(); // 12
@@ -78,8 +60,6 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
         }
         x += tw + pad * 2.0;
     }
-
-    // ── L2 list (168, bg-sidebar) ──
     let l2 = egui::Rect::from_min_size(egui::pos2(rect.min.x, l1.max.y), egui::vec2(l2_w, body_h));
     p.rect_filled(l2, 0.0, egui::Color32::from(theme.bg_sidebar()));
     let spad = theme.spacing_sm.value();
@@ -130,8 +110,6 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
         );
         y += row_h + theme.spacing_xs.value();
     }
-
-    // ── content (padding 18 ≈ spacing_lg, Theme preset grid) ──
     let dpad = theme.spacing_lg.value();
     let cx0 = l2.max.x + dpad;
     let mut cy = l1.max.y + dpad;
@@ -190,7 +168,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("L1 active", "2px accent underline"),
             ("L2 list", "168 · filter + sections"),
             ("L2 selected", "surface-active"),
-            ("content", "flex · padding 18"),
+            ("content", "flex · spacing-lg padding"),
             ("rule", "L1 fixed · L2 grows"),
         ],
         &[

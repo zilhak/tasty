@@ -1,11 +1,5 @@
-//! `multitab` specimen — Multi-tier tab layout (research §2.5 Layouts).
-//!
-//! 같은 가로 축에 탭이 2단 쌓일 때의 위계:
-//! - **tier1 (workspace)**: height 32, bg-app. StatusDot + name, 활성 탭 surface-active.
-//! - **tier2 (pane tab strip)**: height 24, bg-sidebar. 활성 탭 bg-panel + accent top bar.
-//! - **content**: #000(terminal.focused_bg), margin 8.
-//!
-//! 최대 2 tier. Theme 토큰만으로 정적 재현 (binary 미의존).
+//! 워크스페이스 탭과 페인 탭을 두 줄로 구분한 정적 예제.
+//! 배경과 활성 표시를 달리해 두 단계의 소속 관계를 보여준다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -31,8 +25,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
     let pad = theme.spacing_md.value(); // 12 tab padding
     let dot_r = theme.status_dot_size.value() * 0.5;
     let font = egui::FontId::proportional(theme.font_size_body.value());
-
-    // ── tier1: workspace tabs (bg-app) ──
     let tier1 = egui::Rect::from_min_size(rect.min, egui::vec2(w, tier1_h));
     let mut x = tier1.min.x;
     for (name, active) in WORKSPACES {
@@ -66,8 +58,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
         );
         x += tab_w;
     }
-
-    // ── tier2: pane tab strip (bg-sidebar) ──
     let tier2 =
         egui::Rect::from_min_size(egui::pos2(rect.min.x, tier1.max.y), egui::vec2(w, tier2_h));
     p.rect_filled(tier2, 0.0, egui::Color32::from(theme.bg_sidebar()));
@@ -79,7 +69,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
             egui::Rect::from_min_size(egui::pos2(tx, tier2.min.y), egui::vec2(tab_w, tier2_h));
         if *active {
             p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
-            // accent top bar.
             let bar = egui::Rect::from_min_size(
                 tab.min,
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
@@ -109,8 +98,6 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
         );
         tx += tab_w;
     }
-
-    // ── content: #000 with margin 8 ──
     let content = egui::Rect::from_min_max(egui::pos2(rect.min.x, tier2.max.y), rect.max)
         .shrink(theme.spacing_sm.value());
     p.rect_filled(
@@ -139,7 +126,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("tier2", "24 · bg-sidebar · pane tabs"),
             ("active tier1", "surface-active fill"),
             ("active tier2", "bg-panel + accent top bar"),
-            ("content", "#000 · margin 8"),
+            ("content", "terminal focused background · spacing-sm margin"),
             ("depth", "2 tier max"),
         ],
         &[
@@ -161,7 +148,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "워크스페이스(tier1)와 그 안의 pane 탭(tier2)은 서로 다른 배경·강조로 \
-         depth 를 구분한다. 2단을 넘지 않는다 — 그 이상은 위계가 무너진다.",
+        "워크스페이스 탭과 그 안의 페인 탭을 배경과 활성 표시로 구분한다. 이 예제는 두 단계까지만 보여준다.",
     );
 }

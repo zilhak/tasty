@@ -1,40 +1,7 @@
-//! Tutorial — the 6th overlay family (Marker overlay · Callout bubble · Topic
-//! popup). 디자인(4) `gallery/overlays-tutorial.jsx` 의 구조 전사(structural
-//! transcription): jsx 의 `App`/`Marker`/`Scrim`/`Callout`/`Topic`/`TopicPopup`
-//! 함수를 egui 함수로 1:1 대응한다.
-//!
-//! - **Marker** — 대상 rect 위에 그리는 독립 링/글로우. `pointer-events:none`,
-//!   최상위 z. 메시지가 없는 순수 기하 마커(6번째 오버레이).
-//! - **Callout** — 244px 고정폭 안내 말풍선(step/total·dot rail·Skip/Back/Next·
-//!   4방 tail). 버튼은 DS `Button` 재사용.
-//! - **Topic popup** — 360px CenteredFocused 팝업(스크롤 리스트 + 진행).
-//!
-//! 색·폰트·선굵기·간격·반경은 전부 `Theme` 토큰에서 가져온다. 재사용되는 구조 치수는
-//! **이름 붙인 상수**로 뽑았다 — 컴포넌트 박스 고정폭(244/360, `dialog::frame_card` 의
-//! `240.0` 관례)과 `paint_faux_app` 무대 비율(`FAUX_*` 사이드바·상태바·행; 탭바 높이는
-//! 값 복제를 피해 `theme.tab_bar_height` 를 따라간다). 말풍선 tail 오프셋과 marker 데모
-//! 무대도 여러 지점이 나눠 쓰므로 이름을 붙였다(`TAIL_OFFSET_*` · `MARKER_DEMO_*`).
-//!
-//! 무대 높이·스크롤 상한은 한 지점에서만 써도 역할과 사유를 명명한다. 그 밖의 국소
-//! 배치 오프셋은 각 그리기 지점에 인라인으로 둔다. 그중 4px
-//! 그리드 밖인 것(dot rail 지름 5, 팝업 그림자 여백 10)은 그 자리에 이유를 적었다 —
-//! 그리드에 맞추면 원 중심이 픽셀에서 벗어나거나 그림자가 잘린다.
-//!
-//! **이 규칙을 보는 술어가 없다.** 없는 것은 채널이 아니다 —
-//! `crates/tasty-doc-guards/tests/design_token_adherence.rs` 는 이 파일을 스캔하고 헤드리스 조합에서 자동으로
-//! 돈다. 다만 그 술어는 4px 리듬 자리의 인라인 리터럴(`add_space(`·`Margin::`)만 보고
-//! 명명 상수는 설계상 스코프 밖이라, 위 규칙이 권장하는 해결책이 곧 그 가드의 면제
-//! 대상이다. 즉 그 초록은 이 규칙에 대해 아무것도 말하지 않는다 — 채널이 없어 조용한
-//! 것보다 이쪽이 위험하다.
-//!
-//! "같은 리터럴이 한 파일에 두 번" 을 술어로 삼는 안은 재 보고 접었다: 아래
-//! `FAUX_ROW_H` 와 `MARKER_DEMO_INSET_B` 처럼 **우연히 같은 수인 두 개념**이 빨강이
-//! 되는데 그 빨강에는 처방이 없다 — 하나로 묶으면 거짓 결합이고, 면제하면 이름으로
-//! 봐주는 것이다. 그래서 이 규칙을 지키는 것은 사람이다.
-//!
-//! 다른 값에서 파생되는 자리는 값을 복제하지 않는다. composite 데모의 마커 왼쪽
-//! 경계는 `faux_sidebar_w()` + 행 인셋으로 계산한다 — `116 + 8` 을 적어 두면 무대가
-//! 좁아 사이드바가 클램프될 때 마커가 경계를 넘는다.
+//! 튜토리얼의 대상 표시·안내 말풍선·주제 목록을 보여주는 정적 예제.
+//! 색과 공용 치수는 Theme를 사용하고 예제 고유의 구조 값은 이름 붙인 상수로 둔다.
+//! design_token_adherence는 일부 인라인 여백을 검사하지만 이 상수들의 설계 적합성은 검사하지 않는다.
+//! 따라서 상수의 역할과 중복 여부는 직접 검토해야 한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -42,8 +9,6 @@ use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-
-// ── 고정 컴포넌트 치수 (구조 값 — dialog::frame_card 240.0 와 동일 관례) ──────
 const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 const POPUP_W: LogicalPx = LogicalPx(360.0);
 /// 주제 목록만 스크롤하도록 제한하는 specimen 상한. 팝업 머리와 진행 영역은 밖에 둔다.
@@ -51,29 +16,18 @@ const TOPIC_LIST_SCROLL_MAX_H: LogicalPx = LogicalPx(200.0);
 /// 중앙 topic 팝업 주위의 scrim을 보여 주는 데모 무대 높이. marker 링 크기가 아니다.
 const TOPIC_STAGE_H: LogicalPx = LogicalPx(300.0);
 const TAIL: LogicalPx = LogicalPx(12.0); // 12px diamond → 삼각 tail
-
-// ── 재사용되는 국소 구조 값 (모듈 문서의 규칙: 재사용되면 이름을 붙인다) ─────
-// jsx tail offset — 위/아래 tail 은 말풍선 왼쪽에서 28, 좌/우 tail 은 위에서 24.
-// 네 방향 tail 이 두 값을 나눠 쓰므로 한 지점 오프셋이 아니다.
+// 네 방향 말풍선이 디자인의 가로·세로 꼬리 오프셋을 공유한다.
 const TAIL_OFFSET_X: LogicalPx = LogicalPx(28.0);
 const TAIL_OFFSET_Y: LogicalPx = LogicalPx(24.0);
 
-// marker 데모 박스 — ring 변형과 glow 변형이 같은 무대를 쓴다. 두 specimen 이
-// 같은 비율을 보여야 비교가 성립하므로 값을 공유한다. `FAUX_ROW_H` 와 아래
-// `MARKER_DEMO_INSET_B` 가 둘 다 22 인 것은 우연이라 서로 참조하지 않는다.
+// 링과 발광 예제의 크기를 같게 한다. 다른 역할의 값은 우연히 같아도 공유하지 않는다.
 const MARKER_DEMO_W: LogicalPx = LogicalPx(260.0);
 const MARKER_DEMO_H: LogicalPx = LogicalPx(150.0);
 const MARKER_DEMO_INSET_L: LogicalPx = LogicalPx(34.0);
 const MARKER_DEMO_INSET_T: LogicalPx = LogicalPx(38.0);
 const MARKER_DEMO_INSET_R: LogicalPx = LogicalPx(16.0);
 const MARKER_DEMO_INSET_B: LogicalPx = LogicalPx(22.0);
-
-// ── faux app 셸 (jsx `App`) ────────────────────────────────────────────────
-/// 마커가 그 위에 뜨는 가짜 앱 무대. jsx `App` 의 사이드바(116) + 탭바(24) +
-/// 터미널 본문 + 상태바(20) 를 painter 로 절대 배치 전사한다.
-// faux 앱 무대 치수 — 본체 셸(사이드바·탭바·상태바·워크스페이스 행)의 비율을 흉내 내는
-// 데모 전용 구조 상수다. Theme 토큰이 아니라 이 무대 장치의 값·비율 자체가 의미라 명명
-// const 로 고정한다. 나머지 여백(8·12·16)은 실제 spacing 토큰과 값이 같아 토큰을 쓴다.
+// 본체 셸의 비율을 보여주는 예제 전용 크기다. 공용 여백은 Theme 값을 사용한다.
 const FAUX_SIDEBAR_W: LogicalPx = LogicalPx(116.0);
 const FAUX_STATUSBAR_H: LogicalPx = LogicalPx(20.0);
 const FAUX_ROW_H: LogicalPx = LogicalPx(22.0);
@@ -83,8 +37,7 @@ const FAUX_DOT_R: LogicalPx = LogicalPx(4.0);
 const FAUX_LABEL_GAP: LogicalPx = LogicalPx(14.0);
 const FAUX_TEXT_PAD: LogicalPx = LogicalPx(10.0);
 
-/// faux 무대의 사이드바 폭. 무대가 좁으면 절반으로 클램프된다 — 이 식을
-/// 복제하면 마커가 사이드바 경계에서 어긋나므로 한 곳에 둔다.
+/// 사이드바와 마커가 같은 경계를 쓰도록 예제의 폭 제한을 한 곳에서 계산한다.
 fn faux_sidebar_w(r: egui::Rect) -> f32 {
     FAUX_SIDEBAR_W.value().min(r.width() * 0.5)
 }
@@ -93,11 +46,9 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     let sep = egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui());
     let inset = theme.spacing_sm.value(); // 8 — 행 좌우 인셋
     let cap = theme.font_size_caption.value(); // 11 — faux 앱 라벨 폰트
-    // 본체 탭바 높이를 따라간다 — 값 복제(24) 대신 토큰(D5). 본체가 바뀌면 데모도 따라감.
     let tab_h = theme.tab_bar_height.value();
     let sidebar_w = faux_sidebar_w(r);
 
-    // ── 사이드바 (bg-sidebar, border-right) ──
     let side = egui::Rect::from_min_max(r.min, egui::pos2(r.min.x + sidebar_w, r.max.y));
     p.rect_filled(side, 0.0, theme.bg_sidebar().to_egui());
     p.vline(side.max.x, side.y_range(), sep);
@@ -115,7 +66,6 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
                 theme.surface_active().to_egui(),
             );
         }
-        // workspace 상태 dot (accent-success).
         p.circle_filled(
             egui::pos2(
                 row.min.x + (FAUX_GLYPH_INSET + FAUX_DOT_R).value(),
@@ -141,9 +91,7 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
         ry += FAUX_ROW_H + FAUX_ROW_GAP;
     }
 
-    // ── 메인 컬럼 ──
     let main = egui::Rect::from_min_max(egui::pos2(side.max.x, r.min.y), r.max);
-    // 탭바 (bg-panel, border-bottom).
     let tabbar = egui::Rect::from_min_size(main.min, egui::vec2(main.width(), tab_h));
     p.rect_filled(tabbar, 0.0, theme.bg_panel().to_egui());
     p.hline(tabbar.x_range(), tabbar.max.y, sep);
@@ -179,7 +127,6 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
         tx += tw;
     }
 
-    // 터미널 본문 (surface-terminal-focused-bg).
     let body = egui::Rect::from_min_max(
         egui::pos2(main.min.x, tabbar.max.y),
         egui::pos2(main.max.x, main.max.y - FAUX_STATUSBAR_H.value()),
@@ -193,7 +140,6 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
         theme.text_muted().to_egui(),
     );
 
-    // 상태바 (bg-sidebar, border-top).
     let status = egui::Rect::from_min_max(egui::pos2(main.min.x, body.max.y), main.max);
     p.rect_filled(status, 0.0, theme.bg_sidebar().to_egui());
     p.hline(status.x_range(), status.min.y, sep);
@@ -204,12 +150,12 @@ fn paint_scrim(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     p.rect_filled(r, 0.0, theme.scrim().to_egui());
 }
 
-/// 마커 링 (jsx `Marker`) — 2px accent-primary 링 + (glow 시) 정적 halo.
+/// 대상의 링과 선택적인 정적 발광 효과를 그린다.
 fn paint_marker(p: &egui::Painter, rect: egui::Rect, theme: &Theme, glow: bool) {
     let accent = theme.accent_primary();
     let radius = theme.corner_radius.value();
     if glow {
-        // 정적 halo — accent 저알파 확장 링 2겹 (일회성 오버레이 이펙트, sanctioned).
+        // 반투명 링 두 겹으로 정적인 발광 효과를 만든다.
         for (grow, alpha) in [(5.0_f32, 60u8), (2.5, 110)] {
             p.rect_stroke(
                 rect.expand(grow),
@@ -230,8 +176,6 @@ fn paint_marker(p: &egui::Painter, rect: egui::Rect, theme: &Theme, glow: bool) 
     );
 }
 
-// ── Callout (jsx `Callout`) ────────────────────────────────────────────────
-
 /// tail 방향 — 마커가 말풍선의 어느 쪽에 있는지.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tail {
@@ -241,8 +185,7 @@ enum Tail {
     Right,
 }
 
-/// 244px 고정폭 안내 말풍선. 제목·본문·step/total·dot rail·Skip/Back/Next·4방
-/// tail. Frame 으로 본체를 그린 뒤 tail 삼각형을 painter 로 얹는다.
+/// 안내 말풍선 프레임을 그린 뒤 지정한 방향에 꼬리 삼각형을 덧붙인다.
 #[allow(clippy::too_many_arguments)]
 fn callout(
     ui: &mut egui::Ui,
@@ -271,7 +214,6 @@ fn callout(
         .show(ui, |ui| {
             ui.set_width((CALLOUT_W - theme.spacing_lg.scaled(2.0)).value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // step / total (mono, accent-primary, 600).
             ui.label(
                 egui::RichText::new(format!("{step} / {total}"))
                     .monospace()
@@ -280,23 +222,20 @@ fn callout(
                     .color(theme.accent_primary().to_egui()),
             );
             vspace(ui, theme.spacing_xs);
-            // 제목 (13, semibold, text-primary).
             ui.label(
                 egui::RichText::new(title)
                     .size(theme.font_size_body.value())
                     .strong()
                     .color(theme.text_primary().to_egui()),
             );
-            // 디자인 전사값 6px — 토큰 산술(4×1.5)로 표현.
+            // 디자인의 6px 간격을 공용 토큰으로 계산한다.
             vspace(ui, theme.spacing_xs * 1.5);
-            // 본문 (11, text-secondary).
             ui.label(
                 egui::RichText::new(body)
                     .size(theme.font_size_caption.value())
                     .color(theme.text_secondary().to_egui()),
             );
             ui.add_space(theme.spacing_md.value());
-            // 버튼 행: dot rail(좌) + Skip · Back · Next(우).
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 for i in 0..total {
@@ -305,8 +244,7 @@ fn callout(
                     } else {
                         theme.surface_active().to_egui()
                     };
-                    // dot rail — 지름 5(반지름 2.5). 4px 그리드 밖이지만 홀수여야
-                    // 중심이 픽셀에 맞아 원이 흐려지지 않는다.
+                    // 지름 5는 디자인 값이며 작은 진행 점의 비율을 유지한다.
                     let (r, _) = ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
                     ui.painter().circle_filled(r.center(), 2.5, c);
                 }
@@ -321,7 +259,6 @@ fn callout(
                             .size(ControlSize::Sm)
                             .show(ui, theme);
                     }
-                    // Skip — 저강조 링크.
                     ui.label(
                         egui::RichText::new("Skip")
                             .size(theme.font_size_caption.value())
@@ -334,13 +271,11 @@ fn callout(
     paint_tail(ui.painter(), resp.response.rect, theme, tail);
 }
 
-/// tail 삼각형 — bubble 모서리에서 마커 방향으로 튀어나온다. jsx 의 12px 회전
-/// diamond(2변 border) 를 삼각형으로 전사(외곽 2변만 border-strong).
+/// 말풍선 꼬리. 본체와 맞닿는 변을 빼고 나머지 두 변에 테두리를 그린다.
 fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) {
     let fill = theme.surface_raised().to_egui();
     let stroke = egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui());
     let h = TAIL / 2.0; // 삼각 높이 (돌출 길이).
-    // jsx tail offset: up/down left:28, left/right top:24 (bubble 모서리에서의 위치).
     let (a, b, apex) = match tail {
         Tail::Up => {
             let cx = LogicalPx(bubble.min.x) + TAIL_OFFSET_X;
@@ -385,8 +320,6 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
     p.line_segment([apex, b], stroke);
 }
 
-// ── Topic row + popup (jsx `Topic` / `TopicPopup`) ─────────────────────────
-
 fn topic_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -415,13 +348,12 @@ fn topic_row(
         .fill(fill)
         .stroke(egui::Stroke::new(theme.border_width.value(), border))
         .corner_radius(theme.corner_radius.value())
-        // 디자인 전사값 10px — 토큰 산술(4×2.5)로 표현.
+        // 디자인의 10px 간격을 공용 토큰으로 계산한다.
         .inner_margin(margin_all(theme.spacing_xs * 2.5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = TUTORIAL_STEP_GAP_X;
-                // 인덱스 캡 (20x20, radius-sm).
                 let (cap, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                 let (cap_bg, cap_fg) = if sel {
                     (
@@ -469,11 +401,7 @@ fn topic_row(
         });
 }
 
-/// 주제 목록 팝업 (360px, bg-panel, radius-8). `scaled` 시 4개 주제 + 완료 표시.
-///
-/// 본체 `tutorial_topics` 는 트리거에 붙지 않고 뷰포트를 점유하는 centered 표면이라
-/// 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자) 상 **modal** 그림자다 — 트리거 옆에 뜨는 [`callout`](callout)
-/// 과 갈래가 다르다.
+/// 중앙 주제 목록 팝업은 modal 그림자를 사용한다. 트리거 옆의 callout과 구분한다.
 fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
@@ -486,7 +414,6 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
         .show(ui, |ui| {
             ui.set_width(POPUP_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // 헤더.
             egui::Frame::new()
                 .inner_margin(egui::Margin {
                     left: theme.spacing_lg.value() as i8,
@@ -509,7 +436,6 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                     });
                 });
             hsep(ui, theme);
-            // 리스트 (max-height 200 → 내부 스크롤).
             egui::Frame::new()
                 .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
                 .show(ui, |ui| {
@@ -552,7 +478,6 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                         });
                 });
             hsep(ui, theme);
-            // 푸터 (Esc 힌트 + 진행).
             egui::Frame::new()
                 .inner_margin(egui::Margin {
                     left: theme.spacing_lg.value() as i8,
@@ -593,9 +518,7 @@ fn hsep(ui: &mut egui::Ui, theme: &Theme) {
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
 }
-
-// ── faux-app 데모 박스 헬퍼 ─────────────────────────────────────────────────
-/// 무대 박스(bg-app + border + radius) 를 할당하고 그 안에 painter 로 그린다.
+/// 예제 영역을 확보하고 그 안에 그린다.
 fn demo_box(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -614,8 +537,6 @@ fn demo_box(
         egui::StrokeKind::Inside,
     );
 }
-
-// ── Spec: Marker overlay ────────────────────────────────────────────────────
 pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "ring — solid 2px", |ui| {
@@ -693,8 +614,6 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
          ring under reduced-motion.",
     );
 }
-
-// ── Spec: Callout bubble ────────────────────────────────────────────────────
 pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "tail up", |ui| {
@@ -789,7 +708,6 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// scrim 무대 위에 중앙 정렬된 topic 팝업을 얹는 데모 박스 (jsx 의 grid cell).
 fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(392.0, TOPIC_STAGE_H.value()),
@@ -798,7 +716,6 @@ fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
     paint_scrim(&p, rect, theme);
-    // scrim 위 팝업 — 중앙 정렬 child Ui.
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(
         egui::Layout::centered_and_justified(egui::Direction::TopDown),
     ));
@@ -813,12 +730,9 @@ fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
         egui::StrokeKind::Inside,
     );
 }
-
-// ── Spec: Topic-list popup ──────────────────────────────────────────────────
 pub fn draw_topics(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 두 topic_stage 가 같은 소스 위치의 auto-id ScrollArea(topic_popup 내부)를 써서
-        // id 가 충돌했다(egui 중복 마커). 인스턴스별 push_id 로 내부 auto-id 를 분기한다.
+        // 같은 ScrollArea의 여러 예제가 ID를 공유하지 않도록 인스턴스를 구분한다.
         spec::cluster(ui, theme, "default — one topic", |ui| {
             ui.push_id("topic_default", |ui| topic_stage(ui, theme, false));
         });
@@ -852,21 +766,17 @@ pub fn draw_topics(ui: &mut egui::Ui, theme: &Theme) {
         ],
     );
 }
-
-// ── Spec: Composite step in place ───────────────────────────────────────────
 pub fn draw_composite(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         let w = LogicalPx(ui.available_width()).min(LogicalPx(520.0));
         demo_box(ui, theme, w, LogicalPx(340.0), |p, r| {
             paint_faux_app(p, r, theme);
             paint_scrim(p, r, theme);
-            // step 1 마커 = 콘텐츠 전체영역(사이드바 제외).
-            // 사이드바 오른쪽 경계 + 행 인셋에서 시작한다. 116+8 을 손으로 적으면
-            // 무대가 좁아 사이드바가 클램프될 때 마커가 경계를 넘는다.
+            // 사이드바 폭이 줄어들어도 마커가 콘텐츠 경계에 맞도록 같은 계산을 쓴다.
             let inset = theme.spacing_sm.value();
             let m = egui::Rect::from_min_max(
                 egui::pos2(r.min.x + faux_sidebar_w(r) + inset, r.min.y + inset),
-                // 오른쪽만 10 — 팝업 그림자 여백을 남기는 국소 값이라 그리드 밖이다.
+                // 오른쪽 10px은 그림자가 잘리지 않도록 남기는 여백이다.
                 egui::pos2(r.max.x - 10.0, r.max.y - inset),
             );
             paint_marker(p, m, theme, true);

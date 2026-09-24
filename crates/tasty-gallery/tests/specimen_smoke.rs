@@ -1,11 +1,7 @@
-//! specimen headless smoke — GPU 없이 egui 프레임을 돌려 specimen draw 가
-//! 패닉(RefCell 이중 borrow·레이아웃 위반) 없이 렌더되는지 회귀 격리한다.
-//! 픽셀 판정은 하지 않는다 — 시각 정합은 갤러리 육안 몫.
+//! GPU 없이 egui 프레임을 실행해 패닉과 ID 충돌을 검사한다.
+//! 픽셀이나 모든 레이아웃 오류를 판정하는 검사는 아니다.
 
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
-// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
-// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+// 일반 렌더 검사는 패닉 여부를 보므로 FullOutput을 버린다. ID 충돌 검사는 출력을 직접 읽는다.
 #![allow(clippy::let_underscore_must_use)]
 
 use tasty_gallery::catalog::chrome_loading;
@@ -22,18 +18,11 @@ fn run_frames(mut body: impl FnMut(&mut egui::Ui)) {
     }
 }
 
-/// egui id 충돌 마커를 **헤드리스로** 잡는다. `check_for_id_clash` 는 패닉하지 않고
-/// debug 레이어에 "First/Double use of … ID …" 텍스트만 그린다(`context.rs`) — 그래서
-/// `let _ = ctx.run(...)` 로 `FullOutput` 을 버리는 `run_frames` 는 못 잡는다(값을 버리는
-/// 것이 검증을 무력화한 실례: `docs/dev-guide/error-handling.md`). 여기서는 `FullOutput`
-/// 을 받아 그려진 모든 텍스트 shape 를 훑어 그 마커 문구가 있으면 실패시킨다.
-///
-/// 이 가드가 잡는 것은 **id 충돌뿐**이다 — "상자 밖 렌더"(레이아웃 깨짐)는 마커 없이도
-/// 일어나므로(리뷰 변이 B) 여기서 안 잡힌다. 그건 별도 rect-포함 단언이 필요하다.
+/// egui는 ID 충돌을 패닉 대신 텍스트 마커로 표시하므로 FullOutput의 텍스트를 검사한다.
+/// 영역 밖 그리기처럼 마커가 없는 레이아웃 오류는 검출하지 못한다.
 fn assert_no_id_clash(label: &str, mut body: impl FnMut(&mut egui::Ui)) {
     let ctx = egui::Context::default();
-    // release 로 테스트를 돌려도(그땐 기본이 꺼짐) 마커가 그려지도록 강제 — 안 켜면
-    // "0 건" 이 프로파일 의존 동어반복이 된다(리뷰 §5-c1).
+    // release에서도 같은 마커가 나오도록 ID 충돌 표시를 켠다.
     ctx.options_mut(|o| o.warn_on_id_clash = true);
     let mut found: Vec<String> = Vec::new();
     for _ in 0..3 {
@@ -68,11 +57,6 @@ fn collect_id_clash_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
         _ => {}
     }
 }
-
-// ── id 충돌 회귀 가드 (galfix ⑶) ────────────────────────────────────
-// modifier-hint 패널은 같은 소스 위치에서 4번 호출되는 panel() 의 auto-id 가 재사용돼
-// id 가 충돌했고, tutorial 의 topic popup 도 같은 계열의 ScrollArea id 충돌이 있었다.
-// push_id 로 갈라 고쳤다 — 되돌리면(push_id 제거) 이 가드가 마커를 잡아 FAIL 한다.
 
 #[test]
 fn modifier_hint_specimen_은_id_충돌_없이_렌더된다() {
@@ -139,11 +123,7 @@ fn drilldown_detail_뷰는_backbar_와_본문을_렌더된다() {
         assert!(!out.back_clicked);
     });
 }
-
-// ── Task DAG ────────────────────────────────────────────────────────
-// 캔버스/서피스 specimen 은 레이아웃 엔진 호출 + 절대좌표 페인팅 + 중첩
-// ScrollArea 가 한 프레임에 겹친다. 폭이 좁을 때 음수 폭이 새지 않는지까지
-// 여기서 잡는다.
+// 중첩 ScrollArea와 절대좌표 그리기가 함께 실행될 때의 패닉을 확인한다.
 
 #[test]
 fn dag_canvas_specimen_은_헤드리스로_렌더된다() {
@@ -189,17 +169,10 @@ fn dag_surface_specimen_은_헤드리스로_렌더된다() {
 fn dag_rows_와_window_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
     run_frames(|ui| dag::rows::draw(ui, &theme));
-    // popup specimen 은 560 폭 창 두 개를 가로로 놓는다 — 무대보다 넓어 남는
-    // 폭이 음수로 새기 쉬운 배치라 여기서 함께 잡는다.
     run_frames(|ui| dag::window::draw(ui, &theme));
 }
 
-/// 레이아웃 캐시 불변식의 갤러리 쪽 대응 — 좌표는 id + 의존 엣지 + config 만
-/// 보고 나온다. 상태를 바꿔도 노드 좌표가 한 픽셀도 움직이지 않아야 0.5 초
-/// 폴링이 그래프를 흔들지 않는다.
-/// 부팅/종료 로딩 specimen — 두 화면은 같은 `draw_frame` 을 공유하므로 한 테스트로
-/// 함께 잡는다. 중앙 스택은 `top_pad` 를 음수로 클램프하는 계산에 의존해서, 무대가
-/// 스택보다 낮은 프레임에서 레이아웃이 새기 쉬운 자리다.
+/// 부팅·종료 예제가 공유하는 그리기 경로를 여러 상태로 실행한다.
 #[test]
 fn loading_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
@@ -232,8 +205,6 @@ fn dag_레이아웃은_task_상태에_영향받지_않는다() {
     );
 }
 
-// ── 신규 specimen (modal / popup / chrome) ──────────────────────────
-
 #[test]
 fn 신규_오버레이_specimen_은_헤드리스로_렌더된다() {
     use tasty_gallery::catalog::components::{
@@ -262,8 +233,7 @@ fn 신규_크롬_specimen_은_헤드리스로_렌더된다() {
 
 #[test]
 fn layout_shell_specimen_은_헤드리스로_렌더된다() {
-    // 공용 위젯(two_depth_layout 계열)을 직접 호출하는 경로 — thread_local 상태가
-    // 프레임을 넘어 유지되므로 run_frames 의 다중 프레임이 이중 borrow 를 잡는다.
+    // 여러 프레임을 실행해 thread_local 상태 재사용 과정의 중복 대여도 확인한다.
     use tasty_gallery::catalog::components::prim_layout_shell;
     let theme = tasty_themes::mocha_fallback();
     run_frames(|ui| prim_layout_shell::draw(ui, &theme));

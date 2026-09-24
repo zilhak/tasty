@@ -1,21 +1,8 @@
-// 이유: 이 타깃에서 `let _` 로 버리는 것은 아무것도 그리지 않는 egui pass 의
-// `FullOutput` 뿐이고, 필요한 것은 그 pass 의 부수효과(폰트 적재)와 클로저 안의
-// 단언이다. 자리마다가 아니라 파일 머리 한 줄로 덮는 이유는 `let_underscore_documented`
-// 가드가 그렇게 요구하기 때문이다 — 시험 범위의 `let _` 가 프로덕션 명부에 섞이면
-// 새로 생긴 프로덕션 자리가 그 목록 안에 묻힌다.
+// let _는 글꼴 설치용 egui pass의 FullOutput을 버린다. 이 검사는 렌더링 결과 대신 측정값을 사용한다.
 #![allow(clippy::let_underscore_must_use)]
 
-//! 파생 상한이 **참인지** 실제 폰트로 잰다.
-//!
-//! `tasty_ui_widgets::file_handler::target_budget_chars` 의 두 갈래 중 **측정 갈래**는
-//! 여기서만 자동으로 돈다. 본체의 호출부는 `egui::Ui` 를 받아야 해서 bin 유닛 시험이
-//! 들 수 없고, 갤러리 specimen 은 일부러 폴백 상수를 쓴다. 그래서 이 파일이 없으면
-//! "재서 65 가 나온다" 는 주장에 채널이 없다 — 상수 쪽만 시험이 지키고, 정작 화면에
-//! 깔리는 값은 아무도 안 본다.
-//!
-//! `egui::Context` 는 창 없이도 글자를 깔 수 있다. 갤러리가 실제로 설치하는 스택
-//! (`tasty_gallery::fonts::install`)을 그대로 얹고, `pixels_per_point` 는 기본 1.0 —
-//! 디자인이 px 로 말하는 그 좌표계다.
+//! 갤러리의 실제 폰트 구성과 배율 1에서 파일 핸들러의 글자 수·시간 열 폭을 검증한다.
+//! 공칭 글리프 폭과 egui가 배치한 문자열 폭을 구분하며 다른 폰트·배율까지 보장하지 않는다.
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::file_handler::target_budget_chars;
@@ -27,8 +14,6 @@ use tasty_ui_widgets::tokens::{
 fn ctx() -> egui::Context {
     let ctx = egui::Context::default();
     tasty_gallery::fonts::install(&ctx);
-    // 한 pass 를 돌려야 `fonts()` 가 채워진다. 반환하는 `FullOutput` 은 그릴 것이
-    // 없는 빈 pass 의 산출물이라 볼 것이 없다 — 필요한 것은 부수효과뿐이다.
     let _ = ctx.run(egui::RawInput::default(), |_| {});
     ctx
 }
@@ -52,26 +37,25 @@ fn the_pixels_per_point_this_file_reasons_in_is_one() {
     assert_eq!(ctx().pixels_per_point(), 1.0);
 }
 
-/// 한 글자 늘 때의 증분이 토큰이 적어 둔 값과 같은가.
-///
-/// 이 시험이 [`FH_TARGET_MONO_ADVANCE`] 의 doc 주석을 값으로 바꾼다 — 주석은 "egui 가
-/// 반올림해서 6 이다" 라고 말하지만, 그 말이 참인지는 소스를 읽어서는 안 보인다.
+/// egui가 배치한 문자열의 한 글자 증가분과 토큰 값을 비교한다.
 #[test]
 fn a_character_costs_the_advance_the_token_records() {
     let ctx = ctx();
     let one = laid_out(&ctx, "0");
     let two = laid_out(&ctx, "00");
     assert_eq!(LogicalPx(two - one), FH_TARGET_MONO_ADVANCE);
-    // 공칭 advance 와는 다르다 — 그 차가 이 lane 이 고친 것이다.
     let nominal = ctx.fonts(|f| f.glyph_width(&egui::FontId::monospace(CAPTION_PX), '0'));
     assert!(
         (nominal - 5.5556).abs() < 0.01,
         "D2Coding 11px 의 공칭 advance: {nominal}"
     );
-    assert!(two - one > nominal, "깔리는 폭이 공칭보다 넓다");
+    assert!(
+        two - one > nominal,
+        "배치된 문자열의 증가분이 공칭 글리프 폭보다 커야 한다"
+    );
 }
 
-/// 잰 값으로 예산을 구하면 폴백 상수가 나온다 — 두 갈래가 어긋나지 않는다.
+/// 현재 폰트·배율에서 계산한 글자 수가 fallback과 같은지 확인한다.
 #[test]
 fn measuring_gives_exactly_the_derived_cap() {
     let ctx = ctx();
@@ -82,10 +66,7 @@ fn measuring_gives_exactly_the_derived_cap() {
     );
 }
 
-/// 예산만큼의 글자는 라인 박스에 **들어가고** 한 글자 더는 **안 들어간다**.
-///
-/// 앞의 둘은 산술이고 이것이 화면 주장이다 — 65 가 맞는 수라는 말은 결국 65 자가
-/// 안 잘리고 66 자가 잘린다는 뜻이다.
+/// 허용 글자 수는 들어가고 한 글자를 더하면 넘치는지 실제 폭으로 확인한다.
 #[test]
 fn the_budget_is_the_last_count_that_still_fits_the_line_box() {
     let ctx = ctx();
@@ -105,7 +86,7 @@ fn the_budget_is_the_last_count_that_still_fits_the_line_box() {
     );
 }
 
-/// 시안이 적은 70 은 라인 박스를 넘는다 — 고친 이유를 값으로 남긴다.
+/// 70글자는 현재 폰트·배율에서 줄의 폭을 넘는다.
 #[test]
 fn the_seventy_the_design_wrote_overflows_the_line_box() {
     let ctx = ctx();
@@ -117,12 +98,7 @@ fn the_seventy_the_design_wrote_overflows_the_line_box() {
     );
 }
 
-/// 예약된 "언제" 열이 가장 넓은 어휘를 담는가 — 열은 그리는 폰트로 재야 한다.
-///
-/// 시안은 이 폭을 "10 D2Coding chars @ 11px = 55" 로 도출했는데 그 산식은 위와 같은
-/// 공칭 advance 를 쓴 것이라 mono 로는 59.56px 다. 슬롯이 **proportional** caption 으로
-/// 그려지기 때문에 값 56 이 살아남는다 — 산식이 아니라 결과가 맞는 경우라, 그 사실을
-/// 여기에 값으로 박아 둔다.
+/// 실제로 사용하는 proportional caption 글꼴로 시간 열의 표본 문구가 들어가는지 확인한다.
 #[test]
 fn the_reserved_when_column_holds_the_widest_word() {
     let ctx = ctx();

@@ -1,24 +1,6 @@
-//! Banner — 디자인(4) Overlays `banner` Section (3 Spec). 네 번째 overlay 패밀리
-//! (Modal / Popup / Toast / **Banner**).
-//!
-//! 스코프 콘텐츠 영역 최상단(탭바 바로 아래 8px)에 떠 있는 focus-less 공지.
-//! Toast 와 달리 **자기 마우스를 소비**하고 **action 을 실을 수 있다**. 선택적 TTL
-//! 카운트다운(우상단)이 hover 시 × 로 전환된다. 스코프당 1개만 표시, 나머지는 큐(≤5).
-//!
-//! 본 specimen 은 디자인 `gallery/overlays-banners.jsx` 의 Spec 구조를 전사한다:
-//! 1. **shell + 예시** — 캐노니컬 마우스 캡쳐 배너(mouse glyph + 제목 + Shift 우회 힌트).
-//!    persistent(버튼 없음); 우상단 ×는 hover 시에만. 옛 Pause/Don't-show 버튼 단은 폐기.
-//! 2. **dismiss & TTL** — plain(hover × 노출) / TTL(우상단 카운트다운) 두 상태.
-//! 3. **queue & stacking** — 상위 스코프 배너(전면) + 하위 스코프 배너(40% 디밍, 후면).
-//! 4. **position & hit-zone** — 카드 rect 만 마우스 소비, 그 아래 surface 본문은 pass-through.
-//! 5. **capture blacklist** — Settings › Terminal 의 행 리스트 에디터(filled / empty).
-//!
-//! 색·치수·폰트는 모두 `Theme` 토큰 경유(`from_rgb`/hex 리터럴 금지). 배너 전용
-//! Tier-3 토큰은 banner-03 에서 본체 Theme 에 도입되어, 이 specimen 도 근사 없이
-//! 토큰 접근자를 직접 쓴다: 디밍 = `opacity_recessed()`(0.4), 라운드 = `corner_radius_lg`
-//! (radius-8), 그림자 = `shadow_popover()`. semantic 매핑(`banner_bg` → surface-raised 등)도
-//! 전용 접근자(`banner_bg()`/`banner_border()`/`banner_icon_fg()`/`banner_countdown_fg()`)로
-//! 노출된다.
+//! 탭바 아래에 표시하는 배너의 외형·닫기 버튼·메뉴·겹침 예제.
+//! 본체는 스코프당 한 개를 표시하고 최대 다섯 개를 대기시킨다. 이 예제는 큐를 실행하지 않는다.
+//! 카운트다운도 6초로 고정해 그리며 호버·만료·키보드 포커스 처리는 재현하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -34,14 +16,11 @@ const STACK_REAR_OVERHANG_Y: LogicalPx = LogicalPx(14.0);
 /// 전면 배너 child 영역의 높이. 뒤쪽 배너의 아래 부분이 남도록 정한 데모 기하다.
 const STACK_FRONT_BANNER_H: LogicalPx = LogicalPx(56.0);
 
-/// 색을 opacity 로 곱한다(하위 스코프 배너 디밍 — toast 스택 fade 와 같은 관습).
 fn dim(color: egui::Color32, opacity: f32) -> egui::Color32 {
     color.gamma_multiply(opacity)
 }
 
-/// 배너 shell chrome — surface-raised fill + 1px border-strong + radius-8 + popover shadow.
-/// padding 은 12(x)/8(y). `opacity` < 1 이면 모든 색을 곱해 디밍(recessed). `content` 는
-/// 패딩 안의 child Ui 를 받아 본문(icon/제목/본문/action/dismiss)을 그린다.
+/// 배너 프레임과 안쪽 콘텐츠를 그린다. opacity는 배경·테두리·그림자에 곱한다.
 fn banner_shell(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -102,7 +81,7 @@ fn dismiss_x(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
-/// mouse-capture 배너 "더보기"(⋯) 트리거 상태 — Spec 6 (더보기 컨텍스트 메뉴).
+/// 마우스 캡처 배너의 더보기 버튼 표시 상태.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MoreTriggerState {
     /// hover 전 — ⋯/× 둘 다 숨김(폭은 예약된 채 비어 있음).
@@ -124,7 +103,7 @@ fn more_trigger(ui: &mut egui::Ui, theme: &Theme, active: bool) {
         });
 }
 
-/// 우상단 TTL 카운트다운 숫자 — mono micro(10), text-muted, tabular.
+/// 남은 시간을 고정폭 글꼴로 표시한다.
 fn countdown(ui: &mut egui::Ui, theme: &Theme, seconds: u32) {
     ui.label(
         egui::RichText::new(seconds.to_string())
@@ -134,14 +113,7 @@ fn countdown(ui: &mut egui::Ui, theme: &Theme, seconds: u32) {
     );
 }
 
-// ── faux scope: 탭 스트립(반드시 비워둠) + 콘텐츠 + 배너 존 ────────────────────
-// 배너가 "탭바 바로 아래(content-top + 8px), 양옆 8px margin" 에 뜨는 위치 관계를
-// 전사한다. 탭바를 절대 덮지 않는다(탭 전환 차단 방지).
-
-/// faux surface chrome — #000 배경 + 탭 스트립(마지막 탭 active) + 선택적 상단
-/// 디밍 콘텐츠 줄 / 하단 pass-through 주석. 반환값은 배너 존 rect(탭바 아래 8px,
-/// 양옆 8px margin). 셸/배너는 호출측이 이 rect 위에 그린다. (specimen 전사 치수:
-/// 탭 높이 28 은 디자인 tab strip 고정치.)
+/// 탭바를 덮지 않는 배너 영역을 반환한다. 탭 높이는 이 예제의 디자인 값이다.
 fn faux_chrome(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -155,10 +127,8 @@ fn faux_chrome(
     let radius = theme.corner_radius.value();
     let painter = ui.painter_at(rect);
 
-    // 터미널 surface 배경(#000 = ansi_black).
     painter.rect_filled(rect, radius, theme.ansi_black.to_egui());
 
-    // 탭 스트립(28px, bg-sidebar) — 마지막 탭 active.
     let tab_h = 28.0;
     let tab_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), tab_h));
     painter.rect_filled(
@@ -194,7 +164,6 @@ fn faux_chrome(
             egui::Rect::from_min_size(egui::pos2(x, tab_rect.top()), egui::vec2(tab_w, tab_h));
         if active {
             painter.rect_filled(this, 0.0, theme.bg_panel().to_egui());
-            // active underline (accent, 2px).
             let bar = egui::Rect::from_min_size(
                 egui::pos2(
                     this.left(),
@@ -218,7 +187,6 @@ fn faux_chrome(
     }
 
     let content_pad = theme.spacing_md.value();
-    // 상단 터미널 콘텐츠(디밍된 mono 텍스트) — 배너 뒤 컨텍스트.
     if let Some(line) = top_line {
         painter.text(
             egui::pos2(rect.left() + content_pad, tab_rect.bottom() + content_pad),
@@ -228,7 +196,6 @@ fn faux_chrome(
             dim(theme.text_muted().to_egui(), theme.opacity_recessed()),
         );
     }
-    // 하단 pass-through 주석(hit-zone) — 카드 아래는 앱으로 전달됨을 표기.
     if let Some(note) = bottom_note {
         painter.text(
             egui::pos2(rect.left() + content_pad, rect.bottom() - content_pad),
@@ -239,7 +206,6 @@ fn faux_chrome(
         );
     }
 
-    // 배너 존 — 탭바 아래 8px, 양옆 8px margin, 하단 margin 없음.
     let margin = theme.spacing_sm.value();
     egui::Rect::from_min_max(
         egui::pos2(rect.left() + margin, tab_rect.bottom() + margin),
@@ -247,7 +213,6 @@ fn faux_chrome(
     )
 }
 
-/// faux scope + 배너를 존에 그린다(Spec 1 용 기본 vim 스코프).
 fn faux_scope(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -268,11 +233,7 @@ fn faux_scope(
     banner(&mut child);
 }
 
-/// 캐노니컬 마우스 캡쳐 배너 본문 — leading mouse 글리프 + 제목 + Shift 우회 힌트.
-/// persistent(action 버튼 없음); 우상단 ×는 hover 시에만. `more` 는 "더보기" ⋯
-/// 트리거의 상태(닫힘/hover/열림) — mouse-capture 배너는 ⋯ 몫까지 항상 2 슬롯을
-/// 예약한다(hover 전환으로 본문 폭이 흔들리지 않도록). 디자인
-/// `MouseCaptureBannerG`(overlays-shared.jsx) 전사 + 더보기 확장(design-spec-more-menu).
+/// 더보기와 닫기 버튼의 폭을 항상 확보해 호버 전후에 본문 폭이 바뀌지 않게 한다.
 fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme, more: MoreTriggerState) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
@@ -309,8 +270,6 @@ fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme, more: MoreTriggerState
         });
     });
 }
-
-// ── Spec 1: shell + 예시(캐노니컬 마우스 캡쳐 배너) ──────────────────────────
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         faux_scope(ui, theme, theme.measure_lg.value(), 200.0, |ui| {
@@ -359,8 +318,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          (see the banner-more-menu spec for the ⋯ context menu).",
     );
 }
-
-// ── Spec 4: position & hit-zone — 카드만 소비, 본문은 pass-through ─────────────
 pub fn draw_hit_zone(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         let zone = faux_chrome(
@@ -407,8 +364,6 @@ pub fn draw_hit_zone(ui: &mut egui::Ui, theme: &Theme) {
          keeps working everywhere except the card itself.",
     );
 }
-
-// ── Spec 5: capture blacklist — Settings › Terminal 행 리스트 에디터 ──────────
 pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         ui.vertical(|ui| {
@@ -452,9 +407,7 @@ pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Promoted from the old newline textarea to a list editor. The wheel is always \
-         forwarded to the program even for blacklisted apps — only clicks/drags are \
-         intercepted. A blacklisted foreground app also suppresses the capture banner there.",
+        "The exclusion list keeps wheel events forwarded to the program while handling clicks and drags locally. A matching foreground program also suppresses the mouse-capture banner.",
     );
 }
 
@@ -490,9 +443,7 @@ fn blacklist_row(ui: &mut egui::Ui, theme: &Theme, pattern: &str, hover: bool) {
         });
 }
 
-/// 블랙리스트 에디터 카드 — hint 스위치 + 행 리스트(또는 빈 상태) + Add 행 + notice.
-/// 디자인 `BlacklistEditorG`(overlays-shared.jsx) 전사. `empty` 면 빈 상태(neutral
-/// 톤) + Add 버튼 disabled.
+/// 마우스 캡처 제외 목록 설정의 채운 상태와 빈 상태를 비교한다.
 fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
@@ -506,7 +457,6 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
             ui.set_width(theme.measure_sm.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-            // 섹션 라벨 — mono micro uppercase muted.
             ui.label(
                 egui::RichText::new("MOUSE CAPTURE")
                     .monospace()
@@ -514,7 +464,6 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                     .color(theme.text_muted().to_egui()),
             );
 
-            // hint 스위치 행.
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("Show mouse-capture hint")
@@ -527,7 +476,6 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                 });
             });
 
-            // separator (1px).
             let (sep, _) = ui.allocate_exact_size(
                 egui::vec2(ui.available_width(), theme.border_width.value()),
                 egui::Sense::hover(),
@@ -542,7 +490,6 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
             );
 
             if empty {
-                // 빈 상태 — neutral 톤.
                 ui.label(
                     egui::RichText::new(
                         "No programs excluded — clicks are sent to capturing apps.",
@@ -559,7 +506,6 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                 });
             }
 
-            // Add 행 — 우측 Add 버튼(empty 면 disabled) + 남는 폭 Input.
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -576,7 +522,6 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                 });
             });
 
-            // match-rule notice — accent-warning(빈 상태 neutral 과 톤 구분).
             ui.label(
                 egui::RichText::new(
                     "Case-insensitive substring or * wildcard on the process name. \
@@ -588,16 +533,13 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
             );
         });
 }
-
-// ── Spec 2: dismiss & TTL — plain(hover ×) / TTL(카운트다운) ──────────────────
 pub fn draw_dismiss(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
 
-        // plain — hover 시 × 노출(여기선 노출 상태로 표시).
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-            caption_label(ui, theme, "no TTL — hover the banner to reveal ×");
+            caption_label(ui, theme, "no TTL — close button shown");
             ui.scope(|ui| {
                 ui.set_max_width(theme.measure_md.value());
                 banner_shell(ui, theme, 1.0, |ui| {
@@ -612,14 +554,9 @@ pub fn draw_dismiss(ui: &mut egui::Ui, theme: &Theme) {
             });
         });
 
-        // TTL — 우상단 카운트다운 숫자(6초).
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-            caption_label(
-                ui,
-                theme,
-                "TTL 6s — live countdown · hover to pause + show ×",
-            );
+            caption_label(ui, theme, "TTL — static 6s countdown example");
             ui.scope(|ui| {
                 ui.set_max_width(theme.measure_md.value());
                 banner_shell(ui, theme, 1.0, |ui| {
@@ -669,20 +606,15 @@ pub fn draw_dismiss(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The top-right corner holds one affordance. The countdown pauses while the banner \
-         is hovered or its scope is backgrounded. Appear/dismiss is a 120ms alpha fade — \
-         the banner never moves. (egui immediate-mode renders the end state.)",
+        "The host pauses the countdown while the banner is hovered or its scope is backgrounded and uses a 120ms alpha fade. This example only paints the close button and a fixed countdown; it does not run the timer or fade.",
     );
 }
-
-// ── Spec 3: queue & stacking — 상위(전면) + 하위(40% 디밍, 후면) ──────────────
 pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         let width = theme.measure_md.value();
         let height = 116.0;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
-        // 하위 스코프(Pane) 배너 — 더 크고, 40% 로 디밍되어 뒤에. overhang 만 보인다.
         let lower = egui::Rect::from_min_max(
             egui::pos2(rect.left(), rect.top() + STACK_REAR_OVERHANG_Y.value()),
             egui::pos2(rect.right(), rect.bottom()),
@@ -699,7 +631,6 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             });
         });
 
-        // 상위 스코프(Workspace) 배너 — 전면, full opacity, 높은 z(나중에 그림).
         let upper = egui::Rect::from_min_max(
             rect.min,
             egui::pos2(rect.right(), rect.top() + STACK_FRONT_BANNER_H.value()),
@@ -747,19 +678,13 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "A scope shows one banner; others queue (max 5). Across scopes the higher one \
-         (View > Workspace > Pane > Tab > Surface) sits in front at a higher z-index, and \
-         the lower one is dimmed to ~40% opacity behind it. The interactive manager lives \
-         in the kit specimen ui_kits/terminal/overlays/banner.html.",
+        "The host displays one banner per scope and queues up to five more. Higher scopes appear in front (View > Workspace > Pane > Tab > Surface); lower banners use 40% opacity. This example paints the two layers without running the queue.",
     );
 }
-
-// ── Spec 6: "더보기"(⋯) 컨텍스트 메뉴 — trigger 3상태 + 메뉴 ──────────────────
 pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
 
-        // 트리거 상태 3종 — 닫힘(hover 전) / hover(⋯+× 둘 다 노출) / 메뉴 열림(active).
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
             for (state, caption) in [
@@ -780,7 +705,7 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
             }
         });
 
-        // 인터랙티브 컨텍스트 메뉴 — 실제 앵커(트리거 아래 4px, 우측 정렬)를 근사.
+        // 실제 메뉴의 위치를 정적으로 보여준다.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             caption_label(
@@ -791,7 +716,7 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
             mouse_capture_menu(ui, theme, "vim", 240.0);
         });
 
-        // 가변폭 예시 — min-width(200)에서 긴 프로그램 이름이 ellipsis 되는지.
+        // 고정 라벨을 유지하면서 긴 프로그램 이름만 줄이는지 비교한다.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             caption_label(
@@ -851,9 +776,7 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 마우스 캡처 배너 "더보기" 컨텍스트 메뉴 카드 — surface-raised + border-strong +
-/// popover shadow (Tools menu 와 동일 셸 토큰). 두 항목 고정(순서 고정): 배너
-/// 억제(bell) / 캡처 비활성화(mouse). `width` 로 min/max 폭 케이스를 시연한다.
+/// 배너 알림 끄기와 마우스 캡처 끄기 메뉴의 고정 순서·가변 폭 예제.
 fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
     egui::Frame::new()
         .fill(theme.surface_raised().to_egui())
@@ -888,9 +811,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
         });
 }
 
-/// 메뉴 한 줄 — icon + [prefix][app(mono, 강조 + ellipsis)][suffix]. 본체 구현
-/// (`mouse_capture_menu.rs`)과 동일 원칙 — 고정 라벨 텍스트는 줄바꿈/truncate
-/// 없이, 프로그램 이름 세그먼트만 독립적으로 축소+ellipsis 된다.
+/// 고정 라벨은 유지하고 프로그램 이름만 줄인다. 본체 mouse_capture_menu와 같은 배치 원칙이다.
 fn mouse_capture_menu_row(
     ui: &mut egui::Ui,
     theme: &Theme,

@@ -1,25 +1,17 @@
-//! 갤러리 egui 셸 — 디자인(4) gallery 의 4영역 문서 셸.
-//!
-//! 2×2 그리드: 좌상 brand(232×52) / 우상 top(crumb + 세그 토글) / 좌 nav(232) /
-//! 우 main(활성 페이지 전체를 스크롤하는 문서 본문).
-//!
-//! nav 의 Catalog 그룹은 페이지 링크, "On this page" 그룹은 활성 페이지의
-//! Section 앵커. main 은 활성 페이지의 모든 Section/Spec 을 `spec` 헬퍼로 렌더한다.
+//! 상단 도구 모음·왼쪽 탐색·오른쪽 예제 본문으로 갤러리를 구성한다.
+//! Catalog는 페이지를, On this page는 현재 페이지의 구역을 선택한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::{self, Category, Page};
 
-/// brand/nav 폭 (research §1.1 grid-template-columns 232px).
-/// 갤러리 좌측 네비게이션의 좌우 안쪽 여백. 디자인 전사값 10 으로 4px 그리드
-/// 밖이다. `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+/// 디자인의 10px 탐색 여백. egui::Margin에 맞춰 i8로 둔다.
 const NAV_PAD_X: i8 = 10;
 
 const NAV_WIDTH: LogicalPx = LogicalPx(232.0);
-/// brand/top 높이 (research §1.1 grid-template-rows 52px).
 const HEADER_HEIGHT: LogicalPx = LogicalPx(52.0);
-/// 본문 가독 컬럼 상한 (research §1.2 `.g-page` max-width 1080px).
+/// 본문을 읽기 좋은 폭으로 제한하는 디자인 값.
 const PAGE_MAX_WIDTH: LogicalPx = LogicalPx(1080.0);
 
 /// 갤러리에 노출하는 빌트인 테마 식별자.
@@ -41,10 +33,7 @@ impl ThemeId {
     }
 }
 
-/// 빌트인 `LATTE_TOML_TEXT` 를 Mocha base 위에 partial 로 적용해 Theme 생성.
-///
-/// `pub(crate)` — Chrome 카테고리(`catalog::chrome_loading`)가 앰비언트 테마
-/// 토글과 무관하게 Latte 고정 variant specimen 을 그릴 때도 재사용한다.
+/// Mocha 기본값에 내장 Latte 설정을 덮어쓴다. 고정 Latte 예제에서도 사용한다.
 pub(crate) fn latte_theme() -> Theme {
     use tasty_type_appearance::theme::Theme as ThemeStruct;
     let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT)
@@ -55,25 +44,13 @@ pub(crate) fn latte_theme() -> Theme {
     ThemeStruct::with_colors(colors, is_light.unwrap_or(true))
 }
 
-/// UI scale 세그 stops — 배율을 [`AppearanceSettings::ui_scale_factor_for`] 에서 **읽는다**.
-///
-/// 종전에는 `[("0.8", 0.8), ("1.0", 1.0), ("1.2", 1.2)]` 하드코딩 사본이었고, 주석은
-/// "Appearance›Display 매핑과 동일" 이라고 적고 있었는데 **동일하지 않았다** — 본체의
-/// small 은 0.85 다. 사본이 조용히 갈라진 자리다.
-///
-/// 그 사본을 없앨 수 있는 이유는 **의존 방향이 맞기 때문**이다. 배율 집합의 정본
-/// (`tasty-settings`)에 달린 핀(`the_supported_ui_scale_set_is_pinned`)은 자기를 읽지
-/// **못하는** 소비자(`tasty-type-appearance`)의 사본만 겨냥해 두었고, 갤러리는 그 소비자가
-/// 아니다 — `tasty-settings` 를 이미 의존하므로 부르면 된다. 이름이 있고 부를 수도 있는데
-/// 그 자리만 안 부른 형태이고, 값이 달라지는 원인이었다. 규칙: docs/design/systems/theme.md#토큰에-없는-값과-배율.
+/// 본체 AppearanceSettings가 제공하는 UI 배율을 그대로 사용한다.
 fn ui_scale_stops() -> Vec<(String, f32)> {
     tasty_settings::UI_SCALE_CHOICES
         .iter()
         .map(|key| {
             let factor = tasty_settings::AppearanceSettings::ui_scale_factor_for(key);
-            // `{factor}` 는 1.0 을 `"1"` 로 찍는다. 세그는 배율 숫자를 나란히 읽는
-            // 자리라 소수 자리가 들쭉날쭉하면 안 된다 — 두 자리로 찍고 남는 0 하나만
-            // 떼어 `0.85` / `1.0` / `1.2` 로 맞춘다.
+            // 0.85 / 1.0 / 1.2처럼 표시하되 불필요한 끝자리 0만 지운다.
             let padded = format!("{factor:.2}");
             let label = padded.strip_suffix('0').unwrap_or(&padded).to_string();
             (label, factor)
@@ -87,18 +64,17 @@ pub struct GalleryState {
     pub theme: Theme,
     /// 선택된 테마 식별자 (Theme 구조체엔 id 가 없어 별도 보관).
     pub theme_id: ThemeId,
-    /// 문서 페이지 트리 (Foundations/Components/Icons/Overlays/Layouts/Plugins).
+    /// 갤러리 페이지 목록.
     pub pages: Vec<Page>,
     /// 현재 활성 페이지 index (`pages` 기준).
     pub active_page: usize,
-    /// 사이드바 zoom 배율 (UI scale 세그).
+    /// egui 전역 배율. Theme 치수에 다시 곱하지 않는다.
     pub ui_scale: f32,
-    /// SPECS 토글 상태 (4px grid 오버레이 — 본 단계는 상태만, 오버레이는 후순위).
+    /// Specs 선택 상태. 격자 오버레이는 아직 구현하지 않는다.
     pub specs_on: bool,
     /// 다음 frame 에서 visuals/zoom 을 ctx 에 재적용할지.
     pub needs_reapply: bool,
-    /// 배치 스크린샷에서만 쓰는 본문 강제 스크롤 오프셋(px). 사람이 쓰는
-    /// 실행에서는 항상 `None` 이라 스크롤은 평소대로 사용자 것이다.
+    /// 배치 캡처의 본문 스크롤 위치. 일반 실행은 None이다.
     pub shot_scroll: Option<f32>,
     /// 좌상단 brand 로고 텍스처 (앱 아이콘 PNG 디코드 결과, 1회 캐시).
     brand_logo: Option<egui::TextureHandle>,
@@ -132,7 +108,6 @@ impl Default for GalleryState {
     }
 }
 
-/// 한 frame draw.
 pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
     if state.needs_reapply {
         tasty_egui_theme::apply_theme_to_egui(&state.theme, ctx);
@@ -142,14 +117,10 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
 
     let sidebar_bg = egui::Color32::from(state.theme.bg_sidebar());
     let main_bg = egui::Color32::from(state.theme.bg_app());
-
-    // ── 상단: brand(232) + top bar ──
     egui::TopBottomPanel::top("g_header")
         .exact_height(HEADER_HEIGHT.value())
         .frame(egui::Frame::new().fill(sidebar_bg))
         .show(ctx, |ui| header_ui(ui, state));
-
-    // ── 좌측: nav ──
     egui::SidePanel::left("g_nav")
         .exact_width(NAV_WIDTH.value())
         .resizable(false)
@@ -164,8 +135,6 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
                 }),
         )
         .show(ctx, |ui| nav_ui(ui, state));
-
-    // ── 우측: main 문서 본문 ──
     egui::CentralPanel::default()
         .frame(
             egui::Frame::new()
@@ -177,7 +146,7 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
 
 /// 상단 헤더 — brand 블록(좌 232) + top bar(crumb + Specs/Theme/Scale 세그).
 fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
-    // Theme 의존 색/치수를 Copy 로 스냅샷 (이후 state 변이와 borrow 충돌 방지).
+    // closure 안에서 state를 갱신하므로 Theme의 필요한 값을 먼저 복사한다.
     let (primary, muted, melon, border, surf_raised, surf_active, separator) = {
         let t = &state.theme;
         (
@@ -217,7 +186,7 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     let ui_scale = state.ui_scale;
     let specs_on = state.specs_on;
 
-    // 수집한 액션 — 렌더 후 state 에 반영 (closure 내 state 변이 회피).
+    // closure 밖에서 state에 반영할 선택 결과.
     let mut act_theme: Option<ThemeId> = None;
     let mut act_specs: Option<bool> = None;
     let mut act_scale: Option<f32> = None;
@@ -225,14 +194,13 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     let logo_tex = brand_logo_texture(ui.ctx(), &mut state.brand_logo);
 
     ui.horizontal_centered(|ui| {
-        // brand 블록 (좌 232).
         ui.allocate_ui_with_layout(
             egui::vec2(NAV_WIDTH.value(), HEADER_HEIGHT.value()),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.add_space(pad_lg);
                 let (r, _) = ui.allocate_exact_size(egui::vec2(logo, logo), egui::Sense::hover());
-                // 디자인 `.g-brand img`(22px, border-radius 없음) — 앱 아이콘을 그대로 렌더.
+                // 디자인의 앱 아이콘 크기와 모양을 유지한다.
                 egui::Image::from_texture(&logo_tex)
                     .fit_to_exact_size(egui::vec2(logo, logo))
                     .paint_at(ui, r);
@@ -252,7 +220,6 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             },
         );
 
-        // top bar (나머지 폭).
         ui.add_space(pad_lg);
         ui.label(
             egui::RichText::new(page_label)
@@ -262,7 +229,6 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(pad_lg);
-            // Theme 세그 (Mocha / Latte) — 우측 끝.
             if let Some(i) = seg_with_label(
                 ui,
                 &seg,
@@ -280,7 +246,6 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
                 });
             }
             ui.add_space(pad_lg);
-            // UI scale 세그.
             let stops = ui_scale_stops();
             let scale_items: Vec<(&str, bool)> = stops
                 .iter()
@@ -290,7 +255,6 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
                 act_scale = Some(stops[i].1);
             }
             ui.add_space(pad_lg);
-            // Specs 세그 (Off / On).
             if let Some(i) = seg_with_label(
                 ui,
                 &seg,
@@ -303,14 +267,12 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
         });
     });
 
-    // 헤더 하단 separator + brand 우측 separator.
     let rect = ui.max_rect();
     let stroke = egui::Stroke::new(seg.border_w, separator);
     ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
     ui.painter()
         .vline(rect.left() + NAV_WIDTH.value(), rect.y_range(), stroke);
 
-    // 액션 반영.
     if let Some(id) = act_theme
         && id != state.theme_id
     {
@@ -358,7 +320,7 @@ fn decode_brand_logo() -> egui::ColorImage {
     egui::ColorImage::from_rgba_unmultiplied([info.width as usize, info.height as usize], &buf)
 }
 
-/// 좌측 nav — Catalog(5 페이지 링크) + On this page(활성 페이지 Section 앵커).
+/// 페이지 목록과 현재 페이지의 구역 앵커를 표시한다.
 fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     let (primary, muted, secondary, surf_active, separator) = {
         let t = &state.theme;
@@ -427,7 +389,6 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             for title in &sections {
                 ui.horizontal(|ui| {
                     ui.add_space(pad_lg);
-                    // border-left separator.
                     let (r, _) = ui.allocate_exact_size(
                         egui::vec2(border_w, row_h * 0.8),
                         egui::Sense::hover(),
@@ -458,16 +419,11 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
         return;
     };
 
-    // 중앙정렬 좌측 여백(side)은 **뷰포트 폭**(CentralPanel 가용폭, ScrollArea 바깥)으로만
-    // 계산한다. ScrollArea inner 의 `available_width()` 는 자식 specimen 이 뷰포트보다 넓게
-    // 그리면(가로 overflow) 그 폭으로 팽창해, 중앙정렬 여백을 부풀려 콘텐츠가 페이지마다
-    // 다르게 우측으로 밀리는 버그가 있었다(예: Components 만 +124px). 디자인 `.g-page`
-    // (max-width 1080 · margin 0 auto · padding 0 40)처럼 좌측 여백은 콘텐츠가 아니라
-    // 뷰포트에만 종속돼야 한다 → 여기서 한 번만 계산한다.
+    // 넓은 예제가 ScrollArea의 가용 폭을 늘려도 본문이 밀리지 않도록 뷰포트 폭으로 중앙 정렬한다.
     let viewport_w = ui.available_width();
     let content_w = viewport_w.min(PAGE_MAX_WIDTH.value());
     let side = ((viewport_w - content_w) / 2.0).max(0.0);
-    // 디자인 .g-page 좌우 대칭 패딩 40 (= space-xl 24 + space-lg 16).
+    // 디자인의 좌우 여백 40px을 공용 토큰으로 계산한다.
     let pad_x = theme.spacing_xl.value() + theme.spacing_lg.value();
 
     let mut main_scroll = egui::ScrollArea::vertical()
@@ -479,16 +435,11 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
     }
     main_scroll.show(ui, |ui| {
         ui.horizontal(|ui| {
-            // 좌측 = 중앙정렬 여백(뷰포트 기준) + 페이지 좌패딩 40.
             ui.add_space(side + pad_x);
             ui.vertical(|ui| {
-                // 본문 컬럼 = 페이지폭 − 좌우 대칭 패딩(40×2).
-                // 매우 좁은 창에서 음수가 되지 않도록 0 으로 클램프.
                 let col_w = (content_w - pad_x * 2.0).max(0.0);
                 ui.set_max_width(col_w);
-                // spec::note 가 이 폭으로 문단을 줄바꿈하도록 심어둔다. specimen 무대가
-                // 컬럼보다 넓게 그리면 top_down max_rect 가 늘어나 note 의 available_width
-                // 가 팽창하므로, note 는 available_width 대신 이 값을 wrap 폭으로 쓴다.
+                // 넓은 예제에 영향을 받지 않도록 note의 줄바꿈 폭을 따로 전달한다.
                 ui.data_mut(|d| d.insert_temp(crate::catalog::spec::body_column_width_id(), col_w));
                 ui.add_space(theme.spacing_xl.value() + theme.spacing_md.value());
                 page_head(ui, theme, page.category);
@@ -496,8 +447,7 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
                     crate::catalog::spec::section(ui, theme, sec.title);
                     for sp in &sec.specs {
                         crate::catalog::spec::spec(ui, theme, sp.title, sp.when);
-                        // 각 specimen 을 고유 id scope 로 감싼다 — 여러 draw 가
-                        // 같은 페이지에 쌓일 때 내부 위젯/ScrollArea id 충돌 방지.
+                        // 여러 예제의 내부 위젯 ID가 충돌하지 않도록 구분한다.
                         ui.push_id(sp.id, |ui| (sp.draw)(ui, theme));
                     }
                 }
@@ -524,9 +474,18 @@ fn page_head(ui: &mut egui::Ui, theme: &Theme, category: Category) {
     if category.howto() {
         ui.add_space(theme.spacing_lg.value());
         let cells = [
-            ("Usage", "Each specimen is the real Theme-driven widget."),
-            ("Tokens used", "Every value resolves from a semantic token."),
-            ("Specs toggle", "Turn On to overlay the 4px grid (WIP)."),
+            (
+                "Usage",
+                "Examples use shared widgets or reproduce layouts with Theme values.",
+            ),
+            (
+                "Tokens used",
+                "Shared values use Theme tokens; example-only dimensions are named locally.",
+            ),
+            (
+                "Specs toggle",
+                "The toggle is shown; the grid overlay is not implemented.",
+            ),
         ];
         egui::Frame::new()
             .fill(egui::Color32::from(theme.bg_panel()))

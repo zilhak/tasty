@@ -1,35 +1,12 @@
-//! Scrim & frame — overlay 공통 레시피 Spec + 다른 overlay specimen 이 공유하는
-//! 모달 프레임 키트.
-//!
-//! 디자인(4) Overlays 의 모든 모달은 같은 frame 레시피를 공유한다:
-//! `bg-panel`(palette/search/tools 는 `surface-raised`) + 1px `border-strong` +
-//! modal shadow, scrim `rgba(0,0,0,.5)` + blur. 이 모듈은 그 레시피를 한 Spec 으로
-//! 보여주고(`draw`), 동시에 14 Spec 전부가 호출하는 frame/region/field 헬퍼를
-//! `pub` 으로 노출한다 (research §2.4 공통).
-//!
-//! **셸의 lift 그림자는 세 갈래다** — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자). 같은 셸을 쓰는 호출부라도
-//! *본체에서 그 표면이 무엇인가* 에 따라 갈래가 갈리므로, 셸을 부르는 쪽이 셋 중
-//! 하나를 고른다: 뷰포트를 점유하면 [`frame_card`](modal), 트리거 옆에 붙어 살아 있는
-//! 콘텐츠 위에 뜨면 [`frame_card_popover`], **떠 있는 표면이 아니면**(창 셸 · pane
-//! 콘텐츠 · 다른 표면 안에 얹히는 섹션) [`frame_card_flat`]. 셋째 갈래를 안 두면
-//! 갤러리가 "Depth reads through surface tint" 라고 전시하면서 UI 표면에 모달 단차를
-//! 그리게 된다.
-//!
-//! 색·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
-//! (`scrim-bg` black 50% / `shadow-modal` black .55) 을 black-alpha 로 도출한다.
-//!
-//! 치수 중 **specimen 무대의 비율**은 토큰이 아니다 — 대응하는 `Theme` 값이 없고
-//! (`measure_*` 는 300/400/460), 소비자가 이 파일 안뿐이라 토큰으로 올릴 근거가 없다.
-//! 대신 이름 붙인 상수로 둔다(`SCRIM_STAGE_H` · `FRAME_CARD_W`) — 두 anchor 변형이
-//! 같은 무대와 같은 카드 폭을 써야 나란히 놓고 비교할 수 있으므로 값이 갈리면 안 된다.
+//! 모달·팝오버·그림자 없는 콘텐츠에 맞는 프레임을 제공한다.
+//! 호출자가 화면의 용도에 맞는 함수를 선택한다. 배경 어둡게 하기는 별도 헬퍼로 그린다.
+//! 두 배치 예제를 비교할 수 있도록 예제 영역과 카드의 크기는 공유 상수로 둔다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::icons::MockGlyph;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-
-// ── specimen 무대 치수 (모듈 문서의 규칙: 두 변형이 나눠 쓰므로 이름을 붙인다) ──
 /// scrim Spec 무대의 높이. center anchor 와 top anchor 변형이 공유한다.
 const SCRIM_STAGE_H: LogicalPx = LogicalPx(200.0);
 /// 무대 안에 놓는 모달 카드의 폭. 두 변형이 같아야 anchor 차이만 눈에 남는다.
@@ -37,16 +14,8 @@ const FRAME_CARD_W: LogicalPx = LogicalPx(240.0);
 /// top anchor 카드를 무대 위쪽에서 띄우는 데모 inset. center anchor와 위치를 비교한다.
 const TOP_ANCHOR_DEMO_INSET: LogicalPx = LogicalPx(28.0);
 
-// ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
-
-/// 모달 프레임 — 지정 `fill` + 1px border-strong + **modal** shadow, 고정 폭.
-/// 내부 콘텐츠는 region/hsep/field 로 채운다. item_spacing 은 0 으로 둔다
-/// (각 region 이 자체 패딩을 가짐).
-///
-/// **뷰포트를 점유하는** 표면만 이것을 쓴다 — 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자). anchored +
-/// scrim-less 표면(tools menu · search bar · rail category · 드롭다운)은
-/// [`frame_card_popover`], 떠 있는 표면이 아닌 것(창 셸 · pane 콘텐츠 · 다른 표면
-/// 안에 얹히는 섹션)은 [`frame_card_flat`].
+/// 창 중앙의 모달 프레임. 콘텐츠 영역이 각자 여백을 가지므로 item_spacing은 0이다.
+/// 트리거 옆 팝오버는 frame_card_popover, 일반 콘텐츠는 frame_card_flat을 사용한다.
 pub fn frame_card(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -57,8 +26,7 @@ pub fn frame_card(
     frame_card_with_shadow(ui, theme, width, fill, Some(theme.shadow_modal()), add);
 }
 
-/// [`frame_card`] 의 popover 변형 — 같은 셸에 **popover** shadow. 트리거 옆에 붙어
-/// 살아 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)이 쓴다(docs/design/systems/theme.md#떠-있는-표면의-그림자).
+/// 트리거 옆에 뜨는 팝오버 프레임. 배경을 어둡게 하지 않는다.
 pub fn frame_card_popover(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -69,13 +37,7 @@ pub fn frame_card_popover(
     frame_card_with_shadow(ui, theme, width, fill, Some(theme.shadow_popover()), add);
 }
 
-/// [`frame_card`] 의 **그림자 없는** 변형 — 같은 셸(fill + 1px border-strong + radius)에
-/// lift 를 안 얹는다. 그림자 선택 규칙(docs/design/systems/theme.md#떠-있는-표면의-그림자)의 세 번째 갈래로, 본체에서 **떠 있는 표면이
-/// 아닌 것**이 쓴다: 별도 창의 셸(Settings), pane 콘텐츠(image surface), 그리고 다른
-/// 표면 안에 얹혀 있는 것을 갤러리가 따로 떼어 보이는 섹션·서브탭 콘텐츠.
-///
-/// 이 갈래가 없으면 갤러리가 Foundations 에서 "Depth reads through surface tint" 라고
-/// 전시하면서 정작 UI 표면 카드에 모달 단차를 그린다 — 전시와 실제가 갈린다.
+/// 별도 창·페인·설정 섹션처럼 떠 있는 팝업이 아닌 콘텐츠에는 그림자를 넣지 않는다.
 pub fn frame_card_flat(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -105,11 +67,7 @@ fn frame_card_with_shadow(
         frame = frame.shadow(shadow.to_egui());
     }
     frame.show(ui, |ui| {
-        // 부모 stage 가 `horizontal_wrapped`(`StageVariant::Wrap`) 여도 모달
-        // 콘텐츠는 항상 세로(top_down)로 적층 + 폭을 `width` 로 bound 한다.
-        // `Frame::show` 의 콘텐츠 ui 는 부모 레이아웃을 상속하므로, 명시적
-        // vertical child 없이는 region 들이 가로 흐름에 얹혀 본문이 글자당
-        // 줄바꿈으로 붕괴한다 (scrim_backdrop 의 top_down child 와 동일 원리).
+        // 부모의 가로 레이아웃을 상속하면 본문 폭이 좁아지므로 세로 child를 만든다.
         ui.set_width(width.value());
         ui.vertical(|ui| {
             ui.set_width(width.value());
@@ -197,8 +155,7 @@ pub fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str, mono: bool) {
     ui.label(rt);
 }
 
-/// 정적 입력 필드 박스 (height 28, surface-raised + border-default). 데모 전용 —
-/// 실 입력 없이 placeholder/값 텍스트만 표시 (gallery 는 focus 경합을 피한다).
+/// 입력값과 placeholder를 보여주는 정적 필드. 여러 예제의 포커스 경합을 피한다.
 pub fn field(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -256,13 +213,9 @@ pub fn scrim_backdrop(
         egui::Sense::hover(),
     );
     let p = ui.painter_at(rect);
-    // faux app (bg-app).
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
-    // scrim — theme.scrim() 토큰(다른 specimen·호스트와 동일 경로). SCRIM_ALPHA=128 이라
-    // 값은 from_black_alpha(128) 과 동일하다(theme.rs scrim() 주석) — 표류를 토큰으로 돌린다.
     p.rect_filled(rect, theme.corner_radius.value(), theme.scrim().to_egui());
 
-    // 모달을 위에서 top_space 만큼 띄워 가로 중앙 배치.
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -272,11 +225,8 @@ pub fn scrim_backdrop(
     add(&mut child);
 }
 
-// ── scrim & frame Spec ────────────────────────────────────────────────────
-
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // center anchor.
         spec::cluster(ui, theme, "center anchor", |ui| {
             scrim_backdrop(
                 ui,
@@ -295,7 +245,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
         });
-        // top anchor (~88px offset).
         spec::cluster(ui, theme, "top anchor (~88px)", |ui| {
             scrim_backdrop(
                 ui,
@@ -320,7 +269,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("scrim", "black 50% + blur 1px"),
+            ("scrim", "black 50%; no blur in this example"),
             ("frame bg", "bg-panel / surface-raised"),
             ("frame border", "1px border-strong"),
             ("shadow", "modal — 0 20px 60px /.55"),
@@ -345,7 +294,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Every overlay on this page is built from this recipe — the frame, the \
-         scrim, and the lift never change; only the contents and the anchor do.",
+        "Choose the modal, popover, or flat frame for the surface being shown. The caller decides whether to dim the background and where to place the frame.",
     );
 }

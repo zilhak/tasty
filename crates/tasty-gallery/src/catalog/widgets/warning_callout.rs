@@ -1,12 +1,5 @@
-//! Warning callout — 디자인 Settings › Terminal › TUI 섹션 jsx:623-632 의 bordered
-//! warning box. `tasty_ui_widgets::warning_callout` 위젯 1:1 데모.
-//!
-//! 좌측 경고 삼각 아이콘 + caption 본문을 `accent-warning` 40% 보더 / 12% 틴트
-//! 배경의 라운드 박스로 감싼다. OSC 52 클립보드 읽기 토글 바로 아래에 붙어, 그 권한이
-//! 무엇을 여는지 경고하는 한 블록. 아이콘은 갤러리의 `catalog::icons::ALERT_TRIANGLE`
-//! 를 `IconPainter` 클로저로 주입한다(본체는 `icons::ALERT_TRIANGLE`).
-//!
-//! 색·보더·라운드·간격·폰트는 전부 `Theme` 토큰 경유(`from_rgb`/hex 리터럴 금지).
+//! OSC 52 클립보드 읽기 설정 아래에 표시하는 공용 경고 위젯 예제.
+//! 아이콘은 호출자가 전달하고 경고색·여백·글꼴은 Theme에서 읽는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{switch, warning_callout};
@@ -14,7 +7,7 @@ use tasty_ui_widgets::{switch, warning_callout};
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 디자인 신규 문구 (본체 `allow_clipboard_read_notice` en 값과 동일).
+/// 본체 allow_clipboard_read_notice의 영어 문구.
 const NOTICE: &str = "Turning this on lets programs running in the terminal read your \
      system clipboard via OSC 52. Leave it off unless you trust everything that runs here.";
 
@@ -24,7 +17,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.set_max_width(theme.measure_md.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-            // faux Settings › Terminal › TUI 토글 행 — callout 이 이 바로 아래 붙는 맥락.
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("Allow clipboard read (OSC 52)")
@@ -89,9 +81,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The icon is host-owned: this crate has no icon assets, so the callout takes an \
-         IconPainter closure and the caller injects ALERT_TRIANGLE (main app) / the mock \
-         glyph (gallery). The 40%/12% warning tints approximate the design's color-mix via \
-         gamma_multiply, the same idiom as tinted chips and dimmed banners.",
+        "The warning widget accepts an IconPainter callback. Both the main app and gallery supply the shared ALERT_TRIANGLE icon. The border and background apply gamma_multiply to the warning color at 40% and 12%.",
     );
 }
