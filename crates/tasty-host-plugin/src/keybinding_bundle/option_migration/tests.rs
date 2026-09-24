@@ -62,7 +62,7 @@ fn a_rule_based_axis_holds_raw_keys_which_are_not_combos() {
     );
 }
 
-/// 개별 지정 축의 다음/이전도 콤보를 담는다 — 슬롯만 보면 이 자리가 샌다.
+/// 개별 지정의 다음·이전 키도 검사한다.
 #[test]
 fn an_individual_axis_step_is_scanned_too() {
     let mut kb = KeybindingSettings::preset_tasty();
@@ -75,9 +75,7 @@ fn an_individual_axis_step_is_scanned_too() {
     );
 }
 
-/// 규칙 기반 축의 슬롯은 **콤보로 해석하지 않는다**. 손으로 config 를 고쳐 콤보처럼
-/// 생긴 값을 넣어도 그 자리는 raw 키 자리라, 대체 값을 콤보로 받으면 규칙 기반 축의
-/// 의미가 깨진다(그 축의 modifier 는 따로 있다). 개별 지정 축과 섞어 판정하면 안 된다.
+/// 공통 수식키 모드의 슬롯은 단일 키이며 완전한 조합으로 검사하지 않는다.
 #[test]
 fn a_rule_based_slot_is_never_read_as_a_combo() {
     let mut kb = KeybindingSettings::preset_tasty();
@@ -162,7 +160,7 @@ fn nothing_is_left_after_applying() {
     let (kb2, ov2) = apply_migration(&kb, &overrides, &plan).unwrap();
     assert!(scan_option_bindings(&kb2, &ov2, TargetOs::NonMac).is_empty());
 
-    // 실제로 값이 들어갔는지 — 빈 결과가 "아무것도 안 했다" 로도 나오기 때문이다.
+    // 대상이 사라졌다는 것뿐 아니라 대체값이 실제로 저장됐는지도 확인한다.
     assert!(
         kb2.get_bindings("new_tab")
             .unwrap()
@@ -290,8 +288,7 @@ fn replacements_that_collide_with_each_other_are_rejected() {
         .filter(|s| s.replacement_kind() == ReplacementKind::Combo)
         .cloned()
         .collect();
-    // 호스트 네임스페이스 안의 두 자리에 같은 조합을 준다(plugin 은 별도 네임스페이스라
-    // 여기서 골라 쓰면 충돌로 안 잡힌다 — 그것이 규정된 우선순위다).
+    // 같은 호스트 검사 범위의 두 바인딩에 같은 대체값을 넣는다.
     let host_sites: Vec<&BindingSite> = combo_sites
         .iter()
         .filter(|s| !matches!(s, BindingSite::PluginOverride { .. }))
@@ -331,8 +328,7 @@ fn a_replacement_that_collides_with_an_existing_binding_is_rejected() {
     }
 }
 
-/// 같은 plugin 안의 두 커맨드가 같은 키를 갖는 것은 충돌이다 — 어느 것이 발화할지
-/// 가릴 근거가 없다. 반면 호스트↔plugin 은 우선순위가 규정돼 있어 충돌이 아니다.
+/// 같은 plugin 안의 중복만 충돌로 검사하며 호스트와의 중복은 검사하지 않는다.
 #[test]
 fn the_plugin_namespace_is_separate_from_the_host_one() {
     let mut kb = KeybindingSettings::preset_tasty();
@@ -390,8 +386,7 @@ fn the_plugin_namespace_is_separate_from_the_host_one() {
     ));
 }
 
-/// 축 modifier 를 바꾸면 그 축의 **슬롯 전부 + next/prev 합성 콤보**가 한꺼번에
-/// 움직인다 — 충돌 검사가 값 하나만 봤다면 이 케이스가 샌다.
+/// 공통 수식키를 바꾸면 해당 슬롯 전체와 다음·이전 키의 충돌을 검사한다.
 #[test]
 fn changing_an_axis_modifier_is_checked_against_every_composed_combo() {
     let mut kb = KeybindingSettings::preset_tasty();

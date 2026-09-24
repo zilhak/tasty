@@ -1,5 +1,4 @@
-//! Event Bus 라우팅: 호스트 발화 envelope, plugin publish → fan-out, pre/post hook
-//! dispatch, throttle 처리, surface event flush.
+//! 이벤트 전달, extension hook, 렌더 컨텍스트 송신을 처리한다.
 
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -20,9 +19,7 @@ impl PluginManager {
         self.fire_popup_triggers(&event_key, &payload);
     }
 
-    /// `[[contributes.popup]] trigger.kind = "event"`로 선언된 popup 중 방금 발화된
-    /// 이벤트 key에 매칭되는 것을 자동으로 연다. plugin process가 살아 있어야 한다.
-    /// payload는 popup.open IPC의 `context`로 그대로 전달된다.
+    /// 실행 중인 plugin이 이벤트 trigger로 선언한 popup을 열고 payload를 context로 전달한다.
     pub(super) fn fire_popup_triggers(&mut self, event_key: &str, payload: &serde_json::Value) {
         let matches: Vec<(String, String)> = self
             .packages
@@ -65,8 +62,7 @@ impl PluginManager {
         }
     }
 
-    /// 호스트가 직접 한 줄로 발화. envelope을 만드는 호출자가 거의 모든 곳이라
-    /// 편의 헬퍼.
+    /// 기본 메타데이터를 채워 호스트 이벤트를 발행한다.
     pub fn emit_host_event<P: serde::Serialize>(
         &mut self,
         key: &str,
@@ -100,9 +96,7 @@ impl PluginManager {
         self.send_event_dispatches(vec![dispatch]);
     }
 
-    /// plugin이 보낸 publish를 라우팅. 권한/origin/hop 검사 실패 시 경고 로그.
-    /// 활성 extension이 있고 pre_event hook이 매칭되면 hook을 먼저 dispatch한 뒤
-    /// 응답에 따라 fan-out 진행 (PR 6).
+    /// plugin 이벤트를 검사하고 pre-event hook이 있으면 그 결과에 따라 전달한다.
     pub(super) fn route_plugin_event_publish(
         &mut self,
         plugin_id: &str,
@@ -266,13 +260,7 @@ impl PluginManager {
         }
     }
 
-    /// egui-mesh surface 에 렌더 컨텍스트(크기/ppp/raw input)를 forward (A1-S3).
-    ///
-    /// fire-and-forget — plugin 은 응답 대신 비동기 [`PluginEvent::PaintFrame`] 알림으로
-    /// mesh 를 회신한다. 실제 raw_input 수집·송신 호출은 입력 forward 배선(A1-S5/S7)이
-    /// 담당하고, 본 헬퍼는 host→plugin 송신 경로만 제공한다.
-    ///
-    /// [`PluginEvent`]: tasty_plugin_protocol::PluginEvent
+    /// surface 렌더 컨텍스트를 보낸다. plugin은 별도 PaintFrame 알림으로 mesh를 돌려준다.
     pub fn send_surface_set_context(
         &self,
         plugin_id: &str,
@@ -291,11 +279,7 @@ impl PluginManager {
         }
     }
 
-    /// webview surface 가 시도한 navigation 의 URL 을 소유 plugin 에 fire-and-forget
-    /// 통지(`webview.navigation_attempt`). `webview.set_url`(plugin→host)의 반대
-    /// 방향. "원격 http(s) 차단" 판정과 독립 — 차단 여부와 무관하게 모든 navigation
-    /// 시도(로컬 파일 링크 포함)마다 발사된다. plugin 은 응답하지 않는다(host 는 응답을
-    /// 기다리지 않고 무시).
+    /// 소유 plugin에 WebView navigation 시도를 알린다. 차단된 시도도 통지하며 응답은 기다리지 않는다.
     pub fn send_webview_navigation_attempt(
         &self,
         plugin_id: &str,
@@ -314,18 +298,9 @@ impl PluginManager {
         }
     }
 
-    /// egui-mesh surface 의 owning plugin 에 `surface.create` 를 fire-and-forget 으로
-    /// 보낸다. host 측 surface(`EguiMeshSurface` stand-in)는 tree/handles 가 없어
-    /// `RemoteSurfaceEntry` 를 만들지 않으므로 plugin 의 (빈) 응답은 무시된다.
-    ///
-    /// 호출자는 첫 set_context bootstrap **직전**에 부른다 — 같은 plugin req 채널 FIFO 라
-    /// create 가 set_context 보다 먼저 도착해 plugin 이 생성 params(예: markdown `file`)를
-    /// set_context 렌더 전에 받는다.
-    ///
-    /// 호출자를 여기 열거하지 않는다. 한때 `MainView::forward_egui_mesh_context` 하나로
-    /// 적혀 있었는데 실제로는 셋이었고, 산문이 든 명부는 늘어도 따라오지 않는다.
-    /// 그 순서는 본체의 `src/source_guards/mesh_bootstrap_order.rs` 가 호출자를 **스캔해서**
-    /// 판정한다 — 넷째가 생기면 자동으로 좌변에 들어온다.
+    /// 첫 set_context보다 먼저 surface.create를 보내 생성 인자를 전달한다.
+    /// 두 요청은 같은 plugin 채널의 FIFO 순서를 따른다. 응답은 별도로 기다리지 않는다.
+    /// 호출 순서는 src/source_guards/mesh_bootstrap_order.rs에서 검사한다.
     pub fn send_egui_mesh_surface_create(
         &self,
         plugin_id: &str,
@@ -352,14 +327,7 @@ impl PluginManager {
         }
     }
 
-    /// egui-mesh popup 인스턴스에 렌더 컨텍스트(크기/ppp/raw input)를 forward (A2).
-    ///
-    /// [`send_surface_set_context`](Self::send_surface_set_context) 의 popup 대응 —
-    /// fire-and-forget 이고, plugin 은 응답 대신 비동기 [`PopupPaintFrame`] 알림으로
-    /// mesh 를 회신한다. 호스트 popup 합성기(`src/plugin_bridge/popup_render.rs`)가 host→plugin 송신
-    /// 경로로 이 헬퍼를 호출한다.
-    ///
-    /// [`PopupPaintFrame`]: tasty_plugin_protocol::PluginEvent::PopupPaintFrame
+    /// popup 렌더 컨텍스트를 보낸다. mesh는 별도 PopupPaintFrame 알림으로 받는다.
     pub fn send_popup_set_context(
         &self,
         plugin_id: &str,
@@ -378,13 +346,7 @@ impl PluginManager {
         }
     }
 
-    /// egui-mesh banner 인스턴스에 렌더 컨텍스트(크기/ppp/raw input/theme)를 forward (A3).
-    ///
-    /// [`send_popup_set_context`](Self::send_popup_set_context) 의 banner 대응 —
-    /// fire-and-forget 이고, plugin 은 응답 대신 비동기 [`BannerPaintFrame`] 알림으로
-    /// mesh 를 회신한다. 호스트 banner 합성기가 host→plugin 송신 경로로 이 헬퍼를 호출한다.
-    ///
-    /// [`BannerPaintFrame`]: tasty_plugin_protocol::PluginEvent::BannerPaintFrame
+    /// banner 렌더 컨텍스트를 보낸다. mesh는 별도 BannerPaintFrame 알림으로 받는다.
     pub fn send_banner_set_context(
         &self,
         plugin_id: &str,
@@ -415,8 +377,7 @@ impl PluginManager {
                 continue;
             };
             match proc.try_send_request(req) {
-                // 응답이 올 때까지 이 plugin 의 publish 는 이 사건에 대한 반응으로 친다
-                // (재발화 hop 하한 — `EventBus::apply_relay_floor`).
+                // 응답 전 발행에 hop 하한을 적용할 수 있도록 보낸 dispatch를 기록한다.
                 Ok(()) => {
                     self.event_bus
                         .note_dispatch_sent(&d.plugin_id, request_id, d.envelope.meta.hop)

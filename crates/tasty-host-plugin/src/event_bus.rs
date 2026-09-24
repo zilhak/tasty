@@ -70,7 +70,7 @@ const MAX_INFLIGHT_DISPATCHES: usize = EVENT_RING_CAPACITY;
 pub const EVENT_RING_CAPACITY: usize = 1024;
 
 /// 보관한 이벤트의 JSON 직렬화 크기 합계 상한. 실제 메모리 크기와는 다르다.
-/// 개수·바이트 중 먼저 상한에 도달하면 오래된 이벤트부터 제거한다.
+/// 개수와 바이트 상한에 맞춰 오래된 이벤트부터 제거한다.
 /// 가장 최근 이벤트 하나는 상한보다 커도 보관하며 유실은 truncated·skipped로 알린다.
 pub const EVENT_RING_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 

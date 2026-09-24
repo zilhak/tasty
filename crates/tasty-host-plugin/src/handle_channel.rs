@@ -264,7 +264,7 @@ impl HandleListener {
 
         // 같은 프로세스의 동시 bind는 단조 seq로 구분한다.
         // nanos는 PID가 재사용된 뒤 예전 소켓 경로와 충돌할 가능성을 줄인다.
-        // /tmp의 다른 사용자 파일은 sticky bit 때문에 아래 정리로 지울 수 없다.
+        // 이전 소켓 파일을 권한 문제 등으로 지우지 못할 수 있다.
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let seq = SEQ.fetch_add(1, Ordering::Relaxed);
 

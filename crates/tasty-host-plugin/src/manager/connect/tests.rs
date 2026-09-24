@@ -1,7 +1,5 @@
-//! 연결 전에 보낸 요청의 시한은 연결 성사부터 센다는 것, 그리고 연결하지 못한 extension 에
-//! 보낸 hook 은 보낸 적 없는 것으로 진행된다는 것(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
-//!
-//! 프로세스는 stub 이다 — 연결 상태만 손으로 바꾸고, 시각은 sweep 에 주입한다.
+//! 연결 전 요청의 기한 조정과 연결 실패 시 hook 우회를 확인한다.
+//! stub의 연결 상태를 바꾸고 sweep에 시각을 주입한다.
 
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
@@ -64,11 +62,7 @@ fn pre_hook(sent_at: Instant) -> (PendingRequest, mpsc::Receiver<JsonRpcResponse
     (p, rx)
 }
 
-/// 막 띄운 extension 이 pre-hook 시한보다 오래 걸려 연결해도 그 첫 hook 은 만료되지 않고,
-/// 연결 뒤 답하면 target 까지 이어진다.
-///
-/// 시한을 보낸 시각부터 세면 연결을 기다리는 사이 sweep 이 fail-open 으로 hook 을 버리고
-/// extension 을 실패로 센다 — 막 띄운 extension 의 첫 hook 이 늘 그렇게 된다.
+/// 연결 시간이 hook 제한보다 길어도 제한 시간은 연결 뒤부터 계산한다.
 #[test]
 fn a_pre_hook_sent_before_the_extension_connects_is_timed_from_the_connection() {
     let mut mgr = manager();
@@ -105,8 +99,7 @@ fn a_pre_hook_sent_before_the_extension_connects_is_timed_from_the_connection() 
     assert_eq!(forwarded.method, "ipc.invoke");
 }
 
-/// 연결 뒤에도 답이 없으면 시한의 **길이**만큼 지나 예전처럼 만료된다 — 시한을 미루기만
-/// 하고 없애지 않는다.
+/// 연결 뒤에는 원래 제한 시간이 지나면 만료된다.
 #[test]
 fn a_pre_hook_still_expires_one_timeout_after_the_connection() {
     let mut mgr = manager();
@@ -167,8 +160,7 @@ fn a_namespace_call_sent_before_the_owner_connects_is_timed_from_the_connection(
     assert!(answer.error.is_none(), "첫 호출이 실패했다: {answer:?}");
 }
 
-/// 연결에 끝내 실패한 extension 에 보낸 pre-hook 은 예전 기동 실패 때처럼 hook 없이 target 으로
-/// 간다 — caller 에 오류를 돌려주지 않고, 실행된 적 없는 hook 을 실패로 세지 않는다.
+/// 연결 실패한 extension의 hook을 우회하고 target을 호출한다. hook 실패로 세지 않는다.
 #[test]
 fn a_pre_hook_to_an_extension_that_never_connects_is_bypassed() {
     let mut mgr = manager();

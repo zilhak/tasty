@@ -19,19 +19,13 @@ const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct HostListener {
     addr: SocketAddr,
-    /// 등록한 토큰의 연결을 기다려 주는 한도. 운영 값은
-    /// [`HANDSHAKE_TIMEOUT`](crate::process::connect::HANDSHAKE_TIMEOUT) 하나이고, 값으로 둔 것은
-    /// 시험이 연결 실패 갈래를 10 초 기다리지 않고 재려는 것이다.
+    /// 연결 대기 한도. 운영 값은 HANDSHAKE_TIMEOUT이며 테스트에서 줄일 수 있다.
     handshake_timeout: Duration,
     pending: Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>>,
     _accept_thread: std::thread::JoinHandle<()>,
 }
 
-/// 대기 중인 handshake 채널 맵의 poison 을 보고했는가(첫 1 회만).
-///
-/// 임계구역은 `HashMap` insert/remove 뿐이라 패닉이 나도 불변식이 성립한다 — 복구가
-/// 맞다. 조용히 버리면 등록이 안 된 채 `recv_timeout` 만 흘러 **"plugin 이 왜 안 뜨는지"
-/// 가 timeout 으로만 보이고**, 수락 쪽에서 버리면 이미 연결한 plugin 이 거절된다.
+/// 인증 대기 맵의 poison은 처음 한 번만 보고하고 등록된 대기자는 보존한다.
 static PENDING_POISONED: AtomicBool = AtomicBool::new(false);
 const PENDING_WHAT: &str = "plugin handshake pending map";
 
@@ -76,14 +70,8 @@ impl HostListener {
         self.handshake_timeout = timeout;
     }
 
-    /// 해당 토큰의 connection 을 받을 채널을 등록한다 — plugin 을 spawn 하기 **전에**
-    /// 부른다. 등록이 spawn 뒤면 빠르게 connect 한 plugin 이 토큰 없음으로 거절된다 —
-    /// plugin 은 뜨자마자 connect 하고 채널 양 끝이 Nagle 을 끄므로
-    /// (`docs/dev-guide/plugin-development.md` "전송 지연") 인증 줄은 지연 없이 도착한다.
-    ///
-    /// 기다림은 돌려받은 [`PendingConnection`] 이 한다. 등록과 기다림을 가른 이유는
-    /// 기다리는 스레드가 호출자와 다르기 때문이다 — 호출자는 호스트 메인 스레드이고,
-    /// 기다림은 `plugin-connect-<id>` 스레드가 맡는다(docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화).
+    /// plugin을 시작하기 전에 토큰을 등록한다. 빠른 연결이 미등록 토큰으로 거절되는 것을 막는다.
+    /// 반환한 PendingConnection은 별도 스레드에서 기다릴 수 있다.
     pub fn register(&self, token: &str) -> PendingConnection {
         let (tx, rx) = mpsc::channel();
         tasty_utils::poison::recover_mutex(self.pending.lock(), PENDING_WHAT, &PENDING_POISONED)
@@ -138,11 +126,8 @@ fn handle_incoming(
     stream: TcpStream,
     pending: &Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>>,
 ) {
-    // 요청/응답마다 작은 쓰기가 오가는 채널이라 Nagle 을 끈다 — 켜 두면 한 메시지의
-    // 뒤 조각이 앞 조각의 ACK 를 기다리고, plugin 쪽은 ACK 를 수십 ms
-    // 미뤄서 hop 마다 그만큼이 붙는다. plugin SDK 도 자기 끝에서 같은 설정을 한다
-    // (`docs/dev-guide/plugin-development.md` "전송 지연"). 실패해도 채널은 동작하므로
-    // 기록만 한다.
+    // 짧은 요청·응답이 ACK 대기로 지연되지 않도록 양 끝에서 Nagle을 끈다.
+    // 설정에 실패해도 통신은 계속하고 경고를 남긴다.
     if let Err(e) = stream.set_nodelay(true) {
         tracing::warn!("plugin listener: TCP_NODELAY failed: {e}");
     }
@@ -331,8 +316,7 @@ mod tests {
         );
     }
 
-    /// 넘겨받은 plugin 채널은 Nagle 이 꺼져 있어야 한다. 켜져 있으면 요청 줄의
-    /// 개행 조각이 plugin 의 지연 ACK 를 기다려 hop 마다 약 40 ms 가 붙는다.
+    /// 넘겨받은 plugin 채널에 TCP_NODELAY가 설정됐는지 확인한다.
     #[test]
     fn handed_off_stream_has_nodelay() {
         let listener = HostListener::bind().unwrap();
@@ -372,8 +356,7 @@ mod tests {
         let token = "poisoned-token".to_string();
 
         let held = Arc::clone(&listener.pending);
-        // join 결과를 버리지 않고 Err 를 단언한다 — 이 스레드가 언젠가 패닉을 멈추면
-        // 아무것도 poison 되지 않은 채 아래 단언이 전부 공허하게 통과한다.
+        // 락이 실제로 poison됐는지 확인한다.
         std::thread::spawn(move || {
             let _guard = held.lock().expect("fresh lock");
             panic!("poison the pending map on purpose");

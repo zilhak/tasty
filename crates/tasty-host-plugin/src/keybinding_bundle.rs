@@ -1,21 +1,9 @@
-//! 단축키 이식 번들 — 한 환경의 단축키 구성 **전량**을 파일 하나로 옮긴다.
+//! 호스트 단축키와 plugin override를 한 TOML 파일로 내보내고 가져온다.
+//! 두 설정 타입에 의존할 수 있는 tasty-host-plugin에서 번들을 구성한다.
 //!
-//! 옮길 대상이 두 파일에 흩어져 있다.
-//!
-//! - `~/.tasty/config.toml` 의 `[keybindings]` — [`KeybindingSettings`]
-//! - `~/.tasty/plugins.toml` 의 `keybindings` — [`crate::registry_state::PluginsConfig::shortcut_overrides`]
-//!
-//! 그래서 번들 타입은 두 타입이 **모두 보이는 가장 낮은 지점**인 이 크레이트에 있다
-//! (`tasty-host-plugin` → `tasty-settings` 단방향 의존이라 반대쪽에는 못 둔다).
-//! 결정의 근거·대안·재검토 조건은
-//! `docs/features/keybindings/index.md#이식-번들--구성-전량을-파일-한-장으로`,
-//! 지금 어떻게 동작하는지는 `docs/features/keybindings/index.md` 의 "이식 번들" 절.
-//!
-//! ## 왜 `PluginShortcutSnapshot` 이 export 원본이 아닌가
-//!
-//! 설정 창이 가진 스냅샷은 `command_registry.iter_all()` 로 만들어져 **등록된 command
-//! 만** 담는다. 비활성·미등록 plugin 의 override 는 거기 없으므로, 그것을 원본으로
-//! 쓰면 export 에서 조용히 빠진다. 원본은 언제나 `PluginsConfig.keybindings` 자체다.
+//! 비활성·미등록 plugin의 설정도 포함해야 하므로 명령 스냅샷이 아닌
+//! PluginsConfig.keybindings 전체를 내보낸다.
+//! 관련 기능: docs/features/keybindings/index.md#이식-번들--구성-전량을-파일-한-장으로.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -53,7 +41,7 @@ pub struct KeybindingBundle {
     pub plugin_keybindings: PluginShortcutOverrides,
 }
 
-/// [`decode`] 가 "이 환경에 무엇이 있는가" 를 판정하는 데 쓰는 입력.
+/// 가져올 환경에 설치된 plugin과 알려진 스크립트 목록.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DecodeEnv<'a> {
     /// 이 환경에 설치된 plugin id 전량. 여기 없는 plugin 의 override 는 버린다.
@@ -63,7 +51,7 @@ pub struct DecodeEnv<'a> {
     pub known_script_ids: Option<&'a [String]>,
 }
 
-/// decode 결과 — 복원된 값과, 조용히 버려지지 않았음을 보이는 경고 목록.
+/// 복원한 설정과 무시하거나 기본값으로 바꾼 항목의 경고.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedBundle {
     pub keybindings: KeybindingSettings,
@@ -103,7 +91,7 @@ impl fmt::Display for SchemaFound {
     }
 }
 
-/// decode 중 버리거나 기본값으로 되돌린 것 — 조용히 사라지지 않게 전부 여기 담는다.
+/// 가져오기 중 무시하거나 기본값으로 바꾼 항목.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BundleWarning {
     /// 번들 버전이 이 빌드가 아는 것보다 높다 — 아는 만큼만 복원했다.
@@ -136,7 +124,7 @@ impl fmt::Display for BundleWarning {
         match self {
             Self::NewerVersion { found, known } => write!(
                 f,
-                "번들 버전 {found} 은 이 빌드가 아는 {known} 보다 높다 — 아는 만큼만 복원했다"
+                "번들 버전 {found}이 지원 버전 {known}보다 높아 지원하는 항목만 복원했다"
             ),
             Self::UnknownTopLevelKey { key } => {
                 write!(f, "모르는 최상위 키 \"{key}\" 를 무시했다")
@@ -149,7 +137,10 @@ impl fmt::Display for BundleWarning {
                 "단축키 필드 \"{field}\" 의 모양이 달라 기본값으로 복원했다: {reason}"
             ),
             Self::KeybindingsUnreadable { reason } => {
-                write!(f, "[keybindings] 를 읽지 못해 전량 기본값이다: {reason}")
+                write!(
+                    f,
+                    "[keybindings]를 읽지 못해 기본 설정을 사용한다: {reason}"
+                )
             }
             Self::DroppedUninstalledPlugin {
                 plugin_id,
@@ -167,7 +158,7 @@ impl fmt::Display for BundleWarning {
                 "plugin \"{plugin_id}\" 의 \"{command_id}\" 단축키를 읽지 못해 버렸다: {reason}"
             ),
             Self::PluginOverridesUnreadable { reason } => {
-                write!(f, "plugin 단축키 절을 읽지 못해 전량 버렸다: {reason}")
+                write!(f, "plugin 단축키 설정을 읽지 못해 모두 제외했다: {reason}")
             }
             Self::DroppedUnknownScriptBinding { script_id, combo } => write!(
                 f,
@@ -191,11 +182,7 @@ pub fn encode(
     Ok(toml::to_string_pretty(&bundle)?)
 }
 
-/// 번들 TOML 을 읽어 복원한다.
-///
-/// 스키마 식별자가 없거나 다르면 거절하고, 그 밖의 이상(모르는 필드·모양 불일치·
-/// 미설치 plugin·모르는 script)은 **경고로 돌려주고 계속한다** — import 는 사용자가
-/// 고른 파일을 다루는 일이라 한 항목 때문에 전체가 죽으면 안 된다.
+/// 번들 TOML을 읽는다. 스키마가 다르면 거절하며 개별 항목의 문제는 경고와 함께 복구한다.
 pub fn decode(text: &str, env: &DecodeEnv<'_>) -> Result<DecodedBundle, BundleError> {
     let table: toml::Table = toml::from_str(text)?;
 
@@ -256,12 +243,8 @@ pub fn decode(text: &str, env: &DecodeEnv<'_>) -> Result<DecodedBundle, BundleEr
     })
 }
 
-/// `[keybindings]` 를 필드 단위로 복원한다.
-///
-/// 기본값 테이블에서 출발해 번들의 필드를 하나씩 얹고, 얹은 뒤 전체가 역직렬화되지
-/// 않으면 그 필드만 되돌린다. 이 방식이라 **필드 명부를 손으로 들지 않는다** — 무엇이
-/// 있는 필드인지도, 어느 필드가 고정 길이 배열인지도 `KeybindingSettings` 자신의
-/// 직렬화 결과가 답한다. 필드가 늘거나 배열 길이가 바뀌어도 여기는 안 고친다.
+/// KeybindingSettings 기본값에 필드별로 적용한다.
+/// 역직렬화에 실패한 필드만 기본값으로 돌려 타입과 배열 길이를 확인한다.
 fn decode_keybindings(
     value: Option<&toml::Value>,
     warnings: &mut Vec<BundleWarning>,
@@ -269,8 +252,7 @@ fn decode_keybindings(
     let defaults = KeybindingSettings::default();
     let default_table = match toml::Value::try_from(&defaults) {
         Ok(toml::Value::Table(t)) => t,
-        // `KeybindingSettings` 는 struct 라 항상 테이블이다. 그래도 여기서 패닉하지
-        // 않는다 — import 경로는 사용자 파일을 다루므로 어떤 갈래도 살아 나가야 한다.
+        // 기본값 직렬화가 실패해도 패닉 대신 기본 설정을 반환한다.
         _ => return defaults,
     };
 
@@ -314,11 +296,8 @@ fn decode_keybindings(
     }
 }
 
-/// `plugin_keybindings` 를 복원하며 **미설치 plugin 의 항목을 버린다**.
-///
-/// 버리는 것이 맞는 이유: 그 override 는 이 환경에서 가리킬 command 가 없어 발화도
-/// 표시도 되지 않는데, 남겨 두면 `plugins.toml` 에 영원히 고이면서 나중에 그 plugin 을
-/// 설치했을 때 사용자가 기억 못 하는 설정이 되살아난다.
+/// 설치되지 않은 plugin의 override는 가져오지 않는다.
+/// 나중에 plugin을 설치했을 때 오래된 설정이 적용되는 것을 막는다.
 fn decode_plugin_overrides(
     value: Option<&toml::Value>,
     env: &DecodeEnv<'_>,
@@ -369,7 +348,7 @@ fn decode_plugin_overrides(
     out
 }
 
-/// 이식 시 `option` 바인딩 판정과 대체 적용 — 번들이 실어 나르는 두 값 위에서 돈다.
+/// Option 키 이식 여부를 판단하고 사용자가 정한 대체값을 적용한다.
 pub mod option_migration;
 
 #[cfg(test)]

@@ -1,9 +1,6 @@
-//! 연결 대기의 결과를 거둔다 — 연결 대기 자체는 `process::connect` 가 메인 스레드 밖에서 한다.
-//!
-//! 기동은 자식을 띄우자마자 `processes` 에 넣는다. 그래서 이 모듈이 할 일은 셋이다 —
-//! 연결이 성사되면 연속 실패 기록을 지우고, 끝내 안 오면 예전 spawn 실패와 같은 갈래
-//! (`plugin.error` · 연속 실패 누적 · 자동 비활성, 그 extension 에 보낸 hook 은 hook 없이
-//! 진행)로 보내고, 연결 전에 보낸 요청의 시한을 연결 성사부터 세게 한다. 근거·대안은 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화.
+//! 연결 대기 결과를 처리한다. 대기는 process::connect의 별도 스레드가 수행한다.
+//! 성공 시 실패 기록을 지우고, 실패 시 프로세스를 회수하고 대기 요청에 알린다.
+//! 연결 전에 보낸 요청의 제한 시간은 연결 완료부터 계산한다.
 
 #[cfg(test)]
 mod tests;
@@ -14,8 +11,7 @@ use crate::process::connect::{ConnectOutcome, HANDSHAKE_TIMEOUT};
 
 use super::{FinalCaller, PendingRequestKind, PluginManager};
 
-/// 전체 기동이 연결을 기다려 주는 한도의 여유 — 연결 대기 스레드는 연결 한도
-/// ([`HANDSHAKE_TIMEOUT`])에서 스스로 실패를 적으므로, 그 결과를 받을 만큼만 더 기다린다.
+/// 연결 대기 한도 뒤 결과를 회수할 여유 시간.
 const SETTLE_MARGIN: Duration = Duration::from_millis(500);
 
 impl PluginManager {
@@ -58,9 +54,7 @@ impl PluginManager {
         self.on_plugin_spawn_failure(plugin_id, anyhow::anyhow!(reason));
     }
 
-    /// 지금 연결 중인 plugin 전부의 결과가 날 때까지 기다린 뒤 거둔다 — 전체 기동
-    /// (`discover_and_start`)이 부른다. 연결 대기는 plugin 마다 스레드라 겹치므로 전체
-    /// 대기는 가장 느린 하나로 수렴한다.
+    /// 같은 deadline으로 모든 진행 중 연결의 결과를 기다린 뒤 처리한다.
     pub(super) fn wait_for_connections(&mut self) {
         let deadline = Instant::now() + self.connection_wait_limit();
         for proc in self.processes.values() {
@@ -69,9 +63,7 @@ impl PluginManager {
         self.settle_connections();
     }
 
-    /// 연결 결과가 나기를 기다려 줄 최대 시간 — 연결 한도에 그 결과를 받을 여유를 더한
-    /// 것이다. 연결 대기 스레드가 한도에서 스스로 실패를 적으므로 이보다 오래 연결 중으로
-    /// 남는 plugin 은 없다. 예전에 spawn 안에서 막히던 시간과 같은 값이다.
+    /// 연결 한도에 결과를 회수할 여유 시간을 더한 대기 기준.
     pub fn connection_wait_limit(&self) -> Duration {
         self.listener
             .as_ref()
@@ -86,14 +78,8 @@ impl PluginManager {
             .is_some_and(|p| p.connected_at().is_none())
     }
 
-    /// 요청 하나의 시한을 **연결 성사부터** 센 값. 받는 plugin 이 아직 연결 중이면 `None`
-    /// (아직 만료를 따지지 않는다).
-    ///
-    /// 예전에는 기동이 연결까지 막혔으므로 기동 직후 보낸 요청의 시한은 연결 뒤에 섰다.
-    /// 지금은 기동이 곧바로 돌아오므로 그대로 두면 짧은 시한(pre-hook 의 `timeout_ms`)이
-    /// 연결 시간까지 떠안는다. 그래서 연결 전에 보낸 요청은 연결까지 기다린 만큼 시한을
-    /// 민다 — 시한의 **길이**는 그대로다. 연결에 끝내 실패하면 그 요청은 시한이 아니라
-    /// 연결 실패 갈래([`Self::on_connect_failure`])에서 끝난다. 근거는 docs/dev-guide/plugin-development.md#생명주기-healthcheck--자동-재시작비활성화.
+    /// 연결 전에 보낸 요청의 deadline을 연결 대기 시간만큼 미룬다.
+    /// 연결 중이면 None이며 연결 실패는 on_connect_failure에서 처리한다.
     pub(super) fn deadline_from_connection(
         &self,
         to: &str,
@@ -107,10 +93,7 @@ impl PluginManager {
         Some(deadline + connected_at.saturating_duration_since(sent_at))
     }
 
-    /// 연결하지 못한 extension 에 보낸 hook 을 **보낸 적 없는 것으로** 진행시킨다 — hook
-    /// 송신이 실패했을 때(`… dispatch failed; bypassing`)와 같은 갈래다. 예전에는 extension
-    /// 기동이 연결 실패로 끝나 hook 송신 자체가 실패했으므로 원래 흐름이 hook 없이 이어졌다.
-    /// 그 hook 은 실행된 적이 없으므로 연속 실패로 세지 않는다.
+    /// 연결하지 못한 extension의 hook은 실행되지 않았으므로 우회하고 실패 횟수에 넣지 않는다.
     fn bypass_hooks_sent_to(&mut self, plugin_id: &str) {
         let ids: Vec<u64> = self
             .pending_requests

@@ -1,16 +1,6 @@
-//! `option` 바인딩 이식 판정 — 비-macOS 에서 발화 불가능한 자리를 전수로 찾고,
-//! 사용자가 고른 대체 값을 그 목록대로 적용한다.
-//!
-//! `option` 토큰이 든 바인딩은 **비-macOS 에서 절대 매칭되지 않는다**
-//! (`crates/tasty-key-match/src/lib.rs` 의 매칭 규칙: 비-macOS 는
-//! `option_matches = !parsed.option`). 화면에는 그대로 보이는데 눌러도 아무 일이
-//! 없으므로, macOS 에서 만든 구성을 그대로 가져오면 **조용히 죽은 바인딩**이 남는다.
-//! 이식이 깨지는 토큰은 이 하나뿐이다 — 나머지 토큰은 저장이 이미 OS 독립이다
-//! (`docs/design/policies/key-mapping.md` "설정 파일 이식성").
-//!
-//! 판정은 **문자열 검색이 아니라 실제 파서**로 한다. `"option"` 이라는 이름의 키가
-//! 있을 가능성·대소문자·토큰 순서를 문자열 매칭으로 다루면 틀리고, 틀리는 방향이
-//! 거짓 음성(죽은 바인딩을 못 찾음)이라 조용하다.
+//! macOS 밖에서 사용할 수 없는 Option 바인딩을 찾고 대체값을 적용한다.
+//! 대소문자나 토큰 순서를 직접 검색하지 않고 실제 키 파서를 사용한다.
+//! 관련 정책: docs/design/policies/key-mapping.md.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -21,7 +11,7 @@ use tasty_settings::{KeybindingSettings, SwitchAxis, SwitchStep};
 use super::PluginShortcutOverrides;
 use crate::registry_state::ShortcutOverride;
 
-/// 번들이 착지할 플랫폼.
+/// 구성을 가져올 플랫폼.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetOs {
     /// `option` 이 그대로 동작한다 — 마이그레이션이 필요 없다.
@@ -31,8 +21,7 @@ pub enum TargetOs {
 }
 
 impl TargetOs {
-    /// 지금 돌고 있는 빌드의 플랫폼. 판정이 컴파일 타임인 이유는 비-macOS 바이너리의
-    /// 매칭 경로가 `option` 을 **항상 불일치**로 접기 때문이다 — 런타임에 갈릴 여지가 없다.
+    /// 현재 빌드의 플랫폼. macOS 밖에서는 Option 바인딩을 사용할 수 없다.
     pub fn host() -> Self {
         if cfg!(target_os = "macos") {
             Self::Mac
@@ -42,10 +31,7 @@ impl TargetOs {
     }
 }
 
-/// 콤보 하나가 저장되는 자리. 스캔 결과의 위치이자 [`MigrationPlan`] 의 키다.
-///
-/// `AxisModifier` 만 콤보가 아니라 **modifier 조합**을 담는다 —
-/// [`BindingSite::replacement_kind`] 가 그 차이를 말한다.
+/// 바인딩이 저장된 위치. AxisModifier만 완전한 키 조합 대신 수식키 조합을 담는다.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BindingSite {
     /// 일반 콤보 필드의 `index` 번째 바인딩(한 액션에 콤보가 여럿일 수 있다).
@@ -70,7 +56,7 @@ pub enum BindingSite {
     },
 }
 
-/// 이 자리가 요구하는 대체 값의 종류 — 받는 수단이 자리마다 다르다.
+/// 항목에 필요한 대체값의 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplacementKind {
     /// 완전 콤보(`"ctrl+alt+t"`). 기존 녹화로 받는다.
@@ -121,7 +107,7 @@ impl fmt::Display for BindingSite {
     }
 }
 
-/// 발화 불가능한 `option` 바인딩 하나 — 위치와 지금 저장된 값.
+/// 사용할 수 없는 Option 바인딩의 위치와 저장값.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OptionBinding {
     pub site: BindingSite,
@@ -131,10 +117,7 @@ pub struct OptionBinding {
 /// 위치 → 대체 값.
 pub type MigrationPlan = BTreeMap<BindingSite, String>;
 
-/// 한 자리를 어떻게 해소하는가 — 대체 값을 주거나, 그 바인딩을 버린다.
-///
-/// "버린다" 는 사용자가 이 환경에서 그 단축키를 **의도적으로 비워 두는** 선택이라
-/// 해소로 센다. 버리면 그 자리는 콤보가 아니게 되므로 대체 값 검증을 받지 않는다.
+/// 바인딩을 대체하거나 해제한다. 해제한 항목에는 대체값 검증이 필요 없다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolution {
     Replace(String),
@@ -144,7 +127,7 @@ pub enum Resolution {
 /// 위치 → 해소 방법.
 pub type ResolutionPlan = BTreeMap<BindingSite, Resolution>;
 
-/// 대체 값이 **이번에 생긴** 충돌을 만들 때 어떻게 하는가.
+/// 마이그레이션으로 새로 생긴 충돌의 처리 방식.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictPolicy {
     /// 거절한다([`MigrationError::Conflicts`]).
@@ -158,10 +141,10 @@ pub enum ConflictPolicy {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MigrationError {
     /// 스캔이 찾은 자리 중 대체 값이 안 정해진 것이 있다.
-    #[error("대체 값이 안 정해진 자리가 있다: {}", join_sites(.sites))]
+    #[error("대체값을 정하지 않은 바인딩이 있다: {}", join_sites(.sites))]
     Unassigned { sites: Vec<BindingSite> },
     /// 계획이 지금 스캔에 없는 자리를 가리킨다(낡은 계획).
-    #[error("지금 구성에 없는 자리다: {site}")]
+    #[error("현재 구성에 없는 바인딩 위치다: {site}")]
     UnknownSite { site: BindingSite },
     /// 콤보 자리에 콤보가 아닌 값이 왔다.
     #[error("\"{value}\" 는 콤보로 파싱되지 않는다 ({site})")]
@@ -176,7 +159,7 @@ pub enum MigrationError {
     #[error("대체 값이 충돌을 만든다: {}", join_conflicts(.0))]
     Conflicts(Vec<BindingConflict>),
     /// 비울 수 없는 자리를 비우라고 했다 — 축 modifier 는 조합 하나를 반드시 가진다.
-    #[error("이 자리는 비울 수 없다: {site}")]
+    #[error("이 항목은 비울 수 없다: {site}")]
     CannotUnbind { site: BindingSite },
     /// 적용 후에도 `option` 이 남았다 — 스캔과 적용이 갈렸다는 뜻이므로 값으로 받는다.
     #[error("적용 후에도 option 이 남았다: {}", join_sites(.sites))]
@@ -213,17 +196,9 @@ impl fmt::Display for BindingConflict {
     }
 }
 
-/// 이 환경에서 발화 불가능한 `option` 바인딩을 **다섯 자리 전부**에서 찾는다.
-///
-/// 1. 일반 콤보 필드(`GENERAL_BINDING_FIELDS` × 각 원소)
-/// 2. quick-switch 축 modifier 셋
-/// 3. quick-switch 슬롯·다음/이전 — **그 축이 개별 지정일 때만**. 규칙 기반 축의
-///    슬롯은 raw 키 하나라 콤보가 아니고, 그것을 콤보로 해석하면 `"o"` 같은 값이
-///    잡히는 거짓 양성이 난다.
-/// 4. `script_bindings[].combo`
-/// 5. plugin override 의 `Key { value }` — `Inherit`/`None` 은 콤보를 안 담는다.
-///
-/// `target` 이 [`TargetOs::Mac`] 이면 빈 목록이다.
+/// 일반 키, 공통 수식키, 개별 지정 슬롯·다음/이전, 스크립트, plugin override를 검사한다.
+/// 공통 모드의 슬롯은 단일 키이므로 조합으로 검사하지 않는다.
+/// macOS에서는 대체가 필요 없어 빈 목록을 반환한다.
 pub fn scan_option_bindings(
     kb: &KeybindingSettings,
     overrides: &PluginShortcutOverrides,
@@ -315,19 +290,13 @@ pub fn scan_option_bindings(
     found
 }
 
-/// 콤보 문자열이 `option` 축을 요구하는지 — 실제 파서로 판정한다.
+/// 실제 파서로 Option 수식키가 필요한 조합인지 확인한다.
 fn combo_has_option(combo: &str) -> bool {
     parse_binding(combo).is_some_and(|p| p.option)
 }
 
-/// 대체 값을 적용해 새 구성을 만든다.
-///
-/// 계획은 [`scan_option_bindings`]가 찾은 자리를 **빠짐없이** 덮어야 한다 — 하나라도
-/// 비면 그 바인딩은 이 환경에서 죽은 채로 남고, 그것이 조용히 통과하면 마이그레이션
-/// 화면의 존재 이유가 사라진다.
-///
-/// 충돌은 **적용 전후의 차분**으로 본다. 원래부터 있던 중복까지 거절하면 사용자가
-/// 이번 마이그레이션과 무관한 이유로 막힌다.
+/// 모든 대상에 대체값을 정한 뒤 새 구성을 만든다.
+/// 원래 있던 중복은 허용하고 이번 적용으로 생긴 충돌만 검사한다.
 pub fn apply_migration(
     kb: &KeybindingSettings,
     overrides: &PluginShortcutOverrides,
@@ -340,13 +309,9 @@ pub fn apply_migration(
     resolve_migration(kb, overrides, &plan, ConflictPolicy::Reject)
 }
 
-/// [`apply_migration`] 의 일반형 — 자리마다 대체하거나 버릴 수 있고, 충돌을 만났을 때의
-/// 처리를 고른다.
-///
-/// 순서가 요점이다. 대체를 먼저 쓰고(자리 좌표가 그대로다), 그 상태에서 충돌 차분을 본
-/// 뒤, **마지막에** 버리는 자리를 지운다. 지우기를 먼저 하면 같은 필드·같은 override 의
-/// 뒤쪽 원소가 앞으로 당겨져 좌표가 바뀌고, 좌표로 키를 잡는 충돌 차분이 원래 있던 충돌을
-/// 새것으로 오판한다. 버리는 자리는 차분에서 뺀다 — 곧 사라질 값이다.
+/// 각 바인딩을 대체하거나 해제하고 새 충돌을 검사한다.
+/// 먼저 대체값을 적용한 뒤 충돌을 비교하고, 마지막에 해제할 항목을 지운다.
+/// 먼저 지우면 배열 인덱스가 바뀌어 기존 충돌을 새 충돌로 오인할 수 있다.
 pub fn resolve_migration(
     kb: &KeybindingSettings,
     overrides: &PluginShortcutOverrides,
@@ -422,11 +387,8 @@ pub fn resolve_migration(
     Ok((new_kb, new_overrides))
 }
 
-/// 계획이 **아직 덜 채워졌어도** 지금 정해진 해소들이 만들 충돌을 돌려준다.
-///
-/// 마이그레이션 화면이 값을 하나 고를 때마다 그 자리에 충돌 사유를 붙이는 데 쓴다 —
-/// [`resolve_migration`] 은 미지정 자리가 있으면 충돌을 보기 전에 거절하므로 그 용도로
-/// 못 쓴다. 검증에 걸리는 값(콤보가 아닌 값 등)과 스캔에 없는 자리는 건너뛴다.
+/// 일부 대체값만 정한 상태에서도 새 충돌을 조회한다.
+/// 유효하지 않은 값과 현재 대상이 아닌 항목은 건너뛴다.
 pub fn introduced_conflicts(
     kb: &KeybindingSettings,
     overrides: &PluginShortcutOverrides,
@@ -436,9 +398,7 @@ pub fn introduced_conflicts(
     introduced_between(kb, overrides, &new_kb, &new_overrides, &unbind)
 }
 
-/// 계획이 **아직 덜 채워졌어도** 지금 정해진 해소를 반영한 구성 — 미리보기 표가 "지금
-/// 고른 값이면 무엇이 되는가" 를 그리는 데 쓴다. 검증에 걸리는 값과 스캔에 없는 자리는
-/// 건너뛰고, 충돌은 보지 않는다(그것은 [`introduced_conflicts`] 의 일이다).
+/// 현재까지 정한 유효한 대체값으로 미리보기를 만든다. 충돌 여부는 별도로 조회한다.
 pub fn preview_resolution(
     kb: &KeybindingSettings,
     overrides: &PluginShortcutOverrides,
@@ -632,27 +592,19 @@ fn write_site(
     }
 }
 
-/// 충돌 판정의 네임스페이스.
-///
-/// 호스트 액션·quick-switch·스크립트는 한 네임스페이스다(`combo_conflict` 가 보는
-/// 범위와 같고, quick-switch 슬롯은 축을 넘어 서로도 겹치면 안 된다).
-/// plugin 은 **plugin 마다** 별도다 — 겹치는 키에서 plugin 이 호스트보다 항상 우선하고
-/// (`docs/design/policies/key-mapping.md` "Plugin 커맨드 단축키 우선순위"), 어느 plugin 의
-/// 명령이 후보인지는 포커스가 가른다. 그래서 호스트↔plugin 과 plugin↔plugin 은
-/// 충돌이 아니라 규정된 우선순위다.
+/// 마이그레이션의 충돌 검사 범위. 호스트 동작·빠른 전환·스크립트를 함께 검사하고
+/// plugin은 각각 따로 검사한다. 호스트와 plugin 사이, 서로 다른 plugin 사이의 충돌은 검사하지 않는다.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum ConflictScope {
     Host,
     Plugin(String),
 }
 
-/// 발화 콤보 명부의 한 항목 — (충돌 네임스페이스, 자리, 콤보).
+/// 충돌 검사 항목: 검사 범위, 저장 위치, 최종 키 조합.
 type RosterEntry = (ConflictScope, BindingSite, String);
 
-/// 지금 구성에서 **실제로 발화하는 콤보** 전량 — 규칙 기반 축은 합성 콤보로 편다.
-///
-/// 축 modifier 를 바꾸면 그 축의 슬롯 전부와 다음/이전의 합성 콤보가 한꺼번에 바뀌므로,
-/// 충돌 검사가 값 하나가 아니라 이 목록 전체를 대상으로 돌아야 한다.
+/// 현재 설정의 최종 키 조합 목록. 공통 수식키를 바꾸면 모든 슬롯과 다음·이전 키가
+/// 함께 달라지므로 합성한 전체 목록을 검사한다.
 fn combo_roster(kb: &KeybindingSettings, overrides: &PluginShortcutOverrides) -> Vec<RosterEntry> {
     let mut roster = Vec::new();
 
@@ -679,8 +631,7 @@ fn combo_roster(kb: &KeybindingSettings, overrides: &PluginShortcutOverrides) ->
         } else {
             match Combo::parse_modifiers(axis.modifier(kb)) {
                 Some(modifier) => Some(modifier.name()),
-                // 조합으로 파싱되지 않는 modifier(쓰레기 값)면 그 축은 아무것도
-                // 발화하지 않으므로 명부에서 통째로 빠진다.
+                // 수식키 조합을 해석할 수 없으면 해당 전환 종류를 검사 대상에서 뺀다.
                 None => continue,
             }
         };

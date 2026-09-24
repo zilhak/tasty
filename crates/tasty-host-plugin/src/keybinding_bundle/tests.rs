@@ -7,8 +7,7 @@ fn ids(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| (*s).to_string()).collect()
 }
 
-/// 일반 콤보 · quick-switch 축 modifier · quick-switch 슬롯 · next/prev ·
-/// `script_bindings` 를 전부 손댄 구성. round-trip 이 한 부류라도 빠뜨리면 깨진다.
+/// 일반 키·빠른 전환·스크립트 값을 모두 바꿔 직렬화와 복원 결과를 비교한다.
 fn heavily_edited() -> KeybindingSettings {
     let mut kb = KeybindingSettings::preset_mac();
     assert!(kb.add_binding("new_tab", "ctrl+alt+t".into()));
@@ -213,7 +212,7 @@ fn unknown_fields_are_ignored_and_reported() {
 
 #[test]
 fn a_fixed_array_of_the_wrong_length_falls_back_to_the_default() {
-    // 구버전 번들(슬롯이 9개뿐)·신버전 번들(11개) 어느 쪽도 패닉하지 않는다.
+    // 슬롯 수가 맞지 않아도 해당 필드만 기본값으로 복원한다.
     for slots in [
         "[\"1\",\"2\"]",
         "[\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"0\",\"a\"]",
@@ -312,7 +311,7 @@ fn a_newer_version_is_read_best_effort_with_a_warning() {
     }));
 }
 
-/// 최상위 키 명부는 손으로 든 것이라, 구조체가 늘면 여기서 잡힌다.
+/// 직렬화 결과의 최상위 키가 선언된 목록과 같은지 확인한다.
 #[test]
 fn top_level_keys_match_the_struct() {
     let text = encode(

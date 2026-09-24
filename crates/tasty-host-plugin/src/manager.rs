@@ -1,9 +1,6 @@
-//! Plugin 생명주기 매니저.
-//!
-//! 호스트의 부팅 시 한 번 만들어지고, `App`이 유일한 인스턴스를 보유한다.
-//! - 부팅 시 `discover_and_start()`로 `~/.tasty/plugins/`를 스캔하여 활성 plugin 모두 spawn
-//! - 매 메인 루프 tick에서 `pump()` 호출 → plugin 알림 처리 + 헬스체크 + 재시작
-//! - 종료 시 `shutdown_all()`
+//! Plugin 프로세스와 등록 정보를 관리한다.
+//! GUI 부팅은 활성 plugin을 시작하고 headless는 필요한 시점에 시작할 수 있다.
+//! pump가 응답·이벤트·주기 작업을 처리하며 종료 시 shutdown_all로 정리한다.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -27,11 +24,8 @@ use tasty_ipc::ipc_namespace::IpcNamespaceRegistry;
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission, PluginPackage};
 
-/// host popup(`PopupManager`)과 plugin popup(`PluginManager::popup_instances`) 사이의
-/// z-order 를 판정하는 유일한 공유 기준. 두 매니저가 서로 다른 크레이트에 있어 자료구조를
-/// 통합하지 않는 대신, 열리거나 클릭/포커스될 때마다 이 전역 단조증가 순번을 하나씩
-/// 받아 각자의 상태(`PopupState.z_seq` / `PopupInstance.z_seq`)에 기록한다 — 값이 큰 쪽이
-/// 나중에 열리거나 클릭된 것이므로 항상 위에 그려진다(`docs/design/systems/popup.md` 규칙 7).
+/// host와 plugin 팝업이 함께 사용하는 z-order 순번.
+/// 열기·클릭·포커스 시 발급해 두 종류의 팝업 순서를 비교한다.
 static NEXT_POPUP_Z_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// 다음 z-order 순번을 발급한다. host popup 오픈/포커스와 plugin popup 오픈/클릭 양쪽에서
@@ -42,78 +36,32 @@ pub fn next_popup_z_seq() -> u64 {
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
-/// namespace 호출 하나가 응답 없이 pending 에 남을 수 있는 상한.
-///
-/// hook 의 deadline 은 매니페스트가 선언한 `timeout_ms` 에서 오지만(상한 1 초)
-/// namespace 호출에는 그런 선언이 없어 값을 여기서 정한다. 이 값은
-/// `HEALTHCHECK_TIMEOUT + PING_INTERVAL` 을 **넘겨야** 한다 — 프로세스가 죽거나
-/// 굳은 plugin 은 이미 그 상한 안에 healthcheck 가 거두고
-/// (`restart_unresponsive_plugins` → `cancel_pending_namespace_calls`) 그 경로가
-/// `-32004` 를 돌려주기 때문이다. 더 짧게 잡으면 이미 처리되는 그 경우를 앞질러
-/// 회신 시점을 바꾼다. 그래서 그 상한의 두 배로 두고, 여기 걸리는 것은 healthcheck
-/// 가 볼 수 없는 경우 — ping 에는 답하면서 이 호출 하나만 영영 안 돌려주는 plugin —
-/// 뿐이게 한다.
+/// namespace 응답 대기 한도. healthcheck 기준과 ping 주기 합의 두 배를 사용한다.
+/// ping에 답하지만 개별 요청에 답하지 않는 경우도 종료하기 위한 제한이다.
 pub(super) const NAMESPACE_CALL_TIMEOUT: Duration =
     Duration::from_secs(2 * (HEALTHCHECK_TIMEOUT.as_secs() + PING_INTERVAL.as_secs()));
-/// debug 한정 `debug.extension.invoke_hook` 한 건의 응답 상한.
-///
-/// 값을 새로 고르지 않고 매니페스트 검증의 상한에서 가져온다 —
-/// [`HOOK_TIMEOUT_MS_MAX`](tasty_plugin_manifest::HOOK_TIMEOUT_MS_MAX) 는 선언된
-/// hook 의 `timeout_ms` 가 넘을 수 없는 값이므로, 그보다 더 기다리는 것은 **실제
-/// hook 이 할 수 없는 일을 기다리는 것**이다. 이 경로에는 매니페스트 선언이
-/// 없어(호출자가 ext_id·phase·payload 를 직접 준다) 값을 어디선가 정해야 하는데,
-/// 같은 extension 이 정상 경로에서 받는 상한과 같게 두는 것이 유일하게 파생인 값이다.
+/// debug hook 직접 호출의 대기 한도. 매니페스트 hook의 최대 timeout을 사용한다.
 #[cfg(debug_assertions)]
 pub(super) const DEBUG_HOOK_INVOKE_TIMEOUT: Duration =
     Duration::from_millis(tasty_plugin_manifest::HOOK_TIMEOUT_MS_MAX as u64);
-/// 한 plugin 의 namespace 호출이 **연달아** 만료될 수 있는 횟수의 상한. 여기 닿으면
-/// 그 plugin 을 healthcheck 무응답과 같은 경로로 재시작한다.
-///
-/// 만료 한 건은 caller 에 대한 답이지 plugin 에 대한 판정이 아니다 — 한 번은 느렸을
-/// 수 있다. 그러나 그 plugin 의 namespace 응답이 **하나도** 안 오는 채로 만료만 쌓이면
-/// 호출마다 [`NAMESPACE_CALL_TIMEOUT`] 을 태우고 남는 것은 경고 로그뿐이고, 그 상태는
-/// 스스로 끝나지 않는다 — 프로세스는 ping 에 답하므로 healthcheck 가 원리적으로 못 본다.
-///
-/// **처방이 hook 의 backoff 와 다른 이유**: hook 은 선택적이라 우회가 곧 정상 동작이고,
-/// 그래서 실패가 쌓이면 잠시 안 부르는 것이 답이다([`HOOK_FAIL_BACKOFF`]). namespace
-/// 호출에는 우회할 대상이 없다 — 같은 처방을 이식하면 "시도조차 않고 즉시 실패" 가 되어
-/// 회복한 plugin 이 backoff 동안 **도달 불가**가 된다. 재시작은 그 반대다: 그 자리에서
-/// pending 을 전부 거두고(`cancel_pending_namespace_calls`) plugin 을 다시 띄우므로,
-/// 다음 호출은 기다림 없이 건강한 프로세스에 닿는다.
-///
-/// 값 3 은 [`HOOK_FAIL_LIMIT`] 와 같다 — 연속을 우연과 가르는 최소 수. 파생이 아니다.
+/// namespace 연속 만료가 이 수에 도달하면 다음 ping tick에서 재시작 대상으로 삼는다.
+/// hook은 우회할 수 있지만 namespace 호출은 대체 실행이 없어 재시작을 사용한다.
 pub(super) const NAMESPACE_EXPIRY_RESTART_LIMIT: u32 = 3;
 pub(super) const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
-/// plugin 하나에 주는 graceful 종료 기회. 초과하면 force kill 한다. 종료 전체
-/// (`shutdown_all`)는 이 값을 plugin 마다 직렬로 더하지 않고 겹쳐서 소비하므로,
-/// plugin 이 몇 개든 총 대기는 이 값으로 수렴한다.
+/// 정상 종료를 기다릴 기간. shutdown_all에서는 같은 deadline을 공유하며 병렬로 기다린다.
+/// kill과 프로세스 회수까지 포함한 전체 종료 시간의 상한은 아니다.
 pub(super) const PLUGIN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
-/// H — auto-reload polling 간격. pump tick 안의 자연 debounce — 2초 내
-/// 발생한 연속 mtime 변경은 한 번의 swap 으로 흡수된다.
+/// 실행 파일·매니페스트 변경을 확인하는 주기.
 pub(super) const AUTO_RELOAD_POLL_INTERVAL: Duration = Duration::from_secs(2);
-/// RssSurge 이상탐지(`docs/features/telemetry/index.md`) — plugin RSS sampling
-/// 주기. 너무 짧으면
-/// sysinfo 호출 비용이 매 tick 마다 누적되고, 너무 길면 5-샘플 sliding
-/// window(`RSS_SURGE_MIN_SAMPLES`)가 실제 급증을 늦게 잡는다.
+/// plugin RSS 조회 주기. 조회 비용과 변화 감지 간격을 조절한다.
 pub(super) const RSS_SAMPLE_INTERVAL: Duration = Duration::from_secs(30);
 
-/// plugin manager 가 자기 [`TimerHub`](tasty_timer::TimerHub) 에 등록하는 주기 작업 키.
-///
-/// 이 크레이트는 호스트 `App` 을 모르므로 본체 허브에 직접 등록할 수 없다 — 대신
-/// 자기 허브를 소유하고 [`PluginManager::next_deadline`] 만 노출한다. 호스트는 그
-/// 값을 자기 데드라인과 `min` 으로 합성한다(`docs/dev-guide/timer-hub.md`
-/// "계층을 넘는 허브 합성").
+/// 매니저 내부 타이머 종류. 호스트는 next_deadline을 자신의 대기 시각과 합친다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PluginTick {
-    /// `PING_INTERVAL` 주기 ping 송신 + 무응답 plugin 재시작 판정.
-    ///
-    /// healthcheck 를 별도 tick 으로 두지 않고 여기 합승시켰다 — `HEALTHCHECK_TIMEOUT`
-    /// 은 인터벌이 아니라 "마지막 pong 이후 경과" 데드라인 비교라 검사 자체는 아무
-    /// tick 에서나 할 수 있고, ping 을 보내는 tick 이 곧 응답을 기대하는 tick 이라
-    /// 판정 시점으로 자연스럽다. 결과적으로 **비응답 검출 상한은
-    /// `HEALTHCHECK_TIMEOUT + PING_INTERVAL` = 75 초**다(프로세스가 실제로 죽는
-    /// 경우는 이 경로가 아니라 event 채널 Disconnected 로 즉시 잡힌다).
+    /// ping 전송과 마지막 pong 이후 경과 시간에 따른 재시작 판정.
+    /// 실제 판정은 호스트가 이 tick을 처리할 때 수행한다.
     Ping,
     /// `RSS_SAMPLE_INTERVAL` 주기 RSS 샘플링.
     Rss,
@@ -131,10 +79,8 @@ pub(super) enum FinalCaller {
     Local {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         original_id: serde_json::Value,
-        /// 이 호출을 낳은 IPC 요청의 호스트 번호. 회신처와 한 몸으로 사슬(pre-hook → target →
-        /// post-hook)을 따라가므로, 다음 hop 을 대기 표에 넣는 자리가 여기서 읽어
-        /// [`PendingRequest::origin`] 에 복사한다. 번호를 모르는 호출이면 `None` — IPC 큐를 안 지난
-        /// 호출과, IPC `file_handler.dispatch` 처럼 큐를 지났지만 파일 핸들러 큐에서 번호를 잃은 호출.
+        /// 원래 호스트 IPC 요청 번호. pre-hook·target·post-hook 대기 항목에 전달한다.
+        /// IPC 큐 밖에서 왔거나 file-handler 큐에서 번호를 잃은 요청은 None이다.
         origin: Option<tasty_ipc::server::RequestSeq>,
     },
     Plugin {
@@ -154,40 +100,21 @@ impl FinalCaller {
     }
 }
 
-/// 응답을 기다리는 host→plugin request 하나 — **무엇을 기다리는지와 언제 보냈는지**.
-///
-/// `sent_at` 이 여기 붙는 이유는 이 맵이 요청의 수명을 이미 소유하기 때문이다. 별도
-/// 맵에 시각을 두면 응답 없이 사라지는 요청(취소 · deadline 만료 · plugin 종료)마다
-/// 두 맵을 같이 지워야 하고, 한 자리만 빠뜨려도 그 맵이 프로세스 수명 동안 자란다.
+/// 응답을 기다리는 plugin 요청. 종류·수신자·시각을 함께 보관해 종료 시 한 항목으로 정리한다.
 pub(super) struct PendingRequest {
     pub(super) kind: PendingRequestKind,
-    /// 보낸 시각. 응답이 매칭될 때 왕복 대기 시간으로 접힌다.
+    /// 송신 시각. 응답과 매칭되면 경과 시간을 기록한다.
     pub(super) sent_at: Instant,
-    /// 이 요청을 **받은** plugin — 응답을 줄 쪽이다.
-    ///
-    /// 변종 가운데 절반(`SurfaceCreate` · `SurfaceRestore` · `CommandInvoke` · `PopupOpen`
-    /// · `Other`)은 이 값을 안 든다. 그래서 그 plugin 이 치워질 때 그 항목들을 찾을 길이
-    /// 없었고, 새 프로세스는 새 id 를 쓰므로 **영영 매칭되지 않는 항목**이 프로세스 수명
-    /// 동안 남았다 — 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 까지 참으로
-    /// 묶는다. 변종마다 칸을 더하는 대신 여기 하나로 둔다: 받는 쪽은 모든 요청에 있다.
+    /// 요청을 받은 plugin. 해당 프로세스를 정리할 때 응답 없는 요청도 제거하는 기준이다.
     pub(super) to: String,
-    /// 이 plugin 요청을 낳은 **IPC 요청의 호스트 번호**([`tasty_ipc::server::RequestSeq`]).
-    ///
-    /// IPC 요청을 plugin namespace 로 넘긴 것이면 그 요청의 번호이고, pre/post hook 사슬의 다음
-    /// hop 도 같은 값이다 — 사슬이 들고 가는 [`FinalCaller::origin`] 에서 복사하므로 사슬 전체가
-    /// 원 요청 하나를 가리킨다. 번호를 모르는 plugin 요청은 `None` 이다 — IPC 요청에서 오지 않은
-    /// 것(event.dispatch · surface · plugin 이 부른 namespace 등)과, IPC `file_handler.dispatch` 가
-    /// 파일 핸들러 큐를 거쳐 넘긴 것(큐에 옮겨지는 사이 번호가 떨어진다, docs/architecture/ipc-server.md#느린-요청-추적).
-    ///
-    /// `to` 와 같은 이유로 변종이 아니라 여기 칸 하나다 — 어느 변종이 이 값을 가질 수 있는지는
-    /// 넘기는 쪽이 정하고, 응답·만료·취소는 변종과 무관하게 이 칸을 읽는다. plugin 에게는 안
-    /// 간다(docs/architecture/ipc-server.md#느린-요청-추적): 호스트 쪽 대응표이고, 그 대응을 잇는 것이 호스트 req_id 다.
+    /// 원래 호스트 IPC 요청 번호. hook을 거쳐도 같은 번호를 유지한다.
+    /// IPC 밖에서 왔거나 중간 큐에서 번호를 잃었으면 None이다. plugin에는 전송하지 않는다.
+    /// 관련 계측: docs/architecture/ipc-server.md#느린-요청-추적.
     pub(super) origin: Option<tasty_ipc::server::RequestSeq>,
 }
 
 impl PendingRequest {
-    /// `to` 에게 지금 보냈다. `Instant::now()` 를 쓰는 것은 이 크레이트의 기존 관례다 —
-    /// `Clock` port 는 본 바이너리의 `Core` 에 있고 여기서는 안 보인다.
+    /// 수신자와 현재 송신 시각을 기록한다.
     pub(super) fn now(to: impl Into<String>, kind: PendingRequestKind) -> Self {
         Self {
             kind,
@@ -212,8 +139,7 @@ pub(super) enum PendingRequestKind {
     SurfaceRestore {
         surface_id: u32,
     },
-    /// 단계 G: 단축키 매칭으로 plugin command가 트리거된 경우. 응답은
-    /// SurfaceResult 형태로 surface display_name 을 갱신할 수 있다.
+    /// 단축키로 실행한 plugin 명령. SurfaceResult로 표시 이름을 갱신할 수 있다.
     CommandInvoke {
         surface_id: u32,
     },
@@ -288,11 +214,7 @@ pub(super) enum PendingRequestKind {
     DebugExtensionInvokeHook {
         response_tx: mpsc::SyncSender<JsonRpcResponse>,
         original_id: serde_json::Value,
-        /// hook 응답이 도착해야 하는 시각. 지나면 caller 에 오류로 회신하고 버린다.
-        /// 이 변종만 `response_tx` 를 들고 deadline 이 없었고, 그러면 extension 이
-        /// 삼킨 호출 하나가 local CLI 를 영영 세운다 — 선언된 hook 과 달리
-        /// 매니페스트가 정해 주는 `timeout_ms` 가 없어 값이 안 붙어 있었던 것이지
-        /// 기다려야 할 이유가 있었던 것이 아니다.
+        /// debug hook의 응답 기한. 만료되면 호출자에게 오류를 반환한다.
         deadline: Instant,
     },
     /// extension의 pre-event hook을 dispatch한 뒤 응답 대기. 응답이 오면
@@ -371,27 +293,20 @@ pub(super) struct RemoteSurfaceEntry {
     pub(super) handles: SurfaceHandles,
 }
 
-/// egui-mesh surface 의 최근 수신 mesh frame 메타 (A1-S3 수신 라우팅 골격).
-///
-/// plugin 이 [`tasty_plugin_protocol::PluginEvent::PaintFrame`] 를 보낼 때마다
-/// `pump` 가 갱신한다. 렌더 prepare(A1-S5)가 `buffer_id` 로 [`PluginManager::plugin_buffer`]
-/// 를 lookup → footer Acquire-load → `mesh_wire::decode_paint` 의 출발점으로 읽는다.
-/// 본체(mesh 바이트)는 shared buffer 안에 있고, 이 구조체는 메타만 운반한다.
+/// 최근 수신한 mesh 프레임의 메타데이터. 실제 내용은 공유 버퍼에 있으며 렌더러가 읽는다.
 #[derive(Debug, Clone)]
 pub struct EguiMeshFrame {
     /// buffer lookup 에 필요한 소유 plugin id.
     pub plugin_id: String,
     /// mesh POD 바이트가 들어있는 shared buffer.
     pub buffer_id: SharedBufferId,
-    /// plugin 이 commit 한 footer generation. host 는 마지막 합성 generation 과
-    /// 비교해 변하지 않았으면 재합성을 건너뛴다.
+    /// plugin이 알린 footer 세대 번호.
     pub generation: u64,
     /// plugin 렌더 코어의 송신 frame 단조 시퀀스(1부터, buffer 재생성과 무관).
     /// 렌더 prepare 가 `frame_seq == last + 1` 로 textures_delta 체인 연속성을 검증한다.
     /// 구버전 plugin 은 0 → 항상 체인 단절로 취급된다.
     pub frame_seq: u64,
-    /// 이 frame 의 textures_delta 가 plugin 의 전체 텍스처 상태를 full image 로
-    /// 담고 있는가. true 면 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
+    /// 전체 텍스처 상태를 담은 프레임인지 여부. delta 체인 복구에 사용한다.
     pub full_textures: bool,
     /// `mesh_wire::encode_paint` 가 실제로 만든 바이트 길이(shared buffer 의
     /// power-of-two capacity 가 아니라). attach mesh mirror 가 네트워크로
@@ -433,11 +348,9 @@ pub struct PluginManager {
     pub(super) plugin_binary_mtimes: HashMap<String, SystemTime>,
     /// H — auto-reload: plugin id → 마지막 관측한 manifest version.
     pub(super) plugin_manifest_versions: HashMap<String, String>,
-    /// H — auto-reload 활성 여부. `TASTY_PLUGIN_AUTO_RELOAD` env 로 결정.
-    /// false 이면 `PluginTick::AutoReload` 이 등록되지 않아 cost 0.
+    /// TASTY_PLUGIN_AUTO_RELOAD 설정. 꺼져 있으면 AutoReload 타이머를 등록하지 않는다.
     pub(super) auto_reload_enabled: bool,
-    /// hello 받은 plugin의 surface_kinds를 등록하기 위한 registry 핸들. None이면
-    /// registry 등록 동작이 비활성 (헤드리스/테스트).
+    /// hello의 surface kind를 등록할 저장소. 없으면 등록하지 않는다.
     pub surface_registry: Option<Arc<dyn SurfaceRegistry>>,
     /// 이미 registry에 등록된 plugin id (hello를 여러 번 받아도 1회만 등록).
     pub registered_plugins: std::collections::HashSet<String>,
@@ -448,21 +361,13 @@ pub struct PluginManager {
     pub(super) surfaces: HashMap<u32, RemoteSurfaceEntry>,
     /// host → plugin 요청 ID → 종류. 응답 수신 시 후처리 dispatch용.
     pub(super) pending_requests: HashMap<u64, PendingRequest>,
-    /// host→plugin 왕복 대기 게이지. 호스트가 주입한다 — 이 크레이트는 그것을
-    /// 소유하지 않고 올리기만 한다.
-    ///
-    /// `Option` 인 이유는 주입이 없는 구성이 실재하기 때문이다(이 크레이트의 단위
-    /// 시험, 그리고 본 바이너리의 plugin_bridge 시험이 stub registry 로 매니저를
-    /// 세운다). 그때 `None` 이면 **아무것도 안 센다** — 0 을 쌓지 않으므로 읽는 쪽이
-    /// "안 쟀다" 와 "기다림이 없었다" 를 그대로 가른다.
+    /// 호스트가 주입한 plugin 왕복 대기 계측. 없으면 기록하지 않아 미측정과 0을 구별한다.
     plugin_wait: Option<Arc<tasty_telemetry::PluginWaitStats>>,
     /// 느린 요청 링(docs/architecture/ipc-server.md#느린-요청-추적). 원 IPC 요청 번호를 든 대기 항목이 끝날 때(응답 · 만료 · 취소)
     /// 그 hop 을 원 요청의 줄에 붙인다. `plugin_wait` 과 같은 이유로 `Option` 이고, `None` 이면
     /// 아무것도 안 남긴다.
     slow_requests: Option<Arc<tasty_telemetry::SlowRequestLog>>,
-    /// plugin 채널 바이트 장부. 운영 경로는 **프로세스 하나에 하나**다
-    /// (`ChannelLedger::process_wide`) — 창마다 매니저를 세워도 합계의 축은 메모리이고
-    /// 메모리는 하나다. 이 매니저가 띄우는 모든 plugin 프로세스의 세 채널이 여기에 올라간다.
+    /// 프로세스 전체의 plugin 채널 바이트 계측. 모든 매니저가 같은 ChannelLedger를 사용한다.
     pub(super) channel_ledger: Arc<crate::process::channel_bytes::ChannelLedger>,
     /// 각 plugin에 grant된 권한. 매니페스트 + plugins.toml의 granted를 교집합한 결과.
     /// `Arc`로 공유하여 CallerContext가 동시 호출 시 안전.
@@ -473,56 +378,33 @@ pub struct PluginManager {
     /// plugin이 매니페스트로 선언한 단축키 command 일람. plugin
     /// enable/disable/install/remove 시 갱신됨.
     pub command_registry: super::command_registry::PluginCommandRegistry,
-    /// plugin 이 매니페스트로 선언한 `[[contributes.settings_pages]]` sub-page 일람.
-    /// plugin hello/manifest 수신 시 등록되고, disable / 재시작 시 정리된다.
-    /// 설정 모달의 sub-tab 합성은 본 registry 를 순회 (Step 5).
+    /// plugin 설정 페이지. 등록 후 설정 화면에서 사용하며 disable·재시작 시 정리한다.
     pub settings_pages: crate::settings_registry::SettingsPageRegistry,
-    /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. **설치된 매니페스트에서
-    /// 유도되며**(docs/dev-guide/plugin-development.md#cli--ipc-namespace) 실행 여부와 무관하다 — 호스트 IPC dispatcher가 namespace
-    /// 메서드를 어느 plugin에 forward할지 해결할 때 조회한다. "누가 그 이름의 주인인가"
-    /// 와 "지금 떠 있는가" 는 다른 물음이고, 뒤엣것은 `processes` 가 답한다(안 떠 있으면
-    /// `-32002`). 이 표는 `packages` 에서 유도되므로 `packages` 를 바꾸는 자리는
-    /// [`PluginManager::refresh_packages`] 를 거쳐야 한다.
-    ///
-    /// **`tasty-ipc` 가 부팅 때 이 `Arc` 를 그대로 받는다** — 사본이 아니라 같은 표다.
-    /// 예전에는 `method_meta` 가 자기 `HashMap` 미러를 따로 들었고, 갱신을 한쪽만 하는
-    /// 결함이 실제로 났다. 표가 하나면 그 결함이 존재할 자리가 없다.
+    /// 설치 매니페스트에서 만든 namespace 소유자 목록. 실행 상태와 별도로 관리한다.
+    /// tasty-ipc와 같은 Arc를 공유하므로 패키지 갱신은 refresh_packages를 거쳐야 한다.
     ipc_namespaces: Arc<RwLock<IpcNamespaceRegistry>>,
     /// plugin id → (buffer id → 매핑 영역). 호스트가 `host.shared_buffer.create`로
     /// 발급한 영역의 매핑 유지(=OS region keep-alive)와 dirty 수신 시 lookup용.
     /// plugin process가 종료/재시작되면 해당 plugin 슬롯이 통째로 drop되어
     /// 매핑이 해제된다.
     pub(super) plugin_buffers: HashMap<String, HashMap<SharedBufferId, SharedMemory>>,
-    /// 호스트 전체에서 단조 증가하는 shared buffer id. plugin 간 충돌 회피 + 디버그
-    /// 추적을 단순화하기 위해 글로벌 카운터로 둔다.
+    /// 이 매니저가 다음에 발급할 공유 버퍼 ID.
     pub(super) next_buffer_id: AtomicU64,
-    /// egui-mesh surface_id → 최근 paint_frame 메타 (A1-S3). plugin 의 `PaintFrame`
-    /// 알림마다 갱신되고, 렌더 prepare(A1-S5)가 buffer lookup + 디코드 출발점으로 읽는다.
-    /// plugin process 가 종료/재시작되면 해당 plugin 의 엔트리를 정리한다 (stale buffer 참조 방지).
+    /// surface별 최근 mesh 메타데이터. plugin 종료·재시작 시 제거한다.
     pub(super) egui_mesh_frames: HashMap<u32, EguiMeshFrame>,
     /// egui-mesh popup instance_id → 최근 paint_frame 메타 (A2). plugin 의
     /// `PopupPaintFrame` 알림마다 갱신되고, 호스트 popup 합성기가 instance_id 로
     /// lookup 한다. popup 이 닫히거나 plugin 이 종료되면 해당 엔트리를 정리한다.
     pub(super) popup_mesh_frames: HashMap<u64, EguiMeshFrame>,
-    /// Plugin extension 상태 추적. `[extends]` 블록을 선언한 plugin들의
-    /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
-    /// hook dispatch 시 `active_extension_for_target`을 조회한다.
+    /// 확장 plugin의 Active·Pending·Disabled·Conflict 상태. hook 전달 대상을 찾는 데 사용한다.
     extensions: super::extension_registry::ExtensionRegistry,
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
-    /// plugin 별 **연속** namespace 만료 수. 그 plugin 의 namespace 응답이 하나라도
-    /// 도착하면 지운다 — **만료 뒤에 도착한 늦은 응답도 포함한다**(아래
-    /// `expired_namespace_calls`). 답하고 있는 plugin 은 아무리 느려도 여기 안 쌓인다.
-    /// plugin 이 치워질 때(`cancel_pending_namespace_calls`)도 지운다.
+    /// plugin별 namespace 연속 만료 횟수. 응답을 받거나 plugin을 정리하면 지운다.
+    /// 기록된 만료 ID와 일치하는 늦은 응답도 횟수를 지운다.
     pub(super) namespace_expiries: HashMap<String, u32>,
-    /// plugin 별로 **만료로 거둬진 namespace 호출의 request id**. 그 id 의 응답이
-    /// 뒤늦게 도착하면 `namespace_expiries` 를 지우는 근거가 된다 — pending 은 이미
-    /// 없으므로 그때는 이 목록만이 "이 응답이 namespace 호출의 것이었나" 를 안다.
-    ///
-    /// 이것 없이 "id 가 안 맞는 응답" 전체로 계수를 지우면 **늦은 hook 응답**까지
-    /// 지우게 되어, namespace 호출만 삼키면서 hook 에만 답하는 plugin 이 판정을
-    /// 빠져나간다. 길이는 `NAMESPACE_EXPIRY_RESTART_LIMIT` 로 잘라 무한히 안 자란다
-    /// (거기 닿으면 재시작이 일어나고 그 경로가 둘 다 비운다).
+    /// 최근 만료된 namespace 요청 ID. 늦은 응답을 구별해 만료 횟수를 지우는 데 사용한다.
+    /// 저장 개수는 NAMESPACE_EXPIRY_RESTART_LIMIT로 제한한다. hook 응답은 포함하지 않는다.
     pub(super) expired_namespace_calls: HashMap<String, VecDeque<u64>>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
@@ -540,43 +422,27 @@ pub struct PluginManager {
     /// `BannerPaintFrame` 알림마다 갱신되고, 호스트 banner 합성기가 instance_id 로
     /// lookup 한다. banner 가 닫히거나 plugin 이 종료되면 해당 엔트리를 정리한다.
     pub(super) banner_mesh_frames: HashMap<u64, EguiMeshFrame>,
-    /// `SurfaceInvalidated`(단계 06) 로 알려진 surface_id 누적 — idle 상태(입력 무)에서
-    /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
-    /// `take_invalidated_surfaces` 가 드레인한다.
+    /// SurfaceInvalidated로 재그리기를 요청한 surface. pump가 넣고 take_invalidated_surfaces가 가져간다.
     pub(super) invalidated_surfaces: Vec<u32>,
-    /// `PopupInvalidated`(`docs/dev-guide/egui-mesh-channel.md` "popup·banner 대응") 로
-    /// 알려진 popup instance_id 누적 — egui
-    /// `viewport_output` self-repaint 요청(스크롤 스무딩 등) 처럼 무입력 상태에서
-    /// plugin 이 재-forward 를 요청한 egui-mesh popup(git-viewer/clipboard-viewer 등).
-    /// `pump()` 가 채우고 `take_invalidated_popups` 가 드레인한다.
+    /// 입력 없이도 재그리기가 필요한 popup의 요청. pump가 넣고 take_invalidated_popups가 가져간다.
     pub(super) invalidated_popups: Vec<u64>,
-    /// `BannerInvalidated` 로 알려진 banner instance_id 누적 — 위 popup 칸의 banner
-    /// 대응이고 같은 이유로 있다(banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가
-    /// 무입력 재-pass 를 요청할 수 있다). `pump()` 가 채우고
-    /// `take_invalidated_banners` 가 드레인한다.
+    /// 입력 없이도 재그리기가 필요한 banner의 요청. pump가 넣고 take_invalidated_banners가 가져간다.
     pub(super) invalidated_banners: Vec<u64>,
     /// sysinfo 측정 핸들 — tick 마다 새로 만들지 않고 재사용(할당 비용 절감).
     pub(super) sys: sysinfo::System,
-    /// 이번 sampling tick 에서 모인 (plugin_id, rss_bytes). `pump()` 가 채우고
-    /// `take_rss_samples` 가 드레인한다 — `App::about_to_wait` 이 host 가 직접 가진
-    /// `CoreState`/`AnomalyDetector` 로 넘겨 검출·영속·알림을 처리한다(본 크레이트는
-    /// telemetry anomaly 판정 로직을 모른다, plain data 만 반환).
+    /// 이번 tick의 plugin별 RSS. App이 가져가 이상 탐지·저장·알림을 처리한다.
     pub(super) pending_rss_samples: Vec<(String, u64)>,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
     /// 호스트 본문이 CoreState 와 같은 Arc 를 공유 (trait object 로 의존성 격리).
     pub file_format: Arc<dyn tasty_plugin_protocol::host_port::FileFormatRegistryPort>,
     /// 파일 핸들러 시스템. plugin enable/disable 시 handler 추가/제거.
     pub file_handler: Arc<dyn tasty_plugin_protocol::host_port::FileHandlerRegistryPort>,
-    /// 공유 훅 핸들러 레지스트리(webhook/hook). plugin enable/disable 시
-    /// `[[contributes.hook_handler]]` 등록/제거. 호스트가 setter 로 주입하며 None
-    /// 이면 skip (headless 부팅 전/test — 훅 핸들러 없이도 코어 동작).
+    /// 호스트가 주입한 훅 핸들러 레지스트리. 없으면 기여 등록·해제를 생략한다.
     pub hook_handler: Option<Arc<dyn tasty_plugin_protocol::host_port::HookHandlerRegistryPort>>,
-    /// `[[contributes.completion_strategy]]` 등록/제거. 호스트가
-    /// setter 로 주입하며 None 이면 skip — hook_handler 와 동일 지위(독립
-    /// 레지스트리, 미주입 시 완료 판정 전략 없이도 코어 동작).
+    /// 호스트가 주입한 완료 판정 전략 레지스트리. 없으면 기여 등록·해제를 생략한다.
     pub completion_strategy:
         Option<Arc<dyn tasty_plugin_protocol::host_port::CompletionStrategyRegistryPort>>,
-    /// i18n namespace 등록 trait. None 이면 등록 skip (headless/test).
+    /// 번역 namespace 등록 인터페이스. 없으면 등록하지 않는다.
     pub i18n_registrar: Option<Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>>,
     /// 플러그인 자식 프로세스 수명을 호스트에 결박하는 크로스 플랫폼 reaper.
     /// Windows 는 Job Object 핸들을 여기 보유해야 tasty 수명과 KILL_ON_JOB_CLOSE
@@ -648,15 +514,15 @@ mod queries;
 mod response;
 mod retire;
 
-// 유도 상태(확장 집합)의 신선도 단정 — 텍스트가 못 보는 "순서" 를 런타임이 본다.
+// 패키지 변경 뒤 확장 상태가 다시 계산되는지 검사한다.
 #[cfg(test)]
 mod tests_derived_freshness;
 
-// H — plugin 자동 reload (baseline / check_for_updates / auto_reload_one) 테스트.
+// 자동 reload의 기준값·변경 감지·교체 검사.
 #[cfg(test)]
 mod tests_auto_reload;
 
-// namespace 소유 표가 설치된 매니페스트에서 유도되는가 (옛 mirror 테스트의 새 자리).
+// namespace 소유자가 설치 매니페스트에서 계산되는지 검사한다.
 #[cfg(test)]
 mod tests_namespace_table;
 
@@ -697,13 +563,8 @@ mod tests {
         Arc::new(tasty_terminal::waker_factory::NoopWakerFactory)
     }
 
-    /// validate_namespace_call의 분기를 직접 검증하기 위한 mgr 초기화.
-    /// process는 spawn하지 않는다.
-    ///
-    /// 소유 표를 손으로 채우지 않고 **매니페스트를 놓고 유도를 돌린다** — 그것이
-    /// 운영에서 소유가 생기는 유일한 경로이기 때문이다(docs/dev-guide/plugin-development.md#cli--ipc-namespace). 표를 직접 쓰면
-    /// 픽스처가 운영에 없는 상태를 만들 수 있고, 그러면 이 테스트가 지키는 것이
-    /// 실제 경로와 어긋난다.
+    /// 프로세스 실행 없이 매니페스트로 namespace 소유자 목록을 구성한다.
+    /// 운영 경로와 같은 계산을 사용해 호출 검증을 확인한다.
     fn mgr_with_namespace_owner(owner: &str, prefix: &str) -> PluginManager {
         let manifest_toml = format!(
             r#"
@@ -920,8 +781,7 @@ prefix = "{prefix}"
         );
     }
 
-    // 왕복 대기의 기록 자리. 이 게이지가 없던 때에는 "응답이 느리다" 가 호스트
-    // 적체인지 plugin 안의 시간인지 **가릴 값이 없었다.**
+    // plugin 요청의 왕복 대기 시간 기록을 확인한다.
     #[test]
     fn a_matched_response_records_how_long_the_host_waited() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -953,13 +813,12 @@ prefix = "{prefix}"
         assert_eq!(s.matched, 1, "매칭된 응답 하나가 한 번 세져야 한다");
         assert!(
             s.us_max >= 50_000,
-            "보낸 뒤 흐른 시간이 접혀야 한다: {}",
+            "요청 전송부터 응답까지의 시간이 기록되어야 한다: {}",
             s.us_max
         );
     }
 
-    // 끝점이 없는 관측은 안 센다. 이미 만료·취소돼 pending 에 없는 id 의 응답이
-    // 그 경우다 — 시작 시각을 모르므로 여기서 0 을 쌓으면 평균이 아래로 끌린다.
+    // pending에 없는 응답은 시작 시각을 알 수 없으므로 대기 시간 0으로 기록하지 않는다.
     #[test]
     fn an_unmatched_response_is_not_counted_as_a_wait() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1035,9 +894,7 @@ prefix = "{prefix}"
         }
     }
 
-    /// 연속 만료가 쌓이면 그 plugin 이 재시작 대상이 된다. healthcheck 는 이것을
-    /// 원리적으로 못 본다 — stub 은 방금 pong 한 것으로 시작하므로, 여기서 프로세스가
-    /// 치워졌다면 판정한 것은 만료 계수뿐이다.
+    /// 최근 pong이 있어도 namespace 연속 만료가 쌓이면 재시작 대상으로 삼는지 확인한다.
     #[test]
     fn a_plugin_that_only_expires_namespace_calls_is_restarted() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1063,12 +920,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// 재시작은 disable · swap 과 **같은 정리**를 거친다 — 등록 게이트까지 푼다.
-    ///
-    /// 게이트가 안 풀리면 새 프로세스의 hello 가 "이미 등록됨" 으로 읽혀
-    /// `register_new_hellos` 가 안 돈다. 그런데 재시작은 그 plugin 의 이벤트 권한
-    /// (`event_bus.clear_plugin`)과 설정 sub-page 를 이미 지웠으므로, 재시작된 plugin 은
-    /// `event.subscribe` 가 전부 거절되고 설정 탭이 사라진 채로 남는다.
+    /// 재시작 시 등록 상태도 지워 새 hello가 권한과 설정 페이지를 다시 등록할 수 있게 한다.
     #[test]
     fn a_restarted_plugin_is_registered_again_on_its_next_hello() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1090,14 +942,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// 계수로 재시작된 plugin 은 **한 번만** 재시작된다 — 재시작이 그 plugin 의 계수와
-    /// 거둔 id 목록을 함께 비우므로, 새로 뜬 프로세스가 다음 tick 에 옛 계수로 또
-    /// 거둬지지 않는다.
-    ///
-    /// 비우는 줄이 빠지면 계수는 상한에 머물고, 새 프로세스가 ping tick 마다 다시
-    /// 재시작된다 — 한 번 훑어 얻은 판정이 tick 마다 다시 소비되는 것이다. 위 두 시험은
-    /// 재시작 **뒤에** 프로세스를 다시 두지 않아(시험에는 패키지가 없어 재시작 경로가
-    /// 새 프로세스를 안 띄운다) 그것을 못 잰다.
+    /// 재시작 후 만료 횟수와 오래된 ID를 지워 같은 이유로 새 프로세스까지 재시작하지 않는다.
     #[test]
     fn a_plugin_restarted_by_the_expiry_streak_is_restarted_once() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1130,12 +975,8 @@ prefix = "{prefix}"
         );
     }
 
-    /// 재시작된 plugin **에게 보낸** 요청은 caller 가 없어도 거둬진다.
-    ///
-    /// 새 프로세스는 새 request id 를 쓰므로 옛 id 의 응답은 다시 안 온다. deadline 도
-    /// 없는 변종이라 sweep 도 안 본다 — 여기서 안 거두면 프로세스 수명 동안 남고,
-    /// 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 를 영구히 참으로 묶는다.
-    /// 다른 plugin 에게 간 요청은 건드리지 않는다.
+    /// 재시작된 plugin의 요청은 caller나 deadline이 없어도 제거한다.
+    /// 다른 plugin에 보낸 요청은 유지한다.
     #[test]
     fn requests_sent_to_a_restarted_plugin_are_reclaimed() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1172,8 +1013,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// namespace 응답이 하나라도 오면 계수가 0 으로 돌아간다 — 답하고 있는 plugin 은
-    /// 아무리 느려도 이 판정에 안 걸린다.
+    /// namespace 응답을 받으면 연속 만료 횟수를 지운다.
     #[test]
     fn a_namespace_answer_clears_the_expiry_streak() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1226,12 +1066,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// **만료 뒤에 도착한** namespace 응답도 계수를 지운다.
-    ///
-    /// 그 응답이 올 때 pending 은 이미 sweep 이 거둬 없다. 그 자리에서 계수를 안 지우면
-    /// `NAMESPACE_CALL_TIMEOUT` 을 조금씩 넘겨 **매번 실제로 답하는** plugin 이 세 번마다
-    /// 재시작된다 — 재시작은 느린 것을 빠르게 만들지 못하므로 그 반복은 그 plugin 의
-    /// 화면만 주기적으로 없앤다.
+    /// 만료된 요청의 늦은 응답도 기록된 ID와 일치하면 연속 만료 횟수를 지운다.
     #[test]
     fn a_late_namespace_answer_also_clears_the_expiry_streak() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1269,13 +1104,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// 거둬진 id 하나는 계수를 **한 번만** 지운다 — 같은 늦은 응답이 다시 와도 두 번째는
-    /// 아무것도 안 지우고, 한 id 를 소비해도 **다른** 거둬진 id 는 남는다.
-    ///
-    /// 앞쪽이 없으면 plugin 이 옛 응답 한 줄을 계속 재전송해 계수를 영구히 0 으로 눌러
-    /// 둘 수 있다 — namespace 호출을 전부 삼키면서도 재시작 판정을 빠져나간다. 뒤쪽이
-    /// 없으면(한 id 에 목록을 통째로 비우면) 서로 다른 늦은 응답 둘 중 뒤의 것이 계수를
-    /// 못 지운다. 위 두 시험은 같은 id 를 두 번 보내지 않아 둘 다 못 잰다.
+    /// 같은 만료 ID의 응답은 한 번만 처리하고 다른 만료 ID는 남긴다.
     #[test]
     fn a_reaped_namespace_id_clears_the_streak_exactly_once() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1293,9 +1122,7 @@ prefix = "{prefix}"
             );
         };
 
-        // 목록 길이 상한(`NAMESPACE_EXPIRY_RESTART_LIMIT`)이 id 를 밀어내면 소비가 아니라
-        // 자름이 id 를 지운 것이 되어 이 시험이 소비를 못 잰다 — 그래서 한 번에 상한보다
-        // 적게 쌓는다.
+        // 상한에 의한 ID 제거와 혼동하지 않도록 상한보다 적게 기록한다.
         expire_namespace_calls_from(&mut mgr, "com.example.echo", 100, 1);
         late(&mut mgr, 100);
         assert!(
@@ -1332,12 +1159,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// 계수를 지우는 것은 **namespace 응답뿐**이다 — 두 갈래를 한 자리에서 가른다.
-    ///
-    /// (1) pending 이 있는 다른 종류의 응답, (2) pending 이 없는데 namespace 만료로
-    /// 기억된 id 도 아닌 응답(늦은 hook 응답·잡음). 둘 다 계수를 못 지워야 한다.
-    /// 이것이 없으면 namespace 호출만 삼키면서 다른 것에만 답하는 plugin 이 판정을
-    /// 빠져나간다.
+    /// namespace가 아닌 응답과 기록되지 않은 ID는 연속 만료 횟수를 지우지 않는다.
     #[test]
     fn only_a_namespace_answer_clears_the_expiry_streak() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1392,10 +1214,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// 호스트가 **스스로 내는** 오류 코드도 plugin 경계를 넘는가. 이 자리가
-    /// `None` 을 주면 plugin caller 는 SDK 기본값 `-32000` 을 보고, 같은 사건이
-    /// CLI caller 에게는 `-32004` 로 간다 — 코드가 사건이 아니라 누가 물었는지를
-    /// 보고하게 된다.
+    /// 호스트가 정한 오류 코드가 plugin 호출자에게도 그대로 전달되는지 확인한다.
     #[test]
     fn a_host_originated_error_code_reaches_a_plugin_caller() {
         let mut mgr = PluginManager::new(empty_waker());
@@ -1423,11 +1242,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// pending 하나를 심고 `now` 시점으로 sweep 을 돌린 결과를 (남았는가, 회신된
-    /// 응답) 으로 돌려준다. deadline 만 다르게 주어 만료/미만료 두 갈래를 같은
-    /// 자리에서 잰다. **두 시각을 둘 다 인자로 받는 것이 요점이다** — sweep 이
-    /// 자기 안에서 `Instant::now()` 를 읽으면 `now` 를 아무 값으로 줘도 판정이
-    /// 안 바뀌므로, 이 짝이 시간 주입이 실제로 배선돼 있는지를 가른다.
+    /// deadline과 현재 시각을 받아 pending 유지 여부와 응답을 확인한다.
     fn sweep_one_namespace_invoke(
         now: Instant,
         deadline: Instant,
@@ -1450,9 +1265,7 @@ prefix = "{prefix}"
         (mgr.pending_requests.contains_key(&7), rx.try_recv().ok())
     }
 
-    /// 주입한 시각이 실제로 판정에 쓰이는가 — deadline 을 고정해 두고 `now` 만
-    /// 양쪽으로 옮긴다. sweep 이 `Instant::now()` 를 직접 읽으면 두 호출이 같은
-    /// 답을 내므로 이 시험이 죽는다.
+    /// 같은 deadline의 앞뒤 시각을 주입해 만료 판정이 달라지는지 확인한다.
     #[test]
     fn the_injected_now_is_what_decides_expiry() {
         let deadline = Instant::now() + Duration::from_secs(3600);
@@ -1482,9 +1295,7 @@ prefix = "{prefix}"
         );
     }
 
-    /// debug 한정 직접 hook 호출도 `response_tx` 를 들고 있어, deadline 이 없으면
-    /// extension 이 한 번 삼키는 것만으로 local CLI 가 영영 선다. 상한 직전과
-    /// 직후를 같은 자리에서 재서 그 상한이 실제로 걸려 있는지를 가른다.
+    /// debug hook 직접 호출의 기한 전후에서 응답과 대기 항목 정리를 확인한다.
     #[cfg(debug_assertions)]
     #[test]
     fn an_expired_debug_hook_invoke_answers_its_caller() {
@@ -1526,14 +1337,7 @@ prefix = "{prefix}"
 
     #[test]
     fn unexpired_namespace_invoke_is_left_alone() {
-        // 같은 자리에서 deadline 만 미래로 옮긴다 — sweep 이 시각을 실제로 보는지를
-        // 이 짝이 가른다(둘 다 통과해야 deadline 비교가 살아 있다는 뜻이다).
-        //
-        // 이 갈래는 하나를 더 지킨다: `NAMESPACE_CALL_TIMEOUT` 이 0 으로 무너지는
-        // 것. 그 값은 두 상수의 `as_secs()` 합에서 오는데 `as_secs()` 는 버림이라,
-        // 둘 다 1 초 미만이 되면 상한이 0 이 되고 모든 namespace 호출이 다음 pump
-        // 에서 즉시 만료된다. 그러면 여기 deadline 이 곧 `now` 라 이 시험이 빨개진다
-        // (변이 실측: 두 상수를 900ms · 500ms 로 내리면 이 시험이 죽는다).
+        // 미래 deadline은 만료되지 않아야 한다. 시간 단위 변환으로 상한이 0이 되는 경우도 검출한다.
         let (still_pending, resp) =
             sweep_one_namespace_invoke(Instant::now(), Instant::now() + NAMESPACE_CALL_TIMEOUT);
         assert!(still_pending, "아직 만료 전인데 pending 이 사라졌다");

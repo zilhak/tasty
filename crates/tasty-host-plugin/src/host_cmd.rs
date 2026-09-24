@@ -1,7 +1,4 @@
-//! `register_remote_kind`의 create/restore 클로저가 PluginManager에게 보내는 명령.
-//!
-//! 새 RemoteSurface가 만들어지면 해당 surface의 `Arc<Mutex>` 핸들 묶음을 manager에
-//! 전달하여 manager가 plugin과의 메시지 흐름에서 이 surface를 추적할 수 있도록 한다.
+//! surface 생성·복원 시 PluginManager에 추적할 상태 핸들을 전달한다.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -24,8 +21,7 @@ pub enum HostCmd {
         surface_id: u32,
         plugin_id: String,
         kind: String,
-        /// 호스트가 carry 한 시작 cwd. Surface cwd invariant —
-        /// `docs/design/policies/cwd.md#surface-cwd-invariant`.
+        /// 호스트가 전달한 시작 cwd. docs/design/policies/cwd.md#surface-cwd-invariant 참조.
         cwd: Option<PathBuf>,
         params: Value,
         handles: SurfaceHandles,

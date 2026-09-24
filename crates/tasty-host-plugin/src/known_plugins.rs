@@ -1,10 +1,5 @@
-//! `~/.tasty/known-plugins.toml` — 사용자가 trust 한 외부 plugin 의 trust DB.
-//!
-//! 임베드 키 (`bundle_sig::TRUSTED_PUBKEYS`) 에 매칭되지 않는 plugin 의 경우,
-//! 사용자가 모달에서 "신뢰" 를 누른 시점의 *pubkey + 권한 스냅샷* 을 본 파일에
-//! 기록한다. 다음 구동부터는 모달 없이 자동 trust. 단, 매니페스트의 권한이
-//! trust 시점과 달라졌으면 다시 모달이 뜨도록 [`Self::permissions_changed`] 가
-//! 변경을 감지한다 (TOFU + permission-creep 방어).
+//! 사용자가 승인한 외부 plugin의 공개키와 권한을 known-plugins.toml에 저장한다.
+//! 서명이 맞아도 권한이 달라지면 다시 승인이 필요하다.
 //!
 //! ## 파일 포맷 (TOML)
 //!
@@ -16,12 +11,8 @@
 //! publisher_fingerprint = "ab:cd:ef:..."
 //! ```
 //!
-//! ## 신뢰성 / 동시성
-//!
-//! 본 파일은 사용자 머신의 *user-only* DB. release 빌드의 어떤 IPC 도 직접
-//! 쓰기를 노출하지 않는다 (사용자 모달 승인 결과를 통해서만 갱신). 동시성은
-//! 단순 `read → mutate → write` 로 race 가능하지만, plugin 등록 빈도가 매우
-//! 낮아 lock 은 0.7+ 로 미룬다.
+//! 파일 갱신은 read → 변경 → write이며 동시 쓰기를 직렬화하지 않는다.
+//! 따라서 여러 쓰기가 겹치면 변경을 잃을 수 있다.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -30,7 +21,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 
-/// 사용자 trust DB 의 전체 내용 — `~/.tasty/known-plugins.toml` 매핑.
+/// 사용자 데이터 루트의 외부 plugin 신뢰 목록.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct KnownPlugins {
     /// plugin_id → entry. `BTreeMap` 으로 toml dump 시 순서 안정.
@@ -48,8 +39,7 @@ pub struct KnownPluginEntry {
     pub permissions: Vec<String>,
     /// RFC3339 timestamp (예: `2026-06-09T09:50:00Z`).
     pub trusted_at: String,
-    /// publisher 가 별도 채널 (공식 사이트 / 패키지 페이지) 로 게시한 키
-    /// fingerprint. 사용자가 모달에서 수동 비교한 흔적 — 향후 자동 비교 활용.
+    /// 표시용 공개키 지문.
     #[serde(default)]
     pub publisher_fingerprint: String,
 }
@@ -73,7 +63,7 @@ impl KnownPluginEntry {
 }
 
 impl KnownPlugins {
-    /// `~/.tasty/known-plugins.toml` 경로. home 디렉토리 결정 실패 시 None.
+    /// 데이터 루트의 known-plugins.toml 경로. 루트를 찾지 못하면 None.
     pub fn path() -> Option<PathBuf> {
         tasty_utils::path::tasty_home().map(|h| h.join("known-plugins.toml"))
     }

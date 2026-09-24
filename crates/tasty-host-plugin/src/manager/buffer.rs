@@ -31,12 +31,8 @@ impl PluginManager {
         self.plugin_buffers.get(plugin_id)?.get(&buffer_id)
     }
 
-    /// surface/popup/banner 닫힘 시 그 인스턴스가 쓰던 shared buffer 매핑을 host 측
-    /// 에서 해제한다. plugin 은 자기 매핑을 drop 하지만 host 에 알릴 프로토콜
-    /// 메시지가 없어, 이 호출이 없으면 `plugin_buffers` 의 `SharedMemory` 매핑이
-    /// plugin 수명 내내 누적된다 (soak s6 실측: markdown open/close 당 호스트
-    /// RSS ~1.1MB — Rust heap 밖(mmap)이라 dhat 에도 안 잡히는 유형).
-    /// plugin 측 매핑은 독립 뷰라 이 해제와 무관하게 유효하다.
+    /// 닫은 surface·popup·banner의 호스트 공유 매핑을 해제한다.
+    /// plugin의 매핑 해제는 별도로 통지되지 않으며 양쪽 매핑의 수명은 독립적이다.
     pub(super) fn release_plugin_buffer(
         &mut self,
         plugin_id: &str,
@@ -47,11 +43,7 @@ impl PluginManager {
         }
     }
 
-    /// egui-mesh surface 의 최근 paint_frame 메타 조회 (A1-S3 수신 라우팅 골격).
-    ///
-    /// 렌더 prepare(A1-S5)가 호출해 `buffer_id` 로 [`PluginManager::plugin_buffer`] 를
-    /// lookup → footer Acquire-load → `mesh_wire::decode_paint` 로 mesh 를 복원한다.
-    /// plugin 이 아직 frame 을 보내지 않았거나 죽어서 정리됐으면 `None`.
+    /// surface의 최근 프레임 메타데이터. 아직 받지 않았거나 정리했으면 None이다.
     pub fn egui_mesh_frame(&self, surface_id: u32) -> Option<&super::EguiMeshFrame> {
         self.egui_mesh_frames.get(&surface_id)
     }
@@ -64,34 +56,19 @@ impl PluginManager {
         self.egui_mesh_frames.remove(&surface_id);
     }
 
-    /// egui-mesh popup 인스턴스의 최근 paint_frame 메타 조회 (A2). 호스트 popup
-    /// 합성기가 `instance_id` 로 lookup → `buffer_id` 로 [`PluginManager::plugin_buffer`]
-    /// → footer Acquire-load → `decode_paint` 로 mesh 를 복원한다. plugin 이 아직 frame 을
-    /// 보내지 않았거나 popup 이 닫혀 정리됐으면 `None`.
+    /// popup의 최근 프레임 메타데이터. 아직 받지 않았거나 닫혔으면 None이다.
     pub fn popup_mesh_frame(&self, instance_id: u64) -> Option<&super::EguiMeshFrame> {
         self.popup_mesh_frames.get(&instance_id)
     }
 
-    /// egui-mesh banner 인스턴스의 최근 paint_frame 메타 조회 (A3). [`popup_mesh_frame`]
-    /// 의 banner 대응 — 호스트 banner 합성기가 `instance_id` 로 lookup 한다. plugin 이 아직
-    /// frame 을 보내지 않았거나 banner 가 닫혀 정리됐으면 `None`.
-    ///
-    /// [`popup_mesh_frame`]: Self::popup_mesh_frame
+    /// banner의 최근 프레임 메타데이터. 아직 받지 않았거나 닫혔으면 None이다.
     pub fn banner_mesh_frame(&self, instance_id: u64) -> Option<&super::EguiMeshFrame> {
         self.banner_mesh_frames.get(&instance_id)
     }
 
-    /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어
-    /// 메인 채널 결과(`SharedBufferCreateResult`)와 보조 채널 핸들(`HandleAttach`)을
-    /// 양쪽 모두 전송한다.
-    ///
-    /// - main 채널 응답은 caller(`App::process_plugin_ipc_calls`)가
-    ///   `send_ipc_result`로 회신.
-    /// - 보조 채널 핸들은 본 메서드가 직접 송신 (plugin SDK는 같은 call_id로
-    ///   매칭되는 `HandleAttach`를 기다린다).
-    ///
-    /// 핸들 전송이 실패하면 SharedMemory를 등록하지 않고 에러를 반환한다 — plugin은
-    /// `PluginError::HostCallTimeout` 등으로 인식한다.
+    /// 공유 메모리를 만들고 보조 채널로 핸들을 전달한다.
+    /// 호출자가 메인 채널 응답을 보내며 SDK는 call_id로 양쪽 결과를 연결한다.
+    /// 핸들 전송에 실패하면 매핑을 등록하지 않고 오류를 반환한다.
     #[cfg(unix)]
     pub fn create_shared_buffer_for(
         &mut self,
@@ -150,9 +127,8 @@ impl PluginManager {
                 return Err("shared_buffer.create: plugin handle channel not connected".into());
             }
         }
-        // SharedMemory를 매니저가 보관 — Drop이 일어나면 OS region이 회수되므로
-        // plugin이 매핑을 잡고 있는 한 살아있어야 한다. payload는 method 끝에서
-        // Drop되며 송신 fd가 닫힌다(매핑 fd는 mem 안에 별도로 보존).
+        // 호스트가 렌더링에 사용할 매핑을 보관한다. plugin 매핑은 별도 수명을 가진다.
+        // 전송용 payload를 버려도 호스트 매핑은 유지된다.
         self.plugin_buffers
             .entry(plugin_id.to_string())
             .or_default()
@@ -228,8 +204,7 @@ impl PluginManager {
                 return Err("shared_buffer.create: plugin handle channel not connected".into());
             }
         }
-        // 우리 매핑은 매니저가 보관 — plugin 이 매핑을 잡고 있는 한 살아있어야 한다.
-        // payload(peer 테이블의 복제 핸들)는 Drop 이 no-op 라 그대로 떨궈도 된다.
+        // 호스트 매핑을 보관한다. 상대 프로세스에 복제한 핸들은 payload Drop으로 닫히지 않는다.
         self.plugin_buffers
             .entry(plugin_id.to_string())
             .or_default()

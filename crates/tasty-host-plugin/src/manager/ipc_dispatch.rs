@@ -1,6 +1,4 @@
-//! IPC dispatch: 외부 client → plugin namespace forward, plugin → plugin namespace
-//! forward, extension hook 진입 routing, hook backoff/실패 카운터, 최종 응답
-//! 송신 helper.
+//! plugin namespace 호출, extension hook과 응답 전달을 처리한다.
 
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -23,12 +21,8 @@ impl PluginManager {
         std::mem::take(&mut self.pending_plugin_calls)
     }
 
-    /// 라우터가 처리한 결과를 plugin에 송신.
-    ///
-    /// `error_code` 는 호스트가 준 JSON-RPC 코드다. **버리면 plugin 을 거쳐 나온 응답이
-    /// 전부 `-32000`(server error)이 된다** — 호스트가 "인자를 고쳐라"(`-32602`)로
-    /// 거절한 것까지 그렇게 되어, 호출자가 재시도 정책을 반대로 고른다.
-    /// 코드가 없는 실패(문자열만 있는 내부 경로)는 `None` 을 준다.
+    /// 라우터 결과를 plugin에 전달한다. 원래 JSON-RPC 오류 코드도 유지한다.
+    /// 코드 없는 내부 오류에만 None을 사용한다.
     pub fn send_ipc_result(
         &mut self,
         plugin_id: &str,
@@ -55,14 +49,9 @@ impl PluginManager {
         }
     }
 
-    /// 호스트 본문이 새 envelope를 발화. 호스트는 모든 namespace에 publish 가능.
-    /// 매칭되는 모든 plugin 구독자에게 `event.dispatch` 송신.
-    ///
-    /// `origin` 은 이 호출을 낳은 IPC 요청의 호스트 번호다 — 큐에서 꺼낸 명령을 넘기는 자리는
-    /// 그 명령의 [`tasty_ipc::server::IpcCommand::request_seq`] 를 준다. 번호를 모르는 호출은
-    /// `None` 이다 — 파일 핸들러 큐를 거친 forward 는 IPC `file_handler.dispatch` 에서 왔더라도
-    /// 큐로 옮겨지는 사이에 번호를 잃어 `None` 이다. 번호는 plugin 에게 안 가고 대기 중 표에만
-    /// 실린다.
+    /// namespace 소유자와 권한을 확인해 호출을 전달한다. 응답은 response_tx로 돌려준다.
+    /// origin은 호스트의 원 요청 번호이며 plugin에는 보내지 않는다.
+    /// 번호를 모르거나 중간 file-handler 큐에서 잃었으면 None이다.
     pub fn forward_namespace_call(
         &mut self,
         method: &str,
@@ -269,8 +258,7 @@ impl PluginManager {
         false
     }
 
-    /// hook 응답에서 에러/타임아웃이 발생했을 때 호출. 연속 실패 카운터를 증가시키고
-    /// 임계를 넘으면 backoff 시작.
+    /// hook 오류·시간 초과를 기록하고 실패 횟수가 상한에 도달하면 backoff를 시작한다.
     pub(super) fn record_hook_failure(&mut self, ext_id: &str, method: &str) {
         let key = (ext_id.to_string(), method.to_string());
         let state = self.hook_failures.entry(key).or_default();
@@ -424,14 +412,7 @@ impl PluginManager {
         Ok(req_id)
     }
 
-    /// final_caller로 에러 응답 송신.
-    ///
-    /// **두 갈래가 같은 `code` 를 싣는다.** 한동안 plugin 갈래만 코드를 버렸는데,
-    /// 그러면 같은 사건(예: target 이 안 돌려줬다 `-32004`)이 caller 가 CLI 냐 다른
-    /// plugin 이냐에 따라 `-32004` 와 `-32000` 으로 갈렸다 — 코드가 사건이 아니라
-    /// **누가 물었는가**를 보고했다. `docs/dev-guide/api-conventions.md#plugin-을-거쳐-온-실패도-호스트가-준-코드를-그대로-낸다`
-    /// 의 기준처럼 호스트 오류 코드는 plugin 경계를 넘어 유지한다. 이 함수는 다른
-    /// 호출에서 받은 오류를 전달하는 경우뿐 아니라 호스트가 직접 만든 오류도 다룬다.
+    /// 최종 호출자에게 오류를 보낸다. Local과 plugin 모두 호스트의 오류 코드를 유지한다.
     pub(super) fn send_final_error(
         &mut self,
         final_caller: FinalCaller,
@@ -639,17 +620,8 @@ impl PluginManager {
         self.reclaim_requests_sent_to(plugin_id, reason);
     }
 
-    /// 위 취소가 못 보는 나머지 — **그 plugin 에게 보냈는데** 회신할 caller 가 따로
-    /// 없는 요청(`SurfaceCreate` · `SurfaceRestore` · `CommandInvoke` · `PopupOpen` ·
-    /// `Other`)과 debug hook 호출을 거둔다.
-    ///
-    /// 거두지 않으면 영영 안 끝난다. 새 프로세스는 새 request id 를 쓰므로 옛 id 의
-    /// 응답은 다시 오지 않고, deadline 도 없는 변종이라 sweep 도 안 본다. 그 항목들이
-    /// 재시작마다 쌓이고, 남은 `SurfaceRestore` 는 `has_pending_surface_restores` 를
-    /// 영구히 참으로 묶는다.
-    ///
-    /// 받는 쪽으로 찾는다(`PendingRequest::to`) — 위 취소는 *무엇을 위한* 요청인가
-    /// (target) 로 찾으므로, 둘을 합쳐야 이 plugin 이 얽힌 요청이 전부 덮인다.
+    /// 해당 plugin에 보낸 나머지 요청도 수신자 기준으로 정리한다.
+    /// caller나 deadline이 없는 surface·명령·popup 요청도 포함해 재시작 뒤 남지 않게 한다.
     fn reclaim_requests_sent_to(&mut self, plugin_id: &str, reason: &str) {
         let leftover: Vec<u64> = self
             .pending_requests

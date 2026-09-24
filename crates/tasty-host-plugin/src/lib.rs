@@ -1,16 +1,7 @@
-//! Tasty plugin manager — 호스트 측 lifecycle/IPC routing/manifest registry.
-//!
-//! 본 crate 가 manager / handle_channel / process / listener / protocol /
-//! discovery / builtin / event_bus 를 들고 있다 — 본 바이너리에 흩어져 있던 것을
-//! 흡수해 온 것이고, 그쪽에는 더 이상 남아 있지 않다. host 본 바이너리 결합은 6 개 host_port trait
-//! (SurfaceRegistry / FileFormatRegistryPort / FileHandlerRegistryPort /
-//! I18nNamespaceRegistrar / IpcHostFacade) + plugin_bridge/ 잔존 5 모듈로 격리.
+//! 호스트의 plugin 설치·프로세스 관리·IPC·이벤트 전달.
+//! 본체 기능은 host_port trait을 통해 사용한다.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 이유: 테스트의 let _는 사유 검사 대상이 아니다. 제품 코드에는 이 면제를 적용하지 않는다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod builtin;
@@ -36,11 +27,8 @@ mod test_fake_plugin;
 #[cfg(test)]
 mod test_support;
 pub mod tool_registry;
-// Phase J.C WASM POC stub — `wasm-poc` feature 가 활성일 때만 컴파일.
-// default 빌드 surface 변경 0.
+// wasm-poc feature에서만 사용하는 실험 코드.
 pub mod wasm_poc;
-
-// 테스트는 event_bus.rs 에서 event_bus_tests.rs 를 로드 (co-located).
 
 pub use builtin::{
     BuiltinUpgradeAction, BuiltinUpgradeItem, BuiltinUpgradeReport, bundle_root,

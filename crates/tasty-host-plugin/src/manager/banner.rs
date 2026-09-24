@@ -1,9 +1,5 @@
-//! Banner 인스턴스 생명주기(A3): open/close, host 발급 instance_id 관리.
-//!
-//! popup([`super::popup`]) 과 평행하되 banner 는 non-modal 공지라 초기 tree/event 채널이
-//! 없고 egui-mesh 로만 콘텐츠를 그린다 — `banner.open` 응답([`BannerOpenResult`])은 빈
-//! 결과라 `PendingRequestKind::Other` 로 무시한다. 셸/스택/위치/dismiss 타이밍은 host
-//! 소유이며, 여기서는 인스턴스 발급/dedup/정리만 담당한다.
+//! banner 인스턴스를 발급하고 중복 열기와 닫기를 처리한다.
+//! 콘텐츠는 egui-mesh로 받으며 셸·위치·닫기 시점은 호스트가 관리한다.
 
 use serde_json::json;
 
@@ -15,10 +11,8 @@ impl PluginManager {
     /// Plugin 이 contribute 한 banner 의 새 인스턴스를 연다. plugin process 에
     /// `banner.open` IPC 를 보내고 host 발급 `instance_id` 를 돌려준다.
     ///
-    /// `surface_id` 는 banner 가 도킹될 스코프 surface(D1). **소유권 검증(그 surface 가
-    /// 호출 plugin 소유인지)은 caller(App) 가 이미 마친 상태**로 전달된다 — host 본문이
-    /// surface→plugin 매핑을 알고 여기(host-plugin 크레이트)는 모르기 때문. debug 트리거는
-    /// 소유권 검증을 우회한다(격리 빌드 한정).
+    /// surface_id는 호스트가 소유권을 확인한 대상이다. 이 크레이트는 surface 소유자를 조회하지 않는다.
+    /// debug 전용 트리거는 해당 검사를 우회할 수 있다.
     ///
     /// 같은 (plugin_id, banner_id) 인스턴스가 이미 열려 있으면 새로 열지 않고 기존
     /// instance_id 를 돌려준다(단일 인스턴스 dedup — host 소유 정책, identity 원칙 1).
@@ -77,9 +71,7 @@ impl PluginManager {
         Some(*existing)
     }
 
-    /// 매니페스트에서 contribute 를 찾고 egui-mesh api_version 게이트까지 통과해야 `Some`.
-    /// egui-mesh banner 는 epaint 와이어가 host·plugin 동일 컴파일을 강제하므로
-    /// api_version 일치를 게이트한다(surface/popup egui-mesh 등록 정책 미러, docs/dev-guide/egui-mesh-channel.md#데이터-흐름).
+    /// 매니페스트에 banner가 있고 mesh API 버전이 호환되면 정의를 반환한다.
     fn resolve_open_banner_contribute(
         &self,
         plugin_id: &str,
@@ -118,9 +110,7 @@ impl PluginManager {
         let Some(inst) = self.banner_instances.remove(&instance_id) else {
             return;
         };
-        // egui-mesh banner 면 합성기가 참조하던 frame 메타를 함께 정리 (stale buffer 방지).
-        // 그 frame 의 shared buffer 매핑도 해제 — 안 지우면 plugin 수명 내내 host 에
-        // 누적된다 (`release_plugin_buffer` 문서 참조).
+        // 닫은 banner의 프레임과 호스트 공유 매핑도 해제해 plugin 종료까지 쌓이지 않게 한다.
         if let Some(f) = self.banner_mesh_frames.remove(&instance_id) {
             self.release_plugin_buffer(&f.plugin_id, f.buffer_id);
         }
