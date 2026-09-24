@@ -545,7 +545,7 @@ pub(crate) fn apply_create_workspace_inner(
 
 /// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
 /// *모든* workspace 순회 (포커스 독립).
-/// `scope` 가 정하는 후보 중 가장 최근 항목을 복원 스택에서 꺼낸다(ADR-0623).
+/// `scope` 가 정하는 후보 중 가장 최근 항목을 복원 스택에서 꺼낸다(ADR-0023).
 ///
 /// `Workspace` 스코프는 그 워크스페이스에서 닫힌 항목만 본다. 워크스페이스 통째 항목은
 /// 출처가 `None` 이라 여기 원리적으로 안 걸리고, 그래서 "새 워크스페이스를 만들어 놓고
@@ -583,7 +583,7 @@ fn push_tab_to_pane(
 /// **PTY id 공간(`>= PTY_ID_BASE`)을 침범한 scope 는 floor 산정에서 제외하고 그 자리에서
 /// purge 한다.** 포함하면 오염된 scope 하나가 카운터를 PTY 공간으로 밀어 올리고, 그 실행이
 /// 발급한 surface 들이 다시 memory.db 에 기록되어 다음 부팅의 floor 를 유지하는 **비가역
-/// 래칫**이 된다(`docs/adr/0617-workspace-identity-and-focus.md`). 제외 + purge
+/// 래칫**이 된다(`docs/adr/0017-workspace-identity-and-focus.md`). 제외 + purge
 /// 이므로 이미 래칫이 걸린 인스턴스도 부팅 한 번으로 정상 범위로 복귀한다.
 ///
 /// purge 되는 scope 는 정의상 이전 실행의 잔재다(부팅 시점에 live surface 는 아직 없다) —

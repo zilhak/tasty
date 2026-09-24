@@ -1,0 +1,51 @@
+# ADR-0019: 단축키 문법과 설정을 공유하고 도움말은 실제 키 입력을 따른다
+
+- **Status**: Accepted
+- **Date**: 2026-09-24
+- **Tags**: keybindings, settings
+- **Group**: terminal
+
+## Context
+
+단축키는 UI 매칭뿐 아니라 설정 가져오기, 내보내기, 도움말에서도 같은 의미로 읽혀야 한다. 도움말은 사용자의 키 조합 탐색을 돕되 이미 알고 있는 단축키 실행을 방해하지 않아야 한다.
+
+## Decision
+
+저장된 바인딩 문자열의 문법은 tasty-settings가 소유한다. 키 이벤트와 OS modifier의 대응은 매칭 계층이 맡는다. 번들·검증·GUI 모두 같은 parse_binding과 Combo를 사용한다.
+
+modifier hint는 지금 누른 modifier를 모두 포함하는 조합을 보여준다. 조합 변경은 즉시 목록을 바꾸지만 최초 hold 타이머를 다시 시작하지 않는다. Shift 단독은 1200ms, 나머지는 500ms 뒤에 표시한다. 등록된 단축키나 modifier 더블탭을 실제 키 입력에서 소비했으며 아직 표시 전인 경우에만 타이머를 다시 시작한다.
+
+단축키와 역할이 없는 조합도 남겨 ‘지정된 단축키 없음’을 표시한다. 사용자가 누른 키를 무시한 것인지, 미할당인지 구분할 수 있어야 한다.
+
+단축키 번들은 schema="tasty.keybindings"와 버전을 가진 TOML 파일 하나로 저장한다. host 설정과 plugin override를 모두 아는 tasty-host-plugin이 코덱을 소유한다. 전체 설정 파일을 옮기지 않는다. 알 수 없는 필드·높은 버전·복원 불가능한 필드는 경고로 알려주고 읽을 수 있는 값은 복원한다. 잘못된 TOML이나 다른 schema는 거절한다. 미설치 plugin과 없는 스크립트 대상은 경고하고 버린다.
+
+가져오기 Apply는 선택한 행을 draft에 쓰며 footer Save가 실제로 저장한다. plugin 행은 번들에 있는 명령만 반영해 로컬에만 있는 override를 보존한다. 스크립트 행은 현재와 번들의 합집합이며 번들에 없는 현재 항목은 선택 적용 시 제거할 수 있다. Cancel·창 닫기는 plugin draft도 버린다.
+
+## Consequences
+
+문법은 headless에서도 사용할 수 있다. 새 modifier를 추가할 때 문법과 플랫폼 매칭을 함께 검토한다. 빈 조합 표시 때문에 목록이 길어지지만 조용한 텍스트와 작은 행으로 구분한다. Shift 표시 지연은 사용자 피드백에 따라 조정할 값이다.
+
+export는 화면용 command snapshot 대신 PluginsConfig의 override 전체를 읽어 비활성 plugin 설정도 포함한다. decode는 설정 타입의 직렬화 결과로 필드를 얻고 필드마다 복원하므로 별도 필드 목록이 필요 없다. 잘못된 필드는 기본값으로 남는다.
+
+option 변환은 선택하지 않은 행을 포함한 번들 전체에서 해결해야 Apply할 수 있다. 충돌은 변환된 번들 안에서 판단하므로 일부 행만 적용할 때 현재 draft와 생기는 충돌은 이 화면이 모두 잡지 못한다. TOML은 null이 없어 Option 시퀀스·튜플 원소와 중첩 Option은 포맷 검토가 필요하다. 맵의 None 값도 항목이 생략되어 같은 맵으로 복원되지 않는다.
+
+## Alternatives Considered
+
+- 첫 modifier만 기억하면 조합을 좁혀도 목록이 바뀌지 않는다. 정확히 같은 조합만 보여주면 추가로 누를 키를 발견하기 어렵다.
+- 모든 키나 명령 팔레트 실행에 타이머를 리셋하면 실제 hold와 관계없는 조작까지 영향을 준다. 표시 뒤 패널을 다시 숨기면 깜빡임이 생긴다.
+- 빈 조합을 숨기면 모든 조합이 미할당일 때 아무 반응도 보이지 않는다. 역할 행처럼 꾸미면 없는 동작이 있는 것처럼 보인다.
+- option 문자열 검색은 키 이름·대소문자·토큰 순서를 오해할 수 있다. parser를 GUI에 두면 bundle이 headless에서 쓰지 못하고, 새 크레이트는 이미 공통 의존인 settings와 별도 역할이 없다.
+
+태그 없는 설정 직렬화는 임의 TOML을 잘못 읽을 수 있고 host 설정만으로는 plugin override를 담지 못한다. JSON도 가능하지만 현재 번들 타입은 TOML로 표현되며 사용자가 다른 설정과 같은 방식으로 편집할 수 있다. 미설치 plugin override를 남기면 나중에 설치할 때 잊었던 설정이 활성화된다. 통째 교체는 로컬에만 있는 plugin 설정을 지울 수 있다.
+
+## Reconsideration Triggers
+
+표시 지연이나 빈 조합이 방해된다는 피드백, plugin 바인딩으로 늘어난 목록, macOS Option 조합 문제가 생기면 표시 정책을 검토한다. NSMenu나 PTY 키도 타이머를 리셋해야 한다면 실제 소비 경로를 추가한다. 파서가 플랫폼별 문법을 필요로 하거나 중복 정의가 생기면 경계를 다시 검토한다.
+
+번들 타입에 TOML로 표현하기 어려운 None 값이 추가되거나 필드 단위 복구가 자주 부족하면 포맷·복구 단위를 검토한다. 새 바인딩 종류는 코덱·행 모델·마이그레이션을 함께 확인한다. 전체 draft 충돌 검사나 번들과 완전히 같게 맞추는 요구가 생기면 적용 규칙을 재검토한다.
+
+## References
+
+- [단축키 기능](../features/keybindings/index.md)
+- [키 매핑](../design/policies/key-mapping.md)
+- [modifier hint](../design/systems/modifier-hint.md)

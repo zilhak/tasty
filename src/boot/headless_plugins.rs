@@ -177,7 +177,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 ///
 /// **소속은 매니페스트가 답하고, 기동은 소속이 맞은 뒤에만 한다** — `plugin namespace
 /// forward`(`boot/headless_dispatch.rs`)와 **같은 두 층**이고 근거도 같다
-/// ([ADR-0626](../../docs/adr/0626-plugin-registration-and-lifecycle.md)).
+/// ([ADR-0026](../../docs/adr/0026-plugin-registration-and-lifecycle.md)).
 /// 다른 것은 물음뿐이다: 그쪽은 "이 메서드 이름이 누구 것인가", 여기는 "이 kind 를
 /// 누가 선언했는가".
 ///
@@ -201,7 +201,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 /// **띄우는 것은 지목된 하나뿐이다.** 예전에는 `ensure_plugin_manager`
 /// (= `discover_and_start`)를 불러 설치된 것을 **전부** 띄웠고, 그래서 markdown 을
 /// 한 번 지목하면 프로세스 여덟이 덤으로 남았다. 지금은 `start_one_enabled` 로
-/// 소유자만 띄운다 — 요청이 자기가 부르지 않은 관측 대상을 만들지 않는다(ADR-0603과
+/// 소유자만 띄운다 — 요청이 자기가 부르지 않은 관측 대상을 만들지 않는다(ADR-0003과
 /// 같은 축). 설치·권한 grant 도 이 경로에 **없다**: 위 소속 판정이 이미 설치된
 /// package 표를 보므로, 여기 닿았다는 것 자체가 설치가 끝났다는 뜻이다.
 ///
@@ -210,7 +210,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 /// 유일한 트리거로 두고(사본을 만들지 않는다) 그것이 도착할 때까지 pump 를 돌린다.
 /// 기다리는 것은 **우리가 방금 띄운 프로세스**뿐이다 — 이미 떠 있는데 kind 가 아직
 /// 없으면 기다려도 원인이 우리 손에 없으므로 그냥 돌아간다. 대기는 두 단계다: 연결 결과가
-/// 날 때까지(상한 = 연결 한도, 기동이 연결 전에 돌아오므로 — ADR-0626), 그리고 연결이
+/// 날 때까지(상한 = 연결 한도, 기동이 연결 전에 돌아오므로 — ADR-0026), 그리고 연결이
 /// 성사된 뒤부터 [`KIND_REGISTRATION_WAIT`] 동안 hello 를. 연결에 실패했거나 시한이
 /// 지나도록 안 차면 handler 가 예전과 똑같은 `unknown surface kind` 를 답한다.
 pub(crate) fn ensure_plugin_for_surface_kind(
@@ -296,7 +296,7 @@ enum OwnerPoll {
 
 /// [`ensure_plugin_for_surface_kind`] 의 두 단계 대기. 먼저 연결 결과를 `connect_limit` 까지
 /// 기다리고, 연결이 성사된 **그 뒤부터** `registration_wait` 동안 등록을 기다린다 — 등록
-/// 시한이 연결 시간을 떠안지 않게(ADR-0626). 기동이 연결까지 막히던 예전에는 연결이 시한
+/// 시한이 연결 시간을 떠안지 않게(ADR-0026). 기동이 연결까지 막히던 예전에는 연결이 시한
 /// 밖에 있었으므로 그것과 같은 몫이다. 돌려주는 것은 마지막으로 본 상태다.
 ///
 /// 판정을 `poll` 하나로 받는 이유는 시험이다 — pump 는 `App` 전체를 요구하므로, 시한을
@@ -482,7 +482,7 @@ fn register_surface_kinds(
 ///
 /// **세 rendering 을 전부 등록한다 — gui 와 같은 집합이다.** 한때 여기서
 /// `remote`/`webview` 를 건너뛰었고 그 사유는 "실제 렌더가 창을 전제하는 surface 라
-/// headless 에 재현할 대상이 없다" 였다. 그 사유가 [ADR-0622](../../docs/adr/0622-remote-mirror-content-and-queries.md)
+/// headless 에 재현할 대상이 없다" 였다. 그 사유가 [ADR-0022](../../docs/adr/0022-remote-mirror-content-and-queries.md)
 /// 로 무너졌다 — markdown mirror 가 나르는 것은 픽셀이 아니라 **원문**이고, 그리는
 /// 것은 client 다. 서버가 하는 일은 파일 read 와 control 프레임 왕복뿐이라 창이
 /// 필요 없다. 실제로 그 채널의 서버측 코드(`src/core/attach_runtime.rs`)에는 feature
@@ -550,7 +550,7 @@ fn gates_before_intercept<'a>(
 }
 
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.
-/// 게이트 3종을 인터셉트보다 먼저 돌리는 순서까지 같다(ADR-0612).
+/// 게이트 3종을 인터셉트보다 먼저 돌리는 순서까지 같다(ADR-0012).
 /// `host.shared_buffer.create` 는 egui-mesh 프레임 생성에 필수라 그대로 인터셉트한다.
 /// popup.close/banner.open/banner.close 는 헤드리스에 대응하는 GUI 상태(popup/banner
 /// overlay, view)가 없어 생략한다.
@@ -581,7 +581,7 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
             session_token: None,
         };
         // 게이트 3종이 **인터셉트보다 먼저** 돈다 — GUI 진입부와 같은 순서다
-        // (ADR-0612). 아래 인터셉트는 `handle_with_caller` 에 도달하지 않으므로,
+        // (ADR-0012). 아래 인터셉트는 `handle_with_caller` 에 도달하지 않으므로,
         // 게이트가 그 함수 안에만 있으면 그 갈래만 권한·cap·rate·audit 를 통째로
         // 건너뛴다.
         let checked = match gates_before_intercept(app, state, engine, &request, &caller) {
@@ -617,7 +617,7 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
             crate::ipc::handler::handle_checked_request(&mut app.core, state, engine, &checked);
         // plugin 호출도 같은 IPC 핸들러를 타므로(예: Claude 플러그인 훅의
         // `surface.completion`) 결과 회신 전에 Intent 큐를 적용한다 —
-        // `docs/adr/0603-headless-behavior.md`.
+        // `docs/adr/0003-headless-behavior.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
         crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
         // gui 갈래(`src/app/dispatch/plugin_ipc.rs`)와 같은 계약 — 코드를 함께 넘긴다.
@@ -737,7 +737,7 @@ mod tests {
     }
 
     /// 연결이 등록 시한보다 오래 걸린 owner 의 kind 도 등록된다 — 등록 시한은 연결이 성사된
-    /// 뒤부터 센다(ADR-0626). 연결 대기를 빼고 시한을 기동부터 세면 연결하는 동안 시한이 다
+    /// 뒤부터 센다(ADR-0026). 연결 대기를 빼고 시한을 기동부터 세면 연결하는 동안 시한이 다
     /// 지나 `Connected` 로 끝난다(= `unknown surface kind`).
     #[test]
     fn a_kind_is_registered_when_its_owner_connects_after_the_registration_wait() {

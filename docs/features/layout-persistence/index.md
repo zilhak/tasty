@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (설정 토글)
-- **ADR**: [ADR-0617](../../adr/0617-workspace-identity-and-focus.md) — 슬롯 점유 모델
+- **ADR**: [ADR-0017](../../adr/0017-workspace-identity-and-focus.md) — 슬롯 점유 모델
 - **코드**: `src/core/layout_persistence/`, `~/.tasty/layouts/NN.json` · `~/.tasty/scrollback/<id>.bin`
 - **화면**: 없음 (앱 시작 시 자동 복원)
 
@@ -26,7 +26,7 @@
 
 write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬롯이 여러 개이므로 잘린 JSON 하나가 아래 scrollback 정리를 통해 다른 슬롯의 `.bin` 까지 잃게 만들 수 있다.
 
-저장은 각 engine 이 자기 슬롯 파일에만 한다 — 종료 시의 일괄 flush 도 창마다 자기 파일로 나뉜다. 창 사이에 덮어쓰기가 없다는 것이 이 모델의 출발점이다([ADR-0617](../../adr/0617-workspace-identity-and-focus.md)).
+저장은 각 engine 이 자기 슬롯 파일에만 한다 — 종료 시의 일괄 flush 도 창마다 자기 파일로 나뉜다. 창 사이에 덮어쓰기가 없다는 것이 이 모델의 출발점이다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)).
 
 **레거시 마이그레이션** — 단일 파일 시절의 `~/.tasty/layout.json` 은 부팅 1회 `layouts/01.json` 으로 **이동**(rename)된다. `layouts/` 가 이미 있으면 이동하지 않고 남은 레거시 파일을 로그로 알린다.
 
@@ -68,7 +68,7 @@ write 는 `NN.json.tmp` 에 쓴 뒤 rename 하는 **원자적** 교체다. 슬�
 
 저장된 슬롯이 여러 개여도 **부팅 시 창은 1개**다. 나머지 슬롯은 free 로 남아 있다가 창을 더 열면 순서대로 복원된다.
 
-headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는다 — 슬롯을 점유하지도, 저장하지도, 복원하지도 않고, 워크스페이스는 프로세스 수명 동안만 산다. `general.restore_layout` 이 켜져 있으면 부팅 때 그 설정이 무시된다는 warn 을 한 줄 남긴다([ADR-0603](../../adr/0603-headless-behavior.md)). (gui 빌드에 `--headless` 를 주면 헤드리스가 아니라 GUI 로 폴백하므로 이 절이 아니라 위 규칙을 따른다.)
+headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는다 — 슬롯을 점유하지도, 저장하지도, 복원하지도 않고, 워크스페이스는 프로세스 수명 동안만 산다. `general.restore_layout` 이 켜져 있으면 부팅 때 그 설정이 무시된다는 warn 을 한 줄 남긴다([ADR-0003](../../adr/0003-headless-behavior.md)). (gui 빌드에 `--headless` 를 주면 헤드리스가 아니라 GUI 로 폴백하므로 이 절이 아니라 위 규칙을 따른다.)
 
 ### 슬롯 점유
 
@@ -123,5 +123,5 @@ claude plugin 등이 `tasty claude install` 로 SessionStart/End hook 을 걸면
 ## 관련
 
 - [closed-tab-restore](../closed-tab-restore/index.md) · [layout-presets](../layout-presets/index.md) · [terminal](../terminal/index.md)(scrollback)
-- [ADR-0617](../../adr/0617-workspace-identity-and-focus.md) — 슬롯 모델을 고른 이유·대안·재검토 조건
+- [ADR-0017](../../adr/0017-workspace-identity-and-focus.md) — 슬롯 모델을 고른 이유·대안·재검토 조건
 - [멀티 윈도우 아키텍처](../../architecture/multi-window.md) — 창 ↔ engine ↔ 슬롯 1:1 구조

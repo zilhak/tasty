@@ -23,7 +23,7 @@
 //!   프로덕션 바이너리에 그 참조가 들어가지 않으므로 이 가드가 겨냥하는 의존
 //!   방향 역전이 애초에 일어나지 않는다. 이행 대상이 아니라 **성격이 다른 것**이라
 //!   베이스라인과 섞지 않는다. 근거
-//!   [ADR-0647](../docs/adr/0647-source-guards-and-exemptions.md).
+//!   [ADR-0048](../docs/adr/0048-source-guards-and-exemptions.md).
 //!
 //! 주석 안의 언급도 위반으로 본다 — 주석이 옛 경로를 가리키면 그것도 실제
 //! 오정보이므로 코드와 같이 갱신되어야 한다.
@@ -85,7 +85,7 @@ const TEST_ONLY_FILES: &[(&str, &str)] = &[
         "src/adapters/ipc/handler/cli_entry_tests.rs",
         "CLI 가 조립한 params 를 프로덕션 핸들러가 실제로 읽는지 검증한다. tests/ 통합 \
          테스트는 그 핸들러·AppState 픽스처에 닿을 수 없다 — 루트에 lib 타깃이 생긴 \
-         뒤에도(ADR-0601) 픽스처 자신(src/state/tests.rs · src/adapters/test/)이 \
+         뒤에도(ADR-0001) 픽스처 자신(src/state/tests.rs · src/adapters/test/)이 \
          #[cfg(test)] 로만 선언돼 lib 산출물 밖이다. 가시성 문제가 아니다.",
     ),
     (

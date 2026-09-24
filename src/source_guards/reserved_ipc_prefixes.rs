@@ -62,7 +62,7 @@ const RESERVED_AHEAD_OF_ANY_METHOD: &[(&str, &str)] = &[
     ),
     (
         "fs",
-        "`fs.pick_file` 이 ADR-0631로 빠져 그 아래 호스트 메서드가 0 개가 됐다. \
+        "`fs.pick_file` 이 ADR-0031로 빠져 그 아래 호스트 메서드가 0 개가 됐다. \
          이름은 계속 막는다 — 비었다고 내주면 `fs.*` 가 호스트 파일시스템 표면처럼 \
          읽히는 자리를 plugin이 갖게 된다(예약 규칙: docs/dev-guide/plugin-development.md)",
     ),
@@ -237,7 +237,7 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 /// - plugin 실행중 · `image.list` → `{"entries":[]}` (host 값이 그대로 나온다)
 /// - plugin **미실행**(`plugin.disable`) · `image.list` → `-32002 plugin
 ///   'com.tasty.image' is not running` — 소유는 매니페스트에서 오므로 유지되고
-///   실행만 거절된다(ADR-0626)
+///   실행만 거절된다(ADR-0026)
 /// - plugin **제거**(`plugin.remove`) · `image.open {}` → `-32602 missing
 ///   'surface_id'` — **래퍼가 없다.** 소유가 풀려 host 가 직접 답한다
 ///
@@ -246,8 +246,8 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 /// - 실행중 · `image.open {}` → `-32017 host call 'call#1' failed: … it is gated out
 ///   of this build combination (headless / release)` — **래퍼가 있다.** 세 arm 이 전부
 ///   `#[cfg(feature = "gui")]` 라 trampoline 이 되던진 곳에 구현이 없고, host 가 그
-///   사실을 자기 이름을 가진 코드로 답한다(ADR-0604). 즉 조합 차이는 **arm 의 유무**이지
-///   라우팅 순서가 아니다 — ADR-0626 이후 두 조합 모두 forward 가 먼저다
+///   사실을 자기 이름을 가진 코드로 답한다(ADR-0004). 즉 조합 차이는 **arm 의 유무**이지
+///   라우팅 순서가 아니다 — ADR-0026 이후 두 조합 모두 forward 가 먼저다
 /// - 설치+비활성 · `image.list` → `-32002 plugin 'com.tasty.image' is not running` —
 ///   gui 와 **같은 문구, 같은 자리**
 /// - `image.bogus` → `-32601 method 'image.bogus' not found` (plugin 문구) — 두 조합 동일

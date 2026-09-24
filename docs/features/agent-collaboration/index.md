@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent (여럿이 한 인스턴스 공유)
-- **ADR**: [에이전트 작업 조율과 DAG 화면](../../adr/0642-agent-coordination-and-task-views.md)
+- **ADR**: [에이전트 작업 조율과 DAG 화면](../../adr/0042-agent-coordination-and-task-views.md)
 - **코드**: `agent.*` 핸들러(`src/adapters/ipc/handler/agent.rs`), 영속 `tasty-memory`
 - **화면**: 둘 다 호스트의 작업 조회 데이터를 사용한다 — [DAG 그래프 surface](screens/dag-graph-surface.md)(`tasty new tab --type dag_graph`)는 탭 하나를 점유하는 상주 관찰용, [DAG 목록 popup](screens/dag-list-popup.md)(도구 메뉴 · `KeybindingSettings.toggle_dag_list`)은 목록에서 하나를 골라 잠깐 확인하고 닫는 용도의 workspace 스코프 창이다. IPC/CLI 관측 수단(`agent.task_list`/`task_graph`/`task_get`/`dag_list`/`dag_get`)은 그대로 유효하다.
 - **메서드 목록**: [reference/api](../../reference/api.md#에이전트-협업-agent)
@@ -33,7 +33,7 @@
     - `dag_get` 은 그 DAG 부분집합만으로 `task_graph` 와 **동일한** `nodes`/`edges`(또는 `--format dot`)를 낸다 — 렌더 규칙은 한 벌을 공유하므로 두 표면이 갈라지지 않는다.
   - **삭제(`task_delete`)/일괄 삭제(`task_purge`)**: 참조(`depends_on` ∪ `Fallback.task` ∪ `Reduce.inputs`)가 있는 task 삭제는 기본 거부하고 참조자 목록을 `error.data.referenced_by` 에 실어 반환(`-32010`) — dangling 참조로 인한 `create()` 실패(`UnknownDependency`)·downstream 영구 `waiting` 을 막기 위함. `cascade:true` 는 전이적 참조자 전부를 함께 지우고, `force:true` 는 참조 검사만 우회한다(dangling 참조는 호출자 책임). 삭제 금지 상태는 `running` 하나뿐이다(`-32011`) — `waiting`/`ready`/종결 상태는 `cascade`/`force` 여부와 무관하게 항상 허용된다. 이 제약이 terminal 로 좁지 않고 `running` 하나뿐인 이유: 방치된 `waiting` task(예: 입력이 끝나지 않는 `Reduce`)를 terminal-only 제약으로는 영원히 못 지우고, 그게 참조로 자기 입력들을 붙잡아 그 입력들도 영영 GC 대상에서 빠지기 때문. `task_purge` 는 상태 이름 목록(`states`)·경과시간(`older_than_ms`) 필터로 후보를 고르되, 후보 집합 밖에서 참조되는 task 는 자동으로 보존(`retained`)한다 — `dry_run:true` 로 실제 삭제 없이 계획만 확인할 수 있다. 삭제가 실제로 이뤄지면 `tasty.agent.handle.<id>`/`tasty.agent.run_result.<id>` side-key 도 함께 정리된다.
 - **Barrier** — N회 signal 모이면 닫히는 게이트. `timeout_ms` 경과 시 `timed_out` 으로 **lazy 전이**(별도 스레드 없음 — signal/state/list 호출 시 도장).
-- **Semaphore** — N permit 동시 점유. 같은 holder 재acquire 는 idempotent(retry-safe)이며 그 홀더의 `acquired_at`/`expires_at` 를 갱신한다. permit 회복은 그 holder 의 release, 또는 `--ttl-ms` 로 잡은 permit 의 만료뿐이다 — **만료는 opt-in 이고 기본은 만료 없음**(오래 걸리는 정당한 작업의 permit 이 회수돼 두 홀더가 동시에 들어가는 것이 교착보다 나쁘다). 한도는 `semaphore-set-permits` 로 제자리에서 바꾸며, **축소는 drain** — 기존 홀더를 강제 회수하지 않고 새 acquire 만 거절해 수렴시킨다([ADR-0642](../../adr/0642-agent-coordination-and-task-views.md)). **동시성 제한(concurrency limit) 용도로도 쓴다**: `task.metadata.semaphore = { name }` 를 태그한 task 들은 그 세마포어 permit 수만큼만 동시 `Running`, 초과분은 자동 `Ready` 대기 — `task-create --concurrency-limit <name>` 이 이 태깅을 대신해 준다. 절차·라이브 예시는 [dev-guide/agent-runner §동시성 제한](../../dev-guide/agent-runner.md#동시성-제한-concurrency-limit).
+- **Semaphore** — N permit 동시 점유. 같은 holder 재acquire 는 idempotent(retry-safe)이며 그 홀더의 `acquired_at`/`expires_at` 를 갱신한다. permit 회복은 그 holder 의 release, 또는 `--ttl-ms` 로 잡은 permit 의 만료뿐이다 — **만료는 opt-in 이고 기본은 만료 없음**(오래 걸리는 정당한 작업의 permit 이 회수돼 두 홀더가 동시에 들어가는 것이 교착보다 나쁘다). 한도는 `semaphore-set-permits` 로 제자리에서 바꾸며, **축소는 drain** — 기존 홀더를 강제 회수하지 않고 새 acquire 만 거절해 수렴시킨다([ADR-0042](../../adr/0042-agent-coordination-and-task-views.md)). **동시성 제한(concurrency limit) 용도로도 쓴다**: `task.metadata.semaphore = { name }` 를 태그한 task 들은 그 세마포어 permit 수만큼만 동시 `Running`, 초과분은 자동 `Ready` 대기 — `task-create --concurrency-limit <name>` 이 이 태깅을 대신해 준다. 절차·라이브 예시는 [dev-guide/agent-runner §동시성 제한](../../dev-guide/agent-runner.md#동시성-제한-concurrency-limit).
 - **Lease** — 협조적(advisory) 자원 점유 마커 + TTL. OS 락 아님(위반 감지 수준). mode `fail`(충돌 시 `-32009`) / `block`(`acquired:false`). 만료는 list/acquire 시 lazy evict. **pool 모드**(`task.metadata.lease.candidates`): 단일 `resource` 대신 후보 배열을 선언하면 N개 중 하나를 배정받고, dispatch된 task 는 실제 배정 자원을 `command`(Run.cwd/Custom.params — `${lease.resource}` placeholder 치환)로 전달받는다. `elastic`(명시적 opt-in, 기본은 candidates 안에서만 도는 fixed) 이면 소진 시 `overflow_prefix+N` 새 후보를 원자적으로 합성한다(pool 소진 시 `-32012`). 상세·라이브 예시는 [dev-guide/agent-runner §자원 풀 배정](../../dev-guide/agent-runner.md#자원-풀-배정-lease-pool--candidateselastic).
 - **Reducer** — N task 결과를 단일 값으로 합성. 5전략: `first_success`/`all`/`merge_json`/`concat_text`/`custom`(호스트 shell, stdin 에 결과 배열 JSON). 단발 `agent.task_reduce` 또는 DAG 노드(`TaskCommand::Reduce`, 이 경우 `inputs` 는 암묵적 의존성 — 위 Task DAG 항목 참조).
 - **Rate-limit** — (agent, metric) token bucket(보충률 `limit/per_ms`, 상한 `burst`). `global` scope. 누적 임계인 [telemetry cap](../telemetry/index.md) 과 구분(이쪽은 *시간당 비율*). CRUD + `try_consume` 제공 + IPC dispatcher 미들웨어(`should_rate_limit`)가 매 호출 자동 평가.
@@ -90,7 +90,7 @@ claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. �
 
 ### 사건으로 받기 — 폴링하지 않고
 
-종결 사실은 Event Bus 로도 나간다. plugin 이 `agent.task_finished` · `agent.barrier_closed` 를 구독하면 `task_get` 을 되풀이해 묻지 않아도 된다. 두 키의 payload·등급·구독 조건은 [reference/event-catalog](../../reference/event-catalog.md#agent-scopesystem-experimental) 이 정본이고, 무엇을 싣고 무엇을 안 싣는지의 근거는 [ADR-0633](../../adr/0633-event-feed-delivery.md) 이다.
+종결 사실은 Event Bus 로도 나간다. plugin 이 `agent.task_finished` · `agent.barrier_closed` 를 구독하면 `task_get` 을 되풀이해 묻지 않아도 된다. 두 키의 payload·등급·구독 조건은 [reference/event-catalog](../../reference/event-catalog.md#agent-scopesystem-experimental) 이 정본이고, 무엇을 싣고 무엇을 안 싣는지의 근거는 [ADR-0033](../../adr/0033-event-feed-delivery.md) 이다.
 
 경계 셋만 여기 적는다.
 
@@ -100,7 +100,7 @@ claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. �
 
 발화는 `task_await` 의 blocking 동작과 간섭하지 않는다. 같은 호출이 대기자에게 보내고 피드에 적을 뿐이고, **대기자가 없어도 피드에는 적힌다.**
 
-plugin 이 아닌 쪽은 `events.fetch` 로 같은 사건을 **위치로** 읽는다. 부를 수 있는 것은 **로컬 호출자뿐**이다 — 세션 토큰을 들고 붙은 외부 에이전트는 이 메서드를 직접 못 부르고, 로컬 소켓의 `tasty` CLI 를 경유한다. `tasty events follow --filter 'agent.*'` 가 그 루프이고, 한 줄에 한 사건씩 JSON 으로 찍으므로 셸에서 `while read` 로 받는다. 끊겼다 다시 붙을 때는 마지막 위치를 그대로 주면 그 사이 사건부터 이어 받고, 기다린 사이 위치가 링 밖으로 밀렸으면 조용히 처음부터 주는 대신 건너뛴 수를 알린다. 재시작을 넘는 재부착은 세대를 함께 준다 — 연결이 끊기면 `follow` 가 다시 붙을 `--offset` · `--epoch` 을 stderr 에 찍고 끝나고(`--reconnect` 면 1 초마다 다시 붙는다), 그 세대가 새 세대와 다르거나 위치가 새 피드의 끝보다 뒤면 stderr 로 알리고 새 세대의 처음부터 잇는다([ADR-0633](../../adr/0633-event-feed-delivery.md)). 커서를 소비자가 드는 이유와 재시작이 위치를 리셋하는 이유는 [ADR-0633](../../adr/0633-event-feed-delivery.md).
+plugin 이 아닌 쪽은 `events.fetch` 로 같은 사건을 **위치로** 읽는다. 부를 수 있는 것은 **로컬 호출자뿐**이다 — 세션 토큰을 들고 붙은 외부 에이전트는 이 메서드를 직접 못 부르고, 로컬 소켓의 `tasty` CLI 를 경유한다. `tasty events follow --filter 'agent.*'` 가 그 루프이고, 한 줄에 한 사건씩 JSON 으로 찍으므로 셸에서 `while read` 로 받는다. 끊겼다 다시 붙을 때는 마지막 위치를 그대로 주면 그 사이 사건부터 이어 받고, 기다린 사이 위치가 링 밖으로 밀렸으면 조용히 처음부터 주는 대신 건너뛴 수를 알린다. 재시작을 넘는 재부착은 세대를 함께 준다 — 연결이 끊기면 `follow` 가 다시 붙을 `--offset` · `--epoch` 을 stderr 에 찍고 끝나고(`--reconnect` 면 1 초마다 다시 붙는다), 그 세대가 새 세대와 다르거나 위치가 새 피드의 끝보다 뒤면 stderr 로 알리고 새 세대의 처음부터 잇는다([ADR-0033](../../adr/0033-event-feed-delivery.md)). 커서를 소비자가 드는 이유와 재시작이 위치를 리셋하는 이유는 [ADR-0033](../../adr/0033-event-feed-delivery.md).
 
 ## 인터페이스
 
@@ -123,11 +123,11 @@ task 는 영속되지만(`Scope::Workspace`) runner thread 는 in-memory 다 —
 
 `-32004`(not found) · `-32008`(already terminal) · `-32009`(lease conflict) · `-32010`(task 참조 중 — `task_delete` 기본 거부, `error.data.referenced_by` 에 참조자 목록) · `-32011`(task 가 `running` — 삭제 불가, `cancel` 선행 필요) · `-32012`(lease pool 소진 — fixed 전부 점유 중이거나 elastic `max_candidates` 상한 도달, mode `fail`) · `-32602`(사이클/미존재 dep(`depends_on`/`Fallback.task`/`Reduce.inputs`)/잘못된 strategy/`depends_on` 밖을 가리키거나 문법이 깨진 `${task.<id>.output…}` 참조 등) · `-32603`(internal).
 
-**이름·id 의 문자 규칙.** semaphore·barrier 의 `name`, task 의 `id`, rate-limit 의 `id` 는 그대로 memory 키의 한 조각이 되므로 memory 키 규칙([design/systems/memory](../../design/systems/memory.md) — 소문자 `a-z`·`0-9`·`.`·`_`·`-`, 접두사 포함 256 바이트)을 따른다. 어기면 `-32602` 이고, 메시지는 **호출자가 준 값 기준** 문자 좌표(0 부터)와 그 문자로 무엇이 틀렸는지 말한다(`semaphore name "v6S": invalid char at 2: 'S' (allowed: …; at most 234 bytes)` — 다바이트 문자도 입력한 그대로, `aé` 면 `invalid char at 1: 'é'`) — 상한 바이트 수는 종류마다 접두사 길이만큼 다르다. 판정은 생성뿐 아니라 그 값으로 키를 만드는 모든 호출(acquire·release·delete·get 등)에서 같다. lease 의 `resource` 는 키에 넣기 전에 인코딩하므로 이 규칙이 없다. 인코딩 대신 판정을 고른 근거는 [ADR-0642](../../adr/0642-agent-coordination-and-task-views.md).
+**이름·id 의 문자 규칙.** semaphore·barrier 의 `name`, task 의 `id`, rate-limit 의 `id` 는 그대로 memory 키의 한 조각이 되므로 memory 키 규칙([design/systems/memory](../../design/systems/memory.md) — 소문자 `a-z`·`0-9`·`.`·`_`·`-`, 접두사 포함 256 바이트)을 따른다. 어기면 `-32602` 이고, 메시지는 **호출자가 준 값 기준** 문자 좌표(0 부터)와 그 문자로 무엇이 틀렸는지 말한다(`semaphore name "v6S": invalid char at 2: 'S' (allowed: …; at most 234 bytes)` — 다바이트 문자도 입력한 그대로, `aé` 면 `invalid char at 1: 'é'`) — 상한 바이트 수는 종류마다 접두사 길이만큼 다르다. 판정은 생성뿐 아니라 그 값으로 키를 만드는 모든 호출(acquire·release·delete·get 등)에서 같다. lease 의 `resource` 는 키에 넣기 전에 인코딩하므로 이 규칙이 없다. 인코딩 대신 판정을 고른 근거는 [ADR-0042](../../adr/0042-agent-coordination-and-task-views.md).
 
 ## 관련
 
 - [telemetry](../telemetry/index.md) — rate-limit vs cap 구분 · [human-handoff](../human-handoff/index.md) — approval
 - [design/systems/memory](../../design/systems/memory.md) — 영속 backing store
 - [dev-guide/agent-runner](../../dev-guide/agent-runner.md) — task runner 내부 동작(dispatch/poll, 완료 판정 전략 레지스트리)
-- [ADR-0642](../../adr/0642-agent-coordination-and-task-views.md) — task graph를 화면 두 곳에서 제공하고 host 내장 기능으로 구현한 이유
+- [ADR-0042](../../adr/0042-agent-coordination-and-task-views.md) — task graph를 화면 두 곳에서 제공하고 host 내장 기능으로 구현한 이유

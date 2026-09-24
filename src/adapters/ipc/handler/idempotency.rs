@@ -25,17 +25,17 @@
 //!   [`super::handle_checked_request`] 를 지나는 모든 요청이다.
 //! - **App 층** — 창 생성·화면 캡처·plugin 설치·원격 attach 처럼 `App` 이 직접 끝내는
 //!   메서드. GUI 의 app_methods step 과 헤드리스의 App 층 가로채기가 각각 첫 줄에서
-//!   [`run_app_layer`] 를 부른다(ADR-0605). 답을 **나중에** 보내는 메서드가 있어서 진행
+//!   [`run_app_layer`] 를 부른다(ADR-0005). 답을 **나중에** 보내는 메서드가 있어서 진행
 //!   중 상태가 여기서 생긴다 — 아래 "동시에 같은 키가 둘 오면".
 //! - **GUI debug step** — app_methods step **뒤**의 두 step(`debug_methods` ·
 //!   `window_required`, 사용자 입력 재현이라 release 에 없다). 두 step 을 한 함수로 묶어 그
 //!   첫 줄에서 [`run_app_layer`] 를 부른다. 헤드리스에는 이 step 이 따로 없다 — 그 빌드의
-//!   debug 이름은 App 층 가로채기 안에서 끝난다(ADR-0605).
+//!   debug 이름은 App 층 가로채기 안에서 끝난다(ADR-0005).
 //! - **plugin namespace forward** — plugin 이 점유한 prefix 아래의 이름. 두 무리가 있다.
 //!   표가 아는 호스트 메서드인데 prefix 를 번들 plugin 이 점유한 것(`image.open` 등 — plugin
 //!   이 받아 호스트로 되부른다)은 [`forward_keeping_the_key`] 가 보존소를 지나게 한다.
 //!   표가 모르는 plugin 고유 이름은 호스트가 뜻을 모르므로 개입하지 않고, 이름 표가 계약
-//!   **밖**이라고 선언한다(ADR-0605).
+//!   **밖**이라고 선언한다(ADR-0005).
 //!   forward 가 실행 전에 거절한 응답(plugin 이 안 떠 있어 검증에서 멈춘 것 등)도 relay 가
 //!   결말로 기록하므로, 키 수명 안의 재시도는 plugin 이 되살아난 뒤에도 그 거절을 재생으로
 //!   받는다 — 이 경로만의 정책이 아니라 engine 라우터 · App 층도 응답 종류를 가리지 않고 기록한다.
@@ -326,7 +326,7 @@ impl Store {
     /// 그 요청은 실행되지 않았다. 다음 층으로 가서 거기서 다시 판정되고(다음 층도 보존소를
     /// 지나면 처음 보는 키로 한 번 더 센다), 보존소를 안 지나는 이름(plugin 고유 이름)이면
     /// 아무 데서도 실행을 세지 않는 것이 맞다. 되돌리지 않으면 한 요청이 두 번 세지거나,
-    /// 계약 밖 호출이 모수에 섞인다(ADR-0608).
+    /// 계약 밖 호출이 모수에 섞인다(ADR-0008).
     fn abandon_unhandled(&mut self, scope: &str, key: &str, ticket: u64) {
         self.abandon(scope, key, ticket);
         self.counts.executed = self.counts.executed.saturating_sub(1);
@@ -517,7 +517,7 @@ pub(crate) struct Pending {
 /// 부르는 자리는 진입 게이트([`super::check_request`] · `check_without_engine`)다 — 요청이
 /// App 층 · plugin namespace forward · engine 라우터 중 어디로 가든 그 앞이다. 이 검사가
 /// [`begin`] 안에 있던 때에는 보존소가 닿는 범위(engine 라우터)만 물려받아, 같은 봉투가
-/// 목적지에 따라 유효하기도 무효하기도 했다(ADR-0605).
+/// 목적지에 따라 유효하기도 무효하기도 했다(ADR-0005).
 pub(crate) fn check_envelope(
     request: &JsonRpcRequest,
     id: &serde_json::Value,
@@ -694,13 +694,13 @@ pub(crate) fn run_app_layer<T>(
 ///   plugin 이 **나중에** 보내므로 App 층과 같은 진행 중 상태가 생기고, 그래서 같은 함수
 ///   ([`run_app_layer`])를 쓴다. `forward` 는 키를 뗀 사본과 relay 통로를 받는다.
 /// - **plugin 고유 이름**(표가 모른다 → `Outside`). 호스트는 그 뜻을 모르고, 정확히 한 번은
-///   target plugin 의 몫이라고 선언돼 있다(ADR-0605). 개입하지 않고 원래 요청을 그대로 넘긴다.
+///   target plugin 의 몫이라고 선언돼 있다(ADR-0005). 개입하지 않고 원래 요청을 그대로 넘긴다.
 ///
 /// **plugin 고유 이름을 계약 밖으로 지키는 판정은 이름 표의 `Kept` 판정 하나뿐이다.**
 /// [`run_app_layer`] 의 `Mutate` 판정은 그 이름을 거르지 않는다 — forward 는 prefix 가
 /// 점유됐을 때만 일어나고, 그때 `method_meta` 는 plugin 고유 이름을 namespace fallback 으로
 /// `Mutate` 로 해소한다. 그래서 `Kept` 판정을 지우면 plugin 고유 이름이 보존소에 들어가 같은
-/// 키의 재시도가 재생이 된다 — ADR-0605가 정한 "정확히 한 번은 target 의 몫" 과 반대다.
+/// 키의 재시도가 재생이 된다 — ADR-0005가 정한 "정확히 한 번은 target 의 몫" 과 반대다.
 /// 그 갈래는 prefix 를 등록한 채 부르는
 /// `tests::a_plugin_name_is_forwarded_every_time_with_its_request_untouched` 가 잰다.
 pub(crate) fn forward_keeping_the_key(
@@ -1890,7 +1890,7 @@ mod tests {
 
     /// prefix 를 plugin 이 점유한 **표의** `Mutate`(`image.open`)는 forward 로 나가도 같은 키의
     /// 재시도가 두 번째 forward 를 안 낸다 — 첫 forward 의 답(plugin 이 나중에 보낸 것)을 재생으로
-    /// 받는다. 표가 그 이름을 `Kept` 로 선언하므로 호출자가 믿는 계약이다(ADR-0605).
+    /// 받는다. 표가 그 이름을 `Kept` 로 선언하므로 호출자가 믿는 계약이다(ADR-0005).
     #[test]
     fn a_forwarded_host_method_runs_once_per_key_and_the_retry_is_a_replay() {
         let held = std::cell::RefCell::new(Vec::new());
@@ -1922,7 +1922,7 @@ mod tests {
     /// 위 시험의 짝 — 재시도가 plugin 의 답 **전에** 오면 진행 중인 첫 forward 에 합류하고, 두
     /// 번째 forward 를 안 낸다. forward 자리가 `run_app_layer` 에 넘기는 `handled` 판정이 자리를
     /// 열어 둔 채 두는지를 잰다 — 그 판정이 `false` 면 forward 직후 자리가 닫혀 재시도가 plugin
-    /// 으로 한 번 더 나가고, 답을 늦게 받는 위 시험은 그 갈래를 못 본다(ADR-0605).
+    /// 으로 한 번 더 나가고, 답을 늦게 받는 위 시험은 그 갈래를 못 본다(ADR-0005).
     #[test]
     fn a_retry_before_the_plugin_answers_joins_the_running_forward() {
         let held = std::cell::RefCell::new(Vec::new());
@@ -1944,7 +1944,7 @@ mod tests {
     }
 
     /// 통제군 — plugin **고유** 이름(표가 모른다 → `Outside`)은 보존소가 개입하지 않는다. 같은
-    /// 키로 두 번 오면 두 번 forward 되고, plugin 은 원래 요청을 그대로 받는다(ADR-0605).
+    /// 키로 두 번 오면 두 번 forward 되고, plugin 은 원래 요청을 그대로 받는다(ADR-0005).
     ///
     /// prefix 를 **등록한 채** 부른다 — 운영에서 forward 는 prefix 가 점유됐을 때만 일어나므로
     /// 그것이 이 함수가 plugin 고유 이름을 받는 유일한 상태다. 그 상태에서 `method_meta` 는 그

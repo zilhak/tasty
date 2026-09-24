@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`preset.*`)
-- **ADR**: [프리셋 초안과 저장 충돌](../../adr/0638-preset-drafts-and-store-conflicts.md)
+- **ADR**: [프리셋 초안과 저장 충돌](../../adr/0038-preset-drafts-and-store-conflicts.md)
 - **코드**: `tasty-presets` 크레이트, `~/.tasty/presets/{workspace,tab,pane}/<name>.toml`, `preset.*` 핸들러
 - **화면**: PresetView (`View` + `sealed::Sealed` 직접 구현, modeless)
 
@@ -56,7 +56,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 캐시와 이전 모드 기록은 `{kind}:{name}`별로 관리한다. 현재·직전 pass에서 사용한 프리셋만 남겨 방문한 만큼 무한히 쌓이지 않게 한다. 같은 프리셋을 한 프레임에서 보기와 편집 양쪽으로 그리는 조합은 아직 지원 대상으로 정하지 않았다. 같은 캐시가 저장소를 따르면서 편집 내용을 유지할 수는 없으며 현재 호출자도 없다. 설정 초안은 `surface_cfg`에 따로 저장한다.
 
-구조 편집 저장과 설정 확인은 모두 `persist_layout`을 거치고 `Persisted::Conflict`를 처리한다. 관련 테스트는 `persist_tests.rs`, `view_refresh_tests.rs`, `cache_slot_tests.rs`다. [선택 이유](../../adr/0638-preset-drafts-and-store-conflicts.md).
+구조 편집 저장과 설정 확인은 모두 `persist_layout`을 거치고 `Persisted::Conflict`를 처리한다. 관련 테스트는 `persist_tests.rs`, `view_refresh_tests.rs`, `cache_slot_tests.rs`다. [선택 이유](../../adr/0038-preset-drafts-and-store-conflicts.md).
 
 
 ##### 편집 조작과 surface 설정

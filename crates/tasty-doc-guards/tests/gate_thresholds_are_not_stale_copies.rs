@@ -187,7 +187,7 @@ enum Kind {
 /// 매번 같은 답을 안 낸다.
 const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
-        "docs/adr/0646-ci-and-complexity-checks.md",
+        "docs/adr/0047-ci-and-complexity-checks.md",
         Kind::Dated,
         "임계값을 품질 공식에서 도출하지 않았다는 결정 당시의 선택 근거",
     ),
@@ -199,7 +199,7 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
         "src/source_guards/sloc_gate_skip_proxy.rs",
         Kind::Dated,
-        "ADR-0646 의 결론을 비유로 인용",
+        "ADR-0047 의 결론을 비유로 인용",
     ),
     (
         "scripts/check-frozen-sum-ratchet.sh",
@@ -485,7 +485,7 @@ struct Gate {
 ///
 /// **사본이 아직 0 인 지금** 등록하는 것이 미루지 않는 이유다 — 사본이 생긴 뒤에 등록하면
 /// 어느 쪽이 정본인지를 사람이 다시 판정해야 한다. 그리고 예산은 **한 방향으로만 움직여** 되돌아 올라가지 않으므로
-/// (ADR-0646), 낡은 사본이 가장 비싼 값이다.
+/// (ADR-0047), 낡은 사본이 가장 비싼 값이다.
 ///
 /// 자기참조를 세는 자리에서는 이 형태가 반복된다 — 전수를 적는 문장은 자기가 그 전수의
 /// 한 항목이 된다. `SelfRef` 가 있는 이유가 그것이고, 그래서 이 자리의 수는 "정본 + 자기" 로

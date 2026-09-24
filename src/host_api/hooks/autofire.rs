@@ -4,7 +4,7 @@
 //! (`ScriptRegistry::entries_for_event`) → 소스 read + SHA256 재검(TOFU) →
 //! 일치 시 `run_script_tracked` / 불일치 시 **실행 차단** + `tracing::warn`.
 //! 단축키 트리거(`try_dispatch_script_shortcut`)와 동형 시퀀스이며, 트리거 소스만
-//! 단축키에서 이벤트로 바뀐 경로다 (ADR-0627).
+//! 단축키에서 이벤트로 바뀐 경로다 (ADR-0027).
 //!
 //! # TOFU 불일치 처리 (수동 경로와 다름)
 //!

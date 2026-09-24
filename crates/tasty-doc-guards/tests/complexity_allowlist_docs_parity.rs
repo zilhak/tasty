@@ -12,7 +12,7 @@ const ALLOWLIST: &str = ".complexity-file-allowlist";
 const DEBT_MARKER: &str = "# ──";
 
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
-/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0647).
+/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0048).
 fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }

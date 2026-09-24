@@ -7,28 +7,28 @@
 //!
 //! 회차는 두 예산 중 먼저 닿는 것에서 멈춘다.
 //!
-//! - **명령 수** — [`DRAIN_BUDGET_PER_ROUND`]. 동시 연결 상한에서 파생된 값이다(ADR-0607).
+//! - **명령 수** — [`DRAIN_BUDGET_PER_ROUND`]. 동시 연결 상한에서 파생된 값이다(ADR-0007).
 //! - **경과 시간** — [`ROUND_TIME_BUDGET`]. 명령 하나를 끝낼 때마다 본다. **첫 명령은 시간과
 //!   무관하게 늘 처리한다** — 그래야 회차마다 적어도 하나가 진척되고, 예산보다 비싼 명령
 //!   하나가 영영 못 도는 일이 없다.
 //!
 //! 수 예산만으로는 회차의 **시간**이 안 잘린다. 수 예산은 연결 상한과 같은 256 이고, 명령
 //! 하나의 비용은 서로 다르므로 시간 예산도 함께 적용한다(회차 정책은
-//! [ADR-0607](../../docs/adr/0607-ipc-scheduling-and-deadlines.md)).
+//! [ADR-0007](../../docs/adr/0007-ipc-scheduling-and-deadlines.md)).
 //!
 //! **남은 것은 다음 회차가 집는다.** 두 경로 모두 명령마다의 wake 를 이월의 근거로 삼지 않는다.
 //! headless 는 이벤트 채널에 `IpcReady` 를 하나만 두고(명령마다 두면 채널에 적체가 쌓여 같은
 //! 채널의 plugin·PTY wake 가 굶는다), 회차가 끝났을 때 큐에 명령이 남았으면 부르는 쪽이 루프를
-//! 한 번 더 깨운다(ADR-0607). gui 는 wake 를 회차 없이 건너뛸 수 있어서, 회차가 예산에서 멈추면
-//! [`IpcRound::finish`] 가 돌려준 이유를 보고 루프를 스스로 한 번 더 깨운다(ADR-0607). 빈 큐를
+//! 한 번 더 깨운다(ADR-0007). gui 는 wake 를 회차 없이 건너뛸 수 있어서, 회차가 예산에서 멈추면
+//! [`IpcRound::finish`] 가 돌려준 이유를 보고 루프를 스스로 한 번 더 깨운다(ADR-0007). 빈 큐를
 //! 만난 회차는 곧바로 끝난다(busy-spin 없음).
 //!
 //! **이 예산은 이미 실행 중인 명령을 끊지 못한다.** 예산은 명령과 명령 **사이**에서만 본다.
 //! 메인 스레드에서 도는 동기 handler 하나가 오래 걸리면 그 시간 동안 회차도, 타이머도, 화면도
-//! 그 뒤에서 기다린다 — 선점할 수단이 없다(ADR-0607).
+//! 그 뒤에서 기다린다 — 선점할 수단이 없다(ADR-0007).
 //!
 //! 종료 drain(`shutdown_machine`)은 이 규칙을 쓰지 않는다 — 남은 것을 전부 거절로 답해야 하는
-//! 절차라 예산을 두면 답 없이 끝날 수 있다(ADR-0607).
+//! 절차라 예산을 두면 답 없이 끝날 수 있다(ADR-0007).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -40,11 +40,11 @@ use crate::adapters::production::tcp_ipc_server::DRAIN_BUDGET_PER_ROUND;
 use crate::ipc::server::{Claim, IpcCommand, expired_before_run_response};
 use crate::ports::ipc_server::IpcServerPort;
 
-/// 한 회차가 명령을 꺼내는 데 쓸 수 있는 시간. **파생이 아니다** — 근거는 ADR-0607.
+/// 한 회차가 명령을 꺼내는 데 쓸 수 있는 시간. **파생이 아니다** — 근거는 ADR-0007.
 ///
 /// 60 Hz 한 프레임이다. 회차가 끝나야 루프가 렌더·타이머로 넘어가므로, 이 값이 곧 "IPC 부하가
 /// 화면 한 프레임보다 오래 루프를 쥐지 않는다" 는 약속이다. gui 에서는 이 값만으로 안 되고, 다음
-/// 회차가 사용자 이벤트로 곧바로 이어지지 않게 하는 양보(`crate::app::ipc::IpcPacer`, ADR-0607)가
+/// 회차가 사용자 이벤트로 곧바로 이어지지 않게 하는 양보(`crate::app::ipc::IpcPacer`, ADR-0007)가
 /// 같은 값을 간격으로 쓴다. 명령 하나가 이보다 비싸면 그 명령만큼은 넘친다(첫 명령은 늘 처리한다
 /// — 모듈 doc).
 pub(crate) const ROUND_TIME_BUDGET: Duration = Duration::from_millis(16);
@@ -56,7 +56,7 @@ pub(crate) const ROUND_TIME_BUDGET: Duration = Duration::from_millis(16);
 /// `warn!`, 숫자가 아니거나 제품값 이상이라 버리면 그 사유를 `warn!` 으로 남긴다 — 그 헬퍼를
 /// 그대로 쓰지 않는 것은 파싱되는 순간 "덮어쓴다" 를 찍어, 제품값 이상을 버리는 이 자리에서는
 /// 로그가 서로 어긋나기 때문이다. 기본 예산에서는 시험의 동시 요청이 회차를 안 자르므로, 잘린 회차가 루프를 다시
-/// 깨우는 갈래(ADR-0607)를 실행 파일째로 지나게 할 다른 길이 없다. 그 갈래를 재는
+/// 깨우는 갈래(ADR-0007)를 실행 파일째로 지나게 할 다른 길이 없다. 그 갈래를 재는
 /// 시험은 `tests/e2e_tests.rs` 의 `concurrent_requests_are_all_answered_when_every_round_is_cut`.
 fn round_time_budget() -> Duration {
     #[cfg(debug_assertions)]
@@ -221,7 +221,7 @@ const PRESSURE_METHOD: &str = "system.pressure";
 /// 꺼낸 명령을 **실행하기 직전**에 부른다. 실행해도 되면 `true`.
 ///
 /// 호출자가 실은 응답 대기 상한이 큐에서 기다리는 동안 지났으면 실행하지 않고 `-32067` 로
-/// 답한다(ADR-0607). 기다리던 쪽이 먼저 물러났으면 그쪽이 이미 답했으므로 조용히 버린다. 두
+/// 답한다(ADR-0007). 기다리던 쪽이 먼저 물러났으면 그쪽이 이미 답했으므로 조용히 버린다. 두
 /// 경우 모두 게이트(권한·audit·rate limit)에 닿기 **전**이라 실행되지 않은 요청이 토큰을 쓰거나
 /// 감사 행을 남기지 않는다. 큐 대기 계측은 이보다 먼저다 — 만료된 요청도 큐에 앉아 있었다.
 pub(crate) fn claim_or_answer(cmd: &IpcCommand, dispatch: &Arc<DispatchStats>) -> bool {
@@ -501,7 +501,7 @@ mod tests {
 
     /// IPC 명령을 plugin namespace 로 넘기는 두 자리(gui 라우터 · headless)가 **그 명령의 번호**를
     /// 넘긴다 — `None` 을 넘기면 plugin hop 이 호스트 몫과 이어지지 않아 링에 두 줄로 갈리거나
-    /// 아예 안 남는데, 매니저 쪽 시험은 번호를 직접 넣으므로 그것을 못 본다(ADR-0608).
+    /// 아예 안 남는데, 매니저 쪽 시험은 번호를 직접 넣으므로 그것을 못 본다(ADR-0008).
     /// 이 시험이 재는 것은 두 파일 본문(`#[cfg(test)]` 앞)의 **문자열**뿐이고, 파일마다 셋이다 —
     /// 메서드 표기 `.forward_namespace_call(` 가 정확히 1 건인가, 그 1 건의 인자 문자열에
     /// `Some(c.request_seq())` 가 있는가, `::forward_namespace_call` 부분 문자열이 0 건인가.

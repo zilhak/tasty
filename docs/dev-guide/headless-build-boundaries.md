@@ -4,7 +4,7 @@ headless(`--no-default-features`)는 IPC/CLI 와 attach 서버를 실행하는 �
 없다는 이유로 공유 Core·AppState·registry 를 통째로 숨기지 않는다. `dead_code` 진단이
 가리키는 정의의 생산자와 소비자를 따라가며 아래 기준으로 컴파일 대상을 나눈다.
 
-결정과 그 근거는 [ADR-0603](../adr/0603-headless-behavior.md).
+결정과 그 근거는 [ADR-0003](../adr/0003-headless-behavior.md).
 
 ## 세 갈래
 
@@ -31,14 +31,14 @@ dead_code 예외는 쓰지 않는다.
 (`tests/*/mod.rs`: test binary 마다 쓰는 부분집합이 달라 binary 별로 dead 가 생긴다)과 생성
 파일(`tasty-design-tokens` 의 `generated/primitive.rs` 와 그것을 쓰는 생성기: `pub(crate)` 스케일을
 미참조 엔트리까지 보존한다). 둘 다 자리에 사유가 붙어 있다. 그 밖에는 0 이고, 결정과 재검토
-조건은 [ADR-0603](../adr/0603-headless-behavior.md).
+조건은 [ADR-0003](../adr/0003-headless-behavior.md).
 세는 법: `git grep -nE '#!\[(cfg_attr\([^]]*)?allow\([^)]*dead_code' -- '*.rs'`.
 
 지금 ③ 에 해당하는 것은 열하나다.
 
 | 정의 | 왜 남는가 |
 |---|---|
-| 구조 op forward 큐의 원소(`PendingStructuralForward`, `core/impl_mirror.rs`) | headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다([ADR-0603](../adr/0603-headless-behavior.md)). 정의가 남는 것은 두 조합이 공유하는 `mark_last_forward_*` 가 큐의 마지막 원소를 표시하기 때문이고, op 를 읽어 보내는 쪽은 GUI 의 `about_to_wait` 뿐이다. 같은 줄에 있던 git query · markdown content · resize 의 forward 큐는 채우는 자리도 gui 전용이라 필드째 ① 이다 |
+| 구조 op forward 큐의 원소(`PendingStructuralForward`, `core/impl_mirror.rs`) | headless 의 `Core::apply` 는 이 큐에 넣지 않고 거절한다([ADR-0003](../adr/0003-headless-behavior.md)). 정의가 남는 것은 두 조합이 공유하는 `mark_last_forward_*` 가 큐의 마지막 원소를 표시하기 때문이고, op 를 읽어 보내는 쪽은 GUI 의 `about_to_wait` 뿐이다. 같은 줄에 있던 git query · markdown content · resize 의 forward 큐는 채우는 자리도 gui 전용이라 필드째 ① 이다 |
 | `SurfaceKindDef` 의 입력·줌·복사 플래그와 변환 입력 popup id | plugin 매니페스트의 `SurfaceKindDecl` 에서 복사되는 값이다. 복사는 headless 에서도 일어난다 |
 | CoreEvent 의 페이로드(터미널 이벤트 중 제목 · 알림 · 벨 · 명령 완료 · 셸 통합 힌트 · 클립보드, `RestoredKind` 의 인덱스) | variant 는 headless 에서도 발화하지만 그 빌드의 drain 이 `other` 갈래로 흘린다. OSC 7 cwd(`TerminalCwdChanged`)는 여기 없다 — headless PTY drain 이 읽는다(아래 "두 조합이 같게 하는 것") |
 | 호스트 이벤트 큐 항목(`PendingHostEvent` · `PendingSurfaceClosed`, `core/host_event.rs`) | enqueue 메서드는 두 빌드에서 컴파일된다. 헤드리스도 host event 큐를 비우지만 `HookFired`만 적용하고, 이 항목의 GUI 전용 payload는 읽지 않는다. 그 메서드들이 headless 에서 어느 갈래인지는 [AppState 필드 소유권](app-state-ownership.md) 이 적는다 |

@@ -70,7 +70,7 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 `surface.raw_key` 는 `CGEventPost` 로 시스템에 키 이벤트를 주입한다. 이 API 는 손쉬운 사용(`kTCCServiceAccessibility`) 권한을 요구하며, 권한이 없으면 **이벤트가 조용히 버려진다** — 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다.
 
-**이 기능은 debug 빌드 전용이다** — OS 전역 키 주입은 사용자 입력 재현이라 release IPC/CLI 표면에 없다([ADR-0612](../../adr/0612-request-admission-and-isolation.md), [debug-ipc](../../dev-guide/debug-ipc.md)). 따라서 **손쉬운 사용 권한을 소비하는 코드가 release 빌드에는 하나도 없다.**
+**이 기능은 debug 빌드 전용이다** — OS 전역 키 주입은 사용자 입력 재현이라 release IPC/CLI 표면에 없다([ADR-0012](../../adr/0012-request-admission-and-isolation.md), [debug-ipc](../../dev-guide/debug-ipc.md)). 따라서 **손쉬운 사용 권한을 소비하는 코드가 release 빌드에는 하나도 없다.**
 
 **요청 시퀀스도 debug 빌드에서만 돈다.** 소비자가 0 인데 첫 실행에 "이 앱이 내 모든 입력을 볼 수 있게 해달라" 로 읽히는 프롬프트를 띄우는 것은 최소권한 원칙에 어긋난다. release 사용자에게 손쉬운 사용은 **켜라고 안내하지도, 프롬프트를 띄우지도 않는 항목**이다. 자기검증용 debug 빌드에서만 아래 시퀀스가 돌고, 권한을 켠 뒤 재시작이 필요한 것도 그 빌드에서의 이야기다.
 

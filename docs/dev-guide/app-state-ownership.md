@@ -10,7 +10,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 - **실행 자원** — 다른 소유자의 핸들 사본이나, 한 계층이 넣고 다른 계층이 비우는 큐.
 
 소유권을 struct 두 개로 가르지 않고 **컴파일 경계와 모듈 경계**로 가른 결정과 그 근거는
-[ADR-0602](../adr/0602-domain-execution-and-ports.md).
+[ADR-0002](../adr/0002-domain-execution-and-ports.md).
 "어떤 정의를 gui 전용으로 가르는가" 의 판정 규칙 자체는 [헤드리스 정의 경계](headless-build-boundaries.md)
 가 정본이고, 이 문서는 그 규칙을 `AppState` 에 적용한 결과표다.
 
@@ -41,7 +41,7 @@ headless 빌드에 그 필드가 있는지를 적는다.
 | 필드 | 에이전트 쪽 입구 | 실제 도메인 사실이 사는 곳 |
 |---|---|---|
 | `pending_approval_ids` | `approval.request` · capability elevation 이 `enqueue_approval` 로 push | approval 레코드는 `Core` 의 approval 저장소가 갖는다. 이 큐는 그중 **popup 이 보여줄 순서**다 |
-| `file_picker` | `file_picker.trigger`(그 핸들러 모듈이 gui 전용) | 결과는 plugin 에 이벤트로 나간다(ADR-0636) |
+| `file_picker` | `file_picker.trigger`(그 핸들러 모듈이 gui 전용) | 결과는 plugin 에 이벤트로 나간다(ADR-0036) |
 | `pending_open_preset_window` · `pending_preset_window_selection` | 사용자 origin 의 preset 저장만 세운다 | 저장된 preset 은 `PresetStore` 에 있다 |
 
 그래서 headless 가 이 덩어리를 잃어도 도메인 사실은 하나도 안 잃는다. approval 을 묻는 IPC

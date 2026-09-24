@@ -17,7 +17,7 @@
 //! 인스턴스를 띄우는 test binary 수를 늘리지 않으려는 것이다(`docs/dev-guide/e2e-tests.md`).
 //! cwd 는 OSC 7 에 기대지 않는 값(워크스페이스 명시 cwd, holder 입력으로 `cd`)으로 본다 — mirror
 //! terminal 이 OSC 7 없이는 cwd 를 모른다는 것이 그 채널이 존재하는 이유다
-//! (`docs/adr/0622-remote-mirror-content-and-queries.md`).
+//! (`docs/adr/0022-remote-mirror-content-and-queries.md`).
 
 mod attach_common;
 mod common;
@@ -263,7 +263,7 @@ fn repeated_clear_frames_do_not_respam_the_stream() {
     );
 }
 
-/// 하드 점유 중에는 **서버 로컬 포커스가 서버의 attention 을 지우지 못한다**(ADR-0624).
+/// 하드 점유 중에는 **서버 로컬 포커스가 서버의 attention 을 지우지 못한다**(ADR-0024).
 ///
 /// 이 인스턴스는 실제 GUI 라 `src/gfx/gpu.rs` 의 매 프레임 실-포커스 해제가 살아 있다 —
 /// 활성 워크스페이스의 포커스 surface 를 매 프레임 해제 대상으로 삼는다. 점유한

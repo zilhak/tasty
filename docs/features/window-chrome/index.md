@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (GUI 전용 — 윈도우 조작)
-- **ADR**: [창의 OS 통합과 종료](../../adr/0616-window-platform-and-shutdown.md)
+- **ADR**: [창의 OS 통합과 종료](../../adr/0016-window-platform-and-shutdown.md)
 - **코드**: `crates/tasty-platform/src/window_chrome.rs` (CSD 속성·`resize_direction_at`), `src/adapters/ui/titlebar/` (`mod.rs`/`view.rs`/`caption.rs`), `src/adapters/ui/sidebar/` (`view.rs`/`full.rs`/`collapsed.rs`, 리사이즈 위젯 우선권 적재), `src/view/main/mouse.rs` (통합 리사이즈 hit-test)
 - **화면**: [아래 절](#화면)
 

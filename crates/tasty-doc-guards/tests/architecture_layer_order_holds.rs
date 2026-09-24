@@ -42,7 +42,7 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
         "tasty-file-format",
         "tasty-plugin-protocol",
         "plugin 이 형식 레지스트리를 조회하는 port trait 이 wire 크레이트에 살고, Rust 고아 \
-         선택한 의존 방향을 유지하려면 그 impl을 타입을 소유한 쪽에 둔다 (ADR-0601). \
+         선택한 의존 방향을 유지하려면 그 impl을 타입을 소유한 쪽에 둔다 (ADR-0001). \
          docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
     ),
     (
@@ -50,13 +50,13 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
         "tasty-plugin-protocol",
         "plugin 이 handler 레지스트리를 조회하는 port trait 이 wire 크레이트에 살고, 고아 \
          선택한 의존 방향을 유지하려면 그 impl을 타입을 소유한 쪽에 둔다 — 자매 크레이트 \
-         `tasty-file-format` 과 같은 형태이고 같은 결정(ADR-0601)의 적용이다. \
+         `tasty-file-format` 과 같은 형태이고 같은 결정(ADR-0001)의 적용이다. \
          docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
     ),
     (
         "tasty-remote",
         "tasty-ipc",
-        "원격 client 능력이 IPC 호출이고 합칠 후보 둘이 각각 더 나쁜 의존을 들인다 (ADR-0601). \
+        "원격 client 능력이 IPC 호출이고 합칠 후보 둘이 각각 더 나쁜 의존을 들인다 (ADR-0001). \
      docs/architecture/index.md 의 도메인-IO 절이 본문에 적는다.",
     ),
 ];

@@ -3,7 +3,7 @@
 //! 두 명령은 호스트 오류를 `main` 까지 올려 std 가 찍는다. 그래서 첫 줄은
 //! `Error: Error (<code>): <message>` 이고 — 그 모양을 파싱하는 쪽이 있어 바꾸지 않는다 —
 //! 응답에 `error.data` 가 있으면 둘째 줄 `data: <한 줄 JSON>` 이 붙는다. `data` 가 없으면
-//! 한 줄 그대로다. 근거 `docs/adr/0643-cli-errors-and-diagnostic-logs.md`.
+//! 한 줄 그대로다. 근거 `docs/adr/0043-cli-errors-and-diagnostic-logs.md`.
 //!
 //! 실제 바이너리를 가짜 호스트(첫 요청에 JSON-RPC 오류로 답하는 loopback 리스너)에 붙여 잰다 —
 //! std 가 `Err` 를 찍는 모양까지 이 경로에만 있다. `TASTY_HOME` 을 tempdir 로 격리하고 그 안에

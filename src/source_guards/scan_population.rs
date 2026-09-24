@@ -1,6 +1,6 @@
 //! 스캔 **모수**를 집합 동등으로 고정한다 — "몇 개 봤나" 가 아니라 "무엇을 봤나".
 //!
-//! [ADR-0647](../../docs/adr/0647-source-guards-and-exemptions.md)
+//! [ADR-0048](../../docs/adr/0048-source-guards-and-exemptions.md)
 //! 에 따라 검사할 파일 목록과 빈 순회를 각각 확인한다:
 //!
 //! - `MIN_SCANNED_FILES`(하한 900) — **연기 검사**다. 경로가 틀리면 예외가 아니라 조용한

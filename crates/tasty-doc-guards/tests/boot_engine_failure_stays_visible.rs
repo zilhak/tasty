@@ -4,10 +4,10 @@
 //! 실행한 사용자는 stderr 로 진단을 보지만, dock/시작 메뉴/런처로 실행한 사용자에게는
 //! 창이 잠깐 떴다 사라지는 것이 전부였다. 이 단계는 부팅 GPU init 이후라 **GPU·창이
 //! 살아있으므로**, `enter_shell_setup_mode` 선례대로 진단을 창에 그려 유지하도록 고쳤다
-//! (`docs/adr/0616-window-platform-and-shutdown.md` 재검토 트리거 갱신).
+//! (`docs/adr/0016-window-platform-and-shutdown.md` 재검토 트리거 갱신).
 //!
 //! 이 경로는 winit `ActiveEventLoop` 와 GPU 가 있어야 돌아가 행동 테스트로 감쌀 수 없다
-//! (ADR-0616 의 창 생성 경로와 같은 제약). 그래서 진단 소스는 단위 테스트
+//! (ADR-0016 의 창 생성 경로와 같은 제약). 그래서 진단 소스는 단위 테스트
 //! (`boot_machine.rs` 의 `boot_engine_error_info` — 세 키가 distinct)로, 실패가 **보이는
 //! 채로 유지되는지** 는 이 소스 형태 가드로 고정한다. 선례:
 //! `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs`, `crates/tasty-doc-guards/tests/ipc_window_create_returns_outcome.rs`.
@@ -61,7 +61,7 @@ fn boot_error_screen_renderer_exists() {
     let src = read("src/gfx/gpu/boot_error.rs");
     assert!(
         src.contains("fn render_boot_error"),
-        "부팅 실패 화면 렌더러 render_boot_error 가 없다 (ADR-0616 재검토 트리거)."
+        "부팅 실패 화면 렌더러 render_boot_error 가 없다 (ADR-0016 재검토 트리거)."
     );
 }
 
@@ -76,7 +76,7 @@ fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
     assert!(
         routed >= 2,
         "엔진 실패 두 갈래가 모두 boot_error_info 로 라우팅돼야 한다(현재 {routed}건) — \
-         한쪽이라도 blind exit 로 되돌아가면 런처 사용자에게 안 보인다 (ADR-0616)."
+         한쪽이라도 blind exit 로 되돌아가면 런처 사용자에게 안 보인다 (ADR-0016)."
     );
 
     // 진단 빌더 자체는 종료하지 않는다 — 화면을 그릴 수 있게 info 를 돌려줘야 한다.
@@ -85,7 +85,7 @@ fn engine_failure_routes_to_the_visible_error_path_not_a_blind_exit() {
     assert!(
         !builder.contains("exit("),
         "boot_engine_error_info 가 프로세스를 종료한다 — 진단만 만들고 돌려줘야 화면을 \
-         그린 뒤 사용자가 종료할 수 있다 (ADR-0616).\n{builder}"
+         그린 뒤 사용자가 종료할 수 있다 (ADR-0016).\n{builder}"
     );
 }
 
@@ -95,10 +95,10 @@ fn event_loop_dispatches_and_renders_the_boot_error_screen() {
     assert!(
         src.contains("self.boot_error_mode") && src.contains("handle_boot_error_window_event"),
         "window_event 가 boot_error_mode 를 분기해 handle_boot_error_window_event 로 \
-         보내야 한다 (ADR-0616)."
+         보내야 한다 (ADR-0016)."
     );
     assert!(
         src.contains("render_boot_error"),
-        "boot error 이벤트 처리가 render_boot_error 로 화면을 그려야 한다 (ADR-0616)."
+        "boot error 이벤트 처리가 render_boot_error 로 화면을 그려야 한다 (ADR-0016)."
     );
 }

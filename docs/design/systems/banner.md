@@ -97,8 +97,8 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   때문이다. 고정 텍스트는 줄바꿈/truncate 없음, 프로그램 이름 세그먼트만 축소+ellipsis,
   전체 이름은 항목 tooltip 으로 보완한다.
 - 두 블랙리스트 모두 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다 — 이 메뉴는
-  그 목록에 진입하는 **두 번째 경로**일 뿐, 저장/매칭 로직은 [ADR-0615](../../adr/0615-terminal-user-input-routing.md)
-  그대로다. 근거: [ADR-0615](../../adr/0615-terminal-user-input-routing.md).
+  그 목록에 진입하는 **두 번째 경로**일 뿐, 저장/매칭 로직은 [ADR-0015](../../adr/0015-terminal-user-input-routing.md)
+  그대로다. 근거: [ADR-0015](../../adr/0015-terminal-user-input-routing.md).
 
 ## TTL (살아있는 시간)
 
@@ -167,4 +167,4 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 - [toast.md](toast.md) — 휘발성 알림(info 만, 입력 통과)
 - [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Modal/Popup/Toast/Banner 구분
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리(발생 정책 근거)
-- [ADR-0636](../../adr/0636-overlay-scope-and-lifetime.md) — 배너를 별도 4번째 개념으로 둔 결정
+- [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md) — 배너를 별도 4번째 개념으로 둔 결정

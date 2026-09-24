@@ -6,10 +6,10 @@ use super::CoreState;
 
 impl CoreState {
     /// idle TTL 을 넘긴 headless PTY 를 **두 store 에서 함께** 회수하고 회수한 pty id
-    /// 들을 돌려준다(`docs/adr/0613-terminal-io-and-process-lifetime.md`).
+    /// 들을 돌려준다(`docs/adr/0013-terminal-io-and-process-lifetime.md`).
     ///
     /// 회수는 반드시 세 가지를 한 묶음으로 한다 — 어느 하나만 하면 누수나 좀비가
-    /// 된다(ADR-0613):
+    /// 된다(ADR-0013):
     ///
     /// 1. `pty_registry` entry 제거(= `sweep_idle`)
     /// 2. `TerminalStore` 의 `Terminal` 제거 — drop 되면서 PTY master 가 닫히고
@@ -262,7 +262,7 @@ impl CoreState {
         self.terminals.process_all()
     }
 
-    /// OS 절전 복귀 후 헬스 패스 (Windows, ADR-0613). 살아있는 PTY 자식을 wake
+    /// OS 절전 복귀 후 헬스 패스 (Windows, ADR-0013). 살아있는 PTY 자식을 wake
     /// nudge 해 hang 에서 깨어나도록 유도하고, **자식 TUI 가 실행 중인(foreground
     /// 가 셸이 아닌) 살아있는 surface 들의 ID** 를 의심 목록으로 반환한다. 죽은
     /// 자식은 여기서 건드리지 않고 곧이은 `process_all` 의 `ProcessExited` cascade
@@ -315,7 +315,7 @@ impl CoreState {
     ///
     /// Uses a non-blocking take: a terminal whose parser thread currently holds
     /// the state lock (mid-chunk ingest) is skipped this round, so the input
-    /// thread never serializes against busy parser threads (ADR-0613). Skipped
+    /// thread never serializes against busy parser threads (ADR-0013). Skipped
     /// events are not lost — the parser wakes the loop again after each ingest.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();

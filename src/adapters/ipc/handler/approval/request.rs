@@ -83,7 +83,7 @@ pub fn handle_request(
     // 귀속 워크스페이스: 명시 `workspace_id` → `surface_id` 가 사는 워크스페이스 → 활성
     // 워크스페이스. 가운데 갈래는 호출자가 대상 surface 를 이미 댔는데 귀속을 사용자 포커스가
     // 정하지 않게 한다(원칙 3). 둘 다 없는 요청만 종전대로 활성으로 떨어진다 — 호환 때문에
-    // 남긴 기본값이고 근거는 ADR-0617.
+    // 남긴 기본값이고 근거는 ADR-0017.
     let workspace_id =
         match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
             Ok(v) => v,

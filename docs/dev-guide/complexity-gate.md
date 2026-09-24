@@ -1,7 +1,7 @@
 # 복잡도 검사
 
 큰 함수와 파일의 증가를 제한하고 기존 예외를 줄인다.
-선택의 이유는 [CI와 복잡도 검사 결정](../adr/0646-ci-and-complexity-checks.md)에 있다.
+선택의 이유는 [CI와 복잡도 검사 결정](../adr/0047-ci-and-complexity-checks.md)에 있다.
 
 ## 무엇을·도구·임계값
 

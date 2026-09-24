@@ -811,7 +811,7 @@ const WORKFLOW_DIR: &str = ".github/workflows";
 /// 대조군(`git ls-files`)이 낸 워크플로 파일 수의 하한 — **연기 검사**다.
 ///
 /// 스캔 모수 자체는 아래 [`workflow_fail_fast_tests`] 가 git 목록과 **집합 동등**으로
-/// 고정한다(ADR-0647). 하한은 그 대조군이 비는 경우에만 남겨 둔다 — 대조군이 비면
+/// 고정한다(ADR-0048). 하한은 그 대조군이 비는 경우에만 남겨 둔다 — 대조군이 비면
 /// 집합 동등은 양쪽이 빈 집합이라 언제나 초록이기 때문이다.
 /// 값의 근거: 2026-09-05 실측 `.github/workflows` 의 `.yml` **9 개**.
 const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
@@ -836,7 +836,7 @@ const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
 /// 같은 스텝 이름과 주석이다. 둘을 섞으면 다음 사람이 이 상수를 grep 으로 검산하고
 /// 어긋난다고 판단한다.
 ///
-/// `doc-guards.yml` 은 문서 가드를 전용 잡으로 뺀 워크플로다(ADR-0647). 그 잡이 생기면서
+/// `doc-guards.yml` 은 문서 가드를 전용 잡으로 뺀 워크플로다(ADR-0048). 그 잡이 생기면서
 /// 호출이 하나 늘었고, 이 표가 **파일별**이라 그 사실이 "어느 파일에 생겼는가" 로 드러났다
 /// — 총계였으면 다른 파일에서 하나 줄어든 것과 구별되지 않았다.
 const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
@@ -963,7 +963,7 @@ mod home_env_has_one_door;
 
 mod headless_app_layer_coverage;
 // 이름 표의 멱등 키 선언(`KeyContract`)이 App 층 · GUI debug step 의 실제 dispatch 와
-// 맞는가. ADR-0605.
+// 맞는가. ADR-0005.
 mod key_contract_by_layer;
 
 #[cfg(test)]

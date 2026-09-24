@@ -18,7 +18,7 @@ use crate::i18n::t;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadState {
     Ok,
-    /// (ADR-0622) 원격 mirror 응답 대기 중 — 로컬은 동기 IO 라 이 상태를 거치지 않는다.
+    /// (ADR-0022) 원격 mirror 응답 대기 중 — 로컬은 동기 IO 라 이 상태를 거치지 않는다.
     Loading,
     /// 권한 거부 (`PermissionDenied`).
     NoPermission,
@@ -26,12 +26,12 @@ pub enum LoadState {
     Error(String),
 }
 
-/// (ADR-0622) 원격 mirror 디렉토리 응답 소프트 타임아웃 — File Picker
+/// (ADR-0022) 원격 mirror 디렉토리 응답 소프트 타임아웃 — File Picker
 /// (`file_picker.rs::LIST_DIR_SOFT_TIMEOUT`)와 동일 값. 상수 자체를 공유하진 않는다
 /// (두 모듈이 서로를 참조할 근거가 없는 독립 소비자 — 값의 우연한 일치일 뿐).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// 경로 하나의 원격 list_dir 요청 생애주기(ADR-0622 — `ExplorerView` 가
+/// 경로 하나의 원격 list_dir 요청 생애주기(ADR-0022 — `ExplorerView` 가
 /// 자체 소유하는 경로별 pending 상태, host 범용 레지스트리 없음).
 #[derive(Clone)]
 enum RemoteLoadState {
@@ -78,12 +78,12 @@ pub struct ExplorerView {
     pub addr_editing: bool,
     /// 주소창 후보 드롭다운의 keyboard-active 행(필터된 가시 목록 기준).
     pub addr_active: Option<usize>,
-    /// (ADR-0622) 이 surface 가 원격 mirror 인가 — `Some(local_ws_id)` 면 원격, `None`
+    /// (ADR-0022) 이 surface 가 원격 mirror 인가 — `Some(local_ws_id)` 면 원격, `None`
     /// 이면 로컬. `sync()`가 매 호출마다 최신값으로 갱신한다.
     mirror_ws_id: Option<u32>,
-    /// (ADR-0622) 경로별 원격 요청 상태 — 로컬 surface 는 항상 비어 있다.
+    /// (ADR-0022) 경로별 원격 요청 상태 — 로컬 surface 는 항상 비어 있다.
     remote_state: HashMap<PathBuf, RemoteLoadState>,
-    /// (ADR-0622) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
+    /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
     outbox: Vec<ExplorerListRequest>,
 }
 
@@ -142,7 +142,7 @@ impl ExplorerView {
 
     /// 활성 탭 기준으로 엔트리 캐시를 동기화. 로컬은 디렉토리/정렬이 바뀌었거나
     /// 새로고침이 요청됐으면 디스크에서 다시 읽는다. `mirror_ws_id` 가 `Some` 이면
-    /// (ADR-0622) 원격 mirror surface — 동기 IO 대신 `list_dir_request` 를 큐잉하고
+    /// (ADR-0022) 원격 mirror surface — 동기 IO 대신 `list_dir_request` 를 큐잉하고
     /// 경로별 pending 상태로 진행 상황을 추적한다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel, mirror_ws_id: Option<u32>) {
         let tab = panel.active_tab();
@@ -201,7 +201,7 @@ impl ExplorerView {
         self.loaded = Some(key);
     }
 
-    /// (ADR-0622) 원격 mirror 경로: `dir` 의 원격 상태를 확인해 필요하면 새
+    /// (ADR-0022) 원격 mirror 경로: `dir` 의 원격 상태를 확인해 필요하면 새
     /// `list_dir_request` 를 큐잉(`outbox`)하고, 이미 있는 상태(Loading/Loaded/Error)를
     /// `entries`/`state` 에 반영한다. 응답 자체(`Loaded`/`Error` 전이)는
     /// [`Self::apply_remote_list_dir_result`] 가 담당 — 여기서는 절대 동기 IO 를 하지
@@ -283,7 +283,7 @@ impl ExplorerView {
 
     /// 이 view 안에서 `request_id` 로 대기 중인 경로를 찾는다. host 가 응답 라우팅
     /// 전 이걸로 "이 view 가 실제로 이 요청을 기다리는가"를 판정해, stale/불일치
-    /// 응답은 여기서 `None` 을 돌려받아 조용히 무시한다(ADR-0622).
+    /// 응답은 여기서 `None` 을 돌려받아 조용히 무시한다(ADR-0022).
     fn find_pending_dir(&self, request_id: u64) -> Option<PathBuf> {
         self.remote_state
             .iter()
@@ -295,7 +295,7 @@ impl ExplorerView {
             })
     }
 
-    /// (ADR-0622) `MirrorEvent::ListDirResult` 도착 시 App 레이어가 호출. 이 view 가
+    /// (ADR-0022) `MirrorEvent::ListDirResult` 도착 시 App 레이어가 호출. 이 view 가
     /// `request_id` 를 실제로 기다리던 경로에 한해 반영 — 응답이 그 경로의 현재
     /// 활성 root 와 같으면 `entries`/`state` 도 함께 갱신, 아니면(트리 펼침 요청)
     /// `tree_children` 캐시만 채운다. 두 소비처(메인 목록/좌측 트리)가 같은 경로
@@ -351,7 +351,7 @@ impl ExplorerView {
     }
 
     /// 사이드바 트리에서 `dir` 의 하위 디렉토리를 (캐시에 없으면) 읽어 반환.
-    /// `mirror_ws_id` 가 `Some` 이면(ADR-0622) 동기 IO 대신 `list_dir_request` 를
+    /// `mirror_ws_id` 가 `Some` 이면(ADR-0022) 동기 IO 대신 `list_dir_request` 를
     /// 큐잉하고, 응답이 올 때까지 빈 슬라이스를 반환한다(다음 프레임들에서 자동 채움).
     pub fn tree_children_of(&mut self, dir: &Path, mirror_ws_id: Option<u32>) -> &[DirEntryInfo] {
         if let Some(local_ws_id) = mirror_ws_id {
@@ -422,7 +422,7 @@ pub struct ExplorerViewStore {
 
 impl ExplorerViewStore {
     /// surface 의 뷰를 가져오고 (없으면 생성) 활성 탭 기준으로 동기화. `mirror_ws_id`
-    /// 가 `Some` 이면(ADR-0622) 이 surface 가 속한 mirror workspace id — view 는 동기
+    /// 가 `Some` 이면(ADR-0022) 이 surface 가 속한 mirror workspace id — view 는 동기
     /// 로컬 IO 대신 원격 `list_dir_request` 를 큐잉한다.
     pub fn get_or_init(
         &mut self,
@@ -442,7 +442,7 @@ impl ExplorerViewStore {
         self.views.get_mut(&sid)
     }
 
-    /// (ADR-0622) `request_id` 로 대기 중인 view 를 찾아 응답을 반영한다. 어느 view도
+    /// (ADR-0022) `request_id` 로 대기 중인 view 를 찾아 응답을 반영한다. 어느 view도
     /// 이 `request_id` 를 기다리지 않았으면(stale) `false`.
     pub(crate) fn apply_remote_list_dir_result(
         &mut self,
@@ -562,7 +562,7 @@ mod tests {
         assert_eq!(view.addr_buffer, "/tmp/beta");
     }
 
-    /// (ADR-0622) `mirror_ws_id` 가 `Some` 이면 동기 IO 대신 `list_dir_request` 를
+    /// (ADR-0022) `mirror_ws_id` 가 `Some` 이면 동기 IO 대신 `list_dir_request` 를
     /// outbox 에 큐잉하고 `LoadState::Loading` 으로 전이한다.
     #[test]
     fn sync_remote_queues_request_and_sets_loading() {
@@ -578,7 +578,7 @@ mod tests {
         assert!(view.drain_outbox().is_empty());
     }
 
-    /// (ADR-0622) 이 view 가 실제로 기다리던 request_id 가 아니면(stale)
+    /// (ADR-0022) 이 view 가 실제로 기다리던 request_id 가 아니면(stale)
     /// 조용히 무시 — `entries`/`state` 를 바꾸지 않고 `false` 를 반환한다.
     #[test]
     fn apply_remote_list_dir_result_ignores_stale_request_id() {

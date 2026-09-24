@@ -37,7 +37,7 @@ pub const REMOTE_ATTACH_POPUP_ID: &str = "remote_attach";
 
 const UI_MEMORY_ID: &str = "remote_attach.ui";
 
-/// attach kind(같은 레지스트리의 예약 kind, ADR-0620). remote_tool Attach 탭이 편집하고
+/// attach kind(같은 레지스트리의 예약 kind, ADR-0020). remote_tool Attach 탭이 편집하고
 /// 이 팝업은 **소비만** 한다.
 const ATTACH_KIND: &str = "tasty-attach";
 
@@ -60,13 +60,13 @@ const LIST_DIM_WHILE_CREATING: f32 = 0.5;
 /// 워커가 결과를 채우지 않아도 UI 가 Connecting 을 벗어나는 상한(soft timeout).
 ///
 /// 워커 자체에도 상한이 있다(포트 발견 전체 `PORT_DISCOVERY_TOTAL_TIMEOUT` 45초 +
-/// 터널 ready 5초 + IPC 프로브 5초, ADR-0620) — 하지만 그건 최악 ~55초라, 그동안 UI 가
+/// 터널 ready 5초 + IPC 프로브 5초, ADR-0020) — 하지만 그건 최악 ~55초라, 그동안 UI 가
 /// 워커의 완료만 기다리면 사용자는 팝업을 닫는 것 외에 할 수 있는 게 없다. 그래서 **UI 가
 /// 먼저 포기**하고 워커를 취소한다(취소 = 자식 ssh kill, `SshCancel`). 두 상한의 관계는
 /// 의도적으로 **UI 가 먼저**다 — 워커 상한이 먼저 만료되면 UI 는 워커가 만든 정상 에러
 /// 문구를 그대로 받고, UI 가 먼저면 워커를 끊고 이 파일의 타임아웃 문구를 쓴다. 어느
 /// 쪽이든 UI 는 이 시간 안에 조작 가능한 상태로 돌아온다.
-/// 원격 file picker 의 soft timeout(ADR-0622, 8초)과 같은 매 프레임 판정 방식이되,
+/// 원격 file picker 의 soft timeout(ADR-0022, 8초)과 같은 매 프레임 판정 방식이되,
 /// SSH 연결 수립이 포함되므로 값은 더 길게 잡는다.
 const BROWSE_DEADLINE: Duration = Duration::from_secs(20);
 
@@ -577,7 +577,7 @@ fn cleanup(ctx: &egui::Context) {
 /// 재사용 터널을 정리한다. draw_fn 자신의 Escape/Cancel/Connect 경로도 같은
 /// [`cleanup`] 을 부르지만, headless(X 버튼) + `UiIntent::ClosePopup`(디버그 IPC 포함)
 /// 처럼 draw_fn 을 거치지 않는 닫힘 경로가 있으므로 이 훅이 단일 choke point 다
-/// (ADR-0636).
+/// (ADR-0036).
 pub fn on_close_remote_attach_popup(
     ctx: &egui::Context,
     _state: &mut AppState,
@@ -1979,7 +1979,7 @@ mod tests {
                 .is_none()
         );
         // UiState drop 만으로는 포트 발견 자식 ssh 가 회수되지 않는다 — 훅이 취소까지
-        // 책임진다(ADR-0636 단일 choke point).
+        // 책임진다(ADR-0036 단일 choke point).
         assert!(cancel.is_cancelled(), "닫힘 훅이 진행 중 조회를 취소한다");
     }
 }

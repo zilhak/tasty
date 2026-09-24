@@ -16,7 +16,7 @@
 //! 렌더 분기용 `is_content_hidden` 은 GUI 와 시험이, markdown 원문 채널의
 //! `workspace_holders` 는 GUI 만 부른다.
 //!
-//! ADR-0621: 이 레지스트리는 hard(원격 attach)와 soft(표시만) 점유를 통합한다. hard 는
+//! ADR-0021: 이 레지스트리는 hard(원격 attach)와 soft(표시만) 점유를 통합한다. hard 는
 //! 위 기존 메커니즘 그대로이고, soft 는 `soft` 테이블에 additive 로 얹혀 hard 술어를
 //! 오염하지 않는다. 통합 조회는 `occupancy_of`.
 
@@ -48,7 +48,7 @@ pub enum AttachError {
     NotAttached,
 }
 
-// ─── 통합 점유 모델 (ADR-0621) ────────────────────────────────────────────
+// ─── 통합 점유 모델 (ADR-0021) ────────────────────────────────────────────
 //
 // hard 점유(원격 attach)와 soft 점유(표시만)를 하나의 레지스트리가 관리한다.
 // hard 는 기존 `AttachLock`(holder=StreamClient) 저장을 **그대로 보존** 하고, soft 는
@@ -79,7 +79,7 @@ pub enum Holder {
 pub struct Occupancy {
     pub tier: OccupancyTier,
     pub holder: Holder,
-    /// soft: 점유 주체에 대응하는 parent surface(focus 시 부재 청소용, ADR-0621 수명).
+    /// soft: 점유 주체에 대응하는 parent surface(focus 시 부재 청소용, ADR-0021 수명).
     /// hard: 항상 None(연결 EOF/force-detach 수명이라 parent 기록 불필요).
     pub parent: Option<SurfaceId>,
     pub granted_seq: u64,
@@ -88,7 +88,7 @@ pub struct Occupancy {
 /// soft 점유 연산 실패 사유(hard 의 `AttachError` 와 분리 — holder 표현이 다름).
 #[derive(Debug, PartialEq, Eq)]
 pub enum OccupancyError {
-    /// 이미 다른 주체(parent)가 soft 점유 중(1:1 배타, ADR-0621).
+    /// 이미 다른 주체(parent)가 soft 점유 중(1:1 배타, ADR-0021).
     AlreadyOccupied { parent: SurfaceId },
     /// release 요청 주체(parent)가 점유자가 아님.
     NotHolder { parent: SurfaceId },
@@ -105,7 +105,7 @@ struct SoftEntry {
     granted_seq: u64,
 }
 
-/// 통합 점유 레지스트리(ADR-0621). hard(원격 attach)와 soft(표시만) 두 계층을 함께
+/// 통합 점유 레지스트리(ADR-0021). hard(원격 attach)와 soft(표시만) 두 계층을 함께
 /// 관리한다. `CoreState` 가 보유(엔진 권위, model-view 분리). 구 이름은 `AttachRegistry`.
 #[derive(Default)]
 pub struct OccupancyRegistry {
@@ -128,7 +128,7 @@ pub struct OccupancyRegistry {
     /// `None`(테스트/미주입)이면 통지는 no-op + lock 만 free 환원. **hard 전용** —
     /// soft 는 이 경로에 진입하지 않는다.
     notifier: Option<StreamHub>,
-    /// soft 점유 테이블(ADR-0621). hard(`surface_locks`)와 **분리** — soft 는 절대
+    /// soft 점유 테이블(ADR-0021). hard(`surface_locks`)와 **분리** — soft 는 절대
     /// `is_hard_occupied` 를 true 로 만들지 않는다(입력차단/mirror/`"attached"`/content-hidden
     /// 회귀 0). gui/StreamHub 비의존이라 headless 컴파일·동작. holder=주체(parent surface).
     soft: HashMap<SurfaceId, SoftEntry>,
@@ -141,7 +141,7 @@ pub struct OccupancyRegistry {
     /// 중복 echo)이 된다. 로컬 생성 경로(예: `tasty claude spawn`)는 이 플래그가 항상
     /// `false`라 기존대로 즉시 tap 된다.
     suppress_auto_tap: bool,
-    /// **forward 가 아닌 원인으로** 구조가 바뀐 점유 워크스페이스(ADR-0623). holder 는
+    /// **forward 가 아닌 원인으로** 구조가 바뀐 점유 워크스페이스(ADR-0023). holder 는
     /// 구조를 `StructuralDelta` 로만 알 수 있는데, forward 실행은 자기 delta 를 직접
     /// 보내고 다른 원인(PTY 종료로 닫힌 surface, 로컬 경로로 편입된 멤버)은 보낼 자리가
     /// 없었다 — mirror 가 서버에서 이미 사라진 탭을 계속 보였다. 여기 쌓고
@@ -187,7 +187,7 @@ impl OccupancyRegistry {
     }
 
     /// surface 가 **hard 점유** 중인지(서버 입력 차단·list `attached` 필드·readonly
-    /// mirror·content-hidden 판정용). ADR-0621 이후 이 술어는 **hard 전용** 이다 —
+    /// mirror·content-hidden 판정용). ADR-0021 이후 이 술어는 **hard 전용** 이다 —
     /// soft 점유는 절대 true 로 만들지 않는다(입력차단/mirror 회귀 방지). 소비처 5곳
     /// 모두 hard 의미이므로 개명(구 `is_attached`)만으로 의미 보존.
     pub fn is_hard_occupied(&self, surface_id: SurfaceId) -> bool {
@@ -195,7 +195,7 @@ impl OccupancyRegistry {
     }
 
     /// 통합 점유 조회. tier 를 한 번에 판별한다. hard 가
-    /// soft 를 가린다(ADR-0621 테두리 우선순위: 점유 surface 는 hard 표시가 soft 를 덮음).
+    /// soft 를 가린다(ADR-0021 테두리 우선순위: 점유 surface 는 hard 표시가 soft 를 덮음).
     /// 점유 없으면 None. 테두리 렌더(egui_panels.rs::draw_occupied_overlays)가 소비.
     pub fn occupancy_of(&self, surface_id: SurfaceId) -> Option<Occupancy> {
         if let Some(lock) = self.surface_locks.get(&surface_id) {
@@ -216,7 +216,7 @@ impl OccupancyRegistry {
         })
     }
 
-    /// soft 점유 획득(표시만, write 제한 없음 — ADR-0621). 같은 parent 재-acquire 는
+    /// soft 점유 획득(표시만, write 제한 없음 — ADR-0021). 같은 parent 재-acquire 는
     /// 멱등(라벨만 갱신). 이미 다른 주체의 soft 점유면 `AlreadyOccupied`. hard 기계와
     /// 무관 — StreamHub/gui 없이 동작(headless 안전). `CoreState::occupy_soft` 가 호출한다.
     pub fn acquire_soft(
@@ -244,7 +244,7 @@ impl OccupancyRegistry {
         Ok(())
     }
 
-    /// soft 점유 self-release(ADR-0621: 주체 본인 해제). parent(주체 식별자) 불일치 →
+    /// soft 점유 self-release(ADR-0021: 주체 본인 해제). parent(주체 식별자) 불일치 →
     /// `NotHolder`, 엔트리 없음 → `NotOccupied`. `terminal.release` IPC 가
     /// in-process 호출한다.
     pub fn release_soft(
@@ -263,7 +263,7 @@ impl OccupancyRegistry {
     }
 
     /// soft 점유 무조건 해제(주체 검증 없음). 로컬 사용자 force-detach 와 focus 지연
-    /// 청소(ADR-0621)가 tier 공용으로 호출한다 — soft holder 는 stream client 가
+    /// 청소(ADR-0021)가 tier 공용으로 호출한다 — soft holder 는 stream client 가
     /// 아니라 StreamHub 통지 없이 엔트리만 제거된다. 반환: 실제로 제거됐는지.
     pub fn clear_soft(&mut self, surface_id: SurfaceId) -> bool {
         self.soft.remove(&surface_id).is_some()
@@ -550,7 +550,7 @@ impl OccupancyRegistry {
 
     /// 이미 점유된 workspace 에 **나중에 생긴 멤버 surface 를 추가 등록**한다. 구조 변경
     /// forward(split·새 탭 등)로 원격에 새 surface 가 생겼을 때, "workspace 전체가
-    /// remote"(ADR-0621 불변식)를 유지하려면 그 새 surface 도 같은 holder 점유에 편입돼야
+    /// remote"(ADR-0021 불변식)를 유지하려면 그 새 surface 도 같은 holder 점유에 편입돼야
     /// 한다. `acquire_workspace` 의 per-member 등록과 동형으로: 터미널이면 surface_locks 에
     /// (is_hard_occupied → 서버 입력차단·resize skip·readonly), 모든 멤버를
     /// surface_to_workspace 에(입력 라우팅 holder 검증·EOF/force-detach 일괄 정리) 넣는다.
@@ -607,7 +607,7 @@ impl OccupancyRegistry {
     /// workspace 를 하나라도 점유 중인 client 전부(중복 없이, 오름차순). 술어
     /// [`Self::client_holds_workspace`] 가 참인 집합과 같다 — markdown 원문 채널이 요청을
     /// 인가하는 집합과 변경 신호를 받는 집합이 갈라지지 않게 같은 표에서 뽑는다
-    /// (`docs/adr/0622-remote-mirror-content-and-queries.md`).
+    /// (`docs/adr/0022-remote-mirror-content-and-queries.md`).
     #[cfg(feature = "gui")]
     pub fn workspace_holders(&self) -> Vec<AttachClientId> {
         let mut holders: Vec<AttachClientId> =
@@ -844,7 +844,7 @@ mod tests {
         assert!(reg.is_hard_occupied(30));
     }
 
-    // ─── soft 점유 (ADR-0621) ─────────────────────────────────────────────
+    // ─── soft 점유 (ADR-0021) ─────────────────────────────────────────────
 
     #[test]
     fn soft_occupancy_does_not_set_hard_predicate() {

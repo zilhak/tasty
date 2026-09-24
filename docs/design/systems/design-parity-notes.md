@@ -58,7 +58,7 @@ auto-shrink)로 결과만 비슷하게 **눈대중하지 않는다.** 색·간�
   디자인과 일치.
 - **정리된 방향**: 본체는 egui `zoom_factor` 로 균일 처리하지 않는다(native ppp 갱신 전 zoom 이
   박히는 사고 때문). 대신 내부 길이를 리터럴이 아니라 `ui_zoom` 을 곱하는 `Theme` 접근자로 뺀다 —
-  근거·가드·남은 사각(호출부 리터럴)은 [ADR-0639](../../adr/0639-typed-length-and-dpi-boundaries.md).
+  근거·가드·남은 사각(호출부 리터럴)은 [ADR-0039](../../adr/0039-typed-length-and-dpi-boundaries.md).
   그 사각에 남은 리터럴은 여전히 이 증상을 내므로 위 처방(medium 에서 검증)은 유효하다.
 
 ## remote_tool — CSS line-height vs egui 텍스트 박스 높이 (헤더 8px 얕음)
@@ -282,7 +282,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   `Spinner::reduced_motion(bool)` 은 남아 있지만 이제 **설정을 무시하는 override** 이며,
   두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
 - **왜 파라미터가 아닌가**: 종전엔 호출부 파라미터였고, 그러자 실제로 넘기는 자리가 레포
-  전체에 하나도 없어 설정을 켜도 스피너가 돌았다([ADR-0637](../../adr/0637-ui-input-motion-and-elevation.md)).
+  전체에 하나도 없어 설정을 켜도 스피너가 돌았다([ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md)).
 - **근거**: `crates/tasty-ui-widgets/src/spinner.rs`.
 
 ## Button variant — egui 엔 CSS variant 없음 → fill/stroke 수동 조합
@@ -540,7 +540,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   라벨↔입력 `gap: 3` → `STRUCT_GAP_3`, 선택 leaf 핸들 사이 `gap: 2` → `STRUCT_GAP_2`.
 - **근거**: `gallery/preset_editor.jsx` (`SurfaceSettings`/`useSurfaceCfg`/`switchKind`/`normalize`).
 - **결정 근거**: kind 전환 · default 선채움 · autofocus 없음 · 저장 실패 시 화면 유지 · 더블클릭 범위의
-  근거 · 대안 · 재검토 조건은 [ADR-0638](../../adr/0638-preset-drafts-and-store-conflicts.md).
+  근거 · 대안 · 재검토 조건은 [ADR-0038](../../adr/0038-preset-drafts-and-store-conflicts.md).
 
 ## explorer GridCell — 아이콘 축소 + 파일명 3줄 wrap 말줄임 (2026-07-09 디자인 확정 반영)
 
@@ -650,7 +650,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   UI 폰트 상한 14(`theme.md` "UI 폰트 최대" = `font_size_max`)를 넘는다. 구조 축과 토큰 축은
   함께 필수이고(`CLAUDE.md` "갤러리 완전성 · gallery-first") 상한 쪽이 규칙이라 상세 글리프를
   `font_size_max` 로 자른다 — 비율이 0.42 에서 0.30 으로 바뀐다. 사각형 한 변 46 은 그대로다
-  (ADR-0635 대로 44 · 48 로 스냅하지 않는다).
+  (ADR-0035 대로 44 · 48 로 스냅하지 않는다).
 - **근거**: `crates/tasty-ui-widgets/src/plugin_avatar.rs` (위젯 · 두 갈래의 유일한 구현부),
   `crates/tasty-type-appearance/src/theme.rs` 의 `plugin_avatar_bg` · `plugin_avatar_border`
   (위 color-mix 절의 처방 그대로 — 불투명 블렌드는 `mix_srgb`, `transparent` 항은 알파만).

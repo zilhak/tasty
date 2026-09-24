@@ -2,7 +2,7 @@
 
 `~/.tasty/memory.db` (SQLite WAL 단일 파일)에 저장되는 영속 키-값 스토어. AI 에이전트·plugin 이 작업 도중 누적·검색·공유하는 데이터의 backing store 다.
 본 바이너리는 `init_with_config` 로 연 store 를 `Arc<Mutex<dyn MemoryStorage>>` 로 Core 에 주입해 동기 접근한다(`crates/tasty-memory/`). 이 문서는 **가시성·소유권 모델**을 정의한다.
-암호화 안 하는 결정의 근거는 [ADR-0611](../../adr/0611-secrets-and-local-trust.md), IPC trust boundary 는 [ADR-0606](../../adr/0606-bounded-ipc-transport.md).
+암호화 안 하는 결정의 근거는 [ADR-0011](../../adr/0011-secrets-and-local-trust.md), IPC trust boundary 는 [ADR-0006](../../adr/0006-bounded-ipc-transport.md).
 
 ## 책임 범위
 
@@ -23,7 +23,7 @@
 
 둘 다 같은 `Scope`(`global`/`account:<u>`/`window:<id>`/`workspace:<id>`/`surface:<id>`)와 키 규칙(1..=256자 `[a-z0-9._-]+`)을 공유한다. 차이는 **`owner` 차원** 하나다.
 
-`surface:<id>` 의 `<id>` 는 **surface id 공간**(`< 0x8000_0000`)이어야 한다 — 그 이상은 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이고, IPC 가 `invalid_params` 로 거부한다([ADR-0617](../../adr/0617-workspace-identity-and-focus.md)).
+`surface:<id>` 의 `<id>` 는 **surface id 공간**(`< 0x8000_0000`)이어야 한다 — 그 이상은 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이고, IPC 가 `invalid_params` 로 거부한다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)).
 
 ## owner — 숨겨진 host 전용 차원
 
@@ -112,11 +112,11 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   파일이 없어 SQLite 가 WAL 을 못 쓰고, 요청은 조용히 거절돼 `journal_mode` 가 `memory` 로
   남는다(반환값은 성공이다). 그 모드에는 `-wal`·`-shm` 도, 여기 적은 위생 문제도 없다.
   그래서 그 값은 실패가 아니라 정상 결과로 규정하고 경고하지 않는다 —
-  [ADR-0610](../../adr/0610-storage-failure-reporting.md).
+  [ADR-0010](../../adr/0010-storage-failure-reporting.md).
   반대로 **파일 DB 가 `memory` 로 서면 정상이 아니다** — 허용 결과는 모드별이다. 열린
   스토어는 되읽은 결과를 `MemoryStore::applied_pragmas()` 로 들고 있고, 실행 중에는
   `system.pressure` 의 `db_pragmas.memory_db`(CLI `tasty list pressure`)로 조회한다
-  ([ADR-0610](../../adr/0610-storage-failure-reporting.md)).
+  ([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
 - **내구성 범위**(`synchronous=NORMAL` — 프로세스 kill 은 견디고 전원 장애는 최신 commit 을
   약속하지 않는다)와 **저장 실패의 의미**(원인 분류 · 실패한 쓰기는 quota 카운터와 변경
   버퍼를 안 옮긴다)는 [storage](storage.md) 의 두 절이 정본이다.
@@ -124,7 +124,7 @@ goal 에 TTL 이 없는 이유: surface 스코프 데이터는 surface 가 닫�
   않는다. 그 상태의 쓰기는 재시작에 사라지므로 `db_pragmas.memory_db` 가 `degraded: true` 와
   `init_failure` 로, 쓰기 응답이 `durable: false` 로 그 사실을 말한다. 정본은 [storage](storage.md)
   "초기화 실패" 절의 `memory.db` 항이고 근거는
-  [ADR-0610](../../adr/0610-storage-failure-reporting.md).
+  [ADR-0010](../../adr/0010-storage-failure-reporting.md).
 
 ## 보안·신뢰 모델
 
@@ -139,6 +139,6 @@ Passkey는 프로필에서 이름으로 참조하며 passkeys.toml에는 name·k
 ## 관련
 
 - 코드: `crates/tasty-memory/`
-- [ADR-0611](../../adr/0611-secrets-and-local-trust.md) · [ADR-0606](../../adr/0606-bounded-ipc-transport.md)
+- [ADR-0011](../../adr/0011-secrets-and-local-trust.md) · [ADR-0006](../../adr/0006-bounded-ipc-transport.md)
 - [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-development 민감 데이터](../../dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택)
 - 저장 위치 규칙: [storage.md](storage.md) (`~/.tasty/` 전체 저장소 지도; `memory.db` 는 `state.db` 와 별도 연결)

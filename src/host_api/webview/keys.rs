@@ -8,7 +8,7 @@
 //! [`WebViewKeyEvent`] 로 정규화해 [`WebViewKeySink`] 계약으로만 올리고, **우선순위 판정은
 //! 그 구현([`WebViewKeyBridge`]) 한 곳에서만** 한다(백엔드마다 규칙이 갈라지지 않게).
 //!
-//! 결정 배경·대안·재검토 조건: `docs/adr/0629-webview-host-integration.md`.
+//! 결정 배경·대안·재검토 조건: `docs/adr/0029-webview-host-integration.md`.
 //!
 //! # 판정은 동기, 실행은 다음 프레임
 //!
@@ -164,7 +164,7 @@ impl HostShortcutPolicy {
 /// 이 계약을 받는다 — 백엔드는 "이 키를 host 가 가져가는가" 를 묻고 "이 surface 가
 /// 클릭됐다" 를 알리는 것 말고는 정책·큐·설정 어느 것도 모른다. 그래서 정책 판정이나
 /// 큐의 모양이 바뀌어도 세 백엔드 본문은 안 바뀐다. 근거·대안:
-/// `docs/adr/0629-webview-host-integration.md`.
+/// `docs/adr/0029-webview-host-integration.md`.
 ///
 /// **스레드**: 세 백엔드의 콜백(GTK 시그널 / WKWebView 메서드 / WebView2 이벤트)은 모두
 /// winit main thread 에서 발화한다. 그래서 구현은 `Send`/`Sync` 를 요구받지 않고 `Rc` 로

@@ -108,7 +108,7 @@ pub(crate) fn draw_popup_layer(
         }
     }
 
-    // Esc 소유권(ADR-0636) — host/plugin 통틀어 최상단인 popup
+    // Esc 소유권(ADR-0036) — host/plugin 통틀어 최상단인 popup
     // 하나만 Esc 를 소비한다. plugin popup 이 위면 `None` 이고 그 프레임의 Esc 는
     // `plugin_bridge::popup_render` 쪽이 가져간다. plugin z 는 1 프레임 stale 이라
     // (아래 `plugin_occluders` 와 같은 재료) plugin popup 이 막 열린 첫 프레임에는

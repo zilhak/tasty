@@ -98,7 +98,7 @@ impl IntentOrigin {
 /// 들어왔는가" 는 이 값의 좌변이 아니다. 같은 기준을 `WorkspaceCloseOrigin` 이 이미
 /// 쓴다 — 사용자 입력을 재현하는 debug IPC 를 `User` 로 친다.
 // 이유: 이 값을 만드는 자리(explorer·링크·드롭·picker 확정·`file_handler.dispatch` arm)가 전부
-// gui 에만 있다 — headless 는 파일 열기를 `-32017` 로 거절한다(ADR-0631). 정의를 cfg 로 가리지
+// gui 에만 있다 — headless 는 파일 열기를 `-32017` 로 거절한다(ADR-0031). 정의를 cfg 로 가리지
 // 않는 것은 도메인의 `DispatchFile` intent 가 headless 에서도 이 값을 싣고 타입체크를 받게 하려는
 // 것이다. 이 값에 딸린 판정(`selects_result` · `require_origin_pane`)은 부르는 자리가 전부 GUI 라
 // 항목마다 `cfg(feature = "gui")` 다.
@@ -114,7 +114,7 @@ pub enum FileDispatchOrigin {
     /// 사용자가 자기 손으로 열었다 — explorer 더블클릭 · 터미널 링크 클릭 · 파일 드롭 ·
     /// 파일 피커 확정, 그리고 plugin 이 host 가 직접 관측한 사용자 입력(자기 popup 의 누름 ·
     /// 엔진이 사용자 제스처로 보고하고 자기가 쓴 페이지 위에서 난 자기 webview 의 navigation)을 대고 중계한
-    /// `file_handler.dispatch`(ADR-0631).
+    /// `file_handler.dispatch`(ADR-0031).
     User,
     /// 에이전트가 release IPC/CLI(`file_handler.dispatch`)로 열었다.
     Agent,
@@ -123,7 +123,7 @@ pub enum FileDispatchOrigin {
 impl FileDispatchOrigin {
     /// 결과 탭을 선택하는가. 사용자가 방금 그 자리에서 한 행동의 결과는 사용자가
     /// 보려고 연 것이므로 선택하고, 에이전트가 만든 것으로는 포커스를 옮기지 않는다
-    /// ([ADR-0631](../../docs/adr/0631-file-handler-routing.md)).
+    /// ([ADR-0031](../../docs/adr/0031-file-handler-routing.md)).
     #[cfg(feature = "gui")]
     pub(crate) fn selects_result(self) -> bool {
         matches!(self, Self::User)

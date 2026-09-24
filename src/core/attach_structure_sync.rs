@@ -1,8 +1,8 @@
 //! 점유 워크스페이스의 구조를 holder 와 맞추는 자리 중 **forward 가 아닌 원인**의 몫.
 //!
 //! forward 실행 자체는 [`attach_runtime`](crate::core::attach_runtime) 에 있고, 여기는 그
-//! 바깥에서 생긴 구조 변경을 기존 `StructuralDelta` 로 holder 에게 보내는 일(ADR-0623)과,
-//! forward 가 anchor 를 못 풀었을 때 회신할 사유를 정하는 일(ADR-0623)을 맡는다.
+//! 바깥에서 생긴 구조 변경을 기존 `StructuralDelta` 로 holder 에게 보내는 일(ADR-0023)과,
+//! forward 가 anchor 를 못 풀었을 때 회신할 사유를 정하는 일(ADR-0023)을 맡는다.
 
 use crate::core::CoreState;
 use crate::core::attach::AttachClientId;
@@ -12,7 +12,7 @@ use tasty_ipc::stream_hub::PushResult;
 impl CoreState {
     /// 점유 워크스페이스의 구조가 **forward 가 아닌 원인**으로 바뀌었으면 그 holder 에게
     /// 기존 역반영 메시지(`StreamControl::StructuralDelta`, 실행 후 전체 트리)를 보낸다
-    /// (ADR-0623). 표시는 `OccupancyRegistry` 가 쌓는다 — 멤버 surface 가 닫혀 잊힐 때와
+    /// (ADR-0023). 표시는 `OccupancyRegistry` 가 쌓는다 — 멤버 surface 가 닫혀 잊힐 때와
     /// 로컬 경로로 멤버가 편입될 때. forward 실행은 자기 delta 를 직접 보내고 표시를 지우므로
     /// 여기서 두 번 나가지 않는다.
     ///
@@ -69,7 +69,7 @@ fn workspace_not_found_reason() -> String {
 /// (살아 있지 않은 id 지목)에 싣는 문구를 **같은 생성기로** 쓴다(`no live surface N` 로
 /// 시작한다). 요청 이름 자리에는 anchor 를 지목한 것, 즉 이 forward op 의 wire 이름
 /// (`structural_op.<kind>`)을 넣는다. 점유 중인 워크스페이스가 없거나 이 engine 에 없으면
-/// `None` — 호출자가 종전 문구(`workspace not found`)를 쓴다(ADR-0623).
+/// `None` — 호출자가 종전 문구(`workspace not found`)를 쓴다(ADR-0023).
 ///
 /// anchor 가 어딘가에 **살아 있는지는 여기서 안 본다** — 호출자 [`unresolved_forward_reason`]
 /// 이 모든 engine 을 먼저 보고 살아 있으면 이 함수를 부르지 않는다.
@@ -96,7 +96,7 @@ fn unresolved_anchor_reason(
 /// "no live surface" 는 anchor 가 **어디에도** 살아 있지 않을 때만 참이다. 점유 워크스페이스
 /// 밖 — 같은 engine 의 다른 워크스페이스든 다른 engine(GUI 의 다른 창)이든 — 에 살아 있으면
 /// 그 사유는 거짓이 되므로, 먼저 모든 engine 에서 anchor 를 찾고 어디든 있으면 종전 문구를
-/// 쓴다(ADR-0623). engine 하나씩 물으면 점유한 engine 은 다른 engine 의 surface 를 모른다.
+/// 쓴다(ADR-0023). engine 하나씩 물으면 점유한 engine 은 다른 engine 의 surface 를 모른다.
 pub(crate) fn unresolved_forward_reason<'a>(
     engines: impl IntoIterator<Item = &'a CoreState>,
     client_id: AttachClientId,

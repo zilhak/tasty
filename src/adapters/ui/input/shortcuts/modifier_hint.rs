@@ -32,7 +32,7 @@
 //! - `link_click_modifier`(`general`) 단독 조합: modifier+클릭 링크 열기. `"none"` 이면 역할 없음.
 //!
 //! 빈 조합(바인딩·역할 모두 없음)도 섹션을 **유지**한다 — 오버레이가 ChordHead 아래에
-//! "바인딩 없음" 플레이스홀더 한 줄을 그린다(ADR-0619). 이전엔 빈 섹션을
+//! "바인딩 없음" 플레이스홀더 한 줄을 그린다(ADR-0019). 이전엔 빈 섹션을
 //! 생략했으나, 미할당 조합을 홀드하면 패널이 아예 안 떠 "반응 없음"으로 읽히는 문제로 반전.
 //!
 //! NOTE: 오버레이(`super::super::modifier_hint_overlay`)가 이 모델을 소비한다. plugin 단축키는
@@ -45,7 +45,7 @@ use tasty_settings::KeybindingSettings;
 use tasty_key_match::parse_binding;
 
 // 조합 타입과 열거는 `KeybindingSettings` 가 저장하는 축 modifier 값의 해석 규칙이라
-// 그 값을 소유한 크레이트에 있다(`docs/adr/0619-keybinding-settings-and-hints.md`).
+// 그 값을 소유한 크레이트에 있다(`docs/adr/0019-keybinding-settings-and-hints.md`).
 // 이 모듈은 그것으로 hint 섹션을 조립한다.
 pub use tasty_settings::keybindings::parse::{Combo, all_modifier_combos, combos_containing_all};
 
@@ -125,7 +125,7 @@ pub struct HintSection {
 
 impl HintSection {
     /// 바인딩·역할이 모두 없는 조합인가 — 오버레이가 이때 "바인딩 없음" 플레이스홀더를
-    /// 그린다(빈 섹션은 더 이상 생략되지 않는다, ADR-0619).
+    /// 그린다(빈 섹션은 더 이상 생략되지 않는다, ADR-0019).
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty() && self.roles.is_empty()
     }
@@ -274,7 +274,7 @@ pub fn build_hint_sections(
 
     // 5. 빈 섹션도 유지한다 — 오버레이(modifier-hint-03)가 빈 섹션에 "바인딩 없음"
     //    플레이스홀더를 그려 "이 조합은 정말 미할당" 임을 명시한다(2026-07-06 결정,
-    //    ADR-0619). 이전(2026-07-02)엔 여기서 `retain` 으로 빈 섹션을 생략했다.
+    //    ADR-0019). 이전(2026-07-02)엔 여기서 `retain` 으로 빈 섹션을 생략했다.
     sections
 }
 
@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn empty_sections_are_retained() {
-        // ADR-0619: 바인딩·역할이 하나도 안 걸리는 조합도 섹션이 유지된다(오버레이가
+        // ADR-0019: 바인딩·역할이 하나도 안 걸리는 조합도 섹션이 유지된다(오버레이가
         // 플레이스홀더를 그린다). 이전엔 여기서 생략됐다.
         let mut kb = KeybindingSettings::preset_tasty();
         // 모든 고정 필드를 비워 역할만 남긴다.
@@ -649,7 +649,7 @@ mod tests {
 
     #[test]
     fn mixed_hold_keeps_filled_and_empty_sections() {
-        // ADR-0619: Ctrl 홀드 시 채워진 섹션과 빈(플레이스홀더) 섹션이 한 리스트에 공존.
+        // ADR-0019: Ctrl 홀드 시 채워진 섹션과 빈(플레이스홀더) 섹션이 한 리스트에 공존.
         let mut kb = KeybindingSettings::preset_tasty();
         for (field_id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
             kb.clear_field(field_id);

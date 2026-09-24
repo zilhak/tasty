@@ -47,7 +47,7 @@ pub use crate::core::origin::{AgentSource, IntentOrigin};
 /// client) 워크스페이스에서 구조 변경을 시도해 거부된 경우
 /// ([`crate::core::MirrorStructuralBlocked`]) 사용자에게 차단 toast 를 띄우고,
 /// 철회된 kind 로 만들려다 거절된 경우([`crate::core::surface_registry::SurfaceKindWithdrawn`])
-/// 그 kind 를 제공하던 plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 toast 를 띄우고(ADR-0626),
+/// 그 kind 를 제공하던 plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 toast 를 띄우고(ADR-0026),
 /// 그 외 에러는 `warn` 로그를 남긴다. `label` 은 로그용 컨텍스트(예: "SplitSurface").
 ///
 /// **toast 는 사용자 origin 에서만 난다.** 에이전트 origin 의 차단은 사용자 발화와 같은
@@ -91,7 +91,7 @@ pub fn report_apply_error(
 }
 
 /// 철회된 kind 로 만들려다 거절된 것을 알린다 — 사용자가 연 것이면 그 kind 를 제공하던
-/// plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 toast(ADR-0626), 에이전트 발화는 로그만(ADR-0636).
+/// plugin 이 꺼졌거나 아직 다시 연결되지 않았다는 toast(ADR-0026), 에이전트 발화는 로그만(ADR-0036).
 // reason: 헤드리스 조합에는 toast 매니저가 없어 `state` 를 안 쓴다 — gui 조합만 쓴다.
 #[cfg_attr(not(feature = "gui"), allow(unused_variables))]
 fn report_withdrawn_kind(
@@ -134,7 +134,7 @@ pub struct DispatchedIntent {
     ///
     /// 이름이 같지만 **Event Bus envelope 의 `trace_id` 와 무관하고**, IPC 요청을 가리키는 값도
     /// 아니다 — IPC 요청 하나를 가리키는 값은 호스트가 발급하는
-    /// [`tasty_ipc::server::RequestSeq`] 다(ADR-0608).
+    /// [`tasty_ipc::server::RequestSeq`] 다(ADR-0008).
     pub trace_id: Option<String>,
 }
 
@@ -290,7 +290,7 @@ impl UiIntent {
         Intent::Ui(self).from_agent_ipc()
     }
 
-    /// agent plugin 발화 — `file_picker.trigger`(ADR-0636)가 실사용처.
+    /// agent plugin 발화 — `file_picker.trigger`(ADR-0036)가 실사용처.
     #[cfg(feature = "gui")]
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         Intent::Ui(self).from_agent_plugin(plugin_id)
@@ -458,7 +458,7 @@ impl Intent {
         }
     }
 
-    /// agent plugin 발화 — `file_picker.trigger`(ADR-0636)가 실사용처.
+    /// agent plugin 발화 — `file_picker.trigger`(ADR-0036)가 실사용처.
     pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
         DispatchedIntent {
             body: self,
@@ -496,7 +496,7 @@ impl Intent {
 impl DispatchedIntent {
     /// `trace_id` 를 명시 지정한다. 비-테스트 호출처가 없다 — 이 값을 발급하는 IPC 핸들러는
     /// 없고, IPC 요청의 호스트 번호는 이 칸이 아니라 [`tasty_ipc::server::RequestSeq`] 다
-    /// (ADR-0608).
+    /// (ADR-0008).
     #[allow(dead_code)]
     pub fn with_trace_id(mut self, trace_id: impl Into<String>) -> Self {
         self.trace_id = Some(trace_id.into());

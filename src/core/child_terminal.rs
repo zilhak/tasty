@@ -1,4 +1,4 @@
-//! 호스트 child-terminal registry (ADR-0621).
+//! 호스트 child-terminal registry (ADR-0021).
 //!
 //! 에이전트가 spawn 한 **자식 터미널 surface** 의 부모/인덱스/상태 매핑을 호스트가
 //! 단일 SoT 로 보관한다. 지금까지 이 기계는 `tasty-plugin-codex`(`CodexState`) 와
@@ -210,7 +210,7 @@ impl ChildTerminalRegistry {
     /// 이 규칙이 없으면 codex 승인 프롬프트를 **거절**한 자식이 그 자리에 얼어붙는다:
     /// 거절은 `Interrupt`(→ idle) 하나만 쏘고 `PostToolUse`(→ active) 는 오지 않아,
     /// `needs_input` 을 내릴 사람이 아무도 없다(실측 — codex-cli 0.154.0).
-    /// 근거·대안은 [ADR-0641](../../docs/adr/0641-agent-state-and-completion.md).
+    /// 근거·대안은 [ADR-0041](../../docs/adr/0041-agent-state-and-completion.md).
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
         self.idle.insert(child_surface, idle);
         self.needs_input.insert(child_surface, false);

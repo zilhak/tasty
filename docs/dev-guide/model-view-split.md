@@ -10,7 +10,7 @@
 - **테스트 용이성** — 모델 단위 테스트가 GUI 컨텍스트 없이 가능.
 - **정리 일관성** — View 가 store 에 모이면 surface 닫힘 시 한 곳에서 일괄 해제.
 
-> 적용 대상은 **host 내장 surface**(host 가 egui 로 그리는 surface, 현재 explorer·dag_graph·empty)다. `image` 같은 **egui-mesh plugin surface** 와 `html`/`markdown`([ADR-0629](../adr/0629-webview-host-integration.md)) 같은 **webview plugin surface** 는 plugin 프로세스가 자기 상태를 들고 그리므로 이 패턴 밖이다 (→ [concepts/plugins](../concepts/plugins.md)).
+> 적용 대상은 **host 내장 surface**(host 가 egui 로 그리는 surface, 현재 explorer·dag_graph·empty)다. `image` 같은 **egui-mesh plugin surface** 와 `html`/`markdown`([ADR-0029](../adr/0029-webview-host-integration.md)) 같은 **webview plugin surface** 는 plugin 프로세스가 자기 상태를 들고 그리므로 이 패턴 밖이다 (→ [concepts/plugins](../concepts/plugins.md)).
 
 ## 어디에 무엇을 두나
 

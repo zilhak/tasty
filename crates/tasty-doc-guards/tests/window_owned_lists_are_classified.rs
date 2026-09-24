@@ -3,7 +3,7 @@
 //!
 //! ## 왜 이 판정기인가 — 자동 발견은 네 형태로 다 새었다
 //!
-//! "창 소유 컬렉션을 순회 · 대상 인자 없음 · 합산 집합에 없음"([ADR-0617](../../../docs/adr/0617-workspace-identity-and-focus.md))
+//! "창 소유 컬렉션을 순회 · 대상 인자 없음 · 합산 집합에 없음"([ADR-0017](../../../docs/adr/0017-workspace-identity-and-focus.md))
 //! 을 **정적으로 자동 발견**하려는 시도는 이 저장소에서 네 번 다 실패했고, 넷 다
 //! 실측이다.
 //!
@@ -83,7 +83,7 @@ const ROSTER: &[(&str, Class, &str)] = &[
     (
         "tree",
         Aggregated,
-        "이름이 `*.list` 가 아니라 이름 기반 census 에서 빠져 있었다 — ADR-0617이 그 자리다",
+        "이름이 `*.list` 가 아니라 이름 기반 census 에서 빠져 있었다 — ADR-0017이 그 자리다",
     ),
     (
         "tab.list",

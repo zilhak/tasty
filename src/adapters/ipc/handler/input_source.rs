@@ -7,7 +7,7 @@
 //! 재현이다. 따라서 identity 원칙 1 ②에 따라 release 표면에 두지 않고,
 //! `debug.inject_key` 와 같은 `--enable-input-simulation` 런타임 게이트를 함께
 //! 건다. 결정 근거는
-//! [`docs/adr/0612-request-admission-and-isolation.md`].
+//! [`docs/adr/0012-request-admission-and-isolation.md`].
 //!
 //! 이 모듈 선언(`handler.rs`)은 `#[cfg(all(debug_assertions, target_os = "macos",
 //! feature = "gui"))]` 이라 release·비-macOS·headless 빌드에서 통째로 사라진다.

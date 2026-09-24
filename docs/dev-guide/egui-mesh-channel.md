@@ -2,7 +2,7 @@
 
 plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를 host 가
 전용 `egui_wgpu::Renderer` 로 surface 영역에 합성하는 채널. 결정·대안·재검토 조건은
-[ADR-0628](../adr/0628-egui-mesh-rendering.md) (Accepted). 이 문서는
+[ADR-0028](../adr/0028-egui-mesh-rendering.md) (Accepted). 이 문서는
 **현재 동작 상태**만 기술한다.
 
 ## 데이터 흐름
@@ -115,7 +115,7 @@ frame 이 사라지면 다시 bootstrap 한다.
 **과거 소비자(현재는 다른 경로로 대체됨)**: markdown plugin 이 egui-mesh 로 본문을 그리던
 시절엔 markdown 의 idle 폴링 worker(현재 `crates/tasty-plugin-sdk/src/file_watch.rs`)가 이
 채널로 `SurfaceInvalidated` 를 emit 해 재-read 를 트리거했다. markdown 이 webview 로
-전환된 뒤([ADR-0629](../adr/0629-webview-host-integration.md))로는 webview-kind
+전환된 뒤([ADR-0029](../adr/0029-webview-host-integration.md))로는 webview-kind
 surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 무의미해졌다 — 지금
 `file_watch` 는 변경 감지 시 이 채널 대신 `self_invoke` 로 `markdown.reload` IPC 를
 직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
@@ -138,7 +138,7 @@ variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준�
    `main_windows_iter_mut()` 로 순회하며 broadcast 한다(`attach_client.rs` 의 기존
    `plugin_mesh_popup_pending_repaint` 예약 패턴과 동형).
 3. 새 set_context 트리거가 아니라, popup 이 이미 갖고 있던
-   `AppState::plugin_mesh_popup_pending_repaint`(ADR-0622 — 비동기 host→plugin push 후 강제
+   `AppState::plugin_mesh_popup_pending_repaint`(ADR-0022 — 비동기 host→plugin push 후 강제
    repaint 예약)에 그대로 얹는다. `popup_render.rs` 의 forward 게이트(`need_repaint`)가 다음
    프레임에 무입력 `popup.set_context` 를 1 회 통과시킨다 — surface 의 `invalidated` 플래그와
    동일 역할을 이미 있던 필드가 겸한다(별도 상태 필드 신설 불필요).
@@ -174,7 +174,7 @@ set_context 값을 그대로 재현한다(불변식 무위반) — false 로 떨
 
 소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤). git-viewer 는 모든 상태
 변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가 필요 없다. (markdown
-은 이 문서의 이전 리비전까지 대표 소비자였으나, [ADR-0629](../adr/0629-webview-host-integration.md)
+은 이 문서의 이전 리비전까지 대표 소비자였으나, [ADR-0029](../adr/0029-webview-host-integration.md)
 로 본문 surface 가 webview 전환되며 egui-mesh self-repaint 경로 자체를 타지 않게 됐다 —
 `markdown.reload` IPC 는 지금은 host 가 webview 를 직접 재로드하는 별개 경로다.)
 
@@ -204,7 +204,7 @@ wheel smoothing을 줄이는 입력 분할과 프로그램적 scroll animation �
 포함된다. plugin 은 `Theme::with_colors_and_zoom` 으로 host 와 동일한 `Theme` 인스턴스를
 재구성해 디자인 토큰대로 그린다(sizing 은 zoom 으로 재도출). 모든 egui-mesh surface 가
 공유하는 generic 필드다 — image/git-viewer 등이 같은 경로로 Theme parity 를 얻는다
-(markdown 은 [ADR-0629](../adr/0629-webview-host-integration.md) 로 본문 surface 가
+(markdown 은 [ADR-0029](../adr/0029-webview-host-integration.md) 로 본문 surface 가
 webview 전환돼 이 경로 밖 — 대신 `theme.query`/`theme.changed` 를 쓴다. 대용량/파일열기
 확인 팝업 2 개는 여전히 이 경로를 탄다).
 테마 변경은 위 송신 정책의 트리거이므로, 사용자가 테마를 바꾸면 입력이 없어도 재forward 된다.
@@ -304,7 +304,7 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 조각들로 쪼개 **같은 프레임의 이벤트 목록**에 넣는다. 쪼개지 않으면 egui 가 델타를
 `unprocessed_scroll_delta` 에 적립해 여러 프레임에 걸쳐 소진하고, egui-mesh 에서는 그
 프레임 하나하나가 `*Invalidated` → `set_context` → 전체 egui pass 라는 프로세스 간 왕복이
-된다([ADR-0628](../adr/0628-egui-mesh-rendering.md)). 조각 합은 원본
+된다([ADR-0028](../adr/0028-egui-mesh-rendering.md)). 조각 합은 원본
 델타와 같아 이동량이 보존되고, 잔여 델타가 남지 않아 위 "유휴 상태 방치" 경로도 타지 않는다.
 조각 수 상한(64)을 넘는 극단적 델타만 쪼개지 않고 그대로 넘긴다. 같은 이유로 모든 egui-mesh
 Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_animation`)을 꺼 둔다.
@@ -316,7 +316,7 @@ Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_
 그것을 읽으므로 값이 갈리지 않는다. host 는 그 옵션을 사용자 설정
 (`GeneralSettings::wheel_line_scroll`, 기본 50pt)으로 채운다. 같은 옵션을 host egui 의
 `ScrollArea` 전반도 쓰므로 **plugin 표면과 host UI 가 한 값을 공유한다**
-([ADR-0615](../adr/0615-terminal-user-input-routing.md)).
+([ADR-0015](../adr/0015-terminal-user-input-routing.md)).
 
 | 수집 지점 | 입력 소스 | 환산 |
 |-----------|-----------|------|
@@ -349,7 +349,7 @@ escape 소비를 **먼저** 처리한 뒤, 소비되지 않은 키를 이 forwar
 (commit-only 아님) plugin 의 egui `TextEdit` 이 조합 중간 상태를 인라인 표시한다.
 image/mesh_demo 는 이 forward 로 host egui 를 거치지 않으므로(`main.rs` 의 host-egui 키
 피드에서 제외) host egui 가 그 키/IME 를 삼키지 않는다. (markdown 은 본문 surface 가
-[ADR-0629](../adr/0629-webview-host-integration.md) 로 webview 전환되어 이
+[ADR-0029](../adr/0029-webview-host-integration.md) 로 webview 전환되어 이
 경로 밖 — 대용량/파일열기 확인 팝업 2 개만 여전히 이 forward 대상이다.)
 
 키 wire 는 egui `Key::name()` 문자열을 나르고 plugin SDK(`map_event`)가
@@ -432,7 +432,7 @@ forward 루프는 frame 이 없는 채널을 조용히 건너뛰므로, host std
 bundled 전용. `(kind, plugin_id)` 화이트리스트 + plugin `api_version` 이 호스트와 일치할
 때만 등록된다 (epaint 와이어가 host·plugin 동일 컴파일을 강제하는 동안의 보호). 현재
 허용: `(image, com.tasty.image)`, `(mesh_demo, com.tasty.mesh-demo)`. (`markdown` 은
-[ADR-0629](../adr/0629-webview-host-integration.md) 로 webview 전환되며 이
+[ADR-0029](../adr/0029-webview-host-integration.md) 로 webview 전환되며 이
 화이트리스트에서 빠졌다 — 대용량/파일열기 확인 팝업 2 개는 이 화이트리스트와 무관하게
 `[[contributes.popup]]` 로 별도 등록된다.)
 
@@ -583,7 +583,7 @@ egui::ScrollArea::vertical()
 ```
 
 지켜야 하는 것 네 가지 — 근거·대안은
-[ADR-0628](../adr/0628-egui-mesh-rendering.md).
+[ADR-0028](../adr/0028-egui-mesh-rendering.md).
 
 - **행 높이가 균일해야 한다.** `show_rows` 는 `row_height × total_rows` 로 위치를 계산한다. 상수든
   theme 파생이든 **한 프레임 안에서 모든 행이 같은 값**이면 된다. 행 함수와 높이 값이 어긋나면 행이

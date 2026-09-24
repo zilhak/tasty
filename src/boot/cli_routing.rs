@@ -84,7 +84,7 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     }
     // 서브커맨드가 없는 호출(아래 augmented help · GUI 기동)은 봉투를 실을 요청이 없다.
     // 플래그를 받으면 조용히 버리지 않고 명령 쪽과 같은 모양으로 거절한다
-    // (docs/adr/0607-ipc-scheduling-and-deadlines.md).
+    // (docs/adr/0007-ipc-scheduling-and-deadlines.md).
     cli::Envelope {
         response_timeout_ms: cli.response_timeout_ms,
     }

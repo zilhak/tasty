@@ -7,7 +7,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 /// 활성 탭 마커가 `Dot` 일 때의 점 지름. 스케일 밖(4) — 점 치수 토큰은
 /// `status-dot-size`(8) 하나뿐이라 여기를 그리로 보내면 점이 두 배가 된다.
-/// `docs/adr/0635-shared-design-and-theme.md` 대로 이름만 붙인다.
+/// `docs/adr/0035-shared-design-and-theme.md` 대로 이름만 붙인다.
 ///
 /// **이 상수가 생긴 이유가 값이 아니라 이름이다.** 종전에는 밑줄 마커의 *두께*
 /// (`tab-indicator-width`, 2)를 그대로 점의 *반지름*으로 재사용하고 있었다. 두 치수는
@@ -56,7 +56,7 @@ pub(super) fn draw_tab(
     let active_indicator_h = th.tab_indicator_width.value();
     // 점 치수와 그 옆 여백도 배율을 탄다 — 같은 탭 안의 라벨 폰트와 탭바 높이가
     // `Theme` 에서 와서 이미 타므로, 점만 고정이면 1.2 에서 점이 상대적으로 쪼그라든다
-    // (ADR-0635). 값 자체를 토큰으로 스냅하는 것은
+    // (ADR-0035). 값 자체를 토큰으로 스냅하는 것은
     // 별개 물음이고 그쪽은 같은 ADR 이 스냅하지 말라고 정해 두었다.
     // busy 점 지름은 `tab-dot-size` — 24px 탭 strip 안이라 compact 6 이다.
     let dot_radius = th.tab_dot_size().scaled(0.5);

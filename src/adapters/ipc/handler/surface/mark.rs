@@ -31,9 +31,9 @@ pub(crate) fn handle_set_mark(
 /// - `cursor` 를 주면 **서버는 그 소비자를 위해 아무것도 안 든다.** 위치는 호출자가
 ///   들고 매번 가져오므로 소비자가 몇이든 서로를 안 민다. 같은 모양이
 ///   `events.fetch` 다
-///   (`docs/adr/0633-event-feed-delivery.md`).
+///   (`docs/adr/0033-event-feed-delivery.md`).
 ///   이 결정은
-///   `docs/adr/0634-output-cursor-contract.md`.
+///   `docs/adr/0034-output-cursor-contract.md`.
 ///
 /// 둘 다 응답에 보존 구간(`retention_start`/`retention_end`)·다음 위치
 /// (`next_cursor`)·잃은 바이트(`skipped`)·스트림 표지(`stream`)를 싣는다. `text` 는
@@ -213,7 +213,7 @@ fn refused(
 /// `surface.read_since_mark` 과 **다른 커서**를 쓴다. 같은 커서를 쓰면 에이전트의
 /// `surface.set_mark` 이 스캐너의 관측 창을 밀고, 아무도 mark 를 안 세운 surface 에서는
 /// 폴링마다 버퍼 전체가 다시 실린다
-/// (`docs/adr/0613-terminal-io-and-process-lifetime.md`).
+/// (`docs/adr/0013-terminal-io-and-process-lifetime.md`).
 ///
 /// 읽기가 커서를 전진시키므로 **같은 구간을 두 번 받을 수 없다.** 그래서 이 이름의
 /// 소비자는 하나라는 전제 위에 있다 — 둘이 부르면 서로의 바이트를 먹고 그 손실은

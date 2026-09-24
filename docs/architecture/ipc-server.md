@@ -140,8 +140,8 @@ caller별 값이 필요하면 별도의 개인정보·권한 범위를 검토한
 
 ## 관련
 
-- [전송 설계](../adr/0606-bounded-ipc-transport.md)
-- [실행 순서와 기한](../adr/0607-ipc-scheduling-and-deadlines.md)
-- [진단 설계](../adr/0608-ipc-pressure-observability.md)
+- [전송 설계](../adr/0006-bounded-ipc-transport.md)
+- [실행 순서와 기한](../adr/0007-ipc-scheduling-and-deadlines.md)
+- [진단 설계](../adr/0008-ipc-pressure-observability.md)
 - [데이터 흐름](data-flows.md)
 - [저장소 상태](../design/systems/storage.md)

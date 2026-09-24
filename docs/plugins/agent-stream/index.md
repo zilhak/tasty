@@ -7,7 +7,7 @@
 - **코드**: `crates/tasty-plugin-agent-stream/`
 - **권한**: `surface.read`(세션 id meta 조회 · 대상 생존 확인) · `fs.read`(transcript 읽기) · `fs.write`(data_dir 의 watch 스냅샷 쓰기) · `network`(SSE 엔드포인트 bind)
 - **화면**: 없음
-- **근거**: [Agent Stream 설계](../../adr/0651-agent-transcript-stream.md) — 수집·SSE 노출·요청 매칭. [웹훅 신뢰 모델](../../adr/0632-webhook-admission.md).
+- **근거**: [Agent Stream 설계](../../adr/0044-agent-transcript-stream.md) — 수집·SSE 노출·요청 매칭. [웹훅 신뢰 모델](../../adr/0032-webhook-admission.md).
 
 > **예제로서**: **상주 background 스레드 + plugin 자체 HTTP 서버 + CLI/IPC namespace** 예제 — SDK 가 async 를 지원하지 않는 조건에서 파일 tail 루프를 얹는 최소 형태 → [plugin-development](../../dev-guide/plugin-development.md#cli--ipc-namespace) · [§10 한계](../../dev-guide/plugin-development.md#10-한계-현재-sdk).
 
@@ -129,7 +129,7 @@ thinking, tool_use, turn_end 등 여러 이벤트가 나올 수 있으므로 UUI
 
 ## SSE 엔드포인트
 
-수집한 이벤트를 외부 소비자(FE 서버 등)가 구독해 받아가는 채널이다. plugin 이 **자기 프로세스에서** HTTP 서버를 연다 — 본체 웹훅 리스너는 인바운드 전용이라 재사용할 수 없다(응답에 내부 데이터가 실릴 코드 경로가 없다). 근거·대안·재검토 조건은 [Agent Stream 설계](../../adr/0651-agent-transcript-stream.md).
+수집한 이벤트를 외부 소비자(FE 서버 등)가 구독해 받아가는 채널이다. plugin 이 **자기 프로세스에서** HTTP 서버를 연다 — 본체 웹훅 리스너는 인바운드 전용이라 재사용할 수 없다(응답에 내부 데이터가 실릴 코드 경로가 없다). 근거·대안·재검토 조건은 [Agent Stream 설계](../../adr/0044-agent-transcript-stream.md).
 
 ```bash
 tasty agent-stream serve --port 8787                 # loopback, 무인증
@@ -202,7 +202,7 @@ SSE 의 `id` 는 수집 파이프라인의 전역 단조 증가 `seq` 이고, �
 
 `serve` 설정(bind/port/token)은 watch 스냅샷(`<data_dir>/watches.json`)에 함께 남고, 강제 재시작 후 자동으로 다시 bind 한다. 되살아나지 않으면 watch 는 복구됐는데 붙을 곳이 없어 "재구독으로 복구" 전제가 무너진다. 재기동 bind 가 실패하면 경고만 남기고 수집은 계속된다(`poll` 로는 계속 읽을 수 있다). **스냅샷의 `serve` 절은 지금 떠 있는(혹은 떠 있지 않은) 엔드포인트를 기술한다** — `serve` / `serve-stop` 이 리스너를 건드린 뒤라면 레지스트리 락이 오염돼 있어도 기록을 건너뛰지 않는다. 다만 스냅샷 파일 쓰기 자체가 실패하면(디스크 오류 등) 경고만 남고 옛 스냅샷이 남는다. 이 둘이 어긋나면 재시작이 사용자가 닫은 주소를 열거나 열어둔 주소를 열지 않는다.
 
-`serve`를 다시 호출해 실제 bind가 실패하면 이전 리스너는 이미 종료된 상태다. 저장된 serve 설정도 지우므로 재시작해도 이전 주소를 다시 열지 않는다. 대화가 전달되는 주소를 실패한 요청 뒤에 자동으로 다시 열지 않기 위한 선택이다. 다시 열려면 serve를 명시적으로 호출한다. 노출 정책의 이유는 [Agent Stream 설계](../../adr/0651-agent-transcript-stream.md#decision)를 따른다.
+`serve`를 다시 호출해 실제 bind가 실패하면 이전 리스너는 이미 종료된 상태다. 저장된 serve 설정도 지우므로 재시작해도 이전 주소를 다시 열지 않는다. 대화가 전달되는 주소를 실패한 요청 뒤에 자동으로 다시 열지 않기 위한 선택이다. 다시 열려면 serve를 명시적으로 호출한다. 노출 정책의 이유는 [Agent Stream 설계](../../adr/0044-agent-transcript-stream.md#decision)를 따른다.
 
 인자 검증에서 거절된 요청은 다르다. --port 누락·범위 오류, IP로 해석할 수 없는 bind, 토큰 없는 loopback 밖 bind는 이전 서버를 종료하기 전에 거절한다. 이 경우 실행 중인 엔드포인트와 저장된 설정을 유지한다.
 
@@ -253,7 +253,7 @@ FE 가 요청마다 **자기가 만든 `request_id`** 를 웹훅 페이로드에
 
 ### 시퀀스 구조 — 호출 순서
 
-웹훅에 거는 `IpcSequence` 는 두 스텝이다. `${body.*}` 는 **값 leaf 에만** 치환되고 method·객체 key 는 owner 가 고정한 리터럴이다(ADR-0632, `src/hook_handler/exec.rs` 의 `substitute_params`).
+웹훅에 거는 `IpcSequence` 는 두 스텝이다. `${body.*}` 는 **값 leaf 에만** 치환되고 method·객체 key 는 owner 가 고정한 리터럴이다(ADR-0032, `src/hook_handler/exec.rs` 의 `substitute_params`).
 
 1. `agent_stream.turn_start` — `surface`(owner 고정 리터럴) + `request_id`(`${body.request_id}`)
 2. `claude.tell` — `message`(`${body.prompt}`) + `surface`(owner 고정 리터럴)
@@ -266,14 +266,14 @@ FE 가 요청마다 **자기가 만든 `request_id`** 를 웹훅 페이로드에
 
 | 벡터 | 처리 |
 |------|------|
-| method·객체 key 주입 | 불가능. `${body.*}` 는 **값 leaf 에만** 치환되고 method(`agent_stream.turn_start`)·key(`surface`/`request_id`)는 owner 고정 리터럴이다(ADR-0632). 발신자는 어느 IPC 를 부를지도, 어느 surface 에 걸지도 못 정한다 |
+| method·객체 key 주입 | 불가능. `${body.*}` 는 **값 leaf 에만** 치환되고 method(`agent_stream.turn_start`)·key(`surface`/`request_id`)는 owner 고정 리터럴이다(ADR-0032). 발신자는 어느 IPC 를 부를지도, 어느 surface 에 걸지도 못 정한다 |
 | 빈/누락 `request_id` | **거부**(`missing_request_id`). 매칭이 성립할 값이 없다 |
 | 거대 `request_id` (증폭) | **거부**(`request_id_too_long`, 512 바이트 상한). 상한이 없으면 거대한 값이 열린 턴에 저장돼 그 턴의 **모든** 이벤트(SSE·poll)에 복제된다 — 한 번의 큰 페이로드가 스트림 전체로 증폭되는 것을 저장 단계에서 막는다. 자르지 않고 거부해 잘린 id 가 매칭을 깨는 것도 피한다. 타입은 문자열/숫자만 받아 문자열로 정규화한다 |
 | `timeout_secs` 극단값 | 범위로 **클램프**(10s~86400s). 0 이나 과대값으로 타임아웃 안전망을 무력화할 수 없다 |
 
 > **웹훅 JSON 입력 body 상한은 본체 리스너가 적용한다.** 요청당 기본 1 MiB이며 `TASTY_WEBHOOK_MAX_BODY_BYTES`로 조정한다. 선언된 `Content-Length`가 상한을 넘거나 chunked body가 상한을 넘으면 `413 payload too large`로 거부하고 시퀀스를 실행하지 않는다. `request_id`의 512바이트 상한은 그 다음 단계에서 이벤트마다 복제되는 값을 제한한다.
 >
-> body 크기는 경로 매칭·인증보다 먼저 검사한다. 따라서 인증은 이 크기 제한을 대신하지 않으며, 토큰 없는 작은 요청은 `401 unauthorized`, 상한을 넘는 요청은 인증 전에 `413`을 받는다. 남용차단은 `401`·`413` 반복도 집계한다. 이 상한은 JSON 입력에 적용된다. 413 응답은 `Connection: close`를 싣고 잔여 body를 읽지 않은 채 연결을 닫는다([ADR-0632](../../adr/0632-webhook-admission.md)). 입력 상한은 총 메모리의 보장이 아니다. 요청당 상한이 동시 요청 수나 연결 수를 제한하지는 않으므로, 외부 노출 시 프록시에서 연결 제한·타임아웃·TLS를 설정한다. 현재 보장은 [웹훅 body 상한](../../features/webhook/index.md#body-상한-요청당)에 있다. 본체와 같은 `tiny_http` 사본으로 빌드되지만 SSE 서버의 응답 경로는 상류 동작 그대로다.
+> body 크기는 경로 매칭·인증보다 먼저 검사한다. 따라서 인증은 이 크기 제한을 대신하지 않으며, 토큰 없는 작은 요청은 `401 unauthorized`, 상한을 넘는 요청은 인증 전에 `413`을 받는다. 남용차단은 `401`·`413` 반복도 집계한다. 이 상한은 JSON 입력에 적용된다. 413 응답은 `Connection: close`를 싣고 잔여 body를 읽지 않은 채 연결을 닫는다([ADR-0032](../../adr/0032-webhook-admission.md)). 입력 상한은 총 메모리의 보장이 아니다. 요청당 상한이 동시 요청 수나 연결 수를 제한하지는 않으므로, 외부 노출 시 프록시에서 연결 제한·타임아웃·TLS를 설정한다. 현재 보장은 [웹훅 body 상한](../../features/webhook/index.md#body-상한-요청당)에 있다. 본체와 같은 `tiny_http` 사본으로 빌드되지만 SSE 서버의 응답 경로는 상류 동작 그대로다.
 
 ### 정책 — 겹침 · 중복 · 막힌 턴 · 턴 밖 이벤트
 
@@ -317,7 +317,7 @@ curl -X POST "$WEBHOOK_URL" \
 
 그러면 surface 42 의 claude 가 그 프롬프트를 받아 실행하고, 그 실행이 만든 SSE 이벤트에 `"request_id":"req-8f3a"` 가 실린다. 그 요청의 `turn_end` 도 같은 값으로 실려 종료를 알린다.
 
-> **인증 토큰을 반드시 건다.** 이 배선은 외부 발신자가 claude 에게 임의 자연어를 주입하게 하고 claude 는 셸에 닿는다. ADR-0632 은 이 경우를 이미 다룬다 — owner 가 값 슬롯에 민감한 IPC 를 열면 그 트리거 책임은 owner 몫이고, **대응책은 인증으로 트리거 주체를 좁히는 것**이다. 무인증 배선을 예시로 쓰지 않는다. 토큰 없는/틀린 호출은 본체 웹훅 리스너가 `401 unauthorized`로 거부하고 시퀀스를 실행하지 않는다. 웹훅의 거부 바디는 고정 문자열이며, SSE 구독의 빈 `401` 바디와 다르다. body 상한 초과나 남용차단 중인 요청은 각각 `413`·`429`가 먼저 적용된다. 웹훅 토큰은 SSE 토큰과 같은 신뢰 수준·같은 저장(설정 파일 평문, unix `0600`)이다.
+> **인증 토큰을 반드시 건다.** 이 배선은 외부 발신자가 claude 에게 임의 자연어를 주입하게 하고 claude 는 셸에 닿는다. ADR-0032 은 이 경우를 이미 다룬다 — owner 가 값 슬롯에 민감한 IPC 를 열면 그 트리거 책임은 owner 몫이고, **대응책은 인증으로 트리거 주체를 좁히는 것**이다. 무인증 배선을 예시로 쓰지 않는다. 토큰 없는/틀린 호출은 본체 웹훅 리스너가 `401 unauthorized`로 거부하고 시퀀스를 실행하지 않는다. 웹훅의 거부 바디는 고정 문자열이며, SSE 구독의 빈 `401` 바디와 다르다. body 상한 초과나 남용차단 중인 요청은 각각 `413`·`429`가 먼저 적용된다. 웹훅 토큰은 SSE 토큰과 같은 신뢰 수준·같은 저장(설정 파일 평문, unix `0600`)이다.
 
 ### FE 계약 요약
 
@@ -326,7 +326,7 @@ curl -X POST "$WEBHOOK_URL" \
 - 응답 이벤트는 `request_id` 로 요청에 되짚는다. `request_id` 가 없는 이벤트는 요청 밖에서 나온 것이다.
 - 끊기면 `Last-Event-ID` 로 재구독한다(SSE 절). `request_id` 는 재전송 프레임에도 그대로 실린다.
 
-근거·대안·재검토 조건은 [Agent Stream 설계](../../adr/0651-agent-transcript-stream.md), 웹훅 신뢰 모델은 [ADR-0632](../../adr/0632-webhook-admission.md).
+근거·대안·재검토 조건은 [Agent Stream 설계](../../adr/0044-agent-transcript-stream.md), 웹훅 신뢰 모델은 [ADR-0032](../../adr/0032-webhook-admission.md).
 
 ## 비-목표
 
@@ -360,10 +360,10 @@ curl -X POST "$WEBHOOK_URL" \
 
 ## 관련
 
-- [Agent Stream 설계](../../adr/0651-agent-transcript-stream.md) — transcript 수집, SSE 공개 범위와 전달 보장, 요청 ID와 턴의 매칭을 선택한 이유
-- [ADR-0632](../../adr/0632-webhook-admission.md) — 인바운드 웹훅 신뢰 모델(값/흐름 분리 · 단방향 ACK · 인증)
+- [Agent Stream 설계](../../adr/0044-agent-transcript-stream.md) — transcript 수집, SSE 공개 범위와 전달 보장, 요청 ID와 턴의 매칭을 선택한 이유
+- [ADR-0032](../../adr/0032-webhook-admission.md) — 인바운드 웹훅 신뢰 모델(값/흐름 분리 · 단방향 ACK · 인증)
 - [features/webhook](../../features/webhook/index.md) — 웹훅 lifetime · 인증 위치 · 남용차단 · 영속화
-- [ADR-0632](../../adr/0632-webhook-admission.md) — 같은 HTTP 레이어(`tiny_http`)를 고른 근거
+- [ADR-0032](../../adr/0032-webhook-admission.md) — 같은 HTTP 레이어(`tiny_http`)를 고른 근거
 - [claude](../claude/index.md) — `claude-session-id` surface meta 를 기록하는 쪽
 - [dev-guide/plugin-development](../../dev-guide/plugin-development.md) — §9.1 반영 절차 · §10 한계
 - [features/terminal-output](../../features/terminal-output/index.md) — 화면 기반 출력 구조화(다른 소스)

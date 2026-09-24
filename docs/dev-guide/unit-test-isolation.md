@@ -3,10 +3,10 @@
 유닛 테스트의 결과는 **실행하는 사람의 로컬 상태에 좌우되면 안 된다.** 사용자 홈의
 `config.toml` 값 하나로 무관한 테스트가 깨지면, "내 변경이 깬 것인가" 판정이 매번 수동
 대조가 되고 CI 러너와 개발자 머신의 결과가 갈린다. 결정 근거는
-[ADR-0644](../adr/0644-test-isolation-and-harness.md).
+[ADR-0045](../adr/0045-test-isolation-and-harness.md).
 
 e2e 테스트의 격리 단위(프로세스 vs workspace)는 다른 축이다 — [e2e-tests](e2e-tests.md) ·
-[ADR-0644](../adr/0644-test-isolation-and-harness.md).
+[ADR-0045](../adr/0045-test-isolation-and-harness.md).
 
 ## 1. 설정: 테스트 생성자는 `Settings::default()` 를 쓴다
 
@@ -103,7 +103,7 @@ assert!(path.starts_with(home.path().join("screenshots")));
 이다. 셋이 한 바이너리에 같이 들어갈 수 없다는 것은 값으로 확인된다:
 
 - `src/lib.rs` 의 `pub(crate) use tasty_test_support as test_support;` — 선언에
-  **`#[cfg(test)]` 가 붙어 있다.** 루트에 `lib` 타깃이 생긴 뒤에도([ADR-0601](../adr/0601-crate-dependency-boundaries.md))
+  **`#[cfg(test)]` 가 붙어 있다.** 루트에 `lib` 타깃이 생긴 뒤에도([ADR-0001](../adr/0001-crate-dependency-boundaries.md))
   그 cfg 는 이 크레이트를 *의존으로* 컴파일할 때 세워지지 않으므로 **다른 크레이트가 이
   이름을 링크할 수 없다.** 게다가 이 패키지를 의존으로 드는 워크스페이스 크레이트는
   **하나도 없다**(`cargo metadata` 로 셌다).
@@ -184,7 +184,7 @@ assert_eq!(result, Some(tmp.path().join("notes")));
 이 규칙은 `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와도 맞물린다 — 로컬 작업 폴더를 언급하면 하위
 경로가 무엇이든, 아예 없든 그 테스트가 잡으므로(P6) 픽스처 때문에 allowlist 에 예외를 두지
 않는다. 금지 범위와 범위 밖 항목은
-[ADR-0648](../adr/0648-documentation-structure-and-evidence.md) 가 정본이다.
+[ADR-0049](../adr/0049-documentation-structure-and-evidence.md) 가 정본이다.
 
 의존이 없는 작은 fixture에서 직접 이름을 짓는 경우에는 PID로 프로세스를 가르고,
 함수 호출 사이에 유지되는 `static` 단조 counter로 같은 프로세스의 재호출을 가른다.
@@ -217,7 +217,7 @@ find "$H" -mindepth 1                                # (가) 출력이 비어야
   실측 2026-09-20(20 CPU · 부하 55): 두 완주를 `--test-threads=8` 로 겹치자 한쪽만 2 건
   빨갰는데 **공유 홈 잔여물은 0** 이었고, 같은 기계에서 `--test-threads=3` 으로 낮추니 양쪽이
   단독과 같은 `0 failed` 가 됐다. 빨간 2 건은 시간 단정이었고, 그 시험 자신의 대조군
-  ([`ControlProbe`](../adr/0645-verification-evidence-and-diagnostics.md))
+  ([`ControlProbe`](../adr/0046-verification-evidence-and-diagnostics.md))
   이 "대조군도 기준선의 6.6 배로 부풀었다 — 러너가 굶은 것이라 코드에 대한 증거가 아니다" 를
   실패문에 찍어 축을 갈라 줬다. 그러니 이 관측은 **(가) 와 짝으로만 읽는다**: 잔여물이 0 인데
   failed 수가 갈리면 그것은 격리가 아니라 기계다. 대조군이 없는 단정이 갈렸으면 스레드 수를
@@ -259,7 +259,7 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
 위 1~4 는 테스트가 **사용자 환경**을 읽어 로컬 상태에 좌우되는 축이다. 이 절은 다른 축 —
 테스트끼리 **같은 프로세스에서 병렬로** 공유 상태를 밟아 스케줄링에 따라 나타났다 사라지는
 실패다. 부류별 표준 처방과 근거·대안·재검토 조건은
-[ADR-0644](../adr/0644-test-isolation-and-harness.md).
+[ADR-0045](../adr/0045-test-isolation-and-harness.md).
 
 ### 형태 A — 프로세스 내 전역 공유 상태
 
@@ -346,7 +346,7 @@ red 다. 처방은 벽시계 폴링을 **이벤트 대기**로 바꾸는 것 —
   deadline 을 정확히 소진하면 C, 즉시 실패면 A/B(그 다음 자원 종류로 A·B 를 가른다).
 - 원인을 **후보 열거로 추정하지 말고 계측으로** 가른다 — 실패 지점에 상태 플래그(예: 자식
   사망 여부 · 이벤트 방출 여부)를 심어 그 조합이 어느 칸인지로 답을 낸다. 성공 회차·실패
-  회차 **두 극에 다 있는** 로그·패닉은 판별력이 0 이다([테스트 검증 기준](../adr/0645-verification-evidence-and-diagnostics.md)).
+  회차 **두 극에 다 있는** 로그·패닉은 판별력이 0 이다([테스트 검증 기준](../adr/0046-verification-evidence-and-diagnostics.md)).
 
 ### temp 경로 판정의 변수 범위
 
@@ -446,7 +446,7 @@ strace -f -e trace=socketpair -o /tmp/sp.txt <그 경로>
 grep -c 'socketpair(AF_UNIX' /tmp/sp.txt
 ```
 
-수를 여기 적지 않는다([ADR-0648](../adr/0648-documentation-structure-and-evidence.md))
+수를 여기 적지 않는다([ADR-0049](../adr/0049-documentation-structure-and-evidence.md))
 — 시험이 늘면 같이 는다. 이 수의 성질만 적어 둘 값이 있다: **병렬도에 안 움직인다.**
 `--test-threads` 를 바꿔도 호출 총수는 같다(바뀌는 것은 동시에 살아 있는 수뿐이다).
 그래서 이 한 수는 "얼마나 많이 띄우는가" 만 재고 "얼마나 겹치는가" 에 오염되지 않는다.

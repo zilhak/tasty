@@ -86,7 +86,7 @@ TTL 기반 정리 3건이 `Lax` 를 쓴다. 셋 다 원래 **"누가 건드릴 �
 **직전에** 도는 덕분에 동시 개수 상한 판정을 정확하게 만든다(죽은 항목을 먼저 치우고
 상한을 본다). 대체하면 "실제로는 idle 인 PTY 때문에 spawn 이 상한 초과로 실패" 하는
 회귀가 된다 — 주기 타이머는 최대 90초 뒤에나 도는데 spawn 은 지금 성공해야 한다.
-두 경로는 보완 관계다([터미널 프로세스 수명](../adr/0613-terminal-io-and-process-lifetime.md)).
+두 경로는 보완 관계다([터미널 프로세스 수명](../adr/0013-terminal-io-and-process-lifetime.md)).
 
 두 경로가 공존하면 **후처리가 갈라지는 것**이 다음 위험이다. headless PTY 회수는
 registry 제거 + `TerminalStore` 제거 + waker 게이트 해제 셋을 한 묶음으로 해야 하는데
@@ -381,7 +381,7 @@ gui 의 타이머는 `about_to_wait` 앞머리에서만 돈다. winit 은 한 it
 계속 부르면 타이머가 통째로 멈춘다. IPC 가 그 형태였다 — 회차가 답을 주면 호출자가 곧바로 다음
 명령과 wake 를 보낸다. 그래서 `IpcReady` 처리기는 직전 회차가 끝난 뒤 한 회차 예산이 지났을 때만
 회차를 연다(`src/app/ipc.rs` 의 `IpcPacer`,
-[ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md)).
+[ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md)).
 예산에서 잘린 회차가 보내는 재깨움은 그 규칙을 건너뛰지만 `about_to_wait` 한 번 사이에
 한 번뿐이다 — 한도를 풀면 잘림과 재깨움이 사슬을 이뤄 같은 기아가 돌아온다(실측으로 확인됨).
 사용자 이벤트 처리기에 새로 무거운 일을 넣을 때도 같은 물음을 한다 — 그 일이 끝나면서 같은
@@ -389,7 +389,7 @@ gui 의 타이머는 `about_to_wait` 앞머리에서만 돈다. winit 은 한 it
 
 headless 는 이벤트 하나마다 `run_due_timers` 를 부르므로 타이머에는 이 형태가 없다. 대신 같은 이벤트
 채널을 쓰는 다른 wake 가 굶을 수 있어서, IPC waker 는 채널에 `IpcReady` 를 하나만 두고 예산에서 잘린
-회차가 루프를 다시 깨운다([ADR-0607](../adr/0607-ipc-scheduling-and-deadlines.md)).
+회차가 루프를 다시 깨운다([ADR-0007](../adr/0007-ipc-scheduling-and-deadlines.md)).
 
 ## 새 주기 작업을 추가할 때
 

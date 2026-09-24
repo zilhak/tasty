@@ -43,7 +43,7 @@
 //! "받아오거나 명부에 적어라" 라서 무엇도 헐겁게 만들지 않는다.
 //!
 //! 래스터로 재는 선택지는 **이 크레이트에서 불가능하다.** `doc-guards.yml` 이 이 타깃을
-//! 경로 필터 없이 매 push 돌릴 수 있는 이유가 이 크레이트의 **의존 0**(ADR-0647)이고,
+//! 경로 필터 없이 매 push 돌릴 수 있는 이유가 이 크레이트의 **의존 0**(ADR-0048)이고,
 //! 래스터 판정기는 usvg·resvg·tiny-skia 를 끌어와 그 성질을 깬다. 값이 아니라 **채널의
 //! 존재 조건**이 판정 방식을 정한 자리다.
 //!
@@ -269,7 +269,7 @@ fn vendor_files() -> BTreeMap<String, String> {
 
 /// `Icon.jsx` 의 `ICON_PATHS` 레지스트리 → 이름 → inner 마크업.
 ///
-/// 의존 0 이라 파서를 쓸 수 없다(ADR-0647). 블록을 잘라 줄 단위로 읽는다 — 항목이
+/// 의존 0 이라 파서를 쓸 수 없다(ADR-0048). 블록을 잘라 줄 단위로 읽는다 — 항목이
 /// `  name: '…',` 한 줄 형태인 데 기대고, 그 형태가 깨지면 [`PARSE_FLOOR`] 가 잡는다.
 fn vendor_registry(src: &str) -> BTreeMap<String, String> {
     let start = src
@@ -401,7 +401,7 @@ const DIVERGENT_ENVELOPE: &[(&str, &str)] = &[
 /// 여는 `<svg …>` 태그에서 속성을 모은다.
 ///
 /// 값이 따옴표면 그 문자열을, JSX 의 `name={…}` 이면 [`JSX_EXPR`] 를 넣는다. 의존 0 이라
-/// 파서를 못 쓰므로(ADR-0647) 손으로 훑는다 — 이 좌변은 속성 몇 개짜리 여는 태그 하나다.
+/// 파서를 못 쓰므로(ADR-0048) 손으로 훑는다 — 이 좌변은 속성 몇 개짜리 여는 태그 하나다.
 fn open_tag_attrs(tag: &str) -> BTreeMap<String, String> {
     let b = tag.as_bytes();
     let mut out = BTreeMap::new();

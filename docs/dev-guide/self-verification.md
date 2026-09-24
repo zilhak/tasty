@@ -156,14 +156,14 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
    |---|---|---|
    | `plugin enable <id>` | 지목한 1 개 | — |
    | kind 지목 생성 요청 (`--type markdown`) | 그 kind 의 **소유자 1 개** | 0.14 s (두 번째 0.09 s) |
-   | plugin namespace 한 번 (`markdown recent`) | 활성 owner + 매칭 IPC hook의 active extension | 기존 전량 기동에서 범위 축소(ADR-0626) |
+   | plugin namespace 한 번 (`markdown recent`) | 활성 owner + 매칭 IPC hook의 active extension | 기존 전량 기동에서 범위 축소(ADR-0026) |
    | attach mesh mirror 세션 | 설치된 **9 개 전부** | — |
 
-   kind 지목은 소속을 **매니페스트 ∩ `plugins.toml`** 로 먼저 묻는다([ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)). 그래서 ① 없는 이름은 plugin 을 하나도 안 띄우고(실측 `--type nosuchkind` 0.09 s, `running` 0), ② **`plugin disable` 한 plugin 의 kind 도 안 띄운다**(실측 0.09 s, `running` 0). ②가 없으면 그 요청이 영영 안 뜰 plugin 을 기다려 **데몬 IPC 전체가 선다** — 고치기 전 실측이 그 요청 5.34 s · 무관한 `list info` 5.04 s · 덤으로 8 개 기동이었다.
+   kind 지목은 소속을 **매니페스트 ∩ `plugins.toml`** 로 먼저 묻는다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)). 그래서 ① 없는 이름은 plugin 을 하나도 안 띄우고(실측 `--type nosuchkind` 0.09 s, `running` 0), ② **`plugin disable` 한 plugin 의 kind 도 안 띄운다**(실측 0.09 s, `running` 0). ②가 없으면 그 요청이 영영 안 뜰 plugin 을 기다려 **데몬 IPC 전체가 선다** — 고치기 전 실측이 그 요청 5.34 s · 무관한 `list info` 5.04 s · 덤으로 8 개 기동이었다.
 2. **하나만 띄우려면 `plugin enable <id>` 를 쓴다.** 이 둘은 헤드리스에도 배선돼 있고(`plugin.enable` · `plugin.disable`), **지목한 하나만** 기동한다. 실측(2026-09-09, 격리 홈 데몬): 부팅 직후 9 개 전부 `running=false` → `tasty plugin enable com.tasty.image` → `{"enabled":"com.tasty.image"}` → `plugin list` 의 `running` 이 `["com.tasty.image"]` 하나다. 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다 — `plugin.install`·`remove`·`grant`·`revoke`·`upgrade_builtins`·`audit_follow` 는 아직 없어서 `-32017 … gated out of this build combination (headless / release)` 로 답한다.
 
-   namespace 호출은 공통 manager에서 owner만 준비한다. 매칭 pre/post IPC hook이 있는 active extension은 그 호출에 필요한 경우에만 함께 준비한다. 미등록 prefix·disabled owner·게이트 거부는 기동 0이며, 이미 running이면 재시작하지 않는다. 등록 prefix 안의 오타는 완전한 IPC 메서드 명부가 없어 owner가 판정한다. [ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md). 기동 수는 fresh 격리 홈의 fake plugin start 로그와 plugin.list를 전후 대조하고 GUI의 부팅 기동과 호출의 추가 기동을 구분한다.
-3. **선언된 surface kind 는 plugin 이 뜨는 순간 전부 등록된다 — 조합에 따라 갈리지 않는다.** `register_one_surface_kind` 는 `rendering` 세 종류(`webview`/`remote`/`egui-mesh`)를 모두 등록한다([ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)). 실측(2026-09-09, 갓 만든 격리 홈 헤드리스 데몬, 9 개 기동 후):
+   namespace 호출은 공통 manager에서 owner만 준비한다. 매칭 pre/post IPC hook이 있는 active extension은 그 호출에 필요한 경우에만 함께 준비한다. 미등록 prefix·disabled owner·게이트 거부는 기동 0이며, 이미 running이면 재시작하지 않는다. 등록 prefix 안의 오타는 완전한 IPC 메서드 명부가 없어 owner가 판정한다. [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md). 기동 수는 fresh 격리 홈의 fake plugin start 로그와 plugin.list를 전후 대조하고 GUI의 부팅 기동과 호출의 추가 기동을 구분한다.
+3. **선언된 surface kind 는 plugin 이 뜨는 순간 전부 등록된다 — 조합에 따라 갈리지 않는다.** `register_one_surface_kind` 는 `rendering` 세 종류(`webview`/`remote`/`egui-mesh`)를 모두 등록한다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)). 실측(2026-09-09, 갓 만든 격리 홈 헤드리스 데몬, 9 개 기동 후):
 
    | kind | 선언 (`plugin.show` 의 `declared_rendering`) | 등록됐나 (`registered`) | `new workspace --type <kind>` |
    |---|---|---|---|
@@ -172,7 +172,7 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
    | `image` | `egui-mesh` | `true` (`effective_rendering: "egui-mesh"`) | 생성됨 |
    | `mesh_demo` | `egui-mesh` | `true` (`effective_rendering: "egui-mesh"`) | 생성됨 |
 
-   **한때 이 자리는 정반대였다** — `webview`/`remote` 를 skip 하고 `egui-mesh` 만 등록해, 위 표의 앞 두 줄이 `registered: false` + `-32603 unknown surface kind` 였다. 그 skip 의 사유("렌더가 창을 전제한다")는 [ADR-0622](../adr/0622-remote-mirror-content-and-queries.md) 로 무너졌다: mirror 가 나르는 것은 픽셀이 아니라 원문이고 그리는 것은 client 다. 그러니 **옛 회차의 그 표를 근거로 삼지 마라.** 그때 skip 의 증거로 쓰던 `debug-dev.log` 의 `skipped in headless` 줄도 이제 안 나온다 — 그 줄이 없는 것은 로그가 꺼진 것이 아니라 skip 이 없어진 것이다.
+   **한때 이 자리는 정반대였다** — `webview`/`remote` 를 skip 하고 `egui-mesh` 만 등록해, 위 표의 앞 두 줄이 `registered: false` + `-32603 unknown surface kind` 였다. 그 skip 의 사유("렌더가 창을 전제한다")는 [ADR-0022](../adr/0022-remote-mirror-content-and-queries.md) 로 무너졌다: mirror 가 나르는 것은 픽셀이 아니라 원문이고 그리는 것은 client 다. 그러니 **옛 회차의 그 표를 근거로 삼지 마라.** 그때 skip 의 증거로 쓰던 `debug-dev.log` 의 `skipped in headless` 줄도 이제 안 나온다 — 그 줄이 없는 것은 로그가 꺼진 것이 아니라 skip 이 없어진 것이다.
 
    ★ 표의 **선언 열과 등록 열은 여전히 서로 다른 물음**이다. `declared_rendering` 은 매니페스트가 요청한 것이고 `registered` 는 host 가 받아들였는지다 — 지금은 둘이 일치하지만, 일치가 보장이라서가 아니라 **그 plugin 이 떠 있어서**다. 안 뜬 plugin 의 kind 는 선언만 있고 사실이 없다. 사실만 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다. 만들어 보는 술어는 이제 대조용이다.
 
@@ -490,7 +490,7 @@ ls target/debug/deps/*.d | sed 's/-[0-9a-f]*\.d$//' \
 |---|---|---|
 
 셋째 칸이 산출물이다. 앞의 두 칸은 조사 중간값이라 **문서에 적지 않는다** — 커밋마다
-바뀐다([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
+바뀐다([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)).
 셋째 칸이 **0 인 축도 값이다**: 그 축은 문체와 무관하다는 뜻이고, 왜 무관한지가
 다음 조사의 술어 폭을 정한다.
 

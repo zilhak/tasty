@@ -8,9 +8,9 @@
 `crates/tasty-doc-guards/src/bin/adr-renumber.rs`, 합성 레포 시험은
 `crates/tasty-doc-guards/tests/adr_renumber_bin.rs` 에 있다.
 
-> **돌리기 전에**: 재번호는 [ADR-0649](../adr/0649-architecture-decision-records.md)
-> (안 쓴 번호도 재사용하지 않는다)와 정면으로 부딪친다 — 그 ADR 이 막으려는 것이 바로 "옛 번호를
-> 부르는 인용이 다른 문서를 가리키게 되는 것" 이다. 재번호를 하려면 그 결정을 먼저 대체한다.
+번호 변경을 명시적으로 요청받은 대규모 재정리에 사용한다. 평소에는 기존 번호를 유지한다.
+[ADR 작성과 관리](../adr/0050-architecture-decision-records.md)에 따라 이전 번호와 새 번호의 대응표를
+보관하고, 저장소 안의 인용을 모두 갱신한다. 다른 브랜치나 외부 링크의 옛 번호는 자동으로 바뀌지 않는다.
 
 ## 명령
 

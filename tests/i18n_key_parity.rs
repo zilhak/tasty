@@ -258,7 +258,7 @@ const PENDING_FIX_MISSING_KEYS: &[(&str, &str)] = &[
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
+/// (`docs/adr/0049-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
 /// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";

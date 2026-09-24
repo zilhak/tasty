@@ -6,7 +6,7 @@
 CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다.
 원격에 반영됐는지와 실제 실행 결과는
 [원격 설정 확인](#트리거는-어느-ref-의-것인가--작업-트리와-원격이-갈린다)을 따른다.
-선택 이유는 [CI와 복잡도 검사](../adr/0646-ci-and-complexity-checks.md)에 있다.
+선택 이유는 [CI와 복잡도 검사](../adr/0047-ci-and-complexity-checks.md)에 있다.
 
 > 아래에 남긴 2026-09-04~2026-09-08의 일부 측정 커밋은 당시 이력 정리로 현재 `main`에서
 > 찾을 수 없다. 과거 관측값으로만 읽고 현재 상태를 판단하려면 해당 절의 명령으로 다시 확인한다.
@@ -21,14 +21,14 @@ CI 설정 설명은 작업 트리의 `.github/workflows/`를 기준으로 한다
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [실측] |
 | headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 위 `--skip` 1 건을 돌리되 빨개져도 잡을 안 막는다) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
-| 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0647](../adr/0647-source-guards-and-exemptions.md)) | [실측] |
+| 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0048](../adr/0048-source-guards-and-exemptions.md)) | [실측] |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 동결 총합 래칫 | `bash scripts/check-frozen-sum-ratchet.sh` | `complexity-check.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 셸 자산 정적 검사 (**잔여 0 hard-fail** · 검사기 부재는 rc 2) | `bash scripts/check-shell-assets.sh` — 잡이 `scripts/install-shellcheck.sh` 로 검사기를 먼저 놓는다 | `script-gates.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동. ★ **모수**: 이 채널은 **추적되는** 셸 자산 전부(`*.sh` + shebang 이 셸인 것)를 본다. pre-commit 의 `A.3` 은 **staged 경로**를 본다 — 새 파일은 아직 추적 밖이라 전수 모수에 안 들어오므로, 그 훅이 새 자산을 처음 보는 자리다. 문턱(warning 이상)과 그 아래를 안 세기로 한 근거는 [셸 검사와 커밋 범위](ci-gates.md#셸-검사와-커밋-범위) | 등급 미정 |
-| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 문서만 담은 push(`docs/**`·`site/**`·`*.md`)는 제외하되, `src/`·`lang/`·`assets/` 아래의 `.md` 는 되살린다** · 수동. 스크립트가 그 세 디렉토리 아래를 확장자와 무관하게 판정하므로(`crates/tasty-plugin-markdown/assets/NOTICE.md`) `paths-ignore` 가 아니라 부정 패턴 `paths` 를 쓰고, **패턴 순서가 의미를 정한다**(뒤에 오는 패턴이 이긴다 — 워크플로 머리 주석). 발화는 필터 커밋 뒤 첫 push(run 35816936207, `91b75ef7d`)에서 실측했다 — `src/`·`lang/`·`assets/` 아래 `.md` 만 담은 push 의 발화는 **미측정**이다. ★ 판정 대상이 plugin 디렉토리가 아니라 **의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0650](../adr/0650-release-artifacts-and-versioning.md)) 필터가 넓다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라지고, 폐포는 `crates/` 밖의 **워크스페이스 밖 path 의존**(`[patch]` 로 끼운 `vendor/tiny_http`)까지 닿는다([플러그인 버전 비교](release.md#플러그인-버전-비교)). 그래서 경로를 목록으로 적지 않고 문서만 뺀다 — pre-commit `P.1` 도 같은 이유로 선필터가 없다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. **그 발행 모수는 push 전에도 한 번 재어진다** — pre-push `B.9` 가 git 이 stdin 으로 준 원격 tip 을 모수로 같은 스크립트를 부른다(아래 "로컬 훅이 앞당겨 주는 것"). 훅을 안 깐 체크아웃에서는 이 채널이 없고, 그때는 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
+| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 문서만 담은 push(`docs/**`·`site/**`·`*.md`)는 제외하되, `src/`·`lang/`·`assets/` 아래의 `.md` 는 되살린다** · 수동. 스크립트가 그 세 디렉토리 아래를 확장자와 무관하게 판정하므로(`crates/tasty-plugin-markdown/assets/NOTICE.md`) `paths-ignore` 가 아니라 부정 패턴 `paths` 를 쓰고, **패턴 순서가 의미를 정한다**(뒤에 오는 패턴이 이긴다 — 워크플로 머리 주석). 발화는 필터 커밋 뒤 첫 push(run 35816936207, `91b75ef7d`)에서 실측했다 — `src/`·`lang/`·`assets/` 아래 `.md` 만 담은 push 의 발화는 **미측정**이다. ★ 판정 대상이 plugin 디렉토리가 아니라 **의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0051](../adr/0051-release-artifacts-and-versioning.md)) 필터가 넓다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라지고, 폐포는 `crates/` 밖의 **워크스페이스 밖 path 의존**(`[patch]` 로 끼운 `vendor/tiny_http`)까지 닿는다([플러그인 버전 비교](release.md#플러그인-버전-비교)). 그래서 경로를 목록으로 적지 않고 문서만 뺀다 — pre-commit `P.1` 도 같은 이유로 선필터가 없다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. **그 발행 모수는 push 전에도 한 번 재어진다** — pre-push `B.9` 가 git 이 stdin 으로 준 원격 tip 을 모수로 같은 스크립트를 부른다(아래 "로컬 훅이 앞당겨 주는 것"). 훅을 안 깐 체크아웃에서는 이 채널이 없고, 그때는 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동. ★ 이 잡은 **두 물음**에 답하고 트리거가 물음마다 다르다. ㉠ **우리 변경이 만드는 것**(새 의존의 license·ban, 새로 직접 의존이 된 크레이트의 advisory, 쓰이지 않게 된 ignore 항목)은 그 변경이 들어오는 push 에서 잡아야 하므로 `Cargo.lock`·`deny.toml` 로 좁힌 **main push** 가 본다 — **커밋 단위다.** ㉡ **바깥 세계가 만드는 것**(코드는 그대로인데 새 RUSTSEC 권고가 뜬 경우)은 push 로는 영영 안 잡히므로 주간 `schedule` 이 본다 — **주 단위다.** **주 단위여도 되는 이유**는 그 축의 입력이 우리 커밋이 아니라 바깥 세계라 우리 회차와 무관하게 바뀌기 때문이고, daily 는 러너 부하 대비 이득이 적다. ⇒ **㉠ 을 주 단위로 읽으면 안 된다**: 새 의존을 들이는 커밋은 그 push 에서 즉시 판정되고, 노출 창은 일주일이 아니다. (이 갈래 서술은 오래도록 워크플로 파일 머리에만 있었다 — 옮긴 것이 아니라 표에도 둔다. 표만 읽으면 "매주 월요일"이 먼저 눈에 들어와 ㉠ 까지 주 단위로 읽힌다.) | [실측] |
 | 사이트 빌드 | `npm ci && npm run build && npm run check-links` (`site/`) | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
 
@@ -143,7 +143,7 @@ GitHub의 자동 검사를 받지 않는다. 특정 실행을 검증 근거로 �
 위 문단의 금지는 **특정 시점의 적/녹**을 겨냥한다("지금 macOS 만 빨갛다"). 창을 명시한
 과거값은 그 금지의 대상이 아니다 — 창이 붙는 순간 "특정 시점" 이 아니게 되고, 이 문서가
 이미 쓰는 형태다(**과거값은 값으로 적어도 낡지 않는다; 현재형은 명령으로만 적는다**,
-[ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
+[ADR-0049](../adr/0049-documentation-structure-and-evidence.md)).
 
 **왜 한 run 으로는 안 되는가.** 회차 마감 판독에 "CI 6/7 초록, macOS 하나만 빨강" 이라고
 적으면 그 push 를 모수로 해서는 참이다. 그런데 그 문장은 **그 채널이 만성적으로 빨갛다는
@@ -202,7 +202,7 @@ GitHub의 자동 검사를 받지 않는다. 특정 실행을 검증 근거로 �
 (위 재실행 절), 한 처방의 판정에 여러 회차가 든다.
 
 ★ 그리고 이 자리에는 **틀린 처방이 하나 준비돼 있다** — 예산 30 초를 늘리는 것. 그것은
-이 문서가 하한에 대해 이름 붙인 형태(값을 올려 통과시키기)와 같고, [ADR-0645](../adr/0645-verification-evidence-and-diagnostics.md)
+이 문서가 하한에 대해 이름 붙인 형태(값을 올려 통과시키기)와 같고, [ADR-0046](../adr/0046-verification-evidence-and-diagnostics.md)
 이 "예산은 경주 예산이 아니라 안전망" 이라고 이미 못 박았다. 늘리면 이 조건이 조용해질
 뿐 안 사라진다.
 
@@ -692,7 +692,7 @@ lint 와 안 도는 타깃이 통과로 읽히고, 넷째를 건너뛰면 `skipp
 | 그 회차의 `target` | 18G | 위 여유의 1.2% |
 | `~/.cargo` | 2.1G | — |
 
-이 값의 성격은 **한 회차 스냅샷**이다([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)
+이 값의 성격은 **한 회차 스냅샷**이다([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)
 분류로는 계보가 붙은 실측치라 적어도 되지만, 회차마다 달라지므로 판단에 쓰기 전에 다시 재라).
 gui 유닛 스텝이 `target` 을 얼마나 키우는지는 **아직 러너에서 안 쟀다** — 로컬 측정은
 +7.8G 였고, 그 값이면 여유의 0.5% 다. 러너 값은 그 스텝을 담은 첫 회차의 같은 진단 줄에서
@@ -806,7 +806,7 @@ grep -rh 'runs-on:' .github/workflows/ | grep self-hosted \
 커밋과 다른데도 판정이 끝나 버린다.
 
 **실측 (2026-09-07, `[self-hosted, Windows]` 러너, `crossplatform-check` / `check-windows`)** —
-계보를 붙인 한 회차 스냅샷이다([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)):
+계보를 붙인 한 회차 스냅샷이다([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)):
 
 | 재는 것 | 값 |
 |---|---|
@@ -1013,7 +1013,7 @@ cargo test -p tasty-doc-guards --test filter_free_channel_still_exists
 **1 은 다른 워크플로가 덮는다.** `changelog_unreleased` 는 읽는 것이 `*.md` 둘뿐이라
 이 필터 뒤에 있으면 총체적 사각이어야 하는데, `test.yml` 의 `semver-guards` 가 경로 필터
 **없이** main push 마다 `--test changelog_unreleased` 로 이름을 지목한다. 그래서 사각이
-아니다 — [ADR-0647](../adr/0647-source-guards-and-exemptions.md) 이 이 가드를
+아니다 — [ADR-0048](../adr/0048-source-guards-and-exemptions.md) 이 이 가드를
 "안 옮긴다" 로 판정한 근거가 그것이고, 그 근거는 지금도 참이다. **옮기면 오히려 깨진다**:
 타깃이 본체 패키지를 떠나면 `--test changelog_unreleased` 가 `no test target` 으로 실패한다
 (실측).
@@ -1094,7 +1094,7 @@ push(`release.yml`)를 매 push 채널로 세지 않는다.
 
 ★ **"전부 무시 대상" 과 "일부 무시 대상" 은 처방이 다르다.** 전부인 것은 문서만 담은
 push 가 위반의 **유일한 경로**라 필터가 총체적 사각이다 — 그래서 그 셋은 doc-guards 로
-옮겼다(ADR-0647). 일부인 것은 코드 쪽 위반이 여전히 잡히고 문서 쪽 위반도 **다음 소스
+옮겼다(ADR-0048). 일부인 것은 코드 쪽 위반이 여전히 잡히고 문서 쪽 위반도 **다음 소스
 push 에서** 잡힌다. 실측으로도 그 창은 열리지 않았다.
 
 **push 단위** (2026-09-05 재측정, 창 **25.1 시간** · 재구성된 push 41 구간 — 경로 필터가
@@ -1139,7 +1139,7 @@ done | wc -l
 그 계수 단위를 옮겨 적었다가 낡았다 — "식별자와 맞는지" 로 적혀 있었는데 그 가드는 그
 사이 식별자가 아니라 테스트 건수를 세도록 바뀌었고, 사거리 서술도 함께 달라졌다. 가드의
 계약은 가드가 바뀔 때 같이 바뀌므로 **복제본은 정의상 가드 밖이다**
-([ADR-0648](../adr/0648-documentation-structure-and-evidence.md) 의
+([ADR-0049](../adr/0049-documentation-structure-and-evidence.md) 의
 자동 검사와 대조할 수 없는 수치를 복제하지 않는 기준이 서술에도 적용된다). 이 문서는
 그 가드가 **있다는 것과 어느 채널에서 도는지**까지만 말한다.
 
@@ -1154,7 +1154,7 @@ done | wc -l
 |---|---|---|---|
 | lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — 두 조합 모두가 유닛 타깃을 포함한다. 기본 조합은 `crossplatform-check` 의 **세 잡 모두**가 `--lib --bins` 로 돌린다(`check-macos` · `check-windows` · `check-headless` 의 `cargo test (linux, gui, unit)` 스텝), 헤드리스 조합은 `check-headless` 의 전체 스위트가 담는다. 한때 조합 격자에 빈 칸(Linux + gui + debug)이 있었고 지금은 그 gui 스텝이 채운다 — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
 | 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 1 건 제외 — 그 1 건은 같은 잡의 관측용 gui/Xvfb 스텝이 돌리지만 `continue-on-error` 라 **차단하지 않는다**). **기본 조합에는 없다** — 그 조합의 세 잡은 `--lib --bins` 이고(예외는 Windows 잡이 지목하는 `-p tasty-shm -p tasty-doc-guards` 뿐이다) `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/i18n_key_parity.rs` |
-| 문서 가드 통합 테스트 (`crates/tasty-doc-guards/tests/*.rs`) | **있다 — 두 조합과 무관하게** `doc-guards.yml` 이 `-p tasty-doc-guards` 로 돌리고, **Windows 잡도 같은 지목으로 돌린다**(그쪽은 OS 축을 연다). 그 잡에만 `paths-ignore` 가 없어, 문서만 바뀐 push 에서 도는 **유일한** 테스트 채널이다([ADR-0647](../adr/0647-source-guards-and-exemptions.md)). `check-headless` 의 전체 스위트에서도 함께 돈다 | 있다 | `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` |
+| 문서 가드 통합 테스트 (`crates/tasty-doc-guards/tests/*.rs`) | **있다 — 두 조합과 무관하게** `doc-guards.yml` 이 `-p tasty-doc-guards` 로 돌리고, **Windows 잡도 같은 지목으로 돌린다**(그쪽은 OS 축을 연다). 그 잡에만 `paths-ignore` 가 없어, 문서만 바뀐 push 에서 도는 **유일한** 테스트 채널이다([ADR-0048](../adr/0048-source-guards-and-exemptions.md)). `check-headless` 의 전체 스위트에서도 함께 돈다 | 있다 | `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
@@ -1183,7 +1183,7 @@ done | wc -l
   타깃이 도는 모든 조합에서 채널을 갖는다.
 
 채널이 없으면 **"없다" 고 적는다.** 있는 척하는 단정보다 낫다 —
-[ADR-0648](../adr/0648-documentation-structure-and-evidence.md) 가 수에
+[ADR-0049](../adr/0049-documentation-structure-and-evidence.md) 가 수에
 대해 말한 것과 같은 이유로, 검증 주장도 그 출처를 잃으면 낡은 채로 읽힌다.
 
 ### 새 파일을 만들었으면 **그 파일이 사는 패키지 밖**도 돌려라
@@ -1252,7 +1252,7 @@ cargo check -p tasty-doc-guards --all-targets --target x86_64-pc-windows-msvc
 **비용을 그 잡의 시간으로 재면 틀린다.** 잡들은 병렬이고 워크플로 벽시계는 **최댓값**이다.
 그러므로 이 스텝이 사람을 기다리게 하는 시간은 **macOS 잡이 임계경로 잡을 넘는지**로만
 정해진다 — 넘지 않는 동안은 **0** 이다. 수를 여기 적지 않는다
-([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)) — 잡 시간은
+([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)) — 잡 시간은
 커밋마다 바뀐다. 적을 것은 관계와 **재는 법**이다:
 
 ```bash
@@ -1315,7 +1315,7 @@ gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
 값을 여기 적는 이유: CI 로그는 90 일 뒤 사라지고, 사라지는 곳에만 있는 값은 다음 사람에게
 없는 값이다. 대신 **측정일과 측정 대상을 함께** 박는다 — 이 수는 커밋이 아니라 러너
 이미지와 스위트 크기를 따라가므로, 날짜 없이 적으면 낡은 줄 모르고 근거로 쓰인다
-([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
+([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)).
 
 #### 다시 재는 법
 
@@ -1379,7 +1379,7 @@ cargo test -p tasty --lib --no-run       # 바이너리 경로를 찍는다
 `crates/tasty-platform/src/native_menu/linux.rs` 는 `#[cfg(feature = "gui")]` 아래 Linux 전용이면서
 `#[cfg(debug_assertions)]` 함수를 갖는다.
 
-**수를 여기 적지 않는다**([ADR-0648](../adr/0648-documentation-structure-and-evidence.md))
+**수를 여기 적지 않는다**([ADR-0049](../adr/0049-documentation-structure-and-evidence.md))
 — 재는 절차를 적는다. 이름을 조합별로 열거해 빼고, 남은 것이 Windows 조합에 실재하는지는
 **크로스 빌드한 테스트 바이너리에 바이트로 물어본다.**
 
@@ -1451,7 +1451,7 @@ comm -23 /tmp/gui.txt /tmp/win.txt
 논할 때는 두 몫을 갈라서 세야 한다.
 
 어느 쪽인지 가르는 법 — 수를 적지 말고 그 자리에서 세라(타깃이 늘면 바뀌는 값이다,
-[ADR-0648](../adr/0648-documentation-structure-and-evidence.md)):
+[ADR-0049](../adr/0049-documentation-structure-and-evidence.md)):
 
 ```bash
 # 헤드리스 고유 — 자기 바이너리를 띄우는 타깃. 공용 하네스가 대신 띄우는 경우가 있어
@@ -1542,7 +1542,7 @@ lib 유닛 테스트에서 그 서술을 지우면 사실보다 약하다. 어�
 걷고 headless `cargo check` 를 돌리자 그동안 숨어 있던 dead code 가 다수 error 로 터졌다(`enum
 Strategy` · `const PAPLAY_SOUND`/`APLAY_SOUND` · `static STRATEGY` 등). 즉 그
 attribute 는 no-op 가 아니라 **headless 의 dead_code 채널을 crate 전역으로 삭제**하고
-있었다 — [ADR-0646](../adr/0646-ci-and-complexity-checks.md) 의
+있었다 — [ADR-0047](../adr/0047-ci-and-complexity-checks.md) 의
 검사가 실행되어도 해당 위반을 검사하지 못하면 통과 결과가 오해를 만들 수 있다.
 
 **같은 allow 가 중첩되면 자식 제거는 채널을 복원하지 못한다.** inner attribute 는
@@ -1551,7 +1551,7 @@ handler.rs`(자식) 처럼(과거 배치) 같은 조건부 allow 가 겹쳐 있�
 그 트리를 덮는다. 자식 allow 제거는 "채널을 되살린 것" 처럼 보이지만 실제로는 중복
 제거(no-op)일 뿐이다 — 채널을 되살리려면 **가장 바깥의 allow** 를 걷어야 한다. 그래서
 조건부 allow 를 지울 때는 그 자리가 실제로 무엇을 침묵시키는지(가장 바깥인지, 이미 상위가
-덮는 중복인지)를 [ADR-0644](../adr/0644-test-isolation-and-harness.md) 의
+덮는 중복인지)를 [ADR-0045](../adr/0045-test-isolation-and-harness.md) 의
 positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡는지)로 먼저 확인한다.
 
 **census 는 목록으로만 남기고 일괄로 걷지 않는다.** 레포에는 조건부 `cfg_attr(…, allow(…))`
@@ -1968,7 +1968,7 @@ false 로 되돌리며 `AppEvent::OpenSettings` 로 바꾼다. 키보드 경로�
 ##### 그 진단은 세 회차 내리 **0 회** 였다 (과거값) — 그리고 네 번째에 답이 나왔다
 
 두 시제를 갈라 적는다. **과거값은 값으로 적어도 낡지 않는다**; 현재형은 명령으로만 적는다
-([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
+([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)).
 
 - **과거값**: 그 스텝이 존재한 **첫 세 회차**에서는 `command -v xvfb-run` 의 결과 줄이 한 번도
   안 나왔다 — 셋 다 `skipped` 였다(앞의 `cargo test (headless)` 가 실패하거나 취소돼서다).
@@ -2018,7 +2018,7 @@ gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
 이 층의 실제 성질이고, 그것을 지우면 다음 사람은 파일 하나를 돌려 보고 고정됐다고 읽는다.
 
 셋째는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
-나쁘다([ADR-0648](../adr/0648-documentation-structure-and-evidence.md)).
+나쁘다([ADR-0049](../adr/0049-documentation-structure-and-evidence.md)).
 대신 **"단일 값이 없다" 는 단정 자체**를 지킨다: gui 스위트의 통과 수를 적은 **절**은 그
 절이나 그 하위 절에 그 단정을 함께 담아야 한다. 범위가 파일이 아니라 절인 이유는, 파일로
 물으면 한 문서 안의 무관한 두 문장이 서로를 위반으로 만들기 때문이다(실측으로 밟았다).
@@ -2294,7 +2294,7 @@ I/O 가 있나" 였고, 그 회귀는 함수 본문이 아니라 **호출 문맥
 배선 시점에 두 스크립트를 작업 트리에서 직접 돌린 결과는 `rc=0`(둘 다)이다. 다만
 그 직전까지 `check-intent-discipline.sh` 는 **위반 50 건으로 오래 빨갰다** — 채널이
 없어 아무도 안 봤고, 그 사이 문서 셋(`docs/design/flows/action-dispatch.md` ·
-[ADR-0646](../adr/0646-ci-and-complexity-checks.md) · `docs/architecture/index.md#invariants`)
+[ADR-0047](../adr/0047-ci-and-complexity-checks.md) · `docs/architecture/index.md#invariants`)
 은 그것을 살아 있는 게이트로 인용하고 있었다.
 
 **빨간 채로 배선하지 않았다.** 50 을 먼저 갈랐고, 36 이 술어의 오탐이었다 —

@@ -8,7 +8,7 @@ tasty 는 같은 인스턴스를 여러 주체가 **동시에** 사용하는 것
 
 ## AI Agent (에이전트)
 
-자기 작업을 수행하기 위해 tasty 를 조작하는 AI. 입력 표면 = IPC 메서드 / CLI 서브커맨드, 대상은 ID 로 지정. 여럿이 동시에 동작하며 **격리 계약** 을 따른다 — 자기 행동의 부수효과가 사용자 상태(포커스/닫은 항목 히스토리/선택)에 닿지 않는다. **기본은 점유 없이** ID 로 임의 대상을 조작하지만(fire-and-forget `surface.send`/`surface.read`), 필요하면 **점유(soft/hard)를 걸 수 있다** — 예: `terminal` 명령이 spawn 한 child-terminal 을 soft 점유로 표시한다(아래 점유 모델, [ADR-0621](../adr/0621-occupancy-and-attach-admission.md)).
+자기 작업을 수행하기 위해 tasty 를 조작하는 AI. 입력 표면 = IPC 메서드 / CLI 서브커맨드, 대상은 ID 로 지정. 여럿이 동시에 동작하며 **격리 계약** 을 따른다 — 자기 행동의 부수효과가 사용자 상태(포커스/닫은 항목 히스토리/선택)에 닿지 않는다. **기본은 점유 없이** ID 로 임의 대상을 조작하지만(fire-and-forget `surface.send`/`surface.read`), 필요하면 **점유(soft/hard)를 걸 수 있다** — 예: `terminal` 명령이 spawn 한 child-terminal 을 soft 점유로 표시한다(아래 점유 모델, [ADR-0021](../adr/0021-occupancy-and-attach-admission.md)).
 
 ## 원격 접속 사용자 (Remote user)
 
@@ -21,7 +21,7 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach �
 
 ## 점유 (Occupation) 모델
 
-점유는 **주체(원격 사용자 | AI Agent)가 surface/workspace 에 대해 선언하는 지속적·가시적 관계** 다. `surface.send`/`surface.read` 같은 fire-and-forget 조작과 달리, "이 대상은 지금 어떤 주체가 조종 중" 이라는 사실을 로컬 사용자에게 명시한다. 두 계층이 있고 **시각적으로 구분** 된다(터미널 테두리 색: soft=green, hard=peach). 결정 근거·시각 규약은 [ADR-0621](../adr/0621-occupancy-and-attach-admission.md).
+점유는 **주체(원격 사용자 | AI Agent)가 surface/workspace 에 대해 선언하는 지속적·가시적 관계** 다. `surface.send`/`surface.read` 같은 fire-and-forget 조작과 달리, "이 대상은 지금 어떤 주체가 조종 중" 이라는 사실을 로컬 사용자에게 명시한다. 두 계층이 있고 **시각적으로 구분** 된다(터미널 테두리 색: soft=green, hard=peach). 결정 근거·시각 규약은 [ADR-0021](../adr/0021-occupancy-and-attach-admission.md).
 
 ### 약한 점유 (soft)
 

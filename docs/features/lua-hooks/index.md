@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (자기 머신의 자기 스크립트)
-- **ADR**: [ADR-0627](../../adr/0627-lua-and-hook-execution.md) (설계 배경은 아래 [설계 경계](#설계-경계))
+- **ADR**: [ADR-0027](../../adr/0027-lua-and-hook-execution.md) (설계 배경은 아래 [설계 경계](#설계-경계))
 - **코드**: `tasty-lua` 크레이트(engine/host_api/sandbox/bridge), 스크립트 저장소 `tasty-settings`(`ScriptRegistry`), 단축키 바인딩 `KeybindingSettings.script_bindings`
 - **화면**: 설정 modal 단축키 탭 › Scripts (단축키 바인딩) + 기타(Misc) 탭 › Scripts (관리 + 자동실행 트리거 편집)
 
@@ -63,7 +63,7 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 ## 설계 경계
 
-사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0627](../../adr/0627-lua-and-hook-execution.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 발화 site · payload](#구현--발화-site--payload).
+사용자가 등록한 Lua 스크립트로 tasty 를 조작·자동화하는 시스템의 *설계 근거*. 전체 결정은 [ADR-0027](../../adr/0027-lua-and-hook-execution.md). 사용법은 위 절들, payload 매핑은 아래 [구현 — 발화 site · payload](#구현--발화-site--payload).
 
 <a id="위치-결정-adr-0031"></a>
 
@@ -79,7 +79,7 @@ transitive `require` 의존 파일은 커버하지 않는다.
 | 권한 | 콜백 반환값은 이벤트를 취소·변형하지 않는다. 명시 호스트 API 호출은 별도 기능이다 |
 | 샌드박스 | OS 격리 없음. `io`/`os.execute`는 유지한다. 메모리·VM 실행 제한과 위험한 로더 제거는 호스트 안정성을 위한 조치다 |
 
-> plugin 은 별 OS 프로세스로 격리돼 Rust 로 충분하므로 Lua 통로를 의도적으로 막았다. plugin 측 user-scripting 이 필요해지면 별도 채널을 새로 만든다(ADR-0625 와 함께 재검토).
+> plugin 은 별 OS 프로세스로 격리돼 Rust 로 충분하므로 Lua 통로를 의도적으로 막았다. plugin 측 user-scripting 이 필요해지면 별도 채널을 새로 만든다(ADR-0025 와 함께 재검토).
 
 ### 이벤트 매트릭스 — post-only
 
@@ -106,7 +106,7 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 `tasty.on(event, cb)`(동일 event 다중 등록, 순서대로). 인자는 단일 table(payload). 콜백 에러는 `tracing::warn!` 기록 후 다음 콜백 계속(한 ill-behaved hook 이 전체 dispatch 막지 않음). 리턴값 무시(observe-only). 호스트 API 표면(현재): `tasty.on`/`log`/`warn`/`run_cli`(커맨드 큐 경유)/`tree`(read).
 
-이벤트 hook `fire`/`tasty.on` 배관은 유지되지만, 부팅 자동로드(init.lua)가 폐기되어 **hook 을 부팅에 자동 등록하는 경로는 없다.** 이벤트-트리거 **자동실행은 별도(직교) 채널로 구현되어 있다** — 콜백을 깨우는 것이 아니라, 등록 목록(`ScriptEntry.triggers`)에 바인딩된 스크립트 **소스를 트리거 발화 시 TOFU 재검 후 실행**한다(ADR-0627 의 "등록 목록에서 배선" 요구 충족).
+이벤트 hook `fire`/`tasty.on` 배관은 유지되지만, 부팅 자동로드(init.lua)가 폐기되어 **hook 을 부팅에 자동 등록하는 경로는 없다.** 이벤트-트리거 **자동실행은 별도(직교) 채널로 구현되어 있다** — 콜백을 깨우는 것이 아니라, 등록 목록(`ScriptEntry.triggers`)에 바인딩된 스크립트 **소스를 트리거 발화 시 TOFU 재검 후 실행**한다(ADR-0027 의 "등록 목록에서 배선" 요구 충족).
 
 ### 자동실행 (autofire)
 
@@ -133,7 +133,7 @@ crates/tasty-lua/
   meta/tasty.lua   # EmmyLua stub (LuaLS 용)
 ```
 
-`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0627). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
+`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0027). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
 
 이벤트 발화는 `hooks::lua::fire` 헬퍼 한 곳을 거친다(`src/host_api/hooks/lua.rs`):
 
@@ -209,10 +209,10 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ### 에러 / 실행
 
 - 콜백 Lua 에러 → `tracing::warn!` + 같은 이벤트 다음 콜백 계속(dispatch 안 멈춤). payload 직렬화 실패 → warn + 이 이벤트 콜백 전부 skip.
-- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0627 에서 제거됨.
+- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 해당 job만 중단하며 워커는 다음 job을 처리. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0027 에서 제거됨.
 - 디버그: `TASTY_LOG=tasty_lua=debug` (본체가 읽는 변수는 `TASTY_LOG` 다 — [crash-diagnostics](../../dev-guide/crash-diagnostics.md)).
 
 ## 관련
 
 - [reference/event-catalog](../../reference/event-catalog.md) — plugin 용 Event Bus(별개 경로)
-- [ADR-0627](../../adr/0627-lua-and-hook-execution.md) — 결정 근거
+- [ADR-0027](../../adr/0027-lua-and-hook-execution.md) — 결정 근거

@@ -1,6 +1,6 @@
 # IME 시뮬레이션 검증
 
-`surface.ime_*` IPC(**debug 빌드 전용** — 사용자 입력기 조합의 재현이라 release 표면에 없다, [ADR-0612](../adr/0612-request-admission-and-isolation.md). window-local, **local-only** — 로컬 caller 만, `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`)로 IME 입력을 프로그래밍 방식으로 시뮬레이션해 한글/CJK 입력 파이프라인 버그를 재현·검증한다. 핸들러는 `src/adapters/ipc/handler/ime.rs`. (debug 포트 `~/.tasty-debug/tasty.port`, 격리 인스턴스면 `$TASTY_HOME/tasty.port`.)
+`surface.ime_*` IPC(**debug 빌드 전용** — 사용자 입력기 조합의 재현이라 release 표면에 없다, [ADR-0012](../adr/0012-request-admission-and-isolation.md). window-local, **local-only** — 로컬 caller 만, `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`)로 IME 입력을 프로그래밍 방식으로 시뮬레이션해 한글/CJK 입력 파이프라인 버그를 재현·검증한다. 핸들러는 `src/adapters/ipc/handler/ime.rs`. (debug 포트 `~/.tasty-debug/tasty.port`, 격리 인스턴스면 `$TASTY_HOME/tasty.port`.)
 
 메서드: `surface.ime_enable` · `surface.ime_preedit {text}` · `surface.ime_commit {text}` · `surface.ime_status` · `surface.ime_disable`.
 
@@ -69,6 +69,6 @@ call("surface.ime_disable")
   "입력 forward"·"입력 게이트"). 어느 쪽도 이 IPC 로는 주입되지 않는다 —
   `surface.ime_*` 는 focused surface 의 **터미널** 오버레이 상태를 만지고, `debug.inject_key` 는
   키만 주입한다. 인라인 조합 표시는 헤드리스 시뮬레이션 불가 — 실제 OS IME 로 육안 검증한다.
-  (markdown 주소창은 [ADR-0629](../adr/0629-webview-host-integration.md) 로 문서에 내장된
+  (markdown 주소창은 [ADR-0029](../adr/0029-webview-host-integration.md) 로 문서에 내장된
   HTML `<input>` 이 됐다 — IME 는 host native WebView 가 자체 처리하며 이 경로/egui-mesh 어느
   쪽에도 속하지 않는다.)

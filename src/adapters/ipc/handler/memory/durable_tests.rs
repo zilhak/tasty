@@ -1,5 +1,5 @@
 //! 쓰기 응답의 `durable: false` — `memory.db` 를 못 열어 in-memory 대체로 뜬 호스트가
-//! 쓰기를 정상과 똑같은 `ok` 로만 확인하던 결함의 회귀 시험(ADR-0610).
+//! 쓰기를 정상과 똑같은 `ok` 로만 확인하던 결함의 회귀 시험(ADR-0010).
 
 use serde_json::{Value, json};
 

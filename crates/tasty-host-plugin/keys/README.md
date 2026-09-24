@@ -33,4 +33,4 @@ release 슬롯이 항상 비어 있어야 하는 것은 아니다. 실제 서명
 앱과 플러그인을 독립적으로 배포할 때는 신뢰 루트와 서명 범위를 다시 정해야 한다.
 
 절차는 [플러그인 패키징](../../../docs/dev-guide/plugin-packaging.md#서명),
-선택 이유는 [릴리스 결정](../../../docs/adr/0650-release-artifacts-and-versioning.md)을 따른다.
+선택 이유는 [릴리스 결정](../../../docs/adr/0051-release-artifacts-and-versioning.md)을 따른다.

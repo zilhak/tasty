@@ -185,7 +185,7 @@ const NOT_IN_HEADLESS: &[(&str, &str)] = &[
     ),
     (
         "window.focus",
-        "포커스 전환이라 애초에 debug 격리(ADR-0612)이고, 대상도 창이다",
+        "포커스 전환이라 애초에 debug 격리(ADR-0012)이고, 대상도 창이다",
     ),
     (
         "window.list",
@@ -614,7 +614,7 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
     (
         "debug.popup.close",
         "렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 \
-         돈다(ADR-0636). 그 glue(`App::enqueue_plugin_popup_close`)가 gui 게이트 안의 \
+         돈다(ADR-0036). 그 glue(`App::enqueue_plugin_popup_close`)가 gui 게이트 안의 \
          `app::dispatch` 에 있다",
     ),
     // 이쪽은 갈래 한 줄이 맞다 — 재 봤다. `open` 은 `self.view.views` 를 순회해 소유

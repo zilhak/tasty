@@ -413,7 +413,7 @@ impl SurfaceKindDef {
 /// # 철회(withdrawn)
 ///
 /// plugin 을 disable · remove 하면 그 plugin 이 등록한 kind 는 **지우지 않고 철회로
-/// 표시한다**([ADR-0626](../../docs/adr/0626-plugin-registration-and-lifecycle.md)).
+/// 표시한다**([ADR-0026](../../docs/adr/0026-plugin-registration-and-lifecycle.md)).
 /// 이미 열린 surface 는 자기 kind 의 `snapshot` · 아이콘 · 입력 플래그를 계속 읽어야
 /// 하므로(지우면 layout 저장이 그 surface 를 `empty` 로 떨어뜨린다) [`Self::get`] 은
 /// 철회된 것도 돌려준다. 새로 만드는 쪽 — 생성 funnel · 복원 · 목록 — 은
@@ -702,7 +702,7 @@ mod tests {
         }
     }
 
-    /// 철회(ADR-0626)는 정의를 지우지 않는다 — 열린 surface 가 `get` 으로 snapshot 을 계속
+    /// 철회(ADR-0026)는 정의를 지우지 않는다 — 열린 surface 가 `get` 으로 snapshot 을 계속
     /// 읽는다. 새로 만들 수 있는가를 묻는 셋(`get_live` · `contains` · `kinds_snapshot`)과
     /// 생성 funnel 은 철회된 kind 를 없는 것으로 보고, funnel 은 그 사유를 따로 낸다.
     #[test]

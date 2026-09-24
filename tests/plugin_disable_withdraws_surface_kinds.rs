@@ -1,5 +1,5 @@
 //! plugin 을 끄면 그 plugin 이 등록한 surface kind 가 재부팅 없이 철회된다
-//! ([ADR-0626](../docs/adr/0626-plugin-registration-and-lifecycle.md)).
+//! ([ADR-0026](../docs/adr/0026-plugin-registration-and-lifecycle.md)).
 //!
 //! 단위 시험이 못 보는 자리 — `plugin.disable` 이 registry 를 실제로 거두는 배선 — 을
 //! 실제 데몬 상대로 잰다. 헤드리스 조합 전용이다: gui 조합에서는 이 바이너리의 인스턴스가
@@ -8,7 +8,7 @@
 //! 인스턴스는 `common::shared()` 다. plugin 을 켜고 끄는 것은 workspace 로 격리되지 않는
 //! 프로세스 전역 상태라 **이 바이너리에 다른 시험을 넣지 않는다** — 넣으면 그 시험이 꺼진
 //! markdown 을 본다. 이 파일이 별도 test binary 인 이유가 그것이고, 시험이 하나뿐이라 공유
-//! 인스턴스가 곧 이 시험 하나의 인스턴스다(전용 spawn 이 더 주는 것이 없다 — ADR-0644).
+//! 인스턴스가 곧 이 시험 하나의 인스턴스다(전용 spawn 이 더 주는 것이 없다 — ADR-0045).
 #![cfg(not(feature = "gui"))]
 
 mod common;
@@ -57,7 +57,7 @@ fn disabling_a_plugin_withdraws_its_surface_kinds_and_keeps_open_surfaces() {
     let ws = server.create_workspace("plugin-disable-withdraws");
     let pane_id = server.first_pane_id_in_workspace(ws.id);
 
-    // 켜진 상태: kind 지목 생성이 소유자를 띄우고 kind 를 등록한다(ADR-0626).
+    // 켜진 상태: kind 지목 생성이 소유자를 띄우고 kind 를 등록한다(ADR-0026).
     let opened = create_markdown_tab(server, pane_id, &file);
     let open_sid = opened["result"]["surface_id"].as_u64().unwrap_or_else(|| {
         panic!(

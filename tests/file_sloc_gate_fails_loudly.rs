@@ -6,7 +6,7 @@
 //! 그 상태에서는 러너에서 tokei 가 어긋나는 순간 게이트가 **영원히 초록**이 된다.
 //!
 //! 파일 크기 검사는 실제 CI에서 실행되므로 측정 오류도 실패로 보고해야 한다.
-//! 관련 정책은 `docs/adr/0646-ci-and-complexity-checks.md`를 따른다.
+//! 관련 정책은 `docs/adr/0047-ci-and-complexity-checks.md`를 따른다.
 //!
 //! **판정 방식**: 실제 tokei 도 실제 판정기도 쓰지 않는다. PATH 앞에 스텁 `tokei` 를 놓고
 //! `TASTY_STRIP_CFG_TEST_BIN` 에 스텁 판정기를 물려 경우를 주입하고 종료코드만 본다 —

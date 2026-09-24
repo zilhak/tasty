@@ -165,7 +165,7 @@ impl MainView {
 
 /// 링크 메뉴 게이트: hover 링크가 우클릭한 그 surface 의 것이고, 그 surface 가 hard 점유
 /// mirror 가 아니어야 한다. hard 점유 화면은 최대 3초 지연된 스냅샷이라 보이는 링크가
-/// 실제 PTY 상태와 다를 수 있다(ADR-0621 — 좌클릭 링크 오픈과 같은 배제).
+/// 실제 PTY 상태와 다를 수 있다(ADR-0021 — 좌클릭 링크 오픈과 같은 배제).
 fn link_menu_gate(hovered_surface: Option<u32>, clicked_surface: u32, hard_occupied: bool) -> bool {
     hovered_surface == Some(clicked_surface) && !hard_occupied
 }

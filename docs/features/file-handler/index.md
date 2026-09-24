@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`file_handler.dispatch`) · plugin (contribute)
-- **ADR**: [URL 대상은 picker·실행 계층에만](../../adr/0631-file-handler-routing.md)
+- **ADR**: [URL 대상은 picker·실행 계층에만](../../adr/0031-file-handler-routing.md)
 - **코드**: `crates/tasty-file-format/`(식별) + `crates/tasty-file-handler/`(핸들러 정책·레지스트리) + `src/file/dispatch.rs`(디스패치); IPC `file_handler.{reload,detectors,dispatch}`
 - **화면**: [설정 창](../settings/screens/settings.md) Handler 탭의 파일 서브탭 3 종 · file_handler_picker popup
 
@@ -117,8 +117,8 @@ macOS는 동등한 공개 gesture 판정이 없어 항상 Agent다. Linux의 실
 - **사용자**: Settings **Handler** 탭의 파일 서브탭(File Detectors / File Handlers / File Extension Mapping — 토글·user 항목 추가/삭제, 확장자 우선순위). user 설정은 `~/.tasty/file-handlers.toml`(부팅 1 회 로드, atomic write). 같은 탭의 Hook Handlers 서브탭은 파일 핸들러가 아니라 [공유 훅 핸들러 레지스트리](../webhook/index.md) 편집이다.
 - **AI Agent / CLI**: `file_handler.dispatch`(임의 경로를 흐름에 진입, plugin 호출은 FsRead 권한 — 경로 자리의 URL 은 `-32602` 로 거절) · `file_handler.reload`(user 설정 reload — 응답 `{path, exists, rejected}`) · `file_handler.detectors`(아래) · `tasty file-handler` CLI.
 - **detector 조회**: `file_handler.detectors`(`tasty file-handler detectors`)는 finalize 된 detector 전부를 id 순으로 돌려준다 — `{"detectors": [...]}`. 항목마다 병합 결과(`id` · `display_name_i18n_key` · `icon` · `disabled` · `install_order` · `rules`)와 그것을 만든 출처별 원본 `contributions`(`origin` · `display_name_i18n_key` · `icon` · `disabled` · `rules`)를 함께 싣는다. `origin` 은 `host` · `plugin:<id>` · `user` 이고, rule 은 user 설정의 `[[detector.rule]]` 과 같은 키로 적히며 병합 결과 쪽 rule 에만 `origin` 이 붙는다. contribution 의 `disabled` 는 그 출처가 적은 켜기/끄기 patch 이고 적지 않았으면 `null` 이다. `contributions` 는 **설치 순서**이지 병합 순서가 아니다 — 어느 값이 이겼는지는 병합 결과 쪽을 본다. 읽기 전용(local-only, plugin 비노출)이고 두 빌드 모두 답한다.
-- **reload 의 거절 보고**: `rejected` 는 이번 reload 가 **적용하지 않은** user 항목의 배열이다 — `[{"id", "reason"}]`, 없으면 `[]`. 사유는 셋이다. `missing_owner_prefix`(id 에 `<owner>/` 접두사가 없어 설치 안 함 — 버려짐) · `missing_detector_or_action`(`user/…` 항목인데 detector 나 action 이 없어 등록 안 됨 — 버려짐) · `target_not_contributed`(host · plugin handler 를 patch 하는 항목인데 대상이 지금 없음 — plugin 이 안 떠 있거나 id 가 틀렸다. 둘은 가를 수 없다. 항목은 남아 있어 대상이 contribute 되면 그대로 적용된다). 헤드리스는 부팅 시 번들 plugin 이 떠 있지 않아, plugin 을 켜기 전까지 정상 plugin patch 도 `target_not_contributed` 로 보고된다. 파일을 읽거나 파싱하지 못해 reload 가 멈춘 경우는 이전 user 설정이 남고 `rejected` 는 빈 배열이다. 근거 [ADR-0631](../../adr/0631-file-handler-routing.md).
-- **헤드리스 제약**: `file_handler.dispatch` 는 gui 빌드에만 있다. 헤드리스(`--no-default-features`) 데몬은 식별 결과를 적용할 worker 도, 결과를 열 창도 없어 이 요청에 `-32017`(이 빌드 조합에 arm 이 없다)로 답한다 — 수락하고 버리지 않는다. `file_handler.reload` · `file_handler.detectors` 는 두 빌드 모두 답한다. 근거 [ADR-0631](../../adr/0631-file-handler-routing.md).
+- **reload 의 거절 보고**: `rejected` 는 이번 reload 가 **적용하지 않은** user 항목의 배열이다 — `[{"id", "reason"}]`, 없으면 `[]`. 사유는 셋이다. `missing_owner_prefix`(id 에 `<owner>/` 접두사가 없어 설치 안 함 — 버려짐) · `missing_detector_or_action`(`user/…` 항목인데 detector 나 action 이 없어 등록 안 됨 — 버려짐) · `target_not_contributed`(host · plugin handler 를 patch 하는 항목인데 대상이 지금 없음 — plugin 이 안 떠 있거나 id 가 틀렸다. 둘은 가를 수 없다. 항목은 남아 있어 대상이 contribute 되면 그대로 적용된다). 헤드리스는 부팅 시 번들 plugin 이 떠 있지 않아, plugin 을 켜기 전까지 정상 plugin patch 도 `target_not_contributed` 로 보고된다. 파일을 읽거나 파싱하지 못해 reload 가 멈춘 경우는 이전 user 설정이 남고 `rejected` 는 빈 배열이다. 근거 [ADR-0031](../../adr/0031-file-handler-routing.md).
+- **헤드리스 제약**: `file_handler.dispatch` 는 gui 빌드에만 있다. 헤드리스(`--no-default-features`) 데몬은 식별 결과를 적용할 worker 도, 결과를 열 창도 없어 이 요청에 `-32017`(이 빌드 조합에 arm 이 없다)로 답한다 — 수락하고 버리지 않는다. `file_handler.reload` · `file_handler.detectors` 는 두 빌드 모두 답한다. 근거 [ADR-0031](../../adr/0031-file-handler-routing.md).
 
 ## 비-목표
 
@@ -126,5 +126,5 @@ macOS는 동등한 공개 gesture 판정이 없어 항상 Agent다. Linux의 실
 
 ## 관련
 
-- **레지스트리 정본 템플릿**: 이 `FileHandlerRegistry`(3출처 patch 병합 + actor 별 action 스키마 + owner tie-break 정렬)를 공유 훅 핸들러 레지스트리가 미러링한다 — [webhook](../webhook/index.md) · [ADR-0627](../../adr/0627-lua-and-hook-execution.md). 차이: file handler 의 `detector`↔hook 의 `source` 게이트, `System` action↔`ShellCommand`(hook 출처 전용).
+- **레지스트리 정본 템플릿**: 이 `FileHandlerRegistry`(3출처 patch 병합 + actor 별 action 스키마 + owner tie-break 정렬)를 공유 훅 핸들러 레지스트리가 미러링한다 — [webhook](../webhook/index.md) · [ADR-0027](../../adr/0027-lua-and-hook-execution.md). 차이: file handler 의 `detector`↔hook 의 `source` 게이트, `System` action↔`ShellCommand`(hook 출처 전용).
 - [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-development](../../dev-guide/plugin-development.md) · [settings](../settings/index.md)

@@ -48,7 +48,7 @@ script (`foundations.jsx` / `components.jsx` / `icons.jsx` / `layouts.jsx`, or a
 No tokens or component visuals are redefined here — specimens reference the
 design system only.
 
-## Completeness (ADR-0020 — no cuts)
+## Completeness (ADR-0035 — no cuts)
 The gallery is a **mirror of the whole app**: every UI component that exists in
 the body — modal / popup / shared widget / layout idiom — is exposed here as a
 specimen. Nothing is cut from the catalog. Earlier this page folded the egui

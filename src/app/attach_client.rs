@@ -13,7 +13,7 @@
 //!   누적된 원격 출력을 mirror 에 적용하고 화면을 repaint. 끊긴(force-detach/EOF) 세션의
 //!   mirror 를 정리. (`Tick::AttachView` 3초 tick 도 backstop 으로 같은 함수를 호출한다.)
 //!   적용 대상은 창 있는 engine 뿐 아니라 **창 없는 parked engine** 도 포함한다 — 창을
-//!   최소화한 동안 도착한 출력도 유실되지 않는다(ADR-0623).
+//!   최소화한 동안 도착한 출력도 유실되지 않는다(ADR-0023).
 //!
 //! client mirror 는 내가 직접 다루는 대상이라 로컬 워크스페이스처럼 **데이터가 오는 즉시**
 //! 갱신한다(로컬 PTY 의 TerminalOutput wake 와 동형). 서버측 readonly 뷰(`attach_poll` ①)만
@@ -45,7 +45,7 @@ use crate::model::{
 };
 use crate::view::ui::View as _;
 
-/// (ADR-0622 참고) git-viewer plugin id — `crates/tasty-plugin-git-viewer/tasty-plugin.toml`
+/// (ADR-0022 참고) git-viewer plugin id — `crates/tasty-plugin-git-viewer/tasty-plugin.toml`
 /// 의 `id` 와 정합해야 한다. 별도 프로세스(plugin)라 상수를 공유할 crate 가 없어
 /// 문자열 리터럴로 중복(이 파일 + `adapters::ipc::handler::git_viewer`).
 const GIT_VIEWER_PLUGIN_ID: &str = "com.tasty.git-viewer";
@@ -53,7 +53,7 @@ const GIT_VIEWER_PLUGIN_ID: &str = "com.tasty.git-viewer";
 /// 의 `on_event` 가 이 key 로 매칭한다.
 const GIT_VIEWER_QUERY_RESULT_EVENT: &str = "git_viewer.query_result";
 
-/// markdown mirror(ADR-0622) 의 surface kind 와 그것을 소유해야 하는 plugin id. 서버의
+/// markdown mirror(ADR-0022) 의 surface kind 와 그것을 소유해야 하는 plugin id. 서버의
 /// content 화이트리스트(`attach_runtime::is_attach_content_allowed`)와 같은 쌍이다 —
 /// client 도 이 쌍이 등록돼 있을 때만 로컬 markdown surface 를 만든다. 다른 plugin 이 같은
 /// kind 이름을 등록했으면 아래 이벤트를 받을 주체가 없으므로 지금처럼 빈 surface 로 둔다.
@@ -88,7 +88,7 @@ pub(crate) enum MirrorEvent {
     Attention(u32, Option<tasty_ipc::stream::AttentionKindWire>),
     /// 원격 surface 의 cwd `(remote_surface_id, cwd)` — `None` 은 원격도 모르게 됐다는 뜻.
     /// 값은 원격 경로라 로컬 파일시스템에 쓰지 않는다(`CoreState::set_mirror_surface_cwd`,
-    /// ADR-0622).
+    /// ADR-0022).
     Cwd(u32, Option<String>),
     /// forward 한 구조 op 가 원격에서 실패했다(2단계) — `(op_id, reason)`. `reason`(예:
     /// 미등록 kind)을 담아 메인루프가 실패 toast 를 띄운다. 에이전트 발화 op(세션의
@@ -134,7 +134,7 @@ pub(crate) enum MirrorEvent {
     /// generation, frame_seq, full_textures, bytes)` — `bytes` 는 이미 footer 없는 순수
     /// payload(서버 `headless_plugins::forward_mesh_frames`가 footer 를 벗겨 보낸다).
     Mesh(u32, u64, u64, bool, Vec<u8>),
-    /// (ADR-0622 참고) git-viewer — 원격이 이 mirror 세션의 `git_query_request` 를 처리한
+    /// (ADR-0022 참고) git-viewer — 원격이 이 mirror 세션의 `git_query_request` 를 처리한
     /// 결과(`git_query_result` 커스텀 이벤트 — `ListDirResult`/`CaptureResult` 와
     /// 동일하게 `StreamControl` enum 밖). `data` 는 성공 시 kind 별 페이로드
     /// (snapshot: worktrees/status/log, diff: hunks)를 그대로 담은 JSON, 실패 시
@@ -149,7 +149,7 @@ pub(crate) enum MirrorEvent {
         truncated: bool,
         reason: Option<String>,
     },
-    /// (ADR-0622) markdown mirror — 원격이 이 세션의 `markdown_content_request` 를 처리한
+    /// (ADR-0022) markdown mirror — 원격이 이 세션의 `markdown_content_request` 를 처리한
     /// 결과(`markdown_content_result` 커스텀 이벤트, `StreamControl` enum 밖).
     /// `surface_id` 는 **원격** id 다(회신에 실려 온다 — host 는 request_id 표를 두지
     /// 않는다). 성공이면 `file`/`source`, 실패면 `reason`.
@@ -162,13 +162,13 @@ pub(crate) enum MirrorEvent {
         truncated: bool,
         reason: Option<String>,
     },
-    /// (ADR-0622) 원격 markdown 문서가 다시 그려졌다(`markdown_changed` 커스텀
+    /// (ADR-0022) 원격 markdown 문서가 다시 그려졌다(`markdown_changed` 커스텀
     /// 이벤트). `surface_id` 는 **원격** id. 이 세션이 mirror 하지 않는 문서의 신호도 온다
     /// — 수신자가 워크스페이스 holder 가 아니라 점유 client 전부라서다.
     MarkdownChanged { surface_id: u32 },
     /// 서버가 이 연결로 보내려던 프레임을 버렸다(`StreamControl::Loss`). 이 지점 앞뒤의
     /// 데이터는 연속이 아니다. `frames` 는 이번 통지가 말한 수다. 적용은 세션을
-    /// 재동기화 대기로 돌리고 옛 연결을 놓는다 — 이어 그리지 않는다(ADR-0623).
+    /// 재동기화 대기로 돌리고 옛 연결을 놓는다 — 이어 그리지 않는다(ADR-0023).
     Desynced { frames: u64 },
 }
 
@@ -190,7 +190,7 @@ mod outbox {
     /// 수가 없다**. 그 봉인을 지탱하는 것은 두 가지가 함께다 — 필드를 닫는 **모듈
     /// 경계**(위 `mod outbox` 참고)와 host 를 요구하는 **시그니처**. 둘 중 하나만으로는
     /// 부족하다: 모듈이 없으면 필드로 우회할 수 있고, 시그니처가 느슨하면 host 없이
-    /// 비울 수 있다(ADR-0623).
+    /// 비울 수 있다(ADR-0023).
     #[derive(Clone)]
     pub(crate) struct MirrorOutbox {
         events: Arc<Mutex<Vec<MirrorEvent>>>,
@@ -249,7 +249,7 @@ mod outbox {
         /// [`MirrorOutbox::push`] 와 [`MirrorOutbox::take_for`] 뿐이다.
         ///
         /// 즉 위 "host 없이는 비울 수 없다" 는 봉인의 범위는 프로덕션 빌드다. 테스트에서는
-        /// 이 창구로 버퍼를 직접 만질 수 있다(ADR-0623).
+        /// 이 창구로 버퍼를 직접 만질 수 있다(ADR-0023).
         #[cfg(test)]
         pub(super) fn peek(&self) -> std::sync::MutexGuard<'_, Vec<MirrorEvent>> {
             self.events.lock().unwrap_or_else(|p| p.into_inner())
@@ -342,7 +342,7 @@ pub(crate) struct AttachClientSession {
     // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
-    /// bulk 파일 전송(ADR-0622)이 결속할 **원격** workspace id. 대화형 attach 가
+    /// bulk 파일 전송(ADR-0022)이 결속할 **원격** workspace id. 대화형 attach 가
     /// `open_attach_workspace` 에 넘긴 그 값 — 전용 bulk 연결의 `open_bulk` 가 이 값을
     /// 서버에 실어 "이 ws 의 holder 가 존재하는가" 인가의 근거로 삼는다(서버측 검증).
     remote_workspace: u32,
@@ -370,7 +370,7 @@ pub(crate) struct AttachClientSession {
     agent_requests: agent_origin::AgentRequests,
     /// 방금 성공한 op 의 focus 의도 — 다음 `StructuralDelta` 적용에 1회 소비(take)된다.
     next_delta_focus: Option<PendingOpFocus>,
-    /// client-driven resize(ADR-0622) 중복 전송 억제. **원격 surface_id →
+    /// client-driven resize(ADR-0022) 중복 전송 억제. **원격 surface_id →
     /// 마지막으로 forward 한 (cols, rows)**. 로컬 레이아웃 스윕은 매 프레임 돌고
     /// mirror grid 는 server echo 로만 갱신되므로, echo 왕복(약 1 RTT) 동안 같은
     /// 목표가 매 프레임 재계산된다 — 여기서 직전 전송값과 같으면 재전송을 생략해
@@ -382,19 +382,19 @@ pub(crate) struct AttachClientSession {
     /// `user@host` 는 이 세션까지 threading 되어 있지 않아(auto_attach/remote_attach
     /// 팝업 모두 `port` 만 넘김) 후속 개선 대상으로 남긴다.
     remote_label: String,
-    /// (ADR-0622 참고) 아직 응답을 못 받은 `list_dir_request` 의 `request_id →
+    /// (ADR-0022 참고) 아직 응답을 못 받은 `list_dir_request` 의 `request_id →
     /// 소비자 태그`(`None`=File Picker, `Some(surface_id)`=explorer). 서버 응답
     /// 서버의 `list_dir_result`에는 소비자 태그가 없다. 요청할 때 여기에 기록하고
     /// 응답이 오면 꺼내서 해당 소비자에게 전달한다.
     /// 응답을 소비하면(성공/실패 무관) 제거 — stale 재사용 없음.
     pending_list_dir_consumers: HashMap<u64, Option<u32>>,
-    /// (ADR-0622) 이 세션이 만든 **로컬 markdown surface**(plugin 소유 `RemoteSurface`)의
+    /// (ADR-0022) 이 세션이 만든 **로컬 markdown surface**(plugin 소유 `RemoteSurface`)의
     /// local id. 이 surface 들은 로컬에서 닫히는 경로(lifecycle 큐)를 안 타고 mirror 트리
     /// 교체·세션 정리로 사라지므로, host 가 직접 plugin 에 `surface.destroy` 를 보내야
     /// plugin 의 per-surface 문서 상태가 남지 않는다. 재구성마다 새 집합과 견줘 빠진
     /// 것을 destroy 하고, 끊김(Reconnecting) 때는 이 집합에 원문 대기 abandon 을 알린다.
     markdown_locals: HashSet<u32>,
-    /// (ADR-0623) 손실 통지를 받아 **재attach 를 기다리는** 중이면 그때까지 통지된 프레임
+    /// (ADR-0023) 손실 통지를 받아 **재attach 를 기다리는** 중이면 그때까지 통지된 프레임
     /// 수의 합. `Some` 이면 옛 연결에 이미 `Detach` 를 보냈고, 그 연결의 EOF
     /// (`disconnected`)를 본 `apply_attach_client_output` 이 끊김 정리 대신
     /// `reconnect_session` 으로 다시 붙는다. EOF 를 기다리는 이유는 서버가 옛 연결의 점유
@@ -403,7 +403,7 @@ pub(crate) struct AttachClientSession {
     /// 새 attach 가 거절되는 경합이 없다. 한 세션의 재attach 는 한 번에 하나다 — 기다리는
     /// 동안 온 통지는 이 수에 더하기만 한다.
     resync_pending: Option<u64>,
-    /// (ADR-0623) 손실 통지가 **창 없는(parked) engine** 에서 왔다 — `resync_pending` 은
+    /// (ADR-0023) 손실 통지가 **창 없는(parked) engine** 에서 왔다 — `resync_pending` 은
     /// 섰지만 옛 연결에 `Detach` 를 아직 안 보냈다. 재attach 의 마지막 단계
     /// (`reconnect_session`)는 mirror 를 담은 창을 찾으므로 parked 에서 걸면 실패하고, 실패
     /// 갈래는 anchor 없는 세션을 정리한다 — 손실 한 번에 mirror 가 사라진다. 그래서 연결을
@@ -413,7 +413,7 @@ pub(crate) struct AttachClientSession {
 }
 
 impl AttachClientSession {
-    /// (ADR-0623) 손실 재attach 를 위해 옛 연결을 **이미 놓았는가** — 그렇다면 그 연결의
+    /// (ADR-0023) 손실 재attach 를 위해 옛 연결을 **이미 놓았는가** — 그렇다면 그 연결의
     /// EOF 는 끊김이 아니라 재attach 차례다. parked 에서 미뤄 둔 손실은 아직 놓지 않았다.
     fn resync_released(&self) -> bool {
         self.resync_pending.is_some() && !self.resync_awaiting_window
@@ -705,7 +705,7 @@ impl App {
                 engine,
             );
             sess.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
-            // (ADR-0623) 새 연결의 snapshot 은 survivor 터미널에 **이어** 들어간다. 끊긴 동안
+            // (ADR-0023) 새 연결의 snapshot 은 survivor 터미널에 **이어** 들어간다. 끊긴 동안
             // (또는 손실로 놓은 동안)의 바이트는 없으므로 그 앞뒤는 한 stream 이 아니다 —
             // 옛 위치로 읽는 소비자가 이어진 바이트로 오해하지 않게 표지를 새로 만든다.
             for &local in sess.remote_to_local.values() {
@@ -713,7 +713,7 @@ impl App {
                     t.renew_output_stream();
                 }
             }
-            // (ADR-0623) mesh 는 공백을 건너 잇지 않는다. 서버의 mesh 구독은 client id 에
+            // (ADR-0023) mesh 는 공백을 건너 잇지 않는다. 서버의 mesh 구독은 client id 에
             // 묶여 옛 연결과 함께 사라졌으므로, 캐시된 frame 과 구독 dedup 상태를 지워
             // 다음 렌더가 `MeshContext` 를 다시 보내 처음부터(full texture) 받게 한다.
             // dedup 상태가 남으면 크기·테마가 안 바뀌는 한 구독이 다시 안 나간다.
@@ -805,7 +805,7 @@ impl App {
         sess.agent_requests.clear();
         sess.next_delta_focus = None;
         sess.last_forwarded_resize.clear();
-        // ADR-0622 — 재연결 시 pending list_dir 요청 폐기(끊긴 연결에
+        // ADR-0022 — 재연결 시 pending list_dir 요청 폐기(끊긴 연결에
         // 물려 있던 request_id 는 다시 응답이 안 온다). explorer/File Picker 쪽의
         // Loading 상태는 각자의 soft timeout 으로 알아서 ErrorConn 전이한다.
         sess.pending_list_dir_consumers.clear();
@@ -813,7 +813,7 @@ impl App {
         sess.resync_awaiting_window = false;
         sess.state = SessionState::Connected;
         sess.remote_label = format!("127.0.0.1:{port}");
-        // (ADR-0622) 끊긴 동안의 변경 신호는 쌓이지 않았고, survivor markdown 문서는 핸들을
+        // (ADR-0022) 끊긴 동안의 변경 신호는 쌓이지 않았고, survivor markdown 문서는 핸들을
         // 공유해 이어지므로 원문을 다시 받지 않는다 — 그대로 두면 끊김 화면(또는 끊기기 전
         // 원문)이 남는다. 문서마다 변경 신호를 한 번 보내 plugin 이 판단하게 한다: 원문을
         // 보여 주던 문서는 stale 표시, 끊김·실패를 보여 주던 문서는 재요청이다.
@@ -859,7 +859,7 @@ impl App {
     /// engine 에도 없으면(= 고아, 같은 프레임의 `detach_orphaned_mirror_sessions` 가
     /// 세션째 정리) 버퍼를 그대로 둔다 — 먼저 꺼내면 적용 대상이 없을 때 되돌릴 수 없다. 순회 범위는 고아 판정
     /// (`mirror_workspace_engine_alive`)·정리(`cleanup_mirror_workspace`)와 같아야 한다
-    /// (ADR-0623).
+    /// (ADR-0023).
     pub(crate) fn apply_attach_client_output(&mut self) {
         if self.attach_client_sessions.is_empty() {
             return;
@@ -891,7 +891,7 @@ impl App {
             //
             // 아래 `as_main_mut()` 같은 2차 조회가 실패해도 이미 꺼낸 이벤트가 버려지는
             // 일은 없다 — 그 시점엔 아직 꺼내지 않았고, 꺼내려면 host 값이 있어야 하기
-            // 때문이다(`MirrorOutbox::take_for`). 유실이 생기면 조용히 생긴다(ADR-0623).
+            // 때문이다(`MirrorOutbox::take_for`). 유실이 생기면 조용히 생긴다(ADR-0023).
             match host {
                 Some(MirrorOutputHost::Window(wid)) => {
                     let sess = &mut self.attach_client_sessions[idx];
@@ -899,7 +899,7 @@ impl App {
                     let mut mirror_host = main
                         .as_mut()
                         .map(|m| MirrorHost::windowed(&mut m.state, &mut m.core_state));
-                    // (ADR-0623) parked 동안 미뤄 둔 재attach — 창이 돌아왔으니 이제 놓는다.
+                    // (ADR-0023) parked 동안 미뤄 둔 재attach — 창이 돌아왔으니 이제 놓는다.
                     if let Some(host) = mirror_host.as_mut() {
                         resume_resync_in_window(sess, host);
                     }
@@ -958,7 +958,7 @@ impl App {
         }
     }
 
-    /// (ADR-0623) 손실 통지로 옛 연결을 놓은 세션을 **재attach** 로 다시 세운다 — PTY 의
+    /// (ADR-0023) 손실 통지로 옛 연결을 놓은 세션을 **재attach** 로 다시 세운다 — PTY 의
     /// snapshot 재요청이다. 서버가 snapshot 을 만드는 자리가 attach 하나뿐이라 새 wire 가
     /// 필요 없고, 그래서 구 서버에서도 그대로 동작한다. 경로는 네트워크 재연결과 같은
     /// `reconnect_session` 이다(survivor 매핑으로 로컬 id·scrollback 보존, stream 표지 갱신,
@@ -1003,7 +1003,7 @@ impl App {
                 sess.markdown_locals.clone(),
             )
         };
-        // (ADR-0622) mirror markdown 문서는 살아 있지만 끊긴 연결에 물린 원문 요청의 응답은
+        // (ADR-0022) mirror markdown 문서는 살아 있지만 끊긴 연결에 물린 원문 요청의 응답은
         // 영영 안 온다. host 는 plugin 이 어느 request_id 를 기다리는지 모르므로 surface
         // 마다 abandon sentinel(`request_id = 0`)을 보낸다 — plugin 은 기다리던 요청을 끝내고,
         // 원문을 이미 보여 주던 문서도 끊김 화면으로 바꾼다(끊긴 동안의 변경은 신호가 안 와
@@ -1062,7 +1062,7 @@ impl App {
         // 이 순회 범위는 `mirror_workspace_engine_alive`(고아 판정)·`mirror_output_host`
         // (mirror 이벤트 적용 대상 탐색)와 **같아야** 한다 — 판정이 "살아 있다"고 본 곳을
         // 정리가 못 찾으면 잔류가 생기고, 적용이 못 찾으면 그 구간의 출력이 유실된다
-        // (ADR-0623). 다만 여기 창 있는 engine 절반에서 그것을 **지키는 것은 없다** —
+        // (ADR-0023). 다만 여기 창 있는 engine 절반에서 그것을 **지키는 것은 없다** —
         // 창 있는 engine의 범위 일치를 자동으로 검사하지 않는다. 공용 함수를 쓰는 범위와
         // 별도로 순회하는 범위, 관련 시험의 한계는 `window_access::mirror_workspace_engine_alive` 의 doc 에 한 벌만 있다
         // (docs/documentation-model.md#경로와-코드-인용: 사본을 만들지 말고 심볼 이름으로 가리킨다).
@@ -1106,7 +1106,7 @@ impl App {
         if from_disconnect {
             self.notify_git_viewer_mirror_lost();
         }
-        // (ADR-0622) mirror workspace 가 통째로 사라지면 그 안의 로컬 markdown surface 도
+        // (ADR-0022) mirror workspace 가 통째로 사라지면 그 안의 로컬 markdown surface 도
         // 사라진다 — 그 경로는 lifecycle 큐를 안 타므로 plugin 문서 상태를 직접 정리한다.
         destroy_mirror_markdown_surfaces(&mut self.plugin_manager, sess.markdown_locals.clone());
         // heartbeat 스레드 종료 신호 — 사용자 close 경로(disconnected 가 아직 false)도
@@ -1233,7 +1233,7 @@ impl App {
 
     /// `about_to_wait` 에서 호출 — `Core::resize_all_terminals` 의 로컬 레이아웃
     /// 스윕이 mirror(detached) 터미널마다 쌓은 client-driven resize 큐를 drain 해
-    /// 원격에 forward 한다(ADR-0622). 각 로컬 surface id 를 세션 매핑으로 원격 id 로
+    /// 원격에 forward 한다(ADR-0022). 각 로컬 surface id 를 세션 매핑으로 원격 id 로
     /// 치환하고, 세션의 last-forwarded dedup 을 통과한 것만 `StreamControl::ClientResize`
     /// 로 보낸다. 로컬 mirror grid 는 여기서 건드리지 않는다 — server 의 `Resize`
     /// echo 가 유일한 갱신원(desync 방지).
@@ -1315,7 +1315,7 @@ impl App {
     /// 원격 git 조회 forward 큐(`CoreState::pending_git_query_forward`)를 drain 해
     /// 각 요청을 해당 mirror 세션의 attach 채널로 전송한다
     /// (`dispatch_pending_list_dir_forwards` 와 동형). 세션을 못 찾으면(예: mirror
-    /// workspace 소멸/재연결 중) ADR-0622와 동일하게 **soft timeout 을 기다리지
+    /// workspace 소멸/재연결 중) ADR-0022와 동일하게 **soft timeout 을 기다리지
     /// 않고 즉시** 실패 결과를 plugin 에 회신한다(무한 로딩 없음).
     pub(crate) fn dispatch_pending_git_query_forwards(&mut self) {
         let mut pending: Vec<crate::core::PendingGitQueryForward> = Vec::new();
@@ -1346,7 +1346,7 @@ impl App {
 
     /// `about_to_wait` 에서 호출 — `markdown_mirror.content_request` IPC 핸들러가 쌓은
     /// 원격 markdown 원문 조회 forward 큐(`CoreState::pending_markdown_content_forward`)를
-    /// drain 해 각 요청을 해당 mirror 세션의 attach 채널로 보낸다(ADR-0622,
+    /// drain 해 각 요청을 해당 mirror 세션의 attach 채널로 보낸다(ADR-0022,
     /// `dispatch_pending_git_query_forwards` 와 동형). 보낼 수 없으면(세션 없음·재연결 중·
     /// 전송 실패) 응답을 기다리지 않고 **그 자리에서** 실패 결과를 plugin 에 돌려준다 —
     /// 안 그러면 문서가 로딩 상태로 멈춘다.
@@ -1373,7 +1373,7 @@ impl App {
         }
     }
 
-    /// (ADR-0622 참고) 원격 전송 자체가 실패한 git 조회 요청을 plugin 에 `ok:false` 로
+    /// (ADR-0022 참고) 원격 전송 자체가 실패한 git 조회 요청을 plugin 에 `ok:false` 로
     /// 즉시 회신하고, 열려 있는 git-viewer popup 인스턴스에 강제 repaint 를
     /// 예약한다(`apply_attach_client_output`의 `MirrorEvent::GitQueryResult` 성공
     /// 경로와 동형 — 여기는 attach 응답 자체가 오지 않는 케이스라 host 가 직접
@@ -1394,7 +1394,7 @@ impl App {
         }));
     }
 
-    /// (ADR-0622 참고) mirror workspace 가 disconnect 로 정리될 때 호출 — 그 시점에 진행
+    /// (ADR-0022 참고) mirror workspace 가 disconnect 로 정리될 때 호출 — 그 시점에 진행
     /// 중이던 git-viewer 원격 요청이 있으면 응답이 영영 오지 않아 popup 이
     /// "Loading…" 에 무한정 멈춘다. host 는 plugin 내부 pending 상태(어떤
     /// `request_id` 를 기다리는지)를 모르므로, `request_id = 0`(실제 발급은 1부터 —
@@ -1608,7 +1608,7 @@ impl App {
 
 /// forward 큐 원소의 `user_triggered` 를 wire 의 `origin` 으로 옮긴다. 서버는 이것으로 close 를
 /// 자기 복원 스택에 남길지 정한다 — 사용자의 손 조작이 아닌 op(에이전트 IPC/CLI 유래)는 남기지
-/// 않는다(`docs/identity.md` 원칙 1, ADR-0623).
+/// 않는다(`docs/identity.md` 원칙 1, ADR-0023).
 fn forward_origin_of(user_triggered: bool) -> tasty_ipc::stream::ForwardOrigin {
     if user_triggered {
         tasty_ipc::stream::ForwardOrigin::User
@@ -1837,7 +1837,7 @@ fn mirror_output_host(
 /// (`window_access::mirror_workspace_engine_alive` 의 parked 절반). 셋의 순회 범위가
 /// 같아야 한다는 요구를 세 번 적는 대신 함수 하나로 만족시킨다 — 판정이 살아 있다고
 /// 본 engine 을 적용이나 정리가 못 찾는 어긋남이 형태상 생길 수 없다
-/// ([ADR-0623](../../docs/adr/0623-attach-state-sync-and-forwarding.md)).
+/// ([ADR-0023](../../docs/adr/0023-attach-state-sync-and-forwarding.md)).
 /// 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫 항목만 보면 안 된다.
 pub(super) fn find_parked_with_workspace(
     parked: &[(crate::state::AppState, crate::core::CoreState)],
@@ -1853,7 +1853,7 @@ pub(super) fn find_parked_with_workspace(
 enum DisconnectDisposition {
     /// 아무 일도 없다 — 연결이 살아 있거나 이미 `Reconnecting` 이다.
     None,
-    /// (ADR-0623) 손실로 스스로 놓은 연결이다 — 재attach 차례다.
+    /// (ADR-0023) 손실로 스스로 놓은 연결이다 — 재attach 차례다.
     Resync,
     /// 끊겼고 anchor 가 있다 — mirror 를 남긴 채 `Reconnecting` 으로.
     Reconnect,
@@ -1928,7 +1928,7 @@ impl<'a> MirrorHost<'a> {
     ///
     /// 꺼내는 일과 적용하는 일을 한 메서드가 쥐고, 그 메서드를 부르려면 `MirrorHost`
     /// 값이 있어야 한다 — "적용 대상 없이 꺼낸다" 가 호출 순서 약속이 아니라 **타입**
-    /// 으로 불가능해지는 지점이다(ADR-0623).
+    /// 으로 불가능해지는 지점이다(ADR-0023).
     fn drain_and_apply(
         &mut self,
         sess: &mut AttachClientSession,
@@ -1963,7 +1963,7 @@ impl<'a> MirrorHost<'a> {
 ///
 /// 이 함수는 `Option` 을 [`MirrorHost::drain_and_apply`] 로 넘기는 얇은 어댑터일 뿐이다 —
 /// 유실을 막는 것은 이 함수의 순서가 아니라 버퍼를 비우는 유일한 경로
-/// ([`MirrorOutbox::take_for`])가 host 를 요구한다는 사실이다(ADR-0623).
+/// ([`MirrorOutbox::take_for`])가 host 를 요구한다는 사실이다(ADR-0023).
 fn apply_pending_mirror_output(
     sess: &mut AttachClientSession,
     host: Option<MirrorHost<'_>>,
@@ -2070,7 +2070,7 @@ fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
         // 앞뒤의 데이터는 연속이 아니다. `Loss` 는 무엇을 잃었는지
         // 안 싣고(연결 단위) 이 연결은 PTY · 상태 · mesh 를 함께
         // 나르므로, 그중 가장 강한 계약인 snapshot 재요청(=재attach)
-        // 을 연결 전체에 건다(ADR-0623).
+        // 을 연결 전체에 건다(ADR-0023).
         Ok(StreamControl::Loss { frames }) => Some(MirrorEvent::Desynced { frames }),
         // 2단계: forward 실패 회신 → 실패 toast(에이전트 op 는 로그).
         Ok(StreamControl::StructuralResult {
@@ -2347,7 +2347,7 @@ fn pending_op_focus_for(
 /// 시나리오 모두 "새 handshake/delta 를 기존 세션 상태에 diff 적용"이라는 점에서
 /// 구조적으로 동일하다.
 ///
-/// markdown role(ADR-0622)은 로컬 plugin surface 를 **이 함수가 미리 만들어**
+/// markdown role(ADR-0022)은 로컬 plugin surface 를 **이 함수가 미리 만들어**
 /// [`SurvivorMapping::markdown`] 에 담는다 — registry 에 닿는 지점(`engine`)을 쥔 곳이 여기라
 /// `build_layout` 은 그것을 트리에 꽂기만 한다. survivor 는 옛 surface 의 핸들을 공유한
 /// 값을 담아(`RemoteSurface::share_handles`) plugin 에 `surface.create` 를 다시 보내지 않는다 —
@@ -2489,7 +2489,7 @@ fn merge_survivor_mapping(
             // 않는다. layout 복원과 같은 kind 대기 placeholder 로 두면 표시 시점의 reify 가
             // kind 등록을 기다렸다가 실제화한다(`CoreState::reify_plugin_surface`).
             // 같은 이름을 **다른** plugin 이 이미 등록했으면 대기하지 않는다 — reify 는 소유자를
-            // 가리지 않으므로 그 plugin 으로 실제화된다(ADR-0622의 화이트리스트).
+            // 가리지 않으므로 그 plugin 으로 실제화된다(ADR-0022의 화이트리스트).
             markdown_locals.insert(local_id, deferred_mirror_markdown_surface(s, local_id));
         }
         new_map.insert(remote_id, local_id);
@@ -2517,7 +2517,7 @@ fn merge_survivor_mapping(
     }
 }
 
-/// 로컬 markdown surface(ADR-0622)를 담는 맵 — local id → 이미 만든 plugin surface.
+/// 로컬 markdown surface(ADR-0022)를 담는 맵 — local id → 이미 만든 plugin surface.
 /// `build_layout` 이 leaf 를 만날 때 꺼내(`remove`) 트리에 꽂는다.
 type MirrorMarkdownLeaves = HashMap<u32, Box<dyn Surface>>;
 
@@ -2539,7 +2539,7 @@ impl SurvivorMapping {
     }
 }
 
-/// client 가 markdown mirror 를 로컬 surface 로 그릴 수 있는가(ADR-0622).
+/// client 가 markdown mirror 를 로컬 surface 로 그릴 수 있는가(ADR-0022).
 /// `"markdown"` kind 가 번들 markdown plugin 에서 등록돼 있어야 한다 — plugin 이 없거나
 /// 아직 hello 를 안 보냈으면 `false` 이고, 그때 leaf 는 kind 대기 placeholder
 /// ([`deferred_mirror_markdown_surface`])다 — 표시 시점의 reify 가 kind 등록 뒤 실제화한다.
@@ -2574,7 +2574,7 @@ fn share_mirror_markdown_surface(
 /// 새 로컬 markdown surface 를 registry 로 만든다 — 로컬에서 markdown 탭을 여는 것과 같은
 /// 경로(`HostCmd::RemoteSurfaceCreated` → plugin `surface.create`)다. params 에 `file` 이
 /// 아니라 `remote.file` 을 싣는다: `file` 로 실으면 plugin 이 **client 로컬의 같은 경로**를
-/// 읽고, host 도 그 값으로 cwd 를 파생한다(ADR-0622 — 그 값은 표시 전용의 opaque
+/// 읽고, host 도 그 값으로 cwd 를 파생한다(ADR-0022 — 그 값은 표시 전용의 opaque
 /// 문자열이다). 원문은 plugin 이 `markdown_mirror.content_request` 로 따로 가져온다.
 fn create_mirror_markdown_surface(
     descriptor: &Value,
@@ -2690,7 +2690,7 @@ fn markdown_content_failure(local_surface_id: u32, request_id: u64, reason: &str
     })
 }
 
-/// (ADR-0623) 손실 통지를 받은 세션을 재attach 대기로 돌린다.
+/// (ADR-0023) 손실 통지를 받은 세션을 재attach 대기로 돌린다.
 ///
 /// 하는 일은 셋이다. 이 세션의 mirror 터미널마다 출력 stream 표지를 새로 만들어, 공백을
 /// 건넌 위치로 읽는 소비자가 이어진 바이트로 오해하지 않게 한다. 옛 연결에 `Detach` 를
@@ -2729,7 +2729,7 @@ fn begin_resync(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>, frame
     release_for_resync(sess, host);
 }
 
-/// (ADR-0623) parked 동안 미뤄 둔 재attach 를 창이 있는 host 에서 시작한다. 미뤄 둔 것이
+/// (ADR-0023) parked 동안 미뤄 둔 재attach 를 창이 있는 host 에서 시작한다. 미뤄 둔 것이
 /// 없거나 host 가 아직 창이 없으면 아무것도 안 한다.
 fn resume_resync_in_window(sess: &mut AttachClientSession, host: &mut MirrorHost<'_>) {
     if !sess.resync_awaiting_window || !host.windowed {
@@ -2912,7 +2912,7 @@ fn apply_one_mirror_event(
             );
         }
         MirrorEvent::MarkdownChanged { surface_id } => {
-            // 자기가 mirror 하지 않는 문서의 신호는 물들일 곳이 없어 버린다(ADR-0622).
+            // 자기가 mirror 하지 않는 문서의 신호는 물들일 곳이 없어 버린다(ADR-0022).
             if let Some(local) = markdown_mirror_local(sess, surface_id) {
                 push_markdown_changed(plugin_manager, local);
             }
@@ -2929,7 +2929,7 @@ fn apply_one_mirror_event(
     }
 }
 
-/// (ADR-0622) `MirrorEvent::ListDirResult` 한 건을 적용한다. 이 요청의 소비자
+/// (ADR-0022) `MirrorEvent::ListDirResult` 한 건을 적용한다. 이 요청의 소비자
 /// 태그로 분기 — `None` = File Picker(기존 로직), `Some(surface_id)` = explorer(그
 /// surface 의 `ExplorerView` 로 라우팅). 태그가 없으면(세션이 이미 재연결로
 /// 지워졌거나 stale) 조용히 무시한다.
@@ -3016,7 +3016,7 @@ fn apply_list_dir_result_event(
     }
 }
 
-/// (ADR-0622 참고) `MirrorEvent::GitQueryResult` 한 건을 적용한다. host 는 페이로드를
+/// (ADR-0022 참고) `MirrorEvent::GitQueryResult` 한 건을 적용한다. host 는 페이로드를
 /// 해석하지 않고 그대로 plugin(별도 프로세스)에 unicast 이벤트로 전달한다 — plugin
 /// 의 wire DTO 가 유일한 소비자. 인가/mirror workspace 소멸 관측은 이미 send
 /// 단계(dispatch_pending_git_query_forwards)에서 처리됐으므로 여기선 무조건 forward.
@@ -3065,10 +3065,10 @@ fn markdown_mirror_local(sess: &AttachClientSession, remote_surface_id: u32) -> 
     sess.markdown_locals.contains(&local).then_some(local)
 }
 
-/// (ADR-0622) `MirrorEvent::MarkdownContentResult` 한 건을 적용한다 — 원격 surface id 를
+/// (ADR-0022) `MirrorEvent::MarkdownContentResult` 한 건을 적용한다 — 원격 surface id 를
 /// 이 세션의 로컬 markdown surface 로 되돌려 그 plugin 에 unicast 한다. host 는 원문을
 /// 해석하지 않는다(plugin 이 그린다). `truncated` 는 toast 로 알린다 — 문서 본문에
-/// "여기서 잘렸다" 를 심지 않는다(ADR-0622, File Picker 의 `list_dir` 과 같은 방식).
+/// "여기서 잘렸다" 를 심지 않는다(ADR-0022, File Picker 의 `list_dir` 과 같은 방식).
 ///
 /// 로컬 markdown surface 로 매핑되지 않는 회신(그 사이 surface 가 사라졌거나 다른 kind 로
 /// 바뀜)은 조용히 버린다 — 받을 문서가 없다.
@@ -3123,7 +3123,7 @@ fn apply_markdown_content_result_event(
 /// focus 돼 있던 surface 를 remote id 기준으로 캡처해뒀다가, 교체 **후** 새 트리에서
 /// 그 surface 를 찾아 focus 를 복원한다(서버 상태는 건드리지 않음 — client-only 보정).
 ///
-/// 반환값은 이 delta 로 **사라진 로컬 markdown surface**(ADR-0622)의 local id 다 — 이
+/// 반환값은 이 delta 로 **사라진 로컬 markdown surface**(ADR-0022)의 local id 다 — 이
 /// 함수는 plugin manager 를 모르므로, 호출부가 그것을 plugin 에 `surface.destroy` 로 알린다.
 fn apply_mirror_structural_delta(
     sess: &mut AttachClientSession,
@@ -3554,7 +3554,7 @@ fn build_mirror_workspace(
 /// `to_tree_json_full` JSON → `SurfaceLayout`(분할 방향/비율/focus 보존). leaf 의 remote
 /// id 는 `map` 으로 로컬 치환하고, 터미널이면 `TerminalSurface`(mirror grid 가 store 에
 /// 있음), attach mesh mirror(`mesh`)면 `AttachMeshSurface`(attach-behavior.md#mesh-mirror-채널 참고), explorer 면
-/// `ExplorerPanel`, markdown(`markdown`, ADR-0622)이면 미리 만든 로컬 plugin surface, 그 외엔
+/// `ExplorerPanel`, markdown(`markdown`, ADR-0022)이면 미리 만든 로컬 plugin surface, 그 외엔
 /// placeholder `EmptySurface` leaf 로 만든다.
 fn build_layout(
     node: &Value,
@@ -3583,10 +3583,10 @@ fn build_layout(
                     info.display_name.clone(),
                 ))
             } else if let Some(root) = explorer.get(&local) {
-                // (ADR-0622 참고) cwd == root 단순화 — wire 는 root 만 싣는다.
+                // (ADR-0022 참고) cwd == root 단순화 — wire 는 root 만 싣는다.
                 Box::new(ExplorerPanel::new(local, root.clone()))
             } else if let Some(surface) = markdown.remove(&local) {
-                // (ADR-0622) `merge_survivor_mapping` 이 registry 로 미리 만든 로컬
+                // (ADR-0022) `merge_survivor_mapping` 이 registry 로 미리 만든 로컬
                 // markdown surface — kind 가 아직 없으면 kind 대기 placeholder 다. 생성이
                 // 실패했을 때만 여기 없고 아래 빈 surface 로 떨어진다.
                 surface
@@ -3807,7 +3807,7 @@ fn parse_git_query_result(payload: &[u8]) -> Option<MirrorEvent> {
     })
 }
 
-/// (ADR-0622) `markdown_content_result` wire — 서버
+/// (ADR-0022) `markdown_content_result` wire — 서버
 /// `attach_runtime::handle_markdown_content_request` 가 만드는 모양 그대로. 성공이면
 /// `file`/`source`/`truncated`, 실패면 `reason` 만 온다.
 #[derive(serde::Deserialize)]
@@ -3903,10 +3903,10 @@ impl App {
         send_capture_control_frame(&frame_tx, &commit)
     }
 
-    /// file picker/explorer(ADR-0622) — `local_ws_id` mirror 세션의 attach
+    /// file picker/explorer(ADR-0022) — `local_ws_id` mirror 세션의 attach
     /// 채널로 `list_dir_request` 를 보낸다. `consumer`(`None`=File Picker,
     /// `Some(surface_id)`=explorer)는 응답 도착 시 라우팅에 쓰도록 세션에 기록해둔다
-    /// (wire 엔 안 실림 — ADR-0622). 응답은 reader thread 가 비동기로 받아
+    /// (wire 엔 안 실림 — ADR-0022). 응답은 reader thread 가 비동기로 받아
     /// `MirrorEvent::ListDirResult` 로 기존 이벤트 큐에 흘려보낸다(`apply_attach_client_output`
     /// 이 소비 — capture_result 와 동일한 reader-thread→큐→메인루프 drain 경로,
     /// `remote_attach.rs` 류 독자 폴링 슬롯 불필요).
@@ -3976,7 +3976,7 @@ impl App {
         send_capture_control_frame(&sess.frame_tx, &msg)
     }
 
-    /// (ADR-0622) `local_surface_id`(로컬 mirror markdown surface)를 보유한 세션의 attach
+    /// (ADR-0022) `local_surface_id`(로컬 mirror markdown surface)를 보유한 세션의 attach
     /// 채널로 `markdown_content_request` 를 보낸다. 원격 id 치환은 `send_git_query_request`
     /// 와 같다. 응답은 reader thread 가 `MirrorEvent::MarkdownContentResult` 로 흘려보낸다.
     pub(crate) fn send_markdown_content_request(
@@ -4048,7 +4048,7 @@ impl App {
 ///
 /// 세션 상태(`&self`)에 의존하지 않으므로 호출자가 백그라운드 스레드로 오프로드하기
 /// 쉽다(세션에서 `(port, remote_ws)` 만 미리 뽑으면 됨). 전용 연결도 heartbeat/TTL
-/// (ADR-0621)·인가(bulk_workspace holder 결속, 서버가 검증)를 그대로 탄다.
+/// (ADR-0021)·인가(bulk_workspace holder 결속, 서버가 검증)를 그대로 탄다.
 /// 파일 바이트를 bulk `Data` 프레임 payload 시퀀스로 청킹한다(각 원소는
 /// `[transfer_id u64][seq u32][part]`). 순수 함수 — 네트워크 없이 청킹 경계·seq·헤더
 /// 인코딩을 검증할 수 있다. 빈 입력은 청크 0개(begin→commit 만으로 0바이트 저장).
@@ -4060,9 +4060,9 @@ fn bulk_chunk_frames(transfer_id: u64, bytes: &[u8]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// 원격 tasty(loopback `port`)에 bulk 파일 전송 전용 연결(ADR-0622)을 연다. 대화형
+/// 원격 tasty(loopback `port`)에 bulk 파일 전송 전용 연결(ADR-0022)을 연다. 대화형
 /// attach 와 동일한 read/write timeout — silent 단절 감지 + write 백프레셔
-/// 백스톱(ADR-0621 heartbeat). `open_bulk` 이 핸드셰이크 ack 를 읽고 돌아온다.
+/// 백스톱(ADR-0021 heartbeat). `open_bulk` 이 핸드셰이크 ack 를 읽고 돌아온다.
 fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConnection> {
     let sock = TcpStream::connect(("127.0.0.1", port))?;
     if let Err(e) = sock.set_read_timeout(Some(stream::HEARTBEAT_TIMEOUT)) {
@@ -4076,7 +4076,7 @@ fn open_bulk_connection(port: u16, remote_ws: u32) -> anyhow::Result<StreamConne
     Ok(conn)
 }
 
-/// (ADR-0623) bulk 연결의 결과 채널 손실을 통지받겠다고 선언한다. 이 연결로 서버가 미는
+/// (ADR-0023) bulk 연결의 결과 채널 손실을 통지받겠다고 선언한다. 이 연결로 서버가 미는
 /// 것은 `BulkResult` 하나뿐이라, 그것이 버려지면 선언 없이는 결과를 read timeout 까지
 /// 기다리다 원인 모를 실패로 끝난다. 구 서버는 모르는 변종으로 무시한다.
 fn declare_bulk_loss_notify(conn: &mut StreamConnection) {
@@ -4160,7 +4160,7 @@ fn await_bulk_result(conn: &mut StreamConnection, transfer_id: u64) -> anyhow::R
                             ))
                         };
                     }
-                    // (ADR-0623) 이 연결의 프레임이 버려졌다 — 기다리는 결과가 그중 하나였을
+                    // (ADR-0023) 이 연결의 프레임이 버려졌다 — 기다리는 결과가 그중 하나였을
                     // 수 있다. 결과를 모르는 전송은 성공으로도 실패로도 확정하지 않고
                     // **중단**으로 끝낸다. 재시도는 자동으로 하지 않는다 — 서버가 이미
                     // 저장했을 수 있다. 오류는 거부 접두(`BULK_REJECT_PREFIX`)를 달지 않아
@@ -4211,7 +4211,7 @@ mod tests {
     use crate::core::state::IdGenerator;
 
     /// 에이전트 경로(`user_triggered=false`)로 큐에 쌓인 close 는 wire 에 `"origin":"agent"` 로
-    /// 나가야 서버가 그것을 복원 스택에 넣지 않는다(ADR-0623).
+    /// 나가야 서버가 그것을 복원 스택에 넣지 않는다(ADR-0023).
     /// 손 조작 close 는 `"user"` 다.
     #[test]
     fn an_agent_close_is_forwarded_with_the_agent_origin() {
@@ -4526,7 +4526,7 @@ mod tests {
         }
     }
 
-    /// (ADR-0622 참고) `role=="explorer"` leaf 는 `explorer` 맵의 root 로
+    /// (ADR-0022 참고) `role=="explorer"` leaf 는 `explorer` 맵의 root 로
     /// `ExplorerPanel::new(local, root)`(cwd == root 단순화)를 구성해야 한다.
     #[test]
     fn build_layout_constructs_explorer_panel_from_explorer_map() {
@@ -5406,7 +5406,7 @@ mod tests {
         );
     }
 
-    /// (ADR-0623) 서버의 손실 통지는 이제 로그로 끝나지 않고 재동기화 이벤트가 된다.
+    /// (ADR-0023) 서버의 손실 통지는 이제 로그로 끝나지 않고 재동기화 이벤트가 된다.
     #[test]
     fn a_loss_notice_becomes_a_desync_event() {
         let payload = serde_json::to_vec(&StreamControl::Loss { frames: 7 }).unwrap();
@@ -5419,7 +5419,7 @@ mod tests {
         );
     }
 
-    /// (ADR-0623) 원격이 회신한 실패 사유는 wire 에서 toast 까지 고쳐지지 않고 괄호 안에
+    /// (ADR-0023) 원격이 회신한 실패 사유는 wire 에서 toast 까지 고쳐지지 않고 괄호 안에
     /// 그대로 실린다. wire 에 사유가 없으면 괄호 없는 기본 문구다. 이벤트 변형을 직접
     /// 만들지 않고 wire 바이트에서 시작해 파싱·적용 두 단계를 모두 지난다.
     #[test]
@@ -5466,7 +5466,7 @@ mod tests {
         );
     }
 
-    /// (ADR-0623) 손실을 받은 세션은 재attach 대기로 들어가고, 옛 연결에 `Detach` 를
+    /// (ADR-0023) 손실을 받은 세션은 재attach 대기로 들어가고, 옛 연결에 `Detach` 를
     /// **한 번만** 보내며, mirror 터미널의 출력 stream 표지를 새로 만든다. 기다리는 중에 온
     /// 통지는 수만 더한다.
     #[test]
@@ -5542,7 +5542,7 @@ mod tests {
         );
     }
 
-    /// (ADR-0623) 창 없는(parked) engine 의 수동 attach(anchor 없음) mirror 는 손실 한
+    /// (ADR-0023) 창 없는(parked) engine 의 수동 attach(anchor 없음) mirror 는 손실 한
     /// 번에 사라지지 않는다. parked 에서 재attach 를 걸면 창을 못 찾아 실패하고, 실패
     /// 갈래는 anchor 없는 세션을 정리한다 — 그래서 옛 연결을 놓지 않고 창을 기다린다.
     /// 창이 돌아오면 그때 놓고, 낡음을 창에 알린다.
@@ -5630,7 +5630,7 @@ mod tests {
         );
     }
 
-    /// (ADR-0623) bulk 연결은 손실 통지를 선언하고, 결과를 기다리는 중 `Loss` 를 받으면
+    /// (ADR-0023) bulk 연결은 손실 통지를 선언하고, 결과를 기다리는 중 `Loss` 를 받으면
     /// 결과를 모르는 채로 기다리지 않고 **중단**으로 끝낸다. 거부 접두를 달지 않아
     /// 사용자에게 재시도가 열린다.
     #[test]
@@ -5773,7 +5773,7 @@ mod tests {
         })
     }
 
-    /// (ADR-0622) role=markdown 디스크립터는 client 에 번들 markdown plugin 의 kind 가
+    /// (ADR-0022) role=markdown 디스크립터는 client 에 번들 markdown plugin 의 kind 가
     /// 등록돼 있으면 **로컬 plugin surface** 가 된다 — 빈 surface 가 아니다. plugin 에는
     /// `file` 이 아니라 `remote.file` 로 경로가 간다(client 로컬의 같은 경로를 읽지 않게).
     #[test]
@@ -5828,7 +5828,7 @@ mod tests {
     }
 
     /// 다른 plugin 이 같은 kind 이름을 등록했으면 지금과 똑같이 빈 surface — 회귀 없음
-    /// (ADR-0622). kind 대기 placeholder 도 아니다: reify 는 소유자를 가리지 않아
+    /// (ADR-0022). kind 대기 placeholder 도 아니다: reify 는 소유자를 가리지 않아
     /// 그 plugin 으로 실제화되기 때문이다.
     #[test]
     fn markdown_role_stays_empty_when_another_plugin_owns_the_kind() {
@@ -6140,7 +6140,7 @@ mod tests {
     /// 창이 없는 parked engine 에 mirror 이벤트가 그대로 적용된다 — `Data` 는 mirror
     /// 터미널 grid 에, `StructuralDelta` 는 매핑·트리에, 그 delta 로 생긴 새 surface 의
     /// 후속 `Data` 는 갱신된 매핑으로 라우팅된다. 이 경로가 없으면 창을 최소화한 동안
-    /// 도착한 출력이 통째로 유실되고 `remote_to_local` 이 desync 된다(ADR-0623).
+    /// 도착한 출력이 통째로 유실되고 `remote_to_local` 이 desync 된다(ADR-0023).
     #[test]
     fn parked_engine_receives_mirror_data_and_structural_delta() {
         let ws_id = 9_000u32;
@@ -6293,7 +6293,7 @@ mod tests {
         assert!(term.screen_text(false).contains("applied-here"));
     }
 
-    /// 창 유무는 **부수효과만** 게이트한다(ADR-0623). parked engine 에는 toast 를
+    /// 창 유무는 **부수효과만** 게이트한다(ADR-0023). parked engine 에는 toast 를
     /// 쌓지 않는다 — 표면이 없고 토스트 수명이 wall-clock 이라 복원 시점엔 이미
     /// 만료돼 보이지도 않는다. 상태 변경은 게이트와 무관하게 항상 적용된다.
     ///

@@ -65,7 +65,7 @@ pub(crate) fn label_or_raw_key(key: &str) -> String {
 /// `Theme` 필드는 생성 시점에 `zoomed()` 를 한 번 거치지만, 대응 디자인 토큰이 없어
 /// 파일 안 명명 const 로 남은 치수는 그 경로 밖이라 배율을 안 탄다. 그 상태로 두면
 /// **그릇만 고정되고 안의 글자·아이콘은 커진다** — 0.85 에서 여백이 뜨고 1.2 에서 내용이
-/// 잘린다(ADR-0635). 반올림 지점을 `zoomed()` 와 같게
+/// 잘린다(ADR-0035). 반올림 지점을 `zoomed()` 와 같게
 /// 맞춰 배율 1 에서 값이 변하지 않는다.
 ///
 /// **토큰이 생기면 이 함수가 아니라 `Theme` 필드로 옮겨간다** — 여기 있는 것은 토큰이
@@ -82,7 +82,7 @@ pub(crate) fn zoomed_px(
 /// `egui_bridge.rs` 가 호출한다.
 ///
 /// **z-order (뒤→앞)**: popup 자체 → toast → banner → modifier-hint → tutorial.
-/// ADR-0636이 Modal/Popup/Toast/Banner 를 서로 다른 개념으로 나눠 popup 루프
+/// ADR-0036이 Modal/Popup/Toast/Banner 를 서로 다른 개념으로 나눠 popup 루프
 /// (`popup::frame::draw_popup_layer`)와 오버레이 체인(`overlay::draw_overlays`)이
 /// 별도 모듈로 쪼개져 있지만, 화면 겹침 순서는 아래 두 호출의 순서 자체로 여전히
 /// 여기 고정된다 — 순서를 바꾸면 뒤 레이어가 앞 레이어를 가리는 시각적 회귀가 된다.

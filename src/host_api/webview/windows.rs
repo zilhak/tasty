@@ -349,7 +349,7 @@ impl PlatformWebView {
                         return Ok(());
                     };
                     // 비라틴 레이아웃 폴백용 물리 위치 — VK 는 레이아웃이 낸 값이라
-                    // 러시아어 등에서 키캡과 어긋난다(ADR-0629).
+                    // 러시아어 등에서 키캡과 어긋난다(ADR-0029).
                     let physical =
                         win32_scancode_to_physical(status.ScanCode, status.IsExtendedKey.as_bool());
                     if key_bridge_cb.capture_key(surface_id, key, physical, current_winit_mods()) {

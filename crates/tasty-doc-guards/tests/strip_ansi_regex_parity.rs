@@ -23,7 +23,7 @@
 //! 여기(의존 0 크레이트)로 옮기면 lane 이 `cargo test -p tasty-doc-guards` 로 초 단위에
 //! 같은 판정을 받는다. `doc-guards.yml` 이 **경로 필터 없이** main push·PR 마다
 //! `cargo test -p tasty-doc-guards --locked --no-fail-fast` 를 돌린다.
-//! 이 배치는 ADR-0647 이 세운 선례를 그대로 따른 것이다.
+//! 이 배치는 ADR-0048 이 세운 선례를 그대로 따른 것이다.
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::temp_scratch::Scratch;
 

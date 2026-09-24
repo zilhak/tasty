@@ -1,4 +1,4 @@
-//! 호스트 headless PTY registry (`pty.*` primitive — Registry + IO. ADR-0613 ·
+//! 호스트 headless PTY registry (`pty.*` primitive — Registry + IO. ADR-0013 ·
 //! features/headless-pty 참고).
 //!
 //! 에이전트가 Surface(Tab) 없이 백그라운드에서 굴리는 **headless PTY** 의 메타데이터와
@@ -7,7 +7,7 @@
 //! 병렬 구조지만 역할이 다르다:
 //!
 //! - `child_terminal`: `terminal.spawn` 으로 만든 **자식 터미널 surface** 의 parent/index/
-//!   idle 매핑 (ADR-0621 occupancy, GUI 에 보이는 장수명 child-agent). Surface 가 있다.
+//!   idle 매핑 (ADR-0021 occupancy, GUI 에 보이는 장수명 child-agent). Surface 가 있다.
 //! - `pty_registry`(본 모듈): Surface 가 아예 없는 1 회성 자동화 PTY. `child.wait()` 로
 //!   **진짜 exit-code** 를 잡고, GUI 안전망(닫기 버튼)이 없으므로 **동시 개수 상한 +
 //!   idle TTL** 로 좀비 누적을 스스로 막는다.
@@ -42,7 +42,7 @@ pub const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(300);
 /// `TerminalStore` 에 재사용 등록돼도 실 surface id 와 겹치지 않게 하는 근거다.
 ///
 /// **이 disjoint 는 상수 하나로 저절로 성립하지 않는다 — 세 방어가 강제한다**
-/// (`docs/adr/0617-workspace-identity-and-focus.md`):
+/// (`docs/adr/0017-workspace-identity-and-focus.md`):
 ///
 /// 1. **호스트 내부 쓰기 방어** — OSC 133 명령 인덱싱
 ///    ([`CommandIndex::on_boundary`](crate::core::command_index::CommandIndex::on_boundary))은
@@ -381,7 +381,7 @@ impl PtyRegistry {
     /// exit-watcher 가 cell 을 채우며 보내는 `Condvar` 신호로 깨어나므로, 고정 간격 폴링과
     /// 달리 러너 부하와 무관하게 **종료 즉시** 반환한다. 이 테스트류가 보증하려는 계약은
     /// "종료가 온다(그리고 코드가 정확하다)" 이지 "종료가 N 초 안에 온다" 가 아니므로, 시간은
-    /// 사고다 — 고정 마감시각 단정은 부하가 높은 회차에서 확률적으로 깨진다(ADR-0644 고정 시간 대기의 취약성).
+    /// 사고다 — 고정 마감시각 단정은 부하가 높은 회차에서 확률적으로 깨진다(ADR-0045 고정 시간 대기의 취약성).
     /// 상한은 그래서 신호가 영영 오지 않을 때만 걸리는 안전망이고, 넉넉히 준다. 상한 안에
     /// 종료가 안 오면 `None`, 미존재 id 도 `None`.
     ///
@@ -474,7 +474,7 @@ impl PtyRegistry {
     /// **접근 시점 lazy sweep + 주기 타이머 양쪽에서 호출된다.** lazy 만으로는 에이전트가
     /// 조용해진 순간 — 즉 좀비가 가장 오래 남는 순간 — 에 회수도 함께 멈춘다. 주기
     /// 경로가 그 사각을 메우고, lazy 는 spawn 상한 판정을 정확히 유지하려고 남는다
-    /// (`docs/adr/0613-terminal-io-and-process-lifetime.md`). 시각을 주입받고
+    /// (`docs/adr/0013-terminal-io-and-process-lifetime.md`). 시각을 주입받고
     /// idempotent 하므로 두 경로가 겹쳐 돌아도 안전하다.
     pub fn sweep_idle(&mut self, now: Instant) -> Vec<u32> {
         let ttl = self.idle_ttl;
@@ -785,7 +785,7 @@ mod tests {
     /// 아니라 **지연**이고, 이 시험이 지키는 것은 그 재검사다.
     ///
     /// 통지로 깨어나든 만료로 깨어나든 반환값이 같아, 값 비교만으로 지연 차이를 검사할 수 없다.
-    /// 시간을 검사하려면 부하를 구분할 대조군이 필요하다(ADR-0645). 다만 `wait_for_exit`은
+    /// 시간을 검사하려면 부하를 구분할 대조군이 필요하다(ADR-0046). 다만 `wait_for_exit`은
     /// 테스트 전용이고 이 지연에 의존하는 제품 코드가 없어 별도 시간 검사는 추가하지 않았다.
     #[test]
     fn a_fill_is_never_lost_even_if_the_wakeup_never_comes() {

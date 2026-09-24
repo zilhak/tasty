@@ -103,8 +103,8 @@ fn skips_from_workflow() -> Vec<String> {
         "`{STEP_ANCHOR}` 블록에서 `--skip` 을 하나도 못 읽었다. 읽기가 둘이고 **둘 다 \
          실패로 다룬다**:\n\
          (1) 파서가 죽었다 — 스텝 이름이나 인자 표기가 바뀌었다. 그때는 위 앵커를 고친다.\n\
-         (2) 진짜 0 건이다 — 그것은 결함이 아니라 **ADR-0644 의 재검토 조건이 줄어드는 \
-         쪽으로 발화한 것**이다(docs/adr/0644-test-isolation-and-harness.md). 헤드리스가 \
+         (2) 진짜 0 건이다 — 그것은 결함이 아니라 **ADR-0045 의 재검토 조건이 줄어드는 \
+         쪽으로 발화한 것**이다(docs/adr/0045-test-isolation-and-harness.md). 헤드리스가 \
          전 스위트를 돌게 됐다는 뜻이라 그 ADR 의 대안 A 를 다시 본다.\n\
          둘을 가르는 법: 워크플로에서 그 스텝을 눈으로 본다. 앵커는 찾았는데 인자만 \
          없으면 (2) 다."
@@ -536,8 +536,8 @@ fn the_named_skip_count_is_still_one() {
         skips.len(),
         1,
         "`check-headless` 의 명명 `--skip` 이 {} 건이다: {:?}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0644 의 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0644-test-isolation-and-harness.md).\n\
+         ★ 이것은 회귀가 아니라 **ADR-0045 의 재검토 조건이 발동한 것**이다 \
+         (docs/adr/0045-test-isolation-and-harness.md).\n\
          순서가 있다. (1) 늘어난 건이 **\"GUI 를 정말 요구한다\"** 인지 **\"배선 결함\"** \
          인지 가른다 — 그 ADR 이 닫은 두 건은 둘 다 후자였다(헤드리스에 훅이 배선되지 \
          않았거나, 핸들러가 `gui` feature 에 묶여 있었다). (2) 배선 결함이면 skip 이 \

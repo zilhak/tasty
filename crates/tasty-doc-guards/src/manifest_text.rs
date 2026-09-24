@@ -1,7 +1,7 @@
 //! `tasty-plugin-manifest` 의 두 표를 **텍스트로** 읽는다 — 권한 토큰과 contributes 게이트.
 //!
 //! 왜 링크하지 않고 읽나: 이 크레이트는 의존이 0 이라 콜드 빌드가 1 초 미만이고, 그래서
-//! `doc-guards.yml` 이 **경로 필터 없이** 매 push 돌 수 있다(ADR-0647). 그 표들을 링크로
+//! `doc-guards.yml` 이 **경로 필터 없이** 매 push 돌 수 있다(ADR-0048). 그 표들을 링크로
 //! 열거하려면 `tasty-plugin-manifest` 를 끌어와야 하는데 그것만으로 전이 의존이 61 개다
 //! (serde·toml·serde_json…) — 필터 없는 잡의 전제가 무너진다.
 //!

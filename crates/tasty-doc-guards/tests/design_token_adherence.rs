@@ -64,7 +64,7 @@ const SCAN_ROOTS: &[&str] = &[
 /// 전수 이식이 끝난 범위다(남은 건수는 이 파일의
 /// [`no_primitive_color_field_access_in_host_ui`] 가 실시간으로 답한다 — 여기 숫자로
 /// 적으면 다음 병합에 썩는다). 위젯 크레이트도 primitive 절대 불가
-/// (ADR-0635): 재사용 위젯이라도 색은 semantic role 접근자로만 읽는다. 제외:
+/// (ADR-0035): 재사용 위젯이라도 색은 semantic role 접근자로만 읽는다. 제외:
 /// - `crates/tasty-gallery/src`: 팔레트 데모가 raw primitive 를 의도적으로 노출.
 const COLOR_SCAN_ROOTS: &[&str] = &[
     "src/view",
@@ -81,7 +81,7 @@ const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu"
 /// 호출부 길이 리터럴 축의 스캔 모수 — 본체 UI 전부에서 **갤러리만** 뺀다.
 ///
 /// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 리터럴도 함께
-/// 커지므로 거기서는 결함이 아니다(ADR-0639). 제외의 사유가 그것 하나이므로
+/// 커지므로 거기서는 결함이 아니다(ADR-0039). 제외의 사유가 그것 하나이므로
 /// 제외도 그것 하나로 적는다 — 남기는 쪽(`"src/"` 같은 경로 모양)으로 적으면 갤러리가
 /// 아닌 위젯 크레이트까지 사유 없이 함께 빠진다.
 const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
@@ -94,7 +94,7 @@ const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
 
 /// 길이를 직접 받는 egui 호출부. 이 접두 뒤에 숫자가 오면 그 길이는 `Theme` 밖이라
 /// **본체에서 `ui_scale` 을 안 탄다**(본체는 egui `zoom_factor` 를 1.0 으로 고정하고
-/// 배율을 `zoomed()` 로만 먹인다 — ADR-0639).
+/// 배율을 `zoomed()` 로만 먹인다 — ADR-0039).
 const LENGTH_SETTER_PREFIXES: &[&str] = &[
     "set_min_width(",
     "set_max_width(",
@@ -120,7 +120,7 @@ const LENGTH_SETTER_PREFIXES: &[&str] = &[
 ///
 /// 여섯 자리를 지금 고치지 않는 이유는 값이 바뀌기 때문이다 — tier 를 넓힐지 이 여섯을
 /// tier 로 스냅할지는 디자인 판정이고, 자리마다 이름을 주면 드리프트가 정당해 보여
-/// 눈에 안 보이게 된다(ADR-0635). **이 가드가 답하는 것은 그 질문이 아니라 "일곱째가
+/// 눈에 안 보이게 된다(ADR-0035). **이 가드가 답하는 것은 그 질문이 아니라 "일곱째가
 /// 새로 들어오는가" 다.**
 const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
     (
@@ -224,7 +224,7 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     ".size(",
     // 아이콘 글리프 **크기** 축. `icon_glyph_size_xs 12` · `_sm 14` · `_row_action 15` ·
     // `_md 16` 이 실재하므로 이 자리의 리터럴은 "토큰이 없어서" 가 아니라 **토큰 우회**다.
-    // 스케일 밖 값(13 · 17 · 22 · 26 · 28 · 30)은 ADR-0635와 같게 명명 const 로 둔다 —
+    // 스케일 밖 값(13 · 17 · 22 · 26 · 28 · 30)은 ADR-0035와 같게 명명 const 로 둔다 —
     // 그래서 이 접두에는 allowlist 항목이 없다(이식을 먼저 끝내고 넣었다).
     ".image(",
     // 코너 반경 축. **접두가 둘인 이유가 이 축의 교훈이다** — 다수가
@@ -234,7 +234,7 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     //
     // 스케일은 `corner_radius_sm 2` · `corner_radius 4` · `corner_radius_lg 8` 이고
     // DTCG 도 `radius-2/4/8/full` 뿐이다. 밖의 값(3 · 6 · 12)은 스냅하지 말고
-    // ADR-0635 대로 사유를 적은 명명 const 로 둔다 —
+    // ADR-0035 대로 사유를 적은 명명 const 로 둔다 —
     // `tasty_ui_widgets::tokens` 의 `BOOT_CHROME_CORNER_RADIUS` ·
     // `BOOT_CARD_CORNER_RADIUS` · `TAG_PILL_CORNER_RADIUS` 가 그것이다.
     // 전부 0 이면 `CornerRadius::ZERO`(`Margin::ZERO` 와 같은 관례).
@@ -1100,7 +1100,7 @@ fn length_setter_literals_under(
 ///
 /// 이 축의 결함은 토큰이 아니라 배율이다. 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
 /// UI 배율을 `Theme::with_colors_and_zoom` 의 `zoomed()` 로만 적용하므로, 호출부에 적힌
-/// 숫자는 `ui_scale` 을 안 탄다 — 같은 리터럴이 갤러리에서는 결함이 아니다(ADR-0639).
+/// 숫자는 `ui_scale` 을 안 탄다 — 같은 리터럴이 갤러리에서는 결함이 아니다(ADR-0039).
 ///
 /// **하한(`<= n`)이 아니라 집합 동등으로 본다.** 건수 고정은 빨개지기는 해도 무엇이
 /// 늘었는지 말하지 않고, 한 방향(늘어남)만 보면 자리가 고쳐졌을 때 목록이 그대로 남아
@@ -1139,7 +1139,7 @@ fn no_new_length_literal_at_call_sites() {
         added.is_empty(),
         "호출부에 길이 리터럴이 새로 들어왔다 — 본체는 egui zoom_factor 를 1.0 으로 \
          고정하므로 이 숫자는 `ui_scale` 을 안 탄다. `Theme` 의 `field_width_*` 등 \
-         대응 토큰을 넘겨라(ADR-0639):\n{}",
+         대응 토큰을 넘겨라(ADR-0039):\n{}",
         show(&added)
     );
     assert!(

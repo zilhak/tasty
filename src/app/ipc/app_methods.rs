@@ -24,7 +24,7 @@ impl App {
     ) -> IpcStep {
         // 멱등 키를 실은 `Mutate` 는 보존소를 먼저 지난다 — 이 층의 메서드는 engine
         // 라우터에 안 닿으므로 거기 보존소가 못 본다. 이 층이 그 이름을 안 맡으면
-        // (`NotHandled`) 연 자리를 닫고 다음 층이 다시 판정한다(ADR-0605).
+        // (`NotHandled`) 연 자리를 닫고 다음 층이 다시 판정한다(ADR-0005).
         if let Some(step) = host_ipc::handler::idempotency::run_app_layer(
             caller,
             cmd,
@@ -52,7 +52,7 @@ impl App {
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
             // 완료 채널을 실어 보내고 응답은 defer 한다 — winit 핸들러가 창 생성
-            // 성공/실패를 이 채널로 돌려준다(ADR-0607). 즉시 `{"scheduled": true}` 를
+            // 성공/실패를 이 채널로 돌려준다(ADR-0007). 즉시 `{"scheduled": true}` 를
             // 돌려주던 fire-and-forget 은 실패를 요청자에게 못 알려, 실패가 사용자
             // toast 로만 새어나갔다(요청하지도 않은 일의 실패 통지 — 원칙 1 위반).
             let completion = crate::app::event::IpcCompletion::new(
@@ -941,7 +941,7 @@ impl App {
 /// 종전대로 main 창만 다룬다(모달·preset 은 사용자 조작 영역).
 ///
 /// 결정의 근거·기각 대안·재검토 조건:
-/// `docs/adr/0618-explicit-capture-and-fullscreen-stage.md`.
+/// `docs/adr/0018-explicit-capture-and-fullscreen-stage.md`.
 fn resolve_screenshot_window(
     windows: &[(u64, bool)],
     requested: Option<u64>,

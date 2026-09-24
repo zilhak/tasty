@@ -2,7 +2,7 @@
 
 View 내부 가상 창은 모두 **`PopupManager` + `PopupDef` 시스템**으로 만든다. `egui::Window` 를 직접 쓰지 않는다. 용어(Window/Modal/Popup/Toast 구분)는 [concepts/ubiquitous-language](../concepts/ubiquitous-language.md), 시스템 설계는 [`design/systems/popup.md`](../design/systems/popup.md).
 
-> **0단계 — gallery-first**: 새 팝업은 본체에 넣기 **전에** 갤러리에 먼저 만든다(디자인 수령 → 갤러리 specimen → 본체). 아래 3단계는 그 "본체 반영" 단계다. 절차·근거는 [gallery-first](gallery-first.md) · [ADR-0635](../adr/0635-shared-design-and-theme.md).
+> **0단계 — gallery-first**: 새 팝업은 본체에 넣기 **전에** 갤러리에 먼저 만든다(디자인 수령 → 갤러리 specimen → 본체). 아래 3단계는 그 "본체 반영" 단계다. 절차·근거는 [gallery-first](gallery-first.md) · [ADR-0035](../adr/0035-shared-design-and-theme.md).
 
 ## 두 팝업 시스템 — host `PopupDef` vs plugin `[[contributes.popup]]`
 
@@ -11,9 +11,9 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 | | **host `PopupDef`** | **plugin `[[contributes.popup]]`** |
 |---|---|---|
 | 정의 위치 | `src/adapters/ui/popup/defs.rs::all_defs()` 정적 목록(`OnceLock`) | plugin 매니페스트 `tasty-plugin.toml` |
-| 콘텐츠 렌더 | host 프로세스 egui (`draw_fn`) | **plugin 프로세스** egui → egui-mesh 로 tessellate, host 가 합성 ([ADR-0628](../adr/0628-egui-mesh-rendering.md)) |
+| 콘텐츠 렌더 | host 프로세스 egui (`draw_fn`) | **plugin 프로세스** egui → egui-mesh 로 tessellate, host 가 합성 ([ADR-0028](../adr/0028-egui-mesh-rendering.md)) |
 | 셸(scrim·border·이동·리사이즈·outside-click·Esc) | `PopupManager` | **host `PopupManager`** (동일 — 셸은 언제나 host 소유) |
-| 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host event 발행이 발화, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0631](../adr/0631-file-handler-routing.md)) |
+| 여는 주체 | host — `UiIntent::OpenPopup { id }` | host 가 `PluginManager::open_popup_instance(plugin_id, popup_id, context)` 로 인스턴스화. 트리거는 (a) 매니페스트 `trigger = { kind = "event", event_key }` 를 host event 발행이 발화, 또는 (b) surface-kind capability(`convert_input_popup`) 로 host 가 직접 open ([ADR-0031](../adr/0031-file-handler-routing.md)) |
 | 상태·입력 버퍼 | host `AppState.dialogs` | **plugin 프로세스** 내 인스턴스 상태(`instance_id` 키) |
 | 스코프(가시성·경계) | `PopupDef.default_scope` + 여는 쪽 `OpenPopupMode::WithScope` | 매니페스트 `scope`(`window` 기본 / `surface`) + 여는 host 진입점이 대상 surface 바인딩 — 판정 함수는 host 와 같다([design/systems/popup.md](../design/systems/popup.md) §plugin popup 의 스코프) |
 
@@ -25,7 +25,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 **현재 plugin 팝업 (markdown, egui-mesh):**
 
 - `large-file-confirm` — 대용량 파일 열기 확인. 크기 감지·확인 로직이 plugin in-process 소유(host 는 파일 크기를 stat 하지 않는다). plugin 이 `com.tasty.markdown.large_file_confirm` 이벤트를 발행하면 열린다.
-- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). `scope = "surface"` 라 대상 surface 가 보일 때만 그 영역 안에 뜬다. host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host 소유 file_picker popup(`file_picker.trigger`, [ADR-0636](../adr/0636-overlay-scope-and-lifetime.md))으로 위임하고 팝업을 띄운 surface 의 폴더에서 출발시킨다, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 새 탭 쪽은 `owner_popup_instance` 에 자기 popup 을 실어 사용자 조작임을 알린다 — 빠지면 host 가 에이전트 요청으로 받아 새 탭을 선택하지 않는다([ADR-0631](../adr/0631-file-handler-routing.md)). 상세: [plugins/markdown](../plugins/markdown/index.md).
+- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). `scope = "surface"` 라 대상 surface 가 보일 때만 그 영역 안에 뜬다. host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host 소유 file_picker popup(`file_picker.trigger`, [ADR-0036](../adr/0036-overlay-scope-and-lifetime.md))으로 위임하고 팝업을 띄운 surface 의 폴더에서 출발시킨다, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 새 탭 쪽은 `owner_popup_instance` 에 자기 popup 을 실어 사용자 조작임을 알린다 — 빠지면 host 가 에이전트 요청으로 받아 새 탭을 선택하지 않는다([ADR-0031](../adr/0031-file-handler-routing.md)). 상세: [plugins/markdown](../plugins/markdown/index.md).
 
 plugin 팝업 제작 절차는 [plugin-development](plugin-development.md) · [egui-mesh-channel](egui-mesh-channel.md) 참조. 갤러리 specimen 은 host-side 미러로 유지한다(gallery-completeness — plugin egui-mesh 를 갤러리가 직접 렌더하지 않으므로 폼/토큰/구조만 정합).
 
@@ -128,7 +128,7 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
   곱해지지 않는다(`PopupManager::register`). 그래서 폭이 콘텐츠를 안 따르더라도 sizer 가
   `zoomed_px` 로 직접 곱해 돌려줘야 한다. 높이 식도 같다 — `Theme` 값은 생성 때 배율을
   이미 탔고 파일 안 const 는 안 탔으므로, 한 식에서 섞으면 그릇만 고정되고 안의 글자가
-  커진다(ADR-0635). 고정 크기였을 때는 등록이 곱해 주던 몫이라 **sizer 로 바꾸는 순간
+  커진다(ADR-0035). 고정 크기였을 때는 등록이 곱해 주던 몫이라 **sizer 로 바꾸는 순간
   조용히 사라진다.**
 
 sizer 연결은 실제 팝업 크기로 확인한다. `defs.rs`에 함수를 등록한 뒤 한 프레임
@@ -141,13 +141,13 @@ sizer 연결은 실제 팝업 크기로 확인한다. `defs.rs`에 함수를 등
 scrim 이 덮는 rect 는 그 팝업의 `PopupScope` rect 다 — `Surface` 범위면 그 칸 하나, `Pane`·`Tab`
 범위면 그 pane, `Window`·`Workspace` 범위면 창 전체다. 범위 rect 를 찾지 못하면 창 전체로
 떨어진다(`PopupManager::scope_rect` 의 `None` → `screen_rect`)
-([ADR-0636](../adr/0636-overlay-scope-and-lifetime.md)).
+([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md)).
 규칙 본문은 [design/systems/popup.md](../design/systems/popup.md) §scrim 의 범위. 새 팝업을
 만들 때 손댈 자리는 둘이다.
 
 - **scrim 을 깔 것인가** — `PopupManager::popup_has_scrim` 의 id 명부에 더한다. 범위로
   판정하지 않는다: `search_bar` 처럼 `Surface` 범위를 쓰면서도 anchored + scrim-less 인
-  갈래가 있고([ADR-0637](../adr/0637-ui-input-motion-and-elevation.md)), 범위로
+  갈래가 있고([ADR-0037](../adr/0037-ui-input-motion-and-elevation.md)), 범위로
   판정하면 그 갈래가 조용히 뒤집힌다. anchored 명부(`ANCHORED_POPUPS`)와 이 명부가
   어긋나면 `no_anchored_popup_takes_a_scrim` 이 잡는다. 이 명부는 host 팝업의 것이다 —
   plugin 팝업은 명부 없이 예외 없이 scrim 을 깐다(`src/plugin_bridge/popup_render.rs`).

@@ -35,7 +35,7 @@
 - **ipc_namespace `claude`** — 위 동작의 IPC 표면.
 - 실제 Claude 프로세스는 터미널 surface 안에서 돌고(`terminal.spawn`), 플러그인은 그 생명주기·관계를 관리한다.
 - **`reboot`** (`tasty claude reboot [--surface <id>] [--delay <초>] [--prompt <추가문구>] [--profile-file <경로> | --profile <이름[,이름2,...]>] [--clear-profile] [--permission-mode <모드>]`) — surface 안의 Claude 를 종료하고 **같은 세션으로 재시작**한다. Claude 는 스스로 자기 TUI 를 껐다 켤 수 없으므로 에이전트가 이 명령을 자기 surface 에 호출한다(설정/훅/버전 변경 반영용). 동작: 즉시 응답 반환 → `--delay`(기본 5s) 후 Ctrl+C ×4(0.5s 간격) → 전경 프로세스가 Claude 에서 이탈했는지 확인 후 셸에 `claude -r <session_id>`(프로필이 해석되면 뒤에 `--settings "<경로>"` 추가) 전송(session id 는 요청 시점에 surface meta `claude-session-id` 에서 캡처) → Claude 복귀 확인 후 재시작 안내 프롬프트를 `terminal.tell` 로 제출(화면 검증·재시도 + 별도 Enter 로 결정적 제출). 안전 가드: 전경이 여전히 Claude 면 텍스트 미전송·중단, resume 후 미복귀면 안내 미전송(셸 오염 방지), 같은 surface 중복 reboot 거부. **턴의 마지막 행동으로 호출할 것** — delay 이후 진행 중이던 턴은 잘린다.
-  - **`claude-session-id` meta 가 비어 reboot 가 실패하는 경우**: `no active claude session on surface {id} (claude-session-id meta not set …)` 에러는 hook 미설치가 아니어도 발생할 수 있다 — session-start hook 이 이 meta 를 못 심은 것이 원인. 조용히 실패할 수 있는 지점이 최소 3곳: ① `install.rs`의 등록 커맨드가 `if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook … || true; fi` 라 `TASTY_SURFACE_ID` 미설정 시 tasty 바이너리 자체가 실행되지 않음(로그 불가), ② `hook.rs`의 `apply_hook` session-start 분기가 stdin JSON 에 `session_id` 가 없으면 meta 기록을 건너뜀(`tracing::warn!`으로 로그, `tasty plugin logs com.tasty.claude --follow` 또는 `~/.tasty/plugins-logs/com.tasty.claude.log` 에서 확인), ③ `dynamic/stdin.rs`의 `read_stdin_json` 이 TTY/파싱 실패로 `None` 을 반환(hook 은 CLI 프로세스라 tracing 이 **stderr 로만** 나간다 — 공유 로그 파일에는 남지 않는다, [ADR-0643](../../adr/0643-cli-errors-and-diagnostic-logs.md). 전달 실패 자체는 `$TASTY_HOME/hook-failures.log` 에 기록된다). 수동 복구: `tasty surface-meta set --key claude-session-id --value <세션ID>`.
+  - **`claude-session-id` meta 가 비어 reboot 가 실패하는 경우**: `no active claude session on surface {id} (claude-session-id meta not set …)` 에러는 hook 미설치가 아니어도 발생할 수 있다 — session-start hook 이 이 meta 를 못 심은 것이 원인. 조용히 실패할 수 있는 지점이 최소 3곳: ① `install.rs`의 등록 커맨드가 `if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook … || true; fi` 라 `TASTY_SURFACE_ID` 미설정 시 tasty 바이너리 자체가 실행되지 않음(로그 불가), ② `hook.rs`의 `apply_hook` session-start 분기가 stdin JSON 에 `session_id` 가 없으면 meta 기록을 건너뜀(`tracing::warn!`으로 로그, `tasty plugin logs com.tasty.claude --follow` 또는 `~/.tasty/plugins-logs/com.tasty.claude.log` 에서 확인), ③ `dynamic/stdin.rs`의 `read_stdin_json` 이 TTY/파싱 실패로 `None` 을 반환(hook 은 CLI 프로세스라 tracing 이 **stderr 로만** 나간다 — 공유 로그 파일에는 남지 않는다, [ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md). 전달 실패 자체는 `$TASTY_HOME/hook-failures.log` 에 기록된다). 수동 복구: `tasty surface-meta set --key claude-session-id --value <세션ID>`.
 - **`child-profile`** (`tasty claude child-profile [--surface <부모>] --child <index> [--delay <초>] [--prompt <추가문구>] [--profile-file <경로> | --profile <이름[,이름2,...]>] [--clear-profile] [--permission-mode <모드>]`) — **부모가 자식에게 지속 세션 프로필을 부착**한다. `--child <index>`(`claude children` 이 보여주는 index)를 `terminal.children` 으로 자식 surface id 로 해석한 뒤, 그 surface 에 대해 위 `reboot` 과 **완전히 같은 경로**를 태운다(프로필 검증 → surface meta 부착 → Ctrl+C 시퀀스 → `claude -r <sid> --settings "<경로>"` → 안내 프롬프트). 별도 부착 메커니즘이 아니라 reboot 진입점의 재사용이므로, 부착 상태는 자식의 이후 **무인자 `reboot` 에 그대로 승계**된다. 중복 가드도 reboot 과 같은 set 을 쓴다 — 같은 자식에 `reboot` 과 이 명령이 겹치면 뒤엣것이 "이미 진행 중" 으로 거부된다.
   - **`reboot` 과 다른 점 1 — 턴이 잘리지 않는다.** `reboot` 의 "턴의 마지막 행동으로 호출할 것" 경고는 **호출자 자신이 재기동될 때**의 제약이다. 이 명령은 자식만 재기동시키므로 **부모의 턴은 잘리지 않는다** — 호출 후 계속 작업해도 된다.
   - **`reboot` 과 다른 점 2 — 완료 알림이 걸린다.** `spawn`/`tell` 과 동일하게 caller surface 로 `claude-idle`/`needs-input`/`process-exit` 알림 hook 이 자동 등록된다(위 spawn/tell 항목의 자기재무장 사이클과 같음). 자식이 재기동을 마치고 idle 에 도달하면 부모가 그 사실을 통지받는다. `reboot` 은 알림을 걸지 않는다(자기 자신이 대상이라 받을 주체가 없다).
@@ -108,7 +108,7 @@ Codex와 옵션을 억지로 맞추지 않으며, 각각의 기본값은 해당 
 ### Stop-훅 게이트 레지스트리
 
 Stop 게이트는 턴을 끝내기 전에 확인할 본문, 종료 표시 문자열(sentinel), 반복 상한을
-이름으로 등록한 것이다. 선택 이유는 [에이전트 작업 조율](../../adr/0642-agent-coordination-and-task-views.md)을 따른다.
+이름으로 등록한 것이다. 선택 이유는 [에이전트 작업 조율](../../adr/0042-agent-coordination-and-task-views.md)을 따른다.
 
 | 명령 | 동작 |
 |---|---|
@@ -200,7 +200,7 @@ SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고
 
 ### Claude Code 훅 통합
 
-**훅 응답은 조용히 실패한 host 호출 수를 싣는다** — `host_call_failures`(항상 있고 항상 수). 이 핸들러의 host 호출은 전부 최선노력이라(`?` 로 끊지 않는다 — 뒤따르는 로컬 정리를 지키기 위해서다, [ADR-0627](../../adr/0627-lua-and-hook-execution.md)) 실패해도 응답은 `ok` 다. 그 수 없이는 전부 실패한 훅과 전부 성공한 훅이 바이트까지 같다. 0 이 아니면 `<tasty_home>/hook-failures.log` 에도 한 줄 남는다 — 실사용에서 이 CLI 는 훅 명령 안에서 돌고 그 명령은 출력을 버리기 때문이다. 규약은 [error-handling](../../dev-guide/error-handling.md) "최선노력의 대가는 치르되 값으로 노출한다".
+**훅 응답은 조용히 실패한 host 호출 수를 싣는다** — `host_call_failures`(항상 있고 항상 수). 이 핸들러의 host 호출은 전부 최선노력이라(`?` 로 끊지 않는다 — 뒤따르는 로컬 정리를 지키기 위해서다, [ADR-0027](../../adr/0027-lua-and-hook-execution.md)) 실패해도 응답은 `ok` 다. 그 수 없이는 전부 실패한 훅과 전부 성공한 훅이 바이트까지 같다. 0 이 아니면 `<tasty_home>/hook-failures.log` 에도 한 줄 남는다 — 실사용에서 이 CLI 는 훅 명령 안에서 돌고 그 명령은 출력을 버리기 때문이다. 규약은 [error-handling](../../dev-guide/error-handling.md) "최선노력의 대가는 치르되 값으로 노출한다".
 
 `tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 9개 이벤트를 심는다. 모든 이벤트가 같은 형태의 명령 문자열을 쓴다:
 
@@ -208,7 +208,7 @@ SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고
 if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 ```
 
-**가드와 실패 처리는 분리돼 있다.** 바깥 `if` 는 "tasty 밖에서 Claude Code 를 쓰는 환경"(`$TASTY_SURFACE_ID` 미설정)을 **명시적 성공 종료**로 처리해 아무 소음도 내지 않는다. 안쪽 `|| true` 는 오직 `tasty claude hook` 자체의 실패만 담당한다 — 에이전트 턴을 막지 않기 위해 exit 0 을 유지하되, **실패 사실은 버리지 않고** `<tasty_home>/hook-failures.log` 에 한 줄 기록한다([ADR-0643](../../adr/0643-cli-errors-and-diagnostic-logs.md)). 옛 형태(`[ -n … ] && … || true`)는 두 경우를 한 연산자로 함께 삼켜 상태 push 유실이 무흔적으로 사라졌다.
+**가드와 실패 처리는 분리돼 있다.** 바깥 `if` 는 "tasty 밖에서 Claude Code 를 쓰는 환경"(`$TASTY_SURFACE_ID` 미설정)을 **명시적 성공 종료**로 처리해 아무 소음도 내지 않는다. 안쪽 `|| true` 는 오직 `tasty claude hook` 자체의 실패만 담당한다 — 에이전트 턴을 막지 않기 위해 exit 0 을 유지하되, **실패 사실은 버리지 않고** `<tasty_home>/hook-failures.log` 에 한 줄 기록한다([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)). 옛 형태(`[ -n … ] && … || true`)는 두 경우를 한 연산자로 함께 삼켜 상태 push 유실이 무흔적으로 사라졌다.
 
 명령 문자열 생성은 `install.rs::tasty_guarded_command` 한 곳뿐이다 — 세션 프로필(`continue-checklist`)의 hook 명령도 같은 함수를 쓴다(예전엔 `profile.rs` 에 같은 형태가 따로 하드코딩돼 있어 한쪽만 고치는 사고가 났다).
 
@@ -246,7 +246,7 @@ install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 �
 ### API 에러 뒤 자동 재개 (`auto_resume.rs`)
 
 `StopFailure`로 끝난 턴에 일정 시간 뒤 재개 문구를 보낸다. 기본은 꺼짐이다.
-선택 이유는 [에이전트 상태와 완료 전달](../../adr/0641-agent-state-and-completion.md)을 따른다.
+선택 이유는 [에이전트 상태와 완료 전달](../../adr/0041-agent-state-and-completion.md)을 따른다.
 
 | 설정 키 | 기본값 | 범위와 의미 |
 |---|---|---|
@@ -303,13 +303,13 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 
 **스캐너는 에이전트와 다른 커서를 쓴다.** `surface.read_since_scan_mark` 는 에이전트의 mark(`tasty set mark` · `tasty read since-mark` · `parse-since-mark` 가 쓰는 것)와 **별개 커서**를 읽고, 읽을 때마다 읽은 자리 끝으로 전진한다. 그래서 ① 에이전트가 `tasty set mark` 를 걸어도 스캐너의 관측 창이 안 움직이고 ② 폴링 1 회가 나르는 것은 지난 800ms 에 새로 온 바이트뿐이다(한때는 아무도 mark 를 안 세운 surface 에서 폴링마다 버퍼 전체가 실렸다). 반대 방향도 닫혀 있다 — 스캐너의 읽기는 에이전트의 mark 를 안 움직인다.
 
-커서가 전진하므로 한 호출이 주는 것은 화면 전체가 아니라 **델타**다. 패턴 매칭이 볼 창은 plugin 이 누적해 두고, 그 상한은 호스트 출력 버퍼의 상한과 같은 값을 따로 적은 사본이다. **이 커서의 소비자는 하나라는 전제 위에 있다** — 둘이 같은 이름을 부르면 서로의 바이트를 먹고 그 손실은 조용하다. 그래서 CLI 동사가 없다. 근거·대안·재검토 조건은 [ADR-0613](../../adr/0613-terminal-io-and-process-lifetime.md).
+커서가 전진하므로 한 호출이 주는 것은 화면 전체가 아니라 **델타**다. 패턴 매칭이 볼 창은 plugin 이 누적해 두고, 그 상한은 호스트 출력 버퍼의 상한과 같은 값을 따로 적은 사본이다. **이 커서의 소비자는 하나라는 전제 위에 있다** — 둘이 같은 이름을 부르면 서로의 바이트를 먹고 그 손실은 조용하다. 그래서 CLI 동사가 없다. 근거·대안·재검토 조건은 [ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md).
 
 ### 정지 알림 (`claude-error-stalled` → 부모 completion-log)
 
 `claude-error` 자체는 **부모에게 알리지 않는다.** 패턴에 `overloaded_error`/`rate_limit_error`처럼 Claude Code가 자동 재시도하는 일시적 에러가 포함돼 있어, 그대로 알리면 재시도가 잦은 세션에서 알림이 쏟아진다. 대신 스캐너가 "재시도 중"과 "멈춤"을 가른 뒤 **`claude-error-stalled`** 를 따로 발사하고, 부모 알림은 이쪽만 구독한다.
 
-**이름에 `error`가 남아 있지만 범위는 에러 뒤 정지만이 아니다** — 에러 문자열이 한 번도 안 나온 정지도, 호스트가 이미 `stale`로 본 자식도 같은 키로 알린다([ADR-0641](../../adr/0641-agent-state-and-completion.md)). 키는 부모가 `hook.set`으로 이미 등록해 둔 배선 식별자라 개명하면 등록된 훅이 전부 깨지고 기능적으로 얻는 것이 없어서 그대로 두었고, 원인은 **알림 문구가** 가른다(에러 줄이 화면에 있으면 그 줄을 힌트로 붙인 문구, 없으면 "출력도 완료 신호도 없다" 문구).
+**이름에 `error`가 남아 있지만 범위는 에러 뒤 정지만이 아니다** — 에러 문자열이 한 번도 안 나온 정지도, 호스트가 이미 `stale`로 본 자식도 같은 키로 알린다([ADR-0041](../../adr/0041-agent-state-and-completion.md)). 키는 부모가 `hook.set`으로 이미 등록해 둔 배선 식별자라 개명하면 등록된 훅이 전부 깨지고 기능적으로 얻는 것이 없어서 그대로 두었고, 원인은 **알림 문구가** 가른다(에러 줄이 화면에 있으면 그 줄을 힌트로 붙인 문구, 없으면 "출력도 완료 신호도 없다" 문구).
 
 판정 기준은 두 조건의 **동시** 충족이다(`error_scan.rs`):
 
@@ -322,7 +322,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 
 **API 에러로 턴이 끝난 경우는 이 경로가 아니라 완료 알림이 받는다.** `StopFailure`가 상태를 `idle`로 닫으므로 위 둘째 조건이 거짓이 되어 `claude-error-stalled`는 나가지 않고, 대신 `claude-idle`로 깨어난 `notify-done`이 에러 종류를 덧붙인 한 줄을 곧바로 보낸다(30초를 기다리지 않는다). 이 경로가 남아 잡는 것은 턴이 끝나지 않은 정지 — 응답 없이 매달린 요청, 훅이 오지 않은 프롬프트 — 다.
 
-**상태 축은 건드리지 않는다.** 이 경로는 `terminal.set_state`를 호출하지 않으므로 `claude children`의 `state`는 변하지 않는다 — 에러는 재시도로 복구될 수 있어 상태로 승격하면 오탐이고, 파생 상태는 관측 융합의 출력 전용 계약이다([ADR-0641](../../adr/0641-agent-state-and-completion.md)).
+**상태 축은 건드리지 않는다.** 이 경로는 `terminal.set_state`를 호출하지 않으므로 `claude children`의 `state`는 변하지 않는다 — 에러는 재시도로 복구될 수 있어 상태로 승격하면 오탐이고, 파생 상태는 관측 융합의 출력 전용 계약이다([ADR-0041](../../adr/0041-agent-state-and-completion.md)).
 
 배선(`handlers.rs`)은 완료 알림 3형제와 **분리된 수명**을 갖는다:
 

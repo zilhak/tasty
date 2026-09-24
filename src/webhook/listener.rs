@@ -84,7 +84,7 @@ fn accept_loop(server: tiny_http::Server) {
 fn handle_request(request: tiny_http::Request) {
     // 출처 IP(포트 제외 — 스캐너는 IP 를 재사용하며 포트만 바꾼다. 포트를 키에 넣으면
     // 한 발신자가 요청마다 새 키를 만들어 카운터를 우회한다. 대가는 NAT 뒤 공유 —
-    // `docs/adr/0632-webhook-admission.md`).
+    // `docs/adr/0032-webhook-admission.md`).
     let source = request.remote_addr().map(|a| a.ip().to_string());
 
     let Some(mut request) = reject_if_abusive(request, source.as_deref()) else {
@@ -144,7 +144,7 @@ struct BodyTooLarge;
 /// 이 값은 JSON 입력에 적용된다. 동시에 들어오는 요청 수는 제한하지 않으며,
 /// 프로세스 전체 메모리 상한이 아니다. 리스너는 요청마다 스레드를 띄운다.
 /// 초과 요청의 잔여 body 는 읽지 않고 연결을 닫는다([`Screened::respond`]).
-/// ([ADR-0632](../../docs/adr/0632-webhook-admission.md)).
+/// ([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
 ///
 /// 기본 1 MiB. `TASTY_WEBHOOK_MAX_BODY_BYTES` 로 오버라이드한다(0·파싱 실패는 기본값).
 fn max_body_bytes() -> usize {
@@ -166,7 +166,7 @@ fn max_body_bytes() -> usize {
 /// 않고 `read_json_body` 도 호출되지 않는다. HTTP 라이브러리의 작은 body 사전
 /// 버퍼링은 이 타입의 제어 범위 밖이다.
 /// 타입은 남용차단 뒤에 파서를 호출하는 순서를 강제한다.
-/// ([ADR-0632](../../docs/adr/0632-webhook-admission.md)).
+/// ([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
 struct Screened(tiny_http::Request);
 
 impl Screened {
@@ -194,12 +194,12 @@ impl Screened {
     /// 읽기 실패/비-JSON 바디는
     /// `Value::Null`, 상한 초과는 [`BodyTooLarge`].
     ///
-    /// **여기가 body 를 JSON 입력 버퍼로 모으는 자리다**([ADR-0632](../../docs/adr/0632-webhook-admission.md)),
+    /// **여기가 body 를 JSON 입력 버퍼로 모으는 자리다**([ADR-0032](../../docs/adr/0032-webhook-admission.md)),
     /// 이 파서의 입력 상한은 여기서 판정한다. 두 갈래를 함께 막는다 —
     /// 선언된 길이(`Content-Length`)가 이미 크면 **이 함수에서 읽지 않고**, 길이 선언이
     /// 없는 `Transfer-Encoding: chunked` 는 상한 + 1 바이트에서 멈춘다. 뒤엣것이 없으면
     /// 상한이 상한이 아니다 — chunked 에는 선언된 길이가 아예 없다
-    /// ([ADR-0632](../../docs/adr/0632-webhook-admission.md)).
+    /// ([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
     ///
     /// 상한을 넘기면 이 파서는 더 읽지 않는다. 잔여 body 를 HTTP 계층도 읽지 않게
     /// 하는 것은 413 을 보내는 [`Screened::respond`] 의 몫이다.
@@ -237,7 +237,7 @@ impl Screened {
     /// 연결의 스트림은 다음 요청의 시작에 있지 않다. 닫지 않으면 `tiny_http` 의
     /// Content-Length 리더가 Drop 에서 잔여 선언 길이를 끝까지 읽는다(drain). 닫는
     /// 경로는 레포에 vendoring 한 `tiny_http` 의 패치다
-    /// ([ADR-0632](../../docs/adr/0632-webhook-admission.md)).
+    /// ([ADR-0032](../../docs/adr/0032-webhook-admission.md)).
     fn respond(self, ack: AckStatus) {
         let response = build_ack(ack);
         let result = if ack == AckStatus::PayloadTooLarge {

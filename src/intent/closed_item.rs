@@ -8,7 +8,7 @@
 //! - **mirror 워크스페이스면 원격으로 forward 된다**: `Core::apply` 의 mirror 게이트가
 //!   로컬 실행을 막고 `StructuralOp::RestoreClosedItem` 을 forward 큐에 넣는다. 복원은
 //!   새 PTY spawn 이고 스냅샷의 스크롤백은 서버 디스크 참조라 서버만 실행할 수 있다
-//!   (`docs/adr/0623-attach-state-sync-and-forwarding.md`). 이 핸들러는
+//!   (`docs/adr/0023-attach-state-sync-and-forwarding.md`). 이 핸들러는
 //!   그 갈래에서 로컬 스택을 **전혀 건드리지 않는다** — pop 이 게이트 뒤에 있다.
 
 use super::{DispatchedIntent, Intent};

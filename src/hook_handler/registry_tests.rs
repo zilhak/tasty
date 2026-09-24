@@ -209,7 +209,7 @@ fn owner_tiebreak_user_gt_plugin_gt_host() {
 // ── user override (patch semantics) ───────────────────────────────────────
 
 /// plugin hook handler 를 patch 하는 user 설정. 부팅이 user 설정을 plugin 보다 먼저 읽는 경우와
-/// plugin 을 껐다 켠 경우 모두 이 값이 이겨야 한다(ADR-0627).
+/// plugin 을 껐다 켠 경우 모두 이 값이 이겨야 한다(ADR-0027).
 const PLUGIN_PATCH_ID: &str = "com.example.hookp/notify";
 
 fn user_patch_for_plugin(dir: &tempfile::TempDir) -> std::path::PathBuf {

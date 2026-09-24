@@ -11,8 +11,8 @@
 /// 포커스를 잃어서는 안 된다. 그래서 `User` 는 방금 그 조작의 결과이므로 모달로 알리고,
 /// `Agent` 발 실패는 요청자에게 IPC 응답으로 돌려주며 사용자 화면은 건드리지 않는다
 /// (완료 채널 = [`IpcCompletion`]).
-/// 근거: `docs/adr/0616-window-platform-and-shutdown.md`,
-/// `docs/adr/0607-ipc-scheduling-and-deadlines.md`.
+/// 근거: `docs/adr/0016-window-platform-and-shutdown.md`,
+/// `docs/adr/0007-ipc-scheduling-and-deadlines.md`.
 #[cfg(feature = "gui")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WindowRequestOrigin {
@@ -26,7 +26,7 @@ pub(crate) enum WindowRequestOrigin {
 /// 완료 채널. IPC 핸들러는 `{"scheduled": true}` 를 즉시 돌려주는 대신 이 채널을
 /// `AppEvent` 에 실어 보내고 `IpcStep::Handled`(응답 defer)로 반환한다 — winit 핸들러가
 /// op 를 실제로 수행한 뒤 성공/실패를 이 채널로 보낸다. 메서드마다 계약이 갈리지 않게
-/// 한 벌로 공유한다. 근거: `docs/adr/0607-ipc-scheduling-and-deadlines.md`.
+/// 한 벌로 공유한다. 근거: `docs/adr/0007-ipc-scheduling-and-deadlines.md`.
 #[cfg(feature = "gui")]
 #[derive(Debug)]
 pub(crate) struct IpcCompletion {
@@ -63,7 +63,7 @@ impl IpcCompletion {
     }
 
     /// 창 생성 결과를 요청자에게 돌려준다 — `window.create`/`view.create` 왕복의
-    /// **핵심 계약**(ADR-0607). 성공은 `{"created": true, "window_id": <u64>}`,
+    /// **핵심 계약**(ADR-0007). 성공은 `{"created": true, "window_id": <u64>}`,
     /// 실패는 `-32000` 에러에 원인 문자열을 실어 보낸다. 이 매핑이 이 lane 의
     /// 헤드라인 주장이다("window.create 가 생성 성공/실패를 응답에 싣는다") — winit
     /// 핸들러는 이 함수를 부르는 얇은 caller 다. 되돌리면(성공으로 즉답 등)
@@ -99,10 +99,10 @@ pub(crate) enum AppEvent {
     EguiRepaint { window_id: winit::window::WindowId },
     /// Request to create a new window. 첫 페이로드는 **누가 요청했는지** — 실패 안내를
     /// 어느 채널로 낼지 가르는 기준이다([`WindowRequestOrigin`],
-    /// `docs/adr/0616-window-platform-and-shutdown.md`). 둘째는 IPC 요청자에게
+    /// `docs/adr/0016-window-platform-and-shutdown.md`). 둘째는 IPC 요청자에게
     /// 생성 성공/실패를 돌려줄 완료 채널 — `window.create`/`view.create` 는 `Some`,
     /// 메뉴·단축키·tray 등 사용자 경로는 `None`
-    /// (`docs/adr/0607-ipc-scheduling-and-deadlines.md`).
+    /// (`docs/adr/0007-ipc-scheduling-and-deadlines.md`).
     #[cfg(feature = "gui")]
     CreateWindow(WindowRequestOrigin, Option<IpcCompletion>),
     /// CSD titlebar close 버튼이 발화하는 per-window 닫기 요청 (사용자 클릭).
@@ -110,7 +110,7 @@ pub(crate) enum AppEvent {
     /// (단일 창이면 quit 흐름, 다중 창이면 해당 창만 닫음).
     #[cfg(feature = "gui")]
     CloseWindow(winit::window::WindowId),
-    /// 사용자 스크립트 단축키가 눌려 Lua 워커에서 실행 요청 (ADR-0627).
+    /// 사용자 스크립트 단축키가 눌려 Lua 워커에서 실행 요청 (ADR-0027).
     /// view 의 `handle_shortcut` 이 combo 매칭 후 스크립트 소스를 읽어 발행하고,
     /// App 이 소유한 `lua_engine` 워커로 실행한다(사용자 키 입력 경로에서만 — identity 원칙 1).
     ///
@@ -150,7 +150,7 @@ pub(crate) enum AppEvent {
     TrayShowWindow,
     /// OS 가 절전(suspend)에서 복귀했다 (Windows `WM_POWERBROADCAST`). resume
     /// 헬스 패스를 돌려 죽은 ConPTY 자식을 정리하고 살아있는 자식을 wake nudge
-    /// 한다 (ADR-0613). Windows 전용 — Unix PTY 는 절전에 강건해 불필요하다.
+    /// 한다 (ADR-0013). Windows 전용 — Unix PTY 는 절전에 강건해 불필요하다.
     #[cfg(all(windows, feature = "gui"))]
     SystemResumed,
     /// 중앙 타이머 허브(`docs/dev-guide/timer-hub.md`)의 waker 스레드가 다음 데드라인에

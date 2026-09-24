@@ -38,7 +38,7 @@
 //!   하지만 앵커는 제목의 번호를 떼고 그 제목을 가리키던 참조까지 함께 고쳐야 한다.
 //! - P6 로컬 폴더 언급 — 하위 경로가 무엇이든, 아예 없든 잡는다. 폴더 이름 단독
 //!   언급도 금지 대상이라는
-//!   [ADR-0648](../docs/adr/0648-documentation-structure-and-evidence.md) 의
+//!   [ADR-0049](../docs/adr/0049-documentation-structure-and-evidence.md) 의
 //!   결정을 강제한다. P3 가 네 개 하위 디렉토리로 좁혀 놓았던 것을 넓힌 형태다.
 //! - P7 산문 언급 — 번호가 붙지 않은 `TODO`. P1 은 **숫자가 붙어야만** 잡는데, 실제로
 //!   새는 형태는 번호 없이 티켓 자체를 가리키는 산문이다(`이 TODO 는 순수 구조
@@ -59,19 +59,19 @@
 //! 숫자 사이에서 문장을 만들지 않는다. 티켓 인용은 공백·하이픈·`/`·괄호로 쓰이지
 //! 벌거벗은 문장부호로 쓰이지 않는다.
 //!
-//! **스캔 대상 정의 — denylist 전수 순회.** ADR-0648 의 규칙 범위가 "git 이 추적하는
+//! **스캔 대상 정의 — denylist 전수 순회.** ADR-0049 의 규칙 범위가 "git 이 추적하는
 //! 모든 파일" 이므로, 확장자·디렉토리 화이트리스트로 "볼 파일" 을 열거하지 않는다.
 //! 순회가 닿는 모든 파일을 대상으로 삼고 바이너리 확장자만 뺀다. 화이트리스트 방식은
 //! 스크립트·CI 설정·루트 문서·`site/` 를 통째로 놓치는 사각지대를 만들었고, 항목을
 //! 추가해도 다음 사각지대가 또 생긴다. `git ls-files` 로 추적 집합을 직접 묻는 방법도
 //! 있으나, 테스트가 git 바이너리와 저장소 메타데이터의 존재에 의존하게 되어 tarball
 //! 빌드에서 깨지고
-//! [ADR-0644](../docs/adr/0644-test-isolation-and-harness.md)
+//! [ADR-0045](../docs/adr/0045-test-isolation-and-harness.md)
 //! 의 "테스트는 환경을 읽지 않는다" 와도 어긋난다. gitignored 산출물은 `PRUNE_DIRS`
 //! 가지치기로 덮이고, 남는 것(서명 파일 등)은 애초에 인용을 담지 않는다.
 //!
 //! **오탐 회피 — 홈 경로는 그 자리 직전 문맥으로 가른다.** 로컬 지침 폴더는 사용자
-//! 홈에도 같은 이름이 있고, 홈 쪽은 ADR-0648이 범위 밖으로 확정한 항목이다. 판정을
+//! 홈에도 같은 이름이 있고, 홈 쪽은 ADR-0049이 범위 밖으로 확정한 항목이다. 판정을
 //! *줄 전체* 에서 홈 표기를 찾는 식으로 하면, 정당한 홈 경로가 한 번 나오는 줄에
 //! 섞인 진짜 레포 로컬 참조까지 통과한다 — 그래서 **occurrence 직전** 만 본다
 //! ([`home_context_before`]). 로컬 작업 폴더 쪽은 홈에 존재할 수 없어 예외가 없다.
@@ -98,7 +98,7 @@ use std::path::{Path, PathBuf};
 /// **파일 통째가 아니라 패턴 단위**로 면제한다. 파일 전체를 빼면 그 파일이 *다른*
 /// 형태의 위반을 새로 들여도 영영 잡히지 않는다 — 규칙 본문을 담은 파일일수록
 /// 그렇게 되기 쉽다. 등록 기준은
-/// [ADR-0648](../docs/adr/0648-documentation-structure-and-evidence.md) 가 정한
+/// [ADR-0049](../docs/adr/0049-documentation-structure-and-evidence.md) 가 정한
 /// 그대로다: *그 파일의 본질이 그 형태를 담는 것인가*. "고치기 번거롭다" 는 사유가
 /// 아니다.
 /// - `CLAUDE.md`: 규칙 본문이 번호 인용(P1)과 changelog slug(P4)를 **예시로** 든다.
@@ -109,12 +109,12 @@ use std::path::{Path, PathBuf};
 ///   무엇을 잡고 무엇을 통과시키는지 적는 것이 이 파일의 일이라, 금지 형태를 담는
 ///   것이 본질이다. P7 은 숫자를 요구하지 않아 `fx!` 로 판정 지점을 끊을 수도 없다
 ///   (끊을 구분자가 없다 — `TODO` 라는 낱말 자체가 판정 대상이다).
-/// - `scripts/check-allow-reason.sh`(P7): 그 스크립트 주석이 ADR-0646 의 규칙 본문
+/// - `scripts/check-allow-reason.sh`(P7): 그 스크립트 주석이 ADR-0047 의 규칙 본문
 ///   (**빈 사유·"TODO" 금지**)을 인용한다. 인용을 지우면 그 게이트가 무엇을 강제하는지
 ///   알 수 없게 된다 — `CLAUDE.md` 가 P1·P4 를 면제받는 것과 같은 이유다.
 /// - `vendor/tiny_http/src/response.rs`(P7): 상류 크레이트 사본이 쓴 `/* TODO */` 다.
 ///   사본을 상류와 같게 두는 것이 그 디렉토리의 규칙이라(무엇이 tasty 패치인지가 상류와의
-///   차이로 읽혀야 한다 — `docs/adr/0632-webhook-admission.md`)
+///   차이로 읽혀야 한다 — `docs/adr/0032-webhook-admission.md`)
 ///   고치지 않는다. 가리키는 로컬 티켓이 없는 상류의 할 일 표시다.
 ///
 /// **면제는 여전히 패턴 단위다.** P7 로 등록한 항목들도 P7 만 면제이고, 같은 파일에 P1·P3·P6 을
@@ -175,7 +175,7 @@ const PRUNE_DIRS: &[&str] = &[
     // 여기에 두는 이유(다른 두 자리가 아니라): `ALLOWLIST` 는
     // `allowlist_entries_point_at_things_that_exist` 가 실재를 요구해 그 파일이 없는
     // 갓 클론한 트리에서 죽은 인용이 된다. `git check-ignore` 로 묻는 것은 모듈
-    // 머리말이 기각한 축이다(ADR-0644 "테스트는 환경을 읽지 않는다"). 이름 상수는
+    // 머리말이 기각한 축이다(ADR-0045 "테스트는 환경을 읽지 않는다"). 이름 상수는
     // 환경을 안 읽고, 그 이름이 없는 트리에서는 아무것도 안 맞아 무해하다.
     "AGENTS.md",
 ];
@@ -527,7 +527,7 @@ fn contains_word(hay: &str, word: &str) -> bool {
 
 /// P6 — 레포 로컬 폴더 언급. 하위 경로가 무엇이든, 아예 없든 잡는다.
 ///
-/// P3 는 네 개 하위 디렉토리가 뒤따를 때만 잡았다. ADR-0648이 폴더 이름 단독 언급
+/// P3 는 네 개 하위 디렉토리가 뒤따를 때만 잡았다. ADR-0049이 폴더 이름 단독 언급
 /// 까지 금지로 확정했으므로 그 범위를 여기서 강제한다.
 fn find_p6(line: &str) -> Option<String> {
     let lower = line.to_ascii_lowercase();
@@ -912,7 +912,7 @@ fn no_todo_file_citation() {
         "커밋되는 파일이 git 에 올라가지 않는 경로(로컬 작업 폴더 · 로컬 지침 폴더)나 \
          그 안의 문서·디자인 changelog slug 를 인용했다 — 그 좌표는 clone 한 사람에게 \
          존재한 적이 없고, 번호는 재사용되어 무관한 문서로 해석된다. 규칙 전문과 범위 밖 \
-         4 종은 `docs/adr/0648-documentation-structure-and-evidence.md`.\n\
+         4 종은 `docs/adr/0049-documentation-structure-and-evidence.md`.\n\
          대체 수단 3 가지 중 하나를 쓸 것: (1) 이유가 자명하면 번호 대신 이유를 직접 서술 \
          (2) 설계 결정이 크면 `docs/adr/` 에 ADR 을 쓰고 그 경로를 인용 \
          (3) 기능 동작 설명이면 `docs/`(dev-guide / features / plugins) 문서를 참조.\n\
@@ -1175,7 +1175,7 @@ fn p6_catches_local_workspace_mentions() {
 
 #[test]
 fn p6_home_exemption_is_adjacent_not_line_wide() {
-    // 사용자 홈의 런타임 경로 — ADR-0648이 범위 밖으로 확정한 항목.
+    // 사용자 홈의 런타임 경로 — ADR-0049이 범위 밖으로 확정한 항목.
     assert_eq!(find_p6("~/.claude/settings.json 을 머지한다"), None);
     assert_eq!(find_p6("$HOME/.claude/projects 아래를 훑는다"), None);
     assert_eq!(find_p6("%USERPROFILE%\\.claude\\settings.json"), None);

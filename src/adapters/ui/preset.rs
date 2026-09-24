@@ -512,8 +512,8 @@ fn draw_preview(
     // 보기 갈래가 새로고침할 기회가 없었고, 이 시점의 캐시에는 아직 사용자 편집이 없다.
     let entering_edit = editing && !drew_editing_last(ui, &cache.key);
     if !editing || entering_edit {
-        // 보기 모드만 저장소를 따라간다 — 편집 모드의 캐시는 ADR-0638 대로 저장 직전에만
-        // 대조한다(`docs/adr/0638-preset-drafts-and-store-conflicts.md`).
+        // 보기 모드만 저장소를 따라간다 — 편집 모드의 캐시는 ADR-0038 대로 저장 직전에만
+        // 대조한다(`docs/adr/0038-preset-drafts-and-store-conflicts.md`).
         let refreshed = refresh_view_cache(store, kind, name, catalog, &mut cache);
         if refreshed {
             ui.ctx().request_repaint();

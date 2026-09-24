@@ -127,7 +127,7 @@ impl SurfaceMetaStore {
     /// **PTY id 공간(`>= PTY_ID_BASE`)을 침범한 scope 는 최대값 산정에서 제외한다.**
     /// 포함하면 오염된 scope 하나가 카운터 floor 를 PTY 공간 위로 올리고, 그 실행이
     /// 발급한 surface 들이 다시 memory.db 에 기록되어 floor 가 영구 유지되는 비가역
-    /// 래칫이 된다(`docs/adr/0617-workspace-identity-and-focus.md`).
+    /// 래칫이 된다(`docs/adr/0017-workspace-identity-and-focus.md`).
     /// 오염 scope 자체의 제거는 [`purge_out_of_range_surfaces`](Self::purge_out_of_range_surfaces).
     #[cfg(any(feature = "gui", test))]
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {

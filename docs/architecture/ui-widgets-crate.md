@@ -57,7 +57,7 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 - **값이 토큰과 같으면 이쪽이 아니라 SIZING 쪽이다.** 값이 같은 const 는 토큰의
   사본이고, 사본은 `Theme::with_colors_and_zoom` 의 `zoomed()` 경로 밖이라 `ui_scale`
   을 타지 않는다 — zoom 1 에서만 같고 나머지 배율에서 갈라진다
-  ([ADR-0635](../adr/0635-shared-design-and-theme.md)).
+  ([ADR-0035](../adr/0035-shared-design-and-theme.md)).
 - **그래서 스케일 밖 const 에는 사유를 적는다.** 어느 토큰 근처인지, 왜 스냅하지
   않는지, 그리고 zoom 을 안 타는 대가를 doc 주석에 남긴다. 대가의 크기는 축마다
   다르다 — 반경 토큰은 zoom 을 타므로 실재하고, `border_width` 처럼 애초에 zoom 을

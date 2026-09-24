@@ -32,7 +32,7 @@
 //!
 //! ## 면제는 쌍으로 적는다
 //!
-//! [ADR-0647](../../docs/adr/0647-source-guards-and-exemptions.md)
+//! [ADR-0048](../../docs/adr/0048-source-guards-and-exemptions.md)
 //! 대로 **집합 동등**이다. 한정 밖에서 읽는 쌍의 집합이 [`PAIR_EXEMPT`] 와 정확히
 //! 같아야 한다 — 새 쌍이 생기는 것과 면제가 stale 이 되는 것을 둘 다 잡는다.
 

@@ -1,7 +1,7 @@
 # Modifier-hint 오버레이
 
 보조키를 누르고 기다리면 그 조합으로 사용할 수 있는 단축키를 보여 준다.
-설계 이유는 [단축키 결정](../../adr/0619-keybinding-settings-and-hints.md),
+설계 이유는 [단축키 결정](../../adr/0019-keybinding-settings-and-hints.md),
 시각 값은 [토큰 매핑](design-token-mapping.md)의 modifier-hint 절을 따른다.
 
 ## 정체성 — 왜 별도 개념인가

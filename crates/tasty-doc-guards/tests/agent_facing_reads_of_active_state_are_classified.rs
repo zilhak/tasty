@@ -73,9 +73,9 @@ const NEEDLES: &[&str] = &[
 /// `IdentifySpawner`). 도메인은 포트 메서드를 부를 뿐이고, 그 메서드가 전역 활성 포인터로
 /// 대상을 고르는지는 구현 파일에서만 보인다. 호출 자리의 메서드 이름이 바늘을 담는 것
 /// (`set_active_workspace`)은 우연이다 — 이름이 바늘을 안 담는 포트 메서드면 cascade 쪽은
-/// 초록이고 구현만 활성 포인터를 읽는다([ADR-0602](../../../docs/adr/0602-domain-execution-and-ports.md)).
+/// 초록이고 구현만 활성 포인터를 읽는다([ADR-0002](../../../docs/adr/0002-domain-execution-and-ports.md)).
 /// adapters 가 선언한 포트의 구현도 같다(`src/state/ipc_window.rs` — IPC 엔진 핸들러의
-/// `IpcWindow`, [ADR-0602](../../../docs/adr/0602-domain-execution-and-ports.md)).
+/// `IpcWindow`, [ADR-0002](../../../docs/adr/0002-domain-execution-and-ports.md)).
 /// `src/state` · `src/file` 전체를 올리지 않는 이유: 사용자 입력 경로가 섞여 명부가 사람 판정
 /// 없이 부풀고, 이 가드의 물음("에이전트가 부르는 경로인가")이 흐려진다. 포트 구현 파일이
 /// 새로 생기면 여기 한 줄을 더한다.
@@ -179,7 +179,7 @@ const ROSTER: &[(&str, Kind, usize, &str)] = &[
         "src/adapters/ipc/handler/approval/request.rs",
         Attribution,
         1,
-        "승인 요청 생성 쪽의 같은 귀속 — 명시 workspace_id 도 surface_id 도 없을 때만 읽는다(surface 를 댔으면 그 워크스페이스, ADR-0617). approval.rs 와 파일이 달라 사유를 따로 적는다",
+        "승인 요청 생성 쪽의 같은 귀속 — 명시 workspace_id 도 surface_id 도 없을 때만 읽는다(surface 를 댔으면 그 워크스페이스, ADR-0017). approval.rs 와 파일이 달라 사유를 따로 적는다",
     ),
     (
         "src/adapters/ipc/handler/telemetry/record.rs",

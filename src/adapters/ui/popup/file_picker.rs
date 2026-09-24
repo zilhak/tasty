@@ -1,5 +1,5 @@
 //! Tasty 자체 파일 열기 팝업. 로컬과 원격 디렉터리 조회를 같은 UI로 제공한다.
-//! 동작은 `docs/features/native-file-picker/index.md`, 원격 조회 권한은 ADR-0622를 따른다.
+//! 동작은 `docs/features/native-file-picker/index.md`, 원격 조회 권한은 ADR-0022를 따른다.
 //! OS의 로컬 파일 선택 대화상자는 원격 경로를 탐색할 수 없어 이 화면을 따로 둔다.
 //!
 //! gallery specimen: `crates/tasty-gallery/src/catalog/components/file_picker.rs`
@@ -35,7 +35,7 @@ use tasty_type_geometry::length::LogicalPx;
 use crate::adapters::ui::icons;
 
 /// 경로 breadcrumb 의 구분자 글리프. 아이콘 스케일 밖(13) — 스케일의 12 와 14 사이다.
-/// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0635와 같은
+/// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0035와 같은
 /// 처리). 갤러리 specimen 이 같은 값을 같은 이름으로 갖는다.
 pub(super) const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 use crate::adapters::ui::popup::PopupAction;
@@ -121,7 +121,7 @@ pub struct FilePickerProps<'a> {
     /// 선택된 엔트리 이름(현재 디렉토리 기준).
     pub selected: &'a [String],
     pub mode: FilePickerMode<'a>,
-    /// 이 프레임에 Esc 를 소비할 자격이 있는가(ADR-0636).
+    /// 이 프레임에 Esc 를 소비할 자격이 있는가(ADR-0036).
     /// `false` 면 위에 다른 popup 이 있다는 뜻이라 Esc 를 무시한다 — 한 번의 Esc 로
     /// 스택 전체가 닫히는 것을 막는다. 판정은 `AppState.popup_escape_owner`.
     pub owns_escape: bool,
@@ -622,7 +622,7 @@ pub fn draw_file_picker(
     }
 
     let th = theme::theme();
-    // Esc 소유권은 popup 매니저가 프레임 초입에 정한다(ADR-0636) — 여기서 다시
+    // Esc 소유권은 popup 매니저가 프레임 초입에 정한다(ADR-0036) — 여기서 다시
     // 계산하지 않고 그 판정을 읽기만 한다.
     let owns_escape = state.popup_escape_owner == Some(FILE_PICKER_POPUP_ID);
     let data = state.dialogs.file_picker.as_ref().unwrap();
@@ -829,7 +829,7 @@ fn apply_action(
 ///
 /// 피커는 "지금 보고 있는 surface" 의 폴더에서 연다. 이 값은 `inherit_cwd` 설정과 무관하다
 /// — 그 설정은 "새 surface 가 cwd 를 상속하는가" 이고, 피커는 새 surface 를 만들지 않는다
-/// (ADR-0622).
+/// (ADR-0022).
 #[derive(Debug, Clone, Default)]
 pub struct FilePickerStart {
     /// 시작 디렉토리. 로컬 출발이면 로컬 절대경로, 원격(mirror) 출발이면 원격 경로 문자열.
@@ -876,7 +876,7 @@ fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
         .to_string()
 }
 
-/// Tools 메뉴 항목 클릭 · 단축키 · `file_picker.trigger` IPC(ADR-0636) 진입점 —
+/// Tools 메뉴 항목 클릭 · 단축키 · `file_picker.trigger` IPC(ADR-0036) 진입점 —
 /// 출발 surface(없으면 활성 workspace)가 mirror 인지로 로컬/원격을 판별해
 /// [`crate::state::FilePickerData`] 를 채우고 popup 을 연다. 원격이면 `navigate` 가
 /// `pending_list_dir_forward` 를 큐잉하고, 로컬이면 즉시 동기 로드한다.
@@ -886,7 +886,7 @@ fn initial_dir(is_remote: bool, requested: Option<String>) -> String {
 ///
 /// `requester`: `Some` 이면 `file_picker.trigger` 로 이 popup 을 연 plugin — 확정/취소
 /// 시 `app::dispatch::file_picker` 가 `"file_picker.result"` 이벤트를 이 plugin 에만
-/// push 한다(ADR-0636). Tools 메뉴는 `None`.
+/// push 한다(ADR-0036). Tools 메뉴는 `None`.
 /// `filters`: 확장자 필터(점 없이) — 비면 필터 없음.
 pub fn open(
     state: &mut AppState,

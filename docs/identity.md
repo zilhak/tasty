@@ -67,6 +67,6 @@ tasty 의 기반 가정(로컬에서 한 명의 사용자 + 여러 AI Agent 동�
 ## 관련
 
 - [`documentation-model.md`](documentation-model.md) — 이 정체성(특히 headless 동작-우선)에서 도출된 문서 구조
-- [docs/adr/0648-documentation-structure-and-evidence.md](adr/0648-documentation-structure-and-evidence.md) — 문서 분류체계 결정
+- [docs/adr/0049-documentation-structure-and-evidence.md](adr/0049-documentation-structure-and-evidence.md) — 문서 분류체계 결정
 - 용어: [`concepts/actors.md`](concepts/actors.md)(주체) · [`concepts/hierarchy.md`](concepts/hierarchy.md)(구조 계층) · [`concepts/plugins.md`](concepts/plugins.md). 통합 용어집 [`concepts/ubiquitous-language.md`](concepts/ubiquitous-language.md).
 - [`design/policies/focus.md`](design/policies/focus.md) — 포커스 독립성 운영 상세

@@ -57,7 +57,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
             ui.end_row();
 
             // 휠 한 칸이 스크롤하는 거리. 이 한 값이 host UI 위젯과 plugin 표면 양쪽에
-            // 걸린다(ADR-0615) — 어느 한쪽만 바뀌면 같은 창에서 표면마다 이동량이 갈린다.
+            // 걸린다(ADR-0015) — 어느 한쪽만 바뀌면 같은 창에서 표면마다 이동량이 갈린다.
             ui.label(t("settings.general.wheel_line_scroll_label"));
             let mut wheel = settings.general.wheel_line_scroll as f64;
             if super::number::number_field(

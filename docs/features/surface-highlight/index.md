@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent · 원격 사용자
-- **ADR**: [주의 환기 상태의 소유권](../../adr/0624-attention-ownership-and-clear.md)
+- **ADR**: [주의 환기 상태의 소유권](../../adr/0024-attention-ownership-and-clear.md)
 - **화면**: surface 테두리, 탭 제목, 워크스페이스 배지에 표시한다.
 
 ## 목적

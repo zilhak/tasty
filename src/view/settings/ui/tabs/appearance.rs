@@ -1051,7 +1051,7 @@ const SWATCH_INHERITED_ALPHA: u8 = 102;
 /// `status_dot_size`(8) 하나이고 `badge_`/`tab_`/`tag_dot_size` 가 그 별칭이라
 /// (theme.md "상태 점 지름"), 그리로 보내면 5 → 8 로 배율 1 에서 픽셀이 바뀐다.
 /// 게다가 이 점은 상태를 말하지 않는다 — 값이 기본값과 다르다는 표시라 역할도
-/// 다르다. 값을 지키고 이름만 남긴다(ADR-0635의 점 치수 축).
+/// 다르다. 값을 지키고 이름만 남긴다(ADR-0035의 점 치수 축).
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 
 /// hex 입력 폭 (디자인 jsx: 96px). 4px 그리드의 배수이되 대응 토큰이 없어 이름만 둔다.

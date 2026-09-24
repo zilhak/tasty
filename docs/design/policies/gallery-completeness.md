@@ -1,6 +1,6 @@
 # 갤러리 완전성 정책 (운영 상세)
 
-> *왜* 이렇게 결정했는지(근거·대안·재검토 조건)는 [ADR-0635](../../adr/0635-shared-design-and-theme.md). 본 문서는 결정의 *현재 운영 상태* 만 기술한다.
+> *왜* 이렇게 결정했는지(근거·대안·재검토 조건)는 [ADR-0035](../../adr/0035-shared-design-and-theme.md). 본 문서는 결정의 *현재 운영 상태* 만 기술한다.
 
 **갤러리(`crates/tasty-gallery`)는 본체의 모든 UI 컴포넌트를 노출한다. 어떤 컴포넌트도 갤러리에서 빠지지 않는다 — cut 금지.**
 
@@ -54,7 +54,7 @@ enum만 같다고 화면이 같은 것은 아니다. 복사한 치수와 종류�
 
 ## 관련
 
-- [ADR-0635](../../adr/0635-shared-design-and-theme.md) — 결정 근거.
+- [ADR-0035](../../adr/0035-shared-design-and-theme.md) — 결정 근거.
 - [dev-guide/gallery-first](../../dev-guide/gallery-first.md) — 새 컴포넌트는 디자인→갤러리→본체 순서.
 - [design/systems/design-gallery-mapping](../systems/design-gallery-mapping.md) — 디자인 jsx ↔ 갤러리 항목 ↔ 본체 함수 3자 매핑.
 - [design/systems/theme](../systems/theme.md) — UI 디자인 규칙 표. 무대 치수가 그리드·배율 축의 모수 밖인 근거가 그 표의 두 행에 있다.

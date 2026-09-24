@@ -187,7 +187,7 @@ pub(crate) struct PaneSplitCascade {
 /// gui 전용 debug IPC 뿐) 이 분기의 결과가 범위 초과 clamp 와 같다. 그래도 같은 헬퍼를
 /// 지나게 두는 것은, 포인터를 움직이는 headless 경로가 하나라도 생기는 순간 같은 불변식이
 /// 빌드 형태에 따라 다르게 성립하지 않게 하려는 것이다. 근거
-/// `docs/adr/0617-workspace-identity-and-focus.md`.
+/// `docs/adr/0017-workspace-identity-and-focus.md`.
 // 이유: `workspace_purged` 의 id 쪽은 gui 전용 `after_workspace_removed` 만 쓴다.
 #[cfg_attr(
     not(feature = "gui"),

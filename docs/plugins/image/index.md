@@ -5,14 +5,14 @@
 - **배포/통합**: bundled · surface_kind(egui-mesh) · 파일 핸들러 — [plugins 개념](../../concepts/plugins.md)
 - **코드**: `crates/tasty-plugin-image/`(`main.rs`/`doc.rs`/`render.rs`), 등록 `src/core/surface_registry/egui_mesh.rs`(화이트리스트)
 - **권한**: 매니페스트 `permissions`
-- **결정**: [egui-mesh 렌더링](../../adr/0628-egui-mesh-rendering.md) — 이미지 렌더링과 공통 메시 전송 방식
+- **결정**: [egui-mesh 렌더링](../../adr/0028-egui-mesh-rendering.md) — 이미지 렌더링과 공통 메시 전송 방식
 - **화면**: [아래 절](#화면)
 
 > **예제로서**: egui-mesh surface 가 **비트맵 텍스처 + chrome 을 함께** 그리는 예제 — plugin 이 자기 egui `Context` 에서 tessellate 한 mesh 를 host 가 합성한다(mesh-demo 는 순수 위젯 PoC, image 는 텍스처 포함). 새 egui-mesh surface 시작점 → [plugin-development](../../dev-guide/plugin-development.md#surface-kind--rendering-3-종).
 
 ## 목적
 
-이미지를 보고 **임시로** 그리는 **`image` surface 종류**(뷰어 + 그림판)를 제공한다. 변경을 파일로 저장하는 것은 그 위에 얹은 부가 기능이다 — 정체성이 아니다([ADR-0630](../../adr/0630-bundled-plugin-data.md)). `rendering = "egui-mesh"` — plugin 이 비트맵을 자기 egui `Context` 의 텍스처로 올려(폰트 atlas 와 동일 `TexturesDelta` 채널) chrome 과 함께 mesh 로 tessellate 하고, host 가 합성한다. 별도 Canvas 레이어는 없다([ADR-0628](../../adr/0628-egui-mesh-rendering.md)).
+이미지를 보고 **임시로** 그리는 **`image` surface 종류**(뷰어 + 그림판)를 제공한다. 변경을 파일로 저장하는 것은 그 위에 얹은 부가 기능이다 — 정체성이 아니다([ADR-0030](../../adr/0030-bundled-plugin-data.md)). `rendering = "egui-mesh"` — plugin 이 비트맵을 자기 egui `Context` 의 텍스처로 올려(폰트 atlas 와 동일 `TexturesDelta` 채널) chrome 과 함께 mesh 로 tessellate 하고, host 가 합성한다. 별도 Canvas 레이어는 없다([ADR-0028](../../adr/0028-egui-mesh-rendering.md)).
 
 ## 내부 동작
 
@@ -48,7 +48,7 @@
 
 - surface 배치/생성 도메인 — [work-area](../../features/work-area/index.md).
 - 그림판 편집 도구 상세 — design-system / 구현.
-- **저장하지 않은 편집의 복원** — 복원은 디스크에 저장된 것만 대상으로 한다. 미저장 편집은 복원하지 않고, 복원 시점에 알리지도 않는다 ([ADR-0630](../../adr/0630-bundled-plugin-data.md)).
+- **저장하지 않은 편집의 복원** — 복원은 디스크에 저장된 것만 대상으로 한다. 미저장 편집은 복원하지 않고, 복원 시점에 알리지도 않는다 ([ADR-0030](../../adr/0030-bundled-plugin-data.md)).
 
 ## Acceptance Criteria
 

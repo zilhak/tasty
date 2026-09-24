@@ -243,7 +243,7 @@ impl JsonRpcResponse {
     /// | 이 바이너리에 안 들어 있다 | `-32017` | 조합(헤드리스/release)을 본다 |
     /// | 이름이 틀렸다 | `-32601` | 이름을 고친다 |
     ///
-    /// [IPC 오류 구분](../../../docs/adr/0604-ipc-discovery-and-errors.md)에 따라
+    /// [IPC 오류 구분](../../../docs/adr/0004-ipc-discovery-and-errors.md)에 따라
     /// 셋째 제한을 이 함수의 마지막 갈래에서 판정한다.
     ///
     /// ## 셋째 갈래의 술어가 왜 [`is_registered_name`] 인가

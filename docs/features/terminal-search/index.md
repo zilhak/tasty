@@ -8,7 +8,7 @@
 
 ## 목적
 
-터미널 **스크롤백 + 화면 전체**를 텍스트 검색. GPU 렌더러가 매치를 하이라이트하며 현재 매치(active)와 나머지(inactive)를 다른 색으로 구분한다. 두 색(테마 `search_match_active_bg` · `search_match_bg`)은 alpha 로 구분되고, 그 alpha 는 매치 칸의 배경 위에 합성된다([ADR-0635](../../adr/0635-shared-design-and-theme.md)).
+터미널 **스크롤백 + 화면 전체**를 텍스트 검색. GPU 렌더러가 매치를 하이라이트하며 현재 매치(active)와 나머지(inactive)를 다른 색으로 구분한다. 두 색(테마 `search_match_active_bg` · `search_match_bg`)은 alpha 로 구분되고, 그 alpha 는 매치 칸의 배경 위에 합성된다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
 
 ## 내부 동작
 

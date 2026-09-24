@@ -12,7 +12,7 @@
 //!   를 적용할 identify worker 와 결과를 여는 창이 headless 에 없어, headless 에서 받으면
 //!   요청을 버리고도 수락했다고 답하게 된다. 그래서 headless 에서는 arm 이 없고 라우터
 //!   끝이 `-32017` 로 답한다
-//!   ([ADR-0631](../../../../docs/adr/0631-file-handler-routing.md)).
+//!   ([ADR-0031](../../../../docs/adr/0031-file-handler-routing.md)).
 
 #[cfg(feature = "gui")]
 use std::path::PathBuf;
@@ -108,7 +108,7 @@ fn rule_json(kind: &crate::file::format::DetectorRuleKind) -> serde_json::Value 
 }
 
 /// reload 가 적용하지 않은 user 항목을 `[{ "id", "reason" }]` 로 싣는다. 없으면 빈 배열이다
-/// (docs/adr/0631-file-handler-routing.md).
+/// (docs/adr/0031-file-handler-routing.md).
 fn rejected_json(rejected: &[tasty_file_handler::RejectedUserHandler]) -> serde_json::Value {
     rejected
         .iter()
@@ -134,14 +134,14 @@ struct DispatchReq {
     /// 조작(예: markdown 파일열기 팝업의 [열기])으로 부를 때 싣는다. host 는 호출자가 그
     /// popup 의 소유 plugin 이고 그 popup 이 사용자의 확정형 입력을 받았을 때만 이 호출을
     /// 사용자 행동으로 친다 — 그 밖에는(외부 IPC 호출자 · 남의 popup · 닫힌 popup · 입력을
-    /// 안 받은 popup) 값이 없는 것과 같다(ADR-0631).
+    /// 안 받은 popup) 값이 없는 것과 같다(ADR-0031).
     #[serde(default)]
     owner_popup_instance: Option<u64>,
     /// 이 호출을 낸 plugin 이 `origin_surface_id` 의 자기 webview 에서 받은
     /// `webview.navigation_attempt` 의 **URL 그대로**. plugin 이 자기 webview 안의 사용자
     /// 클릭(예: markdown 문서 안의 파일 링크)으로 부를 때 싣는다. host 는 엔진이 그 시도를 사용자
     /// 제스처로 보고했고, 그 surface 의 소유와 지금 페이지를 쓴 호출자가 호출 plugin 일 때만, 그
-    /// 한 번을 사용자 행동으로 친다 — 그 밖에는 값이 없는 것과 같다(ADR-0631).
+    /// 한 번을 사용자 행동으로 친다 — 그 밖에는 값이 없는 것과 같다(ADR-0031).
     #[serde(default)]
     user_navigation_url: Option<String>,
 }
@@ -244,11 +244,11 @@ pub fn handle_dispatch(
 /// 실어도 에이전트다.
 ///
 /// - popup: 호출자가 plugin 이고, 그 plugin 이 댄 `owner_popup_instance` 가 그 plugin 소유로 이
-///   창에 열려 있으며, 그 popup 이 사용자의 확정형 입력을 받았다(ADR-0631).
+///   창에 열려 있으며, 그 popup 이 사용자의 확정형 입력을 받았다(ADR-0031).
 /// - webview: 호출자가 plugin 이고, `origin_surface_id` 의 webview 에서 난 가장 최근 시도가
 ///   엔진이 사용자 제스처로 보고한 것이며 그 plugin 이 쓴 페이지 위에서 났고, host 가 그 시도를
 ///   **바로 그 plugin 에** 통지했으며, plugin 이 댄 `user_navigation_url` 이 그 URL 이다. 이 근거는
-///   한 번 쓰면 사라진다(ADR-0631).
+///   한 번 쓰면 사라진다(ADR-0031).
 ///
 /// 어느 것도 안 맞으면 포커스를 안 옮기는 쪽(에이전트)으로 떨어진다.
 #[cfg(feature = "gui")]

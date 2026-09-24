@@ -47,9 +47,9 @@ impl App {
         if cmd.request.method == "debug.modal.close_request" {
             return self.ipc_handle_debug_modal_close_request(cmd);
         }
-        // 임의 Lua 주입 (debug 전용, ADR-0627) — App 소유 lua_engine 워커로 실행.
+        // 임의 Lua 주입 (debug 전용, ADR-0027) — App 소유 lua_engine 워커로 실행.
         // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
-        // 임의 Lua 주입 (debug 전용, ADR-0627) — App 소유 lua_engine 워커로 실행.
+        // 임의 Lua 주입 (debug 전용, ADR-0027) — App 소유 lua_engine 워커로 실행.
         // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
         // 본체는 헤드리스 pump 와 **같은 함수**를 쓴다 — 두 벌로 두면 갈라진다.
         if cmd.request.method == "debug.lua.eval" {
@@ -421,7 +421,7 @@ impl App {
     /// 존재하므로(`docs/design/systems/fullscreen-stage.md`) 모달 id 를 받을 자리가
     /// 없다 — 캡처(읽기)와 달리 이건 무대를 여닫는 행동이라, 대상 집합을 넓히면
     /// 사용자 조작 영역인 모달까지 에이전트 행동 대상이 된다
-    /// (`docs/adr/0618-explicit-capture-and-fullscreen-stage.md`).
+    /// (`docs/adr/0018-explicit-capture-and-fullscreen-stage.md`).
     fn pick_debug_window(
         &self,
         params: &serde_json::Value,

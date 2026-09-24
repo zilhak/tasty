@@ -219,7 +219,7 @@ impl App {
         };
         stop_before_remove(mgr, &plugin_id);
         // 켜진 채 지우는 plugin 은 `plugin.disable` 을 안 거치므로 kind 철회를 여기서 한다
-        // (ADR-0626). 이미 꺼져 있던 것이면 철회돼 있어 no-op 이다.
+        // (ADR-0026). 이미 꺼져 있던 것이면 철회돼 있어 no-op 이다.
         surface_registry.withdraw_plugin(&plugin_id);
         let plugin_dir = crate::plugin::plugin_root()
             .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?
@@ -239,7 +239,7 @@ impl App {
         // 진입점에 따라 다른 일을 했고, GUI 로는 되고 에이전트로는 안 되는 동작이라
         // 불가침 원칙 2 를 어겼다. 공용 본문에 두면 다음 진입점이 잊을 수 없다.
         // 되돌리는 수단: `plugin.upgrade_builtins { restore_removed: [...] }` ·
-        // CLI `--restore-removed` / `--restore-removed-all` (ADR-0626).
+        // CLI `--restore-removed` / `--restore-removed-all` (ADR-0026).
         crate::plugin::mark_builtin_removed(mgr, &plugin_id);
         // 비활성 자국은 **설치된 것에 대한** 상태다. 제거된 id 를 거기 남겨 두면 그
         // 자국이 다음 설치의 기본값을 조용히 정한다 — 되돌림(`restore_removed`)으로
@@ -252,7 +252,7 @@ impl App {
         }
         // 설치 목록을 **다시 발견**한다 — 손으로 `packages` 만 지우면 안 된다.
         // `ipc_namespaces` 는 이제 설치된 매니페스트에서 유도되는 표라
-        // (ADR-0626) `packages` 를 바꾸는 자리가 그 유도를 같이 돌리지 않으면
+        // (ADR-0026) `packages` 를 바꾸는 자리가 그 유도를 같이 돌리지 않으면
         // 지운 plugin 의 prefix 가 남아, 그 이름의 호출이 `-32002 plugin '<id>'
         // is not running` 으로 거절된다 — 설치조차 안 돼 있는데. 호스트가 같은
         // 이름에 구현을 갖고 있으면 그 구현이 그 상태에서 가려진다.

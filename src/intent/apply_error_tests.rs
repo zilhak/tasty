@@ -59,7 +59,7 @@ fn an_unforwardable_block_toasts_only_for_the_user() {
 }
 
 /// 철회된 kind(제공 plugin 이 꺼졌거나 아직 다시 연결되지 않았다)로 만들려다 거절되면 사용자 발화에서만 그 사유를
-/// toast 로 보인다 — 에이전트 발화는 로그뿐이다(ADR-0626 · ADR-0636).
+/// toast 로 보인다 — 에이전트 발화는 로그뿐이다(ADR-0026 · ADR-0036).
 #[test]
 fn a_withdrawn_kind_refusal_toasts_only_for_the_user() {
     let (_core, mut state, mut engine) = fixture();
@@ -217,7 +217,7 @@ fn a_preset_save_failure_toasts_only_for_the_user() {
 
 /// 철회된 kind 로의 제자리 변환은 거절되므로 최근 목록에도 남지 않는다 — 기록은 적용 전에
 /// 일어나므로, 그 판정이 정의 잔존(`get`)이 아니라 새로 만들 수 있는가(`get_live`)를 물어야
-/// 한다(ADR-0626). 다시 등록해 철회가 풀리면 같은 변환이 기록된다(대조군).
+/// 한다(ADR-0026). 다시 등록해 철회가 풀리면 같은 변환이 기록된다(대조군).
 #[test]
 fn a_convert_to_a_withdrawn_kind_leaves_no_recent_entry() {
     let (mut core, mut state, mut engine) = fixture();

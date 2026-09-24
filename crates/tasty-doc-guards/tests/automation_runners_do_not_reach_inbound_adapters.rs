@@ -8,12 +8,12 @@
 //! 호출은 공용 통신 계약(`tasty_ipc::host_call::HostIpcInjector`)으로 메인 루프에 주입된다 —
 //! 요청을 받아 처리하는 쪽(`adapters::ipc` 핸들러 트리, `tcp_ipc_server`)의 파일 배치를 알면
 //! 안 된다. 그 방향이 리팩토링 마스터플랜의 공용 경계 단위가 없앤 역참조다. 같은 크레이트 안이라
-//! 컴파일러는 이 방향을 못 막는다(도메인 가드와 같은 사정 — ADR-0602).
+//! 컴파일러는 이 방향을 못 막는다(도메인 가드와 같은 사정 — ADR-0002).
 //!
 //! 도메인 가드(`domain_does_not_reach_up`)의 좌변은 `src/core` · `src/ports` 뿐이라 이 두
 //! 디렉토리를 안 본다. 변이 검증이 그 빈자리를 쟀다 — `src/webhook/mod.rs` 에
 //! `use crate::adapters::production::tcp_ipc_server` 를 더해도 아무것도 안 빨개졌다
-//! ([ADR-0602](../../../docs/adr/0602-domain-execution-and-ports.md)).
+//! ([ADR-0002](../../../docs/adr/0002-domain-execution-and-ports.md)).
 //!
 //! # 좌변과 판정기
 //!
@@ -128,7 +128,7 @@ fn automation_runners_do_not_name_an_inbound_adapter() {
         "자동화 실행부(`src/webhook` · `src/hook_handler`) 출하 코드가 inbound adapter 나 메인 \
          루프를 이름으로 부른다:\n{}\n\
          실행부는 공용 통신 계약(`tasty_ipc::host_call`)으로 호출을 주입한다 — 요청을 받는 쪽의 \
-         파일 배치를 모른다(ADR-0602). 필요한 타입이 핸들러 쪽에 정의돼 있으면 공용 계약 쪽으로 \
+         파일 배치를 모른다(ADR-0002). 필요한 타입이 핸들러 쪽에 정의돼 있으면 공용 계약 쪽으로 \
          옮기고 핸들러가 그것을 쓴다.\n\
          ★ 이 가드에 면제 명부를 만들어 통과시키지 마라 — 명부가 비어 있는 것이 이 경계의 \
          현재 상태다.",

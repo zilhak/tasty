@@ -11,7 +11,7 @@ native webview 는 winit 창 **안**에 얹히는 별개의 OS 자식 창/뷰다
 
 PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출부가 쓰는 메서드와 시그니처는
 해당 OS 컴파일이 검사한다. 같은 빌드에서 런타임 다형성을 쓰지 않으므로 별도 backend trait은 두지 않는다.
-선택 근거는 [Webview 통합 ADR](../../adr/0629-webview-host-integration.md)에 있다.
+선택 근거는 [Webview 통합 ADR](../../adr/0029-webview-host-integration.md)에 있다.
 
 컴파일 성공은 실제 크기·focus·navigation·종료 행동이 같다는 증거가 아니다.
 백엔드 변경 때는 아래 계약으로 세 구현을 비교하고 해당 OS에서 동작을 확인한다.
@@ -31,7 +31,7 @@ PlatformWebView는 OS별 타입 중 cfg가 하나를 선택한다. 공통 호출
 | `set_zoom` | `f64` | — | |
 | `set_javascript_enabled` | `bool` | — | |
 | `set_color_scheme` | `ColorScheme` | — | |
-| `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다([ADR-0629](../../adr/0629-webview-host-integration.md)) |
+| `set_remote_content_allowed` | `bool` | — | Linux 는 WebKit content filter 로 막는다([ADR-0029](../../adr/0029-webview-host-integration.md)) |
 | `Drop` | — | — | 아래 "수명" |
 
 ## 생성 — 부모 handle 과 실패 분류

@@ -37,7 +37,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let outcome = self.create_new_window(event_loop, origin);
                 // IPC 요청자(있으면)에게 결과를 돌려준다. 사용자 경로(menu/tray)는
                 // completion 이 None 이라 조용히 끝난다. 결과→응답 매핑 계약은
-                // IpcCompletion::reply_window_create 하나로 모은다(ADR-0607).
+                // IpcCompletion::reply_window_create 하나로 모은다(ADR-0007).
                 if let Some(completion) = completion {
                     completion.reply_window_create(outcome.map(u64::from));
                 }
@@ -208,7 +208,7 @@ impl ApplicationHandler<AppEvent> for App {
         #[cfg(windows)]
         crate::jump_list::setup_jump_list();
 
-        // System tray / status item (best-effort, ADR-0616). Create once and keep
+        // System tray / status item (best-effort, ADR-0016). Create once and keep
         // it alive across window create/destroy (macOS parks state and recreates
         // windows, so guard against re-creating the tray each time). `None` =
         // tray unavailable; the app degrades to taskbar/dock minimize.
@@ -294,7 +294,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // 에이전트 창의 초기 포커스 힌트는 map 뒤에 지운다. winit(X11)은 MapNotify 를 받은
         // 자리에서 `Focused(has_focus)` 를 내므로, 그 창의 첫 `Focused(_)` 가 map 의 가장
-        // 이른 신호다(ADR-0617).
+        // 이른 신호다(ADR-0017).
         if let WindowEvent::Focused(_) = &event
             && self.pending_focus_hint_clear.remove(&id)
             && let Some(view) = self.view.views.get(&id)
@@ -451,7 +451,7 @@ impl ApplicationHandler<AppEvent> for App {
         // 이번 프레임에 쌓은 op 를 같은 프레임에 원격으로 보낸다.
         self.dispatch_pending_structural_forwards();
 
-        // ADR-0622 — client-driven mirror geometry: redraw 의 로컬 레이아웃 스윕이
+        // ADR-0022 — client-driven mirror geometry: redraw 의 로컬 레이아웃 스윕이
         // mirror pane 목표 grid 를 쌓은 큐를 drain 해 원격 PTY 로 forward 한다. 원격
         // reflow 결과는 기존 server→client Resize echo 로 mirror 에 반영된다.
         self.dispatch_pending_resize_forwards();
@@ -460,13 +460,13 @@ impl ApplicationHandler<AppEvent> for App {
         // drain 해 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::ListDirResult`
         // 로 비동기 수신(아래 apply_attach_client_output 경로).
         self.dispatch_pending_list_dir_forwards();
-        // git-viewer(원격, `docs/adr/0622-remote-mirror-content-and-queries.md`)
+        // git-viewer(원격, `docs/adr/0022-remote-mirror-content-and-queries.md`)
         // — `git_viewer.query` IPC 핸들러가 쌓은 원격 git 조회 forward 큐를 drain 해
         // 원격에 전송한다. 응답은 reader thread 가 `MirrorEvent::GitQueryResult` 로
         // 비동기 수신(아래 apply_attach_client_output 경로) → `emit_host_event_to_plugin`
         // 으로 plugin 에 push.
         self.dispatch_pending_git_query_forwards();
-        // markdown mirror(원격, `docs/adr/0622-remote-mirror-content-and-queries.md`)
+        // markdown mirror(원격, `docs/adr/0022-remote-mirror-content-and-queries.md`)
         // — `markdown_mirror.content_request` IPC 핸들러가 쌓은 원문 조회 forward 큐를 drain 해
         // 원격에 전송한다. 응답은 `MirrorEvent::MarkdownContentResult` 로 비동기 수신 →
         // markdown plugin 에 unicast.
@@ -532,9 +532,9 @@ impl ApplicationHandler<AppEvent> for App {
         // wrapper) 모두 매 frame 일관 처리 (intent-ui-vs-domain.md §4.4).
         // dispatch_pending_intents 가 domain_batch 를 따로 모아 cascade 까지 일괄.
         self.dispatch_pending_intents();
-        // Lua 워커에 최신 읽기전용 트리 스냅샷 발행 (ADR-0627 읽기 = 스냅샷).
+        // Lua 워커에 최신 읽기전용 트리 스냅샷 발행 (ADR-0027 읽기 = 스냅샷).
         self.publish_lua_snapshot();
-        // Lua 워커가 발행한 HostCommand drain·적용 (ADR-0627 쓰기 = 커맨드 큐).
+        // Lua 워커가 발행한 HostCommand drain·적용 (ADR-0027 쓰기 = 커맨드 큐).
         self.dispatch_pending_lua_commands();
         // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.
         self.dispatch_pending_popup_opens();
@@ -545,7 +545,7 @@ impl ApplicationHandler<AppEvent> for App {
         // Native file picker popup 의 result 슬롯 drain — 로컬은 DispatchFile,
         // 원격은 클립보드 복사 + toast.
         self.dispatch_pending_file_picker_results();
-        // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0627).
+        // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0027).
         self.dispatch_pending_script_confirm();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
@@ -559,7 +559,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // native webview 가 올린 키/포커스 이벤트 소비 — webview 는 winit 창과 별개의
         // OS 자식 창이라 그 안에서 눌린 키가 `WindowEvent::KeyboardInput` 으로 오지
-        // 않는다(`docs/adr/0629-webview-host-integration.md`).
+        // 않는다(`docs/adr/0029-webview-host-integration.md`).
         let needs_key_poll = self.pump_webview_key_events();
         // 폴링 tick 재예약/취소. tick 이 실제로 걸리는 것은 **Linux 뿐**이고 그 판정은
         // 함수 안에 있다 — macOS/Windows 는 native 키 콜백이 winit 과 같은 OS 이벤트
@@ -687,7 +687,7 @@ impl App {
     /// `resumed()` 의 GPU 초기화. 어댑터가 아예 없으면(드라이버 미설치 등 정상적으로
     /// 발생 가능한 환경 문제) panic(크래시 리포트 대상) 대신 사람이 읽을 진단을
     /// `tracing::error!`(stderr + 파일 로그)로 내고 정상 종료한다 — 부팅 창 생성 실패와
-    /// 같은 처리다(ADR-0616). 엔진 생성 실패는 이 단계와 달리 창·GPU 가 살아 있어
+    /// 같은 처리다(ADR-0016). 엔진 생성 실패는 이 단계와 달리 창·GPU 가 살아 있어
     /// 종료하지 않고 실패 화면을 그린다(`enter_boot_error_mode`). 그 외 에러는 예상 밖
     /// 실패이므로 panic 시켜 크래시 리포팅 경로를 유지한다.
     fn try_init_boot_gpu(
@@ -767,7 +767,7 @@ impl App {
         self.shell_setup_window = Some(window);
     }
 
-    /// `resumed()` 의 tray 아이콘 최초 생성(best-effort, ADR-0616). macOS 는 state 를
+    /// `resumed()` 의 tray 아이콘 최초 생성(best-effort, ADR-0016). macOS 는 state 를
     /// park 하고 window 를 재생성하므로, 재생성 때마다 tray 가 다시 만들어지지 않게
     /// 가드한다. `None` = tray 불가 — 앱은 taskbar/dock minimize 로 degrade.
     #[cfg(all(
@@ -866,7 +866,7 @@ impl App {
     /// 를 요청(예: 스크롤 스무딩이 유휴 상태에서 아직 안 끝남)하면, 다음 프레임에
     /// 무입력으로 재-forward 되도록 예약한다. [`mark_invalidated_surfaces_dirty`] 의
     /// popup 대응이지만, popup 의 forward 게이팅(`popup_render.rs`)은 이미 이 목적의
-    /// `AppState::plugin_mesh_popup_pending_repaint`(ADR-0622, 비동기 host→plugin
+    /// `AppState::plugin_mesh_popup_pending_repaint`(ADR-0022, 비동기 host→plugin
     /// push 후 강제 repaint)를 갖고 있어 그대로 재사용한다 — 어느 window 가 이
     /// popup 을 그리는지 몰라(popup instance 는 window 소유권을 안 나름) 전 main
     /// window 에 broadcast 한다(`attach_client.rs` 의 기존 pending_repaint 예약
@@ -1495,7 +1495,7 @@ impl App {
         }
     }
 
-    /// OS 절전 복귀(`AppEvent::SystemResumed`, Windows) 헬스 패스 (ADR-0613).
+    /// OS 절전 복귀(`AppEvent::SystemResumed`, Windows) 헬스 패스 (ADR-0013).
     /// 전 view/parked engine 을 순회하며 (1) 살아있는 PTY 자식을 wake nudge,
     /// (2) `process_all_pty_output` 로 절전 중 죽은 자식의 `ProcessExited` cascade
     /// 를 즉시 트리거(→ surface 정리), (3) 자식 TUI 가 도는데 깨어나지 못할 수도
@@ -1504,7 +1504,7 @@ impl App {
     pub(crate) fn resume_health_pass(&mut self) {
         use crate::app::dispatch_domain::DispatchSource;
         use crate::core::intent::CoreEvent;
-        tracing::info!("system resumed — running PTY health pass (ADR-0613)");
+        tracing::info!("system resumed — running PTY health pass (ADR-0013)");
         let core = &mut self.core;
         let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
         for (wid, w) in self.view.views.iter_mut() {
@@ -1686,7 +1686,7 @@ impl App {
         self.apply_workspace_attach_requests_batch(outcome.workspace_attach_requests, &hub);
         self.apply_input_frames_batch(outcome.input_frames);
         self.apply_structural_ops_batch(outcome.structural_ops, &hub);
-        // client-driven mirror geometry(ADR-0622): mirror client 가 요청한 크기로
+        // client-driven mirror geometry(ADR-0022): mirror client 가 요청한 크기로
         // 원격 PTY 를 resize. holder 검증은 `apply_attached_workspace_resize` 가
         // 담당하며, 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를
         // 자동 fan-out 한다(여기서 추가 push 없음).
@@ -1705,7 +1705,7 @@ impl App {
         self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
         self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
         self.apply_markdown_content_requests_batch(outcome.markdown_content_requests, &hub);
-        // native bulk 파일 전송(ADR-0622): begin/chunk/commit 을 **도착 순서 그대로**
+        // native bulk 파일 전송(ADR-0022): begin/chunk/commit 을 **도착 순서 그대로**
         // (단일 벡터) 결속 workspace 를 소유한 engine 으로 라우팅한다. 순서 보존이라
         // chunk 가 begin 을 앞지르지 않는다(전량 폐기 + 빈 파일 성공 오보 방지). 결속
         // ws 는 연결-단위 bulk 태깅에서 조회.
@@ -1717,7 +1717,7 @@ impl App {
 
         // 작업 J: attach/detach 직후 즉시 서버 readonly display mirror 를 채워(또는
         // 해제분 정리) 첫 3초 tick 전 blank 를 없앤다. 점유 mirror 있는 window 만 dirty.
-        // 같은 순회에서 forward 가 아닌 원인의 구조 변경을 holder 에게 보낸다(ADR-0623).
+        // 같은 순회에서 forward 가 아닌 원인의 구조 변경을 holder 에게 보낸다(ADR-0023).
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 main.core_state.push_structure_changes();
@@ -1940,7 +1940,7 @@ impl App {
     }
 
     /// `apply_stream_outcome` 지원 — `git_query_requests` 배치 적용.
-    /// git-viewer(`docs/adr/0622-remote-mirror-content-and-queries.md`):
+    /// git-viewer(`docs/adr/0022-remote-mirror-content-and-queries.md`):
     /// mirror client 가 attach 채널로 보낸 git 조회 요청. holder(그 client 가 점유한
     /// 워크스페이스를 가진 engine)를 찾아 처리.
     fn apply_git_query_requests_batch(
@@ -1954,7 +1954,7 @@ impl App {
     }
 
     /// `apply_stream_outcome` 지원 — `markdown_content_requests` 배치 적용.
-    /// markdown mirror(`docs/adr/0622-remote-mirror-content-and-queries.md`):
+    /// markdown mirror(`docs/adr/0022-remote-mirror-content-and-queries.md`):
     /// mirror client 가 attach 채널로 보낸 원문 조회 요청. holder 를 찾아 처리.
     fn apply_markdown_content_requests_batch(
         &mut self,
@@ -2173,7 +2173,7 @@ impl App {
 
     /// mirror client 가 forward 한 구조 op 를 실행하고 `StructuralResult` 로 회신한다.
     /// anchor surface 가 속한 워크스페이스를 **그 client 가 점유(holder)** 하고 있는
-    /// main window 에서만 실행한다(ADR-0621 hard 점유 = 구조 변경 권한). holder 가
+    /// main window 에서만 실행한다(ADR-0021 hard 점유 = 구조 변경 권한). holder 가
     /// 아니거나 대상 워크스페이스를 찾지 못하면 `ok:false` 로 거부한다.
     ///
     /// 한계: parked engine(백그라운드 창)은 `AppState` 를 갖지 않아 도메인 실행 함수
@@ -2199,7 +2199,7 @@ impl App {
                 continue;
             };
             handled = true;
-            // 점유자(holder)만 이 워크스페이스를 조작할 수 있다(ADR-0621 hard 점유).
+            // 점유자(holder)만 이 워크스페이스를 조작할 수 있다(ADR-0021 hard 점유).
             let (ok, reason, delta) = if engine.attach.workspace_holder(ws) != Some(client_id) {
                 (false, Some("not workspace holder".to_string()), None)
             } else {
@@ -2235,7 +2235,7 @@ impl App {
             break;
         }
         if !handled {
-            // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0623).
+            // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0023).
             let engines = self
                 .view
                 .views
@@ -2250,7 +2250,7 @@ impl App {
         }
     }
 
-    /// mirror client 가 forward 한 client-driven resize(ADR-0622)를 원격 PTY 에
+    /// mirror client 가 forward 한 client-driven resize(ADR-0022)를 원격 PTY 에
     /// 적용한다. anchor surface 를 가진 engine 을 순회하며
     /// `apply_attached_workspace_resize`(holder 검증 포함)를 호출한다 — 성공한
     /// engine 에서 멈춘다. 실제 grid 변화는 `Terminal::resize` 가 판정하고, 변화
@@ -2407,7 +2407,7 @@ impl App {
         let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
     }
 
-    /// markdown mirror(`docs/adr/0622-remote-mirror-content-and-queries.md`)
+    /// markdown mirror(`docs/adr/0022-remote-mirror-content-and-queries.md`)
     /// — mirror client 가 attach 채널로 보낸 `markdown_content_request` 하나를 적용한다.
     /// `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을 찾아
     /// `attach_runtime::handle_markdown_content_request` 로 위임한다.
@@ -2459,7 +2459,7 @@ impl App {
         let _ = hub.push(client_id, frame); // best-effort — client 끊김 시 무해.
     }
 
-    /// git-viewer(`docs/adr/0622-remote-mirror-content-and-queries.md`) —
+    /// git-viewer(`docs/adr/0022-remote-mirror-content-and-queries.md`) —
     /// mirror client 가 attach 채널로 보낸 `git_query_request` 하나를 적용한다.
     /// `apply_list_dir_request_msg` 와 완전히 동형 — holder engine 을
     /// 찾아 `attach_runtime::handle_git_query_request` 로 위임한다.

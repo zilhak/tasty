@@ -25,7 +25,7 @@
 //! 무대에서 목록을 내려도 원본 popup 의 스크롤은 그대로다(= "별개 데이터").
 //!
 //! 그 상태는 무대 수명에 속하므로 [`on_close`] 에서 지운다 — popup 의 `on_close`
-//! 관례([ADR-0636](../../../../docs/adr/0636-overlay-scope-and-lifetime.md))
+//! 관례([ADR-0036](../../../../docs/adr/0036-overlay-scope-and-lifetime.md))
 //! 를 무대 정의가 그대로 따른다. 실제 id 는 draw 시점의 Ui 에서만 알 수 있으므로
 //! 그때 temp memory 에 적어 두고 훅이 그것을 읽어 지운다(egui 내부 id 규칙을
 //! 재현하지 않는다).

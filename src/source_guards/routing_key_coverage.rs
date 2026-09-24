@@ -17,7 +17,7 @@
 //!
 //! ## 모수 고정
 //!
-//! [ADR-0647](../../docs/adr/0647-source-guards-and-exemptions.md)
+//! [ADR-0048](../../docs/adr/0048-source-guards-and-exemptions.md)
 //! 대로 **집합 동등**이다 — 핸들러가 읽는 id 키 집합에서 인식 키를 뺀 나머지가
 //! [`NOT_A_ROUTING_TARGET`] 과 정확히 같아야 한다. 양방향이라 새 키가 들어오는 것과
 //! 면제가 stale 이 되는 것을 둘 다 잡는다.
@@ -36,7 +36,7 @@ use std::path::PathBuf;
 
 use super::repo_root;
 
-/// 핸들러 소스 트리. 개별 파일이 아니라 디렉터리다(ADR-0647).
+/// 핸들러 소스 트리. 개별 파일이 아니라 디렉터리다(ADR-0048).
 const HANDLER_DIR: &str = "src/adapters/ipc/handler";
 
 /// 그 디렉터리와 짝인 모듈 루트. 공용 `require_*` 헬퍼가 여기 있다.

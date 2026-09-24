@@ -14,7 +14,7 @@ use tasty_type_geometry::length::LogicalPx;
 // "스케일 밖 폰트 값".
 
 /// 매치 카운터(`3/17`) 폰트. DTCG primitive `font-size-12` 는 있으나 semantic role 이
-/// 없어 `Theme` 필드가 없다 — ADR-0635 대로 **이름에 primitive 임을 남긴다**.
+/// 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
 const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// Draw the search bar popup content.

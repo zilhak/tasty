@@ -959,7 +959,7 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
     }
 
     // 여기서 `engine.collect_events()` 를 쓰지 않는다. 그쪽은 `try_take_events()` 라
-    // **상태 락을 못 잡으면 그 터미널을 통째로 건너뛴다**(ADR-0613 — 입력 스레드가 바쁜
+    // **상태 락을 못 잡으면 그 터미널을 통째로 건너뛴다**(ADR-0013 — 입력 스레드가 바쁜
     // 파서 스레드들과 직렬화되지 않게 한 설계). 호스트 루프에서는 파서가 다시 깨우므로
     // 그 건너뜀이 손실이 아니지만, **한 번만 묻는 테스트**에서는 그 자리가 곧 유실이다.
     //
@@ -1046,7 +1046,7 @@ fn mirror_surface_notification_item_survives_the_attention_gate() {
 
 /// `surface.completion` IPC/CLI 가 mirror 의 **로컬** surface id 를 대상으로 불려도
 /// (미러 인스턴스에서 도는 에이전트/플러그인이 그럴 수 있다) 레코드를 만들지 않는다.
-/// 정책은 "억제" — 서버로 forward 하지 않는다(ADR-0624).
+/// 정책은 "억제" — 서버로 forward 하지 않는다(ADR-0024).
 #[test]
 fn surface_completion_on_mirror_surface_is_suppressed() {
     use crate::core::AttentionKind;
@@ -1096,7 +1096,7 @@ fn server_push_apply_is_not_blocked_by_the_mirror_gate() {
     );
 }
 
-// ---- occupancy > completion 우선순위, NeedsInput > occupancy (ADR-0621, ADR-0624) ----
+// ---- occupancy > completion 우선순위, NeedsInput > occupancy (ADR-0021, ADR-0024) ----
 
 /// 점유(soft) 중 surface 는 Completion 하이라이트가 억제된다: `regions_from_state` 의
 /// 해당 region `kind` 가 `None`. 점유 없이 attention 만 있으면 `Some(Completion)`(대조군).
@@ -2373,8 +2373,8 @@ fn inline_cascade_emits_the_workspace_closed_host_event() {
 
 /// 원격 attach 가 **하드 점유**한 surface 를 GUI close 경로가 죽이지 않는다.
 ///
-/// 하드 점유(ADR-0621)는 "지금 원격 사용자가 이 터미널을 쓰고 있다" 는 선언이다.
-/// `workspace.close` IPC 는 이미 거절하는데(ADR-0617) **사용자 경로는 열려 있었다** —
+/// 하드 점유(ADR-0021)는 "지금 원격 사용자가 이 터미널을 쓰고 있다" 는 선언이다.
+/// `workspace.close` IPC 는 이미 거절하는데(ADR-0017) **사용자 경로는 열려 있었다** —
 /// 같은 파괴가 에이전트에게는 막히고 사람에게는 무경고로 열린 비대칭이었다.
 ///
 /// 이 모듈은 진입점마다 **거절과 통과를 짝으로** 고정한다. 거절만 세면 "전부 막았다" 와

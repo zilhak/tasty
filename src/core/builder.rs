@@ -118,7 +118,7 @@ impl CoreBuilder {
         self
     }
     /// 스토어가 `memory.db` 초기화 실패의 대체면 그 까닭을 `Core` 에 붙인다. `None` 이면
-    /// durable 저장소다(ADR-0610).
+    /// durable 저장소다(ADR-0010).
     pub(crate) fn with_memory_init_fallback(
         mut self,
         fallback: Option<tasty_memory::InitFallback>,

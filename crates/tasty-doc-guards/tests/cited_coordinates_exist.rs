@@ -126,7 +126,7 @@ const PRUNE_DIRS: &[&str] = &[
 ];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다.
+/// (`docs/adr/0049-documentation-structure-and-evidence.md`) 를 어긴다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
@@ -295,7 +295,7 @@ fn scan_pairs(line: &str) -> Vec<(String, Vec<String>)> {
 /// 이 가드가 좌표 인용을 안 찾아 공용 denylist 위에 **더** 빼는 형식. `.svg`·`.lock` 은
 /// 우리 소스 경로 좌표를 담지 않는다 — 바이너리 판정은 정본
 /// [`tasty_doc_guards::is_binary_artifact_ext`] 가 하고, 이 목록은 그 위에 얹는 이 가드의
-/// 모수 축소다(ADR-0647: 판정은 하나, 스캔 범위는 소비자별).
+/// 모수 축소다(ADR-0048: 판정은 하나, 스캔 범위는 소비자별).
 const EXTRA_SKIP_EXTS: &[&str] = &["lock", "svg"];
 
 /// 파일 하나가 스캔 대상인가 — 공용 바이너리 denylist 위에 [`EXTRA_SKIP_EXTS`] 를 더
@@ -910,7 +910,7 @@ fn cited_markdown_links_resolve_from_their_own_document() {
 }
 
 /// 본 판정이 보는 링크 수의 하한 — **연기 검사**다. 스캐너가 깨져 0 을 내면 위 단정이
-/// 언제나 초록이 된다(ADR-0647).
+/// 언제나 초록이 된다(ADR-0048).
 ///
 /// 값은 실측의 절반 아래로 잡았다 — 문서가 늘고 주는 것으로는 안 깨지고 스캐너가
 /// 무너질 때만 걸리게. **이 하한을 고를 때 실측은 3154 였다**(2026-09-05).

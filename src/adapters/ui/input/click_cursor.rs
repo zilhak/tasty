@@ -54,7 +54,7 @@ impl EditableRegion {
 
         // Snapshot cols/rows, cursor, and the grid under a single state lock so
         // the parser thread cannot ingest between reads and leave the cursor and
-        // screen_lines on different generations (ADR-0613).
+        // screen_lines on different generations (ADR-0013).
         let (cols, rows, cursor_col, cursor_row, screen_lines) = terminal.with_surface(|s| {
             let (cols, rows) = s.dimensions();
             let (cursor_col, cursor_row) = s.cursor_position();

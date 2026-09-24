@@ -134,14 +134,14 @@ specimen 은 목록 높이를 먼저 잡아 둔다 — 공용 view 의 `ScrollAr
 이어지고, `poll_create`가 받은 새 workspace ID는 `push_attach`를 통해 기존 attach 큐에
 합류한다. 상세 동작은 [remote-attach](../../features/remote-attach/index.md)의 GUI picker 절을 따른다.
 살아 있는 터널 포트로 생성 요청을 보내며 왕복 상한은 `src/adapters/ui/popup/remote_attach.rs`의
-상수를 따른다. 갤러리 specimen이 gallery-first로 먼저 들어간 순서다(ADR-0635,
+상수를 따른다. 갤러리 specimen이 gallery-first로 먼저 들어간 순서다(ADR-0035,
 [gallery-first](../../dev-guide/gallery-first.md)).
 
 ## switch_overlay (Overlays)
 
 디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw
 (`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/view.rs` full/collapsed). 갤러리 specimen
-이 본체보다 먼저 들어갔고(gallery-first, ADR-0635), 본체 배선은 아래 표대로 탭·사이드바 모두 구현돼 있다.
+이 본체보다 먼저 들어갔고(gallery-first, ADR-0035), 본체 배선은 아래 표대로 탭·사이드바 모두 구현돼 있다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
@@ -599,10 +599,10 @@ compact/image/html-raw/html-pretty/other/empty/read-failed/already-open) 를
 
 디자인 `ui_kits/terminal/overlays/git_viewer.jsx` ↔ plugin `crates/tasty-plugin-git-viewer/src/render.rs`
 (egui-mesh 자가 렌더) ↔ 갤러리 `catalog/components/git_viewer.rs` (Plugins › `Git worktree viewer
-popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린다(ADR-0628의 egui-mesh 렌더링) — plugin 이
+popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린다(ADR-0028의 egui-mesh 렌더링) — plugin 이
 자기 egui Context 에서 새 디자인을 직접 페인트하고 host 는 셸(scrim/border/Esc/outside-click)만
 소유한다. 갤러리는 plugin crate 비의존이라 같은 구성을 Theme 토큰 mock 으로 전사한다. **specimen
-포함 확정**(ADR-0635 완전성). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
+포함 확정**(ADR-0035 완전성). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
 
 | 디자인(jsx) | plugin render.rs | 갤러리 함수 |
 |---|---|---|
@@ -624,7 +624,7 @@ host gallery Tag specimen(prim_chips)에도 노출된다.
 
 egui-mesh surface(`image`) + webview surface/chrome(`markdown`/`html`) 의 Plugins 페이지
 specimen 묶음(각 surface 가 독립 Section). plugin crate 비의존 — plugin render 경로의 토큰·구성만
-painter/egui 로 전사. markdown 은 [ADR-0629](../../adr/0629-webview-host-integration.md)로
+painter/egui 로 전사. markdown 은 [ADR-0029](../../adr/0029-webview-host-integration.md)로
 Stage B 부터 image 와 다른 채널(webview)로 이동했지만, html 과 달리 (콘텐츠가 없는 chrome-only
 specimen 이 아니라) 실제 CSS 출력 내용까지 손으로 전사한다 — plugin 이 아직 host chrome 을 얹지
 않는 대신 문서 자체(주소창 포함)를 통째로 생성하기 때문.
@@ -724,7 +724,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
   `LogicalPx` 로 못 담아 스킵하는 쪽이다(`crates/tasty-design-tokens/src/dtcg.rs` 의
   `Skip::EmUnit`). `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
-- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 스냅하지 않고 명명 const 로 둔다([ADR-0635](../../adr/0635-shared-design-and-theme.md)).
+- 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 스냅하지 않고 명명 const 로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
 - 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 은 디자인이 컴포넌트 토큰(`kb-ie-select-column-width` ·
   `kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width`)을 열었지만 vendor 한
   DTCG export(`crates/tasty-design-tokens/dtcg/tasty.tokens.json`)에 아직 그 이름이 없어 명명 const 로
@@ -773,7 +773,7 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 
 ## Settings › General › Remote transfer
 
-General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [ADR-0622](../../adr/0622-remote-mirror-content-and-queries.md))
+General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md))
 수신측 저장 정책(`RemoteTransferSettings{dir, max_mb}`) 편집. 디자인:
 `gallery/overlays-shared.jsx` `SettingsRemoteTransferFrame` + `gallery/overlays-windows.jsx`
 "Settings · General › Remote transfer" spec. 백엔드는 이미 merge 됐고, 이번은 UI 만.
@@ -891,7 +891,7 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 디자인 `components/core/Badge.jsx`(variant `warning`) + `components/feedback/StatusDot.jsx`
 (status `needs-input`/`completion`) ↔ 본체 `src/adapters/ui/{divider,tab_bar,sidebar/view}.rs`
 ↔ 갤러리 `catalog/components/{occupancy_borders,sidebar,tab_bar}.rs`(surfaces 섹션 기존
-specimen 확장 — 신규 파일 없음). 요청·확정 절차는 [ADR-0624](../../adr/0624-attention-ownership-and-clear.md)
+specimen 확장 — 신규 파일 없음). 요청·확정 절차는 [ADR-0024](../../adr/0024-attention-ownership-and-clear.md)
 가 정한 kind-aware 모델을 그대로 따르며, 토큰 값은 [design-token-mapping §attention
 kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
 참조.

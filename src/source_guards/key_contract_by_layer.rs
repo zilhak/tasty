@@ -33,7 +33,7 @@
 //!
 //! 뒤쪽이 텍스트로 재는 것은 "부르는 자리의 모양" 까지다 — 그 함수가 옳게 판정하는지는
 //! `idempotency` 모듈의 시험이 행동으로 잰다. 둘이 합쳐서 "그 경로의 재시도가 한 번만 실행된다"
-//! 가 된다(ADR-0605).
+//! 가 된다(ADR-0005).
 //!
 //! 이름 추출은 옆 가드(`headless_app_layer_coverage`)의 것을 그대로 쓴다 — 같은 본문에서
 //! 같은 물음(그 층이 무엇을 부르는가)을 두 방식으로 답하면 갈린다. 끝이 `.` 인 리터럴은
@@ -398,7 +398,7 @@ fn the_relay_closure_uses_only_its_own_argument() {
 /// GUI debug 묶음의 `handled` 판정이 **`IpcStep::Handled` 를 실제로 본다.**
 ///
 /// 이 판정이 "늘 맡았다" 가 되면, debug step 이 안 맡은 이름도 연 자리를 맡은 것으로 닫아
-/// 다음 층(라우터 등)이 같은 키를 또 판정한다 — 한 요청이 실행 수를 두 번 올린다(ADR-0608).
+/// 다음 층(라우터 등)이 같은 키를 또 판정한다 — 한 요청이 실행 수를 두 번 올린다(ADR-0008).
 /// 판정 closure 가 자기 인자를 쓰고 그 인자를 `IpcStep::Handled` 와 견주는지 모양으로 잰다.
 #[test]
 fn the_debug_layers_judge_handled_by_the_step() {

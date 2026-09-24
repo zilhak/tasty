@@ -11,7 +11,7 @@
 //! 좌표가 dismiss 로 새는 것이 이 판정이 고치는 버그다.
 //!
 //! z_seq 는 host popup(`PopupState.z_seq`)과 plugin popup(`PopupInstance.z_seq`)이
-//! **공유하는 전역 카운터**(`tasty_host_plugin::next_popup_z_seq`, ADR-0636)라 두
+//! **공유하는 전역 카운터**(`tasty_host_plugin::next_popup_z_seq`, ADR-0036)라 두
 //! 종류를 한 배열에 섞어 비교해도 된다.
 
 use egui::{Pos2, Rect};

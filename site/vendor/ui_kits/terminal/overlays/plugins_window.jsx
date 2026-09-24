@@ -8,7 +8,7 @@ const { ic, Icon, Scrim } = window.TastyKit;
 // Opened from the sidebar "Plugins" entry. The Settings › Plugins tab is for
 // per-plugin *configuration*; this window is for lifecycle: enable / disable
 // installed plugins, and add new ones from a LOCAL FOLDER via the Add plugin tab.
-// There is no online catalog/marketplace (deferred — ADR-0625):
+// There is no online catalog/marketplace (deferred — ADR-0025):
 // you install from a path or a cloned repo, Tasty verifies the
 // folder's tasty-plugin.toml + signature, and copies it into ~/.tasty/plugins.
 const PLUGIN_LIST = [
@@ -50,7 +50,7 @@ const PLUGIN_LIST = [
 // Plugins that are installed/bundled but were REJECTED at registration
 // (signature/trust) or are ENABLED-but-failing (health error). Mirrors
 // tasty-host-plugin/src/bundle_sig.rs TrustDecision + builtin.rs Skipped
-// reasons. NOT a marketplace — only local/bundled plugins (ADR-0625).
+// reasons. NOT a marketplace — only local/bundled plugins (ADR-0025).
 const ATTN = {
   "unknown-key":        { sev: "danger",  label: "Signature not trusted",
     blurb: "Signed by a key that isn't in your trust store — registration rejected." },
@@ -423,7 +423,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
   };
   // The list is INSTALLED-ONLY. There is no catalog/marketplace browse — adding a
   // plugin means pointing Tasty at a LOCAL folder (the “Add plugin” tab). Online
-  // catalog browse + install-by-id are deferred (ADR-0625; docs/adr/0625-plugin-trust-and-distribution.md).
+  // catalog browse + install-by-id are deferred (ADR-0025; docs/adr/0025-plugin-trust-and-distribution.md).
   const list = PLUGIN_LIST.filter((p) => installed[p.id] && matches(p));
   const sel = PLUGIN_LIST.find((p) => p.id === selId);
   const selVisible = sel && installed[sel.id] && matches(sel);

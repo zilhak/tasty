@@ -4,7 +4,7 @@
 
 ## 판정 — 해제 두 조건 · 진입 조건 하나
 
-busy는 이전에 확인한 상태를 기억한다. 입력 직후 에코만 있으면 idle을 유지하지만, 이미 작업 중인 프로그램은 입력만으로 idle이 되지 않는다([ADR-0615](../../adr/0615-terminal-user-input-routing.md)).
+busy는 이전에 확인한 상태를 기억한다. 입력 직후 에코만 있으면 idle을 유지하지만, 이미 작업 중인 프로그램은 입력만으로 idle이 되지 않는다([ADR-0015](../../adr/0015-terminal-user-input-routing.md)).
 
 **Busy 한 surface(terminal)** 는 다음 순서로 판정한다 — 셸 복귀와 출력 만료를 먼저 확인한다.
 
@@ -19,7 +19,7 @@ busy는 이전에 확인한 상태를 기억한다. 입력 직후 에코만 있�
 
 - (1)·(2) 로 idle 이 되면 상태 기록이 지워진다. 같은 프로그램이 다시 foreground 로 와도(중단 후 `fg`) busy 를 물려받지 않는다.
 - foreground 가 다른 프로세스로 바뀌면 PID 가 달라 상태 기록이 적용되지 않는다 — 새 프로그램은 이전 프로그램의 busy 를 물려받지 않는다.
-- 상태 락이 경합 중이면(파서가 ingest 중) 그 tick 은 busy 로 **추정**하되([ADR-0613](../../adr/0613-terminal-io-and-process-lifetime.md)), 그 추정은 상태 기록을 만들지도 지우지도 않는다.
+- 상태 락이 경합 중이면(파서가 ingest 중) 그 tick 은 busy 로 **추정**하되([ADR-0013](../../adr/0013-terminal-io-and-process-lifetime.md)), 그 추정은 상태 기록을 만들지도 지우지도 않는다.
 - 상태 기록은 busy 로 답할 때만 세워지므로 같은 판정을 연달아 물어도 답이 같다.
 
 예시:

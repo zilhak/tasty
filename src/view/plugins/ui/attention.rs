@@ -20,7 +20,7 @@ use tasty_type_geometry::length::LogicalPx;
 //
 // 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다. 그 대가와
 // 재검토 조건(디자인이 `.5` 스케일을 정식 tier 로 승인하면 발동)은
-// `docs/adr/0635-shared-design-and-theme.md` 에 있다 —
+// `docs/adr/0035-shared-design-and-theme.md` 에 있다 —
 // 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
 
 /// DTCG primitive `font-size-12` 를 직접 쓰는 자리. 12px 는 primitive 에는 있지만
@@ -31,7 +31,7 @@ const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 /// severity 점의 지름. 스케일 밖(7) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고,
 /// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
 /// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
-/// `docs/adr/0635-shared-design-and-theme.md` 대로 이름만 붙인다.
+/// `docs/adr/0035-shared-design-and-theme.md` 대로 이름만 붙인다.
 /// **같은 7 을 `crates/tasty-ui-widgets/src/status_bar.rs` 의 `DOT_SIZE` 도 쓴다** —
 /// 무관한 두 크레이트가 독립적으로 고른 값이라 드리프트가 아니라 역할일 가능성이 높고,
 /// 그 판단이 서면 둘이 한 토큰으로 모인다.

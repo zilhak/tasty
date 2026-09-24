@@ -1,7 +1,7 @@
 //! 배너(Banner) 시스템 — Modal / Popup / Toast 에 이은 **4번째 오버레이 개념**.
 //!
 //! 설계 문서: `docs/design/systems/banner.md`, 결정 근거:
-//! `docs/adr/0636-overlay-scope-and-lifetime.md`. 분류 enum 은
+//! `docs/adr/0036-overlay-scope-and-lifetime.md`. 분류 enum 은
 //! [`tasty_model::banner_kind`] (model 잔류, GUI 비의존).
 //!
 //! 배너는 스코프(View / Workspace / Pane / Tab / Surface) 콘텐츠 영역 최상단(탭바

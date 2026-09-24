@@ -24,7 +24,7 @@
 //! **앞**에서 정한다(gui 는 `app/ipc/routing.rs` step 5, 여기서는 아래 2d). 재료도
 //! 같은 매니페스트 하나다 — namespace 소속은 `~/.tasty/plugins/` 의 매니페스트가
 //! 선언하는 정적 사실이라 plugin 을 하나도 안 띄우고 답이 나고, 기동은 소속이
-//! 맞은 뒤에만 한다([ADR-0626](../../docs/adr/0626-plugin-registration-and-lifecycle.md)).
+//! 맞은 뒤에만 한다([ADR-0026](../../docs/adr/0026-plugin-registration-and-lifecycle.md)).
 //!
 //! 예전에는 이 판정이 engine handler 가 `-32601` 을 돌려준 **뒤**의 fallback 이었고
 //! "engine 이 못 답했나" 를 오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅
@@ -45,12 +45,12 @@ use crate::state::AppState;
 ///
 /// `state` 는 gui 와 같은 `AppState` 타입이지만 이 빌드에서는 GUI 소유 필드(`dialogs` 등)가
 /// 컴파일되지 않은 형태다 — 좁은 타입을 따로 두지 않은 이유는
-/// [ADR-0602](../../docs/adr/0602-domain-execution-and-ports.md).
+/// [ADR-0002](../../docs/adr/0002-domain-execution-and-ports.md).
 /// 이 함수는 헤드리스 인스턴스의 창 하나를 **소유하는 자리**라 그것을 받는다 — 요청이 낸
-/// intent 를 응답 전에 그 창의 큐에서 비워 적용하고(intent 적용이 창 상태를 받는다, ADR-0603),
+/// intent 를 응답 전에 그 창의 큐에서 비워 적용하고(intent 적용이 창 상태를 받는다, ADR-0003),
 /// 창 상태 자체가 대상인 debug 핸들러에 그 창을 건넨다. 엔진 핸들러 표와 공통 게이트는 이
 /// 값을 `AppState` 가 아니라 좁은 포트(`IpcWindow`)와 intent 출구로만 본다
-/// ([ADR-0602](../../docs/adr/0602-domain-execution-and-ports.md)).
+/// ([ADR-0002](../../docs/adr/0002-domain-execution-and-ports.md)).
 pub(crate) fn pump_ipc(
     app: &mut App,
     state: &mut AppState,
@@ -89,7 +89,7 @@ fn dispatch_command(
 ) -> std::ops::ControlFlow<()> {
     // 큐 대기는 꺼낸 자리(`CommandObservation::begin`)가 이미 쟀다 — gui 와 같은 자리다.
     // 0) 기한이 큐에서 지났으면 실행하지 않고 답한다 — 게이트보다 앞이다(gui 와 같은 자리,
-    //    ADR-0607).
+    //    ADR-0007).
     if !crate::app::ipc_round::claim_or_answer(&cmd, app.core.dispatch()) {
         return std::ops::ControlFlow::Continue(());
     }
@@ -159,7 +159,7 @@ fn dispatch_command(
     //     오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅 신호로 고정해,
     //     종단을 더 정확하게 만드는 변경이 forward 를 조용히 깨뜨렸다(실측: 표에
     //     등재된 채 plugin namespace 아래 있던 여덟). 이제 코드는 라우팅에 안
-    //     쓰인다 — [ADR-0626](../../docs/adr/0626-plugin-registration-and-lifecycle.md).
+    //     쓰인다 — [ADR-0026](../../docs/adr/0026-plugin-registration-and-lifecycle.md).
     if forward_to_plugin_namespace(app, engine, &caller, &cmd) {
         return std::ops::ControlFlow::Continue(());
     }
@@ -178,7 +178,7 @@ fn dispatch_command(
     // 4) 핸들러가 발화한 Intent 를 **응답 전에** 적용한다. gui 의
     //    `App::dispatch_checked` 가 응답 반환 전에 `dispatch_pending_intents`
     //    를 부르는 것과 같은 계약이며, 이게 없으면 큐가 프로세스 수명 동안 쌓이고
-    //    (`docs/adr/0603-headless-behavior.md`) set_mark /
+    //    (`docs/adr/0003-headless-behavior.md`) set_mark /
     //    completion / notification 같은 에이전트 표면이 headless 에서 무응답이 된다.
     crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
     crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
@@ -216,7 +216,7 @@ fn intercept_app_layer(
     cmd: &crate::ipc::server::IpcCommand,
 ) -> Option<Intercepted> {
     // 멱등 키를 실은 `Mutate` 는 보존소를 먼저 지난다 — gui 의 app_methods step 과 같은
-    // 함수다(ADR-0605).
+    // 함수다(ADR-0005).
     if let Some(hit) = crate::ipc::handler::idempotency::run_app_layer(
         caller,
         cmd,
@@ -320,7 +320,7 @@ fn intercept_app_layer(
 
     // 2-events) 사건 피드 조회. 버스는 `PluginManager` 가 소유하므로 여기서도
     //     **메타데이터 층까지만** 세운다 — 조회가 plugin 프로세스를 띄우면 관측이
-    //     자기 대상을 바꾼다(ADR-0603). release 에도 있어야 하는 표면이라 아래
+    //     자기 대상을 바꾼다(ADR-0003). release 에도 있어야 하는 표면이라 아래
     //     debug 층이 아니라 이 자리다.
     if cmd.request.method == "events.fetch" {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -464,7 +464,7 @@ fn intercept_debug_app_layer(
         return Some(Intercepted::Answered);
     }
     // 아래 둘은 매니저를 본다. **메타데이터 층까지만** 세운다 — 조회가 plugin
-    // 프로세스를 띄우면 관측이 자기 대상을 바꾼다(ADR-0603). 그래서 아직 아무
+    // 프로세스를 띄우면 관측이 자기 대상을 바꾼다(ADR-0003). 그래서 아직 아무
     // plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의
     // 사실이다(매니저가 아예 없을 때의 `-32000` 과 구분된다).
     if cmd.request.method.starts_with("debug.event_bus.") {
@@ -522,7 +522,7 @@ fn intercept_debug_app_layer(
 ///
 /// 두 층을 나눠 부른다. 먼저 `ensure_plugin_manager_metadata` 는 `~/.tasty/plugins/`
 /// 를 스캔해 매니페스트를 읽을 뿐 프로세스를 하나도 안 띄운다. namespace 소유는
-/// 그 매니페스트가 선언하는 정적 사실이므로 그것만으로 답이 난다(ADR-0626).
+/// 그 매니페스트가 선언하는 정적 사실이므로 그것만으로 답이 난다(ADR-0026).
 /// 소속이 맞으면 공통 manager forward가 활성 owner와 매칭 IPC hook extension만 준비한다.
 ///
 /// 이 순서가 왜 필요한지는 실측돼 있다(2026-09-05, 설치 끝난 홈): 소속을 묻기 위해
@@ -532,7 +532,7 @@ fn intercept_debug_app_layer(
 /// 안의 메서드 오타는 전체 메서드 명부가 없는 기존 계약대로 owner가 판정한다.
 ///
 /// 멱등 키를 실은 **표의** `Mutate`(`image.open` 등)는 넘기기 전에 보존소를 지난다 — gui 라우터와
-/// 같은 함수다(ADR-0605). plugin 고유 이름은 거기서 개입하지 않는다(ADR-0605).
+/// 같은 함수다(ADR-0005). plugin 고유 이름은 거기서 개입하지 않는다(ADR-0005).
 #[cfg(not(feature = "gui"))]
 fn forward_to_plugin_namespace(
     app: &mut App,

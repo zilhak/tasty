@@ -19,7 +19,7 @@ use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 // "스케일 밖 폰트 값".
 
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
-/// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0635 대로 **이름에 primitive 임을 남긴다**.
+/// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
 const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는

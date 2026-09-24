@@ -35,7 +35,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 > **소비 배선**: host 가 `resolve_webview_settings` 로 `plugin_settings."com.tasty.html"` 을 읽어 네이티브 webview 에 직접 적용한다(별도 host→plugin IPC 없음 — `font_override` 호스트 적용과 같은 선례). 적용 현황:
 > - **zoom · sandbox(JS on/off)**: 3 OS 모두 실효.
 > - **color_scheme**(`prefers-color-scheme` 강제): macOS 실효(NSAppearance). Windows/Linux 는 no-op(후속).
-> - **allow remote content**(원격 http/https 서브리소스 차단): 3 OS 모두 실효 — macOS 는 `WKContentRuleList`, Windows 는 `WebResourceRequested` 403, Linux 는 같은 스키마의 content filter 를 `WebKitUserContentFilterStore` 로 컴파일해 user content manager 에 붙인다(네비게이션은 decide-policy 가 따로 막는다). 근거·대안은 [ADR-0629](../../adr/0629-webview-host-integration.md). 단 Windows/Linux 백엔드는 macOS 호스트에서 컴파일 불가라 CI(self-hosted Win / `test.yml` Linux)에서만 검증된다.
+> - **allow remote content**(원격 http/https 서브리소스 차단): 3 OS 모두 실효 — macOS 는 `WKContentRuleList`, Windows 는 `WebResourceRequested` 403, Linux 는 같은 스키마의 content filter 를 `WebKitUserContentFilterStore` 로 컴파일해 user content manager 에 붙인다(네비게이션은 decide-policy 가 따로 막는다). 근거·대안은 [ADR-0029](../../adr/0029-webview-host-integration.md). 단 Windows/Linux 백엔드는 macOS 호스트에서 컴파일 불가라 CI(self-hosted Win / `test.yml` Linux)에서만 검증된다.
 
 ### draft / save 모델
 

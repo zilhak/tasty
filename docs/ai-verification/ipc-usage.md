@@ -67,7 +67,7 @@ tasty surface 는 둘 다 뚫는다:
 
 ssh 비밀번호/`sudo` 암호/OTP 프롬프트, 대화형 REPL, 설치 마법사, `git rebase -i` 같은 풀스크린 에디터 등 — 파이프 도구로는 손댈 수 없던 대화형 절차를 surface 안에서 진행할 수 있다.
 
-> 단, ssh 비밀번호는 **키 인증이 정답**이다(키-경로 수렴: [remote-attach](../features/remote-attach/index.md), [ADR-0611](../adr/0611-secrets-and-local-trust.md)). 여기서는 "비밀번호 프롬프트에도 응답할 수 있다"는 **능력의 존재만** 기술하며 비밀번호 자동화를 권장하지 않는다.
+> 단, ssh 비밀번호는 **키 인증이 정답**이다(키-경로 수렴: [remote-attach](../features/remote-attach/index.md), [ADR-0011](../adr/0011-secrets-and-local-trust.md)). 여기서는 "비밀번호 프롬프트에도 응답할 수 있다"는 **능력의 존재만** 기술하며 비밀번호 자동화를 권장하지 않는다.
 
 ### 한계
 

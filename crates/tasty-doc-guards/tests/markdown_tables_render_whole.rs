@@ -41,7 +41,7 @@ use tasty_doc_guards::temp_scratch::Scratch;
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 조립해서 쓰면 비-git 경로 참조 금지
-/// (`docs/adr/0648-documentation-structure-and-evidence.md`)를 어기지 않는다.
+/// (`docs/adr/0049-documentation-structure-and-evidence.md`)를 어기지 않는다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 

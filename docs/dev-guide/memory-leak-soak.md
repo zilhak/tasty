@@ -16,7 +16,7 @@
 | L1 진성 heap 누수 (unreachable) | `Rc` 순환, `mem::forget` | 종료 시 도달불가 블록 = 0 | LSAN(Linux) / `leaks`(macOS) |
 | L2 도달 가능하지만 무한 성장 | 맵/캐시 항목 미제거, retain 누락 | 사이클당 RSS 기울기 ≈ 0 | soak + heaptrack/Instruments/UMDH |
 | L3 GPU 리소스 | wgpu 텍스처/버퍼 미해제, `egui_mesh_targets` 잔류 | 카운트 기준선 복귀 (정수 엄격) | `system.gpu_stats` — **OS 도구로는 불가시** |
-| L4 OS 핸들·프로세스 | ConPTY 핸들, conhost/셸 좀비 (ADR-0613) | 핸들·자식 수 기준선 복귀 | soak 외부 측정 |
+| L4 OS 핸들·프로세스 | ConPTY 핸들, conhost/셸 좀비 (ADR-0013) | 핸들·자식 수 기준선 복귀 | soak 외부 측정 |
 
 장기 실행 앱의 실전 누수 대부분은 **L2** 다. LSAN/valgrind 는 "종료 시 unreachable" 만 누수로 보므로 L2 를 통과시킨다 — 그래서 시간축 diff(soak)가 주력이고 exit-time 판정은 보조다.
 
@@ -62,7 +62,7 @@ env 제어:
 | `s8` | idle | 타이머/폴링 바닥 드리프트 |
 | `s9` | s1~s7 결정적 가중 혼합 | 종합 회귀 |
 
-`s6` 이 새 탭(`tab.create`)이 아니라 분할로 여는 이유: 에이전트가 만든 탭은 선택되지 않아 렌더되지 않고([ADR-0617](../adr/0617-workspace-identity-and-focus.md)), release 에는 탭을 고르는 API 가 없다(원칙 3) — 그렇게 열면 view store · egui-mesh 경로를 안 탄 채 초록이 난다. 분할한 surface 는 `surface0` 이 든 탭, 곧 보이는 탭 안에 서므로 곧바로 렌더된다. debug 전용 `debug.switch_tab` 으로 탭을 고르는 방법은 soak 을 debug 프로필에 묶어 수치의 의미가 바뀌므로 쓰지 않는다. 새 워크스페이스(`workspace.create`)로 여는 것도 같은 이유로 안 된다 — 워크스페이스를 고르는 `workspace.select` 가 release 에 없어 보이지 않는 워크스페이스 안에 선다. 이 설계는 ADR-0617 가 바뀌거나 호스트가 webview 렌더를 셀 수 있게 되면 다시 본다.
+`s6` 이 새 탭(`tab.create`)이 아니라 분할로 여는 이유: 에이전트가 만든 탭은 선택되지 않아 렌더되지 않고([ADR-0017](../adr/0017-workspace-identity-and-focus.md)), release 에는 탭을 고르는 API 가 없다(원칙 3) — 그렇게 열면 view store · egui-mesh 경로를 안 탄 채 초록이 난다. 분할한 surface 는 `surface0` 이 든 탭, 곧 보이는 탭 안에 서므로 곧바로 렌더된다. debug 전용 `debug.switch_tab` 으로 탭을 고르는 방법은 soak 을 debug 프로필에 묶어 수치의 의미가 바뀌므로 쓰지 않는다. 새 워크스페이스(`workspace.create`)로 여는 것도 같은 이유로 안 된다 — 워크스페이스를 고르는 `workspace.select` 가 release 에 없어 보이지 않는 워크스페이스 안에 선다. 이 설계는 ADR-0017 가 바뀌거나 호스트가 webview 렌더를 셀 수 있게 되면 다시 본다.
 
 **`s6` 은 경로를 탔는지 열어 둔 채로 확인한다.** 닫은 뒤의 체크포인트는 경로를 안 탔을 때도 기준선(0)이라 그 값으로는 못 가른다. 그래서 하네스는 explorer 를 열면 `system.gpu_stats` 의 `explorer_views` 가, image 를 열면 `egui_mesh_targets` 가 연 직전보다 커질 때까지 기다리고, 30 초 안에 안 커지면 **soak 을 실패시킨다**(`… was never rendered … the scenario is not measuring its path`). markdown(webview)은 호스트가 세는 값이 없어 이 확인이 없다 — 고정 700 ms 뒤에 닫는다. 분할이 `surface0` 을 매번 리사이즈하므로 `s6` 에는 `s2` 의 레이아웃·PTY 리사이즈 성분이 함께 섞인다. `s9` 의 s6 몫(8 사이클마다 한 번)도 같은 함수를 부르고 세 view 를 차례로 돈다.
 
@@ -190,4 +190,4 @@ surface 를 열고 닫은 전후로 두 번 찍어 `textures/buffers.allocated` 
 - [gpu-rendering 성능 측정](gpu-rendering.md#성능-측정) — 렌더 성능 측정 (RSS/GPU 메모리는 그쪽 범위 밖, 여기가 담당)
 - [model-view-split](model-view-split.md) — `drop_view` 누락이 만드는 L2/L3 누수의 설계 차원 방지
 - [e2e-tests](e2e-tests.md) — soak 이 재활용하는 `TastyInstance` 격리 하네스
-- ADR-0613 — 셸/conhost 좀비(L4) 의 과거 사례와 Job Object 방어
+- ADR-0013 — 셸/conhost 좀비(L4) 의 과거 사례와 Job Object 방어

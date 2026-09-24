@@ -56,7 +56,7 @@ fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &
     apply_bulk_events(app, engine, outcome);
     apply_disconnects(engine, outcome);
     // forward 가 아닌 원인으로 바뀐 점유 워크스페이스의 구조를 holder 에게 — gui 의
-    // `apply_stream_outcome` 끝과 같은 자리(ADR-0623).
+    // `apply_stream_outcome` 끝과 같은 자리(ADR-0023).
     engine.push_structure_changes();
 }
 
@@ -124,7 +124,7 @@ fn apply_structural_ops(
                 }
             }
             Some(_) => (false, Some("not workspace holder".to_string()), None),
-            // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0623).
+            // 점유 워크스페이스는 살아 있는데 anchor 만 사라졌으면 IPC 와 같은 사유(ADR-0023).
             None => (
                 false,
                 Some(
@@ -174,7 +174,7 @@ fn apply_mirror_state(engine: &mut CoreState, outcome: &mut PumpOutcome) {
         engine.apply_attached_attention_clear(client_id, remote_surface_id);
     }
     for (client_id, remote_surface_id, cols, rows) in std::mem::take(&mut outcome.resize_requests) {
-        // client-driven mirror geometry(ADR-0622): mirror client 가
+        // client-driven mirror geometry(ADR-0022): mirror client 가
         // 요청한 크기로 원격 PTY 를 resize. holder 검증은 헬퍼가 담당,
         // 변화 시 기존 resize tap 이 server→client Resize echo 를 자동
         // fan-out 한다(추가 push 없음). headless 서버가 주 시나리오다.
@@ -285,7 +285,7 @@ fn apply_capture_uploads(app: &mut App, engine: &mut CoreState, outcome: &mut Pu
 }
 
 /// 미러가 이 인스턴스에 묻는 파일계 조회 — file picker · git-viewer ·
-/// markdown 원문(ADR-0622).
+/// markdown 원문(ADR-0022).
 fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for (client_id, msg) in std::mem::take(&mut outcome.list_dir_requests) {
         // file picker: mirror client 가 이 headless 인스턴스로
@@ -302,7 +302,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
         );
     }
     for (client_id, msg) in std::mem::take(&mut outcome.git_query_requests) {
-        // git-viewer(`docs/adr/0622-remote-mirror-content-and-queries.md`):
+        // git-viewer(`docs/adr/0022-remote-mirror-content-and-queries.md`):
         // mirror client 가 이 headless 인스턴스로 git status/log/worktrees
         // 또는 diff 조회를 요청 — list_dir 와 동일하게 headless 는 단일
         // engine 이라 holder 순회 불요.
@@ -326,7 +326,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
         );
     }
     for (client_id, msg) in std::mem::take(&mut outcome.markdown_content_requests) {
-        // markdown mirror(`docs/adr/0622-remote-mirror-content-and-queries.md`):
+        // markdown mirror(`docs/adr/0022-remote-mirror-content-and-queries.md`):
         // mirror client 가 이 headless 인스턴스로 markdown 원문을 요청 —
         // list_dir 와 동일하게 headless 는 단일 engine 이라 holder 순회 불요.
         use tasty_ipc::stream_hub::MarkdownContentRequestMsg;
@@ -344,7 +344,7 @@ fn apply_file_requests(app: &mut App, engine: &mut CoreState, outcome: &mut Pump
     }
 }
 
-/// native bulk 파일 전송(ADR-0622) — begin/chunk/commit 을 도착 순서 그대로.
+/// native bulk 파일 전송(ADR-0022) — begin/chunk/commit 을 도착 순서 그대로.
 fn apply_bulk_events(app: &mut App, engine: &mut CoreState, outcome: &mut PumpOutcome) {
     for (client_id, event) in std::mem::take(&mut outcome.bulk_events) {
         // native bulk 파일 전송: begin/chunk/commit 을 **도착 순서

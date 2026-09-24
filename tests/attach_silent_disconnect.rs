@@ -1,5 +1,5 @@
 //! Silent disconnect(EOF 없는 조용한 단절) 시 서버의 `OccupancyRegistry` 점유
-//! lock 이 heartbeat TTL 만료로 자동 해제되는지 검증(ADR-0621). 프로토콜 상세는
+//! lock 이 heartbeat TTL 만료로 자동 해제되는지 검증(ADR-0021). 프로토콜 상세는
 //! `crates/tasty-ipc/src/stream.rs`, 해제 경로는 `docs/dev-guide/attach-behavior.md`
 //! "release 경로" 절 참고.
 //!
@@ -31,7 +31,7 @@
 //! 테스트로도 안 보인다(실측: 결함을 되살린 뮤테이션에서 이 타깃 3 회 전부 `13 passed`).
 //! 판정은 `src/core/attach.rs` 의 합성 회귀와 배선 가드
 //! (`both_pumps_mark_disconnects_before_applying_attach_requests`)가 갖는다 —
-//! 근거는 `docs/adr/0621-occupancy-and-attach-admission.md`.
+//! 근거는 `docs/adr/0021-occupancy-and-attach-admission.md`.
 
 mod attach_common;
 mod common;
@@ -95,7 +95,7 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
 
     // TTL 만료 후: OccupancyRegistry 가 자동으로 free 로 돌아온다(코드 변경 없이
     // 04번의 read timeout → `Err(_) => break` → `Disconnected` →
-    // `release_all_for_client` 체인만으로 동작 — ADR-0621 핵심 가정 검증).
+    // `release_all_for_client` 체인만으로 동작 — ADR-0021 핵심 가정 검증).
     // 이 test 는 GUI 이벤트 루프 경로만 구동한다 — 상단 모듈 doc comment 참조.
     let deadline = Instant::now() + RELEASE_POLL_TIMEOUT;
     let mut released = false;
@@ -130,7 +130,7 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
     drop(stale_conn); // 정리 — 이미 서버측에서 release 됐으므로 이제 닫아도 무해.
 }
 
-// ───── 실패한 attach 는 점유를 남기지 않는다 (ADR-0621) ─────
+// ───── 실패한 attach 는 점유를 남기지 않는다 (ADR-0021) ─────
 
 /// 점유가 풀릴 때까지 폴링한다. 시한 내에 풀리면 걸린 시간, 아니면 `None`.
 /// 점유가 풀릴 때까지 폴링한 결과 — **폴 횟수를 함께 돌려준다.**

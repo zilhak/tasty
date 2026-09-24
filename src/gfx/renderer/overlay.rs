@@ -5,7 +5,7 @@
 //! 반영하려면 GPU 가 아니라 여기서 셀 배경과 합성해야 한다 — GPU 블렌딩으로
 //! 바꾸면 강조가 셀 배경이 아니라 그 아래 clear 색(`bg_panel`)과 섞인다.
 //! 근거·대안·재검토 조건은
-//! `docs/adr/0635-shared-design-and-theme.md`.
+//! `docs/adr/0035-shared-design-and-theme.md`.
 
 use tasty_type_appearance::color::GpuRgba;
 

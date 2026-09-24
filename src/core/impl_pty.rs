@@ -230,7 +230,7 @@ impl Core {
         );
         for (sid, cols, rows) in targets {
             // hard-점유된 surface(원격 client 가 mirror 로 구동 중인 서버측 실제 PTY)는
-            // client-driven geometry(ADR-0622) — 점유 client 가 유일 구동자다. 이 host
+            // client-driven geometry(ADR-0022) — 점유 client 가 유일 구동자다. 이 host
             // 창의 레이아웃 sweep 이 원격 창 grid 로 되돌리면 client 의 ClientResize 가
             // 무력화되어 mirror 가 host 창 크기에 고정(레터박스)된다. 따라서 점유 중인
             // surface 는 여기서 skip 하고, 오직 `apply_attached_workspace_resize`(holder
@@ -240,7 +240,7 @@ impl Core {
                 continue;
             }
             if let Some(t) = engine.terminals.get_mut(sid) {
-                // mirror(detached) 터미널은 client-driven geometry(ADR-0622):
+                // mirror(detached) 터미널은 client-driven geometry(ADR-0022):
                 // 로컬 pane 목표 grid 를 로컬에 **직접 적용하지 않고**(로컬 grid 는
                 // server 의 `Resize` echo 로만 갱신 → 원격 reflow 전 잘못된 grid 에
                 // 바이트가 재생되는 desync 방지) 원격 PTY 를 그 크기로 구동하도록

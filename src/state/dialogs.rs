@@ -158,7 +158,7 @@ pub struct DialogState {
     /// 인덱스가 아니라 id 인 이유: 이 팝업은 메뉴가 닫힌 뒤에도 열려 있어 목록이 밀릴
     /// 창이 길다(기존 메뉴 콜백은 `ws_idx` 를 잡고 그 위험을 주석으로 인정한다).
     pub(crate) pending_force_detach_workspace: Option<crate::model::WorkspaceId>,
-    /// Lua 스크립트 TOFU 변경 확인(`script_changed_confirm`) 팝업의 보류 상태 (ADR-0627).
+    /// Lua 스크립트 TOFU 변경 확인(`script_changed_confirm`) 팝업의 보류 상태 (ADR-0027).
     /// 등록 해시와 현재 파일 해시가 다르면 단축키 발화가 실행을 보류하고 이 값을 채운다 —
     /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
     /// 워커에서 실행하며, [취소]/Esc 면 슬롯을 폐기한다.
@@ -171,7 +171,7 @@ pub struct DialogState {
     pub(crate) transfer_error: VecDeque<TransferError>,
 }
 
-/// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0627).
+/// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0027).
 ///
 /// 단축키 발화 시 등록 해시(`ScriptRegistry`)와 현재 파일 해시가 다르면 실행 대신 이 값을 채우고
 /// 확인 팝업을 띄운다. [실행] 확정 시 `new_hash` 로 레지스트리를 갱신·영속하고 워커에서 실행.
@@ -344,7 +344,7 @@ pub(crate) enum FpLoadState {
     ErrorConn(String),
 }
 
-/// `file_picker.trigger` IPC(ADR-0636)로 popup 을 연 plugin 의 요청자 정보.
+/// `file_picker.trigger` IPC(ADR-0036)로 popup 을 연 plugin 의 요청자 정보.
 /// Tools 메뉴가 연 경우(`requester: None`)와 구분해, 확정/취소 시
 /// `"file_picker.result"` 이벤트를 이 plugin 에만 unicast 하는 데 쓴다.
 #[derive(Debug, Clone)]
@@ -357,7 +357,7 @@ pub(crate) struct FilePickerRequester {
     /// `owner_popup_instance` 파라미터로 plugin 이 자진 신고한 값이다 — host 는
     /// popup 밖(surface 위젯 등)에서 호출한 경우를 구분할 수 없으므로 `Option`.
     ///
-    /// 소유 관계의 **유일한 보관처**다(ADR-0636). 별도 레지스트리를 두면 피커
+    /// 소유 관계의 **유일한 보관처**다(ADR-0036). 별도 레지스트리를 두면 피커
     /// 수명과 어긋날 수 있어, 피커 자신이 들고 있게 했다 — 피커가 사라지면 관계도
     /// 같이 사라진다.
     pub(crate) owner_popup_instance: Option<u64>,

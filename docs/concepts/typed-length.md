@@ -90,6 +90,6 @@ DPI 가드는 `src`·`crates`를 검사한다. `ALLOWED`는 변환 API 본체, W
 
 ## 관련
 
-- [좌표계와 변환 경계 결정](../adr/0639-typed-length-and-dpi-boundaries.md)
+- [좌표계와 변환 경계 결정](../adr/0039-typed-length-and-dpi-boundaries.md)
 - [테마와 UI 배율](../design/systems/theme.md)
 - [DPI 화면 검증](../ai-verification/dpi-scale-verification.md)

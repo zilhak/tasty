@@ -124,7 +124,7 @@ pub struct MethodMeta {
     /// 한쪽 방향은 이미 말할 수 있었다 — `local_only()` 가 "plugin 은 못 부른다" 다.
     /// 반대 방향을 말할 수단이 없어서, plugin 전용 메서드가 `plugin(&[…])` 로 적히고
     /// 외부 호출자는 `-32601`("그런 메서드 없다")을 받았다. 이름은 맞고 표에도 있는데
-    /// 없다고 답하면 원인을 잘못 안내한다. 플랫폼·빌드·호출자 제한을 구분한다(ADR-0604).
+    /// 없다고 답하면 원인을 잘못 안내한다. 플랫폼·빌드·호출자 제한을 구분한다(ADR-0004).
     pub plugin_only: bool,
     /// plugin이 호출하려면 매니페스트에 이 권한들이 모두 선언돼 있어야 함.
     pub required: &'static [Permission],
@@ -708,7 +708,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // remote.* 조회와 달리 연결경계 위임만으로 plugin 에 열 근거가 서지 않는다 —
         // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
         // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
-        // 트리거는 ADR-0621(docs/adr/0621-occupancy-and-attach-admission.md).
+        // 트리거는 ADR-0021(docs/adr/0021-occupancy-and-attach-admission.md).
         ("remote.attach", local_only(Mutate).kept_by_app_layer()),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은

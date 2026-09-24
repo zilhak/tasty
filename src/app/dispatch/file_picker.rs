@@ -7,7 +7,7 @@
 //! 경로를 클립보드에 복사 + toast 로 알린다(트리거 지점 결정과 함께 신규 ADR에 근거
 //! 기록).
 //!
-//! `FilePickerData.requester` 가 `Some` 이면(ADR-0636 — `file_picker.trigger`
+//! `FilePickerData.requester` 가 `Some` 이면(ADR-0036 — `file_picker.trigger`
 //! 로 이 popup 을 연 plugin) 위 기존 동작에 **더해** `"file_picker.result"` 이벤트를
 //! 그 plugin 에 unicast 한다 — `emit_host_event_to_plugin` 은 `PluginManager`(`App`
 //! 소유) 접근이 필요해, `file_picker.trigger` IPC 핸들러(`CoreState` 큐잉만 가능)가
@@ -18,7 +18,7 @@ use crate::core::intent::DomainIntent;
 use crate::state::{FilePickerRequester, FilePickerResult};
 use crate::view::ui::View;
 
-/// `file_picker.result` 이벤트 payload — ADR-0636이 고정한 최소 wire
+/// `file_picker.result` 이벤트 payload — ADR-0036이 고정한 최소 wire
 /// 필드(`request_id`/`paths`/`cancelled`). 확정도 취소도 항상 세 필드 전부를 채워
 /// plugin 이 하나의 구조체로 역직렬화할 수 있게 한다(확정 시 `cancelled: false`).
 const FILE_PICKER_RESULT_EVENT: &str = "file_picker.result";
@@ -90,10 +90,10 @@ impl App {
 /// 종료됐으면 `emit_host_event_to_plugin` 이 조용히 폐기한다(정상 — 결과를 받을
 /// 대상이 없을 뿐 에러 아님).
 ///
-/// 소유 popup(ADR-0636)이 명시됐는데 그 인스턴스가 이미 사라졌다면 결과가 버려질
+/// 소유 popup(ADR-0036)이 명시됐는데 그 인스턴스가 이미 사라졌다면 결과가 버려질
 /// 가능성이 높다 — 연쇄 정리(`app::dispatch::plugin_popup_events`)가 제대로 돌았다면
 /// 나오지 않아야 하는 조합이라 **조용히 넘기지 않고 경고를 남긴다.** 이벤트 자체는
-/// 그대로 보낸다 — ADR-0636의 접수한 요청에 결과를 돌려주는 규칙은 popup
+/// 그대로 보낸다 — ADR-0036의 접수한 요청에 결과를 돌려주는 규칙은 popup
 /// 생사와 무관한 계약이고, plugin 이 popup 밖에서 상관관계를 유지하고 있을 수도 있다.
 fn emit_file_picker_result(
     plugin_manager: Option<&mut crate::plugin::PluginManager>,

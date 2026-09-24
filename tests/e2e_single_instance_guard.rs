@@ -1,6 +1,6 @@
 //! e2e 단일 인스턴스 원칙 가드 — 테스트가 tasty GUI 프로세스를 필요 이상으로 띄우면 fail 한다.
 //!
-//! 원칙(ADR-0644, `docs/dev-guide/e2e-tests.md` §1): **격리 단위는 프로세스가 아니라
+//! 원칙(ADR-0045, `docs/dev-guide/e2e-tests.md` §1): **격리 단위는 프로세스가 아니라
 //! workspace 다.** tasty 인스턴스는 test binary 당 1 개를 `common::shared()` 로 공유하고,
 //! 테스트별 격리는 `create_workspace()` 로 확보한다. GUI 창은 뜰 때마다 OS 포커스를
 //! 훔치고 기동 비용도 크므로, 인스턴스 수는 그 자체로 관리 대상이다.
@@ -29,7 +29,7 @@ use std::path::Path;
 
 /// 문서 경로 — 위반 메시지에 실어 다음 작업자가 원칙을 찾아갈 수 있게 한다.
 const DOC: &str =
-    "docs/dev-guide/e2e-tests.md (원칙 근거: docs/adr/0644-test-isolation-and-harness.md)";
+    "docs/dev-guide/e2e-tests.md (원칙 근거: docs/adr/0045-test-isolation-and-harness.md)";
 
 /// 이 가드 자신 — 아래 마커 문자열을 상수로 담고 있어 스캔하면 자기 자신을 잡는다.
 const SELF_FILE: &str = "e2e_single_instance_guard.rs";
@@ -85,14 +85,14 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/attach_git_query_loopback.rs",
     "tests/attach_list_dir_loopback.rs",
     "tests/attach_local_creation_tap.rs",
-    // ADR-0622의 markdown 원문 채널. 앞의 두 채널(list_dir · git_query)과 같은 가족의
+    // ADR-0022의 markdown 원문 채널. 앞의 두 채널(list_dir · git_query)과 같은 가족의
     // 세 번째 타깃이라 같은 자리에 둔다. **이 스위트만 번들 plugin 스테이징을 켠다**
     // (`spawn_diag::SUITES_THAT_CALL_BUNDLED_PLUGINS`) — 검증 대상이 실제 markdown
     // plugin 이 만든 surface 라 빈 번들 루트로는 `unknown surface kind: markdown` 이
     // 된다. 그 대가로 격리 홈이 커진다.
     "tests/attach_markdown_content_loopback.rs",
     "tests/attach_silent_disconnect.rs",
-    // forward 가 아닌 원인의 구조 변경 역반영(ADR-0623)과 사라진 anchor 의 회신(ADR-0623).
+    // forward 가 아닌 원인의 구조 변경 역반영(ADR-0023)과 사라진 anchor 의 회신(ADR-0023).
     // 검증 대상이 서버와 holder 사이의 **실제 attach 스트림**이라 루프백 attach 로 두
     // 끝(서버 인스턴스 + 붙는 client)이 필요하다 — 위 attach 가족과 같은 이유로 별도 binary 다.
     "tests/attach_structure_sync_loopback.rs",
@@ -100,7 +100,7 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/gui_tests.rs",
     "tests/hook_env_integration.rs",
     "tests/hooks_detection_e2e.rs",
-    // ADR-0626의 surface kind 철회. plugin 을 끄고 켜는 것은 workspace 로 격리되지 않는
+    // ADR-0026의 surface kind 철회. plugin 을 끄고 켜는 것은 workspace 로 격리되지 않는
     // 프로세스 전역 상태라, 기존 e2e 파일에 넣으면 같은 바이너리의 다른 시험이 꺼진
     // markdown 을 본다(`attach_markdown_content_loopback` 은 그 plugin 의 surface 를 잰다).
     // 그래서 별도 binary 이고, 인스턴스는 전용이 아니라 `common::shared()` 다.
@@ -114,7 +114,7 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
 ///
 /// 인스턴스를 띄우는 하네스는 `spawn_diag::instance_bin()` 하나를 거쳐야 한다 —
 /// 그래야 "무엇을 띄우는가" 를 한 곳에서 바꿀 수 있고, 하네스마다 다른 바이너리를
-/// 고르는 상태로 갈리지 않는다(근거: `docs/adr/0644-test-isolation-and-harness.md`).
+/// 고르는 상태로 갈리지 않는다(근거: `docs/adr/0045-test-isolation-and-harness.md`).
 /// 아래 둘은 그 규칙 밖이다.
 ///
 /// - `tests/gui_common/mod.rs`: **GUI 바이너리 자체가 검증 대상**이다(실제 데스크톱
@@ -431,9 +431,9 @@ fn daemon_kind_roster_matches_instance_test_roster() {
     // (BIN_SELECTION_ALLOWLIST) 데몬이 gui 여야 하는 것은 같다.
     // `attach_structure_sync_loopback` 은 테스트 쪽 `cfg(feature` 가 0 이지만 **데몬 쪽**이
     // 조합마다 다른 호출측을 잰다 — forward 회신을 gui 데몬은 `apply_forwarded_structural_op`,
-    // 헤드리스 데몬은 `apply_structural_ops` 가 만든다(ADR-0623). 헤드리스 데몬을 받으면 gui
+    // 헤드리스 데몬은 `apply_structural_ops` 가 만든다(ADR-0023). 헤드리스 데몬을 받으면 gui
     // 완주가 헤드리스 호출측을 한 번 더 잴 뿐이다. 실측 2026-09-23: gui 호출측을 끊는 변이가
-    // SameCombo 에서는 빨갛고, HeadlessOk + override 에서는 초록이었다(ADR-0644).
+    // SameCombo 에서는 빨갛고, HeadlessOk + override 에서는 초록이었다(ADR-0045).
     let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests", "attach_structure_sync_loopback"]
         .iter()
         .map(|s| (*s).to_string())

@@ -33,7 +33,7 @@ impl App {
     /// 포커스된 뷰가 모달(설정 · 플러그인 · 종료 확인)이면 [`Self::focused_window_mut`]
     /// 은 `None` 을 준다 — 그때도 메인 창이 남아 있으면 그 중 하나로 폴백한다. 안내가
     /// "포커스가 마침 모달에 있었다" 는 이유로 조용히 사라지지 않게 하는 것이 요점이다
-    /// (`docs/adr/0616-window-platform-and-shutdown.md`).
+    /// (`docs/adr/0016-window-platform-and-shutdown.md`).
     pub(crate) fn notice_window_mut(&mut self) -> Option<&mut view::main::MainView> {
         let id = match self.focused_window() {
             Some(_) => self.view.focused_view_id,
@@ -155,7 +155,7 @@ impl App {
     /// `find_main_with_workspace` 를 쓰지 않는 이유: 그 헬퍼는 *창(WindowId)* 을
     /// 찾는 것이 본질이라 `self.view.views` 만 본다. 하지만 마지막 창을 닫거나
     /// (macOS 는 최소화도) engine 은 사라지지 않고 `parked_states` 로 옮겨가 그대로
-    /// 살아 있다(ADR-0617 — parked engine 은 레이아웃 슬롯 점유를 유지한다). 창
+    /// 살아 있다(ADR-0017 — parked engine 은 레이아웃 슬롯 점유를 유지한다). 창
     /// 유무로 고아를 판정하면 사용자가 창을 최소화했을 뿐인데 원격 attach 점유가
     /// 조용히 풀린다. 여기서 묻는 것은 "창이 있는가"가 아니라 "그 워크스페이스를
     /// 들고 있는 engine 이 살아 있는가"다.
@@ -164,7 +164,7 @@ impl App {
     /// `attach_client::mirror_output_host`(mirror 이벤트 적용 대상 탐색)와 **같아야**
     /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 mirror 워크스페이스가
     /// 잔류하고, 적용이 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다
-    /// ([ADR-0623](../../docs/adr/0623-attach-state-sync-and-forwarding.md)).
+    /// ([ADR-0023](../../docs/adr/0023-attach-state-sync-and-forwarding.md)).
     ///
     /// parked engine은 세 경로가 `attach_client::find_parked_with_workspace`를 함께 써서
     /// 같은 범위를 조회한다. 창이 있는 engine은 각각 `view.views`, `main_windows_iter_mut`,

@@ -1,5 +1,5 @@
 //! 에이전트가 일으킨 mirror 왕복의 결과를 사용자 toast 에서 떼어 낸다(identity 원칙 1,
-//! `docs/adr/0636-overlay-scope-and-lifetime.md`).
+//! `docs/adr/0036-overlay-scope-and-lifetime.md`).
 //!
 //! 원격 회신은 op_id · request_id 만 싣고 누가 요청했는지는 안 싣는다. 그래서 송신할 때 에이전트
 //! 요청의 id 를 세션에 기억해 두고, 회신이 오면 그 id 로 가른다 — 에이전트 요청이면 로그,
@@ -64,7 +64,7 @@ impl AgentRequests {
 /// "원격에 복원할 항목이 없다" 는 **실패가 아니다** — 아래 일반 문구
 /// ("적용하지 못했습니다")로 내보내면 오류로 읽힌다. 서버가 전용 sentinel
 /// (`STRUCTURAL_REASON_RESTORE_EMPTY`)로 그 경우를 표시하고 여기서 다른
-/// 문구를 쓴다(ADR-0623).
+/// 문구를 쓴다(ADR-0023).
 ///
 /// 에이전트 발화 op 의 실패는 사용자 toast 로 내지 않는다 — 에이전트 행동의
 /// 결과이지 연결 상태 사건이 아니다.
@@ -98,7 +98,7 @@ pub(super) fn apply_structural_failed(
 }
 
 /// 원격 markdown 원문이 잘려 왔음을 알린다 — 문서 본문에 "여기서 잘렸다" 를 심지 않고
-/// toast 로 알린다(ADR-0622). 에이전트가 건 요청의 회신이면 toast 대신 로그다.
+/// toast 로 알린다(ADR-0022). 에이전트가 건 요청의 회신이면 toast 대신 로그다.
 pub(super) fn notify_markdown_truncated(host: &mut MirrorHost<'_>, local: u32, agent_origin: bool) {
     if agent_origin {
         tracing::info!(

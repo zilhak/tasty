@@ -5,7 +5,7 @@
 //! 실패는 요청자(에이전트)에게 전혀 가지 않은 채 사용자 toast 로만 새어나갔다 —
 //! 사용자가 요청하지도 않은 일의 실패 통지(원칙 1 위반). 완료 채널
 //! (`IpcCompletion`)로 왕복시켜 성공/실패를 응답에 싣도록 고쳤다
-//! (`docs/adr/0607-ipc-scheduling-and-deadlines.md`).
+//! (`docs/adr/0007-ipc-scheduling-and-deadlines.md`).
 //!
 //! 그런데 "고쳤다" 와 "고쳐진 채로 유지된다" 는 다른 문제다. 이 경로는 winit
 //! `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다(`create_new_window`
@@ -52,7 +52,7 @@ fn create_new_window_returns_a_result() {
     assert!(
         sig.contains("-> Result<"),
         "create_new_window 은 생성 성공/실패를 요청자에게 돌려줄 수 있게 Result 를 반환해야 \
-         한다 (ADR-0607). 지금 시그니처:\n{sig}"
+         한다 (ADR-0007). 지금 시그니처:\n{sig}"
     );
 }
 
@@ -79,18 +79,18 @@ fn window_create_ipc_routes_through_a_completion_channel() {
     assert!(
         !code.contains(r#""scheduled""#),
         "window.create 핸들러가 fire-and-forget `{{\"scheduled\": true}}` 로 되돌아갔다 — \
-         완료 채널로 실제 결과를 돌려줘야 한다 (ADR-0607).\n블록:\n{block}"
+         완료 채널로 실제 결과를 돌려줘야 한다 (ADR-0007).\n블록:\n{block}"
     );
     // 완료 채널이 실제로 배선돼 있어야 한다: CreateWindow 에 Some(completion) 을 싣고
     // IpcCompletion 을 만든다.
     assert!(
         block.contains("IpcCompletion::new("),
-        "window.create 핸들러가 완료 채널(IpcCompletion)을 만들지 않는다 (ADR-0607).\n블록:\n{block}"
+        "window.create 핸들러가 완료 채널(IpcCompletion)을 만들지 않는다 (ADR-0007).\n블록:\n{block}"
     );
     assert!(
         block.contains("AppEvent::CreateWindow(") && block.contains("Some(completion)"),
         "window.create 는 완료 채널을 실은 AppEvent::CreateWindow(.., Some(completion)) 를 \
-         보내야 한다 (ADR-0607).\n블록:\n{block}"
+         보내야 한다 (ADR-0007).\n블록:\n{block}"
     );
 }
 
@@ -111,6 +111,6 @@ fn winit_handler_routes_the_outcome_through_the_contract_mapping() {
         arm.contains("reply_window_create"),
         "CreateWindow winit 핸들러가 생성 결과를 reply_window_create 계약 함수로 \
          돌려주지 않는다 — inline reply_ok 로 성공 즉답하면 실패가 요청자에게 안 간다 \
-         (ADR-0607).\narm:\n{arm}"
+         (ADR-0007).\narm:\n{arm}"
     );
 }

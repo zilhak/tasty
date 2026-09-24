@@ -85,7 +85,7 @@ agent
 ## 안정성 등급
 
 - **Stable** — major 전까지 키·필수 필드 불변, 옵션 필드 추가만.
-- **Experimental** — minor 마다 변경 가능. **경고일 뿐 구독 조건이 아니다** — 구독 조건은 등급과 무관하게 매니페스트 `event_subscribe` 패턴이 요청 패턴을 덮는가 하나다. 근거는 [ADR-0633](../adr/0633-event-feed-delivery.md).
+- **Experimental** — minor 마다 변경 가능. **경고일 뿐 구독 조건이 아니다** — 구독 조건은 등급과 무관하게 매니페스트 `event_subscribe` 패턴이 요청 패턴을 덮는가 하나다. 근거는 [ADR-0033](../adr/0033-event-feed-delivery.md).
 - **Internal** — debug 빌드 전용.
 
 ## 카탈로그

@@ -10,7 +10,7 @@ use super::require_surface_id;
 /// IPC 요청 진입점은 에이전트 경로라 `save_snapshot=false` 다(되돌리기 스택은 사용자 행동의
 /// 것이다). 원격 holder 가 forward 한 close 는 이 함수를 거치지 않고 forward 실행이
 /// 도메인 함수를 직접 부르며, 그때 `save_snapshot` 은 op 의 origin 이 정한다(User=true ·
-/// Agent=false, ADR-0623) — 그 축의 근거는 도메인 함수의 문서.
+/// Agent=false, ADR-0023) — 그 축의 근거는 도메인 함수의 문서.
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
     window: &mut dyn crate::ipc::window_port::IpcWindow,
@@ -37,7 +37,7 @@ fn close_surface_via_intent(
 ///
 /// 점유 중에는 그 터미널을 원격 사용자가 쓰고 있고, close 는 비가역이다 — 되돌리기 스택에
 /// 남는 것은 살아 있는 PTY 가 아니라 같은 명령으로 새 세션을 여는 레시피다. `workspace.close`
-/// 가 같은 판정을 워크스페이스 단위로 하고(ADR-0617), GUI 경로는
+/// 가 같은 판정을 워크스페이스 단위로 하고(ADR-0017), GUI 경로는
 /// `AppState::refuse_if_hard_occupied` 가 소유한다. 에이전트에게는 토스트가 아니라 사유가
 /// 실린 에러를 준다.
 ///

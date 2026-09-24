@@ -45,9 +45,9 @@ const EXPECTED: &[(&str, usize)] = &[
     ("settings", 3),
     // 32 → 30: `surface.raw_key` / `surface.switch_input_source` 가 debug 표
     // (`DEBUG_METHODS`)로 이동. 사용자 입력 재현을 release 표면에서 뺀 보안
-    // 목적 제거라 major bump 없이 처리된다(ADR-0612 · api-conventions.md
+    // 목적 제거라 major bump 없이 처리된다(ADR-0012 · api-conventions.md
     // "안정성 정책" 의 보안 예외).
-    // + `surface.read_since_scan_mark` — 출력 스캐너 전용 커서 (ADR-0613).
+    // + `surface.read_since_scan_mark` — 출력 스캐너 전용 커서 (ADR-0013).
     ("surface", 33),
     ("system", 3), // + system.pressure
     ("tab", 4),

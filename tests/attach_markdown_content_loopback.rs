@@ -1,4 +1,4 @@
-//! markdown mirror(ADR-0622) — 원격 attach 채널의 `markdown` role 직렬화와
+//! markdown mirror(ADR-0022) — 원격 attach 채널의 `markdown` role 직렬화와
 //! `markdown_content_request`/`markdown_content_result` 왕복을 loopback `TcpStream` 으로
 //! 실제 실행 중인 서버 인스턴스에 대해 검증한다.
 //!
@@ -11,7 +11,7 @@
 //! 디스크립터에 `role:"markdown"` 이 실리는지 → (3) `markdown_content_request` 전송 →
 //! (4) 서버가 실제 디스크의 파일을 읽어 `markdown_content_result` 로 회신하는지를
 //! 프로토콜 레벨에서 전부 실행한다. 과거 `attach_markdown_mesh_mirror_loopback.rs` 가
-//! 같은 자리를 mesh 채널로 검증했고, markdown 이 그 채널을 벗어나며(ADR-0629) 삭제됐다.
+//! 같은 자리를 mesh 채널로 검증했고, markdown 이 그 채널을 벗어나며(ADR-0029) 삭제됐다.
 
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
 // (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
@@ -204,7 +204,7 @@ fn markdown_content_request_reports_a_reason_for_a_missing_file() {
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
 
-/// 하이브리드 신뢰 모델(ADR-0622): attach 점유가 유일한 인가
+/// 하이브리드 신뢰 모델(ADR-0022): attach 점유가 유일한 인가
 /// 조건이다. 점유 없는 client 는 파일을 한 바이트도 읽히지 못한 채 거절돼야 한다.
 #[test]
 fn markdown_content_request_rejected_without_workspace_occupancy() {
@@ -311,7 +311,7 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
 }
 
 /// 인가 집합은 **engine 전체**다 — 그 surface 를 담은 워크스페이스의 holder 로 좁혀 있지
-/// 않다(ADR-0622).
+/// 않다(ADR-0022).
 ///
 /// 술어는 `client_holds_workspace`("이 engine 의 워크스페이스를 **하나라도** 점유했는가")
 /// 이고, 대상 조회는 `find_surface_by_id`(전 워크스페이스 순회)다. 그래서 W2 만 점유한

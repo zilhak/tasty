@@ -140,7 +140,7 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
 두 번째 부류가 이 축에서 유일하게 관측 가능한 흔들림이다 — **인자를 명시하지 않은
 호출은 재현 가능하지 않다.** 금지가 아니라 성질이고, 재현이 필요하면 인자를 준다.
 요청이 이미 대상을 댄 자리에서는 그 대상이 귀속을 정하고, 아무것도 대지 않은 자리에만
-포커스 기본값이 남는다. 자리별 갈래와 남긴 이유는 [ADR-0617](../../adr/0617-workspace-identity-and-focus.md).
+포커스 기본값이 남는다. 자리별 갈래와 남긴 이유는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
 
 세 번째 부류는 **감사 로그를 workspace 로 조회할 때만 드러난다.** 행의 workspace 는
 요청의 대상이 아니므로, 그 열로 "이 워크스페이스에서 무슨 일이 있었나" 를 물으면
@@ -154,7 +154,7 @@ IPC 핸들러(`src/adapters/ipc/`)가 활성 포인터를 읽는 자리를 전�
     # 다섯 포인터를 센다
     grep -rn 'focused_view_id\|active_workspace\|focused_pane\|active_tab\|focused_surface' <out>
 
-    # 합산 집합의 소속 판정(ADR-0617) — 창 소유 컬렉션을 순회하는 핸들러를 뽑아
+    # 합산 집합의 소속 판정(ADR-0017) — 창 소유 컬렉션을 순회하는 핸들러를 뽑아
     # `src/app/dispatch/list_global.rs` 의 arm 과 대조한다. 대상 인자가 있는 것
     # (`surface_id` 등을 받는 것)은 라우터가 주인 창을 푸니 합산 대상이 아니다.
     grep -rn 'for ws in &engine.workspaces\|engine.workspaces.iter()' <out>/src/adapters/ipc
@@ -174,7 +174,7 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 
 ## 삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다
 
-**시야가 움직이는 경우는 하나뿐 — 사용자가 보고 있던 대상 *자체* 가 사라졌을 때다.** 보고 있지 않은 워크스페이스/탭/pane 이 닫혔는데 화면이 바뀌면 결함이다. 근거 [ADR-0617](../../adr/0617-workspace-identity-and-focus.md).
+**시야가 움직이는 경우는 하나뿐 — 사용자가 보고 있던 대상 *자체* 가 사라졌을 때다.** 보고 있지 않은 워크스페이스/탭/pane 이 닫혔는데 화면이 바뀌면 결함이다. 근거 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
 
 활성 포인터 셋 중 둘은 **인덱스**가 진실 소스다 — `AppState::active_workspace` 와 `Pane::active_tab`. 인덱스는 앞쪽 원소가 빠지면 손대지 않아도 **가리키는 대상이 바뀐다.** 그래서 범위 초과 clamp 만으로는 부족하고, 제거 위치를 기준으로 함께 당겨야 한다.
 
@@ -205,7 +205,7 @@ telemetry.record와 record_batch는 workspace_id를 생략하면 활성 workspac
 - `active_workspace` 는 인덱스라 앞쪽 워크스페이스가 빠지면 통째로 밀린다. `workspace.close` 도 위 "삭제로 인한 인덱스 이동" 과 **같은 헬퍼**를 지난다 — 제거 직후 `AppState::fix_workspace_pointers_after_removal` 이 제거 위치를 기준으로 인덱스를 보정하므로, 손대지 않은 포인터가 계속 같은 워크스페이스를 가리킨다. 워크스페이스를 제거하는 새 경로를 추가하면 그 헬퍼를 반드시 함께 태운다.
 - **활성 워크스페이스 자신을 닫을 때만** 이웃으로 이동한다.
 - 에이전트가 닫은 것은 사용자의 "닫은 항목" 되돌리기 스택에 쌓이지 않는다. 사용자 경로와 에이전트 경로의 차이는 `close_workspace_at` 의 `WorkspaceCloseOrigin` **하나**로 표현하고, 갈리는 부수효과(되돌리기 스택 · plugin `surface.closed` 의 reason · close 계측 경로값)를 전부 거기서 파생시킨다 — 같은 축을 나타내는 값을 여럿 두면 그중 하나만 갈리는 사고가 난다.
-- 파일 열기도 같은 형태다 — `FileDispatchOrigin` **하나**가 사용자/에이전트를 가르고, 결과 탭을 선택하는지와 `None` 분기가 발화하는 intent 의 출처가 거기서 파생된다. **전송 채널이 아니라 행위의 성질로 정한다**: plugin 이 사용자의 클릭을 `file_handler.dispatch` 로 중계하는 경로가 있어(markdown 문서 안의 링크 · 파일열기 팝업) "IPC 로 들어왔는가" 는 좌변이 아니다. plugin 이 그 호출에 **자기 popup** 을 `owner_popup_instance` 로 실으면, host 는 호출자가 그 popup 의 소유 plugin 이고 그 popup 이 사용자의 확정형 입력(포인터 버튼 · 키 누름)을 받았을 때만 사용자로 친다 — 외부 IPC 호출자는 같은 키를 실어도 에이전트다([ADR-0631](../../adr/0631-file-handler-routing.md)). webview 에서 오는 중계(markdown 문서 안의 링크)는 plugin 이 통지받은 navigation 의 URL 을 `user_navigation_url` 로 되대고, host 는 native 엔진이 그 시도를 사용자 제스처로 보고했고 그 surface 의 지금 페이지를 소유 plugin 이 썼으며 그 plugin 에 통지한 마지막 시도일 때만 그 한 번을 사용자로 친다 — 근거는 plugin 의 자기 신고가 아니라 host 가 직접 본 두 사실(엔진의 보고 · 페이지 작성자)이다. `webview.set_url` 은 에이전트에게도 열려 있어, 에이전트가 쓴 페이지 위의 사람 클릭은 근거가 되지 않는다(재지 않은 예외 하나: 그 클릭의 시도가 소유 plugin 이 되찾은 프레임의 drain 뒤에야 도착하는 순서 — [파일 열기 가이드의 사용자 동작 판정](../../features/file-handler/index.md)). macOS 는 엔진이 그 값을 주지 않아 에이전트로 도착한다 ([ADR-0631](../../adr/0631-file-handler-routing.md)). 그 값이 `IntentOrigin` 과 별개인 이유는 파일 식별이 워커 스레드를 왕복하면서 발화 당시 intent 를 잃기 때문이다 ([ADR-0631](../../adr/0631-file-handler-routing.md)).
+- 파일 열기도 같은 형태다 — `FileDispatchOrigin` **하나**가 사용자/에이전트를 가르고, 결과 탭을 선택하는지와 `None` 분기가 발화하는 intent 의 출처가 거기서 파생된다. **전송 채널이 아니라 행위의 성질로 정한다**: plugin 이 사용자의 클릭을 `file_handler.dispatch` 로 중계하는 경로가 있어(markdown 문서 안의 링크 · 파일열기 팝업) "IPC 로 들어왔는가" 는 좌변이 아니다. plugin 이 그 호출에 **자기 popup** 을 `owner_popup_instance` 로 실으면, host 는 호출자가 그 popup 의 소유 plugin 이고 그 popup 이 사용자의 확정형 입력(포인터 버튼 · 키 누름)을 받았을 때만 사용자로 친다 — 외부 IPC 호출자는 같은 키를 실어도 에이전트다([ADR-0031](../../adr/0031-file-handler-routing.md)). webview 에서 오는 중계(markdown 문서 안의 링크)는 plugin 이 통지받은 navigation 의 URL 을 `user_navigation_url` 로 되대고, host 는 native 엔진이 그 시도를 사용자 제스처로 보고했고 그 surface 의 지금 페이지를 소유 plugin 이 썼으며 그 plugin 에 통지한 마지막 시도일 때만 그 한 번을 사용자로 친다 — 근거는 plugin 의 자기 신고가 아니라 host 가 직접 본 두 사실(엔진의 보고 · 페이지 작성자)이다. `webview.set_url` 은 에이전트에게도 열려 있어, 에이전트가 쓴 페이지 위의 사람 클릭은 근거가 되지 않는다(재지 않은 예외 하나: 그 클릭의 시도가 소유 plugin 이 되찾은 프레임의 drain 뒤에야 도착하는 순서 — [파일 열기 가이드의 사용자 동작 판정](../../features/file-handler/index.md)). macOS 는 엔진이 그 값을 주지 않아 에이전트로 도착한다 ([ADR-0031](../../adr/0031-file-handler-routing.md)). 그 값이 `IntentOrigin` 과 별개인 이유는 파일 식별이 워커 스레드를 왕복하면서 발화 당시 intent 를 잃기 때문이다 ([ADR-0031](../../adr/0031-file-handler-routing.md)).
 - `workspace.closed` host event 는 origin 과 무관하게 발화한다. 워크스페이스가 사라졌다는 사실 자체는 누가 닫았든 같기 때문이다. 워크스페이스를 제거하는 경로는 셋(GUI·IPC 닫기 · Core cascade · 인라인 cascade)이고, 발화는 각 경로가 아니라 그 셋이 공유하는 초크포인트 `AppState::after_workspace_removed`(`src/state.rs`)가 한다 — 경로마다 각자 쏘던 때 인라인 cascade 하나가 실제로 빠져 있었다. 워크스페이스를 제거하는 새 경로를 추가하면 그 초크포인트를 반드시 지나게 한다.
 
 workspace.close는 마지막 workspace, mirror workspace, hard 점유 surface가 포함된 workspace를 거절한다.
@@ -227,10 +227,10 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
   대상 없는 요청(`tasty new workspace` 등)은 사용자가 보던 창에 떨어진다. 새 창에 워크스페이스를
   만들려면 그 창의 surface 를 `workspace.create` 의 `surface_id`(CLI `tasty new workspace --surface`)로
   지목한다 — `window_id` 는 창 자체를 다루는 요청(닫기 · 스크린샷 등)에만 쓴다
-  ([ADR-0643](../../adr/0643-cli-errors-and-diagnostic-logs.md)).
+  ([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
   그 `surface_id` 는 `cwd` 를 생략했을 때의 상속 원본도 정한다 — 지목했는데 그 창의 포커스 surface 를
   읽으면 결과가 사용자가 그 창에서 보는 탭에 좌우되기 때문이다
-  ([ADR-0643](../../adr/0643-cli-errors-and-diagnostic-logs.md)).
+  ([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)).
   - 예외: 가리키던 창이 없으면(main 창이 0 개였으면) 에이전트 창이 잡는다. 빼앗을 포커스가 없다.
 - 에이전트 창은 숨긴 채 만들어, 등록 뒤 사용자가 보던 창 **뒤에** 키 포커스 없이 보인다
   (`tasty_platform::window_stacking::show_behind`). OS 마다 할 수 있는 데까지다.
@@ -243,7 +243,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 - 사용자가 에이전트 창을 직접 고르면 `WindowEvent::Focused(true)` 추적이 `focused_view_id` 를
   옮긴다.
 
-근거와 플랫폼별 결과는 [ADR-0617](../../adr/0617-workspace-identity-and-focus.md).
+근거와 플랫폼별 결과는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
 
 ## 에이전트가 만든 탭과 선택
 
@@ -260,17 +260,17 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
     발화점은 origin 없는 `file_handler.dispatch` 하나이고, 그 갈래는 이제 사용자가 보던 탭을
     바꾸지 않는다. markdown plugin 의 파일열기 팝업(사용자의 `open_markdown`)은 같은 호출에 자기
     popup 을 실어 사용자로 도착하므로 종전대로 새 탭을 선택한다(아래 "에이전트 닫기와 포커스" 의
-    파일 열기 항목 · [ADR-0631](../../adr/0631-file-handler-routing.md)).
+    파일 열기 항목 · [ADR-0031](../../adr/0031-file-handler-routing.md)).
 - terminal kind 는 `activate` 와 무관하게 background 다. 사용자의 새 터미널 탭은 이 인텐트가
   아니라 `AppState::add_tab` 이 연다.
 - 응답의 `active_tab` 은 "생성 뒤 그 pane 의 활성 탭" 이다 — 에이전트가 만든 탭이면 사용자가
   보던 탭의 인덱스다. 새 탭은 응답의 `surface_id` 로 다룬다.
 
-근거는 [ADR-0617](../../adr/0617-workspace-identity-and-focus.md).
+근거는 [ADR-0017](../../adr/0017-workspace-identity-and-focus.md).
 
 ## 원격이 점유한 surface 는 닫기 요청이 죽이지 않는다
 
-하드 점유(ADR-0621)는 "이 surface 는 지금 원격 사용자가 쓰고 있다" 는 선언이다. 닫기는
+하드 점유(ADR-0021)는 "이 surface 는 지금 원격 사용자가 쓰고 있다" 는 선언이다. 닫기는
 비가역이고 — 되돌리기 스택에 남는 것은 살아 있는 PTY 가 아니라 같은 명령으로 새 세션을
 여는 레시피다 — 그래서 **닫기 요청은 거절한다.** 에이전트 경로만이 아니라 **사용자
 경로도 같다**: 여기서 보호 대상은 로컬 사용자가 아니라 원격 사용자이고, 로컬 사용자는
@@ -320,4 +320,4 @@ category_last_active는 ID를 저장해 삭제·이동 때 인덱스 보정이 �
 - 워크스페이스 close 의 origin 분기: `WorkspaceCloseOrigin`(`src/state/workspace.rs`) — 되돌리기 스택 · plugin close reason · 계측 경로값이 여기서 파생된다.
 - 워크스페이스 제거 후 공통 뒷정리(`workspace.closed` 발화 + workspace scope memory purge): `AppState::after_workspace_removed`(`src/state.rs`).
 
-외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0612](../../adr/0612-request-admission-and-isolation.md).
+외부 소켓의 전 창 합산·namespace·App 조기 응답도 일반 handler와 같은 진입 검사와 허용된 요청의 사용량 집계를 한 번 거친다. 검사 완료 요청을 하위 라우터에 전달하므로 라우팅 층 수만큼 예산이 소비되지 않는다. [ADR-0012](../../adr/0012-request-admission-and-isolation.md).

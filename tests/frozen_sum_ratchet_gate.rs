@@ -3,7 +3,7 @@
 //! 이 게이트가 보는 것은 `.complexity-file-allowlist` 에 오른 파일들의 출하 SLOC **합**
 //! 하나다. `check-file-size.sh`는 목록의 예외 파일을 개별 상한 검사에서 제외하므로
 //! 목록이 그대로여도 그 파일들이 커질 수 있다. 총합 검사를 함께 두는 이유다.
-//! 정책은 `docs/adr/0646-ci-and-complexity-checks.md`를 따른다.
+//! 정책은 `docs/adr/0047-ci-and-complexity-checks.md`를 따른다.
 //!
 //! **판정 방식**: 진짜 레포를 보지 않는다. 임시 루트에 스크립트 둘과 합성 allowlist 를
 //! 깔고, PATH 앞의 스텁 `tokei` 로 합을 주입한다. 그래서 레포 내용이 바뀌어도 여기 값이

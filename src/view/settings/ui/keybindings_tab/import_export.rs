@@ -14,7 +14,7 @@
 //!   `plugin_shortcuts_draft` 에 쓴다. footer Save 가 둘 다 커밋한다(Preset 과 같은 경계).
 //!
 //! 적용 규칙(행 단위 · 번들에 없는 plugin override 보존 · 비워 두기 · 충돌 판정 범위)의
-//! 근거는 `docs/adr/0619-keybinding-settings-and-hints.md`.
+//! 근거는 `docs/adr/0019-keybinding-settings-and-hints.md`.
 //!
 //! 모듈 경계는 **상태·계산 대 화면 단위 그리기**다. 이 파일은 서브탭 상태와 그 전이(export ·
 //! import · apply)와 진입 함수를 들고, 계산은 `model`(행 모델) · `labels`(표시 문자열) ·

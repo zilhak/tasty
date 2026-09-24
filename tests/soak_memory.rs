@@ -260,7 +260,7 @@ fn rendered_count(inst: &TastyInstance, kind: ViewKind) -> Option<u64> {
 /// 탭(사용자가 보고 있는 탭) 안에 서므로 곧바로 렌더된다.
 ///
 /// 새 탭(`tab.create`)으로 열지 않는 이유: 에이전트가 만든 탭은 선택되지 않아 렌더되지 않고
-/// (ADR-0617), release 에는 탭을 고르는 API 가 없다(원칙 3). 그렇게 열면 view store 와 egui-mesh
+/// (ADR-0017), release 에는 탭을 고르는 API 가 없다(원칙 3). 그렇게 열면 view store 와 egui-mesh
 /// 경로를 아예 안 탄 채 초록이 난다.
 ///
 /// 렌더됐는지는 열어 둔 채로 잰다 — 닫은 뒤의 체크포인트는 경로를 안 탔을 때도 기준선(0)이라
@@ -405,7 +405,7 @@ fn soak() {
     let checkpoint_every = env_u64("SOAK_CHECKPOINT_EVERY", 10).max(1);
     let out_dir = std::env::var_os("SOAK_OUT_DIR")
         .map(PathBuf::from)
-        // 이유: SOAK_OUT_DIR 미지정 시의 폴백 디렉토리다(ADR-0644 공유 임시 경로 격리). 격리는 디렉토리가
+        // 이유: SOAK_OUT_DIR 미지정 시의 폴백 디렉토리다(ADR-0045 공유 임시 경로 격리). 격리는 디렉토리가
         //       아니라 파일명이 진다 — 아래 out_path 가 `soak-{scenario}-{epoch}.jsonl` 로 매
         //       실행 유일하고, create_dir_all 은 멱등이며, 이 테스트는 #[ignore] 라 동시 자동
         //       실행되지 않는다(SOAK_* env 로 수동 단독 실행).

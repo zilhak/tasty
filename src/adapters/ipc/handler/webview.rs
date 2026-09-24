@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::plugin::PluginManager;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// attach mirror 문서의 변경 신호원(ADR-0622) — 다시 그려진 surface 를 attach
+/// attach mirror 문서의 변경 신호원(ADR-0022) — 다시 그려진 surface 를 attach
 /// client 들에 알린다. 화이트리스트·수신자·점유 없음의 판정은 전부
 /// `attach_runtime::notify_markdown_changed` 가 한다.
 fn notify_content_changed(
@@ -32,7 +32,7 @@ fn notify_content_changed(
 ///
 /// 이 메서드는 외부 호출자(에이전트)에게도 열려 있다. 그래서 `caller` 가 그 surface 의 소유
 /// plugin 인지를 페이지와 함께 적는다 — host 는 소유 plugin 이 쓴 페이지 위의 사용자 클릭만
-/// 사용자 행동의 근거로 기록한다(ADR-0631). 에이전트는 페이지를 계속 쓸 수 있지만, 그 페이지
+/// 사용자 행동의 근거로 기록한다(ADR-0031). 에이전트는 페이지를 계속 쓸 수 있지만, 그 페이지
 /// 위의 사용자 클릭을 파일 열기의 사용자 행동으로 바꾸지는 못한다.
 pub fn handle_set_url(
     engine: &crate::core::CoreState,
@@ -109,7 +109,7 @@ fn is_owner(
 ///
 /// 통지한 plugin(그 surface 의 소유자)과 그 plugin 이 지금 페이지를 썼는가를 돌려준다 —
 /// 통지하지 않았으면 `None`. 호출부는 근거가 되는 시도(사용자 제스처 · 이 plugin 이 쓴 페이지)를 **바로 이 plugin 에** 묶어
-/// 기록하고, 근거가 못 되는 시도면 그 surface 의 기록을 지운다(ADR-0631).
+/// 기록하고, 근거가 못 되는 시도면 그 surface 의 기록을 지운다(ADR-0031).
 pub fn notify_navigation_attempt(
     mgr: &PluginManager,
     engine: &crate::core::CoreState,
@@ -242,7 +242,7 @@ mod tests {
 
     /// 페이지를 누가 썼는지가 surface 에 남는다 — 소유 plugin 이 쓰면 참, 외부 호출자(에이전트)나
     /// 다른 plugin 이 쓰면 거짓이다. host 는 참인 페이지 위의 사용자 클릭만 사용자 행동의 근거로
-    /// 기록한다(ADR-0631). 쓴 적이 없는 surface 는 거짓에서 시작한다.
+    /// 기록한다(ADR-0031). 쓴 적이 없는 surface 는 거짓에서 시작한다.
     #[test]
     fn set_url_remembers_whether_the_owning_plugin_wrote_the_page() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -265,7 +265,7 @@ mod tests {
 
     /// 페이지 작성자가 소유 plugin 이 아닌 쪽에서 소유 plugin 으로 바뀌면 host 가 가져갈 때까지 전이
     /// 표지가 선다 — 가져가면 내려간다. 소유 plugin 이 연달아 쓰거나 에이전트가 덮는 것은 전이가
-    /// 아니다(ADR-0631).
+    /// 아니다(ADR-0031).
     #[test]
     fn set_url_marks_when_the_owning_plugin_takes_the_page_back() {
         let (mut state, mut engine) = crate::state::tests::test_state();
@@ -377,7 +377,7 @@ mod tests {
     }
 
     /// markdown 문서가 다시 그려지면(`webview.set_url`) 워크스페이스를 점유한 attach client
-    /// 에 `markdown_changed` 가 간다 — ADR-0622의 신호원이 이 핸들러다. 수신자
+    /// 에 `markdown_changed` 가 간다 — ADR-0022의 신호원이 이 핸들러다. 수신자
     /// 집합·화이트리스트 판정은 `attach_runtime::markdown_changed_tests` 가 따로 재고, 여기서
     /// 재는 것은 **이 핸들러가 그 함수를 부르는가** 하나다(부르지 않아도 그쪽 시험은 초록이다).
     /// 신호는 그 surface 에 대해 한 번만 가고, set_url 이 실패한 surface 에는 가지 않는다.

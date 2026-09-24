@@ -5,7 +5,7 @@
 //! 타입으로 옮겨 [`tasty_ipc::IpcHostFacade::record_audit`] 를 부른다.
 //!
 //! **`Allow` 는 기록하지 않는다** — 그 정책의 근거와 이 선택이 무엇을 버리는지는
-//! [ADR-0609](../../../docs/adr/0609-state-storage-and-retention.md).
+//! [ADR-0009](../../../docs/adr/0009-state-storage-and-retention.md).
 
 use crate::ipc::caller::CallerContext;
 use crate::store::audit::{AuditCallerKind, AuditDecision};
@@ -25,7 +25,7 @@ impl AuditCallerKind {
 /// 호출된다.
 ///
 /// **`Allow` 는 기록하지 않고 즉시 반환한다** — 그 정책의 근거와 이 선택이 무엇을
-/// 버리는지는 [ADR-0609](../../../docs/adr/0609-state-storage-and-retention.md).
+/// 버리는지는 [ADR-0009](../../../docs/adr/0009-state-storage-and-retention.md).
 /// 게이트를 통과한 호출은 전부 여기로 오므로, 기록을 여기서 끊으면 dispatcher 의
 /// 어느 진입점이 늘어나도 다시 새지 않는다.
 pub fn record(

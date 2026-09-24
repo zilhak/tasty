@@ -108,7 +108,7 @@ pub(crate) fn regions_from_state(
     let mut out = Vec::new();
     for (_pane_id, _pane_rect, surface_regions) in &regions {
         for r in surface_regions {
-            // 우선순위(ADR-0621 점유 vs 완료, 디자인 rank 토큰 NeedsInput=30 vs
+            // 우선순위(ADR-0021 점유 vs 완료, 디자인 rank 토큰 NeedsInput=30 vs
             // 점유는 그 아래): NeedsInput > 점유(soft/hard) > Completion. 점유 중
             // surface 는 Completion 테두리를 억제하지만(점유색만 남김), NeedsInput
             // 은 억제하지 않는다 — 점유는 "정상적으로 잡혀 작업 중"이란 뜻인데

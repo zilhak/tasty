@@ -18,7 +18,7 @@
 //! | 없음 | `-32601 Method not found: surface.raw_key` |
 //! | 있음 | `-32015 input reproduction over the OS event stream is macOS-only …` |
 //!
-//! 근거와 대안은 [ADR-0604](../../docs/adr/0604-ipc-discovery-and-errors.md).
+//! 근거와 대안은 [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md).
 //!
 //! ## 왜 컴파일러가 아니라 이 가드인가
 //!
@@ -280,14 +280,14 @@ match m {
     }
 }
 
-/// ADR-0604의 **전제**를 못 박는다 — 등재와 CLI 는 플랫폼 균일하다.
+/// ADR-0004의 **전제**를 못 박는다 — 등재와 CLI 는 플랫폼 균일하다.
 ///
 /// 이 결정은 "dispatch 층에서만 플랫폼을 본다" 인데, 그 근거가 취향이 아니라 실측이었다:
 /// 2026-09-05 기준 CLI 서브커맨드 정의와 메서드 등재표에 `target_os` 게이트가 **0 건**이다.
 /// 그래서 위 상보 arm 규칙이 "차이를 한 곳에 모은다" 는 뜻을 가진다.
 ///
 /// 어느 한쪽에 플랫폼 조건이 처음 들어오면 그 뜻이 깨진다 — 그때는 이 가드를 지우는 것이
-/// 아니라 ADR 을 다시 여는 것이 맞다(ADR-0604의 재검토 트리거가 이것이다). 그래서
+/// 아니라 ADR 을 다시 여는 것이 맞다(ADR-0004의 재검토 트리거가 이것이다). 그래서
 /// 실패 메시지가 "하지 마라" 가 아니라 "결정을 다시 열어라" 라고 말한다.
 mod platform_uniform_layers {
     use super::*;
@@ -353,7 +353,7 @@ mod platform_uniform_layers {
         assert!(
             hits.is_empty(),
             "메서드 등재표나 CLI 서브커맨드가 플랫폼으로 갈린다. \
-             [ADR-0604](../../docs/adr/0604-ipc-discovery-and-errors.md) \
+             [ADR-0004](../../docs/adr/0004-ipc-discovery-and-errors.md) \
              는 **그 두 층이 플랫폼 균일하다는 실측** 위에서 \"차이는 dispatch 층에만 \
              둔다\" 를 골랐다. 여기에 조건이 생기면 그 전제가 깨지므로, 이 가드를 지우는 \
              것이 아니라 ADR 을 다시 여는 것이 맞다(그 ADR 의 재검토 트리거다):\n  {}",

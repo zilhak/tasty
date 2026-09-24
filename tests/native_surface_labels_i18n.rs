@@ -119,17 +119,17 @@ fn non_fmt_keys_have_no_placeholder() {
 //
 // 여기서부터가 그 대조다. 플랫폼 소스에서 실제로 호출되는 키를 뽑아 목록과 **양방향**
 // 으로 맞춘다 — 한 방향만 보면 stale 항목이 영원히 남는다. 모수 고정의 등급은 하한이
-// 아니라 집합 동등이다(`docs/adr/0647-source-guards-and-exemptions.md`
+// 아니라 집합 동등이다(`docs/adr/0048-source-guards-and-exemptions.md`
 // 의 집합 비교 규칙).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// 이 가드가 읽는 소스 트리. 개별 파일이 아니라 디렉터리다 — 나중에 생기는 파일이
-/// 기본 제외가 되지 않게(ADR-0647).
+/// 기본 제외가 되지 않게(ADR-0048).
 const PLATFORM_DIR: &str = "crates/tasty-platform/src";
 
-/// 스캔이 걷어 온 `.rs` 파일 수의 하한. **연기 검사 용도**다(ADR-0647) — 경로가 틀리면
+/// 스캔이 걷어 온 `.rs` 파일 수의 하한. **연기 검사 용도**다(ADR-0048) — 경로가 틀리면
 /// 예외가 아니라 조용한 0 이 되고, 0 인 모수는 언제나 초록이기 때문이다.
 ///
 /// 아래 집합 동등이 이미 대부분을 덮는다(걷기가 비면 추출 집합이 비어 목록과 안 맞는다).

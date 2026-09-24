@@ -42,7 +42,7 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수�
 | `release` | `opt-level = 3`, `strip = true` | **thin** | 최적화 검증 `cargo build --release` |
 | `dist` | `inherits = "release"` | **full** (`lto = true`) | 배포 산출물 `cargo build --profile dist` |
 
-- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 의존성 전체는 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**된 것만 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [ADR-0601](../adr/0601-crate-dependency-boundaries.md).
+- **`dev` 는 본체와 등재되지 않은 워크스페이스 크레이트가 opt 0 이다**: 의존성 전체는 `[profile.dev.package."*"]` 로 opt 3 이고, 워크스페이스 크레이트는 glob 에 안 걸려 루트 `Cargo.toml` 에 `[profile.dev.package.<이름>]` 으로 **하나씩 등재**된 것만 opt 3 이다. 새 크레이트를 만들면 등재 여부를 정한다 — dev 최적화 선택과 재검토 기준은 [ADR-0001](../adr/0001-crate-dependency-boundaries.md).
 - **`release` = thin LTO**: 크레이트 IR 요약을 공유해 cross-crate inlining 을 **병렬** 적용. full 의 95–99% 효과를 1/3 시간에 — 일상 "릴리즈 검증" 은 모두 이걸 쓴다.
 - **`dist` = full LTO**: 모든 IR 을 단일 LLVM 모듈로 합쳐 재최적화. 단일 스레드 단계가 길어 약 3.5배 느림. **배포 바이너리(DMG/MSI/AppImage) 빌드 시에만** 쓴다. (AI 자체 검증 빌드에는 절대 사용 금지.)
 
@@ -93,7 +93,7 @@ cargo tree --no-default-features --edges normal -i wgpu
 없는 것: `egui` 계열(`egui`·`ecolor`·`emath`·`epaint`·`egui_extras`) · `winit` ·
 **`wgpu` 계열(`wgpu`·`wgpu-core`·`wgpu-hal`·`wgpu-types`·`naga`·`glow`·`ash`)**.
 `wgpu` 가 빠진 것은 `tasty-font` 이 그것을 `gpu` feature 뒤 optional 로 들고 루트의 `gui` 만
-켜기 때문이다([ADR-0601](../adr/0601-crate-dependency-boundaries.md)).
+켜기 때문이다([ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
 
 **아직 있는 것: `cosmic-text`·`fontdb`·`swash`·`skrifa`·`read-fonts`·`ttf-parser`.**
 이것은 미완이 아니라 결정이다 — `FontConfig` 의 필드 셋이 cosmic-text 타입이고 헤드리스
@@ -221,7 +221,7 @@ append 하게 해서 **실행 횟수**를 세야 갈린다. 저장소 밖 임시
 ### plugin 세 개가 자기 자신만 거는 이유
 
 세 plugin 의 빌드 스크립트는 `tasty-icons` 의 `Icon.svg` 문자열을 읽어 `OUT_DIR` 에 점배열을
-베이크한다([ADR-0635](../adr/0635-shared-design-and-theme.md)).
+베이크한다([ADR-0035](../adr/0035-shared-design-and-theme.md)).
 그런데 거는 것은 `build.rs` 자기 자신뿐이다. **형태만 보면 입력을 빠뜨린 것 같지만 아니다** —
 아이콘은 파일이 아니라 `crates/tasty-icons/src/lib.rs` 안의 문자열 리터럴이고, 그것이 바뀌면
 `tasty-icons` 가 다시 컴파일되며, `tasty-icons` 는 세 스크립트의 **build-dependency** 라 그
@@ -380,7 +380,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 본 바이너리의 큰 leaf 모듈을 떼어낼 때 후보 조건: **out-degree 작음**(다른 src/ 모듈 거의 미참조) · **사이클 없음** · **충분히 큼**(1000줄+). 절차: `crates/tasty-<name>/` 생성 → `git mv` → 내부 경로 갱신 → 본 `Cargo.toml` 의존 추가 → `pub use tasty_<name> as <name>` 재수출(backward path 유지) → `cargo check`/`build` 검증. 기존 `crate::model::Foo` 경로가 그대로 동작하는 게 핵심이라 reverse import 갈아끼우기가 불필요하다.
 
-**세 조건 중 크기는 보조 지표다** — 소비자가 둘 이상이고, 합칠 후보 크레이트에 *그 크레이트가 원래 몰라도 되는 의존* 을 들이게 되는 코드는 1000줄에 못 미쳐도 분리한다(판정은 의존 방향이 우선, [ADR-0601](../adr/0601-crate-dependency-boundaries.md)).
+**세 조건 중 크기는 보조 지표다** — 소비자가 둘 이상이고, 합칠 후보 크레이트에 *그 크레이트가 원래 몰라도 되는 의존* 을 들이게 되는 코드는 1000줄에 못 미쳐도 분리한다(판정은 의존 방향이 우선, [ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
 
 **재수출 형태는 둘 중 하나를 고른다.**
 
@@ -408,7 +408,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 도메인(`src/core/` · `src/ports/`)은 **크레이트로 떼지 않았다** — 본체와 같은 크레이트에 있고,
 방향은 모듈 경계와 가드로 선다. 떼지 않은 이유(도메인 안의 gui 게이트 수 · 형제 모듈 폐포 ·
-`pub(crate)` 표면)와 다시 볼 조건은 [ADR-0602](../adr/0602-domain-execution-and-ports.md),
+`pub(crate)` 표면)와 다시 볼 조건은 [ADR-0002](../adr/0002-domain-execution-and-ports.md),
 경계의 내용은 [아키텍처](../architecture/index.md) 의 "도메인 경계" 절이다.
 
 같은 크레이트 안에서는 `crate::app::…` 이 언제나 해석되므로 컴파일러가 이 방향을 못 막는다.
@@ -417,9 +417,9 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 (파일 단위 test-only · 인라인 `#[cfg(test)]`)와 주석·문자열은 좌변이 아니다. 같은 파일이 도메인
 출하 코드의 `feature = "gui"` 개수를 양방향으로 고정하고, gui feature 의 optional 의존(GUI 크레이트)을
 부르는 자리를 gui 게이트 뒤까지 읽어 목록으로 고정한다 — 게이트 수만 세면 이미 있는 게이트 뒤에
-`egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0602](../adr/0602-domain-execution-and-ports.md)).
+`egui::…` 를 더 들여도 안 보이기 때문이다([ADR-0002](../adr/0002-domain-execution-and-ports.md)).
 자동화 실행부(`src/webhook/` · `src/hook_handler/`)가 inbound adapter 를 부르는 방향은
 `automation_runners_do_not_reach_inbound_adapters.rs` 가 같은 판정기로 막는다.
 
 그래서 이 경계를 세운다고 편집 빌드 범위가 줄지는 않는다 — 도메인을 고쳐도 GUI 를 고쳐도 같은
-컴파일 단위(`tasty` lib)가 다시 돈다. 그 범위가 필요해지는 날이 ADR-0602 의 재검토 조건이다.
+컴파일 단위(`tasty` lib)가 다시 돈다. 그 범위가 필요해지는 날이 ADR-0002 의 재검토 조건이다.

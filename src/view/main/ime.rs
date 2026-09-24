@@ -226,7 +226,7 @@ fn clear_all(w: &mut MainView) {
 //
 // **debug 빌드 전용.** 유일한 호출자인 `surface.ime_*` 핸들러가
 // `#[cfg(debug_assertions)]` 로 격리돼 있다 — IME 조합 상태를 강제로 세팅하는
-// 것은 사용자 입력 재현이라 release 표면에 두지 않는다(ADR-0612). cfg 를
+// 것은 사용자 입력 재현이라 release 표면에 두지 않는다(ADR-0012). cfg 를
 // 빼면 release gui 빌드에서 `dead_code = deny` 에 걸린다.
 // =============================================================================
 
@@ -242,7 +242,7 @@ pub(crate) fn ipc_set_preedit(
     let (col, row, cols) = {
         let terminal = w.state.focused_terminal(engine)?;
         // Snapshot cursor and cols under one state lock so they share a
-        // generation (ADR-0613).
+        // generation (ADR-0013).
         terminal.with_surface(|s| {
             let (col, row) = s.cursor_position();
             let (cols, _) = s.dimensions();

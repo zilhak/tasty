@@ -1,6 +1,6 @@
 # Tasty 문서 모델 (Documentation Model)
 
-이 문서는 설계·명세·개발 문서의 위치와 연결 방법을 정한다. 새 문서를 만들거나 기존 문서를 고치기 전에 읽는다. 분류 이유는 [문서 구조 결정](adr/0648-documentation-structure-and-evidence.md)에 있다.
+이 문서는 설계·명세·개발 문서의 위치와 연결 방법을 정한다. 새 문서를 만들거나 기존 문서를 고치기 전에 읽는다. 분류 이유는 [문서 구조 결정](adr/0049-documentation-structure-and-evidence.md)에 있다.
 
 ## 1. 핵심 원칙 — 동작이 1순위, 화면은 2순위
 
@@ -194,7 +194,7 @@ ADR 제목 비교 규칙으로 바꾸지 않는다.
 
 ## 관련
 
-- [문서 구조와 근거에 대한 결정](adr/0648-documentation-structure-and-evidence.md)
+- [문서 구조와 근거에 대한 결정](adr/0049-documentation-structure-and-evidence.md)
 - [ADR 작성 양식](adr/template.md)
 - [기능 문서](features/index.md)
 - [디자인 변경 절차](dev-guide/design-change-workflow.md)

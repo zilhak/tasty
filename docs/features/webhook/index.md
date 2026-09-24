@@ -2,13 +2,13 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent (`webhook.*` — `register` 만 plugin 허용(`Network` 권한), 나머지 local-only)
-- **ADR**: [ADR-0632](../../adr/0632-webhook-admission.md)(신뢰 모델·불변식) · [ADR-0627](../../adr/0627-lua-and-hook-execution.md)(공유 핸들러 레지스트리)
+- **ADR**: [ADR-0032](../../adr/0032-webhook-admission.md)(신뢰 모델·불변식) · [ADR-0027](../../adr/0027-lua-and-hook-execution.md)(공유 핸들러 레지스트리)
 - **코드**: `src/webhook/`(리스너·레지스트리·lifetime·인증·남용차단·영속화) · `src/adapters/ipc/handler/webhook.rs`(IPC) · `crates/tasty-cli/src/commands/webhook.rs`(CLI)
 - **화면**: 전용 화면 없음. GUI와 headless에서 동작하며 경고는 기존 toast 또는 로그로 알린다
 
 ## 목적
 
-GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구동**하는 경량 인바운드 서버다. tasty 의 제어용 IPC 포트(loopback 전용, [ADR-0606](../../adr/0606-bounded-ipc-transport.md))와 별개로, `0.0.0.0` 의 설정 포트를 열어 외부 발신자의 통지를 받는다. 실제 외부→내부 포워딩은 공유기/OS 몫이고, tasty 가 제공하는 건 "특정 포트에 특정 규칙으로 데이터가 들어오면 지정 핸들러를 구동하라" 이다.
+GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구동**하는 경량 인바운드 서버다. tasty 의 제어용 IPC 포트(loopback 전용, [ADR-0006](../../adr/0006-bounded-ipc-transport.md))와 별개로, `0.0.0.0` 의 설정 포트를 열어 외부 발신자의 통지를 받는다. 실제 외부→내부 포워딩은 공유기/OS 몫이고, tasty 가 제공하는 건 "특정 포트에 특정 규칙으로 데이터가 들어오면 지정 핸들러를 구동하라" 이다.
 
 대표 흐름: tasty 의 어떤 기능이 외부에 작업을 걸어둠 → 그 작업이 완료/오류나면 외부가 웹훅으로 통지 → tasty 가 내부적으로 반응(예: `notification.create`). 웹훅 응답은 "잘 전달됨" ACK 뿐이다.
 
@@ -38,7 +38,7 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 
 ### 단방향 ACK (불변식)
 
-HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다([ADR-0632](../../adr/0632-webhook-admission.md)).
+HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다([ADR-0032](../../adr/0032-webhook-admission.md)).
 
 그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — MVP 는 조건분기가 없다). 실패의 유일한 관측점은 `tracing::error!` 로그다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
 
@@ -147,10 +147,10 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 | `webhook.sweep` | `tasty webhook sweep` | 만료 웹훅 일괄 정리 → 제거된 id 목록 |
 | `webhook.config` | `tasty webhook config [--port <N>]` | 포트 조회/설정(설정은 재시작 후 반영) |
 
-- **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0627](../../adr/0627-lua-and-hook-execution.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
+- **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0027](../../adr/0027-lua-and-hook-execution.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
 - **lifetime 파라미터**: `--persistent`(bool), `--ttl-secs` xor `--count`(둘 다 없으면 `Unlimited`).
 - **auth 파라미터**: `--auth-location <query|bearer|body|header>` + `--auth-token`(상호 requires), bearer 외에는 `--auth-key`.
-- **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0627)](../../adr/0627-lua-and-hook-execution.md) 참조.
+- **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0027)](../../adr/0027-lua-and-hook-execution.md) 참조.
 - **핸들러 레지스트리 GUI**: [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서 레지스트리(host 기본 + plugin 기여 + user 매핑)를 조회·편집한다(토글/셸 명령 인라인 편집/user 행 추가·제거, `~/.tasty/hook-handlers.toml` 영속). **제거는 user 행만** — host/plugin 행은 그 자리에 자물쇠 글리프가 오고, 지워도 finalize 가 되살린다. `IpcSequence` 행은 mono 한 줄 요약만 두고 GUI 편집 경로가 없다 — 시퀀스 본문은 [`tasty hook-handler get`/`upsert`](../hooks/index.md#핸들러-레지스트리-hook_handler) 로 고친다(TOML 손편집 + `reload` 도 그대로 된다). **고쳐도 이미 등록된 웹훅은 안 바뀐다** — 엔트리가 등록 시점 스냅샷을 소유하므로 다시 등록해야 한다. **리스너(bind/port/secret) 설정은 이 서브탭에 없다** — 위 CLI(`webhook.config`) 전용.
 
 ## 비-목표 (Out of scope)
@@ -177,4 +177,4 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 ## 관련
 
 - [hooks](../hooks/index.md) — 내부 이벤트 트리거(웹훅과 대칭인 trigger 출처) · [notifications](../notifications/index.md) · [file-handler](../file-handler/index.md)(레지스트리 정본 템플릿)
-- [API](../../reference/api.md#기타-호스트) · [웹훅 요청 처리와 제한](../../adr/0632-webhook-admission.md) · [Lua와 훅 실행](../../adr/0627-lua-and-hook-execution.md)
+- [API](../../reference/api.md#기타-호스트) · [웹훅 요청 처리와 제한](../../adr/0032-webhook-admission.md) · [Lua와 훅 실행](../../adr/0027-lua-and-hook-execution.md)

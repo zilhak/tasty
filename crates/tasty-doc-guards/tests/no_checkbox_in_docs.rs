@@ -72,7 +72,7 @@ fn is_checkbox_item(line: &str) -> bool {
 ///
 /// 이름을 물음으로 적는다: 다른 가드의 같은 이름 `is_scan_target` 들과 grep 에서 뭉쳐
 /// 보이지만, 이 가드의 물음은 "체크박스 검사 대상 문서인가" 로 그들과 다르다 — 다른
-/// 물음이라 위임할 정본이 없다(ADR-0647: 같은 이름 다른 물음은 이름을 갈라 세운다).
+/// 물음이라 위임할 정본이 없다(ADR-0048: 같은 이름 다른 물음은 이름을 갈라 세운다).
 fn is_checkbox_doc(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
@@ -171,7 +171,7 @@ fn checkbox_matcher_hits_only_line_start_list_items() {
 const PRUNABLE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 작업 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조
-/// 금지(`docs/adr/0648-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
+/// 금지(`docs/adr/0049-documentation-structure-and-evidence.md`) 를 어긴다 — 인용이
 /// 아니라 판정 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";

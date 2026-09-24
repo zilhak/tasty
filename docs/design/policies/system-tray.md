@@ -1,6 +1,6 @@
 # 시스템 트레이 정책 (운영 상세)
 
-> 결정 근거·대안·재검토 조건은 [docs/adr/0616-window-platform-and-shutdown.md](../../adr/0616-window-platform-and-shutdown.md). 본 문서는 *현재 운영 동작* 만 기술한다.
+> 결정 근거·대안·재검토 조건은 [docs/adr/0016-window-platform-and-shutdown.md](../../adr/0016-window-platform-and-shutdown.md). 본 문서는 *현재 운영 동작* 만 기술한다.
 
 tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에서 트레이/상태 영역으로 들어간다 (best-effort)**.
 

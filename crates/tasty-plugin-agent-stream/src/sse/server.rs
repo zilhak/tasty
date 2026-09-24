@@ -1,6 +1,6 @@
 //! tiny_http bind + accept 스레드 + 연결당 스레드.
 //!
-//! 본체 웹훅과 같은 HTTP 레이어를 쓴다(`tiny_http`, blocking, ADR-0632). SDK 가 async 를
+//! 본체 웹훅과 같은 HTTP 레이어를 쓴다(`tiny_http`, blocking, ADR-0032). SDK 가 async 를
 //! 지원하지 않아 plugin 도 blocking 서버 + 전용 스레드가 자연스러운 선택이고, 같은
 //! 크레이트를 쓰면 판단 근거가 본체와 일치한다. 장기 연결
 //! 구독을 제공하지만, 예상 소비자는 FE 서버 한둘이라 연결당 스레드가 부담이 되는

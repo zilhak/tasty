@@ -4,7 +4,7 @@ crates.io 의 `tiny_http` 0.12.0(상류 커밋 `212b1c45852fef2093dc1374875a9393
 아래 패치 하나만 얹은 사본이다. 루트 `Cargo.toml` 의 `[patch.crates-io]` 가 이 디렉토리를
 가리키므로 워크스페이스의 모든 `tiny_http` 소비자(본체 웹훅 리스너 · agent-stream plugin 의
 SSE 서버)가 이 사본으로 빌드된다. 결정·근거·대안·탈출 조건은
-[ADR-0632](../../docs/adr/0632-webhook-admission.md).
+[ADR-0032](../../docs/adr/0032-webhook-admission.md).
 
 ## 옮긴 것과 뺀 것
 

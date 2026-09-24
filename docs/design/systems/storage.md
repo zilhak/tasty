@@ -32,7 +32,7 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
   - 그 외 → `SchemaMismatch{expected, found}` 에러 → 호출자가 사용자에게 안내 후 종료.
 
 **additive ensure 가 이 정책의 유일한 예외 통로다.** v1 이 나간 뒤에 생긴 테이블
-(`tutorial_progress` — [ADR-0609](../../adr/0609-state-storage-and-retention.md))은
+(`tutorial_progress` — [ADR-0009](../../adr/0009-state-storage-and-retention.md))은
 버전을 올리지 않고 그 갈래로 기존 DB 에 닿는다. 그래서 **거기에 얹는 스키마 변경은 버전
 값으로 아무 신호를 내지 않는다** — 실측하면 그 줄을 지워도 나머지 시험이 전부 초록이었다.
 지금은 `an_existing_database_still_gets_the_tutorial_table` 이 그 갈래를 고정한다. 새
@@ -102,7 +102,7 @@ AppliedPragmas는 journal_mode·synchronous·foreign_keys·journal_size_limit의
   commit 들은 잃을 수 있다. DB 가 깨지지는 않는다 — 잃는 것은 끝부분의 commit 이고, 남은
   것은 일관된 이전 상태다.
 - 이 값을 바꾸지 않는다. FULL 로 올리는 것은 commit 마다 fsync 비용을 받는 **별도 결정**이고,
-  지금 코드는 적용 여부만 본다([ADR-0610](../../adr/0610-storage-failure-reporting.md)).
+  지금 코드는 적용 여부만 본다([ADR-0010](../../adr/0010-storage-failure-reporting.md)).
 - **전원 장애 쪽은 측정된 적이 없다.** 그 줄은 SQLite 문서의 계약이다. 재는 법은 commit 직후
   전원을 끊고 재시작해 마지막 commit 의 생존을 보는 것인데 — **이 레포에 그 장비는 없다.**
 - **프로세스 kill 쪽은 쟀다**(2026-09-21, Linux, 격리 홈의 GUI debug 인스턴스): `memory.put` 다섯
@@ -130,7 +130,7 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
   밀리초, `<seq>` 는 그 sink 가 쓴 순번(0 부터, 6 자리로 채움)이다. 순번이 있어 **같은 밀리초에 온
   항목도 각자 키를 가진다** — 한 줄에서 여러 항목이 나와도 덮어쓰지 않는다. 시계가 역행하지 않고 같은 ms 안의 순번이 여섯 자리 범위에 있으면 키 오름차순이 도착
   순서와 같으므로 `memory.list --prefix tasty.observer.<id>.` 가 시간순으로 읽힌다. 근거는
-  [ADR-0609](../../adr/0609-state-storage-and-retention.md).
+  [ADR-0009](../../adr/0009-state-storage-and-retention.md).
 - **상한 `max_records` 는 가장 최근 N 건을 남긴다.** sink 는 자기가 쓴 키를 순서대로 기억해 넘치면
   가장 오래된 것부터 지운다. 키가 유일하므로 지우는 칸은 늘 그 옛 레코드 자신이다. 삭제는
   best-effort 다 — 실패해도 경고 없이 넘어가므로 그때는 N 을 넘는 레코드가 남을 수 있다. sink 가
@@ -147,7 +147,7 @@ fallback에서 memory.db를 쓰는 memory·agent·approval·surface.meta·teleme
   항목은 std mpsc 계약상 워커가 끝까지 비운 뒤 끝나므로 잃지 않는다. 앱 종료 경로가
   `join_retired` 로 남은 워커를 회수하고, 그 호출을 빠뜨린 경로에서도 라우터의 `Drop` 이 같은
   회수를 한다(마지막 방어선). 유일한 유실 경로는 워커가 다 쓰기 전에 프로세스가 죽는 것이다.
-- 근거는 [ADR-0610](../../adr/0610-storage-failure-reporting.md).
+- 근거는 [ADR-0010](../../adr/0010-storage-failure-reporting.md).
 
 ### 관측 로그 보존
 
@@ -202,7 +202,7 @@ config 로 열리고, 원래 파일은 건드리지 않는다(손상 파일은 �
 - **화면 안내는 없다** — `state.db` 와 달리 InfoModal 도 toast 도 뜨지 않는다.
 
 근거·대안(fatal · 쓰기 거절)·재검토 조건은
-[ADR-0610](../../adr/0610-storage-failure-reporting.md).
+[ADR-0010](../../adr/0010-storage-failure-reporting.md).
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
 

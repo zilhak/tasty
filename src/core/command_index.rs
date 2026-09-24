@@ -113,7 +113,7 @@ impl CommandIndex {
     /// 넘기는데, headless PTY 의 `Terminal` 은 그 store 에 **pty id**(`>= PTY_ID_BASE`)
     /// 로 등록돼 있다. 걸러내지 않으면 `Scope::Surface(pty id)` 가 memory.db 에 심겨
     /// surface id 공간이 오염되고, 그 scope 가 다음 부팅의 surface 카운터 floor 를
-    /// PTY 공간으로 밀어 올린다(`docs/adr/0617-workspace-identity-and-focus.md`).
+    /// PTY 공간으로 밀어 올린다(`docs/adr/0017-workspace-identity-and-focus.md`).
     /// 애초에 Surface 가 없는 1 회성 PTY 라 명령 인덱스의 소비자(surface 스코프 조회)도
     /// 없다.
     pub fn on_boundary(
@@ -281,7 +281,7 @@ mod tests {
     }
 
     /// headless PTY id 로 들어온 boundary 는 인덱싱하지 않는다 — `Scope::Surface(pty id)`
-    /// 가 memory.db 에 심기면 surface id 공간이 오염된다(ADR-0617).
+    /// 가 memory.db 에 심기면 surface id 공간이 오염된다(ADR-0017).
     #[test]
     fn headless_pty_ids_are_not_indexed() {
         use crate::core::pty_registry::PTY_ID_BASE;

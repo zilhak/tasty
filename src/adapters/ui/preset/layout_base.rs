@@ -6,7 +6,7 @@
 //! `preset.save` 로 같은 이름을 덮어썼으면 캐시는 낡았고, 그대로 쓰면 에이전트의 쓰기가
 //! 말없이 사라진다(원칙 1). 그래서 캐시를 지을 때와 저장할 때 저장소의 **레이아웃 부분**을
 //! 이 값으로 떠 두고, 저장 직전에 대조한다. 근거는
-//! `docs/adr/0638-preset-drafts-and-store-conflicts.md`.
+//! `docs/adr/0038-preset-drafts-and-store-conflicts.md`.
 //!
 //! 레이아웃 부분만 보는 이유: 저장은 레이아웃만 갈아 쓰고 이름·subtitle 같은 메타는 저장
 //! 시점의 저장소 값을 그대로 둔다(`persist_layout`). 메타만 바뀐 쓰기는 덮이지 않으므로

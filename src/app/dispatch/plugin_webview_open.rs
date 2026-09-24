@@ -2,8 +2,8 @@
 //! 핸들러로 연다.
 //!
 //! plugin 프로세스는 OS 열기를 직접 하지 않는다. host 의 OS 열기 자리
-//! (`terminal_link::open_uri`)로 모아야 debug 스위치(ADR-0644)가 그것도 기록하고, 무엇이
-//! 열리는지를 host 가 한 자리에서 본다. 근거·대안은 ADR-0630.
+//! (`terminal_link::open_uri`)로 모아야 debug 스위치(ADR-0045)가 그것도 기록하고, 무엇이
+//! 열리는지를 host 가 한 자리에서 본다. 근거·대안은 ADR-0030.
 //!
 //! 판정은 [`authorize`] 하나다 — surface 가 호출 plugin 소유의 plugin surface 이고, URL 에
 //! 스킴이 있으며 `javascript:` 가 아니어야 한다. surface→plugin 매핑은 각 view 의

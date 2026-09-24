@@ -9,7 +9,7 @@
 //! 크레이트를 직접 부른다. 본체의 `state::selection` · `adapters::ui::terminal_link`
 //! 재수출을 거치지 않는 이유는, 거치면 렌더러가 앱 상태·UI 어댑터를 보는 모양이
 //! **표기에 남기** 때문이다(타입은 이미 크레이트에 있는데도). 근거·재검토 조건은
-//! `docs/adr/0601-crate-dependency-boundaries.md`.
+//! `docs/adr/0001-crate-dependency-boundaries.md`.
 //!
 //! 그래서 이 모듈이 부르는 본체 경로는 **`crate::cell_palette` 하나**다. 그것이
 //! 남은 것은 실수가 아니라 요구다 — 셀 색 해석은 `gui` 게이트 밖에 있어야 하고
@@ -222,7 +222,7 @@ impl CellRenderer {
         // Lock the shared terminal state once for the whole viewport render
         // (surface + scrollback + cursor/modes). The parser thread's per-chunk
         // lock window is the only contention; a visible terminal is idle enough
-        // that this is uncontended in practice (ADR-0613).
+        // that this is uncontended in practice (ADR-0013).
         terminal.with_render_view(|view| {
             // DECSCNM (reverse screen): swap the default fg/bg for the whole
             // viewport. Cell-level attributes are unaffected; only the default

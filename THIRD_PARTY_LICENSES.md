@@ -85,7 +85,7 @@ MIT 는 위 저작권 고지와 허가 문구를 "소프트웨어의 모든 사�
 
 배포되는 고지는 다음이며, 전부 저장소에 그대로 들어 있습니다. 릴리스 시점에 새로 생성하는
 단계는 없습니다 — 근거는
-[ADR-0650](docs/adr/0650-release-artifacts-and-versioning.md).
+[ADR-0051](docs/adr/0051-release-artifacts-and-versioning.md).
 
 - `LICENSE` — Tasty 자체 코드의 MIT 본문
 - `THIRD_PARTY_LICENSES.md` — 본 문서 (무엇이 번들되고 무슨 의무가 따르는지)

@@ -25,7 +25,7 @@ const TAIL_OFF_V: LogicalPx = LogicalPx(24.0);
 /// 스텝 레일 점의 지름. 스케일 밖(5) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고
 /// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
 /// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
-/// `docs/adr/0635-shared-design-and-theme.md` 대로 이름만 붙인다.
+/// `docs/adr/0035-shared-design-and-theme.md` 대로 이름만 붙인다.
 /// **같은 5 를 `src/view/settings/ui/tabs/appearance.rs` 의 `COLOR_OVERRIDE_DOT_SIZE`
 /// 도 쓴다** — 무관한 두 화면이 독립적으로 고른 값이라 드리프트가 아니라 역할일
 /// 가능성이 높고, 그 판단이 서면 둘이 한 토큰으로 모인다.

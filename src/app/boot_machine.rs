@@ -222,7 +222,7 @@ impl App {
         // 엔진 생성이 실패했다 — GPU·창은 살아있으니(부팅 GPU init 이후 단계) 실패
         // 화면을 그려 사용자에게 보인다. boot 는 재저장하지 않고 window/gpu 소유권을
         // boot error 모드로 넘긴다. GPU 부재·창 생성 실패는 여기 오지 않는다(그쪽은
-        // 그릴 수단이 없어 진단 후 즉시 exit). ADR-0616 재검토 트리거.
+        // 그릴 수단이 없어 진단 후 즉시 exit). ADR-0016 재검토 트리거.
         if self.boot_error_info.is_some() {
             self.enter_boot_error_mode(boot.window, boot.gpu);
             return;

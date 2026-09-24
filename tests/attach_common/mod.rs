@@ -322,7 +322,7 @@ pub fn open_surface_attach(port: u16, surface_id: u64) -> (TcpStream, Value) {
 
 /// `stream.open` 을 target/target_workspace 없이 열어(단순 upgrade — client_id 는
 /// 할당되지만 어떤 workspace 도 점유하지 않은 채) ack 프레임까지만 읽고 반환한다.
-/// "attach 점유 없는 client" 를 재현하는 용도(하이브리드 신뢰 모델, ADR-0622).
+/// "attach 점유 없는 client" 를 재현하는 용도(하이브리드 신뢰 모델, ADR-0022).
 ///
 /// **점유가 없어도 침묵은 끊긴다.** 서버는 attach dispatch 앞에서 소켓에 read timeout
 /// 을 건다(`tcp_ipc_server.rs::arm_stream_read_timeout` — `validate_stream_proto` 보다

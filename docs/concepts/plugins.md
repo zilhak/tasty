@@ -39,8 +39,8 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 
 surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (→ [work-area Surface 종류](../features/work-area/index.md#surface-종류)):
 
-- **`rendering = "egui-mesh"`** — plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다(ADR-0628). bundled 전용 화이트리스트 + api_version 게이트. 예: image, mesh-demo(+ markdown 의 대용량/파일열기 확인 팝업 2개만 — 본문은 아님).
-- **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html, markdown([ADR-0629](../adr/0629-webview-host-integration.md), 본문).
+- **`rendering = "egui-mesh"`** — plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다(ADR-0028). bundled 전용 화이트리스트 + api_version 게이트. 예: image, mesh-demo(+ markdown 의 대용량/파일열기 확인 팝업 2개만 — 본문은 아님).
+- **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html, markdown([ADR-0029](../adr/0029-webview-host-integration.md), 본문).
 - **(기본)** — 플러그인 프로세스가 직접 그린다. host 는 트리에 `RemoteSurface` marker 만 두고 plugin UI DSL 로 콘텐츠를 받는다. 현재 이 모드를 쓰는 번들 plugin 은 없다(과거 explorer 가 예시였으나 host-native 로 승격됨, [hierarchy.md](hierarchy.md) 참고) — 전부 `egui-mesh` 또는 `webview` 로 이전 완료.
 
 ## 권한 (Permissions)

@@ -43,7 +43,7 @@ pub fn handle_open(
         // 원격에 정상 큐잉된 요청을 호출자가 실패로 오인한다. 다른 재사용 핸들러(split
         // 등)와 동일하게 `structural_apply_error` 로 `forwarded:true` 를 성공 응답으로
         // 변환한다. 에이전트 요청이므로 그 forward op 의 원격 실패는 사용자 toast 가 아니라
-        // 로그로 간다(`docs/adr/0636-overlay-scope-and-lifetime.md`).
+        // 로그로 간다(`docs/adr/0036-overlay-scope-and-lifetime.md`).
         Err(e) => {
             crate::core::mark_last_forward_agent_origin(
                 engine,
@@ -83,7 +83,7 @@ pub fn handle_list(engine: &crate::core::CoreState, id: Value) -> JsonRpcRespons
 fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Value>) {
     match layout {
         crate::model::SurfaceLayout::Leaf(surface) => {
-            // image 는 ADR-0628에 따라 egui-mesh 로 전환돼 host 측 stand-in 은
+            // image 는 ADR-0028에 따라 egui-mesh 로 전환돼 host 측 stand-in 은
             // `EguiMeshSurface`(kind=="image")다. dir_count/current_index 는 plugin 이
             // 소유하므로 host list 는 surface_id/path 만 노출한다.
             if let Some(ms) = surface

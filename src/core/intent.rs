@@ -48,7 +48,7 @@ pub(crate) enum SendPayload {
 ///
 /// 스택은 한 인스턴스 안에서 두 사용자에게 공유된다 — 그 기계 앞에 앉은 사용자와,
 /// 워크스페이스를 원격에서 점유한 mirror 사용자. 결정·대안은
-/// `docs/adr/0623-attach-state-sync-and-forwarding.md`.
+/// `docs/adr/0023-attach-state-sync-and-forwarding.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestoreScope {
     /// 이 인스턴스 앞의 사용자가 누른 복원. 전역 LIFO — 스코프를 걸지 않는다.
@@ -111,7 +111,7 @@ pub(crate) enum DomainIntent {
         surface_params: Value,
         /// 새 탭을 그 pane 의 활성 탭으로 세우는가. 사용자가 직접 연 탭이면 `true`,
         /// 에이전트(IPC/CLI)가 만든 탭이면 `false` — 에이전트 행동이 사용자가 보던 탭을
-        /// 바꾸면 안 된다([ADR-0617](../../docs/adr/0617-workspace-identity-and-focus.md)).
+        /// 바꾸면 안 된다([ADR-0017](../../docs/adr/0017-workspace-identity-and-focus.md)).
         /// terminal kind 는 이 값과 무관하게 background 로 붙는다 — 사용자의 새 터미널
         /// 탭은 이 인텐트가 아니라 `AppState::add_tab` 이 연다.
         activate: bool,
@@ -127,7 +127,7 @@ pub(crate) enum DomainIntent {
         from_index: usize,
         to_index: usize,
     },
-    /// headless PTY(`pty_registry`, ADR-0613 · features/headless-pty 참고)를 실제
+    /// headless PTY(`pty_registry`, ADR-0013 · features/headless-pty 참고)를 실제
     /// Surface 로 **승격(adopt)** 한다(`pty.attach_surface`). `CreateTab` 처럼 새
     /// tab_id/surface_id 를 발급받아
     /// Tab/Pane 트리에 marker 를 꽂되, **새 Terminal 을 spawn 하지 않는다** — 이미
@@ -313,7 +313,7 @@ pub(crate) enum DomainIntent {
     ///
     /// gui 빌드에만 있다 — 적용할 identify worker 도, 이 intent 를 만드는 자리도 gui 에만
     /// 있다. headless 에서 에이전트 경로(`file_handler.dispatch`)는 `-32017` 로 거절된다
-    /// (docs/adr/0631-file-handler-routing.md).
+    /// (docs/adr/0031-file-handler-routing.md).
     #[cfg(feature = "gui")]
     DispatchFile {
         target: crate::file::format::FileTarget,

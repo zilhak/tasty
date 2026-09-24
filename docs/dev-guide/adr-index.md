@@ -2,7 +2,7 @@
 
 [ADR 인덱스](../adr/index.md)의 표 행은 ADR 헤더에서 생성한다.
 그룹 목록과 그룹 설명은 사람이 쓴다. 결정 이유는
-[ADR 작성과 관리](../adr/0649-architecture-decision-records.md)에 있다.
+[ADR 작성과 관리](../adr/0050-architecture-decision-records.md)에 있다.
 
 ## 파일 구조
 

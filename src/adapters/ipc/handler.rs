@@ -124,9 +124,9 @@ use crate::state::AppState;
 ///
 /// 라우터 구조:
 /// 1. **engine 핸들러** (`route_engine_handler`): 창 상태 자체가 대상이 아닌 핸들러 전부.
-///    핸들러는 자기가 닿는 상태만 인자로 받고(ADR-0602), 창에는 `AppState` 가 아니라
+///    핸들러는 자기가 닿는 상태만 인자로 받고(ADR-0002), 창에는 `AppState` 가 아니라
 ///    [`IpcWindow`] 포트와 intent 출구로만 닿는다
-///    (`docs/adr/0602-domain-execution-and-ports.md`).
+///    (`docs/adr/0002-domain-execution-and-ports.md`).
 /// 2. **창 핸들러** (`route_window_handler`): gui 빌드 전용. 창 상태 자체를 여는 핸들러
 ///    (파일 선택기 팝업) — 진입점이 쥔 `AppState` 를 받는다.
 /// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release 에서는 정의 안 됨.
@@ -136,7 +136,7 @@ use crate::state::AppState;
 /// 호출한 명령이 권한을 통과하지 못하면 `permission_denied` 로 즉시 회신한다.
 ///
 /// 직접 진입은 공통 게이트를 수행한다. 바깥에서 이미 검사한 경로는
-/// CheckedRequest를 넘겨 handle_checked_request로 실행한다(ADR-0612).
+/// CheckedRequest를 넘겨 handle_checked_request로 실행한다(ADR-0012).
 #[cfg(test)]
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
@@ -161,7 +161,7 @@ pub fn handle_with_caller(
 /// 이 진입점은 요청이 닿은 창의 `AppState` 를 받는다 — 창 상태 자체가 대상인 창·debug
 /// 핸들러에 그것을 건네고, 요청의 intent 출구를 그 창 큐로 옮기는 자리이기 때문이다. 그 아래
 /// 엔진 핸들러 표는 그 창을 포트로만 본다
-/// (`docs/adr/0602-domain-execution-and-ports.md`). 받은 창은 곧바로
+/// (`docs/adr/0002-domain-execution-and-ports.md`). 받은 창은 곧바로
 /// [`entry_window::EntryWindow`] 로 감싼다 — 그 아래 입구 본문은 창 상태를 이름으로 못 부른다.
 pub(crate) fn handle_checked_request(
     core: &mut crate::core::Core,
@@ -415,7 +415,7 @@ pub(crate) fn check_rate_limit_gate(
 /// `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
 /// 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다.
 ///
-/// audit: allow 는 `audit::record` 가 정책에 따라 **버린다**(ADR-0609). 호출을
+/// audit: allow 는 `audit::record` 가 정책에 따라 **버린다**(ADR-0009). 호출을
 /// 남겨두는 이유는 정책이 audit 쪽 한 곳에만 있다는 것을 이 자리에서 읽히게 하고,
 /// 정책이 바뀌면 게이트 통과 지점을 다시 찾아 붙이지 않아도 되게 하기 위해서다.
 fn record_telemetry_and_audit(
@@ -513,7 +513,7 @@ pub fn record_plugin_rss_samples(
 /// `terminal.spawn` 도 같은 정책의 대상이지만 여기서 걸지 않는다 — 대상이
 /// `workspace` 파라미터가 아니라 `pane` 오버라이드까지 반영된 최종 pane 이라,
 /// 그것을 아는 [`spawn_target_guard`] 에서 집행한다(같은 자리에서 mirror 판정도
-/// 함께 한다). 근거는 그 함수의 doc 과 ADR-0621.
+/// 함께 한다). 근거는 그 함수의 doc 과 ADR-0021.
 ///
 /// **convert 계열은 이 두 method 만 커버한다(완전하지 않음, 알려진 한계)**:
 /// `ConvertSurface` 를 발행하는 진입점은 kind 별로 흩어져 있고(`markdown.navigate`,
@@ -530,7 +530,7 @@ pub fn record_plugin_rss_samples(
 /// `tap_new_workspace_member`(`core/attach_runtime.rs`)로 새 surface 가 즉시 같은
 /// hard lock 을 상속받아 자기 결과물에 입력을 못 넣게 되는 부작용은 검토되지
 /// 않았다. 이 사각지대 때문에 정책을 뒤집어 `terminal.spawn` 도 차단 대상이
-/// 됐다(현재 점유 규칙은 ADR-0621). 집행 지점만 위에 적은 대로
+/// 됐다(현재 점유 규칙은 ADR-0021). 집행 지점만 위에 적은 대로
 /// [`spawn_target_guard`] 로 옮겼고, 정책 자체는 그대로다.
 ///
 /// **왜 여기(문자열 method dispatch)인가**: `execute_forwarded_structural_op`
@@ -641,7 +641,7 @@ fn hard_occupied_denial(ws_id: u32, id: &serde_json::Value) -> JsonRpcResponse {
 /// **mirror 판정은 `terminal.spawn` 에만 적용된다.** mirror 워크스페이스 안의
 /// 나머지 구조 변경은 원격으로 forward 되는 것이 정상 설계이므로
 /// (`docs/features/remote-attach/index.md`), 라우터 가드에는 mirror 판정을 넣지
-/// 않는다. 근거: ADR-0621.
+/// 않는다. 근거: ADR-0021.
 fn spawn_target_guard(
     engine: &crate::core::CoreState,
     pane_id: u32,
@@ -720,7 +720,7 @@ fn route_engine_handler(
         "tab.create" => tab::handle_tab_create(core, window, engine, id, &request.params),
         "tab.close" => tab::handle_tab_close(core, window, engine, id, &request.params),
         "tab.move" => tab::handle_tab_move(core, engine, id, &request.params),
-        // terminal: child-terminal 관리와 점유 검사 (ADR-0621)
+        // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
         "terminal.spawn" => terminal::handle_spawn(core, window, engine, id, &request.params),
         "terminal.tell" => terminal::handle_tell(core, engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
@@ -732,7 +732,7 @@ fn route_engine_handler(
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
         "terminal.adopt" => terminal::handle_adopt(engine, id, &request.params),
         "terminal.release" => terminal::handle_release(engine, id, &request.params),
-        // headless PTY primitive (docs/adr/0613-terminal-io-and-process-lifetime.md /
+        // headless PTY primitive (docs/adr/0013-terminal-io-and-process-lifetime.md /
         // pty_registry) — Surface 없는 백그라운드 PTY
         "pty.spawn" => pty::handle_spawn(core, engine, caller, id, &request.params),
         "pty.write" => pty::handle_write(engine, id, &request.params),
@@ -842,7 +842,7 @@ fn route_engine_handler(
         "file_handler.detectors" => file_handler::handle_detectors(engine, id),
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
-        // (docs/adr/0631-file-handler-routing.md)
+        // (docs/adr/0031-file-handler-routing.md)
         // 그 intent 를 적용할 identify worker 와 결과를 여는 창이 gui 에만 있어 arm 도
         // gui 에만 둔다. headless 에 두면 accept 만 받고 요청이 버려진다 —
         // `git_viewer.query` 와 같은 모양이고, 빼면 라우터 끝이 `-32017` 로 답한다.
@@ -870,14 +870,14 @@ fn route_engine_handler(
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
         "recent.query" => recent::handle_query(window, id, request.params.clone()),
-        // (docs/adr/0622-remote-mirror-content-and-queries.md) git-viewer
+        // (docs/adr/0022-remote-mirror-content-and-queries.md) git-viewer
         // 원격 조회 트리거 — 큐잉 + request_id 회신. 큐를 비우는
         // `App::dispatch_pending_git_query_forwards` 가 gui 전용이라 arm 도 gui 에만
-        // 둔다. headless 에 두면 accept 만 받고 결과가 안 온다(ADR-0622). 빼면
+        // 둔다. headless 에 두면 accept 만 받고 결과가 안 온다(ADR-0022). 빼면
         // 라우터 끝이 `-32017` 로 답한다.
         #[cfg(feature = "gui")]
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
-        // (docs/adr/0622-remote-mirror-content-and-queries.md) markdown
+        // (docs/adr/0022-remote-mirror-content-and-queries.md) markdown
         // plugin 의 mirror 원문 요청 — `git_viewer.query` 와 동형이라 경계도 같다.
         #[cfg(feature = "gui")]
         "markdown_mirror.content_request" => {
@@ -1180,7 +1180,7 @@ fn route_engine_handler(
 /// 엔진 핸들러는 창에 [`IpcWindow`] 포트로만 닿는다. 여기와 debug 라우터에 있는 것은 popup ·
 /// 파일 선택기 · debug 주입처럼 창 상태 자체가 대상인 핸들러라 포트로 좁힐 것이 없다 — 그래서
 /// 진입점이 쥔 `AppState` 를 그대로 받는다
-/// (`docs/adr/0602-domain-execution-and-ports.md`). 입구 본문은 창을
+/// (`docs/adr/0002-domain-execution-and-ports.md`). 입구 본문은 창을
 /// 이름으로 못 부르므로 `EntryWindow::route_window` 만 여기로 온다. 팔마다 누가 부를 수 있는지는
 /// `handler/window_router_caller_tests.rs` 의 명부에 적고 그 시험이 대조한다. 그 시험은 본문이
 /// `Some(match request.method.as_str() { … })` 한 식이고 `_` 팔이 `return None` 이기를 요구한다 —
@@ -1195,7 +1195,7 @@ fn route_window_handler(
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
     Some(match request.method.as_str() {
-        // (ADR-0636) plugin 이 host 소유 file_picker popup 을 연다. popup 을
+        // (ADR-0036) plugin 이 host 소유 file_picker popup 을 연다. popup 을
         // 여는 UI state 변경이라 gui feature 전용.
         "file_picker.trigger" => {
             file_picker::handle_trigger(state, engine, caller, id, &request.params)
@@ -1239,7 +1239,7 @@ fn route_debug_handler(
         "debug.inject_key" => debug::handle_debug_inject_key(engine, id, &request.params),
         // OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현이라 debug 격리.
         // 이름은 `surface.*` 이지만 대상 surface 를 받지 못한다(CGEvent/TIS 가
-        // OS 전역에 나간다). 자세한 근거는 docs/adr/0612-request-admission-and-isolation.md.
+        // OS 전역에 나간다). 자세한 근거는 docs/adr/0012-request-admission-and-isolation.md.
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.switch_input_source" => {
             input_source::handle_switch_input_source(state, engine, id, &request.params)
@@ -1315,7 +1315,7 @@ fn route_debug_handler(
 /// `>= PTY_ID_BASE` 는 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이다.
 /// 통과시키면 `surface.meta.*` 등이 `Scope::Surface(pty id)` 를 memory.db 에 심고, 그
 /// scope 가 다음 부팅의 surface 카운터 floor 를 PTY 공간으로 밀어 올린다
-/// (`docs/adr/0617-workspace-identity-and-focus.md`). `as u32` 캐스팅도
+/// (`docs/adr/0017-workspace-identity-and-focus.md`). `as u32` 캐스팅도
 /// `u32::try_from` 으로 바꿔 2^32 이상 값이 조용히 wrap 되지 않게 한다.
 pub(super) fn require_surface_id(
     params: &serde_json::Value,
@@ -1370,7 +1370,7 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
 /// (`forwarded:false`, 예: 워크스페이스 경계를 넘는 move-surface) 또는 일반 에러는 기존대로
 /// internal_error 로 반환한다. headless 는 `forwarded:true` 를 만들지 않는다 — 큐를 비워
 /// 보낼 쪽이 없어 mirror 구조 op 를 모두 거절한다
-/// (docs/adr/0603-headless-behavior.md).
+/// (docs/adr/0003-headless-behavior.md).
 pub(super) fn structural_apply_error(id: serde_json::Value, e: &anyhow::Error) -> JsonRpcResponse {
     if let Some(blocked) = e.downcast_ref::<crate::core::MirrorStructuralBlocked>()
         && blocked.forwarded
@@ -1449,7 +1449,7 @@ fn handle_tree(
 
 /// 한 (state, engine) 쌍의 워크스페이스 트리를 JSON 배열로 빌드한다.
 ///
-/// IPC `list tree`(단일 라우팅 engine) 와 Lua 스냅샷(전 View/parked 통합, ADR-0627)이
+/// IPC `list tree`(단일 라우팅 engine) 와 Lua 스냅샷(전 View/parked 통합, ADR-0027)이
 /// **같은 구조**를 내도록 공유하는 빌더 — 노드 필드(active/busy_count/busy, panes/tabs/surface)가
 /// 드리프트하지 않게 단일 소스로 유지한다.
 pub(crate) fn build_engine_tree(

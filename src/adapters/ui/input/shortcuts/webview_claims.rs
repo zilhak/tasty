@@ -3,8 +3,8 @@
 //! webview 키 브리지(`host_api/webview/keys.rs`)는 콤보 목록을 **주입받기만** 한다 — 어느
 //! 설정 필드가 host 액션이고 어느 것이 페이지가 자체로 구현하는 액션인지는 이 단축키
 //! 계층의 지식이라 여기 둔다. quick-switch 합성 규칙은 디스패치(`numeric.rs`)와 같다.
-//! 결정 배경: `docs/adr/0629-webview-host-integration.md`,
-//! 주입 경계: `docs/adr/0629-webview-host-integration.md`.
+//! 결정 배경: `docs/adr/0029-webview-host-integration.md`,
+//! 주입 경계: `docs/adr/0029-webview-host-integration.md`.
 
 use crate::settings::KeybindingSettings;
 use crate::webview::{HostShortcutPolicy, ShortcutSources};

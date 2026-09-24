@@ -34,7 +34,7 @@ surface hook 은 더 이상 셸 명령 문자열을 직접 들지 않고, **공�
 
 - 줄바꿈 없이 끝나는 청크(예: 프롬프트 대기 중 부분 출력)는 매칭 대상이 아니다 — 다음 청크가 도착해 줄이 완성돼야 매칭된다. 패턴이 청크 경계에 걸쳐 있어도(`"partial ERR"` + `"OR\n"` → `"partial ERROR"`) 완성 시점에 합쳐진 전체 줄로 매칭된다.
 - 옵저버(`output.observe`)가 하나도 등록되지 않은 surface 도 OutputMatch 훅만으로 라인 버퍼 게이트가 열린다(`has_output_match_hook`) — 옵저버 등록이 OutputMatch 동작의 전제조건이 아니다.
-- PTY emit 게이트(`sync_output_event_gates`)는 `hook.set`/`hook.unset` 처리 시점에 **즉시(eager)** 동기화된다(`Core::register_surface_hook`/`unregister_surface_hook`) — `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용 parser thread(ADR-0613)가 PTY 바이트 도착 즉시 처리하므로, 게이트를 다음 `process_surface` 호출까지 지연시키면 등록 직후 도착하는 매칭 출력이 게이트 OFF 상태로 파싱되어 이벤트가 유실된다.
+- PTY emit 게이트(`sync_output_event_gates`)는 `hook.set`/`hook.unset` 처리 시점에 **즉시(eager)** 동기화된다(`Core::register_surface_hook`/`unregister_surface_hook`) — `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용 parser thread(ADR-0013)가 PTY 바이트 도착 즉시 처리하므로, 게이트를 다음 `process_surface` 호출까지 지연시키면 등록 직후 도착하는 매칭 출력이 게이트 OFF 상태로 파싱되어 이벤트가 유실된다.
 
 #### IdleTimeout — 1Hz 폴링 + epoch 기반 anti-spam
 
@@ -167,12 +167,12 @@ Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계
 
 - **`upsert` 는 patch 다** — 안 준 필드는 지우는 것이 아니라 그대로 둔다. id·우선순위·나머지가 유지되므로 그 id 를 참조하는 훅 바인딩(`HookBinding::Handler(id)`)은 계속 같은 것을 가리킨다. 지우고 다시 만드는 경로(`remove` 후 재등록)와 **관측 가능하게 다르다**: 후자는 사이에 들어온 트리거가 갈 곳이 없고, host/plugin 기본값이 잠시 드러나며, 안 적은 필드가 기본값으로 되돌아간다.
 - **최소 한 필드**는 있어야 한다. 아무 필드도 없는 upsert 는 아무것도 안 고친 채 성공으로 보고되므로 거부한다. 형식이 틀린 `action` 도 같은 이유로 조용히 무시하지 않는다.
-- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발화 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0632](../../adr/0632-webhook-admission.md) 의 모양이다.
+- **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발화 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0032](../../adr/0032-webhook-admission.md) 의 모양이다.
 - **`remove` 는 user 기여분만** 지운다. host/plugin 이 같은 id 에 기본값을 심어 뒀으면 그것이 다시 드러나므로, 응답의 `still_present` 가 그 사실을 값으로 말한다.
-- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 로 접는다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값이 이긴다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0627](../../adr/0627-lua-and-hook-execution.md)).
+- **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 로 접는다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값이 이긴다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0027](../../adr/0027-lua-and-hook-execution.md)).
 - 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 유지되지 않을 수 있는 변경임을 알린다).
 
 ## 관련
 
-- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처는 [공유 훅 핸들러 레지스트리(ADR-0627)](../../adr/0627-lua-and-hook-execution.md)를 공유한다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 훅은 위 "바인딩" 절대로 `HookBinding::Handler(id)` 로 레지스트리 핸들러를 참조해 소비하며, 인라인 셸(`--command`)은 하위호환 익명 경로다.
+- **트리거 출처 대칭**: 훅(내부 이벤트)은 웹훅([webhook](../webhook/index.md), 외부 HTTP 트리거)과 대칭인 trigger 출처다. 두 출처는 [공유 훅 핸들러 레지스트리(ADR-0027)](../../adr/0027-lua-and-hook-execution.md)를 공유한다 — `source: hook|webhook|any` 게이트로 셸 action 은 `hook` 출처 전용이다. 훅은 위 "바인딩" 절대로 `HookBinding::Handler(id)` 로 레지스트리 핸들러를 참조해 소비하며, 인라인 셸(`--command`)은 하위호환 익명 경로다.
 - [agent-collaboration](../agent-collaboration/index.md) · [notifications](../notifications/index.md) · [claude plugin](../../plugins/claude/index.md)(Claude hook 발화)

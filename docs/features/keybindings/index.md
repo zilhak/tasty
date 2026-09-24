@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자
-- **ADR**: [ADR-0619](../../adr/0619-keybinding-settings-and-hints.md) — 파서 위치, 이식 번들, 가져오기 적용 단위. 입력 정책은 [키 매핑](../../design/policies/key-mapping.md)을 따른다.
+- **ADR**: [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md) — 파서 위치, 이식 번들, 가져오기 적용 단위. 입력 정책은 [키 매핑](../../design/policies/key-mapping.md)을 따른다.
 - **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`) · 이식 번들 `crates/tasty-host-plugin/src/keybinding_bundle.rs` · 가져오기/내보내기 화면 `src/view/settings/ui/keybindings_tab/import_export.rs`
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
@@ -18,7 +18,7 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
 
-그 문자열을 축과 키 토큰으로 쪼개는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0619](../../adr/0619-keybinding-settings-and-hints.md)).
+그 문자열을 축과 키 토큰으로 쪼개는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0019](../../adr/0019-keybinding-settings-and-hints.md)).
 
 **사이드바 "도구" 메뉴의 빌트인 항목 일곱은 전부 대응 필드를 갖는다** — `toggle_command_palette` · `open_port_scanner` · `open_remote_tool` · `open_preset_window` · `open_tutorial` · `toggle_dag_list` · `open_file_picker`. plugin 이 기여하는 도구 항목은 매니페스트의 `[[contributes.commands]]` 로 이미 단축키를 갖고 Plugins 서브탭에서 관리되므로, 호스트 빌트인만 필드가 없으면 **plugin 도구는 되고 호스트 도구는 안 되는** 역전이 남는다. 다섯(팔레트·DAG 목록 제외)은 네 프리셋 모두 기본값이 비어 있다 — 새 기본값 다섯을 네 프리셋에 넣으면 기존 콤보와의 충돌을 통과해야 하고, 통과하더라도 그 콤보를 이미 쓰던 사용자는 첫 로드에서 `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다.
 
@@ -124,7 +124,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 새 최상위 번들 필드는 BUNDLE_KEYS와 함께 수정하고 비호환 형식 변경은 BUNDLE_VERSION을 올린다.
 
 다른 OS에서 사용할 option 바인딩은 [키 매핑](../../design/policies/key-mapping.md)의 이식 절차를 따른다.
-선택 이유는 [단축키 설정 결정](../../adr/0619-keybinding-settings-and-hints.md)에 있다.
+선택 이유는 [단축키 설정 결정](../../adr/0019-keybinding-settings-and-hints.md)에 있다.
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
 
@@ -132,7 +132,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 위에 그려진다(X11 child window + WebKitGTK / WKWebView subview / child HWND + WebView2).
 그 자식이 키보드 입력을 받으면 winit 최상위 창은 `WindowEvent::KeyboardInput` 을 아예 받지
 못하므로, 아무 조치가 없으면 그 상태에서 사용자가 설정한 단축키가 통째로 죽는다. 그래서 세
-백엔드가 native 키를 가로채 host 로 올린다([ADR-0629](../../adr/0629-webview-host-integration.md)).
+백엔드가 native 키를 가로채 host 로 올린다([ADR-0029](../../adr/0029-webview-host-integration.md)).
 
 - **계약은 한 곳**: 백엔드는 자기 native 키 표현(GDK keyval / NSEvent
   `charactersIgnoringModifiers` / Win32 VK)을 winit `Key`+`ModifiersState` 로 정규화해
@@ -145,7 +145,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   명령의 effective binding(매니페스트 `default_keybinding` / 사용자 override / host 액션
   상속). 포워딩 계층에 키 리터럴은 없다. 도출은 단축키 계층
   (`src/adapters/ui/input/shortcuts/webview_claims.rs`)이 하고, 브리지의 정책은 그 결과인
-  콤보 목록만 받는다([ADR-0629](../../adr/0629-webview-host-integration.md)).
+  콤보 목록만 받는다([ADR-0029](../../adr/0029-webview-host-integration.md)).
 - **plugin 바인딩은 scope 로 미리 거르지 않되, 비활성 plugin 은 제외한다** — 스냅샷은
   활성 plugin 의 모든 명령을 담는 상위집합이다(키가 host 에 도착하는 시점의 모델 포커스를
   브리지가 claim 시점에는 알 수 없다). 비활성 plugin 명령은 발화 자체가 불가능하므로 claim
@@ -349,7 +349,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 - **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 
-결정의 근거·대안·재검토 조건은 [ADR-0619](../../adr/0619-keybinding-settings-and-hints.md).
+결정의 근거·대안·재검토 조건은 [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md).
 
 ### 설정 탭 구성 (서브탭·항목 순서)
 
@@ -387,6 +387,6 @@ General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Ex
 
 ## 관련
 
-- [ADR-0629](../../adr/0629-webview-host-integration.md) — webview 자식 창의 키를 host 로 포워딩하는 결정
+- [ADR-0029](../../adr/0029-webview-host-integration.md) — webview 자식 창의 키를 host 로 포워딩하는 결정
 - [design/policies/key-mapping](../../design/policies/key-mapping.md) — modifier 매핑(바인딩 문자열 → 물리 키 OS별 매핑)·OS 메뉴 key equivalent 정책
 - [settings](../settings/index.md) — 편집 표면

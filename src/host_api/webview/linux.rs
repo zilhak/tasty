@@ -86,7 +86,7 @@ impl Drop for ContentFilter {
 /// 원격 서브리소스를 막는 content-blocker 규칙. 이 JSON 스키마는 macOS 백엔드가
 /// `WKContentRuleList` 에 넣는 것과 **같다** — 두 플랫폼이 같은 문장을 쓴다.
 /// 근거·대안(왜 `send-request` 도 프록시도 아닌지)·재검토 조건은
-/// `docs/adr/0629-webview-host-integration.md`.
+/// `docs/adr/0029-webview-host-integration.md`.
 const REMOTE_BLOCK_RULES: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
@@ -300,7 +300,7 @@ impl PlatformWebView {
 
         // SAFETY: 방금 만든 x11_window를 같은 display에 map → sync. 단일 thread, 같은 호출.
         //
-        // 근거·재검토 조건: docs/adr/0629-webview-host-integration.md
+        // 근거·재검토 조건: docs/adr/0029-webview-host-integration.md
         // `XFlush` 가 아니라 `XSync` 인 것이 핵심이다 — 아래에서 이 창을 조회하는
         // 것은 **GDK 자기 연결**이고, 창을 만든 것은 winit 의 연결이다. `XFlush` 는
         // 소켓에 쓰기만 하고 서버가 처리했는지는 안 기다리므로, 두 연결 사이에
@@ -579,7 +579,7 @@ impl PlatformWebView {
         // 그래서 allocation 을 직접 준다. 다른 수단은 측정으로 갈라냈다 —
         // set_size_request · GdkWindow::resize · register_window + STRUCTURE_MASK 는
         // 이 상태에서 allocation 을 바꾸지 못했다
-        // (docs/adr/0629-webview-host-integration.md).
+        // (docs/adr/0029-webview-host-integration.md).
         self.gtk_window
             .size_allocate(&gtk::Allocation::new(0, 0, w.max(1), h.max(1)));
     }

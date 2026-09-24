@@ -171,7 +171,7 @@ mod tests {
 
     /// 상한을 넘었을 때 **대조군**을 함께 실어 부하가 만든 값과 코드가 만든 값을 가른다
     /// (근거·선택 규칙은
-    /// `docs/adr/0645-verification-evidence-and-diagnostics.md`).
+    /// `docs/adr/0046-verification-evidence-and-diagnostics.md`).
     /// 이 자리가 기다리는 자원은 락과 CPU 뿐이라 스케줄러 계열 대조군이 맞다 — 디스크 뒤에
     /// 줄 서는 값이 아니다.
     #[test]

@@ -13,7 +13,7 @@
 //! - wire 변환: 응답 JSON 조립과 실패의 JSON-RPC 코드 선택은 핸들러가 한다
 //!   ([`StructuralFailure`] 의 갈래가 코드를 정한다).
 //! - 요청 진입 게이트: 호출자 자기 surface/tab/pane 거절, 원격 하드 점유 거절, IPC 요청당
-//!   한 번의 권한·cap·rate-limit 판정(ADR-0612)은 IPC 진입점의 일이다. forward 실행은 holder
+//!   한 번의 권한·cap·rate-limit 판정(ADR-0012)은 IPC 진입점의 일이다. forward 실행은 holder
 //!   검증을 이미 지나 들어오고, 그 면제를 params 플래그가 아니라 **어느 함수를 부르느냐**로
 //!   표현한다(`handler/surface/close.rs` 의 `refuse_if_hard_occupied` 문서).
 //! - forward 전용 단계: anchor resolve, 복원 스택 캡처, 즉시-tap 억제 구간, delta 계산은
@@ -66,7 +66,7 @@ fn agent_origin() -> IntentOrigin {
 /// `Core::apply` 를 에이전트 경로로 부른다. mirror 워크스페이스에서 forward 로 큐잉된 op 에는
 /// 에이전트 표시를 붙여, 원격 실패 회신이 사용자 toast 가 아니라 로그로 가게 한다 — 두 진입점
 /// (IPC 요청 · forward 된 op 의 실행) 모두 이 기계 앞 사용자의 행동이 아니다(identity 원칙 1,
-/// `docs/adr/0636-overlay-scope-and-lifetime.md`).
+/// `docs/adr/0036-overlay-scope-and-lifetime.md`).
 fn apply_as_agent(
     core: &mut Core,
     engine: &mut CoreState,
@@ -324,7 +324,7 @@ pub(crate) struct TabCreated {
 /// `pane_id` 에 새 탭을 만든다. `params` 의 `type`(기본 terminal) · `cwd` · `name` 을 읽고,
 /// kind 의 fresh-context 기본 파라미터를 채운 사본이 새 surface 의 `surface_params` 가 된다.
 /// `activate` 는 새 탭을 활성 탭으로 세우는가다 — 에이전트 진입점은 `false` 를 준다
-/// ([ADR-0617](../../docs/adr/0617-workspace-identity-and-focus.md)).
+/// ([ADR-0017](../../docs/adr/0017-workspace-identity-and-focus.md)).
 pub(crate) fn create_tab(
     core: &mut Core,
     state: &mut dyn CascadeWindow,
@@ -524,7 +524,7 @@ pub(crate) fn move_tab(
 /// `save_snapshot` 은 **진입점이 정한다.** IPC 요청은 에이전트 경로라 `false` 이고(되돌리기
 /// 스택은 사용자 행동의 것이다), forward 된 holder 의 close 는 op 의 origin 이 정한다 —
 /// `User` 면 `true`, `Agent` 면 `false`
-/// (`docs/adr/0623-attach-state-sync-and-forwarding.md`). 그 축을 params 가
+/// (`docs/adr/0023-attach-state-sync-and-forwarding.md`). 그 축을 params 가
 /// 아니라 인자로 받는 이유는 IPC 진입점의 `refuse_if_hard_occupied` 문서에 있다 — params 는
 /// 호출자가 만들므로 데이터로 두면 아무 에이전트나 같은 키를 실어 사용자 스택을 채운다.
 ///

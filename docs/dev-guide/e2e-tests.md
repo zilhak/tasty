@@ -19,7 +19,7 @@
 | 기본 (`gui`) | GUI 바이너리 | 창 + wgpu 디바이스를 반드시 만든다. IPC 는 GPU 부팅이 끝난 뒤에야 시작되므로, GPU 를 못 잡으면 **port file 이 아예 안 써진다**. 그 창이 **어디에** 뜨는지는 `TASTY_E2E_DISPLAY` 가 정한다 — §3 |
 | `--no-default-features` | headless 데몬 | 창도 GPU 도 없다. 실측(2026-09-04, `DISPLAY`·`WAYLAND_DISPLAY` 둘 다 없는 상태): port file 까지 **54 ms** |
 
-즉 IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 검증 내용이 아니라 **빌드 조합**에 있다. 방향 결정과 대안은 [ADR-0644](../adr/0644-test-isolation-and-harness.md).
+즉 IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 검증 내용이 아니라 **빌드 조합**에 있다. 방향 결정과 대안은 [ADR-0045](../adr/0045-test-isolation-and-harness.md).
 
 **바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
 
@@ -29,7 +29,7 @@
 
 **동률을 낡음으로 세는 이유, 그리고 그 판정이 두 층에 있다는 것.** 소스 mtime 이 바이너리와 같은 눈금에 떨어지면 어느 쪽이 먼저인지 파일시스템이 답을 안 준다. 그 **판정 불가**를 "안 낡았다" 로 흡수하면 위 문단이 막으려는 것이 그대로 통과하므로, 판정 불가는 실패 방향으로 보낸다(반대 비용은 다시 빌드 한 번이고, 패닉 문구가 끄는 법까지 알려 준다). ★ 같은 판정이 `scripts/build-e2e-headless.sh` 에도 있다 — 그쪽이 **먼저** 걸러 패닉까지 안 가게 하는 인체공학이고, 하네스가 그 스크립트를 받쳐 주는 관계가 아니다. **두 층이 같은 mtime 을 보므로 한쪽만 고치면 같은 사각이 남는다**: 두 곳의 극성은 함께 움직여야 한다. mtime 을 못 읽는 파일은 두 층 모두 못 본다 — 그것은 선언된 거짓 음성이고, 받쳐 주는 층이 없다.
 
-**그 안에서 판정은 스위트 단위다** — `spawn_diag::daemon_kind()`. 인스턴스를 띄우는 스위트 중 **조합 의존 단언을 가진 것만** 자기 조합의 데몬을 요구하고(`DaemonKind::SameCombo`), 나머지는 헤드리스 데몬으로 충분하다(`HeadlessOk`). 조합 의존은 테스트 쪽 `cfg(feature = "gui")` 로만 드러나지 않는다 — 단언은 하나인데 **데몬 쪽**이 조합마다 다른 호출측을 재는 스위트도 `SameCombo` 다. 헤드리스 데몬을 받으면 초록은 그대로인데 gui 호출측을 안 잰다. 지금 그 형태는 `attach_structure_sync_loopback` 하나다(forward 회신을 gui · 헤드리스 데몬이 서로 다른 함수로 만든다 — [ADR-0644](../adr/0644-test-isolation-and-harness.md)). 명부는 `HEADLESS_OK_SUITES` 한 곳이고, 그것이 `EXPECTED_INSTANCE_TESTS` 와 갈리지 않는 것은 `tests/e2e_single_instance_guard.rs` 가 **양방향으로** 본다(분류 안 된 스위트 / 명부에만 있는 이름). 분류를 안 하면 안전한 쪽인 `SameCombo` 로 떨어진다 — 놓치면 최적화를 잃을 뿐 틀린 빨강은 안 난다.
+**그 안에서 판정은 스위트 단위다** — `spawn_diag::daemon_kind()`. 인스턴스를 띄우는 스위트 중 **조합 의존 단언을 가진 것만** 자기 조합의 데몬을 요구하고(`DaemonKind::SameCombo`), 나머지는 헤드리스 데몬으로 충분하다(`HeadlessOk`). 조합 의존은 테스트 쪽 `cfg(feature = "gui")` 로만 드러나지 않는다 — 단언은 하나인데 **데몬 쪽**이 조합마다 다른 호출측을 재는 스위트도 `SameCombo` 다. 헤드리스 데몬을 받으면 초록은 그대로인데 gui 호출측을 안 잰다. 지금 그 형태는 `attach_structure_sync_loopback` 하나다(forward 회신을 gui · 헤드리스 데몬이 서로 다른 함수로 만든다 — [ADR-0045](../adr/0045-test-isolation-and-harness.md)). 명부는 `HEADLESS_OK_SUITES` 한 곳이고, 그것이 `EXPECTED_INSTANCE_TESTS` 와 갈리지 않는 것은 `tests/e2e_single_instance_guard.rs` 가 **양방향으로** 본다(분류 안 된 스위트 / 명부에만 있는 이름). 분류를 안 하면 안전한 쪽인 `SameCombo` 로 떨어진다 — 놓치면 최적화를 잃을 뿐 틀린 빨강은 안 난다.
 
 **로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.
 
@@ -82,7 +82,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 **번들을 복사해 쓰는 변형**(`cp -r target/debug/builtin-plugins <target>/debug/`)도 동작한다 — exe 옆에 번들이 있으면 역산 분기까지 가지 않는다. 다만 복사본은 **갱신되지 않는다**: 이후 plugin 을 고쳐 다시 빌드해도 그 복사본은 그대로라 §0 의 drift 를 한 겹 더 만든다. 레포 밖 target 을 반드시 써야 할 때의 대안으로만 쓴다.
 
-**첫 namespace 호출이 기동을 기다린다.** 헤드리스는 plugin **프로세스**를 지연 기동한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 소속을 매니페스트로 먼저 확인하고, 맞을 때만 공통 manager가 해당 owner와 필요한 활성 IPC hook extension을 준비한다([ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md)). 그래서 그 첫 호출은 기동 시간을 그대로 문다(실측 2026-09-05: 첫 호출 1272 ms, 기동 뒤 92 ms).
+**첫 namespace 호출이 기동을 기다린다.** 헤드리스는 plugin **프로세스**를 지연 기동한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 소속을 매니페스트로 먼저 확인하고, 맞을 때만 공통 manager가 해당 owner와 필요한 활성 IPC hook extension을 준비한다([ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md)). 그래서 그 첫 호출은 기동 시간을 그대로 문다(실측 2026-09-05: 첫 호출 1272 ms, 기동 뒤 92 ms).
 
 소속 판정 자체는 더 이상 기동을 기다리지 않으므로, 예전에 이 자리에 적혀 있던 "첫 호출이 드물게 `Method not found` 로 답한다"(namespace 표가 hello 뒤에 채워져서 기동과 첫 조회가 겹치던 형태)는 그 원인이 사라졌다. 여전히 `-32601` 이 나오면 그건 이름이나 설치를 의심할 신호다 — 설치된 owner가 비활성·자동 비활성이거나 기동에 실패하면 `-32002 plugin '<id>' is not running` 이 온다.
 
@@ -96,7 +96,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 ## 1. 인스턴스 공유 원칙 (필수)
 
-**tasty 인스턴스는 test binary 당 1 개가 기본이고, 격리는 프로세스가 아니라 workspace 단위로 한다.** 새 e2e 테스트를 쓸 때 인스턴스를 새로 띄우지 말고 `common::shared()` 를 받아 `create_workspace()` 로 자기 workspace 를 만들어라. 결정의 근거·대안·재검토 조건은 [ADR-0644](../adr/0644-test-isolation-and-harness.md).
+**tasty 인스턴스는 test binary 당 1 개가 기본이고, 격리는 프로세스가 아니라 workspace 단위로 한다.** 새 e2e 테스트를 쓸 때 인스턴스를 새로 띄우지 말고 `common::shared()` 를 받아 `create_workspace()` 로 자기 workspace 를 만들어라. 결정의 근거·대안·재검토 조건은 [ADR-0045](../adr/0045-test-isolation-and-harness.md).
 
 **왜 인스턴스를 아끼나**
 
@@ -129,7 +129,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 지금은 시나리오마다 `#[test]` 가 하나고, 각 테스트는 `common::shared()` + `create_workspace()`
 로 자기 workspace 안에서만 움직인다. 창을 요구하는 단언은 한 테스트에 모아 두어 `--skip` 이
-**파일이 아니라 테스트**를 가리킨다. 판정 단위의 근거는 [ADR-0644](../adr/0644-test-isolation-and-harness.md)
+**파일이 아니라 테스트**를 가리킨다. 판정 단위의 근거는 [ADR-0045](../adr/0045-test-isolation-and-harness.md)
 의 「경계는 테스트 단위로 긋는다」 절.
 
 **따라오는 제약 — 전역 목록 위에서는 길이 산술을 쓰지 않는다.** 테스트는 병렬로 도는데
@@ -220,8 +220,8 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 | `SHELL` | 제거 | host login shell 누수 차단(`detect_bash` 의 `$SHELL` 경로) |
 | `OH_MY_ZSH` / `ZSH` | 제거 | oh-my-zsh customization 누수 차단 |
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
-| `TASTY_DEBUG_OS_OPEN_LOG` | 격리 홈 아래 `os-open.log` 로 지정. 정의 자리는 `tests/spawn_diag` 의 `apply_os_open_record` 하나이고 세 하네스가 부른다. 범용 하네스는 `os_open_log()` 로 그 경로를 준다 | 자식의 OS 열기(브라우저 · 파일 관리자)가 **실행자의 이미 떠 있는 브라우저**로 URL 을 넘긴다 — 격리 HOME 도 `TASTY_E2E_DISPLAY` 도 그 채널을 못 막는다. 이 값 아래에서 자식은 띄우지 않고 기록만 한다([debug-ipc.md](debug-ipc.md), [ADR-0644](../adr/0644-test-isolation-and-harness.md)). debug 스위치라 release 로 지은 자식은 무시한다. `e2e_tests` 의 `directory_dispatch_is_recorded_instead_of_opened_under_the_harness`(gui 조합 · debug 빌드)가 기록을 단언한다 |
-| `BROWSER` (unix) | 격리 홈 아래 `os-open-browser.sh` — 받은 인자를 `os-open.log` 에 `BROWSER\t<인자>` 로 적기만 한다. 같은 `apply_os_open_record` 가 준다. 경로에 공백·`:` 가 있으면 `true`, 스크립트를 못 쓰면 하네스가 선다 | tasty 가 띄운 다른 프로세스(PTY 셸 · plugin)가 스스로 여는 것은 위 스위치 밖이다(번들 markdown 의 외부 링크는 host 를 거쳐 스위치 안이다 — [ADR-0630](../adr/0630-bundled-plugin-data.md)). `webbrowser` 는 Linux·BSD 에서 `BROWSER` 를 먼저 보고 성공하면 멈춘다 — macOS·Windows 는 이것으로 안 막힌다. 빈 `BROWSER=` 는 xdg desktop entry 를 직접 실행하므로 쓰지 않는다([ADR-0644](../adr/0644-test-isolation-and-harness.md)). 빌드 프로필과 무관하게 준다 |
+| `TASTY_DEBUG_OS_OPEN_LOG` | 격리 홈 아래 `os-open.log` 로 지정. 정의 자리는 `tests/spawn_diag` 의 `apply_os_open_record` 하나이고 세 하네스가 부른다. 범용 하네스는 `os_open_log()` 로 그 경로를 준다 | 자식의 OS 열기(브라우저 · 파일 관리자)가 **실행자의 이미 떠 있는 브라우저**로 URL 을 넘긴다 — 격리 HOME 도 `TASTY_E2E_DISPLAY` 도 그 채널을 못 막는다. 이 값 아래에서 자식은 띄우지 않고 기록만 한다([debug-ipc.md](debug-ipc.md), [ADR-0045](../adr/0045-test-isolation-and-harness.md)). debug 스위치라 release 로 지은 자식은 무시한다. `e2e_tests` 의 `directory_dispatch_is_recorded_instead_of_opened_under_the_harness`(gui 조합 · debug 빌드)가 기록을 단언한다 |
+| `BROWSER` (unix) | 격리 홈 아래 `os-open-browser.sh` — 받은 인자를 `os-open.log` 에 `BROWSER\t<인자>` 로 적기만 한다. 같은 `apply_os_open_record` 가 준다. 경로에 공백·`:` 가 있으면 `true`, 스크립트를 못 쓰면 하네스가 선다 | tasty 가 띄운 다른 프로세스(PTY 셸 · plugin)가 스스로 여는 것은 위 스위치 밖이다(번들 markdown 의 외부 링크는 host 를 거쳐 스위치 안이다 — [ADR-0030](../adr/0030-bundled-plugin-data.md)). `webbrowser` 는 Linux·BSD 에서 `BROWSER` 를 먼저 보고 성공하면 멈춘다 — macOS·Windows 는 이것으로 안 막힌다. 빈 `BROWSER=` 는 xdg desktop entry 를 직접 실행하므로 쓰지 않는다([ADR-0045](../adr/0045-test-isolation-and-harness.md)). 빌드 프로필과 무관하게 준다 |
 | `DISPLAY` / `WAYLAND_DISPLAY` | **격리하지 않는다 — 이름을 요구한다.** linux 의 gui 조합에서 `TASTY_E2E_DISPLAY` 를 읽어 자식 `DISPLAY` 로 명시 전달하고(그때 `WAYLAND_DISPLAY` 는 제거), 값이 없으면 spawn 을 세운다. 아래 "어느 디스플레이에 뜨는가" | gui 데몬은 창을 만들고 그 창이 어디 뜨는지는 이 값이 정한다. 지우면 winit 이 즉사해 부팅 자체가 없다 — 다른 축과 성질이 다르다 |
 | `TASTY_LOG` | 본체 기본 필터와 **같은 모양** (`warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off`, 웹훅 하네스는 뒤에 `,tasty::webhook::listener=info`). 정의 자리는 `tests/spawn_diag` 의 `LOG_ENV`/`LOG_FILTER` 하나다 | child stderr 폭주에 의한 OS pipe backpressure 회피 + host 의 `TASTY_LOG` 누수 차단. 본체가 읽는 변수는 `TASTY_LOG` 다 — `RUST_LOG` 는 무시된다([crash-diagnostics](crash-diagnostics.md)). **`warn` 한 단어만 주면 안 된다** — 지정하는 순간 본체 기본 필터가 통째로 대체돼 `wgpu_hal=error` 등 억제가 풀리고 로그가 오히려 늘어난다(실측: 미지정 7줄 · `warn` 12줄 · 이 값 7줄) |
 
@@ -239,7 +239,7 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 winit 이 `neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set` 로 즉사하고
 port file 이 안 써진다(§5 의 `NO_DISPLAY_MARKERS` 가 그 시그니처다). 디스플레이는
 격리할 누수가 아니라 **필요한 입력**이다. 그래서 하네스는 격리 대신 **이름**을 요구한다
-([ADR-0644](../adr/0644-test-isolation-and-harness.md)).
+([ADR-0045](../adr/0045-test-isolation-and-harness.md)).
 
 ```
 Xvfb :77 -screen 0 1920x1080x24 -nolisten tcp -ac &
@@ -372,7 +372,7 @@ handshake/raise/read/clear/quiet 경과와 frame tag가 없는 과거 총시간�
 못 본 것은 처방이 정반대인데 종전 메시지(`marker file … not written within 15s`)는 둘을 같은
 말로 덮었다. 가르는 값은 **실제 확인 횟수**다 — 예산을 폴 간격으로 나눈 기대치와 비교해,
 기대의 절반에 못 미치면 굶주림이라고 메시지가 직접 적는다. 그때 상한을 올리는 것은 처방이
-아니다(폴링이 실행되지 못한 원인을 시간 상한 증가로 숨겨서는 안 된다 — [ADR-0644](../adr/0644-test-isolation-and-harness.md)).
+아니다(폴링이 실행되지 못한 원인을 시간 상한 증가로 숨겨서는 안 된다 — [ADR-0045](../adr/0045-test-isolation-and-harness.md)).
 
 메시지에 함께 싣는 것: 경과 · 예산 · 확인 횟수와 기대치 · 1 분 부하 · 호출자가 준 증거(선택).
 **부하는 기록이지 판정이 아니다** — 실측에서 부하 평균은 지연을 예측하지 못했다(최대 지연이
@@ -507,7 +507,7 @@ E2E 와 달리 **GUI surface 없이** 도는 결정적 회귀 가드. `crates/ta
 
 ## 관련
 
-- [ADR-0644](../adr/0644-test-isolation-and-harness.md) — 격리 단위를 workspace 로 정한 근거·대안·재검토 조건
+- [ADR-0045](../adr/0045-test-isolation-and-harness.md) — 격리 단위를 workspace 로 정한 근거·대안·재검토 조건
 - [self-verification.md](self-verification.md) — 커밋 전 시나리오 재현
 - [attach-behavior.md](attach-behavior.md) — 점유 레지스트리(workspace/surface 단위 lock)
 - [build.md](build.md) — dev/release/dist 프로필 (timeout 값 산정 근거)

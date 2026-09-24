@@ -134,7 +134,7 @@ pub struct MainView {
     /// 이 창의 모든 native webview 가 공유하는 키/포커스 브리지. webview 는 OS
     /// 자식 창이라 자기가 키보드 포커스를 잡으면 winit `KeyboardInput` 이 끊긴다 —
     /// 백엔드가 이 브리지에 키를 올리고 host 가 매 프레임 비운다
-    /// (`docs/adr/0629-webview-host-integration.md`).
+    /// (`docs/adr/0029-webview-host-integration.md`).
     pub(crate) webview_key_bridge: std::rc::Rc<crate::webview::WebViewKeyBridge>,
     /// overlay 가 열려 webview 키보드 포커스를 이미 host 로 회수했는지(edge 판정).
     /// overlay 가 닫히면 false 로 돌아가 다음 개폐에 다시 1 회만 회수한다.

@@ -19,7 +19,7 @@
 //! 한 값으로 모으고 위 세 지점(surface · popup · banner)이 모두 그것을 읽는다.
 //!
 //! **줄 → 포인트 배율의 런타임 단일 출처는 egui `Options::line_scroll_speed` 다**
-//! (ADR-0615). 그 옵션은 host 가 설정값(`GeneralSettings::wheel_line_scroll`)으로 직접
+//! (ADR-0015). 그 옵션은 host 가 설정값(`GeneralSettings::wheel_line_scroll`)으로 직접
 //! 채우고, 여기의 [`line_scroll`] 이 그것을 읽는다. 같은 옵션을 host egui 의
 //! `ScrollArea` 전반과 `modifier_hint_overlay::modifier_free_wheel_y` 도 읽으므로,
 //! plugin 표면과 host UI 가 한 값을 공유한다 — 표면 종류로 갈리지 않는다.
@@ -32,7 +32,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 /// 이 egui 컨텍스트가 지금 쓰는 휠 1 notch(= `MouseWheelUnit::Line` 1 줄 = winit
 /// `LineDelta` 의 1.0) 거리. **런타임 단일 출처** — host 가 설정값을 이 옵션에 밀어
-/// 넣으므로(ADR-0615), 여기서 읽으면 host 위젯이 스크롤하는 거리와 정확히 같다.
+/// 넣으므로(ADR-0015), 여기서 읽으면 host 위젯이 스크롤하는 거리와 정확히 같다.
 ///
 /// 상수로 박지 않는 이유가 그것이다. 종전에는 이 값이 상수 50 이었고 host egui 쪽은
 /// 40 이라, 같은 창에서 표면 종류에 따라 휠 한 칸의 거리가 달랐다.
@@ -180,7 +180,7 @@ mod tests {
     }
 }
 
-/// 노치 거리가 **자리마다 재도 같은가** — ADR-0615의 결정을 그 자리에서 확인한다.
+/// 노치 거리가 **자리마다 재도 같은가** — ADR-0015의 결정을 그 자리에서 확인한다.
 ///
 /// 위의 단위 테스트들은 [`wheel_delta_to_points`] 의 산술만 본다: 인자로 준 노치를
 /// 따르는가. 그것은 **호출 자리가 그 노치를 어디서 얻는지는 말하지 않는다.** 상수를

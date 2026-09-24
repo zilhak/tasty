@@ -64,7 +64,7 @@ POSIX는 `if [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`로 Tasty 안에�
   호스트의 idle 전이는 `terminal.state`에 남아 있던 `needs_input` 상태를 해제한다.
 
   승인 직후 이벤트가 없으므로 승인해도 도구가 끝날 때까지 `terminal.state`는 `needs_input`일 수 있다.
-  화면의 attention 알림은 별도 상태이며 [사용자 확인·clear 규칙](../../adr/0624-attention-ownership-and-clear.md)을 따른다.
+  화면의 attention 알림은 별도 상태이며 [사용자 확인·clear 규칙](../../adr/0024-attention-ownership-and-clear.md)을 따른다.
   `PermissionRequest`에 tool ID가 없어 한 서피스의 연속 승인을 도구별로 대응시키지 못한다.
   이 제한은 codex-cli 0.154.0 관측에 근거하며 다른 버전에서는 실제 훅을 확인한다.
   일반 질문(`request_user_input` 등)의 입력 대기는 이 훅의 대상이 아니다.

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [출력 스캐너 규칙](#출력-스캐너-전용-커서) · [ADR-0634](../../adr/0634-output-cursor-contract.md)
+- **ADR**: [출력 스캐너 규칙](#출력-스캐너-전용-커서) · [ADR-0034](../../adr/0034-output-cursor-contract.md)
 - **코드**: `tasty-output` 크레이트, `surface.parse_since_mark`/`surface.commands`/`output.observe_*` 핸들러 · `surface.read_since_scan_mark`(파서를 안 거치는 폴링 커서) · `surface.read_since_mark`(마크 또는 호출자가 지정한 cursor로 읽는 원문 조회)
 - **화면**: 없음
 - **메서드/파서**: [reference/api](../../reference/api.md#surface-상호작용) · [reference/output-parsers](../../reference/output-parsers.md)
@@ -39,8 +39,8 @@
   각 소비자가 자기 위치를 보관하므로 다른 소비자의 조회 범위를 바꾸지 않는다.
   서버에는 소비자별 cursor 상태를 저장하지 않는다.
 
-독립적인 이어 읽기의 선택 근거는 [출력 위치 조회](../../adr/0634-output-cursor-contract.md),
-사건에 같은 방식을 적용한 근거는 [이벤트 피드](../../adr/0633-event-feed-delivery.md)에 있다.
+독립적인 이어 읽기의 선택 근거는 [출력 위치 조회](../../adr/0034-output-cursor-contract.md),
+사건에 같은 방식을 적용한 근거는 [이벤트 피드](../../adr/0033-event-feed-delivery.md)에 있다.
 
 ### 출력 스캐너 전용 커서
 
@@ -80,13 +80,13 @@ CLI의 첫 조회는 cursor 없이 실행한다. 응답에서 받은 값으로
 하나라도 보내기 전에 `ipc.output-cursor` capability와 버전을 확인한다.
 지원하지 않으면 요청을 보내지 않고 `unsupported_capability`와 `sent:false`를 포함한 JSON 한 줄을
 stderr에 쓴 뒤 종료 코드 1로 끝난다. 새 인자가 없는 기존 호출에는 이 확인을 추가하지 않는다.
-자세한 호환 이유는 [출력 조회 ADR](../../adr/0634-output-cursor-contract.md)을 따른다.
+자세한 호환 이유는 [출력 조회 ADR](../../adr/0034-output-cursor-contract.md)을 따른다.
 
 ### 명령 인덱싱 (OSC 133)
 
 셸 통합이 OSC 133 을 보내면 각 명령의 prompt 시작/명령 시작/종료/exit code/명령 문자열을 `tasty-memory`(`surface:<id>` scope, `tasty.commands.<ms>`)에 기록. OSC 133 미지원 셸은 빈 배열.
 
-**headless PTY 는 인덱싱 대상이 아니다.** 인덱서는 `TerminalStore` 키를 그대로 scope id 로 쓰는데 headless PTY([headless-pty](../headless-pty/index.md))의 `Terminal` 은 그 store 에 **pty id**(`>= 0x8000_0000`)로 등록돼 있다 — 그대로 기록하면 surface id 공간을 침범한 `Scope::Surface` 가 생겨 다음 부팅의 surface 카운터를 PTY 공간으로 밀어 올린다([ADR-0617](../../adr/0617-workspace-identity-and-focus.md)). headless PTY 의 종료코드는 `pty.wait` 가 별도로 제공한다.
+**headless PTY 는 인덱싱 대상이 아니다.** 인덱서는 `TerminalStore` 키를 그대로 scope id 로 쓰는데 headless PTY([headless-pty](../headless-pty/index.md))의 `Terminal` 은 그 store 에 **pty id**(`>= 0x8000_0000`)로 등록돼 있다 — 그대로 기록하면 surface id 공간을 침범한 `Scope::Surface` 가 생겨 다음 부팅의 surface 카운터를 PTY 공간으로 밀어 올린다([ADR-0017](../../adr/0017-workspace-identity-and-focus.md)). headless PTY 의 종료코드는 `pty.wait` 가 별도로 제공한다.
 
 **셸 통합 자동 주입(bash/zsh)**: 사용자가 `.bashrc`/`.zshrc`를 전혀 건드리지 않아도, tasty 가 셸 spawn 시점에 OSC 133 A(prompt 시작)/C(명령 실행 직전)/D(명령 종료+exit code) 훅을 자동으로 주입한다 — "사용자가 알아서 셸 통합 스크립트를 설치"해야 했던 이전 사전조건이 사라졌다.
 
@@ -96,7 +96,7 @@ stderr에 쓴 뒤 종료 코드 1로 끝난다. 새 인자가 없는 기존 호�
 
 ### 스트리밍 옵저버
 
-PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 재시작 시 소멸). sink: `memory`(ring buffer, `memory.list`/`query` 로 회수) / `file`(JSONL append). 필터: `parsers`(활성 파서) + `kinds`(출력 후 kind 필터) + `surface_id`(생략 시 전체 surface wildcard). **백압**: 옵저버별 bounded channel(256), 채워지면 drop + `info.dropped` 증가(PTY 스레드 절대 block 안 함). surface 닫히면 매인 옵저버 자동 정리, wildcard 는 유지. **자동 정리는 sink 워커를 그 자리에서 join 하지 않는다** — 워크스페이스 close 가 surface 수만큼 이 경로를 렌더 스레드에서 반복하기 때문이다([ADR-0616](../../adr/0616-window-platform-and-shutdown.md)). channel 에 수락된 항목은 워커가 스스로 다 비우고 끝나므로 유실은 없고, 남은 워커는 앱 종료 시퀀스(S3b)가 회수한다. 다만 **sink 파일에 마지막 항목이 도달하는 시점은 close 응답 이후로 밀릴 수 있다.** 명시 해제(`output.observe_stop`)는 종전대로 호출 복귀 시점에 sink 가 닫혀 있음을 보장한다.
+PTY 라인마다 파서를 돌려 sink 로 fan-out(**휘발성** — 호스트 재시작 시 소멸). sink: `memory`(ring buffer, `memory.list`/`query` 로 회수) / `file`(JSONL append). 필터: `parsers`(활성 파서) + `kinds`(출력 후 kind 필터) + `surface_id`(생략 시 전체 surface wildcard). **백압**: 옵저버별 bounded channel(256), 채워지면 drop + `info.dropped` 증가(PTY 스레드 절대 block 안 함). surface 닫히면 매인 옵저버 자동 정리, wildcard 는 유지. **자동 정리는 sink 워커를 그 자리에서 join 하지 않는다** — 워크스페이스 close 가 surface 수만큼 이 경로를 렌더 스레드에서 반복하기 때문이다([ADR-0016](../../adr/0016-window-platform-and-shutdown.md)). channel 에 수락된 항목은 워커가 스스로 다 비우고 끝나므로 유실은 없고, 남은 워커는 앱 종료 시퀀스(S3b)가 회수한다. 다만 **sink 파일에 마지막 항목이 도달하는 시점은 close 응답 이후로 밀릴 수 있다.** 명시 해제(`output.observe_stop`)는 종전대로 호출 복귀 시점에 sink 가 닫혀 있음을 보장한다.
 
 > **멀티라인 파서는 옵저버에서 발화하지 않는다**(라인별 dispatch). 컴파일 에러 수집은 `prompt_boundary` 옵저버로 종료 감지 후 `parse_since_mark` batch.
 

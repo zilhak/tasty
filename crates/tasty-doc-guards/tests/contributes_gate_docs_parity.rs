@@ -10,7 +10,7 @@
 //! 본체 패키지의 통합 테스트를 돌리는 `check-headless` 는 push 트리거에
 //! `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 있다 — **그 문서만 고치는
 //! push 에서 정확히 안 도는** 형태였다. 실측(2026-09-05, 연속 push 30 구간): 전부 무시
-//! 대상 경로인 push 가 2 건이었다. 여기 doc-guards 는 경로 필터가 없다(ADR-0647).
+//! 대상 경로인 push 가 2 건이었다. 여기 doc-guards 는 경로 필터가 없다(ADR-0048).
 //!
 //! 대가로 `ContributesGate::ALL` 을 런타임에 열거하지 못하고 표를 텍스트로 읽는다
 //! (`tasty_doc_guards::manifest_text`). 판독이 진짜 표와 갈리는 위험은 본체 패키지의

@@ -43,7 +43,7 @@ pub enum ShellSetupAction {
 /// 때, 런처(dock/시작 메뉴)로 실행한 사용자는 stderr 를 못 봐 "창이 깜빡이고 사라지는
 /// 것" 이 전부다 — 그 진단을 창에 그려 보인다. i18n 해석은 App 층에서 하고 여기엔 해석된
 /// 문자열만 담는다(gpu 층은 i18n 을 모른다). 근거:
-/// `docs/adr/0616-window-platform-and-shutdown.md` 재검토 트리거.
+/// `docs/adr/0016-window-platform-and-shutdown.md` 재검토 트리거.
 pub struct BootErrorInfo {
     pub title: String,
     pub body: String,
@@ -240,7 +240,7 @@ impl GpuState {
             opts.zoom_with_keyboard = false;
             // 휠 1노치 거리는 tasty 가 정한다 — egui 는 이 값을 native 40 / web 8 로
             // 갈라 두고 왜 달라야 하는지 자기 소스에 미결 표시로 남겼다. 이 컨텍스트를 쓰는
-            // 모든 `ScrollArea` 와 plugin 표면이 이 한 값을 공유한다(ADR-0615).
+            // 모든 `ScrollArea` 와 plugin 표면이 이 한 값을 공유한다(ADR-0015).
             opts.line_scroll_speed = wheel_line_scroll;
         });
 
@@ -473,9 +473,9 @@ impl GpuState {
         // 는 실제 렌더 시점 포커스(에이전트 주입 아님)라 불가침 원칙 1 에 안전하다.
         if let Some(sid) = focused_surface_id {
             // `clear_attention` 이 아니라 로컬 축 진입점을 쓴다 — 하드 점유(attach) 중인
-            // surface 는 홀더만 해제할 수 있으므로 이 로컬 포커스는 건너뛴다(ADR-0624).
+            // surface 는 홀더만 해제할 수 있으므로 이 로컬 포커스는 건너뛴다(ADR-0024).
             engine.clear_attention_local(sid);
-            // soft 점유 지연 청소(ADR-0621): 실-포커스 surface 의 soft 주체(parent)가
+            // soft 점유 지연 청소(ADR-0021): 실-포커스 surface 의 soft 주체(parent)가
             // 사라졌으면 이 시점에 점유 해제. attention clear 와 같은 실-포커스 블록이라
             // 원칙1 안전. **위 게이트와 무관하다** — soft 점유 청소는 attention 해제 권한과
             // 별개 동작이고, hard 점유 surface 는 이 함수가 자체적으로 조기 반환한다.

@@ -8,7 +8,7 @@
 //!
 //! 경로 필터를 그냥 떼면 문서 한 줄 고칠 때마다 본체 컴파일(수백 크레이트)이 붙는다.
 //! 그래서 필터를 떼는 대신 **잡을 싸게 만들었다** — 의존 0 이면 콜드 빌드가 1 초 미만이라
-//! 필터가 필요 없다. 배경·대안·재검토 트리거는 ADR-0647.
+//! 필터가 필요 없다. 배경·대안·재검토 트리거는 ADR-0048.
 //!
 //! 여기에 의존을 하나라도 더하면 그 결정의 전제가 사라진다. `Cargo.toml` 의
 //! `[dependencies]` 는 비어 있어야 한다. 전용 의존성 검사는 없으므로 manifest 변경 때 리뷰한다.
@@ -53,11 +53,11 @@ pub mod shipping_scope;
 /// 락 poison 을 보고 없이 복구하는 자리를 집는다.
 pub mod poison_recovery;
 
-/// 공유 temp 아래 고정 이름 임시 경로를 집는다(ADR-0644, 공유 임시 경로 격리).
+/// 공유 temp 아래 고정 이름 임시 경로를 집는다(ADR-0045, 공유 임시 경로 격리).
 pub mod temp_path;
 pub mod temp_scratch;
 
-/// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(ADR-0644, 프로세스 환경 격리).
+/// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(ADR-0045, 프로세스 환경 격리).
 pub mod env_isolation;
 
 /// 워크플로의 `on:` 트리거를 구조로 읽는다 — 주석과 트리거 키를 가른다.
@@ -76,7 +76,7 @@ use std::path::{Path, PathBuf};
 /// `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다 — 두 칸 올라간다.
 ///
 /// **틀린 루트로 조용히 진행하지 않는다.** 스캔 가드에서 경로가 틀어지면 예외가 아니라
-/// **조용한 0** 이 나오고, 0 인 모수는 언제나 초록이다(ADR-0647). 그래서 올라간 자리가
+/// **조용한 0** 이 나오고, 0 인 모수는 언제나 초록이다(ADR-0048). 그래서 올라간 자리가
 /// 레포 루트가 맞는지 표지 파일로 확인하고, 아니면 panic 한다. 여기 사는 타깃이
 /// 전부 이 함수를 쓰므로 확인 지점은 하나면 된다.
 ///
@@ -223,7 +223,7 @@ pub fn is_dependency_tree_dir(dir: &Path) -> bool {
 /// `cited_coordinates_exist` 와 `no_todo_file_citation` 이 각자 `SKIP_EXTS` 사본을 두고
 /// 있었다(전자는 후자를 베끼며 그 사실을 주석에 적었다). 같은 물음이라 정본을 하나 둔다.
 /// 가드가 더 뺄 형식(예: 좌표 인용을 안 담는 `.svg`·`.lock`)은 이 위에 얹는다 — 판정은
-/// 하나, 모수는 각자다(ADR-0647: 정본은 판정, 스캔 범위는 소비자별).
+/// 하나, 모수는 각자다(ADR-0048: 정본은 판정, 스캔 범위는 소비자별).
 pub fn is_binary_artifact_ext(ext: &str) -> bool {
     BINARY_ARTIFACT_EXTS.contains(&ext.to_ascii_lowercase().as_str())
 }
@@ -272,7 +272,7 @@ mod tests {
     use super::*;
 
     /// 표식이 있는 임시 디렉토리를 만든다. `tempfile` 을 쓰지 않는 이유는 이 크레이트의
-    /// **의존이 0 이어야 하기 때문**이다(ADR-0647) — dev-dependency 도 이 크레이트의
+    /// **의존이 0 이어야 하기 때문**이다(ADR-0048) — dev-dependency 도 이 크레이트의
     /// 잡을 비싸게 만든다.
     fn temp_dir_named(suffix: &str) -> PathBuf {
         let dir =
@@ -318,7 +318,7 @@ mod tests {
     }
 
     /// 정본 denylist teeth — 바이너리는 막고 텍스트·무확장자는 통과시킨다. 이 판정을
-    /// `cited_coordinates_exist`·`no_todo_file_citation` 이 위임받는다(ADR-0647).
+    /// `cited_coordinates_exist`·`no_todo_file_citation` 이 위임받는다(ADR-0048).
     #[test]
     fn binary_exts_are_denied_and_text_is_scanned() {
         assert!(is_binary_artifact_ext("png"));

@@ -909,7 +909,7 @@ impl MainView {
         // drain 해 무한정 쌓이지 않게 한다.
         //
         // 시도마다 그 surface 의 기록을 다시 정한다 — 근거가 되면(제스처 · 소유 plugin 이 쓴 페이지)
-        // 통지받은 plugin 에 묶어 세우고, 아니면 지운다(ADR-0631). 기록은 통지와 **같은 자리**에서
+        // 통지받은 plugin 에 묶어 세우고, 아니면 지운다(ADR-0031). 기록은 통지와 **같은 자리**에서
         // 정한다: plugin 이 시도를 받기 전에 기록이 서 있어야 그 응답 호출이 근거를 찾는다.
         let records = &mut self.state.webview_user_navigations;
         records.retain(|sid, _| self.webviews.contains_key(sid));
@@ -1983,7 +1983,7 @@ impl MainView {
             .as_ref()
             .map(|c| !c.paths.is_empty())
             .unwrap_or(false);
-        // mirror(attach 원격 점유) explorer 는 browse-only(ADR-0622) — 로컬 fs 를 건드리는
+        // mirror(attach 원격 점유) explorer 는 browse-only(ADR-0022) — 로컬 fs 를 건드리는
         // 항목(붙여넣기/삭제/이름변경/새탭/시스템에서 열기/잘라내기)은 메뉴에서부터
         // 숨긴다. 액션별 개별 가드(아래 각 핸들러)는 그대로 유지한다(방어적 이중화 —
         // 이 native 메뉴가 아닌 다른 경로로 같은 핸들러가 불릴 가능성 대비).
@@ -2116,7 +2116,7 @@ impl MainView {
         items
     }
 
-    /// (ADR-0622) mirror explorer 쓰기 조작 차단 안내 — `apply_explorer_action`
+    /// (ADR-0022) mirror explorer 쓰기 조작 차단 안내 — `apply_explorer_action`
     /// 의 `OpenFile` mirror 가드(`egui_panels.rs`)와 동일한 toast kind/scope. 컨텍스트
     /// 메뉴/단축키의 각 쓰기 핸들러(paste/trash/rename/open_in_system/add_favorite/
     /// open_in_new_tab/cut)가 공유한다.
@@ -2184,7 +2184,7 @@ impl MainView {
         cwd: &std::path::Path,
         is_folder: bool,
     ) {
-        // (ADR-0622) mirror explorer 는 browse-only — 표시된 경로는 원격
+        // (ADR-0022) mirror explorer 는 browse-only — 표시된 경로는 원격
         // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
         // 문자열로 오조작(우연히 동일 경로 존재)하거나 조용히 실패한다.
         if self.core_state.is_mirror_surface(surface_id) {
@@ -2214,7 +2214,7 @@ impl MainView {
 
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
     fn explorer_menu_trash(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        // (ADR-0622) mirror explorer 는 browse-only.
+        // (ADR-0022) mirror explorer 는 browse-only.
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2236,7 +2236,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
     ) {
-        // (ADR-0622) mirror explorer 는 browse-only.
+        // (ADR-0022) mirror explorer 는 browse-only.
         if self.core_state.is_mirror_surface(surface_id) {
             self.toast_remote_write_unsupported();
             return;
@@ -2249,7 +2249,7 @@ impl MainView {
 
     /// 이름 변경 (아이템 40).
     fn explorer_menu_rename(&mut self, surface_id: u32, paths: &[std::path::PathBuf]) {
-        // (ADR-0622) mirror explorer 는 browse-only — 이 가드가 먼저 막아서
+        // (ADR-0022) mirror explorer 는 browse-only — 이 가드가 먼저 막아서
         // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
         // `path.exists()` 게이트까지 도달하지 않음).
         if self.core_state.is_mirror_surface(surface_id) {
@@ -2282,7 +2282,7 @@ impl MainView {
         cwd: &std::path::Path,
         is_empty_target: bool,
     ) {
-        // (ADR-0622) mirror explorer 의 경로는 원격 호스트 경로라, 전역·surface
+        // (ADR-0022) mirror explorer 의 경로는 원격 호스트 경로라, 전역·surface
         // 무관 즐겨찾기 저장소(`~/.tasty/explorer-favorites.toml`)에 그대로 넣으면
         // 로컬/다른 호스트 explorer 의 사이드바를 오염시킨다. 팝업을 아예 열지 않고
         // 여기서 차단한다(`RenameTarget::ExplorerAddFavorite` 이 surface_id 를 갖지

@@ -42,7 +42,7 @@ resumed() (src/app/event_handler.rs)
                      `exit(1)`). 런처로 실행해 stderr 를 못 보는 사용자도 원인을
                      본다. 진단 3줄은 `tracing::error!`(stderr + 파일 로그)로도
                      남긴다. GPU 어댑터 부재·부팅 창 생성 실패는 그릴 수단이 없어
-                     이 경로가 아니다(진단 후 즉시 `exit(1)`). (ADR-0616)
+                     이 경로가 아니다(진단 후 즉시 `exit(1)`). (ADR-0016)
                    · disconnect → **워커 스레드 자체의 예상 밖 panic** 만
                      여기로 온다(engine 생성 실패는 위 Err 로 온다). 메인 동기
                      `ensure_engine_and_plugins` 재시도로 fallback 하고, 그것도
@@ -98,7 +98,7 @@ finish_boot (Ready):
 
 **필요성이 트리거와 무관한 일은 부팅 경로에 건다. 기동만 지연에 둔다.** 지연 자리에
 같은 호출이 남아 있는 것은 재시도라 무해하고, 결함은 지연이 **유일한** 채널일 때
-생긴다. 근거·부류 구분·대안은 [ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md).
+생긴다. 근거·부류 구분·대안은 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md).
 
 지금 명부에 오른 일과 조합별 자리:
 
@@ -111,7 +111,7 @@ finish_boot (Ready):
 소유 표 설치는 `PluginManager` 가 든 표의 핸들을 그것을 **해소하는** 크레이트
 (`tasty-ipc`)에 넘기는 일이다 — 사본을 만드는 것이 아니라 같은 표를 가리키게 한다.
 표의 *내용*은 그 뒤 `refresh_packages` 가 설치된 매니페스트에서 유도한다. 왜 사본이
-아니라 핸들인지는 [ADR-0626](../adr/0626-plugin-registration-and-lifecycle.md).
+아니라 핸들인지는 [ADR-0026](../adr/0026-plugin-registration-and-lifecycle.md).
 
 **여기서 프로세스는 하나도 안 뜬다** — 설치는 디스크에 놓는 것까지고, plugin 기동은
 첫 호출까지 지연된다. agent 러너 스레드도 수동 `agent.task_run --action start` 전까지
@@ -155,7 +155,7 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   따라간다.
 - **종료와 공유한다** — `render_loading` 은 phase 타입이 아니라 i18n 키를 받으므로
   종료 상태 머신도 같은 함수로 같은 락업을 그린다(문구만 다르다). 종료 쪽은
-  [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [ADR-0616](../adr/0616-window-platform-and-shutdown.md).
+  [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
   (Chrome 카테고리) — 부팅 5종(기본/최소창/phase 문구 3종/문구 없음/Latte) +
   종료 2종(기본/phase 문구 4종).

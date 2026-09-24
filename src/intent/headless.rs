@@ -4,7 +4,7 @@
 //! 끝마다 모든 window / parked state 의 큐를 비운다. 그 경로는 window·view 의존이
 //! 커서 통째로 `#[cfg(feature = "gui")]` 이므로, headless 는 같은 계약을 engine
 //! 하나짜리로 좁혀 여기서 수행한다. 설계: `docs/design/flows/action-dispatch.md`,
-//! 결정 근거: `docs/adr/0603-headless-behavior.md`.
+//! 결정 근거: `docs/adr/0003-headless-behavior.md`.
 //!
 //! **gui 빌드의 시험 구성에서도 컴파일한다**(모듈 선언의 `cfg(any(not(feature = "gui"), test))`).
 //! 호출은 headless boot
@@ -609,7 +609,7 @@ mod tests {
     }
 
     /// 에이전트 라벨의 `NewTab` 은 탭을 붙이기만 하고 사용자가 보던 탭을 바꾸지 않는다
-    /// (ADR-0617 · ADR-0631). 사용자의 markdown 파일열기 팝업은 자기 popup 을 실어 보내
+    /// (ADR-0017 · ADR-0031). 사용자의 markdown 파일열기 팝업은 자기 popup 을 실어 보내
     /// 사용자 라벨로 도착하므로 이 갈래에 오지 않는다.
     #[test]
     fn an_agent_labelled_new_tab_keeps_the_users_tab() {

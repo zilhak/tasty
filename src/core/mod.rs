@@ -15,7 +15,7 @@
 //! 이 모듈과 `crate::ports` 가 **도메인**이다. 도메인의 출하 코드는 창 상태·IPC 핸들러·
 //! GUI·부팅 모듈을 이름으로 부르지 않는다 — 창 쪽 연산은 도메인이 선언한 포트
 //! (`cascade_window` · `identify_port`)로만 닿는다. 경계와 그것을 재는 가드는
-//! [ADR-0602](../../docs/adr/0602-domain-execution-and-ports.md).
+//! [ADR-0002](../../docs/adr/0002-domain-execution-and-ports.md).
 
 pub(crate) mod agent;
 pub(crate) mod attach;
@@ -131,7 +131,7 @@ pub(crate) fn next_git_query_request_id() -> u64 {
     NEXT_GIT_QUERY_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// markdown mirror(ADR-0622) `markdown_content_request` id 시퀀스 —
+/// markdown mirror(ADR-0022) `markdown_content_request` id 시퀀스 —
 /// `next_list_dir_request_id` 와 동일 근거(프로세스 내 유일성만 필요). **0 은 발급하지
 /// 않는다** — host 가 "기다리던 요청이 있으면 버려라" sentinel 로 쓴다
 /// (`markdown_mirror.content_result` 의 `request_id = 0`, git-viewer 의 abandon 과 같은 형태).
@@ -146,7 +146,7 @@ pub(crate) fn next_markdown_content_request_id() -> u64 {
     NEXT_MARKDOWN_CONTENT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `file_picker.trigger` IPC(ADR-0636) 요청 id 시퀀스 — `next_list_dir_request_id`
+/// `file_picker.trigger` IPC(ADR-0036) 요청 id 시퀀스 — `next_list_dir_request_id`
 /// 와 동일 근거(프로세스 내 유일성만 필요). **주의**: 이 id 는 `FpLoadState::Loading`
 /// 의 (popup 내부 원격 디렉토리 나열 요청 상관관계) `request_id` 와 완전히 별개의
 /// 네임스페이스다 — 둘 다 필드명이 `request_id` 라 혼동하기 쉽다. 이 id 는
@@ -195,11 +195,11 @@ pub(crate) struct PendingListDirForward {
     pub(crate) local_ws_id: u32,
     pub(crate) request_id: u64,
     pub(crate) dir: String,
-    /// (ADR-0622) 이 요청의 **소비자** — `None` = File Picker(기존 단일
+    /// (ADR-0022) 이 요청의 **소비자** — `None` = File Picker(기존 단일
     /// `FpLoadState` 매칭), `Some(surface_id)` = explorer(그 surface 의 `ExplorerView`
     /// 가 경로별 pending 상태로 자체 추적). `MirrorEvent::ListDirResult` 도착 시 App
     /// 레이어가 이 태그로 라우팅을 분기한다 — host 범용 "request_id → consumer"
-    /// 레지스트리는 만들지 않는다(ADR-0622).
+    /// 레지스트리는 만들지 않는다(ADR-0022).
     pub(crate) consumer: Option<u32>,
 }
 
@@ -224,13 +224,13 @@ pub(crate) struct PendingGitQueryForward {
 }
 
 /// markdown mirror 원문 조회 forward 큐(`CoreState::pending_markdown_content_forward`)의
-/// 원소(ADR-0622). `markdown_mirror.content_request` IPC 핸들러(markdown plugin 이
+/// 원소(ADR-0022). `markdown_mirror.content_request` IPC 핸들러(markdown plugin 이
 /// host.call 로 트리거)가 push, App 이 `about_to_wait` 에서 drain 해 mirror 세션의 attach
 /// 채널로 `markdown_content_request` 를 전송한다 — `PendingGitQueryForward` 와 동형.
 ///
 /// 앵커는 **surface_id** 다 — markdown 은 surface 하나가 문서 하나이고, 회신에도
 /// `surface_id` 가 실려 오므로 host 는 `request_id → consumer` 표를 만들지 않는다
-/// (pending 추적은 plugin 이 surface 별로 한다, ADR-0622).
+/// (pending 추적은 plugin 이 surface 별로 한다, ADR-0022).
 #[derive(Debug, Clone)]
 #[cfg(feature = "gui")]
 pub(crate) struct PendingMarkdownContentForward {
@@ -238,7 +238,7 @@ pub(crate) struct PendingMarkdownContentForward {
     pub(crate) local_surface_id: u32,
     pub(crate) request_id: u64,
     /// 에이전트가 건 요청이다(`markdown.reload` IPC). 그 회신이 잘려 와도 사용자 toast 를
-    /// 띄우지 않는다(ADR-0636).
+    /// 띄우지 않는다(ADR-0036).
     pub(crate) agent_origin: bool,
 }
 
@@ -288,7 +288,7 @@ pub(crate) struct Core {
     /// (원자값 여덟 개) 프로세스 수명 동안 들고 있어도 자라지 않는다.
     pressure: tasty_telemetry::PressureStats,
 
-    /// IPC 진입 게이트의 판정 누계 — 권한 거절 · cap 차단 · 스로틀을 따로 센다(ADR-0608).
+    /// IPC 진입 게이트의 판정 누계 — 권한 거절 · cap 차단 · 스로틀을 따로 센다(ADR-0008).
     /// `pressure` 와 같은 이유로 여기 있다: 기록 자리(`check_request`)가 손에 쥐는 것이 `Core` 다.
     gate: tasty_telemetry::GateStats,
 
@@ -300,7 +300,7 @@ pub(crate) struct Core {
     /// 창마다 매니저를 다시 만들어도 같은 핸들을 넘기므로 축이 프로세스로 유지된다.
     plugin_wait: Arc<tasty_telemetry::PluginWaitStats>,
 
-    /// 느린 요청 링(ADR-0608). 호스트 몫은 dispatch 루프가(GUI · headless 같은 자리),
+    /// 느린 요청 링(ADR-0008). 호스트 몫은 dispatch 루프가(GUI · headless 같은 자리),
     /// plugin hop 은 `tasty-host-plugin` 의 매니저가 채운다 — `plugin_wait` 과 같은 이유로
     /// `Arc` 이고 매니저에 같은 핸들을 넘긴다. 고정 용량이라 프로세스 수명 동안 안 자란다.
     slow_requests: Arc<tasty_telemetry::SlowRequestLog>,
@@ -345,7 +345,7 @@ pub(crate) struct Core {
     memory_pragmas: Option<tasty_memory::pragma::AppliedPragmas>,
 
     /// `memory` 가 `memory.db` 초기화 실패의 in-memory 대체면 그 까닭. `None` 이면 쓰기가
-    /// 파일에 남는다. 진단 응답과 쓰기 응답(`durable: false`)이 이것을 읽는다(ADR-0610).
+    /// 파일에 남는다. 진단 응답과 쓰기 응답(`durable: false`)이 이것을 읽는다(ADR-0010).
     memory_init_fallback: Option<tasty_memory::InitFallback>,
 }
 
@@ -505,7 +505,7 @@ impl Core {
     /// 하위호환 인라인 셸([`HookBinding::InlineShell`]). `OutputMatch` 훅은 PTY
     /// emit 게이트(`sync_output_event_gates`)를 여기서 즉시(eager) 동기화한다 —
     /// `observer_register`/`observer_unregister` 와 동일 패턴. VTE 파싱은 전용
-    /// parser thread(ADR-0613)가 PTY 바이트 도착 즉시 처리하므로, 게이트를
+    /// parser thread(ADR-0013)가 PTY 바이트 도착 즉시 처리하므로, 게이트를
     /// "다음 process_surface 호출까지" 지연시키면 그 사이 도착한 매칭 출력이
     /// 게이트 OFF 상태로 파싱되어 이벤트가 유실된다 — 등록 즉시 게이트를 열어야
     /// 회귀 없이 fire 된다.

@@ -2,7 +2,7 @@
 //!
 //! 문서 대조 가드(`crates/tasty-doc-guards/tests/contributes_gate_docs_parity.rs`)는
 //! 의존 0 크레이트에 산다 — 그래야 `doc-guards.yml` 이 **경로 필터 없이** 매 push 돌 수
-//! 있다(ADR-0647). 그 표의 입력은 전부 `docs/**` 라, 필터가 걸린 잡에 두면 **그 문서만
+//! 있다(ADR-0048). 그 표의 입력은 전부 `docs/**` 라, 필터가 걸린 잡에 두면 **그 문서만
 //! 고치는 push 에서 정확히 안 돈다.**
 //!
 //! 대가로 그 가드는 `tasty-plugin-manifest` 를 링크하지 못해 표를 텍스트로 읽는다. 판독이

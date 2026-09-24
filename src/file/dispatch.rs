@@ -33,7 +33,7 @@ use crate::state::{FileHandlerPickerData, PickerHandlerSummary};
 pub(crate) use picker_apply::{apply_file_picker_result, apply_identify_result};
 
 /// 정의는 도메인(`core::origin`)에 있다 — 도메인의 `DispatchFile` intent 와 identify 포트가
-/// 이 값을 싣고, 도메인은 이 모듈(창 상태를 받는 GUI 동작)을 부르지 않는다(ADR-0602).
+/// 이 값을 싣고, 도메인은 이 모듈(창 상태를 받는 GUI 동작)을 부르지 않는다(ADR-0002).
 #[cfg(feature = "gui")]
 pub use crate::core::origin::FileDispatchOrigin;
 #[cfg(feature = "gui")]
@@ -44,7 +44,7 @@ pub(crate) use crate::core::origin::require_origin_pane;
 /// 식별(`FileFormatRegistry::identify`)은 `File` 만 받는다. `Url` 은 detector 를 거치지
 /// 않고 picker 와 액션 실행으로 곧장 간다. 각 액션이 URL 을 어떻게 다루는지는
 /// [`handler_accepts_target`] 과 `execute_handler_action` 이 정한다 — 결정 근거는
-/// `docs/adr/0631-file-handler-routing.md`.
+/// `docs/adr/0031-file-handler-routing.md`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispatchTarget {
     File(FileTarget),
@@ -452,8 +452,8 @@ pub(crate) fn open_surface_tab(
                 .get(surface_kind)
                 .is_some_and(|d| d.records_recent);
             // 에이전트가 명시 origin 으로 연 결과는 **선택하지 않는다** — 비동기 완료가
-            // 사용자의 현재 탭을 갈아치우면 안 된다(ADR-0631). 사용자가 방금 그 pane 에서
-            // 직접 연 것은 그 반대다: 보려고 연 것이므로 선택한다(ADR-0631).
+            // 사용자의 현재 탭을 갈아치우면 안 된다(ADR-0031). 사용자가 방금 그 pane 에서
+            // 직접 연 것은 그 반대다: 보려고 연 것이므로 선택한다(ADR-0031).
             let intent = crate::core::intent::DomainIntent::CreateTab {
                 pane_id,
                 cwd: None,

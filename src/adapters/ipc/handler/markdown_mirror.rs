@@ -1,14 +1,14 @@
 //! `markdown_mirror.*` IPC — markdown plugin 이 attach mirror 문서의 원문을 원격에서
-//! 가져오게 하는 진입점(`docs/adr/0622-remote-mirror-content-and-queries.md`).
+//! 가져오게 하는 진입점(`docs/adr/0022-remote-mirror-content-and-queries.md`).
 //!
-//! `git_viewer.query`(ADR-0622) 와 같은 **비동기 accept** 다 — 원문은 attach Control 채널
+//! `git_viewer.query`(ADR-0022) 와 같은 **비동기 accept** 다 — 원문은 attach Control 채널
 //! 왕복(`markdown_content_request`/`markdown_content_result`)을 거쳐야 하므로, 이 핸들러는
 //! 요청을 `CoreState::pending_markdown_content_forward` 에 큐잉하고 `request_id` 만 즉시
 //! 회신한다. 실제 원문은 attach 응답 도착 후 `markdown_mirror.content_result` 이벤트로
 //! markdown plugin 에 unicast 된다(`src/app/attach_client.rs`).
 //!
 //! namespace 가 `markdown.` 이 아닌 이유: `markdown` prefix 는 번들 plugin 이 점유하고
-//! 있어 그 이름의 외부 호출은 plugin 으로 forward 된다(ADR-0626). 이 메서드는 plugin 이
+//! 있어 그 이름의 외부 호출은 plugin 으로 forward 된다(ADR-0026). 이 메서드는 plugin 이
 //! host 에 거는 서비스라 host 가 곧바로 받아야 한다.
 
 use serde_json::json;
@@ -34,7 +34,7 @@ pub fn handle_content_request(
         Err(e) => return e,
     };
     // 에이전트가 건 요청(plugin 이 `markdown.reload` 를 받아 건 것)은 그 회신의 잘림 toast 를
-    // 사용자에게 띄우지 않는다(ADR-0636). 칸이 없으면 종전대로 plugin 자신의 요청이다.
+    // 사용자에게 띄우지 않는다(ADR-0036). 칸이 없으면 종전대로 plugin 자신의 요청이다.
     let agent_origin = params
         .get("agent_origin")
         .and_then(|v| v.as_bool())
@@ -80,7 +80,7 @@ mod tests {
     }
 
     /// `agent_origin: true` 를 실은 요청은 큐 원소에 그대로 표시된다 — 회신의 잘림 toast 를
-    /// 사용자에게 띄우지 않는 근거다(ADR-0636).
+    /// 사용자에게 띄우지 않는 근거다(ADR-0036).
     #[test]
     fn content_request_carries_the_agent_origin() {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});

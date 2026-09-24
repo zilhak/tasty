@@ -29,7 +29,7 @@ use crate::core::builder::CoreBuilder;
 ///
 /// boot 가 `memory.db` 를 못 열면 [`memory_fallback_after`] 로 in-memory 대체 저장소를
 /// 열어 넘긴다 — 앱 자체는 기동시키되, 그 저장소가 대체라는 사실을 진단·쓰기 응답이
-/// 말하게 한다(ADR-0610). `memory` 가 `None` 이면(대체조차 못 연 경우) 여기서 한 번 더
+/// 말하게 한다(ADR-0010). `memory` 가 `None` 이면(대체조차 못 연 경우) 여기서 한 번 더
 /// 대체를 시도한다.
 #[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
@@ -143,7 +143,7 @@ fn memory_init_fallback_of(
 ///
 /// 부팅은 계속한다 — 손상된 파일로도 앱을 쓸 수 있게 하는 기존 동작이다. 대신 대체라는
 /// 사실이 저장소에 실려 `system.pressure` 의 `db_pragmas.memory_db` 가 `degraded` 로,
-/// 쓰기 응답이 `durable: false` 로 말한다(ADR-0610). 대체조차 못 열면 `None` 이고,
+/// 쓰기 응답이 `durable: false` 로 말한다(ADR-0010). 대체조차 못 열면 `None` 이고,
 /// 그때는 [`build_production_core_inner`] 가 한 번 더 시도한다.
 pub(crate) fn memory_fallback_after(
     err: &tasty_memory::MemoryInitError,

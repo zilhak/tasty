@@ -8,7 +8,7 @@
 //! 관계가 있으면 양방향 기록과 대상 존재를 검사하고, 관계 해석의 검출력은
 //! 아래 합성 정상·오류 입력으로 확인한다. 과거 사슬 개수를 현재 문서에 요구하지 않는다.
 //! Tags의 주제 관계나 편집 판단은 문자열만으로 검증하지 않는다.
-//! 작성 규칙: docs/adr/0649-architecture-decision-records.md.
+//! 작성 규칙: docs/adr/0050-architecture-decision-records.md.
 
 // 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
 //       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
@@ -64,7 +64,7 @@ fn an_adr_number_names_exactly_one_document() {
          메시지가 인용하는 식별자라, 겹치면 그 인용이 전부 모호해진다. 나중에 얹은 쪽이 \
          현재 최대 번호 + 1 로 옮긴다(파일명·본문 제목·참조 링크 셋 다, 그리고 인덱스를 \
          다시 생성한다). 빈 번호는 재사용하지 않는다\
-         (docs/adr/0649-architecture-decision-records.md).\n  {}",
+         (docs/adr/0050-architecture-decision-records.md).\n  {}",
         dupes.join("\n  ")
     );
 }
