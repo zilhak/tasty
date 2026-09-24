@@ -1,65 +1,18 @@
-//! Markdown → sanitized HTML document generation for the **webview** surface (docs/plugins/markdown/index.md#내부-동작,
-//! Stage B — replaces the former `egui_commonmark` mesh renderer).
+//! Markdown을 호스트 WebView에 표시할 HTML 문서로 만든다.
 //!
-//! [`render_document`] is the single entry point: it turns the markdown source into a
-//! complete, self-contained HTML5 document that the plugin hands to the host via
-//! `webview.set_url` (the host's `sync_webviews` auto-detects a scheme-less string as raw
-//! HTML and calls the native WebView's `load_html`, see `src/view/main/redraw.rs`).
+//! 사용자 본문은 pulldown-cmark로 파싱하고 ammonia의 허용 목록으로 정리한다.
+//! Markdown 링크는 #tasty-nav 마커로 바꿔 호스트에 열기를 요청하며,
+//! 문서 안 앵커는 nav_script에서 스크롤한다. 마커 자체가 사용자 입력을 증명하지는 않는다.
+//! 테마 CSS와 플러그인이 제공하는 스크립트는 본문 정리 후 추가한다.
 //!
-//! Pipeline:
-//! 1. `pulldown-cmark` parses the source and walks the event stream, rewriting every link
-//!    `href` destination to the internal `#tasty-nav:link:<percent-encoded-dest>` fragment
-//!    scheme ([`rewrite_link_dest`]) before generating HTML with `pulldown_cmark::html::push_html`.
-//!    This is **not** cosmetic — a plain `href` pointing at a local file would let the native
-//!    WebView actually navigate there (WebKitGTK/WKWebView/WebView2 only block *remote*
-//!    http(s) navigation at the host level, see `src/host_api/webview/linux.rs`), replacing our
-//!    rendered document with the raw file and breaking the viewer. Routing every non-anchor
-//!    link through a same-document URL fragment sidesteps this: WebKitGTK's `decide-policy`
-//!    still fires for fragment-only navigation (so the host still captures and forwards the
-//!    attempt via Stage A's `webview.navigation_attempt`), but the navigation itself never
-//!    reloads the document (verified live — no `load-changed`/`load-failed` cycle), so the
-//!    surface never flips to the host's loading/error chrome just because a link was clicked.
-//!    The plugin's address-bar script (baked into the document, see [`nav_script`]) uses the
-//!    identical `location.hash = 'tasty-nav:addr:' + encodeURIComponent(path)` trick.
-//! 2. The generated HTML is sanitized through [`sanitize_html`] (`ammonia`) with a minimal
-//!    allowlist sized for GFM output only — `<script>`, inline event handlers (`onerror=`, …),
-//!    and `javascript:` scheme URLs are all stripped. [`classify_link`] additionally treats a
-//!    `javascript:` destination as unresolvable (`None`) so a malicious link can't survive
-//!    even as an inert internal-nav fragment.
-//! 3. [`theme_css`] maps the host `Theme` tokens onto CSS custom properties — the CSS-token
-//!    equivalent of the former `egui::Visuals` mapping, but without the two library
-//!    limitations that motivated this rewrite (`egui_commonmark` couldn't set a per-level
-//!    heading ladder or override body line-height; real CSS does both trivially).
-//! 4. The document carries **no `<base href>` tag**, and nothing this pipeline emits needs one:
-//!    every local `<img src>` is replaced by an inlined `data:` URI (or dropped) by
-//!    [`inline_local_images`] (docs/plugins/markdown/index.md#내부-동작), and every *markdown* link destination that isn't
-//!    anchor-only is already rewritten to a `#tasty-nav:` fragment (point 1). A relative URL can
-//!    still reach the output one way — raw HTML the author wrote themselves (`<a href="x.md">`)
-//!    passes through pulldown-cmark as `Event::Html` and survives `sanitize_html` (ammonia's
-//!    default `url_relative` is pass-through), so [`rewrite_link_event`] never sees it. Without a
-//!    base that href no longer resolves to a file — `a.href` stays the raw relative text
-//!    (measured 2026-09-19 against an opaque base). What an engine does with a *click* on it is
-//!    not measured, in any of the three backends. What is measured is the other direction: with
-//!    a base it resolved to a real file and replaced the rendered document.
-//!    What the base tag actually decided, though, was the *fragment-only* `href` (`#slug`), and
-//!    there it was purely destructive: per the HTML spec an in-page anchor is resolved against
-//!    the base URL too, so `<base href="file:///dir/">` turns `#slug` into `file:///dir/#slug` —
-//!    a different document, so clicking a TOC entry navigates away instead of scrolling
-//!    (measured 2026-09-19, Linux/WebKitGTK 2.50: with the base tag a TOC click left `scrollY`
-//!    at 0; without it the same click reached the heading). docs/plugins/markdown/index.md#내부-동작 records the removal.
-//! 5. In-page anchors (the TOC, `[text](#slug)` body links, footnote reference/backlinks) are
-//!    additionally scrolled **by the trusted script itself** ([`nav_script`]), which cancels the
-//!    click's default navigation and calls `scrollIntoView` on the target id. This is what makes
-//!    repeated clicks on the *same* entry work (a re-assigned identical hash is a no-op for the
-//!    engine) and keeps the three webview backends on one code path instead of on three
-//!    different native fragment-navigation behaviors.
-//! 6. A fenced ` ```mermaid ` block survives the pipeline above as plain
-//!    `<code class="language-mermaid">` — [`rewrite_code_block_event`]/[`sanitize_fence_lang`]
-//!    normalize the fence language into that exact class shape, and `sanitize_html`'s allowlist
-//!    lets `class` through on `code`. [`mermaid_script`] (trusted, plugin-authored — appended
-//!    after sanitization, like [`nav_script`], so it's never subject to the user-content
-//!    allowlist) then vendors `mermaid.js` inline and calls `mermaid.run` against that selector,
-//!    but only when the document actually has one (see call site in [`render_document`]).
+//! 로컬 이미지는 inline_local_images에서 읽어 data URI로 바꾼다. <base href>는
+//! 넣지 않는다. file URL의 base를 넣으면 #slug도 다른 문서로 해석되기 때문이다.
+//! 2026-09-19 Linux/WebKitGTK 2.50에서는 base가 있을 때 목차 클릭 후 scrollY가 0,
+//! 없을 때는 제목 위치로 이동했다. Raw HTML의 상대 링크는 정리 후에도 남을 수 있다.
+//! 같은 날 opaque base에서 a.href가 상대 문자열로 남는 것은 확인했지만,
+//! 이를 클릭했을 때의 동작은 세 WebView 백엔드 모두에서 확인한 것이 아니다.
+//!
+//! 상세: docs/plugins/markdown/index.md#내부-동작.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -71,29 +24,21 @@ use pulldown_cmark::{
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
-/// Marker preceding the encoded payload in every internal-nav URL fragment
-/// (`#tasty-nav:link:<enc>` / `#tasty-nav:addr:<enc>` / `#tasty-nav:refresh:<nonce>`). Shared by the generator
-/// ([`rewrite_link_dest`], [`nav_script`]) and the consumer (`main.rs`'s
-/// `on_webview_navigation_attempt` handler via [`parse_nav_fragment`]).
+/// 내부 이동 URL의 마커. 생성 코드와 parse_nav_fragment에서 함께 사용한다.
 pub const NAV_FRAGMENT_MARKER: &str = "tasty-nav:";
 
-/// `#tasty-nav:refresh:<nonce>` 의 종류 접두. nonce 는 매 클릭 달라야 한다 — 같은 hash 를
-/// 다시 대입하면 WebView 가 navigation 을 시도하지 않아 두 번째 클릭이 사라진다.
+/// 새로고침 마커. 같은 hash를 다시 지정해도 이동 이벤트가 생기지 않아 nonce를 붙인다.
 const NAV_REFRESH_PREFIX: &str = "refresh:";
 
-/// Outcome of clicking a markdown link or submitting the address bar, raised so the plugin
-/// shell performs the side effect (host `file_handler.dispatch` for files / host
-/// `webview.open_external` for URLs).
-///
-/// - `File`: a filesystem path already made absolute against the md dir's `base_dir`.
-/// - `External`: a URL/scheme the host hands to the OS (`http(s)`, `mailto:`, `data:`, …).
+/// 호스트에 요청할 링크 대상. File은 기준 폴더에서 해석한 경로이고,
+/// External은 OS의 기본 앱으로 열 URL이다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinkClick {
     File(PathBuf),
     External(String),
 }
 
-/// A decoded `#tasty-nav:` fragment — which kind of trusted-side interaction it came from.
+/// #tasty-nav 마커에서 해석한 요청 종류.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NavIntent {
     /// A content link (`<a>`) was clicked — `dest` is the original, un-rewritten href.
@@ -104,24 +49,10 @@ pub enum NavIntent {
     Refresh,
 }
 
-/// Parser options mirroring GFM: tables, task lists, strikethrough, footnotes, definition
-/// lists, alert blockquotes (`> [!NOTE]` etc — [`Options::ENABLE_GFM`] is the *only* flag
-/// `scan_blockquote_tag` gates on in pulldown-cmark 0.12's `firstpass.rs`, so it touches
-/// nothing else already enabled here). Shared by [`unsafe_content_html`] and any pre-scan.
-///
-/// - `ENABLE_YAML_STYLE_METADATA_BLOCKS`/`ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS` — hides
-///   leading `---`/`+++` frontmatter (Jekyll/Hugo/Obsidian/Zettlr convention) from the
-///   rendered body instead of letting it fall through to CommonMark's thematic-break/setext-
-///   heading misparse (`---\nkey: value\n---` → a bogus `<h2>key: value</h2>`). This is a
-///   pure hide, not a metadata panel — pulldown-cmark's HTML writer already treats
-///   `Tag::MetadataBlock` as non-writing (`html.rs`'s `in_non_writing_block`), so no extra
-///   event handling is needed here. Only recognized when the block is the very first thing
-///   in the source (CommonMark frontmatter rule) — a `---` later in the document still
-///   parses as an ordinary thematic break.
-/// - `ENABLE_SMART_PUNCTUATION` — always-on typographic substitution (curly quotes, en/em
-///   dash, ellipsis). No settings toggle: this viewer is a general document viewer, not a
-///   spec-literal CommonMark renderer, so the nicer default (matching Obsidian et al.)
-///   outweighs staying byte-identical to GitHub's rendering.
+/// 본문과 사전 탐색에 함께 사용하는 파서 옵션.
+/// 표, 작업 목록, 취소선, 각주, 정의 목록, 콜아웃과 수식을 처리한다.
+/// 문서 시작의 --- 또는 +++ 메타데이터 블록은 본문에 표시하지 않는다.
+/// 스마트 문장부호 변환은 항상 켜져 있으며 별도 설정은 없다.
 fn parser_options() -> Options {
     Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
@@ -135,8 +66,7 @@ fn parser_options() -> Options {
         | Options::ENABLE_MATH
 }
 
-/// Everything [`render_document`] needs. A struct (rather than a long parameter list) since
-/// several fields are independently optional/derived — mirrors the former `draw()` args.
+/// HTML 문서 생성에 필요한 본문, 테마와 표시 상태.
 pub struct DocumentInput<'a> {
     pub theme: &'a Theme,
     pub tr: &'a Translator,
@@ -229,32 +159,21 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         toc_nav_html(tr, &headings)
     };
 
-    // 3.5MB 번들이라 mermaid 블록이 실제로 있는 문서에서만 삽입한다 — 대다수 문서는
-    // mermaid 를 쓰지 않으므로 매번 inline 하면 순수 낭비다.
+    // Mermaid 코드 블록이 있을 때만 번들을 넣는다.
     let mermaid = if body_html.contains("language-mermaid") {
         mermaid_script(theme.is_light)
     } else {
         String::new()
     };
 
-    // 마찬가지로 펜스드 코드블록이 하나도 없는 문서(대다수)에서는 삽입하지 않는다. mermaid
-    // 전용 문서에서도 이 substring 검사는 걸리지만(mermaid 블록도 `class="language-mermaid"`
-    // 라는 같은 모양의 class 를 가짐) — 벤더링한 번들엔 "mermaid" 라는 언어가 없으므로
-    // `highlight_script` 는 아무것도 하이라이팅하지 않고 조용히 끝난다(125KB 낭비는 있지만
-    // mermaid 를 조건에서 정교하게 제외하는 별도 스캐너를 두는 것보다 mermaid_script 와 같은
-    // 수준의 단순한 substring 검사를 유지하는 쪽을 택했다).
+    // 코드 블록이 있을 때만 구문 강조 스크립트를 넣는다.
     let highlight = if body_html.contains("class=\"language-") {
         highlight_script()
     } else {
         String::new()
     };
 
-    // Same "only inline when there's something to act on" convention as mermaid/highlight above
-    // — a document with no code blocks at all (most non-technical documents) skips this too.
-    // `<pre><code` matches both the labeled fenced-block shape (`<pre><code class="language-…">`)
-    // and the unlabeled/indented shape (`<pre><code>`, no class — pulldown-cmark's own
-    // `lang.is_empty()` branch), since the substring check doesn't care what (if anything)
-    // follows `<code`.
+    // 코드 블록의 복사 버튼을 설치한다. Mermaid 블록은 스크립트에서 제외한다.
     let copy_buttons = if body_html.contains("<pre><code") {
         copy_button_script(tr)
     } else {
@@ -296,12 +215,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
     )
 }
 
-/// Parse the URL host WebKitGTK reports via `webview.navigation_attempt` (Stage A) — everything
-/// up to and including the last occurrence of [`NAV_FRAGMENT_MARKER`] is the document's own
-/// location (irrelevant — the document is handed to the engine as raw HTML, so it is normally
-/// `about:blank`); only the payload after the marker matters. Returns `None` if the URL carries
-/// no internal-nav fragment at all (host chrome shouldn't normally forward anything else, but a
-/// defensive `None` keeps this robust against unrelated navigation attempts).
+/// URL fragment에서 내부 이동 요청을 해석한다.
 pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     let idx = url.rfind(NAV_FRAGMENT_MARKER)?;
     let payload = &url[idx + NAV_FRAGMENT_MARKER.len()..];
@@ -317,11 +231,7 @@ pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     None
 }
 
-/// Classify a link/address-bar destination for host-side dispatch. Empty/anchor-only/
-/// `javascript:` destinations are `None` (ignored — the last of these closes the sanitization
-/// gap: `javascript:` has no `://` so it would otherwise fall through to the `File` branch).
-/// `mailto:`/`data:`/any `scheme://` destination is `External`; everything else is resolved as
-/// a filesystem path against `base_dir`.
+/// 링크를 파일 경로나 외부 URL로 분류한다. 빈 값, 문서 안 앵커와 javascript:는 제외한다.
 pub(crate) fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
     let dest = dest.trim();
     if dest.is_empty() || dest.starts_with('#') {
@@ -339,7 +249,7 @@ pub(crate) fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkC
     } else {
         base_dir?.join(path)
     };
-    // cwd 기준 절대화 후 lexical 정규화로 `..` 를 붕괴 (Unix `absolute` 은 `..` 보존).
+    // 현재 작업 폴더 기준 절대경로로 바꾼 뒤 ..를 정리한다.
     let abs = std::path::absolute(&joined).unwrap_or(joined);
     let abs = lexically_normalize(&abs);
     let abs = PathBuf::from(strip_verbatim_prefix(&abs.to_string_lossy()));
@@ -357,17 +267,8 @@ fn strip_verbatim_prefix(s: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
-/// Collapse `.` / `..` segments purely lexically (no filesystem access).
-///
-/// `std::path::absolute` preserves `..` on Unix for symlink safety (`/a/b/../c` isn't
-/// folded to `/a/c` because `b` might be a symlink), so it can't normalize link paths
-/// on its own. This folds `..` identically on every platform — for markdown link
-/// display/dedup a lexical collapse matches intent and keeps dedup keys stable.
-///
-/// Trade-off: when a collapsed segment is a symlink the lexical result can diverge from
-/// the OS's real resolution; for markdown link use this is intentional. Never climbs
-/// above the root/prefix. (Local copy — the plugin doesn't depend on `tasty-utils`,
-/// mirroring `strip_verbatim_prefix` above.)
+/// 경로의 .과 ..를 파일 시스템 조회 없이 정리한다.
+/// 심볼릭 링크를 해석하거나 경로 접근 권한을 확인하는 함수는 아니다.
 fn lexically_normalize(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
@@ -389,32 +290,18 @@ fn lexically_normalize(path: &Path) -> PathBuf {
 
 // ── heading ids + TOC ───────────────────────────────────────────────────────────
 
-/// One heading captured in document order — its plain text (for slug derivation and TOC label)
-/// and the slug ultimately assigned as its `id` (see [`collect_headings`]/[`assign_heading_ids`]).
+/// 목차와 제목 ID에 함께 사용하는 제목 정보.
 #[derive(Clone, Debug)]
 struct HeadingInfo {
     level: HeadingLevel,
-    /// Markup-stripped text — exactly what a reader sees as the heading's own text, no
-    /// code/link/emphasis/image-alt syntax (module design decision: no explicit `{#id}`
-    /// syntax, auto slug only).
+    /// 제목 안의 텍스트. 명시적 {#id} 문법은 지원하지 않는다.
     text: String,
-    /// GitHub-compatible slug, deduped against every earlier heading in the same document.
+    /// Slugger에서 만든 제목 ID.
     slug: String,
 }
 
-/// Pass 1 of the two-pass heading-id pipeline: walks the event stream purely to capture each
-/// heading's plain text and turn it into a per-document-unique slug. pulldown-cmark's flat event
-/// stream doesn't expose a heading's full text until its `TagEnd::Heading` arrives (nested
-/// emphasis/link/code events land as separate stream items in between), so this can't be done in
-/// a single `map()` like [`rewrite_link_event`]/[`rewrite_code_block_event`] — it needs to
-/// buffer. [`assign_heading_ids`] later re-parses the same `source` and pairs this pass's output
-/// back onto each `Tag::Heading` event by document order.
-///
-/// `Event::Text`/`Event::Code` between a heading's `Start`/`End` are concatenated (covers plain
-/// text, inline code, and — since pulldown-cmark emits image alt text as `Event::Text` between
-/// `Tag::Image`'s start/end — image alt text too); every other event (the `Start`/`End` tags of
-/// emphasis/strong/link/image themselves) is ignored, which is exactly "strip the markup, keep
-/// the text" (task requirement).
+/// 제목 안의 텍스트를 모아 목차 항목과 ID를 만든다.
+/// 인라인 코드와 강조 안의 텍스트도 포함하며 제목이 닫힐 때 항목을 저장한다.
 fn collect_headings(source: &str) -> Vec<HeadingInfo> {
     let mut headings = Vec::new();
     let mut current: Option<(HeadingLevel, String)> = None;
@@ -439,24 +326,16 @@ fn collect_headings(source: &str) -> Vec<HeadingInfo> {
     headings
 }
 
-/// GitHub-compatible heading slug allocator — one instance per document so the dedup counters
-/// are shared across every heading (`-1`/`-2` suffixes on the 2nd/3rd occurrence of the same
-/// text, matching GitHub's own heading-anchor behavior).
+/// 정규화한 제목별 사용 횟수. 같은 이름이 반복되면 숫자 접미사를 붙인다.
 #[derive(Default)]
 struct Slugger {
     seen: HashMap<String, u32>,
 }
 
 impl Slugger {
-    /// Lowercase; Unicode letters/digits/`-`/`_` kept (so non-ASCII text like Korean passes
-    /// through untouched — `char::is_alphanumeric` is Unicode-aware, not ASCII-only), runs of
-    /// whitespace collapsed to a single `-`, everything else (ASCII punctuation, markup residue,
-    /// emoji, …) dropped, leading/trailing `-` trimmed. This is a closer-to-intent variant of
-    /// GitHub's own algorithm rather than a byte-exact port (GitHub doesn't collapse/trim) —
-    /// deemed an acceptable, more robust deviation, since "GFM 호환" here means "sane anchors
-    /// GitHub users would recognize", not byte-identical output. Falls back to `"heading"` when
-    /// the input slugifies to nothing at all (an all-punctuation/all-emoji heading) so the `id`
-    /// is never empty.
+    /// 제목을 소문자로 바꾸고 공백을 하이픈으로 치환한 뒤 허용 문자를 남긴다.
+    /// 같은 기본 이름이 반복되면 -1, -2를 붙인다. 서로 다른 기본 이름이
+    /// 생성된 접미사와 겹치는 경우까지 전역 유일성을 보장하지는 않는다.
     fn slug(&mut self, text: &str) -> String {
         let mut base = String::with_capacity(text.len());
         for c in text.chars() {
@@ -487,13 +366,7 @@ impl Slugger {
     }
 }
 
-/// Pass 2: rewrites each `Tag::Heading`'s `id` field to the slug [`collect_headings`] computed
-/// for it, matched purely by document order (both passes parse the identical `source`, so
-/// pulldown-cmark yields headings in the same order both times — index-pairing is safe). The
-/// HTML writer honors `Tag::Heading::id` unconditionally whenever it's `Some` (`html.rs`) — this
-/// needs no `Options::ENABLE_HEADING_ATTRIBUTES` (that option only governs the *parser*
-/// recognizing an explicit `{#id}` in the source text, which this module intentionally never
-/// enables — design decision: auto slugs only, no explicit-id syntax).
+/// 사전 탐색에서 만든 ID를 제목 이벤트에 순서대로 넣는다.
 fn assign_heading_ids<'a>(
     events: impl Iterator<Item = Event<'a>> + 'a,
     headings: &[HeadingInfo],
@@ -522,10 +395,7 @@ fn assign_heading_ids<'a>(
     })
 }
 
-/// Builds the collapsible in-document TOC `<nav>` (design decision: inline top-of-document, not
-/// a sticky side panel — see module/task doc). Nested indentation is per-level via
-/// `tasty-toc-l<N>` classes ([`theme_css`]'s TOC rules). Caller skips this entirely when there
-/// are no headings (see call site in [`render_document`]) rather than rendering an empty shell.
+/// 목차 링크를 만든다. 문서 안 앵커를 사용하므로 호스트에 파일 열기를 요청하지 않는다.
 fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
     let items: String = headings
         .iter()
@@ -548,55 +418,15 @@ fn toc_nav_html(tr: &Translator, headings: &[HeadingInfo]) -> String {
 
 // ── HTML generation ───────────────────────────────────────────────────────────
 
-/// Parse `source` and generate (unsanitized) HTML, rewriting every link destination to the
-/// internal nav-fragment scheme first (module doc — never a plain `href` to a local/external
-/// target). An image alone in its own paragraph gets promoted to a captioned `<figure>`
-/// ([`figurize_solo_image_paragraphs`]) — every other image (mixed into running text, wrapped in
-/// a link, alt-less) passes through untouched, same as before that pass existed. A relative
-/// `src` is not resolved here at all — [`inline_local_images`] later reads the file and replaces
-/// the attribute with a `data:` URI (docs/plugins/markdown/index.md#내부-동작), which is why the document needs no `<base href>`
-/// (module doc point 4). Headings get a GitHub-compatible `id` via the
-/// [`collect_headings`]/[`assign_heading_ids`] two-pass pipeline (module doc "heading ids + TOC"
-/// section) — this recomputes the heading list itself (a cheap, HTML-free text-only walk) rather
-/// than taking it as a parameter, so this function's signature — and every existing call
-/// site/test — stays unchanged; [`render_document`] computes its own separate copy for the TOC
-/// (same deterministic result, since both walk the identical `source`).
-///
-/// Pass ordering: [`figurize_solo_image_paragraphs`] runs before [`autolink_bare_urls`] — it's a
-/// structural (block-level) promotion, decided purely from paragraph shape, so it runs first and
-/// leaves every other inline-text rewrite (autolinking, nav-fragment rewriting) to work on
-/// whatever text/image events actually survive that decision, exactly as if that pass didn't
-/// exist for paragraphs it declines to touch. [`resolve_wikilinks`] runs next, right before
-/// [`autolink_bare_urls`] — both are the same shape of pass (scan merged `Event::Text` runs for a
-/// library-unknown syntax, synthesize `Tag::Link` events with a plain raw `dest_url`), and each
-/// already excludes text inside a link/code-block via its own `link_depth`/`code_block_depth`
-/// tracking, so their relative order can't cause either to double-process the other's output
-/// regardless of which runs first — they're placed adjacently here only because they're
-/// conceptually paired, not because ordering is load-bearing. [`autolink_bare_urls`] itself runs
-/// *before* [`rewrite_link_event`], and synthesizes its new `Tag::Link` events with a plain raw
-/// `dest_url` (e.g. `https://example.com`) — the exact same shape an explicit `[text](url)` link
-/// has at this point in the pipeline (wikilink events have this shape too, see
-/// [`wikilink_events`]). This way `rewrite_link_event`, run last over the *whole* (now
-/// autolink/wikilink-expanded) event stream, is the single place that ever produces the
-/// `#tasty-nav:` fragment scheme; neither pass needs its own copy of that rewrite.
-/// `rewrite_code_block_event`/`rewrite_footnote_event` run first since neither touches
-/// `Text`/`Link`/`Image` events, so their relative order doesn't matter. [`rewrite_callout_events`]
-/// runs right after — it *does* consume `Text` events, but only the ones immediately inside a
-/// blockquote's first paragraph that match a `[!type]` tag line, which no other pass here ever
-/// produces or depends on, so it's still safe before [`figurize_solo_image_paragraphs`]/
-/// [`resolve_wikilinks`]/[`autolink_bare_urls`]/[`rewrite_link_event`]. [`assign_heading_ids`]
-/// runs last over the fully-rewritten stream — none of the other passes touch `Tag::Heading`, so
-/// its position doesn't matter either.
+/// 기준 폴더 없이 Markdown을 정리 전 HTML로 변환하는 테스트용 함수.
 #[cfg(test)]
 fn unsafe_content_html(source: &str, tr: &Translator) -> String {
     unsafe_content_html_in_dir(source, tr, None)
 }
 
-/// Same as [`unsafe_content_html`], additionally resolving `[[wikilink]]` targets against
-/// `base_dir` ([`resolve_wikilinks`]). Split out under its own name so the large existing block of
-/// regression tests that don't exercise wikilink resolution keep calling the stable 2-arg form
-/// unchanged; [`render_document`] — the only real production caller — uses this one, with its own
-/// `base_dir` threaded straight through.
+/// Markdown을 정리 전 HTML로 바꾼다. 코드·각주·콜아웃을 변환한 뒤
+/// 독립 이미지, 위키링크와 URL을 처리하고 링크 마커 및 제목 ID를 넣는다.
+/// 링크를 추가하는 처리는 rewrite_link_event보다 먼저 실행해야 한다.
 fn unsafe_content_html_in_dir(source: &str, tr: &Translator, base_dir: Option<&Path>) -> String {
     let headings = collect_headings(source);
     let footnote_ref_totals = footnote_reference_totals(source);
@@ -619,27 +449,9 @@ fn unsafe_content_html_in_dir(source: &str, tr: &Translator, base_dir: Option<&P
 
 // ── image captions (solo-image paragraphs → <figure>/<figcaption>) ─────────────
 
-/// Promotes a paragraph that consists of **nothing but** a single image to
-/// `<figure><img.../><figcaption>{alt}</figcaption></figure>` — the alt text becomes a visible
-/// caption instead of living only in the invisible `alt` attribute. Policy: this happens
-/// automatically whenever such a paragraph has non-empty alt text, no opt-in syntax required —
-/// alt-less images (`![](img.png)`) are unaffected (nothing to caption).
-///
-/// `Tag::Image` is an *inline* element — pulldown-cmark's own HTML writer only ever emits it
-/// inside a `<p>...</p>` (or another inline context). Wrapping just the `Tag::Image` span itself
-/// in `<figure>` (a block element) would leave `<p><figure>...` in the output — invalid nesting
-/// that browsers "fix" by closing the `<p>` early in unpredictable ways. So this promotes the
-/// *whole paragraph* instead, and only when the image is truly alone in it: any other inline
-/// content in the same paragraph (more text, another image, a link wrapping the image, …)
-/// disqualifies the paragraph and it passes through completely unchanged (original
-/// `<p><img.../></p>`) — safer to skip the caption than to ever risk invalid HTML.
-///
-/// Buffers each `Tag::Paragraph`'s events, mirroring [`collect_headings`]'s "buffer until the
-/// matching end tag, since pulldown-cmark's flat stream doesn't expose a container's full content
-/// until it closes" approach. Paragraphs can't nest (CommonMark block grammar has no paragraph-
-/// inside-paragraph production), so a single non-recursive buffer-until-`TagEnd::Paragraph` is
-/// safe here — unlike a genuinely nestable container (blockquote/list), there's no risk of a
-/// second `Tag::Paragraph` opening before this one closes.
+/// 문단 전체가 alt가 있는 이미지 하나일 때 figure와 figcaption으로 바꾼다.
+/// 본문이나 다른 이미지, 링크가 섞여 있으면 그대로 둔다. p 안에 figure를 넣지
+/// 않도록 이미지뿐 아니라 문단 전체를 바꾼다.
 fn figurize_solo_image_paragraphs(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
     let mut out = Vec::with_capacity(events.len());
     let mut iter = events.into_iter();
@@ -661,9 +473,6 @@ fn figurize_solo_image_paragraphs(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
     out
 }
 
-/// Re-wraps a buffered paragraph's interior events (stripped of its `Tag::Paragraph` start/end by
-/// [`figurize_solo_image_paragraphs`]) back into an ordinary `<p>...</p>` — used by
-/// [`figurize_paragraph_buffer`] on every path that declines to promote.
 fn wrap_as_paragraph(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
     let mut out = Vec::with_capacity(buf.len() + 2);
     out.push(Event::Start(Tag::Paragraph));
@@ -734,14 +543,7 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
         return wrap_as_paragraph(buf); // no alt text — nothing to caption, leave it as-is.
     }
 
-    // The image span itself (`Tag::Image` start/inner/end) is kept byte-for-byte as pulldown-cmark
-    // produced it and handed to the HTML writer unchanged, so `<img src=".." alt=".." title="..">`
-    // is still built by the library's own `raw_text()` exactly as it always was — only the
-    // surrounding structure changes. `Event::Html` is this file's established "trusted,
-    // plugin-authored raw markup" escape hatch (mirrors `wrap_static_callout`'s
-    // `<blockquote class=".." data-label="..">` injection) for the `<figure>`/`<figcaption>` tags
-    // themselves; the caption text rides in as a plain `Event::Text`, so `push_html` HTML-escapes
-    // it exactly like any other body text (no separate escaping call needed here).
+    /// 이미지의 alt 텍스트를 모아 캡션으로 사용한다.
     let mut buf = buf;
     let image_events: Vec<Event<'_>> = buf.drain(start_idx..=end_idx).collect();
     let mut out = Vec::with_capacity(image_events.len() + 4);
@@ -755,11 +557,7 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
 
 // ── Bare `http(s)://` autolinking ───────────────────────────────────────────────
 
-/// Schemes this pass recognizes for bare-URL autolinking. `www.`-prefixed (schemeless) hosts
-/// and email addresses are out of scope for now — recognizing them is a separate change, not a
-/// gap in this pass.
-/// find 히트 하이라이트 배경의 알파. 대응 토큰이 없어 값에 이름만 둔다.
-/// (`alert_css` 의 `BG_ALPHA` 와 값 공간은 같고 역할이 다르다.)
+/// 검색 결과 배경의 투명도. 테마 색에 적용한다.
 const FIND_HIT_BG_ALPHA: u8 = 90;
 
 /// diff 추가/삭제 줄 배경의 알파 — `gamma_multiply(0.12)` 과 같은 비율을
@@ -775,26 +573,8 @@ const AUTOLINK_SCHEMES: &[&str] = &["https://", "http://"];
 /// `)` (e.g. a wiki URL) is legitimately part of the URL.
 const TRAILING_PUNCTUATION: &[char] = &['.', ',', ';', ':', '!', '?', '\'', '"', '*', '_', '~'];
 
-/// Splits bare `http(s)://` URLs found in plain text into `Tag::Link` spans.
-///
-/// Must be **stateful**, not a plain per-event `map()` like [`rewrite_link_event`]/
-/// [`rewrite_code_block_event`]: whether a given `Event::Text` is eligible depends on events
-/// *around* it, not just its own content —
-/// - text already inside an explicit `Tag::Link` (`[https://x](https://x)`) must be left alone
-///   (no nested/duplicate link), tracked via `link_depth`;
-/// - text inside a `Tag::CodeBlock` (fenced or indented) must be left alone, tracked via
-///   `code_block_depth`. Inline code doesn't need separate tracking — pulldown-cmark never
-///   represents inline-code content as `Event::Text` in the first place (it's the distinct
-///   `Event::Code` variant), so it's already excluded by construction.
-///
-/// It must also **buffer across event boundaries**: probing pulldown-cmark 0.12.2 directly
-/// showed a single visual URL can arrive as *multiple* `Event::Text` events, because a lone
-/// `*`/`_` inside the URL that doesn't pair up into real emphasis still gets tokenized as its
-/// own one-character `Event::Text` (e.g. `.../foo*bar` → `Text("...foo")`, `Text("*")`,
-/// `Text("bar...")`; `.../Rust_(lang)` splits the same way around the first `_`). This pass
-/// therefore merges every consecutive run of eligible `Event::Text` events into one buffer
-/// before scanning it for URLs — a non-text event (real markup, `SoftBreak`, …) always flushes
-/// the buffer first, so genuine markup boundaries are never stitched across.
+/// 일반 텍스트의 URL을 링크 이벤트로 바꾼다. 기존 링크와 코드 블록은 제외한다.
+/// 이어지는 Text 이벤트를 모아 URL이 이벤트 경계에서 잘리지 않게 한다.
 fn autolink_bare_urls(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
     let mut out = Vec::with_capacity(events.len());
     let mut link_depth: u32 = 0;
@@ -829,15 +609,7 @@ fn autolink_bare_urls(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
     out
 }
 
-/// Scan one merged plain-text run for bare URLs, emitting alternating `Event::Text` (plain) and
-/// `Event::Start(Tag::Link)`/`Event::Text`/`Event::End(TagEnd::Link)` (matched URL) events.
-/// `dest_url`/inner text are both the raw matched URL — [`rewrite_link_event`] rewrites the
-/// destination into the nav-fragment scheme afterward (see [`unsafe_content_html`] doc).
-///
-/// Any HTML entity in the source markdown (`&amp;` etc) has already been decoded to a literal
-/// character by pulldown-cmark's parser by the time it reaches an `Event::Text` — `push_html`
-/// re-escapes it on the way out identically for autolinked and plain text, so no separate
-/// entity handling is needed here.
+/// 텍스트에서 URL을 찾아 앞뒤 일반 텍스트와 링크 이벤트로 나눈다.
 fn split_bare_urls(text: String) -> Vec<Event<'static>> {
     let mut out = Vec::new();
     let mut plain_start = 0usize;
@@ -882,10 +654,7 @@ fn split_bare_urls(text: String) -> Vec<Event<'static>> {
     out
 }
 
-/// Byte offset (relative to `text`) of the earliest recognized [`AUTOLINK_SCHEMES`] occurrence,
-/// or `None` if the text contains none. `https://` can never spuriously contain `http://` as a
-/// substring (the 5th character differs, `s` vs `:`), so checking both independently and taking
-/// the minimum can't double-count a single occurrence.
+/// 지원하는 scheme 중 가장 먼저 나타나는 위치를 찾는다.
 fn find_scheme_start(text: &str) -> Option<usize> {
     AUTOLINK_SCHEMES
         .iter()
@@ -893,11 +662,8 @@ fn find_scheme_start(text: &str) -> Option<usize> {
         .min()
 }
 
-/// Given confirmed scheme text starting at `scheme_start`, find the byte offset (absolute, in
-/// `text`) where the URL run ends: the first ASCII whitespace or CommonMark autolink delimiter
-/// (`<`/`>`), then trailing punctuation trimmed back per [`TRAILING_PUNCTUATION`] and paren
-/// balance (only parens *within the matched run* count — an enclosing sentence's own `(`/`)`
-/// around the whole URL, e.g. `(https://example.com)`, is irrelevant to this balance check).
+/// 공백 또는 링크를 닫는 문자를 만나면 URL을 끝낸다.
+/// 끝의 문장부호도 제외하되 URL 안의 괄호 짝은 유지한다.
 fn scan_url_end(text: &str, scheme_start: usize) -> usize {
     let rest = &text[scheme_start..];
     let mut end = rest
@@ -930,12 +696,7 @@ fn scan_url_end(text: &str, scheme_start: usize) -> usize {
 
 // ── Obsidian-style wikilinks (`[[문서명]]` / `[[문서명|표시텍스트]]`) ────────────
 
-/// Fixed, deliberately narrow scope (see `docs/plugins/markdown/screens/markdown.md` "위키링크"
-/// section for the full rationale): resolution only ever looks for `<name>.md` in the exact same
-/// directory as the current file (`base_dir`) — no vault-wide recursive search, no
-/// case-insensitive matching, no alias handling. `[[name#heading]]` and `![[embed]]` are not
-/// recognized as wikilinks at all (they fail [`parse_wikilink_body`] and pass through as literal
-/// text, same as any other malformed wikilink body).
+/// 위키링크 대상과 표시할 이름.
 struct Wikilink {
     /// The `.md`-less document name as written inside `[[...]]`, already validated to contain
     /// neither `/`, `\`, nor `..` (see [`parse_wikilink_body`]).
@@ -944,14 +705,7 @@ struct Wikilink {
     display: String,
 }
 
-/// Parse a `[[...]]` body (the text between the delimiters, not including them) into a
-/// [`Wikilink`], or `None` if it isn't a valid wikilink — in which case the caller must leave the
-/// original `[[...]]` text completely untouched (silent pass-through, no error): a nested `[[`,
-/// an empty name, or a name containing `/`/`\`/`..` (not a single-segment same-directory
-/// reference — path-traversal prevention) all fall through here. This intentionally does NOT
-/// recognize `#heading` anchors — a name containing `#` is still accepted verbatim as a literal
-/// (nonexistent) filename component, matching the explicit out-of-scope decision to not implement
-/// `[[name#heading]]`.
+/// 위키링크 안의 대상과 선택적 표시 이름을 해석한다.
 fn parse_wikilink_body(body: &str) -> Option<Wikilink> {
     if body.contains("[[") {
         return None;
@@ -974,17 +728,8 @@ fn parse_wikilink_body(body: &str) -> Option<Wikilink> {
     })
 }
 
-/// Turn one resolved [`Wikilink`] into its event sequence: a normal `Tag::Link` (destination is
-/// the plain relative `<name>.md` — the exact same shape a hand-written `[text](name.md)` link
-/// would have at this point in the pipeline), so [`rewrite_link_event`] rewrites it into the nav
-/// fragment scheme afterward exactly like any other link — no separate resolution machinery.
-///
-/// When the target isn't found under `base_dir` (including when `base_dir` itself is `None` —
-/// same "unresolvable" treatment [`classify_link`] already gives a relative destination with no
-/// base directory), the link is still emitted (clicking it falls through to the existing
-/// nonexistent-file handling), just wrapped in a `.tasty-wikilink-missing` span for the visual
-/// distinction — `span`/`class` are already sanitizer-whitelisted (opened for KaTeX math spans),
-/// so this needs no new [`sanitize_html`] allowance.
+/// 같은 디렉터리의 문서를 가리키는 링크를 만든다. 대상이 없거나 기준 폴더를
+/// 모르면 링크를 유지하면서 tasty-wikilink-missing 클래스로 감싼다.
 fn wikilink_events(link: Wikilink, base_dir: Option<&Path>) -> Vec<Event<'static>> {
     let dest = format!("{}.md", link.name);
     let exists = base_dir.is_some_and(|dir| dir.join(&dest).exists());
@@ -1012,10 +757,7 @@ fn wikilink_events(link: Wikilink, base_dir: Option<&Path>) -> Vec<Event<'static
     }
 }
 
-/// Scan one merged plain-text run for `[[name]]`/`[[name|display]]` wikilinks, emitting
-/// alternating `Event::Text` (plain) and wikilink-link events ([`wikilink_events`]). A `[[` with
-/// no matching `]]` anywhere later in the run stops the scan (the rest is left as plain text) —
-/// mirrors [`split_bare_urls`]'s structure exactly, substituting the delimiter/validation logic.
+/// 텍스트에서 위키링크 구문을 찾아 링크 이벤트로 바꾼다.
 fn split_wikilinks(text: String, base_dir: Option<&Path>) -> Vec<Event<'static>> {
     let mut out = Vec::new();
     let mut plain_start = 0usize;
@@ -1052,16 +794,8 @@ fn split_wikilinks(text: String, base_dir: Option<&Path>) -> Vec<Event<'static>>
     out
 }
 
-/// Rewrite `[[...]]` wikilink text into link events, resolved against `base_dir`. Mirrors
-/// [`autolink_bare_urls`]'s architecture exactly (same doc comment reasoning applies here
-/// verbatim): pulldown-cmark has no notion of this syntax, so `[[...]]` only ever reaches this
-/// pass as literal `Event::Text`, buffered across event boundaries and flushed via
-/// [`split_wikilinks`]; the same `link_depth`/`code_block_depth` tracking excludes text already
-/// inside an explicit link or a code block. `Event::FootnoteReference` is a distinct event
-/// variant — never `Event::Text` — so `[^name]` footnote syntax structurally cannot reach this
-/// scanner regardless of pass ordering; `wikilink_does_not_collide_with_footnote_reference` below
-/// confirms this empirically against the real parser output rather than resting on that
-/// structural argument alone.
+/// 위키링크 구문이 담긴 Text 이벤트를 모아 링크로 바꾼다.
+/// 기존 링크와 코드 블록 안의 텍스트는 제외한다.
 fn resolve_wikilinks<'a>(events: Vec<Event<'a>>, base_dir: Option<&Path>) -> Vec<Event<'a>> {
     let mut out = Vec::with_capacity(events.len());
     let mut link_depth: u32 = 0;
@@ -1113,13 +847,7 @@ fn rewrite_link_event(event: Event<'_>) -> Event<'_> {
     }
 }
 
-/// Rewrite a raw markdown link destination into `#tasty-nav:link:<enc>`, unless it's an
-/// anchor-only/empty destination — those stay verbatim so they keep pointing at a real element
-/// id in *this* document. Their click is not handled by the host at all: [`nav_script`]'s
-/// delegated anchor listener cancels it and scrolls the target into view (module doc point 5).
-/// Leaving them alone is not the same as "the engine handles them" — a `<base href>` used to
-/// resolve them onto a different URL entirely, which is why this document no longer carries one
-/// (module doc point 4).
+/// 문서 안 앵커는 유지하고 나머지 Markdown 링크를 내부 이동 마커로 바꾼다.
 fn rewrite_link_dest(dest: &str) -> String {
     let trimmed = dest.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -1131,16 +859,7 @@ fn rewrite_link_dest(dest: &str) -> String {
     )
 }
 
-/// Normalize a fenced code block's info-string language token before `push_html` turns it
-/// into `<pre><code class="language-<lang>">` (pulldown-cmark 0.12 emits the class on `code`,
-/// not `pre` — checked against its `html.rs` source). This is defense-in-depth on top of
-/// `sanitize_html`'s allowlist (which would let *any* value through as long as the `class`
-/// attribute itself is allowed): [`mermaid_script`]'s `querySelector` keys off this exact
-/// `language-<lang>` class, so the value must be predictable — arbitrary characters from user
-/// markdown (`​```rust"><script>…`) are stripped down to a plain identifier rather than passed
-/// through as-is (they can't break out of the attribute either way, since pulldown-cmark
-/// HTML-escapes the info string, but a predictable value matters for that consumer, not just
-/// for safety).
+/// 코드 펜스의 첫 언어 이름만 남기고 허용 문자로 제한한다.
 fn rewrite_code_block_event(event: Event<'_>) -> Event<'_> {
     match event {
         Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => Event::Start(Tag::CodeBlock(
@@ -1165,19 +884,9 @@ fn sanitize_fence_lang(info: &str) -> String {
 
 // ── callouts (GFM `> [!NOTE]` alerts + Obsidian-style `> [!type]+ Title`) ──────
 
-/// One callout type — either one of the 5 GitHub-style alert kinds pulldown-cmark's *parser*
-/// itself recognizes with [`Options::ENABLE_GFM`] on, or one of Obsidian's extended types that
-/// the parser never sees as a distinct AST shape (module doc below explains why). Both flavors
-/// render through the exact same class/label/icon/accent machinery — this table (and
-/// [`rewrite_callout_events`]) is the single unified path, not two parallel ones.
+/// 콜아웃 한 종류의 표시 이름, CSS 클래스와 아이콘.
 struct CalloutKind {
-    /// `Some` only for the 5 fixed literal tags pulldown-cmark's own `scanners.rs::
-    /// scan_blockquote_tag` recognizes — matched against the real `Tag::BlockQuote(Some(kind))`
-    /// AST event, never against rendered HTML text (see [`rewrite_callout_events`] doc for why
-    /// that distinction matters). `None` for Obsidian-only extended types, which the parser
-    /// always leaves as a plain `Tag::BlockQuote(None)` no matter how they're written — those
-    /// are recognized instead from the buffered blockquote's first line of text
-    /// ([`parse_callout_tag_line`]).
+    /// 파서가 구분한 GFM 콜아웃 종류. 확장 종류는 None이다.
     gfm_kind: Option<BlockQuoteKind>,
     /// Lowercase Obsidian tag text this entry answers to (e.g. `"note"`, `"info"`) — matched
     /// case-insensitively against the `[!type]` token via [`find_callout_kind`]. For the 5 GFM
@@ -1196,24 +905,11 @@ struct CalloutKind {
     /// The glyph's own `Icon::filled` — `true` colors it via `fill`, `false` via `stroke`
     /// (mirrors how `tasty_icons`' `stroke_icon!`/`fill_icon!` macros built it).
     icon_filled: bool,
-    /// This kind's `Theme` accent accessor. No dedicated callout design-token set exists yet, so
-    /// every entry reuses one of the handful of existing generic semantic accents
-    /// (`accent_primary`/`accent_info`/`accent_success`/`accent_warning`/`accent_attention`/
-    /// `accent_danger`/`accent_agent`) rather than inventing new color tokens — with 15 types
-    /// sharing 7 accents, several intentionally double up (distinguished by icon + label text,
-    /// not uniquely by color).
+    /// 테마에서 콜아웃 강조색을 가져온다.
     accent: fn(&Theme) -> tasty_type_appearance::color::HexColor,
 }
 
-/// The 5 GFM kinds (unchanged from before Obsidian support existed — same class/label/icon/
-/// accent) plus Obsidian's own built-in types confirmed against the official callout
-/// documentation (obsidian.md/help/callouts), minus the 3 Obsidian aliases (`important`,
-/// `caution`, `attention`) that collide with a GFM kind's own name — those keywords keep
-/// resolving to the pre-existing GFM entry instead of being redefined, since "GFM 5종 기존
-/// 유지" is a hard requirement and [`find_callout_kind`] checks canonical `type_key`s (this
-/// table) before consulting [`CALLOUT_ALIASES`]. Non-colliding Obsidian aliases (`hint`,
-/// `summary`/`tldr`, `check`/`done`, `help`/`faq`, `fail`/`missing`, `error`, `cite`) live in
-/// [`CALLOUT_ALIASES`] instead of duplicating entries here.
+/// 지원하는 콜아웃 종류. 별칭은 CALLOUT_ALIASES에서 정규 이름에 연결한다.
 const CALLOUT_KINDS: &[CalloutKind] = &[
     CalloutKind {
         gfm_kind: Some(BlockQuoteKind::Note),
@@ -1352,11 +1048,7 @@ const CALLOUT_KINDS: &[CalloutKind] = &[
     },
 ];
 
-/// `(alias, canonical type_key)` pairs for Obsidian's documented type aliases, excluding the 3
-/// that would collide with a GFM kind's own canonical name (`important`, `caution`, `attention`
-/// — see [`CALLOUT_KINDS`] doc). [`find_callout_kind`] only consults this after an exact
-/// [`CALLOUT_KINDS`] `type_key` match fails, so a collision here could never actually shadow a
-/// GFM entry even if one were added by mistake — kept excluded anyway for clarity.
+/// 콜아웃 별칭과 정규 이름.
 const CALLOUT_ALIASES: &[(&str, &str)] = &[
     ("summary", "abstract"),
     ("tldr", "abstract"),
@@ -1371,10 +1063,7 @@ const CALLOUT_ALIASES: &[(&str, &str)] = &[
     ("cite", "quote"),
 ];
 
-/// Resolves a lowercase `[!type]` token (already lowercased by [`parse_callout_tag_line`]) to
-/// its [`CalloutKind`], checking canonical [`CALLOUT_KINDS`] names first and [`CALLOUT_ALIASES`]
-/// second. Types not present in either (e.g. some `[!made-up-type]`) return `None` — per scope,
-/// this plugin only recognizes the Obsidian types the official docs confirm, nothing invented.
+/// 대소문자를 무시하고 정규 이름 또는 별칭으로 콜아웃을 찾는다.
 fn find_callout_kind(type_key: &str) -> Option<&'static CalloutKind> {
     if let Some(found) = CALLOUT_KINDS.iter().find(|k| k.type_key == type_key) {
         return Some(found);
@@ -1401,11 +1090,7 @@ struct ParsedCalloutTag {
     title: Option<String>,
 }
 
-/// Hand-rolled (no `regex` dependency in this crate) parse of `^\[!(\w[\w-]*)\]([+-])?(.*)$`
-/// against a blockquote's first line of raw text. Returns `None` for anything that doesn't match
-/// that exact shape — including a bare `[!NOTE]` line, which never reaches this function at all
-/// (pulldown-cmark's own GFM scanner already consumes those into `Tag::BlockQuote(Some(kind))`
-/// before [`rewrite_callout_events`] ever sees plain-blockquote text; see its module doc).
+/// [!type] 태그와 선택적 접기 표시 및 제목을 읽는다.
 fn parse_callout_tag_line(text: &str) -> Option<ParsedCalloutTag> {
     let rest = text.strip_prefix("[!")?;
     let close = rest.find(']')?;
@@ -1437,32 +1122,9 @@ fn parse_callout_tag_line(text: &str) -> Option<ParsedCalloutTag> {
     })
 }
 
-/// Unified callout preprocessing: buffers every blockquote (`Start(Tag::BlockQuote(_))` through
-/// its matching `End(TagEnd::BlockQuote)`, nest-counted so a callout containing another callout
-/// buffers only its own span) and decides, in one place, whether it's a genuine GFM alert, an
-/// Obsidian-style callout, or an ordinary quote — replacing the old GFM-only
-/// `rewrite_alert_blockquote_event` entirely rather than running alongside it. Two structurally
-/// different inputs both flow through here (see [`CalloutKind::gfm_kind`] doc):
-///
-/// - `Tag::BlockQuote(Some(kind))` — pulldown-cmark's parser already recognized a bare `[!TYPE]`
-///   line (nothing else on it) as one of the 5 GFM kinds. Grammar-guaranteed: never has a fold
-///   marker or custom title, so this always renders the fixed non-foldable shape — byte-
-///   identical to the pre-Obsidian-support output, which is what keeps every existing GFM alert
-///   test passing unchanged.
-/// - `Tag::BlockQuote(None)` — anything else, including every Obsidian-flavored line (`[!info]`,
-///   `[!note]+ Title`, `[!warning]- `, …): the GFM scanner's `scan_blank_line` requirement makes
-///   it reject *any* trailing content after `]`, so these never reach the parser as a distinct
-///   AST shape no matter which of the 5 names they use. [`rewrite_callout_buffer`] parses the
-///   buffered blockquote's own first line of text instead.
-///
-/// This intentionally still keys off the real parser events for the GFM-recognized half (not a
-/// post-pass over the assembled HTML string) for the same reason the old function did: raw HTML
-/// blocks/inline (`Event::Html`/`Event::InlineHtml`) pass through byte-for-byte independent of
-/// `Tag::BlockQuote`, so a naive string search over rendered output could be spoofed into
-/// labeling attacker content as a trusted alert. Matching the AST event closes that gap; the
-/// Obsidian-only half necessarily reads buffered *text* (there's no AST shape to key off), but
-/// only ever from inside a genuine `Tag::BlockQuote(None)` span — raw HTML still never enters
-/// that buffer, so it still can never manufacture a `data-label`/callout header this way either.
+/// 인용문의 첫 문단에서 콜아웃 태그를 읽어 HTML로 바꾼다.
+/// 알 수 없는 종류는 원래 인용문으로 남긴다. 이 처리는 파서의 BlockQuote 이벤트에
+/// 적용하며, raw HTML에 같은 class나 data-label이 있는지까지 막지는 않는다.
 fn rewrite_callout_events<'a>(events: Vec<Event<'a>>, tr: &Translator) -> Vec<Event<'a>> {
     let mut out = Vec::with_capacity(events.len());
     let mut iter = events.into_iter();
@@ -1503,11 +1165,7 @@ fn rewrite_callout_buffer<'a>(
     buf: Vec<Event<'a>>,
     tr: &Translator,
 ) -> Vec<Event<'a>> {
-    // Nested callouts get their own detection too, recursively — bounded by actual source
-    // nesting depth, same as any other recursive-descent pass over this event stream. Perfect
-    // styling for deep nesting isn't required (scope), only that nothing crashes or gets lost —
-    // recursing first and then treating the (already-rewritten) result as opaque body content
-    // for the outer wrapper satisfies that with no special-casing.
+    // 중첩 인용문에도 같은 변환을 적용한다.
     let buf = rewrite_callout_events(buf, tr);
 
     if let Some(kind) = gfm_kind {
@@ -1520,14 +1178,7 @@ fn rewrite_callout_buffer<'a>(
         return wrap_static_callout(callout.class, tr.t(callout.label_key), buf);
     }
 
-    // Plain blockquote — an Obsidian-style tag can only be recognized when the first paragraph's
-    // opening run is plain, untouched `Text` (mirrors `figurize_solo_image_paragraphs`'s "give up
-    // rather than guess" stance for anything more structurally complex, e.g. a tag line starting
-    // with inline emphasis). pulldown-cmark's inline scanner does *not* coalesce a `[...]` run
-    // into one `Text` event even when it isn't a link — `[!note]+ Title` tokenizes as
-    // `Text("["), Text("!note"), Text("]"), Text("+ Title")` (verified against the real 0.12.2
-    // event stream), so every leading `Text` run up to the first non-`Text` event (`SoftBreak` or
-    // `End(Paragraph)`) has to be concatenated before the tag-line grammar can be matched at all.
+    /// 첫 문단의 이어지는 텍스트에서 콜아웃 태그를 읽는다.
     let Some(Event::Start(Tag::Paragraph)) = buf.first() else {
         return wrap_plain_blockquote(None, buf);
     };
@@ -1552,12 +1203,7 @@ fn rewrite_callout_buffer<'a>(
         .clone()
         .unwrap_or_else(|| tr.t(callout.label_key).to_string());
 
-    // Every `Text` run making up the tag line is consumed (regex is `^...$`-anchored over their
-    // concatenation) — what follows is either the rest of that same first paragraph (a
-    // fold-marker-only line immediately continued on the next physical line, still one
-    // CommonMark paragraph) or the paragraph's own close, in which case the tag line *was* the
-    // entire first paragraph and that now-empty paragraph is dropped rather than emitted as
-    // `<p></p>`.
+    // 태그를 제거한 뒤 첫 문단이 비면 문단도 제거한다.
     let mut rest: Vec<Event<'a>> = buf[text_run_end..].to_vec();
     let body: Vec<Event<'a>> = if matches!(rest.first(), Some(Event::End(TagEnd::Paragraph))) {
         rest.remove(0);
@@ -1585,13 +1231,7 @@ fn wrap_plain_blockquote(kind: Option<BlockQuoteKind>, buf: Vec<Event<'_>>) -> V
     out
 }
 
-/// The non-foldable callout shape — used both for a grammar-guaranteed bare GFM `[!TYPE]` tag
-/// and for an Obsidian tag with a custom title but no fold marker (`[!type] Title`). Identical
-/// `<blockquote class=".." data-label="..">` shape the pre-Obsidian-support GFM alert renderer
-/// used, so [`sanitize_html`]'s existing `blockquote` allowlist needs no changes for this path.
-/// CSS can't branch on UI language ([`theme_css`]'s `content: attr(data-label)` just echoes
-/// whatever lands in the DOM), so the label — default *or* custom title — is resolved here, at
-/// document generation time.
+/// 접지 않는 콜아웃에 표시 이름과 CSS 클래스를 붙인다.
 fn wrap_static_callout<'a>(class: &str, label: &str, body: Vec<Event<'a>>) -> Vec<Event<'a>> {
     let mut out = Vec::with_capacity(body.len() + 2);
     out.push(Event::Html(
@@ -1606,14 +1246,7 @@ fn wrap_static_callout<'a>(class: &str, label: &str, body: Vec<Event<'a>>) -> Ve
     out
 }
 
-/// The foldable callout shape (`+`/`-` marker present) — `<details>`/`<summary>` instead of
-/// `<blockquote>`, per scope: "접기(+/-/마커없음): `<details>/<summary>` 매핑". `open` maps
-/// `+` (initially expanded) and is omitted for `-` (initially collapsed) — native
-/// `<details>`/`<summary>` behavior handles the actual expand/collapse toggle, no script needed.
-/// The label rides in as real `Event::Text` inside `<summary>` (auto-escaped by `push_html`,
-/// unlike the sibling `data-label` attribute trick [`wrap_static_callout`] uses, which needs
-/// `<summary>` itself to carry no data — see [`theme_css`]'s `details[class^="markdown-alert-"]
-/// >summary::before` rule for how the icon still renders without an `attr()`-readable label).
+/// 접을 수 있는 콜아웃을 details와 summary로 감싼다.
 fn wrap_foldable_callout<'a>(
     class: &str,
     label: &str,
@@ -1638,27 +1271,16 @@ fn wrap_foldable_callout<'a>(
 
 // ── footnote backlinks + a11y (`[^name]` / `[^name]: ...`) ─────────────────────
 
-/// Per-render mutable state for [`rewrite_footnote_event`], threaded through the whole event
-/// stream via a single `.map()` closure capture (mirrors how [`pulldown_cmark::html`]'s own
-/// writer keeps a `numbers: HashMap<CowStr, usize>` internally — we need our own copy since we
-/// intercept these events *before* that writer ever sees them).
+/// 각주 정의와 참조 번호를 처리하는 상태.
 #[derive(Default)]
 struct FootnoteState {
-    /// `name -> display number`, assigned the first time a name is seen (whichever comes
-    /// first in event order — a reference or the definition itself; footnote definitions can
-    /// legally appear *before* their first reference, so neither event kind can assume it's
-    /// first). Mirrors pulldown-cmark's own `self.numbers.len() + 1` / `or_insert` numbering
-    /// exactly, so the visible `[1]`/`[2]` markers match what the un-rewritten library would
-    /// have shown.
+    /// 각주 이름별 표시 번호. 참조나 정의 중 처음 나타난 순서로 부여한다.
     numbers: std::collections::HashMap<String, usize>,
     /// `name -> how many `FootnoteReference` events for this name have been rewritten so far`
     /// — drives the `fnref-<name>`/`fnref-<name>-2`/... suffix so multiple references to the
     /// same footnote get distinct, individually-targetable ids.
     seen_ref_counts: std::collections::HashMap<String, usize>,
-    /// The name of the `FootnoteDefinition` currently open, if any (`TagEnd::FootnoteDefinition`
-    /// carries no name of its own — checked against pulldown-cmark 0.12's `html.rs` — so the
-    /// name has to be stashed here on `Start` and consumed on `End`). Definitions never nest, so
-    /// a single slot is enough.
+    /// 현재 출력 중인 각주 정의. 끝날 때 되돌아가기 링크를 넣는다.
     open_definition: Option<String>,
 }
 
@@ -1667,14 +1289,7 @@ fn footnote_number(state: &mut FootnoteState, name: &str) -> usize {
     *state.numbers.entry(name.to_string()).or_insert(next)
 }
 
-/// Total reference count per footnote name, computed via a full separate parse pass over `source`
-/// *before* the real rewriting pass runs. Needed because a `FootnoteDefinition`'s closing tag has
-/// to know how many backlinks to emit, but (as [`FootnoteState::open_definition`] documents) a
-/// definition can appear *before* some of its references in the event stream — by the time the
-/// single forward-only rewriting pass reaches `TagEnd::FootnoteDefinition`, later references
-/// simply haven't happened yet. Re-parsing is cheap relative to this plugin's existing
-/// whole-document-re-render-per-keystroke/theme-change architecture (module doc), so a second
-/// pass here is not a new order-of-magnitude cost.
+/// 각주별 참조 횟수를 먼저 세어 정의 끝에 필요한 되돌아가기 링크 수를 구한다.
 fn footnote_reference_totals(source: &str) -> std::collections::HashMap<String, usize> {
     let mut totals = std::collections::HashMap::new();
     for event in Parser::new_ext(source, parser_options()) {
@@ -1685,22 +1300,7 @@ fn footnote_reference_totals(source: &str) -> std::collections::HashMap<String, 
     totals
 }
 
-/// Rewrites `Event::FootnoteReference` and the `Tag::FootnoteDefinition` start/end pair, same
-/// "intercept the real AST event, emit finished markup via `Event::Html`" shape as
-/// [`rewrite_callout_events`] — chosen for the same reason: matching against fully
-/// rendered HTML text can't distinguish a genuine footnote from a raw-HTML block that merely
-/// looks like one, but matching the AST event can (pulldown-cmark passes raw HTML through as
-/// `Event::Html`/`Event::InlineHtml`, never `FootnoteReference`/`Tag::FootnoteDefinition`).
-///
-/// pulldown-cmark's own default markup (`html.rs`) is a starting point but has two gaps this
-/// closes: no id on the reference itself (so multiple references to one footnote all point at
-/// the same `href`, and a definition has no way to link back to *which* reference), and no
-/// backlink or `aria-label` at all. An **undefined** reference (`[^missing]` with no matching
-/// `[^missing]: ...`) never reaches this function as a `FootnoteReference` event in the first
-/// place — pulldown-cmark's parser only recognizes the construct when a matching definition
-/// exists; otherwise it falls back to plain `[`/`^missing`/`]` text (verified by dumping the
-/// event stream for an unmatched reference), so no special-case handling is needed here for that
-/// case — it degrades to literal text with zero risk of a panic.
+/// 각주 참조와 정의를 번호 및 되돌아가기 링크가 있는 HTML로 바꾼다.
 fn rewrite_footnote_event<'a>(
     event: Event<'a>,
     tr: &Translator,
@@ -1775,32 +1375,10 @@ fn rewrite_footnote_event<'a>(
     }
 }
 
-/// Minimal GFM-sized sanitize allowlist. Strips `<script>`, every inline event handler
-/// (`onerror=`, `onclick=`, …), and any `javascript:`-scheme attribute value — the sanitizer
-/// itself is the primary XSS defense (independent of the `classify_link` guard, which only
-/// covers destinations this plugin later dispatches).
-///
-/// `class` is allowed only on the tags pulldown-cmark actually emits it on: `code`
-/// (fenced-block language, already normalized to a plain identifier by
-/// [`rewrite_code_block_event`] — [`mermaid_script`] depends on that exact `language-<lang>`
-/// shape surviving sanitize), `sup`/`div` (fixed literal footnote classes the library itself
-/// writes — `footnote-reference`/`footnote-definition`/`footnote-definition-label`), and
-/// `blockquote`/`details` (one of [`CALLOUT_KINDS`]' fixed literal `markdown-alert-<type>`
-/// classes — `details` additionally allows `open`, the fold-state attribute
-/// [`wrap_foldable_callout`] sets). ammonia does not validate `class` *values* — a raw HTML
-/// block/inline in the source (passed through byte-for-byte by pulldown-cmark, independent of
-/// `Tag::BlockQuote`) can already carry any of these class strings verbatim, so a document author
-/// *can* make an arbitrary blockquote/details pick up the callout CSS's background/border/icon
-/// purely via `class`, same residual risk the `code`/`sup`/`div` allowances already accept — none
-/// of these carry executable content, so that's fine here. What the sanitizer's `class` allowlist
-/// does *not* by itself make possible is a forged `data-label` matching one of the real
-/// translated callout headers: that attribute is only ever set by [`rewrite_callout_events`] from
-/// a genuine `Tag::BlockQuote` event/buffered blockquote text, never by matching rendered HTML
-/// text, so raw-HTML blockquotes always reach this allowlist with `data-label` absent (see that
-/// function's doc for why the distinction matters). A foldable callout's label rides in as plain
-/// `<summary>` text instead of a `data-label` attribute (no sanitizer change needed for that —
-/// `summary` carries no attributes at all). `data-label`'s value is `attr_escape`d before
-/// injection, same escaping every other attribute value in this module gets.
+/// 본문 HTML에서 허용한 태그와 속성만 남긴다. script, 인라인 이벤트 처리기와
+/// javascript URL은 제거한다. class 값 자체는 검사하지 않으며 raw HTML에도
+/// 허용 목록이 그대로 적용된다. 따라서 문서 작성자가 콜아웃 class나 data-label을
+/// 직접 넣을 수 있다. 이 속성은 콜아웃 변환에서만 생성된다는 보장은 없다.
 fn sanitize_html(unsafe_html: &str) -> String {
     use ammonia::Builder;
     use std::collections::{HashMap, HashSet};
@@ -1884,14 +1462,7 @@ fn sanitize_html(unsafe_html: &str) -> String {
     // 접기 콜아웃(details) — 고정 literal class + fold 상태(open, 마커 유무로만 결정되는
     // 불리언, 사용자 입력 그대로 반영되지 않음).
     tag_attributes.insert("details", ["class", "open"].into_iter().collect());
-    // math span(`math math-inline`/`math math-display`) — ammonia 는 class *값* 단위
-    // 화이트리스트를 지원하지 않는다(태그·속성 단위만) — `div`+`class` 가 이미 이 crate 에서
-    // 같은 방식으로 열려 있다(`.tasty-state`/`.tasty-state-error` 등, 위 참조). class 값
-    // 자체는 스크립트 실행도 URL 도 아니라 사용자가 raw HTML 로 `<span
-    // class="math math-inline">직접 쓴 LaTeX</span>` 를 흉내내도 결과는 "자기 콘텐츠가
-    // KaTeX 로 렌더된다" 뿐 — 별도의 신뢰 HTML 사후조립(sanitizer 우회) 경로 없이 이 방식을
-    // 택했다(스코프상으로도 이 방식이 pulldown-cmark 기본 동작을 그대로 쓰므로 커스텀 이벤트
-    // rewrite 코드가 전혀 필요 없어 더 작다).
+    // 수식 span의 class를 남겨 KaTeX 스크립트가 찾을 수 있게 한다.
     tag_attributes.insert("span", ["class"].into_iter().collect());
 
     Builder::default()
@@ -1907,18 +1478,14 @@ fn sanitize_html(unsafe_html: &str) -> String {
 
 // ── local image inlining (sanitize 뒤, 문서 디렉토리 트리로 범위를 좁혀서) ──────
 
-/// 한 이미지의 원본 바이트 상한. 넘으면 싣지 않는다(그 자리는 실패 placeholder 가 된다).
-///
-/// 문서 자체의 대용량 문턱([`crate::LARGE_FILE_LIMIT_BYTES`], 1 MiB)보다 크게 잡는다 —
-/// 이미지는 문서 본문과 달리 한 장이 그만큼 나가는 것이 정상이다. 상한이 있는 이유는
-/// 인라인이 **문서 HTML 을 그만큼 부풀려** host 로 한 줄에 실려 가기 때문이다.
+/// 로컬 이미지를 읽기 전에 검사하는 파일별 크기 기준.
+/// metadata 조회 뒤 파일이 커지는 경우까지 제한하지는 않는다.
 const MAX_INLINE_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// 한 문서에서 인라인하는 이미지 바이트 총합 상한.
 const MAX_INLINE_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
 
-/// 확장자 → `data:` URI 에 쓸 MIME. **여기 없는 확장자는 싣지 않는다** — 임의 파일을
-/// 이미지인 척 문서에 담지 않기 위한 허용목록이다.
+/// 확장자로 고르는 이미지 MIME 목록. 파일 내부 형식은 검사하지 않는다.
 const INLINE_IMAGE_MIME: &[(&str, &str)] = &[
     ("png", "image/png"),
     ("apng", "image/apng"),
@@ -1932,23 +1499,10 @@ const INLINE_IMAGE_MIME: &[(&str, &str)] = &[
     ("svg", "image/svg+xml"),
 ];
 
-/// sanitize 된 본문에서 **원격이 아닌 모든 `<img src>`** 를 파일로 풀어 `data:` URI 로
-/// 바꾼다. 못 푸는 것은 `src` 속성을 통째로 지운다.
-///
-/// **이 함수를 지나면 `http(s)` 도 `data:` 도 아닌 `src` 는 하나도 안 남는다** — 그것이
-/// 이 함수의 계약이고, 두 가지를 한꺼번에 준다.
-///
-/// 1. **로컬 이미지가 뜬다.** webview 는 `load_html` 로 문서를 받아 origin 이
-///    `about:blank` 이라 파일을 못 읽는다. `<base href>` 는 주소를 풀 뿐 읽기 권한을
-///    주지 않는다 — 그래서 상대 경로·스킴 없는 절대 경로·raw HTML `<img>` 가 전부
-///    실패했다. 바이트를 문서 안에 실어 보내면 읽기 권한 자체가 필요 없어지고, 세
-///    플랫폼이 같은 경로로 동작한다(백엔드마다 다른 "읽기 범위" API 를 안 쓴다).
-/// 2. **읽기 범위가 문서 디렉토리 트리로 좁혀진다.** 트리 밖을 가리키는 이미지는 여기서
-///    거절된다. 백엔드에 맡기면 그 범위는 백엔드마다 다르다 — 실측(2026-09-08,
-///    Linux/WebKitGTK): `load_html` 에 `file://` base 를 넘기면 상대 경로는 뜨지만
-///    `../밖/x.svg` 도 **같이** 떴다.
-///
-/// 판정은 `canonicalize` 뒤에 한다 — 심볼릭 링크로 트리 밖을 가리키는 것도 같이 막힌다.
+/// 정리한 HTML의 로컬 이미지를 data URI로 바꾼다. HTTP(S) 이미지는 그대로 둔다.
+/// 기준 폴더 안의 정규화된 경로와 허용 확장자만 읽으며, 읽기 전 metadata 길이로
+/// 파일별·문서별 기준을 검사한다. 경로 확인과 읽기가 하나의 원자적 연산은 아니다.
+/// 읽지 못하는 이미지의 src는 지워 WebView가 로컬 경로를 직접 열지 않게 한다.
 fn inline_local_images(html: &str, base_dir: Option<&Path>) -> String {
     let base_canon = base_dir.and_then(|d| std::fs::canonicalize(d).ok());
     let mut budget = MAX_INLINE_TOTAL_BYTES;
@@ -1970,7 +1524,7 @@ fn inline_local_images(html: &str, base_dir: Option<&Path>) -> String {
     out
 }
 
-/// `<img ...>` 태그 하나를 [`inline_local_images`] 의 계약대로 다시 쓴다.
+/// 이미지 태그 하나의 로컬 src를 인라인 처리한다.
 fn rewrite_img_tag(tag: &str, base_canon: Option<&Path>, budget: &mut u64) -> String {
     const SRC: &str = " src=\"";
     let Some(rel) = tag.find(SRC) else {
@@ -1987,9 +1541,7 @@ fn rewrite_img_tag(tag: &str, base_canon: Option<&Path>, budget: &mut u64) -> St
     }
     let replacement = read_inline_image(&raw, base_canon, budget)
         .map(|uri| format!("{SRC}{}\"", attr_escape(&uri)))
-        // 실을 수 없으면 `src` 를 통째로 지운다. 원본 경로를 남겨 두면 백엔드에 따라
-        // 그것이 그대로 로드돼(트리 밖까지) 위 계약이 깨진다. 지운 자리는 이미
-        // `image_error_script` 가 실패 placeholder 로 바꾼다.
+        // 읽지 못한 로컬 경로는 src에서 제거한다. 이후 오류 표시 스크립트가 처리한다.
         .unwrap_or_default();
     let mut out = String::with_capacity(tag.len());
     out.push_str(&tag[..rel]);
@@ -2046,50 +1598,23 @@ fn html_unescape(s: &str) -> String {
 
 // ── CSS (theme → custom properties) ───────────────────────────────────────────
 
-/// Map the host `Theme` tokens onto CSS custom properties + the base stylesheet. The CSS-side
-/// equivalent of the former `apply_theme` (`egui::Visuals` mapping) — see module doc for why
-/// this rewrite finally allows a real per-level heading ladder and a tuned body line-height,
-/// both library limitations of the retired `egui_commonmark` renderer.
+/// 테마 값을 CSS 변수와 스타일로 변환한다. 제목과 각주의 scroll-margin-top은
+/// 고정 주소창 높이를 고려한다. 주소창, 검색창 위치와 앵커 여백은 --md-addr-bar-h를
+/// 공유한다. 검색 개수 표시의 min-width:40px는 별도의 너비 값이다.
 ///
-/// `scroll-margin-top` is set on two selector groups, not one: headings **and**
-/// `.footnote-reference`/`.footnote-definition`. Both are destinations of the in-page anchor
-/// scroll ([`nav_script`]), so both need the same offset — without it a footnote jumped to from
-/// its reference lands flush against the top edge, under the address bar. The bar is on screen at
-/// every scroll position, so that offset is always doing work; it was not always so, and the
-/// stylesheet records why in the rule right below `:root`. The stylesheet itself carries no
-/// comments: everything the generated document ships is bytes on every render, so the reasoning
-/// lives here instead.
+/// html의 height:100%와 body의 min-height:100%는 서로 역할이 다르다.
+/// body가 문서만큼 늘어나야 sticky 주소창이 끝까지 남고, html 높이가 정해져야
+/// 짧은 문서에서도 body의 백분율 최소 높이가 viewport를 채운다.
+/// WebKitGTK 4.1, viewport 1000×800, 긴 문서 높이 10070에서의 측정:
 ///
-/// `html` keeps `height:100%` while `body` takes `min-height:100%`, and the asymmetry is load
-/// bearing in both directions. All three combinations were measured in WebKitGTK 4.1 on the
-/// document this function generates, at a viewport of 1000 by 800 against a document of 10070:
-///
-/// | `html` / `body` | bar `rect.top` at the end of the scroll | short document `body` box |
+/// | html / body | 끝까지 스크롤한 주소창 rect.top | 짧은 문서 body 높이 |
 /// |---|---|---|
-/// | `height` / `min-height` (this one) | 0 | 800, the viewport |
-/// | `min-height` / `min-height` | 0 | 232, the content |
-/// | `height` / `height` | -8510, off screen | 800 |
+/// | height / min-height (현재) | 0 | 800 |
+/// | min-height / min-height | 0 | 232 |
+/// | height / height | -8510 | 800 |
 ///
-/// `body` must be allowed to grow to the length of the document, because it is the containing
-/// block of the `position:sticky` address bar and a sticky element cannot outlive its containing
-/// block; the third row is what pinning it costs. `html` must keep a definite height, because a
-/// percentage `min-height` resolves against the parent's height and collapses when that height is
-/// itself auto; the second row is what dropping it costs, and the body box stops covering the
-/// viewport.
-///
-/// What the body box height does **not** buy is the background fill. `html` carries no background
-/// of its own, so the body background propagates to the canvas and paints the whole viewport
-/// whatever the box measures. The short document renders the same pixels in all three rows,
-/// including the one whose box is 232: zero differing pixels out of 800000, measured against the
-/// first row. The old `html,body{height:100%}` rule reads as though it were there for that fill,
-/// and the fill is not what it was holding up — do not restore it on that reasoning.
-///
-/// The address bar height is declared once as `--md-addr-bar-h` and read by three other places:
-/// the find bar floats just below the bar, and headings and footnotes reserve that much scroll
-/// margin so an anchor jump does not land underneath it. Those are one fact, and before it had a
-/// name it had been copied into four places and was still spreading. `#tasty-find-count` keeps a
-/// literal `min-width:40px` on purpose — it is the width of a match counter like `3/12`, and its
-/// agreement with the bar height is a coincidence, not a relation.
+/// 배경 채우기는 body 높이와 별개다. html에 배경이 없으면 body 배경이 canvas에
+/// 전파된다. 이 측정에서 짧은 문서의 세 조합은 800000픽셀 중 다른 픽셀이 0개였다.
 fn theme_css(theme: &Theme) -> String {
     let [h1, h2, h3, h4, h5, h6] = heading_sizes_px(theme);
     let body = theme.font_size_body.value();
@@ -2234,16 +1759,7 @@ li input[type=checkbox]{{margin-right:0.4em;}}
     )
 }
 
-/// Per-[`CalloutKind`] CSS: border/background from its accent color, plus the icon half of the
-/// shared header rule — for the `<blockquote>` shape, `blockquote[class^="markdown-alert-"]
-/// ::before` above (the label-text half — `content: attr(data-label)` — is already covered there
-/// since it doesn't vary per kind); for the `<details>`/`<summary>` foldable shape, the
-/// `.{class}>summary::before` selector below layers the same icon onto
-/// `details[class^="markdown-alert-"]>summary::before`'s shared sizing rule (that shape's label
-/// is real `<summary>` text, not `attr()`-read, so only the icon needs a per-kind rule there — see
-/// [`wrap_foldable_callout`]). No dedicated "callout" design token set exists yet, so background
-/// is derived the same way `drop_overlay.rs`/`Theme::preset_split_zone_bg` already do: the same
-/// accent color at low alpha, not a separate token.
+/// 콜아웃 종류별 테마 색과 아이콘 CSS를 만든다.
 fn alert_css(theme: &Theme) -> String {
     /// ~12% opacity — same ratio `drop_overlay.rs` uses for `accent_primary().with_alpha(31)`.
     const BG_ALPHA: u8 = 31;
@@ -2261,12 +1777,7 @@ fn alert_css(theme: &Theme) -> String {
     rules
 }
 
-/// Bakes [`CalloutKind::icon_body`] into a complete, `color_hex`-colored `<svg>` and encodes it as
-/// a `data:image/svg+xml,` URI ready for a CSS `background-image`. The `tasty_icons` source is
-/// fixed to `stroke="white"`/`fill="white"` (crate doc: "색을 글리프에 박지 않는다" — consumers
-/// tint it themselves); the `egui` consumer does that post-hoc on the GPU texture
-/// (`Icon::image`'s `tint`), but a CSS background image has no equivalent hook, so this bakes a
-/// separately-colored copy of the markup directly instead.
+/// 아이콘 SVG를 CSS 마스크로 사용해 테마 강조색으로 그린다.
 fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str) -> String {
     let (fill, stroke) = if filled {
         (color_hex, color_hex)
@@ -2279,16 +1790,7 @@ fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str) -> String
     format!("data:image/svg+xml,{}", percent_encode_fragment(&svg))
 }
 
-/// `highlight.js`'s emitted `hljs-*` token classes, colored from this plugin's own Catppuccin-
-/// style hue fields (`Theme::mauve`/`blue`/`green`/... — the same named-hue vocabulary every other
-/// accent in this codebase derives from) instead of a vendored highlight.js theme (`github.css`
-/// etc). That keeps highlighted code following whichever theme (mocha/latte/a user's custom
-/// theme) is active, the same way every other rule in [`theme_css`] does, rather than always
-/// rendering GitHub's fixed palette regardless of the user's actual theme choice. The class
-/// grouping (which scopes share a color) mirrors highlight.js's own shipped themes — only the
-/// colors themselves are swapped for `Theme` tokens, the scope-to-class grouping is highlight.js's
-/// standard convention, not invented here. Always emitted (like [`alert_css`]'s rules) — inert on
-/// documents with no code blocks since nothing has an `hljs-*` class to match.
+/// 구문 강조 클래스에 테마 색을 연결한다.
 fn hljs_css(theme: &Theme) -> String {
     format!(
         r#"code.hljs{{background:none;}}
@@ -2346,14 +1848,7 @@ fn heading_sizes_px(theme: &Theme) -> [f32; 6] {
 
 // ── address bar (HTML/CSS/minimal trusted JS — design decision: Option 1) ────
 
-/// The address bar markup: a path input (native `<datalist>` for recent-path autocomplete —
-/// no custom dropdown JS needed) + a Go button. Baked with the *current* path/recent list at
-/// document-generation time (there's no live JS↔plugin message channel for a webview surface —
-/// see module doc — so unlike the old `PathField` there's no reactive fetch-on-focus).
-///
-/// attach mirror 문서(`remote`)는 주소창을 읽기 전용으로 두고 Go 대신 새로고침 버튼을 단다 —
-/// 경로는 원격 호스트의 것이라 이 머신에서 열 수 없고, 최근목록도 이 머신의 것이라 후보로
-/// 내지 않는다. 버튼의 `data-stale` 이 변경 신호를 색으로 보인다(CSS 는 [`theme_css`]).
+/// 경로 입력, 최근 경로와 원격 문서 새로고침 버튼을 포함한 주소창.
 fn addr_bar_html(
     tr: &Translator,
     file_path: &str,
@@ -2386,40 +1881,14 @@ fn addr_bar_html(
     )
 }
 
-/// Trusted, plugin-authored script (never sanitized — it never touches user markdown content).
-/// Three responsibilities:
-/// 1. Builds the `#tasty-nav:addr:<enc>` fragment from the address bar's current input value on
-///    Enter/Go-click; module doc explains why a fragment assignment (rather than a real
-///    navigation) is the only safe way to signal the host. The attach mirror refresh button
-///    (`#tasty-refresh`, [`addr_bar_html`]) signals the same way with `#tasty-nav:refresh:<nonce>`.
-/// 2. **In-page anchor scrolling.** One delegated `click` listener owns every fragment-only
-///    `href` in the document — TOC entries ([`toc_nav_html`]), `[text](#slug)` body links that
-///    [`rewrite_link_dest`] deliberately leaves alone, and the footnote reference/backlink pairs
-///    [`rewrite_footnote_event`] emits. It cancels the default navigation and scrolls the target
-///    id into view itself. Three reasons this is done in script rather than left to the engine:
-///    the document is loaded as raw HTML with no real URL, so "navigate to `#slug`" is a
-///    navigation the host would have to classify and the surface could flash its loading chrome
-///    for; re-clicking the *same* entry assigns an identical hash, which is a no-op for every
-///    engine (the task requires repeated clicks to keep working); and the three backends
-///    (WebKitGTK/WKWebView/WebView2) then need not agree on fragment-navigation behavior for a
-///    document whose base URL they each pick differently. An `href` that starts with the
-///    [`NAV_FRAGMENT_MARKER`] is explicitly *not* intercepted — that is the host-signal channel
-///    (module doc point 1) and must still reach `decide-policy`.
-///    Lookup is `getElementById` on the raw fragment text first, then on its percent-decoded
-///    form: heading ids are raw (a Korean heading's `id`/`href` both carry the Korean text
-///    verbatim), while footnote ids are percent-encoded on both sides by
-///    [`percent_encode_fragment`] — one of the two spellings matches in either case, and trying
-///    both costs a single extra DOM lookup only when the first misses.
-/// 3. Best-effort scroll-position preservation across `webview.set_url` reloads (idle-watch
-///    auto-reload and `markdown.reload` both replace the whole document via `load_html` — there
-///    is no in-place DOM patch, so the native WebView's own scroll position is always reset to
-///    0 on reload without this). Keyed by `file_path` (baked in at generation time) so switching
-///    files via the address bar doesn't restore the wrong document's position.
-///    `sessionStorage` is same-origin scoped; whether a webview engine's `load_html` preserves
-///    origin identity (and therefore `sessionStorage`) across reloads of the *same* surface is
-///    platform-dependent and not verified across all three backends (WebKitGTK/WKWebView/
-///    WebView2) — this degrades gracefully to "no restore" if it doesn't persist, never to an
-///    error.
+/// 플러그인이 본문 정리 후 추가하는 이동 스크립트.
+/// 주소 입력과 새로고침은 #tasty-nav 마커로 호스트에 알린다.
+/// 문서 안 링크는 기본 이동을 취소하고 해당 ID로 스크롤한다. 같은 링크를 다시
+/// 클릭해도 동작하며, ID는 원문과 percent-decoding한 값을 차례로 찾는다.
+///
+/// 파일 경로별 스크롤 위치를 sessionStorage에 저장하고 복원을 시도한다.
+/// load_html 이후 저장소가 유지되는지는 세 WebView 백엔드 모두에서 검증하지 않았다.
+/// 저장소를 사용할 수 없으면 복원하지 않는다.
 fn nav_script(file_path: &str) -> String {
     format!(
         r#"(function(){{
@@ -2479,15 +1948,7 @@ try{{sessionStorage.setItem(scrollKey,String(window.scrollY));}}catch(e){{}}
 
 // ── find-in-page (trusted JS, TreeWalker-based text-node highlight) ─────────────
 
-/// The find bar markup: query input + match counter + prev/next + close, `hidden` by default
-/// (toggled by [`find_in_page_script`]). Floats top-right of the document (`position:fixed` in
-/// [`theme_css`]) rather than sitting in normal flow like [`addr_bar_html`], mirroring the
-/// gallery's `search_bar` specimen (`crates/tasty-gallery/src/catalog/components/search_bar.rs`)
-/// — a sticky, non-modal find bar anchored to the top-right of the focused surface.
-///
-/// No case/regex/whole-word toggles (unlike the gallery specimen / terminal `search_bar.rs`) —
-/// out of scope here: this is a literal substring find-on-page, not the terminal's full
-/// `SearchOptions` search.
+/// 본문 검색 UI. 정규식 입력이 아닌 일반 텍스트 검색을 제공한다.
 fn find_bar_html(tr: &Translator) -> String {
     format!(
         r#"<div id="tasty-find-bar" role="search" hidden><input id="tasty-find-input" type="text" placeholder="{placeholder}" autocomplete="off" spellcheck="false"><span id="tasty-find-count">0/0</span><button type="button" id="tasty-find-prev" class="tasty-find-btn" title="{prev}" aria-label="{prev}">&#9650;</button><button type="button" id="tasty-find-next" class="tasty-find-btn" title="{next}" aria-label="{next}">&#9660;</button><button type="button" id="tasty-find-close" class="tasty-find-btn" title="{close}" aria-label="{close}">&times;</button></div>"#,
@@ -2498,41 +1959,10 @@ fn find_bar_html(tr: &Translator) -> String {
     )
 }
 
-/// Trusted, plugin-authored script (never sanitized — [`nav_script`]'s doc comment explains why
-/// this category of script is safe: it never touches user markdown content, only the DOM
-/// structure this same trusted pipeline already built).
-///
-/// Implements the "trust JS" direction over a native find API
-/// (`WebKitFindController`/`WKWebView.find`/WebView2 `Find`): none of those three engines' native
-/// find surfaces agree on a feature set (regex isn't supported by any of them; whole-word varies),
-/// and getting a live match-count back to the host would need a new bidirectional signal per
-/// backend (WebKitGTK's is async-signal-based, WKWebView's is a completion handler, WebView2's is
-/// an event) for a feature that's markdown-plugin-local anyway — a DOM `TreeWalker` walk is a few
-/// dozen lines and needs zero host API surface.
-///
-/// Algorithm: on each search, first [`clearHighlights`](https://developer.mozilla.org — see
-/// inline) unwraps every previously-inserted `<mark>` back into its original text (via
-/// `Node.normalize()`, merging the split text nodes back together) — this is the "restore DOM on
-/// search end/change" requirement, run before every new search rather than only on close, so
-/// stale highlights never accumulate across keystrokes. Then a `TreeWalker` over `#tasty-md-body`
-/// (`NodeFilter.SHOW_TEXT`) visits every text node, **rejecting** (not just skipping — `TreeWalker`
-/// still descends into a rejected node's siblings) any node whose ancestor chain (up to
-/// `#tasty-md-body`) hits a `<pre>`/`<code>` — the scope-exclusion policy decision: code blocks
-/// are excluded from find-in-page (matching a common find-in-page convention — code samples often
-/// contain the search term as noise, e.g. searching a prose word that also happens to appear in a
-/// fenced shell command). The find bar itself lives outside `#tasty-md-body` (see
-/// [`find_bar_html`]'s placement in `render_document`), so it's naturally excluded without an
-/// explicit check.
-///
-/// The query is escaped as a regex literal (`escapeRegExp`) before being compiled with the `gi`
-/// flags — this is **not** a regex-search feature (out of scope, see [`find_bar_html`]'s doc), it
-/// only reuses `RegExp` as the engine for case-insensitive multi-match-per-node scanning.
-///
-/// IME: `compositionstart`/`compositionend` bracket the input's own `input` event — while
-/// composing, `input` events fire per-keystroke of the *in-progress* (not-yet-committed)
-/// composition and must not trigger a search (matching `docs/ai-verification/ime-testing.md`'s
-/// general IME-safety principle); the debounced search only (re)fires on `compositionend` or on
-/// a post-composition plain `input` event.
+/// 플러그인이 제공하는 본문 검색 스크립트. 이전 강조를 지운 뒤 #tasty-md-body의
+/// 텍스트 노드를 탐색하며 pre/code 안의 텍스트는 제외한다. 검색어를 정규식
+/// 리터럴로 escape해 대소문자 구분 없이 찾는다. 검색 UI 자체는 본문 밖에 있다.
+/// IME 조합 중에는 새 검색 예약을 생략하고 compositionend에서 다시 예약한다.
 fn find_in_page_script(tr: &Translator) -> String {
     let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -2670,27 +2100,12 @@ closeBar();
 
 // ── mermaid ────────────────────────────────────────────────────────────────────
 
-/// Vendored `mermaid.js` UMD-equivalent bundle (see `assets/NOTICE.md` for version/license/
-/// source). Fetched once at packaging time — never over the network at runtime, matching
-/// Tasty's offline-first principle.
+/// 번들에 포함한 Mermaid 코드. 버전과 라이선스는 assets/NOTICE.md에 있다.
 const MERMAID_JS_RAW: &str = include_str!("../assets/mermaid.min.js");
 
-/// Neutralize every `</script` occurrence in `s` — **case-insensitively** — by inserting a
-/// backslash between `<` and `/` (`<\/script`, trailing letters' original case preserved).
-/// Necessary because the bundle is embedded verbatim inside an HTML `<script>` element: the
-/// HTML tokenizer's raw-text end-tag scan compares the tag name case-insensitively (`</SCRIPT>`
-/// or `</Script>` closes a `<script>` element exactly like `</script>` does), so a literal
-/// occurrence inside the minified source in *any* case (e.g. in a string constant) would
-/// truncate the script and break every diagram on the page — a plain case-sensitive
-/// `str::replace("</script", ..)` only defuses the all-lowercase form. `\/` is a valid escape
-/// for `/` in JS string/regex literals, so the substitution is semantics-preserving regardless
-/// of case.
-///
-/// Byte-level (not char-level) so multi-byte UTF-8 in the input is never touched except by
-/// copying it through unchanged: `to_ascii_lowercase` only folds ASCII bytes and never changes a
-/// string's byte length, so a match against the lowercased copy at byte offset `i` guarantees
-/// `bytes[i..i+8]` is in-bounds and — since `</script` is pure ASCII — falls on UTF-8
-/// char-boundary-safe split points in the original.
+/// HTML script 요소를 중간에 닫지 않도록 번들의 </script를 대소문자 구분 없이
+/// <\/script로 바꾼다. JS 문자열과 정규식 리터럴의 슬래시 escape에 사용한다.
+/// ASCII 부분만 검사·치환하므로 다른 UTF-8 바이트는 그대로 복사한다.
 fn escape_script_close(s: &str) -> String {
     let bytes = s.as_bytes();
     let lower = s.to_ascii_lowercase();
@@ -2710,33 +2125,15 @@ fn escape_script_close(s: &str) -> String {
     String::from_utf8(out).unwrap_or_default()
 }
 
-/// [`MERMAID_JS_RAW`] with [`escape_script_close`] applied (memoized — the source is ~3.5MB and
-/// this runs once per process, not per render). The vendored build has zero `</script`
-/// occurrences in any case today (grep-verified when it was vendored), but this guards future
-/// re-vendors that might introduce one.
+/// 종료 태그를 escape한 Mermaid 번들을 프로세스당 한 번 만들어 보관한다.
 fn mermaid_js_source() -> &'static str {
     static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ESCAPED.get_or_init(|| escape_script_close(MERMAID_JS_RAW))
 }
 
-/// Inline mermaid bundle + init/run script — only called when the document actually has a
-/// `language-mermaid` fenced block (see call site in [`render_document`]).
-///
-/// `mermaid_theme` mirrors mermaid's built-in `dark`/`default` palettes onto the host
-/// `Theme.is_light`. `reload_all_webviews` (`main.rs`) regenerates the whole document from
-/// scratch on `theme.changed`, so a fresh `is_light` gets baked in on every theme flip — no
-/// separate runtime re-theme path is needed.
-///
-/// `mermaid.run` is called with `querySelector: 'code.language-mermaid'` — the DOM already has
-/// every code block at this point (this script tag is emitted after `#tasty-md-body` in document
-/// order, so the HTML parser has already built those elements by the time it executes this
-/// `<script>`). `suppressErrors: true` plus a `.catch()` guard against a broken diagram killing
-/// page script execution: this exact vendored build's `run()` already renders every matched
-/// diagram independently inside an internal loop and only aggregates+rethrows *after* the loop
-/// completes (verified by reading the bundled source) — so a bad diagram never blocks the others
-/// and is simply left as its original unrendered code text; `suppressErrors` just stops that
-/// trailing rethrow from rejecting the returned promise, and `.catch()` is defense-in-depth for
-/// any other failure path (e.g. `mermaid.initialize` itself).
+/// Mermaid 번들과 실행 스크립트. 코드 블록이 있을 때만 넣으며 Theme.is_light에
+/// 따라 default 또는 dark 테마를 사용한다. suppressErrors를 지정하고
+/// 초기화 예외와 run의 실패를 콘솔에 기록한다.
 fn mermaid_script(is_light: bool) -> String {
     let mermaid_theme = if is_light { "default" } else { "dark" };
     format!(
@@ -2748,41 +2145,18 @@ fn mermaid_script(is_light: bool) -> String {
 
 // ── syntax highlighting (highlight.js) ──────────────────────────────────────────
 
-/// Vendored `highlight.js` "common" bundle (see `assets/NOTICE.md` for version/license/source/
-/// language coverage). Fetched once at packaging time — never over the network at runtime,
-/// matching Tasty's offline-first principle.
+/// 번들에 포함한 highlight.js 코드. 버전과 언어 목록은 assets/NOTICE.md에 있다.
 const HIGHLIGHT_JS_RAW: &str = include_str!("../assets/highlight.min.js");
 
-/// [`HIGHLIGHT_JS_RAW`] with [`escape_script_close`] applied (memoized — ~125KB, cheap, but no
-/// reason to re-scan on every render).
+/// 종료 태그를 escape한 구문 강조 번들을 한 번 만들어 보관한다.
 fn highlight_js_source() -> &'static str {
     static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ESCAPED.get_or_init(|| escape_script_close(HIGHLIGHT_JS_RAW))
 }
 
-/// Inline the highlight.js bundle + a run-once init script — only called when the document
-/// actually has a fenced code block (see call site in [`render_document`]).
-///
-/// Unlike [`mermaid_script`], this never bakes a light/dark choice into the emitted `<script>`:
-/// highlight.js only tokenizes code into `<span class="hljs-*">` elements, it never picks colors
-/// itself. Coloring those classes is `hljs_css`'s job (in `theme_css`, which — like every other
-/// rule in that stylesheet — is derived straight from `Theme` and regenerated on every
-/// `theme.changed` re-render), so this function has nothing theme-dependent left to do.
-///
-/// For every `<code class="language-<lang>">` under a `<pre>` (the exact shape
-/// [`rewrite_code_block_event`]/[`sanitize_fence_lang`] produce): re-extract `<lang>` from the
-/// class (independently of pulldown-cmark's own already-sanitized value — this only trusts the
-/// same `[A-Za-z0-9_+-]` shape, nothing more), skip it silently via `hljs.getLanguage` if
-/// highlight.js doesn't recognize that identifier (covers both genuinely unsupported languages
-/// and non-code fences like `language-mermaid`), otherwise call `hljs.highlightElement`.
-/// `highlightElement` reads the node's plain-text content and rewrites its `innerHTML` with its
-/// own HTML-escaped token spans — it never reinterprets existing markup, so a code block
-/// containing the literal text `<script>` (already HTML-escaped by `sanitize_html` before this
-/// script ever runs) stays inert text after highlighting too. Each block's own try/catch means an
-/// unexpected highlight.js failure on one block leaves that block as plain unhighlighted text
-/// without aborting the rest of the document (mirrors `mermaid_script`'s `suppressErrors`/`.catch`
-/// per-diagram isolation, just no async promise chain here since `highlightElement` is
-/// synchronous).
+/// 언어가 지정된 코드 블록에 구문 강조를 적용한다. 지원하지 않는 언어는 건너뛴다.
+/// highlight.js는 코드의 textContent로 토큰 span을 만들고 색은 hljs_css에서 정한다.
+/// 블록별 예외를 기록한 뒤 다음 블록을 처리한다.
 fn highlight_script() -> String {
     format!(
         r#"<script>{js}</script><script>(function(){{try{{document.querySelectorAll('pre code[class*="language-"]').forEach(function(el){{try{{var m=/language-([A-Za-z0-9_+-]+)/.exec(el.className);if(!m)return;if(!hljs.getLanguage(m[1]))return;hljs.highlightElement(el);}}catch(e){{console.error('highlight.js block failed',e);}}}});}}catch(e){{console.error('highlight.js init failed',e);}}}})();</script>"#,
@@ -2792,34 +2166,14 @@ fn highlight_script() -> String {
 
 // ── copy-to-clipboard button ────────────────────────────────────────────────
 
-/// Inline a copy-to-clipboard button attachment script — only called when the document actually
-/// has at least one `<pre><code>` block (see call site in [`render_document`]).
+/// 본문의 pre > code에 복사 버튼을 넣는다. 오류 상세처럼 code 자식이 없는
+/// pre에는 넣지 않는다. 비동기 렌더링 중일 수 있는 Mermaid 블록도 제외한다.
+/// 클릭 시 textContent를 읽어 복사하므로 구문 강조용 태그는 복사되지 않는다.
 ///
-/// Selector is scoped to `#tasty-md-body pre > code`, **not** every `<pre>` in the document — the
-/// load-error detail box (`.tasty-state-detail`, also a bare `<pre>`, see [`render_document`]'s
-/// `load_error` branch) lives outside `#tasty-md-body` and never gets a button.
-///
-/// Unconditionally skips `code.language-mermaid`, regardless of execution order relative to
-/// [`mermaid_script`]: `mermaid.run()` is asynchronous (returns a promise it never awaits — see
-/// that function's doc comment), so even placing this script strictly after `mermaid_script` in
-/// document order gives no guarantee the diagram DOM-replacement has already happened by the time
-/// this one runs. The class check is the only race-proof way to never attach a button to a
-/// soon-to-be-replaced mermaid block; script ordering can't substitute for it.
-///
-/// Reads `code.textContent` at click time (not `innerHTML`) — this is why ordering relative to
-/// [`highlight_script`] doesn't matter either: `highlightElement` only wraps existing characters
-/// in `<span class="hljs-*">`, it never changes them. Live-verified against the actual vendored
-/// bundle in the real WebKitGTK engine (details: `docs/plugins/markdown/screens/markdown.md`), so
-/// `textContent` returns the exact original code whether or not highlighting has already run on
-/// that block.
-///
-/// `navigator.clipboard.writeText` falls back to the legacy `document.execCommand('copy')` path
-/// (an offscreen, unfocused-looking `<textarea>`) when the modern API is unavailable or its
-/// promise rejects. Live-verified on Linux/WebKitGTK — the primary `writeText` path succeeded
-/// outright there, so the fallback wasn't exercised on this backend (details:
-/// `docs/plugins/markdown/screens/markdown.md`); the same code path is expected to hold on
-/// WKWebView/WebView2 since both implement the standard async Clipboard API, but that's read-only
-/// verification (no macOS/Windows execution environment here) — noted, not claimed as tested.
+/// navigator.clipboard.writeText를 사용할 수 없거나 실패하면 execCommand(copy)를
+/// 시도한다. Linux/WebKitGTK에서 확인한 것은 writeText 경로이며, 그 실행에서
+/// fallback이나 macOS·Windows의 동작까지 확인한 것은 아니다.
+/// 기록: docs/plugins/markdown/screens/markdown.md.
 fn copy_button_script(tr: &Translator) -> String {
     let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -2881,36 +2235,10 @@ pre.appendChild(btn);
     )
 }
 
-/// Inline an image load-failure watcher — only called when the document actually has at least
-/// one `<img>` (see call site in [`render_document`]). `sanitize_html` strips every inline event
-/// handler (`onerror=` included, its core defense line), so this attaches `error` listeners
-/// programmatically instead — the same trust-script pattern [`copy_button_script`] uses to
-/// post-process sanitized DOM.
-///
-/// Two failure paths, both required: a listener catches images that fail *after* this script
-/// runs, but by the time a script this far down the document executes, some images may have
-/// already finished failing — `img.complete && img.naturalWidth===0` catches those retroactively
-/// (a loaded-with-zero-pixels image is exactly what a failed load looks like; a genuinely empty
-/// `src` also reads as `complete` with no dimensions, so this also naturally covers `![alt]()`).
-/// A `data-tasty-img-failed` guard on the element makes the replacement idempotent in case both
-/// paths fire for the same image (the listener can still be queued when the retroactive check
-/// already ran).
-///
-/// Reads `img.getAttribute('src')` (the literal markdown-authored value), not the `img.src`
-/// property (which the engine resolves into an absolute URL against the document's own
-/// location) — this is what keeps the placeholder's path human-readable.
-///
-/// A remote image blocked by the host's remote-content policy fails to load for a real reason
-/// (the request never resolves successfully) — the browser's `error` event fires for it exactly
-/// as it would for any other failed fetch, so it correctly lands on the placeholder rather than
-/// silently passing through as a false positive.
-///
-/// Live-verified in the real WebKitGTK engine against a document with one real image and one
-/// genuinely missing path loaded over a real `file://` base (details:
-/// `docs/plugins/markdown/screens/markdown.md`): the real image stayed an `<img>`, the missing
-/// one was replaced with `.tasty-img-error` carrying the original alt as `aria-label` and the
-/// original relative path as its text — and re-running this exact script a second time against
-/// the same DOM left `placeholderCount` at 1, confirming the per-element guards hold.
+/// 이미지 오류 이벤트를 구독하고, 이미 로드가 끝났지만 naturalWidth가 0인 이미지도
+/// 실패 표시로 바꾼다. 요소의 data-tasty-img-failed로 중복 처리를 막는다.
+/// 표시할 주소는 getAttribute(src)에서 읽는다. 이는 이미지 인라인 처리 후의 값이며
+/// 원본 Markdown 경로와 다를 수 있다.
 fn image_error_script(tr: &Translator) -> String {
     let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -3052,24 +2380,13 @@ const KATEX_FONTS: &[(&str, &[u8])] = &[
     ),
 ];
 
-/// [`KATEX_JS_RAW`] with [`escape_script_close`] applied (memoized, same convention as
-/// [`mermaid_js_source`]/[`highlight_js_source`] — the bundle is inlined verbatim inside an HTML
-/// `<script>` element).
+/// 종료 태그를 escape한 KaTeX 번들을 한 번 만들어 보관한다.
 fn katex_js_source() -> &'static str {
     static ESCAPED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ESCAPED.get_or_init(|| escape_script_close(KATEX_JS_RAW))
 }
 
-/// [`KATEX_CSS_RAW`] with every `@font-face`'s `src:` list collapsed from three formats
-/// (`woff2`/`woff`/`truetype`, each a relative `fonts/<name>.<ext>` URL) down to a single
-/// `data:font/woff2;base64,<...>` entry built from the matching [`KATEX_FONTS`] bytes. Memoized —
-/// base64-encoding ~254KB of font data is wasted work to repeat on every render.
-///
-/// Data URIs, not relative `file://` paths: see `assets/NOTICE.md`'s "Font offline delivery"
-/// note — there is no on-disk plugin-assets directory a relative URL inside the rendered document
-/// could resolve against at runtime (everything is `include_str!`/`include_bytes!`-baked into the
-/// binary), and the document carries no `<base href>` for one to resolve against either (module
-/// doc point 4).
+/// KaTeX CSS의 번들 폰트 URL을 data URI로 바꾼다.
 fn katex_css_with_embedded_fonts() -> &'static str {
     static EMBEDDED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     EMBEDDED.get_or_init(|| {
@@ -3087,44 +2404,15 @@ fn katex_css_with_embedded_fonts() -> &'static str {
     })
 }
 
-/// Inline the KaTeX bundle + init script — only called when the document actually has at least
-/// one `math`/`math-display` span (see call site in [`render_document`]). Scoped to
-/// `#tasty-md-body .math-inline, #tasty-md-body .math-display` — the same shape
-/// `pulldown-cmark`'s `Options::ENABLE_MATH` HTML writer emits by default
-/// (`<span class="math math-inline">`/`<span class="math math-display">`, LaTeX source
-/// HTML-escaped as the span's text) — no custom AST event rewrite was needed to produce this
-/// shape (see `sanitize_html`'s `span`+`class` whitelist comment for why that shape is allowed
-/// through sanitization as-is).
+/// 본문의 수식 span에서 textContent를 읽어 KaTeX에 전달한다.
+/// trust:false로 URL·HTML을 허용하는 명령을 제한하고 throwOnError:false로
+/// 파싱 오류를 표시한다. 그 밖의 예외는 요소별로 콘솔에 기록한다.
+/// 재실행 시 이미 처리한 요소를 다시 해석하지 않도록 표시를 남긴다.
+/// 수식 색은 CSS의 currentColor로 본문 색을 따른다.
 ///
-/// Reads `el.textContent` (not `innerHTML`) to recover the literal LaTeX source — the DOM
-/// decodes the HTML entities `escape_html` encoded back into the original characters, so this
-/// gets exactly what the author typed between `$...$`/`$$...$$`.
-///
-/// `throwOnError: false` + `trust: false` are set explicitly (not left as defaults) per this
-/// task's security requirement: `trust: false` blocks LaTeX commands (`\includegraphics`,
-/// `\href`, `\url`, ...) that could otherwise smuggle arbitrary URLs/markup through a macro,
-/// independent of `sanitize_html`'s own allowlist. `throwOnError: false` makes KaTeX render a
-/// parse failure as a visible (originally `errorColor`-tinted) rendering of the original TeX
-/// source instead of throwing — combined with the outer per-element `try/catch` (defense-in-depth
-/// against a non-`ParseError` exception), a broken formula never crashes the page or blanks the
-/// element. Live-verified in the real WebKitGTK engine (details: `docs/plugins/markdown/screens/
-/// markdown.md`): a genuinely broken formula (`\frac{1}` — missing its second argument) produced
-/// a `.katex-error` element whose text is exactly the original TeX source, while two valid
-/// formulas alongside it rendered as real KaTeX MathML output (`.katex`), and the display-mode
-/// one was wrapped in KaTeX's own `.katex-display`.
-///
-/// `color: currentColor` is KaTeX's own default (verified directly in the vendored
-/// `katex.min.css` — zero hardcoded colors) — math already inherits `body`'s `color:var(--md-fg)`
-/// with no extra theme wiring needed, and follows dark/light exactly like every other themed
-/// element (`theme_css`'s whole `<style>` block is regenerated on every theme change/reload,
-/// same as everything else in this document).
-///
-/// `data-tasty-math-rendered` per-span guard mirrors [`copy_button_script`]/
-/// [`image_error_script`]'s idempotency convention — defense-in-depth in case this script somehow
-/// runs twice against the same DOM (structurally it shouldn't: `reload_webview` always replaces
-/// the whole document, never patches it in place). Without the guard, a second `katex.render`
-/// call would try to re-parse the *already-rendered* KaTeX DOM's `textContent` as TeX instead of
-/// the original source.
+/// Linux/WebKitGTK에서 잘못된 \frac{1}은 원문을 담은 .katex-error로, 함께 둔
+/// 유효한 수식 두 개는 KaTeX MathML로 표시됐다.
+/// 기록: docs/plugins/markdown/screens/markdown.md.
 fn katex_script() -> String {
     format!(
         r#"<style>{css}</style><script>{js}</script><script>(function(){{
@@ -3931,13 +3219,7 @@ mod tests {
         assert_eq!(percent_decode(&enc), raw);
     }
 
-    /// 주소창이 걸린 두 CSS 줄과 높이 선언을 **문자열로** 고정하는 시험 둘의 공통 하네스.
-    ///
-    /// ★ 이 둘이 막는 사고는 **누가 그 줄을 되돌리는 것**이지 엔진이 다르게 계산하는 것이
-    /// 아니다. 문자열이 맞다고 레이아웃이 맞다는 뜻이 아니고, 이 시험을 sticky 가 붙는다는
-    /// 증거로 읽으면 안 된다 — 생성된 바이트만 잰다. 그 바이트가 왜 그래야 하는지와 다른
-    /// 조합에서 엔진이 무엇을 내놓는지는 [`theme_css`] 의 doc 주석이 실측 표로 적는다
-    /// (사유를 여기 복제하지 않는다). 엔진 층을 재는 채널은 이 레포에 없다.
+    // CSS 문자열의 선언을 검사한다. 실제 WebView 레이아웃 검증을 대신하지 않는다.
     fn stylesheet_of_a_rendered_document() -> String {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
@@ -3959,15 +3241,15 @@ mod tests {
         let css = stylesheet_of_a_rendered_document();
         assert!(
             css.contains("html{height:100%"),
-            "html 이 definite height 를 잃으면 body 의 백분율 min-height 가 기댈 곳을 잃는다"
+            "html 높이를 지정해 body의 백분율 min-height 기준을 제공해야 한다"
         );
         assert!(
             css.contains("body{min-height:100%"),
-            "body 가 뷰포트에 묶이면 sticky 주소창이 자기 containing block 을 넘어 못 살아남는다"
+            "긴 문서에서도 sticky 주소창이 보이도록 body가 늘어날 수 있어야 한다"
         );
         assert!(
             !css.contains("html,body{height:100%"),
-            "옛 합친 규칙으로 되돌아갔다 \u{2014} 바가 첫 뷰포트 뒤로 스크롤돼 사라진다"
+            "html과 body 모두에 height:100%를 지정하면 안 된다"
         );
     }
 
@@ -3982,7 +3264,7 @@ mod tests {
         assert_eq!(
             css.matches("var(--md-addr-bar-h)").count(),
             4,
-            "바 높이 \u{b7} find 바 top \u{b7} heading \u{b7} 각주 \u{2014} 넷이 그 이름을 읽어야 한다"
+            "주소창 높이, 검색창 위치, 제목과 각주 여백이 같은 CSS 변수를 사용해야 한다"
         );
     }
 
@@ -4231,13 +3513,7 @@ mod tests {
 
     #[test]
     fn mermaid_script_js_source_has_no_premature_script_close() {
-        // The vendored bundle is inlined verbatim inside an HTML <script> element — any literal
-        // `</script` in it, in any case (the browser's raw-text-element end tag scan is
-        // case-insensitive), would truncate the tag early and break the page.
-        // `mermaid_js_source` neutralizes that; this locks the invariant in regardless of what a
-        // future re-vendor introduces. The vendored file itself has zero occurrences in any
-        // case, so this only proves the current bundle is clean — see
-        // `escape_script_close_neutralizes_mixed_case_occurrences` for the actual logic test.
+        // 문서에 번들과 초기화 코드가 포함되는지 확인한다.
         let js = mermaid_js_source();
         // 번들이 비어 있으면 아래 부정은 무조건 통과한다 — 그 갈래를 먼저 닫는다.
         assert!(js.contains("mermaid"));
@@ -4329,30 +3605,14 @@ mod tests {
 
     #[test]
     fn highlight_script_skips_unsupported_languages_without_erroring() {
-        // `sanitize_fence_lang` lets any `[A-Za-z0-9_+-]` token through as a class (including
-        // languages this vendored bundle doesn't ship, e.g. "brainfuck" isn't in the "common"
-        // bundle, and "mermaid" is a diagram block, not code). The init script must check
-        // `hljs.getLanguage(...)` before calling `highlightElement` so those fall back to plain,
-        // unhighlighted text instead of throwing (`hljs.highlight` throws synchronously on an
-        // unknown language — verified against the vendored bundle directly).
+        // 지원 언어의 구문 강조 코드가 포함되는지 확인한다.
         let script = highlight_script();
         assert!(script.contains("if(!hljs.getLanguage(m[1]))return;"));
     }
 
     #[test]
     fn highlight_js_recognizes_every_minimum_required_language() {
-        // Locks in the language-coverage claim in `assets/NOTICE.md`: every language this task
-        // requires (rust/js/ts/python/json/toml/bash/yaml/markdown) is registered in the
-        // vendored bundle. The bundle registers each language by stripping the `grmr_` prefix
-        // off its internal grammar-function key (verified by reading the bundle's own
-        // registration loop — `Ke.registerLanguage(n,Pe[e])` where `n` derives from `grmr_<id>`),
-        // so `grmr_<id>:` is what `hljs.getLanguage(id)` actually resolves against — this is a
-        // more precise signal than grepping for the bare language name, which also appears in
-        // unrelated places (comments, the human-readable `name:"Rust"` field, etc).
-        //
-        // `toml` isn't checked directly: highlight.js registers it only as an *alias* of the
-        // `ini` grammar (`grmr_ini`, `aliases:["toml"]`) — no `grmr_toml` key exists — so it's
-        // asserted separately below via the alias list instead of this loop's naming convention.
+        // 언어 식별자와 별칭을 번들에서 찾을 수 있는지 확인한다.
         let js = highlight_js_source();
         for lang in [
             "rust",
@@ -4377,12 +3637,7 @@ mod tests {
 
     #[test]
     fn code_block_with_literal_script_tag_stays_escaped_text_after_highlight_insertion() {
-        // XSS regression: a code block containing the literal text `<script>alert(1)</script>`
-        // must render as HTML-escaped text — sanitize_html already guarantees this independently
-        // of syntax highlighting (pulldown-cmark HTML-escapes code block content, and
-        // highlight.js's own `highlightElement` reads `textContent`/rewrites `innerHTML` with its
-        // own escaped spans, never reinterpreting existing markup) — this locks in that adding
-        // the (conditional) highlight.js script tag doesn't change that.
+        // 코드 텍스트를 HTML로 실행하지 않도록 escape하는지 확인한다.
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
@@ -4481,9 +3736,7 @@ mod tests {
 
     #[test]
     fn render_document_error_state_has_no_copy_button() {
-        // `.tasty-state-detail` is a bare `<pre>` with no `<code>` child, and it lives outside
-        // `#tasty-md-body` — the copy-button gate (`<pre><code` substring on `body_html`) must
-        // not fire for it.
+        // 오류 상세 pre에는 code 자식이 없어 복사 버튼 대상이 아니다.
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let tr = Translator::default();
         let html = render_document(DocumentInput {
@@ -4508,9 +3761,7 @@ mod tests {
 
     #[test]
     fn copy_button_script_skips_mermaid_blocks_regardless_of_script_order() {
-        // mermaid.run() is async and unawaited (see `mermaid_script`'s doc comment) — script
-        // *ordering* can't guarantee the diagram DOM-replacement already happened, so the skip
-        // must be an explicit class check inside the attach loop, not implicit via placement.
+        // Mermaid는 비동기로 렌더하므로 클래스 검사로 복사 버튼 대상에서 제외한다.
         let script = copy_button_script(&Translator::default());
         assert!(script.contains("code.classList.contains('language-mermaid')"));
     }
@@ -4641,9 +3892,7 @@ mod tests {
 
     #[test]
     fn image_error_script_reads_src_attribute_not_property() {
-        // `img.src` (property) is whatever the engine resolved against the document's own
-        // location — `getAttribute('src')` preserves the original markdown-authored path, which
-        // is what the placeholder should show.
+        // DOM에서 URL로 해석한 src 프로퍼티 대신 src 속성값을 읽는다.
         let script = image_error_script(&Translator::default());
         assert!(script.contains("img.getAttribute('src')"));
         assert!(!script.contains("img.src"));
@@ -4862,15 +4111,7 @@ mod tests {
 
     #[test]
     fn gfm_tag_with_trailing_text_becomes_an_obsidian_custom_title_callout() {
-        // `scan_blockquote_tag` only recognizes the tag as a genuine GFM AST event when the rest
-        // of that line is blank (pulldown-cmark `scanners.rs`) — trailing text on the same line
-        // makes the parser fall back to a plain blockquote whose literal first line is that text,
-        // tag brackets included. Before Obsidian-style callouts existed, that was the end of the
-        // story (see git history for the old version of this test). Now `rewrite_callout_buffer`
-        // parses that literal first line itself and recognizes it as Obsidian's own documented
-        // "custom title, no fold marker" shape (`[!type] Title`) — this is an intentional
-        // behavior change from Obsidian support, not a regression: the trailing text is real
-        // Obsidian syntax, not malformed GFM syntax.
+        // 콜아웃의 기본 제목과 사용자 제목을 확인한다.
         let out = unsafe_content_html(
             "> [!NOTE] with trailing text\n> more\n",
             &Translator::default(),
@@ -4899,33 +4140,23 @@ mod tests {
 
     #[test]
     fn raw_html_blockquote_spoofing_an_alert_class_gets_no_data_label() {
-        // Adversarial regression for the vulnerability Gate4 flagged: a document author writes
-        // a *raw HTML* blockquote (CommonMark HTML block type 6 — `blockquote` is one of the
-        // block-level tags eligible for verbatim passthrough) carrying one of the 5 literal
-        // alert classes directly, with no `[!NOTE]`-style tag anywhere. pulldown-cmark passes
-        // this through byte-for-byte as `Event::Html`, entirely bypassing `Tag::BlockQuote` —
-        // it must never be mistaken for a genuine alert and must never receive a `data-label`
-        // (a forged label matching real translated alert text is what makes the spoof
-        // convincing; without it there's no fake header text, just an inert class string).
+        // Raw HTML의 class만으로 자동 data-label을 추가하지 않는지 확인한다.
+        // 입력에 직접 넣은 data-label을 차단하는 시험은 아니다.
         let source = "Intro\n\n\
 <blockquote class=\"markdown-alert-note\">Spoofed trustworthy-looking note</blockquote>\n\n\
 Outro\n";
         let out = unsafe_content_html(source, &Translator::default());
         assert!(
             !out.contains("data-label"),
-            "raw HTML blockquote must never receive a data-label, got: {out}"
+            "raw HTML without a data-label must not gain one automatically, got: {out}"
         );
-        // The raw HTML itself still passes through verbatim (that's pulldown-cmark's own raw
-        // HTML block behavior, unrelated to this fix) — confirms this is testing the real
-        // spoofing vector and not a source the parser silently dropped.
+        // Raw HTML을 버려서 검사에 통과한 것이 아닌지 함께 확인한다.
         assert!(
             out.contains(r#"<blockquote class="markdown-alert-note">Spoofed trustworthy-looking note</blockquote>"#),
             "expected the raw HTML to survive unmodified pre-sanitize, got: {out}"
         );
 
-        // A genuine alert elsewhere in the *same* document must still be labeled correctly —
-        // proves this isn't a blanket "never label anything" regression, just a refusal to
-        // label anything that didn't come from a real `Tag::BlockQuote(Some(kind))` event.
+        // 같은 문서의 Markdown 콜아웃에는 제목을 붙인다.
         let mixed = format!("{source}\n> [!NOTE]\n> a real one\n");
         let mixed_out = unsafe_content_html(&mixed, &Translator::default());
         assert_eq!(
@@ -5012,10 +4243,7 @@ Outro\n";
 
     #[test]
     fn obsidian_aliases_never_shadow_a_gfm_kind_of_the_same_name() {
-        // Obsidian's own docs list `important`/`caution`/`attention` as aliases of
-        // `tip`/`warning`/`warning` respectively — but those 3 keywords are already distinct,
-        // pre-existing GFM kinds in this codebase ("GFM 5종 기존 유지" is a hard requirement), so
-        // they must keep resolving to their own GFM entry, not get redefined into an alias.
+        // important와 caution을 지원하며 attention은 알 수 없는 태그로 남긴다.
         let important = unsafe_content_html("> [!important]\n> body\n", &Translator::default());
         assert!(
             important.contains(r#"class="markdown-alert-important""#),
@@ -5272,10 +4500,7 @@ Outro\n";
         assert!(html.contains("tasty-toc-collapsed"), "got: {html}");
     }
 
-    /// 목차·본문 앵커가 **이 문서 안의 id** 를 가리키려면 `<base href>` 가 없어야 한다 —
-    /// HTML 규칙상 fragment-only `href` 도 base URL 에 상대적으로 풀리므로, base 가 있으면
-    /// `#target` 이 `file:///<dir>/#target`(다른 문서)이 된다. base_dir 이 **있는** 문서로
-    /// 건다: base_dir 이 없으면 옛 코드에서도 base 태그가 안 나와 이 시험이 공허해진다.
+    // base href가 있으면 #앵커도 다른 문서의 주소로 해석되므로 넣지 않는다.
     #[test]
     fn document_with_a_base_dir_still_carries_no_base_tag() {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
@@ -5460,8 +4685,7 @@ Outro\n";
     #[test]
     fn find_script_restores_dom_before_every_search_not_only_on_close() {
         let script = find_in_page_script(&Translator::default());
-        // clearHighlights() unwraps every <mark> back to plain text + normalize()s the parent —
-        // called at the top of runSearch() (every keystroke) as well as from closeBar().
+        // 검색 스크립트 문자열의 IME 처리 분기를 확인한다.
         assert!(
             script.contains("function clearHighlights()"),
             "got: {script}"
@@ -5565,7 +4789,7 @@ Outro\n";
     fn tree_with_image() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let png = dir.path().join("pic.png");
-        // 1×1 PNG. 내용이 이미지인지 여기서 묻지 않는다 — 판정은 확장자 허용목록이다.
+        // 확장자 판정을 확인하기 위한 파일이며 유효한 PNG 데이터는 아니다.
         std::fs::write(&png, b"\x89PNG\r\n\x1a\n-not-a-real-png-").unwrap();
         (dir, png)
     }
@@ -5698,9 +4922,7 @@ Outro\n";
         assert_eq!(src_of(&out), None, "got: {out}");
     }
 
-    /// 이 함수의 **계약**: 지나고 나면 `http(s)` 도 `data:` 도 아닌 `src` 는 없다.
-    /// 위 개별 시험이 형태별로 확인하는 것을 한 문장으로 못박는다 — 새 형태가 생겨도
-    /// 이 줄이 먼저 깨진다.
+    // 기준 폴더 밖의 파일 경로를 인라인하지 않는지 확인한다.
     #[test]
     fn no_src_survives_that_is_neither_remote_nor_inlined() {
         let (dir, png) = tree_with_image();
@@ -5735,7 +4957,7 @@ Outro\n";
                 value.starts_with("http://")
                     || value.starts_with("https://")
                     || value.starts_with("data:image/"),
-                "계약 위반 src: {value}"
+                "허용하지 않은 src가 남았다: {value}"
             );
             seen += 1;
             rest = &v[j..];
@@ -5747,11 +4969,7 @@ Outro\n";
 
     // ── sanitize 단계의 스킴 판정 (허용목록을 값으로 못박는다) ──────────────────
 
-    /// 허용 스킴은 `http`·`https`·`mailto` 셋이다. `data:`·`file:` 은 **안 넣는다** —
-    /// ammonia 의 `url_schemes` 는 속성별로 나뉘지 않아 `img src` 를 열면 `a href` 도
-    /// 같이 열린다. 로컬 이미지는 그 스킴 없이도 뜬다(위 인라이너가 상대 경로·스킴
-    /// 없는 절대 경로를 직접 읽는다). 그래서 이 셋으로 충분하고, 넓히면 얻는 것 없이
-    /// `href` 표면만 넓어진다.
+    // HTTP(S) 이미지는 그대로 두고 로컬 이미지만 인라인한다.
     #[test]
     fn sanitize_keeps_only_http_https_mailto_schemes() {
         for (src, kept) in [

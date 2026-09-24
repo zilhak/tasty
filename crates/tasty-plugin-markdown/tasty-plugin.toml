@@ -14,12 +14,9 @@ permissions = [
     # 대용량 파일 확인 팝업(egui-mesh)을 자가 렌더한다.
     "ui.popup",
 ]
-# 대용량 파일 감지 시 plugin 이 발행하는 이벤트(→ host fire_popup_triggers → 확인 팝업).
-# 크기 감지는 plugin in-process — host 는 파일 크기를 stat 하지 않는다(크기게이트 plugin 소유).
+# 플러그인이 로컬 파일의 크기를 확인한 뒤 확인 팝업 이벤트를 보낸다.
 event_publish = ["com.tasty.markdown.large_file_confirm"]
-# webview-kind surface 는 `surface.set_context` 를 받지 않아 Theme 변경이 자동으로
-# 밀리지 않는다(host_api/webview.rs::handle_theme_query 문서 참조) — 이 구독으로 색이
-# 바뀔 때마다 문서를 재생성한다.
+# WebView에는 set_context가 오지 않으므로 테마 변경 이벤트로 문서를 다시 만든다.
 event_subscribe = ["theme.changed"]
 lang_dir = "lang"
 
@@ -27,34 +24,21 @@ lang_dir = "lang"
 type = "process"
 command = "tasty-plugin-markdown"
 
-# webview: host 가 native OS WebView overlay 를 생성해 이 kind 의 surface 를 덮는다
-# (docs/plugins/markdown/index.md#내부-동작, 본문 렌더를 webview로 전환). plugin 은 markdown → sanitize 된 HTML 문서를 만들어
-# `webview.set_url` 로 전달할 뿐, 실제 픽셀은 host WebView 가 그린다. 대용량 파일/파일열기
-# 확인 팝업만 여전히 egui-mesh 로 자가 렌더(아래 `[[contributes.popup]]`).
+# 플러그인이 생성한 HTML을 호스트 WebView가 표시한다. 팝업은 egui-mesh를 사용한다.
 [[surface_kinds]]
 kind = "markdown"
 display_name_i18n_key = "surface.kind.markdown"
 icon = "markdown"
 rendering = "webview"
-# capability: 줌 단축키가 host WebView 의 `HtmlWebViewSettings.zoom_percent` 를 조절한다
-# (src/adapters/ui/input/shortcuts/zoom.rs). `egui_copy` 는 없다 — 선택 텍스트 복사는
-# native WebView 가 Ctrl+C 를 자체 처리한다(egui `Event::Copy` 주입 대상 mesh 가 없다).
+# 줌은 WebView 설정을 조절한다. 선택 텍스트 복사는 WebView가 처리한다.
 zoomable = true
-# 옛 caller 가 `file_path` 로 넘겨도 host 가 canonical `file` 키로 정규화한다.
-# 본체의 `kind == "markdown"` 정규화 하드코딩을 대체(generic-kind 마이그레이션).
+# file_path로 들어온 인자도 file로 받는다.
 param_aliases = { file_path = "file" }
-# 자동 탭 명명: `file` 값의 basename 을 표시명으로(예: README.md). 본체의
-# `kind == "markdown"` basename 명명 하드코딩을 대체(generic-kind 마이그레이션).
+# 파일 이름으로 탭 이름을 정한다.
 name_from_param = "file"
-# 대용량 파일(>1MB) 확인은 **plugin 이 소유**한다: plugin 이 in-process 로 크기를 감지해
-# read 를 보류하고 large-file 이벤트를 발행 → 아래 `[[contributes.popup]]` 확인 팝업을
-# 연다. host 는 파일 크기를 stat 하지 않는다(옛 `size_confirm_limit` 게이트 제거).
-# 파일로 열 때 host 의 "최근 연 파일" 목록에 기록. 본체의 `kind == "markdown"` recent
-# 기록 하드코딩을 대체(generic per-kind). 주소창 드롭다운이 `recent.query` 로 조회.
+# 열었던 파일을 최근 목록에 기록한다. 주소창 후보는 recent.query로 조회한다.
 records_recent = true
-# convert 시 host 가 어느 파일을 열지 물어야 한다 → 즉시 빈 params 변환 대신 아래
-# `file-open` 팝업을 연다. host 는 markdown 을 모르고 이 두 필드(capability + popup 참조)
-# 로만 convert 라우팅을 판정한다(본체 `kind == "markdown"` convert 분기 제거).
+# 변환 전에 파일 경로를 받도록 파일 열기 팝업을 지정한다.
 convert_requires_input = true
 convert_input_popup = "file-open"
 
@@ -69,7 +53,7 @@ required = true
 placeholder_key = "preset.field.file_hint"
 derive_cwd = true
 
-# default_colors: F.H schema 데모.
+# 종류별 기본 색.
 [surface_kinds.default_colors]
 focused_bg = "#11111b"   # = crust, mocha.toml [surfaces.markdown].focused_bg 와 lockstep
 focused_fg = "#cdd6f4"
@@ -80,10 +64,7 @@ unfocused_fg = "#a6adc8"
 prefix = "markdown"
 description_i18n_key = "markdown.namespace.desc"
 
-# 대용량 파일 확인 팝업. plugin 이 크기 초과를 in-process 로 감지해 발행한
-# `com.tasty.markdown.large_file_confirm` 이벤트로 열린다(event trigger). 콘텐츠
-# (파일명·크기 태그·[취소]/[열기])는 plugin 이 egui-mesh 로 자가 렌더하고, 셸(scrim/
-# border/outside-click/Esc)은 host 소유(docs/dev-guide/egui-mesh-channel.md#데이터-흐름). [열기] 시 plugin 이 read 를 재개한다.
+# 크기 확인 이벤트로 여는 팝업. 콘텐츠는 플러그인, 외곽과 닫기는 호스트가 처리한다.
 [[contributes.popup]]
 id = "large-file-confirm"
 trigger = { kind = "event", event_key = "com.tasty.markdown.large_file_confirm" }
@@ -92,17 +73,9 @@ size_hint = { width = 360, height = 150 }
 anchor = "screen-center"
 dismiss_on_outside_click = true
 
-# 파일열기 폼(경로 입력 + browse + 열기/취소). host 는 `[[surface_kinds]]
-# convert_input_popup = "file-open"` 을 보고 convert/open 진입점에서 이 팝업을
-# `open_popup_instance` 로 직접 연다(context 에 convert 대상 surface_id 를 실으면 제자리
-# 변환, 없으면 새 탭). event_key trigger 도 남겨 두어 host 이벤트 발행 경로도 지원한다.
-# browse 는 host 소유 file_picker popup(`file_picker.trigger`)으로 위임, 열기는 surface_id
-# 유무로 분기한다:
-# 있으면 `markdown.navigate`(제자리), 없으면 `file_handler.dispatch`(새 탭).
-# `scope = "surface"` — host 진입점이 대상 surface(제자리 변환이면 그 surface, 새 탭이면
-# 여는 시점의 focus surface)에 이 팝업을 묶는다. 그 surface 가 안 보이면 그리지 않고,
-# 위치는 그 surface 영역 가운데로 잡혀 그 영역 안으로 clamp 된다. event trigger 로 열린
-# 경우는 host 가 대상을 모르므로 창 범위로 뜬다.
+# 파일 열기 팝업. 대상 surface가 있으면 그 자리에서 변환하고 없으면 새 탭을 연다.
+# 파일 선택은 호스트 피커에 요청한다. surface 범위로 열면 해당 영역에 배치하며
+# 대상을 알 수 없는 이벤트 경로에서는 창 범위로 연다.
 [[contributes.popup]]
 id = "file-open"
 trigger = { kind = "event", event_key = "com.tasty.markdown.file_open" }
@@ -134,7 +107,7 @@ name = "markdown"
 description = "Markdown viewer commands"
 description_i18n_key = "markdown.cli.desc"
 subcommands = [
-    { name = "reload", ipc_method = "markdown.reload", args = "reload_args", description = "Force reload the markdown surface from disk", description_i18n_key = "markdown.cli.sub.reload.description" },
+    { name = "reload", ipc_method = "markdown.reload", args = "reload_args", description = "Reload the local file or request the remote document again", description_i18n_key = "markdown.cli.sub.reload.description" },
     { name = "recent", ipc_method = "markdown.recent", args = "recent_args", description = "List recently opened markdown files (newest first, up to 10)", description_i18n_key = "markdown.cli.sub.recent.description" },
 ]
 
@@ -143,8 +116,7 @@ flags = [
     { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID", help_i18n_key = "markdown.cli.arg.reload_args.surface.help" },
 ]
 
-# recent 조회는 인자 없음 — 빈 그룹이라도 명시적으로 가리켜야 한다(validator). plugin
-# 트램폴린이 host 의 generic `recent.query` 를 kind="markdown" 으로 채운다(host 무지).
+# 인자가 없어도 검증기가 참조할 빈 그룹은 선언한다.
 [contributes.cli.arg_groups.recent_args]
 flags = []
 

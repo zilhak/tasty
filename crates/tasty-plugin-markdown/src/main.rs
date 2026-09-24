@@ -1,37 +1,18 @@
 #![forbid(unsafe_code)]
 
-//! Tasty markdown plugin — **webview** markdown viewer surface (docs/plugins/markdown/index.md#내부-동작).
-//!
-//! The plugin owns the markdown document (reads the `.md` file delivered via `surface.create`,
-//! watches it for external changes) and renders it by generating a complete, sanitized HTML
-//! document (`render::render_document`) that the host's native OS WebView displays — the
-//! plugin no longer tessellates its own egui mesh for the document body (that was the former
-//! `rendering = "egui-mesh"` design, docs/dev-guide/egui-mesh-channel.md#데이터-흐름). Address-bar navigation and content link
-//! clicks are captured via the host's `webview.navigation_attempt` event (Stage A) and routed
-//! back through `file_handler.dispatch` (files) or `webview.open_external` (external URLs, opened
-//! by the host — this plugin never calls an OS opener itself) — see `render.rs`'s
-//! module doc for why link destinations are rewritten into an internal URL-fragment scheme
-//! rather than left as plain `href`s.
-//!
-//! Two egui-mesh popups remain unchanged: the large-file confirmation and the file-open form
-//! (`[[contributes.popup]]` in the manifest) are still self-rendered by the plugin — only the
-//! main document surface moved to the webview channel.
+//! Markdown 파일을 HTML로 렌더해 호스트 WebView에 표시한다.
+//! 파일 감시는 SDK의 file_watch를 사용하고, 링크 열기는 호스트에 요청한다.
+//! 대용량 파일 확인과 파일 열기 팝업은 egui-mesh로 그린다.
+//! 상세: docs/plugins/markdown/index.md#내부-동작.
 
-// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
-// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
-// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
-// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
-// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+// 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod popup;
 mod render;
 
-/// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
-/// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
-/// 좌표)를 생성한다. 런타임은 이 점배열을 [`tasty_plugin_sdk::baked_icon::draw`] 로
-/// 그릴 크기에 스케일해 벡터 stroke 로 그린다(텍스처 없음, DPI 독립). 확인 팝업
-/// (large-file/file-open) 전용 — 본문은 더 이상 이 plugin 이 그리지 않는다.
+/// 팝업 아이콘의 빌드 시점 SVG 변환 결과. 0..24 좌표의 경로를
+/// baked_icon::draw에서 크기에 맞춰 그린다.
 mod baked_icons {
     include!(concat!(env!("OUT_DIR"), "/plugin_icons.rs"));
 }
@@ -59,9 +40,8 @@ use tasty_plugin_sdk::EguiMeshPopup;
 const PLUGIN_ID: &str = "com.tasty.markdown";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// 대용량 파일 확인 게이트 임계값 (1MB). 이 크기를 *초과* 하는 파일은 읽기 전에 확인
-/// 팝업을 띄운다. **크기 감지는 plugin in-process** — host 는 파일 크기를 stat 하지
-/// 않는다(불가침 원칙: markdown 크기게이트는 plugin 소유). 이름도 plugin-local 이다.
+/// 로컬 파일을 열 때 확인 팝업을 띄우는 기준(1 MiB 초과).
+/// 전체 읽기 크기를 제한하는 상수는 아니다.
 const LARGE_FILE_LIMIT_BYTES: u64 = 1024 * 1024;
 
 /// 대용량 감지 시 plugin 이 발행하는 이벤트 key. 매니페스트 `event_publish` 패턴 +
@@ -78,9 +58,8 @@ const THEME_CHANGED_EVENT: &str = "theme.changed";
 /// (`docs/dev-guide/attach-behavior.md#markdown-content-채널`).
 const MIRROR_CONTENT_REQUEST_METHOD: &str = "markdown_mirror.content_request";
 
-/// 원격 원문 요청을 누가 일으켰나. host 는 에이전트가 일으킨 요청의 회신에서 사용자
-/// toast(원문 잘림)를 띄우지 않는다 — 에이전트 행동의 부수효과가 사용자 시각 상태에 닿지
-/// 않게 하는 것이다(identity 원칙 1, docs/design/systems/toast.md#origin이-적용되는-경로).
+/// 원문 요청의 출처. 에이전트 요청에는 원문 잘림 토스트를 띄우지 않는다.
+/// docs/design/systems/toast.md#origin이-적용되는-경로.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RemoteRequester {
     /// 최초 열기 · 원격 변경 신호 재조회 · 새로고침 버튼 — 이 plugin 이 스스로 또는 사용자
@@ -90,8 +69,7 @@ enum RemoteRequester {
     Agent,
 }
 
-/// `markdown_mirror.content_request` 의 params. 에이전트 요청에만 `agent_origin: true` 를
-/// 싣는다 — 그 칸이 없는 요청은 종전 그대로 읽힌다.
+/// 에이전트가 요청한 원문 조회에만 agent_origin: true를 넣는다.
 fn mirror_content_request_params(surface_id: u32, requester: RemoteRequester) -> Value {
     match requester {
         RemoteRequester::Plugin => json!({ "surface_id": surface_id }),
@@ -102,17 +80,15 @@ fn mirror_content_request_params(surface_id: u32, requester: RemoteRequester) ->
 /// host 가 이 plugin 에 unicast 하는 원문 조회 회신 이벤트.
 const MIRROR_CONTENT_RESULT_EVENT: &str = "markdown_mirror.content_result";
 
-/// host 가 이 plugin 에 unicast 하는 원격 파일 변경 신호. 받아도 원문을 다시 받지 않고
-/// 새로고침 버튼 색만 바꾼다 — 다시 받는 것은 사용자가 버튼을 눌렀을 때다.
+/// 원격 변경 통지. 정상 문서는 stale 표시를 켜고, 끊김·실패 상태는 다시 조회한다.
 const MIRROR_CHANGED_EVENT: &str = "markdown_mirror.changed";
 
 /// host 가 대기 중인 요청을 버리라고 알릴 때 쓰는 `request_id`. host 는 이 값을 발급하지
 /// 않는다(attach 연결이 끊겨 회신이 영영 안 올 때 보낸다).
 const MIRROR_ABANDON_REQUEST_ID: u64 = 0;
 
-/// Per-surface markdown document state owned by the plugin (content, load outcome, base
-/// dir for relative paths). Tracking to *decide when* to reload lives in the SDK's `file_watch`,
-/// not here — `MdDoc` only knows how to (re-)read once asked.
+/// Surface별 문서 내용, 읽기 결과와 상대경로 기준 디렉터리.
+/// 다시 읽을 시점은 SDK의 파일 감시가 결정한다.
 struct MdDoc {
     file_path: Option<String>,
     base_dir: Option<PathBuf>,
@@ -121,8 +97,7 @@ struct MdDoc {
     /// 대용량 확인 대기 중이면 true — 파일을 아직 읽지 않았다(빈 콘텐츠). 확인 팝업의
     /// [열기] 확정 시 [`MdDoc::resume_load`] 가 실제 read 를 재개한다.
     pending_large: bool,
-    /// attach mirror 문서면 `Some` — 원문은 로컬 파일이 아니라 host 가 원격에서 가져다
-    /// 준다. 이 문서는 파일을 **한 번도 읽지 않는다**(`file_path` 는 원격 경로라 표시 전용).
+    /// 원격 문서 상태. file_path는 표시용 원격 경로이며 로컬에서 읽지 않는다.
     remote: Option<RemoteDoc>,
 }
 
@@ -135,9 +110,8 @@ struct RemoteDoc {
     loaded: bool,
     /// 받은 뒤 원격 파일이 바뀌었다는 신호가 왔는가.
     stale: bool,
-    /// attach 연결이 끊겼다는 통지(abandon)를 받은 뒤 아직 원문을 다시 받지 못했는가. 받은
-    /// 원문은 버리지 않지만 화면은 끊김을 그린다 — 옛 원문을 그대로 두면 연결이 살아 있는
-    /// 화면과 구분되지 않는다.
+    /// 연결 종료 통지 후 아직 원문을 다시 받지 못했는가.
+    /// 기존 원문은 보관하되 화면에는 연결이 끊겼음을 표시한다.
     disconnected: bool,
 }
 
@@ -233,15 +207,10 @@ impl MdDoc {
         true
     }
 
-    /// 원격 파일 변경 신호에 어떻게 반응할지 정한다.
-    ///
-    /// 원문을 보여 주고 있는 문서는 다시 받지 않고 stale 표시만 켠다 — 사용자가 읽던 자리를
-    /// 말없이 갈아치우지 않기 위해서다(docs/dev-guide/attach-behavior.md#markdown-content-채널). 이미 stale 이면 다시 그리지 않는다
-    /// (같은 파일이 연달아 저장될 때 문서를 매번 통째로 다시 싣지 않게).
-    ///
-    /// 원문 대신 끊김·실패를 보여 주는 문서는 **다시 받는다** — 지킬 읽던 자리가 없고, 그
-    /// 상태로 두면 원격이 되살아나도 사용자가 누르기 전까지 끊김 화면이 남는다. host 가
-    /// 재연결 직후 이 신호를 보내는 이유가 그것이다. 이미 받는 중이면 그 회신을 기다린다.
+    /// 원격 파일 변경에 반응한다. 읽던 위치를 보호하기 위해 정상 문서는 stale 표시만 켠다.
+    /// 이미 stale이면 다시 그리지 않는다. 끊김·실패 상태는 원문을 다시 요청하고,
+    /// 요청 중이면 기존 응답을 기다린다.
+    /// docs/dev-guide/attach-behavior.md#markdown-content-채널.
     fn on_remote_changed(&mut self) -> RemoteChange {
         let showing_error = self.load_error.is_some();
         let Some(remote) = self.remote.as_mut() else {
@@ -292,10 +261,7 @@ impl MdDoc {
         }
     }
 
-    /// Force a re-read (`markdown.reload` IPC, idle watch — SDK `file_watch` owns its own
-    /// tracking to decide *when* to call this; `MdDoc` itself no longer tracks mtime since
-    /// `paint_surface` never fires for a webview-kind surface, so there's no per-frame
-    /// throttled poll to gate anymore — see the module doc on the removed `poll_reload`).
+    /// 로컬 파일을 다시 읽는다. IPC와 SDK 파일 감시에서 호출한다.
     fn force_reload(&mut self) {
         // mirror 문서의 경로는 원격 호스트의 것이다 — 로컬에서 읽으면 엉뚱한 파일이 뜬다.
         if self.remote.is_some() {
@@ -323,9 +289,7 @@ struct MarkdownPlugin {
     docs: HashMap<u32, MdDoc>,
     /// large-file 이벤트 발행용 Event Bus 핸들(`on_start` 에서 저장).
     bus: Option<BusHandle>,
-    /// host IPC 호출용 핸들(`on_start` 에서 저장) — `create_surface`/`on_event`/
-    /// `on_webview_navigation_attempt` 컨텍스트에는 host 필드가 없다(SDK 계약). idle 감시
-    /// worker 로 옮기는 클론과는 별개(그쪽은 감시 worker 전용).
+    /// HostHandle을 받지 않는 surface·이벤트 콜백에서 사용할 핸들.
     host: Option<HostHandle>,
     /// popup instance_id → 대용량 확인 대상.
     confirm: HashMap<u64, LargeFileConfirm>,
@@ -335,8 +299,7 @@ struct MarkdownPlugin {
     /// 요청을 낸 파일열기 팝업 instance_id. `"file_picker.result"` 이벤트 수신 시
     /// 이 맵으로 상관관계를 맞춰 `path_input` 을 채운다.
     pending_file_picker: HashMap<u64, u64>,
-    /// popup instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유).
-    /// 대용량/파일열기 확인 팝업 전용 — 본문은 더 이상 이 채널을 쓰지 않는다.
+    /// Popup 인스턴스별 egui-mesh 렌더 상태(폰트 atlas와 공유 버퍼).
     #[cfg(any(unix, windows))]
     popups: HashMap<u64, EguiMeshPopup>,
     /// CJK fallback 폰트를 이미 설치한 popup instance_id — set_fonts 재업로드 방지.
@@ -344,9 +307,7 @@ struct MarkdownPlugin {
     popup_fonts_installed: std::collections::HashSet<u64>,
     /// plugin lang 카탈로그 (state.failed / state.empty / addr.* 등 UI 문자열).
     tr: Translator,
-    /// idle auto-reload 감시 worker(SDK `file_watch::run`) 로 등록/해제 명령을 보내는 채널
-    /// (단계 06). `on_start` 에서 worker 를 spawn 하며 채워진다 — 그 전에는 감시가
-    /// 비활성(사실상 도달하지 않음, worker_loop 이 on_start 를 먼저 호출).
+    /// 파일 감시 워커에 등록·해제 명령을 보내는 채널. on_start에서 생성한다.
     watch_tx: Option<mpsc::Sender<WatchCmd>>,
 }
 
@@ -384,18 +345,12 @@ impl Plugin for MarkdownPlugin {
             tracing::warn!("markdown: theme.changed subscribe failed: {e}");
         }
         self.bus = Some(bus);
-        // `create_surface`/`on_event`/`on_webview_navigation_attempt` 는 host 를 받지
-        // 않으므로(SDK 계약) 별도로 보관한다 — idle 감시 worker 로 옮기는 클론과는 독립.
+        // HostHandle이 없는 콜백에서도 사용할 수 있도록 보관한다.
         self.host = Some(host.clone());
 
-        // idle auto-reload: paint 에 종속되지 않는 별도 스레드가 파일 내용 지문을
-        // 폴링하다가 변경을 감지하면 이 plugin 자신의 `markdown.reload` IPC 를
-        // self_invoke 한다(worker 는 read 하지 않음 — 상세는 SDK `file_watch` 모듈
-        // 문서). webview kind 는 `paint`/`set_context` 를 전혀 받지 않으므로
-        // `SurfaceInvalidated` 기반 idle-invalidate 경로는 쓰지 않는다.
-        //
-        // 판정자는 `ContentDigest` — markdown 은 읽기 비용이 문서 크기로 유계라
-        // 매 폴 전량을 읽는 교환이 성립한다(근거는 그 타입의 문서).
+        // 파일 감시 워커는 ContentDigest로 파일을 읽어 변경 여부를 확인한다.
+        // 변경되면 markdown.reload를 호출해 문서를 다시 읽고 렌더한다.
+        // WebView는 paint 콜백을 받지 않으므로 별도 워커에서 감시한다.
         let (tx, rx) = mpsc::channel();
         self.watch_tx = Some(tx);
         if let Err(e) = std::thread::Builder::new()
@@ -407,13 +362,7 @@ impl Plugin for MarkdownPlugin {
     }
 
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // SDK 는 surface.create 의 **전체 envelope** 을 `ctx.params` 로 넘긴다 — 실제 생성
-        // params(file 등)는 `params.params` 아래에 중첩돼 있다.
-        //
-        // 대용량 파일(> LARGE_FILE_LIMIT_BYTES)은 **plugin in-process** 로 크기를 감지해
-        // read 를 보류하고(확인 대기), large-file 이벤트를 발행한다. host 는 파일 크기를
-        // stat 하지 않는다(크기게이트는 plugin 소유). 이벤트 → host `fire_popup_triggers`
-        // → 이 plugin 의 `[[contributes.popup]]`(event trigger) 확인 팝업이 열린다.
+        // SDK가 전달하는 envelope의 params 안에 실제 생성 인자가 있다.
         if let Some(remote_file) = surface_param_remote_file(&ctx.params) {
             return self.open_remote_surface(ctx.surface_id, remote_file);
         }
@@ -421,14 +370,9 @@ impl Plugin for MarkdownPlugin {
         self.open_file_surface(ctx.surface_id, file)
     }
 
-    // layout 재시작 복원 경로. preset apply 는 `surface.create` 를 타지만 layout
-    // 재시작은 `surface.restore` 를 탄다 — SDK 기본 구현은 빈 `SurfaceResult` 라,
-    // 구현하지 않으면 재시작 시 markdown 이 file 을 잃고 빈 채로 살아난다. create 가
-    // 실어 둔 snapshot(`{"file": ...}`)을 그대로 받아 같은 문서를 연다.
+    // 저장된 snapshot의 file을 사용해 같은 문서를 복원한다.
     fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
-        // attach mirror 문서가 plugin kind 등록을 기다렸다 실제화될 때도 이 경로를 탄다 —
-        // host 는 생성 params 와 같은 모양(`{display_name, remote: {file}}`)을 data 로 싣는다.
-        // 그 경로에는 생성 params 가 없어 탭 제목을 여기서 돌려준다.
+        // 미러 문서 복원 데이터는 {display_name, remote: {file}} 형식이다.
         if let Some(remote_file) = remote_file_of(&ctx.data) {
             let mut result = self.open_remote_surface(ctx.surface_id, remote_file);
             result.display_name = ctx
@@ -454,18 +398,9 @@ impl Plugin for MarkdownPlugin {
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
             "markdown.reload" => self.markdown_reload(&ctx.params),
-            // host 가 구현한 이름이다(surface 를 열고 있는 창을 host 가 안다). 이
-            // namespace 를 plugin 이 점유하는 순간 외부 호출은 전부 여기로 forward 되므로,
-            // arm 이 없으면 host 구현이 **외부에서만** 안 닿는다 — plugin 이 설치돼 있으면
-            // 막히고 빠지면 열리는, 설치 상태에 따라 흔들리는 표면이 된다.
-            // 실측(2026-09-05): arm 이 없을 때 외부 `markdown.navigate` 는 plugin 의
-            // not_found 로 끝났고, plugin 을 빼면 같은 호출이 host arm 에 닿았다.
-            // image.open/list 와 같은 self-call trampoline 로 host 에 돌려준다.
+            // 이 네임스페이스의 외부 요청은 플러그인에 먼저 오므로 호스트 구현에 다시 전달한다.
             "markdown.navigate" => Ok(ctx.host.call(&ctx.method, ctx.params)?),
-            // 최근목록 조회는 host 소유(AppState.recent_files) — plugin 은 저장소를 못 본다.
-            // host 는 generic `recent.query {kind}` 만 알고 "markdown" 을 모른다. CLI/주소창
-            // caller 가 이 plugin namespace 로 보낸 호출을 host 의 generic 메서드로 kind 를
-            // 채워 trampoline 한다(host 무지 유지 — image.open/list 와 동형 host-adapter).
+            // 최근 파일은 호스트가 관리하므로 kind를 지정해 조회한다.
             "markdown.recent" => Ok(ctx
                 .host
                 .call("recent.query", json!({ "kind": "markdown" }))?),
@@ -543,7 +478,7 @@ impl Plugin for MarkdownPlugin {
         self.pending_file_picker.retain(|_, v| *v != iid);
     }
 
-    /// host 가 push 하는 이벤트: `"file_picker.result"`(docs/dev-guide/popup-implementation.md#플러그인이-호스트-팝업-결과를-기다릴-때)와 `"theme.changed"`.
+    /// 파일 피커 결과, 테마 변경과 미러 문서 이벤트를 처리한다.
     fn on_event(&mut self, ctx: EventDispatchCtx) {
         match ctx.envelope.key.as_str() {
             FILE_PICKER_RESULT_EVENT => {
@@ -565,9 +500,7 @@ impl Plugin for MarkdownPlugin {
                     st.path_input = path;
                 }
             }
-            // 전역 테마가 바뀌면(라이트/다크 토글 등) 살아있는 모든 문서를 최신 CSS 로
-            // 재생성한다 — webview-kind surface 는 `surface.set_context` 를 받지 않아
-            // Theme 이 자동으로 밀리지 않는다(`host_api/webview.rs::handle_theme_query` 문서).
+            // WebView에는 surface.set_context가 오지 않으므로 테마 변경 시 문서를 다시 만든다.
             THEME_CHANGED_EVENT => self.reload_all_webviews(),
             MIRROR_CONTENT_RESULT_EVENT => self.on_mirror_content_result(ctx.envelope.payload),
             MIRROR_CHANGED_EVENT => self.on_mirror_changed(&ctx.envelope.payload),
@@ -575,10 +508,8 @@ impl Plugin for MarkdownPlugin {
         }
     }
 
-    /// `webview.navigation_attempt`(Stage A) — 소유 webview surface 가 navigation 을
-    /// 시도함(주소창 Go/Enter, 콘텐츠 링크 클릭). `render.rs` 가 생성한 문서는 모든
-    /// 실제 목적지를 `#tasty-nav:{link,addr}:<enc>` fragment 로 감싸므로, 그 마커가
-    /// 없는 navigation 시도는 이 plugin 이 낸 것이 아니라 조용히 무시한다.
+    /// WebView 이동 요청에서 render.rs가 사용하는 #tasty-nav 마커를 해석한다.
+    /// 마커가 없는 요청은 무시한다. 사용자 동작인지는 호스트가 별도로 판단한다.
     fn on_webview_navigation_attempt(&mut self, ctx: WebviewNavigationAttemptCtx) {
         let Some(intent) = render::parse_nav_fragment(&ctx.url) else {
             return;
@@ -669,10 +600,8 @@ impl MarkdownPlugin {
             .and_then(|v| v.as_u64())
             .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))?
             as u32;
-        // mirror 문서는 원격 원문을 다시 요청한다 — 회신이 오면 그때 다시 그린다.
-        // mirror 문서는 감시에 등록되지 않으므로 이 IPC 는 idle 감시의 self_invoke 가 아니라
-        // 바깥 호출자(`tasty markdown reload` — 에이전트)만 부른다. 그래서 그 회신의 잘림
-        // toast 를 host 가 사용자에게 띄우지 않도록 요청에 표시한다(identity 원칙 1).
+        // 원격 문서는 파일 감시에 등록하지 않는다. 이 IPC에서 시작한 원문 조회에는
+        // 에이전트 출처를 표시해 사용자 토스트를 띄우지 않도록 한다.
         if self
             .docs
             .get(&surface_id)
@@ -688,19 +617,13 @@ impl MarkdownPlugin {
         Ok(json!({ "ok": true, "surface_id": surface_id }))
     }
 
-    /// 문서를 만든다. 파일이 임계값을 *초과* 하면 read 를 보류(`new_deferred`)하고
-    /// large-file 이벤트를 발행해 확인 팝업을 띄운다(크기 감지는 plugin in-process).
-    /// bus 가 없으면(초기화 전) 게이트를 건너뛰고 즉시 로드한다(fail-open).
-    /// create/restore 공용 — file 로 문서를 열고, host 에 snapshot(`{"file": ...}`)을
-    /// 올려 layout/preset round-trip 에 file 을 보존한다. host 는 이 snapshot 을
-    /// `RemoteSurface.snapshot_cache` 로 캐시했다가 `SavedSurface::Generic.data` 로
-    /// 저장하고, 다음 실행의 `surface.restore` 에 `data` 로 되돌려준다. file 이 없으면
-    /// 저장할 것이 없어 `None`(호스트는 기존 캐시 유지).
+    /// 로컬 파일을 열고 경로를 snapshot에 저장한다. 생성과 복원에서 함께 사용한다.
+    /// 크기가 기준을 초과하면 읽기를 보류하고 확인 이벤트를 보낸다.
+    /// 이벤트 버스가 없으면 확인 없이 읽는다. 파일 경로가 없으면 snapshot도 반환하지 않는다.
     fn open_file_surface(&mut self, surface_id: u32, file: Option<String>) -> SurfaceResult {
         let doc = self.make_doc(file.clone(), surface_id);
         self.docs.insert(surface_id, doc);
-        // idle 감시 등록(단계 06). `markdown.navigate` 제자리 이동도 같은 surface_id 로
-        // create_surface 를 다시 호출하므로 여기서 자연스럽게 갱신된다.
+        // 같은 surface의 경로가 바뀌면 감시 등록도 갱신한다.
         self.watch_register(surface_id, file.clone());
         // 문서를 HTML 로 렌더해 host WebView 에 싣는다 — 이 kind 는 mesh 를 그리지 않는다.
         self.reload_webview(surface_id);
@@ -780,10 +703,8 @@ impl MarkdownPlugin {
         MdDoc::new(file)
     }
 
-    /// idle 감시 worker(단계 06)에 surface 의 감시 대상 경로를 등록/갱신한다. worker 가
-    /// 없으면(spawn 실패) 조용히 무시 — idle auto-reload 만 비활성화된다(webview kind 는
-    /// paint 되지 않으므로 대체할 다른 자동 갱신 경로가 없다 — `markdown.reload` 를 명시
-    /// 호출하거나 파일을 다시 열어야 갱신된다).
+    /// 파일 감시 대상을 등록하거나 갱신한다. 워커 생성에 실패했다면 자동 갱신은
+    /// 동작하지 않으며 markdown.reload를 호출하거나 파일을 다시 열어야 한다.
     fn watch_register(&self, surface_id: u32, path: Option<String>) {
         let Some(tx) = &self.watch_tx else { return };
         if tx.send(WatchCmd::Register { surface_id, path }).is_err() {
@@ -793,7 +714,7 @@ impl MarkdownPlugin {
         }
     }
 
-    /// idle 감시 worker(단계 06)에서 surface 를 해제한다.
+    /// 파일 감시 대상에서 surface를 해제한다.
     fn watch_unregister(&self, surface_id: u32) {
         let Some(tx) = &self.watch_tx else { return };
         if tx.send(WatchCmd::Unregister { surface_id }).is_err() {
@@ -815,15 +736,12 @@ impl MarkdownPlugin {
             return;
         };
         let Some(doc) = self.docs.get(&surface_id) else {
-            // 문서가 없으면 실을 것이 없다. surface 는 이미 만들어져 있으므로 host 는
-            // 빈 webview 를 그대로 두고, 화면에는 아무 내용도 안 나온다.
             tracing::warn!(
                 "markdown surface {surface_id}: no document registered — nothing to load"
             );
             return;
         };
-        // 실패하면 렌더를 통째로 건너뛰어 webview 가 빈 채로 남는다. 그 사실과 사유는
-        // `fetch_theme` 이 surface 를 밝혀 남긴다 — 여기서 또 남기지 않는다.
+        // 테마 조회 실패는 fetch_theme에서 기록한다. 새 HTML을 보내지 않아 이전 표시가 남는다.
         let Some(theme) = fetch_theme(host, surface_id) else {
             return;
         };
@@ -895,9 +813,7 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
-/// 렌더된 HTML 을 host webview 에 싣고 결과를 로그에 남긴다. `reload_webview` 에서
-/// 떼어낸 것은 그 함수의 조기 반환 갈래가 이미 여럿이라, 결과 분기까지 함께 두면
-/// 복잡도 게이트(`clippy::cognitive_complexity`)를 넘기 때문이다.
+/// 렌더한 HTML을 호스트 WebView에 보내고 결과를 기록한다.
 fn push_html(host: &HostHandle, surface_id: u32, file_path: &str, html: String) {
     let html_len = html.len();
     if let Err(e) = host.call(
@@ -906,20 +822,14 @@ fn push_html(host: &HostHandle, surface_id: u32, file_path: &str, html: String) 
     ) {
         tracing::warn!("markdown surface {surface_id}: webview.set_url failed: {e}");
     } else {
-        // file 이 없는 surface(빈 문서)는 `file=` 가 빈 채로 남는다 — 그것이 곧
-        // "경로 없이 열린 문서" 라는 표시다.
         tracing::info!(
             "markdown surface {surface_id}: loaded {html_len} bytes of HTML (file={file_path})"
         );
     }
 }
 
-/// host `theme.query` IPC(webview.rs 참조)로 현재 Theme 을 동기 조회한다. webview-kind
-/// surface 는 `surface.set_context` 를 받지 않아(egui-mesh 와 달리 host 가 mesh 프레임을
-/// 합성하지 않으므로) 이 조회가 유일한 Theme 획득 경로다. 실패하면 `None` — 호출자는
-/// 문서 재생성을 건너뛴다(다음 성공한 조회가 갱신할 때까지 이전 내용 유지).
-/// `surface_id` 는 로그 전용이다 — 실패하면 그 surface 의 webview 가 빈 채로 남으므로,
-/// 어느 자리가 비었는지 이 줄만으로 짚을 수 있어야 한다.
+/// theme.query로 현재 테마를 조회한다. WebView surface는 set_context로 테마를 받지 않는다.
+/// 실패하면 None을 반환하고 해당 surface를 로그에 남긴다. 호출자는 갱신을 건너뛴다.
 fn fetch_theme(host: &HostHandle, surface_id: u32) -> Option<Theme> {
     match host.call("theme.query", json!({})) {
         Ok(v) => match serde_json::from_value::<ThemeWire>(v) {
@@ -941,11 +851,8 @@ fn fetch_theme(host: &HostHandle, surface_id: u32) -> Option<Theme> {
     }
 }
 
-/// 편집 진입 시 host 의 generic `recent.query {kind}` 로 최근목록을 조회한다 — 최신순
-/// 최대 10개 경로. host 는 "markdown" 을 모르므로 plugin 이 kind 를 채운다. 문서 생성
-/// 시점에 baked-in 되어 주소창 `<datalist>` 후보가 된다(render.rs 모듈 문서 — 웹뷰
-/// surface 엔 JS↔plugin 메시지 브리지가 없어 반응형 fetch 를 할 수 없다). 실패하면
-/// 빈 목록으로 폴백한다.
+/// 호스트의 recent.query에서 최신 경로를 최대 10개 조회한다.
+/// 문서를 생성할 때 주소창 후보에 넣으며, 조회에 실패하면 빈 목록을 쓴다.
 fn fetch_recent(host: &HostHandle) -> Vec<String> {
     match host.call("recent.query", json!({ "kind": "markdown" })) {
         Ok(v) => parse_recent(&v),
@@ -956,8 +863,7 @@ fn fetch_recent(host: &HostHandle) -> Vec<String> {
     }
 }
 
-/// `recent.query` 응답(`{ "recent": [{ path, file_name }] }`)에서 경로 목록을 추출한다
-/// (순수 — 단위테스트로 격리). 응답 형태가 어긋나면 빈 목록.
+/// recent.query 응답의 recent 배열에서 경로를 꺼낸다. 배열이 없으면 빈 목록을 반환한다.
 fn parse_recent(v: &Value) -> Vec<String> {
     v.get("recent")
         .and_then(|r| r.as_array())
@@ -969,11 +875,9 @@ fn parse_recent(v: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// 링크 클릭 부수효과. `webview.navigation_attempt` 로 도착한, 이 plugin 이 생성한
-/// `#tasty-nav:link:` fragment 에서만 도달한다(module doc). 파일은 host
-/// `file_handler.dispatch`(같은 Pane 새 탭, origin_surface_id)로, 외부 URL 은 host
-/// `webview.open_external` 로 OS 핸들러에 넘긴다 — 이 plugin 은 OS 열기를 직접 하지 않는다.
-/// `nav_url` 은 host 가 통지한 시도의 URL 그대로다(파일 링크가 사용자 행동의 근거로 되댄다).
+/// 문서 링크를 호스트에 전달한다. 파일은 같은 Pane의 새 탭으로 열도록 요청하고,
+/// 외부 URL은 OS의 기본 앱으로 열도록 요청한다.
+/// nav_url은 사용자 동작 판정을 위해 호스트가 보낸 값을 그대로 돌려준다.
 fn dispatch_link(host: &HostHandle, sid: u32, nav_url: &str, click: render::LinkClick) {
     match click {
         render::LinkClick::File(path) => dispatch_file_link(host, sid, nav_url, &path),
@@ -994,14 +898,10 @@ fn dispatch_file_link(host: &HostHandle, sid: u32, nav_url: &str, path: &std::pa
     }
 }
 
-/// 문서 안 파일 링크의 `file_handler.dispatch` 파라미터. 호출(`HostHandle`)과 떼어 두어 단위
-/// 테스트가 wire 모양을 본다.
-///
-/// `user_navigation_url` 은 이 호출이 링크 클릭에서 왔다는 표지다 — host 는 엔진이 그 시도를
-/// 사용자 제스처로 보고했고 그 페이지를 이 plugin 이 썼을 때만 그 한 번을 사용자 행동으로 쳐 새 탭을 선택하고, 아니면(사람의 입력
-/// 없이 스크립트만으로 낸 시도 · 이 plugin 이 쓰지 않은 페이지 · macOS 처럼 엔진이 그 값을 안 주는
-/// 곳) 에이전트로 받아 사용자가 보던 탭을 그대로 둔다(docs/features/file-handler/index.md#origin-소유권과-비동기-완료). 이 plugin 이 판정하지 않는다 —
-/// 받은 URL 을 그대로 되댈 뿐이다.
+/// 파일 링크 열기 요청. user_navigation_url을 호스트에 돌려주면 호스트가
+/// 페이지 소유자와 엔진의 사용자 제스처 정보를 확인한다. macOS처럼 해당 정보를
+/// 제공하지 않거나 확인에 실패하면 에이전트 요청으로 처리해 기존 선택을 유지한다.
+/// docs/features/file-handler/index.md#origin-소유권과-비동기-완료.
 fn file_link_params(sid: u32, nav_url: &str, path: &std::path::Path) -> Value {
     json!({
         "path": path.to_string_lossy(),
@@ -1011,9 +911,8 @@ fn file_link_params(sid: u32, nav_url: &str, path: &std::path::Path) -> Value {
     })
 }
 
-/// 외부 URL 을 host 의 OS 열기 자리로 보낸다(docs/plugins/markdown/index.md#내부-동작). host 가 거기서 열기를 한 곳으로 모아
-/// debug 스위치(docs/dev-guide/self-verification.md#os-열기와-지연-주입)도 이 열기를 기록한다. `sid` 는 링크가 클릭된 이 plugin 의 surface 다
-/// — host 는 자기 surface 에서 온 요청만 연다.
+/// 외부 URL 열기를 호스트에 요청한다. 호스트는 surface 소유자를 확인한다.
+/// OS 열기 기록: docs/dev-guide/self-verification.md#os-열기와-지연-주입.
 fn dispatch_external_link(host: &HostHandle, sid: u32, url: &str) {
     match host.call("webview.open_external", external_link_params(sid, url)) {
         Ok(v) if v.get("opened").and_then(Value::as_bool) == Some(false) => {
@@ -1053,7 +952,6 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
-// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+// 테스트의 let _ = 사용은 제품 코드의 오류 무시 목록에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests;

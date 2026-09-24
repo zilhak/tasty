@@ -121,7 +121,6 @@ pub enum DragState {
         initial_position: Vec2,
     },
     Resizing {
-        /// 어떤 크기 조절 손잡이에서 시작했는지 기록한다. 현재는 읽지 않는다.
         #[allow(dead_code)]
         // 크기 조절 시작 위치를 기록하지만 현재 처리에서는 읽지 않는다.
         handle: ResizeHandle,

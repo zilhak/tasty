@@ -97,7 +97,7 @@ file_hint = "path to markdown file"
 allow_remote = "Allow remote content"
 
 [markdown.cli.sub.reload]
-description = "Force reload the markdown surface from disk"
+description = "Reload the local file or request the remote document again"
 
 [markdown.cli.sub.recent]
 description = "List recently opened markdown files (newest first, up to 10)"

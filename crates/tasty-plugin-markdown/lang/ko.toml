@@ -58,7 +58,7 @@ close_tooltip = "닫기 (Esc)"
 label = "목차"
 aria_label = "목차"
 
-# GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::ALERT_KINDS 가 조회.
+# GFM alert blockquote(`> [!NOTE]` 등) 헤더 레이블 — render.rs::CALLOUT_KINDS 가 조회.
 [markdown.alert]
 note = "참고"
 tip = "팁"
@@ -96,7 +96,7 @@ file_hint = "마크다운 파일 경로"
 allow_remote = "원격 콘텐츠 허용"
 
 [markdown.cli.sub.reload]
-description = "디스크에서 마크다운 서피스 강제 새로고침"
+description = "로컬 파일을 다시 읽거나 원격 문서를 다시 요청합니다"
 
 [markdown.cli.sub.recent]
 description = "최근에 연 마크다운 파일 나열(최신순, 최대 10개)"

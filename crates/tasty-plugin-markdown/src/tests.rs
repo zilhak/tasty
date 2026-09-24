@@ -37,10 +37,7 @@ fn create_surface_loads_missing_file_as_error() {
     assert!(doc.content.is_empty());
 }
 
-// round-trip 회귀: create 는 file 을 snapshot 으로 실어야 layout/preset 저장에
-// file 이 보존된다(그래야 host 가 snapshot_cache→SavedSurface::Generic.data 로
-// round-trip). 이게 없으면(SDK 기본 = 빈 SurfaceResult) plugin surface 가 저장 시
-// 내용을 잃는다.
+// 생성 결과의 snapshot에 경로를 넣어 다음 실행에서 복원할 수 있어야 한다.
 #[test]
 fn create_surface_carries_file_in_snapshot() {
     let mut p = MarkdownPlugin::new(Translator::default());
@@ -92,8 +89,7 @@ fn create_without_file_yields_no_snapshot() {
     assert_eq!(res.snapshot, None);
 }
 
-/// 크기게이트 임계값 판정 — 초과만 게이트(경계값·이하·부재는 통과). host
-/// `file/dispatch.rs` 의 `size_gate_boundary_and_over` 를 plugin in-process 로 이관.
+/// 확인 기준을 초과한 파일만 대용량으로 판정한다.
 #[test]
 fn file_exceeds_limit_gates_over_only() {
     let dir = std::env::temp_dir();
@@ -135,9 +131,7 @@ fn deferred_doc_holds_read_until_resume() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// `force_reload` 가 외부 삭제를 error 상태로 감지한다 — idle 감시(SDK `file_watch`)가
-/// mtime 변경을 감지했을 때, 그리고 `markdown.reload` IPC 가 명시 호출됐을 때 모두
-/// 이 경로 하나로 수렴한다(`file_watch` 모듈 문서 — 레이스를 없애는 단일 쓰기 경로).
+/// 파일이 삭제되면 다시 읽을 때 load_error에 기록한다.
 #[test]
 fn force_reload_detects_external_deletion_as_error() {
     let path = std::env::temp_dir().join(format!("tasty-md-delpoll-{}.md", std::process::id()));
@@ -487,9 +481,8 @@ fn file_open_dispatch_params_carry_the_owner_popup() {
     assert!(params.get("origin_surface_id").is_none());
 }
 
-/// 문서 안 파일 링크는 host 가 통지한 시도의 URL 을 `user_navigation_url` 로 그대로 되댄다 —
-/// host 가 그 클릭을 사용자 행동으로 칠 근거를 찾는 열쇠다(docs/features/file-handler/index.md#origin-소유권과-비동기-완료). 새 탭은 링크가 눌린 surface
-/// 의 pane 에 붙는다.
+/// 링크 열기 요청에 호스트가 보낸 URL과 원래 surface를 전달한다.
+/// 호스트가 사용자 입력을 확인하고 같은 Pane에 새 탭을 연다.
 #[test]
 fn a_file_link_echoes_the_navigation_it_came_from() {
     let url = "about:blank#tasty-nav:link:b.md";

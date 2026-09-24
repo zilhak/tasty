@@ -58,7 +58,7 @@ close_tooltip = "閉じる (Esc)"
 label = "目次"
 aria_label = "目次"
 
-# GFM alert blockquote(`> [!NOTE]` 等)のヘッダーラベル — render.rs::ALERT_KINDS が参照。
+# GFM alert blockquote(`> [!NOTE]` 等)のヘッダーラベル — render.rs::CALLOUT_KINDS が参照。
 [markdown.alert]
 note = "メモ"
 tip = "ヒント"
@@ -96,7 +96,7 @@ file_hint = "マークダウンファイルのパス"
 allow_remote = "リモートコンテンツを許可"
 
 [markdown.cli.sub.reload]
-description = "ディスクからMarkdownサーフェスを強制再読み込み"
+description = "ローカルファイルを再読み込みするか、リモート文書を再取得します"
 
 [markdown.cli.sub.recent]
 description = "最近開いたMarkdownファイルを一覧表示（新しい順、最大10件）"
